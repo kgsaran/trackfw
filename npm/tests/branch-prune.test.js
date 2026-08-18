@@ -79,24 +79,35 @@ test('evaluateBranchIntegration: content identical (stale but integrated) -> del
 })
 
 test('evaluateBranchIntegration: pending work -> never deletable', () => {
-  // f1.go (not f1.md) — pending_work is reserved for genuine code changes; a .md file here would
-  // instead route to REVIEW_DOC_CONFIG (see the dedicated test below).
+  // f1.md — deliberately a doc file, to prove pending_work is decided by "diverg == touched"
+  // (nothing from this branch reached main at all), not by file type. ML-1C fixed the earlier
+  // bug where a doc-only branch with diverg == touched was misrouted to REVIEW_DOC_CONFIG
+  // ("probable housekeeping, confirm and delete manually") even though it had never been
+  // integrated at all. The test below is the contrasting case: same file types, but diverg is a
+  // PROPER subset of touched (partial integration), which is what actually makes it
+  // REVIEW_DOC_CONFIG.
   const execGit = fakeExecGit({
     'merge-base origin/main feat/pending': { stdout: 'abc123', error: null },
-    'diff --name-only -z abc123 feat/pending': { stdout: 'f1.go\x00', error: null },
-    'diff --name-only -z origin/main feat/pending -- f1.go': { stdout: 'f1.go\x00', error: null },
+    'diff --name-only -z abc123 feat/pending': { stdout: 'f1.md\x00', error: null },
+    'diff --name-only -z origin/main feat/pending -- f1.md': { stdout: 'f1.md\x00', error: null },
   })
   const evalResult = evaluateBranchIntegration('feat/pending', execGit)
   assert.equal(evalResult.decision, DECISION.PENDING_WORK)
   assert.equal(isDeletable(evalResult.decision), false)
-  assert.ok(evalResult.reason.includes('f1.go'))
+  assert.ok(evalResult.reason.includes('f1.md'))
 })
 
 test('evaluateBranchIntegration: doc/config-only divergence -> review, never deletable', () => {
+  // review_doc_config requires diverg to be a PROPER subset of touched — genuine partial
+  // integration (README-merged.md made it into main, CLAUDE.md/trackfw.yaml are residue), not a
+  // branch that was never integrated at all.
   const execGit = fakeExecGit({
     'merge-base origin/main feat/docs-only': { stdout: 'abc123', error: null },
-    'diff --name-only -z abc123 feat/docs-only': { stdout: 'CLAUDE.md\x00trackfw.yaml\x00', error: null },
-    'diff --name-only -z origin/main feat/docs-only -- CLAUDE.md trackfw.yaml': {
+    'diff --name-only -z abc123 feat/docs-only': {
+      stdout: 'CLAUDE.md\x00README-merged.md\x00trackfw.yaml\x00',
+      error: null,
+    },
+    'diff --name-only -z origin/main feat/docs-only -- CLAUDE.md README-merged.md trackfw.yaml': {
       stdout: 'CLAUDE.md\x00trackfw.yaml\x00',
       error: null,
     },
@@ -107,6 +118,23 @@ test('evaluateBranchIntegration: doc/config-only divergence -> review, never del
   assert.ok(evalResult.reason.includes('CLAUDE.md'))
   assert.ok(evalResult.reason.includes('trackfw.yaml'))
   assert.ok(evalResult.reason.includes('confirm and delete manually'))
+})
+
+test('evaluateBranchIntegration: doc-only, never integrated (diverg == touched) -> pending_work, not review — ML-1C discriminant', () => {
+  // KG's exact repro: a branch with brand-new, never-merged documentation. diverg == touched
+  // (nothing reached main), so this must be pending_work even though every file is doc/config.
+  const execGit = fakeExecGit({
+    'merge-base origin/main feat/doc-real': { stdout: 'abc123', error: null },
+    'diff --name-only -z abc123 feat/doc-real': { stdout: 'docs/guia-novo.md\x00', error: null },
+    'diff --name-only -z origin/main feat/doc-real -- docs/guia-novo.md': {
+      stdout: 'docs/guia-novo.md\x00',
+      error: null,
+    },
+  })
+  const evalResult = evaluateBranchIntegration('feat/doc-real', execGit)
+  assert.equal(evalResult.decision, DECISION.PENDING_WORK)
+  assert.equal(isDeletable(evalResult.decision), false)
+  assert.ok(!evalResult.reason.includes('housekeeping'), `must not suggest housekeeping for never-merged work: ${evalResult.reason}`)
 })
 
 test('evaluateBranchIntegration: mixed doc+code divergence stays pending_work', () => {
@@ -152,9 +180,9 @@ function makePruneDeps(writelnSink) {
         case 'merge-base origin/main feat/pending':
           return { stdout: 'abc123', error: null }
         case 'diff --name-only -z abc123 feat/pending':
-          return { stdout: 'f1.go\x00', error: null }
-        case 'diff --name-only -z origin/main feat/pending -- f1.go':
-          return { stdout: 'f1.go\x00', error: null }
+          return { stdout: 'f1.md\x00', error: null }
+        case 'diff --name-only -z origin/main feat/pending -- f1.md':
+          return { stdout: 'f1.md\x00', error: null }
         default:
           throw new Error(`unexpected execGit call: ${key}`)
       }
@@ -232,9 +260,9 @@ test('runBranchPrune: fetch failure warns but still evaluates (non-blocking)', (
         case 'merge-base origin/main feat/pending':
           return { stdout: 'abc123', error: null }
         case 'diff --name-only -z abc123 feat/pending':
-          return { stdout: 'f1.go\x00', error: null }
-        case 'diff --name-only -z origin/main feat/pending -- f1.go':
-          return { stdout: 'f1.go\x00', error: null }
+          return { stdout: 'f1.md\x00', error: null }
+        case 'diff --name-only -z origin/main feat/pending -- f1.md':
+          return { stdout: 'f1.md\x00', error: null }
         default:
           throw new Error(`unexpected execGit call: ${key}`)
       }
@@ -621,4 +649,102 @@ test('runBranchPrune: stale origin/main is conservative, not wrong', { timeout: 
     `after a real fetch, expected feat/mine to become content_identical, got ${evalAfterFetch.decision} (${evalAfterFetch.reason})`
   )
   assert.equal(isDeletable(evalAfterFetch.decision), true)
+})
+
+// ────────────────────────────────────────────────────────────────────────────
+// ML-1C discriminant, real git repo: doc-only never-integrated vs partial doc residue,
+// side by side (mirrors Go's TestEvaluateBranchIntegration_RealGitRepo_DocOnlyNeverIntegrated
+// VsPartialResidue).
+// ────────────────────────────────────────────────────────────────────────────
+
+test('evaluateBranchIntegration: real git repo — doc-only never-integrated vs partial doc residue (ML-1C)', { timeout: 30000 }, () => {
+  const which = spawnSync('git', ['--version'])
+  if (which.error) {
+    return
+  }
+
+  const work = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-branch-prune-node-ml1c-'))
+  const bareDir = path.join(work, 'origin.git')
+  const cloneDir = path.join(work, 'clone')
+  const emptyGitConfig = path.join(work, 'empty-gitconfig')
+  fs.writeFileSync(emptyGitConfig, '')
+
+  const env = () => ({
+    ...process.env,
+    GIT_CONFIG_GLOBAL: emptyGitConfig,
+    GIT_CONFIG_SYSTEM: '/dev/null',
+    GIT_TERMINAL_PROMPT: '0',
+    HOME: work,
+  })
+
+  function run(dir, args) {
+    const result = spawnSync('git', args, { cwd: dir, env: env(), encoding: 'utf8' })
+    if (result.status !== 0) {
+      throw new Error(`git ${args.join(' ')} (dir=${dir}) failed: ${result.stderr}\n${result.stdout}`)
+    }
+    return result.stdout
+  }
+
+  fs.mkdirSync(bareDir, { recursive: true })
+  run(bareDir, ['init', '-q', '--bare', '-b', 'main'])
+
+  fs.mkdirSync(cloneDir, { recursive: true })
+  run(work, ['clone', '-q', bareDir, cloneDir])
+  run(cloneDir, ['config', 'user.email', 'falsify@trackfw.test'])
+  run(cloneDir, ['config', 'user.name', 'trackfw falsify'])
+  run(cloneDir, ['config', 'commit.gpgsign', 'false'])
+  run(cloneDir, ['config', 'core.hooksPath', '/dev/null'])
+
+  function writeFile(name, content) {
+    const full = path.join(cloneDir, name)
+    fs.mkdirSync(path.dirname(full), { recursive: true })
+    fs.writeFileSync(full, content)
+  }
+
+  writeFile('base.txt', 'base\n')
+  run(cloneDir, ['add', 'base.txt'])
+  run(cloneDir, ['commit', '-q', '-m', 'base commit'])
+  run(cloneDir, ['push', '-q', 'origin', 'main'])
+
+  // feat/residue: touches app.js (code) and docs/notas.md (doc). Squash-merged, but only the
+  // code file's content is picked up by the squash-merge commit — docs/notas.md never lands in
+  // main, the residue this discriminant targets.
+  run(cloneDir, ['checkout', '-q', '-b', 'feat/residue'])
+  writeFile('app.js', 'module.exports = {}\n')
+  writeFile('docs/notas.md', 'notas da branch\n')
+  run(cloneDir, ['add', 'app.js', 'docs/notas.md'])
+  run(cloneDir, ['commit', '-q', '-m', 'feat/residue work: code + doc'])
+  run(cloneDir, ['checkout', '-q', 'main'])
+  writeFile('app.js', 'module.exports = {}\n')
+  run(cloneDir, ['add', 'app.js'])
+  run(cloneDir, ['commit', '-q', '-m', 'squash-merge feat/residue (code only, doc left out)'])
+  run(cloneDir, ['push', '-q', 'origin', 'main'])
+
+  // feat/doc-real: brand-new documentation, branched off current main, never merged anywhere.
+  run(cloneDir, ['checkout', '-q', '-b', 'feat/doc-real'])
+  writeFile('docs/guia-novo.md', 'guia novo, nunca mergeado\n')
+  run(cloneDir, ['add', 'docs/guia-novo.md'])
+  run(cloneDir, ['commit', '-q', '-m', 'feat/doc-real: never-merged documentation'])
+  run(cloneDir, ['checkout', '-q', 'main'])
+  run(cloneDir, ['fetch', '-q', 'origin'])
+
+  function execGit(args) {
+    const result = spawnSync('git', args, { cwd: cloneDir, env: env(), encoding: 'utf8' })
+    if (result.status !== 0) {
+      return { stdout: '', error: new Error((result.stderr || '').trim() || `git ${args.join(' ')} exited with ${result.status}`) }
+    }
+    return { stdout: (result.stdout || '').trim(), error: null }
+  }
+
+  const evalDocReal = evaluateBranchIntegration('feat/doc-real', execGit)
+  assert.equal(evalDocReal.decision, DECISION.PENDING_WORK, `feat/doc-real expected pending_work, got ${evalDocReal.decision} (${evalDocReal.reason})`)
+  assert.equal(isDeletable(evalDocReal.decision), false)
+  assert.ok(!evalDocReal.reason.includes('housekeeping'), `feat/doc-real must not be advised as housekeeping: ${evalDocReal.reason}`)
+  assert.equal(evalDocReal.touched.length, evalDocReal.diverged.length, 'feat/doc-real: expected touched == diverg')
+
+  const evalResidue = evaluateBranchIntegration('feat/residue', execGit)
+  assert.equal(evalResidue.decision, DECISION.REVIEW_DOC_CONFIG, `feat/residue expected review_doc_config, got ${evalResidue.decision} (${evalResidue.reason})`)
+  assert.equal(isDeletable(evalResidue.decision), false)
+  assert.ok(evalResidue.reason.includes('confirm and delete manually'), `expected manual-confirmation guidance, got ${evalResidue.reason}`)
+  assert.ok(evalResidue.diverged.length < evalResidue.touched.length, `feat/residue: expected diverg to be a PROPER subset of touched, got touched=${evalResidue.touched} diverg=${evalResidue.diverged}`)
 })

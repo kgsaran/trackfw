@@ -312,8 +312,15 @@ done
 assert_three_way "$BP_LABEL"
 
 # ---------------------------------------------------------------------------
-# Scenario (e) — ML-1B: a branch whose only divergence is doc/config files (README.md) is flagged
-# "review", never "delete" and never auto-deleted by --apply.
+# Scenario (e) — ML-1B/ML-1C, side by side in the same fixture (per KG's "Auditoria do ML-1B"):
+# review_doc_config requires diverg to be a PROPER subset of touched — genuine partial
+# integration, not "every diverging file happens to be doc/config".
+#   - feat/docs-review: touches app.txt (code) AND README.md (doc). Only app.txt's content is
+#     squash-merged into main; README.md never lands there — genuine housekeeping residue.
+#     Must be flagged "review", never "delete" and never auto-deleted by --apply.
+#   - feat/doc-real: touches ONLY NEWDOC.md, never merged anywhere (diverg == touched). Must be
+#     "keep"/pending work, NEVER "review" — calling brand-new, unmerged documentation "probable
+#     housekeeping" is the exact wrong-advice bug ML-1C fixes.
 # ---------------------------------------------------------------------------
 BP_LABEL="review-doc-config-only"
 for runtime in go node py; do
@@ -341,11 +348,26 @@ for runtime in go node py; do
     env "${env_args[@]}" git add README.md
     env "${env_args[@]}" git commit -q -m "base commit"
     env "${env_args[@]}" git push -q origin main
+
+    # feat/docs-review: code + doc, only the code lands in main (partial integration residue).
     env "${env_args[@]}" git checkout -q -b feat/docs-review
+    echo "app work" >app.txt
     echo "# updated docs only, never merged" >README.md
-    env "${env_args[@]}" git add README.md
-    env "${env_args[@]}" git commit -q -m "docs-only work"
+    env "${env_args[@]}" git add app.txt README.md
+    env "${env_args[@]}" git commit -q -m "feat/docs-review work: code + doc"
     env "${env_args[@]}" git checkout -q main
+    echo "app work" >app.txt
+    env "${env_args[@]}" git add app.txt
+    env "${env_args[@]}" git commit -q -m "squash-merge feat/docs-review (code only, doc left out)"
+    env "${env_args[@]}" git push -q origin main
+
+    # feat/doc-real: brand-new doc, never merged anywhere — ML-1C discriminant.
+    env "${env_args[@]}" git checkout -q -b feat/doc-real
+    echo "# never merged" >NEWDOC.md
+    env "${env_args[@]}" git add NEWDOC.md
+    env "${env_args[@]}" git commit -q -m "feat/doc-real: never-merged documentation"
+    env "${env_args[@]}" git checkout -q main
+    env "${env_args[@]}" git fetch -q origin
   ) >>"$dest/build.log" 2>&1
   before=$(local_branches "$clone")
   run_prune "$runtime" "$clone"
@@ -363,6 +385,16 @@ for runtime in go node py; do
   review_action=$(echo "$review_line" | awk '{print $2}')
   if [[ "$review_action" != "review" ]]; then
     fail "branch-prune-parity/$BP_LABEL/$runtime" "feat/docs-review must be reported action=review, got action='$review_action' line: $review_line"
+    continue
+  fi
+  doc_real_line=$(grep 'feat/doc-real' "$BP_OUT_FILE" | grep -v 'need manual review' || true)
+  doc_real_action=$(echo "$doc_real_line" | awk '{print $2}')
+  if [[ "$doc_real_action" != "keep" ]]; then
+    fail "branch-prune-parity/$BP_LABEL/$runtime" "feat/doc-real (never merged, doc-only) must be reported action=keep, got action='$doc_real_action' line: $doc_real_line"
+    continue
+  fi
+  if echo "$doc_real_line" | grep -qF 'housekeeping'; then
+    fail "branch-prune-parity/$BP_LABEL/$runtime" "feat/doc-real must NOT be advised as housekeeping — it is real, unmerged work; line: $doc_real_line"
     continue
   fi
   normalize_prune_output "$BP_OUT_FILE"

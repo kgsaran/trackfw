@@ -90,24 +90,35 @@ def test_evaluate_branch_integration_content_identical_deletable_ac2():
 
 
 def test_evaluate_branch_integration_pending_work_not_deletable():
-    # f1.go (não f1.md) — pending_work é reservado para mudanças de código genuínas; um .md aqui
-    # rotearia para review_doc_config (ver teste dedicado abaixo).
+    # f1.md — deliberadamente um arquivo doc, para provar que pending_work é decidido por
+    # "diverg == touched" (nada da branch chegou na main), não pelo tipo do arquivo. O ML-1C
+    # corrigiu o bug em que uma branch só-de-doc com diverg == touched era roteada erradamente
+    # para review_doc_config ("probable housekeeping, confirm and delete manually") mesmo nunca
+    # tendo sido integrada. O teste abaixo é o caso contrastante: mesmos tipos de arquivo, mas
+    # diverg é subconjunto PRÓPRIO de touched (integração parcial) — é isso que de fato torna a
+    # branch review_doc_config.
     exec_git = _fake_exec_git({
         "merge-base origin/main feat/pending": ("abc123", None),
-        "diff --name-only -z abc123 feat/pending": ("f1.go\x00", None),
-        "diff --name-only -z origin/main feat/pending -- f1.go": ("f1.go\x00", None),
+        "diff --name-only -z abc123 feat/pending": ("f1.md\x00", None),
+        "diff --name-only -z origin/main feat/pending -- f1.md": ("f1.md\x00", None),
     })
     ev = evaluate_branch_integration("feat/pending", exec_git)
     assert ev["decision"] == BRANCH_PRUNE_DECISION_PENDING_WORK
     assert not branch_prune_is_deletable(ev["decision"])
-    assert "f1.go" in ev["reason"]
+    assert "f1.md" in ev["reason"]
 
 
 def test_evaluate_branch_integration_review_doc_config_not_deletable():
+    # review_doc_config exige que diverg seja subconjunto PRÓPRIO de touched — integração
+    # parcial genuína (README-merged.md chegou na main, CLAUDE.md/trackfw.yaml são resíduo),
+    # não uma branch que nunca foi integrada.
     exec_git = _fake_exec_git({
         "merge-base origin/main feat/docs-only": ("abc123", None),
-        "diff --name-only -z abc123 feat/docs-only": ("CLAUDE.md\x00trackfw.yaml\x00", None),
-        "diff --name-only -z origin/main feat/docs-only -- CLAUDE.md trackfw.yaml": (
+        "diff --name-only -z abc123 feat/docs-only": (
+            "CLAUDE.md\x00README-merged.md\x00trackfw.yaml\x00",
+            None,
+        ),
+        "diff --name-only -z origin/main feat/docs-only -- CLAUDE.md README-merged.md trackfw.yaml": (
             "CLAUDE.md\x00trackfw.yaml\x00",
             None,
         ),
@@ -120,6 +131,25 @@ def test_evaluate_branch_integration_review_doc_config_not_deletable():
     assert "CLAUDE.md" in ev["reason"]
     assert "trackfw.yaml" in ev["reason"]
     assert "confirm and delete manually" in ev["reason"]
+
+
+def test_evaluate_branch_integration_doc_only_never_integrated_is_pending_work():
+    # Repro exato do KG: branch com documentação nova, nunca mergeada. diverg == touched (nada
+    # chegou na main), então isso deve ser pending_work mesmo sendo tudo doc/config.
+    exec_git = _fake_exec_git({
+        "merge-base origin/main feat/doc-real": ("abc123", None),
+        "diff --name-only -z abc123 feat/doc-real": ("docs/guia-novo.md\x00", None),
+        "diff --name-only -z origin/main feat/doc-real -- docs/guia-novo.md": (
+            "docs/guia-novo.md\x00",
+            None,
+        ),
+    })
+    ev = evaluate_branch_integration("feat/doc-real", exec_git)
+    assert ev["decision"] == BRANCH_PRUNE_DECISION_PENDING_WORK
+    assert not branch_prune_is_deletable(ev["decision"])
+    assert "housekeeping" not in ev["reason"], (
+        f"não deve sugerir housekeeping para trabalho nunca integrado: {ev['reason']!r}"
+    )
 
 
 def test_evaluate_branch_integration_mixed_doc_and_code_stays_pending_work():
@@ -158,8 +188,8 @@ def _make_prune_kwargs(out):
             "merge-base origin/main feat/integrated": ("abc123", None),
             "diff --name-only -z abc123 feat/integrated": ("", None),
             "merge-base origin/main feat/pending": ("abc123", None),
-            "diff --name-only -z abc123 feat/pending": ("f1.go\x00", None),
-            "diff --name-only -z origin/main feat/pending -- f1.go": ("f1.go\x00", None),
+            "diff --name-only -z abc123 feat/pending": ("f1.md\x00", None),
+            "diff --name-only -z origin/main feat/pending -- f1.md": ("f1.md\x00", None),
         }
         if key not in table:
             raise AssertionError(f"unexpected exec_git call: {key}")
@@ -244,8 +274,8 @@ def test_run_branch_prune_fetch_fails_warns_but_still_evaluates():
             "merge-base origin/main feat/integrated": ("abc123", None),
             "diff --name-only -z abc123 feat/integrated": ("", None),
             "merge-base origin/main feat/pending": ("abc123", None),
-            "diff --name-only -z abc123 feat/pending": ("f1.go\x00", None),
-            "diff --name-only -z origin/main feat/pending -- f1.go": ("f1.go\x00", None),
+            "diff --name-only -z abc123 feat/pending": ("f1.md\x00", None),
+            "diff --name-only -z origin/main feat/pending -- f1.md": ("f1.md\x00", None),
         }
         if key not in table:
             raise AssertionError(f"unexpected exec_git call: {key}")
@@ -652,3 +682,105 @@ def test_run_branch_prune_stale_origin_main_is_conservative_not_wrong():
         eval_after_fetch = evaluate_branch_integration("feat/mine", exec_git)
         assert eval_after_fetch["decision"] == BRANCH_PRUNE_DECISION_IDENTICAL, eval_after_fetch
         assert branch_prune_is_deletable(eval_after_fetch["decision"])
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# ML-1C discriminant, repo git real: doc só-nunca-integrada vs resíduo parcial de doc, lado a
+# lado (espelha Go TestEvaluateBranchIntegration_RealGitRepo_DocOnlyNeverIntegratedVsPartialResidue).
+# ────────────────────────────────────────────────────────────────────────────
+
+@pytest.mark.skipif(not _git_available(), reason="git not available in PATH")
+def test_evaluate_branch_integration_real_git_repo_doc_only_never_integrated_vs_partial_residue():
+    with tempfile.TemporaryDirectory(prefix="trackfw-branch-prune-py-ml1c-") as work:
+        bare_dir = os.path.join(work, "origin.git")
+        clone_dir = os.path.join(work, "clone")
+        empty_gitconfig = os.path.join(work, "empty-gitconfig")
+        with open(empty_gitconfig, "w") as f:
+            f.write("")
+
+        env = dict(os.environ)
+        env.update({
+            "GIT_CONFIG_GLOBAL": empty_gitconfig,
+            "GIT_CONFIG_SYSTEM": "/dev/null",
+            "GIT_TERMINAL_PROMPT": "0",
+            "HOME": work,
+        })
+
+        def run(cwd, args):
+            result = subprocess.run(
+                ["git"] + args, cwd=cwd, env=env, capture_output=True, text=True
+            )
+            if result.returncode != 0:
+                raise AssertionError(
+                    f"git {args} (cwd={cwd}) failed: {result.stderr}\n{result.stdout}"
+                )
+            return result.stdout
+
+        os.makedirs(bare_dir, exist_ok=True)
+        run(bare_dir, ["init", "-q", "--bare", "-b", "main"])
+
+        os.makedirs(clone_dir, exist_ok=True)
+        run(work, ["clone", "-q", bare_dir, clone_dir])
+        run(clone_dir, ["config", "user.email", "falsify@trackfw.test"])
+        run(clone_dir, ["config", "user.name", "trackfw falsify"])
+        run(clone_dir, ["config", "commit.gpgsign", "false"])
+        run(clone_dir, ["config", "core.hooksPath", "/dev/null"])
+
+        def write_file(name, content):
+            full = os.path.join(clone_dir, name)
+            os.makedirs(os.path.dirname(full), exist_ok=True)
+            with open(full, "w") as f:
+                f.write(content)
+
+        write_file("base.txt", "base\n")
+        run(clone_dir, ["add", "base.txt"])
+        run(clone_dir, ["commit", "-q", "-m", "base commit"])
+        run(clone_dir, ["push", "-q", "origin", "main"])
+
+        # feat/residue: toca app.py (código) e docs/notas.md (doc). Squash-mergeada, mas só o
+        # conteúdo de app.py é levado no commit de squash-merge — docs/notas.md nunca chega na
+        # main, o resíduo que este discriminante mira.
+        run(clone_dir, ["checkout", "-q", "-b", "feat/residue"])
+        write_file("app.py", "def main():\n    pass\n")
+        write_file("docs/notas.md", "notas da branch\n")
+        run(clone_dir, ["add", "app.py", "docs/notas.md"])
+        run(clone_dir, ["commit", "-q", "-m", "feat/residue work: code + doc"])
+        run(clone_dir, ["checkout", "-q", "main"])
+        write_file("app.py", "def main():\n    pass\n")
+        run(clone_dir, ["add", "app.py"])
+        run(clone_dir, ["commit", "-q", "-m", "squash-merge feat/residue (code only, doc left out)"])
+        run(clone_dir, ["push", "-q", "origin", "main"])
+
+        # feat/doc-real: documentação nova, criada a partir da main atual, nunca mergeada.
+        run(clone_dir, ["checkout", "-q", "-b", "feat/doc-real"])
+        write_file("docs/guia-novo.md", "guia novo, nunca mergeado\n")
+        run(clone_dir, ["add", "docs/guia-novo.md"])
+        run(clone_dir, ["commit", "-q", "-m", "feat/doc-real: never-merged documentation"])
+        run(clone_dir, ["checkout", "-q", "main"])
+        run(clone_dir, ["fetch", "-q", "origin"])
+
+        def exec_git(args):
+            result = subprocess.run(
+                ["git"] + args, cwd=clone_dir, env=env, capture_output=True, text=True
+            )
+            if result.returncode != 0:
+                return ("", result.stderr.strip() or f"git {' '.join(args)} failed")
+            return (result.stdout.strip(), None)
+
+        eval_doc_real = evaluate_branch_integration("feat/doc-real", exec_git)
+        assert eval_doc_real["decision"] == BRANCH_PRUNE_DECISION_PENDING_WORK, eval_doc_real
+        assert not branch_prune_is_deletable(eval_doc_real["decision"])
+        assert "housekeeping" not in eval_doc_real["reason"], (
+            f"feat/doc-real não deve ser sugerida como housekeeping: {eval_doc_real['reason']!r}"
+        )
+        assert len(eval_doc_real["touched"]) == len(eval_doc_real["diverged"]), (
+            f"feat/doc-real: esperado touched == diverg, got {eval_doc_real}"
+        )
+
+        eval_residue = evaluate_branch_integration("feat/residue", exec_git)
+        assert eval_residue["decision"] == BRANCH_PRUNE_DECISION_REVIEW_DOC_CONFIG, eval_residue
+        assert not branch_prune_is_deletable(eval_residue["decision"])
+        assert "confirm and delete manually" in eval_residue["reason"]
+        assert len(eval_residue["diverged"]) < len(eval_residue["touched"]), (
+            f"feat/residue: esperado diverg subconjunto PRÓPRIO de touched, got {eval_residue}"
+        )

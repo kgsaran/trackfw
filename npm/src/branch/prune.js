@@ -210,7 +210,13 @@ function evaluateBranchIntegration(branch, execGit) {
     }
   }
 
-  if (allDocOrConfig(diverg)) {
+  // review_doc_config requires diverg to be a PROPER subset of touched (diverg.length <
+  // touched.length) — not just "all doc/config". diverg is always a subset of touched by
+  // construction (the second git diff is scoped `-- touched`), so this is the same as: at
+  // least one touched file made it into main. That distinguishes genuine housekeeping residue
+  // from a squash-merge from a branch whose ENTIRE touched set — doc/config or not — never
+  // reached main (diverg == touched): that is pending work, regardless of file type.
+  if (diverg.length < touched.length && allDocOrConfig(diverg)) {
     return {
       name: branch,
       decision: DECISION.REVIEW_DOC_CONFIG,

@@ -140,7 +140,17 @@ func evaluateBranchIntegration(branch string, gitExec func(...string) (string, e
 		}
 	}
 
-	if allDocOrConfig(diverg) {
+	// review_doc_config requires diverg to be a PROPER subset of touched (len(diverg) <
+	// len(touched)) — not just "all doc/config". diverg is always a subset of touched by
+	// construction (the second git diff is scoped `-- touched`), so this is the same as: at
+	// least one touched file is NOT in diverg, i.e. it made it into main. That is what
+	// distinguishes genuine housekeeping residue from a squash-merge (some files integrated,
+	// doc/config noise left behind) from a branch whose ENTIRE touched set — doc/config or
+	// not — never reached main at all (diverg == touched): that is pending work, full stop,
+	// regardless of file type. See "Auditoria do ML-1B" in the roadmap: a branch with brand-new,
+	// never-merged docs/guia-novo.md previously fell into review_doc_config and was reported as
+	// "probable housekeeping, confirm and delete manually" — wrong advice about real work.
+	if len(diverg) < len(touched) && allDocOrConfig(diverg) {
 		return branchPruneEvaluation{
 			Name:     branch,
 			Decision: branchPruneDecisionReviewDocConfig,

@@ -19503,3 +19503,47 @@ delimitava essa dependência. ML-3A (revisão de segurança do `hades-tf`) tamb�
 
 Handoff para `trackfw_architect`: auditar o diff, commitar e dar push. ML-1A marcado ✅ Concluído
 no roadmap com evidência bruta colada na seção correspondente.
+
+## Sessão 2026-08-18 — Apolo (INÍCIO: ML-1C — corrigir discriminante `review_doc_config`)
+
+Branch `feat/branch-prune-com-dry-run-por-padrao-e-heuristica-de-arquivos-tocados`, roadmap
+`docs/roadmaps/wip/ROADMAP-2026-08-18-branch-prune-com-dry-run-por-padrao-e-heuristica-de-arquivos-tocados.md`
+em `wip/`. ML-1A e ML-1B já concluídos e auditados. Executando ML-1C: KG mediu em fixture git real
+que `review_doc_config` classificava errado uma branch com documentação **nova e nunca mergeada**
+(`diverg == touched`) como "provável housekeeping, confirme e apague" — conselho errado sobre
+trabalho real, mesmo sem apagar sozinha (falha fechada segura). Correção: `review_doc_config`
+passa a exigir `diverg` como subconjunto PRÓPRIO de `touched` (`len(diverg) < len(touched)`);
+quando `diverg == touched`, é `pending_work` mesmo sendo tudo doc/config. Escopo: só a condição em
+`evaluateBranchIntegration` nos 3 CLIs + testes + `docs/cli-parity.md` + gate de paridade. Fora de
+escopo: Wave 2 (`ship`) e Wave 3 (`hades-tf`). Nenhum commit/push (autoridade exclusiva do
+`trackfw_architect`).
+
+## Sessão 2026-08-18 — Apolo (FIM: ML-1C concluído — discriminante corrigido nos 3 CLIs)
+
+Corrigido nos 3 CLIs: `internal/commands/branch_prune.go` (`evaluateBranchIntegration`),
+`npm/src/branch/prune.js`, `pypi/trackfw/commands/branch.py` — condição de `review_doc_config`
+mudou de `allDocOrConfig(diverg)` para `len(diverg) < len(touched) && allDocOrConfig(diverg)`
+(subconjunto próprio). Quando `diverg == touched`, cai em `pending_work` — nunca `delete` em
+nenhum dos dois casos, a falha fechada não afrouxou.
+
+Fixtures `f1.go` do ML-1B revertidas para `f1.md` nos 3 CLIs (decisão do risco 4 do handoff): com
+o subconjunto próprio, o arquivo de doc genuinamente pendente volta a provar a intenção original
+do teste (pending_work por `diverg == touched`, não por extensão). O teste de
+`review_doc_config` foi reescrito para modelar integração parcial genuína (3 arquivos tocados, 1
+integrado, 2 residuais) em vez de "tudo diverge" — sob a regra nova o fixture antigo teria deixado
+de provar a categoria que testava.
+
+Fixture git real, lado a lado, nos 3 CLIs (`feat/doc-real` nunca integrada vs `feat/residue` com
+integração parcial): Go `TestEvaluateBranchIntegration_RealGitRepo_DocOnlyNeverIntegratedVsPartialResidue`,
+Node equivalente em `npm/tests/branch-prune.test.js`, Python equivalente em
+`pypi/tests/test_branch_prune.py`. Gate `scripts/check-branch-prune-parity.sh`, cenário
+`review-doc-config-only`, reescrito para incluir as duas branches no mesmo fixture.
+`docs/cli-parity.md` atualizado (tabela + texto de `review_doc_config`, com o histórico do bug).
+
+**Evidência:** `go test ./...` ok, `node --test` 684/684, `pytest` 1363 passed, `GO_BIN=bin/trackfw
+scripts/check-branch-prune-parity.sh` 6/6 OK, `make quality` exit 0, `./bin/trackfw validate` 19
+warnings pré-existentes / 0 violações (nenhuma nova).
+
+Fora de escopo confirmado: Wave 2 (ML-2A, `ship`) e Wave 3 (ML-3A, `hades-tf`) não tocados. Nenhum
+`git commit`/`push`/`branch` executado — autoridade exclusiva do `trackfw_architect`. Roadmap
+ML-1C marcado ✅ Concluído com evidência bruta colada na seção correspondente.

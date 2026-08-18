@@ -354,19 +354,107 @@ pendente, qualquer que seja o tipo de arquivo. O resíduo de housekeeping tem `d
 parte entrou, sobrou ruído.
 
 ### ML-1C — `review_doc_config` só quando houve integração parcial
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
 
 **Ação:** `review_doc_config` passa a exigir **`diverg` como subconjunto PRÓPRIO de `touched`**.
 Quando `diverg == touched`, é `pending_work`, mesmo sendo tudo doc/config — nada da branch entrou
 na main.
 
 **Critérios de aceite:**
-- [ ] Branch com doc **nova e nunca mergeada** (`diverg == touched`) → `keep`/`pending_work`, **não** `review`.
-- [ ] Branch integrada com **resíduo** só de doc (`diverg ⊊ touched`) → `review`, com a mensagem atual.
-- [ ] Nenhuma das duas vira `delete` — a falha fechada não pode afrouxar.
-- [ ] Não-regressão completa dos ML-1A e 1B.
-- [ ] Fixture git real cobrindo **os dois** casos, lado a lado.
-- [ ] Paridade nos 3 CLIs; `make quality` verde.
+- [x] Branch com doc **nova e nunca mergeada** (`diverg == touched`) → `keep`/`pending_work`, **não** `review`.
+- [x] Branch integrada com **resíduo** só de doc (`diverg ⊊ touched`) → `review`, com a mensagem atual.
+- [x] Nenhuma das duas vira `delete` — a falha fechada não pode afrouxar.
+- [x] Não-regressão completa dos ML-1A e 1B.
+- [x] Fixture git real cobrindo **os dois** casos, lado a lado.
+- [x] Paridade nos 3 CLIs; `make quality` verde.
+
+**Implementação — nos 3 CLIs:**
+- Go: `internal/commands/branch_prune.go` — `evaluateBranchIntegration`, condição alterada de
+  `allDocOrConfig(diverg)` para `len(diverg) < len(touched) && allDocOrConfig(diverg)`.
+- Node.js: `npm/src/branch/prune.js` — mesma condição (`diverg.length < touched.length &&
+  allDocOrConfig(diverg)`).
+- Python: `pypi/trackfw/commands/branch.py` — `evaluate_branch_integration`, mesma condição
+  (`len(diverg) < len(touched) and all_doc_or_config(diverg)`).
+- `docs/cli-parity.md`, seção `trackfw branch prune`: tabela e texto de `review_doc_config`
+  reescritos para explicitar a exigência de subconjunto próprio, com o histórico do bug (ML-1C).
+
+**Fixtures ajustadas (decisão sobre o risco 4, respondida):** com o subconjunto próprio, os
+fixtures `f1.md` do ML-1A/1B (que tinham sido trocados para `f1.go` no ML-1B porque `.md` passava
+a cair em `review_doc_config`) **voltaram a `f1.md`** em todos os 3 CLIs — o teste volta a provar
+a intenção original (arquivo de doc genuinamente pendente vira `pending_work`, não por ser
+código, mas porque `diverg == touched`). `TestEvaluateBranchIntegration_ReviewDocConfig_NotDeletable`
+(e equivalentes Node/Python) foi reescrito para modelar integração parcial genuína (3 arquivos
+tocados, 1 integrado, 2 residuais) em vez de "tudo diverge" — do contrário o próprio teste do
+ML-1B teria ficado incorreto sob a regra nova.
+
+**Fixture git real, lado a lado, nos 3 CLIs** (prova o discriminante, não só lê o código):
+- Go: `TestEvaluateBranchIntegration_RealGitRepo_DocOnlyNeverIntegratedVsPartialResidue`
+  (`internal/commands/branch_prune_test.go`) — `feat/doc-real` (doc nova, nunca mergeada) vs
+  `feat/residue` (código + doc, só o código integrado via squash-merge).
+- Node.js: mesmo cenário em `npm/tests/branch-prune.test.js`.
+- Python: mesmo cenário em `pypi/tests/test_branch_prune.py`.
+- Gate `scripts/check-branch-prune-parity.sh`, cenário `review-doc-config-only` reescrito para
+  incluir as duas branches no mesmo fixture: `feat/docs-review` (resíduo parcial → `review`) e
+  `feat/doc-real` (nunca integrada → `keep`, nunca `housekeeping` na mensagem).
+
+**Evidência (2026-08-18, Apolo):**
+
+```
+$ TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 go test -timeout 3m ./...
+ok  	github.com/kgsaran/trackfw/internal/commands	7.724s
+... (todos os pacotes ok)
+
+$ cd npm && node --test tests/*.test.js
+ℹ tests 684
+ℹ pass 684
+ℹ fail 0
+
+$ PYTHONPATH=pypi python3 -m pytest pypi/tests -q
+1363 passed, 28 subtests passed in 31.64s
+
+$ GO_BIN=bin/trackfw bash scripts/check-branch-prune-parity.sh
+OK   [branch-prune-parity/dry-run-default]
+OK   [branch-prune-parity/apply-deletes-integrated]
+OK   [branch-prune-parity/apply-never-deletes-current-branch]
+OK   [branch-prune-parity/offline-refuses]
+OK   [branch-prune-parity/review-doc-config-only]
+OK   [branch-prune-parity/stale-origin-main-conservative]
+All check-branch-prune-parity.sh scenarios passed.
+
+$ make quality
+[exited with code 0]
+
+$ ./bin/trackfw validate
+19 warning(s), 0 violations (mesmos pré-existentes, nenhum novo)
+```
+
+**Fora de escopo, confirmado nesta sessão:** Wave 2 (ML-2A, convergência do
+`detectPendingSquashMerges` do `ship`) e Wave 3 (ML-3A, revisão de segurança do `hades-tf`) — não
+implementados. Nenhum `git commit`/`push`/`branch` executado por mim — autoridade exclusiva do
+`trackfw_architect`.
+
+---
+
+### Auditoria do ML-1C — aprovada. Wave 1 completa.
+
+Contraste medido em fixture git real, os dois casos lado a lado:
+
+```
+feat/doc-real   touched=[docs/guia-novo.md]        diverg=[docs/guia-novo.md]  IGUAIS
+                -> keep    pending work vs origin/main: docs/guia-novo.md
+feat/residuo    touched=[docs/a.md main.go]        diverg=[docs/a.md]          SUBCONJUNTO PROPRIO
+                -> review  only doc/config files diverge — probable housekeeping
+```
+
+Antes desta correção, `feat/doc-real` era classificada como `review` e o texto sugeria apagar
+**trabalho real nunca mergeado**. Agora é `pending_work`. **Nenhuma das duas vira `delete`.**
+
+Não-regressão do ML-1A/1B verificada na bateria completa: dry-run não apaga (4→4), `--apply` apaga
+só a integrada, `main`/corrente/worktree sobrevivem. `make quality` exit 0 · 130 cenários · gate
+`branch-prune` 6/6 · `validate` exit 0.
+
+Os fixtures voltaram de `f1.go` para `f1.md` (15 ocorrências), recuperando a intenção original dos
+testes do ML-1A — o subconjunto próprio os classifica certo independentemente da extensão.
 
 ---
 

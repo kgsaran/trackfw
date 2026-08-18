@@ -222,7 +222,14 @@ def evaluate_branch_integration(branch: str, exec_git) -> dict:
             "diverged": [],
         }
 
-    if all_doc_or_config(diverg):
+    # review_doc_config exige que diverg seja um subconjunto PRÓPRIO de touched
+    # (len(diverg) < len(touched)) — não basta ser "tudo doc/config". diverg já é
+    # subconjunto de touched por construção (o segundo git diff é escopado `-- touched`),
+    # então isso equivale a: pelo menos um arquivo tocado entrou na main. Isso distingue
+    # resíduo genuíno de housekeeping de squash-merge de uma branch cujo conjunto tocado
+    # inteiro — doc/config ou não — nunca chegou na main (diverg == touched): isso é
+    # trabalho pendente, qualquer que seja o tipo de arquivo.
+    if len(diverg) < len(touched) and all_doc_or_config(diverg):
         return {
             "name": branch,
             "decision": BRANCH_PRUNE_DECISION_REVIEW_DOC_CONFIG,

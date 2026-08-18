@@ -100,15 +100,20 @@ func TestEvaluateBranchIntegration_ContentIdentical_Deletable(t *testing.T) {
 }
 
 func TestEvaluateBranchIntegration_PendingWork_NotDeletable(t *testing.T) {
-	// f1.go (not f1.md) — pending_work must be reserved for genuine code changes; a .md file here
-	// would instead route to review_doc_config (see TestEvaluateBranchIntegration_ReviewDocConfig).
+	// f1.md — deliberately a doc file, to prove pending_work is decided by "diverg == touched"
+	// (nothing from this branch reached main at all), not by file type. ML-1C fixed the earlier
+	// bug where a doc-only branch with diverg == touched was misrouted to review_doc_config
+	// ("probable housekeeping, confirm and delete manually") even though it had never been
+	// integrated at all — see "Auditoria do ML-1B" in the roadmap. TestEvaluateBranchIntegration_
+	// ReviewDocConfig below is the contrasting case: same file types, but diverg is a PROPER
+	// subset of touched (partial integration), which is what actually makes it review_doc_config.
 	gitExec := fakeGitExec(t, map[string]struct {
 		out string
 		err error
 	}{
 		"merge-base origin/main feat/pending":                   {"abc123", nil},
-		"diff --name-only -z abc123 feat/pending":               {"f1.go\x00", nil},
-		"diff --name-only -z origin/main feat/pending -- f1.go": {"f1.go\x00", nil},
+		"diff --name-only -z abc123 feat/pending":               {"f1.md\x00", nil},
+		"diff --name-only -z origin/main feat/pending -- f1.md": {"f1.md\x00", nil},
 	})
 	eval := evaluateBranchIntegration("feat/pending", gitExec)
 	if eval.Decision != branchPruneDecisionPendingWork {
@@ -117,23 +122,27 @@ func TestEvaluateBranchIntegration_PendingWork_NotDeletable(t *testing.T) {
 	if eval.Decision.deletable() {
 		t.Fatal("expected pending_work to never be deletable")
 	}
-	if !strings.Contains(eval.Reason, "f1.go") {
+	if !strings.Contains(eval.Reason, "f1.md") {
 		t.Fatalf("expected reason to name the diverging file, got %q", eval.Reason)
 	}
 }
 
 func TestEvaluateBranchIntegration_ReviewDocConfig_NotDeletable(t *testing.T) {
-	// AC "Divergência só em doc/config": every diverging file is doc/config (CLAUDE.md, plus a
-	// YAML config file), never real code — must route to review_doc_config, not pending_work,
-	// and must never be deletable (KG's explicit instruction: NOT auto-delete, unlike the
-	// CLAUDE.md §1 "housekeeping, apagar" step, which assumed a human already in the loop).
+	// AC "Divergência só em doc/config": review_doc_config requires diverg to be a PROPER
+	// subset of touched — i.e. genuine partial integration (part of the branch's own work
+	// reached main, doc/config residue is left over), not a branch that was never integrated
+	// at all. Here the branch touched three files (CLAUDE.md, trackfw.yaml, README-merged.md);
+	// README-merged.md made it into main (absent from diverg), but CLAUDE.md and trackfw.yaml —
+	// both doc/config, never real code — still diverge. That is the housekeeping-residue case
+	// ML-1C's discriminant targets: never auto-deletable (KG's explicit instruction), but
+	// distinct from pending_work because SOME of the branch's own work is already in main.
 	gitExec := fakeGitExec(t, map[string]struct {
 		out string
 		err error
 	}{
-		"merge-base origin/main feat/docs-only":                                    {"abc123", nil},
-		"diff --name-only -z abc123 feat/docs-only":                                {"CLAUDE.md\x00trackfw.yaml\x00", nil},
-		"diff --name-only -z origin/main feat/docs-only -- CLAUDE.md trackfw.yaml": {"CLAUDE.md\x00trackfw.yaml\x00", nil},
+		"merge-base origin/main feat/docs-only":                                                     {"abc123", nil},
+		"diff --name-only -z abc123 feat/docs-only":                                                 {"CLAUDE.md\x00README-merged.md\x00trackfw.yaml\x00", nil},
+		"diff --name-only -z origin/main feat/docs-only -- CLAUDE.md README-merged.md trackfw.yaml": {"CLAUDE.md\x00trackfw.yaml\x00", nil},
 	})
 	eval := evaluateBranchIntegration("feat/docs-only", gitExec)
 	if eval.Decision != branchPruneDecisionReviewDocConfig {
@@ -234,9 +243,9 @@ func TestRunBranchPrune_DryRun_NeverDeletes_MainNeverCandidate(t *testing.T) {
 		case "merge-base origin/main feat/pending":
 			return "abc123", nil
 		case "diff --name-only -z abc123 feat/pending":
-			return "f1.go\x00", nil
-		case "diff --name-only -z origin/main feat/pending -- f1.go":
-			return "f1.go\x00", nil // pending
+			return "f1.md\x00", nil
+		case "diff --name-only -z origin/main feat/pending -- f1.md":
+			return "f1.md\x00", nil // pending
 		}
 		return "", fmt.Errorf("unexpected gitExec call: %v", args)
 	}
@@ -292,9 +301,9 @@ func TestRunBranchPrune_Apply_DeletesOnlyIntegrated_KeepsPending(t *testing.T) {
 		case "merge-base origin/main feat/pending":
 			return "abc123", nil
 		case "diff --name-only -z abc123 feat/pending":
-			return "f1.go\x00", nil
-		case "diff --name-only -z origin/main feat/pending -- f1.go":
-			return "f1.go\x00", nil
+			return "f1.md\x00", nil
+		case "diff --name-only -z origin/main feat/pending -- f1.md":
+			return "f1.md\x00", nil
 		}
 		return "", fmt.Errorf("unexpected gitExec call: %v", args)
 	}
@@ -340,9 +349,9 @@ func TestRunBranchPrune_FetchFails_WarnsButStillEvaluates(t *testing.T) {
 		case "merge-base origin/main feat/pending":
 			return "abc123", nil
 		case "diff --name-only -z abc123 feat/pending":
-			return "f1.go\x00", nil
-		case "diff --name-only -z origin/main feat/pending -- f1.go":
-			return "f1.go\x00", nil
+			return "f1.md\x00", nil
+		case "diff --name-only -z origin/main feat/pending -- f1.md":
+			return "f1.md\x00", nil
 		}
 		return "", fmt.Errorf("unexpected gitExec call: %v", args)
 	}
@@ -848,5 +857,142 @@ func TestRunBranchPrune_RealGitRepo_StaleOriginMain_IsConservativeNotWrong(t *te
 	}
 	if !eval.Decision.deletable() {
 		t.Fatal("after a real fetch, feat/mine must be deletable — confirms staleness (not a bug) caused the earlier conservative result")
+	}
+}
+
+// TestEvaluateBranchIntegration_RealGitRepo_DocOnlyNeverIntegratedVsPartialResidue is the ML-1C
+// discriminant, proved in a real repository with the two contrasting branches side by side (per
+// "Auditoria do ML-1B" in the roadmap):
+//
+//   - feat/doc-real:  brand-new documentation, never merged anywhere. touched == diverg
+//     (docs/guia-novo.md). Must be pending_work, kept — NOT review_doc_config, and calling it
+//     "probable housekeeping" would be wrong advice about real, unmerged work.
+//   - feat/residue:   touches both code (app.go, which lands in main) and doc (docs/notas.md,
+//     which does NOT land in main — squash-merge residue). diverg (docs/notas.md) is a PROPER
+//     subset of touched (app.go, docs/notas.md). This is the genuine housekeeping-residue case:
+//     must be review_doc_config, kept, flagged for manual confirmation.
+//
+// Neither branch is ever deletable — the failure-closed guarantee never loosens.
+func TestEvaluateBranchIntegration_RealGitRepo_DocOnlyNeverIntegratedVsPartialResidue(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available in PATH")
+	}
+
+	work := t.TempDir()
+	bareDir := filepath.Join(work, "origin.git")
+	cloneDir := filepath.Join(work, "clone")
+
+	run := func(dir string, args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(),
+			"GIT_CONFIG_GLOBAL="+filepath.Join(work, "empty-gitconfig"),
+			"GIT_CONFIG_SYSTEM=/dev/null",
+			"GIT_TERMINAL_PROMPT=0",
+			"HOME="+work,
+		)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v (dir=%s) failed: %v\n%s", args, dir, err, out)
+		}
+		return string(out)
+	}
+
+	if err := os.WriteFile(filepath.Join(work, "empty-gitconfig"), []byte(""), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.MkdirAll(bareDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	run(bareDir, "init", "-q", "--bare", "-b", "main")
+
+	if err := os.MkdirAll(cloneDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	run(work, "clone", "-q", bareDir, cloneDir)
+	run(cloneDir, "config", "user.email", "falsify@trackfw.test")
+	run(cloneDir, "config", "user.name", "trackfw falsify")
+	run(cloneDir, "config", "commit.gpgsign", "false")
+	run(cloneDir, "config", "core.hooksPath", "/dev/null")
+
+	writeFile := func(name, content string) {
+		full := filepath.Join(cloneDir, name)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	writeFile("base.txt", "base\n")
+	run(cloneDir, "add", "base.txt")
+	run(cloneDir, "commit", "-q", "-m", "base commit")
+	run(cloneDir, "push", "-q", "origin", "main")
+
+	// feat/residue: touches app.go (code) and docs/notas.md (doc). Squash-merged, but only the
+	// code file's content is picked up by the squash-merge commit below — docs/notas.md is
+	// deliberately left out, simulating a human editing the doc differently during merge.
+	run(cloneDir, "checkout", "-q", "-b", "feat/residue")
+	writeFile("app.go", "package main\n")
+	writeFile("docs/notas.md", "notas da branch\n")
+	run(cloneDir, "add", "app.go", "docs/notas.md")
+	run(cloneDir, "commit", "-q", "-m", "feat/residue work: code + doc")
+	run(cloneDir, "checkout", "-q", "main")
+	// Squash-merge only app.go's content into main — docs/notas.md never lands there, the
+	// residue this discriminant targets.
+	writeFile("app.go", "package main\n")
+	run(cloneDir, "add", "app.go")
+	run(cloneDir, "commit", "-q", "-m", "squash-merge feat/residue (code only, doc left out)")
+	run(cloneDir, "push", "-q", "origin", "main")
+
+	// feat/doc-real: brand-new documentation, branched off current main, never merged anywhere.
+	run(cloneDir, "checkout", "-q", "-b", "feat/doc-real")
+	writeFile("docs/guia-novo.md", "guia novo, nunca mergeado\n")
+	run(cloneDir, "add", "docs/guia-novo.md")
+	run(cloneDir, "commit", "-q", "-m", "feat/doc-real: never-merged documentation")
+	run(cloneDir, "checkout", "-q", "main")
+	run(cloneDir, "fetch", "-q", "origin")
+
+	gitExec := func(args ...string) (string, error) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = cloneDir
+		cmd.Env = append(os.Environ(),
+			"GIT_CONFIG_GLOBAL="+filepath.Join(work, "empty-gitconfig"),
+			"GIT_CONFIG_SYSTEM=/dev/null",
+			"HOME="+work,
+		)
+		out, err := cmd.Output()
+		return strings.TrimSpace(string(out)), err
+	}
+
+	evalDocReal := evaluateBranchIntegration("feat/doc-real", gitExec)
+	if evalDocReal.Decision != branchPruneDecisionPendingWork {
+		t.Fatalf("feat/doc-real (never merged, doc-only) expected pending_work, got %v (%s)", evalDocReal.Decision, evalDocReal.Reason)
+	}
+	if evalDocReal.Decision.deletable() {
+		t.Fatal("feat/doc-real must never be deletable")
+	}
+	if strings.Contains(evalDocReal.Reason, "housekeeping") {
+		t.Fatalf("feat/doc-real must not be advised as housekeeping — it is real, unmerged work: %q", evalDocReal.Reason)
+	}
+	if len(evalDocReal.Touched) != len(evalDocReal.Diverged) {
+		t.Fatalf("feat/doc-real: expected touched == diverg (nothing integrated), got touched=%v diverg=%v", evalDocReal.Touched, evalDocReal.Diverged)
+	}
+
+	evalResidue := evaluateBranchIntegration("feat/residue", gitExec)
+	if evalResidue.Decision != branchPruneDecisionReviewDocConfig {
+		t.Fatalf("feat/residue (partial integration, doc residue) expected review_doc_config, got %v (%s)", evalResidue.Decision, evalResidue.Reason)
+	}
+	if evalResidue.Decision.deletable() {
+		t.Fatal("feat/residue must never be deletable")
+	}
+	if !strings.Contains(evalResidue.Reason, "confirm and delete manually") {
+		t.Fatalf("feat/residue expected manual-confirmation guidance, got %q", evalResidue.Reason)
+	}
+	if len(evalResidue.Diverged) >= len(evalResidue.Touched) {
+		t.Fatalf("feat/residue: expected diverg to be a PROPER subset of touched, got touched=%v diverg=%v", evalResidue.Touched, evalResidue.Diverged)
 	}
 }

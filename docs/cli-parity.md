@@ -1008,11 +1008,11 @@ diverg  = git diff --name-only -z origin/main <branch> -- touched  (what still d
 |---|---|---|---|
 | empty | — | `no_own_work` | yes — the `git branch -d` ancestry false negative |
 | non-empty | empty | `content_identical` | yes — the naive-diff stale-but-integrated false positive |
-| non-empty | non-empty, all doc/config | `review_doc_config` | **no** — flagged for manual review (see below) |
-| non-empty | non-empty, any non-doc/config file | `pending_work` | no — named in the report |
+| non-empty | proper subset of `touched`, all doc/config | `review_doc_config` | **no** — flagged for manual review (see below) |
+| non-empty | equal to `touched` (all doc/config), or any non-doc/config file anywhere | `pending_work` | no — named in the report |
 | (merge-base fails) | — | `no_merge_base` | no — refuses, unrelated history or bad ref |
 
-### The `review_doc_config` category — flagged, never auto-deleted
+### The `review_doc_config` category — flagged, never auto-deleted, requires a PROPER subset
 
 `CLAUDE.md` §1's own manual procedure treats a divergence limited to doc/config files (its
 worked example: only `CLAUDE.md` diverges) as "housekeeping, apagar" — but that step assumes a
@@ -1022,6 +1022,18 @@ by construction, so this command deliberately narrows that step: a branch whose 
 `review_doc_config`, reported with action `review` (not `delete`, not `keep`'s plain wording), and
 is **never** offered for deletion by `--apply` — regardless of how confident the classification is.
 
+**`review_doc_config` additionally requires `diverg` to be a PROPER subset of `touched`**
+(`len(diverg) < len(touched)`) — not merely "all doc/config". `diverg` is always a subset of
+`touched` by construction (the second `git diff` is scoped `-- touched`), so a proper subset means
+at least one file the branch touched *did* land in `main` — genuine partial integration, with
+doc/config residue left over. When `diverg == touched`, **nothing** from the branch reached `main`
+at all; that is `pending_work`, regardless of file type. This was corrected in ML-1C after an
+audit found the original rule (any diverging file set that happened to be all doc/config)
+misclassified a branch with brand-new, never-merged documentation as `review_doc_config` —
+"probable housekeeping, confirm and delete manually" is materially wrong advice about real,
+unmerged work, even though the branch itself was never at risk of being auto-deleted (the
+failure-closed guarantee held; the *advice* was wrong).
+
 "Doc/config" is decided by `isDocOrConfigPath` (Go), `isDocOrConfigPath` (Node.js),
 `is_doc_or_config_path` (Python): the existing doc-path check (`docs/`, `vault/`, or a `.md`
 extension) plus a conservative, best-effort list of non-runtime config extensions
@@ -1029,7 +1041,7 @@ extension) plus a conservative, best-effort list of non-runtime config extension
 `.gitattributes`, `.editorconfig`, `trackfw.yaml`, `LICENSE`). Misclassification here can never
 cause a deletion — a file wrongly counted as doc/config only changes whether a *kept* branch is
 reported as `review_doc_config` or `pending_work`; a single non-doc/config file anywhere in
-`diverg` keeps the branch in `pending_work`, all-or-nothing.
+`diverg`, or `diverg` equal to `touched`, keeps the branch in `pending_work`.
 
 The report groups these branches into a summary line separate from the `--apply`/dry-run delete
 summary: `N branch(es) need manual review (only doc/config diverges, never auto-deleted): <names>`.
