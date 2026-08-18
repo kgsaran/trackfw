@@ -208,6 +208,40 @@ func TestGBGDedup_Copilot_SkipsProjectEntryWhenGlobalInstalled(t *testing.T) {
 	}
 }
 
+// TestGBGDedup_Claude_SkipsProjectEntry_ToleratesDoubleSlashInStoredCommand
+// reproduces ROADMAP-2026-08-17 ML-2C's root cause directly at the dedup
+// level (not just the comparator unit test in guard_path_normalize_test.go):
+// the "command" value stored in ~/.claude/settings.json is built with raw
+// string concatenation (as a hand-edited config, or a $HOME captured with a
+// trailing slash before normalization, would produce) instead of
+// filepath.Join, so it textually differs from what
+// globalGitBranchGuardScriptPath() computes today even though it names the
+// SAME file. Before ML-2C this made the dedup silently fail to fire.
+func TestGBGDedup_Claude_SkipsProjectEntry_ToleratesDoubleSlashInStoredCommand(t *testing.T) {
+	home := dedupFixtureHome(t)
+	rawStoredCommand := home + "//" + ".trackfw/scripts/trackfw-git-branch-guard.sh"
+	helperWriteJSON(t, filepath.Join(home, ".claude", "settings.json"), map[string]interface{}{
+		"hooks": map[string]interface{}{
+			"PreToolUse": []interface{}{
+				map[string]interface{}{
+					"matcher": "Bash",
+					"hooks":   []interface{}{map[string]interface{}{"type": "command", "command": rawStoredCommand}},
+				},
+			},
+		},
+	})
+
+	dir := t.TempDir()
+	if err := InjectClaudeHooks(dir); err != nil {
+		t.Fatalf("InjectClaudeHooks failed: %v", err)
+	}
+
+	data := helperReadJSON(t, filepath.Join(dir, ".claude", "settings.json"))
+	if helperHasClaudeHook(data, "PreToolUse", "Bash", claudeGitGuardCmd) {
+		t.Error("project-scope git-branch-guard entry should have been skipped despite the // formatting in the stored global command")
+	}
+}
+
 // --- Fail-open: missing/corrupted global file must not disable the
 // project-scope git-branch-guard entry. ---
 

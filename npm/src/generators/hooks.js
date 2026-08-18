@@ -1111,15 +1111,68 @@ function readGlobalHookJSON(...relParts) {
   }
 }
 
-/** Read-only counterpart of mergeClaudeHookArray. */
+/**
+ * Collapses runs of consecutive slashes ("//" -> "/", any position,
+ * including leading) and strips a trailing slash, so two on-disk forms of
+ * the SAME script path compare equal regardless of incidental formatting
+ * (e.g. $HOME resolving with a trailing slash, as happens with macOS's
+ * $TMPDIR, or a hand-edited config file). Does NOT resolve "." / ".."
+ * segments or symlinks -- those transforms would let unrelated paths
+ * compare equal (silently disarming the dedup, the more dangerous failure
+ * mode here) and symlink resolution errors on a path that does not exist
+ * yet, which every caller here must fail OPEN on. Hand-rolled instead of
+ * path.normalize because it disagrees with Go's filepath.Clean and Python's
+ * os.path.normpath on leading "//" and trailing "/" handling (measured) --
+ * mirrored byte-for-byte in internal/generators/agentfiles.go
+ * (normalizeGuardPath) and pypi/trackfw/generators/hooks.py
+ * (_normalize_guard_path). Never call with anything other than a script
+ * path -- it is not a general string normalizer.
+ */
+function normalizeGuardPath(p) {
+  if (!p) return p
+  let out = ''
+  let prevSlash = false
+  for (const ch of p) {
+    if (ch === '/') {
+      if (prevSlash) continue
+      prevSlash = true
+    } else {
+      prevSlash = false
+    }
+    out += ch
+  }
+  if (out.length > 1 && out.endsWith('/')) {
+    out = out.replace(/\/+$/, '') || '/'
+  }
+  return out
+}
+
+/** Reports whether a and b denote the same script command path after normalizeGuardPath. */
+function samePathCommand(a, b) {
+  return normalizeGuardPath(a) === normalizeGuardPath(b)
+}
+
+/** Read-only counterpart of mergeClaudeHookArray. Compares command paths via samePathCommand (normalized), not raw string equality. */
 function hookArrayHasCommand(existing, matcher, command) {
   const arr = Array.isArray(existing) ? existing : []
   for (const item of arr) {
     if (!item || item.matcher !== matcher) continue
     const inner = Array.isArray(item.hooks) ? item.hooks : []
-    if (inner.some(h => h && h.command === command)) return true
+    if (inner.some(h => h && typeof h.command === 'string' && samePathCommand(h.command, command))) return true
   }
   return false
+}
+
+/**
+ * Read-only, path-normalized counterpart of hasEntry -- used ONLY by the
+ * global-dedup read paths (globalXInstalledCursor/Copilot below), never by
+ * the write-side merge/idempotency helpers (mergeSimpleCommandArray,
+ * injectCursorHooks), which must keep comparing raw strings so their
+ * idempotency behavior does not drift from Go/Python. See samePathCommand's
+ * doc comment for why the value must always be a script path.
+ */
+function hasEntryPath(arr, field, value) {
+  return Array.isArray(arr) && arr.some(e => e && typeof e[field] === 'string' && samePathCommand(e[field], value))
 }
 
 function globalCredentialGuardInstalledClaude() {
@@ -1151,7 +1204,7 @@ function globalCredentialGuardInstalledCursor() {
   if (!scriptPath) return false
   const root = readGlobalHookJSON('.cursor', 'hooks.json')
   if (!root || !root.hooks) return false
-  return hasEntry(root.hooks.beforeShellExecution, 'command', scriptPath)
+  return hasEntryPath(root.hooks.beforeShellExecution, 'command', scriptPath)
 }
 
 function globalCredentialGuardInstalledCopilot() {
@@ -1159,7 +1212,7 @@ function globalCredentialGuardInstalledCopilot() {
   if (!scriptPath) return false
   const root = readGlobalHookJSON('.copilot', 'settings.json')
   if (!root || !root.hooks) return false
-  return hasEntry(root.hooks.preToolUse, 'bash', scriptPath)
+  return hasEntryPath(root.hooks.preToolUse, 'bash', scriptPath)
 }
 
 /**
@@ -1230,7 +1283,7 @@ function globalGitBranchGuardInstalledCursor() {
   if (!scriptPath) return false
   const root = readGlobalHookJSON('.cursor', 'hooks.json')
   if (!root || !root.hooks) return false
-  return hasEntry(root.hooks.beforeShellExecution, 'command', scriptPath)
+  return hasEntryPath(root.hooks.beforeShellExecution, 'command', scriptPath)
 }
 
 function globalGitBranchGuardInstalledCopilot() {
@@ -1238,7 +1291,7 @@ function globalGitBranchGuardInstalledCopilot() {
   if (!scriptPath) return false
   const root = readGlobalHookJSON('.copilot', 'settings.json')
   if (!root || !root.hooks) return false
-  return hasEntry(root.hooks.preToolUse, 'bash', scriptPath)
+  return hasEntryPath(root.hooks.preToolUse, 'bash', scriptPath)
 }
 
 // ---------------------------------------------------------------------------
@@ -2012,4 +2065,6 @@ module.exports = {
   mergeClaudeHookArray,
   mergeSimpleCommandArray,
   mergeCopilotHookArray,
+  normalizeGuardPath,
+  samePathCommand,
 }

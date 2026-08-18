@@ -173,6 +173,27 @@ test('injectCopilotHooks skips project-scope git-branch-guard when global instal
   assert.equal(pre.some(e => e.bash === 'scripts/trackfw-credential-guard.sh'), true)
 })
 
+// ROADMAP-2026-08-17 ML-2C: reproduces the root cause directly at the dedup
+// level (not just the comparator unit test in guard_path_normalize.test.js)
+// -- the "command" value stored in ~/.claude/settings.json is built with raw
+// string concatenation (as a hand-edited config, or a $HOME captured with a
+// trailing slash before normalization, would produce) instead of
+// path.join(), so it textually differs from what globalGitBranchGuardScriptPath()
+// computes today even though it names the SAME file.
+test('injectClaudeHooks skips project-scope git-branch-guard despite // formatting in stored global command', () => {
+  const home = isolatedHome()
+  const rawStoredCommand = home + '//' + '.trackfw/scripts/trackfw-git-branch-guard.sh'
+  writeJSON(path.join(home, '.claude', 'settings.json'), {
+    hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: rawStoredCommand }] }] },
+  })
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-gbg-dedup-project-'))
+  injectClaudeHooks(dir)
+
+  const data = readJSON(path.join(dir, '.claude', 'settings.json'))
+  assert.equal(hasClaudeHook(data, 'PreToolUse', 'Bash', '$CLAUDE_PROJECT_DIR/scripts/trackfw-git-branch-guard.sh'), false)
+})
+
 // --- Fail-open ---
 
 test('injectClaudeHooks fail-open: no global file -> project git-branch-guard entry still added', () => {

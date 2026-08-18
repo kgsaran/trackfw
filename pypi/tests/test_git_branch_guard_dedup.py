@@ -185,6 +185,28 @@ class TestGBGDedupSkipsProjectEntry(DedupTestCase):
         self.assertTrue(any(e.get('bash') == 'scripts/trackfw-credential-guard.sh' for e in pre))
 
 
+    def test_claude_tolerates_double_slash_in_stored_command(self):
+        """ROADMAP-2026-08-17 ML-2C: reproduces the root cause directly at the
+        dedup level -- the "command" value stored in ~/.claude/settings.json
+        is built with raw string concatenation (as a hand-edited config, or a
+        $HOME captured with a trailing slash before normalization, would
+        produce) instead of os.path.join, so it textually differs from what
+        _global_git_branch_guard_script_path() computes today even though it
+        names the SAME file."""
+        home = self._isolated_home()
+        raw_stored_command = home + '//' + '.trackfw/scripts/trackfw-git-branch-guard.sh'
+        _write_json(
+            os.path.join(home, '.claude', 'settings.json'),
+            {'hooks': {'PreToolUse': [{'matcher': 'Bash', 'hooks': [{'type': 'command', 'command': raw_stored_command}]}]}},
+        )
+
+        project_dir = tempfile.mkdtemp()
+        inject_claude_hooks(project_dir)
+
+        data = _read_json(os.path.join(project_dir, '.claude', 'settings.json'))
+        self.assertFalse(_has_claude_hook(data, 'PreToolUse', 'Bash', '$CLAUDE_PROJECT_DIR/scripts/trackfw-git-branch-guard.sh'))
+
+
 class TestGBGDedupFailOpen(DedupTestCase):
     def test_no_global_file(self):
         self._isolated_home()  # empty $HOME, no global files at all

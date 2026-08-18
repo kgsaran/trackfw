@@ -109,25 +109,80 @@ def _read_global_hook_json(*rel_parts: str) -> dict | None:
         return None
 
 
+def _normalize_guard_path(p: str) -> str:
+    """Collapses runs of consecutive slashes ("//" -> "/", any position,
+    including leading) and strips a trailing slash, so two on-disk forms of
+    the SAME script path compare equal regardless of incidental formatting
+    (e.g. $HOME resolving with a trailing slash, as happens with macOS's
+    $TMPDIR, or a hand-edited config file). Does NOT resolve "." / ".."
+    segments or symlinks -- those transforms would let unrelated paths
+    compare equal (silently disarming the dedup, the more dangerous failure
+    mode here) and symlink resolution errors on a path that does not exist
+    yet, which every caller here must fail OPEN on. Hand-rolled instead of
+    os.path.normpath because it disagrees with Go's filepath.Clean and
+    Node's path.normalize on leading "//" handling (POSIX mandates exactly
+    two leading slashes be preserved; measured) -- mirrored byte-for-byte in
+    internal/generators/agentfiles.go (normalizeGuardPath) and
+    npm/src/generators/hooks.js (normalizeGuardPath). Never call with
+    anything other than a script path -- it is not a general string
+    normalizer."""
+    if not p:
+        return p
+    out_chars = []
+    prev_slash = False
+    for ch in p:
+        if ch == '/':
+            if prev_slash:
+                continue
+            prev_slash = True
+        else:
+            prev_slash = False
+        out_chars.append(ch)
+    out = ''.join(out_chars)
+    if len(out) > 1 and out.endswith('/'):
+        out = out.rstrip('/') or '/'
+    return out
+
+
+def _same_path_command(a: str, b: str) -> bool:
+    """Reports whether a and b denote the same script command path after
+    _normalize_guard_path."""
+    return _normalize_guard_path(a) == _normalize_guard_path(b)
+
+
 def _hook_array_has_command(existing, matcher: str, command: str) -> bool:
-    """Read-only counterpart of _merge_claude_hook_array."""
+    """Read-only counterpart of _merge_claude_hook_array. Compares command
+    paths via _same_path_command (normalized), not raw string equality."""
     if not isinstance(existing, list):
         return False
     for entry in existing:
         if not isinstance(entry, dict) or entry.get('matcher') != matcher:
             continue
         inner = entry.get('hooks')
-        if isinstance(inner, list) and _has_entry(inner, 'command', command):
-            return True
+        if not isinstance(inner, list):
+            continue
+        for h in inner:
+            if isinstance(h, dict) and isinstance(h.get('command'), str) \
+                    and _same_path_command(h['command'], command):
+                return True
     return False
 
 
 def _simple_array_has_value(existing, field: str, value: str) -> bool:
-    """Read-only check for flat arrays (Cursor's {"command":...} / Copilot's
-    {"bash":...} shape)."""
+    """Read-only, path-normalized check for flat arrays (Cursor's
+    {"command":...} / Copilot's {"bash":...} shape) -- used ONLY by the
+    global-dedup read paths, never by the write-side merge/idempotency
+    helper (_has_entry), which must keep comparing raw strings so its
+    idempotency behavior does not drift from Go/Node. See
+    _same_path_command's doc comment for why value must always be a script
+    path."""
     if not isinstance(existing, list):
         return False
-    return _has_entry(existing, field, value)
+    for entry in existing:
+        if isinstance(entry, dict) and isinstance(entry.get(field), str) \
+                and _same_path_command(entry[field], value):
+            return True
+    return False
 
 
 def _global_credential_guard_installed_claude() -> bool:

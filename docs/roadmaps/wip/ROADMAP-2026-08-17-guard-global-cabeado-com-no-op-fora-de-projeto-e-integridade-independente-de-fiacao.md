@@ -412,16 +412,124 @@ depender de `//`. Corrigir só o fixture deixaria o produto frágil e o gate ver
 ---
 
 ### ML-2C — Comparar caminho de hook normalizado, não string crua
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
-**Arquivos:** `internal/generators/agentfiles.go` (`hookArrayHasCommand`) + espelhos Node/Python,
-`scripts/check-gates-falsify.sh` (fixture do Cenário 67), testes.
+**Status:** ✅ Concluído — pendente de auditoria do arquiteto · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Arquivos:** `internal/generators/agentfiles.go` (`hookArrayHasCommand`, `simpleArrayHasValue`,
+`normalizeGuardPath`, `samePathCommand` novos) + espelhos `npm/src/generators/hooks.js`
+(`normalizeGuardPath`, `samePathCommand`, `hasEntryPath` novos) e
+`pypi/trackfw/generators/hooks.py` (`_normalize_guard_path`, `_same_path_command` novos,
+`_hook_array_has_command`/`_simple_array_has_value` editados), `scripts/check-gates-falsify.sh`
+(fixture do Cenário 67 + braço 4 novo), testes novos
+`internal/generators/guard_path_normalize_test.go`, `npm/tests/guard_path_normalize.test.js`,
+`pypi/tests/test_guard_path_normalize.py`, mais um teste de regressão em cada um dos 3 arquivos de
+dedup existentes.
+
+**Decisão de escopo (consultada e ratificada por revisão externa antes de implementar):** o mesmo
+bug de comparação por string crua também afeta `simpleArrayHasValue` (Go)/`hasEntry` (Node)/
+`_has_entry` (Python), usados pelo dedup de Cursor/Copilot — não só `hookArrayHasCommand`. Corrigido
+nos 5 alvos (Claude/Codex/Gemini via `hookArrayHasCommand`, Cursor/Copilot via a variante read-only),
+não só no citado no roadmap. **Cuidado tomado:** em Node/Python esses helpers são compartilhados
+com o lado de ESCRITA (idempotência de `injectCursorHooks`/merge helpers) — normalizar ali mudaria
+o comportamento de escrita e quebraria paridade com o Go (que já tinha os 4 call-sites de
+`simpleArrayHasValue` 100% read-only). Solução: `hasEntryPath`/`_simple_array_has_value` novos,
+usados **só** nos 4 call-sites read-only de dedup global; os helpers de escrita (`hasEntry`/
+`_has_entry`) ficaram **byte-intocados**.
+
+**Normalização implementada (`normalizeGuardPath`/`_normalize_guard_path`):** colapsa barras
+duplicadas em qualquer posição (inclusive líder) e remove barra final — **não** resolve `.`/`..`
+nem symlinks. Hand-rolled nos 3 stacks (não `filepath.Clean`/`path.normalize`/`os.path.normpath`)
+porque **medi** que os três divergem entre si: `os.path.normpath('//a/b')` preserva a barra dupla
+líder (regra POSIX), `filepath.Clean`/`path.normalize` a colapsam; `path.normalize('/a/b/')`
+mantém a barra final, `filepath.Clean`/`os.path.normpath` a removem — usar os builtins teria
+quebrado a paridade entre os 3 CLIs mesmo corrigindo o bug em cada um isoladamente.
+
+**Symlink — decisão registrada:** comparação puramente lexical, sem `EvalSymlinks`/`realpath`.
+Dois motivos: (1) toda função aqui responde "o guard global está fiado?" **antes** de o artefato
+necessariamente existir — resolver symlink falha em caminho inexistente, e todo caller é fail-open,
+então o erro viraria um `false` silencioso, exatamente a classe de falha que esta ML existe para
+fechar; (2) o custo de falhar é assimétrico — sub-normalizar faz o guard rodar 2x (ruído), sobre-
+normalizar faz o dedup disparar para um arquivo que não é o mesmo (guard some, falha de segurança
+silenciosa). Vieso para a transformação mais estreita: `normalizeGuardPath` é puramente sintática e
+só colapsa formas que lexicamente denotam o mesmo caminho.
+
+**Fixture do Cenário 67 corrigida sem tocar `$WORK` global:** `T67_FAKE_HOME` agora deriva de
+`WORK67_CLEAN` (uma forma de `$WORK` com barras colapsadas via `sed`), não de `$WORK` bruto — o
+baseline deixa de depender de `$TMPDIR` terminar em `/` (macOS). A tolerância a `//` em si passou a
+ser exercitada **explicitamente** por um braço 4 novo, com `HOME` sintético carregando `//`
+deliberadamente embutido no meio do caminho e o comando gravado no JSON usando essa forma crua
+(simulando config editado à mão ou capturado antes da normalização) — o binário real deve continuar
+deduplicando (entrada de projeto ausente).
+
+**Teste negativo (não estava no AC original, adicionado por indicação da revisão):** caminhos
+genuinamente diferentes não podem comparar iguais — `TestSamePathCommand_DifferentPathsDoNotMatch`
+(Go) e espelhos Node/Python cobrem `/home/alice/...` vs `/home/bob/...`, `/a/b` vs `/a/bb`, guard
+diferente no mesmo diretório, e prefixo vs caminho completo. É a prova de não-sobre-normalização
+que uma bateria só-de-`//` não fecharia.
 
 **Critérios de aceite:**
-- [ ] `hookArrayHasCommand` normaliza ambos os lados antes de comparar (barra dupla, barra final).
-- [ ] Discriminante: `HOME` com `//` passa a deduplicar — hoje não deduplica.
-- [ ] Fixture do Cenário 67 deixa de depender de `//`, mas o **produto** também passa a tolerá-lo.
-- [ ] **Não-regressão do `credential-guard`:** dedup dele inalterado; **Cenário 46 continua passando**.
-- [ ] Cenários 60–67 verdes; `make quality` verde; `./bin/trackfw validate` exit 0.
+- [x] `hookArrayHasCommand` normaliza ambos os lados antes de comparar (barra dupla, barra final).
+- [x] Discriminante: `HOME` com `//` passa a deduplicar — antes não deduplicava.
+- [x] Fixture do Cenário 67 deixa de depender de `//`, e o **produto** também passa a tolerá-lo
+      (braço 4 novo).
+- [x] **Não-regressão do `credential-guard`:** dedup dele inalterado; **Cenário 46 continua
+      passando** (4 sub-braços: baseline, detected, discriminant, structural-comparator-not-reached).
+- [x] Cenários 60–67 verdes; `make quality` verde; `./bin/trackfw validate` exit 0 (17 warnings
+      pré-existentes não relacionados).
+
+**Evidência (colada, bruta):**
+```
+go build ./...                                          → limpo
+go test ./... (inclui internal/generators)               → ok, todos os pacotes
+  TestNormalizeGuardPath_Table                            → PASS
+  TestSamePathCommand_ToleratesDoubleSlashAndTrailingSlash → PASS
+  TestSamePathCommand_DifferentPathsDoNotMatch             → PASS
+  TestGBGDedup_Claude_SkipsProjectEntry_ToleratesDoubleSlashInStoredCommand → PASS
+cd npm && npm test                                        → 651 passed, 0 failed
+  ✔ normalizeGuardPath collapses double slashes and strips trailing slash
+  ✔ samePathCommand tolerates the double-slash formatting produced by a trailing-slash $TMPDIR
+  ✔ samePathCommand does not match genuinely different paths
+  ✔ injectClaudeHooks skips project-scope git-branch-guard despite // formatting in stored global command
+PYTHONPATH=pypi python3 -m pytest pypi/tests -q             → 1330 passed, 28 subtests passed
+make quality (completo)                                   → exit 0
+  scripts/check-gates-falsify.sh                            → 128 cenários, 0 FAIL
+    OK   [falsify/agent-hooks-parity/credential-guard-present-vacuity/baseline]
+    OK   [falsify/agent-hooks-parity/credential-guard-present-vacuity/detected]
+    OK   [falsify/agent-hooks-parity/credential-guard-present-vacuity/discriminant]
+    OK   [falsify/agent-hooks-parity/credential-guard-present-vacuity/structural-comparator-not-reached]
+    OK   [falsify/git-branch-guard/switch-c/...] ... [falsify/git-branch-guard/no-op-outside-project/...] (Cenários 60–64, todos OK)
+    OK   [falsify/git-branch-guard-dedup/baseline-skips-project-entry]
+    OK   [falsify/git-branch-guard-dedup/baseline-credential-guard-unaffected]
+    OK   [falsify/git-branch-guard-dedup/reverse-vacuity]
+    OK   [falsify/git-branch-guard-dedup/detection-catches-regression]
+    OK   [falsify/git-branch-guard-dedup/double-slash-tolerance]     ← braço 4 novo
+./bin/trackfw validate (binário local recompilado)         → exit 0, 17 warnings pré-existentes,
+  0 novos relacionados a este ML
+```
+
+---
+
+### Auditoria do ML-2C — aprovada, e extensão de escopo ratificada
+
+```
+discriminante '//'      refs 1 -> 0     dedup passa a disparar
+nao-regressao           sem global, projeto cabeia (1)   guard NAO sumiu
+nao normalizou demais   caminho parecido porem diferente NAO deduplica (1)
+idempotencia harness    3 rodadas -> gbg=2 cg=2 constante
+idempotencia discover   3 rodadas -> gbg=1 constante
+Cenario 46              4 bracos passam (credential-guard intacto)
+Cenario 67              5 bracos, incluindo double-slash-tolerance
+make quality            exit 0 · 128 cenarios · validate exit 0
+```
+
+**Extensão de escopo ratificada.** O ML pedia `hookArrayHasCommand`; ele estendeu para
+`simpleArrayHasValue`/`hasEntry`/`_has_entry`, que tinham o **mesmo** defeito nos alvos de
+Cursor/Copilot. Corrigir metade deixaria o mesmo bug vivo em dois CLIs, com gate verde — pior que
+não corrigir, porque criaria a impressão de cobertura. A separação leitura/escrita que ele fez por
+linguagem (só os call sites de leitura mudaram; o lado de escrita ficou intacto) é o que preserva a
+idempotência, e a medição acima confirma que preservou.
+
+**Risco inverso verificado por mim:** normalizar demais faria o dedup casar caminhos diferentes e o
+guard sumir do projeto — falha silenciosa de segurança, pior que a duplicação corrigida. Testei com
+caminho deliberadamente parecido e ele **não** deduplica.
 
 ---
 

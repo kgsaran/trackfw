@@ -1600,9 +1600,61 @@ func readGlobalHookJSON(relParts ...string) (root map[string]interface{}, ok boo
 	return root, true
 }
 
+// normalizeGuardPath collapses run of consecutive slashes ("//" -> "/", at
+// any position, including leading) and strips a trailing slash, so that two
+// on-disk forms of the SAME script path compare equal regardless of
+// incidental formatting (e.g. $HOME resolving with a trailing slash, as
+// happens with macOS's $TMPDIR, or a hand-edited config file). It does NOT
+// resolve "." / ".." segments or symlinks — those transforms would let
+// unrelated paths compare equal (turning a missing/renamed guard into a
+// false "already installed" and silently disarming the dedup — the more
+// dangerous failure mode here) and symlink resolution errors on a path that
+// does not exist yet, which every caller in this file must fail OPEN on,
+// producing the exact silent-false this whole ML exists to close. Hand-rolled
+// instead of filepath.Clean/path.normalize/os.path.normpath because those
+// three disagree with each other on leading "//" and trailing "/" handling
+// (measured) — this algorithm is mirrored byte-for-byte in npm/src/generators/
+// hooks.js and pypi/trackfw/generators/hooks.py to keep the three CLIs
+// deciding identically. Never call this with anything other than a script
+// path — it is not a general string normalizer.
+func normalizeGuardPath(p string) string {
+	if p == "" {
+		return p
+	}
+	var b strings.Builder
+	prevSlash := false
+	for _, r := range p {
+		if r == '/' {
+			if prevSlash {
+				continue
+			}
+			prevSlash = true
+		} else {
+			prevSlash = false
+		}
+		b.WriteRune(r)
+	}
+	out := b.String()
+	if len(out) > 1 && strings.HasSuffix(out, "/") {
+		out = strings.TrimRight(out, "/")
+		if out == "" {
+			out = "/"
+		}
+	}
+	return out
+}
+
+// samePathCommand reports whether a and b denote the same script command
+// path after normalizeGuardPath. Use for command-field comparisons only.
+func samePathCommand(a, b string) bool {
+	return normalizeGuardPath(a) == normalizeGuardPath(b)
+}
+
 // hookArrayHasCommand reports whether a Claude/Codex/Gemini-shaped hook
 // array (matcher → {"hooks":[{"command"}]}) already contains command under
-// matcher. Read-only counterpart of mergeClaudeHookArray.
+// matcher. Read-only counterpart of mergeClaudeHookArray. Compares command
+// paths via samePathCommand (normalized), not raw string equality — see its
+// doc comment.
 func hookArrayHasCommand(existing interface{}, matcher, command string) bool {
 	arr, _ := existing.([]interface{})
 	for _, item := range arr {
@@ -1613,7 +1665,11 @@ func hookArrayHasCommand(existing interface{}, matcher, command string) bool {
 		inner, _ := obj["hooks"].([]interface{})
 		for _, h := range inner {
 			hObj, ok := h.(map[string]interface{})
-			if ok && hObj["command"] == command {
+			if !ok {
+				continue
+			}
+			hCommand, ok := hObj["command"].(string)
+			if ok && samePathCommand(hCommand, command) {
 				return true
 			}
 		}
@@ -1624,11 +1680,18 @@ func hookArrayHasCommand(existing interface{}, matcher, command string) bool {
 // simpleArrayHasValue reports whether a flat hook array (Cursor's
 // {"command":...} or Copilot's {"bash":...} shape) already has an entry
 // with field == value. Read-only counterpart of mergeSimpleCommandArray.
+// Compares via samePathCommand (normalized) — every caller of this function
+// passes a script path, never an arbitrary field value; if that ever
+// changes, do not reuse this helper for non-path fields.
 func simpleArrayHasValue(existing interface{}, field, value string) bool {
 	arr, _ := existing.([]interface{})
 	for _, item := range arr {
 		obj, ok := item.(map[string]interface{})
-		if ok && obj[field] == value {
+		if !ok {
+			continue
+		}
+		v, ok := obj[field].(string)
+		if ok && samePathCommand(v, value) {
 			return true
 		}
 	}

@@ -19014,3 +19014,93 @@ bin/trackfw validate (binário local)         → exit 0, 17 warnings pré-exist
 
 Nenhum `git commit`/`push`/branch executado por mim. Handoff para `trackfw_architect` auditar e
 commitar.
+
+---
+
+## Sessão 2026-08-18 — Apolo (INÍCIO: ML-2C — comparação de caminho de hook normalizada)
+
+Branch `fix/guard-global-cabeado-com-no-op-fora-de-projeto-e-integridade-independente-de-fiacao`,
+roadmap `docs/roadmaps/wip/ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-e-
+integridade-independente-de-fiacao.md` em `wip/`. Retomando após a auditoria do arquiteto sobre o
+ML-2B ter achado o baseline do Cenário 67 vermelho por causa de barra dupla em `$TMPDIR` no macOS
+(`$WORK` do falsify vira `.../T//trackfw-falsify.XXX`). Executando ML-2C: normalizar
+`hookArrayHasCommand`/`simpleArrayHasValue` (Go) + espelhos Node/Python antes de comparar caminho
+de comando, e corrigir a fixture do Cenário 67 sem deixar o produto frágil.
+
+## Sessão 2026-08-18 — Apolo (FIM: ML-2C concluído — pendente de auditoria do arquiteto)
+
+**Arquivos alterados:**
+- `internal/generators/agentfiles.go` — `normalizeGuardPath`/`samePathCommand` novos;
+  `hookArrayHasCommand` e `simpleArrayHasValue` passam a comparar via `samePathCommand`.
+- `internal/generators/guard_path_normalize_test.go` (novo) — tabela de normalização + tolerância
+  a `//` + teste negativo (caminhos diferentes não podem casar).
+- `internal/generators/git_branch_guard_dedup_test.go` —
+  `TestGBGDedup_Claude_SkipsProjectEntry_ToleratesDoubleSlashInStoredCommand` novo, reproduz o bug
+  no nível do dedup (não só do comparador).
+- `npm/src/generators/hooks.js` — `normalizeGuardPath`/`samePathCommand`/`hasEntryPath` novos e
+  exportados; `hookArrayHasCommand` usa `samePathCommand`; os 4 call-sites read-only de
+  Cursor/Copilot (`globalCredentialGuardInstalledCursor/Copilot`,
+  `globalGitBranchGuardInstalledCursor/Copilot`) trocam `hasEntry` por `hasEntryPath` —
+  `hasEntry` em si **não foi tocado** (é compartilhado com o lado de escrita/idempotência).
+- `npm/tests/guard_path_normalize.test.js` (novo) + teste de regressão adicionado em
+  `npm/tests/git_branch_guard_dedup.test.js`.
+- `pypi/trackfw/generators/hooks.py` — `_normalize_guard_path`/`_same_path_command` novos;
+  `_hook_array_has_command` e `_simple_array_has_value` reescritos para normalizar (Python já
+  tinha esses dois como wrappers 100% read-only, então `_has_entry` — compartilhado com escrita —
+  também não foi tocado).
+- `pypi/tests/test_guard_path_normalize.py` (novo) + teste de regressão adicionado em
+  `pypi/tests/test_git_branch_guard_dedup.py`.
+- `scripts/check-gates-falsify.sh` — Cenário 67: `T67_FAKE_HOME` passa a derivar de
+  `WORK67_CLEAN` (`$WORK` com barras colapsadas via `sed`), não de `$WORK` bruto, então o baseline
+  não depende mais de `$TMPDIR` terminar em `/`; braço 4 novo (`double-slash-tolerance`) com
+  `HOME` sintético carregando `//` deliberadamente embutido, provando que o produto tolera.
+- `docs/roadmaps/wip/ROADMAP-2026-08-17-...md` — ML-2C marcado `✅ Concluído`, critérios
+  marcados, decisões registradas inline.
+
+**Decisões registradas (consultadas com revisão externa antes de implementar):**
+1. **Escopo estendido além do texto literal do roadmap:** o roadmap só citava
+   `hookArrayHasCommand`, mas `simpleArrayHasValue`/`hasEntry`/`_has_entry` (usados pelo dedup de
+   Cursor/Copilot) tinham exatamente o mesmo bug de comparação por string crua — corrigidos
+   também, não só o citado.
+2. **Armadilha evitada em Node/Python:** `hasEntry`/`_has_entry` são compartilhados com o lado de
+   ESCRITA (idempotência de `injectCursorHooks`, merge helpers). Normalizar ali dentro mudaria o
+   comportamento de escrita e divergiria do Go (cujo `simpleArrayHasValue` já era 100% read-only).
+   Solução: `hasEntryPath` (Node)/reescrita de `_simple_array_has_value` (Python, que já era
+   wrapper dedicado) usados **só** nos 4 call-sites read-only; os helpers de escrita ficaram
+   byte-intocados nos 3 stacks.
+3. **Normalização hand-rolled, não builtins:** medi que `filepath.Clean` (Go), `path.normalize`
+   (Node) e `os.path.normpath` (Python) divergem entre si em barra dupla líder (POSIX exige
+   preservar `//` líder; só o Python respeita) e barra final (só Node preserva) — usar os builtins
+   teria quebrado paridade entre os 3 CLIs mesmo corrigindo cada um isoladamente. Implementei
+   `normalizeGuardPath` do zero, idêntica nos 3 stacks: colapsa barras duplicadas (qualquer
+   posição) e remove barra final, **sem** resolver `.`/`..`/symlinks.
+4. **Symlink — decisão explícita de NÃO resolver:** (a) toda função aqui roda antes de o artefato
+   necessariamente existir e é fail-open, então erro de `EvalSymlinks` em caminho inexistente
+   viraria "não instalado" silencioso; (b) custo assimétrico — sub-normalizar = guard roda 2x
+   (ruído), sobre-normalizar = dedup pode desarmar o guard por engano (falha de segurança
+   silenciosa). Vieso para a transformação mais estreita.
+5. **Teste negativo não estava no AC original, adicionado por indicação da revisão:** caminhos
+   genuinamente diferentes (usuários diferentes, guards diferentes, prefixo vs caminho completo)
+   não podem comparar iguais — sem isso, um teste só-de-`//` não provaria ausência de
+   sobre-normalização.
+
+**Evidência (colada, bruta):**
+```
+go build ./...                                            → limpo
+go test ./... (inclui internal/generators)                 → ok, todos os pacotes
+cd npm && npm test                                          → 651 passed, 0 failed
+PYTHONPATH=pypi python3 -m pytest pypi/tests -q              → 1330 passed, 28 subtests passed
+make quality (completo)                                    → exit 0
+  scripts/check-gates-falsify.sh                             → 128 cenários, 0 FAIL
+    OK [falsify/agent-hooks-parity/credential-guard-present-vacuity/{baseline,detected,discriminant,
+        structural-comparator-not-reached}]  (Cenário 46, não-regressão confirmada)
+    OK [falsify/git-branch-guard/...] (Cenários 60–64, todos OK)
+    OK [falsify/git-branch-guard-dedup/{baseline-skips-project-entry,baseline-credential-guard-
+        unaffected,reverse-vacuity,detection-catches-regression,double-slash-tolerance}]
+        (Cenário 67, braço 4 novo — antes vermelho, agora OK)
+./bin/trackfw validate (binário local recompilado)          → exit 0, 17 warnings pré-existentes,
+  0 novos relacionados a este ML
+```
+
+Nenhum `git commit`/`push`/branch executado por mim. Handoff para `trackfw_architect` auditar e
+commitar. Wave 3 (ML-3A, integridade independente de fiação) segue pendente.
