@@ -3,7 +3,7 @@ status: Open
 date: 2026-08-18
 author: "Zeus (Arquiteto)"
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-18-branch-prune-com-dry-run-por-padrao-e-heuristica-de-arquivos-tocados.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-18-branch-prune-com-dry-run-por-padrao-e-heuristica-de-arquivos-tocados.md"
 ---
 
 # REQ: `trackfw branch prune` apaga branch local já integrada, com detecção correta de squash-merge
@@ -123,4 +123,4 @@ ADR: <!-- nenhum; as duas decisões de desenho estão registradas nesta REQ -->
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-18-branch-prune-com-dry-run-por-padrao-e-heuristica-de-arquivos-tocados.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-08-18-branch-prune-com-dry-run-por-padrao-e-heuristica-de-arquivos-tocados.md`

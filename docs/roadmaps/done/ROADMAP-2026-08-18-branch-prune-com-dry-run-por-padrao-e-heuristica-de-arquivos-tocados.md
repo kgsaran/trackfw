@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-08-18
 req: "docs/req/REQ-2026-08-18-trackfw-branch-prune-apaga-branch-local-ja-integrada-com-deteccao-correta-de-squash-merge.md"
 squad: "apolo-tf, hades-tf"
@@ -7,7 +7,7 @@ squad: "apolo-tf, hades-tf"
 
 # Roadmap: `branch prune` com dry-run por padrão e heurística de arquivos-tocados
 
-> Created: 2026-08-18 | Status: wip
+> Created: 2026-08-18 | Status: done
 
 ## Context
 
@@ -35,7 +35,7 @@ acusou a branch **já mergeada** do #181 como tendo trabalho pendente.
 - [x] AC9 — Cenário P4 com fixture de repositório git **real**. (satisfeito por ML-1A/1C para o
   `branch prune`; ML-2B fecha para o `ship` — Cenário 70 do `check-gates-falsify.sh` sabota o
   Node e prova que `check-ship-parity.sh` reprova)
-- [ ] AC10 — `make quality` verde **e CI verde**. (`make quality` verde localmente, confirmado
+- [x] AC10 — `make quality` verde **e CI verde**. (`make quality` verde localmente, confirmado
   nesta sessão inclusive com o gate novo; CI verde depende do push/PR — autoridade do
   `trackfw_architect`)
 
@@ -730,6 +730,36 @@ leitura linha a linha dos 3 fontes. Aceito — eu **executei** os dois gates nes
 
 **Sobre ACs fechados cedo demais:** não encontrou nenhum. O AC10 (CI verde) está corretamente
 marcado em aberto, não fechado sem lastro.
+
+---
+
+### AC10 fechado — CI verde no PR #187
+
+```
+go · node · python 3.10 · python 3.12 · governance · package-smoke
+parity (4m13s) · windows-integrations-resolve      -> todos pass
+mergeable=MERGEABLE  mergeState=CLEAN
+```
+
+Verde na **primeira** tentativa. Na REQ anterior o `parity` reprovou no Linux por limite de
+argumento que o macOS não aplica, e eu tinha fechado o AC com evidência de uma plataforma só — a
+lição virou risco declarado no topo deste roadmap e o AC10 já nasceu exigindo CI.
+
+### Retrospectiva — 3 MLs planejados, 6 executados
+
+Nenhum retrabalho foi implementação errada. Todos os três MLs extras vieram de **auditoria ou
+pergunta**, não de defeito do agente:
+
+| ML extra | origem |
+|---|---|
+| **1B** | pergunta de KG: *"estamos usando o mesmo método já documentado?"* — não estávamos por inteiro |
+| **1C** | erro **meu** de especificação: transportei a regra de doc/config do `CLAUDE.md` sem o pressuposto que a justificava |
+| **2B** | AC8 fechado com teste por stack em vez de gate entre stacks — a mesma lacuna que eu havia declarado e criticado na REQ de higiene |
+
+O padrão que se repete nas duas últimas REQs: **o plano subestima acoplamento e o critério de
+aceite é escrito mais frouxo do que a intenção**. O AC8 aqui dizia "gate comparando saídas reais" e
+ainda assim foi fechado com teste unitário — porque quem fecha é quem escreveu, e lê o próprio
+critério com boa vontade. Foi a barreira e a auditoria que pegaram, não o autor.
 
 ---
 
