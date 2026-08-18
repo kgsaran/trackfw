@@ -686,7 +686,7 @@ e afirma os dois sentidos. Não é vacuoso.
 ## Wave 3 — Barreira
 
 ### ML-3A — `hades-tf`: revisão de comando destrutivo
-**Status:** ⬜ Pendente · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
+**Status:** ✅ Concluído · **Veredito: APROVA**, com 1 risco residual declarado · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
 **Escreve:** `docs/seguranca/2026-08-18-revisao-do-branch-prune.md`
 
 **Ações:** é o primeiro comando do trackfw que **apaga** trabalho. Verificar se há caminho para
@@ -694,6 +694,42 @@ apagar branch não integrada — nome com caracteres especiais, branch com upstr
 apontando para lugar errado, `main` local defasada em relação a `origin/main`, repositório sem
 `origin`, branch cujo nome colide com ref ambígua. Avaliar se `--apply` pode ser disparado sem
 intenção. **Veredito explícito; bloquear é saída legítima.**
+
+---
+
+### Barreira ML-3A — APROVA
+
+Ele testou em fixtures git reais e descartáveis, não por leitura:
+
+| vetor | resultado |
+|---|---|
+| nome com flag/espaço (`--force`, `foo bar`) | o git recusa criar — vetor inexistente |
+| **ref ambígua** (branch e tag homônimas) | duas camadas independentes fecham: `git branch --format` desambigua para `heads/<nome>` antes do trackfw ver, e `-d/-D heads/<nome>` falha por incompatibilidade |
+| `origin` para repo não relacionado | `merge-base` vazio → `no_merge_base` → keep |
+| sem `origin` | recusa o comando inteiro, exit 1 |
+| clone raso (`--depth 1`) | sem falso negativo |
+| rename / delete / mode-only / binário | todos `pending_work` corretamente |
+| `--apply` real, fixture de 6 branches | **só a integrada apagada** — a prova mais forte |
+| `--apply` por env var | não existe bind nos 3 CLIs, sem shorthand |
+
+**Risco residual declarado — e eu decidi NÃO corrigir agora.** Os dois `git diff` usam `-z` +
+`splitNulPaths`, mas a listagem de branches (`branch_prune.go:432`) e o parsing de worktree (`:466`)
+quebram por `\n`. Confirmei a inconsistência.
+
+Considerei fechar e não fechei: o valor de segurança é **nulo** — criar ref com `\n` exige
+`git update-ref` (plumbing), acesso equivalente a apagar branch diretamente, e o `hades-tf` não
+achou caminho até deleção indevida. Um sétimo ML numa REQ completa, por assepsia, é expansão de
+escopo que atrasa a entrega sem reduzir risco.
+
+**Para quem tocar `defaultListLocalBranches` ou o parsing de worktree:** use `-z` e o mesmo
+`splitNulPaths` que está duas funções acima, para a dureza ficar uniforme no arquivo.
+
+**Lacunas que ele próprio declarou:** submódulo com ponteiro divergente foi raciocinado por
+analogia, não medido; e ele não reexecutou os gates de paridade, cruzou a evidência do roadmap com
+leitura linha a linha dos 3 fontes. Aceito — eu **executei** os dois gates nesta auditoria.
+
+**Sobre ACs fechados cedo demais:** não encontrou nenhum. O AC10 (CI verde) está corretamente
+marcado em aberto, não fechado sem lastro.
 
 ---
 

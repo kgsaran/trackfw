@@ -19547,3 +19547,37 @@ warnings pré-existentes / 0 violações (nenhuma nova).
 Fora de escopo confirmado: Wave 2 (ML-2A, `ship`) e Wave 3 (ML-3A, `hades-tf`) não tocados. Nenhum
 `git commit`/`push`/`branch` executado — autoridade exclusiva do `trackfw_architect`. Roadmap
 ML-1C marcado ✅ Concluído com evidência bruta colada na seção correspondente.
+
+## Sessão 2026-08-18 — Hades (ML-3A: revisão de segurança do `branch prune` — APROVADO)
+
+Barreira ML-3A do roadmap `docs/roadmaps/wip/ROADMAP-2026-08-18-branch-prune-com-dry-run-por-padrao-e-heuristica-de-arquivos-tocados.md`.
+Escrito: `docs/seguranca/2026-08-18-revisao-do-branch-prune.md`. **Veredito: aprovado.**
+
+Testei em fixtures git reais e descartáveis (`/private/tmp/.../scratchpad/prune-audit/t1..t8`,
+nunca o repositório do projeto): nome de branch com flag/espaço (git recusa criar — vetor
+inexistente), ref ambígua branch/tag com mesmo nome (git desambigua a listagem para `heads/<nome>`
+antes do trackfw ver o nome, E `git branch -d/-D heads/<nome>` falha por incompatibilidade de
+nome — duas camadas independentes fecham o vetor), `origin` apontando para repo não relacionado
+(merge-base vazio → `no_merge_base` → keep), sem `origin` (recusa o comando inteiro, exit 1), clone
+raso (`--depth 1`, sem falso negativo), rename/delete/mode-only/binário sem `-M` (todos ficam
+`pending_work`, nunca escapam para `delete`). Rodei `--apply` real num fixture misto com 6 branches
+(integrada, pendente, doc-nova-nunca-mergeada, resíduo-doc-parcial, worktree, main) — só a
+integrada foi apagada.
+
+`--apply` não tem bind de env var em nenhum dos 3 CLIs, sem shorthand de uma letra — sem superfície
+de disparo acidental. `review_doc_config` nunca é candidata a deleção (confirmado nos 3
+`deletable()`/`isDeletable`/`branch_prune_is_deletable`).
+
+**Risco residual nomeado, não bloqueante:** `defaultListLocalBranches` e equivalentes Node/Python
+parseiam `git branch --format=...` por linha (`\n`), sem a mesma dureza `-z` que os dois `git diff`
+já usam. Nome de branch com `\n` literal (só criável via `git update-ref`, plumbing) faz uma ref
+virar duas linhas na listagem — não encontrei caminho até deleção indevida (as duas metades não
+resolvem a nenhuma ref real), e criar a ref já exige o mesmo nível de acesso que apagar branches
+diretamente. Registrado como inconsistência de dureza para quem tocar essa função depois.
+
+Não medido nesta sessão (lacuna declarada, não bloqueio): submódulo com ponteiro divergente;
+reexecução dos gates de paridade (usei a evidência já registrada no roadmap + leitura linha a linha
+dos 3 arquivos-fonte, que são espelhos estruturais idênticos).
+
+Nenhum arquivo de produto tocado. Nenhum commit/push/branch — autoridade exclusiva do
+`trackfw_architect`.
