@@ -19272,3 +19272,64 @@ cenário de falsificação com baseline+detecção; `make quality` verde.
 Roadmap atualizado: ML-3B marcado `✅ Concluído — pendente de auditoria do arquiteto`, critérios de
 aceite marcados, evidência colada. Nenhum `git commit`/`push`/branch executado por mim — handoff
 para `trackfw_architect` auditar e commitar. Wave 4 (ML-4A, `hades-tf`) segue pendente.
+
+## Sessão 2026-08-18 — Hades (INÍCIO: ML-4A — barreira do guard em escopo global)
+
+Branch `fix/guard-global-cabeado-com-no-op-fora-de-projeto-e-integridade-independente-de-fiacao`,
+roadmap `docs/roadmaps/wip/ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-e-
+integridade-independente-de-fiacao.md`, Wave 4/ML-4A. Lido roadmap inteiro (todos os MLs 1A–3B e
+auditorias do arquiteto), REQ e ADR desta série, parecer anterior `docs/seguranca/2026-08-16-revisao-
+do-git-branch-guard.md`. Escopo: responder as 4 perguntas (A no-op induzível dentro de projeto, B
+fiação global cria caminho de desarme, C integridade vacua, D isolamento de `$HOME` nos gates) em
+`docs/seguranca/2026-08-17-revisao-do-guard-em-escopo-global.md`. Nenhum commit/push/branch (Hades
+não tem autoridade de git).
+
+## Sessão 2026-08-18 — Hades (FIM: ML-4A concluído — APROVADO, com achado nomeado)
+
+Entregue `docs/seguranca/2026-08-17-revisao-do-guard-em-escopo-global.md`. **Veredito: aprovar**,
+sem bloqueio — nenhum achado é regressão nem escalada de privilégio nova além do que o
+`ADR-2026-08-12` já aceita (`$HOME` gravável pelo agente é fora do modelo de defesa). Todos os 4
+itens medidos por execução real (`./scripts/trackfw-git-branch-guard.sh`, `./bin/trackfw`
+recompilado localmente, fixtures de `$HOME`/cwd isolados nunca a máquina real exceto para confirmar
+independentemente que `validate` acusa o script global desatualizado de KG — AC3 confirmado por mim
+também).
+
+- **A (no-op induzível dentro de projeto):** 8 vetores testados (`rm`/`mv`/dir/symlink quebrado/
+  trackfw.yaml falso mais próximo/permissão 0000/cwd symlink/ancestral sem permissão de execução
+  após cd). Nenhum desarma sem também destruir a governança (mesma classe já aceita no ADR) ou
+  quebrar o próprio `git` no processo (`A8`/`A11` — autodestrutivo, confirmado que `git status` real
+  falha na mesma condição). `A4`/`A6` (permissão 0000 no yaml; yaml falso em subdir mais próximo)
+  tentam desarmar e **não conseguem** — o guard continua bloqueando.
+- **B (achado central, não bloqueante):** forjei uma entrada global (`~/.claude/settings.json`,
+  `PreToolUse[Bash]` com `command` correto mas **sem** `"type":"command"`) via teste Go descartável
+  (`internal/generators/zz_hades_forge_test.go`, removido após a medição, nunca commitado). Provado
+  por execução: `globalGitBranchGuardInstalledClaude()` retorna `true` (dedup enganado) →
+  `InjectClaudeHooks` **pula** a entrada de projeto → `trackfw validate` (`ValidateUnfiltered()`)
+  reporta **zero** mensagens sobre git-branch-guard. Script global real, íntegro, no disco — o
+  problema é que nem o dedup (escritor grava `"type"`, leitor nunca confere) nem o
+  `hook_resolvable`/`collectCommandsWithMarker` (só faz `strings.Contains` do marker em qualquer
+  string da árvore JSON) validam a forma estrutural que o Claude Code real exige para reconhecer o
+  hook (confirmado contra a doc oficial, https://code.claude.com/docs/en/hooks). Resultado: nem
+  projeto nem global protegem, `validate` fica verde. Não bloqueei (exige `$HOME` já gravável, mesmo
+  pré-requisito do `ADR-2026-08-12`), mas nomeei como débito residual explícito a corrigir —
+  recomendação: espelhar no leitor a mesma checagem de `"type"` que o escritor já faz.
+- **C:** integridade global não vacua por symlink (`os.ReadFile` segue o link, compara conteúdo
+  real). Achei 2 débitos de baixa severidade da mesma família de B: (1) erro de leitura não-ENOENT
+  (ex. chmod 000) colapsa para "silêncio" em vez de propagar erro como a contraparte de projeto faz
+  — não explorável na prática porque script shell ilegível também não é executável; (2)
+  `hook_resolvable` global aceita qualquer caminho absoluto contendo o marker como substring
+  (não só o canônico), mas a integridade só verifica o caminho canônico fixo — mesma causa raiz de
+  B (comparação por substring/campo solto, não validação estrutural).
+- **D:** confirmado por leitura que os 4 gates citados isolam `$HOME` antes de qualquer chamada ao
+  binário; `check-harness-hooks-parity.sh` isola por invocação (equivalente). Node não tem
+  `TestMain` global mas usa `withEnv` com `try/finally` por teste (confirmado que restaura mesmo com
+  asserção lançando) — não é gap.
+
+Resposta ao pedido específico de KG: nenhum AC dos 8 foi fechado cedo demais — o achado B é um gap
+que nenhum AC cobria (não uma alegação falsa como em 2026-08-16), então recomendo nomeá-lo no ADR
+como débito explícito, não corrigi-lo por conta própria (fora da minha autoridade de escopo).
+
+Nenhum arquivo de produção tocado. Único artefato deixado: o parecer. Nenhum `git commit`/`push`
+executado por mim — handoff para `trackfw_architect` auditar, decidir sobre o achado B (ML novo ou
+débito registrado no ADR) e commitar. Roadmap permanece responsabilidade do arquiteto atualizar
+(Wave 4/ML-4A concluído do lado de Hades).

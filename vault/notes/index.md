@@ -73,3 +73,4 @@
 - [git-branch-guard-branch-create-heuristic-e-env-var-assignment-stripping-2026-08-17](git-branch-guard-branch-create-heuristic-e-env-var-assignment-stripping-2026-08-17.md)
 - [git-branch-guard-noop-outside-project-fixtures-and-falsify-cwd-2026-08-17](git-branch-guard-noop-outside-project-fixtures-and-falsify-cwd-2026-08-17.md)
 - [validate-global-guard-integrity-by-existence-makes-unisolated-home-systemic-2026-08-18](validate-global-guard-integrity-by-existence-makes-unisolated-home-systemic-2026-08-18.md)
+- [global-guard-dedup-and-hook-resolvable-never-validate-hook-structure-2026-08-18](global-guard-dedup-and-hook-resolvable-never-validate-hook-structure-2026-08-18.md)

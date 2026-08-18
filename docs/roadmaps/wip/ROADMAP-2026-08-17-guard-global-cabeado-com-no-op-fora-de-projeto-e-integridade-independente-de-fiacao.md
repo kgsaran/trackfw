@@ -752,13 +752,80 @@ do override. Pedi que preferisse a solução simples se ela cobrisse sem distorc
 ## Wave 4 — Barreira
 
 ### ML-4A — `hades-tf`: revisão do guard em escopo global
-**Status:** ⬜ Pendente · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
+**Status:** ✅ Concluído · **Veredito: APROVA**, com 1 achado que virou ML-4B · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
 **Escreve:** `docs/seguranca/2026-08-17-revisao-do-guard-em-escopo-global.md`
 
 **Ações:** o no-op é **superfície de ataque nova** — avaliar se dá para induzir o no-op dentro de um
 projeto trackfw (cwd manipulado, `trackfw.yaml` removido/renomeado, symlink, subdiretório com
 `trackfw.yaml` falso). Avaliar se a fiação global introduziu caminho de desarme. Confirmar que a
 integridade nova não é vacuosa. **Veredito explícito; bloquear é saída legítima.**
+
+---
+
+### Barreira ML-4A — APROVA, e o achado central reproduzido por mim
+
+**Veredito do `hades-tf`: aprovar.** Parecer em `docs/seguranca/2026-08-17-revisao-do-guard-em-escopo-global.md`.
+
+**A) no-op não é induzível** sem custo proibitivo — ele atacou 8 vetores por execução (`rm`, `mv`,
+`trackfw.yaml` como diretório, symlink quebrado, yaml falso mais próximo, `chmod 0000`, cwd symlink,
+ancestral sem permissão). Nenhum desarma sem destruir a governança (classe já aceita no ADR) ou sem
+quebrar o próprio `git` no processo — ele confirmou que `git status` real falha na mesma condição,
+logo é autodestrutivo, não vetor prático.
+
+**B) O achado que importa — e era exatamente o vetor que eu pedi que ele atacasse.**
+Reproduzi por medição própria:
+
+```
+~/.claude/settings.json com command CORRETO mas SEM "type":"command"
+script global presente e integro
+
+  projeto cabeou o guard?  0    <- dedup enganado, pula a fiacao de projeto
+  validate acusa?          0    <- silencio total
+  a entrada global executa? NAO <- sem "type" o CLI ignora
+```
+
+**Nenhum dos dois escopos protege, e tudo fica verde.** Causa: nem o dedup
+(`hookArrayHasCommand`) nem o `hook_resolvable` (`collectCommandsWithMarker`) validam a **forma
+estrutural** da entrada — só a string do `command`.
+
+**C)** integridade não é vacuosa por symlink. Dois débitos menores da mesma família: erro de leitura
+não-ENOENT colapsa em silêncio, e o `hook_resolvable` aceita qualquer caminho que **contenha** o
+marker (verifiquei: acusa caminho fora de `~/.trackfw/scripts` — erra para o lado seguro).
+
+**D)** isolamento de `$HOME` nos gates confirmado; o Node usa `withEnv`+`try/finally` por teste em
+vez de `TestMain`, equivalente. Não é gap.
+
+**Ele também respondeu ao que eu pedi sobre mim:** não encontrou AC fechado cedo demais. O achado B
+é gap que **nenhum dos 8 ACs cobria** — não alegação falsa, diferente do bloqueio de 2026-08-16.
+
+---
+
+### ML-4B — Dedup e `hook_resolvable` validam a forma estrutural da entrada
+**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+
+**Por que corrijo em vez de declarar**, apesar de o `hades-tf` classificar como não-bloqueante: ele
+argumenta que exige `$HOME` gravável, pré-requisito já fora do modelo do `ADR-2026-08-12`. Concordo
+que como **ataque** está fora do modelo — mas isto **não é só ataque**. Entrada malformada surge de
+versão antiga do trackfw com forma diferente, edição à mão, ou outra ferramenta mesclando o config.
+A consequência é **perda silenciosa e total da proteção com `validate` verde** — que é literalmente
+a tese desta REQ, em forma nova: não "instalado e não verificado", mas **"cabeado de forma inválida
+e não verificado"**.
+
+Custo baixo: o escritor já emite `"type":"command"`; falta o leitor exigir. "Instalado" precisa
+significar **"vai de fato executar"**.
+
+**Critérios de aceite:**
+- [ ] Dedup só considera instalado entrada **estruturalmente válida** (com `type` correto por CLI).
+- [ ] Discriminante: entrada sem `type` → projeto **volta a cabear**; hoje pula.
+- [ ] `hook_resolvable` reporta entrada malformada em vez de ignorá-la.
+- [ ] Não-regressão: entradas válidas seguem deduplicando; `credential-guard` inalterado.
+- [ ] Forma estrutural respeita cada CLI — não uniformizar o que o fornecedor define diferente.
+- [ ] Cenário de falsificação com baseline e detecção; `$HOME` do fixture.
+- [ ] `make quality` verde; `./bin/trackfw validate` exit 0.
+
+**Débitos declarados, não corrigidos:** erro de leitura não-ENOENT colapsando em silêncio, e
+`hook_resolvable` aceitando caminho por substring do marker — este último **erra para o lado
+seguro** (acusa em vez de silenciar), verificado por mim.
 
 ---
 
