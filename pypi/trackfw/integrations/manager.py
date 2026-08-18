@@ -42,6 +42,15 @@ class IntegrationManager:
         # update_harness.py already imports from integrations/manager.py
         # (circular import); display formatting is inlined in _mutate instead.
         self.on_skip = on_skip
+        # _after_manifest_persist, when set, is invoked immediately after
+        # manifests are persisted and before artifact bytes are written
+        # during install/update (never during uninstall, which is
+        # intentionally not inverted — see the comment in _mutate). It
+        # exists only so tests can simulate an interruption exactly at the
+        # ADR-2026-08-18 ordering seam. Production code never assigns it.
+        # Mirrors internal/integrations/manager.go's afterManifestPersist
+        # package var.
+        self._after_manifest_persist = None
 
     def _resolve(self, plan: dict[str, Any]) -> tuple[Path, Path, Path]:
         raw = plan["destination"]
@@ -245,20 +254,68 @@ class IntegrationManager:
                 snapshots[filename] = (True, filename.read_bytes(), stat.S_IMODE(info.st_mode))
             except FileNotFoundError:
                 snapshots[filename] = (False, b"", 0)
-        try:
-            for plan, destination, manifest_file, root in active:
-                self._apply(plan, destination, manifests[manifest_file], root, operation, force)
+        def persist_manifests() -> None:
             for filename in sorted(manifests, key=str):
                 self._write_manifest(filename, manifests[filename])
+
+        try:
+            # ADR-2026-08-18: install/update persist the manifest before
+            # writing artifact bytes (self-healing direction on
+            # interruption); uninstall keeps the original
+            # artifacts-before-manifest order. The two are deliberately NOT
+            # symmetric.
+            if operation == "uninstall":
+                # Uninstall is not inverted. Removing bytes first and
+                # persisting the manifest last means an interruption leaves
+                # the manifest still declaring an artifact whose file is now
+                # absent — inspect_with resolves that as "not-installed",
+                # the same self-healing direction install/update get from
+                # the inversion below. Inverting uninstall the same way
+                # (drop the manifest entry, then remove bytes) would instead
+                # leave, on interruption, a file on disk whose content still
+                # matches the catalog template but with no manifest entry at
+                # all — reported as an orphaned "current"/managed=False
+                # artifact that looks legitimate and that nothing detects or
+                # repairs automatically. That is exactly the "disk ahead of
+                # manifest" bad direction the ADR exists to eliminate, so
+                # uninstall must not be simetrized with install/update here.
+                # Mirrors the comment in internal/integrations/manager.go:mutate.
+                for plan, destination, manifest_file, root in active:
+                    self._apply(plan, destination, manifests[manifest_file], root, operation, force)
+                persist_manifests()
+            else:
+                # Install/Update: compute the manifest update for every
+                # active item in memory (no bytes touched yet), persist all
+                # manifests, and only then write the artifact bytes.
+                pending_writes: list[tuple[Path, bytes, int]] = []
+                for plan, destination, manifest_file, root in active:
+                    write = self._plan_artifact_write(plan, destination, manifests[manifest_file], operation, force)
+                    if write is not None:
+                        pending_writes.append(write)
+                persist_manifests()
+                if self._after_manifest_persist is not None:
+                    self._after_manifest_persist()
+                for destination, content, mode in pending_writes:
+                    self._atomic_write(destination, content, mode)
         except BaseException:
+            # Best-effort restore: one snapshot failing to write back (e.g. the
+            # very I/O condition that caused the batch to fail in the first
+            # place is still in effect for that path) must not stop the
+            # others — most importantly the manifest — from being restored.
+            # Mirrors Go's `_ = atomicWrite(...)` (errors discarded) and
+            # Node's `catch { /* preserve original error */ }` in rollback().
+            # Surfaced by ADR-2026-08-18: with the manifest persisted before
+            # artifact bytes, a write-phase failure now always needs the
+            # manifest snapshot restored too, not just (previously, rarely)
+            # the artifact one.
             for filename, (existed, content, mode) in snapshots.items():
-                if existed:
-                    self._atomic_write(filename, content, mode)
-                else:
-                    try:
+                try:
+                    if existed:
+                        self._atomic_write(filename, content, mode)
+                    else:
                         filename.unlink()
-                    except FileNotFoundError:
-                        pass
+                except Exception:  # noqa: BLE001 - best-effort restore, mirrors Go's `_ = atomicWrite(...)` and Node's bare `catch {}`
+                    pass
             raise
 
     def _preflight(self, plan, destination, manifest, operation, force) -> bool:
@@ -400,22 +457,50 @@ class IntegrationManager:
         return "modified"
 
     def _apply(self, plan, destination: Path, manifest, root: Path, operation, force) -> None:
+        """Uninstall only: removes ownership of one artifact from the
+        manifest, and — once no claim remains — the artifact's bytes and any
+        empty ancestor directories it managed. Mutates disk directly (not
+        deferred), because uninstall deliberately keeps the
+        pre-ADR-2026-08-18 ordering: see the comment in _mutate for why this
+        is not simetrized with _plan_artifact_write. Mirrors
+        internal/integrations/manager.go:applyUninstall.
+        """
         artifacts = manifest["artifacts"]
         entry = artifacts.get(str(destination))
         owned = bool(entry and plan["claim"] in entry.get("claims", []))
-        if operation == "uninstall":
-            if not owned:
-                return
-            entry["claims"] = [claim for claim in entry["claims"] if claim != plan["claim"]]
-            if entry["claims"]:
-                return
-            try:
-                destination.unlink()
-            except FileNotFoundError:
-                pass
-            del artifacts[str(destination)]
-            self._remove_empty(destination.parent, root)
+        if not owned:
             return
+        entry["claims"] = [claim for claim in entry["claims"] if claim != plan["claim"]]
+        if entry["claims"]:
+            return
+        try:
+            destination.unlink()
+        except FileNotFoundError:
+            pass
+        del artifacts[str(destination)]
+        self._remove_empty(destination.parent, root)
+
+    def _plan_artifact_write(
+        self, plan, destination: Path, manifest, operation, force
+    ) -> tuple[Path, bytes, int] | None:
+        """Computes the manifest update for one install/update item entirely
+        in memory — never touches the artifact's bytes on disk. The caller
+        (_mutate) persists every manifest in the batch first, and only then
+        applies the returned pending write (ADR-2026-08-18). Returns None
+        when no byte write is needed.
+
+        The manifest values it stores are deliberately *optimistic* when a
+        write is pending: sha256/catalog_version describe the content this
+        call is about to write, not what is currently on disk. If
+        interrupted before the pending write lands, the manifest already
+        declares the target state and inspect_with resolves the (absent or
+        stale) file to "not-installed"/"modified", both self-repairable by a
+        later install/update, never "modified"+unowned ("unmanaged").
+        Mirrors internal/integrations/manager.go:planArtifactWrite.
+        """
+        artifacts = manifest["artifacts"]
+        entry = artifacts.get(str(destination))
+        owned = bool(entry and plan["claim"] in entry.get("claims", []))
 
         try:
             actual = destination.read_bytes()
@@ -432,26 +517,32 @@ class IntegrationManager:
                 # Defense-in-depth: _preflight already rejects this exact case
                 # for "update" (unconditionally) and for "install" without
                 # --force (any state == "modified" is blocked before an
-                # active item ever reaches _apply). This branch is therefore
-                # not reachable via install/update/uninstall today, but stays
-                # as a second line of defense in case _preflight's guard is
-                # ever loosened — hence the identical remediation text, so a
-                # user who somehow hits it still gets the same actionable
-                # message. Mirrors internal/integrations/manager.go:applyMutation.
+                # active item ever reaches _plan_artifact_write). This branch
+                # is therefore not reachable via install/update today, but
+                # stays as a second line of defense in case _preflight's
+                # guard is ever loosened — hence the identical remediation
+                # text, so a user who somehow hits it still gets the same
+                # actionable message. No manifest mutation happens on this
+                # path. Mirrors internal/integrations/manager.go:planArtifactWrite.
                 raise IntegrationError(self._unmanaged_artifact_error(destination, plan["claim"]))
             write = actual_hash != desired_hash and (operation == "update" or force)
         elif exists and owned:
             write = actual_hash != desired_hash
-        if write:
-            self._atomic_write(destination, plan["content"], 0o644)
-            actual_hash = desired_hash
         if entry is None:
             entry = {"destination": str(destination), "claims": []}
         if plan["claim"] not in entry["claims"]:
             entry["claims"].append(plan["claim"])
+        pending: tuple[Path, bytes, int] | None = None
+        if write:
+            # Optimistic: bytes have not moved yet, but the manifest must
+            # already describe the content we are about to write (see doc
+            # comment above).
+            actual_hash = desired_hash
+            pending = (destination, plan["content"], 0o644)
         entry["sha256"] = actual_hash
         entry["catalog_version"] = plan["catalog_version"] if actual_hash == desired_hash else "legacy"
         artifacts[str(destination)] = entry
+        return pending
 
     def _remove_empty(self, directory: Path, root: Path) -> None:
         while directory != root and root in directory.parents:

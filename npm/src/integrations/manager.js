@@ -30,6 +30,14 @@ class IntegrationManager {
   constructor({ projectRoot = process.cwd(), homeRoot = os.homedir() } = {}, { onSkip } = {}) {
     this.roots = { project: path.resolve(projectRoot), global: path.resolve(homeRoot) }
     this.onSkip = onSkip
+    // _afterManifestPersist, when set, runs immediately after manifests are
+    // persisted and before artifact bytes are written during install/update
+    // (never during uninstall, which is intentionally not inverted — see the
+    // comment in mutate()). It exists only so tests can simulate an
+    // interruption exactly at the ADR-2026-08-18 ordering seam. Production
+    // code never assigns it. Mirrors internal/integrations/manager.go's
+    // afterManifestPersist package var.
+    this._afterManifestPersist = undefined
   }
 
   manifestPath(scope) { return path.join(this.roots[scope], '.trackfw', 'integrations-manifest.json') }
@@ -167,9 +175,44 @@ class IntegrationManager {
     const snapshots = new Map()
     for (const item of active) this.snapshot(snapshots, item.file)
     for (const scope of manifests.keys()) this.snapshot(snapshots, this.manifestPath(scope))
-    try {
-      for (const item of active) this.apply(operation, item, manifests.get(item.plan.claim.scope), force)
+    const saveManifests = () => {
       for (const [scope, manifest] of [...manifests].sort(([a], [b]) => a.localeCompare(b))) this.saveManifest(scope, manifest)
+    }
+    try {
+      // ADR-2026-08-18: install/update persist the manifest before writing
+      // artifact bytes (self-healing direction on interruption); uninstall
+      // keeps the original artifacts-before-manifest order. The two are
+      // deliberately NOT symmetric.
+      if (operation === 'uninstall') {
+        // Uninstall is not inverted. Removing bytes first and persisting the
+        // manifest last means an interruption leaves the manifest still
+        // declaring an artifact whose file is now absent — inspectResolved
+        // resolves that as 'not-installed', the same self-healing direction
+        // install/update get from the inversion below. Inverting uninstall
+        // the same way (drop the manifest entry, then remove bytes) would
+        // instead leave, on interruption, a file on disk whose content still
+        // matches the catalog template but with no manifest entry at all —
+        // reported as an orphaned state='current'/managed=false artifact
+        // that looks legitimate and that nothing detects or repairs
+        // automatically. That is exactly the "disk ahead of manifest" bad
+        // direction the ADR exists to eliminate, so uninstall must not be
+        // simetrized with install/update here. Mirrors the comment in
+        // internal/integrations/manager.go:mutate.
+        for (const item of active) this.applyUninstall(item, manifests.get(item.plan.claim.scope))
+        saveManifests()
+      } else {
+        // Install/Update: compute the manifest update for every active item
+        // in memory (no bytes touched yet), persist all manifests, and only
+        // then write the artifact bytes.
+        const pendingWrites = []
+        for (const item of active) {
+          const write = this.planArtifactWrite(operation, item, manifests.get(item.plan.claim.scope), force)
+          if (write) pendingWrites.push(write)
+        }
+        saveManifests()
+        if (typeof this._afterManifestPersist === 'function') this._afterManifestPersist()
+        for (const write of pendingWrites) this.atomicWrite(write.file, write.content, write.mode)
+      }
     } catch (error) {
       this.rollback(snapshots)
       throw error
@@ -256,19 +299,42 @@ class IntegrationManager {
     return { state: 'modified', managed: false }
   }
 
-  apply(operation, { plan, file }, manifest, force) {
+  // applyUninstall removes ownership of one artifact from the manifest, and —
+  // once no claim remains — the artifact's bytes and any empty ancestor
+  // directories it managed. It mutates disk directly (not deferred), because
+  // uninstall deliberately keeps the pre-ADR-2026-08-18 ordering: see the
+  // comment in mutate() for why this is not simetrized with
+  // planArtifactWrite. Mirrors internal/integrations/manager.go:applyUninstall.
+  applyUninstall({ plan, file }, manifest) {
+    const record = manifest.artifacts[file]
+    const key = claimKey(plan.claim)
+    const owned = Boolean(record && record.claims.some(claim => claimKey(claim) === key))
+    if (!owned) return
+    record.claims = record.claims.filter(claim => claimKey(claim) !== key)
+    if (record.claims.length) return
+    if (fs.existsSync(file)) fs.unlinkSync(file)
+    delete manifest.artifacts[file]
+    this.cleanEmpty(path.dirname(file), this.roots[plan.claim.scope])
+  }
+
+  // planArtifactWrite computes the manifest update for one install/update
+  // item entirely in memory — it never touches the artifact's bytes on disk.
+  // The caller (mutate) persists every manifest in the batch first, and only
+  // then applies the returned pending write (ADR-2026-08-18). Returns null
+  // when no byte write is needed.
+  //
+  // The manifest values it stores are deliberately *optimistic* when a write
+  // is pending: sha256/catalog_version describe the content this call is
+  // about to write, not what is currently on disk. If interrupted before the
+  // pending write lands, the manifest already declares the target state and
+  // inspectResolved resolves the (absent or stale) file to
+  // 'not-installed'/'modified', both self-repairable by a later
+  // install/update, never modified+unowned ("unmanaged"). Mirrors
+  // internal/integrations/manager.go:planArtifactWrite.
+  planArtifactWrite(operation, { plan, file }, manifest, force) {
     let record = manifest.artifacts[file]
     const key = claimKey(plan.claim)
     const owned = Boolean(record && record.claims.some(claim => claimKey(claim) === key))
-    if (operation === 'uninstall') {
-      if (!owned) return
-      record.claims = record.claims.filter(claim => claimKey(claim) !== key)
-      if (record.claims.length) return
-      if (fs.existsSync(file)) fs.unlinkSync(file)
-      delete manifest.artifacts[file]
-      this.cleanEmpty(path.dirname(file), this.roots[plan.claim.scope])
-      return
-    }
 
     const exists = fs.existsSync(file)
     let actual = exists ? sha256(fs.readFileSync(file)) : ''
@@ -278,24 +344,29 @@ class IntegrationManager {
     if (exists && !owned) writeDesired = (operation === 'update' && actual !== desired) || (force && actual !== desired)
     else if (exists && owned) writeDesired = actual !== desired
     if (!record) record = { destination: file, sha256: '', catalog_version: '', claims: [] }
+    let pending = null
     if (writeDesired) {
-      this.atomicWrite(file, plan.content, 0o644)
+      // Optimistic: bytes have not moved yet, but the manifest must already
+      // describe the content we are about to write (see doc comment above).
       actual = desired
+      pending = { file, content: plan.content, mode: 0o644 }
     } else if (exists && !owned && actual !== desired && !knownLegacy && !force) {
       // Defense-in-depth: preflight already rejects this exact case for
       // 'update' (unconditionally) and for 'install' without --force (any
       // state === 'modified' is blocked before an active item ever reaches
-      // apply()). This branch is therefore not reachable via install/update/
-      // uninstall today, but stays as a second line of defense in case
+      // planArtifactWrite()). This branch is therefore not reachable via
+      // install/update today, but stays as a second line of defense in case
       // preflight's guard is ever loosened — hence the identical remediation
       // text, so a user who somehow hits it still gets the same actionable
-      // message. Mirrors internal/integrations/manager.go:applyMutation.
+      // message. No manifest mutation happens on this path. Mirrors
+      // internal/integrations/manager.go:planArtifactWrite.
       throw new Error(this.unmanagedArtifactError(file, plan.claim))
     }
     if (!record.claims.some(claim => claimKey(claim) === key)) record.claims.push(cleanClaim(plan.claim))
     record.sha256 = actual
     record.catalog_version = actual === desired ? plan.catalogVersion : 'legacy'
     manifest.artifacts[file] = record
+    return pending
   }
 
   snapshot(snapshots, file) {
