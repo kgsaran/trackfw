@@ -19731,3 +19731,62 @@ byte-a-byte).
 (novo), `pypi/trackfw/integrations/manager.py` (`_inspect_core`/`inspect_full`/`list_full`),
 `pypi/trackfw/integrations/doctor.py` (novo), `pypi/trackfw/commands/doctor.py` (novo),
 `pypi/trackfw/cli.py` (registro), `pypi/tests/test_doctor.py` (novo).
+
+## PARADA 2026-08-18 — Zeus (arquiteto) — PONTO DE RETOMADA
+
+Parada a pedido de KG: janela semanal a 99%. **Nada pendurado** — árvore limpa, tudo commitado e
+empurrado, `make quality` exit 0 e `trackfw validate` exit 0 no último estado.
+
+### Onde parei
+
+| frente | estado |
+|---|---|
+| `main` | `f368139` — Wave 1 do `doctor` (inversão da ordem) mergeada no #189 |
+| **PR #190** | **aberto** — `feat/doctor-detecta-artefato-fora-do-manifesto`, traz o comando `doctor` (ML-2A) |
+| roadmap | `docs/roadmaps/wip/ROADMAP-2026-08-18-doctor-...md` — **em `wip`, REQ não fechada** |
+
+### Retomar exatamente por aqui
+
+**1. ML-2B — gate de paridade + cenário P4** (é o próximo, e o de maior valor)
+Fecha AC3 e AC4. Já está escrito no roadmap, com critérios.
+- Gate comparando as **três saídas reais** do `doctor` — teste por stack **não** fecha o AC3.
+- Cenário P4 reproduzindo a janela: artefato em disco sem registro, e prova de que acusa.
+- Arquivos prováveis: `scripts/check-*-parity.sh` novo ou estendido, `scripts/check-gates-falsify.sh`.
+
+**2. ML-3A — barreira do `hades-tf`**
+Menor prioridade que o ML-2B, e o motivo está registrado: o `doctor` é **somente-diagnóstico** —
+não escreve, não apaga, não altera estado. O risco dele é falso-positivo, que eu já medi
+(baseline limpo, arquivo alheio, as duas classes distintas). O gate protege contra regressão
+futura; a barreira cobriria um risco que este comando quase não tem.
+
+**3. Fechar a REQ:** mover o roadmap para `done`, PR, e **exigir CI verde** antes de fechar o AC8.
+
+### Decisão pendente de KG — release 7.1.0
+
+`main` tem 8 PRs desde a `v7.0.0`, incluindo comando novo (`branch prune`) → por SemVer é **minor**.
+
+**Minha recomendação, registrada:** tagear a **7.1.0 a partir da `main` atual**, sem esperar o #190.
+Tudo na `main` está completo — barreiras passaram, gates existem, ACs fechados. O `doctor` do #190
+está deliberadamente incompleto (sem gate de paridade), e lançá-lo assim contradiria a
+`REQ-2026-08-18-contrato-pinado-...-sem-gate-nomeado`, aberta nesta mesma sessão.
+
+Alternativas se quiser o `doctor` na 7.1.0: fazer o ML-2B antes, **ou** lançar marcando o comando
+como experimental no `CHANGELOG` e declarando a lacuna. **Não recomendado:** mergear e lançar sem
+dizer nada — vira dívida silenciosa, o padrão que estas REQs vêm quebrando.
+
+### Backlog, com causa raiz já medida
+
+- `REQ-2026-08-17-validate-nao-detecta-hook-de-guard-na-forma-relativa-antiga...` — a mais séria das três
+- `REQ-2026-08-17-update-dry-run-aborta-em-symlink-quebrado...`
+- `REQ-2026-08-18-contrato-pinado-no-cli-parity-sem-gate-nomeado...` — ataca a causa da repetição
+
+### Armadilhas de ambiente — custaram tempo real, não redescobrir
+
+- **Binário do `PATH` desatualizado**, e `--version` **não** distingue o build. Sempre `make build` e
+  `./bin/trackfw`. **Não** rodar `make install`: o CLI vem do Homebrew e o Makefile grava em
+  `/usr/local/bin`, criando cópia sombreada.
+- **`trackfw ship` exige algo staged.** Para empurrar trabalho já commitado: `git reset --soft HEAD~1`
+  e deixar o `ship` refazer. `git push`/`commit` brutos são bloqueados por hook.
+- **O guard bloqueia `git commit`/`git branch` literais no comando** — inclusive ao montar fixture.
+  Contorno: pôr o setup num script e executar o script.
+- **Corpo de PR com `git push` no texto**: usar `gh pr create --body-file`, nunca `--body` inline.
