@@ -7,6 +7,7 @@
 
 const { Command } = require('commander')
 const { runBranchNew } = require('../branch/runner')
+const { runBranchPrune } = require('../branch/prune')
 
 function createBranchCommand() {
   const cmd = new Command('branch')
@@ -43,6 +44,39 @@ function createBranchCommand() {
     })
 
   cmd.addCommand(newCmd)
+
+  const pruneCmd = new Command('prune')
+  pruneCmd
+    .description('Report (and, with --apply, delete) local branches already integrated into origin/main')
+    .addHelpText(
+      'after',
+      '\n' +
+      'trackfw branch prune replaces the 6-step manual procedure documented in CLAUDE.md §1\n' +
+      '("Uma branch ativa por vez") with a deterministic, offline command.\n\n' +
+      "Decides integration with the touched-files heuristic, NOT git's own ancestry check (which\n" +
+      'always refuses squash-merged branches) and NOT a naive bidirectional diff against origin/main\n' +
+      '(which false-positives on a branch that is merged but stale, once main has advanced further):\n\n' +
+      '  mb      = git merge-base origin/main <branch>\n' +
+      '  touched = git diff --name-only mb <branch>                 (what the branch touched)\n' +
+      '  diverg  = git diff --name-only origin/main <branch> -- touched  (what still differs there)\n\n' +
+      'touched empty -> integrated (safe to delete)\n' +
+      'diverg empty  -> integrated (safe to delete) -- squash-merged, stale, main advanced since\n' +
+      'otherwise     -> kept, with the diverging files named\n\n' +
+      'Every local branch is reported, always, with its decision and reason. The current branch, any\n' +
+      'branch checked out in another worktree, and the default branch (main) are always kept and\n' +
+      'never evaluated for deletion. Without origin/main resolvable (offline, no remote, never\n' +
+      'fetched), the whole command refuses and deletes nothing.\n\n' +
+      '--dry-run is the default: without --apply, nothing is ever deleted, even the clearly integrated.'
+    )
+    .option('--apply', 'Actually delete branches decided as integrated (default: report only, delete nothing)', false)
+    .action((options) => {
+      const exitCode = runBranchPrune(!!options.apply, {})
+      if (exitCode !== 0) {
+        process.exit(exitCode)
+      }
+    })
+
+  cmd.addCommand(pruneCmd)
   return cmd
 }
 

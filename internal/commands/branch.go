@@ -57,6 +57,7 @@ func newBranchCmd() *cobra.Command {
 		Short: "Manage governed feature branches",
 	}
 	cmd.AddCommand(newBranchNewCmd())
+	cmd.AddCommand(newBranchPruneCmd())
 	return cmd
 }
 

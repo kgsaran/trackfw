@@ -27,7 +27,7 @@ Supported runtimes: Go 1.25+, Node.js 18+, and Python 3.10+.
 | `skills` | yes | yes | yes | `list`, `install`, `uninstall`, `update` across supported AI CLIs |
 | `note` | yes | yes | yes | `new <title>` — creates `vault/notes/<slug>-YYYY-MM-DD.md` and links in `index.md`; idempotent (fails on duplicate) |
 | `ship` | yes | yes | yes | Governed `git commit + push + open PR/MR` for `feat`/`fix`/`refactor`/`chore`/`docs` branches; hard governance gate for `feat`/`fix`/`refactor` only — `chore`/`docs` skip it (see below) |
-| `branch` | yes | yes | yes | `new <type>/<slug>` — for `feat`/`fix`/`refactor`, gates `git checkout -b` on the same `branch_has_wip_roadmap` matching logic `trackfw validate` already applies, moving the check before branch creation instead of after; `chore`/`docs` create the branch without that gate, mirroring the housekeeping exemption `trackfw ship`/`trackfw commit` already grant those types (see below) |
+| `branch` | yes | yes | yes | `new <type>/<slug>` — for `feat`/`fix`/`refactor`, gates `git checkout -b` on the same `branch_has_wip_roadmap` matching logic `trackfw validate` already applies, moving the check before branch creation instead of after; `chore`/`docs` create the branch without that gate, mirroring the housekeeping exemption `trackfw ship`/`trackfw commit` already grant those types (see below). `prune [--apply]` — reports (and, with `--apply`, deletes) local branches already integrated into `origin/main` via the touched-files heuristic (see below); `--dry-run` behavior is the default, `--apply` is opt-in |
 | `gemini` / `cursor` / `copilot` / `windsurf` / `amazonq` | yes | no | no | Historical Go-only compatibility aliases |
 | `version` / `--version` | yes | yes | yes | Both print the same single line: `trackfw <semver>`, no `v` prefix — see "Version output" below |
 | `changelog` | yes | yes | yes | Reads `CHANGELOG.md` at project root; no flags prints the first `## [...]` section (`Unreleased` or latest version); `--version <x.y.z>` prints a specific section (accepts an optional leading `v`); `--all` prints the entire file. Error messages byte-identical: `CHANGELOG.md not found — nothing to show`, `version "<x>" not found in CHANGELOG.md` |
@@ -948,6 +948,103 @@ exit code are byte-identical across all three runtimes:
 Wired into `make quality` via the `parity` target. `scripts/check-gates-falsify.sh` proves the
 gate is non-vacuous (P4): a corrupted Node.js build that reformats the `blocked: ...` stderr
 message is a scenario the gate is asserted to reject.
+
+## `trackfw branch prune`
+
+`trackfw branch prune [--apply]` replaces the 6-step manual procedure documented in `CLAUDE.md`
+§1 ("Uma branch ativa por vez") with a deterministic, offline command
+(`docs/req/REQ-2026-08-18-trackfw-branch-prune-apaga-branch-local-ja-integrada-com-deteccao-correta-de-squash-merge.md`).
+It decides whether each local branch is safe to delete relative to `origin/main` — never a forge,
+never the network — and reports the decision for **every** local branch, always, with a reason.
+
+**`--dry-run` is the default.** Without `--apply`, nothing is ever deleted, even a branch decided
+as clearly integrated — the command only reports. `--apply` is the explicit opt-in required to
+actually run `git branch -D`.
+
+### Why not `git branch -d`, and why not a naive `git diff`
+
+`git branch -d` refuses by **ancestry** — with squash-merge as the project's merge strategy,
+ancestry never exists, so `-d` refuses *every* integrated branch, teaching users to reach for
+`-D`, which deletes without checking anything. A naive bidirectional
+`git diff origin/main <branch> --stat` is only correct when `<branch>` is up to date with `main`;
+on a **stale** branch it reflects how far `main` has moved, not whether the branch's own work
+landed — the exact false positive `detectPendingSquashMerges` (`trackfw ship`, `ship.go:564`)
+had before this REQ, which acknowledged a merged PR (#181) as having "unmerged changes" only
+because a later PR (#182) had since advanced `main`.
+
+### The touched-files heuristic — the single shared decision function
+
+```
+mb      = git merge-base origin/main <branch>
+touched = git diff --name-only -z mb <branch>                      (what the branch touched)
+diverg  = git diff --name-only -z origin/main <branch> -- touched  (what still differs there)
+```
+
+| `touched` | `diverg` | Decision | Deletable |
+|---|---|---|---|
+| empty | — | `no_own_work` | yes — the `git branch -d` ancestry false negative |
+| non-empty | empty | `content_identical` | yes — the naive-diff stale-but-integrated false positive |
+| non-empty | non-empty | `pending_work` | no — named in the report |
+| (merge-base fails) | — | `no_merge_base` | no — refuses, unrelated history or bad ref |
+
+Both `diff` calls use `-z` (NUL-separated, unquoted paths) — without it, a filename with a space
+or non-ASCII byte would be mis-split by the pathspec on the second call, silently narrowing
+`diverg` to nothing and deleting a branch with real pending work in that file.
+
+This decision function — `evaluateBranchIntegration` (Go), `evaluateBranchIntegration` (Node.js),
+`evaluate_branch_integration` (Python) — is the **single shared implementation**; `trackfw ship`'s
+`detectPendingSquashMerges` is expected to call it instead of maintaining its own bidirectional
+diff (tracked separately; see the roadmap's Wave 2).
+
+### Always-kept branches — never evaluated for deletion, never candidates
+
+- **`main`** — the default branch itself. Evaluating it against `origin/main` would trivially
+  report `no_own_work` (its own merge-base against itself is its own tip) and offer to delete the
+  branch the user is meant to keep. Excluded by name before the heuristic ever runs — the
+  highest-severity failure mode this command guards against.
+- **The current branch** — via `git symbolic-ref --quiet --short HEAD` (empty on detached HEAD).
+- **Any branch checked out in another worktree** — via `git worktree list --porcelain`, parsing
+  the `branch refs/heads/<name>` line (not the human-readable format).
+
+With `--apply`, current-branch and worktree status are **re-checked immediately before each
+delete**, not just during the report phase — belt-and-suspenders against the branch changing
+state mid-run.
+
+### Offline / no remote — fails closed
+
+The only ref this command consults is `origin/main`, checked once via
+`git rev-parse --verify -q origin/main` before evaluating anything. If it cannot be resolved (no
+remote configured, or `origin/main` was never fetched), the **whole command** refuses and deletes
+nothing — no fallback to a local `main`, no network fetch attempted. The human-readable reason
+goes to stdout; a bare `branch prune: origin/main not resolvable` goes to stderr (mirroring
+`trackfw branch new`'s stdout/stderr split), exit 1.
+
+### Command surface
+
+| Element | Value |
+|---|---|
+| Invocation | `trackfw branch prune [--apply]` |
+| `--apply` | Actually delete branches decided as integrated. Default: report only, delete nothing (equivalent to an implicit `--dry-run`) |
+| Exit 0 | Ran to completion — includes the case where `--apply` deleted zero branches |
+| Exit 1 | `origin/main` unresolvable (offline, no remote, never fetched), or local branch listing failed |
+| Deletion | `git branch -D` (never `-d` — see above); only for branches decided `no_own_work` or `content_identical`, and never the current/worktree/default branch |
+
+### Parity gate
+
+`scripts/check-branch-prune-parity.sh` builds a **real** local bare repository as `origin` (no
+mock of `git` — see `vault/notes/` precedent, Cenário 50 in `check-gates-falsify.sh`) and asserts
+byte-identical stdout/stderr/exit code across all three runtimes for:
+
+1. **Dry-run (default)** — reports two integrated branches (one squash-merged same-session, one
+   stale-but-integrated after `main` advanced further — the AC2 discriminant) as deletable and a
+   genuinely pending branch as kept, but deletes **nothing**; branch count unchanged.
+2. **`--apply`** — deletes exactly the two integrated branches, keeps the pending branch and
+   `main`.
+3. **`--apply` with the integrated branch checked out as current** — never deletes it, reports
+   the current-branch reason instead.
+4. **Offline** (fresh repo, no remote) — refuses everything, exit 1, deletes nothing.
+
+Wired into `make quality` via the `parity` target.
 
 ## `trackfw barrier`
 

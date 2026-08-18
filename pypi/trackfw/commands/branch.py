@@ -32,6 +32,315 @@ from .. import config as _config
 from .. import validator as _validator
 
 
+# ────────────────────────────────────────────────────────────────────────────
+# `trackfw branch prune` — espelha internal/commands/branch_prune.go byte a byte em
+# comportamento e texto de mensagem (Go é a referência comportamental,
+# docs/cli-parity.md). Decide se uma branch local é segura para apagar pela
+# heurística de arquivos-tocados documentada em CLAUDE.md §1 e
+# REQ-2026-08-18-trackfw-branch-prune-apaga-branch-local-ja-integrada-com-deteccao-
+# correta-de-squash-merge.md — NÃO pela ancestralidade do próprio git
+# (`git branch -d`, que sempre recusa branch squash-mergeada) e NÃO por um diff
+# bidirecional ingênuo contra origin/main (que dá falso-positivo numa branch
+# integrada porém defasada, quando a main avançou por outros PRs).
+#
+# evaluate_branch_integration é a implementação única e compartilhada — o ML-2A
+# (pypi/trackfw/ship/runner.py:_detect_pending_squash_merges) deve chamá-la em vez
+# de reimplementar o diff bidirecional.
+# ────────────────────────────────────────────────────────────────────────────
+
+# Única fonte de verdade que este comando consulta: o ref de rastreamento local da
+# branch default. Por decisão 2 da REQ-2026-08-18, não há consulta a forge nem
+# chamada de rede — offline e determinístico por desenho. Se este ref não puder
+# ser resolvido (sem remoto configurado, ou nunca dado fetch), o comando inteiro
+# se recusa e não apaga nada.
+BRANCH_PRUNE_DEFAULT_REMOTE_REF = "origin/main"
+
+# Nome da branch local que corresponde a BRANCH_PRUNE_DEFAULT_REMOTE_REF. Sempre
+# excluída como candidata a apagar — avaliá-la contra si mesma reportaria "sem
+# trabalho próprio" e ofereceria para apagar a branch que o usuário deve manter
+# (merge-base origin/main main == a própria ponta de main, então "touched" fica
+# trivialmente vazio). É o bug de maior severidade que a heurística ingênua
+# contém.
+BRANCH_PRUNE_DEFAULT_LOCAL_NAME = "main"
+
+BRANCH_PRUNE_DECISION_DEFAULT_BRANCH = "default_branch"
+BRANCH_PRUNE_DECISION_CURRENT_BRANCH = "current_branch"
+BRANCH_PRUNE_DECISION_WORKTREE = "worktree_branch"
+BRANCH_PRUNE_DECISION_NO_OWN_WORK = "no_own_work"
+BRANCH_PRUNE_DECISION_IDENTICAL = "content_identical"
+BRANCH_PRUNE_DECISION_PENDING_WORK = "pending_work"
+BRANCH_PRUNE_DECISION_NO_MERGE_BASE = "no_merge_base"
+BRANCH_PRUNE_DECISION_EVAL_ERROR = "eval_error"
+
+_BRANCH_PRUNE_DELETABLE_DECISIONS = {
+    BRANCH_PRUNE_DECISION_NO_OWN_WORK,
+    BRANCH_PRUNE_DECISION_IDENTICAL,
+}
+
+
+def branch_prune_is_deletable(decision: str) -> bool:
+    """Reporta se decision, por si só, torna a branch candidata a apagar. Tanto
+    no_own_work (squash-merge sem ancestralidade — o falso negativo do
+    `git branch -d`) quanto content_identical (defasada porém integrada — o
+    falso positivo do diff ingênuo) são seguras para apagar; qualquer outra
+    decisão mantém a branch."""
+    return decision in _BRANCH_PRUNE_DELETABLE_DECISIONS
+
+
+def split_nul_paths(raw: str):
+    """Divide uma saída NUL-separada de `git diff --name-only -z` numa lista de
+    caminhos ordenada e sem vazios. Um NUL final (git sempre emite um depois da
+    última entrada) produz um elemento vazio final, que é descartado."""
+    parts = raw.split("\x00")
+    return sorted(p for p in parts if p != "")
+
+
+def evaluate_branch_integration(branch: str, exec_git) -> dict:
+    """Decide se branch é seguro apagar em relação a
+    BRANCH_PRUNE_DEFAULT_REMOTE_REF, usando a heurística de arquivos-tocados:
+
+        mb      = git merge-base origin/main <branch>
+        touched = git diff --name-only mb <branch>                       (o que a branch tocou)
+        diverg  = git diff --name-only origin/main <branch> -- touched   (o que ainda difere lá)
+
+    touched vazio    -> no_own_work (apagável)       -- o falso negativo squash-merge/-d
+    diverg vazio     -> content_identical (apagável) -- o falso positivo do diff ingênuo
+    diverg não-vazio -> pending_work (mantida, explicada)
+
+    Ambas as chamadas de diff usam -z (separadas por NUL, caminhos sem quoting)
+    para que nomes de arquivo com espaço ou bytes não-ASCII nunca sejam
+    mal-divididos — exatamente a classe de bug que faria uma branch com trabalho
+    pendente em "foo bar.md" ler diverg como vazio e ser apagada.
+
+    exec_git(args: list[str]) -> (stdout_str, error_str_or_None) — mesmo
+    contrato de trackfw.ship.runner.default_exec_git.
+    """
+    mb, mb_err = exec_git(["merge-base", BRANCH_PRUNE_DEFAULT_REMOTE_REF, branch])
+    mb = (mb or "").strip()
+    if mb_err is not None or mb == "":
+        return {
+            "name": branch,
+            "decision": BRANCH_PRUNE_DECISION_NO_MERGE_BASE,
+            "reason": (
+                f"no merge-base with {BRANCH_PRUNE_DEFAULT_REMOTE_REF} — refusing "
+                "(unrelated history or bad ref)"
+            ),
+            "touched": [],
+            "diverged": [],
+        }
+
+    touched_raw, touched_err = exec_git(["diff", "--name-only", "-z", mb, branch])
+    if touched_err is not None:
+        return {
+            "name": branch,
+            "decision": BRANCH_PRUNE_DECISION_EVAL_ERROR,
+            "reason": f"git diff --name-only -z {mb} {branch} failed: {touched_err}",
+            "touched": [],
+            "diverged": [],
+        }
+    touched = split_nul_paths(touched_raw)
+
+    if not touched:
+        return {
+            "name": branch,
+            "decision": BRANCH_PRUNE_DECISION_NO_OWN_WORK,
+            "reason": f"no own work relative to {BRANCH_PRUNE_DEFAULT_REMOTE_REF} — safe to delete",
+            "touched": [],
+            "diverged": [],
+        }
+
+    diverg_raw, diverg_err = exec_git(
+        ["diff", "--name-only", "-z", BRANCH_PRUNE_DEFAULT_REMOTE_REF, branch, "--", *touched]
+    )
+    if diverg_err is not None:
+        return {
+            "name": branch,
+            "decision": BRANCH_PRUNE_DECISION_EVAL_ERROR,
+            "reason": (
+                f"git diff --name-only -z {BRANCH_PRUNE_DEFAULT_REMOTE_REF} {branch} "
+                f"-- <touched> failed: {diverg_err}"
+            ),
+            "touched": touched,
+            "diverged": [],
+        }
+    diverg = split_nul_paths(diverg_raw)
+
+    if not diverg:
+        return {
+            "name": branch,
+            "decision": BRANCH_PRUNE_DECISION_IDENTICAL,
+            "reason": (
+                f"squash-merged into {BRANCH_PRUNE_DEFAULT_REMOTE_REF} — content identical "
+                "in touched files, safe to delete"
+            ),
+            "touched": touched,
+            "diverged": [],
+        }
+
+    return {
+        "name": branch,
+        "decision": BRANCH_PRUNE_DECISION_PENDING_WORK,
+        "reason": f"pending work vs {BRANCH_PRUNE_DEFAULT_REMOTE_REF}: {', '.join(diverg)}",
+        "touched": touched,
+        "diverged": diverg,
+    }
+
+
+def _default_list_local_branches(exec_git):
+    """Roda `git branch --format=%(refname:short)` e retorna uma lista com uma
+    branch por linha não-vazia. Retorna (branches, error_str_or_None)."""
+    raw, err = exec_git(["branch", "--format=%(refname:short)"])
+    if err is not None:
+        return [], err
+    branches = [line.strip() for line in raw.split("\n") if line.strip() != ""]
+    return branches, None
+
+
+def _default_current_branch_for_prune(exec_git):
+    """Retorna o nome curto da branch atual, ou "" em HEAD destacado."""
+    name, err = exec_git(["symbolic-ref", "--quiet", "--short", "HEAD"])
+    if err is not None:
+        return ""
+    return (name or "").strip()
+
+
+def _default_worktree_branches(exec_git):
+    """Faz parsing de `git worktree list --porcelain` e retorna o conjunto de
+    nomes curtos de branch em uso em qualquer worktree. Usa a linha porcelain
+    "branch refs/heads/<name>", não o formato legível por humano."""
+    raw, err = exec_git(["worktree", "list", "--porcelain"])
+    result = set()
+    if err is not None:
+        return result
+    prefix = "branch refs/heads/"
+    for raw_line in raw.split("\n"):
+        line = raw_line.strip()
+        if line.startswith(prefix):
+            result.add(line[len(prefix):])
+    return result
+
+
+def _default_delete_branch(exec_git, name):
+    """Roda `git branch -D <name>`. -D é intencional: -d recusa por
+    ancestralidade, exatamente o que este comando existe para contornar com
+    segurança via evaluate_branch_integration."""
+    _, err = exec_git(["branch", "-D", name])
+    return err
+
+
+def run_branch_prune(
+    apply: bool = False,
+    exec_git=None,
+    list_local_branches=None,
+    current_branch=None,
+    worktree_branches=None,
+    delete_branch=None,
+    out=None,
+    err_out=None,
+) -> int:
+    """Implementa `trackfw branch prune`.
+
+    --dry-run é o padrão (apply=False): sem --apply, nada é apagado, nem o
+    claramente integrado. A branch atual, qualquer branch em outro worktree, e a
+    branch default (main) são sempre mantidas e nunca avaliadas para apagar.
+    Sem origin/main resolvível (offline, sem remoto, nunca deu fetch), o comando
+    inteiro se recusa e não apaga nada.
+
+    Retorna o exit code do processo (0 = rodou até o fim, 1 = origin/main
+    irresolvível).
+    """
+    from ..ship import runner as _ship_runner  # import tardio: mantém commands/branch.py sem
+    # dependência de import-time em ship/runner.py, usado só para o default de exec_git.
+
+    exec_git = exec_git or _ship_runner.default_exec_git
+    list_local_branches = list_local_branches or _default_list_local_branches
+    current_branch = current_branch or _default_current_branch_for_prune
+    worktree_branches = worktree_branches or _default_worktree_branches
+    delete_branch = delete_branch or _default_delete_branch
+    out = out or sys.stdout
+    err_out = err_out or sys.stderr
+
+    _, origin_err = exec_git(["rev-parse", "--verify", "-q", BRANCH_PRUNE_DEFAULT_REMOTE_REF])
+    if origin_err is not None:
+        out.write(
+            f"trackfw branch prune: {BRANCH_PRUNE_DEFAULT_REMOTE_REF} not found — offline, "
+            "no remote configured, or never fetched. Refusing to evaluate any branch; nothing "
+            "deleted.\n"
+        )
+        # Espelha internal/commands/branch_prune.go: a mensagem legível vai para stdout acima, e
+        # o erro puro (mesmo padrão de `branch new`) vai para stderr.
+        err_out.write(f"branch prune: {BRANCH_PRUNE_DEFAULT_REMOTE_REF} not resolvable\n")
+        return 1
+
+    branches, list_err = list_local_branches(exec_git)
+    if list_err is not None:
+        out.write(f"trackfw branch prune: failed to list local branches: {list_err}\n")
+        err_out.write(f"{list_err}\n")
+        return 1
+    branches = sorted(branches)
+
+    current = current_branch(exec_git)
+    worktreed = worktree_branches(exec_git)
+
+    out.write(
+        f"trackfw branch prune — evaluating {len(branches)} local branch(es) against "
+        f"{BRANCH_PRUNE_DEFAULT_REMOTE_REF}\n\n"
+    )
+
+    to_delete = []
+    for b in branches:
+        if b == BRANCH_PRUNE_DEFAULT_LOCAL_NAME:
+            ev = {"name": b, "decision": BRANCH_PRUNE_DECISION_DEFAULT_BRANCH, "reason": "default branch — never pruned"}
+        elif b == current:
+            ev = {"name": b, "decision": BRANCH_PRUNE_DECISION_CURRENT_BRANCH, "reason": "current branch — never pruned"}
+        elif b in worktreed:
+            ev = {"name": b, "decision": BRANCH_PRUNE_DECISION_WORKTREE, "reason": "checked out in another worktree — never pruned"}
+        else:
+            ev = evaluate_branch_integration(b, exec_git)
+
+        action = "delete" if branch_prune_is_deletable(ev["decision"]) else "keep"
+        if action == "delete":
+            to_delete.append(b)
+        out.write(f"  {ev['name']:<30} {action:<7} {ev['reason']}\n")
+
+    out.write("\n")
+    if not apply:
+        if not to_delete:
+            out.write("[dry-run] nothing to delete.\n")
+        else:
+            out.write(
+                f"[dry-run] would delete {len(to_delete)} branch(es): {', '.join(to_delete)}. "
+                "Rerun with --apply to delete.\n"
+            )
+        return 0
+
+    if not to_delete:
+        out.write("nothing to delete.\n")
+        return 0
+
+    deleted = []
+    for b in to_delete:
+        # Reconfirma imediatamente antes de cada delete — cinto e suspensório contra a
+        # branch mudar de estado entre o relatório acima e este loop.
+        if b == current_branch(exec_git):
+            out.write(f"skip {b}: became the current branch — refusing to delete\n")
+            continue
+        if b in worktree_branches(exec_git):
+            out.write(f"skip {b}: became checked out in a worktree — refusing to delete\n")
+            continue
+        del_err = delete_branch(exec_git, b)
+        if del_err is not None:
+            out.write(f"failed to delete {b}: {del_err}\n")
+            continue
+        deleted.append(b)
+
+    if not deleted:
+        out.write("deleted 0 branch(es).\n")
+    else:
+        out.write(f"deleted {len(deleted)} branch(es): {', '.join(deleted)}\n")
+    return 0
+
+
 # BRANCH_VALID_TYPES é o vocabulário completo aceito por `trackfw branch new`. feat/fix/refactor
 # são gated numa REQ + roadmap correspondente já em wip/ ou done/ (BRANCH_GATED_TYPES abaixo);
 # chore/docs são tipos de housekeeping — já tratados como isentos de roadmap por `trackfw ship` e
@@ -97,6 +406,49 @@ def register(subparsers):
         help="Report whether the branch would be created or blocked, without executing git",
     )
     new_p.set_defaults(func=_dispatch_new)
+
+    prune_p = sub.add_parser(
+        "prune",
+        help=(
+            "Report (and, with --apply, delete) local branches already integrated into "
+            "origin/main"
+        ),
+        description=(
+            "trackfw branch prune replaces the 6-step manual procedure documented in "
+            "CLAUDE.md §1 (\"Uma branch ativa por vez\") with a deterministic, offline "
+            "command.\n\n"
+            "Decides integration with the touched-files heuristic, NOT git's own ancestry "
+            "check (which always refuses squash-merged branches) and NOT a naive "
+            "bidirectional diff against origin/main (which false-positives on a branch that "
+            "is merged but stale, once main has advanced further):\n\n"
+            "  mb      = git merge-base origin/main <branch>\n"
+            "  touched = git diff --name-only mb <branch>                 "
+            "(what the branch touched)\n"
+            "  diverg  = git diff --name-only origin/main <branch> -- touched  "
+            "(what still differs there)\n\n"
+            "touched empty -> integrated (safe to delete)\n"
+            "diverg empty  -> integrated (safe to delete) -- squash-merged, stale, main "
+            "advanced since\n"
+            "otherwise     -> kept, with the diverging files named\n\n"
+            "Every local branch is reported, always, with its decision and reason. The "
+            "current branch, any branch checked out in another worktree, and the default "
+            "branch (main) are always kept and never evaluated for deletion. Without "
+            "origin/main resolvable (offline, no remote, never fetched), the whole command "
+            "refuses and deletes nothing.\n\n"
+            "--dry-run is the default: without --apply, nothing is ever deleted, even the "
+            "clearly integrated."
+        ),
+    )
+    prune_p.add_argument(
+        "--apply",
+        action="store_true",
+        default=False,
+        help=(
+            "Actually delete branches decided as integrated (default: report only, delete "
+            "nothing)"
+        ),
+    )
+    prune_p.set_defaults(func=_dispatch_prune)
 
     def _branch_default(args):
         branch_parser.print_help()
@@ -214,4 +566,9 @@ def run_branch_new(
 
 def _dispatch_new(args):
     exit_code = run_branch_new(args.spec, dry_run=args.dry_run)
+    sys.exit(exit_code)
+
+
+def _dispatch_prune(args):
+    exit_code = run_branch_prune(apply=args.apply)
     sys.exit(exit_code)

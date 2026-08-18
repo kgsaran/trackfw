@@ -19461,3 +19461,45 @@ lado a lado (forma antiga falha / forma nova passa).
 Nenhum `git commit`/`push`/branch executado por mim. Handoff para `trackfw_architect`: auditar,
 commitar, dar push e confirmar `parity` verde no CI do PR #186 — essa última verificação depende do
 CI real e é responsabilidade do arquiteto pós-push.
+
+## Sessão 2026-08-18 — Apolo (ML-1A — `trackfw branch prune`, heurística de arquivos-tocados)
+
+Branch `fix/branch-prune-com-dry-run-por-padrao-e-heuristica-de-arquivos-tocados`, roadmap
+`docs/roadmaps/wip/ROADMAP-2026-08-18-branch-prune-com-dry-run-por-padrao-e-heuristica-de-arquivos-tocados.md`,
+REQ `docs/req/REQ-2026-08-18-trackfw-branch-prune-apaga-branch-local-ja-integrada-com-deteccao-correta-de-squash-merge.md`.
+Executei o ML-1A: `trackfw branch prune` (novo comando destrutivo, `--apply` opt-in, dry-run
+padrão) + a heurística de arquivos-tocados como função única reutilizável nos 3 CLIs
+(`evaluateBranchIntegration`/`evaluate_branch_integration`), para substituir tanto a
+ancestralidade do `git branch -d` (que sempre recusa squash-merge) quanto o diff bidirecional
+ingênuo (falso-positivo em branch defasada porém integrada — bug real medido no PR #181/#182).
+Nenhum `git commit`/`push`/`branch` executado por mim durante a implementação (autoridade
+exclusiva do `trackfw_architect`); toda a evidência de repositório git real veio de subprocessos
+disparados por `go test`/`node --test`/`pytest`/`scripts/check-branch-prune-parity.sh`, nunca de
+`git commit` literal no meu Bash.
+
+**Arquivos:** `internal/commands/branch_prune.go` (+ `branch_prune_test.go`),
+`internal/commands/branch.go` (registro do subcomando); `npm/src/branch/prune.js` (+
+`npm/tests/branch-prune.test.js`), `npm/src/commands/branch.js` (wiring); lógica embutida em
+`pypi/trackfw/commands/branch.py` (mesmo padrão do `run_branch_new` já existente) + `pypi/tests/
+test_branch_prune.py`; `scripts/check-branch-prune-parity.sh` (novo gate de paridade, real
+bare-repo `origin` + clone, 4 cenários); `Makefile` (wired em `parity`); `docs/cli-parity.md`
+(nova seção `trackfw branch prune`).
+
+**Decisão de maior risco fechada antes do código de produção** (apontada pelo advisor): a
+heurística aplicada literalmente a "cada branch local" classificaria a própria `main` como
+integrada e a ofereceria para apagar (`merge-base origin/main main` == a ponta de `main`,
+`touched` vazio). `main` é excluída por nome nos 3 CLIs, com teste dedicado que falha se `main`
+aparecer como candidata a `delete` em qualquer saída.
+
+**Evidência:** `go test ./...` (todos os pacotes ok), `node --test` (677/677), `pytest` (1356
+passed), `GO_BIN=bin/trackfw scripts/check-branch-prune-parity.sh` (4/4 OK, repositório git real
+com squash-merge simulado), `make quality` completo saiu com exit code 0 (build + os 3 test
+suites + lint + todos os scripts de parity/falsify, incluindo o novo). `./bin/trackfw validate`:
+mesmos 19 warnings pré-existentes, 0 violações novas.
+
+**Fora de escopo desta ML, confirmado:** ML-2A (convergir `detectPendingSquashMerges` do `ship`
+para usar `evaluateBranchIntegration`) não foi tocado — fica para a Wave 2 do roadmap, que já
+delimitava essa dependência. ML-3A (revisão de segurança do `hades-tf`) também pendente.
+
+Handoff para `trackfw_architect`: auditar o diff, commitar e dar push. ML-1A marcado ✅ Concluído
+no roadmap com evidência bruta colada na seção correspondente.
