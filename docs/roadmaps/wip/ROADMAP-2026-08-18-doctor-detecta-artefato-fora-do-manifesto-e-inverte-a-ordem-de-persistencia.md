@@ -8,7 +8,11 @@ squad: "apolo-tf, hades-tf"
 
 # Roadmap: `doctor` detecta artefato fora do manifesto, e a ordem de persistência inverte
 
-> Created: 2026-08-18 | Status: wip
+> Created: 2026-08-18 | Status: wip — **Wave 1 entregue em PR próprio; Waves 2 e 3 pendentes**
+
+> 🔴 **Entrega parcial deliberada.** A Wave 1 (inversão da ordem) foi para PR sozinha porque é
+> autocontida e impede casos novos desde já. **A REQ NÃO está fechada:** o `doctor` (AC1–AC4) e a
+> barreira ainda não existem, e instalações que já estão no estado ruim seguem sem detecção.
 
 ## Context
 
