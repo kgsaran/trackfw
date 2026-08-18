@@ -69,6 +69,34 @@ var globalGuardConfigFiles = []globalGuardConfigFile{
 	{".kiro/hooks/trackfw-credential-guard.json", "Kiro"},
 }
 
+// globalGuardConfigPath resolves the actual on-disk path (relative to $HOME) that
+// validateGuardGlobalHookResolvable must read for a given (globalGuardConfigFile, scriptMarker)
+// pair. For 5 of the 6 CLIs, gf.path already applies uniformly to both guards — Claude/Codex/
+// Gemini/Cursor/Copilot merge both credential-guard and git-branch-guard entries into the SAME
+// file (harnessCredentialGuardTarget*/harnessGitBranchGuardTarget*, internal/generators/
+// agentfiles.go, both write into one shared document via mergeClaudeHookArray-equivalent helpers).
+//
+// Kiro is the sole exception (ROADMAP-2026-08-17 ML-2A, decision ratified by the architect): its
+// writer rewrites the whole document wholesale instead of merging, so sharing one file between two
+// independent wholesale writers would make both targets flap forever. Kiro therefore gets a
+// SEPARATE dedicated file per guard — ~/.kiro/hooks/trackfw-credential-guard.json (gf.path, the
+// default already in globalGuardConfigFiles above) and
+// ~/.kiro/hooks/trackfw-git-branch-guard.json (only reachable for scriptMarker ==
+// gitBranchGuardScriptMarker). check-harness-hooks-parity.sh's hookfile_for() encodes the exact
+// same (cli, guard) -> path mapping on the generator side; this is the validator's read-side
+// mirror of it.
+//
+// ROADMAP-2026-08-17 ML-3B: before this function existed, globalGuardConfigFiles only ever pointed
+// Kiro at trackfw-credential-guard.json for BOTH guards, so git_branch_guard_hook_resolvable never
+// inspected ~/.kiro/hooks/trackfw-git-branch-guard.json at all — the exact class of bug (artifact
+// wired, never verified) this whole REQ exists to close, reintroduced in miniature by ML-2A itself.
+func globalGuardConfigPath(gf globalGuardConfigFile, scriptMarker string) string {
+	if gf.cli == "Kiro" && scriptMarker == gitBranchGuardScriptMarker {
+		return ".kiro/hooks/trackfw-git-branch-guard.json"
+	}
+	return gf.path
+}
+
 // validateGuardGlobalHookResolvable is the GLOBAL-scope counterpart of validateGuardHookResolvable
 // (validator_credential_guard.go): for each of the 6 globalGuardConfigFiles that exists AND
 // references scriptMarker, verifies the referenced script exists and is executable.
@@ -104,13 +132,14 @@ func validateGuardGlobalHookResolvable(ruleName, scriptMarker string) ([]string,
 
 	var msgs []string
 	for _, gf := range globalGuardConfigFiles {
-		fullPath := filepath.Join(home, gf.path)
+		relPath := globalGuardConfigPath(gf, scriptMarker)
+		fullPath := filepath.Join(home, relPath)
 		content, readErr := os.ReadFile(fullPath)
 		if readErr != nil {
 			if os.IsNotExist(readErr) {
 				continue
 			}
-			return nil, fmt.Errorf("%s: lendo %s: %w", ruleName, filepath.Join("~", gf.path), readErr)
+			return nil, fmt.Errorf("%s: lendo %s: %w", ruleName, filepath.Join("~", relPath), readErr)
 		}
 
 		var parsed interface{}
@@ -137,12 +166,12 @@ func validateGuardGlobalHookResolvable(ruleName, scriptMarker string) ([]string,
 			case statErr != nil:
 				msgs = append(msgs, fmt.Sprintf(
 					"~/%s (%s, global scope) references %s resolved to %q, but the script does not exist — run `trackfw update harness` to regenerate it",
-					gf.path, gf.cli, scriptMarker, raw,
+					relPath, gf.cli, scriptMarker, raw,
 				))
 			case info.Mode()&0111 == 0:
 				msgs = append(msgs, fmt.Sprintf(
 					"~/%s (%s, global scope) references %s resolved to %q, but the script is not executable — run `trackfw update harness` to regenerate it",
-					gf.path, gf.cli, scriptMarker, raw,
+					relPath, gf.cli, scriptMarker, raw,
 				))
 			}
 		}

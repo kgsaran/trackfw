@@ -347,13 +347,13 @@ func TestGuardGlobalScriptIntegrity_GlobalInstaladoMasScriptCorrompido_Dispara(t
 	}
 }
 
-// TestGitBranchGuardGlobal_SemWiringGlobalHoje_Silencio — divergência de design documentada: hoje
-// nenhum harnessGitBranchGuardTarget* existe em internal/generators/agentfiles.go (só o script
-// GLOBAL é gerado por `trackfw update harness`, GenerateGlobalGitBranchGuardScript — nunca
-// referenciado em nenhum hooks.json/settings.json global). Então, mesmo com o script global
-// presente, nenhum arquivo de config global o referencia — o mecanismo genérico
-// (validateGuardGlobalHookResolvable/validateGuardGlobalScriptIntegrity) fica corretamente em
-// silêncio até essa wiring existir. Ver o relatório final do ML-1A para a nota completa.
+// TestGitBranchGuardGlobal_SemWiringGlobalHoje_Silencio — atualizado no ML-3B: a fiação global do
+// git-branch-guard EXISTE desde a Wave 2 (ML-2A), mas este teste não a exercita — nenhum dos 6
+// arquivos de globalGuardConfigFiles é escrito no fixture. Prova o caso "script global presente,
+// nenhum config o referencia" (usuário rodou `update harness` só parcialmente, ou nunca instalou a
+// fiação de nenhum CLI): validateGitBranchGuardGlobalHookResolvable deve permanecer em silêncio —
+// hook_resolvable é condicionado à fiação por desenho (ver nota do ML-3B no roadmap: "resolvibilidade
+// pergunta 'o hook aponta para algo que existe', o que só faz sentido havendo hook").
 func TestGitBranchGuardGlobal_SemWiringGlobalHoje_Silencio(t *testing.T) {
 	dir := t.TempDir()
 	chdir(t, dir)
@@ -475,5 +475,176 @@ func TestGuardGlobalScriptIntegrity_NaoDuplicaComDoisConfigsReferenciandoOMesmoS
 	}
 	if len(msgs) != 1 {
 		t.Errorf("esperado exatamente 1 mensagem (script referenciado por 2 configs), obteve %d: %v", len(msgs), msgs)
+	}
+}
+
+// ---- git_branch_guard_hook_resolvable / credential_guard_hook_resolvable (escopo GLOBAL, arquivo
+// DEDICADO do Kiro — ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-e-
+// integridade-independente-de-fiacao, ML-3B) ----
+
+// kiroGlobalGuardFixture monta o documento que harnessCredentialGuardTargetKiro/
+// harnessGitBranchGuardTargetKiro (internal/generators/update.go) escrevem de fato —
+// {"version":"v1","hooks":[{"name","description","trigger","matcher","action":{"type":"command",
+// "command":scriptAbsPath}}, ...]} com dois hooks pre/post — usando hookNamePrefix para distinguir
+// "trackfw-credential-guard" de "trackfw-git-branch-guard" (mesma convenção
+// "<tool>-<guard>-global-pre/-post" que os dois writers reais usam).
+func kiroGlobalGuardFixture(hookNamePrefix, scriptAbsPath string) string {
+	return `{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "` + hookNamePrefix + `-global-pre",
+      "description": "global pre hook",
+      "trigger": "PreToolUse",
+      "matcher": "shell",
+      "action": {"type": "command", "command": "` + scriptAbsPath + `"}
+    },
+    {
+      "name": "` + hookNamePrefix + `-global-post",
+      "description": "global post hook",
+      "trigger": "PostToolUse",
+      "matcher": "shell",
+      "action": {"type": "command", "command": "` + scriptAbsPath + `"}
+    }
+  ]
+}
+`
+}
+
+// TestGitBranchGuardGlobalHookResolvable_KiroDedicatedFile_DisparaScriptAusente — o discriminante
+// central do ML-3B: antes dele, globalGuardConfigFiles só apontava Kiro para
+// trackfw-credential-guard.json (para os dois guards), então ~/.kiro/hooks/
+// trackfw-git-branch-guard.json (escrito por harnessGitBranchGuardTargetKiro desde a Wave 2)
+// nunca era lido por validateGitBranchGuardGlobalHookResolvable — um hook Kiro apontando para
+// script ausente passava limpo. Agora deve violar.
+func TestGitBranchGuardGlobalHookResolvable_KiroDedicatedFile_DisparaScriptAusente(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	home := globalGuardHome(t)
+	t.Cleanup(config.Reset)
+
+	scriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-git-branch-guard.sh")
+	// scriptPath NÃO é criado — ausência proposital.
+	if err := os.MkdirAll(filepath.Join(home, ".kiro", "hooks"), 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(home, ".kiro", "hooks", "trackfw-git-branch-guard.json"),
+		[]byte(kiroGlobalGuardFixture("trackfw-git-branch-guard", scriptPath)),
+		0644,
+	); err != nil {
+		t.Fatalf("write kiro git-branch-guard hooks: %v", err)
+	}
+
+	msgs, err := validateGitBranchGuardGlobalHookResolvable()
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if !hasViolation(msgs, "does not exist") || !hasViolation(msgs, "trackfw-git-branch-guard.json") || !hasViolation(msgs, "Kiro") {
+		t.Errorf("esperado violation do arquivo dedicado do Kiro para git-branch-guard, obteve: %v", msgs)
+	}
+}
+
+// TestGitBranchGuardGlobalHookResolvable_KiroDedicatedFile_NaoDisparaScriptPresenteEExecutavel —
+// simétrico ao teste acima: script presente e executável não deve violar (prova que o teste acima
+// não é vácuo por outro motivo).
+func TestGitBranchGuardGlobalHookResolvable_KiroDedicatedFile_NaoDisparaScriptPresenteEExecutavel(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	home := globalGuardHome(t)
+	t.Cleanup(config.Reset)
+
+	scriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-git-branch-guard.sh")
+	if err := os.MkdirAll(filepath.Dir(scriptPath), 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(scriptPath, []byte(gitBranchGuardScriptReference), 0755); err != nil {
+		t.Fatalf("write global script: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(home, ".kiro", "hooks"), 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(home, ".kiro", "hooks", "trackfw-git-branch-guard.json"),
+		[]byte(kiroGlobalGuardFixture("trackfw-git-branch-guard", scriptPath)),
+		0644,
+	); err != nil {
+		t.Fatalf("write kiro git-branch-guard hooks: %v", err)
+	}
+
+	msgs, err := validateGitBranchGuardGlobalHookResolvable()
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if len(msgs) != 0 {
+		t.Errorf("esperado zero violations com script Kiro presente e executável, obteve: %v", msgs)
+	}
+}
+
+// TestGuardGlobalHookResolvable_KiroDoisArquivosDedicados_NaoRegrideNaoDuplica — não-regressão
+// (AC "credential-guard do Kiro inalterado; sem duplicar aviso"): com OS DOIS arquivos dedicados do
+// Kiro presentes simultaneamente (trackfw-credential-guard.json E trackfw-git-branch-guard.json),
+// cada um referenciando um script ausente distinto, cada regra deve reportar exatamente 1 violation
+// — nunca 0 (regressão de não-cobertura) nem 2+ (dupla contagem entre os dois arquivos/guards).
+func TestGuardGlobalHookResolvable_KiroDoisArquivosDedicados_NaoRegrideNaoDuplica(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	home := globalGuardHome(t)
+	t.Cleanup(config.Reset)
+
+	credScriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+	gbgScriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-git-branch-guard.sh")
+	// Nenhum dos dois scripts é criado — ambos ausentes propositalmente.
+
+	if err := os.MkdirAll(filepath.Join(home, ".kiro", "hooks"), 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(home, ".kiro", "hooks", "trackfw-credential-guard.json"),
+		[]byte(kiroGlobalGuardFixture("trackfw-credential-guard", credScriptPath)),
+		0644,
+	); err != nil {
+		t.Fatalf("write kiro credential-guard hooks: %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(home, ".kiro", "hooks", "trackfw-git-branch-guard.json"),
+		[]byte(kiroGlobalGuardFixture("trackfw-git-branch-guard", gbgScriptPath)),
+		0644,
+	); err != nil {
+		t.Fatalf("write kiro git-branch-guard hooks: %v", err)
+	}
+
+	credMsgs, err := validateCredentialGuardGlobalHookResolvable()
+	if err != nil {
+		t.Fatalf("erro inesperado (credential-guard): %v", err)
+	}
+	if len(credMsgs) != 1 {
+		t.Errorf("esperado exatamente 1 violation (credential-guard do Kiro), obteve %d: %v", len(credMsgs), credMsgs)
+	}
+
+	gbgMsgs, err := validateGitBranchGuardGlobalHookResolvable()
+	if err != nil {
+		t.Fatalf("erro inesperado (git-branch-guard): %v", err)
+	}
+	if len(gbgMsgs) != 1 {
+		t.Errorf("esperado exatamente 1 violation (git-branch-guard do Kiro), obteve %d: %v", len(gbgMsgs), gbgMsgs)
+	}
+}
+
+// TestGitBranchGuardGlobalHookResolvable_KiroSemArquivoDedicado_Silencio — ausência do arquivo
+// dedicado (usuário nunca rodou `update harness --targets kiro-git-branch-guard`) permanece
+// silenciosa — mesmo contrato fail-open de todos os outros 5 CLIs.
+func TestGitBranchGuardGlobalHookResolvable_KiroSemArquivoDedicado_Silencio(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	globalGuardHome(t)
+	t.Cleanup(config.Reset)
+
+	msgs, err := validateGitBranchGuardGlobalHookResolvable()
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if len(msgs) != 0 {
+		t.Errorf("esperado silêncio sem arquivo dedicado do Kiro, obteve: %v", msgs)
 	}
 }

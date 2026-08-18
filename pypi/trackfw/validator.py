@@ -2608,6 +2608,24 @@ _GLOBAL_GUARD_CONFIG_FILES = [
 ]
 
 
+def _global_guard_config_path(rel_path: str, cli: str, script_marker: str) -> str:
+    """Resolve o caminho em disco (relativo a $HOME) que validate_guard_global_hook_resolvable
+    deve ler para um par (entrada de _GLOBAL_GUARD_CONFIG_FILES, script_marker). Port de
+    globalGuardConfigPath (internal/validator/validator_git_branch_guard.go) -- ver o doc comment
+    daquela função para o racional completo (5 CLIs compartilham um único arquivo baseado em merge
+    entre os dois guards; Kiro é a única exceção, com um arquivo dedicado por guard porque seu
+    writer reescreve o documento inteiro por vez).
+
+    ROADMAP-2026-08-17 ML-3B: antes desta função existir, _GLOBAL_GUARD_CONFIG_FILES sempre
+    apontava o Kiro para trackfw-credential-guard.json para os DOIS guards, então
+    git_branch_guard_hook_resolvable nunca inspecionava
+    ~/.kiro/hooks/trackfw-git-branch-guard.json.
+    """
+    if cli == "Kiro" and script_marker == _GIT_BRANCH_GUARD_SCRIPT_MARKER:
+        return ".kiro/hooks/trackfw-git-branch-guard.json"
+    return rel_path
+
+
 def validate_guard_global_hook_resolvable(script_marker: str, cwd: str = None) -> list:
     """Contraparte de escopo GLOBAL de validate_guard_hook_resolvable: para cada um dos 6
     _GLOBAL_GUARD_CONFIG_FILES que existir E referenciar script_marker, verifica que o script
@@ -2635,7 +2653,8 @@ def validate_guard_global_hook_resolvable(script_marker: str, cwd: str = None) -
         return []
 
     msgs = []
-    for rel_path, cli in _GLOBAL_GUARD_CONFIG_FILES:
+    for base_rel_path, cli in _GLOBAL_GUARD_CONFIG_FILES:
+        rel_path = _global_guard_config_path(base_rel_path, cli, script_marker)
         full_path = os.path.join(home, rel_path)
         try:
             with open(full_path, "r", encoding="utf-8") as f:

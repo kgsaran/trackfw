@@ -652,7 +652,7 @@ que o Cenário 46 defendia desde o vazamento de ambiente de 2026-08-08. Verifica
 ---
 
 ### ML-3B — `globalGuardConfigFiles` não cobre o arquivo dedicado do Kiro
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Status:** ✅ Concluído — pendente de auditoria do arquiteto · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
 
 **Confirmado por mim.** O ML-2A criou `~/.kiro/hooks/trackfw-git-branch-guard.json` (arquivo
 dedicado, decisão ratificada), mas `globalGuardConfigFiles` lista apenas
@@ -673,12 +673,79 @@ resolvibilidade pergunta "o hook aponta para algo que existe", o que só faz sen
 mudança por existência valia para **integridade**, não para resolvibilidade.
 
 **Critérios de aceite:**
-- [ ] `globalGuardConfigFiles` cobre o arquivo dedicado do Kiro para o `git-branch-guard`.
-- [ ] Hook do Kiro apontando para script ausente/não-executável é **acusado**.
-- [ ] Não-regressão: `credential-guard` do Kiro inalterado; sem duplicar aviso.
-- [ ] Paridade nos 3 CLIs; `$HOME` do fixture.
-- [ ] Cenário de falsificação com baseline e detecção.
-- [ ] `make quality` verde.
+- [x] `globalGuardConfigFiles` cobre o arquivo dedicado do Kiro para o `git-branch-guard`.
+- [x] Hook do Kiro apontando para script ausente/não-executável é **acusado**.
+- [x] Não-regressão: `credential-guard` do Kiro inalterado; sem duplicar aviso.
+- [x] Paridade nos 3 CLIs; `$HOME` do fixture.
+- [x] Cenário de falsificação com baseline e detecção.
+- [x] `make quality` verde.
+
+**Desenho escolhido (confirmado por leitura, não presumido):** a mesma forma de
+`check-harness-hooks-parity.sh`'s `hookfile_for(cli, guard)` — em vez de reestruturar
+`globalGuardConfigFiles` para uma lista `(cli, guard) → arquivo`, adicionei uma função de resolução
+`globalGuardConfigPath(gf, scriptMarker)` (Go) / `globalGuardConfigPath(gf, scriptMarker)` (Node) /
+`_global_guard_config_path(rel_path, cli, script_marker)` (Python) que recebe a entrada existente de
+`globalGuardConfigFiles` e o `scriptMarker` sendo avaliado, e só desvia o caminho quando `cli ==
+"Kiro" && scriptMarker == gitBranchGuardScriptMarker`. Escolhi a solução mais simples possível: os
+outros 5 CLIs continuam com uma única entrada/arquivo válido para os dois guards (nunca precisaram de
+override), então reestruturar a lista inteira para `(cli, guard) → arquivo` trocaria 6 entradas por
+11 só para expressar 1 exceção real — a função de resolução expressa exatamente essa assimetria sem
+inflar a lista. `globalGuardConfigFiles` continua com 6 entradas, uma por CLI, como antes.
+
+**Não é bug de comparação normalizada (ML-2C):** este ML não altera nenhuma comparação de string —
+é resolução de QUAL arquivo ler antes de qualquer leitura acontecer, então o precedente `//` do
+ML-2C (`normalizeGuardPath`/`samePathCommand`) não se aplica aqui.
+
+**Evidência (colada, bruta):**
+```
+go build ./... / go vet ./...                             → limpo
+go test ./... (inclui internal/validator, 5 testes novos Kiro)  → ok, todos os pacotes
+cd npm && npm test (4 testes novos Kiro)                    → 655 passed, 0 failed
+PYTHONPATH=pypi python3 -m pytest pypi/tests -q (4 testes novos Kiro) → 1334 passed, 28 subtests
+make quality (completo)                                    → exit 0, 130 cenários, 0 FAIL
+  OK [falsify/git-branch-guard-global-hook-resolvable/kiro-dedicated-file/baseline]
+  OK [falsify/git-branch-guard-global-hook-resolvable/kiro-dedicated-file/detected]
+  OK [falsify/git-branch-guard-global-hook-resolvable/kiro-dedicated-file/no-double-report-and-no-regression]
+./bin/trackfw validate (binário local recompilado)         → exit 0, 18 warnings — os mesmos do
+  ML-3A (17 pré-existentes + o script real desatualizado de KG), 0 novos relacionados a este ML
+```
+
+**Discriminante provado por teste (Go/Node/Python, 4 testes por stack):** hook do Kiro no arquivo
+dedicado `~/.kiro/hooks/trackfw-git-branch-guard.json` apontando para script ausente → **acusado**,
+citando o arquivo e "Kiro"; script presente e executável → silêncio; com os dois arquivos dedicados
+do Kiro presentes simultaneamente (credential-guard E git-branch-guard, cada um com script ausente
+distinto) → exatamente 1 violation por regra, nunca 0 (regressão) nem 2+ (dupla contagem); sem
+nenhum arquivo dedicado → silêncio (fail-open, mesmo contrato dos outros 5 CLIs).
+
+**Comentário desatualizado corrigido (débito #3 do relatório do ML-3A):**
+`TestGitBranchGuardGlobal_SemWiringGlobalHoje_Silencio` (Go) e espelhos Node/Python — o comentário
+dizia "hoje nenhum harnessGitBranchGuardTarget* existe", falso desde a Wave 2. Reescrito para
+descrever o que o teste realmente prova (nenhum arquivo de config escrito no fixture → silêncio),
+sem mudar o comportamento testado.
+
+**Débito residual (não fechado, fora do escopo declarado deste ML — mesmo apontado no roadmap):**
+`*_hook_resolvable` continuar condicionado à fiação é correto, não é débito — é a Wave 3 (ML-3A) que
+já tratou disso para a checagem de integridade, não para resolvibilidade.
+
+---
+
+### Auditoria do ML-3B — aprovada
+
+```
+discriminante   hook do Kiro -> script ausente: ACUSA, nomeando o remedio
+                (antes: silencio total, o arquivo nem era varrido)
+ausente         arquivo do Kiro inexistente -> 0 linhas
+nao-duplicacao  os dois guards do Kiro adulterados -> 1 aviso cada, arquivos distintos
+outros 5 CLIs   inalterados
+make quality    exit 0 · 130 cenarios · validate exit 0
+Cenarios 46 e 68 intactos
+```
+
+**Decisão de desenho ratificada.** Ele manteve `globalGuardConfigFiles` com uma entrada por CLI e
+acrescentou um resolvedor `globalGuardConfigPath(gf, scriptMarker)` que só diverge para
+`Kiro + gitBranchGuardScriptMarker`, em vez de reestruturar a lista em 11 pares `(cli, guard)`.
+É a forma do `hookfile_for(cli, guard)` do gate de paridade, com o custo mínimo — só um CLI precisa
+do override. Pedi que preferisse a solução simples se ela cobrisse sem distorcer, e cobre.
 
 ---
 

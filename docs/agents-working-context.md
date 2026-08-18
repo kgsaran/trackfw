@@ -19200,3 +19200,75 @@ commitar. Wave 4 (ML-4A, `hades-tf`) segue pendente — fora do escopo desta ses
   residuais explícitos reportados ao arquiteto (par `*_hook_resolvable` continua condicionado à
   fiação; `globalGuardConfigFiles` não lista o arquivo dedicado do Kiro para git-branch-guard;
   comentário desatualizado em `TestGitBranchGuardGlobal_SemWiringGlobalHoje_Silencio` e espelhos).
+
+---
+
+## Sessão 2026-08-18 — Apolo (ML-3B — `globalGuardConfigFiles` não cobre o arquivo dedicado do
+Kiro) — CONCLUÍDO
+
+**Escopo:** roadmap `docs/roadmaps/wip/ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-
+projeto-e-integridade-independente-de-fiacao.md`, ML-3B (débito #2 reportado pelo ML-3A). Fecha o
+ponto cego: `globalGuardConfigFiles`/`GLOBAL_GUARD_CONFIG_FILES`/`_GLOBAL_GUARD_CONFIG_FILES` (3
+stacks) sempre apontavam o Kiro para `~/.kiro/hooks/trackfw-credential-guard.json` para OS DOIS
+guards, então `git_branch_guard_hook_resolvable` (escopo global) nunca lia o arquivo dedicado
+`~/.kiro/hooks/trackfw-git-branch-guard.json` que a Wave 2 (ML-2A) passou a escrever — um hook Kiro
+apontando para script ausente/não-executável passava limpo.
+
+**Desenho (confirmado por leitura de `check-harness-hooks-parity.sh`'s `hookfile_for(cli, guard)`,
+não presumido):** em vez de reestruturar a lista fechada `globalGuardConfigFiles` para pares
+`(cli, guard) → arquivo` (que trocaria as 6 entradas atuais por 11 só para expressar 1 exceção
+real), adicionei uma função de resolução — `globalGuardConfigPath(gf, scriptMarker)` (Go/Node),
+`_global_guard_config_path(rel_path, cli, script_marker)` (Python) — que recebe a entrada existente
+e o `scriptMarker` sendo avaliado, e só desvia o caminho quando `cli == "Kiro" &&
+scriptMarker == gitBranchGuardScriptMarker`. Os outros 5 CLIs (um único arquivo válido para os dois
+guards) ficam inalterados. Solução mais simples que cobre o caso sem distorcer a estrutura
+existente — a mesma forma do `hookfile_for` do gate, no lado do validador.
+
+**Arquivos:**
+- `internal/validator/validator_git_branch_guard.go` — `globalGuardConfigPath` nova,
+  `validateGuardGlobalHookResolvable` usa o caminho resolvido em vez de `gf.path` (leitura E
+  mensagens de erro).
+- `npm/src/validator/index.js` — espelho `globalGuardConfigPath`.
+- `pypi/trackfw/validator.py` — espelho `_global_guard_config_path`.
+- Testes novos (4 por stack, 12 total): discriminante (script ausente no arquivo dedicado do Kiro →
+  acusado, citando o arquivo e "Kiro"), silêncio simétrico (script presente+executável), não-
+  regressão+não-duplicação (os dois arquivos dedicados do Kiro presentes simultaneamente →
+  exatamente 1 violation por regra, nunca 0 nem 2+), fail-open (sem arquivo dedicado → silêncio).
+  `internal/validator/validator_git_branch_guard_test.go`, `npm/tests/git_branch_guard_hook_integrity.test.js`,
+  `pypi/tests/test_git_branch_guard_validator.py`.
+- `scripts/check-gates-falsify.sh` — Cenário 69 novo: fixture real via
+  `trackfw update harness --targets kiro-git-branch-guard,kiro-credential-guard --install-missing`
+  contra `$HOME` sintético; baseline (os dois arquivos dedicados íntegros → silêncio); detecção
+  (script referenciado pelo arquivo dedicado do git-branch-guard removido → `validate` acusa,
+  citando o arquivo e "Kiro"); não-duplicação (exatamente 1 ocorrência) + não-regressão
+  (credential-guard do Kiro, arquivo separado e intacto, permanece em silêncio).
+- Comentário desatualizado corrigido (débito #3 do ML-3A):
+  `TestGitBranchGuardGlobal_SemWiringGlobalHoje_Silencio` (Go) e espelhos Node/Python diziam "hoje
+  nenhum harnessGitBranchGuardTarget* existe", falso desde a Wave 2 — reescrito para descrever o
+  que o teste realmente prova (nenhum arquivo de config global escrito no fixture → silêncio),
+  comportamento testado inalterado.
+
+**Não é bug de comparação normalizada (ML-2C):** este ML resolve QUAL arquivo ler, não COMO comparar
+strings — o precedente `//`/`normalizeGuardPath` do ML-2C não se aplica aqui.
+
+**Evidência (colada, bruta):**
+```
+go build ./... / go vet ./...                             → limpo
+go test ./... (5 testes novos Kiro)                        → ok, todos os pacotes
+cd npm && npm test (4 testes novos Kiro)                    → 655 passed, 0 failed
+PYTHONPATH=pypi python3 -m pytest pypi/tests -q (4 testes novos Kiro) → 1334 passed, 28 subtests
+make quality (completo)                                    → exit 0, 130 cenários, 0 FAIL
+  OK [falsify/git-branch-guard-global-hook-resolvable/kiro-dedicated-file/baseline]
+  OK [falsify/git-branch-guard-global-hook-resolvable/kiro-dedicated-file/detected]
+  OK [falsify/git-branch-guard-global-hook-resolvable/kiro-dedicated-file/no-double-report-and-no-regression]
+./bin/trackfw validate (binário local recompilado)          → exit 0, 18 warnings — os mesmos do
+  ML-3A (17 pré-existentes + o script real desatualizado de KG), 0 novos relacionados a este ML
+```
+
+**Critérios de aceite:** todos fechados — arquivo dedicado do Kiro coberto; script ausente/não-
+executável acusado; credential-guard do Kiro inalterado sem duplicar; paridade 3 CLIs com gate;
+cenário de falsificação com baseline+detecção; `make quality` verde.
+
+Roadmap atualizado: ML-3B marcado `✅ Concluído — pendente de auditoria do arquiteto`, critérios de
+aceite marcados, evidência colada. Nenhum `git commit`/`push`/branch executado por mim — handoff
+para `trackfw_architect` auditar e commitar. Wave 4 (ML-4A, `hades-tf`) segue pendente.

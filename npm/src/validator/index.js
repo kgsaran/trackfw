@@ -2170,6 +2170,23 @@ const GLOBAL_GUARD_CONFIG_FILES = [
   { relPath: '.kiro/hooks/trackfw-credential-guard.json', cli: 'Kiro' },
 ]
 
+// globalGuardConfigPath resolves the actual on-disk path (relative to $HOME) that
+// validateGuardGlobalHookResolvable must read for a given (GLOBAL_GUARD_CONFIG_FILES entry,
+// scriptMarker) pair. Port of Go's globalGuardConfigPath (internal/validator/
+// validator_git_branch_guard.go) — see that function's doc comment for the full rationale
+// (5 CLIs share one merge-based file across both guards; Kiro is the sole exception, with a
+// dedicated file per guard because its writer rewrites the whole document wholesale).
+//
+// ROADMAP-2026-08-17 ML-3B: before this function existed, GLOBAL_GUARD_CONFIG_FILES only ever
+// pointed Kiro at trackfw-credential-guard.json for BOTH guards, so git_branch_guard_hook_resolvable
+// never inspected ~/.kiro/hooks/trackfw-git-branch-guard.json at all.
+function globalGuardConfigPath(gf, scriptMarker) {
+  if (gf.cli === 'Kiro' && scriptMarker === GIT_BRANCH_GUARD_SCRIPT_MARKER) {
+    return '.kiro/hooks/trackfw-git-branch-guard.json'
+  }
+  return gf.relPath
+}
+
 // validateGuardGlobalHookResolvable is the GLOBAL-scope counterpart of
 // validateGuardHookResolvable: for each of the 6 GLOBAL_GUARD_CONFIG_FILES that exists AND
 // references scriptMarker, verifies the referenced script exists and is executable. Port of Go's
@@ -2190,7 +2207,8 @@ function validateGuardGlobalHookResolvable(scriptMarker) {
 
   const msgs = []
   for (const gf of GLOBAL_GUARD_CONFIG_FILES) {
-    const fullPath = path.join(home, gf.relPath)
+    const relPath = globalGuardConfigPath(gf, scriptMarker)
+    const fullPath = path.join(home, relPath)
     let content
     try {
       content = fs.readFileSync(fullPath, 'utf8')
@@ -2224,9 +2242,9 @@ function validateGuardGlobalHookResolvable(scriptMarker) {
       }
 
       if (!stat) {
-        msgs.push(`~/${gf.relPath} (${gf.cli}, global scope) references ${scriptMarker} resolved to "${raw}", but the script does not exist — run \`trackfw update harness\` to regenerate it`)
+        msgs.push(`~/${relPath} (${gf.cli}, global scope) references ${scriptMarker} resolved to "${raw}", but the script does not exist — run \`trackfw update harness\` to regenerate it`)
       } else if ((stat.mode & 0o111) === 0) {
-        msgs.push(`~/${gf.relPath} (${gf.cli}, global scope) references ${scriptMarker} resolved to "${raw}", but the script is not executable — run \`trackfw update harness\` to regenerate it`)
+        msgs.push(`~/${relPath} (${gf.cli}, global scope) references ${scriptMarker} resolved to "${raw}", but the script is not executable — run \`trackfw update harness\` to regenerate it`)
       }
     }
   }
