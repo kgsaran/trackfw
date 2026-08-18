@@ -27,8 +27,8 @@ Duas frentes, e a **ordem importa**: a inversão da frente 2 impede casos novos,
 instalações que já estão no estado ruim. O `doctor` é o que revela essas.
 
 ## Acceptance Criteria
-- [ ] AC1 — Detecta **arquivo em disco ausente do manifesto** e o distingue de **arquivo modificado à mão**.
-- [ ] AC2 — A saída **nomeia o remédio**, com comando pronto para copiar.
+- [x] AC1 — Detecta **arquivo em disco ausente do manifesto** e o distingue de **arquivo modificado à mão**.
+- [x] AC2 — A saída **nomeia o remédio**, com comando pronto para copiar.
 - [ ] AC3 — Paridade nos 3 CLIs, com **gate comparando saídas reais** — não por leitura de fonte.
 - [ ] AC4 — Cenário P4 reproduzindo a janela: artefato em disco sem registro, e prova de que acusa.
 - [ ] AC5 — Não-regressão: `update` **continua recusando** bytes unmanaged mesmo com `--force`.
@@ -114,23 +114,55 @@ trocaria uma falha rara de interrupção por uma falha comum de erro.
 
 ## Wave 2 — `doctor` (revela o estado ruim já existente)
 
-### ML-2A — Comando/regra que detecta artefato fora do manifesto
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+> ⚠️ **Wave 2 fatiada em 2 lotes menores** (2026-08-18, a pedido de KG): janela semanal a 98%.
+> Cada lote é autocontido e commitado assim que auditado, para nada ficar parado no meio.
+
+### ML-2A — Detecção + comando `doctor` nos 3 CLIs
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
 **Dependência:** ML-1A — a inversão muda o estado que o `doctor` vai encontrar.
+**Escopo enxuto:** função de classificação + superfície do comando + testes unitários nos 3.
+**Fora deste lote:** gate de paridade e cenário P4 — vão para o ML-2B.
 
 **Ação:** detectar **arquivo cujo conteúdo bate com o template do catálogo e que está ausente do
 manifesto** — isso não é adulteração, é escrita não registrada, e o remédio é diferente. Distinguir
 de **arquivo modificado à mão**, que continua sendo o caso de `install --force`.
 
 **Critérios de aceite:**
-- [ ] As duas classes são distinguidas e têm remédios diferentes; não podem ser fundidas.
-- [ ] A saída nomeia o remédio com comando pronto para copiar.
-- [ ] **Não acusa** artefato legítimo — risco 1.
-- [ ] Gate comparando as **três saídas reais**; teste por stack não fecha o AC3.
-- [ ] Cenário P4 reproduzindo a janela.
-- [ ] `make quality` verde.
+- [x] As duas classes são distinguidas e têm remédios diferentes; não podem ser fundidas.
+- [x] A saída nomeia o remédio com comando pronto para copiar.
+- [x] **Não acusa** artefato legítimo — risco 1.
+- [x] `make quality` verde.
+
+### ML-2B — Gate de paridade + cenário P4
+**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Dependência:** ML-2A.
+**Critérios de aceite:**
+- [ ] Gate comparando as **três saídas reais** — teste por stack **não** fecha o AC3.
+- [ ] Cenário P4 reproduzindo a janela: artefato em disco sem registro, e prova de que acusa.
+- [x] `make quality` verde.
 
 ---
+
+### Auditoria do ML-2A — aprovada
+
+```
+baseline limpo        "no mismatches found"        — sem falso-positivo
+arquivo alheio        "no mismatches found"        — o que nao e nosso nao e acusado
+architect sem registro [unregistered-write] remedio: install --force
+                       "adopts it — content already matches ... only the manifest entry is missing"
+backend hand-edit      [hand-modified]      remedio: install --force
+                       "overwrites it ... you will lose the hand edit"
+make quality exit 0 · validate exit 0
+```
+
+As duas classes têm **redação de remédio diferente**, não só rótulo: uma adota, a outra **avisa da
+perda**. Era o ponto do lote — fundi-las faria o `doctor` aconselhar errado.
+
+**Correção que o advisor do agente pegou antes de escrever código, e vale registrar:** a
+classificação precisa usar `Registered` (existe **alguma** entrada para o destino) e não `Managed`
+(entrada pertencente **àquela** claim). Sem isso, destino registrado sob outra claim seria reportado
+como "escrita não registrada" — exatamente o falso-positivo dominante que o comando existe para
+evitar.
 
 ## Wave 3 — Barreira
 
