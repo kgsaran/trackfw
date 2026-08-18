@@ -1112,11 +1112,44 @@ _GIT_BRANCH_GUARD_SH = r"""#!/usr/bin/env bash
 set -euo pipefail
 set -f
 
+# --- 0. Drena o stdin ANTES de qualquer saída antecipada (ML-1B, ROADMAP-2026-08-17-guard-
+# global-cabeado-com-no-op-fora-de-projeto-e-integridade-independente-de-fiacao.md): sem isso,
+# quem escreve o payload JSON no pipe recebe EPIPE quando o no-op abaixo sai com 0 antes de ler
+# — reprodutível em 100% das chamadas fora de projeto trackfw, não é corrida de timing. Só drena
+# se stdin não for um terminal interativo (-t 0): em invocação manual sem pipe, "cat" bloquearia
+# esperando EOF (Ctrl-D). O valor lido é reaproveitado no passo 1 abaixo — nunca há uma segunda
+# leitura.
+_TRACKFW_STDIN=""
+[ -t 0 ] || _TRACKFW_STDIN=$(cat 2>/dev/null || true)
+
+# --- 0b. No-op fora de projeto trackfw (ADR-2026-08-17-guard-global-cabeado-com-no-op-fora-de-
+# projeto-trackfw.md): sobe diretórios a partir do cwd FÍSICO (pwd -P, resolve symlink) até
+# achar trackfw.yaml na raiz do projeto. Sem trackfw.yaml em nenhum ancestral, o guard não se
+# aplica — fora de projeto trackfw não há trackfw ship como alternativa, e bloquear ali é custo
+# sem contrapartida. Custo medido: só parameter expansion e test -f por nível, nenhum fork de
+# processo; limitado pela profundidade do caminho.
+_TRACKFW_ROOT_DIR=$(pwd -P)
+_TRACKFW_FOUND=0
+while :; do
+  if [ -f "$_TRACKFW_ROOT_DIR/trackfw.yaml" ]; then
+    _TRACKFW_FOUND=1
+    break
+  fi
+  if [ "$_TRACKFW_ROOT_DIR" = "/" ]; then
+    break
+  fi
+  _TRACKFW_ROOT_DIR="${_TRACKFW_ROOT_DIR%/*}"
+  if [ -z "$_TRACKFW_ROOT_DIR" ]; then
+    _TRACKFW_ROOT_DIR="/"
+  fi
+done
+[ "$_TRACKFW_FOUND" -eq 1 ] || exit 0
+
 # --- 1. Obter o comando git bruto ------------------------------------------------------------
 if [ "$#" -gt 0 ]; then
   CMD_RAW="$*"
 else
-  INPUT=$(cat 2>/dev/null || true)
+  INPUT="$_TRACKFW_STDIN"
   TRIMMED=$(printf '%s' "$INPUT" | sed -e 's/^[[:space:]]*//')
   case "$TRIMMED" in
     \{*)

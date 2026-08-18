@@ -1,18 +1,32 @@
 #!/usr/bin/env bash
-# check-harness-hooks-parity.sh — proves the six GLOBAL-scope credential-guard
-# hook files written by `trackfw update harness --targets <tool>-credential-
-# guard --install-missing` (~/.claude/settings.json, ~/.codex/hooks.json,
-# ~/.gemini/settings.json, ~/.cursor/hooks.json, ~/.copilot/settings.json,
-# ~/.kiro/hooks/trackfw-credential-guard.json) are STRUCTURALLY identical
+# check-harness-hooks-parity.sh — proves the GLOBAL-scope credential-guard AND
+# git-branch-guard hook files written by `trackfw update harness --targets
+# <tool>-credential-guard,<tool>-git-branch-guard --install-missing`
+# (~/.claude/settings.json, ~/.codex/hooks.json, ~/.gemini/settings.json,
+# ~/.cursor/hooks.json, ~/.copilot/settings.json,
+# ~/.kiro/hooks/trackfw-credential-guard.json,
+# ~/.kiro/hooks/trackfw-git-branch-guard.json) are STRUCTURALLY identical
 # across Go, Node.js and Python, for each of the 6 native-wave CLIs.
+#
+# git-branch-guard wiring (ROADMAP-2026-08-17 Wave 2/ML-2A) reuses the exact
+# same merge helpers credential-guard does — for the 5 merge-based CLIs
+# (claude/codex/gemini/cursor/copilot) both guards' entries coexist in the
+# SAME hook file; only Kiro splits into two dedicated files (its
+# credential-guard writer rewrites its document wholesale, so sharing one
+# file with a second wholesale writer would make the two targets flap
+# between each other's desired state — see internal/generators/update.go:
+# harnessGitBranchGuardTargetKiro's doc comment).
 #
 # Sibling of check-agent-hooks-parity.sh (PR #141), which covers the exact
 # same 6 CLIs but for PROJECT-scope hook files written by `discover --init`.
 # Neither gate subsumes the other: the per-project InjectXHooks and the
-# per-home harnessCredentialGuardTarget<Tool>/credentialGuardTarget<Tool>/
-# _credential_guard_<tool>_result implementations are independent code paths
-# in all 3 stacks (ROADMAP-2026-08-06 Wave 2), and ML-3A's dedup logic reads
-# the global file the harness gate here exercises but never writes it.
+# per-home harnessCredentialGuardTarget<Tool>/harnessGitBranchGuardTarget
+# <Tool>/credentialGuardTarget<Tool>/gitBranchGuardTarget<Tool>/
+# _credential_guard_<tool>_result/_git_branch_guard_<tool>_result
+# implementations are independent code paths in all 3 stacks
+# (ROADMAP-2026-08-06 Wave 2, ROADMAP-2026-08-17 Wave 2), and ML-3A's dedup
+# logic reads the global file the harness gate here exercises but never
+# writes it.
 #
 # Method: same structural (parsed-JSON) deep-compare as
 # check-agent-hooks-parity.sh — NOT byte-identical, since JSON indentation/
@@ -95,44 +109,42 @@ ok()   { echo "OK   [$1]"; }
 fail() { echo "FAIL [$1]: $2" >&2; FAIL=1; }
 
 # ---------------------------------------------------------------------------
-# Per-CLI table: target id passed to --targets and the relative (to $HOME)
-# path of the global hook file each harness target writes.
+# Per-(CLI, guard) table: target id passed to --targets and the relative (to
+# $HOME) path of the global hook file each harness target writes. Both
+# guards share ONE file for the 5 merge-based CLIs; Kiro splits into two
+# dedicated files (see file header).
 # ---------------------------------------------------------------------------
 CLIS="claude codex gemini cursor copilot kiro"
+GUARDS="credential-guard git-branch-guard"
 
 target_for() {
-  case "$1" in
-    claude)  echo "claude-credential-guard" ;;
-    codex)   echo "codex-credential-guard" ;;
-    gemini)  echo "gemini-credential-guard" ;;
-    cursor)  echo "cursor-credential-guard" ;;
-    copilot) echo "copilot-credential-guard" ;;
-    kiro)    echo "kiro-credential-guard" ;;
-    *) echo "target_for: unknown cli '$1'" >&2; exit 1 ;;
-  esac
+  echo "$1-$2"
 }
 
 hookfile_for() {
-  case "$1" in
+  local cli=$1 guard=$2
+  case "$cli" in
     claude)  echo ".claude/settings.json" ;;
     codex)   echo ".codex/hooks.json" ;;
     gemini)  echo ".gemini/settings.json" ;;
     cursor)  echo ".cursor/hooks.json" ;;
     copilot) echo ".copilot/settings.json" ;;
-    kiro)    echo ".kiro/hooks/trackfw-credential-guard.json" ;;
-    *) echo "hookfile_for: unknown cli '$1'" >&2; exit 1 ;;
+    kiro)    echo ".kiro/hooks/trackfw-$guard.json" ;;
+    *) echo "hookfile_for: unknown cli '$cli'" >&2; exit 1 ;;
   esac
 }
 
 # ---------------------------------------------------------------------------
-# Run `update harness --targets <all 6 ids> --install-missing` once per
+# Run `update harness --targets <all 12 ids> --install-missing` once per
 # runtime, each against its own fresh $HOME fixture directory (never the real
 # $HOME of whoever runs this gate).
 # ---------------------------------------------------------------------------
 ALL_TARGETS=""
 for cli in $CLIS; do
-  id=$(target_for "$cli")
-  ALL_TARGETS="${ALL_TARGETS:+$ALL_TARGETS,}$id"
+  for guard in $GUARDS; do
+    id=$(target_for "$cli" "$guard")
+    ALL_TARGETS="${ALL_TARGETS:+$ALL_TARGETS,}$id"
+  done
 done
 
 run_update_harness() {
@@ -166,24 +178,29 @@ fi
 
 # ---------------------------------------------------------------------------
 # P2 vacuity guards, two of them (mirrors check-agent-hooks-parity.sh):
-#   1. the hook file exists and is non-empty for all three runtimes, per CLI;
-#   2. the hook file actually references trackfw-credential-guard.sh at least
-#      once, per runtime — a regression that dropped the credential-guard
-#      entry from all three stacks identically would otherwise still "pass" a
-#      pure cross-stack equality check.
+#   1. the hook file exists and is non-empty for all three runtimes, per
+#      (cli, guard) — for the 5 merge-based CLIs this is the SAME file
+#      checked twice (once per guard), which is fine: it re-asserts
+#      non-emptiness under a distinct label per guard;
+#   2. the hook file actually references trackfw-<guard>.sh at least once,
+#      per runtime — a regression that dropped either guard's entry from all
+#      three stacks identically would otherwise still "pass" a pure
+#      cross-stack equality check.
 # ---------------------------------------------------------------------------
 for cli in $CLIS; do
-  hookfile=$(hookfile_for "$cli")
-  for runtime in go node py; do
-    path="$WORK/$runtime-home/$hookfile"
-    if [[ ! -s "$path" ]]; then
-      fail "harness-hooks-parity/$cli/$runtime/$hookfile" "missing or empty: $path"
-      continue
-    fi
-    if ! grep -q "trackfw-credential-guard.sh" "$path"; then
-      fail "harness-hooks-parity/$cli/$runtime/credential-guard-present" \
-        "trackfw-credential-guard.sh not referenced anywhere in $path"
-    fi
+  for guard in $GUARDS; do
+    hookfile=$(hookfile_for "$cli" "$guard")
+    for runtime in go node py; do
+      path="$WORK/$runtime-home/$hookfile"
+      if [[ ! -s "$path" ]]; then
+        fail "harness-hooks-parity/$cli/$guard/$runtime/$hookfile" "missing or empty: $path"
+        continue
+      fi
+      if ! grep -q "trackfw-$guard.sh" "$path"; then
+        fail "harness-hooks-parity/$cli/$guard/$runtime/present" \
+          "trackfw-$guard.sh not referenced anywhere in $path"
+      fi
+    done
   done
 done
 
@@ -258,17 +275,36 @@ $out"
   fi
 }
 
+# Compare once per DISTINCT file per cli: the 5 merge-based CLIs write both
+# guards into the same file, so credential-guard's hookfile_for output
+# already covers git-branch-guard too — comparing it a second time under the
+# same path would be a no-op. Kiro is the exception (two distinct dedicated
+# files), so it gets a second, guard-labeled comparison for the
+# git-branch-guard file. The un-suffixed "$cli/go-vs-node"/"$cli/go-vs-py"
+# labels are preserved unchanged (never renamed) so existing scenario
+# assertions that target them (e.g. Cenário 45's kiro credential-guard
+# sabotage) keep matching.
 for cli in $CLIS; do
-  hookfile=$(hookfile_for "$cli")
+  primary_hookfile=$(hookfile_for "$cli" "credential-guard")
   go_home="$WORK/go-home"
   node_home="$WORK/node-home"
   py_home="$WORK/py-home"
-  go_file="$go_home/$hookfile"
-  node_file="$node_home/$hookfile"
-  py_file="$py_home/$hookfile"
+  go_file="$go_home/$primary_hookfile"
+  node_file="$node_home/$primary_hookfile"
+  py_file="$py_home/$primary_hookfile"
 
   compare_json "harness-hooks-parity/$cli/go-vs-node" "$go_file" "$go_home" "$node_file" "$node_home"
   compare_json "harness-hooks-parity/$cli/go-vs-py" "$go_file" "$go_home" "$py_file" "$py_home"
+
+  secondary_hookfile=$(hookfile_for "$cli" "git-branch-guard")
+  if [[ "$secondary_hookfile" != "$primary_hookfile" ]]; then
+    go_file2="$go_home/$secondary_hookfile"
+    node_file2="$node_home/$secondary_hookfile"
+    py_file2="$py_home/$secondary_hookfile"
+
+    compare_json "harness-hooks-parity/$cli/git-branch-guard/go-vs-node" "$go_file2" "$go_home" "$node_file2" "$node_home"
+    compare_json "harness-hooks-parity/$cli/git-branch-guard/go-vs-py" "$go_file2" "$go_home" "$py_file2" "$py_home"
+  fi
 done
 
 # ---------------------------------------------------------------------------

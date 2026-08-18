@@ -462,6 +462,288 @@ function credentialGuardTargetKiro(homeRoot, { dryRun, installMissing }) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// git-branch-guard global-scope wiring (ROADMAP-2026-08-17 Wave 2/ML-2A).
+// Mirrors the six credentialGuardTarget<Tool> functions above, entry-for-
+// entry — same 4-state contract, same displayPath per tool, same reuse of
+// mergeClaudeHookArray/mergeSimpleCommandArray/mergeCopilotHookArray (those
+// helpers only need a scriptPath, which here is trackfw-git-branch-guard.sh
+// instead of trackfw-credential-guard.sh). Mirrors
+// internal/generators/update.go:harnessGitBranchGuardTarget<Tool>.
+//
+// Kiro is the one structural exception: credentialGuardTargetKiro rewrites
+// ~/.kiro/hooks/trackfw-credential-guard.json WHOLESALE every run (never
+// merges), so sharing that file with a second wholesale writer would make
+// the two targets flap between each other's desired 2-entry document forever
+// (idempotency failure). gitBranchGuardTargetKiro therefore writes its OWN
+// dedicated file, ~/.kiro/hooks/trackfw-git-branch-guard.json, same
+// {"version":"v1","hooks":[pre,post]} schema, hook names
+// "trackfw-git-branch-guard-global-pre"/"-global-post".
+// ---------------------------------------------------------------------------
+
+function gitBranchGuardTargetClaude(homeRoot, { dryRun, installMissing }) {
+  const id = 'claude-git-branch-guard'
+  const filePath = path.join(homeRoot, '.claude', 'settings.json')
+  const displayPath = tildeify(homeRoot, filePath)
+  const scriptPath = path.join(homeRoot, '.trackfw', 'scripts', 'trackfw-git-branch-guard.sh')
+
+  let root
+  let raw = null
+  try {
+    if (fs.existsSync(filePath)) {
+      raw = fs.readFileSync(filePath, 'utf8')
+      root = raw.length ? JSON.parse(raw) : {}
+    } else {
+      if (!installMissing) return { id, state: 'missing', path: displayPath }
+      if (dryRun) return { id, state: 'updated', path: displayPath }
+      root = {}
+      if (!root.hooks) root.hooks = {}
+      root.hooks.PreToolUse = mergeClaudeHookArray(root.hooks.PreToolUse, 'Bash', scriptPath)
+      root.hooks.PostToolUse = mergeClaudeHookArray(root.hooks.PostToolUse, 'Bash', scriptPath)
+      const desired = JSON.stringify(root, null, 2) + '\n'
+      fs.mkdirSync(path.dirname(filePath), { recursive: true })
+      fs.writeFileSync(filePath, desired, 'utf8')
+      return { id, state: 'updated', path: displayPath }
+    }
+  } catch (e) {
+    return { id, state: 'failed', path: displayPath, message: e.message }
+  }
+
+  try {
+    if (!root.hooks) root.hooks = {}
+    root.hooks.PreToolUse = mergeClaudeHookArray(root.hooks.PreToolUse, 'Bash', scriptPath)
+    root.hooks.PostToolUse = mergeClaudeHookArray(root.hooks.PostToolUse, 'Bash', scriptPath)
+    const desired = JSON.stringify(root, null, 2) + '\n'
+    if (desired === raw) return { id, state: 'skipped', path: displayPath }
+    if (dryRun) return { id, state: 'updated', path: displayPath }
+    fs.writeFileSync(filePath, desired, 'utf8')
+    return { id, state: 'updated', path: displayPath }
+  } catch (e) {
+    return { id, state: 'failed', path: displayPath, message: e.message }
+  }
+}
+
+function gitBranchGuardTargetCodex(homeRoot, { dryRun, installMissing }) {
+  const id = 'codex-git-branch-guard'
+  const filePath = path.join(homeRoot, '.codex', 'hooks.json')
+  const displayPath = tildeify(homeRoot, filePath)
+  const scriptPath = path.join(homeRoot, '.trackfw', 'scripts', 'trackfw-git-branch-guard.sh')
+
+  let root
+  let raw = null
+  try {
+    if (fs.existsSync(filePath)) {
+      raw = fs.readFileSync(filePath, 'utf8')
+      root = raw.length ? JSON.parse(raw) : {}
+    } else {
+      if (!installMissing) return { id, state: 'missing', path: displayPath }
+      if (dryRun) return { id, state: 'updated', path: displayPath }
+      root = {}
+      if (!root.hooks) root.hooks = {}
+      root.hooks.PreToolUse = mergeClaudeHookArray(root.hooks.PreToolUse, 'Bash', scriptPath)
+      root.hooks.PostToolUse = mergeClaudeHookArray(root.hooks.PostToolUse, 'Bash', scriptPath)
+      const desired = JSON.stringify(root, null, 2) + '\n'
+      fs.mkdirSync(path.dirname(filePath), { recursive: true })
+      fs.writeFileSync(filePath, desired, 'utf8')
+      return { id, state: 'updated', path: displayPath }
+    }
+  } catch (e) {
+    return { id, state: 'failed', path: displayPath, message: e.message }
+  }
+
+  try {
+    if (!root.hooks) root.hooks = {}
+    root.hooks.PreToolUse = mergeClaudeHookArray(root.hooks.PreToolUse, 'Bash', scriptPath)
+    root.hooks.PostToolUse = mergeClaudeHookArray(root.hooks.PostToolUse, 'Bash', scriptPath)
+    const desired = JSON.stringify(root, null, 2) + '\n'
+    if (desired === raw) return { id, state: 'skipped', path: displayPath }
+    if (dryRun) return { id, state: 'updated', path: displayPath }
+    fs.writeFileSync(filePath, desired, 'utf8')
+    return { id, state: 'updated', path: displayPath }
+  } catch (e) {
+    return { id, state: 'failed', path: displayPath, message: e.message }
+  }
+}
+
+function gitBranchGuardTargetGemini(homeRoot, { dryRun, installMissing }) {
+  const id = 'gemini-git-branch-guard'
+  const filePath = path.join(homeRoot, '.gemini', 'settings.json')
+  const displayPath = tildeify(homeRoot, filePath)
+  const scriptPath = path.join(homeRoot, '.trackfw', 'scripts', 'trackfw-git-branch-guard.sh')
+
+  let root
+  let raw = null
+  try {
+    if (fs.existsSync(filePath)) {
+      raw = fs.readFileSync(filePath, 'utf8')
+      root = raw.length ? JSON.parse(raw) : {}
+    } else {
+      if (!installMissing) return { id, state: 'missing', path: displayPath }
+      if (dryRun) return { id, state: 'updated', path: displayPath }
+      root = {}
+      if (!root.hooks) root.hooks = {}
+      root.hooks.BeforeTool = mergeClaudeHookArray(root.hooks.BeforeTool, 'run_shell_command', scriptPath)
+      root.hooks.AfterTool = mergeClaudeHookArray(root.hooks.AfterTool, 'run_shell_command', scriptPath)
+      const desired = JSON.stringify(root, null, 2) + '\n'
+      fs.mkdirSync(path.dirname(filePath), { recursive: true })
+      fs.writeFileSync(filePath, desired, 'utf8')
+      return { id, state: 'updated', path: displayPath }
+    }
+  } catch (e) {
+    return { id, state: 'failed', path: displayPath, message: e.message }
+  }
+
+  try {
+    if (!root.hooks) root.hooks = {}
+    root.hooks.BeforeTool = mergeClaudeHookArray(root.hooks.BeforeTool, 'run_shell_command', scriptPath)
+    root.hooks.AfterTool = mergeClaudeHookArray(root.hooks.AfterTool, 'run_shell_command', scriptPath)
+    const desired = JSON.stringify(root, null, 2) + '\n'
+    if (desired === raw) return { id, state: 'skipped', path: displayPath }
+    if (dryRun) return { id, state: 'updated', path: displayPath }
+    fs.writeFileSync(filePath, desired, 'utf8')
+    return { id, state: 'updated', path: displayPath }
+  } catch (e) {
+    return { id, state: 'failed', path: displayPath, message: e.message }
+  }
+}
+
+function gitBranchGuardTargetCursor(homeRoot, { dryRun, installMissing }) {
+  const id = 'cursor-git-branch-guard'
+  const filePath = path.join(homeRoot, '.cursor', 'hooks.json')
+  const displayPath = tildeify(homeRoot, filePath)
+  const scriptPath = path.join(homeRoot, '.trackfw', 'scripts', 'trackfw-git-branch-guard.sh')
+
+  let root
+  let raw = null
+  try {
+    if (fs.existsSync(filePath)) {
+      raw = fs.readFileSync(filePath, 'utf8')
+      root = raw.length ? JSON.parse(raw) : {}
+    } else {
+      if (!installMissing) return { id, state: 'missing', path: displayPath }
+      if (dryRun) return { id, state: 'updated', path: displayPath }
+      root = {}
+      if (typeof root.version === 'undefined') root.version = 1
+      if (!root.hooks) root.hooks = {}
+      root.hooks.beforeShellExecution = mergeSimpleCommandArray(root.hooks.beforeShellExecution, scriptPath)
+      root.hooks.afterShellExecution = mergeSimpleCommandArray(root.hooks.afterShellExecution, scriptPath)
+      const desired = JSON.stringify(root, null, 2) + '\n'
+      fs.mkdirSync(path.dirname(filePath), { recursive: true })
+      fs.writeFileSync(filePath, desired, 'utf8')
+      return { id, state: 'updated', path: displayPath }
+    }
+  } catch (e) {
+    return { id, state: 'failed', path: displayPath, message: e.message }
+  }
+
+  try {
+    if (typeof root.version === 'undefined') root.version = 1
+    if (!root.hooks) root.hooks = {}
+    root.hooks.beforeShellExecution = mergeSimpleCommandArray(root.hooks.beforeShellExecution, scriptPath)
+    root.hooks.afterShellExecution = mergeSimpleCommandArray(root.hooks.afterShellExecution, scriptPath)
+    const desired = JSON.stringify(root, null, 2) + '\n'
+    if (desired === raw) return { id, state: 'skipped', path: displayPath }
+    if (dryRun) return { id, state: 'updated', path: displayPath }
+    fs.writeFileSync(filePath, desired, 'utf8')
+    return { id, state: 'updated', path: displayPath }
+  } catch (e) {
+    return { id, state: 'failed', path: displayPath, message: e.message }
+  }
+}
+
+function gitBranchGuardTargetCopilot(homeRoot, { dryRun, installMissing }) {
+  const id = 'copilot-git-branch-guard'
+  const filePath = path.join(homeRoot, '.copilot', 'settings.json')
+  const displayPath = tildeify(homeRoot, filePath)
+  const scriptPath = path.join(homeRoot, '.trackfw', 'scripts', 'trackfw-git-branch-guard.sh')
+
+  let root
+  let raw = null
+  try {
+    if (fs.existsSync(filePath)) {
+      raw = fs.readFileSync(filePath, 'utf8')
+      root = raw.length ? JSON.parse(raw) : {}
+    } else {
+      if (!installMissing) return { id, state: 'missing', path: displayPath }
+      if (dryRun) return { id, state: 'updated', path: displayPath }
+      root = {}
+      if (!root.hooks) root.hooks = {}
+      root.hooks.preToolUse = mergeCopilotHookArray(root.hooks.preToolUse, scriptPath)
+      root.hooks.postToolUse = mergeCopilotHookArray(root.hooks.postToolUse, scriptPath)
+      const desired = JSON.stringify(root, null, 2) + '\n'
+      fs.mkdirSync(path.dirname(filePath), { recursive: true })
+      fs.writeFileSync(filePath, desired, 'utf8')
+      return { id, state: 'updated', path: displayPath }
+    }
+  } catch (e) {
+    return { id, state: 'failed', path: displayPath, message: e.message }
+  }
+
+  try {
+    if (!root.hooks) root.hooks = {}
+    root.hooks.preToolUse = mergeCopilotHookArray(root.hooks.preToolUse, scriptPath)
+    root.hooks.postToolUse = mergeCopilotHookArray(root.hooks.postToolUse, scriptPath)
+    const desired = JSON.stringify(root, null, 2) + '\n'
+    if (desired === raw) return { id, state: 'skipped', path: displayPath }
+    if (dryRun) return { id, state: 'updated', path: displayPath }
+    fs.writeFileSync(filePath, desired, 'utf8')
+    return { id, state: 'updated', path: displayPath }
+  } catch (e) {
+    return { id, state: 'failed', path: displayPath, message: e.message }
+  }
+}
+
+// gitBranchGuardTargetKiro writes a DEDICATED file,
+// ~/.kiro/hooks/trackfw-git-branch-guard.json — deliberately NOT
+// credentialGuardTargetKiro's file. See this section's header comment for
+// why sharing would break idempotency.
+function gitBranchGuardTargetKiro(homeRoot, { dryRun, installMissing }) {
+  const id = 'kiro-git-branch-guard'
+  const filePath = path.join(homeRoot, '.kiro', 'hooks', 'trackfw-git-branch-guard.json')
+  const displayPath = tildeify(homeRoot, filePath)
+  const scriptPath = path.join(homeRoot, '.trackfw', 'scripts', 'trackfw-git-branch-guard.sh')
+
+  const desired = JSON.stringify(
+    {
+      version: 'v1',
+      hooks: [
+        {
+          name: 'trackfw-git-branch-guard-global-pre',
+          description: 'Blocks branch-creation git subcommands issued outside trackfw branch new (global, all trackfw projects)',
+          trigger: 'PreToolUse',
+          matcher: 'shell',
+          action: { type: 'command', command: scriptPath },
+        },
+        {
+          name: 'trackfw-git-branch-guard-global-post',
+          description: 'Warns on branch-creation git subcommands issued outside trackfw branch new (global, all trackfw projects)',
+          trigger: 'PostToolUse',
+          matcher: 'shell',
+          action: { type: 'command', command: scriptPath },
+        },
+      ],
+    },
+    null,
+    2
+  ) + '\n'
+
+  try {
+    const exists = fs.existsSync(filePath)
+    const actual = exists ? fs.readFileSync(filePath, 'utf8') : null
+
+    if (!exists && !installMissing) return { id, state: 'missing', path: displayPath }
+    if (exists && actual === desired) return { id, state: 'skipped', path: displayPath }
+
+    if (dryRun) return { id, state: 'updated', path: displayPath }
+
+    fs.mkdirSync(path.dirname(filePath), { recursive: true })
+    fs.writeFileSync(filePath, desired, 'utf8')
+    return { id, state: 'updated', path: displayPath }
+  } catch (e) {
+    return { id, state: 'failed', path: displayPath, message: e.message }
+  }
+}
+
 // catalogBundleTarget — one target per (tool, kind) pair at global scope.
 // Uses IntegrationManager.inspect (read-only) to classify every catalog
 // item under that pair, then only calls manager.update() for the subset
@@ -506,18 +788,20 @@ function catalogBundleTarget(toolId, kind, homeRoot, identityConfig, { dryRun, i
 }
 
 // HARNESS_TARGET_IDS — mirrors internal/generators/update.go:HarnessTargetIDs.
-// "codex-credential-guard"/"gemini-credential-guard" are each inserted
-// immediately BEFORE their tool's "-agents"/"-skills" pair (same relative
-// position as claude-credential-guard, which precedes claude-agents/
-// claude-skills) — see buildHarnessTargetIDs's comment in update.go for the
-// full rationale.
-const HARNESS_TARGET_IDS = ['claude-skill', 'claude-credential-guard']
+// "codex-credential-guard"/"codex-git-branch-guard",
+// "gemini-credential-guard"/"gemini-git-branch-guard", etc. are each
+// inserted immediately BEFORE their tool's "-agents"/"-skills" pair (same
+// relative position as claude-credential-guard/claude-git-branch-guard,
+// which precede claude-agents/claude-skills), with credential-guard always
+// preceding git-branch-guard within a tool — see buildHarnessTargetIDs's
+// comment in update.go for the full rationale.
+const HARNESS_TARGET_IDS = ['claude-skill', 'claude-credential-guard', 'claude-git-branch-guard']
 for (const target of catalog.targets) {
-  if (target.id === 'codex') HARNESS_TARGET_IDS.push('codex-credential-guard')
-  if (target.id === 'gemini') HARNESS_TARGET_IDS.push('gemini-credential-guard')
-  if (target.id === 'cursor') HARNESS_TARGET_IDS.push('cursor-credential-guard')
-  if (target.id === 'copilot') HARNESS_TARGET_IDS.push('copilot-credential-guard')
-  if (target.id === 'kiro') HARNESS_TARGET_IDS.push('kiro-credential-guard')
+  if (target.id === 'codex') HARNESS_TARGET_IDS.push('codex-credential-guard', 'codex-git-branch-guard')
+  if (target.id === 'gemini') HARNESS_TARGET_IDS.push('gemini-credential-guard', 'gemini-git-branch-guard')
+  if (target.id === 'cursor') HARNESS_TARGET_IDS.push('cursor-credential-guard', 'cursor-git-branch-guard')
+  if (target.id === 'copilot') HARNESS_TARGET_IDS.push('copilot-credential-guard', 'copilot-git-branch-guard')
+  if (target.id === 'kiro') HARNESS_TARGET_IDS.push('kiro-credential-guard', 'kiro-git-branch-guard')
   HARNESS_TARGET_IDS.push(`${target.id}-agents`, `${target.id}-skills`)
 }
 
@@ -531,21 +815,37 @@ function buildHarnessTargets(homeRoot, identityConfig, { dryRun, installMissing 
   const targets = []
   if (include('claude-skill')) targets.push(claudeSkillTarget(homeRoot, { dryRun, installMissing }))
   if (include('claude-credential-guard')) targets.push(credentialGuardTargetClaude(homeRoot, { dryRun, installMissing }))
+  if (include('claude-git-branch-guard')) targets.push(gitBranchGuardTargetClaude(homeRoot, { dryRun, installMissing }))
   for (const target of catalog.targets) {
     if (target.id === 'codex' && include('codex-credential-guard')) {
       targets.push(credentialGuardTargetCodex(homeRoot, { dryRun, installMissing }))
     }
+    if (target.id === 'codex' && include('codex-git-branch-guard')) {
+      targets.push(gitBranchGuardTargetCodex(homeRoot, { dryRun, installMissing }))
+    }
     if (target.id === 'gemini' && include('gemini-credential-guard')) {
       targets.push(credentialGuardTargetGemini(homeRoot, { dryRun, installMissing }))
+    }
+    if (target.id === 'gemini' && include('gemini-git-branch-guard')) {
+      targets.push(gitBranchGuardTargetGemini(homeRoot, { dryRun, installMissing }))
     }
     if (target.id === 'cursor' && include('cursor-credential-guard')) {
       targets.push(credentialGuardTargetCursor(homeRoot, { dryRun, installMissing }))
     }
+    if (target.id === 'cursor' && include('cursor-git-branch-guard')) {
+      targets.push(gitBranchGuardTargetCursor(homeRoot, { dryRun, installMissing }))
+    }
     if (target.id === 'copilot' && include('copilot-credential-guard')) {
       targets.push(credentialGuardTargetCopilot(homeRoot, { dryRun, installMissing }))
     }
+    if (target.id === 'copilot' && include('copilot-git-branch-guard')) {
+      targets.push(gitBranchGuardTargetCopilot(homeRoot, { dryRun, installMissing }))
+    }
     if (target.id === 'kiro' && include('kiro-credential-guard')) {
       targets.push(credentialGuardTargetKiro(homeRoot, { dryRun, installMissing }))
+    }
+    if (target.id === 'kiro' && include('kiro-git-branch-guard')) {
+      targets.push(gitBranchGuardTargetKiro(homeRoot, { dryRun, installMissing }))
     }
     const agentsId = `${target.id}-agents`
     const skillsId = `${target.id}-skills`
@@ -627,4 +927,10 @@ module.exports = {
   credentialGuardTargetCursor,
   credentialGuardTargetCopilot,
   credentialGuardTargetKiro,
+  gitBranchGuardTargetClaude,
+  gitBranchGuardTargetCodex,
+  gitBranchGuardTargetGemini,
+  gitBranchGuardTargetCursor,
+  gitBranchGuardTargetCopilot,
+  gitBranchGuardTargetKiro,
 }

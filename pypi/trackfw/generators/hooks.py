@@ -109,25 +109,107 @@ def _read_global_hook_json(*rel_parts: str) -> dict | None:
         return None
 
 
+def _normalize_guard_path(p: str) -> str:
+    """Collapses runs of consecutive slashes ("//" -> "/", any position,
+    including leading) and strips a trailing slash, so two on-disk forms of
+    the SAME script path compare equal regardless of incidental formatting
+    (e.g. $HOME resolving with a trailing slash, as happens with macOS's
+    $TMPDIR, or a hand-edited config file). Does NOT resolve "." / ".."
+    segments or symlinks -- those transforms would let unrelated paths
+    compare equal (silently disarming the dedup, the more dangerous failure
+    mode here) and symlink resolution errors on a path that does not exist
+    yet, which every caller here must fail OPEN on. Hand-rolled instead of
+    os.path.normpath because it disagrees with Go's filepath.Clean and
+    Node's path.normalize on leading "//" handling (POSIX mandates exactly
+    two leading slashes be preserved; measured) -- mirrored byte-for-byte in
+    internal/generators/agentfiles.go (normalizeGuardPath) and
+    npm/src/generators/hooks.js (normalizeGuardPath). Never call with
+    anything other than a script path -- it is not a general string
+    normalizer."""
+    if not p:
+        return p
+    out_chars = []
+    prev_slash = False
+    for ch in p:
+        if ch == '/':
+            if prev_slash:
+                continue
+            prev_slash = True
+        else:
+            prev_slash = False
+        out_chars.append(ch)
+    out = ''.join(out_chars)
+    if len(out) > 1 and out.endswith('/'):
+        out = out.rstrip('/') or '/'
+    return out
+
+
+def _same_path_command(a: str, b: str) -> bool:
+    """Reports whether a and b denote the same script command path after
+    _normalize_guard_path."""
+    return _normalize_guard_path(a) == _normalize_guard_path(b)
+
+
 def _hook_array_has_command(existing, matcher: str, command: str) -> bool:
-    """Read-only counterpart of _merge_claude_hook_array."""
+    """Read-only counterpart of _merge_claude_hook_array. Compares command
+    paths via _same_path_command (normalized), not raw string equality.
+
+    ROADMAP-2026-08-17 ML-4B: also requires the sibling 'type' field to
+    equal "command" -- _merge_claude_hook_array always writes
+    {'type': 'command', 'command': ...}, and Claude/Codex/Gemini all
+    silently ignore a hook entry missing "type":"command" (measured,
+    hades-tf ML-4A barrier finding: a global entry with the correct command
+    but no 'type' field looked "installed" to the dedup, so the
+    project-scope entry was skipped in favor of a global entry that never
+    actually executes -- leaving BOTH scopes silently unprotected while
+    `trackfw validate` stayed green). Requiring "type":"command" here closes
+    that gap: a malformed global entry is now treated as "not installed", so
+    the project-scope entry gets re-wired instead of being skipped."""
     if not isinstance(existing, list):
         return False
     for entry in existing:
         if not isinstance(entry, dict) or entry.get('matcher') != matcher:
             continue
         inner = entry.get('hooks')
-        if isinstance(inner, list) and _has_entry(inner, 'command', command):
-            return True
+        if not isinstance(inner, list):
+            continue
+        for h in inner:
+            if isinstance(h, dict) and h.get('type') == 'command' \
+                    and isinstance(h.get('command'), str) \
+                    and _same_path_command(h['command'], command):
+                return True
     return False
 
 
-def _simple_array_has_value(existing, field: str, value: str) -> bool:
-    """Read-only check for flat arrays (Cursor's {"command":...} / Copilot's
-    {"bash":...} shape)."""
+def _simple_array_has_value(existing, field: str, value: str, require_command_type: bool = False) -> bool:
+    """Read-only, path-normalized check for flat arrays (Cursor's
+    {"command":...} / Copilot's {"type":"command","bash":...} shape) -- used
+    ONLY by the global-dedup read paths, never by the write-side
+    merge/idempotency helper (_has_entry), which must keep comparing raw
+    strings so its idempotency behavior does not drift from Go/Node. See
+    _same_path_command's doc comment for why value must always be a script
+    path.
+
+    ROADMAP-2026-08-17 ML-4B: require_command_type mirrors Go's
+    simpleArrayHasValue -- Copilot entries (_merge_credential_guard_copilot_
+    hooks) always carry "type":"command" and Copilot ignores an entry
+    without it (same hades-tf ML-4A finding as _hook_array_has_command
+    above), so Copilot callers pass True. Cursor entries
+    (_merge_credential_guard_cursor_hooks, {"command": ...}) never carry a
+    'type' field -- not part of Cursor's schema -- so requiring it there
+    would make this always return False for a perfectly valid, executing
+    Cursor entry; Cursor callers pass False (the default). Do NOT uniformize
+    this across CLIs."""
     if not isinstance(existing, list):
         return False
-    return _has_entry(existing, field, value)
+    for entry in existing:
+        if not isinstance(entry, dict):
+            continue
+        if require_command_type and entry.get('type') != 'command':
+            continue
+        if isinstance(entry.get(field), str) and _same_path_command(entry[field], value):
+            return True
+    return False
 
 
 def _global_credential_guard_installed_claude() -> bool:
@@ -179,7 +261,7 @@ def _global_credential_guard_installed_cursor() -> bool:
     hooks = root.get('hooks')
     if not isinstance(hooks, dict):
         return False
-    return _simple_array_has_value(hooks.get('beforeShellExecution'), 'command', script_path)
+    return _simple_array_has_value(hooks.get('beforeShellExecution'), 'command', script_path, False)
 
 
 def _global_credential_guard_installed_copilot() -> bool:
@@ -192,7 +274,7 @@ def _global_credential_guard_installed_copilot() -> bool:
     hooks = root.get('hooks')
     if not isinstance(hooks, dict):
         return False
-    return _simple_array_has_value(hooks.get('preToolUse'), 'bash', script_path)
+    return _simple_array_has_value(hooks.get('preToolUse'), 'bash', script_path, True)
 
 
 def _global_credential_guard_installed_kiro() -> bool:
@@ -208,6 +290,95 @@ def _global_credential_guard_installed_kiro() -> bool:
         return os.path.getsize(path) > 0
     except OSError:
         return False
+
+
+# ---------------------------------------------------------------------------
+# Global git-branch-guard dedup (ROADMAP-2026-08-17 Wave 2/ML-2B)
+# ---------------------------------------------------------------------------
+# Mirrors the _global_credential_guard_installed_* family above exactly,
+# pointed at ~/.trackfw/scripts/trackfw-git-branch-guard.sh instead of
+# trackfw-credential-guard.sh. Only 5 of the 6 credential-guard dedup
+# targets have a git-branch-guard counterpart: Kiro's project-scope injector
+# (inject_kiro_hooks) never wires git-branch-guard at all -- see its
+# "Git branch guard" comment -- so there is no
+# _global_git_branch_guard_installed_kiro. Windsurf/AmazonQ wire
+# git-branch-guard at project scope but have no global-scope target (ML-2A
+# only added targets for the 6 CLIs credential-guard already covers) and no
+# credential-guard dedup precedent either -- consistent, not a gap.
+# ---------------------------------------------------------------------------
+
+def _global_git_branch_guard_script_path() -> str | None:
+    """Mirrors Go's globalGitBranchGuardScriptPath / Node's
+    globalGitBranchGuardScriptPath."""
+    home = os.path.expanduser('~')
+    if not home or home == '~':
+        return None
+    return os.path.join(home, '.trackfw', 'scripts', 'trackfw-git-branch-guard.sh')
+
+
+def _global_git_branch_guard_installed_claude() -> bool:
+    script_path = _global_git_branch_guard_script_path()
+    if not script_path:
+        return False
+    root = _read_global_hook_json('.claude', 'settings.json')
+    if not root:
+        return False
+    hooks = root.get('hooks')
+    if not isinstance(hooks, dict):
+        return False
+    return _hook_array_has_command(hooks.get('PreToolUse'), 'Bash', script_path)
+
+
+def _global_git_branch_guard_installed_codex() -> bool:
+    script_path = _global_git_branch_guard_script_path()
+    if not script_path:
+        return False
+    root = _read_global_hook_json('.codex', 'hooks.json')
+    if not root:
+        return False
+    hooks = root.get('hooks')
+    if not isinstance(hooks, dict):
+        return False
+    return _hook_array_has_command(hooks.get('PreToolUse'), 'Bash', script_path)
+
+
+def _global_git_branch_guard_installed_gemini() -> bool:
+    script_path = _global_git_branch_guard_script_path()
+    if not script_path:
+        return False
+    root = _read_global_hook_json('.gemini', 'settings.json')
+    if not root:
+        return False
+    hooks = root.get('hooks')
+    if not isinstance(hooks, dict):
+        return False
+    return _hook_array_has_command(hooks.get('BeforeTool'), 'run_shell_command', script_path)
+
+
+def _global_git_branch_guard_installed_cursor() -> bool:
+    script_path = _global_git_branch_guard_script_path()
+    if not script_path:
+        return False
+    root = _read_global_hook_json('.cursor', 'hooks.json')
+    if not root:
+        return False
+    hooks = root.get('hooks')
+    if not isinstance(hooks, dict):
+        return False
+    return _simple_array_has_value(hooks.get('beforeShellExecution'), 'command', script_path, False)
+
+
+def _global_git_branch_guard_installed_copilot() -> bool:
+    script_path = _global_git_branch_guard_script_path()
+    if not script_path:
+        return False
+    root = _read_global_hook_json('.copilot', 'settings.json')
+    if not root:
+        return False
+    hooks = root.get('hooks')
+    if not isinstance(hooks, dict):
+        return False
+    return _simple_array_has_value(hooks.get('preToolUse'), 'bash', script_path, True)
 
 
 def _merge_claude_hook_array(hook_list: list, matcher: str, command: str) -> None:
@@ -320,9 +491,12 @@ def inject_claude_hooks(cwd: str) -> None:
         _merge_claude_hook_array(pre_hooks, 'Read', _GUARD_CMD_CLAUDE)
         _merge_claude_hook_array(pre_hooks, 'Write|Edit', _GUARD_CMD_CLAUDE)
 
-    # Git branch guard (ML-3C): Bash-only, PreToolUse-only, unconditional -- see the
-    # design-note block above _GIT_GUARD_CMD_CLAUDE.
-    _merge_claude_hook_array(pre_hooks, 'Bash', _GIT_GUARD_CMD_CLAUDE)
+    # Git branch guard (ML-3C): Bash-only, PreToolUse-only -- see the design-note block
+    # above _GIT_GUARD_CMD_CLAUDE. Dedup (ROADMAP-2026-08-17 Wave 2/ML-2B): skip
+    # project-scope when the global one is already installed
+    # (`trackfw update harness --targets claude-git-branch-guard`).
+    if not _global_git_branch_guard_installed_claude():
+        _merge_claude_hook_array(pre_hooks, 'Bash', _GIT_GUARD_CMD_CLAUDE)
 
     # PostToolUse — AskUserQuestion matcher → cleanup; Bash matcher → credential guard
     _merge_claude_hook_array(post_hooks, 'AskUserQuestion', _CLEANUP_CMD_CLAUDE)
@@ -425,12 +599,15 @@ _GUARD_CMD_GEMINI = '$GEMINI_PROJECT_DIR/scripts/trackfw-credential-guard.sh'
 #   - PreToolUse/before-* ONLY, no PostToolUse/after-*: blocking *after* the git
 #     command already ran accomplishes nothing; credential-guard's PostToolUse arm
 #     exists to catch leaks in tool *output*, which has no git-command analogue.
-#   - No `_global_git_branch_guard_installed_*`/skip-if-global-installed family: Go's
-#     agentfiles.go has no such gating for this guard (only credential-guard has it),
-#     and it would be unnecessary here regardless -- a subagent running the same
-#     blocked git command twice (once via the project hook, once via a global one) is
-#     merely idempotent, not a duplicate-warning problem like credential-guard's
-#     attention-signal file. Project-scope wiring below is therefore unconditional.
+#   - `_global_git_branch_guard_installed_*`/skip-if-global-installed family
+#     (ROADMAP-2026-08-17 Wave 2/ML-2B, added after this comment was first written):
+#     Go's agentfiles.go now HAS this gating (globalGitBranchGuardInstalled<Tool>),
+#     mirroring credential-guard's dedup family exactly -- running the same blocked
+#     git command's hook twice per Bash call is idempotent in EFFECT (still blocks),
+#     but doubles the block MESSAGE printed to the agent/user, which is the exact
+#     symptom this dedup exists to close (see the ML-2B roadmap's "Impacto medido").
+#     Applied to Claude/Codex/Gemini/Cursor/Copilot below (Kiro has no git-branch-guard
+#     project wiring at all, see inject_kiro_hooks).
 #   - No `_migrate_hook_command` calls: this is a brand-new script/command string with
 #     no legacy relative-path predecessor to rewrite (unlike credential-guard's
 #     `scripts/trackfw-credential-guard.sh` -> $CLAUDE_PROJECT_DIR/... fix history).
@@ -478,12 +655,15 @@ def inject_codex_hooks(cwd: str) -> None:
             pre_tool_hooks, 'apply_patch', _GUARD_CMD_CODEX,
         )
 
-    # Git branch guard (ML-3C): Bash-only, PreToolUse-only, unconditional -- see the
-    # design-note block above _GIT_GUARD_CMD_CLAUDE. No apply_patch matcher: git
-    # commit/push/checkout -b never reach Codex's apply_patch tool.
-    _merge_codex_hook_entry(
-        pre_tool_hooks, 'Bash', _GIT_GUARD_CMD_CODEX,
-    )
+    # Git branch guard (ML-3C): Bash-only, PreToolUse-only -- see the design-note block
+    # above _GIT_GUARD_CMD_CLAUDE. No apply_patch matcher: git commit/push/checkout -b
+    # never reach Codex's apply_patch tool. Dedup (ROADMAP-2026-08-17 Wave 2/ML-2B): skip
+    # project-scope when the global one is already installed
+    # (`trackfw update harness --targets codex-git-branch-guard`).
+    if not _global_git_branch_guard_installed_codex():
+        _merge_codex_hook_entry(
+            pre_tool_hooks, 'Bash', _GIT_GUARD_CMD_CODEX,
+        )
 
     post_hooks = hooks.setdefault('PostToolUse', [])
     _migrate_hook_command(post_hooks, '.*', 'scripts/trackfw-attention-cleanup.sh', _CLEANUP_CMD_CODEX)
@@ -581,9 +761,12 @@ def inject_gemini_hooks(cwd: str) -> None:
         _merge_claude_hook_array(before, 'read_file|read_many_files', _GUARD_CMD_GEMINI)
         _merge_claude_hook_array(before, 'write_file|replace', _GUARD_CMD_GEMINI)
 
-    # Git branch guard (ML-3C): run_shell_command-only, BeforeTool-only, unconditional
-    # -- see the design-note block above _GIT_GUARD_CMD_CLAUDE.
-    _merge_claude_hook_array(before, 'run_shell_command', _GIT_GUARD_CMD_GEMINI)
+    # Git branch guard (ML-3C): run_shell_command-only, BeforeTool-only -- see the
+    # design-note block above _GIT_GUARD_CMD_CLAUDE. Dedup (ROADMAP-2026-08-17 Wave
+    # 2/ML-2B): skip project-scope when the global one is already installed
+    # (`trackfw update harness --targets gemini-git-branch-guard`).
+    if not _global_git_branch_guard_installed_gemini():
+        _merge_claude_hook_array(before, 'run_shell_command', _GIT_GUARD_CMD_GEMINI)
 
     after = hooks.setdefault('AfterTool', [])
     _migrate_hook_command(after, '*', 'scripts/trackfw-attention-cleanup.sh', _CLEANUP_CMD_GEMINI)
@@ -779,16 +962,18 @@ def inject_copilot_hooks(cwd: str) -> None:
         post_tool_use.append(dict(write_entry))
 
     # Git branch guard (ML-3C, ROADMAP-2026-08-14): "bash" matcher, preToolUse only --
-    # see the design-note block above _GIT_GUARD_CMD_CLAUDE in this module. Unconditional
-    # (no _global_git_branch_guard_installed_* gating exists for this guard, unlike the
-    # credential-guard entries above).
-    pre_tool_use.append({
-        'type': 'command',
-        'matcher': 'bash',
-        'bash': _GIT_GUARD_CMD_PLAIN,
-        'cwd': '.',
-        'timeoutSec': 10,
-    })
+    # see the design-note block above _GIT_GUARD_CMD_CLAUDE in this module. Dedup
+    # (ROADMAP-2026-08-17 Wave 2/ML-2B): skip project-scope when the global one is
+    # already installed (`trackfw update harness --targets copilot-git-branch-guard`),
+    # same reasoning as the credential-guard dedup above.
+    if not _global_git_branch_guard_installed_copilot():
+        pre_tool_use.append({
+            'type': 'command',
+            'matcher': 'bash',
+            'bash': _GIT_GUARD_CMD_PLAIN,
+            'cwd': '.',
+            'timeoutSec': 10,
+        })
 
     data = {
         'version': 1,
@@ -940,14 +1125,19 @@ def inject_cursor_hooks(cwd: str) -> None:
             post.append({'command': 'scripts/trackfw-credential-guard.sh', 'matcher': 'Write'})
 
     # Git branch guard (ML-3C, ROADMAP-2026-08-14): beforeShellExecution only -- see the
-    # design-note block above _GIT_GUARD_CMD_CLAUDE in this module. Defined outside the
-    # `_global_credential_guard_installed_cursor()` conditional above (unlike the
-    # credential-guard entries): no `_global_git_branch_guard_installed_*` gating exists
-    # for this guard, so it is wired unconditionally, and `before` must exist regardless
-    # of whether that conditional ran.
-    before = hooks.setdefault('beforeShellExecution', [])
-    if not _has_entry(before, 'command', _GIT_GUARD_CMD_PLAIN):
-        before.append({'command': _GIT_GUARD_CMD_PLAIN})
+    # design-note block above _GIT_GUARD_CMD_CLAUDE in this module. Dedup
+    # (ROADMAP-2026-08-17 Wave 2/ML-2B): skip project-scope when the global one is
+    # already installed (`trackfw update harness --targets cursor-git-branch-guard`). The
+    # key is intentionally only touched inside this conditional (never a bare
+    # `hooks.setdefault('beforeShellExecution', [])` outside it) so that when BOTH
+    # credential-guard and git-branch-guard are deduped away, the key stays absent from
+    # the emitted JSON rather than becoming a present-but-empty array -- matches Go's
+    # InjectCursorHooks, which check-agent-hooks-parity.sh's structural comparator
+    # treats as significant (absent key vs empty array is drift, not noise).
+    if not _global_git_branch_guard_installed_cursor():
+        before = hooks.setdefault('beforeShellExecution', [])
+        if not _has_entry(before, 'command', _GIT_GUARD_CMD_PLAIN):
+            before.append({'command': _GIT_GUARD_CMD_PLAIN})
 
     _write_json(file_path, data)
 

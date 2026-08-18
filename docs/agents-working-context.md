@@ -18753,3 +18753,711 @@ warnings pré-existentes e não relacionados a este ML (gaps de ADR/Roadmap em o
 
 Roadmap atualizado: ML-4C `✅ Concluído`, AC5 declarado revisado, checkboxes marcados. Handoff para
 `trackfw_architect` auditar e commitar.
+
+## apolo-tf — ML-1A (2026-08-17) — INÍCIO
+
+Branch `fix/guard-global-cabeado-com-no-op-fora-de-projeto-e-integridade-independente-de-fiacao`
+(criada pelo arquiteto). Executando ML-1A do
+`docs/roadmaps/wip/ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-e-integridade-independente-de-fiacao.md`
+(Wave 1, bloqueia as demais): `scripts/trackfw-git-branch-guard.sh` (e as 7 cópias) vira **no-op**
+(exit 0, sem bloquear nada) quando não houver `trackfw.yaml` na raiz do repositório corrente —
+pré-requisito de segurança operacional para a Wave 2 (fiação global do guard), que sem isso
+bloquearia `git commit`/`git push` em toda a máquina do usuário, com ou sem projeto trackfw. Lido
+o ADR `docs/adr/ADR-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-trackfw.md` na
+íntegra antes de codar.
+
+## apolo-tf — ML-1A (2026-08-17) — CONCLUÍDO
+
+**Decisão de design registrada (era responsabilidade minha, não do roadmap):** raiz do projeto
+localizada subindo diretórios a partir do cwd FÍSICO (`pwd -P`, resolve symlink) via parameter
+expansion/`test -f` puros — **sem** `git rev-parse --show-toplevel`. Medido: caminhada por
+builtins ≈0,77 ms/chamada contra ≈16 ms/chamada do `git rev-parse` (fork+exec) — ~21x mais caro —
+e `git rev-parse` sai 128 fora de repositório git (precisa tratamento extra) e resolve a raiz do
+**git**, não a de `trackfw.yaml` (resposta errada em submódulo/repo aninhado). Guard roda em toda
+chamada de ferramenta do agente — custo do fork por chamada era o discriminante decisivo.
+
+**Arquivos tocados (7 cópias do guard + testes 3 stacks + falsify + roadmap + vault):**
+`internal/generators/scaffold.go` (`gitBranchGuardScript`, bloco "--- 0. No-op..." inserido antes
+do parsing de comando), `internal/validator/validator_git_branch_guard_reference.go`,
+`npm/src/generators/hooks.js` (`GIT_BRANCH_GUARD_SCRIPT`, `${...}` escapado como `\${...}` no
+template literal), `npm/src/validator/index.js` (idem), `pypi/trackfw/generators/init_gen.py`
+(`_GIT_BRANCH_GUARD_SH`, raw string, sem escaping necessário), `pypi/trackfw/validator.py` (idem),
+`scripts/trackfw-git-branch-guard.sh` (referência versionada, regenerada via
+`GenerateGitBranchGuardScript` num módulo Go isolado — nunca editada à mão). Confirmado
+byte-idêntico nos 3 runtimes via `discover --init` real (Go/Node/Python) + `check-attention-scripts-parity.sh`.
+
+**Testes**: `internal/generators/git_branch_guard_test.go` (+6 testes: fixture "com trackfw.yaml"
+virou padrão para os testes de bloqueio pré-existentes; fixture par "sem trackfw.yaml" para os
+novos testes de no-op, incl. não-vacuidade e subdiretório profundo). `npm/tests/git_branch_guard.test.js`
+(mesmo padrão, +5 testes). `pypi/tests/test_git_branch_guard.py` (**achado**: os `subprocess.run`
+das 3 classes de teste que exercitam bloqueio NUNCA passavam `cwd=` — rodavam com o cwd AMBIENTE
+do processo pytest; corrigido para `cwd=self.tmpdir` explícito em todas + nova classe
+`TestGitBranchGuardNoOpOutsideProject`, 6 testes). `test_gera_script_executavel` invertido
+(`assertNotIn('trackfw.yaml', ...)` → `assertIn`, comentário desatualizado corrigido).
+
+**`scripts/check-gates-falsify.sh`**: mesmo achado do Python se repetia no gate — `assert_guard_exit`
+nunca fazia `cd`, herdando o cwd ambiente de quem chama o script. Cenários 60-63 (que testam
+bloqueio) ficariam silenciosamente dependentes do cwd de quem roda `make quality`. Fix sem mudar a
+assinatura do helper (usado só pelos Cenários 60-64): `cd` para um fixture COM `trackfw.yaml` logo
+antes do Cenário 60, `cd` de volta ao original logo depois do Cenário 63 — todo `assert_guard_exit`
+do bloco herda o cwd correto. Cenário 64 novo: 4 braços (baseline sem trackfw.yaml → 0; baseline
+com trackfw.yaml → 2, reverse-vacuity; detecção — corrompe `[ "$_TRACKFW_FOUND" -eq 1 ] || exit 0`
+→ 2 mesmo sem trackfw.yaml; auto-discriminação — mesmo build corrompido, dentro de projeto trackfw
+continua bloqueando). Total 125 cenários.
+
+**Evidência:** `go build ./...` limpo · `go test ./...` verde (inclui 24 testes de
+`git_branch_guard_test.go`, incl. os 6 novos) · `node --test`/`npm test`: 611 passed, 0 failed ·
+`PYTHONPATH=pypi python3 -m pytest pypi/tests/`: 1290 passed, 14 subtests · `check-gates-falsify.sh`
+standalone: 125 cenários, 0 FAIL, incluindo as linhas `OK` dos braços de detecção dos Cenários 60-64
+· `make quality` completo: exit 0 · `bin/trackfw validate` (binário local recompilado): exit 0, 17
+warnings pré-existentes não relacionados a este ML.
+
+Nota de vault: `vault/notes/git-branch-guard-noop-outside-project-fixtures-and-falsify-cwd-2026-08-17.md`
+(as duas armadilhas de fixture/cwd ambiente + a medição que descartou `git rev-parse`).
+
+Roadmap `ML-1A` marcado `✅ Concluído` (pendente de auditoria do arquiteto antes de fechar
+oficialmente — Wave 2 bloqueada até essa auditoria confirmar o no-op). Handoff para
+`trackfw_architect` auditar e commitar. Nenhum `git commit`/`push`/branch executado por mim.
+
+## apolo-tf — ML-2A (2026-08-17) — INICIADO
+
+Wave 2 do mesmo roadmap (`ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-e-
+integridade-independente-de-fiacao.md`), depende de ML-1A/1B já concluídas e auditadas (no-op sem
+EPIPE). Objetivo: cabear `git-branch-guard` no escopo global (`trackfw update harness`), nos
+mesmos 6 CLIs do `credential-guard` (claude, codex, gemini, cursor, copilot, kiro — Windsurf fica
+de fora, mesmo critério do credential-guard), seguindo exatamente o padrão dele. Vai tocar
+`internal/generators/update.go`, `npm/src/commands/update-harness.js`,
+`pypi/trackfw/commands/update_harness.py`, `scripts/check-harness-hooks-parity.sh`,
+`scripts/check-gates-falsify.sh`, `docs/cli-parity.md` (lista fixa de 27→33 ids), testes dos 3
+stacks. Decisão de design (orientada por consulta prévia): Kiro recebe **arquivo próprio**
+(`~/.kiro/hooks/trackfw-git-branch-guard.json`) em vez de compartilhar
+`trackfw-credential-guard.json` — o writer do Kiro é wholesale (reescreve o documento inteiro), não
+merge, então compartilhar o arquivo faria os dois targets flap entre si a cada run (falha de
+idempotência). Os outros 5 CLIs reusam os merge helpers existentes (`mergeClaudeHookArray` etc.),
+passando o scriptPath do git-branch-guard — nenhum helper de merge novo, nenhuma edição no gerador
+de template do script (`scaffold.go`/mirrors — já escrito desde ML-1A/1B). Nenhum `git
+commit`/`push`/branch por mim; handoff ao final para `trackfw_architect`.
+
+## apolo-tf — ML-2A (2026-08-17) — CONCLUÍDO
+
+Cabeado `git-branch-guard` no escopo global (`trackfw update harness`), nos mesmos 6 CLIs do
+`credential-guard` (claude, codex, gemini, cursor, copilot, kiro).
+
+**Padrão seguido, 5 dos 6 CLIs (claude/codex/gemini/cursor/copilot):** novas funções
+`harnessGitBranchGuardTarget<Tool>` (Go), `gitBranchGuardTarget<Tool>` (Node),
+`_git_branch_guard_<tool>_result` (Python), espelhando literalmente as `*CredentialGuardTarget<Tool>`
+já existentes, reusando os MESMOS merge helpers (`mergeCredentialGuardClaudeHooks`/`...GeminiHooks`/
+`...CursorHooks`/`...CopilotHooks` no Go; `mergeClaudeHookArray`/`mergeSimpleCommandArray`/
+`mergeCopilotHookArray` no Node; `_merge_claude_hook_array`/`_merge_simple_command_array`/
+`_merge_copilot_hook_array` no Python) — só troca o `scriptPath` para `trackfw-git-branch-guard.sh`.
+Os dois guards **coexistem no MESMO arquivo** (`~/.claude/settings.json` etc.) como duas entradas de
+comando distintas dentro do mesmo array `hooks` do matcher — os merge helpers já deduplicam por
+comando exato e anexam um segundo comando distinto sem sobrescrever o primeiro, então nenhum merge
+helper novo foi necessário.
+
+**Kiro é a exceção estrutural, decisão registrada:** `harnessCredentialGuardTargetKiro` reescreve
+`~/.kiro/hooks/trackfw-credential-guard.json` por INTEIRO a cada run (nunca faz merge). Compartilhar
+esse arquivo com um segundo writer também-wholesale para o git-branch-guard faria os dois targets
+entrarem em flap eternamente (cada run reescreve por cima do outro, ambos reportando `updated` para
+sempre — falha de idempotência). Por isso o Kiro recebe um **arquivo dedicado separado**,
+`~/.kiro/hooks/trackfw-git-branch-guard.json`, mesmo schema `{"version":"v1","hooks":[pre,post]}`,
+nomes de hook `trackfw-git-branch-guard-global-pre`/`-global-post`.
+
+**Lista de targets:** `HarnessTargetIDs`/`HARNESS_TARGET_IDS`/`declared_target_ids()` cresceu de 27
+para **33** ids — `<tool>-git-branch-guard` inserido imediatamente depois de `<tool>-credential-guard`
+e antes de `<tool>-agents`/`<tool>-skills`, nos 3 stacks, ordem byte-idêntica confirmada por
+`check-update-parity.sh` (`update-harness/target-list/three-runtimes-identical`, lista completa dos
+33 ids colada na evidência de `make quality`).
+
+**`scripts/check-harness-hooks-parity.sh`:** restruturado de tabela 1:1 `cli→arquivo` para
+`(cli,guard)→arquivo` — `hookfile_for(cli, guard)` (para Kiro retorna arquivos distintos por guard,
+para os outros 5 o mesmo arquivo independente do guard). Vacuidade (P2) e comparação estrutural
+(go-vs-node/go-vs-py) cobrem os 12 alvos; os labels ORIGINAIS `harness-hooks-parity/$cli/go-vs-node`/
+`go-vs-py` (usados pelo Cenário 45 pré-existente) foram preservados intocados para o arquivo de
+credential-guard — o Kiro ganhou um SEGUNDO par de labels
+`harness-hooks-parity/kiro/git-branch-guard/go-vs-node`/`go-vs-py` para seu arquivo próprio.
+
+**`scripts/check-gates-falsify.sh`:** Cenário 45 (pré-existente) teve o seam ampliado — a nova
+função Python `_git_branch_guard_kiro_result` introduziu uma SEGUNDA ocorrência do trecho
+`"trigger": "PostToolUse",` + `"matcher": "shell",` no arquivo, quebrando a checagem de unicidade do
+`corrupt_literal`; ampliei o contexto do seam do Cenário 45 para incluir `"name": "...-global-post"` +
+`"description": ...`, restrito à função de credential-guard. Cenário 66 novo: mesmo padrão do 45,
+agora para `_git_branch_guard_kiro_result` — corrompe o matcher `-global-post` do arquivo
+git-branch-guard do Kiro, prova detecção sob o label novo, e prova NÃO-REGRESSÃO explícita — o label
+original `harness-hooks-parity/kiro/go-vs-py` (credential-guard) continua passando na MESMA árvore
+corrompida, provando que os dois arquivos do Kiro são comparados de forma independente. Total:
+**127 cenários** (126→127), 0 FAIL, tanto standalone quanto dentro de `make quality`.
+
+**`docs/cli-parity.md`:** lista pinada de 27→33 atualizada com os 6 novos ids em posição, nova seção
+"Kiro global-scope git-branch-guard wiring" explicando a decisão do arquivo dedicado.
+
+**Testes novos:** `internal/commands/update_harness_test.go`
+(`TestUpdateHarnessCmd_GitBranchGuardInstallsViaCLI` tabela dos 6 CLIs +
+`TestUpdateHarnessCmd_GitBranchGuardAndCredentialGuardCoexistIdempotently`, prova 2 refs Pre+Post por
+script, idempotência em 2 runs), `npm/tests/update-harness.test.js` (mesma tabela + 2 testes de
+coexistência/idempotência Claude e Kiro), `pypi/tests/test_update_harness.py`
+(`_GIT_BRANCH_GUARD_CASES` parametrizado + `test_harness_declared_target_list_and_order` ajustado
+para os 33 ids + 2 testes de coexistência).
+
+**Evidência (colada, bruta):**
+```
+go build ./...                    → limpo
+go test ./internal/commands/... ./internal/generators/... → ok (inclui os novos)
+node --test npm/tests/update-harness.test.js → 66 tests, 0 fail
+PYTHONPATH=pypi python3 -m pytest pypi/tests/test_update_harness.py -q → 72 passed
+bash scripts/check-harness-hooks-parity.sh → 14 OK (12 credential-guard/2 kiro git-branch-guard extra)
+make quality (completo)           → exit 0
+  go test ./...                   → todos os pacotes ok
+  node --test (todos)             → 637 passed, 0 failed
+  PYTHONPATH=pypi python3 -m pytest pypi/tests -q → 1316 passed, 14 subtests, 0 failed
+  scripts/check-gates-falsify.sh  → 127 cenários, 0 FAIL
+bin/trackfw validate (binário local recompilado) → exit 0, 17 warnings pré-existentes,
+  0 warnings/violations novos relacionados a este ML
+```
+
+Alvos filtrados (`--targets claude-credential-guard` isolado etc.) confirmados INALTERADOS — os
+testes pré-existentes de credential-guard passam sem edição de expectativa, prova de não-regressão.
+
+**Duas observações reportadas, não corrigidas (fora do escopo desta ML por instrução explícita):**
+
+1. **`validate` passa a poder acusar `git_branch_guard_script_integrity`/`_hook_resolvable` em
+   escopo global "de graça" assim que o usuário rodar `trackfw update harness` de verdade** — a
+   infraestrutura (`validateGitBranchGuardGlobalScriptIntegrity`/`validateGitBranchGuardGlobalHookResolvable`,
+   `internal/validator/validator_git_branch_guard.go:242`) já existe e já está registrada em
+   `validator.go` (de um ML anterior a este) — este ML só a alimenta pela primeira vez, ao fazer os
+   configs globais referenciarem o script. O `~/.trackfw/scripts/trackfw-git-branch-guard.sh` real da
+   máquina de KG está desatualizado (ADR cita 123 vs 369 linhas) — só é regenerado, na prática,
+   quando KG rodar `trackfw update harness` de verdade (nenhum teste deste ML tocou o `$HOME` real).
+   Não fixado aqui — é o comportamento correto que a Wave 3 (próximo ML) formaliza para TODO artefato
+   global, não só este.
+2. **Sem dedup projeto+global para git-branch-guard, ao contrário do credential-guard.** Não existe
+   `globalGitBranchGuardInstalled<Tool>` análogo a `globalCredentialGuardInstalled<Tool>`
+   (`internal/generators/agentfiles.go:1607` em diante) — confirmado por grep, zero ocorrências.
+   Efeito: um projeto trackfw cujo usuário também rodou `trackfw update harness --targets
+   *-git-branch-guard` terá o guard cabeado **duas vezes** (global + projeto) para os mesmos CLIs,
+   rodando duas vezes por chamada de ferramenta, duas mensagens de stderr idênticas. Fora do escopo
+   declarado desta ML (é fiação de projeto, não deste roadmap) — nomeado aqui porque é exatamente a
+   classe de sintoma ("ruído de hook") que originou toda a frente.
+
+Nenhum `git commit`/`push`/branch executado por mim. Handoff para `trackfw_architect` auditar e
+commitar.
+
+## Sessão 2026-08-17 — apolo-tf (ML-2B — dedup projeto+global para o `git-branch-guard`) — CONCLUÍDO
+
+Roadmap `docs/roadmaps/wip/ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-e-integridade-independente-de-fiacao.md`,
+ML-2B. Escopo: fechar o gap que o próprio ML-2A relatou (fiação de projeto + global do
+`git-branch-guard` somadas rodam o guard duas vezes por chamada Bash, dobrando a mensagem de
+bloqueio) espelhando exatamente o padrão `globalCredentialGuardInstalled<Tool>` já existente.
+
+**Arquivos:**
+- `internal/generators/agentfiles.go` — `globalGitBranchGuardScriptPath()` +
+  `globalGitBranchGuardInstalled{Claude,Codex,Gemini,Cursor,Copilot}()`, e os 5 pontos de fiação
+  de projeto (Claude, Codex, Gemini, Copilot, Cursor) passaram a checar essas funções antes de
+  adicionar a entrada. Kiro não tem fiação de `git-branch-guard` (nada a mudar); Windsurf/AmazonQ
+  não têm alvo global (nada a mudar, mesmo padrão do `credential-guard`).
+- `internal/generators/git_branch_guard_dedup_test.go` (novo) — 12 testes: 5 dedup +
+  1 key-absent-not-empty (Cursor) + 2 fail-open + 2 execução real (mensagem uma vez / prova de
+  não-vacuidade com 2 mensagens).
+- `npm/src/generators/hooks.js` — mesmas funções/wraps espelhados; comentários "no global-install
+  dedup" removidos/corrigidos nos 5 pontos.
+- `npm/tests/git_branch_guard_dedup.test.js` (novo, 10 testes) +
+  `npm/tests/credential_guard_dedup.test.js` (comentários desatualizados corrigidos nos casos
+  Cursor/Copilot — as asserções em si continuavam corretas, só a explicação estava errada).
+- `pypi/trackfw/generators/hooks.py` — mesmas funções/wraps espelhados; bloco de design-note
+  acima de `_GIT_GUARD_CMD_CLAUDE` corrigido (dizia "no gating exists", agora existe).
+- `pypi/tests/test_git_branch_guard_dedup.py` (novo, 10 testes) +
+  `pypi/tests/test_credential_guard_dedup.py` (mesma correção de comentário).
+- `docs/roadmaps/wip/ROADMAP-2026-08-17-...md` — ML-2B marcado `✅ Concluído`, critérios
+  marcados, escopo real/armadilhas/débito residual documentados inline no roadmap.
+
+**Decisões registradas:**
+1. **Escopo real: 5 dos 6 CLIs do `credential-guard`.** Kiro nunca teve fiação de projeto do
+   `git-branch-guard` (confirmado por leitura de `InjectKiroHooks`/`inject_kiro_hooks`, não
+   presumido) — nada a deduplicar. Windsurf/AmazonQ têm fiação de projeto mas nenhum alvo global
+   (ML-2A não os cobriu; nem o `credential-guard` tem dedup para eles) — mesmo padrão, não é gap
+   novo.
+2. **Cursor "empty array vs absent key" (risco levantado pelo arquiteto/advisor antes de
+   escrever código):** quando os DOIS guards têm fiação global instalada,
+   `hooks.beforeShellExecution` tem de ficar **ausente** do JSON, não um array vazio presente —
+   os 3 stacks só tocam essa chave dentro do `if` de dedup correspondente. Teste dedicado nos 3
+   stacks prova ausência, não `len==0`.
+3. **AC3 ("mensagem uma vez só, prove executando") levado ao pé da letra:** os testes de "message
+   once" geram o script real, escrevem a fiação global E rodam o injetor de projeto, **leem e
+   combinam** as entradas de `PreToolUse`/`Bash` dos dois arquivos (projeto + `~/.claude/...`,
+   como o Claude Code realmente faz), e **executam** cada entrada com `git push`, contando
+   bloqueios reais (exit 2 + stderr) — não contagem de entradas no JSON. Braço de não-vacuidade
+   simula o estado pré-ML-2B (as duas entradas presentes) e prova que a mesma metodologia reporta
+   2 bloqueios, não 1.
+4. **Cenário de falsificação em teste de unidade, não em `scripts/check-gates-falsify.sh`:**
+   `check-agent-hooks-parity.sh` roda sempre com `$HOME` isolado e vazio, então o caminho "global
+   instalado" nunca é exercitado por esse gate — nem para o `credential-guard`, cujo dedup também
+   nunca ganhou cenário de falsificação em nível de shell (o Cenário 46 ataca o guard de
+   vacuidade de OUTRO gate). Os 12+10+10 testes novos cobrem baseline, fail-open e não-vacuidade
+   por execução real — mesmo rigor do Cenário 46, no nível de teste que já pegaria a classe de
+   regressão de 2026-08-08.
+
+**Débito residual explícito, não fechado:** o dedup é só-de-adição — um projeto que já tinha a
+entrada de projeto escrita ANTES do global ser instalado mantém as duas até algo tocar o arquivo
+manualmente; não há helper de remoção ativa no padrão do `credential-guard` para copiar. Mesma
+classe de gap que o `credential-guard` já tem, decisão do arquiteto se fecha ou não.
+
+**Evidência (colada, bruta):**
+```
+go build ./...                              → limpo
+go test ./...                               → todos os pacotes ok (inclui os 12 novos)
+npm test (npm --prefix npm test)            → 647 passed, 0 failed (10 novos)
+PYTHONPATH=pypi python3 -m pytest pypi/tests → 1326 passed, 14 subtests, 0 failed (10 novos)
+make quality (completo)                     → exit 0, 127 cenários (sem novo cenário shell — ver
+                                               decisão 4 acima), 0 FAIL
+bin/trackfw validate (binário local)         → exit 0, 17 warnings pré-existentes, 0 novos
+```
+
+Nenhum `git commit`/`push`/branch executado por mim. Handoff para `trackfw_architect` auditar e
+commitar.
+
+---
+
+## Sessão 2026-08-18 — Apolo (INÍCIO: ML-2C — comparação de caminho de hook normalizada)
+
+Branch `fix/guard-global-cabeado-com-no-op-fora-de-projeto-e-integridade-independente-de-fiacao`,
+roadmap `docs/roadmaps/wip/ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-e-
+integridade-independente-de-fiacao.md` em `wip/`. Retomando após a auditoria do arquiteto sobre o
+ML-2B ter achado o baseline do Cenário 67 vermelho por causa de barra dupla em `$TMPDIR` no macOS
+(`$WORK` do falsify vira `.../T//trackfw-falsify.XXX`). Executando ML-2C: normalizar
+`hookArrayHasCommand`/`simpleArrayHasValue` (Go) + espelhos Node/Python antes de comparar caminho
+de comando, e corrigir a fixture do Cenário 67 sem deixar o produto frágil.
+
+## Sessão 2026-08-18 — Apolo (FIM: ML-2C concluído — pendente de auditoria do arquiteto)
+
+**Arquivos alterados:**
+- `internal/generators/agentfiles.go` — `normalizeGuardPath`/`samePathCommand` novos;
+  `hookArrayHasCommand` e `simpleArrayHasValue` passam a comparar via `samePathCommand`.
+- `internal/generators/guard_path_normalize_test.go` (novo) — tabela de normalização + tolerância
+  a `//` + teste negativo (caminhos diferentes não podem casar).
+- `internal/generators/git_branch_guard_dedup_test.go` —
+  `TestGBGDedup_Claude_SkipsProjectEntry_ToleratesDoubleSlashInStoredCommand` novo, reproduz o bug
+  no nível do dedup (não só do comparador).
+- `npm/src/generators/hooks.js` — `normalizeGuardPath`/`samePathCommand`/`hasEntryPath` novos e
+  exportados; `hookArrayHasCommand` usa `samePathCommand`; os 4 call-sites read-only de
+  Cursor/Copilot (`globalCredentialGuardInstalledCursor/Copilot`,
+  `globalGitBranchGuardInstalledCursor/Copilot`) trocam `hasEntry` por `hasEntryPath` —
+  `hasEntry` em si **não foi tocado** (é compartilhado com o lado de escrita/idempotência).
+- `npm/tests/guard_path_normalize.test.js` (novo) + teste de regressão adicionado em
+  `npm/tests/git_branch_guard_dedup.test.js`.
+- `pypi/trackfw/generators/hooks.py` — `_normalize_guard_path`/`_same_path_command` novos;
+  `_hook_array_has_command` e `_simple_array_has_value` reescritos para normalizar (Python já
+  tinha esses dois como wrappers 100% read-only, então `_has_entry` — compartilhado com escrita —
+  também não foi tocado).
+- `pypi/tests/test_guard_path_normalize.py` (novo) + teste de regressão adicionado em
+  `pypi/tests/test_git_branch_guard_dedup.py`.
+- `scripts/check-gates-falsify.sh` — Cenário 67: `T67_FAKE_HOME` passa a derivar de
+  `WORK67_CLEAN` (`$WORK` com barras colapsadas via `sed`), não de `$WORK` bruto, então o baseline
+  não depende mais de `$TMPDIR` terminar em `/`; braço 4 novo (`double-slash-tolerance`) com
+  `HOME` sintético carregando `//` deliberadamente embutido, provando que o produto tolera.
+- `docs/roadmaps/wip/ROADMAP-2026-08-17-...md` — ML-2C marcado `✅ Concluído`, critérios
+  marcados, decisões registradas inline.
+
+**Decisões registradas (consultadas com revisão externa antes de implementar):**
+1. **Escopo estendido além do texto literal do roadmap:** o roadmap só citava
+   `hookArrayHasCommand`, mas `simpleArrayHasValue`/`hasEntry`/`_has_entry` (usados pelo dedup de
+   Cursor/Copilot) tinham exatamente o mesmo bug de comparação por string crua — corrigidos
+   também, não só o citado.
+2. **Armadilha evitada em Node/Python:** `hasEntry`/`_has_entry` são compartilhados com o lado de
+   ESCRITA (idempotência de `injectCursorHooks`, merge helpers). Normalizar ali dentro mudaria o
+   comportamento de escrita e divergiria do Go (cujo `simpleArrayHasValue` já era 100% read-only).
+   Solução: `hasEntryPath` (Node)/reescrita de `_simple_array_has_value` (Python, que já era
+   wrapper dedicado) usados **só** nos 4 call-sites read-only; os helpers de escrita ficaram
+   byte-intocados nos 3 stacks.
+3. **Normalização hand-rolled, não builtins:** medi que `filepath.Clean` (Go), `path.normalize`
+   (Node) e `os.path.normpath` (Python) divergem entre si em barra dupla líder (POSIX exige
+   preservar `//` líder; só o Python respeita) e barra final (só Node preserva) — usar os builtins
+   teria quebrado paridade entre os 3 CLIs mesmo corrigindo cada um isoladamente. Implementei
+   `normalizeGuardPath` do zero, idêntica nos 3 stacks: colapsa barras duplicadas (qualquer
+   posição) e remove barra final, **sem** resolver `.`/`..`/symlinks.
+4. **Symlink — decisão explícita de NÃO resolver:** (a) toda função aqui roda antes de o artefato
+   necessariamente existir e é fail-open, então erro de `EvalSymlinks` em caminho inexistente
+   viraria "não instalado" silencioso; (b) custo assimétrico — sub-normalizar = guard roda 2x
+   (ruído), sobre-normalizar = dedup pode desarmar o guard por engano (falha de segurança
+   silenciosa). Vieso para a transformação mais estreita.
+5. **Teste negativo não estava no AC original, adicionado por indicação da revisão:** caminhos
+   genuinamente diferentes (usuários diferentes, guards diferentes, prefixo vs caminho completo)
+   não podem comparar iguais — sem isso, um teste só-de-`//` não provaria ausência de
+   sobre-normalização.
+
+**Evidência (colada, bruta):**
+```
+go build ./...                                            → limpo
+go test ./... (inclui internal/generators)                 → ok, todos os pacotes
+cd npm && npm test                                          → 651 passed, 0 failed
+PYTHONPATH=pypi python3 -m pytest pypi/tests -q              → 1330 passed, 28 subtests passed
+make quality (completo)                                    → exit 0
+  scripts/check-gates-falsify.sh                             → 128 cenários, 0 FAIL
+    OK [falsify/agent-hooks-parity/credential-guard-present-vacuity/{baseline,detected,discriminant,
+        structural-comparator-not-reached}]  (Cenário 46, não-regressão confirmada)
+    OK [falsify/git-branch-guard/...] (Cenários 60–64, todos OK)
+    OK [falsify/git-branch-guard-dedup/{baseline-skips-project-entry,baseline-credential-guard-
+        unaffected,reverse-vacuity,detection-catches-regression,double-slash-tolerance}]
+        (Cenário 67, braço 4 novo — antes vermelho, agora OK)
+./bin/trackfw validate (binário local recompilado)          → exit 0, 17 warnings pré-existentes,
+  0 novos relacionados a este ML
+```
+
+Nenhum `git commit`/`push`/branch executado por mim. Handoff para `trackfw_architect` auditar e
+commitar. Wave 3 (ML-3A, integridade independente de fiação) segue pendente.
+
+---
+
+## Sessão 2026-08-18 — Apolo (ML-3A — integridade de script global independente de fiação) — CONCLUÍDO
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-e-integridade-independente-de-fiacao.md`
+**REQ:** `docs/req/REQ-2026-08-17-guard-global-e-instalado-sem-fiacao-e-sua-integridade-nunca-e-verificada.md`
+
+**Ação:** `validateGuardGlobalScriptIntegrity` (e espelhos Node/Python) deixou de percorrer os 6
+arquivos de config global procurando referências a `scriptMarker` — passou a checar diretamente
+`~/.trackfw/scripts/<script>.sh` (caminho fixo escrito por `GenerateGlobal{CredentialGuard,GitBranchGuard}Script`),
+avaliado **uma única vez por script**, independentemente de quantos (ou nenhum) configs o
+referenciam. "Se o trackfw escreveu o script, o trackfw verifica o script."
+
+**Arquivos:**
+- `internal/validator/validator_git_branch_guard.go` — `validateGuardGlobalScriptIntegrity`
+  reescrita (assinatura mudou de `(ruleName, scriptMarker, referenceContent)` para
+  `(scriptFileName, referenceContent)`); os wrappers `validateCredentialGuardGlobalScriptIntegrity`/
+  `validateGitBranchGuardGlobalScriptIntegrity` continuam com a mesma assinatura pública (nenhuma
+  mudança em `validator.go`, que os invoca).
+- `npm/src/validator/index.js` — mesma reescrita de `validateGuardGlobalScriptIntegrity`.
+- `pypi/trackfw/validator.py` — mesma reescrita de `validate_guard_global_script_integrity`.
+- `internal/validator/validator_git_branch_guard_test.go`,
+  `npm/tests/git_branch_guard_hook_integrity.test.js`,
+  `pypi/tests/test_git_branch_guard_validator.py` — 3 testes novos por stack: dispara sem nenhuma
+  fiação (discriminante central), ausência do artefato é silêncio (credential e git-branch-guard),
+  não duplica com o mesmo script referenciado por 2 configs (Claude+Codex).
+- `internal/validator/main_test.go` (novo) — `TestMain` isolando `$HOME` para o binário de teste
+  inteiro do pacote `validator` (Go).
+- `pypi/tests/conftest.py` (novo) — fixture `session`+`autouse` isolando `$HOME` para a suíte
+  Python inteira.
+- `scripts/check-artifact-parity.sh`, `scripts/check-barrier.sh` — `export HOME="$WORK/home"`
+  isolado no início do script.
+- `scripts/check-gates-falsify.sh` — `export HOME="$WORK/home"` isolado globalmente (com
+  `GOPATH`/`GOCACHE`/`GOMODCACHE` fixados nos valores reais ANTES do isolamento, para não forçar
+  `go build` a rebaixar o cache de módulos a cada run); Cenário 68 novo (8 braços): baseline
+  íntegro sem fiação, ausência do artefato, detecção sem NENHUMA fiação (discriminante central),
+  não-vacuidade via `rules:...off`, não-duplicação para git-branch-guard (2 configs) e para
+  credential-guard (2 configs, não-regressão).
+
+**Achado colateral não-óbvio (nota de vault recomendada, não criada por restrição de escopo desta
+sessão — ver riscos abaixo):** ao trocar o gatilho de "referenciado por config" para "existe em
+disco", **toda** rotina que chama `Validate()`/`ValidateTagged()` sem isolar `$HOME` passou a
+enxergar o `$HOME` REAL de quem roda os testes/gates. Na máquina de KG isso quebrou
+`TestValidate_Clean` (Go), `test_json_sem_violations_summary_counts`/`test_sem_violations_projeto_vazio`
+(Python) e 2 scripts de gate (`check-artifact-parity.sh`, `check-barrier.sh`) — porque o
+`~/.trackfw/scripts/trackfw-git-branch-guard.sh` real de KG está genuinamente desatualizado (é
+exatamente o bug que motivou a REQ). Sem isolar `$HOME` nos runners de teste dos 3 stacks e nos
+gates de shell, a suíte inteira ficaria não-reprodutível entre máquinas. Resolvido isolando `$HOME`
+uma vez por runner/gate (não teste a teste), preservando os testes que já controlavam `$HOME`
+pontualmente (eles salvam/restauram em torno do valor sintético agora, não do real — sem conflito).
+
+**Evidência (colada, bruta):**
+```
+go build ./...                                            → limpo
+go test ./...                                              → ok, todos os pacotes
+cd npm && npm test                                          → 651 passed, 0 failed
+PYTHONPATH=pypi python3 -m pytest pypi/tests -q              → 1330 passed, 28 subtests passed
+make quality (completo)                                    → exit 0
+  scripts/check-gates-falsify.sh                             → 129 cenários, 0 FAIL
+    OK [falsify/git-branch-guard-global-script-integrity/baseline]
+    OK [falsify/git-branch-guard-global-script-integrity/absent-is-not-a-violation]
+    OK [falsify/git-branch-guard-global-script-integrity/detected-without-wiring]
+    PROOF [falsify/git-branch-guard-global-script-integrity/non-vacuity]
+    OK [falsify/git-branch-guard-global-script-integrity/no-double-report]
+    OK [falsify/credential-guard-global-script-integrity/no-double-report]
+./bin/trackfw validate (binário local recompilado, ./bin/trackfw não o do PATH) → exit 0
+  → 18 warnings: os 17 pré-existentes + 1 NOVO —
+    "/Users/kgsaran/.trackfw/scripts/trackfw-git-branch-guard.sh (global scope) content diverges
+    from the template this version of trackfw generates" — a regra agora acusa em produção, na
+    própria máquina de KG, o exato defeito que motivou a REQ (script real 3 versões atrasado).
+    Confirma AC3 (repro fiel) empiricamente, não só por teste sintético.
+```
+
+**Critérios de aceite do ML-3A:** todos fechados — script divergente é acusado mesmo sem config
+referenciando (discriminante central, provado); ausência não é acusada; credential-guard continua
+verificado sem duplicar (contagem exata de ocorrências na saída real, não só JSON); `$HOME` sempre
+do fixture, nunca o real (Cenário 46 preservado); cenário de falsificação com baseline+detecção e
+prova de não-vacuidade; paridade nos 3 CLIs com gate; `make quality` verde.
+
+Nenhum `git commit`/`push`/branch executado por mim. Handoff para `trackfw_architect` auditar e
+commitar. Wave 4 (ML-4A, `hades-tf`) segue pendente — fora do escopo desta sessão.
+
+**Addendum (mesma sessão, pós-revisão):**
+- `scripts/check-validate-parity.sh` — `$HOME` isolado (com `GOPATH`/`GOMODCACHE` fixados antes,
+  mesma armadilha do `check-gates-falsify.sh`) + bloco novo comparando a mensagem do warning
+  `git_branch_guard_script_integrity` (escopo global) byte-a-byte entre Go/Node/Python — o gate
+  pré-existente só comparava `(rule, file)`, não o texto da mensagem, então uma divergência de
+  wording entre os 3 stacks (Python é montado por concatenação de f-strings) passaria despercebida.
+  Path do fixture normalizado contra o mesmo artefato de `$TMPDIR` terminando em `/` no macOS já
+  documentado no Cenário 67/ML-2C.
+- Roadmap: ML-3A marcado `✅ Concluído — pendente de auditoria do arquiteto` (padrão dos ML-2A/2B/2C
+  anteriores nesta mesma frente), critérios de aceite marcados, evidência colada, e 3 débitos
+  residuais explícitos reportados ao arquiteto (par `*_hook_resolvable` continua condicionado à
+  fiação; `globalGuardConfigFiles` não lista o arquivo dedicado do Kiro para git-branch-guard;
+  comentário desatualizado em `TestGitBranchGuardGlobal_SemWiringGlobalHoje_Silencio` e espelhos).
+
+---
+
+## Sessão 2026-08-18 — Apolo (ML-3B — `globalGuardConfigFiles` não cobre o arquivo dedicado do
+Kiro) — CONCLUÍDO
+
+**Escopo:** roadmap `docs/roadmaps/wip/ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-
+projeto-e-integridade-independente-de-fiacao.md`, ML-3B (débito #2 reportado pelo ML-3A). Fecha o
+ponto cego: `globalGuardConfigFiles`/`GLOBAL_GUARD_CONFIG_FILES`/`_GLOBAL_GUARD_CONFIG_FILES` (3
+stacks) sempre apontavam o Kiro para `~/.kiro/hooks/trackfw-credential-guard.json` para OS DOIS
+guards, então `git_branch_guard_hook_resolvable` (escopo global) nunca lia o arquivo dedicado
+`~/.kiro/hooks/trackfw-git-branch-guard.json` que a Wave 2 (ML-2A) passou a escrever — um hook Kiro
+apontando para script ausente/não-executável passava limpo.
+
+**Desenho (confirmado por leitura de `check-harness-hooks-parity.sh`'s `hookfile_for(cli, guard)`,
+não presumido):** em vez de reestruturar a lista fechada `globalGuardConfigFiles` para pares
+`(cli, guard) → arquivo` (que trocaria as 6 entradas atuais por 11 só para expressar 1 exceção
+real), adicionei uma função de resolução — `globalGuardConfigPath(gf, scriptMarker)` (Go/Node),
+`_global_guard_config_path(rel_path, cli, script_marker)` (Python) — que recebe a entrada existente
+e o `scriptMarker` sendo avaliado, e só desvia o caminho quando `cli == "Kiro" &&
+scriptMarker == gitBranchGuardScriptMarker`. Os outros 5 CLIs (um único arquivo válido para os dois
+guards) ficam inalterados. Solução mais simples que cobre o caso sem distorcer a estrutura
+existente — a mesma forma do `hookfile_for` do gate, no lado do validador.
+
+**Arquivos:**
+- `internal/validator/validator_git_branch_guard.go` — `globalGuardConfigPath` nova,
+  `validateGuardGlobalHookResolvable` usa o caminho resolvido em vez de `gf.path` (leitura E
+  mensagens de erro).
+- `npm/src/validator/index.js` — espelho `globalGuardConfigPath`.
+- `pypi/trackfw/validator.py` — espelho `_global_guard_config_path`.
+- Testes novos (4 por stack, 12 total): discriminante (script ausente no arquivo dedicado do Kiro →
+  acusado, citando o arquivo e "Kiro"), silêncio simétrico (script presente+executável), não-
+  regressão+não-duplicação (os dois arquivos dedicados do Kiro presentes simultaneamente →
+  exatamente 1 violation por regra, nunca 0 nem 2+), fail-open (sem arquivo dedicado → silêncio).
+  `internal/validator/validator_git_branch_guard_test.go`, `npm/tests/git_branch_guard_hook_integrity.test.js`,
+  `pypi/tests/test_git_branch_guard_validator.py`.
+- `scripts/check-gates-falsify.sh` — Cenário 69 novo: fixture real via
+  `trackfw update harness --targets kiro-git-branch-guard,kiro-credential-guard --install-missing`
+  contra `$HOME` sintético; baseline (os dois arquivos dedicados íntegros → silêncio); detecção
+  (script referenciado pelo arquivo dedicado do git-branch-guard removido → `validate` acusa,
+  citando o arquivo e "Kiro"); não-duplicação (exatamente 1 ocorrência) + não-regressão
+  (credential-guard do Kiro, arquivo separado e intacto, permanece em silêncio).
+- Comentário desatualizado corrigido (débito #3 do ML-3A):
+  `TestGitBranchGuardGlobal_SemWiringGlobalHoje_Silencio` (Go) e espelhos Node/Python diziam "hoje
+  nenhum harnessGitBranchGuardTarget* existe", falso desde a Wave 2 — reescrito para descrever o
+  que o teste realmente prova (nenhum arquivo de config global escrito no fixture → silêncio),
+  comportamento testado inalterado.
+
+**Não é bug de comparação normalizada (ML-2C):** este ML resolve QUAL arquivo ler, não COMO comparar
+strings — o precedente `//`/`normalizeGuardPath` do ML-2C não se aplica aqui.
+
+**Evidência (colada, bruta):**
+```
+go build ./... / go vet ./...                             → limpo
+go test ./... (5 testes novos Kiro)                        → ok, todos os pacotes
+cd npm && npm test (4 testes novos Kiro)                    → 655 passed, 0 failed
+PYTHONPATH=pypi python3 -m pytest pypi/tests -q (4 testes novos Kiro) → 1334 passed, 28 subtests
+make quality (completo)                                    → exit 0, 130 cenários, 0 FAIL
+  OK [falsify/git-branch-guard-global-hook-resolvable/kiro-dedicated-file/baseline]
+  OK [falsify/git-branch-guard-global-hook-resolvable/kiro-dedicated-file/detected]
+  OK [falsify/git-branch-guard-global-hook-resolvable/kiro-dedicated-file/no-double-report-and-no-regression]
+./bin/trackfw validate (binário local recompilado)          → exit 0, 18 warnings — os mesmos do
+  ML-3A (17 pré-existentes + o script real desatualizado de KG), 0 novos relacionados a este ML
+```
+
+**Critérios de aceite:** todos fechados — arquivo dedicado do Kiro coberto; script ausente/não-
+executável acusado; credential-guard do Kiro inalterado sem duplicar; paridade 3 CLIs com gate;
+cenário de falsificação com baseline+detecção; `make quality` verde.
+
+Roadmap atualizado: ML-3B marcado `✅ Concluído — pendente de auditoria do arquiteto`, critérios de
+aceite marcados, evidência colada. Nenhum `git commit`/`push`/branch executado por mim — handoff
+para `trackfw_architect` auditar e commitar. Wave 4 (ML-4A, `hades-tf`) segue pendente.
+
+## Sessão 2026-08-18 — Hades (INÍCIO: ML-4A — barreira do guard em escopo global)
+
+Branch `fix/guard-global-cabeado-com-no-op-fora-de-projeto-e-integridade-independente-de-fiacao`,
+roadmap `docs/roadmaps/wip/ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-e-
+integridade-independente-de-fiacao.md`, Wave 4/ML-4A. Lido roadmap inteiro (todos os MLs 1A–3B e
+auditorias do arquiteto), REQ e ADR desta série, parecer anterior `docs/seguranca/2026-08-16-revisao-
+do-git-branch-guard.md`. Escopo: responder as 4 perguntas (A no-op induzível dentro de projeto, B
+fiação global cria caminho de desarme, C integridade vacua, D isolamento de `$HOME` nos gates) em
+`docs/seguranca/2026-08-17-revisao-do-guard-em-escopo-global.md`. Nenhum commit/push/branch (Hades
+não tem autoridade de git).
+
+## Sessão 2026-08-18 — Hades (FIM: ML-4A concluído — APROVADO, com achado nomeado)
+
+Entregue `docs/seguranca/2026-08-17-revisao-do-guard-em-escopo-global.md`. **Veredito: aprovar**,
+sem bloqueio — nenhum achado é regressão nem escalada de privilégio nova além do que o
+`ADR-2026-08-12` já aceita (`$HOME` gravável pelo agente é fora do modelo de defesa). Todos os 4
+itens medidos por execução real (`./scripts/trackfw-git-branch-guard.sh`, `./bin/trackfw`
+recompilado localmente, fixtures de `$HOME`/cwd isolados nunca a máquina real exceto para confirmar
+independentemente que `validate` acusa o script global desatualizado de KG — AC3 confirmado por mim
+também).
+
+- **A (no-op induzível dentro de projeto):** 8 vetores testados (`rm`/`mv`/dir/symlink quebrado/
+  trackfw.yaml falso mais próximo/permissão 0000/cwd symlink/ancestral sem permissão de execução
+  após cd). Nenhum desarma sem também destruir a governança (mesma classe já aceita no ADR) ou
+  quebrar o próprio `git` no processo (`A8`/`A11` — autodestrutivo, confirmado que `git status` real
+  falha na mesma condição). `A4`/`A6` (permissão 0000 no yaml; yaml falso em subdir mais próximo)
+  tentam desarmar e **não conseguem** — o guard continua bloqueando.
+- **B (achado central, não bloqueante):** forjei uma entrada global (`~/.claude/settings.json`,
+  `PreToolUse[Bash]` com `command` correto mas **sem** `"type":"command"`) via teste Go descartável
+  (`internal/generators/zz_hades_forge_test.go`, removido após a medição, nunca commitado). Provado
+  por execução: `globalGitBranchGuardInstalledClaude()` retorna `true` (dedup enganado) →
+  `InjectClaudeHooks` **pula** a entrada de projeto → `trackfw validate` (`ValidateUnfiltered()`)
+  reporta **zero** mensagens sobre git-branch-guard. Script global real, íntegro, no disco — o
+  problema é que nem o dedup (escritor grava `"type"`, leitor nunca confere) nem o
+  `hook_resolvable`/`collectCommandsWithMarker` (só faz `strings.Contains` do marker em qualquer
+  string da árvore JSON) validam a forma estrutural que o Claude Code real exige para reconhecer o
+  hook (confirmado contra a doc oficial, https://code.claude.com/docs/en/hooks). Resultado: nem
+  projeto nem global protegem, `validate` fica verde. Não bloqueei (exige `$HOME` já gravável, mesmo
+  pré-requisito do `ADR-2026-08-12`), mas nomeei como débito residual explícito a corrigir —
+  recomendação: espelhar no leitor a mesma checagem de `"type"` que o escritor já faz.
+- **C:** integridade global não vacua por symlink (`os.ReadFile` segue o link, compara conteúdo
+  real). Achei 2 débitos de baixa severidade da mesma família de B: (1) erro de leitura não-ENOENT
+  (ex. chmod 000) colapsa para "silêncio" em vez de propagar erro como a contraparte de projeto faz
+  — não explorável na prática porque script shell ilegível também não é executável; (2)
+  `hook_resolvable` global aceita qualquer caminho absoluto contendo o marker como substring
+  (não só o canônico), mas a integridade só verifica o caminho canônico fixo — mesma causa raiz de
+  B (comparação por substring/campo solto, não validação estrutural).
+- **D:** confirmado por leitura que os 4 gates citados isolam `$HOME` antes de qualquer chamada ao
+  binário; `check-harness-hooks-parity.sh` isola por invocação (equivalente). Node não tem
+  `TestMain` global mas usa `withEnv` com `try/finally` por teste (confirmado que restaura mesmo com
+  asserção lançando) — não é gap.
+
+Resposta ao pedido específico de KG: nenhum AC dos 8 foi fechado cedo demais — o achado B é um gap
+que nenhum AC cobria (não uma alegação falsa como em 2026-08-16), então recomendo nomeá-lo no ADR
+como débito explícito, não corrigi-lo por conta própria (fora da minha autoridade de escopo).
+
+Nenhum arquivo de produção tocado. Único artefato deixado: o parecer. Nenhum `git commit`/`push`
+executado por mim — handoff para `trackfw_architect` auditar, decidir sobre o achado B (ML novo ou
+débito registrado no ADR) e commitar. Roadmap permanece responsabilidade do arquiteto atualizar
+(Wave 4/ML-4A concluído do lado de Hades).
+
+## Sessão 2026-08-18 — Apolo (INÍCIO: ML-4B — dedup e hook_resolvable validam forma estrutural da entrada)
+
+Branch `fix/guard-global-cabeado-com-no-op-fora-de-projeto-e-integridade-independente-de-fiacao`,
+roadmap `docs/roadmaps/wip/ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-e-
+integridade-independente-de-fiacao.md`, Wave 4/ML-4B. Lido roadmap inteiro, achado de Hades
+(barreira ML-4A) e `docs/seguranca/2026-08-17-revisao-do-guard-em-escopo-global.md`. Escopo: fazer
+`hookArrayHasCommand`/`simpleArrayHasValue` (dedup, `internal/generators/agentfiles.go`) e
+`collectCommandsWithMarker`/`validateGuardHookResolvable`/`validateGuardGlobalHookResolvable`
+(validador) exigirem `"type":"command"` como campo irmão do comando, nos 3 CLIs. Sem commit/push
+(fora da minha autoridade de git).
+
+## Sessão 2026-08-18 — Apolo (FIM: ML-4B concluído — evidência colada abaixo)
+
+**O que mudou, nos 3 stacks:**
+- **Dedup** (`internal/generators/agentfiles.go`, `npm/src/generators/hooks.js`,
+  `pypi/trackfw/generators/hooks.py`): `hookArrayHasCommand`/`hasEntryPath`/`_hook_array_has_command`
+  agora exigem `type == "command"` no objeto que carrega o comando (Claude/Codex/Gemini sempre).
+  `simpleArrayHasValue`/`hasEntryPath`/`_simple_array_has_value` ganharam parâmetro
+  `requireCommandType` — `true` para Copilot (schema sempre emite `"type":"command"`), `false` para
+  Cursor (schema nunca carrega `"type"`, ausência é normal, não malformada — não uniformizado).
+- **Validador** (`internal/validator/validator_credential_guard.go` +
+  `validator_git_branch_guard.go`, espelhos Node/Python): `collectCommandsWithMarker` agora retorna,
+  para cada comando casado, se o objeto imediato que o contém também tem `"type":"command"` como
+  irmão (`guardCommandMatch{raw, typeIsCommand}`/equivalentes). `credentialGuardHookFile`/
+  `globalGuardConfigFile` (e espelhos) ganharam campo `requiresCommandType` — `true` para todo CLI
+  exceto Cursor. `validateGuardHookResolvable`/`validateGuardGlobalHookResolvable` reportam
+  violação nova ("hook entry is missing \"type\":\"command\" (or has an invalid type) — <CLI> will
+  silently never execute it") em vez de prosseguir para a checagem de existência/executabilidade
+  quando a entrada é malformada.
+- **Fixtures do gate corrigidas** (`scripts/check-gates-falsify.sh`): Cenário 47
+  (`s47_write_claude_guard_hook`) e a fixture Codex do Cenário 46 (`T46_FAKE_HOME`) não tinham
+  `"type":"command"` — forma antiga, pré-ML-4B. Corrigidas para a forma real que o escritor emite;
+  sem isso o Cenário 47 reprovava (regressão correta, não bug do fix) e o Cenário 46 perderia
+  validade como discriminante hipotético de vazamento de `$HOME`.
+- **Testes novos, 3 stacks:** dedup —
+  `TestGBGDedup_{Claude,Copilot}_ReWiresProjectEntryWhenGlobalEntryMissingType` +
+  `TestGBGDedup_MalformedGlobalEntry_ProjectStillProtects` (Go, execução real via
+  `runGitBranchGuardEntries` com filtro `type=="command"`, prova 0→1 blocks) e espelhos Node/Python.
+  Validador — `TestGuardGlobalHookResolvable_MalformedTypeMissing_Dispara` +
+  `TestGuardGlobalHookResolvable_Cursor_MissingTypeIsNormal_Silencio` (controle de não-regressão)
+  + `TestGitBranchGuardHookResolvable_ProjectMalformedTypeMissing_Dispara` e espelhos Node/Python.
+  **Não-vacuidade confirmada por mim**: `git stash` dos arquivos de produção (Go) → todos os testes
+  novos falham como esperado → `git stash pop` restaura o fix → todos voltam a passar.
+- **`scripts/check-validate-parity.sh`:** novo bloco (mesmo padrão do bloco de integridade global
+  do ML-3A) provando que a mensagem nova de `git_branch_guard_hook_resolvable` (escopo global,
+  entrada sem `"type"`) é byte-idêntica nos 3 CLIs — severidade default é `error` (não `warning`
+  como `script_integrity`), então cada invocação de `validate --json` precisou de `set +e/-e` local
+  para sobreviver ao `set -euo pipefail` do script.
+
+**Evidência bruta:**
+```
+go build ./... / go vet ./...                              → limpo
+go test ./...                                               → ok, todos os pacotes
+cd npm && npm test                                          → 664 passed, 0 failed
+PYTHONPATH=pypi python3 -m pytest pypi/tests -q              → 1343 passed, 28 subtests passed
+make quality (completo)                                     → exit 0, 130 cenários, 0 FAIL
+  scripts/check-validate-parity.sh:
+    Validate JSON parity checks passed
+    Validate JSON parity checks passed (global-scope guard integrity message, byte-identical across 3 CLIs)
+    Validate JSON parity checks passed (global-scope guard missing-type hook_resolvable message, byte-identical across 3 CLIs)
+./bin/trackfw validate (binário local recompilado, $HOME real de KG)  → exit 0, 18 warnings — as
+  mesmas do ML-3A (17 pré-existentes + o script global git-branch-guard desatualizado real), 0 novos
+  relacionados a este ML — confirma que a máquina de KG não tem entrada malformada hoje.
+```
+
+**Discriminante central provado (repro do achado de Hades), colado:**
+```
+antes do fix (git stash internal/validator/validator_{credential,git_branch}_guard.go):
+  TestGuardGlobalHookResolvable_MalformedTypeMissing_Dispara: FAIL — obteve []
+  TestGitBranchGuardHookResolvable_ProjectMalformedTypeMissing_Dispara: FAIL — obteve []
+antes do fix (git stash internal/generators/agentfiles.go):
+  TestGBGDedup_Claude_ReWiresProjectEntryWhenGlobalEntryMissingType: FAIL —
+    "project-scope git-branch-guard entry should have been RE-WIRED [...]"
+depois do fix (git stash pop): todos os 3 voltam a PASS.
+```
+
+**Débitos declarados, não corrigidos (conforme ML-4B do roadmap):** erro de leitura não-ENOENT
+colapsando em silêncio; `hook_resolvable` aceitando caminho por substring do marker (erra para o
+lado seguro — acusa em vez de silenciar, verificado por Hades). Kiro's dedup
+(`globalCredentialGuardInstalledKiro`) continua stat+size only, estruturalmente incapaz de validar
+forma — não tocado por design (arquivo dedicado sempre reescrito por inteiro).
+
+Nenhum `git commit`/`push`/branch executado por mim. Handoff para `trackfw_architect` auditar e
+commitar. Roadmap permanece responsabilidade do arquiteto atualizar (Wave 4/ML-4B pendente de
+auditoria).
+
+---
+
+## Sessão 2026-08-18 — Apolo (INÍCIO: ML-4C — payload grande do Cenário 65 via argv, quebra em Linux/CI)
+
+Branch `fix/guard-global-cabeado-com-no-op-fora-de-projeto-e-integridade-independente-de-fiacao`,
+roadmap `docs/roadmaps/wip/ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-e-integridade-independente-de-fiacao.md`
+em `wip/`. PR #186 abriu com `parity` vermelho no CI (Linux): `assert_writer_no_epipe` interpola o
+payload de 200 KB do Cenário 65 dentro da fonte do `python3 -c`, virando um argumento de `execve` —
+o Linux aplica `MAX_ARG_STRLEN` (128 KB por argumento), o macOS não barra do mesmo jeito. Escopo:
+só `scripts/check-gates-falsify.sh` (helper na linha ~222). Nenhum commit/push/branch (autoridade
+exclusiva do `trackfw_architect`).
+
+## Sessão 2026-08-18 — Apolo (FIM: ML-4C concluído — payload via here-string, provado em Linux real)
+
+**Fix:** o payload deixou de ser interpolado no código-fonte do `python3 -c`; agora entra via
+here-string do bash (`<<<"$payload"`), e o `python3` lê do próprio `sys.stdin`. A here-string do
+bash é implementada com arquivo temporário + `fd 0` redirecionado — nunca vira argumento de
+`execve`, então nunca esbarra em `MAX_ARG_STRLEN`, independentemente do tamanho do payload. O pipe
+real entre o `python3` (escritor) e o guard continua existindo — o mecanismo que o helper existe
+para provar (EPIPE observável via `BrokenPipeError` no stderr do escritor externo) não mudou.
+
+**Como confirmei, sem depender só de "passou no macOS" (o que falhou da vez passada):**
+1. Prova estrutural: rodei `python3 -c "... print(len(sys.argv)); data=sys.stdin.read() ..." <<<"$BIG"`
+   com payload de 300 KB — `argv` tem só o placeholder do `-c` (nunca o payload), o payload de fato
+   chega por `stdin` (300001 bytes lidos).
+2. **Reprodução em container Linux real** (`docker run python:3.12-slim`, mesmo runtime do CI):
+   a forma ANTIGA (payload em argv) reproduz **exatamente** o erro do CI —
+   `bash: line 12: /usr/local/bin/python3: Argument list too long`, exit 126. A forma NOVA
+   (here-string) roda limpo, exit 0, stderr vazio, no mesmo container/mesmo binário/mesmo
+   `ARG_MAX`/`MAX_ARG_STRLEN`.
+3. Gate completo em macOS: os 3 braços do Cenário 65 continuam `OK` (baseline pequeno, baseline
+   grande, detecção com EPIPE genuíno), `make quality` completo verde (130 cenários, 0 FAIL),
+   `./bin/trackfw validate` exit 0, 18 warnings — os mesmos pré-existentes já documentados no
+   roadmap (17 + o script global desatualizado real de KG), 0 novos.
+
+**Evidência bruta** colada no roadmap, seção ML-4C, incluindo a saída do container Docker
+lado a lado (forma antiga falha / forma nova passa).
+
+Nenhum `git commit`/`push`/branch executado por mim. Handoff para `trackfw_architect`: auditar,
+commitar, dar push e confirmar `parity` verde no CI do PR #186 — essa última verificação depende do
+CI real e é responsabilidade do arquiteto pós-push.

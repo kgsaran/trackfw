@@ -410,49 +410,49 @@ var harnessCatalogTargetOrder = []string{
 }
 
 // HarnessTargetIDs is the fixed, declared order of `trackfw update harness`
-// targets: 27 ids — "claude-skill", then "claude-credential-guard" (global
-// credential-guard hook wiring for Claude Code — placed immediately after
-// claude-skill since both are Claude-Code-scoped global artifacts), then for
-// each catalog target in harnessCatalogTargetOrder its "<tool>-agents"/
-// "<tool>-skills" pair, with "codex-credential-guard" inserted immediately
-// BEFORE "codex-agents"/"codex-skills" (ROADMAP-2026-08-06 Wave 2/ML-2B) and
-// "gemini-credential-guard" inserted immediately BEFORE "gemini-agents"/
-// "gemini-skills" (ROADMAP-2026-08-06 Wave 2/ML-2C), and
-// "cursor-credential-guard" inserted immediately BEFORE "cursor-agents"/
-// "cursor-skills" (ROADMAP-2026-08-06 Wave 2/ML-2D), and
-// "copilot-credential-guard" inserted immediately BEFORE "copilot-agents"/
-// "copilot-skills" (ROADMAP-2026-08-06 Wave 2/ML-2E), and
-// "kiro-credential-guard" inserted immediately BEFORE "kiro-agents"/
-// "kiro-skills" (ROADMAP-2026-08-06 Wave 2/ML-2F, the last credential-guard
-// target of this wave — Windsurf has no native hook mechanism and stays out
-// per the ADR) — same relative position as claude-credential-guard/
-// codex-credential-guard/gemini-credential-guard/cursor-credential-guard/
-// copilot-credential-guard (credential-guard target precedes that tool's
-// agents/skills pair, never follows it). Order here
-// is authoritative for both JSON output and iteration — it must never be
+// targets: 33 ids — "claude-skill", then "claude-credential-guard" and
+// "claude-git-branch-guard" (global hook wiring for Claude Code — placed
+// immediately after claude-skill since all three are Claude-Code-scoped
+// global artifacts), then for each catalog target in
+// harnessCatalogTargetOrder its "<tool>-agents"/"<tool>-skills" pair, with
+// "codex-credential-guard"/"codex-git-branch-guard" inserted immediately
+// BEFORE "codex-agents"/"codex-skills" (ROADMAP-2026-08-06 Wave 2/ML-2B,
+// ROADMAP-2026-08-17 Wave 2/ML-2A) and "gemini-credential-guard"/
+// "gemini-git-branch-guard" inserted immediately BEFORE "gemini-agents"/
+// "gemini-skills" (ML-2C), and "cursor-credential-guard"/
+// "cursor-git-branch-guard" inserted immediately BEFORE "cursor-agents"/
+// "cursor-skills" (ML-2D), and "copilot-credential-guard"/
+// "copilot-git-branch-guard" inserted immediately BEFORE "copilot-agents"/
+// "copilot-skills" (ML-2E), and "kiro-credential-guard"/
+// "kiro-git-branch-guard" inserted immediately BEFORE "kiro-agents"/
+// "kiro-skills" (ML-2F, the last guard pair of this wave — Windsurf has no
+// native hook mechanism and stays out per the ADR). Within each tool,
+// credential-guard always precedes git-branch-guard, which always precedes
+// that tool's own agents/skills pair, never follows it. Order here is
+// authoritative for both JSON output and iteration — it must never be
 // derived from the filesystem or from what happens to be installed on a
 // given machine (see docs/cli-parity.md, "targets follows the declared
 // target order, not filesystem order").
 var HarnessTargetIDs = buildHarnessTargetIDs()
 
 func buildHarnessTargetIDs() []string {
-	ids := make([]string, 0, 4+2*len(harnessCatalogTargetOrder))
-	ids = append(ids, "claude-skill", "claude-credential-guard")
+	ids := make([]string, 0, 5+2*len(harnessCatalogTargetOrder))
+	ids = append(ids, "claude-skill", "claude-credential-guard", "claude-git-branch-guard")
 	for _, tool := range harnessCatalogTargetOrder {
 		if tool == "codex" {
-			ids = append(ids, "codex-credential-guard")
+			ids = append(ids, "codex-credential-guard", "codex-git-branch-guard")
 		}
 		if tool == "gemini" {
-			ids = append(ids, "gemini-credential-guard")
+			ids = append(ids, "gemini-credential-guard", "gemini-git-branch-guard")
 		}
 		if tool == "cursor" {
-			ids = append(ids, "cursor-credential-guard")
+			ids = append(ids, "cursor-credential-guard", "cursor-git-branch-guard")
 		}
 		if tool == "copilot" {
-			ids = append(ids, "copilot-credential-guard")
+			ids = append(ids, "copilot-credential-guard", "copilot-git-branch-guard")
 		}
 		if tool == "kiro" {
-			ids = append(ids, "kiro-credential-guard")
+			ids = append(ids, "kiro-credential-guard", "kiro-git-branch-guard")
 		}
 		ids = append(ids, tool+"-agents", tool+"-skills")
 	}
@@ -510,24 +510,48 @@ func UpdateHarness(opts UpdateOptions) (UpdateReport, error) {
 			results = append(results, harnessCredentialGuardTargetClaude(home, opts))
 			continue
 		}
+		if id == "claude-git-branch-guard" {
+			results = append(results, harnessGitBranchGuardTargetClaude(home, opts))
+			continue
+		}
 		if id == "codex-credential-guard" {
 			results = append(results, harnessCredentialGuardTargetCodex(home, opts))
+			continue
+		}
+		if id == "codex-git-branch-guard" {
+			results = append(results, harnessGitBranchGuardTargetCodex(home, opts))
 			continue
 		}
 		if id == "gemini-credential-guard" {
 			results = append(results, harnessCredentialGuardTargetGemini(home, opts))
 			continue
 		}
+		if id == "gemini-git-branch-guard" {
+			results = append(results, harnessGitBranchGuardTargetGemini(home, opts))
+			continue
+		}
 		if id == "cursor-credential-guard" {
 			results = append(results, harnessCredentialGuardTargetCursor(home, opts))
+			continue
+		}
+		if id == "cursor-git-branch-guard" {
+			results = append(results, harnessGitBranchGuardTargetCursor(home, opts))
 			continue
 		}
 		if id == "copilot-credential-guard" {
 			results = append(results, harnessCredentialGuardTargetCopilot(home, opts))
 			continue
 		}
+		if id == "copilot-git-branch-guard" {
+			results = append(results, harnessGitBranchGuardTargetCopilot(home, opts))
+			continue
+		}
 		if id == "kiro-credential-guard" {
 			results = append(results, harnessCredentialGuardTargetKiro(home, opts))
+			continue
+		}
+		if id == "kiro-git-branch-guard" {
+			results = append(results, harnessGitBranchGuardTargetKiro(home, opts))
 			continue
 		}
 		tool, kind, ok := splitHarnessCatalogTargetID(id)
@@ -1199,6 +1223,428 @@ func harnessCredentialGuardTargetKiro(home string, opts UpdateOptions) TargetRes
 			map[string]interface{}{
 				"name":        "trackfw-credential-guard-global-post",
 				"description": "Warns on possible plaintext credential materialization after a shell command executes (global, all projects)",
+				"trigger":     "PostToolUse",
+				"matcher":     "shell",
+				"action":      map[string]interface{}{"type": "command", "command": scriptPath},
+			},
+		},
+	}
+	out, marshalErr := json.MarshalIndent(content, "", "  ")
+	if marshalErr != nil {
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
+	}
+	desired := append(out, '\n')
+
+	data, err := os.ReadFile(path)
+	switch {
+	case os.IsNotExist(err):
+		if !opts.InstallMissing {
+			return TargetResult{ID: id, State: TargetMissing, Path: displayPath}
+		}
+		if opts.DryRun {
+			return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+		}
+		if mkErr := os.MkdirAll(filepath.Dir(path), 0755); mkErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: mkErr.Error()}
+		}
+		if writeErr := os.WriteFile(path, desired, 0644); writeErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
+		}
+		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+	case err != nil:
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: err.Error()}
+	}
+
+	if string(data) == string(desired) {
+		return TargetResult{ID: id, State: TargetSkipped, Path: displayPath}
+	}
+	if opts.DryRun {
+		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+	}
+	if writeErr := os.WriteFile(path, desired, 0644); writeErr != nil {
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
+	}
+	return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// git-branch-guard global-scope wiring (ROADMAP-2026-08-17 Wave 2/ML-2A).
+// Mirrors the credential-guard targets immediately above, entry-for-entry —
+// same 4-state contract, same displayPath/scriptPath shape, same reuse of
+// mergeCredentialGuardClaudeHooks/...GeminiHooks/...CursorHooks/
+// ...CopilotHooks (those helpers are shape-agnostic despite the name, see
+// their own doc comments — they only need a scriptPath, which here is
+// trackfw-git-branch-guard.sh instead of trackfw-credential-guard.sh). The
+// only structural difference from the credential-guard set is Kiro: its
+// credential-guard writer owns ~/.kiro/hooks/trackfw-credential-guard.json
+// WHOLESALE (rewrites the entire document, never merges — see
+// harnessCredentialGuardTargetKiro above), so sharing that file between two
+// wholesale writers would make them flap between each other's desired state
+// every run (an idempotency failure). git-branch-guard therefore gets its
+// OWN dedicated file, ~/.kiro/hooks/trackfw-git-branch-guard.json, same
+// {"version":"v1","hooks":[pre,post]} schema, hook names
+// "trackfw-git-branch-guard-global-pre"/"-global-post".
+// ────────────────────────────────────────────────────────────────────────────
+
+// harnessGitBranchGuardTargetClaude wires the global-scope git-branch-guard
+// hook for Claude Code into ~/.claude/settings.json, mirroring
+// harnessCredentialGuardTargetClaude exactly (merges into the SAME
+// hooks.PreToolUse/PostToolUse[matcher:"Bash"] arrays credential-guard also
+// merges into — mergeClaudeHookArray appends a second, distinct command
+// entry rather than overwriting the first).
+func harnessGitBranchGuardTargetClaude(home string, opts UpdateOptions) TargetResult {
+	const id = "claude-git-branch-guard"
+	const displayPath = "~/.claude/settings.json"
+
+	path := filepath.Join(home, ".claude", "settings.json")
+	scriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-git-branch-guard.sh")
+
+	raw, err := os.ReadFile(path)
+	switch {
+	case os.IsNotExist(err):
+		if !opts.InstallMissing {
+			return TargetResult{ID: id, State: TargetMissing, Path: displayPath}
+		}
+		if opts.DryRun {
+			return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+		}
+		root := make(map[string]interface{})
+		mergeCredentialGuardClaudeHooks(root, scriptPath)
+		desired, marshalErr := json.MarshalIndent(root, "", "  ")
+		if marshalErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
+		}
+		if mkErr := os.MkdirAll(filepath.Dir(path), 0755); mkErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: mkErr.Error()}
+		}
+		if writeErr := os.WriteFile(path, append(desired, '\n'), 0644); writeErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
+		}
+		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+	case err != nil:
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: err.Error()}
+	}
+
+	var root map[string]interface{}
+	if len(raw) > 0 {
+		if unmarshalErr := json.Unmarshal(raw, &root); unmarshalErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: unmarshalErr.Error()}
+		}
+	}
+	if root == nil {
+		root = make(map[string]interface{})
+	}
+	mergeCredentialGuardClaudeHooks(root, scriptPath)
+
+	out, marshalErr := json.MarshalIndent(root, "", "  ")
+	if marshalErr != nil {
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
+	}
+	desired := append(out, '\n')
+	if string(desired) == string(raw) {
+		return TargetResult{ID: id, State: TargetSkipped, Path: displayPath}
+	}
+	if opts.DryRun {
+		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+	}
+	if writeErr := os.WriteFile(path, desired, 0644); writeErr != nil {
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
+	}
+	return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+}
+
+// harnessGitBranchGuardTargetCodex wires the global-scope git-branch-guard
+// hook for Codex CLI into ~/.codex/hooks.json, mirroring
+// harnessCredentialGuardTargetCodex/harnessGitBranchGuardTargetClaude.
+func harnessGitBranchGuardTargetCodex(home string, opts UpdateOptions) TargetResult {
+	const id = "codex-git-branch-guard"
+	const displayPath = "~/.codex/hooks.json"
+
+	path := filepath.Join(home, ".codex", "hooks.json")
+	scriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-git-branch-guard.sh")
+
+	raw, err := os.ReadFile(path)
+	switch {
+	case os.IsNotExist(err):
+		if !opts.InstallMissing {
+			return TargetResult{ID: id, State: TargetMissing, Path: displayPath}
+		}
+		if opts.DryRun {
+			return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+		}
+		root := make(map[string]interface{})
+		mergeCredentialGuardClaudeHooks(root, scriptPath)
+		desired, marshalErr := json.MarshalIndent(root, "", "  ")
+		if marshalErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
+		}
+		if mkErr := os.MkdirAll(filepath.Dir(path), 0755); mkErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: mkErr.Error()}
+		}
+		if writeErr := os.WriteFile(path, append(desired, '\n'), 0644); writeErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
+		}
+		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+	case err != nil:
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: err.Error()}
+	}
+
+	var root map[string]interface{}
+	if len(raw) > 0 {
+		if unmarshalErr := json.Unmarshal(raw, &root); unmarshalErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: unmarshalErr.Error()}
+		}
+	}
+	if root == nil {
+		root = make(map[string]interface{})
+	}
+	mergeCredentialGuardClaudeHooks(root, scriptPath)
+
+	out, marshalErr := json.MarshalIndent(root, "", "  ")
+	if marshalErr != nil {
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
+	}
+	desired := append(out, '\n')
+	if string(desired) == string(raw) {
+		return TargetResult{ID: id, State: TargetSkipped, Path: displayPath}
+	}
+	if opts.DryRun {
+		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+	}
+	if writeErr := os.WriteFile(path, desired, 0644); writeErr != nil {
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
+	}
+	return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+}
+
+// harnessGitBranchGuardTargetGemini wires the global-scope git-branch-guard
+// hook for Gemini CLI into ~/.gemini/settings.json, mirroring
+// harnessCredentialGuardTargetGemini.
+func harnessGitBranchGuardTargetGemini(home string, opts UpdateOptions) TargetResult {
+	const id = "gemini-git-branch-guard"
+	const displayPath = "~/.gemini/settings.json"
+
+	path := filepath.Join(home, ".gemini", "settings.json")
+	scriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-git-branch-guard.sh")
+
+	raw, err := os.ReadFile(path)
+	switch {
+	case os.IsNotExist(err):
+		if !opts.InstallMissing {
+			return TargetResult{ID: id, State: TargetMissing, Path: displayPath}
+		}
+		if opts.DryRun {
+			return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+		}
+		root := make(map[string]interface{})
+		mergeCredentialGuardGeminiHooks(root, scriptPath)
+		desired, marshalErr := json.MarshalIndent(root, "", "  ")
+		if marshalErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
+		}
+		if mkErr := os.MkdirAll(filepath.Dir(path), 0755); mkErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: mkErr.Error()}
+		}
+		if writeErr := os.WriteFile(path, append(desired, '\n'), 0644); writeErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
+		}
+		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+	case err != nil:
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: err.Error()}
+	}
+
+	var root map[string]interface{}
+	if len(raw) > 0 {
+		if unmarshalErr := json.Unmarshal(raw, &root); unmarshalErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: unmarshalErr.Error()}
+		}
+	}
+	if root == nil {
+		root = make(map[string]interface{})
+	}
+	mergeCredentialGuardGeminiHooks(root, scriptPath)
+
+	out, marshalErr := json.MarshalIndent(root, "", "  ")
+	if marshalErr != nil {
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
+	}
+	desired := append(out, '\n')
+	if string(desired) == string(raw) {
+		return TargetResult{ID: id, State: TargetSkipped, Path: displayPath}
+	}
+	if opts.DryRun {
+		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+	}
+	if writeErr := os.WriteFile(path, desired, 0644); writeErr != nil {
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
+	}
+	return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+}
+
+// harnessGitBranchGuardTargetCursor wires the global-scope git-branch-guard
+// hook for Cursor into ~/.cursor/hooks.json, mirroring
+// harnessCredentialGuardTargetCursor.
+func harnessGitBranchGuardTargetCursor(home string, opts UpdateOptions) TargetResult {
+	const id = "cursor-git-branch-guard"
+	const displayPath = "~/.cursor/hooks.json"
+
+	path := filepath.Join(home, ".cursor", "hooks.json")
+	scriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-git-branch-guard.sh")
+
+	raw, err := os.ReadFile(path)
+	switch {
+	case os.IsNotExist(err):
+		if !opts.InstallMissing {
+			return TargetResult{ID: id, State: TargetMissing, Path: displayPath}
+		}
+		if opts.DryRun {
+			return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+		}
+		root := make(map[string]interface{})
+		mergeCredentialGuardCursorHooks(root, scriptPath)
+		desired, marshalErr := json.MarshalIndent(root, "", "  ")
+		if marshalErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
+		}
+		if mkErr := os.MkdirAll(filepath.Dir(path), 0755); mkErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: mkErr.Error()}
+		}
+		if writeErr := os.WriteFile(path, append(desired, '\n'), 0644); writeErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
+		}
+		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+	case err != nil:
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: err.Error()}
+	}
+
+	var root map[string]interface{}
+	if len(raw) > 0 {
+		if unmarshalErr := json.Unmarshal(raw, &root); unmarshalErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: unmarshalErr.Error()}
+		}
+	}
+	if root == nil {
+		root = make(map[string]interface{})
+	}
+	mergeCredentialGuardCursorHooks(root, scriptPath)
+
+	out, marshalErr := json.MarshalIndent(root, "", "  ")
+	if marshalErr != nil {
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
+	}
+	desired := append(out, '\n')
+	if string(desired) == string(raw) {
+		return TargetResult{ID: id, State: TargetSkipped, Path: displayPath}
+	}
+	if opts.DryRun {
+		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+	}
+	if writeErr := os.WriteFile(path, desired, 0644); writeErr != nil {
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
+	}
+	return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+}
+
+// harnessGitBranchGuardTargetCopilot wires the global-scope git-branch-guard
+// hook for GitHub Copilot into ~/.copilot/settings.json, mirroring
+// harnessCredentialGuardTargetCopilot.
+func harnessGitBranchGuardTargetCopilot(home string, opts UpdateOptions) TargetResult {
+	const id = "copilot-git-branch-guard"
+	const displayPath = "~/.copilot/settings.json"
+
+	path := filepath.Join(home, ".copilot", "settings.json")
+	scriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-git-branch-guard.sh")
+
+	raw, err := os.ReadFile(path)
+	switch {
+	case os.IsNotExist(err):
+		if !opts.InstallMissing {
+			return TargetResult{ID: id, State: TargetMissing, Path: displayPath}
+		}
+		if opts.DryRun {
+			return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+		}
+		root := make(map[string]interface{})
+		mergeCredentialGuardCopilotHooks(root, scriptPath)
+		desired, marshalErr := json.MarshalIndent(root, "", "  ")
+		if marshalErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
+		}
+		if mkErr := os.MkdirAll(filepath.Dir(path), 0755); mkErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: mkErr.Error()}
+		}
+		if writeErr := os.WriteFile(path, append(desired, '\n'), 0644); writeErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
+		}
+		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+	case err != nil:
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: err.Error()}
+	}
+
+	var root map[string]interface{}
+	if len(raw) > 0 {
+		if unmarshalErr := json.Unmarshal(raw, &root); unmarshalErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: unmarshalErr.Error()}
+		}
+	}
+	if root == nil {
+		root = make(map[string]interface{})
+	}
+	mergeCredentialGuardCopilotHooks(root, scriptPath)
+
+	out, marshalErr := json.MarshalIndent(root, "", "  ")
+	if marshalErr != nil {
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
+	}
+	desired := append(out, '\n')
+	if string(desired) == string(raw) {
+		return TargetResult{ID: id, State: TargetSkipped, Path: displayPath}
+	}
+	if opts.DryRun {
+		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+	}
+	if writeErr := os.WriteFile(path, desired, 0644); writeErr != nil {
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
+	}
+	return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+}
+
+// harnessGitBranchGuardTargetKiro wires the global-scope git-branch-guard
+// hook for Kiro into a DEDICATED file,
+// ~/.kiro/hooks/trackfw-git-branch-guard.json — deliberately NOT the same
+// file harnessCredentialGuardTargetKiro writes
+// (~/.kiro/hooks/trackfw-credential-guard.json). That writer rewrites its
+// document WHOLESALE (never merges), so two wholesale writers sharing one
+// file would each overwrite the other's entries every run: run
+// credential-guard, then git-branch-guard, then credential-guard again would
+// report "updated" forever (both targets flap forever between their own
+// desired 2-entry document) — a hard idempotency failure. Same schema as
+// harnessCredentialGuardTargetKiro: top-level {"version":"v1","hooks":[...]},
+// each entry {"name","description","trigger","matcher","action":{"type":
+// "command","command":<absolute path>}} — but the two hook names are
+// "trackfw-git-branch-guard-global-pre"/"-global-post", matching the
+// "<tool>-<guard>-global-pre/-post" naming convention
+// harnessCredentialGuardTargetKiro already established.
+func harnessGitBranchGuardTargetKiro(home string, opts UpdateOptions) TargetResult {
+	const id = "kiro-git-branch-guard"
+	const displayPath = "~/.kiro/hooks/trackfw-git-branch-guard.json"
+
+	path := filepath.Join(home, ".kiro", "hooks", "trackfw-git-branch-guard.json")
+	scriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-git-branch-guard.sh")
+
+	content := map[string]interface{}{
+		"version": "v1",
+		"hooks": []interface{}{
+			map[string]interface{}{
+				"name":        "trackfw-git-branch-guard-global-pre",
+				"description": "Blocks branch-creation git subcommands issued outside trackfw branch new (global, all trackfw projects)",
+				"trigger":     "PreToolUse",
+				"matcher":     "shell",
+				"action":      map[string]interface{}{"type": "command", "command": scriptPath},
+			},
+			map[string]interface{}{
+				"name":        "trackfw-git-branch-guard-global-post",
+				"description": "Warns on branch-creation git subcommands issued outside trackfw branch new (global, all trackfw projects)",
 				"trigger":     "PostToolUse",
 				"matcher":     "shell",
 				"action":      map[string]interface{}{"type": "command", "command": scriptPath},

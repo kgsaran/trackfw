@@ -14,6 +14,20 @@ ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/trackfw-barrier.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
 
+# $HOME isolado e sintético — nunca o real. Sem isto, o gate "validate"
+# embutido em `trackfw barrier` enxerga o escopo GLOBAL de guards do usuário
+# rodando o gate: desde ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-
+# fora-de-projeto-e-integridade-independente-de-fiacao (ML-3A),
+# git_branch_guard_script_integrity/credential_guard_script_integrity
+# disparam pela EXISTÊNCIA do script em ~/.trackfw/scripts/, não mais só
+# quando há fiação, então um $HOME real com o harness instalado e o script
+# desatualizado adicionaria um warning que faz o texto de evidência do
+# gate "validate" divergir entre CLIs cujo $HOME real difira (ou entre uma
+# máquina com o harness instalado e outra sem). Mesmo precedente do
+# Cenário 46 em scripts/check-gates-falsify.sh.
+export HOME="$WORK/home"
+mkdir -p "$HOME"
+
 # ---------------------------------------------------------------------------
 # `runGateCommand` (Go/Node/Python) shells out directly via the OS process API;
 # TRACKFW_DISABLE_EXTERNAL_COMMANDS only gates the forge/discover PATH lookups

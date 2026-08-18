@@ -491,11 +491,44 @@ const GIT_BRANCH_GUARD_SCRIPT = `#!/usr/bin/env bash
 set -euo pipefail
 set -f
 
+# --- 0. Drena o stdin ANTES de qualquer saída antecipada (ML-1B, ROADMAP-2026-08-17-guard-
+# global-cabeado-com-no-op-fora-de-projeto-e-integridade-independente-de-fiacao.md): sem isso,
+# quem escreve o payload JSON no pipe recebe EPIPE quando o no-op abaixo sai com 0 antes de ler
+# — reprodutível em 100% das chamadas fora de projeto trackfw, não é corrida de timing. Só drena
+# se stdin não for um terminal interativo (-t 0): em invocação manual sem pipe, "cat" bloquearia
+# esperando EOF (Ctrl-D). O valor lido é reaproveitado no passo 1 abaixo — nunca há uma segunda
+# leitura.
+_TRACKFW_STDIN=""
+[ -t 0 ] || _TRACKFW_STDIN=$(cat 2>/dev/null || true)
+
+# --- 0b. No-op fora de projeto trackfw (ADR-2026-08-17-guard-global-cabeado-com-no-op-fora-de-
+# projeto-trackfw.md): sobe diretórios a partir do cwd FÍSICO (pwd -P, resolve symlink) até
+# achar trackfw.yaml na raiz do projeto. Sem trackfw.yaml em nenhum ancestral, o guard não se
+# aplica — fora de projeto trackfw não há trackfw ship como alternativa, e bloquear ali é custo
+# sem contrapartida. Custo medido: só parameter expansion e test -f por nível, nenhum fork de
+# processo; limitado pela profundidade do caminho.
+_TRACKFW_ROOT_DIR=$(pwd -P)
+_TRACKFW_FOUND=0
+while :; do
+  if [ -f "$_TRACKFW_ROOT_DIR/trackfw.yaml" ]; then
+    _TRACKFW_FOUND=1
+    break
+  fi
+  if [ "$_TRACKFW_ROOT_DIR" = "/" ]; then
+    break
+  fi
+  _TRACKFW_ROOT_DIR="\${_TRACKFW_ROOT_DIR%/*}"
+  if [ -z "$_TRACKFW_ROOT_DIR" ]; then
+    _TRACKFW_ROOT_DIR="/"
+  fi
+done
+[ "$_TRACKFW_FOUND" -eq 1 ] || exit 0
+
 # --- 1. Obter o comando git bruto ------------------------------------------------------------
 if [ "$#" -gt 0 ]; then
   CMD_RAW="$*"
 else
-  INPUT=$(cat 2>/dev/null || true)
+  INPUT="$_TRACKFW_STDIN"
   TRIMMED=$(printf '%s' "$INPUT" | sed -e 's/^[[:space:]]*//')
   case "$TRIMMED" in
     \\{*)
@@ -1078,15 +1111,93 @@ function readGlobalHookJSON(...relParts) {
   }
 }
 
-/** Read-only counterpart of mergeClaudeHookArray. */
+/**
+ * Collapses runs of consecutive slashes ("//" -> "/", any position,
+ * including leading) and strips a trailing slash, so two on-disk forms of
+ * the SAME script path compare equal regardless of incidental formatting
+ * (e.g. $HOME resolving with a trailing slash, as happens with macOS's
+ * $TMPDIR, or a hand-edited config file). Does NOT resolve "." / ".."
+ * segments or symlinks -- those transforms would let unrelated paths
+ * compare equal (silently disarming the dedup, the more dangerous failure
+ * mode here) and symlink resolution errors on a path that does not exist
+ * yet, which every caller here must fail OPEN on. Hand-rolled instead of
+ * path.normalize because it disagrees with Go's filepath.Clean and Python's
+ * os.path.normpath on leading "//" and trailing "/" handling (measured) --
+ * mirrored byte-for-byte in internal/generators/agentfiles.go
+ * (normalizeGuardPath) and pypi/trackfw/generators/hooks.py
+ * (_normalize_guard_path). Never call with anything other than a script
+ * path -- it is not a general string normalizer.
+ */
+function normalizeGuardPath(p) {
+  if (!p) return p
+  let out = ''
+  let prevSlash = false
+  for (const ch of p) {
+    if (ch === '/') {
+      if (prevSlash) continue
+      prevSlash = true
+    } else {
+      prevSlash = false
+    }
+    out += ch
+  }
+  if (out.length > 1 && out.endsWith('/')) {
+    out = out.replace(/\/+$/, '') || '/'
+  }
+  return out
+}
+
+/** Reports whether a and b denote the same script command path after normalizeGuardPath. */
+function samePathCommand(a, b) {
+  return normalizeGuardPath(a) === normalizeGuardPath(b)
+}
+
+/**
+ * Read-only counterpart of mergeClaudeHookArray. Compares command paths via
+ * samePathCommand (normalized), not raw string equality.
+ *
+ * ROADMAP-2026-08-17 ML-4B: also requires the sibling `type` field to equal
+ * "command" -- mergeClaudeHookArray always writes
+ * {type:'command',command:...}, and Claude/Codex/Gemini all silently ignore
+ * a hook entry missing "type":"command" (measured, hades-tf ML-4A barrier
+ * finding: a global entry with the correct command but no `type` field
+ * looked "installed" to the dedup, so the project-scope entry was skipped
+ * in favor of a global entry that never actually executes -- leaving BOTH
+ * scopes silently unprotected while `trackfw validate` stayed green).
+ * Requiring "type":"command" here closes that gap: a malformed global entry
+ * is now treated as "not installed", so the project-scope entry gets
+ * re-wired instead of being skipped.
+ */
 function hookArrayHasCommand(existing, matcher, command) {
   const arr = Array.isArray(existing) ? existing : []
   for (const item of arr) {
     if (!item || item.matcher !== matcher) continue
     const inner = Array.isArray(item.hooks) ? item.hooks : []
-    if (inner.some(h => h && h.command === command)) return true
+    if (inner.some(h => h && h.type === 'command' && typeof h.command === 'string' && samePathCommand(h.command, command))) return true
   }
   return false
+}
+
+/**
+ * Read-only, path-normalized counterpart of hasEntry -- used ONLY by the
+ * global-dedup read paths (globalXInstalledCursor/Copilot below), never by
+ * the write-side merge/idempotency helpers (mergeSimpleCommandArray,
+ * injectCursorHooks), which must keep comparing raw strings so their
+ * idempotency behavior does not drift from Go/Python. See samePathCommand's
+ * doc comment for why the value must always be a script path.
+ *
+ * ROADMAP-2026-08-17 ML-4B: requireCommandType mirrors Go's
+ * simpleArrayHasValue -- Copilot entries (mergeCredentialGuardCopilotHooks)
+ * always carry "type":"command" and Copilot ignores an entry without it
+ * (same hades-tf ML-4A finding as hookArrayHasCommand above), so Copilot
+ * callers pass true. Cursor entries (mergeCredentialGuardCursorHooks,
+ * {command:...}) never carry a `type` field -- not part of Cursor's schema
+ * -- so requiring it there would make this always return false for a
+ * perfectly valid, executing Cursor entry; Cursor callers pass false. Do
+ * NOT uniformize this across CLIs.
+ */
+function hasEntryPath(arr, field, value, requireCommandType) {
+  return Array.isArray(arr) && arr.some(e => e && (!requireCommandType || e.type === 'command') && typeof e[field] === 'string' && samePathCommand(e[field], value))
 }
 
 function globalCredentialGuardInstalledClaude() {
@@ -1118,7 +1229,7 @@ function globalCredentialGuardInstalledCursor() {
   if (!scriptPath) return false
   const root = readGlobalHookJSON('.cursor', 'hooks.json')
   if (!root || !root.hooks) return false
-  return hasEntry(root.hooks.beforeShellExecution, 'command', scriptPath)
+  return hasEntryPath(root.hooks.beforeShellExecution, 'command', scriptPath, false)
 }
 
 function globalCredentialGuardInstalledCopilot() {
@@ -1126,7 +1237,7 @@ function globalCredentialGuardInstalledCopilot() {
   if (!scriptPath) return false
   const root = readGlobalHookJSON('.copilot', 'settings.json')
   if (!root || !root.hooks) return false
-  return hasEntry(root.hooks.preToolUse, 'bash', scriptPath)
+  return hasEntryPath(root.hooks.preToolUse, 'bash', scriptPath, true)
 }
 
 /**
@@ -1144,6 +1255,68 @@ function globalCredentialGuardInstalledKiro() {
   } catch (_) {
     return false
   }
+}
+
+// ---------------------------------------------------------------------------
+// git-branch-guard global-installed dedup (ROADMAP-2026-08-17 Wave 2/ML-2B)
+//
+// Mirrors the globalCredentialGuardInstalled<Tool> family above exactly,
+// pointed at ~/.trackfw/scripts/trackfw-git-branch-guard.sh instead of
+// trackfw-credential-guard.sh. Only 5 of the 6 credential-guard dedup
+// targets have a git-branch-guard counterpart: Kiro's project-scope
+// injector never wires git-branch-guard at all (see injectKiroHooks'
+// git-branch-guard doc comment), so there is no
+// globalGitBranchGuardInstalledKiro. Windsurf/AmazonQ wire git-branch-guard
+// at project scope but have no global-scope target (ML-2A only added
+// targets for the 6 CLIs credential-guard already covers) and no
+// credential-guard dedup precedent either -- consistent, not a gap.
+// ---------------------------------------------------------------------------
+
+/** Mirrors Go's globalGitBranchGuardScriptPath. */
+function globalGitBranchGuardScriptPath() {
+  const home = os.homedir()
+  if (!home) return null
+  return path.join(home, '.trackfw', 'scripts', 'trackfw-git-branch-guard.sh')
+}
+
+function globalGitBranchGuardInstalledClaude() {
+  const scriptPath = globalGitBranchGuardScriptPath()
+  if (!scriptPath) return false
+  const root = readGlobalHookJSON('.claude', 'settings.json')
+  if (!root || !root.hooks) return false
+  return hookArrayHasCommand(root.hooks.PreToolUse, 'Bash', scriptPath)
+}
+
+function globalGitBranchGuardInstalledCodex() {
+  const scriptPath = globalGitBranchGuardScriptPath()
+  if (!scriptPath) return false
+  const root = readGlobalHookJSON('.codex', 'hooks.json')
+  if (!root || !root.hooks) return false
+  return hookArrayHasCommand(root.hooks.PreToolUse, 'Bash', scriptPath)
+}
+
+function globalGitBranchGuardInstalledGemini() {
+  const scriptPath = globalGitBranchGuardScriptPath()
+  if (!scriptPath) return false
+  const root = readGlobalHookJSON('.gemini', 'settings.json')
+  if (!root || !root.hooks) return false
+  return hookArrayHasCommand(root.hooks.BeforeTool, 'run_shell_command', scriptPath)
+}
+
+function globalGitBranchGuardInstalledCursor() {
+  const scriptPath = globalGitBranchGuardScriptPath()
+  if (!scriptPath) return false
+  const root = readGlobalHookJSON('.cursor', 'hooks.json')
+  if (!root || !root.hooks) return false
+  return hasEntryPath(root.hooks.beforeShellExecution, 'command', scriptPath, false)
+}
+
+function globalGitBranchGuardInstalledCopilot() {
+  const scriptPath = globalGitBranchGuardScriptPath()
+  if (!scriptPath) return false
+  const root = readGlobalHookJSON('.copilot', 'settings.json')
+  if (!root || !root.hooks) return false
+  return hasEntryPath(root.hooks.preToolUse, 'bash', scriptPath, true)
 }
 
 // ---------------------------------------------------------------------------
@@ -1212,11 +1385,13 @@ function injectClaudeHooks(cwd) {
   }
 
   // git branch guard (ROADMAP-2026-08-14, ML-3B/Wave 3, step 1): PreToolUse-only, matcher
-  // "Bash" — blocks raw `git commit`/`git push`/`git checkout -b` before they execute. No
-  // global-install dedup here (unlike GUARD_CMD_CLAUDE above): there is no per-CLI global
-  // git-branch-guard harness target yet (only the plain script-generation call at
-  // GenerateGlobalGitBranchGuardScript/generateGlobalGitBranchGuardScript exists so far).
-  data.hooks.PreToolUse = mergeClaudeHookArray(data.hooks.PreToolUse, 'Bash', GBG_CMD_CLAUDE)
+  // "Bash" — blocks raw `git commit`/`git push`/`git checkout -b` before they execute.
+  // Dedup (ROADMAP-2026-08-17 Wave 2/ML-2B): skip the project-scope entry when the global
+  // one is already installed (`trackfw update harness --targets claude-git-branch-guard`),
+  // so the guard doesn't fire (and print its block message) twice per Bash call.
+  if (!globalGitBranchGuardInstalledClaude()) {
+    data.hooks.PreToolUse = mergeClaudeHookArray(data.hooks.PreToolUse, 'Bash', GBG_CMD_CLAUDE)
+  }
 
   writeJSON(filePath, data)
 }
@@ -1272,9 +1447,12 @@ function injectCodexHooks(cwd) {
   }
 
   // git branch guard (ROADMAP-2026-08-14, ML-3B/Wave 3, step 2): PreToolUse-only, matcher
-  // "Bash" -- git commands only ever run via the Bash tool, never apply_patch. No
-  // global-install dedup (see GBG_CMD_CLAUDE comment).
-  data.hooks.PreToolUse = mergeClaudeHookArray(data.hooks.PreToolUse, 'Bash', GBG_CMD_CODEX)
+  // "Bash" -- git commands only ever run via the Bash tool, never apply_patch.
+  // Dedup (ROADMAP-2026-08-17 Wave 2/ML-2B): skip project-scope when the global one is
+  // already installed (`trackfw update harness --targets codex-git-branch-guard`).
+  if (!globalGitBranchGuardInstalledCodex()) {
+    data.hooks.PreToolUse = mergeClaudeHookArray(data.hooks.PreToolUse, 'Bash', GBG_CMD_CODEX)
+  }
 
   writeJSON(filePath, data)
 }
@@ -1343,9 +1521,12 @@ function injectGeminiHooks(cwd) {
   }
 
   // git branch guard (ROADMAP-2026-08-14, ML-3B/Wave 3, step 3): BeforeTool-only, matcher
-  // "run_shell_command" -- git commands only ever run via the shell tool. No global-install
-  // dedup (see GBG_CMD_CLAUDE comment).
-  data.hooks.BeforeTool = mergeClaudeHookArray(data.hooks.BeforeTool, 'run_shell_command', GBG_CMD_GEMINI)
+  // "run_shell_command" -- git commands only ever run via the shell tool.
+  // Dedup (ROADMAP-2026-08-17 Wave 2/ML-2B): skip project-scope when the global one is
+  // already installed (`trackfw update harness --targets gemini-git-branch-guard`).
+  if (!globalGitBranchGuardInstalledGemini()) {
+    data.hooks.BeforeTool = mergeClaudeHookArray(data.hooks.BeforeTool, 'run_shell_command', GBG_CMD_GEMINI)
+  }
 
   writeJSON(filePath, data)
 }
@@ -1505,9 +1686,14 @@ function injectCopilotHooks(cwd) {
   // Go's InjectCopilotHooks (internal/generators/agentfiles.go), which made the same
   // choice for the same reason; the CLI-flag/permissions-config.json approach is a
   // documented, deliberate divergence from the roadmap's literal wording. This file is
-  // overwritten wholesale every run, so no dedup-against-global check is needed --
-  // added unconditionally, matching the always-on attention-signal/cleanup entries.
-  preToolUse.push({ type: 'command', matcher: 'bash', bash: GBG_CMD_COPILOT, cwd: '.', timeoutSec: 10 })
+  // overwritten wholesale every run, but that only means there is no migration concern
+  // -- it does not exempt this entry from the dedup-against-global check
+  // (ROADMAP-2026-08-17 Wave 2/ML-2B): skip project-scope when the global one is
+  // already installed (`trackfw update harness --targets copilot-git-branch-guard`),
+  // same reasoning as the credential-guard dedup above.
+  if (!globalGitBranchGuardInstalledCopilot()) {
+    preToolUse.push({ type: 'command', matcher: 'bash', bash: GBG_CMD_COPILOT, cwd: '.', timeoutSec: 10 })
+  }
 
   const data = {
     version: 1,
@@ -1642,11 +1828,19 @@ function injectCursorHooks(cwd) {
   }
 
   // git branch guard (ROADMAP-2026-08-14, ML-3B/Wave 3, step 5): beforeShellExecution-only --
-  // Cursor's dedicated pre-execution Bash event; git commands only ever run there. No
-  // global-install dedup (see GBG_CMD_CLAUDE comment).
-  if (!Array.isArray(data.hooks.beforeShellExecution)) data.hooks.beforeShellExecution = []
-  if (!hasEntry(data.hooks.beforeShellExecution, 'command', GBG_CMD_CURSOR)) {
-    data.hooks.beforeShellExecution.push({ command: GBG_CMD_CURSOR })
+  // Cursor's dedicated pre-execution Bash event; git commands only ever run there.
+  // Dedup (ROADMAP-2026-08-17 Wave 2/ML-2B): skip project-scope when the global one is
+  // already installed (`trackfw update harness --targets cursor-git-branch-guard`). The
+  // key is intentionally only touched inside this conditional (never created outside it)
+  // so that when BOTH credential-guard and git-branch-guard are deduped away, the key
+  // stays absent from the emitted JSON rather than becoming a present-but-empty array --
+  // matches Go's InjectCursorHooks, which check-agent-hooks-parity.sh's structural
+  // comparator treats as significant (absent key vs empty array is drift, not noise).
+  if (!globalGitBranchGuardInstalledCursor()) {
+    if (!Array.isArray(data.hooks.beforeShellExecution)) data.hooks.beforeShellExecution = []
+    if (!hasEntry(data.hooks.beforeShellExecution, 'command', GBG_CMD_CURSOR)) {
+      data.hooks.beforeShellExecution.push({ command: GBG_CMD_CURSOR })
+    }
   }
 
   writeJSON(filePath, data)
@@ -1896,4 +2090,6 @@ module.exports = {
   mergeClaudeHookArray,
   mergeSimpleCommandArray,
   mergeCopilotHookArray,
+  normalizeGuardPath,
+  samePathCommand,
 }

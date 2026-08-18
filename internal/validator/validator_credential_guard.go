@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -20,9 +21,20 @@ const gitBranchGuardScriptMarker = "trackfw-git-branch-guard.sh"
 
 // credentialGuardHookFile associa um arquivo de hook de projeto ao CLI que o consome, para
 // compor mensagens de violação acionáveis.
+//
+// requiresCommandType (ROADMAP-2026-08-17 ML-4B): se true, um comando casado que não estiver
+// dentro de um objeto JSON com "type":"command" como campo irmão é tratado como ENTRADA
+// ESTRUTURALMENTE MALFORMADA (o CLI silenciosamente nunca a executa — hades-tf ML-4A barrier
+// finding), não como ausência. true para todos os 5 CLIs cujo escritor sempre emite "type":
+// "command" (Claude/Codex/Gemini via mergeClaudeHookArray, GitHub Copilot CLI via
+// mergeCredentialGuardCopilotHooks, Kiro via action.type em InjectKiroHooks — internal/
+// generators/agentfiles.go, update.go). false só para Cursor, cujo schema
+// (mergeCredentialGuardCursorHooks, {"command":...}) nunca carrega um campo "type" — exigi-lo
+// ali faria uma entrada Cursor válida e em execução ser acusada de malformada. Não uniformizar.
 type credentialGuardHookFile struct {
-	path string // relativo à raiz do projeto (CWD)
-	cli  string
+	path                string // relativo à raiz do projeto (CWD)
+	cli                 string
+	requiresCommandType bool
 }
 
 // credentialGuardHookFiles é a lista fechada dos arquivos de hook de PROJETO que o trackfw
@@ -32,12 +44,12 @@ type credentialGuardHookFile struct {
 // repositório do usuário, e a checagem de dedup globalCredentialGuardInstalled*() já os pula de
 // propósito nas entradas de projeto.
 var credentialGuardHookFiles = []credentialGuardHookFile{
-	{".claude/settings.json", "Claude Code"},
-	{".codex/hooks.json", "Codex CLI"},
-	{".gemini/settings.json", "Gemini CLI"},
-	{".cursor/hooks.json", "Cursor"},
-	{".github/hooks/trackfw-attention.json", "GitHub Copilot CLI"},
-	{".kiro/hooks/trackfw-attention.json", "Kiro"},
+	{".claude/settings.json", "Claude Code", true},
+	{".codex/hooks.json", "Codex CLI", true},
+	{".gemini/settings.json", "Gemini CLI", true},
+	{".cursor/hooks.json", "Cursor", false},
+	{".github/hooks/trackfw-attention.json", "GitHub Copilot CLI", true},
+	{".kiro/hooks/trackfw-attention.json", "Kiro", true},
 }
 
 // resolveCredentialGuardHookPath resolve o valor bruto de um comando de hook (string extraída do
@@ -78,28 +90,59 @@ func resolveCredentialGuardHookPath(raw, root string) (resolved string, ok bool)
 	}
 }
 
+// guardCommandMatch pairs a matched raw command string with whether the immediate JSON object it
+// was found in also carries a "type" field equal to "command" — the structural discriminant
+// ROADMAP-2026-08-17 ML-4B adds. Every hook schema this validator reads (Claude/Codex/Gemini's
+// {"hooks":[{"type","command"}]}, Copilot's {"type","bash"}, Kiro's action:{"type","command"})
+// places "type" as a SIBLING of the marker field within the SAME object — never nested deeper —
+// so recording it from the object collectCommandsWithMarker is currently visiting is sufficient;
+// no separate schema-aware walk is needed. Cursor's flat {"command":...} shape never carries a
+// "type" field at all, so typeIsCommand is always false there — see credentialGuardHookFile.
+// requiresCommandType for how callers decide whether that false is a violation or expected.
+type guardCommandMatch struct {
+	raw           string
+	typeIsCommand bool
+}
+
 // collectCommandsWithMarker percorre recursivamente um valor JSON já decodificado
 // (map[string]interface{} / []interface{} / string / ...) e coleta todo valor-string que contém
-// marker, independentemente do nome do campo que o contém.
+// marker, independentemente do nome do campo que o contém — junto com um sinal estrutural
+// (guardCommandMatch.typeIsCommand) de que o objeto imediato que o contém também tem
+// "type":"command" como campo irmão (ROADMAP-2026-08-17 ML-4B).
 //
 // Os 6 formatos de hook usam campos diferentes para o comando: "command" (Claude/Codex/
 // Gemini/Cursor), "bash" (GitHub Copilot CLI), "action.command" (Kiro). Varrer por VALOR em vez
 // de por caminho de chave evita acoplar esta regra à forma exata de cada schema — decisão de
 // design deste ML, não replicar o parsing schema-aware que agentfiles.go faz para escrever os
-// hooks.
+// hooks. O sinal de "type" é a única exceção a essa regra: ele NÃO decide se algo é um "comando"
+// (isso continua sendo puramente por valor/marker), só anota, para cada match já encontrado, se o
+// objeto que o continha também parece estruturalmente válido — a decisão de exigir ou não esse
+// sinal continua no chamador (via requiresCommandType), não aqui.
 //
 // Generalizado (ROADMAP-2026-08-15-trackfw-validate-deve-detectar-scripts-de-hook-ausentes-ou-
 // desatualizados, ML-1A) para aceitar qualquer marker — originalmente hardcoded para
 // credentialGuardScriptMarker; reusado agora também para gitBranchGuardScriptMarker, sem duplicar
 // a travessia recursiva.
-func collectCommandsWithMarker(v interface{}, marker string, out *[]string) {
+func collectCommandsWithMarker(v interface{}, marker string, out *[]guardCommandMatch) {
 	switch t := v.(type) {
 	case string:
+		// Top-level/loose string match, outside any enclosing object (defensive fallback — every
+		// hook file this validator reads is rooted at a JSON object in practice, so this branch is
+		// not expected to fire, but preserves the original function's contract of matching ANY
+		// string value anywhere in the tree). No enclosing object means no "type" sibling to read.
 		if strings.Contains(t, marker) {
-			*out = append(*out, t)
+			*out = append(*out, guardCommandMatch{raw: t, typeIsCommand: false})
 		}
 	case map[string]interface{}:
+		typeStr, _ := t["type"].(string)
+		typeIsCommand := typeStr == "command"
 		for _, val := range t {
+			if s, ok := val.(string); ok {
+				if strings.Contains(s, marker) {
+					*out = append(*out, guardCommandMatch{raw: s, typeIsCommand: typeIsCommand})
+				}
+				continue
+			}
 			collectCommandsWithMarker(val, marker, out)
 		}
 	case []interface{}:
@@ -159,18 +202,33 @@ func validateGuardHookResolvable(ruleName, scriptMarker string) ([]string, error
 			continue
 		}
 
-		var commands []string
+		var commands []guardCommandMatch
 		collectCommandsWithMarker(parsed, scriptMarker, &commands)
 
 		seen := make(map[string]bool, len(commands))
-		for _, raw := range commands {
-			if seen[raw] {
+		for _, m := range commands {
+			seenKey := m.raw + "\x00" + strconv.FormatBool(m.typeIsCommand)
+			if seen[seenKey] {
 				continue
 			}
-			seen[raw] = true
+			seen[seenKey] = true
 
-			resolved, ok := resolveCredentialGuardHookPath(raw, root)
+			resolved, ok := resolveCredentialGuardHookPath(m.raw, root)
 			if !ok {
+				continue
+			}
+
+			// ROADMAP-2026-08-17 ML-4B: a command that resolves to a real path but sits inside a
+			// structurally malformed entry (missing/wrong "type" where this CLI's schema requires
+			// it — hades-tf ML-4A barrier finding) will NEVER be executed by the CLI, regardless of
+			// whether the script itself exists and is executable — checking existence/executability
+			// first would silently pass a hook that never fires. Reported instead of the
+			// exists/executable checks below, which assume a structurally valid entry.
+			if hf.requiresCommandType && !m.typeIsCommand {
+				msgs = append(msgs, fmt.Sprintf(
+					`%s (%s) references %s resolved to %q, but the hook entry is missing "type":"command" (or has an invalid type) — %s will silently never execute it; run `+"`trackfw update`"+` to regenerate it`,
+					hf.path, hf.cli, scriptMarker, resolved, hf.cli,
+				))
 				continue
 			}
 

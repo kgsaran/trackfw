@@ -1167,13 +1167,20 @@ const GIT_BRANCH_GUARD_SCRIPT_MARKER = 'trackfw-git-branch-guard.sh'
 // -fail-open-do-credential-guard, ML-1A). Hooks de escopo GLOBAL (~/.trackfw/..., trackfw update
 // harness) ficam fora — caso distinto, fora do repositório do usuário, e a checagem de dedup
 // globalCredentialGuardInstalled*() já os pula de propósito nas entradas de projeto.
+//
+// requiresCommandType (ROADMAP-2026-08-17 ML-4B, port of Go's credentialGuardHookFile.
+// requiresCommandType): true for every CLI whose writer always emits a sibling "type":"command"
+// field (Claude/Codex/Gemini, GitHub Copilot CLI, Kiro) — a command match found WITHOUT that
+// sibling is a structurally malformed entry the CLI silently never executes (hades-tf ML-4A
+// barrier finding), not merely "absent". false only for Cursor, whose schema
+// ({"command":...}) never carries a "type" field at all.
 const CREDENTIAL_GUARD_HOOK_FILES = [
-  { relPath: '.claude/settings.json', cli: 'Claude Code' },
-  { relPath: '.codex/hooks.json', cli: 'Codex CLI' },
-  { relPath: '.gemini/settings.json', cli: 'Gemini CLI' },
-  { relPath: '.cursor/hooks.json', cli: 'Cursor' },
-  { relPath: '.github/hooks/trackfw-attention.json', cli: 'GitHub Copilot CLI' },
-  { relPath: '.kiro/hooks/trackfw-attention.json', cli: 'Kiro' },
+  { relPath: '.claude/settings.json', cli: 'Claude Code', requiresCommandType: true },
+  { relPath: '.codex/hooks.json', cli: 'Codex CLI', requiresCommandType: true },
+  { relPath: '.gemini/settings.json', cli: 'Gemini CLI', requiresCommandType: true },
+  { relPath: '.cursor/hooks.json', cli: 'Cursor', requiresCommandType: false },
+  { relPath: '.github/hooks/trackfw-attention.json', cli: 'GitHub Copilot CLI', requiresCommandType: true },
+  { relPath: '.kiro/hooks/trackfw-attention.json', cli: 'Kiro', requiresCommandType: true },
 ]
 
 // resolveCredentialGuardHookPath resolve o valor bruto de um comando de hook (string extraída do
@@ -1214,11 +1221,18 @@ function resolveCredentialGuardHookPath(raw, root) {
 }
 
 // collectCommandsWithMarker percorre recursivamente um valor JSON já decodificado e coleta todo
-// valor-string que contém marker, independentemente do nome do campo que o contém.
+// valor-string que contém marker, independentemente do nome do campo que o contém — junto com um
+// sinal estrutural (typeIsCommand) de que o objeto imediato que o contém também tem
+// "type":"command" como campo irmão (ROADMAP-2026-08-17 ML-4B, port de guardCommandMatch em
+// internal/validator/validator_credential_guard.go). Cada entrada de `out` é
+// {raw, typeIsCommand}.
 //
 // Os 6 formatos de hook usam campos diferentes para o comando: "command" (Claude/Codex/
 // Gemini/Cursor), "bash" (GitHub Copilot CLI), "action.command" (Kiro). Varrer por VALOR em vez
-// de por caminho de chave evita acoplar esta regra à forma exata de cada schema.
+// de por caminho de chave evita acoplar esta regra à forma exata de cada schema. Todo schema aqui
+// coloca "type" como IRMÃO do campo do comando dentro do MESMO objeto — nunca aninhado mais fundo
+// — então basta ler "type" do objeto que collectCommandsWithMarker já está visitando; não é
+// necessária uma travessia schema-aware separada.
 //
 // Generalizado (ROADMAP-2026-08-15-trackfw-validate-deve-detectar-scripts-de-hook-ausentes-ou-
 // desatualizados, ML-2A, port de collectCommandsWithMarker em
@@ -1227,7 +1241,10 @@ function resolveCredentialGuardHookPath(raw, root) {
 // também para GIT_BRANCH_GUARD_SCRIPT_MARKER, sem duplicar a travessia recursiva.
 function collectCommandsWithMarker(value, marker, out) {
   if (typeof value === 'string') {
-    if (value.includes(marker)) out.push(value)
+    // Top-level/loose string match, outside any enclosing object — defensive fallback, not
+    // expected to fire since every hook file read here is rooted at a JSON object. No enclosing
+    // object means no "type" sibling to read.
+    if (value.includes(marker)) out.push({ raw: value, typeIsCommand: false })
     return
   }
   if (Array.isArray(value)) {
@@ -1235,7 +1252,15 @@ function collectCommandsWithMarker(value, marker, out) {
     return
   }
   if (value && typeof value === 'object') {
-    for (const key of Object.keys(value)) collectCommandsWithMarker(value[key], marker, out)
+    const typeIsCommand = value.type === 'command'
+    for (const key of Object.keys(value)) {
+      const val = value[key]
+      if (typeof val === 'string') {
+        if (val.includes(marker)) out.push({ raw: val, typeIsCommand })
+        continue
+      }
+      collectCommandsWithMarker(val, marker, out)
+    }
   }
 }
 
@@ -1293,12 +1318,23 @@ function validateGuardHookResolvable(scriptMarker, cwd) {
     collectCommandsWithMarker(parsed, scriptMarker, commands)
 
     const seen = new Set()
-    for (const raw of commands) {
-      if (seen.has(raw)) continue
-      seen.add(raw)
+    for (const m of commands) {
+      const seenKey = `${m.raw} ${m.typeIsCommand}`
+      if (seen.has(seenKey)) continue
+      seen.add(seenKey)
 
-      const resolved = resolveCredentialGuardHookPath(raw, root)
+      const resolved = resolveCredentialGuardHookPath(m.raw, root)
       if (resolved === null) continue
+
+      // ROADMAP-2026-08-17 ML-4B: a command that resolves to a real path but sits inside a
+      // structurally malformed entry (missing/wrong "type" where this CLI's schema requires it —
+      // hades-tf ML-4A barrier finding) will NEVER be executed by the CLI, regardless of whether
+      // the script itself exists and is executable. Reported instead of the exists/executable
+      // checks below, which assume a structurally valid entry.
+      if (hf.requiresCommandType && !m.typeIsCommand) {
+        msgs.push(`${hf.relPath} (${hf.cli}) references ${scriptMarker} resolved to "${resolved}", but the hook entry is missing "type":"command" (or has an invalid type) — ${hf.cli} will silently never execute it; run \`trackfw update\` to regenerate it`)
+        continue
+      }
 
       let stat = null
       try {
@@ -1587,11 +1623,44 @@ const GIT_BRANCH_GUARD_SCRIPT_REFERENCE = `#!/usr/bin/env bash
 set -euo pipefail
 set -f
 
+# --- 0. Drena o stdin ANTES de qualquer saída antecipada (ML-1B, ROADMAP-2026-08-17-guard-
+# global-cabeado-com-no-op-fora-de-projeto-e-integridade-independente-de-fiacao.md): sem isso,
+# quem escreve o payload JSON no pipe recebe EPIPE quando o no-op abaixo sai com 0 antes de ler
+# — reprodutível em 100% das chamadas fora de projeto trackfw, não é corrida de timing. Só drena
+# se stdin não for um terminal interativo (-t 0): em invocação manual sem pipe, "cat" bloquearia
+# esperando EOF (Ctrl-D). O valor lido é reaproveitado no passo 1 abaixo — nunca há uma segunda
+# leitura.
+_TRACKFW_STDIN=""
+[ -t 0 ] || _TRACKFW_STDIN=$(cat 2>/dev/null || true)
+
+# --- 0b. No-op fora de projeto trackfw (ADR-2026-08-17-guard-global-cabeado-com-no-op-fora-de-
+# projeto-trackfw.md): sobe diretórios a partir do cwd FÍSICO (pwd -P, resolve symlink) até
+# achar trackfw.yaml na raiz do projeto. Sem trackfw.yaml em nenhum ancestral, o guard não se
+# aplica — fora de projeto trackfw não há trackfw ship como alternativa, e bloquear ali é custo
+# sem contrapartida. Custo medido: só parameter expansion e test -f por nível, nenhum fork de
+# processo; limitado pela profundidade do caminho.
+_TRACKFW_ROOT_DIR=$(pwd -P)
+_TRACKFW_FOUND=0
+while :; do
+  if [ -f "$_TRACKFW_ROOT_DIR/trackfw.yaml" ]; then
+    _TRACKFW_FOUND=1
+    break
+  fi
+  if [ "$_TRACKFW_ROOT_DIR" = "/" ]; then
+    break
+  fi
+  _TRACKFW_ROOT_DIR="\${_TRACKFW_ROOT_DIR%/*}"
+  if [ -z "$_TRACKFW_ROOT_DIR" ]; then
+    _TRACKFW_ROOT_DIR="/"
+  fi
+done
+[ "$_TRACKFW_FOUND" -eq 1 ] || exit 0
+
 # --- 1. Obter o comando git bruto ------------------------------------------------------------
 if [ "$#" -gt 0 ]; then
   CMD_RAW="$*"
 else
-  INPUT=$(cat 2>/dev/null || true)
+  INPUT="$_TRACKFW_STDIN"
   TRIMMED=$(printf '%s' "$INPUT" | sed -e 's/^[[:space:]]*//')
   case "$TRIMMED" in
     \\{*)
@@ -2128,14 +2197,33 @@ exit 0
 // (internal/validator/validator_git_branch_guard.go) — note this list DIFFERS from
 // CREDENTIAL_GUARD_HOOK_FILES for Copilot and Kiro (global scope uses .copilot/settings.json and
 // .kiro/hooks/trackfw-credential-guard.json, not the project-scope attention-hook paths).
+// requiresCommandType (ROADMAP-2026-08-17 ML-4B) mirrors CREDENTIAL_GUARD_HOOK_FILES'
+// requiresCommandType above — true for every CLI except Cursor.
 const GLOBAL_GUARD_CONFIG_FILES = [
-  { relPath: '.claude/settings.json', cli: 'Claude Code' },
-  { relPath: '.codex/hooks.json', cli: 'Codex CLI' },
-  { relPath: '.gemini/settings.json', cli: 'Gemini CLI' },
-  { relPath: '.cursor/hooks.json', cli: 'Cursor' },
-  { relPath: '.copilot/settings.json', cli: 'GitHub Copilot CLI' },
-  { relPath: '.kiro/hooks/trackfw-credential-guard.json', cli: 'Kiro' },
+  { relPath: '.claude/settings.json', cli: 'Claude Code', requiresCommandType: true },
+  { relPath: '.codex/hooks.json', cli: 'Codex CLI', requiresCommandType: true },
+  { relPath: '.gemini/settings.json', cli: 'Gemini CLI', requiresCommandType: true },
+  { relPath: '.cursor/hooks.json', cli: 'Cursor', requiresCommandType: false },
+  { relPath: '.copilot/settings.json', cli: 'GitHub Copilot CLI', requiresCommandType: true },
+  { relPath: '.kiro/hooks/trackfw-credential-guard.json', cli: 'Kiro', requiresCommandType: true },
 ]
+
+// globalGuardConfigPath resolves the actual on-disk path (relative to $HOME) that
+// validateGuardGlobalHookResolvable must read for a given (GLOBAL_GUARD_CONFIG_FILES entry,
+// scriptMarker) pair. Port of Go's globalGuardConfigPath (internal/validator/
+// validator_git_branch_guard.go) — see that function's doc comment for the full rationale
+// (5 CLIs share one merge-based file across both guards; Kiro is the sole exception, with a
+// dedicated file per guard because its writer rewrites the whole document wholesale).
+//
+// ROADMAP-2026-08-17 ML-3B: before this function existed, GLOBAL_GUARD_CONFIG_FILES only ever
+// pointed Kiro at trackfw-credential-guard.json for BOTH guards, so git_branch_guard_hook_resolvable
+// never inspected ~/.kiro/hooks/trackfw-git-branch-guard.json at all.
+function globalGuardConfigPath(gf, scriptMarker) {
+  if (gf.cli === 'Kiro' && scriptMarker === GIT_BRANCH_GUARD_SCRIPT_MARKER) {
+    return '.kiro/hooks/trackfw-git-branch-guard.json'
+  }
+  return gf.relPath
+}
 
 // validateGuardGlobalHookResolvable is the GLOBAL-scope counterpart of
 // validateGuardHookResolvable: for each of the 6 GLOBAL_GUARD_CONFIG_FILES that exists AND
@@ -2157,7 +2245,8 @@ function validateGuardGlobalHookResolvable(scriptMarker) {
 
   const msgs = []
   for (const gf of GLOBAL_GUARD_CONFIG_FILES) {
-    const fullPath = path.join(home, gf.relPath)
+    const relPath = globalGuardConfigPath(gf, scriptMarker)
+    const fullPath = path.join(home, relPath)
     let content
     try {
       content = fs.readFileSync(fullPath, 'utf8')
@@ -2177,23 +2266,34 @@ function validateGuardGlobalHookResolvable(scriptMarker) {
     collectCommandsWithMarker(parsed, scriptMarker, commands)
 
     const seen = new Set()
-    for (const raw of commands) {
-      if (seen.has(raw)) continue
-      seen.add(raw)
+    for (const m of commands) {
+      const seenKey = `${m.raw} ${m.typeIsCommand}`
+      if (seen.has(seenKey)) continue
+      seen.add(seenKey)
 
-      if (!path.isAbsolute(raw)) continue
+      if (!path.isAbsolute(m.raw)) continue
+
+      // ROADMAP-2026-08-17 ML-4B: reproduced by hades-tf (ML-4A barrier) — a global config entry
+      // with the correct absolute command but missing/wrong "type" (hand-edited, an older trackfw
+      // version, another tool's merge) is silently never executed by the CLI, even though the
+      // script itself exists and is fine. Reported instead of the exists/executable checks below,
+      // which assume the entry is structurally valid.
+      if (gf.requiresCommandType && !m.typeIsCommand) {
+        msgs.push(`~/${relPath} (${gf.cli}, global scope) references ${scriptMarker} resolved to "${m.raw}", but the hook entry is missing "type":"command" (or has an invalid type) — ${gf.cli} will silently never execute it; run \`trackfw update harness\` to regenerate it`)
+        continue
+      }
 
       let stat = null
       try {
-        stat = fs.statSync(raw)
+        stat = fs.statSync(m.raw)
       } catch (_) {
         stat = null
       }
 
       if (!stat) {
-        msgs.push(`~/${gf.relPath} (${gf.cli}, global scope) references ${scriptMarker} resolved to "${raw}", but the script does not exist — run \`trackfw update harness\` to regenerate it`)
+        msgs.push(`~/${relPath} (${gf.cli}, global scope) references ${scriptMarker} resolved to "${m.raw}", but the script does not exist — run \`trackfw update harness\` to regenerate it`)
       } else if ((stat.mode & 0o111) === 0) {
-        msgs.push(`~/${gf.relPath} (${gf.cli}, global scope) references ${scriptMarker} resolved to "${raw}", but the script is not executable — run \`trackfw update harness\` to regenerate it`)
+        msgs.push(`~/${relPath} (${gf.cli}, global scope) references ${scriptMarker} resolved to "${m.raw}", but the script is not executable — run \`trackfw update harness\` to regenerate it`)
       }
     }
   }
@@ -2202,61 +2302,45 @@ function validateGuardGlobalHookResolvable(scriptMarker) {
 }
 
 // validateGuardGlobalScriptIntegrity is the GLOBAL-scope counterpart of
-// validateCredentialGuardScriptIntegrity/validateGitBranchGuardScriptIntegrity: for each of the 6
-// GLOBAL_GUARD_CONFIG_FILES that references scriptMarker, verifies the referenced script's content
-// matches referenceContent byte-for-byte. Port of Go's validateGuardGlobalScriptIntegrity
-// (internal/validator/validator_git_branch_guard.go) — same trigger condition and fail-open
-// contract as validateGuardGlobalHookResolvable above; does not re-validate existence/
-// executability, only content, matching the project-scope split between *_hook_resolvable and
-// *_script_integrity.
-function validateGuardGlobalScriptIntegrity(scriptMarker, referenceContent) {
+// validateCredentialGuardScriptIntegrity/validateGitBranchGuardScriptIntegrity: verifies the
+// content of ~/.trackfw/scripts/<scriptFileName> (the fixed location the global generators write
+// to) against referenceContent byte-for-byte. Port of Go's validateGuardGlobalScriptIntegrity
+// (internal/validator/validator_git_branch_guard.go).
+//
+// ROADMAP-2026-08-17 (guard global cabeado com no-op / integridade independente de fiação), ML-3A:
+// deliberately triggers on ARTIFACT EXISTENCE, not on any GLOBAL_GUARD_CONFIG_FILES entry
+// referencing scriptMarker — the old per-config trigger meant a script trackfw itself wrote (via
+// `trackfw update harness`) but that no config yet pointed at could rot indefinitely with
+// `validate` green. "If trackfw wrote the script, trackfw verifies the script" — existence is the
+// only precondition; wiring is irrelevant to whether the artifact itself has drifted.
+//
+// Fail-open on absence: a script trackfw never wrote (user never ran `update harness`) is not an
+// error.
+//
+// Single evaluation per script (not per referencing config): caps the message count at 1
+// regardless of how many (or how few — including zero) configs reference the same on-disk path —
+// this is what prevents double-reporting now that git-branch-guard has both global wiring (Wave 2)
+// and a global artifact.
+//
+// scriptMarker doubles as the script's own filename (trackfw-credential-guard.sh /
+// trackfw-git-branch-guard.sh) in both call sites below — same equivalence the Go port relies on.
+function validateGuardGlobalScriptIntegrity(scriptFileName, referenceContent) {
   const home = os.homedir()
   if (!home) return []
 
-  const msgs = []
-  for (const gf of GLOBAL_GUARD_CONFIG_FILES) {
-    const fullPath = path.join(home, gf.relPath)
-    let content
-    try {
-      content = fs.readFileSync(fullPath, 'utf8')
-    } catch (e) {
-      if (e.code === 'ENOENT') continue
-      continue
-    }
-
-    let parsed
-    try {
-      parsed = JSON.parse(content)
-    } catch (_) {
-      continue
-    }
-
-    const commands = []
-    collectCommandsWithMarker(parsed, scriptMarker, commands)
-
-    const seen = new Set()
-    for (const raw of commands) {
-      if (seen.has(raw)) continue
-      seen.add(raw)
-
-      if (!path.isAbsolute(raw)) continue
-
-      let scriptContent
-      try {
-        scriptContent = fs.readFileSync(raw, 'utf8')
-      } catch (_) {
-        // Existence/readability is validateGuardGlobalHookResolvable's job — do not double-report
-        // the same underlying condition under two rule names.
-        continue
-      }
-
-      if (scriptContent === referenceContent) continue
-
-      msgs.push(`${raw} (global scope, referenced from ~/${gf.relPath}, ${gf.cli}) content diverges from the template this version of trackfw generates — if you did not edit this file by hand, run \`trackfw update harness\` to regenerate it`)
-    }
+  const scriptPath = path.join(home, '.trackfw', 'scripts', scriptFileName)
+  let content
+  try {
+    content = fs.readFileSync(scriptPath, 'utf8')
+  } catch (_) {
+    // Not installed is not a violation — same contract as every other *_script_integrity check
+    // (project-scope and global) in this file.
+    return []
   }
 
-  return msgs
+  if (content === referenceContent) return []
+
+  return [`${scriptPath} (global scope) content diverges from the template this version of trackfw generates — if you did not edit this file by hand, run \`trackfw update harness\` to regenerate it`]
 }
 
 // validateCredentialGuardGlobalHookResolvable / validateCredentialGuardGlobalScriptIntegrity /
@@ -2282,6 +2366,10 @@ function validateGitBranchGuardGlobalHookResolvable() {
 function validateGitBranchGuardGlobalScriptIntegrity() {
   return validateGuardGlobalScriptIntegrity(GIT_BRANCH_GUARD_SCRIPT_MARKER, GIT_BRANCH_GUARD_SCRIPT_REFERENCE)
 }
+// NOTE: CREDENTIAL_GUARD_SCRIPT_MARKER === 'trackfw-credential-guard.sh' and
+// GIT_BRANCH_GUARD_SCRIPT_MARKER === 'trackfw-git-branch-guard.sh' — both markers are already the
+// literal script filenames, so they double as scriptFileName above with no extra constant needed
+// (same reuse the Go port relies on).
 
 // CREDENTIAL_GUARD_MODE_LOOKBEHIND_LINES mirrors the shell script's own resolution of
 // credential_guard.mode (`grep -A 5 '^credential_guard:'`): the mode key is found on the matched

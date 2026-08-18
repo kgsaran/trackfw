@@ -1540,13 +1540,20 @@ _GIT_BRANCH_GUARD_SCRIPT_MARKER = "trackfw-git-branch-guard.sh"
 # guards em ROADMAP-2026-08-15-..., ML-2B). Hooks de escopo GLOBAL (~/.trackfw/..., trackfw update
 # harness) ficam fora — caso distinto, fora do repositório do usuário, e a checagem de dedup
 # global_credential_guard_installed_*() já os pula de propósito nas entradas de projeto.
+# Cada tupla é (rel_path, cli, requires_command_type) -- requires_command_type (ROADMAP-2026-08-17
+# ML-4B, port de credentialGuardHookFile.requiresCommandType, internal/validator/
+# validator_credential_guard.go) é True para todo CLI cujo escritor sempre emite um campo irmão
+# "type":"command" (Claude/Codex/Gemini, GitHub Copilot CLI, Kiro) -- um comando casado SEM esse
+# irmão é uma entrada estruturalmente malformada que o CLI nunca executa em silêncio (achado da
+# barreira hades-tf ML-4A), não meramente "ausente". False só para Cursor, cujo schema
+# ({"command": ...}) nunca carrega um campo "type".
 _CREDENTIAL_GUARD_HOOK_FILES = [
-    (".claude/settings.json", "Claude Code"),
-    (".codex/hooks.json", "Codex CLI"),
-    (".gemini/settings.json", "Gemini CLI"),
-    (".cursor/hooks.json", "Cursor"),
-    (".github/hooks/trackfw-attention.json", "GitHub Copilot CLI"),
-    (".kiro/hooks/trackfw-attention.json", "Kiro"),
+    (".claude/settings.json", "Claude Code", True),
+    (".codex/hooks.json", "Codex CLI", True),
+    (".gemini/settings.json", "Gemini CLI", True),
+    (".cursor/hooks.json", "Cursor", False),
+    (".github/hooks/trackfw-attention.json", "GitHub Copilot CLI", True),
+    (".kiro/hooks/trackfw-attention.json", "Kiro", True),
 ]
 
 
@@ -1586,11 +1593,18 @@ def _resolve_credential_guard_hook_path(raw: str, root: str):
 
 def _collect_commands_with_marker(value, marker: str, out: list):
     """Percorre recursivamente um valor JSON já decodificado e coleta todo valor-string que
-    contém marker, independentemente do nome do campo que o contém.
+    contém marker, independentemente do nome do campo que o contém -- junto com um sinal
+    estrutural de que o objeto imediato que o contém também tem "type":"command" como campo irmão
+    (ROADMAP-2026-08-17 ML-4B, port de guardCommandMatch, internal/validator/
+    validator_credential_guard.go). Cada entrada de `out` é um dict {"raw": str,
+    "type_is_command": bool}.
 
     Os 6 formatos de hook usam campos diferentes para o comando: "command" (Claude/Codex/
     Gemini/Cursor), "bash" (GitHub Copilot CLI), "action.command" (Kiro). Varrer por VALOR em vez
-    de por caminho de chave evita acoplar esta regra à forma exata de cada schema.
+    de por caminho de chave evita acoplar esta regra à forma exata de cada schema. Todo schema
+    aqui coloca "type" como IRMÃO do campo do comando dentro do MESMO objeto -- nunca aninhado
+    mais fundo -- então basta ler "type" do dict que esta função já está visitando; não é
+    necessária uma travessia schema-aware separada.
 
     Generalizada (ROADMAP-2026-08-15-trackfw-validate-deve-detectar-scripts-de-hook-ausentes-ou-
     desatualizados, ML-2B — port de collectCommandsWithMarker, internal/validator/
@@ -1599,13 +1613,21 @@ def _collect_commands_with_marker(value, marker: str, out: list):
     agora também para _GIT_BRANCH_GUARD_SCRIPT_MARKER, sem duplicar a travessia recursiva.
     """
     if isinstance(value, str):
+        # Match solto/top-level, fora de qualquer objeto que o contenha -- fallback defensivo, não
+        # esperado disparar já que todo arquivo de hook lido aqui é raiz de um objeto JSON. Sem
+        # objeto que o contenha, não há campo "type" irmão para ler.
         if marker in value:
-            out.append(value)
+            out.append({"raw": value, "type_is_command": False})
     elif isinstance(value, list):
         for item in value:
             _collect_commands_with_marker(item, marker, out)
     elif isinstance(value, dict):
+        type_is_command = value.get("type") == "command"
         for val in value.values():
+            if isinstance(val, str):
+                if marker in val:
+                    out.append({"raw": val, "type_is_command": type_is_command})
+                continue
             _collect_commands_with_marker(val, marker, out)
 
 
@@ -1631,7 +1653,7 @@ def validate_guard_hook_resolvable(script_marker: str, cwd: str = None) -> list:
     root = cwd or os.getcwd()
     msgs = []
 
-    for rel_path, cli in _CREDENTIAL_GUARD_HOOK_FILES:
+    for rel_path, cli, requires_command_type in _CREDENTIAL_GUARD_HOOK_FILES:
         full_path = os.path.join(root, rel_path)
         try:
             with open(full_path, "r", encoding="utf-8") as f:
@@ -1648,13 +1670,31 @@ def validate_guard_hook_resolvable(script_marker: str, cwd: str = None) -> list:
         _collect_commands_with_marker(parsed, script_marker, commands)
 
         seen = set()
-        for raw in commands:
-            if raw in seen:
+        for m in commands:
+            seen_key = (m["raw"], m["type_is_command"])
+            if seen_key in seen:
                 continue
-            seen.add(raw)
+            seen.add(seen_key)
 
-            resolved = _resolve_credential_guard_hook_path(raw, root)
+            resolved = _resolve_credential_guard_hook_path(m["raw"], root)
             if resolved is None:
+                continue
+
+            # ROADMAP-2026-08-17 ML-4B: a command that resolves to a real path but sits inside a
+            # structurally malformed entry (missing/wrong "type" where this CLI's schema requires
+            # it -- hades-tf ML-4A barrier finding) will NEVER be executed by the CLI, regardless
+            # of whether the script itself exists and is executable. Reported instead of the
+            # exists/executable checks below, which assume a structurally valid entry.
+            if requires_command_type and not m["type_is_command"]:
+                msgs.append({
+                    "type": "violation",
+                    "message": (
+                        f'{rel_path} ({cli}) references {script_marker} resolved to '
+                        f'"{resolved}", but the hook entry is missing "type":"command" (or has an '
+                        f'invalid type) — {cli} will silently never execute it; run `trackfw '
+                        f'update` to regenerate it'
+                    ),
+                })
                 continue
 
             if not os.path.exists(resolved):
@@ -2008,11 +2048,44 @@ _GIT_BRANCH_GUARD_SCRIPT_REFERENCE = r"""#!/usr/bin/env bash
 set -euo pipefail
 set -f
 
+# --- 0. Drena o stdin ANTES de qualquer saída antecipada (ML-1B, ROADMAP-2026-08-17-guard-
+# global-cabeado-com-no-op-fora-de-projeto-e-integridade-independente-de-fiacao.md): sem isso,
+# quem escreve o payload JSON no pipe recebe EPIPE quando o no-op abaixo sai com 0 antes de ler
+# — reprodutível em 100% das chamadas fora de projeto trackfw, não é corrida de timing. Só drena
+# se stdin não for um terminal interativo (-t 0): em invocação manual sem pipe, "cat" bloquearia
+# esperando EOF (Ctrl-D). O valor lido é reaproveitado no passo 1 abaixo — nunca há uma segunda
+# leitura.
+_TRACKFW_STDIN=""
+[ -t 0 ] || _TRACKFW_STDIN=$(cat 2>/dev/null || true)
+
+# --- 0b. No-op fora de projeto trackfw (ADR-2026-08-17-guard-global-cabeado-com-no-op-fora-de-
+# projeto-trackfw.md): sobe diretórios a partir do cwd FÍSICO (pwd -P, resolve symlink) até
+# achar trackfw.yaml na raiz do projeto. Sem trackfw.yaml em nenhum ancestral, o guard não se
+# aplica — fora de projeto trackfw não há trackfw ship como alternativa, e bloquear ali é custo
+# sem contrapartida. Custo medido: só parameter expansion e test -f por nível, nenhum fork de
+# processo; limitado pela profundidade do caminho.
+_TRACKFW_ROOT_DIR=$(pwd -P)
+_TRACKFW_FOUND=0
+while :; do
+  if [ -f "$_TRACKFW_ROOT_DIR/trackfw.yaml" ]; then
+    _TRACKFW_FOUND=1
+    break
+  fi
+  if [ "$_TRACKFW_ROOT_DIR" = "/" ]; then
+    break
+  fi
+  _TRACKFW_ROOT_DIR="${_TRACKFW_ROOT_DIR%/*}"
+  if [ -z "$_TRACKFW_ROOT_DIR" ]; then
+    _TRACKFW_ROOT_DIR="/"
+  fi
+done
+[ "$_TRACKFW_FOUND" -eq 1 ] || exit 0
+
 # --- 1. Obter o comando git bruto ------------------------------------------------------------
 if [ "$#" -gt 0 ]; then
   CMD_RAW="$*"
 else
-  INPUT=$(cat 2>/dev/null || true)
+  INPUT="$_TRACKFW_STDIN"
   TRIMMED=$(printf '%s' "$INPUT" | sed -e 's/^[[:space:]]*//')
   case "$TRIMMED" in
     \{*)
@@ -2565,14 +2638,34 @@ def validate_git_branch_guard_script_integrity(cwd: str = None) -> list:
 # dos 6 arquivos que `trackfw update harness` pode escrever uma entrada de guard -- contraparte
 # global de _CREDENTIAL_GUARD_HOOK_FILES. Port de globalGuardConfigFiles
 # (internal/validator/validator_git_branch_guard.go).
+# requires_command_type (ROADMAP-2026-08-17 ML-4B) espelha _CREDENTIAL_GUARD_HOOK_FILES acima --
+# True para todo CLI exceto Cursor.
 _GLOBAL_GUARD_CONFIG_FILES = [
-    (".claude/settings.json", "Claude Code"),
-    (".codex/hooks.json", "Codex CLI"),
-    (".gemini/settings.json", "Gemini CLI"),
-    (".cursor/hooks.json", "Cursor"),
-    (".copilot/settings.json", "GitHub Copilot CLI"),
-    (".kiro/hooks/trackfw-credential-guard.json", "Kiro"),
+    (".claude/settings.json", "Claude Code", True),
+    (".codex/hooks.json", "Codex CLI", True),
+    (".gemini/settings.json", "Gemini CLI", True),
+    (".cursor/hooks.json", "Cursor", False),
+    (".copilot/settings.json", "GitHub Copilot CLI", True),
+    (".kiro/hooks/trackfw-credential-guard.json", "Kiro", True),
 ]
+
+
+def _global_guard_config_path(rel_path: str, cli: str, script_marker: str) -> str:
+    """Resolve o caminho em disco (relativo a $HOME) que validate_guard_global_hook_resolvable
+    deve ler para um par (entrada de _GLOBAL_GUARD_CONFIG_FILES, script_marker). Port de
+    globalGuardConfigPath (internal/validator/validator_git_branch_guard.go) -- ver o doc comment
+    daquela função para o racional completo (5 CLIs compartilham um único arquivo baseado em merge
+    entre os dois guards; Kiro é a única exceção, com um arquivo dedicado por guard porque seu
+    writer reescreve o documento inteiro por vez).
+
+    ROADMAP-2026-08-17 ML-3B: antes desta função existir, _GLOBAL_GUARD_CONFIG_FILES sempre
+    apontava o Kiro para trackfw-credential-guard.json para os DOIS guards, então
+    git_branch_guard_hook_resolvable nunca inspecionava
+    ~/.kiro/hooks/trackfw-git-branch-guard.json.
+    """
+    if cli == "Kiro" and script_marker == _GIT_BRANCH_GUARD_SCRIPT_MARKER:
+        return ".kiro/hooks/trackfw-git-branch-guard.json"
+    return rel_path
 
 
 def validate_guard_global_hook_resolvable(script_marker: str, cwd: str = None) -> list:
@@ -2602,7 +2695,8 @@ def validate_guard_global_hook_resolvable(script_marker: str, cwd: str = None) -
         return []
 
     msgs = []
-    for rel_path, cli in _GLOBAL_GUARD_CONFIG_FILES:
+    for base_rel_path, cli, requires_command_type in _GLOBAL_GUARD_CONFIG_FILES:
+        rel_path = _global_guard_config_path(base_rel_path, cli, script_marker)
         full_path = os.path.join(home, rel_path)
         try:
             with open(full_path, "r", encoding="utf-8") as f:
@@ -2619,29 +2713,47 @@ def validate_guard_global_hook_resolvable(script_marker: str, cwd: str = None) -
         _collect_commands_with_marker(parsed, script_marker, commands)
 
         seen = set()
-        for raw in commands:
-            if raw in seen:
+        for m in commands:
+            seen_key = (m["raw"], m["type_is_command"])
+            if seen_key in seen:
                 continue
-            seen.add(raw)
+            seen.add(seen_key)
 
-            if not os.path.isabs(raw):
+            if not os.path.isabs(m["raw"]):
                 continue
 
-            if not os.path.exists(raw):
+            # ROADMAP-2026-08-17 ML-4B: reproduced by hades-tf (ML-4A barrier) -- a global config
+            # entry with the correct absolute command but missing/wrong "type" (hand-edited, an
+            # older trackfw version, another tool's merge) is silently never executed by the CLI,
+            # even though the script itself exists and is fine. Reported instead of the
+            # exists/executable checks below, which assume the entry is structurally valid.
+            if requires_command_type and not m["type_is_command"]:
                 msgs.append({
                     "type": "violation",
                     "message": (
                         f'~/{rel_path} ({cli}, global scope) references {script_marker} resolved '
-                        f'to "{raw}", but the script does not exist — run `trackfw update harness` '
+                        f'to "{m["raw"]}", but the hook entry is missing "type":"command" (or has '
+                        f'an invalid type) — {cli} will silently never execute it; run `trackfw '
+                        f'update harness` to regenerate it'
+                    ),
+                })
+                continue
+
+            if not os.path.exists(m["raw"]):
+                msgs.append({
+                    "type": "violation",
+                    "message": (
+                        f'~/{rel_path} ({cli}, global scope) references {script_marker} resolved '
+                        f'to "{m["raw"]}", but the script does not exist — run `trackfw update harness` '
                         f'to regenerate it'
                     ),
                 })
-            elif not os.access(raw, os.X_OK):
+            elif not os.access(m["raw"], os.X_OK):
                 msgs.append({
                     "type": "violation",
                     "message": (
                         f'~/{rel_path} ({cli}, global scope) references {script_marker} resolved '
-                        f'to "{raw}", but the script is not executable — run `trackfw update '
+                        f'to "{m["raw"]}", but the script is not executable — run `trackfw update '
                         f'harness` to regenerate it'
                     ),
                 })
@@ -2649,67 +2761,57 @@ def validate_guard_global_hook_resolvable(script_marker: str, cwd: str = None) -
     return msgs
 
 
-def validate_guard_global_script_integrity(script_marker: str, reference_content: str, cwd: str = None) -> list:
-    """Contraparte de escopo GLOBAL de validate_guard_script_integrity: para cada um dos 6
-    _GLOBAL_GUARD_CONFIG_FILES que referenciar script_marker, verifica que o conteúdo do script
-    referenciado bate byte-a-byte com reference_content. Mesma condição de disparo e contrato
-    fail-open de validate_guard_global_hook_resolvable (ver seu doc comment) -- esta função não
-    revalida existência/executabilidade, só conteúdo, espelhando a divisão de escopo de
-    *_hook_resolvable/*_script_integrity.
+def validate_guard_global_script_integrity(script_file_name: str, reference_content: str, cwd: str = None) -> list:
+    """Contraparte de escopo GLOBAL de validate_guard_script_integrity: verifica que o conteúdo de
+    ~/.trackfw/scripts/<script_file_name> (o local fixo em que os geradores globais escrevem) bate
+    byte-a-byte com reference_content.
 
     Port de validateGuardGlobalScriptIntegrity (internal/validator/validator_git_branch_guard.go).
+
+    ROADMAP-2026-08-17 (guard global cabeado com no-op / integridade independente de fiação),
+    ML-3A: dispara pela EXISTÊNCIA do artefato, não por nenhuma entrada em
+    _GLOBAL_GUARD_CONFIG_FILES referenciar script_marker -- a condição antiga fazia um script que o
+    trackfw escreveu (via `trackfw update harness`) mas que nenhum config ainda apontava poder
+    apodrecer indefinidamente com `validate` verde. "Se o trackfw escreveu o script, o trackfw
+    verifica o script" -- existência é a única precondição; fiação é irrelevante para saber se o
+    artefato em si divergiu.
+
+    Fail-open na ausência: um script que o trackfw nunca escreveu (usuário nunca rodou `update
+    harness`) não é erro.
+
+    Avaliação única por script (não uma vez por config referenciando-o): garante no máximo 1
+    mensagem, independente de quantos (ou nenhum) configs referenciam o mesmo caminho em disco --
+    é o que evita a dupla emissão agora que o git-branch-guard tem fiação global (Wave 2) E
+    artefato global simultaneamente.
+
+    script_file_name é o mesmo valor de _CREDENTIAL_GUARD_SCRIPT_MARKER/_GIT_BRANCH_GUARD_SCRIPT_MARKER
+    nos dois call sites abaixo -- ambos já são o nome literal do arquivo do script, mesma
+    equivalência que o port Go/Node também reaproveita.
     """
     home = os.path.expanduser("~")
     if not home or home == "~":
         return []
 
-    msgs = []
-    for rel_path, cli in _GLOBAL_GUARD_CONFIG_FILES:
-        full_path = os.path.join(home, rel_path)
-        try:
-            with open(full_path, "r", encoding="utf-8") as f:
-                content = f.read()
-        except OSError:
-            continue
+    script_path = os.path.join(home, ".trackfw", "scripts", script_file_name)
+    try:
+        with open(script_path, "r", encoding="utf-8") as f:
+            content = f.read()
+    except OSError:
+        # Não instalado não é violação -- mesmo contrato de todo outro check
+        # *_script_integrity (projeto e global) neste arquivo.
+        return []
 
-        try:
-            parsed = json.loads(content)
-        except (json.JSONDecodeError, ValueError):
-            continue
+    if content == reference_content:
+        return []
 
-        commands = []
-        _collect_commands_with_marker(parsed, script_marker, commands)
-
-        seen = set()
-        for raw in commands:
-            if raw in seen:
-                continue
-            seen.add(raw)
-
-            if not os.path.isabs(raw):
-                continue
-
-            try:
-                with open(raw, "r", encoding="utf-8") as f:
-                    script_content = f.read()
-            except OSError:
-                # Existência/legibilidade é responsabilidade de validate_guard_global_hook_resolvable
-                # -- não denunciar a mesma condição subjacente sob dois nomes de regra.
-                continue
-
-            if script_content == reference_content:
-                continue
-
-            msgs.append({
-                "type": "warning",
-                "message": (
-                    f'{raw} (global scope, referenced from ~/{rel_path}, {cli}) content diverges '
-                    f'from the template this version of trackfw generates — if you did not edit '
-                    f'this file by hand, run `trackfw update harness` to regenerate it'
-                ),
-            })
-
-    return msgs
+    return [{
+        "type": "warning",
+        "message": (
+            f'{script_path} (global scope) content diverges from the template this version of '
+            f'trackfw generates — if you did not edit this file by hand, run `trackfw update '
+            f'harness` to regenerate it'
+        ),
+    }]
 
 
 # validate_credential_guard_global_hook_resolvable / validate_credential_guard_global_script_integrity /

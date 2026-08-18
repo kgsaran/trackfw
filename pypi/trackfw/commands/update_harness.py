@@ -103,26 +103,35 @@ def _tildeify(home: str, absolute: str) -> str:
 
 
 def declared_target_ids() -> list[str]:
-    # "codex-credential-guard"/"gemini-credential-guard"/
-    # "cursor-credential-guard"/"copilot-credential-guard"/
-    # "kiro-credential-guard" are each inserted immediately BEFORE their
-    # tool's "-agents"/"-skills" pair — same relative position as
-    # claude-credential-guard, which precedes claude-agents/claude-skills.
-    # See internal/generators/update.go:buildHarnessTargetIDs for the full
+    # "codex-credential-guard"/"codex-git-branch-guard",
+    # "gemini-credential-guard"/"gemini-git-branch-guard",
+    # "cursor-credential-guard"/"cursor-git-branch-guard",
+    # "copilot-credential-guard"/"copilot-git-branch-guard",
+    # "kiro-credential-guard"/"kiro-git-branch-guard" are each inserted
+    # immediately BEFORE their tool's "-agents"/"-skills" pair — same
+    # relative position as claude-credential-guard/claude-git-branch-guard,
+    # which precede claude-agents/claude-skills, with credential-guard
+    # always preceding git-branch-guard within a tool. See
+    # internal/generators/update.go:buildHarnessTargetIDs for the full
     # rationale (ROADMAP-2026-08-06 Wave 2/ML-2B, ML-2C, ML-2D, ML-2E,
-    # ML-2F).
-    ids = ["claude-skill", "claude-credential-guard"]
+    # ML-2F; ROADMAP-2026-08-17 Wave 2/ML-2A for the git-branch-guard ids).
+    ids = ["claude-skill", "claude-credential-guard", "claude-git-branch-guard"]
     for tool in _CATALOG_TARGET_ORDER:
         if tool == "codex":
             ids.append("codex-credential-guard")
+            ids.append("codex-git-branch-guard")
         if tool == "gemini":
             ids.append("gemini-credential-guard")
+            ids.append("gemini-git-branch-guard")
         if tool == "cursor":
             ids.append("cursor-credential-guard")
+            ids.append("cursor-git-branch-guard")
         if tool == "copilot":
             ids.append("copilot-credential-guard")
+            ids.append("copilot-git-branch-guard")
         if tool == "kiro":
             ids.append("kiro-credential-guard")
+            ids.append("kiro-git-branch-guard")
         for kind in _CATALOG_KIND_ORDER:
             ids.append(f"{tool}-{kind}")
     return ids
@@ -620,6 +629,353 @@ def _credential_guard_kiro_result(home: str, dry_run: bool, install_missing: boo
     return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
 
 
+def _git_branch_guard_claude_result(home: str, dry_run: bool, install_missing: bool) -> dict[str, Any]:
+    """Evaluates (and, unless dry_run, applies) the global-scope
+    git-branch-guard hook wiring for Claude Code: mirrors
+    `_credential_guard_claude_result` exactly (same file,
+    ~/.claude/settings.json, same hooks.PreToolUse/PostToolUse[matcher:"Bash"]
+    arrays, same `_merge_claude_hook_array` reuse), only the referenced
+    script differs (trackfw-git-branch-guard.sh instead of
+    trackfw-credential-guard.sh) — `_merge_claude_hook_array` appends a
+    second, distinct command entry into the SAME matcher's inner array
+    rather than overwriting the first, so both guards coexist. Mirrors
+    internal/generators/update.go:harnessGitBranchGuardTargetClaude
+    (ROADMAP-2026-08-17 Wave 2/ML-2A).
+    """
+    target_id = "claude-git-branch-guard"
+    path = os.path.join(home, ".claude", "settings.json")
+    display_path = _tildeify(home, path)
+    script_path = os.path.join(home, ".trackfw", "scripts", "trackfw-git-branch-guard.sh")
+
+    try:
+        raw = Path(path).read_bytes()
+    except FileNotFoundError:
+        if not install_missing:
+            return {"id": target_id, "state": STATE_MISSING, "path": display_path}
+        if dry_run:
+            return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
+        root: dict[str, Any] = {}
+        hooks = root.setdefault("hooks", {})
+        _merge_claude_hook_array(hooks.setdefault("PreToolUse", []), "Bash", script_path)
+        _merge_claude_hook_array(hooks.setdefault("PostToolUse", []), "Bash", script_path)
+        desired = json.dumps(root, indent=2) + "\n"
+        try:
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
+            Path(path).write_text(desired, encoding="utf-8")
+        except OSError as error:
+            return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
+        return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
+    except OSError as error:
+        return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
+
+    try:
+        root = json.loads(raw) if raw else {}
+    except json.JSONDecodeError as error:
+        return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
+
+    if not isinstance(root, dict):
+        root = {}
+    hooks = root.setdefault("hooks", {})
+    _merge_claude_hook_array(hooks.setdefault("PreToolUse", []), "Bash", script_path)
+    _merge_claude_hook_array(hooks.setdefault("PostToolUse", []), "Bash", script_path)
+    desired = json.dumps(root, indent=2) + "\n"
+    if desired.encode("utf-8") == raw:
+        return {"id": target_id, "state": STATE_SKIPPED, "path": display_path}
+    if dry_run:
+        return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
+    try:
+        Path(path).write_text(desired, encoding="utf-8")
+    except OSError as error:
+        return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
+    return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
+
+
+def _git_branch_guard_codex_result(home: str, dry_run: bool, install_missing: bool) -> dict[str, Any]:
+    """Mirrors `_git_branch_guard_claude_result` for Codex CLI
+    (~/.codex/hooks.json), same as `_credential_guard_codex_result`'s own
+    relationship to `_credential_guard_claude_result`.
+    """
+    target_id = "codex-git-branch-guard"
+    path = os.path.join(home, ".codex", "hooks.json")
+    display_path = _tildeify(home, path)
+    script_path = os.path.join(home, ".trackfw", "scripts", "trackfw-git-branch-guard.sh")
+
+    try:
+        raw = Path(path).read_bytes()
+    except FileNotFoundError:
+        if not install_missing:
+            return {"id": target_id, "state": STATE_MISSING, "path": display_path}
+        if dry_run:
+            return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
+        root: dict[str, Any] = {}
+        hooks = root.setdefault("hooks", {})
+        _merge_claude_hook_array(hooks.setdefault("PreToolUse", []), "Bash", script_path)
+        _merge_claude_hook_array(hooks.setdefault("PostToolUse", []), "Bash", script_path)
+        desired = json.dumps(root, indent=2) + "\n"
+        try:
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
+            Path(path).write_text(desired, encoding="utf-8")
+        except OSError as error:
+            return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
+        return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
+    except OSError as error:
+        return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
+
+    try:
+        root = json.loads(raw) if raw else {}
+    except json.JSONDecodeError as error:
+        return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
+
+    if not isinstance(root, dict):
+        root = {}
+    hooks = root.setdefault("hooks", {})
+    _merge_claude_hook_array(hooks.setdefault("PreToolUse", []), "Bash", script_path)
+    _merge_claude_hook_array(hooks.setdefault("PostToolUse", []), "Bash", script_path)
+    desired = json.dumps(root, indent=2) + "\n"
+    if desired.encode("utf-8") == raw:
+        return {"id": target_id, "state": STATE_SKIPPED, "path": display_path}
+    if dry_run:
+        return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
+    try:
+        Path(path).write_text(desired, encoding="utf-8")
+    except OSError as error:
+        return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
+    return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
+
+
+def _git_branch_guard_gemini_result(home: str, dry_run: bool, install_missing: bool) -> dict[str, Any]:
+    """Mirrors `_git_branch_guard_claude_result` for Gemini CLI
+    (~/.gemini/settings.json, BeforeTool/AfterTool[matcher:"run_shell_command"]),
+    same as `_credential_guard_gemini_result`'s own relationship to
+    `_credential_guard_claude_result`.
+    """
+    target_id = "gemini-git-branch-guard"
+    path = os.path.join(home, ".gemini", "settings.json")
+    display_path = _tildeify(home, path)
+    script_path = os.path.join(home, ".trackfw", "scripts", "trackfw-git-branch-guard.sh")
+
+    try:
+        raw = Path(path).read_bytes()
+    except FileNotFoundError:
+        if not install_missing:
+            return {"id": target_id, "state": STATE_MISSING, "path": display_path}
+        if dry_run:
+            return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
+        root: dict[str, Any] = {}
+        hooks = root.setdefault("hooks", {})
+        _merge_claude_hook_array(hooks.setdefault("BeforeTool", []), "run_shell_command", script_path)
+        _merge_claude_hook_array(hooks.setdefault("AfterTool", []), "run_shell_command", script_path)
+        desired = json.dumps(root, indent=2) + "\n"
+        try:
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
+            Path(path).write_text(desired, encoding="utf-8")
+        except OSError as error:
+            return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
+        return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
+    except OSError as error:
+        return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
+
+    try:
+        root = json.loads(raw) if raw else {}
+    except json.JSONDecodeError as error:
+        return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
+
+    if not isinstance(root, dict):
+        root = {}
+    hooks = root.setdefault("hooks", {})
+    _merge_claude_hook_array(hooks.setdefault("BeforeTool", []), "run_shell_command", script_path)
+    _merge_claude_hook_array(hooks.setdefault("AfterTool", []), "run_shell_command", script_path)
+    desired = json.dumps(root, indent=2) + "\n"
+    if desired.encode("utf-8") == raw:
+        return {"id": target_id, "state": STATE_SKIPPED, "path": display_path}
+    if dry_run:
+        return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
+    try:
+        Path(path).write_text(desired, encoding="utf-8")
+    except OSError as error:
+        return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
+    return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
+
+
+def _git_branch_guard_cursor_result(home: str, dry_run: bool, install_missing: bool) -> dict[str, Any]:
+    """Mirrors `_git_branch_guard_claude_result` for Cursor
+    (~/.cursor/hooks.json, hooks.beforeShellExecution/afterShellExecution via
+    `_merge_simple_command_array`), same as `_credential_guard_cursor_result`'s
+    own relationship to `_credential_guard_claude_result`.
+    """
+    target_id = "cursor-git-branch-guard"
+    path = os.path.join(home, ".cursor", "hooks.json")
+    display_path = _tildeify(home, path)
+    script_path = os.path.join(home, ".trackfw", "scripts", "trackfw-git-branch-guard.sh")
+
+    try:
+        raw = Path(path).read_bytes()
+    except FileNotFoundError:
+        if not install_missing:
+            return {"id": target_id, "state": STATE_MISSING, "path": display_path}
+        if dry_run:
+            return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
+        root: dict[str, Any] = {}
+        root.setdefault("version", 1)
+        hooks = root.setdefault("hooks", {})
+        _merge_simple_command_array(hooks.setdefault("beforeShellExecution", []), script_path)
+        _merge_simple_command_array(hooks.setdefault("afterShellExecution", []), script_path)
+        desired = json.dumps(root, indent=2) + "\n"
+        try:
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
+            Path(path).write_text(desired, encoding="utf-8")
+        except OSError as error:
+            return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
+        return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
+    except OSError as error:
+        return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
+
+    try:
+        root = json.loads(raw) if raw else {}
+    except json.JSONDecodeError as error:
+        return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
+
+    if not isinstance(root, dict):
+        root = {}
+    root.setdefault("version", 1)
+    hooks = root.setdefault("hooks", {})
+    _merge_simple_command_array(hooks.setdefault("beforeShellExecution", []), script_path)
+    _merge_simple_command_array(hooks.setdefault("afterShellExecution", []), script_path)
+    desired = json.dumps(root, indent=2) + "\n"
+    if desired.encode("utf-8") == raw:
+        return {"id": target_id, "state": STATE_SKIPPED, "path": display_path}
+    if dry_run:
+        return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
+    try:
+        Path(path).write_text(desired, encoding="utf-8")
+    except OSError as error:
+        return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
+    return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
+
+
+def _git_branch_guard_copilot_result(home: str, dry_run: bool, install_missing: bool) -> dict[str, Any]:
+    """Mirrors `_git_branch_guard_claude_result` for GitHub Copilot
+    (~/.copilot/settings.json, hooks.preToolUse/postToolUse[matcher:"bash"]
+    via `_merge_copilot_hook_array`), same as
+    `_credential_guard_copilot_result`'s own relationship to
+    `_credential_guard_claude_result`.
+    """
+    target_id = "copilot-git-branch-guard"
+    path = os.path.join(home, ".copilot", "settings.json")
+    display_path = _tildeify(home, path)
+    script_path = os.path.join(home, ".trackfw", "scripts", "trackfw-git-branch-guard.sh")
+
+    try:
+        raw = Path(path).read_bytes()
+    except FileNotFoundError:
+        if not install_missing:
+            return {"id": target_id, "state": STATE_MISSING, "path": display_path}
+        if dry_run:
+            return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
+        root: dict[str, Any] = {}
+        hooks = root.setdefault("hooks", {})
+        _merge_copilot_hook_array(hooks.setdefault("preToolUse", []), script_path)
+        _merge_copilot_hook_array(hooks.setdefault("postToolUse", []), script_path)
+        desired = json.dumps(root, indent=2) + "\n"
+        try:
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
+            Path(path).write_text(desired, encoding="utf-8")
+        except OSError as error:
+            return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
+        return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
+    except OSError as error:
+        return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
+
+    try:
+        root = json.loads(raw) if raw else {}
+    except json.JSONDecodeError as error:
+        return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
+
+    if not isinstance(root, dict):
+        root = {}
+    hooks = root.setdefault("hooks", {})
+    _merge_copilot_hook_array(hooks.setdefault("preToolUse", []), script_path)
+    _merge_copilot_hook_array(hooks.setdefault("postToolUse", []), script_path)
+    desired = json.dumps(root, indent=2) + "\n"
+    if desired.encode("utf-8") == raw:
+        return {"id": target_id, "state": STATE_SKIPPED, "path": display_path}
+    if dry_run:
+        return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
+    try:
+        Path(path).write_text(desired, encoding="utf-8")
+    except OSError as error:
+        return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
+    return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
+
+
+def _git_branch_guard_kiro_result(home: str, dry_run: bool, install_missing: bool) -> dict[str, Any]:
+    """Evaluates (and, unless dry_run, applies) the global-scope
+    git-branch-guard hook wiring for Kiro: a DEDICATED file at
+    ~/.kiro/hooks/trackfw-git-branch-guard.json — deliberately NOT the same
+    file `_credential_guard_kiro_result` writes
+    (~/.kiro/hooks/trackfw-credential-guard.json). That writer rewrites its
+    document WHOLESALE every run (never merges), so two wholesale writers
+    sharing one file would each overwrite the other's entries every run —
+    both targets would report "updated" forever, a hard idempotency
+    failure. Same schema as `_credential_guard_kiro_result`:
+    {"version":"v1","hooks":[...]}, but hook names
+    "trackfw-git-branch-guard-global-pre"/"-global-post". Mirrors
+    internal/generators/update.go:harnessGitBranchGuardTargetKiro
+    (ROADMAP-2026-08-17 Wave 2/ML-2A).
+    """
+    target_id = "kiro-git-branch-guard"
+    path = os.path.join(home, ".kiro", "hooks", "trackfw-git-branch-guard.json")
+    display_path = _tildeify(home, path)
+    script_path = os.path.join(home, ".trackfw", "scripts", "trackfw-git-branch-guard.sh")
+
+    desired_doc = {
+        "version": "v1",
+        "hooks": [
+            {
+                "name": "trackfw-git-branch-guard-global-pre",
+                "description": "Blocks branch-creation git subcommands issued outside trackfw branch new (global, all trackfw projects)",
+                "trigger": "PreToolUse",
+                "matcher": "shell",
+                "action": {"type": "command", "command": script_path},
+            },
+            {
+                "name": "trackfw-git-branch-guard-global-post",
+                "description": "Warns on branch-creation git subcommands issued outside trackfw branch new (global, all trackfw projects)",
+                "trigger": "PostToolUse",
+                "matcher": "shell",
+                "action": {"type": "command", "command": script_path},
+            },
+        ],
+    }
+    desired = (json.dumps(desired_doc, indent=2) + "\n").encode("utf-8")
+
+    try:
+        existing = Path(path).read_bytes()
+    except FileNotFoundError:
+        if not install_missing:
+            return {"id": target_id, "state": STATE_MISSING, "path": display_path}
+        if dry_run:
+            return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
+        try:
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
+            Path(path).write_bytes(desired)
+        except OSError as error:
+            return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
+        return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
+    except OSError as error:
+        return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
+
+    if existing == desired:
+        return {"id": target_id, "state": STATE_SKIPPED, "path": display_path}
+    if dry_run:
+        return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
+    try:
+        Path(path).write_bytes(desired)
+    except OSError as error:
+        return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
+    return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
+
+
 def _catalog_group_result(
     tool: str,
     kind: str,
@@ -727,20 +1083,38 @@ def _run(args: argparse.Namespace) -> None:
         if target_id == "claude-credential-guard":
             targets.append(_credential_guard_claude_result(home, args.dry_run, args.install_missing))
             continue
+        if target_id == "claude-git-branch-guard":
+            targets.append(_git_branch_guard_claude_result(home, args.dry_run, args.install_missing))
+            continue
         if target_id == "codex-credential-guard":
             targets.append(_credential_guard_codex_result(home, args.dry_run, args.install_missing))
+            continue
+        if target_id == "codex-git-branch-guard":
+            targets.append(_git_branch_guard_codex_result(home, args.dry_run, args.install_missing))
             continue
         if target_id == "gemini-credential-guard":
             targets.append(_credential_guard_gemini_result(home, args.dry_run, args.install_missing))
             continue
+        if target_id == "gemini-git-branch-guard":
+            targets.append(_git_branch_guard_gemini_result(home, args.dry_run, args.install_missing))
+            continue
         if target_id == "cursor-credential-guard":
             targets.append(_credential_guard_cursor_result(home, args.dry_run, args.install_missing))
+            continue
+        if target_id == "cursor-git-branch-guard":
+            targets.append(_git_branch_guard_cursor_result(home, args.dry_run, args.install_missing))
             continue
         if target_id == "copilot-credential-guard":
             targets.append(_credential_guard_copilot_result(home, args.dry_run, args.install_missing))
             continue
+        if target_id == "copilot-git-branch-guard":
+            targets.append(_git_branch_guard_copilot_result(home, args.dry_run, args.install_missing))
+            continue
         if target_id == "kiro-credential-guard":
             targets.append(_credential_guard_kiro_result(home, args.dry_run, args.install_missing))
+            continue
+        if target_id == "kiro-git-branch-guard":
+            targets.append(_git_branch_guard_kiro_result(home, args.dry_run, args.install_missing))
             continue
         tool, kind = target_id.rsplit("-", 1)
         targets.append(_catalog_group_result(tool, kind, home, manager, identity_cfg, args.dry_run, args.install_missing))

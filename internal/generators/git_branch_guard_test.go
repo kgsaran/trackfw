@@ -93,7 +93,28 @@ func TestGenerateGitBranchGuardScript_DoesNotWireIntoAnyHooksFile(t *testing.T) 
 // paralelo), mesmo padrão de runCredentialGuard.
 // ---------------------------------------------------------------------------
 
+// setupGitBranchGuardFixture cria um diretório de fixture com trackfw.yaml na raiz — o guard só
+// funciona (não vira no-op) dentro de um projeto trackfw (ML-1A, ADR-2026-08-17-guard-global-
+// cabeado-com-no-op-fora-de-projeto-trackfw.md). Todos os testes de bloqueio/allow pré-existentes
+// (que verificam comportamento DENTRO de projeto trackfw) dependem deste arquivo existir; os
+// testes específicos do no-op (fora de projeto) usam setupGitBranchGuardFixtureWithoutTrackfwYAML.
 func setupGitBranchGuardFixture(t *testing.T) (dir, scriptPath string) {
+	t.Helper()
+	dir = t.TempDir()
+	if err := GenerateGitBranchGuardScript(dir); err != nil {
+		t.Fatalf("GenerateGitBranchGuardScript erro: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "trackfw.yaml"), []byte("project_name: fixture\n"), 0644); err != nil {
+		t.Fatalf("erro escrevendo trackfw.yaml de fixture: %v", err)
+	}
+	return dir, filepath.Join(dir, "scripts", "trackfw-git-branch-guard.sh")
+}
+
+// setupGitBranchGuardFixtureWithoutTrackfwYAML é o par de setupGitBranchGuardFixture SEM
+// trackfw.yaml — usado pelos testes de no-op (ML-1A). t.TempDir() garante isolamento do repo
+// real (ver TestGitBranchGuard_FixtureHasNoTrackfwYAMLAncestor, que prova a premissa em vez de
+// presumi-la).
+func setupGitBranchGuardFixtureWithoutTrackfwYAML(t *testing.T) (dir, scriptPath string) {
 	t.Helper()
 	dir = t.TempDir()
 	if err := GenerateGitBranchGuardScript(dir); err != nil {
@@ -614,5 +635,85 @@ func TestGitBranchGuard_EnvWithFlag_StillEvades(t *testing.T) {
 	code, _, stderr := runGitBranchGuard(t, dir, script, nil, payload)
 	if code != 0 {
 		t.Errorf("exit code: want 0 (env -i com flag continua fora do escopo declarado), got %d (stderr: %s)", code, stderr)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// ML-1A (ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-e-integridade-
+// independente-de-fiacao.md): no-op fora de projeto trackfw.
+// ---------------------------------------------------------------------------
+
+func TestGitBranchGuard_FixtureHasNoTrackfwYAMLAncestor(t *testing.T) {
+	// Não-vacuidade: prova (em vez de presumir) que t.TempDir() não tem trackfw.yaml em
+	// nenhum ancestral — se tivesse, os testes de no-op abaixo "passariam" pelo motivo
+	// errado (não-detecção acidental, não no-op real).
+	dir, _ := setupGitBranchGuardFixtureWithoutTrackfwYAML(t)
+	d := dir
+	for {
+		if _, err := os.Stat(filepath.Join(d, "trackfw.yaml")); err == nil {
+			t.Fatalf("premissa violada: %s tem trackfw.yaml em ancestral %s — fixture não isolada do repo real", dir, d)
+		}
+		parent := filepath.Dir(d)
+		if parent == d {
+			break
+		}
+		d = parent
+	}
+}
+
+func TestGitBranchGuard_NoTrackfwYAML_PushIsNoOp(t *testing.T) {
+	dir, script := setupGitBranchGuardFixtureWithoutTrackfwYAML(t)
+	payload := `{"tool_input":{"command":"git push"}}`
+
+	code, stdout, stderr := runGitBranchGuard(t, dir, script, nil, payload)
+	if code != 0 {
+		t.Fatalf("exit code: want 0 (sem trackfw.yaml, guard é no-op), got %d (stderr: %s)", code, stderr)
+	}
+	if stdout != "" {
+		t.Errorf("no-op deveria ser silencioso, got: %s", stdout)
+	}
+}
+
+func TestGitBranchGuard_NoTrackfwYAML_CommitAndCheckoutDashB_AreNoOp(t *testing.T) {
+	dir, script := setupGitBranchGuardFixtureWithoutTrackfwYAML(t)
+	for _, cmd := range []string{
+		`git commit -m "x"`,
+		"git checkout -b feat/x",
+		"git branch nova",
+		"git switch -c feat/x",
+	} {
+		payload := `{"tool_input":{"command":"` + jsonEscape(cmd) + `"}}`
+		code, _, stderr := runGitBranchGuard(t, dir, script, nil, payload)
+		if code != 0 {
+			t.Errorf("cmd=%q: exit code want 0 (sem trackfw.yaml, guard é no-op), got %d (stderr: %s)", cmd, code, stderr)
+		}
+	}
+}
+
+func TestGitBranchGuard_WithTrackfwYAML_PushStillBlocks(t *testing.T) {
+	// Reverse-vacuity da bateria acima: MESMO fixture dir (com GenerateGitBranchGuardScript),
+	// só que COM trackfw.yaml — prova que o 0 acima veio do no-op, não de um build quebrado.
+	dir, script := setupGitBranchGuardFixture(t)
+	payload := `{"tool_input":{"command":"git push"}}`
+
+	code, _, stderr := runGitBranchGuard(t, dir, script, nil, payload)
+	if code != 2 {
+		t.Fatalf("exit code: want 2 (com trackfw.yaml, guard continua ativo), got %d (stderr: %s)", code, stderr)
+	}
+}
+
+func TestGitBranchGuard_TrackfwYAMLInAncestor_SubdirectoryStillBlocks(t *testing.T) {
+	// A raiz do projeto é encontrada SUBINDO diretórios — reproduz o agente rodando `git push`
+	// de um subdiretório profundo do repo, não da raiz.
+	dir, script := setupGitBranchGuardFixture(t)
+	sub := filepath.Join(dir, "a", "b", "c")
+	if err := os.MkdirAll(sub, 0755); err != nil {
+		t.Fatalf("erro criando subdiretório: %v", err)
+	}
+	payload := `{"tool_input":{"command":"git push"}}`
+
+	code, _, stderr := runGitBranchGuard(t, sub, script, nil, payload)
+	if code != 2 {
+		t.Fatalf("exit code: want 2 (subdiretório de projeto trackfw continua protegido), got %d (stderr: %s)", code, stderr)
 	}
 }

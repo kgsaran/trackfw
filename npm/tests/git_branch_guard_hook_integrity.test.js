@@ -74,6 +74,40 @@ function globalClaudeSettingsWithCommand(scriptAbsPath) {
 `
 }
 
+// globalClaudeSettingsWithCommandNoType is globalClaudeSettingsWithCommand's ROADMAP-2026-08-17
+// ML-4B counterpart: "type":"command" is deliberately OMITTED -- the exact malformed shape
+// hades-tf's ML-4A barrier finding reproduced.
+function globalClaudeSettingsWithCommandNoType(scriptAbsPath) {
+  return `{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {"command": "${scriptAbsPath}"}
+        ]
+      }
+    ]
+  }
+}
+`
+}
+
+// globalCursorHooksWithCommand: Cursor's schema never carries a "type" field at all -- this
+// fixture is the non-regression control proving requiresCommandType=false for Cursor is not
+// over-tightened by ML-4B.
+function globalCursorHooksWithCommand(scriptAbsPath) {
+  return `{
+  "version": 1,
+  "hooks": {
+    "beforeShellExecution": [
+      {"command": "${scriptAbsPath}"}
+    ]
+  }
+}
+`
+}
+
 function withEnv(overrides, fn) {
   const saved = {}
   for (const key of Object.keys(overrides)) {
@@ -139,6 +173,40 @@ test('git_branch_guard_hook_resolvable: não dispara com script presente e execu
 
   const msgs = validateGitBranchGuardHookResolvable(dir)
   assert.deepEqual(msgs, [])
+})
+
+// ---------------------------------------------------------------------------
+// ROADMAP-2026-08-17 ML-4B -- hades-tf ML-4A barrier finding reproduced: a
+// config entry with the CORRECT command but MISSING "type":"command"
+// (script present and íntegro) makes neither the dedup NOR this rule notice
+// anything wrong -- "nenhum dos dois escopos protege, e tudo fica verde".
+// ---------------------------------------------------------------------------
+
+test('git_branch_guard_hook_resolvable: dispara com entrada de projeto sem "type":"command"', () => {
+  const dir = tmpDir()
+  writeFile(dir, '.claude/settings.json', `{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {"command": "$CLAUDE_PROJECT_DIR/scripts/trackfw-git-branch-guard.sh"}
+        ]
+      }
+    ]
+  }
+}
+`)
+  const scriptPath = path.join(dir, 'scripts', 'trackfw-git-branch-guard.sh')
+  fs.mkdirSync(path.dirname(scriptPath), { recursive: true })
+  fs.writeFileSync(scriptPath, GIT_BRANCH_GUARD_SCRIPT_REFERENCE, { mode: 0o755 })
+
+  const msgs = validateGitBranchGuardHookResolvable(dir)
+  assert.equal(msgs.some(m => m.includes('missing "type":"command"')), true)
+  assert.equal(msgs.some(m => m.includes('.claude/settings.json')), true)
+  assert.equal(msgs.some(m => m.includes('Claude Code')), true)
+  assert.equal(msgs.some(m => m.includes('but the script does not exist')), false)
+  assert.equal(msgs.some(m => m.includes('but the script is not executable')), false)
 })
 
 // ---- git_branch_guard_script_integrity (projeto) ----
@@ -235,6 +303,44 @@ test('escopo global: registrado mas script ausente → dispara', () => {
   })
 })
 
+// ROADMAP-2026-08-17 ML-4B -- hades-tf ML-4A barrier finding: script global presente e íntegro,
+// mas a entrada de config está sem "type":"command" -- Claude Code nunca a executa em silêncio.
+// Antes desta ML: silêncio (mesmo com script e caminho corretos). Depois: violação.
+test('escopo global: registrado sem "type":"command" → dispara (não "does not exist")', () => {
+  const home = tmpDir()
+  withEnv({ HOME: home }, () => {
+    const globalScriptPath = path.join(home, '.trackfw', 'scripts', 'trackfw-git-branch-guard.sh')
+    fs.mkdirSync(path.dirname(globalScriptPath), { recursive: true })
+    fs.writeFileSync(globalScriptPath, GIT_BRANCH_GUARD_SCRIPT_REFERENCE, { mode: 0o755 })
+    fs.mkdirSync(path.join(home, '.claude'), { recursive: true })
+    fs.writeFileSync(path.join(home, '.claude', 'settings.json'), globalClaudeSettingsWithCommandNoType(globalScriptPath), 'utf8')
+
+    const msgs = validateGitBranchGuardGlobalHookResolvable()
+    assert.equal(msgs.some(m => m.includes('missing "type":"command"')), true)
+    assert.equal(msgs.some(m => m.includes('global scope')), true)
+    assert.equal(msgs.some(m => m.includes('Claude Code')), true)
+    assert.equal(msgs.some(m => m.includes('trackfw update harness')), true)
+    assert.equal(msgs.some(m => m.includes('but the script does not exist')), false)
+    assert.equal(msgs.some(m => m.includes('but the script is not executable')), false)
+  })
+})
+
+// Non-regression control: Cursor's schema never carries a "type" field, so its absence is
+// normal, not malformed.
+test('escopo global (Cursor): ausência de "type" é normal, não malformada → silêncio', () => {
+  const home = tmpDir()
+  withEnv({ HOME: home }, () => {
+    const globalScriptPath = path.join(home, '.trackfw', 'scripts', 'trackfw-git-branch-guard.sh')
+    fs.mkdirSync(path.dirname(globalScriptPath), { recursive: true })
+    fs.writeFileSync(globalScriptPath, GIT_BRANCH_GUARD_SCRIPT_REFERENCE, { mode: 0o755 })
+    fs.mkdirSync(path.join(home, '.cursor'), { recursive: true })
+    fs.writeFileSync(path.join(home, '.cursor', 'hooks.json'), globalCursorHooksWithCommand(globalScriptPath), 'utf8')
+
+    const msgs = validateGitBranchGuardGlobalHookResolvable()
+    assert.deepEqual(msgs, [])
+  })
+})
+
 // Mesmo gap acima, mas para o script global corrompido/desatualizado.
 test('escopo global: registrado mas script corrompido → dispara', () => {
   const home = tmpDir()
@@ -252,11 +358,10 @@ test('escopo global: registrado mas script corrompido → dispara', () => {
   })
 })
 
-// Divergência de design documentada: hoje nenhum wiring de git-branch-guard existe em nenhum
-// config global (~/.claude/settings.json etc — só o script GLOBAL é gerado por
-// `trackfw update harness`, nunca referenciado). Então, mesmo com o script global presente,
-// nenhum arquivo de config global o referencia — o mecanismo genérico fica corretamente em
-// silêncio até essa wiring existir. Mesma nota de ML-1A (Go).
+// Atualizado no ML-3B: a fiação global do git-branch-guard EXISTE desde a Wave 2 (ML-2A), mas
+// este teste não a exercita — nenhum dos arquivos globais é escrito no fixture. Prova o caso
+// "script global presente, nenhum config o referencia": deve permanecer em silêncio —
+// hook_resolvable é condicionado à fiação por desenho. Mesma nota de ML-3B (Go).
 test('escopo global git-branch-guard: sem wiring hoje → silêncio', () => {
   const home = tmpDir()
   withEnv({ HOME: home }, () => {
@@ -286,4 +391,139 @@ test('CREDENTIAL_GUARD_GLOBAL_SCRIPT_REFERENCE é byte-idêntico ao que generate
   generateGlobalCredentialGuardScript(home)
   const emitted = fs.readFileSync(path.join(home, '.trackfw', 'scripts', 'trackfw-credential-guard.sh'), 'utf8')
   assert.equal(emitted, CREDENTIAL_GUARD_GLOBAL_SCRIPT_REFERENCE)
+})
+
+// ---- escopo global: integridade dispara por EXISTÊNCIA do artefato, não por fiação
+// (ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-e-integridade-independente-
+// de-fiacao, ML-3A). Mirrors internal/validator/validator_git_branch_guard_test.go's
+// TestGuardGlobalScriptIntegrity_* (Go). ----
+
+test('escopo global git-branch-guard: dispara sem NENHUMA fiação — discriminante central do ML', () => {
+  const home = tmpDir()
+  withEnv({ HOME: home }, () => {
+    const globalScriptPath = path.join(home, '.trackfw', 'scripts', 'trackfw-git-branch-guard.sh')
+    fs.mkdirSync(path.dirname(globalScriptPath), { recursive: true })
+    fs.writeFileSync(globalScriptPath, '#!/usr/bin/env bash\nexit 0\n', { mode: 0o755 })
+    // Nenhum arquivo de config é escrito neste $HOME — nenhuma fiação existe.
+
+    const msgs = validateGitBranchGuardGlobalScriptIntegrity()
+    assert.equal(msgs.some(m => m.includes('diverges from the template')), true)
+    assert.equal(msgs.some(m => m.includes(globalScriptPath)), true)
+  })
+})
+
+test('escopo global: script nunca instalado (nem arquivo, nem fiação) → silêncio, credential e git-branch-guard', () => {
+  withEnv({ HOME: tmpDir() }, () => {
+    const gmsgs = validateGitBranchGuardGlobalScriptIntegrity()
+    assert.deepEqual(gmsgs, [])
+    const cmsgs = validateCredentialGuardGlobalScriptIntegrity()
+    assert.deepEqual(cmsgs, [])
+  })
+})
+
+test('escopo global: script referenciado por 2 configs (Claude + Codex) não duplica a mensagem', () => {
+  const home = tmpDir()
+  withEnv({ HOME: home }, () => {
+    const globalScriptPath = path.join(home, '.trackfw', 'scripts', 'trackfw-git-branch-guard.sh')
+    fs.mkdirSync(path.dirname(globalScriptPath), { recursive: true })
+    fs.writeFileSync(globalScriptPath, '#!/usr/bin/env bash\nexit 0\n', { mode: 0o755 })
+    fs.mkdirSync(path.join(home, '.claude'), { recursive: true })
+    fs.writeFileSync(path.join(home, '.claude', 'settings.json'), globalClaudeSettingsWithCommand(globalScriptPath), 'utf8')
+    fs.mkdirSync(path.join(home, '.codex'), { recursive: true })
+    fs.writeFileSync(path.join(home, '.codex', 'hooks.json'), globalClaudeSettingsWithCommand(globalScriptPath), 'utf8')
+
+    const msgs = validateGitBranchGuardGlobalScriptIntegrity()
+    assert.equal(msgs.length, 1, `esperado exatamente 1 mensagem, obteve ${msgs.length}: ${JSON.stringify(msgs)}`)
+  })
+})
+
+// ---- git_branch_guard_hook_resolvable / credential_guard_hook_resolvable (escopo GLOBAL,
+// arquivo DEDICADO do Kiro — ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-e-
+// integridade-independente-de-fiacao, ML-3B). Mirrors internal/validator/
+// validator_git_branch_guard_test.go's Test*Kiro* (Go). ----
+
+// kiroGlobalGuardFixture monta o documento que os writers reais (harnessCredentialGuardTargetKiro/
+// harnessGitBranchGuardTargetKiro no Go, e seus espelhos Node) escrevem —
+// {"version":"v1","hooks":[{"name","description","trigger","matcher","action":{"type":"command",
+// "command":scriptAbsPath}}, ...]} com dois hooks pre/post.
+function kiroGlobalGuardFixture(hookNamePrefix, scriptAbsPath) {
+  return `{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "${hookNamePrefix}-global-pre",
+      "description": "global pre hook",
+      "trigger": "PreToolUse",
+      "matcher": "shell",
+      "action": {"type": "command", "command": "${scriptAbsPath}"}
+    },
+    {
+      "name": "${hookNamePrefix}-global-post",
+      "description": "global post hook",
+      "trigger": "PostToolUse",
+      "matcher": "shell",
+      "action": {"type": "command", "command": "${scriptAbsPath}"}
+    }
+  ]
+}
+`
+}
+
+// Discriminante central do ML-3B: antes dele, o arquivo dedicado do Kiro para git-branch-guard
+// (~/.kiro/hooks/trackfw-git-branch-guard.json, escrito desde a Wave 2) nunca era lido por
+// validateGitBranchGuardGlobalHookResolvable — um hook Kiro apontando para script ausente passava
+// limpo. Agora deve violar.
+test('escopo global git-branch-guard (Kiro, arquivo dedicado): script ausente → dispara', () => {
+  const home = tmpDir()
+  withEnv({ HOME: home }, () => {
+    const scriptPath = path.join(home, '.trackfw', 'scripts', 'trackfw-git-branch-guard.sh')
+    // scriptPath NÃO é criado — ausência proposital.
+    writeFile(home, '.kiro/hooks/trackfw-git-branch-guard.json', kiroGlobalGuardFixture('trackfw-git-branch-guard', scriptPath))
+
+    const msgs = validateGitBranchGuardGlobalHookResolvable()
+    assert.equal(msgs.some(m => m.includes('does not exist')), true)
+    assert.equal(msgs.some(m => m.includes('trackfw-git-branch-guard.json')), true)
+    assert.equal(msgs.some(m => m.includes('Kiro')), true)
+  })
+})
+
+test('escopo global git-branch-guard (Kiro, arquivo dedicado): script presente e executável → silêncio', () => {
+  const home = tmpDir()
+  withEnv({ HOME: home }, () => {
+    const scriptPath = path.join(home, '.trackfw', 'scripts', 'trackfw-git-branch-guard.sh')
+    fs.mkdirSync(path.dirname(scriptPath), { recursive: true })
+    fs.writeFileSync(scriptPath, GIT_BRANCH_GUARD_SCRIPT_REFERENCE, { mode: 0o755 })
+    writeFile(home, '.kiro/hooks/trackfw-git-branch-guard.json', kiroGlobalGuardFixture('trackfw-git-branch-guard', scriptPath))
+
+    const msgs = validateGitBranchGuardGlobalHookResolvable()
+    assert.deepEqual(msgs, [])
+  })
+})
+
+// Não-regressão: com OS DOIS arquivos dedicados do Kiro presentes simultaneamente
+// (trackfw-credential-guard.json E trackfw-git-branch-guard.json), cada um referenciando um
+// script ausente distinto, cada regra deve reportar exatamente 1 violation — nunca 0 (regressão)
+// nem 2+ (dupla contagem entre os dois arquivos/guards).
+test('escopo global (Kiro, dois arquivos dedicados): não regride, não duplica', () => {
+  const home = tmpDir()
+  withEnv({ HOME: home }, () => {
+    const credScriptPath = path.join(home, '.trackfw', 'scripts', 'trackfw-credential-guard.sh')
+    const gbgScriptPath = path.join(home, '.trackfw', 'scripts', 'trackfw-git-branch-guard.sh')
+    // Nenhum dos dois scripts é criado — ambos ausentes propositalmente.
+    writeFile(home, '.kiro/hooks/trackfw-credential-guard.json', kiroGlobalGuardFixture('trackfw-credential-guard', credScriptPath))
+    writeFile(home, '.kiro/hooks/trackfw-git-branch-guard.json', kiroGlobalGuardFixture('trackfw-git-branch-guard', gbgScriptPath))
+
+    const credMsgs = validateCredentialGuardGlobalHookResolvable()
+    assert.equal(credMsgs.length, 1, `esperado exatamente 1 violation (credential-guard do Kiro), obteve ${credMsgs.length}: ${JSON.stringify(credMsgs)}`)
+
+    const gbgMsgs = validateGitBranchGuardGlobalHookResolvable()
+    assert.equal(gbgMsgs.length, 1, `esperado exatamente 1 violation (git-branch-guard do Kiro), obteve ${gbgMsgs.length}: ${JSON.stringify(gbgMsgs)}`)
+  })
+})
+
+test('escopo global git-branch-guard (Kiro): sem arquivo dedicado → silêncio', () => {
+  withEnv({ HOME: tmpDir() }, () => {
+    const msgs = validateGitBranchGuardGlobalHookResolvable()
+    assert.deepEqual(msgs, [])
+  })
 })

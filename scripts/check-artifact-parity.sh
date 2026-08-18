@@ -26,6 +26,20 @@ trap 'rm -rf "$WORK"' EXIT
 
 mkdir -p "$WORK/go" "$WORK/node" "$WORK/python"
 
+# $HOME isolado e sintético para todo o gate — nunca o real. Sem isto,
+# `trackfw validate` (chamado por assert_quoted_status_validate) enxerga o
+# escopo GLOBAL de guards do usuário rodando o gate: desde
+# ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-e-
+# integridade-independente-de-fiacao (ML-3A),
+# git_branch_guard_script_integrity/credential_guard_script_integrity
+# disparam pela EXISTÊNCIA do script em ~/.trackfw/scripts/, não mais só
+# quando há fiação — então um $HOME real com o harness instalado e o script
+# desatualizado (o próprio caso que motivou aquela REQ) faria este gate
+# reportar um warning que não tem nada a ver com paridade de artefato.
+# Mesmo precedente do Cenário 46 em scripts/check-gates-falsify.sh.
+export HOME="$WORK/home"
+mkdir -p "$HOME"
+
 TITLE="Autenticação e Sessão"
 FLAG_TITLE="Integração de Pagamentos"
 REQ_FLAG_REL="docs/req/REQ-flag-source.md"

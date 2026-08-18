@@ -1936,28 +1936,58 @@ Wave 6 round.
 
 ### Declared harness targets — pinned list
 
-The harness target list is **not** derived at runtime; it is this fixed sequence of 27 ids, in this
+The harness target list is **not** derived at runtime; it is this fixed sequence of 33 ids, in this
 exact order: `claude-skill`, `claude-credential-guard` (global-scope credential-guard wiring for
 Claude Code — `ROADMAP-2026-08-06-hooks-de-credential-guard-como-escopo-global-cross-project-via-trackfw-update-harness.md`,
-ML-2A), `claude-agents`, `claude-skills`, `codex-credential-guard` (same wave, ML-2B — global-scope
-credential-guard wiring for Codex CLI, `~/.codex/hooks.json`), `codex-agents`, `codex-skills`,
+ML-2A), `claude-git-branch-guard` (global-scope git-branch-guard wiring for Claude Code —
+`ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-e-integridade-independente-de-fiacao.md`,
+Wave 2/ML-2A — merges into the SAME `~/.claude/settings.json` hooks.PreToolUse/PostToolUse[matcher:
+"Bash"] arrays claude-credential-guard already writes into, as a second, distinct command entry),
+`claude-agents`, `claude-skills`, `codex-credential-guard` (same wave, ML-2B — global-scope
+credential-guard wiring for Codex CLI, `~/.codex/hooks.json`), `codex-git-branch-guard` (same
+`~/.codex/hooks.json` file), `codex-agents`, `codex-skills`,
 `gemini-credential-guard` (same wave, ML-2C — global-scope credential-guard wiring for Gemini CLI,
-`~/.gemini/settings.json`, `BeforeTool`/`AfterTool[matcher:"run_shell_command"]`), `gemini-agents`,
+`~/.gemini/settings.json`, `BeforeTool`/`AfterTool[matcher:"run_shell_command"]`),
+`gemini-git-branch-guard` (same `~/.gemini/settings.json` file), `gemini-agents`,
 `gemini-skills`, `antigravity-agents`, `antigravity-skills`, `cursor-credential-guard` (same wave,
 ML-2D — global-scope credential-guard wiring for Cursor, `~/.cursor/hooks.json`,
 `hooks.beforeShellExecution`/`hooks.afterShellExecution`, each entry a flat `{"command":"..."}`
 object — no per-entry matcher, unlike Claude/Codex/Gemini's nested `{matcher,hooks:[{type,command}]}`
-shape), `cursor-agents`, `cursor-skills`, `copilot-credential-guard` (same wave, ML-2E — global-scope
+shape), `cursor-git-branch-guard` (same `~/.cursor/hooks.json` file), `cursor-agents`, `cursor-skills`,
+`copilot-credential-guard` (same wave, ML-2E — global-scope
 credential-guard wiring for GitHub Copilot, `~/.copilot/settings.json`,
 `hooks.preToolUse`/`hooks.postToolUse[matcher:"bash"]` — see "GitHub Copilot global-scope wiring
-(ML-2E)" below), `copilot-agents`, `copilot-skills`, `windsurf-agents`, `windsurf-skills`,
+(ML-2E)" below), `copilot-git-branch-guard` (same `~/.copilot/settings.json` file), `copilot-agents`,
+`copilot-skills`, `windsurf-agents`, `windsurf-skills`,
 `amazonq-agents`, `amazonq-skills`, `opencode-agents`, `opencode-skills`, `kiro-credential-guard`
 (same wave, ML-2F — global-scope credential-guard wiring for Kiro, a DEDICATED file at
 `~/.kiro/hooks/trackfw-credential-guard.json` — see "Kiro global-scope wiring (ML-2F)" below),
-`kiro-agents`, `kiro-skills`. Each `<tool>-credential-guard` id (where it exists) is always
-positioned immediately BEFORE that tool's own `<tool>-agents`/`<tool>-skills` pair, never after —
-`kiro-credential-guard` is the last credential-guard target of this wave (Windsurf has no native
-hook mechanism and stays out per the ADR).
+`kiro-git-branch-guard` (ROADMAP-2026-08-17 Wave 2/ML-2A — a SECOND, SEPARATE dedicated file,
+`~/.kiro/hooks/trackfw-git-branch-guard.json`, never the same file as `kiro-credential-guard`: that
+writer rewrites its document wholesale every run, never merges, so two wholesale writers sharing one
+file would make both targets flap between each other's desired state forever — see "Kiro global-scope
+git-branch-guard wiring (ROADMAP-2026-08-17 Wave 2/ML-2A)" below),
+`kiro-agents`, `kiro-skills`. Each `<tool>-credential-guard`/`<tool>-git-branch-guard` id (where it
+exists) is always positioned immediately BEFORE that tool's own `<tool>-agents`/`<tool>-skills` pair,
+never after, and within a tool credential-guard always precedes git-branch-guard — `kiro-git-branch-
+guard` is the last guard target of this wave (Windsurf has no native hook mechanism and stays out per
+the ADR).
+
+### Kiro global-scope git-branch-guard wiring (ROADMAP-2026-08-17 Wave 2/ML-2A) — `~/.kiro/hooks/trackfw-git-branch-guard.json`, dedicated file
+
+Same `{"version":"v1","hooks":[...]}` schema as `kiro-credential-guard`'s own
+`~/.kiro/hooks/trackfw-credential-guard.json` (see "Kiro global-scope wiring (ML-2F)" below), but a
+**separate file**, with hook names `trackfw-git-branch-guard-global-pre`/`-global-post` instead of
+`trackfw-credential-guard-global-pre`/`-global-post`. The other five CLIs (`claude`/`codex`/`gemini`/
+`cursor`/`copilot`) reuse the exact same merge helpers their own `<tool>-credential-guard` targets
+already use, passing `trackfw-git-branch-guard.sh`'s absolute path instead — both guards' entries
+coexist as two distinct command entries in the same matcher's inner array (the merge helpers already
+dedupe on exact command match and append a second, distinct command otherwise; they never overwrite
+the first). Kiro alone splits into two files because `harnessCredentialGuardTargetKiro`/
+`credentialGuardTargetKiro`/`_credential_guard_kiro_result` each rewrite their document WHOLESALE
+every run — sharing that file with a second wholesale writer for git-branch-guard would make the two
+targets flap between each other's desired 2-entry document on every subsequent run, breaking the
+"missing never installs; unchanged content never rewrites" idempotency contract.
 
 ### GitHub Copilot global-scope wiring (ML-2E) — `~/.copilot/settings.json`, inline `hooks` field
 

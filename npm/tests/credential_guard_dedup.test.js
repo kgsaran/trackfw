@@ -128,9 +128,12 @@ test('injectCursorHooks skips project-scope credential-guard when global install
   injectCursorHooks(dir)
 
   const data = readJSON(path.join(dir, '.cursor', 'hooks.json'))
-  // ROADMAP-2026-08-14 ML-3B: the git branch guard entry is unconditional (no per-CLI global
-  // dedup exists for it yet, unlike the credential guard) -- beforeShellExecution keeps
-  // exactly that one entry even when the global credential-guard is already installed.
+  // ROADMAP-2026-08-17 Wave 2/ML-2B: git-branch-guard now has its own global dedup
+  // (globalGitBranchGuardInstalledCursor), but this fixture only wired the GLOBAL
+  // credential-guard entry, not git-branch-guard's -- so the git-branch-guard dedup
+  // check finds no matching command and fails open, keeping its project-scope entry.
+  // See git_branch_guard_dedup.test.js for the case where the git-branch-guard global IS
+  // installed.
   assert.equal((data.hooks.beforeShellExecution || []).length, 1)
   assert.equal(data.hooks.beforeShellExecution[0].command, 'scripts/trackfw-git-branch-guard.sh')
   assert.equal((data.hooks.afterShellExecution || []).length, 0)
@@ -151,10 +154,11 @@ test('injectCopilotHooks skips project-scope credential-guard when global instal
   injectCopilotHooks(dir)
 
   const data = readJSON(path.join(dir, '.github', 'hooks', 'trackfw-attention.json'))
-  // ROADMAP-2026-08-14 ML-3B: the git branch guard entry is unconditional (no per-CLI
-  // global dedup exists for it yet, unlike the credential guard) -- preToolUse keeps the
-  // attention-signal entry plus that one extra entry even when the global
-  // credential-guard is already installed.
+  // ROADMAP-2026-08-17 Wave 2/ML-2B: git-branch-guard now has its own global dedup
+  // (globalGitBranchGuardInstalledCopilot), but this fixture only wired the GLOBAL
+  // credential-guard entry, not git-branch-guard's -- so the git-branch-guard dedup
+  // check finds no matching command and fails open, keeping its project-scope entry
+  // alongside the always-on attention-signal entry.
   assert.equal(data.hooks.preToolUse.length, 2)
   assert.equal(data.hooks.preToolUse[0].bash, 'scripts/trackfw-attention-signal.sh')
   assert.equal(data.hooks.preToolUse[1].bash, 'scripts/trackfw-git-branch-guard.sh')

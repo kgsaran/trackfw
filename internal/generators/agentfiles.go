@@ -282,20 +282,27 @@ func InjectClaudeHooks(cwd string) error {
 	}
 
 	// Git branch guard (ROADMAP-2026-08-14 ML-3A): blocks raw `git commit`/
-	// `git push`/`git checkout -b` for Bash calls. No global-scope target
-	// exists for this guard yet (unlike credential-guard), so there is no
-	// dedup-against-global check here — always add the project-scope entry.
+	// `git push`/`git checkout -b` for Bash calls.
 	// migrateHookCommand is a deliberate old==new no-op today (see its doc
 	// comment / the Gemini injector for the same pattern): it proves the call
 	// point exists and runs before the merge, so a future ML that changes
 	// this command string only needs to update oldCommand here instead of
-	// adding the call from scratch.
+	// adding the call from scratch. Always runs regardless of dedup state
+	// below (a migration must fire even when the project-scope entry is
+	// about to be skipped, so a stale entry never lingers unmigrated).
 	migrateHookCommand(hooks["PreToolUse"], "Bash", claudeGitGuardCmd, claudeGitGuardCmd)
-	hooks["PreToolUse"] = mergeClaudeHookArray(
-		hooks["PreToolUse"],
-		"Bash",
-		claudeGitGuardCmd,
-	)
+	// Dedup (ROADMAP-2026-08-17 Wave 2/ML-2B): skip the project-scope
+	// git-branch-guard entry when the global one is already installed
+	// (`trackfw update harness --targets claude-git-branch-guard`), so the
+	// guard doesn't fire twice per Bash call and print the block message
+	// twice.
+	if !globalGitBranchGuardInstalledClaude() {
+		hooks["PreToolUse"] = mergeClaudeHookArray(
+			hooks["PreToolUse"],
+			"Bash",
+			claudeGitGuardCmd,
+		)
+	}
 
 	migrateHookCommand(hooks["PostToolUse"], "AskUserQuestion", "scripts/trackfw-attention-cleanup.sh", "$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-cleanup.sh")
 
@@ -465,14 +472,19 @@ func InjectCodexHooks(cwd string) error {
 	// so the roadmap's "Rules vs experimental hook" fork resolves to "hook",
 	// consistent with the rest of this function; see docs/cli-parity.md for
 	// the recorded decision). Only "Bash" matters here (apply_patch never
-	// carries a raw git subcommand). No global-scope target exists for this
-	// guard yet, so no dedup-against-global check.
+	// carries a raw git subcommand). migrateHookCommand always runs
+	// regardless of the dedup check below (ROADMAP-2026-08-17 Wave 2/ML-2B).
 	migrateHookCommand(hooks["PreToolUse"], "Bash", codexGitGuardCmd, codexGitGuardCmd)
-	hooks["PreToolUse"] = mergeClaudeHookArray(
-		hooks["PreToolUse"],
-		"Bash",
-		codexGitGuardCmd,
-	)
+	// Dedup (ROADMAP-2026-08-17 Wave 2/ML-2B): skip the project-scope
+	// git-branch-guard entry when the global one is already installed
+	// (`trackfw update harness --targets codex-git-branch-guard`).
+	if !globalGitBranchGuardInstalledCodex() {
+		hooks["PreToolUse"] = mergeClaudeHookArray(
+			hooks["PreToolUse"],
+			"Bash",
+			codexGitGuardCmd,
+		)
+	}
 
 	hooks["PostToolUse"] = mergeClaudeHookArray(
 		hooks["PostToolUse"],
@@ -609,8 +621,7 @@ func InjectGeminiHooks(cwd string) error {
 
 	// Git branch guard (ROADMAP-2026-08-14 ML-3A): only "run_shell_command"
 	// can ever carry a raw git subcommand, so unlike credential-guard this is
-	// not also wired to the read_file/write_file matchers. No global-scope
-	// target exists for this guard yet, so no dedup-against-global check.
+	// not also wired to the read_file/write_file matchers.
 	//
 	// Native subagent toolset restriction (REQ acceptance criterion — Gemini
 	// CLI supports per-agent restricted toolsets, keeping the architect
@@ -623,11 +634,16 @@ func InjectGeminiHooks(cwd string) error {
 	// uniformly to every Gemini agent, architect included, exactly like the
 	// pre-existing credential-guard hook above. See docs/cli-parity.md.
 	migrateHookCommand(hooks["BeforeTool"], "run_shell_command", geminiGitGuardCmd, geminiGitGuardCmd)
-	hooks["BeforeTool"] = mergeClaudeHookArray(
-		hooks["BeforeTool"],
-		"run_shell_command",
-		geminiGitGuardCmd,
-	)
+	// Dedup (ROADMAP-2026-08-17 Wave 2/ML-2B): skip the project-scope
+	// git-branch-guard entry when the global one is already installed
+	// (`trackfw update harness --targets gemini-git-branch-guard`).
+	if !globalGitBranchGuardInstalledGemini() {
+		hooks["BeforeTool"] = mergeClaudeHookArray(
+			hooks["BeforeTool"],
+			"run_shell_command",
+			geminiGitGuardCmd,
+		)
+	}
 
 	hooks["AfterTool"] = mergeClaudeHookArray(
 		hooks["AfterTool"],
@@ -920,16 +936,22 @@ func InjectCopilotHooks(cwd string) error {
 	// file already used for credential-guard above. Following that precedent
 	// instead of inventing a new config surface; documented as a deliberate
 	// divergence from the roadmap's literal wording in docs/cli-parity.md.
-	// This file is overwritten wholesale every run (doc comment above), so no
-	// dedup-against-global check is needed — added unconditionally, matching
-	// the always-on attention-signal/cleanup entries.
-	preToolUse = append(preToolUse, map[string]interface{}{
-		"type":       "command",
-		"matcher":    "bash",
-		"bash":       "scripts/trackfw-git-branch-guard.sh",
-		"cwd":        ".",
-		"timeoutSec": 10,
-	})
+	// This file is overwritten wholesale every run (doc comment above), but
+	// that only means there is no MIGRATION concern (nothing stale to leave
+	// behind) — it does not exempt this entry from the dedup-against-global
+	// check (ROADMAP-2026-08-17 Wave 2/ML-2B): skip the project-scope
+	// git-branch-guard entry when the global one is already installed
+	// (`trackfw update harness --targets copilot-git-branch-guard`), same
+	// reasoning as the credential-guard dedup above.
+	if !globalGitBranchGuardInstalledCopilot() {
+		preToolUse = append(preToolUse, map[string]interface{}{
+			"type":       "command",
+			"matcher":    "bash",
+			"bash":       "scripts/trackfw-git-branch-guard.sh",
+			"cwd":        ".",
+			"timeoutSec": 10,
+		})
+	}
 
 	content := map[string]interface{}{
 		"version": 1,
@@ -1078,9 +1100,7 @@ func InjectCursorHooks(cwd string) error {
 	// permission: \"deny\"", and stdout JSON is only consulted on exit 0;
 	// trackfw-git-branch-guard.sh always exits 2 on a match, so the existing
 	// script output is sufficient without adding a `permission` field to the
-	// byte-parity-tested gitBranchGuardScript constant (scaffold.go). No
-	// global-scope target exists for this guard yet, so no
-	// dedup-against-global check.
+	// byte-parity-tested gitBranchGuardScript constant (scaffold.go).
 	//
 	// The roadmap also asks for a static `Shell(git:commit)`/`Shell(git:push)`
 	// deny layer in `.cursor/rules` as defense-in-depth. NOT added here: this
@@ -1092,7 +1112,21 @@ func InjectCursorHooks(cwd string) error {
 	// by all 7 runtimes) and the Cursor `.mdc` frontmatter format documents
 	// no declarative shell-deny field to confirm. Documented as a known gap
 	// in docs/cli-parity.md rather than guessed at.
-	hooks["beforeShellExecution"] = mergeSimpleCommandArray(hooks["beforeShellExecution"], "scripts/trackfw-git-branch-guard.sh", makeEntry, getCmd)
+	//
+	// Dedup (ROADMAP-2026-08-17 Wave 2/ML-2B): skip the project-scope
+	// git-branch-guard entry when the global one is already installed
+	// (`trackfw update harness --targets cursor-git-branch-guard`). The key
+	// is intentionally only touched inside this conditional (never a
+	// standalone `hooks["beforeShellExecution"] = hooks["beforeShellExecution"]`
+	// outside it) so that when BOTH credential-guard and git-branch-guard are
+	// deduped away, the key stays absent from the emitted JSON rather than
+	// becoming a present-but-empty array — matching the shape the
+	// credential-guard dedup above already produces in the equivalent case,
+	// which check-agent-hooks-parity.sh's structural comparator treats as
+	// significant (absent key vs empty array is drift, not noise).
+	if !globalGitBranchGuardInstalledCursor() {
+		hooks["beforeShellExecution"] = mergeSimpleCommandArray(hooks["beforeShellExecution"], "scripts/trackfw-git-branch-guard.sh", makeEntry, getCmd)
+	}
 
 	root["hooks"] = hooks
 
@@ -1566,9 +1600,75 @@ func readGlobalHookJSON(relParts ...string) (root map[string]interface{}, ok boo
 	return root, true
 }
 
+// normalizeGuardPath collapses run of consecutive slashes ("//" -> "/", at
+// any position, including leading) and strips a trailing slash, so that two
+// on-disk forms of the SAME script path compare equal regardless of
+// incidental formatting (e.g. $HOME resolving with a trailing slash, as
+// happens with macOS's $TMPDIR, or a hand-edited config file). It does NOT
+// resolve "." / ".." segments or symlinks — those transforms would let
+// unrelated paths compare equal (turning a missing/renamed guard into a
+// false "already installed" and silently disarming the dedup — the more
+// dangerous failure mode here) and symlink resolution errors on a path that
+// does not exist yet, which every caller in this file must fail OPEN on,
+// producing the exact silent-false this whole ML exists to close. Hand-rolled
+// instead of filepath.Clean/path.normalize/os.path.normpath because those
+// three disagree with each other on leading "//" and trailing "/" handling
+// (measured) — this algorithm is mirrored byte-for-byte in npm/src/generators/
+// hooks.js and pypi/trackfw/generators/hooks.py to keep the three CLIs
+// deciding identically. Never call this with anything other than a script
+// path — it is not a general string normalizer.
+func normalizeGuardPath(p string) string {
+	if p == "" {
+		return p
+	}
+	var b strings.Builder
+	prevSlash := false
+	for _, r := range p {
+		if r == '/' {
+			if prevSlash {
+				continue
+			}
+			prevSlash = true
+		} else {
+			prevSlash = false
+		}
+		b.WriteRune(r)
+	}
+	out := b.String()
+	if len(out) > 1 && strings.HasSuffix(out, "/") {
+		out = strings.TrimRight(out, "/")
+		if out == "" {
+			out = "/"
+		}
+	}
+	return out
+}
+
+// samePathCommand reports whether a and b denote the same script command
+// path after normalizeGuardPath. Use for command-field comparisons only.
+func samePathCommand(a, b string) bool {
+	return normalizeGuardPath(a) == normalizeGuardPath(b)
+}
+
 // hookArrayHasCommand reports whether a Claude/Codex/Gemini-shaped hook
-// array (matcher → {"hooks":[{"command"}]}) already contains command under
-// matcher. Read-only counterpart of mergeClaudeHookArray.
+// array (matcher → {"hooks":[{"type":"command","command"}]}) already
+// contains command under matcher AND wired with a structurally valid entry
+// that this CLI will actually execute. Read-only counterpart of
+// mergeClaudeHookArray. Compares command paths via samePathCommand
+// (normalized), not raw string equality — see its doc comment.
+//
+// ROADMAP-2026-08-17 ML-4B: also requires the sibling "type" field to equal
+// "command" — mergeClaudeHookArray (this file) always writes
+// {"type":"command","command":...}, and Claude/Codex/Gemini all silently
+// ignore a hook entry missing "type":"command" (measured, hades-tf ML-4A
+// barrier finding). Before this ML, an entry with the correct command but a
+// missing/wrong "type" (hand-edited config, older trackfw version, another
+// tool's merge) made this function return true — dedup then skipped the
+// project-scope entry in favor of a global entry that never actually runs,
+// leaving BOTH scopes silently unprotected while `trackfw validate` stayed
+// green. Requiring "type":"command" here closes that gap: a malformed
+// global entry is now treated as "not installed", so the project-scope
+// entry gets re-wired instead of being skipped.
 func hookArrayHasCommand(existing interface{}, matcher, command string) bool {
 	arr, _ := existing.([]interface{})
 	for _, item := range arr {
@@ -1579,7 +1679,14 @@ func hookArrayHasCommand(existing interface{}, matcher, command string) bool {
 		inner, _ := obj["hooks"].([]interface{})
 		for _, h := range inner {
 			hObj, ok := h.(map[string]interface{})
-			if ok && hObj["command"] == command {
+			if !ok {
+				continue
+			}
+			if hObj["type"] != "command" {
+				continue
+			}
+			hCommand, ok := hObj["command"].(string)
+			if ok && samePathCommand(hCommand, command) {
 				return true
 			}
 		}
@@ -1588,13 +1695,36 @@ func hookArrayHasCommand(existing interface{}, matcher, command string) bool {
 }
 
 // simpleArrayHasValue reports whether a flat hook array (Cursor's
-// {"command":...} or Copilot's {"bash":...} shape) already has an entry
-// with field == value. Read-only counterpart of mergeSimpleCommandArray.
-func simpleArrayHasValue(existing interface{}, field, value string) bool {
+// {"command":...} or Copilot's {"type":"command","bash":...} shape) already
+// has an entry with field == value. Read-only counterpart of
+// mergeSimpleCommandArray. Compares via samePathCommand (normalized) —
+// every caller of this function passes a script path, never an arbitrary
+// field value; if that ever changes, do not reuse this helper for non-path
+// fields.
+//
+// ROADMAP-2026-08-17 ML-4B: requireCommandType controls whether a sibling
+// "type" field equal to "command" is also required, matching what each
+// CLI's own schema demands — mergeCredentialGuardCopilotHooks
+// (internal/generators/update.go) always writes "type":"command" and
+// Copilot ignores an entry without it (same hades-tf ML-4A finding as
+// hookArrayHasCommand above), so Copilot callers pass true. Cursor's
+// mergeCredentialGuardCursorHooks entries ({"command":...}) never carry a
+// "type" field at all — it is not part of Cursor's schema — so requiring it
+// there would make simpleArrayHasValue always return false for a perfectly
+// valid, executing Cursor entry; Cursor callers pass false. Do NOT
+// uniformize this across CLIs — see the risk note on ML-4B in the roadmap.
+func simpleArrayHasValue(existing interface{}, field, value string, requireCommandType bool) bool {
 	arr, _ := existing.([]interface{})
 	for _, item := range arr {
 		obj, ok := item.(map[string]interface{})
-		if ok && obj[field] == value {
+		if !ok {
+			continue
+		}
+		if requireCommandType && obj["type"] != "command" {
+			continue
+		}
+		v, ok := obj[field].(string)
+		if ok && samePathCommand(v, value) {
 			return true
 		}
 	}
@@ -1663,7 +1793,7 @@ func globalCredentialGuardInstalledCursor() bool {
 		return false
 	}
 	hooks, _ := root["hooks"].(map[string]interface{})
-	return simpleArrayHasValue(hooks["beforeShellExecution"], "command", scriptPath)
+	return simpleArrayHasValue(hooks["beforeShellExecution"], "command", scriptPath, false)
 }
 
 // globalCredentialGuardInstalledCopilot checks ~/.copilot/settings.json for
@@ -1679,7 +1809,7 @@ func globalCredentialGuardInstalledCopilot() bool {
 		return false
 	}
 	hooks, _ := root["hooks"].(map[string]interface{})
-	return simpleArrayHasValue(hooks["preToolUse"], "bash", scriptPath)
+	return simpleArrayHasValue(hooks["preToolUse"], "bash", scriptPath, true)
 }
 
 // globalCredentialGuardInstalledKiro checks whether
@@ -1698,4 +1828,121 @@ func globalCredentialGuardInstalledKiro() bool {
 		return false
 	}
 	return info.Size() > 0
+}
+
+// --- git-branch-guard global-installed dedup (ROADMAP-2026-08-17 Wave 2/
+// ML-2B) ---
+//
+// Mirrors the globalCredentialGuardInstalled<Tool> family above exactly,
+// pointed at ~/.trackfw/scripts/trackfw-git-branch-guard.sh instead of
+// trackfw-credential-guard.sh. The global-scope git-branch-guard targets
+// added by ML-2A (harnessGitBranchGuardTarget<Tool>, internal/generators/
+// update.go) reuse the SAME merge helpers as their credential-guard
+// counterparts (mergeCredentialGuardClaudeHooks/GeminiHooks/CursorHooks/
+// CopilotHooks, parametrized by scriptPath) — same hooks key, same matcher,
+// only the scriptPath argument differs — so the read side below checks the
+// exact same hooks key/matcher as globalCredentialGuardInstalled<Tool>, just
+// against the git-branch-guard scriptPath.
+//
+// Only 5 of the 6 credential-guard dedup targets have a git-branch-guard
+// counterpart: Kiro's project-scope injector (InjectKiroHooks) never wires
+// git-branch-guard at all (it is not one of the CLIs InjectKiroHooks covers
+// for this guard — see its doc comment), so there is nothing to dedup there
+// and no globalGitBranchGuardInstalledKiro function exists. Windsurf/AmazonQ
+// wire git-branch-guard at project scope but have no global-scope target
+// (ML-2A only added targets for the 6 CLIs above) and no credential-guard
+// dedup precedent either — consistent, not a gap.
+
+// globalGitBranchGuardScriptPath resolves the absolute path the global
+// git-branch-guard wiring would point at (~/.trackfw/scripts/trackfw-git-
+// branch-guard.sh), matching harnessGitBranchGuardTargetClaude/Codex/Gemini/
+// Cursor/Copilot (internal/generators/update.go) exactly. Returns ok=false
+// if $HOME cannot be resolved (fail-open: caller treats this as "not
+// installed globally").
+func globalGitBranchGuardScriptPath() (path string, ok bool) {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return "", false
+	}
+	return filepath.Join(home, ".trackfw", "scripts", "trackfw-git-branch-guard.sh"), true
+}
+
+// globalGitBranchGuardInstalledClaude checks ~/.claude/settings.json for the
+// PreToolUse[matcher:"Bash"] entry harnessGitBranchGuardTargetClaude writes.
+// Fail-open: any read/parse error → false.
+func globalGitBranchGuardInstalledClaude() bool {
+	scriptPath, ok := globalGitBranchGuardScriptPath()
+	if !ok {
+		return false
+	}
+	root, ok := readGlobalHookJSON(".claude", "settings.json")
+	if !ok {
+		return false
+	}
+	hooks, _ := root["hooks"].(map[string]interface{})
+	return hookArrayHasCommand(hooks["PreToolUse"], "Bash", scriptPath)
+}
+
+// globalGitBranchGuardInstalledCodex checks ~/.codex/hooks.json for the
+// PreToolUse[matcher:"Bash"] entry harnessGitBranchGuardTargetCodex writes.
+// Fail-open: any read/parse error → false.
+func globalGitBranchGuardInstalledCodex() bool {
+	scriptPath, ok := globalGitBranchGuardScriptPath()
+	if !ok {
+		return false
+	}
+	root, ok := readGlobalHookJSON(".codex", "hooks.json")
+	if !ok {
+		return false
+	}
+	hooks, _ := root["hooks"].(map[string]interface{})
+	return hookArrayHasCommand(hooks["PreToolUse"], "Bash", scriptPath)
+}
+
+// globalGitBranchGuardInstalledGemini checks ~/.gemini/settings.json for the
+// BeforeTool[matcher:"run_shell_command"] entry harnessGitBranchGuardTargetGemini
+// writes. Fail-open: any read/parse error → false.
+func globalGitBranchGuardInstalledGemini() bool {
+	scriptPath, ok := globalGitBranchGuardScriptPath()
+	if !ok {
+		return false
+	}
+	root, ok := readGlobalHookJSON(".gemini", "settings.json")
+	if !ok {
+		return false
+	}
+	hooks, _ := root["hooks"].(map[string]interface{})
+	return hookArrayHasCommand(hooks["BeforeTool"], "run_shell_command", scriptPath)
+}
+
+// globalGitBranchGuardInstalledCursor checks ~/.cursor/hooks.json for the
+// hooks.beforeShellExecution entry harnessGitBranchGuardTargetCursor writes.
+// Fail-open: any read/parse error → false.
+func globalGitBranchGuardInstalledCursor() bool {
+	scriptPath, ok := globalGitBranchGuardScriptPath()
+	if !ok {
+		return false
+	}
+	root, ok := readGlobalHookJSON(".cursor", "hooks.json")
+	if !ok {
+		return false
+	}
+	hooks, _ := root["hooks"].(map[string]interface{})
+	return simpleArrayHasValue(hooks["beforeShellExecution"], "command", scriptPath, false)
+}
+
+// globalGitBranchGuardInstalledCopilot checks ~/.copilot/settings.json for
+// the hooks.preToolUse[bash] entry harnessGitBranchGuardTargetCopilot writes.
+// Fail-open: any read/parse error → false.
+func globalGitBranchGuardInstalledCopilot() bool {
+	scriptPath, ok := globalGitBranchGuardScriptPath()
+	if !ok {
+		return false
+	}
+	root, ok := readGlobalHookJSON(".copilot", "settings.json")
+	if !ok {
+		return false
+	}
+	hooks, _ := root["hooks"].(map[string]interface{})
+	return simpleArrayHasValue(hooks["preToolUse"], "bash", scriptPath, true)
 }
