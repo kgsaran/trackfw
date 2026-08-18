@@ -117,7 +117,25 @@ def check_ship_governance():
 
 
 def _detect_pending_squash_merges(current_branch, exec_git, writeln):
-    """Warns about remote branches with non-empty diffs vs origin/main. Non-blocking."""
+    """Warns about remote branches with genuinely pending work vs origin/main. Non-blocking.
+
+    Reuses evaluate_branch_integration (trackfw.commands.branch) — the same touched-files
+    heuristic `trackfw branch prune` uses — instead of a naive bidirectional
+    `git diff origin/main <branch> --stat`. The naive check false-positives on a branch that was
+    squash-merged and is now merely stale (main advanced further afterwards): it always shows a
+    non-empty diff even though nothing from the branch is actually missing from main. Only
+    BRANCH_PRUNE_DECISION_PENDING_WORK — genuine, unintegrated work — surfaces this warning; every
+    other decision (no_own_work, content_identical, review_doc_config, no_merge_base, eval_error)
+    stays silent, the same posture the naive check had on error (skip, no warning).
+
+    Imported lazily to mirror commands/branch.py's own late import of ship/runner.py (avoids an
+    import-time cycle between the two modules).
+    """
+    from trackfw.commands.branch import (
+        evaluate_branch_integration,
+        BRANCH_PRUNE_DECISION_PENDING_WORK,
+    )
+
     stdout, err = exec_git(['branch', '-r', '--no-merged', 'origin/main'])
     if err or not stdout.strip():
         return
@@ -129,10 +147,8 @@ def _detect_pending_squash_merges(current_branch, exec_git, writeln):
         short_name = re.sub(r'^origin/', '', candidate)
         if short_name == current_branch:
             continue
-        diff_out, derr = exec_git(['diff', 'origin/main', candidate, '--stat'])
-        if derr:
-            continue
-        if diff_out.strip():
+        result = evaluate_branch_integration(candidate, exec_git)
+        if result['decision'] == BRANCH_PRUNE_DECISION_PENDING_WORK:
             writeln(f'Warning: branch "{short_name}" appears to have unmerged changes vs origin/main.')
 
 

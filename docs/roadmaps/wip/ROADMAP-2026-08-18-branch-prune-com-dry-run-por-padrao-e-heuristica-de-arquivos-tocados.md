@@ -28,10 +28,14 @@ acusou a branch **já mergeada** do #181 como tendo trabalho pendente.
 - [x] AC4 — Branch corrente e branch em worktree nunca são apagadas.
 - [x] AC5 — Sem `--apply`, nada é apagado.
 - [x] AC6 — Offline/sem remoto: degrada e **não apaga**. Falha fechada.
-- [ ] AC7 — `detectPendingSquashMerges` usa a mesma lógica; falso-positivo do AC2 some.
-- [ ] AC8 — Paridade nos 3 CLIs, com gate de saídas reais.
-- [ ] AC9 — Cenário P4 com fixture de repositório git **real**.
-- [ ] AC10 — `make quality` verde **e CI verde**.
+- [x] AC7 — `detectPendingSquashMerges` usa a mesma lógica; falso-positivo do AC2 some. (ML-2A)
+- [ ] AC8 — Paridade nos 3 CLIs, com gate de saídas reais. (deixo para o arquiteto: ML-2A prova
+  paridade via testes unitários com fixture real nos 3 CLIs, mas não criei gate de shell dedicado
+  para o `ship` — só reusei `check-branch-prune-parity.sh` para não-regressão do `branch prune`)
+- [ ] AC9 — Cenário P4 com fixture de repositório git **real**. (satisfeito por ML-2A para o
+  `ship`; ML-1A/1C já satisfaziam para o `branch prune`)
+- [ ] AC10 — `make quality` verde **e CI verde**. (`make quality` verde localmente, confirmado
+  nesta sessão; CI verde depende do push/PR — autoridade do `trackfw_architect`)
 
 ## 🔴 Riscos que valem para todos os MLs
 
@@ -461,7 +465,7 @@ testes do ML-1A — o subconjunto próprio os classifica certo independentemente
 ## Wave 2 — Convergência do `ship` (depende da Wave 1)
 
 ### ML-2A — `detectPendingSquashMerges` passa a usar a heurística compartilhada
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
 **Dependência:** ML-1A — a função só existe depois dele.
 
 **Discriminante medido, use como caso de teste:** a branch do PR #181, já mergeada, era acusada de
@@ -469,11 +473,128 @@ testes do ML-1A — o subconjunto próprio os classifica certo independentemente
 haver trabalho pendente.
 
 **Critérios de aceite:**
-- [ ] O `ship` deixa de avisar sobre branch defasada porém integrada.
-- [ ] Continua avisando sobre branch com trabalho genuinamente pendente — não-regressão.
-- [ ] Uma só implementação da heurística; sem cópia divergente.
-- [ ] Cenário P4 com baseline e detecção.
+- [x] O `ship` deixa de avisar sobre branch defasada porém integrada.
+- [x] Continua avisando sobre branch com trabalho genuinamente pendente — não-regressão.
+- [x] Uma só implementação da heurística; sem cópia divergente.
+- [x] Cenário P4 com baseline e detecção.
 - [x] `make quality` verde.
+
+**Implementação — nos 3 CLIs, reusando `evaluateBranchIntegration` do ML-1A/1B/1C, sem cópia:**
+- Go: `internal/commands/ship.go:562-591` — `detectPendingSquashMerges` chama
+  `evaluateBranchIntegration(candidate, gitExec)` (mesmo pacote `commands`, sem import) e só avisa
+  quando `eval.Decision == branchPruneDecisionPendingWork`. `candidate` é o ref remoto completo
+  (`origin/feat/x`), não o nome curto — a heurística funciona igual em refs locais e remotos.
+- Node.js: `npm/src/ship/runner.js` — importa `evaluateBranchIntegration`/`DECISION` de
+  `../branch/prune` (sem ciclo: `branch/prune.js` não depende de `ship/runner.js`); avisa só em
+  `DECISION.PENDING_WORK`. Exportado `detectPendingSquashMerges` no `module.exports` para teste
+  direto.
+- Python: `pypi/trackfw/ship/runner.py` — `_detect_pending_squash_merges` faz *late import* de
+  `evaluate_branch_integration`/`BRANCH_PRUNE_DECISION_PENDING_WORK` de `trackfw.commands.branch`
+  dentro da própria função, espelhando o late import já existente em sentido contrário
+  (`commands/branch.py`'s `run_branch_prune` importa `ship.runner` tardiamente) — evita ciclo de
+  import-time nos dois sentidos.
+
+O aviso continua **advisory-only** (nunca bloqueia commit/push) — só a condição de disparo mudou,
+não a severidade. Decisões diferentes de `pending_work` (`no_own_work`, `content_identical`,
+`review_doc_config`, `no_merge_base`, `eval_error`) ficam silenciosas, mesma postura do check
+antigo em erro (pular, sem aviso).
+
+**Cenário P4 (falsificação), fixture de repo git real, nos 3 CLIs:**
+- Go: `internal/commands/ship_test.go` —
+  `TestDetectPendingSquashMerges_RealGitRepo_StaleIntegratedVsGenuinelyPending` reproduz o
+  incidente #181/#182 (branch `feat/a` squash-mergeada, `main` avança com PR #182, branch
+  `feat/pending` nunca mergeada) num repositório git real e descartável (`origin.git` bare + clone,
+  sem mock de `git`) — baseline prova que `git diff origin/main origin/feat/a --stat` (o check
+  ingênuo) é não-vazio antes de provar que `detectPendingSquashMerges` corrigido não avisa sobre
+  `feat/a` e continua avisando sobre `feat/pending`.
+  `TestDetectPendingSquashMerges_CallsSharedEvaluateBranchIntegration` prova, com `gitExec` fake,
+  que a função não roda mais seu próprio `diff --stat` bidirecional quando `merge-base` falha.
+- Node.js: `npm/tests/ship.test.js` — mesmos dois testes, mesmo fixture real.
+- Python: `pypi/tests/test_ship.py` — mesmos dois testes, mesmo fixture real.
+
+**Não-regressão da Wave 1 — provada, não assumida:**
+```
+$ GO_BIN=bin/trackfw bash scripts/check-branch-prune-parity.sh
+OK   [branch-prune-parity/dry-run-default]
+OK   [branch-prune-parity/apply-deletes-integrated]
+OK   [branch-prune-parity/apply-never-deletes-current-branch]
+OK   [branch-prune-parity/offline-refuses]
+OK   [branch-prune-parity/review-doc-config-only]
+OK   [branch-prune-parity/stale-origin-main-conservative]
+All check-branch-prune-parity.sh scenarios passed.
+```
+`branch prune` (comportamento e heurística) não foi tocado neste ML — só o `ship` passou a
+consumi-la.
+
+**Evidência (2026-08-18, Apolo):**
+```
+$ TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 go test -timeout 3m ./...
+ok  	github.com/kgsaran/trackfw/internal/commands	8.303s
+... (todos os pacotes ok)
+
+$ cd npm && node --test tests/*.test.js
+ℹ tests 686
+ℹ pass 686
+ℹ fail 0
+
+$ PYTHONPATH=pypi python3 -m pytest pypi/tests -q
+1365 passed, 28 subtests passed in 28.17s
+
+$ go vet ./...
+(exit 0)
+
+$ make quality
+[exited with code 0]
+
+$ ./bin/trackfw validate
+19 warning(s), 0 violations (mesmos 19 pré-existentes desta sessão — 2 deles são "roadmaps in
+wip/ (limit: 1)" e REQs Open/Roadmap-in-done pré-existentes desta sessão, nenhum novo)
+```
+
+`docs/cli-parity.md` atualizado: seção "Why not `git branch -d`..." registra que o falso positivo
+está fechado; seção "The touched-files heuristic" documenta os 3 pontos de chamada do `ship`
+(inclusive o late-import Python) e a postura advisory-only.
+
+**Fora de escopo, confirmado nesta sessão:** Wave 3 (ML-3A, revisão de segurança do `hades-tf`) —
+não implementado. Nenhum `git commit`/`push`/`branch` executado por mim — autoridade exclusiva do
+`trackfw_architect`.
+
+---
+
+### Auditoria do ML-2A — comportamento aprovado, AC8 em aberto
+
+```
+teste ingenuo no ship   REMOVIDO (o unico --stat que sobrou e o de arquivos staged, sem relacao)
+funcao compartilhada    ship.go:588 chama evaluateBranchIntegration
+implementacao unica     merge-base so aparece em branch_prune.go
+mapeamento              so pending_work dispara o aviso; demais decisoes ficam silenciosas
+Wave 1                  gate branch-prune 6/6, sem regressao
+make quality            exit 0 · validate exit 0
+```
+
+**AC8 NÃO está satisfeito, e o agente sinalizou com honestidade.** A paridade do `ship` foi provada
+por **teste unitário por stack**, com fixture git real em cada um — o que prova comportamento por
+runtime, **não** que os três produzem a mesma saída. O `check-ship-parity.sh` não menciona
+squash/pending (0 ocorrências).
+
+É **exatamente a lacuna que eu declarei e critiquei** na REQ de higiene (ML-2C: *"byte-identidade
+provada por leitura de fonte; os testes afirmam comportamento por stack, não paridade entre
+stacks"*). Declarar de novo seria incoerente — fecha no ML-2B.
+
+### ML-2B — Gate de paridade do aviso de squash-merge do `ship`
+**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Arquivos:** `scripts/check-ship-parity.sh`, `scripts/check-gates-falsify.sh`.
+
+**Ação:** estender o `check-ship-parity.sh` com cenário que roda os **3 binários reais** contra o
+mesmo fixture git e compara a saída byte a byte, para dois casos:
+- branch **defasada porém integrada** → nenhum aviso, nos 3;
+- branch **genuinamente pendente** → aviso presente e idêntico, nos 3.
+
+**Critérios de aceite:**
+- [ ] Cenário novo no `check-ship-parity.sh` comparando saída real `go-vs-node` e `go-vs-py`.
+- [ ] Fixture git real com squash-merge e `main` avançando depois.
+- [ ] Cenário P4 de falsificação: sabotar **um** runtime e provar que o gate reprova.
+- [ ] `make quality` verde e **CI verde** — AC10 exige as duas.
 
 ---
 

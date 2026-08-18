@@ -994,7 +994,9 @@ ancestry never exists, so `-d` refuses *every* integrated branch, teaching users
 on a **stale** branch it reflects how far `main` has moved, not whether the branch's own work
 landed — the exact false positive `detectPendingSquashMerges` (`trackfw ship`, `ship.go:564`)
 had before this REQ, which acknowledged a merged PR (#181) as having "unmerged changes" only
-because a later PR (#182) had since advanced `main`.
+because a later PR (#182) had since advanced `main`. As of ML-2A, `detectPendingSquashMerges`
+itself calls `evaluateBranchIntegration` (see below) instead of that naive diff — the false
+positive is closed.
 
 ### The touched-files heuristic — the single shared decision function
 
@@ -1051,9 +1053,19 @@ or non-ASCII byte would be mis-split by the pathspec on the second call, silentl
 `diverg` to nothing and deleting a branch with real pending work in that file.
 
 This decision function — `evaluateBranchIntegration` (Go), `evaluateBranchIntegration` (Node.js),
-`evaluate_branch_integration` (Python) — is the **single shared implementation**; `trackfw ship`'s
-`detectPendingSquashMerges` is expected to call it instead of maintaining its own bidirectional
-diff (tracked separately; see the roadmap's Wave 2).
+`evaluate_branch_integration` (Python) — is the **single shared implementation**. `trackfw ship`'s
+`detectPendingSquashMerges` (`ship.go`, `ship/runner.js`, `ship/runner.py`) calls it too (ML-2A,
+REQ-2026-08-18) instead of maintaining its own bidirectional diff: for each remote candidate
+returned by `git branch -r --no-merged origin/main`, it warns *only* when the decision is
+`pending_work` — every other decision (`no_own_work`, `content_identical`, `review_doc_config`,
+`no_merge_base`, `eval_error`) stays silent, the same posture the old naive check had on error
+(skip, no warning). This is advisory-only in `ship` (never blocks the commit/push), unlike `branch
+prune`, which is destructive; the two commands share the decision function but not its
+consequences. Node.js imports `evaluateBranchIntegration`/`DECISION` from `branch/prune.js`;
+Python late-imports `evaluate_branch_integration`/`BRANCH_PRUNE_DECISION_PENDING_WORK` from
+`trackfw.commands.branch` inside `_detect_pending_squash_merges` (mirroring `commands/branch.py`'s
+own existing late import of `ship/runner.py`, avoiding an import-time cycle between the two
+modules); Go needs no import — both functions live in the same `commands` package.
 
 ### Always-kept branches — never evaluated for deletion, never candidates
 

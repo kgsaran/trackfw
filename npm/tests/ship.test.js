@@ -2,12 +2,14 @@
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
+const os = require('node:os')
 const fs = require('node:fs')
 const path = require('node:path')
+const { spawnSync } = require('node:child_process')
 const {
   runShip, isShipBranch, isGatedShipBranch, isGitWriteCmd, normalizeBranchSlug, resolveRoadmapDir, resetConfig,
   GIT_WRITE_COMMANDS, buildForgeCreateArgs, firstLine, allDocOnly, defaultBaseBranch,
-  gitCommitsSince, buildPRBody, COMMIT_MESSAGE_SEP,
+  gitCommitsSince, buildPRBody, COMMIT_MESSAGE_SEP, detectPendingSquashMerges,
 } = require('../src/ship/runner')
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -953,4 +955,138 @@ test('ship integration: graceful degradation with clean PATH (no gh/glab/az)', a
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true })
   }
+})
+
+// ────────────────────────────────────────────────────────────────────────────
+// ML-2A — detectPendingSquashMerges reuses evaluateBranchIntegration
+// ────────────────────────────────────────────────────────────────────────────
+
+test(
+  'detectPendingSquashMerges: real git repo — stale-but-integrated vs genuinely pending (P4, AC7)',
+  { timeout: 30000 },
+  () => {
+    const which = spawnSync('git', ['--version'])
+    if (which.error) {
+      return // git not available — skip like Go's t.Skip
+    }
+
+    const work = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-ship-squash-node-'))
+    const bareDir = path.join(work, 'origin.git')
+    const cloneDir = path.join(work, 'clone')
+    const emptyGitConfig = path.join(work, 'empty-gitconfig')
+    fs.writeFileSync(emptyGitConfig, '')
+
+    const env = () => ({
+      ...process.env,
+      GIT_CONFIG_GLOBAL: emptyGitConfig,
+      GIT_CONFIG_SYSTEM: '/dev/null',
+      GIT_TERMINAL_PROMPT: '0',
+      HOME: work,
+    })
+
+    function run(dir, args) {
+      const result = spawnSync('git', args, { cwd: dir, env: env(), encoding: 'utf8' })
+      if (result.status !== 0) {
+        throw new Error(`git ${args.join(' ')} (dir=${dir}) failed: ${result.stderr}\n${result.stdout}`)
+      }
+      return result.stdout
+    }
+
+    fs.mkdirSync(bareDir, { recursive: true })
+    run(bareDir, ['init', '-q', '--bare', '-b', 'main'])
+
+    fs.mkdirSync(cloneDir, { recursive: true })
+    run(work, ['clone', '-q', bareDir, cloneDir])
+    run(cloneDir, ['config', 'user.email', 'falsify@trackfw.test'])
+    run(cloneDir, ['config', 'user.name', 'trackfw falsify'])
+    run(cloneDir, ['config', 'commit.gpgsign', 'false'])
+    run(cloneDir, ['config', 'core.hooksPath', '/dev/null'])
+
+    function writeFile(name, content) {
+      fs.writeFileSync(path.join(cloneDir, name), content)
+    }
+
+    writeFile('base.txt', 'base\n')
+    run(cloneDir, ['add', 'base.txt'])
+    run(cloneDir, ['commit', '-q', '-m', 'base commit'])
+    run(cloneDir, ['push', '-q', 'origin', 'main'])
+
+    // feat/a — pushed to origin, squash-merged into main (ancestry never records the merge).
+    run(cloneDir, ['checkout', '-q', '-b', 'feat/a'])
+    writeFile('a.txt', 'a\n')
+    run(cloneDir, ['add', 'a.txt'])
+    run(cloneDir, ['commit', '-q', '-m', 'feat/a work'])
+    run(cloneDir, ['push', '-q', 'origin', 'feat/a'])
+    run(cloneDir, ['checkout', '-q', 'main'])
+    run(cloneDir, ['merge', '-q', '--squash', 'feat/a'])
+    run(cloneDir, ['commit', '-q', '-m', 'squash-merge feat/a (PR #181)'])
+
+    // main advances further (PR #182) — makes the naive bidirectional diff non-empty for the
+    // already-integrated feat/a.
+    writeFile('b.txt', 'b\n')
+    run(cloneDir, ['add', 'b.txt'])
+    run(cloneDir, ['commit', '-q', '-m', 'unrelated follow-up (PR #182)'])
+    run(cloneDir, ['push', '-q', 'origin', 'main'])
+
+    // feat/pending — pushed to origin, genuinely never merged anywhere.
+    run(cloneDir, ['checkout', '-q', '-b', 'feat/pending'])
+    writeFile('c.txt', 'c\n')
+    run(cloneDir, ['add', 'c.txt'])
+    run(cloneDir, ['commit', '-q', '-m', 'feat/pending work, never merged'])
+    run(cloneDir, ['push', '-q', 'origin', 'feat/pending'])
+
+    run(cloneDir, ['checkout', '-q', 'main'])
+    run(cloneDir, ['fetch', '-q', 'origin'])
+
+    function execGit(args) {
+      const result = spawnSync('git', args, { cwd: cloneDir, env: env(), encoding: 'utf8' })
+      if (result.status !== 0) {
+        return { stdout: '', error: new Error((result.stderr || '').trim() || `git ${args.join(' ')} exited with ${result.status}`) }
+      }
+      return { stdout: (result.stdout || '').trim(), error: null }
+    }
+
+    // P4 baseline: the naive bidirectional check IS non-empty for origin/feat/a — reproduces the
+    // exact PR #181/#182 false positive.
+    const naive = execGit(['diff', 'origin/main', 'origin/feat/a', '--stat'])
+    assert.equal(naive.error, null)
+    assert.notEqual(naive.stdout.trim(), '', 'test setup invalid: naive diff must be non-empty to reproduce the #181/#182 false positive')
+
+    // P4 detection: the fixed detectPendingSquashMerges must not warn about feat/a and must still
+    // warn about feat/pending.
+    const lines = []
+    detectPendingSquashMerges('main', execGit, (s) => lines.push(s))
+    const got = lines.join('\n')
+
+    assert.ok(!got.includes('"feat/a"'), `must NOT warn about feat/a (stale-but-integrated). Output:\n${got}`)
+    assert.ok(got.includes('"feat/pending"'), `must still warn about feat/pending (genuinely unmerged). Output:\n${got}`)
+  }
+)
+
+test('detectPendingSquashMerges: delegates to evaluateBranchIntegration, no own bidirectional diff', () => {
+  const calls = {}
+  function execGit(args) {
+    const key = args.join(' ')
+    calls[key] = (calls[key] || 0) + 1
+    if (key === 'branch -r --no-merged origin/main') {
+      return { stdout: '  origin/feat/unrelated-history\n', error: null }
+    }
+    if (key.startsWith('merge-base origin/main')) {
+      return { stdout: '', error: new Error('fatal: no merge base') }
+    }
+    if (key.startsWith('diff origin/main')) {
+      // A raw bidirectional-diff implementation would call this directly; the shared
+      // evaluateBranchIntegration only reaches its own -z diffs after a successful merge-base,
+      // which never happens here.
+      return { stdout: 'some.file | 1 +\n', error: null }
+    }
+    return { stdout: '', error: null }
+  }
+
+  const lines = []
+  detectPendingSquashMerges('main', execGit, (s) => lines.push(s))
+
+  assert.equal(lines.length, 0, `expected no warning when merge-base fails, got:\n${lines.join('\n')}`)
+  assert.equal(calls['diff origin/main origin/feat/unrelated-history --stat'], undefined,
+    'detectPendingSquashMerges must not run its own bidirectional diff --stat anymore')
 })

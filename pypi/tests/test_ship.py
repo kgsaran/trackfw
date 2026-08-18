@@ -14,6 +14,8 @@ Cobre os mesmos casos que Go e Node.js:
 
 import os
 import re
+import subprocess
+import tempfile
 import pytest
 
 from trackfw.ship.runner import (
@@ -31,6 +33,7 @@ from trackfw.ship.runner import (
     _git_commits_since,
     build_pr_body,
     COMMIT_MESSAGE_SEP,
+    _detect_pending_squash_merges,
 )
 from trackfw import config as _trackfw_config
 from trackfw.forge.adapter import forge_adapter
@@ -1028,3 +1031,153 @@ def test_ship_integration_graceful_degradation_clean_path():
 
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# ML-2A — _detect_pending_squash_merges reuses evaluate_branch_integration
+# ────────────────────────────────────────────────────────────────────────────
+
+def _git_available():
+    try:
+        subprocess.run(["git", "--version"], capture_output=True, check=True)
+        return True
+    except Exception:
+        return False
+
+
+@pytest.mark.skipif(not _git_available(), reason="git not available in PATH")
+def test_detect_pending_squash_merges_real_git_repo_stale_vs_pending():
+    """P4 falsification scenario for ML-2A: reproduces the PR #181/#182 incident in a real,
+    disposable git repository. origin/feat/a is squash-merged into origin/main, which then
+    advances further (origin/feat/b), leaving origin/feat/a's naive bidirectional diff non-empty
+    even though every file it touched is already on main. origin/feat/pending never merges
+    anywhere and must still warn.
+    """
+    with tempfile.TemporaryDirectory(prefix="trackfw-ship-squash-py-") as work:
+        bare_dir = os.path.join(work, "origin.git")
+        clone_dir = os.path.join(work, "clone")
+        empty_gitconfig = os.path.join(work, "empty-gitconfig")
+        with open(empty_gitconfig, "w") as f:
+            f.write("")
+
+        env = dict(os.environ)
+        env.update({
+            "GIT_CONFIG_GLOBAL": empty_gitconfig,
+            "GIT_CONFIG_SYSTEM": "/dev/null",
+            "GIT_TERMINAL_PROMPT": "0",
+            "HOME": work,
+        })
+
+        def run(cwd, args):
+            result = subprocess.run(
+                ["git"] + args, cwd=cwd, env=env, capture_output=True, text=True
+            )
+            if result.returncode != 0:
+                raise AssertionError(
+                    f"git {args} (cwd={cwd}) failed: {result.stderr}\n{result.stdout}"
+                )
+            return result.stdout
+
+        os.makedirs(bare_dir, exist_ok=True)
+        run(bare_dir, ["init", "-q", "--bare", "-b", "main"])
+
+        os.makedirs(clone_dir, exist_ok=True)
+        run(work, ["clone", "-q", bare_dir, clone_dir])
+        run(clone_dir, ["config", "user.email", "falsify@trackfw.test"])
+        run(clone_dir, ["config", "user.name", "trackfw falsify"])
+        run(clone_dir, ["config", "commit.gpgsign", "false"])
+        run(clone_dir, ["config", "core.hooksPath", "/dev/null"])
+
+        def write_file(name, content):
+            with open(os.path.join(clone_dir, name), "w") as f:
+                f.write(content)
+
+        write_file("base.txt", "base\n")
+        run(clone_dir, ["add", "base.txt"])
+        run(clone_dir, ["commit", "-q", "-m", "base commit"])
+        run(clone_dir, ["push", "-q", "origin", "main"])
+
+        # feat/a — pushed to origin, squash-merged into main (ancestry never records the merge).
+        run(clone_dir, ["checkout", "-q", "-b", "feat/a"])
+        write_file("a.txt", "a\n")
+        run(clone_dir, ["add", "a.txt"])
+        run(clone_dir, ["commit", "-q", "-m", "feat/a work"])
+        run(clone_dir, ["push", "-q", "origin", "feat/a"])
+        run(clone_dir, ["checkout", "-q", "main"])
+        run(clone_dir, ["merge", "-q", "--squash", "feat/a"])
+        run(clone_dir, ["commit", "-q", "-m", "squash-merge feat/a (PR #181)"])
+
+        # main advances further (PR #182) — makes the naive bidirectional diff non-empty for the
+        # already-integrated feat/a.
+        write_file("b.txt", "b\n")
+        run(clone_dir, ["add", "b.txt"])
+        run(clone_dir, ["commit", "-q", "-m", "unrelated follow-up (PR #182)"])
+        run(clone_dir, ["push", "-q", "origin", "main"])
+
+        # feat/pending — pushed to origin, genuinely never merged anywhere.
+        run(clone_dir, ["checkout", "-q", "-b", "feat/pending"])
+        write_file("c.txt", "c\n")
+        run(clone_dir, ["add", "c.txt"])
+        run(clone_dir, ["commit", "-q", "-m", "feat/pending work, never merged"])
+        run(clone_dir, ["push", "-q", "origin", "feat/pending"])
+
+        run(clone_dir, ["checkout", "-q", "main"])
+        run(clone_dir, ["fetch", "-q", "origin"])
+
+        def exec_git(args):
+            result = subprocess.run(
+                ["git"] + args, cwd=clone_dir, env=env, capture_output=True, text=True
+            )
+            if result.returncode != 0:
+                return ("", result.stderr.strip() or f"git {' '.join(args)} failed")
+            return (result.stdout.strip(), None)
+
+        # P4 baseline: the naive bidirectional check IS non-empty for origin/feat/a — reproduces
+        # the exact PR #181/#182 false positive.
+        naive_out, naive_err = exec_git(["diff", "origin/main", "origin/feat/a", "--stat"])
+        assert naive_err is None
+        assert naive_out.strip() != "", (
+            "fixture inválida: diff ingênuo deve ser não-vazio para reproduzir o falso "
+            "positivo do #181/#182"
+        )
+
+        # P4 detection: the fixed _detect_pending_squash_merges must not warn about feat/a and
+        # must still warn about feat/pending.
+        lines = []
+        _detect_pending_squash_merges("main", exec_git, lines.append)
+        got = "\n".join(lines)
+
+        assert '"feat/a"' not in got, (
+            f"must NOT warn about feat/a (stale-but-integrated). Output:\n{got}"
+        )
+        assert '"feat/pending"' in got, (
+            f"must still warn about feat/pending (genuinely unmerged). Output:\n{got}"
+        )
+
+
+def test_detect_pending_squash_merges_delegates_to_evaluate_branch_integration():
+    """A raw bidirectional-diff implementation would call `diff origin/main <candidate> --stat`
+    directly; the shared evaluate_branch_integration only reaches its own -z diffs after a
+    successful merge-base, which never happens here (merge-base fails) — so no warning should
+    fire and the raw diff call should never happen.
+    """
+    calls = {}
+
+    def exec_git(args):
+        key = " ".join(args)
+        calls[key] = calls.get(key, 0) + 1
+        if key == "branch -r --no-merged origin/main":
+            return ("  origin/feat/unrelated-history\n", None)
+        if key.startswith("merge-base origin/main"):
+            return ("", "fatal: no merge base")
+        if key.startswith("diff origin/main"):
+            return ("some.file | 1 +\n", None)
+        return ("", None)
+
+    lines = []
+    _detect_pending_squash_merges("main", exec_git, lines.append)
+
+    assert lines == [], f"expected no warning when merge-base fails, got: {lines}"
+    assert "diff origin/main origin/feat/unrelated-history --stat" not in calls, (
+        "_detect_pending_squash_merges must not run its own bidirectional diff --stat anymore"
+    )
