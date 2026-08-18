@@ -312,6 +312,141 @@ done
 assert_three_way "$BP_LABEL"
 
 # ---------------------------------------------------------------------------
+# Scenario (e) — ML-1B: a branch whose only divergence is doc/config files (README.md) is flagged
+# "review", never "delete" and never auto-deleted by --apply.
+# ---------------------------------------------------------------------------
+BP_LABEL="review-doc-config-only"
+for runtime in go node py; do
+  dest="$WORK/e-$runtime"
+  bare="$dest/origin.git"
+  clone="$dest/clone"
+  gitcfg="$dest/empty-gitconfig"
+  mkdir -p "$dest"
+  : >"$gitcfg"
+  env_args=(
+    "GIT_CONFIG_GLOBAL=$gitcfg"
+    "GIT_CONFIG_SYSTEM=/dev/null"
+    "GIT_TERMINAL_PROMPT=0"
+    "HOME=$dest"
+  )
+  git init -q --bare -b main "$bare" >"$dest/build.log" 2>&1
+  env "${env_args[@]}" git clone -q "$bare" "$clone" >>"$dest/build.log" 2>&1
+  (
+    cd "$clone"
+    env "${env_args[@]}" git config user.email "falsify@trackfw.test"
+    env "${env_args[@]}" git config user.name "trackfw falsify"
+    env "${env_args[@]}" git config commit.gpgsign false
+    env "${env_args[@]}" git config core.hooksPath /dev/null
+    echo "# base" >README.md
+    env "${env_args[@]}" git add README.md
+    env "${env_args[@]}" git commit -q -m "base commit"
+    env "${env_args[@]}" git push -q origin main
+    env "${env_args[@]}" git checkout -q -b feat/docs-review
+    echo "# updated docs only, never merged" >README.md
+    env "${env_args[@]}" git add README.md
+    env "${env_args[@]}" git commit -q -m "docs-only work"
+    env "${env_args[@]}" git checkout -q main
+  ) >>"$dest/build.log" 2>&1
+  before=$(local_branches "$clone")
+  run_prune "$runtime" "$clone"
+  echo "$BP_EXIT" >"$WORK/$BP_LABEL.$runtime.exit"
+  after=$(local_branches "$clone")
+  if [[ "$before" != "$after" ]]; then
+    fail "branch-prune-parity/$BP_LABEL/$runtime" "dry-run must delete nothing; before=[$before] after=[$after]"
+    continue
+  fi
+  if ! grep -qF 'need manual review' "$BP_OUT_FILE"; then
+    fail "branch-prune-parity/$BP_LABEL/$runtime" "vacuity guard: stdout missing the review summary; stdout: $(cat "$BP_OUT_FILE")"
+    continue
+  fi
+  review_line=$(grep 'feat/docs-review' "$BP_OUT_FILE" | grep -v 'need manual review' || true)
+  review_action=$(echo "$review_line" | awk '{print $2}')
+  if [[ "$review_action" != "review" ]]; then
+    fail "branch-prune-parity/$BP_LABEL/$runtime" "feat/docs-review must be reported action=review, got action='$review_action' line: $review_line"
+    continue
+  fi
+  normalize_prune_output "$BP_OUT_FILE"
+done
+assert_three_way "$BP_LABEL"
+
+# ---------------------------------------------------------------------------
+# Scenario (f) — ML-1B: `git fetch origin --prune` failure (broken remote URL) is non-blocking and
+# warned, and a stale origin/main only ever makes the result MORE conservative — a branch truly
+# integrated upstream but invisible to the stale local ref is reported "keep", never "delete".
+# ---------------------------------------------------------------------------
+BP_LABEL="stale-origin-main-conservative"
+for runtime in go node py; do
+  dest="$WORK/f-$runtime"
+  bare="$dest/origin.git"
+  clone="$dest/clone"
+  other="$dest/other-clone"
+  gitcfg="$dest/empty-gitconfig"
+  mkdir -p "$dest"
+  : >"$gitcfg"
+  env_args=(
+    "GIT_CONFIG_GLOBAL=$gitcfg"
+    "GIT_CONFIG_SYSTEM=/dev/null"
+    "GIT_TERMINAL_PROMPT=0"
+    "HOME=$dest"
+  )
+  git init -q --bare -b main "$bare" >"$dest/build.log" 2>&1
+  env "${env_args[@]}" git clone -q "$bare" "$clone" >>"$dest/build.log" 2>&1
+  (
+    cd "$clone"
+    env "${env_args[@]}" git config user.email "falsify@trackfw.test"
+    env "${env_args[@]}" git config user.name "trackfw falsify"
+    env "${env_args[@]}" git config commit.gpgsign false
+    env "${env_args[@]}" git config core.hooksPath /dev/null
+    echo base >base.txt
+    env "${env_args[@]}" git add base.txt
+    env "${env_args[@]}" git commit -q -m "base commit"
+    env "${env_args[@]}" git push -q origin main
+    env "${env_args[@]}" git checkout -q -b feat/mine
+    echo "mine v1" >mine.txt
+    env "${env_args[@]}" git add mine.txt
+    env "${env_args[@]}" git commit -q -m "feat/mine work"
+    env "${env_args[@]}" git checkout -q main
+  ) >>"$dest/build.log" 2>&1
+  # Someone else lands the exact same content upstream via an independent clone — our clone above
+  # never learns about it (never fetches again from this point on).
+  env "${env_args[@]}" git clone -q "$bare" "$other" >>"$dest/build.log" 2>&1
+  (
+    cd "$other"
+    env "${env_args[@]}" git config user.email "falsify@trackfw.test"
+    env "${env_args[@]}" git config user.name "trackfw falsify"
+    env "${env_args[@]}" git config commit.gpgsign false
+    echo "mine v1" >mine.txt
+    env "${env_args[@]}" git add mine.txt
+    env "${env_args[@]}" git commit -q -m "someone else lands the same content upstream"
+    env "${env_args[@]}" git push -q origin main
+  ) >>"$dest/build.log" 2>&1
+  # Break the remote URL so `git fetch origin --prune` (run internally by branch prune) fails
+  # deterministically — our clone's origin/main stays frozen at "base commit".
+  (cd "$clone" && env "${env_args[@]}" git remote set-url origin "$dest/does-not-exist.git")
+
+  before=$(local_branches "$clone")
+  run_prune "$runtime" "$clone"
+  echo "$BP_EXIT" >"$WORK/$BP_LABEL.$runtime.exit"
+  after=$(local_branches "$clone")
+  if [[ "$before" != "$after" ]]; then
+    fail "branch-prune-parity/$BP_LABEL/$runtime" "dry-run must delete nothing; before=[$before] after=[$after]"
+    continue
+  fi
+  if ! grep -qi 'warning' "$BP_OUT_FILE"; then
+    fail "branch-prune-parity/$BP_LABEL/$runtime" "vacuity guard: stdout missing the fetch-failure warning; stdout: $(cat "$BP_OUT_FILE")"
+    continue
+  fi
+  mine_line=$(grep 'feat/mine' "$BP_OUT_FILE" || true)
+  mine_action=$(echo "$mine_line" | awk '{print $2}')
+  if [[ "$mine_action" != "keep" ]]; then
+    fail "branch-prune-parity/$BP_LABEL/$runtime" "stale origin/main must report feat/mine as keep (conservative), got action='$mine_action' line: $mine_line"
+    continue
+  fi
+  normalize_prune_output "$BP_OUT_FILE"
+done
+assert_three_way "$BP_LABEL"
+
+# ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
 echo

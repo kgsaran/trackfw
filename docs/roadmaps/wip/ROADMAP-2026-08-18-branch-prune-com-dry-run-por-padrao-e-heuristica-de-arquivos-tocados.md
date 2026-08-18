@@ -185,7 +185,7 @@ qualquer auditoria de comando git vai encontrar.
 ---
 
 ### ML-1B — Fechar as divergências contra o protocolo do `CLAUDE.md` §1
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
 **Origem:** pergunta de KG (2026-08-18) — *"estamos usando o mesmo método já documentado?"*.
 Comparei item a item **no código**, e não estávamos por inteiro.
 
@@ -222,15 +222,151 @@ Comparei item a item **no código**, e não estávamos por inteiro.
    deste ML fica preciso; enquanto não estiver, é afirmação forte demais.
 
 **Critérios de aceite:**
-- [ ] `fetch origin --prune` roda antes da avaliação; falha é não-bloqueante **e avisada**.
-- [ ] Offline continua **não apagando** nada (não-regressão do AC6).
-- [ ] `origin/main` defasado leva a **mais recusas**, nunca a deleção indevida — prove com fixture.
-- [ ] Divergência só em doc/config vira categoria própria, **não** `delete`.
-- [ ] `-d` é tentado antes de `-D`; queda para `-D` só quando `-d` recusa por ancestralidade.
-- [ ] Texto do help condiz com o que o comando faz.
-- [ ] Não-regressão de todo o ML-1A: dry-run padrão, proteções de main/corrente/worktree, offline.
-- [ ] Paridade nos 3 CLIs; fixture de repo git **real**.
-- [ ] `make quality` verde.
+- [x] `fetch origin --prune` roda antes da avaliação; falha é não-bloqueante **e avisada**.
+- [x] Offline continua **não apagando** nada (não-regressão do AC6).
+- [x] `origin/main` defasado leva a **mais recusas**, nunca a deleção indevida — prove com fixture.
+- [x] Divergência só em doc/config vira categoria própria, **não** `delete`.
+- [x] `-d` é tentado antes de `-D`; queda para `-D` só quando `-d` recusa por ancestralidade.
+- [x] Texto do help condiz com o que o comando faz.
+- [x] Não-regressão de todo o ML-1A: dry-run padrão, proteções de main/corrente/worktree, offline.
+- [x] Paridade nos 3 CLIs; fixture de repo git **real**.
+- [x] `make quality` verde.
+
+**Decisão sobre a ação 2 (doc/config), sem discordar de KG:** implementada exatamente como pedido —
+nova categoria `review_doc_config`, ação reportada `review`, nunca `delete`, nunca tocada por
+`--apply`. Não usei o critério "só CLAUDE.md" literal do `CLAUDE.md` §1 (esse exemplo já cai em
+`isDocsFile`, `.md`); estendi para uma lista conservadora de extensões/arquivos de config
+(`.yaml`, `.yml`, `.json`, `.toml`, `.ini`, `.cfg`, `.gitignore`, `.gitattributes`,
+`.editorconfig`, `trackfw.yaml`, `LICENSE`) porque uma classificação errada aqui nunca causa uma
+deleção — só muda entre duas categorias que ambas mantêm a branch (`review_doc_config` vs
+`pending_work`). Risco assimétrico: nenhum.
+
+**Evidência (2026-08-18, Apolo):**
+
+Implementação — 3 ações fechadas nos 3 CLIs:
+1. **`fetch origin --prune`** — `internal/commands/branch_prune.go` (`runBranchPrune`, antes do
+   `rev-parse --verify -q origin/main`), `npm/src/branch/prune.js`,
+   `pypi/trackfw/commands/branch.py` (`run_branch_prune`). Falha só imprime aviso (mensagem
+   idêntica nos 3 CLIs) e a avaliação continua contra o `origin/main` já resolvível localmente —
+   diferente do `ship.go`, que pula o check inteiro na falha do fetch.
+2. **Categoria `review_doc_config`** — nova decisão em `evaluateBranchIntegration` /
+   `evaluateBranchIntegration` / `evaluate_branch_integration`, roteada quando `diverg` é
+   inteiramente doc/config (`isDocOrConfigPath` nos 3 CLIs). Ação reportada `review`; nunca
+   `deletable()`; resumo próprio no relatório (`N branch(es) need manual review...`).
+3. **`-d` antes de `-D`** — `defaultDeleteBranch` / `defaultDeleteBranch` / `_default_delete_branch`
+   tentam `-d` primeiro, caem para `-D` só quando `-d` recusa.
+4. **`Long`/`description`/`addHelpText`** reescritos nos 3 CLIs — não afirmam mais "offline
+   command" nem "replaces the 6-step procedure" sem qualificação; descrevem o fetch best-effort, a
+   categoria de review e a ordem `-d`→`-D`.
+
+Testes novos (mesmo padrão do ML-1A — fixture git real, sem mock de `git`):
+- Go: `internal/commands/branch_prune_test.go` — `TestEvaluateBranchIntegration_ReviewDocConfig_NotDeletable`,
+  `TestEvaluateBranchIntegration_MixedDocAndCode_StaysPendingWork`,
+  `TestRunBranchPrune_FetchFails_WarnsButStillEvaluates`,
+  `TestDefaultDeleteBranch_TriesDashDBeforeDashD_BothCodepaths` (repo real, ambos os caminhos),
+  `TestRunBranchPrune_RealGitRepo_StaleOriginMain_IsConservativeNotWrong` (repo real: dois clones,
+  URL do remoto quebrada para forçar falha do fetch, branch verdadeiramente integrada upstream mas
+  invisível ao `origin/main` defasado é reportada `keep`, e vira `delete`-worthy assim que um fetch
+  real acontece — mesma branch, só a atualidade do ref muda).
+- Node.js: `npm/tests/branch-prune.test.js` — mesmos cenários, mesmo padrão de fixture real.
+- Python: `pypi/tests/test_branch_prune.py` — idem.
+- Gate de paridade `scripts/check-branch-prune-parity.sh` ganhou 2 cenários novos (repositório git
+  real, byte-a-byte nos 3 binários): `review-doc-config-only` e `stale-origin-main-conservative`.
+  Os 4 cenários pré-existentes do ML-1A continuam passando sem alteração (o `fetch` novo é
+  transparente contra o bare `origin` local do fixture).
+
+Não-regressão do ML-1A: os 3 testes de fixture com `f1.md` (que agora cairiam em
+`review_doc_config` em vez de `pending_work`, já que `.md` é doc) foram ajustados para `f1.go` —
+preservando a intenção original do teste (trabalho de código genuinamente pendente), sem alterar
+nenhum comportamento de produção do ML-1A.
+
+Comandos de validação (saída bruta):
+```
+$ TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 go test -timeout 3m ./...
+ok  	github.com/kgsaran/trackfw/internal/commands	6.898s
+... (todos os pacotes ok)
+
+$ cd npm && node --test tests/*.test.js
+ℹ tests 682
+ℹ pass 682
+ℹ fail 0
+
+$ PYTHONPATH=pypi python3 -m pytest pypi/tests -q
+1361 passed, 28 subtests passed in 29.24s
+
+$ GO_BIN=bin/trackfw bash scripts/check-branch-prune-parity.sh
+OK   [branch-prune-parity/dry-run-default]
+OK   [branch-prune-parity/apply-deletes-integrated]
+OK   [branch-prune-parity/apply-never-deletes-current-branch]
+OK   [branch-prune-parity/offline-refuses]
+OK   [branch-prune-parity/review-doc-config-only]
+OK   [branch-prune-parity/stale-origin-main-conservative]
+All check-branch-prune-parity.sh scenarios passed.
+
+$ make quality
+[exited with code 0]
+
+$ ./bin/trackfw validate
+19 warning(s), 0 violations  (mesmos pré-existentes do ML-1A, nenhum novo)
+```
+
+`docs/cli-parity.md` — seção `trackfw branch prune` reescrita: fetch best-effort, categoria
+`review_doc_config`, ordem `-d`→`-D`, tabela de comando atualizada, 2 cenários novos descritos no
+gate de paridade.
+
+**Fora de escopo, confirmado nesta sessão:** Wave 2 (ML-2A, convergência do
+`detectPendingSquashMerges` do `ship`) — não implementado, `ship.go`/`ship/runner.js`/`ship/runner.py`
+não foram tocados. Nenhum `git commit`/`push`/`branch` executado por mim — autoridade exclusiva do
+`trackfw_architect`.
+
+---
+
+### Auditoria do ML-1B — as 3 ações entregues, mas a MINHA regra de doc/config está errada
+
+As três ações do ML-1B foram entregues e o agente **acertou ao não copiar** o `CLAUDE.md`
+literalmente: `review` em vez de `delete`, nunca apagando. `-d` antes de `-D`, `fetch --prune`
+não-bloqueante e avisado, help corrigido.
+
+**Mas a regra que eu especifiquei classifica errado.** Medido em fixture git real:
+
+```
+feat/doc-real   review   only doc/config files diverge — probable housekeeping,
+                         confirm and delete manually
+```
+
+Essa branch tem documentação **nova, nunca mergeada**. Chamá-la de "provável housekeeping" e
+sugerir apagar é **conselho errado sobre trabalho real**. Não apaga sozinha — a falha fechada
+segura —, mas o usuário segue o conselho da ferramenta.
+
+**Erro meu de especificação, não do agente.** A regra do `CLAUDE.md` pressupunha divergência
+**residual** de uma branch **já integrada** (a `main` avançou depois). Eu a transportei sem esse
+pressuposto, e ela passou a capturar também branch **nunca integrada** cujo trabalho é doc.
+
+**Discriminante barato, medido e verificado:**
+
+```
+feat/doc-real         touched: [docs/guia-novo.md]  diverg: [docs/guia-novo.md]   IGUAIS
+feat/codigo-pendente  touched: [main.go]            diverg: [main.go]             IGUAIS
+```
+
+`diverg == touched` ⇒ **nenhum** arquivo da branch está na main ⇒ nada foi integrado ⇒ é trabalho
+pendente, qualquer que seja o tipo de arquivo. O resíduo de housekeeping tem `diverg ⊊ touched` —
+parte entrou, sobrou ruído.
+
+### ML-1C — `review_doc_config` só quando houve integração parcial
+**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+
+**Ação:** `review_doc_config` passa a exigir **`diverg` como subconjunto PRÓPRIO de `touched`**.
+Quando `diverg == touched`, é `pending_work`, mesmo sendo tudo doc/config — nada da branch entrou
+na main.
+
+**Critérios de aceite:**
+- [ ] Branch com doc **nova e nunca mergeada** (`diverg == touched`) → `keep`/`pending_work`, **não** `review`.
+- [ ] Branch integrada com **resíduo** só de doc (`diverg ⊊ touched`) → `review`, com a mensagem atual.
+- [ ] Nenhuma das duas vira `delete` — a falha fechada não pode afrouxar.
+- [ ] Não-regressão completa dos ML-1A e 1B.
+- [ ] Fixture git real cobrindo **os dois** casos, lado a lado.
+- [ ] Paridade nos 3 CLIs; `make quality` verde.
 
 ---
 

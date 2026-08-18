@@ -100,13 +100,15 @@ func TestEvaluateBranchIntegration_ContentIdentical_Deletable(t *testing.T) {
 }
 
 func TestEvaluateBranchIntegration_PendingWork_NotDeletable(t *testing.T) {
+	// f1.go (not f1.md) — pending_work must be reserved for genuine code changes; a .md file here
+	// would instead route to review_doc_config (see TestEvaluateBranchIntegration_ReviewDocConfig).
 	gitExec := fakeGitExec(t, map[string]struct {
 		out string
 		err error
 	}{
 		"merge-base origin/main feat/pending":                   {"abc123", nil},
-		"diff --name-only -z abc123 feat/pending":               {"f1.md\x00", nil},
-		"diff --name-only -z origin/main feat/pending -- f1.md": {"f1.md\x00", nil},
+		"diff --name-only -z abc123 feat/pending":               {"f1.go\x00", nil},
+		"diff --name-only -z origin/main feat/pending -- f1.go": {"f1.go\x00", nil},
 	})
 	eval := evaluateBranchIntegration("feat/pending", gitExec)
 	if eval.Decision != branchPruneDecisionPendingWork {
@@ -115,8 +117,56 @@ func TestEvaluateBranchIntegration_PendingWork_NotDeletable(t *testing.T) {
 	if eval.Decision.deletable() {
 		t.Fatal("expected pending_work to never be deletable")
 	}
-	if !strings.Contains(eval.Reason, "f1.md") {
+	if !strings.Contains(eval.Reason, "f1.go") {
 		t.Fatalf("expected reason to name the diverging file, got %q", eval.Reason)
+	}
+}
+
+func TestEvaluateBranchIntegration_ReviewDocConfig_NotDeletable(t *testing.T) {
+	// AC "Divergência só em doc/config": every diverging file is doc/config (CLAUDE.md, plus a
+	// YAML config file), never real code — must route to review_doc_config, not pending_work,
+	// and must never be deletable (KG's explicit instruction: NOT auto-delete, unlike the
+	// CLAUDE.md §1 "housekeeping, apagar" step, which assumed a human already in the loop).
+	gitExec := fakeGitExec(t, map[string]struct {
+		out string
+		err error
+	}{
+		"merge-base origin/main feat/docs-only":                                    {"abc123", nil},
+		"diff --name-only -z abc123 feat/docs-only":                                {"CLAUDE.md\x00trackfw.yaml\x00", nil},
+		"diff --name-only -z origin/main feat/docs-only -- CLAUDE.md trackfw.yaml": {"CLAUDE.md\x00trackfw.yaml\x00", nil},
+	})
+	eval := evaluateBranchIntegration("feat/docs-only", gitExec)
+	if eval.Decision != branchPruneDecisionReviewDocConfig {
+		t.Fatalf("expected review_doc_config, got %v (%s)", eval.Decision, eval.Reason)
+	}
+	if eval.Decision.deletable() {
+		t.Fatal("review_doc_config must never be deletable — KG's explicit instruction, do not auto-delete doc/config-only divergence")
+	}
+	if !strings.Contains(eval.Reason, "CLAUDE.md") || !strings.Contains(eval.Reason, "trackfw.yaml") {
+		t.Fatalf("expected reason to name the diverging files, got %q", eval.Reason)
+	}
+	if !strings.Contains(eval.Reason, "confirm and delete manually") {
+		t.Fatalf("expected reason to orient the user toward manual confirmation, got %q", eval.Reason)
+	}
+}
+
+func TestEvaluateBranchIntegration_MixedDocAndCode_StaysPendingWork(t *testing.T) {
+	// A single non-doc/config file in diverg must keep the branch in pending_work, not
+	// review_doc_config — the classification is all-or-nothing, never partial credit.
+	gitExec := fakeGitExec(t, map[string]struct {
+		out string
+		err error
+	}{
+		"merge-base origin/main feat/mixed":                               {"abc123", nil},
+		"diff --name-only -z abc123 feat/mixed":                           {"README.md\x00main.go\x00", nil},
+		"diff --name-only -z origin/main feat/mixed -- README.md main.go": {"README.md\x00main.go\x00", nil},
+	})
+	eval := evaluateBranchIntegration("feat/mixed", gitExec)
+	if eval.Decision != branchPruneDecisionPendingWork {
+		t.Fatalf("expected pending_work (mixed doc+code), got %v (%s)", eval.Decision, eval.Reason)
+	}
+	if eval.Decision.deletable() {
+		t.Fatal("pending_work must never be deletable")
 	}
 }
 
@@ -173,6 +223,8 @@ func TestRunBranchPrune_DryRun_NeverDeletes_MainNeverCandidate(t *testing.T) {
 	deps.gitExec = func(args ...string) (string, error) {
 		key := strings.Join(args, " ")
 		switch key {
+		case "fetch origin --prune":
+			return "", nil
 		case "rev-parse --verify -q origin/main":
 			return "abc123", nil
 		case "merge-base origin/main feat/integrated":
@@ -182,9 +234,9 @@ func TestRunBranchPrune_DryRun_NeverDeletes_MainNeverCandidate(t *testing.T) {
 		case "merge-base origin/main feat/pending":
 			return "abc123", nil
 		case "diff --name-only -z abc123 feat/pending":
-			return "f1.md\x00", nil
-		case "diff --name-only -z origin/main feat/pending -- f1.md":
-			return "f1.md\x00", nil // pending
+			return "f1.go\x00", nil
+		case "diff --name-only -z origin/main feat/pending -- f1.go":
+			return "f1.go\x00", nil // pending
 		}
 		return "", fmt.Errorf("unexpected gitExec call: %v", args)
 	}
@@ -229,6 +281,8 @@ func TestRunBranchPrune_Apply_DeletesOnlyIntegrated_KeepsPending(t *testing.T) {
 	deps.gitExec = func(args ...string) (string, error) {
 		key := strings.Join(args, " ")
 		switch key {
+		case "fetch origin --prune":
+			return "", nil
 		case "rev-parse --verify -q origin/main":
 			return "abc123", nil
 		case "merge-base origin/main feat/integrated":
@@ -238,9 +292,9 @@ func TestRunBranchPrune_Apply_DeletesOnlyIntegrated_KeepsPending(t *testing.T) {
 		case "merge-base origin/main feat/pending":
 			return "abc123", nil
 		case "diff --name-only -z abc123 feat/pending":
-			return "f1.md\x00", nil
-		case "diff --name-only -z origin/main feat/pending -- f1.md":
-			return "f1.md\x00", nil
+			return "f1.go\x00", nil
+		case "diff --name-only -z origin/main feat/pending -- f1.go":
+			return "f1.go\x00", nil
 		}
 		return "", fmt.Errorf("unexpected gitExec call: %v", args)
 	}
@@ -260,6 +314,53 @@ func TestRunBranchPrune_Apply_DeletesOnlyIntegrated_KeepsPending(t *testing.T) {
 	got := out.String()
 	if !strings.Contains(got, "deleted 1 branch(es): feat/integrated") {
 		t.Fatalf("expected apply summary naming feat/integrated, got: %q", got)
+	}
+}
+
+func TestRunBranchPrune_FetchFails_WarnsButStillEvaluates(t *testing.T) {
+	// AC "fetch origin --prune roda antes da avaliação; falha é não-bloqueante e avisada": unlike
+	// `git fetch` failing entirely aborting the check (ship.go's posture), branch prune must
+	// still evaluate every branch against whatever origin/main ref is already resolvable
+	// locally, and must print a warning explaining the data may be stale.
+	out := &bytes.Buffer{}
+	deps := makePruneDeps(out)
+	fetchCalled := false
+	deps.gitExec = func(args ...string) (string, error) {
+		key := strings.Join(args, " ")
+		switch key {
+		case "fetch origin --prune":
+			fetchCalled = true
+			return "", fmt.Errorf("fatal: unable to access origin (simulated offline)")
+		case "rev-parse --verify -q origin/main":
+			return "abc123", nil // a previous, successful fetch already resolved this ref
+		case "merge-base origin/main feat/integrated":
+			return "abc123", nil
+		case "diff --name-only -z abc123 feat/integrated":
+			return "", nil
+		case "merge-base origin/main feat/pending":
+			return "abc123", nil
+		case "diff --name-only -z abc123 feat/pending":
+			return "f1.go\x00", nil
+		case "diff --name-only -z origin/main feat/pending -- f1.go":
+			return "f1.go\x00", nil
+		}
+		return "", fmt.Errorf("unexpected gitExec call: %v", args)
+	}
+
+	err := runBranchPrune(false, deps)
+	if err != nil {
+		t.Fatalf("fetch failure must not abort the command: %v", err)
+	}
+	if !fetchCalled {
+		t.Fatal("expected git fetch origin --prune to have been attempted")
+	}
+	got := out.String()
+	if !strings.Contains(strings.ToLower(got), "warning") || !strings.Contains(got, "fetch") {
+		t.Fatalf("expected a warning mentioning the fetch failure, got: %q", got)
+	}
+	// Evaluation must still have proceeded normally — feat/integrated still reported deletable.
+	if !strings.Contains(got, "would delete") || !strings.Contains(got, "feat/integrated") {
+		t.Fatalf("expected evaluation to proceed despite fetch failure, got: %q", got)
 	}
 }
 
@@ -483,5 +584,269 @@ func TestEvaluateBranchIntegration_RealGitRepo_SquashMergeAndStaleDiscriminant(t
 	}
 	if !found {
 		t.Fatal("feat/pending must still exist — it was never a delete candidate")
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// defaultDeleteBranch — -d tried before -D, real git repository (both codepaths).
+// ────────────────────────────────────────────────────────────────────────────
+
+func TestDefaultDeleteBranch_TriesDashDBeforeDashD_BothCodepaths(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available in PATH")
+	}
+
+	work := t.TempDir()
+	run := func(dir string, args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(),
+			"GIT_CONFIG_GLOBAL="+filepath.Join(work, "empty-gitconfig"),
+			"GIT_CONFIG_SYSTEM=/dev/null",
+			"GIT_TERMINAL_PROMPT=0",
+			"HOME="+work,
+		)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v (dir=%s) failed: %v\n%s", args, dir, err, out)
+		}
+		return string(out)
+	}
+	if err := os.WriteFile(filepath.Join(work, "empty-gitconfig"), []byte(""), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	repo := filepath.Join(work, "repo")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	run(repo, "init", "-q", "-b", "main")
+	run(repo, "config", "user.email", "falsify@trackfw.test")
+	run(repo, "config", "user.name", "trackfw falsify")
+	run(repo, "config", "commit.gpgsign", "false")
+	if err := os.WriteFile(filepath.Join(repo, "base.txt"), []byte("base\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run(repo, "add", "base.txt")
+	run(repo, "commit", "-q", "-m", "base")
+
+	gitExec := func(args ...string) (string, error) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repo
+		cmd.Env = append(os.Environ(),
+			"GIT_CONFIG_GLOBAL="+filepath.Join(work, "empty-gitconfig"),
+			"GIT_CONFIG_SYSTEM=/dev/null",
+			"HOME="+work,
+		)
+		out, err := cmd.Output()
+		return strings.TrimSpace(string(out)), err
+	}
+
+	// Codepath 1: feat/ff has fast-forward ancestry with main (a plain merge, no squash) — `git
+	// branch -d` must succeed on its own, without ever needing -D.
+	run(repo, "checkout", "-q", "-b", "feat/ff")
+	if err := os.WriteFile(filepath.Join(repo, "ff.txt"), []byte("ff\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run(repo, "add", "ff.txt")
+	run(repo, "commit", "-q", "-m", "feat/ff work")
+	run(repo, "checkout", "-q", "main")
+	run(repo, "merge", "-q", "--no-ff", "feat/ff") // fast-forward-able ancestry preserved
+
+	if err := defaultDeleteBranch(gitExec, "feat/ff"); err != nil {
+		t.Fatalf("expected defaultDeleteBranch to succeed via plain -d, got: %v", err)
+	}
+	branches, err := defaultListLocalBranches(gitExec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, b := range branches {
+		if b == "feat/ff" {
+			t.Fatal("feat/ff should have been deleted by defaultDeleteBranch (via -d)")
+		}
+	}
+
+	// Codepath 2: feat/squash has NO ancestry with main (squash-merge) — plain `git branch -d`
+	// refuses; defaultDeleteBranch must fall back to -D and still succeed.
+	run(repo, "checkout", "-q", "-b", "feat/squash")
+	if err := os.WriteFile(filepath.Join(repo, "squash.txt"), []byte("squash\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run(repo, "add", "squash.txt")
+	run(repo, "commit", "-q", "-m", "feat/squash work")
+	run(repo, "checkout", "-q", "main")
+	run(repo, "merge", "-q", "--squash", "feat/squash")
+	run(repo, "commit", "-q", "-m", "squash-merge feat/squash")
+
+	if _, err := exec.Command("git", "-C", repo, "branch", "-d", "feat/squash").CombinedOutput(); err == nil {
+		t.Fatal("test setup invalid: git branch -d unexpectedly succeeded on a squash-merged branch")
+	}
+	if err := defaultDeleteBranch(gitExec, "feat/squash"); err != nil {
+		t.Fatalf("expected defaultDeleteBranch to fall back to -D and succeed, got: %v", err)
+	}
+	branches, err = defaultListLocalBranches(gitExec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, b := range branches {
+		if b == "feat/squash" {
+			t.Fatal("feat/squash should have been deleted by defaultDeleteBranch (via fallback -D)")
+		}
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Stale origin/main — real git repository. Proves the AC "origin/main defasado leva a mais
+// recusas, nunca a deleção indevida": when `git fetch origin --prune` fails (simulated by
+// breaking the remote URL), evaluateBranchIntegration keeps using whatever origin/main ref is
+// already resolvable locally. A branch that has, in fact, since been integrated upstream (but
+// whose integration this stale ref cannot see) is reported KEPT (pending_work), never wrongly
+// offered for deletion — the false negative this fixture proves is safe, in contrast to a false
+// positive, which would not be.
+// ────────────────────────────────────────────────────────────────────────────
+
+func TestRunBranchPrune_RealGitRepo_StaleOriginMain_IsConservativeNotWrong(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available in PATH")
+	}
+
+	work := t.TempDir()
+	bareDir := filepath.Join(work, "origin.git")
+	cloneDir := filepath.Join(work, "clone")
+	otherCloneDir := filepath.Join(work, "other-clone")
+
+	run := func(dir string, args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(),
+			"GIT_CONFIG_GLOBAL="+filepath.Join(work, "empty-gitconfig"),
+			"GIT_CONFIG_SYSTEM=/dev/null",
+			"GIT_TERMINAL_PROMPT=0",
+			"HOME="+work,
+		)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v (dir=%s) failed: %v\n%s", args, dir, err, out)
+		}
+		return string(out)
+	}
+	if err := os.WriteFile(filepath.Join(work, "empty-gitconfig"), []byte(""), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Bare "origin".
+	if err := os.MkdirAll(bareDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	run(bareDir, "init", "-q", "--bare", "-b", "main")
+
+	// Our clone under test.
+	if err := os.MkdirAll(cloneDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	run(work, "clone", "-q", bareDir, cloneDir)
+	run(cloneDir, "config", "user.email", "falsify@trackfw.test")
+	run(cloneDir, "config", "user.name", "trackfw falsify")
+	run(cloneDir, "config", "commit.gpgsign", "false")
+	run(cloneDir, "config", "core.hooksPath", "/dev/null")
+
+	if err := os.WriteFile(filepath.Join(cloneDir, "base.txt"), []byte("base\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run(cloneDir, "add", "base.txt")
+	run(cloneDir, "commit", "-q", "-m", "base commit")
+	run(cloneDir, "push", "-q", "origin", "main")
+
+	// In our clone: branch feat/mine, touches mine.txt, never pushed/merged from here.
+	run(cloneDir, "checkout", "-q", "-b", "feat/mine")
+	if err := os.WriteFile(filepath.Join(cloneDir, "mine.txt"), []byte("mine v1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run(cloneDir, "add", "mine.txt")
+	run(cloneDir, "commit", "-q", "-m", "feat/mine work")
+	run(cloneDir, "checkout", "-q", "main")
+
+	// Our clone's origin/main is now frozen at "base commit" — we deliberately never fetch again
+	// in this clone, simulating a fetch failure / offline session from this point on.
+
+	// Meanwhile, "someone else" merges the exact same content upstream via a second, independent
+	// clone — main advances on the bare remote to include mine.txt, unbeknownst to our clone.
+	if err := os.MkdirAll(otherCloneDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	run(work, "clone", "-q", bareDir, otherCloneDir)
+	run(otherCloneDir, "config", "user.email", "falsify@trackfw.test")
+	run(otherCloneDir, "config", "user.name", "trackfw falsify")
+	run(otherCloneDir, "config", "commit.gpgsign", "false")
+	if err := os.WriteFile(filepath.Join(otherCloneDir, "mine.txt"), []byte("mine v1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run(otherCloneDir, "add", "mine.txt")
+	run(otherCloneDir, "commit", "-q", "-m", "someone else lands the same content upstream")
+	run(otherCloneDir, "push", "-q", "origin", "main")
+
+	// Break the remote URL in our clone so `git fetch origin --prune` fails deterministically —
+	// our clone's origin/main stays stale at "base commit", never learning about the push above.
+	run(cloneDir, "remote", "set-url", "origin", filepath.Join(work, "does-not-exist.git"))
+
+	gitExec := func(args ...string) (string, error) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = cloneDir
+		cmd.Env = append(os.Environ(),
+			"GIT_CONFIG_GLOBAL="+filepath.Join(work, "empty-gitconfig"),
+			"GIT_CONFIG_SYSTEM=/dev/null",
+			"HOME="+work,
+		)
+		out, err := cmd.Output()
+		return strings.TrimSpace(string(out)), err
+	}
+
+	out := &bytes.Buffer{}
+	deps := branchPruneDeps{
+		gitExec:           gitExec,
+		listLocalBranches: defaultListLocalBranches,
+		currentBranch:     defaultCurrentBranchForPrune,
+		worktreeBranches:  defaultWorktreeBranches,
+		deleteBranch: func(func(args ...string) (string, error), string) error {
+			t.Fatal("dry-run must never call deleteBranch")
+			return nil
+		},
+		out: out,
+	}
+
+	if err := runBranchPrune(false, deps); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	got := out.String()
+	if !strings.Contains(strings.ToLower(got), "warning") {
+		t.Fatalf("expected a fetch-failure warning (remote URL was broken deliberately), got: %q", got)
+	}
+	// The core of this AC: feat/mine, though truly integrated upstream, must be reported KEPT
+	// (pending_work against the stale local origin/main) — never offered for deletion.
+	for _, line := range strings.Split(got, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "feat/mine ") {
+			if strings.Contains(line, "delete") {
+				t.Fatalf("stale origin/main must never make feat/mine look deletable, got line: %q", line)
+			}
+			if !strings.Contains(line, "keep") {
+				t.Fatalf("expected feat/mine reported keep (pending, stale data), got line: %q", line)
+			}
+		}
+	}
+
+	// Contrast: with a working fetch, the exact same branch (unchanged locally) becomes
+	// deletable — proving the staleness above was the cause of the conservative outcome, not a
+	// pre-existing bug.
+	run(cloneDir, "remote", "set-url", "origin", bareDir)
+	run(cloneDir, "fetch", "-q", "origin")
+	eval := evaluateBranchIntegration("feat/mine", gitExec)
+	if eval.Decision != branchPruneDecisionIdentical {
+		t.Fatalf("after a real fetch, expected feat/mine to become content_identical (deletable), got %v (%s)", eval.Decision, eval.Reason)
+	}
+	if !eval.Decision.deletable() {
+		t.Fatal("after a real fetch, feat/mine must be deletable — confirms staleness (not a bug) caused the earlier conservative result")
 	}
 }

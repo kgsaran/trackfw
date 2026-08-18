@@ -951,15 +951,39 @@ message is a scenario the gate is asserted to reject.
 
 ## `trackfw branch prune`
 
-`trackfw branch prune [--apply]` replaces the 6-step manual procedure documented in `CLAUDE.md`
-§1 ("Uma branch ativa por vez") with a deterministic, offline command
+`trackfw branch prune [--apply]` automates the "one active branch at a time" check documented in
+`CLAUDE.md` §1 ("Uma branch ativa por vez")
 (`docs/req/REQ-2026-08-18-trackfw-branch-prune-apaga-branch-local-ja-integrada-com-deteccao-correta-de-squash-merge.md`).
-It decides whether each local branch is safe to delete relative to `origin/main` — never a forge,
-never the network — and reports the decision for **every** local branch, always, with a reason.
+It decides whether each local branch is safe to delete relative to `origin/main` — never a forge —
+and reports the decision for **every** local branch, always, with a reason. It does not remove
+human judgment from every case: a branch whose only remaining divergence is doc/config files is
+flagged for manual review, never deleted automatically (see "The review_doc_config category"
+below).
 
 **`--dry-run` is the default.** Without `--apply`, nothing is ever deleted, even a branch decided
 as clearly integrated — the command only reports. `--apply` is the explicit opt-in required to
-actually run `git branch -D`.
+actually run `git branch -d`/`-D` (see "Deletion: `-d` before `-D`" below).
+
+### `git fetch origin --prune` — best-effort, non-blocking, always warned on failure
+
+Per `CLAUDE.md` §1 step 1, the command runs `git fetch origin --prune` before evaluating anything.
+Unlike `trackfw ship`'s squash-merge check (`ship.go`), which **skips its check entirely** when
+fetch fails, `branch prune` **keeps evaluating** against whatever `origin/main` ref is already
+resolvable locally — offline is a legitimate use case, and skipping evaluation entirely would
+regress AC6 (offline must still report, just never delete). Failure prints a warning naming the
+fetch failure and only that; it never aborts the command.
+
+A stale `origin/main` only ever makes the result **more conservative** — never less: it can *miss*
+a branch that was in fact integrated since the last fetch (reporting it `keep` when a fresh fetch
+would show it `delete`-worthy), but it can never report a branch as deletable that a fresh fetch
+would show as pending. This holds because staleness only means `diverg` is computed against an
+*older* (but still valid) snapshot of `origin/main`'s content — a merge landing later can only
+ever remove divergence that a stale ref still sees, never introduce divergence that a fresh ref
+would not have shown. Proven with a real-git fixture in all three CLIs (`TestRunBranchPrune_RealGitRepo_StaleOriginMain_IsConservativeNotWrong`
+and Node/Python equivalents): a branch genuinely merged upstream by someone else is reported
+`pending_work` (kept) while the local clone's `origin/main` is stale after a broken remote URL,
+and becomes `content_identical` (deletable) the moment a real fetch succeeds — same branch, same
+local commits, only the freshness of `origin/main` changed.
 
 ### Why not `git branch -d`, and why not a naive `git diff`
 
@@ -984,8 +1008,31 @@ diverg  = git diff --name-only -z origin/main <branch> -- touched  (what still d
 |---|---|---|---|
 | empty | — | `no_own_work` | yes — the `git branch -d` ancestry false negative |
 | non-empty | empty | `content_identical` | yes — the naive-diff stale-but-integrated false positive |
-| non-empty | non-empty | `pending_work` | no — named in the report |
+| non-empty | non-empty, all doc/config | `review_doc_config` | **no** — flagged for manual review (see below) |
+| non-empty | non-empty, any non-doc/config file | `pending_work` | no — named in the report |
 | (merge-base fails) | — | `no_merge_base` | no — refuses, unrelated history or bad ref |
+
+### The `review_doc_config` category — flagged, never auto-deleted
+
+`CLAUDE.md` §1's own manual procedure treats a divergence limited to doc/config files (its
+worked example: only `CLAUDE.md` diverges) as "housekeeping, apagar" — but that step assumes a
+**human already reading the diff** before acting. A destructive command has no human in the loop
+by construction, so this command deliberately narrows that step: a branch whose `diverg` is
+**every file doc/config** (never mixed with even one non-doc/config file) is classified
+`review_doc_config`, reported with action `review` (not `delete`, not `keep`'s plain wording), and
+is **never** offered for deletion by `--apply` — regardless of how confident the classification is.
+
+"Doc/config" is decided by `isDocOrConfigPath` (Go), `isDocOrConfigPath` (Node.js),
+`is_doc_or_config_path` (Python): the existing doc-path check (`docs/`, `vault/`, or a `.md`
+extension) plus a conservative, best-effort list of non-runtime config extensions
+(`.yaml`, `.yml`, `.json`, `.toml`, `.ini`, `.cfg`) and filenames (`.gitignore`,
+`.gitattributes`, `.editorconfig`, `trackfw.yaml`, `LICENSE`). Misclassification here can never
+cause a deletion — a file wrongly counted as doc/config only changes whether a *kept* branch is
+reported as `review_doc_config` or `pending_work`; a single non-doc/config file anywhere in
+`diverg` keeps the branch in `pending_work`, all-or-nothing.
+
+The report groups these branches into a summary line separate from the `--apply`/dry-run delete
+summary: `N branch(es) need manual review (only doc/config diverges, never auto-deleted): <names>`.
 
 Both `diff` calls use `-z` (NUL-separated, unquoted paths) — without it, a filename with a space
 or non-ASCII byte would be mis-split by the pathspec on the second call, silently narrowing
@@ -1010,14 +1057,28 @@ With `--apply`, current-branch and worktree status are **re-checked immediately 
 delete**, not just during the report phase — belt-and-suspenders against the branch changing
 state mid-run.
 
+### Deletion: `-d` before `-D`
+
+`defaultDeleteBranch` (Go), `defaultDeleteBranch` (Node.js), `_default_delete_branch` (Python) try
+`git branch -d <name>` first. When the branch also happens to have fast-forward ancestry with
+`main` (a plain merge, not a squash), `-d` succeeds on its own — confirming the integration via
+git's own independent ancestry check too, at no extra cost. It falls back to `git branch -D
+<name>` only when `-d` refuses, the **expected** outcome for squash-merged branches (no ancestry
+by construction, per the "Why not `git branch -d`" section above). All safety already lives in
+`evaluateBranchIntegration` and the current-branch/worktree re-check immediately before this call
+— which flag ultimately performs the deletion carries no additional safety meaning. Both codepaths
+are proven with a real-git fixture in all three CLIs (a plain-merge branch deleted via `-d` alone;
+a squash-merged branch where `-d` is first confirmed to fail, then `_default_delete_branch` falls
+back to `-D` and succeeds).
+
 ### Offline / no remote — fails closed
 
 The only ref this command consults is `origin/main`, checked once via
-`git rev-parse --verify -q origin/main` before evaluating anything. If it cannot be resolved (no
-remote configured, or `origin/main` was never fetched), the **whole command** refuses and deletes
-nothing — no fallback to a local `main`, no network fetch attempted. The human-readable reason
-goes to stdout; a bare `branch prune: origin/main not resolvable` goes to stderr (mirroring
-`trackfw branch new`'s stdout/stderr split), exit 1.
+`git rev-parse --verify -q origin/main` **after** the best-effort fetch above. If it cannot be
+resolved at all (no remote configured, or `origin/main` was never fetched even before this run),
+the **whole command** refuses and deletes nothing — no fallback to a local `main`. The
+human-readable reason goes to stdout; a bare `branch prune: origin/main not resolvable` goes to
+stderr (mirroring `trackfw branch new`'s stdout/stderr split), exit 1.
 
 ### Command surface
 
@@ -1026,8 +1087,8 @@ goes to stdout; a bare `branch prune: origin/main not resolvable` goes to stderr
 | Invocation | `trackfw branch prune [--apply]` |
 | `--apply` | Actually delete branches decided as integrated. Default: report only, delete nothing (equivalent to an implicit `--dry-run`) |
 | Exit 0 | Ran to completion — includes the case where `--apply` deleted zero branches |
-| Exit 1 | `origin/main` unresolvable (offline, no remote, never fetched), or local branch listing failed |
-| Deletion | `git branch -D` (never `-d` — see above); only for branches decided `no_own_work` or `content_identical`, and never the current/worktree/default branch |
+| Exit 1 | `origin/main` unresolvable (offline with no prior fetch, no remote, never fetched), or local branch listing failed |
+| Deletion | `git branch -d`, falling back to `-D` only when `-d` refuses (see above); only for branches decided `no_own_work` or `content_identical`, and never the current/worktree/default branch, and never `review_doc_config` |
 
 ### Parity gate
 
@@ -1043,6 +1104,13 @@ byte-identical stdout/stderr/exit code across all three runtimes for:
 3. **`--apply` with the integrated branch checked out as current** — never deletes it, reports
    the current-branch reason instead.
 4. **Offline** (fresh repo, no remote) — refuses everything, exit 1, deletes nothing.
+5. **Review, doc/config-only** — a branch whose only divergence is `README.md` is reported action
+   `review` (never `delete`), the manual-review summary line is present, and dry-run deletes
+   nothing.
+6. **Stale `origin/main`, conservative** — a broken remote URL makes `git fetch origin --prune`
+   fail inside the command; a branch genuinely merged upstream by an independent clone (invisible
+   to the stale local `origin/main`) is reported `keep`, never `delete`; the fetch-failure warning
+   is present.
 
 Wired into `make quality` via the `parity` target.
 

@@ -72,10 +72,55 @@ BRANCH_PRUNE_DECISION_PENDING_WORK = "pending_work"
 BRANCH_PRUNE_DECISION_NO_MERGE_BASE = "no_merge_base"
 BRANCH_PRUNE_DECISION_EVAL_ERROR = "eval_error"
 
+# review_doc_config é uma categoria NÃO apagável, distinta de pending_work: todo arquivo
+# divergente é doc/config (is_doc_or_config_path), então é provavelmente resíduo de housekeeping
+# de um squash-merge em vez de trabalho pendente genuíno — mas nunca é apagado automaticamente.
+# O próprio CLAUDE.md §1 trata esse caso como "housekeeping, apagar", mas com um humano já no
+# laço lendo o diff; um comando destrutivo não tem humano no laço por construção, então a
+# REQ-2026-08-18 (ML-1B) restringe deliberadamente esse passo para "sinalizar para confirmação"
+# em vez de "apagar automaticamente". Ver branch_prune_is_deletable abaixo.
+BRANCH_PRUNE_DECISION_REVIEW_DOC_CONFIG = "review_doc_config"
+
 _BRANCH_PRUNE_DELETABLE_DECISIONS = {
     BRANCH_PRUNE_DECISION_NO_OWN_WORK,
     BRANCH_PRUNE_DECISION_IDENTICAL,
 }
+
+# _DOC_CONFIG_EXTENSIONS / _DOC_CONFIG_BASENAMES espelham
+# internal/commands/branch_prune.go's branchPruneDocConfigExtensions/branchPruneDocConfigBasenames
+# — deliberadamente conservador e best-effort. Classificar mal um arquivo aqui nunca causa uma
+# deleção: só muda em qual categoria não-apagável (review_doc_config vs pending_work) uma branch
+# mantida é reportada.
+_DOC_CONFIG_EXTENSIONS = (".yaml", ".yml", ".json", ".toml", ".ini", ".cfg")
+_DOC_CONFIG_BASENAMES = {".gitignore", ".gitattributes", ".editorconfig", "trackfw.yaml", "LICENSE"}
+
+
+def _is_docs_file(path: str) -> bool:
+    """Reporta se path vive sob docs/ ou vault/, ou tem extensão .md. Espelha
+    internal/commands/commit.go's isDocsFile (mesmo pacote lá; standalone aqui)."""
+    if path.startswith("docs/") or path.startswith("vault/"):
+        return True
+    return path.endswith(".md")
+
+
+def is_doc_or_config_path(path: str) -> bool:
+    """Reporta se path é um arquivo de doc (_is_docs_file) ou um arquivo/extensão de config
+    não-runtime bem conhecido. Usado só para rotear uma branch que seria pending_work para
+    review_doc_config — nunca para tornar algo apagável."""
+    if _is_docs_file(path):
+        return True
+    base = path.rsplit("/", 1)[-1]
+    if base in _DOC_CONFIG_BASENAMES:
+        return True
+    return any(path.endswith(ext) for ext in _DOC_CONFIG_EXTENSIONS)
+
+
+def all_doc_or_config(paths) -> bool:
+    """Reporta se todo path em paths é doc/config (is_doc_or_config_path). Lista vazia retorna
+    False."""
+    if not paths:
+        return False
+    return all(is_doc_or_config_path(p) for p in paths)
 
 
 def branch_prune_is_deletable(decision: str) -> bool:
@@ -177,6 +222,18 @@ def evaluate_branch_integration(branch: str, exec_git) -> dict:
             "diverged": [],
         }
 
+    if all_doc_or_config(diverg):
+        return {
+            "name": branch,
+            "decision": BRANCH_PRUNE_DECISION_REVIEW_DOC_CONFIG,
+            "reason": (
+                f"only doc/config files diverge from {BRANCH_PRUNE_DEFAULT_REMOTE_REF} "
+                f"({', '.join(diverg)}) — probable housekeeping, confirm and delete manually"
+            ),
+            "touched": touched,
+            "diverged": diverg,
+        }
+
     return {
         "name": branch,
         "decision": BRANCH_PRUNE_DECISION_PENDING_WORK,
@@ -221,9 +278,17 @@ def _default_worktree_branches(exec_git):
 
 
 def _default_delete_branch(exec_git, name):
-    """Roda `git branch -D <name>`. -D é intencional: -d recusa por
-    ancestralidade, exatamente o que este comando existe para contornar com
-    segurança via evaluate_branch_integration."""
+    """Tenta `git branch -d <name>` primeiro. Quando a branch também tem
+    ancestralidade fast-forward com main (um merge simples, não squash), -d tem
+    sucesso sozinho e confirma a integração pelo próprio check independente do
+    git — sem nunca precisar de -D. Cai para `git branch -D <name>` só quando
+    -d recusa, o resultado esperado para branches squash-mergeadas (sem
+    ancestralidade por construção): toda a segurança já vive em
+    evaluate_branch_integration e na reconferência imediatamente antes desta
+    chamada, não em qual flag efetivamente apaga."""
+    _, err = exec_git(["branch", "-d", name])
+    if err is None:
+        return None
     _, err = exec_git(["branch", "-D", name])
     return err
 
@@ -260,6 +325,20 @@ def run_branch_prune(
     out = out or sys.stdout
     err_out = err_out or sys.stderr
 
+    # Best-effort `git fetch origin --prune`, conforme CLAUDE.md §1 passo 1. Falha é
+    # não-bloqueante — offline é um caso de uso legítimo, a mesma postura que o check de
+    # squash-merge do `trackfw ship` já adota (ship/runner.py) — mas diferente do ship (que pula
+    # o check inteiro na falha de fetch), a avaliação abaixo continua contra qualquer ref
+    # origin/main já resolvível localmente: um ref defasado só torna o resultado MAIS
+    # conservador, nunca menos.
+    _, fetch_err = exec_git(["fetch", "origin", "--prune"])
+    if fetch_err is not None:
+        out.write(
+            "Warning: could not fetch origin (offline, no remote, or fetch failed) — "
+            "evaluating with possibly stale data; a branch merged upstream since the last "
+            "fetch may still be reported as pending.\n"
+        )
+
     _, origin_err = exec_git(["rev-parse", "--verify", "-q", BRANCH_PRUNE_DEFAULT_REMOTE_REF])
     if origin_err is not None:
         out.write(
@@ -288,6 +367,7 @@ def run_branch_prune(
     )
 
     to_delete = []
+    to_review = []
     for b in branches:
         if b == BRANCH_PRUNE_DEFAULT_LOCAL_NAME:
             ev = {"name": b, "decision": BRANCH_PRUNE_DECISION_DEFAULT_BRANCH, "reason": "default branch — never pruned"}
@@ -298,12 +378,21 @@ def run_branch_prune(
         else:
             ev = evaluate_branch_integration(b, exec_git)
 
-        action = "delete" if branch_prune_is_deletable(ev["decision"]) else "keep"
-        if action == "delete":
+        action = "keep"
+        if branch_prune_is_deletable(ev["decision"]):
+            action = "delete"
             to_delete.append(b)
+        elif ev["decision"] == BRANCH_PRUNE_DECISION_REVIEW_DOC_CONFIG:
+            action = "review"
+            to_review.append(b)
         out.write(f"  {ev['name']:<30} {action:<7} {ev['reason']}\n")
 
     out.write("\n")
+    if to_review:
+        out.write(
+            f"{len(to_review)} branch(es) need manual review (only doc/config diverges, "
+            f"never auto-deleted): {', '.join(to_review)}\n"
+        )
     if not apply:
         if not to_delete:
             out.write("[dry-run] nothing to delete.\n")
@@ -414,9 +503,17 @@ def register(subparsers):
             "origin/main"
         ),
         description=(
-            "trackfw branch prune replaces the 6-step manual procedure documented in "
-            "CLAUDE.md §1 (\"Uma branch ativa por vez\") with a deterministic, offline "
-            "command.\n\n"
+            "trackfw branch prune automates the \"one active branch at a time\" check "
+            "documented in CLAUDE.md §1 — it does not remove human judgment from every case: "
+            "a branch whose only remaining divergence is doc/config files is flagged for "
+            "manual review, never deleted automatically.\n\n"
+            "A best-effort 'git fetch origin --prune' runs first. Failure (offline, no "
+            "remote) is non-blocking: a warning is printed and evaluation proceeds against "
+            "the local origin/main ref, whatever its state. A stale origin/main only ever "
+            "makes the result MORE conservative — it can miss a branch that was in fact "
+            "integrated since the last fetch (reporting it kept when a fresh fetch would show "
+            "it deletable), but it never reports one as deletable that a fresh fetch would "
+            "show as pending.\n\n"
             "Decides integration with the touched-files heuristic, NOT git's own ancestry "
             "check (which always refuses squash-merged branches) and NOT a naive "
             "bidirectional diff against origin/main (which false-positives on a branch that "
@@ -426,17 +523,22 @@ def register(subparsers):
             "(what the branch touched)\n"
             "  diverg  = git diff --name-only origin/main <branch> -- touched  "
             "(what still differs there)\n\n"
-            "touched empty -> integrated (safe to delete)\n"
-            "diverg empty  -> integrated (safe to delete) -- squash-merged, stale, main "
-            "advanced since\n"
-            "otherwise     -> kept, with the diverging files named\n\n"
+            "touched empty          -> integrated (safe to delete)\n"
+            "diverg empty           -> integrated (safe to delete) -- squash-merged, stale, "
+            "main advanced since\n"
+            "diverg doc/config only -> flagged for review (kept; probable housekeeping, "
+            "confirm and delete manually)\n"
+            "otherwise               -> kept, with the diverging files named\n\n"
             "Every local branch is reported, always, with its decision and reason. The "
             "current branch, any branch checked out in another worktree, and the default "
             "branch (main) are always kept and never evaluated for deletion. Without "
-            "origin/main resolvable (offline, no remote, never fetched), the whole command "
-            "refuses and deletes nothing.\n\n"
+            "origin/main resolvable at all (offline with no prior fetch ever having run, or "
+            "no remote configured), the whole command refuses and deletes nothing.\n\n"
             "--dry-run is the default: without --apply, nothing is ever deleted, even the "
-            "clearly integrated."
+            "clearly integrated. Deletion tries 'git branch -d' first — confirming the "
+            "integration via git's own ancestry check too, when possible — and falls back to "
+            "'git branch -D' only when -d refuses, the expected case for squash-merged "
+            "branches, which never have fast-forward ancestry with main."
         ),
     )
     prune_p.add_argument(

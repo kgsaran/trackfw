@@ -40,6 +40,57 @@ const DECISION = {
   PENDING_WORK: 'pending_work',
   NO_MERGE_BASE: 'no_merge_base',
   EVAL_ERROR: 'eval_error',
+  // REVIEW_DOC_CONFIG is a NON-deletable category, distinct from PENDING_WORK: every diverging
+  // file is doc/config (isDocOrConfigPath), so it is probably housekeeping residue from a
+  // squash-merge rather than genuine pending work — but it is never auto-deleted. CLAUDE.md §1's
+  // own procedure treats this case as "housekeeping, apagar" but with a human already in the
+  // loop reading the diff; a destructive command has no human in the loop by construction, so
+  // REQ-2026-08-18 (ML-1B) deliberately narrows that step to "flag for confirmation" instead of
+  // "delete automatically". See isDeletable below.
+  REVIEW_DOC_CONFIG: 'review_doc_config',
+}
+
+// DOC_CONFIG_EXTENSIONS/DOC_CONFIG_BASENAMES mirror internal/commands/branch_prune.go's
+// branchPruneDocConfigExtensions/branchPruneDocConfigBasenames — deliberately conservative and
+// best-effort. Misclassifying a file here never causes a deletion: it only changes which
+// non-deletable category (REVIEW_DOC_CONFIG vs PENDING_WORK) a kept branch is reported under.
+const DOC_CONFIG_EXTENSIONS = ['.yaml', '.yml', '.json', '.toml', '.ini', '.cfg']
+const DOC_CONFIG_BASENAMES = new Set(['.gitignore', '.gitattributes', '.editorconfig', 'trackfw.yaml', 'LICENSE'])
+
+/**
+ * isDocsFile reports whether path lives under docs/ or vault/, or has a .md extension. Mirrors
+ * internal/commands/commit.go's isDocsFile (same package there; standalone here).
+ * @param {string} path
+ * @returns {boolean}
+ */
+function isDocsFile(path) {
+  if (path.startsWith('docs/') || path.startsWith('vault/')) return true
+  return path.endsWith('.md')
+}
+
+/**
+ * isDocOrConfigPath reports whether path is a doc file (isDocsFile) or a well-known non-runtime
+ * config file/extension. Used only to route an otherwise PENDING_WORK branch into the
+ * REVIEW_DOC_CONFIG category — never to make anything deletable.
+ * @param {string} path
+ * @returns {boolean}
+ */
+function isDocOrConfigPath(path) {
+  if (isDocsFile(path)) return true
+  const base = path.includes('/') ? path.slice(path.lastIndexOf('/') + 1) : path
+  if (DOC_CONFIG_BASENAMES.has(base)) return true
+  return DOC_CONFIG_EXTENSIONS.some((ext) => path.endsWith(ext))
+}
+
+/**
+ * allDocOrConfig reports whether every path in paths is doc/config (isDocOrConfigPath). Empty
+ * input returns false.
+ * @param {string[]} paths
+ * @returns {boolean}
+ */
+function allDocOrConfig(paths) {
+  if (paths.length === 0) return false
+  return paths.every(isDocOrConfigPath)
 }
 
 /**
@@ -159,6 +210,16 @@ function evaluateBranchIntegration(branch, execGit) {
     }
   }
 
+  if (allDocOrConfig(diverg)) {
+    return {
+      name: branch,
+      decision: DECISION.REVIEW_DOC_CONFIG,
+      reason: `only doc/config files diverge from ${DEFAULT_REMOTE_REF} (${diverg.join(', ')}) — probable housekeeping, confirm and delete manually`,
+      touched,
+      diverged: diverg,
+    }
+  }
+
   return {
     name: branch,
     decision: DECISION.PENDING_WORK,
@@ -217,13 +278,19 @@ function defaultWorktreeBranches(execGit) {
 }
 
 /**
- * defaultDeleteBranch runs `git branch -D <name>`. -D is intentional: -d refuses by ancestry,
- * which the whole command exists to route around safely via evaluateBranchIntegration.
+ * defaultDeleteBranch tries `git branch -d <name>` first. When the branch happens to have
+ * fast-forward ancestry with main too (a plain merge, not a squash), -d succeeds and confirms the
+ * integration via git's own independent check — no need for -D at all. Falls back to
+ * `git branch -D <name>` only when -d refuses, the expected outcome for squash-merged branches
+ * (no ancestry by construction): all safety already lives in evaluateBranchIntegration and the
+ * re-check immediately before this call, not in which flag performs the deletion.
  * @param {function(string[]): {stdout: string, error: Error|null}} execGit
  * @param {string} name
  * @returns {Error|null}
  */
 function defaultDeleteBranch(execGit, name) {
+  const dResult = execGit(['branch', '-d', name])
+  if (!dResult.error) return null
   return execGit(['branch', '-D', name]).error
 }
 
@@ -249,6 +316,18 @@ function runBranchPrune(apply, deps = {}) {
   const deleteBranch = deps.deleteBranch || defaultDeleteBranch
   const writeln = deps.writeln || ((s) => process.stdout.write(s + '\n'))
   const writeErr = deps.writeErr || ((s) => process.stderr.write(s + '\n'))
+
+  // Best-effort `git fetch origin --prune`, per CLAUDE.md §1 step 1. Failure is non-blocking —
+  // offline is a legitimate use case, the same posture `trackfw ship`'s squash-merge check
+  // already takes (ship/runner.js) — but unlike ship (which skips its check entirely on fetch
+  // failure), evaluation below still proceeds against whatever origin/main ref is already
+  // resolvable locally: a stale ref only ever makes the result MORE conservative, never less.
+  const fetchResult = execGit(['fetch', 'origin', '--prune'])
+  if (fetchResult.error) {
+    writeln(
+      'Warning: could not fetch origin (offline, no remote, or fetch failed) — evaluating with possibly stale data; a branch merged upstream since the last fetch may still be reported as pending.'
+    )
+  }
 
   const originCheck = execGit(['rev-parse', '--verify', '-q', DEFAULT_REMOTE_REF])
   if (originCheck.error) {
@@ -277,6 +356,7 @@ function runBranchPrune(apply, deps = {}) {
   writeln(`trackfw branch prune — evaluating ${branches.length} local branch(es) against ${DEFAULT_REMOTE_REF}\n`)
 
   const toDelete = []
+  const toReview = []
   for (const b of branches) {
     let evalResult
     if (b === DEFAULT_LOCAL_NAME) {
@@ -289,12 +369,21 @@ function runBranchPrune(apply, deps = {}) {
       evalResult = evaluateBranchIntegration(b, execGit)
     }
 
-    const action = isDeletable(evalResult.decision) ? 'delete' : 'keep'
-    if (action === 'delete') toDelete.push(b)
+    let action = 'keep'
+    if (isDeletable(evalResult.decision)) {
+      action = 'delete'
+      toDelete.push(b)
+    } else if (evalResult.decision === DECISION.REVIEW_DOC_CONFIG) {
+      action = 'review'
+      toReview.push(b)
+    }
     writeln(`  ${evalResult.name.padEnd(30)} ${action.padEnd(7)} ${evalResult.reason}`)
   }
 
   writeln('')
+  if (toReview.length > 0) {
+    writeln(`${toReview.length} branch(es) need manual review (only doc/config diverges, never auto-deleted): ${toReview.join(', ')}`)
+  }
   if (!apply) {
     if (toDelete.length === 0) {
       writeln('[dry-run] nothing to delete.')
@@ -342,6 +431,8 @@ module.exports = {
   DEFAULT_LOCAL_NAME,
   DECISION,
   isDeletable,
+  isDocOrConfigPath,
+  allDocOrConfig,
   splitNulPaths,
   evaluateBranchIntegration,
   defaultExecGit,

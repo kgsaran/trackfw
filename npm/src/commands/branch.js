@@ -51,22 +51,35 @@ function createBranchCommand() {
     .addHelpText(
       'after',
       '\n' +
-      'trackfw branch prune replaces the 6-step manual procedure documented in CLAUDE.md §1\n' +
-      '("Uma branch ativa por vez") with a deterministic, offline command.\n\n' +
+      'trackfw branch prune automates the "one active branch at a time" check documented in\n' +
+      'CLAUDE.md §1 — it does not remove human judgment from every case: a branch whose only\n' +
+      'remaining divergence is doc/config files is flagged for manual review, never deleted\n' +
+      'automatically.\n\n' +
+      "A best-effort 'git fetch origin --prune' runs first. Failure (offline, no remote) is\n" +
+      'non-blocking: a warning is printed and evaluation proceeds against the local origin/main\n' +
+      'ref, whatever its state. A stale origin/main only ever makes the result MORE conservative —\n' +
+      'it can miss a branch that was in fact integrated since the last fetch (reporting it kept\n' +
+      'when a fresh fetch would show it deletable), but it never reports one as deletable that a\n' +
+      'fresh fetch would show as pending.\n\n' +
       "Decides integration with the touched-files heuristic, NOT git's own ancestry check (which\n" +
       'always refuses squash-merged branches) and NOT a naive bidirectional diff against origin/main\n' +
       '(which false-positives on a branch that is merged but stale, once main has advanced further):\n\n' +
       '  mb      = git merge-base origin/main <branch>\n' +
       '  touched = git diff --name-only mb <branch>                 (what the branch touched)\n' +
       '  diverg  = git diff --name-only origin/main <branch> -- touched  (what still differs there)\n\n' +
-      'touched empty -> integrated (safe to delete)\n' +
-      'diverg empty  -> integrated (safe to delete) -- squash-merged, stale, main advanced since\n' +
-      'otherwise     -> kept, with the diverging files named\n\n' +
+      'touched empty          -> integrated (safe to delete)\n' +
+      'diverg empty           -> integrated (safe to delete) -- squash-merged, stale, main advanced since\n' +
+      'diverg doc/config only -> flagged for review (kept; probable housekeeping, confirm and delete manually)\n' +
+      'otherwise               -> kept, with the diverging files named\n\n' +
       'Every local branch is reported, always, with its decision and reason. The current branch, any\n' +
       'branch checked out in another worktree, and the default branch (main) are always kept and\n' +
-      'never evaluated for deletion. Without origin/main resolvable (offline, no remote, never\n' +
-      'fetched), the whole command refuses and deletes nothing.\n\n' +
-      '--dry-run is the default: without --apply, nothing is ever deleted, even the clearly integrated.'
+      'never evaluated for deletion. Without origin/main resolvable at all (offline with no prior\n' +
+      'fetch ever having run, or no remote configured), the whole command refuses and deletes\n' +
+      'nothing.\n\n' +
+      '--dry-run is the default: without --apply, nothing is ever deleted, even the clearly\n' +
+      "integrated. Deletion tries 'git branch -d' first — confirming the integration via git's own\n" +
+      "ancestry check too, when possible — and falls back to 'git branch -D' only when -d refuses,\n" +
+      'the expected case for squash-merged branches, which never have fast-forward ancestry with main.'
     )
     .option('--apply', 'Actually delete branches decided as integrated (default: report only, delete nothing)', false)
     .action((options) => {

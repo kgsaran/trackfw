@@ -24,10 +24,12 @@ from trackfw.commands.branch import (
     BRANCH_PRUNE_DECISION_IDENTICAL,
     BRANCH_PRUNE_DECISION_PENDING_WORK,
     BRANCH_PRUNE_DECISION_NO_MERGE_BASE,
+    BRANCH_PRUNE_DECISION_REVIEW_DOC_CONFIG,
     branch_prune_is_deletable,
     split_nul_paths,
     evaluate_branch_integration,
     _default_list_local_branches,
+    _default_delete_branch,
     run_branch_prune,
 )
 
@@ -88,15 +90,50 @@ def test_evaluate_branch_integration_content_identical_deletable_ac2():
 
 
 def test_evaluate_branch_integration_pending_work_not_deletable():
+    # f1.go (não f1.md) — pending_work é reservado para mudanças de código genuínas; um .md aqui
+    # rotearia para review_doc_config (ver teste dedicado abaixo).
     exec_git = _fake_exec_git({
         "merge-base origin/main feat/pending": ("abc123", None),
-        "diff --name-only -z abc123 feat/pending": ("f1.md\x00", None),
-        "diff --name-only -z origin/main feat/pending -- f1.md": ("f1.md\x00", None),
+        "diff --name-only -z abc123 feat/pending": ("f1.go\x00", None),
+        "diff --name-only -z origin/main feat/pending -- f1.go": ("f1.go\x00", None),
     })
     ev = evaluate_branch_integration("feat/pending", exec_git)
     assert ev["decision"] == BRANCH_PRUNE_DECISION_PENDING_WORK
     assert not branch_prune_is_deletable(ev["decision"])
-    assert "f1.md" in ev["reason"]
+    assert "f1.go" in ev["reason"]
+
+
+def test_evaluate_branch_integration_review_doc_config_not_deletable():
+    exec_git = _fake_exec_git({
+        "merge-base origin/main feat/docs-only": ("abc123", None),
+        "diff --name-only -z abc123 feat/docs-only": ("CLAUDE.md\x00trackfw.yaml\x00", None),
+        "diff --name-only -z origin/main feat/docs-only -- CLAUDE.md trackfw.yaml": (
+            "CLAUDE.md\x00trackfw.yaml\x00",
+            None,
+        ),
+    })
+    ev = evaluate_branch_integration("feat/docs-only", exec_git)
+    assert ev["decision"] == BRANCH_PRUNE_DECISION_REVIEW_DOC_CONFIG
+    assert not branch_prune_is_deletable(ev["decision"]), (
+        "review_doc_config nunca deve ser apagável — instrução explícita do KG"
+    )
+    assert "CLAUDE.md" in ev["reason"]
+    assert "trackfw.yaml" in ev["reason"]
+    assert "confirm and delete manually" in ev["reason"]
+
+
+def test_evaluate_branch_integration_mixed_doc_and_code_stays_pending_work():
+    exec_git = _fake_exec_git({
+        "merge-base origin/main feat/mixed": ("abc123", None),
+        "diff --name-only -z abc123 feat/mixed": ("README.md\x00main.py\x00", None),
+        "diff --name-only -z origin/main feat/mixed -- README.md main.py": (
+            "README.md\x00main.py\x00",
+            None,
+        ),
+    })
+    ev = evaluate_branch_integration("feat/mixed", exec_git)
+    assert ev["decision"] == BRANCH_PRUNE_DECISION_PENDING_WORK
+    assert not branch_prune_is_deletable(ev["decision"])
 
 
 def test_evaluate_branch_integration_no_merge_base_refuses():
@@ -116,12 +153,13 @@ def _make_prune_kwargs(out):
     def exec_git(args):
         key = " ".join(args)
         table = {
+            "fetch origin --prune": ("", None),
             "rev-parse --verify -q origin/main": ("abc123", None),
             "merge-base origin/main feat/integrated": ("abc123", None),
             "diff --name-only -z abc123 feat/integrated": ("", None),
             "merge-base origin/main feat/pending": ("abc123", None),
-            "diff --name-only -z abc123 feat/pending": ("f1.md\x00", None),
-            "diff --name-only -z origin/main feat/pending -- f1.md": ("f1.md\x00", None),
+            "diff --name-only -z abc123 feat/pending": ("f1.go\x00", None),
+            "diff --name-only -z origin/main feat/pending -- f1.go": ("f1.go\x00", None),
         }
         if key not in table:
             raise AssertionError(f"unexpected exec_git call: {key}")
@@ -190,6 +228,49 @@ def test_run_branch_prune_apply_deletes_only_integrated_keeps_pending():
     assert deleted_names == ["feat/integrated"]
     got = out.getvalue()
     assert "deleted 1 branch(es): feat/integrated" in got
+
+
+def test_run_branch_prune_fetch_fails_warns_but_still_evaluates():
+    out = io.StringIO()
+    fetch_called = {"v": False}
+
+    def exec_git(args):
+        key = " ".join(args)
+        if key == "fetch origin --prune":
+            fetch_called["v"] = True
+            return ("", "fatal: unable to access origin (simulated offline)")
+        table = {
+            "rev-parse --verify -q origin/main": ("abc123", None),  # already resolved before
+            "merge-base origin/main feat/integrated": ("abc123", None),
+            "diff --name-only -z abc123 feat/integrated": ("", None),
+            "merge-base origin/main feat/pending": ("abc123", None),
+            "diff --name-only -z abc123 feat/pending": ("f1.go\x00", None),
+            "diff --name-only -z origin/main feat/pending -- f1.go": ("f1.go\x00", None),
+        }
+        if key not in table:
+            raise AssertionError(f"unexpected exec_git call: {key}")
+        return table[key]
+
+    def list_local_branches(_exec_git):
+        return (["main", "feat/integrated", "feat/pending", "fix/current", "chore/wt"], None)
+
+    def delete_branch(_exec_git, _name):
+        raise AssertionError("delete_branch must not be called in dry-run tests")
+
+    exit_code = run_branch_prune(
+        apply=False,
+        exec_git=exec_git,
+        list_local_branches=list_local_branches,
+        current_branch=lambda _g: "fix/current",
+        worktree_branches=lambda _g: {"chore/wt"},
+        delete_branch=delete_branch,
+        out=out,
+    )
+    assert exit_code == 0, "fetch failure must not abort the command"
+    assert fetch_called["v"]
+    got = out.getvalue()
+    assert "warning" in got.lower() and "fetch" in got, got
+    assert "would delete" in got and "feat/integrated" in got, got
 
 
 def test_run_branch_prune_no_origin_main_refuses_everything():
@@ -382,3 +463,192 @@ def _worktree_branches_from(exec_git):
         if t.startswith(prefix):
             result.add(t[len(prefix):])
     return result
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# _default_delete_branch — -d tentado antes de -D, repositório git real (ambos os caminhos).
+# ────────────────────────────────────────────────────────────────────────────
+
+@pytest.mark.skipif(not _git_available(), reason="git not available in PATH")
+def test_default_delete_branch_tries_dash_d_before_dash_capital_d():
+    with tempfile.TemporaryDirectory(prefix="trackfw-branch-prune-dd-py-") as work:
+        empty_gitconfig = os.path.join(work, "empty-gitconfig")
+        with open(empty_gitconfig, "w") as f:
+            f.write("")
+        env = dict(os.environ)
+        env.update({
+            "GIT_CONFIG_GLOBAL": empty_gitconfig,
+            "GIT_CONFIG_SYSTEM": "/dev/null",
+            "GIT_TERMINAL_PROMPT": "0",
+            "HOME": work,
+        })
+
+        def run(cwd, args):
+            result = subprocess.run(["git"] + args, cwd=cwd, env=env, capture_output=True, text=True)
+            if result.returncode != 0:
+                raise AssertionError(f"git {args} (cwd={cwd}) failed: {result.stderr}\n{result.stdout}")
+            return result.stdout
+
+        repo = os.path.join(work, "repo")
+        os.makedirs(repo, exist_ok=True)
+        run(repo, ["init", "-q", "-b", "main"])
+        run(repo, ["config", "user.email", "falsify@trackfw.test"])
+        run(repo, ["config", "user.name", "trackfw falsify"])
+        run(repo, ["config", "commit.gpgsign", "false"])
+        with open(os.path.join(repo, "base.txt"), "w") as f:
+            f.write("base\n")
+        run(repo, ["add", "base.txt"])
+        run(repo, ["commit", "-q", "-m", "base"])
+
+        def exec_git(args):
+            result = subprocess.run(["git"] + args, cwd=repo, env=env, capture_output=True, text=True)
+            if result.returncode != 0:
+                return ("", result.stderr.strip() or f"git {' '.join(args)} failed")
+            return (result.stdout.strip(), None)
+
+        # Caminho 1: feat/ff tem ancestralidade fast-forward com main (merge simples, sem
+        # squash) — -d sozinho deve ter sucesso.
+        run(repo, ["checkout", "-q", "-b", "feat/ff"])
+        with open(os.path.join(repo, "ff.txt"), "w") as f:
+            f.write("ff\n")
+        run(repo, ["add", "ff.txt"])
+        run(repo, ["commit", "-q", "-m", "feat/ff work"])
+        run(repo, ["checkout", "-q", "main"])
+        run(repo, ["merge", "-q", "--no-ff", "feat/ff"])
+
+        err1 = _default_delete_branch(exec_git, "feat/ff")
+        assert err1 is None, f"expected _default_delete_branch to succeed via plain -d, got: {err1}"
+        remaining, _ = _default_list_local_branches(exec_git)
+        assert "feat/ff" not in remaining
+
+        # Caminho 2: feat/squash não tem ancestralidade com main (squash-merge) — -d puro
+        # recusa; _default_delete_branch deve cair para -D e ainda ter sucesso.
+        run(repo, ["checkout", "-q", "-b", "feat/squash"])
+        with open(os.path.join(repo, "squash.txt"), "w") as f:
+            f.write("squash\n")
+        run(repo, ["add", "squash.txt"])
+        run(repo, ["commit", "-q", "-m", "feat/squash work"])
+        run(repo, ["checkout", "-q", "main"])
+        run(repo, ["merge", "-q", "--squash", "feat/squash"])
+        run(repo, ["commit", "-q", "-m", "squash-merge feat/squash"])
+
+        d_check = subprocess.run(
+            ["git", "-C", repo, "branch", "-d", "feat/squash"], env=env, capture_output=True
+        )
+        assert d_check.returncode != 0, (
+            "fixture inválida: git branch -d teve sucesso inesperado numa branch squash-mergeada"
+        )
+
+        err2 = _default_delete_branch(exec_git, "feat/squash")
+        assert err2 is None, f"expected _default_delete_branch to fall back to -D and succeed, got: {err2}"
+        remaining, _ = _default_list_local_branches(exec_git)
+        assert "feat/squash" not in remaining
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# origin/main defasado — repositório git real. Prova "origin/main defasado leva a mais recusas,
+# nunca a deleção indevida": quando `git fetch origin --prune` falha (simulado quebrando a URL
+# do remoto), a avaliação continua usando qualquer ref origin/main já resolvível localmente. Uma
+# branch de fato integrada upstream, mas invisível para esse ref defasado, é reportada MANTIDA
+# (pending_work) — nunca oferecida para deleção indevidamente.
+# ────────────────────────────────────────────────────────────────────────────
+
+@pytest.mark.skipif(not _git_available(), reason="git not available in PATH")
+def test_run_branch_prune_stale_origin_main_is_conservative_not_wrong():
+    with tempfile.TemporaryDirectory(prefix="trackfw-branch-prune-stale-py-") as work:
+        bare_dir = os.path.join(work, "origin.git")
+        clone_dir = os.path.join(work, "clone")
+        other_clone_dir = os.path.join(work, "other-clone")
+        empty_gitconfig = os.path.join(work, "empty-gitconfig")
+        with open(empty_gitconfig, "w") as f:
+            f.write("")
+        env = dict(os.environ)
+        env.update({
+            "GIT_CONFIG_GLOBAL": empty_gitconfig,
+            "GIT_CONFIG_SYSTEM": "/dev/null",
+            "GIT_TERMINAL_PROMPT": "0",
+            "HOME": work,
+        })
+
+        def run(cwd, args):
+            result = subprocess.run(["git"] + args, cwd=cwd, env=env, capture_output=True, text=True)
+            if result.returncode != 0:
+                raise AssertionError(f"git {args} (cwd={cwd}) failed: {result.stderr}\n{result.stdout}")
+            return result.stdout
+
+        os.makedirs(bare_dir, exist_ok=True)
+        run(bare_dir, ["init", "-q", "--bare", "-b", "main"])
+
+        os.makedirs(clone_dir, exist_ok=True)
+        run(work, ["clone", "-q", bare_dir, clone_dir])
+        run(clone_dir, ["config", "user.email", "falsify@trackfw.test"])
+        run(clone_dir, ["config", "user.name", "trackfw falsify"])
+        run(clone_dir, ["config", "commit.gpgsign", "false"])
+        run(clone_dir, ["config", "core.hooksPath", "/dev/null"])
+
+        with open(os.path.join(clone_dir, "base.txt"), "w") as f:
+            f.write("base\n")
+        run(clone_dir, ["add", "base.txt"])
+        run(clone_dir, ["commit", "-q", "-m", "base commit"])
+        run(clone_dir, ["push", "-q", "origin", "main"])
+
+        run(clone_dir, ["checkout", "-q", "-b", "feat/mine"])
+        with open(os.path.join(clone_dir, "mine.txt"), "w") as f:
+            f.write("mine v1\n")
+        run(clone_dir, ["add", "mine.txt"])
+        run(clone_dir, ["commit", "-q", "-m", "feat/mine work"])
+        run(clone_dir, ["checkout", "-q", "main"])
+        # origin/main deste clone fica congelado em "base commit" — nunca mais é atualizado.
+
+        os.makedirs(other_clone_dir, exist_ok=True)
+        run(work, ["clone", "-q", bare_dir, other_clone_dir])
+        run(other_clone_dir, ["config", "user.email", "falsify@trackfw.test"])
+        run(other_clone_dir, ["config", "user.name", "trackfw falsify"])
+        run(other_clone_dir, ["config", "commit.gpgsign", "false"])
+        with open(os.path.join(other_clone_dir, "mine.txt"), "w") as f:
+            f.write("mine v1\n")
+        run(other_clone_dir, ["add", "mine.txt"])
+        run(other_clone_dir, ["commit", "-q", "-m", "someone else lands the same content upstream"])
+        run(other_clone_dir, ["push", "-q", "origin", "main"])
+
+        # Quebra a URL do remoto para que `git fetch origin --prune` falhe deterministicamente.
+        run(clone_dir, ["remote", "set-url", "origin", os.path.join(work, "does-not-exist.git")])
+
+        def exec_git(args):
+            result = subprocess.run(["git"] + args, cwd=clone_dir, env=env, capture_output=True, text=True)
+            if result.returncode != 0:
+                return ("", result.stderr.strip() or f"git {' '.join(args)} failed")
+            return (result.stdout.strip(), None)
+
+        out_buf = io.StringIO()
+
+        def delete_branch(_g, _name):
+            raise AssertionError("dry-run must never call delete_branch")
+
+        exit_code = run_branch_prune(
+            apply=False,
+            exec_git=exec_git,
+            list_local_branches=_default_list_local_branches,
+            current_branch=lambda g: (lambda r: r[0].strip() if r[1] is None else "")(
+                g(["symbolic-ref", "--quiet", "--short", "HEAD"])
+            ),
+            worktree_branches=lambda g: _worktree_branches_from(g),
+            delete_branch=delete_branch,
+            out=out_buf,
+        )
+        assert exit_code == 0
+        got = out_buf.getvalue()
+        assert "warning" in got.lower(), f"expected fetch-failure warning: {got}"
+        for line in got.split("\n"):
+            if line.strip().startswith("feat/mine "):
+                assert "delete" not in line, (
+                    f"stale origin/main must never make feat/mine look deletable, got line: {line!r}"
+                )
+                assert "keep" in line, f"expected feat/mine reported keep, got line: {line!r}"
+
+        # Contraste: com um fetch funcionando, a mesma branch se torna apagável.
+        run(clone_dir, ["remote", "set-url", "origin", bare_dir])
+        run(clone_dir, ["fetch", "-q", "origin"])
+        eval_after_fetch = evaluate_branch_integration("feat/mine", exec_git)
+        assert eval_after_fetch["decision"] == BRANCH_PRUNE_DECISION_IDENTICAL, eval_after_fetch
+        assert branch_prune_is_deletable(eval_after_fetch["decision"])

@@ -15,6 +15,7 @@ const {
   splitNulPaths,
   evaluateBranchIntegration,
   defaultListLocalBranches,
+  defaultDeleteBranch,
   runBranchPrune,
 } = require('../src/branch/prune')
 
@@ -78,15 +79,48 @@ test('evaluateBranchIntegration: content identical (stale but integrated) -> del
 })
 
 test('evaluateBranchIntegration: pending work -> never deletable', () => {
+  // f1.go (not f1.md) — pending_work is reserved for genuine code changes; a .md file here would
+  // instead route to REVIEW_DOC_CONFIG (see the dedicated test below).
   const execGit = fakeExecGit({
     'merge-base origin/main feat/pending': { stdout: 'abc123', error: null },
-    'diff --name-only -z abc123 feat/pending': { stdout: 'f1.md\x00', error: null },
-    'diff --name-only -z origin/main feat/pending -- f1.md': { stdout: 'f1.md\x00', error: null },
+    'diff --name-only -z abc123 feat/pending': { stdout: 'f1.go\x00', error: null },
+    'diff --name-only -z origin/main feat/pending -- f1.go': { stdout: 'f1.go\x00', error: null },
   })
   const evalResult = evaluateBranchIntegration('feat/pending', execGit)
   assert.equal(evalResult.decision, DECISION.PENDING_WORK)
   assert.equal(isDeletable(evalResult.decision), false)
-  assert.ok(evalResult.reason.includes('f1.md'))
+  assert.ok(evalResult.reason.includes('f1.go'))
+})
+
+test('evaluateBranchIntegration: doc/config-only divergence -> review, never deletable', () => {
+  const execGit = fakeExecGit({
+    'merge-base origin/main feat/docs-only': { stdout: 'abc123', error: null },
+    'diff --name-only -z abc123 feat/docs-only': { stdout: 'CLAUDE.md\x00trackfw.yaml\x00', error: null },
+    'diff --name-only -z origin/main feat/docs-only -- CLAUDE.md trackfw.yaml': {
+      stdout: 'CLAUDE.md\x00trackfw.yaml\x00',
+      error: null,
+    },
+  })
+  const evalResult = evaluateBranchIntegration('feat/docs-only', execGit)
+  assert.equal(evalResult.decision, DECISION.REVIEW_DOC_CONFIG)
+  assert.equal(isDeletable(evalResult.decision), false, 'review_doc_config must never be deletable — KG explicit instruction')
+  assert.ok(evalResult.reason.includes('CLAUDE.md'))
+  assert.ok(evalResult.reason.includes('trackfw.yaml'))
+  assert.ok(evalResult.reason.includes('confirm and delete manually'))
+})
+
+test('evaluateBranchIntegration: mixed doc+code divergence stays pending_work', () => {
+  const execGit = fakeExecGit({
+    'merge-base origin/main feat/mixed': { stdout: 'abc123', error: null },
+    'diff --name-only -z abc123 feat/mixed': { stdout: 'README.md\x00main.js\x00', error: null },
+    'diff --name-only -z origin/main feat/mixed -- README.md main.js': {
+      stdout: 'README.md\x00main.js\x00',
+      error: null,
+    },
+  })
+  const evalResult = evaluateBranchIntegration('feat/mixed', execGit)
+  assert.equal(evalResult.decision, DECISION.PENDING_WORK)
+  assert.equal(isDeletable(evalResult.decision), false)
 })
 
 test('evaluateBranchIntegration: no merge-base -> refuses, never deletable', () => {
@@ -107,6 +141,8 @@ function makePruneDeps(writelnSink) {
     execGit: (args) => {
       const key = args.join(' ')
       switch (key) {
+        case 'fetch origin --prune':
+          return { stdout: '', error: null }
         case 'rev-parse --verify -q origin/main':
           return { stdout: 'abc123', error: null }
         case 'merge-base origin/main feat/integrated':
@@ -116,9 +152,9 @@ function makePruneDeps(writelnSink) {
         case 'merge-base origin/main feat/pending':
           return { stdout: 'abc123', error: null }
         case 'diff --name-only -z abc123 feat/pending':
-          return { stdout: 'f1.md\x00', error: null }
-        case 'diff --name-only -z origin/main feat/pending -- f1.md':
-          return { stdout: 'f1.md\x00', error: null }
+          return { stdout: 'f1.go\x00', error: null }
+        case 'diff --name-only -z origin/main feat/pending -- f1.go':
+          return { stdout: 'f1.go\x00', error: null }
         default:
           throw new Error(`unexpected execGit call: ${key}`)
       }
@@ -175,6 +211,52 @@ test('runBranchPrune: --apply deletes only integrated, keeps pending', () => {
   assert.deepEqual(deletedNames, ['feat/integrated'])
   const got = lines.join('\n')
   assert.ok(got.includes('deleted 1 branch(es): feat/integrated'), got)
+})
+
+test('runBranchPrune: fetch failure warns but still evaluates (non-blocking)', () => {
+  const lines = []
+  let fetchCalled = false
+  const deps = {
+    execGit: (args) => {
+      const key = args.join(' ')
+      switch (key) {
+        case 'fetch origin --prune':
+          fetchCalled = true
+          return { stdout: '', error: new Error('fatal: unable to access origin (simulated offline)') }
+        case 'rev-parse --verify -q origin/main':
+          return { stdout: 'abc123', error: null } // a previous successful fetch already resolved this
+        case 'merge-base origin/main feat/integrated':
+          return { stdout: 'abc123', error: null }
+        case 'diff --name-only -z abc123 feat/integrated':
+          return { stdout: '', error: null }
+        case 'merge-base origin/main feat/pending':
+          return { stdout: 'abc123', error: null }
+        case 'diff --name-only -z abc123 feat/pending':
+          return { stdout: 'f1.go\x00', error: null }
+        case 'diff --name-only -z origin/main feat/pending -- f1.go':
+          return { stdout: 'f1.go\x00', error: null }
+        default:
+          throw new Error(`unexpected execGit call: ${key}`)
+      }
+    },
+    listLocalBranches: () => ({
+      branches: ['main', 'feat/integrated', 'feat/pending', 'fix/current', 'chore/wt'],
+      error: null,
+    }),
+    currentBranch: () => 'fix/current',
+    worktreeBranches: () => new Set(['chore/wt']),
+    deleteBranch: () => {
+      throw new Error('deleteBranch must not be called in dry-run tests')
+    },
+    writeln: (s) => lines.push(s),
+  }
+
+  const exitCode = runBranchPrune(false, deps)
+  assert.equal(exitCode, 0, 'fetch failure must not abort the command')
+  assert.equal(fetchCalled, true)
+  const got = lines.join('\n')
+  assert.ok(got.toLowerCase().includes('warning') && got.includes('fetch'), `expected a fetch-failure warning: ${got}`)
+  assert.ok(got.includes('would delete') && got.includes('feat/integrated'), `evaluation must proceed despite fetch failure: ${got}`)
 })
 
 test('runBranchPrune: origin/main unresolvable refuses everything, even with --apply', () => {
@@ -341,4 +423,202 @@ test('evaluateBranchIntegration: real git repo — squash-merge + stale discrimi
   const remaining = defaultListLocalBranches(execGit).branches.sort()
   assert.ok(!remaining.includes('feat/a'), 'feat/a should have been deleted by --apply')
   assert.ok(remaining.includes('feat/pending'), 'feat/pending must still exist')
+})
+
+// ────────────────────────────────────────────────────────────────────────────
+// defaultDeleteBranch — -d tried before -D, real git repository (both codepaths).
+// ────────────────────────────────────────────────────────────────────────────
+
+test('defaultDeleteBranch: tries -d before -D, both codepaths', { timeout: 30000 }, () => {
+  const which = spawnSync('git', ['--version'])
+  if (which.error) return
+
+  const work = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-branch-prune-dd-node-'))
+  const emptyGitConfig = path.join(work, 'empty-gitconfig')
+  fs.writeFileSync(emptyGitConfig, '')
+  const env = () => ({
+    ...process.env,
+    GIT_CONFIG_GLOBAL: emptyGitConfig,
+    GIT_CONFIG_SYSTEM: '/dev/null',
+    GIT_TERMINAL_PROMPT: '0',
+    HOME: work,
+  })
+  function run(dir, args) {
+    const result = spawnSync('git', args, { cwd: dir, env: env(), encoding: 'utf8' })
+    if (result.status !== 0) {
+      throw new Error(`git ${args.join(' ')} (dir=${dir}) failed: ${result.stderr}\n${result.stdout}`)
+    }
+    return result.stdout
+  }
+
+  const repo = path.join(work, 'repo')
+  fs.mkdirSync(repo, { recursive: true })
+  run(repo, ['init', '-q', '-b', 'main'])
+  run(repo, ['config', 'user.email', 'falsify@trackfw.test'])
+  run(repo, ['config', 'user.name', 'trackfw falsify'])
+  run(repo, ['config', 'commit.gpgsign', 'false'])
+  fs.writeFileSync(path.join(repo, 'base.txt'), 'base\n')
+  run(repo, ['add', 'base.txt'])
+  run(repo, ['commit', '-q', '-m', 'base'])
+
+  function execGit(args) {
+    const result = spawnSync('git', args, { cwd: repo, env: env(), encoding: 'utf8' })
+    if (result.status !== 0) {
+      return { stdout: '', error: new Error((result.stderr || '').trim() || `git ${args.join(' ')} exited with ${result.status}`) }
+    }
+    return { stdout: (result.stdout || '').trim(), error: null }
+  }
+
+  // Codepath 1: feat/ff has fast-forward ancestry with main (plain merge, no squash) — `-d` alone
+  // must succeed.
+  run(repo, ['checkout', '-q', '-b', 'feat/ff'])
+  fs.writeFileSync(path.join(repo, 'ff.txt'), 'ff\n')
+  run(repo, ['add', 'ff.txt'])
+  run(repo, ['commit', '-q', '-m', 'feat/ff work'])
+  run(repo, ['checkout', '-q', 'main'])
+  run(repo, ['merge', '-q', '--no-ff', 'feat/ff'])
+
+  const err1 = defaultDeleteBranch(execGit, 'feat/ff')
+  assert.equal(err1, null, `expected defaultDeleteBranch to succeed via plain -d, got: ${err1}`)
+  assert.ok(!defaultListLocalBranches(execGit).branches.includes('feat/ff'))
+
+  // Codepath 2: feat/squash has NO ancestry with main (squash-merge) — plain -d refuses;
+  // defaultDeleteBranch must fall back to -D and still succeed.
+  run(repo, ['checkout', '-q', '-b', 'feat/squash'])
+  fs.writeFileSync(path.join(repo, 'squash.txt'), 'squash\n')
+  run(repo, ['add', 'squash.txt'])
+  run(repo, ['commit', '-q', '-m', 'feat/squash work'])
+  run(repo, ['checkout', '-q', 'main'])
+  run(repo, ['merge', '-q', '--squash', 'feat/squash'])
+  run(repo, ['commit', '-q', '-m', 'squash-merge feat/squash'])
+
+  const dCheck = spawnSync('git', ['-C', repo, 'branch', '-d', 'feat/squash'], { env: env() })
+  assert.notEqual(dCheck.status, 0, 'test setup invalid: git branch -d unexpectedly succeeded on a squash-merged branch')
+
+  const err2 = defaultDeleteBranch(execGit, 'feat/squash')
+  assert.equal(err2, null, `expected defaultDeleteBranch to fall back to -D and succeed, got: ${err2}`)
+  assert.ok(!defaultListLocalBranches(execGit).branches.includes('feat/squash'))
+})
+
+// ────────────────────────────────────────────────────────────────────────────
+// Stale origin/main — real git repository. Proves "origin/main defasado leva a mais recusas,
+// nunca a deleção indevida": when `git fetch origin --prune` fails (simulated by breaking the
+// remote URL), evaluation keeps using whatever origin/main ref is already resolvable locally. A
+// branch truly integrated upstream, but invisible to this stale ref, is reported KEPT
+// (pending_work) — never wrongly offered for deletion.
+// ────────────────────────────────────────────────────────────────────────────
+
+test('runBranchPrune: stale origin/main is conservative, not wrong', { timeout: 30000 }, () => {
+  const which = spawnSync('git', ['--version'])
+  if (which.error) return
+
+  const work = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-branch-prune-stale-node-'))
+  const bareDir = path.join(work, 'origin.git')
+  const cloneDir = path.join(work, 'clone')
+  const otherCloneDir = path.join(work, 'other-clone')
+  const emptyGitConfig = path.join(work, 'empty-gitconfig')
+  fs.writeFileSync(emptyGitConfig, '')
+  const env = () => ({
+    ...process.env,
+    GIT_CONFIG_GLOBAL: emptyGitConfig,
+    GIT_CONFIG_SYSTEM: '/dev/null',
+    GIT_TERMINAL_PROMPT: '0',
+    HOME: work,
+  })
+  function run(dir, args) {
+    const result = spawnSync('git', args, { cwd: dir, env: env(), encoding: 'utf8' })
+    if (result.status !== 0) {
+      throw new Error(`git ${args.join(' ')} (dir=${dir}) failed: ${result.stderr}\n${result.stdout}`)
+    }
+    return result.stdout
+  }
+
+  fs.mkdirSync(bareDir, { recursive: true })
+  run(bareDir, ['init', '-q', '--bare', '-b', 'main'])
+
+  fs.mkdirSync(cloneDir, { recursive: true })
+  run(work, ['clone', '-q', bareDir, cloneDir])
+  run(cloneDir, ['config', 'user.email', 'falsify@trackfw.test'])
+  run(cloneDir, ['config', 'user.name', 'trackfw falsify'])
+  run(cloneDir, ['config', 'commit.gpgsign', 'false'])
+  run(cloneDir, ['config', 'core.hooksPath', '/dev/null'])
+
+  fs.writeFileSync(path.join(cloneDir, 'base.txt'), 'base\n')
+  run(cloneDir, ['add', 'base.txt'])
+  run(cloneDir, ['commit', '-q', '-m', 'base commit'])
+  run(cloneDir, ['push', '-q', 'origin', 'main'])
+
+  run(cloneDir, ['checkout', '-q', '-b', 'feat/mine'])
+  fs.writeFileSync(path.join(cloneDir, 'mine.txt'), 'mine v1\n')
+  run(cloneDir, ['add', 'mine.txt'])
+  run(cloneDir, ['commit', '-q', '-m', 'feat/mine work'])
+  run(cloneDir, ['checkout', '-q', 'main'])
+  // cloneDir's origin/main is now frozen at "base commit" — never fetched again from here.
+
+  fs.mkdirSync(otherCloneDir, { recursive: true })
+  run(work, ['clone', '-q', bareDir, otherCloneDir])
+  run(otherCloneDir, ['config', 'user.email', 'falsify@trackfw.test'])
+  run(otherCloneDir, ['config', 'user.name', 'trackfw falsify'])
+  run(otherCloneDir, ['config', 'commit.gpgsign', 'false'])
+  fs.writeFileSync(path.join(otherCloneDir, 'mine.txt'), 'mine v1\n')
+  run(otherCloneDir, ['add', 'mine.txt'])
+  run(otherCloneDir, ['commit', '-q', '-m', 'someone else lands the same content upstream'])
+  run(otherCloneDir, ['push', '-q', 'origin', 'main'])
+
+  // Break the remote URL so `git fetch origin --prune` fails deterministically.
+  run(cloneDir, ['remote', 'set-url', 'origin', path.join(work, 'does-not-exist.git')])
+
+  function execGit(args) {
+    const result = spawnSync('git', args, { cwd: cloneDir, env: env(), encoding: 'utf8' })
+    if (result.status !== 0) {
+      return { stdout: '', error: new Error((result.stderr || '').trim() || `git ${args.join(' ')} exited with ${result.status}`) }
+    }
+    return { stdout: (result.stdout || '').trim(), error: null }
+  }
+
+  const outLines = []
+  const exitCode = runBranchPrune(false, {
+    execGit,
+    listLocalBranches: defaultListLocalBranches,
+    currentBranch: (g) => {
+      const r = g(['symbolic-ref', '--quiet', '--short', 'HEAD'])
+      return r.error ? '' : r.stdout.trim()
+    },
+    worktreeBranches: (g) => {
+      const r = g(['worktree', 'list', '--porcelain'])
+      const set = new Set()
+      if (r.error) return set
+      const prefix = 'branch refs/heads/'
+      for (const line of r.stdout.split('\n')) {
+        const t = line.trim()
+        if (t.startsWith(prefix)) set.add(t.slice(prefix.length))
+      }
+      return set
+    },
+    deleteBranch: () => {
+      throw new Error('dry-run must never call deleteBranch')
+    },
+    writeln: (s) => outLines.push(s),
+  })
+
+  assert.equal(exitCode, 0)
+  const got = outLines.join('\n')
+  assert.ok(got.toLowerCase().includes('warning'), `expected fetch-failure warning: ${got}`)
+  for (const line of got.split('\n')) {
+    if (line.trim().startsWith('feat/mine ')) {
+      assert.ok(!line.includes('delete'), `stale origin/main must never make feat/mine look deletable, got line: ${line}`)
+      assert.ok(line.includes('keep'), `expected feat/mine reported keep, got line: ${line}`)
+    }
+  }
+
+  // Contrast: with a working fetch, the exact same branch becomes deletable.
+  run(cloneDir, ['remote', 'set-url', 'origin', bareDir])
+  run(cloneDir, ['fetch', '-q', 'origin'])
+  const evalAfterFetch = evaluateBranchIntegration('feat/mine', execGit)
+  assert.equal(
+    evalAfterFetch.decision,
+    DECISION.IDENTICAL,
+    `after a real fetch, expected feat/mine to become content_identical, got ${evalAfterFetch.decision} (${evalAfterFetch.reason})`
+  )
+  assert.equal(isDeletable(evalAfterFetch.decision), true)
 })
