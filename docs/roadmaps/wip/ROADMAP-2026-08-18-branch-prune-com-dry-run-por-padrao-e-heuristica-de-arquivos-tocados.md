@@ -184,6 +184,56 @@ qualquer auditoria de comando git vai encontrar.
 
 ---
 
+### ML-1B — Fechar as divergências contra o protocolo do `CLAUDE.md` §1
+**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Origem:** pergunta de KG (2026-08-18) — *"estamos usando o mesmo método já documentado?"*.
+Comparei item a item **no código**, e não estávamos por inteiro.
+
+| Protocolo `CLAUDE.md` §1 | ML-1A | veredito |
+|---|---|---|
+| Passo 3-bis: `merge-base` → `touched` → `diverg` | ✅ | núcleo correto |
+| Não apagar branch em worktree | ✅ | |
+| Passo 3 — teste ingênuo `git diff --stat` | ❌ | **correto omitir** — é o defeito que a REQ corrige |
+| `gh pr list` para caso duvidoso | ❌ | **correto omitir** — decisão de KG: sem forge |
+| Passo 2 — candidatas via `branch -r --no-merged` | ❌ | **correto divergir** — apagamos branch **local** |
+| **Passo 1 — `git fetch origin --prune`** | ❌ | 🔴 **fechar** |
+| **`diverg` só em doc/config → housekeeping** | ❌ | 🔴 **fechar, com ressalva abaixo** |
+| **Tentar `-d` antes de `-D`** | ❌ | 🔴 **fechar** |
+
+**Ações:**
+
+1. **`fetch origin --prune` antes de avaliar.** Sem ele, `origin/main` pode estar velho e uma branch
+   recém-mergeada aparece como pendente. A falha do fetch é **não-bloqueante** (offline é caso de
+   uso legítimo, mesmo padrão do passo 3 do `ship`), mas o comando deve **avisar** que avaliou com
+   dado possivelmente defasado. Note que `origin/main` velho torna o resultado **mais conservador**,
+   não menos — mais recusas, nunca mais deleções.
+
+2. **Divergência só em doc/config — NÃO apagar automaticamente.** O `CLAUDE.md` manda tratar como
+   housekeeping e apagar, mas ali havia **humano no laço**. Num comando destrutivo isso apagaria
+   branch cuja única pendência é documentação. **Classifique como categoria própria** (ex.: `review`)
+   com motivo — *"só doc/config diverge; provável housekeeping, confirme e apague"* — em vez de
+   `delete`. Preserva "falha fechada" e ainda resolve o caso para o usuário.
+   **Se você discordar, argumente antes de implementar.**
+
+3. **Tentar `git branch -d` antes de `-D`.** Se `-d` aceitar, a integração é confirmada também pelo
+   git. Só cai para `-D` quando `-d` recusar por ancestralidade — que é o esperado em squash-merge.
+
+4. **Corrigir o texto do `Long` help**, que hoje afirma substituir o procedimento de 6 passos. Depois
+   deste ML fica preciso; enquanto não estiver, é afirmação forte demais.
+
+**Critérios de aceite:**
+- [ ] `fetch origin --prune` roda antes da avaliação; falha é não-bloqueante **e avisada**.
+- [ ] Offline continua **não apagando** nada (não-regressão do AC6).
+- [ ] `origin/main` defasado leva a **mais recusas**, nunca a deleção indevida — prove com fixture.
+- [ ] Divergência só em doc/config vira categoria própria, **não** `delete`.
+- [ ] `-d` é tentado antes de `-D`; queda para `-D` só quando `-d` recusa por ancestralidade.
+- [ ] Texto do help condiz com o que o comando faz.
+- [ ] Não-regressão de todo o ML-1A: dry-run padrão, proteções de main/corrente/worktree, offline.
+- [ ] Paridade nos 3 CLIs; fixture de repo git **real**.
+- [ ] `make quality` verde.
+
+---
+
 ## Wave 2 — Convergência do `ship` (depende da Wave 1)
 
 ### ML-2A — `detectPendingSquashMerges` passa a usar a heurística compartilhada
