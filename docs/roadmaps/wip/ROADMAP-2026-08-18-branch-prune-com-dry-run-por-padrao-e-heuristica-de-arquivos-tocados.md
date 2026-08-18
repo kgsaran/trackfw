@@ -29,13 +29,15 @@ acusou a branch **já mergeada** do #181 como tendo trabalho pendente.
 - [x] AC5 — Sem `--apply`, nada é apagado.
 - [x] AC6 — Offline/sem remoto: degrada e **não apaga**. Falha fechada.
 - [x] AC7 — `detectPendingSquashMerges` usa a mesma lógica; falso-positivo do AC2 some. (ML-2A)
-- [ ] AC8 — Paridade nos 3 CLIs, com gate de saídas reais. (deixo para o arquiteto: ML-2A prova
-  paridade via testes unitários com fixture real nos 3 CLIs, mas não criei gate de shell dedicado
-  para o `ship` — só reusei `check-branch-prune-parity.sh` para não-regressão do `branch prune`)
-- [ ] AC9 — Cenário P4 com fixture de repositório git **real**. (satisfeito por ML-2A para o
-  `ship`; ML-1A/1C já satisfaziam para o `branch prune`)
+- [x] AC8 — Paridade nos 3 CLIs, com gate de saídas reais. (ML-2B: `check-ship-parity.sh`,
+  cenário `squash-merge-warning`, roda os 3 binários reais contra o mesmo fixture git e compara
+  stdout+stderr+exit-code byte a byte)
+- [x] AC9 — Cenário P4 com fixture de repositório git **real**. (satisfeito por ML-1A/1C para o
+  `branch prune`; ML-2B fecha para o `ship` — Cenário 70 do `check-gates-falsify.sh` sabota o
+  Node e prova que `check-ship-parity.sh` reprova)
 - [ ] AC10 — `make quality` verde **e CI verde**. (`make quality` verde localmente, confirmado
-  nesta sessão; CI verde depende do push/PR — autoridade do `trackfw_architect`)
+  nesta sessão inclusive com o gate novo; CI verde depende do push/PR — autoridade do
+  `trackfw_architect`)
 
 ## 🔴 Riscos que valem para todos os MLs
 
@@ -582,7 +584,7 @@ provada por leitura de fonte; os testes afirmam comportamento por stack, não pa
 stacks"*). Declarar de novo seria incoerente — fecha no ML-2B.
 
 ### ML-2B — Gate de paridade do aviso de squash-merge do `ship`
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
 **Arquivos:** `scripts/check-ship-parity.sh`, `scripts/check-gates-falsify.sh`.
 
 **Ação:** estender o `check-ship-parity.sh` com cenário que roda os **3 binários reais** contra o
@@ -591,10 +593,93 @@ mesmo fixture git e compara a saída byte a byte, para dois casos:
 - branch **genuinamente pendente** → aviso presente e idêntico, nos 3.
 
 **Critérios de aceite:**
-- [ ] Cenário novo no `check-ship-parity.sh` comparando saída real `go-vs-node` e `go-vs-py`.
-- [ ] Fixture git real com squash-merge e `main` avançando depois.
-- [ ] Cenário P4 de falsificação: sabotar **um** runtime e provar que o gate reprova.
-- [ ] `make quality` verde e **CI verde** — AC10 exige as duas.
+- [x] Cenário novo no `check-ship-parity.sh` comparando saída real `go-vs-node` e `go-vs-py`.
+- [x] Fixture git real com squash-merge e `main` avançando depois.
+- [x] Cenário P4 de falsificação: sabotar **um** runtime e provar que o gate reprova.
+- [x] `make quality` verde. **CI verde** ainda depende do push/PR — autoridade do
+  `trackfw_architect` (mesma ressalva do AC10 desde o início do roadmap).
+
+**Implementação:**
+- `scripts/check-ship-parity.sh`, cenário `(e) squash-merge-warning`: `make_squash_fixture` cria
+  um bare `origin` real + um único clone (mesmo padrão de
+  `TestDetectPendingSquashMerges_RealGitRepo_StaleIntegratedVsGenuinelyPending`, o teste Go-only
+  do ML-2A que esta ML estende aos 3 runtimes) — `feat/a` pushada, squash-mergeada em `main`, com
+  `main` avançando depois (réplica do #181/#182); `feat/pending` pushada e nunca mergeada. O
+  `ship` roda a partir de `chore/ship-parity-squash-check` (checked out após o avanço de `main`,
+  um arquivo não-doc staged) — **sem `--dry-run`**, porque o Step 3 do `ship` só executa o fetch
+  real e `detectPendingSquashMerges` fora do dry-run (`ship.go:212-220`; dry-run só imprime
+  `[dry-run] git fetch origin --prune` e nunca chama a detecção — as 4 cenas pré-existentes (a-d)
+  usavam `--dry-run` e por isso nunca exerciam este caminho).
+- Guard de não-vacuidade: antes do diff de 3 vias, cada runtime é checado individualmente —
+  o aviso de `feat/pending` DEVE aparecer, e `feat/a` NUNCA pode aparecer em nenhum aviso.
+  `assert_three_way` então prova byte-identidade de stdout+stderr+exit-code nos 3 binários reais.
+- `scripts/check-gates-falsify.sh`, Cenário 70: sabota `npm/src/ship/runner.js` — a condição
+  `evalResult.decision === BRANCH_PRUNE_DECISION.PENDING_WORK` vira `true` incondicional,
+  reintroduzindo o falso-positivo (Node avisa sobre `feat/a`, a branch stale-porém-integrada) numa
+  cópia isolada do Node (Go e Python intocados). Prova, rodando o `check-ship-parity.sh` real
+  contra essa árvore, que o gate novo reprova com o diagnóstico exato do guard de não-vacuidade
+  (`stale-but-integrated feat/a must never appear in a warning`) e com o diff byte a byte
+  correspondente. Contagem do resumo final ajustada de 130→131 cenários.
+
+**Evidência (2026-08-18, Apolo):**
+```
+$ GO_BIN=bin/trackfw bash scripts/check-ship-parity.sh
+OK   [ship-parity/chore-skips-gate]
+OK   [ship-parity/docs-skips-gate]
+OK   [ship-parity/feat-still-gated-non-regression]
+OK   [ship-parity/invalid-branch-vocabulary]
+OK   [ship-parity/squash-merge-warning]
+
+All check-ship-parity.sh scenarios passed.
+
+$ (P4 isolado, fora do make quality) sabotando npm/src/ship/runner.js numa árvore isolada:
+FAIL [ship-parity/squash-merge-warning/node]: stale-but-integrated feat/a must never appear in a
+warning; stdout: ...Warning: branch "feat/a" appears to have unmerged changes vs origin/main...
+FAIL [ship-parity/squash-merge-warning/go-vs-node/out]: stdout/stderr diverges: +Warning: branch
+"feat/a" appears to have unmerged changes vs origin/main.
+check-ship-parity.sh: one or more scenarios FAILED.  (exit 1, confirmado)
+
+$ GO_BIN=bin/trackfw bash scripts/check-branch-prune-parity.sh
+OK   [branch-prune-parity/dry-run-default]
+OK   [branch-prune-parity/apply-deletes-integrated]
+OK   [branch-prune-parity/apply-never-deletes-current-branch]
+OK   [branch-prune-parity/offline-refuses]
+OK   [branch-prune-parity/review-doc-config-only]
+OK   [branch-prune-parity/stale-origin-main-conservative]
+All check-branch-prune-parity.sh scenarios passed.
+
+$ make quality
+... OK   [falsify/ship-parity/squash-merge-warning-false-positive]
+Falsification checks passed (all 131 scenarios, ...)
+[exited with code 0]
+
+$ ./bin/trackfw validate
+19 warning(s), 0 violations (mesmos pré-existentes desta sessão, nenhum novo)
+```
+
+**Fora de escopo, confirmado nesta sessão:** Wave 3 (ML-3A, revisão de segurança do `hades-tf`) —
+não implementado. Nenhum `git commit`/`push`/`branch` executado por mim — autoridade exclusiva do
+`trackfw_architect`.
+
+---
+
+### Auditoria do ML-2B — pendente (arquiteto)
+
+### Auditoria do ML-2B — aprovada. AC8 fechado.
+
+```
+check-ship-parity.sh   5/5, incluindo o cenario novo squash-merge-warning
+guard de vacuidade     afirma que o aviso da pendente APARECE
+                       e que a integrada NUNCA aparece — os dois sentidos
+Cenario 70 (P4)        OK [falsify/ship-parity/squash-merge-warning-false-positive]
+Wave 1                 branch-prune 6/6, sem regressao
+make quality           exit 0 · 131 cenarios · validate exit 0
+```
+
+O guard de vacuidade era o risco que eu tinha nomeado no handoff: um diff de saídas vazias
+"passaria" sem provar nada, caso o `ship` abortasse antes por governança ou por nada staged. O
+cenário roda **sem** `--dry-run` (o dry-run pula o passo 3 inteiro) a partir de branch `chore/`,
+e afirma os dois sentidos. Não é vacuoso.
 
 ---
 
