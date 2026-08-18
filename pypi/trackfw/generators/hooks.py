@@ -152,7 +152,19 @@ def _same_path_command(a: str, b: str) -> bool:
 
 def _hook_array_has_command(existing, matcher: str, command: str) -> bool:
     """Read-only counterpart of _merge_claude_hook_array. Compares command
-    paths via _same_path_command (normalized), not raw string equality."""
+    paths via _same_path_command (normalized), not raw string equality.
+
+    ROADMAP-2026-08-17 ML-4B: also requires the sibling 'type' field to
+    equal "command" -- _merge_claude_hook_array always writes
+    {'type': 'command', 'command': ...}, and Claude/Codex/Gemini all
+    silently ignore a hook entry missing "type":"command" (measured,
+    hades-tf ML-4A barrier finding: a global entry with the correct command
+    but no 'type' field looked "installed" to the dedup, so the
+    project-scope entry was skipped in favor of a global entry that never
+    actually executes -- leaving BOTH scopes silently unprotected while
+    `trackfw validate` stayed green). Requiring "type":"command" here closes
+    that gap: a malformed global entry is now treated as "not installed", so
+    the project-scope entry gets re-wired instead of being skipped."""
     if not isinstance(existing, list):
         return False
     for entry in existing:
@@ -162,25 +174,40 @@ def _hook_array_has_command(existing, matcher: str, command: str) -> bool:
         if not isinstance(inner, list):
             continue
         for h in inner:
-            if isinstance(h, dict) and isinstance(h.get('command'), str) \
+            if isinstance(h, dict) and h.get('type') == 'command' \
+                    and isinstance(h.get('command'), str) \
                     and _same_path_command(h['command'], command):
                 return True
     return False
 
 
-def _simple_array_has_value(existing, field: str, value: str) -> bool:
+def _simple_array_has_value(existing, field: str, value: str, require_command_type: bool = False) -> bool:
     """Read-only, path-normalized check for flat arrays (Cursor's
-    {"command":...} / Copilot's {"bash":...} shape) -- used ONLY by the
-    global-dedup read paths, never by the write-side merge/idempotency
-    helper (_has_entry), which must keep comparing raw strings so its
-    idempotency behavior does not drift from Go/Node. See
+    {"command":...} / Copilot's {"type":"command","bash":...} shape) -- used
+    ONLY by the global-dedup read paths, never by the write-side
+    merge/idempotency helper (_has_entry), which must keep comparing raw
+    strings so its idempotency behavior does not drift from Go/Node. See
     _same_path_command's doc comment for why value must always be a script
-    path."""
+    path.
+
+    ROADMAP-2026-08-17 ML-4B: require_command_type mirrors Go's
+    simpleArrayHasValue -- Copilot entries (_merge_credential_guard_copilot_
+    hooks) always carry "type":"command" and Copilot ignores an entry
+    without it (same hades-tf ML-4A finding as _hook_array_has_command
+    above), so Copilot callers pass True. Cursor entries
+    (_merge_credential_guard_cursor_hooks, {"command": ...}) never carry a
+    'type' field -- not part of Cursor's schema -- so requiring it there
+    would make this always return False for a perfectly valid, executing
+    Cursor entry; Cursor callers pass False (the default). Do NOT uniformize
+    this across CLIs."""
     if not isinstance(existing, list):
         return False
     for entry in existing:
-        if isinstance(entry, dict) and isinstance(entry.get(field), str) \
-                and _same_path_command(entry[field], value):
+        if not isinstance(entry, dict):
+            continue
+        if require_command_type and entry.get('type') != 'command':
+            continue
+        if isinstance(entry.get(field), str) and _same_path_command(entry[field], value):
             return True
     return False
 
@@ -234,7 +261,7 @@ def _global_credential_guard_installed_cursor() -> bool:
     hooks = root.get('hooks')
     if not isinstance(hooks, dict):
         return False
-    return _simple_array_has_value(hooks.get('beforeShellExecution'), 'command', script_path)
+    return _simple_array_has_value(hooks.get('beforeShellExecution'), 'command', script_path, False)
 
 
 def _global_credential_guard_installed_copilot() -> bool:
@@ -247,7 +274,7 @@ def _global_credential_guard_installed_copilot() -> bool:
     hooks = root.get('hooks')
     if not isinstance(hooks, dict):
         return False
-    return _simple_array_has_value(hooks.get('preToolUse'), 'bash', script_path)
+    return _simple_array_has_value(hooks.get('preToolUse'), 'bash', script_path, True)
 
 
 def _global_credential_guard_installed_kiro() -> bool:
@@ -338,7 +365,7 @@ def _global_git_branch_guard_installed_cursor() -> bool:
     hooks = root.get('hooks')
     if not isinstance(hooks, dict):
         return False
-    return _simple_array_has_value(hooks.get('beforeShellExecution'), 'command', script_path)
+    return _simple_array_has_value(hooks.get('beforeShellExecution'), 'command', script_path, False)
 
 
 def _global_git_branch_guard_installed_copilot() -> bool:
@@ -351,7 +378,7 @@ def _global_git_branch_guard_installed_copilot() -> bool:
     hooks = root.get('hooks')
     if not isinstance(hooks, dict):
         return False
-    return _simple_array_has_value(hooks.get('preToolUse'), 'bash', script_path)
+    return _simple_array_has_value(hooks.get('preToolUse'), 'bash', script_path, True)
 
 
 def _merge_claude_hook_array(hook_list: list, matcher: str, command: str) -> None:

@@ -194,6 +194,58 @@ test('injectClaudeHooks skips project-scope git-branch-guard despite // formatti
   assert.equal(hasClaudeHook(data, 'PreToolUse', 'Bash', '$CLAUDE_PROJECT_DIR/scripts/trackfw-git-branch-guard.sh'), false)
 })
 
+// ---------------------------------------------------------------------------
+// ROADMAP-2026-08-17 ML-4B -- hades-tf ML-4A barrier finding: a global entry
+// with the CORRECT command but MISSING "type":"command" (hand-edited config,
+// older trackfw version, another tool's merge) is silently never executed by
+// Claude Code/GitHub Copilot CLI. Before this ML, hookArrayHasCommand/
+// hasEntryPath still read such an entry as "installed", so the project-scope
+// entry was skipped in favor of a global entry that never fires -- "nenhum
+// dos dois escopos protege". Cursor is the exception: its schema never
+// carries a "type" field, so a missing "type" there is normal, not
+// malformed -- see the // formatting test above, whose fixture already has
+// no "type" field and must keep skipping. Mirrors
+// TestGBGDedup_Claude_ReWiresProjectEntryWhenGlobalEntryMissingType /
+// TestGBGDedup_Copilot_ReWiresProjectEntryWhenGlobalEntryMissingType (Go).
+// ---------------------------------------------------------------------------
+
+test('injectClaudeHooks RE-WIRES project-scope git-branch-guard when global entry is missing "type":"command"', () => {
+  const home = isolatedHome()
+  const scriptPath = gbgScriptPathFor(home)
+  writeJSON(path.join(home, '.claude', 'settings.json'), {
+    // Deliberately missing "type":"command" -- the ML-4A barrier finding's
+    // exact malformed shape.
+    hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [{ command: scriptPath }] }] },
+  })
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-gbg-dedup-project-'))
+  injectClaudeHooks(dir)
+
+  const data = readJSON(path.join(dir, '.claude', 'settings.json'))
+  assert.equal(
+    hasClaudeHook(data, 'PreToolUse', 'Bash', '$CLAUDE_PROJECT_DIR/scripts/trackfw-git-branch-guard.sh'),
+    true,
+    'the malformed global entry (missing "type") is never executed by Claude Code, so the project-scope entry must be re-wired'
+  )
+})
+
+test('injectCopilotHooks RE-WIRES project-scope git-branch-guard when global entry is missing "type":"command"', () => {
+  const home = isolatedHome()
+  const scriptPath = gbgScriptPathFor(home)
+  writeJSON(path.join(home, '.copilot', 'settings.json'), {
+    // Deliberately missing "type":"command" -- same ML-4A finding, Copilot's
+    // own schema.
+    hooks: { preToolUse: [{ matcher: 'bash', bash: scriptPath, cwd: '.', timeoutSec: 10 }] },
+  })
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-gbg-dedup-project-'))
+  injectCopilotHooks(dir)
+
+  const data = readJSON(path.join(dir, '.github', 'hooks', 'trackfw-attention.json'))
+  const pre = data.hooks.preToolUse
+  assert.equal(pre.some(e => e.bash === 'scripts/trackfw-git-branch-guard.sh'), true)
+})
+
 // --- Fail-open ---
 
 test('injectClaudeHooks fail-open: no global file -> project git-branch-guard entry still added', () => {
@@ -270,6 +322,55 @@ test('git-branch-guard block message appears exactly once when both scopes are i
   const resolved = gitGuardEntries.map(p => p.replace('$CLAUDE_PROJECT_DIR', projectDir))
   const blocked = runEntries(projectDir, resolved)
   assert.equal(blocked, 1)
+})
+
+// ROADMAP-2026-08-17 ML-4B -- proves the fix end-to-end via EXECUTION, not
+// just JSON presence. claudeHookCommandsWithType filters on type==='command'
+// (unlike claudeHookCommands above), modeling what a real Claude Code
+// runtime would actually fire -- the malformed global entry is present in
+// the combined hook set but must be excluded from what executes. Before
+// this ML: the malformed entry made the dedup skip the project entry AND
+// the malformed entry itself never fires -- 0 blocks. After: the project
+// entry is re-wired and, being structurally valid, executes -- 1 block.
+// Mirrors TestGBGDedup_MalformedGlobalEntry_ProjectStillProtects (Go).
+function claudeHookCommandsWithType(data, event, matcher) {
+  const arr = (data.hooks && data.hooks[event]) || []
+  const out = []
+  for (const e of arr) {
+    if (!e || e.matcher !== matcher || !Array.isArray(e.hooks)) continue
+    for (const h of e.hooks) {
+      if (h && h.type === 'command' && typeof h.command === 'string') out.push(h.command)
+    }
+  }
+  return out
+}
+
+test('git-branch-guard: malformed global entry (missing "type") does not defeat protection', () => {
+  const home = isolatedHome()
+  generateGlobalGitBranchGuardScript(home)
+  const globalScriptPath = gbgScriptPathFor(home)
+  writeJSON(path.join(home, '.claude', 'settings.json'), {
+    hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [{ command: globalScriptPath }] }] },
+  })
+
+  const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-gbg-dedup-exec-'))
+  fs.writeFileSync(path.join(projectDir, 'trackfw.yaml'), 'roadmap_dir: docs/roadmaps\n', 'utf8')
+  generateGitBranchGuardScript(projectDir)
+
+  injectClaudeHooks(projectDir)
+
+  const projectData = readJSON(path.join(projectDir, '.claude', 'settings.json'))
+  const globalData = readJSON(path.join(home, '.claude', 'settings.json'))
+  const executable = [
+    ...claudeHookCommandsWithType(projectData, 'PreToolUse', 'Bash'),
+    ...claudeHookCommandsWithType(globalData, 'PreToolUse', 'Bash'),
+  ]
+  const resolved = executable
+    .filter(p => p.includes('trackfw-git-branch-guard.sh'))
+    .map(p => p.replace('$CLAUDE_PROJECT_DIR', projectDir))
+
+  const blocked = runEntries(projectDir, resolved)
+  assert.equal(blocked, 1, `expected exactly 1 block (the re-wired, structurally-valid project entry); executable entries: ${JSON.stringify(resolved)}`)
 })
 
 test('non-vacuity: with both entries wired (pre-dedup simulation), the message appears twice', () => {

@@ -1651,10 +1651,24 @@ func samePathCommand(a, b string) bool {
 }
 
 // hookArrayHasCommand reports whether a Claude/Codex/Gemini-shaped hook
-// array (matcher → {"hooks":[{"command"}]}) already contains command under
-// matcher. Read-only counterpart of mergeClaudeHookArray. Compares command
-// paths via samePathCommand (normalized), not raw string equality — see its
-// doc comment.
+// array (matcher → {"hooks":[{"type":"command","command"}]}) already
+// contains command under matcher AND wired with a structurally valid entry
+// that this CLI will actually execute. Read-only counterpart of
+// mergeClaudeHookArray. Compares command paths via samePathCommand
+// (normalized), not raw string equality — see its doc comment.
+//
+// ROADMAP-2026-08-17 ML-4B: also requires the sibling "type" field to equal
+// "command" — mergeClaudeHookArray (this file) always writes
+// {"type":"command","command":...}, and Claude/Codex/Gemini all silently
+// ignore a hook entry missing "type":"command" (measured, hades-tf ML-4A
+// barrier finding). Before this ML, an entry with the correct command but a
+// missing/wrong "type" (hand-edited config, older trackfw version, another
+// tool's merge) made this function return true — dedup then skipped the
+// project-scope entry in favor of a global entry that never actually runs,
+// leaving BOTH scopes silently unprotected while `trackfw validate` stayed
+// green. Requiring "type":"command" here closes that gap: a malformed
+// global entry is now treated as "not installed", so the project-scope
+// entry gets re-wired instead of being skipped.
 func hookArrayHasCommand(existing interface{}, matcher, command string) bool {
 	arr, _ := existing.([]interface{})
 	for _, item := range arr {
@@ -1668,6 +1682,9 @@ func hookArrayHasCommand(existing interface{}, matcher, command string) bool {
 			if !ok {
 				continue
 			}
+			if hObj["type"] != "command" {
+				continue
+			}
 			hCommand, ok := hObj["command"].(string)
 			if ok && samePathCommand(hCommand, command) {
 				return true
@@ -1678,16 +1695,32 @@ func hookArrayHasCommand(existing interface{}, matcher, command string) bool {
 }
 
 // simpleArrayHasValue reports whether a flat hook array (Cursor's
-// {"command":...} or Copilot's {"bash":...} shape) already has an entry
-// with field == value. Read-only counterpart of mergeSimpleCommandArray.
-// Compares via samePathCommand (normalized) — every caller of this function
-// passes a script path, never an arbitrary field value; if that ever
-// changes, do not reuse this helper for non-path fields.
-func simpleArrayHasValue(existing interface{}, field, value string) bool {
+// {"command":...} or Copilot's {"type":"command","bash":...} shape) already
+// has an entry with field == value. Read-only counterpart of
+// mergeSimpleCommandArray. Compares via samePathCommand (normalized) —
+// every caller of this function passes a script path, never an arbitrary
+// field value; if that ever changes, do not reuse this helper for non-path
+// fields.
+//
+// ROADMAP-2026-08-17 ML-4B: requireCommandType controls whether a sibling
+// "type" field equal to "command" is also required, matching what each
+// CLI's own schema demands — mergeCredentialGuardCopilotHooks
+// (internal/generators/update.go) always writes "type":"command" and
+// Copilot ignores an entry without it (same hades-tf ML-4A finding as
+// hookArrayHasCommand above), so Copilot callers pass true. Cursor's
+// mergeCredentialGuardCursorHooks entries ({"command":...}) never carry a
+// "type" field at all — it is not part of Cursor's schema — so requiring it
+// there would make simpleArrayHasValue always return false for a perfectly
+// valid, executing Cursor entry; Cursor callers pass false. Do NOT
+// uniformize this across CLIs — see the risk note on ML-4B in the roadmap.
+func simpleArrayHasValue(existing interface{}, field, value string, requireCommandType bool) bool {
 	arr, _ := existing.([]interface{})
 	for _, item := range arr {
 		obj, ok := item.(map[string]interface{})
 		if !ok {
+			continue
+		}
+		if requireCommandType && obj["type"] != "command" {
 			continue
 		}
 		v, ok := obj[field].(string)
@@ -1760,7 +1793,7 @@ func globalCredentialGuardInstalledCursor() bool {
 		return false
 	}
 	hooks, _ := root["hooks"].(map[string]interface{})
-	return simpleArrayHasValue(hooks["beforeShellExecution"], "command", scriptPath)
+	return simpleArrayHasValue(hooks["beforeShellExecution"], "command", scriptPath, false)
 }
 
 // globalCredentialGuardInstalledCopilot checks ~/.copilot/settings.json for
@@ -1776,7 +1809,7 @@ func globalCredentialGuardInstalledCopilot() bool {
 		return false
 	}
 	hooks, _ := root["hooks"].(map[string]interface{})
-	return simpleArrayHasValue(hooks["preToolUse"], "bash", scriptPath)
+	return simpleArrayHasValue(hooks["preToolUse"], "bash", scriptPath, true)
 }
 
 // globalCredentialGuardInstalledKiro checks whether
@@ -1895,7 +1928,7 @@ func globalGitBranchGuardInstalledCursor() bool {
 		return false
 	}
 	hooks, _ := root["hooks"].(map[string]interface{})
-	return simpleArrayHasValue(hooks["beforeShellExecution"], "command", scriptPath)
+	return simpleArrayHasValue(hooks["beforeShellExecution"], "command", scriptPath, false)
 }
 
 // globalGitBranchGuardInstalledCopilot checks ~/.copilot/settings.json for
@@ -1911,5 +1944,5 @@ func globalGitBranchGuardInstalledCopilot() bool {
 		return false
 	}
 	hooks, _ := root["hooks"].(map[string]interface{})
-	return simpleArrayHasValue(hooks["preToolUse"], "bash", scriptPath)
+	return simpleArrayHasValue(hooks["preToolUse"], "bash", scriptPath, true)
 }

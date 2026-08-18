@@ -19333,3 +19333,89 @@ Nenhum arquivo de produção tocado. Único artefato deixado: o parecer. Nenhum 
 executado por mim — handoff para `trackfw_architect` auditar, decidir sobre o achado B (ML novo ou
 débito registrado no ADR) e commitar. Roadmap permanece responsabilidade do arquiteto atualizar
 (Wave 4/ML-4A concluído do lado de Hades).
+
+## Sessão 2026-08-18 — Apolo (INÍCIO: ML-4B — dedup e hook_resolvable validam forma estrutural da entrada)
+
+Branch `fix/guard-global-cabeado-com-no-op-fora-de-projeto-e-integridade-independente-de-fiacao`,
+roadmap `docs/roadmaps/wip/ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-e-
+integridade-independente-de-fiacao.md`, Wave 4/ML-4B. Lido roadmap inteiro, achado de Hades
+(barreira ML-4A) e `docs/seguranca/2026-08-17-revisao-do-guard-em-escopo-global.md`. Escopo: fazer
+`hookArrayHasCommand`/`simpleArrayHasValue` (dedup, `internal/generators/agentfiles.go`) e
+`collectCommandsWithMarker`/`validateGuardHookResolvable`/`validateGuardGlobalHookResolvable`
+(validador) exigirem `"type":"command"` como campo irmão do comando, nos 3 CLIs. Sem commit/push
+(fora da minha autoridade de git).
+
+## Sessão 2026-08-18 — Apolo (FIM: ML-4B concluído — evidência colada abaixo)
+
+**O que mudou, nos 3 stacks:**
+- **Dedup** (`internal/generators/agentfiles.go`, `npm/src/generators/hooks.js`,
+  `pypi/trackfw/generators/hooks.py`): `hookArrayHasCommand`/`hasEntryPath`/`_hook_array_has_command`
+  agora exigem `type == "command"` no objeto que carrega o comando (Claude/Codex/Gemini sempre).
+  `simpleArrayHasValue`/`hasEntryPath`/`_simple_array_has_value` ganharam parâmetro
+  `requireCommandType` — `true` para Copilot (schema sempre emite `"type":"command"`), `false` para
+  Cursor (schema nunca carrega `"type"`, ausência é normal, não malformada — não uniformizado).
+- **Validador** (`internal/validator/validator_credential_guard.go` +
+  `validator_git_branch_guard.go`, espelhos Node/Python): `collectCommandsWithMarker` agora retorna,
+  para cada comando casado, se o objeto imediato que o contém também tem `"type":"command"` como
+  irmão (`guardCommandMatch{raw, typeIsCommand}`/equivalentes). `credentialGuardHookFile`/
+  `globalGuardConfigFile` (e espelhos) ganharam campo `requiresCommandType` — `true` para todo CLI
+  exceto Cursor. `validateGuardHookResolvable`/`validateGuardGlobalHookResolvable` reportam
+  violação nova ("hook entry is missing \"type\":\"command\" (or has an invalid type) — <CLI> will
+  silently never execute it") em vez de prosseguir para a checagem de existência/executabilidade
+  quando a entrada é malformada.
+- **Fixtures do gate corrigidas** (`scripts/check-gates-falsify.sh`): Cenário 47
+  (`s47_write_claude_guard_hook`) e a fixture Codex do Cenário 46 (`T46_FAKE_HOME`) não tinham
+  `"type":"command"` — forma antiga, pré-ML-4B. Corrigidas para a forma real que o escritor emite;
+  sem isso o Cenário 47 reprovava (regressão correta, não bug do fix) e o Cenário 46 perderia
+  validade como discriminante hipotético de vazamento de `$HOME`.
+- **Testes novos, 3 stacks:** dedup —
+  `TestGBGDedup_{Claude,Copilot}_ReWiresProjectEntryWhenGlobalEntryMissingType` +
+  `TestGBGDedup_MalformedGlobalEntry_ProjectStillProtects` (Go, execução real via
+  `runGitBranchGuardEntries` com filtro `type=="command"`, prova 0→1 blocks) e espelhos Node/Python.
+  Validador — `TestGuardGlobalHookResolvable_MalformedTypeMissing_Dispara` +
+  `TestGuardGlobalHookResolvable_Cursor_MissingTypeIsNormal_Silencio` (controle de não-regressão)
+  + `TestGitBranchGuardHookResolvable_ProjectMalformedTypeMissing_Dispara` e espelhos Node/Python.
+  **Não-vacuidade confirmada por mim**: `git stash` dos arquivos de produção (Go) → todos os testes
+  novos falham como esperado → `git stash pop` restaura o fix → todos voltam a passar.
+- **`scripts/check-validate-parity.sh`:** novo bloco (mesmo padrão do bloco de integridade global
+  do ML-3A) provando que a mensagem nova de `git_branch_guard_hook_resolvable` (escopo global,
+  entrada sem `"type"`) é byte-idêntica nos 3 CLIs — severidade default é `error` (não `warning`
+  como `script_integrity`), então cada invocação de `validate --json` precisou de `set +e/-e` local
+  para sobreviver ao `set -euo pipefail` do script.
+
+**Evidência bruta:**
+```
+go build ./... / go vet ./...                              → limpo
+go test ./...                                               → ok, todos os pacotes
+cd npm && npm test                                          → 664 passed, 0 failed
+PYTHONPATH=pypi python3 -m pytest pypi/tests -q              → 1343 passed, 28 subtests passed
+make quality (completo)                                     → exit 0, 130 cenários, 0 FAIL
+  scripts/check-validate-parity.sh:
+    Validate JSON parity checks passed
+    Validate JSON parity checks passed (global-scope guard integrity message, byte-identical across 3 CLIs)
+    Validate JSON parity checks passed (global-scope guard missing-type hook_resolvable message, byte-identical across 3 CLIs)
+./bin/trackfw validate (binário local recompilado, $HOME real de KG)  → exit 0, 18 warnings — as
+  mesmas do ML-3A (17 pré-existentes + o script global git-branch-guard desatualizado real), 0 novos
+  relacionados a este ML — confirma que a máquina de KG não tem entrada malformada hoje.
+```
+
+**Discriminante central provado (repro do achado de Hades), colado:**
+```
+antes do fix (git stash internal/validator/validator_{credential,git_branch}_guard.go):
+  TestGuardGlobalHookResolvable_MalformedTypeMissing_Dispara: FAIL — obteve []
+  TestGitBranchGuardHookResolvable_ProjectMalformedTypeMissing_Dispara: FAIL — obteve []
+antes do fix (git stash internal/generators/agentfiles.go):
+  TestGBGDedup_Claude_ReWiresProjectEntryWhenGlobalEntryMissingType: FAIL —
+    "project-scope git-branch-guard entry should have been RE-WIRED [...]"
+depois do fix (git stash pop): todos os 3 voltam a PASS.
+```
+
+**Débitos declarados, não corrigidos (conforme ML-4B do roadmap):** erro de leitura não-ENOENT
+colapsando em silêncio; `hook_resolvable` aceitando caminho por substring do marker (erra para o
+lado seguro — acusa em vez de silenciar, verificado por Hades). Kiro's dedup
+(`globalCredentialGuardInstalledKiro`) continua stat+size only, estruturalmente incapaz de validar
+forma — não tocado por design (arquivo dedicado sempre reescrito por inteiro).
+
+Nenhum `git commit`/`push`/branch executado por mim. Handoff para `trackfw_architect` auditar e
+commitar. Roadmap permanece responsabilidade do arquiteto atualizar (Wave 4/ML-4B pendente de
+auditoria).

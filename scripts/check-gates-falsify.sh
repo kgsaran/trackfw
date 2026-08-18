@@ -3939,8 +3939,12 @@ corrupt_literal \
 # independente de qualquer coisa instalada no `$HOME` real do executor.
 T46_FAKE_HOME="$WORK/s46-fake-global-home"
 mkdir -p "$T46_FAKE_HOME/.codex"
+# "type":"command" (ROADMAP-2026-08-17 ML-4B): must match what the real writer emits so this
+# fixture stays a valid discriminant if $HOME isolation ever regressed — hookArrayHasCommand now
+# requires the sibling "type" field, so an entry missing it would no longer read as "installed"
+# even in the hypothetical leak this fixture defends against.
 cat >"$T46_FAKE_HOME/.codex/hooks.json" <<EOF
-{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"command":"$T46_FAKE_HOME/.trackfw/scripts/trackfw-credential-guard.sh"}]}]}}
+{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"$T46_FAKE_HOME/.trackfw/scripts/trackfw-credential-guard.sh"}]}]}}
 EOF
 
 set +e
@@ -4062,11 +4066,19 @@ echo "OK   [falsify/agent-hooks-parity/credential-guard-present-vacuity/structur
 # silêncio. Reportado a Zeus para decisão (ML novo ou aceitar o gap).
 # ---------------------------------------------------------------------------
 
+# ROADMAP-2026-08-17 ML-4B: the fixture must carry "type":"command" like the
+# real writer (mergeClaudeHookArray, internal/generators/agentfiles.go) always
+# emits -- credential_guard_hook_resolvable now treats a matched command
+# WITHOUT that sibling field as a structurally malformed entry (see
+# hookArrayHasCommand's ML-4B doc comment), not a validly-wired one, so a
+# fixture missing it would make this scenario's own baseline arm fail for the
+# wrong reason (masking the "does the script exist" check this cenário exists
+# to prove) instead of exercising it.
 s47_write_claude_guard_hook() {
   local dest=$1
   mkdir -p "$(dirname "$dest")"
   cat > "$dest" <<'EOF'
-{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"command":"$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh"}]}]}}
+{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh"}]}]}}
 EOF
 }
 

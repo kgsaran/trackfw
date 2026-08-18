@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-08-17
 req: "docs/req/REQ-2026-08-17-guard-global-e-instalado-sem-fiacao-e-sua-integridade-nunca-e-verificada.md"
 adr: "docs/adr/ADR-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-trackfw.md"
@@ -8,7 +8,7 @@ squad: "apolo-tf, hades-tf"
 
 # Roadmap: guard global cabeado com no-op fora de projeto, e integridade independente de fiação
 
-> Created: 2026-08-17 | Status: wip
+> Created: 2026-08-17 | Status: done
 
 ## Context
 
@@ -801,7 +801,7 @@ vez de `TestMain`, equivalente. Não é gap.
 ---
 
 ### ML-4B — Dedup e `hook_resolvable` validam a forma estrutural da entrada
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Status:** ✅ Concluído — auditado por medição própria · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
 
 **Por que corrijo em vez de declarar**, apesar de o `hades-tf` classificar como não-bloqueante: ele
 argumenta que exige `$HOME` gravável, pré-requisito já fora do modelo do `ADR-2026-08-12`. Concordo
@@ -815,17 +815,55 @@ Custo baixo: o escritor já emite `"type":"command"`; falta o leitor exigir. "In
 significar **"vai de fato executar"**.
 
 **Critérios de aceite:**
-- [ ] Dedup só considera instalado entrada **estruturalmente válida** (com `type` correto por CLI).
-- [ ] Discriminante: entrada sem `type` → projeto **volta a cabear**; hoje pula.
-- [ ] `hook_resolvable` reporta entrada malformada em vez de ignorá-la.
-- [ ] Não-regressão: entradas válidas seguem deduplicando; `credential-guard` inalterado.
-- [ ] Forma estrutural respeita cada CLI — não uniformizar o que o fornecedor define diferente.
-- [ ] Cenário de falsificação com baseline e detecção; `$HOME` do fixture.
-- [ ] `make quality` verde; `./bin/trackfw validate` exit 0.
+- [x] Dedup só considera instalado entrada **estruturalmente válida** (com `type` correto por CLI).
+- [x] Discriminante: entrada sem `type` → projeto **volta a cabear**; hoje pula.
+- [x] `hook_resolvable` reporta entrada malformada em vez de ignorá-la.
+- [x] Não-regressão: entradas válidas seguem deduplicando; `credential-guard` inalterado.
+- [x] Forma estrutural respeita cada CLI — não uniformizar o que o fornecedor define diferente.
+- [x] Cenário de falsificação com baseline e detecção; `$HOME` do fixture.
+- [x] `make quality` verde; `./bin/trackfw validate` exit 0.
 
 **Débitos declarados, não corrigidos:** erro de leitura não-ENOENT colapsando em silêncio, e
 `hook_resolvable` aceitando caminho por substring do marker — este último **erra para o lado
 seguro** (acusa em vez de silenciar), verificado por mim.
+
+---
+
+### Auditoria do ML-4B — aprovada. REQ completa.
+
+```
+discriminante    entrada SEM type -> projeto VOLTA a cabear (1; antes 0)
+                 e o validate ACUSA, nomeando o remedio (antes: silencio)
+nao-regressao    entrada COM type -> projeto pula (0), validate limpo (0)
+isencao Cursor   CONFIRMADA POR EXECUCAO, nao e atalho:
+                   Claude ['command','type'] · Codex ['command','type'] · Cursor ['command']
+Cenario 46       4 bracos intactos
+make quality     exit 0 · 130 cenarios · validate exit 0
+```
+
+Mensagem nova: *"the hook entry is missing `"type":"command"` (or has an invalid type) — Claude Code
+will silently never execute it; run `trackfw update harness` to regenerate it"*. Nomeia o defeito
+**e** o remédio, e não emite o aviso errado de "does not exist" quando o problema é estrutural.
+
+### Padrão consolidado — quatro defeitos irmãos nesta REQ
+
+| onde | condição estreita demais | correta |
+|---|---|---|
+| resolvibilidade de hook | propriedade do **caminho** | do par (caminho, **cwd**) |
+| integridade global | condicionada à **fiação** | condicionada à **existência** |
+| comando do hook | igualdade **exata de string** | caminho **normalizado** |
+| forma da entrada | só a string `command` | **+ forma estrutural** |
+
+Todos produzem a **mesma falha**: proteção ausente com `validate` verde. Proponho virar seção do
+`cli-parity.md` — com quatro instâncias medidas, é generalização sustentada, não intuição.
+
+### Lição de planejamento
+
+As 4 waves precisaram de **8 MLs**. Nenhum retrabalho foi por implementação errada: todos vieram de
+auditoria achando efeito colateral que o ML original não previa (EPIPE, string crua, cobertura do
+Kiro, forma estrutural). O roadmap subestimou o **acoplamento** entre script, fiação, dedup e
+validador — não os agentes. Para o próximo roadmap que toque escopo global, assumir que cada
+mudança em um desses quatro mexe nos outros três.
 
 ---
 

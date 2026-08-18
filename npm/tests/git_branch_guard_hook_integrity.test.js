@@ -74,6 +74,40 @@ function globalClaudeSettingsWithCommand(scriptAbsPath) {
 `
 }
 
+// globalClaudeSettingsWithCommandNoType is globalClaudeSettingsWithCommand's ROADMAP-2026-08-17
+// ML-4B counterpart: "type":"command" is deliberately OMITTED -- the exact malformed shape
+// hades-tf's ML-4A barrier finding reproduced.
+function globalClaudeSettingsWithCommandNoType(scriptAbsPath) {
+  return `{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {"command": "${scriptAbsPath}"}
+        ]
+      }
+    ]
+  }
+}
+`
+}
+
+// globalCursorHooksWithCommand: Cursor's schema never carries a "type" field at all -- this
+// fixture is the non-regression control proving requiresCommandType=false for Cursor is not
+// over-tightened by ML-4B.
+function globalCursorHooksWithCommand(scriptAbsPath) {
+  return `{
+  "version": 1,
+  "hooks": {
+    "beforeShellExecution": [
+      {"command": "${scriptAbsPath}"}
+    ]
+  }
+}
+`
+}
+
 function withEnv(overrides, fn) {
   const saved = {}
   for (const key of Object.keys(overrides)) {
@@ -139,6 +173,40 @@ test('git_branch_guard_hook_resolvable: não dispara com script presente e execu
 
   const msgs = validateGitBranchGuardHookResolvable(dir)
   assert.deepEqual(msgs, [])
+})
+
+// ---------------------------------------------------------------------------
+// ROADMAP-2026-08-17 ML-4B -- hades-tf ML-4A barrier finding reproduced: a
+// config entry with the CORRECT command but MISSING "type":"command"
+// (script present and íntegro) makes neither the dedup NOR this rule notice
+// anything wrong -- "nenhum dos dois escopos protege, e tudo fica verde".
+// ---------------------------------------------------------------------------
+
+test('git_branch_guard_hook_resolvable: dispara com entrada de projeto sem "type":"command"', () => {
+  const dir = tmpDir()
+  writeFile(dir, '.claude/settings.json', `{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {"command": "$CLAUDE_PROJECT_DIR/scripts/trackfw-git-branch-guard.sh"}
+        ]
+      }
+    ]
+  }
+}
+`)
+  const scriptPath = path.join(dir, 'scripts', 'trackfw-git-branch-guard.sh')
+  fs.mkdirSync(path.dirname(scriptPath), { recursive: true })
+  fs.writeFileSync(scriptPath, GIT_BRANCH_GUARD_SCRIPT_REFERENCE, { mode: 0o755 })
+
+  const msgs = validateGitBranchGuardHookResolvable(dir)
+  assert.equal(msgs.some(m => m.includes('missing "type":"command"')), true)
+  assert.equal(msgs.some(m => m.includes('.claude/settings.json')), true)
+  assert.equal(msgs.some(m => m.includes('Claude Code')), true)
+  assert.equal(msgs.some(m => m.includes('but the script does not exist')), false)
+  assert.equal(msgs.some(m => m.includes('but the script is not executable')), false)
 })
 
 // ---- git_branch_guard_script_integrity (projeto) ----
@@ -232,6 +300,44 @@ test('escopo global: registrado mas script ausente → dispara', () => {
     assert.equal(msgs.some(m => m.includes('does not exist')), true)
     assert.equal(msgs.some(m => m.includes('global scope')), true)
     assert.equal(msgs.some(m => m.includes('trackfw update harness')), true)
+  })
+})
+
+// ROADMAP-2026-08-17 ML-4B -- hades-tf ML-4A barrier finding: script global presente e íntegro,
+// mas a entrada de config está sem "type":"command" -- Claude Code nunca a executa em silêncio.
+// Antes desta ML: silêncio (mesmo com script e caminho corretos). Depois: violação.
+test('escopo global: registrado sem "type":"command" → dispara (não "does not exist")', () => {
+  const home = tmpDir()
+  withEnv({ HOME: home }, () => {
+    const globalScriptPath = path.join(home, '.trackfw', 'scripts', 'trackfw-git-branch-guard.sh')
+    fs.mkdirSync(path.dirname(globalScriptPath), { recursive: true })
+    fs.writeFileSync(globalScriptPath, GIT_BRANCH_GUARD_SCRIPT_REFERENCE, { mode: 0o755 })
+    fs.mkdirSync(path.join(home, '.claude'), { recursive: true })
+    fs.writeFileSync(path.join(home, '.claude', 'settings.json'), globalClaudeSettingsWithCommandNoType(globalScriptPath), 'utf8')
+
+    const msgs = validateGitBranchGuardGlobalHookResolvable()
+    assert.equal(msgs.some(m => m.includes('missing "type":"command"')), true)
+    assert.equal(msgs.some(m => m.includes('global scope')), true)
+    assert.equal(msgs.some(m => m.includes('Claude Code')), true)
+    assert.equal(msgs.some(m => m.includes('trackfw update harness')), true)
+    assert.equal(msgs.some(m => m.includes('but the script does not exist')), false)
+    assert.equal(msgs.some(m => m.includes('but the script is not executable')), false)
+  })
+})
+
+// Non-regression control: Cursor's schema never carries a "type" field, so its absence is
+// normal, not malformed.
+test('escopo global (Cursor): ausência de "type" é normal, não malformada → silêncio', () => {
+  const home = tmpDir()
+  withEnv({ HOME: home }, () => {
+    const globalScriptPath = path.join(home, '.trackfw', 'scripts', 'trackfw-git-branch-guard.sh')
+    fs.mkdirSync(path.dirname(globalScriptPath), { recursive: true })
+    fs.writeFileSync(globalScriptPath, GIT_BRANCH_GUARD_SCRIPT_REFERENCE, { mode: 0o755 })
+    fs.mkdirSync(path.join(home, '.cursor'), { recursive: true })
+    fs.writeFileSync(path.join(home, '.cursor', 'hooks.json'), globalCursorHooksWithCommand(globalScriptPath), 'utf8')
+
+    const msgs = validateGitBranchGuardGlobalHookResolvable()
+    assert.deepEqual(msgs, [])
   })
 })
 

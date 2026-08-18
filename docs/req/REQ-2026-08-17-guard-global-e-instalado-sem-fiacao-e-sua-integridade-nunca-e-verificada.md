@@ -3,7 +3,7 @@ status: Open
 date: 2026-08-17
 author: "Zeus (Arquiteto)"
 adr: "docs/adr/ADR-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-trackfw.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-e-integridade-independente-de-fiacao.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-e-integridade-independente-de-fiacao.md"
 ---
 
 # REQ: o `git-branch-guard` global é instalado sem fiação, e a integridade do escopo global nunca é verificada
@@ -137,4 +137,4 @@ ADR de contexto: `docs/adr/ADR-2026-08-12-nao-ha-prevencao-contra-agente-induzid
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-e-integridade-independente-de-fiacao.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-e-integridade-independente-de-fiacao.md`

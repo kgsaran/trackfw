@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 )
 
 // ROADMAP-2026-08-15-trackfw-validate-deve-detectar-scripts-de-hook-ausentes-ou-desatualizados,
@@ -48,9 +49,13 @@ func validateGitBranchGuardScriptIntegrity() ([]string, error) {
 // the CLI that consumes it, for the global-scope guard checks below. Distinct from
 // credentialGuardHookFile (validator_credential_guard.go), whose .path is rooted at the PROJECT
 // root, not $HOME.
+// requiresCommandType (ROADMAP-2026-08-17 ML-4B) mirrors credentialGuardHookFile.
+// requiresCommandType — see that field's doc comment in validator_credential_guard.go. true for
+// every CLI except Cursor.
 type globalGuardConfigFile struct {
-	path string // relative to $HOME
-	cli  string
+	path                string // relative to $HOME
+	cli                 string
+	requiresCommandType bool
 }
 
 // globalGuardConfigFiles is the closed list of GLOBAL hook/settings files `trackfw update harness`
@@ -61,12 +66,12 @@ type globalGuardConfigFile struct {
 // note on credentialGuardScriptReference — so this list is validator's own, independently
 // maintained copy of the same 6 paths).
 var globalGuardConfigFiles = []globalGuardConfigFile{
-	{".claude/settings.json", "Claude Code"},
-	{".codex/hooks.json", "Codex CLI"},
-	{".gemini/settings.json", "Gemini CLI"},
-	{".cursor/hooks.json", "Cursor"},
-	{".copilot/settings.json", "GitHub Copilot CLI"},
-	{".kiro/hooks/trackfw-credential-guard.json", "Kiro"},
+	{".claude/settings.json", "Claude Code", true},
+	{".codex/hooks.json", "Codex CLI", true},
+	{".gemini/settings.json", "Gemini CLI", true},
+	{".cursor/hooks.json", "Cursor", false},
+	{".copilot/settings.json", "GitHub Copilot CLI", true},
+	{".kiro/hooks/trackfw-credential-guard.json", "Kiro", true},
 }
 
 // globalGuardConfigPath resolves the actual on-disk path (relative to $HOME) that
@@ -147,31 +152,48 @@ func validateGuardGlobalHookResolvable(ruleName, scriptMarker string) ([]string,
 			continue
 		}
 
-		var commands []string
+		var commands []guardCommandMatch
 		collectCommandsWithMarker(parsed, scriptMarker, &commands)
 
 		seen := make(map[string]bool, len(commands))
-		for _, raw := range commands {
-			if seen[raw] {
+		for _, m := range commands {
+			seenKey := m.raw + "\x00" + strconv.FormatBool(m.typeIsCommand)
+			if seen[seenKey] {
 				continue
 			}
-			seen[raw] = true
+			seen[seenKey] = true
 
-			if !filepath.IsAbs(raw) {
+			if !filepath.IsAbs(m.raw) {
 				continue
 			}
 
-			info, statErr := os.Stat(raw)
+			// ROADMAP-2026-08-17 ML-4B: reproduced by hades-tf (ML-4A barrier) — a global config
+			// entry with the correct absolute command but missing/wrong "type" (hand-edited, an
+			// older trackfw version, another tool's merge) is silently never executed by the CLI,
+			// even though the script itself exists and is fine. Before this ML that state was
+			// invisible to both the dedup (agentfiles.go's hookArrayHasCommand/simpleArrayHasValue,
+			// fixed in the same ML) and this rule — "nenhum dos dois escopos protege, e tudo fica
+			// verde". Reported instead of the exists/executable checks below, which assume the
+			// entry is structurally valid.
+			if gf.requiresCommandType && !m.typeIsCommand {
+				msgs = append(msgs, fmt.Sprintf(
+					`~/%s (%s, global scope) references %s resolved to %q, but the hook entry is missing "type":"command" (or has an invalid type) — %s will silently never execute it; run `+"`trackfw update harness`"+` to regenerate it`,
+					relPath, gf.cli, scriptMarker, m.raw, gf.cli,
+				))
+				continue
+			}
+
+			info, statErr := os.Stat(m.raw)
 			switch {
 			case statErr != nil:
 				msgs = append(msgs, fmt.Sprintf(
 					"~/%s (%s, global scope) references %s resolved to %q, but the script does not exist — run `trackfw update harness` to regenerate it",
-					relPath, gf.cli, scriptMarker, raw,
+					relPath, gf.cli, scriptMarker, m.raw,
 				))
 			case info.Mode()&0111 == 0:
 				msgs = append(msgs, fmt.Sprintf(
 					"~/%s (%s, global scope) references %s resolved to %q, but the script is not executable — run `trackfw update harness` to regenerate it",
-					relPath, gf.cli, scriptMarker, raw,
+					relPath, gf.cli, scriptMarker, m.raw,
 				))
 			}
 		}

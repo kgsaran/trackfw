@@ -242,6 +242,140 @@ func TestGBGDedup_Claude_SkipsProjectEntry_ToleratesDoubleSlashInStoredCommand(t
 	}
 }
 
+// ---------------------------------------------------------------------------
+// ROADMAP-2026-08-17 ML-4B — hades-tf ML-4A barrier finding: a global entry
+// with the CORRECT command but MISSING "type":"command" (hand-edited config,
+// older trackfw version, another tool's merge) is silently never executed by
+// Claude Code/Codex/Gemini/GitHub Copilot CLI/Kiro. Before this ML,
+// hookArrayHasCommand/simpleArrayHasValue still read such an entry as
+// "installed", so the project-scope entry was skipped in favor of a global
+// entry that never fires — "nenhum dos dois escopos protege, e tudo fica
+// verde". Cursor is the one exception: its schema never carries a "type"
+// field at all, so a missing "type" there is normal, not malformed — see
+// TestGBGDedup_Cursor_SkipsProjectEntryWhenGlobalInstalled above, whose
+// fixture already has no "type" field and must keep skipping.
+// ---------------------------------------------------------------------------
+
+func TestGBGDedup_Claude_ReWiresProjectEntryWhenGlobalEntryMissingType(t *testing.T) {
+	home := dedupFixtureHome(t)
+	scriptPath := gbgDedupScriptPath(home)
+	helperWriteJSON(t, filepath.Join(home, ".claude", "settings.json"), map[string]interface{}{
+		"hooks": map[string]interface{}{
+			"PreToolUse": []interface{}{
+				map[string]interface{}{
+					"matcher": "Bash",
+					// Deliberately missing "type":"command" -- the ML-4A barrier
+					// finding's exact malformed shape.
+					"hooks": []interface{}{map[string]interface{}{"command": scriptPath}},
+				},
+			},
+		},
+	})
+
+	dir := t.TempDir()
+	if err := InjectClaudeHooks(dir); err != nil {
+		t.Fatalf("InjectClaudeHooks failed: %v", err)
+	}
+
+	data := helperReadJSON(t, filepath.Join(dir, ".claude", "settings.json"))
+	if !helperHasClaudeHook(data, "PreToolUse", "Bash", claudeGitGuardCmd) {
+		t.Error("project-scope git-branch-guard entry should have been RE-WIRED: the global entry is missing \"type\":\"command\" and Claude Code will never execute it, so treating it as \"installed\" would leave both scopes unprotected (hades-tf ML-4A barrier finding)")
+	}
+}
+
+func TestGBGDedup_Copilot_ReWiresProjectEntryWhenGlobalEntryMissingType(t *testing.T) {
+	home := dedupFixtureHome(t)
+	scriptPath := gbgDedupScriptPath(home)
+	helperWriteJSON(t, filepath.Join(home, ".copilot", "settings.json"), map[string]interface{}{
+		"hooks": map[string]interface{}{
+			"preToolUse": []interface{}{
+				// Deliberately missing "type":"command" -- same ML-4A finding,
+				// Copilot's own schema.
+				map[string]interface{}{"matcher": "bash", "bash": scriptPath, "cwd": ".", "timeoutSec": 10},
+			},
+		},
+	})
+
+	dir := t.TempDir()
+	if err := InjectCopilotHooks(dir); err != nil {
+		t.Fatalf("InjectCopilotHooks failed: %v", err)
+	}
+
+	data := helperReadJSON(t, filepath.Join(dir, ".github", "hooks", "trackfw-attention.json"))
+	hooks, _ := data["hooks"].(map[string]interface{})
+	pre, _ := hooks["preToolUse"].([]interface{})
+	found := false
+	for _, item := range pre {
+		if item.(map[string]interface{})["bash"] == "scripts/trackfw-git-branch-guard.sh" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("project-scope git-branch-guard entry should have been RE-WIRED when the global Copilot entry is missing \"type\":\"command\", got %v", pre)
+	}
+}
+
+// TestGBGDedup_MalformedGlobalEntry_ProjectStillProtects proves the ML-4B fix
+// end-to-end via EXECUTION (not just JSON presence), mirroring
+// TestGBGDedup_MessageAppearsOnceWhenBothScopesInstalled's methodology. The
+// malformed global entry (missing "type") is real and present in the
+// combined project+global hook set, but a real Claude Code runtime would
+// never execute it -- so the "what actually fires" set (built via
+// helperClaudeHookCommandsWithType, which filters on type=="command", unlike
+// helperClaudeHookCommands above) must exclude it. Before this ML: the
+// malformed entry made the dedup skip the project entry AND the malformed
+// entry itself never fires -- 0 blocks, "nenhum dos dois escopos protege".
+// After this ML: the project entry is re-wired and, being structurally
+// valid, executes -- 1 block, protection restored.
+func TestGBGDedup_MalformedGlobalEntry_ProjectStillProtects(t *testing.T) {
+	home := dedupFixtureHome(t)
+	if err := GenerateGlobalGitBranchGuardScript(home); err != nil {
+		t.Fatalf("GenerateGlobalGitBranchGuardScript failed: %v", err)
+	}
+	globalScriptPath := gbgDedupScriptPath(home)
+	helperWriteJSON(t, filepath.Join(home, ".claude", "settings.json"), map[string]interface{}{
+		"hooks": map[string]interface{}{
+			"PreToolUse": []interface{}{
+				map[string]interface{}{
+					"matcher": "Bash",
+					"hooks":   []interface{}{map[string]interface{}{"command": globalScriptPath}},
+				},
+			},
+		},
+	})
+
+	projectDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(projectDir, "trackfw.yaml"), []byte("roadmap_dir: docs/roadmaps\n"), 0644); err != nil {
+		t.Fatalf("write trackfw.yaml: %v", err)
+	}
+	if err := GenerateGitBranchGuardScript(projectDir); err != nil {
+		t.Fatalf("GenerateGitBranchGuardScript failed: %v", err)
+	}
+	if err := InjectClaudeHooks(projectDir); err != nil {
+		t.Fatalf("InjectClaudeHooks failed: %v", err)
+	}
+
+	projectData := helperReadJSON(t, filepath.Join(projectDir, ".claude", "settings.json"))
+	globalData := helperReadJSON(t, filepath.Join(home, ".claude", "settings.json"))
+
+	executable := append(
+		helperClaudeHookCommandsWithType(t, projectData, "PreToolUse", "Bash"),
+		helperClaudeHookCommandsWithType(t, globalData, "PreToolUse", "Bash")...,
+	)
+	resolved := make([]string, 0, len(executable))
+	for _, p := range executable {
+		if !strings.Contains(p, "trackfw-git-branch-guard.sh") {
+			continue
+		}
+		resolved = append(resolved, strings.ReplaceAll(p, "$CLAUDE_PROJECT_DIR", projectDir))
+	}
+
+	got := runGitBranchGuardEntries(t, projectDir, resolved)
+	if got != 1 {
+		t.Fatalf("expected exactly 1 block (the re-wired, structurally-valid project entry) -- the malformed global entry must be excluded from what actually executes; got %d (executable entries: %v)", got, resolved)
+	}
+}
+
 // --- Fail-open: missing/corrupted global file must not disable the
 // project-scope git-branch-guard entry. ---
 
@@ -452,6 +586,37 @@ func helperClaudeHookCommands(t *testing.T, data map[string]interface{}, event, 
 		for _, h := range inner {
 			hObj, ok := h.(map[string]interface{})
 			if !ok {
+				continue
+			}
+			if cmd, ok := hObj["command"].(string); ok {
+				out = append(out, cmd)
+			}
+		}
+	}
+	return out
+}
+
+// helperClaudeHookCommandsWithType is helperClaudeHookCommands' ML-4B
+// counterpart: it only returns commands from entries that ALSO carry
+// "type":"command" — i.e. it models what a real Claude Code runtime would
+// actually execute, not merely what textually references a script. Used by
+// TestGBGDedup_MalformedGlobalEntry_ProjectStillProtects to exclude a
+// malformed (type-less) entry from the "what fires" set even though it is
+// present in the combined project+global hook set.
+func helperClaudeHookCommandsWithType(t *testing.T, data map[string]interface{}, event, matcher string) []string {
+	t.Helper()
+	var out []string
+	hooks, _ := data["hooks"].(map[string]interface{})
+	arr, _ := hooks[event].([]interface{})
+	for _, item := range arr {
+		obj, ok := item.(map[string]interface{})
+		if !ok || obj["matcher"] != matcher {
+			continue
+		}
+		inner, _ := obj["hooks"].([]interface{})
+		for _, h := range inner {
+			hObj, ok := h.(map[string]interface{})
+			if !ok || hObj["type"] != "command" {
 				continue
 			}
 			if cmd, ok := hObj["command"].(string); ok {

@@ -279,3 +279,97 @@ if msgs[1:] != msgs[:-1]:
 PY
 
 echo "Validate JSON parity checks passed (global-scope guard integrity message, byte-identical across 3 CLIs)"
+
+# ---------------------------------------------------------------------------
+# ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-e-integridade-independente-de-
+# fiacao, ML-4B: same gap as the block above, this time for the NEW "hook entry is missing
+# \"type\":\"command\"" message "git_branch_guard_hook_resolvable" (GLOBAL scope) emits since
+# ML-4B — hades-tf's ML-4A barrier finding reproduced: a global config entry with the CORRECT
+# command but MISSING "type":"command" (script present and íntegro) is silently never executed by
+# Claude Code, and this rule now reports it. Written by hand in 3 places (Go's
+# validateGuardGlobalHookResolvable, Node's validateGuardGlobalHookResolvable, Python's
+# validate_guard_global_hook_resolvable) — this block proves the wording is byte-identical, not
+# just the (rule, file) key.
+#
+# Unlike git_branch_guard_script_integrity (default severity "warning"), this rule's default
+# severity is "error" (falls through in ruleSeverity — see internal/validator/validator.go's
+# comment on git_branch_guard_hook_resolvable), so `validate --json` exits non-zero here; each
+# invocation is wrapped in set +e/-e to survive that under this script's `set -euo pipefail`.
+#
+# $HOME isolado por fixture, nunca o real (mesmo precedente do Cenário 46).
+# ---------------------------------------------------------------------------
+GVMT_TMP_CLEAN=$(printf '%s' "$TMP_DIR" | sed 's#//*#/#g')
+GVMT_HOME="$GVMT_TMP_CLEAN/global-missing-type-home"
+mkdir -p "$GVMT_HOME/.claude" "$GVMT_HOME/.trackfw/scripts"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$GVMT_HOME/.trackfw/scripts/trackfw-git-branch-guard.sh"
+chmod +x "$GVMT_HOME/.trackfw/scripts/trackfw-git-branch-guard.sh"
+# Entrada CORRETA no comando, mas SEM "type":"command" -- o achado central do ML-4B.
+cat >"$GVMT_HOME/.claude/settings.json" <<EOF
+{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"command":"$GVMT_HOME/.trackfw/scripts/trackfw-git-branch-guard.sh"}]}]}}
+EOF
+
+GVMT_PROJECT="$TMP_DIR/global-missing-type-project"
+mkdir -p \
+  "$GVMT_PROJECT/docs/adr" \
+  "$GVMT_PROJECT/docs/req" \
+  "$GVMT_PROJECT/docs/roadmaps"/{backlog,wip,blocked,done,abandoned}
+cat >"$GVMT_PROJECT/trackfw.yaml" <<'EOF'
+governance_mode: strict
+adr_dirs:
+  - docs/adr
+req_dir: docs/req
+roadmap_dir: docs/roadmaps
+EOF
+
+run_global_missing_type() {
+  local output=$1
+  shift
+  set +e
+  (cd "$GVMT_PROJECT" && HOME="$GVMT_HOME" "$@") >"$output" 2>"$output.stderr"
+  set -e
+}
+
+run_global_missing_type "$TMP_DIR/gvmt-go.json" "$TMP_DIR/trackfw-go" validate --json
+run_global_missing_type "$TMP_DIR/gvmt-node.json" node "$ROOT_DIR/npm/bin/trackfw" validate --json
+run_global_missing_type "$TMP_DIR/gvmt-python.json" env PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw validate --json
+
+python3 - "$TMP_DIR/gvmt-go.json" "$TMP_DIR/gvmt-node.json" "$TMP_DIR/gvmt-python.json" <<'PY'
+import json
+import sys
+
+def violation_messages(path):
+    with open(path, encoding="utf-8") as stream:
+        payload = json.load(stream)
+    return sorted(
+        item["message"] for item in payload["violations"]
+        if item.get("rule") == "git_branch_guard_hook_resolvable"
+    )
+
+msgs = [violation_messages(path) for path in sys.argv[1:]]
+
+# P2 vacuity guard: prove the rule actually fired in all 3.
+for path, value in zip(sys.argv[1:], msgs):
+    if not value:
+        raise SystemExit(
+            f"validate parity (global missing-type hook_resolvable): {path} produced ZERO "
+            "git_branch_guard_hook_resolvable violations — fixture is vacuous, or this CLI "
+            "regressed the structural-validity check (ML-4B)"
+        )
+    for text in value:
+        if "does not exist" in text or "not executable" in text:
+            raise SystemExit(
+                f"validate parity (global missing-type hook_resolvable): {path} reported the "
+                f"wrong diagnostic ({text!r}) -- the script exists and is executable, the "
+                "fixture's defect is the missing \"type\":\"command\" field, not existence"
+            )
+
+if msgs[1:] != msgs[:-1]:
+    for path, value in zip(sys.argv[1:], msgs):
+        print(path, json.dumps(value, indent=2), file=sys.stderr)
+    raise SystemExit(
+        "validate parity: git_branch_guard_hook_resolvable GLOBAL-scope missing-\"type\" warning "
+        "message text differs between runtimes (byte-for-byte comparison, not just rule+file)"
+    )
+PY
+
+echo "Validate JSON parity checks passed (global-scope guard missing-type hook_resolvable message, byte-identical across 3 CLIs)"

@@ -1152,13 +1152,28 @@ function samePathCommand(a, b) {
   return normalizeGuardPath(a) === normalizeGuardPath(b)
 }
 
-/** Read-only counterpart of mergeClaudeHookArray. Compares command paths via samePathCommand (normalized), not raw string equality. */
+/**
+ * Read-only counterpart of mergeClaudeHookArray. Compares command paths via
+ * samePathCommand (normalized), not raw string equality.
+ *
+ * ROADMAP-2026-08-17 ML-4B: also requires the sibling `type` field to equal
+ * "command" -- mergeClaudeHookArray always writes
+ * {type:'command',command:...}, and Claude/Codex/Gemini all silently ignore
+ * a hook entry missing "type":"command" (measured, hades-tf ML-4A barrier
+ * finding: a global entry with the correct command but no `type` field
+ * looked "installed" to the dedup, so the project-scope entry was skipped
+ * in favor of a global entry that never actually executes -- leaving BOTH
+ * scopes silently unprotected while `trackfw validate` stayed green).
+ * Requiring "type":"command" here closes that gap: a malformed global entry
+ * is now treated as "not installed", so the project-scope entry gets
+ * re-wired instead of being skipped.
+ */
 function hookArrayHasCommand(existing, matcher, command) {
   const arr = Array.isArray(existing) ? existing : []
   for (const item of arr) {
     if (!item || item.matcher !== matcher) continue
     const inner = Array.isArray(item.hooks) ? item.hooks : []
-    if (inner.some(h => h && typeof h.command === 'string' && samePathCommand(h.command, command))) return true
+    if (inner.some(h => h && h.type === 'command' && typeof h.command === 'string' && samePathCommand(h.command, command))) return true
   }
   return false
 }
@@ -1170,9 +1185,19 @@ function hookArrayHasCommand(existing, matcher, command) {
  * injectCursorHooks), which must keep comparing raw strings so their
  * idempotency behavior does not drift from Go/Python. See samePathCommand's
  * doc comment for why the value must always be a script path.
+ *
+ * ROADMAP-2026-08-17 ML-4B: requireCommandType mirrors Go's
+ * simpleArrayHasValue -- Copilot entries (mergeCredentialGuardCopilotHooks)
+ * always carry "type":"command" and Copilot ignores an entry without it
+ * (same hades-tf ML-4A finding as hookArrayHasCommand above), so Copilot
+ * callers pass true. Cursor entries (mergeCredentialGuardCursorHooks,
+ * {command:...}) never carry a `type` field -- not part of Cursor's schema
+ * -- so requiring it there would make this always return false for a
+ * perfectly valid, executing Cursor entry; Cursor callers pass false. Do
+ * NOT uniformize this across CLIs.
  */
-function hasEntryPath(arr, field, value) {
-  return Array.isArray(arr) && arr.some(e => e && typeof e[field] === 'string' && samePathCommand(e[field], value))
+function hasEntryPath(arr, field, value, requireCommandType) {
+  return Array.isArray(arr) && arr.some(e => e && (!requireCommandType || e.type === 'command') && typeof e[field] === 'string' && samePathCommand(e[field], value))
 }
 
 function globalCredentialGuardInstalledClaude() {
@@ -1204,7 +1229,7 @@ function globalCredentialGuardInstalledCursor() {
   if (!scriptPath) return false
   const root = readGlobalHookJSON('.cursor', 'hooks.json')
   if (!root || !root.hooks) return false
-  return hasEntryPath(root.hooks.beforeShellExecution, 'command', scriptPath)
+  return hasEntryPath(root.hooks.beforeShellExecution, 'command', scriptPath, false)
 }
 
 function globalCredentialGuardInstalledCopilot() {
@@ -1212,7 +1237,7 @@ function globalCredentialGuardInstalledCopilot() {
   if (!scriptPath) return false
   const root = readGlobalHookJSON('.copilot', 'settings.json')
   if (!root || !root.hooks) return false
-  return hasEntryPath(root.hooks.preToolUse, 'bash', scriptPath)
+  return hasEntryPath(root.hooks.preToolUse, 'bash', scriptPath, true)
 }
 
 /**
@@ -1283,7 +1308,7 @@ function globalGitBranchGuardInstalledCursor() {
   if (!scriptPath) return false
   const root = readGlobalHookJSON('.cursor', 'hooks.json')
   if (!root || !root.hooks) return false
-  return hasEntryPath(root.hooks.beforeShellExecution, 'command', scriptPath)
+  return hasEntryPath(root.hooks.beforeShellExecution, 'command', scriptPath, false)
 }
 
 function globalGitBranchGuardInstalledCopilot() {
@@ -1291,7 +1316,7 @@ function globalGitBranchGuardInstalledCopilot() {
   if (!scriptPath) return false
   const root = readGlobalHookJSON('.copilot', 'settings.json')
   if (!root || !root.hooks) return false
-  return hasEntryPath(root.hooks.preToolUse, 'bash', scriptPath)
+  return hasEntryPath(root.hooks.preToolUse, 'bash', scriptPath, true)
 }
 
 // ---------------------------------------------------------------------------

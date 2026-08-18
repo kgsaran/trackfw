@@ -222,6 +222,43 @@ func globalClaudeSettingsWithCommand(scriptAbsPath string) string {
 `
 }
 
+// globalClaudeSettingsWithCommandNoType is globalClaudeSettingsWithCommand's ROADMAP-2026-08-17
+// ML-4B counterpart: the "type":"command" field is deliberately OMITTED — the exact malformed
+// shape hades-tf's ML-4A barrier finding reproduced (correct command, missing type, script
+// present and integro, "nenhum dos dois escopos protege, e tudo fica verde").
+func globalClaudeSettingsWithCommandNoType(scriptAbsPath string) string {
+	return `{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {"command": "` + scriptAbsPath + `"}
+        ]
+      }
+    ]
+  }
+}
+`
+}
+
+// globalCursorHooksWithCommand monta ~/.cursor/hooks.json com uma entrada global
+// beforeShellExecution apontando para scriptAbsPath — mesma forma que
+// harnessCredentialGuardTargetCursor/harnessGitBranchGuardTargetCursor escrevem. Cursor's schema
+// never carries a "type" field at all (ROADMAP-2026-08-17 ML-4B) — this fixture is the
+// non-regression control proving requiresCommandType=false for Cursor is not over-tightened.
+func globalCursorHooksWithCommand(scriptAbsPath string) string {
+	return `{
+  "version": 1,
+  "hooks": {
+    "beforeShellExecution": [
+      {"command": "` + scriptAbsPath + `"}
+    ]
+  }
+}
+`
+}
+
 // TestGuardGlobalHookResolvable_SemEntradaGlobal_Silencio — sem NENHUMA entrada global
 // referenciando o marker em nenhum dos 6 arquivos, não é violação (nenhuma dependência real).
 func TestGuardGlobalHookResolvable_SemEntradaGlobal_Silencio(t *testing.T) {
@@ -313,6 +350,125 @@ func TestGuardGlobalHookResolvable_GlobalInstaladoMasScriptAusente_Dispara(t *te
 	}
 	if !hasViolation(msgs, "does not exist") || !hasViolation(msgs, "global scope") || !hasViolation(msgs, "trackfw update harness") {
 		t.Errorf("esperado violation de script global ausente, obteve: %v", msgs)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// ROADMAP-2026-08-17 ML-4B — hades-tf ML-4A barrier finding reproduced: a global config entry
+// with the CORRECT command but MISSING "type":"command" (script present and íntegro) makes
+// neither the dedup NOR this rule notice anything wrong — "nenhum dos dois escopos protege, e
+// tudo fica verde". Before this ML, collectCommandsWithMarker only cared about the string value,
+// never the structural "type" sibling, so this exact fixture produced zero violations.
+// ---------------------------------------------------------------------------
+
+// TestGuardGlobalHookResolvable_MalformedTypeMissing_Dispara reproduces the hades-tf ML-4A
+// barrier finding exactly: script present+executable+correct path, but the hook entry is missing
+// "type":"command" — Claude Code silently never executes it. Before this ML: silence. After:
+// violation.
+func TestGuardGlobalHookResolvable_MalformedTypeMissing_Dispara(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	home := globalGuardHome(t)
+	t.Cleanup(config.Reset)
+
+	globalScriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-git-branch-guard.sh")
+	if err := os.MkdirAll(filepath.Dir(globalScriptPath), 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(globalScriptPath, []byte(gitBranchGuardScriptReference), 0755); err != nil {
+		t.Fatalf("write global script: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(home, ".claude"), 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".claude", "settings.json"), []byte(globalClaudeSettingsWithCommandNoType(globalScriptPath)), 0644); err != nil {
+		t.Fatalf("write global settings: %v", err)
+	}
+
+	msgs, err := validateGitBranchGuardGlobalHookResolvable()
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if !hasViolation(msgs, `missing "type":"command"`) || !hasViolation(msgs, "global scope") || !hasViolation(msgs, "Claude Code") || !hasViolation(msgs, "trackfw update harness") {
+		t.Errorf("esperado violation de entrada estruturalmente malformada (type ausente), obteve: %v", msgs)
+	}
+	// Discriminante central: NÃO deve ser a mensagem de "does not exist" — o script existe e é
+	// executável, só a forma estrutural da entrada é que está errada.
+	if hasViolation(msgs, "but the script does not exist") || hasViolation(msgs, "but the script is not executable") {
+		t.Errorf("mensagem errada: script existe e é executável, o problema é a ausência de \"type\", obteve: %v", msgs)
+	}
+}
+
+// TestGuardGlobalHookResolvable_Cursor_MissingTypeIsNormal_Silencio is the non-regression
+// control: Cursor's schema never carries a "type" field, so its absence is normal, not malformed
+// — requiresCommandType=false for Cursor must not be over-tightened by this ML.
+func TestGuardGlobalHookResolvable_Cursor_MissingTypeIsNormal_Silencio(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	home := globalGuardHome(t)
+	t.Cleanup(config.Reset)
+
+	globalScriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-git-branch-guard.sh")
+	if err := os.MkdirAll(filepath.Dir(globalScriptPath), 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(globalScriptPath, []byte(gitBranchGuardScriptReference), 0755); err != nil {
+		t.Fatalf("write global script: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(home, ".cursor"), 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".cursor", "hooks.json"), []byte(globalCursorHooksWithCommand(globalScriptPath)), 0644); err != nil {
+		t.Fatalf("write global cursor hooks: %v", err)
+	}
+
+	msgs, err := validateGitBranchGuardGlobalHookResolvable()
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if len(msgs) != 0 {
+		t.Errorf("Cursor nunca carrega campo \"type\" — ausência é normal, não malformada; esperado zero violations, obteve: %v", msgs)
+	}
+}
+
+// TestGitBranchGuardHookResolvable_ProjectMalformedTypeMissing_Dispara is the PROJECT-scope
+// counterpart of TestGuardGlobalHookResolvable_MalformedTypeMissing_Dispara — same discriminant,
+// validateGuardHookResolvable (validator_credential_guard.go) instead of the global variant.
+func TestGitBranchGuardHookResolvable_ProjectMalformedTypeMissing_Dispara(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	writeFile(t, dir, ".claude/settings.json", `{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {"command": "$CLAUDE_PROJECT_DIR/scripts/trackfw-git-branch-guard.sh"}
+        ]
+      }
+    ]
+  }
+}
+`)
+	scriptPath := filepath.Join(dir, "scripts", "trackfw-git-branch-guard.sh")
+	if err := os.MkdirAll(filepath.Dir(scriptPath), 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(scriptPath, []byte(gitBranchGuardScriptReference), 0755); err != nil {
+		t.Fatalf("write script: %v", err)
+	}
+
+	msgs, err := validateGitBranchGuardHookResolvable()
+	if err != nil {
+		t.Fatalf("validateGitBranchGuardHookResolvable() erro: %v", err)
+	}
+	if !hasViolation(msgs, `missing "type":"command"`) || !hasViolation(msgs, ".claude/settings.json") || !hasViolation(msgs, "Claude Code") {
+		t.Errorf("esperado violation de entrada estruturalmente malformada (type ausente), obteve: %v", msgs)
+	}
+	if hasViolation(msgs, "but the script does not exist") || hasViolation(msgs, "but the script is not executable") {
+		t.Errorf("mensagem errada: script existe e é executável, o problema é a ausência de \"type\", obteve: %v", msgs)
 	}
 }
 

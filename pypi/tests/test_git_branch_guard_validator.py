@@ -114,6 +114,49 @@ class TestGitBranchGuardHookResolvable(unittest.TestCase):
         )
 
 
+class TestGitBranchGuardHookResolvableMalformedType(unittest.TestCase):
+    """ROADMAP-2026-08-17 ML-4B -- hades-tf ML-4A barrier finding reproduced at PROJECT scope: a
+    hook entry with the CORRECT command but MISSING "type":"command" (script present and
+    íntegro) makes neither the dedup NOR this rule notice anything wrong."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        _config.reset()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+        _config.reset()
+
+    def test_dispara_entrada_sem_type(self):
+        _write(
+            os.path.join(self.tmp, ".claude/settings.json"),
+            json.dumps({
+                "hooks": {
+                    "PreToolUse": [
+                        {"matcher": "Bash", "hooks": [
+                            {"command": "$CLAUDE_PROJECT_DIR/scripts/trackfw-git-branch-guard.sh"}]}
+                    ]
+                }
+            }),
+        )
+        script_path = os.path.join(self.tmp, "scripts", "trackfw-git-branch-guard.sh")
+        _write(script_path, v._GIT_BRANCH_GUARD_SCRIPT_REFERENCE)
+        os.chmod(script_path, 0o755)
+
+        cfg = _config.defaults()
+        msgs = v.validate_git_branch_guard_hook_resolvable(cfg, cwd=self.tmp)
+        texts = [m["message"] for m in msgs]
+        self.assertTrue(
+            any(
+                'missing "type":"command"' in t and ".claude/settings.json" in t and "Claude Code" in t
+                for t in texts
+            ),
+            f"esperado violation de entrada estruturalmente malformada (type ausente), obteve: {texts}",
+        )
+        self.assertFalse(any("but the script does not exist" in t for t in texts))
+        self.assertFalse(any("but the script is not executable" in t for t in texts))
+
+
 # ---- git_branch_guard_script_integrity (projeto) ----
 
 class TestGitBranchGuardScriptIntegrity(unittest.TestCase):
@@ -199,6 +242,30 @@ def _global_claude_settings_with_command(script_abs_path: str) -> str:
     })
 
 
+def _global_claude_settings_with_command_no_type(script_abs_path: str) -> str:
+    """ROADMAP-2026-08-17 ML-4B counterpart of _global_claude_settings_with_command:
+    "type":"command" is deliberately OMITTED -- the exact malformed shape hades-tf's ML-4A
+    barrier finding reproduced."""
+    return json.dumps({
+        "hooks": {
+            "PreToolUse": [
+                {"matcher": "Bash", "hooks": [{"command": script_abs_path}]}
+            ]
+        }
+    })
+
+
+def _global_cursor_hooks_with_command(script_abs_path: str) -> str:
+    """Cursor's schema never carries a "type" field at all -- non-regression control proving
+    requires_command_type=False for Cursor is not over-tightened by ML-4B."""
+    return json.dumps({
+        "version": 1,
+        "hooks": {
+            "beforeShellExecution": [{"command": script_abs_path}]
+        }
+    })
+
+
 class TestGuardGlobalHookResolvable(unittest.TestCase):
 
     def setUp(self):
@@ -268,6 +335,50 @@ class TestGuardGlobalHookResolvable(unittest.TestCase):
             ),
             f"esperado violation de script global ausente, obteve: {msgs}",
         )
+
+    def test_global_registrado_sem_type_dispara(self):
+        # ROADMAP-2026-08-17 ML-4B -- hades-tf ML-4A barrier finding: script global presente e
+        # íntegro, mas a entrada de config está sem "type":"command" -- Claude Code nunca a
+        # executa em silêncio. Antes desta ML: silêncio. Depois: violação, e NÃO a mensagem de
+        # "does not exist" (o script existe, o problema é a forma estrutural).
+        home = _global_guard_home(self)
+
+        global_script_path = os.path.join(home, ".trackfw", "scripts", "trackfw-git-branch-guard.sh")
+        _write(global_script_path, v._GIT_BRANCH_GUARD_SCRIPT_REFERENCE)
+        os.chmod(global_script_path, 0o755)
+        _write(
+            os.path.join(home, ".claude", "settings.json"),
+            _global_claude_settings_with_command_no_type(global_script_path),
+        )
+
+        msgs = v.validate_git_branch_guard_global_hook_resolvable(self.tmp)
+        texts = [m["message"] for m in msgs]
+        self.assertTrue(
+            any(
+                'missing "type":"command"' in t and "global scope" in t and "Claude Code" in t
+                and "trackfw update harness" in t
+                for t in texts
+            ),
+            f"esperado violation de entrada estruturalmente malformada (type ausente), obteve: {texts}",
+        )
+        self.assertFalse(any("but the script does not exist" in t for t in texts))
+        self.assertFalse(any("but the script is not executable" in t for t in texts))
+
+    def test_global_cursor_sem_type_e_normal_silencio(self):
+        # Non-regression control: Cursor's schema never carries a "type" field, so its absence is
+        # normal, not malformed.
+        home = _global_guard_home(self)
+
+        global_script_path = os.path.join(home, ".trackfw", "scripts", "trackfw-git-branch-guard.sh")
+        _write(global_script_path, v._GIT_BRANCH_GUARD_SCRIPT_REFERENCE)
+        os.chmod(global_script_path, 0o755)
+        _write(
+            os.path.join(home, ".cursor", "hooks.json"),
+            _global_cursor_hooks_with_command(global_script_path),
+        )
+
+        msgs = v.validate_git_branch_guard_global_hook_resolvable(self.tmp)
+        self.assertEqual(msgs, [], f"esperado zero violations (Cursor não carrega \"type\"), obteve: {msgs}")
 
     def test_global_instalado_mas_script_corrompido_dispara(self):
         home = _global_guard_home(self)

@@ -63,6 +63,24 @@ def _claude_hook_commands(data, event, matcher):
     return out
 
 
+def _claude_hook_commands_with_type(data, event, matcher):
+    """ROADMAP-2026-08-17 ML-4B counterpart of _claude_hook_commands: only
+    returns commands from entries that ALSO carry "type":"command" -- i.e.
+    models what a real Claude Code runtime would actually execute, not
+    merely what textually references a script."""
+    out = []
+    for entry in data.get('hooks', {}).get(event, []):
+        if entry.get('matcher') != matcher:
+            continue
+        for h in entry.get('hooks', []):
+            if h.get('type') != 'command':
+                continue
+            cmd = h.get('command')
+            if isinstance(cmd, str):
+                out.append(cmd)
+    return out
+
+
 class DedupTestCase(unittest.TestCase):
     def setUp(self):
         self._orig_home = os.environ.get('HOME')
@@ -207,6 +225,60 @@ class TestGBGDedupSkipsProjectEntry(DedupTestCase):
         self.assertFalse(_has_claude_hook(data, 'PreToolUse', 'Bash', '$CLAUDE_PROJECT_DIR/scripts/trackfw-git-branch-guard.sh'))
 
 
+class TestGBGDedupReWiresOnMalformedGlobalEntry(DedupTestCase):
+    """ROADMAP-2026-08-17 ML-4B -- hades-tf ML-4A barrier finding: a global
+    entry with the CORRECT command but MISSING "type":"command" (hand-edited
+    config, older trackfw version, another tool's merge) is silently never
+    executed by Claude Code/GitHub Copilot CLI. Before this ML,
+    _hook_array_has_command/_simple_array_has_value still read such an entry
+    as "installed", so the project-scope entry was skipped in favor of a
+    global entry that never fires -- "nenhum dos dois escopos protege".
+    Cursor is the exception: its schema never carries a "type" field, so a
+    missing "type" there is normal, not malformed -- see
+    test_claude_tolerates_double_slash_in_stored_command above, whose
+    fixture already has no "type" field for Cursor-shaped entries and must
+    keep skipping. Mirrors
+    TestGBGDedup_Claude_ReWiresProjectEntryWhenGlobalEntryMissingType /
+    TestGBGDedup_Copilot_ReWiresProjectEntryWhenGlobalEntryMissingType (Go).
+    """
+
+    def test_claude(self):
+        home = self._isolated_home()
+        script_path = self._script_path(home)
+        _write_json(
+            os.path.join(home, '.claude', 'settings.json'),
+            # Deliberately missing "type":"command" -- the ML-4A barrier
+            # finding's exact malformed shape.
+            {'hooks': {'PreToolUse': [{'matcher': 'Bash', 'hooks': [{'command': script_path}]}]}},
+        )
+
+        project_dir = tempfile.mkdtemp()
+        inject_claude_hooks(project_dir)
+
+        data = _read_json(os.path.join(project_dir, '.claude', 'settings.json'))
+        self.assertTrue(
+            _has_claude_hook(data, 'PreToolUse', 'Bash', '$CLAUDE_PROJECT_DIR/scripts/trackfw-git-branch-guard.sh'),
+            'the malformed global entry (missing "type") is never executed by Claude Code, so the project-scope entry must be re-wired',
+        )
+
+    def test_copilot(self):
+        home = self._isolated_home()
+        script_path = self._script_path(home)
+        _write_json(
+            os.path.join(home, '.copilot', 'settings.json'),
+            # Deliberately missing "type":"command" -- same ML-4A finding,
+            # Copilot's own schema.
+            {'hooks': {'preToolUse': [{'matcher': 'bash', 'bash': script_path, 'cwd': '.', 'timeoutSec': 10}]}},
+        )
+
+        project_dir = tempfile.mkdtemp()
+        inject_copilot_hooks(project_dir)
+
+        data = _read_json(os.path.join(project_dir, '.github', 'hooks', 'trackfw-attention.json'))
+        pre = data['hooks']['preToolUse']
+        self.assertTrue(any(e.get('bash') == 'scripts/trackfw-git-branch-guard.sh' for e in pre))
+
+
 class TestGBGDedupFailOpen(DedupTestCase):
     def test_no_global_file(self):
         self._isolated_home()  # empty $HOME, no global files at all
@@ -285,6 +357,49 @@ class TestGBGDedupMessageOnce(DedupTestCase):
         resolved = [p.replace('$CLAUDE_PROJECT_DIR', project_dir) for p in git_guard_entries]
         blocked = _run_entries(project_dir, resolved)
         self.assertEqual(blocked, 1)
+
+    def test_malformed_global_entry_does_not_defeat_protection(self):
+        """ROADMAP-2026-08-17 ML-4B -- proves the fix end-to-end via
+        EXECUTION, not just JSON presence. _claude_hook_commands_with_type
+        filters on type == 'command' (unlike _claude_hook_commands above),
+        modeling what a real Claude Code runtime would actually fire -- the
+        malformed global entry is present in the combined hook set but must
+        be excluded from what executes. Before this ML: the malformed entry
+        made the dedup skip the project entry AND the malformed entry itself
+        never fires -- 0 blocks. After: the project entry is re-wired and,
+        being structurally valid, executes -- 1 block. Mirrors
+        TestGBGDedup_MalformedGlobalEntry_ProjectStillProtects (Go)."""
+        home = self._isolated_home()
+        generate_global_git_branch_guard_script(home)
+        global_script_path = self._script_path(home)
+        _write_json(
+            os.path.join(home, '.claude', 'settings.json'),
+            {'hooks': {'PreToolUse': [{'matcher': 'Bash', 'hooks': [{'command': global_script_path}]}]}},
+        )
+
+        project_dir = tempfile.mkdtemp()
+        with open(os.path.join(project_dir, 'trackfw.yaml'), 'w', encoding='utf-8') as f:
+            f.write('roadmap_dir: docs/roadmaps\n')
+        _generate_git_branch_guard_script(project_dir)
+
+        inject_claude_hooks(project_dir)
+
+        project_data = _read_json(os.path.join(project_dir, '.claude', 'settings.json'))
+        global_data = _read_json(os.path.join(home, '.claude', 'settings.json'))
+        executable = (
+            _claude_hook_commands_with_type(project_data, 'PreToolUse', 'Bash')
+            + _claude_hook_commands_with_type(global_data, 'PreToolUse', 'Bash')
+        )
+        resolved = [
+            p.replace('$CLAUDE_PROJECT_DIR', project_dir)
+            for p in executable if 'trackfw-git-branch-guard.sh' in p
+        ]
+
+        blocked = _run_entries(project_dir, resolved)
+        self.assertEqual(
+            blocked, 1,
+            f'expected exactly 1 block (the re-wired, structurally-valid project entry); executable entries: {resolved}',
+        )
 
     def test_non_vacuous_both_entries_wired_message_twice(self):
         home = self._isolated_home()

@@ -1167,13 +1167,20 @@ const GIT_BRANCH_GUARD_SCRIPT_MARKER = 'trackfw-git-branch-guard.sh'
 // -fail-open-do-credential-guard, ML-1A). Hooks de escopo GLOBAL (~/.trackfw/..., trackfw update
 // harness) ficam fora — caso distinto, fora do repositório do usuário, e a checagem de dedup
 // globalCredentialGuardInstalled*() já os pula de propósito nas entradas de projeto.
+//
+// requiresCommandType (ROADMAP-2026-08-17 ML-4B, port of Go's credentialGuardHookFile.
+// requiresCommandType): true for every CLI whose writer always emits a sibling "type":"command"
+// field (Claude/Codex/Gemini, GitHub Copilot CLI, Kiro) — a command match found WITHOUT that
+// sibling is a structurally malformed entry the CLI silently never executes (hades-tf ML-4A
+// barrier finding), not merely "absent". false only for Cursor, whose schema
+// ({"command":...}) never carries a "type" field at all.
 const CREDENTIAL_GUARD_HOOK_FILES = [
-  { relPath: '.claude/settings.json', cli: 'Claude Code' },
-  { relPath: '.codex/hooks.json', cli: 'Codex CLI' },
-  { relPath: '.gemini/settings.json', cli: 'Gemini CLI' },
-  { relPath: '.cursor/hooks.json', cli: 'Cursor' },
-  { relPath: '.github/hooks/trackfw-attention.json', cli: 'GitHub Copilot CLI' },
-  { relPath: '.kiro/hooks/trackfw-attention.json', cli: 'Kiro' },
+  { relPath: '.claude/settings.json', cli: 'Claude Code', requiresCommandType: true },
+  { relPath: '.codex/hooks.json', cli: 'Codex CLI', requiresCommandType: true },
+  { relPath: '.gemini/settings.json', cli: 'Gemini CLI', requiresCommandType: true },
+  { relPath: '.cursor/hooks.json', cli: 'Cursor', requiresCommandType: false },
+  { relPath: '.github/hooks/trackfw-attention.json', cli: 'GitHub Copilot CLI', requiresCommandType: true },
+  { relPath: '.kiro/hooks/trackfw-attention.json', cli: 'Kiro', requiresCommandType: true },
 ]
 
 // resolveCredentialGuardHookPath resolve o valor bruto de um comando de hook (string extraída do
@@ -1214,11 +1221,18 @@ function resolveCredentialGuardHookPath(raw, root) {
 }
 
 // collectCommandsWithMarker percorre recursivamente um valor JSON já decodificado e coleta todo
-// valor-string que contém marker, independentemente do nome do campo que o contém.
+// valor-string que contém marker, independentemente do nome do campo que o contém — junto com um
+// sinal estrutural (typeIsCommand) de que o objeto imediato que o contém também tem
+// "type":"command" como campo irmão (ROADMAP-2026-08-17 ML-4B, port de guardCommandMatch em
+// internal/validator/validator_credential_guard.go). Cada entrada de `out` é
+// {raw, typeIsCommand}.
 //
 // Os 6 formatos de hook usam campos diferentes para o comando: "command" (Claude/Codex/
 // Gemini/Cursor), "bash" (GitHub Copilot CLI), "action.command" (Kiro). Varrer por VALOR em vez
-// de por caminho de chave evita acoplar esta regra à forma exata de cada schema.
+// de por caminho de chave evita acoplar esta regra à forma exata de cada schema. Todo schema aqui
+// coloca "type" como IRMÃO do campo do comando dentro do MESMO objeto — nunca aninhado mais fundo
+// — então basta ler "type" do objeto que collectCommandsWithMarker já está visitando; não é
+// necessária uma travessia schema-aware separada.
 //
 // Generalizado (ROADMAP-2026-08-15-trackfw-validate-deve-detectar-scripts-de-hook-ausentes-ou-
 // desatualizados, ML-2A, port de collectCommandsWithMarker em
@@ -1227,7 +1241,10 @@ function resolveCredentialGuardHookPath(raw, root) {
 // também para GIT_BRANCH_GUARD_SCRIPT_MARKER, sem duplicar a travessia recursiva.
 function collectCommandsWithMarker(value, marker, out) {
   if (typeof value === 'string') {
-    if (value.includes(marker)) out.push(value)
+    // Top-level/loose string match, outside any enclosing object — defensive fallback, not
+    // expected to fire since every hook file read here is rooted at a JSON object. No enclosing
+    // object means no "type" sibling to read.
+    if (value.includes(marker)) out.push({ raw: value, typeIsCommand: false })
     return
   }
   if (Array.isArray(value)) {
@@ -1235,7 +1252,15 @@ function collectCommandsWithMarker(value, marker, out) {
     return
   }
   if (value && typeof value === 'object') {
-    for (const key of Object.keys(value)) collectCommandsWithMarker(value[key], marker, out)
+    const typeIsCommand = value.type === 'command'
+    for (const key of Object.keys(value)) {
+      const val = value[key]
+      if (typeof val === 'string') {
+        if (val.includes(marker)) out.push({ raw: val, typeIsCommand })
+        continue
+      }
+      collectCommandsWithMarker(val, marker, out)
+    }
   }
 }
 
@@ -1293,12 +1318,23 @@ function validateGuardHookResolvable(scriptMarker, cwd) {
     collectCommandsWithMarker(parsed, scriptMarker, commands)
 
     const seen = new Set()
-    for (const raw of commands) {
-      if (seen.has(raw)) continue
-      seen.add(raw)
+    for (const m of commands) {
+      const seenKey = `${m.raw} ${m.typeIsCommand}`
+      if (seen.has(seenKey)) continue
+      seen.add(seenKey)
 
-      const resolved = resolveCredentialGuardHookPath(raw, root)
+      const resolved = resolveCredentialGuardHookPath(m.raw, root)
       if (resolved === null) continue
+
+      // ROADMAP-2026-08-17 ML-4B: a command that resolves to a real path but sits inside a
+      // structurally malformed entry (missing/wrong "type" where this CLI's schema requires it —
+      // hades-tf ML-4A barrier finding) will NEVER be executed by the CLI, regardless of whether
+      // the script itself exists and is executable. Reported instead of the exists/executable
+      // checks below, which assume a structurally valid entry.
+      if (hf.requiresCommandType && !m.typeIsCommand) {
+        msgs.push(`${hf.relPath} (${hf.cli}) references ${scriptMarker} resolved to "${resolved}", but the hook entry is missing "type":"command" (or has an invalid type) — ${hf.cli} will silently never execute it; run \`trackfw update\` to regenerate it`)
+        continue
+      }
 
       let stat = null
       try {
@@ -2161,13 +2197,15 @@ exit 0
 // (internal/validator/validator_git_branch_guard.go) — note this list DIFFERS from
 // CREDENTIAL_GUARD_HOOK_FILES for Copilot and Kiro (global scope uses .copilot/settings.json and
 // .kiro/hooks/trackfw-credential-guard.json, not the project-scope attention-hook paths).
+// requiresCommandType (ROADMAP-2026-08-17 ML-4B) mirrors CREDENTIAL_GUARD_HOOK_FILES'
+// requiresCommandType above — true for every CLI except Cursor.
 const GLOBAL_GUARD_CONFIG_FILES = [
-  { relPath: '.claude/settings.json', cli: 'Claude Code' },
-  { relPath: '.codex/hooks.json', cli: 'Codex CLI' },
-  { relPath: '.gemini/settings.json', cli: 'Gemini CLI' },
-  { relPath: '.cursor/hooks.json', cli: 'Cursor' },
-  { relPath: '.copilot/settings.json', cli: 'GitHub Copilot CLI' },
-  { relPath: '.kiro/hooks/trackfw-credential-guard.json', cli: 'Kiro' },
+  { relPath: '.claude/settings.json', cli: 'Claude Code', requiresCommandType: true },
+  { relPath: '.codex/hooks.json', cli: 'Codex CLI', requiresCommandType: true },
+  { relPath: '.gemini/settings.json', cli: 'Gemini CLI', requiresCommandType: true },
+  { relPath: '.cursor/hooks.json', cli: 'Cursor', requiresCommandType: false },
+  { relPath: '.copilot/settings.json', cli: 'GitHub Copilot CLI', requiresCommandType: true },
+  { relPath: '.kiro/hooks/trackfw-credential-guard.json', cli: 'Kiro', requiresCommandType: true },
 ]
 
 // globalGuardConfigPath resolves the actual on-disk path (relative to $HOME) that
@@ -2228,23 +2266,34 @@ function validateGuardGlobalHookResolvable(scriptMarker) {
     collectCommandsWithMarker(parsed, scriptMarker, commands)
 
     const seen = new Set()
-    for (const raw of commands) {
-      if (seen.has(raw)) continue
-      seen.add(raw)
+    for (const m of commands) {
+      const seenKey = `${m.raw} ${m.typeIsCommand}`
+      if (seen.has(seenKey)) continue
+      seen.add(seenKey)
 
-      if (!path.isAbsolute(raw)) continue
+      if (!path.isAbsolute(m.raw)) continue
+
+      // ROADMAP-2026-08-17 ML-4B: reproduced by hades-tf (ML-4A barrier) — a global config entry
+      // with the correct absolute command but missing/wrong "type" (hand-edited, an older trackfw
+      // version, another tool's merge) is silently never executed by the CLI, even though the
+      // script itself exists and is fine. Reported instead of the exists/executable checks below,
+      // which assume the entry is structurally valid.
+      if (gf.requiresCommandType && !m.typeIsCommand) {
+        msgs.push(`~/${relPath} (${gf.cli}, global scope) references ${scriptMarker} resolved to "${m.raw}", but the hook entry is missing "type":"command" (or has an invalid type) — ${gf.cli} will silently never execute it; run \`trackfw update harness\` to regenerate it`)
+        continue
+      }
 
       let stat = null
       try {
-        stat = fs.statSync(raw)
+        stat = fs.statSync(m.raw)
       } catch (_) {
         stat = null
       }
 
       if (!stat) {
-        msgs.push(`~/${relPath} (${gf.cli}, global scope) references ${scriptMarker} resolved to "${raw}", but the script does not exist — run \`trackfw update harness\` to regenerate it`)
+        msgs.push(`~/${relPath} (${gf.cli}, global scope) references ${scriptMarker} resolved to "${m.raw}", but the script does not exist — run \`trackfw update harness\` to regenerate it`)
       } else if ((stat.mode & 0o111) === 0) {
-        msgs.push(`~/${relPath} (${gf.cli}, global scope) references ${scriptMarker} resolved to "${raw}", but the script is not executable — run \`trackfw update harness\` to regenerate it`)
+        msgs.push(`~/${relPath} (${gf.cli}, global scope) references ${scriptMarker} resolved to "${m.raw}", but the script is not executable — run \`trackfw update harness\` to regenerate it`)
       }
     }
   }
