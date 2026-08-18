@@ -1,5 +1,5 @@
 ---
-status: done
+status: wip
 date: 2026-08-17
 req: "docs/req/REQ-2026-08-17-guard-global-e-instalado-sem-fiacao-e-sua-integridade-nunca-e-verificada.md"
 adr: "docs/adr/ADR-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-trackfw.md"
@@ -8,7 +8,7 @@ squad: "apolo-tf, hades-tf"
 
 # Roadmap: guard global cabeado com no-op fora de projeto, e integridade independente de fiação
 
-> Created: 2026-08-17 | Status: done
+> Created: 2026-08-17 | Status: wip
 
 ## Context
 
@@ -39,7 +39,8 @@ com roadmap próprio **depois** deste — as duas tocam os mesmos arquivos de va
       funcionando e não acusa em dobro.
 - [x] AC6 — Paridade nos 3 CLIs, com gate; conteúdo do script byte-idêntico entre escopos.
 - [x] AC7 — Cenários de falsificação (P4) com baseline **e** detecção para cada ML.
-- [x] AC8 — `make quality` verde; `trackfw validate` sem novas violações.
+- [ ] AC8 — `make quality` verde **em Linux também**; `trackfw validate` sem novas violações.
+      🔴 Reaberto: fechei com evidência **só de macOS**; o CI (Linux) reprovou o Cenário 65.
 
 ## 🔴 Riscos que valem para TODOS os MLs deste roadmap
 
@@ -864,6 +865,42 @@ auditoria achando efeito colateral que o ML original não previa (EPIPE, string 
 Kiro, forma estrutural). O roadmap subestimou o **acoplamento** entre script, fiação, dedup e
 validador — não os agentes. Para o próximo roadmap que toque escopo global, assumir que cada
 mudança em um desses quatro mexe nos outros três.
+
+---
+
+### 🔴 CI reprovou o que eu aprovei — AC8 fechado com evidência insuficiente
+
+O PR #186 abriu com `parity` **vermelho** no CI, embora `make quality` passasse aqui. **A falha é
+minha**: fechei o AC8 com evidência de **uma só plataforma**.
+
+```
+FAIL [falsify/git-branch-guard/stdin-drain-before-noop/baseline-writer-clean-large-payload]
+  writer stderr: python3: Argument list too long
+```
+
+**Não é bug de produto.** `assert_writer_no_epipe` interpola o payload **dentro do fonte Python**
+passado por `-c`, então o payload de 200 KB vira um **argumento** de 200 KB. O Linux aplica
+`MAX_ARG_STRLEN` (128 KB por argumento); o macOS não barra do mesmo jeito.
+
+**O agravante:** no Linux esse braço **nunca exercitou o produto** — falhava na partida do escritor.
+Era um teste vacuoso que só não passou despercebido porque a asserção era estrita o bastante para
+reprovar em vez de seguir. Se ela fosse mais frouxa, teríamos um falso verde permanente em CI.
+
+**Lição além do conserto:** `make quality` verde localmente **não é** evidência de AC quando o
+cenário depende de limites do sistema operacional. Payload grande, caminho longo, limite de
+argumento e semântica de pipe são exatamente os casos em que macOS e Linux divergem.
+
+### ML-4C — Payload grande via stdin/arquivo, não via argumento
+**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Arquivos:** `scripts/check-gates-falsify.sh` (helper `assert_writer_no_epipe`, ~linha 222, e o
+Cenário 65).
+
+**Critérios de aceite:**
+- [ ] O payload deixa de ser passado como **argumento**; vai por arquivo ou stdin.
+- [ ] O braço de payload grande **exercita o produto de fato** em Linux — não pode falhar na
+      partida do escritor nem passar sem rodar o guard.
+- [ ] Os 3 braços do Cenário 65 seguem válidos, incluindo o de detecção.
+- [ ] `make quality` verde localmente **e** o `parity` do CI verde no PR #186.
 
 ---
 
