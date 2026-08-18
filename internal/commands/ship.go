@@ -559,8 +559,17 @@ func isGitWriteCmd(args []string) bool {
 	return gitWriteCommands[args[0]]
 }
 
-// detectPendingSquashMerges warns about branches that have non-empty diffs
-// against origin/main. Non-blocking — prints only.
+// detectPendingSquashMerges warns about branches that have genuinely pending work against
+// origin/main. Non-blocking — prints only.
+//
+// Reuses evaluateBranchIntegration (branch_prune.go) — the same touched-files heuristic
+// `trackfw branch prune` uses — instead of a naive bidirectional `git diff origin/main <branch>
+// --stat`. The naive check false-positives on a branch that was squash-merged and is now merely
+// stale (main advanced further afterwards): it always shows a non-empty diff even though nothing
+// from the branch is actually missing from main. Only branchPruneDecisionPendingWork — genuine,
+// unintegrated work — surfaces this warning; every other decision (no_own_work,
+// content_identical, review_doc_config, no_merge_base, eval_error) is silently kept quiet, same
+// posture the naive check had on error (skip, no warning).
 func detectPendingSquashMerges(currentBranch string, gitExec func(...string) (string, error), out io.Writer) {
 	remoteBranches, err := gitExec("branch", "-r", "--no-merged", "origin/main")
 	if err != nil || strings.TrimSpace(remoteBranches) == "" {
@@ -576,11 +585,8 @@ func detectPendingSquashMerges(currentBranch string, gitExec func(...string) (st
 		if shortName == currentBranch {
 			continue
 		}
-		diff, derr := gitExec("diff", "origin/main", candidate, "--stat")
-		if derr != nil {
-			continue
-		}
-		if strings.TrimSpace(diff) != "" {
+		eval := evaluateBranchIntegration(candidate, gitExec)
+		if eval.Decision == branchPruneDecisionPendingWork {
 			fmt.Fprintf(out, "Warning: branch %q appears to have unmerged changes vs origin/main.\n", shortName)
 		}
 	}

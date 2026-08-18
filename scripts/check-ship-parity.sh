@@ -44,6 +44,17 @@
 #   (d) branch outside the ship vocabulary (feat|fix|refactor|chore|docs), non-doc file staged →
 #       exit 1, byte-identical stdout+stderr ("Error: ... does not match the required
 #       pattern...", stderr).
+#   (e) squash-merge warning (AC8 of
+#       docs/roadmaps/wip/ROADMAP-2026-08-18-branch-prune-com-dry-run-por-padrao-e-heuristica-de-arquivos-tocados.md,
+#       ML-2B): a REAL git remote (bare origin + clone) with one branch that was squash-merged
+#       into main and is now merely stale (main advanced further afterwards — the #181/#182
+#       incident) and one branch that is genuinely never merged. Runs `ship` WITHOUT --dry-run
+#       (dry-run skips Step 3's fetch and detectPendingSquashMerges entirely — see ship.go:212-220
+#       — so it cannot exercise this path) so the real `git fetch origin --prune` +
+#       detectPendingSquashMerges call the same evaluateBranchIntegration heuristic
+#       `check-branch-prune-parity.sh` already proves per-runtime. Proves, byte-for-byte across
+#       all three runtimes: the stale-but-integrated branch gets NO warning, the genuinely
+#       pending branch gets the warning, and the two are never conflated.
 set -euo pipefail
 
 export NO_COLOR=1
@@ -249,6 +260,96 @@ done
 # Full-stream byte diff: all three runtimes now write this error to stderr with the "Error: "
 # prefix (ML-1B) — a real drift anywhere in the message (e.g. the vocabulary list, or the
 # "git checkout -b feat/<slug>" hint) or in which stream it lands on still fails this gate.
+assert_three_way "$SH_LABEL"
+
+# ---------------------------------------------------------------------------
+# Scenario (e) — squash-merge warning parity (AC8, ML-2B).
+#
+# make_squash_fixture builds a REAL bare "origin" + a single working clone (mirrors
+# TestDetectPendingSquashMerges_RealGitRepo_StaleIntegratedVsGenuinelyPending in
+# internal/commands/ship_test.go, the Go-only proof this scenario now extends to all 3
+# runtimes):
+#   - feat/a: pushed to origin, squash-merged into main, then main advances further
+#     (an unrelated follow-up commit) — feat/a is content-integrated but ancestry-stale.
+#   - feat/pending: pushed to origin, genuinely never merged anywhere.
+#   - a NEW branch (chore/<slug>) is checked out off the advanced main, with one non-doc file
+#     staged — this is the branch `ship` actually runs from; it is never itself a candidate
+#     (detectPendingSquashMerges always skips currentBranch).
+# ---------------------------------------------------------------------------
+make_squash_fixture() {
+  local dir=$1
+  local bare="$dir-origin.git"
+  mkdir -p "$bare"
+  (cd "$bare" && git init -q --bare -b main .)
+
+  git clone -q "$bare" "$dir"
+  (
+    cd "$dir"
+    git config user.email test@example.com
+    git config user.name "trackfw parity gate"
+
+    echo base >base.txt
+    git add base.txt
+    git commit -qm "base commit"
+    git push -q origin main
+
+    # feat/a — pushed, then squash-merged into main. Ancestry never records the merge (the
+    # git branch -d false negative), so it stays in `branch -r --no-merged origin/main`.
+    git checkout -q -b feat/a
+    echo a >a.txt
+    git add a.txt
+    git commit -qm "feat/a work"
+    git push -q origin feat/a
+    git checkout -q main
+    git merge -q --squash feat/a
+    git commit -qm "squash-merge feat/a (PR #181)"
+
+    # main advances further (PR #182) — this is what makes the naive bidirectional diff
+    # non-empty for the already-integrated feat/a, and what the touched-files heuristic must
+    # see through.
+    echo b >b.txt
+    git add b.txt
+    git commit -qm "unrelated follow-up (PR #182)"
+    git push -q origin main
+
+    # feat/pending — pushed, genuinely never merged anywhere.
+    git checkout -q -b feat/pending
+    echo c >c.txt
+    git add c.txt
+    git commit -qm "feat/pending work, never merged"
+    git push -q origin feat/pending
+
+    # The branch `ship` actually runs from — off the advanced main, with one staged non-doc
+    # file. chore/ skips Step 2's governance gate so no roadmap/REQ fixture is needed.
+    git checkout -q main
+    git checkout -q -b "chore/ship-parity-squash-check"
+    echo note >note.txt
+    git add note.txt
+  )
+}
+
+SH_LABEL="squash-merge-warning"
+for runtime in go node py; do
+  fixture="$WORK/e-$runtime"
+  make_squash_fixture "$fixture"
+  run_ship "$runtime" "$fixture" -m "chore: ship parity squash-merge check" --no-pr
+  echo "$SH_EXIT" >"$WORK/$SH_LABEL.$runtime.exit"
+  if [[ "$SH_EXIT" -ne 0 ]]; then
+    fail "ship-parity/$SH_LABEL/$runtime" "expected exit 0, got $SH_EXIT; stdout: $(cat "$SH_OUT_FILE"); stderr: $(cat "$SH_ERR_FILE")"
+    continue
+  fi
+  # Vacuity guard: the warning must actually fire for the genuinely pending branch — otherwise
+  # an empty-vs-empty diff below would "pass" without proving anything (risk 1 of the ML).
+  if ! grep -qF 'Warning: branch "feat/pending" appears to have unmerged changes vs origin/main.' "$SH_OUT_FILE"; then
+    fail "ship-parity/$SH_LABEL/$runtime" "vacuity guard: stdout missing the pending-branch warning; stdout: $(cat "$SH_OUT_FILE")"
+    continue
+  fi
+  # The stale-but-integrated branch must never be warned about.
+  if grep -qF 'feat/a' "$SH_OUT_FILE"; then
+    fail "ship-parity/$SH_LABEL/$runtime" "stale-but-integrated feat/a must never appear in a warning; stdout: $(cat "$SH_OUT_FILE")"
+    continue
+  fi
+done
 assert_three_way "$SH_LABEL"
 
 # ---------------------------------------------------------------------------

@@ -1294,3 +1294,173 @@ func TestShip_Integration_GracefulDegradation_RealBinary(t *testing.T) {
 		t.Fatalf("expected github.com fallback URL in dry-run output (proves graceful degradation), got:\n%s", combined)
 	}
 }
+
+// ────────────────────────────────────────────────────────────────────────────
+// ML-2A — detectPendingSquashMerges reuses evaluateBranchIntegration
+// ────────────────────────────────────────────────────────────────────────────
+
+// TestDetectPendingSquashMerges_RealGitRepo_StaleIntegratedVsGenuinelyPending is the P4
+// falsification scenario for ML-2A (REQ-2026-08-18): reproduces the PR #181/#182 incident in a
+// real, disposable git repository. origin/feat/a is squash-merged into origin/main, which then
+// advances further (origin/feat/b), leaving origin/feat/a's naive bidirectional diff non-empty
+// even though every file it touched is already on main. origin/feat/pending never merges
+// anywhere and must still warn.
+//
+// Baseline (P4): asserts the naive check IS non-empty for origin/feat/a first — proving the test
+// discriminates against the pre-fix behavior instead of passing vacuously. Detection: the fixed
+// detectPendingSquashMerges (calling evaluateBranchIntegration) must NOT warn about feat/a and
+// MUST warn about feat/pending.
+func TestDetectPendingSquashMerges_RealGitRepo_StaleIntegratedVsGenuinelyPending(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available in PATH")
+	}
+
+	work := t.TempDir()
+	bareDir := filepath.Join(work, "origin.git")
+	cloneDir := filepath.Join(work, "clone")
+
+	run := func(dir string, args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(),
+			"GIT_CONFIG_GLOBAL="+filepath.Join(work, "empty-gitconfig"),
+			"GIT_CONFIG_SYSTEM=/dev/null",
+			"GIT_TERMINAL_PROMPT=0",
+			"HOME="+work,
+		)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v (dir=%s) failed: %v\n%s", args, dir, err, out)
+		}
+		return string(out)
+	}
+
+	if err := os.WriteFile(filepath.Join(work, "empty-gitconfig"), []byte(""), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.MkdirAll(bareDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	run(bareDir, "init", "-q", "--bare", "-b", "main")
+
+	if err := os.MkdirAll(cloneDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	run(work, "clone", "-q", bareDir, cloneDir)
+	run(cloneDir, "config", "user.email", "falsify@trackfw.test")
+	run(cloneDir, "config", "user.name", "trackfw falsify")
+	run(cloneDir, "config", "commit.gpgsign", "false")
+	run(cloneDir, "config", "core.hooksPath", "/dev/null")
+
+	writeFile := func(name, content string) {
+		if err := os.WriteFile(filepath.Join(cloneDir, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	writeFile("base.txt", "base\n")
+	run(cloneDir, "add", "base.txt")
+	run(cloneDir, "commit", "-q", "-m", "base commit")
+	run(cloneDir, "push", "-q", "origin", "main")
+
+	// feat/a — pushed to origin, then squash-merged into main. Ancestry never records the merge
+	// (the git branch -d false negative), so it stays in `branch -r --no-merged origin/main`.
+	run(cloneDir, "checkout", "-q", "-b", "feat/a")
+	writeFile("a.txt", "a\n")
+	run(cloneDir, "add", "a.txt")
+	run(cloneDir, "commit", "-q", "-m", "feat/a work")
+	run(cloneDir, "push", "-q", "origin", "feat/a")
+	run(cloneDir, "checkout", "-q", "main")
+	run(cloneDir, "merge", "-q", "--squash", "feat/a")
+	run(cloneDir, "commit", "-q", "-m", "squash-merge feat/a (PR #181)")
+
+	// main advances further (PR #182) — this is what makes the naive bidirectional diff non-empty
+	// for the already-integrated feat/a.
+	writeFile("b.txt", "b\n")
+	run(cloneDir, "add", "b.txt")
+	run(cloneDir, "commit", "-q", "-m", "unrelated follow-up (PR #182)")
+	run(cloneDir, "push", "-q", "origin", "main")
+
+	// feat/pending — pushed to origin, genuinely never merged anywhere.
+	run(cloneDir, "checkout", "-q", "-b", "feat/pending")
+	writeFile("c.txt", "c\n")
+	run(cloneDir, "add", "c.txt")
+	run(cloneDir, "commit", "-q", "-m", "feat/pending work, never merged")
+	run(cloneDir, "push", "-q", "origin", "feat/pending")
+
+	run(cloneDir, "checkout", "-q", "main")
+	run(cloneDir, "fetch", "-q", "origin")
+
+	gitExec := func(args ...string) (string, error) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = cloneDir
+		cmd.Env = append(os.Environ(),
+			"GIT_CONFIG_GLOBAL="+filepath.Join(work, "empty-gitconfig"),
+			"GIT_CONFIG_SYSTEM=/dev/null",
+			"HOME="+work,
+		)
+		out, err := cmd.Output()
+		return strings.TrimSpace(string(out)), err
+	}
+
+	// P4 baseline: prove the naive bidirectional check (the pre-fix behavior) IS non-empty for
+	// origin/feat/a — this is the exact false positive the PR #181/#182 incident reported.
+	naiveDiff, err := gitExec("diff", "origin/main", "origin/feat/a", "--stat")
+	if err != nil {
+		t.Fatalf("naive diff failed: %v", err)
+	}
+	if strings.TrimSpace(naiveDiff) == "" {
+		t.Fatal("test setup invalid: naive diff origin/main origin/feat/a --stat must be non-empty to reproduce the #181/#182 false positive")
+	}
+
+	// P4 detection: the fixed detectPendingSquashMerges must not warn about feat/a (stale but
+	// integrated) and must still warn about feat/pending (genuinely unmerged).
+	out := &bytes.Buffer{}
+	detectPendingSquashMerges("main", gitExec, out)
+	got := out.String()
+
+	if strings.Contains(got, `"feat/a"`) {
+		t.Fatalf("detectPendingSquashMerges must NOT warn about feat/a (stale-but-integrated squash-merge) — this is the AC7 discriminant. Output:\n%s", got)
+	}
+	if !strings.Contains(got, `"feat/pending"`) {
+		t.Fatalf("detectPendingSquashMerges must still warn about feat/pending (genuinely unmerged) — non-regression. Output:\n%s", got)
+	}
+}
+
+// TestDetectPendingSquashMerges_CallsSharedEvaluateBranchIntegration is a narrower, fast
+// (fake-gitExec) test proving detectPendingSquashMerges routes through evaluateBranchIntegration
+// instead of maintaining its own bidirectional diff: for a candidate whose merge-base call fails,
+// no warning fires — a raw diff-based implementation would still have attempted `git diff
+// origin/main <candidate> --stat` and could have warned regardless of merge-base failing.
+func TestDetectPendingSquashMerges_CallsSharedEvaluateBranchIntegration(t *testing.T) {
+	calls := map[string]int{}
+	gitExec := func(args ...string) (string, error) {
+		key := strings.Join(args, " ")
+		calls[key]++
+		switch {
+		case key == "branch -r --no-merged origin/main":
+			return "  origin/feat/unrelated-history\n", nil
+		case strings.HasPrefix(key, "merge-base origin/main"):
+			return "", fmt.Errorf("fatal: no merge base")
+		case strings.HasPrefix(key, "diff origin/main"):
+			// A raw bidirectional-diff implementation would call this directly; the shared
+			// evaluateBranchIntegration only reaches its own -z diffs after a successful
+			// merge-base, which never happens here.
+			return "some.file | 1 +\n", nil
+		default:
+			return "", nil
+		}
+	}
+
+	out := &bytes.Buffer{}
+	detectPendingSquashMerges("main", gitExec, out)
+
+	if out.Len() != 0 {
+		t.Fatalf("expected no warning when merge-base fails (routed through evaluateBranchIntegration -> no_merge_base), got:\n%s", out.String())
+	}
+	if calls["diff origin/main origin/feat/unrelated-history --stat"] > 0 {
+		t.Fatal("detectPendingSquashMerges must not run its own bidirectional diff --stat anymore — it must delegate entirely to evaluateBranchIntegration")
+	}
+}

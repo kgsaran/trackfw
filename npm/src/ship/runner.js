@@ -12,6 +12,7 @@ const { load: loadConfig, reset: resetConfig } = require('../config')
 const { resolve: forgeResolve } = require('../forge/resolve')
 const { forgeAdapter } = require('../forge/adapter')
 const validator = require('../validator')
+const { evaluateBranchIntegration, DECISION: BRANCH_PRUNE_DECISION } = require('../branch/prune')
 
 // Git subcommands that modify local or remote state.
 // In --dry-run mode these are printed but not executed.
@@ -130,8 +131,17 @@ function normalizeBranchSlug(value) {
 }
 
 /**
- * detectPendingSquashMerges warns about remote branches with non-empty diffs vs origin/main.
- * Non-blocking.
+ * detectPendingSquashMerges warns about remote branches with genuinely pending work vs
+ * origin/main. Non-blocking.
+ *
+ * Reuses evaluateBranchIntegration (branch/prune.js) — the same touched-files heuristic
+ * `trackfw branch prune` uses — instead of a naive bidirectional `git diff origin/main <branch>
+ * --stat`. The naive check false-positives on a branch that was squash-merged and is now merely
+ * stale (main advanced further afterwards): it always shows a non-empty diff even though nothing
+ * from the branch is actually missing from main. Only DECISION.PENDING_WORK — genuine,
+ * unintegrated work — surfaces this warning; every other decision (no_own_work,
+ * content_identical, review_doc_config, no_merge_base, eval_error) stays silent, the same
+ * posture the naive check had on error (skip, no warning).
  * @param {string} currentBranch
  * @param {function} execGit
  * @param {function} writeln
@@ -146,9 +156,8 @@ function detectPendingSquashMerges(currentBranch, execGit, writeln) {
     const shortName = candidate.replace(/^origin\//, '')
     if (shortName === currentBranch) continue
 
-    const { stdout: diff, error: derr } = execGit(['diff', 'origin/main', candidate, '--stat'])
-    if (derr) continue
-    if (diff.trim()) {
+    const evalResult = evaluateBranchIntegration(candidate, execGit)
+    if (evalResult.decision === BRANCH_PRUNE_DECISION.PENDING_WORK) {
       writeln(`Warning: branch "${shortName}" appears to have unmerged changes vs origin/main.`)
     }
   }
@@ -605,4 +614,5 @@ module.exports = {
   gitCommitsSince,
   buildPRBody,
   COMMIT_MESSAGE_SEP,
+  detectPendingSquashMerges,
 }

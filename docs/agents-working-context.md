@@ -19461,3 +19461,123 @@ lado a lado (forma antiga falha / forma nova passa).
 Nenhum `git commit`/`push`/branch executado por mim. Handoff para `trackfw_architect`: auditar,
 commitar, dar push e confirmar `parity` verde no CI do PR #186 — essa última verificação depende do
 CI real e é responsabilidade do arquiteto pós-push.
+
+## Sessão 2026-08-18 — Apolo (ML-1A — `trackfw branch prune`, heurística de arquivos-tocados)
+
+Branch `fix/branch-prune-com-dry-run-por-padrao-e-heuristica-de-arquivos-tocados`, roadmap
+`docs/roadmaps/wip/ROADMAP-2026-08-18-branch-prune-com-dry-run-por-padrao-e-heuristica-de-arquivos-tocados.md`,
+REQ `docs/req/REQ-2026-08-18-trackfw-branch-prune-apaga-branch-local-ja-integrada-com-deteccao-correta-de-squash-merge.md`.
+Executei o ML-1A: `trackfw branch prune` (novo comando destrutivo, `--apply` opt-in, dry-run
+padrão) + a heurística de arquivos-tocados como função única reutilizável nos 3 CLIs
+(`evaluateBranchIntegration`/`evaluate_branch_integration`), para substituir tanto a
+ancestralidade do `git branch -d` (que sempre recusa squash-merge) quanto o diff bidirecional
+ingênuo (falso-positivo em branch defasada porém integrada — bug real medido no PR #181/#182).
+Nenhum `git commit`/`push`/`branch` executado por mim durante a implementação (autoridade
+exclusiva do `trackfw_architect`); toda a evidência de repositório git real veio de subprocessos
+disparados por `go test`/`node --test`/`pytest`/`scripts/check-branch-prune-parity.sh`, nunca de
+`git commit` literal no meu Bash.
+
+**Arquivos:** `internal/commands/branch_prune.go` (+ `branch_prune_test.go`),
+`internal/commands/branch.go` (registro do subcomando); `npm/src/branch/prune.js` (+
+`npm/tests/branch-prune.test.js`), `npm/src/commands/branch.js` (wiring); lógica embutida em
+`pypi/trackfw/commands/branch.py` (mesmo padrão do `run_branch_new` já existente) + `pypi/tests/
+test_branch_prune.py`; `scripts/check-branch-prune-parity.sh` (novo gate de paridade, real
+bare-repo `origin` + clone, 4 cenários); `Makefile` (wired em `parity`); `docs/cli-parity.md`
+(nova seção `trackfw branch prune`).
+
+**Decisão de maior risco fechada antes do código de produção** (apontada pelo advisor): a
+heurística aplicada literalmente a "cada branch local" classificaria a própria `main` como
+integrada e a ofereceria para apagar (`merge-base origin/main main` == a ponta de `main`,
+`touched` vazio). `main` é excluída por nome nos 3 CLIs, com teste dedicado que falha se `main`
+aparecer como candidata a `delete` em qualquer saída.
+
+**Evidência:** `go test ./...` (todos os pacotes ok), `node --test` (677/677), `pytest` (1356
+passed), `GO_BIN=bin/trackfw scripts/check-branch-prune-parity.sh` (4/4 OK, repositório git real
+com squash-merge simulado), `make quality` completo saiu com exit code 0 (build + os 3 test
+suites + lint + todos os scripts de parity/falsify, incluindo o novo). `./bin/trackfw validate`:
+mesmos 19 warnings pré-existentes, 0 violações novas.
+
+**Fora de escopo desta ML, confirmado:** ML-2A (convergir `detectPendingSquashMerges` do `ship`
+para usar `evaluateBranchIntegration`) não foi tocado — fica para a Wave 2 do roadmap, que já
+delimitava essa dependência. ML-3A (revisão de segurança do `hades-tf`) também pendente.
+
+Handoff para `trackfw_architect`: auditar o diff, commitar e dar push. ML-1A marcado ✅ Concluído
+no roadmap com evidência bruta colada na seção correspondente.
+
+## Sessão 2026-08-18 — Apolo (INÍCIO: ML-1C — corrigir discriminante `review_doc_config`)
+
+Branch `feat/branch-prune-com-dry-run-por-padrao-e-heuristica-de-arquivos-tocados`, roadmap
+`docs/roadmaps/wip/ROADMAP-2026-08-18-branch-prune-com-dry-run-por-padrao-e-heuristica-de-arquivos-tocados.md`
+em `wip/`. ML-1A e ML-1B já concluídos e auditados. Executando ML-1C: KG mediu em fixture git real
+que `review_doc_config` classificava errado uma branch com documentação **nova e nunca mergeada**
+(`diverg == touched`) como "provável housekeeping, confirme e apague" — conselho errado sobre
+trabalho real, mesmo sem apagar sozinha (falha fechada segura). Correção: `review_doc_config`
+passa a exigir `diverg` como subconjunto PRÓPRIO de `touched` (`len(diverg) < len(touched)`);
+quando `diverg == touched`, é `pending_work` mesmo sendo tudo doc/config. Escopo: só a condição em
+`evaluateBranchIntegration` nos 3 CLIs + testes + `docs/cli-parity.md` + gate de paridade. Fora de
+escopo: Wave 2 (`ship`) e Wave 3 (`hades-tf`). Nenhum commit/push (autoridade exclusiva do
+`trackfw_architect`).
+
+## Sessão 2026-08-18 — Apolo (FIM: ML-1C concluído — discriminante corrigido nos 3 CLIs)
+
+Corrigido nos 3 CLIs: `internal/commands/branch_prune.go` (`evaluateBranchIntegration`),
+`npm/src/branch/prune.js`, `pypi/trackfw/commands/branch.py` — condição de `review_doc_config`
+mudou de `allDocOrConfig(diverg)` para `len(diverg) < len(touched) && allDocOrConfig(diverg)`
+(subconjunto próprio). Quando `diverg == touched`, cai em `pending_work` — nunca `delete` em
+nenhum dos dois casos, a falha fechada não afrouxou.
+
+Fixtures `f1.go` do ML-1B revertidas para `f1.md` nos 3 CLIs (decisão do risco 4 do handoff): com
+o subconjunto próprio, o arquivo de doc genuinamente pendente volta a provar a intenção original
+do teste (pending_work por `diverg == touched`, não por extensão). O teste de
+`review_doc_config` foi reescrito para modelar integração parcial genuína (3 arquivos tocados, 1
+integrado, 2 residuais) em vez de "tudo diverge" — sob a regra nova o fixture antigo teria deixado
+de provar a categoria que testava.
+
+Fixture git real, lado a lado, nos 3 CLIs (`feat/doc-real` nunca integrada vs `feat/residue` com
+integração parcial): Go `TestEvaluateBranchIntegration_RealGitRepo_DocOnlyNeverIntegratedVsPartialResidue`,
+Node equivalente em `npm/tests/branch-prune.test.js`, Python equivalente em
+`pypi/tests/test_branch_prune.py`. Gate `scripts/check-branch-prune-parity.sh`, cenário
+`review-doc-config-only`, reescrito para incluir as duas branches no mesmo fixture.
+`docs/cli-parity.md` atualizado (tabela + texto de `review_doc_config`, com o histórico do bug).
+
+**Evidência:** `go test ./...` ok, `node --test` 684/684, `pytest` 1363 passed, `GO_BIN=bin/trackfw
+scripts/check-branch-prune-parity.sh` 6/6 OK, `make quality` exit 0, `./bin/trackfw validate` 19
+warnings pré-existentes / 0 violações (nenhuma nova).
+
+Fora de escopo confirmado: Wave 2 (ML-2A, `ship`) e Wave 3 (ML-3A, `hades-tf`) não tocados. Nenhum
+`git commit`/`push`/`branch` executado — autoridade exclusiva do `trackfw_architect`. Roadmap
+ML-1C marcado ✅ Concluído com evidência bruta colada na seção correspondente.
+
+## Sessão 2026-08-18 — Hades (ML-3A: revisão de segurança do `branch prune` — APROVADO)
+
+Barreira ML-3A do roadmap `docs/roadmaps/wip/ROADMAP-2026-08-18-branch-prune-com-dry-run-por-padrao-e-heuristica-de-arquivos-tocados.md`.
+Escrito: `docs/seguranca/2026-08-18-revisao-do-branch-prune.md`. **Veredito: aprovado.**
+
+Testei em fixtures git reais e descartáveis (`/private/tmp/.../scratchpad/prune-audit/t1..t8`,
+nunca o repositório do projeto): nome de branch com flag/espaço (git recusa criar — vetor
+inexistente), ref ambígua branch/tag com mesmo nome (git desambigua a listagem para `heads/<nome>`
+antes do trackfw ver o nome, E `git branch -d/-D heads/<nome>` falha por incompatibilidade de
+nome — duas camadas independentes fecham o vetor), `origin` apontando para repo não relacionado
+(merge-base vazio → `no_merge_base` → keep), sem `origin` (recusa o comando inteiro, exit 1), clone
+raso (`--depth 1`, sem falso negativo), rename/delete/mode-only/binário sem `-M` (todos ficam
+`pending_work`, nunca escapam para `delete`). Rodei `--apply` real num fixture misto com 6 branches
+(integrada, pendente, doc-nova-nunca-mergeada, resíduo-doc-parcial, worktree, main) — só a
+integrada foi apagada.
+
+`--apply` não tem bind de env var em nenhum dos 3 CLIs, sem shorthand de uma letra — sem superfície
+de disparo acidental. `review_doc_config` nunca é candidata a deleção (confirmado nos 3
+`deletable()`/`isDeletable`/`branch_prune_is_deletable`).
+
+**Risco residual nomeado, não bloqueante:** `defaultListLocalBranches` e equivalentes Node/Python
+parseiam `git branch --format=...` por linha (`\n`), sem a mesma dureza `-z` que os dois `git diff`
+já usam. Nome de branch com `\n` literal (só criável via `git update-ref`, plumbing) faz uma ref
+virar duas linhas na listagem — não encontrei caminho até deleção indevida (as duas metades não
+resolvem a nenhuma ref real), e criar a ref já exige o mesmo nível de acesso que apagar branches
+diretamente. Registrado como inconsistência de dureza para quem tocar essa função depois.
+
+Não medido nesta sessão (lacuna declarada, não bloqueio): submódulo com ponteiro divergente;
+reexecução dos gates de paridade (usei a evidência já registrada no roadmap + leitura linha a linha
+dos 3 arquivos-fonte, que são espelhos estruturais idênticos).
+
+Nenhum arquivo de produto tocado. Nenhum commit/push/branch — autoridade exclusiva do
+`trackfw_architect`.
