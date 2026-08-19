@@ -911,6 +911,94 @@ fi
 assert_three_way "$RT_LABEL"
 
 # ---------------------------------------------------------------------------
+# Scenario 14 — no local tracking ref at all for the forge's default branch
+# (forgeLocalSHA == ""): the missing-branch complement of Scenarios 12-13, which forge a
+# PRESENT-but-wrong ref. This is the exact consequence ADR-2026-08-19's Emenda 1 declares:
+# with no local ref to cross-check against, the command "can publish a commit the local
+# clone never saw" — deliberately, not as a bug, per release.go:384-391's own comment. It
+# must publish using the FORGE's sha, never refuse and never fall back to a local guess.
+#
+# Same narrowing technique as Scenario 13 (remote.origin.fetch pinned away from the
+# default branch BEFORE the command's own internal `git fetch origin --prune` runs, so
+# that fetch cannot re-populate the tracking ref it doesn't own — see the note above
+# Scenario 11). Unlike Scenario 13 (ref present but STALE), here the ref is deleted
+# outright via `git update-ref -d` so `git rev-parse origin/main` fails entirely, landing
+# on forgeLocalSHA == "" rather than a mismatched value.
+#
+# The stub answers with a sha that CANNOT exist in this fixture's clone (FORGE_ONLY_SHA_S14,
+# 40 hex digits, never derived from any real commit here) rather than the real main sha —
+# deliberately, so the payload assertion below discriminates PROVENANCE, not just VALUE. The
+# real main sha is what origin/main would ALSO resolve to had the tracking ref survived, so
+# asserting against it would pass identically whether the command used the forge's sha (the
+# correct path) or a leftover local ref (the degraded path this scenario exists to catch) —
+# it would prove the value matched, not where it came from. This also makes the scenario
+# self-discriminating against fixture decay: if the refspec narrowing ever stops isolating
+# origin/main and the command's own `git fetch` silently repopulates it, forgeLocalSHA
+# becomes the real main sha, diverges from FORGE_ONLY_SHA_S14, and Precondition 6's
+# cross-check refuses — flipping this scenario's "expected exit 0" assertion loudly red
+# instead of silently collapsing into a duplicate of Scenario 10.
+# ---------------------------------------------------------------------------
+RT_LABEL="forge-local-ref-absent-success"
+dest="$WORK/s14"
+fixture=$(build_fixture "$dest" "github" "1")
+FORGE_ONLY_SHA_S14="c0ffee11c0ffee22c0ffee33c0ffee44c0ffee55"
+(
+  cd "$fixture"
+  # remote.origin.fetch must name a branch that genuinely exists on origin — an unresolvable
+  # refspec makes the command's own `git fetch origin --prune` fail outright (a DIFFERENT,
+  # unrelated refusal), rather than simply skip refreshing origin/main.
+  env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "GIT_TERMINAL_PROMPT=0" "HOME=$dest" \
+    git branch s14-decoy
+  env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "GIT_TERMINAL_PROMPT=0" "HOME=$dest" \
+    git push -q origin s14-decoy
+  env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "GIT_TERMINAL_PROMPT=0" "HOME=$dest" \
+    git config remote.origin.fetch "+refs/heads/s14-decoy:refs/remotes/origin/s14-decoy"
+  env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "HOME=$dest" \
+    git update-ref -d refs/remotes/origin/main
+) >>"$dest/build.log" 2>&1
+# Vacuity guard: prove the tracking ref is genuinely gone before trusting the scenario at
+# all — a failure here means the setup didn't reach the state it claims to.
+if (cd "$fixture" && env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" HOME="$dest" \
+    git rev-parse -q --verify refs/remotes/origin/main >/dev/null 2>&1); then
+  fail "release-tag-parity/$RT_LABEL/setup" "vacuity guard: refs/remotes/origin/main still resolves after the deletion — scenario proves nothing"
+fi
+stub="$dest-stub"
+for runtime in go node py; do
+  call_log="$dest-calls-$runtime"
+  write_release_gh_stub "$stub-$runtime" "$call_log" "main" "$FORGE_ONLY_SHA_S14"
+  run_release "$runtime" "$fixture" "$stub-$runtime" "$dest" "$RELEASE_VERSION"
+  echo "$RT_EXIT" >"$WORK/$RT_LABEL.$runtime.exit"
+  if [[ "$RT_EXIT" -ne 0 ]]; then
+    fail "release-tag-parity/$RT_LABEL/$runtime" "expected exit 0: an absent local tracking ref must not block publishing from the forge's sha, got $RT_EXIT; stderr: $(cat "$RT_ERR_FILE")"
+    continue
+  fi
+  if ! grep -qF "commit:     $FORGE_ONLY_SHA_S14" "$RT_OUT_FILE"; then
+    fail "release-tag-parity/$RT_LABEL/$runtime" "stdout must echo the forge's commit sha even with no local tracking ref to fall back on; stdout: $(cat "$RT_OUT_FILE")"
+    continue
+  fi
+  if [[ ! -f "$call_log/01-tags-request.json" || ! -f "$call_log/02-refs-request.json" ]]; then
+    fail "release-tag-parity/$RT_LABEL/$runtime" "expected both publish calls to be reached; found: $(ls "$call_log" 2>/dev/null)"
+    continue
+  fi
+  # The load-bearing assertion: the tag-object payload's 'object' field — the actual commit
+  # the tag will point at — is read from the gh api PAYLOAD the stub received, never from the
+  # success message. It must equal FORGE_ONLY_SHA_S14, a sha that cannot exist anywhere in
+  # this fixture's clone — proving the value came from the forge, not from a local ref (there
+  # is none left to source it from, correct or otherwise).
+  tags_object_s14=$(json_field "$call_log/01-tags-request.json" object)
+  if [[ "$tags_object_s14" != "$FORGE_ONLY_SHA_S14" ]]; then
+    fail "release-tag-parity/$RT_LABEL/$runtime" "tag-object payload 'object' must equal the forge's commit sha ($FORGE_ONLY_SHA_S14) when no local ref exists to cross-check against, got $tags_object_s14"
+    continue
+  fi
+  refs_sha_s14=$(json_field "$call_log/02-refs-request.json" sha)
+  if [[ "$refs_sha_s14" != "$FAKE_TAG_OBJECT_SHA" ]]; then
+    fail "release-tag-parity/$RT_LABEL/$runtime" "LIGHTWEIGHT-TAG REGRESSION: ref payload 'sha' must equal the tag-object sha ($FAKE_TAG_OBJECT_SHA), got $refs_sha_s14"
+    continue
+  fi
+done
+assert_three_way "$RT_LABEL"
+
+# ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
 echo

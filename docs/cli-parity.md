@@ -4110,7 +4110,7 @@ estabelecida em ML-3A (destrutivo, irreversível, worktree compartilhado entre s
 | `git worktree remove -f`/`--force` | token de força em qualquer posição | `git worktree remove` sem force (recusa sozinho quando há algo não commitado) |
 | `git rm -f`/`--force` | token de força em qualquer posição; sem carve-out para `--cached` (destrancar do index sem `-f` já é liberado por não precisar de force) | mesma classe de `git clean -f`/`git reset --hard` já bloqueados |
 
-**Gate:** `scripts/check-release-tag-parity.sh` ganhou 3 cenários adversariais (11-13) provando
+**Gate:** `scripts/check-release-tag-parity.sh` ganhou 4 cenários (11-14) sobre a origem do alvo — os 11-13 adversariais e o 14 cobrindo a ausência da ref de tracking local — provando
 que a seleção do commit-alvo é ancorada no forge e recusa nomeando a divergência quando um ref
 local (symref repontado, `origin/<base>` forjado via `update-ref` sob refspec estreitado, ou
 `remote.origin.fetch` estreitado deixando o ref local desatualizado) diverge do forge —
