@@ -277,11 +277,40 @@ Nenhum commit/push — entregue para auditoria do `trackfw_architect`.
 
 **Critérios de aceite:**
 - [ ] Gate compara as **três saídas reais** em todos os caminhos de recusa
+- [ ] **Correção de coerência:** a mensagem de árvore suja não pode mais recomendar `git stash` — o
+      guard o bloqueia desde o ML-3A. Trocar por orientação que o próprio produto aceita
+      (`trackfw commit`, ou reverter o arquivo). Nos 3 CLIs.
 - [ ] Cenário P4 sabotando a criação do objeto de tag (anotada → leve) e provando gate vermelho
 - [ ] Seção no `cli-parity.md` **nomeando o gate**
 - [ ] `make quality` verde
 
 ---
+
+
+### Auditoria do ML-2A — aprovada, com uma correção pequena para o ML-2B
+
+Exercitei as recusas contra o repositório real — é seguro, porque recusar é o que elas fazem:
+
+```
+arvore suja        -> recusa, listando os arquivos
+tag ja existente   -> 'tag "v7.1.0" already exists locally. Delete it first...'
+versao divergente  -> 'internal/version/version.go has version "7.1.0", expected "9.9.9"'
+paridade das 3 saidas para o mesmo caso: go==node OK · go==py OK
+```
+
+A mensagem de versão divergente aponta **qual arquivo** diverge, com os dois valores. Era o critério,
+e é o que separa uma recusa útil de um "algo está errado".
+
+**Correção que a auditoria pegou, e é de coerência interna do produto:** a mensagem de árvore suja
+diz *"Commit or **stash** your changes"* — e o guard, desde hoje, **bloqueia `git stash`**. O
+produto estaria recomendando um comando que ele próprio recusa. Nos 3 CLIs
+(`internal/commands/release.go:51`, `npm/src/release/runner.js:30`,
+`pypi/trackfw/release/runner.py:36`). Não é defeito do executor — o ML-3A entrou depois do handoff
+dele. Vai para o ML-2B.
+
+**Duas divergências reais corrigidas por ele**, via comparação das 3 saídas com argumentos fixos:
+texto de erro de git no fallback do Python, e timestamp com milissegundos no Node. **Quinta** vez
+nesta série que comparar saídas reais acha o que teste por stack não acha.
 
 ## Wave 3 — Guard: comandos destrutivos + mensagem
 
