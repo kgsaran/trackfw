@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -112,6 +113,69 @@ func TestDoctorDistinguishesUnregisteredWriteFromHandModified(t *testing.T) {
 	}
 	if strings.Contains(report, "["+string(integrations.DoctorUnregisteredWrite)+"]") {
 		t.Fatalf("must not report unregistered-write for this case: %s", report)
+	}
+}
+
+// TestDoctorReportsUnknownContentForNeverInstalledDestination reproduces
+// end-to-end (real command surface, not the ClassifyDoctor unit) the state
+// ML-3A's audit found silently unreported: a destination the catalog would
+// use for this claim, carrying content that was never installed by trackfw
+// (no manifest entry) and that does not match the catalog template either.
+// The remedy must name the preflight refusal literally.
+func TestDoctorReportsUnknownContentForNeverInstalledDestination(t *testing.T) {
+	project, _ := integrationCommandFixture(t)
+
+	// Learn the exact destination `agents install` would use, read-only,
+	// without ever installing — mirrors scripts/check-doctor-parity.sh's
+	// scenario (d)/(f) fixture construction.
+	listCmd := newAgentsCmd()
+	listCmd.SetArgs([]string{"list", "--items", "backend", "--targets", "claude", "--scope", "project", "--json"})
+	var listOut bytes.Buffer
+	listCmd.SetOut(&listOut)
+	if err := listCmd.Execute(); err != nil {
+		t.Fatalf("agents list failed: %v", err)
+	}
+	var listPayload struct {
+		Deployments []struct {
+			Destination string `json:"destination"`
+		} `json:"deployments"`
+	}
+	if err := json.Unmarshal(listOut.Bytes(), &listPayload); err != nil {
+		t.Fatalf("agents list --json did not decode: %v\n%s", err, listOut.String())
+	}
+	if len(listPayload.Deployments) != 1 {
+		t.Fatalf("expected exactly one deployment row, got %d: %+v", len(listPayload.Deployments), listPayload.Deployments)
+	}
+	destination := listPayload.Deployments[0].Destination
+	if !strings.HasPrefix(destination, "/") {
+		destination = project + "/" + destination
+	}
+
+	if err := os.MkdirAll(filepath.Dir(destination), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(destination, []byte("nobody installed this through trackfw"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := newDoctorCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("doctor failed: %v", err)
+	}
+	report := out.String()
+	if !strings.Contains(report, "["+string(integrations.DoctorUnknownContent)+"]") {
+		t.Fatalf("expected unknown-content finding, got: %s", report)
+	}
+	if !strings.Contains(report, "unmanaged artifact") {
+		t.Fatalf("expected remedy to name the preflight refusal literally, got: %s", report)
+	}
+	if strings.Contains(report, "["+string(integrations.DoctorUnregisteredWrite)+"]") {
+		t.Fatalf("must not report unregistered-write for this case: %s", report)
+	}
+	if strings.Contains(report, "["+string(integrations.DoctorHandModified)+"]") {
+		t.Fatalf("must not report hand-modified for this case: %s", report)
 	}
 }
 

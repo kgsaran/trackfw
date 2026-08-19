@@ -7,11 +7,13 @@ import (
 	"github.com/kgsaran/trackfw/internal/identity"
 )
 
-// DoctorFindingKind distinguishes the two states a project's artifacts can be
-// in relative to the manifest that this file's ClassifyDoctor reports. They
-// require different remedies and must never be merged — see
-// docs/req/REQ-2026-08-17-doctor-detecta-artefato-em-disco-ausente-do-manifesto-apos-janela-de-gravacao-parcial.md
-// and ADR-2026-08-18-ordem-de-persistencia-inverte-para-manifesto-antes-dos-artefatos.md.
+// DoctorFindingKind distinguishes the three states a project's artifacts can
+// be in relative to the manifest that this file's ClassifyDoctor reports.
+// They require different remedies and must never be merged — see
+// docs/req/REQ-2026-08-17-doctor-detecta-artefato-em-disco-ausente-do-manifesto-apos-janela-de-gravacao-parcial.md,
+// ADR-2026-08-18-ordem-de-persistencia-inverte-para-manifesto-antes-dos-artefatos.md,
+// and docs/seguranca/2026-08-18-revisao-do-doctor-e-da-inversao.md (ML-3A, the
+// audit that found the third class was falling silently outside the switch).
 type DoctorFindingKind string
 
 const (
@@ -30,6 +32,23 @@ const (
 	// after trackfw wrote it. Remedy overwrites that edit, so it is a human
 	// decision, never automatic.
 	DoctorHandModified DoctorFindingKind = "hand-modified"
+
+	// DoctorUnknownContent: neither does any manifest entry exist for this
+	// destination, NOR does the on-disk content match the catalog template
+	// (!Registered && StateModified). This state is genuinely ambiguous
+	// between two causes a hash-only signal cannot distinguish: a file that
+	// simply is not trackfw's occupying a catalog destination, or an
+	// orphaned trackfw artifact — written before an interruption left the
+	// manifest entry missing (ADR-2026-08-18) — whose bytes then drifted
+	// once the catalog template moved on. It is exactly the state that
+	// makes `agents install`'s preflight refuse this destination with
+	// "unmanaged artifact" (Manager.preflight, manager.go) — staying silent
+	// here would make doctor report "no mismatches found" to the very user
+	// whose install the tool just refused. The remedy therefore names that
+	// refusal literally, with both branches, instead of picking a side —
+	// see vault/notes/doctor-classifydoctor-silences-tampering-when-manifest-
+	// entry-removed-2026-08-19.md.
+	DoctorUnknownContent DoctorFindingKind = "unknown-content"
 )
 
 // DoctorFinding is one artifact requiring the user's attention, plus a
@@ -42,29 +61,39 @@ type DoctorFinding struct {
 	Remedy      string            `json:"remedy"`
 }
 
-// ClassifyDoctor separates the two disk/manifest mismatches doctor reports
+// ClassifyDoctor separates the three disk/manifest mismatches doctor reports
 // from every other lifecycle state. It is intentionally narrow: an artifact
 // that is current-and-registered, outdated (handled by `update`),
-// not-installed, or unmanaged-with-content-that-does-not-match-the-catalog
-// (content that simply is not trackfw's) is never reported here — flagging
-// any of those would be the false positive that is this command's dominant
-// risk (see the roadmap's "🔴 Risco dominante").
+// not-installed, or registered under a claim OTHER than the one under
+// inspection (Managed=false, Registered=true, regardless of State) is never
+// reported here — flagging any of those would be the false positive that is
+// this command's dominant risk (see the roadmap's "🔴 Risco dominante").
 //
 // The classification deliberately keys off Inspection.Registered, not
 // Inspection.Managed: Managed additionally requires this exact claim to own
 // the manifest entry (claimOwned), so a destination registered under a
 // *different* claim would read Managed=false while still being registered.
-// Treating that as an "unregistered write" would be exactly the dominant
-// false-positive this command exists to avoid — it is registered, just not
-// by this claim, and is out of scope for doctor either way.
+// Treating that as an "unregistered write" (or, symmetrically, as
+// "unknown-content") would be exactly the dominant false-positive this
+// command exists to avoid — it is registered, just not by this claim, and is
+// out of scope for doctor either way. See Cenário 71/72 in
+// scripts/check-gates-falsify.sh, which falsify exactly this discriminant
+// for both classes.
 //
-// Both classes are hash-based and cannot distinguish "interrupted before the
-// optimistic manifest write settled" (ML-1A) from a genuine hand edit when
-// Registered=true and the hash differs — the manifest write is optimistic by
-// design (see planArtifactWrite's doc comment), so a crash mid-write can
-// leave a manifest hash describing content that was never actually written.
-// That ambiguity is inherent to a hash-only signal and is left for Wave 3
-// (ML-3A) to rule on; ClassifyDoctor implements the table as specified.
+// Content at a catalog destination that matches neither the desired bytes
+// nor any manifest entry (!Registered && StateModified) IS reported, as
+// DoctorUnknownContent — see that constant's doc comment for why this
+// changed (ML-2C, correcting the ML-3A audit finding).
+//
+// Both hash-based classes (hand-modified and unknown-content) cannot
+// distinguish "interrupted before the optimistic manifest write settled"
+// (ML-1A) from a genuine hand edit when Registered=true and the hash
+// differs — the manifest write is optimistic by design (see
+// planArtifactWrite's doc comment), so a crash mid-write can leave a
+// manifest hash describing content that was never actually written. That
+// ambiguity is inherent to a hash-only signal; ClassifyDoctor implements the
+// table as specified, and unknown-content's remedy is written to be honest
+// about the analogous ambiguity in its own two candidate causes.
 func ClassifyDoctor(plans []PlannedArtifact, inspections []Inspection) []DoctorFinding {
 	// Non-nil from the start (never `var findings []DoctorFinding`): the zero
 	// case must round-trip through `--json` as `[]`, matching Node's
@@ -85,6 +114,13 @@ func ClassifyDoctor(plans []PlannedArtifact, inspections []Inspection) []DoctorF
 				Claim:       plan.Claim,
 				Destination: inspection.Destination,
 				Remedy:      doctorRemedy(inspection.Destination, plan.Claim, "adopts it — content already matches the catalog template, only the manifest entry is missing"),
+			})
+		case !inspection.Registered && inspection.State == StateModified:
+			findings = append(findings, DoctorFinding{
+				FindingKind: DoctorUnknownContent,
+				Claim:       plan.Claim,
+				Destination: inspection.Destination,
+				Remedy:      doctorRemedy(inspection.Destination, plan.Claim, "is ambiguous — content matches neither the catalog template nor a manifest entry, so install will refuse this destination with \"unmanaged artifact\"; if this file is yours, remove or move it; if it is trackfw's and it drifted from the catalog template, this replaces it"),
 			})
 		case inspection.Managed && inspection.State == StateModified:
 			findings = append(findings, DoctorFinding{

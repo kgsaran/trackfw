@@ -55,6 +55,31 @@ adultera o conteúdo e apaga a entrada do manifesto — mas isso já é o caso q
 ADR-2026-08-12 aceita como não-prevenível; não é a base do achado, só reforça a prioridade do
 conserto.
 
+## Resolvido — ML-2C (2026-08-19)
+
+Implementado por `apolo-tf`: terceira classe `DoctorUnknownContent` / `unknown-content` /
+`UNKNOWN_CONTENT` (nomes por CLI) no `case !Registered && StateModified` dos 3 CLIs
+(`internal/integrations/doctor.go`, `npm/src/integrations/doctor.js`,
+`pypi/trackfw/integrations/doctor.py`). Remédio nomeia literalmente `unmanaged artifact` e
+apresenta os dois ramos (arquivo alheio vs. artefato órfão do trackfw), em vez de escolher um
+lado — a ambiguidade descrita acima neste achado não pôde ser resolvida por hash sozinho, então a
+saída passou a declará-la honestamente.
+
+**Cenário (d) do gate (`scripts/check-doctor-parity.sh`) foi reinterpretado, não apagado ou
+duplicado.** Antes desta correção, (d) construía exatamente este estado (conteúdo alheio no
+destino real do catálogo, nunca instalado) e afirmava `no mismatches found` — era, sem saber, o
+teste que travava o bug em produção. O fixture não mudou; só a expectativa: agora espera
+`[unknown-content]`. Se um agente futuro ler `docs/cli-parity.md` ou este vault e encontrar
+referência à prosa antiga de (d) ("prova que o que não é do trackfw nunca é acusado"), essa prosa
+descreve um comportamento **retirado deliberadamente**, não uma regressão a restaurar.
+
+Foi adicionado um cenário novo, **(f)**, com claim retargetada + um byte anexado ao conteúdo
+(`Registered=true, Managed=false, State=modified`) — é o único fixture do gate capaz de provar que
+o discriminante correto da nova classe é `!Registered`, não `!Managed`: o cenário (e) já existente
+não alcança esse `case` porque seu `State` fica `current`. Cenário 72 de
+`scripts/check-gates-falsify.sh` sabota esse discriminante e usa (f) para provar vermelho,
+espelhando o Cenário 71 para `unregistered-write`.
+
 ## Direção de correção (não implementada — decisão de produto, fora do escopo desta role)
 
 Terceira classe de finding para `!Registered && State == StateModified` em destino catalog-conhecido

@@ -3,18 +3,19 @@ package integrations
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/kgsaran/trackfw/internal/identity"
 )
 
-// TestClassifyDoctorDistinguishesTheTwoClasses exercises the five cases the
-// classification must get right without touching disk or the manifest —
+// TestClassifyDoctorDistinguishesTheThreeClasses exercises the seven cases
+// the classification must get right without touching disk or the manifest —
 // ClassifyDoctor only reads Inspection/PlannedArtifact fields. See the ML-2A
-// roadmap entry for why classes 1 and 2 cannot be merged, and the doc
-// comment on ClassifyDoctor for why Registered (not Managed) is the correct
-// signal for class 1.
-func TestClassifyDoctorDistinguishesTheTwoClasses(t *testing.T) {
+// roadmap entry for why classes 1 and 3 cannot be merged, ML-2C for why
+// class 2 exists, and the doc comment on ClassifyDoctor for why Registered
+// (not Managed) is the correct signal for classes 1 and 2.
+func TestClassifyDoctorDistinguishesTheThreeClasses(t *testing.T) {
 	plan := testPlan("project", "/proj/.claude/agents/trackfw-backend.md", "v1", "rendered")
 
 	cases := []struct {
@@ -40,12 +41,17 @@ func TestClassifyDoctorDistinguishesTheTwoClasses(t *testing.T) {
 			wantKind: DoctorHandModified, wantFlag: true,
 		},
 		{
-			name: "alien content, no manifest entry -> not our problem",
+			// Was "not our problem" / wantFlag: false before ML-2C — this is
+			// exactly the state ML-3A's audit found silently falling outside
+			// the switch, which is what makes `agents install`'s preflight
+			// refuse with "unmanaged artifact". See DoctorUnknownContent's
+			// doc comment.
+			name: "content matches neither template nor manifest entry -> unknown content",
 			inspection: Inspection{
 				Claim: plan.Claim, Destination: plan.Destination,
 				State: StateModified, Managed: false, Registered: false,
 			},
-			wantFlag: false,
+			wantKind: DoctorUnknownContent, wantFlag: true,
 		},
 		{
 			name: "template match, already registered and owned -> nothing to report",
@@ -60,6 +66,21 @@ func TestClassifyDoctorDistinguishesTheTwoClasses(t *testing.T) {
 			inspection: Inspection{
 				Claim: plan.Claim, Destination: plan.Destination,
 				State: StateCurrent, Managed: false, Registered: true,
+			},
+			wantFlag: false,
+		},
+		{
+			// The unknown-content analogue of the case above: a destination
+			// registered under a DIFFERENT claim whose content also
+			// mismatches must stay silent too — it is that other claim's
+			// concern, not this one's, regardless of State. This is the
+			// discriminant Cenário 72 (check-gates-falsify.sh) falsifies for
+			// DoctorUnknownContent, mirroring Cenário 71 for
+			// DoctorUnregisteredWrite.
+			name: "registered under a DIFFERENT claim, content modified -> must not be reported as unknown content",
+			inspection: Inspection{
+				Claim: plan.Claim, Destination: plan.Destination,
+				State: StateModified, Managed: false, Registered: true,
 			},
 			wantFlag: false,
 		},
@@ -159,6 +180,41 @@ func TestRunDoctorFindsUnregisteredWriteAfterManifestEntryRemoved(t *testing.T) 
 	findings = ClassifyDoctor([]PlannedArtifact{plan}, mustList(t, manager, plan))
 	if len(findings) != 1 || findings[0].FindingKind != DoctorHandModified {
 		t.Fatalf("findings = %+v, want single hand-modified finding", findings)
+	}
+}
+
+// TestRunDoctorFindsUnknownContentWhenNeitherRegisteredNorMatching reproduces
+// the state ML-3A's audit found falling silently outside ClassifyDoctor's
+// switch: a destination that was never installed (no manifest entry at all)
+// but that carries content matching neither the catalog template nor any
+// LegacyHashes entry. This is an end-to-end test through Manager (not
+// hand-built Inspection values), proving inspectResolved really produces
+// StateModified for this case (manager.go:638-645) and that ClassifyDoctor
+// now has a case for it.
+func TestRunDoctorFindsUnknownContentWhenNeitherRegisteredNorMatching(t *testing.T) {
+	manager, project, _ := testManager(t)
+	plan := testPlan("project", ".claude/agents/trackfw-backend.md", "v1", "rendered content")
+
+	absoluteDestination := filepath.Join(project, plan.Destination)
+	if err := os.MkdirAll(filepath.Dir(absoluteDestination), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Alien/orphaned bytes at the exact catalog destination, never installed
+	// (zero manifest entry) — content matches neither `desired` nor any
+	// LegacyHashes entry.
+	if err := os.WriteFile(absoluteDestination, []byte("content nobody wrote through trackfw"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	findings := ClassifyDoctor([]PlannedArtifact{plan}, mustList(t, manager, plan))
+	if len(findings) != 1 {
+		t.Fatalf("findings = %d, want 1: %+v", len(findings), findings)
+	}
+	if findings[0].FindingKind != DoctorUnknownContent {
+		t.Fatalf("finding kind = %q, want %q", findings[0].FindingKind, DoctorUnknownContent)
+	}
+	if !strings.Contains(findings[0].Remedy, "unmanaged artifact") {
+		t.Fatalf("remedy must name the preflight refusal literally, got: %q", findings[0].Remedy)
 	}
 }
 

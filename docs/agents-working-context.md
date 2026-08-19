@@ -19905,3 +19905,76 @@ AC1 desmarcado com motivo escrito; auditoria do ML-2A **qualificada retroativame
 cenários nunca alcançaram esse estado). ADR-2026-08-18 ganhou **Emenda 1** sobre o alcance real da
 auto-cura. `main` intocada; PR #190 sem merge; tag 7.1.0 **ainda pendente de decisão de KG** — o
 achado **reforça** a recomendação de tagear sem o #190.
+
+## 2026-08-19 — Apolo (apolo-tf) — início ML-2C
+
+Iniciando ML-2C (terceira classe do `doctor`) na branch `feat/doctor-detecta-artefato-fora-do-manifesto`,
+já criada pelo arquiteto. Escopo: `internal/integrations/doctor.go` (+testes), `internal/commands/doctor.go`
+(+testes), espelhos `npm/src/integrations/doctor.js`/`npm/src/commands/doctor.js`,
+`pypi/trackfw/integrations/doctor.py`/`pypi/trackfw/commands/doctor.py` (+testes dos 3),
+`scripts/check-doctor-parity.sh`, `scripts/check-gates-falsify.sh`, `docs/cli-parity.md`.
+
+Nova classe `unknown-content` para `!Registered && StateModified` (destino de catálogo com
+conteúdo que não bate nem com o template nem com nenhuma entrada de manifesto). Remédio nomeia
+literalmente a recusa `unmanaged artifact` do preflight, nos dois ramos (arquivo alheio vs.
+artefato órfão do trackfw). Cenário (d) do gate será **reinterpretado**, não apagado — ele já
+constrói exatamente o fixture que a nova classe passa a acusar; será adicionado um cenário (f)
+novo (registrado sob claim diferente + conteúdo divergido) para fechar a cobertura do
+discriminante `!Registered` (não `!Managed`) da nova classe, espelhando o Cenário 71 para a classe
+`unregistered-write`. Sem commits/push — autoridade exclusiva do `trackfw_architect`.
+
+## 2026-08-19 — Apolo (apolo-tf) — ML-2C implementado, aguardando auditoria do arquiteto
+
+Terceira classe `unknown-content`/`DoctorUnknownContent`/`UNKNOWN_CONTENT` implementada nos 3 CLIs
+(`case !Registered && StateModified`), remédio nomeando `unmanaged artifact` literalmente com os
+dois ramos. `Long`/`description`/`help` do comando `doctor` atualizados nos 3 (a afirmação "is
+never reported" deixou de ser verdadeira). `printDoctorReport`/`printReport`/`_print_report`
+contam as 3 classes explicitamente (Go trocou o `if/else` implícito por `switch` explícito, para
+uma 4ª classe futura falhar visivelmente em vez de inflar `hand-modified`).
+
+**Cenário (d)** do `check-doctor-parity.sh` foi **reinterpretado, não duplicado**: o fixture já era
+exatamente o estado que a nova classe passa a acusar (conteúdo alheio no destino real do catálogo,
+nunca instalado); só a expectativa mudou, de `no mismatches found` para `[unknown-content]`. Prosa
+antiga sobre "(d) prova que arquivo alheio nunca é acusado" foi removida — não é mais verdade e não
+existe mais estado equivalente que fique em silêncio para um destino de catálogo sem entrada de
+manifesto. Adicionado **cenário (f)** novo (claim retargetada para item diferente + byte anexado ao
+conteúdo, reproduzindo `Registered=true, Managed=false, State=modified`) — é o único fixture capaz
+de provar que o discriminante correto é `!Registered`, não `!Managed`, pois o cenário (e) já
+existente tem `State=current` e nunca alcança o `case` novo. **Cenário 72** em
+`check-gates-falsify.sh` sabota esse discriminante com `corrupt_literal` e usa o cenário (f) para
+provar vermelho, espelhando o Cenário 71 para `unregistered-write` (contagem do gate: 132 → 133).
+
+Testes retargetados nos 3 CLIs (o caso "conteúdo alheio, sem manifesto -> não é problema nosso"
+pinava exatamente o comportamento corrigido) + testes novos para o caso silencioso irmão
+(`Registered=true, Managed=false, State=modified`) + testes end-to-end (`RunDoctor`/`runDoctor`/
+`run_doctor` e comando real nos 3). Nota de vault `doctor-classifydoctor-silences-tampering-...`
+recebeu seção "Resolvido — ML-2C" explicando a reinterpretação do cenário (d) para quem ler a prosa
+antiga em `docs/cli-parity.md` ou no vault.
+
+**Evidência:** `go build ./...` limpo; `go test ./internal/integrations/... ./internal/commands/...`
+verde; `node --test npm/tests/doctor.test.js` (10/10) verde; `PYTHONPATH=pypi python3 -m pytest
+pypi/tests/test_doctor.py` (10/10) verde; `GO_BIN=bin/trackfw bash scripts/check-doctor-parity.sh`
+— 6 cenários × texto+json × 3 CLIs, todos `OK`; `bash scripts/check-gates-falsify.sh` — 133
+cenários, `exit 0`, zero `FAIL`; `make quality` — `exit 0`; `./bin/trackfw validate` — `exit 0`,
+21 warnings pré-existentes e não relacionados (nenhum novo).
+
+Roadmap `ML-2C` deixado em `🔄 Em andamento` (não marquei `✅` — decisão do `trackfw_architect` após
+auditoria, conforme protocolo). Nenhum commit/branch feito — devolvendo para auditoria e commit do
+`trackfw_architect`.
+
+## 2026-08-19 — Zeus (arquiteto) — ML-2C auditado · decisão de release de KG
+
+**Decisão de KG, registrada:** *"só vamos lançar versão após fecharmos o doctor"*. A 7.1.0 deixa de
+ser item paralelo e vira **consequência** do fechamento da REQ. Não trazer a tag como decisão
+pendente até o roadmap estar em `done` e o PR mergeado com CI verde.
+
+**ML-2C auditado e aprovado**, com **duas** sabotagens — uma só provaria metade. Sabotei o
+discriminante (`!Registered` → `!Managed`): o gate pegou no cenário (f), acusação falsa. Sabotei o
+`case` para nunca disparar: o gate pegou no cenário (d), silêncio. As duas direções do defeito estão
+cobertas. AC1 **refechado**, agora com três classes.
+
+Emendei a REQ (Emenda 1): ela foi escrita presumindo duas classes, e a barreira mostrou que são três.
+O corpo original não foi reescrito — REQ é raiz de rastreabilidade, emenda-se.
+
+**Falta para fechar:** PR #190 com **CI verde** (AC8 — `make quality` local não substitui), merge,
+roadmap para `done`. Só então a 7.1.0.

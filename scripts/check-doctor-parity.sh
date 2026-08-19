@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 # check-doctor-parity.sh — proves `trackfw doctor` behaves byte-for-byte identically in Go,
-# Node.js, and Python, across both surfaces (text report and --json), for the two finding
-# classes ML-2A introduced (unregistered-write, hand-modified) plus three silent paths (clean
-# baseline, unmanaged alien content at a real catalog destination, and a destination registered
-# under a DIFFERENT claim — the near-miss false positive the ML-2A audit trail flagged) — see
-# internal/integrations/doctor.go, docs/req/REQ-2026-08-17-doctor-detecta-artefato-em-disco-
-# ausente-do-manifesto-apos-janela-de-gravacao-parcial.md and
-# ADR-2026-08-18-ordem-de-persistencia-inverte-para-manifesto-antes-dos-artefatos.md.
+# Node.js, and Python, across both surfaces (text report and --json), for the three finding
+# classes ML-2A/ML-2C introduced (unregistered-write, unknown-content, hand-modified) plus three
+# silent paths (clean baseline, and two destinations registered under a DIFFERENT claim — the
+# near-miss false positive the ML-2A audit trail flagged, at both State=current and
+# State=modified) — see internal/integrations/doctor.go, docs/req/REQ-2026-08-17-doctor-detecta-
+# artefato-em-disco-ausente-do-manifesto-apos-janela-de-gravacao-parcial.md,
+# ADR-2026-08-18-ordem-de-persistencia-inverte-para-manifesto-antes-dos-artefatos.md, and
+# docs/seguranca/2026-08-18-revisao-do-doctor-e-da-inversao.md (ML-3A's audit, which found
+# unknown-content silently unreported before ML-2C — scenario (d) below was retargeted from a
+# "stays silent" assertion to the new finding it now correctly produces, rather than duplicated).
 #
 # doctor is READ-ONLY (it never writes — every finding just prints a remedy command), so unlike
 # check-branch-prune-parity.sh's --apply arm, a single fixture project/home pair can be built
@@ -307,12 +310,23 @@ printf 'x' >>"$c_destination"
 run_scenario "hand-modified" "$c_project" "$c_home" "[hand-modified]"
 
 # ---------------------------------------------------------------------------
-# Scenario (d) — alien file at a real catalog destination: use `agents list --json` (read-only,
-# writes nothing) to learn the exact destination `agents install --items backend --targets
-# claude --scope project` WOULD use, then write garbage content there directly — without ever
-# installing, so there is zero manifest entry AND the content does not match the catalog
-# template. This is the dominant false-positive risk doctor exists to avoid: a real project file
-# that simply is not trackfw's must never be reported.
+# Scenario (d) — unknown content at a real catalog destination: use `agents list --json`
+# (read-only, writes nothing) to learn the exact destination `agents install --items backend
+# --targets claude --scope project` WOULD use, then write garbage content there directly —
+# without ever installing, so there is zero manifest entry AND the content does not match the
+# catalog template (!Registered && StateModified).
+#
+# RETARGETED by ML-2C (was "alien-file-not-flagged" / "no mismatches found" — see
+# docs/seguranca/2026-08-18-revisao-do-doctor-e-da-inversao.md and
+# vault/notes/doctor-classifydoctor-silences-tampering-when-manifest-entry-removed-2026-08-19.md):
+# ML-3A's audit found this EXACT state falling silently outside ClassifyDoctor's cases, which is
+# precisely the state that makes `agents install`'s own preflight refuse this same destination
+# with "unmanaged artifact" — `doctor` answering "no mismatches found" to the user whose install
+# the tool just refused was the bug, not a feature. The fixture is unchanged (this IS the
+# roadmap's "cenário (f)" fixture shape — reinterpreted here rather than duplicated, since
+# duplicating it would be a vacuous second scenario); only the expectation changed: all 3 CLIs
+# must now report exactly one unknown-content finding whose remedy names "unmanaged artifact"
+# literally, never unregistered-write or hand-modified.
 # ---------------------------------------------------------------------------
 read -r d_project d_home <<<"$(build_fixture "$WORK/d")"
 d_list_json="$WORK/d-list.json"
@@ -335,7 +349,7 @@ case "$d_destination" in
 esac
 mkdir -p "$(dirname "$d_destination")"
 printf 'this content does not match any catalog template\n' >"$d_destination"
-run_scenario "alien-file-not-flagged" "$d_project" "$d_home" "no mismatches found"
+run_scenario "unknown-content-never-installed" "$d_project" "$d_home" "[unknown-content]"
 
 # ---------------------------------------------------------------------------
 # Scenario (e) — registered under a different claim: install for real, then retarget the
@@ -353,6 +367,28 @@ install_backend go "$e_project" "$e_home"
 e_destination=$(manifest_destination "$e_project")
 retarget_manifest_claim_item "$e_project" "$e_destination" "architect"
 run_scenario "registered-under-different-claim" "$e_project" "$e_home" "no mismatches found"
+
+# ---------------------------------------------------------------------------
+# Scenario (f) — registered under a different claim, AND the content also drifted: install for
+# real, retarget the manifest claim item exactly like scenario (e), then ALSO append a byte to
+# the on-disk artifact so State becomes `modified` instead of `current`. Reproduces
+# Registered=true, Managed=false, State=modified — the unknown-content analogue of scenario (e).
+# All three CLIs must stay completely silent: this destination is registered, just under another
+# item's claim, and content is that other claim's problem, not this one's, regardless of State.
+#
+# This is the ONLY fixture in this gate that distinguishes ClassifyDoctor's unknown-content case
+# keying off `!Registered` (correct) from a hypothetical `!Managed` (the exact near-miss Cenário
+# 71 already proved for unregistered-write) — scenario (e) alone cannot discriminate this because
+# its State stays `current`, never reaching the unknown-content case regardless of which
+# discriminant is used. Added by ML-2C specifically so Cenário 72 (check-gates-falsify.sh) has
+# something to falsify against; see that scenario's comment for the corruption it proves red.
+# ---------------------------------------------------------------------------
+read -r f_project f_home <<<"$(build_fixture "$WORK/f")"
+install_backend go "$f_project" "$f_home"
+f_destination=$(manifest_destination "$f_project")
+retarget_manifest_claim_item "$f_project" "$f_destination" "architect"
+printf 'x' >>"$f_destination"
+run_scenario "registered-under-different-claim-content-drifted" "$f_project" "$f_home" "no mismatches found"
 
 # ---------------------------------------------------------------------------
 # Summary

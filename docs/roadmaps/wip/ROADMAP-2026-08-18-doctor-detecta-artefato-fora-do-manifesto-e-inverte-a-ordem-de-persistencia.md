@@ -27,8 +27,8 @@ Duas frentes, e a **ordem importa**: a inversão da frente 2 impede casos novos,
 instalações que já estão no estado ruim. O `doctor` é o que revela essas.
 
 ## Acceptance Criteria
-- [ ] AC1 — Detecta **arquivo em disco ausente do manifesto** e o distingue de **arquivo modificado à mão**.
-      🔴 **Desmarcado em 2026-08-19 pela barreira do ML-3A.** Existe um terceiro estado —
+- [x] AC1 — Detecta **arquivo em disco ausente do manifesto** e o distingue de **arquivo modificado à mão**.
+      ✅ **Refechado em 2026-08-19 pelo ML-2C, com três classes.** Histórico: desmarcado pela barreira do ML-3A — Existe um terceiro estado —
       `!Registered && StateModified` — que **nenhum `case` do `ClassifyDoctor` cobre**, e o comando
       responde `no mismatches found`. É exatamente o estado que faz o `agents install` recusar com
       `unmanaged artifact`, ou seja, o sintoma do CMDB que originou esta REQ. Fecha no ML-2C.
@@ -272,7 +272,7 @@ inline por invocação, sem `export` global; `pwd -P` cobre o symlink de `$TMPDI
 ## Wave 4 — Corretiva da barreira
 
 ### ML-2C — Terceira classe: conteúdo desconhecido em destino do catálogo
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Status:** 🔄 Em andamento · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
 **Dependência:** ML-3A. **Fecha o AC1.**
 **Arquivos:** `internal/integrations/doctor.go`, `npm/src/integrations/doctor.js`,
 `pypi/trackfw/integrations/doctor.py` (+ testes dos 3), `scripts/check-doctor-parity.sh`,
@@ -285,13 +285,52 @@ base). O remédio precisa **nomear a recusa**: `agents install` vai recusar este
 Isso converte o achado de acusação em **explicação** — e é o que dissolve a objeção de falso-positivo.
 
 **Critérios de aceite:**
-- [ ] Três classes distintas nos 3 CLIs, com remédios distintos; nenhuma pode ser fundida.
-- [ ] O remédio da classe nova **nomeia a recusa** `unmanaged artifact`.
-- [ ] Cenário (f) no `check-doctor-parity.sh`, **texto e `--json`**, comparando as 3 saídas reais.
-- [ ] Cenário P4 irmão do 71: sabota o `case` novo e prova que o gate fica vermelho — a classe
+- [x] Três classes distintas nos 3 CLIs, com remédios distintos; nenhuma pode ser fundida.
+- [x] O remédio da classe nova **nomeia a recusa** `unmanaged artifact`.
+- [x] Cenário (f) no `check-doctor-parity.sh`, **texto e `--json`**, comparando as 3 saídas reais.
+- [x] Cenário P4 irmão do 71: sabota o `case` novo e prova que o gate fica vermelho — a classe
       **não pode voltar ao silêncio** sem gate reprovar.
-- [ ] Seção do `doctor` no `docs/cli-parity.md` atualizada.
-- [ ] `make quality` verde.
+- [x] Seção do `doctor` no `docs/cli-parity.md` atualizada.
+- [x] `make quality` verde.
+
+---
+
+### Auditoria do ML-2C — aprovada, com **duas** sabotagens exigidas
+
+Auditei por medição, não por leitura. Uma sabotagem só provaria metade:
+
+```
+1) discriminante:  !Registered  ->  !Managed        (delta de literal único)
+   gate -> EXIT=1, 7 FAIL. Pega no cenário (f):
+   "registered-under-different-claim-content-drifted/go: vacuity guard: stdout missing
+    'no mismatches found'; stdout: ... 1 unknown-content"     <- FALSO-POSITIVO detectado
+
+2) regressao ao silencio:  case false && !Registered && StateModified
+   gate -> EXIT=1, 7 FAIL. Pega no cenário (d):
+   "unknown-content-never-installed/go: vacuity guard: stdout missing '[unknown-content]';
+    stdout: no mismatches found"                              <- SILÊNCIO detectado
+
+restaurado -> "All check-doctor-parity.sh scenarios passed."
+```
+
+As duas direções do defeito ficam cobertas: **acusar demais** e **calar**. O cenário (f) é o que
+prova que a classe se apoia em `Registered` e não em `Managed` — o executor o acrescentou por conta
+própria, e tinha razão: o cenário (e) sozinho nunca alcança esse `case`, porque seu `State` fica
+`current`.
+
+**Cenário (d) reinterpretado, não duplicado.** Ele já montava exatamente o estado novo; só a
+expectativa mudou, de "fica em silêncio" para `[unknown-content]`. Está correto — o que mudou foi o
+veredito do produto sobre aquele estado, não o estado. Apagá-lo teria perdido cobertura.
+
+**Verifiquei a veracidade do remédio**, que era o ponto delicado: `planArtifactWrite`
+(`manager.go`) com `exists && !owned` e `force` de fato substitui os bytes. O texto promete o que o
+produto cumpre.
+
+`make quality` exit 0 · 371 OK · 0 FAIL · 133 cenários · `validate` exit 0.
+
+**Pendências não-bloqueantes registradas pelo executor:** `npm/src/integrations/doctor.js` aparece
+como binário no `git diff` por dois NUL literais **pré-existentes** em `.join('\0')` — cosmético,
+fora do escopo, cabe numa limpeza futura.
 
 ## Notas
 - **Fora de escopo, declarado:** WAL/journal cross-file — rejeitado no ADR por desproporção.

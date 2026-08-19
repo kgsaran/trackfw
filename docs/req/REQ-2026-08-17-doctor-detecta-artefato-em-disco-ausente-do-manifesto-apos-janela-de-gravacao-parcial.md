@@ -111,3 +111,20 @@ ADR: <!-- a criar, se a frente 2 for adiante (AC6) -->
 
 ## Linked Roadmap
 Roadmap: <!-- sem roadmap; backlog -->
+
+---
+
+## Emenda 1 (2026-08-19) — são **três** classes, não duas
+
+> O corpo acima é o texto original da REQ e não foi reescrito. Esta emenda corrige o número de
+> classes, que a barreira do ML-3A mostrou estar errado.
+
+A REQ foi escrita presumindo duas classes. A barreira encontrou um **terceiro estado**
+(`!Registered && StateModified`) que nenhuma delas cobria e que o `doctor` silenciava — justamente o
+estado que faz o `agents install` recusar com `unmanaged artifact`, ou seja, o sintoma que originou
+esta REQ. Fechado no ML-2C com a classe `unknown-content`, cujo remédio **nomeia a recusa** e declara
+as duas causas possíveis em vez de acusar adulteração.
+
+Consequência para quem ler o AC1: "distingue de arquivo modificado à mão" continua valendo, mas a
+distinção é **ternária**. Ver `docs/seguranca/2026-08-18-revisao-do-doctor-e-da-inversao.md` e a
+nota de vault correspondente.

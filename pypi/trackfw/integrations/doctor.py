@@ -18,12 +18,23 @@ from trackfw.identity import load as load_identity
 from .catalog import plan_deployments
 from .manager import IntegrationManager
 
-# The two disk/manifest mismatches doctor reports. They require different
+# The three disk/manifest mismatches doctor reports. They require different
 # remedies and must never be merged — see
-# docs/req/REQ-2026-08-17-doctor-detecta-artefato-em-disco-ausente-do-manifesto-apos-janela-de-gravacao-parcial.md
-# and ADR-2026-08-18-ordem-de-persistencia-inverte-para-manifesto-antes-dos-artefatos.md.
+# docs/req/REQ-2026-08-17-doctor-detecta-artefato-em-disco-ausente-do-manifesto-apos-janela-de-gravacao-parcial.md,
+# ADR-2026-08-18-ordem-de-persistencia-inverte-para-manifesto-antes-dos-artefatos.md,
+# and docs/seguranca/2026-08-18-revisao-do-doctor-e-da-inversao.md (ML-3A —
+# UNKNOWN_CONTENT used to fall silently outside classify_doctor's branches).
 UNREGISTERED_WRITE = "unregistered-write"
 HAND_MODIFIED = "hand-modified"
+# UNKNOWN_CONTENT: neither does any manifest entry exist for this
+# destination, NOR does the on-disk content match the catalog template
+# (registered=False and state="modified"). Genuinely ambiguous between a
+# file that simply is not trackfw's occupying a catalog destination, and an
+# orphaned trackfw artifact whose bytes drifted once the catalog moved on —
+# exactly the state that makes `agents install`'s preflight refuse with
+# "unmanaged artifact". The remedy names that refusal literally, with both
+# branches, instead of picking a side.
+UNKNOWN_CONTENT = "unknown-content"
 
 
 def _doctor_remedy(destination: str, claim: dict[str, Any], effect: str) -> str:
@@ -34,18 +45,24 @@ def _doctor_remedy(destination: str, claim: dict[str, Any], effect: str) -> str:
 
 
 def classify_doctor(statuses: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Separates the two disk/manifest mismatches doctor reports from every
+    """Separates the three disk/manifest mismatches doctor reports from every
     other lifecycle state. Deliberately narrow: current-and-registered,
-    outdated (handled by `update`), not-installed, and unmanaged content that
-    does not match the catalog (not trackfw's) are never reported — flagging
-    any of those would be the false positive that is this command's
-    dominant risk.
+    outdated (handled by `update`), not-installed, and registered under a
+    claim OTHER than the one under inspection (managed=False,
+    registered=True, regardless of state) are never reported — flagging any
+    of those would be the false positive that is this command's dominant
+    risk.
+
+    Content at a catalog destination that matches neither the desired bytes
+    nor any manifest entry (registered=False and state="modified") IS
+    reported, as UNKNOWN_CONTENT — see that constant's doc comment.
 
     Keys off "registered", not "managed": managed additionally requires this
     exact claim to own the manifest entry, so a destination registered under
     a *different* claim reads managed=False while still being registered.
-    Treating that as an "unregistered write" would be exactly the dominant
-    false-positive doctor exists to avoid.
+    Treating that as an "unregistered write" (or, symmetrically, as
+    "unknown-content") would be exactly the dominant false-positive doctor
+    exists to avoid.
     """
     findings: list[dict[str, Any]] = []
     for status in statuses:
@@ -67,6 +84,19 @@ def classify_doctor(statuses: list[dict[str, Any]]) -> list[dict[str, Any]]:
                         destination,
                         claim,
                         "adopts it — content already matches the catalog template, only the manifest entry is missing",
+                    ),
+                }
+            )
+        elif not status["registered"] and status["state"] == "modified":
+            findings.append(
+                {
+                    "finding": UNKNOWN_CONTENT,
+                    "claim": claim,
+                    "destination": destination,
+                    "remedy": _doctor_remedy(
+                        destination,
+                        claim,
+                        "is ambiguous — content matches neither the catalog template nor a manifest entry, so install will refuse this destination with \"unmanaged artifact\"; if this file is yours, remove or move it; if it is trackfw's and it drifted from the catalog template, this replaces it",
                     ),
                 }
             )

@@ -12,7 +12,7 @@ const os = require('node:os')
 const path = require('node:path')
 
 const { buildPlans, IntegrationManager } = require('../src/integrations')
-const { classifyDoctor, runDoctor, UNREGISTERED_WRITE, HAND_MODIFIED } = require('../src/integrations/doctor')
+const { classifyDoctor, runDoctor, UNREGISTERED_WRITE, HAND_MODIFIED, UNKNOWN_CONTENT } = require('../src/integrations/doctor')
 
 function roots() {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-doctor-'))
@@ -38,9 +38,16 @@ test('classifyDoctor: manifest-owned, hash differs -> hand modified', () => {
   assert.equal(findings[0].finding, HAND_MODIFIED)
 })
 
-test('classifyDoctor: alien content, no manifest entry -> not our problem', () => {
+// Was "not our problem" / length 0 before ML-2C — this is exactly the state
+// ML-3A's audit found silently falling outside classifyDoctor's cases,
+// which is what makes `agents install`'s preflight refuse with "unmanaged
+// artifact". See UNKNOWN_CONTENT's doc comment.
+test('classifyDoctor: content matches neither template nor manifest entry -> unknown content', () => {
   const status = { claim: { target: 'claude', surface: 'cli', scope: 'project', kind: 'agents', item: 'backend' }, destination: '/proj/x.md', state: 'modified', managed: false, registered: false }
-  assert.equal(classifyDoctor([status]).length, 0)
+  const findings = classifyDoctor([status])
+  assert.equal(findings.length, 1)
+  assert.equal(findings[0].finding, UNKNOWN_CONTENT)
+  assert.ok(findings[0].remedy.includes('unmanaged artifact'))
 })
 
 test('classifyDoctor: template match, already registered and owned -> nothing to report', () => {
@@ -50,6 +57,16 @@ test('classifyDoctor: template match, already registered and owned -> nothing to
 
 test('classifyDoctor: registered under a DIFFERENT claim, content current -> must not be reported as unregistered', () => {
   const status = { claim: { target: 'claude', surface: 'cli', scope: 'project', kind: 'agents', item: 'backend' }, destination: '/proj/x.md', state: 'current', managed: false, registered: true }
+  assert.equal(classifyDoctor([status]).length, 0)
+})
+
+// The unknown-content analogue of the case above: a destination registered
+// under a DIFFERENT claim whose content also mismatches must stay silent
+// too — it is that other claim's concern, not this one's, regardless of
+// state. This is the discriminant Cenário 72 (check-gates-falsify.sh)
+// falsifies for UNKNOWN_CONTENT, mirroring Cenário 71 for UNREGISTERED_WRITE.
+test('classifyDoctor: registered under a DIFFERENT claim, content modified -> must not be reported as unknown content', () => {
+  const status = { claim: { target: 'claude', surface: 'cli', scope: 'project', kind: 'agents', item: 'backend' }, destination: '/proj/x.md', state: 'modified', managed: false, registered: true }
   assert.equal(classifyDoctor([status]).length, 0)
 })
 
@@ -93,4 +110,19 @@ test('runDoctor: finds unregistered write after manifest entry removed, distingu
   findings = runDoctor({ identity: { agents: {} }, projectRoot, homeRoot })
   assert.equal(findings.length, 1)
   assert.equal(findings[0].finding, HAND_MODIFIED)
+})
+
+test('runDoctor: finds unknown content for a destination never installed through trackfw', () => {
+  const { projectRoot, homeRoot } = roots()
+  const [plan] = buildPlans('agents', { targets: ['claude'], items: ['backend'], scope: 'project', identity: { agents: {} } })
+  const destination = path.join(projectRoot, plan.destination)
+  fs.mkdirSync(path.dirname(destination), { recursive: true })
+  // Never installed (zero manifest entry), content matches neither the
+  // catalog template nor any LegacyHashes entry.
+  fs.writeFileSync(destination, 'nobody installed this through trackfw')
+
+  const findings = runDoctor({ identity: { agents: {} }, projectRoot, homeRoot })
+  assert.equal(findings.length, 1)
+  assert.equal(findings[0].finding, UNKNOWN_CONTENT)
+  assert.ok(findings[0].remedy.includes('unmanaged artifact'))
 })

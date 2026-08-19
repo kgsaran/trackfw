@@ -14,9 +14,9 @@ func newDoctorCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "doctor",
-		Short: "Detect artifacts on disk missing from the manifest, and distinguish them from hand-modified artifacts",
+		Short: "Detect artifacts on disk missing from the manifest, distinguishing hand-modified artifacts from unknown content",
 		Long: `trackfw doctor sweeps every catalog-managed agents/skills destination, in
-both project and global scope, and reports two distinct disk/manifest
+both project and global scope, and reports three distinct disk/manifest
 mismatches with different remedies — they are never merged:
 
   unregistered-write   on-disk content matches the current catalog template
@@ -26,16 +26,30 @@ mismatches with different remedies — they are never merged:
                         own, only the manifest record is missing. Safe to
                         adopt.
 
+  unknown-content       on-disk content matches neither the catalog template
+                        NOR any manifest entry. This state is genuinely
+                        ambiguous: it could be a file that is not trackfw's
+                        at all occupying a catalog destination, or an
+                        orphaned trackfw artifact whose bytes drifted once
+                        the catalog moved on. It is exactly the state that
+                        makes "agents install" refuse this destination with
+                        "unmanaged artifact" — the remedy names that refusal
+                        instead of picking a side: remove or move the file
+                        if it is yours; if it is trackfw's and it drifted,
+                        "install --force" replaces it with the current
+                        template.
+
   hand-modified         the manifest owns the destination, but its on-disk
                         hash no longer matches what the manifest recorded —
                         the file was edited after trackfw wrote it. Adopting
                         overwrites that edit; it is a human decision, never
                         automatic.
 
-Content that does not match the catalog template and has no manifest entry
-is not trackfw's and is never reported — flagging it would be a false
-positive. Each finding prints a ready-to-copy remediation command; doctor
-never writes anything itself.`,
+A destination registered under a claim other than the one being inspected is
+never reported, regardless of its content — that ambiguity belongs to a
+different item, not this one, and is out of scope for doctor. Each finding
+prints a ready-to-copy remediation command; doctor never writes anything
+itself.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			findings, err := runDoctor()
 			if err != nil {
@@ -77,15 +91,21 @@ func printDoctorReport(cmd *cobra.Command, findings []integrations.DoctorFinding
 		fmt.Fprintln(out, "trackfw doctor: no mismatches found -- disk matches the manifest for every catalog-managed artifact.")
 		return
 	}
-	unregistered, handModified := 0, 0
+	// Counted explicitly by kind (never an if/else fallback into the last
+	// bucket) so a fourth class introduced later fails loudly here instead
+	// of silently inflating hand-modified's count.
+	var unregistered, handModified, unknownContent int
 	for _, finding := range findings {
-		if finding.FindingKind == integrations.DoctorUnregisteredWrite {
+		switch finding.FindingKind {
+		case integrations.DoctorUnregisteredWrite:
 			unregistered++
-		} else {
+		case integrations.DoctorHandModified:
 			handModified++
+		case integrations.DoctorUnknownContent:
+			unknownContent++
 		}
 	}
-	fmt.Fprintf(out, "trackfw doctor: %d finding(s) -- %d unregistered-write, %d hand-modified\n\n", len(findings), unregistered, handModified)
+	fmt.Fprintf(out, "trackfw doctor: %d finding(s) -- %d unregistered-write, %d hand-modified, %d unknown-content\n\n", len(findings), unregistered, handModified, unknownContent)
 	// One blank line BETWEEN findings, none trailing after the last one — matches Node's
 	// `lines.join('\n').replace(/\n$/, '')` and Python's `"\n".join(lines).rstrip("\n")`
 	// (npm/src/commands/doctor.js, pypi/trackfw/commands/doctor.py). A naive per-finding
