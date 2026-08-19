@@ -20631,3 +20631,45 @@ adversariais (11-13)") ficou desatualizado (agora são 4, com o Cenário 14) —
 handoff, deixado como está.
 
 Nenhum commit/push — entregue para auditoria do `trackfw_architect`.
+
+## 2026-08-19 — Hades (INÍCIO: ML-4C — reverificação do bloqueio do `release tag`)
+
+Handoff pede reverificação do próprio veredito de BLOQUEAR emitido no ML-4A, à luz da Emenda 1 do
+ADR (commit-alvo passa a vir do forge, `GET repos/{owner}/{repo}` → `default_branch` →
+`GET .../commits/{branch}` → `sha`) e do ML-4B/ML-4D que a implementam nos 3 CLIs + gate. Escopo:
+escrever exatamente `docs/seguranca/2026-08-19-reverificacao-do-release-tag.md`, sem tocar código
+de produto.
+
+## 2026-08-19 — Hades (FIM: ML-4C concluído — BLOQUEIO LEVANTADO)
+
+**Veredito: BLOQUEIO LEVANTADO.** Reproduzi o exploit exato do ML-4A (achado B.2, variante "sem
+push": commit local forjado nunca empurrado + symref `origin/HEAD` repontado para uma branch
+antiga alheia) contra o binário atual, com fixture nova e independente da do gate
+(`scratchpad/reverify/`, `bare` local descartável, stub de `gh`). A tag publicada aponta para o sha
+real de `origin/main` (via `gh api commits/main`), não para o commit forjado nem para a branch para
+onde o symref foi desviado — o desvio foi neutralizado, não usado, confirmando a Emenda 1
+(`internal/commands/release.go:365-410`). `bash scripts/check-release-tag-parity.sh` → 18/18 OK
+contra o binário desta branch. `git update-ref` confirmado bloqueado **ao vivo** pelo hook real
+deste repositório (não só lido no script). Paridade dos 3 CLIs confirmada por leitura direta
+(`npm/src/release/runner.js:311-366`, `pypi/trackfw/release/runner.py:400-466`) — estrutura
+idêntica ao Go, incluindo a correção do `LastIndexByte`/`rfind` para `HasPrefix` (branch com `/` no
+nome). Nenhum achado novo. Relatório completo:
+`docs/seguranca/2026-08-19-reverificacao-do-release-tag.md`.
+
+Nenhum commit/push — entregue para auditoria do `trackfw_architect`.
+
+## 2026-08-19 — Zeus (arquiteto) — bloqueio LEVANTADO, REQ pronta para PR
+
+`hades-tf`: **LEVANTADO COM RESSALVAS**. Ele reproduziu o próprio exploit contra o binário desta
+branch, com fixture independente da do gate, e testou o bloqueio de `update-ref` ao vivo no hook real.
+
+A ressalva é honesta e ele podia ter calado: dois dos três danos que o parecer dele mesmo listava
+nunca dependiam do mecanismo corrigido. Confirmei por leitura — Pré-condições 3 e 4 leem conteúdo
+local (arquivos de versão e `CHANGELOG.md`).
+
+**O argumento decisivo é dele:** corrigir o commit-alvo tornou a mensagem forjada **mais crível**,
+porque agora aparece pendurada num commit real do tip. A correção de um vetor ampliou a
+credibilidade do outro. Virou `REQ-2026-08-19-release-tag-confia-em-conteudo-local...` (backlog) —
+não é regressão desta REQ, é superfície que nunca esteve no escopo dela.
+
+AC1-AC9 fechados. Falta o AC10: **CI verde**.

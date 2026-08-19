@@ -543,7 +543,7 @@ npm que importam `hooks.js` e verificou Go e Python. Go isola via `t.Setenv("HOM
 ## Wave 4 — Barreira
 
 ### ML-4A — `hades-tf`: revisão do escape hatch
-**Status:** ⬜ Pendente · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
+**Status:** ✅ Concluído · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
 **Escreve:** `docs/seguranca/2026-08-19-revisao-do-push-forcado-e-do-release-tag.md`
 
 **Ações:** avaliar se a amarração ao PR aberto é contornável (PR fechado? PR de outro repo? branch
@@ -586,7 +586,7 @@ que não cobre o próprio contrato é pior que gate ausente, porque compra confi
 ## Wave 5 — Corretiva da barreira
 
 ### ML-4B — Commit-alvo da tag ancorado no forge
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Fecha AC3 e AC8.**
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Fecha AC3 e AC8.**
 **Arquivos (3 stacks):** `internal/commands/release.go` + `internal/commands/ship.go`
 (`defaultBaseBranch`), `npm/src/release/runner.js`, `pypi/trackfw/release/runner.py`, testes dos 3,
 `scripts/check-release-tag-parity.sh`, `scripts/check-gates-falsify.sh`, `docs/cli-parity.md`,
@@ -806,7 +806,7 @@ fora de escopo é o comportamento certo.
 `make quality` exit 0 · 137 cenários · 18/18 no gate · `validate` exit 0.
 
 ### ML-4C — Reverificação do `hades-tf`
-**Status:** ⬜ Pendente · **Agente:** `hades-tf` · **Dependência:** ML-4B.
+**Status:** ✅ Concluído · **Agente:** `hades-tf` · **Dependência:** ML-4B.
 Quem bloqueou é quem confirma que fechou. Veredito explícito.
 
 
@@ -814,3 +814,27 @@ Quem bloqueou é quem confirma que fechou. Veredito explícito.
 - **Fora de escopo, declarado:** afrouxar o `case push)` do guard; merge de PR; `trackfw release`
   cobrindo bump e CHANGELOG (adiado no ADR, não rejeitado).
 - Commits e branch são exclusivos do `trackfw_architect`.
+
+### Auditoria do ML-4C — **bloqueio levantado**, e a ressalva vira REQ
+
+Veredito do `hades-tf`: **LEVANTADO COM RESSALVAS**
+(`docs/seguranca/2026-08-19-reverificacao-do-release-tag.md`).
+
+Ele reproduziu o **próprio exploit** contra o binário desta branch, com fixture nova e independente
+da do gate — a tag apontou para o sha real de `origin/main`, não para o commit forjado nem para a
+branch do symref desviado. Testou o bloqueio de `update-ref` **ao vivo**, no hook real, não por
+leitura. Gate 18/18.
+
+**A ressalva é honesta e ele podia ter calado:** dois dos três danos que o parecer dele mesmo listava
+no ML-4A **nunca dependiam** do mecanismo que o ML-4B corrigiu. Confirmei por leitura
+(`release.go:302-329`): as Pré-condições 3 e 4 seguem lendo conteúdo **local** — arquivos de versão
+e `CHANGELOG.md`.
+
+**E o argumento decisivo é dele, não meu:** corrigir o commit-alvo tornou a mensagem forjada **mais
+crível**, porque agora ela aparece pendurada num commit real do tip da branch padrão. A correção de
+um vetor ampliou a credibilidade do outro. Um revisor menos rigoroso teria levantado o bloqueio e
+seguido.
+
+Aberta a `REQ-2026-08-19-release-tag-confia-em-conteudo-local-para-versao-e-mensagem-da-tag`
+(backlog). **Não** é regressão desta REQ — é superfície que nunca esteve no escopo dela.
+

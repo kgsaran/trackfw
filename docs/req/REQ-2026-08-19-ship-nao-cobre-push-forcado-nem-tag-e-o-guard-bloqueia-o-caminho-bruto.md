@@ -108,20 +108,23 @@ do no-op. Não deixar implícito.
 - [x] AC1 — Decisão registrada em **ADR**: `ship --force-with-lease` + `release tag` separado, ou
       um `ship` alargado. Com o motivo.
 - [x] AC2 — Push pós-rebase tem caminho governado, usando **`--force-with-lease`**, nunca `--force`.
-- [ ] AC3 — Tag anotada de release tem caminho governado, com a mensagem íntegra no objeto de tag.
-      🔴 **Bloqueado pela barreira do ML-4A (2026-08-19).** O commit-alvo vem de refs **locais**, não
+- [x] AC3 — Tag anotada de release tem caminho governado, com a mensagem íntegra no objeto de tag.
+      ✅ **Refechado no ML-4B; bloqueio levantado pelo `hades-tf` no ML-4C**, que reproduziu o próprio
+      exploit contra o binário atual e confirmou que a tag aponta para o tip real do forge.
+      Histórico: bloqueado pela barreira do ML-4A — O commit-alvo vem de refs **locais**, não
       do forge — `symbolic-ref refs/remotes/origin/HEAD` e `rev-parse origin/<base>` são ambos
       artefatos locais e graváveis. A garantia "a tag sempre aponta para `origin/<default>`" **não
       é sustentada**. Fecha no ML-4B.
-- [ ] AC4 — As demais formas da tabela ou são cobertas, ou recusadas **com orientação**.
+- [x] AC4 — As demais formas da tabela ou são cobertas, ou recusadas **com orientação**.
 - [x] AC5 — Mensagem do guard deixa claro que o comando **inteiro** foi bloqueado.
-- [ ] AC6 — Paridade nos **3 CLIs**, com **gate comparando as saídas reais** — teste por stack não fecha.
-- [ ] AC7 — Cenário P4 para cada superfície nova, com braço de baseline e de detecção.
-- [ ] AC8 — Seção no `docs/cli-parity.md` **nomeando o gate** que a protege.
-      🔴 **Insuficiente:** o gate nomeado não exercita seleção adversarial do commit-alvo, ou seja,
+- [x] AC6 — Paridade nos **3 CLIs**, com **gate comparando as saídas reais** — teste por stack não fecha.
+- [x] AC7 — Cenário P4 para cada superfície nova, com braço de baseline e de detecção.
+- [x] AC8 — Seção no `docs/cli-parity.md` **nomeando o gate** que a protege.
+      ✅ Gate estendido nos ML-4B e ML-4D: 4 cenários sobre a origem do alvo (11-14).
+      Histórico: era insuficiente — o gate nomeado não exercita seleção adversarial do commit-alvo, ou seja,
       não protege a própria garantia que o AC8 declara. Estender no ML-4B.
 - [x] AC9 — Consequência de segurança declarada no ADR.
-- [ ] AC10 — `make quality` verde **e CI verde**.
+- [ ] AC10 — `make quality` verde **e CI verde**. (local verde; **aguardando CI**)
 
 ## Riscos para quem executar
 
@@ -135,3 +138,17 @@ ADR: <!-- a criar: forma do caminho governado para push forçado e tag -->
 
 ## Linked Roadmap
 Roadmap: <!-- a criar -->
+
+## Débito nomeado ao fechar (não é regressão, é escopo que nunca esteve aqui)
+
+A reverificação do `hades-tf` levantou o bloqueio **com ressalvas**: as Pré-condições 3 e 4 do
+`release tag` seguem lendo **conteúdo local** (arquivos de versão e `CHANGELOG.md`), sem âncora no
+forge. Confirmei por leitura (`release.go:302-329`).
+
+O ponto que torna isso digno de REQ própria, e é do revisor: **corrigir o commit-alvo tornou a
+mensagem forjada mais crível**, porque agora ela aparece pendurada num commit real do tip da branch
+padrão. A correção de um vetor ampliou a credibilidade do outro.
+
+Aberta a `REQ-2026-08-19-release-tag-confia-em-conteudo-local-para-versao-e-mensagem-da-tag`
+(backlog). **Não** é regressão desta REQ — é superfície que nunca esteve no escopo dela, e fechá-la
+por dentro seria escopo inflado sem decisão de KG.
