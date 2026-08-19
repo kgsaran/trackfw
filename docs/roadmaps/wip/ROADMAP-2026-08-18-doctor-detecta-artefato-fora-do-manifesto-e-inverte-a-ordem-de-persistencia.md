@@ -134,12 +134,26 @@ de **arquivo modificado à mão**, que continua sendo o caso de `install --force
 - [x] `make quality` verde.
 
 ### ML-2B — Gate de paridade + cenário P4
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Status:** 🔄 Em andamento · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
 **Dependência:** ML-2A.
+**Arquivos:** `scripts/check-doctor-parity.sh` (novo), `Makefile` (alvo `parity`),
+`scripts/check-gates-falsify.sh`, `docs/cli-parity.md` (seção nova, **nomeando o gate**).
+
 **Critérios de aceite:**
 - [ ] Gate comparando as **três saídas reais** — teste por stack **não** fecha o AC3.
+- [ ] Gate cobre **as duas superfícies**: relatório de texto **e** `--json`.
 - [ ] Cenário P4 reproduzindo a janela: artefato em disco sem registro, e prova de que acusa.
-- [x] `make quality` verde.
+- [ ] `docs/cli-parity.md` ganha seção do `doctor` **nomeando o gate** que a protege.
+- [ ] `make quality` verde.
+
+**Restrições duras do fixture** (cada uma já custou ciclo nesta série):
+1. `HOME` **redirecionado** para o temp — o `doctor` varre escopo global; sem isso o gate lê o
+   `~/.trackfw` real e a saída vira dependente de máquina.
+2. Os dois estados construídos por **install-e-mutar**, nunca por bytes de template hardcoded
+   (hardcode apodrece e fica vacuoso em silêncio — o modo de falha do Cenário 58).
+3. **Identidade fixada** explicitamente: `identity.Load` decide os destinos; e identidade ausente
+   faz os 3 errarem igual, fechando o AC3 **vacuamente**.
+4. Edição do manifesto por `python3`, **nunca `sed -i`** (BSD vs GNU — foi a classe da falha de CI).
 
 ---
 

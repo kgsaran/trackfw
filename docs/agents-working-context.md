@@ -19790,3 +19790,23 @@ dizer nada — vira dívida silenciosa, o padrão que estas REQs vêm quebrando.
 - **O guard bloqueia `git commit`/`git branch` literais no comando** — inclusive ao montar fixture.
   Contorno: pôr o setup num script e executar o script.
 - **Corpo de PR com `git push` no texto**: usar `gh pr create --body-file`, nunca `--body` inline.
+
+## RETOMADA 2026-08-19 — Zeus (arquiteto) — ML-2B
+
+Retomo exatamente no ponto escrito na parada de 2026-08-18: **ML-2B do `doctor`**, na branch
+`feat/doctor-detecta-artefato-fora-do-manifesto` (PR #190 aberto).
+
+ML-2B marcado 🔄 e ampliado com quatro restrições duras de fixture, mais duas lacunas que o ML-2A
+deixou abertas e que fecham barato aqui:
+
+- **`docs/cli-parity.md` não tem seção do `doctor`.** Verificado: zero ocorrências fora de menções
+  de outras seções. Sem isso o comando entra como o artefato exato que a
+  `REQ-2026-08-18-contrato-pinado-...-sem-gate-nomeado` descreve — contrato pinado sem gate.
+- **Gate precisa cobrir `--json` além do texto.** O comando tem a flag; é onde tags de struct do Go,
+  camelCase do Node e snake_case do Python divergem de verdade.
+
+Ordenação determinística já existe no Go (`sortDoctorFindings`, `internal/integrations/doctor.go:106`).
+Se o gate reprovar por ordem, o conserto é **no produto nos 3**, não no gate — ordem instável em
+relatório de diagnóstico é defeito.
+
+**Decisão da 7.1.0 segue em aberto** — "vamos prosseguir" é continuidade do ML, não aprovação de tag.
