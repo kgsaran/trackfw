@@ -604,6 +604,55 @@ e o literal `gitBranchGuardScript` em `internal/generators/scaffold.go` (+ espel
       `update-ref` é o mecanismo que tornou este exploit alcançável
 - [ ] `make quality` verde
 
+
+### Auditoria do ML-4B — aprovada, com **uma correção minha** e uma lacuna de gate
+
+**Errei a primeira sabotagem, e o erro é instrutivo.** Troquei `objectSHA := commitObj.SHA` por
+`objectSHA := forgeLocalSHA` e o gate ficou **verde** — cheguei a suspeitar do gate. Estava errado:
+naquele ponto a checagem cruzada já garantiu que os dois valores são **iguais**, então minha
+"sabotagem" era semanticamente idêntica ao original. Sabotagem que não muda comportamento não testa
+nada.
+
+A sabotagem **de verdade** — voltar a resolver o alvo pela ref local derivada do symref, que é
+exatamente a regressão que o bloqueio existe para impedir:
+
+```
+objectSHA := commitObj.SHA  ->  rev-parse origin/<base local>   (+ checagem cruzada neutralizada)
+gate -> EXIT=1, 17 FAIL, e o primeiro nomeia o defeito:
+  "forge-symref-repoint-neutralized/go: stdout must echo the forge's real main commit sha,
+   proving the repoint was ignored"
+restaurado -> "All check-release-tag-parity.sh scenarios passed."
+```
+
+**A correção de desenho que ele fez sozinho está certa, e é a parte mais madura do lote.** A primeira
+versão recusava quando o nome do forge diferia do `base` local. Isso **invertia o princípio do ADR**:
+clone raso sem symref cai no fallback `"main"`, então um repositório cujo default é `master`
+recusaria **sem nenhum atacante envolvido**. Ele removeu a comparação de nomes — o nome do forge
+vence **incondicionalmente** — e passou a cruzar apenas o **sha**, contra `origin/<nome do forge>`,
+nunca contra `origin/<base local>`. Segurança que produz falso-positivo em uso legítimo vira
+segurança desligada.
+
+#### Lacuna de gate que eu encontrei, e que vai para o ML-4D
+
+Nenhum dos 17 cenários exercita **ausência da ref de tracking local** (`forgeLocalSHA == ""`). É
+justamente a consequência que a Emenda 1 declara: *"pode publicar um commit que o clone local nunca
+viu"*. O código atual está correto nesse caminho — verifiquei —, mas **uma regressão ali passaria
+sem gate**. Depois desta sessão inteira defendendo que gate precisa cobrir a garantia que declara,
+não vou abrir exceção para a nossa.
+
+---
+
+### ML-4D — Cenário de ref de tracking ausente
+**Status:** ⬜ Pendente · **Agente:** `apolo-tf` · **Dependência:** ML-4B.
+**Arquivos:** `scripts/check-release-tag-parity.sh`.
+Cenário com `refs/remotes/origin/<default>` **inexistente**: o comando deve usar o sha do forge e
+publicar, sem recusar. É a consequência declarada na Emenda 1, hoje sem cobertura.
+
+**Critérios de aceite:**
+- [ ] Cenário novo cobre `forgeLocalSHA == ""`, comparando as 3 saídas reais
+- [ ] Prova que o alvo publicado é o **sha do forge**
+- [ ] `make quality` verde
+
 ### ML-4C — Reverificação do `hades-tf`
 **Status:** ⬜ Pendente · **Agente:** `hades-tf` · **Dependência:** ML-4B.
 Quem bloqueou é quem confirma que fechou. Veredito explícito.

@@ -583,22 +583,37 @@ func gitCommitsSince(base string, execGit func(args ...string) (string, error)) 
 	return commits
 }
 
+// gitSymbolicRefOriginHeadPrefix is the fixed prefix `git symbolic-ref refs/remotes/origin/HEAD`
+// always returns before the branch name, because "origin" is the literal ref namespace we
+// queried — never derived from the output itself. Stripping this exact prefix (instead of
+// cutting at the last '/') is what makes defaultBaseBranch correct for a default branch that
+// itself contains a slash (e.g. "release/7.2"): LastIndexByte("refs/remotes/origin/release/7.2",
+// '/') used to cut at "7.2", discarding "release/". Two consumers depend on this: release.go's
+// commit-target resolution and this file's buildPRBody (via gitCommitsSince).
+const gitSymbolicRefOriginHeadPrefix = "refs/remotes/origin/"
+
 // defaultBaseBranch resolves the repository's default branch for `git log <base>..HEAD`.
-// It tries `git symbolic-ref refs/remotes/origin/HEAD` (format "refs/remotes/origin/main" —
-// only the name after the last slash is kept) and falls back to "main" when that fails or
-// yields nothing (e.g. shallow clone without a remote-tracking HEAD). Same resolution
+// It tries `git symbolic-ref refs/remotes/origin/HEAD` and falls back to "main" when that fails
+// or yields nothing (e.g. shallow clone without a remote-tracking HEAD). Same resolution
 // pattern already used for branch/governance checks in internal/validator/validator.go.
+//
+// This is a LOCAL, gravable ref — trackfw release tag treats its result as a cross-check
+// candidate only, never as the source of truth for the tag's commit target (the forge is the
+// source; see ADR-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md, Emenda 1).
 func defaultBaseBranch(execGit func(args ...string) (string, error)) string {
 	out, err := execGit("symbolic-ref", "refs/remotes/origin/HEAD")
 	if err != nil {
 		return "main"
 	}
 	out = strings.TrimSpace(out)
-	idx := strings.LastIndexByte(out, '/')
-	if idx < 0 || idx+1 >= len(out) {
+	if !strings.HasPrefix(out, gitSymbolicRefOriginHeadPrefix) {
 		return "main"
 	}
-	return out[idx+1:]
+	name := out[len(gitSymbolicRefOriginHeadPrefix):]
+	if name == "" {
+		return "main"
+	}
+	return name
 }
 
 // buildPRBody constructs the PR/MR body. With 0 or 1 non-merge commit on the branch (the

@@ -185,12 +185,22 @@ PYEOF
 }
 
 # ---------------------------------------------------------------------------
-# write_release_gh_stub DIR CALL_LOG — a `gh` stub that answers exactly the two `gh api` calls
-# release tag makes (POST git/tags, POST git/refs), recording each request body to CALL_LOG in
-# call order, and returning a tag-object sha DELIBERATELY DIFFERENT from any real commit sha.
+# write_release_gh_stub DIR CALL_LOG [FORGE_DEFAULT_BRANCH] [FORGE_COMMIT_SHA] — a `gh` stub
+# that answers all four `gh api` calls release tag makes:
+#   GET  repos/{owner}/{repo}                      -> default_branch (FORGE_DEFAULT_BRANCH,
+#        default "main" — the forge's answer, never read from a local ref)
+#   GET  repos/{owner}/{repo}/commits/<branch>      -> sha (FORGE_COMMIT_SHA, default the fixed
+#        RELEASE_TAG-unrelated fallback below when unset — callers that need a REAL commit sha
+#        pass it explicitly)
+#   POST repos/{owner}/{repo}/git/tags              -> sha DELIBERATELY DIFFERENT from any real
+#        commit sha (FAKE_TAG_OBJECT_SHA)
+#   POST repos/{owner}/{repo}/git/refs              -> {}
+# Only the two POST calls are recorded to CALL_LOG (in call order) — the GET calls are answered
+# but never logged, so scenario 9's "no publish happened" assertion (absence of *.json files in
+# CALL_LOG) stays meaningful even though GET calls now happen before the identity check.
 # ---------------------------------------------------------------------------
 write_release_gh_stub() {
-  local dir=$1 call_log=$2
+  local dir=$1 call_log=$2 forge_default_branch=${3:-main} forge_commit_sha=${4:-0000000000000000000000000000000000000f}
   mkdir -p "$dir" "$call_log"
   cat >"$dir/gh" <<EOF
 #!/usr/bin/env bash
@@ -206,6 +216,12 @@ case "\$2" in
   *git/refs*)
     printf '%s' "\$body" >"$call_log/\$(printf '%02d' "\$n")-refs-request.json"
     echo '{"ref":"refs/tags/$RELEASE_TAG","object":{"sha":"$FAKE_TAG_OBJECT_SHA"}}'
+    ;;
+  *commits/*)
+    echo '{"sha":"$forge_commit_sha"}'
+    ;;
+  repos/\{owner\}/\{repo\})
+    echo '{"default_branch":"$forge_default_branch"}'
     ;;
   *)
     echo "release-tag-parity stub: unexpected gh call: \$*" >&2
@@ -588,9 +604,10 @@ assert_three_way "$RT_LABEL"
 RT_LABEL="git-identity-missing"
 dest="$WORK/s9"
 fixture=$(build_fixture "$dest" "github" "0")
+commit_sha_s9=$(git --git-dir="$dest/origin.git" rev-parse main)
 stub="$dest-stub"
 call_log="$dest-calls"
-write_release_gh_stub "$stub" "$call_log"
+write_release_gh_stub "$stub" "$call_log" "main" "$commit_sha_s9"
 for runtime in go node py; do
   run_release "$runtime" "$fixture" "$stub" "$dest" "$RELEASE_VERSION"
   echo "$RT_EXIT" >"$WORK/$RT_LABEL.$runtime.exit"
@@ -622,7 +639,7 @@ commit_sha=$(git --git-dir="$dest/origin.git" rev-parse main)
 stub="$dest-stub"
 for runtime in go node py; do
   call_log="$dest-calls-$runtime"
-  write_release_gh_stub "$stub-$runtime" "$call_log"
+  write_release_gh_stub "$stub-$runtime" "$call_log" "main" "$commit_sha"
   run_release "$runtime" "$fixture" "$stub-$runtime" "$dest" "$RELEASE_VERSION"
   echo "$RT_EXIT" >"$WORK/$RT_LABEL.$runtime.exit"
   if [[ "$RT_EXIT" -ne 0 ]]; then
@@ -692,6 +709,205 @@ for runtime in go node py; do
     continue
   fi
 done
+assert_three_way "$RT_LABEL"
+
+# ---------------------------------------------------------------------------
+# Scenarios 11-13 — adversarial selection of the commit target (ADR-2026-08-19, Emenda 1).
+# Scenarios 12-13 attack the sha cross-check via the origin/<forge-branch> tracking ref: a direct
+# `git update-ref` forgery under a narrowed refspec — the exact mechanism the ADR calls out as
+# what made the original exploit reachable (12) — and a `remote.origin.fetch` narrowed BEFORE the
+# command's own internal `git fetch origin --prune` runs, leaving the tracking ref naturally
+# stale against a legitimate second push rather than actively forged (13, same narrowing
+# technique check-ship-force-parity.sh's "remote-advanced-lease-mismatch" scenario already
+# exercises for `ship --force-with-lease`). The `gh` stub in each scenario answers with the
+# FORGE's true, unspoofed values — proving the divergence is caught by comparison against the
+# forge, not by the local ref happening to be internally consistent. Both refuse, naming both
+# shas.
+#
+# Scenario 11 attacks the OTHER local ref — the symref-derived branch NAME — and proves the
+# opposite property: the forge's default_branch name is authoritative UNCONDITIONALLY, with no
+# local-vs-forge name comparison at all. A repointed origin/HEAD symref is neutralized, not
+# refused: the command resolves and publishes using the forge's real branch/sha, ignoring the
+# repoint entirely. This is deliberate — a fresh/shallow clone legitimately has no origin/HEAD
+# symref (defaultBaseBranch falls back to "main"), so treating a name disagreement as a refusal
+# would be a false refusal against a legitimate repo, not a security check.
+#
+# IMPORTANT, discovered while building these three (see vault/notes/git-fetch-self-heals-
+# forged-origin-head-and-tracking-refs-2026-08-19.md): the command's OWN internal
+# `git fetch origin --prune` (Precondition 2) self-heals a forged origin/<base> tracking ref
+# under the DEFAULT refspec — git 2.50 always force-updates `refs/remotes/origin/*` from the real
+# remote on fetch. A standalone `git update-ref` forgery, run and then left for the command's own
+# fetch to see, is silently undone before the comparison code ever runs — that is NOT this
+# command being extra-safe, it is Scenarios 12-13 being vacuous unless the forgery is made to
+# survive the fetch on purpose (`remote.origin.fetch` narrowed), matching exactly the mechanism
+# the ADR names as the real attack surface.
+# ---------------------------------------------------------------------------
+
+# --- Scenario 11 — repointed origin/HEAD symref: proves it is NEUTRALIZED, not refused. The ---
+# forge's default_branch ("main") is used unconditionally; origin/main (not origin/chore/other)
+# is what gets cross-checked and published, regardless of the symref repoint.
+RT_LABEL="forge-symref-repoint-neutralized"
+dest="$WORK/s11"
+fixture=$(build_fixture "$dest" "github" "1")
+(
+  cd "$fixture"
+  env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "HOME=$dest" \
+    git config remote.origin.followRemoteHEAD never
+  env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "HOME=$dest" \
+    git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/chore/other
+) >>"$dest/build.log" 2>&1
+commit_sha_s11=$(git --git-dir="$dest/origin.git" rev-parse main)
+stub="$dest-stub"
+for runtime in go node py; do
+  call_log="$dest-calls-$runtime"
+  write_release_gh_stub "$stub-$runtime" "$call_log" "main" "$commit_sha_s11"
+  run_release "$runtime" "$fixture" "$stub-$runtime" "$dest" "$RELEASE_VERSION"
+  echo "$RT_EXIT" >"$WORK/$RT_LABEL.$runtime.exit"
+  if [[ "$RT_EXIT" -ne 0 ]]; then
+    fail "release-tag-parity/$RT_LABEL/$runtime" "expected exit 0: a repointed local symref must be neutralized (the forge's branch name wins), never refused; stderr: $(cat "$RT_ERR_FILE")"
+    continue
+  fi
+  if grep -qF "chore/other" "$RT_ERR_FILE" 2>/dev/null; then
+    fail "release-tag-parity/$RT_LABEL/$runtime" "stderr must not mention chore/other — the repointed symref must be silently ignored, not surfaced as a refusal; stderr: $(cat "$RT_ERR_FILE")"
+    continue
+  fi
+  if ! grep -qF "commit:     $commit_sha_s11" "$RT_OUT_FILE"; then
+    fail "release-tag-parity/$RT_LABEL/$runtime" "stdout must echo the forge's real main commit sha, proving the repoint was ignored; stdout: $(cat "$RT_OUT_FILE")"
+    continue
+  fi
+  if [[ ! -f "$call_log/01-tags-request.json" || ! -f "$call_log/02-refs-request.json" ]]; then
+    fail "release-tag-parity/$RT_LABEL/$runtime" "expected the neutralized repoint to still reach both publish calls; found: $(ls "$call_log" 2>/dev/null)"
+    continue
+  fi
+done
+assert_three_way "$RT_LABEL"
+
+# --- Scenario 12 — origin/main forged via `git update-ref` UNDER A NARROWED REFSPEC (so the ---
+# command's own internal fetch cannot undo the forgery before reading it — without narrowing,
+# this scenario is vacuous; see the note above). remote.origin.fetch is pinned to a decoy
+# branch only, so the forgery on refs/remotes/origin/main survives untouched.
+RT_LABEL="forge-commit-diverges-update-ref"
+dest="$WORK/s12"
+fixture=$(build_fixture "$dest" "github" "1")
+real_commit_sha_s12=$(git --git-dir="$dest/origin.git" rev-parse main)
+(
+  cd "$fixture"
+  env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "GIT_TERMINAL_PROMPT=0" "HOME=$dest" \
+    git config remote.origin.fetch "+refs/heads/s12-decoy:refs/remotes/origin/s12-decoy"
+  env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "HOME=$dest" \
+    git checkout -q -b s12-decoy
+  echo decoy >>CHANGELOG.md
+  env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "HOME=$dest" \
+    git add CHANGELOG.md
+  env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "HOME=$dest" \
+    git commit -q -m "fixture: decoy commit, distinct sha from main"
+  env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "GIT_TERMINAL_PROMPT=0" "HOME=$dest" \
+    git push -q origin s12-decoy
+  env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "HOME=$dest" \
+    git checkout -q main
+) >>"$dest/build.log" 2>&1
+forged_sha_s12=$(git --git-dir="$dest/origin.git" rev-parse s12-decoy)
+# Forges BOTH refs/remotes/origin/main and the local refs/heads/main to the SAME wrong value —
+# a self-consistent local state (Precondition 2's pre-existing local-branch-staleness check,
+# which only compares refs/heads/<base> against origin/<base>, sees no disagreement between the
+# two and would otherwise fire first for an unrelated reason, proving nothing about the forge
+# comparison this scenario exists to exercise).
+(
+  cd "$fixture"
+  env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "HOME=$dest" \
+    git update-ref refs/remotes/origin/main "$forged_sha_s12"
+  # git reset --hard (not a second update-ref) moves refs/heads/main, the index AND the
+  # working tree together, so Precondition 1's dirty-tree check stays clean — a bare
+  # update-ref on refs/heads/main alone would leave the working tree pointing at the OLD
+  # commit's content, tripping "working tree is not clean" for an unrelated reason.
+  env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "HOME=$dest" \
+    git reset --hard "$forged_sha_s12"
+) >>"$dest/build.log" 2>&1
+stub="$dest-stub"
+call_log="$dest-calls"
+write_release_gh_stub "$stub" "$call_log" "main" "$real_commit_sha_s12"
+for runtime in go node py; do
+  run_release "$runtime" "$fixture" "$stub" "$dest" "$RELEASE_VERSION"
+  echo "$RT_EXIT" >"$WORK/$RT_LABEL.$runtime.exit"
+  if [[ "$RT_EXIT" -eq 0 ]]; then
+    fail "release-tag-parity/$RT_LABEL/$runtime" "expected non-zero exit when origin/main is forged via update-ref (under a narrowed refspec) and diverges from the forge's tip, got 0"
+    continue
+  fi
+  if ! grep -qF "$forged_sha_s12" "$RT_ERR_FILE" || ! grep -qF "$real_commit_sha_s12" "$RT_ERR_FILE"; then
+    fail "release-tag-parity/$RT_LABEL/$runtime" "vacuity guard: stderr missing both the forged and the forge's real commit sha; stderr: $(cat "$RT_ERR_FILE")"
+    continue
+  fi
+  if ! grep -qF "diverges" "$RT_ERR_FILE"; then
+    fail "release-tag-parity/$RT_LABEL/$runtime" "vacuity guard: stderr missing the divergence refusal; stderr: $(cat "$RT_ERR_FILE")"
+    continue
+  fi
+done
+if [[ -n "$(find "$call_log" -maxdepth 1 -name '*.json' 2>/dev/null)" ]]; then
+  fail "release-tag-parity/$RT_LABEL/no-publish" "refusal must never reach the publish calls; found request files: $(ls "$call_log")"
+fi
+assert_three_way "$RT_LABEL"
+
+# --- Scenario 13 — remote.origin.fetch narrowed BEFORE the command's own fetch runs, with NO --
+# active forgery: the local tracking ref simply stays pinned to a stale commit while a second,
+# independent clone legitimately advances the remote. Distinct from Scenario 12 (active
+# forgery): here nothing local is written except the narrowing config itself. Mirrors
+# check-ship-force-parity.sh's "remote-advanced-lease-mismatch" narrowing technique.
+RT_LABEL="forge-commit-diverges-narrowed-fetch"
+dest="$WORK/s13"
+fixture=$(build_fixture "$dest" "github" "1")
+stale_sha_s13=$(git --git-dir="$dest/origin.git" rev-parse main)
+(
+  cd "$fixture"
+  env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "GIT_TERMINAL_PROMPT=0" "HOME=$dest" \
+    git branch s13-decoy
+  env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "GIT_TERMINAL_PROMPT=0" "HOME=$dest" \
+    git push -q origin s13-decoy
+  env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "GIT_TERMINAL_PROMPT=0" "HOME=$dest" \
+    git config remote.origin.fetch "+refs/heads/s13-decoy:refs/remotes/origin/s13-decoy"
+) >>"$dest/build.log" 2>&1
+# A second, independent clone pushes ONE more legitimate commit to main directly on the bare
+# remote — the forge (this scenario's `gh` stub) reports THIS as the real tip, while our
+# fixture's remote.origin.fetch narrowing means its own internal `git fetch origin --prune`
+# never downloads it, so origin/main stays pinned at stale_sha_s13.
+other_s13="$dest/other"
+(
+  env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "HOME=$dest" \
+    git clone -q "$dest/origin.git" "$other_s13"
+  cd "$other_s13"
+  env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "HOME=$dest" \
+    git config user.email "other@trackfw.test"
+  env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "HOME=$dest" \
+    git config user.name "trackfw release parity (other clone)"
+  echo more >>CHANGELOG.md
+  env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "HOME=$dest" \
+    git add CHANGELOG.md
+  env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "HOME=$dest" \
+    git commit -q -m "another party's legitimate commit"
+  env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "GIT_TERMINAL_PROMPT=0" "HOME=$dest" \
+    git push -q origin main
+) >>"$dest/build.log" 2>&1
+advanced_sha_s13=$(git --git-dir="$dest/origin.git" rev-parse main)
+if [[ "$advanced_sha_s13" == "$stale_sha_s13" ]]; then
+  fail "release-tag-parity/$RT_LABEL/setup" "vacuity guard: the other clone's push did not advance the bare remote — scenario proves nothing"
+fi
+stub="$dest-stub"
+call_log="$dest-calls"
+write_release_gh_stub "$stub" "$call_log" "main" "$advanced_sha_s13"
+for runtime in go node py; do
+  run_release "$runtime" "$fixture" "$stub" "$dest" "$RELEASE_VERSION"
+  echo "$RT_EXIT" >"$WORK/$RT_LABEL.$runtime.exit"
+  if [[ "$RT_EXIT" -eq 0 ]]; then
+    fail "release-tag-parity/$RT_LABEL/$runtime" "expected non-zero exit when a narrowed remote.origin.fetch leaves origin/main stale against the forge's advanced tip, got 0"
+    continue
+  fi
+  if ! grep -qF "$stale_sha_s13" "$RT_ERR_FILE" || ! grep -qF "$advanced_sha_s13" "$RT_ERR_FILE"; then
+    fail "release-tag-parity/$RT_LABEL/$runtime" "vacuity guard: stderr missing both the stale local and the forge's advanced commit sha; stderr: $(cat "$RT_ERR_FILE")"
+    continue
+  fi
+done
+if [[ -n "$(find "$call_log" -maxdepth 1 -name '*.json' 2>/dev/null)" ]]; then
+  fail "release-tag-parity/$RT_LABEL/no-publish" "refusal must never reach the publish calls; found request files: $(ls "$call_log")"
+fi
 assert_three_way "$RT_LABEL"
 
 # ---------------------------------------------------------------------------

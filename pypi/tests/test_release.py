@@ -81,11 +81,6 @@ def make_deps(file_overrides=None, git_responses=None, git_errors=None,
             raise FileNotFoundError(f"file not found: {path}")
         return files[path]
 
-    def default_exec_forge_api(name, args, stdin):
-        if "git/tags" in args[1]:
-            return ('{"sha":"tagobjectsha000"}', None)
-        return ("{}", None)
-
     deps = dict(
         exec_git=git.exec,
         read_file=read_file,
@@ -97,6 +92,26 @@ def make_deps(file_overrides=None, git_responses=None, git_errors=None,
         exec_forge_api=exec_forge_api if exec_forge_api is not None else default_exec_forge_api,
     )
     return deps, git, out_lines, err_lines
+
+
+# default_exec_forge_api answers the four gh api calls release tag makes:
+#   - repos/{owner}/{repo}                       -> default_branch: "main" (agrees with the
+#     fixture's symref-derived base, so no divergence fires by default)
+#   - repos/{owner}/{repo}/commits/main           -> sha: SHA (agrees with the fixture's local
+#     origin/main, so no divergence fires by default)
+#   - repos/{owner}/{repo}/git/tags  (POST)       -> sha: "tagobjectsha000"
+#   - repos/{owner}/{repo}/git/refs  (POST)       -> {}
+def default_exec_forge_api(name, args, stdin):
+    endpoint = args[1]
+    if "git/tags" in endpoint:
+        return ('{"sha":"tagobjectsha000"}', None)
+    if "git/refs" in endpoint:
+        return ("{}", None)
+    if "/commits/" in endpoint:
+        return (json.dumps({"sha": SHA}), None)
+    if endpoint == "repos/{owner}/{repo}":
+        return ('{"default_branch":"main"}', None)
+    return ("{}", None)
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -310,10 +325,9 @@ def test_success_publishes_annotated_tag():
     calls = []
 
     def exec_forge_api(name, args, stdin):
-        calls.append((name, args, stdin))
-        if "git/tags" in args[1]:
-            return ('{"sha":"tagobjectsha000"}', None)
-        return ("{}", None)
+        if "git/tags" in args[1] or "git/refs" in args[1]:
+            calls.append((name, args, stdin))
+        return default_exec_forge_api(name, args, stdin)
 
     deps, _, out, err = make_deps(exec_forge_api=exec_forge_api)
     code = run_release_tag(VERSION, **deps)
@@ -345,11 +359,92 @@ def test_tag_object_call_failure_never_reaches_ref_call():
     def exec_forge_api(name, args, stdin):
         if "git/tags" in args[1]:
             return ("", "401 Unauthorized")
-        ref_called["value"] = True
-        return ("{}", None)
+        if "git/refs" in args[1]:
+            ref_called["value"] = True
+        return default_exec_forge_api(name, args, stdin)
 
     deps, _, _, err = make_deps(exec_forge_api=exec_forge_api)
     code = run_release_tag(VERSION, **deps)
     assert code == 1
     assert ref_called["value"] is False
     assert "gh api failed creating the tag object" in err[0]
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Commit target anchored on the forge (ADR-2026-08-19, Emenda 1) — the forge's
+# default_branch/commit sha are authoritative; local refs are cross-checked only, never trusted.
+# ────────────────────────────────────────────────────────────────────────────
+
+
+def test_repointed_local_symref_is_neutralized_forge_branch_name_wins():
+    # The local, symref-derived base resolves to "chore/other" (attacker-writable, purely
+    # local), while the forge reports "main". The forge's branch name is authoritative
+    # unconditionally — no local-vs-forge name comparison exists (a fresh/shallow clone
+    # legitimately has no local opinion at all). The repoint is neutralized: publish uses the
+    # forge's branch/sha, ignoring it.
+    deps, _, _, _ = make_deps(
+        git_responses={
+            "symbolic-ref refs/remotes/origin/HEAD": "refs/remotes/origin/chore/other",
+            "rev-parse origin/chore/other": "shaonchoreother00",
+        },
+        git_errors={"rev-parse -q --verify refs/heads/chore/other": "no such branch"},
+    )
+    tags_body = {"value": None}
+
+    def exec_forge_api(name, args, stdin):
+        if "git/tags" in args[1]:
+            tags_body["value"] = stdin
+            return ('{"sha":"tagobjectsha000"}', None)
+        return default_exec_forge_api(name, args, stdin)
+
+    deps["exec_forge_api"] = exec_forge_api
+    code = run_release_tag(VERSION, **deps)
+    assert code == 0
+    assert SHA in tags_body["value"]
+
+
+def test_absent_local_symref_is_not_a_false_divergence():
+    # No origin/HEAD symref at all — _default_base_branch falls back to "main". The forge's
+    # real default branch is "master". There is no local opinion to disagree with the forge
+    # here, just an absent one — must not refuse.
+    deps, _, _, _ = make_deps(
+        git_errors={
+            "symbolic-ref refs/remotes/origin/HEAD": "not a symbolic ref",
+            "rev-parse origin/main": "unknown revision",
+        },
+        git_responses={"rev-parse origin/master": SHA},
+    )
+
+    def exec_forge_api(name, args, stdin):
+        if args[1] == "repos/{owner}/{repo}":
+            return ('{"default_branch":"master"}', None)
+        return default_exec_forge_api(name, args, stdin)
+
+    deps["exec_forge_api"] = exec_forge_api
+    code = run_release_tag(VERSION, **deps)
+    assert code == 0
+
+
+def test_forge_commit_diverges_refuses_naming_divergence():
+    deps, _, _, err = make_deps(git_responses={"rev-parse origin/main": "forgedlocalsha000"})
+    code = run_release_tag(VERSION, **deps)
+    assert code == 1
+    assert "forgedlocalsha000" in err[0]
+    assert SHA in err[0]
+    assert "diverges" in err[0]
+
+
+def test_publish_always_uses_forge_sha_never_local():
+    deps, _, _, _ = make_deps(git_errors={"rev-parse origin/main": "unknown revision"})
+    tags_body = {"value": None}
+
+    def exec_forge_api(name, args, stdin):
+        if "git/tags" in args[1]:
+            tags_body["value"] = stdin
+            return ('{"sha":"tagobjectsha000"}', None)
+        return default_exec_forge_api(name, args, stdin)
+
+    deps["exec_forge_api"] = exec_forge_api
+    code = run_release_tag(VERSION, **deps)
+    assert code == 0
+    assert SHA in tags_body["value"]

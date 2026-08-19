@@ -65,6 +65,17 @@ function unsupportedForgeMsg(resolvedForge, tagName, objectSHA) {
 const NO_GIT_IDENTITY_MSG =
   'trackfw release tag refuses to run: git config user.name and user.email must be set to create an annotated tag (git config user.name "Your Name" && git config user.email you@example.com).'
 
+// commitDivergesMsg fires when a LOCAL ref (origin/<forge's default branch>'s resolved sha)
+// disagrees with what the forge itself reports for that same branch. This ref is writable inside
+// the clone (git update-ref) — the forge is the only source that is not — so a disagreement is
+// refused, never silently resolved by picking one side. The BRANCH NAME itself comes from the
+// forge unconditionally (no local-vs-forge name check — see the call site) since a fresh/shallow
+// clone legitimately has no local opinion on it at all. See ADR-2026-08-19-caminho-governado-
+// para-push-forcado-e-tag-de-release.md, Emenda 1.
+function commitDivergesMsg(base, localSHA, forgeBase, forgeSHA) {
+  return `trackfw release tag refuses to run: local origin/${base} (${localSHA}) diverges from the forge's ${forgeBase} tip (${forgeSHA}). A local ref can be stale or forged — investigate before retrying: git fetch origin --prune`
+}
+
 // ─── Version file extraction ───────────────────────────────────────────────
 
 const GO_VERSION_RE = /Version\s*=\s*"([^"]+)"/
@@ -186,6 +197,9 @@ function runReleaseTag(versionArg, deps = {}) {
   }
 
   // ─── Precondition 2: default branch up to date with origin ──────────────
+  // base is symref-derived — a LOCAL, gravable ref. Used below only as (a) the value the
+  // forge's default_branch must agree with, and (b) input to the local-branch-staleness check,
+  // unrelated to the forge and unaffected by it.
   const fetchResult = execGit(['fetch', 'origin', '--prune'])
   if (fetchResult.error) {
     writeErr(fetchFailedMsg(fetchResult.error.message))
@@ -194,21 +208,23 @@ function runReleaseTag(versionArg, deps = {}) {
 
   const base = defaultBaseBranch(execGit)
 
+  // localSHA (origin/<base>'s local tracking ref) is best-effort and non-fatal: a cross-check
+  // candidate against the forge, never the source of the commit target. A failure to resolve it
+  // must not block reaching the forge resolution below.
+  let localSHA = ''
   const objResult = execGit(['rev-parse', `origin/${base}`])
-  if (objResult.error) {
-    writeErr(`could not resolve origin/${base}: ${objResult.error.message}`)
-    return 1
-  }
-  const objectSHA = objResult.stdout.trim()
+  if (!objResult.error) {
+    localSHA = objResult.stdout.trim()
 
-  const localBranchExists = execGit(['rev-parse', '-q', '--verify', `refs/heads/${base}`])
-  if (!localBranchExists.error) {
-    const localResult = execGit(['rev-parse', `refs/heads/${base}`])
-    if (!localResult.error) {
-      const localSHA = localResult.stdout.trim()
-      if (localSHA !== objectSHA) {
-        writeErr(localBranchStaleMsg(base, localSHA, objectSHA))
-        return 1
+    const localBranchExists = execGit(['rev-parse', '-q', '--verify', `refs/heads/${base}`])
+    if (!localBranchExists.error) {
+      const localResult = execGit(['rev-parse', `refs/heads/${base}`])
+      if (!localResult.error) {
+        const localBranchSHA = localResult.stdout.trim()
+        if (localBranchSHA !== localSHA) {
+          writeErr(localBranchStaleMsg(base, localBranchSHA, localSHA))
+          return 1
+        }
       }
     }
   }
@@ -278,15 +294,76 @@ function runReleaseTag(versionArg, deps = {}) {
   }
 
   if (resolution.forge !== 'github') {
-    writeErr(unsupportedForgeMsg(resolution.forge, tagName, objectSHA))
+    // No forge to ask — localSHA is shown purely as an informational hint for the manual
+    // fallback text below; the command never publishes on this path.
+    writeErr(unsupportedForgeMsg(resolution.forge, tagName, localSHA))
     return 1
   }
 
   const adapter = forgeAdapter(resolution.forge, availFn)
   if (!adapter.available) {
-    writeErr(noForgeCLIMsg(tagName, objectSHA))
+    // Same reasoning as above: no forge CLI to ask, localSHA is informational only.
+    writeErr(noForgeCLIMsg(tagName, localSHA))
     return 1
   }
+
+  // ─── The commit-target comes from the forge, never from a local ref ─────
+  // The forge's default_branch is authoritative for the BRANCH NAME — unconditionally, with no
+  // refusal if it disagrees with the local symref-derived base (a fresh/shallow clone may have
+  // no origin/HEAD symref at all, defaultBaseBranch then falls back to "main"; refusing on that
+  // mismatch would be a false refusal against a legitimate repo, not a security check). Only the
+  // forge's SHA is cross-checked against a local ref — resolved fresh, keyed to the forge's own
+  // branch name, never to the (possibly-forged) local base. See ADR-2026-08-19-caminho-
+  // governado-para-push-forcado-e-tag-de-release.md, Emenda 1.
+  const repoInfoResp = execForgeAPI('gh', ['api', 'repos/{owner}/{repo}'], '')
+  if (repoInfoResp.error) {
+    writeErr(`trackfw release tag: gh api failed resolving the repository's default branch from the forge: ${repoInfoResp.error.message}`)
+    return 1
+  }
+  let repoInfo
+  try {
+    repoInfo = JSON.parse(repoInfoResp.stdout)
+  } catch (_) {
+    repoInfo = {}
+  }
+  if (!repoInfo.default_branch) {
+    writeErr(`trackfw release tag: could not parse default_branch from the forge's repository response: ${repoInfoResp.stdout}`)
+    return 1
+  }
+
+  // forgeLocalSHA is resolved fresh against the forge's own branch name — deliberately NOT
+  // reusing localSHA above, which was keyed to the symref-derived base and may name a different
+  // branch (stale symref, or a fresh clone with no symref at all). Best-effort/non-fatal.
+  let forgeLocalSHA = ''
+  const forgeObjResult = execGit(['rev-parse', `origin/${repoInfo.default_branch}`])
+  if (!forgeObjResult.error) {
+    forgeLocalSHA = forgeObjResult.stdout.trim()
+  }
+
+  const commitResp = execForgeAPI('gh', ['api', `repos/{owner}/{repo}/commits/${repoInfo.default_branch}`], '')
+  if (commitResp.error) {
+    writeErr(`trackfw release tag: gh api failed resolving the forge's tip commit for ${repoInfo.default_branch}: ${commitResp.error.message}`)
+    return 1
+  }
+  let commitObj
+  try {
+    commitObj = JSON.parse(commitResp.stdout)
+  } catch (_) {
+    commitObj = {}
+  }
+  if (!commitObj.sha) {
+    writeErr(`trackfw release tag: could not parse the forge's commit response for ${repoInfo.default_branch}: ${commitResp.stdout}`)
+    return 1
+  }
+
+  if (forgeLocalSHA && forgeLocalSHA !== commitObj.sha) {
+    writeErr(commitDivergesMsg(repoInfo.default_branch, forgeLocalSHA, repoInfo.default_branch, commitObj.sha))
+    return 1
+  }
+
+  // objectSHA is now authoritative — resolved from the forge, cross-checked (not sourced)
+  // against the local ref above.
+  const objectSHA = commitObj.sha
 
   // ─── Tagger identity ──────────────────────────────────────────────────
   const nameResult = execGit(['config', 'user.name'])
@@ -343,10 +420,14 @@ function runReleaseTag(versionArg, deps = {}) {
   return 0
 }
 
+// GIT_SYMBOLIC_REF_ORIGIN_HEAD_PREFIX — see ship/runner.js's identical constant/rationale.
+const GIT_SYMBOLIC_REF_ORIGIN_HEAD_PREFIX = 'refs/remotes/origin/'
+
 /**
  * defaultBaseBranch resolves the repository's default branch, mirroring Go's
  * defaultBaseBranch (ship.go) exactly: tries symbolic-ref refs/remotes/origin/HEAD, falls back
- * to "main".
+ * to "main". This is a LOCAL, gravable ref — release tag treats its result as a cross-check
+ * candidate only, never as the source of truth for the tag's commit target.
  * @param {function} execGit
  * @returns {string}
  */
@@ -354,9 +435,9 @@ function defaultBaseBranch(execGit) {
   const result = execGit(['symbolic-ref', 'refs/remotes/origin/HEAD'])
   if (result.error) return 'main'
   const out = result.stdout.trim()
-  const idx = out.lastIndexOf('/')
-  if (idx < 0 || idx + 1 >= out.length) return 'main'
-  return out.slice(idx + 1)
+  if (!out.startsWith(GIT_SYMBOLIC_REF_ORIGIN_HEAD_PREFIX)) return 'main'
+  const name = out.slice(GIT_SYMBOLIC_REF_ORIGIN_HEAD_PREFIX.length)
+  return name === '' ? 'main' : name
 }
 
 module.exports = {

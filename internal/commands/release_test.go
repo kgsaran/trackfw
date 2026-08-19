@@ -92,14 +92,32 @@ func makeReleaseDeps(t *testing.T, fileOverrides map[string]string) (releaseDeps
 		configForge: "",
 		repoDir:     "",
 		availFn:     func(string) bool { return true },
-		execForgeAPI: func(name string, args []string, stdin string) (string, error) {
-			if len(args) >= 2 && strings.Contains(args[1], "git/tags") {
-				return `{"sha":"tagobjectsha000"}`, nil
-			}
-			return `{}`, nil
-		},
+		execForgeAPI: defaultMockReleaseForgeAPI,
 	}
 	return d, g
+}
+
+// defaultMockReleaseForgeAPI answers the four gh api calls release tag makes:
+//   - repos/{owner}/{repo}                       -> default_branch: "main" (agrees with the
+//     fixture's symref-derived base, so no divergence fires by default)
+//   - repos/{owner}/{repo}/commits/main           -> sha: releaseTestSHA (agrees with the
+//     fixture's local origin/main, so no divergence fires by default)
+//   - repos/{owner}/{repo}/git/tags  (POST)       -> sha: "tagobjectsha000"
+//   - repos/{owner}/{repo}/git/refs  (POST)       -> {}
+func defaultMockReleaseForgeAPI(name string, args []string, stdin string) (string, error) {
+	if len(args) >= 2 {
+		switch {
+		case strings.Contains(args[1], "git/tags"):
+			return `{"sha":"tagobjectsha000"}`, nil
+		case strings.Contains(args[1], "git/refs"):
+			return `{}`, nil
+		case strings.Contains(args[1], "/commits/"):
+			return fmt.Sprintf(`{"sha":%q}`, releaseTestSHA), nil
+		case args[1] == "repos/{owner}/{repo}":
+			return `{"default_branch":"main"}`, nil
+		}
+	}
+	return `{}`, nil
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -334,6 +352,111 @@ func TestReleaseTag_ManualForge_Aborts(t *testing.T) {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
+// Commit target ancored on the forge (ADR-2026-08-19, Emenda 1) — the forge's
+// default_branch/commit sha are authoritative; local refs are cross-checked only, never trusted.
+// ────────────────────────────────────────────────────────────────────────────
+
+func TestReleaseTag_LocalSymrefDiverges_ForgeNameWinsWithoutRefusal(t *testing.T) {
+	// Simulates a repointed local symbolic-ref: the local, symref-derived base resolves to
+	// "chore/other" (an attacker-writable, purely local operation), while the forge reports
+	// "main". The forge's branch name is authoritative unconditionally — no local-vs-forge name
+	// comparison exists, because a fresh/shallow clone legitimately has no local opinion on the
+	// default branch at all (defaultBaseBranch falls back to "main" with no symref present, which
+	// must not be indistinguishable from — nor treated as — a forgery). The repoint is neutralized:
+	// the command resolves and publishes using the forge's branch (origin/main) and sha, ignoring
+	// the repointed symref entirely.
+	d, g := makeReleaseDeps(t, nil)
+	g.responses["symbolic-ref refs/remotes/origin/HEAD"] = "refs/remotes/origin/chore/other"
+	g.responses["rev-parse origin/chore/other"] = "shaonchoreother00"
+	g.errors["rev-parse -q --verify refs/heads/chore/other"] = errors.New("no such branch")
+
+	var tagsBody string
+	d.execForgeAPI = func(name string, args []string, stdin string) (string, error) {
+		if len(args) >= 2 && strings.Contains(args[1], "git/tags") {
+			tagsBody = stdin
+			return `{"sha":"tagobjectsha000"}`, nil
+		}
+		return defaultMockReleaseForgeAPI(name, args, stdin)
+	}
+
+	if err := runReleaseTag(releaseTestVersion, d); err != nil {
+		t.Fatalf("unexpected error: %v — a repointed local symref must not block publish, only the forge's own sha cross-check does", err)
+	}
+	if !strings.Contains(tagsBody, releaseTestSHA) {
+		t.Errorf("tag object payload = %q, want it to use the forge's commit sha %q for origin/main, ignoring the repointed symref (shaonchoreother00)", tagsBody, releaseTestSHA)
+	}
+}
+
+func TestReleaseTag_NoLocalSymref_ForgeBranchNameUsedWithoutFalseRefusal(t *testing.T) {
+	// Simulates a fresh/shallow clone that has no origin/HEAD symref at all — defaultBaseBranch
+	// falls back to its "main" default. If the repo's REAL default branch is "master" (as reported
+	// by the forge), the forge's name must still be used without any refusal: there is no local
+	// opinion to disagree with the forge here, just an absent one. Regression guard for treating
+	// "no symref" and "a genuinely repointed symref" as the same signal — they are not.
+	d, g := makeReleaseDeps(t, nil)
+	g.errors["symbolic-ref refs/remotes/origin/HEAD"] = errors.New("ref refs/remotes/origin/HEAD is not a symbolic ref")
+	delete(g.responses, "rev-parse origin/main")
+	g.errors["rev-parse origin/main"] = errors.New("unknown revision")
+	g.responses["rev-parse origin/master"] = releaseTestSHA
+
+	d.execForgeAPI = func(name string, args []string, stdin string) (string, error) {
+		if len(args) >= 2 && args[1] == "repos/{owner}/{repo}" {
+			return `{"default_branch":"master"}`, nil
+		}
+		return defaultMockReleaseForgeAPI(name, args, stdin)
+	}
+
+	if err := runReleaseTag(releaseTestVersion, d); err != nil {
+		t.Fatalf("unexpected error: %v — an absent local symref (fresh/shallow clone) must not be treated as a divergence against the forge's real default branch", err)
+	}
+}
+
+func TestReleaseTag_ForgeCommitDiverges_RefusesNamingDivergence(t *testing.T) {
+	// Simulates a forged/stale origin/main tracking ref (e.g. via git update-ref, or a narrowed
+	// remote.origin.fetch that never learned the real tip): local origin/main resolves to a sha
+	// the forge does not report as its tip. Must refuse — the forge sha is never published
+	// silently past a disagreeing local ref.
+	d, g := makeReleaseDeps(t, nil)
+	g.responses["rev-parse origin/main"] = "forgedlocalsha000"
+	err := runReleaseTag(releaseTestVersion, d)
+	if err == nil {
+		t.Fatal("expected error when local origin/main diverges from the forge's tip commit")
+	}
+	if !strings.Contains(err.Error(), "forgedlocalsha000") || !strings.Contains(err.Error(), releaseTestSHA) {
+		t.Errorf("error = %q, want it to name both the local and forge shas", err.Error())
+	}
+	if !strings.Contains(err.Error(), "diverges") {
+		t.Errorf("error = %q, want it to name the divergence explicitly", err.Error())
+	}
+}
+
+func TestReleaseTag_ForgeCommitSHA_UsedForPublish_NeverLocal(t *testing.T) {
+	// Even when local origin/main cannot be resolved at all (symref repointed to a branch this
+	// clone has no tracking ref for), the command must still resolve and publish using the
+	// forge's sha — never block on the missing local cross-check candidate.
+	d, g := makeReleaseDeps(t, nil)
+	g.responses["symbolic-ref refs/remotes/origin/HEAD"] = "refs/remotes/origin/main"
+	delete(g.responses, "rev-parse origin/main")
+	g.errors["rev-parse origin/main"] = errors.New("unknown revision")
+
+	var tagsBody string
+	d.execForgeAPI = func(name string, args []string, stdin string) (string, error) {
+		if len(args) >= 2 && strings.Contains(args[1], "git/tags") {
+			tagsBody = stdin
+			return `{"sha":"tagobjectsha000"}`, nil
+		}
+		return defaultMockReleaseForgeAPI(name, args, stdin)
+	}
+
+	if err := runReleaseTag(releaseTestVersion, d); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(tagsBody, releaseTestSHA) {
+		t.Errorf("tag object payload = %q, want it to use the forge's commit sha %q", tagsBody, releaseTestSHA)
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
 // Git identity
 // ────────────────────────────────────────────────────────────────────────────
 
@@ -362,16 +485,17 @@ func TestReleaseTag_Success_PublishesAnnotatedTag(t *testing.T) {
 		body string
 	}
 	d.execForgeAPI = func(name string, args []string, stdin string) (string, error) {
-		call := struct {
-			name string
-			args []string
-			body string
-		}{name, args, stdin}
-		calls = append(calls, call)
-		if strings.Contains(args[1], "git/tags") {
-			return `{"sha":"tagobjectsha000"}`, nil
+		// Only the two POST publish calls are recorded — the GET calls resolving
+		// default_branch/commit sha are answered but not part of what this test asserts on.
+		if len(args) >= 2 && (strings.Contains(args[1], "git/tags") || strings.Contains(args[1], "git/refs")) {
+			call := struct {
+				name string
+				args []string
+				body string
+			}{name, args, stdin}
+			calls = append(calls, call)
 		}
-		return `{}`, nil
+		return defaultMockReleaseForgeAPI(name, args, stdin)
 	}
 
 	buf := &bytes.Buffer{}
@@ -434,11 +558,13 @@ func TestReleaseTag_TagObjectCallFails_AbortsBeforeRefCall(t *testing.T) {
 	d, _ := makeReleaseDeps(t, nil)
 	var refCalled bool
 	d.execForgeAPI = func(name string, args []string, stdin string) (string, error) {
-		if strings.Contains(args[1], "git/tags") {
+		if len(args) >= 2 && strings.Contains(args[1], "git/tags") {
 			return "", errors.New("401 Unauthorized")
 		}
-		refCalled = true
-		return `{}`, nil
+		if len(args) >= 2 && strings.Contains(args[1], "git/refs") {
+			refCalled = true
+		}
+		return defaultMockReleaseForgeAPI(name, args, stdin)
 	}
 	err := runReleaseTag(releaseTestVersion, d)
 	if err == nil {

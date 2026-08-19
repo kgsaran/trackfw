@@ -917,7 +917,8 @@ never guesses:**
    branch currently checked out. If a local branch with that same name exists and diverges from
    `origin/<default>`, refuses naming `git pull`; if no such local branch exists, the check is
    skipped — this is what lets `release tag` run from any checked-out branch as long as the
-   working tree is clean.
+   working tree is clean. **This local resolution is a cross-check candidate only — see the
+   "commit-target ancoring" note below for what actually decides the published commit.**
 3. **The 4 version files disagree with `<version>`** — `internal/version/version.go`,
    `npm/package.json`, `pypi/pyproject.toml`, and `pypi/trackfw/__init__.py` (checked twice: the
    `importlib.metadata` fallback and the `except`-block fallback, since both hold a version
@@ -940,11 +941,62 @@ never guesses:**
    set, naming both commands to fix it. The tag is always annotated, and an annotated tag
    requires a tagger identity.
 
-**Publication contract — two GitHub API calls, in order, second only on first's success:**
+**Commit-target ancoring — the forge decides the branch NAME unconditionally, a local ref only
+cross-checks the SHA (ADR Emenda 1, 2026-08-19).** The barrier review (`docs/seguranca/2026-08-19-
+revisao-do-push-forcado-e-do-release-tag.md`) found that resolving the tag's commit purely from
+local refs — `git symbolic-ref refs/remotes/origin/HEAD` for the default branch name,
+`git rev-parse origin/<base>` for its commit — is **not** an adequate anchor: both are gravable
+inside the clone (`git symbolic-ref`, `git update-ref`), and the command's own internal
+`git fetch origin --prune` does not reliably protect them — a `remote.origin.fetch` narrowed to
+exclude the target branch leaves a forged or stale `origin/<base>` untouched by that fetch. The
+fix: **the commit target comes from the forge**, via two GitHub GET calls (reusing the same `gh`
+credential already used for the two POST calls below):
+
+```
+GET repos/{owner}/{repo}                      (gh api repos/{owner}/{repo})
+  -> .default_branch                          — AUTHORITATIVE for the branch name, unconditionally.
+                                                  No comparison against the local symref-derived
+                                                  base exists: a fresh/shallow clone legitimately
+                                                  has no origin/HEAD symref at all (the local
+                                                  resolver then falls back to "main"), so refusing
+                                                  on a name disagreement would be a false refusal
+                                                  against a legitimate repo, not a security check.
+
+GET repos/{owner}/{repo}/commits/{branch}     (gh api repos/{owner}/{repo}/commits/<forge's
+                                                  default_branch>)
+  -> .sha                                     — this is the `object` field in the POST git/tags
+                                                  payload below. Cross-checked against a FRESH
+                                                  local read of origin/<forge's default_branch>
+                                                  (never against origin/<local symref-derived
+                                                  base>, which may name a different branch) — that
+                                                  local read is best-effort/non-fatal (absence must
+                                                  not block reaching the forge), but when it DOES
+                                                  resolve, disagreement with the forge is always a
+                                                  refusal, never resolved by picking either side
+```
+
+The local symref-derived base is used ONLY for the pre-existing "local default branch stale
+against origin" check (precondition 2 above, comparing two local refs unrelated to the forge) and
+as an informational hint in the two forge-unreachable refusal paths (no forge CLI / unsupported
+forge) — it plays no role in deciding what gets tagged. A repointed `origin/HEAD` symref is
+therefore **neutralized, not refused**: the command silently uses the forge's real branch and
+publishes against its sha, ignoring the repoint (Scenario 11 below).
+
+The sha-divergence refusal message names both sides (`releaseTagCommitDivergesFmt` — kept
+byte-identical across the 3 CLIs, same convention as every other refusal in this command).
+
+`defaultBaseBranch`/`_default_base_branch` (shared with `ship`'s PR-body commit range) was also
+fixed to strip the literal `refs/remotes/origin/` prefix instead of cutting at the last `/` —
+the old logic broke a default branch name that itself contains a slash (e.g. `release/7.2`
+resolved to `7.2`). Two consumers share this fix in each CLI: `release tag`'s own resolution and
+`ship`'s PR body (`gitCommitsSince`/`buildPRBody`).
+
+**Publication contract — two GitHub API calls, in order, second only on first's success (the
+`object` field below is the forge-resolved sha from the GET call above, never a local one):**
 
 ```
 POST git/tags   (gh api repos/{owner}/{repo}/git/tags   --input -)
-  body: {tag, message, object: <origin/default commit sha>, type: "commit", tagger: {name, email, date}}
+  body: {tag, message, object: <forge-resolved commit sha>, type: "commit", tagger: {name, email, date}}
   -> returns the sha of the TAG OBJECT (not visible via any ref yet)
 
 POST git/refs   (gh api repos/{owner}/{repo}/git/refs   --input -)
@@ -967,13 +1019,17 @@ repository context — the remote URL is never hand-parsed for this.
 bare git remote, local and offline, `$HOME`/`GIT_CONFIG_GLOBAL`/`GIT_CONFIG_SYSTEM` isolated at
 both fixture-construction time and invocation time (the identity precondition means a developer
 machine's real global `git config user.name` must never leak in). Publication always goes
-through a local `gh` stub — no scenario, including success, ever reaches a real GitHub API.
-Ten scenarios, byte-diffed across the 3 runtimes on stdout, stderr, and exit code:
+through a local `gh` stub — no scenario, including success, ever reaches a real GitHub API. The
+stub answers all four `gh api` calls the command makes (the two GET commit-target calls and the
+two POST publish calls); only the two POST calls are recorded to the scenario's call log, so the
+"refusal must never publish" assertions stay meaningful on every scenario that reaches
+precondition 6 (forge resolution), where both GET calls happen before the identity check.
+Thirteen scenarios, byte-diffed across the 3 runtimes on stdout, stderr, and exit code:
 
 - Scenarios 1–9 exercise the nine refusal paths above (3 split into 3a–3e, one isolated
   mismatch per version-file check).
 - Scenario 10 ("success") is the load-bearing one: it asserts the **SHA linkage** between the
-  two `gh api` calls — the `git/refs` payload's `sha` must equal the `git/tags` response's
+  two `gh api` POST calls — the `git/refs` payload's `sha` must equal the `git/tags` response's
   returned sha (a fixed stub value, deliberately different from the commit sha), never the
   commit sha directly. This is what `scripts/check-gates-falsify.sh`'s Cenário 75 sabotages
   (single-literal change on `internal/commands/release.go`'s `refPayload` construction —
@@ -981,6 +1037,35 @@ Ten scenarios, byte-diffed across the 3 runtimes on stdout, stderr, and exit cod
   scenario's linkage assertion catches: the sabotaged binary still exits 0 and still prints a
   "Tag published" success message, but the ref it created points at the commit, not the tag
   object.
+- **Scenarios 11–13 (ML-4B, ADR Emenda 1) exercise adversarial selection of the commit target**
+  via the two different local refs the forge-anchoring code touches. 12 and 13 prove the sha
+  cross-check refuses on divergence; 11 proves the opposite property on purpose — the branch NAME
+  has no local-vs-forge comparison at all, so a repointed symref is neutralized, not refused:
+  - **11 — repointed `origin/HEAD` symref**, locked against git's own auto-resync via
+    `remote.origin.followRemoteHEAD never` (git ≥2.48 otherwise silently restores a repointed
+    symref during the command's own internal `git fetch origin --prune`, making the scenario
+    vacuous without this — see `vault/notes/git-fetch-self-heals-forged-origin-head-and-
+    tracking-refs-2026-08-19.md`). The forge's `default_branch` (`main`, via the stub) disagrees
+    with the repointed local base name (`chore/other`) — asserts **success** (exit 0), that
+    stderr never mentions `chore/other`, and that stdout echoes the forge's real `main` commit
+    sha, proving the repoint was silently ignored and both publish calls still fired.
+  - **12 — `origin/main` forged via `git update-ref`, under a `remote.origin.fetch` refspec
+    narrowed to exclude `main`** (without narrowing, the command's own fetch overwrites the
+    forgery before it is ever read — same vault note). `refs/heads/main` is reset to the same
+    forged sha via `git reset --hard` so the pre-existing local-branch-staleness check (a
+    different, unrelated precondition) cannot discriminate this corruption instead of the new
+    forge-comparison code. The forge's real tip (via the stub) disagrees — refused.
+  - **13 — `remote.origin.fetch` narrowed with no active forgery**: a second, independent clone
+    legitimately pushes one more commit to `main` on the bare remote; the fixture's narrowed
+    refspec means its own internal fetch never learns about it, so `origin/main` stays naturally
+    stale. The forge (via the stub) reports the advanced tip — refused. Mirrors
+    `check-ship-force-parity.sh`'s "remote-advanced-lease-mismatch" narrowing technique.
+
+  All three assert non-publication (no `git/tags`/`git/refs` request files) on top of the
+  refusal. Scenario 12/13's underlying divergence check is what `scripts/check-gates-falsify.sh`'s
+  Cenário 76 sabotages (single-literal `false &&` prefix neutering
+  `if localSHA != "" && localSHA != commitObj.SHA {` in an isolated Go copy) — the sabotaged
+  binary still resolves and prints the forge's sha correctly, but the refusal is gone.
 
 ## `trackfw branch new`
 
@@ -4004,6 +4089,40 @@ faria `git reset --soft` bloquear incorretamente). `git reset --soft`/`--mixed`,
 list`/`show`, `git clean -n`, `git restore --staged` e `git checkout <branch>` são provados livres
 tanto antes quanto — onde corrompidos — expostos como dependentes do literal exato, não de uma
 lacuna acidental.
+
+### `update-ref`/`worktree remove --force`/`git rm -f` entram no bloqueio destrutivo (ML-4B, ROADMAP-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md, corretivo do veredito BLOQUEAR do `hades-tf`)
+
+> ADR: `docs/adr/ADR-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md`, Emenda 1
+
+`git update-ref` foi o **mecanismo** que tornou alcançável o exploit descrito na Emenda 1 do ADR
+(forjar `refs/remotes/origin/<base>` localmente, sem push, para desviar o commit-alvo de
+`trackfw release tag`) — a correção do próprio `release tag` (ancorar o commit-alvo no forge)
+fecha esse desvio para esse comando específico, mas o guard também passou a bloquear
+`update-ref` na origem, já que não há forma de leitura equivalente a liberar seletivamente
+(a subcommand inteira é escrita).
+
+`git worktree remove --force`/`-f` e `git rm -f`/`--force` entram pela mesma classe já
+estabelecida em ML-3A (destrutivo, irreversível, worktree compartilhado entre subagentes):
+
+| Subcomando bloqueado | Discriminante | Alternativa citada na mensagem |
+|---|---|---|
+| `git update-ref` | qualquer forma (sem exceção — sem forma de leitura a liberar) | `trackfw release tag` (o commit-alvo agora vem do forge, não de refs locais) |
+| `git worktree remove -f`/`--force` | token de força em qualquer posição | `git worktree remove` sem force (recusa sozinho quando há algo não commitado) |
+| `git rm -f`/`--force` | token de força em qualquer posição; sem carve-out para `--cached` (destrancar do index sem `-f` já é liberado por não precisar de force) | mesma classe de `git clean -f`/`git reset --hard` já bloqueados |
+
+**Gate:** `scripts/check-release-tag-parity.sh` ganhou 3 cenários adversariais (11-13) provando
+que a seleção do commit-alvo é ancorada no forge e recusa nomeando a divergência quando um ref
+local (symref repontado, `origin/<base>` forjado via `update-ref` sob refspec estreitado, ou
+`remote.origin.fetch` estreitado deixando o ref local desatualizado) diverge do forge —
+sabotados de propósito pelo Cenário 76 de `scripts/check-gates-falsify.sh`. **Declarado, não
+fechado:** este ML não adicionou pares baseline+detecção dedicados no próprio
+`check-gates-falsify.sh` para `update-ref`/`worktree remove --force`/`rm -f` (o padrão que o
+Cenário 74 estabeleceu para `stash`/`reset --hard`/`clean -f`/`restore`/`checkout --`) — a
+literal do script está correta (byte-idêntica entre `gitBranchGuardScript`,
+`gitBranchGuardScriptReference`, `GIT_BRANCH_GUARD_SCRIPT`/`GIT_BRANCH_GUARD_SCRIPT_REFERENCE`
+em Node e `_GIT_BRANCH_GUARD_SH`/`_GIT_BRANCH_GUARD_SCRIPT_REFERENCE` em Python, verificado pelos
+testes de integridade existentes), mas a prova de falsificação por comando fica para um ML
+futuro se a cobertura do Cenário 74 for considerada insuficiente para esta classe.
 
 ## `trackfw <skills|agents> third-party` — instalação de skills de terceiro via URL (ADR-2026-08-15, ML-3A/ML-3B)
 

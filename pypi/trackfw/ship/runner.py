@@ -267,22 +267,26 @@ def _all_doc_only(files):
     return True
 
 
+# _GIT_SYMBOLIC_REF_ORIGIN_HEAD_PREFIX — see Go's ship.go gitSymbolicRefOriginHeadPrefix for the
+# rationale: stripping this exact literal prefix (instead of cutting at the last '/') is what
+# makes _default_base_branch correct for a default branch that itself contains a slash.
+_GIT_SYMBOLIC_REF_ORIGIN_HEAD_PREFIX = 'refs/remotes/origin/'
+
+
 def _default_base_branch(exec_git):
     """
     Resolves the repository's default branch for `git log <base>..HEAD`.
-    Tries `git symbolic-ref refs/remotes/origin/HEAD` (format
-    "refs/remotes/origin/main" — only the name after the last slash is kept) and
-    falls back to "main" when that fails or yields nothing (e.g. shallow clone
-    without a remote-tracking HEAD).
+    Tries `git symbolic-ref refs/remotes/origin/HEAD` and falls back to "main" when that fails
+    or yields nothing (e.g. shallow clone without a remote-tracking HEAD).
     """
     stdout, err = exec_git(['symbolic-ref', 'refs/remotes/origin/HEAD'])
     if err:
         return 'main'
     stdout = stdout.strip()
-    idx = stdout.rfind('/')
-    if idx < 0 or idx + 1 >= len(stdout):
+    if not stdout.startswith(_GIT_SYMBOLIC_REF_ORIGIN_HEAD_PREFIX):
         return 'main'
-    return stdout[idx + 1:]
+    name = stdout[len(_GIT_SYMBOLIC_REF_ORIGIN_HEAD_PREFIX):]
+    return name if name else 'main'
 
 
 def _git_commits_since(base, exec_git):

@@ -67,6 +67,19 @@ const (
 	releaseTagUnsupportedForgeFmt = "trackfw release tag currently only supports GitHub (resolved forge: %q). Publishing tag %s on this forge is not implemented yet — commit to tag: %s. Create %s through your forge's web UI, or open an issue requesting support for this forge."
 
 	releaseTagNoGitIdentityMsg = "trackfw release tag refuses to run: git config user.name and user.email must be set to create an annotated tag (git config user.name \"Your Name\" && git config user.email you@example.com)."
+
+	// releaseTagCommitDivergesFmt fires when a LOCAL ref (origin/<forge's default branch>'s
+	// resolved sha) disagrees with what the forge itself reports for that same branch. This ref
+	// is writable inside the clone (git update-ref) — the forge is the only source that is not —
+	// so a disagreement is refused, never silently resolved by picking one side. The BRANCH NAME
+	// itself comes from the forge unconditionally (no local-vs-forge name check — see the call
+	// site) since a fresh/shallow clone legitimately has no local opinion on it at all. See
+	// ADR-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md, Emenda 1.
+	releaseTagCommitDivergesFmt = "trackfw release tag refuses to run: local origin/%s (%s) diverges from the forge's %s tip (%s). A local ref can be stale or forged — investigate before retrying: git fetch origin --prune"
+
+	releaseTagForgeAPIDefaultBranchFailedFmt = "trackfw release tag: gh api failed resolving the repository's default branch from the forge: %w"
+
+	releaseTagForgeAPICommitFailedFmt = "trackfw release tag: gh api failed resolving the forge's tip commit for %s: %w"
 )
 
 // releaseVersionFile describes one location where the project version is recorded, and how
@@ -254,24 +267,33 @@ func runReleaseTag(versionArg string, deps releaseDeps) error {
 	}
 
 	// ─── Precondition 2: default branch up to date with origin ──────────────
+	// base is symref-derived — a LOCAL, gravable ref (git symbolic-ref). It is used below only
+	// as (a) the value the forge's default_branch must agree with, and (b) input to the
+	// local-branch-staleness check, which is unrelated to the forge and unaffected by it.
 	if _, err := deps.execGit("fetch", "origin", "--prune"); err != nil {
 		return fmt.Errorf(releaseTagFetchFailedFmt, err)
 	}
 
 	base := defaultBaseBranch(deps.execGit)
 
-	objectSHA, err := deps.execGit("rev-parse", "origin/"+base)
-	if err != nil {
-		return fmt.Errorf("could not resolve origin/%s: %w", base, err)
-	}
-	objectSHA = strings.TrimSpace(objectSHA)
+	// localSHA (origin/<base>'s local tracking ref) is best-effort and non-fatal here: it is a
+	// cross-check candidate against the forge, never the source of the commit target. A failure
+	// to resolve it (e.g. a symref repointed to a branch this clone has no tracking ref for)
+	// must not block reaching the forge resolution below — the forge's answer is what decides.
+	localSHA := ""
+	if out, lerr := deps.execGit("rev-parse", "origin/"+base); lerr == nil {
+		localSHA = strings.TrimSpace(out)
 
-	if _, err := deps.execGit("rev-parse", "-q", "--verify", "refs/heads/"+base); err == nil {
-		localSHA, lerr := deps.execGit("rev-parse", "refs/heads/"+base)
-		if lerr == nil {
-			localSHA = strings.TrimSpace(localSHA)
-			if localSHA != objectSHA {
-				return fmt.Errorf(releaseTagLocalBranchStaleFmt, base, base, localSHA, objectSHA)
+		// Local-branch-staleness check: unrelated to the forge — both sides here are local
+		// (refs/heads/<base> vs the origin/<base> ref just resolved above) — kept exactly as
+		// before.
+		if _, verr := deps.execGit("rev-parse", "-q", "--verify", "refs/heads/"+base); verr == nil {
+			localBranchSHA, lberr := deps.execGit("rev-parse", "refs/heads/"+base)
+			if lberr == nil {
+				localBranchSHA = strings.TrimSpace(localBranchSHA)
+				if localBranchSHA != localSHA {
+					return fmt.Errorf(releaseTagLocalBranchStaleFmt, base, base, localBranchSHA, localSHA)
+				}
 			}
 		}
 	}
@@ -329,13 +351,63 @@ func runReleaseTag(versionArg string, deps releaseDeps) error {
 	}
 
 	if resolution.Forge != "github" {
-		return fmt.Errorf(releaseTagUnsupportedForgeFmt, resolution.Forge, tagName, objectSHA, tagName)
+		// No forge to ask — localSHA is shown purely as an informational hint for the manual
+		// fallback text below; the command never publishes on this path.
+		return fmt.Errorf(releaseTagUnsupportedForgeFmt, resolution.Forge, tagName, localSHA, tagName)
 	}
 
 	adapter := forge.NewAdapter(resolution.Forge, deps.availFn)
 	if !adapter.Available {
-		return fmt.Errorf(releaseTagNoForgeCLIFmt, tagName, objectSHA, tagName)
+		// Same reasoning as above: no forge CLI to ask, localSHA is informational only.
+		return fmt.Errorf(releaseTagNoForgeCLIFmt, tagName, localSHA, tagName)
 	}
+
+	// ─── The commit-target comes from the forge, never from a local ref ─────
+	// The forge's default_branch is authoritative for the BRANCH NAME — unconditionally, with no
+	// refusal if it disagrees with the local symref-derived base (a fresh/shallow clone may have
+	// no origin/HEAD symref at all, defaultBaseBranch then falls back to "main"; refusing on that
+	// mismatch would be a false refusal against a legitimate repo, not a security check). Only the
+	// forge's SHA is cross-checked against a local ref — resolved fresh, keyed to the forge's own
+	// branch name, never to the (possibly-forged) local base. See ADR-2026-08-19-caminho-
+	// governado-para-push-forcado-e-tag-de-release.md, Emenda 1.
+	repoInfoResp, err := deps.execForgeAPI("gh", []string{"api", "repos/{owner}/{repo}"}, "")
+	if err != nil {
+		return fmt.Errorf(releaseTagForgeAPIDefaultBranchFailedFmt, err)
+	}
+	var repoInfo struct {
+		DefaultBranch string `json:"default_branch"`
+	}
+	if jerr := json.Unmarshal([]byte(repoInfoResp), &repoInfo); jerr != nil || repoInfo.DefaultBranch == "" {
+		return fmt.Errorf("trackfw release tag: could not parse default_branch from the forge's repository response: %s", repoInfoResp)
+	}
+
+	// forgeLocalSHA is resolved fresh against the forge's own branch name — deliberately NOT
+	// reusing localSHA above, which was keyed to the symref-derived base and may name a different
+	// branch (stale symref, or a fresh clone with no symref at all). Best-effort/non-fatal, same
+	// reasoning as localSHA: absence must not block reaching the publish step below.
+	forgeLocalSHA := ""
+	if out, lerr := deps.execGit("rev-parse", "origin/"+repoInfo.DefaultBranch); lerr == nil {
+		forgeLocalSHA = strings.TrimSpace(out)
+	}
+
+	commitResp, err := deps.execForgeAPI("gh", []string{"api", "repos/{owner}/{repo}/commits/" + repoInfo.DefaultBranch}, "")
+	if err != nil {
+		return fmt.Errorf(releaseTagForgeAPICommitFailedFmt, repoInfo.DefaultBranch, err)
+	}
+	var commitObj struct {
+		SHA string `json:"sha"`
+	}
+	if jerr := json.Unmarshal([]byte(commitResp), &commitObj); jerr != nil || commitObj.SHA == "" {
+		return fmt.Errorf("trackfw release tag: could not parse the forge's commit response for %s: %s", repoInfo.DefaultBranch, commitResp)
+	}
+
+	if forgeLocalSHA != "" && forgeLocalSHA != commitObj.SHA {
+		return fmt.Errorf(releaseTagCommitDivergesFmt, repoInfo.DefaultBranch, forgeLocalSHA, repoInfo.DefaultBranch, commitObj.SHA)
+	}
+
+	// objectSHA is now authoritative — resolved from the forge, cross-checked (not sourced)
+	// against the local ref above.
+	objectSHA := commitObj.SHA
 
 	// ─── Tagger identity ──────────────────────────────────────────────────
 	name, _ := deps.execGit("config", "user.name")

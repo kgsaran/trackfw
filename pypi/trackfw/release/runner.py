@@ -103,6 +103,21 @@ NO_GIT_IDENTITY_MSG = (
     "git config user.email you@example.com)."
 )
 
+
+# _commit_diverges_msg fires when a LOCAL ref (origin/<forge's default branch>'s resolved sha)
+# disagrees with what the forge itself reports for that same branch. This ref is writable inside
+# the clone (git update-ref) — the forge is the only source that is not — so a disagreement is
+# refused, never silently resolved by picking one side. The BRANCH NAME itself comes from the
+# forge unconditionally (no local-vs-forge name check — see the call site) since a fresh/shallow
+# clone legitimately has no local opinion on it at all. See ADR-2026-08-19-caminho-governado-
+# para-push-forcado-e-tag-de-release.md, Emenda 1.
+def _commit_diverges_msg(base, local_sha, forge_base, forge_sha):
+    return (
+        f"trackfw release tag refuses to run: local origin/{base} ({local_sha}) diverges from "
+        f"the forge's {forge_base} tip ({forge_sha}). A local ref can be stale or forged — "
+        "investigate before retrying: git fetch origin --prune"
+    )
+
 # ─── Version file extraction ───────────────────────────────────────────────
 
 _GO_VERSION_RE = re.compile(r'Version\s*=\s*"([^"]+)"')
@@ -226,19 +241,25 @@ def default_exec_forge_api(name, args, stdin):
         return ("", str(e))
 
 
+# _GIT_SYMBOLIC_REF_ORIGIN_HEAD_PREFIX — see ship/runner.py's identical constant/rationale.
+_GIT_SYMBOLIC_REF_ORIGIN_HEAD_PREFIX = "refs/remotes/origin/"
+
+
 def _default_base_branch(exec_git):
     """
     Resolves the repository's default branch, mirroring Go's defaultBaseBranch (ship.go)
-    exactly: tries symbolic-ref refs/remotes/origin/HEAD, falls back to "main".
+    exactly: tries symbolic-ref refs/remotes/origin/HEAD, falls back to "main". This is a
+    LOCAL, gravable ref — release tag treats its result as a cross-check candidate only, never
+    as the source of truth for the tag's commit target.
     """
     out, err = exec_git(["symbolic-ref", "refs/remotes/origin/HEAD"])
     if err:
         return "main"
     out = out.strip()
-    idx = out.rfind("/")
-    if idx < 0 or idx + 1 >= len(out):
+    if not out.startswith(_GIT_SYMBOLIC_REF_ORIGIN_HEAD_PREFIX):
         return "main"
-    return out[idx + 1 :]
+    name = out[len(_GIT_SYMBOLIC_REF_ORIGIN_HEAD_PREFIX):]
+    return name if name else "main"
 
 
 def run_release_tag(
@@ -286,6 +307,9 @@ def run_release_tag(
         return 1
 
     # ─── Precondition 2: default branch up to date with origin ──────────
+    # base is symref-derived — a LOCAL, gravable ref. Used below only as (a) the value the
+    # forge's default_branch must agree with, and (b) input to the local-branch-staleness
+    # check, unrelated to the forge and unaffected by it.
     _, err = exec_git(["fetch", "origin", "--prune"])
     if err:
         write_err(_fetch_failed_msg(err))
@@ -293,20 +317,22 @@ def run_release_tag(
 
     base = _default_base_branch(exec_git)
 
-    object_sha, err = exec_git(["rev-parse", f"origin/{base}"])
-    if err:
-        write_err(f"could not resolve origin/{base}: {err}")
-        return 1
-    object_sha = object_sha.strip()
+    # local_sha (origin/<base>'s local tracking ref) is best-effort and non-fatal: a cross-check
+    # candidate against the forge, never the source of the commit target. A failure to resolve
+    # it must not block reaching the forge resolution below.
+    local_sha = ""
+    origin_sha, origin_err = exec_git(["rev-parse", f"origin/{base}"])
+    if not origin_err:
+        local_sha = origin_sha.strip()
 
-    _, local_verify_err = exec_git(["rev-parse", "-q", "--verify", f"refs/heads/{base}"])
-    if not local_verify_err:
-        local_sha, lerr = exec_git(["rev-parse", f"refs/heads/{base}"])
-        if not lerr:
-            local_sha = local_sha.strip()
-            if local_sha != object_sha:
-                write_err(_local_branch_stale_msg(base, local_sha, object_sha))
-                return 1
+        _, local_verify_err = exec_git(["rev-parse", "-q", "--verify", f"refs/heads/{base}"])
+        if not local_verify_err:
+            local_branch_sha, lerr = exec_git(["rev-parse", f"refs/heads/{base}"])
+            if not lerr:
+                local_branch_sha = local_branch_sha.strip()
+                if local_branch_sha != local_sha:
+                    write_err(_local_branch_stale_msg(base, local_branch_sha, local_sha))
+                    return 1
 
     # ─── Precondition 3: the 4 version files must all match ─────────────
     for label, path, extract in RELEASE_VERSION_FILES:
@@ -361,13 +387,83 @@ def run_release_tag(
         return 1
 
     if resolution.forge != "github":
-        write_err(_unsupported_forge_msg(resolution.forge, tag_name, object_sha))
+        # No forge to ask — local_sha is shown purely as an informational hint for the manual
+        # fallback text below; the command never publishes on this path.
+        write_err(_unsupported_forge_msg(resolution.forge, tag_name, local_sha))
         return 1
 
     adapter = forge_adapter(resolution.forge, avail_fn)
     if not adapter.available:
-        write_err(_no_forge_cli_msg(tag_name, object_sha))
+        # Same reasoning as above: no forge CLI to ask, local_sha is informational only.
+        write_err(_no_forge_cli_msg(tag_name, local_sha))
         return 1
+
+    # ─── The commit-target comes from the forge, never from a local ref ──
+    # The forge's default_branch is authoritative for the BRANCH NAME — unconditionally, with no
+    # refusal if it disagrees with the local symref-derived base (a fresh/shallow clone may have
+    # no origin/HEAD symref at all, _default_base_branch then falls back to "main"; refusing on
+    # that mismatch would be a false refusal against a legitimate repo, not a security check).
+    # Only the forge's SHA is cross-checked against a local ref — resolved fresh, keyed to the
+    # forge's own branch name, never to the (possibly-forged) local base. See ADR-2026-08-19-
+    # caminho-governado-para-push-forcado-e-tag-de-release.md, Emenda 1.
+    repo_info_resp, repo_info_err = exec_forge_api(
+        "gh", ["api", "repos/{owner}/{repo}"], ""
+    )
+    if repo_info_err:
+        write_err(
+            "trackfw release tag: gh api failed resolving the repository's default branch "
+            f"from the forge: {repo_info_err}"
+        )
+        return 1
+    try:
+        repo_info = json.loads(repo_info_resp)
+    except (json.JSONDecodeError, TypeError):
+        repo_info = {}
+    default_branch = repo_info.get("default_branch") if isinstance(repo_info, dict) else None
+    if not default_branch:
+        write_err(
+            "trackfw release tag: could not parse default_branch from the forge's "
+            f"repository response: {repo_info_resp}"
+        )
+        return 1
+
+    # forge_local_sha is resolved fresh against the forge's own branch name — deliberately NOT
+    # reusing local_sha above, which was keyed to the symref-derived base and may name a
+    # different branch (stale symref, or a fresh clone with no symref at all). Best-effort/
+    # non-fatal, same reasoning as local_sha.
+    forge_local_sha = ""
+    forge_origin_sha, forge_origin_err = exec_git(["rev-parse", f"origin/{default_branch}"])
+    if not forge_origin_err:
+        forge_local_sha = forge_origin_sha.strip()
+
+    commit_resp, commit_err = exec_forge_api(
+        "gh", ["api", f"repos/{{owner}}/{{repo}}/commits/{default_branch}"], ""
+    )
+    if commit_err:
+        write_err(
+            "trackfw release tag: gh api failed resolving the forge's tip commit for "
+            f"{default_branch}: {commit_err}"
+        )
+        return 1
+    try:
+        commit_obj = json.loads(commit_resp)
+    except (json.JSONDecodeError, TypeError):
+        commit_obj = {}
+    forge_sha = commit_obj.get("sha") if isinstance(commit_obj, dict) else None
+    if not forge_sha:
+        write_err(
+            "trackfw release tag: could not parse the forge's commit response for "
+            f"{default_branch}: {commit_resp}"
+        )
+        return 1
+
+    if forge_local_sha and forge_local_sha != forge_sha:
+        write_err(_commit_diverges_msg(default_branch, forge_local_sha, default_branch, forge_sha))
+        return 1
+
+    # object_sha is now authoritative — resolved from the forge, cross-checked (not sourced)
+    # against the local ref above.
+    object_sha = forge_sha
 
     # ─── Tagger identity ─────────────────────────────────────────────────
     name, _ = exec_git(["config", "user.name"])

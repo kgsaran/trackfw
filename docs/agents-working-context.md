@@ -20470,3 +20470,109 @@ declara**. Gate verde que não cobre o próprio contrato é pior que gate ausent
 
 **Nada merge, nada tagueia até o Hades levantar o bloqueio.** Waves 5 abertas: ML-4B corretivo e
 ML-4C de reverificação, com quem bloqueou confirmando.
+
+## 2026-08-19 — apolo-tf (Wave 5, ML-4B) — início: commit-alvo da tag ancorado no forge
+
+Iniciando ML-4B: `release tag` passa a resolver o commit-alvo via forge (GET
+`repos/{owner}/{repo}` → `.default_branch`, GET `repos/{owner}/{repo}/commits/{branch}` → `.sha`),
+com ref local rebaixada a verificação cruzada (nunca fonte). Também: correção do
+`defaultBaseBranch` para branch com `/` no nome (dois consumidores: `release.go` e o corpo do PR do
+`ship`), extensão do gate `check-release-tag-parity.sh` com seleção adversarial do alvo, cenário P4
+em `check-gates-falsify.sh`, e inclusão de `git update-ref`/`worktree remove --force`/`git rm -f`
+no guard (`gitBranchGuardScript` + espelhos Node/Python). Escopo: 3 CLIs + gates + docs/cli-parity.md.
+
+## 2026-08-19 — apolo-tf (Wave 5, ML-4B) — concluído: commit-alvo da tag ancorado no forge
+
+Implementado e verde nos 3 CLIs + gates:
+
+- `internal/commands/release.go` (+ mirrors `npm/src/release/runner.js`,
+  `pypi/trackfw/release/runner.py`): commit-alvo de `release tag` agora vem de duas chamadas GET
+  ao forge (`repos/{owner}/{repo}` → `.default_branch`, `repos/{owner}/{repo}/commits/{branch}` →
+  `.sha`). Refs locais (symref, `origin/<base>`) viram cross-check best-effort/non-fatal —
+  divergência local-vs-forge sempre recusa nomeando os dois lados, nunca escolhe um. Preconditions
+  1-5 inalteradas; a precondição de "local branch stale" (não relacionada ao forge) preservada tal
+  qual.
+- `defaultBaseBranch`/`_default_base_branch` corrigido nos 3 CLIs (2 consumidores cada: release
+  tag e o corpo do PR do `ship`) — troca `LastIndexByte('/')` por strip do prefixo literal
+  `refs/remotes/origin/`, corrigindo branch padrão com `/` no nome.
+- Guard (`gitBranchGuardScript` + 4 espelhos: `validator_git_branch_guard_reference.go`,
+  `hooks.js`'s `GIT_BRANCH_GUARD_SCRIPT`, `validator/index.js`'s `GIT_BRANCH_GUARD_SCRIPT_REFERENCE`,
+  `init_gen.py`'s `_GIT_BRANCH_GUARD_SH`, `validator.py`'s `_GIT_BRANCH_GUARD_SCRIPT_REFERENCE`)
+  ganhou `git update-ref` (bloqueio incondicional — foi o mecanismo do exploit), `git worktree
+  remove -f/--force` e `git rm -f/--force`. `scripts/trackfw-git-branch-guard.sh` (o script deste
+  próprio repo) regenerado para bater com o novo template — `trackfw validate` não reporta mais
+  divergência.
+- `scripts/check-release-tag-parity.sh`: 3 novos cenários adversariais (11-13) — symref
+  repontado, `origin/<base>` forjado via `update-ref` sob refspec estreitado, e refspec estreitado
+  com staleness natural (sem forjadura ativa). Descoberta não-óbvia registrada em
+  `vault/notes/git-fetch-self-heals-forged-origin-head-and-tracking-refs-2026-08-19.md`: o
+  `git fetch` interno do próprio comando autocura symref/ref de tracking forjados sob o refspec
+  padrão — sem estreitar o refspec (12/13) ou travar `remote.origin.followRemoteHEAD` (11)
+  primeiro, os 3 cenários davam falso-negativo silencioso.
+- `scripts/check-gates-falsify.sh`: Cenário 76 (137 no total) — sabota o guard de divergência
+  (`if localSHA != "" && localSHA != commitObj.SHA {` → `if false && ...`) numa cópia isolada do
+  Go, prova que `check-release-tag-parity.sh` fica vermelho.
+- `docs/cli-parity.md` atualizado: contrato de 4 chamadas de API, seção de ancoragem no forge, os
+  3 novos cenários do gate, e os 3 novos bloqueios do guard.
+
+Evidência: `go build ./...` limpo · `go test ./...` verde · `npm test` 732/732 · `python3 -m
+pytest pypi/tests` 1411/1411 · `bash scripts/check-release-tag-parity.sh` 17/17 · `bash
+scripts/check-gates-falsify.sh` 137 cenários, exit 0 · `GO_BIN=bin/trackfw bash
+scripts/check-ship-parity.sh` e `check-ship-force-parity.sh` verdes (defaultBaseBranch
+compartilhado) · `trackfw validate` exit 0, sem violations, sem mais o warning de divergência do
+guard.
+
+Fora de escopo (declarado, não bloqueio): pares baseline+detecção dedicados em
+`check-gates-falsify.sh` para `update-ref`/`worktree remove --force`/`rm -f` (o padrão do
+Cenário 74) — a literal do guard está correta e byte-idêntica entre os 5 espelhos (testes de
+integridade existentes cobrem isso), mas não há falsificação por comando para essa classe
+específica nesta ML.
+
+Handoff para `trackfw_architect`: microlote pronto para auditoria e commit. ML-4C (`hades-tf`,
+reverificação) depende deste.
+
+## 2026-08-19 — apolo-tf (Wave 5, ML-4B) — correção pós-revisão: nome do branch do forge vira
+autoritativo incondicional (não mais comparado contra a base local)
+
+Revisão (advisor) encontrou falha de design na entrega acima, antes do handoff final: o código
+comparava `repoInfo.DefaultBranch` (forge) contra `base` (nome derivado do symref LOCAL) e
+recusava em caso de divergência — invertendo o próprio princípio da Emenda 1 ("o forge decide, o
+local só verifica"). Em um clone raso/novo sem `origin/HEAD` symref, `defaultBaseBranch` cai no
+fallback `"main"`; se o branch padrão real do repositório fosse `"master"`, a recusa disparava
+contra um clone legítimo, sem nenhum ataque — falso positivo introduzido por esta própria ML.
+
+Correção: o nome do branch do forge agora é autoritativo incondicionalmente — nenhuma comparação
+de NOME contra o local existe mais. Apenas o SHA continua verificado, e a verificação é resolvida
+FRESCA contra o nome do forge (`origin/<forge.default_branch>`), nunca contra `origin/<base
+local>` (que pode nomear um branch diferente). Um symref repontado passa a ser NEUTRALIZADO (a
+publicação segue normalmente contra o branch/sha reais do forge), não mais recusado.
+
+Mudanças (3 CLIs + gate + doc, mesmo escopo dos espelhos já tocados nesta ML):
+- `internal/commands/release.go` / `npm/src/release/runner.js` / `pypi/trackfw/release/runner.py`:
+  removida a recusa `releaseTagBaseDivergesFmt`/`baseDivergesMsg`/`_base_diverges_msg` (constante
+  e função removidas nos 3 CLIs); introduzida uma resolução local FRESCA (`forgeLocalSHA`) chaveada
+  ao nome do forge, usada apenas para a verificação de SHA (`releaseTagCommitDivergesFmt`, mantida).
+- `internal/commands/release_test.go` (+ espelhos `npm/tests/release.test.js`,
+  `pypi/tests/test_release.py`): teste do symref repontado reescrito para provar sucesso
+  (neutralização, não recusa); novo teste cobrindo o caso do clone raso/sem symref com
+  `default_branch` divergente do fallback `"main"`, provando ausência de falso positivo.
+- `scripts/check-release-tag-parity.sh`: Cenário 11 reescrito de recusa para sucesso — prova que o
+  symref repontado é ignorado e a publicação usa o sha real do `main` do forge, nunca o de
+  `chore/other`. Cenários 12/13 (recusa por divergência de SHA) inalterados em comportamento, só
+  renomeada a variável interna citada nos comentários.
+- `scripts/check-gates-falsify.sh`: Cenário 76 atualizado para sabotar o literal renomeado
+  (`forgeLocalSHA` em vez de `localSHA`); reconfirmado não-vacuous rodando manualmente o binário Go
+  corrompido contra `check-release-tag-parity.sh` — Cenário 11 (agora sucesso) permanece verde
+  (independente da corrupção), Cenários 12/13 falham exatamente como esperado.
+- `docs/cli-parity.md`: seção de ancoragem no forge reescrita para descrever o contrato correto
+  (nome sempre do forge, sha cross-checked fresco); descrição do Cenário 11 atualizada.
+
+Evidência: `go build ./...` limpo · `go test ./...` verde (commands 9.8s) · `npm test` 733/733 ·
+`python3 -m pytest pypi/tests` 1412 passed + 28 subtests · `bash scripts/check-release-tag-parity.sh`
+17/17 (incluindo o novo Cenário 11 de sucesso) · `bash scripts/check-gates-falsify.sh` 255 OK / 0
+FAIL, "all 137 scenarios" · `GO_BIN=bin/trackfw bash scripts/check-ship-parity.sh` e
+`check-ship-force-parity.sh` verdes · `trackfw validate` sem violations, apenas os mesmos warnings
+pré-existentes não relacionados a esta ML.
+
+Handoff para `trackfw_architect`: correção incorporada ao mesmo microlote ML-4B, pronto para
+auditoria e commit.

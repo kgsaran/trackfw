@@ -2491,7 +2491,43 @@ match_subcommand() {
                 ;;
             esac
           done
+        elif [ "${1:-}" = "remove" ]; then
+          # git worktree remove SEM -f/--force já recusa sozinho quando há alteração não
+          # commitada no worktree indicado — só a forma com force é irreversível o bastante
+          # para bloquear aqui.
+          shift
+          for tok2 in "$@"; do
+            case "$tok2" in
+              -f|--force)
+                echo "worktree-remove-force"
+                return 0
+                ;;
+            esac
+          done
         fi
+        ;;
+      update-ref)
+        # git update-ref reescreve um ref (inclusive refs/remotes/origin/*) sem tocar o
+        # objeto apontado nem exigir push — foi o mecanismo que tornou alcançável o exploit
+        # descrito no ADR-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md
+        # (Emenda 1): forjar origin/<base> localmente para desviar o commit-alvo de trackfw
+        # release tag. Sem forma de leitura equivalente a bloquear seletivamente — a
+        # subcommand inteira é escrita — bloqueia sempre, sem exceção de token.
+        echo "update-ref"
+        return 0
+        ;;
+      rm)
+        # git rm -f/--force apaga do working tree e do index de forma irreversível, mesma
+        # classe de git clean -f/git reset --hard já bloqueados acima — sem exceção para
+        # --cached (destrancar do index sem -f já segue liberado por não precisar de force).
+        for tok2 in "$@"; do
+          case "$tok2" in
+            -f*|--force|--force=*)
+              echo "rm-force"
+              return 0
+              ;;
+          esac
+        done
         ;;
     esac
   done <<EOF
@@ -2535,6 +2571,15 @@ case "$SUBCOMMAND" in
     ;;
   checkout-path)
     REASON="trackfw: git checkout -- <path>/git checkout . bruto bloqueado — descarta de forma irreversível as alterações não commitadas do caminho indicado. \`git checkout <branch>\`/\`git switch <branch>\` seguem liberados; para descartar de fato, confirme antes com o usuário. Nada antes deste comando foi executado (comando composto é bloqueado por inteiro). Ver CLAUDE.md §1."
+    ;;
+  update-ref)
+    REASON="trackfw: git update-ref bruto bloqueado — reescreve um ref (inclusive refs/remotes/origin/*) sem tocar o objeto apontado nem exigir push, o que permite forjar o commit-alvo que \`trackfw release tag\` publicaria. Nada antes deste comando foi executado (comando composto é bloqueado por inteiro). Ver CLAUDE.md §1."
+    ;;
+  worktree-remove-force)
+    REASON="trackfw: git worktree remove -f/--force bruto bloqueado — remove um worktree e descarta de forma irreversível qualquer alteração não commitada nele. \`git worktree remove\` sem force segue liberado (recusa sozinho quando há algo não commitado). Nada antes deste comando foi executado (comando composto é bloqueado por inteiro). Ver CLAUDE.md §1."
+    ;;
+  rm-force)
+    REASON="trackfw: git rm -f/--force bruto bloqueado — apaga arquivos do working tree e do index de forma irreversível, mesma classe de \`git clean -f\`/\`git reset --hard\` já bloqueados. Nada antes deste comando foi executado (comando composto é bloqueado por inteiro). Ver CLAUDE.md §1."
     ;;
   *)
     exit 0

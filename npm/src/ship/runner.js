@@ -302,10 +302,17 @@ function allDocOnly(files) {
  */
 const COMMIT_MESSAGE_SEP = '\x1e'
 
+// GIT_SYMBOLIC_REF_ORIGIN_HEAD_PREFIX is the fixed prefix `git symbolic-ref
+// refs/remotes/origin/HEAD` always returns before the branch name, because "origin" is the
+// literal ref namespace queried — never derived from the output itself. Stripping this exact
+// prefix (instead of cutting at the last '/') is what makes defaultBaseBranch correct for a
+// default branch that itself contains a slash (e.g. "release/7.2"): lastIndexOf('/') used to
+// cut at "7.2", discarding "release/". Mirrors Go's ship.go gitSymbolicRefOriginHeadPrefix.
+const GIT_SYMBOLIC_REF_ORIGIN_HEAD_PREFIX = 'refs/remotes/origin/'
+
 /**
  * defaultBaseBranch resolves the repository's default branch for `git log <base>..HEAD`.
- * Tries `git symbolic-ref refs/remotes/origin/HEAD` (format "refs/remotes/origin/main" —
- * only the name after the last slash is kept) and falls back to "main" when that fails or
+ * Tries `git symbolic-ref refs/remotes/origin/HEAD` and falls back to "main" when that fails or
  * yields nothing.
  * @param {function} execGit
  * @returns {string}
@@ -314,9 +321,9 @@ function defaultBaseBranch(execGit) {
   const { stdout, error } = execGit(['symbolic-ref', 'refs/remotes/origin/HEAD'])
   if (error) return 'main'
   const out = (stdout || '').trim()
-  const idx = out.lastIndexOf('/')
-  if (idx < 0 || idx + 1 >= out.length) return 'main'
-  return out.slice(idx + 1)
+  if (!out.startsWith(GIT_SYMBOLIC_REF_ORIGIN_HEAD_PREFIX)) return 'main'
+  const name = out.slice(GIT_SYMBOLIC_REF_ORIGIN_HEAD_PREFIX.length)
+  return name === '' ? 'main' : name
 }
 
 /**

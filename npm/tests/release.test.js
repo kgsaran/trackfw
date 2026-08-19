@@ -54,6 +54,22 @@ function makeMockGit(overrides = {}) {
   return execGit
 }
 
+// defaultExecForgeAPI answers the four gh api calls release tag makes:
+//   - repos/{owner}/{repo}                       -> default_branch: "main" (agrees with the
+//     fixture's symref-derived base, so no divergence fires by default)
+//   - repos/{owner}/{repo}/commits/main           -> sha: SHA (agrees with the fixture's local
+//     origin/main, so no divergence fires by default)
+//   - repos/{owner}/{repo}/git/tags  (POST)       -> sha: "tagobjectsha000"
+//   - repos/{owner}/{repo}/git/refs  (POST)       -> {}
+function defaultExecForgeAPI(name, args, stdin) {
+  const endpoint = args[1]
+  if (endpoint.includes('git/tags')) return { stdout: '{"sha":"tagobjectsha000"}', error: null }
+  if (endpoint.includes('git/refs')) return { stdout: '{}', error: null }
+  if (endpoint.includes('/commits/')) return { stdout: JSON.stringify({ sha: SHA }), error: null }
+  if (endpoint === 'repos/{owner}/{repo}') return { stdout: '{"default_branch":"main"}', error: null }
+  return { stdout: '{}', error: null }
+}
+
 function makeDeps({ fileOverrides = {}, gitOverrides = {}, availFn = () => true, execForgeAPI = null } = {}) {
   const files = { ...validFiles(VERSION), ...fileOverrides }
   const execGit = makeMockGit(gitOverrides)
@@ -70,12 +86,7 @@ function makeDeps({ fileOverrides = {}, gitOverrides = {}, availFn = () => true,
     configForge: '',
     repoDir: '',
     availFn,
-    execForgeAPI:
-      execForgeAPI ||
-      ((name, args, stdin) => {
-        if (args[1].includes('git/tags')) return { stdout: '{"sha":"tagobjectsha000"}', error: null }
-        return { stdout: '{}', error: null }
-      }),
+    execForgeAPI: execForgeAPI || defaultExecForgeAPI,
   }
   return { deps, execGit, outLines, errLines }
 }
@@ -289,9 +300,8 @@ test('release tag: success publishes an annotated tag via two gh api calls', () 
   const calls = []
   const { deps, outLines, errLines } = makeDeps({
     execForgeAPI: (name, args, stdin) => {
-      calls.push({ name, args, stdin })
-      if (args[1].includes('git/tags')) return { stdout: '{"sha":"tagobjectsha000"}', error: null }
-      return { stdout: '{}', error: null }
+      if (args[1].includes('git/tags') || args[1].includes('git/refs')) calls.push({ name, args, stdin })
+      return defaultExecForgeAPI(name, args, stdin)
     },
   })
   const code = runReleaseTag(VERSION, deps)
@@ -318,14 +328,95 @@ test('release tag: success publishes an annotated tag via two gh api calls', () 
 test('release tag: tag object call failure never reaches the ref call', () => {
   let refCalled = false
   const { deps, errLines } = makeDeps({
-    execForgeAPI: (name, args) => {
+    execForgeAPI: (name, args, stdin) => {
       if (args[1].includes('git/tags')) return { stdout: '', error: new Error('401 Unauthorized') }
-      refCalled = true
-      return { stdout: '{}', error: null }
+      if (args[1].includes('git/refs')) refCalled = true
+      return defaultExecForgeAPI(name, args, stdin)
     },
   })
   const code = runReleaseTag(VERSION, deps)
   assert.equal(code, 1)
   assert.equal(refCalled, false)
   assert.match(errLines[0], /gh api failed creating the tag object/)
+})
+
+// ────────────────────────────────────────────────────────────────────────────
+// Commit target anchored on the forge (ADR-2026-08-19, Emenda 1) — the forge's
+// default_branch/commit sha are authoritative; local refs are cross-checked only, never trusted.
+// ────────────────────────────────────────────────────────────────────────────
+
+test('release tag: repointed local symref is neutralized — forge branch name wins, no refusal', () => {
+  // The local, symref-derived base resolves to "chore/other" (attacker-writable, purely local),
+  // while the forge reports "main". The forge's branch name is authoritative unconditionally —
+  // no local-vs-forge name comparison exists (a fresh/shallow clone legitimately has no local
+  // opinion at all). The repoint is neutralized: publish uses the forge's branch/sha, ignoring it.
+  const { deps } = makeDeps({
+    gitOverrides: {
+      responses: {
+        'symbolic-ref refs/remotes/origin/HEAD': 'refs/remotes/origin/chore/other',
+        'rev-parse origin/chore/other': 'shaonchoreother00',
+      },
+      errors: { 'rev-parse -q --verify refs/heads/chore/other': new Error('no such branch') },
+    },
+  })
+  let tagsBody = null
+  deps.execForgeAPI = (name, args, stdin) => {
+    if (args[1].includes('git/tags')) {
+      tagsBody = stdin
+      return { stdout: '{"sha":"tagobjectsha000"}', error: null }
+    }
+    return defaultExecForgeAPI(name, args, stdin)
+  }
+  const code = runReleaseTag(VERSION, deps)
+  assert.equal(code, 0)
+  assert.ok(tagsBody.includes(SHA))
+})
+
+test('release tag: absent local symref (fresh/shallow clone) is not a false divergence', () => {
+  // No origin/HEAD symref at all — defaultBaseBranch falls back to "main". The forge's real
+  // default branch is "master". There is no local opinion to disagree with the forge here, just
+  // an absent one — must not refuse.
+  const { deps } = makeDeps({
+    gitOverrides: {
+      errors: {
+        'symbolic-ref refs/remotes/origin/HEAD': new Error('ref refs/remotes/origin/HEAD is not a symbolic ref'),
+        'rev-parse origin/main': new Error('unknown revision'),
+      },
+      responses: { 'rev-parse origin/master': SHA },
+    },
+  })
+  deps.execForgeAPI = (name, args, stdin) => {
+    if (args[1] === 'repos/{owner}/{repo}') return { stdout: '{"default_branch":"master"}', error: null }
+    return defaultExecForgeAPI(name, args, stdin)
+  }
+  const code = runReleaseTag(VERSION, deps)
+  assert.equal(code, 0)
+})
+
+test('release tag: forge commit sha divergence refuses naming the divergence', () => {
+  const { deps, errLines } = makeDeps({
+    gitOverrides: { responses: { 'rev-parse origin/main': 'forgedlocalsha000' } },
+  })
+  const code = runReleaseTag(VERSION, deps)
+  assert.equal(code, 1)
+  assert.match(errLines[0], /forgedlocalsha000/)
+  assert.match(errLines[0], new RegExp(SHA))
+  assert.match(errLines[0], /diverges/)
+})
+
+test('release tag: publish always uses the forge sha, never the local one', () => {
+  const { deps } = makeDeps({
+    gitOverrides: { errors: { 'rev-parse origin/main': new Error('unknown revision') } },
+  })
+  let tagsBody = null
+  deps.execForgeAPI = (name, args, stdin) => {
+    if (args[1].includes('git/tags')) {
+      tagsBody = stdin
+      return { stdout: '{"sha":"tagobjectsha000"}', error: null }
+    }
+    return defaultExecForgeAPI(name, args, stdin)
+  }
+  const code = runReleaseTag(VERSION, deps)
+  assert.equal(code, 0)
+  assert.ok(tagsBody.includes(SHA))
 })
