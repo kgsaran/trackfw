@@ -20003,3 +20003,12 @@ PR #190 mergeado por KG (`main` em `364ee78`). Fechamento executado:
 **Próximo passo, e agora é o único:** a **7.1.0**, conforme a decisão de KG de só lançar depois do
 `doctor` fechado. `main` acumula 9 PRs desde a `v7.0.0`, incluindo comando novo (`branch prune`) e o
 `doctor` — por SemVer, **minor**.
+## 2026-08-19 — Zeus (arquiteto) — bump para 7.1.0
+
+Autorizado por KG após o fechamento do `doctor`. Bump nos 4 arquivos de versão + `CHANGELOG.md`
+no mesmo PR, conforme o protocolo de release (nunca commit separado).
+
+Versão verificada nos **três** runtimes, não só no Go: `trackfw 7.1.0`, `npm 7.1.0`, `pypi 7.1.0`.
+
+**Minor**, não major: dois comandos novos (`doctor`, `branch prune`) e nenhuma quebra.
+A tag só depois deste PR mergeado — a tag representa o estado pós-merge.
