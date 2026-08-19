@@ -20012,3 +20012,25 @@ Versão verificada nos **três** runtimes, não só no Go: `trackfw 7.1.0`, `npm
 
 **Minor**, não major: dois comandos novos (`doctor`, `branch prune`) e nenhuma quebra.
 A tag só depois deste PR mergeado — a tag representa o estado pós-merge.
+
+## 2026-08-19 — Zeus (arquiteto) — REQ do push forçado e tag de release
+
+`v7.1.0` publicada (tag anotada em `13e73f2`). A publicação exigiu **dois contornos**, e os dois
+viraram esta REQ.
+
+**Achado central:** o `case push)` do guard é incondicional; o `ship` cobre **uma** forma de push
+(`buildPushArgs` é o inventário completo). Entre os dois sobra um vão de 5 formas. Consequência
+desconfortável: **o protocolo de release do `CLAUDE.md` deste projeto é inexecutável dentro dos
+guardrails deste projeto.**
+
+Não corrigi só as duas formas que medi — enumerei as cinco na REQ. Corrigir só o medido devolveria
+a mesma classe daqui a pouco; é o padrão "condição estreita demais" já nomeado nesta série.
+
+**Decisões de KG (ADR-2026-08-19):**
+- `ship --force-with-lease` **mais** `release tag` separado. Tag não é operação de branch, e o
+  portão do `ship` (REQ + roadmap em wip) não se aplica a release.
+- Force-push **restrito a branch com PR aberto**. KG escolheu a opção mais restritiva das três.
+  Propriedade que a decisão compra: o PR mora **no forge**, fora do alcance de escrita do agente —
+  a âncora sai do repositório, que é a direção do `ADR-2026-08-12`.
+
+Branch criada, roadmap em `wip`. 4 waves, 6 MLs.
