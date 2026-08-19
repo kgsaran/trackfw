@@ -88,3 +88,21 @@ estão no disco. Aceito porque:
   não-regressão explícita do rollback em erro normal.
 - A inversão **não** dispensa a detecção (frente 1 da REQ): instalações já feitas com a ordem antiga
   seguem podendo ter o estado ruim, e o `doctor` é o que revela.
+
+---
+
+## Emenda 1 (2026-08-19) — o alcance real do benefício de auto-cura
+
+> Esta ADR está `Accepted`. A emenda **acrescenta**; nada acima foi reescrito.
+
+Levantado pela barreira do `hades-tf` (ML-3A, `docs/seguranca/2026-08-18-revisao-do-doctor-e-da-inversao.md`)
+e aceito: o benefício de auto-cura descrito acima vale para **instalação nova interrompida**, e não
+para **update de artefato já existente**.
+
+No caso de update, o arquivo antigo continua em disco após a interrupção, com hash divergente do que
+o manifesto (otimista) já declarou. As duas ordens — a antiga e a nova — convergem no mesmo
+`StateModified`, que exige `--force` humano. A inversão **não piora** esse caso; apenas não o cura,
+ao contrário do que a redação original sugere.
+
+A decisão permanece válida: o ganho é real para o caminho de instalação nova, que é o caminho do
+incidente que originou a REQ. A correção aqui é de **escopo declarado**, não de direção.

@@ -19849,3 +19849,59 @@ scripts/check-doctor-parity.sh` verde (10 sub-cenários), `make quality` exit 0 
 Roadmap `ROADMAP-2026-08-18-doctor-detecta-artefato-fora-do-manifesto-e-inverte-a-ordem-de-persistencia.md`
 ML-2B marcado ✅ Concluído. Próximo: ML-3A (`hades-tf`, revisão da inversão e do diagnóstico).
 Commit/push são exclusivos do `trackfw_architect`.
+
+## 2026-08-19 — hades-tf — ML-3A concluído, veredito APROVADO COM RESSALVAS
+
+Parecer escrito em `docs/seguranca/2026-08-18-revisao-do-doctor-e-da-inversao.md` (único arquivo que
+esta role escreve). **Não editei código de produto.**
+
+**Ressalva séria, medida por execução real (fixture descartável) e confirmada por leitura de
+`legacy.go`:** `ClassifyDoctor` (`internal/integrations/doctor.go:68-100` e espelhos Node/Python) não
+tem `case` para `!Registered && State == StateModified` — cai no `default` silencioso, `doctor`
+reporta "no mismatches found". O caminho de produção que chega nesse estado **não precisa de
+adversário**: é o próprio cenário do REQ (interrupção comum deixa artefato órfão) somado a deriva de
+catálogo (`CatalogVersion` novo depois da interrupção) sobre um item sem cobertura em
+`LegacyHashes` — que é a maioria do catálogo (curated manualmente, só ~10 entradas `global` +
+`codex`/`project`; `claude/cli/project/agents/architect`, usado no fixture, não tem nenhuma). Um
+agente induzido/adversário que adultera conteúdo e apaga a entrada do manifesto cai na mesma lacuna,
+mas isso já está coberto pelo ADR-2026-08-12 (não reaberto) — não é a base do achado. AC1 não fecha
+até existir um terceiro `case` cobrindo esse estado. Nota do vault:
+`doctor-classifydoctor-silences-tampering-when-manifest-entry-removed-2026-08-19.md`.
+
+**Aprovado, sem ressalva:** a inversão de ordem do `mutate` (`manager.go`) — não abre caminho para
+sobrescrever bytes não escritos pelo trackfw, rollback preserva arquivos e manifestos, assimetria do
+`uninstall` é correta. `doctor` confirmado por leitura como não-escritor nos 3 CLIs. Gate
+`check-doctor-parity.sh`/Cenário 71 confirmado por leitura como não tocando `$HOME` real nem o
+repositório do projeto (todo `HOME=` é passado inline por chamada, `pwd -P` cobre a armadilha de
+symlink do `$TMPDIR`).
+
+**Observação não bloqueante registrada no parecer:** o benefício de auto-cura do ADR-2026-08-18 vale
+para instalação **nova** interrompida (arquivo ausente do disco); para *update* de artefato já
+existente, uma interrupção na janela produz `StateModified` e exige `--force` humano nas duas
+ordens (antiga e nova) — o texto do ADR generaliza um pouco além do que a tabela realmente prova,
+mas isso não é uma regressão de segurança.
+
+Próximo passo é decisão do arquiteto: endereçar o achado crítico (terceira classe de finding
+"unclaimed-drift" ou equivalente, sem `--force` automático, redação honesta sobre a ambiguidade) é
+código de produto — fora do escopo desta role.
+
+## 2026-08-19 — Zeus (arquiteto) — auditoria da barreira ML-3A
+
+Barreira do `hades-tf` voltou **APROVADO COM RESSALVAS**, e a ressalva **reprova o AC1**. Confirmei
+por leitura direta, não pelo relatório: `inspectResolved` (`manager.go:638-645`) produz
+`StateModified` para `!managed` com conteúdo divergente, e `ClassifyDoctor` (`doctor.go:81-95`) não
+tem `case` para esse estado — cai fora do `switch` em silêncio.
+
+**O argumento que decidiu, e que a barreira não usou:** esse é o estado que faz o `preflight` recusar
+com `unmanaged artifact`. O `doctor` responde `no mismatches found` ao usuário cujo `agents install`
+acabou de recusar — diagnóstico que contradiz a ferramenta que ele diagnostica.
+
+Recusei a forma binária da ressalva (reportar tudo seria a acusação falsa do risco 1) e abri o
+**ML-2C** com terceira classe cujo remédio **nomeia a recusa**, virando explicação em vez de acusação.
+Volume verificado antes de decidir: destino do catálogo é **arquivo nomeado**, não diretório — a
+classe só dispara em colisão de nome, que é o que se quer revelar.
+
+AC1 desmarcado com motivo escrito; auditoria do ML-2A **qualificada retroativamente** (seus 4
+cenários nunca alcançaram esse estado). ADR-2026-08-18 ganhou **Emenda 1** sobre o alcance real da
+auto-cura. `main` intocada; PR #190 sem merge; tag 7.1.0 **ainda pendente de decisão de KG** — o
+achado **reforça** a recomendação de tagear sem o #190.

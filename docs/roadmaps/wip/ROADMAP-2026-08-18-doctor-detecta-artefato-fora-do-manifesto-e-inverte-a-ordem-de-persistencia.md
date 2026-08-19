@@ -27,7 +27,11 @@ Duas frentes, e a **ordem importa**: a inversão da frente 2 impede casos novos,
 instalações que já estão no estado ruim. O `doctor` é o que revela essas.
 
 ## Acceptance Criteria
-- [x] AC1 — Detecta **arquivo em disco ausente do manifesto** e o distingue de **arquivo modificado à mão**.
+- [ ] AC1 — Detecta **arquivo em disco ausente do manifesto** e o distingue de **arquivo modificado à mão**.
+      🔴 **Desmarcado em 2026-08-19 pela barreira do ML-3A.** Existe um terceiro estado —
+      `!Registered && StateModified` — que **nenhum `case` do `ClassifyDoctor` cobre**, e o comando
+      responde `no mismatches found`. É exatamente o estado que faz o `agents install` recusar com
+      `unmanaged artifact`, ou seja, o sintoma do CMDB que originou esta REQ. Fecha no ML-2C.
 - [x] AC2 — A saída **nomeia o remédio**, com comando pronto para copiar.
 - [x] AC3 — Paridade nos 3 CLIs, com **gate comparando saídas reais** — não por leitura de fonte.
 - [x] AC4 — Cenário P4 reproduzindo a janela: artefato em disco sem registro, e prova de que acusa.
@@ -211,6 +215,10 @@ presente. O Cenário 71 sabota exatamente esse literal e prova que agora fica ve
 
 `make quality` exit 0 · 367 OK · 0 FAIL · 132 cenários · `validate` exit 0.
 
+> 🔴 **Qualificação retroativa (2026-08-19).** A auditoria do ML-2A acima segue válida no que
+> mediu, mas seus quatro cenários **nunca alcançaram** o estado `!Registered && StateModified`.
+> Aprovar o ML-2A não provou o AC1 — ver a barreira do ML-3A e o ML-2C.
+
 ## Wave 3 — Barreira
 
 ### ML-3A — `hades-tf`: revisão da inversão e do diagnóstico
@@ -223,6 +231,67 @@ Avaliar se o `doctor` pode ser induzido a chamar de "escrita não registrada" um
 de fato — o que rebaixaria adulteração a acidente. **Veredito explícito; bloquear é saída legítima.**
 
 ---
+
+### ML-3A — auditoria da barreira: ressalva **aceita**, e ela reprova o AC1
+
+Veredito do `hades-tf`: **APROVADO COM RESSALVAS** — `docs/seguranca/2026-08-18-revisao-do-doctor-e-da-inversao.md`.
+Nota de vault: `vault/notes/doctor-classifydoctor-silences-tampering-when-manifest-entry-removed-2026-08-19.md`.
+
+**Confirmei a ressalva por leitura direta, não pelo relatório:**
+`inspectResolved` (`internal/integrations/manager.go:638-645`) — com `!managed`, conteúdo diferente
+do desejado e fora de `LegacyHashes`, o estado é `StateModified`. E `ClassifyDoctor`
+(`internal/integrations/doctor.go:81-95`) só tem `case` para `!Registered && StateCurrent` e para
+`Managed && StateModified`. O terceiro estado **cai fora do `switch` em silêncio**.
+
+**O argumento que decide, e que a barreira não usou:** esse é precisamente o estado que faz o
+`preflight` recusar com `unmanaged artifact`. Ou seja, o `doctor` responde **"no mismatches found"
+para o usuário cujo `agents install` acabou de recusar** — um diagnóstico que contradiz a ferramenta
+que ele existe para diagnosticar. Esse foi o sintoma do CMDB que originou a REQ. Não é feature
+incompleta; é o AC1 não fechado.
+
+**Não aceito a forma binária da ressalva.** Reportar todo `!Registered && StateModified` como
+adulteração seria a acusação falsa que o risco 1 nomeia. A saída é uma **terceira classe** que
+declara a ambiguidade honestamente — ver ML-2C.
+
+**Volume verificado antes de decidir** (era o que definia se cabia num ML ou exigia REQ nova):
+`RunDoctor` varre todo destino do catálogo, mas destino é **arquivo nomeado** (`.claude/agents/<slug>.md`),
+não diretório. Só dispara para quem tem arquivo de mesmo nome de outra origem — que é exatamente a
+colisão que se quer revelar. Volume limitado; a classe é segura.
+
+**Observação não-bloqueante aceita:** a auto-cura que o ADR-2026-08-18 promete vale para instalação
+nova interrompida, **não** para update de artefato já existente — nesse caso as duas ordens convergem
+no mesmo `StateModified`. Registrada como **Emenda 1** no ADR (que é `Accepted`, portanto emendado,
+nunca reescrito).
+
+**Aprovado sem ressalva:** a inversão da ordem (sem caminho para sobrescrever bytes alheios, rollback
+íntegro, assimetria do `uninstall` correta), o `doctor` não escrever nada, e o gate do ML-2B (`HOME`
+inline por invocação, sem `export` global; `pwd -P` cobre o symlink de `$TMPDIR` no macOS).
+
+---
+
+## Wave 4 — Corretiva da barreira
+
+### ML-2C — Terceira classe: conteúdo desconhecido em destino do catálogo
+**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Dependência:** ML-3A. **Fecha o AC1.**
+**Arquivos:** `internal/integrations/doctor.go`, `npm/src/integrations/doctor.js`,
+`pypi/trackfw/integrations/doctor.py` (+ testes dos 3), `scripts/check-doctor-parity.sh`,
+`scripts/check-gates-falsify.sh`, `docs/cli-parity.md`.
+
+**Ação:** terceira classe para `!Registered && State == StateModified`. **Não** é
+`unregistered-write` (remédio errado: "adota, já bate") nem `hand-modified` (acusa adulteração sem
+base). O remédio precisa **nomear a recusa**: `agents install` vai recusar este destino com
+`unmanaged artifact`; se o arquivo é seu, remova-o; se é do trackfw e derivou, `install --force`.
+Isso converte o achado de acusação em **explicação** — e é o que dissolve a objeção de falso-positivo.
+
+**Critérios de aceite:**
+- [ ] Três classes distintas nos 3 CLIs, com remédios distintos; nenhuma pode ser fundida.
+- [ ] O remédio da classe nova **nomeia a recusa** `unmanaged artifact`.
+- [ ] Cenário (f) no `check-doctor-parity.sh`, **texto e `--json`**, comparando as 3 saídas reais.
+- [ ] Cenário P4 irmão do 71: sabota o `case` novo e prova que o gate fica vermelho — a classe
+      **não pode voltar ao silêncio** sem gate reprovar.
+- [ ] Seção do `doctor` no `docs/cli-parity.md` atualizada.
+- [ ] `make quality` verde.
 
 ## Notas
 - **Fora de escopo, declarado:** WAL/journal cross-file — rejeitado no ADR por desproporção.
