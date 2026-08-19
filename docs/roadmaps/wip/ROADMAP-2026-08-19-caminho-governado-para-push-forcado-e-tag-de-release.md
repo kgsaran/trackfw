@@ -194,7 +194,7 @@ mais testes dos 3.
 > forma e custariam duas rodadas de gate byte-idêntico. Ficam num ML só.
 
 ### ML-3A — Bloqueio da classe destrutiva + mensagem de raio de alcance
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
 **Arquivos:** `internal/generators/scaffold.go` (literal `gitBranchGuardScript` — **fonte
 canônica**, nunca editar as 7 cópias em disco) + espelhos Node/Python, testes dos 3,
 `scripts/check-gates-falsify.sh`, `docs/cli-parity.md`.
@@ -231,20 +231,120 @@ criou o arquivo e devolveu só a mensagem do commit. A mensagem do `push` passa 
 `trackfw ship` **e** `trackfw release tag`.
 
 **Critérios de aceite:**
-- [ ] Cada comando da lista de bloqueio é recusado, com alternativa nomeada
-- [ ] Cada comando da lista de liberação continua funcionando — **provado por cenário**, com
+- [x] Cada comando da lista de bloqueio é recusado, com alternativa nomeada
+- [x] Cada comando da lista de liberação continua funcionando — **provado por cenário**, com
       atenção especial ao `git reset --soft`
-- [ ] Evasões conhecidas cobertas: prefixo `env`/`command`, flag fora da primeira posição,
+- [x] Evasões conhecidas cobertas: prefixo `env`/`command`, flag fora da primeira posição,
       `git${IFS}stash`
-- [ ] Mensagem diz que o comando **inteiro** foi bloqueado
-- [ ] Mensagem do `push` cita os dois caminhos governados
-- [ ] Script **byte-idêntico** entre os 3 CLIs e entre escopos; no-op fora de projeto preservado
-- [ ] Dreno de stdin preservado (um ML anterior introduziu EPIPE aqui e foi reprovado)
-- [ ] Cenário P4 por comando bloqueado **e** por comando liberado — falso-positivo é o risco dominante
-- [ ] `docs/cli-parity.md` nomeia o gate
-- [ ] `make quality` verde
+- [x] Mensagem diz que o comando **inteiro** foi bloqueado
+- [x] Mensagem do `push` cita os dois caminhos governados
+- [x] Script **byte-idêntico** entre os 3 CLIs e entre escopos; no-op fora de projeto preservado
+- [x] Dreno de stdin preservado (um ML anterior introduziu EPIPE aqui e foi reprovado)
+- [x] Cenário P4 por comando bloqueado **e** por comando liberado — falso-positivo é o risco dominante
+- [x] `docs/cli-parity.md` nomeia o gate
+- [x] `make quality` verde
+
+**Evidência de conclusão (apolo-tf, 2026-08-19):**
+- `go build ./...` / `go vet ./...`: limpos.
+- `go test ./...`: 100% verde (todos os pacotes, inclusive `TestGitBranchGuardScriptReference_MatchesGenerator`/`_MatchesGlobalGenerator`).
+- `node --test` (npm/): 709/709 verde.
+- `pytest` (pypi/): 1388 passed, 28 subtests passed.
+- `bash scripts/check-gates-falsify.sh`: exit 0, 154 cenários (Cenário 74 novo: 20 asserções, um par
+  baseline+detecção por comando das 5 classes novas, cobrindo bloqueio e liberação).
+- `make quality`: exit 0, do zero.
+- `./bin/trackfw validate`: exit 0, **23 warnings total** — 21 pré-existentes e não relacionados a
+  este ML, e **2 atribuíveis a esta mudança**: os scripts materializados deste próprio projeto,
+  `scripts/trackfw-git-branch-guard.sh` e `~/.trackfw/scripts/trackfw-git-branch-guard.sh`, divergem
+  do novo template até `trackfw update`/`trackfw update harness` rodarem; não executei nenhum dos
+  dois por estar fora do escopo declarado do ML — é escrita de artefato, não de fonte. `scripts/
+  trackfw-git-branch-guard.sh` deste repositório fica **inerte** para a proteção nova até alguém
+  rodar `trackfw update` — informação de sequenciamento para o `trackfw_architect`, não um defeito.
+- `docs/cli-parity.md`: nova seção "Bloqueio da classe destrutiva de working tree + mensagem de raio
+  de alcance", nomeando o Cenário 74.
+- Achado registrado em `vault/notes/git-branch-guard-case-block-extension-breaks-corrupt-literal-scenarios-2026-08-19.md`:
+  o Cenário 62b pré-existente quebrou porque seu alvo de `corrupt_literal` incluía o `;;` de
+  fechamento do bloco `checkout)`, que deixou de ficar colado ao for-loop de `-b` depois da inserção
+  do bloco novo de detecção `--`/`.`; corrigido restringindo o alvo ao for-loop, sem tocar na
+  intenção original do cenário.
 
 ---
+
+---
+
+### Auditoria do ML-3A — comportamento aprovado; **duas pendências minhas**, não dele
+
+Gerei o script pelo binário recém-compilado e exercitei 18 casos direto no hook, não por leitura:
+
+```
+BLOQUEIAM (9/9): stash · stash push · stash clear · reset --hard · clean -fd
+                 restore <path> · checkout -- <path> · checkout . · env FOO=1 git stash
+LIVRES   (9/9): stash list · stash show · reset --soft HEAD~1 · reset HEAD~1 · clean -n
+                 restore --staged · checkout main · switch main · status
+no-op fora de projeto trackfw: preservado (exit 0, sem bloqueio)
+dreno de stdin: 0 EPIPE em 5 execucoes com payload de 200KB
+```
+
+`git reset --soft HEAD~1` livre era o critério que mais me preocupava — o próprio trilho governado
+depende dele.
+
+#### Pendência 1 — o guard entregue não estava **ativo**
+
+O `validate` acusava dois avisos que o executor classificou como fora de escopo: os scripts
+materializados (deste repositório e o global) estavam defasados em relação ao template novo.
+Discordo da classificação — significa que **a proteção pedida por KG não estava valendo em lugar
+nenhum**, nem aqui nem nas outras máquinas dele. Rodei `trackfw update` e `trackfw update harness`,
+e confirmei os dois guards **ativos** respondendo `block`. `validate` voltou a zero avisos de guard.
+
+#### Pendência 2 — vazamento de ambiente em 2 testes do Node (latente, exposto por mim)
+
+Ao cabear o guard global, `npm/tests/git_branch_guard.test.js` passou a falhar em
+`injectCodexHooks` e `injectCopilotHooks`. **Não é defeito de produto** — é o dedup projeto/global
+funcionando como projetado. Os testes leem o **`$HOME` real** e presumem que não há guard global
+cabeado. Provado:
+
+```
+HOME real          -> 2 falhas
+HOME=$(mktemp -d)  -> 42 passed, 0 failed
+```
+
+O modo de falha é o pior possível: **verde no CI** (que tem `$HOME` limpo) e **vermelho na máquina
+de quem tem o produto instalado**. É exatamente a classe que o Cenário 46 existe para caçar, agora
+materializada em teste real. Vai para o ML-3B.
+
+---
+
+### ML-3B — Isolar `$HOME` nos testes de hook do Node
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dependência:** ML-3A
+**Arquivos:** `npm/tests/git_branch_guard.test.js` (e equivalentes de Go/Python **se** tiverem o
+mesmo vazamento — verificar, não presumir).
+
+**Critérios de aceite:**
+- [x] Os testes passam com `$HOME` real **e** com `$HOME` sintético — o resultado não depende da máquina
+- [x] Verificado se Go e Python têm o mesmo vazamento; corrigido onde houver
+- [x] `make quality` verde **com o guard global cabeado**, que é o estado real desta máquina
+
+
+### Auditoria do ML-3B — aprovada
+
+Verifiquei o determinismo eu mesmo, nas duas direções:
+
+```
+HOME real       -> 44 passed, 0 failed
+HOME sintetico  -> 44 passed, 0 failed
+make quality    -> exit 0, 0 FAIL, 135 cenarios   (nesta maquina, com guard global cabeado)
+validate        -> exit 0, ZERO avisos de guard defasado
+```
+
+**A causa raiz é mais simples e mais incômoda do que eu supunha:** o helper `withIsolatedHome` **já
+existia no próprio arquivo** e era usado pelos testes vizinhos (`injectClaudeHooks`,
+`injectGeminiHooks`, `injectCursorHooks`). Só dois testes não o usavam. Não era ausência de padrão;
+era o padrão existindo e não sendo aplicado — o tipo de lacuna que nenhuma revisão por leitura pega,
+porque o arquivo *parece* isolado.
+
+**Varredura, e é o que fecha o lote:** ele não corrigiu só o que quebrou. Varreu todos os testes do
+npm que importam `hooks.js` e verificou Go e Python. Go isola via `t.Setenv("HOME", t.TempDir())` nas
+17 funções relevantes; Python isola em `setUp`/`tearDown` e via `_isolated_home()`. O vazamento era
+**exclusivo** dos dois. Isso eu pedi explicitamente para não presumir, e a resposta veio medida.
 
 ## Wave 4 — Barreira
 

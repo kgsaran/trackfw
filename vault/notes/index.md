@@ -75,3 +75,4 @@
 - [validate-global-guard-integrity-by-existence-makes-unisolated-home-systemic-2026-08-18](validate-global-guard-integrity-by-existence-makes-unisolated-home-systemic-2026-08-18.md)
 - [global-guard-dedup-and-hook-resolvable-never-validate-hook-structure-2026-08-18](global-guard-dedup-and-hook-resolvable-never-validate-hook-structure-2026-08-18.md)
 - [doctor-classifydoctor-silences-tampering-when-manifest-entry-removed-2026-08-19](doctor-classifydoctor-silences-tampering-when-manifest-entry-removed-2026-08-19.md)
+- [git-branch-guard-case-block-extension-breaks-corrupt-literal-scenarios-2026-08-19](git-branch-guard-case-block-extension-breaks-corrupt-literal-scenarios-2026-08-19.md)

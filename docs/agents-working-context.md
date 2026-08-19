@@ -20197,3 +20197,133 @@ forma e custariam duas rodadas de gate byte-idêntico.
 
 **Fora de escopo, registrado como recomendação:** worktree isolado por subagente é a defesa
 estrutural, e é melhor que a tripwire — mas é mudança de orquestração, não de produto.
+
+## 2026-08-19 — apolo-tf — ML-3A: guard bloqueia classe destrutiva + mensagem de raio de alcance
+
+Início. Roadmap `docs/roadmaps/wip/ROADMAP-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md`
+(Wave 3, ML-3A) + REQ `docs/req/REQ-2026-08-19-guard-nao-bloqueia-comandos-destrutivos-de-working-tree-em-repo-compartilhado-por-agentes.md`.
+
+Adicionadas ao `match_subcommand` do `gitBranchGuardScript` (fonte canônica em
+`internal/generators/scaffold.go`, espelhada byte-a-byte em `npm/src/generators/hooks.js`,
+`pypi/trackfw/generators/init_gen.py`, e nas 2 cópias-referência do validator —
+`internal/validator/validator_git_branch_guard_reference.go` e
+`npm/src/validator/index.js:GIT_BRANCH_GUARD_SCRIPT_REFERENCE`, essa última descoberta só via
+`command grep` — o alias `grep` do ambiente, wrappeado em `ugrep --ignore-files`, retornava vazio
+silenciosamente para esse arquivo): `stash` (bloqueia bare/push/save/clear/drop, libera list/show),
+`reset` (só `--hard` bloqueia, em qualquer posição de token), `clean` (bloqueia -f/-fd/-x/-X exceto
+com -n/--dry-run presente), `restore` (bloqueia com path e sem --staged) e `checkout` ganhou um
+segundo discriminante (`--`/`.` bloqueiam, sem quebrar `checkout <branch>`).
+
+Toda mensagem de recusa (novas e pré-existentes) passou a declarar "nada antes deste comando foi
+executado (comando composto é bloqueado por inteiro)"; a de `push` passou a citar `trackfw release
+tag` ao lado de `trackfw ship`.
+
+**Achado que exigiu retrabalho:** o Cenário 62b pré-existente de `check-gates-falsify.sh`
+(`corrupt_literal` sobre o bloco `checkout)`) parou de casar porque o literal-alvo original incluía
+o `;;` de fechamento do case, que agora vem depois do bloco novo de detecção de path. Corrigido
+restringindo o alvo ao for-loop de `-b`/`-B`/`--orphan` apenas, preservando a intenção original do
+cenário sem tocar no código novo.
+
+**Cenário P4 novo:** Cenário 74 — um par baseline+detecção por comando (10 corrupções isoladas em
+`internal/generators/scaffold.go`, sempre com `count==1` garantido por `corrupt_literal`), cobrindo
+as duas direções: o bloqueado escapando (rótulo do `case` removido) e o liberado sendo capturado por
+engano (discriminante de liberação removido ou alargado para `*`). Um desenho errado foi pego pelo
+próprio gate na primeira rodada: a checagem de over-block do `clean -n` sozinho nunca dispara porque
+`clean_force` só fica 1 com um token de força presente — corrigido testando `-n -f` junto (onde
+`-n` deve vencer), que é o discriminante real que o código protege.
+
+**Retrabalho pós-revisão do advisor (mesmo dia, antes do handoff):** 4 achados corrigidos.
+1. `git restore --staged --worktree <path>` (ou `-W`) escapava — `--staged` sozinho não toca o
+   working tree, mas `--staged` + `--worktree`/`-W` restaura os **dois**. A REQ licencia só
+   "`--staged` **sozinho**"; eu tinha implementado "qualquer `--staged` → livre", mais permissivo
+   do que o texto pedia. Fechado nos 6 arquivos-fonte (Go/Node/Python × geradores+referências do
+   validator), mais 3 asserções novas no Cenário 74 (baseline bloqueia
+   `--staged --worktree`, detecção prova dependência do discriminante `--worktree|-W`, e
+   auto-discriminação prova que `--staged` sozinho continua livre no mesmo build corrompido).
+2. A contagem "134→154" do cabeçalho de `check-gates-falsify.sh` estava chutada. A convenção real
+   (confirmada olhando o histórico: 131→133→134 ao longo de 3 commits anteriores) é **+1 por
+   Cenário novo no topo**, não por asserção individual — corrigido para **135**.
+3. Verifiquei ausência de falso-positivo com os tokens novos: `trackfw commit -m "bloqueia git
+   stash e git reset --hard"` → exit 0; heredoc com corpo citando `git clean -fd`/`git restore`/
+   `git checkout --` como prosa, comando real `trackfw commit` → exit 0. O `quote_aware_split`/
+   `strip_heredoc_bodies` seguraram para as classes novas, sem regressão do que o Cenário 61 já
+   fechou.
+4. Declarei no `cli-parity.md` (não fechei, por decisão explícita, escopo do próprio ML): `stash`
+   é deny-by-default (`pop`/`apply`/`branch`/`create`/`store` também bloqueiam, não só
+   `push`/`save`/`clear`/`drop` — a REQ cita `stash pop` como caminho de recuperação, então é uma
+   restrição a mais que a REQ pediu textualmente, registrada para o `trackfw_architect` decidir se
+   afrouxa); e `git checkout ./src/foo.go` (caminho sem `--` nem `.` sozinho) segue livre pela
+   mesma ambiguidade branch-vs-caminho que a REQ pede para não adivinhar.
+
+**Como distingui `git checkout <branch>` de `git checkout -- <path>`:** só a forma **explícita**
+bloqueia — `--` em qualquer posição de token, ou `.` como token isolado. Sem nenhum dos dois,
+qualquer argumento é tratado como nome de branch e libera, mesmo sendo na prática um caminho
+relativo sem esses marcadores (`git checkout ./src/foo.go` fica livre — declarado acima, mesma
+ambiguidade que a REQ nomeia).
+
+**Como garanti que `git reset --soft` segue livre:** o discriminante é só o token literal
+`--hard`, varrendo todos os tokens (não só o primeiro) — `--soft`, `--mixed` e a forma sem flag
+nunca setam a variável que dispara o bloqueio. Provado por cenário (baseline + Cenário 74/74d, que
+corrompe o discriminante alargando-o para `*` e confirma que `reset --soft` passaria a bloquear
+incorretamente sem ele).
+
+**Evidência final:** `go build ./...`/`go vet ./...` limpos, `go test ./...` 100% verde (inclusive
+`TestGitBranchGuardScriptReference_MatchesGenerator`/`_MatchesGlobalGenerator`), `node --test`
+709/709, `pytest` 1388 passed/28 subtests, `bash scripts/check-gates-falsify.sh` exit 0 — **135
+cenários** (Cenário 74 novo, 28 asserções `assert_guard_exit` cobrindo as 5 classes + o fix do
+`--worktree`), `make quality` exit 0 do zero, `./bin/trackfw validate` exit 0 — **23 warnings
+total**, dos quais **21 pré-existentes e não relacionados** e **2 atribuíveis a este ML**: os
+scripts materializados deste próprio projeto (`scripts/trackfw-git-branch-guard.sh` e
+`~/.trackfw/scripts/trackfw-git-branch-guard.sh`) divergem do novo template até `trackfw
+update`/`trackfw update harness` rodarem — não executei nenhum dos dois (escrita de artefato, fora
+do escopo declarado do ML). **Sequenciamento para o `trackfw_architect`:** a proteção nova fica
+inerte neste repositório até esse `trackfw update` rodar.
+
+Também documentado em `docs/cli-parity.md`, nova seção "Bloqueio da classe destrutiva de working
+tree + mensagem de raio de alcance", nomeando o Cenário 74.
+
+Nenhum commit/push — entregue para auditoria do `trackfw_architect`.
+
+## Sessão 2026-08-19 — Apolo (INÍCIO: ML-3B — vazamento de `$HOME` real em testes de hook)
+
+Branch `fix/serve-amarra-em-loopback-por-padrao-com-opt-in-explicito-para-exposicao` (permanece
+ativa desta sessão, roadmap real é
+`docs/roadmaps/wip/ROADMAP-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md`,
+Wave 3/ML-3B). Escopo: dois testes de `npm/tests/git_branch_guard.test.js`
+(`injectCodexHooks`/`injectCopilotHooks`) liam `os.homedir()` real (via `os.homedir()` dentro de
+`globalGitBranchGuardScriptPath`) sem isolar `$HOME`, então passavam a falhar nesta máquina depois
+que `trackfw update harness` cabeou o guard global — verde no CI, vermelho localmente. Verificar
+também Go/Python quanto ao mesmo vazamento antes de corrigir.
+
+## Sessão 2026-08-19 — Apolo (FIM: ML-3B concluído — `$HOME` isolado, Go/Python já estavam corretos)
+
+**Diagnóstico confirmado:** os testes `injectCodexHooks`/`injectCopilotHooks` em
+`npm/tests/git_branch_guard.test.js` não usavam o helper `withIsolatedHome` (já existente e usado
+pelos vizinhos `injectClaudeHooks`/`injectGeminiHooks`/`injectCursorHooks`, linha 416 do arquivo)
+— por isso liam `~/.codex/hooks.json`/`~/.copilot/settings.json` reais desta máquina através de
+`globalGitBranchGuardScriptPath()`/`readGlobalHookJSON()` (`npm/src/generators/hooks.js`), que
+dependem de `os.homedir()`. Não é defeito de produto — é o dedup projeto/global (ROADMAP-2026-08-17)
+funcionando como projetado; o teste é que não declarava o estado global assumido.
+
+**Fix:** envolvidos os dois blocos de teste em `withIsolatedHome(() => { withTmpDir(...) })`,
+mesmo padrão dos 3 testes irmãos.
+
+**Go e Python:** verificados, não corrigidos — já estavam corretos.
+`internal/generators/agentfiles_test.go` isola `$HOME` via `t.Setenv("HOME", t.TempDir())` em
+todas as 17 funções de teste que exercitam os injectors (`TestInjectCodexHooks`,
+`TestInjectCopilotHooks`, etc. — grep confirmou 1:1 entre `t.Setenv` e as funções de teste
+relevantes). `pypi/tests/test_git_branch_guard.py` isola `$HOME` em `setUp()`/`tearDown()` da
+classe que contém `test_codex`/`test_copilot` (linhas 354–361, `os.environ['HOME'] =
+tempfile.mkdtemp()`), e `pypi/tests/test_git_branch_guard_dedup.py` também isola via
+`_isolated_home()`. Nenhuma mudança de código nesses dois stacks.
+
+**Evidência:**
+- `node --test npm/tests/git_branch_guard.test.js` com `$HOME` real desta máquina → `44 passed, 0
+  failed`
+- mesmo comando com `HOME=$(mktemp -d)` → `44 passed, 0 failed` (idêntico)
+- `make quality` nesta máquina (guard global já cabeado) → `EXIT=0`, todos os 3 CLIs, `go test
+  ./...` verde, `node --test` verde, `pytest` verde, `check-gates-falsify.sh` 135 cenários OK
+- `./bin/trackfw validate` → exit 0 (só warnings pré-existentes, nenhum novo)
+
+Roadmap atualizado: ML-3B → `✅ Concluído`. Nenhum commit/push — entregue para auditoria do
+`trackfw_architect`.

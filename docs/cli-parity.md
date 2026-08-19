@@ -3850,6 +3850,74 @@ no Python (`pypi/trackfw/commands/commit.py`): `sys.stdout.write()` sem `flush()
 `subprocess.run` com stdio herdado inverte a ordem da saída quando stdout não é um TTY — corrigido
 com `out.flush()`.
 
+### Bloqueio da classe destrutiva de working tree + mensagem de raio de alcance (ML-3A, ROADMAP-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md / REQ-2026-08-19-guard-nao-bloqueia-comandos-destrutivos-de-working-tree-em-repo-compartilhado-por-agentes.md)
+
+> REQ: `docs/req/REQ-2026-08-19-guard-nao-bloqueia-comandos-destrutivos-de-working-tree-em-repo-compartilhado-por-agentes.md`
+
+`git worktree list` confirma que subagentes despachados em paralelo pelo mesmo agente
+orquestrador compartilham **um único worktree físico** — um `git stash`/`git reset --hard`/`git
+clean -f` disparado por um agente afeta o trabalho não commitado de **todos** os outros. O guard
+(mesmo script canônico `gitBranchGuardScript`, seção acima) passou a reconhecer também essa classe,
+com o mesmo padrão de precedência de casamento por segmento (`match_subcommand`).
+
+**Bloqueado**, mensagem sempre nomeando a alternativa segura:
+
+| Subcomando bloqueado | Discriminante | Alternativa citada na mensagem |
+|---|---|---|
+| `git stash` (bare) / `stash push` / `stash save` | qualquer subcomando de stash exceto `list`/`show` | `git stash list`/`git stash show` (leitura) + `trackfw branch new` para guardar trabalho em progresso |
+| `git stash clear` / `stash drop` | idem | idem |
+| `git reset --hard` | `--hard` em qualquer posição de token | `git reset --soft`/`--mixed` (`git reset --soft HEAD~1` é o contorno padrão do `trackfw ship`) |
+| `git clean -f`/`-fd`/`-x`/`-X`/`--force` | qualquer token de força, exceto quando `-n`/`--dry-run` também presente | `git clean -n`/`--dry-run` |
+| `git restore <path>` sem `--staged`, **ou** `git restore --staged --worktree <path>` (ou `-W`) | argumento posicional presente e (`--staged` ausente **ou** `--worktree`/`-W` presente) | `git restore --staged` **sozinho** (não toca o working tree) |
+| `git checkout -- <path>` / `git checkout .` | `--` em qualquer posição de token, ou `.` como token isolado | `git checkout <branch>`/`git switch <branch>` |
+
+**Liberado, verificado por cenário (o risco dominante é super-bloquear, não sub-bloquear — o
+próprio guard já registra esse julgamento na regra de `git branch`):**
+
+- `git stash list` / `git stash show` (leitura).
+- `git reset` **sem** `--hard` — inclui `--soft` e `--mixed` (inclusive sem flag, que é `--mixed`
+  implícito). `git reset --soft HEAD~1` é o contorno padrão para reempurrar trabalho já commitado
+  via `trackfw ship`, então bloquear `reset` inteiro inviabilizaria o próprio trilho governado.
+- `git clean -n` / `--dry-run` (nunca apaga nada) — inclusive quando `-n` aparece **junto** com um
+  token de força (`git clean -n -f`): `-n` vence, git nunca apaga nada com dry-run presente, e o
+  discriminante é testado com essa combinação, não só `-n` isolado.
+- `git restore --staged <path>` **sozinho** (sem `--worktree`/`-W`) — mexe só no index, nunca no
+  working tree. `--staged --worktree`/`-W` juntos restauram **os dois**, então continuam bloqueados
+  mesmo com `--staged` presente — a REQ licencia só "`--staged` sozinho", não "qualquer `--staged`".
+- `git checkout <branch>` / `git switch <branch>` — distinguir nome de branch de caminho sem `--`
+  é genuinamente ambíguo; adivinhar produziria falso-positivo, então só a forma explícita de
+  caminho (`--`/`.`) bloqueia. **Declarado, não fechado:** `git checkout ./src/foo.go` (caminho sem
+  `--` nem `.` sozinho) também fica livre por essa mesma decisão — é a mesma ambiguidade
+  branch-vs-caminho que a REQ pede para não adivinhar, não uma lacuna nova.
+
+**Mensagem de raio de alcance:** o guard inspeciona a string do comando inteiro antes de executar
+qualquer parte dele, então um comando composto (`cat > f <<EOF ... EOF && git commit ...`) é
+recusado **por inteiro antes de qualquer parte rodar** — nenhum efeito colateral do que veio antes
+do comando bloqueado chega a acontecer. Toda mensagem de recusa (das classes acima e das
+pré-existentes de `checkout -b`/`switch -c`/`branch`/`worktree add -b`/`commit`/`push`) agora
+declara explicitamente essa propriedade ("Nada antes deste comando foi executado (comando composto
+é bloqueado por inteiro)"). A mensagem de `push` passa também a citar `trackfw release tag` ao lado
+de `trackfw ship`, como caminho governado alternativo (Wave 2 do mesmo roadmap).
+
+Evasões já conhecidas do guard (prefixo `env`/`command`, flag fora da primeira posição de token,
+`git${IFS}stash`) continuam cobertas para os subcomandos novos pelo mesmo `match_subcommand` — não
+é uma checagem separada por classe.
+
+**Regra de `stash` é deny-by-default, declarado:** só `list`/`show` estão na allowlist de leitura —
+`stash pop`/`apply`/`branch`/`create`/`store` **também bloqueiam**, não só `push`/`save`/`clear`/
+`drop`. A própria REQ nomeia `stash pop` como o caminho de recuperação de um `stash` já feito; a
+decisão aqui foi bloquear a classe inteira por padrão em vez de abrir uma allowlist maior — se isso
+for restritivo demais na prática, é ajuste de allowlist num ML futuro, não reabertura desta REQ.
+
+**Gate de prova negativa (P4):** Cenário 74 de `scripts/check-gates-falsify.sh` — um par
+baseline+detecção **por comando**, cobrindo as duas direções: o comando bloqueado escapando
+(rótulo do `case` corrompido) e o comando liberado sendo capturado por engano (discriminante de
+liberação corrompido ou alargado para casar qualquer token, ex.: `--hard` virando um curinga que
+faria `git reset --soft` bloquear incorretamente). `git reset --soft`/`--mixed`, `git stash
+list`/`show`, `git clean -n`, `git restore --staged` e `git checkout <branch>` são provados livres
+tanto antes quanto — onde corrompidos — expostos como dependentes do literal exato, não de uma
+lacuna acidental.
+
 ## `trackfw <skills|agents> third-party` — instalação de skills de terceiro via URL (ADR-2026-08-15, ML-3A/ML-3B)
 
 ### O comando, em duas fases
