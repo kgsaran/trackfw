@@ -20114,3 +20114,64 @@ Dois pontos que valem memória:
 
 Ressalva não-bloqueante: comandos do `glab` escritos por convenção documentada, sem verificação em
 runtime (não instalado aqui). Confirmar antes de anunciar suporte a GitLab.
+
+## 2026-08-19 — Apolo (backend) — INÍCIO: ML-1B — gate de paridade do `ship --force-with-lease` + P4
+
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md`
+(Wave 1, ML-1B). Dependência ML-1A já auditado e concluído.
+
+Escopo: `scripts/check-ship-force-parity.sh` (novo), registro no alvo `parity` do `Makefile`,
+cenário P4 em `scripts/check-gates-falsify.sh`, seção nova em `docs/cli-parity.md`.
+
+## 2026-08-19 — Apolo (backend) — FIM: ML-1B concluído — gate de paridade + P4 + correção de paridade real no `ship`
+
+**Arquivos:** `scripts/check-ship-force-parity.sh` (novo, 5 cenários), `Makefile` (alvo `parity`),
+`scripts/check-gates-falsify.sh` (Cenário 73), `docs/cli-parity.md` (seção `ship --force-with-lease`
+nomeando o gate), `internal/commands/ship.go` (fix de paridade, ver abaixo).
+
+**Achado real, não previsto no handoff:** construir o gate revelou uma divergência genuína de
+mensagem entre os 3 CLIs, não pega pelo `grep` do ML-1A. `exec.Command().Output()` do Go, ao falhar,
+retorna um erro genérico `"exit status N"` — descarta o texto real do stderr do processo filho.
+Node (`spawnSync`) e Python (`subprocess.run`) já capturavam o stderr real. Isso afetava DOIS pontos
+do `ship.go`: `defaultCheckPROpen` (mensagem "could not verify... CLI error: ...") e `defaultGitExec`
+(toda falha de `git commit`/`git push`, inclusive a recusa real de `--force-with-lease` por lease
+obsoleto: "! [rejected] ... (stale info)"). Corrigidos os dois — `cmd.Stderr` capturado
+explicitamente, texto trimado usado na mensagem, com fallback `"<cli> exited with <code>"` só
+quando stderr vem vazio (caminho que na prática nunca dispara com git/gh reais). Confirmado
+manualmente byte-a-byte nos 3 runtimes antes e depois da correção. `go test ./internal/commands/...`
+seguiu 100% verde (nenhum teste fixava o texto antigo).
+
+**Discriminante semântico do cenário 5 (`remote-advanced-lease-mismatch`)**, mais forte que
+inspecionar a string do argv do push: fixture com bare remote real, um segundo clone empurra um
+commit legítimo na mesma branch, e o `remote.origin.fetch` do nosso clone é restrito a `main` só
+(assim o `git fetch origin --prune` interno do `ship` nunca aprende sobre o push do outro clone).
+Com `--force-with-lease` correto: git recusa (lease obsoleto), commit do outro clone sobrevive.
+Sabotado para `--force` cru: push passa, commit do outro clone é destruído. Provei os dois lados
+manualmente (binário real vs. binário com o literal `"--force-with-lease"` → `"--force"` trocado)
+antes de formalizar o cenário no gate.
+
+**Armadilha de bash que custou um ciclo:** `git log ... | grep -qF "..."` sob `set -o pipefail`
+pode fazer o `git log` upstream morrer por SIGPIPE assim que o `grep -q` encontra o match e fecha o
+pipe cedo — o status da pipeline vira não-zero mesmo com o grep tendo casado. Corrigido capturando a
+saída numa variável antes do grep, nunca via pipe direto.
+
+**Isolamento de PATH:** a máquina de dev tem `gh`/`az` reais instalados — o gate nunca herda o PATH
+do chamador; monta um PATH do zero (`node`+`python3` reais via symlink + `/usr/bin:/bin`) e só
+prepende o diretório de stub do `gh` quando o cenário precisa dele, garantindo que "sem CLI de
+forge" realmente não vê nenhum.
+
+**Cenário P4 (Cenário 73 de `check-gates-falsify.sh`):** delta de literal único em cópia isolada do
+Go (`"--force-with-lease"` → `"--force"` em `ship.go`, ocorrência única). Braço de baseline (gate
+verde contra o binário real) + braço de detecção (gate vermelho contra o binário sabotado,
+especificamente no cenário `remote-advanced-lease-mismatch`) — validado isoladamente antes de
+integrar no script de 6700+ linhas.
+
+**Evidência:** `go build ./...` limpo, `go vet ./...` limpo, `go test ./...` 100% verde (todos os
+pacotes), `node --test` 709/709 verde, `pytest` 1388 passed/28 subtests verde,
+`GO_BIN=bin/trackfw scripts/check-ship-force-parity.sh` exit 0 (5/5, estável em 3 execuções
+repetidas), `make quality` executado do zero (build + todos os gates de paridade + 73 cenários de
+falsificação) — ver relatório final para o exit code. `./bin/trackfw validate` exit 0 (mesmos 22
+warnings pré-existentes da REQ agregadora, nenhum novo).
+
+**Fora de escopo, como combinado:** Wave 2 (`release tag`), Wave 3 (mensagem do guard), Wave 4
+(revisão do `hades-tf`). Nenhum commit/push — entregue para auditoria do `trackfw_architect`.

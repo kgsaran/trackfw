@@ -831,6 +831,70 @@ code directly from the runner function (Node.js/Python), so the usage text is ne
 printed for runtime errors. Parse-time errors (unknown flags) still show usage, because
 they are raised by cobra/commander/argparse before the command handler runs.
 
+### `ship --force-with-lease` — governed force-push (ML-1B)
+
+> ROADMAP-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md,
+> ADR-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md
+
+`--force-with-lease` pushes with `git push --force-with-lease` instead of a plain push — for the
+post-rebase case, where a plain push is rejected as non-fast-forward. Raw `--force` is **never**
+exposed as a flag in any of the 3 CLIs (Python additionally sets `allow_abbrev=False` on the
+`ship` subparser, so `argparse` cannot silently resolve a bare `--force` to `--force-with-lease`
+by prefix matching — the only other `--f...` flag on the parser).
+
+The flag only runs step 6's push once a new gate (step 2.5, before any write) has confirmed the
+branch already has an **open** PR/MR via the resolved forge CLI (`gh`, `glab`, or `az`) — the safe
+path is always to open the PR first. This produces three distinct refusal classes, never
+conflated:
+
+```
+no forge CLI available   → refuses, names gh/glab/az, never degrades to a permissive push
+forge CLI available,
+  zero open PR/MR         → refuses, names the branch, points at opening the PR/MR first
+forge CLI available,
+  query itself fails      → refuses, "could not verify ...", surfaces the CLI's own stderr text
+forge CLI available,
+  PR/MR confirmed open    → pushes with --force-with-lease, skips PR/MR creation in step 7
+```
+
+"Cannot verify" (the forge CLI errored, e.g. an auth failure) is a **separate** refusal from
+"no open PR/MR" (the query succeeded and returned zero results) — conflating them would make a
+`gh` authentication failure look like "no PR exists yet", nudging the caller to open a PR that
+already exists.
+
+When nothing is staged (the common post-rebase-with-conflicts-resolved case, where the index is
+already clean), `--force-with-lease` pushes the existing local commits without requiring `-m` —
+this exception does not apply without the flag; a plain `ship` with nothing staged still aborts
+exactly as before.
+
+**Stderr-text parity fix (ML-1B).** Building this gate found a real divergence: Go's
+`exec.Command().Output()` error alone formats as the generic `"exit status N"`, discarding the
+forge CLI's actual diagnostic text — while Node's `spawnSync` and Python's `subprocess.run`
+already surfaced the real stderr. `defaultCheckPROpen` and `defaultGitExec`
+(`internal/commands/ship.go`) now capture `cmd.Stderr` explicitly and use its trimmed text in the
+refusal/error message, matching Node.js/Python byte-for-byte. This affects both the "cannot
+verify" force-with-lease refusal and every `git commit`/`git push` failure message `ship` ever
+prints, not only the force-with-lease path.
+
+**Gate: `scripts/check-ship-force-parity.sh`** (registered in the `parity` Make target). Real bare
+git remotes only — never a mocked `git`, per the project's standing gate-fixture convention (see
+`check-branch-prune-parity.sh`). Five scenarios, each diffed byte-for-byte across the 3 runtimes
+on stdout, stderr, and exit code:
+
+- `no-forge-cli`, `forge-zero-pr`, `forge-unverifiable`, `forge-pr-open-pushes` — the four paths
+  above; the success path is proved by the remote SHA actually changing
+  (`git --git-dir=<bare> rev-parse <branch>` before/after), never by the printed message alone.
+- `remote-advanced-lease-mismatch` — the semantic discriminant, stronger than inspecting the push
+  argv string: a second clone pushes a legitimate commit to the branch after our clone last
+  recorded its state (our clone's remote-tracking ref is pinned stale on purpose — fetch refspec
+  restricted to `main`). The correct `--force-with-lease` refuses (real git safety semantics: the
+  remote moved past what we last knew) and the other clone's commit survives untouched. A raw
+  `--force` would push through unconditionally and destroy it — this is exactly what
+  `scripts/check-gates-falsify.sh`'s P4 scenario (Cenário 73) sabotages via a single-literal
+  change to `ship.go`'s push-arg construction on an isolated Go copy, and what this scenario
+  catches: the sabotaged binary's push exits 0 and the other party's commit disappears from the
+  remote.
+
 ## `trackfw branch new`
 
 `trackfw branch new <type>/<slug>` moves the `branch_has_wip_roadmap` governance gate — already

@@ -58,16 +58,24 @@ force-push **restrito a branch que já tem PR aberto**.
 - [x] `make quality` verde
 
 ### ML-1B — Gate de paridade do push forçado + P4
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` · **Dependência:** ML-1A
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` · **Dependência:** ML-1A
 **Arquivos:** `scripts/check-ship-force-parity.sh` (novo), `Makefile` (alvo `parity`),
-`scripts/check-gates-falsify.sh`, `docs/cli-parity.md` (seção **nomeando o gate**).
+`scripts/check-gates-falsify.sh`, `docs/cli-parity.md` (seção **nomeando o gate**),
+`internal/commands/ship.go` (correção de paridade real encontrada ao construir o gate — ver nota).
 
 **Critérios de aceite:**
-- [ ] Gate compara as **três saídas reais** (sucesso, sem-PR, sem-forge), stdout e stderr
-- [ ] Fixture com **remoto bare de verdade** e rebase real
-- [ ] Cenário P4: sabota o `--force-with-lease` para `--force` e prova que o gate fica vermelho
-- [ ] Seção no `cli-parity.md` **nomeando o gate**
-- [ ] `make quality` verde
+- [x] Gate compara as **três saídas reais** (sucesso, sem-PR, sem-forge, não-verificável), stdout e stderr
+- [x] Fixture com **remoto bare de verdade** e rebase/divergência real
+- [x] Cenário P4: sabota o `--force-with-lease` para `--force` e prova que o gate fica vermelho
+- [x] Seção no `cli-parity.md` **nomeando o gate**
+- [x] `make quality` verde
+
+**Achado real durante a construção do gate:** `exec.Command().Output()` do Go descartava o
+stderr real do processo filho, retornando só `"exit status N"` — divergindo byte-a-byte de
+Node/Python, que já capturavam o stderr real. Afetava `defaultCheckPROpen` (mensagem "could not
+verify") e `defaultGitExec` (toda falha de `git commit`/`git push`, inclusive a recusa real do
+`--force-with-lease` por lease obsoleto). Corrigido nos dois pontos; confirmado byte-a-byte nos 3
+runtimes. `go test ./...` seguiu 100% verde.
 
 ---
 
@@ -110,6 +118,35 @@ convenção documentada, **sem verificação em runtime** — o `glab` não est�
 Está comentado no código. Vale confirmar antes de anunciar suporte a GitLab.
 
 `make quality` exit 0 · 0 FAIL · `validate` exit 0.
+
+---
+
+### Auditoria do ML-1B — aprovada, e o discriminante é semântico, não textual
+
+Sabotei o literal único e exigi vermelho:
+
+```
+"--force-with-lease"  ->  "--force"     (internal/commands/ship.go:432)
+gate -> EXIT=1, 6 FAIL, e o primeiro diz tudo:
+  ship-force-parity/remote-advanced-lease-mismatch/go:
+  "--force-with-lease must refuse when the remote advances past the recorded lease
+   (real git safety semantics), got exit 0"
+restaurado -> "All check-ship-force-parity.sh scenarios passed."
+```
+
+Era exatamente o que eu tinha pedido e o que mais importava neste lote: o gate **não** inspeciona a
+string dos argumentos. Ele monta um segundo clone que empurra um commit legítimo, e verifica que o
+`--force-with-lease` **recusa** enquanto o `--force` **destrói o commit alheio**. Um gate que
+casasse a string passaria com qualquer flag equivalente e falharia em qualquer refatoração
+inofensiva; este prova a propriedade que interessa.
+
+**Divergência real corrigida, fora do handoff:** o `exec.Command().Output()` do Go descartava o
+stderr do processo filho e devolvia só `"exit status N"`, enquanto Node e Python já traziam o texto
+real. Ou seja, a mensagem de "não consegui verificar" nasceria **inútil no Go** — sem dizer o que o
+`gh` reclamou. Nenhum teste fixava o texto antigo, então só um gate comparando as três saídas reais
+acharia isso. É a **quarta** vez nesta série.
+
+`make quality` exit 0 · 0 FAIL · 134 cenários · `validate` exit 0.
 
 ## Wave 2 — `release tag` (2 MLs, sequenciais)
 > Dependências: independente da Wave 1 em arquivos, **mas** sequencial por prudência: a Wave 2
