@@ -1,9 +1,9 @@
 ---
-status: Open
+status: Done
 date: 2026-08-17
 author: "Zeus (Arquiteto)"
-adr: ""
-roadmap: ""
+adr: "docs/adr/ADR-2026-08-18-ordem-de-persistencia-inverte-para-manifesto-antes-dos-artefatos.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-18-doctor-detecta-artefato-fora-do-manifesto-e-inverte-a-ordem-de-persistencia.md"
 ---
 
 # REQ: `doctor` detecta artefato em disco ausente do manifesto após janela de gravação parcial
