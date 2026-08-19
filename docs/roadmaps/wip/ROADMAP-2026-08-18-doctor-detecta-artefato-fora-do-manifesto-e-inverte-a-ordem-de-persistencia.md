@@ -8,7 +8,7 @@ squad: "apolo-tf, hades-tf"
 
 # Roadmap: `doctor` detecta artefato fora do manifesto, e a ordem de persistência inverte
 
-> Created: 2026-08-18 | Status: wip — **Wave 1 entregue em PR próprio; Waves 2 e 3 pendentes**
+> Created: 2026-08-18 | Status: **todas as waves concluídas** — AC1–AC8 fechados, CI verde no PR #190
 
 > 🔴 **Entrega parcial deliberada.** A Wave 1 (inversão da ordem) foi para PR sozinha porque é
 > autocontida e impede casos novos desde já. **A REQ NÃO está fechada:** o `doctor` (AC1–AC4) e a
@@ -40,7 +40,11 @@ instalações que já estão no estado ruim. O `doctor` é o que revela essas.
       `npm/tests/agents-skills.test.js:79,178` — todos verdes no `make quality` desta auditoria.
 - [x] AC6 — Decisão sobre a janela registrada em ADR. ✅ **feito** — `ADR-2026-08-18`, inverter a ordem.
 - [x] AC7 — Inversão implementada, com rollback preservado em erro normal. Evidência: ML-1A.
-- [ ] AC8 — `make quality` verde **e CI verde**.
+- [x] AC8 — `make quality` verde **e CI verde**.
+      Evidência (PR #190, run 32266062707): `go`, `node`, `python (3.10)`, `python (3.12)`,
+      `package-smoke`, `windows-integrations-resolve`, `governance` e — o que importava —
+      **`parity` em Linux, 5m15s, pass**. É o job onde esta série já quebrou por diferença de
+      plataforma invisível no macOS.
 
 ## 🔴 Riscos que valem para todos os MLs
 
@@ -222,7 +226,7 @@ presente. O Cenário 71 sabota exatamente esse literal e prova que agora fica ve
 ## Wave 3 — Barreira
 
 ### ML-3A — `hades-tf`: revisão da inversão e do diagnóstico
-**Status:** ⬜ Pendente · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
+**Status:** ✅ Concluído · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
 **Escreve:** `docs/seguranca/2026-08-18-revisao-do-doctor-e-da-inversao.md`
 
 **Ações:** a inversão mexe no caminho de escrita de tudo — avaliar se abre caminho para o produto

@@ -19978,3 +19978,11 @@ O corpo original não foi reescrito — REQ é raiz de rastreabilidade, emenda-s
 
 **Falta para fechar:** PR #190 com **CI verde** (AC8 — `make quality` local não substitui), merge,
 roadmap para `done`. Só então a 7.1.0.
+
+## 2026-08-19 — Zeus (arquiteto) — AC8 fechado, CI verde
+
+PR #190, run 32266062707: **todos os jobs pass**, incluindo **`parity` em Linux (5m15s)** — o job
+onde esta série já quebrou por diferença de plataforma invisível no macOS. AC1–AC8 fechados.
+
+Roadmap pronto para `done`. **Aguardando merge de KG** — arquiteto não faz merge.
+Após o merge: `roadmap move ... done`, REQ fechada, e **só então** a 7.1.0.
