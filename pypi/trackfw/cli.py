@@ -132,6 +132,10 @@ def main():
     from trackfw.commands import ship as ship_cmd
     ship_cmd.register(subparsers)
 
+    # --- release ---
+    from trackfw.commands import release as release_cmd
+    release_cmd.register(subparsers)
+
     # --- agents / skills ---
     from trackfw.commands import agents as agents_cmd
     from trackfw.commands import skills as skills_cmd

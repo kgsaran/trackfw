@@ -20327,3 +20327,47 @@ tempfile.mkdtemp()`), e `pypi/tests/test_git_branch_guard_dedup.py` também isol
 
 Roadmap atualizado: ML-3B → `✅ Concluído`. Nenhum commit/push — entregue para auditoria do
 `trackfw_architect`.
+
+## Sessão 2026-08-19 — Apolo (ML-2A concluído — `trackfw release tag <versão>`, 3 stacks)
+
+Branch `fix/serve-amarra-em-loopback-por-padrao-com-opt-in-explicito-para-exposicao` (permanece
+ativa, roadmap real é
+`docs/roadmaps/wip/ROADMAP-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md`,
+Wave 2/ML-2A). Implementado `trackfw release tag <versão>` nos 3 CLIs:
+`internal/commands/release.go`, `npm/src/release/runner.js` + `npm/src/commands/release.js`,
+`pypi/trackfw/release/runner.py` + `pypi/trackfw/commands/release.py`, mais 20 testes por stack
+(60 no total). As 6 pré-condições (árvore limpa; branch padrão sincronizada com `origin/<default>`;
+os 4 arquivos de versão; seção do CHANGELOG.md; tag inexistente local e remota; CLI de forge
+disponível) recusam com mensagens que nomeiam a correção, byte-alinhadas entre os 3 CLIs por
+construção. Publica via duas chamadas `gh api` (`git/tags` depois `git/refs`, nunca a segunda se a
+primeira falhar), preservando a anotação — reaproveita `changelog.FormatSection`/`forge.Resolve`
+já existentes, sem duplicar lógica.
+
+**Decisão de escopo registrada no roadmap (ML-2A), não estava explícita no handoff:** a
+implementação de referência (`gh api .../git/tags`+`.../git/refs`) é específica do GitHub —
+`release tag` só publica quando o forge resolvido é `github`; para os demais (`gitlab`, `azure`,
+`bitbucket`, `manual`) recusa nomeando o forge e orientando a publicação manual — mesmo sabendo que
+essa orientação colide com o guard do `case push)`. Aceito e declarado, não escondido; ampliar para
+outros forges fica fora deste ML.
+
+**Evidência:** `go build`/`go vet` limpos; `go test ./...` 100% verde; `node --test` 729/729;
+`pytest` 1408 passed; `make quality` exit 0 (135 cenários de falsificação pré-existentes,
+`check-thirdparty-parity.sh` OK — nenhum gate novo, isso é o ML-2B); `./bin/trackfw validate` exit
+0, 21 warnings todos pré-existentes. Exercitei o binário real contra este próprio repositório
+(`./bin/trackfw release tag 9.9.9`) e confirmei a recusa correta na pré-condição 1 (árvore suja,
+listando `git status --porcelain` real) — nunca rodei contra um remoto de verdade, por prudência.
+
+**Autorrevisão pós-implementação (via advisor) encontrou 3 pontos e todos foram corrigidos antes de
+entregar:** AC1 (tag anotada) estava marcado sem verificação real — provava só que o mock
+concordava com o código; fechado com leitura read-only da `v7.1.0` real pelos mesmos endpoints
+`gh api .../git/refs/tags/...` e `.../git/tags/<sha>` que o comando faz POST, confirmando
+`type:"tag"`, o campo `.sha` parseado e o round-trip da mensagem. AC5 (mensagens byte-idênticas)
+estava marcado sem nunca ter sido comparado — os testes usavam `Contains`/`match`/`in`, que não
+pegam divergência de texto completo; um dump+diff das 10 mensagens de recusa com argumentos fixos
+achou 2 divergências reais (erro de git sem stderr no Python faltava "exited with N"; timestamp do
+Node com milissegundos que Go/Python não têm) e ambas foram corrigidas — diff agora vazio nos 3
+pares. A mensagem de forge não suportado orientava `git push origin <tag>`, que o próprio guard
+bloqueia incondicionalmente — reescrita para não instruir um comando que o harness recusa.
+
+Roadmap atualizado: ML-2A → `✅ Concluído`, com evidência completa inline (incluindo a correção
+pós-autorrevisão). Nenhum commit/push — entregue para auditoria do `trackfw_architect`.

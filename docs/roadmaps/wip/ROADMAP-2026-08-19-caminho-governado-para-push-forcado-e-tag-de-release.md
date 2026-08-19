@@ -153,7 +153,7 @@ acharia isso. É a **quarta** vez nesta série.
 > publica, e prefiro a Wave 1 auditada antes.
 
 ### ML-2A — `trackfw release tag <versão>`
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf`
+**Status:** ✅ Concluído · **Agente:** `apolo-tf`
 **Arquivos (os 3 stacks):** `internal/commands/release.go` (novo) + registro no `root.go`,
 `npm/src/commands/release.js` + `index.js`, `pypi/trackfw/commands/release.py` + `cli.py`,
 mais testes dos 3.
@@ -167,11 +167,108 @@ mais testes dos 3.
   ainda não existente local nem remotamente.
 
 **Critérios de aceite:**
-- [ ] Tag remota é **anotada**, com a mensagem íntegra — verificado no objeto, não só na ref
-- [ ] Cada pré-condição recusa com mensagem que nomeia o que corrigir
-- [ ] Recusa se a tag já existe, local **ou** remotamente
-- [ ] Versão divergente entre os 4 arquivos → recusa apontando qual diverge
-- [ ] `make quality` verde
+- [x] Tag remota é **anotada**, com a mensagem íntegra — verificado no objeto, não só na ref
+- [x] Cada pré-condição recusa com mensagem que nomeia o que corrigir
+- [x] Recusa se a tag já existe, local **ou** remotamente
+- [x] Versão divergente entre os 4 arquivos → recusa apontando qual diverge
+- [x] `make quality` verde
+
+**Evidência de conclusão (apolo-tf, 2026-08-19):**
+
+Implementado nos 3 stacks: `internal/commands/release.go` (novo) + registro em `root.go`;
+`npm/src/release/runner.js` (novo) + `npm/src/commands/release.js` (novo) + registro em
+`commands/index.js`; `pypi/trackfw/release/runner.py` (novo) + `pypi/trackfw/commands/release.py`
+(novo) + registro em `cli.py`. Testes novos: `internal/commands/release_test.go` (20 casos),
+`npm/tests/release.test.js` (20 casos), `pypi/tests/test_release.py` (20 casos) — mesmos 20
+cenários espelhados nos 3 runtimes (uma pré-condição por vez + git identity + sucesso + a
+publicação nunca cria a ref quando a criação do objeto falha).
+
+**Decisão de escopo tomada durante a implementação, registrada aqui por não estar explícita no
+handoff:** a implementação de referência validada em produção (`gh api .../git/tags` +
+`.../git/refs`) é específica do GitHub — não existe endpoint equivalente genérico nos outros
+forges via `gh`. `release tag` portanto **só publica via GitHub** nesta versão: para qualquer
+outro forge resolvido (`gitlab`, `azure`, `bitbucket`, `manual`), recusa nomeando o forge resolvido
+e a orientação de publicar a tag manualmente (`git tag -a ... && git push origin ...`) — sabendo
+que essa orientação colide com o guard do `case push)`, que bloqueia `git push origin <tag>`
+incondicionalmente; é uma limitação aceita e declarada, não escondida, e populacional só de
+GitHub é o forge deste próprio repositório. Ampliar para outros forges fica fora deste ML.
+
+**Pré-condição 2 ("main atualizada com o remoto"), interpretação escolhida:** a tag sempre aponta
+para `origin/<default>` (a ponta do branch padrão **no remoto**, obtida via `git fetch` +
+`git rev-parse origin/<default>`) — nunca para o branch atualmente em checkout. Se existir um
+branch local com o mesmo nome do branch padrão (`main`/`master`) e ele divergir de
+`origin/<default>`, a pré-condição recusa nomeando o `git pull` como correção; se não existir
+branch local com esse nome, a checagem é pulada (nada a comparar). Isso permite rodar
+`release tag` a partir de qualquer branch em checkout, contanto que a árvore esteja limpa e
+`origin/<default>` seja a fonte de verdade do commit a ser taggeado — decisão deliberada para não
+forçar `git checkout main` como pré-requisito artificial.
+
+**Mensagem da tag = seção do CHANGELOG.md formatada** via `changelog.FormatSection`/`format_section`/
+`formatSection` (módulo já existente, reusado — não duplicado), incluindo o cabeçalho `## [x.y.z] -
+data`.
+
+**Identidade do tagger:** lida de `git config user.name`/`user.email`; recusa se qualquer um
+estiver vazio, com mensagem que nomeia os dois comandos de correção.
+
+**Publicação:** duas chamadas `gh api` com o corpo JSON via stdin (`--input -`), usando os
+placeholders `{owner}`/`{repo}` do próprio `gh api` (resolvidos por ele a partir do contexto do
+repositório atual) em vez de parsear o remote URL manualmente. A segunda chamada (`git/refs`)
+**nunca** é executada se a primeira (`git/tags`) falhar — testado explicitamente nos 3 CLIs
+(`TestReleaseTag_TagObjectCallFails_AbortsBeforeRefCall` / equivalentes).
+
+**Evidência de validação:**
+- `go build ./...` / `go vet ./...`: limpos.
+- `go test ./internal/commands/... -run TestReleaseTag -v`: 20/20 PASS (mais os 5 sub-testes de
+  `TestReleaseTag_VersionFileMismatch_NamesWhichFile`).
+- `go test ./...`: 100% verde, todos os pacotes.
+- `node --test npm/tests/release.test.js`: 20/20 PASS.
+- `node --test` (suíte completa): 729/729 PASS.
+- `pytest pypi/tests/test_release.py -v`: 20/20 PASS.
+- `pytest` (suíte completa): 1408 passed.
+- `make quality`: `[exited with code 0]`, incluindo `check-gates-falsify.sh` com os 135 cenários
+  pré-existentes (nenhum novo cenário de falsificação — isso é o ML-2B) e
+  `check-thirdparty-parity.sh` OK.
+- `./bin/trackfw validate`: `EXIT=0`, 21 warnings — todos pré-existentes (mesma classe de REQs sem
+  ADR/roadmap linkado já presentes antes deste ML; nenhum novo).
+- Exercício end-to-end contra o binário real e este próprio repositório:
+  `./bin/trackfw release tag 9.9.9` recusou corretamente na pré-condição 1 (árvore suja), listando
+  os arquivos novos/modificados via `git status --porcelain` real — prova de que o comando está
+  corretamente cabeado do CLI até `runReleaseTag`, sem exercitar nenhuma escrita real (nunca rodei
+  contra um remoto de verdade, por prudência — ver risco dominante do roadmap).
+
+**Correção pós-autorrevisão (3 achados, todos endereçados antes de entregar):**
+
+1. **AC1 ("tag remota é anotada... verificado no objeto") estava marcado sem verificação real** —
+   só provava que o payload construído concordava com o mock. Fechado com verificação **read-only**
+   contra a `v7.1.0` já conhecida como anotada, pelos **mesmos endpoints** que este comando faz
+   POST:
+   ```
+   gh api repos/{owner}/{repo}/git/refs/tags/v7.1.0
+     -> {"object":{"sha":"856f0c...","type":"tag", ...}}   # type "tag" confirma anotada
+   gh api repos/{owner}/{repo}/git/tags/856f0c...
+     -> {"sha":"856f0c...","tagger":{...},"object":{"sha":"13e73f...","type":"commit"},
+         "message":"v7.1.0 — doctor, branch prune..."}
+   ```
+   Confirma: expansão `{owner}`/`{repo}` funciona, o campo `.sha` que o código parseia é o
+   correto, e a mensagem/tagger sobrevivem intactos no round-trip. Zero escrita.
+
+2. **AC5 ("mensagens byte-idênticas entre os 3 CLIs") estava marcado sem nunca ter sido
+   comparado** — os testes usavam `Contains`/`match`/`in`, que passam mesmo sob divergência de
+   texto completo. Comparação real feita (dump das 10 mensagens de recusa com os mesmos argumentos
+   fixos, `diff` dos 3 stacks) encontrou e corrigiu 2 divergências antes inexistentes nos testes:
+   - `default_exec_git` do Python (fallback sem stderr) retornava `"git ... failed"`; Go/Node
+     retornam `"git ... exited with N"`. Alinhado.
+   - `date` do tagger: Node `toISOString()` emite milissegundos (`...:56.789Z`); Go
+     (`time.RFC3339`) e Python (`strftime`) não. Node corrigido para truncar (`.replace(/\.\d{3}Z$/,
+     'Z')`) — o *valor* sempre diverge por horário de execução, mas o *formato* agora não.
+   Após a correção, `diff` das 10 mensagens é vazio nos 3 pares (go-vs-node, go-vs-py).
+
+3. **A mensagem de forge não suportado orientava para um comando que o guard bloqueia** —
+   `git push origin <tag>` cai no `case push)` incondicional. Reescrita para não instruir esse
+   comando: nomeia o commit a taggear e orienta criar a tag pela UI web do forge ou abrir uma
+   issue pedindo suporte, em vez de um comando que o próprio harness recusa.
+
+Nenhum commit/push — entregue para auditoria do `trackfw_architect`.
 
 ### ML-2B — Gate de paridade do `release tag` + P4
 **Status:** ⬜ Pendente · **Agente:** `apolo-tf` · **Dependência:** ML-2A
