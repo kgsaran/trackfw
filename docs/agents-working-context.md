@@ -20175,3 +20175,25 @@ warnings pré-existentes da REQ agregadora, nenhum novo).
 
 **Fora de escopo, como combinado:** Wave 2 (`release tag`), Wave 3 (mensagem do guard), Wave 4
 (revisão do `hades-tf`). Nenhum commit/push — entregue para auditoria do `trackfw_architect`.
+
+## 2026-08-19 — Zeus (arquiteto) — REQ dos comandos destrutivos
+
+KG levantou: agentes não devem conseguir rodar `git stash` — em repo compartilhado, quebra o
+trabalho dos outros. Verifiquei o pressuposto: `git worktree list` mostra **um único worktree**, os
+subagentes paralelos compartilham o diretório. Risco real.
+
+Medi antes de agir, e o recorte mudou: o guard bloqueia **zero** comandos destrutivos de working
+tree, e o `stash` é o **menos** grave da classe — é o único recuperável. `reset --hard`,
+`clean -fd`, `restore` e `checkout -- <path>` são irrecuperáveis e também passam livres. Bloquear só
+o `stash` seria "condição estreita demais" pela quinta vez nesta série. **KG decidiu: classe inteira.**
+
+**O risco dominante aqui é o oposto do óbvio — super-bloquear.** Dois casos que quebrariam o próprio
+trilho: `git reset --soft HEAD~1` é o contorno padrão para empurrar via `ship`, e
+`git checkout <branch>` precisa continuar funcionando. Só `--hard` e só a forma explícita de caminho.
+
+**Decisão de orquestração:** a REQ nova e a Wave 3 original (mensagem do guard) editam o **mesmo
+literal** `gitBranchGuardScript`. Viraram um ML só — dois passes seriam sequenciais de qualquer
+forma e custariam duas rodadas de gate byte-idêntico.
+
+**Fora de escopo, registrado como recomendação:** worktree isolado por subagente é a defesa
+estrutural, e é melhor que a tripwire — mas é mudança de orquestração, não de produto.

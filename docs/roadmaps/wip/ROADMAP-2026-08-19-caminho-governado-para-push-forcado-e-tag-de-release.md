@@ -186,23 +186,62 @@ mais testes dos 3.
 
 ---
 
-## Wave 3 — Mensagem do guard
+## Wave 3 — Guard: comandos destrutivos + mensagem
 
-### ML-3A — Guard diz que o comando **inteiro** foi bloqueado
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf`
-**Arquivos:** `internal/generators/scaffold.go` (literal do script — **fonte canônica**, nunca
-editar as 7 cópias à mão) + espelhos Node/Python, `scripts/check-attention-scripts-parity.sh` se
-aplicável.
+> **Duas REQs, uma wave, e o motivo está declarado:** a Wave 3 original (mensagem do guard) e a
+> `REQ-2026-08-19-guard-nao-bloqueia-comandos-destrutivos-de-working-tree...` editam **o mesmo
+> literal** (`gitBranchGuardScript`). Dois passes no mesmo arquivo seriam sequenciais de qualquer
+> forma e custariam duas rodadas de gate byte-idêntico. Ficam num ML só.
 
-**Ação:** a mensagem de recusa passa a dizer que **nada antes do `git push` executou**, e a do
-`push` aponta `trackfw ship` **e** `trackfw release tag`. Custou um ciclo real: um comando composto
-com heredoc não gravou o arquivo, não criou a tag, e devolveu só a mensagem do push.
+### ML-3A — Bloqueio da classe destrutiva + mensagem de raio de alcance
+**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Arquivos:** `internal/generators/scaffold.go` (literal `gitBranchGuardScript` — **fonte
+canônica**, nunca editar as 7 cópias em disco) + espelhos Node/Python, testes dos 3,
+`scripts/check-gates-falsify.sh`, `docs/cli-parity.md`.
+
+**Contexto:** `git worktree list` confirma **um único worktree** — subagentes paralelos compartilham
+o mesmo diretório. Um `git stash` de um agente tira o trabalho não commitado de todos os outros.
+
+**Bloquear** (mensagem nomeando a alternativa):
+```
+git stash | stash push | stash save · git stash clear | drop
+git reset --hard   (token em qualquer posição)
+git clean -f | -fd | -x | -X       (NÃO -n / --dry-run)
+git restore <path>                 (NÃO --staged sozinho)
+git checkout -- <path> | git checkout .
+```
+
+**Liberar, e provar por cenário que seguem livres:**
+```
+git stash list | show · git reset (sem --hard) · git clean -n | --dry-run
+git restore --staged · git checkout <branch> | git switch <branch>
+```
+
+🔴 **O risco dominante é super-bloquear, não sub-bloquear.** O próprio guard já registra esse
+julgamento na regra do `git branch`. Dois casos concretos:
+- **`git reset --soft HEAD~1` é o contorno padrão** para empurrar trabalho já commitado via `ship`.
+  Bloquear `git reset` inteiro inviabiliza o trilho governado. **Só `--hard`.**
+- **`git checkout <branch>` continua funcionando.** Distinguir branch de caminho sem `--` é
+  ambíguo; adivinhar gera falso-positivo. Só a forma explícita de caminho.
+
+**Mensagem (a parte que vinha da Wave 3 original):** a recusa passa a dizer que **nada antes do
+comando bloqueado executou** — o guard inspeciona a string, e um comando composto é barrado
+**inteiro**. Custou dois ciclos reais nesta sessão: um `cat > f <<EOF ... EOF && git commit ...` não
+criou o arquivo e devolveu só a mensagem do commit. A mensagem do `push` passa a citar
+`trackfw ship` **e** `trackfw release tag`.
 
 **Critérios de aceite:**
-- [ ] Mensagem menciona que o comando inteiro foi bloqueado
+- [ ] Cada comando da lista de bloqueio é recusado, com alternativa nomeada
+- [ ] Cada comando da lista de liberação continua funcionando — **provado por cenário**, com
+      atenção especial ao `git reset --soft`
+- [ ] Evasões conhecidas cobertas: prefixo `env`/`command`, flag fora da primeira posição,
+      `git${IFS}stash`
+- [ ] Mensagem diz que o comando **inteiro** foi bloqueado
 - [ ] Mensagem do `push` cita os dois caminhos governados
-- [ ] Script **byte-idêntico** entre os 3 CLIs e entre escopos — gate existente cobre
-- [ ] Cenário P4 para a mensagem nova
+- [ ] Script **byte-idêntico** entre os 3 CLIs e entre escopos; no-op fora de projeto preservado
+- [ ] Dreno de stdin preservado (um ML anterior introduziu EPIPE aqui e foi reprovado)
+- [ ] Cenário P4 por comando bloqueado **e** por comando liberado — falso-positivo é o risco dominante
+- [ ] `docs/cli-parity.md` nomeia o gate
 - [ ] `make quality` verde
 
 ---
@@ -215,8 +254,10 @@ com heredoc não gravou o arquivo, não criou a tag, e devolveu só a mensagem d
 
 **Ações:** avaliar se a amarração ao PR aberto é contornável (PR fechado? PR de outro repo? branch
 renomeada?); se o `release tag` pode ser induzido a publicar tag apontando para commit que não é o
-da `main`; e se a dependência do forge abre caminho de degradação silenciosa. **Veredito explícito;
-bloquear é saída legítima.**
+da `main`; se a dependência do forge abre caminho de degradação silenciosa; e se o bloqueio da
+classe destrutiva tem evasão óbvia — lembrando que é **tripwire, não fronteira**: `rm -rf` e
+`python -c "shutil.rmtree(...)"` seguem livres por construção, e isso é aceito, não um achado.
+**Veredito explícito; bloquear é saída legítima.**
 
 ---
 
