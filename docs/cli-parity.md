@@ -4111,3 +4111,76 @@ intencional, é REQ própria. Ver o apêndice "Barreira ML-2A" em
 O gate degrada para teste de conexão quando falta `lsof`, e nesse modo **pula** a exclusão de
 wildcard em vez de passar em silêncio — o braço de detecção do Cenário 59 então deixa de reprovar e
 a falsificação fica vermelha. A vacuidade se denuncia sozinha em vez de virar falso verde.
+
+## `trackfw doctor` — detecção de artefato fora do manifesto (REQ-2026-08-17, ADR-2026-08-18, ML-2A/ML-2B)
+
+Gate: **`scripts/check-doctor-parity.sh`** (alvo `parity`) + Cenário 71 de `check-gates-falsify.sh`.
+O gate compara as **três saídas reais** (`diff -u` byte a byte, stdout e stderr, nas duas
+superfícies — relatório de texto e `--json`) contra fixtures construídas por **install-e-mutar**
+real, nunca por bytes de template hardcoded.
+
+**Origem:** antes da inversão de ordem de persistência do ADR-2026-08-18, uma escrita
+interrompida entre gravar os bytes de um artefato e persistir a entrada correspondente no
+manifesto podia deixar o disco e o manifesto dessincronizados sem nenhum comando para detectar
+ou remediar isso.
+
+### As duas classes, e por que não podem ser fundidas
+
+| classe | condição | remédio |
+|---|---|---|
+| `unregistered-write` | conteúdo em disco bate byte a byte com o template atual do catálogo, **mas o manifesto não tem entrada nenhuma** para o destino | adota — `install --force`, seguro porque o conteúdo já é o que o install escreveria de qualquer forma |
+| `hand-modified` | o manifesto **tem** entrada e esta claim é dona dela, **mas o hash em disco divergiu** do que o manifesto registrou | avisa da perda — `install --force` sobrescreve a edição manual |
+
+A classificação usa `Registered` (existe **alguma** entrada para o destino, de qualquer claim),
+não `Managed` (esta claim exata é dona da entrada) — ver o doc comment de `ClassifyDoctor`
+(`internal/integrations/doctor.go`). Um destino registrado sob uma claim **diferente** deve ficar
+em silêncio, nunca virar falso-positivo de "escrita não registrada"; isso quase entrou como bug no
+ML-2A e é o alvo exato do Cenário 71.
+
+### Cenários do gate (a–e), cada um em texto e `--json`
+
+- **(a) baseline limpo** — nada instalado, os 3 relatam `no mismatches found` / `[]`.
+- **(b) unregistered-write** — install real seguido de remoção cirúrgica da entrada do manifesto
+  (bytes em disco intocados).
+- **(c) hand-modified** — install real seguido de um byte anexado ao artefato em disco (hash do
+  manifesto fica obsoleto).
+- **(d) arquivo alheio** — conteúdo alheio escrito exatamente no destino que o catálogo usaria,
+  **sem nunca instalar** (zero entrada no manifesto, conteúdo não bate template) — prova que o que
+  não é do trackfw nunca é acusado.
+- **(e) registrado sob claim diferente** — install real seguido de retargetar o `item` da claim da
+  entrada do manifesto (hash intocado) — reproduz `Registered=true, Managed=false, State=current`
+  e prova que os 3 CLIs ficam em silêncio (o discriminante do Cenário 71).
+
+### Restrições duras do fixture (cada uma já custou um ciclo nesta série)
+
+1. **`HOME` redirecionado** para um diretório temporário por cenário — `doctor` varre o escopo
+   **global** além do de projeto; sem isso o gate leria o `~/.trackfw` real de quem o executa.
+2. **Install-e-mutar, nunca bytes de template hardcoded** — hardcode apodrece em silêncio na
+   próxima mudança de template do catálogo.
+3. **Identidade fixada explicitamente** (`identity.json` escrito em `$HOME` antes do install) —
+   sem isso, o fallback zero-value de `identity.Load` faz os 3 CLIs concordarem por construção,
+   fechando a paridade vacuamente independente de a renderização sensível a identidade estar
+   correta.
+4. **Edição do manifesto via `python3`, nunca `sed -i`** — divergência BSD vs GNU já custou uma
+   falha de CI só-em-Linux nesta série.
+5. **Resolução física do caminho do fixture (`pwd -P`)** — no macOS, `/tmp` e `$TMPDIR` são
+   symlinks para `/private/...`; a resolução de cwd do Go só é física após `EvalSymlinks`
+   explícito, enquanto Node e Python são sempre físicos. Sem normalizar o `project`/`home` do
+   fixture com `pwd -P` antes de instalar, o manifesto fica gravado com a chave não-canônica do Go
+   e toda leitura via Node/Python falha o lookup — reportando "não registrado" para **qualquer**
+   artefato, independentemente do que foi de fato instalado. Mesmo fix que
+   `scripts/check-thirdparty-parity.sh` já aplica.
+
+### Dois defeitos reais de paridade que este gate encontrou e corrigiu no produto (não no gate)
+
+- **`--json` com zero achados:** o Go emitia `null` (slice nil serializada por `encoding/json`)
+  onde Node e Python sempre emitem `[]`. Corrigido inicializando `ClassifyDoctor` com
+  `[]DoctorFinding{}` (`internal/integrations/doctor.go`) — a forma canônica escolhida é a que
+  Node/Python já usavam.
+- **Linha em branco final do relatório de texto:** o Go deixava uma linha em branco à direita do
+  último finding; Node e Python já normalizavam isso (`.replace(/\n$/, '')` /
+  `.rstrip("\n")`). Corrigido em `printDoctorReport` (`internal/commands/doctor.go`) para não
+  emitir a quebra final — a forma canônica é a que os outros dois já usavam.
+
+Nenhuma divergência de **nomes de campo** no `--json` foi encontrada: `finding`, `claim`
+(`target`/`surface`/`scope`/`kind`/`item`), `destination`, `remedy` já casavam nos 3 CLIs.

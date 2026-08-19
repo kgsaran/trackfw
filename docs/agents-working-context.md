@@ -19810,3 +19810,42 @@ Se o gate reprovar por ordem, o conserto é **no produto nos 3**, não no gate �
 relatório de diagnóstico é defeito.
 
 **Decisão da 7.1.0 segue em aberto** — "vamos prosseguir" é continuidade do ML, não aprovação de tag.
+
+## 2026-08-19 — apolo-tf — ML-2B concluído
+
+Implementei `scripts/check-doctor-parity.sh` (novo, registrado no alvo `parity` do `Makefile`),
+Cenário 71 em `scripts/check-gates-falsify.sh` (132 cenários no total, 19 gates) e a seção nova
+`## trackfw doctor` em `docs/cli-parity.md` nomeando o gate.
+
+**Divergências reais encontradas e corrigidas no produto (Go), nunca mascaradas no gate:**
+- `--json` com zero achados emitia `null` (slice nil do `encoding/json`) em vez de `[]` como
+  Node/Python — `ClassifyDoctor` (`internal/integrations/doctor.go`) agora inicializa
+  `findings := []DoctorFinding{}`.
+- O relatório de texto deixava uma linha em branco à direita do último finding; Node/Python já
+  normalizavam isso — `printDoctorReport` (`internal/commands/doctor.go`) ajustado para não emitir
+  a quebra final.
+- Nomes de campo do `--json` (`finding`, `claim.{target,surface,scope,kind,item}`, `destination`,
+  `remedy`) já batiam nos 3 CLIs — sem divergência aqui.
+
+**Armadilha de ambiente confirmada e contornada** (mesma classe já documentada em
+`check-thirdparty-parity.sh`): no macOS, `$TMPDIR`/`/tmp` resolvem para `/private/...` via
+symlink. A resolução de cwd do Go só é física após `EvalSymlinks` explícito; Node/Python são
+sempre físicos. Sem `project=$(cd "$project" && pwd -P)` no fixture, o manifesto é gravado com a
+chave não-canônica do Go e toda leitura via Node/Python falha o lookup — reportando "não
+registrado" para qualquer artefato, independentemente do que foi de fato instalado. Fixado no
+`build_fixture` do gate novo.
+
+**Gate estendido para 5 cenários (a–e)**, não só os 4 do escopo original: adicionei (e) "registrado
+sob claim diferente" porque os 4 cenários (a-d) não distinguem `Registered` de `Managed` — só essa
+quinta fixture reproduz `Registered=true, Managed=false, State=current` e prova em silêncio nos 3
+CLIs. É exatamente o quase-bug que o `ClassifyDoctor` doc comment e a auditoria do ML-2A já
+flagavam; o Cenário 71 sabota esse literal exato (`Registered`→`Managed`) e prova que o gate novo
+reprova.
+
+Evidência: `go build ./...` limpo, `go test ./...` verde, `GO_BIN=bin/trackfw
+scripts/check-doctor-parity.sh` verde (10 sub-cenários), `make quality` exit 0 (367 OK, zero FAIL),
+`./bin/trackfw validate` exit 0 (só warnings pré-existentes, nenhum novo).
+
+Roadmap `ROADMAP-2026-08-18-doctor-detecta-artefato-fora-do-manifesto-e-inverte-a-ordem-de-persistencia.md`
+ML-2B marcado ✅ Concluído. Próximo: ML-3A (`hades-tf`, revisão da inversão e do diagnóstico).
+Commit/push são exclusivos do `trackfw_architect`.

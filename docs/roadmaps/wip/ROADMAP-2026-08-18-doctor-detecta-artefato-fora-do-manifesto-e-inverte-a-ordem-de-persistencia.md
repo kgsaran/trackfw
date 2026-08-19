@@ -29,10 +29,12 @@ instalações que já estão no estado ruim. O `doctor` é o que revela essas.
 ## Acceptance Criteria
 - [x] AC1 — Detecta **arquivo em disco ausente do manifesto** e o distingue de **arquivo modificado à mão**.
 - [x] AC2 — A saída **nomeia o remédio**, com comando pronto para copiar.
-- [ ] AC3 — Paridade nos 3 CLIs, com **gate comparando saídas reais** — não por leitura de fonte.
-- [ ] AC4 — Cenário P4 reproduzindo a janela: artefato em disco sem registro, e prova de que acusa.
-- [ ] AC5 — Não-regressão: `update` **continua recusando** bytes unmanaged mesmo com `--force`.
-- [ ] AC6 — Decisão sobre a janela registrada em ADR. ✅ **feito** — `ADR-2026-08-18`, inverter a ordem.
+- [x] AC3 — Paridade nos 3 CLIs, com **gate comparando saídas reais** — não por leitura de fonte.
+- [x] AC4 — Cenário P4 reproduzindo a janela: artefato em disco sem registro, e prova de que acusa.
+- [x] AC5 — Não-regressão: `update` **continua recusando** bytes unmanaged mesmo com `--force`.
+      Evidência (verificada por mim, não pelo executor): `manager_test.go:149-152`, `legacy_test.go:120-124`,
+      `npm/tests/agents-skills.test.js:79,178` — todos verdes no `make quality` desta auditoria.
+- [x] AC6 — Decisão sobre a janela registrada em ADR. ✅ **feito** — `ADR-2026-08-18`, inverter a ordem.
 - [x] AC7 — Inversão implementada, com rollback preservado em erro normal. Evidência: ML-1A.
 - [ ] AC8 — `make quality` verde **e CI verde**.
 
@@ -134,17 +136,17 @@ de **arquivo modificado à mão**, que continua sendo o caso de `install --force
 - [x] `make quality` verde.
 
 ### ML-2B — Gate de paridade + cenário P4
-**Status:** 🔄 Em andamento · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
 **Dependência:** ML-2A.
 **Arquivos:** `scripts/check-doctor-parity.sh` (novo), `Makefile` (alvo `parity`),
 `scripts/check-gates-falsify.sh`, `docs/cli-parity.md` (seção nova, **nomeando o gate**).
 
 **Critérios de aceite:**
-- [ ] Gate comparando as **três saídas reais** — teste por stack **não** fecha o AC3.
-- [ ] Gate cobre **as duas superfícies**: relatório de texto **e** `--json`.
-- [ ] Cenário P4 reproduzindo a janela: artefato em disco sem registro, e prova de que acusa.
-- [ ] `docs/cli-parity.md` ganha seção do `doctor` **nomeando o gate** que a protege.
-- [ ] `make quality` verde.
+- [x] Gate comparando as **três saídas reais** — teste por stack **não** fecha o AC3.
+- [x] Gate cobre **as duas superfícies**: relatório de texto **e** `--json`.
+- [x] Cenário P4 reproduzindo a janela: artefato em disco sem registro, e prova de que acusa.
+- [x] `docs/cli-parity.md` ganha seção do `doctor` **nomeando o gate** que a protege.
+- [x] `make quality` verde.
 
 **Restrições duras do fixture** (cada uma já custou ciclo nesta série):
 1. `HOME` **redirecionado** para o temp — o `doctor` varre escopo global; sem isso o gate lê o
@@ -177,6 +179,37 @@ classificação precisa usar `Registered` (existe **alguma** entrada para o dest
 (entrada pertencente **àquela** claim). Sem isso, destino registrado sob outra claim seria reportado
 como "escrita não registrada" — exatamente o falso-positivo dominante que o comando existe para
 evitar.
+
+---
+
+### Auditoria do ML-2B — aprovada, com dois defeitos reais achados pelo próprio gate
+
+Não auditei por leitura. **Reverti a correção do produto e exigi que o gate ficasse vermelho:**
+
+```
+findings := []DoctorFinding{}  ->  var findings []DoctorFinding    (delta de literal único)
+GO_BIN=bin/trackfw scripts/check-doctor-parity.sh  ->  EXIT=1, 6 FAIL
+    doctor-parity/baseline-clean-json/go-vs-node
+    doctor-parity/alien-file-not-flagged-json/go-vs-node   (e os pares go-vs-py)
+restaurado  ->  "All check-doctor-parity.sh scenarios passed."
+```
+
+O gate **não é vacuoso** — pega a divergência real, no par certo, na superfície certa.
+
+**Dois defeitos de produto que só um gate de três saídas revelaria:**
+1. `--json` com zero findings: Go emitia `null` (slice nil no `encoding/json`); Node e Python
+   emitiam `[]`. Corrigido **no Go**, que era o divergente.
+2. Relatório de texto: Go deixava linha em branco ao final; Node e Python já removiam.
+
+Nenhum dos dois apareceria em teste por stack — cada runtime concordaria consigo mesmo. É
+exatamente a lacuna que o AC3 existe para fechar, e a terceira REQ seguida em que ela se materializa
+como defeito real, não como formalidade.
+
+**Escopo ampliado pelo executor, e bem:** cenário (e) "registrado sob outra claim". Os 4 cenários
+que especifiquei **não** distinguiam `Registered` de `Managed` — o gate passaria com o defeito
+presente. O Cenário 71 sabota exatamente esse literal e prova que agora fica vermelho.
+
+`make quality` exit 0 · 367 OK · 0 FAIL · 132 cenários · `validate` exit 0.
 
 ## Wave 3 — Barreira
 

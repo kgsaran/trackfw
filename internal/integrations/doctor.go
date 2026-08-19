@@ -66,7 +66,13 @@ type DoctorFinding struct {
 // That ambiguity is inherent to a hash-only signal and is left for Wave 3
 // (ML-3A) to rule on; ClassifyDoctor implements the table as specified.
 func ClassifyDoctor(plans []PlannedArtifact, inspections []Inspection) []DoctorFinding {
-	var findings []DoctorFinding
+	// Non-nil from the start (never `var findings []DoctorFinding`): the zero
+	// case must round-trip through `--json` as `[]`, matching Node's
+	// `Array.prototype.filter` and Python's `list` — encoding/json renders a
+	// nil slice as `null`, which is not what Node/Python ever emit and would
+	// be a real cross-CLI divergence on the JSON surface (ML-2B's gate,
+	// scripts/check-doctor-parity.sh, exists to catch exactly this).
+	findings := []DoctorFinding{}
 	for i, plan := range plans {
 		if i >= len(inspections) {
 			break

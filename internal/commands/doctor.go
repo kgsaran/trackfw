@@ -86,7 +86,15 @@ func printDoctorReport(cmd *cobra.Command, findings []integrations.DoctorFinding
 		}
 	}
 	fmt.Fprintf(out, "trackfw doctor: %d finding(s) -- %d unregistered-write, %d hand-modified\n\n", len(findings), unregistered, handModified)
-	for _, finding := range findings {
-		fmt.Fprintf(out, "[%s] %s\n  remedy: %s\n\n", finding.FindingKind, finding.Destination, finding.Remedy)
+	// One blank line BETWEEN findings, none trailing after the last one — matches Node's
+	// `lines.join('\n').replace(/\n$/, '')` and Python's `"\n".join(lines).rstrip("\n")`
+	// (npm/src/commands/doctor.js, pypi/trackfw/commands/doctor.py). A naive per-finding
+	// "\n\n" suffix leaves a trailing blank line only Go would emit — a real byte-level
+	// divergence on the text surface caught by scripts/check-doctor-parity.sh (ML-2B).
+	for i, finding := range findings {
+		if i > 0 {
+			fmt.Fprintln(out)
+		}
+		fmt.Fprintf(out, "[%s] %s\n  remedy: %s\n", finding.FindingKind, finding.Destination, finding.Remedy)
 	}
 }
