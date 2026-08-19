@@ -10,6 +10,64 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 > backfill. A partir de `2.16.0`, este arquivo é atualizado como parte
 > obrigatória do protocolo de release (ver `CLAUDE.md`).
 
+## [7.1.0] - 2026-08-19
+
+Dois comandos novos e uma série de correções de segurança e de higiene acumuladas
+desde a `7.0.0`. **Sem breaking changes** — atualização direta.
+
+### Added
+
+- **`trackfw doctor`** — diagnostica divergências entre o disco e o manifesto de
+  integrações, em escopo de projeto e global, e distingue **três** classes com
+  remédios diferentes, que nunca são fundidas:
+  - `unregistered-write` — os bytes são do trackfw e batem com o template do
+    catálogo; só falta o registro no manifesto. Adotar é seguro.
+  - `hand-modified` — o manifesto é dono do destino, mas o arquivo foi editado
+    depois. Adotar **perde a edição**, e a saída avisa disso.
+  - `unknown-content` — o conteúdo não bate com o template nem tem entrada no
+    manifesto. É o estado que faz o `install` recusar com `unmanaged artifact`,
+    e o remédio **nomeia essa recusa** e declara as duas causas possíveis
+    (arquivo de terceiro, ou artefato do trackfw que derivou) em vez de acusar
+    adulteração.
+
+  O comando **nunca escreve nada** — só imprime o comando de correção.
+- **`trackfw branch prune`** — remove branches locais já integradas, com
+  **dry-run por padrão**. Detecta corretamente **squash-merge**, que não deixa
+  ancestralidade e por isso engana o `git branch -d`. Nunca apaga a branch
+  atual, a branch padrão, nem branch presa em worktree.
+
+### Fixed
+
+- 🔒 **`trackfw serve` amarra em loopback por padrão.** Antes escutava em todas
+  as interfaces, expondo a cadeia de governança na rede local sem autenticação.
+  A exposição agora exige opt-in explícito, com aviso.
+- 🔒 **Guard global de branch cabeado e verificado.** O script era escrito em
+  `~/.trackfw/scripts/` e **nada jamais o invocava** — e a regra de integridade
+  só avaliava configs que o referenciassem, então nunca rodava para ele.
+  Consequência real: o script global ficou 3 versões atrasado com `validate`
+  verde o tempo todo. Agora é cabeado nos mesmos CLIs do credential-guard, com
+  **no-op fora de projeto trackfw**, e a verificação de integridade dispara por
+  **existência do artefato**, não por fiação.
+- 🔒 **Handler global de erro no CLI Node.** Erro não tratado vazava stack
+  trace, caminhos absolutos de instalação e versão do runtime.
+- **Ordem de persistência invertida: manifesto antes dos artefatos.** Uma
+  interrupção no meio da gravação deixava o disco à frente do manifesto, um
+  estado que exigia decisão humana (`unmanaged artifact`). A direção invertida é
+  auto-reparável por um `install`/`update` seguinte.
+- **Sete débitos acumulados** da entrega de plugins e da release `7.0.0`,
+  incluindo brechas de contorno do guard de branch (`git switch -c`, prefixos
+  `env`/`command`, `git worktree add -b`, flags fora da primeira posição).
+- **`trackfw ship` e `trackfw branch new` aceitam branches `chore` e `docs`**
+  sem exigir roadmap correspondente.
+
+### Internal
+
+- Novo gate `check-doctor-parity.sh` comparando as **três saídas reais** do
+  `doctor` (texto e `--json`), não apenas testes por stack. Ele encontrou dois
+  defeitos reais de paridade que nenhum teste por runtime pegaria.
+- Suíte de falsificação cresceu para **133 cenários**: todo gate tem braço de
+  baseline e braço de detecção, com prova de não-vacuidade.
+
 ## [7.0.0] - 2026-08-16
 
 > ⚠️ **Versão com Breaking Change.** O subsistema de plugins foi **removido**. Leia a seção
