@@ -1464,3 +1464,224 @@ func TestDetectPendingSquashMerges_CallsSharedEvaluateBranchIntegration(t *testi
 		t.Fatal("detectPendingSquashMerges must not run its own bidirectional diff --stat anymore — it must delegate entirely to evaluateBranchIntegration")
 	}
 }
+
+// ────────────────────────────────────────────────────────────────────────────
+// --force-with-lease — ML-1A
+// ────────────────────────────────────────────────────────────────────────────
+
+// makeForceLeaseDeps returns opts/deps ready to reach the force-with-lease gate: valid gated
+// branch, no governance violations, github forge resolved via config, CLI available.
+func makeForceLeaseDeps(staged string, checkPROpen func(forge.Adapter, string) (bool, error)) (shipOpts, shipDeps, *mockGit, *mockForgeCLI) {
+	g := &mockGit{branch: "fix/rebase-test", stagedFiles: staged, remoteURL: "https://github.com/org/repo.git"}
+	cli := &mockForgeCLI{}
+	d := shipDeps{
+		execGit:         g.exec,
+		checkGovernance: func() []string { return nil },
+		out:             &bytes.Buffer{},
+		configForge:     "github",
+		repoDir:         "",
+		availFn:         func(string) bool { return true },
+		execForgeCLI:    cli.exec,
+		checkPROpen:     checkPROpen,
+	}
+	opts := shipOpts{message: "fix: rebase", forceWithLease: true}
+	return opts, d, g, cli
+}
+
+func TestShip_ForceWithLease_OpenPR_Succeeds(t *testing.T) {
+	opts, d, g, cli := makeForceLeaseDeps("file.go", func(adapter forge.Adapter, branch string) (bool, error) {
+		if branch != "fix/rebase-test" {
+			t.Fatalf("unexpected branch passed to checkPROpen: %q", branch)
+		}
+		return true, nil
+	})
+	if err := runShip(opts, d); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(cli.calls) > 0 {
+		t.Fatalf("execForgeCLI must not be called to create a PR when force-with-lease already confirmed one is open, got %d calls", len(cli.calls))
+	}
+
+	var pushCall []string
+	for _, c := range g.calls {
+		if len(c) > 0 && c[0] == "push" {
+			pushCall = c
+		}
+	}
+	if pushCall == nil {
+		t.Fatal("expected a push call")
+	}
+	want := []string{"push", "--force-with-lease", "-u", "origin", "fix/rebase-test"}
+	if strings.Join(pushCall, " ") != strings.Join(want, " ") {
+		t.Fatalf("push args = %v, want %v", pushCall, want)
+	}
+
+	out := d.out.(*bytes.Buffer).String()
+	if !strings.Contains(out, "already open — skipping creation (--force-with-lease)") {
+		t.Fatalf("expected skip-creation message, got:\n%s", out)
+	}
+}
+
+func TestShip_ForceWithLease_PushOnly_WhenNothingStaged(t *testing.T) {
+	opts, d, g, _ := makeForceLeaseDeps("", func(forge.Adapter, string) (bool, error) { return true, nil })
+	opts.message = "" // no -m required in push-only mode
+	if err := runShip(opts, d); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, c := range g.calls {
+		if len(c) > 0 && c[0] == "commit" {
+			t.Fatalf("commit must not be called when nothing is staged, got call: %v", c)
+		}
+	}
+	out := d.out.(*bytes.Buffer).String()
+	if !strings.Contains(out, "pushes existing commits only") {
+		t.Fatalf("expected push-only notice, got:\n%s", out)
+	}
+}
+
+func TestShip_ForceWithLease_NothingStaged_NoFlag_StillAborts(t *testing.T) {
+	// Non-regression: without --force-with-lease, nothing staged still aborts exactly as before.
+	g := &mockGit{branch: "fix/rebase-test", stagedFiles: ""}
+	d := shipDeps{
+		execGit:         g.exec,
+		checkGovernance: func() []string { return nil },
+		out:             &bytes.Buffer{},
+		availFn:         func(string) bool { return false },
+		execForgeCLI:    func(string, []string) error { return nil },
+	}
+	err := runShip(shipOpts{message: "fix: x"}, d)
+	if err == nil || !strings.Contains(err.Error(), "nothing is staged") {
+		t.Fatalf("expected 'nothing is staged' error, got: %v", err)
+	}
+}
+
+func TestShip_ForceWithLease_NoOpenPR_Refuses(t *testing.T) {
+	opts, d, g, cli := makeForceLeaseDeps("file.go", func(forge.Adapter, string) (bool, error) { return false, nil })
+	err := runShip(opts, d)
+	if err == nil {
+		t.Fatal("expected refusal when no PR is open")
+	}
+	if !strings.Contains(err.Error(), "no open pull/merge request") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, c := range g.calls {
+		if len(c) > 0 && (c[0] == "commit" || c[0] == "push") {
+			t.Fatalf("refusal must happen before any write — got call: %v", c)
+		}
+	}
+	if len(cli.calls) > 0 {
+		t.Fatalf("execForgeCLI must not be called, got %d calls", len(cli.calls))
+	}
+}
+
+func TestShip_ForceWithLease_NoForgeCLI_RefusesWithoutDegrading(t *testing.T) {
+	g := &mockGit{branch: "fix/rebase-test", stagedFiles: "file.go", remoteURL: "https://github.com/org/repo.git"}
+	d := shipDeps{
+		execGit:         g.exec,
+		checkGovernance: func() []string { return nil },
+		out:             &bytes.Buffer{},
+		configForge:     "github",
+		availFn:         func(string) bool { return false }, // CLI absent
+		execForgeCLI:    func(string, []string) error { return nil },
+	}
+	err := runShip(shipOpts{message: "fix: rebase", forceWithLease: true}, d)
+	if err == nil {
+		t.Fatal("expected refusal when forge CLI is unavailable")
+	}
+	if !strings.Contains(err.Error(), "requires a forge CLI") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, c := range g.calls {
+		if len(c) > 0 && (c[0] == "commit" || c[0] == "push") {
+			t.Fatalf("refusal must happen before any write — got call: %v", c)
+		}
+	}
+}
+
+func TestShip_ForceWithLease_ManualForge_Refuses(t *testing.T) {
+	// No forge flag, no config, no remote URL → manual — must refuse, never degrade.
+	g := &mockGit{branch: "fix/rebase-test", stagedFiles: "file.go"}
+	d := shipDeps{
+		execGit:         g.exec,
+		checkGovernance: func() []string { return nil },
+		out:             &bytes.Buffer{},
+		availFn:         func(string) bool { return true },
+		execForgeCLI:    func(string, []string) error { return nil },
+	}
+	err := runShip(shipOpts{message: "fix: rebase", forceWithLease: true}, d)
+	if err == nil {
+		t.Fatal("expected refusal for manual forge")
+	}
+	if !strings.Contains(err.Error(), "requires a forge CLI") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestShip_ForceWithLease_CannotVerify_Refuses(t *testing.T) {
+	opts, d, g, _ := makeForceLeaseDeps("file.go", func(forge.Adapter, string) (bool, error) {
+		return false, fmt.Errorf("gh: authentication required")
+	})
+	err := runShip(opts, d)
+	if err == nil {
+		t.Fatal("expected refusal when PR status cannot be verified")
+	}
+	if !strings.Contains(err.Error(), "could not verify") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, c := range g.calls {
+		if len(c) > 0 && (c[0] == "commit" || c[0] == "push") {
+			t.Fatalf("refusal must happen before any write — got call: %v", c)
+		}
+	}
+}
+
+func TestShip_ForceWithLease_DryRun_StillRunsGate(t *testing.T) {
+	called := false
+	opts, d, _, _ := makeForceLeaseDeps("file.go", func(forge.Adapter, string) (bool, error) {
+		called = true
+		return false, nil
+	})
+	opts.dryRun = true
+	err := runShip(opts, d)
+	if err == nil {
+		t.Fatal("expected refusal even in dry-run when no PR is open")
+	}
+	if !called {
+		t.Fatal("checkPROpen must run in dry-run mode too — it is read-only")
+	}
+}
+
+func TestShip_ForceWithLease_NormalPush_Unaffected(t *testing.T) {
+	// Non-regression: --force-with-lease not set → push args are exactly as before.
+	g := &mockGit{branch: "fix/normal", stagedFiles: "file.go"}
+	d := shipDeps{
+		execGit:         g.exec,
+		checkGovernance: func() []string { return nil },
+		out:             &bytes.Buffer{},
+		availFn:         func(string) bool { return false },
+		execForgeCLI:    func(string, []string) error { return nil },
+	}
+	if err := runShip(shipOpts{message: "fix: x"}, d); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var pushCall []string
+	for _, c := range g.calls {
+		if len(c) > 0 && c[0] == "push" {
+			pushCall = c
+		}
+	}
+	want := []string{"push", "-u", "origin", "fix/normal"}
+	if strings.Join(pushCall, " ") != strings.Join(want, " ") {
+		t.Fatalf("push args = %v, want %v", pushCall, want)
+	}
+}
+
+func TestShip_ForceFlagDoesNotExist(t *testing.T) {
+	cmd := newShipCmd()
+	if flag := cmd.Flags().Lookup("force"); flag != nil {
+		t.Fatalf("raw --force flag must never be registered on ship — found: %+v", flag)
+	}
+	if flag := cmd.Flags().Lookup("force-with-lease"); flag == nil {
+		t.Fatal("expected --force-with-lease flag to be registered")
+	}
+}

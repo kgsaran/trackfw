@@ -5,6 +5,7 @@ All git write operations are injectable for testability.
 Never passes "add ." or "add -A" to any git executor.
 """
 
+import json
 import os
 import re
 import subprocess
@@ -19,6 +20,75 @@ from trackfw.forge.adapter import forge_adapter
 # Git subcommands that modify local or remote state.
 # In --dry-run mode these are printed but not executed.
 GIT_WRITE_COMMANDS = {"commit", "push", "fetch"}
+
+# force-with-lease refusal messages. Named constants so the ML-1B parity gate has a single
+# place to compare byte-for-byte across the 3 CLIs. Byte-identical to Go's
+# forceLease*Msg/Fmt constants (internal/commands/ship.go) and Node's FORCE_LEASE_* /
+# forceLease*Msg() (npm/src/ship/runner.js). Never expose "--force" (raw) as a flag — see
+# ADR-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md.
+FORCE_LEASE_NO_FORGE_CLI_MSG = (
+    "trackfw ship --force-with-lease requires a forge CLI (gh, glab, or az) to confirm "
+    "an open pull/merge request before rewriting remote history. No forge CLI is "
+    "available for this repository — install and authenticate it, or push without "
+    "--force-with-lease."
+)
+
+
+def force_lease_no_pr_open_msg(branch):
+    return (
+        f'trackfw ship --force-with-lease refuses to run: branch "{branch}" has no open '
+        "pull/merge request. Open the PR/MR first (trackfw ship without "
+        "--force-with-lease, or your forge's web UI), then retry."
+    )
+
+
+def force_lease_cannot_verify_msg(branch, cli_name, err_message):
+    return (
+        f'trackfw ship --force-with-lease could not verify whether branch "{branch}" has '
+        f"an open pull/merge request ({cli_name} CLI error: {err_message}). Refusing "
+        f"rather than risking a force push without a verified PR — check your "
+        f"{cli_name} CLI authentication and retry."
+    )
+
+
+def default_check_pr_open(adapter, branch):
+    """
+    Queries the resolved forge CLI for an open PR/MR whose source branch is `branch`, using
+    the same list-based query shape for every forge: empty result means "no PR" (exit 0),
+    any non-zero exit or unparseable output means "cannot verify" (raised as an exception —
+    never conflated with "no PR"). bitbucket and "manual" never reach here: run_ship only
+    calls check_pr_open when adapter.available is True, and bitbucket's adapter is always
+    available=False.
+    """
+    if adapter.forge == "github":
+        args = ["pr", "list", "--head", branch, "--state", "open", "--json", "number"]
+    elif adapter.forge == "gitlab":
+        # glab mr list: --source-branch filters by source branch, --state opened matches
+        # gh's "open" state, -F json requests machine-readable output (glab's own flag,
+        # not an external jq/GNU dependency).
+        args = ["mr", "list", "--source-branch", branch, "--state", "opened", "-F", "json"]
+    elif adapter.forge == "azure":
+        # az defaults to --output json; passed explicitly here for clarity, not reliance
+        # on the ambient default.
+        args = ["repos", "pr", "list", "--source-branch", branch, "--status", "active", "--output", "json"]
+    else:
+        raise RuntimeError(f'no PR/MR query defined for forge "{adapter.forge}"')
+
+    try:
+        result = subprocess.run([adapter.cli_name] + args, capture_output=True, text=True)
+    except FileNotFoundError:
+        raise RuntimeError(f"{adapter.cli_name} not found in PATH")
+
+    if result.returncode != 0:
+        msg = (result.stderr or "").strip() or f"{adapter.cli_name} exited with {result.returncode}"
+        raise RuntimeError(msg)
+
+    try:
+        parsed = json.loads(result.stdout or "[]")
+    except json.JSONDecodeError as e:
+        raise RuntimeError(f"could not parse {adapter.cli_name} output: {e}")
+
+    return isinstance(parsed, list) and len(parsed) > 0
 
 
 def is_git_write_cmd(args):
@@ -315,6 +385,8 @@ def run_ship(
     check_governance=None,
     writeln=None,
     write_err=None,
+    force_with_lease=False,
+    check_pr_open=None,
 ):
     """
     Executes the seven-step ship sequence.
@@ -351,6 +423,15 @@ def run_ship(
         multi-line detail printed BEFORE the abort (violation lists, remediation hints,
         "Note: ..." blocks) stays on stdout via writeln, same as Go's deps.out — only this final
         one-line (or one-block) summary moves to stderr.
+    force_with_lease : bool
+        --force-with-lease: governed force-push (git push --force-with-lease). Only runs
+        when the branch already has an open PR/MR, verified via check_pr_open. When
+        nothing is staged (e.g. after a rebase that already committed the result), skips
+        the commit step entirely instead of requiring -m.
+    check_pr_open : callable(adapter, str) -> bool | None
+        Injected PR/MR-open check for the resolved forge. Raises on "cannot verify"
+        (CLI error / unparseable output) — never returns False for that case. None uses
+        default_check_pr_open.
 
     Returns
     -------
@@ -436,6 +517,52 @@ def run_ship(
 
         writeln('Governance: OK')
 
+    # ─── Step 2.5: force-with-lease gate ────────────────────────────────────
+    # Runs before any write (commit/push) — a refusal here must never leave a local
+    # commit the caller cannot push. Read-only, so it runs in --dry-run too, same
+    # posture as the read-only calls in Step 0 / Step 7.
+    #
+    # force_lease_adapter/force_lease_resolution are reused by Step 7 below to avoid a
+    # second forge resolution and a duplicate "Forge: ..." line, and because Step 7
+    # must skip PR/MR creation entirely once this gate has confirmed one is already
+    # open — creating a second one would be a spurious failure on every successful
+    # force push.
+    force_lease_adapter = None
+    force_lease_resolution = None
+    if force_with_lease:
+        gate_remote_url_out, _ = exec_git(['remote', 'get-url', 'origin'])
+        gate_remote_url = (gate_remote_url_out or '').strip()
+
+        try:
+            resolution = forge_resolve(
+                flag_forge=forge_flag,
+                config_forge=config_forge,
+                remote_url=gate_remote_url,
+                repo_dir=repo_dir,
+            )
+        except ValueError as res_err:
+            write_err(str(res_err))
+            return 1
+
+        adapter = forge_adapter(resolution.forge, avail_fn)
+        if resolution.forge == 'manual' or not adapter.available:
+            write_err(FORCE_LEASE_NO_FORGE_CLI_MSG)
+            return 1
+
+        check_pr_open_fn = check_pr_open or default_check_pr_open
+        try:
+            open_pr = check_pr_open_fn(adapter, branch)
+        except Exception as pr_err:  # noqa: BLE001 — any failure here means "cannot verify"
+            write_err(force_lease_cannot_verify_msg(branch, adapter.cli_name, pr_err))
+            return 1
+        if not open_pr:
+            write_err(force_lease_no_pr_open_msg(branch))
+            return 1
+
+        writeln(f'force-with-lease: open {adapter.noun} confirmed for "{branch}" ({resolution.forge}).')
+        force_lease_adapter = adapter
+        force_lease_resolution = resolution
+
     # ─── Step 3: Squash-merge detection ────────────────────────────────────
     if dry_run:
         writeln('[dry-run] git fetch origin --prune')
@@ -459,7 +586,14 @@ def run_ship(
 
     # Reuses staged_files read at the top of the function (Step 0) — never re-query
     # git here.
-    if not staged_files:
+    #
+    # --force-with-lease push-only mode: a rebase that resolved conflicts already
+    # committed the result (the index is clean afterwards) — there is nothing left to
+    # stage or commit, only to push. Only --force-with-lease grants this exception;
+    # without it, "nothing staged" still aborts exactly as before (non-regression).
+    push_only = force_with_lease and not staged_files
+
+    if not staged_files and not force_with_lease:
         write_err(
             'nothing is staged — stage your files explicitly before running ship:\n'
             '  git add <file1> <file2> ...\n'
@@ -468,23 +602,30 @@ def run_ship(
         return 1
 
     # ─── Step 5: Commit ────────────────────────────────────────────────────
-    if not message:
-        write_err(
-            'commit message is required — use -m:\n'
-            '  trackfw ship -m "feat(<scope>): <description>"'
-        )
-        return 1
+    if push_only:
+        writeln('Nothing staged — --force-with-lease pushes existing commits only, no new commit.')
+    else:
+        if not message:
+            write_err(
+                'commit message is required — use -m:\n'
+                '  trackfw ship -m "feat(<scope>): <description>"'
+            )
+            return 1
 
-    _, commit_err = git(['commit', '-m', message])
-    if commit_err:
-        write_err(f'git commit failed: {commit_err}')
-        return 1
+        _, commit_err = git(['commit', '-m', message])
+        if commit_err:
+            write_err(f'git commit failed: {commit_err}')
+            return 1
 
-    if not dry_run:
-        writeln(f'Committed: {message}')
+        if not dry_run:
+            writeln(f'Committed: {message}')
 
     # ─── Step 6: Push ──────────────────────────────────────────────────────
     push_args = _build_push_args(branch, exec_git)
+    if force_with_lease:
+        # Fixed position: push --force-with-lease [-u] origin <branch> — identical
+        # across the 3 CLIs (ML-1B's parity gate compares this literally).
+        push_args = [push_args[0], '--force-with-lease'] + push_args[1:]
     _, push_err = git(push_args)
     if push_err:
         write_err(f'git push failed: {push_err}')
@@ -494,6 +635,16 @@ def run_ship(
         writeln(f'Pushed:    {branch} → origin/{branch}')
 
     # ─── Step 7: Open PR/MR ────────────────────────────────────────────────
+    # --force-with-lease only ever reaches here after Step 2.5 confirmed a PR/MR is
+    # already open on this branch — creating another one would be a spurious failure
+    # on every successful force push. Reuses the adapter/resolution Step 2.5 already
+    # computed instead of resolving the forge a second time.
+    if force_with_lease:
+        writeln(f'Forge:     {force_lease_resolution.forge} (source: {force_lease_resolution.source})')
+        writeln(f'{force_lease_adapter.noun} already open — skipping creation (--force-with-lease).')
+        writeln('\nship complete.')
+        return 0
+
     # Resolve forge: flag → config → remote URL → CI files → manual.
     remote_url_out, _ = exec_git(['remote', 'get-url', 'origin'])
     remote_url = (remote_url_out or '').strip()

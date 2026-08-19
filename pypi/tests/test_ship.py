@@ -37,6 +37,7 @@ from trackfw.ship.runner import (
 )
 from trackfw import config as _trackfw_config
 from trackfw.forge.adapter import forge_adapter
+from trackfw.commands import ship as ship_cmd
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -91,7 +92,7 @@ class MockGit:
 
 def make_deps(branch='feat/my-feature', staged='file.py', violations=None,
               config_forge='', repo_dir='', avail_fn=None, exec_forge_cli=None,
-              remote_url=''):
+              remote_url='', check_pr_open=None):
     """Builds a dict of injectable dependencies.
 
     'lines' (stdout, via writeln) and 'err_lines' (stderr, via write_err) are kept as separate
@@ -122,6 +123,7 @@ def make_deps(branch='feat/my-feature', staged='file.py', violations=None,
         # Step 7 safe defaults: no CLI invoked, no filesystem access.
         'avail_fn': avail_fn or (lambda name: False),
         'exec_forge_cli': exec_forge_cli or _noop_forge_cli,
+        'check_pr_open': check_pr_open,
     }
 
 
@@ -1181,3 +1183,168 @@ def test_detect_pending_squash_merges_delegates_to_evaluate_branch_integration()
     assert "diff origin/main origin/feat/unrelated-history --stat" not in calls, (
         "_detect_pending_squash_merges must not run its own bidirectional diff --stat anymore"
     )
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# --force-with-lease — ML-1A
+# ────────────────────────────────────────────────────────────────────────────
+
+def _make_force_lease_deps(staged='file.py', check_pr_open=None):
+    return make_deps(
+        branch='fix/rebase-test',
+        staged=staged,
+        config_forge='github',
+        avail_fn=lambda name: True,
+        remote_url='https://github.com/org/repo.git',
+        check_pr_open=check_pr_open,
+    )
+
+
+def _run_force_lease(d, message='fix: rebase', dry_run=False):
+    code = run_ship(
+        message=message,
+        dry_run=dry_run,
+        exec_git=d['exec_git'],
+        check_governance=d['check_governance'],
+        writeln=d['writeln'],
+        write_err=d['write_err'],
+        avail_fn=d['avail_fn'],
+        exec_forge_cli=d['exec_forge_cli'],
+        config_forge=d['config_forge'],
+        repo_dir=d['repo_dir'],
+        force_with_lease=True,
+        check_pr_open=d['check_pr_open'],
+    )
+    out = '\n'.join(d['lines'] + d['err_lines'])
+    return code, out
+
+
+def test_ship_force_lease_open_pr_succeeds():
+    seen = {}
+
+    def check_pr_open(adapter, branch):
+        seen['branch'] = branch
+        return True
+
+    d = _make_force_lease_deps(check_pr_open=check_pr_open)
+    code, out = _run_force_lease(d)
+    assert code == 0, out
+    assert seen['branch'] == 'fix/rebase-test'
+    assert len(d['cli_calls']) == 0, 'exec_forge_cli must not be called to create a PR'
+
+    push_call = next(c for c in d['git'].calls if c[0] == 'push')
+    assert push_call == ['push', '--force-with-lease', '-u', 'origin', 'fix/rebase-test']
+    assert 'already open — skipping creation (--force-with-lease)' in out
+
+
+def test_ship_force_lease_push_only_when_nothing_staged():
+    d = _make_force_lease_deps(staged='', check_pr_open=lambda a, b: True)
+    code, out = _run_force_lease(d, message='')
+    assert code == 0, out
+    assert not any(c[0] == 'commit' for c in d['git'].calls), 'commit must not be called'
+    assert 'pushes existing commits only' in out
+
+
+def test_ship_nothing_staged_without_force_lease_still_aborts():
+    d = make_deps(branch='fix/rebase-test', staged='')
+    code = run_ship(
+        message='fix: x',
+        exec_git=d['exec_git'],
+        check_governance=d['check_governance'],
+        writeln=d['writeln'],
+        write_err=d['write_err'],
+        avail_fn=d['avail_fn'],
+        exec_forge_cli=d['exec_forge_cli'],
+    )
+    out = '\n'.join(d['lines'] + d['err_lines'])
+    assert code == 1
+    assert 'nothing is staged' in out
+
+
+def test_ship_force_lease_no_open_pr_refuses():
+    d = _make_force_lease_deps(check_pr_open=lambda a, b: False)
+    code, out = _run_force_lease(d)
+    assert code == 1
+    assert 'no open pull/merge request' in out
+    assert not any(c[0] in ('commit', 'push') for c in d['git'].calls), 'must not write before refusal'
+    assert len(d['cli_calls']) == 0
+
+
+def test_ship_force_lease_no_forge_cli_refuses_without_degrading():
+    d = make_deps(
+        branch='fix/rebase-test',
+        staged='file.py',
+        config_forge='github',
+        avail_fn=lambda name: False,
+        remote_url='https://github.com/org/repo.git',
+    )
+    code, out = _run_force_lease(d)
+    assert code == 1
+    assert 'requires a forge CLI' in out
+    assert not any(c[0] in ('commit', 'push') for c in d['git'].calls)
+
+
+def test_ship_force_lease_manual_forge_refuses():
+    d = make_deps(branch='fix/rebase-test', staged='file.py', avail_fn=lambda name: True)
+    code, out = _run_force_lease(d)
+    assert code == 1
+    assert 'requires a forge CLI' in out
+
+
+def test_ship_force_lease_cannot_verify_refuses():
+    def check_pr_open(adapter, branch):
+        raise RuntimeError('gh: authentication required')
+
+    d = _make_force_lease_deps(check_pr_open=check_pr_open)
+    code, out = _run_force_lease(d)
+    assert code == 1
+    assert 'could not verify' in out
+    assert not any(c[0] in ('commit', 'push') for c in d['git'].calls)
+
+
+def test_ship_force_lease_dry_run_still_runs_gate():
+    called = {'value': False}
+
+    def check_pr_open(adapter, branch):
+        called['value'] = True
+        return False
+
+    d = _make_force_lease_deps(check_pr_open=check_pr_open)
+    code, out = _run_force_lease(d, dry_run=True)
+    assert code == 1
+    assert called['value'], 'check_pr_open must run in dry-run mode too'
+    assert 'no open pull/merge request' in out
+
+
+def test_ship_normal_push_unaffected_by_force_lease_path():
+    d = make_deps(branch='fix/normal', staged='file.py')
+    code = run_ship(
+        message='fix: x',
+        exec_git=d['exec_git'],
+        check_governance=d['check_governance'],
+        writeln=d['writeln'],
+        write_err=d['write_err'],
+        avail_fn=d['avail_fn'],
+        exec_forge_cli=d['exec_forge_cli'],
+        force_with_lease=False,
+    )
+    assert code == 0
+    push_call = next(c for c in d['git'].calls if c[0] == 'push')
+    assert push_call == ['push', '-u', 'origin', 'fix/normal']
+
+
+def test_ship_cli_raw_force_flag_does_not_exist():
+    import argparse
+
+    parser = argparse.ArgumentParser(prog='trackfw')
+    subparsers = parser.add_subparsers(dest='command')
+    ship_cmd.register(subparsers)
+
+    # --force-with-lease must parse.
+    args = parser.parse_args(['ship', '-m', 'x', '--force-with-lease'])
+    assert args.force_with_lease is True
+
+    # Raw --force must NOT be accepted, not even as an abbreviation of
+    # --force-with-lease (allow_abbrev=False on the ship subparser).
+    with pytest.raises(SystemExit):
+        parser.parse_args(['ship', '-m', 'x', '--force'])

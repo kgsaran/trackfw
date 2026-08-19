@@ -39,7 +39,7 @@ force-push **restrito a branch que já tem PR aberto**.
 ## Wave 1 — Push forçado (2 MLs, sequenciais: compartilham `ship`)
 
 ### ML-1A — `ship --force-with-lease`, restrito a branch com PR aberto
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
 **Arquivos (os 3 stacks, sempre):** `internal/commands/ship.go`, `npm/src/commands/ship.js`,
 `pypi/trackfw/commands/ship.py` + testes dos 3.
 
@@ -50,12 +50,12 @@ force-push **restrito a branch que já tem PR aberto**.
 - Sem PR aberto: recusar, dizendo que o caminho é abrir o PR primeiro.
 
 **Critérios de aceite:**
-- [ ] `--force-with-lease` funciona em branch rebaseada **com** PR aberto
-- [ ] Recusa **sem** PR aberto, com mensagem que nomeia o caminho correto
-- [ ] Recusa quando não há CLI de forge, sem degradar
-- [ ] `--force` cru **não existe** como flag em nenhum dos 3
-- [ ] Não-regressão: push normal do `ship` inalterado
-- [ ] `make quality` verde
+- [x] `--force-with-lease` funciona em branch rebaseada **com** PR aberto
+- [x] Recusa **sem** PR aberto, com mensagem que nomeia o caminho correto
+- [x] Recusa quando não há CLI de forge, sem degradar
+- [x] `--force` cru **não existe** como flag em nenhum dos 3
+- [x] Não-regressão: push normal do `ship` inalterado
+- [x] `make quality` verde
 
 ### ML-1B — Gate de paridade do push forçado + P4
 **Status:** ⬜ Pendente · **Agente:** `apolo-tf` · **Dependência:** ML-1A
@@ -70,6 +70,46 @@ force-push **restrito a branch que já tem PR aberto**.
 - [ ] `make quality` verde
 
 ---
+
+---
+
+### Auditoria do ML-1A — aprovada, verificada em fixture próprio
+
+Não auditei pelo relatório. Montei remoto **bare de verdade**, reescrevi história e exercitei os
+quatro caminhos com o binário recém-compilado:
+
+```
+sem CLI de forge      -> RECUSA  "requires a forge CLI (gh, glab, or az) to confirm an open PR"
+forge, zero PR        -> RECUSA  "has no open pull/merge request. Open the PR/MR first"
+forge, nao verificavel-> RECUSA  "could not verify ... Refusing rather than risking a force push"
+forge, PR aberto      -> EMPURRA  remoto passa de 561f12b para a4e492e (historia reescrita)
+nao-regressao         -> ship normal sem nada staged continua abortando
+```
+
+**Três classes de recusa, não duas.** O executor separou "não há PR" de "não consegui verificar",
+e isso importa: fundi-las faria uma falha de autenticação do `gh` parecer ausência de PR, empurrando
+o usuário a abrir um PR que já existe. Não estava no meu handoff; foi decisão dele, e é a correta.
+
+**Achado que só apareceu por medir, e que teria furado o AC4:** o `argparse` do Python tem
+`allow_abbrev=True` por padrão. Como `--force-with-lease` era a única flag `--f...`, um `--force`
+cru **funcionaria por abreviação** — passando num `grep` por "--force" e violando o AC em runtime.
+Corrigido com `allow_abbrev=False`. Confirmei nos 3: `Error: unknown flag`, `unknown option`,
+`unrecognized arguments`.
+
+**Mudança de desenho que aceito, com o motivo:** pós-rebase o índice já está limpo, então a parada
+"nada staged" tornava o AC1 impossível. Com `--force-with-lease` e nada staged, o commit é pulado e
+o fluxo vai direto ao push com portão. Sem a flag, o comportamento é idêntico ao anterior —
+verifiquei a não-regressão explicitamente.
+
+**Portão no passo 2.5**, antes de qualquer escrita: uma recusa nunca deixa commit local
+impossível de empurrar. E o passo 7 reusa a resolução de forge para **não** tentar abrir PR que já
+existe.
+
+**Ressalva registrada, não bloqueante:** os comandos de `glab` (GitLab) foram escritos pela
+convenção documentada, **sem verificação em runtime** — o `glab` não está instalado nesta máquina.
+Está comentado no código. Vale confirmar antes de anunciar suporte a GitLab.
+
+`make quality` exit 0 · 0 FAIL · `validate` exit 0.
 
 ## Wave 2 — `release tag` (2 MLs, sequenciais)
 > Dependências: independente da Wave 1 em arquivos, **mas** sequencial por prudência: a Wave 2

@@ -11,6 +11,7 @@ const {
   GIT_WRITE_COMMANDS, buildForgeCreateArgs, firstLine, allDocOnly, defaultBaseBranch,
   gitCommitsSince, buildPRBody, COMMIT_MESSAGE_SEP, detectPendingSquashMerges,
 } = require('../src/ship/runner')
+const shipCommand = require('../src/commands/ship')
 
 // ────────────────────────────────────────────────────────────────────────────
 // helpers
@@ -77,7 +78,7 @@ function captureOutput() {
   }
 }
 
-function makeDeps({ branch, staged, violations = [], configForge = '', repoDir = '', availFn = null, execForgeCLI = null, remoteURL = '', baseRef = '', commitLog = '' } = {}) {
+function makeDeps({ branch, staged, violations = [], configForge = '', repoDir = '', availFn = null, execForgeCLI = null, remoteURL = '', baseRef = '', commitLog = '', checkPROpen = null } = {}) {
   const git = makeMockGit({ branch, stagedFiles: staged, remoteURL, baseRef, commitLog })
   const cap = captureOutput()
   const deps = {
@@ -89,6 +90,7 @@ function makeDeps({ branch, staged, violations = [], configForge = '', repoDir =
     repoDir,
     availFn: availFn || (() => false),
     execForgeCLI: execForgeCLI || (() => null),
+    checkPROpen: checkPROpen || undefined,
   }
   return { deps, git, cap }
 }
@@ -1089,4 +1091,122 @@ test('detectPendingSquashMerges: delegates to evaluateBranchIntegration, no own 
   assert.equal(lines.length, 0, `expected no warning when merge-base fails, got:\n${lines.join('\n')}`)
   assert.equal(calls['diff origin/main origin/feat/unrelated-history --stat'], undefined,
     'detectPendingSquashMerges must not run its own bidirectional diff --stat anymore')
+})
+
+// ────────────────────────────────────────────────────────────────────────────
+// --force-with-lease — ML-1A
+// ────────────────────────────────────────────────────────────────────────────
+
+function makeForceLeaseDeps({ staged = 'file.js', checkPROpen } = {}) {
+  const { deps, git, cap } = makeDeps({
+    branch: 'fix/rebase-test',
+    staged,
+    configForge: 'github',
+    availFn: () => true,
+    remoteURL: 'https://github.com/org/repo.git',
+    checkPROpen,
+  })
+  const opts = { message: 'fix: rebase', forceWithLease: true }
+  return { opts, deps, git, cap }
+}
+
+test('ship force-with-lease: open PR → succeeds, skips creation, uses correct push args', () => {
+  const { opts, deps, git, cap } = makeForceLeaseDeps({
+    checkPROpen: (adapter, branch) => {
+      assert.equal(branch, 'fix/rebase-test')
+      return true
+    },
+  })
+  const code = runShip(opts, deps)
+  assert.equal(code, 0, cap.output())
+
+  const pushCall = git.calls.find((c) => c[0] === 'push')
+  assert.deepEqual(pushCall, ['push', '--force-with-lease', '-u', 'origin', 'fix/rebase-test'])
+  assert.ok(cap.output().includes('already open — skipping creation (--force-with-lease)'), cap.output())
+})
+
+test('ship force-with-lease: nothing staged → push-only, no commit required', () => {
+  const { opts, deps, git, cap } = makeForceLeaseDeps({ staged: '', checkPROpen: () => true })
+  opts.message = ''
+  const code = runShip(opts, deps)
+  assert.equal(code, 0, cap.output())
+  assert.ok(!git.calls.some((c) => c[0] === 'commit'), 'commit must not be called when nothing staged')
+  assert.ok(cap.output().includes('pushes existing commits only'), cap.output())
+})
+
+test('ship: nothing staged without --force-with-lease still aborts (non-regression)', () => {
+  const { deps, cap } = makeDeps({ branch: 'fix/rebase-test', staged: '' })
+  const code = runShip({ message: 'fix: x', forceWithLease: false }, deps)
+  assert.equal(code, 1)
+  assert.ok(cap.output().includes('nothing is staged'), cap.output())
+})
+
+test('ship force-with-lease: no open PR → refuses before any write', () => {
+  const { opts, deps, git, cap } = makeForceLeaseDeps({ checkPROpen: () => false })
+  const code = runShip(opts, deps)
+  assert.equal(code, 1)
+  assert.ok(cap.output().includes('no open pull/merge request'), cap.output())
+  assert.ok(!git.calls.some((c) => c[0] === 'commit' || c[0] === 'push'), 'must not write before refusal')
+})
+
+test('ship force-with-lease: no forge CLI available → refuses without degrading', () => {
+  const { deps, git, cap } = makeDeps({
+    branch: 'fix/rebase-test',
+    staged: 'file.js',
+    configForge: 'github',
+    availFn: () => false,
+    remoteURL: 'https://github.com/org/repo.git',
+  })
+  const code = runShip({ message: 'fix: rebase', forceWithLease: true }, deps)
+  assert.equal(code, 1)
+  assert.ok(cap.output().includes('requires a forge CLI'), cap.output())
+  assert.ok(!git.calls.some((c) => c[0] === 'commit' || c[0] === 'push'), 'must not write before refusal')
+})
+
+test('ship force-with-lease: manual forge → refuses', () => {
+  const { deps, cap } = makeDeps({
+    branch: 'fix/rebase-test',
+    staged: 'file.js',
+    availFn: () => true,
+  })
+  const code = runShip({ message: 'fix: rebase', forceWithLease: true }, deps)
+  assert.equal(code, 1)
+  assert.ok(cap.output().includes('requires a forge CLI'), cap.output())
+})
+
+test('ship force-with-lease: checkPROpen throws → cannot verify, refuses', () => {
+  const { opts, deps, git, cap } = makeForceLeaseDeps({
+    checkPROpen: () => { throw new Error('gh: authentication required') },
+  })
+  const code = runShip(opts, deps)
+  assert.equal(code, 1)
+  assert.ok(cap.output().includes('could not verify'), cap.output())
+  assert.ok(!git.calls.some((c) => c[0] === 'commit' || c[0] === 'push'), 'must not write before refusal')
+})
+
+test('ship force-with-lease: dry-run still runs the gate', () => {
+  let called = false
+  const { opts, deps, cap } = makeForceLeaseDeps({
+    checkPROpen: () => { called = true; return false },
+  })
+  opts.dryRun = true
+  const code = runShip(opts, deps)
+  assert.equal(code, 1)
+  assert.ok(called, 'checkPROpen must run in dry-run mode too')
+  assert.ok(cap.output().includes('no open pull/merge request'), cap.output())
+})
+
+test('ship: normal push unaffected by force-with-lease code path (non-regression)', () => {
+  const { deps, git } = makeDeps({ branch: 'fix/normal', staged: 'file.js' })
+  const code = runShip({ message: 'fix: x', forceWithLease: false }, deps)
+  assert.equal(code, 0)
+  const pushCall = git.calls.find((c) => c[0] === 'push')
+  assert.deepEqual(pushCall, ['push', '-u', 'origin', 'fix/normal'])
+})
+
+test('ship CLI: raw --force flag does not exist; --force-with-lease does', () => {
+  const forceOpt = shipCommand.options.find((o) => o.long === '--force')
+  assert.equal(forceOpt, undefined, 'raw --force must never be registered on ship')
+  const leaseOpt = shipCommand.options.find((o) => o.long === '--force-with-lease')
+  assert.ok(leaseOpt, 'expected --force-with-lease option to be registered')
 })

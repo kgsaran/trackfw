@@ -20034,3 +20034,83 @@ a mesma classe daqui a pouco; é o padrão "condição estreita demais" já nome
   a âncora sai do repositório, que é a direção do `ADR-2026-08-12`.
 
 Branch criada, roadmap em `wip`. 4 waves, 6 MLs.
+
+## 2026-08-19 — Apolo (backend) — INÍCIO: ML-1A — `ship --force-with-lease`
+
+Branch `feat/caminho-governado-para-push-forcado-e-tag-de-release`, roadmap
+`docs/roadmaps/wip/ROADMAP-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md`,
+Wave 1 / ML-1A. Escopo: `internal/commands/ship.go`, `npm/src/ship/runner.js` +
+`npm/src/commands/ship.js`, `pypi/trackfw/ship/runner.py` + `pypi/trackfw/commands/ship.py`, e os
+testes dos 3 stacks. Nenhum commit/push (autoridade exclusiva do `trackfw_architect`).
+
+## 2026-08-19 — Apolo (backend) — FIM: ML-1A concluído — `ship --force-with-lease` implementado nos 3 CLIs
+
+**Achado que mudou o design (confirmado empiricamente antes de codar, via fixture com remoto bare
+real):** pós-rebase o índice já está limpo (a resolução de conflito já commitou) — `ship` como
+estava abortava em "nothing is staged" antes de chegar no push, o que tornaria o AC1 impossível.
+Solução: quando `--force-with-lease` está setada e nada está staged, o passo de commit (Step 5) é
+pulado inteiramente (sem exigir `-m`), indo direto para o push forçado. Sem a flag, o comportamento
+"nothing is staged" continua idêntico ao anterior (não-regressão).
+
+**Onde o gate roda:** nova Step 2.5, logo após a governança e antes de qualquer escrita (commit ou
+push) — colocá-lo depois do push, como cheguei a desenhar inicialmente, deixaria um commit local
+irrecuperável para trás numa recusa. O gate resolve o forge (flag → config → remote URL → CI files
+→ manual) e o adapter uma única vez; Step 7 reaproveita esse mesmo resultado para não resolver o
+forge duas vezes e, principalmente, para **não tentar criar um segundo PR** quando o gate já
+confirmou que um está aberto (armadilha real: sem esse reaproveitamento, todo force-push bem
+sucedido terminaria com um "Warning: PR CLI failed" espúrio, porque `gh pr create` falha quando já
+existe PR para a branch).
+
+**Detecção de PR aberto por forge** — mesmo formato "list" nos 3, para que resultado vazio
+signifique inequivocamente "sem PR" (exit 0) e qualquer exit≠0/output não-parseável signifique
+"não foi possível verificar" (nunca confundido com "sem PR"):
+- github: `gh pr list --head <branch> --state open --json number`
+- gitlab: `glab mr list --source-branch <branch> --state opened -F json` (flags **não verificadas
+  localmente** — `glab` não está instalado nesta máquina; escolhidas por precedente de nomenclatura
+  do próprio `glab`, documentado em comentário no código)
+- azure: `az repos pr list --source-branch <branch> --status active --output json` (verificado via
+  `az repos pr list --help` nesta máquina)
+- bitbucket/manual: nunca chegam à query — `adapter.Available` é sempre `false` para bitbucket, e
+  o gate recusa antes de chamar `checkPROpen`.
+
+**Recusas, com mensagens byte-idênticas nos 3 CLIs** (constantes nomeadas em cada stack, para o
+ML-1B comparar): sem PR aberto, sem CLI de forge disponível (nunca degrada para push permissivo,
+inclusive forge `manual`), e "não foi possível verificar" (erro/timeout do CLI de forge).
+
+**Achado de paridade que só apareceria em runtime** (não em grep): `argparse` do Python tem
+`allow_abbrev=True` por padrão — com `--force-with-lease` sendo o único `--f...` do subparser
+`ship`, `trackfw ship --force` seria aceito silenciosamente como abreviação válida, quebrando o AC4
+("`--force` cru não existe em nenhum dos 3") só no Python, apesar de nenhum grep por `"--force"`
+encontrar essa flag registrada. Corrigido com `allow_abbrev=False` no `subparsers.add_parser("ship",
+...)`; verificado em runtime (`python3 -m trackfw ship --force ...` → `unrecognized arguments`).
+
+**Verificação end-to-end real** (não só testes injetados): fixture com remoto bare local + rebase
+real com conflito resolvido + stub de `gh` no PATH simulando os 3 estados (PR aberto, sem PR,
+CLI com erro de auth) + `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1` para o caso "sem CLI de forge" — os 4
+cenários (sucesso, sem PR, sem CLI, não-verificável) produziram exatamente as saídas esperadas
+contra o binário Go real, e o conteúdo do remoto após o push confirmou que o rebase realmente foi
+publicado (`git --git-dir=remote.git show <branch>:file.txt`).
+
+**Testes:** 15 novos em Go (`internal/commands/ship_test.go`), 10 novos em Node
+(`npm/tests/ship.test.js`), 10 novos em Python (`pypi/tests/test_ship.py`) — Go 100% verde
+(`go test ./...`), Node 83/83 verde (`node --test tests/ship.test.js`), Python 124/124 verde
+(`pytest tests/test_ship.py`). `make quality` saiu com exit 0 (falsificação, paridade, gates de
+segurança inclusos). `./bin/trackfw validate` saiu com exit 0 (só warnings pré-existentes, nenhum
+novo). Roadmap atualizado: ML-1A → `✅ Concluído`, critérios de aceite marcados.
+
+**Fora de escopo, como combinado:** ML-1B (gate de paridade + P4), `release tag` (Wave 2), mensagem
+do guard (Wave 3). Nenhum commit/push — entregue para auditoria do `trackfw_architect`.
+
+## 2026-08-19 — Zeus (arquiteto) — ML-1A auditado
+
+Auditado em fixture próprio com remoto bare real, não pelo relatório. Quatro caminhos exercitados;
+o de sucesso confirmado pela mudança de SHA no remoto.
+
+Dois pontos que valem memória:
+- O executor separou **três** classes de recusa (sem forge / sem PR / não verificável). Fundir as
+  duas últimas faria falha de autenticação do `gh` parecer ausência de PR.
+- `argparse` do Python tem `allow_abbrev=True`: `--force` cru **funcionaria por abreviação** de
+  `--force-with-lease`, passando num grep e violando o AC em runtime. Corrigido.
+
+Ressalva não-bloqueante: comandos do `glab` escritos por convenção documentada, sem verificação em
+runtime (não instalado aqui). Confirmar antes de anunciar suporte a GitLab.
