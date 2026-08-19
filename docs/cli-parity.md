@@ -895,6 +895,93 @@ on stdout, stderr, and exit code:
   catches: the sabotaged binary's push exits 0 and the other party's commit disappears from the
   remote.
 
+### `trackfw release tag <version>` — governed release publication (ML-2A/ML-2B)
+
+> ROADMAP-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md,
+> ADR-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md
+
+`release tag` exists because `trackfw ship` only pushes branches — tagging a release is not a
+branch operation, and `ship`'s governance gate ("REQ + roadmap in wip/") does not apply here. It
+is a separate `release` command group (`trackfw release tag <version>`), not a `ship` flag.
+
+**Nine refusal paths, all checked before any write, every one naming what to fix — this command
+never guesses:**
+
+1. **Dirty working tree** — refuses, lists the files via `git status --porcelain`, and names
+   `trackfw commit` as the fix. **Never recommends `git stash`** — the git-branch-guard has
+   blocked `stash` since ML-3A of this same roadmap, and the product would otherwise be
+   recommending a command it refuses itself (the ML-2B coherence fix this gate's Scenario 1
+   pins).
+2. **Local default branch stale against `origin`** — the tag always targets
+   `origin/<default>` (`main`/`master`, resolved the same way `ship` resolves it), never the
+   branch currently checked out. If a local branch with that same name exists and diverges from
+   `origin/<default>`, refuses naming `git pull`; if no such local branch exists, the check is
+   skipped — this is what lets `release tag` run from any checked-out branch as long as the
+   working tree is clean.
+3. **The 4 version files disagree with `<version>`** — `internal/version/version.go`,
+   `npm/package.json`, `pypi/pyproject.toml`, and `pypi/trackfw/__init__.py` (checked twice: the
+   `importlib.metadata` fallback and the `except`-block fallback, since both hold a version
+   literal) — 5 checks in total. Refuses naming exactly which file/occurrence diverges and both
+   values.
+4. **`CHANGELOG.md` missing the version's section** — refuses unless a `## [<version>] -
+   YYYY-MM-DD` heading exists; the matched section becomes the tag message
+   (`changelog.FormatSection`/`format_section`/`formatSection` — the module `ship`-adjacent
+   tooling already reuses, not duplicated).
+5. **Tag already exists locally.**
+6. **Tag already exists on `origin`.**
+7. **No forge CLI available** — `release tag` currently only supports GitHub; refuses naming
+   `gh` and the manual fallback (`git tag -a ... && git push origin ...`), which does not
+   actually work if attempted — see the note on the guard below.
+8. **Forge resolves to something other than GitHub** — refuses naming the resolved forge, the
+   commit to tag, and points at the forge's web UI or an issue requesting support; deliberately
+   does **not** suggest `git push origin <tag>`, since the `git-branch-guard`'s `case push)`
+   blocks that push form unconditionally regardless of the reason it's being run for.
+9. **Git identity missing** — refuses unless both `git config user.name` and `user.email` are
+   set, naming both commands to fix it. The tag is always annotated, and an annotated tag
+   requires a tagger identity.
+
+**Publication contract — two GitHub API calls, in order, second only on first's success:**
+
+```
+POST git/tags   (gh api repos/{owner}/{repo}/git/tags   --input -)
+  body: {tag, message, object: <origin/default commit sha>, type: "commit", tagger: {name, email, date}}
+  -> returns the sha of the TAG OBJECT (not visible via any ref yet)
+
+POST git/refs   (gh api repos/{owner}/{repo}/git/refs   --input -)
+  body: {ref: "refs/tags/<tag>", sha: <the git/tags response's sha — NOT the commit sha>}
+```
+
+Both calls are required, and in this order: the first creates the tag object (carrying the
+message/tagger) but nothing points at it yet; the second creates the ref pointing at that
+object. **The second call alone — or a ref payload wired to the commit sha instead of the tag
+object's sha — creates a *lightweight* tag**: the ref exists, `git describe`/`git tag -l` find
+it, and the loss (no message, no tagger) is invisible until someone inspects the tag object
+itself. This is exactly the regression the ADR names as the risk `release tag` exists to avoid,
+since a plain `git push origin <tag>` from a lightweight local tag has the same failure mode and
+the guard blocks that push form anyway. The second call is never issued if the first fails.
+
+`{owner}`/`{repo}` are the literal placeholders `gh api` itself expands from the current
+repository context — the remote URL is never hand-parsed for this.
+
+**Gate: `scripts/check-release-tag-parity.sh`** (registered in the `parity` Make target). A real
+bare git remote, local and offline, `$HOME`/`GIT_CONFIG_GLOBAL`/`GIT_CONFIG_SYSTEM` isolated at
+both fixture-construction time and invocation time (the identity precondition means a developer
+machine's real global `git config user.name` must never leak in). Publication always goes
+through a local `gh` stub — no scenario, including success, ever reaches a real GitHub API.
+Ten scenarios, byte-diffed across the 3 runtimes on stdout, stderr, and exit code:
+
+- Scenarios 1–9 exercise the nine refusal paths above (3 split into 3a–3e, one isolated
+  mismatch per version-file check).
+- Scenario 10 ("success") is the load-bearing one: it asserts the **SHA linkage** between the
+  two `gh api` calls — the `git/refs` payload's `sha` must equal the `git/tags` response's
+  returned sha (a fixed stub value, deliberately different from the commit sha), never the
+  commit sha directly. This is what `scripts/check-gates-falsify.sh`'s Cenário 75 sabotages
+  (single-literal change on `internal/commands/release.go`'s `refPayload` construction —
+  `SHA: tagObj.SHA` reverted to `SHA: objectSHA` — in an isolated Go copy) and what this
+  scenario's linkage assertion catches: the sabotaged binary still exits 0 and still prints a
+  "Tag published" success message, but the ref it created points at the commit, not the tag
+  object.
+
 ## `trackfw branch new`
 
 `trackfw branch new <type>/<slug>` moves the `branch_has_wip_roadmap` governance gate — already

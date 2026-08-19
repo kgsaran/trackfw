@@ -48,7 +48,7 @@ type releaseDeps struct {
 // fix, per the ADR's decision that release tag prefers refusing over guessing.
 // See ADR-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md.
 const (
-	releaseTagDirtyTreeFmt = "trackfw release tag refuses to run: working tree is not clean.\n%s\nCommit or stash your changes before tagging a release."
+	releaseTagDirtyTreeFmt = "trackfw release tag refuses to run: working tree is not clean.\n%s\nCommit your changes (trackfw commit) before tagging a release."
 
 	releaseTagFetchFailedFmt = "trackfw release tag refuses to run: could not fetch origin (%s). Check your network/credentials and retry."
 

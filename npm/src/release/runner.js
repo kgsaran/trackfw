@@ -27,7 +27,7 @@ const changelog = require('../changelog')
 // so the ML-2B parity gate can compare all 3 CLIs. Every precondition refusal names what to
 // fix — release tag prefers refusing over guessing.
 function dirtyTreeMsg(statusOut) {
-  return `trackfw release tag refuses to run: working tree is not clean.\n${statusOut}\nCommit or stash your changes before tagging a release.`
+  return `trackfw release tag refuses to run: working tree is not clean.\n${statusOut}\nCommit your changes (trackfw commit) before tagging a release.`
 }
 
 function fetchFailedMsg(errMessage) {

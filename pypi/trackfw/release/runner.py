@@ -33,7 +33,7 @@ from trackfw.forge.adapter import forge_adapter
 def _dirty_tree_msg(status_out):
     return (
         f"trackfw release tag refuses to run: working tree is not clean.\n{status_out}\n"
-        "Commit or stash your changes before tagging a release."
+        "Commit your changes (trackfw commit) before tagging a release."
     )
 
 

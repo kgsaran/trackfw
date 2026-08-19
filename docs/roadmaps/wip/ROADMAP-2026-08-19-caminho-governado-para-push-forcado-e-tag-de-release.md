@@ -271,18 +271,57 @@ repositório atual) em vez de parsear o remote URL manualmente. A segunda chamad
 Nenhum commit/push — entregue para auditoria do `trackfw_architect`.
 
 ### ML-2B — Gate de paridade do `release tag` + P4
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` · **Dependência:** ML-2A
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` · **Dependência:** ML-2A
 **Arquivos:** `scripts/check-release-tag-parity.sh` (novo), `Makefile`,
 `scripts/check-gates-falsify.sh`, `docs/cli-parity.md`.
 
 **Critérios de aceite:**
-- [ ] Gate compara as **três saídas reais** em todos os caminhos de recusa
-- [ ] **Correção de coerência:** a mensagem de árvore suja não pode mais recomendar `git stash` — o
+- [x] Gate compara as **três saídas reais** em todos os caminhos de recusa
+- [x] **Correção de coerência:** a mensagem de árvore suja não pode mais recomendar `git stash` — o
       guard o bloqueia desde o ML-3A. Trocar por orientação que o próprio produto aceita
       (`trackfw commit`, ou reverter o arquivo). Nos 3 CLIs.
-- [ ] Cenário P4 sabotando a criação do objeto de tag (anotada → leve) e provando gate vermelho
-- [ ] Seção no `cli-parity.md` **nomeando o gate**
-- [ ] `make quality` verde
+- [x] Cenário P4 sabotando a criação do objeto de tag (anotada → leve) e provando gate vermelho
+- [x] Seção no `cli-parity.md` **nomeando o gate**
+- [x] `make quality` verde
+
+**Evidência de conclusão (apolo-tf, retomado de execução parcial interrompida por limite de
+sessão — 2026-08-19):**
+
+Ao assumir o lote, três coisas já estavam feitas e verificadas por KG: a correção de coerência
+(zero ocorrências de "stash" em `internal/commands/release.go`, `npm/src/release/runner.js`,
+`pypi/trackfw/release/runner.py`), `scripts/check-release-tag-parity.sh` (10 cenários — os 9
+caminhos de recusa da precondição 1–9, mais o sucesso) já passando isoladamente, e o registro no
+alvo `parity:` do `Makefile` (linha 36). Faltavam três itens, todos fechados agora:
+
+1. **Contagem de cenários corrigida: 137 → 136.** O diff desta série só acrescenta **um**
+   Cenário de topo (75); a mensagem final do `check-gates-falsify.sh` estava contando um a mais.
+   Corrigido na linha do `echo` final.
+2. **Cenário 75 verificado ponta a ponta — passou na primeira execução, sem precisar de
+   conserto.** `bash scripts/check-gates-falsify.sh`: exit 0, zero FAIL. O cenário sabota o
+   literal `SHA: tagObj.SHA` → `SHA: objectSHA` em `internal/commands/release.go` (payload da
+   segunda chamada `gh api .../git/refs`), numa cópia isolada do Go, e prova que
+   `check-release-tag-parity.sh` fica vermelho contra o binário sabotado (mensagem
+   `LIGHTWEIGHT-TAG REGRESSION: ref payload 'sha' must equal the tag-object sha`) depois de provar
+   que o mesmo gate passa limpo contra o binário original (braço de baseline).
+3. **Seção nova em `docs/cli-parity.md`** (`### trackfw release tag <version>` — governed release
+   publication, logo após `ship --force-with-lease`): nomeia o gate
+   (`scripts/check-release-tag-parity.sh`), documenta as 9 pré-condições de recusa e o contrato
+   das duas chamadas `gh api` (`git/tags` depois `git/refs`, preservando a anotação — a segunda
+   chamada sozinha, ou um payload `sha` apontando para o commit em vez do objeto de tag, degrada
+   para tag leve), e nomeia o Cenário 75 como o que falsifica essa degradação.
+
+**Evidência de validação:**
+- `make build`: limpo.
+- `bash scripts/check-gates-falsify.sh`: `EXIT=0`, 0 FAIL, texto final confirmando **"all 136
+  scenarios"**.
+- `GO_BIN=bin/trackfw bash scripts/check-release-tag-parity.sh`: `EXIT=0`, 10/10 cenários OK.
+- `make quality`: `EXIT=0`, do zero (inclui `check-thirdparty-parity.sh` e o
+  `check-gates-falsify.sh` acima).
+- `./bin/trackfw validate`: `EXIT=0`, 21 warnings — mesma classe pré-existente já registrada no
+  ML-2A (REQs sem ADR/roadmap linkado, roadmap em wip sem heading de critérios de aceite), nenhum
+  novo.
+
+Nenhum commit/push — entregue para auditoria do `trackfw_architect`.
 
 ---
 
@@ -311,6 +350,35 @@ dele. Vai para o ML-2B.
 **Duas divergências reais corrigidas por ele**, via comparação das 3 saídas com argumentos fixos:
 texto de erro de git no fallback do Python, e timestamp com milissegundos no Node. **Quinta** vez
 nesta série que comparar saídas reais acha o que teste por stack não acha.
+
+
+### Auditoria do ML-2B — aprovada, com a mensagem de falha mais útil da série
+
+Sabotei eu mesmo o discriminante e exigi vermelho:
+
+```
+{Ref: ..., SHA: tagObj.SHA}  ->  {Ref: ..., SHA: objectSHA}     (literal único)
+gate -> EXIT=1, e a mensagem se explica sozinha:
+  "LIGHTWEIGHT-TAG REGRESSION: ref payload 'sha' must equal the tag-object sha
+   (deadbeef...), got e41569b1... (commit sha is e41569b1...)"
+restaurado -> "All check-release-tag-parity.sh scenarios passed."
+```
+
+Vale registrar a **qualidade da mensagem**: ela nomeia a regressão, mostra o valor esperado, o obtido,
+e **por que** o obtido está errado (é o sha do commit). Quem quebrar isso daqui a um ano não precisa
+ler o gate para entender. É o padrão que quero nos outros.
+
+**Por que este era o discriminante certo:** tag leve *parece* funcionar — a ref existe, `git describe`
+acha, nada falha. A perda só aparece quando alguém procura a mensagem do release, meses depois, num
+repositório público. Defeito silencioso e caro de desfazer.
+
+**Interrupção por limite de sessão, e o que se aprende dela:** o executor anterior caiu exatamente ao
+iniciar a verificação do Cenário 75. Auditei o disco antes de re-despachar, para não mandar refazer o
+que já estava bom, e o handoff novo listou o que **não** tocar. Achei ali um erro de contagem
+(137 em vez de 136) — a convenção é +1 por Cenário de topo, confirmada no histórico
+(`133 → 134 → 135`). Gate escrito e não executado é gate não-verificado; o P4 vale para o próprio P4.
+
+`make quality` exit 0 · 0 FAIL · 136 cenários · `validate` exit 0.
 
 ## Wave 3 — Guard: comandos destrutivos + mensagem
 

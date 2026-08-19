@@ -20371,3 +20371,41 @@ bloqueia incondicionalmente — reescrita para não instruir um comando que o ha
 
 Roadmap atualizado: ML-2A → `✅ Concluído`, com evidência completa inline (incluindo a correção
 pós-autorrevisão). Nenhum commit/push — entregue para auditoria do `trackfw_architect`.
+
+## Sessão 2026-08-19 — Apolo (INÍCIO: ML-2B, retomada de execução parcial interrompida)
+
+Branch `feat/caminho-governado-para-push-forcado-e-tag-de-release-tag-de-release`, roadmap
+`docs/roadmaps/wip/ROADMAP-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md`
+em `wip/`. Retomando o ML-2B (Gate de paridade do `release tag` + Cenário P4), interrompido por
+limite de sessão de um executor anterior. Já verificado por KG antes de eu começar: correção de
+coerência (sem `git stash` nas mensagens de árvore suja, nos 3 CLIs), `check-release-tag-parity.sh`
+passando isoladamente, registro no alvo `parity:` do Makefile. Faltava: corrigir a contagem de
+cenários (137→136) em `check-gates-falsify.sh`, rodar e verificar o Cenário 75 ponta a ponta
+(nunca executado), e escrever a seção do `release tag` em `docs/cli-parity.md` (não tocada pelo
+executor anterior). Nenhum commit/push (autoridade exclusiva do `trackfw_architect`).
+
+## Sessão 2026-08-19 — Apolo (FIM: ML-2B concluído — gate de paridade + Cenário 75 + doc, não commitado)
+
+As três pendências fechadas:
+
+1. **Contagem de cenários:** `137` → `136` na mensagem final de `scripts/check-gates-falsify.sh`
+   (o diff desta série só adiciona um Cenário de topo, o 75).
+2. **Cenário 75 verificado ponta a ponta — passou de primeira, sem precisar de conserto.**
+   `bash scripts/check-gates-falsify.sh`: exit 0, 0 FAIL. Sabota `SHA: tagObj.SHA` →
+   `SHA: objectSHA` em `internal/commands/release.go` (payload da 2ª chamada `gh api
+   .../git/refs`) numa cópia isolada do Go, e prova `check-release-tag-parity.sh` vermelho contra
+   o binário sabotado (degradação de tag anotada para leve) após provar que o mesmo gate passa
+   limpo contra o binário original.
+3. **Seção nova em `docs/cli-parity.md`** (`### trackfw release tag <version>`, logo após `ship
+   --force-with-lease`): nomeia `scripts/check-release-tag-parity.sh`, documenta as 9
+   pré-condições de recusa e o contrato das duas chamadas `gh api` (`git/tags` depois `git/refs`,
+   preservando anotação), e nomeia o Cenário 75.
+
+**Evidência:** `make build` limpo; `bash scripts/check-gates-falsify.sh` exit 0, "all 136
+scenarios"; `GO_BIN=bin/trackfw bash scripts/check-release-tag-parity.sh` exit 0, 10/10; `make
+quality` exit 0; `./bin/trackfw validate` exit 0, 21 warnings pré-existentes (mesma classe do
+ML-2A, nenhum novo).
+
+Roadmap atualizado: ML-2B → `✅ Concluído`, com evidência completa inline. Nenhum commit/push —
+entregue para auditoria do `trackfw_architect`. Falta apenas ML-4A (`hades-tf`, revisão de
+segurança do escape hatch) para fechar a roadmap inteira.
