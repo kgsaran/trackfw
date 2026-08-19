@@ -810,6 +810,41 @@ fora de escopo é o comportamento certo.
 Quem bloqueou é quem confirma que fechou. Veredito explícito.
 
 
+## Wave 6 — Corretiva de CI
+
+### ML-6A — `check-ship-force-parity.sh` reprova em Linux
+**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Arquivos:** `scripts/check-ship-force-parity.sh` (e produto **só** se a causa raiz estiver lá).
+
+**Evidência (CI do PR #194, job `parity`, run 32314033472):** verde no macOS, **vermelho no Linux**.
+Todos os cenários que dependem de stub de `gh` caem na recusa de *forge ausente*:
+
+```
+FAIL [ship-force-parity/forge-zero-pr/{go,node,py}]:
+  vacuity guard: stderr missing the no-open-PR refusal; stderr:
+  "requires a forge CLI (gh, glab, or az) ... No forge CLI is available for this repository"
+FAIL [ship-force-parity/forge-unverifiable/{go,node,py}]:   idem
+FAIL [ship-force-parity/forge-pr-open-pushes/{go,node,py}]: expected exit 0, got 1 — mesma causa
+OK   [ship-force-parity/no-forge-cli]                       (o único que espera essa recusa)
+OK   [ship-force-parity/remote-advanced-lease-mismatch]
+```
+
+O stub de `gh` **não está sendo encontrado** no Linux. `BASE_PATH="$RUNTIME_BIN:/usr/bin:/bin"`
+(linha 103) e o stub é preposto por cenário (linhas 212-214).
+
+🔴 **O que isto significa, e é o ponto:** o gate passava localmente **pelo motivo errado**. Mesma
+classe do vazamento de `$HOME` do ML-3B — verde numa máquina, vermelho na outra. Consertar o sintoma
+sem entender **por que divergiu** deixa a próxima instância viva.
+
+**Critérios de aceite:**
+- [ ] Causa raiz **reproduzida em Linux**, não inferida — container `golang`/`ubuntu`, como um ML
+      anterior desta série fez em `python:3.12-slim`
+- [ ] Gate verde em Linux **e** macOS
+- [ ] Se a causa raiz for do **produto** e não do gate, corrigir no produto e dizer isso
+- [ ] Os outros gates de stub de forge (`check-release-tag-parity.sh`, que usa o mesmo padrão)
+      **verificados quanto à mesma causa** — não presumir que estão bem só porque passaram
+- [ ] `make quality` verde · **CI verde** (é o AC10, e é o que reprovou)
+
 ## Notas
 - **Fora de escopo, declarado:** afrouxar o `case push)` do guard; merge de PR; `trackfw release`
   cobrindo bump e CHANGELOG (adiado no ADR, não rejeitado).

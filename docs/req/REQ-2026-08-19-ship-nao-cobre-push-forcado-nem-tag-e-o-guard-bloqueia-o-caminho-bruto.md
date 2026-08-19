@@ -124,7 +124,10 @@ do no-op. Não deixar implícito.
       Histórico: era insuficiente — o gate nomeado não exercita seleção adversarial do commit-alvo, ou seja,
       não protege a própria garantia que o AC8 declara. Estender no ML-4B.
 - [x] AC9 — Consequência de segurança declarada no ADR.
-- [ ] AC10 — `make quality` verde **e CI verde**. (local verde; **aguardando CI**)
+- [ ] AC10 — `make quality` verde **e CI verde**.
+      🔴 **CI REPROVOU** (PR #194, job `parity` em Linux): `check-ship-force-parity.sh` verde no
+      macOS, vermelho no Linux — o stub de `gh` não é encontrado. O gate passava localmente **pelo
+      motivo errado**. Corrige no ML-6A.
 
 ## Riscos para quem executar
 
