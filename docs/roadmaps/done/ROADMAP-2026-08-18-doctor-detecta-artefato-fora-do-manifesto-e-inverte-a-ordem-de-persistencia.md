@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-08-18
 req: "docs/req/REQ-2026-08-17-doctor-detecta-artefato-em-disco-ausente-do-manifesto-apos-janela-de-gravacao-parcial.md"
 adr: "docs/adr/ADR-2026-08-18-ordem-de-persistencia-inverte-para-manifesto-antes-dos-artefatos.md"
@@ -8,7 +8,7 @@ squad: "apolo-tf, hades-tf"
 
 # Roadmap: `doctor` detecta artefato fora do manifesto, e a ordem de persistência inverte
 
-> Created: 2026-08-18 | Status: **todas as waves concluídas** — AC1–AC8 fechados, CI verde no PR #190
+> Created: 2026-08-18 | Status: done
 
 > 🔴 **Entrega parcial deliberada.** A Wave 1 (inversão da ordem) foi para PR sozinha porque é
 > autocontida e impede casos novos desde já. **A REQ NÃO está fechada:** o `doctor` (AC1–AC4) e a

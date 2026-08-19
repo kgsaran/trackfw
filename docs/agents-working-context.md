@@ -19986,3 +19986,20 @@ onde esta série já quebrou por diferença de plataforma invisível no macOS. A
 
 Roadmap pronto para `done`. **Aguardando merge de KG** — arquiteto não faz merge.
 Após o merge: `roadmap move ... done`, REQ fechada, e **só então** a 7.1.0.
+
+## 2026-08-19 — Zeus (arquiteto) — REQ do `doctor` encerrada
+
+PR #190 mergeado por KG (`main` em `364ee78`). Fechamento executado:
+
+- `main` atualizada; branch local removida com o **próprio `trackfw branch prune`** — dogfooding do
+  comando que esta série entregou. Classificou corretamente como `squash-merged into origin/main`,
+  que é o caso que o `git branch -d` erra.
+- Roadmap movido para `done` via `trackfw roadmap move`.
+- REQ marcada `Done` e **religada** ao ADR e ao roadmap (os campos `adr:`/`roadmap:` estavam vazios).
+  Efeito colateral medido: `validate` caiu de 21 para 19 avisos.
+
+**Estado da REQ:** AC1–AC8 fechados, CI verde, barreira aprovada com a ressalva já corrigida.
+
+**Próximo passo, e agora é o único:** a **7.1.0**, conforme a decisão de KG de só lançar depois do
+`doctor` fechado. `main` acumula 9 PRs desde a `v7.0.0`, incluindo comando novo (`branch prune`) e o
+`doctor` — por SemVer, **minor**.
