@@ -154,6 +154,10 @@ def main():
     from trackfw.commands import changelog as changelog_cmd
     changelog_cmd.register(subparsers)
 
+    # --- doctor ---
+    from trackfw.commands import doctor as doctor_cmd
+    doctor_cmd.register(subparsers)
+
     # Snapshot the final command set for the "unknown command" error path
     # above — must run after every .register(subparsers) call, before parsing.
     parser.trackfw_command_names = list(subparsers.choices.keys())

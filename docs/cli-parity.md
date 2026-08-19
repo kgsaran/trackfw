@@ -4111,3 +4111,103 @@ intencional, é REQ própria. Ver o apêndice "Barreira ML-2A" em
 O gate degrada para teste de conexão quando falta `lsof`, e nesse modo **pula** a exclusão de
 wildcard em vez de passar em silêncio — o braço de detecção do Cenário 59 então deixa de reprovar e
 a falsificação fica vermelha. A vacuidade se denuncia sozinha em vez de virar falso verde.
+
+## `trackfw doctor` — detecção de artefato fora do manifesto (REQ-2026-08-17, ADR-2026-08-18, ML-2A/ML-2B/ML-2C)
+
+Gate: **`scripts/check-doctor-parity.sh`** (alvo `parity`) + Cenários 71 e 72 de
+`check-gates-falsify.sh`. O gate compara as **três saídas reais** (`diff -u` byte a byte, stdout e
+stderr, nas duas superfícies — relatório de texto e `--json`) contra fixtures construídas por
+**install-e-mutar** real, nunca por bytes de template hardcoded.
+
+**Origem:** antes da inversão de ordem de persistência do ADR-2026-08-18, uma escrita
+interrompida entre gravar os bytes de um artefato e persistir a entrada correspondente no
+manifesto podia deixar o disco e o manifesto dessincronizados sem nenhum comando para detectar
+ou remediar isso.
+
+**ML-2C (correção da barreira ML-3A):** a auditoria de segurança
+(`docs/seguranca/2026-08-18-revisao-do-doctor-e-da-inversao.md`) encontrou um terceiro estado —
+`!Registered && StateModified` — caindo em silêncio fora do `switch` de `ClassifyDoctor`. É
+precisamente o estado que faz o preflight de `agents install` recusar o mesmo destino com
+`unmanaged artifact`: o `doctor` respondia "no mismatches found" ao usuário cujo `install` acabara
+de recusar. Ver `vault/notes/doctor-classifydoctor-silences-tampering-when-manifest-entry-removed-2026-08-19.md`.
+
+### As três classes, e por que não podem ser fundidas
+
+| classe | condição | remédio |
+|---|---|---|
+| `unregistered-write` | conteúdo em disco bate byte a byte com o template atual do catálogo, **mas o manifesto não tem entrada nenhuma** para o destino | adota — `install --force`, seguro porque o conteúdo já é o que o install escreveria de qualquer forma |
+| `unknown-content` | conteúdo em disco **não** bate com o template do catálogo **e** o manifesto não tem entrada nenhuma para o destino | ambíguo — nomeia literalmente a recusa: `agents install` recusará este destino com `unmanaged artifact`; se o arquivo é do usuário, remover ou mover; se é do trackfw e derivou do template, `install --force` substitui |
+| `hand-modified` | o manifesto **tem** entrada e esta claim é dona dela, **mas o hash em disco divergiu** do que o manifesto registrou | avisa da perda — `install --force` sobrescreve a edição manual |
+
+`unregistered-write` e `unknown-content` usam o mesmo discriminante — `Registered` (existe
+**alguma** entrada para o destino, de qualquer claim), não `Managed` (esta claim exata é dona da
+entrada) — ver o doc comment de `ClassifyDoctor` (`internal/integrations/doctor.go`). Um destino
+registrado sob uma claim **diferente** deve ficar em silêncio, nunca virar falso-positivo, seja de
+"escrita não registrada" (Cenário 71) ou de "conteúdo desconhecido" (Cenário 72) — isso quase
+entrou como bug no ML-2A para a primeira classe, e é o risco simétrico que o ML-2C precisou fechar
+para a segunda.
+
+`unknown-content` é **genuinamente ambíguo** entre duas causas que um sinal só-de-hash não
+distingue: um arquivo que simplesmente não é do trackfw ocupando um destino do catálogo, ou um
+artefato órfão do trackfw (escrito antes de uma interrupção deixar a entrada do manifesto
+ausente, ADR-2026-08-18) cujos bytes derivaram depois que o template do catálogo evoluiu. Por
+isso o remédio nomeia a recusa literalmente em vez de escolher um lado.
+
+### Cenários do gate (a–f), cada um em texto e `--json`
+
+- **(a) baseline limpo** — nada instalado, os 3 relatam `no mismatches found` / `[]`.
+- **(b) unregistered-write** — install real seguido de remoção cirúrgica da entrada do manifesto
+  (bytes em disco intocados).
+- **(c) hand-modified** — install real seguido de um byte anexado ao artefato em disco (hash do
+  manifesto fica obsoleto).
+- **(d) unknown-content** — conteúdo alheio escrito exatamente no destino que o catálogo usaria,
+  **sem nunca instalar** (zero entrada no manifesto, conteúdo não bate template) — reproduz
+  `Registered=false, State=modified`. **Reinterpretado pelo ML-2C** (antes chamado
+  "alien-file-not-flagged", esperava `no mismatches found`): é exatamente o estado que
+  `ClassifyDoctor` deixava de reportar; o fixture não mudou, só a expectativa — os 3 CLIs agora
+  relatam exatamente um finding `unknown-content` cujo remédio cita `unmanaged artifact`
+  literalmente.
+- **(e) registrado sob claim diferente, conteúdo atual** — install real seguido de retargetar o
+  `item` da claim da entrada do manifesto (hash intocado) — reproduz `Registered=true,
+  Managed=false, State=current` e prova que os 3 CLIs ficam em silêncio (o discriminante do
+  Cenário 71).
+- **(f) registrado sob claim diferente, conteúdo divergido** — igual a (e), mas **também** com um
+  byte anexado ao artefato em disco, reproduzindo `Registered=true, Managed=false,
+  State=modified`. Adicionado pelo ML-2C: é o **único** fixture do gate capaz de discriminar o
+  `!Registered` correto de um `!Managed` incorreto na classe `unknown-content` — (e) sozinho não
+  alcança esse `case` porque seu `State` permanece `current`. Prova que os 3 CLIs ficam em silêncio
+  (o discriminante do Cenário 72).
+
+### Restrições duras do fixture (cada uma já custou um ciclo nesta série)
+
+1. **`HOME` redirecionado** para um diretório temporário por cenário — `doctor` varre o escopo
+   **global** além do de projeto; sem isso o gate leria o `~/.trackfw` real de quem o executa.
+2. **Install-e-mutar, nunca bytes de template hardcoded** — hardcode apodrece em silêncio na
+   próxima mudança de template do catálogo.
+3. **Identidade fixada explicitamente** (`identity.json` escrito em `$HOME` antes do install) —
+   sem isso, o fallback zero-value de `identity.Load` faz os 3 CLIs concordarem por construção,
+   fechando a paridade vacuamente independente de a renderização sensível a identidade estar
+   correta.
+4. **Edição do manifesto via `python3`, nunca `sed -i`** — divergência BSD vs GNU já custou uma
+   falha de CI só-em-Linux nesta série.
+5. **Resolução física do caminho do fixture (`pwd -P`)** — no macOS, `/tmp` e `$TMPDIR` são
+   symlinks para `/private/...`; a resolução de cwd do Go só é física após `EvalSymlinks`
+   explícito, enquanto Node e Python são sempre físicos. Sem normalizar o `project`/`home` do
+   fixture com `pwd -P` antes de instalar, o manifesto fica gravado com a chave não-canônica do Go
+   e toda leitura via Node/Python falha o lookup — reportando "não registrado" para **qualquer**
+   artefato, independentemente do que foi de fato instalado. Mesmo fix que
+   `scripts/check-thirdparty-parity.sh` já aplica.
+
+### Dois defeitos reais de paridade que este gate encontrou e corrigiu no produto (não no gate)
+
+- **`--json` com zero achados:** o Go emitia `null` (slice nil serializada por `encoding/json`)
+  onde Node e Python sempre emitem `[]`. Corrigido inicializando `ClassifyDoctor` com
+  `[]DoctorFinding{}` (`internal/integrations/doctor.go`) — a forma canônica escolhida é a que
+  Node/Python já usavam.
+- **Linha em branco final do relatório de texto:** o Go deixava uma linha em branco à direita do
+  último finding; Node e Python já normalizavam isso (`.replace(/\n$/, '')` /
+  `.rstrip("\n")`). Corrigido em `printDoctorReport` (`internal/commands/doctor.go`) para não
+  emitir a quebra final — a forma canônica é a que os outros dois já usavam.
+
+Nenhuma divergência de **nomes de campo** no `--json` foi encontrada: `finding`, `claim`
+(`target`/`surface`/`scope`/`kind`/`item`), `destination`, `remedy` já casavam nos 3 CLIs.
