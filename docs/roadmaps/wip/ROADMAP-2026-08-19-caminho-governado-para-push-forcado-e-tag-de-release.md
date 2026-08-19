@@ -555,6 +555,60 @@ classe destrutiva tem evasão óbvia — lembrando que é **tripwire, não front
 
 ---
 
+### Auditoria do ML-4A — **BLOQUEIO ACEITO**, e o achado é pior do que o parecer diz
+
+Veredito do `hades-tf`: **BLOQUEAR `trackfw release tag`**; `ship --force-with-lease` e o bloqueio da
+classe destrutiva **aprovados**. Parecer: `docs/seguranca/2026-08-19-revisao-do-push-forcado-e-do-release-tag.md`.
+
+Confirmei por leitura direta, não pelo relatório:
+- `defaultBaseBranch` (`internal/commands/ship.go:591`) → `git symbolic-ref refs/remotes/origin/HEAD`,
+  **symref local e gravável**;
+- `release.go:263` → `rev-parse origin/<base>`, **também ref local** — `refs/remotes/origin/<base>` é
+  artefato do clone, não fato do remoto;
+- Precondição 2 (`release.go:269`) só compara **se** existir `refs/heads/<base>`; sem ela, **pulada**.
+
+**E é pior do que o parecer registra.** O `git fetch origin --prune` que roda antes não corrige nada:
+`fetch` só atualiza o que o refspec cobre. Um `remote.origin.fetch` estreitado deixa `origin/<base>`
+forjado, e o fetch não o conserta — mecanismo que **o próprio gate do ML-1B explora de propósito**,
+nesta mesma branch. Ou seja: **os dois saltos são locais**. Pinar o symref corrigiria metade.
+
+A garantia central — *"a tag sempre aponta para `origin/<default>`"* — **não é sustentada**. Num
+comando que publica em repositório público, isso é bloqueio, não ressalva.
+
+**AC3 e AC8 desmarcados** com o motivo escrito. O AC8 merece nota própria: o gate existe, passa, e
+**não protege a garantia que o AC8 declara** — não exercita seleção adversarial do alvo. Gate verde
+que não cobre o próprio contrato é pior que gate ausente, porque compra confiança.
+
+`ADR-2026-08-19` ganhou **Emenda 1** (ADR `Accepted` se emenda, nunca se reescreve).
+
+---
+
+## Wave 5 — Corretiva da barreira
+
+### ML-4B — Commit-alvo da tag ancorado no forge
+**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Fecha AC3 e AC8.**
+**Arquivos (3 stacks):** `internal/commands/release.go` + `internal/commands/ship.go`
+(`defaultBaseBranch`), `npm/src/release/runner.js`, `pypi/trackfw/release/runner.py`, testes dos 3,
+`scripts/check-release-tag-parity.sh`, `scripts/check-gates-falsify.sh`, `docs/cli-parity.md`,
+e o literal `gitBranchGuardScript` em `internal/generators/scaffold.go` (+ espelhos).
+
+**Critérios de aceite:**
+- [ ] Commit-alvo vem do **forge** (`.default_branch` e depois `.sha` da branch), nunca de ref local
+- [ ] Ref local, se usada, é **verificação cruzada** — nunca fonte
+- [ ] `defaultBaseBranch` corrigido para branch com `/` no nome; o mesmo helper alimenta o corpo do
+      PR do `ship`, então a correção tem dois consumidores
+- [ ] Gate estendido com **seleção adversarial do alvo**: symref repontado, `origin/<base>` forjado
+      via `update-ref`, refspec estreitado. Sem isso o AC8 não fecha
+- [ ] Cenário P4 sabotando o sha do forge de volta para o local, provando gate vermelho
+- [ ] `git update-ref`, `git worktree remove --force` e `git rm -f` entram no bloqueio destrutivo —
+      `update-ref` é o mecanismo que tornou este exploit alcançável
+- [ ] `make quality` verde
+
+### ML-4C — Reverificação do `hades-tf`
+**Status:** ⬜ Pendente · **Agente:** `hades-tf` · **Dependência:** ML-4B.
+Quem bloqueou é quem confirma que fechou. Veredito explícito.
+
+
 ## Notas
 - **Fora de escopo, declarado:** afrouxar o `case push)` do guard; merge de PR; `trackfw release`
   cobrindo bump e CHANGELOG (adiado no ADR, não rejeitado).

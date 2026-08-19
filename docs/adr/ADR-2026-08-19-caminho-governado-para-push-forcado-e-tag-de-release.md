@@ -95,3 +95,54 @@ antes, abrir um PR — que é visível, atribuível e não reescrevível por que
   torna honesto. A correção mora no `ship`/`release`, nunca em enfraquecer a tripwire.
 - **Aceitar o force-push sem restrição, só declarando** — rejeitada em favor da amarração ao PR
   aberto, que custa pouco e move a âncora para fora do repositório.
+
+---
+
+## Emenda 1 (2026-08-19) — o commit-alvo da tag ancora no forge, não em ref local
+
+> Esta ADR está `Accepted`. A emenda **acrescenta**; nada acima foi reescrito.
+
+A barreira do ML-4A (`docs/seguranca/2026-08-19-revisao-do-push-forcado-e-do-release-tag.md`)
+**bloqueou** o `release tag`, e o achado é procedente. Confirmado por leitura:
+
+- `defaultBaseBranch` (`internal/commands/ship.go:591`) resolve a branch padrão por
+  `git symbolic-ref refs/remotes/origin/HEAD` — **symref local e gravável**;
+- `release.go:263` resolve o commit por `rev-parse origin/<base>` — **também ref local**, porque
+  `refs/remotes/origin/<base>` é um artefato do clone, não um fato do remoto;
+- a Precondição 2 só compara **se** existir `refs/heads/<base>` local; sem ela, é **pulada por inteiro**.
+
+O `git fetch origin --prune` que roda antes **não corrige** isso: `fetch` só atualiza os refs que o
+refspec cobre. Um `remote.origin.fetch` estreitado deixa `origin/<base>` desatualizado ou forjado, e
+o fetch não o conserta — mecanismo já explorado deliberadamente pelo gate do ML-1B.
+
+**Os dois saltos são locais.** Pinar o symref não resolve; seria corrigir um dos dois.
+
+### Decisão
+
+**O commit-alvo da tag passa a vir do forge**, pela credencial já usada nas outras chamadas:
+
+```
+GET /repos/{owner}/{repo}                    -> .default_branch
+GET /repos/{owner}/{repo}/commits/{branch}   -> .sha     <- é este o `object` do git/tags
+```
+
+Refs locais viram, no máximo, **verificação cruzada** — nunca a fonte.
+
+Isto não é decisão nova: é o **mesmo princípio** que esta ADR já adotou para a checagem de PR aberto
+— *a âncora mora fora do repositório, onde o agente não escreve*. O campo do commit-alvo simplesmente
+não recebeu o princípio na primeira passada.
+
+### Consequência aceita, declarada
+
+Com o sha vindo do forge, o `release tag` pode publicar um commit que **o clone local nunca viu**.
+É o comportamento correto — o forge é a autoridade — mas amplia em silêncio o que o comando alcança.
+Fica dito, do mesmo modo que o `rm trackfw.yaml` foi dito no ADR do no-op.
+
+### Achados menores da mesma barreira, e o destino de cada um
+
+| achado | decisão |
+|---|---|
+| `defaultBaseBranch` usa o **último** `/` do symref — branch `release/7.2` vira `7.2` | **corrigir**; o mesmo helper alimenta o corpo do PR do `ship` |
+| gate do `release tag` não exercita seleção adversarial do alvo | **corrigir junto com o código** — é o gate falhando em proteger a própria garantia |
+| PR em **rascunho** satisfaz o portão do `--force-with-lease` | **declarar, não bloquear**: rascunho ainda mora no forge, é visível e atribuível — a propriedade de âncora se mantém |
+| `git update-ref`, `worktree remove --force`, `git rm -f` fora do bloqueio destrutivo | **incluir `update-ref`** — foi o mecanismo que tornou este exploit alcançável; os outros dois entram por serem a mesma classe |

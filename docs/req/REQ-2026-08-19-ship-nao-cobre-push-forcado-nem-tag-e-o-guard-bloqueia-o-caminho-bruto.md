@@ -105,16 +105,22 @@ do no-op. Não deixar implícito.
 
 ## Acceptance Criteria
 
-- [ ] AC1 — Decisão registrada em **ADR**: `ship --force-with-lease` + `release tag` separado, ou
+- [x] AC1 — Decisão registrada em **ADR**: `ship --force-with-lease` + `release tag` separado, ou
       um `ship` alargado. Com o motivo.
-- [ ] AC2 — Push pós-rebase tem caminho governado, usando **`--force-with-lease`**, nunca `--force`.
+- [x] AC2 — Push pós-rebase tem caminho governado, usando **`--force-with-lease`**, nunca `--force`.
 - [ ] AC3 — Tag anotada de release tem caminho governado, com a mensagem íntegra no objeto de tag.
+      🔴 **Bloqueado pela barreira do ML-4A (2026-08-19).** O commit-alvo vem de refs **locais**, não
+      do forge — `symbolic-ref refs/remotes/origin/HEAD` e `rev-parse origin/<base>` são ambos
+      artefatos locais e graváveis. A garantia "a tag sempre aponta para `origin/<default>`" **não
+      é sustentada**. Fecha no ML-4B.
 - [ ] AC4 — As demais formas da tabela ou são cobertas, ou recusadas **com orientação**.
-- [ ] AC5 — Mensagem do guard deixa claro que o comando **inteiro** foi bloqueado.
+- [x] AC5 — Mensagem do guard deixa claro que o comando **inteiro** foi bloqueado.
 - [ ] AC6 — Paridade nos **3 CLIs**, com **gate comparando as saídas reais** — teste por stack não fecha.
 - [ ] AC7 — Cenário P4 para cada superfície nova, com braço de baseline e de detecção.
 - [ ] AC8 — Seção no `docs/cli-parity.md` **nomeando o gate** que a protege.
-- [ ] AC9 — Consequência de segurança declarada no ADR.
+      🔴 **Insuficiente:** o gate nomeado não exercita seleção adversarial do commit-alvo, ou seja,
+      não protege a própria garantia que o AC8 declara. Estender no ML-4B.
+- [x] AC9 — Consequência de segurança declarada no ADR.
 - [ ] AC10 — `make quality` verde **e CI verde**.
 
 ## Riscos para quem executar

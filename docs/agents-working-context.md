@@ -20409,3 +20409,64 @@ ML-2A, nenhum novo).
 Roadmap atualizado: ML-2B → `✅ Concluído`, com evidência completa inline. Nenhum commit/push —
 entregue para auditoria do `trackfw_architect`. Falta apenas ML-4A (`hades-tf`, revisão de
 segurança do escape hatch) para fechar a roadmap inteira.
+
+## Sessão 2026-08-19 — Hades (INÍCIO: ML-4A — parecer de segurança sobre push forçado e release tag)
+
+Branch `feat/caminho-governado-para-push-forcado-e-tag-de-release` (não criada por mim), roadmap
+`docs/roadmaps/wip/ROADMAP-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md`,
+Wave 4. Escopo: avaliar `ship --force-with-lease` (Wave 1), `release tag` (Wave 2) e o bloqueio da
+classe destrutiva do guard (Wave 3), com veredito explícito em
+`docs/seguranca/2026-08-19-revisao-do-push-forcado-e-do-release-tag.md`. Nenhum código de produto
+tocado; nenhum commit/push (autoridade exclusiva do `trackfw_architect`).
+
+## Sessão 2026-08-19 — Hades (FIM: ML-4A concluído — BLOQUEAR `release tag`, resto aprovado)
+
+Entregue `docs/seguranca/2026-08-19-revisao-do-push-forcado-e-do-release-tag.md`. **Veredito:
+BLOQUEAR `trackfw release tag`** (nos 3 CLIs — a causa raiz é compartilhada por design); `ship
+--force-with-lease` e o bloqueio da classe destrutiva (Wave 3): **APROVADOS**.
+
+**Achado bloqueante, medido com fixture real (remoto bare local, stub de `gh`, nunca rede real),
+na forma mais forte confirmada — sem push nenhum do atacante:** `defaultBaseBranch`
+(`ship.go:591-602` / `npm/src/release/runner.js:347-353` / `pypi/trackfw/release/runner.py:229-241`)
+resolve o commit-alvo da tag via `git symbolic-ref refs/remotes/origin/HEAD` — um symref **local,
+mutável por um comando git comum, fora de todas as classes do guard**. A Precondição 2 do
+`release.go` só valida "SE existir uma branch local com o nome de `base`, ela bate com
+`origin/<base>`" — quando não existe (ex.: `base` redefinido para uma branch antiga já existente
+em `origin`, que o atacante nunca criou localmente), a checagem é **pulada**, não satisfeita. Provei
+publicando (contra stub) uma tag `v4.4.4` apontando para uma branch alheia pré-existente,
+com um commit forjado que **nunca existiu em nenhum ref remoto** — zero push, zero PR, zero
+contorno do guard (o único comando "incomum" é o `symbolic-ref`, que é leitura/config). Uma
+variante mais fraca (com push próprio) também ficou registrada, mas a sem-push é a que sustenta o
+veredito, por não depender de nada que o `ADR-2026-08-12` já tenha aceito como não-prevenível.
+Correção recomendada: resolver `base` via `git ls-remote --symref origin HEAD` (ao vivo) e/ou
+restringir literalmente a `main`/`master`, e exigir que o checkout atual seja `base`. **O gate
+nomeado pelo AC8 (`check-release-tag-parity.sh`) não cobre esta propriedade** — nenhum dos 10
+cenários toca `symbolic-ref`; o ML corretivo precisa estender o gate, não só o código. Fica para um
+ML corretivo do `apolo-tf`, coordenado pelo `trackfw_architect`.
+
+Achados menores, não bloqueantes: **bug de parsing** no mesmo `defaultBaseBranch` (usa o *último*
+`/` do symref — `LastIndexByte`/`rfind`) — um branch padrão com `/` no nome (ex. `release/main`)
+resolve errado, e o mesmo helper alimenta o corpo do PR do `ship` normal
+(`gitCommitsSince`/`buildPRBody`, `ship.go:488`), não só o `release tag`; PR em rascunho satisfaz o
+portão do `--force-with-lease` (`gh pr list --state open` não exclui draft — confirmado via
+`gh pr list --help`, não websearch); `git update-ref`/`worktree remove --force`/`git rm -f` seguem
+fora do bloqueio da classe destrutiva (mesma família do `git rm`/`filter-branch` já declarados fora
+de escopo pela REQ, mas `update-ref` é a mais preocupante por atingir o objetivo específico da REQ
+— corrupção de branch compartilhada — por um caminho não cogitado no roadmap; registrado como REQ
+futura, não bloqueio).
+
+## 2026-08-19 — Zeus (arquiteto) — barreira BLOQUEOU o `release tag`
+
+`hades-tf`: **BLOQUEAR**. Confirmei por leitura, e o achado é **pior** do que o parecer registra: não
+é só o symref ser local — `rev-parse origin/<base>` também é ref local, e o `fetch --prune` não
+corrige porque só atualiza o que o refspec cobre. **Os dois saltos são locais.** Pinar o symref
+corrigiria metade.
+
+Decisão (Emenda 1 do ADR): o commit-alvo passa a vir do **forge**. Não é decisão nova — é o mesmo
+princípio que a ADR já adotou para o PR aberto, aplicado ao campo que ficou de fora.
+
+AC3 e AC8 desmarcados. O AC8 merece a nota: o gate existe, passa, e **não protege a garantia que ele
+declara**. Gate verde que não cobre o próprio contrato é pior que gate ausente — compra confiança.
+
+**Nada merge, nada tagueia até o Hades levantar o bloqueio.** Waves 5 abertas: ML-4B corretivo e
+ML-4C de reverificação, com quem bloqueou confirmando.
