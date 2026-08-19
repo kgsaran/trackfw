@@ -19986,3 +19986,13 @@ onde esta série já quebrou por diferença de plataforma invisível no macOS. A
 
 Roadmap pronto para `done`. **Aguardando merge de KG** — arquiteto não faz merge.
 Após o merge: `roadmap move ... done`, REQ fechada, e **só então** a 7.1.0.
+
+## 2026-08-19 — Zeus (arquiteto) — bump para 7.1.0
+
+Autorizado por KG após o fechamento do `doctor`. Bump nos 4 arquivos de versão + `CHANGELOG.md`
+no mesmo PR, conforme o protocolo de release (nunca commit separado).
+
+Versão verificada nos **três** runtimes, não só no Go: `trackfw 7.1.0`, `npm 7.1.0`, `pypi 7.1.0`.
+
+**Minor**, não major: dois comandos novos (`doctor`, `branch prune`) e nenhuma quebra.
+A tag só depois deste PR mergeado — a tag representa o estado pós-merge.
