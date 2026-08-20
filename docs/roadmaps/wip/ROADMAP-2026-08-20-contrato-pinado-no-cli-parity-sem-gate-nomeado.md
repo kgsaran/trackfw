@@ -250,6 +250,46 @@ HTML adicional colado na mesma linha — não há caso real disso a corrigir ago
 
 ---
 
+
+### Auditoria do ML-1B — aprovada, com um 6º caso que ele achou e não corrigiu sozinho
+
+```
+5 classes de reprovacao provadas por execucao (Cenarios 77b-77g), delta unico cada
+nao-vacuidade (77h): checker com os.path.isfile neutralizado fica em silencio
+documento real: 1 gate · 1 gate+partial · 1 gap · 0 none · 174 sem anotacao · 0 invalidas
+138 cenarios · make quality exit 0 · validate exit 0 · invocacao CI-exata exit 0
+```
+
+**Ele rodou a invocação CI-exata sem eu precisar cobrar.** Depois de três rodadas de CI perdidas
+ontem por essa exata lacuna, é o tipo de coisa que quero ver virar hábito.
+
+**Achado 1 — parsing ciente de blocos de código.** Minha medição por `grep` cru estava errada:
+15 dos "cabeçalhos" são literais dentro de exemplos de template (`## Motivation`, `## Context`) para
+`req new`/`adr new`/`roadmap new`. **O universo é 177, não ~192.** Confirmei por conta própria.
+Numa triagem que é julgamento, 8% de falsos obrigaria o triador a decidir sobre seções que não
+existem. Corrigido na Emenda 2 e aqui.
+
+**Achado 2 — `partial=` vazio passa em silêncio, e ele sinalizou em vez de corrigir.** Foi a atitude
+certa: não estava entre os 5 casos que eu documentei, e inventar o 6º por conta própria seria decidir
+formato, que é meu. Verifiquei o furo:
+
+```
+gate=scripts/check-cli-parity.sh partial=     ->  exit 0, conta como cobertura parcial
+                                                   SEM dizer o que fica de fora
+```
+
+É o mesmo argumento que matou o `gate=` vazio, e aqui é pior — a seção some do relatório que existe
+para revelar lacunas. **Vira o 6º caso**, com regra geral na Emenda 2 para não precisar emendar a
+cada chave nova: *toda chave presente exige valor não-vazio; para "não se aplica", omita a chave*.
+
+---
+
+### ML-1B-bis — 6º caso de reprovação
+**Status:** ⬜ Pendente · **Agente:** `apolo-tf` · **Dependência:** ML-1B.
+Aplicar a regra geral da Emenda 2 no checker: chave presente com valor vazio reprova. Braço P4 para
+o caso. Lote de minutos, mas precisa entrar **antes** do ML-2A — 177 seções anotadas contra um
+checker permissivo seriam 177 anotações a reconferir.
+
 ## Wave 2 — Triagem (o grosso do trabalho)
 
 ### ML-2A — Triagem das seções
@@ -259,8 +299,8 @@ HTML adicional colado na mesma linha — não há caso real disso a corrigir ago
 **Ação:** classificar **cada** seção nos **três** estados da Emenda 1 (`gate=`, `gap`, `none`),
 mais `partial=` onde couber. Refazer a contagem: a da REQ (18 de 52) está defasada.
 
-🔴 **Refatiar antes de começar.** O universo medido é **~192** (`##` 53 · `###` 122 · `####` 17), não
-175. Triagem de 192 seções num ML só é grande demais para auditar bem — dividir por faixas do
+🔴 **Refatiar antes de começar.** O universo medido é **177** (`##` 39 · `###` 121 · `####` 17) — ver Emenda 2:
+o `grep` cru contava 15 cabeçalhos dentro de blocos de código de template, que não são seções. Triagem de 192 seções num ML só é grande demais para auditar bem — dividir por faixas do
 documento, com cada lote auditável de forma independente.
 
 **O produto mais valioso desta REQ é a lista de contratos SEM gate.** Ela não é subproduto da

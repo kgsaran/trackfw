@@ -173,3 +173,47 @@ ela importa, que é explicar uma lacuna. Muda a regra de leitura:
 
 Chave desconhecida na anotação é **erro**, não texto livre — senão um `reson=` com erro de digitação
 viraria parte do valor anterior e o checker aceitaria em silêncio.
+
+---
+
+## Emenda 2 (2026-08-20) — `partial=` vazio reprova, e o universo real é 177
+
+> Esta ADR está `Accepted`. A emenda **acrescenta**; nada acima foi reescrito.
+
+### `partial=` vazio é a mesma falha que a Emenda 1 rejeitou
+
+Levantado pelo ML-1B, que **sinalizou em vez de corrigir por conta própria** — correto, porque não
+estava entre os 5 casos documentados. Verificado por mim:
+
+```
+<!-- trackfw-contract: gate=scripts/check-cli-parity.sh partial= -->
+checker -> exit 0, e a secao conta como "gate= com partial=" sem nenhuma ressalva listada
+```
+
+É **exatamente** o argumento que matou o `gate=` vazio na Emenda 1: valor vazio é indistinguível de
+omissão, e aqui é pior — a seção entra na contagem de cobertura parcial **sem dizer o que fica de
+fora**, então some do relatório que existe para revelar lacunas.
+
+**Decisão: `partial=` vazio é o 6º caso de reprovação.** `partial` presente exige valor não-vazio.
+
+Regra geral, para não precisar de emenda a cada chave nova:
+
+> **Toda chave presente na anotação exige valor não-vazio.** Chave sem valor é erro, nunca "não se
+> aplica" — para "não se aplica", omita a chave.
+
+### O universo real é 177, não ~192
+
+O ML-1B implementou parsing **ciente de blocos de código** e encontrou o que a minha medição por
+`grep` cru não via. Confirmei por conta própria:
+
+```
+fora de fence:  ## 39 · ### 121 · #### 17  = 177
+dentro de fence:                             15  (falsos)
+```
+
+Os 15 são cabeçalhos literais (`## Motivation`, `## Context`…) dentro de exemplos de template para
+`req new`/`adr new`/`roadmap new`. **Não são seções do documento.**
+
+Corrige a Emenda 1, que dizia ~192, e o roadmap. A diferença importa: 15 falsos positivos numa
+triagem de 177 é ruído de 8% num trabalho que é julgamento, e cada falso obrigaria o triador a
+decidir sobre algo que não existe.

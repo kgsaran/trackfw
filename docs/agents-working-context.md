@@ -20960,3 +20960,41 @@ próximo prefixo ou fim de linha, nunca por split cru.
 
 `./bin/trackfw validate` → exit 0 (mesmos warnings pré-existentes, nenhum novo). `make quality` →
 exit 0. Nenhum commit feito — devolvendo ao `trackfw_architect` para auditoria.
+
+## Sessão 2026-08-20 — Apolo (INÍCIO: ML-1B — meta-checker de cobertura de contrato)
+
+Branch `feat/contrato-pinado-no-cli-parity-sem-gate-nomeado` (ativa, sem commit/push — autoridade
+exclusiva do `trackfw_architect`). Roadmap
+`docs/roadmaps/wip/ROADMAP-2026-08-20-contrato-pinado-no-cli-parity-sem-gate-nomeado.md`, ML-1B.
+Escopo: `scripts/check-parity-contract-coverage.sh` (novo), registro no alvo `parity:` do
+`Makefile`, cenário P4 novo em `scripts/check-gates-falsify.sh` (137 → 138). Formato de anotação
+fechado no ADR (Emenda 1 + Nota de parsing) — não decido formato, só implemento o parser.
+
+## Sessão 2026-08-20 — Apolo (FIM: ML-1B concluído)
+
+**Arquivos:** `scripts/check-parity-contract-coverage.sh` (novo), `Makefile` (alvo `parity:`,
+grupo sem `GO_BIN` — o checker não toca o binário Go), `scripts/check-gates-falsify.sh` (Cenário 77
++ contagem final 137→138).
+
+Parser em Python3 embutido (heredoc) por prefixo de chave conhecido (`gate=`/`partial=`/`reason=`),
+fence-aware (ignora `##`/`###`/`####` dentro de blocos ` ``` ` — são templates literais de
+`req new`/`adr new`/`roadmap new` embutidos como exemplo em `docs/cli-parity.md`, não seções reais
+do documento). Universo real medido: `## 39 · ### 121 · #### 17 = 177`, não 192 — o `~192` do
+roadmap/ADR vem de `grep -c` ingênuo, que conta esses 14+1 cabeçalhos de template como se fossem
+seções de verdade. O relatório imprime as duas contagens lado a lado para não obrigar ninguém a
+redescobrir isso no ML-2A.
+
+5 casos de reprovação provados por execução (fixtures em `$WORK` no Cenário 77 do
+`check-gates-falsify.sh`, cobrindo `##`/`###`/`####`, `gate=`/`gap`/`none` válidos e o estado
+`malformed`): gate sem caminho, gate apontando pro vazio, gap sem motivo, none sem motivo, chave
+desconhecida (`reson=`) e prefixo sem estado reconhecido. Braço de não-vacuidade: cópia do checker
+com o `os.path.isfile` neutralizado (sempre `True`) prova que o caso 2 (gate inexistente) fica mudo
+sem essa checagem — script real, não lido, restaurado depois.
+
+**Decisão de escopo, registrada, não corrigida:** `gate=x partial=` com valor vazio conta hoje como
+cobertura plena silenciosamente — mesmo modo de falha que a Emenda 1 rejeitou para `gate=` vazio,
+mas fora dos 5 casos que o ML-1B lista. Não reprovo por isso; deixo registrado para o arquiteto
+decidir se vira um 6º caso.
+
+`make quality` exit 0 · `./bin/trackfw validate` exit 0 · `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make
+parity` exit 0. Nenhum commit feito — devolvendo ao `trackfw_architect` para auditoria.

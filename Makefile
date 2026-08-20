@@ -19,6 +19,7 @@ parity: build
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-cli-parity.sh
 	scripts/check-validate-parity.sh
 	scripts/check-referential-integrity.sh
+	scripts/check-parity-contract-coverage.sh
 	scripts/check-static-assets.sh
 	scripts/check-integration-assets.sh
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-identity-parity.sh
