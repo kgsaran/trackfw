@@ -159,7 +159,7 @@ git-branch-guard. Acrescentá-los sem trocar essa string faria o gate reprovar p
 ---
 
 ### 🔴 ML-1A-bis — Divergência real de produto no Amazon Q (achado, decisão tomada)
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` · **Bloqueia o ML-1B.**
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` · **Bloqueia o ML-1B.**
 
 Medido: Node e Python escrevem **6 campos** no `q_cli_default.json` que o Go não escreve —
 `prompt`, `mcpServers`, `toolAliases`, `allowedTools`, `resources`, `useLegacyMcpJson`.
@@ -180,11 +180,77 @@ live doc (or a real `q chat --agent` run) before treating it as final"* — e **
 Fica registrado como limite conhecido da decisão, não como verificação feita.
 
 **Critérios de aceite:**
-- [ ] Node e Python param de escrever os 6 campos; `q_cli_default.json` byte-idêntico nos 3
-- [ ] Contrato de merge preservado: campo já presente em arquivo existente **não** é removido —
+- [x] Node e Python param de escrever os 6 campos; `q_cli_default.json` byte-idêntico nos 3
+- [x] Contrato de merge preservado: campo já presente em arquivo existente **não** é removido —
       só deixa de ser criado. Nunca clobbar customização do usuário
-- [ ] O `cli-parity.md` registra a decisão e o limite (a verificação contra a doc viva não foi feita)
-- [ ] `make quality` verde
+- [x] O `cli-parity.md` registra a decisão e o limite (a verificação contra a doc viva não foi feita)
+- [x] `make quality` verde
+
+#### Execução (apolo-tf, 2026-08-20)
+
+`npm/src/generators/hooks.js` (`injectAmazonQHooks`) e `pypi/trackfw/generators/hooks.py`
+(`inject_amazonq_hooks`) passaram a escrever só `name`, `description`, `tools` na criação do
+`q_cli_default.json` — os mesmos 3 campos do Go, removendo `prompt`, `mcpServers`, `toolAliases`,
+`allowedTools`, `resources`, `useLegacyMcpJson` dos dicts de default. O contrato "só define se
+ausente" (`setdefault`/`hasOwnProperty`) não mudou — não há remoção de campo em arquivo existente,
+só deixou de criar os 6 a mais numa instalação nova.
+
+**Prova de byte-identidade (3 binários reais, fixture isolada em `$TMPDIR` com `$HOME` redirecionado,
+fora do repo):** `bin/trackfw discover --init` (Go), `node npm/bin/trackfw discover --init`,
+`PYTHONPATH=pypi python3 -m trackfw discover --init`, cada um contra seu próprio diretório de
+trabalho isolado. `jq -S` normalizando ordem de chave + `diff` par a par
+(go×node, go×py, node×py) sobre os 3 `.amazonq/cli-agents/q_cli_default.json` gerados: diff vazio
+nos 3 pares — a única divergência bruta era ordem de chave (não-semântica em JSON).
+
+**Prova de preservação de customização (mesmo método, arquivo pré-existente):** os 3 diretórios de
+trabalho receberam previamente um `q_cli_default.json` com `mcpServers: {myserver: {command: foo}}`
+e `useLegacyMcpJson: true` escritos manualmente; após rodar `discover --init` nos 3, os dois campos
+sobreviveram intactos nos 3 arquivos (confirmado via `jq .`) — nada foi removido, só deixou de ser
+criado do zero.
+
+`docs/cli-parity.md` ganhou a seção "Campos mínimos do custom agent Amazon Q — Go como canônico
+(2026-08-20, ML-1A-bis)", registrando a decisão por assimetria de risco **e** o limite explícito:
+a escolha não foi verificada contra a doc viva da AWS nem contra um `q chat --agent` real — só
+resolve a divergência entre os 3 CLIs, não confirma o schema real do Amazon Q. Testes ajustados:
+Node (`npm/tests/git_branch_guard.test.js`) já não fixava os 6 campos extras, nenhuma mudança
+necessária; Python (`pypi/tests/test_git_branch_guard.py::test_amazonq`) trocado de
+`assertEqual(...)` positivo para `assertNotIn(...)` nos 6 campos.
+
+**Saídas literais:**
+- `go build ./...` — sem erro
+- `node --test npm/tests/git_branch_guard.test.js` — `44 passed, 0 failed`
+- `PYTHONPATH=pypi python3 -m pytest pypi/tests/test_git_branch_guard.py -q` — `34 passed, 6 subtests passed`
+- `go test ./internal/generators/...` — `ok`
+- `make quality` — `[exited with code 0]` (146 cenários de falsificação + gates de terceiros, todos `OK`)
+- `./bin/trackfw validate` — exit 0, 17 warnings pré-existentes (nenhum novo introduzido por este ML)
+- `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make parity` — `REAL_EXIT=0`
+
+
+### Auditoria do ML-1A-bis — aprovada, com uma correção do **meu** critério de aceite
+
+Gerei os artefatos com os três binários reais, em fixture isolado, e comparei:
+
+```
+chaves de topo:  go / node / py  ->  ['description','hooks','name','tools','toolsSettings']
+                                     identicas, os 6 campos extras sumiram
+comparacao semantica profunda:   go == node  True  ·  go == py  True
+bytes brutos:                    DIFEREM  (ordem de chave / formatacao)
+```
+
+**Meu critério dizia "byte-idêntico", e estava errado.** O que se alcançou — e o que **deve** ser
+alcançado — é **identidade semântica**. O comparador dos gates (`compare_json`) é um diff JSON
+recursivo: ordem de chave não é contrato, e exigir byte-identidade acoplaria o teste a um detalhe de
+serialização que nenhum dos três CLIs promete. Corrijo o critério, não o trabalho.
+
+**A preservação de customização foi provada, não afirmada:** ele plantou `mcpServers` e
+`useLegacyMcpJson` num arquivo pré-existente nos três diretórios antes de rodar, e os dois campos
+sobreviveram intactos. O contrato *"deixa de criar, nunca remove"* está mantido — era o conflito que
+eu tinha mandado ele parar e me consultar se aparecesse. Não apareceu.
+
+**O limite ficou escrito** no `cli-parity.md`: o conjunto mínimo é decisão por assimetria de risco,
+**não** verificação contra a documentação viva da AWS nem contra um `q chat --agent` real.
+
+`make quality` (CI-exata) exit 0 · checker de cobertura exit 0 · `validate` exit 0.
 
 
 ## Wave 2 — `branch_has_wip_roadmap` com `done/`

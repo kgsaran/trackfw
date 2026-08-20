@@ -439,13 +439,18 @@ class TestGitBranchGuardHookWiringIdempotent(unittest.TestCase):
         data = _read_json(path)
         self.assertEqual(data['name'], 'q_cli_default')
         self.assertIn('git branch guard', data['description'])
-        self.assertIsNone(data['prompt'])
-        self.assertEqual(data['mcpServers'], {})
         self.assertEqual(data['tools'], ['*'])
-        self.assertEqual(data['toolAliases'], {})
-        self.assertEqual(data['allowedTools'], [])
-        self.assertEqual(data['resources'], [])
-        self.assertFalse(data['useLegacyMcpJson'])
+        # ML-1A-bis (ROADMAP-2026-08-20): Go is canonical; only name/description/tools
+        # are written on first creation. `prompt`/`mcpServers`/`toolAliases`/
+        # `allowedTools`/`resources`/`useLegacyMcpJson` are deliberately NOT written --
+        # an extra field the real schema doesn't expect risks failing validation,
+        # while an absent optional field usually doesn't (docs/cli-parity.md).
+        self.assertNotIn('prompt', data)
+        self.assertNotIn('mcpServers', data)
+        self.assertNotIn('toolAliases', data)
+        self.assertNotIn('allowedTools', data)
+        self.assertNotIn('resources', data)
+        self.assertNotIn('useLegacyMcpJson', data)
         pre_entries = [e for e in data['hooks']['preToolUse'] if e['matcher'] == 'execute_bash']
         self.assertEqual(len(pre_entries), 1)
         commands = [h['command'] for h in pre_entries[0]['hooks']]

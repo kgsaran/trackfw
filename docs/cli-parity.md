@@ -4353,6 +4353,35 @@ O contrato de payload do `gitBranchGuardScript` (seção acima) também foi ajus
 cadeia de tentativas de extração do comando via stdin JSON, ao lado dos campos genéricos já
 existentes (`.tool_input.command`, `.command`, `.hook_input.command`).
 
+### Campos mínimos do custom agent Amazon Q — Go como canônico (2026-08-20, ML-1A-bis)
+
+<!-- trackfw-contract: gap reason=a decisão de alinhar Node/Python ao conjunto mínimo do Go é por assimetria de risco, não por verificação contra a doc viva da AWS ou um `q chat --agent` real; nenhum gate cross-CLI confirma o schema real do Amazon Q, só a byte-identidade entre os 3 CLIs (ML-1B) -->
+
+Investigação do ML-1A (roadmap `ROADMAP-2026-08-20-gates-para-os-tres-contratos-de-maior-risco.md`)
+mediu uma 6ª divergência real entre os 3 CLIs: Node e Python escreviam, na criação do
+`.amazonq/cli-agents/q_cli_default.json`, 6 campos que o Go **deliberadamente omite** (doc comment
+de `InjectAmazonQHooks`, `internal/generators/agentfiles.go`) — `prompt`, `mcpServers`,
+`toolAliases`, `allowedTools`, `resources`, `useLegacyMcpJson`.
+
+**Decisão: o Go é o canônico.** Node (`npm/src/generators/hooks.js`) e Python
+(`pypi/trackfw/generators/hooks.py`) foram alinhados a ele — o conjunto mínimo escrito na criação
+passou a ser só `name`, `description` e `tools`. O motivo é assimetria de risco, citada no próprio
+comentário do Go: um campo extra que o schema real não espera arrisca falhar a validação do agente;
+um campo opcional ausente normalmente não. Entre as duas, escrever de menos é o lado seguro.
+
+**Limite explícito, para não virar "confirmado" por engano:** essa escolha **não** foi verificada
+contra a documentação viva da AWS (`command-line-custom-agents-configuration.html`) nem contra um
+`q chat --agent` real — é a mesma ressalva que o comentário do Go já carregava ("verify this
+defaults set against the live doc ... before treating it as final") e que segue sem ser feita. O
+que ML-1A-bis resolve é a **divergência entre os 3 CLIs**, não a **correção contra o schema real do
+Amazon Q**.
+
+**Contrato de merge preservado:** o alinhamento é só sobre o que uma instalação **nova** cria. Um
+arquivo `q_cli_default.json` pré-existente com qualquer um dos 6 campos (ex.: `mcpServers`
+configurado manualmente pelo usuário) não é tocado — os 3 injectors usam
+merge-só-se-ausente (`setdefault`/`hasOwnProperty`/`_, exists := root[k]`), então nenhum campo já
+presente é removido por este lote.
+
 ### Fix de robustez do `match_subcommand` (2026-08-14, ML-4A, achado por teste manual E2E)
 
 <!-- trackfw-contract: gate=scripts/check-gates-falsify.sh partial=os 3 bugs foram achados por teste manual E2E, não por gate automatizado; o bug 1 (comando encadeado) é superado e coberto indiretamente pelos Cenários 60/61 (segmentação quote-aware); grep confirma que não há cenário dedicado para o bug 2 (basename vs caminho absoluto, ex. `/usr/bin/git commit`) -->

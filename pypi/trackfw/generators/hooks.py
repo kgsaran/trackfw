@@ -1258,14 +1258,20 @@ def inject_windsurf_hooks(cwd: str) -> None:
 #
 # Minimal-but-valid custom agent schema (per command-line-custom-agents-
 # configuration.html), field-for-field mirror of Go's InjectAmazonQHooks
-# (internal/generators/agentfiles.go) and Node's injectAmazonQHooks
-# (npm/src/generators/hooks.js), confirmed on this branch after both landed their
-# fix ahead of this Python port -- do not diverge from these defaults without
-# updating all three. Only set for fields not already present (`setdefault`), so
-# re-running against a hand-edited or previously-generated file never clobbers user
-# customization -- same "preserve existing settings" contract as every other
-# merge-based injector in this module. `tools: ["*"]` is written on first creation
-# so the default agent keeps today's unrestricted tool access (this fix does not
+# (internal/generators/agentfiles.go) -- Go is the canonical set of defaults
+# (ROADMAP-2026-08-20, ML-1A-bis): only `name`, `description` and `tools` are written
+# on first creation. `prompt`/`mcpServers`/`toolAliases`/`allowedTools`/`resources`/
+# `useLegacyMcpJson` were written by this port until ML-1A-bis and are now
+# deliberately NOT written here -- an extra field the real schema doesn't expect
+# risks failing validation, whereas an absent optional field usually doesn't
+# (assymetry-of-risk decision, not a verification against the live Amazon Q schema --
+# see docs/cli-parity.md for the recorded limit). Only set for fields not already
+# present (`setdefault`), so re-running against a hand-edited or previously-generated
+# file never clobbers user customization -- same "preserve existing settings"
+# contract as every other merge-based injector in this module, and pre-existing
+# occurrences of the dropped fields in a user's file are left untouched (never
+# removed, only no longer created). `tools: ["*"]` is written on first creation so
+# the default agent keeps today's unrestricted tool access (this fix does not
 # narrow what any agent can do, only where the deny wiring lives).
 #
 # Documented gap (roadmap step 7, second half): Amazon Q Developer CLI supports native
@@ -1283,13 +1289,7 @@ _GIT_GUARD_DENIED_COMMANDS_PATTERN = '^git (commit|push|checkout -b)'
 _AMAZONQ_AGENT_DEFAULTS = {
     'name': 'q_cli_default',
     'description': 'trackfw-managed default agent — wires the git branch guard hook/denylist. See docs/cli-parity.md.',
-    'prompt': None,
-    'mcpServers': {},
     'tools': ['*'],
-    'toolAliases': {},
-    'allowedTools': [],
-    'resources': [],
-    'useLegacyMcpJson': False,
 }
 
 

@@ -21538,3 +21538,26 @@ ML-1B precisa trocar a string do guard só para essas duas entradas.
 
 Parecer completo com as 5 respostas na seção ML-1A do roadmap. Nenhuma linha de gate escrita, nenhum
 script alterado. `./bin/trackfw validate` exit 0.
+
+## 2026-08-20 — Apolo (apolo-tf) — ML-1A-bis: Node e Python alinhados ao Go no `q_cli_default.json`
+
+Executei a decisão já tomada (não minha): Go é canônico. `npm/src/generators/hooks.js`
+(`injectAmazonQHooks`) e `pypi/trackfw/generators/hooks.py` (`inject_amazonq_hooks`) pararam de
+escrever `prompt`, `mcpServers`, `toolAliases`, `allowedTools`, `resources`, `useLegacyMcpJson` na
+criação do `q_cli_default.json` — só `name`/`description`/`tools` agora, igual ao Go. Contrato de
+merge (`setdefault`/`hasOwnProperty`) intocado: nenhum campo é removido de arquivo pré-existente,
+só deixou de ser criado do zero.
+
+Provado com os 3 binários reais em fixture isolada ($TMPDIR, $HOME redirecionado): `discover --init`
+gera `q_cli_default.json` estruturalmente byte-idêntico nos 3 (`jq -S` + `diff` par a par, vazio nos
+3 pares); e um arquivo pré-existente com `mcpServers`/`useLegacyMcpJson` sobrevive intacto nos 3
+após re-rodar `discover --init`.
+
+`docs/cli-parity.md` ganhou a seção que registra a decisão **e** o limite: a escolha do conjunto
+mínimo é assimetria de risco, não verificação contra a doc viva da AWS — ninguém rodou `q chat
+--agent` real ainda. Teste Python (`test_amazonq`) trocado de `assertEqual` positivo para
+`assertNotIn` nos 6 campos; teste Node não precisou mudar (não fixava os extras).
+
+`make quality` exit 0 (146 cenários), `./bin/trackfw validate` exit 0 (mesmos 17 warnings
+pré-existentes, nenhum novo), `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make parity` exit 0. ML-1A-bis
+marcado ✅ no roadmap — desbloqueia o ML-1B.
