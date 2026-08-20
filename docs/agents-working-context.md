@@ -20998,3 +20998,63 @@ decidir se vira um 6º caso.
 
 `make quality` exit 0 · `./bin/trackfw validate` exit 0 · `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make
 parity` exit 0. Nenhum commit feito — devolvendo ao `trackfw_architect` para auditoria.
+
+## Sessão 2026-08-20 — Apolo (INÍCIO: ML-1B-bis — 6º caso de reprovação)
+
+Emenda 2 do ADR fechou a decisão do ML-1B: `partial=` vazio é o 6º caso, generalizado como "toda
+chave presente exige valor não-vazio". Implementando em
+`scripts/check-parity-contract-coverage.sh` como um laço único sobre `kv.items()` (não um `if` por
+chave), e o braço P4 correspondente em `scripts/check-gates-falsify.sh` (Cenário 77).
+
+## Sessão 2026-08-20 — Apolo (FIM: ML-1B-bis implementado, aguardando auditoria)
+
+**Arquivos:** `scripts/check-parity-contract-coverage.sh`, `scripts/check-gates-falsify.sh`
+(Cenário 77, sub-braços `77i`–`77l` + contagem final 138→142).
+
+**Regra geral, não caso a caso:** dentro de `parse_annotation()`, um único laço
+(`for key in sorted(kv): if not kv[key].strip(): ...`) roda ANTES da lógica por estado
+(`gate`/`gap`/`none`) e reprova qualquer chave presente com valor vazio, nomeando a chave na
+mensagem (`"%s= presente com valor vazio" % key`). Isso substituiu os dois checks específicos que
+existiam para `gate=` vazio e `reason=` vazio — ambos removidos como código morto, já que o laço
+geral sempre reprova (e dá `continue`) antes de o código específico rodar. O check específico que
+sobrou é só para **chave ausente** (`reason` nunca escrita), que é semântica distinta de
+"escrita e vazia" — `gap`/`none` sem a chave `reason` continua com a mensagem antiga
+("sem reason= (motivo obrigatório)"), preservada porque é um caso diferente do que a Emenda 2
+resolve.
+
+**Mensagem pinada mudou** (critério explícito da tarefa: "mensagem nomeia qual chave está vazia"):
+`"gate= sem caminho nomeado (vazio)"` → `"gate= presente com valor vazio"`. Confirmado por grep que
+nada mais no repo (scripts/docs) pinava o texto antigo.
+
+**Braço P4 (Cenário 77 de `check-gates-falsify.sh`):** entra como sub-braços dentro do MESMO
+cenário 77, não um cenário novo — segue a convenção existente (77a–h já eram sub-braços de um único
+gate). Adicionei:
+- `77i` — `partial=` vazio reprova (nunca tinha check dedicado antes desta ML)
+- `77j` — `reason=` vazio no estado `gap` (distinto de `77d`, que testa a chave AUSENTE, não vazia)
+- `77k` — o mesmo para o estado `none` (distinto de `77e`), provando que o branch
+  `state in ("gap", "none")` compartilhado aplica a regra aos dois estados
+- `77l` — não-vacuidade: neutraliza o LAÇO geral (`for key in sorted(kv):` → `for key in []:`) numa
+  cópia isolada e prova que `77i` fica mudo — isolando que é o laço, não um check específico
+  remanescente, quem sustenta a detecção (a auditoria do arquiteto tinha marcado isso como
+  obrigatório antes do handoff, pelo mesmo padrão do `77h` pré-existente)
+
+Cada arma de `77i`/`77j`/`77k` é single-delta contra o baseline `77a` (só uma das 4 linhas do
+fixture muda por cenário). Contagem final do echo: 138 → 142 (4 arms novos).
+
+**Header do checker também renumerado:** a lista de 5 casos virou 6, alinhando com a linguagem do
+próprio ADR ("6º caso de reprovação") — caso 6 é a regra geral e explicitamente marcado como
+"subsume o caso 1" (gate= vazio).
+
+**Achado fora de escopo, registrado e não corrigido** (mesmo padrão do achado que o ML-1B me
+passou): uma chave desconhecida escrita DEPOIS de uma chave conhecida (`gap reason=x reson=y`) é
+engolida como parte do valor livre de `reason=` em vez de reprovar — o check de chave desconhecida
+só olha o prefixo `leading` antes da primeira chave reconhecida. Não é o 6º caso e não deveria virar
+correção não pedida; fica registrado para o arquiteto decidir.
+
+**Validações:** `bash scripts/check-parity-contract-coverage.sh docs/cli-parity.md` exit 0 (estado
+atual do repo continua limpo). Cenário 77 completo (a–l, 15 asserções) rodado isolado via harness
+extraído do próprio `check-gates-falsify.sh` — todas `OK`. `./bin/trackfw validate` exit 0 (só os
+mesmos warnings pré-existentes, nenhum novo). `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make parity`
+disparado (roda `check-gates-falsify.sh` completo com `GO_BIN` setado, forma CI-exata) — em
+andamento no momento deste registro, resultado a confirmar na auditoria. Nenhum commit feito —
+devolvendo ao `trackfw_architect` para auditoria.

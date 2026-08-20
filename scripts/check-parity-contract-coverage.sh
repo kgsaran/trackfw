@@ -14,13 +14,22 @@
 #
 # 🔴 Modo relatório (decisão de desenho, não preguiça — ver roadmap ML-1B):
 # enquanto a triagem da Wave 2 (ML-2A) não fecha, seção SEM anotação nenhuma
-# não reprova — é contada e listada. Só anotação PRESENTE e INVÁLIDA reprova:
+# não reprova — é contada e listada. Só anotação PRESENTE e INVÁLIDA reprova
+# — os 6 casos da ADR (Emenda 1 definiu 1-5; Emenda 2 acrescentou o 6º):
 #   1. `gate=` sem caminho nomeado (vazio)
 #   2. `gate=` nomeando caminho que não existe no disco
-#   3. `gap`/`none` sem `reason=`
+#   3. `gap`/`none` SEM a chave `reason=` (chave ausente, não vazia — caso
+#      distinto do 6: aqui a chave nem foi escrita)
 #   4. chave desconhecida na anotação (ex.: `reson=` por erro de digitação)
 #   5. anotação malformada — prefixo `trackfw-contract:` sem estado reconhecido
 #      (nenhum de `gate=`/`gap`/`none`)
+#   6. QUALQUER chave presente com valor vazio (regra GERAL — ADR Emenda 2:
+#      toda chave presente exige valor não-vazio; chave sem valor é erro,
+#      nunca "não se aplica" — para "não se aplica", omite-se a chave). Não
+#      é um `if` por chave: é um laço sobre todo par presente na anotação,
+#      então cobre chave nova sem precisar de emendar o ADR de novo. Este
+#      caso SUBSUME o caso 1 (`gate=` vazio é uma instância dele) e também
+#      pega `partial=`/`reason=` vazios, que antes da Emenda 2 passavam.
 #
 # O relatório (contagem por estado + lista de `gap`) é o entregável desta
 # REQ, não decoração: é o número que se quer acompanhar cair.
@@ -129,6 +138,15 @@ def parse_annotation(raw):
     if leading.strip():
         parse_errors.append("chave desconhecida na anotação: '%s'" % leading.strip())
 
+    # ADR Emenda 2 — regra GERAL, não caso a caso: toda chave PRESENTE exige
+    # valor não-vazio. Isto cobre gate=/partial=/reason= hoje e qualquer
+    # chave nova amanhã, sem precisar de um `if` por chave nem de emendar o
+    # ADR de novo. Chave ausente é assunto separado (checado por estado,
+    # abaixo, para gap/none exigindo reason=).
+    for key in sorted(kv):
+        if not kv[key].strip():
+            parse_errors.append("%s= presente com valor vazio" % key)
+
     return {"state": state, "kv": kv, "parse_errors": parse_errors}
 
 
@@ -185,11 +203,10 @@ for sec in sections:
         continue
 
     if state == "gate":
-        gate_value = kv.get("gate", "").strip()
-        if not gate_value:
-            counts["invalid"] += 1
-            violations.append("%s: gate= sem caminho nomeado (vazio)" % heading)
-            continue
+        # kv["gate"] é garantidamente não-vazio aqui: o laço geral acima já
+        # reprovou (e já deu `continue`, via `errs`) qualquer chave presente
+        # com valor vazio, `gate=` incluso.
+        gate_value = kv["gate"].strip()
 
         missing = []
         for path in [p.strip() for p in gate_value.split(",") if p.strip()]:
@@ -211,11 +228,13 @@ for sec in sections:
         continue
 
     if state in ("gap", "none"):
-        reason_value = kv.get("reason", "").strip()
-        if not reason_value:
+        # Chave AUSENTE (não escrita) é caso distinto de chave PRESENTE-vazia
+        # (já reprovado acima pelo laço geral): aqui a chave nem existe.
+        if "reason" not in kv:
             counts["invalid"] += 1
             violations.append("%s: %s sem reason= (motivo obrigatório)" % (heading, state))
             continue
+        reason_value = kv["reason"].strip()
         counts[state] += 1
         if state == "gap":
             gap_list.append((heading, reason_value))

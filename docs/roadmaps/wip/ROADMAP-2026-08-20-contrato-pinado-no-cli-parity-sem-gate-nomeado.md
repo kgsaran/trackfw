@@ -285,10 +285,56 @@ cada chave nova: *toda chave presente exige valor não-vazio; para "não se apli
 ---
 
 ### ML-1B-bis — 6º caso de reprovação
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` · **Dependência:** ML-1B.
+**Status:** 🔄 Em andamento (implementado, aguardando auditoria) · **Agente:** `apolo-tf` · **Dependência:** ML-1B.
 Aplicar a regra geral da Emenda 2 no checker: chave presente com valor vazio reprova. Braço P4 para
 o caso. Lote de minutos, mas precisa entrar **antes** do ML-2A — 177 seções anotadas contra um
 checker permissivo seriam 177 anotações a reconferir.
+
+
+### Auditoria do ML-1B-bis — aprovada, e ele achou **a mesma classe outra vez**
+
+```
+regra GERAL, nao if por chave: um laco sobre as chaves extraidas, antes da logica de estado
+substituiu duas checagens ad-hoc (gate=, reason=) que viraram codigo morto
+bracos 77i/77j/77k + 77l de nao-vacuidade (neutraliza o proprio laco)
+142 cenarios · invocacao CI-exata exit 0 · validate exit 0
+```
+
+O `77l` é o braço que importa: ele neutraliza **o laço geral** e prova que é ele, e não alguma
+checagem específica remanescente, que sustenta a detecção. Sem isso, a regra "geral" poderia estar
+passando por acidente das antigas.
+
+#### 🔴 O achado dele expõe uma lacuna de conformidade **do meu próprio ADR**
+
+Ele sinalizou — de novo sem corrigir, de novo certo — que **chave desconhecida escrita depois de uma
+conhecida** é absorvida no texto livre em vez de reprovar. Verifiquei:
+
+```
+<!-- trackfw-contract: gap reason=motivo qualquer reson=erro de digitacao -->
+checker -> exit 0, e o relatorio lista "motivo qualquer reson=erro de digitacao" como motivo
+```
+
+Isto **não é decisão nova**: é exatamente o caso que eu escrevi na Nota de parsing do ADR, com estas
+palavras — *"chave desconhecida é erro, não texto livre — senão um `reson=` com erro de digitação
+viraria parte do valor anterior e o checker aceitaria em silêncio"*. O checker só inspeciona chave
+desconhecida **antes** da primeira conhecida, então o cenário que motivou a regra é justamente o que
+escapa.
+
+**A regra está certa e escrita; a implementação não a cumpre.** É conformidade, não escopo novo.
+
+**Padrão que vale nomear:** é a terceira vez seguida que o mesmo executor encontra uma lacuna, **não
+a corrige por conta própria** e a devolve com o argumento. Nas três, a contenção foi correta — e nas
+três a lacuna era real. Isso é o comportamento que eu quero: quem executa sinaliza, quem decide
+decide.
+
+---
+
+### ML-1B-ter — Conformidade: chave desconhecida em qualquer posição
+**Status:** ⬜ Pendente · **Agente:** `apolo-tf` · **Dependência:** ML-1B-bis. **Antes do ML-2A.**
+Fazer o checker cumprir a regra já escrita na Nota de parsing do ADR: chave desconhecida reprova
+**em qualquer posição**, não só antes da primeira conhecida. Braço P4 com o caso `reson=` depois de
+`reason=`. Precisa entrar antes da triagem — 177 anotações escritas contra um parser que engole
+erro de digitação em silêncio seriam 177 a reconferir.
 
 ## Wave 2 — Triagem (o grosso do trabalho)
 
