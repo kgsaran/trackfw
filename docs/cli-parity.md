@@ -4011,6 +4011,8 @@ section for the canonical, cross-CLI message this produces.
 
 ## Unknown top-level command — canonical message
 
+<!-- trackfw-contract: gate=scripts/check-unknown-command-parity.sh -->
+
 `trackfw <unrecognized>` produces, in **all three CLIs**, on **stderr**, **exit
 code 1**:
 
@@ -4065,6 +4067,8 @@ removal above must never invoke) by `scripts/check-unknown-command-parity.sh`
 
 ### Candidate set — "completion" is Go-only, and deliberately excluded
 
+<!-- trackfw-contract: gap reason=nenhum cenário de check-unknown-command-parity.sh testa um typo próximo de "completion" (grep confirma zero ocorrências da palavra no script) para confirmar que a lista de candidatos exclui "completion" nos 3 CLIs -->
+
 Cobra auto-registers a `completion` subcommand that has no Node.js/Python
 equivalent (shell-completion script generator, framework built-in, unrelated
 to plugins). If the suggestion algorithm used cobra's own command list, a typo
@@ -4075,6 +4079,8 @@ the fixed list that Node.js (`program.commands`) and Python
 (`subparsers.choices`) already have.
 
 ### Bare invocation (`trackfw` with no argument) — unified
+
+<!-- trackfw-contract: gate=scripts/check-unknown-command-parity.sh -->
 
 `trackfw` **with no argument at all** behaves identically across the three runtimes: **exit
 `0`**, help printed to **stdout**, **stderr empty**. This used to diverge — Go exited `0`
@@ -4094,12 +4100,16 @@ message" above — **exit `1`**, message on **stderr**, identical across the thr
 
 ## Detecção de adulteração do credential-guard: as duas regras novas, e o que elas não veem (ROADMAP-2026-08-12-deteccao-de-adulteracao)
 
+<!-- trackfw-contract: none reason=cabeçalho de citação ao ADR e aos arquivos de implementação, sem alegação de comportamento própria — o conteúdo factual está nas subseções abaixo -->
+
 > Decisão: `docs/adr/ADR-2026-08-12-nao-ha-prevencao-contra-agente-induzido-com-escrita-irrestrita-a-resposta-e-deteccao-ancorada-no-git.md`
 > (ler as **3 emendas**). Implementação: `internal/validator/validator_credential_guard_integrity.go`
 > + equivalentes em `npm/src/validator/index.js` e `pypi/trackfw/validator.py`. Continuação de
 > §"Semântica de falha de hook por CLI" e §"Controle positivo do credential-guard".
 
 ### As três vias, e quem cobre cada uma
+
+<!-- trackfw-contract: gate=scripts/check-gates-falsify.sh partial=os Cenários 47/49/50 provam não-vacuidade de cada uma das 3 regras (hook_resolvable/script_integrity/mode_downgrade), mas por desenho comentado nos próprios cenários ("por que só o CLI Go") testam só o CLI Go — paridade de severidade/âncora entre os 3 runtimes depende só de suítes de teste unitário internas por stack, sem gate cross-CLI -->
 
 | Via | Regra | Âncora | Severidade |
 |---|---|---|---|
@@ -4108,6 +4118,8 @@ message" above — **exit `1`**, message on **stderr**, identical across the thr
 | **Downgrade** de `credential_guard.mode` | `credential_guard_mode_downgrade` | **git `HEAD`**, direcional | `error` |
 
 ### Por que a âncora é POR ALVO
+
+<!-- trackfw-contract: gap reason=a distinção de âncora por alvo (script→binário, mode→HEAD) é rationale de arquitetura; nenhum gate exercita o caso que discriminaria as duas (ex.: HEAD divergente do disco só para o script, provando que script_integrity de fato ignora HEAD) -->
 
 - **Script → template do binário.** O script é **concatenação pura de constantes, sem interpolação
   por projeto** — o binário **é** a referência canônica, e não depende de `HEAD`, de commit nem de
@@ -4119,6 +4131,8 @@ message" above — **exit `1`**, message on **stderr**, identical across the thr
 
 ### Por que `warning` no script — e o que destravaria `error`
 
+<!-- trackfw-contract: gate=scripts/check-gates-falsify.sh partial=a severidade default "warning" é lida do código-fonte pelo comentário do Cenário 49; os fixtures desse cenário fixam `rules: credential_guard_script_integrity: error` explicitamente "para poder usar assert_fails_with" — nenhum gate confirma que o default REAL (sem override) resolve para warning -->
+
 O script **não carrega marcador de versão**. A regra, portanto, **não consegue distinguir** *drift*
 legítimo (usuário não rodou `trackfw update` depois de um bump) de adulteração real. Afirmar
 adulteração seria errado em metade dos casos, então a mensagem é **causalmente neutra** e a severidade
@@ -4128,6 +4142,8 @@ adulteração seria errado em metade dos casos, então a mensagem é **causalmen
 não feito.
 
 ### 🔴 O que estas regras NÃO veem — mesmo destaque
+
+<!-- trackfw-contract: gap reason=cada bullet é um limite de comportamento falsificável (regra não vê adversário que commita a mudança, não vê ausência de HEAD, warning não muda exit code do validate) — nenhum gate exercita esses cenários adversariais; é autodeclaração de limite, não prova -->
 
 - **Verificam quando o `validate` roda**, não no momento da invocação do hook. Entre um `validate`
   verde e a próxima chamada de ferramenta, tudo pode mudar.
@@ -4143,6 +4159,8 @@ não feito.
 
 ### 🔴 Dois limites descobertos na revisão final (ML-3B), ainda abertos
 
+<!-- trackfw-contract: gap reason=os dois limites (auto-silenciamento da regra do mode via edição não commitada + `rules: off` simultâneos; cobertura de deleção condicional ao wiring existente) são comportamento falsificável do trackfw sem gate ou teste que os exercite -->
+
 1. **A regra do `mode` pode se auto-silenciar.** `ruleSeverity()` lê `rules:` **sempre do
    `trackfw.yaml` em disco**, nunca do `HEAD`. Logo, uma **única edição não commitada** que rebaixe
    `credential_guard.mode` **e** defina `credential_guard_mode_downgrade: off` derrota a detecção —
@@ -4154,6 +4172,8 @@ não feito.
    para script ausente, então não há o que acusar.
 
 ### Cópia local do template no validador — dívida conhecida, coberta
+
+<!-- trackfw-contract: gate=internal/validator/validator_credential_guard_integrity_external_test.go,npm/tests/credential_guard_integrity.test.js,pypi/tests/test_credential_guard_integrity.py partial=cada stack tem seu próprio teste MatchesGenerator (Go: TestCredentialGuardScriptReference_MatchesGenerator; Node: "CREDENTIAL_GUARD_SCRIPT_REFERENCE é byte-idêntico ao que generateCredentialGuardScript emite"; Python: test_credential_guard_integrity.py:82) provando que a cópia local do PRÓPRIO validador bate com o gerador REAL do PRÓPRIO stack — mas são 3 testes unitários isolados, nunca um gate cross-CLI que rode os 3 juntos e compare as 3 cópias entre si; o Cenário 48 de check-gates-falsify.sh prova que os 3 GERADORES emitem o mesmo script (via check-attention-scripts-parity.sh), o que fecha a lacuna transitivamente quando somado aos 3 testes MatchesGenerator, mas nenhum gate único afirma essa cadeia completa de uma vez -->
 
 `internal/validator` **não pode importar** `internal/generators` (ciclo de import), então o template
 existe **também** numa cópia local do validador, em cada stack. A alternativa de injeção de provider
@@ -4168,15 +4188,21 @@ o `TestCredentialGuardScript_ParityAcrossStacks` pré-existente, que **nunca exe
 
 ## Ancoragem no `HEAD` da severidade das regras de credential-guard (ROADMAP-2026-08-12-ancorar-rules-no-head)
 
+<!-- trackfw-contract: none reason=cabeçalho de citação ao ADR, sem alegação de comportamento própria — o conteúdo factual está nas subseções abaixo -->
+
 > ADR (4 emendas): `docs/adr/ADR-2026-08-12-severidade-das-regras-de-credential-guard-resolvida-pela-mais-estrita-entre-head-e-disco.md`
 
 ### O problema que isto fecha
+
+<!-- trackfw-contract: none reason=narrativa histórica do problema motivador, sem alegação de comportamento de CLI atual verificável -->
 
 As regras de credential-guard podiam ser **desligadas pela mesma edição não commitada que deveriam
 denunciar** — `ruleSeverity()` lia `rules:` só do disco. Sem commit, **sem rastro**. Era pior que os
 limites que o ADR de detecção aceita, onde o adversário commita e sobra o diff revisável.
 
 ### O que mudou
+
+<!-- trackfw-contract: gate=scripts/check-gates-falsify.sh partial=os Cenários 51/52/54 (internal/validator) provam a resolução pela mais estrita entre HEAD e disco, o carve-out do baseline não suprimindo as 3 regras de guard, e o ambiente do git limpo de GIT_* — mas todos rodam só contra o CLI Go (mesmo padrão dos Cenários 47/49/50, "por que só o CLI Go"); a linha "severidade das outras ~38 regras inalterada" tem cenário próprio (53) também só-Go -->
 
 | Aspecto | Comportamento |
 |---|---|
@@ -4190,6 +4216,8 @@ As três regras: `credential_guard_hook_resolvable`, `credential_guard_script_in
 
 ### 🔴 Consequência de migração — quebra silenciosa se não for lida
 
+<!-- trackfw-contract: gap reason=a "quebra do nada" ao rodar `trackfw update` num projeto com baseline tolerando essas regras é comportamento falsificável — nenhum gate monta esse fixture end-to-end (baseline pré-existente + update + confirmação de violação reaparecendo) -->
+
 Um projeto que hoje **tolera** uma violação dessas regras via `.trackfw-baseline.json` passa a ter
 uma violação **não suprimível**. É **intencional** — é o carve-out funcionando — mas aparece como
 *"quebrou do nada"* num `trackfw update`.
@@ -4197,6 +4225,8 @@ uma violação **não suprimível**. É **intencional** — é o carve-out funci
 **Saída legítima e auditável:** desligar a regra com `rules:` **commitado**, ou corrigir a causa.
 
 ### Por que o filtro de ambiente é por PREFIXO, não por lista
+
+<!-- trackfw-contract: gate=scripts/check-gates-falsify.sh partial=o Cenário 54 prova os dois vetores (GIT_DIR/GIT_WORK_TREE e GIT_CONFIG_COUNT=abc) contra o binário real, com controle autodiscriminante provando que cada vetor é genuíno — mas roda só contra o CLI Go; Node.js/Python têm filtro equivalente (npm/src/validator/git-exec.js, pypi/trackfw/validator.py) sem gate cross-CLI comparando os 3 -->
 
 A primeira correção usou uma **denylist de 8 nomes** ("variáveis que redirecionam o repositório") e
 **não fechava o problema**. O vetor real é **fazer o `git` falhar por qualquer motivo** — todo call
@@ -4211,6 +4241,8 @@ o processo falhar. Detalhe em
 
 ### O que continua aberto
 
+<!-- trackfw-contract: gap reason=os dois itens (governance_mode: lenient convertendo tudo em warning; ausência de HEAD caindo no disco) são limitações declaradas e falsificáveis sem gate ou teste que as exercite e confirme -->
+
 - **`governance_mode: lenient`** converte **toda** a saída do `validate` em warning, inclusive a
   destas regras. **Não** foi fechado — *blast radius* é o validador inteiro e há caso de uso legítimo
   (onboarding, com `lenient_until`). **REQ própria.** Enquanto existir, o problema está **reduzido,
@@ -4222,6 +4254,8 @@ o processo falhar. Detalhe em
   controles de segurança**, e não foram alterados.
 
 ## Git branch guard por runtime (ML-1A, ROADMAP-2026-08-14-bloqueio-tecnico-de-comandos-git-brutos-por-subagente-via-deny-hooks-nos-7-runtimes-suportados.md)
+
+<!-- trackfw-contract: gate=scripts/check-harness-hooks-parity.sh,scripts/check-agent-hooks-parity.sh partial=GUARDS="credential-guard git-branch-guard" prova paridade estrutural do wiring nos 6 native-wave CLIs (claude/codex/gemini/cursor/copilot/kiro) — Windsurf e Amazon Q, citados na tabela como "deny global" wired, NÃO têm gate cross-CLI: grep confirma CLIS="claude codex gemini cursor copilot kiro" em ambos os scripts, sem "windsurf"/"amazon" em nenhum dos dois -->
 
 > REQ: `docs/req/REQ-2026-08-14-bloqueio-tecnico-de-comandos-git-brutos-por-subagente-via-deny-hooks-nos-7-runtimes-suportados.md`
 
@@ -4259,6 +4293,8 @@ uma REQ nova.
 
 ### Contrato de payload do script (`gitBranchGuardScript`)
 
+<!-- trackfw-contract: gate=scripts/check-attention-scripts-parity.sh,scripts/check-gates-falsify.sh partial=check-attention-scripts-parity.sh prova a byte-identidade do script entre os 3 CLIs; os Cenários 60-69/74 de check-gates-falsify.sh exercitam os 3 formatos de entrada e o padrão casado contra esse script canônico único, mas nenhum cenário testa especificamente o campo `tool_info.command_line` (formato Windsurf) nem `$TRACKFW_GIT_COMMAND` como fallback -->
+
 O script suporta 3 formatos de entrada, nesta ordem de precedência — cobre os contratos divergentes
 dos 7 runtimes sem precisar de uma variante de script por runtime:
 
@@ -4292,6 +4328,8 @@ Mensagem de bloqueio por subcomando (todas referenciam CLAUDE.md §1):
 
 ### Caminhos confirmados — Windsurf e Amazon Q (apolo-tf, 2026-08-14, correção pós-auditoria do ML-3A)
 
+<!-- trackfw-contract: gap reason=a seção afirma "byte-identidade confirmada via check-agent-hooks-parity.sh e check-harness-hooks-parity.sh", mas grep confirma ZERO ocorrências de "windsurf"/"amazon"/"q_cli" em nenhum dos dois scripts — CLIS="claude codex gemini cursor copilot kiro" em ambos; os caminhos corrigidos (.windsurf/hooks.json, .amazonq/cli-agents/q_cli_default.json) não têm nenhum gate cross-CLI que os exercite -->
+
 A primeira implementação do wiring (ML-3A) escreveu caminhos/formatos **inventados** para Windsurf e
 Amazon Q, sinalizados no próprio comentário de código como não confirmados contra documentação
 oficial. Uma verificação posterior confirmou que ambos estavam estruturalmente errados — corrigido
@@ -4317,6 +4355,8 @@ existentes (`.tool_input.command`, `.command`, `.hook_input.command`).
 
 ### Fix de robustez do `match_subcommand` (2026-08-14, ML-4A, achado por teste manual E2E)
 
+<!-- trackfw-contract: gate=scripts/check-gates-falsify.sh partial=os 3 bugs foram achados por teste manual E2E, não por gate automatizado; o bug 1 (comando encadeado) é superado e coberto indiretamente pelos Cenários 60/61 (segmentação quote-aware); grep confirma que não há cenário dedicado para o bug 2 (basename vs caminho absoluto, ex. `/usr/bin/git commit`) -->
+
 O teste manual end-to-end (via subagente `apolo-tf`) revelou 3 bugs reais na lógica de detecção,
 todos com a mesma causa raiz — o script fazia busca de padrão livre na string inteira do comando,
 sem respeitar limites reais de segmento (`;`, `&&`, `||`, `|`, quebra de linha) nem exigir que `git`
@@ -4338,6 +4378,8 @@ padrão heredoc (`done <<EOF...EOF`) que o Go já usava, evitando o subshell. Ve
 `git-branch-guard-self-blocking-quote-unaware-splitter-2026-08-14.md`.
 
 ### Segmentação quote-aware — resolve o falso-positivo de linha de mensagem (ML-1A, 2026-08-16)
+
+<!-- trackfw-contract: gate=scripts/check-gates-falsify.sh -->
 
 A limitação acima **foi resolvida**: `match_subcommand` passou a segmentar o comando através de
 `quote_aware_split` (scanner char-a-char em `awk`) + `strip_heredoc_bodies`, em vez do `sed` cego
@@ -4363,6 +4405,8 @@ interpretador de shell); essa ressalva geral permanece registrada na REQ vincula
 
 ### Gate de paridade do `trackfw commit` (`scripts/check-commit-parity.sh`, ML-4A)
 
+<!-- trackfw-contract: gate=scripts/check-commit-parity.sh -->
+
 Criado para fechar a lacuna que só `check-branch-new-parity.sh` cobria antes — verifica que as
 mensagens de bloqueio/aviso do novo comando `trackfw commit` são byte-idênticas entre os 3 CLIs em 3
 cenários (commit em `main`/`master`, commit em `feat/` sem roadmap em `wip/`, commit em branch
@@ -4372,6 +4416,8 @@ no Python (`pypi/trackfw/commands/commit.py`): `sys.stdout.write()` sem `flush()
 com `out.flush()`.
 
 ### Bloqueio da classe destrutiva de working tree + mensagem de raio de alcance (ML-3A, ROADMAP-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md / REQ-2026-08-19-guard-nao-bloqueia-comandos-destrutivos-de-working-tree-em-repo-compartilhado-por-agentes.md)
+
+<!-- trackfw-contract: gate=scripts/check-gates-falsify.sh partial=Cenário 74 confirma par baseline+detecção por comando para todas as linhas da tabela de bloqueio/liberação (stash, reset --hard, clean -f, restore, checkout --/.); a alegação de "raio de alcance" (nada antes do comando bloqueado chega a executar em comando composto) não tem cenário dedicado provando ausência de efeito colateral — é propriedade do mecanismo de hook do runtime (inspeção antes da execução), não testada isoladamente por este gate -->
 
 > REQ: `docs/req/REQ-2026-08-19-guard-nao-bloqueia-comandos-destrutivos-de-working-tree-em-repo-compartilhado-por-agentes.md`
 
@@ -4441,6 +4487,8 @@ lacuna acidental.
 
 ### `update-ref`/`worktree remove --force`/`git rm -f` entram no bloqueio destrutivo (ML-4B, ROADMAP-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md, corretivo do veredito BLOQUEAR do `hades-tf`)
 
+<!-- trackfw-contract: gate=scripts/check-release-tag-parity.sh partial=Cenários 11-14 provam a origem do commit-alvo; a própria seção declara "não fechado" para os 3 comandos novos: nenhum par baseline+detecção dedicado em check-gates-falsify.sh para update-ref/worktree remove --force/rm -f no padrão do Cenário 74 — a literal do script está correta (verificado por testes de integridade existentes), mas sem prova de falsificação por comando -->
+
 > ADR: `docs/adr/ADR-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md`, Emenda 1
 
 `git update-ref` foi o **mecanismo** que tornou alcançável o exploit descrito na Emenda 1 do ADR
@@ -4475,7 +4523,11 @@ futuro se a cobertura do Cenário 74 for considerada insuficiente para esta clas
 
 ## `trackfw <skills|agents> third-party` — instalação de skills de terceiro via URL (ADR-2026-08-15, ML-3A/ML-3B)
 
+<!-- trackfw-contract: none reason=cabeçalho de citação ao ADR, sem alegação de comportamento própria — o conteúdo factual está nas subseções abaixo -->
+
 ### O comando, em duas fases
+
+<!-- trackfw-contract: gate=scripts/check-thirdparty-parity.sh -->
 
 `third-party` nunca instala em um passo. O fluxo é deliberadamente quebrado em duas invocações
 separadas para forçar um ponto de revisão humana entre "buscar da rede" e "gravar no sistema de
@@ -4506,6 +4558,8 @@ para o que ela NÃO garante.
 
 ### Os 3 schemas JSON (D9)
 
+<!-- trackfw-contract: gate=scripts/check-thirdparty-parity.sh -->
+
 | Schema | Caminho | Keyed por | Escrito por |
 |---|---|---|---|
 | Quarentena | `.trackfw/thirdparty-quarantine/<checksum_sha256>.json` | nome de arquivo = checksum SHA-256 dos bytes brutos | `third-party fetch` |
@@ -4526,6 +4580,8 @@ inspeção do ADR), nos 3 CLIs.
 
 ### Escopo default diverge do catálogo (exceção D4)
 
+<!-- trackfw-contract: gate=scripts/check-thirdparty-parity.sh -->
+
 Ao contrário dos itens de catálogo (agentes, skills nativas), cujo escopo default é `global`,
 `third-party install` usa escopo default **`project`** (ADR-2026-07-25 D1 mantém `global` como
 default de catálogo; `third-party` é uma exceção documentada, não uma divergência). Motivo: um
@@ -4534,6 +4590,8 @@ compartilham o home do usuário, ampliando o raio de um erro de revisão. `--sco
 aceitando `global` explicitamente quando desejado.
 
 ### D4-bis — `--scope global` continua permitido, mas com aviso e confirmação próprios (ML-4C)
+
+<!-- trackfw-contract: gap reason=grep confirma zero ocorrência de "scope global"/"yes-global-scope-unverified" em check-thirdparty-parity.sh — o aviso, a mensagem de recusa e a flag `--yes-global-scope-unverified` não têm nenhum gate cross-CLI -->
 
 Achado do `hades-tf`, decisão de KG (2026-08-15): `--scope global` tira o artefato do perímetro de
 `thirdparty_artifact_has_provenance` — a regra só lê o manifest do **projeto**
@@ -4553,6 +4611,8 @@ silencioso:
 
 ### `trackfw validate` — regra `thirdparty_artifact_has_provenance` (D2)
 
+<!-- trackfw-contract: gate=scripts/check-thirdparty-parity.sh partial=a branch (i) (violação por Claim.origin sem entrada de provenance) tem mensagem comparada byte-a-byte pela Parte C; a branch (ii) tem o caminho de não-falso-positivo coberto (D2-bis, instalação legítima produz zero violações nos 3 CLIs) — mas a DETECÇÃO real da branch (ii) (installed_sha256 divergente após adulterar o arquivo instalado) não é exercitada cross-CLI: grep não encontra fixture de tamper/append no script; a cobertura desse caminho é só testes unitários por stack (branch_ii_quarantine_deletion_still_detects_tamper e equivalentes), nunca comparados entre os 3 CLIs via gate -->
+
 Bidirecional, e **nunca faz fetch de rede** (D6 — a regra só lê `.trackfw/` e os artefatos já
 instalados no disco):
 
@@ -4566,6 +4626,8 @@ instalados no disco):
   quarentena** — sua ausência não é mais considerada erro por esta ramificação (ver D2-bis abaixo).
 
 #### D2-bis — dois hashes, dois domínios (`schema_version: 2`, `installed_sha256`)
+
+<!-- trackfw-contract: gate=scripts/check-thirdparty-parity.sh -->
 
 A entrada de proveniência carrega **dois** hashes SHA-256, em domínios diferentes, e confundi-los
 foi um bug real encontrado na auditoria do ML-3A:
@@ -4624,6 +4686,8 @@ gravou.
 
 ### Limitação do critério de markers (D3) — o que ele NÃO cobre
 
+<!-- trackfw-contract: gate=scripts/check-thirdparty-parity.sh partial=a não-cobertura de homoglifos é comprovada cross-CLI (Parte A do gate, caso cyrillic_pass, que DEVE passar) — mas paráfrase, indireção, fragmentação e conteúdo auto-modificável são limitações declaradas sem nenhum gate ou fixture que demonstre a evasão descrita -->
+
 O checker de markers (`checkMarkers`/`check_markers`/equivalentes) procura por um conjunto fechado
 de padrões textuais suspeitos (heading H1–H6 com determinado formato, blocos de código cercados por
 ` ``` `/`~~~`, comentários HTML, etc.) no conteúdo bruto buscado por `fetch`, antes de permitir que
@@ -4651,6 +4715,8 @@ provenance (D10.2) — o checker de markers só existe para pegar o caso óbvio 
 volume que chega à revisão humana.
 
 ### D3-ter — fence não fechado e comentário HTML deixaram de conceder imunidade (ML-4C)
+
+<!-- trackfw-contract: gate=scripts/check-thirdparty-parity.sh -->
 
 Dois achados da barreira da Wave 4 (o do fence pelos **dois** auditores independentemente; o do
 comentário HTML só pelo `hades-tf`), ambos reproduzidos pelo arquiteto nos 3 CLIs antes da correção,
@@ -4680,6 +4746,8 @@ conteúdo dentro de um fence fechado.
 
 ### D6-bis — a query string da URL de origem é redigida antes de persistir (ML-4C)
 
+<!-- trackfw-contract: gap reason=grep confirma zero ocorrência de "RedactURL"/"redact_url"/"[redacted]" em qualquer script de scripts/*.sh — a redação de query string/userinfo antes de persistir em quarentena/provenance não tem nenhum gate cross-CLI que a exercite -->
+
 Achado do `hades-tf`: a URL completa (com query string) era gravada **verbatim** em
 `.trackfw/thirdparty-quarantine/<checksum>.json` e, potencialmente, em
 `.trackfw/thirdparty-provenance.json` — ambos versionados. Uma URL pré-assinada carrega token na
@@ -4696,6 +4764,8 @@ redigida é a que vai para os dois arquivos. Verificação de integridade usa ch
 nada quebra.
 
 ### Gate de paridade (`scripts/check-thirdparty-parity.sh`, ML-3A)
+
+<!-- trackfw-contract: gate=scripts/check-thirdparty-parity.sh partial=a própria seção já declara o limite da Parte D (só StateNotInstalled, StateModified sem gate) -->
 
 Registrado em `make quality`/`parity`. Cobre, nos 3 CLIs:
 
@@ -4736,6 +4806,8 @@ este script.
 
 ## `trackfw serve` — endereço de escuta, `--host` e aviso de exposição (REQ-2026-08-16, ML-1A/1B/1C)
 
+<!-- trackfw-contract: gate=scripts/check-serve-address-parity.sh -->
+
 Gate: `scripts/check-serve-address-parity.sh` (alvo `parity`) + Cenário 59 de
 `check-gates-falsify.sh`. O gate prova o contrato **por escuta real** — sobe cada runtime, mede com
 `lsof`, mata — e nunca por leitura de fonte. Um teste que só procurasse a string `"127.0.0.1"` no
@@ -4745,6 +4817,8 @@ código passaria mesmo com o bind efetivo quebrado.
 `/api/chain` devolvia a cadeia de governança inteira para qualquer dispositivo da rede.
 
 ### Contrato pinado
+
+<!-- trackfw-contract: gate=scripts/check-serve-address-parity.sh -->
 
 | item | valor, idêntico nos 3 runtimes |
 |---|---|
@@ -4758,6 +4832,8 @@ código passaria mesmo com o bind efetivo quebrado.
 A linha do aviso é comparada **byte a byte** entre os 3 pelo gate, normalizando só a porta.
 
 ### URL impressa (e aberta no browser)
+
+<!-- trackfw-contract: gate=scripts/check-serve-address-parity.sh partial=o gate testa o bind real (lsof) para o caso default e a URL impressa para `--host ::1` (colchetes, regra 2) e `--host 0.0.0.0` (não-localhost, regra 3) — mas não há asserção sobre o TEXTO da URL impressa no caso default (regra 1, loopback IPv4 → "http://localhost:<porta>"); o gate confirma o bind com lsof nesse caso, não a string da URL -->
 
 Regra idêntica nos 3, implementada em `DisplayURL` (Go), `displayUrl` (Node) e `_display_url`
 (Python):
@@ -4775,6 +4851,8 @@ convenção compartilhada.
 
 ### Exceções intencionais — divergências que **não** são violação do contrato
 
+<!-- trackfw-contract: gap reason=as alegações empíricas ("curl localhost devolve 200 nos 3 com bind IPv4"; `--host ::ffff:127.0.0.1`/`127.0.0.2` não bindam em nenhum dos 3) são medições declaradas — grep confirma zero ocorrência de "curl"/"ffff:127"/"127.0.0.2" em check-serve-address-parity.sh, sem gate que as reproduza -->
+
 - **Porta padrão diverge:** Go `4080`, Node e Python `8080`. Pré-existente a esta REQ, fora do seu
   escopo, e **deliberadamente não corrigida aqui** para não misturar mudança de interface com uma
   correção de segurança urgente.
@@ -4789,6 +4867,8 @@ convenção compartilhada.
 
 ### 🔴 O que este contrato **não** garante
 
+<!-- trackfw-contract: gate=scripts/check-serve-address-parity.sh partial=a degradação do gate quando `lsof` falta (pula a exclusão de wildcard em vez de passar em silêncio) está no código real do gate (HAVE_LSOF); a ausência de autenticação no `serve` é fato de arquitetura declarado, não uma alegação testável por gate -->
+
 **Não há autenticação no `serve`.** Expor com `--host` deixa a cadeia de governança legível por
 qualquer um que alcance a porta — o aviso é a única mitigação, e por ir a stderr **não protege uso
 não-interativo** (Makefile, Dockerfile, CI redirecionam stderr para log). Se a exposição vier a ser
@@ -4800,6 +4880,8 @@ wildcard em vez de passar em silêncio — o braço de detecção do Cenário 59
 a falsificação fica vermelha. A vacuidade se denuncia sozinha em vez de virar falso verde.
 
 ## `trackfw doctor` — detecção de artefato fora do manifesto (REQ-2026-08-17, ADR-2026-08-18, ML-2A/ML-2B/ML-2C)
+
+<!-- trackfw-contract: gate=scripts/check-doctor-parity.sh -->
 
 Gate: **`scripts/check-doctor-parity.sh`** (alvo `parity`) + Cenários 71 e 72 de
 `check-gates-falsify.sh`. O gate compara as **três saídas reais** (`diff -u` byte a byte, stdout e
@@ -4819,6 +4901,8 @@ precisamente o estado que faz o preflight de `agents install` recusar o mesmo de
 de recusar. Ver `vault/notes/doctor-classifydoctor-silences-tampering-when-manifest-entry-removed-2026-08-19.md`.
 
 ### As três classes, e por que não podem ser fundidas
+
+<!-- trackfw-contract: gate=scripts/check-doctor-parity.sh -->
 
 | classe | condição | remédio |
 |---|---|---|
@@ -4841,6 +4925,8 @@ ausente, ADR-2026-08-18) cujos bytes derivaram depois que o template do catálog
 isso o remédio nomeia a recusa literalmente em vez de escolher um lado.
 
 ### Cenários do gate (a–f), cada um em texto e `--json`
+
+<!-- trackfw-contract: gate=scripts/check-doctor-parity.sh -->
 
 - **(a) baseline limpo** — nada instalado, os 3 relatam `no mismatches found` / `[]`.
 - **(b) unregistered-write** — install real seguido de remoção cirúrgica da entrada do manifesto
@@ -4867,6 +4953,8 @@ isso o remédio nomeia a recusa literalmente em vez de escolher um lado.
 
 ### Restrições duras do fixture (cada uma já custou um ciclo nesta série)
 
+<!-- trackfw-contract: gate=scripts/check-doctor-parity.sh -->
+
 1. **`HOME` redirecionado** para um diretório temporário por cenário — `doctor` varre o escopo
    **global** além do de projeto; sem isso o gate leria o `~/.trackfw` real de quem o executa.
 2. **Install-e-mutar, nunca bytes de template hardcoded** — hardcode apodrece em silêncio na
@@ -4886,6 +4974,8 @@ isso o remédio nomeia a recusa literalmente em vez de escolher um lado.
    `scripts/check-thirdparty-parity.sh` já aplica.
 
 ### Dois defeitos reais de paridade que este gate encontrou e corrigiu no produto (não no gate)
+
+<!-- trackfw-contract: gate=scripts/check-doctor-parity.sh -->
 
 - **`--json` com zero achados:** o Go emitia `null` (slice nil serializada por `encoding/json`)
   onde Node e Python sempre emitem `[]`. Corrigido inicializando `ClassifyDoctor` com

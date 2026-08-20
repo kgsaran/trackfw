@@ -21385,3 +21385,96 @@ exatamente em `## Unknown top-level command`, escopo do ML-2D, não tocado). `./
 exit 0 (só os 18 warnings pré-existentes, não relacionados a esta REQ). `make quality` exit 0 (145
 cenários de falsificação, Go+Node+Python+parity completos). Nenhum commit feito — devolvendo ao
 `trackfw_architect` para auditoria e despacho do lote 4 (ML-2D).
+
+## Sessão 2026-08-20 — Hefesto (INÍCIO: ML-2D — triagem de cobertura de contrato, lote 4/4, o último)
+
+Branch `feat/contrato-pinado-no-cli-parity-sem-gate-nomeado`, roadmap
+`docs/roadmaps/wip/ROADMAP-2026-08-20-contrato-pinado-no-cli-parity-sem-gate-nomeado.md`. Escopo: as
+45 seções de `docs/cli-parity.md` sem anotação, começando em `## Unknown top-level command` (linha
+~4012) até o fim do documento (`### Dois defeitos reais de paridade...`, doctor). Verificação: gate
+por gate lido diretamente (`check-unknown-command-parity.sh`, `check-gates-falsify.sh` cenários
+47-76, `check-commit-parity.sh`, `check-release-tag-parity.sh`, `check-thirdparty-parity.sh` Partes
+A-D, `check-serve-address-parity.sh`, `check-doctor-parity.sh`, `check-harness-hooks-parity.sh`,
+`check-agent-hooks-parity.sh`), não por grep de nome de regra. Nenhum gate criado. Sem commit
+(autoridade exclusiva do `trackfw_architect`).
+
+## Sessão 2026-08-20 — Hefesto (FIM: ML-2D concluído — triagem fechada, 0 seções sem anotação)
+
+**Contagem do lote 4 (45 seções):** `gate=` plena 16 (36%) · `gate=` com `partial=` 15 (33%) · `gap`
+10 (22%) · `none` 4 (9%).
+
+**Contagem final consolidada (177 seções, os 4 lotes):** `gate=` plena 72 (41%) · `gate=` com
+`partial=` 51 (29%) · `gap` 42 (24%) · `none` 12 (7%) · sem anotação 0 · inválida 0. Conferido
+aritmeticamente: 72+51+42+12 = 177; delta do lote 4 sobre a baseline dos 3 lotes anteriores
+(56/36/32/8) bate exatamente com as 45 seções deste lote.
+
+**Lista de `gap` do lote 4, por risco:**
+1. **"Caminhos confirmados — Windsurf e Amazon Q"** — a seção afirma "byte-identidade confirmada
+   via `check-agent-hooks-parity.sh` e `check-harness-hooks-parity.sh`", mas grep confirma ZERO
+   ocorrências de "windsurf"/"amazon"/"q_cli" em nenhum dos dois scripts (`CLIS="claude codex
+   gemini cursor copilot kiro"` em ambos) — não é lacuna declarada, é alegação de cobertura que não
+   existe. Mesmo padrão no cabeçalho "Git branch guard por runtime" (tabela dos 7 runtimes).
+2. **D6-bis** (redação de query string da URL antes de persistir em quarentena/provenance) — zero
+   gate; risco de segredo (token pré-assinado) versionado no git se a redação regredir.
+3. **D4-bis** (`--scope global` do third-party — aviso e flag `--yes-global-scope-unverified`) —
+   zero gate; instalação fora do perímetro do `validate` sem prova de que o aviso de fato aparece.
+4. **"O que continua aberto"** (Ancoragem no HEAD) — `governance_mode: lenient` converte as 3
+   regras de guard em warning sem gate que confirme o blast radius.
+5. **"Dois limites descobertos ML-3B"** — auto-silenciamento da regra `mode_downgrade` via edição
+   não commitada + `rules: off` simultâneos, sem teste adversarial.
+
+**Top-5 consolidado dos 4 lotes (julgamento comparativo, não repete listas por lote):**
+1. **Windsurf/Amazon Q (lote 4)** — único achado dos 4 lotes que é alegação FALSA de cobertura, não
+   lacuna declarada; pior categoria porque o leitor confia na frase.
+2. **`credential_guard_hook_resolvable`/"O que ela NÃO cobre" (lote 3, linha ~3701-3798)** —
+   controle de segurança central do ADR-2026-08-12 (mitigação de fail-open); não-vacuidade provada
+   só no CLI Go (Cenário 47, "por que só o CLI Go" no próprio comentário); nenhuma via adversarial
+   (sobrescrever o script, editar `credential_guard.mode`) é exercitada por gate ou teste.
+3. **D6-bis, redação de URL (lote 4)** — vetor concreto de vazamento de segredo versionado, zero
+   gate.
+4. **Modo default do credential-guard GLOBAL warn→block (lote 3, linha ~3887)** — nenhum gate roda
+   o script gerado sem `trackfw.yaml` para confirmar o fallback; só a estrutura do wiring JSON é
+   comparada.
+5. **`branch_has_wip_roadmap` aceitando `done/` (lote 3, linha ~2958)** — mudança central da
+   REQ-2026-07-26 nunca exercitada cross-CLI (grep negativo em 4 scripts).
+
+**O que a distribuição dos 4 lotes diz:** cobertura é forte (quase só `gate=`) onde uma REQ recente
+criou um script de gate NO MESMO ML da mudança (doctor, third-party, serve, `commit`, `release tag`,
+unknown-command — todos no lote 4, refletindo o `gate=` mais alto dos 4 lotes, 36%). Cobertura é
+fraca em dois padrões recorrentes que atravessam os 4 lotes: (a) prosa de rationale/limitação — "por
+que X e não Y", "o que esta regra NÃO vê" — inerentemente difícil de gatear e concentrada em `gap`;
+(b) alegações de verificação cross-CLI embutidas na prosa que ultrapassam o que o gate nomeado
+realmente testa (Windsurf/Amazon Q, D2 branch (ii) detecção de tamper testada só por unit test
+por stack, D4-bis, D6-bis) — o risco maior não é "ninguém testou isto", é "o documento diz ao leitor
+que foi testado quando não foi".
+
+**Correção feita durante a auto-revisão (achado do `advisor`):** a anotação de "Cópia local do
+template no validador" originalmente afirmava "grep confirma que não há teste equivalente em
+npm/tests/*.js nem pypi/tests/*.py" — falso. `npm/tests/credential_guard_integrity.test.js:423` e
+`pypi/tests/test_credential_guard_integrity.py:82` têm o mesmo teste `MatchesGenerator` do Go.
+Corrigido para `gate=` com os 3 arquivos e `partial=` descrevendo a lacuna real (3 testes
+unitários isolados, nunca um gate cross-CLI que rode os 3 juntos).
+
+**Nível de verificação:** leitura de trecho de gate/cenário para a maioria das 45 seções (doctor
+6 cenários a-f lidos linha a linha; third-party Partes A-D lidas; git-branch-guard Cenários 47-76
+lidos; serve `check-serve-address-parity.sh` lido por completo); `none` decidido por leitura do
+corpo completo da seção confirmando ausência de alegação falsificável própria (cabeçalhos-ponteiro
+para ADR); alguns `gap`/`partial` (Windsurf/Amazon Q, D4-bis, D6-bis, "completion", "exceções
+intencionais" do serve) apoiados em grep negativo de múltiplos termos plausíveis por script, não em
+leitura de cenário — mais fraco que leitura direta, mitigado por buscar mais de um termo por
+alegação.
+
+**Correção de formato (achado do `check-parity-contract-coverage.sh`, não do `advisor`):** a
+primeira passada usava `partial=` como estado isolado (formato inválido — só é chave válida junto
+de `gate=`) e `gate=<caminho> (comentário entre parênteses)` (caminho inexistente no disco por
+incluir o comentário). `make quality` reprovou com 22 violações nomeadas; todas corrigidas para o
+formato `gate=<caminho>[,<caminho>] partial=<texto>` / `gap reason=<texto>` antes de qualquer
+commit.
+
+**Validações:** `bash scripts/check-parity-contract-coverage.sh` exit 0 (177/177 anotadas, 0
+inválida). `git diff --numstat docs/cli-parity.md` = 90 inserções, 0 deleções (prosa intocada).
+`go build ./cmd/trackfw` sem erros. `./bin/trackfw validate` exit 0 (só os 18 warnings
+pré-existentes, não relacionados). `make quality` exit 0 (145 cenários de falsificação,
+Go+Node+Python+parity completos, incluindo os gates novos exercitados pelas anotações deste lote).
+Nenhum commit feito — devolvendo ao `trackfw_architect` para auditoria e despacho final da REQ (a
+triagem dos 177 está fechada).

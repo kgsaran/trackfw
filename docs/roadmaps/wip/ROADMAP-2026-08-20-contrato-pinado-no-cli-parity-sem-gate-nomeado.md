@@ -547,6 +547,55 @@ perceber que "afirmar que algo **não** é usado" é alegação falsificável de
 pegou um fechamento de comentário HTML malformado (`->` em vez de `-->`) que ele mesmo introduziu,
 antes de me entregar.
 
+
+### Auditoria do ML-2D — **triagem fechada, 177/177**
+
+```
+lote 4 (45):   gate= 16 · partial 15 · gap 10 · none 4
+CONSOLIDADO:   gate= 72 (41%) · partial 51 (29%) · gap 42 (24%) · none 12 (7%)
+               sem anotacao 0 · invalidas 0
+diff: 90 insercoes, 0 delecoes — prosa byte-identica (conferido por mim)
+make quality (CI-exata) exit 0 · validate exit 0
+```
+
+#### O achado #1 é de uma classe pior que lacuna, e verifiquei
+
+O documento **afirma cobertura que não existe** para Windsurf e Amazon Q. Medido por mim:
+
+```
+grep -c 'windsurf|amazonq' em check-agent-hooks-parity.sh    -> 0
+grep -c 'windsurf|amazonq' em check-harness-hooks-parity.sh  -> 0
+e a tabela da secao lista os dois como "deny global" cabeados
+```
+
+**Ausência silenciosa é ruim; afirmação falsa é pior**, porque quem lê o documento para decidir se
+pode confiar no wiring recebe uma garantia que não existe. É o único caso desse tipo nos quatro
+lotes, e o executor acertou ao pô-lo no topo.
+
+#### O que a distribuição diz — e é a conclusão útil da REQ
+
+| lote | conteúdo | gap |
+|---|---|---|
+| 1 | contrato antigo, nunca gateado | **39%** |
+| 2 | features recentes, nasceram com gate | 7% |
+| 3 | parecer de segurança, prosa de investigação | 27% |
+| 4 | REQs que nasceram com gate no mesmo ML | 22% |
+
+**A prática do projeto melhorou.** O que entrou com gate no mesmo microlote está coberto; o passivo
+é datado e não está crescendo. Isso muda o diagnóstico de *"estamos mal cobertos"* para *"há uma
+dívida antiga identificada, e a prática atual não a aumenta"* — remédios diferentes.
+
+E os **51 `partial`** (29%) são a descoberta que eu não tinha antecipado ao escrever o ADR: o padrão
+dominante não é ausência de gate, é **gate que prova que os 3 runtimes concordam entre si sem provar
+que concordam com o texto que a seção fixa**.
+
+**Autorrevisão dele:** corrigiu uma alegação exagerada própria e **22 violações de formato** —
+`partial=` isolado sem `gate=`, e caminhos de gate com comentário embutido que quebravam a checagem
+de existência. Todas pegas antes de me entregar, pelo próprio checker.
+
+**Nível de verificação declarado:** majoritariamente leitura direta de cenário; alguns `gap`/`partial`
+apoiados em grep negativo — mais fraco, e ele disse isso em vez de deixar implícito.
+
 ## Wave 3 — Tornar bloqueante
 
 ### ML-3A — Checker vira bloqueante
