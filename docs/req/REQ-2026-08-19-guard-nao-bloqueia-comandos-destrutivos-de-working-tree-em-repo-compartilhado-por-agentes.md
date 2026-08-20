@@ -1,9 +1,9 @@
 ---
-status: Open
+status: Done
 date: 2026-08-19
 author: ""
 adr: ""
-roadmap: ""
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md"
 ---
 
 # REQ: guard não bloqueia comandos destrutivos de working tree em repo compartilhado por agentes

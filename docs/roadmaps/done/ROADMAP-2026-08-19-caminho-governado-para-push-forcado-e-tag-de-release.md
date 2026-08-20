@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-08-19
 req: "docs/req/REQ-2026-08-19-ship-nao-cobre-push-forcado-nem-tag-e-o-guard-bloqueia-o-caminho-bruto.md"
 adr: "docs/adr/ADR-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md"
@@ -8,7 +8,7 @@ squad: "apolo-tf, hades-tf"
 
 # Roadmap: caminho governado para push forçado e tag de release
 
-> Created: 2026-08-19 | Status: wip
+> Created: 2026-08-19 | Status: done
 
 ## Context
 
