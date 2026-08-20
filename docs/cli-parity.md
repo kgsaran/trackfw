@@ -2957,7 +2957,7 @@ strings de aviso **byte-a-byte** entre os três runtimes.
 
 ## Regra `branch_has_wip_roadmap` — comportamento unificado nos 3 runtimes
 
-<!-- trackfw-contract: gap reason=nenhum gate cross-CLI posiciona um roadmap correspondente em done/ (linhas 2 e 4 da tabela — nem o caso de match nem o de slug divergente); check-branch-new-parity.sh só cobre roadmap em wip/ (cenário b) e ausência total de roadmap (cenário a/f), check-commit-parity.sh e check-ship-parity.sh idem, e check-validate-parity.sh não tem nenhuma ocorrência de "branch_has_wip_roadmap"/"wip/ nor done/" — a mudança central desta seção (aceitar done/, introduzida pela REQ-2026-07-26) nunca é exercitada cross-CLI -->
+<!-- trackfw-contract: gate=scripts/check-validate-parity.sh partial=cobre as 3 linhas centrais da tabela via TRACKFW_BRANCH (roadmap em done/ com slug igual aceito, nenhum roadmap em wip/ nem done/ bloqueia, roadmap em done/ com slug diferente bloqueia); check-branch-new-parity.sh continua cobrindo só wip/ (cenário b) e ausência total (cenário a/f), sem cenário próprio de done/ — redundante com o bloco de check-validate-parity.sh, que exercita a mesma BranchSlugMatchesRoadmap; achado registrado (não corrigido, ver vault/notes/validate-branch-has-wip-roadmap-done-python-rule-null-2026-08-20.md): pypi/trackfw/validator.py's validate_branch_has_wip_roadmap retorna strings simples em vez do formato dict de _enrich_items, então o "rule"/"file" desta regra sai null em validate --json no Python (Go/Node.js tagueiam corretamente) — texto da mensagem é byte-idêntico nos 3, o gate compara por esse texto e pina a divergência de tag explicitamente -->
 
 
 A regra verifica que toda branch `feat/`, `fix/` ou `refactor/` possui um roadmap cujo nome

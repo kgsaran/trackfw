@@ -119,7 +119,17 @@ ADR:
 Roadmap:
 EOF
 
-GOCACHE=${GOCACHE:-/tmp/trackfw-go-cache} go build -o "$TMP_DIR/trackfw-go" ./cmd/trackfw
+# GO_BIN override — segue a convenção de check-branch-new-parity.sh/check-artifact-parity.sh:
+# não fixado → compila um binário descartável (comportamento original, preservado);
+# relativo → prefixa com ROOT_DIR; absoluto → usado como está. Sem isto o Cenário P4
+# (ROADMAP-2026-08-20-gates-para-os-tres-contratos-de-maior-risco, ML-2A) não teria como
+# apontar este script para um binário Go sabotado em cópia isolada.
+if [[ -z "${GO_BIN:-}" ]]; then
+  GOCACHE=${GOCACHE:-/tmp/trackfw-go-cache} go build -o "$TMP_DIR/trackfw-go" ./cmd/trackfw
+  GO_BIN="$TMP_DIR/trackfw-go"
+elif [[ "$GO_BIN" != /* ]]; then
+  GO_BIN="$ROOT_DIR/$GO_BIN"
+fi
 
 run_validator() {
   local output=$1
@@ -137,7 +147,7 @@ run_validator() {
   fi
 }
 
-run_validator "$TMP_DIR/go.json" "$TMP_DIR/trackfw-go" validate --json
+run_validator "$TMP_DIR/go.json" "$GO_BIN" validate --json
 run_validator "$TMP_DIR/node.json" node "$ROOT_DIR/npm/bin/trackfw" validate --json
 run_validator "$TMP_DIR/python.json" env PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw validate --json
 
@@ -241,7 +251,7 @@ run_global_integrity() {
   (cd "$GVP_PROJECT" && HOME="$GVP_HOME" "$@") >"$output" 2>"$output.stderr"
 }
 
-run_global_integrity "$TMP_DIR/gvp-go.json" "$TMP_DIR/trackfw-go" validate --json
+run_global_integrity "$TMP_DIR/gvp-go.json" "$GO_BIN" validate --json
 run_global_integrity "$TMP_DIR/gvp-node.json" node "$ROOT_DIR/npm/bin/trackfw" validate --json
 run_global_integrity "$TMP_DIR/gvp-python.json" env PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw validate --json
 
@@ -329,7 +339,7 @@ run_global_missing_type() {
   set -e
 }
 
-run_global_missing_type "$TMP_DIR/gvmt-go.json" "$TMP_DIR/trackfw-go" validate --json
+run_global_missing_type "$TMP_DIR/gvmt-go.json" "$GO_BIN" validate --json
 run_global_missing_type "$TMP_DIR/gvmt-node.json" node "$ROOT_DIR/npm/bin/trackfw" validate --json
 run_global_missing_type "$TMP_DIR/gvmt-python.json" env PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw validate --json
 
@@ -373,3 +383,184 @@ if msgs[1:] != msgs[:-1]:
 PY
 
 echo "Validate JSON parity checks passed (global-scope guard missing-type hook_resolvable message, byte-identical across 3 CLIs)"
+
+# ---------------------------------------------------------------------------
+# ROADMAP-2026-08-20-gates-para-os-tres-contratos-de-maior-risco, ML-2A: a regra
+# `branch_has_wip_roadmap` aceita roadmap correspondente em `done/`, não só em
+# `wip/`, desde a REQ-2026-07-26-robustez-dos-gates-de-governanca-e-paridade — mas
+# esse comportamento nunca tinha sido exercitado cross-CLI (nem aqui, nem em
+# check-branch-new-parity.sh, cujos fixtures diziam literalmente "wip/ and done/
+# deliberately left empty"). Três casos, orientados por `TRACKFW_BRANCH` — suportado
+# de forma idêntica pelos 3 CLIs (internal/validator/validator.go:
+# validateBranchHasWIPRoadmap, npm/src/validator/index.js, pypi/trackfw/validator.py:
+# validate_branch_has_wip_roadmap), o que dispensa `git checkout` real:
+#   1. roadmap em done/ com slug IGUAL     → SEM violação (aceito — o caso central
+#      que esta seção nunca provou)
+#   2. nenhum roadmap em wip/ nem done/    → violação "no roadmap is in wip/ nor
+#      done/" (não-regressão do caso já conhecido)
+#   3. roadmap em done/ com slug DIFERENTE → violação "no matching roadmap in wip/
+#      nor done/" (discriminante: sem este caso, um gate que aceitasse QUALQUER
+#      roadmap em done/ — não só o de slug correspondente — passaria por acidente)
+# Cada braço só compara as mensagens da regra `branch_has_wip_roadmap` filtradas do
+# JSON (não o payload inteiro) — outras regras podem disparar de forma diferente
+# nesta fixture mínima sem invalidar a prova, que é especificamente sobre esta regra.
+# ---------------------------------------------------------------------------
+mkdir -p \
+  "$TMP_DIR/bhr-match/docs/roadmaps"/{wip,done} \
+  "$TMP_DIR/bhr-nomatch/docs/roadmaps"/{wip,done} \
+  "$TMP_DIR/bhr-diff/docs/roadmaps"/{wip,done}
+
+for d in bhr-match bhr-nomatch bhr-diff; do
+  cat >"$TMP_DIR/$d/trackfw.yaml" <<'EOF'
+roadmap_dir: docs/roadmaps
+EOF
+done
+
+cat >"$TMP_DIR/bhr-match/docs/roadmaps/done/ROADMAP-2026-08-20-minha-feature.md" <<'EOF'
+---
+status: done
+---
+# Roadmap: minha feature
+EOF
+
+cat >"$TMP_DIR/bhr-diff/docs/roadmaps/done/ROADMAP-2026-08-20-outra-coisa.md" <<'EOF'
+---
+status: done
+---
+# Roadmap: outra coisa
+EOF
+# bhr-nomatch: wip/ e done/ deliberadamente vazios — nenhum roadmap em lugar nenhum.
+
+run_bhr() {
+  local output=$1 dir=$2 branch=$3
+  shift 3
+  set +e
+  ( cd "$dir" && TRACKFW_BRANCH="$branch" "$@" ) >"$output" 2>"$output.stderr"
+  echo "$?" >"$output.exit"
+  set -e
+}
+
+run_bhr "$TMP_DIR/bhr-match-go.json"     "$TMP_DIR/bhr-match"   feat/minha-feature       "$GO_BIN" validate --json
+run_bhr "$TMP_DIR/bhr-match-node.json"   "$TMP_DIR/bhr-match"   feat/minha-feature       node "$ROOT_DIR/npm/bin/trackfw" validate --json
+run_bhr "$TMP_DIR/bhr-match-py.json"     "$TMP_DIR/bhr-match"   feat/minha-feature       env PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw validate --json
+
+run_bhr "$TMP_DIR/bhr-nomatch-go.json"   "$TMP_DIR/bhr-nomatch" feat/sem-roadmap-nenhum  "$GO_BIN" validate --json
+run_bhr "$TMP_DIR/bhr-nomatch-node.json" "$TMP_DIR/bhr-nomatch" feat/sem-roadmap-nenhum  node "$ROOT_DIR/npm/bin/trackfw" validate --json
+run_bhr "$TMP_DIR/bhr-nomatch-py.json"   "$TMP_DIR/bhr-nomatch" feat/sem-roadmap-nenhum  env PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw validate --json
+
+run_bhr "$TMP_DIR/bhr-diff-go.json"      "$TMP_DIR/bhr-diff"    feat/minha-feature       "$GO_BIN" validate --json
+run_bhr "$TMP_DIR/bhr-diff-node.json"    "$TMP_DIR/bhr-diff"    feat/minha-feature       node "$ROOT_DIR/npm/bin/trackfw" validate --json
+run_bhr "$TMP_DIR/bhr-diff-py.json"      "$TMP_DIR/bhr-diff"    feat/minha-feature       env PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw validate --json
+
+python3 - "$TMP_DIR" <<'PY'
+import json
+import os
+import sys
+
+tmp = sys.argv[1]
+
+# ACHADO (não corrigido neste ML — registrado no roadmap): pypi/trackfw/validator.py's
+# validate_branch_has_wip_roadmap() returns plain strings, not the {"type": "violation",
+# "message": ...} dict shape every other Python rule uses. _enrich_items() (validator.py)
+# only tags "rule"/"file" onto dict items — a bare string passes through untouched — so
+# Python's `validate --json` reports this ONE rule with "rule": null, "file": null while
+# Go and Node.js both tag "rule": "branch_has_wip_roadmap" correctly. Confirmed by direct
+# invocation of the 3 real binaries against an identical fixture before writing this gate.
+# Pre-existing, unrelated to done/ acceptance (reproduces on the plain no-roadmap case
+# too) — filtering by "rule" here would make every non-match Python case in this block
+# vacuously fail, so filtering below uses the message text (byte-identical across the 3
+# CLIs) instead, and the rule/file divergence is pinned explicitly so it cannot silently
+# regress further (e.g. Go/Node losing the tag too) without this gate noticing.
+BHR_MESSAGE_MARKER = "wip/ nor done/"
+
+
+def load(name):
+    path = os.path.join(tmp, name)
+    with open(path, encoding="utf-8") as fh:
+        payload = json.load(fh)
+    with open(path + ".exit", encoding="utf-8") as fh:
+        exit_code = int(fh.read().strip())
+    matching = [
+        item for item in payload["violations"]
+        if BHR_MESSAGE_MARKER in item.get("message", "")
+    ]
+    msgs = sorted(item["message"] for item in matching)
+    rules = sorted({item.get("rule") for item in matching})
+    return exit_code, msgs, rules
+
+
+# label -> (filename pattern, expect violation?, substring expected in every message)
+cases = {
+    "match": ("bhr-match-{}.json", False, None),
+    "nomatch": ("bhr-nomatch-{}.json", True, "no roadmap is in wip/ nor done/"),
+    "diff": ("bhr-diff-{}.json", True, "no matching roadmap in wip/ nor done/"),
+}
+
+for label, (pattern, expect_violation, expectation) in cases.items():
+    results = {rt: load(pattern.format(rt)) for rt in ("go", "node", "py")}
+
+    for rt, (exit_code, msgs, rules) in results.items():
+        if expect_violation:
+            # P2 vacuity guard: a regra REALMENTE precisa disparar — um exit
+            # não-zero por conta de outra regra qualquer nesta fixture mínima
+            # não prova nada sobre branch_has_wip_roadmap.
+            if not msgs:
+                raise SystemExit(
+                    f"branch_has_wip_roadmap done/ parity ({label}/{rt}): esperava "
+                    "violação da regra branch_has_wip_roadmap, nenhuma foi "
+                    f"reportada (violations completo: exit={exit_code}) — fixture "
+                    "vacua ou regressão"
+                )
+            if exit_code == 0:
+                raise SystemExit(
+                    f"branch_has_wip_roadmap done/ parity ({label}/{rt}): violação "
+                    "reportada mas exit code é 0 — severidade default da regra é "
+                    "'error', deveria reprovar"
+                )
+            if not all(expectation in m for m in msgs):
+                raise SystemExit(
+                    f"branch_has_wip_roadmap done/ parity ({label}/{rt}): mensagem "
+                    f"não contém {expectation!r}: {msgs!r}"
+                )
+            # Achado pinado (ver comentário BHR_MESSAGE_MARKER acima): Go/Node
+            # tagueiam "rule": "branch_has_wip_roadmap"; Python tagueia "rule": null
+            # para esta regra especificamente. Qualquer mudança nesse conjunto
+            # (nos dois sentidos) é uma regressão real e deve reprovar aqui.
+            expected_rules = (
+                [None] if rt == "py" else ["branch_has_wip_roadmap"]
+            )
+            if rules != expected_rules:
+                raise SystemExit(
+                    f"branch_has_wip_roadmap done/ parity ({label}/{rt}): tag "
+                    f"'rule' mudou de {expected_rules!r} para {rules!r} — se for "
+                    "Python passando a taguear corretamente, atualizar este "
+                    "pin e o achado documentado (validate_branch_has_wip_roadmap "
+                    "retorna strings, não dicts); se for Go/Node perdendo a tag, "
+                    "é regressão real"
+                )
+        else:
+            # Caso central do ML-2A: roadmap correspondente em done/ deve ser
+            # ACEITO — nenhuma violação da regra, seja qual for o exit code
+            # geral (outra regra pode disparar nesta fixture mínima sem
+            # relação com o que está sendo provado aqui).
+            if msgs:
+                raise SystemExit(
+                    f"branch_has_wip_roadmap done/ parity ({label}/{rt}): roadmap "
+                    "correspondente em done/ deveria ser aceito (zero violações "
+                    f"da regra), mas {rt} reportou {msgs!r}"
+                )
+
+    go_msgs, node_msgs, py_msgs = (results[rt][1] for rt in ("go", "node", "py"))
+    if not (go_msgs == node_msgs == py_msgs):
+        raise SystemExit(
+            f"branch_has_wip_roadmap done/ parity ({label}): mensagens divergem "
+            f"entre runtimes -- go={go_msgs!r} node={node_msgs!r} py={py_msgs!r}"
+        )
+
+print(
+    "branch_has_wip_roadmap done/ acceptance parity checks passed "
+    "(match/no-roadmap/diff-slug discriminant, byte-identical across 3 CLIs)"
+)
+PY
+
+echo "Validate JSON parity checks passed (branch_has_wip_roadmap accepting done/, exercised cross-CLI: match / no-roadmap / diff-slug discriminant)"

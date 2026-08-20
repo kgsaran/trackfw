@@ -365,7 +365,7 @@ cobertura de harness dos dois no futuro.
 ## Wave 2 — `branch_has_wip_roadmap` com `done/`
 
 ### ML-2A — Cenário cross-CLI com roadmap em `done/`
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf`
+**Status:** ✅ Concluído · **Agente:** `apolo-tf`
 **Arquivos:** `scripts/check-branch-new-parity.sh` e/ou `check-validate-parity.sh`,
 `scripts/check-gates-falsify.sh`, `docs/cli-parity.md`.
 
@@ -380,7 +380,122 @@ exercitado entre os 3 CLIs.
 - [ ] Cenário P4 sabotando a aceitação de `done/` e provando gate vermelho
 - [ ] `make quality` verde
 
+#### Execução (apolo-tf, 2026-08-20) — pronta para auditoria, status/checkboxes deixados para o `trackfw_architect`
+
+**Onde o gate foi posto e por quê:** `scripts/check-validate-parity.sh`, não `check-branch-new-
+parity.sh`. A própria evidência da REQ cita "`check-validate-parity.sh` não tem nenhuma ocorrência
+da regra" — é o alvo mais literal. `TRACKFW_BRANCH` é suportado de forma idêntica pelos 3 CLIs
+(`internal/validator/validator.go`, `npm/src/validator/index.js`,
+`pypi/trackfw/validator.py:validate_branch_has_wip_roadmap`), o que permite exercitar `validate`
+sem `git checkout` real — mais simples que `check-branch-new-parity.sh`, que já cobre wip/ (b) e
+ausência (a/f) mas nunca precisou de `done/` porque `branch new` e `validate` chamam a mesma
+`BranchSlugMatchesRoadmap`/`branchSlugMatchesRoadmap`/`branch_slug_matches_roadmap` (não é uma
+segunda implementação).
+
+**Os 3 casos, medidos com os binários reais:**
+1. Roadmap em `done/` com slug igual → **zero violação** nos 3 (aceito — o caso central que a
+   seção nunca provou).
+2. Nenhum roadmap em lugar nenhum → bloqueia nos 3, mensagem "no roadmap is in wip/ nor done/"
+   (não-regressão).
+3. Roadmap em `done/` com slug **diferente** → bloqueia nos 3, mensagem "no matching roadmap in
+   wip/ nor done/" (discriminante — sem ele um gate que aceitasse qualquer roadmap em `done/`
+   passaria por acidente).
+
+**Concordam os 3 CLIs de verdade no caso `done/`?** Sim, na semântica que importa (aceita/bloqueia,
+texto da mensagem, exit code) — byte-idêntico nos 3. **Achado registrado, não corrigido:** Python's
+`validate --json` tagueia esta UMA regra com `"rule": null, "file": null` —
+`validate_branch_has_wip_roadmap` (pypi) retorna `list[str]`, não o formato dict que
+`_enrich_items` sabe enriquecer; Go/Node tagueiam `"rule": "branch_has_wip_roadmap"` corretamente.
+Isso é só a tag estruturada do `--json`, não a semântica de `done/`. O gate filtra por substring de
+mensagem (`"wip/ nor done/"`, confirmado único nos 3 validators via grep antes de usar) em vez de
+por `rule`, e pina a divergência de tag explicitamente para que uma mudança futura em qualquer lado
+reprove. Detalhado em `vault/notes/validate-branch-has-wip-roadmap-done-python-rule-null-
+2026-08-20.md`.
+
+**Regressão própria pega e corrigida antes de fechar:** adicionar suporte a `GO_BIN` em
+`check-validate-parity.sh` (necessário para o P4 sem cópia de script) quebrou o Cenário 4
+pré-existente — `make parity` exporta `GO_BIN=bin/trackfw` (relativo) só para a linha do
+`check-gates-falsify.sh` no Makefile, e essa variável vazava para o Cenário 4 (que nunca precisou
+dela antes), resolvendo contra o `ROOT_DIR` errado. Corrigido com `env GO_BIN="$ROOT_DIR/bin/
+trackfw"` explícito, mesma convenção já usada pelos Cenários 42/78.
+
+**Cenário 79** (`check-gates-falsify.sh`, 147→148): baseline (binário real passa limpo) + detecção
+(corrompe `BranchSlugMatchesRoadmap` dropando `doneDirs` do slice varrido — delta de literal único
+— binário Go isolado, `check-validate-parity.sh` real apontado para ele via `GO_BIN`, Node.js/
+Python reais) — prova que o bloco novo reprova se a aceitação de `done/` quebrar em qualquer um dos
+3 runtimes.
+
+`docs/cli-parity.md`: anotação da seção saiu de `gap` para `gate=scripts/check-validate-parity.sh
+partial=...`, nomeando as 3 linhas cobertas, a redundância declarada com `check-branch-new-
+parity.sh` e o achado do `rule: null`.
+
+**Saídas literais:**
+- `go build ./...` — sem erro
+- `bash scripts/check-parity-contract-coverage.sh` — exit 0, zero anotação inválida/seção sem
+  anotação
+- `GO_BIN=bin/trackfw bash scripts/check-validate-parity.sh` — todos os blocos OK, incl. o novo
+  "branch_has_wip_roadmap done/ acceptance parity checks passed (match/no-roadmap/diff-slug
+  discriminant, byte-identical across 3 CLIs)"
+- `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 bash scripts/check-gates-falsify.sh` — "Falsification checks
+  passed (all 148 scenarios...)", incl. `OK [falsify/validate-parity/branch-has-wip-roadmap-done-
+  acceptance-baseline]` e `OK [falsify/validate-parity/branch-has-wip-roadmap-done-acceptance-not-
+  detected]`
+- `make quality` — exit 0, zero FAIL
+- `./bin/trackfw validate` — exit 0, 17 warnings pré-existentes (mesma contagem do ML-1B, nenhum
+  novo — a nota nova do vault não ficou órfã)
+- `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make parity` — zero FAIL, "all 148 scenarios" confirmado, e
+  as duas linhas do Cenário 79 (baseline + detecção) presentes no log
+
 ---
+
+### Auditoria do ML-2A — aprovada, e achou a **7ª divergência**
+
+```
+sabotagem propria: dirs := append(wipDirs, doneDirs...)  ->  append(wipDirs)   (literal unico)
+  gate -> EXIT=1: "roadmap correspondente em done/ deveria ser aceito (zero violacoes),
+                   mas go reportou [...no roadmap is in wip/ nor done/...]"
+restaurado -> passa
+148 cenarios · make quality (CI-exata) exit 0 · cobertura exit 0 · validate exit 0
+```
+
+O script usa convenção de mensagem própria em vez do prefixo `FAIL` — por isso meu `grep -c FAIL`
+deu zero num run que saiu com `EXIT=1`. **Quase registrei como não-detecção.** Anoto para não repetir:
+contar `FAIL` não substitui olhar o código de saída, e gates desta base não seguem uma convenção só.
+
+**A escolha de onde pôr o gate é dele e está certa:** `check-validate-parity.sh`, não
+`check-branch-new-parity.sh`. A evidência da REQ apontava aquele script como o de zero ocorrências
+da regra, e o `TRACKFW_BRANCH` conduz o `validate` direto, sem precisar de `git checkout` real —
+fixture mais simples e mais determinístico.
+
+**Os três casos, com o discriminante:** `done/` com slug igual aceita; nenhum roadmap recusa; `done/`
+com slug **diferente** recusa. Sem o terceiro, uma implementação que aceitasse *qualquer* roadmap
+concluído passaria — e seria pior que o bug original.
+
+#### 7ª divergência real, fixada e não corrigida
+
+```
+TRACKFW_BRANCH=feat/inexistente  validate --json
+  Go      ->  rule: "branch_has_wip_roadmap"
+  Python  ->  rule: None
+```
+
+Confirmei por medição. `validate_branch_has_wip_roadmap` (`pypi/trackfw/validator.py:1436`) devolve
+`list[str]` em vez da forma que o `_enrich_items` enriquece. Mensagem e exit code idênticos; só o
+`rule` do JSON diverge — e `--json` é o que integração de CI consome, então quem filtra por `rule`
+perde esta regra **em silêncio**.
+
+Ele **fixou a divergência no gate**, para que deriva em qualquer direção reprove alto, e abriu a
+questão em vez de consertar. Correto: virou
+`REQ-2026-08-20-validate-json-do-python-nao-rotula-a-regra-branch-has-wip-roadmap`, com um AC que
+exige **varrer as demais regras** — se uma devolve a forma errada por descuido, é improvável que
+esteja sozinha.
+
+**Regressão que ele mesmo causou e consertou:** ao dar suporte a `GO_BIN` no
+`check-validate-parity.sh`, o `GO_BIN=bin/trackfw` relativo do `make parity` vazou para a cópia
+isolada do Cenário 4 e resolveu contra o `ROOT_DIR` errado. Corrigiu com override absoluto, na
+convenção que os Cenários 42/78 já usavam. Achou porque rodou a **invocação CI-exata** — rodar só o
+script direto não teria mostrado.
+
 
 ## Wave 3 — `credential_guard_hook_resolvable` cross-CLI
 

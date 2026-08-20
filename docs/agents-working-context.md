@@ -21595,3 +21595,83 @@ cenários passed · `make quality` exit 0, zero FAIL (2804 linhas) · `./bin/tra
 (17 warnings pré-existentes) · `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make parity` REAL_EXIT=0.
 
 ML-1B marcado ✅ no roadmap. **Fim.**
+
+## 2026-08-20 — Apolo (apolo-tf) — ML-2A: `branch_has_wip_roadmap` aceitando `done/` exercitado cross-CLI
+
+**Início:** ML-2A, `docs/roadmaps/wip/ROADMAP-2026-08-20-gates-para-os-tres-contratos-de-maior-risco.md`.
+
+Gate posto em `scripts/check-validate-parity.sh` (não em `check-branch-new-parity.sh`): a REQ cita
+a própria seção do `cli-parity.md` provando que `check-validate-parity.sh` tinha zero ocorrências da
+regra, e `TRACKFW_BRANCH` (suportado identicamente pelos 3 CLIs — confirmado nos 3 fontes) permite
+exercitar `validate` sem `git checkout` real. Três casos novos, via `TRACKFW_BRANCH`: roadmap em
+`done/` com slug igual → aceito (zero violação, o caso central nunca provado); nenhum roadmap em
+lugar nenhum → bloqueia (não-regressão); roadmap em `done/` com slug **diferente** → bloqueia
+(discriminante — sem ele um gate que aceitasse qualquer roadmap em `done/` passaria por acidente).
+
+**Achado ao montar o fixture (registrado, não corrigido):** Python's `validate --json` tagueia esta
+UMA regra com `"rule": null, "file": null` — `validate_branch_has_wip_roadmap` retorna `list[str]`
+em vez do formato dict que `_enrich_items` (pypi/trackfw/validator.py) sabe enriquecer; Go/Node
+tagueiam `"rule": "branch_has_wip_roadmap"` corretamente. **Importante: isso é só a tag estruturada
+do `--json`, não a semântica de `done/` — o texto da mensagem e o exit code são byte-idênticos nos
+3, então a aceitação de `done/` em si CONCORDA nos 3 CLIs.** O gate filtra por substring de mensagem
+(`"wip/ nor done/"`, confirmado único nos 3 validators via grep) em vez de por `rule`, e pina a
+divergência de tag explicitamente (assert que Python é `[None]`, Go/Node são
+`["branch_has_wip_roadmap"]`) para que uma mudança futura em qualquer lado reprove aqui. Detalhado em
+`vault/notes/validate-branch-has-wip-roadmap-done-python-rule-null-2026-08-20.md`.
+
+**Regressão own própria pega e corrigida antes de fechar:** `check-validate-parity.sh` ganhou
+suporte a `GO_BIN` (antes sempre auto-compilava, ignorando a env var) para viabilizar o P4 sem cópia
+de script. Isso quebrou o Cenário 4 pré-existente (`validate-parity/rule-removed`): `make parity`
+exporta `GO_BIN=bin/trackfw` (relativo) só para a linha do `check-gates-falsify.sh` no Makefile, e
+essa variável vaza para o Cenário 4 (que nunca precisou dela antes), resolvendo contra o `ROOT_DIR`
+errado (o diretório da cópia isolada, não o repo real) — `exit 127`, binário não encontrado. Corrigido
+adicionando `env GO_BIN="$ROOT_DIR/bin/trackfw"` explícito ao Cenário 4, mesma convenção já usada
+pelos Cenários 42/78 ao copiar outros scripts GO_BIN-aware.
+
+Cenário 79 novo em `check-gates-falsify.sh` (baseline + detecção): corrompe
+`BranchSlugMatchesRoadmap` (`internal/validator/validator.go`) — `dirs := append(append([]string{},
+wipDirs...), doneDirs...)` vira `append([]string{}, wipDirs...)`, dropando `doneDirs` — binário Go
+isolado, `check-validate-parity.sh` real apontado para ele via `GO_BIN`; Node.js/Python seguem reais.
+Braço de baseline confirma o binário real passa limpo antes do braço de detecção provar que o
+corrompido reprova com o diagnóstico exato. 147→148 cenários.
+
+`docs/cli-parity.md`: anotação da seção "Regra `branch_has_wip_roadmap`" saiu de `gap` para
+`gate=scripts/check-validate-parity.sh partial=...`, nomeando as 3 linhas cobertas, a redundância
+declarada com `check-branch-new-parity.sh` (mesma `BranchSlugMatchesRoadmap`, sem cenário próprio de
+`done/`) e o achado do `rule: null` do Python.
+
+**Saídas literais, todas medidas na árvore final (após o fix do Cenário 4 e o braço de baseline do
+Cenário 79):**
+- `go build ./...` — sem erro
+- `bash scripts/check-parity-contract-coverage.sh` — exit 0, zero anotação inválida/seção sem
+  anotação
+- `GO_BIN=bin/trackfw bash scripts/check-validate-parity.sh` — todos os blocos OK, incl.
+  `branch_has_wip_roadmap done/ acceptance parity checks passed (match/no-roadmap/diff-slug
+  discriminant, byte-identical across 3 CLIs)`
+- `make quality` — re-rodado depois do fix e do braço de baseline, `EXIT=0`, zero `FAIL` no log
+  (2914 linhas), incl. a linha positiva acima e `OK [falsify/validate-parity/branch-has-wip-
+  roadmap-done-acceptance-baseline]` + `OK [.../not-detected]`
+- `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make parity` — confirmado, zero `FAIL`, "Falsification
+  checks passed (all 148 scenarios...)", a linha positiva do bloco novo aparece na execução direta
+  do Makefile (linha 20, antes de qualquer cenário de `check-gates-falsify.sh`) — a prova positiva
+  do CI não depende só do braço de baseline do Cenário 79
+- `./bin/trackfw validate` — exit 0, 17 warnings pré-existentes, mesma contagem do ML-1B, nenhum
+  novo — a nota nova do vault não ficou órfã
+
+**Handoff — arquivos para o `trackfw_architect` revisar e commitar (nenhum commit feito por mim):**
+modificados: `docs/agents-working-context.md`, `docs/cli-parity.md`,
+`docs/roadmaps/wip/ROADMAP-2026-08-20-gates-para-os-tres-contratos-de-maior-risco.md`,
+`scripts/check-gates-falsify.sh`, `scripts/check-validate-parity.sh`, `vault/notes/index.md`.
+**Arquivo NOVO, não rastreado — precisa ser adicionado explicitamente ao stage:**
+`vault/notes/validate-branch-has-wip-roadmap-done-python-rule-null-2026-08-20.md`.
+
+**Achado que mais vale a atenção do auditor:** ao adicionar suporte a `GO_BIN` em
+`check-validate-parity.sh` (necessário para o Cenário 79), o Cenário 4 **pré-existente** (não
+pedido por este ML) quebrou — `make parity` exporta `GO_BIN=bin/trackfw` (relativo) só para a
+linha do `check-gates-falsify.sh` no Makefile, e essa variável vazava para dentro do Cenário 4
+(cópia isolada em `$T4`), resolvendo contra o `ROOT_DIR` errado. Diagnosticado e corrigido com `env
+GO_BIN="$ROOT_DIR/bin/trackfw"` explícito no próprio Cenário 4, mesma convenção já usada pelos
+Cenários 42/78. Vale conferir esse diff isoladamente — é uma mudança num cenário que este ML não
+pediu, motivada por uma regressão que o próprio trabalho causou.
+
+ML-2A pronto para auditoria do `trackfw_architect`. **Fim.**
