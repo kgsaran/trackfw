@@ -63,6 +63,8 @@ of the same version inside one runtime.
 
 ### Source of the string per runtime
 
+<!-- trackfw-contract: gate=scripts/check-release-tag-parity.sh partial=cobre os 4 arquivos-fonte de versão (inclusive o fallback duplo de pypi/trackfw/__init__.py) só como pré-condição de `release tag`, indiretamente; não testa a leitura em si (internal/version/version.go, npm/package.json, importlib.metadata) fora desse fluxo -->
+
 | Runtime | Source |
 |---|---|
 | Go | `internal/version/version.go`, stored **without** the `v` |
@@ -74,6 +76,8 @@ the cobra `Version` field in `internal/commands/root.go` for the flag — so the
 both.
 
 ### Gate assertion — pinned, and why the old one was vacuous
+
+<!-- trackfw-contract: gate=scripts/check-cli-parity.sh -->
 
 The parity gate must apply **the same assertion to all three runtimes**:
 
@@ -92,6 +96,8 @@ audit — and used a **different regex for Node.js**
 A per-runtime exemption in a parity gate makes the difference permanent and invisible.
 
 ### `-v` is reserved for verbose — never bound to `--version`
+
+<!-- trackfw-contract: gate=scripts/check-cli-parity.sh -->
 
 `-v` is **not** a shorthand for `--version` in any runtime. All three reject it with a **non-zero exit**.
 Resolved by `REQ-2026-07-30-reservar-v-para-verbose-e-remover-atalho-de-versao-no-go`; previously it was
@@ -113,6 +119,8 @@ Implementing the verbose semantics is **not** part of this reservation — decid
 per command, and in what format, needs a concrete use case. It gets its own REQ when one exists.
 
 #### What is *not* unified — measured, and deliberately left alone
+
+<!-- trackfw-contract: gate=scripts/check-cli-parity.sh partial=a exigência positiva (-v não vincula e sai não-zero nos 3 runtimes) é coberta pelo mesmo gate da seção-mãe; a tabela de mensagem/exit code exatos por runtime para QUALQUER flag desconhecida (--zzz) é medida como baseline mas não verificada por nenhum gate -->
 
 After rejection, the three emit **different messages and exit codes**, because those are produced by the
 frameworks. Baseline measured with an arbitrary unknown flag (`--zzz`):
@@ -177,6 +185,8 @@ three, not to claim the broader 31-key set is resolved.
 
 ## Site documentation drift (ML-2B) — out of this document's contract, registered anyway
 
+<!-- trackfw-contract: none reason=a própria seção declara que docs/cli-parity.md não contrata prosa de documentação (site/guide), só comportamento de CLI; registrada apenas como paper trail de uma limpeza -->
+
 `site/guide/commands.md` and `site/en/guide/commands.md` are pt/en mirrors of the same command
 reference; `docs/cli-parity.md` does not contract them, because this document pins **CLI
 behavior**, not documentation prose. ML-2B (same roadmap as the other items in this section)
@@ -186,6 +196,8 @@ rather than `README.md`. Registered here only so the cleanup has a paper trail; 
 clause of the parity contract.
 
 ## Canonical governance references
+
+<!-- trackfw-contract: gap reason=a regra de match literal sem fallback por basename (extractRefPath) é comportamento falsificável do validador mas nenhum gate cross-CLI testa a rejeição de uma referência por basename ou por diretório de estado errado nos 3 runtimes -->
 
 REQ frontmatter fields `adr:` and `roadmap:` use the same canonical reference
 format in Go, Node.js, and Python: a complete path from the project root,
@@ -205,6 +217,8 @@ as `docs/roadmaps/wip/X.md` when the file is in `done/`, is invalid even when a
 file with the same basename exists elsewhere under `docs/roadmaps/`.
 
 ### `roadmap move` synchronizes the paired REQ reference
+
+<!-- trackfw-contract: gate=scripts/check-roadmap-move-parity.sh -->
 
 Because the reference is checked literally against the state directory, moving a roadmap invalidates
 every REQ that points at it. `trackfw roadmap move` therefore rewrites those references as part of the
@@ -267,6 +281,8 @@ after processing all of them, so one unwritable file does not hide the rest.
 
 ### `req list` / `req move` — discovery layouts and conditional physical move
 
+<!-- trackfw-contract: gap reason=nenhum gate cross-CLI exercita req list/req move — nem a descoberta por layout (flat/by_agent) nem a discriminação in-place-vs-physical-move são comparadas entre Go, Node.js e Python -->
+
 `req_dir` reuses the roadmap's own `roadmap_namespacing` field — there is no separate `req_namespacing`
 key (see ADR-2026-08-04). `req list` and `req move <name> <status>` discover REQs by concatenating three
 fixed, non-recursive globs (not mutually exclusive, all three are always scanned):
@@ -299,6 +315,8 @@ in `trackfw log` output.
 
 ## JSON Schema artifacts
 
+<!-- trackfw-contract: gap reason=nenhum gate compara os 3 arquivos docs/schema/*.json publicados por init entre os 3 runtimes; check-artifact-parity.sh tem uma lista fixa de KINDS que não inclui os schemas -->
+
 `trackfw init` publishes `docs/schema/adr.schema.json`,
 `docs/schema/req.schema.json`, and `docs/schema/roadmap.schema.json` as
 cross-runtime helper artifacts for external agents and automation. They describe
@@ -311,6 +329,8 @@ frontmatter presence, folder/status coherence, reference integrity, and
 traceability checks.
 
 ## Validator `stale_wip` and inspection errors
+
+<!-- trackfw-contract: gap reason=o contrato de stale_wip (fonte .trackfw-log, fallback mtime, thresholds, severidade) e os diagnósticos de inspeção (ENOTDIR, arquivo ilegível) não têm gate cross-CLI; cobertura hoje é só por suíte de testes interna a cada runtime -->
 
 The Go, Node.js, and Python validators share the same `stale_wip` contract:
 
@@ -352,6 +372,8 @@ Python test the `.trackfw-log` source of truth, configurable boundary behavior,
 
 ## AI integration lifecycle
 
+<!-- trackfw-contract: gate=scripts/check-integration-cli-parity.sh partial=comportamento não-interativo sem --targets (abre seletor TTY / exige a flag) não é exercitado por este gate, que sempre passa --targets explícito -->
+
 The Go, Node.js, and Python runtimes expose the same public lifecycle:
 
 ```bash
@@ -366,6 +388,8 @@ is required. Supported targets are Claude Code, Codex, Gemini CLI, Antigravity,
 Cursor, GitHub Copilot, Windsurf, Amazon Q, OpenCode, and Kiro.
 
 ### OpenCode agent representation (`opencode-agent`)
+
+<!-- trackfw-contract: gate=scripts/check-identity-parity.sh partial=o target "opencode" entra na lista derivada do catálogo (support_level != unsupported) e tem seus artefatos comparados byte a byte nos 3 runtimes; as RAZÕES da representação (mode: subagent fixo, model:/tools:/memory: omitidos deliberadamente) são justificativa pinada que o diff de bytes não discrimina — os 3 runtimes concordando num valor errado ainda passaria -->
 
 OpenCode (opencode.ai) is the tenth catalog target
 (`REQ-2026-08-04-compatibilidade-com-opencode-opencode-ai-para-uso-de-modelos-open-source`).
@@ -445,6 +469,8 @@ part of the cross-runtime contract; use `agents` and `skills` in new automation.
 
 ## Install scope (`--scope`)
 
+<!-- trackfw-contract: gap reason=nenhum gate exercita a tabela de resolução de --scope sem flag/sem TTY (D5/D6/D8: default global em install/update, erro obrigatório em uninstall) nos 3 runtimes; os gates de integração existentes sempre passam --scope explícito -->
+
 `agents|skills install|update|uninstall`, and `trackfw init`'s AI-tools step,
 share one scope-resolution contract across the three runtimes
 (ADR-2026-07-25-escopo-de-instalacao-selecionavel-para-agents-e-skills):
@@ -471,6 +497,8 @@ channel scripts consume instead).
 
 ### Internal codex-sync paths fixed to `scope: "project"`
 
+<!-- trackfw-contract: gap reason=nenhum gate verifica que a escrita do Codex (install e o re-sync de update) cai em scope=project nos 3 runtimes; a seção mesma nota que não é alcançável pela flag pública --scope, então precisaria de fixture dedicada que hoje não existe -->
+
 Two call sites bypass the scope gate entirely and hardcode `project`, in all
 three runtimes:
 
@@ -495,6 +523,8 @@ Neither is a parity gap: all three runtimes agree, and neither is reachable
 through the public `--scope` flag.
 
 ## `update` refusing unmanaged content — message names the remedy (item 8, ML-2C)
+
+<!-- trackfw-contract: gap reason=a própria seção se autodeclara "Parity gap, not yet closed by a gate" — a paridade da mensagem foi verificada lendo o código-fonte dos 3 runtimes, não por um gate que roda os 3 binários e diffa stdout/stderr real -->
 
 > ROADMAP-2026-08-16-higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-da-release-7-0-0.md
 
@@ -557,6 +587,8 @@ stream/prefix divergence fixed above, but only `ship` was fixed by this roadmap;
 open for a future ML.
 
 ## Non-interactive `--targets` error message (pre-existing, not part of the
+
+<!-- trackfw-contract: gap reason=as duas strings divergentes (Go/Node vs Python) são pinadas literalmente e testadas cada uma dentro do próprio runtime; nenhum gate cross-CLI impede uma edição futura de afastar ainda mais os dois textos aqui fixados -->
 install-scope contract)
 
 `install|update|uninstall` without `--targets` and without a TTY fail with a
@@ -575,6 +607,8 @@ silently fixed, so a future REQ can pick it up deliberately.
 
 ## Non-zero exit codes for integration lifecycle errors
 
+<!-- trackfw-contract: gap reason=a divergência de exit code (1 em Go/Node, 2 em Python) é documentada como aceita e pré-existente, mas nenhum gate cross-CLI a verifica ativamente; uma mudança acidental do 2 do Python passaria despercebida -->
+
 Go and Node exit `1` (the default for cobra/Node's uncaught-throw path) on
 integration errors (invalid `--scope`, missing `--targets`, `uninstall`
 without `--scope`, etc.). Python's `agents`/`skills` command handler
@@ -585,11 +619,15 @@ unrelated to and unaffected by the install-scope feature.
 
 ## Agent identity
 
+<!-- trackfw-contract: gate=scripts/check-identity-parity.sh -->
+
 Agent identity is a cross-runtime contract, not a per-distribution feature. The
 Go, Node.js, and Python CLIs read the **same** configuration file and must
 produce the same artifact bytes for the same input.
 
 ### Shared configuration
+
+<!-- trackfw-contract: gate=scripts/check-identity-parity.sh partial=o fallback "sem identity.json" é testado byte a byte nos 3 runtimes (HOME_WITHOUT); schema_version inválido, agents vazio e entrada ausente para um id específico não são exercitados -->
 
 ```
 ~/.trackfw/identity.json
@@ -625,6 +663,8 @@ name.
 
 ### Slug contract
 
+<!-- trackfw-contract: gate=scripts/check-identity-parity.sh partial=cobre só o ponto 1 (slugs de preset hardcoded, renderizados e comparados byte a byte nos 3 runtimes); o modo custom (slugificação dinâmica) e a rejeição de entrada inválida/colisão de slugs (pontos 2 e 3) não são exercitados -->
+
 1. **Preset slugs are hardcoded.** Every themed preset ships an explicit
    `display_name`/`slug` pair. Slugs are never derived at runtime, so the three
    runtimes cannot diverge through differences in Unicode normalization
@@ -640,6 +680,8 @@ name.
 
 ### Shared test fixture
 
+<!-- trackfw-contract: gate=scripts/check-identity-parity.sh -->
+
 The slug vectors live in a single fixture replicated **byte-identically** in
 the three packages:
 
@@ -654,6 +696,8 @@ string, and the over-length case. Each suite consumes the fixture directly;
 adding a vector in one runtime without propagating it is a contract break.
 
 ### Parity gate
+
+<!-- trackfw-contract: gate=scripts/check-identity-parity.sh,scripts/check-gates-falsify.sh -->
 
 `scripts/check-identity-parity.sh` is the cross-CLI gate for this contract. It
 verifies that the three `slug_vectors.json` copies are byte-identical and that
@@ -673,6 +717,8 @@ to add an uncovered agent-capable surface and requires
 `check-identity-parity.sh` to fail with a catalog coverage diagnostic.
 
 ### The wizard's UX is also part of the contract
+
+<!-- trackfw-contract: gap reason=a própria seção declara que a UX do wizard "has no automated cross-CLI test yet" e depende só de revisão manual -->
 
 Identity is not only configured by `init` — `trackfw agents install` offers
 the same interactive wizard, and the two entry points must feel identical
@@ -705,6 +751,8 @@ change.
 
 ## `trackfw ship`
 
+<!-- trackfw-contract: gate=scripts/check-ship-parity.sh partial=roda com TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 e a maioria dos cenários usa --no-pr/--dry-run, então os passos 5–7 (commit real, push real, abertura de PR/MR) quase nunca executam ponta a ponta; --forge, resolução de forge e a tabela de adaptadores também não são exercitados (ver subseções) -->
+
 `trackfw ship` runs a seven-step governed delivery sequence in all three runtimes:
 
 ```
@@ -721,6 +769,8 @@ change.
 
 ### Flags
 
+<!-- trackfw-contract: gate=scripts/check-ship-parity.sh partial=--forge não é exercitado por nenhum cenário deste gate -->
+
 | Flag | Type | Description |
 |---|---|---|
 | `-m` / `--message` | string | Commit message (Conventional Commits format required) |
@@ -729,6 +779,8 @@ change.
 | `--forge` | string | Override forge detection (`github`, `gitlab`, `bitbucket`, `azure`) |
 
 ### Forge resolution and `forge:` field
+
+<!-- trackfw-contract: gap reason=nenhum gate testa a precedência de resolução do forge (flag > trackfw.yaml > remote URL > CI file > manual) nem a mensagem impressa com a origem resolvida -->
 
 The resolved forge is printed before step 7:
 
@@ -749,6 +801,8 @@ source `config` on subsequent `ship` calls.
 
 ### Adapter table
 
+<!-- trackfw-contract: gap reason=nenhum gate testa os padrões de URL de fallback ou o CLI/substantivo por forge (gh/glab/az/bitbucket) da tabela de adaptadores -->
+
 | Forge | CLI | Noun | Fallback URL pattern |
 |---|---|---|---|
 | `github` | `gh` | Pull Request | `{base}/compare/{branch}?expand=1` |
@@ -761,6 +815,8 @@ SSH/git@ format. Self-hosted instances are supported: the base URL is extracted 
 remote URL regardless of the host.
 
 ### Graceful degradation
+
+<!-- trackfw-contract: gap reason=nenhum gate testa o passo 7 com o CLI de forge ausente (fallback de URL impresso, exit 0) nem o texto de --dry-run correspondente, byte a byte entre os 3 runtimes; check-ship-parity.sh desabilita comandos externos mas roda majoritariamente com --no-pr, sem chegar ao passo 7 -->
 
 When the forge CLI is not available in `$PATH` (or `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1`
 is set), step 7 prints the fallback browser URL and exits 0 — it does not fail the
@@ -782,6 +838,8 @@ This text is identical in Go, Node.js, and Python.
 
 ### Behavioural divergence from `trackfw validate`
 
+<!-- trackfw-contract: gap reason=nenhum gate fixa governance_mode: lenient em trackfw.yaml e confirma que ship ainda aborta — a diferença central desta seção (ship ignora lenient mode; validate não) nunca é exercitada; check-ship-parity.sh só prova o bloqueio com config default -->
+
 `trackfw validate` respects `governance_mode: lenient` (configured in `trackfw.yaml`)
 and per-rule severity overrides — in lenient mode, governance violations become warnings
 and exit code is 0.
@@ -801,6 +859,8 @@ pass (exit 0) but `trackfw ship` abort. This is intentional. The error message f
 2 explicitly mentions lenient mode to prevent confusion.
 
 ### Step 2 governance check — shared implementation, byte-identical output (ML-1B)
+
+<!-- trackfw-contract: gate=scripts/check-ship-parity.sh -->
 
 > ROADMAP-2026-08-16-higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-da-release-7-0-0.md
 
@@ -831,6 +891,8 @@ Covered by `scripts/check-ship-parity.sh` (`feat-still-gated-non-regression` and
 
 ### Usage silencing
 
+<!-- trackfw-contract: gap reason=nenhum gate verifica que a saída de uso (usage/help) é suprimida em erros de runtime (padrão de branch, gate de governança, nada staged, -m ausente) nos 3 runtimes -->
+
 Runtime errors (branch pattern, governance gate, nothing staged, missing `-m`) set
 `SilenceUsage = true` inside the command handler (Go/cobra) or return a non-zero exit
 code directly from the runner function (Node.js/Python), so the usage text is never
@@ -838,6 +900,8 @@ printed for runtime errors. Parse-time errors (unknown flags) still show usage, 
 they are raised by cobra/commander/argparse before the command handler runs.
 
 ### `ship --force-with-lease` — governed force-push (ML-1B)
+
+<!-- trackfw-contract: gate=scripts/check-ship-force-parity.sh -->
 
 > ROADMAP-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md,
 > ADR-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md
@@ -902,6 +966,8 @@ on stdout, stderr, and exit code:
   remote.
 
 ### `trackfw release tag <version>` — governed release publication (ML-2A/ML-2B)
+
+<!-- trackfw-contract: gate=scripts/check-release-tag-parity.sh -->
 
 > ROADMAP-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md,
 > ADR-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md
@@ -1075,6 +1141,8 @@ Thirteen scenarios, byte-diffed across the 3 runtimes on stdout, stderr, and exi
 
 ## `trackfw branch new`
 
+<!-- trackfw-contract: gate=scripts/check-branch-new-parity.sh -->
+
 `trackfw branch new <type>/<slug>` moves the `branch_has_wip_roadmap` governance gate — already
 enforced by `trackfw validate` and `trackfw ship` (see "Regra `branch_has_wip_roadmap`" below) —
 to **before** branch creation instead of after, for the `feat`/`fix`/`refactor` types. It reuses
@@ -1100,6 +1168,8 @@ time.
 
 ### Command surface
 
+<!-- trackfw-contract: gate=scripts/check-branch-new-parity.sh -->
+
 | Element | Value |
 |---|---|
 | Invocation | `trackfw branch new <type>/<slug>` |
@@ -1112,6 +1182,8 @@ time.
 | Exit = Git's own code | Match found (or `chore`/`docs`), `git checkout -b` ran and failed (e.g. branch already exists → Git's `128`) |
 
 ### Decision flow
+
+<!-- trackfw-contract: gate=scripts/check-branch-new-parity.sh -->
 
 ```
 1. Parse "<type>/<slug>" — <type> must be feat|fix|refactor|chore|docs, <slug> non-empty.
@@ -1130,6 +1202,8 @@ time.
 
 ### Shared matching logic — never duplicated
 
+<!-- trackfw-contract: gap reason=nenhum gate compara a mensagem de `trackfw validate` com a de `trackfw branch new` no mesmo fixture/runtime para provar que são byte-idênticas entre si — cada comando é validado isoladamente entre os 3 runtimes, não um contra o outro -->
+
 The slug-matching rule is implemented once per runtime and called from both places:
 
 | Runtime | Shared function | Called by `trackfw validate` | Called by `trackfw branch new` |
@@ -1146,6 +1220,8 @@ no-matching-roadmap message builders (`BranchGovernanceOrientation` /
 same way.
 
 ### Git output and exit code are propagated literally
+
+<!-- trackfw-contract: gate=scripts/check-branch-new-parity.sh -->
 
 `trackfw branch new` never reformats, wraps, or replaces `git checkout -b`'s own stdout, stderr,
 or exit code. This was **not** true by default in two of the three runtimes and required an
@@ -1177,6 +1253,8 @@ is exactly what `scripts/check-branch-new-parity.sh` (see below) does.
 
 ### Parity gate
 
+<!-- trackfw-contract: gate=scripts/check-branch-new-parity.sh,scripts/check-gates-falsify.sh -->
+
 `scripts/check-branch-new-parity.sh` covers three scenarios, each asserting stdout, stderr, and
 exit code are byte-identical across all three runtimes:
 
@@ -1193,6 +1271,8 @@ message is a scenario the gate is asserted to reject.
 
 ## `trackfw branch prune`
 
+<!-- trackfw-contract: gate=scripts/check-branch-prune-parity.sh -->
+
 `trackfw branch prune [--apply]` automates the "one active branch at a time" check documented in
 `CLAUDE.md` §1 ("Uma branch ativa por vez")
 (`docs/req/REQ-2026-08-18-trackfw-branch-prune-apaga-branch-local-ja-integrada-com-deteccao-correta-de-squash-merge.md`).
@@ -1207,6 +1287,8 @@ as clearly integrated — the command only reports. `--apply` is the explicit op
 actually run `git branch -d`/`-D` (see "Deletion: `-d` before `-D`" below).
 
 ### `git fetch origin --prune` — best-effort, non-blocking, always warned on failure
+
+<!-- trackfw-contract: gate=scripts/check-branch-prune-parity.sh -->
 
 Per `CLAUDE.md` §1 step 1, the command runs `git fetch origin --prune` before evaluating anything.
 Unlike `trackfw ship`'s squash-merge check (`ship.go`), which **skips its check entirely** when

@@ -392,7 +392,8 @@ que veio antes. Cada lote fecha com o checker verde e é auditado antes do segui
 demais na prática, o ajuste acontece depois de 44 seções, não de 177.
 
 ### ML-2A — Triagem, lote 1 (linhas 35–1209)
-**Status:** ⬜ Pendente · **Agente:** `hefesto-tf` (`subagent_type: hefesto-tf`) · **Dependência:** ML-1B
+**Status:** 🔄 Em andamento — lote 1/4 concluído (linhas 35–1209, 44 seções); lotes 2–4 pendentes ·
+**Agente:** `hefesto-tf` (`subagent_type: hefesto-tf`) · **Dependência:** ML-1B
 **Escreve:** anotações em `docs/cli-parity.md` e o relatório de triagem.
 
 **Ação:** classificar **cada** seção nos **três** estados da Emenda 1 (`gate=`, `gap`, `none`),
@@ -413,6 +414,47 @@ triagem — é o entregável.
 - [ ] `make quality` verde
 
 ---
+
+
+### Auditoria do ML-2A — aprovada; **39% do primeiro quarto é contrato sem gate**
+
+```
+44 secoes:  gate= 17 · gate+partial 9 · gap 17 · none 1 · invalidas 0
+checker exit 0 · make quality (CI-exata) exit 0 · validate exit 0
+```
+
+**17 de 44 = 39%.** Se a proporção se mantiver, o documento inteiro tem por volta de 70 contratos
+não-aplicados. A REQ deixou de ser hipótese na primeira medição real.
+
+**Verifiquei dois `gap` por medição, não pelo relatório:**
+
+```
+gap #1  check-ship-parity.sh cobre lenient mode?  -> grep -c lenient = 0   CONFIRMADO
+gap #9  check-artifact-parity.sh KINDS inclui schemas?
+        KINDS=(req adr roadmap ... note note_index)  -> nao inclui        CONFIRMADO
+```
+
+O `gap #1` é o mais grave e ele acertou ao pô-lo em primeiro: a seção existe para fixar que o `ship`
+**ignora** `governance_mode: lenient` enquanto o `validate` respeita — e nenhum cenário monta um
+fixture com `lenient`. Uma regressão que fizesse o `ship` passar a respeitar o modo permissivo
+atravessaria o gate inteiro. É o portão duro de governança dependendo de teste que não existe.
+
+**A relação `none` = 1 é o sinal de que não houve conveniência.** O modo de falha previsível desta
+REQ é inflar `none` para silenciar o checker; um único `none` em 44 seções, e num caso genuinamente
+fora do domínio de comportamento de CLI (deriva de documentação de site), é o oposto disso.
+
+#### Duas lições dele que valem para os 133 restantes — vão nos handoffs
+
+**1. `none` só quando o assunto está fora do domínio de comportamento de CLI.** Ele marcou `none` na
+primeira passada sempre que a seção dizia "isto não é requerido", e corrigiu 2 dos 3 na revisão:
+prosa de disclaimer costuma esconder uma **exigência positiva** falsificável por trás.
+
+**2. Rodar o gate isolado antes de declarar `gap` — não basta grepar o script.** Ele classificou
+três seções como `gap` por leitura estática e depois descobriu que o `check-identity-parity.sh`
+**deriva alvos do catálogo dinamicamente**, cobrindo mais do que o shell lista literalmente. Corrigiu
+sozinho. Esse é o falso-positivo mais provável da triagem, e agora tem contramedida escrita.
+
+**Nenhuma discordância com os 3 pilotos.**
 
 ## Wave 3 — Tornar bloqueante
 

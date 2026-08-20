@@ -21076,3 +21076,91 @@ aceito — o dano é recusa com mensagem clara; o dano oposto é silêncio).
 
 **Próximo: ML-2A, a triagem de 177 seções.** É o lote caro da REQ e o produto mais valioso —
 a lista de contratos sem gate. Refatiar antes de despachar.
+
+## 2026-08-20 — Hefesto (code quality) — ML-2A, lote 1/4 (linhas 35–1209, 44 seções) — início
+
+Recebido: anotar as 44 seções entre as linhas 35 e 1209 de `docs/cli-parity.md` (3 pilotos já
+anotados por outro executor). Formato fechado pelo ADR-2026-08-20 (Emendas 1 e 2). Branch
+`feat/contrato-pinado-no-cli-parity-sem-gate-nomeado`, sem commit/push (devolvendo ao
+`trackfw_architect`).
+
+## 2026-08-20 — Hefesto (code quality) — ML-2A, lote 1/4 concluído
+
+**41 seções novas anotadas** (+ 3 pilotos pré-existentes = 44 do lote). Método: para cada seção,
+grep pela alegação falsificável específica dentro de `scripts/check-*.sh` (não pelo nome do script —
+vários gates com nome plausível não cobrem o que a seção afirma) e leitura do trecho relevante do
+gate antes de decidir. Não usei `gate=` sem confirmar que o script citado realmente exercita a
+alegação da seção; várias vezes um gate existe e cobre um aspecto adjacente mas não o pinado ali —
+nesses casos usei `gap`, nunca carimbei.
+
+**Contagem final do lote (linhas 35–1209), após 2 rodadas de correção pós-revisão:** `gate=` pleno:
+17 · `gate=` com `partial=`: 9 · `gap`: 17 · `none`: 1 (só "Site documentation drift" — prosa de
+documentação, fora do domínio de comportamento de CLI). Total 44. Confirmado por
+`bash scripts/check-parity-contract-coverage.sh` (exit 0, zero anotação inválida).
+
+**Segunda correção:** "OpenCode agent representation" (linha 390) estava `gap`, mas
+`check-identity-parity.sh` deriva sua lista de targets do catálogo (`support_level != unsupported`)
+e `opencode` está nela (`support_level: native`) — rodei o gate isolado e confirmei "opencode" nos
+12 target/surface comparados byte a byte. Virou `gate=...partial=` (o diff de bytes não discrimina
+as RAZÕES pinadas da representação — mode fixo, omissões deliberadas — só a igualdade entre os 3).
+Já "Canonical governance references" (linha 198) fiquei em dúvida se `check-validate-parity.sh`
+cobriria incidentalmente a regra de match literal sem fallback por basename — li o script e a
+fixture dele testa `adr_accepted_when_req_done`/`blocked_by_draft_adr`, nunca uma referência
+basename-only ou de diretório de estado errado; `gap` confirmado como estava.
+
+**Correção pós-revisão (4 seções ajustadas antes de fechar o lote):** a primeira passada tinha 3
+`none` — revisão apontou que 2 delas (linha 64 "Source of the string per runtime" e linha 115 "What
+is *not* unified") pinam fatos falsificáveis e não deveriam usar `none` só porque a seção se
+autodescreve como não-vinculante; virei `gate=` com `partial=` para as duas (a 64 é coberta
+indiretamente por `check-release-tag-parity.sh`, que checa os 4 arquivos-fonte de versão incluindo
+o fallback duplo do `pypi/trackfw/__init__.py`; a 115 tem sua exigência positiva coberta por
+`check-cli-parity.sh`, só a tabela de mensagem/exit-code por flag desconhecida arbitrária fica sem
+gate). Também troquei `gap` por `gate=...partial=` nas linhas 592 e 626 (Shared configuration/Slug
+contract): `check-identity-parity.sh` existe e cobre boa parte (fallback sem identity.json byte a
+byte; slugs de preset hardcoded), então nomear `gap` teria escondido a cobertura real que existe —
+exatamente o "colapsava em vazio" que a Emenda 1 do ADR corrige com `partial=`. E ampliei o
+`partial=` da linha 706 (`trackfw ship`) para registrar que quase nenhum cenário de
+`check-ship-parity.sh` executa os passos 5–7 ponta a ponta (roda com
+`TRACKFW_DISABLE_EXTERNAL_COMMANDS=1` e majoritariamente `--no-pr`/`--dry-run`).
+
+**Gaps mais arriscados, na minha leitura (não exaustivo — critério é blast radius x chance de
+divergência silenciosa):**
+1. **"Behavioural divergence from `trackfw validate`" (linha 783/839)** — a diferença central que a
+   seção existe para pinar (`ship` ignora `governance_mode: lenient`, `validate` não) nunca é
+   testada: `check-ship-parity.sh` só prova o bloqueio com config default, nunca fixa
+   `governance_mode: lenient` no fixture. Um regresso que fizesse `ship` passar a respeitar lenient
+   mode passaria batido — é exatamente o cenário que motivou a seção existir.
+2. **"Install scope (`--scope`)" (linha 446)** — a tabela de resolução D5/D6/D8 (default global sem
+   `--scope`/sem TTY, erro obrigatório em `uninstall` não-interativo) não é exercitada por nenhum
+   gate; os gates de integração existentes sempre passam `--scope` explícito. É a superfície mais
+   usada do install e a mais fácil de regressar sem ninguém notar.
+3. **"`req list` / `req move`" (linha 268)** — lógica de discovery por layout (flat/by_agent) e a
+   discriminação in-place-vs-physical-move não tem gate cross-CLI algum. É tão intrincada quanto
+   `roadmap move` (que tem gate dedicado) mas ficou sem.
+4. **"`update` refusing unmanaged content"** — a própria seção já se autodeclara
+   "Parity gap, not yet closed by a gate"; incluí como está, não inventei cobertura.
+5. **"Validator `stale_wip` and inspection errors"** e **"JSON Schema artifacts"** — nenhum gate
+   cross-CLI; `check-artifact-parity.sh` tem uma lista fixa de `KINDS` que não inclui os schemas.
+
+**Hesitações:**
+- Seção 115 ("What is *not* unified") e 178 ("Site documentation drift") — marquei `none`, mas ambas
+  pinam fatos mensuráveis (baseline de mensagens de erro; o que foi trocado no site). Decidi que
+  `none` cabe porque as duas se auto-declaram explicitamente FORA do contrato com motivo específico
+  (não "não achei gate") — é o oposto do modo de falha que a REQ nomeia. Se o critério for "qualquer
+  fato mensurável é contrato", essas duas viram `gap` em vez de `none`; sinalizando para decisão do
+  arquiteto se o piloto motivar ajuste.
+- Seção 592 ("Shared configuration") e 626 ("Slug contract") — o gate `check-identity-parity.sh`
+  existe e tem nome certo, mas ao ler o script vi que ele só compara fixtures/artefatos com preset
+  fixo; não exercita `schema_version` inválido, os fallbacks de arquivo ausente, nem o modo `custom`
+  de slugificação dinâmica que a seção pina. Marquei `gap` em vez de `gate=` — o nome do script bateu
+  mas o conteúdo não cobria a alegação específica.
+
+**Discordâncias com os 3 pilotos:** nenhuma. Concordo com o `partial=` em "Vault de conhecimento" e
+com o `gap` em "i18n locale keys".
+
+**Validações:** `bash scripts/check-parity-contract-coverage.sh` exit 0 (17 gate / 4 partial / 20
+gap / 3 none / 133 sem anotação / 0 inválida — as 44 seções do lote todas classificadas, nenhuma
+fora do intervalo tocada). `./bin/trackfw validate` exit 0 (só os warnings pré-existentes). `make
+quality` exit 0 (Go+Node+Python+parity completo, incluindo os 145 cenários de
+`check-gates-falsify.sh`). Nenhum commit feito — devolvendo ao `trackfw_architect` para auditoria e
+para despachar os lotes 2–4.
