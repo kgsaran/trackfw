@@ -20739,3 +20739,18 @@ variável: 5 OK. Invocação CI-exata (`TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make
 **Padrão novo de auditoria, a partir de agora:** rodar a **invocação CI-exata**, não o comando
 equivalente. "Verde localmente" e "verde no CI" não são o mesmo comando, e essa diferença já custou
 um ciclo hoje.
+
+## 2026-08-19 — Zeus (arquiteto) — erro meu de auditoria, corrigido
+
+Aprovei o ML-6A citando como prova que o gate irmão "passou no CI". **Ele nunca rodou.**
+`Makefile:35` roda o force-push e `:36` o release-tag; o `make` para no primeiro erro. Citei um gate
+que não executou. Inventei a evidência em vez de medi-la.
+
+O CI seguinte mostrou a falha **oposta**: `gh` real está em `/usr/bin` no runner, então desligar a
+env var destapou o cenário que exige ausência de forge. O ML-6A não estava errado — estava
+**incompleto**, e minha auditoria deveria ter pego.
+
+**Regra que passo a aplicar:** antes de citar "o gate X passou no CI", confirmar que ele **executou**.
+Num alvo que para no primeiro erro, gates posteriores não rodam — e "não reprovou" não é "passou".
+
+ML-6B aberto: os dois gates precisam de `PATH` sem `gh` no cenário `no-forge-cli`.

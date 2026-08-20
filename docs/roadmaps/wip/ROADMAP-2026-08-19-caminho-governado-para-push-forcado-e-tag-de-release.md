@@ -881,6 +881,51 @@ o stub seja alcançável, então desligar a variável ali não abre caminho para
 CI roda `make parity` com env de step; eu rodava o script direto. Rodar a **invocação CI-exata** é o
 que fecha essa lacuna, e passa a ser o meu padrão de auditoria daqui em diante.
 
+### 🔴 Correção do meu próprio erro de auditoria — ML-6B
+
+Aprovei o ML-6A com um argumento **empírico que não existia**. Escrevi:
+
+> *"o gate irmão `check-release-tag-parity.sh` tem cenário `no-forge-cli`, usa o mesmo `BASE_PATH` e
+> **passou no CI**. Se `gh` fosse alcançável por `/usr/bin` no runner, aquele cenário teria
+> reprovado."*
+
+**Ele nunca rodou no CI.** `Makefile:35` executa o `check-ship-force-parity.sh` e `Makefile:36` o
+`check-release-tag-parity.sh`; o `make` para no primeiro erro. Como o de force-push reprovava, o
+irmão jamais foi alcançado — nas duas execuções. Citei como prova um gate que não executou.
+
+O CI seguinte mostrou o contrário, e com a falha **oposta**:
+
+```
+FAIL [ship-force-parity/no-forge-cli/{go,node,py}]:
+  stderr: "could not verify ... (gh CLI error: gh: To use GitHub CLI in a GitHub Actions
+   workflow, set the GH_TOKEN environment variable...)"
+```
+
+Ou seja: **`gh` real está no `PATH` do runner**, via `/usr/bin`. Desligar a env var no ML-6A destapou
+o cenário que dependia de `gh` estar ausente. O ML-6A não estava errado — estava **incompleto**, e a
+minha auditoria não pegou porque inventei a evidência em vez de medi-la.
+
+---
+
+### ML-6B — Cenário `no-forge-cli` precisa de `PATH` sem `gh` de verdade
+**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Arquivos:** `scripts/check-ship-force-parity.sh` **e** `scripts/check-release-tag-parity.sh`.
+
+`BASE_PATH="$RUNTIME_BIN:/usr/bin:/bin"` inclui `/usr/bin`, onde o runner do GitHub tem `gh`. Com a
+env var desligada, o cenário que exige ausência de forge encontra o `gh` real.
+
+**Os dois gates têm o mesmo defeito** — o do `release tag` só não se manifestou porque nunca chegou a
+rodar. Corrigir os dois.
+
+**Critérios de aceite:**
+- [ ] O cenário `no-forge-cli` roda com `PATH` que tem `git` e coreutils mas **não** tem `gh`/`glab`/`az`
+- [ ] Vale nos **dois** gates
+- [ ] Guarda de não-vacuidade: o cenário falha se algum CLI de forge for alcançável, em vez de passar
+      por acidente
+- [ ] Verificado na **invocação CI-exata** (`TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make parity`) **e**
+      num ambiente com `gh` em `/usr/bin`, simulando o runner
+- [ ] `make quality` verde · **CI verde**
+
 ## Notas
 - **Fora de escopo, declarado:** afrouxar o `case push)` do guard; merge de PR; `trackfw release`
   cobrindo bump e CHANGELOG (adiado no ADR, não rejeitado).
