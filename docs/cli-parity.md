@@ -34,6 +34,8 @@ Supported runtimes: Go 1.25+, Node.js 18+, and Python 3.10+.
 
 ## Version output
 
+<!-- trackfw-contract: gate=scripts/check-cli-parity.sh -->
+
 Both surfaces — the `version` subcommand and the `--version` flag — print **the same single line** to
 stdout, in all three runtimes:
 
@@ -134,6 +136,8 @@ fail, and most likely reach for a hack in one framework's error path.
 
 ## Vault de conhecimento
 
+<!-- trackfw-contract: gate= -->
+
 `trackfw init` cria `vault/notes/` e gera `vault/notes/index.md` nos três CLIs.
 
 O comando `note new "<título>"` cria `vault/notes/<slug>-YYYY-MM-DD.md` com frontmatter
@@ -151,6 +155,8 @@ Regra de validação `note_orphan` — notas em `vault/notes/` não referenciada
 | Detecção de link | aceita `[texto](arquivo.md)` e `[[nome-da-nota]]` |
 
 ## i18n locale keys — no orphan keys (ML-2A)
+
+<!-- trackfw-contract: none reason=registra remoção pontual de errors.notFound; a seção mesma declara que cli-parity.md não documenta paridade de chaves i18n como contrato -->
 
 > ROADMAP-2026-08-16-higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-da-release-7-0-0.md
 

@@ -20851,3 +20851,89 @@ Rejeitei explicitamente inferir cobertura por menção na prosa: hoje 18 seçõe
 texto livre, e inferência sobre prosa falha de forma silenciosa.
 
 Próximo: ML-1A aplica o formato em 3 pilotos de naturezas diferentes.
+
+## 2026-08-20 — Apolo (backend) — ML-1A (INÍCIO): aplicar o formato em 3 seções-piloto
+
+Branch `feat/contrato-pinado-no-cli-parity-sem-gate-nomeado` (ativa, não criada por mim — instrução
+explícita de não criar branch/commit/push). Lendo ADR-2026-08-20, roadmap wip e REQ-2026-08-18 antes
+de anotar. Escopo: 3 seções-piloto de `docs/cli-parity.md`, uma de cada natureza (gate óbvio, sem
+gate, não-contrato). Nenhum gate criado, nenhum comportamento de CLI alterado.
+
+## 2026-08-20 — Apolo (backend) — ML-1A (FIM): 3 pilotos anotados, achado central sobre o formato
+
+Anotadas 3 seções em `docs/cli-parity.md` (não commitado — commit é do `trackfw_architect`):
+
+1. **`## Version output`** → `gate=scripts/check-cli-parity.sh` (confirmado no disco; script
+   contém o regex fixo `^trackfw [0-9]+\.[0-9]+\.[0-9]+$` e comparação de bytes entre os 3
+   runtimes, exatamente o que a seção promete).
+2. **`## Vault de conhecimento`** → `gate=` (vazio). Contrato real (tabela pinada de
+   `note_orphan`: severidade default, elevação, comportamento sem `vault/`, formatos de link
+   aceitos), sem nenhum script dedicado. **Achado ao lado:** `note_orphan` está implementado em
+   Go (`internal/validator/validator.go`) e Python (`pypi/trackfw/validator.py`) mas **ausente**
+   em `npm/src/validator/` — divergência real de paridade já em produção, nunca detectada por
+   teste porque cada runtime só se testa contra si mesmo. Não corrigi (fora de escopo do ML);
+   registrado aqui para priorização futura.
+3. **`## i18n locale keys — no orphan keys (ML-2A)`** → `none reason=...`. A própria seção já se
+   autodeclara fora do contrato ("does not otherwise document i18n locale-key parity as a
+   contract"), mas pina um fato falsificável específico (`errors.notFound` removido dos 3 CLIs) —
+   caso genuinamente ambíguo entre prosa histórica e contrato pontual.
+
+**Achado central — o formato do ADR não cobre o terceiro estado que a REQ inteira existe para
+revelar.** O ADR define só duas formas: `gate=<caminho>` (contrato protegido) e
+`none reason=<motivo>` (não-contrato). Não há forma documentada para "isto É contrato, mas
+**nenhum** gate o protege" — exatamente o caso mais valioso da REQ (AC5: "lista de contratos sem
+gate"). Usei `gate=` com valor vazio (chave documentada, valor vazio) por ser a opção que não
+inventa sintaxe nova nem fabrica um caminho de script que não existe (fabricar
+`gate=scripts/check-vault-notes-parity.sh` seria o "carimbo" que o próprio ADR reprova em
+"Consequences" — nomear e não existir vira rot, não intenção). **Decisão a validar antes do
+ML-2A/Hefesto triar as 50 seções restantes:** `gate=` vazio é legível e discriminável de "sem
+anotação", mas o Zeus/arquiteto deve confirmar se este é o valor sentinela oficial ou se prefere
+emendar o ADR com uma terceira forma explícita (ex.: `gate=none`) antes da triagem em escala.
+
+**Medições que respondem às perguntas do ML:**
+- **Nível de anotação:** o documento tem 3 profundidades de heading, não 2 — `##` (53), `###`
+  (122) e **`####` (17, não contado na REQ nem no roadmap)**. Contrato e não-contrato aparecem
+  misturados em profundidades diferentes dentro da MESMA seção de topo: `## Version output`
+  contém `### Gate assertion` (contrato) e `#### What is *not* unified` (não-contrato,
+  explicitamente "deliberately left alone") como filhos diretos. Disclaimers de não-contrato
+  aparecem em pelo menos 8 pontos do documento em profundidades `##`, `###` e `####` (linhas 172,
+  321, 553, 1727, 2650, entre outras) — a divergência de status não se alinha com a profundidade
+  do heading. **Conclusão:** a anotação precisa cobrir os 3 níveis, não só `##`/`###` como a REQ
+  assumia — isso muda o tamanho real da triagem do ML-2A de 175 para ~192 candidatos.
+- **Gate parcial:** `## Vault de conhecimento` é o próprio exemplo — `scripts/check-artifact-parity.sh`
+  cobre a mecânica de criação de nota (arquivo + índice), mas a semântica da regra `note_orphan`
+  (severidade, elevação, comportamento sem `vault/`) não tem gate nenhum. O formato atual não
+  distingue "sem gate algum" de "gate cobre só uma fatia" — ambos ficam `gate=` vazio hoje, o que
+  perde informação. Recomendo ao Zeus decidir se vale a pena (well seria escopo do ML-2A, não
+  deste ML).
+- **Caso ambíguo:** `## i18n locale keys — no orphan keys (ML-2A)` — prosa que se autodeclara não-
+  contrato mas pina um fato específico e falsificável. Marquei `none` seguindo a autodeclaração da
+  própria seção, mas é o tipo de caso que vai se repetir na triagem de 50 seções e merece critério
+  explícito (ex.: "se a seção pina um fato mas se autodeclara não-contrato, vence a
+  autodeclaração").
+
+`./bin/trackfw validate` → exit 0 (warnings pré-existentes, nenhum novo). `make quality` → exit 0
+(rodado em background, log completo, sem regressão — inclusive `check-referential-integrity.sh`
+não reagiu ao comentário HTML novo). Nenhum commit feito — devolvendo ao `trackfw_architect` para
+auditoria e decisão sobre o achado do `gate=` vazio antes do ML-2A.
+
+## 2026-08-20 — Zeus (arquiteto) — o piloto pagou-se
+
+O ML-1A existia para descobrir barato se o formato aguentava. Não aguentava, e melhor saber em 3
+seções do que em 192.
+
+**Emenda 1 ao ADR**, com quatro correções:
+- estado `gap` próprio para "é contrato e nada o protege" — o caso central da REQ não tinha forma.
+  Valor vazio era indistinguível de **omissão**, e a contagem de `gap` é o produto da REQ;
+- `partial=` para cobertura parcial, medida no piloto 2;
+- regra de desempate: **fato falsificável sobre comportamento de CLI ⇒ é contrato**, a
+  autodeclaração não prevalece;
+- universo real: **~192** seções em **três** níveis (`####` não estava contado). ML-2A refatiado.
+
+**Achado lateral, e é a melhor evidência que a REQ podia ter:** `note_orphan` existe em Go e Python
+e **está ausente do Node**, com o `cli-parity.md` documentando-a como contrato. Bastou perguntar
+"qual gate protege esta seção?" — a pergunta do mecanismo produziu a descoberta **antes de o
+mecanismo existir**. REQ aberta no backlog.
+
+Próximo: ML-1A-bis reaplica os pilotos no formato final, para o ML-1B codificar contra ele e não
+contra o provisório.

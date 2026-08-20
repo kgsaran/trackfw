@@ -92,3 +92,70 @@ mudanças na marcação ficam visíveis no diff. **Nenhuma impede o abuso** — 
   adivinha.
 - **Bloquear desde o primeiro dia** — rejeitada em favor de modo relatório durante a triagem. Gate
   vermelho por semanas é gate que se aprende a ignorar, e perderíamos justamente o que se quer criar.
+
+---
+
+## Emenda 1 (2026-08-20) — três estados, não dois; e cobertura parcial
+
+> Esta ADR está `Accepted`. A emenda **acrescenta**; nada acima foi reescrito.
+
+O ML-1A aplicou o formato em 3 pilotos e encontrou o que o piloto existia para encontrar: **o
+formato original tem só dois estados, e o caso central da REQ é um terceiro.**
+
+### O buraco
+
+`gate=<caminho>` e `none reason=<motivo>` não cobrem *"isto é contrato e **nada** o protege"* — que
+é **exatamente** o que a REQ existe para revelar. O executor contornou anotando `gate=` com valor
+vazio, e sinalizou a decisão em vez de escondê-la. Foi a escolha certa diante da alternativa de
+inventar um caminho de script inexistente, que esta própria ADR chama de carimbo.
+
+Mas valor vazio é a solução errada, por um motivo específico: **é indistinguível de omissão**. O
+checker não consegue separar "declarei que não há gate" de "esqueci de preencher" — e a segunda é
+justamente a falha que se quer detectar.
+
+### Decisão: três estados explícitos
+
+```
+<!-- trackfw-contract: gate=scripts/check-doctor-parity.sh -->     contrato protegido
+<!-- trackfw-contract: gap reason=<motivo> -->                     contrato SEM gate
+<!-- trackfw-contract: none reason=<motivo> -->                    não é contrato
+```
+
+`gap` é distinto, greppável e **contável**. A contagem de `gap` é o produto mais valioso da REQ, e
+precisa ser um número que se possa acompanhar cair ao longo do tempo. Com valor vazio isso não
+existe.
+
+### Cobertura parcial
+
+Medido no piloto 2: `## Vault de conhecimento` tem um gate que cobre a mecânica de criação de nota,
+mas **não** cobre a semântica da regra `note_orphan`. "Protegido pela metade" colapsava em
+`gate=` vazio, perdendo a informação.
+
+```
+<!-- trackfw-contract: gate=<caminhos> partial=<o que fica de fora> -->
+```
+
+`partial` é opcional. Quando presente, a seção conta como **coberta com ressalva**, e o `partial`
+entra no mesmo relatório do `gap` — porque lacuna declarada e lacuna parcial têm o mesmo destino:
+virar trabalho priorizável.
+
+### Regra de desempate para seção ambígua
+
+O piloto 3 encontrou seção que **se autodeclara** não-contrato e mesmo assim fixa um fato
+falsificável sobre comportamento de CLI. Vai recorrer em escala, e precisa de regra, não de
+julgamento caso a caso:
+
+> **Se a seção fixa um fato falsificável sobre o comportamento dos CLIs, ela é contrato** — a
+> autodeclaração não prevalece.
+
+O motivo é o mesmo princípio da ADR: prosa que afirma comportamento **é** contrato, esteja ou não
+rotulada assim. Quem quiser que não seja, remove a afirmação.
+
+### Universo real da triagem
+
+Medido: `##` 53 · `###` 122 · **`####` 17** — três níveis, não dois. O `####` não aparecia na REQ
+nem no roadmap. E o estado de contrato **não acompanha a profundidade**: há `####` de não-contrato
+dentro de `##` de contrato.
+
+**A anotação vale para os três níveis. O universo da triagem é ~192, não 175.** O ML-2A é
+proporcionalmente maior do que estava dimensionado.

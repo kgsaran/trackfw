@@ -66,7 +66,7 @@ documento cresceu desde então, e três seções novas entraram já nomeando o g
 ## Wave 1 — Formato e mecanismo (2 MLs, sequenciais)
 
 ### ML-1A — Aplicar o formato em 3 seções-piloto
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
 **Arquivos:** `docs/cli-parity.md` (apenas 3 seções-piloto).
 
 > **O ADR foi escrito por mim, não delegado** — decisão de formato é do arquiteto, e o roadmap
@@ -85,9 +85,17 @@ aguenta os três casos antes de virar 53.
 
 **Critérios de aceite:**
 - [x] Formato decidido em ADR, com o motivo da escolha — feito por mim
-- [ ] 3 seções-piloto anotadas, cobrindo os **três** casos: com gate, sem gate, não-contrato
-- [ ] A escolha de cada piloto é **justificada** — piloto fácil demais não prova nada
-- [ ] Nenhuma mudança de comportamento de CLI, nenhum gate criado
+- [x] 3 seções-piloto anotadas, cobrindo os **três** casos: com gate, sem gate, não-contrato
+- [x] A escolha de cada piloto é **justificada** — piloto fácil demais não prova nada
+- [x] Nenhuma mudança de comportamento de CLI, nenhum gate criado
+
+> **Achado do executor (Apolo), pendente de decisão do arquiteto antes do ML-2A:** o formato do
+> ADR só define `gate=<caminho>` e `none reason=<motivo>` — não há forma explícita para
+> "contrato sem gate", o caso mais valioso da REQ. Anotado como `gate=` (chave documentada, valor
+> vazio) por não inventar sintaxe nem fabricar caminho de script inexistente. Ver
+> `docs/agents-working-context.md`, sessão 2026-08-20 (Apolo), para a medição completa
+> (`####` — 17 headers não contados na REQ/roadmap — e o exemplo de gate parcial em
+> `## Vault de conhecimento`, que também revelou `note_orphan` ausente no validator do Node.js).
 
 ### ML-1B — Meta-checker
 **Status:** ⬜ Pendente · **Agente:** `apolo-tf` · **Dependência:** ML-1A
@@ -112,14 +120,71 @@ gate vermelho por semanas é gate que se aprende a ignorar.
 
 ---
 
+### Auditoria do ML-1A — aprovada, e o piloto **pagou-se** antes de escalar
+
+Era exatamente para isto que o lote existia: descobrir barato que o formato não aguentava. Descobriu.
+
+**Confirmei as três medições por conta própria:**
+
+```
+niveis de titulo:  ## 53 · ### 122 · #### 17      <- o #### nao existia na REQ nem no roadmap
+note_orphan:       Go 3 ocorrencias · Python 4 · Node ZERO
+```
+
+**Achado 1 — o formato tinha dois estados e o caso central da REQ é um terceiro.** Não havia forma
+para *"isto é contrato e nada o protege"*. O executor contornou com `gate=` vazio e **sinalizou a
+decisão em vez de escondê-la** — escolha certa diante da alternativa de inventar caminho de script,
+que a própria ADR chama de carimbo. Mas valor vazio é indistinguível de **omissão**, e o checker não
+separaria "declarei a lacuna" de "esqueci de preencher". Resolvido na **Emenda 1**: estado `gap`
+próprio, greppável e **contável** — a contagem de `gap` é o produto da REQ e precisa ser um número
+que se acompanhe cair.
+
+**Achado 2 — três níveis de título, não dois.** E o estado de contrato **não acompanha a
+profundidade**: há `####` de não-contrato dentro de `##` de contrato. O universo da triagem é **~192,
+não 175**. O ML-2A está subdimensionado no roadmap e precisa ser refatiado.
+
+**Achado 3 — cobertura parcial não era expressável.** Medido no piloto 2: o gate cobre a mecânica de
+criação de nota mas não a semântica da regra. Colapsava em vazio. Emenda 1 acrescenta `partial=`.
+
+**Achado 4 — regra de desempate.** Seção que se autodeclara não-contrato e mesmo assim fixa fato
+falsificável. Emenda 1: **fato falsificável sobre comportamento de CLI ⇒ é contrato**; a
+autodeclaração não prevalece.
+
+#### O achado lateral é a melhor evidência que esta REQ podia ter
+
+`note_orphan` existe em Go e Python e **está ausente do CLI Node**, com `cli-parity.md:147`
+documentando-a como contrato. Violação viva da regra dura de paridade.
+
+E o modo como apareceu é o argumento: **bastou alguém perguntar "qual gate protege esta seção?"**.
+Não houve investigação — a pergunta que o mecanismo faz produziu a descoberta antes de o mecanismo
+existir. Aberta a `REQ-2026-08-20-note-orphan-existe-em-go-e-python-e-esta-ausente-do-cli-node`
+(backlog), com escopo negativo explícito: **não** varrer as outras regras à mão, porque é justamente
+isso que o ML-2A vai fazer de forma sistemática.
+
+`make quality` exit 0 · `validate` exit 0.
+
+---
+
+### ML-1A-bis — Reaplicar os 3 pilotos no formato da Emenda 1
+**Status:** ⬜ Pendente · **Agente:** `apolo-tf` · **Dependência:** Emenda 1 (feita).
+Trocar o `gate=` vazio do piloto 2 por `gap reason=...` (ou `gate=... partial=...`, o que a medição
+dele indicar), e revisar o piloto 3 sob a regra de desempate. Lote de minutos; existe para o ML-1B
+codificar contra o formato **final**, não contra o provisório.
+
+---
+
 ## Wave 2 — Triagem (o grosso do trabalho)
 
 ### ML-2A — Triagem das seções
 **Status:** ⬜ Pendente · **Agente:** `hefesto-tf` (`subagent_type: hefesto-tf`) · **Dependência:** ML-1B
 **Escreve:** anotações em `docs/cli-parity.md` e o relatório de triagem.
 
-**Ação:** classificar **cada** seção em contrato-com-gate, contrato-sem-gate, ou não-contrato-com-motivo.
-Refazer a contagem: a da REQ (18 de 52) está defasada.
+**Ação:** classificar **cada** seção nos **três** estados da Emenda 1 (`gate=`, `gap`, `none`),
+mais `partial=` onde couber. Refazer a contagem: a da REQ (18 de 52) está defasada.
+
+🔴 **Refatiar antes de começar.** O universo medido é **~192** (`##` 53 · `###` 122 · `####` 17), não
+175. Triagem de 192 seções num ML só é grande demais para auditar bem — dividir por faixas do
+documento, com cada lote auditável de forma independente.
 
 **O produto mais valioso desta REQ é a lista de contratos SEM gate.** Ela não é subproduto da
 triagem — é o entregável.
