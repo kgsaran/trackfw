@@ -564,3 +564,161 @@ print(
 PY
 
 echo "Validate JSON parity checks passed (branch_has_wip_roadmap accepting done/, exercised cross-CLI: match / no-roadmap / diff-slug discriminant)"
+
+# ---------------------------------------------------------------------------
+# ROADMAP-2026-08-20-gates-para-os-tres-contratos-de-maior-risco, ML-3A: a regra
+# `credential_guard_hook_resolvable` exercitada cross-CLI (os 3 CLIs concordam,
+# não só Go do Cenário 47) — 4 casos orientados por fixture de projeto:
+#
+#   1. claude-absent:  .claude/settings.json com $CLAUDE_PROJECT_DIR/…, script
+#      AUSENTE → violação nos 3 CLIs (braço de detecção)
+#   2. claude-present: mesmo hook, script PRESENTE e executável → silêncio nos 3
+#      (não-regressão/baseline)
+#   3. cursor-absent:  .cursor/hooks.json com caminho relativo puro, script
+#      AUSENTE → violação nos 3 (prova que o braço relativo é alcançável —
+#      discriminante: sem este caso, uma implementação que retornasse ok=false para
+#      todo caminho relativo passaria os casos 1/2/4 por omissão)
+#   4. cursor-present: mesmo hook Cursor, script PRESENTE → silêncio nos 3
+#      (guarda de falso-positivo: caminho relativo legítimo não acusado)
+#
+# Cada braço filtra as violações/warnings pelo campo "rule" (que os 3 CLIs emitem
+# corretamente para esta regra — Python usa _enrich_items(msgs, rule_name) e msgs
+# é lista de dicts, não strings, então o tag não se perde como em
+# validate_branch_has_wip_roadmap). Nenhum TRACKFW_BRANCH necessário: a regra só
+# lê arquivos do projeto, sem chamada git.
+#
+# $TMP_DIR pode embutir "//" (macOS $TMPDIR com barra final) — normalizado em
+# CG_TMP_CLEAN antes de criar os fixtures, pelo mesmo motivo documentado no
+# bloco GVP acima (Go colapsa via filepath.Join; Python não — preservaria "//"
+# embutido na mensagem quebrando a comparação byte-a-byte por artefato de fixture).
+# ---------------------------------------------------------------------------
+CG_TMP_CLEAN=$(printf '%s' "$TMP_DIR" | sed 's#//*#/#g')
+
+for cg_fixture in cg-claude-absent cg-claude-present cg-cursor-absent cg-cursor-present; do
+  mkdir -p "$CG_TMP_CLEAN/$cg_fixture/docs/roadmaps"/{wip,done}
+  cat >"$CG_TMP_CLEAN/$cg_fixture/trackfw.yaml" <<'EOF'
+roadmap_dir: docs/roadmaps
+EOF
+done
+
+# Claude settings.json — formato com "type":"command" (requiresCommandType=true).
+# Mesma estrutura que s47_write_claude_guard_hook no Cenário 47.
+for cg_fixture in cg-claude-absent cg-claude-present; do
+  mkdir -p "$CG_TMP_CLEAN/$cg_fixture/.claude"
+  cat >"$CG_TMP_CLEAN/$cg_fixture/.claude/settings.json" <<'EOF'
+{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh"}]}]}}
+EOF
+done
+
+# Cursor hooks.json — formato sem "type" (requiresCommandType=false), caminho relativo puro.
+for cg_fixture in cg-cursor-absent cg-cursor-present; do
+  mkdir -p "$CG_TMP_CLEAN/$cg_fixture/.cursor"
+  cat >"$CG_TMP_CLEAN/$cg_fixture/.cursor/hooks.json" <<'EOF'
+{"version":1,"hooks":{"beforeShellExecution":[{"command":"scripts/trackfw-credential-guard.sh"}]}}
+EOF
+done
+
+# Script presente e executável apenas nos fixtures "present".
+for cg_fixture in cg-claude-present cg-cursor-present; do
+  mkdir -p "$CG_TMP_CLEAN/$cg_fixture/scripts"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$CG_TMP_CLEAN/$cg_fixture/scripts/trackfw-credential-guard.sh"
+  chmod +x "$CG_TMP_CLEAN/$cg_fixture/scripts/trackfw-credential-guard.sh"
+done
+
+run_cg() {
+  local output=$1 dir=$2
+  shift 2
+  set +e
+  ( cd "$dir" && "$@" ) >"$output" 2>"$output.stderr"
+  echo "$?" >"$output.exit"
+  set -e
+}
+
+for cg_fixture in cg-claude-absent cg-claude-present cg-cursor-absent cg-cursor-present; do
+  run_cg "$CG_TMP_CLEAN/$cg_fixture-go.json"   "$CG_TMP_CLEAN/$cg_fixture" "$GO_BIN" validate --json
+  run_cg "$CG_TMP_CLEAN/$cg_fixture-node.json" "$CG_TMP_CLEAN/$cg_fixture" node "$ROOT_DIR/npm/bin/trackfw" validate --json
+  run_cg "$CG_TMP_CLEAN/$cg_fixture-py.json"   "$CG_TMP_CLEAN/$cg_fixture" env PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw validate --json
+done
+
+python3 - "$CG_TMP_CLEAN" <<'PY'
+import json
+import os
+import sys
+
+tmp = sys.argv[1]
+
+# Todas as 3 implementações tagueiam "rule": "credential_guard_hook_resolvable" corretamente:
+# Go     → applyRuleTagged / strings emitidas pelo validateGuardHookResolvable
+# Node   → enriquecido em validateResult (index.js)
+# Python → _enrich_items(msgs, "credential_guard_hook_resolvable"); msgs é lista de dicts
+#          (não strings como validate_branch_has_wip_roadmap), portanto "rule" não se perde.
+CG_RULE = "credential_guard_hook_resolvable"
+CG_MSG_MARKER = "but the script does not exist"
+
+
+def load(name):
+    path = os.path.join(tmp, name)
+    with open(path, encoding="utf-8") as fh:
+        payload = json.load(fh)
+    with open(path + ".exit", encoding="utf-8") as fh:
+        exit_code = int(fh.read().strip())
+    all_items = payload.get("violations", []) + payload.get("warnings", [])
+    matching = [item for item in all_items if item.get("rule") == CG_RULE]
+    msgs = sorted(item["message"] for item in matching)
+    return exit_code, msgs
+
+
+# label → (filename-pattern, expect_violation)
+cases = {
+    "claude-absent":  ("cg-claude-absent-{}.json",  True),
+    "claude-present": ("cg-claude-present-{}.json", False),
+    "cursor-absent":  ("cg-cursor-absent-{}.json",  True),
+    "cursor-present": ("cg-cursor-present-{}.json", False),
+}
+
+for label, (pattern, expect_violation) in cases.items():
+    results = {rt: load(pattern.format(rt)) for rt in ("go", "node", "py")}
+
+    for rt, (exit_code, msgs) in results.items():
+        if expect_violation:
+            # P2 vacuity guard: a regra REALMENTE disparou neste runtime —
+            # um exit != 0 por outra regra qualquer não prova nada aqui.
+            if not msgs:
+                raise SystemExit(
+                    f"credential_guard_hook_resolvable parity ({label}/{rt}): expected "
+                    f"violation from rule {CG_RULE!r}, none reported "
+                    f"(exit={exit_code}) — fixture vacua ou regra regrediu"
+                )
+            if not all(CG_MSG_MARKER in m for m in msgs):
+                raise SystemExit(
+                    f"credential_guard_hook_resolvable parity ({label}/{rt}): "
+                    f"mensagem inesperada — esperava {CG_MSG_MARKER!r} em todas: {msgs!r}"
+                )
+        else:
+            # Casos "present": nenhuma violação da regra, qualquer que seja o
+            # exit code geral (outras regras podem disparar nesta fixture mínima).
+            if msgs:
+                raise SystemExit(
+                    f"credential_guard_hook_resolvable parity ({label}/{rt}): "
+                    f"nenhuma violação da regra esperada (script presente), mas "
+                    f"{rt} reportou: {msgs!r}"
+                )
+
+    # Comparação cross-CLI (apenas nos casos de detecção, onde msgs != []).
+    if expect_violation:
+        go_msgs, node_msgs, py_msgs = (results[rt][1] for rt in ("go", "node", "py"))
+        if not (go_msgs == node_msgs == py_msgs):
+            raise SystemExit(
+                f"credential_guard_hook_resolvable parity ({label}): mensagens "
+                f"divergem entre runtimes — go={go_msgs!r} node={node_msgs!r} "
+                f"py={py_msgs!r}"
+            )
+
+print(
+    "credential_guard_hook_resolvable parity checks passed "
+    "(claude-absent/claude-present/cursor-absent/cursor-present, "
+    "byte-identical across 3 CLIs)"
+)
+PY
+
+echo "Validate JSON parity checks passed (credential_guard_hook_resolvable cross-CLI: claude-absent detection / claude-present baseline / cursor-absent relative-branch live / cursor-present false-positive guard)"

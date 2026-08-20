@@ -3700,7 +3700,7 @@ REQ nova a partir do parecer de Hades.
 
 ## Controle positivo do credential-guard: o que a regra `credential_guard_hook_resolvable` cobre, e o que não cobre (ROADMAP-2026-08-12-mitigacao-do-fail-open, Wave 1/2/3/3-bis + Barreira B1)
 
-<!-- trackfw-contract: gap reason=nenhum gate cross-CLI compara `trackfw validate` nos 3 runtimes para esta regra; verificado lendo scripts/check-gates-falsify.sh — o Cenário 47 (prova de não-vacuidade) exercita explicitamente só o CLI Go ("Por que só o CLI Go", comentário do próprio cenário) e a paridade de comportamento entre os 3 stacks depende só de suítes de teste unitário internas por runtime -->
+<!-- trackfw-contract: gate=scripts/check-validate-parity.sh partial=bloco ML-3A (ROADMAP-2026-08-20-gates-para-os-tres-contratos-de-maior-risco) cobre 4 casos (claude-absent/claude-present/cursor-absent/cursor-present) e prova que os 3 CLIs concordam byte-a-byte; não exerce todas as 6 entradas de credentialGuardHookFiles (Codex/Gemini/GitHub/Kiro dependem de paridade de wiring coberta pelo Cenário 44 e de cobertura unitária interna por runtime); Cenário 80 prova não-vacuidade do bloco cross-CLI -->
 
 > Fontes: `internal/validator/validator_credential_guard.go` (implementação, os 3 CLIs têm
 > equivalente em `npm/src/` e `pypi/trackfw/`), `docs/adr/ADR-2026-08-12-defesa-do-credential-guard-vive-no-escopo-global-controle-que-mora-onde-o-agente-escreve-nao-e-controle.md`
@@ -3715,7 +3715,7 @@ coisa que sobrou no escopo de projeto**. O risco real de documentação é algu�
 
 ### 1. O que a regra faz
 
-<!-- trackfw-contract: gap reason=mesma lacuna da seção-mãe — a mecânica específica descrita aqui (varredura por valor via collectCredentialGuardCommands, resolução das 3 formas de prefixo, checagem os.Stat + bit executável 0111, mensagem de violação) só tem prova de não-vacuidade no CLI Go (Cenário 47); Node.js e Python têm só cobertura de teste unitário interna ao próprio runtime, sem gate cross-CLI -->
+<!-- trackfw-contract: gate=scripts/check-validate-parity.sh partial=bloco ML-3A cobre resolução de caminho para Claude ($CLAUDE_PROJECT_DIR/) e Cursor (relativo puro); as outras 4 formas (Codex/Gemini/GitHub/Kiro) têm paridade de wiring coberta pelo Cenário 44 mas não gate cross-CLI de existência/executabilidade -->
 
 
 `credential_guard_hook_resolvable` (default `error`, configurável por `rules:` no `trackfw.yaml`,

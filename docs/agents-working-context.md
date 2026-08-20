@@ -21675,3 +21675,52 @@ Cenários 42/78. Vale conferir esse diff isoladamente — é uma mudança num ce
 pediu, motivada por uma regressão que o próprio trabalho causou.
 
 ML-2A pronto para auditoria do `trackfw_architect`. **Fim.**
+
+## Sessão 2026-08-20 — Apolo (INÍCIO: ML-3A — credential_guard_hook_resolvable provado nos 3 CLIs)
+
+Branch `fix/serve-amarra-em-loopback-por-padrao-com-opt-in-explicito-para-exposicao`... aguarda,
+branch correta é `feat/gates-para-os-tres-contratos-de-maior-risco`. Roadmap:
+`docs/roadmaps/wip/ROADMAP-2026-08-20-gates-para-os-tres-contratos-de-maior-risco.md` em `wip/`.
+
+Executando ML-3A: estender o Cenário 47 (Go-only) para prova cross-CLI nos 3 CLIs via bloco novo
+em `scripts/check-validate-parity.sh` + Cenário 80 (P4) em `scripts/check-gates-falsify.sh` +
+anotação em `docs/cli-parity.md`. 4 casos: claude-absent (detecção), claude-present (baseline),
+cursor-absent (caminho relativo alcançável, discriminante), cursor-present (falso-positivo).
+
+Nenhum commit/push (autoridade exclusiva do `trackfw_architect`).
+
+## Sessão 2026-08-20 — Apolo (FIM: ML-3A concluído — credential_guard_hook_resolvable provado nos 3 CLIs)
+
+**Entregue:**
+- Bloco novo em `scripts/check-validate-parity.sh` (após linha 566): 4 casos
+  (claude-absent/claude-present/cursor-absent/cursor-present), filtragem por
+  `rule == "credential_guard_hook_resolvable"`, comparação byte-a-byte cross-CLI.
+- Cenário 80 (P4) em `scripts/check-gates-falsify.sh`: baseline + detecção via
+  sabotagem de `credentialGuardScriptMarker` em cópia isolada do Go source.
+- Anotação `docs/cli-parity.md` atualizada de `gap reason=` para
+  `gate=scripts/check-validate-parity.sh partial=...` nas duas ocorrências.
+- Roadmap ML-3A marcado ✅ Concluído.
+
+**Evidências:**
+- `make quality` exit 0, sem FAIL lines.
+- `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make parity` exit 0, 149 cenários.
+- `OK   [falsify/validate-parity/credential-guard-hook-resolvable-cross-cli-baseline]`
+- `OK   [falsify/validate-parity/credential-guard-hook-resolvable-not-detected]`
+- `./bin/trackfw validate` exit 0, 17 warnings pré-existentes.
+- Nenhuma divergência de `rule` encontrada entre os 3 CLIs para esta regra
+  (Python usa `_enrich_items` com dicts, não strings como `branch_has_wip_roadmap`).
+
+**Achados:**
+- Nenhum novo divergência de parity encontrada — as 3 implementações concordam
+  byte-a-byte nas mensagens de detecção para Claude e Cursor.
+- P4 sabotagem: `credentialGuardScriptMarker = "trackfw-credential-guard.sh"` →
+  `"trackfw-credential-guard-DISABLED.sh"` faz Go silenciar a regra enquanto
+  Node.js/Python ainda disparam → gate detecta na posição exata `claude-absent/go`.
+
+**Handoff — arquivos para o `trackfw_architect` revisar e commitar:**
+modificados: `docs/agents-working-context.md`, `docs/cli-parity.md`,
+`docs/roadmaps/wip/ROADMAP-2026-08-20-gates-para-os-tres-contratos-de-maior-risco.md`,
+`scripts/check-gates-falsify.sh`, `scripts/check-validate-parity.sh`.
+Nenhum arquivo novo não rastreado.
+
+**ML-3A pronto para auditoria do `trackfw_architect`. Fim.**

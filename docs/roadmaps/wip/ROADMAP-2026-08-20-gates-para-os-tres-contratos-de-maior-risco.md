@@ -500,7 +500,7 @@ script direto não teria mostrado.
 ## Wave 3 — `credential_guard_hook_resolvable` cross-CLI
 
 ### ML-3A — Estender a prova para Node e Python
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf`
+**Status:** ✅ Concluído · **Agente:** `apolo-tf`
 
 O Cenário 47 declara no próprio comentário ser prova black-box da regra **Go**. É o controle que o
 `ADR-2026-08-12` aponta como o que resta mitigando o fail-open — com prova em um terço dos runtimes.
@@ -513,6 +513,40 @@ O Cenário 47 declara no próprio comentário ser prova black-box da regra **Go*
 - [ ] `make quality` verde
 
 ---
+
+### Auditoria do ML-3A — aprovada; **o controle central deixa de ser provado em 1/3**
+
+```
+sabotagem propria: credentialGuardScriptMarker
+  "trackfw-credential-guard.sh" -> "...-DISABLED.sh"        (literal unico)
+  gate -> EXIT=1: "expected violation from rule 'credential_guard_hook_resolvable',
+                   none reported (exit=0) — fixture vacua ou regra regrediu"
+restaurado -> EXIT=0
+149 cenarios · make quality (CI-exata) exit 0 · cobertura exit 0 · validate exit 0
+```
+
+**Quatro casos, não três** — ele acrescentou um par que eu não tinha pedido, e faz diferença:
+`claude-absent`/`claude-present` com caminho `$CLAUDE_PROJECT_DIR/...`, e
+`cursor-absent`/`cursor-present` com caminho **relativo**. O par do Cursor prova que o ramo relativo
+é **alcançável** — sem ele, os dois casos do Claude poderiam passar com o ramo relativo morto, e o
+discriminante de falso-positivo que eu pedi não estaria provado, só afirmado.
+
+**A dúvida que levantei no handoff foi respondida por medição, e negativamente:** eu avisei que, se
+esta regra tivesse a mesma forma de retorno do defeito do ML-2A, o Python emitiria `rule: null`.
+**Não emite** — a regra tagueia corretamente nos 3. E a prova é estrutural, não declarativa: o gate
+**filtra por `rule == "credential_guard_hook_resolvable"`**; se o Python devolvesse `null`, o filtro
+não acharia nada e o caso reprovaria. O gate passando **é** a prova.
+
+Isso restringe o escopo da `REQ-2026-08-20-validate-json-do-python-...`: o defeito não é geral no
+Python, é por regra. O AC de varredura daquela REQ segue valendo, agora sabendo que há pelo menos
+uma regra correta para servir de referência.
+
+**Nota do harness, e é não-achado:** a saída do executor bateu num padrão de "texto em forma de
+instrução" (`settings-json`). Verifiquei o contexto — o lote monta fixtures de `.claude/settings.json`
+e `.cursor/hooks.json`, então conteúdo com forma de configuração é o trabalho, não injeção. Registro
+porque conferi, não porque preocupa.
+
+**Wave 3 fechada.** Falta a barreira.
 
 ## Wave 4 — Barreira
 
