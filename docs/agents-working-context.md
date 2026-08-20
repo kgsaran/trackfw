@@ -21514,3 +21514,27 @@ desenho do comparador antes de codificar.
 
 Escopo negativo declarado: as outras 39 `gap` e 50 `partial` ficam. A lista é priorizável de
 propósito; fechar tudo não é meta.
+
+## 2026-08-20 — Apolo (apolo-tf) — ML-1A: parecer sobre o comparador, sem escrever gate
+
+Investiguei se `check-agent-hooks-parity.sh` estende para Windsurf/Amazon Q ou exige comparador
+próprio. Medido com fixture em `$TMPDIR` (HOME isolado) e os 3 binários reais invocados
+(`discover --init`).
+
+**Resposta: estende sem alteração.** `compare_json` já é um diff JSON recursivo genérico que só
+assume "um arquivo, caminho fixo, por CLI" — premissa que Windsurf (`.windsurf/hooks.json`) e
+Amazon Q (`.amazonq/cli-agents/q_cli_default.json`) cumprem. Basta acrescentar as duas entradas nas
+tabelas `CLIS`/`marker_for`/`hookfile_for`, na mesma convenção já usada (`file:`/`dir:`). Hipótese
+inicial da REQ (formato exigiria comparador dedicado) **não se confirmou**.
+
+**Achado (não corrigido, registrado para o ML-1B):** Node.js e Python escrevem 6 campos extras no
+`q_cli_default.json` (`prompt`, `mcpServers`, `toolAliases`, `allowedTools`, `resources`,
+`useLegacyMcpJson`) que o Go **deliberadamente omite** (doc comment de `InjectAmazonQHooks`).
+Windsurf: sem divergência, os 3 CLIs geram byte-idêntico.
+
+**Achado secundário:** o guard de vacuidade #2 do gate (`grep "trackfw-credential-guard.sh"`) não
+se aplica a Windsurf/Amazon Q — nenhum dos dois wireia credential-guard, só git-branch-guard.
+ML-1B precisa trocar a string do guard só para essas duas entradas.
+
+Parecer completo com as 5 respostas na seção ML-1A do roadmap. Nenhuma linha de gate escrita, nenhum
+script alterado. `./bin/trackfw validate` exit 0.

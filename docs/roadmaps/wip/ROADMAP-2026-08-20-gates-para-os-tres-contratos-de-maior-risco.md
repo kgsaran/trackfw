@@ -33,7 +33,7 @@ Primeiro consumo da lista da triagem (42 `gap` + 51 `partial`). Três alvos, esc
 ## Wave 1 — Windsurf e Amazon Q (o mais grave: alegação **falsa**)
 
 ### ML-1A — Avaliar o comparador antes de estender
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
 **Arquivos:** nenhum de produto — **lote de investigação**, entrega um parecer curto no roadmap.
 
 Os dois gates comparam **estrutura JSON** de 6 CLIs que compartilham forma. Windsurf usa arquivo
@@ -44,9 +44,88 @@ Os dois gates comparam **estrutura JSON** de 6 CLIs que compartilham forma. Wind
 ou eles exigem comparador próprio? Se exigem, qual o desenho — e o que se perde em cada opção?
 
 **Critérios de aceite:**
-- [ ] Resposta com evidência: forma real dos dois arquivos gerados pelos 3 CLIs, lado a lado
-- [ ] Recomendação explícita, com o trade-off
-- [ ] **Nenhuma linha de gate escrita** — decidir o desenho antes de codificar é o ponto do lote
+- [x] Resposta com evidência: forma real dos dois arquivos gerados pelos 3 CLIs, lado a lado
+- [x] Recomendação explícita, com o trade-off
+- [x] **Nenhuma linha de gate escrita** — decidir o desenho antes de codificar é o ponto do lote
+
+#### Parecer (apolo-tf, 2026-08-20)
+
+**Método:** fixture descartável em `$TMPDIR` (fora do repo e de `$HOME`), com `HOME` isolado por
+runtime. Marcador de detecção colocado (`.windsurfrules` vazio + dir `.amazonq/`) e os três
+binários reais invocados uma vez cada — `bin/trackfw discover --init` (Go), `node npm/bin/trackfw
+discover --init`, `PYTHONPATH=pypi python3 -m trackfw discover --init`. Saída completa capturada;
+os dois arquivos (`.windsurf/hooks.json`, `.amazonq/cli-agents/q_cli_default.json`) lidos dos três
+diretórios de trabalho.
+
+**1) Forma real, lado a lado.**
+
+`Windsurf` — os 3 CLIs escrevem **exatamente** o mesmo JSON, byte a byte (após reformatação):
+```json
+{
+  "hooks": {
+    "pre_run_command": [
+      { "command": "bash scripts/trackfw-git-branch-guard.sh", "show_output": true }
+    ]
+  }
+}
+```
+
+`Amazon Q` — divergência real (ver item 4). Go escreve só os campos citados no próprio doc comment
+de `InjectAmazonQHooks` (`name`, `description`, `tools`, `hooks`, `toolsSettings`). Node e Python
+escrevem os mesmos campos **mais** `prompt`, `mcpServers`, `toolAliases`, `allowedTools`,
+`resources`, `useLegacyMcpJson` — os campos que o doc comment do Go descreve como "deliberadamente
+NÃO escritos aqui". O bloco `hooks.preToolUse` e `toolsSettings.execute_bash.deniedCommands` (o
+`^git (commit|push|checkout -b)`) são **idênticos** nos 3.
+
+**2) O comparador atual estende, ou exige um próprio?**
+**Estende, sem alteração.** `compare_json` em `check-agent-hooks-parity.sh` já é um diff estrutural
+JSON genérico e recursivo — não assume nada sobre a forma de nenhum CLI específico, só que existe
+**um arquivo, em um caminho fixo, por CLI**. Windsurf (`.windsurf/hooks.json`) e Amazon Q
+(`.amazonq/cli-agents/q_cli_default.json`) cumprem exatamente essa premissa: caminho fixo, um
+arquivo, JSON parseável. Basta acrescentar duas entradas em `CLIS`, `marker_for()` e
+`hookfile_for()`, seguindo a convenção já usada (`file:.windsurfrules` no mesmo estilo de
+`file:CLAUDE.md`; `dir:.amazonq` no mesmo estilo de `dir:.cursor`/`dir:.kiro`). A hipótese inicial
+do ML (formatos exigiriam comparador dedicado) **não se confirmou** — o formato de arquivo único
+com caminho fixo é o que o comparador já assume; a divergência de Amazon Q vira `FAIL` automático
+no diff genérico, que é o comportamento correto.
+
+**3) Se exigisse comparador próprio: desenho e trade-off.** N/A — não exige. Registrado apenas por
+completude do critério: a alternativa descartada seria um comparador dedicado por CLI (ex.: um para
+"arquivo único com objeto de eventos", outro para "arquivo de agente nomeado"), que teria o mesmo
+poder de detecção do genérico atual só que com mais código a manter — sem ganho, já que ambos os
+formatos são "um arquivo JSON em um caminho fixo".
+
+**4) Divergência real entre os 3 CLIs — achado, não conserto.**
+**Sim, no Amazon Q.** Node.js e Python escrevem 6 campos extras (`prompt`, `mcpServers`,
+`toolAliases`, `allowedTools`, `resources`, `useLegacyMcpJson`) que o Go **deliberadamente omite**
+(doc comment de `InjectAmazonQHooks`, `internal/generators/agentfiles.go`, motivo: risco de campo
+não esperado pelo schema real do Amazon Q, nunca confirmado contra a doc oficial nesta sessão
+anterior). Registrado como achado — **não corrigido neste lote**; é o gatilho natural do ML-1B
+(o `compare_json` vai reportar essa drift assim que a cobertura existir) e, se a correção de
+comportamento for necessária, é microlote/REQ própria, não silenciosa. Windsurf: nenhuma
+divergência encontrada.
+
+**5) `deniedCommands` é parte do contrato — o gate precisa compará-lo?**
+**Sim, e o desenho genérico já cobre isso de graça.** A tabela do `cli-parity.md` (linha "Amazon Q
+Developer | hook `preToolUse` + `deniedCommands` regex... | deny global") declara os dois
+mecanismos como o contrato — não só o hook. Como `compare_json` faz diff recursivo do JSON inteiro
+(não um subcaminho escolhido a dedo), `toolsSettings.execute_bash.deniedCommands` já é comparado
+automaticamente assim que o arquivo inteiro entra no diff — não precisa de nenhum caminho especial
+no comparador.
+
+**Achado adicional (guarda de vacuidade #2, não é o comparador estrutural):** o segundo guard de
+`check-agent-hooks-parity.sh` (`grep -q "trackfw-credential-guard.sh"`) não se aplica a Windsurf/
+Amazon Q — nenhum dos dois tem wiring de credential-guard em nenhum dos 3 CLIs (confirmado por
+`grep` em `agentfiles.go`/`hooks.js`/`hooks.py`: só `git-branch-guard` é injetado para esses dois).
+O ML-1B precisa trocar essa string por `trackfw-git-branch-guard.sh` **especificamente para essas
+duas entradas** (as outras 6 continuam checando `credential-guard.sh`, que é o que elas de fato
+wireiam nesse arquivo).
+
+**Recomendação para o ML-1B:** estender as 3 tabelas (`CLIS`, `marker_for`, `hookfile_for`) com
+`windsurf`/`amazonq` nesse mesmo script, ajustar a string do guard de vacuidade #2 para essas duas
+entradas, e deixar `compare_json` intocado — ele já vai reportar a divergência do item 4 como
+`FAIL`, que deve ser corrigida (comportamento, fora deste lote) ou explicitamente aceita/registrada
+antes de fechar o ML-1B como verde. Nenhum comparador novo, nenhum script novo.
 
 ### ML-1B — Implementar a cobertura decidida
 **Status:** ⬜ Pendente · **Agente:** `apolo-tf` · **Dependência:** ML-1A
@@ -57,6 +136,56 @@ ou eles exigem comparador próprio? Se exigem, qual o desenho — e o que se per
 - [ ] `make quality` verde
 
 ---
+
+### Auditoria do ML-1A — aprovada, e **minha hipótese estava errada**
+
+Escrevi na REQ que o formato divergente de Windsurf/Amazon Q *"provavelmente exigiria comparador
+próprio"*. **Não exige.** O `compare_json` do `check-agent-hooks-parity.sh` é um diff JSON recursivo
+genérico; a única premissa que ele faz é *"um arquivo, caminho fixo, por CLI"* — e os dois cumprem.
+Basta acrescentar entradas em `CLIS`/`marker_for`/`hookfile_for`, na convenção que já existe.
+
+O lote de investigação se pagou pelo motivo inverso do esperado: em vez de evitar um desenho errado,
+**evitou um desenho desnecessário**. Se eu tivesse mandado implementar direto com a minha hipótese,
+teríamos ganhado um comparador paralelo para nada.
+
+**`deniedCommands` é coberto de graça** — o diff é do JSON inteiro, então
+`toolsSettings.execute_bash.deniedCommands` entra sem caminho especial. Era a minha dúvida nº 5 e a
+resposta é melhor que a esperada.
+
+**Achado secundário, que teria custado uma rodada:** o guard de vacuidade nº 2 dos gates procura a
+string `trackfw-credential-guard.sh` — e **nem Windsurf nem Amazon Q cabeiam credential-guard**, só
+git-branch-guard. Acrescentá-los sem trocar essa string faria o gate reprovar por motivo errado.
+
+---
+
+### 🔴 ML-1A-bis — Divergência real de produto no Amazon Q (achado, decisão tomada)
+**Status:** ⬜ Pendente · **Agente:** `apolo-tf` · **Bloqueia o ML-1B.**
+
+Medido: Node e Python escrevem **6 campos** no `q_cli_default.json` que o Go não escreve —
+`prompt`, `mcpServers`, `toolAliases`, `allowedTools`, `resources`, `useLegacyMcpJson`.
+
+**É a 6ª divergência real desta série**, e o gate do ML-1B reprovaria por causa dela — corretamente.
+
+**Decisão: o Go é o canônico; Node e Python se alinham a ele.** O motivo está escrito no próprio
+código (`agentfiles.go:1400-1415`), e é assimetria de risco:
+
+> *"an extra field the real schema doesn't expect risks failing validation, whereas an absent
+> optional field usually doesn't"*
+
+Campo extra pode **quebrar** a validação do agente; campo opcional ausente normalmente não. Entre as
+duas, escrever de menos é o lado seguro. Nada na implementação de Node/Python justifica os extras.
+
+**Nota que herdamos:** o comentário do Go pede explicitamente *"verify this defaults set against the
+live doc (or a real `q chat --agent` run) before treating it as final"* — e **ninguém verificou**.
+Fica registrado como limite conhecido da decisão, não como verificação feita.
+
+**Critérios de aceite:**
+- [ ] Node e Python param de escrever os 6 campos; `q_cli_default.json` byte-idêntico nos 3
+- [ ] Contrato de merge preservado: campo já presente em arquivo existente **não** é removido —
+      só deixa de ser criado. Nunca clobbar customização do usuário
+- [ ] O `cli-parity.md` registra a decisão e o limite (a verificação contra a doc viva não foi feita)
+- [ ] `make quality` verde
+
 
 ## Wave 2 — `branch_has_wip_roadmap` com `done/`
 
