@@ -20810,3 +20810,29 @@ CI":
 - antes de citar "o gate X passou no CI", confirmar que ele **executou**.
 
 **Aguardando merge de KG.** Arquiteto não faz merge.
+
+## 2026-08-20 — Zeus (arquiteto) — higiene de estado + abertura do contrato pinado
+
+**Higiene.** O levantamento do backlog revelou desvio acumulado: 6 REQs marcadas `Open` cujo trabalho
+já estava na `main`, e 2 roadmaps parados em `wip` com todos os MLs `✅`. Não é cosmético — o
+`trackfw status` e o board do `serve` mostravam trabalho em andamento inexistente, e roadmap parado
+em `wip` interfere no gate do `branch new`.
+
+Causa: cada merge fechava o PR mas não voltava para fechar a REQ. **Regra que passo a seguir:** o
+fechamento da REQ entra no mesmo ciclo do merge, não num "depois".
+
+```
+antes:  wip 2 · REQs Open 11 · validate 21 warnings
+depois: wip 0 · REQs Open  5 · validate 16 warnings
+```
+
+**Contrato pinado.** Roadmap criado em `analyzing` — não em `wip`, porque a codificação não começou.
+3 waves. A escolha desta REQ entre as 5 do backlog tem base medida: entre 18/08 (quando ela foi
+aberta com 2 instâncias) e hoje, a lacuna produziu **mais 5 divergências reais** de paridade, todas
+invisíveis a teste por stack. Ela ataca a causa da repetição, não a instância.
+
+Medição refeita hoje: 53 seções de topo, 122 subseções, 27 scripts de gate. A contagem da REQ
+(18 de 52) está defasada e o ML-2A precisa refazê-la.
+
+**Backlog restante (4):** i18n nos 3 CLIs · `validate` cego ao hook relativo antigo ·
+`update --dry-run` em symlink quebrado · `release tag` confia em conteúdo local.

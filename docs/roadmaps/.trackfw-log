@@ -169,3 +169,6 @@
 2026-08-18 15:25  ROADMAP-2026-08-18-doctor-detecta-artefato-fora-do-manifesto-e-inverte-a-ordem-de-persistencia.md  backlog → wip
 2026-08-19 12:04  ROADMAP-2026-08-18-doctor-detecta-artefato-fora-do-manifesto-e-inverte-a-ordem-de-persistencia.md  wip → done
 2026-08-19 12:53  ROADMAP-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md  backlog → wip
+2026-08-20 06:29  ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-e-integridade-independente-de-fiacao.md  wip → done
+2026-08-20 06:30  ROADMAP-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md  wip → done
+2026-08-20 06:31  ROADMAP-2026-08-20-contrato-pinado-no-cli-parity-sem-gate-nomeado.md  backlog → analyzing

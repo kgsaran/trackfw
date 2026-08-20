@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-08-17
 req: "docs/req/REQ-2026-08-17-guard-global-e-instalado-sem-fiacao-e-sua-integridade-nunca-e-verificada.md"
 adr: "docs/adr/ADR-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-trackfw.md"
@@ -8,7 +8,7 @@ squad: "apolo-tf, hades-tf"
 
 # Roadmap: guard global cabeado com no-op fora de projeto, e integridade independente de fiação
 
-> Created: 2026-08-17 | Status: wip
+> Created: 2026-08-17 | Status: done
 
 ## Context
 

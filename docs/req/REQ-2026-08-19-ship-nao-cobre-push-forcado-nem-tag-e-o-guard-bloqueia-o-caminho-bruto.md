@@ -1,9 +1,9 @@
 ---
-status: Open
+status: Done
 date: 2026-08-19
 author: ""
 adr: ""
-roadmap: ""
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md"
 ---
 
 # REQ: `ship` não cobre push forçado nem tag, e o guard bloqueia o caminho bruto
