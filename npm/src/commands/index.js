@@ -51,6 +51,7 @@ function createProgram() {
   program.addCommand(require('./skills'))
   program.addCommand(require('./note'))
   program.addCommand(require('./ship'))
+  program.addCommand(require('./release'))
   program.addCommand(require('./barrier'))
   program.addCommand(require('./branch'))
   program.addCommand(require('./commit'))

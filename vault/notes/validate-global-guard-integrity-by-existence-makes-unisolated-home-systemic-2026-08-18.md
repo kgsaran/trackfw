@@ -90,6 +90,18 @@ redownload) mesmo com `$HOME` sintético.
   primeiro — do contrário o sintoma parece "gate ficou lento e não limpa `/tmp`", que não aponta
   obviamente para a causa.
 
+## Addendum 2026-08-19 (ML-3B, ROADMAP-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release)
+
+Instância remanescente da mesma família, achada depois que o guard global foi de fato cabeado
+nesta máquina via `trackfw update harness`: dois testes de
+`npm/tests/git_branch_guard.test.js` (`injectCodexHooks`, `injectCopilotHooks`) liam `$HOME` real
+sem usar o helper `withIsolatedHome` já existente no mesmo arquivo (usado pelos 3 testes vizinhos
+`injectClaudeHooks`/`injectGeminiHooks`/`injectCursorHooks`). Sintoma: verde no CI, vermelho na
+máquina com o harness instalado — mesmo padrão descrito acima, mas em `npm test`, que a nota
+original registrou como "não quebrou sozinho... não porque estivesse isolado". Fix: envolver os
+dois blocos de teste em `withIsolatedHome`. Go (`t.Setenv` em todas as 17 funções de teste
+relevantes) e Python (`setUp`/`_isolated_home`) já isolavam corretamente — só o npm tinha o gap.
+
 ## Referências
 
 - `internal/validator/validator_git_branch_guard.go` (`validateGuardGlobalScriptIntegrity`)

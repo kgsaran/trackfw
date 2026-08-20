@@ -1901,6 +1901,24 @@ match_subcommand() {
               ;;
           esac
         done
+        # git checkout -- <path> | git checkout . descarta alterações não commitadas do
+        # caminho indicado, de forma irreversível, no worktree compartilhado — bloqueia
+        # quando '--' aparece em qualquer posição (forma explícita de pathspec) ou quando
+        # '.' aparece como token isolado. 'git checkout <branch>' sem nenhum dos dois
+        # segue liberado por decisão (distinguir branch de caminho sem '--' é ambíguo, e
+        # adivinhar produziria falso-positivo).
+        checkout_path=0
+        for tok2 in "$@"; do
+          case "$tok2" in
+            --|.)
+              checkout_path=1
+              ;;
+          esac
+        done
+        if [ "$checkout_path" = "1" ]; then
+          echo "checkout-path"
+          return 0
+        fi
         ;;
       switch)
         for tok2 in "$@"; do
@@ -1911,6 +1929,87 @@ match_subcommand() {
               ;;
           esac
         done
+        ;;
+      stash)
+        # git stash: liberado só para leitura (list/show) — bloqueia a forma bare
+        # (equivale a "push"), push, save, clear e drop. Decisão de KG: bloquear a
+        # classe inteira, não só os literais medidos (ver REQ). Repositório com um único
+        # worktree compartilhado entre subagentes paralelos — um stash de um agente
+        # remove as alterações não commitadas de todos os outros.
+        stash_sub="\${1:-}"
+        case "$stash_sub" in
+          list|show)
+            ;;
+          *)
+            echo "stash"
+            return 0
+            ;;
+        esac
+        ;;
+      reset)
+        # Só --hard bloqueia, em qualquer posição de token — --soft/--mixed (inclusive
+        # sem flag, que é --mixed implícito) seguem liberados: --soft é o contorno
+        # padrão para reempurrar trabalho já commitado via ` + "`" + `trackfw ship` + "`" + `.
+        for tok2 in "$@"; do
+          case "$tok2" in
+            --hard)
+              echo "reset-hard"
+              return 0
+              ;;
+          esac
+        done
+        ;;
+      clean)
+        # Bloqueia qualquer forma com force (-f, -fd, -fx, --force) ou -x/-X, EXCETO
+        # quando -n/--dry-run também está presente (dry-run nunca apaga nada).
+        clean_dry=0
+        clean_force=0
+        for tok2 in "$@"; do
+          case "$tok2" in
+            -n|--dry-run)
+              clean_dry=1
+              ;;
+            -f*|--force|--force=*|-x|-X)
+              clean_force=1
+              ;;
+          esac
+        done
+        if [ "$clean_dry" != "1" ] && [ "$clean_force" = "1" ]; then
+          echo "clean-force"
+          return 0
+        fi
+        ;;
+      restore)
+        # git restore --staged SOZINHO nunca toca o working tree (mexe só no
+        # index), então segue liberado mesmo com path. Mas --worktree/-W (com ou
+        # sem --staged junto) SEMPRE afeta o working tree — inclusive
+        # "--staged --worktree", que restaura os dois — então bloqueia sempre que
+        # --worktree/-W aparecer, e também no caso padrão (sem --staged em
+        # nenhuma forma) com um argumento posicional (o path).
+        restore_staged=0
+        restore_worktree=0
+        restore_positional=0
+        for tok2 in "$@"; do
+          case "$tok2" in
+            --staged)
+              restore_staged=1
+              ;;
+            --worktree|-W)
+              restore_worktree=1
+              ;;
+            -*)
+              ;;
+            *)
+              restore_positional=1
+              ;;
+          esac
+        done
+        if [ "$restore_positional" = "1" ]; then
+          if [ "$restore_worktree" = "1" ] || [ "$restore_staged" != "1" ]; then
+            echo "restore-path"
+            return 0
+          fi
+        fi
         ;;
       branch)
         # git branch é majoritariamente leitura (sem args, -a, -r, -l, --list, -v/-vv,
@@ -1967,7 +2066,43 @@ match_subcommand() {
                 ;;
             esac
           done
+        elif [ "\${1:-}" = "remove" ]; then
+          # git worktree remove SEM -f/--force já recusa sozinho quando há alteração não
+          # commitada no worktree indicado — só a forma com force é irreversível o bastante
+          # para bloquear aqui.
+          shift
+          for tok2 in "$@"; do
+            case "$tok2" in
+              -f|--force)
+                echo "worktree-remove-force"
+                return 0
+                ;;
+            esac
+          done
         fi
+        ;;
+      update-ref)
+        # git update-ref reescreve um ref (inclusive refs/remotes/origin/*) sem tocar o
+        # objeto apontado nem exigir push — foi o mecanismo que tornou alcançável o exploit
+        # descrito no ADR-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md
+        # (Emenda 1): forjar origin/<base> localmente para desviar o commit-alvo de trackfw
+        # release tag. Sem forma de leitura equivalente a bloquear seletivamente — a
+        # subcommand inteira é escrita — bloqueia sempre, sem exceção de token.
+        echo "update-ref"
+        return 0
+        ;;
+      rm)
+        # git rm -f/--force apaga do working tree e do index de forma irreversível, mesma
+        # classe de git clean -f/git reset --hard já bloqueados acima — sem exceção para
+        # --cached (destrancar do index sem -f já segue liberado por não precisar de force).
+        for tok2 in "$@"; do
+          case "$tok2" in
+            -f*|--force|--force=*)
+              echo "rm-force"
+              return 0
+              ;;
+          esac
+        done
         ;;
     esac
   done <<EOF
@@ -1980,22 +2115,46 @@ SUBCOMMAND=$(match_subcommand "$CMD_RAW") || exit 0
 
 case "$SUBCOMMAND" in
   checkout-b)
-    REASON="trackfw: git checkout -b bruto bloqueado. Use ` + GBG_REF_BACKTICK + `trackfw branch new <type>/<slug>` + GBG_REF_BACKTICK + `. Ver CLAUDE.md §1."
+    REASON="trackfw: git checkout -b bruto bloqueado. Use ` + GBG_REF_BACKTICK + `trackfw branch new <type>/<slug>` + GBG_REF_BACKTICK + `. Nada antes deste comando foi executado (comando composto é bloqueado por inteiro). Ver CLAUDE.md §1."
     ;;
   switch-c)
-    REASON="trackfw: git switch -c bruto bloqueado. Use ` + GBG_REF_BACKTICK + `trackfw branch new <type>/<slug>` + GBG_REF_BACKTICK + `. Ver CLAUDE.md §1."
+    REASON="trackfw: git switch -c bruto bloqueado. Use ` + GBG_REF_BACKTICK + `trackfw branch new <type>/<slug>` + GBG_REF_BACKTICK + `. Nada antes deste comando foi executado (comando composto é bloqueado por inteiro). Ver CLAUDE.md §1."
     ;;
   branch-create)
-    REASON="trackfw: git branch bruto bloqueado. Use ` + GBG_REF_BACKTICK + `trackfw branch new <type>/<slug>` + GBG_REF_BACKTICK + `. Ver CLAUDE.md §1."
+    REASON="trackfw: git branch bruto bloqueado. Use ` + GBG_REF_BACKTICK + `trackfw branch new <type>/<slug>` + GBG_REF_BACKTICK + `. Nada antes deste comando foi executado (comando composto é bloqueado por inteiro). Ver CLAUDE.md §1."
     ;;
   worktree-add-b)
-    REASON="trackfw: git worktree add -b bruto bloqueado. Use ` + GBG_REF_BACKTICK + `trackfw branch new <type>/<slug>` + GBG_REF_BACKTICK + `. Ver CLAUDE.md §1."
+    REASON="trackfw: git worktree add -b bruto bloqueado. Use ` + GBG_REF_BACKTICK + `trackfw branch new <type>/<slug>` + GBG_REF_BACKTICK + `. Nada antes deste comando foi executado (comando composto é bloqueado por inteiro). Ver CLAUDE.md §1."
     ;;
   commit)
-    REASON="trackfw: git commit bruto bloqueado. Use ` + GBG_REF_BACKTICK + `trackfw commit -m '<mensagem>'` + GBG_REF_BACKTICK + `. Ver CLAUDE.md §1."
+    REASON="trackfw: git commit bruto bloqueado. Use ` + GBG_REF_BACKTICK + `trackfw commit -m '<mensagem>'` + GBG_REF_BACKTICK + `. Nada antes deste comando foi executado (comando composto é bloqueado por inteiro). Ver CLAUDE.md §1."
     ;;
   push)
-    REASON="trackfw: git push bruto bloqueado. Use ` + GBG_REF_BACKTICK + `trackfw ship` + GBG_REF_BACKTICK + `. Ver CLAUDE.md §1."
+    REASON="trackfw: git push bruto bloqueado. Use ` + GBG_REF_BACKTICK + `trackfw ship` + GBG_REF_BACKTICK + ` (ou ` + GBG_REF_BACKTICK + `trackfw release tag` + GBG_REF_BACKTICK + ` para publicar uma tag de release). Nada antes deste comando foi executado (comando composto é bloqueado por inteiro). Ver CLAUDE.md §1."
+    ;;
+  stash)
+    REASON="trackfw: git stash bruto bloqueado — worktree compartilhado entre subagentes, um stash remove as alterações não commitadas de todos os outros. ` + GBG_REF_BACKTICK + `git stash list` + GBG_REF_BACKTICK + `/` + GBG_REF_BACKTICK + `git stash show` + GBG_REF_BACKTICK + ` seguem liberados; para guardar trabalho em progresso, use uma branch própria via ` + GBG_REF_BACKTICK + `trackfw branch new` + GBG_REF_BACKTICK + ` e commit nela. Nada antes deste comando foi executado (comando composto é bloqueado por inteiro). Ver CLAUDE.md §1."
+    ;;
+  reset-hard)
+    REASON="trackfw: git reset --hard bruto bloqueado — descarta de forma irreversível as alterações não commitadas de todo o worktree compartilhado. ` + GBG_REF_BACKTICK + `git reset --soft` + GBG_REF_BACKTICK + `/` + GBG_REF_BACKTICK + `--mixed` + GBG_REF_BACKTICK + ` seguem liberados (ex.: ` + GBG_REF_BACKTICK + `git reset --soft HEAD~1` + GBG_REF_BACKTICK + ` é o caminho padrão para reempurrar via ` + GBG_REF_BACKTICK + `trackfw ship` + GBG_REF_BACKTICK + `). Nada antes deste comando foi executado (comando composto é bloqueado por inteiro). Ver CLAUDE.md §1."
+    ;;
+  clean-force)
+    REASON="trackfw: git clean -f/-x bruto bloqueado — apaga arquivos não rastreados do worktree compartilhado, de forma irreversível. ` + GBG_REF_BACKTICK + `git clean -n` + GBG_REF_BACKTICK + `/` + GBG_REF_BACKTICK + `--dry-run` + GBG_REF_BACKTICK + ` segue liberado para revisar antes o que seria apagado. Nada antes deste comando foi executado (comando composto é bloqueado por inteiro). Ver CLAUDE.md §1."
+    ;;
+  restore-path)
+    REASON="trackfw: git restore <path> bruto bloqueado — descarta de forma irreversível as alterações não commitadas do caminho indicado. ` + GBG_REF_BACKTICK + `git restore --staged` + GBG_REF_BACKTICK + ` (não toca o working tree) segue liberado; para descartar de fato, confirme antes com o usuário. Nada antes deste comando foi executado (comando composto é bloqueado por inteiro). Ver CLAUDE.md §1."
+    ;;
+  checkout-path)
+    REASON="trackfw: git checkout -- <path>/git checkout . bruto bloqueado — descarta de forma irreversível as alterações não commitadas do caminho indicado. ` + GBG_REF_BACKTICK + `git checkout <branch>` + GBG_REF_BACKTICK + `/` + GBG_REF_BACKTICK + `git switch <branch>` + GBG_REF_BACKTICK + ` seguem liberados; para descartar de fato, confirme antes com o usuário. Nada antes deste comando foi executado (comando composto é bloqueado por inteiro). Ver CLAUDE.md §1."
+    ;;
+  update-ref)
+    REASON="trackfw: git update-ref bruto bloqueado — reescreve um ref (inclusive refs/remotes/origin/*) sem tocar o objeto apontado nem exigir push, o que permite forjar o commit-alvo que ` + GBG_REF_BACKTICK + `trackfw release tag` + GBG_REF_BACKTICK + ` publicaria. Nada antes deste comando foi executado (comando composto é bloqueado por inteiro). Ver CLAUDE.md §1."
+    ;;
+  worktree-remove-force)
+    REASON="trackfw: git worktree remove -f/--force bruto bloqueado — remove um worktree e descarta de forma irreversível qualquer alteração não commitada nele. ` + GBG_REF_BACKTICK + `git worktree remove` + GBG_REF_BACKTICK + ` sem force segue liberado (recusa sozinho quando há algo não commitado). Nada antes deste comando foi executado (comando composto é bloqueado por inteiro). Ver CLAUDE.md §1."
+    ;;
+  rm-force)
+    REASON="trackfw: git rm -f/--force bruto bloqueado — apaga arquivos do working tree e do index de forma irreversível, mesma classe de ` + GBG_REF_BACKTICK + `git clean -f` + GBG_REF_BACKTICK + `/` + GBG_REF_BACKTICK + `git reset --hard` + GBG_REF_BACKTICK + ` já bloqueados. Nada antes deste comando foi executado (comando composto é bloqueado por inteiro). Ver CLAUDE.md §1."
     ;;
   *)
     exit 0

@@ -413,6 +413,15 @@ test('fallback via variável de ambiente TRACKFW_GIT_COMMAND bloqueia', () => {
 // internal/generators/agentfiles_test.go's git-branch-guard section.
 // ---------------------------------------------------------------------------
 
+// Synthetic, empty $HOME: every test wrapped in this helper assumes NO global-scope guard
+// (credential-guard or git-branch-guard) is wired for the CLI under test -- an empty tmpdir has
+// no ~/.claude/settings.json, ~/.codex/hooks.json, etc. to read, so globalGitBranchGuardInstalled*
+// (npm/src/generators/hooks.js) always resolves to false and the project-scope entry is added.
+// The complementary state -- global wiring present, so the project-scope entry is legitimately
+// SKIPPED (dedup) -- is intentionally NOT covered by these unit tests; it's covered end-to-end by
+// scripts/check-gates-falsify.sh Scenario 67 (`trackfw discover --init` against a synthetic $HOME
+// with the global guard actually wired, baseline + reverse-vacuity + detection). Declared here,
+// rather than inherited by accident, per ROADMAP-2026-08-19 ML-3B.
 function withIsolatedHome(fn) {
   const origHome = process.env.HOME
   process.env.HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-gbg-home-iso-'))
@@ -438,14 +447,16 @@ test('injectClaudeHooks wires PreToolUse[Bash] with the git branch guard command
 })
 
 test('injectCodexHooks wires PreToolUse[Bash] with the git branch guard command, idempotently', () => {
-  withTmpDir((tmp) => {
-    injectCodexHooks(tmp)
-    injectCodexHooks(tmp)
-    const data = JSON.parse(fs.readFileSync(path.join(tmp, '.codex', 'hooks.json'), 'utf8'))
-    const bashEntry = data.hooks.PreToolUse.find(e => e.matcher === 'Bash')
-    const commands = bashEntry.hooks.map(h => h.command)
-    assert.ok(commands.includes('"$(git rev-parse --show-toplevel)/scripts/trackfw-git-branch-guard.sh"'))
-    assert.equal(commands.filter(c => c === '"$(git rev-parse --show-toplevel)/scripts/trackfw-git-branch-guard.sh"').length, 1, 'idempotent across 2 runs')
+  withIsolatedHome(() => {
+    withTmpDir((tmp) => {
+      injectCodexHooks(tmp)
+      injectCodexHooks(tmp)
+      const data = JSON.parse(fs.readFileSync(path.join(tmp, '.codex', 'hooks.json'), 'utf8'))
+      const bashEntry = data.hooks.PreToolUse.find(e => e.matcher === 'Bash')
+      const commands = bashEntry.hooks.map(h => h.command)
+      assert.ok(commands.includes('"$(git rev-parse --show-toplevel)/scripts/trackfw-git-branch-guard.sh"'))
+      assert.equal(commands.filter(c => c === '"$(git rev-parse --show-toplevel)/scripts/trackfw-git-branch-guard.sh"').length, 1, 'idempotent across 2 runs')
+    })
   })
 })
 
@@ -464,11 +475,13 @@ test('injectGeminiHooks wires BeforeTool[run_shell_command] with the git branch 
 })
 
 test('injectCopilotHooks wires preToolUse[bash] with the git branch guard command', () => {
-  withTmpDir((tmp) => {
-    injectCopilotHooks(tmp)
-    const data = JSON.parse(fs.readFileSync(path.join(tmp, '.github', 'hooks', 'trackfw-attention.json'), 'utf8'))
-    const entry = data.hooks.preToolUse.find(e => e.matcher === 'bash' && e.bash === 'scripts/trackfw-git-branch-guard.sh')
-    assert.ok(entry, 'preToolUse missing git-branch-guard bash entry')
+  withIsolatedHome(() => {
+    withTmpDir((tmp) => {
+      injectCopilotHooks(tmp)
+      const data = JSON.parse(fs.readFileSync(path.join(tmp, '.github', 'hooks', 'trackfw-attention.json'), 'utf8'))
+      const entry = data.hooks.preToolUse.find(e => e.matcher === 'bash' && e.bash === 'scripts/trackfw-git-branch-guard.sh')
+      assert.ok(entry, 'preToolUse missing git-branch-guard bash entry')
+    })
   })
 })
 

@@ -18,6 +18,68 @@ const { evaluateBranchIntegration, DECISION: BRANCH_PRUNE_DECISION } = require('
 // In --dry-run mode these are printed but not executed.
 const GIT_WRITE_COMMANDS = new Set(['commit', 'push', 'fetch'])
 
+// force-with-lease refusal messages. Named constants so the ML-1B parity gate has a single
+// place to compare byte-for-byte across the 3 CLIs. Byte-identical to Go's
+// forceLease*Msg/Fmt constants (internal/commands/ship.go) and Python's FORCE_LEASE_* below.
+// Never expose "--force" (raw) as a flag — see
+// ADR-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md.
+const FORCE_LEASE_NO_FORGE_CLI_MSG =
+  'trackfw ship --force-with-lease requires a forge CLI (gh, glab, or az) to confirm an open pull/merge request before rewriting remote history. No forge CLI is available for this repository — install and authenticate it, or push without --force-with-lease.'
+
+function forceLeaseNoPROpenMsg(branch) {
+  return `trackfw ship --force-with-lease refuses to run: branch "${branch}" has no open pull/merge request. Open the PR/MR first (trackfw ship without --force-with-lease, or your forge's web UI), then retry.`
+}
+
+function forceLeaseCannotVerifyMsg(branch, cliName, errMessage) {
+  return `trackfw ship --force-with-lease could not verify whether branch "${branch}" has an open pull/merge request (${cliName} CLI error: ${errMessage}). Refusing rather than risking a force push without a verified PR — check your ${cliName} CLI authentication and retry.`
+}
+
+/**
+ * defaultCheckPROpen queries the resolved forge CLI for an open PR/MR whose source branch is
+ * `branch`, using the same list-based query shape for every forge: empty result means "no PR"
+ * (exit 0), any non-zero exit or unparseable output means "cannot verify" (thrown — never
+ * conflated with "no PR"). bitbucket and "manual" never reach here: runShip only calls
+ * checkPROpen when adapter.available is true, and bitbucket's adapter is always available=false.
+ * @param {object} adapter
+ * @param {string} branch
+ * @returns {boolean}
+ */
+function defaultCheckPROpen(adapter, branch) {
+  let args
+  switch (adapter.forge) {
+    case 'github':
+      args = ['pr', 'list', '--head', branch, '--state', 'open', '--json', 'number']
+      break
+    case 'gitlab':
+      // glab mr list: --source-branch filters by source branch, --state opened matches
+      // gh's "open" state, -F json requests machine-readable output (glab's own flag,
+      // not an external jq/GNU dependency).
+      args = ['mr', 'list', '--source-branch', branch, '--state', 'opened', '-F', 'json']
+      break
+    case 'azure':
+      // az defaults to --output json; passed explicitly here for clarity, not reliance
+      // on the ambient default.
+      args = ['repos', 'pr', 'list', '--source-branch', branch, '--status', 'active', '--output', 'json']
+      break
+    default:
+      throw new Error(`no PR/MR query defined for forge "${adapter.forge}"`)
+  }
+
+  const result = spawnSync(adapter.cliName, args, { encoding: 'utf8' })
+  if (result.status !== 0) {
+    const msg = (result.stderr || '').trim() || `${adapter.cliName} exited with ${result.status}`
+    throw new Error(msg)
+  }
+
+  let parsed
+  try {
+    parsed = JSON.parse(result.stdout || '[]')
+  } catch (e) {
+    throw new Error(`could not parse ${adapter.cliName} output: ${e.message}`)
+  }
+  return Array.isArray(parsed) && parsed.length > 0
+}
+
 /**
  * isGitWriteCmd returns true when the first arg is a write-mode git subcommand.
  * @param {string[]} args
@@ -240,10 +302,17 @@ function allDocOnly(files) {
  */
 const COMMIT_MESSAGE_SEP = '\x1e'
 
+// GIT_SYMBOLIC_REF_ORIGIN_HEAD_PREFIX is the fixed prefix `git symbolic-ref
+// refs/remotes/origin/HEAD` always returns before the branch name, because "origin" is the
+// literal ref namespace queried — never derived from the output itself. Stripping this exact
+// prefix (instead of cutting at the last '/') is what makes defaultBaseBranch correct for a
+// default branch that itself contains a slash (e.g. "release/7.2"): lastIndexOf('/') used to
+// cut at "7.2", discarding "release/". Mirrors Go's ship.go gitSymbolicRefOriginHeadPrefix.
+const GIT_SYMBOLIC_REF_ORIGIN_HEAD_PREFIX = 'refs/remotes/origin/'
+
 /**
  * defaultBaseBranch resolves the repository's default branch for `git log <base>..HEAD`.
- * Tries `git symbolic-ref refs/remotes/origin/HEAD` (format "refs/remotes/origin/main" —
- * only the name after the last slash is kept) and falls back to "main" when that fails or
+ * Tries `git symbolic-ref refs/remotes/origin/HEAD` and falls back to "main" when that fails or
  * yields nothing.
  * @param {function} execGit
  * @returns {string}
@@ -252,9 +321,9 @@ function defaultBaseBranch(execGit) {
   const { stdout, error } = execGit(['symbolic-ref', 'refs/remotes/origin/HEAD'])
   if (error) return 'main'
   const out = (stdout || '').trim()
-  const idx = out.lastIndexOf('/')
-  if (idx < 0 || idx + 1 >= out.length) return 'main'
-  return out.slice(idx + 1)
+  if (!out.startsWith(GIT_SYMBOLIC_REF_ORIGIN_HEAD_PREFIX)) return 'main'
+  const name = out.slice(GIT_SYMBOLIC_REF_ORIGIN_HEAD_PREFIX.length)
+  return name === '' ? 'main' : name
 }
 
 /**
@@ -444,6 +513,59 @@ function runShip(opts, deps = {}) {
     writeln('Governance: OK')
   }
 
+  // ─── Step 2.5: force-with-lease gate ───────────────────────────────────────
+  // Runs before any write (commit/push) — a refusal here must never leave a local
+  // commit the caller cannot push. Read-only, so it runs in --dry-run too, same
+  // posture as the read-only calls in Step 0 / Step 7.
+  //
+  // forceLeaseAdapter/forceLeaseResolution are reused by Step 7 below to avoid a
+  // second forge resolution and a duplicate "Forge: ..." line, and because Step 7
+  // must skip PR/MR creation entirely once this gate has confirmed one is already
+  // open — creating a second one would be a spurious failure on every successful
+  // force push.
+  let forceLeaseAdapter = null
+  let forceLeaseResolution = null
+  if (opts.forceWithLease) {
+    const { stdout: gateRemoteURLRaw } = execGit(['remote', 'get-url', 'origin'])
+    const gateRemoteURL = (gateRemoteURLRaw || '').trim()
+
+    let resolution
+    try {
+      resolution = forgeResolve({
+        flagForge: opts.forge || '',
+        configForge: deps.configForge || '',
+        remoteURL: gateRemoteURL,
+        repoDir: deps.repoDir || '',
+      })
+    } catch (resErr) {
+      writeErr(resErr.message)
+      return 1
+    }
+
+    const adapter = forgeAdapter(resolution.forge, deps.availFn || undefined)
+    if (resolution.forge === 'manual' || !adapter.available) {
+      writeErr(FORCE_LEASE_NO_FORGE_CLI_MSG)
+      return 1
+    }
+
+    const checkPROpen = deps.checkPROpen || defaultCheckPROpen
+    let open
+    try {
+      open = checkPROpen(adapter, branch)
+    } catch (prErr) {
+      writeErr(forceLeaseCannotVerifyMsg(branch, adapter.cliName, prErr.message))
+      return 1
+    }
+    if (!open) {
+      writeErr(forceLeaseNoPROpenMsg(branch))
+      return 1
+    }
+
+    writeln(`force-with-lease: open ${adapter.noun} confirmed for "${branch}" (${resolution.forge}).`)
+    forceLeaseAdapter = adapter
+    forceLeaseResolution = resolution
+  }
+
   // ─── Step 3: Squash-merge detection ────────────────────────────────────────
   if (opts.dryRun) {
     writeln('[dry-run] git fetch origin --prune')
@@ -466,7 +588,14 @@ function runShip(opts, deps = {}) {
   writeln('────────────────────────────────────────────────────────\n')
 
   // Reuses stagedFiles read at the top of the function (Step 0) — never re-query git here.
-  if (stagedFiles.length === 0) {
+  //
+  // --force-with-lease push-only mode: a rebase that resolved conflicts already
+  // committed the result (the index is clean afterwards) — there is nothing left to
+  // stage or commit, only to push. Only --force-with-lease grants this exception;
+  // without it, "nothing staged" still aborts exactly as before (non-regression).
+  const pushOnly = opts.forceWithLease && stagedFiles.length === 0
+
+  if (stagedFiles.length === 0 && !opts.forceWithLease) {
     writeErr(
       'nothing is staged — stage your files explicitly before running ship:\n' +
       '  git add <file1> <file2> ...\n' +
@@ -476,26 +605,35 @@ function runShip(opts, deps = {}) {
   }
 
   // ─── Step 5: Commit ────────────────────────────────────────────────────────
-  if (!opts.message) {
-    writeErr(
-      'commit message is required — use -m:\n' +
-      '  trackfw ship -m "feat(<scope>): <description>"'
-    )
-    return 1
-  }
+  if (pushOnly) {
+    writeln('Nothing staged — --force-with-lease pushes existing commits only, no new commit.')
+  } else {
+    if (!opts.message) {
+      writeErr(
+        'commit message is required — use -m:\n' +
+        '  trackfw ship -m "feat(<scope>): <description>"'
+      )
+      return 1
+    }
 
-  const { error: commitErr } = git(['commit', '-m', opts.message])
-  if (commitErr) {
-    writeErr(`git commit failed: ${commitErr.message}`)
-    return 1
-  }
+    const { error: commitErr } = git(['commit', '-m', opts.message])
+    if (commitErr) {
+      writeErr(`git commit failed: ${commitErr.message}`)
+      return 1
+    }
 
-  if (!opts.dryRun) {
-    writeln(`Committed: ${opts.message}`)
+    if (!opts.dryRun) {
+      writeln(`Committed: ${opts.message}`)
+    }
   }
 
   // ─── Step 6: Push ──────────────────────────────────────────────────────────
-  const pushArgs = buildPushArgs(branch, execGit)
+  let pushArgs = buildPushArgs(branch, execGit)
+  if (opts.forceWithLease) {
+    // Fixed position: push --force-with-lease [-u] origin <branch> — identical
+    // across the 3 CLIs (ML-1B's parity gate compares this literally).
+    pushArgs = [pushArgs[0], '--force-with-lease', ...pushArgs.slice(1)]
+  }
   const { error: pushErr } = git(pushArgs)
   if (pushErr) {
     writeErr(`git push failed: ${pushErr.message}`)
@@ -507,6 +645,17 @@ function runShip(opts, deps = {}) {
   }
 
   // ─── Step 7: Open PR/MR ────────────────────────────────────────────────────
+  // --force-with-lease only ever reaches here after Step 2.5 confirmed a PR/MR is
+  // already open on this branch — creating another one would be a spurious failure
+  // on every successful force push. Reuses the adapter/resolution Step 2.5 already
+  // computed instead of resolving the forge a second time.
+  if (opts.forceWithLease) {
+    writeln(`Forge:     ${forceLeaseResolution.forge} (source: ${forceLeaseResolution.source})`)
+    writeln(`${forceLeaseAdapter.noun} already open — skipping creation (--force-with-lease).`)
+    writeln('\nship complete.')
+    return 0
+  }
+
   const { stdout: remoteURLRaw } = execGit(['remote', 'get-url', 'origin'])
   const remoteURL = (remoteURLRaw || '').trim()
 
@@ -615,4 +764,8 @@ module.exports = {
   buildPRBody,
   COMMIT_MESSAGE_SEP,
   detectPendingSquashMerges,
+  defaultCheckPROpen,
+  FORCE_LEASE_NO_FORGE_CLI_MSG,
+  forceLeaseNoPROpenMsg,
+  forceLeaseCannotVerifyMsg,
 }

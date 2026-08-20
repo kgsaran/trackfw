@@ -4,6 +4,7 @@
 
 ## Índice
 
+- [ci-inherited-trackfw-disable-external-commands-vacuous-parity-gate-2026-08-19](ci-inherited-trackfw-disable-external-commands-vacuous-parity-gate-2026-08-19.md)
 - [bash-grep-F-embedded-newline-vacuous-match-2026-08-16](bash-grep-F-embedded-newline-vacuous-match-2026-08-16.md)
 - [commander-missing-subcommand-help-error-exit-1-2026-08-16](commander-missing-subcommand-help-error-exit-1-2026-08-16.md)
 - [ship-checkgovernance-error-stream-wording-divergence-2026-08-16](ship-checkgovernance-error-stream-wording-divergence-2026-08-16.md)
@@ -75,3 +76,6 @@
 - [validate-global-guard-integrity-by-existence-makes-unisolated-home-systemic-2026-08-18](validate-global-guard-integrity-by-existence-makes-unisolated-home-systemic-2026-08-18.md)
 - [global-guard-dedup-and-hook-resolvable-never-validate-hook-structure-2026-08-18](global-guard-dedup-and-hook-resolvable-never-validate-hook-structure-2026-08-18.md)
 - [doctor-classifydoctor-silences-tampering-when-manifest-entry-removed-2026-08-19](doctor-classifydoctor-silences-tampering-when-manifest-entry-removed-2026-08-19.md)
+- [git-branch-guard-case-block-extension-breaks-corrupt-literal-scenarios-2026-08-19](git-branch-guard-case-block-extension-breaks-corrupt-literal-scenarios-2026-08-19.md)
+- [git-fetch-self-heals-forged-origin-head-and-tracking-refs-2026-08-19](git-fetch-self-heals-forged-origin-head-and-tracking-refs-2026-08-19.md)
+- [forge-anchoring-branch-name-must-be-unconditional-not-cross-checked-2026-08-19](forge-anchoring-branch-name-must-be-unconditional-not-cross-checked-2026-08-19.md)
