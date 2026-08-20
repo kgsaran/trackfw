@@ -20836,3 +20836,18 @@ Medição refeita hoje: 53 seções de topo, 122 subseções, 27 scripts de gate
 
 **Backlog restante (4):** i18n nos 3 CLIs · `validate` cego ao hook relativo antigo ·
 `update --dry-run` em symlink quebrado · `release tag` confia em conteúdo local.
+
+## 2026-08-20 — Zeus (arquiteto) — ADR do formato de anotação
+
+Branch criada, roadmap em `wip`. **Escrevi o ADR eu mesmo** — o roadmap original atribuía a decisão
+de formato ao executor, e isso estava errado: decisão material é do arquiteto. Corrigido no roadmap.
+
+Formato: comentário HTML por seção. Três escolhas com motivo registrado — comentário em vez de
+frontmatter (a granularidade é por seção, não por arquivo), `none` exigindo motivo (força a
+distinção contrato/prosa a ser declarada), e o checker validando que o gate **existe** (nomear gate
+inexistente reprova, senão a anotação vira carimbo).
+
+Rejeitei explicitamente inferir cobertura por menção na prosa: hoje 18 seções mencionam gate em
+texto livre, e inferência sobre prosa falha de forma silenciosa.
+
+Próximo: ML-1A aplica o formato em 3 pilotos de naturezas diferentes.

@@ -1,14 +1,14 @@
 ---
-status: analyzing
+status: wip
 date: 2026-08-20
 req: "docs/req/REQ-2026-08-18-contrato-pinado-no-cli-parity-sem-gate-nomeado-e-contrato-nao-aplicado.md"
-adr: ""
+adr: "docs/adr/ADR-2026-08-20-anotacao-de-cobertura-de-contrato-no-cli-parity.md"
 squad: "apolo-tf, hefesto-tf"
 ---
 
 # Roadmap: contrato pinado no `cli-parity.md` sem gate nomeado
 
-> Created: 2026-08-20 | Status: analyzing
+> Created: 2026-08-20 | Status: wip
 
 ## Context
 
@@ -65,9 +65,18 @@ documento cresceu desde então, e três seções novas entraram já nomeando o g
 
 ## Wave 1 — Formato e mecanismo (2 MLs, sequenciais)
 
-### ML-1A — Formato de anotação legível por máquina
+### ML-1A — Aplicar o formato em 3 seções-piloto
 **Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
-**Arquivos:** `docs/cli-parity.md` (só o **formato** e 3 seções-piloto), `docs/adr/` (ADR novo).
+**Arquivos:** `docs/cli-parity.md` (apenas 3 seções-piloto).
+
+> **O ADR foi escrito por mim, não delegado** — decisão de formato é do arquiteto, e o roadmap
+> original o atribuía ao executor por engano. Formato decidido em
+> `ADR-2026-08-20-anotacao-de-cobertura-de-contrato-no-cli-parity.md`:
+> ```
+> <!-- trackfw-contract: gate=scripts/check-doctor-parity.sh -->
+> <!-- trackfw-contract: none reason=<motivo em uma linha> -->
+> ```
+> Resta ao ML-1A **aplicar** e provar que o formato aguenta os três casos.
 
 **Ação:** decidir e registrar em **ADR** o formato pelo qual uma seção declara o gate que a protege,
 e pelo qual uma seção se declara **não-contrato com motivo**. Aplicar em **3 seções-piloto** de
@@ -75,11 +84,10 @@ naturezas diferentes — uma com gate óbvio, uma sem gate, uma que é prosa —
 aguenta os três casos antes de virar 53.
 
 **Critérios de aceite:**
-- [ ] Formato decidido em ADR, com o motivo da escolha
-- [ ] Legível por máquina, não prosa livre
-- [ ] Marcação de não-contrato **exige motivo escrito**; sem motivo é inválido
-- [ ] 3 seções-piloto anotadas, cobrindo os três casos
-- [ ] Nenhuma mudança de comportamento de CLI
+- [x] Formato decidido em ADR, com o motivo da escolha — feito por mim
+- [ ] 3 seções-piloto anotadas, cobrindo os **três** casos: com gate, sem gate, não-contrato
+- [ ] A escolha de cada piloto é **justificada** — piloto fácil demais não prova nada
+- [ ] Nenhuma mudança de comportamento de CLI, nenhum gate criado
 
 ### ML-1B — Meta-checker
 **Status:** ⬜ Pendente · **Agente:** `apolo-tf` · **Dependência:** ML-1A
