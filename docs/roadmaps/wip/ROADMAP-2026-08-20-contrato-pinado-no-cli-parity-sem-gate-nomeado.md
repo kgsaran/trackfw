@@ -372,7 +372,26 @@ que já cumpre o formato final.
 
 ## Wave 2 — Triagem (o grosso do trabalho)
 
-### ML-2A — Triagem das seções
+### Fatiamento da triagem — 4 lotes sequenciais
+
+177 seções, medidas com parsing ciente de blocos de código. **Sequenciais, não paralelos:** todos
+editam `docs/cli-parity.md`, e dois agentes no mesmo arquivo é conflito garantido.
+
+| lote | linhas | seções |
+|---|---|---|
+| ML-2A | 35–1209 | 44 |
+| ML-2B | 1230–2668 | 44 |
+| ML-2C | 2685–3652 | 44 |
+| ML-2D | 3669–4545 | 45 |
+
+**Por que fatiar:** triagem é julgamento, não mecânica. 177 seções num lote só não é auditável com o
+mesmo rigor aplicado à Wave 1 — e auditoria fraca no lote mais importante anularia o cuidado de tudo
+que veio antes. Cada lote fecha com o checker verde e é auditado antes do seguinte.
+
+**O ML-2A é também o lote-piloto da triagem:** se o critério de classificação se mostrar ambíguo
+demais na prática, o ajuste acontece depois de 44 seções, não de 177.
+
+### ML-2A — Triagem, lote 1 (linhas 35–1209)
 **Status:** ⬜ Pendente · **Agente:** `hefesto-tf` (`subagent_type: hefesto-tf`) · **Dependência:** ML-1B
 **Escreve:** anotações em `docs/cli-parity.md` e o relatório de triagem.
 
