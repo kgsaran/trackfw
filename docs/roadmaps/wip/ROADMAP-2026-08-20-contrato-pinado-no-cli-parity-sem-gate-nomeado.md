@@ -504,6 +504,49 @@ concordam **entre si**, não que concordam com o texto literalmente pinado pela 
 de lacuna que eu não tinha antecipado ao escrever o ADR, e que só aparece quando alguém confere
 alegação por alegação.
 
+
+### Auditoria do ML-2C — aprovada; **respondi o item aberto que ele deixou**
+
+```
+lote 3 (44):   gate= 12 · partial 13 · gap 12 · none 7
+acumulado(132): gate= 56 · partial 36 · gap 32 · none 8 · invalidas 0 · 45 sem anotacao
+make quality (CI-exata) exit 0 · validate exit 0
+```
+
+**Item aberto dele, respondido por medição** — ele pediu que eu confirmasse que as 44 inserções não
+mexeram na prosa, porque o anchor do `Edit` descarta anexar no lugar errado mas não um typo dentro
+do trecho reproduzido:
+
+```
+git diff --numstat docs/cli-parity.md   ->  129 insercoes, 0 delecoes
+linhas removidas que nao sejam anotacao ->  NENHUMA
+```
+
+**Zero deleções.** A prosa está byte-idêntica; toda a mudança é comentário inserido. Pedir essa
+verificação em vez de afirmar que estava tudo bem foi a atitude certa — é o tipo de dano que passa
+despercebido por meses num documento de 4,5 mil linhas.
+
+#### O salto de `none` (1 → 0 → 7) eu fui olhar, porque é o modo de falha nomeado
+
+Li os 7. **Todos legítimos, e o motivo é o conteúdo do quarto**: este trecho é o parecer de segurança
+do credential-guard, e as seções são semântica de falha de **CLIs de terceiros** medida do fornecedor,
+refutação de hipótese de ataque já descartada, declaração de escopo do que **não** foi medido,
+referências cruzadas, e princípios de desenho dos próprios gates. Nada disso é comportamento do
+trackfw. `none` aqui é a classificação correta, não conveniência.
+
+#### O `gap` #1 dele é o mais grave dos três lotes
+
+`branch_has_wip_roadmap` aceita, desde a `REQ-2026-07-26`, roadmap correspondente em `done/` além de
+`wip/` — e **nenhum gate cross-CLI jamais põe um roadmap em `done/`**. Ele verificou os três
+candidatos (`branch-new`, `commit`, `ship`) e o `check-validate-parity.sh`, que tem zero ocorrências
+da regra. **O comportamento que define aquela REQ nunca foi testado entre os 3 CLIs** — e é a regra
+que sustenta todo `branch`/`commit`/`ship` do projeto.
+
+**Correções da autorrevisão dele que valem nota:** reclassificou uma seção de `none` para `gap` ao
+perceber que "afirmar que algo **não** é usado" é alegação falsificável de ausência de saída; e
+pegou um fechamento de comentário HTML malformado (`->` em vez de `-->`) que ele mesmo introduziu,
+antes de me entregar.
+
 ## Wave 3 — Tornar bloqueante
 
 ### ML-3A — Checker vira bloqueante

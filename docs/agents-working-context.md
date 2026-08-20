@@ -21312,3 +21312,76 @@ lotes 1+2 classificadas, nenhuma fora do intervalo tocada). `./bin/trackfw valid
 warnings pré-existentes, não relacionados a esta REQ). `make quality` exit 0 (Go+Node+Python+parity
 completo, rodado de novo após a 2ª correção). Nenhum commit feito — devolvendo ao `trackfw_architect`
 para auditoria e para despachar os lotes 3–4.
+
+## Sessão 2026-08-20 — Hefesto (ML-2C: triagem de cobertura de contrato, lote 3/4)
+
+Branch `feat/contrato-pinado-no-cli-parity-sem-gate-nomeado` (não commitada — autoridade exclusiva
+do `trackfw_architect`). Anotadas as 44 seções do 3º quarto de `docs/cli-parity.md`
+(`#### update --install-missing...`, linha 2899 original, até `## Plugin subsystem — removed`),
+seguindo a chamada de calibração feita ao advisor antes de escrever (ver histórico da sessão):
+`none` só para conteúdo genuinamente não-CLI (citações, tabelas de semântica de CLI de terceiro,
+registros de refutação/decisão de arquitetura, referências cruzadas puras) — descartei 3 `none`
+iniciais mal calibrados (`update --install-missing`, `Implementação canônica`, `Nota de teste`) que
+o advisor identificou como comportamento falsificável do trackfw disfarçado de autodeclaração.
+
+**Contagem final do lote 3 (recalculada a partir dos deltas do checker, corrigida após auditoria do
+advisor — a contagem manual inicial estava errada):** `gate=` plena 12 (27%) · `gate=` com `partial=`
+13 (30%) · `gap` 12 (27%, inclui a reclassificação de "A decisão de arquitetura" de `none`→`gap` na
+2ª correção) · `none` 7 (16%) = 44.
+
+**Achado de maior risco (topo da lista, por impacto):** a regra `branch_has_wip_roadmap` (linha
+2946 original) — desde a REQ-2026-07-26, passou a aceitar roadmap em `done/`, não só `wip/`. Nenhum
+gate cross-CLI posiciona um roadmap correspondente em `done/`, nem no caso de match nem no de slug
+divergente: `check-branch-new-parity.sh` só testa roadmap em `wip/` e ausência total; `check-commit-
+parity.sh`/`check-ship-parity.sh` idem; `check-validate-parity.sh` não tem nenhuma ocorrência de
+"branch_has_wip_roadmap"/"wip/ nor done/". A mudança central da REQ nunca é exercitada cross-CLI —
+verificado por grep negativo nos 4 scripts, não por leitura de trecho (nível de verificação:
+grep-negativo confirmado em múltiplos arquivos, mais forte que grep único).
+
+**Segundo achado de risco:** `## Controle positivo do credential-guard` e sua subseção "1. O que a
+regra faz" (regra `credential_guard_hook_resolvable`) — a única prova de não-vacuidade
+(`check-gates-falsify.sh` Cenário 47) exercita **só o CLI Go** por desenho explícito do próprio
+comentário do cenário ("Por que só o CLI Go"); Node.js e Python têm cobertura apenas via suíte de
+teste unitária interna ao próprio runtime, nunca cross-CLI. Mesmo padrão structural em `## Modo
+default do credential-guard GLOBAL — warn → block`: nenhum gate executa o script gerado para
+confirmar o fallback `DEFAULT_MODE=block` (global) vs `warn` (projeto) — só a estrutura do wiring
+JSON é comparada, não a leitura de `credential_guard.mode` em runtime.
+
+**Terceiro, `adr new --scope global`/`adr list`:** grep confirma zero ocorrência de "adr" combinado
+com "--scope" ou "adr list" em qualquer `check-*.sh` — só o template default (`--scope project`
+implícito) é coberto por `check-artifact-parity.sh`.
+
+**Hesitações/reclassificações da autorrevisão:** o bloco de semântica de falha de hook por CLI
+(seções "Semântica de falha..." a "Controle positivo...", ~14 seções) foi o de maior risco de
+miscalibração no sentido oposto (gap em excesso) — usei o discriminador "pina comportamento do
+trackfw, ou só semântica/rationale de terceiro?": tabelas de fail-open de CLIs de terceiro,
+discriminadores de log de vendor, registro de hipótese refutada e referências cruzadas puras viraram
+`none` (8 no total, ante 1 no documento inteiro antes deste lote — proporção concentrada nesse bloco
+específico, não distribuída); parágrafos que citam código/mecanismo do próprio trackfw (exit 2 +
+stderr do gerador, `os.WriteFile(...,0755)`, leitura de `credential_guard.mode`) viraram `gap`.
+
+**Comparação com os lotes 1/2:** lote 1 = 39% gap / 20% partial (contrato antigo, nunca gateado);
+lote 2 = 7% gap / 32% partial (features recentes, já nasceram com gate). Este lote fica em 27% gap /
+30% partial / 16% none — perfil misto: mais gap que o lote 2 mas menos que o lote 1, com o gap
+concentrado quase todo em um único bloco temático (o investigativo de segurança do credential-guard/
+git-branch-guard fail-open, ~14 seções) mais dois achados isolados fora desse bloco
+(`branch_has_wip_roadmap`, `update --install-missing`) — não distribuído uniformemente como nos
+lotes 1/2.
+
+**Nível de verificação:** grep negativo confirmado em múltiplos scripts para os 2 achados de maior
+risco (branch_has_wip_roadmap, credential_guard_hook_resolvable); leitura de trecho de gate para
+todos os `gate=`/`partial=` restantes (não apenas grep de nome de regra); os 8 `none` foram decididos
+pelo discriminador explícito acima, não por omissão.
+
+**Ressalva de integridade não verificada:** todos os `Edit` usaram `old_string` casando o texto
+existente verbatim (âncora correta confirmada), mas a prosa reproduzida na cauda de cada `new_string`
+não foi diffada de volta contra o original após a escrita — um typo silencioso na cauda teria mudado
+prosa sem que o checker (só valida sintaxe de anotação) ou a contagem de 177 seções detectassem.
+Pedido ao `trackfw_architect`: confirmar 0 deleções de prosa em `docs/cli-parity.md` no diff.
+
+**Validações:** `bash scripts/check-parity-contract-coverage.sh` exit 0 (56 gate / 36 partial / 32
+gap / 8 none / 45 sem anotação / 0 inválida — acumulado dos 3 lotes; as 45 restantes começam
+exatamente em `## Unknown top-level command`, escopo do ML-2D, não tocado). `./bin/trackfw validate`
+exit 0 (só os 18 warnings pré-existentes, não relacionados a esta REQ). `make quality` exit 0 (145
+cenários de falsificação, Go+Node+Python+parity completos). Nenhum commit feito — devolvendo ao
+`trackfw_architect` para auditoria e despacho do lote 4 (ML-2D).
