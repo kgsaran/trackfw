@@ -12,10 +12,13 @@
 #   <!-- trackfw-contract: gap reason=<motivo> -->
 #   <!-- trackfw-contract: none reason=<motivo> -->
 #
-# 🔴 Modo relatório (decisão de desenho, não preguiça — ver roadmap ML-1B):
-# enquanto a triagem da Wave 2 (ML-2A) não fecha, seção SEM anotação nenhuma
-# não reprova — é contada e listada. Só anotação PRESENTE e INVÁLIDA reprova
-# — os 6 casos da ADR (Emenda 1 definiu 1-5; Emenda 2 acrescentou o 6º):
+# 🔴 Bloqueante (ROADMAP ML-3A, 2026-08-20): a triagem da Wave 2 fechou —
+# 177/177 seções anotadas (gate= 72 · partial 51 · gap 42 · none 12 · sem
+# anotação 0 · inválidas 0). Seção SEM anotação nenhuma agora REPROVA — era
+# modo relatório só enquanto a triagem estava em curso (ver histórico no
+# roadmap). Anotação PRESENTE e INVÁLIDA reprova pelos 6 casos de sempre
+# (Emenda 1 definiu 1-5; Emenda 2 acrescentou o 6º), mais o 7º caso que o
+# ML-3A acrescenta — SEÇÃO SEM ANOTAÇÃO:
 #   1. `gate=` sem caminho nomeado (vazio)
 #   2. `gate=` nomeando caminho que não existe no disco
 #   3. `gap`/`none` SEM a chave `reason=` (chave ausente, não vazia — caso
@@ -30,6 +33,9 @@
 #      então cobre chave nova sem precisar de emendar o ADR de novo. Este
 #      caso SUBSUME o caso 1 (`gate=` vazio é uma instância dele) e também
 #      pega `partial=`/`reason=` vazios, que antes da Emenda 2 passavam.
+#   7. SEÇÃO SEM ANOTAÇÃO — a triagem fechou (177/177), então a partir de
+#      agora ausência de anotação não é "ainda não triado", é regressão: uma
+#      seção nova entrou sem passar pela triagem. Reprova.
 #
 # O relatório (contagem por estado + lista de `gap`) é o entregável desta
 # REQ, não decoração: é o número que se quer acompanhar cair.
@@ -283,6 +289,7 @@ for sec in sections:
     if sec["raw"] is None:
         counts["unannotated"] += 1
         unannotated_list.append(heading)
+        violations.append("%s: seção sem anotação trackfw-contract" % heading)
         continue
 
     parsed = parse_annotation(sec["raw"])
@@ -378,7 +385,7 @@ if gap_list:
 else:
     print("  (nenhum)")
 print("")
-print("-- seções sem anotação (modo relatório — não reprovam ainda) --")
+print("-- seções sem anotação (reprovam — bloqueante desde o ML-3A) --")
 if unannotated_list:
     for heading in unannotated_list:
         print("  - %s" % heading)
@@ -387,12 +394,12 @@ else:
 
 if violations:
     print("")
-    print("== ANOTAÇÕES INVÁLIDAS (reprovam) ==", file=sys.stderr)
+    print("== VIOLAÇÕES (reprovam: anotação inválida ou seção sem anotação) ==", file=sys.stderr)
     for v in violations:
         print("FAIL: %s" % v, file=sys.stderr)
     sys.exit(1)
 
 print("")
-print("OK — nenhuma anotação inválida (seções sem anotação seguem em modo relatório)")
+print("OK — nenhuma anotação inválida e nenhuma seção sem anotação")
 sys.exit(0)
 PYEOF

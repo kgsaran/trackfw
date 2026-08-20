@@ -599,12 +599,39 @@ apoiados em grep negativo — mais fraco, e ele disse isso em vez de deixar impl
 ## Wave 3 — Tornar bloqueante
 
 ### ML-3A — Checker vira bloqueante
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` · **Dependência:** ML-2A
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` · **Dependência:** ML-2A
 **Critérios de aceite:**
-- [ ] Checker reprova de verdade; `make quality` verde porque a triagem fechou, não porque o checker
+- [x] Checker reprova de verdade; `make quality` verde porque a triagem fechou, não porque o checker
       é permissivo
-- [ ] Seção nova sem anotação **reprova** — provado por cenário
-- [ ] CI verde
+- [x] Seção nova sem anotação **reprova** — provado por cenário
+- [x] CI verde
+
+**Execução:** `scripts/check-parity-contract-coverage.sh` — o branch que contava e listava seção
+sem anotação, sem reprovar, agora também acrescenta a violação (7º caso de reprovação, junto aos 6
+já existentes das Emendas 1/2). Mensagens de relatório atualizadas ("bloqueante desde o ML-3A" em
+vez de "modo relatório"). `Makefile`/gate `parity` já invocava o script (nenhuma mudança necessária
+ali — a ADR previu isso desde o ML-1B).
+
+`scripts/check-gates-falsify.sh`, Cenário 77: o fixture compartilhado `write_s77_fixture()` tinha
+uma 5ª seção ("Unannotated section") propositalmente sem anotação para provar o modo relatório —
+ela foi **removida** do fixture compartilhado (senão os 12 braços 77a-77o, que não testam esse
+caso, passariam a reprovar pelo motivo errado) e ganhou fixture **dedicado**: 77p empilha essa
+mesma seção sem anotação em cima do baseline 77a (que sozinho, com as 4 formas válidas, continua
+passando) e prova, single-delta, que só a ausência de anotação derruba o exit code — com a mensagem
+exata `seção sem anotação trackfw-contract`. Total: 146 cenários (era 145).
+
+Contagem de hoje, confirmada por execução: `gate= 72 · gate+partial 51 · gap 42 · none 12 · sem
+anotação 0 · inválidas 0` — 177/177, igual à contagem que fechou a triagem no ML-2D.
+
+**Validações:**
+```
+bash scripts/check-parity-contract-coverage.sh          -> exit 0 (sem anotação: 0)
+GO_BIN=bin/trackfw bash scripts/check-gates-falsify.sh   -> 146 cenários, exit 0
+TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make parity          -> exit 0
+make quality                                             -> exit 0
+./bin/trackfw validate                                   -> exit 0 (mesmos 18 warnings pré-existentes,
+                                                             nenhum novo)
+```
 
 ---
 
@@ -615,3 +642,28 @@ apoiados em grep negativo — mais fraco, e ele disse isso em vez de deixar impl
 - **Fora de escopo:** exigir gate para tudo. Seção que descreve exceção intencional ou contexto deve
   ser marcada como não-contrato, não ganhar gate inventado.
 - Commits e branch são exclusivos do `trackfw_architect`.
+
+### Auditoria do ML-3A — aprovada; **o bloqueio é fato, não afirmação**
+
+Provei eu mesmo, acrescentando uma seção sem anotação ao documento real:
+
+```
+com secao nova sem anotacao  ->  EXIT=1  "sem anotacao: 1"
+                                 "-- secoes sem anotacao (reprovam — bloqueante desde o ML-3A) --"
+restaurado                   ->  EXIT=0
+146 cenarios · make quality (CI-exata) exit 0 · validate exit 0
+```
+
+**A decisão de fixture dele merece registro**, porque é do tipo que se erra em silêncio: o helper
+compartilhado do Cenário 77 tinha uma 5ª seção **deliberadamente sem anotação**, ali para exercitar
+o antigo modo relatório. Com o bloqueio ligado, ela faria **12 sub-cenários** falharem — todos pelo
+motivo errado, a seção sem anotação em vez do delta pretendido. Ele removeu do fixture compartilhado
+e criou o `77p`, que parte do baseline limpo e acrescenta **um** cabeçalho sem anotação. Delta único
+preservado.
+
+Se ele tivesse apenas "consertado até ficar verde", teríamos 12 cenários passando por acidente e um
+gate novo sem prova. É exatamente o padrão que esta REQ existe para impedir, e ele o evitou dentro
+da própria REQ.
+
+**Wave 3 fechada. REQ pronta para PR.**
+

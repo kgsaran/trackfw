@@ -21478,3 +21478,22 @@ pré-existentes, não relacionados). `make quality` exit 0 (145 cenários de fal
 Go+Node+Python+parity completos, incluindo os gates novos exercitados pelas anotações deste lote).
 Nenhum commit feito — devolvendo ao `trackfw_architect` para auditoria e despacho final da REQ (a
 triagem dos 177 está fechada).
+
+## 2026-08-20 — Zeus (arquiteto) — REQ do contrato pinado completa
+
+Todas as waves fechadas. Mecanismo pronto, triagem completa, checker bloqueante.
+
+```
+177/177 anotadas: gate= 72 (41%) · partial 51 (29%) · gap 42 (24%) · none 12 (7%)
+146 cenarios de falsificacao · make quality CI-exata exit 0 · validate exit 0
+```
+
+**O produto é a lista**, não o checker: 42 contratos sem gate e 51 com cobertura parcial, todos com
+motivo escrito e localizáveis por grep. Vira backlog priorizado.
+
+**Prioridade que recomendo**, e o motivo: a alegação **falsa** de cobertura (Windsurf/Amazon Q) vem
+antes de qualquer lacuna silenciosa. Documento que promete o que não entrega é pior que documento
+omisso — o omisso não engana quem decide.
+
+**Escopo negativo respeitado:** nenhuma lacuna foi fechada. A REQ cria o mecanismo que revela;
+fechar cada uma é trabalho subsequente e priorizável, e provavelmente não vale para todas.
