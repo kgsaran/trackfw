@@ -20836,3 +20836,664 @@ Medição refeita hoje: 53 seções de topo, 122 subseções, 27 scripts de gate
 
 **Backlog restante (4):** i18n nos 3 CLIs · `validate` cego ao hook relativo antigo ·
 `update --dry-run` em symlink quebrado · `release tag` confia em conteúdo local.
+
+## 2026-08-20 — Zeus (arquiteto) — ADR do formato de anotação
+
+Branch criada, roadmap em `wip`. **Escrevi o ADR eu mesmo** — o roadmap original atribuía a decisão
+de formato ao executor, e isso estava errado: decisão material é do arquiteto. Corrigido no roadmap.
+
+Formato: comentário HTML por seção. Três escolhas com motivo registrado — comentário em vez de
+frontmatter (a granularidade é por seção, não por arquivo), `none` exigindo motivo (força a
+distinção contrato/prosa a ser declarada), e o checker validando que o gate **existe** (nomear gate
+inexistente reprova, senão a anotação vira carimbo).
+
+Rejeitei explicitamente inferir cobertura por menção na prosa: hoje 18 seções mencionam gate em
+texto livre, e inferência sobre prosa falha de forma silenciosa.
+
+Próximo: ML-1A aplica o formato em 3 pilotos de naturezas diferentes.
+
+## 2026-08-20 — Apolo (backend) — ML-1A (INÍCIO): aplicar o formato em 3 seções-piloto
+
+Branch `feat/contrato-pinado-no-cli-parity-sem-gate-nomeado` (ativa, não criada por mim — instrução
+explícita de não criar branch/commit/push). Lendo ADR-2026-08-20, roadmap wip e REQ-2026-08-18 antes
+de anotar. Escopo: 3 seções-piloto de `docs/cli-parity.md`, uma de cada natureza (gate óbvio, sem
+gate, não-contrato). Nenhum gate criado, nenhum comportamento de CLI alterado.
+
+## 2026-08-20 — Apolo (backend) — ML-1A (FIM): 3 pilotos anotados, achado central sobre o formato
+
+Anotadas 3 seções em `docs/cli-parity.md` (não commitado — commit é do `trackfw_architect`):
+
+1. **`## Version output`** → `gate=scripts/check-cli-parity.sh` (confirmado no disco; script
+   contém o regex fixo `^trackfw [0-9]+\.[0-9]+\.[0-9]+$` e comparação de bytes entre os 3
+   runtimes, exatamente o que a seção promete).
+2. **`## Vault de conhecimento`** → `gate=` (vazio). Contrato real (tabela pinada de
+   `note_orphan`: severidade default, elevação, comportamento sem `vault/`, formatos de link
+   aceitos), sem nenhum script dedicado. **Achado ao lado:** `note_orphan` está implementado em
+   Go (`internal/validator/validator.go`) e Python (`pypi/trackfw/validator.py`) mas **ausente**
+   em `npm/src/validator/` — divergência real de paridade já em produção, nunca detectada por
+   teste porque cada runtime só se testa contra si mesmo. Não corrigi (fora de escopo do ML);
+   registrado aqui para priorização futura.
+3. **`## i18n locale keys — no orphan keys (ML-2A)`** → `none reason=...`. A própria seção já se
+   autodeclara fora do contrato ("does not otherwise document i18n locale-key parity as a
+   contract"), mas pina um fato falsificável específico (`errors.notFound` removido dos 3 CLIs) —
+   caso genuinamente ambíguo entre prosa histórica e contrato pontual.
+
+**Achado central — o formato do ADR não cobre o terceiro estado que a REQ inteira existe para
+revelar.** O ADR define só duas formas: `gate=<caminho>` (contrato protegido) e
+`none reason=<motivo>` (não-contrato). Não há forma documentada para "isto É contrato, mas
+**nenhum** gate o protege" — exatamente o caso mais valioso da REQ (AC5: "lista de contratos sem
+gate"). Usei `gate=` com valor vazio (chave documentada, valor vazio) por ser a opção que não
+inventa sintaxe nova nem fabrica um caminho de script que não existe (fabricar
+`gate=scripts/check-vault-notes-parity.sh` seria o "carimbo" que o próprio ADR reprova em
+"Consequences" — nomear e não existir vira rot, não intenção). **Decisão a validar antes do
+ML-2A/Hefesto triar as 50 seções restantes:** `gate=` vazio é legível e discriminável de "sem
+anotação", mas o Zeus/arquiteto deve confirmar se este é o valor sentinela oficial ou se prefere
+emendar o ADR com uma terceira forma explícita (ex.: `gate=none`) antes da triagem em escala.
+
+**Medições que respondem às perguntas do ML:**
+- **Nível de anotação:** o documento tem 3 profundidades de heading, não 2 — `##` (53), `###`
+  (122) e **`####` (17, não contado na REQ nem no roadmap)**. Contrato e não-contrato aparecem
+  misturados em profundidades diferentes dentro da MESMA seção de topo: `## Version output`
+  contém `### Gate assertion` (contrato) e `#### What is *not* unified` (não-contrato,
+  explicitamente "deliberately left alone") como filhos diretos. Disclaimers de não-contrato
+  aparecem em pelo menos 8 pontos do documento em profundidades `##`, `###` e `####` (linhas 172,
+  321, 553, 1727, 2650, entre outras) — a divergência de status não se alinha com a profundidade
+  do heading. **Conclusão:** a anotação precisa cobrir os 3 níveis, não só `##`/`###` como a REQ
+  assumia — isso muda o tamanho real da triagem do ML-2A de 175 para ~192 candidatos.
+- **Gate parcial:** `## Vault de conhecimento` é o próprio exemplo — `scripts/check-artifact-parity.sh`
+  cobre a mecânica de criação de nota (arquivo + índice), mas a semântica da regra `note_orphan`
+  (severidade, elevação, comportamento sem `vault/`) não tem gate nenhum. O formato atual não
+  distingue "sem gate algum" de "gate cobre só uma fatia" — ambos ficam `gate=` vazio hoje, o que
+  perde informação. Recomendo ao Zeus decidir se vale a pena (well seria escopo do ML-2A, não
+  deste ML).
+- **Caso ambíguo:** `## i18n locale keys — no orphan keys (ML-2A)` — prosa que se autodeclara não-
+  contrato mas pina um fato específico e falsificável. Marquei `none` seguindo a autodeclaração da
+  própria seção, mas é o tipo de caso que vai se repetir na triagem de 50 seções e merece critério
+  explícito (ex.: "se a seção pina um fato mas se autodeclara não-contrato, vence a
+  autodeclaração").
+
+`./bin/trackfw validate` → exit 0 (warnings pré-existentes, nenhum novo). `make quality` → exit 0
+(rodado em background, log completo, sem regressão — inclusive `check-referential-integrity.sh`
+não reagiu ao comentário HTML novo). Nenhum commit feito — devolvendo ao `trackfw_architect` para
+auditoria e decisão sobre o achado do `gate=` vazio antes do ML-2A.
+
+## 2026-08-20 — Zeus (arquiteto) — o piloto pagou-se
+
+O ML-1A existia para descobrir barato se o formato aguentava. Não aguentava, e melhor saber em 3
+seções do que em 192.
+
+**Emenda 1 ao ADR**, com quatro correções:
+- estado `gap` próprio para "é contrato e nada o protege" — o caso central da REQ não tinha forma.
+  Valor vazio era indistinguível de **omissão**, e a contagem de `gap` é o produto da REQ;
+- `partial=` para cobertura parcial, medida no piloto 2;
+- regra de desempate: **fato falsificável sobre comportamento de CLI ⇒ é contrato**, a
+  autodeclaração não prevalece;
+- universo real: **~192** seções em **três** níveis (`####` não estava contado). ML-2A refatiado.
+
+**Achado lateral, e é a melhor evidência que a REQ podia ter:** `note_orphan` existe em Go e Python
+e **está ausente do Node**, com o `cli-parity.md` documentando-a como contrato. Bastou perguntar
+"qual gate protege esta seção?" — a pergunta do mecanismo produziu a descoberta **antes de o
+mecanismo existir**. REQ aberta no backlog.
+
+Próximo: ML-1A-bis reaplica os pilotos no formato final, para o ML-1B codificar contra ele e não
+contra o provisório.
+
+## 2026-08-20 — Apolo (backend) — ML-1A-bis: 3 pilotos reaplicados no formato final da Emenda 1
+
+**Arquivo:** `docs/cli-parity.md` (só as 3 anotações dos pilotos), roadmap `ROADMAP-2026-08-20-
+contrato-pinado-no-cli-parity-sem-gate-nomeado.md` (ML-1A-bis → ✅ Concluído).
+
+- **Piloto 1** (`## Version output`): sem mudança, `gate=scripts/check-cli-parity.sh` já válido.
+- **Piloto 2** (`## Vault de conhecimento`): `gate=` vazio → `gate=scripts/check-artifact-parity.sh
+  partial=regra note_orphan não comparada entre os 3 CLIs`. Medido: o script exercita a mecânica de
+  `note new` (cenários `note`/`note_index`) nos 3 CLIs; nenhum gate compara a semântica da regra
+  `note_orphan` entre eles — por isso `partial`, não `gap` (existe cobertura parcial, não zero).
+- **Piloto 3** (`## i18n locale keys`): `none reason=...` → `gap reason=...`, sob a regra de
+  desempate da Emenda 1. A seção se autodeclara não-contrato mas fixa fato falsificável presente
+  (`errors.notFound` ausente e sem consumidor nos 3 CLIs); confirmei que não há gate de comparação
+  de chaves de locale entre runtimes (só `check-gates-falsify.sh` menciona i18n, e não testa isso).
+
+**Achado para o ML-1B** (não corrigido aqui, é escopo do checker): o formato atual não impede `=`
+ou `,` dentro do texto livre de `reason=`/`partial=`, o que quebra um parser que faça split ingênuo
+por vírgula/igual. Recomendação registrada no roadmap: parsear por prefixo de chave conhecido até o
+próximo prefixo ou fim de linha, nunca por split cru.
+
+`./bin/trackfw validate` → exit 0 (mesmos warnings pré-existentes, nenhum novo). `make quality` →
+exit 0. Nenhum commit feito — devolvendo ao `trackfw_architect` para auditoria.
+
+## Sessão 2026-08-20 — Apolo (INÍCIO: ML-1B — meta-checker de cobertura de contrato)
+
+Branch `feat/contrato-pinado-no-cli-parity-sem-gate-nomeado` (ativa, sem commit/push — autoridade
+exclusiva do `trackfw_architect`). Roadmap
+`docs/roadmaps/wip/ROADMAP-2026-08-20-contrato-pinado-no-cli-parity-sem-gate-nomeado.md`, ML-1B.
+Escopo: `scripts/check-parity-contract-coverage.sh` (novo), registro no alvo `parity:` do
+`Makefile`, cenário P4 novo em `scripts/check-gates-falsify.sh` (137 → 138). Formato de anotação
+fechado no ADR (Emenda 1 + Nota de parsing) — não decido formato, só implemento o parser.
+
+## Sessão 2026-08-20 — Apolo (FIM: ML-1B concluído)
+
+**Arquivos:** `scripts/check-parity-contract-coverage.sh` (novo), `Makefile` (alvo `parity:`,
+grupo sem `GO_BIN` — o checker não toca o binário Go), `scripts/check-gates-falsify.sh` (Cenário 77
++ contagem final 137→138).
+
+Parser em Python3 embutido (heredoc) por prefixo de chave conhecido (`gate=`/`partial=`/`reason=`),
+fence-aware (ignora `##`/`###`/`####` dentro de blocos ` ``` ` — são templates literais de
+`req new`/`adr new`/`roadmap new` embutidos como exemplo em `docs/cli-parity.md`, não seções reais
+do documento). Universo real medido: `## 39 · ### 121 · #### 17 = 177`, não 192 — o `~192` do
+roadmap/ADR vem de `grep -c` ingênuo, que conta esses 14+1 cabeçalhos de template como se fossem
+seções de verdade. O relatório imprime as duas contagens lado a lado para não obrigar ninguém a
+redescobrir isso no ML-2A.
+
+5 casos de reprovação provados por execução (fixtures em `$WORK` no Cenário 77 do
+`check-gates-falsify.sh`, cobrindo `##`/`###`/`####`, `gate=`/`gap`/`none` válidos e o estado
+`malformed`): gate sem caminho, gate apontando pro vazio, gap sem motivo, none sem motivo, chave
+desconhecida (`reson=`) e prefixo sem estado reconhecido. Braço de não-vacuidade: cópia do checker
+com o `os.path.isfile` neutralizado (sempre `True`) prova que o caso 2 (gate inexistente) fica mudo
+sem essa checagem — script real, não lido, restaurado depois.
+
+**Decisão de escopo, registrada, não corrigida:** `gate=x partial=` com valor vazio conta hoje como
+cobertura plena silenciosamente — mesmo modo de falha que a Emenda 1 rejeitou para `gate=` vazio,
+mas fora dos 5 casos que o ML-1B lista. Não reprovo por isso; deixo registrado para o arquiteto
+decidir se vira um 6º caso.
+
+`make quality` exit 0 · `./bin/trackfw validate` exit 0 · `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make
+parity` exit 0. Nenhum commit feito — devolvendo ao `trackfw_architect` para auditoria.
+
+## Sessão 2026-08-20 — Apolo (INÍCIO: ML-1B-bis — 6º caso de reprovação)
+
+Emenda 2 do ADR fechou a decisão do ML-1B: `partial=` vazio é o 6º caso, generalizado como "toda
+chave presente exige valor não-vazio". Implementando em
+`scripts/check-parity-contract-coverage.sh` como um laço único sobre `kv.items()` (não um `if` por
+chave), e o braço P4 correspondente em `scripts/check-gates-falsify.sh` (Cenário 77).
+
+## Sessão 2026-08-20 — Apolo (FIM: ML-1B-bis implementado, aguardando auditoria)
+
+**Arquivos:** `scripts/check-parity-contract-coverage.sh`, `scripts/check-gates-falsify.sh`
+(Cenário 77, sub-braços `77i`–`77l` + contagem final 138→142).
+
+**Regra geral, não caso a caso:** dentro de `parse_annotation()`, um único laço
+(`for key in sorted(kv): if not kv[key].strip(): ...`) roda ANTES da lógica por estado
+(`gate`/`gap`/`none`) e reprova qualquer chave presente com valor vazio, nomeando a chave na
+mensagem (`"%s= presente com valor vazio" % key`). Isso substituiu os dois checks específicos que
+existiam para `gate=` vazio e `reason=` vazio — ambos removidos como código morto, já que o laço
+geral sempre reprova (e dá `continue`) antes de o código específico rodar. O check específico que
+sobrou é só para **chave ausente** (`reason` nunca escrita), que é semântica distinta de
+"escrita e vazia" — `gap`/`none` sem a chave `reason` continua com a mensagem antiga
+("sem reason= (motivo obrigatório)"), preservada porque é um caso diferente do que a Emenda 2
+resolve.
+
+**Mensagem pinada mudou** (critério explícito da tarefa: "mensagem nomeia qual chave está vazia"):
+`"gate= sem caminho nomeado (vazio)"` → `"gate= presente com valor vazio"`. Confirmado por grep que
+nada mais no repo (scripts/docs) pinava o texto antigo.
+
+**Braço P4 (Cenário 77 de `check-gates-falsify.sh`):** entra como sub-braços dentro do MESMO
+cenário 77, não um cenário novo — segue a convenção existente (77a–h já eram sub-braços de um único
+gate). Adicionei:
+- `77i` — `partial=` vazio reprova (nunca tinha check dedicado antes desta ML)
+- `77j` — `reason=` vazio no estado `gap` (distinto de `77d`, que testa a chave AUSENTE, não vazia)
+- `77k` — o mesmo para o estado `none` (distinto de `77e`), provando que o branch
+  `state in ("gap", "none")` compartilhado aplica a regra aos dois estados
+- `77l` — não-vacuidade: neutraliza o LAÇO geral (`for key in sorted(kv):` → `for key in []:`) numa
+  cópia isolada e prova que `77i` fica mudo — isolando que é o laço, não um check específico
+  remanescente, quem sustenta a detecção (a auditoria do arquiteto tinha marcado isso como
+  obrigatório antes do handoff, pelo mesmo padrão do `77h` pré-existente)
+
+Cada arma de `77i`/`77j`/`77k` é single-delta contra o baseline `77a` (só uma das 4 linhas do
+fixture muda por cenário). Contagem final do echo: 138 → 142 (4 arms novos).
+
+**Header do checker também renumerado:** a lista de 5 casos virou 6, alinhando com a linguagem do
+próprio ADR ("6º caso de reprovação") — caso 6 é a regra geral e explicitamente marcado como
+"subsume o caso 1" (gate= vazio).
+
+**Achado fora de escopo, registrado e não corrigido** (mesmo padrão do achado que o ML-1B me
+passou): uma chave desconhecida escrita DEPOIS de uma chave conhecida (`gap reason=x reson=y`) é
+engolida como parte do valor livre de `reason=` em vez de reprovar — o check de chave desconhecida
+só olha o prefixo `leading` antes da primeira chave reconhecida. Não é o 6º caso e não deveria virar
+correção não pedida; fica registrado para o arquiteto decidir.
+
+**Validações:** `bash scripts/check-parity-contract-coverage.sh docs/cli-parity.md` exit 0 (estado
+atual do repo continua limpo). Cenário 77 completo (a–l, 15 asserções) rodado isolado via harness
+extraído do próprio `check-gates-falsify.sh` — todas `OK`. `./bin/trackfw validate` exit 0 (só os
+mesmos warnings pré-existentes, nenhum novo). `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make parity`
+disparado (roda `check-gates-falsify.sh` completo com `GO_BIN` setado, forma CI-exata) — em
+andamento no momento deste registro, resultado a confirmar na auditoria. Nenhum commit feito —
+devolvendo ao `trackfw_architect` para auditoria.
+
+## 2026-08-20 — Zeus (arquiteto) — Wave 1 do contrato pinado fechada
+
+Mecanismo pronto: formato em ADR com 2 emendas, meta-checker com 6 classes de reprovação + regra
+geral de valor não-vazio + chave desconhecida em qualquer posição, 145 cenários de falsificação,
+invocação CI-exata verde.
+
+**Três lotes corretivos saíram de devoluções do próprio executor** — `gate=` vazio, `partial=` vazio,
+chave desconhecida posicional. Nas três ele sinalizou sem corrigir, e nas três a lacuna era real.
+A terceira era conformidade contra o meu próprio ADR: a regra estava escrita, a implementação não a
+cumpria.
+
+Heurístico de typo testado por mim na fronteira, não no caminho feliz: `gatee=` é pego (contra o que
+o relatório dizia), `raeson=` escapa (falso-negativo aceito), `rate=10` reprova (falso-positivo real,
+aceito — o dano é recusa com mensagem clara; o dano oposto é silêncio).
+
+**Próximo: ML-2A, a triagem de 177 seções.** É o lote caro da REQ e o produto mais valioso —
+a lista de contratos sem gate. Refatiar antes de despachar.
+
+## 2026-08-20 — Hefesto (code quality) — ML-2A, lote 1/4 (linhas 35–1209, 44 seções) — início
+
+Recebido: anotar as 44 seções entre as linhas 35 e 1209 de `docs/cli-parity.md` (3 pilotos já
+anotados por outro executor). Formato fechado pelo ADR-2026-08-20 (Emendas 1 e 2). Branch
+`feat/contrato-pinado-no-cli-parity-sem-gate-nomeado`, sem commit/push (devolvendo ao
+`trackfw_architect`).
+
+## 2026-08-20 — Hefesto (code quality) — ML-2A, lote 1/4 concluído
+
+**41 seções novas anotadas** (+ 3 pilotos pré-existentes = 44 do lote). Método: para cada seção,
+grep pela alegação falsificável específica dentro de `scripts/check-*.sh` (não pelo nome do script —
+vários gates com nome plausível não cobrem o que a seção afirma) e leitura do trecho relevante do
+gate antes de decidir. Não usei `gate=` sem confirmar que o script citado realmente exercita a
+alegação da seção; várias vezes um gate existe e cobre um aspecto adjacente mas não o pinado ali —
+nesses casos usei `gap`, nunca carimbei.
+
+**Contagem final do lote (linhas 35–1209), após 2 rodadas de correção pós-revisão:** `gate=` pleno:
+17 · `gate=` com `partial=`: 9 · `gap`: 17 · `none`: 1 (só "Site documentation drift" — prosa de
+documentação, fora do domínio de comportamento de CLI). Total 44. Confirmado por
+`bash scripts/check-parity-contract-coverage.sh` (exit 0, zero anotação inválida).
+
+**Segunda correção:** "OpenCode agent representation" (linha 390) estava `gap`, mas
+`check-identity-parity.sh` deriva sua lista de targets do catálogo (`support_level != unsupported`)
+e `opencode` está nela (`support_level: native`) — rodei o gate isolado e confirmei "opencode" nos
+12 target/surface comparados byte a byte. Virou `gate=...partial=` (o diff de bytes não discrimina
+as RAZÕES pinadas da representação — mode fixo, omissões deliberadas — só a igualdade entre os 3).
+Já "Canonical governance references" (linha 198) fiquei em dúvida se `check-validate-parity.sh`
+cobriria incidentalmente a regra de match literal sem fallback por basename — li o script e a
+fixture dele testa `adr_accepted_when_req_done`/`blocked_by_draft_adr`, nunca uma referência
+basename-only ou de diretório de estado errado; `gap` confirmado como estava.
+
+**Correção pós-revisão (4 seções ajustadas antes de fechar o lote):** a primeira passada tinha 3
+`none` — revisão apontou que 2 delas (linha 64 "Source of the string per runtime" e linha 115 "What
+is *not* unified") pinam fatos falsificáveis e não deveriam usar `none` só porque a seção se
+autodescreve como não-vinculante; virei `gate=` com `partial=` para as duas (a 64 é coberta
+indiretamente por `check-release-tag-parity.sh`, que checa os 4 arquivos-fonte de versão incluindo
+o fallback duplo do `pypi/trackfw/__init__.py`; a 115 tem sua exigência positiva coberta por
+`check-cli-parity.sh`, só a tabela de mensagem/exit-code por flag desconhecida arbitrária fica sem
+gate). Também troquei `gap` por `gate=...partial=` nas linhas 592 e 626 (Shared configuration/Slug
+contract): `check-identity-parity.sh` existe e cobre boa parte (fallback sem identity.json byte a
+byte; slugs de preset hardcoded), então nomear `gap` teria escondido a cobertura real que existe —
+exatamente o "colapsava em vazio" que a Emenda 1 do ADR corrige com `partial=`. E ampliei o
+`partial=` da linha 706 (`trackfw ship`) para registrar que quase nenhum cenário de
+`check-ship-parity.sh` executa os passos 5–7 ponta a ponta (roda com
+`TRACKFW_DISABLE_EXTERNAL_COMMANDS=1` e majoritariamente `--no-pr`/`--dry-run`).
+
+**Gaps mais arriscados, na minha leitura (não exaustivo — critério é blast radius x chance de
+divergência silenciosa):**
+1. **"Behavioural divergence from `trackfw validate`" (linha 783/839)** — a diferença central que a
+   seção existe para pinar (`ship` ignora `governance_mode: lenient`, `validate` não) nunca é
+   testada: `check-ship-parity.sh` só prova o bloqueio com config default, nunca fixa
+   `governance_mode: lenient` no fixture. Um regresso que fizesse `ship` passar a respeitar lenient
+   mode passaria batido — é exatamente o cenário que motivou a seção existir.
+2. **"Install scope (`--scope`)" (linha 446)** — a tabela de resolução D5/D6/D8 (default global sem
+   `--scope`/sem TTY, erro obrigatório em `uninstall` não-interativo) não é exercitada por nenhum
+   gate; os gates de integração existentes sempre passam `--scope` explícito. É a superfície mais
+   usada do install e a mais fácil de regressar sem ninguém notar.
+3. **"`req list` / `req move`" (linha 268)** — lógica de discovery por layout (flat/by_agent) e a
+   discriminação in-place-vs-physical-move não tem gate cross-CLI algum. É tão intrincada quanto
+   `roadmap move` (que tem gate dedicado) mas ficou sem.
+4. **"`update` refusing unmanaged content"** — a própria seção já se autodeclara
+   "Parity gap, not yet closed by a gate"; incluí como está, não inventei cobertura.
+5. **"Validator `stale_wip` and inspection errors"** e **"JSON Schema artifacts"** — nenhum gate
+   cross-CLI; `check-artifact-parity.sh` tem uma lista fixa de `KINDS` que não inclui os schemas.
+
+**Hesitações:**
+- Seção 115 ("What is *not* unified") e 178 ("Site documentation drift") — marquei `none`, mas ambas
+  pinam fatos mensuráveis (baseline de mensagens de erro; o que foi trocado no site). Decidi que
+  `none` cabe porque as duas se auto-declaram explicitamente FORA do contrato com motivo específico
+  (não "não achei gate") — é o oposto do modo de falha que a REQ nomeia. Se o critério for "qualquer
+  fato mensurável é contrato", essas duas viram `gap` em vez de `none`; sinalizando para decisão do
+  arquiteto se o piloto motivar ajuste.
+- Seção 592 ("Shared configuration") e 626 ("Slug contract") — o gate `check-identity-parity.sh`
+  existe e tem nome certo, mas ao ler o script vi que ele só compara fixtures/artefatos com preset
+  fixo; não exercita `schema_version` inválido, os fallbacks de arquivo ausente, nem o modo `custom`
+  de slugificação dinâmica que a seção pina. Marquei `gap` em vez de `gate=` — o nome do script bateu
+  mas o conteúdo não cobria a alegação específica.
+
+**Discordâncias com os 3 pilotos:** nenhuma. Concordo com o `partial=` em "Vault de conhecimento" e
+com o `gap` em "i18n locale keys".
+
+**Validações:** `bash scripts/check-parity-contract-coverage.sh` exit 0 (17 gate / 4 partial / 20
+gap / 3 none / 133 sem anotação / 0 inválida — as 44 seções do lote todas classificadas, nenhuma
+fora do intervalo tocada). `./bin/trackfw validate` exit 0 (só os warnings pré-existentes). `make
+quality` exit 0 (Go+Node+Python+parity completo, incluindo os 145 cenários de
+`check-gates-falsify.sh`). Nenhum commit feito — devolvendo ao `trackfw_architect` para auditoria e
+para despachar os lotes 2–4.
+
+## Sessão 2026-08-20 — Hefesto (INÍCIO: ML-2B — triagem de cobertura de contrato, lote 2/4)
+
+Branch `feat/contrato-pinado-no-cli-parity-sem-gate-nomeado`, roadmap
+`docs/roadmaps/wip/ROADMAP-2026-08-20-contrato-pinado-no-cli-parity-sem-gate-nomeado.md` em `wip/`.
+Escopo: as 44 seções seguintes às do lote 1 (linhas 1312–2750 no documento antes da minha edição),
+cobrindo `trackfw branch prune`, `trackfw barrier`, `trackfw update`/`update harness`, wiring de
+hooks de credential-guard por CLI (projeto e global) e o preflight de skip de `install`. Nenhum
+commit/push (autoridade exclusiva do `trackfw_architect`).
+
+## Sessão 2026-08-20 — Hefesto (FIM: ML-2B concluído — 36 gate / 5 gate+partial / 2 gap / 1 none)
+
+**Contagem do lote 2:** `gate=` 36 · `gate=` com `partial=` 5 · `gap` 2 · `none` 1 · 0 inválidas — as
+44 seções do intervalo, todas classificadas.
+
+Contraste com o lote 1 (39% gap): este lote é **muito mais coberto** — só 2/44 (4,5%) é `gap` puro
+(mais 5 `partial`). Não é acaso: os tópicos deste lote (`branch prune`, `barrier`, `update`/`update
+harness`, wiring de hooks) são features recentes (agosto/2026) construídas já com gate cross-CLI
+dedicado desde o primeiro ML — `check-branch-prune-parity.sh`, `check-barrier.sh`,
+`check-update-parity.sh`, `check-agent-hooks-parity.sh`, `check-harness-hooks-parity.sh`. Ao
+contrário do lote 1, cuja alta taxa de `gap` vinha de contratos mais antigos, documentados por
+prosa/leitura de código sem gate dedicado nunca ter sido escrito. **Sinal de priorização:** a
+proporção de `gap` não é uniforme pelo documento — concentra-se em seções antigas, não recentes;
+convém que os lotes 3/4 verifiquem se esse padrão se mantém.
+
+**Lista de `gap` ordenada por risco:**
+1. **`### Edge cases not reached by the eight mandated scenarios` (barrier, era linha 1718)** — 4
+   casos de borda (bloco de aceite vazio, wave sem MLs, wave sem título, gate morto por sinal) só
+   têm teste unitário por runtime; nenhum cenário do `check-barrier.sh` os exercita cross-CLI. Risco
+   moderado: o `barrier` é o binário que decide se uma wave libera — um destes 4 casos divergindo
+   silenciosamente entre runtimes afetaria diretamente o gate que audita todos os outros gates.
+2. **`### 'trackfw.yaml' fields consumed by 'update' and 'sync'` (era linha 1773)** — nenhum gate
+   cross-CLI exercita o efeito dos 12 campos `Update`/`Sync` (`hooks`, `ci`, `backend`, `frontend`,
+   `pkg_manager`, `agent_conventions`, `linear_*`, `jira_*`) na saída gerada. Risco maior em termos
+   de superfície (12 campos, 2 integrações externas — Linear/Jira), mas mitigado por já ter sido
+   fechado uma vez nesta seção (Python não lia 5 desses campos, corrigido nesta REQ) — a lacuna
+   remanescente é "sem prova formal de que não regride", não "sabidamente quebrado".
+
+**Um achado de `gate=` que quase virou falso-positivo (lição 2 aplicada):** a seção "`credential_guard.mode`" citava um teste (`TestCredentialGuardScript_ParityAcrossStacks`) sem eu confirmar se ele
+de fato invoca Node/Python. Rodei `grep` no arquivo (`internal/generators/credential_guard_test.go`)
+e confirmei que o teste Go **invoca os geradores Node e Python via subprocesso** e compara os 3
+scripts byte a byte — é um gate cross-CLI genuíno, só que vive como teste Go em vez de
+`scripts/*.sh`. Marquei `gate=internal/generators/credential_guard_test.go` (path não-`.sh`, mas o
+ADR não exige extensão) com `partial=` porque esse teste prova paridade do script GERADO, não o
+fallback silencioso de um `mode` não reconhecido para `warn` nem a divergência real de comportamento
+`warn`/`block` em runtime — isso não tem gate.
+
+**Dois `partial=` que vieram de medição, não de leitura:** em "`### The touched-files heuristic`"
+(branch prune) confirmei por `grep` que `check-branch-prune-parity.sh` não constrói fixture para as
+linhas `no_own_work`/`no_merge_base` da tabela de decisão (só `content_identical`,
+`review_doc_config`, `pending_work` têm cenário). Em "`### Deletion: '-d' before '-D'`" confirmei que
+o gate cross-CLI só exercita o fallback `-d`→`-D` (branch squash, sem ancestria) — o caminho onde
+`-d` sozinho basta (merge não-squash) só tem prova por teste unitário isolado por runtime
+(`TestDefaultDeleteBranch_TriesDashDBeforeDashD_BothCodepaths` em Go e equivalentes em Node/Python,
+cada um "concordando consigo mesmo" — exatamente o padrão de risco que a REQ nomeia).
+
+**Hesitações:**
+- "`#### Ordering has no call site — helper is optional`" (barrier) — marquei `none`, não `gap`: a
+  seção descreve uma regra normativa para um comportamento que **não existe ainda** (nenhum comando
+  lista/compara waves hoje). Não há comportamento de CLI presente para falsificar. Se a leitura for
+  "regra normativa é sempre contrato, mesmo sem superfície hoje", isso vira `gap` — sinalizando para
+  o arquiteto, mesmo padrão de decisão dos pilotos.
+- "`## trackfw update vs trackfw update harness`" e as 6 subseções de `## install sobre artefato
+  gerenciado desatualizado`" — marquei `gate=scripts/check-update-parity.sh` para todas, reaproveitando
+  a mesma evidência (cenários 6/7/8 do gate provam byte-a-byte a mensagem de skip, incluindo path
+  tilde-abreviado e comando de remediação). Achei razoável não subdividir em `partial` por não achar
+  nenhuma alegação específica da seção que o gate deixasse de exercitar — mas não testei cada um dos
+  4 estados (`updated`/`skipped`/`missing`/`failed`) isoladamente por leitura de asserção, só por
+  comparação estrutural JSON go-vs-node/go-vs-py; se o critério exigir prova por estado individual,
+  vale revisão.
+
+**Discordâncias com o piloto/lote 1:** nenhuma.
+
+**Correção pós-autorrevisão (antes de fechar o ML), 6 reclassificações de `gate=`/`none` para
+`partial=`/`gap` — nenhuma delas tinha sido confirmada por leitura de asserção, só por nome de
+cenário ou por "não achei teste contrário":**
+- `#### Suporte por CLI — visão consolidada, escopo DE PROJETO` — `gate=` → `partial=`: a própria
+  seção declara cobertura de sabotagem e2e em só 3 de 6 CLIs; eu tinha essa evidência no relatório e
+  não a apliquei na primeira passada.
+- `#### Ordering has no call site` (barrier) — `none` → `gap`: a regra de desempate da Emenda 1 diz
+  que fato falsificável presente (`compareWaveLabels` coberto só em Go) prevalece sobre
+  autodeclaração de "sem superfície hoje"; eu tinha registrado isso como hesitação e decidido errado.
+- `### Contrato` (install skip) — `gate=` → `partial=`: confirmei por grep que a linha `modified`
+  (erro, exige `--force`) da tabela não tem cenário no gate, só a linha `outdated+owned`.
+- `### Superfície do sinal de skip` — `gate=` → `partial=`: a exigência "uma vez por artefato, nunca
+  duas" precisa de fixture com múltiplos artefatos pulados; o gate só exercita um por cenário.
+- `### Roadmap parsing rules` (barrier) — `gate=` → `partial=`: regras 3/4/5 cobertas pelos cenários
+  isolated-check; regra 6 (fence não-terminado, ML sem delimitação) sem cenário.
+- `### Declared project targets` / `### Declared harness targets` — `gate=` → `partial=`: aplicando o
+  mesmo critério do achado "OpenCode agent representation" do lote 1 — comparação estrutural go-vs-
+  node/go-vs-py prova que os 3 runtimes concordam entre si, não que a contagem/ordem bate com os 5/33
+  ids documentados; os três concordando com uma lista errada ainda passaria.
+
+**Contagem final do lote 2, pós-correção:** `gate=` 30 · `gate=` com `partial=` 11 · `gap` 3 ·
+`none` 0 — 5,4% `gap` puro (2 originais + `Ordering has no call site`), mas **25% da amostra (14/44)
+com alguma ressalva** (`partial`+`gap`) quando a verificação vai além do nome do gate. Ainda assim
+muito mais coberto que o lote 1 (39% `gap`), e a leitura continua válida: features recentes chegaram
+com gate cross-CLI dedicado desde o primeiro ML; a diferença é que "ter um gate nomeado" não é o
+mesmo que "o gate cobrir cada alegação da seção" — o produto real desta REQ é essa distinção, e a
+autorrevisão a aplicou tarde demais na primeira passada.
+
+**Lista de `gap` ordenada por risco (atualizada):**
+1. **`#### Ordering has no call site — helper is optional` (barrier)** — fato falsificável hoje
+   (Go tem `compareWaveLabels` testado; Node/Python não) sem gate cross-CLI. Risco baixo em termos
+   de impacto de produto (não há call site ainda), mas é o tipo exato de lacuna que a regra de
+   desempate existe para não deixar passar por autodeclaração.
+2. **`### Edge cases not reached by the eight mandated scenarios` (barrier)** — 4 casos de borda só
+   com teste unitário por runtime. Risco moderado: afeta o binário que audita todos os outros gates.
+3. **`### 'trackfw.yaml' fields consumed by 'update' and 'sync'`** — nenhum gate cross-CLI para os
+   12 campos `Update`/`Sync`. Mitigado por já ter sido fechado uma vez nesta seção (Python não lia
+   5 campos, corrigido nesta REQ).
+
+**Hesitação que sobrou, não resolvida:** nenhuma seção deste lote foi marcada `none` no fechamento —
+a única candidata (`Ordering has no call site`) virou `gap` na correção. Sinalizando ao arquiteto:
+se isso for um padrão nos lotes 3/4 também, pode indicar que o critério de desempate da Emenda 1 é,
+na prática, quase sempre resolvido a favor de `gap`/`gate`, o que é o comportamento pretendido, mas
+vale confirmar que não é super-marcação.
+
+**Segunda rodada de correção (mesma classe, achada por segunda auditoria antes de fechar):** três
+`gate=` a mais reclassificados para `partial=`, todos pelo mesmo padrão — o gate prova que os 3
+runtimes concordam ENTRE SI, não que concordam com o texto/regra especificamente PINADO pela seção:
+- `### Offline / no remote — fails closed` (branch prune) — o cenário prova exit 1 e zero deleções,
+  mas não afirma o texto pinado `branch prune: origin/main not resolvable` (grep vazio).
+- `### JSON document` (barrier) — o cenário 6 usa fixture 100% verde e prova só concordância entre
+  runtimes; não afirma os formatos pinados de `evidence`/`failures` (`<ML-id>: <n> criteria met`,
+  `<command>: exit 0`) contra valor esperado, e nenhum cenário produz `failures[]` não-vazio.
+- `#### Origem do comando de remediação — pinada` (install skip) — os cenários 6/7 são cada um de
+  escopo uniforme (só global, só projeto); a seção diz que as derivações proibidas só erram num lote
+  de escopo MISTO, e essa fixture discriminante não existe no gate.
+
+**Contagem final do lote 2, pós-2ª correção:** `gate=` 27 · `gate=` com `partial=` 14 · `gap` 3 ·
+`none` 0 = 44.
+
+**Nível de verificação, para o arquiteto mirar a auditoria:** os ~27 `gate=` finais foram confirmados
+no nível de "cenário existe e cobre a topologia da seção" (nome do cenário lido, alegações centrais
+conferidas por grep/leitura do script) — não houve mapeamento alegação-a-asserção linha por linha
+para cada um dos 44. Os 17 `gate=`→`partial=`/`gap` (2 rodadas de correção) vieram de checar
+especificamente se uma alegação pinada (string literal, linha de tabela, "uma vez nunca duas") tinha
+asserção correspondente no script — esse nível mais fundo não foi aplicado às ~27 seções que
+permaneceram `gate=` puro. Se a auditoria do arquiteto amostrar 2–3 dessas 27 com o mesmo padrão
+(comparação estrutural sem string pinada específica testada), é provável que existam outras.
+
+**Validações (pós-2ª correção):** `bash scripts/check-parity-contract-coverage.sh` exit 0 (contagem
+acumulada: 44 gate / 23 partial / 20 gap / 1 none / 89 sem anotação / 0 inválida — as 88 seções dos
+lotes 1+2 classificadas, nenhuma fora do intervalo tocada). `./bin/trackfw validate` exit 0 (só os
+warnings pré-existentes, não relacionados a esta REQ). `make quality` exit 0 (Go+Node+Python+parity
+completo, rodado de novo após a 2ª correção). Nenhum commit feito — devolvendo ao `trackfw_architect`
+para auditoria e para despachar os lotes 3–4.
+
+## Sessão 2026-08-20 — Hefesto (ML-2C: triagem de cobertura de contrato, lote 3/4)
+
+Branch `feat/contrato-pinado-no-cli-parity-sem-gate-nomeado` (não commitada — autoridade exclusiva
+do `trackfw_architect`). Anotadas as 44 seções do 3º quarto de `docs/cli-parity.md`
+(`#### update --install-missing...`, linha 2899 original, até `## Plugin subsystem — removed`),
+seguindo a chamada de calibração feita ao advisor antes de escrever (ver histórico da sessão):
+`none` só para conteúdo genuinamente não-CLI (citações, tabelas de semântica de CLI de terceiro,
+registros de refutação/decisão de arquitetura, referências cruzadas puras) — descartei 3 `none`
+iniciais mal calibrados (`update --install-missing`, `Implementação canônica`, `Nota de teste`) que
+o advisor identificou como comportamento falsificável do trackfw disfarçado de autodeclaração.
+
+**Contagem final do lote 3 (recalculada a partir dos deltas do checker, corrigida após auditoria do
+advisor — a contagem manual inicial estava errada):** `gate=` plena 12 (27%) · `gate=` com `partial=`
+13 (30%) · `gap` 12 (27%, inclui a reclassificação de "A decisão de arquitetura" de `none`→`gap` na
+2ª correção) · `none` 7 (16%) = 44.
+
+**Achado de maior risco (topo da lista, por impacto):** a regra `branch_has_wip_roadmap` (linha
+2946 original) — desde a REQ-2026-07-26, passou a aceitar roadmap em `done/`, não só `wip/`. Nenhum
+gate cross-CLI posiciona um roadmap correspondente em `done/`, nem no caso de match nem no de slug
+divergente: `check-branch-new-parity.sh` só testa roadmap em `wip/` e ausência total; `check-commit-
+parity.sh`/`check-ship-parity.sh` idem; `check-validate-parity.sh` não tem nenhuma ocorrência de
+"branch_has_wip_roadmap"/"wip/ nor done/". A mudança central da REQ nunca é exercitada cross-CLI —
+verificado por grep negativo nos 4 scripts, não por leitura de trecho (nível de verificação:
+grep-negativo confirmado em múltiplos arquivos, mais forte que grep único).
+
+**Segundo achado de risco:** `## Controle positivo do credential-guard` e sua subseção "1. O que a
+regra faz" (regra `credential_guard_hook_resolvable`) — a única prova de não-vacuidade
+(`check-gates-falsify.sh` Cenário 47) exercita **só o CLI Go** por desenho explícito do próprio
+comentário do cenário ("Por que só o CLI Go"); Node.js e Python têm cobertura apenas via suíte de
+teste unitária interna ao próprio runtime, nunca cross-CLI. Mesmo padrão structural em `## Modo
+default do credential-guard GLOBAL — warn → block`: nenhum gate executa o script gerado para
+confirmar o fallback `DEFAULT_MODE=block` (global) vs `warn` (projeto) — só a estrutura do wiring
+JSON é comparada, não a leitura de `credential_guard.mode` em runtime.
+
+**Terceiro, `adr new --scope global`/`adr list`:** grep confirma zero ocorrência de "adr" combinado
+com "--scope" ou "adr list" em qualquer `check-*.sh` — só o template default (`--scope project`
+implícito) é coberto por `check-artifact-parity.sh`.
+
+**Hesitações/reclassificações da autorrevisão:** o bloco de semântica de falha de hook por CLI
+(seções "Semântica de falha..." a "Controle positivo...", ~14 seções) foi o de maior risco de
+miscalibração no sentido oposto (gap em excesso) — usei o discriminador "pina comportamento do
+trackfw, ou só semântica/rationale de terceiro?": tabelas de fail-open de CLIs de terceiro,
+discriminadores de log de vendor, registro de hipótese refutada e referências cruzadas puras viraram
+`none` (8 no total, ante 1 no documento inteiro antes deste lote — proporção concentrada nesse bloco
+específico, não distribuída); parágrafos que citam código/mecanismo do próprio trackfw (exit 2 +
+stderr do gerador, `os.WriteFile(...,0755)`, leitura de `credential_guard.mode`) viraram `gap`.
+
+**Comparação com os lotes 1/2:** lote 1 = 39% gap / 20% partial (contrato antigo, nunca gateado);
+lote 2 = 7% gap / 32% partial (features recentes, já nasceram com gate). Este lote fica em 27% gap /
+30% partial / 16% none — perfil misto: mais gap que o lote 2 mas menos que o lote 1, com o gap
+concentrado quase todo em um único bloco temático (o investigativo de segurança do credential-guard/
+git-branch-guard fail-open, ~14 seções) mais dois achados isolados fora desse bloco
+(`branch_has_wip_roadmap`, `update --install-missing`) — não distribuído uniformemente como nos
+lotes 1/2.
+
+**Nível de verificação:** grep negativo confirmado em múltiplos scripts para os 2 achados de maior
+risco (branch_has_wip_roadmap, credential_guard_hook_resolvable); leitura de trecho de gate para
+todos os `gate=`/`partial=` restantes (não apenas grep de nome de regra); os 8 `none` foram decididos
+pelo discriminador explícito acima, não por omissão.
+
+**Ressalva de integridade não verificada:** todos os `Edit` usaram `old_string` casando o texto
+existente verbatim (âncora correta confirmada), mas a prosa reproduzida na cauda de cada `new_string`
+não foi diffada de volta contra o original após a escrita — um typo silencioso na cauda teria mudado
+prosa sem que o checker (só valida sintaxe de anotação) ou a contagem de 177 seções detectassem.
+Pedido ao `trackfw_architect`: confirmar 0 deleções de prosa em `docs/cli-parity.md` no diff.
+
+**Validações:** `bash scripts/check-parity-contract-coverage.sh` exit 0 (56 gate / 36 partial / 32
+gap / 8 none / 45 sem anotação / 0 inválida — acumulado dos 3 lotes; as 45 restantes começam
+exatamente em `## Unknown top-level command`, escopo do ML-2D, não tocado). `./bin/trackfw validate`
+exit 0 (só os 18 warnings pré-existentes, não relacionados a esta REQ). `make quality` exit 0 (145
+cenários de falsificação, Go+Node+Python+parity completos). Nenhum commit feito — devolvendo ao
+`trackfw_architect` para auditoria e despacho do lote 4 (ML-2D).
+
+## Sessão 2026-08-20 — Hefesto (INÍCIO: ML-2D — triagem de cobertura de contrato, lote 4/4, o último)
+
+Branch `feat/contrato-pinado-no-cli-parity-sem-gate-nomeado`, roadmap
+`docs/roadmaps/wip/ROADMAP-2026-08-20-contrato-pinado-no-cli-parity-sem-gate-nomeado.md`. Escopo: as
+45 seções de `docs/cli-parity.md` sem anotação, começando em `## Unknown top-level command` (linha
+~4012) até o fim do documento (`### Dois defeitos reais de paridade...`, doctor). Verificação: gate
+por gate lido diretamente (`check-unknown-command-parity.sh`, `check-gates-falsify.sh` cenários
+47-76, `check-commit-parity.sh`, `check-release-tag-parity.sh`, `check-thirdparty-parity.sh` Partes
+A-D, `check-serve-address-parity.sh`, `check-doctor-parity.sh`, `check-harness-hooks-parity.sh`,
+`check-agent-hooks-parity.sh`), não por grep de nome de regra. Nenhum gate criado. Sem commit
+(autoridade exclusiva do `trackfw_architect`).
+
+## Sessão 2026-08-20 — Hefesto (FIM: ML-2D concluído — triagem fechada, 0 seções sem anotação)
+
+**Contagem do lote 4 (45 seções):** `gate=` plena 16 (36%) · `gate=` com `partial=` 15 (33%) · `gap`
+10 (22%) · `none` 4 (9%).
+
+**Contagem final consolidada (177 seções, os 4 lotes):** `gate=` plena 72 (41%) · `gate=` com
+`partial=` 51 (29%) · `gap` 42 (24%) · `none` 12 (7%) · sem anotação 0 · inválida 0. Conferido
+aritmeticamente: 72+51+42+12 = 177; delta do lote 4 sobre a baseline dos 3 lotes anteriores
+(56/36/32/8) bate exatamente com as 45 seções deste lote.
+
+**Lista de `gap` do lote 4, por risco:**
+1. **"Caminhos confirmados — Windsurf e Amazon Q"** — a seção afirma "byte-identidade confirmada
+   via `check-agent-hooks-parity.sh` e `check-harness-hooks-parity.sh`", mas grep confirma ZERO
+   ocorrências de "windsurf"/"amazon"/"q_cli" em nenhum dos dois scripts (`CLIS="claude codex
+   gemini cursor copilot kiro"` em ambos) — não é lacuna declarada, é alegação de cobertura que não
+   existe. Mesmo padrão no cabeçalho "Git branch guard por runtime" (tabela dos 7 runtimes).
+2. **D6-bis** (redação de query string da URL antes de persistir em quarentena/provenance) — zero
+   gate; risco de segredo (token pré-assinado) versionado no git se a redação regredir.
+3. **D4-bis** (`--scope global` do third-party — aviso e flag `--yes-global-scope-unverified`) —
+   zero gate; instalação fora do perímetro do `validate` sem prova de que o aviso de fato aparece.
+4. **"O que continua aberto"** (Ancoragem no HEAD) — `governance_mode: lenient` converte as 3
+   regras de guard em warning sem gate que confirme o blast radius.
+5. **"Dois limites descobertos ML-3B"** — auto-silenciamento da regra `mode_downgrade` via edição
+   não commitada + `rules: off` simultâneos, sem teste adversarial.
+
+**Top-5 consolidado dos 4 lotes (julgamento comparativo, não repete listas por lote):**
+1. **Windsurf/Amazon Q (lote 4)** — único achado dos 4 lotes que é alegação FALSA de cobertura, não
+   lacuna declarada; pior categoria porque o leitor confia na frase.
+2. **`credential_guard_hook_resolvable`/"O que ela NÃO cobre" (lote 3, linha ~3701-3798)** —
+   controle de segurança central do ADR-2026-08-12 (mitigação de fail-open); não-vacuidade provada
+   só no CLI Go (Cenário 47, "por que só o CLI Go" no próprio comentário); nenhuma via adversarial
+   (sobrescrever o script, editar `credential_guard.mode`) é exercitada por gate ou teste.
+3. **D6-bis, redação de URL (lote 4)** — vetor concreto de vazamento de segredo versionado, zero
+   gate.
+4. **Modo default do credential-guard GLOBAL warn→block (lote 3, linha ~3887)** — nenhum gate roda
+   o script gerado sem `trackfw.yaml` para confirmar o fallback; só a estrutura do wiring JSON é
+   comparada.
+5. **`branch_has_wip_roadmap` aceitando `done/` (lote 3, linha ~2958)** — mudança central da
+   REQ-2026-07-26 nunca exercitada cross-CLI (grep negativo em 4 scripts).
+
+**O que a distribuição dos 4 lotes diz:** cobertura é forte (quase só `gate=`) onde uma REQ recente
+criou um script de gate NO MESMO ML da mudança (doctor, third-party, serve, `commit`, `release tag`,
+unknown-command — todos no lote 4, refletindo o `gate=` mais alto dos 4 lotes, 36%). Cobertura é
+fraca em dois padrões recorrentes que atravessam os 4 lotes: (a) prosa de rationale/limitação — "por
+que X e não Y", "o que esta regra NÃO vê" — inerentemente difícil de gatear e concentrada em `gap`;
+(b) alegações de verificação cross-CLI embutidas na prosa que ultrapassam o que o gate nomeado
+realmente testa (Windsurf/Amazon Q, D2 branch (ii) detecção de tamper testada só por unit test
+por stack, D4-bis, D6-bis) — o risco maior não é "ninguém testou isto", é "o documento diz ao leitor
+que foi testado quando não foi".
+
+**Correção feita durante a auto-revisão (achado do `advisor`):** a anotação de "Cópia local do
+template no validador" originalmente afirmava "grep confirma que não há teste equivalente em
+npm/tests/*.js nem pypi/tests/*.py" — falso. `npm/tests/credential_guard_integrity.test.js:423` e
+`pypi/tests/test_credential_guard_integrity.py:82` têm o mesmo teste `MatchesGenerator` do Go.
+Corrigido para `gate=` com os 3 arquivos e `partial=` descrevendo a lacuna real (3 testes
+unitários isolados, nunca um gate cross-CLI que rode os 3 juntos).
+
+**Nível de verificação:** leitura de trecho de gate/cenário para a maioria das 45 seções (doctor
+6 cenários a-f lidos linha a linha; third-party Partes A-D lidas; git-branch-guard Cenários 47-76
+lidos; serve `check-serve-address-parity.sh` lido por completo); `none` decidido por leitura do
+corpo completo da seção confirmando ausência de alegação falsificável própria (cabeçalhos-ponteiro
+para ADR); alguns `gap`/`partial` (Windsurf/Amazon Q, D4-bis, D6-bis, "completion", "exceções
+intencionais" do serve) apoiados em grep negativo de múltiplos termos plausíveis por script, não em
+leitura de cenário — mais fraco que leitura direta, mitigado por buscar mais de um termo por
+alegação.
+
+**Correção de formato (achado do `check-parity-contract-coverage.sh`, não do `advisor`):** a
+primeira passada usava `partial=` como estado isolado (formato inválido — só é chave válida junto
+de `gate=`) e `gate=<caminho> (comentário entre parênteses)` (caminho inexistente no disco por
+incluir o comentário). `make quality` reprovou com 22 violações nomeadas; todas corrigidas para o
+formato `gate=<caminho>[,<caminho>] partial=<texto>` / `gap reason=<texto>` antes de qualquer
+commit.
+
+**Validações:** `bash scripts/check-parity-contract-coverage.sh` exit 0 (177/177 anotadas, 0
+inválida). `git diff --numstat docs/cli-parity.md` = 90 inserções, 0 deleções (prosa intocada).
+`go build ./cmd/trackfw` sem erros. `./bin/trackfw validate` exit 0 (só os 18 warnings
+pré-existentes, não relacionados). `make quality` exit 0 (145 cenários de falsificação,
+Go+Node+Python+parity completos, incluindo os gates novos exercitados pelas anotações deste lote).
+Nenhum commit feito — devolvendo ao `trackfw_architect` para auditoria e despacho final da REQ (a
+triagem dos 177 está fechada).
+
+## 2026-08-20 — Zeus (arquiteto) — REQ do contrato pinado completa
+
+Todas as waves fechadas. Mecanismo pronto, triagem completa, checker bloqueante.
+
+```
+177/177 anotadas: gate= 72 (41%) · partial 51 (29%) · gap 42 (24%) · none 12 (7%)
+146 cenarios de falsificacao · make quality CI-exata exit 0 · validate exit 0
+```
+
+**O produto é a lista**, não o checker: 42 contratos sem gate e 51 com cobertura parcial, todos com
+motivo escrito e localizáveis por grep. Vira backlog priorizado.
+
+**Prioridade que recomendo**, e o motivo: a alegação **falsa** de cobertura (Windsurf/Amazon Q) vem
+antes de qualquer lacuna silenciosa. Documento que promete o que não entrega é pior que documento
+omisso — o omisso não engana quem decide.
+
+**Escopo negativo respeitado:** nenhuma lacuna foi fechada. A REQ cria o mecanismo que revela;
+fechar cada uma é trabalho subsequente e priorizável, e provavelmente não vale para todas.
