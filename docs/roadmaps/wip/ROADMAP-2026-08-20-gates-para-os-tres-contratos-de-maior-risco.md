@@ -128,12 +128,82 @@ entradas, e deixar `compare_json` intocado — ele já vai reportar a divergênc
 antes de fechar o ML-1B como verde. Nenhum comparador novo, nenhum script novo.
 
 ### ML-1B — Implementar a cobertura decidida
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` · **Dependência:** ML-1A
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` · **Dependência:** ML-1A
 **Critérios de aceite:**
-- [ ] Windsurf e Amazon Q cobertos, nos 3 CLIs, comparando saídas/artefatos reais
-- [ ] Cenário P4 com baseline e detecção
-- [ ] A anotação da seção deixa de afirmar cobertura inexistente
-- [ ] `make quality` verde
+- [x] Windsurf e Amazon Q cobertos, nos 3 CLIs, comparando saídas/artefatos reais
+- [x] Cenário P4 com baseline e detecção
+- [x] A anotação da seção deixa de afirmar cobertura inexistente
+- [x] `make quality` verde
+
+#### Execução (apolo-tf, 2026-08-20)
+
+**A alegação do texto NÃO se confirmou ao ser verificada — e o motivo era mais grave do que
+"faltava cobrir".** A seção "Git branch guard por runtime" já apontava (via a própria anotação
+`trackfw-contract` deixada pelo ML-1A) que Windsurf/Amazon Q não tinham gate cross-CLI. Verificando
+antes de codar, achei uma segunda alegação falsa, mais específica, na seção "Caminhos confirmados —
+Windsurf e Amazon Q": ela dizia que a correção de caminho/schema (ML-3A pós-auditoria) tinha
+"byte-identidade confirmada via `check-agent-hooks-parity.sh` **e** `check-harness-hooks-parity.sh`".
+**A segunda metade é impossível, não só não-verificada:** os dois arquivos corrigidos
+(`.windsurf/hooks.json`, `.amazonq/cli-agents/q_cli_default.json`) são de **project-scope**;
+`check-harness-hooks-parity.sh` só compara arquivos de **global-scope** em `~/.<tool>/...`, que não
+existem para Windsurf/Amazon Q — confirmado lendo `internal/generators/update.go`
+(`harnessCatalogTargetOrder`/`buildHarnessTargetIDs`) e o espelho em `npm/src/commands/
+update-harness.js`/`pypi/trackfw/commands/update_harness.py`: nenhum dos 3 CLIs tem um target
+`windsurf-credential-guard`/`windsurf-git-branch-guard`/`amazonq-credential-guard`/`amazonq-git-
+branch-guard`. Windsurf não tem mecanismo de hook global nativo (decisão registrada no próprio
+comentário do código, "stays out per the ADR"); Amazon Q simplesmente nunca recebeu esse par.
+`check-harness-hooks-parity.sh` **nunca poderia** ter provado essa frase — não é uma lacuna de gate,
+é ausência de artefato para gatear. Reportado como achado, não consertado (consertar seria mudança
+de produto, fora de escopo): a menção a `check-harness-hooks-parity.sh` nessa frase foi removida, e
+o header do próprio `check-harness-hooks-parity.sh` ganhou um parágrafo explicando por que ele nunca
+vai cobrir os dois.
+
+**Guard de vacuidade #2 ajustado como o ML-1A previu:** a segunda camada do gate
+(`check-agent-hooks-parity.sh`) grepava `trackfw-credential-guard.sh` incondicionalmente — mas
+Windsurf/Amazon Q só wireiam git-branch-guard, nunca credential-guard (confirmado por grep em
+`agentfiles.go`/`hooks.js`/`hooks.py`). Adicionei `guard_marker_for()`: retorna
+`trackfw-git-branch-guard.sh` para esses dois, `trackfw-credential-guard.sh` para os outros 6 —
+continua sendo guard real (reprova se o marcador não aparecer), só deixou de assumir um marcador
+único para os 8 CLIs.
+
+**O que mudou, por arquivo:**
+- `scripts/check-agent-hooks-parity.sh` — `CLIS` ganhou `windsurf amazonq`; `marker_for`/
+  `hookfile_for` ganharam as duas entradas (`file:.windsurfrules`→`.windsurf/hooks.json`,
+  `dir:.amazonq`→`.amazonq/cli-agents/q_cli_default.json`, confirmados contra
+  `internal/generators/hooks.go:InjectHooksDetected`); comentários de cabeçalho atualizados de "6
+  CLIs"/"18 invocações" para "8 CLIs"/"24 invocações". `compare_json` **não mudou uma linha** — como
+  o ML-1A previu, o diff JSON recursivo genérico já cobre os dois formatos novos e o
+  `toolsSettings.execute_bash.deniedCommands` do Amazon Q de graça.
+- `scripts/check-harness-hooks-parity.sh` — só o header comentário, explicando a exclusão
+  estrutural (nenhuma mudança em `CLIS`/lógica: não há artefato a comparar).
+- `scripts/check-gates-falsify.sh` — Cenário 78 novo: corrompe `tools: ['*']` → `tools: ['read']`
+  em `injectAmazonQHooks` (Node, único no arquivo) numa cópia isolada de `npm/`, prova que
+  `check-agent-hooks-parity.sh` reprova em `agent-hooks-parity/amazonq/go-vs-node` com o path JSON
+  `$.tools[0]` — sem essa prova, a extensão de `CLIS` poderia estar presente só de nome (ex.: um
+  `marker_for`/`hookfile_for` errado comparando um arquivo vazio dos dois lados, "passando" por
+  vacuidade mútua) sem o comparador jamais ser exercitado para os dois CLIs novos. Contagem: 146→147.
+- `docs/cli-parity.md` — duas correções: (1) a anotação da seção "Git branch guard por runtime"
+  (linha 4258) passou de `partial=` genérico para um `partial=` que nomeia exatamente o que
+  `check-agent-hooks-parity.sh` cobre (8 CLIs, project-scope) vs. o que `check-harness-hooks-
+  parity.sh` cobre (6 CLIs, global-scope) e por quê os outros 2 ficam fora por design; (2) a seção
+  "Caminhos confirmados — Windsurf e Amazon Q" saiu de `gap` para `gate=scripts/check-agent-hooks-
+  parity.sh partial=...` (identidade semântica, não byte-idêntica — nota cruzada com a seção
+  ML-1A-bis) e a menção falsa a `check-harness-hooks-parity.sh` foi removida do texto.
+
+**Saídas literais:**
+- `go build ./...` / `go vet ./...` — sem erro
+- `GO_BIN=bin/trackfw bash scripts/check-agent-hooks-parity.sh` — todos os 8 CLIs `OK` (16 linhas
+  go-vs-node/go-vs-py), incluindo `amazonq/go-vs-node` e `amazonq/go-vs-py` — a real divergência de 6
+  campos do Amazon Q que o ML-1A-bis fechou fica coberta e verde
+- `bash scripts/check-harness-hooks-parity.sh` — inalterado, todos os 6 CLIs `OK`
+- `bash scripts/check-parity-contract-coverage.sh` — exit 0, zero seções sem anotação, zero
+  anotação inválida
+- `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 bash scripts/check-gates-falsify.sh` — `Falsification checks
+  passed (all 147 scenarios...)`, incluindo `OK [falsify/agent-hooks-parity/amazonq/go-vs-node-
+  tools-drift-not-detected]`
+- `make quality` — exit 0, zero `FAIL` no log completo (2804 linhas)
+- `./bin/trackfw validate` — exit 0, 17 warnings pré-existentes (nenhum novo)
+- `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make parity` — `REAL_EXIT=0`, zero `FAIL`
 
 ---
 
@@ -251,6 +321,45 @@ eu tinha mandado ele parar e me consultar se aparecesse. Não apareceu.
 **não** verificação contra a documentação viva da AWS nem contra um `q chat --agent` real.
 
 `make quality` (CI-exata) exit 0 · checker de cobertura exit 0 · `validate` exit 0.
+
+
+### Auditoria do ML-1B — aprovada; a alegação era **pior** do que "não verificada"
+
+```
+CLIS agora: claude codex gemini copilot cursor kiro windsurf amazonq   (8/8)
+sabotagem propria: "tools": ["*"] -> ["execute_bash"]  (literal unico, Go)
+  -> EXIT=1, 2 FAIL: amazonq/go-vs-node e amazonq/go-vs-py, "structural drift"
+restaurado -> todos passam
+147 cenarios · make quality (CI-exata) exit 0 · cobertura exit 0 · validate exit 0
+```
+
+#### A descoberta central: a alegação era **impossível**, não apenas não-verificada
+
+O texto afirmava byte-identidade confirmada por `check-agent-hooks-parity.sh` **e** por
+`check-harness-hooks-parity.sh`. A segunda metade **nunca poderia ser verdade**: os caminhos de
+Windsurf e Amazon Q são de **escopo de projeto**, e aquele gate só compara escopo **global**
+(`~/.<tool>/...`). Não é lacuna de gate — é **ausência de artefato para gatear**.
+
+Confirmado por ele na fonte, nos 3 CLIs: nenhum tem target de harness para os dois. Windsurf **não
+tem mecanismo de hook global nativo** (decisão registrada no próprio comentário do gerador); Amazon
+Q nunca recebeu o par.
+
+Eu classifiquei isto como "alegação falsa de cobertura" na triagem. Estava certo, mas por um motivo
+mais fraco do que o real: eu achava que faltava rodar o gate. **Faltava o gate ser capaz.**
+
+#### O resultado ficou melhor que o meu critério de aceite
+
+Eu escrevi *"a anotação vira `gate=`"*. Ela virou `gate=...partial=...`, e está **mais correta**:
+declara os 8 CLIs cobertos em escopo de projeto, os 6 em escopo global, e **por que** os outros dois
+nunca terão o segundo. Forçar `gate=` pleno teria reintroduzido a mesma classe de imprecisão que o
+lote existia para eliminar — só que a meu favor desta vez, o que é pior.
+
+**Guard de vacuidade ajustado como o parecer do ML-1A previu:** `guard_marker_for()` por CLI, para
+que Windsurf e Amazon Q sejam checados contra `trackfw-git-branch-guard.sh` — o que de fato cabeiam
+— e não contra `credential-guard`. Continua sendo guard: marcador ausente **reprova**.
+
+Nota de vault registrada sobre a impossibilidade estrutural, para ninguém tentar "consertar" a
+cobertura de harness dos dois no futuro.
 
 
 ## Wave 2 — `branch_has_wip_roadmap` com `done/`

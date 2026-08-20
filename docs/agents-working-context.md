@@ -21561,3 +21561,37 @@ mínimo é assimetria de risco, não verificação contra a doc viva da AWS — 
 `make quality` exit 0 (146 cenários), `./bin/trackfw validate` exit 0 (mesmos 17 warnings
 pré-existentes, nenhum novo), `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make parity` exit 0. ML-1A-bis
 marcado ✅ no roadmap — desbloqueia o ML-1B.
+
+## 2026-08-20 — Apolo (apolo-tf) — ML-1B: Windsurf/Amazon Q cobertos em check-agent-hooks-parity.sh
+
+**Início:** ML-1B, `docs/roadmaps/wip/ROADMAP-2026-08-20-gates-para-os-tres-contratos-de-maior-risco.md`.
+
+Estendi `scripts/check-agent-hooks-parity.sh` (`CLIS`/`marker_for`/`hookfile_for`) para os 8 CLIs
+nativos, incluindo Windsurf e Amazon Q — `compare_json` não mudou uma linha, como o ML-1A previu.
+Ajustei o guard de vacuidade #2 (`guard_marker_for`) porque Windsurf/Amazon Q só wireiam
+git-branch-guard, não credential-guard.
+
+**Achado ao verificar antes de gatear (não consertado, é decisão de produto pré-existente):**
+`docs/cli-parity.md` afirmava que a correção de caminho/schema do ML-3A tinha "byte-identidade
+confirmada via `check-agent-hooks-parity.sh` **e** `check-harness-hooks-parity.sh`" — a segunda
+metade é impossível, não só não-verificada: os caminhos corrigidos são project-scope
+(`.windsurf/hooks.json`, `.amazonq/cli-agents/q_cli_default.json`) e `check-harness-hooks-parity.sh`
+só compara global-scope (`~/.<tool>/...`); nenhum dos 3 CLIs tem target de harness
+(`windsurf-credential-guard` etc.) para esses dois — confirmado em `buildHarnessTargetIDs()`
+(`internal/generators/update.go`) e nos espelhos Node/Python. Registrado em
+`vault/notes/windsurf-amazonq-sem-harness-scope-nunca-cobriveis-por-check-harness-hooks-parity-2026-08-20.md`.
+A frase falsa foi removida do doc; a menção a `check-harness-hooks-parity.sh` não voltou.
+
+Cenário 78 novo em `check-gates-falsify.sh` (corrompe `tools: ['*']`→`['read']` em
+`injectAmazonQHooks`/Node, prova drift em `$.tools[0]`) — 146→147 cenários. `docs/cli-parity.md`:
+anotação da seção "Git branch guard por runtime" reescrita para nomear os dois escopos com
+precisão; "Caminhos confirmados" saiu de `gap` para `gate=scripts/check-agent-hooks-parity.sh
+partial=...` (identidade semântica, não byte-idêntica).
+
+**Saídas:** `go build`/`go vet` sem erro · `check-agent-hooks-parity.sh` 16/16 OK (incl.
+amazonq) · `check-harness-hooks-parity.sh` inalterado, 14/14 OK · `check-parity-contract-
+coverage.sh` exit 0 · `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 bash check-gates-falsify.sh` — 147
+cenários passed · `make quality` exit 0, zero FAIL (2804 linhas) · `./bin/trackfw validate` exit 0
+(17 warnings pré-existentes) · `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make parity` REAL_EXIT=0.
+
+ML-1B marcado ✅ no roadmap. **Fim.**

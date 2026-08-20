@@ -4255,7 +4255,7 @@ o processo falhar. Detalhe em
 
 ## Git branch guard por runtime (ML-1A, ROADMAP-2026-08-14-bloqueio-tecnico-de-comandos-git-brutos-por-subagente-via-deny-hooks-nos-7-runtimes-suportados.md)
 
-<!-- trackfw-contract: gate=scripts/check-harness-hooks-parity.sh,scripts/check-agent-hooks-parity.sh partial=GUARDS="credential-guard git-branch-guard" prova paridade estrutural do wiring nos 6 native-wave CLIs (claude/codex/gemini/cursor/copilot/kiro) — Windsurf e Amazon Q, citados na tabela como "deny global" wired, NÃO têm gate cross-CLI: grep confirma CLIS="claude codex gemini cursor copilot kiro" em ambos os scripts, sem "windsurf"/"amazon" em nenhum dos dois -->
+<!-- trackfw-contract: gate=scripts/check-harness-hooks-parity.sh,scripts/check-agent-hooks-parity.sh partial=GUARDS="credential-guard git-branch-guard" prova paridade estrutural do wiring project-scope (discover --init) nos 8 CLIs nativos, incluindo Windsurf e Amazon Q desde ROADMAP-2026-08-20/ML-1B (claude/codex/gemini/cursor/copilot/kiro/windsurf/amazonq via check-agent-hooks-parity.sh), e do wiring global/harness-scope (update harness) nos 6 CLIs que têm target de harness (claude/codex/gemini/cursor/copilot/kiro via check-harness-hooks-parity.sh) — Windsurf e Amazon Q nunca tiveram par de targets de harness (grep confirma zero ocorrências de "windsurf"/"amazonq" pareadas com credential-guard/git-branch-guard em HarnessTargetIDs/buildHarnessTargetIDs nos 3 CLIs): Windsurf não tem mecanismo de hook global nativo (decisão registrada no próprio comentário de harnessCatalogTargetOrder, internal/generators/update.go) e Amazon Q nunca recebeu esse par — não é uma lacuna de gate, é ausência de artefato para gatear -->
 
 > REQ: `docs/req/REQ-2026-08-14-bloqueio-tecnico-de-comandos-git-brutos-por-subagente-via-deny-hooks-nos-7-runtimes-suportados.md`
 
@@ -4328,14 +4328,18 @@ Mensagem de bloqueio por subcomando (todas referenciam CLAUDE.md §1):
 
 ### Caminhos confirmados — Windsurf e Amazon Q (apolo-tf, 2026-08-14, correção pós-auditoria do ML-3A)
 
-<!-- trackfw-contract: gap reason=a seção afirma "byte-identidade confirmada via check-agent-hooks-parity.sh e check-harness-hooks-parity.sh", mas grep confirma ZERO ocorrências de "windsurf"/"amazon"/"q_cli" em nenhum dos dois scripts — CLIS="claude codex gemini cursor copilot kiro" em ambos; os caminhos corrigidos (.windsurf/hooks.json, .amazonq/cli-agents/q_cli_default.json) não têm nenhum gate cross-CLI que os exercite -->
+<!-- trackfw-contract: gate=scripts/check-agent-hooks-parity.sh partial=prova paridade estrutural (identidade semântica via diff JSON recursivo, não byte-idêntica — ver seção "Campos mínimos do custom agent Amazon Q" logo abaixo) dos 2 arquivos de project-scope entre Go/Node.js/Python desde ROADMAP-2026-08-20/ML-1B; check-harness-hooks-parity.sh não se aplica a estes caminhos (arquivos de project-scope, não de ~/.<tool> global-scope) e nunca poderia comparar algo que não existe nesse escopo para nenhum dos dois CLIs -->
 
 A primeira implementação do wiring (ML-3A) escreveu caminhos/formatos **inventados** para Windsurf e
 Amazon Q, sinalizados no próprio comentário de código como não confirmados contra documentação
 oficial. Uma verificação posterior confirmou que ambos estavam estruturalmente errados — corrigido
 nos 3 CLIs (Go `internal/generators/agentfiles.go`, Node `npm/src/generators/hooks.js`, Python
-`pypi/trackfw/generators/hooks.py`), com byte-identidade confirmada via `check-agent-hooks-parity.sh`
-e `check-harness-hooks-parity.sh`.
+`pypi/trackfw/generators/hooks.py`), com paridade estrutural confirmada via
+`check-agent-hooks-parity.sh` (ROADMAP-2026-08-20/ML-1B — a menção anterior a
+`check-harness-hooks-parity.sh` nesta frase era falsa e nunca poderia ter sido verdadeira: os dois
+caminhos aqui são de project-scope, e check-harness-hooks-parity.sh só compara arquivos de
+global-scope em `~/.<tool>/...`, que não existem para Windsurf/Amazon Q — ver a nota na seção "Git
+branch guard por runtime" acima).
 
 | Runtime | Caminho errado (ML-3A original) | Caminho correto (confirmado) |
 |---|---|---|

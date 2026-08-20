@@ -2,9 +2,13 @@
 # check-agent-hooks-parity.sh — proves the per-CLI agent hook files written by
 # `trackfw discover --init` (.claude/settings.json, .codex/hooks.json,
 # .gemini/settings.json, .github/hooks/trackfw-attention.json,
-# .cursor/hooks.json, .kiro/hooks/trackfw-attention.json) are STRUCTURALLY
-# identical across Go, Node.js and Python for each of the 6 native-wave CLIs
-# (Claude Code, Codex, Gemini CLI, GitHub Copilot, Cursor, Kiro).
+# .cursor/hooks.json, .kiro/hooks/trackfw-attention.json, .windsurf/hooks.json,
+# .amazonq/cli-agents/q_cli_default.json) are STRUCTURALLY identical across
+# Go, Node.js and Python for each of the 8 native-wave CLIs (Claude Code,
+# Codex, Gemini CLI, GitHub Copilot, Cursor, Kiro, Windsurf, Amazon Q
+# Developer — the last two added ROADMAP-2026-08-20/ML-1B; see that ML's
+# report for why the existing generic structural diff needed zero changes to
+# extend to their different-but-still-single-fixed-path-JSON-file shape).
 #
 # Extends the family started by check-attention-scripts-parity.sh (which only
 # covers the two shell scripts, byte-for-byte). Each CLI has its own JSON
@@ -25,18 +29,18 @@
 # Real invocation, not internal generator calls: each stack runs its own real
 # `discover --init` entry point (Go binary / `node npm/bin/trackfw` /
 # `python3 -m trackfw`) exactly once, against a single fixture directory per
-# stack that carries ALL 6 CLIs' detection markers at once (see
+# stack that carries ALL 8 CLIs' detection markers at once (see
 # internal/generators/hooks.go:InjectHooksDetected and its Node/Python
 # equivalents) — CLAUDE.md, AGENTS.md, GEMINI.md, .kiro/,
-# .github/copilot-instructions.md, .cursor/. This exercises the detection
-# dispatcher as a whole (all 6 branches in one run), not just each per-CLI
-# injector function in isolation, and keeps this gate to 3 `discover --init`
-# invocations (one full scaffold + gate install each) instead of 18 — a
-# per-CLI-isolated fixture set was measured to add ~15s to `make quality` for
-# no detection benefit the per-file vacuity guards below don't already cover
-# (a detector regression that silently skips one CLI still fails that CLI's
-# "missing or empty" guard; nothing about co-locating the 6 markers in one
-# fixture can mask that).
+# .github/copilot-instructions.md, .cursor/, .windsurfrules, .amazonq/. This
+# exercises the detection dispatcher as a whole (all 8 branches in one run),
+# not just each per-CLI injector function in isolation, and keeps this gate
+# to 3 `discover --init` invocations (one full scaffold + gate install each)
+# instead of 24 — a per-CLI-isolated fixture set was measured to add ~15s to
+# `make quality` for no detection benefit the per-file vacuity guards below
+# don't already cover (a detector regression that silently skips one CLI
+# still fails that CLI's "missing or empty" guard; nothing about co-locating
+# the 8 markers in one fixture can mask that).
 set -euo pipefail
 
 export NO_COLOR=1
@@ -76,10 +80,14 @@ fail() { echo "FAIL [$1]: $2" >&2; FAIL=1; }
 # ---------------------------------------------------------------------------
 # Per-CLI table: marker file/dir that InjectHooksDetected (Go/Node/Python)
 # requires to detect the CLI, and the relative path of the hook file each
-# InjectXHooks writes. All 6 markers are placed together in one fixture dir
-# per stack (see file header for why single-fixture is safe here).
+# InjectXHooks writes. All 8 markers are placed together in one fixture dir
+# per stack (see file header for why single-fixture is safe here). windsurf/
+# amazonq added ROADMAP-2026-08-20/ML-1B — markers/paths confirmed against
+# internal/generators/hooks.go's InjectHooksDetected table (file:.windsurfrules
+# and dir:.amazonq, same convention already used by file:CLAUDE.md and
+# dir:.cursor above), not invented for this gate.
 # ---------------------------------------------------------------------------
-CLIS="claude codex gemini copilot cursor kiro"
+CLIS="claude codex gemini copilot cursor kiro windsurf amazonq"
 
 marker_for() {
   case "$1" in
@@ -89,6 +97,8 @@ marker_for() {
     copilot) echo "file:.github/copilot-instructions.md" ;;
     cursor)  echo "dir:.cursor" ;;
     kiro)    echo "dir:.kiro" ;;
+    windsurf) echo "file:.windsurfrules" ;;
+    amazonq)  echo "dir:.amazonq" ;;
     *) echo "marker_for: unknown cli '$1'" >&2; exit 1 ;;
   esac
 }
@@ -101,6 +111,8 @@ hookfile_for() {
     copilot) echo ".github/hooks/trackfw-attention.json" ;;
     cursor)  echo ".cursor/hooks.json" ;;
     kiro)    echo ".kiro/hooks/trackfw-attention.json" ;;
+    windsurf) echo ".windsurf/hooks.json" ;;
+    amazonq)  echo ".amazonq/cli-agents/q_cli_default.json" ;;
     *) echo "hookfile_for: unknown cli '$1'" >&2; exit 1 ;;
   esac
 }
@@ -180,23 +192,37 @@ fi
 #   1. the hook file exists and is non-empty for all three runtimes, per CLI
 #      (a missing/empty file on one side would make a structural diff either
 #      error out uninformatively or, worse, be silently skipped);
-#   2. the hook file actually references scripts/trackfw-credential-guard.sh
-#      at least once, per runtime — a regression that dropped the
-#      credential-guard entry from all three stacks identically would
-#      otherwise still "pass" a pure cross-stack equality check, defeating
-#      the whole point of this ML.
+#   2. the hook file actually references the guard script it's supposed to
+#      wire at least once, per runtime — a regression that dropped the
+#      guard entry from all three stacks identically would otherwise still
+#      "pass" a pure cross-stack equality check, defeating the whole point
+#      of this ML. For 6 of the 8 CLIs that's scripts/trackfw-credential-
+#      guard.sh; windsurf and amazonq don't wire credential-guard at all —
+#      confirmed by grep across agentfiles.go/hooks.js/hooks.py (ML-1A
+#      parecer, ROADMAP-2026-08-20) — only git-branch-guard, so their guard
+#      marker is trackfw-git-branch-guard.sh instead. Using the
+#      credential-guard string for these two would make the guard reprove
+#      for the wrong reason (string never present, even on a healthy run).
 # ---------------------------------------------------------------------------
+guard_marker_for() {
+  case "$1" in
+    windsurf|amazonq) echo "trackfw-git-branch-guard.sh" ;;
+    *) echo "trackfw-credential-guard.sh" ;;
+  esac
+}
+
 for cli in $CLIS; do
   hookfile=$(hookfile_for "$cli")
+  marker=$(guard_marker_for "$cli")
   for runtime in go node py; do
     path="$WORK/$runtime/$hookfile"
     if [[ ! -s "$path" ]]; then
       fail "agent-hooks-parity/$cli/$runtime/$hookfile" "missing or empty: $path"
       continue
     fi
-    if ! grep -q "trackfw-credential-guard.sh" "$path"; then
+    if ! grep -q "$marker" "$path"; then
       fail "agent-hooks-parity/$cli/$runtime/credential-guard-present" \
-        "scripts/trackfw-credential-guard.sh not referenced anywhere in $path"
+        "$marker not referenced anywhere in $path"
     fi
   done
 done
