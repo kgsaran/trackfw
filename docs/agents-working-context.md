@@ -20793,3 +20793,20 @@ Roadmap atualizado (ML-6B ✅, AC "CI verde" deixado sem check — não verific�
 autoridade de commit/push, fica para o `trackfw_architect` confirmar pós-merge).
 
 Nenhum commit/push — entregue para auditoria do `trackfw_architect`.
+
+## 2026-08-19 — Zeus (arquiteto) — CI VERDE, REQ pronta para merge
+
+PR #194, run 32318795207: **todos os jobs pass**, incluindo `parity` em Linux (6m14s). AC1–AC10
+fechados nas duas REQs.
+
+**Três rodadas de CI até fechar**, e as três falhas foram da mesma família — "verde local ≠ verde no
+CI":
+1. env var `TRACKFW_DISABLE_EXTERNAL_COMMANDS` no nível do *step*, herdada por todos os scripts
+2. `gh` real em `/usr/bin` no runner, ausente do meu `PATH` local
+3. (a minha) citei como prova um gate que **nunca executou** — `make` para no primeiro erro
+
+**Duas regras que passam a valer nas minhas auditorias:**
+- rodar a **invocação CI-exata**, não o comando equivalente;
+- antes de citar "o gate X passou no CI", confirmar que ele **executou**.
+
+**Aguardando merge de KG.** Arquiteto não faz merge.
