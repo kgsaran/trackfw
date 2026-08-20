@@ -551,7 +551,7 @@ porque conferi, não porque preocupa.
 ## Wave 4 — Barreira
 
 ### ML-4A — `hades-tf`: os gates novos provam o que dizem provar?
-**Status:** ⬜ Pendente · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
+**Status:** ✅ Concluído · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
 **Escreve:** `docs/seguranca/2026-08-20-revisao-dos-gates-dos-tres-contratos.md`
 
 Foco: o gate do `credential_guard_hook_resolvable` toca o controle central contra fail-open —
@@ -559,6 +559,44 @@ provar em 3 runtimes só vale se a prova for a mesma. Avaliar se o gate de Winds
 o que importa ou só a forma. **Veredito explícito; bloquear é saída legítima.**
 
 ---
+
+### Auditoria do ML-4A — **APROVADO COM RESSALVAS**, e o achado C-1 é o que importa
+
+Parecer: `docs/seguranca/2026-08-20-revisao-dos-gates-dos-tres-contratos.md`. Cinco débitos, nenhum
+bloqueante.
+
+**C-1, confirmado por mim no repositório real:**
+
+```
+docs/roadmaps/done/          127 arquivos
+"guard" casa por substring    11
+"serve"                        3
+```
+
+`fix/guard` é hoje aceito por **11 roadmaps sem relação** — e o corpus só cresce. **É uma regra de
+governança que enfraquece com a idade do projeto**: quanto mais o time entrega, menos o portão exige.
+
+**Correção de atribuição que fiz no parecer.** Ele registrou que *"o ML-2A é a mudança que amplia o
+corpus"*. Não é — verifiquei o commit: o ML-2A tocou só `scripts/` e docs, **nenhuma linha de
+produto**. A aceitação de `done/` vem da `REQ-2026-07-26`; a fraqueza é **pré-existente desde julho**.
+
+O que o ML-2A fez foi **torná-la visível**, ao exercitar a regra cross-CLI pela primeira vez. Isso
+não diminui o achado — aumenta. É a demonstração mais limpa da tese da REQ do contrato pinado: a
+lacuna estava lá há um mês e nenhum humano a viu, porque nada a exercitava.
+
+Virou `REQ-2026-08-20-branch-has-wip-roadmap-casa-por-substring-num-corpus-de-done-que-so-cresce`,
+com o risco dominante nomeado: **apertar demais paralisa**, porque o portão é atravessado por todo
+`branch new`, `commit` e `ship`. E com um AC que exige medir os candidatos contra os **127 roadmaps
+reais** antes de escolher — o corpus de teste já existe.
+
+**Achado D, promovido de inferido para medido, e desarma minha preocupação:** eu tinha pedido que
+ele avaliasse se parar de escrever `allowedTools` **reduz proteção**. Ele grepou os 3 runtimes:
+`allowedTools` só aparece em **comentário**, em nenhum deles era escrito. A remoção do ML-1A-bis
+alinhou documentação a um comportamento que já era o de fato. **Nenhuma proteção foi reduzida.**
+
+**Os outros três débitos são pequenos e de gate/doc:** duas fixtures faltando em escopo de projeto
+(A-1), guard de vacuidade para `deniedCommands` (B-1), e distinguir na doc *impossibilidade
+estrutural* do Windsurf de *implementação pendente* do Amazon Q (B-3). Vão para um ML corretivo.
 
 ## Notas
 - **Fora de escopo, declarado:** as outras 39 `gap` e 50 `partial`. A lista é priorizável de

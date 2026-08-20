@@ -21724,3 +21724,38 @@ modificados: `docs/agents-working-context.md`, `docs/cli-parity.md`,
 Nenhum arquivo novo não rastreado.
 
 **ML-3A pronto para auditoria do `trackfw_architect`. Fim.**
+
+## Sessão 2026-08-20 — Hades (INÍCIO: ML-4A — barreira de segurança para os 3 contratos de maior risco)
+
+Branch `feat/gates-para-os-tres-contratos-de-maior-risco`. Roadmap
+`docs/roadmaps/wip/ROADMAP-2026-08-20-gates-para-os-tres-contratos-de-maior-risco.md` em `wip/`.
+Retomando sessão anterior que concluiu a leitura de todos os artefatos (ML-1A-bis, ML-1B, ML-2A,
+ML-3A). Executando medições obrigatórias antes de produzir o parecer:
+A1 (script presente mas não executável — 3 CLIs), A2 (entrada claude sem "type":"command"),
+B1 (deniedCommands ausente em amazonq fixture isolado), C1 (slug parcialmente coincidente em done/).
+Escopo: exatamente `docs/seguranca/2026-08-20-revisao-dos-gates-dos-tres-contratos.md` +
+esta entrada. Nenhum commit/push (autoridade exclusiva do `trackfw_architect`).
+
+## Sessão 2026-08-20 — Hades (FIM: ML-4A concluído — APROVADO COM RESSALVAS)
+
+Entregue `docs/seguranca/2026-08-20-revisao-dos-gates-dos-tres-contratos.md`.
+
+**Veredito:** APROVADO COM RESSALVAS. Quatro debts residuais nomeados, nenhum blocking.
+
+**Medições executadas (fixtures isolados no scratchpad, nenhum produto modificado):**
+- A1-exact: non-executable script (chmod 644) → VIOLATION nos 3 CLIs ("script is not executable") — controle ativo, path não coberto pelo gate ML-3A
+- A2-notype: hook sem "type":"command", script ausente → VIOLATION nos 3 CLIs ("missing type") — controle ativo, path não coberto pelo gate ML-3A
+- B1-exact: discover --init com HOME isolado, 8 marcadores de CLI → arquivos Amazon Q idênticos nos 3 CLIs, `deniedCommands` presente e correto; mas vacuity guard não cobre deniedCommands
+- C1: feat/minha-feature + done/minha-feature-v2 → ACEITA (substring por design, documentado); C1b: slug mais longo → RECUSA; 3 CLIs concordam
+
+**Debts residuais para REQs separadas:**
+- A-1 (Média): Gate ML-3A não exercita caminhos "não-executável" e "missing type"
+- B-1 (Baixa): Vacuity guard amazonq não cobre deniedCommands — drop correlacionado cross-CLI não detectado
+- B-3 (Baixa): Documentação agrupa Windsurf/Amazon Q sem distinguir impossibilidade vs. pendência
+- D-2 (Baixa): Schema Amazon Q CLI custom agent não verificado formalmente (risco funcional, não de segurança)
+
+**Arquivos escritos (somente):**
+- `docs/seguranca/2026-08-20-revisao-dos-gates-dos-tres-contratos.md`
+- `docs/agents-working-context.md` (esta entrada)
+
+Nenhum commit/push feito. Devolvo ao `trackfw_architect` para ML-4B (commit + handoff).
