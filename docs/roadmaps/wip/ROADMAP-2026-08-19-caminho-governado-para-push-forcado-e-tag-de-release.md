@@ -813,7 +813,7 @@ Quem bloqueou é quem confirma que fechou. Veredito explícito.
 ## Wave 6 — Corretiva de CI
 
 ### ML-6A — `check-ship-force-parity.sh` reprova em Linux
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
 **Arquivos:** `scripts/check-ship-force-parity.sh` (e produto **só** se a causa raiz estiver lá).
 
 **Evidência (CI do PR #194, job `parity`, run 32314033472):** verde no macOS, **vermelho no Linux**.
@@ -844,6 +844,42 @@ sem entender **por que divergiu** deixa a próxima instância viva.
 - [ ] Os outros gates de stub de forge (`check-release-tag-parity.sh`, que usa o mesmo padrão)
       **verificados quanto à mesma causa** — não presumir que estão bem só porque passaram
 - [ ] `make quality` verde · **CI verde** (é o AC10, e é o que reprovou)
+
+---
+
+### Auditoria do ML-6A — aprovada, e **minha hipótese estava errada**
+
+Eu disse que era diferença de plataforma. **Não era.** A causa é diferença de **invocação**:
+
+```
+.github/workflows/quality.yml:98   TRACKFW_DISABLE_EXTERNAL_COMMANDS: "1"   (nível do step)
+   -> herdada por TODOS os scripts que `make parity` executa em sequência
+   -> defaultAvailFn (internal/forge/adapter.go) reporta gh/glab/az indisponivel,
+      independentemente do PATH
+local: roda o script direto, sem a env var  -> sempre verde
+CI:    roda via `make parity`, com a env var -> sempre vermelho nos cenarios que estubam gh
+```
+
+Reproduzi eu mesmo, removendo o fix no lugar e rodando com a env var:
+
+```
+SEM fix + env var -> EXIT=1, 9 FAIL, mensagem LITERALMENTE igual à do CI
+COM fix + env var -> EXIT=0, 5 OK
+invocacao CI-exata `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make parity` -> EXIT=0, 0 FAIL
+```
+
+**Fix no gate, não no produto, e concordo:** a semântica da env var é intencional — impedir que a
+suíte alcance comandos externos reais. O gate monta o próprio `PATH` do zero justamente para que só
+o stub seja alcançável, então desligar a variável ali não abre caminho para comando real.
+
+**Confirmação de que o desligamento é seguro, por evidência e não por argumento:** o gate irmão
+`check-release-tag-parity.sh` já tinha o mesmo `unset`, tem cenário `no-forge-cli`, usa o **mesmo**
+`BASE_PATH="$RUNTIME_BIN:/usr/bin:/bin"` — e **passou no CI**. Se `gh` fosse alcançável por
+`/usr/bin` no runner, aquele cenário teria reprovado. É prova empírica, do próprio CI.
+
+**Lição de método, e é a que fica:** "verde localmente" e "verde no CI" não são o mesmo comando. O
+CI roda `make parity` com env de step; eu rodava o script direto. Rodar a **invocação CI-exata** é o
+que fecha essa lacuna, e passa a ser o meu padrão de auditoria daqui em diante.
 
 ## Notas
 - **Fora de escopo, declarado:** afrouxar o `case push)` do guard; merge de PR; `trackfw release`

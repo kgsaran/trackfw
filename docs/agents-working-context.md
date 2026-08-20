@@ -20673,3 +20673,69 @@ credibilidade do outro. Virou `REQ-2026-08-19-release-tag-confia-em-conteudo-loc
 não é regressão desta REQ, é superfície que nunca esteve no escopo dela.
 
 AC1-AC9 fechados. Falta o AC10: **CI verde**.
+
+## 2026-08-19 — Apolo (backend) — INÍCIO: ML-6A — `check-ship-force-parity.sh` verde no macOS, vermelho no Linux (evidência CI PR #194)
+
+Branch `feat/caminho-governado-para-push-forcado-e-tag-de-release`, roadmap
+`docs/roadmaps/wip/ROADMAP-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md`
+(Wave 6). Escopo: reproduzir em Linux real (container), identificar causa raiz sem assumir,
+consertar no lugar certo (gate vs produto), verificar `check-release-tag-parity.sh` quanto ao
+mesmo risco. Nenhum commit/push (autoridade exclusiva do `trackfw_architect`).
+
+## 2026-08-19 — Apolo (backend) — FIM: ML-6A concluído — causa raiz não era Linux-vs-macOS, era `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1` herdado do step `make parity` do CI
+
+**Causa raiz medida** (reproduzida em container Ubuntu com go/node/python3 instalados e no macOS
+local, ambas batendo byte-a-byte com a saída literal do CI): `internal/forge/adapter.go`'s
+`defaultAvailFn` (espelhado em Node/Python) reporta `gh`/`glab`/`az` como indisponível sempre que
+`TRACKFW_DISABLE_EXTERNAL_COMMANDS=1`, **independente do PATH** — comportamento intencional (usado
+por `check-ship-parity.sh` e por `make test`). O job `parity` do `quality.yml` seta essa env var no
+nível do step `- run: make parity`, herdada por TODOS os 15+ scripts que `make parity` roda em
+sequência — inclusive `check-ship-force-parity.sh`, que nunca a desligava apesar de montar seu
+próprio PATH do zero justamente para que um `gh` stub fosse detectado de verdade. Resultado: os 3
+cenários que estubam `gh` (`forge-zero-pr`, `forge-unverifiable`, `forge-pr-open-pushes`) colapsavam
+na recusa "no forge CLI" errada, e só os 2 cenários que já esperavam ALGUMA recusa passavam — por
+coincidência, não por prova real. **Não era divergência de plataforma**: local a gente roda o
+script direto (sem a env var); CI roda via `make parity` (com a env var no step). Confirmado
+setando a env var manualmente no macOS e reproduzindo o mesmo FAIL.
+
+**Fix no gate** (não no produto — a semântica da env var é intencional e documentada):
+`scripts/check-ship-force-parity.sh` agora tem `unset TRACKFW_DISABLE_EXTERNAL_COMMANDS || true`
+logo após montar `BASE_PATH`, **exatamente o fix já presente** em
+`scripts/check-release-tag-parity.sh:105` (gate irmão, mesmo comentário) — que por isso nunca
+manifestou o bug em CI. `check-gates-falsify.sh` cenário 73 invoca `check-ship-force-parity.sh`
+como subprocesso para o braço baseline; herdaria a mesma env var, mas fica coberto
+transitivamente pelo fix (confirmado rodando `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make parity`
+completo — os 137 cenários do falsify passaram, incluindo o 73).
+
+**Evidência:**
+- Container Ubuntu, script SEM fix + env var: reproduz literalmente as 3 linhas `FAIL` do log do CI
+  (mesmo texto de stderr).
+- Container Ubuntu, script COM fix + env var: `OK` nos 5 cenários.
+- macOS, script COM fix + env var: `OK` nos 5 cenários (mesmo sem fix + env var reproduz o FAIL).
+- `GO_BIN=bin/trackfw TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 bash scripts/check-release-tag-parity.sh`:
+  18/18 `OK` — já tinha o fix, nenhuma mudança necessária ali.
+- `make quality` (macOS, sem env var): exit 0.
+- `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make parity` (macOS, invocação CI-exata): 0 linhas `^FAIL `,
+  inclui `check-gates-falsify.sh` (137 cenários) e `check-thirdparty-parity.sh` passando ao final.
+- `./bin/trackfw validate`: exit 0 (só warnings pré-existentes não relacionados).
+
+Nota do vault:
+`vault/notes/ci-inherited-trackfw-disable-external-commands-vacuous-parity-gate-2026-08-19.md`
+(linkada a `check-agent-hooks-parity-unisolated-home-false-failure-2026-08-08`, mesma classe de
+falha: env ambiental vazando para dentro de um gate que estuba dependência externa).
+
+Nenhum commit/push — entregue para auditoria do `trackfw_architect`. Roadmap não marcado ✅ (fica
+para o audit do orquestrador, conforme protocolo).
+
+## 2026-08-19 — Zeus (arquiteto) — ML-6A: minha hipótese estava errada
+
+Eu atribuí a falha do CI a diferença de plataforma. **Era diferença de invocação.**
+`TRACKFW_DISABLE_EXTERNAL_COMMANDS=1` está no nível do *step* do workflow e é herdada por todos os
+scripts que `make parity` roda. Local eu rodava o script direto, sem a variável.
+
+Reproduzi removendo o fix no lugar: 9 FAIL, mensagem literalmente igual à do CI. Com o fix e a mesma
+variável: 5 OK. Invocação CI-exata (`TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make parity`): exit 0.
+
+**Padrão novo de auditoria, a partir de agora:** rodar a **invocação CI-exata**, não o comando
+equivalente. "Verde localmente" e "verde no CI" não são o mesmo comando, e essa diferença já custou
+um ciclo hoje.

@@ -102,6 +102,15 @@ ln -s "$REAL_PYTHON3" "$RUNTIME_BIN/python3"
 # unless a scenario explicitly prepends its own stub directory.
 BASE_PATH="$RUNTIME_BIN:/usr/bin:/bin"
 
+# Never let an inherited TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make the forge adapter report
+# "unavailable" regardless of PATH — CI's `make parity` step sets this env var for every gate in
+# the target (it exists so check-ship-parity.sh can force the no-forge-CLI path deterministically
+# there), and it leaks into every script `make parity` runs afterwards, including this one. Left
+# unset here, it collapses scenarios (b)/(c)/(d) — which all stub `gh` in PATH and expect it to
+# be detected — onto the same "no forge CLI" refusal as scenario (a), for the wrong reason. Same
+# fix already applied in check-release-tag-parity.sh's sibling gate.
+unset TRACKFW_DISABLE_EXTERNAL_COMMANDS || true
+
 FAIL=0
 ok()   { echo "OK   [$1]"; }
 fail() { echo "FAIL [$1]: $2" >&2; FAIL=1; }
