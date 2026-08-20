@@ -1311,6 +1311,9 @@ local commits, only the freshness of `origin/main` changed.
 
 ### Why not `git branch -d`, and why not a naive `git diff`
 
+<!-- trackfw-contract: gate=scripts/check-branch-prune-parity.sh -->
+
+
 `git branch -d` refuses by **ancestry** — with squash-merge as the project's merge strategy,
 ancestry never exists, so `-d` refuses *every* integrated branch, teaching users to reach for
 `-D`, which deletes without checking anything. A naive bidirectional
@@ -1323,6 +1326,9 @@ itself calls `evaluateBranchIntegration` (see below) instead of that naive diff 
 positive is closed.
 
 ### The touched-files heuristic — the single shared decision function
+
+<!-- trackfw-contract: gate=scripts/check-branch-prune-parity.sh partial=as linhas no_own_work e no_merge_base da tabela de decisão não são exercitadas cross-CLI pelo gate; só content_identical, review_doc_config e pending_work o são (cenários a, b, e, f) -->
+
 
 ```
 mb      = git merge-base origin/main <branch>
@@ -1339,6 +1345,9 @@ diverg  = git diff --name-only -z origin/main <branch> -- touched  (what still d
 | (merge-base fails) | — | `no_merge_base` | no — refuses, unrelated history or bad ref |
 
 ### The `review_doc_config` category — flagged, never auto-deleted, requires a PROPER subset
+
+<!-- trackfw-contract: gate=scripts/check-branch-prune-parity.sh -->
+
 
 `CLAUDE.md` §1's own manual procedure treats a divergence limited to doc/config files (its
 worked example: only `CLAUDE.md` diverges) as "housekeeping, apagar" — but that step assumes a
@@ -1393,6 +1402,9 @@ modules); Go needs no import — both functions live in the same `commands` pack
 
 ### Always-kept branches — never evaluated for deletion, never candidates
 
+<!-- trackfw-contract: gate=scripts/check-branch-prune-parity.sh partial=exclusão de branch com worktree checked-out em outro diretório não é exercitada cross-CLI pelo gate (só a branch atual via HEAD é, cenário c) -->
+
+
 - **`main`** — the default branch itself. Evaluating it against `origin/main` would trivially
   report `no_own_work` (its own merge-base against itself is its own tip) and offer to delete the
   branch the user is meant to keep. Excluded by name before the heuristic ever runs — the
@@ -1406,6 +1418,9 @@ delete**, not just during the report phase — belt-and-suspenders against the b
 state mid-run.
 
 ### Deletion: `-d` before `-D`
+
+<!-- trackfw-contract: gate=scripts/check-branch-prune-parity.sh partial=o fallback -d→-D só é exercitado cross-CLI no sentido squash (-d falha, cai para -D); o caminho onde -d sozinho basta (merge não-squash com ancestria) só tem prova por teste unitário isolado por runtime, não por comparação cross-CLI -->
+
 
 `defaultDeleteBranch` (Go), `defaultDeleteBranch` (Node.js), `_default_delete_branch` (Python) try
 `git branch -d <name>` first. When the branch also happens to have fast-forward ancestry with
@@ -1421,6 +1436,9 @@ back to `-D` and succeeds).
 
 ### Offline / no remote — fails closed
 
+<!-- trackfw-contract: gate=scripts/check-branch-prune-parity.sh partial=cenário d prova exit 1 e zero deleções quando origin/main não é resolvível, mas o gate não afirma o texto pinado "branch prune: origin/main not resolvable" — grep por "not resolvable" no script não retorna nada -->
+
+
 The only ref this command consults is `origin/main`, checked once via
 `git rev-parse --verify -q origin/main` **after** the best-effort fetch above. If it cannot be
 resolved at all (no remote configured, or `origin/main` was never fetched even before this run),
@@ -1429,6 +1447,9 @@ human-readable reason goes to stdout; a bare `branch prune: origin/main not reso
 stderr (mirroring `trackfw branch new`'s stdout/stderr split), exit 1.
 
 ### Command surface
+
+<!-- trackfw-contract: gate=scripts/check-branch-prune-parity.sh -->
+
 
 | Element | Value |
 |---|---|
@@ -1439,6 +1460,9 @@ stderr (mirroring `trackfw branch new`'s stdout/stderr split), exit 1.
 | Deletion | `git branch -d`, falling back to `-D` only when `-d` refuses (see above); only for branches decided `no_own_work` or `content_identical`, and never the current/worktree/default branch, and never `review_doc_config` |
 
 ### Parity gate
+
+<!-- trackfw-contract: gate=scripts/check-branch-prune-parity.sh -->
+
 
 `scripts/check-branch-prune-parity.sh` builds a **real** local bare repository as `origin` (no
 mock of `git` — see `vault/notes/` precedent, Cenário 50 in `check-gates-falsify.sh`) and asserts
@@ -1464,6 +1488,9 @@ Wired into `make quality` via the `parity` target.
 
 ## `trackfw barrier`
 
+<!-- trackfw-contract: gate=scripts/check-barrier.sh -->
+
+
 `trackfw barrier <roadmap> --wave <n>` is the deterministic core of the wave-release barrier.
 It is **stack-agnostic**: it never assumes a build tool, a test runner or a parity rule. Every
 executable check comes from the roadmap itself. The agent-orchestration layer (specialist
@@ -1471,6 +1498,9 @@ inspections for code quality and security) lives in the `/trackfw:barrier` slash
 in the binary.
 
 ### Command surface
+
+<!-- trackfw-contract: gate=scripts/check-barrier.sh -->
+
 
 | Element | Value |
 |---|---|
@@ -1528,6 +1558,9 @@ formatting differences before diffing (Go emits compact JSON, Node.js and Python
 
 ### Wave label grammar
 
+<!-- trackfw-contract: gate=scripts/check-barrier.sh -->
+
+
 A wave label is `<integer>[-<suffix>]`:
 
 | Element | Rule |
@@ -1568,6 +1601,9 @@ decision 12 forbids. See ADR decision 16.
 
 #### Detection is a full pre-pass — pinned
 
+<!-- trackfw-contract: gate=scripts/check-barrier.sh -->
+
+
 Two regexes are required, and **the order of operations matters more than the regexes**:
 
 | Regex | Role |
@@ -1597,6 +1633,9 @@ vacuous with respect to the early-break bug.
 
 #### Ordering has no call site — helper is optional
 
+<!-- trackfw-contract: gap reason=a seção fixa fato falsificável hoje (Go tem compareWaveLabels coberto por teste unitário; Node.js e Python declinaram) e uma exigência positiva ("não fixe esta assimetria em nenhuma direção"), mas nenhum gate cross-CLI compara os três runtimes nesse ponto; regra de desempate da Emenda 1 aplicada — autodeclaração de "sem superfície hoje" não prevalece sobre fato falsificável presente -->
+
+
 No runtime currently lists or compares waves; `--wave` resolution is exact-match only. The ordering
 rule above stays **normative** — it applies the moment a listing surface appears — but implementing a
 comparator is **optional** until then. Go has `compareWaveLabels` covered by unit tests, which proves
@@ -1605,6 +1644,9 @@ code. Do not "fix" this asymmetry in either direction: adding dead comparators t
 parity, and deleting Go's loses the tested proof.
 
 ### States
+
+<!-- trackfw-contract: gate=scripts/check-barrier.sh partial=os estados pending e running só aparecem mid-run ou em documento abortado; os cenários do gate comparam apenas o documento JSON final (passed/blocked), nunca um snapshot mid-run -->
+
 
 | State | Meaning |
 |---|---|
@@ -1616,6 +1658,9 @@ parity, and deleting Go's loses the tested proof.
 The wave-level `status` is `passed` only when **every** check is `passed`; otherwise `blocked`.
 
 ### Roadmap parsing rules (string-level — no heuristics)
+
+<!-- trackfw-contract: gate=scripts/check-barrier.sh partial=regras 3, 4 e 5 são exercitadas cross-CLI pelos cenários isolated-check; a regra 6 (fence não-terminado, ML cujo corpo não pode ser delimitado como usage error nomeado) não tem cenário — grep por "unterminated"/"fence"/"cannot be delimited" no gate não retorna nada -->
+
 
 These are literal parsing rules. All three runtimes must implement them identically.
 
@@ -1644,6 +1689,9 @@ These are literal parsing rules. All three runtimes must implement them identica
 
 ### Built-in checks
 
+<!-- trackfw-contract: gate=scripts/check-barrier.sh -->
+
+
 Evaluated in this fixed order; the run continues through all checks so the report is complete.
 
 | `name` | Passes when |
@@ -1657,6 +1705,9 @@ Evaluated in this fixed order; the run continues through all checks so the repor
 shelling out to a `trackfw` binary that may not be on `PATH`.
 
 ### JSON document
+
+<!-- trackfw-contract: gate=scripts/check-barrier.sh partial=o cenário 6 usa uma fixture 100% verde (todos os checks passed) e prova só que os 3 runtimes concordam ENTRE SI byte a byte; não afirma os textos pinados de evidence/failures ("<ML-id>: <n> criteria met", "<command>: exit 0") contra um valor esperado — grep por "criteria met"/"exit 0'" no script não retorna asserção correspondente, e nenhum cenário deste gate produz um failures[] não-vazio para comparar -->
+
 
 ```json
 {
@@ -1717,6 +1768,9 @@ Determinism contract:
 
 ### Edge cases not reached by the eight mandated scenarios
 
+<!-- trackfw-contract: gap reason=os quatro casos de borda (bloco de aceite vazio, wave sem MLs, wave sem título, processo morto por sinal) só têm cobertura em testes unitários por runtime (barrier_test.go/barrier.js/barrier.py); nenhum cenário de check-barrier.sh os exercita cross-CLI -->
+
+
 These were surfaced while implementing the runtimes. They are pinned here because each is a point
 where three independent implementations would otherwise drift silently — no contract test exercises
 them, so the parity gate is the only thing that would catch it, and only much later.
@@ -1730,6 +1784,9 @@ them, so the parity gate is the only thing that would catch it, and only much la
 
 ### `trackfw barrier` vs `/trackfw:barrier`
 
+<!-- trackfw-contract: gate=scripts/check-barrier.sh -->
+
+
 | | `trackfw barrier` (CLI) | `/trackfw:barrier` (slash command) |
 |---|---|---|
 | Nature | Deterministic, reproducible, exit-code driven | Orchestration checklist for `trackfw_architect` |
@@ -1742,6 +1799,9 @@ A green CLI barrier is **necessary but not sufficient** to release a wave. The s
 inspections and diff audit are conditions the binary cannot evaluate.
 
 ## `trackfw update` vs `trackfw update harness`
+
+<!-- trackfw-contract: gate=scripts/check-update-parity.sh -->
+
 
 Update is split by **scope**. The split exists because `trackfw update` today mutates global state
 (`~/.claude` skill, global Codex deployments) as a side effect of being run inside a project — so a
@@ -1771,6 +1831,9 @@ current project's own `trackfw.yaml`.
 directory.
 
 ### `trackfw.yaml` fields consumed by `update` and `sync` — single loader, `Update`/`Sync` namespaces
+
+<!-- trackfw-contract: gap reason=nenhum gate cross-CLI exercita o efeito dos 12 campos Update/Sync (hooks, ci, backend, frontend, pkg_manager, agent_conventions, linear_*, jira_*) na saída gerada; há só testes unitários por runtime e a prova de falsificação do carregador unificado em check-gates-falsify.sh, que garante que o loader é chamado, não que os três runtimes reagem identicamente a um dado valor de campo -->
+
 
 Since `REQ-2026-08-02-unificar-a-leitura-do-trackfw-yaml-em-um-unico-carregador-nos-tres-clis`, all
 twelve fields below are read exclusively by the shared config loader (Go `config.Load`, Node.js
@@ -1815,6 +1878,9 @@ shelling out to `trackfw` from inside a hook, which is not guaranteed to exist. 
 `roadmap_dir`, is intentionally minimal, and is not part of the `Update`/`Sync` namespaces above.
 
 ### `credential_guard.mode` — `trackfw.yaml` field consumed by `scripts/trackfw-credential-guard.sh`
+
+<!-- trackfw-contract: gate=internal/generators/credential_guard_test.go partial=TestCredentialGuardScript_ParityAcrossStacks compara byte a byte o script GERADO entre Go, Node e Python (que embute a leitura de mode via grep/sed), mas nenhum gate cross-CLI testa o fallback silencioso de um valor mode não reconhecido para "warn" nem a divergência real de comportamento warn vs block em runtime -->
+
 
 Since `ADR-2026-08-05-hook-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes`, a
 nested `credential_guard:` mapping is read from `trackfw.yaml` by the shared config loader in all
@@ -1878,6 +1944,9 @@ Wave 5 (ML-5A) scope.
 
 #### Codex wiring (ML-2B) — `PreToolUse`/`PostToolUse` matcher `"Bash"`
 
+<!-- trackfw-contract: gate=scripts/check-agent-hooks-parity.sh -->
+
+
 `InjectCodexHooks` (Go: `internal/generators/agentfiles.go`; Node.js:
 `npm/src/generators/hooks.js:injectCodexHooks`; Python:
 `pypi/trackfw/generators/hooks.py:inject_codex_hooks`) writes three independent hook events into
@@ -1924,6 +1993,9 @@ anywhere in the array", which would have produced sibling `{"matcher": "Bash", .
 of merging into an existing one).
 
 #### Gemini CLI wiring (ML-2C) — `BeforeTool`/`AfterTool` matcher `"run_shell_command"`
+
+<!-- trackfw-contract: gate=scripts/check-agent-hooks-parity.sh -->
+
 
 `InjectGeminiHooks` (Go: `internal/generators/agentfiles.go`; Node.js:
 `npm/src/generators/hooks.js:injectGeminiHooks`; Python:
@@ -2006,6 +2078,9 @@ and the `Bash`-matcher wiring together.
 
 #### GitHub Copilot wiring (ML-2D) — `.github/hooks/trackfw-attention.json` format correction + matcher `"bash"`
 
+<!-- trackfw-contract: gate=scripts/check-agent-hooks-parity.sh -->
+
+
 `InjectCopilotHooks` (Go: `internal/generators/agentfiles.go`; Node.js:
 `npm/src/generators/hooks.js:injectCopilotHooks`; Python:
 `pypi/trackfw/generators/hooks.py:inject_copilot_hooks`) writes a dedicated (overwritten wholesale, same
@@ -2082,6 +2157,9 @@ JSON structurally (event keys, entry count, `bash`/`type`/`matcher` fields) rath
 since each stack's own JSON serializer is free to choose its own formatting.
 
 #### Cursor wiring (ML-2E) — `.cursor/hooks.json`, `hooks.beforeShellExecution`/`hooks.afterShellExecution`
+
+<!-- trackfw-contract: gate=scripts/check-agent-hooks-parity.sh -->
+
 
 `InjectCursorHooks` (Go: `internal/generators/agentfiles.go`; Node.js:
 `npm/src/generators/hooks.js:injectCursorHooks`; Python:
@@ -2208,6 +2286,9 @@ migrate and is a no-op on the top-level keys.
 
 #### Kiro wiring (ML-2F) — `.kiro/hooks/trackfw-attention.json` format correction + `PreToolUse`/`PostToolUse` matcher `"shell"`
 
+<!-- trackfw-contract: gate=scripts/check-agent-hooks-parity.sh -->
+
+
 `InjectKiroHooks` (Go: `internal/generators/agentfiles.go`; Node.js:
 `npm/src/generators/hooks.js:injectKiroHooks`; Python:
 `pypi/trackfw/generators/hooks.py:inject_kiro_hooks`) fully overwrites
@@ -2302,6 +2383,9 @@ regenerated with the same four entries, so re-running the injector never duplica
 
 #### Suporte por CLI — visão consolidada, escopo DE PROJETO (ML-5A, `ROADMAP-2026-08-05-hooks-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md`)
 
+<!-- trackfw-contract: gate=scripts/check-agent-hooks-parity.sh partial=a estrutura do wiring (matcher/evento/schema por CLI) é comparada byte a byte entre os 3 runtimes; a própria seção declara cobertura de teste de sabotagem end-to-end em só 3 de 6 CLIs (Claude Code, Cursor, Kiro) — Codex, Gemini CLI e GitHub Copilot ficaram sem esse teste específico -->
+
+
 > Não confundir com a seção "Suporte por CLI — visão consolidada, escopo GLOBAL (ML-5A)" mais abaixo
 > neste mesmo documento — mesmo rótulo `ML-5A`, mas de um roadmap diferente e posterior
 > (`ROADMAP-2026-08-06-hooks-de-credential-guard-como-escopo-global-cross-project-via-trackfw-update-harness.md`),
@@ -2390,6 +2474,9 @@ não uma lacuna de cobertura de detecção real.
 
 ### States
 
+<!-- trackfw-contract: gate=scripts/check-update-parity.sh -->
+
+
 Both commands report one state per target. These four strings are pinned:
 
 | State | Meaning |
@@ -2406,6 +2493,9 @@ outcome, not a usage error. Exit is non-zero only when at least one target is `f
 
 ### Flags
 
+<!-- trackfw-contract: gate=scripts/check-update-parity.sh -->
+
+
 | Flag | Applies to | Behaviour |
 |---|---|---|
 | `--dry-run` | both | Compute and report states without writing anything |
@@ -2414,6 +2504,9 @@ outcome, not a usage error. Exit is non-zero only when at least one target is `f
 | `--install-missing` | both | Allow `missing` targets to be installed instead of merely reported |
 
 ### JSON document
+
+<!-- trackfw-contract: gate=scripts/check-update-parity.sh -->
+
 
 ```json
 {
@@ -2433,6 +2526,9 @@ target order, not filesystem order. `summary` always carries all four counters, 
 
 ### Declared project targets — pinned list
 
+<!-- trackfw-contract: gate=scripts/check-update-parity.sh partial=o gate garante que os 3 runtimes concordam entre si sobre o array de targets (comparação estrutural go-vs-node/go-vs-py), mas nenhum cenário afirma independentemente que a contagem/ordem bate com os 5 ids documentados — os 3 runtimes concordando com uma lista errada ainda passaria (mesmo padrão do achado "OpenCode agent representation" do lote 1) -->
+
+
 `trackfw update` declares this fixed sequence of 5 ids, in this exact order:
 `agent-rules`, `agent-hooks`, `codex-project-agents`, `validate-script`, `claude-commands`.
 
@@ -2441,6 +2537,9 @@ reports its honest state — silently shortening the list makes the JSON incompa
 
 ### `updated` vs `skipped` — the discriminator is content, not action
 
+<!-- trackfw-contract: gate=scripts/check-update-parity.sh -->
+
+
 `updated` means the target's content **actually changed**. A target that already matches the current
 template is `skipped`, even if the implementation rewrote the bytes. Deciding by "did I call write()"
 instead of "did the content change" makes an idempotent re-run report `updated` in one runtime and
@@ -2448,6 +2547,9 @@ instead of "did the content change" makes an idempotent re-run report `updated` 
 Wave 6 round.
 
 ### Declared harness targets — pinned list
+
+<!-- trackfw-contract: gate=scripts/check-update-parity.sh partial=mesmo padrão da lista de targets do projeto — os 3 runtimes concordando entre si sobre os 33 ids não prova que a lista bate com os 33 documentados; nenhum cenário afirma a contagem/ordem exata de forma independente -->
+
 
 The harness target list is **not** derived at runtime; it is this fixed sequence of 33 ids, in this
 exact order: `claude-skill`, `claude-credential-guard` (global-scope credential-guard wiring for
@@ -2488,6 +2590,9 @@ the ADR).
 
 ### Kiro global-scope git-branch-guard wiring (ROADMAP-2026-08-17 Wave 2/ML-2A) — `~/.kiro/hooks/trackfw-git-branch-guard.json`, dedicated file
 
+<!-- trackfw-contract: gate=scripts/check-harness-hooks-parity.sh -->
+
+
 Same `{"version":"v1","hooks":[...]}` schema as `kiro-credential-guard`'s own
 `~/.kiro/hooks/trackfw-credential-guard.json` (see "Kiro global-scope wiring (ML-2F)" below), but a
 **separate file**, with hook names `trackfw-git-branch-guard-global-pre`/`-global-post` instead of
@@ -2503,6 +2608,9 @@ targets flap between each other's desired 2-entry document on every subsequent r
 "missing never installs; unchanged content never rewrites" idempotency contract.
 
 ### GitHub Copilot global-scope wiring (ML-2E) — `~/.copilot/settings.json`, inline `hooks` field
+
+<!-- trackfw-contract: gate=scripts/check-harness-hooks-parity.sh -->
+
 
 **Investigation, confirmed 2026-08-06** against
 `https://docs.github.com/en/copilot/reference/hooks-reference` (the `hooks-configuration` URL the ADR
@@ -2555,6 +2663,9 @@ confidence: no opt-in flag is needed for either project-scope (`.codex/hooks.jso
 
 ### Kiro global-scope wiring (ML-2F) — `~/.kiro/hooks/trackfw-credential-guard.json`, dedicated file
 
+<!-- trackfw-contract: gate=scripts/check-harness-hooks-parity.sh -->
+
+
 **Format, confirmed 2026-08-06** against `https://kiro.dev/changelog/cli/2-13/` (re-fetched via
 `curl -L`, same RSC/HTML retrieval method the project-scope `InjectKiroHooks` investigation used):
 "Hooks placed in `~/.kiro/hooks/` now fire in every workspace automatically ... Workspace-level hooks
@@ -2595,6 +2706,9 @@ documented here and in the Go/Node/Python doc comments above
 instead; release notes pointing users at `trackfw update harness` should mention it too.
 
 ### Suporte por CLI — visão consolidada, escopo GLOBAL (ML-5A, `ROADMAP-2026-08-06-hooks-de-credential-guard-como-escopo-global-cross-project-via-trackfw-update-harness.md`)
+
+<!-- trackfw-contract: gate=scripts/check-harness-hooks-parity.sh -->
+
 
 Consolida, numa única tabela, o wiring **global** (`trackfw update harness`) já detalhado CLI a CLI
 nas seções acima ("Declared harness targets — pinned list", "GitHub Copilot global-scope wiring
@@ -2678,6 +2792,9 @@ barrier roadmap and had to be fixed later in ML-2E.
 
 ## `install` sobre artefato gerenciado desatualizado — skip, não erro fatal
 
+<!-- trackfw-contract: gate=scripts/check-update-parity.sh -->
+
+
 Escopo desta seção: o preflight de `mutationInstall` no `IntegrationManager` dos três runtimes.
 Afeta todo caller de `install` — `trackfw init --ai-tools`, `trackfw agents install`,
 `trackfw skills install` e `trackfw update --install-missing`.
@@ -2690,6 +2807,9 @@ fronteira projeto/global aos demais comandos.
 
 ### Problema
 
+<!-- trackfw-contract: gate=scripts/check-update-parity.sh -->
+
+
 Um artefato `outdated` **e** `owned` (declarado no manifest com o mesmo claim, bytes correspondentes
 a um template trackfw anterior) fazia o preflight de `install` retornar erro. Como `mutate` é um lote
 atômico com rollback, o erro **aborta a operação inteira**: um harness global desatualizado impedia
@@ -2700,6 +2820,9 @@ artifact "/home/<user>/.gemini/agents/trackfw-architect.md" is outdated; use upd
 ```
 
 ### Contrato
+
+<!-- trackfw-contract: gate=scripts/check-update-parity.sh partial=cenários 6/7/8 exercitam cross-CLI só a linha outdated+owned da tabela (skip, bytes preservados, exit 0); a linha modified (erro, exige --force) não tem cenário no gate — grep por "modified"/"--force" no script não retorna teste correspondente -->
+
 
 | Estado do artefato | `owned` | `install` sem `--force` |
 |---|---|---|
@@ -2717,6 +2840,9 @@ artifact "/home/<user>/.gemini/agents/trackfw-architect.md" is outdated; use upd
 
 ### Superfície do sinal de skip
 
+<!-- trackfw-contract: gate=scripts/check-update-parity.sh partial=o gate confirma a mensagem de skip byte a byte para um único artefato pulado; a exigência "chamado uma vez por artefato pulado, nunca duas vezes para o mesmo destino" precisaria de fixture com múltiplos artefatos pulados no mesmo lote, e nenhum cenário monta isso -->
+
+
 O observador opcional de skip é a **única** superfície sancionada para o sinal. Nenhum runtime deve
 propagá-lo por outro caminho — em particular, o `mutate` do Node.js já retorna `this.inspect(plans)`,
 e esse retorno **não** deve ser usado para comunicar skips, sob pena de divergência com Go e Python.
@@ -2731,6 +2857,9 @@ O observador é chamado **uma vez por artefato pulado**, na fase de preflight, n
 `resolved` — nunca duas vezes para o mesmo destino.
 
 #### Valor de cada parâmetro — pinado
+
+<!-- trackfw-contract: gate=scripts/check-update-parity.sh -->
+
 
 A primeira rodada de implementação pinou os **nomes** dos parâmetros e deixou os **valores** à
 interpretação. Os três runtimes produziram três respostas para `reason`: a linha de aviso completa
@@ -2748,6 +2877,9 @@ rodada produziu **dois sites de composição dentro do mesmo runtime** (`init.js
 no Node.js), que podem divergir entre si sem que nenhum teste de paridade entre runtimes perceba.
 
 #### Origem do comando de remediação — pinada
+
+<!-- trackfw-contract: gate=scripts/check-update-parity.sh partial=cenários 6 e 7 são cada um de escopo uniforme (s6 só global, s7 só projeto); a própria seção diz que as derivações proibidas só erram num lote de escopo MISTO — a fixture que discriminaria a derivação correta (por plan.claim.scope, por artefato) das proibidas (inferência do path renderizado, closure de escopo do comando) não existe no gate -->
+
 
 A remediação é derivada de **`plan.claim.scope`, por artefato**, dentro do manager.
 

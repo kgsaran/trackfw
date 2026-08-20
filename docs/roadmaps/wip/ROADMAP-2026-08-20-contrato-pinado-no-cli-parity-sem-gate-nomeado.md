@@ -456,6 +456,54 @@ sozinho. Esse é o falso-positivo mais provável da triagem, e agora tem contram
 
 **Nenhuma discordância com os 3 pilotos.**
 
+
+### Auditoria do ML-2B — aprovada, e a **declaração de nível de verificação** vale registrar
+
+```
+lote 2 (44):  gate= 27 · partial 14 · gap 3 · none 0
+acumulado (88): gate= 44 · partial 23 · gap 20 · none 1 · invalidas 0 · 89 sem anotacao
+make quality (CI-exata) exit 0 · validate exit 0
+```
+
+**Ele declarou o próprio limite, e isso é o mais valioso do relatório.** Escreveu que os 27 `gate=`
+foram confirmados no nível *"o cenário existe e cobre a topologia da seção"*, **não** mapeamento
+alegação-a-asserção, e **pediu** que eu amostrasse — dizendo que, se eu achasse o padrão numa,
+provavelmente há outras. Executor que expõe a fragilidade da própria conclusão em vez de deixá-la
+implícita é o que torna a auditoria possível.
+
+**Amostrei 2 dos 24 `gate=` plenos, por medição:**
+
+```
+linha 1349  "review_doc_config — requires a PROPER subset"
+   -> grep inicial: 'review_doc_config' so aparece em COMENTARIO (linhas 316-317). Suspeita.
+   -> leitura do trecho: existe Cenario (e) real, 'review-doc-config-only', com fixture de
+      subconjunto PROPRIO e o contraste feat/doc-real. ANOTACAO CORRETA.
+linha 1491  '## trackfw barrier' -> check-barrier.sh, com diff byte a byte. CORRETA.
+```
+
+A primeira parecia defeito e não era — o grep encontrava só o comentário porque o cenário nomeia o
+label de outra forma. Registro o falso alarme de propósito: **grep sobre nome de regra não é prova
+de cobertura, nos dois sentidos** — nem de ausência, nem de presença.
+
+#### A divergência estatística é achado, não ruído
+
+```
+lote 1:  39% gap    ·  20% partial
+lote 2:   7% gap    ·  32% partial
+```
+
+A explicação dele é convincente e verificável: os tópicos do lote 2 — `branch prune`, `barrier`,
+`update`, fiação de hooks — são features recentes, que **já nasceram com gate cross-CLI dedicado**.
+O `gap` alto do lote 1 vinha de contrato **antigo**, nunca gateado.
+
+E a frase que resume o valor da REQ, dele: **"ter gate nomeado não é o mesmo que o gate cobrir cada
+alegação da seção"**. O `partial` subindo de 20% para 32% é exatamente isso ficando visível.
+
+**17 reclassificações na autorrevisão**, todas do mesmo padrão: o gate prova que os 3 runtimes
+concordam **entre si**, não que concordam com o texto literalmente pinado pela seção. É uma classe
+de lacuna que eu não tinha antecipado ao escrever o ADR, e que só aparece quando alguém confere
+alegação por alegação.
+
 ## Wave 3 — Tornar bloqueante
 
 ### ML-3A — Checker vira bloqueante

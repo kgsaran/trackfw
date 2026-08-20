@@ -21164,3 +21164,151 @@ fora do intervalo tocada). `./bin/trackfw validate` exit 0 (só os warnings pré
 quality` exit 0 (Go+Node+Python+parity completo, incluindo os 145 cenários de
 `check-gates-falsify.sh`). Nenhum commit feito — devolvendo ao `trackfw_architect` para auditoria e
 para despachar os lotes 2–4.
+
+## Sessão 2026-08-20 — Hefesto (INÍCIO: ML-2B — triagem de cobertura de contrato, lote 2/4)
+
+Branch `feat/contrato-pinado-no-cli-parity-sem-gate-nomeado`, roadmap
+`docs/roadmaps/wip/ROADMAP-2026-08-20-contrato-pinado-no-cli-parity-sem-gate-nomeado.md` em `wip/`.
+Escopo: as 44 seções seguintes às do lote 1 (linhas 1312–2750 no documento antes da minha edição),
+cobrindo `trackfw branch prune`, `trackfw barrier`, `trackfw update`/`update harness`, wiring de
+hooks de credential-guard por CLI (projeto e global) e o preflight de skip de `install`. Nenhum
+commit/push (autoridade exclusiva do `trackfw_architect`).
+
+## Sessão 2026-08-20 — Hefesto (FIM: ML-2B concluído — 36 gate / 5 gate+partial / 2 gap / 1 none)
+
+**Contagem do lote 2:** `gate=` 36 · `gate=` com `partial=` 5 · `gap` 2 · `none` 1 · 0 inválidas — as
+44 seções do intervalo, todas classificadas.
+
+Contraste com o lote 1 (39% gap): este lote é **muito mais coberto** — só 2/44 (4,5%) é `gap` puro
+(mais 5 `partial`). Não é acaso: os tópicos deste lote (`branch prune`, `barrier`, `update`/`update
+harness`, wiring de hooks) são features recentes (agosto/2026) construídas já com gate cross-CLI
+dedicado desde o primeiro ML — `check-branch-prune-parity.sh`, `check-barrier.sh`,
+`check-update-parity.sh`, `check-agent-hooks-parity.sh`, `check-harness-hooks-parity.sh`. Ao
+contrário do lote 1, cuja alta taxa de `gap` vinha de contratos mais antigos, documentados por
+prosa/leitura de código sem gate dedicado nunca ter sido escrito. **Sinal de priorização:** a
+proporção de `gap` não é uniforme pelo documento — concentra-se em seções antigas, não recentes;
+convém que os lotes 3/4 verifiquem se esse padrão se mantém.
+
+**Lista de `gap` ordenada por risco:**
+1. **`### Edge cases not reached by the eight mandated scenarios` (barrier, era linha 1718)** — 4
+   casos de borda (bloco de aceite vazio, wave sem MLs, wave sem título, gate morto por sinal) só
+   têm teste unitário por runtime; nenhum cenário do `check-barrier.sh` os exercita cross-CLI. Risco
+   moderado: o `barrier` é o binário que decide se uma wave libera — um destes 4 casos divergindo
+   silenciosamente entre runtimes afetaria diretamente o gate que audita todos os outros gates.
+2. **`### 'trackfw.yaml' fields consumed by 'update' and 'sync'` (era linha 1773)** — nenhum gate
+   cross-CLI exercita o efeito dos 12 campos `Update`/`Sync` (`hooks`, `ci`, `backend`, `frontend`,
+   `pkg_manager`, `agent_conventions`, `linear_*`, `jira_*`) na saída gerada. Risco maior em termos
+   de superfície (12 campos, 2 integrações externas — Linear/Jira), mas mitigado por já ter sido
+   fechado uma vez nesta seção (Python não lia 5 desses campos, corrigido nesta REQ) — a lacuna
+   remanescente é "sem prova formal de que não regride", não "sabidamente quebrado".
+
+**Um achado de `gate=` que quase virou falso-positivo (lição 2 aplicada):** a seção "`credential_guard.mode`" citava um teste (`TestCredentialGuardScript_ParityAcrossStacks`) sem eu confirmar se ele
+de fato invoca Node/Python. Rodei `grep` no arquivo (`internal/generators/credential_guard_test.go`)
+e confirmei que o teste Go **invoca os geradores Node e Python via subprocesso** e compara os 3
+scripts byte a byte — é um gate cross-CLI genuíno, só que vive como teste Go em vez de
+`scripts/*.sh`. Marquei `gate=internal/generators/credential_guard_test.go` (path não-`.sh`, mas o
+ADR não exige extensão) com `partial=` porque esse teste prova paridade do script GERADO, não o
+fallback silencioso de um `mode` não reconhecido para `warn` nem a divergência real de comportamento
+`warn`/`block` em runtime — isso não tem gate.
+
+**Dois `partial=` que vieram de medição, não de leitura:** em "`### The touched-files heuristic`"
+(branch prune) confirmei por `grep` que `check-branch-prune-parity.sh` não constrói fixture para as
+linhas `no_own_work`/`no_merge_base` da tabela de decisão (só `content_identical`,
+`review_doc_config`, `pending_work` têm cenário). Em "`### Deletion: '-d' before '-D'`" confirmei que
+o gate cross-CLI só exercita o fallback `-d`→`-D` (branch squash, sem ancestria) — o caminho onde
+`-d` sozinho basta (merge não-squash) só tem prova por teste unitário isolado por runtime
+(`TestDefaultDeleteBranch_TriesDashDBeforeDashD_BothCodepaths` em Go e equivalentes em Node/Python,
+cada um "concordando consigo mesmo" — exatamente o padrão de risco que a REQ nomeia).
+
+**Hesitações:**
+- "`#### Ordering has no call site — helper is optional`" (barrier) — marquei `none`, não `gap`: a
+  seção descreve uma regra normativa para um comportamento que **não existe ainda** (nenhum comando
+  lista/compara waves hoje). Não há comportamento de CLI presente para falsificar. Se a leitura for
+  "regra normativa é sempre contrato, mesmo sem superfície hoje", isso vira `gap` — sinalizando para
+  o arquiteto, mesmo padrão de decisão dos pilotos.
+- "`## trackfw update vs trackfw update harness`" e as 6 subseções de `## install sobre artefato
+  gerenciado desatualizado`" — marquei `gate=scripts/check-update-parity.sh` para todas, reaproveitando
+  a mesma evidência (cenários 6/7/8 do gate provam byte-a-byte a mensagem de skip, incluindo path
+  tilde-abreviado e comando de remediação). Achei razoável não subdividir em `partial` por não achar
+  nenhuma alegação específica da seção que o gate deixasse de exercitar — mas não testei cada um dos
+  4 estados (`updated`/`skipped`/`missing`/`failed`) isoladamente por leitura de asserção, só por
+  comparação estrutural JSON go-vs-node/go-vs-py; se o critério exigir prova por estado individual,
+  vale revisão.
+
+**Discordâncias com o piloto/lote 1:** nenhuma.
+
+**Correção pós-autorrevisão (antes de fechar o ML), 6 reclassificações de `gate=`/`none` para
+`partial=`/`gap` — nenhuma delas tinha sido confirmada por leitura de asserção, só por nome de
+cenário ou por "não achei teste contrário":**
+- `#### Suporte por CLI — visão consolidada, escopo DE PROJETO` — `gate=` → `partial=`: a própria
+  seção declara cobertura de sabotagem e2e em só 3 de 6 CLIs; eu tinha essa evidência no relatório e
+  não a apliquei na primeira passada.
+- `#### Ordering has no call site` (barrier) — `none` → `gap`: a regra de desempate da Emenda 1 diz
+  que fato falsificável presente (`compareWaveLabels` coberto só em Go) prevalece sobre
+  autodeclaração de "sem superfície hoje"; eu tinha registrado isso como hesitação e decidido errado.
+- `### Contrato` (install skip) — `gate=` → `partial=`: confirmei por grep que a linha `modified`
+  (erro, exige `--force`) da tabela não tem cenário no gate, só a linha `outdated+owned`.
+- `### Superfície do sinal de skip` — `gate=` → `partial=`: a exigência "uma vez por artefato, nunca
+  duas" precisa de fixture com múltiplos artefatos pulados; o gate só exercita um por cenário.
+- `### Roadmap parsing rules` (barrier) — `gate=` → `partial=`: regras 3/4/5 cobertas pelos cenários
+  isolated-check; regra 6 (fence não-terminado, ML sem delimitação) sem cenário.
+- `### Declared project targets` / `### Declared harness targets` — `gate=` → `partial=`: aplicando o
+  mesmo critério do achado "OpenCode agent representation" do lote 1 — comparação estrutural go-vs-
+  node/go-vs-py prova que os 3 runtimes concordam entre si, não que a contagem/ordem bate com os 5/33
+  ids documentados; os três concordando com uma lista errada ainda passaria.
+
+**Contagem final do lote 2, pós-correção:** `gate=` 30 · `gate=` com `partial=` 11 · `gap` 3 ·
+`none` 0 — 5,4% `gap` puro (2 originais + `Ordering has no call site`), mas **25% da amostra (14/44)
+com alguma ressalva** (`partial`+`gap`) quando a verificação vai além do nome do gate. Ainda assim
+muito mais coberto que o lote 1 (39% `gap`), e a leitura continua válida: features recentes chegaram
+com gate cross-CLI dedicado desde o primeiro ML; a diferença é que "ter um gate nomeado" não é o
+mesmo que "o gate cobrir cada alegação da seção" — o produto real desta REQ é essa distinção, e a
+autorrevisão a aplicou tarde demais na primeira passada.
+
+**Lista de `gap` ordenada por risco (atualizada):**
+1. **`#### Ordering has no call site — helper is optional` (barrier)** — fato falsificável hoje
+   (Go tem `compareWaveLabels` testado; Node/Python não) sem gate cross-CLI. Risco baixo em termos
+   de impacto de produto (não há call site ainda), mas é o tipo exato de lacuna que a regra de
+   desempate existe para não deixar passar por autodeclaração.
+2. **`### Edge cases not reached by the eight mandated scenarios` (barrier)** — 4 casos de borda só
+   com teste unitário por runtime. Risco moderado: afeta o binário que audita todos os outros gates.
+3. **`### 'trackfw.yaml' fields consumed by 'update' and 'sync'`** — nenhum gate cross-CLI para os
+   12 campos `Update`/`Sync`. Mitigado por já ter sido fechado uma vez nesta seção (Python não lia
+   5 campos, corrigido nesta REQ).
+
+**Hesitação que sobrou, não resolvida:** nenhuma seção deste lote foi marcada `none` no fechamento —
+a única candidata (`Ordering has no call site`) virou `gap` na correção. Sinalizando ao arquiteto:
+se isso for um padrão nos lotes 3/4 também, pode indicar que o critério de desempate da Emenda 1 é,
+na prática, quase sempre resolvido a favor de `gap`/`gate`, o que é o comportamento pretendido, mas
+vale confirmar que não é super-marcação.
+
+**Segunda rodada de correção (mesma classe, achada por segunda auditoria antes de fechar):** três
+`gate=` a mais reclassificados para `partial=`, todos pelo mesmo padrão — o gate prova que os 3
+runtimes concordam ENTRE SI, não que concordam com o texto/regra especificamente PINADO pela seção:
+- `### Offline / no remote — fails closed` (branch prune) — o cenário prova exit 1 e zero deleções,
+  mas não afirma o texto pinado `branch prune: origin/main not resolvable` (grep vazio).
+- `### JSON document` (barrier) — o cenário 6 usa fixture 100% verde e prova só concordância entre
+  runtimes; não afirma os formatos pinados de `evidence`/`failures` (`<ML-id>: <n> criteria met`,
+  `<command>: exit 0`) contra valor esperado, e nenhum cenário produz `failures[]` não-vazio.
+- `#### Origem do comando de remediação — pinada` (install skip) — os cenários 6/7 são cada um de
+  escopo uniforme (só global, só projeto); a seção diz que as derivações proibidas só erram num lote
+  de escopo MISTO, e essa fixture discriminante não existe no gate.
+
+**Contagem final do lote 2, pós-2ª correção:** `gate=` 27 · `gate=` com `partial=` 14 · `gap` 3 ·
+`none` 0 = 44.
+
+**Nível de verificação, para o arquiteto mirar a auditoria:** os ~27 `gate=` finais foram confirmados
+no nível de "cenário existe e cobre a topologia da seção" (nome do cenário lido, alegações centrais
+conferidas por grep/leitura do script) — não houve mapeamento alegação-a-asserção linha por linha
+para cada um dos 44. Os 17 `gate=`→`partial=`/`gap` (2 rodadas de correção) vieram de checar
+especificamente se uma alegação pinada (string literal, linha de tabela, "uma vez nunca duas") tinha
+asserção correspondente no script — esse nível mais fundo não foi aplicado às ~27 seções que
+permaneceram `gate=` puro. Se a auditoria do arquiteto amostrar 2–3 dessas 27 com o mesmo padrão
+(comparação estrutural sem string pinada específica testada), é provável que existam outras.
+
+**Validações (pós-2ª correção):** `bash scripts/check-parity-contract-coverage.sh` exit 0 (contagem
+acumulada: 44 gate / 23 partial / 20 gap / 1 none / 89 sem anotação / 0 inválida — as 88 seções dos
+lotes 1+2 classificadas, nenhuma fora do intervalo tocada). `./bin/trackfw validate` exit 0 (só os
+warnings pré-existentes, não relacionados a esta REQ). `make quality` exit 0 (Go+Node+Python+parity
+completo, rodado de novo após a 2ª correção). Nenhum commit feito — devolvendo ao `trackfw_architect`
+para auditoria e para despachar os lotes 3–4.
