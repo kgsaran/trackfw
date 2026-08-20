@@ -20937,3 +20937,26 @@ mecanismo existir**. REQ aberta no backlog.
 
 Próximo: ML-1A-bis reaplica os pilotos no formato final, para o ML-1B codificar contra ele e não
 contra o provisório.
+
+## 2026-08-20 — Apolo (backend) — ML-1A-bis: 3 pilotos reaplicados no formato final da Emenda 1
+
+**Arquivo:** `docs/cli-parity.md` (só as 3 anotações dos pilotos), roadmap `ROADMAP-2026-08-20-
+contrato-pinado-no-cli-parity-sem-gate-nomeado.md` (ML-1A-bis → ✅ Concluído).
+
+- **Piloto 1** (`## Version output`): sem mudança, `gate=scripts/check-cli-parity.sh` já válido.
+- **Piloto 2** (`## Vault de conhecimento`): `gate=` vazio → `gate=scripts/check-artifact-parity.sh
+  partial=regra note_orphan não comparada entre os 3 CLIs`. Medido: o script exercita a mecânica de
+  `note new` (cenários `note`/`note_index`) nos 3 CLIs; nenhum gate compara a semântica da regra
+  `note_orphan` entre eles — por isso `partial`, não `gap` (existe cobertura parcial, não zero).
+- **Piloto 3** (`## i18n locale keys`): `none reason=...` → `gap reason=...`, sob a regra de
+  desempate da Emenda 1. A seção se autodeclara não-contrato mas fixa fato falsificável presente
+  (`errors.notFound` ausente e sem consumidor nos 3 CLIs); confirmei que não há gate de comparação
+  de chaves de locale entre runtimes (só `check-gates-falsify.sh` menciona i18n, e não testa isso).
+
+**Achado para o ML-1B** (não corrigido aqui, é escopo do checker): o formato atual não impede `=`
+ou `,` dentro do texto livre de `reason=`/`partial=`, o que quebra um parser que faça split ingênuo
+por vírgula/igual. Recomendação registrada no roadmap: parsear por prefixo de chave conhecido até o
+próximo prefixo ou fim de linha, nunca por split cru.
+
+`./bin/trackfw validate` → exit 0 (mesmos warnings pré-existentes, nenhum novo). `make quality` →
+exit 0. Nenhum commit feito — devolvendo ao `trackfw_architect` para auditoria.

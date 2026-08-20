@@ -136,7 +136,7 @@ fail, and most likely reach for a hack in one framework's error path.
 
 ## Vault de conhecimento
 
-<!-- trackfw-contract: gate= -->
+<!-- trackfw-contract: gate=scripts/check-artifact-parity.sh partial=regra note_orphan não comparada entre os 3 CLIs -->
 
 `trackfw init` cria `vault/notes/` e gera `vault/notes/index.md` nos três CLIs.
 
@@ -156,7 +156,7 @@ Regra de validação `note_orphan` — notas em `vault/notes/` não referenciada
 
 ## i18n locale keys — no orphan keys (ML-2A)
 
-<!-- trackfw-contract: none reason=registra remoção pontual de errors.notFound; a seção mesma declara que cli-parity.md não documenta paridade de chaves i18n como contrato -->
+<!-- trackfw-contract: gap reason=a seção fixa fato falsificável (errors.notFound ausente e sem consumidor nos 3 CLIs) mas nenhum gate compara chaves de locale entre runtimes; ver REQ-2026-08-16-conformidade-estrutural-e-comportamental-de-i18n-entre-os-tres-clis -->
 
 > ROADMAP-2026-08-16-higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-da-release-7-0-0.md
 

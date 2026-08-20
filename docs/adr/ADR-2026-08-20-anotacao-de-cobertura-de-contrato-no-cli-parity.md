@@ -159,3 +159,17 @@ dentro de `##` de contrato.
 
 **A anotação vale para os três níveis. O universo da triagem é ~192, não 175.** O ML-2A é
 proporcionalmente maior do que estava dimensionado.
+
+### Nota de parsing (levantada pelo ML-1A-bis, incorporada ao formato)
+
+`reason=` e `partial=` são **texto livre**, e o texto livre pode conter `=` e `,`. Um parser que
+faça split ingênuo por esses caracteres quebra.
+
+**O formato não muda por isso** — restringir o texto livre custaria expressividade justamente onde
+ela importa, que é explicar uma lacuna. Muda a regra de leitura:
+
+> O parser reconhece **prefixos de chave conhecidos** (`gate=`, `partial=`, `reason=`) e consome até
+> o próximo prefixo conhecido ou o fim da linha.
+
+Chave desconhecida na anotação é **erro**, não texto livre — senão um `reson=` com erro de digitação
+viraria parte do valor anterior e o checker aceitaria em silêncio.

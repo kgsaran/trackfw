@@ -163,13 +163,90 @@ isso que o ML-2A vai fazer de forma sistemática.
 
 `make quality` exit 0 · `validate` exit 0.
 
+
+### Auditoria do ML-1A-bis — aprovada
+
+```
+linha  37  gate=scripts/check-cli-parity.sh
+linha 139  gate=scripts/check-artifact-parity.sh partial=regra note_orphan nao comparada entre os 3 CLIs
+linha 159  gap reason=... ver REQ-2026-08-16-conformidade-...-i18n-...
+os dois caminhos de gate existem no disco (conferido)
+make quality exit 0 · validate exit 0
+```
+
+**A decisão do piloto 2 é dele e está certa:** `partial`, não `gap`. Ele mediu que o
+`check-artifact-parity.sh` exercita a mecânica de `note new` nos 3 CLIs — a cobertura **existe**, é
+parcial, não zero. Marcar `gap` teria apagado a cobertura real e inflado a contagem de lacunas, que
+é justamente o número que a REQ quer confiável.
+
+**O piloto 3 sobreviveu ao primeiro teste real da regra de desempate.** Eu escrevi a regra a partir
+do relato dele, sem olhar a seção, e pedi que discordasse se ela produzisse resultado ruim no caso
+concreto. Ele aplicou e não discordou, com o argumento certo: a alternativa **manteria a
+autodeclaração como juíza de si mesma**. E foi além do pedido — ligou o `gap` à
+`REQ-2026-08-16-...-i18n-...`, que é onde a lacuna já está rastreada. Lacuna com destino é melhor
+que lacuna apenas contada.
+
+**Achado de parsing incorporado ao ADR**, sem mudar o formato: `reason=`/`partial=` são texto livre e
+podem conter `=` e `,`. Restringir custaria expressividade onde ela mais importa. Muda a regra de
+leitura — parser reconhece **prefixos de chave conhecidos** e consome até o próximo ou o fim da
+linha. E chave desconhecida é **erro**, não texto: senão um `reson=` com erro de digitação viraria
+parte do valor anterior e passaria em silêncio.
+
 ---
 
 ### ML-1A-bis — Reaplicar os 3 pilotos no formato da Emenda 1
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` · **Dependência:** Emenda 1 (feita).
-Trocar o `gate=` vazio do piloto 2 por `gap reason=...` (ou `gate=... partial=...`, o que a medição
-dele indicar), e revisar o piloto 3 sob a regra de desempate. Lote de minutos; existe para o ML-1B
-codificar contra o formato **final**, não contra o provisório.
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` · **Dependência:** Emenda 1 (feita).
+
+**Piloto 1 (`## Version output`):** revalidado, segue válido no formato final —
+`gate=scripts/check-cli-parity.sh`, script existe no disco.
+
+**Piloto 2 (`## Vault de conhecimento`):** o `gate=` vazio virou `partial`, não `gap`. Medição:
+`scripts/check-artifact-parity.sh` de fato exercita a mecânica de `note new` nos 3 CLIs (cria
+`vault/notes/<slug>-DATA.md` e a linha em `index.md` — cenário `note`/`note_index` do script,
+comparado entre Go/Node/Python). O que esse gate **não** cobre é a semântica da regra de validate
+`note_orphan` — nenhum script compara o comportamento dessa regra entre os 3 CLIs, e é exatamente
+essa lacuna que expôs `note_orphan` ausente do validator do Node (ver achado lateral do ML-1A,
+`REQ-2026-08-20-note-orphan-existe-em-go-e-python-e-esta-ausente-do-cli-node`). Como existe gate
+cobrindo parte do contrato da seção, `partial=` é o estado correto, não `gap` (que é para "nada
+protege"):
+```
+<!-- trackfw-contract: gate=scripts/check-artifact-parity.sh partial=regra note_orphan não comparada entre os 3 CLIs -->
+```
+
+**Piloto 3 (`## i18n locale keys`):** reclassificado de `none` para `gap` sob a regra de desempate.
+A seção se autodeclara não-contrato ("cli-parity.md não documenta paridade de chaves i18n como
+contrato"), mas fixa um fato falsificável e presente sobre o comportamento dos 3 CLIs: `errors.notFound`
+está ausente das três árvores de locale e sem consumidor em nenhum runtime. Isso é testável por
+grep hoje, e é exatamente o tipo de afirmação que a regra de desempate da Emenda 1 cobre — prosa que
+afirma comportamento é contrato, rotulada ou não. Não há gate no repo que compare chaves de locale
+entre runtimes (confirmado — `grep -rl locale scripts/*.sh` só acha `check-gates-falsify.sh`, que não
+testa isso), logo o estado correto é `gap`, não `none`:
+```
+<!-- trackfw-contract: gap reason=a seção fixa fato falsificável (errors.notFound ausente e sem consumidor nos 3 CLIs) mas nenhum gate compara chaves de locale entre runtimes; ver REQ-2026-08-16-conformidade-estrutural-e-comportamental-de-i18n-entre-os-tres-clis -->
+```
+Não discordo da regra aplicada a este caso: a alternativa (manter `none`) exigiria que a própria
+seção decidisse por autodeclaração se é contrato, que é precisamente o problema que a Emenda 1
+resolve.
+
+**Ambiguidade de parsing para o ML-1B (achado, não corrigido aqui):** nenhum dos 3 valores usados
+acima tem `=` dentro do texto livre de `reason`/`partial`, nem vírgula dentro de um caminho de gate
+único. Mas o formato **permite** ambas as coisas hoje — nada no ADR proíbe `reason=` conter `=` ou
+`,`, e `partial=` aceita texto livre sem limite de tamanho. Um checker por regex ingênuo que
+faça split em `,` para separar múltiplos `gate=` vai quebrar se um `reason`/`partial` contiver
+vírgula (ex.: o texto do piloto 2 tem vírgula? Não, mas é fácil escrever um que tenha). Recomendo
+ao ML-1B: (a) parsear pelo **prefixo da chave** (`gate=`/`partial=`/`reason=`) até o próximo prefixo
+de chave conhecido ou fim de linha, nunca por split ingênuo em vírgula; (b) proibir explicitamente
+`=` dentro de `reason`/`partial` livre não é necessário se o parser não depender de split por `=`.
+Nenhuma seção do documento hoje tem duas anotações `trackfw-contract` na mesma linha nem comentário
+HTML adicional colado na mesma linha — não há caso real disso a corrigir agora.
+
+**Critérios de aceite:**
+- [x] Os 3 pilotos no formato final da Emenda 1
+- [x] Escolha entre `gap` e `partial` no piloto 2 justificada por medição (`check-artifact-parity.sh`
+      existe e cobre a mecânica; `note_orphan` semântico não tem gate)
+- [x] Piloto 3 reavaliado sob a regra de desempate, com veredito escrito (reclassificado `none` → `gap`)
+- [x] Caminhos de gate nomeados existem no disco (`check-cli-parity.sh`, `check-artifact-parity.sh`)
+- [x] `./bin/trackfw validate` exit 0 · `make quality` exit 0
 
 ---
 
