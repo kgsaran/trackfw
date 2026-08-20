@@ -21058,3 +21058,21 @@ mesmos warnings pré-existentes, nenhum novo). `TRACKFW_DISABLE_EXTERNAL_COMMAND
 disparado (roda `check-gates-falsify.sh` completo com `GO_BIN` setado, forma CI-exata) — em
 andamento no momento deste registro, resultado a confirmar na auditoria. Nenhum commit feito —
 devolvendo ao `trackfw_architect` para auditoria.
+
+## 2026-08-20 — Zeus (arquiteto) — Wave 1 do contrato pinado fechada
+
+Mecanismo pronto: formato em ADR com 2 emendas, meta-checker com 6 classes de reprovação + regra
+geral de valor não-vazio + chave desconhecida em qualquer posição, 145 cenários de falsificação,
+invocação CI-exata verde.
+
+**Três lotes corretivos saíram de devoluções do próprio executor** — `gate=` vazio, `partial=` vazio,
+chave desconhecida posicional. Nas três ele sinalizou sem corrigir, e nas três a lacuna era real.
+A terceira era conformidade contra o meu próprio ADR: a regra estava escrita, a implementação não a
+cumpria.
+
+Heurístico de typo testado por mim na fronteira, não no caminho feliz: `gatee=` é pego (contra o que
+o relatório dizia), `raeson=` escapa (falso-negativo aceito), `rate=10` reprova (falso-positivo real,
+aceito — o dano é recusa com mensagem clara; o dano oposto é silêncio).
+
+**Próximo: ML-2A, a triagem de 177 seções.** É o lote caro da REQ e o produto mais valioso —
+a lista de contratos sem gate. Refatiar antes de despachar.

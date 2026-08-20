@@ -330,11 +330,45 @@ decide.
 ---
 
 ### ML-1B-ter — Conformidade: chave desconhecida em qualquer posição
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` · **Dependência:** ML-1B-bis. **Antes do ML-2A.**
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` · **Dependência:** ML-1B-bis. **Antes do ML-2A.**
 Fazer o checker cumprir a regra já escrita na Nota de parsing do ADR: chave desconhecida reprova
 **em qualquer posição**, não só antes da primeira conhecida. Braço P4 com o caso `reson=` depois de
 `reason=`. Precisa entrar antes da triagem — 177 anotações escritas contra um parser que engole
 erro de digitação em silêncio seriam 177 a reconferir.
+
+
+### Auditoria do ML-1B-ter — aprovada; testei a fronteira do heurístico, não o caminho feliz
+
+O critério é: token minúsculo seguido de `=`, precedido por início ou espaço, a **distância de edição
+≤ 1** de `gate`/`partial`/`reason`. Exercitei os dois lados eu mesmo:
+
+```
+DEVEM REPROVAR
+  reason=motivo reson=typo      -> 1  ✓
+  reason=motivo gatee=x         -> 1  ✓   (o relatorio dele dizia que escapava — nao escapa)
+  reason=motivo raeson=x        -> 0  falso-negativo ACEITO (transposicao = distancia 2)
+DEVEM PASSAR
+  reason=... sob LANG=pt_BR ...      -> 0  ✓  (maiuscula)
+  reason=a flag --scope=global ...   -> 0  ✓  (precedido por '-', nao espaco)
+  reason=taxa rate=10 por segundo    -> 1  falso-positivo CONFIRMADO
+```
+
+**Duas correções ao relatório dele, ambas medidas:** `gatee=` **é** pego (ele disse que escapava — a
+implementação é melhor que a descrição), e o falso-positivo do `rate=10` é **real**, não hipotético.
+
+**Aceito o `rate=10`**, e o motivo: o dano é uma recusa com mensagem clara, e o autor reescreve o
+motivo. O dano oposto — deixar `reson=` passar — é silencioso, e silêncio num verificador é a falha
+que esta REQ inteira combate. A escolha de distância 1 em vez de 2 está justificada no próprio
+script: distância 2 pegaria transposições, mas o crescimento de falsos-positivos supera o ganho.
+
+**Escolha de desenho que endosso:** ele fez uma **segunda passada** independente do parser por
+prefixo, varrendo inclusive dentro do valor já fatiado — que é onde o defeito morava. Tentar remendar
+o parser primário teria misturado duas responsabilidades e provavelmente reintroduzido o problema.
+
+`145 cenários` · invocação CI-exata exit 0 · `validate` exit 0.
+
+**Wave 1 fechada.** O mecanismo está pronto e falsificado; a triagem pode começar contra um checker
+que já cumpre o formato final.
 
 ## Wave 2 — Triagem (o grosso do trabalho)
 

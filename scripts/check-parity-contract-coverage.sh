@@ -112,6 +112,93 @@ def extract_kv(body, positions):
     return kv
 
 
+KNOWN_KEY_NAMES = [k[:-1] for k in KNOWN_KEYS]  # ["gate", "partial", "reason"]
+
+
+def levenshtein(a, b):
+    """Distância de edição clássica (inserção/remoção/substituição, sem
+    transposição) — suficiente para o caso que queremos pegar (um caractere
+    trocado/faltando/sobrando), não para todo typo imaginável."""
+    if a == b:
+        return 0
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        curr = [i] + [0] * len(b)
+        for j, cb in enumerate(b, 1):
+            curr[j] = min(
+                prev[j] + 1,       # remoção
+                curr[j - 1] + 1,   # inserção
+                prev[j - 1] + (ca != cb),  # substituição (0 se igual)
+            )
+        prev = curr
+    return prev[-1]
+
+
+def find_key_like_tokens(s):
+    """Posições de tokens alfabéticos minúsculos imediatamente seguidos de
+    '=', só quando precedidos por início de string ou espaço — mesma regra
+    de fronteira usada por find_keys(), mas sem se limitar às 3 chaves
+    conhecidas: aqui queremos candidatos a CHAVE DIGITADA ERRADA, não texto
+    livre com '=' no meio (ex.: 'LANG=pt_BR', '--flag=valor' nunca batem
+    aqui: 'LANG' tem maiúsculas, e o 'f' de '--flag' é precedido por '-',
+    não por espaço)."""
+    tokens = []
+    i, n = 0, len(s)
+    while i < n:
+        if i == 0 or s[i - 1].isspace():
+            j = i
+            while j < n and s[j].isalpha() and s[j].islower():
+                j += 1
+            if j > i and j < n and s[j] == "=":
+                tokens.append((i, s[i:j]))
+        i += 1
+    return tokens
+
+
+def find_unknown_key_typos(body, positions):
+    """Segunda passada, independente de find_keys()/extract_kv(): varre TODO
+    o corpo (inclusive dentro do valor de reason=/partial=, onde uma chave
+    desconhecida digitada depois de uma chave real seria hoje engolida em
+    silêncio pelo fatiamento de extract_kv — a lacuna que este laço fecha).
+
+    Critério heurístico (decisão de desenho, ver Nota de parsing do ADR):
+    um token é tratado como CHAVE DESCONHECIDA só quando está a distância de
+    edição <= 1 de gate/partial/reason (uma inserção, remoção ou
+    substituição de caractere) — ex.: 'reson=' (falta o 'a' de 'reason').
+
+    Trade-off explícito, assumido deliberadamente para o lado do
+    falso-negativo:
+      - ACEITA indevidamente (falso-negativo): typos de 2+ caracteres ou
+        transposições (ex.: 'raeson=', 'gatee=' com uma letra a mais E uma
+        trocada) escapam. Também escapa qualquer palavra de texto livre que
+        contenha '=' mas não esteja perto de nenhuma das 3 chaves (ex.:
+        'modo=debug', 'status=ok').
+      - REJEITA indevidamente (falso-positivo), caso raro e aceito: uma
+        palavra de texto livre que por coincidência fique a 1 edição de uma
+        chave conhecida e apareça imediatamente seguida de '=' — ex.:
+        'reason=convertido à rate=10' seria sinalizado, porque 'rate' está a
+        1 edição de 'gate'. Julgamento: esse padrão ('palavra=valor' solto
+        dentro de uma frase) é raro em português corrido; quando acontecer,
+        quem anota reformula o motivo (ex.: 'à taxa de 10') — custo baixo e
+        localizado, contra o custo de deixar 'reson=' (o typo real que
+        motivou esta regra) voltar a passar em silêncio.
+      - Distância 1 (não 2+) foi escolhida por ser o ponto onde o
+        falso-positivo já fica raro o bastante para não atrapalhar o texto
+        livre; distância 2 pegaria mais typos reais mas também mais palavras
+        comuns por acidente (ex.: 'data='  a 2 de 'gate=').
+    """
+    known_starts = {pos for pos, _ in positions}
+    typos = []
+    for start, token in find_key_like_tokens(body):
+        if start in known_starts or token in KNOWN_KEY_NAMES:
+            continue
+        for name in KNOWN_KEY_NAMES:
+            if levenshtein(token, name) <= 1:
+                typos.append(token)
+                break
+    return typos
+
+
 def parse_annotation(raw):
     """Parser por prefixo de chave conhecido — reason=/partial= são texto
     livre e podem conter '=' e ',' (Nota de parsing, ADR Emenda 1)."""
@@ -137,6 +224,17 @@ def parse_annotation(raw):
     parse_errors = []
     if leading.strip():
         parse_errors.append("chave desconhecida na anotação: '%s'" % leading.strip())
+
+    # Chave desconhecida em QUALQUER posição, não só antes da primeira chave
+    # reconhecida (o `leading` acima só cobre esse caso). Sem isto, uma chave
+    # digitada errada DEPOIS de uma chave real é engolida em silêncio dentro
+    # do valor da chave anterior por extract_kv() — exatamente o cenário que
+    # a Nota de parsing do ADR (Emenda 1) descreve para 'reson='. Ver
+    # find_unknown_key_typos() para o critério heurístico e o trade-off.
+    for token in sorted(set(find_unknown_key_typos(body, positions))):
+        parse_errors.append(
+            "chave desconhecida na anotação: '%s=' (não é gate=/partial=/reason=)" % token
+        )
 
     # ADR Emenda 2 — regra GERAL, não caso a caso: toda chave PRESENTE exige
     # valor não-vazio. Isto cobre gate=/partial=/reason= hoje e qualquer
