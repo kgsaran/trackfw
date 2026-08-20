@@ -21497,3 +21497,20 @@ omisso — o omisso não engana quem decide.
 
 **Escopo negativo respeitado:** nenhuma lacuna foi fechada. A REQ cria o mecanismo que revela;
 fechar cada uma é trabalho subsequente e priorizável, e provavelmente não vale para todas.
+
+## 2026-08-20 — Zeus (arquiteto) — primeiro consumo da lista da triagem
+
+REQ do contrato pinado fechada (#196), roadmap em `done`. Abre a REQ que **consome** a lista: os 3
+`gap`/`partial` de maior risco dos 42+51.
+
+**Uma REQ, não três** — mesma natureza, mesma triagem, e duas delas tocam os mesmos scripts de gate.
+Separadas seriam sequenciais de qualquer forma e pagariam três ciclos de governança.
+
+**Correção de suposição minha, antes de abrir:** eu esperava que Windsurf/Amazon Q fossem ausência de
+implementação. **Não são** — os 3 CLIs implementam, com teste por stack. Falta só o gate cross-CLI, e
+os formatos deles divergem dos outros seis (`hooks.pre_run_command` num arquivo único vs agente
+customizado em `cli-agents/`). Por isso o ML-1A é **investigação sem escrever gate**: decidir o
+desenho do comparador antes de codificar.
+
+Escopo negativo declarado: as outras 39 `gap` e 50 `partial` ficam. A lista é priorizável de
+propósito; fechar tudo não é meta.
