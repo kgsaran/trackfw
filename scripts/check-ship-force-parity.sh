@@ -111,6 +111,43 @@ BASE_PATH="$RUNTIME_BIN:/usr/bin:/bin"
 # fix already applied in check-release-tag-parity.sh's sibling gate.
 unset TRACKFW_DISABLE_EXTERNAL_COMMANDS || true
 
+# NO_FORGE_PATH — used ONLY by scenario (a) below, which must prove genuine absence of a forge
+# CLI via defaultAvailFn's real exec.LookPath(name) call (never via
+# TRACKFW_DISABLE_EXTERNAL_COMMANDS=1, which the other scenarios need OFF anyway and which would
+# skip that code path entirely instead of exercising it). BASE_PATH's "/usr/bin:/bin" is NOT safe
+# for this: the GitHub Actions ubuntu-latest runner ships a real `gh` at /usr/bin/gh (ML-6B), so a
+# scenario meant to see no forge CLI would see a real one there. GIT_ONLY_BIN carries nothing but
+# a symlink to the real `git` this host resolves — no coreutils, no /usr/bin, no /bin — because
+# nothing this scenario exercises (git plumbing over the local bare-repo file transport, plus the
+# node/python3 interpreters already isolated in RUNTIME_BIN) needs anything else on PATH: the
+# product itself only ever execs "git" and the resolved forge CLI name (grep -rn 'exec.Command\|
+# spawnSync\|subprocess.run' confirms this across all 3 stacks).
+REAL_GIT=$(command -v git || true)
+if [[ -z "$REAL_GIT" ]]; then
+  echo "check-ship-force-parity: git not found in PATH" >&2
+  exit 1
+fi
+GIT_ONLY_BIN="$WORK/gitonlybin"
+mkdir -p "$GIT_ONLY_BIN"
+ln -s "$REAL_GIT" "$GIT_ONLY_BIN/git"
+NO_FORGE_PATH="$RUNTIME_BIN:$GIT_ONLY_BIN"
+
+# Non-vacuity guard — fails BEFORE any scenario runs if gh/glab/az somehow resolve on
+# NO_FORGE_PATH, or if git does NOT resolve on it. A "no forge CLI" scenario that runs against a
+# PATH secretly still carrying a forge CLI would pass for the wrong reason — exactly the class of
+# bug this ML exists to fix (see the "Correção do meu próprio erro de auditoria" note in the
+# roadmap: the CI-observed failure was a real `gh` reachable via /usr/bin, not a hypothesis).
+for cli in gh glab az; do
+  if resolved=$(PATH="$NO_FORGE_PATH" command -v "$cli" 2>/dev/null); then
+    echo "check-ship-force-parity: vacuity guard failed — '$cli' resolves on NO_FORGE_PATH ($NO_FORGE_PATH) at $resolved; the no-forge-cli scenario would prove nothing" >&2
+    exit 1
+  fi
+done
+if ! PATH="$NO_FORGE_PATH" command -v git >/dev/null 2>&1; then
+  echo "check-ship-force-parity: vacuity guard failed — git does not resolve on NO_FORGE_PATH ($NO_FORGE_PATH)" >&2
+  exit 1
+fi
+
 FAIL=0
 ok()   { echo "OK   [$1]"; }
 fail() { echo "FAIL [$1]: $2" >&2; FAIL=1; }
@@ -208,13 +245,21 @@ remote_head() {
 # run_ship RUNTIME DIR PATH_PREFIX ARGS...
 # Runs `trackfw ship ARGS...` from DIR with PATH="<PATH_PREFIX>:$BASE_PATH" (PATH_PREFIX may be
 # empty). Sets SF_EXIT and writes stdout/stderr to $WORK/<label>.<runtime>.{out,err}.
+# If RUN_PATH_OVERRIDE is set (non-empty), it REPLACES the whole PATH computation above —
+# BASE_PATH is not consulted at all. Used only by scenario (a), which needs NO_FORGE_PATH exactly
+# (no /usr/bin, no /bin) rather than a prefix layered on top of BASE_PATH.
 run_ship() {
   local runtime=$1 dir=$2 path_prefix=$3
   shift 3
   local out_file="$WORK/$SF_LABEL.$runtime.out" err_file="$WORK/$SF_LABEL.$runtime.err"
-  local run_path="$BASE_PATH"
-  if [[ -n "$path_prefix" ]]; then
-    run_path="$path_prefix:$BASE_PATH"
+  local run_path
+  if [[ -n "${RUN_PATH_OVERRIDE:-}" ]]; then
+    run_path="$RUN_PATH_OVERRIDE"
+  else
+    run_path="$BASE_PATH"
+    if [[ -n "$path_prefix" ]]; then
+      run_path="$path_prefix:$BASE_PATH"
+    fi
   fi
   set +e
   case "$runtime" in
@@ -262,9 +307,11 @@ $(cat "$WORK/$label.diff.go-py.$stream")"
 
 # ---------------------------------------------------------------------------
 # Scenario (a) — sem CLI de forge: PATH has no gh/glab/az at all. Must refuse without
-# degrading to a permissive push, remote untouched.
+# degrading to a permissive push, remote untouched. Runs against NO_FORGE_PATH (git-only,
+# curated), NOT BASE_PATH — see the NO_FORGE_PATH comment above run_ship for why.
 # ---------------------------------------------------------------------------
 SF_LABEL="no-forge-cli"
+RUN_PATH_OVERRIDE="$NO_FORGE_PATH"
 for runtime in go node py; do
   fixture=$(make_fixture "$WORK/a-$runtime" "chore/no-forge-cli")
   bare="$WORK/a-$runtime/origin.git"
@@ -285,6 +332,7 @@ for runtime in go node py; do
     continue
   fi
 done
+unset RUN_PATH_OVERRIDE
 assert_three_way "$SF_LABEL"
 
 # ---------------------------------------------------------------------------

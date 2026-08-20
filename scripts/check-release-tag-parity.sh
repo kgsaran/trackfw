@@ -104,6 +104,39 @@ BASE_PATH="$RUNTIME_BIN:/usr/bin:/bin"
 # onto the same outcome for the wrong reason.
 unset TRACKFW_DISABLE_EXTERNAL_COMMANDS || true
 
+# NO_FORGE_PATH — used ONLY by Scenario 7 (no-forge-cli) below, which must prove genuine absence
+# of a forge CLI via defaultAvailFn's real exec.LookPath("gh") call, not via
+# TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 (which every other scenario here needs OFF anyway, and
+# which would skip that code path instead of exercising it). BASE_PATH's "/usr/bin:/bin" is NOT
+# safe for this: the GitHub Actions ubuntu-latest runner ships a real `gh` at /usr/bin/gh (see
+# ML-6B / the "no-forge-cli" CI failure this gate never actually reached before). GIT_ONLY_BIN
+# carries nothing but a symlink to the real `git` this host resolves — the product only ever execs
+# "git" and the resolved forge CLI name (gh); patch_version_file/json_field's python3 calls below
+# run in the SCRIPT's own process, outside this restricted PATH, so they are unaffected.
+REAL_GIT=$(command -v git || true)
+if [[ -z "$REAL_GIT" ]]; then
+  echo "check-release-tag-parity: git not found in PATH" >&2
+  exit 1
+fi
+GIT_ONLY_BIN="$WORK/gitonlybin"
+mkdir -p "$GIT_ONLY_BIN"
+ln -s "$REAL_GIT" "$GIT_ONLY_BIN/git"
+NO_FORGE_PATH="$RUNTIME_BIN:$GIT_ONLY_BIN"
+
+# Non-vacuity guard — fails BEFORE any scenario runs if gh/glab/az somehow resolve on
+# NO_FORGE_PATH, or if git does NOT resolve on it. A "no forge CLI" scenario running against a
+# PATH secretly still carrying a forge CLI would pass for the wrong reason.
+for cli in gh glab az; do
+  if resolved=$(PATH="$NO_FORGE_PATH" command -v "$cli" 2>/dev/null); then
+    echo "check-release-tag-parity: vacuity guard failed — '$cli' resolves on NO_FORGE_PATH ($NO_FORGE_PATH) at $resolved; the no-forge-cli scenario would prove nothing" >&2
+    exit 1
+  fi
+done
+if ! PATH="$NO_FORGE_PATH" command -v git >/dev/null 2>&1; then
+  echo "check-release-tag-parity: vacuity guard failed — git does not resolve on NO_FORGE_PATH ($NO_FORGE_PATH)" >&2
+  exit 1
+fi
+
 FAIL=0
 ok()   { echo "OK   [$1]"; }
 fail() { echo "FAIL [$1]: $2" >&2; FAIL=1; }
@@ -316,9 +349,14 @@ run_release() {
   local runtime=$1 dir=$2 path_prefix=$3 dest=$4
   shift 4
   local out_file="$WORK/$RT_LABEL.$runtime.out" err_file="$WORK/$RT_LABEL.$runtime.err"
-  local run_path="$BASE_PATH"
-  if [[ -n "$path_prefix" ]]; then
-    run_path="$path_prefix:$BASE_PATH"
+  local run_path
+  if [[ -n "${RUN_PATH_OVERRIDE:-}" ]]; then
+    run_path="$RUN_PATH_OVERRIDE"
+  else
+    run_path="$BASE_PATH"
+    if [[ -n "$path_prefix" ]]; then
+      run_path="$path_prefix:$BASE_PATH"
+    fi
   fi
   local gitcfg="$dest/empty-gitconfig"
   local -a e=(
@@ -556,6 +594,7 @@ assert_three_way "$RT_LABEL"
 RT_LABEL="no-forge-cli"
 dest="$WORK/s7"
 fixture=$(build_fixture "$dest" "github" "1")
+RUN_PATH_OVERRIDE="$NO_FORGE_PATH"
 for runtime in go node py; do
   run_release "$runtime" "$fixture" "" "$dest" "$RELEASE_VERSION"
   echo "$RT_EXIT" >"$WORK/$RT_LABEL.$runtime.exit"
@@ -568,6 +607,7 @@ for runtime in go node py; do
     continue
   fi
 done
+unset RUN_PATH_OVERRIDE
 assert_three_way "$RT_LABEL"
 
 # ---------------------------------------------------------------------------

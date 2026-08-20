@@ -20754,3 +20754,42 @@ env var destapou o cenário que exige ausência de forge. O ML-6A não estava er
 Num alvo que para no primeiro erro, gates posteriores não rodam — e "não reprovou" não é "passou".
 
 ML-6B aberto: os dois gates precisam de `PATH` sem `gh` no cenário `no-forge-cli`.
+
+## 2026-08-19 — apolo-tf (backend) — ML-6B início
+
+Retomando `ROADMAP-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md`, ML-6B: os
+cenários `no-forge-cli` de `scripts/check-ship-force-parity.sh` e `scripts/check-release-tag-parity.sh`
+usam `BASE_PATH="$RUNTIME_BIN:/usr/bin:/bin"`, e o runner ubuntu-latest do GitHub Actions tem `gh`
+real em `/usr/bin`. Vou construir um `PATH` curado (git-only) exclusivo desse cenário, com guarda de
+não-vacuidade, e verificar em container com `gh` em `/usr/bin` simulando o runner.
+
+## 2026-08-19 — apolo-tf (backend) — ML-6B concluído
+
+`scripts/check-ship-force-parity.sh` e `scripts/check-release-tag-parity.sh`: novo `NO_FORGE_PATH`
+(`RUNTIME_BIN` + `GIT_ONLY_BIN`, symlink só para o `git` real, sem `/usr/bin`/`/bin`), usado **apenas**
+pelo cenário `no-forge-cli`/Scenario 7 via `RUN_PATH_OVERRIDE` (substitui `run_path` inteiro, nunca
+prefixa `BASE_PATH`). Guarda de não-vacuidade antes de qualquer cenário rodar: falha se `gh`/`glab`/
+`az` resolverem em `NO_FORGE_PATH`, ou se `git` não resolver.
+
+Deliberadamente **não** usei `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1` para este cenário (apesar do
+padrão existir em `check-ship-parity.sh`): esse env var pula `exec.LookPath` inteiramente, e o
+cenário existe para provar que `exec.LookPath` genuinamente não encontra o CLI — código diferente do
+atalho de desligamento explícito.
+
+**Red-proof em container** (`ubuntu:24.04` + `gh` fake em `/usr/bin` reproduzindo a mensagem real do
+runner): script sabotado (sem o fix) reproduziu a FALHA EXATA do CI (`could not verify ... set the
+GH_TOKEN environment variable`) nos 3 runtimes; script restaurado passou 5/5 e 18/18 no mesmo
+container. Invocação CI-exata dentro do container (`TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make
+parity`, `gh` real em `/usr/bin`) passou pelos dois gates deste ML (5/5 e 18/18) antes de falhar
+depois num gate não relacionado (`serve-address-parity`, por falta de `lsof` no container — lacuna
+do container, não do produto). Invocação CI-exata neste host (sem `gh` em `/usr/bin`): exit 0, 137
+cenários de falsificação.
+
+`make quality` exit 0 (local) · `./bin/trackfw validate` exit 0, 21 warnings pré-existentes (mesma
+classe já registrada, nenhum novo). Report-only: nenhum terceiro gate carrega o mesmo `BASE_PATH`
+com `/usr/bin`; nenhuma linha de `docs/cli-parity.md` descreve a construção antiga do PATH.
+
+Roadmap atualizado (ML-6B ✅, AC "CI verde" deixado sem check — não verificável por este agente sem
+autoridade de commit/push, fica para o `trackfw_architect` confirmar pós-merge).
+
+Nenhum commit/push — entregue para auditoria do `trackfw_architect`.
