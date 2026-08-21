@@ -13,7 +13,6 @@ lightweight local tag would lose it, and the git-branch-guard blocks that push f
 """
 
 import json
-import os
 import re
 import subprocess
 import sys
@@ -118,6 +117,15 @@ def _commit_diverges_msg(base, local_sha, forge_base, forge_sha):
         "investigate before retrying: git fetch origin --prune"
     )
 
+
+# _object_absent_msg fires when git show <sha>:<path> fails (object absent locally after the
+# fetch that Precondition 2 already ran). Names the path and the sha so the user knows
+# exactly what is missing. Never falls back to the working tree. See ADR-2026-08-21-
+# release-tag-le-versao-e-changelog-do-commit-ancorado.md.
+def _object_absent_msg(path, sha, err_message):
+    return f"trackfw release tag refuses to run: could not read {path} at commit {sha}: {err_message}"
+
+
 # ─── Version file extraction ───────────────────────────────────────────────
 
 _GO_VERSION_RE = re.compile(r'Version\s*=\s*"([^"]+)"')
@@ -216,9 +224,29 @@ def default_exec_git(args):
         return ("", str(e))
 
 
-def default_read_file(path):
-    with open(path, "r", encoding="utf-8") as f:
-        return f.read()
+def default_read_at_commit(sha, path):
+    """
+    Reads a file from a specific commit object (git show <sha>:<path>) and returns the content
+    verbatim — stdout is NOT stripped because callers rely on byte-exact content (CHANGELOG
+    sections, version strings with newlines). On any failure the error surfaces git's real
+    stderr; there is NO fallback to the working tree. See ADR-2026-08-21-release-tag-le-
+    versao-e-changelog-do-commit-ancorado.md.
+
+    Returns (content_str, error_str_or_None).
+    """
+    try:
+        result = subprocess.run(
+            ["git", "show", f"{sha}:{path}"], capture_output=True, text=True
+        )
+        if result.returncode != 0:
+            msg = result.stderr.strip() or f"git show {sha}:{path} exited with {result.returncode}"
+            return ("", msg)
+        # NOT stripped — content must be preserved byte-for-byte.
+        return (result.stdout, None)
+    except FileNotFoundError:
+        return ("", "git not found in PATH")
+    except Exception as e:  # noqa: BLE001
+        return ("", str(e))
 
 
 def default_exec_forge_api(name, args, stdin):
@@ -265,7 +293,7 @@ def _default_base_branch(exec_git):
 def run_release_tag(
     version_arg,
     exec_git=None,
-    read_file=None,
+    read_at_commit=None,
     writeln=None,
     write_err=None,
     config_forge="",
@@ -285,8 +313,10 @@ def run_release_tag(
     """
     if exec_git is None:
         exec_git = default_exec_git
-    if read_file is None:
-        read_file = lambda p: default_read_file(os.path.join(repo_dir or ".", p))  # noqa: E731
+    # read_at_commit reads a file from a specific commit object (git show <sha>:<path>).
+    # Content is returned verbatim — NOT stripped. Absent object → error; no fallback to local.
+    if read_at_commit is None:
+        read_at_commit = default_read_at_commit
     if writeln is None:
         writeln = lambda s: print(s)  # noqa: E731
     if write_err is None:
@@ -333,36 +363,6 @@ def run_release_tag(
                 if local_branch_sha != local_sha:
                     write_err(_local_branch_stale_msg(base, local_branch_sha, local_sha))
                     return 1
-
-    # ─── Precondition 3: the 4 version files must all match ─────────────
-    for label, path, extract in RELEASE_VERSION_FILES:
-        try:
-            content = read_file(path)
-        except Exception as e:  # noqa: BLE001
-            write_err(f"trackfw release tag refuses to run: could not read {path}: {e}")
-            return 1
-        try:
-            got = extract(content)
-        except Exception as e:  # noqa: BLE001
-            write_err(f"trackfw release tag refuses to run: {e}")
-            return 1
-        if got != version:
-            write_err(_version_mismatch_msg(label, got, version))
-            return 1
-
-    # ─── Precondition 4: CHANGELOG.md has the version's section ─────────
-    try:
-        changelog_content = read_file("CHANGELOG.md")
-    except Exception as e:  # noqa: BLE001
-        write_err(f"trackfw release tag refuses to run: could not read CHANGELOG.md: {e}")
-        return 1
-    sections = changelog.parse_sections(changelog_content)
-    try:
-        section = changelog.find_version(sections, version)
-    except ValueError as e:
-        write_err(_changelog_missing_msg(str(e), version))
-        return 1
-    tag_message = changelog.format_section(section)
 
     # ─── Precondition 5: tag must not already exist, local or remote ────
     _, local_tag_err = exec_git(["rev-parse", "-q", "--verify", f"refs/tags/{tag_name}"])
@@ -464,6 +464,39 @@ def run_release_tag(
     # object_sha is now authoritative — resolved from the forge, cross-checked (not sourced)
     # against the local ref above.
     object_sha = forge_sha
+
+    # ─── Precondition 3: version files in the commit-target must all match ─
+    # Content is read from object_sha via git show, NOT from the working tree. Objects are
+    # content-addressed: given a sha from the forge, the content is cyptographically determined —
+    # a local edit that was not committed cannot influence the tag message.
+    # Absent object → refuse naming sha+path; never fall back to local. See ADR-2026-08-21.
+    for label, path, extract in RELEASE_VERSION_FILES:
+        content, rerr = read_at_commit(object_sha, path)
+        if rerr:
+            write_err(_object_absent_msg(path, object_sha, rerr))
+            return 1
+        try:
+            got = extract(content)
+        except Exception as e:  # noqa: BLE001
+            write_err(f"trackfw release tag refuses to run: {e}")
+            return 1
+        if got != version:
+            write_err(_version_mismatch_msg(label, got, version))
+            return 1
+
+    # ─── Precondition 4: CHANGELOG.md in the commit-target has the version's section ──
+    # Same anchoring as P3: content comes from object_sha, never from the working tree.
+    changelog_content, changelog_err = read_at_commit(object_sha, "CHANGELOG.md")
+    if changelog_err:
+        write_err(_object_absent_msg("CHANGELOG.md", object_sha, changelog_err))
+        return 1
+    sections = changelog.parse_sections(changelog_content)
+    try:
+        section = changelog.find_version(sections, version)
+    except ValueError as e:
+        write_err(_changelog_missing_msg(str(e), version))
+        return 1
+    tag_message = changelog.format_section(section)
 
     # ─── Tagger identity ─────────────────────────────────────────────────
     name, _ = exec_git(["config", "user.name"])

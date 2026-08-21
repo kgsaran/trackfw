@@ -487,8 +487,14 @@ for case_spec in "${MISMATCH_CASES[@]}"; do
   fixture=$(build_fixture "$dest" "github" "1")
   patch_version_file "$fixture/$rel_path" "$old_pattern" "$new_pattern"
   commit_and_push_mutation "$fixture" "$dest/empty-gitconfig" "$dest"
+  # ML-2A (ROADMAP-2026-08-21): P3/P4 moved after forge resolution — a gh stub is now required
+  # to reach P3/P4. The stub returns the post-mutation sha so git show <sha>:<path> returns the
+  # mutated (mismatched) content and fires the expected refusal. Repair, not extension.
+  real_sha=$(git --git-dir="$dest/origin.git" rev-parse main)
+  stub_dir="$dest-stub"
+  write_release_gh_stub "$stub_dir" "$dest-calls" "main" "$real_sha"
   for runtime in go node py; do
-    run_release "$runtime" "$fixture" "" "$dest" "$RELEASE_VERSION"
+    run_release "$runtime" "$fixture" "$stub_dir" "$dest" "$RELEASE_VERSION"
     echo "$RT_EXIT" >"$WORK/$RT_LABEL.$runtime.exit"
     if [[ "$RT_EXIT" -eq 0 ]]; then
       fail "release-tag-parity/$RT_LABEL/$runtime" "expected non-zero exit for a version mismatch in $rel_path, got 0"
@@ -499,6 +505,10 @@ for case_spec in "${MISMATCH_CASES[@]}"; do
       continue
     fi
   done
+  # The stub now makes publishing physically reachable — verify no POST calls were made.
+  if [[ -n "$(find "$dest-calls" -maxdepth 1 -name '*.json' 2>/dev/null)" ]]; then
+    fail "release-tag-parity/$RT_LABEL/no-publish" "refusal must never reach the publish calls; found: $(ls "$dest-calls")"
+  fi
   assert_three_way "$RT_LABEL"
 done
 
@@ -510,8 +520,14 @@ dest="$WORK/s4"
 fixture=$(build_fixture "$dest" "github" "1")
 printf '# Changelog\n' >"$fixture/CHANGELOG.md"
 commit_and_push_mutation "$fixture" "$dest/empty-gitconfig" "$dest"
+# ML-2A (ROADMAP-2026-08-21): P4 moved after forge resolution — stub required to reach P4.
+# The real post-mutation sha is used so git show <sha>:CHANGELOG.md returns the bare file
+# (no version section) and fires the expected refusal. Repair, not extension.
+real_sha_s4=$(git --git-dir="$dest/origin.git" rev-parse main)
+stub_s4="$dest-stub"
+write_release_gh_stub "$stub_s4" "$dest-calls" "main" "$real_sha_s4"
 for runtime in go node py; do
-  run_release "$runtime" "$fixture" "" "$dest" "$RELEASE_VERSION"
+  run_release "$runtime" "$fixture" "$stub_s4" "$dest" "$RELEASE_VERSION"
   echo "$RT_EXIT" >"$WORK/$RT_LABEL.$runtime.exit"
   if [[ "$RT_EXIT" -eq 0 ]]; then
     fail "release-tag-parity/$RT_LABEL/$runtime" "expected non-zero exit when CHANGELOG.md lacks the version section, got 0"
@@ -526,6 +542,10 @@ for runtime in go node py; do
     continue
   fi
 done
+# The stub now makes publishing physically reachable — verify no POST calls were made.
+if [[ -n "$(find "$dest-calls" -maxdepth 1 -name '*.json' 2>/dev/null)" ]]; then
+  fail "release-tag-parity/$RT_LABEL/no-publish" "refusal must never reach the publish calls; found: $(ls "$dest-calls")"
+fi
 assert_three_way "$RT_LABEL"
 
 # ---------------------------------------------------------------------------
@@ -965,23 +985,22 @@ assert_three_way "$RT_LABEL"
 # outright via `git update-ref -d` so `git rev-parse origin/main` fails entirely, landing
 # on forgeLocalSHA == "" rather than a mismatched value.
 #
-# The stub answers with a sha that CANNOT exist in this fixture's clone (FORGE_ONLY_SHA_S14,
-# 40 hex digits, never derived from any real commit here) rather than the real main sha —
-# deliberately, so the payload assertion below discriminates PROVENANCE, not just VALUE. The
-# real main sha is what origin/main would ALSO resolve to had the tracking ref survived, so
-# asserting against it would pass identically whether the command used the forge's sha (the
-# correct path) or a leftover local ref (the degraded path this scenario exists to catch) —
-# it would prove the value matched, not where it came from. This also makes the scenario
-# self-discriminating against fixture decay: if the refspec narrowing ever stops isolating
-# origin/main and the command's own `git fetch` silently repopulates it, forgeLocalSHA
-# becomes the real main sha, diverges from FORGE_ONLY_SHA_S14, and Precondition 6's
-# cross-check refuses — flipping this scenario's "expected exit 0" assertion loudly red
-# instead of silently collapsing into a duplicate of Scenario 10.
+# The stub answers with FORGE_ONLY_SHA_S14 — an empty commit on s14-decoy whose tree is
+# byte-identical to main's (so P3/P4 pass after ML-2A) but whose sha differs from the real
+# main sha (self-discriminant). ML-2A (ROADMAP-2026-08-21) moved P3/P4 after forge resolution;
+# they now call git show <sha>:<path>. A sha with no local objects (the former c0ffee11... fake)
+# causes a named refusal per ADR-2026-08-21 — correct behaviour, but wrong outcome for this
+# scenario, which exists to prove that an absent local TRACKING REF (not absent git objects)
+# must not block publishing. Using the decoy commit preserves both the object-presence needed
+# for P3/P4 and the value-discrimination needed to distinguish forge provenance from a
+# silently-repopulated local ref: if refspec narrowing ever decays and git fetch repopulates
+# refs/remotes/origin/main with the real main sha, forgeLocalSHA (main sha) diverges from
+# FORGE_ONLY_SHA_S14 (decoy sha ≠ main sha) and Precondition 6 refuses — flipping the
+# "expected exit 0" assertion loudly red instead of silently collapsing into a vacuous pass.
 # ---------------------------------------------------------------------------
 RT_LABEL="forge-local-ref-absent-success"
 dest="$WORK/s14"
 fixture=$(build_fixture "$dest" "github" "1")
-FORGE_ONLY_SHA_S14="c0ffee11c0ffee22c0ffee33c0ffee44c0ffee55"
 (
   cd "$fixture"
   # remote.origin.fetch must name a branch that genuinely exists on origin — an unresolvable
@@ -991,11 +1010,30 @@ FORGE_ONLY_SHA_S14="c0ffee11c0ffee22c0ffee33c0ffee44c0ffee55"
     git branch s14-decoy
   env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "GIT_TERMINAL_PROMPT=0" "HOME=$dest" \
     git push -q origin s14-decoy
+  # Create an empty commit on s14-decoy — same tree as main (P3/P4 read the correct version
+  # files and CHANGELOG), but a DISTINCT sha. This restores the self-discriminant: if the
+  # refspec narrowing ever stops isolating origin/main and git fetch silently repopulates it,
+  # forgeLocalSHA becomes the real main sha, which diverges from the decoy sha (≠ main sha),
+  # and Precondition 6's cross-check refuses — flipping "expected exit 0" loudly red.
+  # ML-2A (ROADMAP-2026-08-21): P3/P4 now use git show <sha>:<path>; a sha with no local
+  # objects (the former c0ffee11... fake) causes a named refusal per ADR-2026-08-21. The
+  # decoy commit's objects ARE in the local store, so P3/P4 succeed.
+  env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "GIT_TERMINAL_PROMPT=0" "HOME=$dest" \
+    git checkout -q s14-decoy
+  env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "GIT_TERMINAL_PROMPT=0" "HOME=$dest" \
+    git commit -q --allow-empty -m "fixture: decoy commit, tree identical to main, distinct sha"
+  env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "GIT_TERMINAL_PROMPT=0" "HOME=$dest" \
+    git push -q origin s14-decoy
+  env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "GIT_TERMINAL_PROMPT=0" "HOME=$dest" \
+    git checkout -q main
   env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "GIT_TERMINAL_PROMPT=0" "HOME=$dest" \
     git config remote.origin.fetch "+refs/heads/s14-decoy:refs/remotes/origin/s14-decoy"
   env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "HOME=$dest" \
     git update-ref -d refs/remotes/origin/main
 ) >>"$dest/build.log" 2>&1
+# Derive FORGE_ONLY_SHA_S14 from the decoy commit on the bare remote: distinct from main's
+# sha (self-discriminant preserved) but carrying the same tree (P3/P4 read valid content).
+FORGE_ONLY_SHA_S14=$(git --git-dir="$dest/origin.git" rev-parse s14-decoy)
 # Vacuity guard: prove the tracking ref is genuinely gone before trusting the scenario at
 # all — a failure here means the setup didn't reach the state it claims to.
 if (cd "$fixture" && env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" HOME="$dest" \
@@ -1022,9 +1060,9 @@ for runtime in go node py; do
   fi
   # The load-bearing assertion: the tag-object payload's 'object' field — the actual commit
   # the tag will point at — is read from the gh api PAYLOAD the stub received, never from the
-  # success message. It must equal FORGE_ONLY_SHA_S14, a sha that cannot exist anywhere in
-  # this fixture's clone — proving the value came from the forge, not from a local ref (there
-  # is none left to source it from, correct or otherwise).
+  # success message. It must equal FORGE_ONLY_SHA_S14 (the s14-decoy sha), which differs from
+  # origin/main's sha (deleted) and from any local ref this clone resolves — proving the value
+  # came from the forge, not from a silently-repopulated local ref.
   tags_object_s14=$(json_field "$call_log/01-tags-request.json" object)
   if [[ "$tags_object_s14" != "$FORGE_ONLY_SHA_S14" ]]; then
     fail "release-tag-parity/$RT_LABEL/$runtime" "tag-object payload 'object' must equal the forge's commit sha ($FORGE_ONLY_SHA_S14) when no local ref exists to cross-check against, got $tags_object_s14"

@@ -4,6 +4,61 @@
 
 ---
 
+## Sessão 2026-08-21 — Apolo (FIM: ML-2A — release tag ancora versão e mensagem no forge)
+
+Branch `fix/release-tag-ancora-versao-e-mensagem-no-forge`. Sem commit/push (autoridade do
+`trackfw_architect`).
+
+**Veredito: CONCLUÍDO. Todas as validações verdes.**
+
+**Artefatos modificados (3 stacks):**
+- Go: `internal/commands/release.go` (P3/P4 movidos pós-forge, `readCommittedFile` via `git show`),
+  `internal/commands/release_test.go` (+3 testes: objeto ausente versão, objeto ausente changelog, âncora)
+- Node.js: `npm/src/release/runner.js` (`readAtCommit`, P3/P4 pós-forge),
+  `npm/tests/release.test.js` (+3 testes equivalentes)
+- Python: `pypi/trackfw/release/runner.py` (`read_at_commit`, P3/P4 pós-forge),
+  `pypi/tests/test_release.py` (+3 testes equivalentes)
+- Gate: `scripts/check-release-tag-parity.sh` (reparação de 3 categorias de falha):
+  - Cenários 3a-3e + 4: stub `gh` adicionado para que P3/P4 sejam alcançados; guarda no-publish adicionado
+  - Cenário 14 (`forge-local-ref-absent-success`): fake sha `c0ffee11...` substituído por sha de
+    commit vazio em `s14-decoy` (objetos existem localmente; self-discriminant preservado)
+- Roadmap: ML-2A marcado ✅
+
+**Decisões técnicas relevantes:**
+- Cenário 14 usava sha inexistente localmente como discriminante de proveniência. Após ML-2A, P3/P4
+  tentam `git show <sha>:<path>` e, se o objeto estiver ausente, recusam (ADR-2026-08-21 explícito).
+  Solução: commit vazio (`--allow-empty`) em `s14-decoy` → sha real com tree idêntica à main;
+  self-discriminant mantido (forge_sha ≠ main_sha → divergência refusaria se fetch repovoar origin/main).
+- Cenários 3a-3e e 4 precisam de stub pois P3/P4 agora ficam após a chamada ao forge. Stub retorna
+  sha real (pós-mutação), então `git show <sha>:<path>` retorna o conteúdo mutado e dispara a recusa
+  esperada. Guarda de no-publish adicionado porque stub torna publish fisicamente alcançável.
+
+**Lacunas declaradas para ML-2B / hades-tf ML-3A:**
+- Objeto ausente localmente não tem cobertura parity cross-CLI (só testes unitários nos 3 stacks).
+- Reordenação de P3/P4 após forge muda qual recusa "vence" quando `gh` ausente: usuário sem `gh`
+  vê "requires the GitHub CLI" em vez de "version mismatch". Consequência inevitável do ADR.
+  Hades-tf deve verificar se isso fecha ou abre vetor.
+
+**Evidência:**
+```
+make build                          → exit 0
+make test                           → ok todos pacotes Go; 27/27 Node.js; 27/27 Python
+bash scripts/check-release-tag-parity.sh → All 18 scenarios passed
+TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make parity → exit 0
+./bin/trackfw validate              → 17 warnings pré-existentes, 0 violations
+```
+
+---
+
+## Sessão 2026-08-21 — Apolo (INÍCIO: ML-2A — release tag ancora versão e mensagem no forge)
+
+Branch `fix/release-tag-ancora-versao-e-mensagem-no-forge`. Sem commit/push (autoridade do
+`trackfw_architect`). Escopo: P3/P4 passam a ler de `git show <objectSHA>:<path>` nos 3 CLIs;
+`readFile` removido, `readCommittedFile`/`readAtCommit`/`read_at_commit` adicionado; objetos ausentes
+recusam nomeando o quê falta (ADR-2026-08-21); parity gate verde.
+
+---
+
 ## Sessão 2026-08-21 — Apolo (FIM: ML-5C — Estender a recusa a separadores unicode)
 
 Branch `feat/versao-do-modelo-por-tier-com-composicao-por-alvo`. Sem commit/push (autoridade do
@@ -22192,3 +22247,21 @@ impasse do pin (hoje não dá para rodar `agents update` sem perder o pin), e 7.
 
 **Depois da release:** `update --dry-run` em symlink · i18n nos 3 CLIs · `note_orphan` ausente no
 Node · `rule: null` no `validate --json` do Python · substring no corpus de `done/`.
+
+---
+
+## Apolo-tf — 2026-08-21 — INICIANDO ML-2A
+
+**Branch:** `fix/release-tag-ancora-versao-e-mensagem-no-forge`
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-08-21-release-tag-ancora-versao-e-mensagem-no-forge.md`
+**ML:** ML-2A — Ancorar versão e mensagem no commit-alvo (3 stacks)
+
+Lendo ADR, roadmap, os 3 runners, os 3 arquivos de testes, e o `check-release-tag-parity.sh`.
+
+Mudanças planejadas:
+- `releaseDeps`: remove `readFile`, adiciona `readCommittedFile(sha, path string) (string, error)`
+- P3 e P4 movidos para DEPOIS de `objectSHA` ser resolvido (após forge API)
+- Novo `defaultReleaseReadCommittedFile`: usa `git show <sha>:<path>`, stdout NÃO trimado
+- Mesma estrutura em Node.js (`readAtCommit`) e Python (`read_at_commit`)
+- Nova constante de recusa nomeando sha+path nos 3 CLIs (byte-identical)
+- Testes novos: objeto ausente recusa nomeando; conteúdo da tag vem do commit, não do working tree

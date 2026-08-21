@@ -76,14 +76,16 @@ def make_deps(file_overrides=None, git_responses=None, git_errors=None,
     out_lines = []
     err_lines = []
 
-    def read_file(path):
+    def read_at_commit(sha, path):
+        # reads from the files map, keyed by path (ignoring sha — tests control both
+        # the sha the forge mock returns and the content in the files map).
         if path not in files:
-            raise FileNotFoundError(f"file not found: {path}")
-        return files[path]
+            return ("", f"object {sha}:{path} not found")
+        return (files[path], None)
 
     deps = dict(
         exec_git=git.exec,
-        read_file=read_file,
+        read_at_commit=read_at_commit,
         writeln=out_lines.append,
         write_err=err_lines.append,
         config_forge="",
@@ -448,3 +450,96 @@ def test_publish_always_uses_forge_sha_never_local():
     code = run_release_tag(VERSION, **deps)
     assert code == 0
     assert SHA in tags_body["value"]
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# ML-2A: Object anchoring — P3/P4 read from the commit-target, not the
+# working tree. See ADR-2026-08-21-release-tag-le-versao-e-changelog-do-
+# commit-ancorado.md.
+# ────────────────────────────────────────────────────────────────────────────
+
+
+def test_object_absent_version_file_refuses_naming_sha_and_path():
+    """When read_at_commit cannot find a version file, refuse naming path+sha, never publish."""
+    deps, _, _, err = make_deps()
+    publish_called = {"value": False}
+
+    def exec_forge_api(name, args, stdin):
+        if "git/tags" in args[1]:
+            publish_called["value"] = True
+        return default_exec_forge_api(name, args, stdin)
+
+    files = valid_files(VERSION)
+
+    def read_at_commit(sha, path):
+        if path == "internal/version/version.go":
+            return ("", f"path '{path}' does not exist in '{sha}'")
+        return (files[path], None) if path in files else ("", f"object {sha}:{path} not found")
+
+    deps["exec_forge_api"] = exec_forge_api
+    deps["read_at_commit"] = read_at_commit
+    code = run_release_tag(VERSION, **deps)
+    assert code == 1
+    assert "internal/version/version.go" in err[0]
+    assert SHA in err[0]
+    assert "refuses to run" in err[0]
+    assert not publish_called["value"]
+
+
+def test_object_absent_changelog_refuses_naming_sha_and_path():
+    """When read_at_commit cannot find CHANGELOG.md, refuse naming path+sha, never publish."""
+    deps, _, _, err = make_deps()
+    publish_called = {"value": False}
+
+    def exec_forge_api(name, args, stdin):
+        if "git/tags" in args[1]:
+            publish_called["value"] = True
+        return default_exec_forge_api(name, args, stdin)
+
+    files = valid_files(VERSION)
+
+    def read_at_commit(sha, path):
+        if path == "CHANGELOG.md":
+            return ("", f"path '{path}' does not exist in '{sha}'")
+        return (files[path], None) if path in files else ("", f"object {sha}:{path} not found")
+
+    deps["exec_forge_api"] = exec_forge_api
+    deps["read_at_commit"] = read_at_commit
+    code = run_release_tag(VERSION, **deps)
+    assert code == 1
+    assert "CHANGELOG.md" in err[0]
+    assert SHA in err[0]
+    assert "refuses to run" in err[0]
+    assert not publish_called["value"]
+
+
+def test_tag_message_sourced_from_commit_blob_not_hypothetical_local():
+    """
+    The tag payload message must come from read_at_commit (the commit-anchored blob), not from
+    any hypothetical local source. read_at_commit delivers a CHANGELOG body with a unique
+    discriminant line; the test asserts the payload contains it.
+    """
+    deps, _, _, err = make_deps()
+    tags_body = {"value": None}
+
+    def exec_forge_api(name, args, stdin):
+        if "git/tags" in args[1]:
+            tags_body["value"] = stdin
+        return default_exec_forge_api(name, args, stdin)
+
+    files = valid_files(VERSION)
+
+    def read_at_commit(sha, path):
+        if path == "CHANGELOG.md":
+            return (
+                f"# Changelog\n\n## [{VERSION}] - 2026-08-21\n\n### Added\n- from-commit-object-anchor\n",
+                None,
+            )
+        return (files[path], None) if path in files else ("", f"object {sha}:{path} not found")
+
+    deps["exec_forge_api"] = exec_forge_api
+    deps["read_at_commit"] = read_at_commit
+    code = run_release_tag(VERSION, **deps)
+    assert code == 0, f"unexpected failure: {err}"
+    assert "from-commit-object-anchor" in tags_body["value"]
+    assert "from-working-tree-NOT-anchored" not in tags_body["value"]

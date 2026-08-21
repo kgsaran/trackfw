@@ -86,7 +86,7 @@ Decisão material, e o ponto difícil é o **momento** da verificação, não o 
 ## Wave 2 — Implementação
 
 ### ML-2A — Ancorar versão e mensagem
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-1A
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-1A
 **Arquivos (3 stacks):** `internal/commands/release.go`, `npm/src/release/runner.js`,
 `pypi/trackfw/release/runner.py`, testes dos 3.
 
@@ -96,6 +96,41 @@ Decisão material, e o ponto difícil é o **momento** da verificação, não o 
 - [ ] Divergência **recusa nomeando o quê** divergiu (AC3)
 - [ ] **Fluxo legítimo de release preservado** — provado por cenário que simule o PR de bump
 - [ ] `make quality` verde
+
+### Auditoria do ML-2A — aprovada, e a ancoragem é **estrutural**, não convencional
+
+```
+release.go:412  deps.readCommittedFile(objectSHA, vf.path)
+release.go:427  deps.readCommittedFile(objectSHA, "CHANGELOG.md")
+grep readFile em release.go  ->  NENHUMA ocorrencia
+make quality (CI-exata) exit 0 · cobertura exit 0 · validate exit 0
+```
+
+**Tentei sabotar trocando de volta para leitura do working tree — e não compila.** O campo
+`readFile` foi **removido do struct**, não apenas deixado de usar. Isso é melhor que gate: um
+fallback silencioso para o working tree passa a ser **impossível de escrever por acidente**, em vez
+de detectável depois.
+
+Era exatamente o que eu tinha nomeado como o que não pode acontecer. Ele resolveu removendo a
+possibilidade, não vigiando-a.
+
+**As três provas centrais estão nos testes dos 3 stacks**, com discriminante literal
+(`- from-commit-object-anchor`) provando que a mensagem vem do commit e não de conteúdo local.
+
+#### Duas lacunas que ele declarou, e ambas são honestas
+
+**1.** A recusa de "objeto ausente" tem cobertura só por teste unitário por stack, sem gate
+cross-CLI. Vai para o ML-2B — e é justamente o caminho onde o fallback silencioso seria mais
+tentador.
+
+**2. Consequência de ordem que eu não tinha previsto:** mover P3/P4 para depois da resolução do
+forge muda **qual recusa vence**. Um usuário sem `gh` agora vê *"requires the GitHub CLI"* antes de
+qualquer erro de versão — mesmo que o erro de versão também exista.
+
+É consequência inevitável do ADR, não defeito. Mas é **mudança de experiência**: quem errava a
+versão e não tinha `gh` recebia a mensagem útil primeiro. Declarada para veredito do `hades-tf` no
+ML-3A, e concordo em levá-la à barreira em vez de decidir sozinho.
+
 
 ### ML-2B — Gate + P4
 **Status:** ⬜ Pendente · **Agente:** `apolo-tf` · **Dep.:** ML-2A
