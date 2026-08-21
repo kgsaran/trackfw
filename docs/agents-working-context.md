@@ -21971,3 +21971,22 @@ Fechando a classe do nil map em `ProjectConfig`:
 - Decisão de fechamento: initConfigMaps() por reflexão no início de parse() — todos os campos de mapa inicializados sem ação humana futura
 - Escopo: config.go, config_nil_map_test.go, check-gates-falsify.sh (Cenário 85 P4)
 - Node.js e Python: imunes por construção (cada construction já inclui `agentModels: {}`)
+
+## 2026-08-21 — Zeus (arquiteto) — decisão de release de KG
+
+**Uma release**, não duas. Escopo da 7.2.0: modelo por tier + `agents models` + verbosidade + as
+duas REQs de segurança (`release tag` confia em conteúdo local · `validate` cego ao hook relativo
+antigo).
+
+Eu havia recomendado duas releases — 7.2.0 com o modelo assim que fechasse, para desbloquear o
+impasse do pin (hoje não dá para rodar `agents update` sem perder o pin), e 7.3.0 com segurança.
+**KG decidiu uma só.** Registrado: o impasse do pin persiste até a release, e é consequência aceita.
+
+**Fila até a release:**
+1. modelo — ML-3A (gate + P4) e barreira ← em andamento
+2. `release tag` confia em conteúdo local
+3. `validate` cego ao hook relativo antigo
+4. bump + CHANGELOG + tag 7.2.0
+
+**Depois da release:** `update --dry-run` em symlink · i18n nos 3 CLIs · `note_orphan` ausente no
+Node · `rule: null` no `validate --json` do Python · substring no corpus de `done/`.
