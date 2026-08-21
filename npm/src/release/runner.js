@@ -158,7 +158,7 @@ function defaultExecGit(args) {
 // the error surfaces git's real stderr; there is NO fallback to the working tree.
 // See ADR-2026-08-21-release-tag-le-versao-e-changelog-do-commit-ancorado.md.
 function defaultReadAtCommit(sha, filePath) {
-  const result = spawnSync('git', ['show', `${sha}:${filePath}`], { encoding: 'utf8' })
+  const result = spawnSync('git', ['--no-replace-objects', 'show', `${sha}:${filePath}`], { encoding: 'utf8' })
   if (result.status !== 0) {
     const msg = (result.stderr || '').trim() || `git show ${sha}:${filePath} exited with ${result.status}`
     return { content: '', error: new Error(msg) }

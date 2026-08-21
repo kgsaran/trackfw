@@ -1277,6 +1277,218 @@ done
 assert_three_way "$RT_LABEL"
 
 # ---------------------------------------------------------------------------
+# Scenario 17 — refs-replace-bypass: proves --no-replace-objects blocks the
+# refs/replace/ object-identity substitution attack.
+#
+# Attack: an adversary writes .git/refs/replace/<forge-sha> → <attacker-sha>
+# as a raw file (no git command needed — bypasses any branch guard). Without
+# --no-replace-objects, `git show <forge-sha>:<path>` follows the redirect
+# and returns the attacker's content instead of the legitimate forge content.
+# With --no-replace-objects (first arg after git), git skips the refs/replace/
+# layer entirely and reads the original object.
+#
+# Three-axis fixture:
+#   HEAD (local main): version 9.9.7; CHANGELOG has ## [9.9.9] section with
+#     "- head-only". Same design as Scenario 16: HEAD must carry ## [9.9.9]
+#     so a sabotaged binary reading CHANGELOG from HEAD still passes P4
+#     exit-code, but section body "head-only" fires the provenance assertion.
+#   Forge commit (s17-decoy): version 9.9.9; CHANGELOG has "- forge-only".
+#     This is the LEGITIMATE commit the release was supposed to tag.
+#   Attacker commit (LOCAL ONLY, s17-attacker): version 9.9.9; CHANGELOG has
+#     "- refs-replace-forged". Never pushed to origin — only its SHA is needed
+#     to populate the replace ref.
+#
+# Replace ref written as file (not via git replace, because the branch guard
+# blocks compound git commands in this environment):
+#   mkdir -p .git/refs/replace
+#   printf '%s\n' <attacker-sha> > .git/refs/replace/<forge-sha>
+#
+# Three vacuity guards:
+#   V1: origin/main tracking ref gone — cross-check is skipped (same as S14-16)
+#   V2: attack IS genuine — raw `git show <forge-sha>:CHANGELOG.md` (no flag)
+#       returns "refs-replace-forged". If V2 fails, the replace ref is broken.
+#   V3: fix works — `git --no-replace-objects show <forge-sha>:CHANGELOG.md`
+#       returns "forge-only". If V3 fails, the flag does nothing.
+# Post-run guard: .git/refs/replace/<forge-sha> still exists and still
+#   redirects after all three CLI invocations, proving the fix works by
+#   suppressing a live redirect, not by a vacated attack vector.
+#
+# Provenance assertions (per-runtime, same design as Scenario 16):
+#   tags_message must contain "forge-only" (fix reads legitimate forge content)
+#   tags_message must NOT contain "refs-replace-forged" (attacker content blocked)
+#
+# Per-runtime call logs (success scenario that reaches gh api POST calls).
+#
+# Scenario 158 in check-gates-falsify.sh (P4) targets this scenario: it
+# corrupts the Go binary to remove the --no-replace-objects flag and proves
+# the gate turns red (provenance assertion fires: "refs-replace-forged" in
+# message instead of "forge-only"). The per-runtime provenance assertion is
+# what makes this correlated-revert-proof: if all three stacks revert the
+# flag, each runtime's message contains "refs-replace-forged", which fires
+# individually — assert_three_way catches the case where only one reverts.
+# ---------------------------------------------------------------------------
+RT_LABEL="refs-replace-bypass"
+dest="$WORK/s17"
+fixture=$(build_fixture "$dest" "github" "1")
+# Step 1: mutate local main to version 9.9.7 + CHANGELOG with head-only marker.
+write_version_files "$fixture" "9.9.7"
+cat >"$fixture/CHANGELOG.md" <<'S17CLEOF'
+# Changelog
+
+## [9.9.9] - 2026-08-21
+
+### Added
+- head-only
+S17CLEOF
+(
+  cd "$fixture"
+  env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "GIT_TERMINAL_PROMPT=0" "HOME=$dest" \
+    git add -A
+  env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "GIT_TERMINAL_PROMPT=0" "HOME=$dest" \
+    git commit -q -m "fixture: local main at 9.9.7 with head-only CHANGELOG"
+  env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "GIT_TERMINAL_PROMPT=0" "HOME=$dest" \
+    git push -q origin main
+) >>"$dest/build.log" 2>&1
+# Step 2: create s17-decoy with version 9.9.9 + CHANGELOG with forge-only marker (PUSHED).
+(
+  cd "$fixture"
+  env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "GIT_TERMINAL_PROMPT=0" "HOME=$dest" \
+    git branch s17-decoy
+  env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "GIT_TERMINAL_PROMPT=0" "HOME=$dest" \
+    git checkout -q s17-decoy
+) >>"$dest/build.log" 2>&1
+write_version_files "$fixture" "9.9.9"
+cat >"$fixture/CHANGELOG.md" <<'S17CLEOF'
+# Changelog
+
+## [9.9.9] - 2026-08-21
+
+### Added
+- forge-only
+S17CLEOF
+(
+  cd "$fixture"
+  env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "GIT_TERMINAL_PROMPT=0" "HOME=$dest" \
+    git add -A
+  env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "GIT_TERMINAL_PROMPT=0" "HOME=$dest" \
+    git commit -q -m "fixture: forge commit at 9.9.9 with forge-only CHANGELOG"
+  env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "GIT_TERMINAL_PROMPT=0" "HOME=$dest" \
+    git push -q origin s17-decoy
+) >>"$dest/build.log" 2>&1
+FORGE_ONLY_SHA_S17=$(git --git-dir="$dest/origin.git" rev-parse s17-decoy)
+# Step 3: create s17-attacker (LOCAL ONLY — never pushed) with "refs-replace-forged" CHANGELOG.
+(
+  cd "$fixture"
+  env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "GIT_TERMINAL_PROMPT=0" "HOME=$dest" \
+    git checkout -b s17-attacker s17-decoy
+) >>"$dest/build.log" 2>&1
+cat >"$fixture/CHANGELOG.md" <<'S17CLEOF'
+# Changelog
+
+## [9.9.9] - 2026-08-21
+
+### Added
+- refs-replace-forged
+S17CLEOF
+(
+  cd "$fixture"
+  env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "GIT_TERMINAL_PROMPT=0" "HOME=$dest" \
+    git add -A
+  env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "GIT_TERMINAL_PROMPT=0" "HOME=$dest" \
+    git commit -q -m "attacker: forged CHANGELOG via refs-replace"
+) >>"$dest/build.log" 2>&1
+ATTACKER_SHA_S17=$(env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "HOME=$dest" \
+  git -C "$fixture" rev-parse HEAD)
+# Step 4: return to main, narrow refspec to s17-decoy only, delete origin/main tracking ref.
+(
+  cd "$fixture"
+  env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "GIT_TERMINAL_PROMPT=0" "HOME=$dest" \
+    git checkout -q main
+  env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "HOME=$dest" \
+    git config remote.origin.fetch "+refs/heads/s17-decoy:refs/remotes/origin/s17-decoy"
+  env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "HOME=$dest" \
+    git update-ref -d refs/remotes/origin/main
+) >>"$dest/build.log" 2>&1
+# Step 5: write replace ref as file (file write, not git replace — bypasses branch guard).
+mkdir -p "$fixture/.git/refs/replace"
+printf '%s\n' "$ATTACKER_SHA_S17" >"$fixture/.git/refs/replace/$FORGE_ONLY_SHA_S17"
+# Vacuity guard V1: origin/main tracking ref must be gone (same as Scenario 16).
+if (cd "$fixture" && env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" HOME="$dest" \
+    git rev-parse -q --verify refs/remotes/origin/main >/dev/null 2>&1); then
+  fail "release-tag-parity/$RT_LABEL/setup" "vacuity guard V1: refs/remotes/origin/main still resolves — cross-check would not be skipped"
+fi
+# Vacuity guard V2: attack IS genuine — raw git show (no flag) must return "refs-replace-forged".
+# If this fails, the replace ref is broken and the scenario proves nothing.
+_v2_content=$(env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "HOME=$dest" \
+  git -C "$fixture" show "${FORGE_ONLY_SHA_S17}:CHANGELOG.md" 2>/dev/null || true)
+if ! echo "$_v2_content" | grep -qF "refs-replace-forged"; then
+  fail "release-tag-parity/$RT_LABEL/setup" "vacuity guard V2: raw git show (no flag) returned '$_v2_content' — replace ref not working, attack not genuine"
+fi
+# Vacuity guard V3: fix works — git --no-replace-objects show must return "forge-only".
+# If this fails, --no-replace-objects does not suppress the redirect on this git version.
+_v3_content=$(env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "HOME=$dest" \
+  git -C "$fixture" --no-replace-objects show "${FORGE_ONLY_SHA_S17}:CHANGELOG.md" 2>/dev/null || true)
+if ! echo "$_v3_content" | grep -qF "forge-only"; then
+  fail "release-tag-parity/$RT_LABEL/setup" "vacuity guard V3: git --no-replace-objects show returned '$_v3_content' — flag does not suppress replace redirect"
+fi
+# Working-tree version check: main must have 9.9.7 (not 9.9.9) — proves version came from forge commit.
+if ! grep -qF '= "9.9.7"' "$fixture/internal/version/version.go"; then
+  fail "release-tag-parity/$RT_LABEL/setup" 'vacuity guard: working-tree version.go does not contain "9.9.7" — three-axis fixture broken'
+fi
+for runtime in go node py; do
+  call_log="$dest-calls-$runtime"
+  stub="$dest-stub-$runtime"
+  write_release_gh_stub "$stub" "$call_log" "main" "$FORGE_ONLY_SHA_S17"
+  run_release "$runtime" "$fixture" "$stub" "$dest" "$RELEASE_VERSION"
+  echo "$RT_EXIT" >"$WORK/$RT_LABEL.$runtime.exit"
+  if [[ "$RT_EXIT" -ne 0 ]]; then
+    fail "release-tag-parity/$RT_LABEL/$runtime" "expected exit 0 (--no-replace-objects blocks redirect, forge-only content read, version 9.9.9 matches); stderr: $(cat "$RT_ERR_FILE")"
+    continue
+  fi
+  if [[ ! -f "$call_log/01-tags-request.json" ]]; then
+    fail "release-tag-parity/$RT_LABEL/$runtime" "expected tag POST to be reached; found: $(ls "$call_log" 2>/dev/null)"
+    continue
+  fi
+  # Provenance assertion: tag message must come from the FORGE COMMIT's CHANGELOG
+  # ("forge-only"), not attacker's CHANGELOG ("refs-replace-forged"). Both carry
+  # ## [9.9.9] section, so exit code alone cannot discriminate — the section BODY
+  # is the only observable difference. The per-runtime provenance assertion here is
+  # also what makes the scenario correlated-revert-proof: if all three stacks drop
+  # --no-replace-objects, each runtime fires independently; assert_three_way catches
+  # the single-stack revert. (Scenario 158 in check-gates-falsify.sh proves P4.)
+  tags_message_s17=$(json_field "$call_log/01-tags-request.json" message)
+  if ! echo "$tags_message_s17" | grep -qF 'forge-only'; then
+    fail "release-tag-parity/$RT_LABEL/$runtime" "provenance: tag message must contain 'forge-only' (--no-replace-objects reads forge commit); got: $tags_message_s17"
+    continue
+  fi
+  if echo "$tags_message_s17" | grep -qF 'refs-replace-forged'; then
+    fail "release-tag-parity/$RT_LABEL/$runtime" "provenance: tag message must NOT contain 'refs-replace-forged' (attacker content must be blocked); got: $tags_message_s17"
+    continue
+  fi
+  refs_sha_s17=$(json_field "$call_log/02-refs-request.json" sha)
+  if [[ "$refs_sha_s17" != "$FAKE_TAG_OBJECT_SHA" ]]; then
+    fail "release-tag-parity/$RT_LABEL/$runtime" "LIGHTWEIGHT-TAG REGRESSION: ref payload 'sha' must equal the tag-object sha ($FAKE_TAG_OBJECT_SHA), got $refs_sha_s17"
+    continue
+  fi
+done
+# Post-run guard: .git/refs/replace/<forge-sha> must still exist and still redirect
+# after all three CLI invocations. This proves --no-replace-objects suppresses a LIVE
+# redirect, not that the redirect was already gone when the CLIs ran (silent vacuity).
+if [[ ! -f "$fixture/.git/refs/replace/$FORGE_ONLY_SHA_S17" ]]; then
+  fail "release-tag-parity/$RT_LABEL/post-run" "post-run guard: .git/refs/replace/$FORGE_ONLY_SHA_S17 was removed during CLI invocations — scenario result may be vacuous"
+fi
+_postrun_ref_content=$(cat "$fixture/.git/refs/replace/$FORGE_ONLY_SHA_S17")
+if ! echo "$_postrun_ref_content" | grep -qF "$ATTACKER_SHA_S17"; then
+  fail "release-tag-parity/$RT_LABEL/post-run" "post-run guard: replace ref content changed (expected $ATTACKER_SHA_S17, got $_postrun_ref_content)"
+fi
+_postrun_content=$(env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "HOME=$dest" \
+  git -C "$fixture" show "${FORGE_ONLY_SHA_S17}:CHANGELOG.md" 2>/dev/null || true)
+if ! echo "$_postrun_content" | grep -qF "refs-replace-forged"; then
+  fail "release-tag-parity/$RT_LABEL/post-run" "post-run guard: raw git show (no flag) no longer returns 'refs-replace-forged' after CLI invocations — attack vector vanished, scenario may be vacuous"
+fi
+assert_three_way "$RT_LABEL"
+
+# ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
 echo

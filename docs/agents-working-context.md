@@ -4,6 +4,16 @@
 
 ---
 
+## Sessão 2026-08-21 — Apolo (INÍCIO: ML-4A — --no-replace-objects nos 3 CLIs)
+
+Branch `fix/release-tag-ancora-versao-e-mensagem-no-forge`. Sem commit/push.
+
+Escopo: adicionar `--no-replace-objects` como primeiro argumento ao `git show` nos 3 CLIs;
+provar o exploit resolvido; adicionar cenários no gate com refs/replace/ presente e P4;
+medir `.git/info/grafts`.
+
+---
+
 ## Sessão 2026-08-21 — Hades (FIM: ML-3A — barreira BLOQUEAR, vetor refs/replace/ medido)
 
 Branch `fix/release-tag-ancora-versao-e-mensagem-no-forge`. Sem commit/push (autoridade do
@@ -22349,3 +22359,40 @@ bash scripts/check-parity-contract-coverage.sh       → exit 0
 TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make parity      → exit 0 (incluindo OK [falsify/release-tag-parity/content-from-commit-baseline] + content-from-commit-false-negative)
 ./bin/trackfw validate                               → 17 warnings pré-existentes, 0 violations
 ```
+
+---
+
+## Sessão 2026-08-21 — Apolo (FIM: ML-4A — --no-replace-objects nos 3 CLIs)
+
+**Handoff recebido de:** `trackfw_architect` (continuação de sessão anterior truncada por limite de contexto)
+
+**Escopo executado:** ML-4A do `ROADMAP-2026-08-21-release-tag-ancora-versao-e-mensagem-no-forge.md` (Wave 4) — fechar o furo de `refs/replace/` na ancoragem de conteúdo de `trackfw release tag`.
+
+**Trabalho realizado:**
+1. **Fix nos 3 CLIs** (`--no-replace-objects` como primeiro argumento após `git`):
+   - Go: `internal/commands/release.go:224` — `exec.Command("git", "--no-replace-objects", "show", sha+":"+path)`
+   - Node.js: `npm/src/release/runner.js:161` — `spawnSync('git', ['--no-replace-objects', 'show', ...])`
+   - Python: `pypi/trackfw/release/runner.py:239` — `subprocess.run(["git", "--no-replace-objects", "show", ...])`
+2. **Scenario 17 (`refs-replace-bypass`) em `scripts/check-release-tag-parity.sh`:** fixture três eixos (HEAD 9.9.7/head-only, forge commit 9.9.9/forge-only, attacker commit LOCAL-ONLY 9.9.9/refs-replace-forged); replace ref escrita como arquivo; V1/V2/V3 vacuity guards + post-run guard; provenance assertions por runtime.
+3. **Cenário 158 (P4) em `scripts/check-gates-falsify.sh`:** seam `"--no-replace-objects", "show"` → `"show"` em cópia isolada Go; baseline + detection arm; echo final 157 → 158.
+4. **`docs/cli-parity.md` atualizado:** "Sixteen scenarios (20 RT_LABELs)" → "Seventeen scenarios (21 RT_LABELs)"; gate mention inclui Scenario 17 (ML-4A); Scenario 17 description adicionada.
+5. **`.git/info/grafts` medido:** grafts só alteram parent-chain traversal, NÃO afetam `git show <sha>:<path>`. Vault note `git-show-honra-refs-replace-por-padrao-2026-08-21.md` atualizado com a taxonomia completa de camadas de indireção.
+6. **Roadmap ML-4A** marcado ✅ Concluído com evidências.
+
+**Achado reportado (não corrigido neste ML):** `defaultReleaseReadCommittedFile` usa `os.Environ()` bruto sem `cleanGitEnv()`. Para sha-addressed reads, GIT_DIR redirect faz objeto ausente (recusa) vs. forjado — menos crítico; reportado para hades-tf/ML-4B.
+
+**Evidências:**
+```
+make build                                                    → exit 0
+go test ./...                                                 → ok todos os pacotes Go
+bash scripts/check-release-tag-parity.sh                     → All 21 RT_LABELs passed (incl. refs-replace-bypass)
+P4 detection arm isolado                                      → exit 1, "provenance: tag message must contain 'forge-only'" ✓
+./bin/trackfw validate                                        → 0 violations, 17 warnings pré-existentes
+TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make parity               → exit 0
+  OK [falsify/release-tag-parity/refs-replace-bypass-baseline]
+  OK [falsify/release-tag-parity/refs-replace-bypass-false-negative]
+  All check-release-tag-parity.sh scenarios passed
+  Falsification checks passed (all 158 scenarios, ...)
+```
+
+**Próximo:** ML-4B → `hades-tf` (reverificação; bloqueio levantado).

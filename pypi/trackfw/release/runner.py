@@ -236,7 +236,7 @@ def default_read_at_commit(sha, path):
     """
     try:
         result = subprocess.run(
-            ["git", "show", f"{sha}:{path}"], capture_output=True, text=True
+            ["git", "--no-replace-objects", "show", f"{sha}:{path}"], capture_output=True, text=True
         )
         if result.returncode != 0:
             msg = result.stderr.strip() or f"git show {sha}:{path} exited with {result.returncode}"

@@ -239,15 +239,44 @@ Regressão ali só apareceria em gate, não em build.
 ## Wave 4 — Corretiva do bloqueio
 
 ### ML-4A — `--no-replace-objects` nos 3 CLIs
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Bloqueia o merge.**
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` · **Evidência:** `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make parity` exit 0 · `./bin/trackfw validate` exit 0 · `go test ./...` verde · `bash scripts/check-release-tag-parity.sh` exit 0 (21 RT_LABELs) · P4 detection arm validado em isolamento (exit 1 com "provenance: tag message must contain 'forge-only'").
 
 **Critérios de aceite:**
-- [ ] `--no-replace-objects` como primeiro argumento, nos 3 CLIs
-- [ ] O exploit reproduzido acima deixa de funcionar — provado nos 3
-- [ ] Cenário no gate com `refs/replace/` presente, e P4
-- [ ] **Avaliar `.git/info/grafts`** — mecanismo análogo, obsoleto, **não** coberto por
-      `--no-replace-objects`. Cobrir ou declarar por escrito por que não
-- [ ] `make quality` verde · CI-exata verde
+- [x] `--no-replace-objects` como primeiro argumento, nos 3 CLIs
+- [x] O exploit reproduzido acima deixa de funcionar — provado nos 3 (Scenario 17: V2=ataque genuíno, V3=flag bloqueia, post-run guard=redirect ainda ativo após CLIs)
+- [x] Cenário no gate com `refs/replace/` presente (Scenario 17), e P4 (Cenário 158 em check-gates-falsify.sh)
+- [x] **`.git/info/grafts` medido:** grafts substituem a lista de pais do commit (parent-chain traversal), mas `git show <sha>:<path>` resolve o objeto pelo sha, lê o ponteiro `tree`, e percorre a árvore — caminho que grafts nunca tocam. O resultado é independente de versão: o script de medição confirmou via `git cat-file -p SHA_A` que o ponteiro `tree` permanece inalterado com graft instalado, enquanto `git log` seguiu o pai virtual. A única rota de grafts para o fluxo de leitura de árvore é `git replace --convert-graft-file`, que produz entradas `refs/replace/` — já bloqueadas pela flag. Git 2.50.1 reporta grafts como deprecated (serão removidos). **Grafts não são um vetor. Não precisam de cobertura adicional.**
+- [x] `make quality` verde · CI-exata (`TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make parity`) verde
+
+**Nota de risco reportada:** `defaultReleaseReadCommittedFile` em `internal/commands/release.go` herda o `os.Environ()` bruto — sem `cleanGitEnv()` (que existe em `internal/validator/validator_git_exec.go`). Para o padrão de leitura `<sha>:<path>` (sha-addressed), redirecionamento de `GIT_DIR` torna o objeto ausente (refusa) em vez de forjado — menos crítico que o caso `HEAD:path` (ref-addressed) fechado pelo `cleanGitEnv` do validador. Não corrigido neste ML (fora do escopo); reportado para `hades-tf`/ML-4B.
+
+### Auditoria do ML-4A — aprovada; a exclusão medida vale tanto quanto a correção
+
+```
+--no-replace-objects presente nos 3 CLIs (uma ocorrencia cada, conferido)
+sabotagem propria: removi a flag do Go
+  gate -> EXIT=1: "provenance: tag message must contain 'forge-only'
+                   (--no-replace-objects reads forge commit)"
+restaurado -> EXIT=0
+158 cenarios · make quality (CI-exata) exit 0 · cobertura exit 0 · validate exit 0
+```
+
+#### `.git/info/grafts` **não é vetor**, e ele provou em vez de blindar
+
+Grafts substituem a **lista de pais** do commit — afetam travessia de cadeia (`git log`,
+`rev-list`). `git show <sha>:<path>` resolve o objeto pelo sha, lê o ponteiro `tree` e percorre a
+árvore: **caminho que grafts nunca tocam**. Confirmado com `git cat-file -p`: o ponteiro `tree` é
+idêntico com e sem graft, enquanto o `git log` seguiu o pai virtual.
+
+**Terceira exclusão por medição nesta série** — depois do NEL e do CR. Cada uma evitou blindagem
+nominal contra vetor inexistente, e blindagem inútil não é neutra: é falso-positivo esperando
+acontecer, num comando que **publica**.
+
+**Achado que ele reportou e não corrigiu:** a leitura herda `os.Environ()` sem o `cleanGitEnv()` que
+o validador aplica. Para leitura **por sha** o impacto é menor — `GIT_DIR` redirecionado torna o
+objeto **ausente**, e ausente **recusa**, que é o lado seguro. Diferente do caso `HEAD:<path>`
+(endereçado por ref), que o Cenário 54 já fecha. Deixado para o veredito da barreira, corretamente.
+
 
 ### ML-4B — Reverificação do `hades-tf`
 **Status:** ⬜ Pendente · **Agente:** `hades-tf` · **Dep.:** ML-4A. Quem bloqueou levanta.

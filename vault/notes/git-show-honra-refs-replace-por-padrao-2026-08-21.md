@@ -42,19 +42,51 @@ Adicionar `--no-replace-objects` ao invocation de `git show` nas três implement
 
 `GIT_NO_REPLACE_OBJECTS=1` como variável de ambiente do subprocess tem o mesmo efeito.
 
-## Mecanismo adicional: `.git/info/grafts`
+## Mecanismo adicional: `.git/info/grafts` — MEDIDO, NÃO É UM VETOR
 
-O arquivo `.git/info/grafts` (mecanismo mais antigo, deprecated mas ainda suportado) cria
-substituições similares. `--no-replace-objects` NÃO desabilita grafts. Se isso for considerado
-vetor adicional, a mitigação seria `git -c core.grafts=/dev/null show ...` ou inicialização de
-repositório com `core.grafts` explicitamente desapontando para `/dev/null`. Na prática, grafts são
-raros e ausentes na maioria dos clones modernos.
+**Medição executada (ML-4A, 2026-08-21):** fixture isolada (fora do repo trackfw, sem hooks),
+dois commits A (legítimo, "legitimate content") e B (forjado, "FORGED content"). Graft instalado
+em `.git/info/grafts` declarando A com pai virtual B. Resultado:
+
+- `git show SHA_A:CHANGELOG.md` → "legitimate content" (inalterado pelo graft)
+- `git log SHA_A --oneline` → mostra B como pai (graft age aqui)
+- `git cat-file -p SHA_A` → ponteiro `tree` idêntico antes e depois do graft
+
+**Por quê:** grafts substituem a **lista de pais** de um commit (parent-chain traversal — `git
+log`, `git rev-list`). `git show <sha>:<path>` resolve o objeto pelo sha, lê o ponteiro `tree`,
+e percorre a árvore de arquivos — esse caminho nunca toca os pais. Grafts não têm como redirecionar
+`git show <sha>:<path>`.
+
+**Taxonomia das camadas de indireção do git:**
+- `refs/replace/` — substitui **identidade do objeto**: git trata `<sha>` como se fosse outro
+  objeto antes de qualquer leitura. Quebra a garantia "sha determina conteúdo". **Bloqueado por
+  `--no-replace-objects`.** Vetor confirmado.
+- `.git/info/grafts`, `.git/shallow` — alteram **metadados do grafo** (lista de pais, profundidade
+  de histórico). Nunca tocam a árvore do objeto requisitado. Não são vetores para `git show
+  <sha>:<path>`. Grafts são deprecated no git 2.50.1.
+- `.git/objects/info/alternates`, `GIT_ALTERNATE_OBJECT_DIRECTORIES` — adicionam **fontes de
+  objetos**. Não podem forjar: objetos são content-addressed, então um alternate só pode fornecer
+  um objeto cujo conteúdo hash para o sha requisitado. Pior caso = objeto ausente → recusa (caminho
+  já coberto pelo Scenario 15). Não são vetores de forjaria.
+
+**Conclusão:** grafts não precisam de cobertura adicional nem de mitigação com `core.grafts`.
+A única rota de grafts para o fluxo de leitura de árvore seria `git replace --convert-graft-file`,
+que produz entradas `refs/replace/` — já bloqueadas pela flag.
 
 ## Estrutura do guard
 
 O `trackfw-git-branch-guard.sh` não menciona `git replace` em nenhum bloco. Como o ataque pode
 ser feito com escrita de arquivo direta (sem invocar `git replace`), o guard é irrelevante para
 este vetor.
+
+## Observação: `os.Environ()` bruto em `defaultReleaseReadCommittedFile`
+
+`internal/commands/release.go`'s `exec.Command` herda o `os.Environ()` bruto — sem passar por
+`cleanGitEnv()` (que existe em `internal/validator/validator_git_exec.go` e remove variáveis
+`GIT_*`). Para o padrão `git show <sha>:<path>` (sha-addressed), redirecionamento via `GIT_DIR`
+faz o objeto ficar ausente (recusa) em vez de forjado — menos crítico que o caso `HEAD:path`
+(ref-addressed) fechado pelo `cleanGitEnv` do validador (Cenário 54 em check-gates-falsify.sh).
+Não corrigido em ML-4A; reportado para `hades-tf`/ML-4B.
 
 ## Relevância futura
 

@@ -221,7 +221,7 @@ without -a, and the git-branch-guard blocks that push form anyway.`,
 // (object absent, sha unknown) the error surfaces git's real stderr; there is no fallback to
 // the working tree. See ADR-2026-08-21-release-tag-le-versao-e-changelog-do-commit-ancorado.md.
 func defaultReleaseReadCommittedFile(sha, path string) (string, error) {
-	cmd := exec.Command("git", "show", sha+":"+path)
+	cmd := exec.Command("git", "--no-replace-objects", "show", sha+":"+path)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
