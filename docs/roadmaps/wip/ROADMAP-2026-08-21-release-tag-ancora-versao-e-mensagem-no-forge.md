@@ -177,13 +177,80 @@ teste de valor.**
 ## Wave 3 — Barreira
 
 ### ML-3A — `hades-tf`
-**Status:** ⬜ Pendente · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
+**Status:** ❌ Bloqueado — veredito BLOQUEAR, novo achado (`refs/replace/`) · **Agente:** `hades-tf`
 **Escreve:** `docs/seguranca/2026-08-21-revisao-da-ancoragem-de-versao-e-mensagem.md`
 
 Foi ele quem levantou o achado. Avaliar se a âncora fecha o vetor que ele descreveu, e se a
 verificação criou caminho novo de recusa indevida. **Veredito explícito.**
 
+#### Veredito ML-3A — BLOQUEAR
+
+`git show <sha>:<path>` honra `refs/replace/` por padrão. Um atacante com acesso local de escrita
+pode criar `.git/refs/replace/<forge-sha>` → `<commit-local-forjado>` por escrita direta de
+arquivo (sem nenhum comando git, guard irrelevante). Com o replace ref no lugar, `git show
+<forge-sha>:CHANGELOG.md` retorna conteúdo forjado — re-abrindo P3 (versão) e P4 (mensagem) nos
+3 CLIs. Medido ao vivo em fixture isolada.
+
+**Fix (uma linha por CLI):** adicionar `--no-replace-objects` como flag ao `git show` em
+`defaultReleaseReadCommittedFile` (Go), `defaultReadAtCommit` (Node.js),
+`default_read_at_commit` (Python). Localização exata no documento de revisão.
+
+Consequência de ordem (P3/P4 após forge → "no gh" antes de "versão errada"): **não é vetor**,
+apenas mudança de UX. Sem mitigação recomendada.
+
 ---
+
+### Auditoria do ML-3A — **BLOQUEIO ACEITO**; o achado invalida o argumento do meu ADR
+
+Veredito: **BLOQUEAR** (`docs/seguranca/2026-08-21-revisao-da-ancoragem-de-versao-e-mensagem.md`).
+Reproduzi por conta própria:
+
+```
+sha ancorado (do forge): bf5fc158...
+echo <sha-forjado> > .git/refs/replace/<sha-do-forge>    (escrita de arquivo, SEM git)
+
+git show <sha>:CHANGELOG.md               ->  CONTEUDO FORJADO PELO ATACANTE
+git --no-replace-objects show <sha>:...   ->  CONTEUDO LEGITIMO
+```
+
+**Meu ADR afirma que "dado um sha, o conteúdo é criptograficamente determinado".** É verdadeiro para
+o object store e **falso para `git show`**, que passa pela camada de substituição de objetos.
+Deduzi a propriedade do formato e **presumi que a ferramenta a preservava**.
+
+**E o ataque não usa comando git nenhum** — é escrita de arquivo. O guard de branch, que bloqueia
+uma dúzia de subcomandos, é **irrelevante** aqui. Ele confirmou que `git replace` não aparece em
+nenhum bloco do guard.
+
+Emenda 1 registrada no ADR, com a lição: **garantia criptográfica do formato não é garantia da
+ferramenta que o lê**. Quando a segurança depende de "o sha determina o conteúdo", é preciso
+verificar que o leitor não tem camada de indireção — e o `git` tem pelo menos duas.
+
+**Duas observações dele que valem tanto quanto o achado:**
+
+A **consequência de ordem** que eu tinha mandado avaliar **não é vetor** — o comando recusa nos dois
+caminhos e nada é publicado. É mudança de UX, e ele disse isso em vez de inflar a ressalva.
+
+E ele corrigiu um exagero **meu**: eu escrevi que a ancoragem ficou "estrutural" porque não compila.
+Isso vale **só para Go** — em Node e Python a remoção é convencional, sem enforcement de compilador.
+Regressão ali só apareceria em gate, não em build.
+
+---
+
+## Wave 4 — Corretiva do bloqueio
+
+### ML-4A — `--no-replace-objects` nos 3 CLIs
+**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Bloqueia o merge.**
+
+**Critérios de aceite:**
+- [ ] `--no-replace-objects` como primeiro argumento, nos 3 CLIs
+- [ ] O exploit reproduzido acima deixa de funcionar — provado nos 3
+- [ ] Cenário no gate com `refs/replace/` presente, e P4
+- [ ] **Avaliar `.git/info/grafts`** — mecanismo análogo, obsoleto, **não** coberto por
+      `--no-replace-objects`. Cobrir ou declarar por escrito por que não
+- [ ] `make quality` verde · CI-exata verde
+
+### ML-4B — Reverificação do `hades-tf`
+**Status:** ⬜ Pendente · **Agente:** `hades-tf` · **Dep.:** ML-4A. Quem bloqueou levanta.
 
 ## Notas
 - **Fora de escopo:** reabrir o ancoramento do commit-alvo — fechado e reverificado no #194.

@@ -95,3 +95,47 @@ O caso que quebraria o desenho ingênuo **deixa de existir**, em vez de precisar
 - **Exigir working tree limpo e confiar nele** — rejeitada: a Pré-condição 1 já exige árvore limpa, e
   isso não impede que o conteúdo commitado localmente difira do que o forge tem. Árvore limpa não é
   ancoragem.
+
+---
+
+## Emenda 1 (2026-08-21) — `git show` honra `refs/replace/`, e isso furava a âncora
+
+> Esta ADR está `Accepted`. A emenda **acrescenta**; nada acima foi reescrito.
+
+A barreira do ML-3A **bloqueou**, e o achado invalida o argumento central escrito acima.
+
+O ADR afirma: *"objetos git são endereçados por conteúdo. Dado um sha, o conteúdo é
+criptograficamente determinado."* Isso é **verdadeiro para o object store** e **falso para
+`git show`** — que passa pela camada de substituição de objetos.
+
+Reproduzido por mim:
+
+```
+sha ancorado (do forge): bf5fc158...
+echo <sha-forjado> > .git/refs/replace/<sha-do-forge>     (escrita de arquivo, sem git)
+
+git show <sha>:CHANGELOG.md                  ->  CONTEUDO FORJADO PELO ATACANTE
+git --no-replace-objects show <sha>:...      ->  CONTEUDO LEGITIMO
+```
+
+**O ataque não usa nenhum comando git** — basta escrever um arquivo em `.git/refs/replace/`. O
+guard de branch é irrelevante, e confirmei que ele não menciona `git replace` em bloco nenhum.
+
+### Correção
+
+`--no-replace-objects` como primeiro argumento, nos 3 CLIs. Uma linha cada.
+
+### O que eu errei, e a lição
+
+Deduzi a propriedade de endereçamento por conteúdo — que é real — e **presumi que a ferramenta a
+preservava**. Não verifiquei o comportamento do `git show` com camadas de indireção. Foi raciocínio
+correto sobre o modelo de dados e incorreto sobre a implementação.
+
+**A regra que fica:** garantia criptográfica do formato não é garantia da ferramenta que o lê.
+Quando a segurança depende de "o sha determina o conteúdo", é preciso verificar que o **leitor** não
+tem camada de substituição — e `git` tem pelo menos duas (`refs/replace/` e `.git/info/grafts`).
+
+### Superfície adjacente, declarada
+
+`.git/info/grafts` é mecanismo análogo, obsoleto, e **não** é coberto por `--no-replace-objects`.
+Avaliar no ML de correção.

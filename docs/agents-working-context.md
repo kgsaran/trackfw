@@ -4,6 +4,37 @@
 
 ---
 
+## Sessão 2026-08-21 — Hades (FIM: ML-3A — barreira BLOQUEAR, vetor refs/replace/ medido)
+
+Branch `fix/release-tag-ancora-versao-e-mensagem-no-forge`. Sem commit/push (autoridade do
+`trackfw_architect`).
+
+**Veredito: BLOQUEAR.**
+
+**Achado medido:** `git show <sha>:<path>` honra `refs/replace/` por padrão nos 3 CLIs. Atacante
+com acesso local de escrita cria `.git/refs/replace/<forge-sha>` por escrita direta de arquivo
+(sem comando git, guard irrelevante), servindo conteúdo forjado para o sha do forge. Re-abre P3
+(versão) e P4 (mensagem).
+
+**Fix (uma linha por CLI):** adicionar `--no-replace-objects` ao git show em:
+- `internal/commands/release.go:224` (`defaultReleaseReadCommittedFile`)
+- `npm/src/release/runner.js:161` (`defaultReadAtCommit`)
+- `pypi/trackfw/release/runner.py:239` (`default_read_at_commit`)
+
+**Artefatos escritos:**
+- `docs/seguranca/2026-08-21-revisao-da-ancoragem-de-versao-e-mensagem.md` (revisão completa)
+- `vault/notes/git-show-honra-refs-replace-por-padrao-2026-08-21.md` (nota de vault)
+- Roadmap ML-3A marcado BLOQUEAR com sumário do achado e fix
+
+**Achados secundários declarados (não bloqueantes adicionais):**
+- Consequência de ordem (P3/P4 após forge): não é vetor, apenas UX — sem ação.
+- Garantia estrutural "não compila" cobre só Go; Node.js e Python têm convenção equivalente mas
+  sem enforcement de compilador.
+- `.git/info/grafts` é superfície adjacente não coberta por `--no-replace-objects`; raro em
+  clones modernos, deixado para o ML de correção avaliar.
+
+---
+
 ## Sessão 2026-08-21 — Apolo (FIM: ML-2A — release tag ancora versão e mensagem no forge)
 
 Branch `fix/release-tag-ancora-versao-e-mensagem-no-forge`. Sem commit/push (autoridade do

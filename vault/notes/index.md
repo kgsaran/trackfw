@@ -83,3 +83,4 @@
 - [git-branch-guard-case-block-extension-breaks-corrupt-literal-scenarios-2026-08-19](git-branch-guard-case-block-extension-breaks-corrupt-literal-scenarios-2026-08-19.md)
 - [git-fetch-self-heals-forged-origin-head-and-tracking-refs-2026-08-19](git-fetch-self-heals-forged-origin-head-and-tracking-refs-2026-08-19.md)
 - [forge-anchoring-branch-name-must-be-unconditional-not-cross-checked-2026-08-19](forge-anchoring-branch-name-must-be-unconditional-not-cross-checked-2026-08-19.md)
+- [git-show-honra-refs-replace-por-padrao-2026-08-21](git-show-honra-refs-replace-por-padrao-2026-08-21.md)
