@@ -21853,3 +21853,22 @@ Entregues (não commitados — autoridade exclusiva do `trackfw_architect`):
 Evidências: `make test` → todos os pacotes Go verdes; `check-artifact-parity.sh` → `OK [artifact-parity/claude-md-architect-responses-byte-identical]`; `./bin/trackfw validate` → exit 0 (17 warnings pré-existentes); `check-parity-contract-coverage.sh` → `OK — nenhuma anotação inválida e nenhuma seção sem anotação`.
 
 Riscos residuais: `make quality` completo e `check-gates-falsify.sh` rodam em background — resultado pendente de confirmação pelo `trackfw_architect`.
+
+## 2026-08-21 — Zeus (arquiteto) — REQ do modelo por tier
+
+REQ da verbosidade fechada (#198). Nova REQ: versão do modelo configurável por tier.
+
+**ADR escrito por mim** (ML-1A não delegado — decisão de formato é do arquiteto).
+
+Decisão central, de KG e melhor que a minha: guardar **a versão**, não o ID. ID cru quebraria
+OpenCode (`anthropic/claude-sonnet-4-6`) e Bedrock (`anthropic.claude-...`), ou obrigaria o render a
+desmontar string para remontar. Com a versão, cada alvo compõe a própria forma — que é o que a
+camada de render já faz com os tiers.
+
+**Risco dominante nomeado: vazamento de namespace.** ID Claude chegando ao mapeamento do Codex,
+Cursor ou Antigravity quebra os três, e quebra no artefato gerado — o usuário descobre quando o
+agente não sobe. É gate, não cuidado.
+
+**Motivo registrado, porque a leitura ingênua inverte a decisão:** Sonnet 4.6 consome ~30% menos
+tokens (tokenizador pré-4.7) e custa **mais** por token ($3/$15 contra $2/$10). Quem otimiza cota
+quer 4.6; quem otimiza dólar quer 5. Decisões contrárias a partir do mesmo dado.

@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-08-21
 req: "docs/req/REQ-2026-08-21-regra-de-verbosidade-das-respostas-do-arquiteto-no-asset-e-nas-regras-semeadas.md"
 adr: ""
@@ -8,7 +8,7 @@ squad: "apolo-tf"
 
 # Roadmap: regra de verbosidade no asset do arquiteto e nas regras semeadas
 
-> Created: 2026-08-21 | Status: wip
+> Created: 2026-08-21 | Status: done
 
 ## Context
 
