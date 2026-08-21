@@ -2,8 +2,8 @@
 status: Open
 date: 2026-08-19
 author: ""
-adr: ""
-roadmap: ""
+adr: "docs/adr/ADR-2026-08-21-release-tag-le-versao-e-changelog-do-commit-ancorado.md"
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-21-release-tag-ancora-versao-e-mensagem-no-forge.md"
 ---
 
 # REQ: `release tag` confia em conteúdo local para a versão e para a mensagem da tag

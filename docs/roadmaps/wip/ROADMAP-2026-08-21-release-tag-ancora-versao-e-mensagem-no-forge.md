@@ -2,7 +2,7 @@
 status: wip
 date: 2026-08-21
 req: "docs/req/REQ-2026-08-19-release-tag-confia-em-conteudo-local-para-versao-e-mensagem-da-tag.md"
-adr: ""
+adr: "docs/adr/ADR-2026-08-21-release-tag-le-versao-e-changelog-do-commit-ancorado.md"
 squad: "apolo-tf, hades-tf"
 ---
 
@@ -51,7 +51,22 @@ Vale o mesmo princípio do `ADR-2026-08-17`: falso-positivo aqui não irrita, **
 ## Wave 1 — Decisão
 
 ### ML-1A — ADR: o que ancorar, e quando
-**Status:** ⬜ Pendente · **Agente:** `zeus-tf` (arquiteto — **não delegar**)
+**Status:** ✅ Concluído · **Agente:** `zeus-tf` (arquiteto — **não delegar**)
+`ADR-2026-08-21-release-tag-le-versao-e-changelog-do-commit-ancorado.md`
+
+**A decisão é mais simples do que o problema sugeria: não comparar local com remoto — não ler o
+local.** O comando **já resolve** o sha do commit-alvo no forge; versão e `CHANGELOG` passam a ser
+lidos **daquele commit** (`git show <sha>:CHANGELOG.md`).
+
+Objetos git são **endereçados por conteúdo**: dado um sha, o conteúdo é criptograficamente
+determinado. A leitura é local, mas **a autoridade é o sha**, e o sha vem do forge. Mesma propriedade
+que a Emenda 1 do `ADR-2026-08-19` usou para o commit-alvo, aplicada ao conteúdo.
+
+**E o falso-positivo do PR de bump deixa de existir em vez de precisar de exceção:** o commit-alvo é
+o tip **pós-merge**, então a seção do `CHANGELOG` e o bump **já estão nele**. Não há divergência a
+tolerar porque não há comparação.
+
+Sem chamada de API nova, e funciona offline depois do fetch.
 
 Decisão material, e o ponto difícil é o **momento** da verificação, não o mecanismo:
 
