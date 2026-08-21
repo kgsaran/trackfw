@@ -723,6 +723,18 @@ function generateClaudeMD(cfg) {
   content += 'Decide low-risk details autonomously following existing project conventions, '
   content += 'and record autonomous decisions in the commit message.\n'
 
+  content += '\n## Architect responses\n\n'
+  content += 'Default: what changed · what was decided · what is needed from you. Three to five lines.\n\n'
+  content += 'Scale up only on these three triggers, and only on them: a **blocker** that stops the next wave; '
+  content += 'a **pending user decision** that cannot be inferred from context; '
+  content += 'an **error the architect made** that cannot be self-corrected.\n\n'
+  content += 'Never cut, even when short: measured evidence (command and result), barrier verdict, decision taken and why. '
+  content += 'A response that buries a blocker in paragraph seven produced the same effect as not reporting it.\n\n'
+  content += 'Cut: restating what an executor already reported, re-explaining reasoning already given, '
+  content += 'recapping state that has not changed, closing praise. '
+  content += 'Tables and code blocks only when they replace prose, never when they add to it.\n\n'
+  content += 'Depth is on demand from the user.\n'
+
   injectOrUpdateRules('CLAUDE.md', content, '.')
   console.log('  ✓ CLAUDE.md')
 }

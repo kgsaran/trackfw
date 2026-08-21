@@ -469,6 +469,18 @@ def generate_claude_md(cwd: str, opts: dict) -> None:
     lines.append('Decide low-risk details autonomously following existing project conventions, ')
     lines.append('and record autonomous decisions in the commit message.\n')
 
+    lines.append('\n## Architect responses\n')
+    lines.append('\nDefault: what changed · what was decided · what is needed from you. Three to five lines.\n')
+    lines.append('\nScale up only on these three triggers, and only on them: a **blocker** that stops the next wave; ')
+    lines.append('a **pending user decision** that cannot be inferred from context; ')
+    lines.append('an **error the architect made** that cannot be self-corrected.\n')
+    lines.append('\nNever cut, even when short: measured evidence (command and result), barrier verdict, decision taken and why. ')
+    lines.append('A response that buries a blocker in paragraph seven produced the same effect as not reporting it.\n')
+    lines.append('\nCut: restating what an executor already reported, re-explaining reasoning already given, ')
+    lines.append('recapping state that has not changed, closing praise. ')
+    lines.append('Tables and code blocks only when they replace prose, never when they add to it.\n')
+    lines.append('\nDepth is on demand from the user.\n')
+
     header = ''.join(lines)
     _inject_or_update_rules(os.path.join(cwd, 'CLAUDE.md'), header, cwd)
     print('  checkmark CLAUDE.md')

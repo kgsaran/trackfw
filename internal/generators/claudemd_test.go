@@ -168,6 +168,43 @@ func TestGenerateClaudeMD_HarnessSections(t *testing.T) {
 	}
 }
 
+func TestGenerateClaudeMD_ArchitectResponsesSection(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	_ = os.Chdir(dir)
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+
+	cfg := Config{ProjectName: "verbosity-test"}
+	if err := generateClaudeMD(cfg); err != nil {
+		t.Fatalf("generateClaudeMD() erro: %v", err)
+	}
+
+	contentBytes, err := os.ReadFile("CLAUDE.md")
+	if err != nil {
+		t.Fatalf("os.ReadFile(CLAUDE.md) erro: %v", err)
+	}
+	content := string(contentBytes)
+
+	checks := []string{
+		"## Architect responses",
+		"Default: what changed",
+		"what was decided",
+		"what is needed from you. Three to five lines.",
+		"a **blocker** that stops the next wave",
+		"a **pending user decision** that cannot be inferred from context",
+		"an **error the architect made** that cannot be self-corrected",
+		"Never cut, even when short: measured evidence",
+		"Cut: restating what an executor already reported",
+		"Depth is on demand from the user.",
+	}
+
+	for _, expected := range checks {
+		if !strings.Contains(content, expected) {
+			t.Errorf("CLAUDE.md ## Architect responses não contém o trecho esperado: %q", expected)
+		}
+	}
+}
+
 func TestGenerateClaudeCommands_Architect(t *testing.T) {
 	dir := t.TempDir()
 	orig, _ := os.Getwd()

@@ -21799,3 +21799,57 @@ Cenários novos confirmados:
 - `docs/cli-parity.md` — anotação linha ~4258 distingue Windsurf (impossibilidade estrutural) de Amazon Q (pendência de implementação) (B-3)
 
 Nenhum commit/push feito. Devolvo ao `trackfw_architect` para auditoria e commit do ML-4B.
+
+## 2026-08-21 — Zeus (arquiteto) — REQ da verbosidade
+
+REQ dos 3 gates fechada (#197, CI verde). Roadmap em `done`.
+
+Nova REQ, a partir de feedback direto de KG: minhas respostas eram prolixas. O argumento decisivo
+não foi custo de token — foi **atenção**: relatório longo torna o achado importante indistinguível
+do resto. Mesma falha de sinal ruidoso que a série de gates combateu, em outra superfície.
+
+**Decisão de desenho, contra a hipótese inicial de KG:** regra fixa com escalada por gatilho, não
+controle configurável. Mesmo motivo que o estado `none` da REQ do contrato pinado — botão é ajustado
+uma vez e esquecido no valor errado.
+
+**Risco dominante nomeado:** encurtar demais **esconde bloqueio**. Os três gatilhos (bloqueio ·
+decisão do usuário · erro próprio) são o que impede a regra de virar silêncio conveniente. Fora de
+escopo, deliberado: a verbosidade dos **executores**, porque o relatório detalhado deles é o que
+torna a auditoria possível.
+
+Já registrado na minha memória de projeto; esta REQ leva a regra para o **produto** — asset do
+arquiteto e `CLAUDE.md` semeado.
+
+**Fila:** depois desta, a REQ do modelo configurável por versão.
+
+## Sessão 2026-08-21 — Apolo (INÍCIO: ML-1A — regra de verbosidade no asset do arquiteto e no CLAUDE.md semeado)
+
+Branch `feat/regra-de-verbosidade-no-asset-do-arquiteto`. Roadmap
+`docs/roadmaps/wip/ROADMAP-2026-08-21-regra-de-verbosidade-no-asset-do-arquiteto-e-nas-regras-semeadas.md`
+em `wip/`. Executando ML-1A: inserir regra de resposta curta com três gatilhos de escalada explícitos
+no `internal/integrations/assets/agents/architect.md` (+ sync npm/pypi) e no `CLAUDE.md` semeado
+(Go `claudemd.go` + Node.js `init.js` + Python `init_gen.py`); estender gate `check-artifact-parity.sh`
+com comparação de seção; adicionar Cenário 84 (P4) em `check-gates-falsify.sh`; anotar
+`trackfw-contract` em `docs/cli-parity.md`. Nenhum commit/push — autoridade exclusiva do
+`trackfw_architect`.
+
+## Sessão 2026-08-21 — Apolo (FIM: ML-1A concluído — regra de verbosidade entregue, aguardando auditoria do trackfw_architect)
+
+Entregues (não commitados — autoridade exclusiva do `trackfw_architect`):
+
+- `internal/integrations/assets/agents/architect.md` — seção `## Response length` adicionada antes da assinatura.
+- `npm/src/integrations/assets/agents/architect.md` e `pypi/trackfw/integrations/assets/agents/architect.md` — sincronizados via `scripts/sync-integration-assets.sh`.
+- `internal/generators/claudemd.go` — seção `## Architect responses` inserida após `## Autopilot`.
+- `npm/src/generators/init.js` — seção `## Architect responses` inserida após `## Autopilot`.
+- `pypi/trackfw/generators/init_gen.py` — seção `## Architect responses` inserida após `## Autopilot`.
+- `scripts/check-artifact-parity.sh` — novo bloco de comparação awk da seção `## Architect responses` (vacuity guard + diff byte-a-byte).
+- `scripts/check-gates-falsify.sh` — Cenário 84 (P4): Node.js `init.js` corrompido; baseline prova ciclo limpo; detecção asserta `CLAUDE.md ## Architect responses missing or empty (node)`; contagem atualizada de 152 → 153.
+- `docs/cli-parity.md` — nova seção `## CLAUDE.md — seção ## Architect responses byte-idêntica nos 3 runtimes` com `trackfw-contract: gate=scripts/check-artifact-parity.sh`.
+- `internal/generators/claudemd_test.go` — novo `TestGenerateClaudeMD_ArchitectResponsesSection`.
+- `pypi/tests/test_generators_init.py` — novo `test_generate_claude_md_architect_responses_section`.
+- `internal/integrations/testdata/architect.subagent.golden.md` e `architect.agent-directory.golden.md` — atualizados com seção `## Response length`.
+- Roadmap ML-1A: `⬜ Pendente` → `🔄 Em andamento`.
+
+Evidências: `make test` → todos os pacotes Go verdes; `check-artifact-parity.sh` → `OK [artifact-parity/claude-md-architect-responses-byte-identical]`; `./bin/trackfw validate` → exit 0 (17 warnings pré-existentes); `check-parity-contract-coverage.sh` → `OK — nenhuma anotação inválida e nenhuma seção sem anotação`.
+
+Riscos residuais: `make quality` completo e `check-gates-falsify.sh` rodam em background — resultado pendente de confirmação pelo `trackfw_architect`.

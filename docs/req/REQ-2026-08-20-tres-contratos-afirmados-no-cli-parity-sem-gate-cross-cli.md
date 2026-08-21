@@ -1,9 +1,9 @@
 ---
-status: Open
+status: Done
 date: 2026-08-20
 author: ""
 adr: ""
-roadmap: ""
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-20-gates-para-os-tres-contratos-de-maior-risco.md"
 ---
 
 # REQ: três contratos afirmados no `cli-parity.md` sem gate cross-CLI
@@ -86,7 +86,7 @@ detecção. Ao fechar, a anotação da seção correspondente passa de `gap`/`pa
 - [x] AC5 — As anotações das seções correspondentes passam para `gate=`, e o texto que hoje **afirma
       falsamente** a cobertura de Windsurf/Amazon Q é corrigido ou passa a ser verdade.
 - [x] AC6 — Divergência real encontrada é **registrada como achado**, não corrigida em silêncio.
-- [ ] AC7 — `make quality` verde **e CI verde**. (local verde; **aguardando CI**)
+- [x] AC7 — `make quality` verde **e CI verde**. CI verde no PR #197, run 32472657228.
 
 ## Riscos para quem executar
 
