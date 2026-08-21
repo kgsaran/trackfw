@@ -4,6 +4,47 @@
 
 ---
 
+## Sessão 2026-08-21 — Apolo (FIM: ML-3A — Gate de paridade agent_models + cenário P4)
+
+Branch `feat/versao-do-modelo-por-tier-com-composicao-por-alvo`.
+
+**Artefatos entregues:**
+- `scripts/check-agent-models-parity.sh` — novo gate (4 casos × 3 runtimes): composição, sem
+  vazamento de namespace (per-runtime baseline vs candidate), config ausente, escape hatch.
+  19 OKs com binário real; falha corretamente com binário corrompido.
+- `scripts/check-gates-falsify.sh` — Cenário 86 adicionado (P4: remoção da guarda
+  `targetID == "claude" && len(agentModels) > 0` em render.go → Gemini recebe model ID composto).
+  Contagem: 155 → 156. Nota sobre ROOT_DIR vs T86: detecção arm usa
+  `$ROOT_DIR/scripts/check-agent-models-parity.sh` (não cópia em T86) para que NODE_CLI/PY_ROOT
+  resolvam para os CLIs reais — evita falha antecipada de `set -e` em install Node inexistente.
+- `Makefile` — `check-agent-models-parity.sh` adicionado ao target `parity`, entre
+  `check-doctor-parity.sh` e `check-gates-falsify.sh`.
+- `docs/cli-parity.md` — seção `## agent_models` adicionada ao fim (7 subsections, 6 com
+  `trackfw-contract: gate=scripts/check-agent-models-parity.sh`, 2 com `none reason=`).
+  `bash scripts/check-parity-contract-coverage.sh` exit 0, sem anotação faltante.
+
+**Evidência de qualidade:**
+- `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make parity` exit 0 (156 cenários; OK
+  `agent-models-parity/namespace-guard-removed-causes-gemini-leak` verificado).
+- `./bin/trackfw validate` exit 0 (17 warnings pre-existentes, 0 violations).
+
+**Armadilha encontrada e resolvida:**
+Cenário P4 usava `$T86/scripts/check-agent-models-parity.sh`; ROOT_DIR resolvia para T86 onde
+npm/pypi não existem; com `set -e`, node install falhava ANTES do check de vazamento Go, e o script
+morria sem imprimir "namespace leak". Fix: detecção arm usa `$ROOT_DIR/scripts/...` (projeto real).
+
+Roadmap ML-3A → ✅ Concluído. Sem commit/push — aguardando auditoria do `trackfw_architect`.
+
+---
+
+## Sessão 2026-08-21 — Apolo (INÍCIO: ML-3A — Gate de paridade agent_models + cenário P4)
+
+Branch `feat/versao-do-modelo-por-tier-com-composicao-por-alvo`, roadmap `wip/`.
+Implementando: novo script `check-agent-models-parity.sh`, anotação em `docs/cli-parity.md`,
+cenário P4 em `check-gates-falsify.sh`, atualização do Makefile.
+
+---
+
 ## Sessão 2026-08-21 — Apolo (FIM: ML-2C concluído — Fecha classe nil map em ProjectConfig)
 
 `initConfigMaps(cfg)` por reflexão adicionada como primeira linha de `parse()` em

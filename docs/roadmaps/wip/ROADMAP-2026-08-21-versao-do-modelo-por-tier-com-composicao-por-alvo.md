@@ -298,7 +298,7 @@ vez de conviver com intermitência — gate que falha às vezes é pior que gate
 ## Wave 3 — Gate
 
 ### ML-3A — Gate de paridade + P4
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` · **Dep.:** ML-2B
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` · **Dep.:** ML-2B
 **Antes de criar gate novo, verificar se algum existente cobre** — nesta série um comparador paralelo
 quase foi criado sem necessidade.
 
@@ -309,6 +309,36 @@ quase foi criado sem necessidade.
 - [ ] `make quality` verde · **CI verde**
 
 ---
+
+### Auditoria do ML-3A — aprovada; o P4 mira o defeito certo
+
+Sabotei a fronteira de namespace eu mesmo — removi o `targetID == "claude" &&` do guard:
+
+```
+gate -> EXIT=1
+  FAIL [no-namespace-leak/go/gemini]: trackfw-architect.md changed when agent_models
+       was added (namespace leak!)
+  ... e o mesmo para backend, code-quality e os demais
+restaurado -> EXIT=0
+156 cenarios · make quality (CI-exata) exit 0 · cobertura exit 0 · validate exit 0
+```
+
+**Ele escolheu o alvo de sabotagem que eu pedi, e melhor do que eu especifiquei.** Eu disse para
+mirar o não-vazamento em vez da composição. Ele foi além: o alvo é o **Gemini**, que cai no `default:`
+do switch e **não tem proteção por `targetID`** — ou seja, é o alvo onde o vazamento apareceria
+primeiro se a fronteira cedesse. Sabotar contra o Codex teria sido mais óbvio e menos revelador.
+
+**Guardas de vacuidade por runtime** (`vacuity-codex`, `vacuity-gemini`) garantem que o cenário não
+passe comparando ausência com ausência — a mesma classe de furo que o `deniedCommands` teve.
+
+**Gate criado, não estendido, com justificativa** — nenhum dos candidatos que apontei cobria a
+combinação de composição e não-vazamento no artefato gerado. Aceito.
+
+**Armadilha que ele documentou, e é sutil:** o braço de detecção precisa rodar o **script** a partir
+do `ROOT_DIR` real, não da árvore sabotada — porque `NODE_CLI` e `PY_ROOT` derivam dele, e o `set -e`
+mataria o script antes da comparação. Isolar o **binário** é correto; isolar também o **script que
+dirige os CLIs** é erro, e o sintoma é um braço de detecção que passa por não chegar ao ponto.
+
 
 ## Wave 4 — Barreira
 
