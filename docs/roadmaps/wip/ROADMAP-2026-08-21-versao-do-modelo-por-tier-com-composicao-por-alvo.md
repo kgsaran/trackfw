@@ -248,7 +248,7 @@ tipo que só aparece quando alguém compara linha a linha.
 
 
 ### ML-2C — Fechar a classe do nil map (corretivo, **antes do merge**)
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Bloqueia o ML-3A.**
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Bloqueia o ML-3A.**
 
 **Decisão de sequenciamento, de KG:** resolver antes de seguir. E com uma correção minha — o panic
 **ainda não está na `main`**: o campo `AgentModels` foi introduzido pelo ML-1B **nesta branch**.
@@ -260,6 +260,39 @@ classe e do processo que falhou; a correção acontece aqui.
 
 **Critérios de aceite:** ver a REQ. O essencial: **fechar a classe, não a instância** — construtor
 único ou init defensivo no `parse`, com a decisão registrada.
+
+
+### Auditoria do ML-2C — aprovada; a classe **está** fechada, e provei
+
+Meu critério era: *"se a solução exige que alguém lembre de algo, não fechou a classe"*. Testei
+exatamente isso — acrescentei um campo de mapa **novo** ao struct, **sem tocar em nenhuma
+construção**, e verifiquei se ele nasce inicializado:
+
+```go
+Rules            map[string]string
+AgentModels      map[string]string
+CampoNovoDeTeste map[string]string   <- adicionado so no teste
+
+parse(...) -> cfg.CampoNovoDeTeste != nil
+go test ... -run TestCampoNovoDeMapaEhInicializado  ->  ok
+```
+
+**Passou.** A varredura por reflexão em `initConfigMaps`, chamada na primeira linha do `parse()`,
+inicializa qualquer campo de mapa nil — inclusive os que ainda não existem. O próximo campo não
+reintroduz o defeito, e ninguém precisa lembrar de nada.
+
+Confirmou também que a única construção quebrada era `ParseRulesFromContent`; a outra já tinha sido
+corrigida no ML-2B.
+
+**Node e Python imunes por construção** — todo literal de config já inicializa o mapa. Ele declarou
+por escrito em vez de mexer sem necessidade, que era o pedido.
+
+**Decisão de desenho do P4 que vale nota:** ele descartou a abordagem via `validate` + git HEAD
+porque o subprocesso git não era determinístico no fixture, e passou a corromper o `config.go`
+removendo a chamada e rodar o teste Go contra a cópia. Trocou uma prova instável por uma estável em
+vez de conviver com intermitência — gate que falha às vezes é pior que gate ausente.
+
+`make quality` (CI-exata) exit 0 · 155 cenários · `validate` exit 0.
 
 
 ## Wave 3 — Gate

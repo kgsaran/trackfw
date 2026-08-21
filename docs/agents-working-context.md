@@ -4,6 +4,22 @@
 
 ---
 
+## Sessão 2026-08-21 — Apolo (FIM: ML-2C concluído — Fecha classe nil map em ProjectConfig)
+
+`initConfigMaps(cfg)` por reflexão adicionada como primeira linha de `parse()` em
+`internal/config/config.go` — garante que todo campo de mapa de `ProjectConfig` seja não-nil antes
+de qualquer escrita, independentemente de como o caller construiu o struct. 4 novos testes em
+`internal/config/config_nil_map_test.go`: provam o panic antes do fix e a invariante após. Node e
+Python imunes por construção (declarados explicitamente). Cenário 85 (P4) adicionado em
+`scripts/check-gates-falsify.sh` — usa `go test ./internal/config/ -run TestParseRulesFromContent…`
+na cópia corrompida; abordagem `trackfw validate + git HEAD` descartada (não determinística via
+subprocess). `make test` 15 pkgs verdes. `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make parity` exit 0
+(155 cenários, incluindo OK nil-map-init/parse-missing-causes-panic-on-agent-models).
+`./bin/trackfw validate` 0 violations. Vault note indexada. Roadmap ML-2C → ✅ Concluído.
+Sem commit/push — aguardando auditoria do `trackfw_architect`.
+
+---
+
 ## Sessão 2026-08-21 — Apolo (FIM: ML-2B concluído — Catálogo pina as versões)
 
 Corrigidas 3 construções de `PlanRequest` em `update.go` (linhas 150, 1961 project-scope; 1718
@@ -21945,3 +21961,13 @@ Entregou `trackfw agents models` nos 3 CLIs (Go, Node.js, Python):
 - Drift gate: `TestResolveAgentModelMatchesRender` / `test_resolve_agent_model_matches_render` prova que resolver = Render
 - Testes: 3 Go (incluindo drift gate), 17 Node.js, 30 Python
 - Todos os testes verdes; parity harness verde; `make lint` limpo; `trackfw validate` sem novos erros
+
+---
+**Apolo** | ML-2C — Em andamento | 2026-08-21
+Branch: `feat/versao-do-modelo-por-tier-com-composicao-por-alvo`
+
+Fechando a classe do nil map em `ProjectConfig`:
+- Defeito: `ParseRulesFromContent` (config.go:165) cria `ProjectConfig{Rules: make(...)}` sem inicializar `AgentModels`, que é nil; `parse()` escreve `cfg.AgentModels[k] = s` → panic com `assignment to entry in nil map`
+- Decisão de fechamento: initConfigMaps() por reflexão no início de parse() — todos os campos de mapa inicializados sem ação humana futura
+- Escopo: config.go, config_nil_map_test.go, check-gates-falsify.sh (Cenário 85 P4)
+- Node.js e Python: imunes por construção (cada construction já inclui `agentModels: {}`)

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 
@@ -236,6 +237,33 @@ func hasMultipleDocuments(data []byte) bool {
 	return dec.Decode(new(yaml.Node)) == nil
 }
 
+// initConfigMaps initializes all nil map fields of cfg using reflection.
+// Called at the very start of parse() so that every code path — including
+// early returns — leaves maps in a writable state, regardless of how the
+// caller constructed the ProjectConfig.
+//
+// Using reflection instead of per-field nil checks means that when a new
+// map field is added to ProjectConfig, the write in parse() is safe
+// automatically — no second edit to an "initMaps" call site required.
+// Alternative (per-field checks in parse, or a manual constructor) would
+// require the developer to remember two edits: one for the write, one for
+// the init; the reflection approach closes this class by making the
+// invariant self-maintaining.
+//
+// Only the top-level fields of ProjectConfig are walked; nested config
+// structs (UpdateConfig, SyncConfig, CredentialGuardConfig) contain no
+// map fields and need no special handling.
+func initConfigMaps(cfg *ProjectConfig) {
+	v := reflect.ValueOf(cfg).Elem()
+	t := v.Type()
+	for i := 0; i < t.NumField(); i++ {
+		fv := v.Field(i)
+		if fv.Kind() == reflect.Map && fv.IsNil() {
+			fv.Set(reflect.MakeMap(t.Field(i).Type))
+		}
+	}
+}
+
 // parse itself still tolerates yaml.Unmarshal failure by returning early (cfg keeps whatever
 // defaults/prior state it had) — genuine syntax errors are caught and turned into a fatal exit
 // one layer up, in Load, before parse is ever called with malformed content. This function only
@@ -244,6 +272,8 @@ func hasMultipleDocuments(data []byte) bool {
 // isn't a mapping (valid YAML, unexpected shape — e.g. a bare list) are both left as silent
 // no-ops, since neither is a parse failure.
 func parse(content string, cfg *ProjectConfig) {
+	initConfigMaps(cfg) // guarantee: all map fields are non-nil before any write
+
 	var root yaml.Node
 	if err := yaml.Unmarshal([]byte(content), &root); err != nil {
 		return

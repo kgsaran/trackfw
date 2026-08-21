@@ -1,9 +1,9 @@
 ---
-status: Open
+status: Done
 date: 2026-08-21
 author: ""
 adr: ""
-roadmap: ""
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-21-regra-de-verbosidade-no-asset-do-arquiteto-e-nas-regras-semeadas.md"
 ---
 
 # REQ: regra de verbosidade das respostas do arquiteto, no asset e nas regras semeadas
