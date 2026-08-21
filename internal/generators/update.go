@@ -147,7 +147,7 @@ func updateDetectedCodexIntegrations(cwd string) error {
 	manager := integrations.Manager{ProjectRoot: cwd, HomeDir: home}
 	updated := 0
 	for _, kind := range []integrations.ItemKind{integrations.KindAgents, integrations.KindSkills} {
-		plans, planErr := integrations.BuildPlans(catalog, integrations.PlanRequest{Kind: kind, Targets: []string{"codex"}, Scope: "project", Identity: ident})
+		plans, planErr := integrations.BuildPlans(catalog, integrations.PlanRequest{Kind: kind, Targets: []string{"codex"}, Scope: "project", Identity: ident, AgentModels: config.Load().AgentModels})
 		if planErr != nil {
 			fmt.Printf("  ⚠ Codex %s plans: %v\n", kind, planErr)
 			continue
@@ -1716,10 +1716,11 @@ func harnessCatalogTarget(catalog *integrations.Catalog, id, tool string, kind i
 		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: err.Error()}
 	}
 	plans, err := integrations.BuildPlans(catalog, integrations.PlanRequest{
-		Kind:     kind,
-		Targets:  []string{tool},
-		Scope:    "global",
-		Identity: ident,
+		Kind:        kind,
+		Targets:     []string{tool},
+		Scope:       "global",
+		Identity:    ident,
+		AgentModels: config.Load().AgentModels,
 	})
 	if err != nil {
 		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: err.Error()}
@@ -1957,8 +1958,15 @@ func codexProjectAgentsApply(root string, opts UpdateOptions) error {
 		return err
 	}
 	manager := integrations.Manager{ProjectRoot: root, HomeDir: home}
+	var projectAgentModels map[string]string
+	if chErr := withChdir(root, func() error {
+		projectAgentModels = config.Load().AgentModels
+		return nil
+	}); chErr != nil {
+		return chErr
+	}
 	for _, kind := range []integrations.ItemKind{integrations.KindAgents, integrations.KindSkills} {
-		plans, planErr := integrations.BuildPlans(catalog, integrations.PlanRequest{Kind: kind, Targets: []string{"codex"}, Scope: "project", Identity: ident})
+		plans, planErr := integrations.BuildPlans(catalog, integrations.PlanRequest{Kind: kind, Targets: []string{"codex"}, Scope: "project", Identity: ident, AgentModels: projectAgentModels})
 		if planErr != nil {
 			return planErr
 		}

@@ -4,6 +4,30 @@
 
 ---
 
+## Sessão 2026-08-21 — Apolo (FIM: ML-2B concluído — Catálogo pina as versões)
+
+Corrigidas 3 construções de `PlanRequest` em `update.go` (linhas 150, 1961 project-scope; 1718
+harness — alinhado ao espelho npm) que omitiam `AgentModels`. Corrigidas assinaturas de
+`RunDoctor`/`doctorPlansForScope` em `integrations/doctor.go`, chamador `commands/doctor.go`
+(import `config` adicionado), teste `doctor_test.go` e espelhos npm (`integrations/doctor.js`,
+`commands/doctor.js`). Corrigido bug adjacente de ML-1B: `config.ReadAgentConventions` não
+inicializava `AgentModels` antes de `parse()`, causando panic em nil map. Prova e2e: 3 binários
+com HOME redirecionado, todos exibem `model: claude-sonnet-4-6` / `model: claude-opus-5` nos
+artefatos gerados. `make quality` 458 OK 0 FAIL. `make parity` exit 0. `validate` 0 violations.
+Status ML-2B alterado para ✅ Concluído. Sem commit/push (autoridade do `trackfw_architect`).
+
+---
+
+## Sessão 2026-08-21 — Apolo (INÍCIO: ML-2B — Catálogo pina as versões)
+
+Branch `feat/versao-do-modelo-por-tier-com-composicao-por-alvo`, roadmap
+`docs/roadmaps/wip/ROADMAP-2026-08-21-versao-do-modelo-por-tier-com-composicao-por-alvo.md` em `wip/`.
+Executando ML-2B: corrigir 3 construções de `PlanRequest` em `update.go` e 2 em `doctor.go` que omitem
+`AgentModels`, fazendo o pin ser perdido no `agents update` / relatado como drift falso pelo `doctor`.
+Espelhar em npm (doctor.js). Python já está correto. Sem commit/push (autoridade do `trackfw_architect`).
+
+---
+
 ## Sessão 2026-08-21 — Apolo (FIM: ML-1B concluído — Resolução e composição por alvo)
 
 Implementação do ML-1B nos 3 stacks (Go/Node.js/Python): campo `agent_models` em `trackfw.yaml`,

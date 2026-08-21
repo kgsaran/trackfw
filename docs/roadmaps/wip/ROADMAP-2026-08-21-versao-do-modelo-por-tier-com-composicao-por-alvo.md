@@ -165,15 +165,87 @@ superfície nova. Correto.
 
 
 ### ML-2B — Catálogo pina as versões
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` · **Dep.:** ML-2A
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` · **Dep.:** ML-2A
 `agents update` passa a **reforçar** o pin em vez de desfazê-lo.
 
 **Critérios de aceite:**
-- [ ] Após `agents update`, os arquivos gerados trazem as versões pinadas
-- [ ] Provado end-to-end com os 3 binários, em fixture com `HOME` redirecionado
-- [ ] `make quality` verde
+- [x] Após `agents update`, os arquivos gerados trazem as versões pinadas
+- [x] Provado end-to-end com os 3 binários, em fixture com `HOME` redirecionado
+- [x] `make quality` verde
+
+**Auditoria:**
+Corrigidas 3 construções de `PlanRequest` que omitiam `AgentModels` em `update.go` (linhas 150 e
+1961 project-scope; linha 1718 harness — alinhado ao espelho npm), 2 assinaturas em
+`integrations/doctor.go` (`RunDoctor`/`doctorPlansForScope`), chamador em `commands/doctor.go`
+(novo import `config`), teste em `doctor_test.go`, e espelhos npm (`integrations/doctor.js`,
+`commands/doctor.js`). Corrigido também um bug adjacente de ML-1B em `config.ReadAgentConventions`
+que não inicializava `AgentModels` antes de chamar `parse()`, causando panic com nil map quando
+`agent_models` estava em `trackfw.yaml`.
+
+**Prova end-to-end (3 binários, HOME redirecionado, fixture com `agent_models: sonnet: "4.6", opus: "5"`):**
+```
+Go:     trackfw-architect.md: model: claude-opus-5   | trackfw-backend.md: model: claude-sonnet-4-6
+npm:    trackfw-architect.md: model: claude-opus-5   | trackfw-backend.md: model: claude-sonnet-4-6
+Python: trackfw-architect.md: model: claude-opus-5   | trackfw-backend.md: model: claude-sonnet-4-6
+```
+`make build` exit 0 · `make test` exit 0 · `make quality` (458 OK, 0 FAIL) · `trackfw validate` 17 warnings pré-existentes (0 violations) · `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make parity` exit 0.
 
 ---
+
+---
+
+### Auditoria do ML-2B — aprovada no escopo, **com um defeito de gravidade alta subclassificado**
+
+**O AC central passou**, verificado por mim end-to-end com os 3 binários e `HOME` redirecionado:
+
+```
+go    architect=claude-opus-5   backend=claude-sonnet-4-6
+node  architect=claude-opus-5   backend=claude-sonnet-4-6
+py    architect=claude-opus-5   backend=claude-sonnet-4-6
+```
+
+**O pin sobrevive ao `agents update`** — o defeito que originou a REQ está fechado.
+
+#### 🔴 O panic, e duas falhas de processo
+
+Ele corrigiu um `nil map` em `config.go` e chamou de *"bug adjacente ML-1B"*, num parágrafo do meio
+do relatório. **Panic não é nota de rodapé.**
+
+Reproduzi — precisou do caminho certo, com `CLAUDE.md` presente para que a geração de regras seja
+alcançada em vez de pulada:
+
+```
+sem o fix:  trackfw update  ->  panic, stack ate root.go:94
+com o fix:  normal
+```
+
+E **sobrou uma**. Confirmei com teste dedicado:
+
+```
+config.go:181  ReadAgentConventions   -> corrigido no ML-2B
+config.go:165  ParseRulesFromContent  -> AINDA PANICA
+   "PANIC com agent_models: assignment to entry in nil map"
+```
+
+Nona vez nesta série do padrão **"condição estreita demais"**: consertou-se a ocorrência, não a
+classe.
+
+**Falha minha, na auditoria do ML-1B:** exercitei `agents install` e `agents models` — nos dois, o
+caminho da geração de regras é **pulado**. Testei o que a **feature nova** usa, não o que a **mudança
+de struct** atinge. Campo novo em struct compartilhado tem raio de alcance maior que a feature que o
+motivou, e eu não considerei isso.
+
+**Falha do gate:** `make quality` ficou verde com o panic presente. Nenhum teste cobria `parse()`
+com `agent_models` a partir das construções afetadas.
+
+Aberta a `REQ-2026-08-21-nil-map-em-construcao-de-projectconfig-causa-panic-quando-agent-models-esta-configurado`,
+com AC exigindo **fechar a classe** — construtor único ou init defensivo no `parse` — e não a
+instância.
+
+**Achado dele que vale registrar:** o `update-harness.js` do Node já passava `agentModels` enquanto o
+Go não passava. Ele alinhou o Go ao espelho. Divergência silenciosa de comportamento entre CLIs, do
+tipo que só aparece quando alguém compara linha a linha.
+
 
 ## Wave 3 — Gate
 

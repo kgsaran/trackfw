@@ -178,7 +178,7 @@ func ReadAgentConventions(cwd string) string {
 	if err != nil {
 		return ""
 	}
-	cfg := ProjectConfig{Rules: make(map[string]string)}
+	cfg := ProjectConfig{Rules: make(map[string]string), AgentModels: map[string]string{}}
 	parse(string(data), &cfg)
 	return cfg.Update.AgentConventions
 }

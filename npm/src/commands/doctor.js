@@ -2,6 +2,7 @@
 
 const { Command } = require('commander')
 const { runDoctor, UNREGISTERED_WRITE, HAND_MODIFIED, UNKNOWN_CONTENT } = require('../integrations/doctor')
+const projectConfig = require('../config')
 
 function printReport(findings) {
   if (findings.length === 0) {
@@ -21,7 +22,7 @@ const cmd = new Command('doctor')
 cmd.description('Detect artifacts on disk missing from the manifest, distinguishing hand-modified artifacts from unknown content')
 cmd.option('--json', 'Emit findings as a JSON array instead of the text report')
 cmd.action(async options => {
-  const findings = runDoctor({})
+  const findings = runDoctor({ agentModels: projectConfig.load().agentModels || {} })
   if (options.json) {
     process.stdout.write(`${JSON.stringify(findings, null, 2)}\n`)
     return
