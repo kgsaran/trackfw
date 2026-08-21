@@ -56,7 +56,7 @@ function buildPlans(kind, options = {}) {
       for (const item of selected.itemEntries) {
         for (const installPath of paths) {
           const destination = installPath.path.replace('{{id}}', item.id)
-          let content = render({ target: targetEntry.id, kind, item, content: readAsset(item), capability, destination, identity: identityConfig })
+          let content = render({ target: targetEntry.id, kind, item, content: readAsset(item), capability, destination, identity: identityConfig, agentModels: options.agentModels || {} })
           // D5/D9 extension point: reproduce any persisted third-party
           // reference block so regenerating this exact artifact (e.g. a
           // later `trackfw agents update`) settles at state "current"

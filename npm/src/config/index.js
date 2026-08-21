@@ -65,6 +65,10 @@ function defaults() {
     credentialGuard: {
       mode: 'warn',
     },
+    // agent_models field — see ADR-2026-08-21-versao-do-modelo-por-tier-com-composicao-por-alvo.md.
+    // Maps tier name (e.g. "opus", "sonnet") to version string (e.g. "5", "4.6").
+    // Absent or empty map → behavior identical to today (tier alias used verbatim).
+    agentModels: {},
     rules: {
       wip_has_req:          'error',
       wip_acceptance:       'error',
@@ -278,6 +282,17 @@ function parse(content, cfg) {
     if (mode === 'warn' || mode === 'block') cfg.credentialGuard.mode = mode;
   }
 
+  // agent_models field — flat mapping from tier name to version string.
+  // See ADR-2026-08-21-versao-do-modelo-por-tier-com-composicao-por-alvo.md.
+  // An absent, malformed, or empty block leaves agentModels as the empty object from defaults(),
+  // preserving identical behavior to today. A key with an empty string value is stored as-is
+  // (the render layer treats empty string as "no pin" — fall back to tier alias).
+  if (m.agent_models !== undefined && typeof m.agent_models === 'object' && !Array.isArray(m.agent_models)) {
+    for (const [k, v] of Object.entries(m.agent_models)) {
+      if (typeof v === 'string') cfg.agentModels[k] = v;
+    }
+  }
+
   return false;
 }
 
@@ -298,7 +313,7 @@ function parseRulesFromContent(content) {
   // never creates them) — so this cannot be a bare { rules: {} } literal or parse() throws on any
   // content that sets one of those nested keys. rules starts empty (not seeded from defaults()),
   // deliberately: the caller wants exactly what `rules:` in content declares, nothing else.
-  const cfg = { rules: {}, credentialGuard: {}, update: {}, sync: {}, linkFields: {} };
+  const cfg = { rules: {}, credentialGuard: {}, update: {}, sync: {}, linkFields: {}, agentModels: {} };
   parse(content, cfg);
   return cfg.rules;
 }
@@ -316,7 +331,7 @@ function readAgentConventions(cwd) {
   } catch (_) {
     return '';
   }
-  const cfg = { rules: {}, credentialGuard: {}, update: { agentConventions: '' }, sync: {}, linkFields: {} };
+  const cfg = { rules: {}, credentialGuard: {}, update: { agentConventions: '' }, sync: {}, linkFields: {}, agentModels: {} };
   try {
     parse(content, cfg);
   } catch (_) {

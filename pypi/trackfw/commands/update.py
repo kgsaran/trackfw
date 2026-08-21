@@ -343,10 +343,11 @@ def _run(args: argparse.Namespace) -> None:
             from trackfw.integrations.catalog import plan_deployments
             from trackfw.integrations.manager import IntegrationManager
             manager = IntegrationManager(cwd)
-            _, plans = plan_deployments("agents", target_ids=["codex"], scope="project", identity_cfg=ident)
+            _am = project_config.load(cwd).get("agent_models", {})
+            _, plans = plan_deployments("agents", target_ids=["codex"], scope="project", identity_cfg=ident, agent_models=_am)
             plans = [plan for plan, status in zip(plans, manager.list(plans)) if status["state"] != "not-installed"]
             manager.update(plans)
-            _, plans = plan_deployments("skills", target_ids=["codex"], scope="project", identity_cfg=ident)
+            _, plans = plan_deployments("skills", target_ids=["codex"], scope="project", identity_cfg=ident, agent_models=_am)
             plans = [plan for plan, status in zip(plans, manager.list(plans)) if status["state"] != "not-installed"]
             manager.update(plans)
         except Exception as e:
@@ -450,7 +451,7 @@ def _codex_project_agents_target(root: str, dry_run: bool, install_missing: bool
         manager = IntegrationManager(root)
         wrote_any = False
         for kind in ("agents", "skills"):
-            _, plans = plan_deployments(kind, target_ids=["codex"], scope="project", identity_cfg=ident)
+            _, plans = plan_deployments(kind, target_ids=["codex"], scope="project", identity_cfg=ident, agent_models=project_config.load(root).get("agent_models", {}))
             statuses = manager.list(plans)
             to_write = [
                 plan

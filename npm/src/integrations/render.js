@@ -97,6 +97,19 @@ function mapModelCursor(model) {
   return CURSOR_MODEL_MAP[model] || ''
 }
 
+// containsControlChar reports whether s contains any ASCII control character
+// (U+0000–U+001F) or a Unicode line/paragraph separator (U+2028, U+2029).
+// Mirrors internal/integrations/render.go:containsControlChar (ML-5C).
+// In JavaScript, strings are UTF-16; U+2028/U+2029 are single code units
+// accessible via charCodeAt, so no surrogate-pair handling is needed.
+function containsControlChar(s) {
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i)
+    if (c < 0x20 || c === 0x2028 || c === 0x2029) return true
+  }
+  return false
+}
+
 // rewriteFrontmatterModelLine substitui a linha "model:" do frontmatter de um
 // markdown cru por value, preservando toda outra linha do frontmatter e o
 // corpo byte a byte. Se o frontmatter não tiver linha "model:", uma é
@@ -105,7 +118,14 @@ function mapModelCursor(model) {
 // espelha a detecção de fronteira usada por rewriteFrontmatterFields,
 // escopada à chave única "model". Espelha
 // internal/integrations/render.go:rewriteFrontmatterModelLine.
+//
+// Throws an Error if value contains any ASCII control character (U+0000–U+001F).
+// Model IDs never require control characters; any such value is rejected to
+// prevent frontmatter injection (ML-5A).
 function rewriteFrontmatterModelLine(source, value) {
+  if (containsControlChar(value)) {
+    throw new Error(`model value contains control character and was rejected: model IDs never require newlines or other control characters (got ${JSON.stringify(value)})`)
+  }
   const trimmed = String(source).trim()
   if (!trimmed.startsWith('---\n')) return trimmed
   const end = trimmed.indexOf('\n---', 4)
@@ -296,6 +316,27 @@ function frontmatterName(content) {
   return undefined
 }
 
+// isVersionString reports whether s is a bare version string (digits and dots
+// only, e.g. "5", "4.6", "1.0.2"). Mirrors internal/integrations/render.go:isVersionString.
+// Values that don't match — pre-composed IDs like "claude-sonnet-4-5-20250929" (hyphens),
+// "latest" (letters), or "" (empty) — return false and the caller uses the value literally
+// (escape hatch, ADR-2026-08-21 §3).
+function isVersionString(s) {
+  if (!s) return false
+  return /^[0-9]+(\.[0-9]+)*$/.test(s)
+}
+
+// composeClaudeModelID builds a Claude model identifier from tier and version,
+// applying the three composition rules from the official Anthropic docs.
+// Mirrors internal/integrations/render.go:composeClaudeModelID.
+//   Rule 1: dots become hyphens ("4.6" → "claude-sonnet-4-6")
+//   Rule 2: major-only version never gets "-0" ("5" → "claude-sonnet-5")
+//   Rule 3: handled via escape hatch — pre-composed IDs are never version strings
+function composeClaudeModelID(tier, version) {
+  const hyphenated = version.replace(/\./g, '-')
+  return `claude-${tier}-${hyphenated}`
+}
+
 // render converte um item canônico do catálogo para a representação nativa
 // declarada por uma surface alvo. Quando identity carrega uma identidade
 // customizada para item.id, o name/description/body renderizados são
@@ -321,7 +362,12 @@ function frontmatterName(content) {
 // normalize(content) — a mesma expressão usada antes de existir suporte a
 // identidade — então a saída sem identidade é garantida byte a byte
 // inalterada por construção, não por coincidência.
-function render({ kind, content, capability, item, identity: cfg, target }) {
+//
+// agentModels (opcional) — objeto de tier→versão lido de trackfw.yaml's agent_models.
+// Ausente ou vazio: saída idêntica a antes. Somente o alvo "claude" recebe IDs
+// compostos; Codex, Cursor, Antigravity, OpenCode, Gemini, Kiro não são afetados
+// (ADR-2026-08-21 §4 — gate, não cuidado).
+function render({ kind, content, capability, item, identity: cfg, target, agentModels }) {
   if (kind === 'skills') return normalize(content)
 
   const id = item && cfg ? lookupIdentity(cfg, item.id) : undefined
@@ -407,6 +453,18 @@ function render({ kind, content, capability, item, identity: cfg, target }) {
   if (target === 'cursor') {
     const mappedModel = mapModelCursor(parts.model)
     source = mappedModel ? rewriteFrontmatterModelLine(source, mappedModel) : removeFrontmatterModelLine(source)
+  } else if (target === 'claude' && agentModels && Object.keys(agentModels).length > 0) {
+    // Allowlist: only the "claude" target receives composed model IDs.
+    // Codex, Cursor, Antigravity, OpenCode, Gemini, Kiro and any other target are left
+    // untouched even when agentModels is populated (ADR-2026-08-21 §4 — gate, not cuidado).
+    const version = agentModels[parts.model]
+    if (version) {
+      const modelID = isVersionString(version)
+        ? composeClaudeModelID(parts.model, version)
+        : version // escape hatch: non-version value used literally (ADR-2026-08-21 §3)
+      source = rewriteFrontmatterModelLine(source, modelID)
+    }
+    // Empty string version means "no pin": leave source unchanged (tier alias preserved).
   }
   if (!id) return normalize(source)
   const withBody = insertBodyPrefix(source, greeting)
@@ -415,4 +473,60 @@ function render({ kind, content, capability, item, identity: cfg, target }) {
   return normalize(withSignature)
 }
 
-module.exports = { render, markdownParts, frontmatterName, greetingLine, insertBodyPrefix, rewriteFrontmatterFields, rewriteSignatureLine }
+// resolveAgentModel returns the model string that render() would write to the
+// model field of an artifact with the given representation and targetID, for
+// an agent with the given tier. Mirrors
+// internal/integrations/models.go:ResolveAgentModel.
+//
+// Returns { resolved: string, present: boolean }.
+// present=false means the artifact format omits the model field entirely — the
+// caller should display "—" or equivalent rather than the tier alias.
+//
+// agentModels applies only for the "claude" target (ADR-2026-08-21 §4).
+function resolveAgentModel(tier, representation, targetID, agentModels) {
+  if (representation === 'custom-agent-toml') {
+    const v = resolveModelCodex(tier)
+    return { resolved: v, present: v !== '' }
+  }
+  if (representation === 'cli-agent-json' || representation === 'agent-json') {
+    return { resolved: '', present: false }
+  }
+  if (representation === 'agent-directory') {
+    const v = resolveModel(tier)
+    return { resolved: v, present: v !== '' }
+  }
+  if (representation === 'opencode-agent') {
+    return { resolved: '', present: false }
+  }
+  // default branch — mirrors render()'s default case
+  if (targetID === 'cursor') {
+    const v = mapModelCursor(tier)
+    return { resolved: v, present: v !== '' }
+  }
+  if (targetID === 'claude') {
+    const am = agentModels || {}
+    const version = am[tier]
+    if (version) {
+      const modelID = isVersionString(version) ? composeClaudeModelID(tier, version) : version
+      return { resolved: modelID, present: true }
+    }
+    // no pin → tier alias unchanged
+  }
+  return { resolved: tier, present: true }
+}
+
+// looksLikeSuspectModelValue reports whether v is an agent_models value that
+// will trigger the escape-hatch path and likely produce an invalid model
+// identifier in the rendered artifact. Returns true when v is not a bare
+// version string AND does not start with "claude-". Callers should emit a
+// per-tier warning to stderr (not per-row) when this returns true.
+// Mirrors internal/integrations/models.go:LooksLikeSuspectModelValue.
+// looksLikeSuspectModelValue mirrors internal/integrations/models.go:LooksLikeSuspectModelValue.
+// ML-5A: values with control characters are always suspect — rewriteFrontmatterModelLine
+// rejects them outright, so this function must agree with the write path to keep the
+// "agents models" inspection command aligned with "agents install/update" behavior.
+function looksLikeSuspectModelValue(v) {
+  return containsControlChar(v) || (!isVersionString(v) && !v.startsWith('claude-'))
+}
+
+module.exports = { render, markdownParts, frontmatterName, greetingLine, insertBodyPrefix, rewriteFrontmatterFields, rewriteFrontmatterModelLine, rewriteSignatureLine, isVersionString, composeClaudeModelID, resolveAgentModel, looksLikeSuspectModelValue }

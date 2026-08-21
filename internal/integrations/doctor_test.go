@@ -229,7 +229,7 @@ func TestRunDoctorSweepsFullCatalogWithoutError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	findings, err := RunDoctor(catalog, manager, identity.Config{})
+	findings, err := RunDoctor(catalog, manager, identity.Config{}, nil)
 	if err != nil {
 		t.Fatalf("RunDoctor() error = %v", err)
 	}

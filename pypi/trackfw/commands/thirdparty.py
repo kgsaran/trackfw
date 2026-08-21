@@ -19,6 +19,7 @@ from typing import Any, Callable
 from urllib.parse import urlparse
 
 from trackfw import identity, thirdparty
+from trackfw import config as trackfw_config
 from trackfw.integrations.catalog import load_catalog, plan_deployments
 from trackfw.integrations.manager import IntegrationError, IntegrationManager
 
@@ -303,6 +304,7 @@ def execute_install(kind: str, args: argparse.Namespace) -> None:
                     scope=scope,
                     identity_cfg=ident,
                     project_root=project_root,
+                    agent_models=trackfw_config.load().get("agent_models", {}),
                 )
                 if not agent_plans:
                     raise IntegrationError(
@@ -453,6 +455,7 @@ def execute_install(kind: str, args: argparse.Namespace) -> None:
                     scope=scope,
                     identity_cfg=ident,
                     project_root=project_root,
+                    agent_models=trackfw_config.load().get("agent_models", {}),
                 )
                 manager.update(agent_plans, force=False)
 

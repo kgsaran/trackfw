@@ -175,11 +175,11 @@ func sortDoctorFindings(findings []DoctorFinding) {
 // returning ok=false is a hard error there, by design for explicit
 // install/update requests) — doctor's sweep is expected to hit surfaces that
 // simply do not support a given scope, and must skip those, not fail.
-func RunDoctor(catalog *Catalog, manager Manager, ident identity.Config) ([]DoctorFinding, error) {
+func RunDoctor(catalog *Catalog, manager Manager, ident identity.Config, agentModels map[string]string) ([]DoctorFinding, error) {
 	var allPlans []PlannedArtifact
 	for _, kind := range []ItemKind{KindAgents, KindSkills} {
 		for _, scope := range []string{"project", "global"} {
-			plans, err := doctorPlansForScope(catalog, kind, scope, ident, manager.ProjectRoot)
+			plans, err := doctorPlansForScope(catalog, kind, scope, ident, manager.ProjectRoot, agentModels)
 			if err != nil {
 				return nil, err
 			}
@@ -195,7 +195,7 @@ func RunDoctor(catalog *Catalog, manager Manager, ident identity.Config) ([]Doct
 
 // doctorPlansForScope builds plans for every target×surface of kind that
 // both support scope and are not "unsupported" for kind, skipping the rest.
-func doctorPlansForScope(catalog *Catalog, kind ItemKind, scope string, ident identity.Config, projectRoot string) ([]PlannedArtifact, error) {
+func doctorPlansForScope(catalog *Catalog, kind ItemKind, scope string, ident identity.Config, projectRoot string, agentModels map[string]string) ([]PlannedArtifact, error) {
 	var result []PlannedArtifact
 	for _, target := range catalog.Targets {
 		for _, surface := range target.Surfaces {
@@ -218,6 +218,7 @@ func doctorPlansForScope(catalog *Catalog, kind ItemKind, scope string, ident id
 				Surfaces:    map[string]string{target.ID: surface.ID},
 				Identity:    ident,
 				ProjectRoot: projectRoot,
+				AgentModels: agentModels,
 			})
 			if err != nil {
 				return nil, err

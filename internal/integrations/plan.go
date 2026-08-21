@@ -22,6 +22,13 @@ type PlanRequest struct {
 	// to before this field existed (ApplyThirdPartyReferences no-ops on an
 	// empty root).
 	ProjectRoot string
+
+	// AgentModels maps tier names (e.g. "sonnet", "opus") to version strings
+	// (e.g. "4.6", "5") read from trackfw.yaml's agent_models field. A nil or
+	// empty map leaves rendered output byte-for-byte identical to before this
+	// field existed — by construction (Render no-ops the composition branch
+	// when len(agentModels) == 0). See ADR-2026-08-21.
+	AgentModels map[string]string
 }
 
 // BuildPlans resolves catalog selections into deterministic lifecycle plans.
@@ -59,7 +66,7 @@ func BuildPlans(catalog *Catalog, request PlanRequest) ([]PlannedArtifact, error
 				if err != nil {
 					return nil, err
 				}
-				content, err := Render(item, request.Kind, capability, source, request.Identity, target.ID)
+				content, err := Render(item, request.Kind, capability, source, request.Identity, target.ID, request.AgentModels)
 				if err != nil {
 					return nil, err
 				}

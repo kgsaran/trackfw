@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/huh"
+	"github.com/kgsaran/trackfw/internal/config"
 	"github.com/kgsaran/trackfw/internal/identity"
 	"github.com/kgsaran/trackfw/internal/integrations"
 	"github.com/kgsaran/trackfw/internal/thirdparty"
@@ -325,6 +326,7 @@ func executeThirdPartyInstall(cmd *cobra.Command, kind integrations.ItemKind, op
 				agentPlans, err := integrations.BuildPlans(catalog, integrations.PlanRequest{
 					Kind: integrations.KindAgents, Targets: []string{rt.targetID}, Items: []string{agentID},
 					Scope: opts.scope, Identity: ident, ProjectRoot: manager.ProjectRoot,
+					AgentModels: config.Load().AgentModels,
 				})
 				if err != nil {
 					return err
@@ -513,6 +515,7 @@ func executeThirdPartyInstall(cmd *cobra.Command, kind integrations.ItemKind, op
 				agentPlans, err := integrations.BuildPlans(catalog, integrations.PlanRequest{
 					Kind: integrations.KindAgents, Targets: []string{rt.targetID}, Items: []string{agentID},
 					Scope: opts.scope, Identity: ident, ProjectRoot: manager.ProjectRoot,
+					AgentModels: config.Load().AgentModels,
 				})
 				if err != nil {
 					return err

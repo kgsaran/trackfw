@@ -5044,3 +5044,100 @@ isso o remédio nomeia a recusa literalmente em vez de escolher um lado.
 
 Nenhuma divergência de **nomes de campo** no `--json` foi encontrada: `finding`, `claim`
 (`target`/`surface`/`scope`/`kind`/`item`), `destination`, `remedy` já casavam nos 3 CLIs.
+
+---
+
+## `agent_models` — versão de modelo por tier com composição por alvo
+
+<!-- trackfw-contract: gate=scripts/check-agent-models-parity.sh -->
+
+O campo `agent_models` em `trackfw.yaml` permite configurar a versão do modelo por tier de agente
+(`sonnet`, `opus`, `haiku`). Quando presente, o CLI compõe um model ID completo para o target
+`claude`; todos os outros targets permanecem com seu alias canônico de tier — essa fronteira é
+um GATE (ADR-2026-08-21), não um detalhe de implementação.
+
+### Motivo: cota, não custo
+
+<!-- trackfw-contract: none reason=este subtítulo é rationale de arquitetura (por que o campo existe), não uma alegação de comportamento de CLI; o comportamento consequente (composição e fronteira de namespace) é coberto pelos demais cenários do gate -->
+
+O campo existe para que equipes que têm acesso a modelos específicos por cota (ex.: acesso
+antecipado ao `claude-opus-5` antes do GA) possam fixar essa versão no projeto sem depender do
+alias genérico de tier (`opus`). Não é um mecanismo de controle de custo; o campo não altera o
+tier de nenhum agente — só especifica a versão dentro do tier.
+
+### Formato
+
+<!-- trackfw-contract: none reason=este subtítulo documenta a sintaxe YAML do campo; a verificação de que os 3 CLIs lêem e aplicam corretamente esse formato está nos Cenários 1–4 do gate -->
+
+```yaml
+agent_models:
+  sonnet: "4.6"     # compõe para claude-sonnet-4-6 no target claude
+  opus: "5"         # compõe para claude-opus-5 no target claude
+```
+
+### As três regras de composição (aplicadas nos 3 CLIs identicamente)
+
+<!-- trackfw-contract: gate=scripts/check-agent-models-parity.sh -->
+
+1. **Versão com ponto(s):** `"4.6"` → `claude-sonnet-4-6` (ponto substituído por traço).
+2. **Major sem minor:** `"5"` → `claude-opus-5` (sem sufixo `-0`; minor omitido é omitido no ID).
+3. **Escape hatch — valor literal:** se o valor contiver traço ou qualquer caractere não-numérico
+   além de ponto (ex.: `"claude-sonnet-4-5-20250929"`), ele é usado literalmente como model ID,
+   sem prefixo nem substituição. O predicado `isVersionString` (regex `^[0-9]+(\.[0-9]+)*$`)
+   decide entre composição e passagem literal.
+
+### Fronteira de namespace (regra mais importante)
+
+<!-- trackfw-contract: gate=scripts/check-agent-models-parity.sh -->
+
+Apenas o target `claude` recebe composição. A condição de guarda em
+`internal/integrations/render.go` é:
+
+```go
+} else if targetID == "claude" && len(agentModels) > 0 {
+```
+
+Targets que usam o `case default:` do switch de representação (Gemini, Cursor, Kiro, Copilot,
+Windsurf) **não** recebem o model ID composto. Targets com cases dedicados que retornam cedo
+(Codex via `custom-agent-toml`, Antigravity via `agent-directory`, OpenCode via
+`opencode-agent`, AmazonQ via `cli-agent-json`) também não são afetados.
+
+**Consequência de uma violação:** um agente Gemini receberia `model: claude-sonnet-4-6` no lugar
+de `model: sonnet` — seu SDK não reconhece o prefixo `claude-` e rejeita o modelo na inicialização.
+A causa fica a duas camadas de distância do sintoma, tornando o diagnóstico custoso.
+
+### Comportamento quando `agent_models` está ausente
+
+<!-- trackfw-contract: gate=scripts/check-agent-models-parity.sh -->
+
+Sem `agent_models` no `trackfw.yaml`, o comportamento é idêntico ao de hoje: cada agente recebe
+o alias canônico do seu tier (`sonnet`, `opus`, etc.) sem nenhuma composição. Nenhum default
+implícito é aplicado; o campo é completamente opcional.
+
+### Cenários cobertos pelo gate (`check-agent-models-parity.sh`)
+
+<!-- trackfw-contract: gate=scripts/check-agent-models-parity.sh -->
+
+| Caso | Descrição | Axis de comparação |
+|------|-----------|-------------------|
+| 1 — Composição | `agent_models: {opus: "5", sonnet: "4.6"}` → agente architect recebe `model: claude-opus-5`, backend recebe `model: claude-sonnet-4-6` | Cross-runtime (Go = Node = Python) |
+| 2 — Sem vazamento | Com `agent_models` configurado, targets não-Claude (Codex, Gemini) **não** mudam em relação ao baseline sem `agent_models` | Por-runtime (baseline vs candidate, independente entre runtimes) |
+| 3 — Config ausente | Sem `agent_models`, o target `claude`/backend mantém o alias `sonnet` sem composição | Cross-runtime |
+| 4 — Escape hatch | `sonnet: "claude-sonnet-4-5-20250929"` é passado literalmente como `model: claude-sonnet-4-5-20250929` | Cross-runtime |
+
+O Caso 2 é verificado **por-runtime** (não cross-runtime) porque um vazamento correlacionado
+identicamente nos 3 runtimes passaria numa verificação cross-runtime — o problema ainda existiria
+e o usuário só o descobriria em produção.
+
+### Nota de implementação: três guards no switch de representação
+
+<!-- trackfw-contract: gate=scripts/check-agent-models-parity.sh -->
+
+O switch em `render.go` tem três camadas de proteção que somadas garantem a fronteira:
+
+1. Cases dedicados que `return` cedo (Codex, Antigravity, OpenCode, AmazonQ) — nunca alcançam o bloco de composição.
+2. Guard `targetID == "cursor"` dentro do `default:` — Cursor tem seu próprio `if` antes do `else if` de composição.
+3. Guard `targetID == "claude" && len(agentModels) > 0` — o load-bearing literal que protege todos os demais targets que caem no `default:` (Gemini, Kiro, Copilot, Windsurf).
+
+A remoção da condição `targetID == "claude" &&` do guard 3 é o único vetor de vulnerabilidade
+não redundante — o Cenário 86 de `check-gates-falsify.sh` o falsifica diretamente.

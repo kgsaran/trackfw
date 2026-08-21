@@ -10,6 +10,7 @@ from typing import Any, Callable
 
 from trackfw.i18n import t as i18n_t
 from trackfw.identity import IdentityError, load as load_identity
+from trackfw import config as trackfw_config
 
 from .catalog import plan_deployments
 from .manager import IntegrationError, IntegrationManager
@@ -177,6 +178,65 @@ def _force_help(action: str) -> str:
     return "Replace a modified managed artifact; never adopts unmanaged bytes — use 'install --force' for that"
 
 
+# Larguras de coluna — devem coincidir com Go e Node.js para saída byte-idêntica.
+_MODELS_AGENT_WIDTH = 14
+_MODELS_TIER_WIDTH = 8
+_MODELS_TARGET_WIDTH = 12
+_MODELS_NA = "—"
+
+
+def _run_models(_args: argparse.Namespace) -> int:
+    """Implementação do subcomando `trackfw agents models`.
+
+    Lista, por agente e por alvo, o modelo efetivamente resolvido que
+    install/update escreveria no campo model: do artefato gerado. Espelha
+    internal/commands/agents_models.go:executeAgentModels e
+    npm/src/commands/integrations.js:createAgentModelsCommand.
+    """
+    from .catalog import load_catalog
+    from .renderers import resolve_agent_model, looks_like_suspect_model_value
+    from .catalog import _surfaces as _catalog_surfaces
+
+    agent_models: dict[str, str] = trackfw_config.load().get("agent_models", {}) or {}
+    catalog = load_catalog()
+
+    # Avisos: um por tier suspeito, ordenados, para stderr (antes da tabela).
+    suspect_tiers = sorted(tier for tier, v in agent_models.items() if looks_like_suspect_model_value(v))
+    for tier in suspect_tiers:
+        print(
+            f'WARN: agent_models.{tier} = {json.dumps(agent_models[tier])} — not a version string and not a claude- model ID; will be written literally and may produce an invalid model identifier',
+            file=sys.stderr,
+        )
+
+    aw, tw, gw = _MODELS_AGENT_WIDTH, _MODELS_TIER_WIDTH, _MODELS_TARGET_WIDTH
+
+    def row(a: str, b: str, c: str, d: str) -> str:
+        return f"{a:<{aw}} {b:<{tw}} {c:<{gw}} {d}"
+
+    print(row("AGENT", "TIER", "TARGET", "RESOLVED"))
+
+    for agent in catalog["agents"]:
+        asset_path = agent["asset"].removeprefix("assets/")
+        from importlib.resources import files
+        source = files("trackfw.integrations").joinpath("assets").joinpath(asset_path).read_text(encoding="utf-8")
+        from .renderers import _parts
+        metadata, _ = _parts(source)
+        tier = metadata.get("model", "") or "sonnet"
+
+        for target in catalog["targets"]:
+            # Selecionar a surface padrão: primeira não-legacy e não-unsupported.
+            surfaces = _catalog_surfaces(target, "agents", {}, False)
+            if not surfaces:
+                continue
+            surface = surfaces[0]
+            representation = surface["capabilities"]["agents"]["representation"]
+            resolved, present = resolve_agent_model(tier, representation, target["id"], agent_models)
+            display = resolved if present else _MODELS_NA
+            print(row(agent["id"], tier, target["id"], display))
+
+    return 0
+
+
 def add_lifecycle_parser(subparsers, kind: str):
     parser = subparsers.add_parser(kind, help=f"List and manage trackfw {kind}")
     actions = parser.add_subparsers(dest="action", required=True)
@@ -233,6 +293,17 @@ def add_lifecycle_parser(subparsers, kind: str):
     from trackfw.commands.thirdparty import add_thirdparty_parser
 
     add_thirdparty_parser(actions, kind)
+
+    # "models" é exclusivo de agents: skills não têm campo model, e expor
+    # `trackfw skills models` enganaria o usuário. Espelha o gate de kind
+    # das flags de identidade no mesmo arquivo e nos CLIs Go e Node.js.
+    if kind == "agents":
+        models_cmd = actions.add_parser(
+            "models",
+            help="Show the resolved model each agent uses per target",
+        )
+        models_cmd.set_defaults(func=lambda args: _run_models(args))
+
     return parser
 
 
@@ -257,7 +328,7 @@ def run(args: argparse.Namespace, kind: str) -> int:
         # Identity must be resolved from disk before plan_deployments — skipping
         # this silently reverts custom agent names to the neutral defaults.
         ident = load_identity(home)
-        catalog, _ = plan_deployments(kind, scope=resolved_scope, identity_cfg=ident)
+        catalog, _ = plan_deployments(kind, scope=resolved_scope, identity_cfg=ident, agent_models=trackfw_config.load().get("agent_models", {}))
         targets = csv_values(args.targets)
         items = csv_values(args.items)
 
@@ -319,6 +390,7 @@ def run(args: argparse.Namespace, kind: str) -> int:
             # Mirrors internal/commands/integrations_flags.go passing
             # manager.ProjectRoot to BuildPlans at both of its call sites.
             project_root=os.getcwd(),
+            agent_models=trackfw_config.load().get("agent_models", {}),
         )
         def _on_skip(destination: str, reason: str) -> None:
             print(reason, file=sys.stderr)

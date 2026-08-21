@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 
@@ -56,6 +57,11 @@ type ProjectConfig struct {
 	// credential_guard field — see ADR-2026-08-05-hook-de-guarda-contra-materializacao-de-
 	// credenciais-reais-por-subagentes.md.
 	CredentialGuard CredentialGuardConfig
+
+	// agent_models field — see ADR-2026-08-21-versao-do-modelo-por-tier-com-composicao-por-alvo.md.
+	// Maps tier name (e.g. "opus", "sonnet") to version string (e.g. "5", "4.6").
+	// Absent or empty map → behavior identical to today (tier alias used verbatim).
+	AgentModels map[string]string
 }
 
 // CredentialGuardConfig holds the credential_guard.* fields read from trackfw.yaml — see
@@ -173,7 +179,7 @@ func ReadAgentConventions(cwd string) string {
 	if err != nil {
 		return ""
 	}
-	cfg := ProjectConfig{Rules: make(map[string]string)}
+	cfg := ProjectConfig{Rules: make(map[string]string), AgentModels: map[string]string{}}
 	parse(string(data), &cfg)
 	return cfg.Update.AgentConventions
 }
@@ -205,6 +211,7 @@ func defaults() ProjectConfig {
 		CredentialGuard: CredentialGuardConfig{
 			Mode: "warn",
 		},
+		AgentModels: map[string]string{},
 	}
 }
 
@@ -230,6 +237,33 @@ func hasMultipleDocuments(data []byte) bool {
 	return dec.Decode(new(yaml.Node)) == nil
 }
 
+// initConfigMaps initializes all nil map fields of cfg using reflection.
+// Called at the very start of parse() so that every code path — including
+// early returns — leaves maps in a writable state, regardless of how the
+// caller constructed the ProjectConfig.
+//
+// Using reflection instead of per-field nil checks means that when a new
+// map field is added to ProjectConfig, the write in parse() is safe
+// automatically — no second edit to an "initMaps" call site required.
+// Alternative (per-field checks in parse, or a manual constructor) would
+// require the developer to remember two edits: one for the write, one for
+// the init; the reflection approach closes this class by making the
+// invariant self-maintaining.
+//
+// Only the top-level fields of ProjectConfig are walked; nested config
+// structs (UpdateConfig, SyncConfig, CredentialGuardConfig) contain no
+// map fields and need no special handling.
+func initConfigMaps(cfg *ProjectConfig) {
+	v := reflect.ValueOf(cfg).Elem()
+	t := v.Type()
+	for i := 0; i < t.NumField(); i++ {
+		fv := v.Field(i)
+		if fv.Kind() == reflect.Map && fv.IsNil() {
+			fv.Set(reflect.MakeMap(t.Field(i).Type))
+		}
+	}
+}
+
 // parse itself still tolerates yaml.Unmarshal failure by returning early (cfg keeps whatever
 // defaults/prior state it had) — genuine syntax errors are caught and turned into a fatal exit
 // one layer up, in Load, before parse is ever called with malformed content. This function only
@@ -238,6 +272,8 @@ func hasMultipleDocuments(data []byte) bool {
 // isn't a mapping (valid YAML, unexpected shape — e.g. a bare list) are both left as silent
 // no-ops, since neither is a parse failure.
 func parse(content string, cfg *ProjectConfig) {
+	initConfigMaps(cfg) // guarantee: all map fields are non-nil before any write
+
 	var root yaml.Node
 	if err := yaml.Unmarshal([]byte(content), &root); err != nil {
 		return
@@ -375,6 +411,21 @@ func parse(content string, cfg *ProjectConfig) {
 		if cg, ok := v.(map[string]interface{}); ok {
 			if mode, ok := stringVal(cg, "mode"); ok && (mode == "warn" || mode == "block") {
 				cfg.CredentialGuard.Mode = mode
+			}
+		}
+	}
+
+	// agent_models field — flat mapping from tier name to version string.
+	// See ADR-2026-08-21-versao-do-modelo-por-tier-com-composicao-por-alvo.md.
+	// An absent, malformed, or empty block leaves AgentModels as the empty map from defaults(),
+	// preserving identical behavior to today. A key with an empty string value is stored as-is
+	// (the render layer treats empty string as "no pin" — fall back to tier alias).
+	if v, ok := m["agent_models"]; ok {
+		if am, ok := v.(map[string]interface{}); ok {
+			for k, rv := range am {
+				if s, ok := rv.(string); ok {
+					cfg.AgentModels[k] = s
+				}
 			}
 		}
 	}

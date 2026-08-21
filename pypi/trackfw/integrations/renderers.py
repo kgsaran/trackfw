@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from trackfw import identity
@@ -251,6 +252,15 @@ def _rewrite_frontmatter_fields(source: str, name: str, description: str) -> str
     return "---\n" + "\n".join(lines) + rest
 
 
+def _contains_control_char(s: str) -> bool:
+    """Reports whether s contains any ASCII control character (U+0000–U+001F)
+    or a Unicode line/paragraph separator (U+2028, U+2029).
+
+    Mirrors internal/integrations/render.go:containsControlChar (ML-5C).
+    """
+    return any(ord(c) < 0x20 or ord(c) in (0x2028, 0x2029) for c in s)
+
+
 def _rewrite_frontmatter_model_line(source: str, value: str) -> str:
     """Substitui a linha "model:" do frontmatter de um markdown cru por
     value, preservando as demais linhas do frontmatter e o corpo byte a
@@ -259,8 +269,18 @@ def _rewrite_frontmatter_model_line(source: str, value: str) -> str:
     retornado sem alteração (trimmed) — espelha a detecção de fronteira de
     _rewrite_frontmatter_fields, escopada à chave "model".
 
+    Raises ValueError if value contains any ASCII control character
+    (U+0000–U+001F). Model IDs never require control characters; any such
+    value is rejected to prevent frontmatter injection (ML-5A).
+
     Espelha internal/integrations/render.go:rewriteFrontmatterModelLine.
     """
+    if _contains_control_char(value):
+        raise ValueError(
+            f"model value contains control character and was rejected: "
+            f"model IDs never require newlines or other control characters "
+            f"(got {value!r})"
+        )
     trimmed = source.strip()
     if not trimmed.startswith("---\n"):
         return trimmed
@@ -321,6 +341,30 @@ def _remove_frontmatter_model_line(source: str) -> str:
     return "---\n" + "\n".join(kept) + rest
 
 
+def _is_version_string(s: str) -> bool:
+    """Reporta se s é uma string de versão pura (dígitos e pontos apenas, ex.:
+    "5", "4.6", "1.0.2"). Valores que não correspondem — IDs pré-compostos como
+    "claude-sonnet-4-5-20250929" (tem traço), "latest" (tem letra), "" (vazio) —
+    retornam False e o chamador usa o valor literalmente (escape hatch,
+    ADR-2026-08-21 §3). Espelha internal/integrations/render.go:isVersionString.
+    """
+    if not s:
+        return False
+    return bool(re.fullmatch(r"[0-9]+(\.[0-9]+)*", s))
+
+
+def _compose_claude_model_id(tier: str, version: str) -> str:
+    """Constrói um identificador de modelo Claude a partir de tier e versão,
+    aplicando as três regras de composição (ADR-2026-08-21 §2):
+      Regra 1: ponto vira traço ("4.6" → "claude-sonnet-4-6")
+      Regra 2: versão maior nunca ganha "-0" ("5" → "claude-sonnet-5")
+      Regra 3: tratada via escape hatch — IDs pré-compostos nunca chegam aqui
+    Espelha internal/integrations/render.go:composeClaudeModelID.
+    """
+    hyphenated = version.replace(".", "-")
+    return f"claude-{tier}-{hyphenated}"
+
+
 def _normalize_markdown(source: str) -> str:
     return source.strip() + "\n"
 
@@ -350,6 +394,7 @@ def render(
     source: str,
     capability: dict[str, str],
     identity_cfg: "identity.Config | None" = None,
+    agent_models: "dict[str, str] | None" = None,
 ) -> str:
     if kind == "skills":
         return _normalize_markdown(source)
@@ -453,6 +498,23 @@ def render(
             source = _rewrite_frontmatter_model_line(source, mapped_cursor)
         else:
             source = _remove_frontmatter_model_line(source)
+    elif target == "claude" and agent_models:
+        # Allowlist: somente o alvo "claude" recebe IDs de modelo compostos.
+        # Codex, Cursor, Antigravity, OpenCode, Gemini, Kiro e qualquer outro
+        # alvo são deixados sem alteração mesmo com agent_models populado —
+        # ADR-2026-08-21 §4 (gate, não cuidado).
+        tier = metadata.get("model", "")
+        version = agent_models.get(tier, "")
+        if version:
+            # String vazia = sem pin: deixa source sem alteração (alias de tier preservado).
+            if _is_version_string(version):
+                # Regras 1 e 2: ponto→traço; major omite minor.
+                model_id = _compose_claude_model_id(tier, version)
+            else:
+                # Escape hatch: valor com traço, letra ou outro char não-versão
+                # é usado literalmente (ADR-2026-08-21 §3).
+                model_id = version
+            source = _rewrite_frontmatter_model_line(source, model_id)
 
     if agent is None:
         return _normalize_markdown(source)
@@ -460,3 +522,71 @@ def render(
     with_frontmatter = _rewrite_frontmatter_fields(with_body, name, description)
     with_signature = _rewrite_signature_line(with_frontmatter, agent.display_name)
     return _normalize_markdown(with_signature)
+
+
+# ---------------------------------------------------------------------------
+# Resolução de modelo efetivo — exposta para "trackfw agents models" (ML-2A)
+# ---------------------------------------------------------------------------
+
+
+def resolve_agent_model(
+    tier: str,
+    representation: str,
+    target_id: str,
+    agent_models: "dict[str, str] | None" = None,
+) -> "tuple[str, bool]":
+    """Retorna o valor de modelo que render() escreveria no campo model: do
+    artefato com a representation e target_id dados, para um agente de tier tier.
+
+    Retorna (resolved, present) — present=False significa que o formato do
+    artefato omite o campo model inteiramente (ex.: cli-agent-json, agent-json,
+    opencode-agent); o chamador deve exibir "—" em vez do alias de tier.
+
+    agentModels só é aplicado para o alvo "claude" (ADR-2026-08-21 §4).
+    Espelha internal/integrations/models.go:ResolveAgentModel e
+    npm/src/integrations/render.js:resolveAgentModel.
+    """
+    if representation == "custom-agent-toml":
+        v = _map_model_codex(tier)
+        return (v, v is not None)
+    if representation in ("cli-agent-json", "agent-json"):
+        return ("", False)
+    if representation == "agent-directory":
+        v = _map_model(tier)
+        return (v, v is not None)
+    if representation == "opencode-agent":
+        return ("", False)
+    # default branch — espelha o case default de render()
+    if target_id == "cursor":
+        v = _map_model_cursor(tier)
+        return (v, v is not None)
+    if target_id == "claude":
+        am = agent_models or {}
+        version = am.get(tier, "")
+        if version:
+            if _is_version_string(version):
+                model_id = _compose_claude_model_id(tier, version)
+            else:
+                model_id = version  # escape hatch: usa literalmente
+            return (model_id, True)
+        # sem pin → alias de tier inalterado
+    return (tier, True)
+
+
+def looks_like_suspect_model_value(v: str) -> bool:
+    """Reporta se v é um valor de agent_models que aciona o escape hatch e
+    provavelmente produz um identificador de modelo inválido no artefato gerado.
+
+    Retorna True quando v não é uma string de versão pura E não começa com
+    "claude-". Chamadores devem emitir um aviso por tier (não por linha) para
+    stderr quando isso retornar True.
+
+    Preferência por falso-negativo: "4.6-beta" avisa; "4.6", "5",
+    "claude-sonnet-4-5-20250929" não avisam.
+    Espelha internal/integrations/models.go:LooksLikeSuspectModelValue.
+    """
+    # ML-5A: values with control characters are always suspect —
+    # _rewrite_frontmatter_model_line rejects them outright, so this function
+    # must agree with the write path to keep "trackfw agents models" aligned
+    # with "trackfw agents install/update" behavior.
+    return _contains_control_char(v) or (not _is_version_string(v) and not v.startswith("claude-"))

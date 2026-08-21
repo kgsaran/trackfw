@@ -4,6 +4,7 @@ const fs = require('fs')
 const os = require('os')
 const path = require('path')
 const identityStore = require('../identity')
+const projectConfig = require('../config')
 const { catalog, buildPlans, IntegrationManager, globalGroupPath } = require('../integrations')
 const { tildeify, validateTargets, buildDocument, humanReport, silenceConsole } = require('../lib/update-engine')
 const { mergeClaudeHookArray, mergeSimpleCommandArray, mergeCopilotHookArray, generateGlobalCredentialGuardScript, generateGlobalGitBranchGuardScript } = require('../generators/hooks')
@@ -757,7 +758,7 @@ function catalogBundleTarget(toolId, kind, homeRoot, identityConfig, { dryRun, i
   let displayPath = `~/.${toolId}`
   try {
     displayPath = globalGroupPath(toolId, kind)
-    const plans = buildPlans(kind, { targets: [toolId], scope: 'global', identity: identityConfig })
+    const plans = buildPlans(kind, { targets: [toolId], scope: 'global', identity: identityConfig, agentModels: projectConfig.load().agentModels || {} })
     if (!plans.length) return { id, state: 'missing', path: displayPath }
 
     const manager = new IntegrationManager({ homeRoot })

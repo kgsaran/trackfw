@@ -43,6 +43,7 @@ from pathlib import Path
 from typing import Any
 
 from trackfw.identity import IdentityError, load as load_identity
+from trackfw import config as trackfw_config
 from trackfw.integrations.catalog import global_group_path, load_catalog, plan_deployments
 from trackfw.integrations.manager import IntegrationError, IntegrationManager
 from trackfw.generators.hooks import _merge_claude_hook_array, _merge_simple_command_array, _merge_copilot_hook_array
@@ -992,7 +993,7 @@ def _catalog_group_result(
         return {"id": target_id, "state": STATE_FAILED, "path": "", "message": str(error)}
 
     try:
-        _, plans = plan_deployments(kind, target_ids=[tool], scope="global", identity_cfg=identity_cfg)
+        _, plans = plan_deployments(kind, target_ids=[tool], scope="global", identity_cfg=identity_cfg, agent_models=trackfw_config.load().get("agent_models", {}))
     except ValueError as error:
         return {"id": target_id, "state": STATE_FAILED, "path": directory, "message": str(error)}
 

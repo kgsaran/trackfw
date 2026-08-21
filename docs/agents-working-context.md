@@ -4,6 +4,271 @@
 
 ---
 
+## Sessão 2026-08-21 — Apolo (FIM: ML-5C — Estender a recusa a separadores unicode)
+
+Branch `feat/versao-do-modelo-por-tier-com-composicao-por-alvo`. Sem commit/push (autoridade do
+`trackfw_architect`).
+
+**Veredito: CONCLUÍDO. Todas as validações verdes.**
+
+**Pontos de código incluídos:** U+2028 (LINE SEPARATOR) e U+2029 (PARAGRAPH SEPARATOR).
+**Excluído com medição:** U+0085 (NEL) — yaml.v3 normaliza para espaço, sem injeção estrutural.
+**Caso legítimo:** `claude-sonnet-4-6-café` aceito nos 3 CLIs (U+00E9 não é separador de linha).
+
+**Artefatos modificados (3 stacks):**
+- Go: `render.go` (`containsControlChar` → rune loop + U+2028/U+2029), `render_test.go`
+  (+2 testes), `models_test.go` (+3 casos)
+- Node.js: `npm/src/integrations/render.js` (`c === 0x2028 || c === 0x2029`),
+  `npm/tests/agents_models.test.js` (+6 testes)
+- Python: `pypi/trackfw/integrations/renderers.py` (`ord(c) in (0x2028, 0x2029)`),
+  `pypi/tests/test_agents_models.py` (+5 testes)
+- Gate: `scripts/check-agent-models-parity.sh` (Case 5c + vacuity)
+- Vault: `vault/notes/rewrite-frontmatter-newline-injection-escape-hatch-2026-08-21.md` (seção ML-5C)
+- Roadmap: ML-5C marcado ✅
+
+**Evidência:**
+```
+make test          → ok (todos pacotes Go)
+28 tests Node.js   → pass 28, fail 0
+41 tests Python    → 41 passed
+TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make parity → exit 0, 0 FAILs
+./bin/trackfw validate → 17 warnings pré-existentes, 0 violations
+```
+
+---
+
+## Sessão 2026-08-21 — Apolo (INÍCIO: ML-5C — Estender a recusa a separadores unicode)
+
+Branch `feat/versao-do-modelo-por-tier-com-composicao-por-alvo`. Sem commit/push (autoridade do
+`trackfw_architect`). Escopo: estender `containsControlChar` para U+2028/U+2029 nos 3 CLIs, gate P4
+novo, testes, sem over-fix.
+
+**Medições pré-implementação realizadas:**
+- `go run` com yaml.v3 + literal U+2028 bytes → valor preservado na string Go: `claude-sonnet-4-6 tools: Bash` (len=31, rune[17]=U+2028). Contradiz leitura anterior com Python `splitlines()` (que trata U+2028 como separador de linha na leitura de volta — falso len=17).
+- YAML escape ` ` em double-quoted scalar: yaml.v3 decodifica para U+2028 idêntico. Fixture de heredoc (ASCII puro) é seguro.
+- U+0085 (NEL): yaml.v3 normaliza para espaço (sem injeção estrutural) — **excluído** da correção, com medição citada.
+- Chokepoint confirmado: todo caminho com escrita em disco passa por `Render → rewriteFrontmatterModelLine`. Check único.
+
+---
+
+## Sessão 2026-08-21 — Hades (FIM: ML-5B — Reverificação da barreira de segurança: configuração de modelo)
+
+Branch `feat/versao-do-modelo-por-tier-com-composicao-por-alvo`. Sem commit/push (autoridade do
+`trackfw_architect`).
+
+**Veredito: BLOQUEIO LEVANTADO COM RESSALVAS.**
+
+**Medições realizadas:**
+- Exploit 1 (\n → chave duplicada): exit=1, arquivo intacto. FECHADO.
+- Exploit 2 (\n---\n → body injection): exit=1, arquivo intacto. FECHADO.
+- Tab (0x09): exit=1. FECHADO (< 0x20 cobre).
+- CR (0x0D): YAML normaliza para espaço; espaço é inócuo. FECHADO.
+- U+2028/U+2029: NOT blocked (>= 0x80, fora do limite < 0x20). Se escrito, linha de model contém
+  U+2028 literalmente. Parsers line-based: model ID inválido (disponibilidade). Parsers YAML 1.2:
+  potencial split de linha (especulativo). DÍVIDA NOMEADA, não bloqueante.
+- Paridade 3 CLIs: idêntica em todos os casos.
+- Deferimento CWD→global: defensável.
+
+**Artefato produzido:**
+- `docs/seguranca/2026-08-21-reverificacao-da-configuracao-de-modelo.md`
+
+---
+
+## Sessão 2026-08-21 — Hades (INÍCIO: ML-5B — Reverificação da barreira de segurança: configuração de modelo)
+
+Branch `feat/versao-do-modelo-por-tier-com-composicao-por-alvo`. Sem commit/push (autoridade do
+`trackfw_architect`). Escopo: confirmar se os exploits originais do ML-4A estão fechados no binário
+atual, verificar cobertura da correção (controles ASCII vs. Unicode), paridade 3 CLIs, e avaliar se
+o deferimento do segundo achado (CWD→global) é defensável.
+
+---
+
+## Sessão 2026-08-21 — Apolo (FIM: ML-5A — Corretiva de bloqueio: rejeitar caracteres de controle no valor de modelo)
+
+Branch `feat/versao-do-modelo-por-tier-com-composicao-por-alvo`. Sem commit/push (autoridade do
+`trackfw_architect`).
+
+**Veredito: CONCLUÍDO. Todas as validações verdes.**
+
+**Artefatos modificados (3 stacks):**
+- Go: `render.go` (`containsControlChar` + assinatura `([]byte, error)` + callers), `models.go`
+  (`LooksLikeSuspectModelValue` flags controle), `render_test.go` (+2 testes), `models_test.go` (+2 casos)
+- Node.js: `npm/src/integrations/render.js` (`containsControlChar` + throw + export),
+  `npm/tests/agents_models.test.js` (+5 testes)
+- Python: `pypi/trackfw/integrations/renderers.py` (`_contains_control_char` + ValueError +
+  `looks_like_suspect_model_value`), `pypi/tests/test_agents_models.py` (+5 testes)
+- Gate: `scripts/check-agent-models-parity.sh` (Case 5a + 5b, 2 variantes × 3 runtimes + vacuity)
+- Vault: `vault/notes/rewrite-frontmatter-newline-injection-escape-hatch-2026-08-21.md`
+  (correção implementada + decisão sobre segundo achado)
+- Roadmap: ML-5A → ✅ Concluído
+
+**Evidências:**
+- `go test ./internal/integrations/` exit 0 (todos os testes incluindo os 4 novos)
+- `go test ./...` exit 0
+- `node --test npm/tests/*.test.js` → 755 pass, 0 fail
+- `pytest pypi/tests/` → 1448 passed
+- `./bin/trackfw validate` → 17 warnings pré-existentes, 0 violations
+- `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make parity` exit 0
+- `check-agent-models-parity.sh` Case 5: 7 OK lines (2 variantes × 3 runtimes + vacuity)
+
+**Decisão sobre segundo achado (`update harness` CWD→global):** DEFERIDO. Motivo: o fix do
+caractere de controle já elimina a injeção de instrução. Restringir o CWD→global path é mudança de
+comportamento mais ampla, merece REQ própria. Residual documentado na nota de vault.
+
+---
+
+## Sessão 2026-08-21 — Apolo (INÍCIO: ML-5A — Corretiva de bloqueio: rejeitar caracteres de controle no valor de modelo)
+
+Branch `feat/versao-do-modelo-por-tier-com-composicao-por-alvo`. Escopo: rejeitar valores com `\n`,
+`\r`, `\x00–\x1F` em `rewriteFrontmatterModelLine` nos 3 CLIs (Go + Node.js + Python), atualizar
+`LooksLikeSuspectModelValue` / espelhos para incluir controle como suspeito, adicionar P4 no gate
+de paridade e registrar decisão sobre segundo achado (`update harness` CWD→global). Nenhum
+commit/push (autoridade do `trackfw_architect`).
+
+---
+
+## Sessão 2026-08-21 — Hades (FIM: ML-4A — Barreira de segurança: configuração de modelo)
+
+Branch `feat/versao-do-modelo-por-tier-com-composicao-por-alvo`. Sem commit/push (autoridade do
+`trackfw_architect`).
+
+**Veredito: BLOQUEAR.**
+
+**Achados:**
+- CRÍTICO: `rewriteFrontmatterModelLine` (`render.go:503–536`) não sanitiza newlines embarcadas no
+  valor de escape hatch. Medido: valor com `\n---\n` injeta bytes no corpo do arquivo de agente
+  global; valor com `\ntools: Bash` injeta chave YAML duplicada no frontmatter. Ambos sem aviso
+  (payload começa com `claude-`, bypassa `looksLikeSuspectModelValue`).
+- ALTO: `update harness` lê `trackfw.yaml` do CWD (`config.Load()` relativo) e escreve em
+  `os.UserHomeDir()/.claude/agents/` — escalada de escopo confirmada por medição com HOME
+  redirecionado. Todos os 3 CLIs afetados.
+- SEM ACHADO: Guarda `targetID == "claude"` em `render.go:201` verificada sólida; gate P4 ML-3A
+  cobre falseabilidade.
+
+**Artefatos entregues:**
+- `docs/seguranca/2026-08-21-revisao-da-configuracao-de-modelo.md` — relatório completo
+- `vault/notes/rewrite-frontmatter-newline-injection-escape-hatch-2026-08-21.md` — nota do vault
+- `docs/agents-working-context.md` — esta entrada
+
+**Mitigação sugerida ao implementador (sem alterar código aqui):** rejeitar em
+`rewriteFrontmatterModelLine` qualquer valor com caracteres de controle antes de escrever.
+Preserva o escape hatch; model IDs não precisam de newlines.
+
+---
+
+## Sessão 2026-08-21 — Hades (INÍCIO: ML-4A — Barreira de segurança: configuração de modelo)
+
+Branch `feat/versao-do-modelo-por-tier-com-composicao-por-alvo`, roadmap `wip/`. Executando ML-4A:
+barreira de segurança sobre a feature `agent_models`. Perguntas A–D sobre escape hatch, namespace
+guard, escalada CWD→HOME e postura de detecção. Nenhum código de produto alterado. Nenhum
+commit/push (autoridade exclusiva do `trackfw_architect`).
+
+---
+
+## Sessão 2026-08-21 — Apolo (FIM: ML-3A — Gate de paridade agent_models + cenário P4)
+
+Branch `feat/versao-do-modelo-por-tier-com-composicao-por-alvo`.
+
+**Artefatos entregues:**
+- `scripts/check-agent-models-parity.sh` — novo gate (4 casos × 3 runtimes): composição, sem
+  vazamento de namespace (per-runtime baseline vs candidate), config ausente, escape hatch.
+  19 OKs com binário real; falha corretamente com binário corrompido.
+- `scripts/check-gates-falsify.sh` — Cenário 86 adicionado (P4: remoção da guarda
+  `targetID == "claude" && len(agentModels) > 0` em render.go → Gemini recebe model ID composto).
+  Contagem: 155 → 156. Nota sobre ROOT_DIR vs T86: detecção arm usa
+  `$ROOT_DIR/scripts/check-agent-models-parity.sh` (não cópia em T86) para que NODE_CLI/PY_ROOT
+  resolvam para os CLIs reais — evita falha antecipada de `set -e` em install Node inexistente.
+- `Makefile` — `check-agent-models-parity.sh` adicionado ao target `parity`, entre
+  `check-doctor-parity.sh` e `check-gates-falsify.sh`.
+- `docs/cli-parity.md` — seção `## agent_models` adicionada ao fim (7 subsections, 6 com
+  `trackfw-contract: gate=scripts/check-agent-models-parity.sh`, 2 com `none reason=`).
+  `bash scripts/check-parity-contract-coverage.sh` exit 0, sem anotação faltante.
+
+**Evidência de qualidade:**
+- `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make parity` exit 0 (156 cenários; OK
+  `agent-models-parity/namespace-guard-removed-causes-gemini-leak` verificado).
+- `./bin/trackfw validate` exit 0 (17 warnings pre-existentes, 0 violations).
+
+**Armadilha encontrada e resolvida:**
+Cenário P4 usava `$T86/scripts/check-agent-models-parity.sh`; ROOT_DIR resolvia para T86 onde
+npm/pypi não existem; com `set -e`, node install falhava ANTES do check de vazamento Go, e o script
+morria sem imprimir "namespace leak". Fix: detecção arm usa `$ROOT_DIR/scripts/...` (projeto real).
+
+Roadmap ML-3A → ✅ Concluído. Sem commit/push — aguardando auditoria do `trackfw_architect`.
+
+---
+
+## Sessão 2026-08-21 — Apolo (INÍCIO: ML-3A — Gate de paridade agent_models + cenário P4)
+
+Branch `feat/versao-do-modelo-por-tier-com-composicao-por-alvo`, roadmap `wip/`.
+Implementando: novo script `check-agent-models-parity.sh`, anotação em `docs/cli-parity.md`,
+cenário P4 em `check-gates-falsify.sh`, atualização do Makefile.
+
+---
+
+## Sessão 2026-08-21 — Apolo (FIM: ML-2C concluído — Fecha classe nil map em ProjectConfig)
+
+`initConfigMaps(cfg)` por reflexão adicionada como primeira linha de `parse()` em
+`internal/config/config.go` — garante que todo campo de mapa de `ProjectConfig` seja não-nil antes
+de qualquer escrita, independentemente de como o caller construiu o struct. 4 novos testes em
+`internal/config/config_nil_map_test.go`: provam o panic antes do fix e a invariante após. Node e
+Python imunes por construção (declarados explicitamente). Cenário 85 (P4) adicionado em
+`scripts/check-gates-falsify.sh` — usa `go test ./internal/config/ -run TestParseRulesFromContent…`
+na cópia corrompida; abordagem `trackfw validate + git HEAD` descartada (não determinística via
+subprocess). `make test` 15 pkgs verdes. `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make parity` exit 0
+(155 cenários, incluindo OK nil-map-init/parse-missing-causes-panic-on-agent-models).
+`./bin/trackfw validate` 0 violations. Vault note indexada. Roadmap ML-2C → ✅ Concluído.
+Sem commit/push — aguardando auditoria do `trackfw_architect`.
+
+---
+
+## Sessão 2026-08-21 — Apolo (FIM: ML-2B concluído — Catálogo pina as versões)
+
+Corrigidas 3 construções de `PlanRequest` em `update.go` (linhas 150, 1961 project-scope; 1718
+harness — alinhado ao espelho npm) que omitiam `AgentModels`. Corrigidas assinaturas de
+`RunDoctor`/`doctorPlansForScope` em `integrations/doctor.go`, chamador `commands/doctor.go`
+(import `config` adicionado), teste `doctor_test.go` e espelhos npm (`integrations/doctor.js`,
+`commands/doctor.js`). Corrigido bug adjacente de ML-1B: `config.ReadAgentConventions` não
+inicializava `AgentModels` antes de `parse()`, causando panic em nil map. Prova e2e: 3 binários
+com HOME redirecionado, todos exibem `model: claude-sonnet-4-6` / `model: claude-opus-5` nos
+artefatos gerados. `make quality` 458 OK 0 FAIL. `make parity` exit 0. `validate` 0 violations.
+Status ML-2B alterado para ✅ Concluído. Sem commit/push (autoridade do `trackfw_architect`).
+
+---
+
+## Sessão 2026-08-21 — Apolo (INÍCIO: ML-2B — Catálogo pina as versões)
+
+Branch `feat/versao-do-modelo-por-tier-com-composicao-por-alvo`, roadmap
+`docs/roadmaps/wip/ROADMAP-2026-08-21-versao-do-modelo-por-tier-com-composicao-por-alvo.md` em `wip/`.
+Executando ML-2B: corrigir 3 construções de `PlanRequest` em `update.go` e 2 em `doctor.go` que omitem
+`AgentModels`, fazendo o pin ser perdido no `agents update` / relatado como drift falso pelo `doctor`.
+Espelhar em npm (doctor.js). Python já está correto. Sem commit/push (autoridade do `trackfw_architect`).
+
+---
+
+## Sessão 2026-08-21 — Apolo (FIM: ML-1B concluído — Resolução e composição por alvo)
+
+Implementação do ML-1B nos 3 stacks (Go/Node.js/Python): campo `agent_models` em `trackfw.yaml`,
+3 regras de composição + escape hatch, composição por alvo (allowlist "claude"), prova de ausência
+de vazamento para Codex/Cursor/Antigravity/OpenCode. Status ML-1B alterado para ✅ Concluído no
+roadmap. Resultado dos gates: `make build` OK, `make test` OK (todos os pacotes Go verdes),
+`TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make parity` OK (exit 0, 153 cenários de falsificação
+passando, todos os scripts de paridade verdes), `./bin/trackfw validate` OK (apenas warnings
+pré-existentes, sem violações bloqueantes). Sem commit/push (autoridade do `trackfw_architect`).
+
+---
+
+## Sessão 2026-08-21 — Apolo (INÍCIO: ML-1B — Resolução e composição por alvo)
+
+Branch `feat/versao-do-modelo-por-tier-com-composicao-por-alvo`, roadmap
+`docs/roadmaps/wip/ROADMAP-2026-08-21-versao-do-modelo-por-tier-com-composicao-por-alvo.md` em `wip/`.
+Executando ML-1B: adicionar campo `agent_models` nos 3 CLIs (Go/Node.js/Python), implementar
+3 regras de composição + escape hatch, compor modelo por alvo (apenas `"claude"` recebe
+composição no default branch — allowlist, não denylist), provar ausência de vazamento para
+Codex/Cursor/Antigravity/OpenCode. Sem commit/push (autoridade exclusiva do `trackfw_architect`).
+
+---
+
 ## Sessão 2026-08-15 — Hades (INÍCIO: ML-0A — parecer de segurança sobre skills de terceiro via URL)
 
 Branch `feat/instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas`, roadmap
@@ -21853,3 +22118,77 @@ Entregues (não commitados — autoridade exclusiva do `trackfw_architect`):
 Evidências: `make test` → todos os pacotes Go verdes; `check-artifact-parity.sh` → `OK [artifact-parity/claude-md-architect-responses-byte-identical]`; `./bin/trackfw validate` → exit 0 (17 warnings pré-existentes); `check-parity-contract-coverage.sh` → `OK — nenhuma anotação inválida e nenhuma seção sem anotação`.
 
 Riscos residuais: `make quality` completo e `check-gates-falsify.sh` rodam em background — resultado pendente de confirmação pelo `trackfw_architect`.
+
+## 2026-08-21 — Zeus (arquiteto) — REQ do modelo por tier
+
+REQ da verbosidade fechada (#198). Nova REQ: versão do modelo configurável por tier.
+
+**ADR escrito por mim** (ML-1A não delegado — decisão de formato é do arquiteto).
+
+Decisão central, de KG e melhor que a minha: guardar **a versão**, não o ID. ID cru quebraria
+OpenCode (`anthropic/claude-sonnet-4-6`) e Bedrock (`anthropic.claude-...`), ou obrigaria o render a
+desmontar string para remontar. Com a versão, cada alvo compõe a própria forma — que é o que a
+camada de render já faz com os tiers.
+
+**Risco dominante nomeado: vazamento de namespace.** ID Claude chegando ao mapeamento do Codex,
+Cursor ou Antigravity quebra os três, e quebra no artefato gerado — o usuário descobre quando o
+agente não sobe. É gate, não cuidado.
+
+**Motivo registrado, porque a leitura ingênua inverte a decisão:** Sonnet 4.6 consome ~30% menos
+tokens (tokenizador pré-4.7) e custa **mais** por token ($3/$15 contra $2/$10). Quem otimiza cota
+quer 4.6; quem otimiza dólar quer 5. Decisões contrárias a partir do mesmo dado.
+
+---
+**Apolo** | ML-2A — Comando de resolução efetiva | 2026-08-21
+Branch: `fix/serve-amarra-em-loopback-por-padrao-com-opt-in-explicito-para-exposicao`
+Roadmap: `ROADMAP-2026-08-21-versao-do-modelo-por-tier-com-composicao-por-alvo.md`
+Status: **iniciando implementação**
+
+Entregando `trackfw agents models` nos 3 CLIs (Go, Node.js, Python):
+- Superfície: subcomando de `agents` (gate por `kind == KindAgents`)
+- Lógica de resolução: `ResolveAgentModel(tier, representation, targetID, agentModels)` (Go) / espelhos
+- Warning: uma vez por tier, stderr, quando `!isVersionString(v) && !hasPrefix(v, "claude-")`
+- "—" para targets onde model field é ausente (cli-agent-json, agent-json, opencode-agent)
+- Ordem: per-agente × per-target, ambos em ordem de catálogo (determinístico)
+
+---
+**Apolo** | ML-2A — Concluído | 2026-08-21
+Branch: `fix/serve-amarra-em-loopback-por-padrao-com-opt-in-explicito-para-exposicao`
+
+Entregou `trackfw agents models` nos 3 CLIs (Go, Node.js, Python):
+- Superfície: `trackfw agents models` (gate `kind == KindAgents`)
+- Output: 121 linhas (1 header + 12 agentes × 10 alvos), byte-idêntico nos 3 CLIs
+- Warning: stderr, por tier, quando `!isVersionString(v) && !hasPrefix(v, "claude-")`
+- "—" para targets sem campo model (amazonq/cli-agent-json, opencode/opencode-agent, antigravity-legacy/agent-json, kiro-cli/agent-json)
+- Drift gate: `TestResolveAgentModelMatchesRender` / `test_resolve_agent_model_matches_render` prova que resolver = Render
+- Testes: 3 Go (incluindo drift gate), 17 Node.js, 30 Python
+- Todos os testes verdes; parity harness verde; `make lint` limpo; `trackfw validate` sem novos erros
+
+---
+**Apolo** | ML-2C — Em andamento | 2026-08-21
+Branch: `feat/versao-do-modelo-por-tier-com-composicao-por-alvo`
+
+Fechando a classe do nil map em `ProjectConfig`:
+- Defeito: `ParseRulesFromContent` (config.go:165) cria `ProjectConfig{Rules: make(...)}` sem inicializar `AgentModels`, que é nil; `parse()` escreve `cfg.AgentModels[k] = s` → panic com `assignment to entry in nil map`
+- Decisão de fechamento: initConfigMaps() por reflexão no início de parse() — todos os campos de mapa inicializados sem ação humana futura
+- Escopo: config.go, config_nil_map_test.go, check-gates-falsify.sh (Cenário 85 P4)
+- Node.js e Python: imunes por construção (cada construction já inclui `agentModels: {}`)
+
+## 2026-08-21 — Zeus (arquiteto) — decisão de release de KG
+
+**Uma release**, não duas. Escopo da 7.2.0: modelo por tier + `agents models` + verbosidade + as
+duas REQs de segurança (`release tag` confia em conteúdo local · `validate` cego ao hook relativo
+antigo).
+
+Eu havia recomendado duas releases — 7.2.0 com o modelo assim que fechasse, para desbloquear o
+impasse do pin (hoje não dá para rodar `agents update` sem perder o pin), e 7.3.0 com segurança.
+**KG decidiu uma só.** Registrado: o impasse do pin persiste até a release, e é consequência aceita.
+
+**Fila até a release:**
+1. modelo — ML-3A (gate + P4) e barreira ← em andamento
+2. `release tag` confia em conteúdo local
+3. `validate` cego ao hook relativo antigo
+4. bump + CHANGELOG + tag 7.2.0
+
+**Depois da release:** `update --dry-run` em symlink · i18n nos 3 CLIs · `note_orphan` ausente no
+Node · `rule: null` no `validate --json` do Python · substring no corpus de `done/`.

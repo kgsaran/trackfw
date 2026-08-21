@@ -13,6 +13,48 @@ import (
 	"github.com/kgsaran/trackfw/internal/identity"
 )
 
+// isVersionString reports whether s is a bare version string (digits and dots
+// only, e.g. "5", "4.6", "1.0.2"). Values that don't match — including
+// pre-composed IDs like "claude-sonnet-4-5-20250929" (hyphens), "latest"
+// (letters), or "" (empty) — return false and the caller uses the value
+// literally (escape hatch, ADR-2026-08-21 §3).
+//
+// Trade-off: a value like "4.6-beta" (version-like but with a suffix) is
+// treated as literal and produces an unchanged model line; a purely numeric
+// string that happens not to be a real model version (e.g. "99") gets
+// composed into "claude-tier-99" (a wrong-but-visible ID). We accept the
+// first failure mode over the second: the literal path is recoverable (the
+// user sees the exact string they typed); the silent-compose path silently
+// produces a non-existent model ID without any indication of what went wrong.
+func isVersionString(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, c := range s {
+		if c != '.' && (c < '0' || c > '9') {
+			return false
+		}
+	}
+	return true
+}
+
+// composeClaudeModelID builds a Claude model identifier from tier (e.g.
+// "sonnet") and version (e.g. "4.6" or "5"), applying the three composition
+// rules from the official Anthropic model documentation
+// (ADR-2026-08-21-versao-do-modelo-por-tier-com-composicao-por-alvo.md §2):
+//
+//  1. Dots in the version become hyphens: "4.6" → "4-6".
+//  2. A major-only version never gets a trailing "-0": "5" → "claude-sonnet-5".
+//  3. Pre-4.6 IDs include a date suffix; they must be stored as literal values
+//     (escape hatch) and never reach this function.
+//
+// caller is responsible for calling isVersionString(version) before
+// composeClaudeModelID and using the value literally when it returns false.
+func composeClaudeModelID(tier, version string) string {
+	hyphenated := strings.ReplaceAll(version, ".", "-")
+	return "claude-" + tier + "-" + hyphenated
+}
+
 // Render converts a canonical catalog item to the native representation
 // declared by a target surface. When cfg carries a customized identity for
 // item.ID, the rendered name/description/body are personalized (ADR
@@ -39,11 +81,15 @@ import (
 // byte-for-byte unchanged by construction, not by coincidence.
 //
 // targetID is the canonical ID of the render target (e.g. "cursor",
-// "gemini", "kiro", "codex") as declared in the target catalog. It exists to
-// let future waves differentiate "cursor" from "gemini"/"kiro" within the
-// shared "agent-markdown" representation (Rota B, the default branch) — this
-// function does not yet apply any such differentiation.
-func Render(item Item, kind ItemKind, capability Capability, source []byte, cfg identity.Config, targetID string) ([]byte, error) {
+// "gemini", "kiro", "codex") as declared in the target catalog.
+//
+// agentModels maps tier names (e.g. "sonnet", "opus") to version strings
+// (e.g. "4.6", "5"). A nil or empty map means "no pin" — output is identical
+// to before this parameter existed, by construction. Only the "claude" target
+// receives composed model IDs; all other targets (Codex, Cursor, Antigravity,
+// OpenCode, Gemini, Kiro, etc.) are unaffected even when agentModels is
+// populated (ADR-2026-08-21 §4 — namespace boundary is a gate, not a cuidado).
+func Render(item Item, kind ItemKind, capability Capability, source []byte, cfg identity.Config, targetID string, agentModels map[string]string) ([]byte, error) {
 	if kind == KindSkills {
 		return normalizeMarkdown(source), nil
 	}
@@ -148,9 +194,39 @@ func Render(item Item, kind ItemKind, capability Capability, source []byte, cfg 
 	default:
 		if targetID == "cursor" {
 			if mapped, ok := mapModelCursor(model); ok {
-				source = rewriteFrontmatterModelLine(source, mapped)
+				var rewErr error
+				source, rewErr = rewriteFrontmatterModelLine(source, mapped)
+				if rewErr != nil {
+					return nil, rewErr
+				}
 			} else {
 				source = removeFrontmatterModelLine(source)
+			}
+		} else if targetID == "claude" && len(agentModels) > 0 {
+			// Allowlist: only the "claude" target receives composed model IDs.
+			// Codex, Cursor, Antigravity, OpenCode, Gemini, Kiro and any other
+			// target are left untouched even when agentModels is populated —
+			// ADR-2026-08-21 §4 (gate, not cuidado).
+			//
+			// Empty version string means "no pin": leave the existing model line
+			// as-is (fall back to tier alias). This preserves identical behavior
+			// for callers that set agentModels but leave a tier value empty.
+			if version, ok := agentModels[model]; ok && version != "" {
+				var modelID string
+				if isVersionString(version) {
+					// Compose: "4.6" → "claude-sonnet-4-6"; "5" → "claude-sonnet-5".
+					modelID = composeClaudeModelID(model, version)
+				} else {
+					// Escape hatch: non-version value (contains hyphens, letters, etc.)
+					// is used literally — e.g. "claude-sonnet-4-5-20250929" stays as-is.
+					// ADR-2026-08-21 §3.
+					modelID = version
+				}
+				var rewErr error
+				source, rewErr = rewriteFrontmatterModelLine(source, modelID)
+				if rewErr != nil {
+					return nil, rewErr
+				}
 			}
 		}
 		if !hasIdentity {
@@ -425,6 +501,31 @@ func mapModelCursor(model string) (string, bool) {
 	}
 }
 
+// containsControlChar reports whether s contains any ASCII control character
+// (U+0000–U+001F) or a Unicode line/paragraph separator (U+2028, U+2029).
+// Model IDs never require control characters or Unicode line separators in any
+// known or anticipated format; a value that contains them is either malformed
+// or a frontmatter-injection payload. Callers must reject, not sanitize.
+//
+// Implementation note: the rune loop is equivalent to the old byte loop for
+// ASCII controls — UTF-8 continuation bytes are always ≥ 0x80, so a byte
+// < 0x20 can never be part of a multi-byte sequence. The rune loop adds
+// detection of U+2028/U+2029, which yaml.v3 preserves verbatim in the parsed
+// Go string (bytes 0xE2 0x80 0xA8 / 0xE2 0x80 0xA9, all ≥ 0x80, invisible to
+// the original byte < 0x20 check). ML-5C.
+//
+// U+0085 (NEL) is intentionally excluded: yaml.v3 normalizes it to a space
+// at parse time, so no U+0085 ever reaches this function; the space it
+// produces is inert for YAML frontmatter parsers (measured 2026-08-21).
+func containsControlChar(s string) bool {
+	for _, r := range s {
+		if r < 0x20 || r == ' ' || r == ' ' {
+			return true
+		}
+	}
+	return false
+}
+
 // rewriteFrontmatterModelLine replaces the "model:" line of a raw markdown
 // source's frontmatter with value, preserving every other frontmatter line
 // and the body byte-for-byte. If the frontmatter has no "model:" line, one is
@@ -432,14 +533,22 @@ func mapModelCursor(model string) (string, bool) {
 // recognizable frontmatter, source is returned unchanged (trimmed) — mirrors
 // the boundary detection used by rewriteFrontmatterFields, scoped to the
 // single "model" key.
-func rewriteFrontmatterModelLine(source []byte, value string) []byte {
+//
+// Returns an error if value contains any ASCII control character (U+0000–U+001F).
+// Model IDs never require control characters; any such value is rejected to
+// prevent frontmatter injection (CVE-class: escape hatch writes value literally;
+// a newline closes the frontmatter block or adds attacker-controlled YAML keys).
+func rewriteFrontmatterModelLine(source []byte, value string) ([]byte, error) {
+	if containsControlChar(value) {
+		return nil, fmt.Errorf("model value contains control character and was rejected: model IDs never require newlines or other control characters (got %q)", value)
+	}
 	trimmed := strings.TrimSpace(string(source))
 	if !strings.HasPrefix(trimmed, "---\n") {
-		return []byte(trimmed)
+		return []byte(trimmed), nil
 	}
 	end := strings.Index(trimmed[4:], "\n---")
 	if end < 0 {
-		return []byte(trimmed)
+		return []byte(trimmed), nil
 	}
 	frontmatter := trimmed[4 : 4+end]
 	rest := trimmed[4+end:] // starts with "\n---", followed by the body
@@ -465,7 +574,7 @@ func rewriteFrontmatterModelLine(source []byte, value string) []byte {
 		lines = append(lines, "model: "+value)
 	}
 
-	return []byte("---\n" + strings.Join(lines, "\n") + rest)
+	return []byte("---\n" + strings.Join(lines, "\n") + rest), nil
 }
 
 // removeFrontmatterModelLine removes the "model:" line from a raw markdown

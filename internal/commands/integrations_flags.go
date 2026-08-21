@@ -10,6 +10,7 @@ import (
 
 	"github.com/charmbracelet/huh"
 	cbterm "github.com/charmbracelet/x/term"
+	"github.com/kgsaran/trackfw/internal/config"
 	"github.com/kgsaran/trackfw/internal/generators"
 	"github.com/kgsaran/trackfw/internal/i18n"
 	"github.com/kgsaran/trackfw/internal/identity"
@@ -70,6 +71,12 @@ func newIntegrationsLifecycleCmd(kind integrations.ItemKind) *cobra.Command {
 		newIntegrationMutationCmd(kind, "update"),
 		newIntegrationsThirdPartyCmd(kind),
 	)
+	// "models" is agents-only: skills have no model field, and surfacing this
+	// under `trackfw skills models` would mislead users. Mirrors the identity
+	// flag gate at integrations_flags.go that keeps --identity out of skills.
+	if kind == integrations.KindAgents {
+		cmd.AddCommand(newAgentModelsCmd())
+	}
 	return cmd
 }
 
@@ -218,6 +225,7 @@ func executeIntegrationMutation(cmd *cobra.Command, kind integrations.ItemKind, 
 	plans, err := integrations.BuildPlans(catalog, integrations.PlanRequest{
 		Kind: kind, Targets: opts.targets, Items: opts.items, Scope: opts.scope, Surfaces: surfaceMap, Identity: ident,
 		ProjectRoot: manager.ProjectRoot,
+		AgentModels: config.Load().AgentModels,
 	})
 	if err != nil {
 		return err
@@ -328,6 +336,7 @@ func executeIntegrationList(cmd *cobra.Command, kind integrations.ItemKind, opts
 		Kind: kind, Targets: opts.targets, Items: opts.items, Scope: opts.scope,
 		Surfaces: surfaceMap, AllSurfaces: true, Identity: ident,
 		ProjectRoot: manager.ProjectRoot,
+		AgentModels: config.Load().AgentModels,
 	})
 	if err != nil {
 		return err

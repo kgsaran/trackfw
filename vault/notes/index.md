@@ -4,6 +4,8 @@
 
 ## Índice
 
+- [rewrite-frontmatter-newline-injection-escape-hatch-2026-08-21](rewrite-frontmatter-newline-injection-escape-hatch-2026-08-21.md)
+- [nil-map-em-projectconfig-campo-novo-atinge-construcoes-antigas-2026-08-21](nil-map-em-projectconfig-campo-novo-atinge-construcoes-antigas-2026-08-21.md)
 - [validate-branch-has-wip-roadmap-done-python-rule-null-2026-08-20](validate-branch-has-wip-roadmap-done-python-rule-null-2026-08-20.md)
 - [windsurf-amazonq-sem-harness-scope-nunca-cobriveis-por-check-harness-hooks-parity-2026-08-20](windsurf-amazonq-sem-harness-scope-nunca-cobriveis-por-check-harness-hooks-parity-2026-08-20.md)
 - [ci-inherited-trackfw-disable-external-commands-vacuous-parity-gate-2026-08-19](ci-inherited-trackfw-disable-external-commands-vacuous-parity-gate-2026-08-19.md)

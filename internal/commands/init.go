@@ -9,6 +9,7 @@ import (
 
 	"github.com/charmbracelet/huh"
 	cbterm "github.com/charmbracelet/x/term"
+	"github.com/kgsaran/trackfw/internal/config"
 	"github.com/kgsaran/trackfw/internal/forge"
 	"github.com/kgsaran/trackfw/internal/generators"
 	"github.com/kgsaran/trackfw/internal/i18n"
@@ -417,6 +418,7 @@ func installAITools(aiTools []string, cwd string, scope string) error {
 	for _, kind := range []integrations.ItemKind{integrations.KindAgents, integrations.KindSkills} {
 		selected, err := integrations.BuildPlans(catalog, integrations.PlanRequest{
 			Kind: kind, Targets: aiTools, Scope: scope, Identity: ident,
+			AgentModels: config.Load().AgentModels,
 		})
 		if err != nil {
 			return fmt.Errorf("configurando AI tools: %w", err)

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/kgsaran/trackfw/internal/config"
 	"github.com/kgsaran/trackfw/internal/identity"
 	"github.com/kgsaran/trackfw/internal/integrations"
 	"github.com/spf13/cobra"
@@ -82,7 +83,7 @@ func runDoctor() ([]integrations.DoctorFinding, error) {
 	if err != nil {
 		return nil, fmt.Errorf("doctor: identidade invalida: %w", err)
 	}
-	return integrations.RunDoctor(catalog, manager, ident)
+	return integrations.RunDoctor(catalog, manager, ident, config.Load().AgentModels)
 }
 
 func printDoctorReport(cmd *cobra.Command, findings []integrations.DoctorFinding) {
