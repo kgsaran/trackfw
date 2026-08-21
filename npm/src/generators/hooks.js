@@ -2124,7 +2124,17 @@ function injectWindsurfHooks(cwd) {
 // written on first creation so the default agent keeps today's unrestricted
 // tool access (this fix does not narrow what any agent can do, only where
 // the deny wiring lives). Mirrors Go's InjectAmazonQHooks
-// (internal/generators/agentfiles.go) field-for-field.
+// (internal/generators/agentfiles.go) field-for-field -- Go is the
+// canonical set (ROADMAP-2026-08-20, ML-1A-bis): only `name`, `description`
+// and `tools` are written on first creation. `prompt`/`mcpServers`/
+// `toolAliases`/`allowedTools`/`resources`/`useLegacyMcpJson` were written
+// here until ML-1A-bis and are now deliberately NOT written -- an extra
+// field the real schema doesn't expect risks failing validation, whereas an
+// absent optional field usually doesn't (asymmetry-of-risk decision, not a
+// verification against the live Amazon Q schema -- see docs/cli-parity.md
+// for the recorded limit). Pre-existing occurrences of the dropped fields
+// in a user's file are left untouched (never removed, only no longer
+// created).
 //
 // Native custom-agent toolset restriction (REQ acceptance criterion): still
 // NOT implemented here -- this ML only wires the guard/deny fields on the
@@ -2141,13 +2151,7 @@ function injectAmazonQHooks(cwd) {
   const defaults = {
     name: 'q_cli_default',
     description: 'trackfw-managed default agent — wires the git branch guard hook/denylist. See docs/cli-parity.md.',
-    prompt: null,
-    mcpServers: {},
     tools: ['*'],
-    toolAliases: {},
-    allowedTools: [],
-    resources: [],
-    useLegacyMcpJson: false,
   }
   for (const [k, v] of Object.entries(defaults)) {
     if (!Object.prototype.hasOwnProperty.call(data, k)) data[k] = v

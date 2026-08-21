@@ -8,6 +8,25 @@
 # ~/.kiro/hooks/trackfw-git-branch-guard.json) are STRUCTURALLY identical
 # across Go, Node.js and Python, for each of the 6 native-wave CLIs.
 #
+# Windsurf and Amazon Q are deliberately NOT covered by this gate, and never
+# can be without a product change: `HarnessTargetIDs`/`buildHarnessTargetIDs`
+# (internal/generators/update.go) only pairs credential-guard/git-branch-guard
+# targets with claude/codex/gemini/cursor/copilot/kiro — there is no
+# `windsurf-credential-guard`, `windsurf-git-branch-guard`, `amazonq-
+# credential-guard` or `amazonq-git-branch-guard` target in any of the 3
+# CLIs (confirmed by grep across update.go/update-harness.js/
+# update_harness.py, ROADMAP-2026-08-20/ML-1B); the same doc comment says
+# "Windsurf has no native hook mechanism and stays out per the ADR", and
+# Amazon Q was simply never given a harness-scope (global, ~/.amazonq) pair
+# either — both only get project-scope wiring via `discover --init`
+# (InjectWindsurfHooks/InjectAmazonQHooks), which check-agent-hooks-parity.sh
+# covers. There is no global ~/.amazonq or ~/.windsurf hook file this gate
+# could compare; extending CLIS here would require inventing a harness
+# target that does not exist, which is a product-behavior change out of
+# ML-1B's scope, not a gate-coverage gap. See docs/cli-parity.md's "Git
+# branch guard por runtime" section for the correction to the previously
+# false claim that this gate already covered them.
+#
 # git-branch-guard wiring (ROADMAP-2026-08-17 Wave 2/ML-2A) reuses the exact
 # same merge helpers credential-guard does — for the 5 merge-based CLIs
 # (claude/codex/gemini/cursor/copilot) both guards' entries coexist in the

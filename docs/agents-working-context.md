@@ -21497,3 +21497,305 @@ omisso — o omisso não engana quem decide.
 
 **Escopo negativo respeitado:** nenhuma lacuna foi fechada. A REQ cria o mecanismo que revela;
 fechar cada uma é trabalho subsequente e priorizável, e provavelmente não vale para todas.
+
+## 2026-08-20 — Zeus (arquiteto) — primeiro consumo da lista da triagem
+
+REQ do contrato pinado fechada (#196), roadmap em `done`. Abre a REQ que **consome** a lista: os 3
+`gap`/`partial` de maior risco dos 42+51.
+
+**Uma REQ, não três** — mesma natureza, mesma triagem, e duas delas tocam os mesmos scripts de gate.
+Separadas seriam sequenciais de qualquer forma e pagariam três ciclos de governança.
+
+**Correção de suposição minha, antes de abrir:** eu esperava que Windsurf/Amazon Q fossem ausência de
+implementação. **Não são** — os 3 CLIs implementam, com teste por stack. Falta só o gate cross-CLI, e
+os formatos deles divergem dos outros seis (`hooks.pre_run_command` num arquivo único vs agente
+customizado em `cli-agents/`). Por isso o ML-1A é **investigação sem escrever gate**: decidir o
+desenho do comparador antes de codificar.
+
+Escopo negativo declarado: as outras 39 `gap` e 50 `partial` ficam. A lista é priorizável de
+propósito; fechar tudo não é meta.
+
+## 2026-08-20 — Apolo (apolo-tf) — ML-1A: parecer sobre o comparador, sem escrever gate
+
+Investiguei se `check-agent-hooks-parity.sh` estende para Windsurf/Amazon Q ou exige comparador
+próprio. Medido com fixture em `$TMPDIR` (HOME isolado) e os 3 binários reais invocados
+(`discover --init`).
+
+**Resposta: estende sem alteração.** `compare_json` já é um diff JSON recursivo genérico que só
+assume "um arquivo, caminho fixo, por CLI" — premissa que Windsurf (`.windsurf/hooks.json`) e
+Amazon Q (`.amazonq/cli-agents/q_cli_default.json`) cumprem. Basta acrescentar as duas entradas nas
+tabelas `CLIS`/`marker_for`/`hookfile_for`, na mesma convenção já usada (`file:`/`dir:`). Hipótese
+inicial da REQ (formato exigiria comparador dedicado) **não se confirmou**.
+
+**Achado (não corrigido, registrado para o ML-1B):** Node.js e Python escrevem 6 campos extras no
+`q_cli_default.json` (`prompt`, `mcpServers`, `toolAliases`, `allowedTools`, `resources`,
+`useLegacyMcpJson`) que o Go **deliberadamente omite** (doc comment de `InjectAmazonQHooks`).
+Windsurf: sem divergência, os 3 CLIs geram byte-idêntico.
+
+**Achado secundário:** o guard de vacuidade #2 do gate (`grep "trackfw-credential-guard.sh"`) não
+se aplica a Windsurf/Amazon Q — nenhum dos dois wireia credential-guard, só git-branch-guard.
+ML-1B precisa trocar a string do guard só para essas duas entradas.
+
+Parecer completo com as 5 respostas na seção ML-1A do roadmap. Nenhuma linha de gate escrita, nenhum
+script alterado. `./bin/trackfw validate` exit 0.
+
+## 2026-08-20 — Apolo (apolo-tf) — ML-1A-bis: Node e Python alinhados ao Go no `q_cli_default.json`
+
+Executei a decisão já tomada (não minha): Go é canônico. `npm/src/generators/hooks.js`
+(`injectAmazonQHooks`) e `pypi/trackfw/generators/hooks.py` (`inject_amazonq_hooks`) pararam de
+escrever `prompt`, `mcpServers`, `toolAliases`, `allowedTools`, `resources`, `useLegacyMcpJson` na
+criação do `q_cli_default.json` — só `name`/`description`/`tools` agora, igual ao Go. Contrato de
+merge (`setdefault`/`hasOwnProperty`) intocado: nenhum campo é removido de arquivo pré-existente,
+só deixou de ser criado do zero.
+
+Provado com os 3 binários reais em fixture isolada ($TMPDIR, $HOME redirecionado): `discover --init`
+gera `q_cli_default.json` estruturalmente byte-idêntico nos 3 (`jq -S` + `diff` par a par, vazio nos
+3 pares); e um arquivo pré-existente com `mcpServers`/`useLegacyMcpJson` sobrevive intacto nos 3
+após re-rodar `discover --init`.
+
+`docs/cli-parity.md` ganhou a seção que registra a decisão **e** o limite: a escolha do conjunto
+mínimo é assimetria de risco, não verificação contra a doc viva da AWS — ninguém rodou `q chat
+--agent` real ainda. Teste Python (`test_amazonq`) trocado de `assertEqual` positivo para
+`assertNotIn` nos 6 campos; teste Node não precisou mudar (não fixava os extras).
+
+`make quality` exit 0 (146 cenários), `./bin/trackfw validate` exit 0 (mesmos 17 warnings
+pré-existentes, nenhum novo), `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make parity` exit 0. ML-1A-bis
+marcado ✅ no roadmap — desbloqueia o ML-1B.
+
+## 2026-08-20 — Apolo (apolo-tf) — ML-1B: Windsurf/Amazon Q cobertos em check-agent-hooks-parity.sh
+
+**Início:** ML-1B, `docs/roadmaps/wip/ROADMAP-2026-08-20-gates-para-os-tres-contratos-de-maior-risco.md`.
+
+Estendi `scripts/check-agent-hooks-parity.sh` (`CLIS`/`marker_for`/`hookfile_for`) para os 8 CLIs
+nativos, incluindo Windsurf e Amazon Q — `compare_json` não mudou uma linha, como o ML-1A previu.
+Ajustei o guard de vacuidade #2 (`guard_marker_for`) porque Windsurf/Amazon Q só wireiam
+git-branch-guard, não credential-guard.
+
+**Achado ao verificar antes de gatear (não consertado, é decisão de produto pré-existente):**
+`docs/cli-parity.md` afirmava que a correção de caminho/schema do ML-3A tinha "byte-identidade
+confirmada via `check-agent-hooks-parity.sh` **e** `check-harness-hooks-parity.sh`" — a segunda
+metade é impossível, não só não-verificada: os caminhos corrigidos são project-scope
+(`.windsurf/hooks.json`, `.amazonq/cli-agents/q_cli_default.json`) e `check-harness-hooks-parity.sh`
+só compara global-scope (`~/.<tool>/...`); nenhum dos 3 CLIs tem target de harness
+(`windsurf-credential-guard` etc.) para esses dois — confirmado em `buildHarnessTargetIDs()`
+(`internal/generators/update.go`) e nos espelhos Node/Python. Registrado em
+`vault/notes/windsurf-amazonq-sem-harness-scope-nunca-cobriveis-por-check-harness-hooks-parity-2026-08-20.md`.
+A frase falsa foi removida do doc; a menção a `check-harness-hooks-parity.sh` não voltou.
+
+Cenário 78 novo em `check-gates-falsify.sh` (corrompe `tools: ['*']`→`['read']` em
+`injectAmazonQHooks`/Node, prova drift em `$.tools[0]`) — 146→147 cenários. `docs/cli-parity.md`:
+anotação da seção "Git branch guard por runtime" reescrita para nomear os dois escopos com
+precisão; "Caminhos confirmados" saiu de `gap` para `gate=scripts/check-agent-hooks-parity.sh
+partial=...` (identidade semântica, não byte-idêntica).
+
+**Saídas:** `go build`/`go vet` sem erro · `check-agent-hooks-parity.sh` 16/16 OK (incl.
+amazonq) · `check-harness-hooks-parity.sh` inalterado, 14/14 OK · `check-parity-contract-
+coverage.sh` exit 0 · `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 bash check-gates-falsify.sh` — 147
+cenários passed · `make quality` exit 0, zero FAIL (2804 linhas) · `./bin/trackfw validate` exit 0
+(17 warnings pré-existentes) · `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make parity` REAL_EXIT=0.
+
+ML-1B marcado ✅ no roadmap. **Fim.**
+
+## 2026-08-20 — Apolo (apolo-tf) — ML-2A: `branch_has_wip_roadmap` aceitando `done/` exercitado cross-CLI
+
+**Início:** ML-2A, `docs/roadmaps/wip/ROADMAP-2026-08-20-gates-para-os-tres-contratos-de-maior-risco.md`.
+
+Gate posto em `scripts/check-validate-parity.sh` (não em `check-branch-new-parity.sh`): a REQ cita
+a própria seção do `cli-parity.md` provando que `check-validate-parity.sh` tinha zero ocorrências da
+regra, e `TRACKFW_BRANCH` (suportado identicamente pelos 3 CLIs — confirmado nos 3 fontes) permite
+exercitar `validate` sem `git checkout` real. Três casos novos, via `TRACKFW_BRANCH`: roadmap em
+`done/` com slug igual → aceito (zero violação, o caso central nunca provado); nenhum roadmap em
+lugar nenhum → bloqueia (não-regressão); roadmap em `done/` com slug **diferente** → bloqueia
+(discriminante — sem ele um gate que aceitasse qualquer roadmap em `done/` passaria por acidente).
+
+**Achado ao montar o fixture (registrado, não corrigido):** Python's `validate --json` tagueia esta
+UMA regra com `"rule": null, "file": null` — `validate_branch_has_wip_roadmap` retorna `list[str]`
+em vez do formato dict que `_enrich_items` (pypi/trackfw/validator.py) sabe enriquecer; Go/Node
+tagueiam `"rule": "branch_has_wip_roadmap"` corretamente. **Importante: isso é só a tag estruturada
+do `--json`, não a semântica de `done/` — o texto da mensagem e o exit code são byte-idênticos nos
+3, então a aceitação de `done/` em si CONCORDA nos 3 CLIs.** O gate filtra por substring de mensagem
+(`"wip/ nor done/"`, confirmado único nos 3 validators via grep) em vez de por `rule`, e pina a
+divergência de tag explicitamente (assert que Python é `[None]`, Go/Node são
+`["branch_has_wip_roadmap"]`) para que uma mudança futura em qualquer lado reprove aqui. Detalhado em
+`vault/notes/validate-branch-has-wip-roadmap-done-python-rule-null-2026-08-20.md`.
+
+**Regressão own própria pega e corrigida antes de fechar:** `check-validate-parity.sh` ganhou
+suporte a `GO_BIN` (antes sempre auto-compilava, ignorando a env var) para viabilizar o P4 sem cópia
+de script. Isso quebrou o Cenário 4 pré-existente (`validate-parity/rule-removed`): `make parity`
+exporta `GO_BIN=bin/trackfw` (relativo) só para a linha do `check-gates-falsify.sh` no Makefile, e
+essa variável vaza para o Cenário 4 (que nunca precisou dela antes), resolvendo contra o `ROOT_DIR`
+errado (o diretório da cópia isolada, não o repo real) — `exit 127`, binário não encontrado. Corrigido
+adicionando `env GO_BIN="$ROOT_DIR/bin/trackfw"` explícito ao Cenário 4, mesma convenção já usada
+pelos Cenários 42/78 ao copiar outros scripts GO_BIN-aware.
+
+Cenário 79 novo em `check-gates-falsify.sh` (baseline + detecção): corrompe
+`BranchSlugMatchesRoadmap` (`internal/validator/validator.go`) — `dirs := append(append([]string{},
+wipDirs...), doneDirs...)` vira `append([]string{}, wipDirs...)`, dropando `doneDirs` — binário Go
+isolado, `check-validate-parity.sh` real apontado para ele via `GO_BIN`; Node.js/Python seguem reais.
+Braço de baseline confirma o binário real passa limpo antes do braço de detecção provar que o
+corrompido reprova com o diagnóstico exato. 147→148 cenários.
+
+`docs/cli-parity.md`: anotação da seção "Regra `branch_has_wip_roadmap`" saiu de `gap` para
+`gate=scripts/check-validate-parity.sh partial=...`, nomeando as 3 linhas cobertas, a redundância
+declarada com `check-branch-new-parity.sh` (mesma `BranchSlugMatchesRoadmap`, sem cenário próprio de
+`done/`) e o achado do `rule: null` do Python.
+
+**Saídas literais, todas medidas na árvore final (após o fix do Cenário 4 e o braço de baseline do
+Cenário 79):**
+- `go build ./...` — sem erro
+- `bash scripts/check-parity-contract-coverage.sh` — exit 0, zero anotação inválida/seção sem
+  anotação
+- `GO_BIN=bin/trackfw bash scripts/check-validate-parity.sh` — todos os blocos OK, incl.
+  `branch_has_wip_roadmap done/ acceptance parity checks passed (match/no-roadmap/diff-slug
+  discriminant, byte-identical across 3 CLIs)`
+- `make quality` — re-rodado depois do fix e do braço de baseline, `EXIT=0`, zero `FAIL` no log
+  (2914 linhas), incl. a linha positiva acima e `OK [falsify/validate-parity/branch-has-wip-
+  roadmap-done-acceptance-baseline]` + `OK [.../not-detected]`
+- `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make parity` — confirmado, zero `FAIL`, "Falsification
+  checks passed (all 148 scenarios...)", a linha positiva do bloco novo aparece na execução direta
+  do Makefile (linha 20, antes de qualquer cenário de `check-gates-falsify.sh`) — a prova positiva
+  do CI não depende só do braço de baseline do Cenário 79
+- `./bin/trackfw validate` — exit 0, 17 warnings pré-existentes, mesma contagem do ML-1B, nenhum
+  novo — a nota nova do vault não ficou órfã
+
+**Handoff — arquivos para o `trackfw_architect` revisar e commitar (nenhum commit feito por mim):**
+modificados: `docs/agents-working-context.md`, `docs/cli-parity.md`,
+`docs/roadmaps/wip/ROADMAP-2026-08-20-gates-para-os-tres-contratos-de-maior-risco.md`,
+`scripts/check-gates-falsify.sh`, `scripts/check-validate-parity.sh`, `vault/notes/index.md`.
+**Arquivo NOVO, não rastreado — precisa ser adicionado explicitamente ao stage:**
+`vault/notes/validate-branch-has-wip-roadmap-done-python-rule-null-2026-08-20.md`.
+
+**Achado que mais vale a atenção do auditor:** ao adicionar suporte a `GO_BIN` em
+`check-validate-parity.sh` (necessário para o Cenário 79), o Cenário 4 **pré-existente** (não
+pedido por este ML) quebrou — `make parity` exporta `GO_BIN=bin/trackfw` (relativo) só para a
+linha do `check-gates-falsify.sh` no Makefile, e essa variável vazava para dentro do Cenário 4
+(cópia isolada em `$T4`), resolvendo contra o `ROOT_DIR` errado. Diagnosticado e corrigido com `env
+GO_BIN="$ROOT_DIR/bin/trackfw"` explícito no próprio Cenário 4, mesma convenção já usada pelos
+Cenários 42/78. Vale conferir esse diff isoladamente — é uma mudança num cenário que este ML não
+pediu, motivada por uma regressão que o próprio trabalho causou.
+
+ML-2A pronto para auditoria do `trackfw_architect`. **Fim.**
+
+## Sessão 2026-08-20 — Apolo (INÍCIO: ML-3A — credential_guard_hook_resolvable provado nos 3 CLIs)
+
+Branch `fix/serve-amarra-em-loopback-por-padrao-com-opt-in-explicito-para-exposicao`... aguarda,
+branch correta é `feat/gates-para-os-tres-contratos-de-maior-risco`. Roadmap:
+`docs/roadmaps/wip/ROADMAP-2026-08-20-gates-para-os-tres-contratos-de-maior-risco.md` em `wip/`.
+
+Executando ML-3A: estender o Cenário 47 (Go-only) para prova cross-CLI nos 3 CLIs via bloco novo
+em `scripts/check-validate-parity.sh` + Cenário 80 (P4) em `scripts/check-gates-falsify.sh` +
+anotação em `docs/cli-parity.md`. 4 casos: claude-absent (detecção), claude-present (baseline),
+cursor-absent (caminho relativo alcançável, discriminante), cursor-present (falso-positivo).
+
+Nenhum commit/push (autoridade exclusiva do `trackfw_architect`).
+
+## Sessão 2026-08-20 — Apolo (FIM: ML-3A concluído — credential_guard_hook_resolvable provado nos 3 CLIs)
+
+**Entregue:**
+- Bloco novo em `scripts/check-validate-parity.sh` (após linha 566): 4 casos
+  (claude-absent/claude-present/cursor-absent/cursor-present), filtragem por
+  `rule == "credential_guard_hook_resolvable"`, comparação byte-a-byte cross-CLI.
+- Cenário 80 (P4) em `scripts/check-gates-falsify.sh`: baseline + detecção via
+  sabotagem de `credentialGuardScriptMarker` em cópia isolada do Go source.
+- Anotação `docs/cli-parity.md` atualizada de `gap reason=` para
+  `gate=scripts/check-validate-parity.sh partial=...` nas duas ocorrências.
+- Roadmap ML-3A marcado ✅ Concluído.
+
+**Evidências:**
+- `make quality` exit 0, sem FAIL lines.
+- `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make parity` exit 0, 149 cenários.
+- `OK   [falsify/validate-parity/credential-guard-hook-resolvable-cross-cli-baseline]`
+- `OK   [falsify/validate-parity/credential-guard-hook-resolvable-not-detected]`
+- `./bin/trackfw validate` exit 0, 17 warnings pré-existentes.
+- Nenhuma divergência de `rule` encontrada entre os 3 CLIs para esta regra
+  (Python usa `_enrich_items` com dicts, não strings como `branch_has_wip_roadmap`).
+
+**Achados:**
+- Nenhum novo divergência de parity encontrada — as 3 implementações concordam
+  byte-a-byte nas mensagens de detecção para Claude e Cursor.
+- P4 sabotagem: `credentialGuardScriptMarker = "trackfw-credential-guard.sh"` →
+  `"trackfw-credential-guard-DISABLED.sh"` faz Go silenciar a regra enquanto
+  Node.js/Python ainda disparam → gate detecta na posição exata `claude-absent/go`.
+
+**Handoff — arquivos para o `trackfw_architect` revisar e commitar:**
+modificados: `docs/agents-working-context.md`, `docs/cli-parity.md`,
+`docs/roadmaps/wip/ROADMAP-2026-08-20-gates-para-os-tres-contratos-de-maior-risco.md`,
+`scripts/check-gates-falsify.sh`, `scripts/check-validate-parity.sh`.
+Nenhum arquivo novo não rastreado.
+
+**ML-3A pronto para auditoria do `trackfw_architect`. Fim.**
+
+## Sessão 2026-08-20 — Hades (INÍCIO: ML-4A — barreira de segurança para os 3 contratos de maior risco)
+
+Branch `feat/gates-para-os-tres-contratos-de-maior-risco`. Roadmap
+`docs/roadmaps/wip/ROADMAP-2026-08-20-gates-para-os-tres-contratos-de-maior-risco.md` em `wip/`.
+Retomando sessão anterior que concluiu a leitura de todos os artefatos (ML-1A-bis, ML-1B, ML-2A,
+ML-3A). Executando medições obrigatórias antes de produzir o parecer:
+A1 (script presente mas não executável — 3 CLIs), A2 (entrada claude sem "type":"command"),
+B1 (deniedCommands ausente em amazonq fixture isolado), C1 (slug parcialmente coincidente em done/).
+Escopo: exatamente `docs/seguranca/2026-08-20-revisao-dos-gates-dos-tres-contratos.md` +
+esta entrada. Nenhum commit/push (autoridade exclusiva do `trackfw_architect`).
+
+## Sessão 2026-08-20 — Hades (FIM: ML-4A concluído — APROVADO COM RESSALVAS)
+
+Entregue `docs/seguranca/2026-08-20-revisao-dos-gates-dos-tres-contratos.md`.
+
+**Veredito:** APROVADO COM RESSALVAS. Quatro debts residuais nomeados, nenhum blocking.
+
+**Medições executadas (fixtures isolados no scratchpad, nenhum produto modificado):**
+- A1-exact: non-executable script (chmod 644) → VIOLATION nos 3 CLIs ("script is not executable") — controle ativo, path não coberto pelo gate ML-3A
+- A2-notype: hook sem "type":"command", script ausente → VIOLATION nos 3 CLIs ("missing type") — controle ativo, path não coberto pelo gate ML-3A
+- B1-exact: discover --init com HOME isolado, 8 marcadores de CLI → arquivos Amazon Q idênticos nos 3 CLIs, `deniedCommands` presente e correto; mas vacuity guard não cobre deniedCommands
+- C1: feat/minha-feature + done/minha-feature-v2 → ACEITA (substring por design, documentado); C1b: slug mais longo → RECUSA; 3 CLIs concordam
+
+**Debts residuais para REQs separadas:**
+- A-1 (Média): Gate ML-3A não exercita caminhos "não-executável" e "missing type"
+- B-1 (Baixa): Vacuity guard amazonq não cobre deniedCommands — drop correlacionado cross-CLI não detectado
+- B-3 (Baixa): Documentação agrupa Windsurf/Amazon Q sem distinguir impossibilidade vs. pendência
+- D-2 (Baixa): Schema Amazon Q CLI custom agent não verificado formalmente (risco funcional, não de segurança)
+
+**Arquivos escritos (somente):**
+- `docs/seguranca/2026-08-20-revisao-dos-gates-dos-tres-contratos.md`
+- `docs/agents-working-context.md` (esta entrada)
+
+Nenhum commit/push feito. Devolvo ao `trackfw_architect` para ML-4B (commit + handoff).
+
+## Sessão 2026-08-21 — Apolo (INÍCIO: ML-4B — A-1, B-1, B-3)
+
+Branch `fix/serve-amarra-em-loopback-por-padrao-com-opt-in-explicito-para-exposicao`. Roadmap:
+`docs/roadmaps/wip/ROADMAP-2026-08-20-gates-para-os-tres-contratos-de-maior-risco.md`.
+
+Três débitos da barreira (parecer `docs/seguranca/2026-08-20-revisao-dos-gates-dos-tres-contratos.md`):
+- **A-1**: dois fixtures novos em `check-validate-parity.sh` (cg-claude-noexec + cg-claude-notype)
+- **B-1**: vacuity guard para `deniedCommands` em `check-agent-hooks-parity.sh` + Cenário 83
+- **B-3**: doc `docs/cli-parity.md` — distinguir impossibilidade estrutural (Windsurf) de pendência (Amazon Q)
+
+Escopo: `scripts/check-validate-parity.sh`, `scripts/check-agent-hooks-parity.sh`,
+`scripts/check-gates-falsify.sh`, `docs/cli-parity.md`, `docs/agents-working-context.md`.
+Nenhum commit/push (autoridade exclusiva do `trackfw_architect`).
+
+## Sessão 2026-08-21 — Apolo (FIM: ML-4B concluído — A-1, B-1, B-3 implementados)
+
+Todos os três débitos da barreira fechados. Evidências de validação:
+
+**`TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make parity`** — exit 0, all 152 scenarios OK.
+Cenários novos confirmados:
+- OK `[falsify/validate-parity/credential-guard-noexec-baseline]` (A-1 Cenário 81 baseline)
+- OK `[falsify/validate-parity/credential-guard-noexec-not-detected]` (A-1 Cenário 81 detecção)
+- OK `[falsify/validate-parity/credential-guard-notype-baseline]` (A-1 Cenário 82 baseline)
+- OK `[falsify/validate-parity/credential-guard-notype-not-detected]` (A-1 Cenário 82 detecção)
+- OK `[falsify/agent-hooks-parity/amazonq-denied-commands-vacuity-baseline]` (B-1 Cenário 83 baseline)
+- OK `[falsify/agent-hooks-parity/amazonq/denied-commands-not-detected]` (B-1 Cenário 83 detecção)
+
+**`bash scripts/check-parity-contract-coverage.sh`** — exit 0, nenhuma seção sem anotação.
+**`make lint`** — exit 0 (`go vet ./...`).
+**`make test`** — exit 0, todos os pacotes Go verdes.
+**`./bin/trackfw validate`** — exit 0 (17 warnings de ADR/REQ linkage, sem erros).
+
+**Arquivos modificados:**
+- `scripts/check-validate-parity.sh` — fixtures cg-claude-noexec + cg-claude-notype (A-1)
+- `scripts/check-agent-hooks-parity.sh` — P3 deniedCommands vacuity guard (B-1)
+- `scripts/check-gates-falsify.sh` — Cenários 81, 82, 83; echo atualizado para 152 (A-1 + B-1)
+- `docs/cli-parity.md` — anotação linha ~4258 distingue Windsurf (impossibilidade estrutural) de Amazon Q (pendência de implementação) (B-3)
+
+Nenhum commit/push feito. Devolvo ao `trackfw_architect` para auditoria e commit do ML-4B.

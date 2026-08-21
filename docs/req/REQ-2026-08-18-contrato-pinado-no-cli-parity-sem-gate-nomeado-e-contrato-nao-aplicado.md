@@ -1,9 +1,9 @@
 ---
-status: Open
+status: Done
 date: 2026-08-18
 author: "Zeus (Arquiteto)"
-adr: ""
-roadmap: ""
+adr: "docs/adr/ADR-2026-08-20-anotacao-de-cobertura-de-contrato-no-cli-parity.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-20-contrato-pinado-no-cli-parity-sem-gate-nomeado.md"
 ---
 
 # REQ: contrato pinado no `cli-parity.md` sem gate nomeado é contrato não-aplicado

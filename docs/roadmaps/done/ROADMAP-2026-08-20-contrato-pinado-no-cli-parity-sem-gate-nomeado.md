@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-08-20
 req: "docs/req/REQ-2026-08-18-contrato-pinado-no-cli-parity-sem-gate-nomeado-e-contrato-nao-aplicado.md"
 adr: "docs/adr/ADR-2026-08-20-anotacao-de-cobertura-de-contrato-no-cli-parity.md"
@@ -8,7 +8,7 @@ squad: "apolo-tf, hefesto-tf"
 
 # Roadmap: contrato pinado no `cli-parity.md` sem gate nomeado
 
-> Created: 2026-08-20 | Status: wip
+> Created: 2026-08-20 | Status: done
 
 ## Context
 

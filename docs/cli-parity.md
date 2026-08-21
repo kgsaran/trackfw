@@ -2957,7 +2957,7 @@ strings de aviso **byte-a-byte** entre os três runtimes.
 
 ## Regra `branch_has_wip_roadmap` — comportamento unificado nos 3 runtimes
 
-<!-- trackfw-contract: gap reason=nenhum gate cross-CLI posiciona um roadmap correspondente em done/ (linhas 2 e 4 da tabela — nem o caso de match nem o de slug divergente); check-branch-new-parity.sh só cobre roadmap em wip/ (cenário b) e ausência total de roadmap (cenário a/f), check-commit-parity.sh e check-ship-parity.sh idem, e check-validate-parity.sh não tem nenhuma ocorrência de "branch_has_wip_roadmap"/"wip/ nor done/" — a mudança central desta seção (aceitar done/, introduzida pela REQ-2026-07-26) nunca é exercitada cross-CLI -->
+<!-- trackfw-contract: gate=scripts/check-validate-parity.sh partial=cobre as 3 linhas centrais da tabela via TRACKFW_BRANCH (roadmap em done/ com slug igual aceito, nenhum roadmap em wip/ nem done/ bloqueia, roadmap em done/ com slug diferente bloqueia); check-branch-new-parity.sh continua cobrindo só wip/ (cenário b) e ausência total (cenário a/f), sem cenário próprio de done/ — redundante com o bloco de check-validate-parity.sh, que exercita a mesma BranchSlugMatchesRoadmap; achado registrado (não corrigido, ver vault/notes/validate-branch-has-wip-roadmap-done-python-rule-null-2026-08-20.md): pypi/trackfw/validator.py's validate_branch_has_wip_roadmap retorna strings simples em vez do formato dict de _enrich_items, então o "rule"/"file" desta regra sai null em validate --json no Python (Go/Node.js tagueiam corretamente) — texto da mensagem é byte-idêntico nos 3, o gate compara por esse texto e pina a divergência de tag explicitamente -->
 
 
 A regra verifica que toda branch `feat/`, `fix/` ou `refactor/` possui um roadmap cujo nome
@@ -3700,7 +3700,7 @@ REQ nova a partir do parecer de Hades.
 
 ## Controle positivo do credential-guard: o que a regra `credential_guard_hook_resolvable` cobre, e o que não cobre (ROADMAP-2026-08-12-mitigacao-do-fail-open, Wave 1/2/3/3-bis + Barreira B1)
 
-<!-- trackfw-contract: gap reason=nenhum gate cross-CLI compara `trackfw validate` nos 3 runtimes para esta regra; verificado lendo scripts/check-gates-falsify.sh — o Cenário 47 (prova de não-vacuidade) exercita explicitamente só o CLI Go ("Por que só o CLI Go", comentário do próprio cenário) e a paridade de comportamento entre os 3 stacks depende só de suítes de teste unitário internas por runtime -->
+<!-- trackfw-contract: gate=scripts/check-validate-parity.sh partial=bloco ML-3A (ROADMAP-2026-08-20-gates-para-os-tres-contratos-de-maior-risco) cobre 4 casos (claude-absent/claude-present/cursor-absent/cursor-present) e prova que os 3 CLIs concordam byte-a-byte; não exerce todas as 6 entradas de credentialGuardHookFiles (Codex/Gemini/GitHub/Kiro dependem de paridade de wiring coberta pelo Cenário 44 e de cobertura unitária interna por runtime); Cenário 80 prova não-vacuidade do bloco cross-CLI -->
 
 > Fontes: `internal/validator/validator_credential_guard.go` (implementação, os 3 CLIs têm
 > equivalente em `npm/src/` e `pypi/trackfw/`), `docs/adr/ADR-2026-08-12-defesa-do-credential-guard-vive-no-escopo-global-controle-que-mora-onde-o-agente-escreve-nao-e-controle.md`
@@ -3715,7 +3715,7 @@ coisa que sobrou no escopo de projeto**. O risco real de documentação é algu�
 
 ### 1. O que a regra faz
 
-<!-- trackfw-contract: gap reason=mesma lacuna da seção-mãe — a mecânica específica descrita aqui (varredura por valor via collectCredentialGuardCommands, resolução das 3 formas de prefixo, checagem os.Stat + bit executável 0111, mensagem de violação) só tem prova de não-vacuidade no CLI Go (Cenário 47); Node.js e Python têm só cobertura de teste unitário interna ao próprio runtime, sem gate cross-CLI -->
+<!-- trackfw-contract: gate=scripts/check-validate-parity.sh partial=bloco ML-3A cobre resolução de caminho para Claude ($CLAUDE_PROJECT_DIR/) e Cursor (relativo puro); as outras 4 formas (Codex/Gemini/GitHub/Kiro) têm paridade de wiring coberta pelo Cenário 44 mas não gate cross-CLI de existência/executabilidade -->
 
 
 `credential_guard_hook_resolvable` (default `error`, configurável por `rules:` no `trackfw.yaml`,
@@ -4255,7 +4255,7 @@ o processo falhar. Detalhe em
 
 ## Git branch guard por runtime (ML-1A, ROADMAP-2026-08-14-bloqueio-tecnico-de-comandos-git-brutos-por-subagente-via-deny-hooks-nos-7-runtimes-suportados.md)
 
-<!-- trackfw-contract: gate=scripts/check-harness-hooks-parity.sh,scripts/check-agent-hooks-parity.sh partial=GUARDS="credential-guard git-branch-guard" prova paridade estrutural do wiring nos 6 native-wave CLIs (claude/codex/gemini/cursor/copilot/kiro) — Windsurf e Amazon Q, citados na tabela como "deny global" wired, NÃO têm gate cross-CLI: grep confirma CLIS="claude codex gemini cursor copilot kiro" em ambos os scripts, sem "windsurf"/"amazon" em nenhum dos dois -->
+<!-- trackfw-contract: gate=scripts/check-harness-hooks-parity.sh,scripts/check-agent-hooks-parity.sh partial=GUARDS="credential-guard git-branch-guard" prova paridade estrutural do wiring project-scope (discover --init) nos 8 CLIs nativos, incluindo Windsurf e Amazon Q desde ROADMAP-2026-08-20/ML-1B (claude/codex/gemini/cursor/copilot/kiro/windsurf/amazonq via check-agent-hooks-parity.sh), e do wiring global/harness-scope (update harness) nos 6 CLIs que têm target de harness (claude/codex/gemini/cursor/copilot/kiro via check-harness-hooks-parity.sh) — Windsurf não tem par de targets de harness por impossibilidade estrutural: não tem mecanismo de hook global nativo (decisão registrada no próprio comentário de harnessCatalogTargetOrder, internal/generators/update.go) e nunca terá — sem artefato global para gatear. Amazon Q não tem par de targets de harness por pendência de implementação: caminhos ~/.aws/amazonq/ existem no catálogo (catalog.json linha 44), mas os harness targets nunca foram implementados nos 3 CLIs — a ausência não é permanente (grep confirma zero ocorrências de "windsurf"/"amazonq" pareadas com credential-guard/git-branch-guard em HarnessTargetIDs/buildHarnessTargetIDs nos 3 CLIs) -->
 
 > REQ: `docs/req/REQ-2026-08-14-bloqueio-tecnico-de-comandos-git-brutos-por-subagente-via-deny-hooks-nos-7-runtimes-suportados.md`
 
@@ -4328,14 +4328,18 @@ Mensagem de bloqueio por subcomando (todas referenciam CLAUDE.md §1):
 
 ### Caminhos confirmados — Windsurf e Amazon Q (apolo-tf, 2026-08-14, correção pós-auditoria do ML-3A)
 
-<!-- trackfw-contract: gap reason=a seção afirma "byte-identidade confirmada via check-agent-hooks-parity.sh e check-harness-hooks-parity.sh", mas grep confirma ZERO ocorrências de "windsurf"/"amazon"/"q_cli" em nenhum dos dois scripts — CLIS="claude codex gemini cursor copilot kiro" em ambos; os caminhos corrigidos (.windsurf/hooks.json, .amazonq/cli-agents/q_cli_default.json) não têm nenhum gate cross-CLI que os exercite -->
+<!-- trackfw-contract: gate=scripts/check-agent-hooks-parity.sh partial=prova paridade estrutural (identidade semântica via diff JSON recursivo, não byte-idêntica — ver seção "Campos mínimos do custom agent Amazon Q" logo abaixo) dos 2 arquivos de project-scope entre Go/Node.js/Python desde ROADMAP-2026-08-20/ML-1B; check-harness-hooks-parity.sh não se aplica a estes caminhos (arquivos de project-scope, não de ~/.<tool> global-scope) e nunca poderia comparar algo que não existe nesse escopo para nenhum dos dois CLIs -->
 
 A primeira implementação do wiring (ML-3A) escreveu caminhos/formatos **inventados** para Windsurf e
 Amazon Q, sinalizados no próprio comentário de código como não confirmados contra documentação
 oficial. Uma verificação posterior confirmou que ambos estavam estruturalmente errados — corrigido
 nos 3 CLIs (Go `internal/generators/agentfiles.go`, Node `npm/src/generators/hooks.js`, Python
-`pypi/trackfw/generators/hooks.py`), com byte-identidade confirmada via `check-agent-hooks-parity.sh`
-e `check-harness-hooks-parity.sh`.
+`pypi/trackfw/generators/hooks.py`), com paridade estrutural confirmada via
+`check-agent-hooks-parity.sh` (ROADMAP-2026-08-20/ML-1B — a menção anterior a
+`check-harness-hooks-parity.sh` nesta frase era falsa e nunca poderia ter sido verdadeira: os dois
+caminhos aqui são de project-scope, e check-harness-hooks-parity.sh só compara arquivos de
+global-scope em `~/.<tool>/...`, que não existem para Windsurf/Amazon Q — ver a nota na seção "Git
+branch guard por runtime" acima).
 
 | Runtime | Caminho errado (ML-3A original) | Caminho correto (confirmado) |
 |---|---|---|
@@ -4352,6 +4356,35 @@ O contrato de payload do `gitBranchGuardScript` (seção acima) também foi ajus
 `tool_info.command_line` (formato real do payload `pre_run_command` do Windsurf) foi adicionado à
 cadeia de tentativas de extração do comando via stdin JSON, ao lado dos campos genéricos já
 existentes (`.tool_input.command`, `.command`, `.hook_input.command`).
+
+### Campos mínimos do custom agent Amazon Q — Go como canônico (2026-08-20, ML-1A-bis)
+
+<!-- trackfw-contract: gap reason=a decisão de alinhar Node/Python ao conjunto mínimo do Go é por assimetria de risco, não por verificação contra a doc viva da AWS ou um `q chat --agent` real; nenhum gate cross-CLI confirma o schema real do Amazon Q, só a byte-identidade entre os 3 CLIs (ML-1B) -->
+
+Investigação do ML-1A (roadmap `ROADMAP-2026-08-20-gates-para-os-tres-contratos-de-maior-risco.md`)
+mediu uma 6ª divergência real entre os 3 CLIs: Node e Python escreviam, na criação do
+`.amazonq/cli-agents/q_cli_default.json`, 6 campos que o Go **deliberadamente omite** (doc comment
+de `InjectAmazonQHooks`, `internal/generators/agentfiles.go`) — `prompt`, `mcpServers`,
+`toolAliases`, `allowedTools`, `resources`, `useLegacyMcpJson`.
+
+**Decisão: o Go é o canônico.** Node (`npm/src/generators/hooks.js`) e Python
+(`pypi/trackfw/generators/hooks.py`) foram alinhados a ele — o conjunto mínimo escrito na criação
+passou a ser só `name`, `description` e `tools`. O motivo é assimetria de risco, citada no próprio
+comentário do Go: um campo extra que o schema real não espera arrisca falhar a validação do agente;
+um campo opcional ausente normalmente não. Entre as duas, escrever de menos é o lado seguro.
+
+**Limite explícito, para não virar "confirmado" por engano:** essa escolha **não** foi verificada
+contra a documentação viva da AWS (`command-line-custom-agents-configuration.html`) nem contra um
+`q chat --agent` real — é a mesma ressalva que o comentário do Go já carregava ("verify this
+defaults set against the live doc ... before treating it as final") e que segue sem ser feita. O
+que ML-1A-bis resolve é a **divergência entre os 3 CLIs**, não a **correção contra o schema real do
+Amazon Q**.
+
+**Contrato de merge preservado:** o alinhamento é só sobre o que uma instalação **nova** cria. Um
+arquivo `q_cli_default.json` pré-existente com qualquer um dos 6 campos (ex.: `mcpServers`
+configurado manualmente pelo usuário) não é tocado — os 3 injectors usam
+merge-só-se-ausente (`setdefault`/`hasOwnProperty`/`_, exists := root[k]`), então nenhum campo já
+presente é removido por este lote.
 
 ### Fix de robustez do `match_subcommand` (2026-08-14, ML-4A, achado por teste manual E2E)
 

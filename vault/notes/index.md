@@ -4,6 +4,8 @@
 
 ## Índice
 
+- [validate-branch-has-wip-roadmap-done-python-rule-null-2026-08-20](validate-branch-has-wip-roadmap-done-python-rule-null-2026-08-20.md)
+- [windsurf-amazonq-sem-harness-scope-nunca-cobriveis-por-check-harness-hooks-parity-2026-08-20](windsurf-amazonq-sem-harness-scope-nunca-cobriveis-por-check-harness-hooks-parity-2026-08-20.md)
 - [ci-inherited-trackfw-disable-external-commands-vacuous-parity-gate-2026-08-19](ci-inherited-trackfw-disable-external-commands-vacuous-parity-gate-2026-08-19.md)
 - [bash-grep-F-embedded-newline-vacuous-match-2026-08-16](bash-grep-F-embedded-newline-vacuous-match-2026-08-16.md)
 - [commander-missing-subcommand-help-error-exit-1-2026-08-16](commander-missing-subcommand-help-error-exit-1-2026-08-16.md)
