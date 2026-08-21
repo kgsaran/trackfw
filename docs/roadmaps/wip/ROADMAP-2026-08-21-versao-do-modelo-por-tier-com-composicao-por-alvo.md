@@ -247,6 +247,21 @@ Go não passava. Ele alinhou o Go ao espelho. Divergência silenciosa de comport
 tipo que só aparece quando alguém compara linha a linha.
 
 
+### ML-2C — Fechar a classe do nil map (corretivo, **antes do merge**)
+**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Bloqueia o ML-3A.**
+
+**Decisão de sequenciamento, de KG:** resolver antes de seguir. E com uma correção minha — o panic
+**ainda não está na `main`**: o campo `AgentModels` foi introduzido pelo ML-1B **nesta branch**.
+Fixar aqui evita publicar um panic conhecido, então isto vira ML corretivo desta REQ em vez de
+trabalho separado.
+
+A `REQ-2026-08-21-nil-map-em-construcao-de-projectconfig-causa-panic-...` fica como registro da
+classe e do processo que falhou; a correção acontece aqui.
+
+**Critérios de aceite:** ver a REQ. O essencial: **fechar a classe, não a instância** — construtor
+único ou init defensivo no `parse`, com a decisão registrada.
+
+
 ## Wave 3 — Gate
 
 ### ML-3A — Gate de paridade + P4
