@@ -79,14 +79,14 @@ detecção. Ao fechar, a anotação da seção correspondente passa de `gap`/`pa
 
 ## Acceptance Criteria
 
-- [ ] AC1 — Windsurf e Amazon Q cobertos pelos gates de wiring, respeitando os formatos próprios.
-- [ ] AC2 — `branch_has_wip_roadmap` com roadmap em `done/` exercitado cross-CLI.
-- [ ] AC3 — `credential_guard_hook_resolvable` com prova cross-CLI, não só Go.
-- [ ] AC4 — Cenário P4 para cada um, com baseline e detecção.
-- [ ] AC5 — As anotações das seções correspondentes passam para `gate=`, e o texto que hoje **afirma
+- [x] AC1 — Windsurf e Amazon Q cobertos pelos gates de wiring, respeitando os formatos próprios.
+- [x] AC2 — `branch_has_wip_roadmap` com roadmap em `done/` exercitado cross-CLI.
+- [x] AC3 — `credential_guard_hook_resolvable` com prova cross-CLI, não só Go.
+- [x] AC4 — Cenário P4 para cada um, com baseline e detecção.
+- [x] AC5 — As anotações das seções correspondentes passam para `gate=`, e o texto que hoje **afirma
       falsamente** a cobertura de Windsurf/Amazon Q é corrigido ou passa a ser verdade.
-- [ ] AC6 — Divergência real encontrada é **registrada como achado**, não corrigida em silêncio.
-- [ ] AC7 — `make quality` verde **e CI verde**.
+- [x] AC6 — Divergência real encontrada é **registrada como achado**, não corrigida em silêncio.
+- [ ] AC7 — `make quality` verde **e CI verde**. (local verde; **aguardando CI**)
 
 ## Riscos para quem executar
 

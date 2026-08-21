@@ -594,7 +594,7 @@ echo "Validate JSON parity checks passed (branch_has_wip_roadmap accepting done/
 # ---------------------------------------------------------------------------
 CG_TMP_CLEAN=$(printf '%s' "$TMP_DIR" | sed 's#//*#/#g')
 
-for cg_fixture in cg-claude-absent cg-claude-present cg-cursor-absent cg-cursor-present; do
+for cg_fixture in cg-claude-absent cg-claude-present cg-cursor-absent cg-cursor-present cg-claude-noexec cg-claude-notype; do
   mkdir -p "$CG_TMP_CLEAN/$cg_fixture/docs/roadmaps"/{wip,done}
   cat >"$CG_TMP_CLEAN/$cg_fixture/trackfw.yaml" <<'EOF'
 roadmap_dir: docs/roadmaps
@@ -603,12 +603,22 @@ done
 
 # Claude settings.json — formato com "type":"command" (requiresCommandType=true).
 # Mesma estrutura que s47_write_claude_guard_hook no Cenário 47.
-for cg_fixture in cg-claude-absent cg-claude-present; do
+# cg-claude-noexec compartilha este formato (script presente mas não-executável).
+for cg_fixture in cg-claude-absent cg-claude-present cg-claude-noexec; do
   mkdir -p "$CG_TMP_CLEAN/$cg_fixture/.claude"
   cat >"$CG_TMP_CLEAN/$cg_fixture/.claude/settings.json" <<'EOF'
 {"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh"}]}]}}
 EOF
 done
+
+# cg-claude-notype: sem "type":"command" — o hook é sintaticamente válido mas o
+# Claude Code nunca o executa (requiresCommandType=true para Claude). O validador
+# deve emitir violation "missing type:command" ANTES de verificar existência do
+# script (ML-4B, ROADMAP-2026-08-17 ML-4B). Script ausente — não relevante.
+mkdir -p "$CG_TMP_CLEAN/cg-claude-notype/.claude"
+cat >"$CG_TMP_CLEAN/cg-claude-notype/.claude/settings.json" <<'EOF'
+{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"command":"$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh"}]}]}}
+EOF
 
 # Cursor hooks.json — formato sem "type" (requiresCommandType=false), caminho relativo puro.
 for cg_fixture in cg-cursor-absent cg-cursor-present; do
@@ -625,6 +635,14 @@ for cg_fixture in cg-claude-present cg-cursor-present; do
   chmod +x "$CG_TMP_CLEAN/$cg_fixture/scripts/trackfw-credential-guard.sh"
 done
 
+# cg-claude-noexec: script presente mas não-executável (chmod 644).
+# O chmod 644 é explícito e não depende de umask — a intenção deve ser legível no diff.
+mkdir -p "$CG_TMP_CLEAN/cg-claude-noexec/scripts"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$CG_TMP_CLEAN/cg-claude-noexec/scripts/trackfw-credential-guard.sh"
+chmod 644 "$CG_TMP_CLEAN/cg-claude-noexec/scripts/trackfw-credential-guard.sh"
+# cg-claude-notype: sem script — o validador deve disparar "missing type:command"
+# antes de checar existência/executabilidade do script.
+
 run_cg() {
   local output=$1 dir=$2
   shift 2
@@ -634,7 +652,7 @@ run_cg() {
   set -e
 }
 
-for cg_fixture in cg-claude-absent cg-claude-present cg-cursor-absent cg-cursor-present; do
+for cg_fixture in cg-claude-absent cg-claude-present cg-cursor-absent cg-cursor-present cg-claude-noexec cg-claude-notype; do
   run_cg "$CG_TMP_CLEAN/$cg_fixture-go.json"   "$CG_TMP_CLEAN/$cg_fixture" "$GO_BIN" validate --json
   run_cg "$CG_TMP_CLEAN/$cg_fixture-node.json" "$CG_TMP_CLEAN/$cg_fixture" node "$ROOT_DIR/npm/bin/trackfw" validate --json
   run_cg "$CG_TMP_CLEAN/$cg_fixture-py.json"   "$CG_TMP_CLEAN/$cg_fixture" env PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw validate --json
@@ -653,7 +671,12 @@ tmp = sys.argv[1]
 # Python → _enrich_items(msgs, "credential_guard_hook_resolvable"); msgs é lista de dicts
 #          (não strings como validate_branch_has_wip_roadmap), portanto "rule" não se perde.
 CG_RULE = "credential_guard_hook_resolvable"
-CG_MSG_MARKER = "but the script does not exist"
+
+# Marcadores por caso — substring esperada em TODAS as mensagens de violação daquele caso.
+# None para casos sem violação.
+CG_MARKER_ABSENT = "but the script does not exist"
+CG_MARKER_NOEXEC = "not executable"
+CG_MARKER_NOTYPE = 'missing "type":"command"'
 
 
 def load(name):
@@ -668,15 +691,21 @@ def load(name):
     return exit_code, msgs
 
 
-# label → (filename-pattern, expect_violation)
+# label → (filename-pattern, expect_violation, msg_marker_or_None)
+# ML-4B (ROADMAP-2026-08-20-gates-para-os-tres-contratos-de-maior-risco, A-1):
+# adicionados cg-claude-noexec (script presente mas não-executável) e
+# cg-claude-notype (hook sem "type":"command"), estendendo um padrão já coberto
+# no escopo de harness pelo bloco gvmt acima — aqui coberto no escopo de projeto.
 cases = {
-    "claude-absent":  ("cg-claude-absent-{}.json",  True),
-    "claude-present": ("cg-claude-present-{}.json", False),
-    "cursor-absent":  ("cg-cursor-absent-{}.json",  True),
-    "cursor-present": ("cg-cursor-present-{}.json", False),
+    "claude-absent":  ("cg-claude-absent-{}.json",  True,  CG_MARKER_ABSENT),
+    "claude-present": ("cg-claude-present-{}.json", False, None),
+    "cursor-absent":  ("cg-cursor-absent-{}.json",  True,  CG_MARKER_ABSENT),
+    "cursor-present": ("cg-cursor-present-{}.json", False, None),
+    "claude-noexec":  ("cg-claude-noexec-{}.json",  True,  CG_MARKER_NOEXEC),
+    "claude-notype":  ("cg-claude-notype-{}.json",  True,  CG_MARKER_NOTYPE),
 }
 
-for label, (pattern, expect_violation) in cases.items():
+for label, (pattern, expect_violation, msg_marker) in cases.items():
     results = {rt: load(pattern.format(rt)) for rt in ("go", "node", "py")}
 
     for rt, (exit_code, msgs) in results.items():
@@ -689,10 +718,10 @@ for label, (pattern, expect_violation) in cases.items():
                     f"violation from rule {CG_RULE!r}, none reported "
                     f"(exit={exit_code}) — fixture vacua ou regra regrediu"
                 )
-            if not all(CG_MSG_MARKER in m for m in msgs):
+            if msg_marker and not all(msg_marker in m for m in msgs):
                 raise SystemExit(
                     f"credential_guard_hook_resolvable parity ({label}/{rt}): "
-                    f"mensagem inesperada — esperava {CG_MSG_MARKER!r} em todas: {msgs!r}"
+                    f"mensagem inesperada — esperava {msg_marker!r} em todas: {msgs!r}"
                 )
         else:
             # Casos "present": nenhuma violação da regra, qualquer que seja o
@@ -716,9 +745,10 @@ for label, (pattern, expect_violation) in cases.items():
 
 print(
     "credential_guard_hook_resolvable parity checks passed "
-    "(claude-absent/claude-present/cursor-absent/cursor-present, "
+    "(claude-absent/claude-present/cursor-absent/cursor-present/"
+    "claude-noexec/claude-notype, "
     "byte-identical across 3 CLIs)"
 )
 PY
 
-echo "Validate JSON parity checks passed (credential_guard_hook_resolvable cross-CLI: claude-absent detection / claude-present baseline / cursor-absent relative-branch live / cursor-present false-positive guard)"
+echo "Validate JSON parity checks passed (credential_guard_hook_resolvable cross-CLI: claude-absent detection / claude-present baseline / cursor-absent relative-branch live / cursor-present false-positive guard / claude-noexec not-executable detection / claude-notype missing-type-command detection)"

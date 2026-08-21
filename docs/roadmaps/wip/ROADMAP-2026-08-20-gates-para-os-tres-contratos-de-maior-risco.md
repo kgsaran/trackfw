@@ -598,6 +598,38 @@ alinhou documentação a um comportamento que já era o de fato. **Nenhuma prote
 (A-1), guard de vacuidade para `deniedCommands` (B-1), e distinguir na doc *impossibilidade
 estrutural* do Windsurf de *implementação pendente* do Amazon Q (B-3). Vão para um ML corretivo.
 
+---
+
+### Auditoria do ML-4B — aprovada; **REQ fechada**
+
+```
+152 cenarios · make quality (CI-exata) exit 0 · cobertura exit 0 · validate exit 0
+```
+
+**O B-1 é o mais importante dos três, e o desenho da prova dele é o que vale registrar.** Uma
+sabotagem de um stack só cairia no `compare_json` e **não** provaria nada sobre o guard — provaria
+que runtimes divergentes são detectados, que já se sabia. Ele fez sabotagem **tri-stack**: os três
+escrevendo `DENIED_COMMANDS_REMOVED`, todos **errados igualmente**. Aí o `compare_json` passa, o
+guard P2 passa, e **só** o P3 pega.
+
+Confirmei a lógica do P3 de forma isolada, sem depender do relatório:
+
+```
+padrao presente no JSON  -> grep -qF casa   -> guard passa
+padrao trocado           -> grep -qF falha  -> guard REPROVA
+```
+
+É o caso que eu descrevi no handoff — o campo sumindo dos três ao mesmo tempo — e agora tem prova
+de que reprova, não só afirmação.
+
+**A-1:** os dois casos de escopo de projeto entraram estendendo o padrão do bloco `gvmt`, como o
+parecer indicava. **B-3:** a doc passa a distinguir impossibilidade **estrutural permanente** do
+Windsurf de **pendência de implementação** do Amazon Q — a fusão dos dois era a mesma classe de
+imprecisão que originou esta REQ.
+
+**Nenhuma divergência nova.** Depois de sete nesta série, um lote inteiro sem achado é resultado, não
+ausência de rigor: os três gates novos rodaram contra os 3 CLIs e concordaram.
+
 ## Notas
 - **Fora de escopo, declarado:** as outras 39 `gap` e 50 `partial`. A lista é priorizável de
   propósito; fechar tudo não é meta.

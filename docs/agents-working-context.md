@@ -21759,3 +21759,43 @@ Entregue `docs/seguranca/2026-08-20-revisao-dos-gates-dos-tres-contratos.md`.
 - `docs/agents-working-context.md` (esta entrada)
 
 Nenhum commit/push feito. Devolvo ao `trackfw_architect` para ML-4B (commit + handoff).
+
+## Sessão 2026-08-21 — Apolo (INÍCIO: ML-4B — A-1, B-1, B-3)
+
+Branch `fix/serve-amarra-em-loopback-por-padrao-com-opt-in-explicito-para-exposicao`. Roadmap:
+`docs/roadmaps/wip/ROADMAP-2026-08-20-gates-para-os-tres-contratos-de-maior-risco.md`.
+
+Três débitos da barreira (parecer `docs/seguranca/2026-08-20-revisao-dos-gates-dos-tres-contratos.md`):
+- **A-1**: dois fixtures novos em `check-validate-parity.sh` (cg-claude-noexec + cg-claude-notype)
+- **B-1**: vacuity guard para `deniedCommands` em `check-agent-hooks-parity.sh` + Cenário 83
+- **B-3**: doc `docs/cli-parity.md` — distinguir impossibilidade estrutural (Windsurf) de pendência (Amazon Q)
+
+Escopo: `scripts/check-validate-parity.sh`, `scripts/check-agent-hooks-parity.sh`,
+`scripts/check-gates-falsify.sh`, `docs/cli-parity.md`, `docs/agents-working-context.md`.
+Nenhum commit/push (autoridade exclusiva do `trackfw_architect`).
+
+## Sessão 2026-08-21 — Apolo (FIM: ML-4B concluído — A-1, B-1, B-3 implementados)
+
+Todos os três débitos da barreira fechados. Evidências de validação:
+
+**`TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make parity`** — exit 0, all 152 scenarios OK.
+Cenários novos confirmados:
+- OK `[falsify/validate-parity/credential-guard-noexec-baseline]` (A-1 Cenário 81 baseline)
+- OK `[falsify/validate-parity/credential-guard-noexec-not-detected]` (A-1 Cenário 81 detecção)
+- OK `[falsify/validate-parity/credential-guard-notype-baseline]` (A-1 Cenário 82 baseline)
+- OK `[falsify/validate-parity/credential-guard-notype-not-detected]` (A-1 Cenário 82 detecção)
+- OK `[falsify/agent-hooks-parity/amazonq-denied-commands-vacuity-baseline]` (B-1 Cenário 83 baseline)
+- OK `[falsify/agent-hooks-parity/amazonq/denied-commands-not-detected]` (B-1 Cenário 83 detecção)
+
+**`bash scripts/check-parity-contract-coverage.sh`** — exit 0, nenhuma seção sem anotação.
+**`make lint`** — exit 0 (`go vet ./...`).
+**`make test`** — exit 0, todos os pacotes Go verdes.
+**`./bin/trackfw validate`** — exit 0 (17 warnings de ADR/REQ linkage, sem erros).
+
+**Arquivos modificados:**
+- `scripts/check-validate-parity.sh` — fixtures cg-claude-noexec + cg-claude-notype (A-1)
+- `scripts/check-agent-hooks-parity.sh` — P3 deniedCommands vacuity guard (B-1)
+- `scripts/check-gates-falsify.sh` — Cenários 81, 82, 83; echo atualizado para 152 (A-1 + B-1)
+- `docs/cli-parity.md` — anotação linha ~4258 distingue Windsurf (impossibilidade estrutural) de Amazon Q (pendência de implementação) (B-3)
+
+Nenhum commit/push feito. Devolvo ao `trackfw_architect` para auditoria e commit do ML-4B.

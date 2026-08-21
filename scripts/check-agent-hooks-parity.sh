@@ -234,6 +234,30 @@ if [[ "$FAIL" -ne 0 ]]; then
 fi
 
 # ---------------------------------------------------------------------------
+# P3 vacuity guard — deniedCommands (Amazon Q only, ML-4B):
+# A correlated drop of deniedCommands from all 3 stacks passes compare_json
+# (both sides missing the key) and the P2 guard above (git-branch-guard
+# script string still present in the agent JSON). This guard catches that
+# case by asserting the deny pattern is present per runtime. Cenário 83
+# proves non-vacuity.
+# ---------------------------------------------------------------------------
+AQ_HOOKFILE=$(hookfile_for amazonq)
+DENIED_PATTERN='^git (commit|push|checkout -b)'
+for runtime in go node py; do
+  aq_path="$WORK/$runtime/$AQ_HOOKFILE"
+  if ! grep -qF "$DENIED_PATTERN" "$aq_path"; then
+    fail "agent-hooks-parity/amazonq/$runtime/denied-commands-present" \
+      "deniedCommands pattern '$DENIED_PATTERN' not found in $aq_path — correlated drop across all stacks would be silent without this guard (Cenário 83)"
+  fi
+done
+
+if [[ "$FAIL" -ne 0 ]]; then
+  echo
+  echo "check-agent-hooks-parity.sh: one or more scenarios FAILED (deniedCommands vacuity guard)." >&2
+  exit 1
+fi
+
+# ---------------------------------------------------------------------------
 # Structural (parsed-JSON) diff, go-vs-node and go-vs-py, per CLI. Array order
 # is significant (semantic for at least one CLI — see file header); object
 # key order and whitespace/indentation are not, since json.load in the
