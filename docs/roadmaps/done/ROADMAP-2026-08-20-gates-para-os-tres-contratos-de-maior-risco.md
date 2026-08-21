@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-08-20
 req: "docs/req/REQ-2026-08-20-tres-contratos-afirmados-no-cli-parity-sem-gate-cross-cli.md"
 adr: ""
@@ -8,7 +8,7 @@ squad: "apolo-tf, hades-tf"
 
 # Roadmap: gates para os três contratos de maior risco
 
-> Created: 2026-08-20 | Status: wip
+> Created: 2026-08-20 | Status: done
 
 ## Context
 

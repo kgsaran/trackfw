@@ -21799,3 +21799,25 @@ Cenários novos confirmados:
 - `docs/cli-parity.md` — anotação linha ~4258 distingue Windsurf (impossibilidade estrutural) de Amazon Q (pendência de implementação) (B-3)
 
 Nenhum commit/push feito. Devolvo ao `trackfw_architect` para auditoria e commit do ML-4B.
+
+## 2026-08-21 — Zeus (arquiteto) — REQ da verbosidade
+
+REQ dos 3 gates fechada (#197, CI verde). Roadmap em `done`.
+
+Nova REQ, a partir de feedback direto de KG: minhas respostas eram prolixas. O argumento decisivo
+não foi custo de token — foi **atenção**: relatório longo torna o achado importante indistinguível
+do resto. Mesma falha de sinal ruidoso que a série de gates combateu, em outra superfície.
+
+**Decisão de desenho, contra a hipótese inicial de KG:** regra fixa com escalada por gatilho, não
+controle configurável. Mesmo motivo que o estado `none` da REQ do contrato pinado — botão é ajustado
+uma vez e esquecido no valor errado.
+
+**Risco dominante nomeado:** encurtar demais **esconde bloqueio**. Os três gatilhos (bloqueio ·
+decisão do usuário · erro próprio) são o que impede a regra de virar silêncio conveniente. Fora de
+escopo, deliberado: a verbosidade dos **executores**, porque o relatório detalhado deles é o que
+torna a auditoria possível.
+
+Já registrado na minha memória de projeto; esta REQ leva a regra para o **produto** — asset do
+arquiteto e `CLAUDE.md` semeado.
+
+**Fila:** depois desta, a REQ do modelo configurável por versão.
