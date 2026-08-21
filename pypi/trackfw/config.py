@@ -121,6 +121,10 @@ def defaults():
         "credential_guard": {
             "mode": "warn",
         },
+        # agent_models field — ver ADR-2026-08-21-versao-do-modelo-por-tier-com-composicao-por-alvo.md.
+        # Mapeia nome de tier (ex.: "opus", "sonnet") para string de versão (ex.: "5", "4.6").
+        # Ausente ou vazio → comportamento idêntico ao atual (alias de tier usado verbatim).
+        "agent_models": {},
         "rules": {
             "wip_has_req":          "error",
             "wip_acceptance":       "error",
@@ -186,6 +190,7 @@ def parse_rules_from_content(content):
         "update": {},
         "sync": {},
         "link_fields": {},
+        "agent_models": {},
     }
     _parse(content, cfg)
     return cfg["rules"]
@@ -211,6 +216,7 @@ def read_agent_conventions(cwd=None):
             "update": {},
             "sync": {},
             "link_fields": {},
+            "agent_models": {},
         }
         malformed = _parse(content, cfg)
         if malformed:
@@ -343,5 +349,15 @@ def _parse(content, cfg):
         mode = cg.get("mode")
         if isinstance(mode, str) and mode in ("warn", "block"):
             cfg["credential_guard"]["mode"] = mode
+
+    # agent_models field — mapeamento plano de nome de tier para string de versão.
+    # Ver ADR-2026-08-21-versao-do-modelo-por-tier-com-composicao-por-alvo.md.
+    # Um bloco ausente, malformado ou vazio deixa agent_models como o dict vazio dos defaults(),
+    # preservando comportamento idêntico ao atual. Um valor de string vazia é armazenado como-está
+    # (a camada de render trata string vazia como "sem pin" — cai no alias de tier).
+    if isinstance(m.get("agent_models"), dict):
+        for k, v in m["agent_models"].items():
+            if isinstance(v, str):
+                cfg["agent_models"][k] = v
 
     return False

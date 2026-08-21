@@ -13,6 +13,48 @@ import (
 	"github.com/kgsaran/trackfw/internal/identity"
 )
 
+// isVersionString reports whether s is a bare version string (digits and dots
+// only, e.g. "5", "4.6", "1.0.2"). Values that don't match — including
+// pre-composed IDs like "claude-sonnet-4-5-20250929" (hyphens), "latest"
+// (letters), or "" (empty) — return false and the caller uses the value
+// literally (escape hatch, ADR-2026-08-21 §3).
+//
+// Trade-off: a value like "4.6-beta" (version-like but with a suffix) is
+// treated as literal and produces an unchanged model line; a purely numeric
+// string that happens not to be a real model version (e.g. "99") gets
+// composed into "claude-tier-99" (a wrong-but-visible ID). We accept the
+// first failure mode over the second: the literal path is recoverable (the
+// user sees the exact string they typed); the silent-compose path silently
+// produces a non-existent model ID without any indication of what went wrong.
+func isVersionString(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, c := range s {
+		if c != '.' && (c < '0' || c > '9') {
+			return false
+		}
+	}
+	return true
+}
+
+// composeClaudeModelID builds a Claude model identifier from tier (e.g.
+// "sonnet") and version (e.g. "4.6" or "5"), applying the three composition
+// rules from the official Anthropic model documentation
+// (ADR-2026-08-21-versao-do-modelo-por-tier-com-composicao-por-alvo.md §2):
+//
+//  1. Dots in the version become hyphens: "4.6" → "4-6".
+//  2. A major-only version never gets a trailing "-0": "5" → "claude-sonnet-5".
+//  3. Pre-4.6 IDs include a date suffix; they must be stored as literal values
+//     (escape hatch) and never reach this function.
+//
+// caller is responsible for calling isVersionString(version) before
+// composeClaudeModelID and using the value literally when it returns false.
+func composeClaudeModelID(tier, version string) string {
+	hyphenated := strings.ReplaceAll(version, ".", "-")
+	return "claude-" + tier + "-" + hyphenated
+}
+
 // Render converts a canonical catalog item to the native representation
 // declared by a target surface. When cfg carries a customized identity for
 // item.ID, the rendered name/description/body are personalized (ADR
@@ -39,11 +81,15 @@ import (
 // byte-for-byte unchanged by construction, not by coincidence.
 //
 // targetID is the canonical ID of the render target (e.g. "cursor",
-// "gemini", "kiro", "codex") as declared in the target catalog. It exists to
-// let future waves differentiate "cursor" from "gemini"/"kiro" within the
-// shared "agent-markdown" representation (Rota B, the default branch) — this
-// function does not yet apply any such differentiation.
-func Render(item Item, kind ItemKind, capability Capability, source []byte, cfg identity.Config, targetID string) ([]byte, error) {
+// "gemini", "kiro", "codex") as declared in the target catalog.
+//
+// agentModels maps tier names (e.g. "sonnet", "opus") to version strings
+// (e.g. "4.6", "5"). A nil or empty map means "no pin" — output is identical
+// to before this parameter existed, by construction. Only the "claude" target
+// receives composed model IDs; all other targets (Codex, Cursor, Antigravity,
+// OpenCode, Gemini, Kiro, etc.) are unaffected even when agentModels is
+// populated (ADR-2026-08-21 §4 — namespace boundary is a gate, not a cuidado).
+func Render(item Item, kind ItemKind, capability Capability, source []byte, cfg identity.Config, targetID string, agentModels map[string]string) ([]byte, error) {
 	if kind == KindSkills {
 		return normalizeMarkdown(source), nil
 	}
@@ -151,6 +197,28 @@ func Render(item Item, kind ItemKind, capability Capability, source []byte, cfg 
 				source = rewriteFrontmatterModelLine(source, mapped)
 			} else {
 				source = removeFrontmatterModelLine(source)
+			}
+		} else if targetID == "claude" && len(agentModels) > 0 {
+			// Allowlist: only the "claude" target receives composed model IDs.
+			// Codex, Cursor, Antigravity, OpenCode, Gemini, Kiro and any other
+			// target are left untouched even when agentModels is populated —
+			// ADR-2026-08-21 §4 (gate, not cuidado).
+			//
+			// Empty version string means "no pin": leave the existing model line
+			// as-is (fall back to tier alias). This preserves identical behavior
+			// for callers that set agentModels but leave a tier value empty.
+			if version, ok := agentModels[model]; ok && version != "" {
+				var modelID string
+				if isVersionString(version) {
+					// Compose: "4.6" → "claude-sonnet-4-6"; "5" → "claude-sonnet-5".
+					modelID = composeClaudeModelID(model, version)
+				} else {
+					// Escape hatch: non-version value (contains hyphens, letters, etc.)
+					// is used literally — e.g. "claude-sonnet-4-5-20250929" stays as-is.
+					// ADR-2026-08-21 §3.
+					modelID = version
+				}
+				source = rewriteFrontmatterModelLine(source, modelID)
 			}
 		}
 		if !hasIdentity {

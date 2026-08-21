@@ -151,7 +151,7 @@ function codexProjectAgentsTarget(cwd, identityConfig, { dryRun, installMissing 
     const manager = new IntegrationManager({ projectRoot: cwd });
     let wroteAny = false;
     for (const kind of ['agents', 'skills']) {
-      const plans = buildPlans(kind, { targets: ['codex'], scope: 'project', identity: identityConfig });
+      const plans = buildPlans(kind, { targets: ['codex'], scope: 'project', identity: identityConfig, agentModels: projectConfig.load(cwd).agentModels || {} });
       const statuses = manager.inspect(plans);
       const toWrite = plans.filter((_, index) => {
         const state = statuses[index].state;

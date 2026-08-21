@@ -296,6 +296,27 @@ function frontmatterName(content) {
   return undefined
 }
 
+// isVersionString reports whether s is a bare version string (digits and dots
+// only, e.g. "5", "4.6", "1.0.2"). Mirrors internal/integrations/render.go:isVersionString.
+// Values that don't match — pre-composed IDs like "claude-sonnet-4-5-20250929" (hyphens),
+// "latest" (letters), or "" (empty) — return false and the caller uses the value literally
+// (escape hatch, ADR-2026-08-21 §3).
+function isVersionString(s) {
+  if (!s) return false
+  return /^[0-9]+(\.[0-9]+)*$/.test(s)
+}
+
+// composeClaudeModelID builds a Claude model identifier from tier and version,
+// applying the three composition rules from the official Anthropic docs.
+// Mirrors internal/integrations/render.go:composeClaudeModelID.
+//   Rule 1: dots become hyphens ("4.6" → "claude-sonnet-4-6")
+//   Rule 2: major-only version never gets "-0" ("5" → "claude-sonnet-5")
+//   Rule 3: handled via escape hatch — pre-composed IDs are never version strings
+function composeClaudeModelID(tier, version) {
+  const hyphenated = version.replace(/\./g, '-')
+  return `claude-${tier}-${hyphenated}`
+}
+
 // render converte um item canônico do catálogo para a representação nativa
 // declarada por uma surface alvo. Quando identity carrega uma identidade
 // customizada para item.id, o name/description/body renderizados são
@@ -321,7 +342,12 @@ function frontmatterName(content) {
 // normalize(content) — a mesma expressão usada antes de existir suporte a
 // identidade — então a saída sem identidade é garantida byte a byte
 // inalterada por construção, não por coincidência.
-function render({ kind, content, capability, item, identity: cfg, target }) {
+//
+// agentModels (opcional) — objeto de tier→versão lido de trackfw.yaml's agent_models.
+// Ausente ou vazio: saída idêntica a antes. Somente o alvo "claude" recebe IDs
+// compostos; Codex, Cursor, Antigravity, OpenCode, Gemini, Kiro não são afetados
+// (ADR-2026-08-21 §4 — gate, não cuidado).
+function render({ kind, content, capability, item, identity: cfg, target, agentModels }) {
   if (kind === 'skills') return normalize(content)
 
   const id = item && cfg ? lookupIdentity(cfg, item.id) : undefined
@@ -407,6 +433,18 @@ function render({ kind, content, capability, item, identity: cfg, target }) {
   if (target === 'cursor') {
     const mappedModel = mapModelCursor(parts.model)
     source = mappedModel ? rewriteFrontmatterModelLine(source, mappedModel) : removeFrontmatterModelLine(source)
+  } else if (target === 'claude' && agentModels && Object.keys(agentModels).length > 0) {
+    // Allowlist: only the "claude" target receives composed model IDs.
+    // Codex, Cursor, Antigravity, OpenCode, Gemini, Kiro and any other target are left
+    // untouched even when agentModels is populated (ADR-2026-08-21 §4 — gate, not cuidado).
+    const version = agentModels[parts.model]
+    if (version) {
+      const modelID = isVersionString(version)
+        ? composeClaudeModelID(parts.model, version)
+        : version // escape hatch: non-version value used literally (ADR-2026-08-21 §3)
+      source = rewriteFrontmatterModelLine(source, modelID)
+    }
+    // Empty string version means "no pin": leave source unchanged (tier alias preserved).
   }
   if (!id) return normalize(source)
   const withBody = insertBodyPrefix(source, greeting)
@@ -415,4 +453,4 @@ function render({ kind, content, capability, item, identity: cfg, target }) {
   return normalize(withSignature)
 }
 
-module.exports = { render, markdownParts, frontmatterName, greetingLine, insertBodyPrefix, rewriteFrontmatterFields, rewriteSignatureLine }
+module.exports = { render, markdownParts, frontmatterName, greetingLine, insertBodyPrefix, rewriteFrontmatterFields, rewriteSignatureLine, isVersionString, composeClaudeModelID }

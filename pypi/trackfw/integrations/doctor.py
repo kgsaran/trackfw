@@ -13,6 +13,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
+from trackfw import config as trackfw_config
 from trackfw.identity import load as load_identity
 
 from .catalog import plan_deployments
@@ -159,7 +160,8 @@ def run_doctor(
     for kind in ("agents", "skills"):
         for scope in ("project", "global"):
             _catalog, plans = plan_deployments(
-                kind, scope=scope, all_surfaces=True, identity_cfg=ident, project_root=project_root
+                kind, scope=scope, all_surfaces=True, identity_cfg=ident, project_root=project_root,
+                agent_models=trackfw_config.load(project_root).get("agent_models", {}),
             )
             if not plans:
                 continue

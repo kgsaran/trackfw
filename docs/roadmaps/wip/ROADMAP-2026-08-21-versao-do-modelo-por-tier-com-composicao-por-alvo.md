@@ -43,7 +43,7 @@ fronteira de namespace. Decisão de formato é do arquiteto; o roadmap anterior 
 executor por engano e foi corrigido.
 
 ### ML-1B — Resolução e composição por alvo
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-1A
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-1A
 **Arquivos (3 stacks):** leitura de config, `internal/integrations/render.go` + espelhos, testes.
 
 - `agent_models` por tier, guardando **versão**.
@@ -59,6 +59,50 @@ executor por engano e foi corrigido.
 
 ---
 
+---
+
+### Auditoria do ML-1B — aprovada, com uma lacuna pequena para o ML-2A
+
+Verifiquei **end-to-end**, gerando artefatos reais com os 3 alvos, não pelos testes dele:
+
+```
+                        sem agent_models        com agent_models
+Claude   model:         sonnet              ->  claude-sonnet-4-6     COMPOE
+Codex    model =        "gpt-5.4-mini"      ->  "gpt-5.4-mini"        INTOCADO
+Cursor   model:         composer-2.5[...]   ->  composer-2.5[...]     INTOCADO
+```
+
+**Zero vazamento de namespace** — o AC que mais importava do lote, provado no artefato gerado e não
+só em teste unitário.
+
+As três regras de composição, cada uma com caso próprio:
+
+```
+"5"                            -> claude-opus-5 / claude-sonnet-5      (maior sem minor)
+"4.6"                          -> claude-opus-4-6 / claude-sonnet-4-6  (ponto vira traco)
+"claude-sonnet-4-5-20250929"   -> literal                              (escape hatch)
+"4.6-beta"                     -> literal                              (escape hatch)
+```
+
+**Escape hatch com critério explícito:** `^[0-9]+(\.[0-9]+)*$`. Trade-off documentado e coerente
+com o que pedi — prefere falso-negativo (tratar como literal) a falso-positivo (compor errado a
+partir de algo que não era versão).
+
+#### 🔴 Lacuna que encontrei, e vai para o ML-2A
+
+`"4.6-beta"` vira **literalmente** `model: 4.6-beta` no frontmatter. É o escape hatch funcionando
+como especificado — mas o resultado é um valor de modelo **inválido**, escrito em silêncio. O agente
+falha ao subir, e a causa fica a duas camadas de distância.
+
+É a mesma classe do `reson=` que a REQ do contrato pinado tratou: entrada de forma desconhecida
+aceita sem sinal. O AC da REQ pede que a resolução *"não falhe de forma obscura"*, e este caminho
+falha.
+
+**Não bloqueia**, e o remédio já tem lugar natural: o **ML-2A** entrega o comando de resolução
+efetiva, que é exatamente onde isso deve aparecer. Acrescentado como critério lá — avisar quando o
+valor não é versão **nem** parece ID de modelo (não começa com `claude-`).
+
+
 ## Wave 2 — Visibilidade e catálogo
 
 ### ML-2A — Comando de resolução efetiva
@@ -68,6 +112,9 @@ confirma — foi exatamente a situação em que ninguém sabia dizer qual modelo
 
 **Critérios de aceite:**
 - [ ] Saída mostra agente · tier · alvo · valor resolvido
+- [ ] **Avisa** quando o valor configurado não é versão **nem** parece ID de modelo (não começa com
+      `claude-`) — hoje `"4.6-beta"` vira `model: 4.6-beta` em silêncio, e o agente falha ao subir
+      com a causa a duas camadas de distância (lacuna medida na auditoria do ML-1B)
 - [ ] Byte-idêntica nos 3 CLIs
 - [ ] `make quality` verde
 

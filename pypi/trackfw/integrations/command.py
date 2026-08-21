@@ -10,6 +10,7 @@ from typing import Any, Callable
 
 from trackfw.i18n import t as i18n_t
 from trackfw.identity import IdentityError, load as load_identity
+from trackfw import config as trackfw_config
 
 from .catalog import plan_deployments
 from .manager import IntegrationError, IntegrationManager
@@ -257,7 +258,7 @@ def run(args: argparse.Namespace, kind: str) -> int:
         # Identity must be resolved from disk before plan_deployments — skipping
         # this silently reverts custom agent names to the neutral defaults.
         ident = load_identity(home)
-        catalog, _ = plan_deployments(kind, scope=resolved_scope, identity_cfg=ident)
+        catalog, _ = plan_deployments(kind, scope=resolved_scope, identity_cfg=ident, agent_models=trackfw_config.load().get("agent_models", {}))
         targets = csv_values(args.targets)
         items = csv_values(args.items)
 
@@ -319,6 +320,7 @@ def run(args: argparse.Namespace, kind: str) -> int:
             # Mirrors internal/commands/integrations_flags.go passing
             # manager.ProjectRoot to BuildPlans at both of its call sites.
             project_root=os.getcwd(),
+            agent_models=trackfw_config.load().get("agent_models", {}),
         )
         def _on_skip(destination: str, reason: str) -> None:
             print(reason, file=sys.stderr)

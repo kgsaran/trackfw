@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from trackfw import identity
@@ -321,6 +322,30 @@ def _remove_frontmatter_model_line(source: str) -> str:
     return "---\n" + "\n".join(kept) + rest
 
 
+def _is_version_string(s: str) -> bool:
+    """Reporta se s é uma string de versão pura (dígitos e pontos apenas, ex.:
+    "5", "4.6", "1.0.2"). Valores que não correspondem — IDs pré-compostos como
+    "claude-sonnet-4-5-20250929" (tem traço), "latest" (tem letra), "" (vazio) —
+    retornam False e o chamador usa o valor literalmente (escape hatch,
+    ADR-2026-08-21 §3). Espelha internal/integrations/render.go:isVersionString.
+    """
+    if not s:
+        return False
+    return bool(re.fullmatch(r"[0-9]+(\.[0-9]+)*", s))
+
+
+def _compose_claude_model_id(tier: str, version: str) -> str:
+    """Constrói um identificador de modelo Claude a partir de tier e versão,
+    aplicando as três regras de composição (ADR-2026-08-21 §2):
+      Regra 1: ponto vira traço ("4.6" → "claude-sonnet-4-6")
+      Regra 2: versão maior nunca ganha "-0" ("5" → "claude-sonnet-5")
+      Regra 3: tratada via escape hatch — IDs pré-compostos nunca chegam aqui
+    Espelha internal/integrations/render.go:composeClaudeModelID.
+    """
+    hyphenated = version.replace(".", "-")
+    return f"claude-{tier}-{hyphenated}"
+
+
 def _normalize_markdown(source: str) -> str:
     return source.strip() + "\n"
 
@@ -350,6 +375,7 @@ def render(
     source: str,
     capability: dict[str, str],
     identity_cfg: "identity.Config | None" = None,
+    agent_models: "dict[str, str] | None" = None,
 ) -> str:
     if kind == "skills":
         return _normalize_markdown(source)
@@ -453,6 +479,23 @@ def render(
             source = _rewrite_frontmatter_model_line(source, mapped_cursor)
         else:
             source = _remove_frontmatter_model_line(source)
+    elif target == "claude" and agent_models:
+        # Allowlist: somente o alvo "claude" recebe IDs de modelo compostos.
+        # Codex, Cursor, Antigravity, OpenCode, Gemini, Kiro e qualquer outro
+        # alvo são deixados sem alteração mesmo com agent_models populado —
+        # ADR-2026-08-21 §4 (gate, não cuidado).
+        tier = metadata.get("model", "")
+        version = agent_models.get(tier, "")
+        if version:
+            # String vazia = sem pin: deixa source sem alteração (alias de tier preservado).
+            if _is_version_string(version):
+                # Regras 1 e 2: ponto→traço; major omite minor.
+                model_id = _compose_claude_model_id(tier, version)
+            else:
+                # Escape hatch: valor com traço, letra ou outro char não-versão
+                # é usado literalmente (ADR-2026-08-21 §3).
+                model_id = version
+            source = _rewrite_frontmatter_model_line(source, model_id)
 
     if agent is None:
         return _normalize_markdown(source)

@@ -56,6 +56,11 @@ type ProjectConfig struct {
 	// credential_guard field — see ADR-2026-08-05-hook-de-guarda-contra-materializacao-de-
 	// credenciais-reais-por-subagentes.md.
 	CredentialGuard CredentialGuardConfig
+
+	// agent_models field — see ADR-2026-08-21-versao-do-modelo-por-tier-com-composicao-por-alvo.md.
+	// Maps tier name (e.g. "opus", "sonnet") to version string (e.g. "5", "4.6").
+	// Absent or empty map → behavior identical to today (tier alias used verbatim).
+	AgentModels map[string]string
 }
 
 // CredentialGuardConfig holds the credential_guard.* fields read from trackfw.yaml — see
@@ -205,6 +210,7 @@ func defaults() ProjectConfig {
 		CredentialGuard: CredentialGuardConfig{
 			Mode: "warn",
 		},
+		AgentModels: map[string]string{},
 	}
 }
 
@@ -375,6 +381,21 @@ func parse(content string, cfg *ProjectConfig) {
 		if cg, ok := v.(map[string]interface{}); ok {
 			if mode, ok := stringVal(cg, "mode"); ok && (mode == "warn" || mode == "block") {
 				cfg.CredentialGuard.Mode = mode
+			}
+		}
+	}
+
+	// agent_models field — flat mapping from tier name to version string.
+	// See ADR-2026-08-21-versao-do-modelo-por-tier-com-composicao-por-alvo.md.
+	// An absent, malformed, or empty block leaves AgentModels as the empty map from defaults(),
+	// preserving identical behavior to today. A key with an empty string value is stored as-is
+	// (the render layer treats empty string as "no pin" — fall back to tier alias).
+	if v, ok := m["agent_models"]; ok {
+		if am, ok := v.(map[string]interface{}); ok {
+			for k, rv := range am {
+				if s, ok := rv.(string); ok {
+					cfg.AgentModels[k] = s
+				}
 			}
 		}
 	}

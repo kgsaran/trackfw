@@ -4,6 +4,7 @@ import os
 import sys
 
 from trackfw import identity
+from trackfw import config as trackfw_config
 from trackfw.commands import identity_wizard
 from trackfw.generators.init_gen import scaffold
 from trackfw.i18n import t as i18n_t
@@ -156,12 +157,13 @@ def run(args):
         def _on_skip(destination: str, reason: str) -> None:
             print(reason, file=sys.stderr)
 
-        _, plans = plan_deployments("agents", target_ids=ai_tools, scope=scope, identity_cfg=ident)
+        _am = trackfw_config.load(cwd).get("agent_models", {})
+        _, plans = plan_deployments("agents", target_ids=ai_tools, scope=scope, identity_cfg=ident, agent_models=_am)
         print("Destino:")
         for plan in plans:
             print(f"  {plan['destination']}")
         IntegrationManager(cwd, on_skip=_on_skip).install(plans)
-        _, plans = plan_deployments("skills", target_ids=ai_tools, scope=scope, identity_cfg=ident)
+        _, plans = plan_deployments("skills", target_ids=ai_tools, scope=scope, identity_cfg=ident, agent_models=_am)
         print("Destino:")
         for plan in plans:
             print(f"  {plan['destination']}")

@@ -4,6 +4,29 @@
 
 ---
 
+## Sessão 2026-08-21 — Apolo (FIM: ML-1B concluído — Resolução e composição por alvo)
+
+Implementação do ML-1B nos 3 stacks (Go/Node.js/Python): campo `agent_models` em `trackfw.yaml`,
+3 regras de composição + escape hatch, composição por alvo (allowlist "claude"), prova de ausência
+de vazamento para Codex/Cursor/Antigravity/OpenCode. Status ML-1B alterado para ✅ Concluído no
+roadmap. Resultado dos gates: `make build` OK, `make test` OK (todos os pacotes Go verdes),
+`TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make parity` OK (exit 0, 153 cenários de falsificação
+passando, todos os scripts de paridade verdes), `./bin/trackfw validate` OK (apenas warnings
+pré-existentes, sem violações bloqueantes). Sem commit/push (autoridade do `trackfw_architect`).
+
+---
+
+## Sessão 2026-08-21 — Apolo (INÍCIO: ML-1B — Resolução e composição por alvo)
+
+Branch `feat/versao-do-modelo-por-tier-com-composicao-por-alvo`, roadmap
+`docs/roadmaps/wip/ROADMAP-2026-08-21-versao-do-modelo-por-tier-com-composicao-por-alvo.md` em `wip/`.
+Executando ML-1B: adicionar campo `agent_models` nos 3 CLIs (Go/Node.js/Python), implementar
+3 regras de composição + escape hatch, compor modelo por alvo (apenas `"claude"` recebe
+composição no default branch — allowlist, não denylist), provar ausência de vazamento para
+Codex/Cursor/Antigravity/OpenCode. Sem commit/push (autoridade exclusiva do `trackfw_architect`).
+
+---
+
 ## Sessão 2026-08-15 — Hades (INÍCIO: ML-0A — parecer de segurança sobre skills de terceiro via URL)
 
 Branch `feat/instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas`, roadmap

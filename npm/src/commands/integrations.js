@@ -7,6 +7,7 @@ const identityStore = require('../identity')
 const identityWizard = require('./identity-wizard')
 const { t } = require('../i18n')
 const { createThirdPartyCommand } = require('./thirdparty')
+const configModule = require('../config')
 
 const csv = value => String(value).split(',').map(entry => entry.trim()).filter(Boolean)
 const collect = (value, previous) => previous.concat(value)
@@ -214,6 +215,7 @@ function createLifecycleCommand(kind) {
         }
       }
 
+      options.agentModels = configModule.load().agentModels || {}
       const output = execute(kind, operation, options)
       console.log(options.json ? JSON.stringify(output) : human(output))
     })

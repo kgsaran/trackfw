@@ -81,6 +81,11 @@ def plan_deployments(
     # (apply_third_party_references no-ops on a falsy root). Mirrors
     # internal/integrations/plan.go's PlanRequest.ProjectRoot.
     project_root: str | None = None,
+    # agent_models maps tier names (e.g. "sonnet", "opus") to version strings
+    # (e.g. "4.6", "5") read from trackfw.yaml's agent_models field. A None or
+    # empty dict leaves rendered output byte-for-byte identical to before this
+    # parameter existed. See ADR-2026-08-21.
+    agent_models: "dict[str, str] | None" = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     if kind not in {"agents", "skills"}:
         raise ValueError(f"unsupported integration kind {kind!r}")
@@ -113,7 +118,7 @@ def plan_deployments(
                 content = _asset_root().joinpath(asset_path).read_text(encoding="utf-8")
                 for install_path in install_paths:
                     destination = install_path["path"].replace("{{id}}", item["id"])
-                    rendered = render(kind, target["id"], surface["id"], item, content, capability, identity_cfg)
+                    rendered = render(kind, target["id"], surface["id"], item, content, capability, identity_cfg, agent_models)
                     rendered_bytes = rendered.encode("utf-8")
                     # D5/D9 extension point: reproduce any persisted
                     # third-party reference block so regenerating this
