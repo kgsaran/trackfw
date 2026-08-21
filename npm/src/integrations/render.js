@@ -98,10 +98,14 @@ function mapModelCursor(model) {
 }
 
 // containsControlChar reports whether s contains any ASCII control character
-// (U+0000–U+001F). Mirrors internal/integrations/render.go:containsControlChar.
+// (U+0000–U+001F) or a Unicode line/paragraph separator (U+2028, U+2029).
+// Mirrors internal/integrations/render.go:containsControlChar (ML-5C).
+// In JavaScript, strings are UTF-16; U+2028/U+2029 are single code units
+// accessible via charCodeAt, so no surrogate-pair handling is needed.
 function containsControlChar(s) {
   for (let i = 0; i < s.length; i++) {
-    if (s.charCodeAt(i) < 0x20) return true
+    const c = s.charCodeAt(i)
+    if (c < 0x20 || c === 0x2028 || c === 0x2029) return true
   }
   return false
 }

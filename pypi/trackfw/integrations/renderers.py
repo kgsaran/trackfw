@@ -253,11 +253,12 @@ def _rewrite_frontmatter_fields(source: str, name: str, description: str) -> str
 
 
 def _contains_control_char(s: str) -> bool:
-    """Reports whether s contains any ASCII control character (U+0000–U+001F).
+    """Reports whether s contains any ASCII control character (U+0000–U+001F)
+    or a Unicode line/paragraph separator (U+2028, U+2029).
 
-    Mirrors internal/integrations/render.go:containsControlChar.
+    Mirrors internal/integrations/render.go:containsControlChar (ML-5C).
     """
-    return any(ord(c) < 0x20 for c in s)
+    return any(ord(c) < 0x20 or ord(c) in (0x2028, 0x2029) for c in s)
 
 
 def _rewrite_frontmatter_model_line(source: str, value: str) -> str:

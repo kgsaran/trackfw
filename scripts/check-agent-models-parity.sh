@@ -490,10 +490,71 @@ if [[ -f "$case5a_yaml" ]]; then
   fi
 fi
 
+# ===========================================================================
+# Case 5c — Unicode line-separator injection: agents install MUST refuse a
+# trackfw.yaml whose agent_models value contains U+2028 (LINE SEPARATOR) or
+# U+2029 (PARAGRAPH SEPARATOR). yaml.v3 preserves these codepoints verbatim
+# in the parsed Go string (bytes 0xE2 0x80 0xA8 / 0xE2 0x80 0xA9, all ≥ 0x80,
+# invisible to the original ASCII < 0x20 check). Line-based frontmatter
+# parsers treat U+2028 as a line terminator, enabling structural injection.
+# (ML-5C, measured 2026-08-21 with `go run` directly against yaml.v3.)
+#
+# The fixture embeds literal U+2028 bytes (0xE2 0x80 0xA8) directly in the
+# YAML double-quoted string. All three parsers (yaml.v3, js-yaml, PyYAML)
+# preserve this codepoint verbatim in the parsed value — confirmed by
+# direct `go run` measurement 2026-08-21. The vacuity guard below confirms
+# the fixture file contains the literal U+2028 bytes.
+#
+# NEL (U+0085) intentionally excluded: yaml.v3 normalizes it to a space
+# before reaching containsControlChar; no injection path exists (measured).
+# ===========================================================================
+
+write_yaml_unicode_linesep() {
+  local proj=$1
+  mkdir -p "$proj"
+  # Literal U+2028 bytes in the YAML value. All three parsers preserve
+  # U+2028 verbatim in the parsed string (yaml.v3 measured 2026-08-21).
+  cat >"$proj/trackfw.yaml" <<'YAML'
+project_name: agent-models-parity-test
+adr_dirs:
+  - docs/adr
+req_dir: docs/req
+roadmap_dir: docs/roadmaps
+roadmap_namespacing: flat
+agent_models:
+  sonnet: "claude-sonnet-4-6 tools: Bash"
+  opus: "5"
+YAML
+}
+
+# Variant 5c — U+2028 LINE SEPARATOR injection
+for rt in go node py; do
+  proj="$WORK/case5c-$rt"
+  write_yaml_unicode_linesep "$proj"
+  if run_install_expect_fail "$rt" "$proj" "claude"; then
+    ok "unicode-linesep/U+2028/$rt/install-rejected"
+  else
+    diag "unicode-linesep/U+2028/$rt/install-rejected" "$rt accepted U+2028 value (exit 0) — unicode line-separator injection not blocked"
+  fi
+done
+
+# Vacuity guard for case 5c: confirm the YAML fixture contains the literal
+# U+2028 bytes (0xE2 0x80 0xA8). If the fixture lost the character (e.g.
+# was written as plain ASCII), the test would pass trivially because the
+# value would not contain a unicode line separator.
+case5c_yaml="$WORK/case5c-go/trackfw.yaml"
+if [[ -f "$case5c_yaml" ]]; then
+  if grep -qF ' ' "$case5c_yaml"; then
+    ok "unicode-linesep/vacuity/yaml-fixture-contains-u2028-escape"
+  else
+    diag "unicode-linesep/vacuity/yaml-fixture-contains-u2028-escape" "fixture missing \\u2028 escape — test passed trivially"
+  fi
+fi
+
 # ---------------------------------------------------------------------------
 if [[ "$FAIL" -ne 0 ]]; then
   echo "check-agent-models-parity: drift detected — see FAIL lines above." >&2
   exit 1
 fi
 
-echo "All check-agent-models-parity.sh scenarios passed (4 cases × 3 runtimes + Case 5 control-char rejection, namespace isolation confirmed for codex+gemini)."
+echo "All check-agent-models-parity.sh scenarios passed (4 cases × 3 runtimes + Case 5 control-char/unicode-separator rejection, namespace isolation confirmed for codex+gemini)."

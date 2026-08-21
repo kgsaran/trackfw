@@ -195,3 +195,45 @@ def test_rewrite_frontmatter_model_line_accepts_legitimate_escape_hatch():
     """Legitimate escape-hatch value (dated ID) must continue to work after ML-5A."""
     result = _rewrite_frontmatter_model_line(_SOURCE_WITH_MODEL, "claude-sonnet-4-5-20250929")
     assert "model: claude-sonnet-4-5-20250929" in result
+
+# ---------------------------------------------------------------------------
+# ML-5C: Unicode line/paragraph separators rejected (U+2028, U+2029)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        # U+2028 LINE SEPARATOR — yaml.v3 preserves verbatim; line-based
+        # frontmatter parsers treat it as a line terminator (ML-5C).
+        ("claude-sonnet-4-6 tools: Bash", True),
+        # U+2029 PARAGRAPH SEPARATOR — same class, same argument.
+        ("claude-sonnet-4-6 tools: Bash", True),
+        # Accented claude- value: U+00E9 is not a line separator →
+        # LooksLikeSuspectModelValue must return False (no warn).
+        ("claude-sonnet-4-6-café", False),
+    ],
+)
+def test_looks_like_suspect_model_value_unicode_separators(value, expected):
+    """looks_like_suspect_model_value extends to U+2028/U+2029 (ML-5C)."""
+    assert looks_like_suspect_model_value(value) == expected
+
+
+@pytest.mark.parametrize(
+    "separator_value",
+    [
+        "claude-sonnet-4-6 tools: Bash",  # U+2028 LINE SEPARATOR
+        "claude-sonnet-4-6 tools: Bash",  # U+2029 PARAGRAPH SEPARATOR
+    ],
+)
+def test_rewrite_frontmatter_model_line_rejects_unicode_separators(separator_value):
+    """_rewrite_frontmatter_model_line must reject U+2028/U+2029 (ML-5C)."""
+    with pytest.raises(ValueError, match="control character"):
+        _rewrite_frontmatter_model_line(_SOURCE_WITH_MODEL, separator_value)
+
+
+def test_rewrite_frontmatter_model_line_accepts_accented_value():
+    """Accented claude- value must not be rejected by the unicode-separator check (ML-5C)."""
+    legitimate = "claude-sonnet-4-6-café"
+    result = _rewrite_frontmatter_model_line(_SOURCE_WITH_MODEL, legitimate)
+    assert f"model: {legitimate}" in result

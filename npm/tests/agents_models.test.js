@@ -135,3 +135,43 @@ test('rewriteFrontmatterModelLine accepts legitimate escape-hatch value (claude-
   const result = rewriteFrontmatterModelLine(SOURCE_WITH_MODEL, 'claude-sonnet-4-5-20250929')
   assert.match(result, /model: claude-sonnet-4-5-20250929/)
 })
+
+// ---------------------------------------------------------------------------
+// ML-5C: looksLikeSuspectModelValue flags U+2028/U+2029
+// ---------------------------------------------------------------------------
+
+test('looksLikeSuspectModelValue warns on U+2028 LINE SEPARATOR (ML-5C)', () => {
+  assert.equal(looksLikeSuspectModelValue('claude-sonnet-4-6 tools: Bash'), true)
+})
+
+test('looksLikeSuspectModelValue warns on U+2029 PARAGRAPH SEPARATOR (ML-5C)', () => {
+  assert.equal(looksLikeSuspectModelValue('claude-sonnet-4-6 tools: Bash'), true)
+})
+
+// ML-5C: accented value — check is for line separators, not non-ASCII.
+test('looksLikeSuspectModelValue does not warn on accented claude- ID (ML-5C)', () => {
+  assert.equal(looksLikeSuspectModelValue('claude-sonnet-4-6-café'), false)
+})
+
+// ---------------------------------------------------------------------------
+// ML-5C: rewriteFrontmatterModelLine rejects U+2028/U+2029
+// ---------------------------------------------------------------------------
+
+test('rewriteFrontmatterModelLine rejects U+2028 LINE SEPARATOR (ML-5C)', () => {
+  assert.throws(
+    () => rewriteFrontmatterModelLine(SOURCE_WITH_MODEL, 'claude-sonnet-4-6 tools: Bash'),
+    /control character/
+  )
+})
+
+test('rewriteFrontmatterModelLine rejects U+2029 PARAGRAPH SEPARATOR (ML-5C)', () => {
+  assert.throws(
+    () => rewriteFrontmatterModelLine(SOURCE_WITH_MODEL, 'claude-sonnet-4-6 tools: Bash'),
+    /control character/
+  )
+})
+
+test('rewriteFrontmatterModelLine accepts accented legitimate value (ML-5C)', () => {
+  const result = rewriteFrontmatterModelLine(SOURCE_WITH_MODEL, 'claude-sonnet-4-6-café')
+  assert.match(result, /model: claude-sonnet-4-6-café/)
+})

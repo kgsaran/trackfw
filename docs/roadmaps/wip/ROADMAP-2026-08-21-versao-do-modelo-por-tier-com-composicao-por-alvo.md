@@ -486,16 +486,70 @@ caso que se presume perigoso por analogia e não é.
 ---
 
 ### ML-5C — Estender a recusa a separadores unicode
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Bloqueia o merge.**
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
 
 **Critérios de aceite:**
-- [ ] U+2028 e U+2029 recusados nos 3 CLIs, com a mesma mensagem dos de controle
-- [ ] Provado: o caso que hoje sai `exit=0` passa a sair `exit != 0`, sem artefato
-- [ ] Valores legítimos e acentuação comum **não** afetados — o check é sobre **separadores**, não
-      sobre não-ASCII. Recusar `é` seria over-fix
-- [ ] `LooksLikeSuspectModelValue` também sinaliza
-- [ ] Cenário P4 para o caso novo
-- [ ] `make quality` verde · CI-exata verde
+- [x] U+2028 e U+2029 recusados nos 3 CLIs, com a mesma mensagem dos de controle
+- [x] Provado: o caso que hoje sai `exit=0` passa a sair `exit != 0`, sem artefato
+- [x] Valores legítimos e acentuação comum **não** afetados — provado com `claude-sonnet-4-6-café`
+- [x] `LooksLikeSuspectModelValue` também sinaliza (delega a `containsControlChar`)
+- [x] Cenário P4 para o caso novo (Case 5c no gate, U+2028 × 3 runtimes + vacuity)
+- [x] `make quality` verde · CI-exata verde
+
+**Arquivos modificados (3 stacks):**
+- Go: `internal/integrations/render.go` (`containsControlChar` → rune loop + U+2028/U+2029),
+  `internal/integrations/render_test.go` (+2 testes: rejeição U+2028/U+2029 + aceite acento),
+  `internal/integrations/models_test.go` (+3 casos em `LooksLikeSuspectModelValue`)
+- Node.js: `npm/src/integrations/render.js` (`containsControlChar` + `c === 0x2028 || c === 0x2029`),
+  `npm/tests/agents_models.test.js` (+6 testes ML-5C)
+- Python: `pypi/trackfw/integrations/renderers.py` (`_contains_control_char` + `ord(c) in (0x2028, 0x2029)`),
+  `pypi/tests/test_agents_models.py` (+5 testes ML-5C)
+- Gate: `scripts/check-agent-models-parity.sh` (Case 5c: U+2028 × 3 runtimes + vacuity guard)
+- Vault: `vault/notes/rewrite-frontmatter-newline-injection-escape-hatch-2026-08-21.md` (seção ML-5C adicionada)
+
+**Pontos de código U+2028 e U+2029 — justificativa por medição:**
+- U+2028/U+2029: yaml.v3 preserva verbatim no valor Go string (rune[17]=U+2028, len=31). Confirmado
+  por `go run` com yaml.v3. Parsers de frontmatter baseados em linha tratam como separador → injeção
+  estrutural. INCLUÍDOS.
+- U+0085 (NEL): yaml.v3 normaliza para espaço antes de retornar o valor. O resultado é
+  `claude-sonnet-4-6 tools: Bash` (espaço literal). Sem injeção estrutural. EXCLUÍDO com medição.
+
+**Caso legítimo provado não afetado:** `claude-sonnet-4-6-café` aceito (U+00E9 não é separador).
+
+**Evidência CI-exata:**
+```
+OK   [unicode-linesep/U+2028/go/install-rejected]
+OK   [unicode-linesep/U+2028/node/install-rejected]
+OK   [unicode-linesep/U+2028/py/install-rejected]
+OK   [unicode-linesep/vacuity/yaml-fixture-contains-u2028-escape]
+All check-agent-models-parity.sh scenarios passed (...unicode-separator rejection...)
+TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make parity  →  exit 0, 0 FAILs
+./bin/trackfw validate  →  17 warnings pré-existentes, 0 violations
+```
+
+### Auditoria do ML-5C — aprovada; sem over-fix
+
+```
+U+2028      exit=1  <sem artefato>
+U+2029      exit=1  <sem artefato>
+acentuado   exit=0  claude-sonnet-4-6-cafeé     <- legitimo, intacto
+versao-ok   exit=0  claude-sonnet-4-6
+```
+
+O risco que eu nomeei era **recusar acentuação por paranoia**. Não aconteceu — o check é sobre
+separadores de linha, não sobre não-ASCII.
+
+**A decisão sobre U+0085 (NEL) é o melhor do lote.** Eu tinha citado o NEL no handoff como candidato,
+e ele **excluiu — por medição**: o `yaml.v3` normaliza U+0085 para **espaço** antes de devolver o
+valor, então não há injeção estrutural. Ampliar o bloqueio ali seria proteção nominal contra um vetor
+que não existe, e cada codepoint bloqueado sem evidência é um falso-positivo esperando acontecer.
+
+Ele fez o mesmo com o `CR` na reverificação anterior. Duas vezes seguidas medindo antes de bloquear,
+contra uma sugestão minha nas duas. É a postura certa: **eu levanto a hipótese, quem mede decide**.
+
+`make quality` (CI-exata) exit 0 · cobertura exit 0 · `validate` exit 0.
+
+**Wave 5 fechada. REQ pronta para PR.**
 
 ## Notas
 - **Fora de escopo:** trocar o tier de um agente; mudar mapeamento de Codex/Cursor/Antigravity;

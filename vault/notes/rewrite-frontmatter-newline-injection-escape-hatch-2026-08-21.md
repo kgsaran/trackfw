@@ -84,7 +84,61 @@ relativo) e escreve em `~/.claude/agents/` (escopo global para todos os projetos
 **Artefato:** criar REQ `update-harness-cwd-hostil-modifica-agentes-globais` para rastrear o
 residual com escopo, AC e revisão de comportamento adequada.
 
+## Extensão ML-5C: U+2028 e U+2029 (LINE/PARAGRAPH SEPARATOR)
+
+**Descoberto em:** ML-5B (reverificação de barreira). Corrigido em ML-5C.
+
+### Por que `< 0x20` era insuficiente
+
+`containsControlChar` usava limite `s[i] < 0x20`. U+2028 (LINE SEPARATOR) e U+2029
+(PARAGRAPH SEPARATOR) têm bytes UTF-8 `0xE2 0x80 0xA8` / `0xE2 0x80 0xA9`, todos `>= 0x80`.
+
+### Comportamento do parser
+
+Medido diretamente com `go run` contra `gopkg.in/yaml.v3`:
+
+```
+value configurada em trackfw.yaml: "claude-sonnet-4-6\xe2\x80\xa8tools: Bash"
+valor parseado por yaml.v3 (Go string): "claude-sonnet-4-6 tools: Bash" (len=31, rune[17]=U+2028)
+```
+
+yaml.v3 **preserva** U+2028 no valor Go string (não converte para `\n` nem para espaço).
+`rewriteFrontmatterModelLine` escreve `model: claude-sonnet-4-6<U+2028>tools: Bash`.
+
+Parsers de frontmatter que dividem em `\n`/`\r\n` veem isso como uma linha válida com ID inválido.
+Parsers YAML 1.2 que tratam U+2028 como separador de linha podem dividir em nova chave — injeção estrutural especulativa.
+
+### U+0085 (NEL) — excluído, com medição
+
+yaml.v3 **normaliza** U+0085 para espaço antes de passar o valor para Go.
+O resultado é `claude-sonnet-4-6 tools: Bash` (espaço literal, não U+0085).
+Sem injeção estrutural; espaço é inócuo para parsers de frontmatter baseados em linha.
+U+0085 **não** foi adicionado ao check — justificativa por evidência, não por precaução.
+
+### Correção implementada (ML-5C)
+
+`containsControlChar` trocou o loop de byte `s[i] < 0x20` por loop de rune:
+
+```go
+for _, r := range s {
+    if r < 0x20 || r == ' ' || r == ' ' {
+        return true
+    }
+}
+```
+
+O loop de rune é equivalente ao loop de byte para ASCII: bytes UTF-8 de continuação são sempre
+`>= 0x80`, então `byte < 0x20` nunca pertence a sequência multi-byte. U+2028/U+2029 adicionados
+pelo valor exato do rune. Identicamente nos 3 CLIs (Node.js via `charCodeAt`, Python via `ord`).
+
+`LooksLikeSuspectModelValue` sinaliza automaticamente (delega a `containsControlChar`).
+
+Gate: Case 5c em `scripts/check-agent-models-parity.sh` (fixture com U+2028 literal no YAML
+double-quoted, 3 runtimes × 1 variante + vacuity guard).
+
 ## Artefatos de evidência
 
 - `docs/seguranca/2026-08-21-revisao-da-configuracao-de-modelo.md` — relatório completo com
   reprodução passo a passo
+- `docs/seguranca/2026-08-21-reverificacao-da-configuracao-de-modelo.md` — reverificação ML-5B,
+  gap U+2028 identificado e medido

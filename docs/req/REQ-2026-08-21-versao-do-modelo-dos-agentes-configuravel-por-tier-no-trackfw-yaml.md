@@ -104,19 +104,19 @@ Isto precisa ser gate, não cuidado.
 
 ## Acceptance Criteria
 
-- [ ] AC1 — `agent_models` por tier no `trackfw.yaml`, guardando **versão**, não ID.
-- [ ] AC2 — Composição correta nas três regras: ponto→traço, maior sem minor, e alvo compondo a
+- [x] AC1 — `agent_models` por tier no `trackfw.yaml`, guardando **versão**, não ID.
+- [x] AC2 — Composição correta nas três regras: ponto→traço, maior sem minor, e alvo compondo a
       própria forma (Claude / OpenCode / Bedrock).
-- [ ] AC3 — Escape hatch: valor que não é versão é usado **literalmente**.
-- [ ] AC4 — **Nenhum vazamento de namespace** — provado por cenário: Codex, Cursor e Antigravity
+- [x] AC3 — Escape hatch: valor que não é versão é usado **literalmente**.
+- [x] AC4 — **Nenhum vazamento de namespace** — provado por cenário: Codex, Cursor e Antigravity
       seguem com os próprios valores quando `agent_models` está configurado.
-- [ ] AC5 — Comando lista a **resolução efetiva** por agente e por alvo.
-- [ ] AC6 — Catálogo pina as versões escolhidas; `agents update` **reforça** o pin.
-- [ ] AC7 — Paridade nos 3 CLIs, com **gate comparando saídas reais**.
-- [ ] AC8 — Cenário P4 com baseline e detecção.
-- [ ] AC9 — Anotação `trackfw-contract` da seção (o checker de cobertura é bloqueante).
-- [ ] AC10 — O motivo (**cota, não custo**) registrado no `cli-parity.md` ou em ADR.
-- [ ] AC11 — `make quality` verde **e CI verde**.
+- [x] AC5 — Comando lista a **resolução efetiva** por agente e por alvo.
+- [x] AC6 — Catálogo pina as versões escolhidas; `agents update` **reforça** o pin.
+- [x] AC7 — Paridade nos 3 CLIs, com **gate comparando saídas reais**.
+- [x] AC8 — Cenário P4 com baseline e detecção.
+- [x] AC9 — Anotação `trackfw-contract` da seção (o checker de cobertura é bloqueante).
+- [x] AC10 — O motivo (**cota, não custo**) registrado no `cli-parity.md` ou em ADR.
+- [ ] AC11 — `make quality` verde **e CI verde**. (local verde; **aguardando CI**)
 
 ## Riscos para quem executar
 

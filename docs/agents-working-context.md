@@ -4,6 +4,53 @@
 
 ---
 
+## Sessão 2026-08-21 — Apolo (FIM: ML-5C — Estender a recusa a separadores unicode)
+
+Branch `feat/versao-do-modelo-por-tier-com-composicao-por-alvo`. Sem commit/push (autoridade do
+`trackfw_architect`).
+
+**Veredito: CONCLUÍDO. Todas as validações verdes.**
+
+**Pontos de código incluídos:** U+2028 (LINE SEPARATOR) e U+2029 (PARAGRAPH SEPARATOR).
+**Excluído com medição:** U+0085 (NEL) — yaml.v3 normaliza para espaço, sem injeção estrutural.
+**Caso legítimo:** `claude-sonnet-4-6-café` aceito nos 3 CLIs (U+00E9 não é separador de linha).
+
+**Artefatos modificados (3 stacks):**
+- Go: `render.go` (`containsControlChar` → rune loop + U+2028/U+2029), `render_test.go`
+  (+2 testes), `models_test.go` (+3 casos)
+- Node.js: `npm/src/integrations/render.js` (`c === 0x2028 || c === 0x2029`),
+  `npm/tests/agents_models.test.js` (+6 testes)
+- Python: `pypi/trackfw/integrations/renderers.py` (`ord(c) in (0x2028, 0x2029)`),
+  `pypi/tests/test_agents_models.py` (+5 testes)
+- Gate: `scripts/check-agent-models-parity.sh` (Case 5c + vacuity)
+- Vault: `vault/notes/rewrite-frontmatter-newline-injection-escape-hatch-2026-08-21.md` (seção ML-5C)
+- Roadmap: ML-5C marcado ✅
+
+**Evidência:**
+```
+make test          → ok (todos pacotes Go)
+28 tests Node.js   → pass 28, fail 0
+41 tests Python    → 41 passed
+TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make parity → exit 0, 0 FAILs
+./bin/trackfw validate → 17 warnings pré-existentes, 0 violations
+```
+
+---
+
+## Sessão 2026-08-21 — Apolo (INÍCIO: ML-5C — Estender a recusa a separadores unicode)
+
+Branch `feat/versao-do-modelo-por-tier-com-composicao-por-alvo`. Sem commit/push (autoridade do
+`trackfw_architect`). Escopo: estender `containsControlChar` para U+2028/U+2029 nos 3 CLIs, gate P4
+novo, testes, sem over-fix.
+
+**Medições pré-implementação realizadas:**
+- `go run` com yaml.v3 + literal U+2028 bytes → valor preservado na string Go: `claude-sonnet-4-6 tools: Bash` (len=31, rune[17]=U+2028). Contradiz leitura anterior com Python `splitlines()` (que trata U+2028 como separador de linha na leitura de volta — falso len=17).
+- YAML escape ` ` em double-quoted scalar: yaml.v3 decodifica para U+2028 idêntico. Fixture de heredoc (ASCII puro) é seguro.
+- U+0085 (NEL): yaml.v3 normaliza para espaço (sem injeção estrutural) — **excluído** da correção, com medição citada.
+- Chokepoint confirmado: todo caminho com escrita em disco passa por `Render → rewriteFrontmatterModelLine`. Check único.
+
+---
+
 ## Sessão 2026-08-21 — Hades (FIM: ML-5B — Reverificação da barreira de segurança: configuração de modelo)
 
 Branch `feat/versao-do-modelo-por-tier-com-composicao-por-alvo`. Sem commit/push (autoridade do

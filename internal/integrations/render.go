@@ -502,12 +502,24 @@ func mapModelCursor(model string) (string, bool) {
 }
 
 // containsControlChar reports whether s contains any ASCII control character
-// (U+0000–U+001F). Model IDs never require control characters in any known or
-// anticipated format; a value that contains them is either malformed or a
-// frontmatter-injection payload. Callers must reject, not sanitize.
+// (U+0000–U+001F) or a Unicode line/paragraph separator (U+2028, U+2029).
+// Model IDs never require control characters or Unicode line separators in any
+// known or anticipated format; a value that contains them is either malformed
+// or a frontmatter-injection payload. Callers must reject, not sanitize.
+//
+// Implementation note: the rune loop is equivalent to the old byte loop for
+// ASCII controls — UTF-8 continuation bytes are always ≥ 0x80, so a byte
+// < 0x20 can never be part of a multi-byte sequence. The rune loop adds
+// detection of U+2028/U+2029, which yaml.v3 preserves verbatim in the parsed
+// Go string (bytes 0xE2 0x80 0xA8 / 0xE2 0x80 0xA9, all ≥ 0x80, invisible to
+// the original byte < 0x20 check). ML-5C.
+//
+// U+0085 (NEL) is intentionally excluded: yaml.v3 normalizes it to a space
+// at parse time, so no U+0085 ever reaches this function; the space it
+// produces is inert for YAML frontmatter parsers (measured 2026-08-21).
 func containsControlChar(s string) bool {
-	for i := 0; i < len(s); i++ {
-		if s[i] < 0x20 {
+	for _, r := range s {
+		if r < 0x20 || r == ' ' || r == ' ' {
 			return true
 		}
 	}
