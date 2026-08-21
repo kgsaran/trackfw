@@ -4,6 +4,38 @@
 
 ---
 
+## Sessão 2026-08-21 — Hades (FIM: ML-5B — Reverificação da barreira de segurança: configuração de modelo)
+
+Branch `feat/versao-do-modelo-por-tier-com-composicao-por-alvo`. Sem commit/push (autoridade do
+`trackfw_architect`).
+
+**Veredito: BLOQUEIO LEVANTADO COM RESSALVAS.**
+
+**Medições realizadas:**
+- Exploit 1 (\n → chave duplicada): exit=1, arquivo intacto. FECHADO.
+- Exploit 2 (\n---\n → body injection): exit=1, arquivo intacto. FECHADO.
+- Tab (0x09): exit=1. FECHADO (< 0x20 cobre).
+- CR (0x0D): YAML normaliza para espaço; espaço é inócuo. FECHADO.
+- U+2028/U+2029: NOT blocked (>= 0x80, fora do limite < 0x20). Se escrito, linha de model contém
+  U+2028 literalmente. Parsers line-based: model ID inválido (disponibilidade). Parsers YAML 1.2:
+  potencial split de linha (especulativo). DÍVIDA NOMEADA, não bloqueante.
+- Paridade 3 CLIs: idêntica em todos os casos.
+- Deferimento CWD→global: defensável.
+
+**Artefato produzido:**
+- `docs/seguranca/2026-08-21-reverificacao-da-configuracao-de-modelo.md`
+
+---
+
+## Sessão 2026-08-21 — Hades (INÍCIO: ML-5B — Reverificação da barreira de segurança: configuração de modelo)
+
+Branch `feat/versao-do-modelo-por-tier-com-composicao-por-alvo`. Sem commit/push (autoridade do
+`trackfw_architect`). Escopo: confirmar se os exploits originais do ML-4A estão fechados no binário
+atual, verificar cobertura da correção (controles ASCII vs. Unicode), paridade 3 CLIs, e avaliar se
+o deferimento do segundo achado (CWD→global) é defensável.
+
+---
+
 ## Sessão 2026-08-21 — Apolo (FIM: ML-5A — Corretiva de bloqueio: rejeitar caracteres de controle no valor de modelo)
 
 Branch `feat/versao-do-modelo-por-tier-com-composicao-por-alvo`. Sem commit/push (autoridade do

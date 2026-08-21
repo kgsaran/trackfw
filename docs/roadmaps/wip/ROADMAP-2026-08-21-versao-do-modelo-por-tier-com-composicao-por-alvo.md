@@ -449,7 +449,53 @@ distinção precisa de critério, não de heurística frouxa.
 
 
 ### ML-5B — Reverificação do `hades-tf`
-**Status:** ⬜ Pendente · **Agente:** `hades-tf` · **Dep.:** ML-5A. Quem bloqueou levanta.
+**Status:** ✅ Concluído · **Agente:** `hades-tf` · **Dep.:** ML-5A. Quem bloqueou levanta.
+
+### Auditoria do ML-5B — bloqueio levantado; a lacuna que eu previ é real
+
+Veredito: **LEVANTADO COM RESSALVAS**
+(`docs/seguranca/2026-08-21-reverificacao-da-configuracao-de-modelo.md`).
+
+Os dois exploits dele foram reproduzidos contra o binário atual e **bloqueados**. Paridade nos 3
+CLIs confirmada por ele, testando `rewriteFrontmatterModelLine` direto em cada runtime.
+
+**A ressalva é a lacuna que eu levantei no handoff**, e confirmei por medição própria:
+
+```
+agent_models.sonnet = "claude-sonnet-4-6<U+2028>tools: Bash"
+  exit=0
+  model: claude-sonnet-4-6\u2028tools: Bash    <- ESCRITO
+  contem U+2028: True
+```
+
+`containsControlChar` usa limite `< 0x20`; os bytes UTF-8 de U+2028 são todos `>= 0x80`, então
+passam. O parser YAML do Go **preserva** o caractere em vez de normalizá-lo.
+
+**Ele mediu o que dava para medir e marcou o resto como inferido** — o impacto depende do loader de
+frontmatter: parser que divide por `\n` produz ID inválido (disponibilidade); parser YAML 1.2 que
+trate U+2028 como separador produziria injeção estrutural. O loader real não é mensurável daqui, e
+ele disse isso em vez de afirmar o pior caso.
+
+**Decisão: corrigir agora, não virar REQ.** É extensão do mesmo check, com o **mesmo argumento já
+aceito** — ID de modelo nunca precisa de separador de linha, qualquer que seja o formato futuro.
+Abrir REQ para cinco linhas custaria mais em processo do que o trabalho.
+
+**`CR` sozinho:** ele mediu que o parser normaliza para espaço — inócuo. Registro porque é o tipo de
+caso que se presume perigoso por analogia e não é.
+
+---
+
+### ML-5C — Estender a recusa a separadores unicode
+**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Bloqueia o merge.**
+
+**Critérios de aceite:**
+- [ ] U+2028 e U+2029 recusados nos 3 CLIs, com a mesma mensagem dos de controle
+- [ ] Provado: o caso que hoje sai `exit=0` passa a sair `exit != 0`, sem artefato
+- [ ] Valores legítimos e acentuação comum **não** afetados — o check é sobre **separadores**, não
+      sobre não-ASCII. Recusar `é` seria over-fix
+- [ ] `LooksLikeSuspectModelValue` também sinaliza
+- [ ] Cenário P4 para o caso novo
+- [ ] `make quality` verde · CI-exata verde
 
 ## Notas
 - **Fora de escopo:** trocar o tier de um agente; mudar mapeamento de Codex/Cursor/Antigravity;
