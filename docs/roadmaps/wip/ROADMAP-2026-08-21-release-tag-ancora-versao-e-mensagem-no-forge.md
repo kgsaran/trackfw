@@ -133,7 +133,7 @@ ML-3A, e concordo em levá-la à barreira em vez de decidir sozinho.
 
 
 ### ML-2B — Gate + P4
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` · **Dep.:** ML-2A
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` · **Dep.:** ML-2A
 **Estender `scripts/check-release-tag-parity.sh`**, que já tem 18 cenários — não criar paralelo.
 
 **Critérios de aceite:**
@@ -144,6 +144,35 @@ ML-3A, e concordo em levá-la à barreira em vez de decidir sozinho.
 - [ ] `make quality` verde · CI-exata verde
 
 ---
+
+### Auditoria do ML-2B — aprovada; o P4 encontrou o único alvo sabotável
+
+Sabotei o sha eu mesmo — `objectSHA` → `"HEAD"`:
+
+```
+compila=OK                              <- e o ponto: precisa compilar para ser sabotagem
+gate -> EXIT=1
+  FAIL [release-tag-parity/content-from-commit-provenance/go]:
+    provenance: tag message must contain 'forge-only' (from forge commit CHANGELOG);
+    got: ## [9.9.9] - 2026-08-19
+restaurado -> EXIT=0
+157 cenarios · make quality (CI-exata) exit 0 · cobertura exit 0 · validate exit 0
+```
+
+**A escolha do alvo era o problema difícil deste lote, e ele acertou.** Sabotar a leitura em si
+**não compila** — o campo foi removido do struct no ML-2A. Um P4 ingênuo teria tentado isso,
+falhado, e o lote acabaria sem falsificação real. Ele mirou no que **resta frágil**: passar o sha
+errado, que compila e desfaz a ancoragem em silêncio.
+
+**A fixture do cenário 16 prova proveniência, não igualdade.** Dois eixos — HEAD com `9.9.7`
+`head-only`, decoy com `9.9.9` `forge-only` — e **ambos os `CHANGELOG` têm `## [9.9.9]`**. Se o
+comando lesse o lugar errado, ainda encontraria a seção da versão; só o **conteúdo** denuncia a
+origem. Comparar apenas "achou a versão" teria passado com o defeito presente.
+
+É o mesmo padrão do sha sintético que ele usou na REQ do `doctor`: **teste de proveniência em vez de
+teste de valor.**
+
+**Wave 2 fechada.** Falta a barreira.
 
 ## Wave 3 — Barreira
 

@@ -22265,3 +22265,56 @@ Mudanças planejadas:
 - Mesma estrutura em Node.js (`readAtCommit`) e Python (`read_at_commit`)
 - Nova constante de recusa nomeando sha+path nos 3 CLIs (byte-identical)
 - Testes novos: objeto ausente recusa nomeando; conteúdo da tag vem do commit, não do working tree
+
+---
+
+## Sessão 2026-08-21 — Apolo (INÍCIO: ML-2B — gate + P4 da ancoragem)
+
+Branch `fix/serve-amarra-em-loopback-por-padrao-com-opt-in-explicito-para-exposicao`. Sem commit/push
+(autoridade do `trackfw_architect`).
+
+Escopo: estender `scripts/check-release-tag-parity.sh` com cenários 15 (object-absent), 16
+(content-from-commit-provenance dois eixos); adicionar Cenário 87 ao
+`scripts/check-gates-falsify.sh` (P4 prova que ancoragem do CHANGELOG é load-bearing); atualizar
+`docs/cli-parity.md` com documentação da ancoragem de conteúdo; validações completas.
+
+---
+
+## Sessão 2026-08-21 — Apolo (FIM: ML-2B — gate + P4 da ancoragem)
+
+Branch `fix/serve-amarra-em-loopback-por-padrao-com-opt-in-explicito-para-exposicao`. Sem
+commit/push (autoridade do `trackfw_architect`).
+
+**Veredito: CONCLUÍDO. Todas as validações verdes.**
+
+**Artefatos modificados:**
+- `scripts/check-release-tag-parity.sh`: cenários 15 (object-absent) e 16
+  (content-from-commit-provenance, dois eixos) adicionados; script vai de 18 para 20 RT_LABELs.
+- `scripts/check-gates-falsify.sh`: Cenário 87 adicionado (P4 — sabota leitura do CHANGELOG
+  de objectSHA → "HEAD"; gate captura via asserção de proveniência do Scenario 16; contagem
+  atualizada de 156 → 157).
+- `docs/cli-parity.md`: parágrafo de ancoragem de conteúdo adicionado; contagem de cenários
+  atualizada ("Thirteen" → "Sixteen scenarios (20 RT_LABELs)"); Scenarios 14-16 documentados.
+- Roadmap ML-2B: ⬜ Pendente → ✅ Concluído.
+- `docs/agents-working-context.md`: entradas de INÍCIO e FIM desta sessão.
+
+**Decisões técnicas relevantes:**
+- Fixture dois eixos (Scenario 16): HEAD versão 9.9.7 / CHANGELOG head-only; decoy 9.9.9 /
+  CHANGELOG forge-only. Ambas CHANGELOG têm ## [9.9.9] para que a sabotagem do CHANGELOG
+  ainda passe em P4 → falso negativo detectável só via payload.
+- Alvo de sabotagem P4 (Cenário 87): `readCommittedFile(objectSHA, "CHANGELOG.md")` → `("HEAD",
+  "CHANGELOG.md")`. Compila; readFile foi removido do struct → fallback para disco impossível
+  de compilar. Literal único em release.go (corrupt_literal verifica).
+- cli-parity.md atualizado sem nova subsection (seguindo conselho do advisor) — texto estendido
+  dentro da seção existente `### trackfw release tag <version>`; anotação `<!-- trackfw-contract
+  -->` pré-existente cobre o conteúdo novo.
+
+**Evidência:**
+```
+make build                                           → exit 0
+make test                                            → ok todos os pacotes Go (cached)
+GO_BIN=./bin/trackfw bash scripts/check-release-tag-parity.sh → All 20 scenarios passed
+bash scripts/check-parity-contract-coverage.sh       → exit 0
+TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make parity      → exit 0 (incluindo OK [falsify/release-tag-parity/content-from-commit-baseline] + content-from-commit-false-negative)
+./bin/trackfw validate                               → 17 warnings pré-existentes, 0 violations
+```

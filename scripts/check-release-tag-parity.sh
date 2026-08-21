@@ -1077,6 +1077,206 @@ done
 assert_three_way "$RT_LABEL"
 
 # ---------------------------------------------------------------------------
+# Scenario 15 — object-absent: forge returns a sha whose git objects do not
+# exist locally → all 3 CLIs refuse naming path AND sha, byte-identical.
+#
+# Technique: same pin+delete as Scenario 14 — pin remote.origin.fetch to a
+# guard branch (s15-guard) that genuinely exists on origin, then delete
+# refs/remotes/origin/main so the command's own `git fetch origin --prune`
+# refreshes only s15-guard and never repopulates origin/main. This makes
+# forgeLocalSHA = "" → cross-check skipped → command proceeds to P3, calls
+# `git show FAKE_ABSENT_SHA:<path>` → object absent → refuses naming path and
+# sha (ADR-2026-08-21: "objeto ausente → recusar nomeando o quê falta").
+#
+# FAKE_ABSENT_SHA (40 × 'a') is syntactically valid as a sha40 but will never
+# appear in a freshly-initialized local git object store — proven by vacuity
+# guard 2 below.  No gh api POST may happen (no-publish guard).
+# ---------------------------------------------------------------------------
+FAKE_ABSENT_SHA="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+RT_LABEL="object-absent"
+dest="$WORK/s15"
+fixture=$(build_fixture "$dest" "github" "1")
+(
+  cd "$fixture"
+  env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "GIT_TERMINAL_PROMPT=0" "HOME=$dest" \
+    git branch s15-guard
+  env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "GIT_TERMINAL_PROMPT=0" "HOME=$dest" \
+    git push -q origin s15-guard
+  env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "HOME=$dest" \
+    git config remote.origin.fetch "+refs/heads/s15-guard:refs/remotes/origin/s15-guard"
+  env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "HOME=$dest" \
+    git update-ref -d refs/remotes/origin/main
+) >>"$dest/build.log" 2>&1
+# Vacuity guard 1: origin/main tracking ref must be gone
+if (cd "$fixture" && env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" HOME="$dest" \
+    git rev-parse -q --verify refs/remotes/origin/main >/dev/null 2>&1); then
+  fail "release-tag-parity/$RT_LABEL/setup" "vacuity guard: refs/remotes/origin/main still resolves after deletion — scenario proves nothing"
+fi
+# Vacuity guard 2: the fake sha must not exist as a local git object
+if (cd "$fixture" && git cat-file -e "$FAKE_ABSENT_SHA" 2>/dev/null); then
+  fail "release-tag-parity/$RT_LABEL/setup" "vacuity guard: $FAKE_ABSENT_SHA exists as a local git object — scenario proves nothing"
+fi
+stub="$dest-stub"
+call_log="$dest-calls"
+write_release_gh_stub "$stub" "$call_log" "main" "$FAKE_ABSENT_SHA"
+for runtime in go node py; do
+  run_release "$runtime" "$fixture" "$stub" "$dest" "$RELEASE_VERSION"
+  echo "$RT_EXIT" >"$WORK/$RT_LABEL.$runtime.exit"
+  if [[ "$RT_EXIT" -eq 0 ]]; then
+    fail "release-tag-parity/$RT_LABEL/$runtime" "expected non-zero exit: git object absent for sha $FAKE_ABSENT_SHA, got exit 0"
+    continue
+  fi
+  if ! grep -qF "could not read" "$RT_ERR_FILE"; then
+    fail "release-tag-parity/$RT_LABEL/$runtime" "stderr must name the missing path (expected 'could not read'); stderr: $(cat "$RT_ERR_FILE")"
+    continue
+  fi
+  if ! grep -qF "$FAKE_ABSENT_SHA" "$RT_ERR_FILE"; then
+    fail "release-tag-parity/$RT_LABEL/$runtime" "stderr must name the absent sha ($FAKE_ABSENT_SHA); stderr: $(cat "$RT_ERR_FILE")"
+    continue
+  fi
+  # No-publish guard: the command must refuse before reaching any gh api POST
+  if [[ -f "$call_log/01-tags-request.json" ]]; then
+    fail "release-tag-parity/$RT_LABEL/$runtime" "no-publish guard: tag POST was reached despite absent git object"
+    continue
+  fi
+done
+assert_three_way "$RT_LABEL"
+
+# ---------------------------------------------------------------------------
+# Scenario 16 — content-from-commit-provenance: covers BOTH the legitimate
+# PR-bump flow (case 2) and content provenance proof (case 3).
+#
+# Two-axis fixture (advisor recommendation — both anchored reads discriminated):
+#   HEAD (local main): version 9.9.7 in all 5 version files; CHANGELOG has
+#     ## [9.9.9] section with "- head-only" (pre-merge state).
+#   Decoy commit (objectSHA / forge): version 9.9.9 in all 5 version files;
+#     CHANGELOG has ## [9.9.9] section with "- forge-only" (post-merge state).
+#
+# Real binary reads everything from objectSHA (decoy):
+#   P3 → version 9.9.9 == RELEASE_VERSION ✓
+#   P4 → ## [9.9.9] section found ✓; message contains "forge-only" ✓
+#   Publishes → exit 0 ✓
+#
+# The two-axis design makes EACH anchored read independently falsifiable (Cenário 87):
+#   sabotage CHANGELOG read (objectSHA → "HEAD"): P4 still passes (## [9.9.9]
+#     found in HEAD too) but message = "head-only" → provenance assertion fires.
+#   sabotage version read (objectSHA → "HEAD"): P3 reads 9.9.7 ≠ 9.9.9 → exit
+#     non-zero → exit-code assertion fires.
+#
+# Same pin+delete technique as Scenarios 14/15: forge stub returns the decoy
+# sha; cross-check is skipped (refs/remotes/origin/main deleted); P1 passes
+# (working tree matches HEAD); P2 skipped (origin/main gone).
+#
+# Per-runtime call logs (like Scenario 14) because this is a success scenario
+# that makes POST calls.
+# ---------------------------------------------------------------------------
+RT_LABEL="content-from-commit-provenance"
+dest="$WORK/s16"
+fixture=$(build_fixture "$dest" "github" "1")
+# Step 1: mutate local main to version 9.9.7 + CHANGELOG with head-only marker.
+# HEAD carries ## [9.9.9] section (not ## [9.9.7]) so that the sabotaged binary
+# (reading CHANGELOG from HEAD) still passes P4 — only the section BODY differs.
+write_version_files "$fixture" "9.9.7"
+cat >"$fixture/CHANGELOG.md" <<'S16CLEOF'
+# Changelog
+
+## [9.9.9] - 2026-08-19
+
+### Added
+- head-only
+S16CLEOF
+(
+  cd "$fixture"
+  env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "GIT_TERMINAL_PROMPT=0" "HOME=$dest" \
+    git add -A
+  env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "GIT_TERMINAL_PROMPT=0" "HOME=$dest" \
+    git commit -q -m "fixture: local main at 9.9.7 with head-only CHANGELOG"
+  env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "GIT_TERMINAL_PROMPT=0" "HOME=$dest" \
+    git push -q origin main
+) >>"$dest/build.log" 2>&1
+# Step 2: create s16-decoy with version 9.9.9 + CHANGELOG with forge-only marker.
+(
+  cd "$fixture"
+  env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "GIT_TERMINAL_PROMPT=0" "HOME=$dest" \
+    git branch s16-decoy
+  env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "GIT_TERMINAL_PROMPT=0" "HOME=$dest" \
+    git checkout -q s16-decoy
+) >>"$dest/build.log" 2>&1
+write_version_files "$fixture" "9.9.9"
+cat >"$fixture/CHANGELOG.md" <<'S16CLEOF'
+# Changelog
+
+## [9.9.9] - 2026-08-19
+
+### Added
+- forge-only
+S16CLEOF
+(
+  cd "$fixture"
+  env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "GIT_TERMINAL_PROMPT=0" "HOME=$dest" \
+    git add -A
+  env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "GIT_TERMINAL_PROMPT=0" "HOME=$dest" \
+    git commit -q -m "fixture: forge commit at 9.9.9 with forge-only CHANGELOG"
+  env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "GIT_TERMINAL_PROMPT=0" "HOME=$dest" \
+    git push -q origin s16-decoy
+  # Switch back to main, pin refspec to s16-decoy only, delete origin/main tracking ref
+  env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "GIT_TERMINAL_PROMPT=0" "HOME=$dest" \
+    git checkout -q main
+  env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "HOME=$dest" \
+    git config remote.origin.fetch "+refs/heads/s16-decoy:refs/remotes/origin/s16-decoy"
+  env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "HOME=$dest" \
+    git update-ref -d refs/remotes/origin/main
+) >>"$dest/build.log" 2>&1
+FORGE_ONLY_SHA_S16=$(git --git-dir="$dest/origin.git" rev-parse s16-decoy)
+# Vacuity guard 1: origin/main tracking ref must be gone
+if (cd "$fixture" && env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" HOME="$dest" \
+    git rev-parse -q --verify refs/remotes/origin/main >/dev/null 2>&1); then
+  fail "release-tag-parity/$RT_LABEL/setup" "vacuity guard: refs/remotes/origin/main still resolves — cross-check would not be skipped"
+fi
+# Vacuity guard 2: working-tree version.go must have 9.9.7, not 9.9.9 — proves
+# that version came from the forge commit, not the local working tree.
+if ! grep -qF '= "9.9.7"' "$fixture/internal/version/version.go"; then
+  fail "release-tag-parity/$RT_LABEL/setup" 'vacuity guard: working-tree version.go does not contain "9.9.7" — two-axis fixture broken'
+fi
+for runtime in go node py; do
+  call_log="$dest-calls-$runtime"
+  stub="$dest-stub-$runtime"
+  write_release_gh_stub "$stub" "$call_log" "main" "$FORGE_ONLY_SHA_S16"
+  run_release "$runtime" "$fixture" "$stub" "$dest" "$RELEASE_VERSION"
+  echo "$RT_EXIT" >"$WORK/$RT_LABEL.$runtime.exit"
+  if [[ "$RT_EXIT" -ne 0 ]]; then
+    fail "release-tag-parity/$RT_LABEL/$runtime" "expected exit 0 for legitimate PR-bump flow (version 9.9.9 on forge commit, 9.9.7 in local tree); stderr: $(cat "$RT_ERR_FILE")"
+    continue
+  fi
+  if [[ ! -f "$call_log/01-tags-request.json" ]]; then
+    fail "release-tag-parity/$RT_LABEL/$runtime" "expected tag POST to be reached; found: $(ls "$call_log" 2>/dev/null)"
+    continue
+  fi
+  # Provenance assertion: tag message must come from the FORGE COMMIT's CHANGELOG
+  # ("forge-only"), not from the working-tree CHANGELOG ("head-only"). Both carry
+  # ## [9.9.9] section, so exit code alone cannot discriminate — the section BODY
+  # is the only observable difference. This is the assertion Cenário 87 in
+  # check-gates-falsify.sh targets: the sabotaged binary reads CHANGELOG from
+  # "HEAD" instead of objectSHA → P4 still passes → exit 0, but message =
+  # "head-only" → this assertion fires.
+  tags_message_s16=$(json_field "$call_log/01-tags-request.json" message)
+  if ! echo "$tags_message_s16" | grep -qF 'forge-only'; then
+    fail "release-tag-parity/$RT_LABEL/$runtime" "provenance: tag message must contain 'forge-only' (from forge commit CHANGELOG); got: $tags_message_s16"
+    continue
+  fi
+  if echo "$tags_message_s16" | grep -qF 'head-only'; then
+    fail "release-tag-parity/$RT_LABEL/$runtime" "provenance: tag message must NOT contain 'head-only' (from working-tree CHANGELOG); got: $tags_message_s16"
+    continue
+  fi
+  refs_sha_s16=$(json_field "$call_log/02-refs-request.json" sha)
+  if [[ "$refs_sha_s16" != "$FAKE_TAG_OBJECT_SHA" ]]; then
+    fail "release-tag-parity/$RT_LABEL/$runtime" "LIGHTWEIGHT-TAG REGRESSION: ref payload 'sha' must equal the tag-object sha ($FAKE_TAG_OBJECT_SHA), got $refs_sha_s16"
+    continue
+  fi
+done
+assert_three_way "$RT_LABEL"
+
+# ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
 echo
