@@ -4,6 +4,44 @@
 
 ---
 
+## Sessão 2026-08-21 — Hades (FIM: ML-4A — Barreira de segurança: configuração de modelo)
+
+Branch `feat/versao-do-modelo-por-tier-com-composicao-por-alvo`. Sem commit/push (autoridade do
+`trackfw_architect`).
+
+**Veredito: BLOQUEAR.**
+
+**Achados:**
+- CRÍTICO: `rewriteFrontmatterModelLine` (`render.go:503–536`) não sanitiza newlines embarcadas no
+  valor de escape hatch. Medido: valor com `\n---\n` injeta bytes no corpo do arquivo de agente
+  global; valor com `\ntools: Bash` injeta chave YAML duplicada no frontmatter. Ambos sem aviso
+  (payload começa com `claude-`, bypassa `looksLikeSuspectModelValue`).
+- ALTO: `update harness` lê `trackfw.yaml` do CWD (`config.Load()` relativo) e escreve em
+  `os.UserHomeDir()/.claude/agents/` — escalada de escopo confirmada por medição com HOME
+  redirecionado. Todos os 3 CLIs afetados.
+- SEM ACHADO: Guarda `targetID == "claude"` em `render.go:201` verificada sólida; gate P4 ML-3A
+  cobre falseabilidade.
+
+**Artefatos entregues:**
+- `docs/seguranca/2026-08-21-revisao-da-configuracao-de-modelo.md` — relatório completo
+- `vault/notes/rewrite-frontmatter-newline-injection-escape-hatch-2026-08-21.md` — nota do vault
+- `docs/agents-working-context.md` — esta entrada
+
+**Mitigação sugerida ao implementador (sem alterar código aqui):** rejeitar em
+`rewriteFrontmatterModelLine` qualquer valor com caracteres de controle antes de escrever.
+Preserva o escape hatch; model IDs não precisam de newlines.
+
+---
+
+## Sessão 2026-08-21 — Hades (INÍCIO: ML-4A — Barreira de segurança: configuração de modelo)
+
+Branch `feat/versao-do-modelo-por-tier-com-composicao-por-alvo`, roadmap `wip/`. Executando ML-4A:
+barreira de segurança sobre a feature `agent_models`. Perguntas A–D sobre escape hatch, namespace
+guard, escalada CWD→HOME e postura de detecção. Nenhum código de produto alterado. Nenhum
+commit/push (autoridade exclusiva do `trackfw_architect`).
+
+---
+
 ## Sessão 2026-08-21 — Apolo (FIM: ML-3A — Gate de paridade agent_models + cenário P4)
 
 Branch `feat/versao-do-modelo-por-tier-com-composicao-por-alvo`.
