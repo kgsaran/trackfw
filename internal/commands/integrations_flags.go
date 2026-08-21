@@ -71,6 +71,12 @@ func newIntegrationsLifecycleCmd(kind integrations.ItemKind) *cobra.Command {
 		newIntegrationMutationCmd(kind, "update"),
 		newIntegrationsThirdPartyCmd(kind),
 	)
+	// "models" is agents-only: skills have no model field, and surfacing this
+	// under `trackfw skills models` would mislead users. Mirrors the identity
+	// flag gate at integrations_flags.go that keeps --identity out of skills.
+	if kind == integrations.KindAgents {
+		cmd.AddCommand(newAgentModelsCmd())
+	}
 	return cmd
 }
 

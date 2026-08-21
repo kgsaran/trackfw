@@ -106,17 +106,63 @@ valor não é versão **nem** parece ID de modelo (não começa com `claude-`).
 ## Wave 2 — Visibilidade e catálogo
 
 ### ML-2A — Comando de resolução efetiva
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` · **Dep.:** ML-1B
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` · **Dep.:** ML-1B
 Lista, por agente e por alvo, o modelo **efetivamente resolvido**. Sem isso o usuário configura e não
 confirma — foi exatamente a situação em que ninguém sabia dizer qual modelo os agentes usavam.
 
 **Critérios de aceite:**
-- [ ] Saída mostra agente · tier · alvo · valor resolvido
-- [ ] **Avisa** quando o valor configurado não é versão **nem** parece ID de modelo (não começa com
+- [x] Saída mostra agente · tier · alvo · valor resolvido
+- [x] **Avisa** quando o valor configurado não é versão **nem** parece ID de modelo (não começa com
       `claude-`) — hoje `"4.6-beta"` vira `model: 4.6-beta` em silêncio, e o agente falha ao subir
       com a causa a duas camadas de distância (lacuna medida na auditoria do ML-1B)
-- [ ] Byte-idêntica nos 3 CLIs
-- [ ] `make quality` verde
+- [x] Byte-idêntica nos 3 CLIs
+- [x] `make quality` verde (Go/Node.js/Python todos verdes; parity harness passa)
+
+**Superfície:** `trackfw agents models` (subcomando de `agents`, gate `kind == KindAgents`)
+**Arquivos criados:**
+- `internal/integrations/models.go` — `ResolveAgentModel`, `LooksLikeSuspectModelValue`, `AgentTier`, `DefaultAgentSurface`
+- `internal/integrations/models_test.go` — 3 testes Go incluindo drift gate
+- `internal/commands/agents_models.go` — command implementation
+- `internal/commands/integrations_flags.go` — registro para KindAgents
+- `npm/src/integrations/render.js` — `resolveAgentModel`, `looksLikeSuspectModelValue`
+- `npm/src/commands/integrations.js` — subcomando `models` + `createAgentModelsCommand`
+- `npm/tests/agents_models.test.js` — 17 testes Node.js
+- `pypi/trackfw/integrations/renderers.py` — `resolve_agent_model`, `looks_like_suspect_model_value`
+- `pypi/trackfw/integrations/command.py` — subcomando `models` + `_run_models`
+- `pypi/tests/test_agents_models.py` — 30 testes Python incluindo drift gate
+
+---
+
+### Auditoria do ML-2A — aprovada; a lacuna do ML-1B ficou visível
+
+Verifiquei os cinco casos eu mesmo, com o binário recém-compilado:
+
+```
+4.6                          warn=0  ->  claude-sonnet-4-6
+5                            warn=0  ->  claude-sonnet-5
+claude-sonnet-4-5-20250929   warn=0  ->  literal
+4.6-beta                     warn=1  ->  literal          <- a lacuna, agora anunciada
+<sem config>                 warn=0  ->  sonnet           <- comportamento de hoje preservado
+```
+
+O aviso nomeia o problema por extenso, em vez de apenas sinalizar: *"not a version string and not a
+`claude-` model ID; will be written literally and may produce an invalid model identifier"*. Quem
+receber isso sabe o que fazer sem abrir o código.
+
+**Nenhum falso-positivo nos três valores legítimos** — era o risco que eu nomeei no handoff, porque
+aviso barulhento treina o usuário a ignorar, e aí perde-se o aviso que importa.
+
+**Decisão dele que eu não pedi, e que fecha um buraco que eu não tinha visto:** criou um *drift gate*
+(`TestResolveAgentModelMatchesRender`) provando que o valor **relatado** pelo comando é o que o
+`Render()` de fato **escreveria**. Sem isso, o comando poderia divergir do render em qualquer
+mudança futura — e **um comando de inspeção que mente é pior que não ter comando**, porque o usuário
+confia nele em vez de conferir o artefato.
+
+Superfície escolhida: `trackfw agents models`, estendendo o grupo existente em vez de criar
+superfície nova. Correto.
+
+`make quality` (CI-exata) exit 0 · cobertura exit 0 · `validate` exit 0.
+
 
 ### ML-2B — Catálogo pina as versões
 **Status:** ⬜ Pendente · **Agente:** `apolo-tf` · **Dep.:** ML-2A

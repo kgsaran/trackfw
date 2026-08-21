@@ -3,6 +3,8 @@
 const os = require('node:os')
 const { Command } = require('commander')
 const { catalog, execute, parseSurfaces, buildPlans } = require('../integrations')
+const { surfaceFor, readAsset } = require('../integrations/catalog')
+const { markdownParts, resolveAgentModel, looksLikeSuspectModelValue } = require('../integrations/render')
 const identityStore = require('../identity')
 const identityWizard = require('./identity-wizard')
 const { t } = require('../i18n')
@@ -125,6 +127,10 @@ function createLifecycleCommand(kind) {
   // internal/commands/integrations_flags.go registering `third-party` in
   // newIntegrationsLifecycleCmd.
   root.addCommand(createThirdPartyCommand(kind))
+  // "models" is agents-only: skills have no model field, and surfacing this
+  // under `trackfw skills models` would mislead users. Mirrors the identity
+  // flag gate and the Go/Python implementations.
+  if (kind === 'agents') root.addCommand(createAgentModelsCommand())
   for (const operation of ['list', 'install', 'uninstall', 'update']) {
     const mutation = operation !== 'list'
     const command = new Command(operation)
@@ -224,4 +230,58 @@ function createLifecycleCommand(kind) {
   return root
 }
 
-module.exports = { createLifecycleCommand, csv, human, promptSelection, promptAmbiguousSurfaces, resolveScope }
+// createAgentModelsCommand returns the "models" subcommand of "trackfw agents".
+// Lists, for each catalog agent × target pair, the model identifier that
+// install/update would write to the generated artifact. Mirrors
+// internal/commands/agents_models.go:newAgentModelsCmd and
+// pypi/trackfw/integrations/command.py:_run_models.
+//
+// Column widths must match Go and Python for byte-identical output.
+const MODELS_AGENT_WIDTH = 14
+const MODELS_TIER_WIDTH = 8
+const MODELS_TARGET_WIDTH = 12
+const MODELS_NA = '—'
+
+function pad(s, width) {
+  return String(s).padEnd(width)
+}
+
+function createAgentModelsCommand() {
+  const cmd = new Command('models')
+    .description('Show the resolved model each agent uses per target')
+  cmd.action(() => {
+    const agentModels = configModule.load().agentModels || {}
+
+    // Warnings: emit once per suspect tier, sorted, to stderr.
+    const suspectTiers = Object.keys(agentModels)
+      .filter(tier => looksLikeSuspectModelValue(agentModels[tier]))
+      .sort()
+    for (const tier of suspectTiers) {
+      process.stderr.write(
+        `WARN: agent_models.${tier} = ${JSON.stringify(agentModels[tier])} — not a version string and not a claude- model ID; will be written literally and may produce an invalid model identifier\n`
+      )
+    }
+
+    const lines = []
+    lines.push(`${pad('AGENT', MODELS_AGENT_WIDTH)} ${pad('TIER', MODELS_TIER_WIDTH)} ${pad('TARGET', MODELS_TARGET_WIDTH)} RESOLVED`)
+
+    for (const agent of catalog.agents) {
+      const source = readAsset(agent)
+      const parts = markdownParts(source)
+      const tier = parts.model || 'sonnet'
+
+      for (const target of catalog.targets) {
+        const surface = surfaceFor(target, null, 'agents')
+        const representation = surface.capabilities.agents.representation
+        const { resolved, present } = resolveAgentModel(tier, representation, target.id, agentModels)
+        const display = present ? resolved : MODELS_NA
+        lines.push(`${pad(agent.id, MODELS_AGENT_WIDTH)} ${pad(tier, MODELS_TIER_WIDTH)} ${pad(target.id, MODELS_TARGET_WIDTH)} ${display}`)
+      }
+    }
+
+    console.log(lines.join('\n'))
+  })
+  return cmd
+}
+
+module.exports = { createLifecycleCommand, createAgentModelsCommand, csv, human, promptSelection, promptAmbiguousSurfaces, resolveScope }

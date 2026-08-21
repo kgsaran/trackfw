@@ -453,4 +453,56 @@ function render({ kind, content, capability, item, identity: cfg, target, agentM
   return normalize(withSignature)
 }
 
-module.exports = { render, markdownParts, frontmatterName, greetingLine, insertBodyPrefix, rewriteFrontmatterFields, rewriteSignatureLine, isVersionString, composeClaudeModelID }
+// resolveAgentModel returns the model string that render() would write to the
+// model field of an artifact with the given representation and targetID, for
+// an agent with the given tier. Mirrors
+// internal/integrations/models.go:ResolveAgentModel.
+//
+// Returns { resolved: string, present: boolean }.
+// present=false means the artifact format omits the model field entirely — the
+// caller should display "—" or equivalent rather than the tier alias.
+//
+// agentModels applies only for the "claude" target (ADR-2026-08-21 §4).
+function resolveAgentModel(tier, representation, targetID, agentModels) {
+  if (representation === 'custom-agent-toml') {
+    const v = resolveModelCodex(tier)
+    return { resolved: v, present: v !== '' }
+  }
+  if (representation === 'cli-agent-json' || representation === 'agent-json') {
+    return { resolved: '', present: false }
+  }
+  if (representation === 'agent-directory') {
+    const v = resolveModel(tier)
+    return { resolved: v, present: v !== '' }
+  }
+  if (representation === 'opencode-agent') {
+    return { resolved: '', present: false }
+  }
+  // default branch — mirrors render()'s default case
+  if (targetID === 'cursor') {
+    const v = mapModelCursor(tier)
+    return { resolved: v, present: v !== '' }
+  }
+  if (targetID === 'claude') {
+    const am = agentModels || {}
+    const version = am[tier]
+    if (version) {
+      const modelID = isVersionString(version) ? composeClaudeModelID(tier, version) : version
+      return { resolved: modelID, present: true }
+    }
+    // no pin → tier alias unchanged
+  }
+  return { resolved: tier, present: true }
+}
+
+// looksLikeSuspectModelValue reports whether v is an agent_models value that
+// will trigger the escape-hatch path and likely produce an invalid model
+// identifier in the rendered artifact. Returns true when v is not a bare
+// version string AND does not start with "claude-". Callers should emit a
+// per-tier warning to stderr (not per-row) when this returns true.
+// Mirrors internal/integrations/models.go:LooksLikeSuspectModelValue.
+function looksLikeSuspectModelValue(v) {
+  return !isVersionString(v) && !v.startsWith('claude-')
+}
+
+module.exports = { render, markdownParts, frontmatterName, greetingLine, insertBodyPrefix, rewriteFrontmatterFields, rewriteSignatureLine, isVersionString, composeClaudeModelID, resolveAgentModel, looksLikeSuspectModelValue }

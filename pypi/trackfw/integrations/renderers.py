@@ -503,3 +503,67 @@ def render(
     with_frontmatter = _rewrite_frontmatter_fields(with_body, name, description)
     with_signature = _rewrite_signature_line(with_frontmatter, agent.display_name)
     return _normalize_markdown(with_signature)
+
+
+# ---------------------------------------------------------------------------
+# Resolução de modelo efetivo — exposta para "trackfw agents models" (ML-2A)
+# ---------------------------------------------------------------------------
+
+
+def resolve_agent_model(
+    tier: str,
+    representation: str,
+    target_id: str,
+    agent_models: "dict[str, str] | None" = None,
+) -> "tuple[str, bool]":
+    """Retorna o valor de modelo que render() escreveria no campo model: do
+    artefato com a representation e target_id dados, para um agente de tier tier.
+
+    Retorna (resolved, present) — present=False significa que o formato do
+    artefato omite o campo model inteiramente (ex.: cli-agent-json, agent-json,
+    opencode-agent); o chamador deve exibir "—" em vez do alias de tier.
+
+    agentModels só é aplicado para o alvo "claude" (ADR-2026-08-21 §4).
+    Espelha internal/integrations/models.go:ResolveAgentModel e
+    npm/src/integrations/render.js:resolveAgentModel.
+    """
+    if representation == "custom-agent-toml":
+        v = _map_model_codex(tier)
+        return (v, v is not None)
+    if representation in ("cli-agent-json", "agent-json"):
+        return ("", False)
+    if representation == "agent-directory":
+        v = _map_model(tier)
+        return (v, v is not None)
+    if representation == "opencode-agent":
+        return ("", False)
+    # default branch — espelha o case default de render()
+    if target_id == "cursor":
+        v = _map_model_cursor(tier)
+        return (v, v is not None)
+    if target_id == "claude":
+        am = agent_models or {}
+        version = am.get(tier, "")
+        if version:
+            if _is_version_string(version):
+                model_id = _compose_claude_model_id(tier, version)
+            else:
+                model_id = version  # escape hatch: usa literalmente
+            return (model_id, True)
+        # sem pin → alias de tier inalterado
+    return (tier, True)
+
+
+def looks_like_suspect_model_value(v: str) -> bool:
+    """Reporta se v é um valor de agent_models que aciona o escape hatch e
+    provavelmente produz um identificador de modelo inválido no artefato gerado.
+
+    Retorna True quando v não é uma string de versão pura E não começa com
+    "claude-". Chamadores devem emitir um aviso por tier (não por linha) para
+    stderr quando isso retornar True.
+
+    Preferência por falso-negativo: "4.6-beta" avisa; "4.6", "5",
+    "claude-sonnet-4-5-20250929" não avisam.
+    Espelha internal/integrations/models.go:LooksLikeSuspectModelValue.
+    """
+    return not _is_version_string(v) and not v.startswith("claude-")

@@ -21895,3 +21895,29 @@ agente não sobe. É gate, não cuidado.
 **Motivo registrado, porque a leitura ingênua inverte a decisão:** Sonnet 4.6 consome ~30% menos
 tokens (tokenizador pré-4.7) e custa **mais** por token ($3/$15 contra $2/$10). Quem otimiza cota
 quer 4.6; quem otimiza dólar quer 5. Decisões contrárias a partir do mesmo dado.
+
+---
+**Apolo** | ML-2A — Comando de resolução efetiva | 2026-08-21
+Branch: `fix/serve-amarra-em-loopback-por-padrao-com-opt-in-explicito-para-exposicao`
+Roadmap: `ROADMAP-2026-08-21-versao-do-modelo-por-tier-com-composicao-por-alvo.md`
+Status: **iniciando implementação**
+
+Entregando `trackfw agents models` nos 3 CLIs (Go, Node.js, Python):
+- Superfície: subcomando de `agents` (gate por `kind == KindAgents`)
+- Lógica de resolução: `ResolveAgentModel(tier, representation, targetID, agentModels)` (Go) / espelhos
+- Warning: uma vez por tier, stderr, quando `!isVersionString(v) && !hasPrefix(v, "claude-")`
+- "—" para targets onde model field é ausente (cli-agent-json, agent-json, opencode-agent)
+- Ordem: per-agente × per-target, ambos em ordem de catálogo (determinístico)
+
+---
+**Apolo** | ML-2A — Concluído | 2026-08-21
+Branch: `fix/serve-amarra-em-loopback-por-padrao-com-opt-in-explicito-para-exposicao`
+
+Entregou `trackfw agents models` nos 3 CLIs (Go, Node.js, Python):
+- Superfície: `trackfw agents models` (gate `kind == KindAgents`)
+- Output: 121 linhas (1 header + 12 agentes × 10 alvos), byte-idêntico nos 3 CLIs
+- Warning: stderr, por tier, quando `!isVersionString(v) && !hasPrefix(v, "claude-")`
+- "—" para targets sem campo model (amazonq/cli-agent-json, opencode/opencode-agent, antigravity-legacy/agent-json, kiro-cli/agent-json)
+- Drift gate: `TestResolveAgentModelMatchesRender` / `test_resolve_agent_model_matches_render` prova que resolver = Render
+- Testes: 3 Go (incluindo drift gate), 17 Node.js, 30 Python
+- Todos os testes verdes; parity harness verde; `make lint` limpo; `trackfw validate` sem novos erros
