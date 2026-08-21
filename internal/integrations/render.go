@@ -194,7 +194,11 @@ func Render(item Item, kind ItemKind, capability Capability, source []byte, cfg 
 	default:
 		if targetID == "cursor" {
 			if mapped, ok := mapModelCursor(model); ok {
-				source = rewriteFrontmatterModelLine(source, mapped)
+				var rewErr error
+				source, rewErr = rewriteFrontmatterModelLine(source, mapped)
+				if rewErr != nil {
+					return nil, rewErr
+				}
 			} else {
 				source = removeFrontmatterModelLine(source)
 			}
@@ -218,7 +222,11 @@ func Render(item Item, kind ItemKind, capability Capability, source []byte, cfg 
 					// ADR-2026-08-21 §3.
 					modelID = version
 				}
-				source = rewriteFrontmatterModelLine(source, modelID)
+				var rewErr error
+				source, rewErr = rewriteFrontmatterModelLine(source, modelID)
+				if rewErr != nil {
+					return nil, rewErr
+				}
 			}
 		}
 		if !hasIdentity {
@@ -493,6 +501,19 @@ func mapModelCursor(model string) (string, bool) {
 	}
 }
 
+// containsControlChar reports whether s contains any ASCII control character
+// (U+0000–U+001F). Model IDs never require control characters in any known or
+// anticipated format; a value that contains them is either malformed or a
+// frontmatter-injection payload. Callers must reject, not sanitize.
+func containsControlChar(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] < 0x20 {
+			return true
+		}
+	}
+	return false
+}
+
 // rewriteFrontmatterModelLine replaces the "model:" line of a raw markdown
 // source's frontmatter with value, preserving every other frontmatter line
 // and the body byte-for-byte. If the frontmatter has no "model:" line, one is
@@ -500,14 +521,22 @@ func mapModelCursor(model string) (string, bool) {
 // recognizable frontmatter, source is returned unchanged (trimmed) — mirrors
 // the boundary detection used by rewriteFrontmatterFields, scoped to the
 // single "model" key.
-func rewriteFrontmatterModelLine(source []byte, value string) []byte {
+//
+// Returns an error if value contains any ASCII control character (U+0000–U+001F).
+// Model IDs never require control characters; any such value is rejected to
+// prevent frontmatter injection (CVE-class: escape hatch writes value literally;
+// a newline closes the frontmatter block or adds attacker-controlled YAML keys).
+func rewriteFrontmatterModelLine(source []byte, value string) ([]byte, error) {
+	if containsControlChar(value) {
+		return nil, fmt.Errorf("model value contains control character and was rejected: model IDs never require newlines or other control characters (got %q)", value)
+	}
 	trimmed := strings.TrimSpace(string(source))
 	if !strings.HasPrefix(trimmed, "---\n") {
-		return []byte(trimmed)
+		return []byte(trimmed), nil
 	}
 	end := strings.Index(trimmed[4:], "\n---")
 	if end < 0 {
-		return []byte(trimmed)
+		return []byte(trimmed), nil
 	}
 	frontmatter := trimmed[4 : 4+end]
 	rest := trimmed[4+end:] // starts with "\n---", followed by the body
@@ -533,7 +562,7 @@ func rewriteFrontmatterModelLine(source []byte, value string) []byte {
 		lines = append(lines, "model: "+value)
 	}
 
-	return []byte("---\n" + strings.Join(lines, "\n") + rest)
+	return []byte("---\n" + strings.Join(lines, "\n") + rest), nil
 }
 
 // removeFrontmatterModelLine removes the "model:" line from a raw markdown

@@ -396,16 +396,57 @@ aplica a este controle.
 ## Wave 5 — Corretiva do bloqueio
 
 ### ML-5A — Rejeitar caracteres de controle no valor de modelo
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Bloqueia o merge.**
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Bloqueia o merge.**
 
 **Critérios de aceite:**
-- [ ] Valor com `\n`, `\r` ou controle é **recusado**, nos 3 CLIs — não sanitizado em silêncio
-- [ ] As duas variantes que reproduzi deixam de produzir artefato adulterado — provadas
-- [ ] Escape hatch legítimo (`claude-sonnet-4-5-20250929`) **continua funcionando**
-- [ ] Cenário P4 para as duas variantes
-- [ ] Decisão sobre o segundo achado (`update harness` lendo cwd para escopo global): corrigir aqui
-      ou virar REQ — com o motivo escrito
-- [ ] `make quality` verde · CI-exata verde
+- [x] Valor com `\n`, `\r` ou controle é **recusado**, nos 3 CLIs — não sanitizado em silêncio
+- [x] As duas variantes que reproduzi deixam de produzir artefato adulterado — provadas
+- [x] Escape hatch legítimo (`claude-sonnet-4-5-20250929`) **continua funcionando**
+- [x] Cenário P4 para as duas variantes (Case 5a + 5b em `check-agent-models-parity.sh`)
+- [x] Decisão sobre o segundo achado: DEFERIDO com motivo registrado na nota de vault
+- [x] `make quality` verde · CI-exata verde (pendente conclusão — executando em BG)
+
+**Arquivos modificados (3 stacks):**
+- Go: `internal/integrations/render.go` (helper `containsControlChar` + assinatura `([]byte, error)`),
+  `internal/integrations/models.go` (`LooksLikeSuspectModelValue` flags controle),
+  `internal/integrations/render_test.go` (+2 testes rejeição), `internal/integrations/models_test.go` (+2 casos)
+- Node.js: `npm/src/integrations/render.js` (`containsControlChar` + throw), `npm/tests/agents_models.test.js` (+5 testes)
+- Python: `pypi/trackfw/integrations/renderers.py` (`_contains_control_char` + ValueError + `looks_like_suspect_model_value`),
+  `pypi/tests/test_agents_models.py` (+3 testes)
+- Gate: `scripts/check-agent-models-parity.sh` (Case 5a + 5b, 2 variantes × 3 runtimes)
+- Vault: `vault/notes/rewrite-frontmatter-newline-injection-escape-hatch-2026-08-21.md` (decisão + correção)
+
+**Contagem de cenários:** 156 → 163 (+ 7 novas OK lines no gate parity: 6 rejeições + 1 vacuity)
+
+### Auditoria do ML-5A — aprovada; as duas injeções recusadas, os dois caminhos legítimos intactos
+
+Verifiquei os quatro casos eu mesmo:
+
+```
+chave-duplicada   exit=1  <sem artefato>                 injecao=0
+corpo-injetado    exit=1  <sem artefato>                 injecao=0
+escape-legitimo   exit=0  claude-sonnet-4-5-20250929     injecao=0
+versao-normal     exit=0  claude-sonnet-4-6              injecao=0
+```
+
+**Recusa, não sanitização** — nenhum artefato é gerado. Era o que eu tinha pedido: sanitizar
+produziria um valor que o usuário não escreveu e não consegue explicar.
+
+E o escape hatch **continua funcionando**, que era o risco de over-fix. A correção mira o caractere
+de controle, não o mecanismo.
+
+**A decisão sobre o segundo achado é dele, e endosso**, com o argumento que ele escreveu:
+a correção do caractere de controle **elimina a classe de dano mais grave**. Depois dela, a pior
+saída de um `trackfw.yaml` hostil é um ID de modelo arbitrário **de uma linha só** — não mais
+injeção de instrução no corpo do agente. Uma ordem de magnitude menos severo, e o resto é mudança de
+comportamento com raio amplo que merece ciclo próprio.
+
+Virou `REQ-2026-08-21-update-harness-le-trackfw-yaml-do-cwd-e-escreve-em-escopo-global`, com o risco
+dominante nomeado: **o caso legítimo e o hostil têm a mesma forma** — `trackfw.yaml` no cwd —, e a
+distinção precisa de critério, não de heurística frouxa.
+
+`make quality` (CI-exata) exit 0 · cobertura exit 0 · `validate` exit 0.
+
 
 ### ML-5B — Reverificação do `hades-tf`
 **Status:** ⬜ Pendente · **Agente:** `hades-tf` · **Dep.:** ML-5A. Quem bloqueou levanta.

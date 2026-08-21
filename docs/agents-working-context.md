@@ -4,6 +4,50 @@
 
 ---
 
+## Sessão 2026-08-21 — Apolo (FIM: ML-5A — Corretiva de bloqueio: rejeitar caracteres de controle no valor de modelo)
+
+Branch `feat/versao-do-modelo-por-tier-com-composicao-por-alvo`. Sem commit/push (autoridade do
+`trackfw_architect`).
+
+**Veredito: CONCLUÍDO. Todas as validações verdes.**
+
+**Artefatos modificados (3 stacks):**
+- Go: `render.go` (`containsControlChar` + assinatura `([]byte, error)` + callers), `models.go`
+  (`LooksLikeSuspectModelValue` flags controle), `render_test.go` (+2 testes), `models_test.go` (+2 casos)
+- Node.js: `npm/src/integrations/render.js` (`containsControlChar` + throw + export),
+  `npm/tests/agents_models.test.js` (+5 testes)
+- Python: `pypi/trackfw/integrations/renderers.py` (`_contains_control_char` + ValueError +
+  `looks_like_suspect_model_value`), `pypi/tests/test_agents_models.py` (+5 testes)
+- Gate: `scripts/check-agent-models-parity.sh` (Case 5a + 5b, 2 variantes × 3 runtimes + vacuity)
+- Vault: `vault/notes/rewrite-frontmatter-newline-injection-escape-hatch-2026-08-21.md`
+  (correção implementada + decisão sobre segundo achado)
+- Roadmap: ML-5A → ✅ Concluído
+
+**Evidências:**
+- `go test ./internal/integrations/` exit 0 (todos os testes incluindo os 4 novos)
+- `go test ./...` exit 0
+- `node --test npm/tests/*.test.js` → 755 pass, 0 fail
+- `pytest pypi/tests/` → 1448 passed
+- `./bin/trackfw validate` → 17 warnings pré-existentes, 0 violations
+- `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make parity` exit 0
+- `check-agent-models-parity.sh` Case 5: 7 OK lines (2 variantes × 3 runtimes + vacuity)
+
+**Decisão sobre segundo achado (`update harness` CWD→global):** DEFERIDO. Motivo: o fix do
+caractere de controle já elimina a injeção de instrução. Restringir o CWD→global path é mudança de
+comportamento mais ampla, merece REQ própria. Residual documentado na nota de vault.
+
+---
+
+## Sessão 2026-08-21 — Apolo (INÍCIO: ML-5A — Corretiva de bloqueio: rejeitar caracteres de controle no valor de modelo)
+
+Branch `feat/versao-do-modelo-por-tier-com-composicao-por-alvo`. Escopo: rejeitar valores com `\n`,
+`\r`, `\x00–\x1F` em `rewriteFrontmatterModelLine` nos 3 CLIs (Go + Node.js + Python), atualizar
+`LooksLikeSuspectModelValue` / espelhos para incluir controle como suspeito, adicionar P4 no gate
+de paridade e registrar decisão sobre segundo achado (`update harness` CWD→global). Nenhum
+commit/push (autoridade do `trackfw_architect`).
+
+---
+
 ## Sessão 2026-08-21 — Hades (FIM: ML-4A — Barreira de segurança: configuração de modelo)
 
 Branch `feat/versao-do-modelo-por-tier-com-composicao-por-alvo`. Sem commit/push (autoridade do

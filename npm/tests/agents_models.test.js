@@ -2,7 +2,7 @@
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const { resolveAgentModel, looksLikeSuspectModelValue } = require('../src/integrations/render')
+const { resolveAgentModel, looksLikeSuspectModelValue, rewriteFrontmatterModelLine } = require('../src/integrations/render')
 
 // ---------------------------------------------------------------------------
 // LooksLikeSuspectModelValue — criterion for the "4.6-beta" warning (ML-2A)
@@ -97,4 +97,41 @@ test('resolveAgentModel: copilot custom-agent → tier alias', () => {
 
 test('resolveAgentModel: windsurf skill → tier alias', () => {
   assert.deepEqual(resolveAgentModel('sonnet', 'skill', 'windsurf', pinned), { resolved: 'sonnet', present: true })
+})
+
+// ---------------------------------------------------------------------------
+// ML-5A: looksLikeSuspectModelValue flags control characters
+// ---------------------------------------------------------------------------
+
+test('looksLikeSuspectModelValue warns on value with newline (frontmatter key injection)', () => {
+  assert.equal(looksLikeSuspectModelValue('claude-sonnet-4-6\ntools: Bash'), true)
+})
+
+test('looksLikeSuspectModelValue warns on value with newline-frontmatter-close (body injection)', () => {
+  assert.equal(looksLikeSuspectModelValue('claude-sonnet-4-6\n---\nINJECTED'), true)
+})
+
+// ---------------------------------------------------------------------------
+// ML-5A: rewriteFrontmatterModelLine rejects control characters
+// ---------------------------------------------------------------------------
+
+const SOURCE_WITH_MODEL = '---\nname: trackfw-backend\nmodel: sonnet\n---\n\n# Backend\n'
+
+test('rewriteFrontmatterModelLine rejects value with newline (key injection variant)', () => {
+  assert.throws(
+    () => rewriteFrontmatterModelLine(SOURCE_WITH_MODEL, 'claude-sonnet-4-6\ntools: Bash'),
+    /control character/
+  )
+})
+
+test('rewriteFrontmatterModelLine rejects value with frontmatter-close sequence (body injection variant)', () => {
+  assert.throws(
+    () => rewriteFrontmatterModelLine(SOURCE_WITH_MODEL, 'claude-sonnet-4-6\n---\nINJECTED'),
+    /control character/
+  )
+})
+
+test('rewriteFrontmatterModelLine accepts legitimate escape-hatch value (claude-sonnet-4-5-20250929)', () => {
+  const result = rewriteFrontmatterModelLine(SOURCE_WITH_MODEL, 'claude-sonnet-4-5-20250929')
+  assert.match(result, /model: claude-sonnet-4-5-20250929/)
 })

@@ -52,18 +52,26 @@ func ResolveAgentModel(tier, representation, targetID string, agentModels map[st
 // identifier in the rendered artifact.
 //
 // Returns true when v is not a bare version string (digits and dots only) AND
-// does not look like a Claude model ID (prefix "claude-"). Callers should emit
-// a per-tier warning to stderr when this returns true; the warning must fire
-// once per tier, not once per row, to avoid being so noisy that it trains the
-// user to ignore it.
+// does not look like a Claude model ID (prefix "claude-"), OR when v contains
+// any ASCII control character (U+0000–U+001F). Values with control characters
+// are always suspect: rewriteFrontmatterModelLine rejects them outright, so
+// an agent_models entry containing \n or \r will fail at install time. Flagging
+// them here aligns the "trackfw agents models" inspection command with the
+// behavior of "trackfw agents install/update" — a command that reports a
+// different outcome than the write path would is worse than no command.
+//
+// Callers should emit a per-tier warning to stderr when this returns true; the
+// warning must fire once per tier, not once per row, to avoid being so noisy
+// that it trains the user to ignore it.
 //
 // Trade-off: false-negatives are preferred over false-positives.
 // "4.6-beta" → warns (has hyphen, not version, not claude-).
 // "4.6", "5"  → no warn (bare version strings).
 // "claude-sonnet-4-5-20250929" → no warn (looks like a Claude model ID).
 // "gpt-5"     → warns (not a version, not claude-; wrong namespace for claude target).
+// "claude-sonnet-4-6\ntools: Bash" → warns (control char; install would reject).
 func LooksLikeSuspectModelValue(v string) bool {
-	return !isVersionString(v) && !strings.HasPrefix(v, "claude-")
+	return containsControlChar(v) || (!isVersionString(v) && !strings.HasPrefix(v, "claude-"))
 }
 
 // AgentTier extracts the tier (canonical model alias, e.g. "sonnet", "opus")

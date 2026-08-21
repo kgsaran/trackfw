@@ -252,6 +252,14 @@ def _rewrite_frontmatter_fields(source: str, name: str, description: str) -> str
     return "---\n" + "\n".join(lines) + rest
 
 
+def _contains_control_char(s: str) -> bool:
+    """Reports whether s contains any ASCII control character (U+0000–U+001F).
+
+    Mirrors internal/integrations/render.go:containsControlChar.
+    """
+    return any(ord(c) < 0x20 for c in s)
+
+
 def _rewrite_frontmatter_model_line(source: str, value: str) -> str:
     """Substitui a linha "model:" do frontmatter de um markdown cru por
     value, preservando as demais linhas do frontmatter e o corpo byte a
@@ -260,8 +268,18 @@ def _rewrite_frontmatter_model_line(source: str, value: str) -> str:
     retornado sem alteração (trimmed) — espelha a detecção de fronteira de
     _rewrite_frontmatter_fields, escopada à chave "model".
 
+    Raises ValueError if value contains any ASCII control character
+    (U+0000–U+001F). Model IDs never require control characters; any such
+    value is rejected to prevent frontmatter injection (ML-5A).
+
     Espelha internal/integrations/render.go:rewriteFrontmatterModelLine.
     """
+    if _contains_control_char(value):
+        raise ValueError(
+            f"model value contains control character and was rejected: "
+            f"model IDs never require newlines or other control characters "
+            f"(got {value!r})"
+        )
     trimmed = source.strip()
     if not trimmed.startswith("---\n"):
         return trimmed
@@ -566,4 +584,8 @@ def looks_like_suspect_model_value(v: str) -> bool:
     "claude-sonnet-4-5-20250929" não avisam.
     Espelha internal/integrations/models.go:LooksLikeSuspectModelValue.
     """
-    return not _is_version_string(v) and not v.startswith("claude-")
+    # ML-5A: values with control characters are always suspect —
+    # _rewrite_frontmatter_model_line rejects them outright, so this function
+    # must agree with the write path to keep "trackfw agents models" aligned
+    # with "trackfw agents install/update" behavior.
+    return _contains_control_char(v) or (not _is_version_string(v) and not v.startswith("claude-"))

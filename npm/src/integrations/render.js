@@ -97,6 +97,15 @@ function mapModelCursor(model) {
   return CURSOR_MODEL_MAP[model] || ''
 }
 
+// containsControlChar reports whether s contains any ASCII control character
+// (U+0000–U+001F). Mirrors internal/integrations/render.go:containsControlChar.
+function containsControlChar(s) {
+  for (let i = 0; i < s.length; i++) {
+    if (s.charCodeAt(i) < 0x20) return true
+  }
+  return false
+}
+
 // rewriteFrontmatterModelLine substitui a linha "model:" do frontmatter de um
 // markdown cru por value, preservando toda outra linha do frontmatter e o
 // corpo byte a byte. Se o frontmatter não tiver linha "model:", uma é
@@ -105,7 +114,14 @@ function mapModelCursor(model) {
 // espelha a detecção de fronteira usada por rewriteFrontmatterFields,
 // escopada à chave única "model". Espelha
 // internal/integrations/render.go:rewriteFrontmatterModelLine.
+//
+// Throws an Error if value contains any ASCII control character (U+0000–U+001F).
+// Model IDs never require control characters; any such value is rejected to
+// prevent frontmatter injection (ML-5A).
 function rewriteFrontmatterModelLine(source, value) {
+  if (containsControlChar(value)) {
+    throw new Error(`model value contains control character and was rejected: model IDs never require newlines or other control characters (got ${JSON.stringify(value)})`)
+  }
   const trimmed = String(source).trim()
   if (!trimmed.startsWith('---\n')) return trimmed
   const end = trimmed.indexOf('\n---', 4)
@@ -501,8 +517,12 @@ function resolveAgentModel(tier, representation, targetID, agentModels) {
 // version string AND does not start with "claude-". Callers should emit a
 // per-tier warning to stderr (not per-row) when this returns true.
 // Mirrors internal/integrations/models.go:LooksLikeSuspectModelValue.
+// looksLikeSuspectModelValue mirrors internal/integrations/models.go:LooksLikeSuspectModelValue.
+// ML-5A: values with control characters are always suspect — rewriteFrontmatterModelLine
+// rejects them outright, so this function must agree with the write path to keep the
+// "agents models" inspection command aligned with "agents install/update" behavior.
 function looksLikeSuspectModelValue(v) {
-  return !isVersionString(v) && !v.startsWith('claude-')
+  return containsControlChar(v) || (!isVersionString(v) && !v.startsWith('claude-'))
 }
 
-module.exports = { render, markdownParts, frontmatterName, greetingLine, insertBodyPrefix, rewriteFrontmatterFields, rewriteSignatureLine, isVersionString, composeClaudeModelID, resolveAgentModel, looksLikeSuspectModelValue }
+module.exports = { render, markdownParts, frontmatterName, greetingLine, insertBodyPrefix, rewriteFrontmatterFields, rewriteFrontmatterModelLine, rewriteSignatureLine, isVersionString, composeClaudeModelID, resolveAgentModel, looksLikeSuspectModelValue }
