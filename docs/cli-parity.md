@@ -3253,6 +3253,29 @@ Dois cenários negativos (P4) estão em `scripts/check-gates-falsify.sh`:
   do Node.js para emitir `status: backlogged` no `/trackfw:roadmap`; asserta
   exit != 0 com `artifact parity drift: slash_roadmap (go vs node)`.
 
+## CLAUDE.md — seção `## Architect responses` byte-idêntica nos 3 runtimes (ML-1A, ROADMAP-2026-08-21-regra-de-verbosidade-no-asset-do-arquiteto-e-nas-regras-semeadas)
+
+<!-- trackfw-contract: gate=scripts/check-artifact-parity.sh -->
+
+`trackfw init` / `trackfw discover --init` grava `CLAUDE.md` em cada runtime a partir de um
+gerador embutido (`internal/generators/claudemd.go`, `npm/src/generators/init.js`,
+`pypi/trackfw/generators/init_gen.py`). O `CLAUDE.md` completo **não** é byte-idêntico entre os
+3 runtimes (Python inclui `## Architecture Directives (mandatory)` como seção de cabeçalho
+separada; Go e Node.js não). A seção `## Architect responses`, acrescentada pelo ML-1A desta
+ROADMAP, **deve** ser byte-idêntica nos 3 runtimes — ela define o protocolo de verbosidade do
+agente Arquiteto e qualquer divergência silenciosa introduziria comportamento distinto por runtime.
+
+O gate `check-artifact-parity.sh` isola e verifica apenas essa seção via `awk` (extrai de
+`## Architect responses` até o próximo `## ` ou fim de arquivo) e compara byte a byte across
+os 3 outputs de `init`. Um extrato vazio em qualquer runtime activa o vacuity guard antes da
+comparação — evitando que a seção desapareça silenciosamente e a comparação byte a byte passe
+por vacuidade (os 3 arquivos vazios concordam entre si).
+
+Cenário P4 de falsificação em `scripts/check-gates-falsify.sh` (Cenário 84):
+Node.js's `init.js` section header corrupted from `'## Architect responses'` to
+`'## VERBOSITY_SECTION_REMOVED'` in an isolated npm copy; awk extraction finds no matching heading
+→ vacuity guard fires `CLAUDE.md ## Architect responses missing or empty (node)`.
+
 ## Scripts de attention hooks (`trackfw-attention-signal.sh` / `trackfw-attention-cleanup.sh`) — byte-idênticos
 
 <!-- trackfw-contract: gate=scripts/check-attention-scripts-parity.sh -->

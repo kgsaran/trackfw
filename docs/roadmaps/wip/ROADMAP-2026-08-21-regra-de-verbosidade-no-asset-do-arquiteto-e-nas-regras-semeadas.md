@@ -28,7 +28,7 @@ mexer neles, é achado.
 ## Wave 1 — Texto e cobertura (1 ML)
 
 ### ML-1A — Regra nos dois lugares, com gate estendido
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
 **Arquivos:** `internal/integrations/assets/agents/architect.md` + espelhos,
 `internal/generators/agentfiles.go`, `npm/src/generators/init.js`,
 `pypi/trackfw/generators/init_gen.py`, gate de paridade **existente**, `docs/cli-parity.md`.
@@ -56,3 +56,31 @@ evitou isso se pagou.
 - **Fora de escopo:** controle configurável. A REQ registra o motivo: botão é ajustado uma vez e
   esquecido no valor errado.
 - Commits e branch são exclusivos do `trackfw_architect`.
+
+---
+
+### Auditoria do ML-1A — aprovada
+
+```
+sabotagem propria: "Depth is on demand from the user." -> "Depth is always maximum."
+  gate -> EXIT=1: "artifact parity drift: CLAUDE.md ## Architect responses differs
+                   between go and node" (idem go/python)
+restaurado -> EXIT=0
+153 cenarios · make quality (CI-exata) exit 0 · cobertura exit 0 · validate exit 0
+```
+
+**Risco residual dele, resolvido:** ele declarou que o `make quality` estava rodando quando o
+contexto acabou e pediu confirmação. Rodei a invocação CI-exata completa — exit 0, zero FAIL.
+Declarar o que ficou por confirmar, em vez de afirmar verde, é o comportamento certo.
+
+**Gate estendido, não paralelo** — `check-artifact-parity.sh`, que já cobria o `CLAUDE.md` semeado.
+Era o que eu tinha pedido para verificar antes de criar.
+
+**A redação passa no teste que mais me preocupava.** Eu tinha escrito no handoff: *"se a sua redação
+puder ser lida como 'reporte menos', está errada"*. A dele inclui a salvaguarda de forma literal:
+
+> *"A response that buries a blocker in paragraph seven produced the same effect as not reporting it."*
+
+Os três gatilhos estão qualificados, não genéricos — bloqueio **que para a próxima wave**, decisão
+**que não se infere do contexto**, erro **que não se autocorrige**. Sem essas qualificações, "erro do
+agente" viraria escada para escalar sempre.

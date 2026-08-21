@@ -333,6 +333,34 @@ class TestGenerateClaudeMDHarnessSections(unittest.TestCase):
             'CLAUDE.md não anuncia o slash command /trackfw:barrier na tabela',
         )
 
+    def test_generate_claude_md_architect_responses_section(self):
+        from trackfw.generators.init_gen import generate_claude_md
+
+        opts = {'project_name': 'verbosity-test', 'namespacing': 'flat', 'wip_limit': 1}
+        generate_claude_md(self.tmp, opts)
+
+        claude_path = os.path.join(self.tmp, 'CLAUDE.md')
+        with open(claude_path, encoding='utf-8') as f:
+            content = f.read()
+
+        checks = [
+            '## Architect responses',
+            'Default: what changed',
+            'what was decided',
+            'what is needed from you. Three to five lines.',
+            'a **blocker** that stops the next wave',
+            'a **pending user decision** that cannot be inferred from context',
+            'an **error the architect made** that cannot be self-corrected',
+            'Never cut, even when short: measured evidence',
+            'Cut: restating what an executor already reported',
+            'Depth is on demand from the user.',
+        ]
+        for expected in checks:
+            self.assertIn(
+                expected, content,
+                f'CLAUDE.md ## Architect responses não contém o trecho esperado: {expected!r}',
+            )
+
     def test_generate_claude_md_preserves_pre_existing_sections(self):
         from trackfw.generators.init_gen import generate_claude_md
 

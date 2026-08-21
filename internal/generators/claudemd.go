@@ -201,6 +201,18 @@ func generateClaudeMD(cfg Config) error {
 	sb.WriteString("Decide low-risk details autonomously following existing project conventions, ")
 	sb.WriteString("and record autonomous decisions in the commit message.\n")
 
+	sb.WriteString("\n## Architect responses\n\n")
+	sb.WriteString("Default: what changed · what was decided · what is needed from you. Three to five lines.\n\n")
+	sb.WriteString("Scale up only on these three triggers, and only on them: a **blocker** that stops the next wave; ")
+	sb.WriteString("a **pending user decision** that cannot be inferred from context; ")
+	sb.WriteString("an **error the architect made** that cannot be self-corrected.\n\n")
+	sb.WriteString("Never cut, even when short: measured evidence (command and result), barrier verdict, decision taken and why. ")
+	sb.WriteString("A response that buries a blocker in paragraph seven produced the same effect as not reporting it.\n\n")
+	sb.WriteString("Cut: restating what an executor already reported, re-explaining reasoning already given, ")
+	sb.WriteString("recapping state that has not changed, closing praise. ")
+	sb.WriteString("Tables and code blocks only when they replace prose, never when they add to it.\n\n")
+	sb.WriteString("Depth is on demand from the user.\n")
+
 	if err := injectOrUpdateRules("CLAUDE.md", sb.String(), "."); err != nil {
 		return fmt.Errorf("updating CLAUDE.md: %w", err)
 	}

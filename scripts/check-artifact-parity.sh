@@ -466,4 +466,45 @@ for RUNTIME in go node python; do
   assert_quoted_status_validate "$RUNTIME"
 done
 
-echo "Artifact parity checks passed (8 artifact types × 3 runtimes; roadmap flags, quoted status, analyzing cycle flat/by_agent)"
+# ── CLAUDE.md — seção "## Architect responses" byte-idêntica nos 3 runtimes ─
+#
+# O CLAUDE.md completo NÃO é byte-idêntico entre os 3 runtimes (Python tem
+# "## Architecture Directives" na seção de header, Go/Node.js não têm).
+# Esta verificação isola apenas a seção de verbosidade acrescentada pelo
+# ML-1A de ROADMAP-2026-08-21-regra-de-verbosidade, que DEVE ser idêntica.
+#
+# Extração: awk captura de "## Architect responses" até o início do próximo
+# heading "## " ou fim do arquivo. A seção é comparada byte a byte entre os
+# 3 runtimes. Um extrato vazio em qualquer runtime é falha de vacuidade.
+VERBOSITY_FAIL=0
+for RUNTIME in go node python; do
+  awk '/^## Architect responses/{found=1} found && /^## / && !/^## Architect responses/{exit} found{print}' \
+    "$WORK/$RUNTIME/CLAUDE.md" > "$WORK/verbosity-$RUNTIME.txt"
+  if [[ ! -s "$WORK/verbosity-$RUNTIME.txt" ]]; then
+    echo "artifact parity drift: CLAUDE.md ## Architect responses missing or empty ($RUNTIME) — vacuity guard failed" >&2
+    VERBOSITY_FAIL=1
+  fi
+done
+
+if [[ "$VERBOSITY_FAIL" -ne 0 ]]; then
+  echo "check-artifact-parity: CLAUDE.md verbosity vacuity guard failed" >&2
+  exit 1
+fi
+
+if ! cmp -s "$WORK/verbosity-go.txt" "$WORK/verbosity-node.txt"; then
+  echo "artifact parity drift: CLAUDE.md ## Architect responses differs between go and node" >&2
+  diff "$WORK/verbosity-go.txt" "$WORK/verbosity-node.txt" >&2 || true
+  FAIL=1
+fi
+if ! cmp -s "$WORK/verbosity-go.txt" "$WORK/verbosity-python.txt"; then
+  echo "artifact parity drift: CLAUDE.md ## Architect responses differs between go and python" >&2
+  diff "$WORK/verbosity-go.txt" "$WORK/verbosity-python.txt" >&2 || true
+  FAIL=1
+fi
+
+if [[ "$FAIL" -ne 0 ]]; then
+  exit 1
+fi
+
+echo "OK   [artifact-parity/claude-md-architect-responses-byte-identical]"
+echo "Artifact parity checks passed (8 artifact types × 3 runtimes; roadmap flags, quoted status, analyzing cycle flat/by_agent; CLAUDE.md ## Architect responses section)"
