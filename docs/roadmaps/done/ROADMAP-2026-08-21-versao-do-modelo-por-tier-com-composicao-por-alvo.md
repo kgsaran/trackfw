@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-08-21
 req: "docs/req/REQ-2026-08-21-versao-do-modelo-dos-agentes-configuravel-por-tier-no-trackfw-yaml.md"
 adr: "docs/adr/ADR-2026-08-21-versao-do-modelo-por-tier-com-composicao-por-alvo.md"
@@ -8,7 +8,7 @@ squad: "apolo-tf, hades-tf"
 
 # Roadmap: versão do modelo por tier, com composição por alvo
 
-> Created: 2026-08-21 | Status: wip
+> Created: 2026-08-21 | Status: done
 
 ## Context
 
