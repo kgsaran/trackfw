@@ -3,7 +3,7 @@ date: 2026-08-22
 author: "Hades (Security Reviewer)"
 roadmap: "ROADMAP-2026-08-22-validate-detecta-hook-com-pwd-que-falha-fora-da-raiz.md"
 ml: "ML-3A"
-revision: "2 (sessao continuada — tres achados corrigidos apos validacao por execucao nos 3 stacks)"
+revision: "3 (reverificacao de ML-4A — tres ressalvas confirmadas fechadas; APROVADO COM RESSALVAS)"
 ---
 
 # Revisao de Seguranca — Classificacao por Ancoragem (ML-3A)
@@ -239,7 +239,7 @@ uma superficie de pre-existente relevante para a barreira.
 
 ---
 
-## Instrucao para o arquiteto
+## Instrucao para o arquiteto (original — revisao 2)
 
 **Esta barreira reprova a entrega.** Duas correcoes sao necessarias antes de APROVADO:
 
@@ -253,3 +253,113 @@ uma superficie de pre-existente relevante para a barreira.
    onde `$PWD` aparece como argumento (ex: `git -C $PWD status`) antes de aplicar.
 
 O gap de `${PWD}` nao e bloqueante e pode ser endereçado em REQ futura.
+
+---
+
+## Reverificacao ML-4A — Sessao 2026-08-22 (Hades, revisao 3)
+
+### Veredito
+
+**APROVADO COM RESSALVAS**
+
+As tres ressalvas bloqueantes do parecer anterior foram medidas nos tres runtimes com fixtures
+gerenciadas via `json.dump` Python (round-trip validado). A correcao fecha os tres achados.
+O debito de mensagem de `"~/..."` e declarado e aceito para a release 7.2.0.
+
+### Instrumento desta reverificacao
+
+- Binario `./bin/trackfw` recompilado (`make build` — exit 0)
+- `node /…/npm/bin/trackfw` (entrypoint correto)
+- `PYTHONPATH=/…/pypi python3 -m trackfw` (entrypoint correto)
+- Fixtures gerados com `python3 -c "import json, sys; ... print(json.dumps(...))"` — round-trip
+  validado antes de confiar no resultado
+- `cd "$tmpdir" && <cli> validate` — o validator usa `os.Getwd()`, nao aceita `--root`
+
+Nota: o uso de `--root` nos testes da sessao anterior causava silencio falso universal. Corrigido
+aqui executando os CLIs a partir do diretorio de fixture.
+
+### Q1 — As tres ressalvas estao fechadas? (medido nos 3 runtimes)
+
+| Forma | Go | Node | Python | Esperado | Status |
+|---|---|---|---|---|---|
+| `~/.trackfw/scripts/trackfw-credential-guard.sh` (sem aspas) | SILENT | SILENT | SILENT | classe 1 | FECHADA |
+| `~/scripts/trackfw-credential-guard.sh` (sem aspas) | SILENT | SILENT | SILENT | classe 1 | FECHADA |
+| `"~/.trackfw/scripts/trackfw-credential-guard.sh"` (com aspas) | ACUSADO | ACUSADO | ACUSADO | classe 2 | FECHADA |
+| `${PWD}/scripts/trackfw-credential-guard.sh` | ACUSADO (msg PWD) | ACUSADO (msg PWD) | ACUSADO (msg PWD) | classe 2 | FECHADA |
+| `sh -c "$PWD/scripts/trackfw-credential-guard.sh"` | ACUSADO (msg PWD) | ACUSADO (msg PWD) | ACUSADO (msg PWD) | classe 2, msg PWD | FECHADA |
+
+Mensagem de `${PWD}` e `sh -c "$PWD/..."`: "$PWD expands to the current working directory, not the
+project root; run `trackfw update` to fix it" — correta e especifica.
+
+### Q2 — A correcao do til abriu porta nova?
+
+Casos borda medidos nos 3 runtimes:
+
+| Forma | Resultado | Analise |
+|---|---|---|
+| `~` sozinho | SILENT | Nao contem o marker; regra nao ativada. Irrelevante para ancoragem. |
+| `~usuario/scripts/trackfw-credential-guard.sh` | ACUSADO ("bare relative path") | `~user` nao comeca com `~/`; cai em classe 2. Mensagem errada (nao e cwd-dependent). Edge case extremamente improvavel em contexto real. Nao bloqueante — observacao registrada. |
+| `~/../scripts/trackfw-credential-guard.sh` | SILENT | Comeca com `~/` → classe 1. `~/../` resolve para um absoluto. Correto. |
+| `$HOME/scripts/trackfw-credential-guard.sh` | SILENT (classe 3) | `$HOME` e tratado como variavel generica (classe 3). Semanticamente equivalente a `~/` mas o validador nao le o ambiente. Consistente com o ADR. |
+
+**Observacao nova (nao bloqueante):** `~usuario/scripts/...` (tilde com nome de usuario diferente
+do corrente) e acusado com mensagem "bare relative path" factualmente errada. O path expande para
+o home de outro usuario — nao depende do cwd. Em contexto de hooks de agentes de IA, essa forma
+e extremamente improvavel. Registrado como debito de baixa prioridade, menor que o gap de
+`${PWD}` original.
+
+### Q3 — Regressao nos casos aprovados anteriormente?
+
+| Forma | Resultado | Avaliacao |
+|---|---|---|
+| `/opt/x/scripts/trackfw-credential-guard.sh` (absoluto) | SILENT | OK — classe 1 preservada |
+| `"$(git rev-parse --show-toplevel)/scripts/..."` (Codex) | Acusa "script does not exist" | CORRETO — a forma e classe 1 (ancorada), o resolver encontra o path absoluto e o script nao existe no fixture de teste. Nao e regressao de classificacao; e o check de existencia funcionando. |
+| `$OUTRA/scripts/trackfw-credential-guard.sh` | SILENT | OK — classe 3 preservada |
+| `$CLAUDE_PROJECT_DIR/scripts/...` | Acusa "script does not exist" | CORRETO — mesma logica do Codex acima. |
+| `$PWD/scripts/trackfw-credential-guard.sh` | ACUSADO (msg PWD) | OK — classe 2 preservada, msg correta |
+
+Nenhuma regressao de classificacao detectada. Os avisos de "script does not exist" para
+$CLAUDE_PROJECT_DIR e Codex sao esperados (o fixture nao tem o script em disco) e corretos.
+
+### Q4 — Debito: mensagem de `"~/..."` e aceitavel para 7.2.0?
+
+**Veredito: DEBITO ACEITAVEL para 7.2.0.**
+
+Fundamento:
+- A deteccao e correta: `"~/..."` e classe 2 (o til dentro de aspas duplas nao expande — o path
+  nunca resolve).
+- A mensagem "bare relative path — this command only resolves from the project root" e
+  **direcionalmente correta** (a forma esta errada) mas **literalmente imprecisa** (`"~/..."` nao
+  e cwd-dependent — o til simplesmente nao expande dentro de aspas duplas).
+- O remedio sugerido (`run trackfw update`) e **correto**: o update substitui por
+  `$CLAUDE_PROJECT_DIR/...` ou caminho absoluto real.
+- Quem escreve `"~/..."` (tilde entre aspas duplas) em um hook de agente e uma ocorrencia
+  vanishingly rare. A probabilidade de dano por mensagem enganosa e muito baixa.
+- Fui eu quem restringiu o handoff a duas mensagens (apos aprovar o escopo do ML-4A). O
+  debito e meu e esta documentado aqui para REQ futura.
+
+O debito nao e bloqueante para 7.2.0. Deve ser endereçado em REQ subsequente junto com
+`~usuario/...` (mesmo corretivo: terceira mensagem para tilde-dentro-de-aspas, ou instrucao
+mais precisa).
+
+### Suite de testes e paridade
+
+- `go test ./...` → verde (todos os pacotes)
+- `node --test npm/tests/validator.test.js` → 98 passed, 0 failed
+- `python3 -m pytest pypi/tests/test_validator.py -q` → 121 passed
+- `bash scripts/check-validate-parity.sh` → 18 casos CG passaram, byte-identical nos 3 CLIs
+  (incluindo `claude-tilde`, `claude-tilde-quoted`, `claude-pwd-braced`, `claude-sh-c-pwd`)
+
+### Instrucao ao arquiteto (revisao 3)
+
+A barreira esta **levantada**. A entrega ML-4A esta **APROVADA COM RESSALVAS** documentadas:
+
+1. **Aprovado:** `~/` sem aspas → classe 1 (SILENT) nos 3 CLIs.
+2. **Aprovado:** `"~/..."` com aspas → classe 2 (ACUSADO). Mensagem imprecisa registrada como debito aceitavel.
+3. **Aprovado:** `${PWD}/...` → classe 2, mensagem correta do PWD, nos 3 CLIs.
+4. **Aprovado:** `sh -c "$PWD/..."` → classe 2, mensagem correta do PWD, nos 3 CLIs.
+5. **Residual nomeado:** `~usuario/...` — acusado com mensagem errada. Edge case improvavel. REQ futura.
+6. **Residual nomeado (pre-existente):** `${PWD}` como gap de prefixo literal vs predicado semantico — fechado pelo ML-4A (`${PWD}/` agora em classe 2).
+7. **Residual nomeado (pre-existente, nao introduzido):** `"$CLAUDE_PROJECT_DIR/..."` com aspas escapa checks de existencia/executabilidade.
+
+Prosseguir para o proximo ML do roadmap.

@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-08-22
 req: "docs/req/REQ-2026-08-21-validate-nao-detecta-hook-com-pwd-que-falha-fora-da-raiz.md"
 adr: "docs/adr/ADR-2026-08-22-postura-do-validate-diante-de-formas-de-hook-nao-reconhecidas-classificar-por-ancoragem-nao-por-casamento-com-o-gerado.md"
@@ -8,7 +8,7 @@ squad: "apolo-tf, hades-tf"
 
 # Roadmap: `validate` detecta hook com `$PWD` que falha fora da raiz
 
-> Created: 2026-08-22 | Status: wip
+> Created: 2026-08-22 | Status: done
 
 ## Context
 
@@ -262,6 +262,47 @@ instrumento defeituoso quase vira conclusão — e a primeira em que o próprio 
 - [x] Casos novos no `check-validate-parity.sh`, com guard de vacuidade
 - [x] Nenhuma regressão nos casos já aprovados (absoluto, Codex, classe 3, Cursor)
 - [x] `make quality` CI-exata **exit 0** (exit code medido) · `validate` 17 warnings
+
+---
+
+### Auditoria do ML-4A e reverificação da barreira — **APROVADO COM RESSALVAS**
+
+**Medição própria, oito formas, fixture com round-trip validado:**
+
+```
+~/.trackfw/scripts/...        (sem aspas)  SILENCIO   <- era falso-positivo
+"~/.trackfw/scripts/..."      (com aspas)  acusado    <- til nao expande entre aspas
+${PWD}/scripts/...                         acusado, mensagem do $PWD
+sh -c "$PWD/scripts/..."                   acusado, mensagem do $PWD   <- era a errada
+$PWD/scripts/...                           acusado, mensagem do $PWD
+/opt/x/scripts/...            (absoluto)   SILENCIO
+"$(git rev-parse ...)/..."    (Codex)      SILENCIO
+$OUTRA/scripts/...            (classe 3)   SILENCIO
+```
+
+O par til-aspeado × til-desaspeado é o núcleo: **a mesma aspa que faz `$PWD` continuar expandindo faz
+o `~` parar de expandir.** Duas variáveis, comportamentos opostos sob a mesma sintaxe.
+
+**A barreira reverificou nos 3 runtimes e levantou o bloqueio** — quem reprovou é quem aprova.
+`docs/seguranca/2026-08-22-revisao-da-classificacao-por-ancoragem.md`, revisão 3.
+
+**Segunda correção de instrumento dele, e vale mais que o veredito:** na primeira sessão ele usou
+`--root`, flag que o `validate` **não aceita** — o que produziu *silêncio universal falso* nos três
+CLIs. Reverificou com `cd "$tmpdir" && <cli> validate`, que é o caminho real, já que o validador usa
+`os.Getwd()`. É a segunda vez nesta REQ que ele identifica o próprio instrumento como defeituoso
+antes de concluir do produto.
+
+**Residuais nomeados, todos não bloqueantes, todos candidatos a REQ futura:**
+1. `~usuario/scripts/…` → acusado com mensagem "bare relative", factualmente errada. `~user` expande
+   para o home de outro usuário; não é cwd-dependent. Probabilidade real ínfima em hook de agente.
+2. `"~/…"` → mensagem imprecisa (*"only resolves from the project root"*; na verdade não resolve de
+   lugar nenhum). **O débito é meu:** fui eu que restringi o handoff a duas mensagens. Veredito dele:
+   aceitável para a 7.2.0, porque não induz a uma forma silenciosa.
+3. `"$CLAUDE_PROJECT_DIR/…"` **com aspas externas** escapa dos checks de existência e
+   executabilidade — o `resolve` recebe o valor **cru**, enquanto a classificação recebe o valor sem
+   aspas. **Pré-existente**, não introduzido aqui, mas a assimetria ficou mais visível agora.
+
+**Wave 4 fechada. Entrega completa.**
 
 ---
 

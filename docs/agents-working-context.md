@@ -4,6 +4,31 @@
 
 ---
 
+## Sessão 2026-08-22 — Hades (FIM: Reverificação ML-3A — APROVADO COM RESSALVAS)
+
+Branch `fix/validate-detecta-hook-com-pwd-que-falha-fora-da-raiz`. Sem commit/push.
+
+**Resultado:** barreira levantada. ML-4A aprovado com ressalvas documentadas em `docs/seguranca/2026-08-22-revisao-da-classificacao-por-ancoragem.md` (revisao 3).
+
+**Medido nos 3 runtimes com entrypoints corretos e fixtures json.dump + round-trip:**
+- `~/…` (sem aspas) → SILENT (classe 1) — fechado ✓
+- `"~/…"` (com aspas) → ACUSADO — fechado ✓ (mensagem imprecisa, debito aceitavel)
+- `${PWD}/…` → ACUSADO + msg PWD — fechado ✓
+- `sh -c "$PWD/…"` → ACUSADO + msg PWD — fechado ✓
+- Regressoes: sem regressao de classificacao; avisos de "script nao existe" para Codex/$CLAUDE_PROJECT_DIR sao corretos (fixture sem script).
+- Debito `~usuario/…`: acusado com mensagem errada — observacao nova, nao bloqueante, REQ futura.
+- Debito `"~/…"` mensagem imprecisa: aceitavel para 7.2.0, documentado.
+
+---
+
+## Sessão 2026-08-22 — Hades (INÍCIO: Reverificação ML-3A bloqueio — confirmar/negar 3 ressalvas pós ML-4A)
+
+Branch `fix/validate-detecta-hook-com-pwd-que-falha-fora-da-raiz`. Sem commit/push.
+
+Escopo: reverificar nos 3 runtimes (Go, Node.js, Python) se ML-4A fechou as três ressalvas do bloqueio ML-3A. Medir edge cases do tilde, regressões e avaliar débito de mensagem de `"~/…"`.
+
+---
+
 ## Sessão 2026-08-22 — Apolo (INÍCIO: ML-4A — `~/` é classe 1; `${PWD}/` é classe 2; mensagem certa por forma)
 
 Branch `fix/validate-detecta-hook-com-pwd-que-falha-fora-da-raiz`. Sem commit/push.
