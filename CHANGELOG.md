@@ -10,6 +10,88 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 > backfill. A partir de `2.16.0`, este arquivo é atualizado como parte
 > obrigatória do protocolo de release (ver `CLAUDE.md`).
 
+## [7.2.0] - 2026-08-22
+
+Um comando novo, contratos de paridade transformados em gates executáveis e três
+correções de segurança em regras que decidem se um controle está **ativo**.
+**Sem breaking changes** — atualização direta.
+
+### Added
+
+- **`trackfw push`** — empurra commits já criados, sem commitar e sem abrir PR.
+  Fecha o beco sem saída em que `trackfw commit` deixava o usuário: com o commit
+  feito, `git push` é bloqueado pelo guard e `trackfw ship` recusa com
+  `nothing is staged`. O vocabulário de entrega passa a ser composicional:
+
+  ```
+  trackfw commit -m "..."   commita
+  trackfw push              empurra
+  trackfw ship -m "..."     commit + push + PR (composição)
+  ```
+
+  `push` **reusa** os gates do `ship` em vez de reimplementá-los — bloqueio em
+  `main`/`master`, padrão de nome de branch, governança (`wip/` ou `done/`, com a
+  isenção `chore`/`docs`), aviso de squash pendente e o gate de
+  `--force-with-lease`, que só executa com PR/MR aberto verificado via CLI de
+  forge. Flags: `--dry-run` e `--force-with-lease`. **Nunca** aceita `-m`.
+
+- **`trackfw agents models`** e versão de modelo por tier no `trackfw.yaml`, com
+  composição por alvo no render de agentes para Codex (TOML) e Cursor
+  (frontmatter).
+
+- **Gates cross-CLI para os três contratos de maior risco** e mecanismo que
+  transforma contrato pinado em `cli-parity.md` em **gate nomeado**, com checker
+  de cobertura bloqueante — um contrato afirmado sem gate deixa de ser aceito.
+
+- **Caminho governado para push forçado e tag de release**: `trackfw ship
+  --force-with-lease` (exige PR aberto) e `trackfw release tag`, que publica a tag
+  anotada via API do forge preservando a anotação. O guard passa a bloquear a
+  classe destrutiva de comandos de working tree.
+
+- **Regra de verbosidade do arquiteto** no asset do agente e no `CLAUDE.md`
+  semeado.
+
+### Fixed
+
+- **`validate` era cego ao hook de guard na forma relativa antiga.** Um
+  `.claude/settings.json` apontando `scripts/trackfw-credential-guard.sh` resolve
+  a partir da raiz e **falha em silêncio** fora dela — o guard não executava, com
+  status não-bloqueante, e o único sinal era ruído no terminal. A regra modelava
+  resolvibilidade como propriedade do **caminho**, quando é propriedade do par
+  **(caminho, cwd)**. Cursor, Copilot e Kiro, para os quais o caminho relativo é a
+  forma correta, continuam limpos.
+
+- **`validate` era cego a `$PWD`, que falha do mesmo jeito.** Corrigido pela
+  classificação por **semântica de ancoragem** — não por casamento com o que o
+  gerador emite. Três classes: ancorado (silêncio; inclui caminho absoluto e `~/`
+  não aspeado), dependente do cwd (acusa; inclui `$PWD/`, `${PWD}/`, `"$PWD/"`,
+  `./`, `../`) e indecidível (silêncio declarado). A mensagem explica **por que** a
+  forma não ancora, em vez de dizer apenas que é inválida.
+
+- **`release tag` confiava em conteúdo local** para versão e mensagem da tag; agora
+  ancora ambas no commit do forge, com `--no-replace-objects` para fechar o desvio
+  por `refs/replace/`.
+
+- **A mensagem do guard para `git push` bruto** passa a ensinar `trackfw push`
+  como caminho primário. A mensagem do `git reset --hard` continua indicando
+  `trackfw ship -m`, que é o comando correto ali — depois de `reset --soft` o
+  trabalho está *staged*, não commitado.
+
+- **Panic com `agent-models` configurado** — `nil map` na construção de
+  `ProjectConfig`.
+
+### Internal
+
+- Higiene de estado dos artefatos de governança e abertura do contrato pinado.
+- Suíte de falsificação vai a **165 cenários** e **23 gates**; gates novos:
+  `check-push-parity.sh` e `check-push-force-parity.sh`.
+
+### Nota de atualização
+
+Rode **`trackfw update harness`** depois de atualizar: a mensagem do guard que
+ensina `trackfw push` só chega ao seu ambiente por ela. Até lá o guard continua
+bloqueando normalmente — apenas indicando o comando antigo.
+
 ## [7.1.0] - 2026-08-19
 
 Dois comandos novos e uma série de correções de segurança e de higiene acumuladas
