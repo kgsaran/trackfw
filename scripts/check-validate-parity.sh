@@ -594,7 +594,7 @@ echo "Validate JSON parity checks passed (branch_has_wip_roadmap accepting done/
 # ---------------------------------------------------------------------------
 CG_TMP_CLEAN=$(printf '%s' "$TMP_DIR" | sed 's#//*#/#g')
 
-for cg_fixture in cg-claude-absent cg-claude-present cg-cursor-absent cg-cursor-present cg-claude-noexec cg-claude-notype cg-claude-relativo cg-copilot-relativo-present; do
+for cg_fixture in cg-claude-absent cg-claude-present cg-cursor-absent cg-cursor-present cg-claude-noexec cg-claude-notype cg-claude-relativo cg-copilot-relativo-present cg-claude-pwd cg-claude-pwd-quoted cg-claude-absoluto cg-claude-outra-var cg-claude-git-toplevel cg-cursor-pwd; do
   mkdir -p "$CG_TMP_CLEAN/$cg_fixture/docs/roadmaps"/{wip,done}
   cat >"$CG_TMP_CLEAN/$cg_fixture/trackfw.yaml" <<'EOF'
 roadmap_dir: docs/roadmaps
@@ -670,6 +670,211 @@ mkdir -p "$CG_TMP_CLEAN/cg-copilot-relativo-present/scripts"
 printf '#!/usr/bin/env bash\nexit 0\n' > "$CG_TMP_CLEAN/cg-copilot-relativo-present/scripts/trackfw-credential-guard.sh"
 chmod +x "$CG_TMP_CLEAN/cg-copilot-relativo-present/scripts/trackfw-credential-guard.sh"
 
+# ---------------------------------------------------------------------------
+# ROADMAP-2026-08-22 ML-2A: fixtures para os novos casos de classe de ancoragem.
+# Referência ao ADR-2026-08-22-postura-do-validate-diante-de-formas-de-hook-
+# nao-reconhecidas-classificar-por-ancoragem-nao-por-casamento-com-o-gerado.md
+#
+# Classe 2 (dependente do cwd) → acusar (requiresVarOrShellPrefix=true para Claude):
+#   cg-claude-pwd        — $PWD/scripts/… (cláusula de prefixo literal)
+#   cg-claude-pwd-quoted — "$PWD/scripts/…" entre aspas (achado D.3: aspas
+#                          removidas por stripOuterQuotesForClassify antes de classificar)
+#
+# Classe 1 (ancorado) → silencioso:
+#   cg-claude-absoluto      — /opt/trackfw/scripts/… (filepath.IsAbs=true → classe 1)
+#   cg-claude-git-toplevel  — "$(git rev-parse --show-toplevel)/…" (forma Codex/ML-1A)
+#
+# Classe 3 (indecidível) → silencioso, residual declarado:
+#   cg-claude-outra-var — $OUTRA_VAR/scripts/… ($ mas não $PWD/ nem reconhecido)
+#
+# Não-regressão (Cursor com $PWD → silêncio via requiresVarOrShellPrefix=false):
+#   cg-cursor-pwd — .cursor/hooks.json com $PWD/scripts/… → silêncio
+#
+# Nota sobre vacuidade em casos silenciosos:
+#   cg-claude-absoluto e cg-claude-git-toplevel: resolveCredentialGuardHookPath retorna
+#   ok=false para estas formas (default branch), portanto o validador não verifica
+#   existência do script → nenhum "but the script does not exist" é emitido.
+#   A ausência de violation é real, não por script presente. Residual declarado:
+#   "a ausência de erro em classe 1 e 3 é verificável apenas pela sabotagem de sentido
+#   oposto (Cenário 165), não por um irmão -absent, pois resolve retorna ok=false antes
+#   de inspecionar o filesystem" (ADR-2026-08-22 §3).
+#
+# cg-claude-outra-var e cg-cursor-pwd: mesma nota — ok=false antes do filesystem.
+# ---------------------------------------------------------------------------
+
+# Pre-flight: validar JSON dos novos fixtures com python3 antes de confiar neles.
+# O handoff avisou que JSON com aspas embutidas mal escapadas dá falso negativo
+# indistinguível de regra que não detecta (barreira de 2026-08-21, ML-1B).
+_validate_fixture_json() {
+  local path=$1 expected_command=$2
+  local got
+  got=$(python3 -c "
+import json, sys
+with open('$path') as f:
+  d = json.load(f)
+hooks = d['hooks']['PreToolUse'][0]['hooks'][0]
+sys.stdout.write(hooks['command'])
+" 2>&1) || {
+    echo "FAIL [cg-fixture/json-invalid]: $path nao parseia como JSON valido: $got" >&2
+    exit 1
+  }
+  if [ "$got" != "$expected_command" ]; then
+    echo "FAIL [cg-fixture/json-command-mismatch]: $path — esperava command=$expected_command, obteve=$got" >&2
+    exit 1
+  fi
+}
+
+# cg-claude-pwd: $PWD/scripts/… → classe 2, acusar (requiresVarOrShellPrefix=true)
+mkdir -p "$CG_TMP_CLEAN/cg-claude-pwd/.claude"
+python3 -c "
+import json
+d = {'hooks': {'PreToolUse': [{'matcher': 'Bash', 'hooks': [{'type': 'command', 'command': '\$PWD/scripts/trackfw-credential-guard.sh'}]}]}}
+with open('$CG_TMP_CLEAN/cg-claude-pwd/.claude/settings.json', 'w') as f:
+    json.dump(d, f)
+"
+_validate_fixture_json "$CG_TMP_CLEAN/cg-claude-pwd/.claude/settings.json" \
+  '$PWD/scripts/trackfw-credential-guard.sh'
+
+# cg-claude-pwd-quoted: "$PWD/scripts/…" com aspas externas → achado D.3:
+# stripOuterQuotesForClassify remove as aspas e classifica como $PWD/ → classe 2 → acusar.
+mkdir -p "$CG_TMP_CLEAN/cg-claude-pwd-quoted/.claude"
+python3 -c "
+import json
+d = {'hooks': {'PreToolUse': [{'matcher': 'Bash', 'hooks': [{'type': 'command', 'command': '\"' + r'\$PWD/scripts/trackfw-credential-guard.sh' + '\"'}]}]}}
+with open('$CG_TMP_CLEAN/cg-claude-pwd-quoted/.claude/settings.json', 'w') as f:
+    json.dump(d, f)
+"
+_validate_fixture_json "$CG_TMP_CLEAN/cg-claude-pwd-quoted/.claude/settings.json" \
+  '"$PWD/scripts/trackfw-credential-guard.sh"'
+
+# cg-claude-absoluto: /opt/trackfw/scripts/… → classe 1 (filepath.IsAbs=true) → silencioso.
+# Script não criado: resolveCredentialGuardHookPath retorna ok=false para caminhos
+# absolutos (default branch), não inspeciona o filesystem.
+mkdir -p "$CG_TMP_CLEAN/cg-claude-absoluto/.claude"
+python3 -c "
+import json
+d = {'hooks': {'PreToolUse': [{'matcher': 'Bash', 'hooks': [{'type': 'command', 'command': '/opt/trackfw/scripts/trackfw-credential-guard.sh'}]}]}}
+with open('$CG_TMP_CLEAN/cg-claude-absoluto/.claude/settings.json', 'w') as f:
+    json.dump(d, f)
+"
+# Validar cg-claude-absoluto inline (estrutura idêntica à função de pré-voo)
+python3 -c "
+import json, sys
+with open('$CG_TMP_CLEAN/cg-claude-absoluto/.claude/settings.json') as f:
+  d = json.load(f)
+cmd = d['hooks']['PreToolUse'][0]['hooks'][0]['command']
+assert cmd == '/opt/trackfw/scripts/trackfw-credential-guard.sh', 'expected absolute path, got ' + repr(cmd)
+sys.stdout.write('OK cg-claude-absoluto JSON\n')
+"
+
+# cg-claude-outra-var: \$OUTRA_VAR/scripts/… → classe 3 (indecidível) → silencioso.
+mkdir -p "$CG_TMP_CLEAN/cg-claude-outra-var/.claude"
+python3 -c "
+import json
+d = {'hooks': {'PreToolUse': [{'matcher': 'Bash', 'hooks': [{'type': 'command', 'command': '\$OUTRA_VAR/scripts/trackfw-credential-guard.sh'}]}]}}
+with open('$CG_TMP_CLEAN/cg-claude-outra-var/.claude/settings.json', 'w') as f:
+    json.dump(d, f)
+"
+
+# cg-claude-git-toplevel: "$(git rev-parse --show-toplevel)/…" → classe 1 → silencioso.
+# Esta é a forma Codex/ML-1A com aspas externas — stripOuterQuotesForClassify remove as
+# aspas, e a forma resultante começa com $( → reconhecida como git rev-parse → classe 1.
+# NOTA: resolveCredentialGuardHookPath RECONHECE esta forma (codexPrefix case) e resolve
+# scripts/trackfw-credential-guard.sh contra a raiz do fixture — o script PRECISA existir
+# para não disparar "script does not exist" que mascararia o silêncio de classificação.
+mkdir -p "$CG_TMP_CLEAN/cg-claude-git-toplevel/.claude"
+python3 -c "
+import json
+cmd = '\"' + r'\$(git rev-parse --show-toplevel)/scripts/trackfw-credential-guard.sh' + '\"'
+d = {'hooks': {'PreToolUse': [{'matcher': 'Bash', 'hooks': [{'type': 'command', 'command': cmd}]}]}}
+with open('$CG_TMP_CLEAN/cg-claude-git-toplevel/.claude/settings.json', 'w') as f:
+    json.dump(d, f)
+"
+mkdir -p "$CG_TMP_CLEAN/cg-claude-git-toplevel/scripts"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$CG_TMP_CLEAN/cg-claude-git-toplevel/scripts/trackfw-credential-guard.sh"
+chmod +x "$CG_TMP_CLEAN/cg-claude-git-toplevel/scripts/trackfw-credential-guard.sh"
+
+# cg-cursor-pwd: .cursor/hooks.json com $PWD/… → silencioso porque Cursor tem
+# requiresVarOrShellPrefix=false → a guarda de CLI curto-circuita antes de
+# consultar o classificador. Prova não-regressão do AC3 da REQ: a regra não
+# acusa Cursor mesmo quando a forma seria classe 2 se fosse Claude.
+# Residual declarado: ok=false antes do filesystem; ausência de violation é real.
+mkdir -p "$CG_TMP_CLEAN/cg-cursor-pwd/.cursor"
+python3 -c "
+import json
+d = {'version': 1, 'hooks': {'beforeShellExecution': [{'command': '\$PWD/scripts/trackfw-credential-guard.sh'}]}}
+with open('$CG_TMP_CLEAN/cg-cursor-pwd/.cursor/hooks.json', 'w') as f:
+    json.dump(d, f)
+"
+
+# ---------------------------------------------------------------------------
+# ROADMAP-2026-08-22 ML-4A: fixtures para os achados da barreira ML-3A (Hades).
+#
+# cg-claude-tilde       — ~/scripts/… sem aspas → classe 1 (tilde expande para
+#                         $HOME em shell POSIX — ancorado) → silencioso.
+#                         Residual declarado: resolveCredentialGuardHookPath retorna
+#                         ok=false para ~/… (excluído do case de relativo puro),
+#                         portanto não inspeciona o filesystem; silêncio é real.
+#
+# cg-claude-tilde-quoted — "~/scripts/…" com aspas → classe 2 (tilde NÃO expande
+#                           dentro de aspas duplas) → acusar com "bare relative path".
+#
+# cg-claude-pwd-braced   — ${PWD}/scripts/… → classe 2 (mesma semântica de $PWD/…;
+#                           PWD é mandado pelo POSIX, sempre o cwd) → acusar com
+#                           mensagem do $PWD.
+#
+# cg-claude-sh-c-pwd     — sh -c "$PWD/scripts/…" → classe 2 (cwd-dependent) e
+#                           mensagem do $PWD (Contains, não HasPrefix) → acusar.
+# ---------------------------------------------------------------------------
+
+# cg-claude-tilde: ~/scripts/… (sem aspas) → classe 1 → silencioso.
+# Residual: resolveCredentialGuardHookPath exclui ~/… do case de relativo puro;
+# ok=false silencia sem inspecionar o filesystem.
+mkdir -p "$CG_TMP_CLEAN/cg-claude-tilde/.claude"
+python3 -c "
+import json
+d = {'hooks': {'PreToolUse': [{'matcher': 'Bash', 'hooks': [{'type': 'command', 'command': '~/scripts/trackfw-credential-guard.sh'}]}]}}
+with open('$CG_TMP_CLEAN/cg-claude-tilde/.claude/settings.json', 'w') as f:
+    json.dump(d, f)
+"
+_validate_fixture_json "$CG_TMP_CLEAN/cg-claude-tilde/.claude/settings.json" \
+  '~/scripts/trackfw-credential-guard.sh'
+
+# cg-claude-tilde-quoted: "~/scripts/…" (com aspas externas no valor JSON) → classe 2
+# (tilde não expande dentro de aspas duplas) → acusar com "bare relative path".
+mkdir -p "$CG_TMP_CLEAN/cg-claude-tilde-quoted/.claude"
+python3 -c "
+import json
+d = {'hooks': {'PreToolUse': [{'matcher': 'Bash', 'hooks': [{'type': 'command', 'command': '\"' + r'~/scripts/trackfw-credential-guard.sh' + '\"'}]}]}}
+with open('$CG_TMP_CLEAN/cg-claude-tilde-quoted/.claude/settings.json', 'w') as f:
+    json.dump(d, f)
+"
+_validate_fixture_json "$CG_TMP_CLEAN/cg-claude-tilde-quoted/.claude/settings.json" \
+  '"~/scripts/trackfw-credential-guard.sh"'
+
+# cg-claude-pwd-braced: \${PWD}/scripts/… → classe 2 → acusar com mensagem do $PWD.
+mkdir -p "$CG_TMP_CLEAN/cg-claude-pwd-braced/.claude"
+python3 -c "
+import json
+d = {'hooks': {'PreToolUse': [{'matcher': 'Bash', 'hooks': [{'type': 'command', 'command': '\${PWD}/scripts/trackfw-credential-guard.sh'}]}]}}
+with open('$CG_TMP_CLEAN/cg-claude-pwd-braced/.claude/settings.json', 'w') as f:
+    json.dump(d, f)
+"
+_validate_fixture_json "$CG_TMP_CLEAN/cg-claude-pwd-braced/.claude/settings.json" \
+  '${PWD}/scripts/trackfw-credential-guard.sh'
+
+# cg-claude-sh-c-pwd: sh -c "\$PWD/scripts/…" → classe 2 (cwd-dependent), mensagem do $PWD.
+# Contains("\$PWD") em qualquer posição → "with a \$PWD path" (não "bare relative path").
+mkdir -p "$CG_TMP_CLEAN/cg-claude-sh-c-pwd/.claude"
+python3 -c "
+import json
+d = {'hooks': {'PreToolUse': [{'matcher': 'Bash', 'hooks': [{'type': 'command', 'command': 'sh -c \"\$PWD/scripts/trackfw-credential-guard.sh\"'}]}]}}
+with open('$CG_TMP_CLEAN/cg-claude-sh-c-pwd/.claude/settings.json', 'w') as f:
+    json.dump(d, f)
+"
+_validate_fixture_json "$CG_TMP_CLEAN/cg-claude-sh-c-pwd/.claude/settings.json" \
+  'sh -c "$PWD/scripts/trackfw-credential-guard.sh"'
+
 run_cg() {
   local output=$1 dir=$2
   shift 2
@@ -679,7 +884,7 @@ run_cg() {
   set -e
 }
 
-for cg_fixture in cg-claude-absent cg-claude-present cg-cursor-absent cg-cursor-present cg-claude-noexec cg-claude-notype cg-claude-relativo cg-copilot-relativo-present; do
+for cg_fixture in cg-claude-absent cg-claude-present cg-cursor-absent cg-cursor-present cg-claude-noexec cg-claude-notype cg-claude-relativo cg-copilot-relativo-present cg-claude-pwd cg-claude-pwd-quoted cg-claude-absoluto cg-claude-outra-var cg-claude-git-toplevel cg-cursor-pwd cg-claude-tilde cg-claude-tilde-quoted cg-claude-pwd-braced cg-claude-sh-c-pwd; do
   run_cg "$CG_TMP_CLEAN/$cg_fixture-go.json"   "$CG_TMP_CLEAN/$cg_fixture" "$GO_BIN" validate --json
   run_cg "$CG_TMP_CLEAN/$cg_fixture-node.json" "$CG_TMP_CLEAN/$cg_fixture" node "$ROOT_DIR/npm/bin/trackfw" validate --json
   run_cg "$CG_TMP_CLEAN/$cg_fixture-py.json"   "$CG_TMP_CLEAN/$cg_fixture" env PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw validate --json
@@ -705,6 +910,7 @@ CG_MARKER_ABSENT = "but the script does not exist"
 CG_MARKER_NOEXEC = "not executable"
 CG_MARKER_NOTYPE = 'missing "type":"command"'
 CG_MARKER_BARE   = "with a bare relative path"
+CG_MARKER_PWD    = "with a $PWD path"
 
 
 def load(name):
@@ -735,6 +941,26 @@ cases = {
     # de Copilot silenciado (requiresVarOrShellPrefix=false para Copilot).
     "claude-relativo":          ("cg-claude-relativo-{}.json",          True,  CG_MARKER_BARE),
     "copilot-relativo-present": ("cg-copilot-relativo-present-{}.json", False, None),
+    # ROADMAP-2026-08-22 ML-2A: classificação por ancoragem (ADR-2026-08-22).
+    # Classe 2 (dependente do cwd) → acusar:
+    "claude-pwd":          ("cg-claude-pwd-{}.json",          True,  CG_MARKER_PWD),
+    "claude-pwd-quoted":   ("cg-claude-pwd-quoted-{}.json",   True,  CG_MARKER_PWD),
+    # Classe 1 (ancorado) → silencioso:
+    "claude-absoluto":     ("cg-claude-absoluto-{}.json",     False, None),
+    "claude-git-toplevel": ("cg-claude-git-toplevel-{}.json", False, None),
+    # Classe 3 (indecidível) → silencioso, residual declarado:
+    "claude-outra-var":    ("cg-claude-outra-var-{}.json",    False, None),
+    # Não-regressão AC3: Cursor com $PWD → silêncio (requiresVarOrShellPrefix=false):
+    "cursor-pwd":          ("cg-cursor-pwd-{}.json",          False, None),
+    # ROADMAP-2026-08-22 ML-4A: achados da barreira ML-3A (Hades).
+    # ~/… sem aspas → classe 1 (tilde expande para $HOME) → silencioso:
+    "claude-tilde":        ("cg-claude-tilde-{}.json",        False, None),
+    # "~/…" com aspas → classe 2 (tilde não expande em aspas duplas) → bare relative:
+    "claude-tilde-quoted": ("cg-claude-tilde-quoted-{}.json", True,  CG_MARKER_BARE),
+    # ${PWD}/… → classe 2 → mensagem do $PWD:
+    "claude-pwd-braced":   ("cg-claude-pwd-braced-{}.json",   True,  CG_MARKER_PWD),
+    # sh -c "$PWD/…" → classe 2 → mensagem do $PWD (contains, não startsWith):
+    "claude-sh-c-pwd":     ("cg-claude-sh-c-pwd-{}.json",     True,  CG_MARKER_PWD),
 }
 
 for label, (pattern, expect_violation, msg_marker) in cases.items():
@@ -778,12 +1004,15 @@ for label, (pattern, expect_violation, msg_marker) in cases.items():
 print(
     "credential_guard_hook_resolvable parity checks passed "
     "(claude-absent/claude-present/cursor-absent/cursor-present/"
-    "claude-noexec/claude-notype/claude-relativo/copilot-relativo-present, "
+    "claude-noexec/claude-notype/claude-relativo/copilot-relativo-present/"
+    "claude-pwd/claude-pwd-quoted/claude-absoluto/claude-git-toplevel/"
+    "claude-outra-var/cursor-pwd/"
+    "claude-tilde/claude-tilde-quoted/claude-pwd-braced/claude-sh-c-pwd, "
     "byte-identical across 3 CLIs)"
 )
 PY
 
-echo "Validate JSON parity checks passed (credential_guard_hook_resolvable cross-CLI: claude-absent detection / claude-present baseline / cursor-absent relative-branch live / cursor-present false-positive guard / claude-noexec not-executable detection / claude-notype missing-type-command detection / claude-relativo bare-relative-path detection / copilot-relativo-present false-positive guard)"
+echo "Validate JSON parity checks passed (credential_guard_hook_resolvable cross-CLI: claude-absent detection / claude-present baseline / cursor-absent relative-branch live / cursor-present false-positive guard / claude-noexec not-executable detection / claude-notype missing-type-command detection / claude-relativo bare-relative-path detection / copilot-relativo-present false-positive guard / claude-pwd \$PWD-class2-detected / claude-pwd-quoted quoted-\$PWD-class2-detected / claude-absoluto absolute-class1-silent / claude-git-toplevel git-toplevel-class1-silent / claude-outra-var other-var-class3-silent / cursor-pwd cursor-\$PWD-silent / claude-tilde tilde-class1-silent / claude-tilde-quoted quoted-tilde-class2-bare-relative / claude-pwd-braced \${PWD}-class2-pwd-msg / claude-sh-c-pwd sh-c-\$PWD-class2-pwd-msg)"
 
 # ---------------------------------------------------------------------------
 # ROADMAP-2026-08-21-validate-detecta-hook-de-guard-na-forma-relativa-antiga,
