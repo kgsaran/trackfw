@@ -1206,7 +1206,7 @@ runtimes on stdout, stderr, and exit code:
 
 ## `trackfw push`
 
-<!-- trackfw-contract: gate=scripts/check-push-parity.sh partial=roda com TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 e todos os cenários usam --dry-run; o push real (git push para o remoto), o caminho --force-with-lease e a detecção de squash-merges com fetch real não são exercitados ponta a ponta -->
+<!-- trackfw-contract: gate=scripts/check-push-parity.sh partial=roda com TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 e todos os cenários usam --dry-run; o push real (git push para o remoto) e a detecção de squash-merges com fetch real não são exercitados ponta a ponta (--force-with-lease tem gate próprio: scripts/check-push-force-parity.sh) -->
 
 `trackfw push` pushes already-created commits without committing and without opening a PR/MR. It
 runs the same branch-name validation and governance gate as `trackfw ship`, but stops after the
@@ -1240,6 +1240,31 @@ trackfw ship -m "..."     commit + push + PR (composition)
 standalone command for the common case where `trackfw commit` was already run and only the push
 step remains. `ship` always also commits (requires `-m`); `push` never commits. `commit` never
 pushes; `push` never commits.
+
+### `push --force-with-lease` — governed force-push (ML-4B)
+
+<!-- trackfw-contract: gate=scripts/check-push-force-parity.sh -->
+
+`push --force-with-lease` runs `git push --force-with-lease` instead of a plain push — for the
+post-rebase case where a plain push is rejected. It only runs when the branch already has an open
+PR/MR, verified via the resolved forge CLI (ConfigForge from `trackfw.yaml` `forge:` key, then
+RemoteURL, then CI files — push has no `--forge` flag). Three distinct refusal classes:
+
+| Refusal class | Condition | Message fragment |
+|---|---|---|
+| No forge CLI | gh/glab/az absent from PATH | `requires a forge CLI (gh, glab, or az)` |
+| No open PR | PR list returns empty | `has no open pull/merge request. Open the PR/MR first` |
+| Unverifiable | forge CLI exits non-zero | `could not verify whether branch` |
+
+**Gate: `scripts/check-push-force-parity.sh`** (registered in the `parity` Make target). Real bare
+origin per (scenario, runtime) — 5 scenarios total: no-forge-cli, forge-zero-pr,
+forge-unverifiable, forge-pr-open-pushes (remote SHA changes, proved with `Pushed: ` marker),
+remote-advanced-lease-mismatch (other clone advances remote, --force-with-lease refuses). Byte
+comparison across Go, Node.js, Python via `assert_three_way`. `TRACKFW_DISABLE_EXTERNAL_COMMANDS`
+is unset in this gate (push's forge lookup must never be suppressed). Cenário 163 in
+`scripts/check-gates-falsify.sh` sabotages an isolated Go copy by inserting `open = true` right
+before `if !open {` — `if false {` would leave `open` declared and unused, which does not compile —
+and proves the gate detects the P4-push regression.
 
 ## `trackfw branch new`
 

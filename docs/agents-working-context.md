@@ -22950,3 +22950,62 @@ Branch `feat/trackfw-push-comando-proprio-para-empurrar-commits-ja-criados`. Sem
 - `./bin/trackfw validate` → exit 0, 17 warnings (baseline mantido, nenhum warning novo)
 
 **`git diff npm/src/ship/runner.js`:** apenas 3 linhas adicionadas dentro do `module.exports`
+
+---
+
+## Sessão 2026-08-22 — Apolo (INÍCIO: ML-4B — Gate de paridade --force-with-lease)
+
+Branch `feat/trackfw-push-comando-proprio-para-empurrar-commits-ja-criados`. Sem commit/push.
+
+Escopo: (a) criar `scripts/check-push-force-parity.sh` com 5 cenários e bare origin real por cenário; (b) registrar no Makefile target `parity`; (c) adicionar Cenário 163 em `scripts/check-gates-falsify.sh`; (d) atualizar `docs/cli-parity.md` linha ~1209 para declarar o novo gate e remover `--force-with-lease` do `partial=`.
+
+Baseline: `./bin/trackfw validate` → 17 warnings, 0 violations.
+
+---
+
+## Sessão 2026-08-22 — Apolo (FIM: ML-4B — Gate de paridade --force-with-lease)
+
+Branch `feat/trackfw-push-comando-proprio-para-empurrar-commits-ja-criados`. Sem commit/push.
+
+**Resultado:** ML-4B ✅ Concluído. Todos os critérios de aceite atendidos.
+
+**Evidências:**
+
+- `bash scripts/check-push-force-parity.sh` (GO_BIN=bin/trackfw) → 5 cenários, EXIT=0
+  - OK   [push-force-parity/no-forge-cli]
+  - OK   [push-force-parity/forge-zero-pr]
+  - OK   [push-force-parity/forge-unverifiable]
+  - OK   [push-force-parity/forge-pr-open-pushes]
+  - OK   [push-force-parity/remote-advanced-lease-mismatch]
+
+- Makefile: `check-push-force-parity.sh` registrado entre `check-push-parity.sh` e `check-release-tag-parity.sh` (leitura do arquivo confirma)
+
+- Cenário 163 (check-gates-falsify.sh):
+  - baseline arm: `OK   [falsify/push-force-parity/pr-open-gate-baseline]`
+  - detection arm: `OK   [falsify/push-force-parity/pr-open-gate-removed/go]`
+  - `GO_BIN=bin/trackfw bash scripts/check-gates-falsify.sh` → EXIT=0 (163 cenários, 23 gates)
+
+- `bash scripts/check-parity-contract-coverage.sh` → EXIT=0 (nenhuma seção sem anotação)
+
+- `bash scripts/check-ship-force-parity.sh` → EXIT=0 (não-regressão, 5 cenários)
+
+- `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality` → **EXIT=0** (0 FAIL lines)
+
+- `./bin/trackfw validate` → 17 warnings (baseline mantido), 0 violations, EXIT=0
+
+**Decisões técnicas:**
+- Sabotagem Cenário 163: `open = true // sabotaged` antes de `if !open {` (não `if false {` que geraria "declared and not used" no Go)
+- Forge via `trackfw.yaml forge: github` (push tem NO --forge flag); verificado empiricamente nos 3 CLIs — byte-idêntico para todos os cenários
+- `unset TRACKFW_DISABLE_EXTERNAL_COMMANDS || true` presente; mesmo padrão de check-ship-force-parity.sh
+- chore/ branches para todos os cenários (skip governance gate sem precisar de fixtures de REQ+roadmap)
+
+**Arquivos criados/modificados:**
+- `scripts/check-push-force-parity.sh` (novo, 5 cenários, ~350 linhas)
+- `Makefile`: `check-push-force-parity.sh` inserido entre push-parity e release-tag-parity
+- `scripts/check-gates-falsify.sh`: Cenário 163 adicionado (sabotagem open=true); "all 162 scenarios, 22 gates" → "all 163 scenarios, 23 gates"
+- `docs/cli-parity.md`: `partial=` de trackfw push atualizado (--force-with-lease removido do gap); nova subseção `### push --force-with-lease` com annotation própria `gate=scripts/check-push-force-parity.sh`
+- `docs/roadmaps/wip/ROADMAP-2026-08-22-...push....md`: ML-4B → ✅ Concluído
+
+**Proibido tocado:** nenhum dos arquivos proibidos foi tocado (push.go, runner.js, runner.py, seus testes, scripts de guard/hook)
+
+**Próximo:** handoff para `trackfw_architect` para auditoria e commit do ML-4B.

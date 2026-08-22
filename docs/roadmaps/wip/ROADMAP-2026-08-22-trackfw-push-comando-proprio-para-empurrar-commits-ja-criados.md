@@ -393,7 +393,7 @@ AC2 cumprido **de fato**, não por declaração. Terceira vez que ele reporta "0
 exit code do `make quality`; medi eu mesmo, como nas anteriores.
 
 ### ML-4B — Gate de runtime do `--force-with-lease`
-**Status:** 🔄 Em andamento · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-4A
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-4A
 
 Decisão do KG: fechar nesta REQ, não em REQ separada. `scripts/check-push-force-parity.sh` espelhando
 `scripts/check-ship-force-parity.sh` (bare origin real, PR aberto × ausente) + cenário 163 de
@@ -406,6 +406,35 @@ ser verificável.
 - [ ] `partial=` de `docs/cli-parity.md` atualizado — a lacuna deixa de ser declarada porque deixa
       de existir
 - [ ] `make quality` CI-exata exit 0
+
+---
+
+### Auditoria do ML-4B — aprovada; e este gate acusa no PRÓPRIO eixo
+
+```
+sabotagem propria: open, prErr := checkPROpen(adapter, branch); open = true   (push.go, so Go)
+  check-push-force-parity.sh -> EXIT 1
+    FAIL [push-force-parity/forge-zero-pr/go]: expected non-zero exit with zero open PRs, got 0
+    FAIL [push-force-parity/forge-zero-pr/go-vs-node/out]: stdout/stderr diverges
+restaurado -> EXIT 0, push.go com git diff VAZIO
+make quality (CI-exata, minha)  exit 0
+validate                        17 warnings, 0 violations
+```
+
+**A primeira linha do FAIL é o que importa.** No ML-2A a minha sabotagem só quebrou o eixo
+cross-runtime; aqui o gate acusou pelo **próprio critério** — "esperava saída não-zero com zero PRs
+abertos". O caminho de reescrita de história remota deixou de depender de leitura de código para ser
+verificável, que era o pedido das duas barreiras.
+
+**Detalhe de implementação dele que valia registrar:** a sabotagem do cenário 163 insere
+`open = true` em vez de `if false {`, porque `if false` deixaria `open` declarada e não usada — erro
+de compilação em Go. Cenário de falsificação que não compila não prova nada.
+
+**Corrigido por mim no `docs/cli-parity.md`:** a subseção nova descrevia a sabotagem como
+`if !open {` → `if false {`, exatamente a forma descartada por não compilar. Contrato documentado com
+afirmação falsa é pior que contrato sem afirmação.
+
+**Wave 4 fechada. Entrega completa.**
 
 ---
 
