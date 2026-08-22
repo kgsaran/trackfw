@@ -1,6 +1,6 @@
 ---
 name: push-e-pr-via-ship
-description: git push/commit brutos são bloqueados por hook neste repo; o caminho é trackfw commit e trackfw ship, e ship exige algo staged
+description: git push/commit brutos são bloqueados por hook; use trackfw ship --no-pr -m direto (trackfw commit deixa o commit preso sem push sancionado)
 metadata:
   type: project
 ---
@@ -9,6 +9,11 @@ Neste repositório, `git commit` e `git push` brutos são **bloqueados por hook*
 (`git-branch-guard`). Os caminhos sancionados são `trackfw commit -m` e `trackfw ship`.
 
 **Detalhes que custam tempo se descobertos na hora:**
+- **Nunca use `trackfw commit` numa branch feat/fix/refactor cujo commit precisará ser empurrado.**
+  Ele commita, mas deixa você **sem saída sancionada**: `git push` bruto é bloqueado pelo guard e o
+  `ship` recusa com "nothing is staged" (o caminho sem `-m` exige `--force-with-lease`, que por sua
+  vez exige PR aberto). Medido em 2026-08-22 — custou um `git reset --soft HEAD~1` para refazer pelo
+  `ship`. O caminho certo é ir **direto** para `trackfw ship --no-pr -m "..."` com os arquivos staged.
 - `trackfw ship` **exige algo staged** — se todo o trabalho já foi commitado, ele falha com
   "nothing is staged" antes de qualquer push. Não existe modo "só empurrar".
 - O binário do `PATH` costuma estar **desatualizado** em relação ao repo, e **`--version` NÃO

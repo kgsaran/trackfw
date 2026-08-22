@@ -22602,3 +22602,25 @@ introduzido pela transição foi fechado pelo `req move`).
 sabidamente quebradas). Não é regressão desta entrega; é a lacuna nomeada pela barreira do ML-3A.
 
 **Próximo:** PR desta branch — **não aberto**, aguardando pedido explícito do usuário.
+
+---
+
+## Sessão 2026-08-22 — trackfw_architect (INÍCIO: `trackfw push` — comando próprio)
+
+**Origem:** KG relatou, a partir do beco sem saída medido no encerramento da REQ anterior, que falta
+um comando de push no trackfw. `trackfw commit` cria o commit e não há saída sancionada depois dele:
+`git push` é bloqueado pelo guard e `ship` recusa com "nothing is staged".
+
+**Decisões tomadas com KG (AskUserQuestion):**
+1. Comando **próprio** `trackfw push` — não relaxar o `ship`, não `commit --push`.
+2. A REASON do `git-branch-guard` para `push` passa a citar `trackfw push`, **nesta mesma REQ**
+   (5 arquivos duplicam a string, 4 gates cobram a sincronia).
+3. PR #201 mergeado antes de abrir a branch nova — regra de uma branch ativa por vez cumprida.
+
+**Artefatos criados:** ADR-2026-08-22 (Accepted) · REQ-2026-08-22 (com negative scope explícito,
+AC1–AC11) · ROADMAP-2026-08-22 em `wip/` · branch
+`feat/trackfw-push-comando-proprio-para-empurrar-commits-ja-criados` via `trackfw branch new`.
+
+**Plano:** Wave 1 (ML-1A, `apolo-tf`, comando nos 3 CLIs num único ML para garantir paridade
+byte-a-byte) → Wave 2 sequencial (ML-2A gate + falsificação; ML-2B REASON do guard) → Wave 3
+barreira em paralelo (`hefesto-tf` qualidade, `hades-tf` segurança).
