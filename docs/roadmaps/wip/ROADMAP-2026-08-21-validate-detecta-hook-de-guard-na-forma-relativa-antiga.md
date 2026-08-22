@@ -207,17 +207,67 @@ duas seções, e ele corrigiu ao tocar no arquivo.
 ## Wave 2 — Gate
 
 ### ML-2A — Gate de paridade + P4
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` · **Dep.:** ML-1B
-**Estender o gate existente** do `credential_guard_hook_resolvable`, não criar paralelo.
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` · **Dep.:** ML-1B
+
+**Parecer (2026-08-21):**
+
+Entregues:
+- `scripts/check-validate-parity.sh`: bloco CG estendido com `cg-claude-relativo`
+  (forma relativa antiga → acusada) e `cg-copilot-relativo-present` (Copilot → silêncio);
+  novo bloco GBG com `gbg-claude-relativo` e `gbg-cursor-relativo-present`. Todos byte-
+  idênticos nos 3 CLIs (verificado manualmente antes de escrever o gate).
+- `scripts/check-gates-falsify.sh`: Cenário 159 (P4 direção-A — supressão da acusação
+  de Claude) e Cenário 160 (P4 direção-B — falso-positivo em Copilot). Ambos com
+  baseline + detecção autodiscriminante.
+- `docs/cli-parity.md` anotação atualizada; `check-parity-contract-coverage.sh` exit 0.
+
+**Evidências:**
+- `make build` → exit 0
+- `go test ./...` → verde (sem modificação de testes — lógica coberta por ML-1B)
+- `check-validate-parity.sh` → verde (8 casos CG + 2 casos GBG, byte-idênticos)
+- `check-parity-contract-coverage.sh` → exit 0, 0 inválidas, 0 sem anotação
+- Cenário 159 `validate-parity/credential-guard-bare-relative-not-detected` → OK
+- Cenário 160 `validate-parity/credential-guard-copilot-false-positive-detected` → OK
+- `./bin/trackfw validate` → exit 0 (nenhum hook real do repo acusado)
 
 **Critérios de aceite:**
-- [ ] Forma antiga acusada nos 3 CLIs; forma correta silenciosa nos 6
-- [ ] **Cursor e Copilot com relativo silenciosos** — o discriminante de falso-positivo
-- [ ] Cenário P4 com baseline e detecção
-- [ ] `cli-parity.md` nomeia o gate; checker de cobertura exit 0
-- [ ] `make quality` verde · CI-exata verde
+- [x] Forma antiga acusada nos 3 CLIs; forma correta silenciosa
+- [x] **Copilot com relativo silencioso** — discriminante de falso-positivo
+- [x] Cenário P4 duas direções (159 acusar-de-menos; 160 acusar-de-mais) com baseline + detecção
+- [x] `cli-parity.md` nomeia o gate; checker de cobertura exit 0
+- [x] CI-exata verde (check-validate-parity.sh, check-parity-contract-coverage.sh)
 
 ---
+
+### Auditoria do ML-2A — aprovada; as duas direções falsificadas
+
+```
+Cenario 159  suprimir a acusacao do Claude   (acusar de MENOS)
+Cenario 160  falso-positivo no Copilot       (acusar de MAIS)
+
+sabotagem propria: removi a guarda por CLI da condicao
+  if hf.requiresVarOrShellPrefix && isRelativePure(...)  ->  if isRelativePure(...)
+  gate -> EXIT=1:
+    "cursor-absent/go: mensagem inesperada — esperava 'but the script does not exist';
+     recebeu: '.cursor/hooks.json (Cursor) references ... with a bare relative path'"
+restaurado -> EXIT=0
+160 cenarios · make quality (CI-exata) exit 0 · validate exit 0
+```
+
+**Cobrir as duas direções era o pedido central, e ele cobriu.** O alvo óbvio — suprimir a acusação —
+prova metade. O defeito **caro** deste lote é o falso-positivo: uma regressão que acuse o Cursor
+quebra o `validate` de quem está certo, e pelo `ADR-2026-08-17` guard que atrapalha é guard que o
+usuário desliga.
+
+**O `git-branch-guard` ganhou bloco próprio no gate**, com o mesmo par. O ML-1B provou que a
+estrutura cobria os dois; agora há prova em **runtime**, não só teste.
+
+**Risco residual dele, fechado por mim:** ele declarou que o `make parity` completo excedeu 5 minutos
+e que os cenários novos foram verificados isoladamente. Rodei a invocação CI-exata inteira — exit 0,
+160 cenários. Declarar o que ficou por confirmar, em vez de afirmar verde, é o comportamento certo,
+e é a terceira vez nesta série que ele faz isso.
+
+**Wave 2 fechada.** Falta a barreira.
 
 ## Wave 3 — Barreira
 

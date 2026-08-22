@@ -3787,7 +3787,7 @@ REQ nova a partir do parecer de Hades.
 
 ## Controle positivo do credential-guard: o que a regra `credential_guard_hook_resolvable` cobre, e o que não cobre (ROADMAP-2026-08-12-mitigacao-do-fail-open, Wave 1/2/3/3-bis + Barreira B1)
 
-<!-- trackfw-contract: gate=scripts/check-validate-parity.sh partial=bloco ML-3A (ROADMAP-2026-08-20-gates-para-os-tres-contratos-de-maior-risco) cobre 4 casos (claude-absent/claude-present/cursor-absent/cursor-present) e prova que os 3 CLIs concordam byte-a-byte; não exerce todas as 6 entradas de credentialGuardHookFiles (Codex/Gemini/GitHub/Kiro dependem de paridade de wiring coberta pelo Cenário 44 e de cobertura unitária interna por runtime); Cenário 80 prova não-vacuidade do bloco cross-CLI -->
+<!-- trackfw-contract: gate=scripts/check-validate-parity.sh partial=bloco ROADMAP-2026-08-20 ML-3A/ML-4B e ROADMAP-2026-08-21 ML-2A: cobre 8 casos CG (claude-absent/claude-present/cursor-absent/cursor-present/claude-noexec/claude-notype/claude-relativo/copilot-relativo-present) e 2 casos GBG (gbg-claude-relativo/gbg-cursor-relativo-present) byte-identicos nos 3 CLIs; Cenário 80 prova nao-vacuidade do cross-CLI de deteccao; Cenários 159/160 provam as duas direcoes do discriminante de falso-positivo (acusar de menos e acusar de mais para Copilot); nao exerce todas as 6 entradas de credentialGuardHookFiles (Codex/Gemini/Kiro dependem de cobertura unitaria interna por runtime) -->
 
 > Fontes: `internal/validator/validator_credential_guard.go` (implementação, os 3 CLIs têm
 > equivalente em `npm/src/` e `pypi/trackfw/`), `docs/adr/ADR-2026-08-12-defesa-do-credential-guard-vive-no-escopo-global-controle-que-mora-onde-o-agente-escreve-nao-e-controle.md`

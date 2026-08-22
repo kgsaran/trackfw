@@ -4,6 +4,42 @@
 
 ---
 
+## Sessão 2026-08-21 — Apolo (FIM: ML-2A — Gate de paridade + cenário P4)
+
+Branch `fix/validate-detecta-hook-de-guard-na-forma-relativa-antiga`. Sem commit/push.
+
+**Resultado:** ML-2A ✅ Concluído. Todos os critérios de aceite atendidos.
+
+**Evidências:**
+- `make build` → exit 0
+- `go test ./...` → verde
+- `check-validate-parity.sh` → verde (8 casos CG + 2 casos GBG, byte-idênticos nos 3 CLIs)
+- `check-parity-contract-coverage.sh` → exit 0
+- Cenário 159 (`credential-guard-bare-relative-not-detected`) → OK
+- Cenário 160 (`credential-guard-copilot-false-positive-detected`) → OK
+- `./bin/trackfw validate` → exit 0
+
+**Arquivos modificados:**
+- `scripts/check-validate-parity.sh` — bloco CG estendido + novo bloco GBG
+- `scripts/check-gates-falsify.sh` — Cenários 159 e 160 adicionados
+- `docs/cli-parity.md` — anotação `trackfw-contract` atualizada (linha ~3790)
+- `docs/agents-working-context.md`, `docs/roadmaps/wip/ROADMAP-2026-08-21-*.md` — status
+
+**Próximo:** ML-3A (`hades-tf`) — barreira de segurança.
+
+---
+
+## Sessão 2026-08-21 — Apolo (INÍCIO: ML-2A — Gate de paridade + cenário P4)
+
+Branch `fix/validate-detecta-hook-de-guard-na-forma-relativa-antiga`. Sem commit/push.
+
+Escopo: estender `scripts/check-validate-parity.sh` (bloco credential-guard existente) com
+casos `claude-relativo` e `copilot-relativo-present`; adicionar bloco git-branch-guard;
+adicionar Cenários 159/160 em `scripts/check-gates-falsify.sh` (P4 duas direções); atualizar
+anotação `trackfw-contract` em `docs/cli-parity.md`.
+
+---
+
 ## Sessão 2026-08-21 — Apolo (FIM: ML-1B — Implementar a regra)
 
 Branch `fix/validate-detecta-hook-de-guard-na-forma-relativa-antiga`. Sem commit/push.

@@ -594,7 +594,7 @@ echo "Validate JSON parity checks passed (branch_has_wip_roadmap accepting done/
 # ---------------------------------------------------------------------------
 CG_TMP_CLEAN=$(printf '%s' "$TMP_DIR" | sed 's#//*#/#g')
 
-for cg_fixture in cg-claude-absent cg-claude-present cg-cursor-absent cg-cursor-present cg-claude-noexec cg-claude-notype; do
+for cg_fixture in cg-claude-absent cg-claude-present cg-cursor-absent cg-cursor-present cg-claude-noexec cg-claude-notype cg-claude-relativo cg-copilot-relativo-present; do
   mkdir -p "$CG_TMP_CLEAN/$cg_fixture/docs/roadmaps"/{wip,done}
   cat >"$CG_TMP_CLEAN/$cg_fixture/trackfw.yaml" <<'EOF'
 roadmap_dir: docs/roadmaps
@@ -643,6 +643,33 @@ chmod 644 "$CG_TMP_CLEAN/cg-claude-noexec/scripts/trackfw-credential-guard.sh"
 # cg-claude-notype: sem script — o validador deve disparar "missing type:command"
 # antes de checar existência/executabilidade do script.
 
+# cg-claude-relativo: .claude/settings.json com caminho relativo puro (forma
+# antiga/errada para Claude). "type":"command" PRESENTE — a acusação é pela
+# FORMA, não pela ausência de tipo ou do script. Script PRESENTE e executável.
+# Isso prova que a regra detecta a forma pelo CLI (requiresVarOrShellPrefix=true
+# para Claude), não pela ausência física do script (ROADMAP-2026-08-21 ML-2A).
+mkdir -p "$CG_TMP_CLEAN/cg-claude-relativo/.claude"
+cat >"$CG_TMP_CLEAN/cg-claude-relativo/.claude/settings.json" <<'EOF'
+{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"scripts/trackfw-credential-guard.sh"}]}]}}
+EOF
+mkdir -p "$CG_TMP_CLEAN/cg-claude-relativo/scripts"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$CG_TMP_CLEAN/cg-claude-relativo/scripts/trackfw-credential-guard.sh"
+chmod +x "$CG_TMP_CLEAN/cg-claude-relativo/scripts/trackfw-credential-guard.sh"
+
+# cg-copilot-relativo-present: .github/hooks/trackfw-attention.json com caminho
+# relativo puro. Copilot tem requiresVarOrShellPrefix=false — relativo é a forma
+# CORRETA para ele (campo "bash", "type":"command" como irmão obrigatório).
+# Script PRESENTE. Espera-se SILÊNCIO nos 3 CLIs — é o discriminante de
+# falso-positivo e o alvo do Cenário P4 direção-B (Cenário 160): flipping
+# requiresVarOrShellPrefix para Copilot deve fazer o gate reprovar aqui.
+mkdir -p "$CG_TMP_CLEAN/cg-copilot-relativo-present/.github/hooks"
+cat >"$CG_TMP_CLEAN/cg-copilot-relativo-present/.github/hooks/trackfw-attention.json" <<'EOF'
+{"type":"command","bash":"scripts/trackfw-credential-guard.sh"}
+EOF
+mkdir -p "$CG_TMP_CLEAN/cg-copilot-relativo-present/scripts"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$CG_TMP_CLEAN/cg-copilot-relativo-present/scripts/trackfw-credential-guard.sh"
+chmod +x "$CG_TMP_CLEAN/cg-copilot-relativo-present/scripts/trackfw-credential-guard.sh"
+
 run_cg() {
   local output=$1 dir=$2
   shift 2
@@ -652,7 +679,7 @@ run_cg() {
   set -e
 }
 
-for cg_fixture in cg-claude-absent cg-claude-present cg-cursor-absent cg-cursor-present cg-claude-noexec cg-claude-notype; do
+for cg_fixture in cg-claude-absent cg-claude-present cg-cursor-absent cg-cursor-present cg-claude-noexec cg-claude-notype cg-claude-relativo cg-copilot-relativo-present; do
   run_cg "$CG_TMP_CLEAN/$cg_fixture-go.json"   "$CG_TMP_CLEAN/$cg_fixture" "$GO_BIN" validate --json
   run_cg "$CG_TMP_CLEAN/$cg_fixture-node.json" "$CG_TMP_CLEAN/$cg_fixture" node "$ROOT_DIR/npm/bin/trackfw" validate --json
   run_cg "$CG_TMP_CLEAN/$cg_fixture-py.json"   "$CG_TMP_CLEAN/$cg_fixture" env PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw validate --json
@@ -677,6 +704,7 @@ CG_RULE = "credential_guard_hook_resolvable"
 CG_MARKER_ABSENT = "but the script does not exist"
 CG_MARKER_NOEXEC = "not executable"
 CG_MARKER_NOTYPE = 'missing "type":"command"'
+CG_MARKER_BARE   = "with a bare relative path"
 
 
 def load(name):
@@ -697,12 +725,16 @@ def load(name):
 # cg-claude-notype (hook sem "type":"command"), estendendo um padrão já coberto
 # no escopo de harness pelo bloco gvmt acima — aqui coberto no escopo de projeto.
 cases = {
-    "claude-absent":  ("cg-claude-absent-{}.json",  True,  CG_MARKER_ABSENT),
-    "claude-present": ("cg-claude-present-{}.json", False, None),
-    "cursor-absent":  ("cg-cursor-absent-{}.json",  True,  CG_MARKER_ABSENT),
-    "cursor-present": ("cg-cursor-present-{}.json", False, None),
-    "claude-noexec":  ("cg-claude-noexec-{}.json",  True,  CG_MARKER_NOEXEC),
-    "claude-notype":  ("cg-claude-notype-{}.json",  True,  CG_MARKER_NOTYPE),
+    "claude-absent":          ("cg-claude-absent-{}.json",          True,  CG_MARKER_ABSENT),
+    "claude-present":         ("cg-claude-present-{}.json",         False, None),
+    "cursor-absent":          ("cg-cursor-absent-{}.json",          True,  CG_MARKER_ABSENT),
+    "cursor-present":         ("cg-cursor-present-{}.json",         False, None),
+    "claude-noexec":          ("cg-claude-noexec-{}.json",          True,  CG_MARKER_NOEXEC),
+    "claude-notype":          ("cg-claude-notype-{}.json",          True,  CG_MARKER_NOTYPE),
+    # ROADMAP-2026-08-21 ML-2A: forma relativa antiga acusada; falso-positivo
+    # de Copilot silenciado (requiresVarOrShellPrefix=false para Copilot).
+    "claude-relativo":          ("cg-claude-relativo-{}.json",          True,  CG_MARKER_BARE),
+    "copilot-relativo-present": ("cg-copilot-relativo-present-{}.json", False, None),
 }
 
 for label, (pattern, expect_violation, msg_marker) in cases.items():
@@ -746,9 +778,126 @@ for label, (pattern, expect_violation, msg_marker) in cases.items():
 print(
     "credential_guard_hook_resolvable parity checks passed "
     "(claude-absent/claude-present/cursor-absent/cursor-present/"
-    "claude-noexec/claude-notype, "
+    "claude-noexec/claude-notype/claude-relativo/copilot-relativo-present, "
     "byte-identical across 3 CLIs)"
 )
 PY
 
-echo "Validate JSON parity checks passed (credential_guard_hook_resolvable cross-CLI: claude-absent detection / claude-present baseline / cursor-absent relative-branch live / cursor-present false-positive guard / claude-noexec not-executable detection / claude-notype missing-type-command detection)"
+echo "Validate JSON parity checks passed (credential_guard_hook_resolvable cross-CLI: claude-absent detection / claude-present baseline / cursor-absent relative-branch live / cursor-present false-positive guard / claude-noexec not-executable detection / claude-notype missing-type-command detection / claude-relativo bare-relative-path detection / copilot-relativo-present false-positive guard)"
+
+# ---------------------------------------------------------------------------
+# ROADMAP-2026-08-21-validate-detecta-hook-de-guard-na-forma-relativa-antiga,
+# ML-2A: a regra `git_branch_guard_hook_resolvable` exercitada cross-CLI para
+# a forma relativa antiga e o discriminante de falso-positivo (Cursor):
+#
+#   1. gbg-claude-relativo: .claude/settings.json com caminho relativo puro
+#      para git-branch-guard, script PRESENTE → acusa "bare relative path"
+#      nos 3 CLIs (validateGuardHookResolvable compartilhada, mesma lógica).
+#   2. gbg-cursor-relativo-present: .cursor/hooks.json com relativo puro,
+#      script PRESENTE → SILÊNCIO nos 3 CLIs (Cursor tem
+#      requiresVarOrShellPrefix=false — relativo é a forma correta).
+#
+# Fixtures separados de credential-guard (marcador diferente:
+# "trackfw-git-branch-guard.sh") para manter discriminação de regra limpa.
+# ---------------------------------------------------------------------------
+for gbg_fixture in gbg-claude-relativo gbg-cursor-relativo-present; do
+  mkdir -p "$CG_TMP_CLEAN/$gbg_fixture/docs/roadmaps"/{wip,done}
+  cat >"$CG_TMP_CLEAN/$gbg_fixture/trackfw.yaml" <<'EOF'
+roadmap_dir: docs/roadmaps
+EOF
+done
+
+# gbg-claude-relativo: .claude/settings.json com relativo puro para git-branch-guard.
+mkdir -p "$CG_TMP_CLEAN/gbg-claude-relativo/.claude"
+cat >"$CG_TMP_CLEAN/gbg-claude-relativo/.claude/settings.json" <<'EOF'
+{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"scripts/trackfw-git-branch-guard.sh"}]}]}}
+EOF
+mkdir -p "$CG_TMP_CLEAN/gbg-claude-relativo/scripts"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$CG_TMP_CLEAN/gbg-claude-relativo/scripts/trackfw-git-branch-guard.sh"
+chmod +x "$CG_TMP_CLEAN/gbg-claude-relativo/scripts/trackfw-git-branch-guard.sh"
+
+# gbg-cursor-relativo-present: .cursor/hooks.json com relativo puro → silêncio.
+mkdir -p "$CG_TMP_CLEAN/gbg-cursor-relativo-present/.cursor"
+cat >"$CG_TMP_CLEAN/gbg-cursor-relativo-present/.cursor/hooks.json" <<'EOF'
+{"version":1,"hooks":{"beforeShellExecution":[{"command":"scripts/trackfw-git-branch-guard.sh"}]}}
+EOF
+mkdir -p "$CG_TMP_CLEAN/gbg-cursor-relativo-present/scripts"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$CG_TMP_CLEAN/gbg-cursor-relativo-present/scripts/trackfw-git-branch-guard.sh"
+chmod +x "$CG_TMP_CLEAN/gbg-cursor-relativo-present/scripts/trackfw-git-branch-guard.sh"
+
+for gbg_fixture in gbg-claude-relativo gbg-cursor-relativo-present; do
+  run_cg "$CG_TMP_CLEAN/$gbg_fixture-go.json"   "$CG_TMP_CLEAN/$gbg_fixture" "$GO_BIN" validate --json
+  run_cg "$CG_TMP_CLEAN/$gbg_fixture-node.json" "$CG_TMP_CLEAN/$gbg_fixture" node "$ROOT_DIR/npm/bin/trackfw" validate --json
+  run_cg "$CG_TMP_CLEAN/$gbg_fixture-py.json"   "$CG_TMP_CLEAN/$gbg_fixture" env PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw validate --json
+done
+
+python3 - "$CG_TMP_CLEAN" <<'PY'
+import json
+import os
+import sys
+
+tmp = sys.argv[1]
+
+GBG_RULE = "git_branch_guard_hook_resolvable"
+GBG_MARKER_BARE = "with a bare relative path"
+
+
+def load_gbg(name):
+    path = os.path.join(tmp, name)
+    with open(path, encoding="utf-8") as fh:
+        payload = json.load(fh)
+    with open(path + ".exit", encoding="utf-8") as fh:
+        exit_code = int(fh.read().strip())
+    all_items = payload.get("violations", []) + payload.get("warnings", [])
+    matching = [item for item in all_items if item.get("rule") == GBG_RULE]
+    msgs = sorted(item["message"] for item in matching)
+    return exit_code, msgs
+
+
+# label → (filename-pattern, expect_violation, msg_marker_or_None)
+gbg_cases = {
+    "claude-relativo":          ("gbg-claude-relativo-{}.json",          True,  GBG_MARKER_BARE),
+    "cursor-relativo-present":  ("gbg-cursor-relativo-present-{}.json",  False, None),
+}
+
+for label, (pattern, expect_violation, msg_marker) in gbg_cases.items():
+    results = {rt: load_gbg(pattern.format(rt)) for rt in ("go", "node", "py")}
+
+    for rt, (exit_code, msgs) in results.items():
+        if expect_violation:
+            if not msgs:
+                raise SystemExit(
+                    f"git_branch_guard_hook_resolvable parity ({label}/{rt}): expected "
+                    f"violation from rule {GBG_RULE!r}, none reported "
+                    f"(exit={exit_code}) — fixture vacua ou regra regrediu"
+                )
+            if msg_marker and not all(msg_marker in m for m in msgs):
+                raise SystemExit(
+                    f"git_branch_guard_hook_resolvable parity ({label}/{rt}): "
+                    f"mensagem inesperada — esperava {msg_marker!r} em todas: {msgs!r}"
+                )
+        else:
+            if msgs:
+                raise SystemExit(
+                    f"git_branch_guard_hook_resolvable parity ({label}/{rt}): "
+                    f"nenhuma violacao da regra esperada (Cursor relativo e correto), mas "
+                    f"{rt} reportou: {msgs!r}"
+                )
+
+    if expect_violation:
+        go_msgs, node_msgs, py_msgs = (results[rt][1] for rt in ("go", "node", "py"))
+        if not (go_msgs == node_msgs == py_msgs):
+            raise SystemExit(
+                f"git_branch_guard_hook_resolvable parity ({label}): mensagens "
+                f"divergem entre runtimes — go={go_msgs!r} node={node_msgs!r} "
+                f"py={py_msgs!r}"
+            )
+
+print(
+    "git_branch_guard_hook_resolvable parity checks passed "
+    "(gbg-claude-relativo bare-relative-path / gbg-cursor-relativo-present false-positive guard, "
+    "byte-identical across 3 CLIs)"
+)
+PY
+
+echo "Validate JSON parity checks passed (git_branch_guard_hook_resolvable cross-CLI: gbg-claude-relativo bare-relative-path detection / gbg-cursor-relativo-present false-positive guard)"
