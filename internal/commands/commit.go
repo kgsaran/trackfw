@@ -57,9 +57,15 @@ func newCommitCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "commit",
 		Short: "Commit staged changes, gated on governance for feat/fix/refactor branches",
-		Long: `trackfw commit is the missing intermediate step between raw 'git commit' and
-'trackfw ship': it commits staged changes directly, but blocks the commit before it happens
-when governance is missing, instead of letting it land and only catching it later:
+		Long: `trackfw commit commits staged changes directly, but blocks the commit before it
+happens when governance is missing, instead of letting it land and only catching it later.
+
+Compositional vocabulary:
+  trackfw commit -m "..."   commits
+  trackfw push              pushes
+  trackfw ship -m "..."     commit + push + PR (composition)
+
+Behavioral steps:
 
   1. On 'main'/'master': always blocked — commit directly on the default branch is never
      permitted.

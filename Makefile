@@ -34,6 +34,7 @@ parity: build
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-commit-parity.sh
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-ship-parity.sh
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-ship-force-parity.sh
+	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-push-parity.sh
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-release-tag-parity.sh
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-unknown-command-parity.sh
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-attention-scripts-parity.sh

@@ -20,7 +20,7 @@ GOCACHE=${GOCACHE:-/tmp/trackfw-go-cache} go build -o "$GO_BIN" ./cmd/trackfw
 # exit 1 rather than silently running a vacuous check.
 floor_commands=(
   init adr req roadmap validate status log discover update metrics
-  sync context baseline help configure serve version agents skills note ship
+  sync context baseline help configure serve version agents skills note ship push
 )
 
 # Go-only commands: documented in docs/cli-parity.md as exceptions to the

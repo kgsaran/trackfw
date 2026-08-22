@@ -22714,3 +22714,47 @@ barreira em paralelo (`hefesto-tf` qualidade, `hades-tf` segurança).
 - `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality` → EXIT 0 (background, completou com sucesso)
 
 **Próximo:** Handoff para trackfw_architect para auditoria e commit.
+
+---
+
+## Apolo — 2026-08-22 — INÍCIO
+
+**Sessão:** Continuação de sessão anterior (compactada). ML-2A do roadmap `ROADMAP-2026-08-22-trackfw-push-comando-proprio-para-empurrar-commits-ja-criados.md`.
+
+**Escopo:**
+- `scripts/check-push-parity.sh` (novo): gate de paridade byte-a-byte para `trackfw push` com 5 cenários + guard de vacuidade por cenário
+- `scripts/check-cli-parity.sh`: adicionar `push` ao array `floor_commands`
+- `Makefile`: registrar `check-push-parity.sh` no target `parity`
+- `scripts/check-gates-falsify.sh`: adicionar Cenários 161 e 162 (Direção A e B), atualizar contagem de 160→162
+- `docs/cli-parity.md`: adicionar linha `push` na tabela de comandos e seção `## trackfw push`
+- `internal/commands/commit.go`, `npm/src/commands/commit.js`, `pypi/trackfw/commands/commit.py`: substituir o framing "missing intermediate step" pelo vocabulário composicional (AC12)
+
+**Branch:** `fix/validate-detecta-hook-de-guard-na-forma-relativa-antiga` (branch existente, sem criar nova branch)
+
+## Apolo — 2026-08-22 — FIM
+
+**ML-2A concluído.** Todos os critérios de aceite atendidos.
+
+**Arquivos criados/modificados:**
+- `scripts/check-push-parity.sh` (novo): 5 cenários + guard de vacuidade por cenário, comparação byte-a-byte Go/Node/Python
+- `scripts/check-cli-parity.sh`: `push` adicionado ao array `floor_commands`
+- `Makefile`: `check-push-parity.sh` registrado no target `parity`
+- `scripts/check-gates-falsify.sh`: Cenários 161 (Direção A — gate de governança removida) e 162 (Direção B — push emite texto de PR) adicionados; total atualizado de 160→162, 21→22 gates
+- `docs/cli-parity.md`: linha `push` na tabela de comandos; seção `## trackfw push` com anotação `trackfw-contract`, passos, tabela de flags e fronteira explícita com `ship`/`commit`
+- `internal/commands/commit.go`: framing "missing intermediate step" substituído pelo vocabulário composicional (AC12)
+- `npm/src/commands/commit.js`: mesma substituição (AC12)
+- `pypi/trackfw/commands/commit.py`: mesma substituição (AC12)
+- `docs/roadmaps/wip/ROADMAP-2026-08-22-...push....md`: ML-2A → ✅ Concluído
+
+**Evidências de validação:**
+- `bash scripts/check-push-parity.sh` (GO_BIN=bin/trackfw) → EXIT 0 (5 cenários: feat-governance-ok-no-upstream, feat-governance-ok-with-upstream, main-blocked, feat-governance-blocked, chore-docs-exempt)
+- `bash scripts/check-cli-parity.sh` → EXIT 0
+- `bash scripts/check-commit-parity.sh` → EXIT 0
+- `bash scripts/check-ship-parity.sh` → EXIT 0
+- `bash scripts/check-parity-contract-coverage.sh` → EXIT 0 (nenhuma seção sem anotação)
+- `GO_BIN=bin/trackfw bash scripts/check-gates-falsify.sh` → EXIT 0 (162 cenários, 22 gates — inclui 161 e 162 novos com baseline+detecção verdes)
+- `./bin/trackfw validate` → 0 violations, 16 warnings → EXIT 0
+- `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality` → EXIT 0
+- `make test` → todos os pacotes verdes
+
+**Próximo:** Handoff para `trackfw_architect` para auditoria e commit do ML-2A.

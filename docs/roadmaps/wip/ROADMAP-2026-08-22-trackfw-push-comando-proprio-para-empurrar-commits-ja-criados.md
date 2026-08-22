@@ -142,7 +142,7 @@ disso é superfície de usuário.
 > build e índice do git compartilhados. ML-2B começa só após a auditoria do ML-2A.
 
 ### ML-2A — Gate de paridade + falsificação nas duas direções
-**Status:** 🔄 Em andamento · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-1A
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-1A
 
 **Arquivos afetados:**
 - `scripts/check-push-parity.sh` (novo — espelhe a estrutura de `scripts/check-ship-parity.sh`)
@@ -178,6 +178,46 @@ disso é superfície de usuário.
 - [ ] Os 2 cenários novos de falsificação com baseline verde e detecção vermelha, evidência colada
 - [ ] `bash scripts/check-parity-contract-coverage.sh` exit 0
 - [ ] `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality` exit 0
+
+---
+
+### Auditoria do ML-2A — aprovada; e o gate é load-bearing por sabotagem minha
+
+```
+sabotagem propria: if !isGatedShipBranch(branch)  ->  if true    (push.go, so no Go)
+  check-push-parity.sh -> EXIT 1
+    FAIL [push-parity/feat-governance-ok-no-upstream/go-vs-node/out]: stdout/stderr diverges
+restaurado -> EXIT 0, "All check-push-parity.sh scenarios passed"
+push.go de volta com git diff VAZIO
+```
+
+**Sendo exato sobre o que a minha sabotagem provou:** ela quebrou o **eixo cross-runtime** (mudei só
+o Go, e a comparação Go-vs-Node acusou). É a mesma prova do cenário 161 — não é prova de que os
+guards de vacuidade são load-bearing. Uma corrupção coordenada nos 3 stacks está fora do modelo de
+ameaça, e o `partial=` declara isso.
+
+**AC12 — o que eu não aceitei de palavra.** Pedi o diff provando string-fonte idêntica do help do
+`commit` nos 3 CLIs; ele entregou um parágrafo dizendo que a paridade "é normalizada por espaços".
+É exatamente a hedge que escondeu a divergência `PR.` × `PR/MR.` na primeira rodada do ML-1A, então
+extraí as três strings e comparei:
+
+```
+literal      GO==NODE False · GO==PY False   (só quebra de linha: argparse rewrapa)
+normalizado  GO==NODE True  · GO==PY True    <- identidade palavra a palavra
+```
+
+A hedge estava correta, e agora está **medida**. O framing falso — *"the missing intermediate step
+between raw `git commit` and `trackfw ship`"* — não existe mais em nenhum stack.
+
+**`make parity` de fato invoca o gate novo:** `Makefile:37`, dentro do alvo, entre
+`check-ship-force-parity.sh` e `check-release-tag-parity.sh`. Verificado no arquivo, não pelo exit
+code — recipe inserida fora do alvo faz no-op silencioso com quality ainda verde.
+
+**Lacuna nomeada, que não bloqueia:** o `--force-with-lease` do `push` **não** tem gate ponta a ponta.
+O `ship` tem `check-ship-force-parity.sh`, com bare origin real; o `push` não ganhou equivalente, e o
+`partial=` declara. O AC7 não exigia, então ele cumpriu o critério como escrito — mas é caminho de
+reescrita de história remota sem prova de runtime. **Vai para o `hades-tf` no ML-3B**, cujo item (b)
+já pergunta se o `--force-with-lease` é alcançável por outra via.
 
 ### ML-2B — REASON do guard cita `trackfw push`
 **Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-2A
