@@ -4,6 +4,137 @@
 
 ---
 
+## Sessão 2026-08-21 — Hades (FIM: ML-3A — Barreira de segurança)
+
+Branch `fix/validate-detecta-hook-de-guard-na-forma-relativa-antiga`. Sem commit/push.
+
+**Resultado:** ML-3A ✅ APROVADO.
+
+**Evidencias medidas:**
+- Forma-alvo (`scripts/...` em Claude/Codex/Gemini) → CAPTURADA (fixture + binario compilado)
+- Variantes de relativo puro (dot-slash, dotdot, interprete-prefixo) → CAPTURADAS
+- Forma correta (`$CLAUDE_PROJECT_DIR/...`) → SILENCIO
+- Cursor/Copilot/Kiro com relativo → SILENCIO por construcao (requiresVarOrShellPrefix=false)
+- Tabela dos 6 CLIs verificada contra constantes dos 3 geradores — consistente
+- Guarda `hf.requiresVarOrShellPrefix &&` e load-bearing (ML-2A Cenario 160 confirmou)
+
+**Gaps nomeados (fora de escopo da REQ, nao blockers):**
+- `$PWD/scripts/...` nao capturado (nao gerado pelo trackfw; ok=false silencioso)
+- `$UNDEFINED/scripts/...` nao capturado (mesmo motivo)
+- Risco residual Kiro: cwd indeterminado, `requiresVarOrShellPrefix=false` e escolha conservadora
+
+**Arquivo escrito:**
+- `docs/seguranca/2026-08-21-revisao-da-deteccao-de-hook-relativo.md`
+
+**Proximo:** commit + push pelo trackfw_architect (todos os MLs concluidos; release 7.2.0).
+
+---
+
+## Sessão 2026-08-21 — Hades (INÍCIO: ML-3A — Barreira de segurança)
+
+Branch `fix/validate-detecta-hook-de-guard-na-forma-relativa-antiga`. Sem commit/push.
+
+Escopo: barreira de segurança — avaliar se a detecção é contornável, se o falso-positivo foi
+evitado por construção, e se a tabela dos 6 CLIs está correta. Escreve
+`docs/seguranca/2026-08-21-revisao-da-deteccao-de-hook-relativo.md`.
+
+---
+
+## Sessão 2026-08-21 — Apolo (FIM: ML-2A — Gate de paridade + cenário P4)
+
+Branch `fix/validate-detecta-hook-de-guard-na-forma-relativa-antiga`. Sem commit/push.
+
+**Resultado:** ML-2A ✅ Concluído. Todos os critérios de aceite atendidos.
+
+**Evidências:**
+- `make build` → exit 0
+- `go test ./...` → verde
+- `check-validate-parity.sh` → verde (8 casos CG + 2 casos GBG, byte-idênticos nos 3 CLIs)
+- `check-parity-contract-coverage.sh` → exit 0
+- Cenário 159 (`credential-guard-bare-relative-not-detected`) → OK
+- Cenário 160 (`credential-guard-copilot-false-positive-detected`) → OK
+- `./bin/trackfw validate` → exit 0
+
+**Arquivos modificados:**
+- `scripts/check-validate-parity.sh` — bloco CG estendido + novo bloco GBG
+- `scripts/check-gates-falsify.sh` — Cenários 159 e 160 adicionados
+- `docs/cli-parity.md` — anotação `trackfw-contract` atualizada (linha ~3790)
+- `docs/agents-working-context.md`, `docs/roadmaps/wip/ROADMAP-2026-08-21-*.md` — status
+
+**Próximo:** ML-3A (`hades-tf`) — barreira de segurança.
+
+---
+
+## Sessão 2026-08-21 — Apolo (INÍCIO: ML-2A — Gate de paridade + cenário P4)
+
+Branch `fix/validate-detecta-hook-de-guard-na-forma-relativa-antiga`. Sem commit/push.
+
+Escopo: estender `scripts/check-validate-parity.sh` (bloco credential-guard existente) com
+casos `claude-relativo` e `copilot-relativo-present`; adicionar bloco git-branch-guard;
+adicionar Cenários 159/160 em `scripts/check-gates-falsify.sh` (P4 duas direções); atualizar
+anotação `trackfw-contract` em `docs/cli-parity.md`.
+
+---
+
+## Sessão 2026-08-21 — Apolo (FIM: ML-1B — Implementar a regra)
+
+Branch `fix/validate-detecta-hook-de-guard-na-forma-relativa-antiga`. Sem commit/push.
+
+**Resultado:** Implementação completa nos 3 stacks. Todos os critérios de aceite atendidos.
+
+**Evidências:**
+- `make build` → exit 0
+- `go test ./...` → verde (novos testes AC1, AC2, AC3 nos 3 stacks)
+- `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make parity` → exit 0
+- `./bin/trackfw validate` → exit 0 (nenhum hook real do repo acusado)
+- `git-branch-guard` coberto pela mesma estrutura (compartilha `validateGuardHookResolvable` + `credentialGuardHookFiles`)
+
+**Arquivos modificados:** `internal/validator/validator_credential_guard.go`, `internal/validator/validator_credential_guard_test.go`, `internal/validator/validator_git_branch_guard_test.go`, `npm/src/validator/index.js`, `npm/tests/validator.test.js`, `pypi/trackfw/validator.py`, `pypi/tests/test_validator.py`
+
+---
+
+## Sessão 2026-08-21 — Apolo (INÍCIO: ML-1B — Implementar a regra)
+
+Branch `fix/validate-detecta-hook-de-guard-na-forma-relativa-antiga`. Sem commit/push.
+
+Escopo: adicionar flag `requiresVarOrShellPrefix bool` em `credentialGuardHookFile` (e espelhos
+Node/Python), estender `validateGuardHookResolvable` nos 3 stacks para acusar forma relativa pura
+em Claude/Gemini/Codex, escrever testes AC1–AC3 nos 3 stacks, passar `make build`, `make test` e
+`TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make parity`.
+
+---
+
+## Sessão 2026-08-21 — Apolo (FIM: ML-1A — Reproduzir a falha antes de escrever a regra)
+
+Branch `fix/validate-detecta-hook-de-guard-na-forma-relativa-antiga`. Sem commit/push.
+
+**Resultado:** Bug reproduzido. Parecer escrito na seção ML-1A do roadmap.
+
+**Medido:**
+- Forma antiga: `scripts/trackfw-credential-guard.sh` (sem prefixo) — errada em Claude/Gemini/Codex,
+  correta em Cursor/Copilot/Kiro.
+- `resolveCredentialGuardHookPath()` trata a forma antiga como relativa pura (case 4) → resolve para
+  `<root>/scripts/...` → script encontrado → nenhuma violação (bug).
+- Execução fora da raiz: `cd subdir && /bin/sh scripts/trackfw-credential-guard.sh` → exit 127
+  "No such file or directory" (falha confirmada).
+- Sinal discriminante: arquivo de host (`.claude/settings.json` vs `.cursor/hooks.json`).
+- `./bin/trackfw validate` exit 0.
+
+**Recomendação para ML-1B:** flag `requiresVarOrShellPrefix bool` em `credentialGuardHookFile`,
+verdadeiro para Claude/Gemini/Codex, falso para Cursor/Copilot/Kiro. Extensão de
+`validateGuardHookResolvable`, não regra nova.
+
+---
+
+## Sessão 2026-08-21 — Apolo (INÍCIO: ML-1A — Reproduzir a falha antes de escrever a regra)
+
+Branch `fix/validate-detecta-hook-de-guard-na-forma-relativa-antiga`. Sem commit/push.
+
+Escopo: responder as quatro perguntas de investigação com medição real (fixture + execução fora
+da raiz); produzir parecer para a seção ML-1A do roadmap. Nenhuma linha de regra escrita.
+
+---
+
 ## Sessão 2026-08-21 — Hades (FIM: ML-4B — BLOQUEIO LEVANTADO)
 
 Branch `fix/release-tag-ancora-versao-e-mensagem-no-forge`. Sem commit/push.
@@ -22435,3 +22566,39 @@ TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make parity               → exit 0
 ```
 
 **Próximo:** ML-4B → `hades-tf` (reverificação; bloqueio levantado).
+
+---
+
+## Sessão 2026-08-22 — trackfw_architect (INÍCIO: encerramento da REQ do hook relativo)
+
+**Contexto:** sessão anterior interrompida por reinício do macbook (atualização de SO). Árvore limpa,
+branch `fix/validate-detecta-hook-de-guard-na-forma-relativa-antiga` em sincronia com o remoto,
+Waves 1–3 do `ROADMAP-2026-08-21-validate-detecta-hook-de-guard-na-forma-relativa-antiga.md` já
+auditadas e aprovadas (ML-1A, ML-1B, ML-2A, ML-3A ✅).
+
+**Escopo desta sessão:** apenas encerramento — revalidação CI-exata, transição do roadmap para
+`done/`, registro no contexto de trabalho e commit dos artefatos de governança. Sem código novo.
+PR não será aberto sem pedido explícito do usuário.
+
+---
+
+## Sessão 2026-08-22 — trackfw_architect (FIM: REQ do hook relativo encerrada)
+
+**Entregue:**
+- Revalidação CI-exata na branch: `make build` exit 0 · `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make
+  quality` exit 0 (160 cenários de falsificação, gates de paridade dos 3 CLIs).
+- `ROADMAP-2026-08-21-validate-detecta-hook-de-guard-na-forma-relativa-antiga.md`: `wip/` → `done/`
+  via `trackfw roadmap move` (a referência pareada da REQ foi sincronizada pelo próprio comando).
+- `REQ-2026-08-17-...-forma-relativa-antiga-que-falha-fora-da-raiz.md`: status `Open` → `done` via
+  `trackfw req move` — fechou o warning `req is Open but linked Roadmap is in done/`.
+- Nota de vault `deteccao-de-hook-relativo-nao-cobre-pwd-aspas-e-var-indefinida-2026-08-22.md`
+  (+ link no índice), registrando as 3 formas NÃO capturadas pela regra.
+
+**Estado da cadeia:** `./bin/trackfw validate` → 0 violations, 16 warnings (era 17; o warning novo
+introduzido pela transição foi fechado pelo `req move`).
+
+**Débito deliberadamente aberto:** `REQ-2026-08-21-validate-nao-detecta-hook-com-pwd-que-falha-fora-da-raiz.md`
+— sem roadmap, aguardando ADR que escolha a postura (acusar tudo que não casa × lista de formas
+sabidamente quebradas). Não é regressão desta entrega; é a lacuna nomeada pela barreira do ML-3A.
+
+**Próximo:** PR desta branch — **não aberto**, aguardando pedido explícito do usuário.

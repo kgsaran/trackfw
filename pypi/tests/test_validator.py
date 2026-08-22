@@ -1104,25 +1104,75 @@ class TestCredentialGuardHookResolvable(unittest.TestCase):
                        violations, warnings, cfg)
         self.assertTrue(any("trackfw-credential-guard.sh" in m["message"] for m in violations))
 
-        # warning
+        # warning — cwd=self.tmp é obrigatório para _apply_rule porque
+        # credential_guard_hook_resolvable é uma _CREDENTIAL_GUARD_ANCHORED_RULE: sem cwd, a
+        # severidade é lida da git HEAD do repositório real (onde a regra não está configurada
+        # como warning), sobrepondo o cfg do disco. self.tmp não é um worktree git, então
+        # _head_trackfw_yaml retorna ok=False e o fallback é o disco.
         cfg = _config.defaults()
         cfg["rules"] = {"credential_guard_hook_resolvable": "warning"}
         violations, warnings = [], []
         v._apply_rule("credential_guard_hook_resolvable",
                        v.validate_credential_guard_hook_resolvable(cfg, cwd=self.tmp),
-                       violations, warnings, cfg)
+                       violations, warnings, cfg, cwd=self.tmp)
         self.assertEqual(violations, [])
         self.assertTrue(any("trackfw-credential-guard.sh" in m["message"] for m in warnings))
 
-        # off
+        # off — mesmo raciocínio: cwd=self.tmp para isolar do git HEAD real.
         cfg = _config.defaults()
         cfg["rules"] = {"credential_guard_hook_resolvable": "off"}
         violations, warnings = [], []
         v._apply_rule("credential_guard_hook_resolvable",
                        v.validate_credential_guard_hook_resolvable(cfg, cwd=self.tmp),
-                       violations, warnings, cfg)
+                       violations, warnings, cfg, cwd=self.tmp)
         self.assertEqual(violations, [])
         self.assertEqual(warnings, [])
+
+    def test_dispara_forma_relativa_antiga_em_claude_ac1(self):
+        """AC1 (ROADMAP-2026-08-21 ML-1B): Claude settings com forma relativa antiga
+        ("scripts/...") e script PRESENTE e executável deve gerar violation "bare relative path".
+        Prova que a violação vem da forma do comando, não da ausência do script."""
+        _write(
+            os.path.join(self.tmp, ".claude/settings.json"),
+            _guard_entry_claude_settings("scripts/trackfw-credential-guard.sh"),
+        )
+        script_path = os.path.join(self.tmp, "scripts", "trackfw-credential-guard.sh")
+        _write(script_path, "#!/bin/sh\nexit 0\n")
+        os.chmod(script_path, 0o755)
+
+        cfg = _config.defaults()
+        msgs = v.validate_credential_guard_hook_resolvable(cfg, cwd=self.tmp)
+        self.assertTrue(
+            any("bare relative path" in m["message"] and ".claude/settings.json" in m["message"]
+                for m in msgs),
+            f"AC1: esperado violation de forma relativa antiga em Claude, obteve: {msgs}",
+        )
+        self.assertTrue(
+            any("trackfw update" in m["message"] for m in msgs),
+            f"AC4: mensagem deve nomear trackfw update, obteve: {msgs}",
+        )
+
+    def test_nao_dispara_forma_relativa_em_cursor_ac3(self):
+        """AC3 não-vácuo (ROADMAP-2026-08-21 ML-1B): Cursor com caminho relativo puro e script
+        PRESENTE e executável não deve gerar violação — requiresVarOrShellPrefix=False para
+        Cursor por construção (falso-positivo eliminado por construção)."""
+        _write(
+            os.path.join(self.tmp, ".cursor/hooks.json"),
+            json.dumps({
+                "version": 1,
+                "hooks": {"beforeShellExecution": [{"command": "scripts/trackfw-credential-guard.sh"}]},
+            }),
+        )
+        script_path = os.path.join(self.tmp, "scripts", "trackfw-credential-guard.sh")
+        _write(script_path, "#!/bin/sh\nexit 0\n")
+        os.chmod(script_path, 0o755)
+
+        cfg = _config.defaults()
+        msgs = v.validate_credential_guard_hook_resolvable(cfg, cwd=self.tmp)
+        self.assertEqual(
+            msgs, [],
+            f"AC3: Cursor com relativo deve estar limpo (falso-positivo eliminado por construção), obteve: {msgs}",
+        )
 
 
 class TestAdrOrphanExemptOutsideCwd(unittest.TestCase):

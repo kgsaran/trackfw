@@ -1174,13 +1174,21 @@ const GIT_BRANCH_GUARD_SCRIPT_MARKER = 'trackfw-git-branch-guard.sh'
 // sibling is a structurally malformed entry the CLI silently never executes (hades-tf ML-4A
 // barrier finding), not merely "absent". false only for Cursor, whose schema
 // ({"command":...}) never carries a "type" field at all.
+//
+// requiresVarOrShellPrefix (ROADMAP-2026-08-21 ML-1B, port of Go's
+// credentialGuardHookFile.requiresVarOrShellPrefix): true for Claude/Codex/Gemini — the
+// ADR-2026-08-11 requires these CLIs to anchor the hook path with $VAR/... or "$(git ...)/..."
+// because their hooks run from the agent's cwd, not necessarily the project root. A bare
+// relative path ("scripts/...") silently fails from any subdirectory (REQ-2026-08-17 root
+// cause). false for Cursor/Copilot/Kiro, where the bare relative path IS the correct form —
+// flagging them would be a false-positive (the dominant risk of this REQ).
 const CREDENTIAL_GUARD_HOOK_FILES = [
-  { relPath: '.claude/settings.json', cli: 'Claude Code', requiresCommandType: true },
-  { relPath: '.codex/hooks.json', cli: 'Codex CLI', requiresCommandType: true },
-  { relPath: '.gemini/settings.json', cli: 'Gemini CLI', requiresCommandType: true },
-  { relPath: '.cursor/hooks.json', cli: 'Cursor', requiresCommandType: false },
-  { relPath: '.github/hooks/trackfw-attention.json', cli: 'GitHub Copilot CLI', requiresCommandType: true },
-  { relPath: '.kiro/hooks/trackfw-attention.json', cli: 'Kiro', requiresCommandType: true },
+  { relPath: '.claude/settings.json', cli: 'Claude Code', requiresCommandType: true, requiresVarOrShellPrefix: true },
+  { relPath: '.codex/hooks.json', cli: 'Codex CLI', requiresCommandType: true, requiresVarOrShellPrefix: true },
+  { relPath: '.gemini/settings.json', cli: 'Gemini CLI', requiresCommandType: true, requiresVarOrShellPrefix: true },
+  { relPath: '.cursor/hooks.json', cli: 'Cursor', requiresCommandType: false, requiresVarOrShellPrefix: false },
+  { relPath: '.github/hooks/trackfw-attention.json', cli: 'GitHub Copilot CLI', requiresCommandType: true, requiresVarOrShellPrefix: false },
+  { relPath: '.kiro/hooks/trackfw-attention.json', cli: 'Kiro', requiresCommandType: true, requiresVarOrShellPrefix: false },
 ]
 
 // resolveCredentialGuardHookPath resolve o valor bruto de um comando de hook (string extraída do
@@ -1325,6 +1333,18 @@ function validateGuardHookResolvable(scriptMarker, cwd) {
 
       const resolved = resolveCredentialGuardHookPath(m.raw, root)
       if (resolved === null) continue
+
+      // ROADMAP-2026-08-21 ML-1B: a command that resolves via the bare-relative-path branch of
+      // resolveCredentialGuardHookPath is only safe for CLIs that always invoke hooks from the
+      // project root (Cursor/Copilot/Kiro). For Claude/Gemini/Codex the hook runs from the
+      // agent's cwd, which can be any subdirectory — the bare relative path silently fails even
+      // though the script exists under the root (REQ-2026-08-17 root cause). False-positive
+      // (AC3) is eliminated by construction: Cursor/Copilot/Kiro have
+      // requiresVarOrShellPrefix=false and never enter this branch.
+      if (hf.requiresVarOrShellPrefix && !m.raw.startsWith('$') && !m.raw.startsWith('"') && !path.isAbsolute(m.raw)) {
+        msgs.push(`${hf.relPath} (${hf.cli}) references ${scriptMarker} with a bare relative path — this command only resolves from the project root and will silently fail when the agent's cwd is a subdirectory; run \`trackfw update\` to fix it`)
+        continue
+      }
 
       // ROADMAP-2026-08-17 ML-4B: a command that resolves to a real path but sits inside a
       // structurally malformed entry (missing/wrong "type" where this CLI's schema requires it —

@@ -31,10 +31,19 @@ const gitBranchGuardScriptMarker = "trackfw-git-branch-guard.sh"
 // generators/agentfiles.go, update.go). false só para Cursor, cujo schema
 // (mergeCredentialGuardCursorHooks, {"command":...}) nunca carrega um campo "type" — exigi-lo
 // ali faria uma entrada Cursor válida e em execução ser acusada de malformada. Não uniformizar.
+//
+// requiresVarOrShellPrefix (ROADMAP-2026-08-21 ML-1B): se true, um comando casado na forma
+// relativa pura (sem prefixo "$", sem aspas de substituição de shell, sem caminho absoluto) é
+// tratado como FORMA RELATIVA ANTIGA — o ADR-2026-08-11 exige para estes CLIs que o comando
+// use um mecanismo que ancora o caminho à raiz do projeto ($VAR/... ou "$(git ...)/..."), pois
+// os hooks não são invocados necessariamente a partir da raiz (causa do bug REQ-2026-08-17).
+// true para Claude/Codex/Gemini; false para Cursor/Copilot/Kiro, cujo caminho relativo puro
+// é a forma CORRETA — acusá-los seria falso-positivo (o risco dominante desta REQ).
 type credentialGuardHookFile struct {
-	path                string // relativo à raiz do projeto (CWD)
-	cli                 string
-	requiresCommandType bool
+	path                    string // relativo à raiz do projeto (CWD)
+	cli                     string
+	requiresCommandType     bool
+	requiresVarOrShellPrefix bool
 }
 
 // credentialGuardHookFiles é a lista fechada dos arquivos de hook de PROJETO que o trackfw
@@ -44,12 +53,21 @@ type credentialGuardHookFile struct {
 // repositório do usuário, e a checagem de dedup globalCredentialGuardInstalled*() já os pula de
 // propósito nas entradas de projeto.
 var credentialGuardHookFiles = []credentialGuardHookFile{
-	{".claude/settings.json", "Claude Code", true},
-	{".codex/hooks.json", "Codex CLI", true},
-	{".gemini/settings.json", "Gemini CLI", true},
-	{".cursor/hooks.json", "Cursor", false},
-	{".github/hooks/trackfw-attention.json", "GitHub Copilot CLI", true},
-	{".kiro/hooks/trackfw-attention.json", "Kiro", true},
+	{".claude/settings.json", "Claude Code", true, true},
+	{".codex/hooks.json", "Codex CLI", true, true},
+	{".gemini/settings.json", "Gemini CLI", true, true},
+	{".cursor/hooks.json", "Cursor", false, false},
+	{".github/hooks/trackfw-attention.json", "GitHub Copilot CLI", true, false},
+	{".kiro/hooks/trackfw-attention.json", "Kiro", true, false},
+}
+
+// isRelativePureForGuard retorna true quando raw é um caminho relativo puro — sem prefixo "$",
+// sem aspas de substituição de shell, e sem caminho absoluto. É exatamente a negação das 3
+// formas que resolveCredentialGuardHookPath reconhece como "correto para Claude/Gemini/Codex"
+// (case 4 daquela função). Usada em validateGuardHookResolvable para detectar a forma relativa
+// antiga nesses CLIs (ROADMAP-2026-08-21 ML-1B, requiresVarOrShellPrefix).
+func isRelativePureForGuard(raw string) bool {
+	return !strings.HasPrefix(raw, "$") && !strings.HasPrefix(raw, `"`) && !filepath.IsAbs(raw)
 }
 
 // resolveCredentialGuardHookPath resolve o valor bruto de um comando de hook (string extraída do
@@ -215,6 +233,25 @@ func validateGuardHookResolvable(ruleName, scriptMarker string) ([]string, error
 
 			resolved, ok := resolveCredentialGuardHookPath(m.raw, root)
 			if !ok {
+				continue
+			}
+
+			// ROADMAP-2026-08-21 ML-1B: a command that resolves to a real path via the "caminho
+			// relativo puro" branch of resolveCredentialGuardHookPath (case 4) is only safe for
+			// CLIs that always invoke hooks from the project root (Cursor/Copilot/Kiro). For
+			// Claude/Gemini/Codex the hook runs from the agent's cwd, which can be any
+			// subdirectory — the bare relative path silently fails in that case even though the
+			// script exists under the root (REQ-2026-08-17 root cause). Reported here instead of
+			// the existence/executability checks below; `trackfw update` migrates to the correct
+			// prefixed form. Falso-positivo (AC3) is eliminated by construction: Cursor/Copilot/
+			// Kiro have requiresVarOrShellPrefix=false and never enter this branch.
+			if hf.requiresVarOrShellPrefix && isRelativePureForGuard(m.raw) {
+				msgs = append(msgs, fmt.Sprintf(
+					"%s (%s) references %s with a bare relative path — "+
+						"this command only resolves from the project root and will silently "+
+						"fail when the agent's cwd is a subdirectory; run `trackfw update` to fix it",
+					hf.path, hf.cli, scriptMarker,
+				))
 				continue
 			}
 

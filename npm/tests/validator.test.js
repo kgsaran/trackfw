@@ -540,6 +540,59 @@ test('credential_guard_hook_resolvable: configurável via rules (warning/off), d
   }
 })
 
+// ROADMAP-2026-08-21 ML-1B — requiresVarOrShellPrefix: forma relativa antiga em Claude acusada,
+// Cursor com relativo limpo (AC1 + AC3 não-vácuo).
+
+test('credential_guard_hook_resolvable: dispara forma relativa antiga em Claude (AC1, script presente)', () => {
+  // AC1: Claude settings com "scripts/trackfw-credential-guard.sh" (sem prefixo), script
+  // presente e executável. A violação vem da forma do comando, não da ausência do script.
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-cg-legrel-'))
+  const origDir = process.cwd()
+  fs.mkdirSync(path.join(tmp, '.claude'), { recursive: true })
+  fs.writeFileSync(path.join(tmp, '.claude', 'settings.json'),
+    guardEntryClaudeSettings('scripts/trackfw-credential-guard.sh'))
+  fs.mkdirSync(path.join(tmp, 'scripts'), { recursive: true })
+  fs.writeFileSync(path.join(tmp, 'scripts', 'trackfw-credential-guard.sh'), '#!/bin/sh\nexit 0\n', { mode: 0o755 })
+  process.chdir(tmp)
+  config.reset()
+  try {
+    const msgs = validator.validateCredentialGuardHookResolvable()
+    assert(msgs.some(m => m.includes('bare relative path') && m.includes('.claude/settings.json')),
+      'AC1: esperava violation de forma relativa antiga em Claude: ' + JSON.stringify(msgs))
+    assert(msgs.some(m => m.includes('trackfw update')),
+      'AC4: mensagem deve nomear trackfw update: ' + JSON.stringify(msgs))
+  } finally {
+    process.chdir(origDir)
+    config.reset()
+    fs.rmSync(tmp, { recursive: true, force: true })
+  }
+})
+
+test('credential_guard_hook_resolvable: Cursor com relativo puro e script presente continua limpo (AC3, não-vácuo)', () => {
+  // AC3 não-vácuo: Cursor com "scripts/trackfw-credential-guard.sh" e script PRESENTE e
+  // executável não deve violar — requiresVarOrShellPrefix=false para Cursor por construção.
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-cg-cursor-'))
+  const origDir = process.cwd()
+  fs.mkdirSync(path.join(tmp, '.cursor'), { recursive: true })
+  fs.writeFileSync(path.join(tmp, '.cursor', 'hooks.json'), JSON.stringify({
+    version: 1,
+    hooks: { beforeShellExecution: [{ command: 'scripts/trackfw-credential-guard.sh' }] },
+  }))
+  fs.mkdirSync(path.join(tmp, 'scripts'), { recursive: true })
+  fs.writeFileSync(path.join(tmp, 'scripts', 'trackfw-credential-guard.sh'), '#!/bin/sh\nexit 0\n', { mode: 0o755 })
+  process.chdir(tmp)
+  config.reset()
+  try {
+    const msgs = validator.validateCredentialGuardHookResolvable()
+    assert.strictEqual(msgs.length, 0,
+      'AC3: Cursor com relativo deve estar limpo (falso-positivo eliminado por construção): ' + JSON.stringify(msgs))
+  } finally {
+    process.chdir(origDir)
+    config.reset()
+    fs.rmSync(tmp, { recursive: true, force: true })
+  }
+})
+
 // ROADMAP-2026-08-15-instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas, ML-3A —
 // thirdparty_artifact_has_provenance (ADR-2026-08-15 D2). Port of
 // internal/validator/validator_thirdparty_provenance_test.go — same fixtures, same assertions.

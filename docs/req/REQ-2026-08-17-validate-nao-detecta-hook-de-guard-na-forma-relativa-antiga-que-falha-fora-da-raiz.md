@@ -1,14 +1,14 @@
 ---
-status: Open
+status: done
 date: 2026-08-17
 author: "Zeus (Arquiteto)"
 adr: ""
-roadmap: ""
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-21-validate-detecta-hook-de-guard-na-forma-relativa-antiga.md"
 ---
 
 # REQ: `validate` não detecta hook de guard na forma relativa antiga, que falha fora da raiz
 
-> Date: 2026-08-17 | Status: Open (backlog, sem roadmap)
+> Date: 2026-08-17 | Status: done
 | Linear Issue:
 | Jira Issue:
 
@@ -81,16 +81,16 @@ A opção 2 parece mais forte: não exige enumerar formas erradas e acompanha o 
 
 ## Acceptance Criteria
 
-- [ ] AC1 — Repro fiel: fixture com hook de guard na forma relativa antiga em CLI cuja decisão é
+- [x] AC1 — Repro fiel: fixture com hook de guard na forma relativa antiga em CLI cuja decisão é
       `$VAR/...`, com o script **presente** na raiz. Hoje o `validate` passa; deve acusar.
-- [ ] AC2 — Não-regressão: hook na forma correta **não** é acusado, em nenhum dos 6 CLIs.
-- [ ] AC3 — **Cursor e Copilot com caminho relativo continuam limpos** — falso-positivo aqui é o
+- [x] AC2 — Não-regressão: hook na forma correta **não** é acusado, em nenhum dos 6 CLIs.
+- [x] AC3 — **Cursor e Copilot com caminho relativo continuam limpos** — falso-positivo aqui é o
       risco dominante, porque o relativo é a forma certa neles.
-- [ ] AC4 — Mensagem nomeia o remédio (`trackfw update`), como o ML-2C fez para o `update`.
-- [ ] AC5 — Paridade nos 3 CLIs, com gate comparando as saídas reais — **não** por leitura de fonte.
-- [ ] AC6 — Cenário de falsificação (P4), baseline + detecção, provando que a regra pega a forma
+- [x] AC4 — Mensagem nomeia o remédio (`trackfw update`), como o ML-2C fez para o `update`.
+- [x] AC5 — Paridade nos 3 CLIs, com gate comparando as saídas reais — **não** por leitura de fonte.
+- [x] AC6 — Cenário de falsificação (P4), baseline + detecção, provando que a regra pega a forma
       antiga e que a prova não é vacuosa.
-- [ ] AC7 — `make quality` verde; `trackfw validate` sem novas violações.
+- [x] AC7 — `make quality` verde; `trackfw validate` sem novas violações. 160 cenários, CI-exata exit 0.
 
 ## Riscos para quem executar
 

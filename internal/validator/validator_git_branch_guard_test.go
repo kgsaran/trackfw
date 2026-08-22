@@ -118,6 +118,32 @@ func TestGitBranchGuardHookResolvable_NaoDisparaScriptPresenteEExecutavel(t *tes
 	}
 }
 
+// TestGitBranchGuardHookResolvable_DisparaFormaRelativaAntigaEmClaude — prova que a mesma regra
+// requiresVarOrShellPrefix cobre o git-branch-guard (a função validateGuardHookResolvable é
+// compartilhada; um único flag na tabela credentialGuardHookFiles cobre ambos os guards).
+func TestGitBranchGuardHookResolvable_DisparaFormaRelativaAntigaEmClaude(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	writeFile(t, dir, ".claude/settings.json", gitBranchGuardEntryClaudeSettings(`scripts/trackfw-git-branch-guard.sh`))
+	scriptPath := filepath.Join(dir, "scripts", "trackfw-git-branch-guard.sh")
+	if err := os.MkdirAll(filepath.Dir(scriptPath), 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(scriptPath, []byte("#!/bin/sh\nexit 0\n"), 0755); err != nil {
+		t.Fatalf("write script: %v", err)
+	}
+
+	msgs, err := validateGitBranchGuardHookResolvable()
+	if err != nil {
+		t.Fatalf("validateGitBranchGuardHookResolvable() erro: %v", err)
+	}
+	if !hasViolation(msgs, "bare relative path") || !hasViolation(msgs, ".claude/settings.json") {
+		t.Errorf("esperado violation de forma relativa antiga em Claude para git-branch-guard, obteve: %v", msgs)
+	}
+}
+
 // ---- git_branch_guard_script_integrity (projeto) ----
 
 func TestGitBranchGuardScriptIntegrity_ScriptAusente_Silencio(t *testing.T) {
