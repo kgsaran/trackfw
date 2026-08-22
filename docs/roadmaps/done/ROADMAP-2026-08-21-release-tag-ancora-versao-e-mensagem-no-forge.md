@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-08-21
 req: "docs/req/REQ-2026-08-19-release-tag-confia-em-conteudo-local-para-versao-e-mensagem-da-tag.md"
 adr: "docs/adr/ADR-2026-08-21-release-tag-le-versao-e-changelog-do-commit-ancorado.md"
@@ -8,7 +8,7 @@ squad: "apolo-tf, hades-tf"
 
 # Roadmap: `release tag` ancora versão e mensagem no forge
 
-> Created: 2026-08-21 | Status: wip
+> Created: 2026-08-21 | Status: done
 
 ## Context
 

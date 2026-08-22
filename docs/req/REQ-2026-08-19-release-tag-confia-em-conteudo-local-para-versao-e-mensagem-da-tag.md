@@ -1,9 +1,9 @@
 ---
-status: Open
+status: Done
 date: 2026-08-19
 author: ""
 adr: "docs/adr/ADR-2026-08-21-release-tag-le-versao-e-changelog-do-commit-ancorado.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-21-release-tag-ancora-versao-e-mensagem-no-forge.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-21-release-tag-ancora-versao-e-mensagem-no-forge.md"
 ---
 
 # REQ: `release tag` confia em conteúdo local para a versão e para a mensagem da tag
@@ -62,7 +62,7 @@ invalida a ideia de que o `release tag` esteja fechado.
 - [x] AC4 — Paridade nos 3 CLIs com **gate comparando saídas reais**.
 - [x] AC5 — Cenário P4 com braço de baseline e de detecção.
 - [x] AC6 — Seção do `docs/cli-parity.md` atualizada, **nomeando o gate**.
-- [ ] AC7 — `make quality` verde **e CI verde**. (local verde; **aguardando CI**)
+- [x] AC7 — `make quality` verde **e CI verde**. CI verde no PR #200, 10/10 jobs.
 
 ## Riscos para quem executar
 
