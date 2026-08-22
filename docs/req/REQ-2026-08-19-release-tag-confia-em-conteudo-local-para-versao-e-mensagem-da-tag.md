@@ -56,13 +56,13 @@ invalida a ideia de que o `release tag` esteja fechado.
 
 ## Acceptance Criteria
 
-- [ ] AC1 — A versão publicada não pode ser determinada apenas por conteúdo local editável.
-- [ ] AC2 — A mensagem da tag é verificada contra o `CHANGELOG.md` de `origin/<default_branch>`.
-- [ ] AC3 — Divergência recusa nomeando **o quê** divergiu, no padrão do ML-4B.
-- [ ] AC4 — Paridade nos 3 CLIs com **gate comparando saídas reais**.
-- [ ] AC5 — Cenário P4 com braço de baseline e de detecção.
-- [ ] AC6 — Seção do `docs/cli-parity.md` atualizada, **nomeando o gate**.
-- [ ] AC7 — `make quality` verde **e CI verde**.
+- [x] AC1 — A versão publicada não pode ser determinada apenas por conteúdo local editável.
+- [x] AC2 — A mensagem da tag é verificada contra o `CHANGELOG.md` de `origin/<default_branch>`.
+- [x] AC3 — Divergência recusa nomeando **o quê** divergiu, no padrão do ML-4B.
+- [x] AC4 — Paridade nos 3 CLIs com **gate comparando saídas reais**.
+- [x] AC5 — Cenário P4 com braço de baseline e de detecção.
+- [x] AC6 — Seção do `docs/cli-parity.md` atualizada, **nomeando o gate**.
+- [ ] AC7 — `make quality` verde **e CI verde**. (local verde; **aguardando CI**)
 
 ## Riscos para quem executar
 

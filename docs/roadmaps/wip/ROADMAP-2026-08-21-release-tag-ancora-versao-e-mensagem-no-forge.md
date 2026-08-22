@@ -279,8 +279,48 @@ objeto **ausente**, e ausente **recusa**, que é o lado seguro. Diferente do cas
 
 
 ### ML-4B — Reverificação do `hades-tf`
-**Status:** ⬜ Pendente · **Agente:** `hades-tf` · **Dep.:** ML-4A. Quem bloqueou levanta.
+**Status:** ✅ Concluído · **Agente:** `hades-tf` · **Dep.:** ML-4A. Quem bloqueou levanta.
 
 ## Notas
 - **Fora de escopo:** reabrir o ancoramento do commit-alvo — fechado e reverificado no #194.
 - Commits e branch são exclusivos do `trackfw_architect`.
+
+### Auditoria do ML-4B — **bloqueio levantado**
+
+Veredito: **BLOQUEIO LEVANTADO**
+(`docs/seguranca/2026-08-21-reverificacao-da-ancoragem-de-versao-e-mensagem.md`).
+
+**Sete vetores medidos, nenhuma terceira camada de indireção:**
+
+```
+GIT_DIR redirect                    -> recusa (sha ausente no decoy)
+GIT_ALTERNATE_OBJECT_DIRECTORIES    -> conteudo legitimo
+GIT_REPLACE_REF_BASE + arquivo      -> neutralizado por --no-replace-objects
+GIT_CONFIG_COUNT (useReplaceRefs)   -> flag de CLI sobrepoe config
+core.hooksPath                      -> nao afeta stdout de git show
+objects/info/alternates             -> mesmo mecanismo (inferido, declarado)
+promisor/partial clone              -> content-addressing valida o hash (inferido, declarado)
+```
+
+Ele **separou medido de inferido** nos sete, sem inflar.
+
+**O achado do `os.Environ()` se sustenta, e ele mediu em vez de aceitar meu resumo:** o pior caso é
+**recusa** (`releaseTagObjectAbsentFmt`), não objeto forjado. `GIT_REPLACE_REF_BASE` e `GIT_CONFIG_*`
+para reativar replace são anulados pela flag de linha de comando, que tem precedência sobre config.
+
+**Node e Python saíram de "inferido" para "medido"** — o `assert_three_way` só emite `OK` quando os
+três batem byte a byte, então o cenário 17 exercitou os três runtimes de fato.
+
+#### Dívida nomeada, aceita e registrada
+
+O cenário P4 sabota **só o Go**. Node e Python têm cobertura em runtime pelo gate, mas não
+falsificação por sabotagem de código. É a mesma assimetria que ele apontou no ML-3A sobre o "não
+compila".
+
+**Não fecho aqui, e o motivo:** é propriedade **sistêmica da suíte de falsificação**, não desta REQ.
+Vários cenários sabotam Node ou Python (o 43 e o 58, por exemplo), outros só o Go — a escolha nunca
+foi feita por critério explícito. Resolver caso a caso, dentro de uma REQ de segurança, seria
+escopo inflado; a decisão certa é um critério para a suíte inteira.
+
+**Wave 4 fechada. REQ pronta para PR.**
+

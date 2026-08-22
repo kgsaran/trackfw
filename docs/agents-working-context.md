@@ -4,6 +4,45 @@
 
 ---
 
+## Sessão 2026-08-21 — Hades (FIM: ML-4B — BLOQUEIO LEVANTADO)
+
+Branch `fix/release-tag-ancora-versao-e-mensagem-no-forge`. Sem commit/push.
+
+**Veredito: BLOQUEIO LEVANTADO.**
+
+**Medido:**
+- `--no-replace-objects` confirmado por leitura nos 3 CLIs (Go:224, Node:161, Python:239).
+- `check-release-tag-parity.sh` exit 0, todos 21 cenários incluindo `refs-replace-bypass`
+  nos 3 runtimes (go, node, py) via `for runtime in go node py` linha 1438.
+- GIT_DIR redirect → recusa (não forjaria); GIT_ALTERNATE_OBJECT_DIRECTORIES → conteúdo legítimo
+  (content-addressed); GIT_REPLACE_REF_BASE → neutralizado pela flag; GIT_CONFIG_COUNT injetando
+  core.useReplaceRefs=true → sobreposto pela flag; core.hooksPath → sem efeito em git show.
+- os.Environ() bruto: argumento do ML-4A sustenta — pior caso é recusa, não forjaria.
+
+**Inferido (não medido):**
+- objects/info/alternates (arquivo): equivalente a GIT_ALTERNATE_OBJECT_DIRECTORIES.
+- Promisor/partial clone: content-addressing impede forjaria mesmo se promisor comprometido.
+
+**Dívida nomeada (não bloqueante):**
+- Cenário 158 saboteia `--no-replace-objects` apenas no Go; Node/Python sem falsificação
+  equivalente (mesma assimetria ML-3A "não compila cobre só Go").
+- os.Environ() bruto em defaultReleaseReadCommittedFile: dívida de defesa em profundidade.
+
+**Artefato escrito:**
+- `docs/seguranca/2026-08-21-reverificacao-da-ancoragem-de-versao-e-mensagem.md`
+
+---
+
+## Sessão 2026-08-21 — Hades (INÍCIO: ML-4B — reverificação pós-fix --no-replace-objects)
+
+Branch `fix/release-tag-ancora-versao-e-mensagem-no-forge`. Sem commit/push.
+
+Escopo: verificar se o exploit refs/replace/ está fechado nos 3 CLIs; medir camadas de indireção
+adicionais (GIT_ALTERNATE_OBJECT_DIRECTORIES, GIT_REPLACE_REF_BASE, GIT_CONFIG_*, core.hooksPath,
+promisor); medir se os.Environ() bruto sustenta o argumento do ML-4A; redigir relatório ML-4B.
+
+---
+
 ## Sessão 2026-08-21 — Apolo (INÍCIO: ML-4A — --no-replace-objects nos 3 CLIs)
 
 Branch `fix/release-tag-ancora-versao-e-mensagem-no-forge`. Sem commit/push.
