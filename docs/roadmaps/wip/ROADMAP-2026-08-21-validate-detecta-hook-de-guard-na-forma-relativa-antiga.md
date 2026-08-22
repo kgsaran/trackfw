@@ -272,7 +272,7 @@ e é a terceira vez nesta série que ele faz isso.
 ## Wave 3 — Barreira
 
 ### ML-3A — `hades-tf`
-**Status:** ⬜ Pendente · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
+**Status:** ✅ Concluido · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
 **Escreve:** `docs/seguranca/2026-08-21-revisao-da-deteccao-de-hook-relativo.md`
 
 A regra decide se um guard está ativo. Avaliar se a detecção pode ser **contornada** por uma forma
@@ -284,3 +284,45 @@ explícito.**
 ## Notas
 - **Fora de escopo:** mudar a decisão de qual forma cada CLI usa. A regra **detecta**, não redefine.
 - Commits e branch são exclusivos do `trackfw_architect`.
+
+### Auditoria do ML-3A — **APROVADO**; três lacunas nomeadas, uma virou REQ
+
+Veredito: **APROVADO** (`docs/seguranca/2026-08-21-revisao-da-deteccao-de-hook-relativo.md`).
+
+**Ele testou 8 variantes**, não as 4 que eu sugeri:
+
+```
+CAPTURADAS:      scripts/...  ·  ./scripts/...  ·  sh scripts/...  ·  ../scripts/...
+SILENCIO OK:     $CLAUDE_PROJECT_DIR/...
+NAO CAPTURADAS:  $PWD/...  ·  $UNDEFINED/...  ·  "scripts/..." (aspas)
+```
+
+**Confirmei a mais relevante por medição própria:**
+
+```
+"command": "$PWD/scripts/trackfw-credential-guard.sh"   (json validado antes)
+  validate acusa?  0
+  hook fora da raiz -> No such file or directory
+```
+
+**E o argumento de por que essa é a pior das três é meu, e agrava o achado:** `$PWD` é **o erro que
+alguém comete tentando consertar**. Quem recebe *"references ... with a bare relative path"* e edita
+à mão pode escrever `$PWD/` achando que ancora na raiz — e o `validate` **passa a ficar em
+silêncio**, confirmando o engano.
+
+**A correção do ML-1B criou o caminho para esse erro**, ao ensinar que o problema era "falta de
+prefixo". Virou `REQ-2026-08-21-validate-nao-detecta-hook-com-pwd-que-falha-fora-da-raiz`, com a
+decisão de postura explicitada: acusar tudo que não casa (fecha a classe, arrisca falso-positivo) ou
+lista de formas sabidamente quebradas (não incomoda, mas é "condição estreita demais" pela décima
+vez). **O ADR escolhe com o motivo.**
+
+**O falso-positivo é por construção, e ele mostrou o mecanismo:** a condição curto-circuita no
+primeiro operando, então para Cursor/Copilot/Kiro o valor do comando **nem é avaliado**. Mediu os
+três. O ML-2A já provara que a guarda é load-bearing.
+
+**Kiro:** ele **não** afirmou que `false` é seguro — disse que é **conservador, não comprovadamente
+seguro**, e registrou o residual. Se o Kiro rodar hooks de subdiretório, o guard falha em silêncio.
+É a distinção entre "medido" e "escolhido na ausência de dado", e ele a manteve.
+
+**Wave 3 fechada. REQ pronta para PR.**
+

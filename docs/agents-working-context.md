@@ -4,6 +4,42 @@
 
 ---
 
+## Sessão 2026-08-21 — Hades (FIM: ML-3A — Barreira de segurança)
+
+Branch `fix/validate-detecta-hook-de-guard-na-forma-relativa-antiga`. Sem commit/push.
+
+**Resultado:** ML-3A ✅ APROVADO.
+
+**Evidencias medidas:**
+- Forma-alvo (`scripts/...` em Claude/Codex/Gemini) → CAPTURADA (fixture + binario compilado)
+- Variantes de relativo puro (dot-slash, dotdot, interprete-prefixo) → CAPTURADAS
+- Forma correta (`$CLAUDE_PROJECT_DIR/...`) → SILENCIO
+- Cursor/Copilot/Kiro com relativo → SILENCIO por construcao (requiresVarOrShellPrefix=false)
+- Tabela dos 6 CLIs verificada contra constantes dos 3 geradores — consistente
+- Guarda `hf.requiresVarOrShellPrefix &&` e load-bearing (ML-2A Cenario 160 confirmou)
+
+**Gaps nomeados (fora de escopo da REQ, nao blockers):**
+- `$PWD/scripts/...` nao capturado (nao gerado pelo trackfw; ok=false silencioso)
+- `$UNDEFINED/scripts/...` nao capturado (mesmo motivo)
+- Risco residual Kiro: cwd indeterminado, `requiresVarOrShellPrefix=false` e escolha conservadora
+
+**Arquivo escrito:**
+- `docs/seguranca/2026-08-21-revisao-da-deteccao-de-hook-relativo.md`
+
+**Proximo:** commit + push pelo trackfw_architect (todos os MLs concluidos; release 7.2.0).
+
+---
+
+## Sessão 2026-08-21 — Hades (INÍCIO: ML-3A — Barreira de segurança)
+
+Branch `fix/validate-detecta-hook-de-guard-na-forma-relativa-antiga`. Sem commit/push.
+
+Escopo: barreira de segurança — avaliar se a detecção é contornável, se o falso-positivo foi
+evitado por construção, e se a tabela dos 6 CLIs está correta. Escreve
+`docs/seguranca/2026-08-21-revisao-da-deteccao-de-hook-relativo.md`.
+
+---
+
 ## Sessão 2026-08-21 — Apolo (FIM: ML-2A — Gate de paridade + cenário P4)
 
 Branch `fix/validate-detecta-hook-de-guard-na-forma-relativa-antiga`. Sem commit/push.
