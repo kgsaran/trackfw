@@ -77,9 +77,12 @@ function makeDeps({ fileOverrides = {}, gitOverrides = {}, availFn = () => true,
   const errLines = []
   const deps = {
     execGit,
-    readFile: (p) => {
-      if (!(p in files)) throw new Error(`file not found: ${p}`)
-      return files[p]
+    // readAtCommit reads from the files map, keyed by path (ignoring sha — tests control both
+    // the sha the forge mock returns and the content in the files map; the sha parameter is
+    // available for assertions in individual tests via custom overrides).
+    readAtCommit: (sha, p) => {
+      if (!(p in files)) return { content: '', error: new Error(`object ${sha}:${p} not found`) }
+      return { content: files[p], error: null }
     },
     writeln: (s) => outLines.push(s),
     writeErr: (s) => errLines.push(s),
@@ -419,4 +422,77 @@ test('release tag: publish always uses the forge sha, never the local one', () =
   const code = runReleaseTag(VERSION, deps)
   assert.equal(code, 0)
   assert.ok(tagsBody.includes(SHA))
+})
+
+// ────────────────────────────────────────────────────────────────────────────
+// ML-2A: Object anchoring — P3/P4 read from the commit-target, not the
+// working tree. See ADR-2026-08-21-release-tag-le-versao-e-changelog-do-
+// commit-ancorado.md.
+// ────────────────────────────────────────────────────────────────────────────
+
+test('release tag: absent version file object refuses naming path and sha, never publishes', () => {
+  const { deps, errLines } = makeDeps()
+  let publishCalled = false
+  deps.execForgeAPI = (name, args, stdin) => {
+    if (args[1].includes('git/tags')) publishCalled = true
+    return defaultExecForgeAPI(name, args, stdin)
+  }
+  deps.readAtCommit = (sha, p) => {
+    if (p === 'internal/version/version.go') {
+      return { content: '', error: new Error(`path '${p}' does not exist in '${sha}'`) }
+    }
+    const files = validFiles(VERSION)
+    return p in files ? { content: files[p], error: null } : { content: '', error: new Error(`object ${sha}:${p} not found`) }
+  }
+  const code = runReleaseTag(VERSION, deps)
+  assert.equal(code, 1)
+  assert.match(errLines[0], /internal\/version\/version\.go/)
+  assert.match(errLines[0], new RegExp(SHA))
+  assert.match(errLines[0], /refuses to run/)
+  assert.equal(publishCalled, false)
+})
+
+test('release tag: absent CHANGELOG.md object refuses naming path and sha, never publishes', () => {
+  const { deps, errLines } = makeDeps()
+  let publishCalled = false
+  deps.execForgeAPI = (name, args, stdin) => {
+    if (args[1].includes('git/tags')) publishCalled = true
+    return defaultExecForgeAPI(name, args, stdin)
+  }
+  deps.readAtCommit = (sha, p) => {
+    if (p === 'CHANGELOG.md') {
+      return { content: '', error: new Error(`path '${p}' does not exist in '${sha}'`) }
+    }
+    const files = validFiles(VERSION)
+    return p in files ? { content: files[p], error: null } : { content: '', error: new Error(`object ${sha}:${p} not found`) }
+  }
+  const code = runReleaseTag(VERSION, deps)
+  assert.equal(code, 1)
+  assert.match(errLines[0], /CHANGELOG\.md/)
+  assert.match(errLines[0], new RegExp(SHA))
+  assert.match(errLines[0], /refuses to run/)
+  assert.equal(publishCalled, false)
+})
+
+test('release tag: tag message sourced from commit blob, not hypothetical local content', () => {
+  // readAtCommit delivers a CHANGELOG body with a unique discriminant line. A hypothetical
+  // "local" version would have a different line. The tag payload must contain the committed
+  // body, proving anchoring to the commit object, not to any local source.
+  const { deps, errLines } = makeDeps()
+  let tagsBody = null
+  deps.execForgeAPI = (name, args, stdin) => {
+    if (args[1].includes('git/tags')) tagsBody = stdin
+    return defaultExecForgeAPI(name, args, stdin)
+  }
+  const files = validFiles(VERSION)
+  deps.readAtCommit = (sha, p) => {
+    if (p === 'CHANGELOG.md') {
+      return { content: `# Changelog\n\n## [${VERSION}] - 2026-08-21\n\n### Added\n- from-commit-object-anchor\n`, error: null }
+    }
+    return p in files ? { content: files[p], error: null } : { content: '', error: new Error(`object ${sha}:${p} not found`) }
+  }
+  const code = runReleaseTag(VERSION, deps)
+  assert.equal(code, 0, errLines.join('\n'))
+  assert.ok(tagsBody.includes('from-commit-object-anchor'), `tag payload must contain committed body; got: ${tagsBody}`)
+  assert.ok(!tagsBody.includes('from-working-tree-NOT-anchored'), 'tag payload must not contain local-only content')
 })

@@ -15,8 +15,6 @@
  */
 
 const { spawnSync } = require('child_process')
-const fs = require('fs')
-const path = require('path')
 const { load: loadConfig } = require('../config')
 const { resolve: forgeResolve } = require('../forge/resolve')
 const { forgeAdapter } = require('../forge/adapter')
@@ -74,6 +72,14 @@ const NO_GIT_IDENTITY_MSG =
 // para-push-forcado-e-tag-de-release.md, Emenda 1.
 function commitDivergesMsg(base, localSHA, forgeBase, forgeSHA) {
   return `trackfw release tag refuses to run: local origin/${base} (${localSHA}) diverges from the forge's ${forgeBase} tip (${forgeSHA}). A local ref can be stale or forged — investigate before retrying: git fetch origin --prune`
+}
+
+// objectAbsentMsg fires when git show <sha>:<path> fails (object absent locally after the
+// fetch that Precondition 2 already ran). Names the path and the sha so the user knows
+// exactly what is missing. Never falls back to the working tree. See ADR-2026-08-21-
+// release-tag-le-versao-e-changelog-do-commit-ancorado.md.
+function objectAbsentMsg(filePath, sha, errMessage) {
+  return `trackfw release tag refuses to run: could not read ${filePath} at commit ${sha}: ${errMessage}`
 }
 
 // ─── Version file extraction ───────────────────────────────────────────────
@@ -146,8 +152,19 @@ function defaultExecGit(args) {
   return { stdout: (result.stdout || '').trim(), error: null }
 }
 
-function defaultReadFile(filePath) {
-  return fs.readFileSync(filePath, 'utf8')
+// defaultReadAtCommit reads a file from a specific commit object (git show <sha>:<path>)
+// and returns the content verbatim — stdout is NOT trimmed because callers rely on
+// byte-exact content (CHANGELOG sections, version strings with newlines). On any failure
+// the error surfaces git's real stderr; there is NO fallback to the working tree.
+// See ADR-2026-08-21-release-tag-le-versao-e-changelog-do-commit-ancorado.md.
+function defaultReadAtCommit(sha, filePath) {
+  const result = spawnSync('git', ['--no-replace-objects', 'show', `${sha}:${filePath}`], { encoding: 'utf8' })
+  if (result.status !== 0) {
+    const msg = (result.stderr || '').trim() || `git show ${sha}:${filePath} exited with ${result.status}`
+    return { content: '', error: new Error(msg) }
+  }
+  // NOT trimmed — content must be preserved byte-for-byte.
+  return { content: result.stdout, error: null }
 }
 
 /**
@@ -174,7 +191,10 @@ function defaultExecForgeAPI(name, args, stdin) {
  */
 function runReleaseTag(versionArg, deps = {}) {
   const execGit = deps.execGit || defaultExecGit
-  const readFile = deps.readFile || ((p) => defaultReadFile(path.join(deps.repoDir || '.', p)))
+  // readAtCommit reads a file from a specific commit object. Default reads via git show so
+  // the authority is the sha (content-addressed), not the working tree. Returns
+  // { content: string, error: Error|null } — content is NOT trimmed (byte-exact for parsers).
+  const readAtCommit = deps.readAtCommit || defaultReadAtCommit
   const writeln = deps.writeln || ((s) => process.stdout.write(s + '\n'))
   const writeErr = deps.writeErr || ((s) => process.stderr.write(`Error: ${s}\n`))
   const configForge = deps.configForge || ''
@@ -228,46 +248,6 @@ function runReleaseTag(versionArg, deps = {}) {
       }
     }
   }
-
-  // ─── Precondition 3: the 4 version files must all match ─────────────────
-  for (const vf of RELEASE_VERSION_FILES) {
-    let content
-    try {
-      content = readFile(vf.path)
-    } catch (e) {
-      writeErr(`trackfw release tag refuses to run: could not read ${vf.path}: ${e.message}`)
-      return 1
-    }
-    let got
-    try {
-      got = vf.extract(content)
-    } catch (e) {
-      writeErr(`trackfw release tag refuses to run: ${e.message}`)
-      return 1
-    }
-    if (got !== version) {
-      writeErr(versionMismatchMsg(vf.label, got, version))
-      return 1
-    }
-  }
-
-  // ─── Precondition 4: CHANGELOG.md has the version's section ─────────────
-  let changelogContent
-  try {
-    changelogContent = readFile('CHANGELOG.md')
-  } catch (e) {
-    writeErr(`trackfw release tag refuses to run: could not read CHANGELOG.md: ${e.message}`)
-    return 1
-  }
-  const sections = changelog.parseSections(changelogContent)
-  let section
-  try {
-    section = changelog.findVersion(sections, version)
-  } catch (e) {
-    writeErr(changelogMissingMsg(e.message, version))
-    return 1
-  }
-  const tagMessage = changelog.formatSection(section)
 
   // ─── Precondition 5: tag must not already exist, local or remote ────────
   const localTagExists = execGit(['rev-parse', '-q', '--verify', `refs/tags/${tagName}`])
@@ -364,6 +344,47 @@ function runReleaseTag(versionArg, deps = {}) {
   // objectSHA is now authoritative — resolved from the forge, cross-checked (not sourced)
   // against the local ref above.
   const objectSHA = commitObj.sha
+
+  // ─── Precondition 3: version files in the commit-target must all match ──
+  // Content is read from objectSHA via git show, NOT from the working tree. Objects are
+  // content-addressed: given a sha from the forge, the content is cyptographically determined —
+  // a local edit that was not committed cannot influence the tag message.
+  // Absent object → refuse naming sha+path; never fall back to local. See ADR-2026-08-21.
+  for (const vf of RELEASE_VERSION_FILES) {
+    const readResult = readAtCommit(objectSHA, vf.path)
+    if (readResult.error) {
+      writeErr(objectAbsentMsg(vf.path, objectSHA, readResult.error.message))
+      return 1
+    }
+    let got
+    try {
+      got = vf.extract(readResult.content)
+    } catch (e) {
+      writeErr(`trackfw release tag refuses to run: ${e.message}`)
+      return 1
+    }
+    if (got !== version) {
+      writeErr(versionMismatchMsg(vf.label, got, version))
+      return 1
+    }
+  }
+
+  // ─── Precondition 4: CHANGELOG.md in the commit-target has the version's section ──
+  // Same anchoring as P3: content comes from objectSHA, never from the working tree.
+  const changelogReadResult = readAtCommit(objectSHA, 'CHANGELOG.md')
+  if (changelogReadResult.error) {
+    writeErr(objectAbsentMsg('CHANGELOG.md', objectSHA, changelogReadResult.error.message))
+    return 1
+  }
+  const sections = changelog.parseSections(changelogReadResult.content)
+  let section
+  try {
+    section = changelog.findVersion(sections, version)
+  } catch (e) {
+    writeErr(changelogMissingMsg(e.message, version))
+    return 1
+  }
+  const tagMessage = changelog.formatSection(section)
 
   // ─── Tagger identity ──────────────────────────────────────────────────
   const nameResult = execGit(['config', 'user.name'])

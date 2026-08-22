@@ -1,9 +1,9 @@
 ---
-status: Open
+status: Done
 date: 2026-08-21
 author: "Zeus (Arquiteto)"
 adr: "docs/adr/ADR-2026-08-21-versao-do-modelo-por-tier-com-composicao-por-alvo.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-21-versao-do-modelo-por-tier-com-composicao-por-alvo.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-21-versao-do-modelo-por-tier-com-composicao-por-alvo.md"
 ---
 
 # REQ: versão do modelo dos agentes configurável por tier no `trackfw.yaml`
@@ -116,7 +116,7 @@ Isto precisa ser gate, não cuidado.
 - [x] AC8 — Cenário P4 com baseline e detecção.
 - [x] AC9 — Anotação `trackfw-contract` da seção (o checker de cobertura é bloqueante).
 - [x] AC10 — O motivo (**cota, não custo**) registrado no `cli-parity.md` ou em ADR.
-- [ ] AC11 — `make quality` verde **e CI verde**. (local verde; **aguardando CI**)
+- [x] AC11 — `make quality` verde **e CI verde**. CI verde no PR #199, 10/10 jobs.
 
 ## Riscos para quem executar
 

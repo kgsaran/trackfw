@@ -11,3 +11,12 @@ roadmap_namespacing: flat
 hooks: none
 ci: github-actions
 forge: github
+
+# Versão do modelo por tier (ADR-2026-08-21). Guarda a VERSÃO, não o ID —
+# cada alvo compõe a própria forma. Motivo da escolha: COTA, não custo —
+# o Sonnet 4.6 usa o tokenizador pré-4.7 e consome ~30% menos tokens para
+# o mesmo texto, embora custe mais por token ($3/$15 contra $2/$10).
+# Conferir a resolução efetiva: trackfw agents models
+agent_models:
+  opus: "5"
+  sonnet: "4.6"

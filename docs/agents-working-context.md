@@ -4,6 +4,141 @@
 
 ---
 
+## Sessão 2026-08-21 — Hades (FIM: ML-4B — BLOQUEIO LEVANTADO)
+
+Branch `fix/release-tag-ancora-versao-e-mensagem-no-forge`. Sem commit/push.
+
+**Veredito: BLOQUEIO LEVANTADO.**
+
+**Medido:**
+- `--no-replace-objects` confirmado por leitura nos 3 CLIs (Go:224, Node:161, Python:239).
+- `check-release-tag-parity.sh` exit 0, todos 21 cenários incluindo `refs-replace-bypass`
+  nos 3 runtimes (go, node, py) via `for runtime in go node py` linha 1438.
+- GIT_DIR redirect → recusa (não forjaria); GIT_ALTERNATE_OBJECT_DIRECTORIES → conteúdo legítimo
+  (content-addressed); GIT_REPLACE_REF_BASE → neutralizado pela flag; GIT_CONFIG_COUNT injetando
+  core.useReplaceRefs=true → sobreposto pela flag; core.hooksPath → sem efeito em git show.
+- os.Environ() bruto: argumento do ML-4A sustenta — pior caso é recusa, não forjaria.
+
+**Inferido (não medido):**
+- objects/info/alternates (arquivo): equivalente a GIT_ALTERNATE_OBJECT_DIRECTORIES.
+- Promisor/partial clone: content-addressing impede forjaria mesmo se promisor comprometido.
+
+**Dívida nomeada (não bloqueante):**
+- Cenário 158 saboteia `--no-replace-objects` apenas no Go; Node/Python sem falsificação
+  equivalente (mesma assimetria ML-3A "não compila cobre só Go").
+- os.Environ() bruto em defaultReleaseReadCommittedFile: dívida de defesa em profundidade.
+
+**Artefato escrito:**
+- `docs/seguranca/2026-08-21-reverificacao-da-ancoragem-de-versao-e-mensagem.md`
+
+---
+
+## Sessão 2026-08-21 — Hades (INÍCIO: ML-4B — reverificação pós-fix --no-replace-objects)
+
+Branch `fix/release-tag-ancora-versao-e-mensagem-no-forge`. Sem commit/push.
+
+Escopo: verificar se o exploit refs/replace/ está fechado nos 3 CLIs; medir camadas de indireção
+adicionais (GIT_ALTERNATE_OBJECT_DIRECTORIES, GIT_REPLACE_REF_BASE, GIT_CONFIG_*, core.hooksPath,
+promisor); medir se os.Environ() bruto sustenta o argumento do ML-4A; redigir relatório ML-4B.
+
+---
+
+## Sessão 2026-08-21 — Apolo (INÍCIO: ML-4A — --no-replace-objects nos 3 CLIs)
+
+Branch `fix/release-tag-ancora-versao-e-mensagem-no-forge`. Sem commit/push.
+
+Escopo: adicionar `--no-replace-objects` como primeiro argumento ao `git show` nos 3 CLIs;
+provar o exploit resolvido; adicionar cenários no gate com refs/replace/ presente e P4;
+medir `.git/info/grafts`.
+
+---
+
+## Sessão 2026-08-21 — Hades (FIM: ML-3A — barreira BLOQUEAR, vetor refs/replace/ medido)
+
+Branch `fix/release-tag-ancora-versao-e-mensagem-no-forge`. Sem commit/push (autoridade do
+`trackfw_architect`).
+
+**Veredito: BLOQUEAR.**
+
+**Achado medido:** `git show <sha>:<path>` honra `refs/replace/` por padrão nos 3 CLIs. Atacante
+com acesso local de escrita cria `.git/refs/replace/<forge-sha>` por escrita direta de arquivo
+(sem comando git, guard irrelevante), servindo conteúdo forjado para o sha do forge. Re-abre P3
+(versão) e P4 (mensagem).
+
+**Fix (uma linha por CLI):** adicionar `--no-replace-objects` ao git show em:
+- `internal/commands/release.go:224` (`defaultReleaseReadCommittedFile`)
+- `npm/src/release/runner.js:161` (`defaultReadAtCommit`)
+- `pypi/trackfw/release/runner.py:239` (`default_read_at_commit`)
+
+**Artefatos escritos:**
+- `docs/seguranca/2026-08-21-revisao-da-ancoragem-de-versao-e-mensagem.md` (revisão completa)
+- `vault/notes/git-show-honra-refs-replace-por-padrao-2026-08-21.md` (nota de vault)
+- Roadmap ML-3A marcado BLOQUEAR com sumário do achado e fix
+
+**Achados secundários declarados (não bloqueantes adicionais):**
+- Consequência de ordem (P3/P4 após forge): não é vetor, apenas UX — sem ação.
+- Garantia estrutural "não compila" cobre só Go; Node.js e Python têm convenção equivalente mas
+  sem enforcement de compilador.
+- `.git/info/grafts` é superfície adjacente não coberta por `--no-replace-objects`; raro em
+  clones modernos, deixado para o ML de correção avaliar.
+
+---
+
+## Sessão 2026-08-21 — Apolo (FIM: ML-2A — release tag ancora versão e mensagem no forge)
+
+Branch `fix/release-tag-ancora-versao-e-mensagem-no-forge`. Sem commit/push (autoridade do
+`trackfw_architect`).
+
+**Veredito: CONCLUÍDO. Todas as validações verdes.**
+
+**Artefatos modificados (3 stacks):**
+- Go: `internal/commands/release.go` (P3/P4 movidos pós-forge, `readCommittedFile` via `git show`),
+  `internal/commands/release_test.go` (+3 testes: objeto ausente versão, objeto ausente changelog, âncora)
+- Node.js: `npm/src/release/runner.js` (`readAtCommit`, P3/P4 pós-forge),
+  `npm/tests/release.test.js` (+3 testes equivalentes)
+- Python: `pypi/trackfw/release/runner.py` (`read_at_commit`, P3/P4 pós-forge),
+  `pypi/tests/test_release.py` (+3 testes equivalentes)
+- Gate: `scripts/check-release-tag-parity.sh` (reparação de 3 categorias de falha):
+  - Cenários 3a-3e + 4: stub `gh` adicionado para que P3/P4 sejam alcançados; guarda no-publish adicionado
+  - Cenário 14 (`forge-local-ref-absent-success`): fake sha `c0ffee11...` substituído por sha de
+    commit vazio em `s14-decoy` (objetos existem localmente; self-discriminant preservado)
+- Roadmap: ML-2A marcado ✅
+
+**Decisões técnicas relevantes:**
+- Cenário 14 usava sha inexistente localmente como discriminante de proveniência. Após ML-2A, P3/P4
+  tentam `git show <sha>:<path>` e, se o objeto estiver ausente, recusam (ADR-2026-08-21 explícito).
+  Solução: commit vazio (`--allow-empty`) em `s14-decoy` → sha real com tree idêntica à main;
+  self-discriminant mantido (forge_sha ≠ main_sha → divergência refusaria se fetch repovoar origin/main).
+- Cenários 3a-3e e 4 precisam de stub pois P3/P4 agora ficam após a chamada ao forge. Stub retorna
+  sha real (pós-mutação), então `git show <sha>:<path>` retorna o conteúdo mutado e dispara a recusa
+  esperada. Guarda de no-publish adicionado porque stub torna publish fisicamente alcançável.
+
+**Lacunas declaradas para ML-2B / hades-tf ML-3A:**
+- Objeto ausente localmente não tem cobertura parity cross-CLI (só testes unitários nos 3 stacks).
+- Reordenação de P3/P4 após forge muda qual recusa "vence" quando `gh` ausente: usuário sem `gh`
+  vê "requires the GitHub CLI" em vez de "version mismatch". Consequência inevitável do ADR.
+  Hades-tf deve verificar se isso fecha ou abre vetor.
+
+**Evidência:**
+```
+make build                          → exit 0
+make test                           → ok todos pacotes Go; 27/27 Node.js; 27/27 Python
+bash scripts/check-release-tag-parity.sh → All 18 scenarios passed
+TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make parity → exit 0
+./bin/trackfw validate              → 17 warnings pré-existentes, 0 violations
+```
+
+---
+
+## Sessão 2026-08-21 — Apolo (INÍCIO: ML-2A — release tag ancora versão e mensagem no forge)
+
+Branch `fix/release-tag-ancora-versao-e-mensagem-no-forge`. Sem commit/push (autoridade do
+`trackfw_architect`). Escopo: P3/P4 passam a ler de `git show <objectSHA>:<path>` nos 3 CLIs;
+`readFile` removido, `readCommittedFile`/`readAtCommit`/`read_at_commit` adicionado; objetos ausentes
+recusam nomeando o quê falta (ADR-2026-08-21); parity gate verde.
+
+---
+
 ## Sessão 2026-08-21 — Apolo (FIM: ML-5C — Estender a recusa a separadores unicode)
 
 Branch `feat/versao-do-modelo-por-tier-com-composicao-por-alvo`. Sem commit/push (autoridade do
@@ -22192,3 +22327,111 @@ impasse do pin (hoje não dá para rodar `agents update` sem perder o pin), e 7.
 
 **Depois da release:** `update --dry-run` em symlink · i18n nos 3 CLIs · `note_orphan` ausente no
 Node · `rule: null` no `validate --json` do Python · substring no corpus de `done/`.
+
+---
+
+## Apolo-tf — 2026-08-21 — INICIANDO ML-2A
+
+**Branch:** `fix/release-tag-ancora-versao-e-mensagem-no-forge`
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-08-21-release-tag-ancora-versao-e-mensagem-no-forge.md`
+**ML:** ML-2A — Ancorar versão e mensagem no commit-alvo (3 stacks)
+
+Lendo ADR, roadmap, os 3 runners, os 3 arquivos de testes, e o `check-release-tag-parity.sh`.
+
+Mudanças planejadas:
+- `releaseDeps`: remove `readFile`, adiciona `readCommittedFile(sha, path string) (string, error)`
+- P3 e P4 movidos para DEPOIS de `objectSHA` ser resolvido (após forge API)
+- Novo `defaultReleaseReadCommittedFile`: usa `git show <sha>:<path>`, stdout NÃO trimado
+- Mesma estrutura em Node.js (`readAtCommit`) e Python (`read_at_commit`)
+- Nova constante de recusa nomeando sha+path nos 3 CLIs (byte-identical)
+- Testes novos: objeto ausente recusa nomeando; conteúdo da tag vem do commit, não do working tree
+
+---
+
+## Sessão 2026-08-21 — Apolo (INÍCIO: ML-2B — gate + P4 da ancoragem)
+
+Branch `fix/serve-amarra-em-loopback-por-padrao-com-opt-in-explicito-para-exposicao`. Sem commit/push
+(autoridade do `trackfw_architect`).
+
+Escopo: estender `scripts/check-release-tag-parity.sh` com cenários 15 (object-absent), 16
+(content-from-commit-provenance dois eixos); adicionar Cenário 87 ao
+`scripts/check-gates-falsify.sh` (P4 prova que ancoragem do CHANGELOG é load-bearing); atualizar
+`docs/cli-parity.md` com documentação da ancoragem de conteúdo; validações completas.
+
+---
+
+## Sessão 2026-08-21 — Apolo (FIM: ML-2B — gate + P4 da ancoragem)
+
+Branch `fix/serve-amarra-em-loopback-por-padrao-com-opt-in-explicito-para-exposicao`. Sem
+commit/push (autoridade do `trackfw_architect`).
+
+**Veredito: CONCLUÍDO. Todas as validações verdes.**
+
+**Artefatos modificados:**
+- `scripts/check-release-tag-parity.sh`: cenários 15 (object-absent) e 16
+  (content-from-commit-provenance, dois eixos) adicionados; script vai de 18 para 20 RT_LABELs.
+- `scripts/check-gates-falsify.sh`: Cenário 87 adicionado (P4 — sabota leitura do CHANGELOG
+  de objectSHA → "HEAD"; gate captura via asserção de proveniência do Scenario 16; contagem
+  atualizada de 156 → 157).
+- `docs/cli-parity.md`: parágrafo de ancoragem de conteúdo adicionado; contagem de cenários
+  atualizada ("Thirteen" → "Sixteen scenarios (20 RT_LABELs)"); Scenarios 14-16 documentados.
+- Roadmap ML-2B: ⬜ Pendente → ✅ Concluído.
+- `docs/agents-working-context.md`: entradas de INÍCIO e FIM desta sessão.
+
+**Decisões técnicas relevantes:**
+- Fixture dois eixos (Scenario 16): HEAD versão 9.9.7 / CHANGELOG head-only; decoy 9.9.9 /
+  CHANGELOG forge-only. Ambas CHANGELOG têm ## [9.9.9] para que a sabotagem do CHANGELOG
+  ainda passe em P4 → falso negativo detectável só via payload.
+- Alvo de sabotagem P4 (Cenário 87): `readCommittedFile(objectSHA, "CHANGELOG.md")` → `("HEAD",
+  "CHANGELOG.md")`. Compila; readFile foi removido do struct → fallback para disco impossível
+  de compilar. Literal único em release.go (corrupt_literal verifica).
+- cli-parity.md atualizado sem nova subsection (seguindo conselho do advisor) — texto estendido
+  dentro da seção existente `### trackfw release tag <version>`; anotação `<!-- trackfw-contract
+  -->` pré-existente cobre o conteúdo novo.
+
+**Evidência:**
+```
+make build                                           → exit 0
+make test                                            → ok todos os pacotes Go (cached)
+GO_BIN=./bin/trackfw bash scripts/check-release-tag-parity.sh → All 20 scenarios passed
+bash scripts/check-parity-contract-coverage.sh       → exit 0
+TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make parity      → exit 0 (incluindo OK [falsify/release-tag-parity/content-from-commit-baseline] + content-from-commit-false-negative)
+./bin/trackfw validate                               → 17 warnings pré-existentes, 0 violations
+```
+
+---
+
+## Sessão 2026-08-21 — Apolo (FIM: ML-4A — --no-replace-objects nos 3 CLIs)
+
+**Handoff recebido de:** `trackfw_architect` (continuação de sessão anterior truncada por limite de contexto)
+
+**Escopo executado:** ML-4A do `ROADMAP-2026-08-21-release-tag-ancora-versao-e-mensagem-no-forge.md` (Wave 4) — fechar o furo de `refs/replace/` na ancoragem de conteúdo de `trackfw release tag`.
+
+**Trabalho realizado:**
+1. **Fix nos 3 CLIs** (`--no-replace-objects` como primeiro argumento após `git`):
+   - Go: `internal/commands/release.go:224` — `exec.Command("git", "--no-replace-objects", "show", sha+":"+path)`
+   - Node.js: `npm/src/release/runner.js:161` — `spawnSync('git', ['--no-replace-objects', 'show', ...])`
+   - Python: `pypi/trackfw/release/runner.py:239` — `subprocess.run(["git", "--no-replace-objects", "show", ...])`
+2. **Scenario 17 (`refs-replace-bypass`) em `scripts/check-release-tag-parity.sh`:** fixture três eixos (HEAD 9.9.7/head-only, forge commit 9.9.9/forge-only, attacker commit LOCAL-ONLY 9.9.9/refs-replace-forged); replace ref escrita como arquivo; V1/V2/V3 vacuity guards + post-run guard; provenance assertions por runtime.
+3. **Cenário 158 (P4) em `scripts/check-gates-falsify.sh`:** seam `"--no-replace-objects", "show"` → `"show"` em cópia isolada Go; baseline + detection arm; echo final 157 → 158.
+4. **`docs/cli-parity.md` atualizado:** "Sixteen scenarios (20 RT_LABELs)" → "Seventeen scenarios (21 RT_LABELs)"; gate mention inclui Scenario 17 (ML-4A); Scenario 17 description adicionada.
+5. **`.git/info/grafts` medido:** grafts só alteram parent-chain traversal, NÃO afetam `git show <sha>:<path>`. Vault note `git-show-honra-refs-replace-por-padrao-2026-08-21.md` atualizado com a taxonomia completa de camadas de indireção.
+6. **Roadmap ML-4A** marcado ✅ Concluído com evidências.
+
+**Achado reportado (não corrigido neste ML):** `defaultReleaseReadCommittedFile` usa `os.Environ()` bruto sem `cleanGitEnv()`. Para sha-addressed reads, GIT_DIR redirect faz objeto ausente (recusa) vs. forjado — menos crítico; reportado para hades-tf/ML-4B.
+
+**Evidências:**
+```
+make build                                                    → exit 0
+go test ./...                                                 → ok todos os pacotes Go
+bash scripts/check-release-tag-parity.sh                     → All 21 RT_LABELs passed (incl. refs-replace-bypass)
+P4 detection arm isolado                                      → exit 1, "provenance: tag message must contain 'forge-only'" ✓
+./bin/trackfw validate                                        → 0 violations, 17 warnings pré-existentes
+TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make parity               → exit 0
+  OK [falsify/release-tag-parity/refs-replace-bypass-baseline]
+  OK [falsify/release-tag-parity/refs-replace-bypass-false-negative]
+  All check-release-tag-parity.sh scenarios passed
+  Falsification checks passed (all 158 scenarios, ...)
+```
+
+**Próximo:** ML-4B → `hades-tf` (reverificação; bloqueio levantado).

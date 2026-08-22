@@ -81,17 +81,20 @@ func makeReleaseDeps(t *testing.T, fileOverrides map[string]string) (releaseDeps
 	g := newMockReleaseGit()
 	d := releaseDeps{
 		execGit: g.exec,
-		readFile: func(path string) (string, error) {
+		// readCommittedFile reads from the files map, keyed by path (ignoring sha — tests control
+		// both the sha the forge mock returns and the content in the files map; the sha parameter
+		// is available for assertions in individual tests via custom overrides).
+		readCommittedFile: func(sha, path string) (string, error) {
 			content, ok := files[path]
 			if !ok {
-				return "", fmt.Errorf("file not found: %s", path)
+				return "", fmt.Errorf("object %s:%s not found", sha, path)
 			}
 			return content, nil
 		},
-		out:         &bytes.Buffer{},
-		configForge: "",
-		repoDir:     "",
-		availFn:     func(string) bool { return true },
+		out:          &bytes.Buffer{},
+		configForge:  "",
+		repoDir:      "",
+		availFn:      func(string) bool { return true },
 		execForgeAPI: defaultMockReleaseForgeAPI,
 	}
 	return d, g
@@ -573,4 +576,141 @@ func TestReleaseTag_TagObjectCallFails_AbortsBeforeRefCall(t *testing.T) {
 	if refCalled {
 		t.Fatal("git/refs must never be called when git/tags failed — would create an orphan ref")
 	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// ML-2A: Object anchoring — P3/P4 read from the commit-target, not the
+// working tree. See ADR-2026-08-21-release-tag-le-versao-e-changelog-do-
+// commit-ancorado.md.
+// ────────────────────────────────────────────────────────────────────────────
+
+// TestReleaseTag_ObjectAbsent_VersionFile_RefusesNamingShAndPath verifies that
+// when readCommittedFile cannot find a version file at objectSHA, the command
+// refuses with a message that names both the path and the sha — and never
+// reaches the publish step.
+func TestReleaseTag_ObjectAbsent_VersionFile_RefusesNamingShAndPath(t *testing.T) {
+	d, _ := makeReleaseDeps(t, nil)
+	var publishCalled bool
+	d.execForgeAPI = func(name string, args []string, stdin string) (string, error) {
+		if len(args) >= 2 && strings.Contains(args[1], "git/tags") {
+			publishCalled = true
+		}
+		return defaultMockReleaseForgeAPI(name, args, stdin)
+	}
+	// Make the version file absent at the commit sha.
+	d.readCommittedFile = func(sha, path string) (string, error) {
+		if path == "internal/version/version.go" {
+			return "", fmt.Errorf("path 'internal/version/version.go' does not exist in '%s'", sha)
+		}
+		// All other files succeed with valid content.
+		files := validReleaseVersionFiles(releaseTestVersion)
+		if content, ok := files[path]; ok {
+			return content, nil
+		}
+		return "", fmt.Errorf("object %s:%s not found", sha, path)
+	}
+
+	err := runReleaseTag(releaseTestVersion, d)
+	if err == nil {
+		t.Fatal("expected error when version file object is absent")
+	}
+	if !strings.Contains(err.Error(), "internal/version/version.go") {
+		t.Errorf("error = %q, want it to name the missing path", err.Error())
+	}
+	if !strings.Contains(err.Error(), releaseTestSHA) {
+		t.Errorf("error = %q, want it to name the commit sha %q", err.Error(), releaseTestSHA)
+	}
+	if !strings.Contains(err.Error(), "refuses to run") {
+		t.Errorf("error = %q, want it to be a refusal message", err.Error())
+	}
+	if publishCalled {
+		t.Fatal("git/tags must never be called when a version file object is absent")
+	}
+}
+
+// TestReleaseTag_ObjectAbsent_Changelog_RefusesNamingShaAndPath verifies that
+// when readCommittedFile cannot find CHANGELOG.md at objectSHA, the command
+// refuses naming both the path and the sha, and never publishes.
+func TestReleaseTag_ObjectAbsent_Changelog_RefusesNamingShaAndPath(t *testing.T) {
+	d, _ := makeReleaseDeps(t, nil)
+	var publishCalled bool
+	d.execForgeAPI = func(name string, args []string, stdin string) (string, error) {
+		if len(args) >= 2 && strings.Contains(args[1], "git/tags") {
+			publishCalled = true
+		}
+		return defaultMockReleaseForgeAPI(name, args, stdin)
+	}
+	d.readCommittedFile = func(sha, path string) (string, error) {
+		if path == "CHANGELOG.md" {
+			return "", fmt.Errorf("path 'CHANGELOG.md' does not exist in '%s'", sha)
+		}
+		files := validReleaseVersionFiles(releaseTestVersion)
+		if content, ok := files[path]; ok {
+			return content, nil
+		}
+		return "", fmt.Errorf("object %s:%s not found", sha, path)
+	}
+
+	err := runReleaseTag(releaseTestVersion, d)
+	if err == nil {
+		t.Fatal("expected error when CHANGELOG.md object is absent")
+	}
+	if !strings.Contains(err.Error(), "CHANGELOG.md") {
+		t.Errorf("error = %q, want it to name CHANGELOG.md", err.Error())
+	}
+	if !strings.Contains(err.Error(), releaseTestSHA) {
+		t.Errorf("error = %q, want it to name the commit sha %q", err.Error(), releaseTestSHA)
+	}
+	if !strings.Contains(err.Error(), "refuses to run") {
+		t.Errorf("error = %q, want it to be a refusal message", err.Error())
+	}
+	if publishCalled {
+		t.Fatal("git/tags must never be called when CHANGELOG.md object is absent")
+	}
+}
+
+// TestReleaseTag_TagMessageFromCommit_NotFromHypotheticalLocal proves that the
+// tag payload message is sourced from readCommittedFile (the commit-anchored
+// content), not from any alternative local source. The readCommittedFile mock
+// returns CHANGELOG content with a body line that only appears in the committed
+// blob, while a "hypothetical local" version would have a different body line.
+// The test asserts the tag payload contains the committed body, not the other.
+func TestReleaseTag_TagMessageFromCommit_NotFromHypotheticalLocal(t *testing.T) {
+	d, _ := makeReleaseDeps(t, nil)
+
+	// committedBody is a unique body line that only readCommittedFile can deliver.
+	const committedBody = "- from-commit-object-anchor\n"
+	const localOnlyBody = "- from-working-tree-NOT-anchored\n"
+
+	// readCommittedFile returns committed-blob content for CHANGELOG.md.
+	files := validReleaseVersionFiles(releaseTestVersion)
+	d.readCommittedFile = func(sha, path string) (string, error) {
+		if path == "CHANGELOG.md" {
+			return fmt.Sprintf("# Changelog\n\n## [%s] - 2026-08-21\n\n### Added\n%s", releaseTestVersion, committedBody), nil
+		}
+		if content, ok := files[path]; ok {
+			return content, nil
+		}
+		return "", fmt.Errorf("object %s:%s not found", sha, path)
+	}
+
+	var tagPayloadBody string
+	d.execForgeAPI = func(name string, args []string, stdin string) (string, error) {
+		if len(args) >= 2 && strings.Contains(args[1], "git/tags") {
+			tagPayloadBody = stdin
+		}
+		return defaultMockReleaseForgeAPI(name, args, stdin)
+	}
+
+	if err := runReleaseTag(releaseTestVersion, d); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(tagPayloadBody, "from-commit-object-anchor") {
+		t.Errorf("tag payload = %q, want it to contain the committed-blob body line", tagPayloadBody)
+	}
+	if strings.Contains(tagPayloadBody, "from-working-tree-NOT-anchored") {
+		t.Errorf("tag payload = %q, must NOT contain the local-only body line (anchoring failure)", tagPayloadBody)
+	}
+	_ = localOnlyBody // documented here as the "not this" counterpart
 }

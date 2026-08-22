@@ -1087,6 +1087,24 @@ the guard blocks that push form anyway. The second call is never issued if the f
 `{owner}`/`{repo}` are the literal placeholders `gh api` itself expands from the current
 repository context — the remote URL is never hand-parsed for this.
 
+**Content anchorage — version files and `CHANGELOG.md` read from the forge commit object, not
+the working tree (ADR-2026-08-21, ML-2A).** The barrier review
+(`docs/seguranca/2026-08-21-revisao-da-ancoragem-de-versao-e-mensagem.md`) found that reading
+version and CHANGELOG from the local working tree allowed an attacker to publish a tag whose
+message was written locally and never appeared in any auditable commit. The fix extends the same
+sha-based authority already used for the commit target: version files (the 5 checks in P3 above)
+and `CHANGELOG.md` (P4) are now read via `git show <objectSHA>:<path>`, where `objectSHA` is the
+forge-resolved commit sha. Git objects are content-addressed — given a sha, the content is
+cryptographically determined. The read is local (no extra API call), but the authority is the sha,
+which comes from the forge. `readFile` was **removed** from the `releaseDeps` struct entirely (not
+left unused): any future attempt to re-introduce a working-tree read fails to compile, making
+silent fallback structurally impossible rather than merely guarded. If the requested object is
+absent locally, the command refuses naming both the path and the sha — never falls back to the
+working tree. **This resolves the PR-bump false-positive without exception**: since `objectSHA` is
+the tip of the default branch *after* the PR merge, the bumped version files and the new CHANGELOG
+section are already in it, so there is no divergence to tolerate. The gate name for this anchorage
+is `check-release-tag-parity.sh` (Scenarios 15 and 16 added in ML-2B; Scenario 17 added in ML-4A).
+
 **Gate: `scripts/check-release-tag-parity.sh`** (registered in the `parity` Make target). A real
 bare git remote, local and offline, `$HOME`/`GIT_CONFIG_GLOBAL`/`GIT_CONFIG_SYSTEM` isolated at
 both fixture-construction time and invocation time (the identity precondition means a developer
@@ -1096,7 +1114,8 @@ stub answers all four `gh api` calls the command makes (the two GET commit-targe
 two POST publish calls); only the two POST calls are recorded to the scenario's call log, so the
 "refusal must never publish" assertions stay meaningful on every scenario that reaches
 precondition 6 (forge resolution), where both GET calls happen before the identity check.
-Thirteen scenarios, byte-diffed across the 3 runtimes on stdout, stderr, and exit code:
+Seventeen scenarios (21 RT_LABELs — scenario 3 splits into 3a–3e), byte-diffed across the 3
+runtimes on stdout, stderr, and exit code:
 
 - Scenarios 1–9 exercise the nine refusal paths above (3 split into 3a–3e, one isolated
   mismatch per version-file check).
@@ -1138,6 +1157,51 @@ Thirteen scenarios, byte-diffed across the 3 runtimes on stdout, stderr, and exi
   Cenário 76 sabotages (single-literal `false &&` prefix neutering
   `if localSHA != "" && localSHA != commitObj.SHA {` in an isolated Go copy) — the sabotaged
   binary still resolves and prints the forge's sha correctly, but the refusal is gone.
+- **Scenario 14 (ML-2A) — `refs/remotes/origin/main` absent**: proves that an absent local
+  tracking ref (as opposed to an absent git object) must not block publishing. Uses the same
+  pin+delete technique as Scenarios 12/13: `remote.origin.fetch` pinned to a decoy branch,
+  `refs/remotes/origin/main` deleted. The forge stub returns the decoy commit's sha — distinct
+  from `main`'s sha (self-discriminant: if the refspec ever stops isolating and `git fetch`
+  repopulates `origin/main`, the cross-check refuses, flipping the "expected exit 0" assertion
+  loudly red). Decoy commit carries the same tree as `main`, so P3/P4 (`git show <sha>:path`)
+  succeed on valid objects.
+- **Scenario 15 (ML-2B) — git object absent**: proves that when the forge returns a sha whose
+  git objects do not exist locally, all 3 CLIs refuse naming both the path and the sha. Uses the
+  same pin+delete technique (forgeLocalSHA = "" → cross-check skipped → reaches P3 → `git show
+  FAKE_ABSENT_SHA:<path>` fails). FAKE_ABSENT_SHA (40 × 'a') is proven absent by a vacuity
+  guard (`git cat-file -e`). No-publish guard: no `git/tags` POST may be reached.
+- **Scenario 16 (ML-2B) — content-from-commit provenance**: proves BOTH that the legitimate
+  PR-bump flow succeeds (case 2) and that the tag message content comes from the forge commit,
+  not the working tree (case 3). Two-axis fixture: HEAD (local main) carries version 9.9.7 and
+  CHANGELOG with `- head-only`; forge commit (decoy) carries version 9.9.9 and CHANGELOG with
+  `- forge-only`. Both CHANGELOG carry a `## [9.9.9]` section so exit code alone cannot
+  discriminate the two sources — only the section body can. Real binary reads from objectSHA →
+  version 9.9.9 passes, message = "forge-only". Provenance proven by asserting the `message`
+  field in the captured `git/tags` POST payload contains "forge-only" and not "head-only". The
+  two-axis design makes each anchored read independently falsifiable: bypassing the version read
+  (objectSHA → "HEAD") makes P3 see 9.9.7 ≠ 9.9.9 → exit non-zero; bypassing the CHANGELOG
+  read (objectSHA → "HEAD") keeps exit 0 but payload message = "head-only" → provenance
+  assertion fires. This second bypass is exactly what `scripts/check-gates-falsify.sh`'s Cenário
+  87 sabotages (`deps.readCommittedFile(objectSHA, "CHANGELOG.md")` →
+  `deps.readCommittedFile("HEAD", "CHANGELOG.md")` in an isolated Go copy).
+- **Scenario 17 (ML-4A) — `refs/replace/` object-identity bypass**: proves that
+  `--no-replace-objects` (first argument after `git` in all 3 CLIs) blocks the attack where an
+  adversary writes `.git/refs/replace/<forge-sha>` = `<attacker-sha>` as a raw file (no git
+  command; bypasses any branch guard). Without the flag, `git show <forge-sha>:CHANGELOG.md`
+  follows the redirect and returns the attacker's content. Three-axis fixture: HEAD at 9.9.7
+  with `- head-only`; forge commit (s17-decoy, pushed) at 9.9.9 with `- forge-only`; attacker
+  commit (s17-attacker, LOCAL ONLY, never pushed) at 9.9.9 with `- refs-replace-forged`. Replace
+  ref written as a raw file: `printf '%s\n' <attacker-sha> > .git/refs/replace/<forge-sha>`.
+  Three vacuity guards: V1 (origin/main tracking ref gone — cross-check skipped, same as S14–16);
+  V2 (attack genuine — raw `git show` without flag returns "refs-replace-forged"); V3 (fix works —
+  `git --no-replace-objects show` returns "forge-only"). Post-run guard: replace ref still present
+  and still active after all three CLI invocations, proving the fix suppresses a live redirect.
+  Provenance assertions per runtime: message contains "forge-only" AND does NOT contain
+  "refs-replace-forged". The per-runtime assertion makes the scenario correlated-revert-proof:
+  all three stacks dropping the flag → each runtime fires independently; `assert_three_way` catches
+  single-stack revert. `scripts/check-gates-falsify.sh`'s Cenário 158 sabotages
+  (`"--no-replace-objects", "show"` → `"show"` in an isolated Go copy) and proves this provenance
+  assertion catches the false negative.
 
 ## `trackfw branch new`
 

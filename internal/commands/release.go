@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -25,8 +24,11 @@ type releaseDeps struct {
 	// write commands both go through this — release tag never uses "add ." semantics.
 	execGit func(args ...string) (string, error)
 
-	// readFile reads a file relative to repoDir (the 4 version files + CHANGELOG.md).
-	readFile func(path string) (string, error)
+	// readCommittedFile reads a file from a specific commit object (git show <sha>:<path>)
+	// and returns the content byte-for-byte, WITHOUT trimming — callers rely on verbatim
+	// content (CHANGELOG sections, version strings). Absent object → error naming what is
+	// missing; never falls back to the working tree.
+	readCommittedFile func(sha, path string) (string, error)
 
 	out io.Writer
 
@@ -80,6 +82,13 @@ const (
 	releaseTagForgeAPIDefaultBranchFailedFmt = "trackfw release tag: gh api failed resolving the repository's default branch from the forge: %w"
 
 	releaseTagForgeAPICommitFailedFmt = "trackfw release tag: gh api failed resolving the forge's tip commit for %s: %w"
+
+	// releaseTagObjectAbsentFmt fires when git show <sha>:<path> fails (object not present
+	// locally after the fetch that Precondition 2 already ran). Names the path and the sha so
+	// the user knows exactly what is missing. Never falls back to the working tree — that would
+	// undo the anchoring that this ML exists to provide. See ADR-2026-08-21-release-tag-le-
+	// versao-e-changelog-do-commit-ancorado.md.
+	releaseTagObjectAbsentFmt = "trackfw release tag refuses to run: could not read %s at commit %s: %s"
 )
 
 // releaseVersionFile describes one location where the project version is recorded, and how
@@ -192,13 +201,13 @@ without -a, and the git-branch-guard blocks that push form anyway.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cmd.SilenceUsage = true
 			deps := releaseDeps{
-				execGit:      defaultGitExec,
-				readFile:     defaultReleaseReadFile,
-				out:          cmd.OutOrStdout(),
-				configForge:  config.Load().Forge,
-				repoDir:      ".",
-				availFn:      nil,
-				execForgeAPI: defaultExecForgeAPI,
+				execGit:           defaultGitExec,
+				readCommittedFile: defaultReleaseReadCommittedFile,
+				out:               cmd.OutOrStdout(),
+				configForge:       config.Load().Forge,
+				repoDir:           ".",
+				availFn:           nil,
+				execForgeAPI:      defaultExecForgeAPI,
 			}
 			return runReleaseTag(args[0], deps)
 		},
@@ -206,14 +215,29 @@ without -a, and the git-branch-guard blocks that push form anyway.`,
 	return cmd
 }
 
-// defaultReleaseReadFile reads a file relative to the current working directory (the repo
-// root, in production use).
-func defaultReleaseReadFile(path string) (string, error) {
-	data, err := os.ReadFile(path)
+// defaultReleaseReadCommittedFile reads a file from a specific commit object (git show
+// <sha>:<path>) and returns the content verbatim — stdout is NOT trimmed because callers rely
+// on byte-exact content (CHANGELOG sections, version strings with newlines). On any failure
+// (object absent, sha unknown) the error surfaces git's real stderr; there is no fallback to
+// the working tree. See ADR-2026-08-21-release-tag-le-versao-e-changelog-do-commit-ancorado.md.
+func defaultReleaseReadCommittedFile(sha, path string) (string, error) {
+	cmd := exec.Command("git", "--no-replace-objects", "show", sha+":"+path)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
 	if err != nil {
-		return "", err
+		msg := strings.TrimSpace(stderr.String())
+		if msg == "" {
+			if exitErr, ok := err.(*exec.ExitError); ok {
+				msg = fmt.Sprintf("git show %s:%s exited with %d", sha, path, exitErr.ExitCode())
+			} else {
+				msg = err.Error()
+			}
+		}
+		return "", errors.New(msg)
 	}
-	return string(data), nil
+	return stdout.String(), nil
 }
 
 // defaultExecForgeAPI runs a forge CLI command (gh api ...) feeding stdin and capturing
@@ -298,36 +322,6 @@ func runReleaseTag(versionArg string, deps releaseDeps) error {
 		}
 	}
 
-	// ─── Precondition 3: the 4 version files must all match ─────────────────
-	for _, vf := range releaseVersionFiles {
-		content, rerr := deps.readFile(vf.path)
-		if rerr != nil {
-			return fmt.Errorf("trackfw release tag refuses to run: could not read %s: %w", vf.path, rerr)
-		}
-		got, eerr := vf.extract(content)
-		if eerr != nil {
-			return fmt.Errorf("trackfw release tag refuses to run: %w", eerr)
-		}
-		if got != version {
-			return fmt.Errorf(releaseTagVersionMismatchFmt, vf.label, got, version)
-		}
-	}
-
-	// ─── Precondition 4: CHANGELOG.md has the version's section ─────────────
-	changelogContent, err := deps.readFile("CHANGELOG.md")
-	if err != nil {
-		return fmt.Errorf("trackfw release tag refuses to run: could not read CHANGELOG.md: %w", err)
-	}
-	sections, err := changelog.ParseSections(changelogContent)
-	if err != nil {
-		return fmt.Errorf("trackfw release tag refuses to run: could not parse CHANGELOG.md: %w", err)
-	}
-	section, err := changelog.FindVersion(sections, version)
-	if err != nil {
-		return fmt.Errorf(releaseTagChangelogMissingFmt, err.Error(), version)
-	}
-	tagMessage := changelog.FormatSection(section)
-
 	// ─── Precondition 5: tag must not already exist, local or remote ────────
 	if _, err := deps.execGit("rev-parse", "-q", "--verify", "refs/tags/"+tagName); err == nil {
 		return fmt.Errorf(releaseTagExistsLocalFmt, tagName, tagName)
@@ -408,6 +402,41 @@ func runReleaseTag(versionArg string, deps releaseDeps) error {
 	// objectSHA is now authoritative — resolved from the forge, cross-checked (not sourced)
 	// against the local ref above.
 	objectSHA := commitObj.SHA
+
+	// ─── Precondition 3: version files in the commit-target must all match ──
+	// Content is read from objectSHA via git show, NOT from the working tree. Objects are
+	// content-addressed: given a sha that comes from the forge, the content is cyptographically
+	// determined — a local edit that was not committed cannot influence the tag message.
+	// Absent object → refuse naming sha+path; never fall back to local. See ADR-2026-08-21.
+	for _, vf := range releaseVersionFiles {
+		content, rerr := deps.readCommittedFile(objectSHA, vf.path)
+		if rerr != nil {
+			return fmt.Errorf(releaseTagObjectAbsentFmt, vf.path, objectSHA, rerr.Error())
+		}
+		got, eerr := vf.extract(content)
+		if eerr != nil {
+			return fmt.Errorf("trackfw release tag refuses to run: %w", eerr)
+		}
+		if got != version {
+			return fmt.Errorf(releaseTagVersionMismatchFmt, vf.label, got, version)
+		}
+	}
+
+	// ─── Precondition 4: CHANGELOG.md in the commit-target has the version's section ──
+	// Same anchoring as P3: content comes from objectSHA, never from the working tree.
+	changelogContent, err := deps.readCommittedFile(objectSHA, "CHANGELOG.md")
+	if err != nil {
+		return fmt.Errorf(releaseTagObjectAbsentFmt, "CHANGELOG.md", objectSHA, err.Error())
+	}
+	sections, err := changelog.ParseSections(changelogContent)
+	if err != nil {
+		return fmt.Errorf("trackfw release tag refuses to run: could not parse CHANGELOG.md: %w", err)
+	}
+	section, err := changelog.FindVersion(sections, version)
+	if err != nil {
+		return fmt.Errorf(releaseTagChangelogMissingFmt, err.Error(), version)
+	}
+	tagMessage := changelog.FormatSection(section)
 
 	// ─── Tagger identity ──────────────────────────────────────────────────
 	name, _ := deps.execGit("config", "user.name")
