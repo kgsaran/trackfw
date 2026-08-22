@@ -43,19 +43,119 @@ Essa distinção é o trabalho; o resto é mecânica.
 ## Wave 1 — Repro e regra
 
 ### ML-1A — Reproduzir a falha antes de escrever a regra
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
-**Lote de investigação.** Entrega um parecer curto no roadmap; **nenhuma linha de regra**.
+**Status:** ✅ Concluído · **Agente:** `apolo-tf`
 
-**Perguntas a responder com medição:**
-- Qual é exatamente a "forma relativa antiga", e em quais dos 6 CLIs ela é **errada**?
-- Em quais ela é **correta** (Cursor, Copilot — confirmar, não presumir)?
-- O hook na forma antiga **falha mesmo** fora da raiz? Reproduza.
-- Qual sinal distingue as duas formas de modo **decidível**? Se não houver sinal limpo, diga —
-  é resposta legítima, e muda o desenho.
+**Parecer (2026-08-21):**
+
+#### P1 — Qual é a "forma relativa antiga"?
+
+Literal exato (credential-guard):
+```
+scripts/trackfw-credential-guard.sh
+```
+Literal exato (git-branch-guard):
+```
+scripts/trackfw-git-branch-guard.sh
+```
+Nomeadas como `GUARD_CMD_LEGACY` (Node `npm/src/generators/hooks.js:1173`) e equivalentes Go
+(`agentfiles.go` — a migração sai de `"scripts/trackfw-credential-guard.sh"` para a forma com
+prefixo, linhas 253–254 / 438–441 / 584–586) e Python (`pypi/trackfw/generators/hooks.py` —
+`_migrate_hook_command(..., 'scripts/trackfw-credential-guard.sh', _GUARD_CMD_*)`).
+
+#### P2 — Em quais CLIs a forma relativa é ERRADA, em quais é CORRETA?
+
+Medido via ADR-2026-08-11 (tabela de decisão) + constantes dos 3 geradores:
+
+| CLI | Forma atual (correta) | Relativa (`scripts/...`) |
+|---|---|---|
+| Claude Code | `$CLAUDE_PROJECT_DIR/scripts/...` | **ERRADA** — hooks rodam no cwd do agente |
+| Gemini CLI | `$GEMINI_PROJECT_DIR/scripts/...` | **ERRADA** — por argumento de assimetria (ADR §Gemini) |
+| Codex CLI | `"$(git rev-parse --show-toplevel)/scripts/..."` | **ERRADA** — cwd é o cwd da sessão |
+| Cursor | `scripts/...` ← **É esta forma** | **CORRETA** — doc: "Run from the project root" |
+| GitHub Copilot CLI | `scripts/...` + campo `"cwd":"."` | **CORRETA** — cwd pinado pelo campo estrutural |
+| Kiro | `scripts/...` | **CORRETA** (indeterminado, default ADR: não alterar) |
+
+Cursor e Copilot confirmados: relativo é a forma atual emitida pelos 3 geradores e não tem migração
+pendente (constantes `GUARD_CMD_CURSOR`, `GUARD_CMD_COPILOT`, `GBG_CMD_CURSOR`, `GBG_CMD_COPILOT`
+mantidas como `scripts/...`).
+
+#### P3 — O hook na forma antiga falha fora da raiz?
+
+**Sim. Reproduzido:**
+
+Fixture: `.claude/settings.json` com `"command":"scripts/trackfw-credential-guard.sh"` (type:command),
+script presente em `<root>/scripts/trackfw-credential-guard.sh`.
+
+```
+# Validação da raiz — resultado:
+credential_guard_hook_resolvable: VAZIO  ← bug confirmado (nenhuma violação)
+
+# Execução como Claude faria a partir de subdir:
+$ cd fixture-a/subdir && /bin/sh scripts/trackfw-credential-guard.sh
+/bin/sh: scripts/trackfw-credential-guard.sh: No such file or directory
+exit 127
+```
+
+O validate conclui "ok" porque `resolveCredentialGuardHookPath()` trata `scripts/...` (sem `$`, sem
+`"`, não absoluto) como relativo puro (case 4, linha 84) e resolve para `<root>/scripts/...` — que
+existe. O script não é executado pelo validate; só o CLI de agente o executa em runtime, a partir do
+cwd corrente, que pode ser qualquer subdiretório.
+
+#### P4 — Qual sinal distingue as duas formas?
+
+**Sinal limpo e decidível: o arquivo de host (qual CLI) combinado com a presença ou ausência de prefixo.**
+
+- `scripts/trackfw-credential-guard.sh` em `.claude/settings.json` → forma antiga/errada
+- `scripts/trackfw-credential-guard.sh` em `.cursor/hooks.json` → forma correta
+
+A string de comando é idêntica. O que difere é o CLI. `credentialGuardHookFiles` já estrutura cada
+entrada com o CLI correspondente. A tabela do ADR-2026-08-11 é inequívoca: para Claude, Gemini e
+Codex, o prefixo/mecanismo é **obrigatório**; para Cursor/Copilot/Kiro, o relativo é o mecanismo
+correto.
+
+Não há ambiguidade: um mesmo valor de string só pode ser "forma antiga" num dos 6 contextos de host
+file. O discriminante é `(host_file, forma_do_comando)`, não `forma_do_comando` sozinha.
+
+#### Recomendação de desenho para ML-1B
+
+Adicionar flag `requiresVarOrShellPrefix bool` em `credentialGuardHookFile`:
+
+```go
+{".claude/settings.json",                    "Claude Code",        true,  true },   // requiresCommandType, requiresVarOrShellPrefix
+{".codex/hooks.json",                        "Codex CLI",          true,  true },
+{".gemini/settings.json",                    "Gemini CLI",         true,  true },
+{".cursor/hooks.json",                       "Cursor",             false, false},
+{".github/hooks/trackfw-attention.json",     "GitHub Copilot CLI", true,  false},
+{".kiro/hooks/trackfw-attention.json",       "Kiro",               true,  false},
+```
+
+Em `validateGuardHookResolvable`, após `resolveCredentialGuardHookPath` retornar `ok=true`, acrescentar:
+
+```go
+if hf.requiresVarOrShellPrefix && isRelativePure(m.raw) {
+    msgs = append(msgs, fmt.Sprintf(
+        "%s (%s) references %s with a bare relative path — "+
+        "this command only resolves from the project root and will silently "+
+        "fail when the agent's cwd is a subdirectory; run `trackfw update` to fix it",
+        hf.path, hf.cli, scriptMarker,
+    ))
+    continue
+}
+```
+
+onde `isRelativePure(raw)` = `!strings.HasPrefix(raw, "$") && !strings.HasPrefix(raw, "\"") && !filepath.IsAbs(raw)` — exatamente a negação dos 3 prefixos que `resolveCredentialGuardHookPath` já reconhece como "correto para Claude/Gemini/Codex".
+
+**Trade-off:** depende do modelo de "qual CLI usa qual forma", que já vive em `credentialGuardHookFiles`
+e no ADR — não introduz nova dependência; o padrão `requiresCommandType` já usa o mesmo mecanismo.
+A alternativa (comparar com o que o gerador emitiria) é mais genérica mas duplica lógica do gerador
+no validador e é mais frágil a drift. Opção 1 preferida.
+
+**Falso-positivo (AC3):** por construção ausente. Cursor/Copilot/Kiro têm `requiresVarOrShellPrefix=false`
+e nunca entram no branch de acusação, independente do valor da string.
 
 **Critérios de aceite:**
-- [ ] As quatro respostas, com evidência medida
-- [ ] Nenhuma linha de regra escrita
+- [x] As quatro respostas, com evidência medida
+- [x] Nenhuma linha de regra escrita
 
 ### ML-1B — Implementar a regra
 **Status:** ⬜ Pendente · **Agente:** `apolo-tf` · **Dep.:** ML-1A

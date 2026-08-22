@@ -4,6 +4,37 @@
 
 ---
 
+## Sessão 2026-08-21 — Apolo (FIM: ML-1A — Reproduzir a falha antes de escrever a regra)
+
+Branch `fix/validate-detecta-hook-de-guard-na-forma-relativa-antiga`. Sem commit/push.
+
+**Resultado:** Bug reproduzido. Parecer escrito na seção ML-1A do roadmap.
+
+**Medido:**
+- Forma antiga: `scripts/trackfw-credential-guard.sh` (sem prefixo) — errada em Claude/Gemini/Codex,
+  correta em Cursor/Copilot/Kiro.
+- `resolveCredentialGuardHookPath()` trata a forma antiga como relativa pura (case 4) → resolve para
+  `<root>/scripts/...` → script encontrado → nenhuma violação (bug).
+- Execução fora da raiz: `cd subdir && /bin/sh scripts/trackfw-credential-guard.sh` → exit 127
+  "No such file or directory" (falha confirmada).
+- Sinal discriminante: arquivo de host (`.claude/settings.json` vs `.cursor/hooks.json`).
+- `./bin/trackfw validate` exit 0.
+
+**Recomendação para ML-1B:** flag `requiresVarOrShellPrefix bool` em `credentialGuardHookFile`,
+verdadeiro para Claude/Gemini/Codex, falso para Cursor/Copilot/Kiro. Extensão de
+`validateGuardHookResolvable`, não regra nova.
+
+---
+
+## Sessão 2026-08-21 — Apolo (INÍCIO: ML-1A — Reproduzir a falha antes de escrever a regra)
+
+Branch `fix/validate-detecta-hook-de-guard-na-forma-relativa-antiga`. Sem commit/push.
+
+Escopo: responder as quatro perguntas de investigação com medição real (fixture + execução fora
+da raiz); produzir parecer para a seção ML-1A do roadmap. Nenhuma linha de regra escrita.
+
+---
+
 ## Sessão 2026-08-21 — Hades (FIM: ML-4B — BLOQUEIO LEVANTADO)
 
 Branch `fix/release-tag-ancora-versao-e-mensagem-no-forge`. Sem commit/push.
