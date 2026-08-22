@@ -247,7 +247,12 @@ func TestPush_ForceWithLease_NoPROpen_Blocks(t *testing.T) {
 	// This test is limited to verifying the message shape; the full forge integration
 	// is exercised by check-push-parity.sh (ML-2A).
 	// Skipping the forge gate test here because it requires a real remote URL.
-	t.Skip("forge gate tested in check-ship-force-parity.sh / check-push-parity.sh")
+	// The "force-with-lease + no PR open" path has no runtime coverage at any level:
+	// - check-ship-force-parity.sh tests `trackfw ship`, not `trackfw push`.
+	// - check-push-parity.sh runs all scenarios with --dry-run; the force-with-lease
+	//   gate fires before any write, but the parity script never passes --force-with-lease.
+	// This gap is declared in docs/cli-parity.md (partial= annotation on check-push-parity.sh).
+	t.Skip("force-with-lease+no-PR path has no end-to-end coverage; see docs/cli-parity.md partial= annotation")
 }
 
 // ────────────────────────────────────────────────────────────────────────────

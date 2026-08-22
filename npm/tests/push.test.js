@@ -180,3 +180,29 @@ test('push: upstream already configured → push args do not include -u', () => 
   assert.ok(pushCall.includes('origin'), 'push args must include origin')
   assert.ok(pushCall.includes('feat/my-feature'), 'push args must include branch name')
 })
+
+// ────────────────────────────────────────────────────────────────────────────
+// NeverCommits — push must never call git commit (ML-4A)
+// ────────────────────────────────────────────────────────────────────────────
+
+test('push: never calls git commit', () => {
+  // chore/ branch: no governance check, no upstream (--dry-run keeps it safe)
+  const { deps, execGit } = makeDeps({ branch: 'chore/update-deps' })
+  const code = runPush({ dryRun: true }, deps)
+  assert.equal(code, 0)
+  const commitCall = execGit.calls.find(c => c[0] === 'commit')
+  assert.equal(commitCall, undefined, `push must never call git commit, but found call: ${commitCall}`)
+})
+
+// ────────────────────────────────────────────────────────────────────────────
+// GovernanceMessage — says "trackfw push", not "trackfw ship" (ML-4A)
+// ────────────────────────────────────────────────────────────────────────────
+
+test('push: governance message says "trackfw push", not "trackfw ship"', () => {
+  const violations = ['no roadmap found in wip/ nor done/']
+  const { deps, cap } = makeDeps({ branch: 'feat/orphan', violations })
+  runPush({ dryRun: true }, deps)
+  const output = cap.output()
+  assert.ok(output.includes('trackfw push'), `governance message must contain "trackfw push"; got: ${output}`)
+  assert.ok(!output.includes('trackfw ship'), `governance message must NOT contain "trackfw ship"; got: ${output}`)
+})

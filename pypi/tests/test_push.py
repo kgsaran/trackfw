@@ -169,3 +169,28 @@ def test_push_with_upstream_no_dash_u():
     assert '-u' not in push_call, f'push args must NOT include -u when upstream exists; got: {push_call}'
     assert 'origin' in push_call, 'push args must include origin'
     assert 'feat/my-feature' in push_call, 'push args must include branch name'
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# NeverCommits — push must never call git commit (ML-4A)
+# ────────────────────────────────────────────────────────────────────────────
+
+
+def test_push_never_calls_git_commit():
+    # chore/ branch: no governance check, dry-run keeps it safe
+    code, _, git = run(branch='chore/update-deps')
+    assert code == 0
+    commit_calls = [c for c in git.calls if c and c[0] == 'commit']
+    assert commit_calls == [], f'push must never call git commit, but found: {commit_calls}'
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# GovernanceMessage — says "trackfw push", not "trackfw ship" (ML-4A)
+# ────────────────────────────────────────────────────────────────────────────
+
+
+def test_push_governance_message_says_push_not_ship():
+    violations = ['no roadmap found in wip/ nor done/']
+    code, out, _ = run(branch='feat/orphan', violations=violations)
+    assert 'trackfw push' in out, f'governance message must contain "trackfw push"; got: {out!r}'
+    assert 'trackfw ship' not in out, f'governance message must NOT contain "trackfw ship"; got: {out!r}'

@@ -7,14 +7,8 @@
  * Reusa os helpers de npm/src/ship/runner.js; nunca reimplementa a lógica de governança,
  * detecção de squash-merge ou construção de push args.
  *
- * Note: defaultExecGit is not exported by ship/runner.js (it is package-private).
- * push/runner.js defines its own production git executor using the same implementation —
- * a thin spawnSync wrapper. This is the only function not reused from ship/runner.js.
- *
  * See ADR-2026-08-22-comandos-de-entrega-separados-push-proprio-e-ship-como-composicao.md.
  */
-
-const { spawnSync } = require('child_process')
 
 const {
   isShipBranch,
@@ -23,23 +17,9 @@ const {
   checkShipGovernance,
   detectPendingSquashMerges,
   defaultCheckPROpen,
+  buildPushArgs,
+  defaultExecGit,
 } = require('../ship/runner')
-
-/**
- * defaultExecGit runs git with the provided args and returns { stdout, error }.
- * Identical implementation to ship/runner.js's defaultExecGit — reproduced here because
- * ship/runner.js does not export it (it is package-private in that module).
- * @param {string[]} args
- * @returns {{ stdout: string, error: Error|null }}
- */
-function defaultExecGit(args) {
-  const result = spawnSync('git', args, { encoding: 'utf8' })
-  if (result.status !== 0) {
-    const msg = (result.stderr || '').trim() || `git ${args.join(' ')} exited with ${result.status}`
-    return { stdout: '', error: new Error(msg) }
-  }
-  return { stdout: (result.stdout || '').trim(), error: null }
-}
 
 /**
  * defaultCheckGovernance delegates to checkShipGovernance — the same hard gate used by
@@ -48,22 +28,6 @@ function defaultExecGit(args) {
  */
 function defaultCheckGovernance() {
   return checkShipGovernance()
-}
-
-/**
- * buildPushArgs returns the push args, adding -u if no upstream is configured.
- * Identical implementation to ship/runner.js's buildPushArgs — reproduced here because
- * ship/runner.js does not export it (it is package-private in that module).
- * @param {string} branch
- * @param {function} execGit
- * @returns {string[]}
- */
-function buildPushArgs(branch, execGit) {
-  const { error } = execGit(['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'])
-  if (error) {
-    return ['push', '-u', 'origin', branch]
-  }
-  return ['push', 'origin', branch]
 }
 
 const { resolve: forgeResolve } = require('../forge/resolve')

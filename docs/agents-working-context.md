@@ -22849,3 +22849,104 @@ Branch `feat/trackfw-push-comando-proprio-para-empurrar-commits-ja-criados`. Sem
 - `./bin/trackfw validate` → 0 violations, **17 warnings**, exit 0
 
 **Próximo:** Handoff para `trackfw_architect` para auditoria e commit da correção pós-auditoria ML-2B.
+
+---
+
+## Sessão 2026-08-22 — Hades (INÍCIO: ML-3B — Barreira de segurança do `trackfw push`)
+
+Branch `fix/validate-detecta-hook-de-guard-na-forma-relativa-antiga` (repositório limpo, Waves 1 e 2 commitadas). Sem commit/push por este agente.
+
+Escopo: revisão de segurança do comando `trackfw push` nos 3 CLIs. Arquivo de entrega: `docs/seguranca/2026-08-22-revisao-do-comando-push.md`. Lendo: push.go, runner.js, runner.py, scripts/trackfw-git-branch-guard.sh, scripts/check-push-parity.sh, scripts/check-gates-falsify.sh (cenários 161 e 162), docs/cli-parity.md, ADR e REQ.
+
+---
+
+## Sessão 2026-08-22 — Hefesto (INÍCIO: ML-3A — Barreira de qualidade do `trackfw push`)
+
+Branch `fix/validate-detecta-hook-de-guard-na-forma-relativa-antiga` (repositório limpo, Waves 1 e 2 commitadas). Sem commit/push por este agente.
+
+Escopo: revisão de qualidade do comando `trackfw push` nos 3 CLIs — duplication, divergência de reuso, cobertura de testes, comentário incorreto em push/runner.js, e gap do `--force-with-lease`. Arquivo de entrega: `docs/qualidade/2026-08-22-revisao-do-comando-push.md`. Arquivo secundário obrigatório: entrada INÍCIO e FIM neste arquivo.
+
+---
+
+## Sessão 2026-08-22 — Hefesto (FIM: ML-3A — Barreira de qualidade do `trackfw push`)
+
+**Arquivo produzido:** `docs/qualidade/2026-08-22-revisao-do-comando-push.md`
+
+**Veredito:** APROVADO COM RESSALVAS
+
+**Evidências coletadas:**
+- Go: 8 helpers reusados via visibilidade de pacote — zero duplicação.
+- Node.js: `buildPushArgs` (push/runner.js:61-67) e `defaultExecGit` (push/runner.js:35-42) reimplementadas localmente. `buildPushArgs` viola AC2 da REQ.
+- Python: 6 públicos + 2 privados importados de ship/runner.py — zero reimplementação.
+- Comentário em push/runner.js:10-14 afirma que `defaultExecGit` é "a única função não reusada" — incorreto, `buildPushArgs` também não é reusada.
+- Testes: Go=13 executando+1 skip, Node=7, Python=7. Ausentes em Node/Python: GovernanceMessage_SaysPush, NeverCommits, ForceWithLease_NoForgeCLI, InvalidBranch, DryRun.
+- Gap `--force-with-lease`: declarado com `partial=` em cli-parity.md:1209. O `t.Skip` em push_test.go:237 tem justificativa inacurada (aponta para gates que não cobrem o caminho NoPROpen).
+- ADR sobrestima a superfície Python em um símbolo (`_all_doc_only` listado mas não importado).
+
+**Próximo:** Handoff para `trackfw_architect` com as ressalvas ordenadas. Agentes indicados para correção: `apolo-tf` (código e testes), `trackfw_architect` (ADR e decisão sobre AC2).
+
+---
+
+## Hades — ML-3B: Revisão de Segurança do `trackfw push` (FIM)
+**Data:** 2026-08-22
+**Branch:** fix/validate-detecta-hook-de-guard-na-forma-relativa-antiga
+
+**Entregavel produzido:** `docs/seguranca/2026-08-22-revisao-do-comando-push.md`
+
+**Veredicto:** APROVADO COM RESSALVAS
+
+**Evidencias adicionais coletadas nesta sessao (vs. sessao anterior):**
+- `npm/src/commands/push.js` e `pypi/trackfw/commands/push.py` lidos: nenhuma flag `--forge`, nenhuma criacao de PR.
+- `defaultCheckPROpen` (Go, Node, Python) confirmado read-only (pr list / mr list) em todos os 3 runtimes. Erros sempre fail-closed.
+- `adapter.go:24` confirmado: `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1` → `Available=false` → gate de force recusa. Fail-closed.
+- `defaultCheckGovernance` em push.go:90 delega para mesma `validator.CheckShipGovernance` que ship usa.
+- Grep negativo: sem `"--force"` nem simbolos de criacao de PR em nenhum dos 5 arquivos de push.
+- Contagem de arquivos com REASON atualizado: 6 arquivos distintos (7 ocorrencias). `npm/src/validator/index.js` nao contem embedded guard script — nao e relevante para a contagem.
+
+**Ressalvas registradas:**
+- DT-1 (Media): ausencia de `check-push-force-parity.sh` com bare-origin real. Recomendacao: cenario 163 em `check-gates-falsify.sh`.
+- DT-2 (Baixa): copia global `~/.trackfw/scripts/` com REASON pedagogicamente desatualizado. Funcionalidade preservada. Resolvido por `trackfw update harness`.
+
+**Achados fora de escopo:** OOE-1 (`buildPushArgs` duplicado em Node — para `hefesto-tf`). OOE-2 (args posicionais silenciosos — para `apolo-tf`/`hefesto-tf`).
+
+**Proximo:** Handoff para `trackfw_architect` para commit e PR.
+
+---
+
+## Sessão 2026-08-22 — Apolo (INÍCIO: ML-4A — Correções pós-barreira de qualidade/segurança)
+
+Branch `feat/trackfw-push-comando-proprio-para-empurrar-commits-ja-criados`. Sem commit/push.
+
+Escopo: 3 correções determinadas pelo arquiteto após aprovação com ressalvas de hefesto-tf e hades-tf.
+1. [ALTA] Exportar `buildPushArgs` e `defaultExecGit` de `ship/runner.js`; importar em `push/runner.js`.
+2. [ALTA] Corrigir/remover comentário desatualizado em `push/runner.js:10-14`.
+3. [MÉDIA] Portar `TestPush_NeverCommits` e `TestPush_GovernanceMessage_SaysPush` para Node e Python.
+4. [BAIXA] Reescrever comentário do `t.Skip` em `push_test.go:237`.
+
+---
+
+## Sessão 2026-08-22 — Apolo (FIM: ML-4A — Correções pós-barreira de qualidade/segurança)
+
+Branch `feat/trackfw-push-comando-proprio-para-empurrar-commits-ja-criados`. Sem commit/push.
+
+**Resultado:** ML-4A concluído. Todos os critérios de aceite atendidos.
+
+**Correções aplicadas:**
+1. `npm/src/ship/runner.js`: `buildPushArgs` e `defaultExecGit` adicionadas ao `module.exports` (apenas 3 linhas, sem alteração de comportamento).
+2. `npm/src/push/runner.js`: importa `buildPushArgs` e `defaultExecGit` de `../ship/runner`; cópias locais e comentário desatualizado removidos; `const { spawnSync } = require('child_process')` órfão removido.
+3. `npm/tests/push.test.js`: `TestPush_NeverCommits` e `TestPush_GovernanceMessage_SaysPush` portados (9 testes, 0 falhas).
+4. `pypi/tests/test_push.py`: mesmos 2 testes portados (9 testes, 0 falhas).
+5. `internal/commands/push_test.go`: comentário do `t.Skip` reescrito descrevendo a lacuna real de cobertura e apontando para `docs/cli-parity.md`.
+
+**Evidências:**
+- `make build` → exit 0
+- `go test ./...` → exit 0 (todos os pacotes)
+- `node --test npm/tests/push.test.js` → 9 passed, 0 failed, 0 skipped
+- `python3 -m pytest pypi/tests/test_push.py -v` → 9 passed in 0.02s
+- `bash scripts/check-push-parity.sh` → All 5 scenarios passed
+- `bash scripts/check-ship-parity.sh` → All 5 scenarios passed
+- `bash scripts/check-ship-force-parity.sh` → All 5 scenarios passed
+- `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality` → 0 FAIL lines
+- `./bin/trackfw validate` → exit 0, 17 warnings (baseline mantido, nenhum warning novo)
+
+**`git diff npm/src/ship/runner.js`:** apenas 3 linhas adicionadas dentro do `module.exports`

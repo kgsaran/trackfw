@@ -304,7 +304,7 @@ atualizado. O `+1 warning` é exatamente esse marcador.
 > alteram código.
 
 ### ML-3A — Revisão de qualidade
-**Status:** ⬜ Pendente · **Agente:** `hefesto-tf` (`subagent_type: hefesto-tf`)
+**Status:** ✅ Concluído · **Agente:** `hefesto-tf` (`subagent_type: hefesto-tf`)
 **Escreve:** `docs/qualidade/2026-08-22-revisao-do-comando-push.md`
 
 Avaliar **duplicação real vs. reuso declarado**: o ADR manda reusar os helpers do `ship`; verificar
@@ -312,13 +312,100 @@ se foi isso que aconteceu nos 3 stacks ou se houve cópia. Apontar onde uma muda
 deixaria de propagar para o `push`. **Veredito explícito.** Não altera código de produto.
 
 ### ML-3B — Revisão de segurança
-**Status:** ⬜ Pendente · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
+**Status:** ✅ Concluído · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
 **Escreve:** `docs/seguranca/2026-08-22-revisao-do-comando-push.md`
 
 O `push` é caminho de escrita para o remoto. Avaliar: (a) se algum gate do `ship` foi perdido no
 caminho; (b) se `--force-with-lease` continua exigindo PR aberto e não é alcançável por outra via;
 (c) se a mudança da REASON do guard abre alguma leitura que ensine um caminho não governado.
 **Veredito explícito.** Não altera código de produto.
+
+
+---
+
+### Auditoria da Wave 3 — as duas barreiras APROVAM COM RESSALVAS, e uma ressalva é falha minha
+
+**`hefesto-tf` — `docs/qualidade/2026-08-22-revisao-do-comando-push.md`**
+
+Ele foi mais rigoroso que eu no ponto que interessa: **o AC2 não estava cumprido**. O critério diz
+*"reuso de `buildPushArgs`, não reimplementação"*, e o Node reimplementava. Eu vi a duplicação no
+ML-1A, confirmei que o `ship/runner.js` não exportava a função, aceitei a declaração honesta do Apolo
+e adiei a decisão para a Wave 3. Critério escrito não se negocia por conveniência — a ressalva é
+minha, não dele.
+
+Agravante que ele mediu: o comentário que "documentava" a duplicação **subestimava pela metade** —
+dizia que `defaultExecGit` era a única função não reusada, quando `buildPushArgs` também não era. E
+é justamente a que carrega a decisão de upstream (`@{u}`).
+
+Também achou **dois testes existentes só em Go**: `TestPush_NeverCommits` (a invariante central) e
+`TestPush_GovernanceMessage_SaysPush` — cujo texto foi **critério de rejeição** na primeira rodada do
+ML-1A. O mesmo defeito voltando por outra porta.
+
+**Ranking de risco dele, que vale mais que o veredito:** `Go = Python > Node`. O Python importa
+direto, então renomear no `ship` estoura em `ImportError` na hora; o Node tinha cópia local que
+divergiria **em silêncio**. Falha barulhenta vale mais que falha limpa.
+
+**`hades-tf` — `docs/seguranca/2026-08-22-revisao-do-comando-push.md`**
+
+Nenhum gate do `ship` perdido, e `push` é **mais restrito** num ponto: sem a exceção `allDocOnly`,
+porque não lê o index. Nenhum bypass do `--force-with-lease` alcançável — mediu os três runtimes:
+`FlagForge: ""` (sem `--forge`), `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1` produzindo `Available=false` e
+recusa, e `forge manual` sem erro capturado explicitamente. Todos fail-closed.
+
+Ressalva única (DT-1), a mesma do Hefesto por outro ângulo: falta gate de runtime ponta a ponta para
+o `--force-with-lease`. **Não é bypass hoje — é lacuna de detecção para refatoração futura.**
+
+---
+
+## Wave 4 — Correções pós-barreira
+
+> Dependências: Wave 3 completa. **MLs sequenciais** — ambos recompilam `bin/trackfw` e rodam
+> `make quality`.
+
+### ML-4A — Fechar o AC2 e os testes que faltam
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+
+Exportar `buildPushArgs` e `defaultExecGit` de `npm/src/ship/runner.js` (**apenas** no bloco
+`module.exports`) e remover as cópias locais de `npm/src/push/runner.js`; corrigir o comentário que
+subestimava a duplicação; portar `TestPush_NeverCommits` e `TestPush_GovernanceMessage_SaysPush` para
+Node e Python; reescrever a justificativa do `t.Skip` em `push_test.go:237`, que descrevia cobertura
+inexistente.
+
+**Critérios de aceite:**
+- [ ] AC2 da REQ cumprido de fato — sem definição local no Node
+- [ ] `git diff npm/src/ship/runner.js` só dentro do `module.exports`
+- [ ] Os 2 testes presentes nos 3 stacks
+- [ ] `check-ship-parity.sh` e `check-ship-force-parity.sh` verdes (não-regressão do `ship`)
+- [ ] `make quality` CI-exata exit 0 · `validate` 17 warnings
+
+
+**Auditoria do ML-4A — aprovada:**
+
+```
+git --no-pager diff npm/src/ship/runner.js   3 linhas, todas dentro do module.exports
+npm/src/push/runner.js            zero definicao local; buildPushArgs e defaultExecGit importadas
+testes                            Go 16 · Node 9 · Python 9
+make quality (CI-exata, minha)    exit 0
+validate                          17 warnings, 0 violations
+```
+
+AC2 cumprido **de fato**, não por declaração. Terceira vez que ele reporta "0 linhas FAIL" em vez do
+exit code do `make quality`; medi eu mesmo, como nas anteriores.
+
+### ML-4B — Gate de runtime do `--force-with-lease`
+**Status:** 🔄 Em andamento · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-4A
+
+Decisão do KG: fechar nesta REQ, não em REQ separada. `scripts/check-push-force-parity.sh` espelhando
+`scripts/check-ship-force-parity.sh` (bare origin real, PR aberto × ausente) + cenário 163 de
+falsificação. O caminho de reescrita de história remota deixa de depender de leitura de código para
+ser verificável.
+
+**Critérios de aceite:**
+- [ ] Gate novo verde, registrado no alvo `parity` do `Makefile`
+- [ ] Cenário 163 com baseline verde e braço de detecção vermelho
+- [ ] `partial=` de `docs/cli-parity.md` atualizado — a lacuna deixa de ser declarada porque deixa
+      de existir
+- [ ] `make quality` CI-exata exit 0
 
 ---
 
