@@ -1,14 +1,14 @@
 ---
-status: Open
+status: done
 date: 2026-08-17
 author: "Zeus (Arquiteto)"
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-21-validate-detecta-hook-de-guard-na-forma-relativa-antiga.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-21-validate-detecta-hook-de-guard-na-forma-relativa-antiga.md"
 ---
 
 # REQ: `validate` não detecta hook de guard na forma relativa antiga, que falha fora da raiz
 
-> Date: 2026-08-17 | Status: Open (backlog, sem roadmap)
+> Date: 2026-08-17 | Status: done
 | Linear Issue:
 | Jira Issue:
 

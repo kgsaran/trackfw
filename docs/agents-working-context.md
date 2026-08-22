@@ -22566,3 +22566,39 @@ TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make parity               → exit 0
 ```
 
 **Próximo:** ML-4B → `hades-tf` (reverificação; bloqueio levantado).
+
+---
+
+## Sessão 2026-08-22 — trackfw_architect (INÍCIO: encerramento da REQ do hook relativo)
+
+**Contexto:** sessão anterior interrompida por reinício do macbook (atualização de SO). Árvore limpa,
+branch `fix/validate-detecta-hook-de-guard-na-forma-relativa-antiga` em sincronia com o remoto,
+Waves 1–3 do `ROADMAP-2026-08-21-validate-detecta-hook-de-guard-na-forma-relativa-antiga.md` já
+auditadas e aprovadas (ML-1A, ML-1B, ML-2A, ML-3A ✅).
+
+**Escopo desta sessão:** apenas encerramento — revalidação CI-exata, transição do roadmap para
+`done/`, registro no contexto de trabalho e commit dos artefatos de governança. Sem código novo.
+PR não será aberto sem pedido explícito do usuário.
+
+---
+
+## Sessão 2026-08-22 — trackfw_architect (FIM: REQ do hook relativo encerrada)
+
+**Entregue:**
+- Revalidação CI-exata na branch: `make build` exit 0 · `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make
+  quality` exit 0 (160 cenários de falsificação, gates de paridade dos 3 CLIs).
+- `ROADMAP-2026-08-21-validate-detecta-hook-de-guard-na-forma-relativa-antiga.md`: `wip/` → `done/`
+  via `trackfw roadmap move` (a referência pareada da REQ foi sincronizada pelo próprio comando).
+- `REQ-2026-08-17-...-forma-relativa-antiga-que-falha-fora-da-raiz.md`: status `Open` → `done` via
+  `trackfw req move` — fechou o warning `req is Open but linked Roadmap is in done/`.
+- Nota de vault `deteccao-de-hook-relativo-nao-cobre-pwd-aspas-e-var-indefinida-2026-08-22.md`
+  (+ link no índice), registrando as 3 formas NÃO capturadas pela regra.
+
+**Estado da cadeia:** `./bin/trackfw validate` → 0 violations, 16 warnings (era 17; o warning novo
+introduzido pela transição foi fechado pelo `req move`).
+
+**Débito deliberadamente aberto:** `REQ-2026-08-21-validate-nao-detecta-hook-com-pwd-que-falha-fora-da-raiz.md`
+— sem roadmap, aguardando ADR que escolha a postura (acusar tudo que não casa × lista de formas
+sabidamente quebradas). Não é regressão desta entrega; é a lacuna nomeada pela barreira do ML-3A.
+
+**Próximo:** PR desta branch — **não aberto**, aguardando pedido explícito do usuário.
