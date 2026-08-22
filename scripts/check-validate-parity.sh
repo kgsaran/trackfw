@@ -807,6 +807,74 @@ with open('$CG_TMP_CLEAN/cg-cursor-pwd/.cursor/hooks.json', 'w') as f:
     json.dump(d, f)
 "
 
+# ---------------------------------------------------------------------------
+# ROADMAP-2026-08-22 ML-4A: fixtures para os achados da barreira ML-3A (Hades).
+#
+# cg-claude-tilde       — ~/scripts/… sem aspas → classe 1 (tilde expande para
+#                         $HOME em shell POSIX — ancorado) → silencioso.
+#                         Residual declarado: resolveCredentialGuardHookPath retorna
+#                         ok=false para ~/… (excluído do case de relativo puro),
+#                         portanto não inspeciona o filesystem; silêncio é real.
+#
+# cg-claude-tilde-quoted — "~/scripts/…" com aspas → classe 2 (tilde NÃO expande
+#                           dentro de aspas duplas) → acusar com "bare relative path".
+#
+# cg-claude-pwd-braced   — ${PWD}/scripts/… → classe 2 (mesma semântica de $PWD/…;
+#                           PWD é mandado pelo POSIX, sempre o cwd) → acusar com
+#                           mensagem do $PWD.
+#
+# cg-claude-sh-c-pwd     — sh -c "$PWD/scripts/…" → classe 2 (cwd-dependent) e
+#                           mensagem do $PWD (Contains, não HasPrefix) → acusar.
+# ---------------------------------------------------------------------------
+
+# cg-claude-tilde: ~/scripts/… (sem aspas) → classe 1 → silencioso.
+# Residual: resolveCredentialGuardHookPath exclui ~/… do case de relativo puro;
+# ok=false silencia sem inspecionar o filesystem.
+mkdir -p "$CG_TMP_CLEAN/cg-claude-tilde/.claude"
+python3 -c "
+import json
+d = {'hooks': {'PreToolUse': [{'matcher': 'Bash', 'hooks': [{'type': 'command', 'command': '~/scripts/trackfw-credential-guard.sh'}]}]}}
+with open('$CG_TMP_CLEAN/cg-claude-tilde/.claude/settings.json', 'w') as f:
+    json.dump(d, f)
+"
+_validate_fixture_json "$CG_TMP_CLEAN/cg-claude-tilde/.claude/settings.json" \
+  '~/scripts/trackfw-credential-guard.sh'
+
+# cg-claude-tilde-quoted: "~/scripts/…" (com aspas externas no valor JSON) → classe 2
+# (tilde não expande dentro de aspas duplas) → acusar com "bare relative path".
+mkdir -p "$CG_TMP_CLEAN/cg-claude-tilde-quoted/.claude"
+python3 -c "
+import json
+d = {'hooks': {'PreToolUse': [{'matcher': 'Bash', 'hooks': [{'type': 'command', 'command': '\"' + r'~/scripts/trackfw-credential-guard.sh' + '\"'}]}]}}
+with open('$CG_TMP_CLEAN/cg-claude-tilde-quoted/.claude/settings.json', 'w') as f:
+    json.dump(d, f)
+"
+_validate_fixture_json "$CG_TMP_CLEAN/cg-claude-tilde-quoted/.claude/settings.json" \
+  '"~/scripts/trackfw-credential-guard.sh"'
+
+# cg-claude-pwd-braced: \${PWD}/scripts/… → classe 2 → acusar com mensagem do $PWD.
+mkdir -p "$CG_TMP_CLEAN/cg-claude-pwd-braced/.claude"
+python3 -c "
+import json
+d = {'hooks': {'PreToolUse': [{'matcher': 'Bash', 'hooks': [{'type': 'command', 'command': '\${PWD}/scripts/trackfw-credential-guard.sh'}]}]}}
+with open('$CG_TMP_CLEAN/cg-claude-pwd-braced/.claude/settings.json', 'w') as f:
+    json.dump(d, f)
+"
+_validate_fixture_json "$CG_TMP_CLEAN/cg-claude-pwd-braced/.claude/settings.json" \
+  '${PWD}/scripts/trackfw-credential-guard.sh'
+
+# cg-claude-sh-c-pwd: sh -c "\$PWD/scripts/…" → classe 2 (cwd-dependent), mensagem do $PWD.
+# Contains("\$PWD") em qualquer posição → "with a \$PWD path" (não "bare relative path").
+mkdir -p "$CG_TMP_CLEAN/cg-claude-sh-c-pwd/.claude"
+python3 -c "
+import json
+d = {'hooks': {'PreToolUse': [{'matcher': 'Bash', 'hooks': [{'type': 'command', 'command': 'sh -c \"\$PWD/scripts/trackfw-credential-guard.sh\"'}]}]}}
+with open('$CG_TMP_CLEAN/cg-claude-sh-c-pwd/.claude/settings.json', 'w') as f:
+    json.dump(d, f)
+"
+_validate_fixture_json "$CG_TMP_CLEAN/cg-claude-sh-c-pwd/.claude/settings.json" \
+  'sh -c "$PWD/scripts/trackfw-credential-guard.sh"'
+
 run_cg() {
   local output=$1 dir=$2
   shift 2
@@ -816,7 +884,7 @@ run_cg() {
   set -e
 }
 
-for cg_fixture in cg-claude-absent cg-claude-present cg-cursor-absent cg-cursor-present cg-claude-noexec cg-claude-notype cg-claude-relativo cg-copilot-relativo-present cg-claude-pwd cg-claude-pwd-quoted cg-claude-absoluto cg-claude-outra-var cg-claude-git-toplevel cg-cursor-pwd; do
+for cg_fixture in cg-claude-absent cg-claude-present cg-cursor-absent cg-cursor-present cg-claude-noexec cg-claude-notype cg-claude-relativo cg-copilot-relativo-present cg-claude-pwd cg-claude-pwd-quoted cg-claude-absoluto cg-claude-outra-var cg-claude-git-toplevel cg-cursor-pwd cg-claude-tilde cg-claude-tilde-quoted cg-claude-pwd-braced cg-claude-sh-c-pwd; do
   run_cg "$CG_TMP_CLEAN/$cg_fixture-go.json"   "$CG_TMP_CLEAN/$cg_fixture" "$GO_BIN" validate --json
   run_cg "$CG_TMP_CLEAN/$cg_fixture-node.json" "$CG_TMP_CLEAN/$cg_fixture" node "$ROOT_DIR/npm/bin/trackfw" validate --json
   run_cg "$CG_TMP_CLEAN/$cg_fixture-py.json"   "$CG_TMP_CLEAN/$cg_fixture" env PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw validate --json
@@ -884,6 +952,15 @@ cases = {
     "claude-outra-var":    ("cg-claude-outra-var-{}.json",    False, None),
     # Não-regressão AC3: Cursor com $PWD → silêncio (requiresVarOrShellPrefix=false):
     "cursor-pwd":          ("cg-cursor-pwd-{}.json",          False, None),
+    # ROADMAP-2026-08-22 ML-4A: achados da barreira ML-3A (Hades).
+    # ~/… sem aspas → classe 1 (tilde expande para $HOME) → silencioso:
+    "claude-tilde":        ("cg-claude-tilde-{}.json",        False, None),
+    # "~/…" com aspas → classe 2 (tilde não expande em aspas duplas) → bare relative:
+    "claude-tilde-quoted": ("cg-claude-tilde-quoted-{}.json", True,  CG_MARKER_BARE),
+    # ${PWD}/… → classe 2 → mensagem do $PWD:
+    "claude-pwd-braced":   ("cg-claude-pwd-braced-{}.json",   True,  CG_MARKER_PWD),
+    # sh -c "$PWD/…" → classe 2 → mensagem do $PWD (contains, não startsWith):
+    "claude-sh-c-pwd":     ("cg-claude-sh-c-pwd-{}.json",     True,  CG_MARKER_PWD),
 }
 
 for label, (pattern, expect_violation, msg_marker) in cases.items():
@@ -929,12 +1006,13 @@ print(
     "(claude-absent/claude-present/cursor-absent/cursor-present/"
     "claude-noexec/claude-notype/claude-relativo/copilot-relativo-present/"
     "claude-pwd/claude-pwd-quoted/claude-absoluto/claude-git-toplevel/"
-    "claude-outra-var/cursor-pwd, "
+    "claude-outra-var/cursor-pwd/"
+    "claude-tilde/claude-tilde-quoted/claude-pwd-braced/claude-sh-c-pwd, "
     "byte-identical across 3 CLIs)"
 )
 PY
 
-echo "Validate JSON parity checks passed (credential_guard_hook_resolvable cross-CLI: claude-absent detection / claude-present baseline / cursor-absent relative-branch live / cursor-present false-positive guard / claude-noexec not-executable detection / claude-notype missing-type-command detection / claude-relativo bare-relative-path detection / copilot-relativo-present false-positive guard / claude-pwd \$PWD-class2-detected / claude-pwd-quoted quoted-\$PWD-class2-detected / claude-absoluto absolute-class1-silent / claude-git-toplevel git-toplevel-class1-silent / claude-outra-var other-var-class3-silent / cursor-pwd cursor-\$PWD-silent)"
+echo "Validate JSON parity checks passed (credential_guard_hook_resolvable cross-CLI: claude-absent detection / claude-present baseline / cursor-absent relative-branch live / cursor-present false-positive guard / claude-noexec not-executable detection / claude-notype missing-type-command detection / claude-relativo bare-relative-path detection / copilot-relativo-present false-positive guard / claude-pwd \$PWD-class2-detected / claude-pwd-quoted quoted-\$PWD-class2-detected / claude-absoluto absolute-class1-silent / claude-git-toplevel git-toplevel-class1-silent / claude-outra-var other-var-class3-silent / cursor-pwd cursor-\$PWD-silent / claude-tilde tilde-class1-silent / claude-tilde-quoted quoted-tilde-class2-bare-relative / claude-pwd-braced \${PWD}-class2-pwd-msg / claude-sh-c-pwd sh-c-\$PWD-class2-pwd-msg)"
 
 # ---------------------------------------------------------------------------
 # ROADMAP-2026-08-21-validate-detecta-hook-de-guard-na-forma-relativa-antiga,

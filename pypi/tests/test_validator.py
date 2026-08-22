@@ -1179,47 +1179,85 @@ class TestCredentialGuardHookResolvable(unittest.TestCase):
     # ------------------------------------------------------------------
 
     def test_classify_hook_anchorage_classe1_ancorado(self):
-        """classifyHookAnchorage retorna classe 1 para formas ancoradas."""
+        """classifyHookAnchorage retorna classe 1 para formas ancoradas (incluindo ~/… sem aspas)."""
         cases = [
-            "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh",
-            "$GEMINI_PROJECT_DIR/scripts/trackfw-credential-guard.sh",
-            "$(git rev-parse --show-toplevel)/scripts/trackfw-credential-guard.sh",
-            "/opt/scripts/trackfw-credential-guard.sh",
-            "/absolute/path/guard.sh",
+            ("$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh", False),
+            ("$GEMINI_PROJECT_DIR/scripts/trackfw-credential-guard.sh", False),
+            ("$(git rev-parse --show-toplevel)/scripts/trackfw-credential-guard.sh", False),
+            ("/opt/scripts/trackfw-credential-guard.sh", False),
+            ("/absolute/path/guard.sh", False),
+            # ~/… sem aspas: tilde expande para $HOME em qualquer shell POSIX — ancorado.
+            ("~/scripts/trackfw-credential-guard.sh", False),
+            ("~/.trackfw/scripts/trackfw-credential-guard.sh", False),
         ]
-        for raw in cases:
+        for raw, was_quoted in cases:
             self.assertEqual(
-                v._classify_hook_anchorage(raw), v._HOOK_ANCHORAGE_CLASS_ANCHORED,
-                f"esperava classe 1 para: {raw!r}",
+                v._classify_hook_anchorage(raw, was_quoted), v._HOOK_ANCHORAGE_CLASS_ANCHORED,
+                f"esperava classe 1 para: {raw!r} (was_quoted={was_quoted})",
             )
 
     def test_classify_hook_anchorage_classe2_cwd_dependent(self):
         """classifyHookAnchorage retorna classe 2 para formas dependentes do cwd."""
         cases = [
-            "$PWD/scripts/trackfw-credential-guard.sh",
-            "./scripts/trackfw-credential-guard.sh",
-            "../scripts/trackfw-credential-guard.sh",
-            "scripts/trackfw-credential-guard.sh",
-            "sh scripts/trackfw-credential-guard.sh",
+            ("$PWD/scripts/trackfw-credential-guard.sh", False),
+            ("${PWD}/scripts/trackfw-credential-guard.sh", False),
+            ("./scripts/trackfw-credential-guard.sh", False),
+            ("../scripts/trackfw-credential-guard.sh", False),
+            ("scripts/trackfw-credential-guard.sh", False),
+            ("sh scripts/trackfw-credential-guard.sh", False),
+            # "~/…" com aspas: tilde NÃO expande dentro de aspas duplas — classe 2.
+            ("~/scripts/trackfw-credential-guard.sh", True),
+            ("~/.trackfw/scripts/trackfw-credential-guard.sh", True),
         ]
-        for raw in cases:
+        for raw, was_quoted in cases:
             self.assertEqual(
-                v._classify_hook_anchorage(raw), v._HOOK_ANCHORAGE_CLASS_CWD_DEPENDENT,
-                f"esperava classe 2 para: {raw!r}",
+                v._classify_hook_anchorage(raw, was_quoted), v._HOOK_ANCHORAGE_CLASS_CWD_DEPENDENT,
+                f"esperava classe 2 para: {raw!r} (was_quoted={was_quoted})",
             )
 
     def test_classify_hook_anchorage_classe3_indecidivel(self):
         """classifyHookAnchorage retorna classe 3 para variáveis próprias do usuário."""
         cases = [
-            "$SOME_OTHER_VAR/scripts/trackfw-credential-guard.sh",
-            "$MY_CUSTOM_DIR/guard.sh",
-            "$UNDEFINED/trackfw-credential-guard.sh",
+            ("$SOME_OTHER_VAR/scripts/trackfw-credential-guard.sh", False),
+            ("$MY_CUSTOM_DIR/guard.sh", False),
+            ("$UNDEFINED/trackfw-credential-guard.sh", False),
         ]
-        for raw in cases:
+        for raw, was_quoted in cases:
             self.assertEqual(
-                v._classify_hook_anchorage(raw), v._HOOK_ANCHORAGE_CLASS_UNDECIDABLE,
-                f"esperava classe 3 para: {raw!r}",
+                v._classify_hook_anchorage(raw, was_quoted), v._HOOK_ANCHORAGE_CLASS_UNDECIDABLE,
+                f"esperava classe 3 para: {raw!r} (was_quoted={was_quoted})",
             )
+
+    def test_hook_value_was_quoted(self):
+        """_hook_value_was_quoted detecta aspas externas."""
+        self.assertTrue(v._hook_value_was_quoted('"$PWD/scripts/guard.sh"'))
+        self.assertTrue(v._hook_value_was_quoted('"~/scripts/guard.sh"'))
+        self.assertFalse(v._hook_value_was_quoted("~/scripts/guard.sh"))
+        self.assertFalse(v._hook_value_was_quoted("$PWD/scripts/guard.sh"))
+        self.assertFalse(v._hook_value_was_quoted('"'))
+        self.assertTrue(v._hook_value_was_quoted('""'))
+        self.assertFalse(v._hook_value_was_quoted('"abc'))
+
+    def test_cwd_dependent_reason_pwd_em_qualquer_posicao(self):
+        """_cwd_dependent_reason retorna mensagem do $PWD para qualquer forma contendo $PWD."""
+        pwd_cases = [
+            "$PWD/scripts/guard.sh",
+            "${PWD}/scripts/guard.sh",
+            'sh -c "$PWD/scripts/guard.sh"',
+            "env FOO=x $PWD/scripts/guard.sh",
+        ]
+        for raw in pwd_cases:
+            reason = v._cwd_dependent_reason(raw)
+            self.assertIn("$PWD path", reason, f"esperava '$PWD path' para: {raw!r}")
+        bare_cases = [
+            "./scripts/guard.sh",
+            "../scripts/guard.sh",
+            "scripts/guard.sh",
+            "~/scripts/guard.sh",
+        ]
+        for raw in bare_cases:
+            reason = v._cwd_dependent_reason(raw)
+            self.assertIn("bare relative path", reason, f"esperava 'bare relative path' para: {raw!r}")
 
     def test_strip_outer_quotes_for_classify(self):
         """_strip_outer_quotes_for_classify remove aspas duplas envolventes."""
@@ -1238,6 +1276,76 @@ class TestCredentialGuardHookResolvable(unittest.TestCase):
                 v._strip_outer_quotes_for_classify(raw), want,
                 f"strip({raw!r})",
             )
+
+    # ------------------------------------------------------------------
+    # ML-4A (ROADMAP-2026-08-22) — ~/…, ${PWD}/…, mensagem certa por forma
+    # ------------------------------------------------------------------
+
+    def test_tilde_sem_aspas_silencioso(self):
+        """ML-4A: ~/… sem aspas é classe 1 (tilde expande para $HOME — ancorado). Não deve
+        gerar violação (falso-positivo confirmado pela barreira ML-3A/Hades)."""
+        _write(
+            os.path.join(self.tmp, ".claude/settings.json"),
+            _guard_entry_claude_settings("~/scripts/trackfw-credential-guard.sh"),
+        )
+        cfg = _config.defaults()
+        msgs = v.validate_credential_guard_hook_resolvable(cfg, cwd=self.tmp)
+        self.assertEqual(
+            msgs, [],
+            f"ML-4A: ~/… sem aspas (classe 1) deve ser silencioso, obteve: {msgs}",
+        )
+
+    def test_tilde_com_aspas_acusado(self):
+        """ML-4A: \"~/…\" aspeado é classe 2 (tilde NÃO expande dentro de aspas duplas).
+        Deve gerar violação com mensagem 'bare relative path'."""
+        cmd_value = '"~/scripts/trackfw-credential-guard.sh"'
+        content = _guard_entry_claude_settings(cmd_value)
+        parsed = json.loads(content)
+        cmd_in_json = parsed["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+        self.assertTrue(
+            cmd_in_json.startswith('"') and cmd_in_json.endswith('"'),
+            f"valor command deve ter aspas literais, obteve: {cmd_in_json!r}",
+        )
+        _write(os.path.join(self.tmp, ".claude/settings.json"), content)
+        cfg = _config.defaults()
+        msgs = v.validate_credential_guard_hook_resolvable(cfg, cwd=self.tmp)
+        self.assertTrue(
+            any("bare relative path" in m["message"] for m in msgs),
+            f"ML-4A: \"~/…\" aspeado deve ser acusado com 'bare relative path', obteve: {msgs}",
+        )
+
+    def test_pwd_chaveado_acusado(self):
+        """ML-4A: ${PWD}/… é classe 2 (mesma semântica de $PWD/…). Deve gerar violação
+        com mensagem do $PWD."""
+        _write(
+            os.path.join(self.tmp, ".claude/settings.json"),
+            _guard_entry_claude_settings("${PWD}/scripts/trackfw-credential-guard.sh"),
+        )
+        cfg = _config.defaults()
+        msgs = v.validate_credential_guard_hook_resolvable(cfg, cwd=self.tmp)
+        self.assertTrue(
+            any("$PWD path" in m["message"] for m in msgs),
+            f"ML-4A: ${'{'}PWD{'}'}/… deve ser acusado com mensagem do $PWD, obteve: {msgs}",
+        )
+
+    def test_sh_c_pwd_mensagem_pwd(self):
+        """ML-4A: sh -c \"$PWD/…\" deve ser acusado com mensagem do $PWD, não 'bare relative
+        path', pois $PWD está presente no comando."""
+        cmd_value = 'sh -c "$PWD/scripts/trackfw-credential-guard.sh"'
+        content = _guard_entry_claude_settings(cmd_value)
+        parsed = json.loads(content)
+        self.assertIsNotNone(parsed, "fixture JSON deve ser válido")
+        _write(os.path.join(self.tmp, ".claude/settings.json"), content)
+        cfg = _config.defaults()
+        msgs = v.validate_credential_guard_hook_resolvable(cfg, cwd=self.tmp)
+        self.assertTrue(
+            any("$PWD path" in m["message"] for m in msgs),
+            f"ML-4A: sh -c \"$PWD/…\" deve usar mensagem do $PWD, obteve: {msgs}",
+        )
+        self.assertFalse(
+            any("bare relative path" in m["message"] for m in msgs),
+            f"ML-4A: sh -c \"$PWD/…\" não deve dizer 'bare relative path', obteve: {msgs}",
+        )
 
     def test_dispara_pwd_em_claude_ac2(self):
         """AC2: Claude settings com $PWD/… e script presente deve gerar violation explicando

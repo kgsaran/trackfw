@@ -1592,9 +1592,11 @@ def _resolve_credential_guard_hook_path(raw: str, root: str):
     if raw.startswith(codex_prefix) and raw.endswith('"'):
         inner = raw[len(codex_prefix):-1]
         return os.path.join(root, inner)
-    if not raw.startswith("$") and not raw.startswith('"') and not os.path.isabs(raw):
+    if not raw.startswith("$") and not raw.startswith('"') and not os.path.isabs(raw) and not raw.startswith("~/"):
         # Caminho relativo puro — Cursor (beforeShellExecution/preToolUse), GitHub Copilot CLI
         # (campo "bash"), Kiro (action.command).
+        # ~/… é excluído: é classe 1 (tilde expande para $HOME — ancorado) mas o validator não
+        # expande o til; retornar None silencia sem acusar.
         return os.path.join(root, raw)
     return None
 
@@ -1615,9 +1617,17 @@ def _strip_outer_quotes_for_classify(raw: str) -> str:
     return raw
 
 
-def _classify_hook_anchorage(raw_stripped: str) -> int:
+def _hook_value_was_quoted(raw: str) -> bool:
+    """Reporta se raw tinha aspas duplas externas que _strip_outer_quotes_for_classify removeria.
+    Usado para distinguir ~/… (tilde expande para $HOME — classe 1) de \"~/…\" (tilde NÃO expande
+    dentro de aspas duplas — classe 2)."""
+    return len(raw) >= 2 and raw[0] == '"' and raw[-1] == '"'
+
+
+def _classify_hook_anchorage(raw_stripped: str, was_quoted: bool) -> int:
     """Retorna a classe de ancoragem de raw_stripped (com aspas externas já removidas).
-    Ver _HOOK_ANCHORAGE_CLASS_* e ADR-2026-08-22.
+    was_quoted indica se o valor original tinha aspas externas (obtido com _hook_value_was_quoted
+    antes de chamar _strip_outer_quotes_for_classify). Ver _HOOK_ANCHORAGE_CLASS_* e ADR-2026-08-22.
 
     Classe 2 é um predicado, não uma lista de literais: o critério é 'expande a partir do cwd'.
     Classe 3 permanece em silêncio por escolha: $FOO/… pode estar correto no ambiente do usuário.
@@ -1630,9 +1640,15 @@ def _classify_hook_anchorage(raw_stripped: str) -> int:
         or os.path.isabs(raw_stripped)
     ):
         return _HOOK_ANCHORAGE_CLASS_ANCHORED
+    # ~/… sem aspas: tilde expande para $HOME em qualquer shell POSIX -- semanticamente ancorado.
+    # "~/…" com aspas: tilde NÃO expande dentro de aspas duplas, logo a forma quebra -- classe 2.
+    if raw_stripped.startswith("~/") and not was_quoted:
+        return _HOOK_ANCHORAGE_CLASS_ANCHORED
     # Classe 2 -- expande a partir do cwd.
+    # ${PWD}/… tem a mesma semântica de $PWD/… (PWD é mandado pelo POSIX, sempre o cwd).
     if (
         raw_stripped.startswith("$PWD/")
+        or raw_stripped.startswith("${PWD}/")
         or raw_stripped.startswith("./")
         or raw_stripped.startswith("../")
         or (not raw_stripped.startswith("$") and not os.path.isabs(raw_stripped))
@@ -1644,10 +1660,12 @@ def _classify_hook_anchorage(raw_stripped: str) -> int:
 
 def _cwd_dependent_reason(raw_stripped: str) -> str:
     """Retorna o sufixo de mensagem específico por forma para violações de classe 2, iniciando em
-    'with a …'. Dois formatos: $PWD/… recebe explicação sobre $PWD; demais (./…, ../…, relativo
-    puro) recebem 'bare relative path'. A frase 'bare relative path' é preservada para não
-    regredir os testes existentes e a UX da ROADMAP-2026-08-21 ML-1B."""
-    if raw_stripped.startswith("$PWD"):
+    'with a …'. Formas contendo $PWD ou ${PWD} (em qualquer posição, inclusive em wrappers sh -c /
+    env) recebem a mensagem do $PWD; demais recebem 'bare relative path'. Usa 'in' (não startsWith)
+    para cobrir sh -c "$PWD/…" e env FOO=x $PWD/….
+    A frase 'bare relative path' é preservada para não regredir os testes existentes e a UX da
+    ROADMAP-2026-08-21 ML-1B."""
+    if "$PWD" in raw_stripped or "${PWD}" in raw_stripped:
         return (
             "with a $PWD path — $PWD expands to the current working directory, not the project "
             "root; run `trackfw update` to fix it"
@@ -1746,8 +1764,10 @@ def validate_guard_hook_resolvable(script_marker: str, cwd: str = None) -> list:
             # ADR-2026-08-22: classificar por ancoragem ANTES de resolver. Aspas externas são
             # sintaxe, não semântica — removê-las antes garante que "$PWD/…" receba o mesmo
             # veredito que $PWD/… sem aspas (achado D.3).
+            # was_quoted distingue ~/… (classe 1) de "~/…" (classe 2).
+            was_quoted = _hook_value_was_quoted(m["raw"])
             raw_stripped = _strip_outer_quotes_for_classify(m["raw"])
-            anchorage_class = _classify_hook_anchorage(raw_stripped)
+            anchorage_class = _classify_hook_anchorage(raw_stripped, was_quoted)
 
             # Classe 2 (dependente do cwd) + CLI que exige ancoragem → acusar com mensagem
             # específica por forma. Cursor/Copilot/Kiro têm requires_var_or_shell_prefix=False

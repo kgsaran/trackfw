@@ -208,7 +208,7 @@ padrão, não incidente.
 > Dependências: Wave 2 completa e auditada.
 
 ### ML-3A — Revisão de segurança
-**Status:** 🔄 Em andamento · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
+**Status:** ✅ Concluído — **REPROVOU** · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
 **Escreve:** `docs/seguranca/2026-08-22-revisao-da-classificacao-por-ancoragem.md`
 
 A regra decide se um guard está ativo. Avaliar:
@@ -216,6 +216,52 @@ A regra decide se um guard está ativo. Avaliar:
 (b) a classe 1 ficou realmente livre de falso-positivo — em especial o caminho absoluto?
 (c) a classe 3 é ponto cego **aceito e declarado**, ou virou porta de entrada nova?
 **Veredito explícito**, distinguindo o que foi medido do que foi escolhido na ausência de dado.
+
+
+---
+
+### Auditoria do ML-3A — **REPROVADO**, e o achado é do tipo que a REQ existia para evitar
+
+Parecer: `docs/seguranca/2026-08-22-revisao-da-classificacao-por-ancoragem.md`.
+
+**Confirmei os três achados por medição própria**, com fixture validado:
+
+```
+~/.trackfw/scripts/trackfw-credential-guard.sh   -> ACUSADO  "bare relative path"   <- FALSO-POSITIVO
+${PWD}/scripts/trackfw-credential-guard.sh       -> SILENCIO                         <- falso-negativo
+sh -c "$PWD/scripts/..."                         -> acusado com a mensagem ERRADA
+```
+
+**O bloqueante:** `filepath.IsAbs("~/…")` é `false` em Go, então o til caiu na classe 2. Mas `~`
+expande para `$HOME` em qualquer shell POSIX — a forma **ancora**. E o caminho que torna isso grave é
+o do próprio trackfw: `~/.trackfw/scripts/trackfw-credential-guard.sh` é o **harness global**. Acusar
+esse usuário o empurra a rodar `trackfw update`, que troca o comando por `$CLAUDE_PROJECT_DIR/…` —
+inútil para hook global. **A regra criada para impedir que o guard fique inerte passaria a deixá-lo
+inerte.**
+
+**Correção de rota dele que merece registro:** na primeira passada ele mediu Node e Python com
+caminhos errados (`npm/src/index.js` → module not found; `pypi/trackfw/cli.py` sem `PYTHONPATH`),
+recebeu silêncio dos dois e **percebeu que o silêncio era do instrumento, não do produto**. Refez com
+`node npm/bin/trackfw` e `PYTHONPATH=pypi python3 -m trackfw`. É a terceira vez nesta série que um
+instrumento defeituoso quase vira conclusão — e a primeira em que o próprio agente pega.
+
+---
+
+## Wave 4 — Correção pós-barreira
+
+> Dependências: ML-3A. Bloqueia o PR.
+
+### ML-4A — `~/` é classe 1; `${PWD}/` é classe 2; mensagem certa por forma
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+
+**Critérios de aceite:**
+- [x] `~/…` **não aspeado** → classe 1 (silêncio) nos 3 CLIs
+- [x] `"~/…"` **aspeado** → **acusado**: o til não expande entre aspas duplas, então a forma quebra
+- [x] `${PWD}/…` → classe 2 (acusado), mesmo predicado de `$PWD/…`
+- [x] `sh -c "$PWD/…"` → acusado com a mensagem **do `$PWD`**, não a de relativo puro
+- [x] Casos novos no `check-validate-parity.sh`, com guard de vacuidade
+- [x] Nenhuma regressão nos casos já aprovados (absoluto, Codex, classe 3, Cursor)
+- [x] `make quality` CI-exata **exit 0** (exit code medido) · `validate` 17 warnings
 
 ---
 

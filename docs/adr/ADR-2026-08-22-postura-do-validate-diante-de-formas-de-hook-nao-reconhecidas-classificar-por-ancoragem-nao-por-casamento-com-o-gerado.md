@@ -62,9 +62,26 @@ Três classes, avaliadas apenas para os CLIs com `requiresVarOrShellPrefix=true`
 
 | Classe | Formas | Veredito |
 |---|---|---|
-| **1. Ancorado** | `$CLAUDE_PROJECT_DIR/…`, `$GEMINI_PROJECT_DIR/…`, `"$(git rev-parse --show-toplevel)/…"`, **caminho absoluto** | silêncio |
-| **2. Comprovadamente dependente do cwd** | `$PWD/…`, `./…`, `../…`, relativo puro (já coberto) | **acusar** |
+| **1. Ancorado** | `$CLAUDE_PROJECT_DIR/…`, `$GEMINI_PROJECT_DIR/…`, `"$(git rev-parse --show-toplevel)/…"`, **caminho absoluto**, **`~/…` não aspeado** | silêncio |
+| **2. Comprovadamente dependente do cwd** | `$PWD/…`, `${PWD}/…`, `"$PWD/…"`, `./…`, `../…`, relativo puro (já coberto) | **acusar** |
 | **3. Indecidível** | `$OUTRA_VAR/…`, comandos com pipe/subshell não reconhecidos, `$UNDEFINED/…` | silêncio, **residual declarado** |
+
+### Emenda de 2026-08-22, após a barreira do `hades-tf` — `~/` e `${PWD}/`
+
+A primeira implementação classificou `~/…` como **classe 2**, porque `filepath.IsAbs("~/…")` é
+`false` em Go. É **falso-positivo**: o til expande para `$HOME` em qualquer shell POSIX, logo a forma
+ancora e funciona de qualquer cwd. O caso que torna isso grave é concreto —
+`~/.trackfw/scripts/trackfw-credential-guard.sh` é o caminho do **harness global do próprio
+trackfw**. Acusá-lo empurra o usuário a rodar `trackfw update`, que sobrescreve o comando por
+`$CLAUDE_PROJECT_DIR/…` — inútil para um hook de escopo global.
+
+**Sutileza que a decisão precisa carregar:** o til **não** expande entre aspas duplas. `"~/x.sh"` é
+literal e quebra. Como a classificação remove aspas envolventes antes de decidir — necessário para
+`"$PWD/…"` e para a forma do Codex —, `~/…` só é classe 1 quando **não** estava aspeado. `$PWD`, ao
+contrário, expande normalmente dentro de aspas duplas.
+
+`${PWD}/…` entra na classe 2 pelo mesmo predicado de `$PWD/…`. Deixá-la de fora seria a "condição
+estreita demais" que este ADR se propõe a evitar: mesma semântica, sintaxe diferente.
 
 **Classe 2 é uma regra, não uma lista de literais.** O critério é *"expande a partir do diretório
 corrente"* — propriedade verificável de cada forma, e é assim que o teste deve ser escrito: exercendo

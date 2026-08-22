@@ -86,3 +86,4 @@
 - [git-show-honra-refs-replace-por-padrao-2026-08-21](git-show-honra-refs-replace-por-padrao-2026-08-21.md)
 - [deteccao-de-hook-relativo-nao-cobre-pwd-aspas-e-var-indefinida-2026-08-22](deteccao-de-hook-relativo-nao-cobre-pwd-aspas-e-var-indefinida-2026-08-22.md)
 - [reason-do-guard-diverge-por-escaping-de-aspas-entre-python-e-go-node-2026-08-22](reason-do-guard-diverge-por-escaping-de-aspas-entre-python-e-go-node-2026-08-22.md)
+- [classify-hook-anchorage-tilde-false-positive-2026-08-22](classify-hook-anchorage-tilde-false-positive-2026-08-22.md)

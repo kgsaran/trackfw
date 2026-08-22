@@ -88,16 +88,25 @@ func stripOuterQuotesForClassify(raw string) string {
 	return raw
 }
 
+// hookValueWasQuoted reporta se raw tinha aspas duplas externas que
+// stripOuterQuotesForClassify removeria. Usado para distinguir ~/… (til
+// expande para $HOME sem aspas — classe 1) de "~/…" (til NÃO expande dentro
+// de aspas duplas — classe 2).
+func hookValueWasQuoted(raw string) bool {
+	return len(raw) >= 2 && raw[0] == '"' && raw[len(raw)-1] == '"'
+}
+
 // classifyHookAnchorage retorna a classe de ancoragem de rawStripped (valor de comando de hook
-// com aspas externas já removidas). Ver constantes hookAnchorageClass* e ADR-2026-08-22 para a
-// decisão e o motivo de cada classe.
+// com aspas externas já removidas). wasQuoted indica se o valor original tinha aspas externas
+// (obtido com hookValueWasQuoted antes de chamar stripOuterQuotesForClassify).
+// Ver constantes hookAnchorageClass* e ADR-2026-08-22 para a decisão e o motivo de cada classe.
 //
 // Classe 2 é um predicado, não uma lista de literais: o critério é "expande a partir do
 // diretório corrente". Formas novas que satisfaçam esse critério entram aqui automaticamente.
 //
 // Classe 3 permanece em silêncio por escolha, não por omissão: $FOO/… pode estar correto no
 // ambiente do usuário; o validador não lê o ambiente em que o hook vai rodar.
-func classifyHookAnchorage(rawStripped string) int {
+func classifyHookAnchorage(rawStripped string, wasQuoted bool) int {
 	// Classe 1 — ancora na raiz do projeto.
 	if strings.HasPrefix(rawStripped, "$CLAUDE_PROJECT_DIR/") ||
 		strings.HasPrefix(rawStripped, "$GEMINI_PROJECT_DIR/") ||
@@ -105,8 +114,15 @@ func classifyHookAnchorage(rawStripped string) int {
 		filepath.IsAbs(rawStripped) {
 		return hookAnchorageClassAnchored
 	}
+	// ~/… sem aspas: tilde expande para $HOME em qualquer shell POSIX — semânticamente ancorado.
+	// "~/…" com aspas: tilde NÃO expande dentro de aspas duplas, logo a forma quebra — classe 2.
+	if strings.HasPrefix(rawStripped, "~/") && !wasQuoted {
+		return hookAnchorageClassAnchored
+	}
 	// Classe 2 — expande a partir do cwd.
+	// ${PWD}/… tem a mesma semântica de $PWD/… (PWD é mandado pelo POSIX, sempre o cwd).
 	if strings.HasPrefix(rawStripped, "$PWD/") ||
+		strings.HasPrefix(rawStripped, "${PWD}/") ||
 		strings.HasPrefix(rawStripped, "./") ||
 		strings.HasPrefix(rawStripped, "../") ||
 		(!strings.HasPrefix(rawStripped, "$") && !filepath.IsAbs(rawStripped)) {
@@ -120,13 +136,15 @@ func classifyHookAnchorage(rawStripped string) int {
 // classe 2 (dependente do cwd), iniciando em "with a …". O resultado é concatenado após
 // "references <scriptMarker> " pelo chamador. Dois formatos:
 //
-//   - $PWD/… → "with a $PWD path — $PWD expands to the current working directory…"
+//   - $PWD/… ou qualquer forma contendo $PWD ou ${PWD} → "with a $PWD path — …"
 //   - demais (./…, ../…, relativo puro) → "with a bare relative path — this command only…"
 //
+// A detecção usa Contains em vez de HasPrefix para cobrir wrappers como
+// `sh -c "$PWD/…"` e `env FOO=x $PWD/…` que contêm $PWD mas não o têm no prefixo.
 // A frase "bare relative path" é preservada para não regredir os testes existentes e a UX
 // introduzida pela ROADMAP-2026-08-21 ML-1B.
 func cwdDependentReason(rawStripped string) string {
-	if strings.HasPrefix(rawStripped, "$PWD") {
+	if strings.Contains(rawStripped, "$PWD") || strings.Contains(rawStripped, "${PWD}") {
 		return "with a $PWD path — " +
 			"$PWD expands to the current working directory, not the project root; " +
 			"run `trackfw update` to fix it"
@@ -172,9 +190,11 @@ func resolveCredentialGuardHookPath(raw, root string) (resolved string, ok bool)
 	case strings.HasPrefix(raw, codexPrefix) && strings.HasSuffix(raw, `"`):
 		inner := strings.TrimSuffix(strings.TrimPrefix(raw, codexPrefix), `"`)
 		return filepath.Join(root, inner), true
-	case !strings.HasPrefix(raw, "$") && !strings.HasPrefix(raw, `"`) && !filepath.IsAbs(raw):
+	case !strings.HasPrefix(raw, "$") && !strings.HasPrefix(raw, `"`) && !filepath.IsAbs(raw) && !strings.HasPrefix(raw, "~/"):
 		// Caminho relativo puro — Cursor (beforeShellExecution/preToolUse), GitHub Copilot CLI
 		// (campo "bash"), Kiro (action.command).
+		// ~/… é excluído: é classe 1 (tilde expande para $HOME — ancorado) mas não é uma forma
+		// que o validator consegue resolver sem expandir o til; ok=false silencia sem acusar.
 		return filepath.Join(root, raw), true
 	default:
 		return "", false
@@ -307,8 +327,11 @@ func validateGuardHookResolvable(ruleName, scriptMarker string) ([]string, error
 			// ADR-2026-08-22: classificar por ancoragem ANTES de resolver. Aspas externas são
 			// sintaxe, não semântica — removê-las antes de classificar garante que "$PWD/…"
 			// (entre aspas) receba o mesmo veredito que $PWD/… sem aspas (achado D.3).
+			// wasQuoted é necessário para distinguir ~/… (classe 1) de "~/…" (classe 2): o til
+			// expande para $HOME sem aspas mas permanece literal dentro de aspas duplas.
+			wasQuoted := hookValueWasQuoted(m.raw)
 			rawStripped := stripOuterQuotesForClassify(m.raw)
-			class := classifyHookAnchorage(rawStripped)
+			class := classifyHookAnchorage(rawStripped, wasQuoted)
 
 			// Classe 2 (dependente do cwd) + CLI que exige ancoragem → acusar com mensagem
 			// específica por forma. Cursor/Copilot/Kiro têm requiresVarOrShellPrefix=false e

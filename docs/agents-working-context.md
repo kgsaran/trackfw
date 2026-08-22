@@ -4,6 +4,61 @@
 
 ---
 
+## Sessão 2026-08-22 — Apolo (INÍCIO: ML-4A — `~/` é classe 1; `${PWD}/` é classe 2; mensagem certa por forma)
+
+Branch `fix/validate-detecta-hook-com-pwd-que-falha-fora-da-raiz`. Sem commit/push.
+
+Escopo: corrigir três achados pós-barreira (ML-3A/Hades):
+1. `~/…` (sem aspas) → classe 1 (silêncio); `"~/…"` (com aspas) → classe 2 (acusar)
+2. `${PWD}/…` → classe 2 (acusar)
+3. `sh -c "$PWD/…"` → mensagem do `$PWD`, não "bare relative path"
+
+Estratégia: adicionar helper `hookValueWasQuoted(raw)` + param `wasQuoted bool` em
+`classifyHookAnchorage` nos 3 CLIs; `Contains` em `cwdDependentReason` para detectar
+`$PWD`/`${PWD}` em qualquer posição. Falsify scenarios 159/164/165 verificados — nenhum
+`sed` pina os textos que serão alterados (exceto os preservados intencionalmente).
+
+---
+
+## Sessão 2026-08-22 — Apolo (FIM: ML-4A — `~/` é classe 1; `${PWD}/` é classe 2; mensagem certa por forma)
+
+Branch `fix/validate-detecta-hook-com-pwd-que-falha-fora-da-raiz`. Sem commit/push.
+
+**Resultado:** ML-4A concluído. Todos os critérios de aceite atendidos.
+
+**Correções aplicadas nos 3 CLIs (Go / Node.js / Python):**
+1. `hookValueWasQuoted(raw)` — helper que detecta se o valor bruto tem aspas duplas externas; adicionado nos 3 stacks.
+2. `classifyHookAnchorage(rawStripped, wasQuoted)` — recebe o flag `wasQuoted`; `~/` sem aspas → classe 1 (silêncio); `~/` com aspas → classe 2 (acusar).
+3. `${PWD}/` → classe 2 via mesmo predicado de `$PWD/` (adicionado ao bloco de prefixos da classe 2).
+4. `cwdDependentReason` — trocou `HasPrefix("$PWD")` por `Contains("$PWD") || Contains("${PWD}")` para cobrir `sh -c "$PWD/..."` e variantes wrapper.
+5. `resolveCredentialGuardHookPath` — último `case` excluiu `~/` para evitar resolução literal de `~` como nome de diretório.
+6. `check-validate-parity.sh` — 4 novos fixtures de paridade: `claude-tilde` (silêncio), `claude-tilde-quoted` (acusado/bare), `claude-pwd-braced` (acusado/pwd-msg), `claude-sh-c-pwd` (acusado/pwd-msg).
+7. `docs/cli-parity.md` — contrato atualizado: 14 → 18 casos CG; 4 novos casos listados.
+8. Testes unitários nos 3 CLIs: `TestHookValueWasQuoted`, `TestCwdDependentReason_PwdEmQualquerPosicao`, e 4 testes de integração por fixture.
+
+**Evidências:**
+- `make build` → exit 0
+- `go test ./...` → verde (Go)
+- `node --test npm/tests/validator.test.js` → 98 passed, 0 failed
+- `python3 -m pytest pypi/tests/test_validator.py -v` → 121 passed
+- `bash scripts/check-validate-parity.sh` → 18 casos CG passaram, byte-identical nos 3 CLIs
+- `bash scripts/check-gates-falsify.sh` → 165 cenários passaram (exit 0); 159/164/165 verificados
+- `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality` → exit 0
+- `./bin/trackfw validate` → 17 warnings, 0 violations
+
+---
+
+## Sessão 2026-08-22 — Hades (INÍCIO: ML-3A — Revisão de segurança da classificação por ancoragem)
+
+Branch `fix/validate-detecta-hook-com-pwd-que-falha-fora-da-raiz`. Sem commit/push.
+
+Escopo: revisão de segurança do classificador `classifyHookAnchorage` introduzido nas Waves 1–2.
+Responder cinco perguntas com evidência medida: (a) bypass de classe 2; (b) falso-positivo de
+classe 1; (c) tamanho de classe 3; (d) `$UNDEFINED` e o ADR; (e) indução de terceiro erro pela
+mensagem. Artefato de saída: `docs/seguranca/2026-08-22-revisao-da-classificacao-por-ancoragem.md`.
+
+---
+
 ## Sessão 2026-08-22 — Apolo (FIM: correção pontual pós-auditoria ML-2A — echo final de check-gates-falsify.sh)
 
 Branch `fix/validate-detecta-hook-de-guard-na-forma-relativa-antiga`. Sem commit/push.
@@ -23125,3 +23180,59 @@ merge, e `trackfw release tag 7.2.0`.
 - `./bin/trackfw validate` → violations=0, warnings=17
 
 **Status do roadmap:** ML-2A ✅ Concluído; ML-3A ⬜ Pendente (hades-tf)
+
+---
+
+## [INÍCIO] hades-tf — 2026-08-22 — ML-3A do ROADMAP-2026-08-22-validate-detecta-hook-com-pwd-que-falha-fora-da-raiz
+
+**Objetivo:** Barreira de segurança sobre `classifyHookAnchorage` e a tabela de 3 classes introduzida
+nas Waves 1–2. Responder às 5 questões do mandato (bypass, false-positivo, classe 3, $UNDEFINED,
+mensagem). Emitir veredito APROVADO / APROVADO COM RESSALVAS / REPROVADO.
+
+**Branch:** `fix/validate-detecta-hook-de-guard-na-forma-relativa-antiga`
+
+**Estado de entrada:** make quality VERDE (ML-2A concluído), 3 stacks em paridade, fixture CG com
+6 casos parity. Barreira anterior (2026-08-21) já validou D.1/D.2/D.3.
+
+---
+
+## hades-tf | 2026-08-22 | FIM | ML-3A (ROADMAP-2026-08-22-validate-detecta-hook-com-pwd-que-falha-fora-da-raiz)
+
+**Veredito:** REPROVADO
+
+**O que foi feito:**
+- Lidos: ADR-2026-08-22, REQ-2026-08-21, roadmap (incluindo auditoria do arquiteto na Wave 2),
+  código Go (classifyHookAnchorage:100, stripOuterQuotesForClassify:84, cwdDependentReason:127,
+  uso em :310-316, resolveCredentialGuardHookPath:162), Node.js e Python (paridade verificada)
+- Medidas feitas com os 3 stacks corretos: `./bin/trackfw`, `node npm/bin/trackfw`,
+  `PYTHONPATH=pypi python3 -m trackfw` — fixtures gerados via `python3 -c json.dump` e
+  validados por round-trip
+- Nota: primeira sessão (interrompida por limite de contexto) usou paths errados para Node/Python,
+  obtendo SILENT falso. Esta sessão corrigiu e re-mediu; o veredito mudou
+
+**Achados bloqueantes:**
+1. **Falso-positivo em `~/...`** (todos os 3 CLIs): `classifyHookAnchorage` classifica `~/` como
+   classe 2 (bare relative) porque `filepath.IsAbs("~/...")` retorna false. Mas `~` expande para
+   `$HOME` (caminho absoluto). A mensagem "bare relative path — only resolves from the project root"
+   é factualmente errada. `~/.trackfw/scripts/trackfw-credential-guard.sh` — path criado pelo
+   próprio harness do trackfw — é acusado incorretamente.
+2. **Mensagem errada para `sh -c "$PWD/..."`** (todos os 3 CLIs, moderado): detecção correta (é
+   cwd-dependent), mas recebe mensagem "bare relative path" em vez da mensagem "$PWD path".
+   `cwdDependentReason` verifica `HasPrefix(rawStripped, "$PWD")` mas `sh -c "$PWD/..."` começa
+   com `sh`.
+
+**Achados não-bloqueantes:**
+- `${PWD}/...` → classe 3 em todos os 3 CLIs (implementação com lista de prefixos literais em vez
+  de predicado semântico — PWD é POSIX-mandado, não se enquadra no residual do ADR)
+- `"$CLAUDE_PROJECT_DIR/..."` com aspas → silencioso (correto), mas `resolveCredentialGuardHookPath`
+  usa `m.raw` com aspas → escapa checks de existência/executabilidade (pré-existente)
+
+**Instrução para o arquiteto:**
+- Adicionar `strings.HasPrefix(rawStripped, "~/")` à classe 1 em `classifyHookAnchorage` nos 3
+  stacks antes de aprovação
+- Corrigir `cwdDependentReason` para detectar `$PWD` dentro de comandos wrapper (opcional, mas
+  recomendado na mesma entrega)
+
+**Arquivo gerado:** `docs/seguranca/2026-08-22-revisao-da-classificacao-por-ancoragem.md` (revisão 2)
+
+**Vault:** nota criada em `vault/notes/classify-hook-anchorage-tilde-false-positive-2026-08-22.md`
