@@ -23261,3 +23261,26 @@ mensagem). Emitir veredito APROVADO / APROVADO COM RESSALVAS / REPROVADO.
 **Arquivo gerado:** `docs/seguranca/2026-08-22-revisao-da-classificacao-por-ancoragem.md` (revisão 2)
 
 **Vault:** nota criada em `vault/notes/classify-hook-anchorage-tilde-false-positive-2026-08-22.md`
+
+---
+
+## Sessão 2026-08-22 — trackfw_architect (ADR da Wave 0 de modelo de ameaça)
+
+**Origem:** proposta do KG a partir do custo observado nesta série — três REQs consecutivas, duas
+delas retrabalhadas por achados de barreira que eram **completude de enumeração**, pergunta que não
+precisa de código para ser respondida.
+
+**Decisão do KG:** Wave 0 em **toda** REQ, sem triagem por gatilho. Motivo registrado: a triagem
+devolve ao arquiteto a decisão de dispensar a revisão, e é esse julgamento otimista que a barreira
+existe para corrigir.
+
+**Escopo é o harness, não a prática local:** gerador de roadmap nos 3 CLIs (hoje o template só emite
+Wave 1), asset do papel de arquiteto, `CLAUDE.md` semeado e `trackfw barrier`. Propagação por
+`trackfw update harness`.
+
+**Limite declarado no ADR:** a Wave 0 **não** conserta o que mais custou ciclos nesta série —
+entregas declaradas verdes sem medição do exit code (seis ocorrências, duas realmente vermelhas).
+Isso é disciplina de medição e precisa de controle próprio.
+
+**Próximo:** `chore/release-7-2-0` (bump + CHANGELOG) → tag → REQ do harness implementando a Wave 0,
+que nascerá com a própria Wave 0.
