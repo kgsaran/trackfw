@@ -22758,3 +22758,94 @@ barreira em paralelo (`hefesto-tf` qualidade, `hades-tf` segurança).
 - `make test` → todos os pacotes verdes
 
 **Próximo:** Handoff para `trackfw_architect` para auditoria e commit do ML-2A.
+
+---
+
+## Sessão 2026-08-22 — Apolo (INÍCIO: ML-2B — REASON do guard cita `trackfw push`)
+
+Branch `feat/trackfw-push-comando-proprio-para-empurrar-commits-ja-criados`. Sem commit/push.
+
+Escopo: atualizar a REASON do ramo `push` do `git-branch-guard` para citar `trackfw push` como caminho primário, mantendo `trackfw ship` e `trackfw release tag`, nos 5 arquivos em sincronia obrigatória. Também atualizar o comentário linha 347 e a REASON de `reset-hard` (linha 534) onde citam `trackfw ship` no contexto de reempurrar trabalho já commitado.
+
+---
+
+## Sessão 2026-08-22 — Apolo (FIM: ML-2B — REASON do guard cita `trackfw push`)
+
+Branch `feat/trackfw-push-comando-proprio-para-empurrar-commits-ja-criados`. Sem commit/push.
+
+**Resultado:** ML-2B ✅ Concluído. Todos os critérios de aceite atendidos.
+
+**Escopo real (além dos 5 listados no roadmap):** a REASON também estava duplicada em
+`npm/src/validator/index.js` (linha 2153, variante GBG_REF_BACKTICK) e
+`pypi/trackfw/validator.py` (linha 2589, variante `\``). Total de 7 arquivos atualizados.
+
+**Strings alteradas em todos os 7 arquivos:**
+- push REASON: `trackfw ship` → `trackfw push` como primário, `trackfw ship` mantido para commit+push+PR, `trackfw release tag` mantido
+- reset-hard REASON: `reempurrar via \`trackfw ship\`` → `reempurrar via \`trackfw push\``
+- Comentário reset section: `via \`trackfw ship\`` → `via \`trackfw push\``
+
+**Decisão sobre linhas 347/534:** atualizadas com a mesma disciplina de sincronia. A falsify suite não ancora nessas strings (`grep "git push bruto bloqueado|trackfw ship|reempurrar" scripts/check-gates-falsify.sh` → empty). Substituição pura (sem reestruturação de frase), mínima blast radius.
+
+**Controle positivo:** `echo '{"tool_input":{"command":"git push"}}' | scripts/trackfw-git-branch-guard.sh` → `{"decision":"block","reason":"trackfw: git push bruto bloqueado. Use \`trackfw push\` (para empurrar commits já criados), \`trackfw ship\` (para commit+push+PR em uma etapa) ou \`trackfw release tag\` (para publicar uma tag de release)..."}` · exit 2.
+
+**Warning +1 declarado:** `git_branch_guard_script_integrity` (global scope, `~/.trackfw/scripts/trackfw-git-branch-guard.sh`) — baseline 16 → 17. Nenhum warning de projeto-scope. Nenhum `trackfw update harness` rodado.
+
+**Evidências de validação:**
+- `bash -n scripts/trackfw-git-branch-guard.sh` → exit 0
+- `make build` → exit 0
+- `go test ./...` → todos os pacotes verdes, exit 0
+- `node --test npm/tests/git_branch_guard_hook_integrity.test.js` → 25/25 pass, exit 0
+- `python3 -m pytest pypi/tests/test_git_branch_guard_validator.py` → 24 passed, exit 0
+- `GO_BIN=bin/trackfw bash scripts/check-attention-scripts-parity.sh` → 8/8 OK (incluindo git-branch-guard.sh/go-vs-node e go-vs-py), exit 0
+- `GO_BIN=bin/trackfw bash scripts/check-agent-hooks-parity.sh` → All passed, exit 0
+- `GO_BIN=bin/trackfw bash scripts/check-harness-hooks-parity.sh` → All passed, exit 0
+- `GO_BIN=bin/trackfw bash scripts/check-artifact-parity.sh` → exit 0
+- `GO_BIN=bin/trackfw bash scripts/check-gates-falsify.sh` → exit 0
+- `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality` → 502 OK, 0 FAIL, exit 0
+- `./bin/trackfw validate` → 0 violations, **17 warnings** (16 baseline + 1 novo git_branch_guard_script_integrity global), exit 0
+
+**Arquivos modificados:**
+- `scripts/trackfw-git-branch-guard.sh` (linhas 347, 528, 534)
+- `internal/validator/validator_git_branch_guard_reference.go` (linhas 373, 554, 560)
+- `internal/generators/scaffold.go` (linhas 1561, 1742, 1748)
+- `npm/src/generators/hooks.js` (linhas 820, 1001, 1007)
+- `pypi/trackfw/generators/init_gen.py` (linhas 1453, 1634, 1640)
+- `npm/src/validator/index.js` (linhas 1972, 2153, 2159) — arquivo extra descoberto em execução
+- `pypi/trackfw/validator.py` (linhas 2408, 2589, 2595) — arquivo extra descoberto em execução
+- `docs/roadmaps/wip/ROADMAP-2026-08-22-...push....md`: ML-2B → ✅ Concluído
+
+**Próximo:** Handoff para `trackfw_architect` para auditoria e commit do ML-2B.
+
+---
+
+## apolo-tf — Correção pós-auditoria ML-2B — 2026-08-22
+
+**Início:** Correção das posições 347 e 534 nas 7 cópias, após auditoria do arquiteto reprovar a substituição mecânica `trackfw ship → trackfw push` nesses dois pontos semânticos.
+
+**Problema detectado pelo arquiteto:** as posições 347 (comentário sobre `--soft`) e 534 (REASON do `reset-hard`) citavam `trackfw push` incorretamente. Após `git reset --soft HEAD~1`, as mudanças ficam *staged* (não commitadas), então `trackfw push` não tem o que empurrar — o caminho correto é `trackfw ship -m "..."`.
+
+**Complicação de escaping:** os arquivos `.sh`, `.go`, `.js` e `.py` têm convenções diferentes de escape de backtick e aspas duplas. A string `"..."` dentro de `REASON="..."` cria um problema de quoting em bash quando usada com `\"...\"` no `.sh` mas `"..."` nos geradores (Go/Node). O `check-attention-scripts-parity.sh` detectou divergência entre Go e Python. Solução: unificar todos (geradores e `.sh` fonte) em `"..."` sem escape, alinhado ao que o Go generator produz. `bash -n` passa, e o bloqueio funcional continua operante (JSON reason cita `trackfw ship`).
+
+**Mudanças aplicadas:**
+- Posições 347 e 534 revertidas de `trackfw push` → `trackfw ship -m "..."` nas 7 cópias
+- Linha 528 (REASON do ramo `push`) mantida intacta com `trackfw push` (estava correta)
+- `init_gen.py` (Python) e `validator.py` também ajustados para `"..."` sem escape, alinhando com Go e eliminando divergência no `check-attention-scripts-parity.sh`
+- Phrasing ligeiramente melhorado: "trabalho staged via `trackfw ship -m "..."` (ainda falta commitar após --soft)"
+
+**Evidências de validação:**
+- `sed -n '347p;528p;534p' scripts/trackfw-git-branch-guard.sh` → 3 linhas corretas (ship/push/ship)
+- `bash -n scripts/trackfw-git-branch-guard.sh` → exit 0
+- `echo '{"tool_input":{"command":"git push"}}' | bash scripts/trackfw-git-branch-guard.sh` → blocks, cita `trackfw push`, exit 2
+- `echo '{"tool_input":{"command":"git reset --hard HEAD"}}' | bash scripts/trackfw-git-branch-guard.sh` → blocks, cita `trackfw ship`, exit 2
+- `go test ./...` → exit 0
+- `node --test npm/tests/git_branch_guard_hook_integrity.test.js` → 25/25 pass, exit 0
+- `python3 -m pytest pypi/tests/test_git_branch_guard_validator.py` → 24 passed, exit 0
+- `check-agent-hooks-parity.sh` → All passed, exit 0
+- `check-harness-hooks-parity.sh` → All passed, exit 0
+- `check-artifact-parity.sh` → exit 0
+- `check-attention-scripts-parity.sh` → All passed, exit 0 (go-vs-py agora OK)
+- `check-gates-falsify.sh` → exit 0 (background)
+- `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality` → exit 0
+- `./bin/trackfw validate` → 0 violations, **17 warnings**, exit 0
+
+**Próximo:** Handoff para `trackfw_architect` para auditoria e commit da correção pós-auditoria ML-2B.

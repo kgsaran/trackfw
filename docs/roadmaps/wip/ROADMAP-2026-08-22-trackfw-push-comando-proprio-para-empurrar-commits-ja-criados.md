@@ -220,7 +220,7 @@ reescrita de história remota sem prova de runtime. **Vai para o `hades-tf` no M
 já pergunta se o `--force-with-lease` é alcançável por outra via.
 
 ### ML-2B — REASON do guard cita `trackfw push`
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-2A
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-2A
 
 **Arquivos afetados (os 5 que duplicam a string, em sincronia obrigatória):**
 - `scripts/trackfw-git-branch-guard.sh:512`
@@ -254,6 +254,47 @@ já pergunta se o `--force-with-lease` é alcançável por outra via.
 - [ ] `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality` exit 0
 - [ ] `validate` exit 0 com **+1 warning esperado** (`git_branch_guard_script_integrity`, escopo
       global, severidade warning) — declarar, não "consertar" rodando `update harness`
+
+---
+
+### Auditoria do ML-2B — aprovada na segunda rodada; reprovada na primeira, por conselho errado
+
+```
+git push         -> bloqueia citando `trackfw push`      (medido por mim)
+git reset --hard -> bloqueia citando `trackfw ship -m`   (medido por mim)
+bash -n                                   exit 0
+make quality (CI-exata, medida por mim)   exit 0
+validate                                  17 warnings (16 + 1 global esperado), 0 violations
+```
+
+**O que reprovei: substituição mecânica que os 4 gates aprovariam.** Ele trocou `trackfw ship` por
+`trackfw push` também na REASON do `git reset --hard`, que dizia — e passou a dizer errado:
+
+> *"`git reset --soft HEAD~1` é o caminho padrão para reempurrar via `trackfw push`"*
+
+`reset --soft` **desfaz o commit** e deixa tudo *staged*. Nesse estado `push` não tem o que empurrar,
+porque ele não commita. O certo é `ship -m`. Não é teoria: é a manobra que eu executei hoje de manhã,
+e foi o `ship` que resolveu.
+
+**Os 4 gates estavam verdes com o conselho errado dentro.** Eles provam **identidade byte-a-byte
+entre as cópias**, não **correção da mensagem**. É a distinção que essa wave inteira ensina.
+
+**Dois achados dele, ambos legítimos:**
+1. **Eram 7 cópias, não 5.** `npm/src/validator/index.js` e `pypi/trackfw/validator.py` também
+   carregam a referência e estavam fora do mapa do roadmap. Ele achou e sincronizou.
+2. **Divergência de escaping por linguagem:** ao introduzir aspas duplas na mensagem, o gerador
+   Python emitia `\"..."` onde Go e Node emitiam `"..."` — quebrando o eixo go-vs-py do
+   `check-attention-scripts-parity.sh` com todos os outros gates verdes. Sintoma longe da causa:
+   o gate compara os **scripts emitidos**, não o código do gerador. Registrado em
+   `vault/notes/reason-do-guard-diverge-por-escaping-de-aspas-entre-python-e-go-node-2026-08-22.md`.
+
+**O benefício do AC8 está diferido no ambiente do KG, e isso é fato medido.** O `git push` bruto pela
+ferramenta Bash ainda devolve a mensagem **antiga**, porque `~/.claude/settings.json` também wira a
+cópia **global** `~/.trackfw/scripts/`, que bloqueia primeiro e só muda com `trackfw update harness`.
+O guard **não** falha aberto — continua bloqueando; apenas ensina o caminho velho até o harness ser
+atualizado. O `+1 warning` é exatamente esse marcador.
+
+**Wave 2 fechada.** Falta a barreira.
 
 ---
 

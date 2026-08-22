@@ -1558,7 +1558,7 @@ match_subcommand() {
       reset)
         # Só --hard bloqueia, em qualquer posição de token — --soft/--mixed (inclusive
         # sem flag, que é --mixed implícito) seguem liberados: --soft é o contorno
-        # padrão para reempurrar trabalho já commitado via ` + "`" + `trackfw ship` + "`" + `.
+        # padrão para reempurrar trabalho staged via ` + "`" + `trackfw ship -m "..."` + "`" + ` (ainda falta commitar após --soft).
         for tok2 in "$@"; do
           case "$tok2" in
             --hard)
@@ -1739,13 +1739,13 @@ case "$SUBCOMMAND" in
     REASON="trackfw: git commit bruto bloqueado. Use \` + "`" + `trackfw commit -m '<mensagem>'\` + "`" + `. Nada antes deste comando foi executado (comando composto é bloqueado por inteiro). Ver CLAUDE.md §1."
     ;;
   push)
-    REASON="trackfw: git push bruto bloqueado. Use \` + "`" + `trackfw ship\` + "`" + ` (ou \` + "`" + `trackfw release tag\` + "`" + ` para publicar uma tag de release). Nada antes deste comando foi executado (comando composto é bloqueado por inteiro). Ver CLAUDE.md §1."
+    REASON="trackfw: git push bruto bloqueado. Use \` + "`" + `trackfw push\` + "`" + ` (para empurrar commits já criados), \` + "`" + `trackfw ship\` + "`" + ` (para commit+push+PR em uma etapa) ou \` + "`" + `trackfw release tag\` + "`" + ` (para publicar uma tag de release). Nada antes deste comando foi executado (comando composto é bloqueado por inteiro). Ver CLAUDE.md §1."
     ;;
   stash)
     REASON="trackfw: git stash bruto bloqueado — worktree compartilhado entre subagentes, um stash remove as alterações não commitadas de todos os outros. \` + "`" + `git stash list\` + "`" + `/\` + "`" + `git stash show\` + "`" + ` seguem liberados; para guardar trabalho em progresso, use uma branch própria via \` + "`" + `trackfw branch new\` + "`" + ` e commit nela. Nada antes deste comando foi executado (comando composto é bloqueado por inteiro). Ver CLAUDE.md §1."
     ;;
   reset-hard)
-    REASON="trackfw: git reset --hard bruto bloqueado — descarta de forma irreversível as alterações não commitadas de todo o worktree compartilhado. \` + "`" + `git reset --soft\` + "`" + `/\` + "`" + `--mixed\` + "`" + ` seguem liberados (ex.: \` + "`" + `git reset --soft HEAD~1\` + "`" + ` é o caminho padrão para reempurrar via \` + "`" + `trackfw ship\` + "`" + `). Nada antes deste comando foi executado (comando composto é bloqueado por inteiro). Ver CLAUDE.md §1."
+    REASON="trackfw: git reset --hard bruto bloqueado — descarta de forma irreversível as alterações não commitadas de todo o worktree compartilhado. \` + "`" + `git reset --soft\` + "`" + `/\` + "`" + `--mixed\` + "`" + ` seguem liberados (ex.: \` + "`" + `git reset --soft HEAD~1\` + "`" + ` é o caminho padrão; use \` + "`" + `trackfw ship -m "..."\` + "`" + ` para commitar e empurrar). Nada antes deste comando foi executado (comando composto é bloqueado por inteiro). Ver CLAUDE.md §1."
     ;;
   clean-force)
     REASON="trackfw: git clean -f/-x bruto bloqueado — apaga arquivos não rastreados do worktree compartilhado, de forma irreversível. \` + "`" + `git clean -n\` + "`" + `/\` + "`" + `--dry-run\` + "`" + ` segue liberado para revisar antes o que seria apagado. Nada antes deste comando foi executado (comando composto é bloqueado por inteiro). Ver CLAUDE.md §1."

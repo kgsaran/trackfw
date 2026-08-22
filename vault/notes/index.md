@@ -85,3 +85,4 @@
 - [forge-anchoring-branch-name-must-be-unconditional-not-cross-checked-2026-08-19](forge-anchoring-branch-name-must-be-unconditional-not-cross-checked-2026-08-19.md)
 - [git-show-honra-refs-replace-por-padrao-2026-08-21](git-show-honra-refs-replace-por-padrao-2026-08-21.md)
 - [deteccao-de-hook-relativo-nao-cobre-pwd-aspas-e-var-indefinida-2026-08-22](deteccao-de-hook-relativo-nao-cobre-pwd-aspas-e-var-indefinida-2026-08-22.md)
+- [reason-do-guard-diverge-por-escaping-de-aspas-entre-python-e-go-node-2026-08-22](reason-do-guard-diverge-por-escaping-de-aspas-entre-python-e-go-node-2026-08-22.md)
