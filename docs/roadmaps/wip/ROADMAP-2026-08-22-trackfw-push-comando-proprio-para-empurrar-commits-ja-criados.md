@@ -52,7 +52,7 @@ runtimes na primeira mudança do `ship`.
 > por linguagem é exatamente o que produziu as divergências anteriores.
 
 ### ML-1A — `trackfw push` nos 3 CLIs
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Status:** 🔄 Em andamento · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
 
 **Arquivos afetados:**
 - Go: `internal/commands/push.go` (novo), `internal/commands/root.go` (registro do comando),
@@ -112,6 +112,8 @@ runtimes na primeira mudança do `ship`.
 - `Makefile` (registrar `check-push-parity.sh` no alvo `parity`, junto aos demais)
 - `docs/cli-parity.md` (linha na tabela de comandos + seção `## trackfw push` com anotação
   `<!-- trackfw-contract: gate=scripts/check-push-parity.sh -->`)
+- Help do `trackfw commit` nos 3 stacks: `internal/commands/commit.go`, o equivalente em
+  `npm/src/` e em `pypi/trackfw/` — **só a string de descrição**, nenhum comportamento.
 - **Proibido tocar:** qualquer arquivo de implementação do ML-1A.
 
 **Ações:**
@@ -125,9 +127,14 @@ runtimes na primeira mudança do `ship`.
    Cada um com braço de baseline + braço de detecção, no padrão dos cenários 159/160.
 3. `docs/cli-parity.md`: descrever a sequência de passos do `push`, a tabela de flags e a **fronteira
    explícita com `ship` e `commit`** (quem faz o quê).
+4. **Corrigir o help do `trackfw commit`**, que hoje se anuncia como *"the missing intermediate step
+   between raw `git commit` and `trackfw ship`"* — afirmação que o próprio ADR usa como evidência do
+   beco sem saída. Substituir pelo vocabulário composicional (`commit` commita · `push` empurra ·
+   `ship` compõe os dois + PR). **Mesma string nos 3 CLIs** — é item de paridade, não pode cair só
+   no Go.
 
 **Critérios de aceite:**
-- [ ] AC7, AC9, AC10 da REQ
+- [ ] AC7, AC9, AC10, AC12 da REQ
 - [ ] `bash scripts/check-push-parity.sh` verde · `check-cli-parity.sh` verde
 - [ ] Os 2 cenários novos de falsificação com baseline verde e detecção vermelha, evidência colada
 - [ ] `bash scripts/check-parity-contract-coverage.sh` exit 0
@@ -149,16 +156,25 @@ runtimes na primeira mudança do `ship`.
 1. Alterar **apenas** a REASON do ramo `push` para apontar `trackfw push` como caminho primário,
    mantendo `trackfw release tag` onde já é citado. O ramo `commit` continua citando o comando dele.
 2. Aplicar a **mesma string** nos 5 arquivos — divergência de um caractere quebra os gates.
-3. Rodar os 4 gates que cobram a sincronia: `check-agent-hooks-parity.sh`,
+3. **Controle positivo obrigatório — o script editado passa a governar as suas próprias chamadas
+   Bash neste repo** (`.claude/settings.json` o wira em PreToolUse/PostToolUse). Um script quebrado
+   **falha aberto**, em silêncio (`vault/notes/hooks-de-agente-falham-abertos-quando-o-script-nao-resolve-2026-08-12.md`).
+   Antes de encerrar: `bash -n scripts/trackfw-git-branch-guard.sh` **e** uma tentativa real de
+   `git push` bruto, provando que **ainda é bloqueada** e que a mensagem exibida é a nova. Cole a
+   saída no parecer. Gate verde não prova que o guard ainda dispara.
+4. Rodar os 4 gates que cobram a sincronia: `check-agent-hooks-parity.sh`,
    `check-harness-hooks-parity.sh`, `check-artifact-parity.sh`, `check-gates-falsify.sh`.
-4. **Não** rodar `trackfw update` nem `update harness` no ambiente do usuário — a atualização do
+5. **Não** rodar `trackfw update` nem `update harness` no ambiente do usuário — a atualização do
    harness instalado é decisão dele.
 
 **Critérios de aceite:**
 - [ ] AC8 da REQ
 - [ ] Os 5 arquivos com a string **byte-idêntica** (evidência: `grep -n` nos cinco, colado)
+- [ ] `bash -n` verde **e** `git push` bruto ainda bloqueado, com a mensagem nova (evidência colada)
 - [ ] Os 4 gates de hooks verdes
 - [ ] `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality` exit 0
+- [ ] `validate` exit 0 com **+1 warning esperado** (`git_branch_guard_script_integrity`, escopo
+      global, severidade warning) — declarar, não "consertar" rodando `update harness`
 
 ---
 

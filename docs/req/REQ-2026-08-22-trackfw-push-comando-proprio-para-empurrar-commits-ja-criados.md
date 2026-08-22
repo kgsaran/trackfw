@@ -43,8 +43,9 @@ Decisão de desenho em `ADR-2026-08-22-comandos-de-entrega-separados-push-propri
 - [ ] **AC3** — Gates herdados, com a **mesma** semântica do `ship`: bloqueio incondicional em
       `main`/`master`; padrão `feat|fix|refactor|chore|docs/<slug>`; governança (roadmap em `wip/`
       **ou** `done/`) obrigatória para `feat`/`fix`/`refactor` e dispensada para `chore`/`docs`.
-- [ ] **AC4** — `push` **nunca commita** e **nunca abre PR/MR**: não aceita `-m`, e nenhum caminho
-      seu chama o adaptador de forge.
+- [ ] **AC4** — `push` **nunca commita** e **nunca abre PR/MR**: não aceita `-m` e não faz nenhuma
+      chamada de **escrita** ao forge. A checagem de PR aberto exigida pelo `--force-with-lease`
+      (AC5) é **leitura** e é permitida.
 - [ ] **AC5** — `--force-with-lease` disponível, com o **mesmo** gate do `ship` (exige PR/MR aberto
       na branch, verificado pelo CLI de forge resolvido).
 - [ ] **AC6** — `--dry-run` imprime o que faria sem executar comando de escrita, nos 3 CLIs.
@@ -52,7 +53,14 @@ Decisão de desenho em `ADR-2026-08-22-comandos-de-entrega-separados-push-propri
       (`scripts/check-push-parity.sh`), cobrindo caminho feliz, bloqueio em `main`, bloqueio de
       governança, isenção `chore`/`docs` e a ausência de upstream.
 - [ ] **AC8** — REASON do ramo `push` do `git-branch-guard` cita `trackfw push`, sincronizada nos
-      **5 arquivos** que a duplicam, com os 4 gates de paridade de hooks verdes.
+      **5 arquivos** que a duplicam, com os 4 gates de paridade de hooks verdes. Efeito esperado e
+      **declarado**: a cópia global `~/.trackfw/scripts/trackfw-git-branch-guard.sh` passa a divergir
+      do template até que o usuário rode `trackfw update harness` — regra
+      `git_branch_guard_script_integrity`, severidade **warning**, logo `validate` e `make quality`
+      seguem exit 0 com **+1 warning** de baseline.
+- [ ] **AC12** — O help do `trackfw commit` deixa de se descrever como *"the missing intermediate
+      step between raw `git commit` and `trackfw ship`"* (hoje falso) e passa ao vocabulário
+      composicional do ADR, **nos 3 CLIs**.
 - [ ] **AC9** — Falsificação em **duas direções**: (a) suprimir um gate de `push` é detectado; (b)
       `push` que abra PR ou que commite é detectado.
 - [ ] **AC10** — `docs/cli-parity.md` com seção `trackfw push`, anotação `<!-- trackfw-contract -->`
