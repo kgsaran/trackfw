@@ -52,7 +52,7 @@ runtimes na primeira mudança do `ship`.
 > por linguagem é exatamente o que produziu as divergências anteriores.
 
 ### ML-1A — `trackfw push` nos 3 CLIs
-**Status:** 🔄 Em andamento · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
 
 **Arquivos afetados:**
 - Go: `internal/commands/push.go` (novo), `internal/commands/root.go` (registro do comando),
@@ -94,6 +94,45 @@ runtimes na primeira mudança do `ship`.
 - [ ] `grep` provando que nenhum caminho de `push` chama o adaptador de forge para **abrir** PR
       (a checagem de PR aberto do `--force-with-lease` é leitura, e é permitida)
 
+
+---
+
+### Auditoria do ML-1A — **aprovada na segunda rodada**; reprovada na primeira
+
+```
+ship.go / ship-runner.js / ship-runner.py   git diff --stat VAZIO   <- reuso real, nao copia
+5 cenarios de execucao                      byte-identicos nos 3 runtimes
+push --help                                 ingles, string-fonte identica nos 3 (1110 chars)
+testes                                      Go 14 · Node 7 · Python 7
+make quality (CI-exata, medida por mim)     exit 0
+validate                                    16 warnings (baseline), 0 violations
+```
+
+**O que reprovei na primeira rodada, e por que importa:**
+
+1. **Help em português** — o resto do CLI é inglês (`ship --help` abre com *"trackfw ship runs a
+   governed delivery sequence"*). As mensagens de **erro** dele já estavam corretas em inglês; só o
+   help escapou.
+2. **Texto-fonte do help divergindo entre Go e Python** — Go dizia `sem abrir PR.`, Node e Python
+   `sem abrir PR/MR.`; o item 2 do Go tinha um trecho que faltava no Python. Ele comparou os 5
+   cenários de execução e **não comparou o help** — é exatamente onde a divergência estava. A lição
+   é a de sempre nesta série: paridade vale para toda superfície de saída, não só a que o teste olha.
+3. **Zero testes em Node e Python**, com Go em 14 — e ambos tinham `ship.test.js` / `test_ship.py`
+   para espelhar.
+
+**Achado dele que aceito, com o risco registrado:** `buildPushArgs` e `defaultExecGit` **não** são
+exportados por `npm/src/ship/runner.js` (confirmei nos exports, `runner.js:748-770`). Ele os
+reimplementou localmente no Node e **declarou** a duplicação em vez de escondê-la. Fica como questão
+explícita para o `hefesto-tf` no ML-3A: exportar os dois vale mais que duplicar?
+
+**Efeito colateral necessário e aceito:** `writeln` em `npm/src/push/runner.js` era hardcoded em
+`process.stdout.write`, o que tornava a saída incapturável em teste. Virou injetável, no mesmo padrão
+do `ship`. Caminho de produção inalterado.
+
+**Residual menor, não bloqueante:** os comentários de cabeçalho de `push/runner.js` e
+`push/runner.py` seguem em português. O repositório mistura os dois em comentários internos, e nada
+disso é superfície de usuário.
+
 ---
 
 ## Wave 2 — Gate e o que o guard ensina
@@ -103,7 +142,7 @@ runtimes na primeira mudança do `ship`.
 > build e índice do git compartilhados. ML-2B começa só após a auditoria do ML-2A.
 
 ### ML-2A — Gate de paridade + falsificação nas duas direções
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-1A
+**Status:** 🔄 Em andamento · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-1A
 
 **Arquivos afetados:**
 - `scripts/check-push-parity.sh` (novo — espelhe a estrutura de `scripts/check-ship-parity.sh`)

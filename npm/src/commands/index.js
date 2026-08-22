@@ -55,6 +55,7 @@ function createProgram() {
   program.addCommand(require('./barrier'))
   program.addCommand(require('./branch'))
   program.addCommand(require('./commit'))
+  program.addCommand(require('./push'))
   program.addCommand(require('./doctor'))
 
   const { createServeCommand } = require('./serve')
