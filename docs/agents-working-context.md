@@ -4,6 +4,34 @@
 
 ---
 
+## Sessão 2026-08-21 — Apolo (FIM: ML-1B — Implementar a regra)
+
+Branch `fix/validate-detecta-hook-de-guard-na-forma-relativa-antiga`. Sem commit/push.
+
+**Resultado:** Implementação completa nos 3 stacks. Todos os critérios de aceite atendidos.
+
+**Evidências:**
+- `make build` → exit 0
+- `go test ./...` → verde (novos testes AC1, AC2, AC3 nos 3 stacks)
+- `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make parity` → exit 0
+- `./bin/trackfw validate` → exit 0 (nenhum hook real do repo acusado)
+- `git-branch-guard` coberto pela mesma estrutura (compartilha `validateGuardHookResolvable` + `credentialGuardHookFiles`)
+
+**Arquivos modificados:** `internal/validator/validator_credential_guard.go`, `internal/validator/validator_credential_guard_test.go`, `internal/validator/validator_git_branch_guard_test.go`, `npm/src/validator/index.js`, `npm/tests/validator.test.js`, `pypi/trackfw/validator.py`, `pypi/tests/test_validator.py`
+
+---
+
+## Sessão 2026-08-21 — Apolo (INÍCIO: ML-1B — Implementar a regra)
+
+Branch `fix/validate-detecta-hook-de-guard-na-forma-relativa-antiga`. Sem commit/push.
+
+Escopo: adicionar flag `requiresVarOrShellPrefix bool` em `credentialGuardHookFile` (e espelhos
+Node/Python), estender `validateGuardHookResolvable` nos 3 stacks para acusar forma relativa pura
+em Claude/Gemini/Codex, escrever testes AC1–AC3 nos 3 stacks, passar `make build`, `make test` e
+`TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make parity`.
+
+---
+
 ## Sessão 2026-08-21 — Apolo (FIM: ML-1A — Reproduzir a falha antes de escrever a regra)
 
 Branch `fix/validate-detecta-hook-de-guard-na-forma-relativa-antiga`. Sem commit/push.

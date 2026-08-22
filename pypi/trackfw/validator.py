@@ -1540,20 +1540,28 @@ _GIT_BRANCH_GUARD_SCRIPT_MARKER = "trackfw-git-branch-guard.sh"
 # guards em ROADMAP-2026-08-15-..., ML-2B). Hooks de escopo GLOBAL (~/.trackfw/..., trackfw update
 # harness) ficam fora — caso distinto, fora do repositório do usuário, e a checagem de dedup
 # global_credential_guard_installed_*() já os pula de propósito nas entradas de projeto.
-# Cada tupla é (rel_path, cli, requires_command_type) -- requires_command_type (ROADMAP-2026-08-17
-# ML-4B, port de credentialGuardHookFile.requiresCommandType, internal/validator/
-# validator_credential_guard.go) é True para todo CLI cujo escritor sempre emite um campo irmão
-# "type":"command" (Claude/Codex/Gemini, GitHub Copilot CLI, Kiro) -- um comando casado SEM esse
-# irmão é uma entrada estruturalmente malformada que o CLI nunca executa em silêncio (achado da
-# barreira hades-tf ML-4A), não meramente "ausente". False só para Cursor, cujo schema
-# ({"command": ...}) nunca carrega um campo "type".
+# Cada tupla é (rel_path, cli, requires_command_type, requires_var_or_shell_prefix).
+# requires_command_type (ROADMAP-2026-08-17 ML-4B, port de
+# credentialGuardHookFile.requiresCommandType, internal/validator/validator_credential_guard.go)
+# é True para todo CLI cujo escritor sempre emite um campo irmão "type":"command"
+# (Claude/Codex/Gemini, GitHub Copilot CLI, Kiro) -- um comando casado SEM esse irmão é uma
+# entrada estruturalmente malformada que o CLI nunca executa em silêncio (achado da barreira
+# hades-tf ML-4A), não meramente "ausente". False só para Cursor, cujo schema ({"command": ...})
+# nunca carrega um campo "type".
+# requires_var_or_shell_prefix (ROADMAP-2026-08-21 ML-1B, port de
+# credentialGuardHookFile.requiresVarOrShellPrefix): True para Claude/Codex/Gemini -- o
+# ADR-2026-08-11 exige que estes CLIs usem $VAR/... ou "$(git ...)/..." porque seus hooks rodam
+# a partir do cwd do agente, não necessariamente a raiz do projeto. Um caminho relativo puro
+# ("scripts/...") falha em silêncio a partir de qualquer subdiretório (causa raiz da
+# REQ-2026-08-17). False para Cursor/Copilot/Kiro, onde o caminho relativo puro É a forma
+# correta -- acusá-los seria falso-positivo (o risco dominante desta REQ).
 _CREDENTIAL_GUARD_HOOK_FILES = [
-    (".claude/settings.json", "Claude Code", True),
-    (".codex/hooks.json", "Codex CLI", True),
-    (".gemini/settings.json", "Gemini CLI", True),
-    (".cursor/hooks.json", "Cursor", False),
-    (".github/hooks/trackfw-attention.json", "GitHub Copilot CLI", True),
-    (".kiro/hooks/trackfw-attention.json", "Kiro", True),
+    (".claude/settings.json", "Claude Code", True, True),
+    (".codex/hooks.json", "Codex CLI", True, True),
+    (".gemini/settings.json", "Gemini CLI", True, True),
+    (".cursor/hooks.json", "Cursor", False, False),
+    (".github/hooks/trackfw-attention.json", "GitHub Copilot CLI", True, False),
+    (".kiro/hooks/trackfw-attention.json", "Kiro", True, False),
 ]
 
 
@@ -1653,7 +1661,7 @@ def validate_guard_hook_resolvable(script_marker: str, cwd: str = None) -> list:
     root = cwd or os.getcwd()
     msgs = []
 
-    for rel_path, cli, requires_command_type in _CREDENTIAL_GUARD_HOOK_FILES:
+    for rel_path, cli, requires_command_type, requires_var_or_shell_prefix in _CREDENTIAL_GUARD_HOOK_FILES:
         full_path = os.path.join(root, rel_path)
         try:
             with open(full_path, "r", encoding="utf-8") as f:
@@ -1678,6 +1686,29 @@ def validate_guard_hook_resolvable(script_marker: str, cwd: str = None) -> list:
 
             resolved = _resolve_credential_guard_hook_path(m["raw"], root)
             if resolved is None:
+                continue
+
+            # ROADMAP-2026-08-21 ML-1B: a command that resolves via the bare-relative-path
+            # branch of _resolve_credential_guard_hook_path is only safe for CLIs that always
+            # invoke hooks from the project root (Cursor/Copilot/Kiro). For Claude/Gemini/Codex
+            # the hook runs from the agent's cwd, which can be any subdirectory -- the bare
+            # relative path silently fails even though the script exists under the root
+            # (REQ-2026-08-17 root cause). False-positive (AC3) is eliminated by construction:
+            # Cursor/Copilot/Kiro have requires_var_or_shell_prefix=False and never reach here.
+            raw = m["raw"]
+            if (requires_var_or_shell_prefix
+                    and not raw.startswith("$")
+                    and not raw.startswith('"')
+                    and not os.path.isabs(raw)):
+                msgs.append({
+                    "type": "violation",
+                    "message": (
+                        f'{rel_path} ({cli}) references {script_marker} with a bare relative '
+                        f'path — this command only resolves from the project root and will '
+                        f'silently fail when the agent\'s cwd is a subdirectory; run '
+                        f'`trackfw update` to fix it'
+                    ),
+                })
                 continue
 
             # ROADMAP-2026-08-17 ML-4B: a command that resolves to a real path but sits inside a

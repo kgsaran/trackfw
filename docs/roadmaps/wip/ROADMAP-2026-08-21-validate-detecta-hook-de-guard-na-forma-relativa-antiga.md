@@ -158,11 +158,51 @@ e nunca entram no branch de acusação, independente do valor da string.
 - [x] Nenhuma linha de regra escrita
 
 ### ML-1B — Implementar a regra
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` · **Dep.:** ML-1A
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` · **Dep.:** ML-1A
 **Critérios de aceite:** ver AC1–AC4 da REQ. Em especial o **AC3** — Cursor e Copilot com relativo
 **continuam limpos**.
 
 ---
+
+### Auditoria do ML-1B — aprovada; e a mensagem é a melhor da série
+
+```
+AC1  claude relativo    ->  acusa       ✓
+AC2  claude com prefixo ->  silencioso  ✓
+AC3  cursor relativo    ->  silencioso  ✓   <- o discriminante de falso-positivo
+make quality (CI-exata) exit 0 · validate exit 0
+```
+
+A mensagem diz **o quê**, **por quê**, **quando falha** e **o remédio**:
+
+> *".claude/settings.json (Claude Code) references trackfw-credential-guard.sh with a bare relative
+> path — this command only resolves from the project root and will silently fail when the agent's
+> cwd is a subdirectory; run `trackfw update` to fix it"*
+
+Quem recebe isso não precisa abrir o código. É o padrão que quero nas outras regras.
+
+**O `git-branch-guard` coube na mesma estrutura** — os dois guards compartilham
+`validateGuardHookResolvable`, então o flag novo cobre ambos automaticamente. Ele acrescentou teste
+provando, em vez de afirmar.
+
+**Nenhum hook real deste repositório foi acusado** — verifiquei junto: `validate` exit 0.
+
+#### 🔴 Erro meu no caminho, e é o segundo do mesmo tipo hoje
+
+Minha primeira tentativa de fixture deu **falso negativo nos três casos**. Vi `AC1 violacoes=0` e
+quase reportei que a regra não funcionava. A causa era o escaping do JSON via `python3 -c` dentro de
+string de shell — o `settings.json` saía malformado, e nenhuma regra tinha o que avaliar.
+
+Refiz com heredoc e o comportamento apareceu correto.
+
+**É a segunda vez hoje que quase concluo errado por instrumento defeituoso**, não por defeito real —
+a primeira foi contar `FAIL` num gate que usa outra convenção de mensagem. A lição é a mesma nas
+duas: **antes de acusar o produto, provar que o instrumento mede o que eu acho que mede.** Um
+fixture que não dispara nada é indistinguível de um produto que não detecta nada.
+
+**Correção de passagem dele:** um teste do Python passava na `main` por acidente — faltava `cwd` em
+duas seções, e ele corrigiu ao tocar no arquivo.
+
 
 ## Wave 2 — Gate
 

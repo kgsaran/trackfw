@@ -358,3 +358,69 @@ func TestCredentialGuardHookResolvable_CaminhoResolvidoEhFisicoNaoSimlink(t *tes
 		t.Errorf("esperado o caminho físico %q na mensagem, obteve: %v", expected, msgs)
 	}
 }
+
+// TestCredentialGuardHookResolvable_DisparaFormaRelativaAntigaEmClaude — AC1: Claude settings com
+// a forma relativa antiga ("scripts/...") e o script PRESENTE e executável deve gerar violação
+// "bare relative path" (ROADMAP-2026-08-21 ML-1B, requiresVarOrShellPrefix).
+func TestCredentialGuardHookResolvable_DisparaFormaRelativaAntigaEmClaude(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	// Forma relativa antiga — idêntica à que o CMDB tinha antes do `trackfw update` (REQ-2026-08-17).
+	writeFile(t, dir, ".claude/settings.json", guardEntryClaudeSettings(`scripts/trackfw-credential-guard.sh`))
+	// Script PRESENTE e executável — prova que a violação não vem da ausência do script,
+	// mas da forma do comando.
+	scriptPath := filepath.Join(dir, "scripts", "trackfw-credential-guard.sh")
+	if err := os.MkdirAll(filepath.Dir(scriptPath), 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(scriptPath, []byte("#!/bin/sh\nexit 0\n"), 0755); err != nil {
+		t.Fatalf("write script: %v", err)
+	}
+
+	msgs, err := validateCredentialGuardHookResolvable()
+	if err != nil {
+		t.Fatalf("validateCredentialGuardHookResolvable() erro: %v", err)
+	}
+	if !hasViolation(msgs, "bare relative path") || !hasViolation(msgs, ".claude/settings.json") {
+		t.Errorf("esperado violation de forma relativa antiga em Claude, obteve: %v", msgs)
+	}
+	if !hasViolation(msgs, "trackfw update") {
+		t.Errorf("esperado menção a `trackfw update` na mensagem (AC4), obteve: %v", msgs)
+	}
+}
+
+// TestCredentialGuardHookResolvable_NaoDisparaFormaRelativaEmCursor — AC3 (não-vácuo): Cursor com
+// caminho relativo puro e script PRESENTE e executável não deve gerar violação. O caminho relativo
+// é a forma CORRETA para Cursor (requiresVarOrShellPrefix=false).
+func TestCredentialGuardHookResolvable_NaoDisparaFormaRelativaEmCursor(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	writeFile(t, dir, ".cursor/hooks.json", `{
+  "version": 1,
+  "hooks": {
+    "beforeShellExecution": [{"command": "scripts/trackfw-credential-guard.sh"}]
+  }
+}
+`)
+	// Script presente e executável — prova que o silêncio não vem da ausência,
+	// mas do tratamento correto de Cursor (requiresVarOrShellPrefix=false).
+	scriptPath := filepath.Join(dir, "scripts", "trackfw-credential-guard.sh")
+	if err := os.MkdirAll(filepath.Dir(scriptPath), 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(scriptPath, []byte("#!/bin/sh\nexit 0\n"), 0755); err != nil {
+		t.Fatalf("write script: %v", err)
+	}
+
+	msgs, err := validateCredentialGuardHookResolvable()
+	if err != nil {
+		t.Fatalf("validateCredentialGuardHookResolvable() erro: %v", err)
+	}
+	if len(msgs) != 0 {
+		t.Errorf("AC3: Cursor com relativo deve estar limpo (falso-positivo eliminado por construção), obteve: %v", msgs)
+	}
+}
