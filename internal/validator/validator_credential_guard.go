@@ -61,14 +61,87 @@ var credentialGuardHookFiles = []credentialGuardHookFile{
 	{".kiro/hooks/trackfw-attention.json", "Kiro", true, false},
 }
 
-// isRelativePureForGuard retorna true quando raw é um caminho relativo puro — sem prefixo "$",
-// sem aspas de substituição de shell, e sem caminho absoluto. É exatamente a negação das 3
-// formas que resolveCredentialGuardHookPath reconhece como "correto para Claude/Gemini/Codex"
-// (case 4 daquela função). Usada em validateGuardHookResolvable para detectar a forma relativa
-// antiga nesses CLIs (ROADMAP-2026-08-21 ML-1B, requiresVarOrShellPrefix).
-func isRelativePureForGuard(raw string) bool {
-	return !strings.HasPrefix(raw, "$") && !strings.HasPrefix(raw, `"`) && !filepath.IsAbs(raw)
+// hookAnchorageClass classifica a semântica de ancoragem de um valor de comando de hook.
+// Avaliada apenas para CLIs com requiresVarOrShellPrefix=true (Claude Code, Codex CLI, Gemini
+// CLI). A classificação opera sobre o valor com aspas externas já removidas (ver
+// stripOuterQuotesForClassify). Decisão e motivo: ADR-2026-08-22. Três classes:
+//
+//   - hookAnchorageClassAnchored (1): ancora na raiz do projeto independentemente do cwd.
+//   - hookAnchorageClassCwdDependent (2): expande a partir do diretório corrente; acusar.
+//   - hookAnchorageClassUndecidable (3): não é possível decidir sem executar (residual declarado).
+const (
+	hookAnchorageClassAnchored     = 1
+	hookAnchorageClassCwdDependent = 2
+	hookAnchorageClassUndecidable  = 3
+)
+
+// stripOuterQuotesForClassify remove aspas duplas envolventes de raw, se presentes. Necessário
+// porque o Codex emite "$(git rev-parse --show-toplevel)/…" com aspas como parte do valor — e
+// um usuário que copia/edita à mão pode escrever "$PWD/scripts/…" com aspas (achado D.3 da
+// barreira ML-3A de 2026-08-21). As aspas são sintaxe, não semântica de ancoragem; removê-las
+// antes de classificar garante que a forma entre aspas receba o mesmo veredito que a forma sem
+// aspas.
+func stripOuterQuotesForClassify(raw string) string {
+	if len(raw) >= 2 && raw[0] == '"' && raw[len(raw)-1] == '"' {
+		return raw[1 : len(raw)-1]
+	}
+	return raw
 }
+
+// classifyHookAnchorage retorna a classe de ancoragem de rawStripped (valor de comando de hook
+// com aspas externas já removidas). Ver constantes hookAnchorageClass* e ADR-2026-08-22 para a
+// decisão e o motivo de cada classe.
+//
+// Classe 2 é um predicado, não uma lista de literais: o critério é "expande a partir do
+// diretório corrente". Formas novas que satisfaçam esse critério entram aqui automaticamente.
+//
+// Classe 3 permanece em silêncio por escolha, não por omissão: $FOO/… pode estar correto no
+// ambiente do usuário; o validador não lê o ambiente em que o hook vai rodar.
+func classifyHookAnchorage(rawStripped string) int {
+	// Classe 1 — ancora na raiz do projeto.
+	if strings.HasPrefix(rawStripped, "$CLAUDE_PROJECT_DIR/") ||
+		strings.HasPrefix(rawStripped, "$GEMINI_PROJECT_DIR/") ||
+		strings.HasPrefix(rawStripped, "$(git rev-parse --show-toplevel)/") ||
+		filepath.IsAbs(rawStripped) {
+		return hookAnchorageClassAnchored
+	}
+	// Classe 2 — expande a partir do cwd.
+	if strings.HasPrefix(rawStripped, "$PWD/") ||
+		strings.HasPrefix(rawStripped, "./") ||
+		strings.HasPrefix(rawStripped, "../") ||
+		(!strings.HasPrefix(rawStripped, "$") && !filepath.IsAbs(rawStripped)) {
+		return hookAnchorageClassCwdDependent
+	}
+	// Classe 3 — indecidível; silêncio declarado.
+	return hookAnchorageClassUndecidable
+}
+
+// cwdDependentReason retorna o sufixo de mensagem específico por forma para violações de
+// classe 2 (dependente do cwd), iniciando em "with a …". O resultado é concatenado após
+// "references <scriptMarker> " pelo chamador. Dois formatos:
+//
+//   - $PWD/… → "with a $PWD path — $PWD expands to the current working directory…"
+//   - demais (./…, ../…, relativo puro) → "with a bare relative path — this command only…"
+//
+// A frase "bare relative path" é preservada para não regredir os testes existentes e a UX
+// introduzida pela ROADMAP-2026-08-21 ML-1B.
+func cwdDependentReason(rawStripped string) string {
+	if strings.HasPrefix(rawStripped, "$PWD") {
+		return "with a $PWD path — " +
+			"$PWD expands to the current working directory, not the project root; " +
+			"run `trackfw update` to fix it"
+	}
+	return "with a bare relative path — " +
+		"this command only resolves from the project root and will silently " +
+		"fail when the agent's cwd is a subdirectory; run `trackfw update` to fix it"
+}
+
+// isRelativePureForGuard foi substituída por classifyHookAnchorage (ADR-2026-08-22, ML-1A).
+// Mantida apenas para referência durante a transição; não é usada em validateGuardHookResolvable.
+// ATENÇÃO: remover após confirmação de que nenhum caller externo depende dela.
+// func isRelativePureForGuard(raw string) bool {
+// 	return !strings.HasPrefix(raw, "$") && !strings.HasPrefix(raw, `"`) && !filepath.IsAbs(raw)
+// }
 
 // resolveCredentialGuardHookPath resolve o valor bruto de um comando de hook (string extraída do
 // JSON) para um caminho de arquivo absoluto, usando exatamente as 3 formas de prefixo que o
@@ -231,27 +304,29 @@ func validateGuardHookResolvable(ruleName, scriptMarker string) ([]string, error
 			}
 			seen[seenKey] = true
 
-			resolved, ok := resolveCredentialGuardHookPath(m.raw, root)
-			if !ok {
+			// ADR-2026-08-22: classificar por ancoragem ANTES de resolver. Aspas externas são
+			// sintaxe, não semântica — removê-las antes de classificar garante que "$PWD/…"
+			// (entre aspas) receba o mesmo veredito que $PWD/… sem aspas (achado D.3).
+			rawStripped := stripOuterQuotesForClassify(m.raw)
+			class := classifyHookAnchorage(rawStripped)
+
+			// Classe 2 (dependente do cwd) + CLI que exige ancoragem → acusar com mensagem
+			// específica por forma. Cursor/Copilot/Kiro têm requiresVarOrShellPrefix=false e
+			// nunca entram aqui — falso-positivo eliminado por construção (AC3 da REQ).
+			if hf.requiresVarOrShellPrefix && class == hookAnchorageClassCwdDependent {
+				msgs = append(msgs, fmt.Sprintf(
+					"%s (%s) references %s %s",
+					hf.path, hf.cli, scriptMarker,
+					cwdDependentReason(rawStripped),
+				))
 				continue
 			}
 
-			// ROADMAP-2026-08-21 ML-1B: a command that resolves to a real path via the "caminho
-			// relativo puro" branch of resolveCredentialGuardHookPath (case 4) is only safe for
-			// CLIs that always invoke hooks from the project root (Cursor/Copilot/Kiro). For
-			// Claude/Gemini/Codex the hook runs from the agent's cwd, which can be any
-			// subdirectory — the bare relative path silently fails in that case even though the
-			// script exists under the root (REQ-2026-08-17 root cause). Reported here instead of
-			// the existence/executability checks below; `trackfw update` migrates to the correct
-			// prefixed form. Falso-positivo (AC3) is eliminated by construction: Cursor/Copilot/
-			// Kiro have requiresVarOrShellPrefix=false and never enter this branch.
-			if hf.requiresVarOrShellPrefix && isRelativePureForGuard(m.raw) {
-				msgs = append(msgs, fmt.Sprintf(
-					"%s (%s) references %s with a bare relative path — "+
-						"this command only resolves from the project root and will silently "+
-						"fail when the agent's cwd is a subdirectory; run `trackfw update` to fix it",
-					hf.path, hf.cli, scriptMarker,
-				))
+			// Classe 1 (ancorado) e classe 3 (indecidível) prosseguem para a resolução existente.
+			// Classe 1 com forma absoluta resolve com ok=false (default branch) e é silenciada
+			// por construção — caminho absoluto ancora, é wiring legítimo (ADR-2026-08-22).
+			resolved, ok := resolveCredentialGuardHookPath(m.raw, root)
+			if !ok {
 				continue
 			}
 

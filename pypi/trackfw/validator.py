@@ -1599,6 +1599,65 @@ def _resolve_credential_guard_hook_path(raw: str, root: str):
     return None
 
 
+# _HOOK_ANCHORAGE_CLASS_* -- classifica a semântica de ancoragem de um valor de comando de hook.
+# Avaliada apenas para CLIs com requires_var_or_shell_prefix=True. Decisão: ADR-2026-08-22.
+_HOOK_ANCHORAGE_CLASS_ANCHORED = 1
+_HOOK_ANCHORAGE_CLASS_CWD_DEPENDENT = 2
+_HOOK_ANCHORAGE_CLASS_UNDECIDABLE = 3
+
+
+def _strip_outer_quotes_for_classify(raw: str) -> str:
+    """Remove aspas duplas envolventes de raw, se presentes. Necessário porque "$PWD/scripts/…"
+    entre aspas (achado D.3) deve receber o mesmo veredito que $PWD/… sem aspas: as aspas são
+    sintaxe, não semântica de ancoragem."""
+    if len(raw) >= 2 and raw[0] == '"' and raw[-1] == '"':
+        return raw[1:-1]
+    return raw
+
+
+def _classify_hook_anchorage(raw_stripped: str) -> int:
+    """Retorna a classe de ancoragem de raw_stripped (com aspas externas já removidas).
+    Ver _HOOK_ANCHORAGE_CLASS_* e ADR-2026-08-22.
+
+    Classe 2 é um predicado, não uma lista de literais: o critério é 'expande a partir do cwd'.
+    Classe 3 permanece em silêncio por escolha: $FOO/… pode estar correto no ambiente do usuário.
+    """
+    # Classe 1 -- ancora na raiz do projeto.
+    if (
+        raw_stripped.startswith("$CLAUDE_PROJECT_DIR/")
+        or raw_stripped.startswith("$GEMINI_PROJECT_DIR/")
+        or raw_stripped.startswith("$(git rev-parse --show-toplevel)/")
+        or os.path.isabs(raw_stripped)
+    ):
+        return _HOOK_ANCHORAGE_CLASS_ANCHORED
+    # Classe 2 -- expande a partir do cwd.
+    if (
+        raw_stripped.startswith("$PWD/")
+        or raw_stripped.startswith("./")
+        or raw_stripped.startswith("../")
+        or (not raw_stripped.startswith("$") and not os.path.isabs(raw_stripped))
+    ):
+        return _HOOK_ANCHORAGE_CLASS_CWD_DEPENDENT
+    # Classe 3 -- indecidível; silêncio declarado.
+    return _HOOK_ANCHORAGE_CLASS_UNDECIDABLE
+
+
+def _cwd_dependent_reason(raw_stripped: str) -> str:
+    """Retorna o sufixo de mensagem específico por forma para violações de classe 2, iniciando em
+    'with a …'. Dois formatos: $PWD/… recebe explicação sobre $PWD; demais (./…, ../…, relativo
+    puro) recebem 'bare relative path'. A frase 'bare relative path' é preservada para não
+    regredir os testes existentes e a UX da ROADMAP-2026-08-21 ML-1B."""
+    if raw_stripped.startswith("$PWD"):
+        return (
+            "with a $PWD path — $PWD expands to the current working directory, not the project "
+            "root; run `trackfw update` to fix it"
+        )
+    return (
+        "with a bare relative path — this command only resolves from the project root and will "
+        "silently fail when the agent's cwd is a subdirectory; run `trackfw update` to fix it"
+    )
+
+
 def _collect_commands_with_marker(value, marker: str, out: list):
     """Percorre recursivamente um valor JSON já decodificado e coleta todo valor-string que
     contém marker, independentemente do nome do campo que o contém -- junto com um sinal
@@ -1684,31 +1743,28 @@ def validate_guard_hook_resolvable(script_marker: str, cwd: str = None) -> list:
                 continue
             seen.add(seen_key)
 
-            resolved = _resolve_credential_guard_hook_path(m["raw"], root)
-            if resolved is None:
-                continue
+            # ADR-2026-08-22: classificar por ancoragem ANTES de resolver. Aspas externas são
+            # sintaxe, não semântica — removê-las antes garante que "$PWD/…" receba o mesmo
+            # veredito que $PWD/… sem aspas (achado D.3).
+            raw_stripped = _strip_outer_quotes_for_classify(m["raw"])
+            anchorage_class = _classify_hook_anchorage(raw_stripped)
 
-            # ROADMAP-2026-08-21 ML-1B: a command that resolves via the bare-relative-path
-            # branch of _resolve_credential_guard_hook_path is only safe for CLIs that always
-            # invoke hooks from the project root (Cursor/Copilot/Kiro). For Claude/Gemini/Codex
-            # the hook runs from the agent's cwd, which can be any subdirectory -- the bare
-            # relative path silently fails even though the script exists under the root
-            # (REQ-2026-08-17 root cause). False-positive (AC3) is eliminated by construction:
-            # Cursor/Copilot/Kiro have requires_var_or_shell_prefix=False and never reach here.
-            raw = m["raw"]
-            if (requires_var_or_shell_prefix
-                    and not raw.startswith("$")
-                    and not raw.startswith('"')
-                    and not os.path.isabs(raw)):
+            # Classe 2 (dependente do cwd) + CLI que exige ancoragem → acusar com mensagem
+            # específica por forma. Cursor/Copilot/Kiro têm requires_var_or_shell_prefix=False
+            # e nunca chegam aqui — falso-positivo eliminado por construção (AC3 da REQ).
+            if requires_var_or_shell_prefix and anchorage_class == _HOOK_ANCHORAGE_CLASS_CWD_DEPENDENT:
                 msgs.append({
                     "type": "violation",
                     "message": (
-                        f'{rel_path} ({cli}) references {script_marker} with a bare relative '
-                        f'path — this command only resolves from the project root and will '
-                        f'silently fail when the agent\'s cwd is a subdirectory; run '
-                        f'`trackfw update` to fix it'
+                        f'{rel_path} ({cli}) references {script_marker} '
+                        f'{_cwd_dependent_reason(raw_stripped)}'
                     ),
                 })
+                continue
+
+            # Classe 1 (ancorado) e classe 3 (indecidível) prosseguem para a resolução existente.
+            resolved = _resolve_credential_guard_hook_path(m["raw"], root)
+            if resolved is None:
                 continue
 
             # ROADMAP-2026-08-17 ML-4B: a command that resolves to a real path but sits inside a

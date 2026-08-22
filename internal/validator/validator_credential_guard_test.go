@@ -1,6 +1,7 @@
 package validator
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -388,6 +389,309 @@ func TestCredentialGuardHookResolvable_DisparaFormaRelativaAntigaEmClaude(t *tes
 	}
 	if !hasViolation(msgs, "trackfw update") {
 		t.Errorf("esperado menção a `trackfw update` na mensagem (AC4), obteve: %v", msgs)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Testes ML-1A — classificação por ancoragem (ADR-2026-08-22)
+// ---------------------------------------------------------------------------
+
+// guardEntryCodexHooks monta um .codex/hooks.json mínimo com uma entrada de credential-guard
+// usando o valor bruto scriptCmd no campo "command".
+func guardEntryCodexHooks(scriptCmd string) string {
+	return `{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {"command": ` + scriptCmd + `, "type": "command"}
+        ]
+      }
+    ]
+  }
+}
+`
+}
+
+// guardEntryGeminiSettings monta um .gemini/settings.json mínimo com uma entrada de
+// credential-guard usando o valor bruto scriptCmd no campo "command".
+func guardEntryGeminiSettings(scriptCmd string) string {
+	return `{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {"command": "` + scriptCmd + `", "type": "command"}
+        ]
+      }
+    ]
+  }
+}
+`
+}
+
+// TestClassifyHookAnchorage_Classe1_Ancorado — classifyHookAnchorage retorna classe 1 para todas
+// as formas ancoradas (variáveis de projeto, forma do Codex, caminho absoluto).
+func TestClassifyHookAnchorage_Classe1_Ancorado(t *testing.T) {
+	cases := []string{
+		"$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh",
+		"$GEMINI_PROJECT_DIR/scripts/trackfw-credential-guard.sh",
+		"$(git rev-parse --show-toplevel)/scripts/trackfw-credential-guard.sh",
+		"/opt/scripts/trackfw-credential-guard.sh",
+		"/absolute/path/to/guard.sh",
+	}
+	for _, raw := range cases {
+		got := classifyHookAnchorage(raw)
+		if got != hookAnchorageClassAnchored {
+			t.Errorf("classifyHookAnchorage(%q) = %d, quero hookAnchorageClassAnchored (%d)", raw, got, hookAnchorageClassAnchored)
+		}
+	}
+}
+
+// TestClassifyHookAnchorage_Classe2_CwdDependent — classifyHookAnchorage retorna classe 2 para
+// formas dependentes do cwd ($PWD/…, ./…, ../…, relativo puro).
+func TestClassifyHookAnchorage_Classe2_CwdDependent(t *testing.T) {
+	cases := []string{
+		"$PWD/scripts/trackfw-credential-guard.sh",
+		"./scripts/trackfw-credential-guard.sh",
+		"../scripts/trackfw-credential-guard.sh",
+		"scripts/trackfw-credential-guard.sh",
+		"sh scripts/trackfw-credential-guard.sh",
+	}
+	for _, raw := range cases {
+		got := classifyHookAnchorage(raw)
+		if got != hookAnchorageClassCwdDependent {
+			t.Errorf("classifyHookAnchorage(%q) = %d, quero hookAnchorageClassCwdDependent (%d)", raw, got, hookAnchorageClassCwdDependent)
+		}
+	}
+}
+
+// TestClassifyHookAnchorage_Classe3_Indecidivel — classifyHookAnchorage retorna classe 3 para
+// variáveis próprias do usuário que o validador não pode resolver.
+func TestClassifyHookAnchorage_Classe3_Indecidivel(t *testing.T) {
+	cases := []string{
+		"$SOME_OTHER_VAR/scripts/trackfw-credential-guard.sh",
+		"$MY_CUSTOM_DIR/guard.sh",
+		"$UNDEFINED/trackfw-credential-guard.sh",
+	}
+	for _, raw := range cases {
+		got := classifyHookAnchorage(raw)
+		if got != hookAnchorageClassUndecidable {
+			t.Errorf("classifyHookAnchorage(%q) = %d, quero hookAnchorageClassUndecidable (%d)", raw, got, hookAnchorageClassUndecidable)
+		}
+	}
+}
+
+// TestStripOuterQuotesForClassify — remove aspas duplas envolventes, não toca em outros valores.
+func TestStripOuterQuotesForClassify(t *testing.T) {
+	cases := []struct {
+		raw  string
+		want string
+	}{
+		{`"$PWD/scripts/guard.sh"`, `$PWD/scripts/guard.sh`},
+		{`"$(git rev-parse --show-toplevel)/scripts/guard.sh"`, `$(git rev-parse --show-toplevel)/scripts/guard.sh`},
+		{`$CLAUDE_PROJECT_DIR/scripts/guard.sh`, `$CLAUDE_PROJECT_DIR/scripts/guard.sh`},
+		{`scripts/guard.sh`, `scripts/guard.sh`},
+		{`"`, `"`},           // string de 1 char
+		{`""`, ``},           // string vazia entre aspas
+		{`"abc`, `"abc`},     // aspas de abertura sem fechamento
+	}
+	for _, c := range cases {
+		got := stripOuterQuotesForClassify(c.raw)
+		if got != c.want {
+			t.Errorf("stripOuterQuotesForClassify(%q) = %q, quero %q", c.raw, got, c.want)
+		}
+	}
+}
+
+// TestCredentialGuardHookResolvable_DisparaPwdEmClaude — AC2: Claude settings com $PWD/…
+// e script presente deve gerar violação com mensagem explicando que $PWD não ancora.
+func TestCredentialGuardHookResolvable_DisparaPwdEmClaude(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	writeFile(t, dir, ".claude/settings.json", guardEntryClaudeSettings(`$PWD/scripts/trackfw-credential-guard.sh`))
+	scriptPath := filepath.Join(dir, "scripts", "trackfw-credential-guard.sh")
+	if err := os.MkdirAll(filepath.Dir(scriptPath), 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(scriptPath, []byte("#!/bin/sh\nexit 0\n"), 0755); err != nil {
+		t.Fatalf("write script: %v", err)
+	}
+
+	msgs, err := validateCredentialGuardHookResolvable()
+	if err != nil {
+		t.Fatalf("validateCredentialGuardHookResolvable() erro: %v", err)
+	}
+	if !hasViolation(msgs, "$PWD path") || !hasViolation(msgs, ".claude/settings.json") {
+		t.Errorf("AC2: esperado violation de $PWD em Claude, obteve: %v", msgs)
+	}
+	if !hasViolation(msgs, "current working directory") {
+		t.Errorf("AC2: mensagem deve explicar que $PWD não ancora, obteve: %v", msgs)
+	}
+	if !hasViolation(msgs, "trackfw update") {
+		t.Errorf("AC2: mensagem deve citar `trackfw update`, obteve: %v", msgs)
+	}
+}
+
+// TestCredentialGuardHookResolvable_DisparaPwdEntreAspasEmClaude — achado D.3: "$PWD/…" entre
+// aspas também acusado após strip de aspas externas (classifyHookAnchorage opera no valor puro).
+func TestCredentialGuardHookResolvable_DisparaPwdEntreAspasEmClaude(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	// O JSON precisa de escape: o valor do campo "command" é "$PWD/scripts/...".
+	// guardEntryClaudeSettings concatena diretamente o scriptCmd no JSON; para o valor
+	// conter aspas duplas literais no JSON, precisamos escapar com \".
+	const scriptCmdJSON = `\"$PWD/scripts/trackfw-credential-guard.sh\"`
+	writeFile(t, dir, ".claude/settings.json", guardEntryClaudeSettings(scriptCmdJSON))
+
+	// Valida que o JSON foi gerado corretamente (fixture malformado dá falso negativo silencioso).
+	rawJSON, readErr := os.ReadFile(filepath.Join(dir, ".claude/settings.json"))
+	if readErr != nil {
+		t.Fatalf("ReadFile: %v", readErr)
+	}
+	var parsedCheck interface{}
+	if jsonErr := json.Unmarshal(rawJSON, &parsedCheck); jsonErr != nil {
+		t.Fatalf("fixture JSON inválido: %v — saída: %s", jsonErr, rawJSON)
+	}
+
+	scriptPath := filepath.Join(dir, "scripts", "trackfw-credential-guard.sh")
+	if err := os.MkdirAll(filepath.Dir(scriptPath), 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(scriptPath, []byte("#!/bin/sh\nexit 0\n"), 0755); err != nil {
+		t.Fatalf("write script: %v", err)
+	}
+
+	msgs, err := validateCredentialGuardHookResolvable()
+	if err != nil {
+		t.Fatalf("validateCredentialGuardHookResolvable() erro: %v", err)
+	}
+	if !hasViolation(msgs, "$PWD path") || !hasViolation(msgs, ".claude/settings.json") {
+		t.Errorf("D.3: esperado violation de $PWD entre aspas em Claude, obteve: %v", msgs)
+	}
+}
+
+// TestCredentialGuardHookResolvable_CaminhoAbsolutoSilencioso — classe 1: caminho absoluto não
+// deve gerar violação (wiring legítimo, ancora independentemente do cwd). O falso-positivo que
+// reprova a entrega (ADR-2026-08-22).
+func TestCredentialGuardHookResolvable_CaminhoAbsolutoSilencioso(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	writeFile(t, dir, ".claude/settings.json", guardEntryClaudeSettings(`/opt/scripts/trackfw-credential-guard.sh`))
+
+	msgs, err := validateCredentialGuardHookResolvable()
+	if err != nil {
+		t.Fatalf("validateCredentialGuardHookResolvable() erro: %v", err)
+	}
+	if len(msgs) != 0 {
+		t.Errorf("classe 1 (absoluto) deve ser silenciosa, obteve: %v", msgs)
+	}
+}
+
+// TestCredentialGuardHookResolvable_OutraVarSilenciosa — classe 3: $OUTRA_VAR/… não deve gerar
+// violação (indecidível; silêncio declarado no ADR-2026-08-22).
+func TestCredentialGuardHookResolvable_OutraVarSilenciosa(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	writeFile(t, dir, ".claude/settings.json", guardEntryClaudeSettings(`$MY_CUSTOM_DIR/scripts/trackfw-credential-guard.sh`))
+
+	msgs, err := validateCredentialGuardHookResolvable()
+	if err != nil {
+		t.Fatalf("validateCredentialGuardHookResolvable() erro: %v", err)
+	}
+	if len(msgs) != 0 {
+		t.Errorf("classe 3 ($OUTRA_VAR) deve ser silenciosa, obteve: %v", msgs)
+	}
+}
+
+// TestCredentialGuardHookResolvable_CodexFormaSilenciosa — forma do Codex com aspas e git
+// rev-parse (classe 1) deve continuar silenciosa após strip de aspas externas.
+func TestCredentialGuardHookResolvable_CodexFormaSilenciosa(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	// O valor JSON do Codex já inclui as aspas externas: "\"$(git rev-parse ...)\""
+	// guardEntryCodexHooks recebe o valor JSON bruto (incluindo as aspas para o JSON).
+	codexHooks := `{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {"command": "\"$(git rev-parse --show-toplevel)/scripts/trackfw-credential-guard.sh\"", "type": "command"}
+        ]
+      }
+    ]
+  }
+}
+`
+	writeFile(t, dir, ".codex/hooks.json", codexHooks)
+	scriptPath := filepath.Join(dir, "scripts", "trackfw-credential-guard.sh")
+	if err := os.MkdirAll(filepath.Dir(scriptPath), 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(scriptPath, []byte("#!/bin/sh\nexit 0\n"), 0755); err != nil {
+		t.Fatalf("write script: %v", err)
+	}
+
+	msgs, err := validateCredentialGuardHookResolvable()
+	if err != nil {
+		t.Fatalf("validateCredentialGuardHookResolvable() erro: %v", err)
+	}
+	if len(msgs) != 0 {
+		t.Errorf("forma Codex (classe 1 com aspas) deve ser silenciosa, obteve: %v", msgs)
+	}
+}
+
+// TestCredentialGuardHookResolvable_DisparaPwdEmCodex — AC2 para Codex: $PWD/… também acusado.
+func TestCredentialGuardHookResolvable_DisparaPwdEmCodex(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	writeFile(t, dir, ".codex/hooks.json", `{
+  "hooks": {
+    "PreToolUse": [
+      {"matcher": ".*", "hooks": [{"command": "$PWD/scripts/trackfw-credential-guard.sh", "type": "command"}]}
+    ]
+  }
+}
+`)
+
+	msgs, err := validateCredentialGuardHookResolvable()
+	if err != nil {
+		t.Fatalf("validateCredentialGuardHookResolvable() erro: %v", err)
+	}
+	if !hasViolation(msgs, "$PWD path") || !hasViolation(msgs, ".codex/hooks.json") {
+		t.Errorf("AC2 Codex: esperado violation de $PWD, obteve: %v", msgs)
+	}
+}
+
+// TestCredentialGuardHookResolvable_DisparaPwdEmGemini — AC2 para Gemini: $PWD/… também acusado.
+func TestCredentialGuardHookResolvable_DisparaPwdEmGemini(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	writeFile(t, dir, ".gemini/settings.json", guardEntryGeminiSettings(`$PWD/scripts/trackfw-credential-guard.sh`))
+
+	msgs, err := validateCredentialGuardHookResolvable()
+	if err != nil {
+		t.Fatalf("validateCredentialGuardHookResolvable() erro: %v", err)
+	}
+	if !hasViolation(msgs, "$PWD path") || !hasViolation(msgs, ".gemini/settings.json") {
+		t.Errorf("AC2 Gemini: esperado violation de $PWD, obteve: %v", msgs)
 	}
 }
 

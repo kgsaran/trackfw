@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-08-22
 req: "docs/req/REQ-2026-08-22-trackfw-push-comando-proprio-para-empurrar-commits-ja-criados.md"
 adr: "docs/adr/ADR-2026-08-22-comandos-de-entrega-separados-push-proprio-e-ship-como-composicao.md"
@@ -8,7 +8,7 @@ squad: "apolo-tf, hefesto-tf, hades-tf"
 
 # Roadmap: `trackfw push` — comando próprio para empurrar commits já criados
 
-> Created: 2026-08-22 | Status: wip
+> Created: 2026-08-22 | Status: done
 
 ## Context
 

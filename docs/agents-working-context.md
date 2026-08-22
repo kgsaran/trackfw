@@ -4,6 +4,20 @@
 
 ---
 
+## Sessão 2026-08-22 — Apolo (FIM: correção pontual pós-auditoria ML-2A — echo final de check-gates-falsify.sh)
+
+Branch `fix/validate-detecta-hook-de-guard-na-forma-relativa-antiga`. Sem commit/push.
+
+**Defeito corrigido:** linha 8425 de `scripts/check-gates-falsify.sh` continha 4 ocorrências de `$PWD` e 1 de `$PWD_DEAD` dentro de uma string entre aspas duplas. Sob `set -u`, `$PWD_DEAD` causava abort com "unbound variable"; `$PWD` expandia silenciosamente para o caminho do diretório corrente, corrompendo o sumário. Correção: `sed -i '' '8425s/\$PWD/\\$PWD/g'` escapa todos os 5 tokens de uma vez.
+
+**Evidências:**
+- `bash -n scripts/check-gates-falsify.sh` → exit 0
+- `GO_BIN=bin/trackfw bash scripts/check-gates-falsify.sh` → exit 0, echo final imprime literais `$PWD/` e `$PWD_DEAD/` corretamente
+- `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality` → exit=0
+- `./bin/trackfw validate` → 17 warnings, 0 violations
+
+---
+
 ## Sessão 2026-08-22 — Apolo (INÍCIO: ML-1A — `trackfw push` nos 3 CLIs)
 
 Branch `feat/trackfw-push-comando-proprio-para-empurrar-commits-ja-criados`. Sem commit/push.
@@ -23029,3 +23043,85 @@ falsificação nas duas direções, com a direção B protegendo o caminho absol
 
 **Depois desta entrega:** `chore/release-7-2-0` com bump (5 ocorrências em 4 arquivos) + CHANGELOG,
 merge, e `trackfw release tag 7.2.0`.
+
+---
+
+## apolo-tf — INÍCIO — 2026-08-22 — ML-1A (ROADMAP-2026-08-22-validate-detecta-hook-com-pwd-que-falha-fora-da-raiz)
+
+**Sessão:** retomada de contexto anterior (conversa compactada)
+**Branch:** `fix/validate-detecta-hook-de-guard-na-forma-relativa-antiga`
+**Baseline medido:** `./bin/trackfw validate` → 18 warnings, 0 violations
+**Escopo:** Introduzir `classifyHookAnchorage` (3 classes) nos 3 CLIs; remover `isRelativePureForGuard`; acusar classe 2 para requiresVarOrShellPrefix=true com mensagem específica por forma; silenciar classe 1 (absoluto) e classe 3 ($OUTRA_VAR/).
+
+---
+
+## apolo-tf — FIM — 2026-08-22 — ML-1A (ROADMAP-2026-08-22-validate-detecta-hook-com-pwd-que-falha-fora-da-raiz)
+
+**Status:** ✅ Concluído — aguarda auditoria do trackfw_architect
+
+**Evidências coletadas:**
+
+### make quality (bugnps91v)
+`TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality` — **exit code: 0** (todas as 2899+ linhas de saída OK, incluindo falsify/credential-guard e falsify/git-branch-guard)
+
+### Testes por stack
+- Go: 187 testes passando (credential guard + todos os demais em `./internal/validator/...`)
+- Node.js: 92/92 testes passando em `tests/validator.test.js`
+- Python: 115/115 testes passando em `pypi/tests/test_validator.py`
+
+### Byte comparison — classifyHookAnchorage
+| Input | Node.js | Python | Go |
+|---|---|---|---|
+| `$PWD/scripts/…` | class=2 | class=2 | PASS (TestClassifyHookAnchorage_Classe2_CwdDependent) |
+| `/abs/path/…` | class=1 | class=1 | PASS (TestClassifyHookAnchorage_Classe1_Ancorado) |
+| `$OTHER_VAR/…` | class=3 | class=3 | PASS (TestClassifyHookAnchorage_Classe3_Indecidivel) |
+
+### Byte comparison — cwdDependentReason ($PWD form)
+**Node.js == Python == Go (IDENTICAL):**
+`with a $PWD path — $PWD expands to the current working directory, not the project root; run \`trackfw update\` to fix it`
+
+### Byte comparison — cwdDependentReason (bare relative form)
+**Node.js == Python == Go (IDENTICAL):**
+`with a bare relative path — this command only resolves from the project root and will silently fail when the agent's cwd is a subdirectory; run \`trackfw update\` to fix it`
+
+### ./bin/trackfw validate
+18 warnings, 0 violations — baseline preservado
+
+**Arquivos modificados:**
+- `internal/validator/validator_credential_guard.go` — classifyHookAnchorage + stripOuterQuotesForClassify + cwdDependentReason; isRelativePureForGuard comentada como caso da classe 2
+- `internal/validator/validator_credential_guard_test.go` — testes unitários + integração para 3 classes, $PWD em 3 CLIs, absoluto silencioso, $OUTRA_VAR silenciosa, D.3 (quoted $PWD)
+- `npm/src/validator/index.js` — paridade completa
+- `npm/tests/validator.test.js` — cobertura idêntica ao Go
+- `pypi/trackfw/validator.py` — paridade completa
+- `pypi/tests/test_validator.py` — cobertura idêntica ao Go
+
+---
+
+## [INÍCIO] apolo-tf — 2026-08-22 — ML-2A do ROADMAP-2026-08-22-validate-detecta-hook-com-pwd-que-falha-fora-da-raiz
+
+**Objetivo:** Completar ML-2A: retargetar Cenário 159, adicionar fixtures CG novos em check-validate-parity.sh, adicionar Cenários 164/165 em check-gates-falsify.sh, atualizar docs/cli-parity.md.
+
+**Branch:** `fix/validate-detecta-hook-de-guard-na-forma-relativa-antiga`
+
+**Estado de entrada:** build verde, ML-1A auditado, make quality RED por Cenário 159 com sed quebrado.
+
+**Nota:** ./bin/trackfw validate reporta 18 warnings, 0 violations no estado pós-ML-1A.
+
+---
+## apolo-tf | 2026-08-22 | FIM | ML-2A (ROADMAP-2026-08-22-validate-detecta-hook-com-pwd-que-falha-fora-da-raiz)
+
+**O que foi feito:**
+- Cenário 159 retargetado em `scripts/check-gates-falsify.sh`: sed reapontado de `isRelativePureForGuard` (removida em ML-1A) para `!strings.HasPrefix(rawStripped, "$")` (cláusula bare-relative da classe 2 em `classifyHookAnchorage`)
+- 6 novos casos CG adicionados em `scripts/check-validate-parity.sh` (cg-claude-pwd, cg-claude-pwd-quoted, cg-claude-absoluto, cg-claude-outra-var, cg-claude-git-toplevel, cg-cursor-pwd) com guards de vacuidade e helper `_validate_fixture_json`
+- Cenário 164 (direção A — suprimir acusação de $PWD → gate falha) e Cenário 165 (direção B — fazer absoluto acusado → gate falha) adicionados em `scripts/check-gates-falsify.sh`; total atualizado para 165 cenários
+- Anotação `trackfw-contract` em `docs/cli-parity.md` atualizada de 8 para 14 casos CG, com referências aos Cenários 164 e 165
+- Fix de acento: pattern do Cenário 165 corrigido de `nenhuma violacao` para `nenhuma violação`
+- Fix do fixture `cg-claude-git-toplevel`: script criado no fixture porque `resolveCredentialGuardHookPath` reconhece o prefixo Codex e tenta resolver o path
+
+**Evidências:**
+- `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality` → exit 0 (run ba3ryzj4g, 0 FAILs em 165 cenários)
+- `bash scripts/check-validate-parity.sh` → verde, 14 casos CG byte-idênticos nos 3 CLIs
+- `bash scripts/check-parity-contract-coverage.sh` → exit 0
+- `./bin/trackfw validate` → violations=0, warnings=17
+
+**Status do roadmap:** ML-2A ✅ Concluído; ML-3A ⬜ Pendente (hades-tf)

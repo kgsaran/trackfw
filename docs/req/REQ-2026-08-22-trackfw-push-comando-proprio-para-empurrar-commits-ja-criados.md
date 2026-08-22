@@ -1,14 +1,14 @@
 ---
-status: Open
+status: done
 date: 2026-08-22
 author: "Zeus (Arquiteto)"
 adr: "docs/adr/ADR-2026-08-22-comandos-de-entrega-separados-push-proprio-e-ship-como-composicao.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-22-trackfw-push-comando-proprio-para-empurrar-commits-ja-criados.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-22-trackfw-push-comando-proprio-para-empurrar-commits-ja-criados.md"
 ---
 
 # REQ: `trackfw push` — comando próprio para empurrar commits já criados
 
-> Date: 2026-08-22 | Status: Open
+> Date: 2026-08-22 | Status: done
 | Linear Issue:
 | Jira Issue:
 
@@ -87,4 +87,4 @@ ADR: `docs/adr/ADR-2026-08-22-comandos-de-entrega-separados-push-proprio-e-ship-
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-22-trackfw-push-comando-proprio-para-empurrar-commits-ja-criados.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-08-22-trackfw-push-comando-proprio-para-empurrar-commits-ja-criados.md`

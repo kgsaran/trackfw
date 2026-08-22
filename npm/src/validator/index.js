@@ -1228,6 +1228,57 @@ function resolveCredentialGuardHookPath(raw, root) {
   return null
 }
 
+// HOOK_ANCHORAGE_CLASS_* classifica a semântica de ancoragem de um valor de comando de hook.
+// Avaliada apenas para CLIs com requiresVarOrShellPrefix=true. Decisão: ADR-2026-08-22.
+const HOOK_ANCHORAGE_CLASS_ANCHORED      = 1
+const HOOK_ANCHORAGE_CLASS_CWD_DEPENDENT = 2
+const HOOK_ANCHORAGE_CLASS_UNDECIDABLE   = 3
+
+// stripOuterQuotesForClassify remove aspas duplas envolventes de raw, se presentes. Necessário
+// porque "$PWD/scripts/…" entre aspas (achado D.3) deve receber o mesmo veredito que $PWD/…
+// sem aspas: as aspas são sintaxe, não semântica de ancoragem.
+function stripOuterQuotesForClassify(raw) {
+  if (raw.length >= 2 && raw[0] === '"' && raw[raw.length - 1] === '"') {
+    return raw.slice(1, raw.length - 1)
+  }
+  return raw
+}
+
+// classifyHookAnchorage retorna a classe de ancoragem de rawStripped (com aspas externas já
+// removidas). Ver HOOK_ANCHORAGE_CLASS_* e ADR-2026-08-22.
+function classifyHookAnchorage(rawStripped) {
+  // Classe 1 — ancora na raiz do projeto.
+  if (
+    rawStripped.startsWith('$CLAUDE_PROJECT_DIR/') ||
+    rawStripped.startsWith('$GEMINI_PROJECT_DIR/') ||
+    rawStripped.startsWith('$(git rev-parse --show-toplevel)/') ||
+    path.isAbsolute(rawStripped)
+  ) {
+    return HOOK_ANCHORAGE_CLASS_ANCHORED
+  }
+  // Classe 2 — expande a partir do cwd.
+  if (
+    rawStripped.startsWith('$PWD/') ||
+    rawStripped.startsWith('./') ||
+    rawStripped.startsWith('../') ||
+    (!rawStripped.startsWith('$') && !path.isAbsolute(rawStripped))
+  ) {
+    return HOOK_ANCHORAGE_CLASS_CWD_DEPENDENT
+  }
+  // Classe 3 — indecidível; silêncio declarado.
+  return HOOK_ANCHORAGE_CLASS_UNDECIDABLE
+}
+
+// cwdDependentReason retorna o sufixo de mensagem específico por forma para violações de
+// classe 2, iniciando em "with a …". Dois formatos: $PWD/… recebe explicação sobre $PWD;
+// demais (./…, ../…, relativo puro) recebem "bare relative path".
+function cwdDependentReason(rawStripped) {
+  if (rawStripped.startsWith('$PWD')) {
+    return 'with a $PWD path — $PWD expands to the current working directory, not the project root; run `trackfw update` to fix it'
+  }
+  return "with a bare relative path — this command only resolves from the project root and will silently fail when the agent's cwd is a subdirectory; run `trackfw update` to fix it"
+}
+
 // collectCommandsWithMarker percorre recursivamente um valor JSON já decodificado e coleta todo
 // valor-string que contém marker, independentemente do nome do campo que o contém — junto com um
 // sinal estrutural (typeIsCommand) de que o objeto imediato que o contém também tem
@@ -1331,20 +1382,18 @@ function validateGuardHookResolvable(scriptMarker, cwd) {
       if (seen.has(seenKey)) continue
       seen.add(seenKey)
 
-      const resolved = resolveCredentialGuardHookPath(m.raw, root)
-      if (resolved === null) continue
-
-      // ROADMAP-2026-08-21 ML-1B: a command that resolves via the bare-relative-path branch of
-      // resolveCredentialGuardHookPath is only safe for CLIs that always invoke hooks from the
-      // project root (Cursor/Copilot/Kiro). For Claude/Gemini/Codex the hook runs from the
-      // agent's cwd, which can be any subdirectory — the bare relative path silently fails even
-      // though the script exists under the root (REQ-2026-08-17 root cause). False-positive
-      // (AC3) is eliminated by construction: Cursor/Copilot/Kiro have
-      // requiresVarOrShellPrefix=false and never enter this branch.
-      if (hf.requiresVarOrShellPrefix && !m.raw.startsWith('$') && !m.raw.startsWith('"') && !path.isAbsolute(m.raw)) {
-        msgs.push(`${hf.relPath} (${hf.cli}) references ${scriptMarker} with a bare relative path — this command only resolves from the project root and will silently fail when the agent's cwd is a subdirectory; run \`trackfw update\` to fix it`)
+      // ADR-2026-08-22: classificar por ancoragem ANTES de resolver. Aspas externas são
+      // sintaxe, não semântica — removê-las antes garante que "$PWD/…" receba o mesmo veredito.
+      const rawStripped = stripOuterQuotesForClassify(m.raw)
+      const anchorageClass = classifyHookAnchorage(rawStripped)
+      if (hf.requiresVarOrShellPrefix && anchorageClass === HOOK_ANCHORAGE_CLASS_CWD_DEPENDENT) {
+        msgs.push(`${hf.relPath} (${hf.cli}) references ${scriptMarker} ${cwdDependentReason(rawStripped)}`)
         continue
       }
+
+      // Classe 1 (ancorado) e classe 3 (indecidível) prosseguem para a resolução existente.
+      const resolved = resolveCredentialGuardHookPath(m.raw, root)
+      if (resolved === null) continue
 
       // ROADMAP-2026-08-17 ML-4B: a command that resolves to a real path but sits inside a
       // structurally malformed entry (missing/wrong "type" where this CLI's schema requires it —
@@ -3200,6 +3249,13 @@ module.exports = {
   resolveAdrStatus,
   // ROADMAP-2026-08-12-mitigacao-do-fail-open-do-credential-guard, ML-1A
   resolveCredentialGuardHookPath,
+  // ADR-2026-08-22 (ML-1A): classificação por ancoragem
+  HOOK_ANCHORAGE_CLASS_ANCHORED,
+  HOOK_ANCHORAGE_CLASS_CWD_DEPENDENT,
+  HOOK_ANCHORAGE_CLASS_UNDECIDABLE,
+  stripOuterQuotesForClassify,
+  classifyHookAnchorage,
+  cwdDependentReason,
   collectCredentialGuardCommands,
   validateCredentialGuardHookResolvable,
   // ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate, ML-1A

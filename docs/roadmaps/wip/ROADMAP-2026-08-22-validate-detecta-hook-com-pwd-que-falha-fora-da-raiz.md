@@ -70,7 +70,7 @@ cwd, é wiring customizado legítimo. Acusá-lo é o falso-positivo que reprova 
 > o que produziu as divergências das séries anteriores.
 
 ### ML-1A — Classificação por ancoragem nos 3 CLIs
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
 
 **Arquivos afetados:**
 - Go: `internal/validator/validator_credential_guard.go` + testes
@@ -119,7 +119,7 @@ cwd, é wiring customizado legítimo. Acusá-lo é o falso-positivo que reprova 
 > Dependências: ML-1A completo e auditado.
 
 ### ML-2A — Paridade + falsificação nas duas direções
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-1A
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-1A
 
 **Arquivos afetados:**
 - `scripts/check-validate-parity.sh` (estender os blocos CG e GBG existentes — **não** criar gate
@@ -146,12 +146,69 @@ cwd, é wiring customizado legítimo. Acusá-lo é o falso-positivo que reprova 
 
 ---
 
+### Auditoria do ML-1A e do ML-2A — aprovadas, com dois vermelhos meus no caminho
+
+**Comportamento medido por mim, com fixtures próprios (não pelo relatório):**
+
+```
+Claude Code:
+  $PWD/scripts/...                        acusa=1   <- deteccao nova
+  "$PWD/scripts/..."  (entre aspas)       acusa=1   <- fecha o achado D.3
+  ./scripts/...                           acusa=1   <- nao-regressao
+  /opt/x/scripts/...  (absoluto)          acusa=0   <- o falso-positivo que reprovaria
+  $MY_ROOT/scripts/... (classe 3)         acusa=0
+  $CLAUDE_PROJECT_DIR/scripts/...         acusa=0
+  "$(git rev-parse --show-toplevel)/..."  acusa=0   <- forma do Codex intacta
+Cursor (os tres valores):                 acusa=0   <- imune por construcao
+```
+
+**Sabotagem própria, numa direção que os cenários dele NÃO cobrem** — neutralizei
+`stripOuterQuotesForClassify`:
+
+```
+gate_exit=1
+  claude-pwd-quoted/go: mensagem inesperada — esperava 'with a $PWD path',
+  obteve 'with a bare relative path'
+restaurado -> exit 0, arquivo IDENTICO ao entregue
+```
+
+O que isso revela: sem o strip, `"$PWD/…"` **ainda é acusado** (cai na cláusula do relativo puro),
+mas com a **mensagem errada** — a que não explica que `$PWD` expande para o cwd. **O gate pina a
+mensagem, não só o veredito.** Numa regra cuja função é ensinar o usuário a consertar, dizer a coisa
+errada é o defeito.
+
+#### Dois vermelhos que ele declarou verdes
+
+1. **Cenário 159 invalidado pelo ML-1A.** O `sed` sabotava
+   `hf.requiresVarOrShellPrefix && isRelativePureForGuard(...)`, símbolo que o refactor removeu. O
+   **guard de vacuidade do próprio cenário** (`cmp -s`) recusou-se a fingir que provou algo:
+   *"sed nao alterou validator_credential_guard.go — prova P4 invalida"*. Retargetado no ML-2A.
+2. **`PWD_DEAD: unbound variable` no echo final.** Os 165 cenários passavam e o script morria no
+   sumário: string entre aspas duplas contendo `$PWD_DEAD/`, expandida sob `set -u`. E o irmão
+   silencioso, que eu mandei procurar: **4 ocorrências de `$PWD`**, que existe no ambiente e expandia
+   **sem falhar**, corrompendo o texto do sumário para quem fosse ler o log amanhã.
+
+Nas duas vezes o método dele foi `grep FAIL`, que não vê abort por variável não ligada. **Sexta
+entrega seguida em que "0 linhas FAIL" é apresentado como exit code.** Registrado aqui porque é
+padrão, não incidente.
+
+#### Trabalho dele que eu não pedi e que ficou melhor que o pedido
+
+- **Pré-flight de JSON dentro do gate** (`_validate_fixture_json`): parseia o fixture e confere que o
+  `command` faz round-trip. É a resposta ao risco que quase me enganou hoje, agora no CI em vez da
+  disciplina de quem escrever o próximo fixture.
+- **Limite de vacuidade declarado, não maquiado:** para classes 1 e 3 o `resolveCredentialGuardHookPath`
+  retorna `ok=false` **antes** de tocar o filesystem, então não existe irmão `-absent` que prove que
+  o silêncio é real — só a sabotagem de sentido oposto (cenário 165). Está escrito no gate.
+
+---
+
 ## Wave 3 — Barreira
 
 > Dependências: Wave 2 completa e auditada.
 
 ### ML-3A — Revisão de segurança
-**Status:** ⬜ Pendente · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
+**Status:** 🔄 Em andamento · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
 **Escreve:** `docs/seguranca/2026-08-22-revisao-da-classificacao-por-ancoragem.md`
 
 A regra decide se um guard está ativo. Avaliar:

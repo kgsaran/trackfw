@@ -593,6 +593,237 @@ test('credential_guard_hook_resolvable: Cursor com relativo puro e script presen
   }
 })
 
+// ADR-2026-08-22 ML-1A — classifyHookAnchorage + stripOuterQuotesForClassify: testes unitários
+// e testes de integração com validateCredentialGuardHookResolvable.
+
+test('classifyHookAnchorage: classe 1 — formas ancoradas', () => {
+  const cases = [
+    '$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh',
+    '$GEMINI_PROJECT_DIR/scripts/trackfw-credential-guard.sh',
+    '$(git rev-parse --show-toplevel)/scripts/trackfw-credential-guard.sh',
+    '/opt/scripts/trackfw-credential-guard.sh',
+    '/absolute/path/guard.sh',
+  ]
+  for (const raw of cases) {
+    assert.strictEqual(validator.classifyHookAnchorage(raw), validator.HOOK_ANCHORAGE_CLASS_ANCHORED,
+      `esperava classe 1 para: ${raw}`)
+  }
+})
+
+test('classifyHookAnchorage: classe 2 — dependente do cwd', () => {
+  const cases = [
+    '$PWD/scripts/trackfw-credential-guard.sh',
+    './scripts/trackfw-credential-guard.sh',
+    '../scripts/trackfw-credential-guard.sh',
+    'scripts/trackfw-credential-guard.sh',
+    'sh scripts/trackfw-credential-guard.sh',
+  ]
+  for (const raw of cases) {
+    assert.strictEqual(validator.classifyHookAnchorage(raw), validator.HOOK_ANCHORAGE_CLASS_CWD_DEPENDENT,
+      `esperava classe 2 para: ${raw}`)
+  }
+})
+
+test('classifyHookAnchorage: classe 3 — indecidível', () => {
+  const cases = [
+    '$SOME_OTHER_VAR/scripts/trackfw-credential-guard.sh',
+    '$MY_CUSTOM_DIR/guard.sh',
+    '$UNDEFINED/trackfw-credential-guard.sh',
+  ]
+  for (const raw of cases) {
+    assert.strictEqual(validator.classifyHookAnchorage(raw), validator.HOOK_ANCHORAGE_CLASS_UNDECIDABLE,
+      `esperava classe 3 para: ${raw}`)
+  }
+})
+
+test('stripOuterQuotesForClassify: remove aspas duplas envolventes', () => {
+  const cases = [
+    { raw: '"$PWD/scripts/guard.sh"', want: '$PWD/scripts/guard.sh' },
+    { raw: '"$(git rev-parse --show-toplevel)/scripts/guard.sh"', want: '$(git rev-parse --show-toplevel)/scripts/guard.sh' },
+    { raw: '$CLAUDE_PROJECT_DIR/scripts/guard.sh', want: '$CLAUDE_PROJECT_DIR/scripts/guard.sh' },
+    { raw: 'scripts/guard.sh', want: 'scripts/guard.sh' },
+    { raw: '"', want: '"' },
+    { raw: '""', want: '' },
+    { raw: '"abc', want: '"abc' },
+  ]
+  for (const { raw, want } of cases) {
+    assert.strictEqual(validator.stripOuterQuotesForClassify(raw), want,
+      `stripOuterQuotesForClassify(${JSON.stringify(raw)})`)
+  }
+})
+
+test('credential_guard_hook_resolvable: $PWD/… acusado em Claude (AC2)', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-cg-pwd-'))
+  const origDir = process.cwd()
+  fs.mkdirSync(path.join(tmp, '.claude'), { recursive: true })
+  fs.writeFileSync(path.join(tmp, '.claude', 'settings.json'),
+    guardEntryClaudeSettings('$PWD/scripts/trackfw-credential-guard.sh'))
+  fs.mkdirSync(path.join(tmp, 'scripts'), { recursive: true })
+  fs.writeFileSync(path.join(tmp, 'scripts', 'trackfw-credential-guard.sh'), '#!/bin/sh\nexit 0\n', { mode: 0o755 })
+  process.chdir(tmp)
+  config.reset()
+  try {
+    const msgs = validator.validateCredentialGuardHookResolvable()
+    assert(msgs.some(m => m.includes('$PWD path') && m.includes('.claude/settings.json')),
+      'AC2: esperava violation de $PWD em Claude: ' + JSON.stringify(msgs))
+    assert(msgs.some(m => m.includes('current working directory')),
+      'AC2: mensagem deve explicar que $PWD não ancora: ' + JSON.stringify(msgs))
+    assert(msgs.some(m => m.includes('trackfw update')),
+      'AC2: mensagem deve citar trackfw update: ' + JSON.stringify(msgs))
+  } finally {
+    process.chdir(origDir)
+    config.reset()
+    fs.rmSync(tmp, { recursive: true, force: true })
+  }
+})
+
+test('credential_guard_hook_resolvable: "$PWD/…" entre aspas também acusado (D.3)', () => {
+  // Achado D.3: valor entre aspas deve ser acusado após strip de aspas externas.
+  // O JSON field value é: "$PWD/scripts/..." (com as aspas fazendo parte do valor JSON).
+  // guardEntryClaudeSettings insere o scriptCmd diretamente no template JSON.
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-cg-pwdq-'))
+  const origDir = process.cwd()
+  fs.mkdirSync(path.join(tmp, '.claude'), { recursive: true })
+  // Para que o valor JSON do campo "command" seja "$PWD/scripts/..." (com aspas literais),
+  // passamos a string JS com os caracteres de aspas duplas — guardEntryClaudeSettings usa
+  // JSON.stringify, que irá escapar as aspas corretamente para \"...\".
+  // Passamos '"$PWD/..."' (JS string com aspas duplas no conteúdo).
+  const cmdValue = '"$PWD/scripts/trackfw-credential-guard.sh"'
+  const content = guardEntryClaudeSettings(cmdValue)
+  // Verifica que o JSON é válido (fixture malformado → falso negativo silencioso).
+  const parseCheck = JSON.parse(content)
+  assert(parseCheck, 'fixture JSON deve ser válido')
+  // Verifica que o valor do campo "command" foi serializado com aspas (achado D.3).
+  const cmdInJSON = parseCheck.hooks.PreToolUse[0].hooks[0].command
+  assert(cmdInJSON.startsWith('"') && cmdInJSON.endsWith('"'),
+    'valor command deve ter aspas duplas como primeiro e último char: ' + JSON.stringify(cmdInJSON))
+  fs.writeFileSync(path.join(tmp, '.claude', 'settings.json'), content)
+  fs.mkdirSync(path.join(tmp, 'scripts'), { recursive: true })
+  fs.writeFileSync(path.join(tmp, 'scripts', 'trackfw-credential-guard.sh'), '#!/bin/sh\nexit 0\n', { mode: 0o755 })
+  process.chdir(tmp)
+  config.reset()
+  try {
+    const msgs = validator.validateCredentialGuardHookResolvable()
+    assert(msgs.some(m => m.includes('$PWD path') && m.includes('.claude/settings.json')),
+      'D.3: esperava violation de $PWD entre aspas em Claude: ' + JSON.stringify(msgs))
+  } finally {
+    process.chdir(origDir)
+    config.reset()
+    fs.rmSync(tmp, { recursive: true, force: true })
+  }
+})
+
+test('credential_guard_hook_resolvable: caminho absoluto silencioso (classe 1, falso-positivo dominante)', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-cg-abs-'))
+  const origDir = process.cwd()
+  fs.mkdirSync(path.join(tmp, '.claude'), { recursive: true })
+  fs.writeFileSync(path.join(tmp, '.claude', 'settings.json'),
+    guardEntryClaudeSettings('/opt/scripts/trackfw-credential-guard.sh'))
+  process.chdir(tmp)
+  config.reset()
+  try {
+    const msgs = validator.validateCredentialGuardHookResolvable()
+    assert.strictEqual(msgs.length, 0,
+      'classe 1 (absoluto) deve ser silenciosa: ' + JSON.stringify(msgs))
+  } finally {
+    process.chdir(origDir)
+    config.reset()
+    fs.rmSync(tmp, { recursive: true, force: true })
+  }
+})
+
+test('credential_guard_hook_resolvable: $OUTRA_VAR/… silenciosa (classe 3)', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-cg-cls3-'))
+  const origDir = process.cwd()
+  fs.mkdirSync(path.join(tmp, '.claude'), { recursive: true })
+  fs.writeFileSync(path.join(tmp, '.claude', 'settings.json'),
+    guardEntryClaudeSettings('$MY_CUSTOM_DIR/scripts/trackfw-credential-guard.sh'))
+  process.chdir(tmp)
+  config.reset()
+  try {
+    const msgs = validator.validateCredentialGuardHookResolvable()
+    assert.strictEqual(msgs.length, 0,
+      'classe 3 ($OUTRA_VAR) deve ser silenciosa: ' + JSON.stringify(msgs))
+  } finally {
+    process.chdir(origDir)
+    config.reset()
+    fs.rmSync(tmp, { recursive: true, force: true })
+  }
+})
+
+test('credential_guard_hook_resolvable: forma Codex com aspas continua silenciosa (classe 1)', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-cg-codex-'))
+  const origDir = process.cwd()
+  fs.mkdirSync(path.join(tmp, '.codex'), { recursive: true })
+  // O valor emitido pelo Codex já inclui aspas literais como parte do JSON value.
+  const content = JSON.stringify({
+    hooks: {
+      PreToolUse: [{
+        matcher: '.*',
+        hooks: [{ command: '"$(git rev-parse --show-toplevel)/scripts/trackfw-credential-guard.sh"', type: 'command' }],
+      }],
+    },
+  }, null, 2)
+  fs.writeFileSync(path.join(tmp, '.codex', 'hooks.json'), content)
+  fs.mkdirSync(path.join(tmp, 'scripts'), { recursive: true })
+  fs.writeFileSync(path.join(tmp, 'scripts', 'trackfw-credential-guard.sh'), '#!/bin/sh\nexit 0\n', { mode: 0o755 })
+  process.chdir(tmp)
+  config.reset()
+  try {
+    const msgs = validator.validateCredentialGuardHookResolvable()
+    assert.strictEqual(msgs.length, 0,
+      'forma Codex (classe 1 com aspas) deve ser silenciosa: ' + JSON.stringify(msgs))
+  } finally {
+    process.chdir(origDir)
+    config.reset()
+    fs.rmSync(tmp, { recursive: true, force: true })
+  }
+})
+
+test('credential_guard_hook_resolvable: $PWD/… acusado em Codex (AC2)', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-cg-pwdcodex-'))
+  const origDir = process.cwd()
+  fs.mkdirSync(path.join(tmp, '.codex'), { recursive: true })
+  fs.writeFileSync(path.join(tmp, '.codex', 'hooks.json'), JSON.stringify({
+    hooks: {
+      PreToolUse: [{ matcher: '.*', hooks: [{ command: '$PWD/scripts/trackfw-credential-guard.sh', type: 'command' }] }],
+    },
+  }))
+  process.chdir(tmp)
+  config.reset()
+  try {
+    const msgs = validator.validateCredentialGuardHookResolvable()
+    assert(msgs.some(m => m.includes('$PWD path') && m.includes('.codex/hooks.json')),
+      'AC2 Codex: esperava violation de $PWD: ' + JSON.stringify(msgs))
+  } finally {
+    process.chdir(origDir)
+    config.reset()
+    fs.rmSync(tmp, { recursive: true, force: true })
+  }
+})
+
+test('credential_guard_hook_resolvable: $PWD/… acusado em Gemini (AC2)', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-cg-pwdgemini-'))
+  const origDir = process.cwd()
+  fs.mkdirSync(path.join(tmp, '.gemini'), { recursive: true })
+  fs.writeFileSync(path.join(tmp, '.gemini', 'settings.json'), JSON.stringify({
+    hooks: {
+      PreToolUse: [{ matcher: '.*', hooks: [{ command: '$PWD/scripts/trackfw-credential-guard.sh', type: 'command' }] }],
+    },
+  }))
+  process.chdir(tmp)
+  config.reset()
+  try {
+    const msgs = validator.validateCredentialGuardHookResolvable()
+    assert(msgs.some(m => m.includes('$PWD path') && m.includes('.gemini/settings.json')),
+      'AC2 Gemini: esperava violation de $PWD: ' + JSON.stringify(msgs))
+  } finally {
+    process.chdir(origDir)
+    config.reset()
+    fs.rmSync(tmp, { recursive: true, force: true })
+  }
+})
+
 // ROADMAP-2026-08-15-instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas, ML-3A —
 // thirdparty_artifact_has_provenance (ADR-2026-08-15 D2). Port of
 // internal/validator/validator_thirdparty_provenance_test.go — same fixtures, same assertions.
