@@ -1,9 +1,9 @@
 ---
 status: Open
 date: 2026-08-21
-author: ""
-adr: ""
-roadmap: ""
+author: "Zeus (Arquiteto)"
+adr: "docs/adr/ADR-2026-08-22-postura-do-validate-diante-de-formas-de-hook-nao-reconhecidas-classificar-por-ancoragem-nao-por-casamento-com-o-gerado.md"
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-22-validate-detecta-hook-com-pwd-que-falha-fora-da-raiz.md"
 ---
 
 # REQ: `validate` não detecta hook com `$PWD` que falha fora da raiz
@@ -82,7 +82,7 @@ arrisca incomodar — e pelo `ADR-2026-08-17`, guard que atrapalha é guard que 
 - **Binário do `PATH` desatualizado**; `--version` não distingue o build.
 
 ## Linked ADR
-ADR: <!-- a criar: postura sobre formas nao reconhecidas -->
+ADR: `docs/adr/ADR-2026-08-22-postura-do-validate-diante-de-formas-de-hook-nao-reconhecidas-classificar-por-ancoragem-nao-por-casamento-com-o-gerado.md`
 
 ## Linked Roadmap
-Roadmap: <!-- sem roadmap; backlog -->
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-22-validate-detecta-hook-com-pwd-que-falha-fora-da-raiz.md`

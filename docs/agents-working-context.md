@@ -23009,3 +23009,23 @@ Branch `feat/trackfw-push-comando-proprio-para-empurrar-commits-ja-criados`. Sem
 **Proibido tocado:** nenhum dos arquivos proibidos foi tocado (push.go, runner.js, runner.py, seus testes, scripts de guard/hook)
 
 **Próximo:** handoff para `trackfw_architect` para auditoria e commit do ML-4B.
+
+---
+
+## Sessão 2026-08-22 — trackfw_architect (INÍCIO: `$PWD` — última entrega antes da 7.2.0)
+
+**Contexto:** PR #202 (`trackfw push`) mergeado. Decisão do KG: a REQ do `$PWD` **entra na 7.2.0**,
+com o argumento de que a mensagem que induz o erro sai nesta release e a correção deve sair junto.
+
+**Decisão de desenho já tomada** em
+`ADR-2026-08-22-postura-do-validate-diante-de-formas-de-hook-nao-reconhecidas-classificar-por-ancoragem-nao-por-casamento-com-o-gerado.md`:
+classificar por **semântica de ancoragem**, não por casamento com o que o gerador emite. O dado que
+quebrou o empate entre as duas opções da REQ: **caminho absoluto cai no conjunto não reconhecido e é
+uma forma correta** — logo "acusar tudo que não casa" é falso-positivo demonstrável a partir do
+código.
+
+**Plano:** Wave 1 (ML-1A, `apolo-tf`, classificador nos 3 CLIs num único ML) → Wave 2 (ML-2A, gate +
+falsificação nas duas direções, com a direção B protegendo o caminho absoluto) → Wave 3 (`hades-tf`).
+
+**Depois desta entrega:** `chore/release-7-2-0` com bump (5 ocorrências em 4 arquivos) + CHANGELOG,
+merge, e `trackfw release tag 7.2.0`.
