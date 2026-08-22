@@ -12,9 +12,13 @@ function createCommitCommand() {
   const cmd = new Command('commit')
   cmd
     .description(
-      "trackfw commit is the missing intermediate step between raw 'git commit' and\n" +
-      "'trackfw ship': it commits staged changes directly, but blocks the commit before it happens\n" +
-      'when governance is missing, instead of letting it land and only catching it later:\n\n' +
+      "trackfw commit commits staged changes directly, but blocks the commit before it\n" +
+      'happens when governance is missing, instead of letting it land and only catching it later.\n\n' +
+      'Compositional vocabulary:\n' +
+      '  trackfw commit -m "..."   commits\n' +
+      '  trackfw push              pushes\n' +
+      '  trackfw ship -m "..."     commit + push + PR (composition)\n\n' +
+      'Behavioral steps:\n\n' +
       "  1. On 'main'/'master': always blocked — commit directly on the default branch is never\n" +
       '     permitted.\n' +
       '  2. On a feat/fix/refactor branch: requires a roadmap matching the branch slug already in\n' +

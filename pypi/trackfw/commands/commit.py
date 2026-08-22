@@ -61,10 +61,14 @@ def register(subparsers):
         "commit",
         help="Commit staged changes, gated on governance for feat/fix/refactor branches",
         description=(
-            "trackfw commit is the missing intermediate step between raw 'git commit' and "
-            "'trackfw ship': it commits staged changes directly, but blocks the commit before "
-            "it happens when governance is missing, instead of letting it land and only "
-            "catching it later:\n\n"
+            "trackfw commit commits staged changes directly, but blocks the commit before it "
+            "happens when governance is missing, instead of letting it land and only "
+            "catching it later.\n\n"
+            "Compositional vocabulary:\n"
+            "  trackfw commit -m \"...\"   commits\n"
+            "  trackfw push              pushes\n"
+            "  trackfw ship -m \"...\"     commit + push + PR (composition)\n\n"
+            "Behavioral steps:\n\n"
             "  1. On 'main'/'master': always blocked — commit directly on the default branch "
             "is never permitted.\n"
             "  2. On a feat/fix/refactor branch: requires a roadmap matching the branch slug "

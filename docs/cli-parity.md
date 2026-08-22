@@ -27,6 +27,7 @@ Supported runtimes: Go 1.25+, Node.js 18+, and Python 3.10+.
 | `skills` | yes | yes | yes | `list`, `install`, `uninstall`, `update` across supported AI CLIs |
 | `note` | yes | yes | yes | `new <title>` — creates `vault/notes/<slug>-YYYY-MM-DD.md` and links in `index.md`; idempotent (fails on duplicate) |
 | `ship` | yes | yes | yes | Governed `git commit + push + open PR/MR` for `feat`/`fix`/`refactor`/`chore`/`docs` branches; hard governance gate for `feat`/`fix`/`refactor` only — `chore`/`docs` skip it (see below) |
+| `push` | yes | yes | yes | Governed `git push` for already-committed work — never commits, never opens a PR/MR; same branch vocabulary and governance gate as `ship` (see below) |
 | `branch` | yes | yes | yes | `new <type>/<slug>` — for `feat`/`fix`/`refactor`, gates `git checkout -b` on the same `branch_has_wip_roadmap` matching logic `trackfw validate` already applies, moving the check before branch creation instead of after; `chore`/`docs` create the branch without that gate, mirroring the housekeeping exemption `trackfw ship`/`trackfw commit` already grant those types (see below). `prune [--apply]` — reports (and, with `--apply`, deletes) local branches already integrated into `origin/main` via the touched-files heuristic (see below); `--dry-run` behavior is the default, `--apply` is opt-in |
 | `gemini` / `cursor` / `copilot` / `windsurf` / `amazonq` | yes | no | no | Historical Go-only compatibility aliases |
 | `version` / `--version` | yes | yes | yes | Both print the same single line: `trackfw <semver>`, no `v` prefix — see "Version output" below |
@@ -1202,6 +1203,68 @@ runtimes on stdout, stderr, and exit code:
   single-stack revert. `scripts/check-gates-falsify.sh`'s Cenário 158 sabotages
   (`"--no-replace-objects", "show"` → `"show"` in an isolated Go copy) and proves this provenance
   assertion catches the false negative.
+
+## `trackfw push`
+
+<!-- trackfw-contract: gate=scripts/check-push-parity.sh partial=roda com TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 e todos os cenários usam --dry-run; o push real (git push para o remoto) e a detecção de squash-merges com fetch real não são exercitados ponta a ponta (--force-with-lease tem gate próprio: scripts/check-push-force-parity.sh) -->
+
+`trackfw push` pushes already-created commits without committing and without opening a PR/MR. It
+runs the same branch-name validation and governance gate as `trackfw ship`, but stops after the
+push — it never runs `git commit` and never opens a pull request.
+
+```
+1. Validates branch name — must match feat|fix|refactor|chore|docs/<slug>
+2. Validates governance — REQ + roadmap in wip/ must exist for feat/fix/refactor branches
+   (hard gate: not affected by lenient mode or per-rule severity); chore/docs branches skip
+   this check, mirroring 'trackfw commit' and 'trackfw ship'
+3. Detects pending squash-merges in other branches (advisory only)
+4. Pushes to origin (adds -u if no upstream is configured yet)
+```
+
+**push never commits and never opens a PR/MR.** It does not accept `-m`. If you have not
+committed yet, run `trackfw commit -m "..."` first.
+
+Compositional vocabulary:
+```
+trackfw commit -m "..."   commits
+trackfw push              pushes
+trackfw ship -m "..."     commit + push + PR (composition)
+```
+
+| Flag | Go | Node.js | Python | Notes |
+|------|-----|---------|--------|-------|
+| `--dry-run` | yes | yes | yes | Print what would be done without executing write commands |
+| `--force-with-lease` | yes | yes | yes | Governed force-push; requires an open PR/MR on the branch (verified via forge CLI) |
+
+**Boundary with `ship` and `commit`:** `push` is not a partial `ship` with fewer steps — it is a
+standalone command for the common case where `trackfw commit` was already run and only the push
+step remains. `ship` always also commits (requires `-m`); `push` never commits. `commit` never
+pushes; `push` never commits.
+
+### `push --force-with-lease` — governed force-push (ML-4B)
+
+<!-- trackfw-contract: gate=scripts/check-push-force-parity.sh -->
+
+`push --force-with-lease` runs `git push --force-with-lease` instead of a plain push — for the
+post-rebase case where a plain push is rejected. It only runs when the branch already has an open
+PR/MR, verified via the resolved forge CLI (ConfigForge from `trackfw.yaml` `forge:` key, then
+RemoteURL, then CI files — push has no `--forge` flag). Three distinct refusal classes:
+
+| Refusal class | Condition | Message fragment |
+|---|---|---|
+| No forge CLI | gh/glab/az absent from PATH | `requires a forge CLI (gh, glab, or az)` |
+| No open PR | PR list returns empty | `has no open pull/merge request. Open the PR/MR first` |
+| Unverifiable | forge CLI exits non-zero | `could not verify whether branch` |
+
+**Gate: `scripts/check-push-force-parity.sh`** (registered in the `parity` Make target). Real bare
+origin per (scenario, runtime) — 5 scenarios total: no-forge-cli, forge-zero-pr,
+forge-unverifiable, forge-pr-open-pushes (remote SHA changes, proved with `Pushed: ` marker),
+remote-advanced-lease-mismatch (other clone advances remote, --force-with-lease refuses). Byte
+comparison across Go, Node.js, Python via `assert_three_way`. `TRACKFW_DISABLE_EXTERNAL_COMMANDS`
+is unset in this gate (push's forge lookup must never be suppressed). Cenário 163 in
+`scripts/check-gates-falsify.sh` sabotages an isolated Go copy by inserting `open = true` right
+before `if !open {` — `if false {` would leave `open` declared and unused, which does not compile —
+and proves the gate detects the P4-push regression.
 
 ## `trackfw branch new`
 

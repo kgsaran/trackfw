@@ -154,6 +154,10 @@ def main():
     from trackfw.commands import commit as commit_cmd
     commit_cmd.register(subparsers)
 
+    # --- push ---
+    from trackfw.commands import push as push_cmd
+    push_cmd.register(subparsers)
+
     # --- changelog ---
     from trackfw.commands import changelog as changelog_cmd
     changelog_cmd.register(subparsers)

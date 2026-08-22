@@ -768,4 +768,7 @@ module.exports = {
   FORCE_LEASE_NO_FORGE_CLI_MSG,
   forceLeaseNoPROpenMsg,
   forceLeaseCannotVerifyMsg,
+  // Exported for reuse by push/runner.js (AC2 of REQ-2026-08-22-trackfw-push).
+  buildPushArgs,
+  defaultExecGit,
 }
