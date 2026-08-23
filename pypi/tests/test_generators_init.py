@@ -1232,7 +1232,7 @@ class TestGenerateClaudeCommands(unittest.TestCase):
             content = f.read()
 
         self.assertIn('trackfw_architect', content)
-        self.assertIn('trackfw barrier <roadmap> --wave <n> --json', content)
+        self.assertIn('trackfw barrier <roadmap> --wave <n> --trust-local-gates --json', content)
         self.assertIn('Todos os MLs da wave concluídos e marcados', content)
         self.assertIn('Agente code-quality reportou', content)
         self.assertIn('Agente security reportou', content)

@@ -24212,3 +24212,52 @@ Medições seguras realizadas (sem rodar `agents update` nem `update harness`):
 - Wrong place: `trackfw: agents global: agent_models configurado em trackfw.yaml do projeto mas não vale para escopo global. Mova a chave para ~/.trackfw/trackfw.yaml.`
 - Not configured: `trackfw: agents global: agent_models não configurado em ~/.trackfw/trackfw.yaml — usando tier canônico. Configure em ~/.trackfw/trackfw.yaml para pinar versões.`
 - Malformed: `trackfw: aviso: "~/.trackfw/trackfw.yaml" tem YAML malformado — config global de modelo ignorada; usando tier canônico.`
+
+---
+
+## Sessão 2026-08-23 — apolo-tf (INÍCIO: ML-2A — barrier recusa gate de roadmap não confiável)
+
+Branch `fix/barrier-nao-executa-gate-de-roadmap-nao-confiavel`.
+
+**Escopo:** Adicionar discriminante de confiança ao `barrier` nos 3 CLIs (Go, Node.js, Python).
+Flag `--trust-local-gates` para o slash command. Status `not_evaluated` para gate não avaliado.
+Documentar AC13 (residual do slash command) em `docs/cli-parity.md`.
+
+**Decisão de implementação:**
+- Discriminante: `git show origin/main:<relPath>` (AC11)
+- Fail-open quando não é um git repo (check-barrier.sh usa temp dirs)
+- Fail-closed quando arquivo não está em origin/main (PR-added roadmap)
+- Fail-closed quando conteúdo difere de origin/main
+- Fail-open quando origin/main não é acessível (origem não configurada, ref não fetchado)
+- Status novo: `not_evaluated` (AC6), distinto de `passed` e `blocked`
+- Overall: `not_evaluated` → `blocked` → exit 1 (agregação já existente)
+- AC13: residual declarado — slash command no repo é editável via PR hostile
+
+
+---
+
+## Sessão 2026-08-23 — apolo-tf (FIM: ML-2A — barrier recusa gate de roadmap não confiável)
+
+**Status final:** ✅ ML-2A Concluído.
+
+**Evidências de conclusão:**
+
+- `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality` → exit 0
+  - `check-parity-contract-coverage.sh`: 0 seções sem anotação, 0 violações
+  - Todos os checks de parity passaram (Go, Node.js, Python)
+- `./bin/trackfw validate` → 16 warnings, 0 violations (sem regressão)
+- **AC14 (não-execução):** `./bin/trackfw barrier HOSTILE-AC14-TEST --wave 1 --json` → exit 1, `gates.status: "not_evaluated"`, arquivo hostil NÃO criado
+- **AC5 (WIP frictionless):** `./bin/trackfw barrier ... --trust-local-gates` → `gates.status: "passed"`
+
+**Arquivos modificados nesta sessão:**
+- `internal/commands/barrier.go` — `roadmapTrustForGates()`, flag `--trust-local-gates`, status `not_evaluated`
+- `npm/src/commands/barrier.js` — paridade Node.js
+- `pypi/trackfw/commands/barrier.py` — paridade Python
+- `.claude/commands/trackfw/barrier.md` — slash command injeta `--trust-local-gates`; warning AC13
+- `internal/generators/scaffold.go`, `npm/src/generators/init.js`, `pypi/trackfw/generators/init_gen.py` — template barrier.md atualizado
+- `npm/tests/generators.test.js`, `pypi/tests/test_generators_init.py` — assertions atualizadas
+- `internal/commands/barrier_test.go` — 2 novos testes (fail-open em non-git-repo, --trust-local-gates passa)
+- `docs/cli-parity.md` — seção "Trust and --trust-local-gates" com 5 subsections anotadas (gap)
+- `docs/roadmaps/wip/ROADMAP-2026-08-23-*.md` — ML-2A marcado ✅ Concluído
+
+**Handoff para:** `trackfw_architect` para auditoria e commit.

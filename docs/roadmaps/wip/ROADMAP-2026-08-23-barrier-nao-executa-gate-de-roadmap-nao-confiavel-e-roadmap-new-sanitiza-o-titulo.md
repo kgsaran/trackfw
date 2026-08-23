@@ -145,16 +145,57 @@ defense-in-depth, não a única barreira. Registrado como raciocínio dele, não
 > Dependências: ML-1A auditado. **A forma vem da decisão do ML-0A.**
 
 ### ML-2A — `barrier` recusa gate de roadmap não confiável
-**Status:** 🔄 Em andamento · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-1A
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-1A
 
 **Critérios de aceite:** AC3, AC4, AC5, AC6 · **prova de que o fluxo normal segue usável**
+
+---
+
+### Auditoria do ML-2A — aprovada; o vetor está fechado, provado com roadmap hostil meu
+
+```
+roadmap com gate 'touch /tmp/TRUST_REGRESSION', nao commitado em origin/main
+
+CLI direta:
+  gates: not_evaluated
+    "roadmap is not committed in origin/main — pass --trust-local-gates to evaluate local gates"
+  test -f /tmp/TRUST_REGRESSION  ->  NAO existe        <- ausencia de efeito, nao exit code
+com --trust-local-gates:
+  gates: passed                                         <- fluxo dominante intacto
+
+make quality (CI-exata, minha)  exit 0
+validate                        16 warnings, 0 violations
+```
+
+**Paridade conferida onde ela é contrato.** O **texto** dos 3 CLIs diverge bastante (cabeçalhos e
+símbolos distintos) — e isso é **pré-existente e por desenho**: `check-barrier.sh` compara **JSON
+normalizado**, não texto. O JSON bate:
+
+```
+go == node    True
+go == py      difere so em started_at/finished_at (timestamps — o gate normaliza)
+gates.status  not_evaluated
+```
+
+**AC13 respondido com honestidade, não com remendo.** O parecer dele em `cli-parity.md`:
+
+> *"A flag vinda de um slash command hostil, de um `Makefile` hostil, de um passo de CI hostil e a
+> invocação consciente do mantenedor são **indistinguíveis em `argv`**. Verificar o `barrier.md`
+> contra `origin/main` não ajuda — o CLI nunca lê esse arquivo; quem lê e executa é o agente."*
+
+É a resposta certa: a alternativa seria fingir uma proteção que o CLI não tem como oferecer. O slash
+command passou a carregar o aviso de **não** usar a flag ao revisar roadmap de PR de terceiro.
+
+**Residual que ele declara para a Wave 3:** os cenários cross-CLI de `not_evaluated` no
+`check-barrier.sh` ainda não existem — as strings estão pinadas no `cli-parity.md` como `gap`, não
+verificadas por gate. É exatamente o próximo ML.
 
 ---
 
 ## Wave 3 — Gate
 
 ### ML-3A — Paridade e falsificação nas duas direções
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-2A
+**Status:** 🔄 Em andamento · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-2A
 
 **Critérios de aceite:** AC7, AC8, AC9, AC10
 

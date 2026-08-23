@@ -227,7 +227,96 @@ function evalAcceptanceEvidence(mls) {
   return { name: 'acceptance_evidence', status, evidence, failures }
 }
 
-function evalGates(commands, cwd) {
+// ────────────────────────────────────────────────────────────────────────────
+// Roadmap trust check (AC11, AC12 — docs/cli-parity.md § Trust and --trust-local-gates)
+// ────────────────────────────────────────────────────────────────────────────
+
+// roadmapTrustForGates determines whether the gates declared in a roadmap can
+// be trusted for execution without --trust-local-gates.
+//
+// Decision (AC4, AC11): the discriminant is git — a roadmap whose content
+// differs from origin/main, or that is absent from origin/main, is untrusted.
+//
+// Returns { trusted: true } or { trusted: false, failureMsg: '...' }.
+// Fail-open when not in a git repo, origin/main not resolvable, or any git
+// error other than "path absent from origin/main". See docs/cli-parity.md.
+function roadmapTrustForGates(roadmapPath) {
+  const roadmapDir = path.dirname(roadmapPath)
+
+  // Step 1: check if we are inside a git repository.
+  const revParse = spawnSync('git', ['rev-parse', '--git-dir'], {
+    cwd: roadmapDir,
+    encoding: 'utf8',
+    stdio: 'pipe',
+  })
+  if (revParse.status !== 0) {
+    // Not a git repo → fail-open.
+    return { trusted: true }
+  }
+
+  // Step 2: get the repository toplevel.
+  const topLevel = spawnSync('git', ['rev-parse', '--show-toplevel'], {
+    cwd: roadmapDir,
+    encoding: 'utf8',
+    stdio: 'pipe',
+  })
+  if (topLevel.status !== 0) {
+    return { trusted: true }
+  }
+  const repoRoot = topLevel.stdout.trim()
+
+  // Step 3: compute repo-relative path (always forward slashes for git).
+  const absRoadmap = path.resolve(roadmapPath)
+  const relPath = path.relative(repoRoot, absRoadmap).split(path.sep).join('/')
+
+  // Step 4: retrieve the file at origin/main.
+  const show = spawnSync('git', ['show', `origin/main:${relPath}`], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+    stdio: 'pipe',
+  })
+  if (show.status !== 0) {
+    // If the path specifically does not exist in origin/main → untrusted.
+    const stderr = show.stderr || ''
+    if (stderr.includes('does not exist in') || stderr.includes('exists on disk, but not in')) {
+      return {
+        trusted: false,
+        failureMsg: 'gates not evaluated: roadmap is not committed in origin/main — pass --trust-local-gates to evaluate local gates',
+      }
+    }
+    // Other failures (no remote, not fetched) → fail-open.
+    return { trusted: true }
+  }
+
+  // Step 5: compare content byte-for-byte.
+  let localContent
+  try {
+    localContent = fs.readFileSync(roadmapPath, 'utf8')
+  } catch (_) {
+    return { trusted: true }
+  }
+  if (show.stdout !== localContent) {
+    return {
+      trusted: false,
+      failureMsg: 'gates not evaluated: roadmap content differs from origin/main — pass --trust-local-gates to evaluate local gates',
+    }
+  }
+  return { trusted: true }
+}
+
+function evalGates(commands, cwd, trustResult = { trusted: true }) {
+  // trustResult: { trusted: true } | { trusted: false, failureMsg: string }
+  if (!trustResult.trusted) {
+    // Roadmap is not trusted: do not execute gates (AC3, AC14).
+    // Report as not_evaluated — distinct from passed and blocked (AC6).
+    return {
+      name: 'gates',
+      status: 'not_evaluated',
+      commands,
+      evidence: [],
+      failures: [trustResult.failureMsg],
+    }
+  }
   const evidence = []
   const failures = []
   for (const command of commands) {
@@ -306,7 +395,7 @@ function printTextReport(doc) {
 // Command
 // ────────────────────────────────────────────────────────────────────────────
 
-async function runBarrier(roadmapArg, waveOption, jsonOutput) {
+async function runBarrier(roadmapArg, waveOption, jsonOutput, trustLocalGates) {
   if (waveOption === undefined || waveOption === null || String(waveOption).trim() === '') {
     throw new UsageError('--wave is required')
   }
@@ -325,10 +414,15 @@ async function runBarrier(roadmapArg, waveOption, jsonOutput) {
   const mls = findMLs(lines, wave.startLine, wave.endLine)
   const gates = parseGates(lines, wave.startLine, wave.endLine)
 
+  // Determine trust for gate execution (AC11, AC12).
+  const trustResult = trustLocalGates
+    ? { trusted: true }
+    : roadmapTrustForGates(resolved.path)
+
   const checks = []
   checks.push(evalMlsComplete(mls, waveLabel))
   checks.push(evalAcceptanceEvidence(mls))
-  checks.push(evalGates(gates.commands, process.cwd()))
+  checks.push(evalGates(gates.commands, process.cwd(), trustResult))
   checks.push(await evalValidate())
   const finishedAt = new Date()
 
@@ -354,9 +448,10 @@ function createBarrierCommand() {
     .argument('<roadmap>', 'Roadmap basename, with or without .md')
     .option('--wave <label>', 'Wave label to evaluate (e.g. 1, 2-bis, 2-hotfix)')
     .option('--json', 'Emit the result document as JSON instead of a text report')
+    .option('--trust-local-gates', 'Trust the local roadmap content for gate execution without comparing to origin/main (used by the /trackfw:barrier slash command for WIP roadmaps)')
     .action(async (roadmapArg, options) => {
       try {
-        const exitCode = await runBarrier(roadmapArg, options.wave, !!options.json)
+        const exitCode = await runBarrier(roadmapArg, options.wave, !!options.json, !!options.trustLocalGates)
         process.exit(exitCode)
       } catch (err) {
         if (err instanceof UsageError) {
@@ -381,6 +476,7 @@ module.exports.findMLs = findMLs
 module.exports.mlCompletionStatus = mlCompletionStatus
 module.exports.mlAcceptanceEvidence = mlAcceptanceEvidence
 module.exports.parseGates = parseGates
+module.exports.roadmapTrustForGates = roadmapTrustForGates
 module.exports.evalMlsComplete = evalMlsComplete
 module.exports.evalAcceptanceEvidence = evalAcceptanceEvidence
 module.exports.evalGates = evalGates
