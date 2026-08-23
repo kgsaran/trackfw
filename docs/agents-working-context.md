@@ -23860,3 +23860,49 @@ ADR-2026-08-23 aceito.
 
 **Primeiro roadmap gerado com Wave 0 pelo próprio harness (PR #206)** — e o `barrier --wave 0` já
 reprova por gate real, antes de qualquer implementação.
+
+---
+
+## Sessão 2026-08-23 — hades-tf (INÍCIO: ML-0A — Modelo de ameaça da config global de modelo)
+
+Branch `fix/agents-update-de-escopo-global-resolve-o-pin-de-modelo-da-config-global`.
+Roadmap: `ROADMAP-2026-08-23-agents-update-de-escopo-global-resolve-o-pin-de-modelo-da-config-global.md`.
+
+Escopo: Wave 0 — escrever `docs/seguranca/2026-08-23-modelo-de-ameaca-da-config-global-de-modelo.md`
+com as quatro seções obrigatórias. Nenhuma linha de implementação.
+
+Medições seguras realizadas (sem rodar `agents update` nem `update harness`):
+- `HOME=/nonexistent`, cwd sem `trackfw.yaml`: `agents models` exit 0, tier canônico silencioso.
+- `trackfw.yaml` malformado no cwd: `agents models` exit 1, `MalformedConfigMessage` — bricks todo comando do cwd.
+- `trackfw.yaml` com `chmod 000` no cwd: `agents models` exit 0, silêncio — EACCES = ENOENT na lógica atual.
+
+## Sessão 2026-08-23 — hades-tf (FIM: ML-0A — Modelo de ameaça da config global de modelo)
+
+`trackfw barrier ... --wave 0`: result: **passed**, exit 0. Todos os 4 checks verdes.
+
+**Entregável:** `docs/seguranca/2026-08-23-modelo-de-ameaca-da-config-global-de-modelo.md`
+
+**Achados principais (para o ML-1A do apolo-tf):**
+
+1. **Lista da REQ incompleta em 3 sites:** `update harness` (Go `:1723`, Node `catalogBundleTarget`,
+   Python `:996`) e `init.go:421` também lêem `config.Load().AgentModels` com Scope global. O ML-1A
+   deve cobrir todos esses sites, não só os dois da REQ.
+
+2. **Singleton restringe a solução:** `Load()` é `sync.Once` nos 3 CLIs. A correção deve ser um
+   **resolvedor separado** chamado antes de montar o `PlanRequest` — não uma mudança em `Load()`.
+
+3. **Precedência recomendada (AC2): escopo escolhe o arquivo, exclusivamente.** Global → só
+   `~/.trackfw/trackfw.yaml`. Projeto → só cwd. Sem merge. Custo: o pin manual aplicado hoje (de
+   dentro do repo) reverte após a implementação; KG precisa criar `~/.trackfw/trackfw.yaml` antes.
+
+4. **AC4 exige leitura diagnóstica do projeto:** para distinguir "não configurado" de "configurado no
+   lugar errado", o resolvedor global precisa checar o `trackfw.yaml` do cwd — sem usar o valor.
+
+5. **`osExit(1)` para config global malformada é bug:** brickaria todo comando de todo diretório.
+   Resolvedor global deve ser **não-fatal** (aviso + canônico), com caminho absoluto na mensagem.
+
+6. **Terceiro estado de EACCES (medido):** `chmod 000 trackfw.yaml` → exit 0 silencioso. AC4 declara
+   2 estados; há 3. Residual declarado no modelo de ameaça.
+
+7. **`REQ-2026-08-21-update-harness`:** absorver AC1/AC2/AC3 nesta REQ; rescopar a REQ mais antiga
+   para sanitização de valor (residual que persiste independente da fonte). Decisão do arquiteto.

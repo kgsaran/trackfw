@@ -65,6 +65,29 @@ Decisão de desenho em
       `trackfw-contract`; checker de cobertura exit 0.
 - [ ] **AC10** — `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality` exit 0, com **exit code medido**.
 
+### Acrescentados pela Wave 0 (`docs/seguranca/2026-08-23-modelo-de-ameaca-da-config-global-de-modelo.md`)
+
+- [ ] **AC11** — A correção cobre **todos** os sites que montam `PlanRequest` com escopo global, não
+      os dois citados originalmente: **6 em Go, 4 em Node, 3 em Python**. Os três omitidos pela REQ:
+      `update harness` (`internal/generators/update.go:1723` + equivalentes), `init.go:421`
+      (`installAITools`) e `agents_models.go:68`. A `REQ-2026-08-21-update-harness-le-trackfw-yaml-do-cwd`
+      é **absorvida** na parte de origem de config.
+- [ ] **AC12** — 🔴 **Config global malformada NÃO pode ser fatal.** `config.Load()` hoje faz
+      `osExit(1)` em YAML inválido (`internal/config/config.go:141-144`). Reusar essa política para
+      `~/.trackfw/trackfw.yaml` faria **um arquivo global quebrado derrubar todo comando do trackfw,
+      em todo diretório**. Mensagem não-fatal, byte-idêntica nos 3 CLIs.
+- [ ] **AC13** — **Precedência: o escopo escolhe o arquivo, exclusivamente.** Global lê só
+      `~/.trackfw/trackfw.yaml`; projeto lê só o do cwd. Sem merge, sem fallback.
+      **Consequência declarada:** o pin aplicado à mão em 2026-08-23 reverte quando isto entrar, a
+      menos que `~/.trackfw/trackfw.yaml` exista — a migração é parte da entrega, não do usuário.
+- [ ] **AC14** — 🔴 **O AC4 exige ler o arquivo de projeto para diagnóstico.** Distinguir "não
+      configurado" de "configurado em lugar que não vale para escopo global" só é possível se o
+      resolvedor global **olhar** o `trackfw.yaml` do projeto — **sem usar o valor**. Implementar
+      apenas "global lê do global" **não** entrega o AC4.
+- [ ] **AC15** — Testes de resolução por escopo usam **subprocessos** ou reset explícito do singleton:
+      `config.Load()` usa `sync.Once`, então um processo que resolve projeto antes de global prende o
+      valor do cwd e mascara o defeito.
+
 ## Negative scope
 
 - **Não** generaliza o carregador de config global para outras chaves. Começa por `agent_models`; a
