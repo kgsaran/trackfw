@@ -114,6 +114,105 @@ const MalformedConfigMessage = "trackfw: erro ao carregar \"trackfw.yaml\": YAML
 // path without terminating the test process.
 var osExit = os.Exit
 
+// AgentModelsSource indicates where agent_models was resolved from for a global-scope operation.
+type AgentModelsSource int
+
+const (
+	// AgentModelsSourceNone: global config absent or has no agent_models; cwd also has none.
+	AgentModelsSourceNone AgentModelsSource = iota
+	// AgentModelsSourceGlobal: agent_models resolved from ~/.trackfw/trackfw.yaml.
+	AgentModelsSourceGlobal
+	// AgentModelsSourceProjectOnly: agent_models found in cwd's trackfw.yaml but not global.
+	// The value is NOT used; this state triggers the AC4/AC14 advisory message.
+	AgentModelsSourceProjectOnly
+	// AgentModelsSourceGlobalMalformed: ~/.trackfw/trackfw.yaml exists but has invalid YAML.
+	// Non-fatal: MalformedGlobalConfigMessage is emitted; canonical tier is used.
+	AgentModelsSourceGlobalMalformed
+)
+
+// MalformedGlobalConfigMessage is written to stderr (non-fatal) when ~/.trackfw/trackfw.yaml
+// exists but fails to parse as valid YAML. Unlike MalformedConfigMessage (project config, fatal),
+// a malformed global config degrades gracefully to canonical tier.
+// Must be byte-identical across Go, Node.js and Python — ADR-2026-08-23.
+const MalformedGlobalConfigMessage = `trackfw: aviso: "~/.trackfw/trackfw.yaml" tem YAML malformado — config global de modelo ignorada; usando tier canônico.`
+
+// GlobalAgentModelsNoneMessage is emitted to stderr when agent_models is not configured in the
+// global config and not found in cwd's trackfw.yaml either. Non-fatal.
+// Must be byte-identical across Go, Node.js and Python — ADR-2026-08-23.
+const GlobalAgentModelsNoneMessage = `trackfw: agents global: agent_models não configurado em ~/.trackfw/trackfw.yaml — usando tier canônico. Configure em ~/.trackfw/trackfw.yaml para pinar versões.`
+
+// GlobalAgentModelsProjectOnlyMessage is emitted to stderr when agent_models is found in the
+// project's trackfw.yaml but not in the global config (AC4/AC14). The value is NOT applied.
+// Must be byte-identical across Go, Node.js and Python — ADR-2026-08-23.
+const GlobalAgentModelsProjectOnlyMessage = `trackfw: agents global: agent_models configurado em trackfw.yaml do projeto mas não vale para escopo global. Mova a chave para ~/.trackfw/trackfw.yaml.`
+
+// LoadGlobalAgentModels reads agent_models from ~/.trackfw/trackfw.yaml, bypassing the Load()
+// singleton. homeDir is the user home directory (e.g. from os.UserHomeDir()); cwd is the
+// working directory used only for the AC14 diagnostic (detect "configured in project, not global").
+//
+// Never calls osExit. Returns an empty map and the appropriate AgentModelsSource for the caller
+// to decide messaging and fallback. Pattern mirrors ReadAgentConventions above.
+func LoadGlobalAgentModels(homeDir, cwd string) (map[string]string, AgentModelsSource) {
+	globalPath := filepath.Join(homeDir, ".trackfw", "trackfw.yaml")
+	data, err := os.ReadFile(globalPath)
+	if err != nil {
+		// Global file absent or unreadable → check if cwd trackfw.yaml has agent_models (AC14).
+		return map[string]string{}, cwdAgentModelsSource(cwd)
+	}
+	// Global file exists — validate YAML (non-fatal for global config, per AC12).
+	var probe yaml.Node
+	if err := yaml.Unmarshal(data, &probe); err != nil || hasMultipleDocuments(data) {
+		return map[string]string{}, AgentModelsSourceGlobalMalformed
+	}
+	cfg := ProjectConfig{Rules: make(map[string]string), AgentModels: map[string]string{}}
+	parse(string(data), &cfg)
+	if len(cfg.AgentModels) > 0 {
+		return cfg.AgentModels, AgentModelsSourceGlobal
+	}
+	// Global file exists but has no agent_models → check if cwd has it (AC14).
+	return map[string]string{}, cwdAgentModelsSource(cwd)
+}
+
+// cwdAgentModelsSource returns AgentModelsSourceProjectOnly if cwd's trackfw.yaml has
+// agent_models configured, or AgentModelsSourceNone otherwise.
+func cwdAgentModelsSource(cwd string) AgentModelsSource {
+	if cwd == "" {
+		return AgentModelsSourceNone
+	}
+	data, err := os.ReadFile(filepath.Join(cwd, "trackfw.yaml"))
+	if err != nil {
+		return AgentModelsSourceNone
+	}
+	cfg := ProjectConfig{Rules: make(map[string]string), AgentModels: map[string]string{}}
+	parse(string(data), &cfg)
+	if len(cfg.AgentModels) > 0 {
+		return AgentModelsSourceProjectOnly
+	}
+	return AgentModelsSourceNone
+}
+
+// ResolveAgentModels returns the agent_models map and any advisory message for the given scope.
+// For global scope, reads from ~/.trackfw/trackfw.yaml via LoadGlobalAgentModels.
+// For project scope, reads from the cwd's trackfw.yaml via Load().
+// The returned warnMsg is non-empty when the caller should emit an advisory to stderr.
+// ResolveAgentModels never writes to stderr itself.
+func ResolveAgentModels(scope, homeDir, cwd string) (models map[string]string, warnMsg string) {
+	if scope != "global" {
+		return Load().AgentModels, ""
+	}
+	m, source := LoadGlobalAgentModels(homeDir, cwd)
+	switch source {
+	case AgentModelsSourceNone:
+		return m, GlobalAgentModelsNoneMessage
+	case AgentModelsSourceProjectOnly:
+		return m, GlobalAgentModelsProjectOnlyMessage
+	case AgentModelsSourceGlobalMalformed:
+		return m, MalformedGlobalConfigMessage
+	default: // AgentModelsSourceGlobal
+		return m, ""
+	}
+}
+
 // Load returns the singleton ProjectConfig, reading trackfw.yaml on first call.
 // If trackfw.yaml is absent, empty or comments-only, retrocompatible defaults apply silently.
 // If trackfw.yaml exists but is not valid YAML, Load prints MalformedConfigMessage to stderr

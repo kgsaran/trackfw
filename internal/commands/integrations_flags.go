@@ -222,10 +222,14 @@ func executeIntegrationMutation(cmd *cobra.Command, kind integrations.ItemKind, 
 	if err != nil {
 		return fmt.Errorf("%s: identidade invalida: %w", operation, err)
 	}
+	agentModels, warnMsg := config.ResolveAgentModels(opts.scope, manager.HomeDir, manager.ProjectRoot)
+	if warnMsg != "" {
+		fmt.Fprintln(os.Stderr, warnMsg)
+	}
 	plans, err := integrations.BuildPlans(catalog, integrations.PlanRequest{
 		Kind: kind, Targets: opts.targets, Items: opts.items, Scope: opts.scope, Surfaces: surfaceMap, Identity: ident,
 		ProjectRoot: manager.ProjectRoot,
-		AgentModels: config.Load().AgentModels,
+		AgentModels: agentModels,
 	})
 	if err != nil {
 		return err
@@ -332,11 +336,15 @@ func executeIntegrationList(cmd *cobra.Command, kind integrations.ItemKind, opts
 	if err != nil {
 		return fmt.Errorf("list: identidade invalida: %w", err)
 	}
+	listAgentModels, listWarnMsg := config.ResolveAgentModels(opts.scope, manager.HomeDir, manager.ProjectRoot)
+	if listWarnMsg != "" {
+		fmt.Fprintln(os.Stderr, listWarnMsg)
+	}
 	plans, err := integrations.BuildPlans(catalog, integrations.PlanRequest{
 		Kind: kind, Targets: opts.targets, Items: opts.items, Scope: opts.scope,
 		Surfaces: surfaceMap, AllSurfaces: true, Identity: ident,
 		ProjectRoot: manager.ProjectRoot,
-		AgentModels: config.Load().AgentModels,
+		AgentModels: listAgentModels,
 	})
 	if err != nil {
 		return err

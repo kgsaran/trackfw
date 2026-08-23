@@ -4,6 +4,17 @@
 
 ---
 
+## Sessão 2026-08-23 — apolo-tf (INÍCIO: ML-1A — Config global como fonte para escopo global, nos 3 CLIs)
+
+Branch `fix/agents-update-de-escopo-global-resolve-o-pin-de-modelo-da-config-global`. Sem
+commit/push (autoridade exclusiva do `trackfw_architect`).
+
+**Escopo:** implementar `LoadGlobalAgentModels` / `ResolveAgentModels` nos 3 CLIs (Go + Node +
+Python); corrigir 13 sites de chamada (6 Go + 4 Node + 3 Python); AC5 em `agents models`;
+AC12 (não-fatal para global malformado); AC14 (diagnóstico de "configurado no projeto").
+
+---
+
 ## Sessão 2026-08-22 — apolo-tf (INÍCIO/FIM: ML-1A — Wave 0 no gerador, no `barrier` e nos assets)
 
 Branch `feat/wave-0-de-modelo-de-ameaca-no-harness-e-o-asset-do-arquiteto-ensina-trackfw-push`. Sem
@@ -23906,3 +23917,50 @@ Medições seguras realizadas (sem rodar `agents update` nem `update harness`):
 
 7. **`REQ-2026-08-21-update-harness`:** absorver AC1/AC2/AC3 nesta REQ; rescopar a REQ mais antiga
    para sanitização de valor (residual que persiste independente da fonte). Decisão do arquiteto.
+
+---
+
+## FIM — apolo-tf — 2026-08-23 — ML-1A concluído
+
+**Tarefa:** ML-1A — Config global como fonte para escopo global, nos 3 CLIs
+**Roadmap:** `ROADMAP-2026-08-23-agents-update-de-escopo-global-resolve-o-pin-de-modelo-da-config-global.md`
+**Branch:** `fix/agents-update-de-escopo-global-resolve-o-pin-de-modelo-da-config-global`
+
+### Arquivos modificados
+
+**Go:**
+- `internal/config/config.go` — `AgentModelsSource`, `LoadGlobalAgentModels`, `cwdAgentModelsSource`, `ResolveAgentModels`, 3 constantes de mensagem
+- `internal/config/config_global_agent_models_test.go` (NOVO) — 9 testes AC15-compliant com `t.TempDir()`
+- `internal/commands/integrations_flags.go` — 2 call sites (lifecycle + list) migrados para `ResolveAgentModels`
+- `internal/commands/init.go` — 1 call site migrado
+- `internal/generators/update.go` — 1 call site `harnessCatalogTarget` (global fixo)
+- `internal/commands/integrations_thirdparty.go` — 2 call sites migrados
+- `internal/commands/agents_models.go` — `executeAgentModels` usa `LoadGlobalAgentModels` + emite "source: ..." no stdout
+
+**Node.js:**
+- `npm/src/config/index.js` — `_cwdAgentModelsSource`, `loadGlobalAgentModels`, `resolveAgentModels`, 3 constantes
+- `npm/src/commands/integrations.js` — lifecycle handler + `createAgentModelsCommand` migrados
+- `npm/src/commands/update-harness.js` — `catalogBundleTarget` migrado
+
+**Python:**
+- `pypi/trackfw/config.py` — `_cwd_agent_models_source`, `load_global_agent_models`, `resolve_agent_models`, 3 constantes
+- `pypi/trackfw/integrations/command.py` — `_run_models` + `run` migrados
+- `pypi/trackfw/commands/update_harness.py` — `_catalog_group_result` migrado
+
+### Evidências de conclusão
+
+- `go build ./...` — limpo
+- `go test ./...` — 16 pacotes, todos `ok`
+- `go vet ./...` — limpo
+- Node.js: 773 passed, 0 failed
+- Python: 1485 passed
+- `make quality` — exit 0 (background task bmka52dl6 concluído)
+- `./bin/trackfw validate` — 16 warnings, mesma baseline, zero violações novas
+- AC1 verificado: saída idêntica de dois cwds distintos com mesmo `~/.trackfw/trackfw.yaml`
+- AC4/AC14 verificado: "source: não configurado" e "source: trackfw.yaml do projeto..." conforme esperado
+- AC12 verificado: config global malformada → exit 0, aviso, fallback canônico
+
+### Residual declarado
+
+`internal/commands/doctor.go` — 1 call site de `config.Load().AgentModels` que não foi migrado. Exclui-se do escopo porque: (1) `doctor` faz leitura diagnóstica apenas, não usa o valor para renderizar agentes; (2) não está na enumeração de AC11; (3) migração exigiria refactoring de assinatura de `RunDoctor`. Risco: baixo, comportamento documentado.
+

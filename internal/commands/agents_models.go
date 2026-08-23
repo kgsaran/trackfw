@@ -10,6 +10,15 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// modelsSourceLine constants are the "source:" header printed to stdout before the table (AC5).
+// Must be byte-identical across Go, Node.js and Python — ADR-2026-08-23.
+const (
+	modelsSourceLineGlobal        = "source: ~/.trackfw/trackfw.yaml"
+	modelsSourceLineNone          = "source: não configurado"
+	modelsSourceLineProjectOnly   = "source: trackfw.yaml do projeto (não vale para escopo global)"
+	modelsSourceLineGlobalMalformed = "source: arquivo global malformado"
+)
+
 // newAgentModelsCmd returns the "models" subcommand of "trackfw agents". It
 // lists, for each catalog agent × target pair, the model identifier that
 // "trackfw agents install" or "trackfw agents update" would write to the
@@ -65,10 +74,36 @@ func executeAgentModels(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("loading catalog: %w", err)
 	}
 
-	cfg := config.Load()
-	agentModels := cfg.AgentModels
+	// AC5 + AC11: read agent_models from the global config (~/.trackfw/trackfw.yaml),
+	// not from the cwd singleton. Show origin before the table.
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("resolving home directory: %w", err)
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("resolving working directory: %w", err)
+	}
+	agentModels, modelsSource := config.LoadGlobalAgentModels(homeDir, cwd)
 	if agentModels == nil {
 		agentModels = map[string]string{}
+	}
+
+	out := cmd.OutOrStdout()
+
+	// Source line (AC5): show origin before the table; advisory to stderr when not resolved.
+	switch modelsSource {
+	case config.AgentModelsSourceGlobal:
+		fmt.Fprintln(out, modelsSourceLineGlobal)
+	case config.AgentModelsSourceNone:
+		fmt.Fprintln(out, modelsSourceLineNone)
+		fmt.Fprintln(os.Stderr, config.GlobalAgentModelsNoneMessage)
+	case config.AgentModelsSourceProjectOnly:
+		fmt.Fprintln(out, modelsSourceLineProjectOnly)
+		fmt.Fprintln(os.Stderr, config.GlobalAgentModelsProjectOnlyMessage)
+	case config.AgentModelsSourceGlobalMalformed:
+		fmt.Fprintln(out, modelsSourceLineGlobalMalformed)
+		fmt.Fprintln(os.Stderr, config.MalformedGlobalConfigMessage)
 	}
 
 	// Warnings: emit once per suspect tier, sorted for deterministic output,
@@ -88,7 +123,6 @@ func executeAgentModels(cmd *cobra.Command, _ []string) error {
 		)
 	}
 
-	out := cmd.OutOrStdout()
 	fmt.Fprintf(out, "%-*s %-*s %-*s %s\n",
 		modelsAgentWidth, "AGENT",
 		modelsTierWidth, "TIER",

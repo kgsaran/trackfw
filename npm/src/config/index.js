@@ -86,6 +86,21 @@ function defaults() {
 
 let _instance = null;
 
+// MALFORMED_GLOBAL_CONFIG_MESSAGE is written to stderr (non-fatal) when ~/.trackfw/trackfw.yaml
+// exists but fails to parse as valid YAML. Must be byte-identical to Go's MalformedGlobalConfigMessage
+// and Python's MALFORMED_GLOBAL_CONFIG_MESSAGE — ADR-2026-08-23.
+const MALFORMED_GLOBAL_CONFIG_MESSAGE = 'trackfw: aviso: "~/.trackfw/trackfw.yaml" tem YAML malformado — config global de modelo ignorada; usando tier canônico.';
+
+// GLOBAL_AGENT_MODELS_NONE_MESSAGE is emitted to stderr when agent_models is not configured
+// in the global config and not found in cwd's trackfw.yaml either.
+// Must be byte-identical to Go's GlobalAgentModelsNoneMessage and Python's equivalent.
+const GLOBAL_AGENT_MODELS_NONE_MESSAGE = 'trackfw: agents global: agent_models não configurado em ~/.trackfw/trackfw.yaml — usando tier canônico. Configure em ~/.trackfw/trackfw.yaml para pinar versões.';
+
+// GLOBAL_AGENT_MODELS_PROJECT_ONLY_MESSAGE is emitted when agent_models is found in the
+// project's trackfw.yaml but not in the global config (AC4/AC14). Value NOT applied.
+// Must be byte-identical to Go's GlobalAgentModelsProjectOnlyMessage and Python's equivalent.
+const GLOBAL_AGENT_MODELS_PROJECT_ONLY_MESSAGE = 'trackfw: agents global: agent_models configurado em trackfw.yaml do projeto mas não vale para escopo global. Mova a chave para ~/.trackfw/trackfw.yaml.';
+
 // MALFORMED_CONFIG_MESSAGE is written to stderr, verbatim, when trackfw.yaml exists but fails to
 // parse as YAML. Kept identical, character-for-character, to Go's MalformedConfigMessage and
 // Python's MALFORMED_CONFIG_MESSAGE — see the comment on parse() below for why the text is
@@ -340,6 +355,65 @@ function readAgentConventions(cwd) {
   return cfg.update.agentConventions || '';
 }
 
+// _cwdAgentModelsSource returns 'project_only' if cwd's trackfw.yaml has agent_models configured,
+// 'none' otherwise. Used for the AC14 diagnostic in loadGlobalAgentModels.
+function _cwdAgentModelsSource(cwd) {
+  if (!cwd) return 'none';
+  try {
+    const cwdContent = fs.readFileSync(path.join(cwd, 'trackfw.yaml'), 'utf8');
+    const cwdCfg = { rules: {}, credentialGuard: {}, update: {}, sync: {}, linkFields: {}, agentModels: {} };
+    parse(cwdContent, cwdCfg);
+    if (cwdCfg.agentModels && Object.keys(cwdCfg.agentModels).length > 0) return 'project_only';
+  } catch (_) {}
+  return 'none';
+}
+
+// loadGlobalAgentModels reads agent_models from ~/.trackfw/trackfw.yaml, bypassing the load()
+// singleton. homeDir is os.homedir(); cwd is process.cwd() (used only for AC14 diagnostic).
+// Returns { models: {}, source } where source is one of:
+//   'global'            — agent_models resolved from ~/.trackfw/trackfw.yaml
+//   'none'              — global config absent or has no agent_models; cwd also has none
+//   'project_only'      — agent_models in cwd's trackfw.yaml but not global (AC14 trigger)
+//   'global_malformed'  — ~/.trackfw/trackfw.yaml exists but has invalid YAML (AC12 trigger)
+// Never calls process.exit. Pattern mirrors readAgentConventions above.
+function loadGlobalAgentModels(homeDir, cwd) {
+  const globalPath = path.join(homeDir, '.trackfw', 'trackfw.yaml');
+  let data;
+  try {
+    data = fs.readFileSync(globalPath, 'utf8');
+  } catch (_) {
+    return { models: {}, source: _cwdAgentModelsSource(cwd) };
+  }
+  // Validate YAML (non-fatal for global config, per AC12).
+  const globalCfg = { rules: {}, credentialGuard: {}, update: {}, sync: {}, linkFields: {}, agentModels: {} };
+  const malformed = parse(data, globalCfg);
+  if (malformed) {
+    return { models: {}, source: 'global_malformed' };
+  }
+  if (globalCfg.agentModels && Object.keys(globalCfg.agentModels).length > 0) {
+    return { models: globalCfg.agentModels, source: 'global' };
+  }
+  // Global file exists but has no agent_models → check cwd (AC14).
+  return { models: {}, source: _cwdAgentModelsSource(cwd) };
+}
+
+// resolveAgentModels returns { models, warning } for the given scope.
+// For global scope, reads from ~/.trackfw/trackfw.yaml via loadGlobalAgentModels.
+// For project scope, reads from the cwd's trackfw.yaml via load().
+// warning is a non-empty string when the caller should emit an advisory to stderr.
+// resolveAgentModels never writes to stderr itself.
+function resolveAgentModels(scope, homeDir, cwd) {
+  if (scope !== 'global') {
+    return { models: load().agentModels || {}, warning: '' };
+  }
+  const { models, source } = loadGlobalAgentModels(homeDir, cwd);
+  let warning = '';
+  if (source === 'none') warning = GLOBAL_AGENT_MODELS_NONE_MESSAGE;
+  else if (source === 'project_only') warning = GLOBAL_AGENT_MODELS_PROJECT_ONLY_MESSAGE;
+  else if (source === 'global_malformed') warning = MALFORMED_GLOBAL_CONFIG_MESSAGE;
+  return { models, warning };
+}
+
 const NAMESPACING_FLAT = 'flat';
 const NAMESPACING_BY_AGENT = 'by_agent';
 
@@ -350,7 +424,12 @@ module.exports = {
   expandPath,
   parseRulesFromContent,
   readAgentConventions,
+  loadGlobalAgentModels,
+  resolveAgentModels,
   NAMESPACING_FLAT,
   NAMESPACING_BY_AGENT,
   MALFORMED_CONFIG_MESSAGE,
+  MALFORMED_GLOBAL_CONFIG_MESSAGE,
+  GLOBAL_AGENT_MODELS_NONE_MESSAGE,
+  GLOBAL_AGENT_MODELS_PROJECT_ONLY_MESSAGE,
 };

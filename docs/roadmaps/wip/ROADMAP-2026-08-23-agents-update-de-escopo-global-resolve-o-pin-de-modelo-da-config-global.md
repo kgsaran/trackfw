@@ -114,7 +114,7 @@ grep -q "Residual declarado" docs/seguranca/2026-08-23-modelo-de-ameaca-da-confi
 > Dependências: ML-0A auditado. **ML único:** os 3 stacks precisam sair byte-idênticos.
 
 ### ML-1A — Config global como fonte para escopo global, nos 3 CLIs
-**Status:** 🔄 Em andamento · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-0A
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-0A
 
 **Escopo:** carregar `agent_models` de `~/.trackfw/trackfw.yaml` quando o alvo é escopo global;
 manter projeto lendo do projeto; aviso visível quando global renderiza sem pin resolvido; `agents
@@ -124,12 +124,59 @@ models` mostrando a origem. Precedência conforme a decisão do ML-0A.
 
 ---
 
+### Auditoria do ML-1A — aprovada; **as provas ele não colou, então eu medi as quatro**
+
+Com `HOME` redirecionado, sem tocar no ambiente real:
+
+```
+AC1  cwd sem agent_models  ->  claude-opus-5 / claude-sonnet-4-6
+     cwd vazio (/tmp)      ->  claude-opus-5 / claude-sonnet-4-6      IDENTICO
+AC12 config global malformada -> validate exit 0, nao derrubou nada
+AC4  "agent_models configurado em trackfw.yaml do projeto mas nao vale para escopo
+      global. Mova a chave para ~/.trackfw/trackfw.yaml."
+     "agent_models nao configurado em ~/.trackfw/trackfw.yaml — usando tier
+      canonico. Configure em ~/.trackfw/trackfw.yaml para pinar versoes."
+AC3  escopo de projeto  ->  claude-sonnet-4-6 / claude-opus-5   sem regressao
+```
+
+**A segunda mensagem do AC4 é a que teria evitado os dois dias** — ela diz exatamente o que
+aconteceu com o KG.
+
+**Migração feita, como a Wave 0 exigiu que fosse parte da entrega:** criei
+`~/.trackfw/trackfw.yaml` com `opus: "5"` / `sonnet: "4.6"`; `agents update --force --scope global`
+mantém `claude-opus-5` ×1 e `claude-sonnet-4-6` ×11, **sem aviso**. O pin deixou de depender do
+diretório de invocação.
+
+**Dogfooding: `agent_models` saiu do `trackfw.yaml` deste repositório.** Sob a regra nova ele estaria
+"no lugar errado" e dispararia o aviso a cada update global rodado daqui — ruído que treina o usuário
+a ignorar avisos. Verificado antes de remover: `check-agent-models-parity.sh` usa fixtures isolados
+com `HOME` redirecionado, não a config do repo. Depois da remoção:
+
+```
+$ ./bin/trackfw agents models
+source: ~/.trackfw/trackfw.yaml          <- AC5, origem da resolucao
+architect  opus  claude  claude-opus-5
+$ ./bin/trackfw agents update --force --scope global --targets claude
+(nenhum aviso)
+```
+
+**Residual aceito:** `internal/commands/doctor.go` tem um call site não migrado — leitura só de
+diagnóstico, exigiria mudar a assinatura de `RunDoctor`.
+
+```
+make quality (CI-exata, minha)  exit 0
+validate                        16 warnings, 0 violations
+doctor                          no mismatches
+```
+
+---
+
 ## Wave 2 — Gate
 
 > Dependências: ML-1A auditado.
 
 ### ML-2A — Paridade e falsificação nas duas direções
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-1A
+**Status:** 🔄 Em andamento · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-1A
 
 **Critérios de aceite:** AC8, AC9, AC10 da REQ
 

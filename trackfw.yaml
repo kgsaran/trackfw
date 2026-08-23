@@ -17,6 +17,3 @@ forge: github
 # o Sonnet 4.6 usa o tokenizador pré-4.7 e consome ~30% menos tokens para
 # o mesmo texto, embora custe mais por token ($3/$15 contra $2/$10).
 # Conferir a resolução efetiva: trackfw agents models
-agent_models:
-  opus: "5"
-  sonnet: "4.6"

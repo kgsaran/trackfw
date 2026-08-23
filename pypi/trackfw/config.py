@@ -24,6 +24,30 @@ MALFORMED_CONFIG_MESSAGE = (
     "Corrija a sintaxe do arquivo antes de continuar."
 )
 
+# MALFORMED_GLOBAL_CONFIG_MESSAGE is written to stderr (non-fatal) when ~/.trackfw/trackfw.yaml
+# exists but fails to parse as valid YAML. Must be byte-identical to Go's MalformedGlobalConfigMessage
+# and Node's MALFORMED_GLOBAL_CONFIG_MESSAGE — ADR-2026-08-23.
+MALFORMED_GLOBAL_CONFIG_MESSAGE = (
+    'trackfw: aviso: "~/.trackfw/trackfw.yaml" tem YAML malformado'
+    " — config global de modelo ignorada; usando tier canônico."
+)
+
+# GLOBAL_AGENT_MODELS_NONE_MESSAGE is emitted to stderr when agent_models is not configured
+# in the global config and not found in cwd's trackfw.yaml either.
+# Must be byte-identical to Go's GlobalAgentModelsNoneMessage and Node's equivalent.
+GLOBAL_AGENT_MODELS_NONE_MESSAGE = (
+    "trackfw: agents global: agent_models não configurado em ~/.trackfw/trackfw.yaml"
+    " — usando tier canônico. Configure em ~/.trackfw/trackfw.yaml para pinar versões."
+)
+
+# GLOBAL_AGENT_MODELS_PROJECT_ONLY_MESSAGE is emitted when agent_models is found in the
+# project's trackfw.yaml but not in the global config (AC4/AC14). Value NOT applied.
+# Must be byte-identical to Go's GlobalAgentModelsProjectOnlyMessage and Node's equivalent.
+GLOBAL_AGENT_MODELS_PROJECT_ONLY_MESSAGE = (
+    "trackfw: agents global: agent_models configurado em trackfw.yaml do projeto"
+    " mas não vale para escopo global. Mova a chave para ~/.trackfw/trackfw.yaml."
+)
+
 
 def _resolve_alias_node(node):
     """PyYAML's yaml.compose() já resolve aliases de forma transparente: o nó de 'b' em
@@ -224,6 +248,94 @@ def read_agent_conventions(cwd=None):
         return cfg["update"].get("agent_conventions", "")
     except Exception:
         return ""
+
+
+def _cwd_agent_models_source(cwd: str | None) -> str:
+    """Returns 'project_only' if cwd's trackfw.yaml has agent_models configured, 'none' otherwise.
+    Used for the AC14 diagnostic in load_global_agent_models.
+    """
+    if not cwd:
+        return "none"
+    try:
+        yaml_path = os.path.join(cwd, "trackfw.yaml")
+        with open(yaml_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        cfg: dict = {
+            "rules": {},
+            "credential_guard": {},
+            "update": {},
+            "sync": {},
+            "link_fields": {},
+            "agent_models": {},
+        }
+        malformed = _parse(content, cfg)
+        if not malformed and cfg.get("agent_models"):
+            return "project_only"
+    except Exception:
+        pass
+    return "none"
+
+
+def load_global_agent_models(home_dir: str, cwd: str | None = None) -> tuple[dict, str]:
+    """Reads agent_models from ~/.trackfw/trackfw.yaml, bypassing the load() singleton.
+
+    home_dir is the user's home directory (e.g. os.path.expanduser('~')); cwd is the
+    working directory used only for the AC14 diagnostic (detect 'configured in project,
+    not global'). Never calls sys.exit. Pattern mirrors read_agent_conventions above.
+
+    Returns (models, source) where source is one of:
+      'global'            — agent_models resolved from ~/.trackfw/trackfw.yaml
+      'none'              — global config absent or has no agent_models; cwd also has none
+      'project_only'      — agent_models in cwd's trackfw.yaml but not global (AC14 trigger)
+      'global_malformed'  — ~/.trackfw/trackfw.yaml exists but has invalid YAML (AC12 trigger)
+    """
+    global_path = os.path.join(home_dir, ".trackfw", "trackfw.yaml")
+    try:
+        with open(global_path, "r", encoding="utf-8") as f:
+            data = f.read()
+    except Exception:
+        # Global file absent or unreadable → check cwd for AC14 diagnostic.
+        return {}, _cwd_agent_models_source(cwd)
+
+    # Validate YAML (non-fatal for global config, per AC12).
+    cfg: dict = {
+        "rules": {},
+        "credential_guard": {},
+        "update": {},
+        "sync": {},
+        "link_fields": {},
+        "agent_models": {},
+    }
+    malformed = _parse(data, cfg)
+    if malformed:
+        return {}, "global_malformed"
+
+    if cfg.get("agent_models"):
+        return dict(cfg["agent_models"]), "global"
+
+    # Global file exists but has no agent_models → check cwd (AC14).
+    return {}, _cwd_agent_models_source(cwd)
+
+
+def resolve_agent_models(scope: str, home_dir: str, cwd: str | None = None) -> tuple[dict, str]:
+    """Returns (models, warn_msg) for the given scope.
+
+    For global scope, reads from ~/.trackfw/trackfw.yaml via load_global_agent_models.
+    For project scope, reads from the cwd's trackfw.yaml via load().
+    warn_msg is non-empty when the caller should emit an advisory to stderr.
+    resolve_agent_models never writes to stderr itself.
+    """
+    if scope != "global":
+        return dict(load().get("agent_models", {})), ""
+
+    models, source = load_global_agent_models(home_dir, cwd)
+    if source == "none":
+        return models, GLOBAL_AGENT_MODELS_NONE_MESSAGE
+    if source == "project_only":
+        return models, GLOBAL_AGENT_MODELS_PROJECT_ONLY_MESSAGE
+    if source == "global_malformed":
+        return models, MALFORMED_GLOBAL_CONFIG_MESSAGE
+    return models, ""  # source == "global"
 
 
 def _parse(content, cfg):
