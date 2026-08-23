@@ -23284,3 +23284,27 @@ Isso é disciplina de medição e precisa de controle próprio.
 
 **Próximo:** `chore/release-7-2-0` (bump + CHANGELOG) → tag → REQ do harness implementando a Wave 0,
 que nascerá com a própria Wave 0.
+
+---
+
+## Sessão 2026-08-22 — trackfw_architect (INÍCIO: Wave 0 no harness — primeira REQ sob a regra nova)
+
+**Contexto:** `v7.2.0` publicada (tag `ae25dbc`, commit `1aac4af`). KG rodou `trackfw update`,
+`update harness` e `agents update --force`. Conferi: PATH e repo em 7.2.0, `doctor` sem mismatches,
+`validate` 16 warnings / 0 violations, guard global byte-idêntico ao do projeto — e o `git push`
+bruto já devolve a mensagem que ensina `trackfw push`.
+
+**Lacuna encontrada na conferência:** `grep -c "trackfw push" ~/.claude/agents/trackfw-architect.md`
+→ **0**. O guard ensina o comando novo; o agente que mais empurra código não sabe que ele existe.
+Entrou nesta REQ junto com a Wave 0 — as duas mexem no asset do arquiteto.
+
+**Descoberta de desenho, feita antes de qualquer código:** `trackfw barrier` **recusa `--wave 0`**
+(`internal/commands/barrier.go:89`, `waveInt >= 1`). Chamar a wave nova de "Wave 0" sem mexer nisso a
+tornaria inavaliável pela própria ferramenta. Decisão registrada no roadmap: estender a gramática,
+não renomear a wave.
+
+**Esta REQ é a primeira sob a regra nova, e a Wave 0 dela audita a própria Wave 0.**
+
+**Plano:** Wave 0 (`hades-tf`, modelo de ameaça do método) → Wave 1 (`apolo-tf`, gerador + barrier +
+assets + CLAUDE.md semeado, ML único para paridade byte-a-byte) → Wave 2 (gate + falsificação) →
+Wave 3 (reverificação da barreira).
