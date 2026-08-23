@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-08-23
 req: "docs/req/REQ-2026-08-23-titulo-de-roadmap-new-forja-secao-com-gate-que-o-barrier-executa.md"
 squad: "hades-tf, apolo-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, apolo-tf"
 
 # Roadmap: barrier nao executa gate de roadmap nao confiavel e roadmap new sanitiza o titulo
 
-> Created: 2026-08-23 | Status: wip
+> Created: 2026-08-23 | Status: done
 
 ## Context
 
@@ -244,9 +244,38 @@ vem por composição, não por triplicar a sabotagem.
 ## Wave 4 — Barreira
 
 ### ML-4A — Reverificação
-**Status:** 🔄 Em andamento · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
+**Status:** ✅ Concluído · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
 
 Quem escreveu a Wave 0 verifica se a implementação honra o que ela decidiu. **Veredito explícito.**
+
+---
+
+### Auditoria do ML-4A — **APROVADO**, com um achado adjacente que eu escalo
+
+Parecer: `docs/seguranca/2026-08-23-barreira-do-gate-nao-confiavel.md`.
+
+**O que ele mediu e passou:** o discriminante se comporta como a Wave 0 previu nos casos que ela
+nomeou · `not_evaluated` não é confundível com `passed` em nenhum consumidor · a sanitização não tem
+contorno por **U+2028/U+2029** — ele confirmou nos 3 runtimes que o parser usa `split("\n")` e não
+`splitlines()`, então o separador Unicode não abre linha nova · `make quality` exit 0, 377 cenários.
+
+**O AC5 — o critério que reprovaria mesmo com o vetor fechado — passa:** o fluxo dominante não ganhou
+nenhuma interação a mais, porque o consentimento vem do slash command.
+
+#### O achado adjacente, e é maior que o gate
+
+Perguntei se o AC13 tinha **irmãos**. Tem: os **scripts de hook versionados** referenciados pelo
+`.claude/settings.json` do projeto — mais `Makefile` e passos de CI.
+
+**A superfície de hook é mais ampla que a do gate:** ela **não exige rodar `trackfw barrier`**. Um
+checkout de PR hostil executa hook na máquina do mantenedor assim que ele usa a ferramenta. O gate
+que fechamos exige uma ação; o hook não exige nenhuma.
+
+Nomeei os irmãos no mesmo residual do `docs/cli-parity.md` — `check-parity-contract-coverage.sh`
+exit 0. **Não corrigi nada além disso**, e é deliberado: a mitigação real dessa classe não é código,
+é revisão de diff, e mudar isso é decisão de outro ciclo.
+
+**Entrega completa.**
 
 ---
 

@@ -1,14 +1,14 @@
 ---
-status: Open
+status: done
 date: 2026-08-23
 author: "Zeus (Arquiteto)"
 adr: "docs/adr/ADR-2026-08-23-barrier-nao-executa-gate-de-roadmap-nao-confiavel-e-roadmap-new-sanitiza-o-titulo.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-23-barrier-nao-executa-gate-de-roadmap-nao-confiavel-e-roadmap-new-sanitiza-o-titulo.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-23-barrier-nao-executa-gate-de-roadmap-nao-confiavel-e-roadmap-new-sanitiza-o-titulo.md"
 ---
 
 # REQ: título de `roadmap new` forja seção com gate que o `barrier` executa
 
-> Date: 2026-08-23 | Status: Open
+> Date: 2026-08-23 | Status: done
 | Linear Issue:
 | Jira Issue:
 
@@ -96,4 +96,4 @@ ADR: `docs/adr/ADR-2026-08-23-barrier-nao-executa-gate-de-roadmap-nao-confiavel-
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-23-barrier-nao-executa-gate-de-roadmap-nao-confiavel-e-roadmap-new-sanitiza-o-titulo.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-08-23-barrier-nao-executa-gate-de-roadmap-nao-confiavel-e-roadmap-new-sanitiza-o-titulo.md`

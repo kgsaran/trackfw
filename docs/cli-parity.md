@@ -1875,6 +1875,13 @@ CI step, and the maintainer's own conscious invocation are all indistinguishable
 Checking `.claude/commands/trackfw/barrier.md` against `origin/main` doesn't help — the CLI never
 reads that file; the agent reads and executes it.
 
+**Sibling surfaces in the same residual class** (named by the ML-4A barrier review, 2026-08-23):
+version-controlled Claude hook scripts wired from the project's `.claude/settings.json`, project
+`Makefile` targets, and any CI step. All of them run maintainer-side from a PR checkout without
+passing through the CLI, and none is verifiable by the CLI for the same reason as the slash command.
+The hook surface is **broader** than the gate one: it does not require running `trackfw barrier` at
+all.
+
 **The protection against this residual is the same as the protection against a hostile
 `Makefile` or CI workflow in a PR: the maintainer reads the diff.** Editing the slash command
 in a PR is an observable change in the diff, under the same code-review boundary that governs

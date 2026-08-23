@@ -4,6 +4,35 @@
 
 ---
 
+## Sessão 2026-08-23 — hades-tf (FIM: ML-4A — Barreira final / APROVADO com achado adjacente)
+
+Branch `fix/barrier-nao-executa-gate-de-roadmap-nao-confiavel`.
+
+**Veredito:** APROVADO. Discriminante funciona nos 5 casos. Sanitização sem contorno exploitável.
+`not_evaluated` inconfundível com `passed`. Fluxo normal sem atrito. Harness falsifica nas duas
+direções.
+
+**Achado reportado (MEDIUM, fora de escopo desta REQ):** `.claude/settings.json` e os scripts
+`scripts/trackfw-git-branch-guard.sh` (e irmãos) são versioned hook scripts que executam em
+**toda** invocação Bash do Claude Code no repositório. Um PR hostil que os modifique executa no
+shell do mantenedor sem passar por `barrier`. A proteção é a mesma do AC13 (ler o diff), mas o
+inventário de AC13 em `docs/cli-parity.md` não os nomeia. Ação: adicionar ao inventário do
+residual — sem mudança de código de produto.
+
+**Artefato escrito:** `docs/seguranca/2026-08-23-barreira-do-gate-nao-confiavel.md`
+**ML-4A:** ✅ Concluído
+
+---
+
+## Sessão 2026-08-23 — hades-tf (INÍCIO: ML-4A — Barreira final / Wave 0 volta)
+
+Branch `fix/barrier-nao-executa-gate-de-roadmap-nao-confiavel`.
+
+**Escopo:** Reverificação da implementação contra o modelo de ameaça do ML-0A.
+Escreve `docs/seguranca/2026-08-23-barreira-do-gate-nao-confiavel.md`.
+
+---
+
 ## Sessão 2026-08-23 — apolo-tf (FIM: ML-3A pós-auditoria — cenário 171 / fix padrão assert_fails_with / CONCLUÍDO)
 
 Branch `fix/barrier-nao-executa-gate-de-roadmap-nao-confiavel`.
