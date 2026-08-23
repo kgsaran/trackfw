@@ -226,9 +226,65 @@ correção ao round-trip, mas o desvio fica registrado.
 ## Wave 3 — Barreira
 
 ### ML-3A — Reverificação
-**Status:** 🔄 Em andamento · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
+**Status:** ✅ Concluído · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
+**Veredito:** REPROVADO — 5 sites adicionais encontrados (Python init.py, thirdparty.py ×2; Node.js init, thirdparty.js), todos write-path. Detalhes: `docs/seguranca/2026-08-23-barreira-da-config-global-de-modelo.md`.
 
 Quem escreveu a Wave 0 verifica se a implementação honra o que ela enumerou. **Veredito explícito.**
+
+---
+
+### Auditoria do ML-3A — **REPROVADO**, e o achado é a mesma classe do defeito original
+
+Parecer: `docs/seguranca/2026-08-23-barreira-da-config-global-de-modelo.md`.
+
+**A Wave 0 anunciou enumeração completa — 13 sites — e estava incompleta. Faltavam 5**, todos nos
+caminhos de `init` e `third-party` do Node e do Python. Confirmei dois por leitura direta:
+
+```
+pypi/trackfw/commands/init.py:160        _am = trackfw_config.load(cwd)...     <- le cwd com scope=global
+pypi/trackfw/commands/thirdparty.py:458  agent_models=trackfw_config.load()... <- WRITE via manager.update
+npm/src/commands/thirdparty.js           nenhuma ocorrencia de agentModels
+```
+
+**Dois deles são caminho de escrita real de arquivo de agente** (`manager.update`), não leitura de
+diagnóstico. Ou seja: o defeito que esta REQ existe para corrigir **continua vivo** por outra porta —
+`trackfw init` e `third-party --apply-to` ainda pinam pelo cwd.
+
+**O que ele mediu e passou:** os 13 sites migrados · global vencendo quando há config nos dois
+lugares · malformada não-fatal · `chmod 000` tratado como ausente com aviso · as duas mensagens de
+aviso acionáveis e sem induzir erro novo · symlink para `/etc/passwd` sem vazar dado.
+
+**Residual novo que ele nomeia, e que eu aceito:** `HOME` indefinido sai com exit 1 em vez do
+não-fatal que a Wave 0 recomendara. Não há AC exigindo, e `HOME` indefinido não ocorre em produção.
+
+**Sobre a superfície nova de arquivo (a pergunta que eu pedi para ele atacar):** valor com caractere
+de controle é rejeitado no caminho de escrita; valor com `:` que *pareça* modelo (`claude-opus-5:
+danger`) **passa** e vira linha de frontmatter potencialmente inválida. É residual **pré-existente**
+da REQ-2026-08-21 e, nesta entrega, a superfície **diminuiu**: a fonte deixou de ser qualquer cwd e
+passou a ser o home do usuário.
+
+---
+
+## Wave 4 — Correção pós-barreira
+
+### ML-1B — Os 5 sites que a enumeração perdeu
+**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+
+| # | Site | Tipo |
+|---|---|---|
+| B1 | `pypi/trackfw/commands/init.py:160` | write (install) |
+| B2 | `pypi/trackfw/commands/thirdparty.py:458` | **write** (`manager.update`) |
+| B3 | `npm/src/commands/thirdparty.js:337` | **write** (`manager.update`) |
+| B4 | `npm/src/generators/init.js` (`installIntegrationTarget`) | write (install) |
+| B5 | `pypi/trackfw/commands/thirdparty.py:307` | inspeção |
+
+**Critérios de aceite:**
+- [ ] Os 5 usando o resolvedor por escopo, no padrão dos 13 anteriores
+- [ ] Casos 11–12 no `check-agent-models-parity.sh`: `init` e `third-party --apply-to` em escopo
+      global, com **subprocesso próprio** e guard de vacuidade
+- [ ] **Contagem independente:** provar por busca que não há um 19º site — a lista dada já falhou duas
+      vezes nesta REQ
+- [ ] `make quality` CI-exata **exit 0**, exit code medido · `validate` 16 warnings
 
 ---
 

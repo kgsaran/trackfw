@@ -4,6 +4,36 @@
 
 ---
 
+## Sessão 2026-08-23 — hades-tf (FIM: ML-3A — Barreira final / reverificação)
+
+Branch `fix/agents-update-de-escopo-global-resolve-o-pin-de-modelo-da-config-global`. Sem
+commit/push (autoridade exclusiva do `trackfw_architect`).
+
+**Veredito:** REPROVADO. Os 13 sites declarados estão corretamente migrados. Encontrados 5 sites
+adicionais (não na Wave 0) que reproduzem o defeito original em caminhos de escrita:
+- `pypi/trackfw/commands/init.py:160` — init global lê cwd
+- `pypi/trackfw/commands/thirdparty.py:307,458` — --apply-to usa cwd (458 é write path)
+- `npm/src/generators/init.js:1281` (installIntegrationTarget) — agentModels não passado
+- `npm/src/commands/thirdparty.js:336–337` — --apply-to write path sem agentModels
+
+**Artefato produzido:** `docs/seguranca/2026-08-23-barreira-da-config-global-de-modelo.md`
+
+**Próximo passo:** ML-xA cirúrgico (apolo-tf) para as 5 correções Python/Node.js pendentes + 2
+novos casos no parity gate (Cases 11–12 para init e thirdparty).
+
+## Sessão 2026-08-23 — hades-tf (INÍCIO: ML-3A — Barreira final / reverificação)
+
+Branch `fix/agents-update-de-escopo-global-resolve-o-pin-de-modelo-da-config-global`. Sem
+commit/push (autoridade exclusiva do `trackfw_architect`).
+
+**Escopo:** Confrontar cada item do modelo de ameaça (Wave 0) com o que foi entregue nas Waves 1 e
+2. Medir os 4 cenários do §2 com `HOME` redirecionado. Avaliar superfície nova
+`~/.trackfw/trackfw.yaml` (valor hostil, permissões, symlink). Escrever veredito em
+`docs/seguranca/2026-08-23-barreira-da-config-global-de-modelo.md`. Atualizar status do ML-3A no
+roadmap.
+
+---
+
 ## Sessão 2026-08-23 — apolo-tf (FIM: ML-2A — Paridade e falsificação nas duas direções)
 
 Branch `fix/agents-update-de-escopo-global-resolve-o-pin-de-modelo-da-config-global`. Sem
