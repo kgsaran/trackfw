@@ -55,12 +55,50 @@ grep -q "Residual declarado" docs/seguranca/2026-08-23-modelo-de-ameaca-do-gate-
 grep -q "discriminante" docs/seguranca/2026-08-23-modelo-de-ameaca-do-gate-nao-confiavel.md
 ```
 
+
+---
+
+### Auditoria do ML-0A — aprovada, com um achado meu que virou AC13
+
+**A recomendação resolve a tensão do AC5 sem ceder no vetor:** comparar contra **`origin/main`**, com
+`--trust-local-gates` **injetado pelo slash command**.
+
+- **`HEAD` não serve** — o roadmap do PR **está** commitado na branch do PR, então HEAD-comparison o
+  marcaria como confiável: fecharia a usabilidade **sem fechar o vetor**.
+- **Flag obrigatória universal** viraria costume de digitá-la sempre — o *"guard que o usuário
+  desliga"* do `ADR-2026-08-17`.
+- A separação é o ponto: **fluxo de agente** (dominante, slash command) sem fricção; **revisão de PR**
+  (CLI direta) protegida por padrão.
+
+**Ele mediu o caso dominante**, não supôs: o `barrier` roda **antes** do commit de conclusão do ML,
+logo o roadmap está sempre modificado e não commitado — confirmado nos registros desta série.
+
+**Confirmei a ordem de execução no código:** `barrier.go:506-525` compõe o veredito **depois** de
+rodar os comandos. Por isso o gate da direção (b) tem de verificar **ausência do arquivo**, não só
+exit code → **AC14**.
+
+**Enumeração:** buscou `sh -c`, `exec.Command`, `subprocess.run(shell=True)` e
+`spawnSync({shell:true})` nos 3 stacks; o `barrier` é o **único** ponto que executa shell derivado de
+conteúdo de arquivo versionado. Os demais `exec` usam args estruturados.
+
+#### 🔴 O que eu achei auditando a recomendação
+
+**O slash command vive no repositório** — `.claude/commands/trackfw/barrier.md` está versionado aqui.
+Um PR hostil pode **editar o próprio slash command** para incluir `--trust-local-gates` e recuperar a
+execução. **A proteção guarda a chave dentro da porta que ela tranca.** → **AC13**: a entrega diz o
+que impede isso, ou declara o residual com o motivo.
+
+**Residuais dele, aceitos:** roadmap commitado e mergeado com gate hostil continua executando
+(fronteira é revisão de código) · mantenedor que revisa PR pelo slash command contorna a proteção ·
+store de hashes pré-aprovados descartado, com motivo.
+
+---
 ## Wave 1 — Sanitização do título
 
 > Dependências: ML-0A auditado. **Parte barata e independente da decisão do discriminante.**
 
 ### ML-1A — `roadmap new` sanitiza o título nos 3 CLIs
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-0A
+**Status:** 🔄 Em andamento · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-0A
 
 `internal/generators/roadmap.go:150` e o caminho `--from-req`, mais os equivalentes Node e Python.
 Newline e retorno de carro no título são entrada malformada.
