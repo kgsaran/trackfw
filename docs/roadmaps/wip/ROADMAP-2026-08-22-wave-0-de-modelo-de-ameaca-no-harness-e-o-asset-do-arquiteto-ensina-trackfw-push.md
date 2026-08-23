@@ -132,7 +132,7 @@ depende de Wave 0 auditada" é frase no roadmap, não checagem em código.
 > byte-idênticos, e dividir por linguagem é o que produziu as divergências das séries anteriores.
 
 ### ML-1A — Wave 0 no gerador, no `barrier` e nos assets
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-0A
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-0A
 
 **Arquivos afetados (âncoras medidas):**
 - Gerador: `internal/generators/roadmap.go:113` (template `new`) e `:153` (`--from-req`) + os
@@ -155,7 +155,21 @@ depende de Wave 0 auditada" é frase no roadmap, não checagem em código.
 4. Asset de segurança: entregável da Wave 0.
 5. `CLAUDE.md` semeado: diretiva *Security wave* cobrindo as duas pontas.
 
-**Critérios de aceite:** AC1–AC8 da REQ · `make quality` exit 0 · assets byte-idênticos nos 3 CLIs
+**Critérios de aceite:**
+- [x] AC1, AC2, AC12 — template emite `## Wave 0 — Threat Model` nos dois caminhos (`new` e
+      `--from-req`), byte-idêntico nos 3 CLIs (provado por `diff`), ML sempre `ML-0A`
+- [x] AC3, AC4 — `barrier --wave 0` aceito ponta a ponta nos 3 runtimes (prova real contra o
+      roadmap desta REQ, não só fixture — ver `docs/agents-working-context.md`)
+- [x] AC5 — asset do arquiteto: Wave 0 obrigatória + `trackfw push`/`commit`/`ship` nomeados
+      (`grep -c "trackfw push"` = 2 nos 3 caminhos, era 0)
+- [x] AC6 — asset de segurança: seção `## Wave 0 deliverable`
+- [x] AC7 — `CLAUDE.md` semeado nas duas superfícies reais (`claudemd.go` **e**
+      `agentfiles.go`/`trackfw:rules` block — a REQ só citava a primeira)
+- [x] AC8 — assets byte-idênticos nos 3 CLIs (`diff` confirmado)
+- [x] AC13 — gate não-vazio, fixo, sem interpolação (placeholder fail-closed, `exit 1`)
+- [ ] `make quality` exit 0 — **exit 2**, isolado em `scripts/check-barrier.sh` Cenário 11
+      (contrato antigo "Wave 0 = malformed"), antecipado e documentado; patch especificado para
+      ML-2A. `go test`/`npm test`/`pytest` unitários: todos verdes (ver evidência abaixo)
 
 ---
 
@@ -164,12 +178,122 @@ depende de Wave 0 auditada" é frase no roadmap, não checagem em código.
 > Dependências: ML-1A auditado.
 
 ### ML-2A — Falsificação nas duas direções
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-1A
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-1A
 
 Implementa os alvos enumerados pela Wave 0. Mínimo: gerador que deixa de emitir Wave 0 é detectado;
 `barrier --wave 0` recusado é detectado. Baseline + braço de detecção, `cli-parity.md` atualizado.
 
 **Critérios de aceite:** AC9, AC10, AC11 da REQ
+
+**Entregue (detalhe completo em `docs/agents-working-context.md`, sessão "FIM: ML-2A"):**
+- `scripts/check-barrier.sh` Cenário 11 invertido: `## Wave 0` aceita e genuinamente avaliada (guard
+  de vacuidade em evidence/commands, não só status), parity JSON byte-a-byte nos 3 runtimes.
+- AC14: `scripts/check-artifact-parity.sh` ganhou asserção de conteúdo esperado (`## Wave 0 — Threat
+  Model`, `**Gates da wave:**`, `ML-0A`) nos KINDS `roadmap`/`roadmap_flags`/`roadmap_from_req`,
+  complementar ao diff cross-stack — provada load-bearing por sabotagem manual antes de escrever o
+  cenário de falsificação. Achado fora de escopo reportado (não corrigido): `slash_roadmap`
+  (`.claude/commands/trackfw/roadmap.md`) não ensina Wave 0 — sua fonte (`scaffold.go` +
+  equivalentes npm/pypi) toca arquivos já marcados modificados pelo ML-1A, fora da fronteira deste ML.
+- AC9: `scripts/check-gates-falsify.sh` Cenários 166 (Direção A — sabotagem sincronizada nos 3
+  geradores via cópia isolada da árvore, detectada pela asserção do item acima, não pelo diff antigo),
+  167 e 168 (Direção B — os **dois** guardas de `--wave 0`: 167 sabota `parseWaves`, 168 sabota a
+  validação de flag em `newBarrierCmd`, ambos com `intVal/waveInt < 0` → `< 1`, ambos detectados pelo
+  Cenário 11 invertido com mensagens de erro distintas — achado do próprio ML-0A, "barrier tem DOIS
+  guardas", fechado no falsify só após revisão do advisor apontar que a primeira entrega cobria só
+  um). Total 165→168, echo final. Achado colateral corrigido (fora do escopo Wave 0): Cenário 26
+  (`s26-go`) pinava um literal de `roadmap.go` partido em dois `fmt.Sprintf` pelo ML-1A — só a
+  referência do gate foi ajustada, não o arquivo.
+- AC10: `docs/cli-parity.md`, seção `roadmap new <title>`, ganhou o bloco Wave 0 completo no exemplo
+  de template + prosa (placeholder `exit 1` fail-closed, não-interpolação) e anotação
+  `trackfw-contract` atualizada. Fence externo do exemplo alargado de 3 para 4 crases após revisão do
+  advisor apontar que o fence interno (` ```bash `) de mesmo comprimento fechava o bloco externo
+  prematuramente no CommonMark, vazando `## Wave 1`/`### ML-1A` como headings reais na renderização.
+
+**Evidência medida:** `check-barrier.sh`/`check-artifact-parity.sh`/`check-gates-falsify.sh`/
+`check-parity-contract-coverage.sh` todos exit 0; `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality`
+exit 0 medido (`echo $? > arquivo`); `./bin/trackfw validate` exit 0, 16 warnings pré-existentes sem
+relação com Wave 0.
+
+---
+
+### Auditoria do ML-1A e do ML-2A — aprovadas; e o teste de injeção foi o que eu mais queria ver
+
+**ML-1A — auditoria por medição própria, incluindo o ataque que motivou o AC13:**
+
+```
+$ trackfw roadmap new 'teste $(touch /tmp/INJETADO) `id` fim'
+
+**Gates da wave:**
+```bash
+# Wave 0 gate — replace this placeholder with a project-specific check before
+# marking ML-0A done. Do not remove the gate; replace its command (AC13).
+exit 1  # placeholder gate fails closed until ML-0A replaces it
+```
+/tmp/INJETADO -> nao existe
+
+barrier --wave 0   go_exit=0 · node_exit=0 · py_exit=0   (ponta a ponta, roadmap real)
+asset do arquiteto  "trackfw push" x2 · "Wave 0" x2, nos 3 caminhos
+```
+
+**Ele entregou melhor do que o AC pedia:** eu escrevi "gate não-vazio"; ele fez `exit 1` —
+**fail-closed**. Wave 0 gerada e não preenchida **reprova** no `barrier`, em vez de passar limpa. É o
+que de fato fecha a via de esvaziamento que o ML-0A encontrou.
+
+**E, pela primeira vez em sete entregas, ele mediu, achou vermelho e não escondeu:** `make quality`
+saiu **exit 2** no cenário 11 do `check-barrier.sh`, que pinava o contrato antigo (*"Wave 0 é
+malformada"*). Arquivo proibido para ele. **Reportou em vez de ajustar o gate para caber na própria
+mudança**, que seria o pior desfecho possível.
+
+Correção dele ao meu handoff: eu disse "dois guardas × 3 stacks = 6 pontos"; são **4** — só o Go tem
+os dois.
+
+**ML-2A — verifiquei a divulgação antes do resto.** Ele avisou que o cenário 168 reusa o braço de
+baseline do 167 — e foi assim que o cenário 159 ficou vácuo nesta mesma série. Conferi: o braço de
+**sabotagem** do 168 é independente e tem guard próprio (`sed 's/waveInt < 0 {/waveInt < 1 {/'` +
+`cmp -s` + `FAIL [falsify/setup-s168]`). A prova não é herdada.
+
+```
+make quality (CI-exata, minha)   exit 0
+check-barrier / artifact-parity / gates-falsify / contract-coverage   exit 0
+validate                         16 warnings, 0 violations
+falsificacao                     168 cenarios
+```
+
+---
+
+## Wave 2-bis — A superfície que a Wave 0 não enumerou
+
+> Dependências: ML-2A. **Bloqueia a Wave 3.**
+
+### ML-1B — O slash command ainda ensina `## Wave 1`
+**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+
+**Achado do ML-2A, e é ele que decide se o método é real ou decorativo.**
+
+`.claude/commands/trackfw/roadmap.md` — gerado de `internal/generators/scaffold.go:333` — ensina
+`## Wave 1` como primeira wave, **sem nenhuma menção a Wave 0**.
+
+**Por que bloqueia:** o gerador **não** é a superfície que governa a estrutura real dos roadmaps.
+Todo roadmap desta sessão foi escrito à mão por cima do esqueleto. Quem ensina a estrutura é o slash
+command. Somando ao resíduo já medido — Wave 0 manuscrita não traz bloco de gates, então `barrier`
+reporta `gates: passed` —, o caminho **gerado** é fail-closed e o caminho **manuscrito** é
+escancarado. E o slash command alimenta o segundo.
+
+**Escopo:**
+1. `internal/generators/scaffold.go:333` + equivalentes Node/Python: Wave 0 na estrutura ensinada,
+   byte-idêntica nos 3 stacks.
+2. Estender a asserção de conteúdo esperado (AC14) ao artefato `slash_roadmap` em
+   `scripts/check-artifact-parity.sh`. O ML-2A o pulou **porque ele ainda não tinha Wave 0** —
+   deixando sem pino justamente o artefato que mais ensina.
+3. Decidir explicitamente o destino de `.claude/commands/trackfw/roadmap.md` **deste** repositório:
+   regenerar, ou declarar o drift esperado do `doctor` como se fez com o `+1 warning` do guard.
+   Surpresa de mismatch depois é o que não pode acontecer.
+
+**Critérios de aceite:**
+- [ ] Slash template com Wave 0, byte-idêntico nos 3 stacks
+- [ ] `slash_roadmap` coberto pela asserção de conteúdo esperado
+- [ ] `doctor` limpo **ou** drift declarado no roadmap com o motivo
+- [ ] `make quality` CI-exata **exit 0**, exit code medido · `validate` sem violations novas
 
 ---
 

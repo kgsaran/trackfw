@@ -82,7 +82,11 @@ def test_roadmap_inexistente_mensagem_nomeia_roadmap():
     assert "ROADMAP-nao-existe" in stderr
 
 
-def test_wave_zero_e_erro_de_uso():
+def test_wave_zero_nao_presente_no_roadmap_e_erro_de_uso():
+    """"--wave 0" é um rótulo válido (Wave 0 threat-model convention, ML-1A de
+    ROADMAP-2026-08-22-wave-0-de-modelo-de-ameaca-no-harness), mas a fixture só declara
+    "## Wave 1" — então o erro de uso agora vem de "wave not found", não de "invalid
+    --wave" (rótulo malformado). Exit 2 nos dois casos; a mensagem muda de causa."""
     dir_ = _setup_dir(
         linked_req=True,
         ml_status="✅",
@@ -90,7 +94,8 @@ def test_wave_zero_e_erro_de_uso():
     )
     _, stderr, code = _run_barrier_cli(dir_, "ROADMAP-barrier-fixture", "--wave", "0", "--json")
     assert code == 2
-    assert "wave" in stderr.lower()
+    assert "wave 0" in stderr.lower()
+    assert "not found" in stderr.lower()
 
 
 def test_wave_nao_numerica_e_erro_de_uso():
@@ -479,13 +484,17 @@ def test_is_valid_wave_label_tabela_completa():
     Node.js já tinha este teste de tabela via isValidWaveLabel (barrier.test.js).
     Go cobre via TestWaveLabelGrammar_ValidAndInvalid usando parseWaves.
     Este teste fecha a mesma lacuna em Python: verifica a função diretamente,
-    garantindo que a implementação nativa (re.fullmatch + int>=1) corresponde
-    ao contrato em todos os seis rótulos inválidos e cinco válidos da tabela.
+    garantindo que a implementação nativa (re.fullmatch + int>=0) corresponde
+    ao contrato em todos os cinco rótulos inválidos e seis válidos da tabela.
+
+    "0" é a convenção da Wave 0 de modelo de ameaça (docs/cli-parity.md §
+    "Wave label grammar"; ROADMAP-2026-08-22-wave-0-de-modelo-de-ameaca-no-
+    harness, ML-1A) — passou de inválido para válido.
     """
     from trackfw.commands.barrier import _is_valid_wave_label
 
-    valid = ["1", "2", "2-bis", "2-hotfix", "10-a2"]
-    invalid = ["X", "2-BIS", "-bis", "2-", "2-bis-ter", "0"]
+    valid = ["0", "1", "2", "2-bis", "2-hotfix", "10-a2"]
+    invalid = ["X", "2-BIS", "-bis", "2-", "2-bis-ter"]
 
     for lbl in valid:
         assert _is_valid_wave_label(lbl), (

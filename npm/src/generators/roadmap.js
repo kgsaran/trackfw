@@ -5,6 +5,42 @@ const config = require('../config')
 const { localDateISO } = require('./date')
 const { resolveReqFiles } = require('../validator/index.js')
 
+// wave0Block — "## Wave 0 — Threat Model" section prepended to every generated roadmap, before
+// the first implementation wave (AC1, AC12). Byte-identical to internal/generators/roadmap.go's
+// wave0Block/wave0GateFence and to pypi/trackfw/generators/roadmap.py's WAVE0_BLOCK (gate:
+// scripts/check-artifact-parity.sh).
+//
+// The gate command (`exit 1`) is fixed, literal and never interpolated with any REQ title, slug
+// or user-controlled string — see the Go generator's comment for the full rationale (AC13,
+// docs/cli-parity.md § "trackfw barrier"). It intentionally fails closed until ML-0A replaces it
+// with a real, project-specific check.
+//
+// The ML is always ML-0A, never ML-1A — newRoadmapFromReq labels MLs derived from REQ acceptance
+// criteria "ML-1A", "ML-1B", ... starting at the first criterion.
+const WAVE0_BLOCK = `## Wave 0 — Threat Model
+> Dependencies: none. Blocks all implementation.
+
+### ML-0A — Threat model for this roadmap
+**Status:** pending
+**Files affected:**
+**Actions:**
+1. Enumeration completeness — is the list of surfaces in this roadmap complete? Name what is missing, or show the list is closed.
+2. Threat model — who empties this Wave 0 without breaking any written rule, and how?
+3. Falsification targets in both directions — for each surface, what breaks when the behavior regresses, and what breaks when it regresses the opposite way?
+4. Declared residual — what this design accepts not covering.
+**Acceptance criteria:**
+- [ ] The four sections above answered with evidence, not a one-line assertion
+- [ ] No implementation line written for this ML
+
+**Gates da wave:**
+\`\`\`bash
+# Wave 0 gate — replace this placeholder with a project-specific check before
+# marking ML-0A done. Do not remove the gate; replace its command (AC13).
+exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli-parity.md
+\`\`\`
+
+`
+
 const VALID_STATES = ['backlog', 'analyzing', 'wip', 'blocked', 'done', 'abandoned']
 const STATE_ORDER = ['analyzing', 'wip', 'backlog', 'blocked', 'done', 'abandoned']
 const VALID_STATES_MESSAGE = VALID_STATES.join(', ')
@@ -441,7 +477,7 @@ REQ: ${reqPath || ''}
 - [ ]
 - [ ]
 
-## Wave 1 — <name> (parallel MLs)
+${WAVE0_BLOCK}## Wave 1 — <name> (parallel MLs)
 > Dependencies: none
 
 ### ML-1A — ${title}
@@ -509,7 +545,7 @@ function newRoadmapFromReq(reqPath) {
     mlLines.push('- [ ] build passes')
     mlLines.push('- [ ] tests green')
   }
-  const mlSection = mlLines.join('\n')
+  const mlSection = WAVE0_BLOCK + mlLines.join('\n')
 
   const adrRef = linkedADR ? `\nADR: ${linkedADR}` : ''
 

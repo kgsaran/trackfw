@@ -67,7 +67,7 @@ func generateClaudeMD(cfg Config) error {
 	sb.WriteString("4. **Docker + .env from day 1** — containerize early; all config via env vars, never hardcoded.\n")
 	sb.WriteString("5. **2-layer validation** — frontend (UX feedback) + backend (security guard). Never only one.\n")
 	sb.WriteString("6. **API-first** — define OpenAPI contract before coding frontend/backend integration.\n")
-	sb.WriteString("7. **Security wave** — include a red-team review wave at the end of every feature roadmap.\n")
+	sb.WriteString("7. **Threat model waves** — every feature roadmap opens with a Wave 0 threat model (before implementation) and closes with a red-team review wave (before release).\n")
 	sb.WriteString("8. **Test coverage** — TDD for critical business logic; min 60% (prototype) / 80% (production).\n\n")
 
 	// Frontend section

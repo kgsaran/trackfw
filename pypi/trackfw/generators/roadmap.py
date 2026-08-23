@@ -13,6 +13,42 @@ from trackfw import config as cfg_module
 VALID_STATES = ["backlog", "analyzing", "wip", "blocked", "done", "abandoned"]
 STATE_ORDER = ["analyzing", "wip", "backlog", "blocked", "done", "abandoned"]
 
+# WAVE0_BLOCK — seção "## Wave 0 — Threat Model" pré-anexada a todo roadmap gerado, antes da
+# primeira wave de implementação (AC1, AC12). Byte-idêntica a internal/generators/roadmap.go
+# (wave0Block/wave0GateFence) e a npm/src/generators/roadmap.js (WAVE0_BLOCK) — gate:
+# scripts/check-artifact-parity.sh.
+#
+# O comando do gate (`exit 1`) é fixo, literal, e nunca interpolado com título de REQ, slug ou
+# qualquer string controlada pelo usuário — ver o comentário do gerador Go para a justificativa
+# completa (AC13, docs/cli-parity.md § "trackfw barrier"). Ele falha fechado (fails closed) de
+# propósito, até que ML-0A o substitua por um check real e específico do projeto.
+#
+# O ML é sempre ML-0A, nunca ML-1A — generate_roadmap_from_req rotula os MLs derivados dos
+# critérios de aceite da REQ como "ML-1A", "ML-1B", ... a partir do primeiro critério.
+WAVE0_BLOCK = """## Wave 0 — Threat Model
+> Dependencies: none. Blocks all implementation.
+
+### ML-0A — Threat model for this roadmap
+**Status:** pending
+**Files affected:**
+**Actions:**
+1. Enumeration completeness — is the list of surfaces in this roadmap complete? Name what is missing, or show the list is closed.
+2. Threat model — who empties this Wave 0 without breaking any written rule, and how?
+3. Falsification targets in both directions — for each surface, what breaks when the behavior regresses, and what breaks when it regresses the opposite way?
+4. Declared residual — what this design accepts not covering.
+**Acceptance criteria:**
+- [ ] The four sections above answered with evidence, not a one-line assertion
+- [ ] No implementation line written for this ML
+
+**Gates da wave:**
+```bash
+# Wave 0 gate — replace this placeholder with a project-specific check before
+# marking ML-0A done. Do not remove the gate; replace its command (AC13).
+exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli-parity.md
+```
+
+"""
+
 
 # ---------------------------------------------------------------------------
 # helpers
@@ -206,7 +242,7 @@ REQ: {req_path}
 - [ ]
 - [ ]
 
-## Wave 1 — <name> (parallel MLs)
+{WAVE0_BLOCK}## Wave 1 — <name> (parallel MLs)
 > Dependencies: none
 
 ### ML-1A — {title}
@@ -330,7 +366,7 @@ def generate_roadmap_from_req(req_path: str, cfg: dict, agent: str = None) -> st
         ])
 
     adr_ref = f"\nADR: {linked_adr}" if linked_adr else ""
-    ml_section = "\n".join(ml_lines)
+    ml_section = WAVE0_BLOCK + "\n".join(ml_lines)
     body = f"""---
 status: backlog
 date: {today}

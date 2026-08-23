@@ -1633,7 +1633,7 @@ in the binary.
 |---|---|
 | Invocation | `trackfw barrier <roadmap> --wave <n>` |
 | `<roadmap>` | Basename with or without `.md`, resolved against `wip/` then `done/` under `roadmap_dir` (both `flat` and `by_agent` layouts) |
-| `--wave` | Wave **label**, required. Grammar `<integer>[-<suffix>]` — see "Wave label grammar" below. `2`, `2-bis`, `2-hotfix` are valid; the integer part must be ≥ 1. |
+| `--wave` | Wave **label**, required. Grammar `<integer>[-<suffix>]` — see "Wave label grammar" below. `0`, `2`, `2-bis`, `2-hotfix` are valid; the integer part must be ≥ 0. |
 | `--json` | Emit the result document instead of the text report |
 | Exit 0 | `status: "passed"` |
 | Exit 1 | `status: "blocked"` — at least one check failed |
@@ -1692,11 +1692,15 @@ A wave label is `<integer>[-<suffix>]`:
 
 | Element | Rule |
 |---|---|
-| Integer part | One or more digits, value ≥ 1. Required. |
+| Integer part | One or more digits, value ≥ 0. Required. |
 | Suffix | Optional. A single `-` followed by `[a-z0-9]+` — lowercase only. |
 
-Valid: `1`, `2`, `2-bis`, `2-hotfix`, `10-a2`. Invalid: `X`, `2-BIS` (uppercase), `-bis` (no integer),
-`2-` (empty suffix), `2-bis-ter` (two suffixes), `0` (integer < 1).
+Valid: `0`, `1`, `2`, `2-bis`, `2-hotfix`, `10-a2`. `0` is the Wave 0 threat-model convention
+(ROADMAP-2026-08-22-wave-0-de-modelo-de-ameaca-no-harness-e-o-asset-do-arquiteto-ensina-trackfw-push,
+ML-1A). Invalid: `X`, `2-BIS` (uppercase), `-bis` (no integer), `2-` (empty suffix), `2-bis-ter` (two
+suffixes). Negative integers (`-1`) are already excluded by the regex, which has no sign — the
+`>= 0` bound only rejects a malformed grammar match, it never has a negative integer to reject in
+practice.
 
 Regex, pinned: `^## Wave (\d+(?:-[a-z0-9]+)?) ` — the trailing space is part of rule 1 and is
 preserved.
@@ -3239,12 +3243,12 @@ author: ""
 
 #### `roadmap new <title>`
 
-<!-- trackfw-contract: gate=scripts/check-artifact-parity.sh partial=cobre template default, --title/--req e --from-req (KINDS roadmap/roadmap_flags/roadmap_from_req, incluindo o campo req: no formato exato "docs/req/<slug>.md" — linhas 272/388 do gate) e o ciclo E2E backlog→analyzing em layout flat e by_agent; as transições subsequentes da máquina de estados (analyzing→wip→blocked→done→abandoned) não são exercitadas por este gate -->
+<!-- trackfw-contract: gate=scripts/check-artifact-parity.sh partial=cobre template default, --title/--req e --from-req (KINDS roadmap/roadmap_flags/roadmap_from_req, incluindo o campo req: no formato exato "docs/req/<slug>.md" — linhas 272/388 do gate), o ciclo E2E backlog→analyzing em layout flat e by_agent, e uma asserção de conteúdo esperado (não só diff cross-stack) que os 3 KINDS acima contêm os literais `## Wave 0 — Threat Model`, `**Gates da wave:**` e `ML-0A` (AC14, ROADMAP-2026-08-22-wave-0-de-modelo-de-ameaca-no-harness-e-o-asset-do-arquiteto-ensina-trackfw-push, ML-2A — fecha a lacuna em que uma regressão sincronizada removendo Wave 0 dos 3 stacks passava despercebida no diff cross-stack sozinho, provado por check-gates-falsify.sh Cenário 166); as transições subsequentes da máquina de estados (analyzing→wip→blocked→done→abandoned) não são exercitadas por este gate -->
 
 
 Arquivo: `docs/roadmaps/backlog/ROADMAP-YYYY-MM-DD-<slug>.md`
 
-```
+````
 ---
 status: backlog
 date: YYYY-MM-DD
@@ -3260,6 +3264,28 @@ squad: ""
 <!-- What problem does this roadmap solve? Link the REQ. -->
 REQ: 
 
+## Wave 0 — Threat Model
+> Dependencies: none. Blocks all implementation.
+
+### ML-0A — Threat model for this roadmap
+**Status:** pending
+**Files affected:**
+**Actions:**
+1. Enumeration completeness — is the list of surfaces in this roadmap complete? Name what is missing, or show the list is closed.
+2. Threat model — who empties this Wave 0 without breaking any written rule, and how?
+3. Falsification targets in both directions — for each surface, what breaks when the behavior regresses, and what breaks when it regresses the opposite way?
+4. Declared residual — what this design accepts not covering.
+**Acceptance criteria:**
+- [ ] The four sections above answered with evidence, not a one-line assertion
+- [ ] No implementation line written for this ML
+
+**Gates da wave:**
+```bash
+# Wave 0 gate — replace this placeholder with a project-specific check before
+# marking ML-0A done. Do not remove the gate; replace its command (AC13).
+exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli-parity.md
+```
+
 ## Wave 1 — <name> (parallel MLs)
 > Dependencies: none
 
@@ -3271,7 +3297,23 @@ REQ:
 - [ ] build passes
 - [ ] tests green
 - [ ] validate passes
-```
+````
+
+`## Wave 0 — Threat Model` is prepended to every generated roadmap — both `roadmap new` (shown
+above) and `roadmap new --from-req` (`## Wave 0` is always followed there by `## Wave 1 —
+Implementation (derived from REQ criteria)`, never renumbered — `--from-req` has no separate
+template subsection in this document; its body differs from the one shown above only in how the
+implementation waves below Wave 0 are derived, one ML per REQ acceptance criterion, labeled
+`ML-1A`, `ML-1B`, ... in criterion order). The Wave 0 ML is always labeled `ML-0A`, never `ML-1A` —
+`ML-1A` is reserved for the first
+implementation ML (or the first REQ-derived ML on the `--from-req` path). The `**Gates da wave:**`
+block is a fixed, literal, non-interpolated `exit 1` placeholder (AC13,
+docs/seguranca/2026-08-22-modelo-de-ameaca-da-wave-0-no-harness.md §2.1/§3 F5) — it fails closed
+until the ML-0A author replaces the command with a project-specific evidence check; no REQ title,
+slug or date is ever substituted into it, because `trackfw barrier` (see below) executes gate
+commands via `sh -c` without sanitization. `trackfw barrier <roadmap> --wave 0` evaluates this
+wave like any other (see "Wave label grammar" — the integer part accepts `0` specifically for this
+convention).
 
 O mesmo frontmatter é obrigatório para roadmaps criados por interfaces de agente,
 incluindo o slash-command `/trackfw:roadmap`: `status`, `date`, `req` e `squad`.

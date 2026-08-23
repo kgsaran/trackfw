@@ -1291,7 +1291,7 @@ class TestGenerateClaudeCommands(unittest.TestCase):
         self.assertIn('Docker + .env from day 1:', block)
         self.assertIn('2-layer validation:', block)
         self.assertIn('API-first:', block)
-        self.assertIn('Security wave:', block)
+        self.assertIn('Threat model waves:', block)
         self.assertIn('Test coverage:', block)
         self.assertIn('Use `/trackfw:architect` to define stack before the first REQ', block)
         self.assertIn(GLOBAL_ADR_DIRECTIVE, block)

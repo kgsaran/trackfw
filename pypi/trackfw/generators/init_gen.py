@@ -277,7 +277,7 @@ def _trackfw_rules_block(agent_conventions: str = "") -> str:
         '- **Docker + .env from day 1:** containerize early; all config via env vars\n'
         '- **2-layer validation:** frontend (UX) + backend (security) — never only one\n'
         '- **API-first:** define OpenAPI contract before coding frontend/backend integration\n'
-        '- **Security wave:** include a red-team review wave in every feature roadmap\n'
+        '- **Threat model waves:** every feature roadmap opens with a Wave 0 threat model (before implementation) and closes with a red-team review wave (before release)\n'
         '- **Test coverage:** TDD for critical logic; min 60% (prototype) / 80% (production)\n'
         '- Use `/trackfw:architect` to define stack before the first REQ\n'
         + conventions_section +
@@ -407,7 +407,7 @@ def generate_claude_md(cwd: str, opts: dict) -> None:
     lines.append('4. **Docker + .env from day 1** — containerize early; all config via env vars, never hardcoded.\n')
     lines.append('5. **2-layer validation** — frontend (UX feedback) + backend (security guard). Never only one.\n')
     lines.append('6. **API-first** — define OpenAPI contract before coding frontend/backend integration.\n')
-    lines.append('7. **Security wave** — include a red-team review wave at the end of every feature roadmap.\n')
+    lines.append('7. **Threat model waves** — every feature roadmap opens with a Wave 0 threat model (before implementation) and closes with a red-team review wave (before release).\n')
     lines.append('8. **Test coverage** — TDD for critical business logic; min 60% (prototype) / 80% (production).\n')
     lines.append('\n## Pre-commit checklist\n')
     lines.append('\nBefore every commit:\n')

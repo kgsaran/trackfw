@@ -50,7 +50,7 @@ def register(subparsers):
         "--wave",
         dest="wave",
         required=True,
-        help="Rótulo da wave a avaliar. Gramática: <inteiro>[-<sufixo>], inteiro >= 1. Ex: 1, 2, 2-bis, 2-hotfix.",
+        help="Rótulo da wave a avaliar. Gramática: <inteiro>[-<sufixo>], inteiro >= 0. Ex: 0, 1, 2, 2-bis, 2-hotfix.",
     )
     parser.add_argument(
         "--json",
@@ -105,18 +105,20 @@ _GATES_HEADER_RE = re.compile(r"^\*\*Gates da wave:\*\*")
 def _is_valid_wave_label(token: str) -> bool:
     """Valida o token de rótulo de wave contra a gramática pinada.
 
-    Gramática: <inteiro>[-<sufixo>], inteiro >= 1, sufixo [a-z0-9]+.
-    Válidos: "1", "2", "2-bis", "2-hotfix", "10-a2".
-    Inválidos: "X", "0", "2-BIS", "2-", "2-bis-ter", "-bis".
+    Gramática: <inteiro>[-<sufixo>], inteiro >= 0, sufixo [a-z0-9]+.
+    Válidos: "0", "1", "2", "2-bis", "2-hotfix", "10-a2". "0" é a convenção da
+    Wave 0 de modelo de ameaça (docs/cli-parity.md § "Wave label grammar").
+    Inválidos: "X", "2-BIS", "2-", "2-bis-ter", "-bis".
 
     Usa re.fullmatch para garantir correspondência completa do token —
     re.match sem $ aceitaria "2-bis-ter" ao corresponder apenas "2-bis".
-    A exigência >= 1 garante que "0" seja rejeitado (Node.js: parseInt >= 1).
+    A exigência >= 0 rejeita negativos (embora a regex já não os aceite,
+    por não ter sinal) e aceita "0" (Node.js: parseInt >= 0).
     Usado pelo pré-passo de heading E pela validação de --wave, para que
     as duas superfícies compartilhem exatamente a mesma regra.
     """
     m = re.fullmatch(r"(\d+)(?:-[a-z0-9]+)?", token)
-    return bool(m) and int(m.group(1)) >= 1
+    return bool(m) and int(m.group(1)) >= 0
 
 
 def _find_wave(lines: list, wave_label: str, roadmap_basename: str) -> tuple:
@@ -328,9 +330,9 @@ _LINES_CACHE: list = []
 def _parse_wave_label(raw: str) -> str:
     """Valida e retorna o rótulo de wave passado via --wave.
 
-    Gramática: <inteiro>[-<sufixo>], sufixo [a-z0-9]+, inteiro >= 1.
-    Exemplos válidos: "1", "2", "2-bis", "2-hotfix", "10-a2".
-    Exemplos inválidos: "abc", "0", "2-BIS", "2-", "2-bis-ter".
+    Gramática: <inteiro>[-<sufixo>], sufixo [a-z0-9]+, inteiro >= 0.
+    Exemplos válidos: "0", "1", "2", "2-bis", "2-hotfix", "10-a2".
+    Exemplos inválidos: "abc", "2-BIS", "2-", "2-bis-ter".
 
     Mensagem de erro pinada literalmente por docs/cli-parity.md (quarta mensagem
     de exit-2): 'invalid --wave "<value>" — not a valid wave label'. O separador

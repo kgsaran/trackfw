@@ -227,13 +227,15 @@ test('findWave: throws UsageError naming the line number for a malformed wave la
 // ────────────────────────────────────────────────────────────────────────────
 
 test('isValidWaveLabel: valid labels (contract table)', () => {
-  for (const label of ['1', '2', '2-bis', '2-hotfix', '10-a2']) {
+  // "0" is the Wave 0 threat-model convention (docs/cli-parity.md § "Wave label
+  // grammar"; ROADMAP-2026-08-22-wave-0-de-modelo-de-ameaca-no-harness ML-1A).
+  for (const label of ['0', '1', '2', '2-bis', '2-hotfix', '10-a2']) {
     assert.ok(barrier.isValidWaveLabel(label), `expected "${label}" to be valid`)
   }
 })
 
 test('isValidWaveLabel: invalid labels (contract table)', () => {
-  for (const label of ['X', '2-BIS', '-bis', '2-', '2-bis-ter', '0']) {
+  for (const label of ['X', '2-BIS', '-bis', '2-', '2-bis-ter']) {
     assert.ok(!barrier.isValidWaveLabel(label), `expected "${label}" to be invalid`)
   }
 })

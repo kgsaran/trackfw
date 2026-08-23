@@ -48,17 +48,20 @@ function resolveRoadmapFile(cfg, roadmapArg) {
 // recognised as a wave heading (neither valid nor malformed).
 const WAVE_SCAN_RE = /^## Wave (\S+) /
 
-// Grammar: <integer>[-<suffix>] where integer >= 1 and suffix is [a-z0-9]+ (lowercase).
-// Valid: 1, 2, 2-bis, 2-hotfix, 10-a2.
-// Invalid: X, 2-BIS, -bis, 2-, 2-bis-ter, 0.
+// Grammar: <integer>[-<suffix>] where integer >= 0 and suffix is [a-z0-9]+ (lowercase).
+// Valid: 0, 1, 2, 2-bis, 2-hotfix, 10-a2. 0 is the Wave 0 threat-model convention
+// (docs/cli-parity.md § "Wave label grammar").
+// Invalid: X, 2-BIS, -bis, 2-, 2-bis-ter.
 const WAVE_LABEL_RE = /^(\d+)(?:-([a-z0-9]+))?$/
 
 // isValidWaveLabel returns true iff token matches the grammar above.
 // Exported so unit tests can assert the full table of valid/invalid examples.
+// Shared by both guard points (the --wave flag validation and the heading
+// pre-pass in findWave) — a single function, unlike Go's two duplicated checks.
 function isValidWaveLabel(token) {
   const m = WAVE_LABEL_RE.exec(String(token))
   if (!m) return false
-  return parseInt(m[1], 10) >= 1
+  return parseInt(m[1], 10) >= 0
 }
 
 // ────────────────────────────────────────────────────────────────────────────
