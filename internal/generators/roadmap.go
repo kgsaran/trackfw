@@ -57,7 +57,7 @@ const wave0Block = "## Wave 0 — Threat Model\n" +
 	"**Status:** pending\n" +
 	"**Files affected:**\n" +
 	"**Actions:**\n" +
-	"1. Enumeration completeness — is the list of surfaces in this roadmap complete? Name what is missing, or show the list is closed.\n" +
+	"1. Enumeration completeness — is the list of surfaces in this roadmap complete? Name what is missing, or show the list is closed. Do not limit the search to the files already named by the REQ — before declaring the list closed, search the repository for other places that emit the same artifact or the same pattern (for example, grep for the literal the final artifact contains).\n" +
 	"2. Threat model — who empties this Wave 0 without breaking any written rule, and how?\n" +
 	"3. Falsification targets in both directions — for each surface, what breaks when the behavior regresses, and what breaks when it regresses the opposite way?\n" +
 	"4. Declared residual — what this design accepts not covering.\n" +

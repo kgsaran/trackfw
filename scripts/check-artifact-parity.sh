@@ -209,6 +209,8 @@ declare -a WAVE0_EXPECTED_STRINGS=(
   "## Wave 0 — Threat Model"
   "**Gates da wave:**"
   "ML-0A"
+  "Do not limit the search to the files already named by the REQ"
+  "search the repository for other places that emit the same artifact or the same pattern"
 )
 for KIND in "${WAVE0_CONTENT_KINDS[@]}"; do
   REL=$(expected_path "$KIND")

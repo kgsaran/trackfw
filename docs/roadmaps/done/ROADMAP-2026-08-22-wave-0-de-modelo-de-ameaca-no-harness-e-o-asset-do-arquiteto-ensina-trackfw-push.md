@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-08-22
 req: "docs/req/REQ-2026-08-22-wave-0-de-modelo-de-ameaca-no-harness-e-o-asset-do-arquiteto-ensina-trackfw-push.md"
 adr: "docs/adr/ADR-2026-08-22-modelo-de-ameaca-no-desenho-wave-0-de-red-team-antes-da-implementacao-no-harness.md"
@@ -8,7 +8,7 @@ squad: "hades-tf, apolo-tf, prometeu-tf"
 
 # Roadmap: Wave 0 de modelo de ameaça no harness, e o asset do arquiteto ensina `trackfw push`
 
-> Created: 2026-08-22 | Status: wip
+> Created: 2026-08-22 | Status: done
 
 ## Context
 
@@ -410,7 +410,7 @@ E propôs a correção no template: a seção "Completude de enumeração" pede 
 ## Wave 4 — A lição da estreia entra no template
 
 ### ML-1C — "Completude de enumeração" passa a dizer COMO verificar
-**Status:** 🔄 Em andamento · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
 
 Acrescentar à Ação 1 do bloco de Wave 0 — em `internal/generators/roadmap.go` (`wave0Block`), no
 slash command (`internal/generators/scaffold.go`) e nos equivalentes Node/Python — a instrução que
@@ -418,9 +418,48 @@ faltava: **não se limitar aos arquivos citados na REQ; buscar no repositório p
 emitem o mesmo artefato ou padrão antes de declarar a lista fechada.**
 
 **Critérios de aceite:**
-- [ ] Instrução presente nos dois templates, byte-idêntica nos 3 stacks
-- [ ] Asserção de conteúdo esperado do `check-artifact-parity.sh` cobre o texto novo
-- [ ] `make quality` CI-exata **exit 0**, exit code medido · `validate` sem violations novas
+- [x] Instrução presente nos dois templates, byte-idêntica nos 3 stacks
+- [x] Asserção de conteúdo esperado do `check-artifact-parity.sh` cobre o texto novo
+- [x] `make quality` CI-exata **exit 0**, exit code medido · `validate` sem violations novas
+
+**Evidência:** o grep repositório-largo pelo próprio literal ("Enumeration completeness") — a
+verificação que a instrução nova ensina a fazer — achou uma 7ª emissão fora da lista original do
+handoff: `docs/cli-parity.md:3274`, uma cópia documental do bloco Wave 0 que havia ficado
+desatualizada. Corrigida no mesmo ML (fora da lista de arquivos do handoff, mas dentro do escopo —
+não está na lista de proibidos).
+
+---
+
+### Auditoria do ML-1C — aprovada na segunda medição; a primeira achou o pino pela metade
+
+**O que ele entregou, e é o fecho do ciclo:** a instrução nova diz *"não se limite aos arquivos
+citados; busque no repositório pelo literal do artefato final"*. Ele **rodou a própria instrução**
+(`grep -rn "Enumeration completeness"`) e achou um **oitavo ponto de emissão** que nem o handoff nem
+a barreira tinham enumerado — um espelho desatualizado do bloco de Wave 0 em `docs/cli-parity.md`.
+O método encontrou uma superfície aplicando a lição da própria falha.
+
+**O furo que a minha auditoria pegou:** o pino cobria só a **primeira metade** da frase.
+
+```
+sabotagem sincronizada nos 3 stacks:
+  'search the repository for other places' -> SABOTADO   gate EXIT 0   <- passava
+  'Do not limit the search to the files…'  -> SABOTADO   gate EXIT 1   <- pinada
+```
+
+A metade pinada era o *"não faça"*; a **metade operativa** — o *como* verificar, que é o valor
+inteiro do ML — estava solta. Só apareceu porque sabotei os **três** stacks de uma vez: sabotar só o
+Go dispara o eixo cross-stack antes e mascara a lacuna.
+
+Corrigido no ML-1C-bis, e reverificado por mim:
+
+```
+sabotagem sincronizada da metade operativa -> EXIT 1
+  artifact content drift: nao contem o literal esperado:
+  search the repository for other places that emit the same artifact...
+restaurado -> EXIT 0
+```
+
+**Entrega completa.**
 
 ---
 

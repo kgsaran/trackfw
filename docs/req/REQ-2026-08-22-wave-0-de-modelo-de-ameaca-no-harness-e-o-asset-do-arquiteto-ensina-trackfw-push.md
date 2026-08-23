@@ -1,14 +1,14 @@
 ---
-status: Open
+status: done
 date: 2026-08-22
 author: "Zeus (Arquiteto)"
 adr: "docs/adr/ADR-2026-08-22-modelo-de-ameaca-no-desenho-wave-0-de-red-team-antes-da-implementacao-no-harness.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-22-wave-0-de-modelo-de-ameaca-no-harness-e-o-asset-do-arquiteto-ensina-trackfw-push.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-22-wave-0-de-modelo-de-ameaca-no-harness-e-o-asset-do-arquiteto-ensina-trackfw-push.md"
 ---
 
 # REQ: Wave 0 de modelo de ameaça no harness, e o asset do arquiteto ensina `trackfw push`
 
-> Date: 2026-08-22 | Status: Open
+> Date: 2026-08-22 | Status: done
 | Linear Issue:
 | Jira Issue:
 
@@ -96,4 +96,4 @@ ADR: `docs/adr/ADR-2026-08-22-modelo-de-ameaca-no-desenho-wave-0-de-red-team-ant
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-22-wave-0-de-modelo-de-ameaca-no-harness-e-o-asset-do-arquiteto-ensina-trackfw-push.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-08-22-wave-0-de-modelo-de-ameaca-no-harness-e-o-asset-do-arquiteto-ensina-trackfw-push.md`
