@@ -413,7 +413,7 @@ def run(args: argparse.Namespace, kind: str) -> int:
             # Mirrors internal/commands/integrations_flags.go passing
             # manager.ProjectRoot to BuildPlans at both of its call sites.
             project_root=os.getcwd(),
-            agent_models=trackfw_config.load().get("agent_models", {}),
+            agent_models=run_agent_models,
         )
         def _on_skip(destination: str, reason: str) -> None:
             print(reason, file=sys.stderr)

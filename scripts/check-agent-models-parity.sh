@@ -551,10 +551,371 @@ if [[ -f "$case5c_yaml" ]]; then
   fi
 fi
 
+# ===========================================================================
+# Cases 6–10 — Global scope: config source selection (ML-2A)
+#
+# Per-process isolation (AC15): every invocation below is a fresh OS process
+# (subshell + cd). sync.Once cannot leak between cases — a process that
+# resolves project scope before global scope would pin the wrong cwd in the
+# Go singleton and mask the defect. Each case uses its own HOME directory so
+# global-scope writes (to ~/.claude/agents/) do not clobber each other.
+#
+# Gate: runs `agents install --scope global --targets claude`, checks stderr
+# for contract warning messages, and checks ~/.claude/agents/ for the correct
+# composed or canonical model IDs.
+# ===========================================================================
+
+# ---------------------------------------------------------------------------
+# Helper: write_yaml_global HOME_DIR [WITH_AGENT_MODELS]
+# Writes ~/.trackfw/trackfw.yaml inside HOME_DIR with optional agent_models.
+# ---------------------------------------------------------------------------
+write_yaml_global() {
+  local home_dir=$1 with_models=${2:-0}
+  mkdir -p "$home_dir/.trackfw"
+  if [[ "$with_models" -eq 1 ]]; then
+    cat >"$home_dir/.trackfw/trackfw.yaml" <<'YAML'
+agent_models:
+  sonnet: "4.6"
+  opus: "5"
+YAML
+  else
+    printf 'project_name: global-scope-test\n' >"$home_dir/.trackfw/trackfw.yaml"
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# Helper: write_yaml_distinct PROJECT_DIR
+# Like write_yaml(with_models=1) but uses sonnet: "9.9" — a value DISTINCT
+# from the global pin (4.6). Discriminant for Direction B sabotage: if project
+# scope accidentally reads from global, "claude-sonnet-4-6" appears instead
+# of the expected "claude-sonnet-9-9".
+# ---------------------------------------------------------------------------
+write_yaml_distinct() {
+  local proj=$1
+  mkdir -p "$proj"
+  cat >"$proj/trackfw.yaml" <<'YAML'
+project_name: global-scope-distinct-test
+adr_dirs:
+  - docs/adr
+req_dir: docs/req
+roadmap_dir: docs/roadmaps
+roadmap_namespacing: flat
+agent_models:
+  sonnet: "9.9"
+  opus: "5"
+YAML
+}
+
+# ---------------------------------------------------------------------------
+# Helper: run_install_global RT HOME_DIR CWD_DIR TARGET [STDERR_FILE]
+# Runs agents install --scope global from CWD_DIR with HOME set to HOME_DIR.
+# If STDERR_FILE given, captures stderr there; otherwise discards.
+# Each invocation is a fresh subprocess — AC15 satisfied structurally.
+# ---------------------------------------------------------------------------
+run_install_global() {
+  local rt=$1 home_dir=$2 cwd_dir=$3 target=$4 stderr_dest="${5:-/dev/null}"
+  mkdir -p "$cwd_dir"
+  case "$rt" in
+    go)   ( cd "$cwd_dir" && HOME="$home_dir" "$GO_BIN" agents install --targets "$target" --scope global >/dev/null 2>"$stderr_dest" ) ;;
+    node) ( cd "$cwd_dir" && HOME="$home_dir" node "$NODE_CLI" agents install --targets "$target" --scope global >/dev/null 2>"$stderr_dest" ) ;;
+    py)   ( cd "$cwd_dir" && HOME="$home_dir" PYTHONPATH="$PY_ROOT" python3 -m trackfw agents install --targets "$target" --scope global >/dev/null 2>"$stderr_dest" ) ;;
+    *)    echo "check-agent-models-parity: unknown runtime '$rt'" >&2; exit 1 ;;
+  esac
+}
+
+# ---------------------------------------------------------------------------
+# Helper: run_install_with_home RT HOME_DIR PROJ TARGET
+# Like run_install but uses an explicit HOME_DIR (for project-scope with an
+# isolated home that has its own ~/.trackfw/trackfw.yaml).
+# ---------------------------------------------------------------------------
+run_install_with_home() {
+  local rt=$1 home_dir=$2 proj=$3 target=$4
+  case "$rt" in
+    go)   ( cd "$proj" && HOME="$home_dir" "$GO_BIN" agents install --targets "$target" --scope project >/dev/null 2>&1 ) ;;
+    node) ( cd "$proj" && HOME="$home_dir" node "$NODE_CLI" agents install --targets "$target" --scope project >/dev/null 2>&1 ) ;;
+    py)   ( cd "$proj" && HOME="$home_dir" PYTHONPATH="$PY_ROOT" python3 -m trackfw agents install --targets "$target" --scope project >/dev/null 2>&1 ) ;;
+    *)    echo "check-agent-models-parity: unknown runtime '$rt'" >&2; exit 1 ;;
+  esac
+}
+
+# ===========================================================================
+# Case 6 — Global scope, pin in global config, two cwds: same composed model
+#
+# Two invocations from different cwds:
+#   cwd-a: empty directory (no trackfw.yaml)
+#   cwd-b: trackfw.yaml with DISTINCT agent_models (sonnet: "9.9")
+# Both must produce the same composed model from the global pin
+# (model: claude-opus-5 for architect, model: claude-sonnet-4-6 for backend).
+#
+# Discriminant: Direction A sabotage (global reads cwd) would make cwd-a
+# produce "model: sonnet" (no pin) and cwd-b produce "model: claude-sonnet-9-9"
+# — different values, caught by the cross-cwd byte-identical comparison.
+#
+# Vacuity guard: both outputs must contain "model: claude-opus-5". If the
+# global config is not being read, the model would be "model: opus"
+# (canonical alias), making the guard fail before the comparison runs.
+# ===========================================================================
+for rt in go node py; do
+  home6a="$WORK/case6-home-a-$rt"
+  home6b="$WORK/case6-home-b-$rt"
+  cwd6a="$WORK/case6-cwd-a-$rt"
+  cwd6b="$WORK/case6-cwd-b-$rt"
+
+  write_yaml_global "$home6a" 1  # global pin: sonnet=4.6, opus=5
+  write_yaml_global "$home6b" 1  # same global pin (independent HOME)
+  mkdir -p "$cwd6a"              # cwd-a: no trackfw.yaml (discriminant for Dir-A)
+  write_yaml_distinct "$cwd6b"   # cwd-b: sonnet=9.9 (discriminant for Dir-A)
+
+  run_install_global "$rt" "$home6a" "$cwd6a" "claude"
+  run_install_global "$rt" "$home6b" "$cwd6b" "claude"
+done
+
+# Vacuity guard: Go runs must have model: claude-opus-5 in the architect file
+go_arch6a="$WORK/case6-home-a-go/.claude/agents/trackfw-architect.md"
+go_arch6b="$WORK/case6-home-b-go/.claude/agents/trackfw-architect.md"
+
+for label_f in "cwd-a:$go_arch6a" "cwd-b:$go_arch6b"; do
+  lbl="${label_f%%:*}"
+  f="${label_f#*:}"
+  if [[ ! -f "$f" ]]; then
+    diag "global-scope/two-cwds/vacuity-$lbl" "Go did not generate trackfw-architect.md — fixture broken"
+  elif ! grep -q 'model: claude-opus-5' "$f"; then
+    diag "global-scope/two-cwds/vacuity-$lbl" "Go architect missing 'model: claude-opus-5' from global pin (got: $(grep 'model:' "$f" || echo 'no model line'))"
+  else
+    ok "global-scope/two-cwds/vacuity-$lbl/opus-composed"
+  fi
+done
+
+# Cross-cwd byte-identical comparison per runtime and per agent file
+if [[ $FAIL -eq 0 ]]; then
+  C6_FAIL=0
+  for rt in go node py; do
+    home6a_rt="$WORK/case6-home-a-$rt"
+    home6b_rt="$WORK/case6-home-b-$rt"
+    agents_dir="$home6a_rt/.claude/agents"
+    if [[ ! -d "$agents_dir" ]]; then
+      diag "global-scope/two-cwds/$rt/cross-cwd" ".claude/agents missing in home-a — fixture broken"; C6_FAIL=1; continue
+    fi
+    for rel in $(find "$agents_dir" -name 'trackfw-*.md' -exec basename {} \; | sort); do
+      f_a="$home6a_rt/.claude/agents/$rel"
+      f_b="$home6b_rt/.claude/agents/$rel"
+      if [[ ! -f "$f_b" ]]; then
+        diag "global-scope/two-cwds/$rt/cross-cwd" "cwd-b missing: .claude/agents/$rel"; C6_FAIL=1; continue
+      fi
+      if ! cmp -s "$f_a" "$f_b"; then
+        diag "global-scope/two-cwds/$rt/cross-cwd" "$rel differs between cwd-a and cwd-b (global scope reads cwd instead of global config)"
+        diff "$f_a" "$f_b" >&2 || true
+        C6_FAIL=1
+      fi
+    done
+  done
+  [[ $C6_FAIL -eq 0 ]] && ok "global-scope/two-cwds/cross-cwd-byte-identical"
+fi
+
+# ===========================================================================
+# Case 7 — Global scope, agent_models in project only: warning "wrong place"
+#
+# ~/.trackfw/trackfw.yaml exists but has no agent_models.
+# The project's trackfw.yaml HAS agent_models.
+# Global scope must:
+#   (a) emit the GlobalAgentModelsProjectOnlyMessage warning to stderr
+#   (b) use canonical tier alias (model: sonnet), NOT the project's values
+#
+# Warning string frozen from internal/config/config.go:GlobalAgentModelsProjectOnlyMessage
+# — byte-identical across Go, Node.js and Python (ADR-2026-08-23).
+# ===========================================================================
+# shellcheck disable=SC2016  # single-quoted strings used intentionally
+GLOBAL_WRONG_PLACE_MSG='trackfw: agents global: agent_models configurado em trackfw.yaml do projeto mas não vale para escopo global. Mova a chave para ~/.trackfw/trackfw.yaml.'
+
+for rt in go node py; do
+  home7="$WORK/case7-home-$rt"
+  cwd7="$WORK/case7-cwd-$rt"
+  stderr7="$WORK/case7-stderr-$rt.txt"
+
+  write_yaml_global "$home7" 0  # global file exists, no agent_models key
+  write_yaml "$cwd7" 1          # project has agent_models (sonnet=4.6)
+
+  run_install_global "$rt" "$home7" "$cwd7" "claude" "$stderr7"
+
+  # (a) Warning must appear in stderr
+  if ! grep -qF "$GLOBAL_WRONG_PLACE_MSG" "$stderr7"; then
+    diag "global-scope/project-only-warn/$rt/warning-present" "warning 'configured in project' not found in stderr (got: $(head -3 "$stderr7" || echo '(empty)'))"
+  else
+    ok "global-scope/project-only-warn/$rt/warning-present"
+  fi
+
+  # (b) Output must use canonical tier — NOT the project's composed value
+  back7="$home7/.claude/agents/trackfw-backend.md"
+  if [[ ! -f "$back7" ]]; then
+    diag "global-scope/project-only-warn/$rt/canonical-tier" "did not generate trackfw-backend.md — fixture broken"
+  elif grep -q 'model: claude-sonnet-' "$back7"; then
+    diag "global-scope/project-only-warn/$rt/canonical-tier" "composed model found despite project-only config — value leaked: $(grep 'model:' "$back7")"
+  elif ! grep -q 'model: sonnet' "$back7"; then
+    diag "global-scope/project-only-warn/$rt/canonical-tier" "expected 'model: sonnet' (canonical) but got: $(grep 'model:' "$back7" || echo 'no model line')"
+  else
+    ok "global-scope/project-only-warn/$rt/canonical-tier"
+  fi
+done
+
+# ===========================================================================
+# Case 8 — Global scope, agent_models nowhere: warning "not configured"
+#
+# ~/.trackfw/trackfw.yaml absent (HOME has no .trackfw/ dir) AND
+# no trackfw.yaml in cwd. Global scope must:
+#   (a) emit the GlobalAgentModelsNoneMessage warning to stderr
+#   (b) use canonical tier alias (model: sonnet)
+#
+# Warning string frozen from internal/config/config.go:GlobalAgentModelsNoneMessage
+# — byte-identical across Go, Node.js and Python (ADR-2026-08-23).
+# ===========================================================================
+GLOBAL_NOT_CONFIGURED_MSG='trackfw: agents global: agent_models não configurado em ~/.trackfw/trackfw.yaml — usando tier canônico. Configure em ~/.trackfw/trackfw.yaml para pinar versões.'
+
+for rt in go node py; do
+  home8="$WORK/case8-home-$rt"
+  cwd8="$WORK/case8-cwd-$rt"
+  stderr8="$WORK/case8-stderr-$rt.txt"
+
+  mkdir -p "$home8" "$cwd8"  # no .trackfw/ in HOME; no trackfw.yaml in cwd
+
+  run_install_global "$rt" "$home8" "$cwd8" "claude" "$stderr8"
+
+  # (a) Warning must appear in stderr
+  if ! grep -qF "$GLOBAL_NOT_CONFIGURED_MSG" "$stderr8"; then
+    diag "global-scope/none-warn/$rt/warning-present" "warning 'not configured' not found in stderr (got: $(head -3 "$stderr8" || echo '(empty)'))"
+  else
+    ok "global-scope/none-warn/$rt/warning-present"
+  fi
+
+  # (b) Output must use canonical tier
+  back8="$home8/.claude/agents/trackfw-backend.md"
+  if [[ ! -f "$back8" ]]; then
+    diag "global-scope/none-warn/$rt/canonical-tier" "did not generate trackfw-backend.md — fixture broken"
+  elif ! grep -q 'model: sonnet' "$back8"; then
+    diag "global-scope/none-warn/$rt/canonical-tier" "expected 'model: sonnet' (canonical) but got: $(grep 'model:' "$back8" || echo 'no model line')"
+  else
+    ok "global-scope/none-warn/$rt/canonical-tier"
+  fi
+done
+
+# ===========================================================================
+# Case 9 — Project scope, pin in project: composed (non-regression)
+#
+# A global ~/.trackfw/trackfw.yaml with agent_models IS present (sonnet: "4.6"),
+# but project scope must read ONLY the project's trackfw.yaml (sonnet: "9.9").
+# The DISTINCT values discriminate Direction B sabotage: if project scope
+# accidentally reads global, output would contain "model: claude-sonnet-4-6"
+# instead of the expected "model: claude-sonnet-9-9".
+#
+# Cross-runtime comparison verifies byte-identical behavior across all 3 CLIs.
+# ===========================================================================
+for rt in go node py; do
+  home9="$WORK/case9-home-$rt"
+  cwd9="$WORK/case9-$rt"
+
+  write_yaml_global "$home9" 1  # global: sonnet=4.6 (different from project)
+  write_yaml_distinct "$cwd9"   # project: sonnet=9.9 (discriminant)
+
+  run_install_with_home "$rt" "$home9" "$cwd9" "claude"
+done
+
+# Vacuity guard: Go backend must have model: claude-sonnet-9-9 (from project, not global)
+go_back9="$WORK/case9-go/.claude/agents/trackfw-backend.md"
+if [[ ! -f "$go_back9" ]]; then
+  diag "global-scope/project-scope-nonreg/vacuity" "Go did not generate trackfw-backend.md — fixture broken"
+elif ! grep -q 'model: claude-sonnet-9-9' "$go_back9"; then
+  diag "global-scope/project-scope-nonreg/vacuity" "Go backend missing 'model: claude-sonnet-9-9' (project pin) — got: $(grep 'model:' "$go_back9" || echo 'no model line')"
+else
+  ok "global-scope/project-scope-nonreg/vacuity/sonnet-9.9-from-project"
+fi
+
+# Cross-runtime comparison
+if [[ $FAIL -eq 0 ]]; then
+  C9_FAIL=0
+  for rel in $(find "$WORK/case9-go/.claude/agents" -name 'trackfw-*.md' -exec basename {} \; 2>/dev/null | sort); do
+    go_f="$WORK/case9-go/.claude/agents/$rel"
+    node_f="$WORK/case9-node/.claude/agents/$rel"
+    py_f="$WORK/case9-py/.claude/agents/$rel"
+    if ! cmp -s "$go_f" "$node_f" 2>/dev/null; then
+      diag "global-scope/project-scope-nonreg/cross-runtime/go-vs-node" "$rel differs"; C9_FAIL=1
+    fi
+    if ! cmp -s "$go_f" "$py_f" 2>/dev/null; then
+      diag "global-scope/project-scope-nonreg/cross-runtime/go-vs-py" "$rel differs"; C9_FAIL=1
+    fi
+  done
+  [[ $C9_FAIL -eq 0 ]] && ok "global-scope/project-scope-nonreg/cross-runtime/claude-12-agents-byte-identical"
+fi
+
+# ===========================================================================
+# Case 10 — Malformed global config: non-fatal, canonical tier, warning
+#
+# ~/.trackfw/trackfw.yaml exists but contains invalid YAML.
+# Global scope must (AC12):
+#   (a) NOT exit with status 1 — non-fatal (unlike project config, which is fatal)
+#   (b) emit MalformedGlobalConfigMessage to stderr
+#   (c) use canonical tier alias (model: sonnet)
+#
+# Warning string frozen from internal/config/config.go:MalformedGlobalConfigMessage
+# — byte-identical across Go, Node.js and Python (ADR-2026-08-23).
+# ===========================================================================
+GLOBAL_MALFORMED_MSG='trackfw: aviso: "~/.trackfw/trackfw.yaml" tem YAML malformado — config global de modelo ignorada; usando tier canônico.'
+
+for rt in go node py; do
+  home10="$WORK/case10-home-$rt"
+  cwd10="$WORK/case10-cwd-$rt"
+  stderr10="$WORK/case10-stderr-$rt.txt"
+
+  mkdir -p "$home10/.trackfw" "$cwd10"
+  # Malformed YAML: unclosed brace (invalid under yaml.v3/PyYAML/js-yaml)
+  printf 'agent_models:\n  sonnet: {\n' >"$home10/.trackfw/trackfw.yaml"
+
+  # (a) Must exit 0 — use "if !" to disarm set -e (same pattern as run_install_expect_fail)
+  c10_exit=0
+  case "$rt" in
+    go)
+      if ! ( cd "$cwd10" && HOME="$home10" "$GO_BIN" agents install --targets claude --scope global >/dev/null 2>"$stderr10" ); then
+        c10_exit=1
+      fi
+      ;;
+    node)
+      if ! ( cd "$cwd10" && HOME="$home10" node "$NODE_CLI" agents install --targets claude --scope global >/dev/null 2>"$stderr10" ); then
+        c10_exit=1
+      fi
+      ;;
+    py)
+      if ! ( cd "$cwd10" && HOME="$home10" PYTHONPATH="$PY_ROOT" python3 -m trackfw agents install --targets claude --scope global >/dev/null 2>"$stderr10" ); then
+        c10_exit=1
+      fi
+      ;;
+  esac
+
+  if [[ $c10_exit -ne 0 ]]; then
+    diag "global-scope/malformed-global/$rt/exit-zero" "command exited non-zero — malformed global config must be non-fatal (AC12)"
+  else
+    ok "global-scope/malformed-global/$rt/exit-zero"
+  fi
+
+  # (b) Warning must appear in stderr
+  if ! grep -qF "$GLOBAL_MALFORMED_MSG" "$stderr10"; then
+    diag "global-scope/malformed-global/$rt/warning-present" "malformed-config warning not found in stderr (got: $(head -3 "$stderr10" || echo '(empty)'))"
+  else
+    ok "global-scope/malformed-global/$rt/warning-present"
+  fi
+
+  # (c) Output must use canonical tier
+  back10="$home10/.claude/agents/trackfw-backend.md"
+  if [[ ! -f "$back10" ]]; then
+    diag "global-scope/malformed-global/$rt/canonical-tier" "did not generate trackfw-backend.md — fixture broken"
+  elif ! grep -q 'model: sonnet' "$back10"; then
+    diag "global-scope/malformed-global/$rt/canonical-tier" "expected 'model: sonnet' (canonical) but got: $(grep 'model:' "$back10" || echo 'no model line')"
+  else
+    ok "global-scope/malformed-global/$rt/canonical-tier"
+  fi
+done
+
 # ---------------------------------------------------------------------------
 if [[ "$FAIL" -ne 0 ]]; then
   echo "check-agent-models-parity: drift detected — see FAIL lines above." >&2
   exit 1
 fi
 
-echo "All check-agent-models-parity.sh scenarios passed (4 cases × 3 runtimes + Case 5 control-char/unicode-separator rejection, namespace isolation confirmed for codex+gemini)."
+echo "All check-agent-models-parity.sh scenarios passed (4 cases × 3 runtimes + Case 5 control-char/unicode-separator rejection, namespace isolation confirmed for codex+gemini + Cases 6–10 global-scope source selection: two-cwd identity, project-only warning, not-configured warning, project-scope non-regression, malformed-global non-fatal)."

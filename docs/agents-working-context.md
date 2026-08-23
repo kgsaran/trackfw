@@ -4,6 +4,47 @@
 
 ---
 
+## Sessão 2026-08-23 — apolo-tf (FIM: ML-2A — Paridade e falsificação nas duas direções)
+
+Branch `fix/agents-update-de-escopo-global-resolve-o-pin-de-modelo-da-config-global`. Sem
+commit/push (autoridade exclusiva do `trackfw_architect`).
+
+**Escopo:** Cases 6–10 em `check-agent-models-parity.sh` (subprocessos isolados, AC15); cenários
+169–170 em `check-gates-falsify.sh` (Direction A e B); nova seção em `docs/cli-parity.md` com
+contrato de resolução por escopo; fix de bug em `pypi/trackfw/integrations/command.py` linha 416
+(segunda chamada `plan_deployments` usava `load()` em vez de `run_agent_models`).
+
+**Evidências:**
+- `bash scripts/check-agent-models-parity.sh` → exit 0, todos os casos OK (incluindo Cases 6–10)
+- `bash scripts/check-parity-contract-coverage.sh` → exit 0, 0 seções sem anotação
+- `./bin/trackfw validate` → 16 warnings, 0 violations
+- Cenário 169 (Direction A): baseline exit 0; detection exit 1 com "from global pin" em stderr
+- Cenário 170 (Direction B): baseline exit 0; detection exit 1 com "claude-sonnet-9-9 (project pin)" em stderr
+- `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make parity` → exit 0, 0 FAILs (task buprzo27v);
+  falhas anteriores (bcb4jy8k4) eram race condition com task b89ez4bm6 pré-compactação ainda ativa;
+  bug adicional corrigido: pattern de detecção do Cenário 170 em `check-gates-falsify.sh` usava
+  `"claude-sonnet-9-9 (project pin)"` mas a mensagem `diag` contém aspas simples ao redor do
+  model — corrigido para `"claude-sonnet-9-9' (project pin)"`
+
+**Arquivos modificados (sem commit):**
+- `scripts/check-agent-models-parity.sh` — helpers + Cases 6–10 + echo final
+- `scripts/check-gates-falsify.sh` — cenários 169–170 + echo final (168→170)
+- `docs/cli-parity.md` — seção contrato de resolução por escopo
+- `pypi/trackfw/integrations/command.py` — bug fix linha 416
+
+---
+
+## Sessão 2026-08-23 — apolo-tf (INÍCIO: ML-2A — Paridade e falsificação nas duas direções)
+
+Branch `fix/agents-update-de-escopo-global-resolve-o-pin-de-modelo-da-config-global`. Sem
+commit/push (autoridade exclusiva do `trackfw_architect`).
+
+**Escopo:** 5 novos casos no parity gate (Cases 6–10 com subprocessos isolados por AC15);
+2 cenários de falsificação (169–170) no `check-gates-falsify.sh`; atualização do
+`docs/cli-parity.md` com contrato de escopo; cada subcase em subprocesso próprio (sync.Once).
+
+---
+
 ## Sessão 2026-08-23 — apolo-tf (INÍCIO: ML-1A — Config global como fonte para escopo global, nos 3 CLIs)
 
 Branch `fix/agents-update-de-escopo-global-resolve-o-pin-de-modelo-da-config-global`. Sem
@@ -23964,3 +24005,27 @@ Medições seguras realizadas (sem rodar `agents update` nem `update harness`):
 
 `internal/commands/doctor.go` — 1 call site de `config.Load().AgentModels` que não foi migrado. Exclui-se do escopo porque: (1) `doctor` faz leitura diagnóstica apenas, não usa o valor para renderizar agentes; (2) não está na enumeração de AC11; (3) migração exigiria refactoring de assinatura de `RunDoctor`. Risco: baixo, comportamento documentado.
 
+
+---
+
+## apolo-tf · ML-2A — Paridade e falsificação nas duas direções
+
+**INÍCIO** — 2026-08-23
+
+**Branch:** `fix/agents-update-de-escopo-global-resolve-o-pin-de-modelo-da-config-global`
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-08-23-agents-update-de-escopo-global-resolve-o-pin-de-modelo-da-config-global.md`
+**REQ:** `docs/req/REQ-2026-08-23-agents-update-de-escopo-global-perde-o-pin-de-modelo-porque-le-agent-models-do-cwd.md`
+
+**Escopo deste ML:**
+1. Estender `scripts/check-agent-models-parity.sh` com 5 casos de escopo global (Cases 6–10), cada um em subprocesso próprio com guard de vacuidade, byte-idêntico nos 3 CLIs.
+2. Adicionar 2 cenários de falsificação (169–170) a `scripts/check-gates-falsify.sh` — Direção A (global lê cwd) e Direção B (projeto lê global) — atualizando o total de 168 para 170.
+3. Atualizar `docs/cli-parity.md` com o contrato de resolução por escopo, as duas mensagens de aviso verbatim, o comportamento não-fatal para config global malformada, e a anotação `trackfw-contract`.
+
+**Seams confirmados de falsificação:**
+- Direção A: `internal/commands/integrations_flags.go:225` — `config.ResolveAgentModels(opts.scope, ...)` → `config.Load().AgentModels, ""`
+- Direção B: `internal/commands/integrations_flags.go:225` — `opts.scope` → `"global"` (força escopo global para qualquer scope)
+
+**Strings de aviso (byte-idênticas nos 3 CLIs, confirmado por grep):**
+- Wrong place: `trackfw: agents global: agent_models configurado em trackfw.yaml do projeto mas não vale para escopo global. Mova a chave para ~/.trackfw/trackfw.yaml.`
+- Not configured: `trackfw: agents global: agent_models não configurado em ~/.trackfw/trackfw.yaml — usando tier canônico. Configure em ~/.trackfw/trackfw.yaml para pinar versões.`
+- Malformed: `trackfw: aviso: "~/.trackfw/trackfw.yaml" tem YAML malformado — config global de modelo ignorada; usando tier canônico.`
