@@ -56,7 +56,7 @@ todo roadmap futuro.
 > Dependências: nenhuma. **Bloqueia toda a implementação.**
 
 ### ML-0A — Modelo de ameaça do próprio método
-**Status:** ⬜ Pendente · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
+**Status:** ✅ Concluído · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
 **Escreve:** `docs/seguranca/2026-08-22-modelo-de-ameaca-da-wave-0-no-harness.md`
 
 Quatro seções, conforme o ADR:
@@ -79,11 +79,50 @@ Quatro seções, conforme o ADR:
    sobre um artefato que ainda não existe** e não pode medir. O que isso deixa passar, estruturalmente?
 
 **Critérios de aceite:**
-- [ ] As quatro seções, com a enumeração de superfícies **fechada** ou o que falta nomeado
-- [ ] Pelo menos uma via de esvaziamento do método que o `barrier` **não** pega, ou a prova de que
+- [x] As quatro seções, com a enumeração de superfícies **fechada** ou o que falta nomeado
+- [x] Pelo menos uma via de esvaziamento do método que o `barrier` **não** pega, ou a prova de que
       não há
-- [ ] Alvos de falsificação com arquivo e gate correspondente — insumo direto do ML de gate
-- [ ] Nenhuma linha de implementação escrita
+- [x] Alvos de falsificação com arquivo e gate correspondente — insumo direto do ML de gate
+- [x] Nenhuma linha de implementação escrita (`git status --short` confirma 3 arquivos: roadmap,
+      `agents-working-context.md`, `docs/seguranca/2026-08-22-modelo-de-ameaca-da-wave-0-no-harness.md`)
+
+---
+
+### Auditoria do ML-0A — **aprovada**, e a Wave 0 pagou o próprio custo antes de existir código
+
+Parecer: `docs/seguranca/2026-08-22-modelo-de-ameaca-da-wave-0-no-harness.md`.
+
+**Achados que mudaram o escopo, todos medidos e confirmados por mim:**
+
+1. **`barrier` tem DOIS guardas contra `--wave 0`, não um.** O AC3 citava só a validação do flag
+   (`:89`); `parseWaves` (~`:203`) repete `intVal < 1` sobre o cabeçalho do roadmap. Corrigir só o
+   primeiro faria o comando passar da CLI e **falhar ao ler o próprio roadmap**. É literalmente a
+   mesma classe do achado do `$PWD`/`~/`: duas formas do mesmo problema, só uma na lista.
+2. **`roadmap new --from-req` não gera Wave 0** e usa rótulo `ML-1x` fixo — colidiria com os MLs
+   derivados dos critérios de aceite. Virou **AC12**.
+3. **Os quatro checks do `barrier` são satisfazíveis editando só o roadmap.** `gates` reporta
+   `passed` quando a wave **não declara nenhum gate** (`parseGates` devolve lista vazia sem erro).
+   Resultado: as cinco vias de esvaziamento — Wave 0 vazia, de uma linha, copiada da REQ anterior,
+   escrita pelo implementador, ou marcada ✅ sem artefato — **passam limpas, sempre**. Virou **AC13**:
+   o template pré-carrega um gate não-vazio.
+4. 🔴 **E ele mesmo achou o perigo da própria sugestão.** `runGateCommand` (`:385`) executa via
+   `exec.Command("sh","-c", …)` **sem sanitização**. Se o AC13 fosse implementado interpolando o
+   título da REQ — como o gerador já faz com outros campos —, um título com backticks ou `$(...)`
+   viraria **execução de shell dentro do harness**, instalada em todo projeto que roda
+   `trackfw update`. A restrição "gate fixo, não interpolado" entrou no AC13 por causa disso.
+5. **`check-artifact-parity.sh` só compara `go×node` e `go×python`** — nunca contra conteúdo
+   esperado. Uma regressão **sincronizada** que remova `## Wave 0` dos três stacks passa em silêncio.
+   Virou **AC14**.
+
+**A resposta honesta que eu pedi, e ele deu:** uma Wave 0 **teria** pego o `~/` — era lacuna numa
+tabela fechada, respondível por leitura. **Não** teria pego os outros três achados da mesma
+reprovação (`${PWD}` silencioso, mensagem errada em runtime, aspas escapando dos checks), porque
+exigem executar o código contra um caso concreto. A frase dele fecha a questão:
+
+> **Wave 0 desloca a enumeração para a esquerda; ela não desloca a medição.**
+
+**Residual que ele nomeia e fica fora desta REQ:** `barrier` não impõe ordem entre waves — "Wave 1
+depende de Wave 0 auditada" é frase no roadmap, não checagem em código.
 
 ---
 

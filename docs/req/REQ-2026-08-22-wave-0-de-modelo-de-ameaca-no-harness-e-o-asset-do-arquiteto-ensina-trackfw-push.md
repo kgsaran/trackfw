@@ -48,10 +48,12 @@ existe — e volta a cair nele a cada contexto novo.
       completude de enumeração · modelo de ameaça · alvos de falsificação nas duas direções ·
       residual declarado.
 - [ ] **AC2** — Os três geradores produzem template **byte-idêntico**, provado por gate.
-- [ ] **AC3** — `trackfw barrier <roadmap> --wave 0` **é aceito** nos 3 CLIs. Hoje é recusado com
-      `invalid --wave` porque a gramática exige `>= 1` (`internal/commands/barrier.go:89` e
-      equivalentes). Sem isso a wave nova nasce inavaliável pela própria ferramenta.
-- [ ] **AC4** — O parser de waves reconhece o cabeçalho `## Wave 0 — …` nos 3 CLIs.
+- [ ] **AC3** — `trackfw barrier <roadmap> --wave 0` **é aceito** nos 3 CLIs. São **dois** guardas
+      independentes com `intVal < 1`, não um (achado da Wave 0): a validação do flag
+      (`internal/commands/barrier.go:89`) **e** a do cabeçalho dentro de `parseWaves` (~`:203`).
+      Corrigir só o primeiro faz o comando passar da CLI e falhar ao ler o próprio roadmap.
+- [ ] **AC4** — O parser de waves reconhece o cabeçalho `## Wave 0 — …` nos 3 CLIs. **Não** é
+      satisfeito de graça pelo AC3 — é o segundo ponto de código.
 - [ ] **AC5** — Asset do arquiteto (`internal/integrations/assets/agents/architect.md` + as cópias em
       `npm/src/` e `pypi/trackfw/`) exige Wave 0 antes de despachar implementação **e** nomeia
       `trackfw push` na autoridade de Git, distinguindo os três comandos.
@@ -63,6 +65,18 @@ existe — e volta a cair nele a cada contexto novo.
       (b) `barrier --wave 0` voltando a ser recusado é detectado.
 - [ ] **AC10** — `docs/cli-parity.md` atualizado onde o contrato mudar; checker de cobertura exit 0.
 - [ ] **AC11** — `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality` exit 0, com **exit code medido**.
+- [ ] **AC12** — `roadmap new --from-req` emite Wave 0 **e** não colide com os MLs derivados dos
+      critérios de aceite, que hoje usam rótulo `ML-1x` fixo (achado da Wave 0).
+- [ ] **AC13** — O template da Wave 0 traz um **gate não-vazio** (`**Gates da wave:**`), porque
+      `barrier` reporta `gates: passed` quando a wave não declara nenhum — sem isso, uma Wave 0
+      vazia, copiada ou escrita pelo próprio implementador passa limpa, sempre.
+      🔴 **Restrição de segurança inegociável:** o comando do gate é **fixo e não interpolado**.
+      `runGateCommand` (`barrier.go:385`) executa via `exec.Command("sh","-c", …)` **sem
+      sanitização**; interpolar título de REQ ou qualquer string derivada do usuário transforma um
+      título com backticks ou `$(...)` em execução de shell dentro do harness.
+- [ ] **AC14** — O gate de paridade do template **compara com conteúdo esperado**, não só entre os 3
+      stacks. `check-artifact-parity.sh` hoje faz apenas `go×node` e `go×python`, então uma regressão
+      **sincronizada** que remova `## Wave 0` dos três passa em silêncio.
 
 ## Negative scope
 

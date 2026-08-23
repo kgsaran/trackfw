@@ -23308,3 +23308,75 @@ não renomear a wave.
 **Plano:** Wave 0 (`hades-tf`, modelo de ameaça do método) → Wave 1 (`apolo-tf`, gerador + barrier +
 assets + CLAUDE.md semeado, ML único para paridade byte-a-byte) → Wave 2 (gate + falsificação) →
 Wave 3 (reverificação da barreira).
+
+---
+
+## Sessão 2026-08-22 — hades-tf (INÍCIO: ML-0A — modelo de ameaça do próprio método)
+
+**Tarefa:** roadmap `ROADMAP-2026-08-22-wave-0-de-modelo-de-ameaca-no-harness-e-o-asset-do-arquiteto-
+ensina-trackfw-push.md`, ML-0A. Escreve `docs/seguranca/2026-08-22-modelo-de-ameaca-da-wave-0-no-
+harness.md`, as quatro seções do ADR — nenhuma linha de implementação.
+
+**Medido antes de escrever (não no ADR/REQ):**
+- `internal/commands/barrier.go:89` (flag `--wave`) **e** `:203` (`parseWaves`, cabeçalho `## Wave N`)
+  rejeitam `intVal < 1` — dois pontos de bloqueio, não um. AC3 e AC4 são mudanças distintas de fato.
+- Check `gates` (`runBarrier:495-517`) e `parseGates:341-381`: uma wave **sem** bloco
+  `**Gates da wave:**` retorna lista vazia sem erro → `gatesOK` permanece `true` → `passed`. Nenhum
+  dos 4 checks do barrier lê `docs/seguranca/`.
+- `roadmap.go` nunca passa pelo `integrations/render.go` — o template de roadmap é arquivo plano; só
+  os assets (`architect.md`/`security.md`) atravessam os 6 alvos de render.
+- Vault `asset-parity-gate-nao-cobre-o-caminho-de-geracao...`: `check-integration-assets.sh` valida
+  paridade **entre os 3 stacks**, não conteúdo — uma regressão de texto idêntica nos 3 passa o gate.
+
+**Próximo:** ML-1A (`apolo-tf`), bloqueado por esta Wave 0.
+
+---
+
+## Sessão 2026-08-22 — hades-tf (FIM: ML-0A — modelo de ameaça do próprio método)
+
+**Entregue:** `docs/seguranca/2026-08-22-modelo-de-ameaca-da-wave-0-no-harness.md`, quatro seções.
+
+**Veredito:** prosseguir para Wave 1, com duas adições ao escopo do ML-1A:
+1. Corrigir os **dois** pontos de bloqueio `intVal < 1` do `barrier` — `internal/commands/
+   barrier.go:89` (flag `--wave`) **e** `:203` (`parseWaves`, cabeçalho de wave) — não só o citado na
+   REQ, nos 3 stacks.
+2. Template da Wave 0 (nos dois caminhos, `new` e `--from-req`) deve emitir um bloco `**Gates da
+   wave:**` não-vazio ancorado no artefato desta wave — é a única alavanca mecânica encontrada contra
+   o esvaziamento do método (achado central do §2: os 4 checks do `barrier` são satisfazíveis editando
+   só o roadmap; nenhum lê `docs/seguranca/`; uma wave sem gate declarado passa `gates` vacuamente).
+
+**Achado central (§2, medido em `runBarrier`/`parseGates`):** nenhuma das 5 vias de esvaziamento
+listadas na tarefa é pega pelo `barrier` hoje — não por bug, mas porque o design ("nunca inventa um
+gate") é anterior a esta REQ. `mls_complete`/`acceptance_evidence` são checkbox no roadmap;
+`gates` roda 0 comandos se nenhum for declarado (`parseGates` retorna `[]` sem erro); `validate` não
+tem regra sobre Wave 0 (o ADR recusa criar uma). O único fechamento mecânico possível é o gerador
+pré-carregar o gate (item 2 acima).
+
+**Alvos de falsificação entregues ao ML-2A:** 7 no total (F1-F7) — F1/F2/F4/F6 cobrem o mínimo do
+AC9; F3 (asset perde `trackfw push`) precisa de teste de **conteúdo**, não só o gate de paridade
+existente (`check-integration-assets.sh` só compara os 3 stacks entre si, não valida texto — vault
+`asset-parity-gate-nao-cobre-o-caminho-de-geracao-mas-o-caminho-e-fiel-2026-08-13.md`); F5 fecha a
+lacuna do achado central; F7 fecha a direção "acusar de mais" que faltava na lista mínima do roadmap.
+
+**Enumeração corrigida:** `roadmap.go` nunca passa por `integrations/render.go` — só os assets (não o
+template de roadmap) atravessam os 6 alvos de render; `--from-req` precisa de `ML-0A` explícito (hoje
+gera só `ML-1A..ML-1n` a partir dos critérios, sem Wave 0); canal de propagação do asset é `agents
+update`, não `update harness` como a REQ nomeia.
+
+**Residual (§4), respondido em duas partes:** a classe do achado do `~/` (lacuna em tabela fechada) —
+sim, Wave 0 pegaria. Os outros três achados da mesma reprovação (`${PWD}` silencioso, mensagem errada,
+`m.raw` com aspas) — não, exigem execução; estrutural, o ADR já declara esse limite.
+
+**Próximo:** ML-1A (`apolo-tf`), com os dois adendos acima somados ao escopo já descrito no roadmap.
+
+**Correção pós-autorevisão (advisor), antes de fechar ML-0A:** critérios de aceite do próprio ML-0A
+estavam `[ ]` (unticked) enquanto o parecer os satisfazia — o mesmo meio-estado que o §2 do parecer
+nomeia como via de esvaziamento ("wave ✅ sem os 4 itens marcados"); ticados. F5 recebeu uma restrição
+que faltava: `runGateCommand` (`barrier.go:385-394`) executa o bloco de gate via `sh -c` sem
+sanitização e sem respeitar `TRACKFW_DISABLE_EXTERNAL_COMMANDS` — um gate com título/slug/data
+interpolado vira execução de shell; o gate emitido pela Wave 0 tem que ser fixo, sem interpolação, e
+sem assumir `docs/seguranca/` como convenção universal (`ProjectConfig` não tem esse namespace). F1 e
+F4 foram remedidos: `check-integration-assets.sh` não cobre `generators/roadmap.go` (só
+`internal/integrations/assets`); o gate certo é `check-artifact-parity.sh`, que já executa `roadmap
+new`/`--from-req` nos 3 CLIs — mas só faz diff cross-stack, não asserção de conteúdo, então F1/F3/F4
+são a mesma classe de lacuna (adicionado como item 3 do veredito).
