@@ -23833,3 +23833,30 @@ artifact or the same pattern"`.
 Não commitei, não fiz push, não abri PR — aguardando auditoria do `trackfw_architect`.
 
 **Próximo:** `trackfw_architect` audita esta correção pontual e decide sobre fechar o ML-1C/roadmap.
+
+---
+
+## Sessão 2026-08-23 — trackfw_architect (INÍCIO: pin de modelo perdido em escopo global)
+
+**Bug reportado por KG com impacto diário de cota.** Depois de `agents update --force` com a 7.2.0,
+os agentes ficaram no alias (`opus`/`sonnet`) em vez do pin (`claude-opus-5`/`claude-sonnet-4-6`).
+
+**Erro meu que atrasou o diagnóstico, registrado de propósito:** li o `ADR-2026-08-14` (roteamento
+para Codex e Cursor), vi que Claude Code não estava nele e disse "fora de escopo, não é bug". A
+`REQ-2026-08-21` que governa a feature diz o contrário — a motivação **é** o Claude Code, e o AC6
+promete que `agents update` reforça o pin. KG corrigiu. ADR vizinho descreve uma decisão; a REQ
+descreve a intenção.
+
+**Diagnóstico medido:** `config.Load()` (`config.go:125`) lê `trackfw.yaml` do **cwd**, sem fallback
+global. Artefato de escopo **global** renderiza com a config do diretório de invocação; de qualquer
+outro lugar cai no tier canônico, em silêncio. Rodando de dentro deste repo, o pin aplica
+corretamente — o código funciona, a config é que não é encontrada.
+
+**Mitigação imediata aplicada:** rodei `agents update --force --scope global --targets claude` daqui;
+os 12 agentes estão pinados agora.
+
+**Decisão do KG:** os modelos vivem no `trackfw.yaml` **global**, não no do projeto.
+ADR-2026-08-23 aceito.
+
+**Primeiro roadmap gerado com Wave 0 pelo próprio harness (PR #206)** — e o `barrier --wave 0` já
+reprova por gate real, antes de qualquer implementação.
