@@ -266,7 +266,7 @@ falsificacao                     168 cenarios
 > Dependências: ML-2A. **Bloqueia a Wave 3.**
 
 ### ML-1B — O slash command ainda ensina `## Wave 1`
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
 
 **Achado do ML-2A, e é ele que decide se o método é real ou decorativo.**
 
@@ -297,12 +297,56 @@ escancarado. E o slash command alimenta o segundo.
 
 ---
 
+### Auditoria do ML-1B — aprovada, e a asserção nova é load-bearing por sabotagem minha
+
+```
+sabotagem: '## Wave 0 — Threat Model' -> '## Wave 1 — Implementation'  (scaffold.go, so Go)
+  check-artifact-parity.sh -> EXIT 1
+    artifact content drift: slash_roadmap (go) — arquivo gerado nao contem o
+    literal esperado: ## Wave 0 — Threat Model
+restaurado -> exit 0, scaffold.go IDENTICO ao entregue
+
+make quality (CI-exata, minha)   exit 0
+validate                         16 warnings, 0 violations
+doctor                           no mismatches
+```
+
+**O que essa mensagem prova e o gate antigo não provava:** ela acusa **por conteúdo esperado**, não
+por divergência entre stacks. Antes do AC14, uma regressão sincronizada nos três passaria calada — o
+cenário realista de quem edita três arquivos com o mesmo `sed`.
+
+**Honestidade dele que evitou um registro falso:** ele escolheu regenerar o
+`.claude/commands/trackfw/roadmap.md` deste repo, mas declarou que o `doctor` estava limpo **antes e
+depois**, porque ele cobre artefatos de agents/skills e **não** os assets do `scaffold.go`. A
+regeneração foi higiene de dogfooding, não conserto de mismatch. Se tivesse escrito "regenerei para o
+doctor ficar limpo", teríamos uma afirmação falsa no registro.
+
+**Ponto cego novo, nomeado:** o `trackfw doctor` **não enxerga os assets do `scaffold.go`**. Se este
+repositório tivesse ficado com o slash command defasado, nada acusaria.
+
+---
+
+### 🔴 O dado mais desconfortável desta entrega, e ele vai para a barreira
+
+**A Wave 0 enumerou CINCO superfícies do harness e deixou passar a sexta — a mais importante.**
+
+O slash command (`scaffold.go:333`) é o que realmente ensina a estrutura dos roadmaps, porque eles são
+escritos à mão por cima do esqueleto. Ele não estava na enumeração do ML-0A. Quem tropeçou nele foi o
+ML-2A, **escrevendo o gate** — ou seja, já na implementação.
+
+Isso não invalida o método: a Wave 0 pagou o próprio custo com quatro ACs novos, dois deles
+(injeção via `sh -c` e regressão sincronizada) de classe grave. Mas calibra a expectativa, e é
+coerente com o que o próprio parecer declarou: **desloca a enumeração para a esquerda, não a torna
+completa.**
+
+---
+
 ## Wave 3 — Barreira
 
 > Dependências: Wave 2 auditada.
 
 ### ML-3A — Reverificação
-**Status:** ⬜ Pendente · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
+**Status:** 🔄 Em andamento · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
 
 Quem escreveu a Wave 0 verifica se a implementação honra o que ela enumerou — e se as vias de
 esvaziamento que ele apontou foram fechadas ou declaradas. **Veredito explícito.**

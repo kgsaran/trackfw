@@ -192,14 +192,16 @@ fi
 # o que o conteúdo TEM que conter, independente do que os outros 2 stacks
 # disserem.
 #
-# Restrita aos 3 artefatos que vêm literalmente do template de
+# Cobre os 3 artefatos que vêm literalmente do template de
 # internal/generators/roadmap.go (e equivalentes npm/pypi) — "roadmap",
-# "roadmap_flags" e "roadmap_from_req". "slash_roadmap" (o comando
-# `.claude/commands/trackfw/roadmap.md`) é um artefato estático diferente,
-# gerado por internal/generators/scaffold.go (e equivalentes), que hoje NÃO
-# ensina Wave 0 — gap real, fora do escopo deste ML (achado reportado
-# separadamente; ver docs/agents-working-context.md ML-2A).
-WAVE0_CONTENT_KINDS=("roadmap" "roadmap_flags" "roadmap_from_req")
+# "roadmap_flags" e "roadmap_from_req" — e também "slash_roadmap" (o comando
+# `.claude/commands/trackfw/roadmap.md`, gerado por internal/generators/
+# scaffold.go e equivalentes). Até o ML-2A, "slash_roadmap" não ensinava
+# Wave 0 e ficou de fora desta lista (gap reportado separadamente em
+# docs/agents-working-context.md ML-2A); o ML-1B da Wave 2-bis fechou esse
+# gap no template e agora ele entra na mesma asserção — é o artefato que
+# mais ensina a estrutura de roadmap para quem escreve um à mão.
+WAVE0_CONTENT_KINDS=("roadmap" "roadmap_flags" "roadmap_from_req" "slash_roadmap")
 # Literal exato emitido por wave0Block/WAVE0_BLOCK — "Threat Model", não
 # "Modelo de ameaça" (a REQ/roadmap usam a tradução em prosa; o texto gerado
 # é em inglês, como todo o restante do template).
