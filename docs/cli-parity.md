@@ -5310,3 +5310,78 @@ O switch em `render.go` tem três camadas de proteção que somadas garantem a f
 
 A remoção da condição `targetID == "claude" &&` do guard 3 é o único vetor de vulnerabilidade
 não redundante — o Cenário 86 de `check-gates-falsify.sh` o falsifica diretamente.
+
+## Resolução por escopo de `agent_models` — fonte da configuração por escopo (ML-1A, ADR-2026-08-23)
+
+<!-- trackfw-contract: gate=scripts/check-agent-models-parity.sh -->
+
+O escopo escolhe o arquivo, exclusivamente — sem merge, sem fallback entre escopos (ADR-2026-08-23, AC13):
+
+| Escopo | Arquivo lido | Precedência |
+|--------|-------------|-------------|
+| `global` | `~/.trackfw/trackfw.yaml` | Exclusivo: o cwd não é consultado para o valor |
+| `project` | `./trackfw.yaml` do cwd | Exclusivo: o arquivo global não é consultado |
+
+### Contratos de escopo global
+
+<!-- trackfw-contract: gate=scripts/check-agent-models-parity.sh -->
+
+#### Dois cwds, mesmo pin global: saída byte-idêntica
+
+<!-- trackfw-contract: gate=scripts/check-agent-models-parity.sh -->
+
+`agents install --scope global` invocado de dois cwds diferentes (um sem `trackfw.yaml`, outro com `agent_models` distinto) deve produzir arquivos de agente byte-idênticos em `~/.claude/agents/`. O valor vem sempre de `~/.trackfw/trackfw.yaml`, jamais do cwd.
+
+#### Aviso "configurado no projeto, não no global"
+
+<!-- trackfw-contract: gate=scripts/check-agent-models-parity.sh -->
+
+Quando `~/.trackfw/trackfw.yaml` existe mas não tem `agent_models` E o `trackfw.yaml` do cwd tem `agent_models`, o comando emite para stderr (byte-idêntico nos 3 CLIs):
+
+```
+trackfw: agents global: agent_models configurado em trackfw.yaml do projeto mas não vale para escopo global. Mova a chave para ~/.trackfw/trackfw.yaml.
+```
+
+O valor do projeto **não é aplicado**: o tier canônico (`model: sonnet`, `model: opus`) é usado.
+
+#### Aviso "não configurado"
+
+<!-- trackfw-contract: gate=scripts/check-agent-models-parity.sh -->
+
+Quando `~/.trackfw/trackfw.yaml` está ausente ou não tem `agent_models` E o cwd também não tem `agent_models`, o comando emite para stderr (byte-idêntico nos 3 CLIs):
+
+```
+trackfw: agents global: agent_models não configurado em ~/.trackfw/trackfw.yaml — usando tier canônico. Configure em ~/.trackfw/trackfw.yaml para pinar versões.
+```
+
+#### Config global malformada: não fatal (AC12)
+
+<!-- trackfw-contract: gate=scripts/check-agent-models-parity.sh -->
+
+Se `~/.trackfw/trackfw.yaml` existe mas contém YAML inválido, o comando:
+- **Não faz exit 1** — diferente do `trackfw.yaml` de projeto, que é fatal.
+- Emite o aviso abaixo para stderr (byte-idêntico nos 3 CLIs).
+- Usa o tier canônico como fallback.
+
+```
+trackfw: aviso: "~/.trackfw/trackfw.yaml" tem YAML malformado — config global de modelo ignorada; usando tier canônico.
+```
+
+### Contrato de escopo de projeto (não-regressão)
+
+<!-- trackfw-contract: gate=scripts/check-agent-models-parity.sh -->
+
+`agents install --scope project` lê `agent_models` do `trackfw.yaml` do cwd, mesmo que `~/.trackfw/trackfw.yaml` esteja presente com valores diferentes. A presença do arquivo global não altera o comportamento de escopo de projeto.
+
+### Cenários do gate (Cases 6–10 de `check-agent-models-parity.sh`)
+
+<!-- trackfw-contract: gate=scripts/check-agent-models-parity.sh -->
+
+| Case | Fixture | Verificação |
+|------|---------|-------------|
+| 6 — Dois cwds, pin global | home com `agent_models`, cwd-a vazio, cwd-b com `sonnet: "9.9"` distinto | Saída byte-idêntica entre cwds; vacuity guard: `model: claude-opus-5` |
+| 7 — Pin só no projeto | `~/.trackfw/trackfw.yaml` sem `agent_models`, cwd com `agent_models` | Aviso "wrong place" em stderr; `model: sonnet` (não composto) |
+| 8 — Pin em lugar nenhum | Sem `~/.trackfw/trackfw.yaml`, sem `trackfw.yaml` no cwd | Aviso "not configured" em stderr; `model: sonnet` |
+| 9 — Escopo de projeto (não-regressão) | Global com `sonnet: "4.6"`, projeto com `sonnet: "9.9"` | Vacuity guard: `model: claude-sonnet-9-9`; cross-runtime byte-idêntico |
+| 10 — Config global malformada | `~/.trackfw/trackfw.yaml` com YAML inválido | Exit 0; aviso malformed em stderr; `model: sonnet` |
+

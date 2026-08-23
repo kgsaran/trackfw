@@ -157,7 +157,9 @@ def run(args):
         def _on_skip(destination: str, reason: str) -> None:
             print(reason, file=sys.stderr)
 
-        _am = trackfw_config.load(cwd).get("agent_models", {})
+        _am, _am_warn = trackfw_config.resolve_agent_models(scope, home, cwd)
+        if _am_warn:
+            print(_am_warn, file=sys.stderr)
         _, plans = plan_deployments("agents", target_ids=ai_tools, scope=scope, identity_cfg=ident, agent_models=_am)
         print("Destino:")
         for plan in plans:

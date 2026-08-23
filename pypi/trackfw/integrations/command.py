@@ -197,7 +197,27 @@ def _run_models(_args: argparse.Namespace) -> int:
     from .renderers import resolve_agent_model, looks_like_suspect_model_value
     from .catalog import _surfaces as _catalog_surfaces
 
-    agent_models: dict[str, str] = trackfw_config.load().get("agent_models", {}) or {}
+    # AC5 + AC11: read agent_models from the global config (~/.trackfw/trackfw.yaml),
+    # not from the cwd singleton. Show origin before the table.
+    home = os.path.expanduser("~")
+    cwd = os.getcwd()
+    agent_models, models_source = trackfw_config.load_global_agent_models(home, cwd)
+    agent_models = agent_models or {}
+
+    # Source line (AC5): show origin before the table; advisory to stderr when not resolved.
+    _models_source_lines = {
+        "global": "source: ~/.trackfw/trackfw.yaml",
+        "none": "source: não configurado",
+        "project_only": "source: trackfw.yaml do projeto (não vale para escopo global)",
+        "global_malformed": "source: arquivo global malformado",
+    }
+    print(_models_source_lines.get(models_source, _models_source_lines["none"]))
+    if models_source == "none":
+        print(trackfw_config.GLOBAL_AGENT_MODELS_NONE_MESSAGE, file=sys.stderr)
+    elif models_source == "project_only":
+        print(trackfw_config.GLOBAL_AGENT_MODELS_PROJECT_ONLY_MESSAGE, file=sys.stderr)
+    elif models_source == "global_malformed":
+        print(trackfw_config.MALFORMED_GLOBAL_CONFIG_MESSAGE, file=sys.stderr)
     catalog = load_catalog()
 
     # Avisos: um por tier suspeito, ordenados, para stderr (antes da tabela).
@@ -328,7 +348,10 @@ def run(args: argparse.Namespace, kind: str) -> int:
         # Identity must be resolved from disk before plan_deployments — skipping
         # this silently reverts custom agent names to the neutral defaults.
         ident = load_identity(home)
-        catalog, _ = plan_deployments(kind, scope=resolved_scope, identity_cfg=ident, agent_models=trackfw_config.load().get("agent_models", {}))
+        run_agent_models, run_warn_msg = trackfw_config.resolve_agent_models(resolved_scope, home, os.getcwd())
+        if run_warn_msg:
+            print(run_warn_msg, file=sys.stderr)
+        catalog, _ = plan_deployments(kind, scope=resolved_scope, identity_cfg=ident, agent_models=run_agent_models)
         targets = csv_values(args.targets)
         items = csv_values(args.items)
 
@@ -390,7 +413,7 @@ def run(args: argparse.Namespace, kind: str) -> int:
             # Mirrors internal/commands/integrations_flags.go passing
             # manager.ProjectRoot to BuildPlans at both of its call sites.
             project_root=os.getcwd(),
-            agent_models=trackfw_config.load().get("agent_models", {}),
+            agent_models=run_agent_models,
         )
         def _on_skip(destination: str, reason: str) -> None:
             print(reason, file=sys.stderr)

@@ -1715,12 +1715,17 @@ func harnessCatalogTarget(catalog *integrations.Catalog, id, tool string, kind i
 	if err != nil {
 		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: err.Error()}
 	}
+	harnessCwd, _ := os.Getwd() // for AC14 diagnostic only; failure is OK (empty → no diagnostic)
+	harnessAgentModels, harnessWarnMsg := config.ResolveAgentModels("global", home, harnessCwd)
+	if harnessWarnMsg != "" {
+		fmt.Fprintln(os.Stderr, harnessWarnMsg)
+	}
 	plans, err := integrations.BuildPlans(catalog, integrations.PlanRequest{
 		Kind:        kind,
 		Targets:     []string{tool},
 		Scope:       "global",
 		Identity:    ident,
-		AgentModels: config.Load().AgentModels,
+		AgentModels: harnessAgentModels,
 	})
 	if err != nil {
 		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: err.Error()}

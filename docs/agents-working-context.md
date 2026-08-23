@@ -4,6 +4,160 @@
 
 ---
 
+## Sessão 2026-08-23 — hades-tf (FIM: ML-3B — Reverificação pós-ML-1B / APROVADO)
+
+Branch `fix/agents-update-de-escopo-global-resolve-o-pin-de-modelo-da-config-global`. Sem
+commit/push (autoridade exclusiva do `trackfw_architect`).
+
+**Escopo:** Confirmar ou negar as 5 ressalvas da barreira ML-3A após o ML-1B corretivo. Buscar
+regressão. Perguntas Q1–Q5 respondidas por medição independente (não pelo gate do ML-1B).
+
+**Veredito:** APROVADO.
+
+**Medições realizadas:**
+- Q1: `init` e `skills third-party install --apply-to` em escopo global, 3 runtimes com HOME
+  redirecionado e cwd sem `trackfw.yaml`. Todos retornam `model: claude-sonnet-4-6`. Independente
+  do gate do ML-1B.
+- Q2: Busca explícita por `plan_deployments`/`buildPlans`/`BuildPlans` nos 3 stacks. 19 call
+  sites, lista fechada.
+- Q3: Gate 71 OK / 0 FAIL. `make quality` exit 0. EACCES em `trackfw.yaml` (novo): "não
+  configurado" + canônico, exit 0 — mesmo comportamento R2.
+- Q4: `doctor` → "no mismatches found" quando agentes globais têm pin mas projeto não tem.
+  Causa: comparação por `manifest.hash`, não re-render. R4 confirmado correto.
+- Q5: Discriminante da classe do B6 ("resolução única no topo da função") verificado em todos
+  os call sites de inspect+write nos 3 stacks. Sem irmão.
+
+**Artefato atualizado:** `docs/seguranca/2026-08-23-barreira-da-config-global-de-modelo.md`
+(seção "Reverificação — ML-3B" adicionada; cabeçalho REPROVADO→APROVADO).
+
+**ML-3B atualizado:** ✅ Concluído no roadmap.
+
+**Próximo passo:** handoff para `trackfw_architect` — auditoria e commit do ML-3B + encerramento
+da Wave 3 (barreira).
+
+---
+
+## Sessão 2026-08-23 — hades-tf (INÍCIO: ML-3B — Reverificação pós-ML-1B)
+
+Branch `fix/agents-update-de-escopo-global-resolve-o-pin-de-modelo-da-config-global`. Sem
+commit/push (autoridade exclusiva do `trackfw_architect`).
+
+**Escopo:** Confirmar ou negar as 5 ressalvas da barreira ML-3A, após o ML-1B ter aplicado as 6
+correções. Buscar regressão. Responder Q1–Q5.
+
+---
+
+## Sessão 2026-08-23 — apolo-tf (FIM: ML-1B — 6 correções cirúrgicas Python/Node.js + cases 11-12 do parity gate)
+
+Branch `fix/agents-update-de-escopo-global-resolve-o-pin-de-modelo-da-config-global`. Sem
+commit/push (autoridade exclusiva do `trackfw_architect`).
+
+**Escopo:** Aplicar 6 correções cirúrgicas (B1-B5 da barreira + 6º site descoberto na busca de
+enumeração) em Python e Node.js. Adicionar Cases 11-12 em `scripts/check-agent-models-parity.sh`
+para `init` e `third-party --apply-to` em escopo global. Provar ausência de 19º site por busca
+explícita nos 3 stacks. Rodar `make quality` e `trackfw validate`.
+
+**Sites a corrigir:**
+- B1: `pypi/trackfw/commands/init.py:160`
+- B5: `pypi/trackfw/commands/thirdparty.py:307`
+- B2: `pypi/trackfw/commands/thirdparty.py:458`
+- 6º site: `npm/src/commands/thirdparty.js:195` (precondition, par do B5)
+- B3: `npm/src/commands/thirdparty.js:336`
+- B4: `npm/src/generators/init.js:1284`
+
+**Resultados:**
+- 6 sites corrigidos (B1–B5 + 6º site `npm/src/commands/thirdparty.js:195`)
+- Prova de ausência de 19º site: busca explícita nos 3 stacks — todos os `buildPlans`/`plan_deployments`/`PlanRequest` produtivos agora passam o modelo resolvido corretamente
+- Cases 11–12 adicionados ao gate e passando: 6/6 OK (Case 11 — init global) + 9/9 OK (Case 12 — thirdparty --apply-to global)
+- `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality` → exit 0
+- `./bin/trackfw validate` → 16 warnings pré-existentes, 0 violations novas
+- ML-1B: ✅ Concluído no roadmap
+
+**Próximo passo:** handoff para `trackfw_architect` — auditoria e commit do ML-1B.
+
+---
+
+## Sessão 2026-08-23 — hades-tf (FIM: ML-3A — Barreira final / reverificação)
+
+Branch `fix/agents-update-de-escopo-global-resolve-o-pin-de-modelo-da-config-global`. Sem
+commit/push (autoridade exclusiva do `trackfw_architect`).
+
+**Veredito:** REPROVADO. Os 13 sites declarados estão corretamente migrados. Encontrados 5 sites
+adicionais (não na Wave 0) que reproduzem o defeito original em caminhos de escrita:
+- `pypi/trackfw/commands/init.py:160` — init global lê cwd
+- `pypi/trackfw/commands/thirdparty.py:307,458` — --apply-to usa cwd (458 é write path)
+- `npm/src/generators/init.js:1281` (installIntegrationTarget) — agentModels não passado
+- `npm/src/commands/thirdparty.js:336–337` — --apply-to write path sem agentModels
+
+**Artefato produzido:** `docs/seguranca/2026-08-23-barreira-da-config-global-de-modelo.md`
+
+**Próximo passo:** handoff para `trackfw_architect` — auditoria e commit do ML-1B.
+
+## Sessão 2026-08-23 — hades-tf (INÍCIO: ML-3A — Barreira final / reverificação)
+
+Branch `fix/agents-update-de-escopo-global-resolve-o-pin-de-modelo-da-config-global`. Sem
+commit/push (autoridade exclusiva do `trackfw_architect`).
+
+**Escopo:** Confrontar cada item do modelo de ameaça (Wave 0) com o que foi entregue nas Waves 1 e
+2. Medir os 4 cenários do §2 com `HOME` redirecionado. Avaliar superfície nova
+`~/.trackfw/trackfw.yaml` (valor hostil, permissões, symlink). Escrever veredito em
+`docs/seguranca/2026-08-23-barreira-da-config-global-de-modelo.md`. Atualizar status do ML-3A no
+roadmap.
+
+---
+
+## Sessão 2026-08-23 — apolo-tf (FIM: ML-2A — Paridade e falsificação nas duas direções)
+
+Branch `fix/agents-update-de-escopo-global-resolve-o-pin-de-modelo-da-config-global`. Sem
+commit/push (autoridade exclusiva do `trackfw_architect`).
+
+**Escopo:** Cases 6–10 em `check-agent-models-parity.sh` (subprocessos isolados, AC15); cenários
+169–170 em `check-gates-falsify.sh` (Direction A e B); nova seção em `docs/cli-parity.md` com
+contrato de resolução por escopo; fix de bug em `pypi/trackfw/integrations/command.py` linha 416
+(segunda chamada `plan_deployments` usava `load()` em vez de `run_agent_models`).
+
+**Evidências:**
+- `bash scripts/check-agent-models-parity.sh` → exit 0, todos os casos OK (incluindo Cases 6–10)
+- `bash scripts/check-parity-contract-coverage.sh` → exit 0, 0 seções sem anotação
+- `./bin/trackfw validate` → 16 warnings, 0 violations
+- Cenário 169 (Direction A): baseline exit 0; detection exit 1 com "from global pin" em stderr
+- Cenário 170 (Direction B): baseline exit 0; detection exit 1 com "claude-sonnet-9-9 (project pin)" em stderr
+- `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make parity` → exit 0, 0 FAILs (task buprzo27v);
+  falhas anteriores (bcb4jy8k4) eram race condition com task b89ez4bm6 pré-compactação ainda ativa;
+  bug adicional corrigido: pattern de detecção do Cenário 170 em `check-gates-falsify.sh` usava
+  `"claude-sonnet-9-9 (project pin)"` mas a mensagem `diag` contém aspas simples ao redor do
+  model — corrigido para `"claude-sonnet-9-9' (project pin)"`
+
+**Arquivos modificados (sem commit):**
+- `scripts/check-agent-models-parity.sh` — helpers + Cases 6–10 + echo final
+- `scripts/check-gates-falsify.sh` — cenários 169–170 + echo final (168→170)
+- `docs/cli-parity.md` — seção contrato de resolução por escopo
+- `pypi/trackfw/integrations/command.py` — bug fix linha 416
+
+---
+
+## Sessão 2026-08-23 — apolo-tf (INÍCIO: ML-2A — Paridade e falsificação nas duas direções)
+
+Branch `fix/agents-update-de-escopo-global-resolve-o-pin-de-modelo-da-config-global`. Sem
+commit/push (autoridade exclusiva do `trackfw_architect`).
+
+**Escopo:** 5 novos casos no parity gate (Cases 6–10 com subprocessos isolados por AC15);
+2 cenários de falsificação (169–170) no `check-gates-falsify.sh`; atualização do
+`docs/cli-parity.md` com contrato de escopo; cada subcase em subprocesso próprio (sync.Once).
+
+---
+
+## Sessão 2026-08-23 — apolo-tf (INÍCIO: ML-1A — Config global como fonte para escopo global, nos 3 CLIs)
+
+Branch `fix/agents-update-de-escopo-global-resolve-o-pin-de-modelo-da-config-global`. Sem
+commit/push (autoridade exclusiva do `trackfw_architect`).
+
+**Escopo:** implementar `LoadGlobalAgentModels` / `ResolveAgentModels` nos 3 CLIs (Go + Node +
+Python); corrigir 13 sites de chamada (6 Go + 4 Node + 3 Python); AC5 em `agents models`;
+AC12 (não-fatal para global malformado); AC14 (diagnóstico de "configurado no projeto").
+
+---
+
 ## Sessão 2026-08-22 — apolo-tf (INÍCIO/FIM: ML-1A — Wave 0 no gerador, no `barrier` e nos assets)
 
 Branch `feat/wave-0-de-modelo-de-ameaca-no-harness-e-o-asset-do-arquiteto-ensina-trackfw-push`. Sem
@@ -23833,3 +23987,147 @@ artifact or the same pattern"`.
 Não commitei, não fiz push, não abri PR — aguardando auditoria do `trackfw_architect`.
 
 **Próximo:** `trackfw_architect` audita esta correção pontual e decide sobre fechar o ML-1C/roadmap.
+
+---
+
+## Sessão 2026-08-23 — trackfw_architect (INÍCIO: pin de modelo perdido em escopo global)
+
+**Bug reportado por KG com impacto diário de cota.** Depois de `agents update --force` com a 7.2.0,
+os agentes ficaram no alias (`opus`/`sonnet`) em vez do pin (`claude-opus-5`/`claude-sonnet-4-6`).
+
+**Erro meu que atrasou o diagnóstico, registrado de propósito:** li o `ADR-2026-08-14` (roteamento
+para Codex e Cursor), vi que Claude Code não estava nele e disse "fora de escopo, não é bug". A
+`REQ-2026-08-21` que governa a feature diz o contrário — a motivação **é** o Claude Code, e o AC6
+promete que `agents update` reforça o pin. KG corrigiu. ADR vizinho descreve uma decisão; a REQ
+descreve a intenção.
+
+**Diagnóstico medido:** `config.Load()` (`config.go:125`) lê `trackfw.yaml` do **cwd**, sem fallback
+global. Artefato de escopo **global** renderiza com a config do diretório de invocação; de qualquer
+outro lugar cai no tier canônico, em silêncio. Rodando de dentro deste repo, o pin aplica
+corretamente — o código funciona, a config é que não é encontrada.
+
+**Mitigação imediata aplicada:** rodei `agents update --force --scope global --targets claude` daqui;
+os 12 agentes estão pinados agora.
+
+**Decisão do KG:** os modelos vivem no `trackfw.yaml` **global**, não no do projeto.
+ADR-2026-08-23 aceito.
+
+**Primeiro roadmap gerado com Wave 0 pelo próprio harness (PR #206)** — e o `barrier --wave 0` já
+reprova por gate real, antes de qualquer implementação.
+
+---
+
+## Sessão 2026-08-23 — hades-tf (INÍCIO: ML-0A — Modelo de ameaça da config global de modelo)
+
+Branch `fix/agents-update-de-escopo-global-resolve-o-pin-de-modelo-da-config-global`.
+Roadmap: `ROADMAP-2026-08-23-agents-update-de-escopo-global-resolve-o-pin-de-modelo-da-config-global.md`.
+
+Escopo: Wave 0 — escrever `docs/seguranca/2026-08-23-modelo-de-ameaca-da-config-global-de-modelo.md`
+com as quatro seções obrigatórias. Nenhuma linha de implementação.
+
+Medições seguras realizadas (sem rodar `agents update` nem `update harness`):
+- `HOME=/nonexistent`, cwd sem `trackfw.yaml`: `agents models` exit 0, tier canônico silencioso.
+- `trackfw.yaml` malformado no cwd: `agents models` exit 1, `MalformedConfigMessage` — bricks todo comando do cwd.
+- `trackfw.yaml` com `chmod 000` no cwd: `agents models` exit 0, silêncio — EACCES = ENOENT na lógica atual.
+
+## Sessão 2026-08-23 — hades-tf (FIM: ML-0A — Modelo de ameaça da config global de modelo)
+
+`trackfw barrier ... --wave 0`: result: **passed**, exit 0. Todos os 4 checks verdes.
+
+**Entregável:** `docs/seguranca/2026-08-23-modelo-de-ameaca-da-config-global-de-modelo.md`
+
+**Achados principais (para o ML-1A do apolo-tf):**
+
+1. **Lista da REQ incompleta em 3 sites:** `update harness` (Go `:1723`, Node `catalogBundleTarget`,
+   Python `:996`) e `init.go:421` também lêem `config.Load().AgentModels` com Scope global. O ML-1A
+   deve cobrir todos esses sites, não só os dois da REQ.
+
+2. **Singleton restringe a solução:** `Load()` é `sync.Once` nos 3 CLIs. A correção deve ser um
+   **resolvedor separado** chamado antes de montar o `PlanRequest` — não uma mudança em `Load()`.
+
+3. **Precedência recomendada (AC2): escopo escolhe o arquivo, exclusivamente.** Global → só
+   `~/.trackfw/trackfw.yaml`. Projeto → só cwd. Sem merge. Custo: o pin manual aplicado hoje (de
+   dentro do repo) reverte após a implementação; KG precisa criar `~/.trackfw/trackfw.yaml` antes.
+
+4. **AC4 exige leitura diagnóstica do projeto:** para distinguir "não configurado" de "configurado no
+   lugar errado", o resolvedor global precisa checar o `trackfw.yaml` do cwd — sem usar o valor.
+
+5. **`osExit(1)` para config global malformada é bug:** brickaria todo comando de todo diretório.
+   Resolvedor global deve ser **não-fatal** (aviso + canônico), com caminho absoluto na mensagem.
+
+6. **Terceiro estado de EACCES (medido):** `chmod 000 trackfw.yaml` → exit 0 silencioso. AC4 declara
+   2 estados; há 3. Residual declarado no modelo de ameaça.
+
+7. **`REQ-2026-08-21-update-harness`:** absorver AC1/AC2/AC3 nesta REQ; rescopar a REQ mais antiga
+   para sanitização de valor (residual que persiste independente da fonte). Decisão do arquiteto.
+
+---
+
+## FIM — apolo-tf — 2026-08-23 — ML-1A concluído
+
+**Tarefa:** ML-1A — Config global como fonte para escopo global, nos 3 CLIs
+**Roadmap:** `ROADMAP-2026-08-23-agents-update-de-escopo-global-resolve-o-pin-de-modelo-da-config-global.md`
+**Branch:** `fix/agents-update-de-escopo-global-resolve-o-pin-de-modelo-da-config-global`
+
+### Arquivos modificados
+
+**Go:**
+- `internal/config/config.go` — `AgentModelsSource`, `LoadGlobalAgentModels`, `cwdAgentModelsSource`, `ResolveAgentModels`, 3 constantes de mensagem
+- `internal/config/config_global_agent_models_test.go` (NOVO) — 9 testes AC15-compliant com `t.TempDir()`
+- `internal/commands/integrations_flags.go` — 2 call sites (lifecycle + list) migrados para `ResolveAgentModels`
+- `internal/commands/init.go` — 1 call site migrado
+- `internal/generators/update.go` — 1 call site `harnessCatalogTarget` (global fixo)
+- `internal/commands/integrations_thirdparty.go` — 2 call sites migrados
+- `internal/commands/agents_models.go` — `executeAgentModels` usa `LoadGlobalAgentModels` + emite "source: ..." no stdout
+
+**Node.js:**
+- `npm/src/config/index.js` — `_cwdAgentModelsSource`, `loadGlobalAgentModels`, `resolveAgentModels`, 3 constantes
+- `npm/src/commands/integrations.js` — lifecycle handler + `createAgentModelsCommand` migrados
+- `npm/src/commands/update-harness.js` — `catalogBundleTarget` migrado
+
+**Python:**
+- `pypi/trackfw/config.py` — `_cwd_agent_models_source`, `load_global_agent_models`, `resolve_agent_models`, 3 constantes
+- `pypi/trackfw/integrations/command.py` — `_run_models` + `run` migrados
+- `pypi/trackfw/commands/update_harness.py` — `_catalog_group_result` migrado
+
+### Evidências de conclusão
+
+- `go build ./...` — limpo
+- `go test ./...` — 16 pacotes, todos `ok`
+- `go vet ./...` — limpo
+- Node.js: 773 passed, 0 failed
+- Python: 1485 passed
+- `make quality` — exit 0 (background task bmka52dl6 concluído)
+- `./bin/trackfw validate` — 16 warnings, mesma baseline, zero violações novas
+- AC1 verificado: saída idêntica de dois cwds distintos com mesmo `~/.trackfw/trackfw.yaml`
+- AC4/AC14 verificado: "source: não configurado" e "source: trackfw.yaml do projeto..." conforme esperado
+- AC12 verificado: config global malformada → exit 0, aviso, fallback canônico
+
+### Residual declarado
+
+`internal/commands/doctor.go` — 1 call site de `config.Load().AgentModels` que não foi migrado. Exclui-se do escopo porque: (1) `doctor` faz leitura diagnóstica apenas, não usa o valor para renderizar agentes; (2) não está na enumeração de AC11; (3) migração exigiria refactoring de assinatura de `RunDoctor`. Risco: baixo, comportamento documentado.
+
+
+---
+
+## apolo-tf · ML-2A — Paridade e falsificação nas duas direções
+
+**INÍCIO** — 2026-08-23
+
+**Branch:** `fix/agents-update-de-escopo-global-resolve-o-pin-de-modelo-da-config-global`
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-08-23-agents-update-de-escopo-global-resolve-o-pin-de-modelo-da-config-global.md`
+**REQ:** `docs/req/REQ-2026-08-23-agents-update-de-escopo-global-perde-o-pin-de-modelo-porque-le-agent-models-do-cwd.md`
+
+**Escopo deste ML:**
+1. Estender `scripts/check-agent-models-parity.sh` com 5 casos de escopo global (Cases 6–10), cada um em subprocesso próprio com guard de vacuidade, byte-idêntico nos 3 CLIs.
+2. Adicionar 2 cenários de falsificação (169–170) a `scripts/check-gates-falsify.sh` — Direção A (global lê cwd) e Direção B (projeto lê global) — atualizando o total de 168 para 170.
+3. Atualizar `docs/cli-parity.md` com o contrato de resolução por escopo, as duas mensagens de aviso verbatim, o comportamento não-fatal para config global malformada, e a anotação `trackfw-contract`.
+
+**Seams confirmados de falsificação:**
+- Direção A: `internal/commands/integrations_flags.go:225` — `config.ResolveAgentModels(opts.scope, ...)` → `config.Load().AgentModels, ""`
+- Direção B: `internal/commands/integrations_flags.go:225` — `opts.scope` → `"global"` (força escopo global para qualquer scope)
+
+**Strings de aviso (byte-idênticas nos 3 CLIs, confirmado por grep):**
+- Wrong place: `trackfw: agents global: agent_models configurado em trackfw.yaml do projeto mas não vale para escopo global. Mova a chave para ~/.trackfw/trackfw.yaml.`
+- Not configured: `trackfw: agents global: agent_models não configurado em ~/.trackfw/trackfw.yaml — usando tier canônico. Configure em ~/.trackfw/trackfw.yaml para pinar versões.`
+- Malformed: `trackfw: aviso: "~/.trackfw/trackfw.yaml" tem YAML malformado — config global de modelo ignorada; usando tier canônico.`

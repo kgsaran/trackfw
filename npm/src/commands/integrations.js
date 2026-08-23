@@ -221,7 +221,9 @@ function createLifecycleCommand(kind) {
         }
       }
 
-      options.agentModels = configModule.load().agentModels || {}
+      const { models: resolvedModels, warning: modelsWarning } = configModule.resolveAgentModels(options.scope, os.homedir(), process.cwd())
+      if (modelsWarning) process.stderr.write(modelsWarning + '\n')
+      options.agentModels = resolvedModels
       const output = execute(kind, operation, options)
       console.log(options.json ? JSON.stringify(output) : human(output))
     })
@@ -250,7 +252,22 @@ function createAgentModelsCommand() {
   const cmd = new Command('models')
     .description('Show the resolved model each agent uses per target')
   cmd.action(() => {
-    const agentModels = configModule.load().agentModels || {}
+    // AC5 + AC11: read agent_models from the global config (~/.trackfw/trackfw.yaml),
+    // not from the cwd singleton. Show origin before the table.
+    const { models: agentModels, source: modelsSource } = configModule.loadGlobalAgentModels(os.homedir(), process.cwd())
+
+    // Source line (AC5): show origin before the table; advisory to stderr when not resolved.
+    const sourceLines = {
+      global: 'source: ~/.trackfw/trackfw.yaml',
+      none: 'source: não configurado',
+      project_only: 'source: trackfw.yaml do projeto (não vale para escopo global)',
+      global_malformed: 'source: arquivo global malformado',
+    }
+    const sourceLine = sourceLines[modelsSource] || sourceLines['none']
+    process.stdout.write(sourceLine + '\n')
+    if (modelsSource === 'none') process.stderr.write(configModule.GLOBAL_AGENT_MODELS_NONE_MESSAGE + '\n')
+    else if (modelsSource === 'project_only') process.stderr.write(configModule.GLOBAL_AGENT_MODELS_PROJECT_ONLY_MESSAGE + '\n')
+    else if (modelsSource === 'global_malformed') process.stderr.write(configModule.MALFORMED_GLOBAL_CONFIG_MESSAGE + '\n')
 
     // Warnings: emit once per suspect tier, sorted, to stderr.
     const suspectTiers = Object.keys(agentModels)

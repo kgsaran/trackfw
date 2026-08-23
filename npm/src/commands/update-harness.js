@@ -758,7 +758,9 @@ function catalogBundleTarget(toolId, kind, homeRoot, identityConfig, { dryRun, i
   let displayPath = `~/.${toolId}`
   try {
     displayPath = globalGroupPath(toolId, kind)
-    const plans = buildPlans(kind, { targets: [toolId], scope: 'global', identity: identityConfig, agentModels: projectConfig.load().agentModels || {} })
+    const { models: harnessAgentModels, warning: harnessWarnMsg } = projectConfig.resolveAgentModels('global', homeRoot, process.cwd())
+    if (harnessWarnMsg) process.stderr.write(harnessWarnMsg + '\n')
+    const plans = buildPlans(kind, { targets: [toolId], scope: 'global', identity: identityConfig, agentModels: harnessAgentModels })
     if (!plans.length) return { id, state: 'missing', path: displayPath }
 
     const manager = new IntegrationManager({ homeRoot })

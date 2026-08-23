@@ -39,6 +39,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -993,7 +994,10 @@ def _catalog_group_result(
         return {"id": target_id, "state": STATE_FAILED, "path": "", "message": str(error)}
 
     try:
-        _, plans = plan_deployments(kind, target_ids=[tool], scope="global", identity_cfg=identity_cfg, agent_models=trackfw_config.load().get("agent_models", {}))
+        harness_agent_models, harness_warn_msg = trackfw_config.resolve_agent_models("global", home, os.getcwd())
+        if harness_warn_msg:
+            print(harness_warn_msg, file=sys.stderr)
+        _, plans = plan_deployments(kind, target_ids=[tool], scope="global", identity_cfg=identity_cfg, agent_models=harness_agent_models)
     except ValueError as error:
         return {"id": target_id, "state": STATE_FAILED, "path": directory, "message": str(error)}
 

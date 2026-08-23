@@ -289,6 +289,9 @@ def execute_install(kind: str, args: argparse.Namespace) -> None:
     # write happens (including the skill file below). Fail everything up
     # front instead of leaving partial state on a precondition failure.
     apply_to = _csv_values(args.apply_to)
+    _tp_agent_models, _tp_warn = trackfw_config.resolve_agent_models(scope, home, project_root)
+    if _tp_warn:
+        print(_tp_warn, file=sys.stderr)
     ident: identity.Config | None = None
     if apply_to:
         ident = identity.load(home)
@@ -304,7 +307,7 @@ def execute_install(kind: str, args: argparse.Namespace) -> None:
                     scope=scope,
                     identity_cfg=ident,
                     project_root=project_root,
-                    agent_models=trackfw_config.load().get("agent_models", {}),
+                    agent_models=_tp_agent_models,
                 )
                 if not agent_plans:
                     raise IntegrationError(
@@ -455,7 +458,7 @@ def execute_install(kind: str, args: argparse.Namespace) -> None:
                     scope=scope,
                     identity_cfg=ident,
                     project_root=project_root,
-                    agent_models=trackfw_config.load().get("agent_models", {}),
+                    agent_models=_tp_agent_models,
                 )
                 manager.update(agent_plans, force=False)
 

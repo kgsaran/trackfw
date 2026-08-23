@@ -414,11 +414,15 @@ func installAITools(aiTools []string, cwd string, scope string) error {
 	if err != nil {
 		return fmt.Errorf("instalando AI tools: identidade invalida: %w", err)
 	}
+	initAgentModels, initWarnMsg := config.ResolveAgentModels(scope, home, cwd)
+	if initWarnMsg != "" {
+		fmt.Fprintln(os.Stderr, initWarnMsg)
+	}
 	var plans []integrations.PlannedArtifact
 	for _, kind := range []integrations.ItemKind{integrations.KindAgents, integrations.KindSkills} {
 		selected, err := integrations.BuildPlans(catalog, integrations.PlanRequest{
 			Kind: kind, Targets: aiTools, Scope: scope, Identity: ident,
-			AgentModels: config.Load().AgentModels,
+			AgentModels: initAgentModels,
 		})
 		if err != nil {
 			return fmt.Errorf("configurando AI tools: %w", err)

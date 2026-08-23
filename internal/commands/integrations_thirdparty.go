@@ -312,6 +312,10 @@ func executeThirdPartyInstall(cmd *cobra.Command, kind integrations.ItemKind, op
 	// path: skill file written, registry entry upserted, but no reference
 	// actually injected, and no flag on this command to force past it.
 	// Fail everything up front instead.
+	tpAgentModels, tpWarnMsg := config.ResolveAgentModels(opts.scope, manager.HomeDir, manager.ProjectRoot)
+	if tpWarnMsg != "" {
+		fmt.Fprintln(os.Stderr, tpWarnMsg)
+	}
 	var ident identity.Config
 	if len(opts.applyTo) > 0 {
 		ident, err = identity.Load(manager.HomeDir)
@@ -326,7 +330,7 @@ func executeThirdPartyInstall(cmd *cobra.Command, kind integrations.ItemKind, op
 				agentPlans, err := integrations.BuildPlans(catalog, integrations.PlanRequest{
 					Kind: integrations.KindAgents, Targets: []string{rt.targetID}, Items: []string{agentID},
 					Scope: opts.scope, Identity: ident, ProjectRoot: manager.ProjectRoot,
-					AgentModels: config.Load().AgentModels,
+					AgentModels: tpAgentModels,
 				})
 				if err != nil {
 					return err
@@ -515,7 +519,7 @@ func executeThirdPartyInstall(cmd *cobra.Command, kind integrations.ItemKind, op
 				agentPlans, err := integrations.BuildPlans(catalog, integrations.PlanRequest{
 					Kind: integrations.KindAgents, Targets: []string{rt.targetID}, Items: []string{agentID},
 					Scope: opts.scope, Identity: ident, ProjectRoot: manager.ProjectRoot,
-					AgentModels: config.Load().AgentModels,
+					AgentModels: tpAgentModels,
 				})
 				if err != nil {
 					return err
