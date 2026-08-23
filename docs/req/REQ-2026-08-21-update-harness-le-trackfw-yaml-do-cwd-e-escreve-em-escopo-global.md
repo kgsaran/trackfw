@@ -34,6 +34,21 @@ Registrado pelo executor e verificado por mim:
    afeta todo usuário que roda o comando fora de um projeto canônico, e merece ciclo próprio.
 3. Fazer no ML-5A seria expansão de escopo não sancionada, no meio de uma correção de bloqueio.
 
+## 🔄 Reescopada em 2026-08-23 — a metade da origem de config foi entregue
+
+**A parte "lê `trackfw.yaml` do cwd e escreve em escopo global" foi resolvida** pela
+`REQ-2026-08-23-agents-update-de-escopo-global-perde-o-pin-de-modelo-porque-le-agent-models-do-cwd`
+(PR #207): `agent_models` de escopo global passa a ser resolvido **exclusivamente** de
+`~/.trackfw/trackfw.yaml`, em **19 call sites** dos 3 CLIs — incluindo os três desta REQ
+(`update.go:1723`, `update-harness.js`, `update_harness.py`). Um `trackfw.yaml` de diretório
+qualquer **não influencia mais** o que é escrito em escopo global.
+
+**O que sobra para esta REQ, e é só isto:** a **sanitização do valor**. O guard atual rejeita
+caractere de controle, mas um valor de uma linha que *pareça* modelo (`claude-opus-5: danger`) passa
+e vira linha de frontmatter possivelmente inválida. A superfície diminuiu — a fonte deixou de ser
+qualquer cwd e passou a ser o home do usuário, que ele mesmo controla —, mas o valor continua indo
+para o artefato sem validação de forma.
+
 ## Residual documentado, e é o que esta REQ ataca
 
 - Valor de uma linha ainda pode ser **arbitrário** — o usuário passa a rodar com um modelo que não
