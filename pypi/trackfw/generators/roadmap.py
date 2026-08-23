@@ -5,6 +5,7 @@ Espelha npm/src/generators/roadmap.js em Python puro.
 
 import os
 import re
+import sys
 import datetime
 import unicodedata
 
@@ -315,6 +316,12 @@ def generate_roadmap(title: str, cfg: dict, agent: str = None, req_path: str = "
     - Modo by_agent: cfg["roadmap_dir"]/<agent>/backlog/<slug>.md
     Retorna o path do arquivo criado.
     """
+    # AC1/AC2: o título é dado de uma linha — newline e CR são entrada malformada.
+    # Mensagem byte-idêntica nos 3 CLIs (docs/cli-parity.md).
+    if '\n' in title or '\r' in title:
+        print("Error: roadmap title must be a single line: newline and carriage return are not allowed", file=sys.stderr)
+        sys.exit(1)
+
     today = datetime.date.today().isoformat()
     slug = slugify(title)
     filename = f"ROADMAP-{today}-{slug}.md"
@@ -339,6 +346,12 @@ def generate_roadmap_from_req(req_path: str, cfg: dict, agent: str = None) -> st
     parsed_title, criteria, linked_adr = _parse_req_for_roadmap(data)
     basename = os.path.basename(req_path)
     title = parsed_title or os.path.splitext(basename)[0].removeprefix("REQ-")
+
+    # AC1: o título lido da REQ também pode conter newline forjado — rejeitar cedo.
+    if '\n' in title or '\r' in title:
+        print("Error: roadmap title must be a single line: newline and carriage return are not allowed", file=sys.stderr)
+        sys.exit(1)
+
     today = datetime.date.today().isoformat()
     slug = slugify(title)
     filename = f"ROADMAP-{today}-{slug}.md"

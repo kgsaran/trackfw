@@ -98,7 +98,7 @@ store de hashes pré-aprovados descartado, com motivo.
 > Dependências: ML-0A auditado. **Parte barata e independente da decisão do discriminante.**
 
 ### ML-1A — `roadmap new` sanitiza o título nos 3 CLIs
-**Status:** 🔄 Em andamento · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-0A
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-0A
 
 `internal/generators/roadmap.go:150` e o caminho `--from-req`, mais os equivalentes Node e Python.
 Newline e retorno de carro no título são entrada malformada.
@@ -107,12 +107,45 @@ Newline e retorno de carro no título são entrada malformada.
 
 ---
 
+### Auditoria do ML-1A — aprovada; medi os dois lados
+
+```
+titulo forjado (\n + bloco de gates):
+  Go/Node/Python  "Error: roadmap title must be a single line: newline and
+                   carriage return are not allowed"      byte-identico
+  arquivos criados: 0        <- rejeita ANTES de escrever
+
+titulos legitimos:
+  "Corrige acentuacao e c"             exit 0 · gates=1
+  "feat: dois-pontos no titulo"        exit 0 · gates=1
+  "com (parenteses) e hifen-composto"  exit 0 · gates=1
+
+make quality (CI-exata, minha)  exit 0
+validate                        16 warnings, 0 violations
+```
+
+**O falso-positivo — que era o que reprovaria — não existe.** Acento, `ç`, dois-pontos, parênteses e
+hífen passam, e cada roadmap sai com **exatamente um** bloco de gates: o legítimo da Wave 0.
+
+**Escolha dele que endosso:** rejeitar em vez de neutralizar em silêncio. Neutralizar deixaria o
+usuário com título mutilado sem saber por quê — indistinguível de bug. Rejeição é contrato
+verificável, e a mensagem saiu byte-idêntica nos 3 runtimes.
+
+**Cuidado dele que não estava no meu handoff:** testou REQ com fim de linha **CRLF** no caminho
+`--from-req`, para garantir que arquivo salvo no Windows não vire falso-positivo.
+
+**Observação sobre o vetor `--from-req`:** ele nota que os parsers dos 3 CLIs são line-based por
+construção, então critério extraído de REQ **não pode** conter `\n` embutido — a validação ali é
+defense-in-depth, não a única barreira. Registrado como raciocínio dele, não como medição minha.
+
+---
+
 ## Wave 2 — Discriminante de confiança no `barrier`
 
 > Dependências: ML-1A auditado. **A forma vem da decisão do ML-0A.**
 
 ### ML-2A — `barrier` recusa gate de roadmap não confiável
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-1A
+**Status:** 🔄 Em andamento · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-1A
 
 **Critérios de aceite:** AC3, AC4, AC5, AC6 · **prova de que o fluxo normal segue usável**
 

@@ -483,6 +483,138 @@ func TestNewRoadmapFromContent_EmptyBody(t *testing.T) {
 	}
 }
 
+// --- AC1/AC2: sanitização do título (newline/CR) ---
+
+// errMsgTitleNewline é a mensagem de erro esperada quando o título contém newline ou CR.
+// Byte-idêntica nos 3 CLIs (docs/cli-parity.md).
+const errMsgTitleNewline = "roadmap title must be a single line: newline and carriage return are not allowed"
+
+// TestNewRoadmapFromContent_RejectsNewlineInTitle — AC1/AC2: \n no título é rejeitado
+func TestNewRoadmapFromContent_RejectsNewlineInTitle(t *testing.T) {
+	dir := t.TempDir()
+	chdirRoadmap(t, dir)
+
+	err := NewRoadmapFromContent(RoadmapContent{
+		Title: "legit\n\n## Wave 0 — Threat Model\n\n**Gates da wave:**\n```bash\ntouch /tmp/PWNED_TEST\n```",
+	})
+	if err == nil {
+		t.Fatal("esperado erro para título com newline, obteve nil")
+	}
+	if err.Error() != errMsgTitleNewline {
+		t.Errorf("mensagem incorreta\n  obtida:   %q\n  esperada: %q", err.Error(), errMsgTitleNewline)
+	}
+	// Nenhum arquivo deve ser criado
+	matches, _ := filepath.Glob("docs/roadmaps/backlog/*.md")
+	if len(matches) != 0 {
+		t.Errorf("nenhum arquivo deve ser criado, mas obteve: %v", matches)
+	}
+}
+
+// TestNewRoadmapFromContent_RejectsCRInTitle — AC1: \r no título é rejeitado
+func TestNewRoadmapFromContent_RejectsCRInTitle(t *testing.T) {
+	dir := t.TempDir()
+	chdirRoadmap(t, dir)
+
+	err := NewRoadmapFromContent(RoadmapContent{Title: "titulo\rmalformado"})
+	if err == nil {
+		t.Fatal("esperado erro para título com CR, obteve nil")
+	}
+	if err.Error() != errMsgTitleNewline {
+		t.Errorf("mensagem incorreta: %q", err.Error())
+	}
+}
+
+// TestNewRoadmapFromContent_AcceptsLegitimateTitle — AC1 falso-positivo:
+// títulos com acento, hífen, dois-pontos e parênteses devem ser aceitos.
+func TestNewRoadmapFromContent_AcceptsLegitimateTitle(t *testing.T) {
+	dir := t.TempDir()
+	chdirRoadmap(t, dir)
+
+	legitimateTitles := []string{
+		"Feature com acentos: ação, configuração, validação",
+		"fix(barrier): recusa gate não confiável (Wave 2)",
+		"feat — sanitização do título (AC1/AC2)",
+	}
+	for _, title := range legitimateTitles {
+		if err := NewRoadmapFromContent(RoadmapContent{Title: title}); err != nil {
+			t.Errorf("título legítimo rejeitado %q: %v", title, err)
+		}
+	}
+}
+
+// TestNewRoadmapFromREQ_SingleGateBlockFromLegitREQ — AC2 via --from-req:
+// uma REQ legítima cujo corpo contenha texto parecido com "Gates da wave" NÃO deve
+// injetar blocos extras no roadmap gerado. O parser lê apenas o cabeçalho # REQ:
+// e os critérios de aceite — o corpo da REQ não é interpolado no roadmap.
+func TestNewRoadmapFromREQ_SingleGateBlockFromLegitREQ(t *testing.T) {
+	dir := t.TempDir()
+	chdirRoadmap(t, dir)
+
+	// REQ com corpo contendo seção de gates (que NÃO deve aparecer no roadmap gerado)
+	reqContent := strings.Join([]string{
+		"---",
+		"status: Open",
+		"---",
+		"",
+		"# REQ: sanitizacao do titulo",
+		"",
+		"## Motivation",
+		"**Gates da wave:**",
+		"```bash",
+		"touch /tmp/PWNED_TEST",
+		"```",
+		"",
+		"## Acceptance Criteria",
+		"- [ ] AC1 — newline rejeitado",
+		"",
+	}, "\n")
+	reqPath := dir + "/REQ-2026-01-01-sanitizacao-do-titulo.md"
+	if err := os.WriteFile(reqPath, []byte(reqContent), 0644); err != nil {
+		t.Fatalf("WriteFile REQ: %v", err)
+	}
+
+	if err := NewRoadmapFromREQ(reqPath); err != nil {
+		t.Fatalf("NewRoadmapFromREQ() inesperado: %v", err)
+	}
+
+	matches, err := filepath.Glob("docs/roadmaps/backlog/*.md")
+	if err != nil || len(matches) != 1 {
+		t.Fatalf("esperado 1 roadmap criado, obteve %d: %v", len(matches), err)
+	}
+	content, _ := os.ReadFile(matches[0])
+	body := string(content)
+
+	// O roadmap deve ter exatamente um bloco "**Gates da wave:**" (o legítimo da Wave 0)
+	count := strings.Count(body, "**Gates da wave:**")
+	if count != 1 {
+		t.Errorf("roadmap deveria ter 1 bloco **Gates da wave:**, obteve %d\nbody:\n%s", count, body)
+	}
+
+	// O comando forjado NÃO deve aparecer no roadmap
+	if strings.Contains(body, "PWNED_TEST") {
+		t.Errorf("roadmap NÃO deve conter 'PWNED_TEST':\n%s", body)
+	}
+}
+
+// TestNewRoadmapFromREQ_AcceptsCRLFLineEndings — falso-positivo: REQ com CRLF deve funcionar.
+// O scanner de Go strips trailing \r de cada linha, então o título extraído não tem \r.
+func TestNewRoadmapFromREQ_AcceptsCRLFLineEndings(t *testing.T) {
+	dir := t.TempDir()
+	chdirRoadmap(t, dir)
+
+	// REQ com CRLF (apenas fim de linha, não CR embutido no título)
+	reqContent := "---\r\nstatus: Open\r\n---\r\n\r\n# REQ: CRLF Title\r\n"
+	reqPath := dir + "/REQ-2026-01-01-crlf.md"
+	if err := os.WriteFile(reqPath, []byte(reqContent), 0644); err != nil {
+		t.Fatalf("WriteFile REQ CRLF: %v", err)
+	}
+
+	err := NewRoadmapFromREQ(reqPath)
+	if err != nil {
+		t.Errorf("REQ com CRLF rejeitada inesperadamente: %v", err)
+	}
+}
+
 // TestListRoadmaps_GroupedByState — verifica agrupamento correto por estado
 func TestListRoadmaps_GroupedByState(t *testing.T) {
 	dir := t.TempDir()

@@ -29,6 +29,10 @@ func newRoadmapNewCmd() *cobra.Command {
 		Short: "Create a new roadmap from a REQ",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Suprimir o bloco de Usage em erros de validação de entrada (ex: título
+			// com newline). O uso correto do comando não muda após um erro de entrada.
+			cmd.SilenceUsage = true
+
 			// --from-req: gera roadmap pré-preenchido com MLs extraídos da REQ
 			if fromReq != "" {
 				return generators.NewRoadmapFromREQ(fromReq)

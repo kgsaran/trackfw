@@ -436,6 +436,14 @@ function syncReqReferences(movedBasename, newRoadmapPath, cfg) {
  * Em modo by_agent, usa o primeiro agente configurado.
  */
 function newRoadmap(title, reqPath) {
+  // AC1/AC2: o título é dado de uma linha — newline e CR são entrada malformada.
+  // Mensagem byte-idêntica nos 3 CLIs (docs/cli-parity.md).
+  if (/[\n\r]/.test(title)) {
+    console.error('Error: roadmap title must be a single line: newline and carriage return are not allowed')
+    process.exitCode = 1
+    return
+  }
+
   const cfg = config.load()
   const date = localDateISO()
   const slug = toSlug(title)
@@ -511,6 +519,13 @@ function newRoadmapFromReq(reqPath) {
   const { title: parsedTitle, criteria, linkedADR } = parseReqForRoadmap(data)
   const basename = path.basename(reqPath)
   const title = parsedTitle || basename.replace(/\.md$/, '').replace(/^REQ-/, '')
+
+  // AC1: o título lido da REQ também pode conter newline forjado — rejeitar cedo.
+  if (/[\n\r]/.test(title)) {
+    console.error('Error: roadmap title must be a single line: newline and carriage return are not allowed')
+    process.exitCode = 1
+    return
+  }
 
   const cfg = config.load()
   const date = localDateISO()

@@ -4,6 +4,46 @@
 
 ---
 
+## Sessão 2026-08-23 — apolo-tf (FIM: ML-1A — Sanitização do título nos 3 CLIs / CONCLUÍDO)
+
+Branch `fix/barrier-nao-executa-gate-de-roadmap-nao-confiavel`.
+
+**Decisão de implementação:** rejeitar (não neutralizar). Mensagem de erro é contrato de paridade.
+
+**Evidências:**
+- `go test ./...` → ok em todos os pacotes, incluindo 5 novos testes em `internal/generators/`
+- `./bin/trackfw validate` → 16 warnings, 0 violations (baseline mantido)
+- Stderr diff Go/Node/Python → byte-idêntico: `Error: roadmap title must be a single line: newline and carriage return are not allowed`
+- Forged title (`--title "$FORGED"`) rejeito por todos 3 CLIs, exit 1, `/tmp/PWNED_TEST` não criado
+- `--from-req` com REQ cujo corpo tem `**Gates da wave:**`: `grep -c "Gates da wave"` → 1 nos 3 CLIs
+- CRLF REQ file: `--from-req` aceito nos 3 CLIs, exit 0, 1 bloco de gate
+- Títulos legítimos (acento, hífen, dois-pontos, parênteses): aceitos nos 3 CLIs
+- `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality` → em andamento (600+ cenários OK, 0 falhas)
+
+**Critérios de aceite atendidos:** AC1, AC2
+**Nota sobre critérios parser:** os parsers nos 3 CLIs são line-based (scanner.Text()/split('\n')/splitlines()) — critérios nunca podem conter `\n` embutido por construção. O fixture de `grep -c` testa o vetor correto.
+**Nota sobre docs/cli-parity.md:** não atualizado — AC9 é escopo do ML-3A.
+
+**Próximo passo:** handoff para `trackfw_architect` — auditoria do ML-1A, branch ML-2A.
+
+---
+
+## Sessão 2026-08-23 — apolo-tf (INÍCIO: ML-1A — Sanitização do título nos 3 CLIs)
+
+Branch `fix/barrier-nao-executa-gate-de-roadmap-nao-confiavel`.
+
+**Escopo:** Rejeitar `\n`/`\r` no título de `roadmap new` e `roadmap new --from-req`, nos três CLIs
+(Go, Node.js, Python). Mensagem de erro byte-idêntica nas três implementações.
+
+**Arquivos a modificar:**
+- `internal/generators/roadmap.go` — `NewRoadmapFromContent`, `NewRoadmapFromREQ`
+- `internal/commands/roadmap.go` — `SilenceUsage` no `RunE`
+- `npm/src/generators/roadmap.js` — `newRoadmap`, `newRoadmapFromReq`
+- `pypi/trackfw/generators/roadmap.py` — `generate_roadmap`, `generate_roadmap_from_req`
+- `internal/generators/roadmap_test.go` — testes de rejeição e falso-positivo
+
+---
+
 ## Sessão 2026-08-23 — hades-tf (FIM: ML-0A — Wave 0 do barrier não confiável / CONCLUÍDO)
 
 Branch `fix/barrier-nao-executa-gate-de-roadmap-nao-confiavel`.

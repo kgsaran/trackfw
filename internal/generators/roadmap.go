@@ -115,6 +115,12 @@ func NewRoadmap(title string) error {
 // NewRoadmapFromContent cria um roadmap a partir de um RoadmapContent.
 // Se Body for preenchido, usa diretamente; caso contrário, gera template padrão.
 func NewRoadmapFromContent(content RoadmapContent) error {
+	// AC1/AC2: o título é dado de uma linha — newline e CR são entrada malformada.
+	// A mensagem é contrato de paridade: byte-idêntica nos 3 CLIs (docs/cli-parity.md).
+	if strings.ContainsAny(content.Title, "\n\r") {
+		return fmt.Errorf("roadmap title must be a single line: newline and carriage return are not allowed")
+	}
+
 	cfg := config.Load()
 
 	var backlogDir string
@@ -194,6 +200,13 @@ func NewRoadmapFromREQ(reqPath string) error {
 	if title == "" {
 		title = strings.TrimSuffix(filepath.Base(reqPath), ".md")
 		title = strings.TrimPrefix(title, "REQ-")
+	}
+
+	// AC1: o título lido da REQ também pode conter newline forjado — rejeitar cedo,
+	// antes de interpolar em fmt.Sprintf abaixo. NewRoadmapFromContent repete a guarda
+	// mas a mensagem de erro sai daqui para o caminho --from-req.
+	if strings.ContainsAny(title, "\n\r") {
+		return fmt.Errorf("roadmap title must be a single line: newline and carriage return are not allowed")
 	}
 
 	date := time.Now().Format("2006-01-02")
