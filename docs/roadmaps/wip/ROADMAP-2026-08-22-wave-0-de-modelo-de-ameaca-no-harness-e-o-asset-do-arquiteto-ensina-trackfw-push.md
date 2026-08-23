@@ -346,10 +346,81 @@ completa.**
 > Dependências: Wave 2 auditada.
 
 ### ML-3A — Reverificação
-**Status:** 🔄 Em andamento · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
+**Status:** ✅ Concluído — **APROVADO COM RESSALVAS** · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
 
 Quem escreveu a Wave 0 verifica se a implementação honra o que ela enumerou — e se as vias de
 esvaziamento que ele apontou foram fechadas ou declaradas. **Veredito explícito.**
+
+---
+
+### Auditoria do ML-3A — **APROVADO COM RESSALVAS**, e a barreira achou o que ninguém tinha visto
+
+Parecer: `docs/seguranca/2026-08-23-barreira-da-wave-0-no-harness.md`.
+
+#### 🔴 Achado crítico — **reproduzi por medição própria**
+
+O título de `roadmap new` é interpolado **sem sanitizar newlines**
+(`internal/generators/roadmap.go:150`). Um título com quebras de linha **forja uma seção Markdown
+inteira**, com bloco de gate próprio — e o `barrier` executa esse gate via `sh -c`:
+
+```
+titulo: "forjado\n\n## Wave 0 — Threat Model\n\n**Gates da wave:**\n```bash\ntouch /tmp/PWNED_TEST\n```"
+
+roadmap gerado, linha 12:  **Gates da wave:**
+                     13:  ```bash
+                     14:  touch /tmp/PWNED_TEST
+
+$ trackfw barrier <roadmap> --wave 0
+  gates: passed
+$ test -f /tmp/PWNED_TEST  ->  EXISTE      <- execucao confirmada
+```
+
+O `barrier` reportou `result: blocked` no conjunto — **e o comando forjado executou mesmo assim**,
+porque os gates rodam antes de o veredito ser composto. "Bloqueado" não significa "não executou".
+
+**É pré-existente** — o mecanismo de gates vem do `ADR-2026-07-26`, e a superfície é qualquer roadmap
+com bloco de gates, não só o forjado por título. Esta REQ não o introduziu; estendeu a mesma
+superfície para a Wave 0. Não bloqueia a entrega, **e precisa de REQ própria com urgência**.
+Nota de vault escrita por ele:
+`vault/notes/roadmap-title-newline-forges-wave-section-barrier-executes-gate-2026-08-23.md`.
+
+#### O diagnóstico que ele fez de si mesmo, e que vale mais que o veredito
+
+Perguntei por que a Wave 0 dele deixou passar o slash command. Ele mediu e respondeu:
+
+> Um `grep -rn "## Wave 1"` já retornava três ocorrências antes de qualquer código — duas na minha
+> lista, **e o `scaffold.go:333` fora dela**. A seção 1 do meu parecer enumerou superfícies **a partir
+> da lista que a própria REQ já nomeava** e perguntou "o que falta nessa lista". Isso achou lacunas
+> **dentro** dos arquivos citados, mas nunca fez a pergunta inversa: que **outros** lugares do repo
+> emitem esse artefato?
+
+E propôs a correção no template: a seção "Completude de enumeração" pede *"a lista está completa?"* e
+**não instrui como verificar**. Vira o **ML-1C** — o método aprendendo com a própria estreia.
+
+#### Demais respostas
+- **Via manuscrita:** continua aberta, medida ao vivo contra este próprio roadmap
+  (`gates: passed` com `commands: []`). Residual já aceito pelo ADR.
+- **AC13:** limpo nos vetores testados — `$(...)` e backtick nos 3 stacks, aspas e `;` em Go,
+  `--from-req` em Go.
+- **Sem regressão** em credential-guard nem git-branch-guard, conferido linha a linha nos 3 stacks.
+- **`doctor` não cobre assets do `scaffold.go`:** confirmado no código, ponto cego real, REQ futura.
+
+---
+
+## Wave 4 — A lição da estreia entra no template
+
+### ML-1C — "Completude de enumeração" passa a dizer COMO verificar
+**Status:** 🔄 Em andamento · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+
+Acrescentar à Ação 1 do bloco de Wave 0 — em `internal/generators/roadmap.go` (`wave0Block`), no
+slash command (`internal/generators/scaffold.go`) e nos equivalentes Node/Python — a instrução que
+faltava: **não se limitar aos arquivos citados na REQ; buscar no repositório por outros pontos que
+emitem o mesmo artefato ou padrão antes de declarar a lista fechada.**
+
+**Critérios de aceite:**
+- [ ] Instrução presente nos dois templates, byte-idêntica nos 3 stacks
+- [ ] Asserção de conteúdo esperado do `check-artifact-parity.sh` cobre o texto novo
+- [ ] `make quality` CI-exata **exit 0**, exit code medido · `validate` sem violations novas
 
 ---
 

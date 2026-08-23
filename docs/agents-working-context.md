@@ -23659,3 +23659,57 @@ confirmado por `git status --short` só listando os 5 arquivos acima. Não commi
 não abri PR — aguardando auditoria do `trackfw_architect`.
 
 **Próximo:** ML-3A (`hades-tf`) — reverificação/veredito, agora com a Wave 2-bis fechada.
+
+## Sessão 2026-08-23 — hades-tf (INÍCIO/FIM: ML-3A — Wave 3, barreira da Wave 0 no harness)
+
+Branch `feat/wave-0-de-modelo-de-ameaca-no-harness-e-o-asset-do-arquiteto-ensina-trackfw-push`. Sem
+commit/push (autoridade exclusiva do `trackfw_architect`). Único artefato escrito:
+`docs/seguranca/2026-08-23-barreira-da-wave-0-no-harness.md`.
+
+**Veredito: APROVADO COM RESSALVAS.**
+
+Confrontei meu próprio parecer (`docs/seguranca/2026-08-22-...`) contra o entregue, com medição
+própria, não releitura:
+
+1. **A via de esvaziamento central do §2 (Wave 0 manuscrita sem gate) continua aberta** —
+   provei ao vivo rodando `barrier --wave 0` contra a Wave 0 *deste próprio roadmap* (escrita à mão,
+   sem `**Gates da wave:**`): `gates: passed` com `commands: []`, `status: passed` geral. O AC13
+   (gate `exit 1` fail-closed) fecha só o caminho **gerado**; não fecha, e não tinha como fechar sem
+   violar a decisão do ADR, o caminho manuscrito — que é como toda esta série de roadmaps nasceu.
+   Não é regressão do ML-1A/2A/1B: é o residual já nomeado no parecer original, agora com evidência
+   medida em vez de raciocinada.
+2. **AC13 (não-interpolação) retestado nos 3 stacks** com 4 vetores (`$(...)`+backtick, aspas,
+   `;`, e conteúdo de REQ via `--from-req`) — limpo em todos, incluindo Node e Python que o ML-1A não
+   havia testado diretamente.
+3. **Diagnóstico do porquê o slash command escapou da enumeração original**: a Wave 0 auditou a
+   lista de arquivos que a própria REQ nomeava, em vez de fazer busca independente pelo padrão
+   textual (`## Wave 1`) no repo inteiro — um `grep` de dez segundos teria achado `scaffold.go:333`
+   junto com `roadmap.go`. Recomendação (não implementada, fora da minha fronteira): o `wave0Block`
+   do template deveria instruir busca textual independente, não só auditoria da lista dada.
+4. **Sem regressão em credential-guard/git-branch-guard** — isolei os diffs exatos desta REQ em
+   `agentfiles.go` (1 bullet) e `scaffold.go` (3 hunks, todos no bloco de exemplo Markdown do slash
+   command); as mudanças de texto `REASON=` que apareceram num diff mais largo pertencem ao commit
+   `7132fc5` (#202, anterior a esta série), confirmado por `git log -S`.
+5. **`trackfw doctor` não cobre assets do `scaffold.go`** — confirmado no código
+   (`doctor.go:19-37`, escopo declarado "catalog-managed"), sem REQ/ADR aberta cobrindo o gap.
+   Recomendo REQ nova (fora desta série), não bloqueante.
+
+Nenhuma ressalva bloqueia a barreira — são residual já aceito pelo ADR, lição de método para
+trabalho futuro, e recomendação de REQ nova.
+
+🔴 **Correção pós-advisor, achado crítico novo (§2-bis do parecer)**: ao completar o vetor
+"newline no título" que a tarefa pedia e eu não havia executado antes da primeira versão do
+parecer, encontrei **execução de shell arbitrária**: `roadmap new "<título com \n\n## Wave N ...
+**Gates da wave:** ...>"` planta uma seção Markdown forjada com gate próprio, que `barrier --wave N`
+executa (parseia a *primeira* ocorrência do heading, não a real). Reproduzido em Go e Node, para
+`--wave 0` **e** para `--wave 1` contra o mesmo mecanismo pré-existente à REQ (gates existem desde
+ADR-2026-07-26). Não é regressão do ML-1A/2A — é superfície já aberta para todas as waves ≥1, que
+esta REQ apenas estendeu (em +1) ao aceitar `--wave 0`. Recomendo REQ nova e urgente, fora desta
+série. Corrigi também duas imprecisões que o advisor pegou antes de eu fechar: §2 marcava
+`--from-req` como `n/a` para Node/Python quando na verdade não foi retestado (não é a mesma coisa);
+e o §6 original resumia "AC1-14 entregues: sim, todos" como se eu tivesse medido, quando é herdado
+do registro de apolo-tf — corrigido para `[raciocinado, herdado]`.
+
+**Fim da Wave 0/harness sob minha responsabilidade.** Próximo: `trackfw_architect` decide sobre
+merge/PR desta REQ **e** sobre abrir com urgência a REQ do achado crítico do §2-bis (execução de
+shell via título com newline + `barrier`), independente desta série.
