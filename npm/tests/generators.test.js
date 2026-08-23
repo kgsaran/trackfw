@@ -52,7 +52,7 @@ test('trackfwRulesBlock includes mandatory 8 architecture directives', () => {
   assert.ok(block.includes('- **Docker + .env from day 1:**'), 'should contain docker + .env from day 1')
   assert.ok(block.includes('- **2-layer validation:**'), 'should contain 2-layer validation')
   assert.ok(block.includes('- **API-first:**'), 'should contain api-first')
-  assert.ok(block.includes('- **Security wave:**'), 'should contain security wave')
+  assert.ok(block.includes('- **Threat model waves:**'), 'should contain threat model waves')
   assert.ok(block.includes('- **Test coverage:**'), 'should contain test coverage')
   assert.ok(block.includes("Use `/trackfw:architect` to define stack"), 'should mention /trackfw:architect')
 })

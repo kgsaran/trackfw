@@ -277,7 +277,7 @@ def _trackfw_rules_block(agent_conventions: str = "") -> str:
         '- **Docker + .env from day 1:** containerize early; all config via env vars\n'
         '- **2-layer validation:** frontend (UX) + backend (security) — never only one\n'
         '- **API-first:** define OpenAPI contract before coding frontend/backend integration\n'
-        '- **Security wave:** include a red-team review wave in every feature roadmap\n'
+        '- **Threat model waves:** every feature roadmap opens with a Wave 0 threat model (before implementation) and closes with a red-team review wave (before release)\n'
         '- **Test coverage:** TDD for critical logic; min 60% (prototype) / 80% (production)\n'
         '- Use `/trackfw:architect` to define stack before the first REQ\n'
         + conventions_section +
@@ -407,7 +407,7 @@ def generate_claude_md(cwd: str, opts: dict) -> None:
     lines.append('4. **Docker + .env from day 1** — containerize early; all config via env vars, never hardcoded.\n')
     lines.append('5. **2-layer validation** — frontend (UX feedback) + backend (security guard). Never only one.\n')
     lines.append('6. **API-first** — define OpenAPI contract before coding frontend/backend integration.\n')
-    lines.append('7. **Security wave** — include a red-team review wave at the end of every feature roadmap.\n')
+    lines.append('7. **Threat model waves** — every feature roadmap opens with a Wave 0 threat model (before implementation) and closes with a red-team review wave (before release).\n')
     lines.append('8. **Test coverage** — TDD for critical business logic; min 60% (prototype) / 80% (production).\n')
     lines.append('\n## Pre-commit checklist\n')
     lines.append('\nBefore every commit:\n')
@@ -574,7 +574,7 @@ def generate_claude_commands(cwd: str) -> None:
             '   - Leia o conteúdo completo do arquivo REQ selecionado\n\n'
             '3. **Gerar o roadmap**\n'
             '   Com base no conteúdo da REQ, gere um roadmap seguindo **estritamente** este formato:\n\n'
-            '   ```markdown\n'
+            '   ````markdown\n'
             '   ---\n'
             '   status: backlog\n'
             '   date: <YYYY-MM-DD>\n'
@@ -585,6 +585,25 @@ def generate_claude_commands(cwd: str) -> None:
             '   > Created: <YYYY-MM-DD> | Status: backlog\n\n'
             '   ## Diagnóstico / Contexto\n'
             '   <resumo do problema, motivação e escopo extraídos da REQ>\n\n'
+            '   ## Wave 0 — Threat Model\n'
+            '   > Dependencies: none. Blocks all implementation.\n\n'
+            '   ### ML-0A — Threat model for this roadmap\n'
+            '   **Status:** pending\n'
+            '   **Files affected:**\n'
+            '   **Actions:**\n'
+            '   1. Enumeration completeness — is the list of surfaces in this roadmap complete? Name what is missing, or show the list is closed. Do not limit the search to the files already named by the REQ — before declaring the list closed, search the repository for other places that emit the same artifact or the same pattern (for example, grep for the literal the final artifact contains).\n'
+            '   2. Threat model — who empties this Wave 0 without breaking any written rule, and how?\n'
+            '   3. Falsification targets in both directions — for each surface, what breaks when the behavior regresses, and what breaks when it regresses the opposite way?\n'
+            '   4. Declared residual — what this design accepts not covering.\n'
+            '   **Acceptance criteria:**\n'
+            '   - [ ] The four sections above answered with evidence, not a one-line assertion\n'
+            '   - [ ] No implementation line written for this ML\n\n'
+            '   **Gates da wave:**\n'
+            '   ```bash\n'
+            '   # Wave 0 gate — replace this placeholder with a project-specific check before\n'
+            '   # marking ML-0A done. Do not remove the gate; replace its command (AC13).\n'
+            '   exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli-parity.md\n'
+            '   ```\n\n'
             '   ## Wave 1 — <nome descritivo> (<N> MLs em paralelo)\n'
             '   > Dependências: Independente\n\n'
             '   ### ML-1A — <título>\n'
@@ -603,7 +622,7 @@ def generate_claude_commands(cwd: str) -> None:
             '   ## Wave 2 — <nome> (depende de Wave 1)\n'
             '   > Dependências: Wave 1 completa\n'
             '   ...\n'
-            '   ```\n\n'
+            '   ````\n\n'
             '   **Princípios obrigatórios:**\n'
             '   - MLs dentro da mesma Wave são **independentes** (arquivos distintos, sem conflito)\n'
             '   - Cada ML deve ser detalhado o suficiente para execução por um agente sem contexto extra\n'

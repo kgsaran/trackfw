@@ -19,6 +19,56 @@ type RoadmapContent struct {
 	Body    string
 }
 
+// wave0GateFence is the fixed, literal, non-interpolated gate command emitted inside every
+// generated "## Wave 0 — Threat Model" block (AC13, docs/cli-parity.md § "trackfw barrier").
+//
+// It intentionally FAILS CLOSED: `exit 1` always blocks the "gates" check until the ML-0A
+// author replaces this placeholder with a real, project-specific evidence check. This is the
+// only mechanical lever `barrier` has against a vacuous Wave 0 — `gates` reports "passed" when a
+// wave declares zero gates (parseGates returns an empty, non-nil slice), so an empty Wave 0,
+// copied verbatim, or written by the implementer instead of a reviewer, would otherwise pass
+// clean every time (docs/seguranca/2026-08-22-modelo-de-ameaca-da-wave-0-no-harness.md, §2.1).
+//
+// Not interpolated: no REQ title, slug, date or any user-controlled string is substituted into
+// this command. runGateCommand (internal/commands/barrier.go) executes gate commands via
+// `sh -c` with no sanitization — interpolating a REQ title containing backticks or `$(...)`
+// would turn this into arbitrary shell execution inside the harness. The command below is a
+// constant string, byte-identical across every project that runs `trackfw update`.
+const wave0GateFence = "```bash\n" +
+	"# Wave 0 gate — replace this placeholder with a project-specific check before\n" +
+	"# marking ML-0A done. Do not remove the gate; replace its command (AC13).\n" +
+	"exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli-parity.md\n" +
+	"```\n"
+
+// wave0Block is the "## Wave 0 — Threat Model" section prepended to every generated roadmap,
+// before the first implementation wave (AC1, AC12). It is a plain (non-raw) Go string — not a
+// backtick raw string literal — because it embeds a fenced ```bash block itself: a raw string
+// cannot contain a literal backtick without terminating early. Byte-identical across the "new"
+// and "--from-req" generation paths, and across the 3 CLIs (gate: scripts/check-artifact-parity.sh).
+//
+// The ML is always labeled ML-0A, never ML-1A — NewRoadmapFromREQ labels MLs derived from REQ
+// acceptance criteria "ML-1A", "ML-1B", ... starting at the first criterion, so "ML-0A" is the
+// only label available to Wave 0 without colliding with a derived ML
+// (docs/seguranca/2026-08-22-modelo-de-ameaca-da-wave-0-no-harness.md, §1.2).
+const wave0Block = "## Wave 0 — Threat Model\n" +
+	"> Dependencies: none. Blocks all implementation.\n" +
+	"\n" +
+	"### ML-0A — Threat model for this roadmap\n" +
+	"**Status:** pending\n" +
+	"**Files affected:**\n" +
+	"**Actions:**\n" +
+	"1. Enumeration completeness — is the list of surfaces in this roadmap complete? Name what is missing, or show the list is closed. Do not limit the search to the files already named by the REQ — before declaring the list closed, search the repository for other places that emit the same artifact or the same pattern (for example, grep for the literal the final artifact contains).\n" +
+	"2. Threat model — who empties this Wave 0 without breaking any written rule, and how?\n" +
+	"3. Falsification targets in both directions — for each surface, what breaks when the behavior regresses, and what breaks when it regresses the opposite way?\n" +
+	"4. Declared residual — what this design accepts not covering.\n" +
+	"**Acceptance criteria:**\n" +
+	"- [ ] The four sections above answered with evidence, not a one-line assertion\n" +
+	"- [ ] No implementation line written for this ML\n" +
+	"\n" +
+	"**Gates da wave:**\n" +
+	wave0GateFence +
+	"\n"
+
 var roadmapStateOrder = []string{"analyzing", "wip", "backlog", "blocked", "done", "abandoned"}
 var roadmapValidStateNames = map[string]bool{
 	"backlog": true, "analyzing": true, "wip": true, "blocked": true, "done": true, "abandoned": true,
@@ -110,7 +160,7 @@ REQ: %s
 - [ ]
 - [ ]
 
-## Wave 1 — <name> (parallel MLs)
+`, date, content.REQPath, content.Title, date, content.REQPath) + wave0Block + fmt.Sprintf(`## Wave 1 — <name> (parallel MLs)
 > Dependencies: none
 
 ### ML-1A — %s
@@ -121,7 +171,7 @@ REQ: %s
 - [ ] build passes
 - [ ] tests green
 - [ ] validate passes
-`, date, content.REQPath, content.Title, date, content.REQPath, content.Title)
+`, content.Title)
 	}
 
 	if err := os.WriteFile(filename, []byte(body), 0644); err != nil {
@@ -150,6 +200,7 @@ func NewRoadmapFromREQ(reqPath string) error {
 
 	// Gerar seção de MLs a partir dos critérios de aceite
 	var mlSection strings.Builder
+	mlSection.WriteString(wave0Block)
 	mlSection.WriteString("## Wave 1 — Implementation (derived from REQ criteria)\n")
 	mlSection.WriteString("> Dependencies: none\n")
 	for i, criterion := range criteria {

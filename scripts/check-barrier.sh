@@ -746,30 +746,76 @@ for runtime in go node py; do
 done
 
 # ---------------------------------------------------------------------------
-# Scenario 11 — ## Wave 0 is a malformed heading: integer part must be ≥1.
-# All three runtimes must detect it in the pre-pass (same code path as "X").
+# Scenario 11 — ## Wave 0 is a VALID heading (ADR decision, ML-1A): the old
+# contract ("0" is malformed) is INVERTED here on purpose — the ADR rejected
+# renumbering the threat-model wave, so `barrier` had to widen the grammar to
+# accept 0 instead. Wave X ("not a number", Scenarios 8/9) stays malformed —
+# only the integer lower bound moved, not the whole label grammar.
+#
+# This must prove `--wave 0` is not just syntactically accepted (exit != 2)
+# but genuinely EVALUATED: `mls_complete` finds the ML-0A block and reports
+# it complete, `gates` runs the declared command and reports evidence — not
+# a status flipped to "passed" over an empty/untouched check. Vacuity guard:
+# assert non-empty evidence/commands on both checks, not just their status
+# field — a check that never ran can still report "passed" trivially
+# (parseGates returns an empty-but-non-nil slice for zero gates, per the
+# threat model, §2.1/§3 F5) and a bare status comparison would not catch it.
 # ---------------------------------------------------------------------------
 S11="$WORK/s11-wave-zero"
 common_dirs "$S11"
 cat >"$S11/docs/roadmaps/wip/ROADMAP-barrier-fixture.md" <<'EOF'
 # Roadmap: Barrier Wave-Zero Fixture
 
-## Wave 0 — Bad Zero Wave
+## Wave 0 — Threat Model
 
-### ML-0A — Bad ML
-**Status:** ✅
+### ML-0A — Threat model for this roadmap
+**Status:** ✅ Concluído
+**Gates da wave:**
+```bash
+exit 0
+```
+
 **Critérios de aceite:**
 - [x] done
 EOF
-# ## Wave 0 is at line 3.
-WANT11='trackfw barrier: malformed wave heading at line 3: "0" is not a valid wave label'
 for runtime in go node py; do
-  run_barrier "$runtime" "$S11" ROADMAP-barrier-fixture --wave 1
-  [[ "$BARRIER_EXIT" -eq 2 ]] || fail "barrier/wave-label/wave-zero/$runtime" "expected exit 2, got $BARRIER_EXIT; stderr: $BARRIER_STDERR"
-  [[ -n "$BARRIER_STDERR" ]] || fail "barrier/wave-label/wave-zero/$runtime" "stderr is empty — vacuity guard failed"
-  [[ "$BARRIER_STDERR" == "$WANT11"$'\n' || "$BARRIER_STDERR" == "$WANT11" ]] || fail "barrier/wave-label/wave-zero/$runtime" "stderr mismatch, want [$WANT11], got [$BARRIER_STDERR]"
-  ok "barrier/wave-label/wave-zero/$runtime"
+  run_barrier "$runtime" "$S11" ROADMAP-barrier-fixture --wave 0 --json
+  [[ "$BARRIER_EXIT" -eq 0 || "$BARRIER_EXIT" -eq 1 ]] || fail "barrier/wave-label/wave-zero-accepted/$runtime" "expected exit 0 or 1 (never 2 — a usage/grammar error), got $BARRIER_EXIT; stderr: $BARRIER_STDERR"
+  GOT_WAVE=$(get_wave_field "$BARRIER_STDOUT")
+  [[ "$GOT_WAVE" == "0" ]] || fail "barrier/wave-label/wave-zero-accepted/$runtime" "expected wave=0, got $GOT_WAVE"
+
+  MLS_STATUS=$(check_field_json "$BARRIER_STDOUT" mls_complete status)
+  [[ "$MLS_STATUS" == '"passed"' ]] || fail "barrier/wave-label/wave-zero-accepted/$runtime" "mls_complete status: want \"passed\", got $MLS_STATUS"
+  MLS_EVIDENCE=$(check_field_json "$BARRIER_STDOUT" mls_complete evidence)
+  [[ "$MLS_EVIDENCE" != "[]" && "$MLS_EVIDENCE" != "MISSING" ]] || fail "barrier/wave-label/wave-zero-accepted/$runtime" "mls_complete evidence is empty — vacuity guard failed, wave 0 was accepted but not genuinely evaluated"
+
+  GATES_STATUS=$(check_field_json "$BARRIER_STDOUT" gates status)
+  [[ "$GATES_STATUS" == '"passed"' ]] || fail "barrier/wave-label/wave-zero-accepted/$runtime" "gates status: want \"passed\", got $GATES_STATUS"
+  GATES_COMMANDS=$(check_field_json "$BARRIER_STDOUT" gates commands)
+  [[ "$GATES_COMMANDS" == '["exit 0"]' ]] || fail "barrier/wave-label/wave-zero-accepted/$runtime" "gates commands: want [\"exit 0\"], got $GATES_COMMANDS"
+  GATES_EVIDENCE=$(check_field_json "$BARRIER_STDOUT" gates evidence)
+  [[ "$GATES_EVIDENCE" != "[]" && "$GATES_EVIDENCE" != "MISSING" ]] || fail "barrier/wave-label/wave-zero-accepted/$runtime" "gates evidence is empty — vacuity guard failed, the declared gate command never ran"
+
+  ok "barrier/wave-label/wave-zero-accepted/$runtime"
 done
+
+# Byte-identical parity across runtimes for the Wave 0 JSON document (checks
+# array, evidence and all) — the same discipline as Scenario 12's four-message
+# parity check, applied to the newly-inverted contract.
+run_barrier go "$S11" ROADMAP-barrier-fixture --wave 0 --json
+GO_STDOUT11="$BARRIER_STDOUT"
+run_barrier node "$S11" ROADMAP-barrier-fixture --wave 0 --json
+NODE_STDOUT11="$BARRIER_STDOUT"
+run_barrier py "$S11" ROADMAP-barrier-fixture --wave 0 --json
+PY_STDOUT11="$BARRIER_STDOUT"
+# started_at/finished_at are timestamps and legitimately differ per run — strip them before comparing.
+STRIP_TS='import json,sys; d=json.loads(sys.argv[1]); d.pop("started_at",None); d.pop("finished_at",None); print(json.dumps(d,sort_keys=True))'
+GO_NORM11=$(python3 -c "$STRIP_TS" "$GO_STDOUT11")
+NODE_NORM11=$(python3 -c "$STRIP_TS" "$NODE_STDOUT11")
+PY_NORM11=$(python3 -c "$STRIP_TS" "$PY_STDOUT11")
+[[ "$GO_NORM11" == "$NODE_NORM11" ]] || fail "barrier/wave-label/wave-zero-accepted/parity/go-vs-node" "JSON diverges (timestamps excluded): go=[$GO_NORM11] node=[$NODE_NORM11]"
+[[ "$GO_NORM11" == "$PY_NORM11" ]] || fail "barrier/wave-label/wave-zero-accepted/parity/go-vs-py" "JSON diverges (timestamps excluded): go=[$GO_NORM11] py=[$PY_NORM11]"
+ok "barrier/wave-label/wave-zero-accepted/parity/three-runtimes-identical"
 
 # ---------------------------------------------------------------------------
 # Scenario 12 — --wave 2-BIS is an invalid argument (fourth pinned exit-2

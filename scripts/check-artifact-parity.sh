@@ -183,6 +183,53 @@ if [[ $FAIL -ne 0 ]]; then
   exit 1
 fi
 
+# ── Asserção de conteúdo esperado (AC14) ─────────────────────────────────────
+# O diff cross-stack abaixo só prova "os 3 stacks concordam entre si" — uma
+# regressão SINCRONIZADA que remova a mesma coisa dos 3 geradores ao mesmo
+# tempo produz 3 saídas idênticas e passa em silêncio (achado do modelo de
+# ameaça, docs/seguranca/2026-08-22-modelo-de-ameaca-da-wave-0-no-harness.md,
+# §3 F1/F4). Esta asserção é complementar ao diff, não o substitui: ela fixa
+# o que o conteúdo TEM que conter, independente do que os outros 2 stacks
+# disserem.
+#
+# Cobre os 3 artefatos que vêm literalmente do template de
+# internal/generators/roadmap.go (e equivalentes npm/pypi) — "roadmap",
+# "roadmap_flags" e "roadmap_from_req" — e também "slash_roadmap" (o comando
+# `.claude/commands/trackfw/roadmap.md`, gerado por internal/generators/
+# scaffold.go e equivalentes). Até o ML-2A, "slash_roadmap" não ensinava
+# Wave 0 e ficou de fora desta lista (gap reportado separadamente em
+# docs/agents-working-context.md ML-2A); o ML-1B da Wave 2-bis fechou esse
+# gap no template e agora ele entra na mesma asserção — é o artefato que
+# mais ensina a estrutura de roadmap para quem escreve um à mão.
+WAVE0_CONTENT_KINDS=("roadmap" "roadmap_flags" "roadmap_from_req" "slash_roadmap")
+# Literal exato emitido por wave0Block/WAVE0_BLOCK — "Threat Model", não
+# "Modelo de ameaça" (a REQ/roadmap usam a tradução em prosa; o texto gerado
+# é em inglês, como todo o restante do template).
+declare -a WAVE0_EXPECTED_STRINGS=(
+  "## Wave 0 — Threat Model"
+  "**Gates da wave:**"
+  "ML-0A"
+  "Do not limit the search to the files already named by the REQ"
+  "search the repository for other places that emit the same artifact or the same pattern"
+)
+for KIND in "${WAVE0_CONTENT_KINDS[@]}"; do
+  REL=$(expected_path "$KIND")
+  for RUNTIME in go node python; do
+    TARGET="$WORK/$RUNTIME/$REL"
+    for NEEDLE in "${WAVE0_EXPECTED_STRINGS[@]}"; do
+      if ! grep -qF -- "$NEEDLE" "$TARGET"; then
+        echo "artifact content drift: $KIND ($RUNTIME) — arquivo gerado não contém o literal esperado: $NEEDLE ($TARGET)" >&2
+        FAIL=1
+      fi
+    done
+  done
+done
+
+if [[ $FAIL -ne 0 ]]; then
+  echo "check-artifact-parity: asserção de conteúdo esperado (AC14) falhou — comparação cross-stack abortada" >&2
+  exit 1
+fi
+
 # ── Comparação conteúdo e nome de arquivo ────────────────────────────────────
 # Nome: os paths relativos dentro de WORK/<runtime> são idênticos por construção
 # (todos usam a mesma EXPECTED_<KIND>). O vacuity guard acima já confirmou que

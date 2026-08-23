@@ -536,13 +536,15 @@ func TestBarrierRegression_Exit2MessagesArePinnedLiterally(t *testing.T) {
 }
 
 // TestWaveLabelGrammar_ValidAndInvalid is a table test of the full contract table
-// from docs/cli-parity.md §wave-label-grammar (pinned in ML-3A). It exercises
+// from docs/cli-parity.md §wave-label-grammar (pinned in ML-3A, extended in
+// ROADMAP-2026-08-22-wave-0-de-modelo-de-ameaca-no-harness ML-1A). It exercises
 // the composite predicate used in the heading pre-pass: waveLabelRe (regex) +
-// int≥1 guard in parseWaves. "0" is the only label that passes the regex but
-// fails the int≥1 rule — parseWaves is the correct surface to test for that case.
+// int≥0 guard in parseWaves. "0" is now valid (the Wave 0 threat-model
+// convention) — it used to be the only label that passed the regex but failed
+// the (then int≥1) guard; parseWaves remains the correct surface to test it on.
 func TestWaveLabelGrammar_ValidAndInvalid(t *testing.T) {
-	valid := []string{"1", "2", "2-bis", "2-hotfix", "10-a2"}
-	invalid := []string{"X", "2-BIS", "-bis", "2-", "2-bis-ter", "0"}
+	valid := []string{"0", "1", "2", "2-bis", "2-hotfix", "10-a2"}
+	invalid := []string{"X", "2-BIS", "-bis", "2-", "2-bis-ter"}
 
 	for _, lbl := range valid {
 		lbl := lbl
@@ -564,7 +566,7 @@ func TestWaveLabelGrammar_ValidAndInvalid(t *testing.T) {
 		lbl := lbl
 		t.Run("invalid/"+lbl, func(t *testing.T) {
 			// Use parseWaves (not waveLabelRe alone) to exercise the full composite
-			// predicate — "0" passes the regex but is caught by the int≥1 guard.
+			// predicate.
 			content := "## Wave " + lbl + " — Bad Heading\nbody\n"
 			lines := strings.Split(content, "\n")
 			_, uerr := parseWaves(lines)

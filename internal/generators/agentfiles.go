@@ -86,7 +86,7 @@ Delete the file when resolved. Visible as a live banner in ` + "`trackfw serve`"
 - **Docker + .env from day 1:** containerize early; all config via env vars
 - **2-layer validation:** frontend (UX) + backend (security) — never only one
 - **API-first:** define OpenAPI contract before coding frontend/backend integration
-- **Security wave:** include a red-team review wave in every feature roadmap
+- **Threat model waves:** every feature roadmap opens with a Wave 0 threat model (before implementation) and closes with a red-team review wave (before release)
 - **Test coverage:** TDD for critical logic; min 60% (prototype) / 80% (production)
 - Use ` + "`/trackfw:architect`" + ` to define stack before the first REQ
 ` + conventionsSection + `

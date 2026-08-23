@@ -452,7 +452,7 @@ Delete the file when resolved. Visible as a live banner in \`trackfw serve\`.
 - **Docker + .env from day 1:** containerize early; all config via env vars
 - **2-layer validation:** frontend (UX) + backend (security) — never only one
 - **API-first:** define OpenAPI contract before coding frontend/backend integration
-- **Security wave:** include a red-team review wave in every feature roadmap
+- **Threat model waves:** every feature roadmap opens with a Wave 0 threat model (before implementation) and closes with a red-team review wave (before release)
 - **Test coverage:** TDD for critical logic; min 60% (prototype) / 80% (production)
 - Use \`/trackfw:architect\` to define stack before the first REQ
 ` + conventionsSection + `
@@ -855,7 +855,7 @@ trackfw não está instalado. Instale com:
 3. **Gerar o roadmap**
    Com base no conteúdo da REQ, gere um roadmap seguindo **estritamente** este formato:
 
-   \`\`\`markdown
+   \`\`\`\`markdown
    ---
    status: backlog
    date: <YYYY-MM-DD>
@@ -869,6 +869,28 @@ trackfw não está instalado. Instale com:
 
    ## Diagnóstico / Contexto
    <resumo do problema, motivação e escopo extraídos da REQ>
+
+   ## Wave 0 — Threat Model
+   > Dependencies: none. Blocks all implementation.
+
+   ### ML-0A — Threat model for this roadmap
+   **Status:** pending
+   **Files affected:**
+   **Actions:**
+   1. Enumeration completeness — is the list of surfaces in this roadmap complete? Name what is missing, or show the list is closed. Do not limit the search to the files already named by the REQ — before declaring the list closed, search the repository for other places that emit the same artifact or the same pattern (for example, grep for the literal the final artifact contains).
+   2. Threat model — who empties this Wave 0 without breaking any written rule, and how?
+   3. Falsification targets in both directions — for each surface, what breaks when the behavior regresses, and what breaks when it regresses the opposite way?
+   4. Declared residual — what this design accepts not covering.
+   **Acceptance criteria:**
+   - [ ] The four sections above answered with evidence, not a one-line assertion
+   - [ ] No implementation line written for this ML
+
+   **Gates da wave:**
+   \`\`\`bash
+   # Wave 0 gate — replace this placeholder with a project-specific check before
+   # marking ML-0A done. Do not remove the gate; replace its command (AC13).
+   exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli-parity.md
+   \`\`\`
 
    ## Wave 1 — <nome descritivo> (<N> MLs em paralelo)
    > Dependências: Independente
@@ -890,7 +912,7 @@ trackfw não está instalado. Instale com:
    ## Wave 2 — <nome> (depende de Wave 1)
    > Dependências: Wave 1 completa
    ...
-   \`\`\`
+   \`\`\`\`
 
    **Princípios obrigatórios:**
    - MLs dentro da mesma Wave são **independentes** (arquivos distintos, sem conflito)

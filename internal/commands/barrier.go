@@ -84,9 +84,12 @@ zero violations. It never invents a gate and never assumes a build tool.`,
 				fmt.Fprintf(cmd.ErrOrStderr(), "trackfw barrier: invalid --wave %q — not a valid wave label\n", waveStr)
 				os.Exit(2)
 			}
-			// Integer part must be >= 1 (grammar: integer value constraint, not enforced by regex).
+			// Integer part must be >= 0 (grammar: integer value constraint, not enforced by regex).
+			// 0 is a valid wave label — the Wave 0 threat-model convention (docs/cli-parity.md
+			// § "Wave label grammar"). The regex cannot reject negatives on its own (\d+ has no
+			// sign), so this is still the only place enforcing the lower bound.
 			waveInt, _ := splitWaveLabel(waveLabel)
-			if waveInt < 1 {
+			if waveInt < 0 {
 				fmt.Fprintf(cmd.ErrOrStderr(), "trackfw barrier: invalid --wave %q — not a valid wave label\n", waveStr)
 				os.Exit(2)
 			}
@@ -199,9 +202,10 @@ func parseWaves(lines []string) ([]waveBlock, *barrierUsageError) {
 				msg: fmt.Sprintf("malformed wave heading at line %d: \"%s\" is not a valid wave label", i+1, token),
 			}
 		}
-		// Integer part must be >= 1 (regex allows "0" since \d+ matches any digits).
+		// Integer part must be >= 0 — 0 is a valid wave label (Wave 0 threat-model convention,
+		// docs/cli-parity.md § "Wave label grammar"). Mirrors the flag-validation constraint above.
 		intVal, _ := splitWaveLabel(token)
-		if intVal < 1 {
+		if intVal < 0 {
 			return nil, &barrierUsageError{
 				msg: fmt.Sprintf("malformed wave heading at line %d: \"%s\" is not a valid wave label", i+1, token),
 			}
