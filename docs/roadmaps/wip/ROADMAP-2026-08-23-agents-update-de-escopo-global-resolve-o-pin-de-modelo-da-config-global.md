@@ -268,7 +268,7 @@ passou a ser o home do usuário.
 ## Wave 4 — Correção pós-barreira
 
 ### ML-1B — Os 5 sites que a enumeração perdeu
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
 
 | # | Site | Tipo |
 |---|---|---|
@@ -285,6 +285,44 @@ passou a ser o home do usuário.
 - [ ] **Contagem independente:** provar por busca que não há um 19º site — a lista dada já falhou duas
       vezes nesta REQ
 - [ ] `make quality` CI-exata **exit 0**, exit code medido · `validate` 16 warnings
+
+---
+
+### Auditoria do ML-1B — aprovada; e a exigência de "prove por busca" rendeu um sexto site
+
+**Ele achou sozinho o que nem eu nem a barreira tínhamos enumerado:**
+`npm/src/commands/thirdparty.js:195` — a chamada de `buildPlans` da **pré-condição** do `--apply-to`,
+gêmea do B5 do Python. Sem ela, a inspeção renderizaria com `{}`, veria `model: sonnet`, concluiria
+que o artefato foi "modificado" e **recusaria prosseguir**.
+
+**Minha varredura independente, para não aceitar a lista dele tampouco:**
+
+```
+internal/config/config.go:201    dentro do resolvedor (ramo de projeto)   ok
+internal/generators/update.go:150 e :1968   Scope: "project" explicito     ok
+npm/src/config/index.js          internals do resolvedor                  ok
+internal/commands/doctor.go:86   residuo ja declarado (so diagnostico)    aceito
+```
+
+**Sabotagem própria — o caso 11 é load-bearing e discrimina por runtime:**
+
+```
+sabotagem: init.py volta a trackfw_config.load(cwd)
+  FAIL [init-global-scope/py/pin]: expected 'model: claude-sonnet-4-6' but got: model: sonnet
+restaurado -> exit 0
+```
+
+Acusou **só no runtime sabotado**, nomeando o esperado e o obtido — os três eixos são independentes.
+
+```
+make quality (CI-exata, minha)   exit 0
+validate                         16 warnings, 0 violations
+```
+
+**Contagem final desta REQ: 19 call sites.** A lista inicial tinha 2; a Wave 0 levou a 13; o ML-2A
+achou o 14º; a barreira achou 5 (15–18) e reprovou; o ML-1B achou o 19º por busca própria. É a
+evidência mais forte da sessão de que **lista dada não é lista fechada** — e de que a instrução que
+o harness passou a ensinar (*buscar, não confiar na lista*) é a que fecha a diferença.
 
 ---
 

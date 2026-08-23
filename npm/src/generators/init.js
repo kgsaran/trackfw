@@ -1280,8 +1280,11 @@ async function installAmazonQ(cwd = process.cwd()) {
  */
 async function installIntegrationTarget(target, cwd = process.cwd(), scope = 'project', { onSkip } = {}) {
   const { execute, buildPlans } = require('../integrations')
+  const { resolveAgentModels } = require('../config')
+  const { models: agentModels, warning: agentModelsWarning } = resolveAgentModels(scope, os.homedir(), cwd)
+  if (agentModelsWarning) process.stderr.write(agentModelsWarning + '\n')
   const roots = { projectRoot: cwd }
-  const options = { targets: [target], scope, onSkip }
+  const options = { targets: [target], scope, onSkip, agentModels }
   // D5 — transparency: print resolved destinations before writing anything.
   // buildPlans has no side effects, so it is safe to call here purely to
   // enumerate destinations; the actual write happens below via execute().

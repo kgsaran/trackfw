@@ -912,10 +912,205 @@ for rt in go node py; do
   fi
 done
 
+# ===========================================================================
+# Case 11 — init --ai-tools claude global scope: pin from global config
+#
+# ~/.trackfw/trackfw.yaml with agent_models is present; cwd has no trackfw.yaml.
+# init auto-selects global scope (no TTY → D4: scope="global").
+# The installed agent must carry model: claude-sonnet-4-6 — not the canonical
+# tier alias — proving that B1 (init.py/init.go/init.js) reads from the global
+# config, not from the cwd config (which does not exist and carries no pin).
+#
+# Vacuity guard: check both exit-zero and the exact pin in the agent file.
+# ===========================================================================
+for rt in go node py; do
+  home11="$WORK/case11-home-$rt"
+  cwd11="$WORK/case11-cwd-$rt"
+
+  write_yaml_global "$home11" 1  # ~/.trackfw/trackfw.yaml: sonnet=4.6, opus=5
+  mkdir -p "$cwd11"
+
+  c11_exit=0
+  case "$rt" in
+    go)
+      if ! ( cd "$cwd11" && HOME="$home11" "$GO_BIN" init --ai-tools claude >/dev/null 2>&1 ); then
+        c11_exit=1
+      fi
+      ;;
+    node)
+      if ! ( cd "$cwd11" && HOME="$home11" node "$NODE_CLI" init --ai-tools claude >/dev/null 2>&1 ); then
+        c11_exit=1
+      fi
+      ;;
+    py)
+      if ! ( cd "$cwd11" && HOME="$home11" PYTHONPATH="$PY_ROOT" python3 -m trackfw init --ai-tools claude >/dev/null 2>&1 ); then
+        c11_exit=1
+      fi
+      ;;
+  esac
+
+  if [[ $c11_exit -ne 0 ]]; then
+    diag "init-global-scope/$rt/exit-zero" "init --ai-tools claude exited non-zero"
+  else
+    ok "init-global-scope/$rt/exit-zero"
+  fi
+
+  back11="$home11/.claude/agents/trackfw-backend.md"
+  if [[ ! -f "$back11" ]]; then
+    diag "init-global-scope/$rt/pin" "init did not create trackfw-backend.md at global path — fixture broken"
+  elif ! grep -q 'model: claude-sonnet-4-6' "$back11"; then
+    diag "init-global-scope/$rt/pin" "expected 'model: claude-sonnet-4-6' but got: $(grep 'model:' "$back11" || echo 'no model line')"
+  else
+    ok "init-global-scope/$rt/pin/backend-sonnet-4.6"
+  fi
+done
+
+# ===========================================================================
+# Case 12 — skills third-party install --apply-to backend --scope global:
+#           pin from global config preserved on re-render
+#
+# ~/.trackfw/trackfw.yaml with agent_models present; cwd has no trackfw.yaml.
+# Flow: (a) install agents globally; (b) install a third-party skill at
+# global scope with --apply-to backend; (c) verify the re-rendered agent file
+# has BOTH the third-party reference block marker AND model: claude-sonnet-4-6.
+#
+# The two conditions split cleanly before/after fix:
+#   pre-fix:  re-render uses {} → model: sonnet (canonical) + ref block present
+#   post-fix: re-render uses global pin → model: claude-sonnet-4-6 + ref block
+#
+# Vacuity: BOTH conditions must be true — either alone could pass vacuously.
+# Provenance key uses tilde form (~/.claude/skills/...) because
+# resolveThirdPartySkillDestination returns that string for global scope.
+# ===========================================================================
+
+C12_CONTENT='# Example Third-Party Skill (Case 12)
+
+Some helpful, benign content.
+
+'
+C12_CHECKSUM=$(printf '%s' "$C12_CONTENT" | python3 -c 'import sys,hashlib; sys.stdout.write(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())')
+C12_CONTENT_B64=$(printf '%s' "$C12_CONTENT" | python3 -c 'import sys,base64; sys.stdout.write(base64.b64encode(sys.stdin.buffer.read()).decode())')
+C12_PROV_KEY='~/.claude/skills/thirdparty/my-skill.md'
+
+for rt in go node py; do
+  home12="$WORK/case12-home-$rt"
+  cwd12="$WORK/case12-cwd-$rt"
+
+  write_yaml_global "$home12" 1  # ~/.trackfw/trackfw.yaml: sonnet=4.6, opus=5
+  mkdir -p "$cwd12"
+
+  # (a) Install agents at global scope first — precondition for --apply-to
+  c12a_exit=0
+  case "$rt" in
+    go)
+      if ! ( cd "$cwd12" && HOME="$home12" "$GO_BIN" agents install --targets claude --scope global >/dev/null 2>&1 ); then
+        c12a_exit=1
+      fi
+      ;;
+    node)
+      if ! ( cd "$cwd12" && HOME="$home12" node "$NODE_CLI" agents install --targets claude --scope global >/dev/null 2>&1 ); then
+        c12a_exit=1
+      fi
+      ;;
+    py)
+      if ! ( cd "$cwd12" && HOME="$home12" PYTHONPATH="$PY_ROOT" python3 -m trackfw agents install --targets claude --scope global >/dev/null 2>&1 ); then
+        c12a_exit=1
+      fi
+      ;;
+  esac
+
+  if [[ $c12a_exit -ne 0 ]]; then
+    diag "thirdparty-apply-global/$rt/agents-install-precondition" "agents install --scope global failed — cannot test --apply-to"
+    continue
+  fi
+
+  # (b) Seed quarantine and provenance — global scope uses tilde key form
+  mkdir -p "$cwd12/.trackfw/thirdparty-quarantine"
+  cat >"$cwd12/.trackfw/thirdparty-quarantine/$C12_CHECKSUM.json" <<EOF
+{
+  "schema_version": 1,
+  "url": "https://example.com/skills/my-skill.md",
+  "checksum_sha256": "$C12_CHECKSUM",
+  "fetched_at": "2026-08-23T00:00:00Z",
+  "content_base64": "$C12_CONTENT_B64",
+  "marker_check": {"result": "pass", "matched_markers": []},
+  "kind": "skill",
+  "requested_targets": ["claude"]
+}
+EOF
+  cat >"$cwd12/.trackfw/thirdparty-provenance.json" <<EOF
+{
+  "schema_version": 2,
+  "entries": {
+    "$C12_PROV_KEY": {
+      "url": "https://example.com/skills/my-skill.md",
+      "checksum_sha256": "$C12_CHECKSUM",
+      "installed_at": "2026-08-23T00:00:00Z",
+      "approved_by": "hades-tf",
+      "review_reference": "docs/seguranca/2026-08-23-barreira-da-config-global-de-modelo.md",
+      "scope": "global",
+      "marker_override": false
+    }
+  }
+}
+EOF
+
+  # (c) Install third-party skill at global scope with --apply-to backend
+  c12b_exit=0
+  case "$rt" in
+    go)
+      if ! ( cd "$cwd12" && HOME="$home12" TRACKFW_ORCHESTRATOR_SESSION=1 "$GO_BIN" skills third-party install \
+          --checksum "$C12_CHECKSUM" --targets claude --apply-to backend --scope global \
+          --yes-i-trust-this-source --yes-global-scope-unverified >/dev/null 2>&1 ); then
+        c12b_exit=1
+      fi
+      ;;
+    node)
+      if ! ( cd "$cwd12" && HOME="$home12" TRACKFW_ORCHESTRATOR_SESSION=1 node "$NODE_CLI" skills third-party install \
+          --checksum "$C12_CHECKSUM" --targets claude --apply-to backend --scope global \
+          --yes-i-trust-this-source --yes-global-scope-unverified >/dev/null 2>&1 ); then
+        c12b_exit=1
+      fi
+      ;;
+    py)
+      if ! ( cd "$cwd12" && HOME="$home12" TRACKFW_ORCHESTRATOR_SESSION=1 PYTHONPATH="$PY_ROOT" python3 -m trackfw skills third-party install \
+          --checksum "$C12_CHECKSUM" --targets claude --apply-to backend --scope global \
+          --yes-i-trust-this-source --yes-global-scope-unverified >/dev/null 2>&1 ); then
+        c12b_exit=1
+      fi
+      ;;
+  esac
+
+  if [[ $c12b_exit -ne 0 ]]; then
+    diag "thirdparty-apply-global/$rt/install-exit-zero" "skills third-party install --scope global --apply-to backend failed"
+    continue
+  fi
+  ok "thirdparty-apply-global/$rt/install-exit-zero"
+
+  back12="$home12/.claude/agents/trackfw-backend.md"
+  if [[ ! -f "$back12" ]]; then
+    diag "thirdparty-apply-global/$rt/vacuity" "agent trackfw-backend.md not found at global path — fixture broken"
+    continue
+  fi
+
+  # Both conditions must hold — pre-fix, the ref block appears but model degrades
+  if ! grep -qF '<!-- trackfw:thirdparty-skills:start -->' "$back12"; then
+    diag "thirdparty-apply-global/$rt/ref-block" "re-render did not inject third-party reference block — apply-to may have no-op'd"
+  else
+    ok "thirdparty-apply-global/$rt/ref-block/present"
+  fi
+
+  if ! grep -q 'model: claude-sonnet-4-6' "$back12"; then
+    diag "thirdparty-apply-global/$rt/pin" "expected 'model: claude-sonnet-4-6' after re-render but got: $(grep 'model:' "$back12" || echo 'no model line')"
+  else
+    ok "thirdparty-apply-global/$rt/pin/claude-sonnet-4-6-preserved"
+  fi
+done
+
 # ---------------------------------------------------------------------------
 if [[ "$FAIL" -ne 0 ]]; then
   echo "check-agent-models-parity: drift detected — see FAIL lines above." >&2
   exit 1
 fi
 
-echo "All check-agent-models-parity.sh scenarios passed (4 cases × 3 runtimes + Case 5 control-char/unicode-separator rejection, namespace isolation confirmed for codex+gemini + Cases 6–10 global-scope source selection: two-cwd identity, project-only warning, not-configured warning, project-scope non-regression, malformed-global non-fatal)."
+echo "All check-agent-models-parity.sh scenarios passed (4 cases × 3 runtimes + Case 5 control-char/unicode-separator rejection, namespace isolation confirmed for codex+gemini + Cases 6–10 global-scope source selection: two-cwd identity, project-only warning, not-configured warning, project-scope non-regression, malformed-global non-fatal + Cases 11–12: init global-scope pin, thirdparty --apply-to global pin preserved on re-render)."

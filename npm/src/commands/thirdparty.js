@@ -6,8 +6,11 @@
 // `trackfw skills third-party` (D1). See:
 // docs/adr/ADR-2026-08-15-gate-de-duas-fases-para-artefatos-de-terceiro-quarentena-parecer-vinculado-por-checksum-e-deteccao-por-proveniencia-versionada.md
 
+const os = require('os')
+
 const { Command } = require('commander')
 
+const configModule = require('../config')
 const identityStore = require('../identity')
 const { items: catalogItems } = require('../integrations/catalog')
 const { buildPlans, IntegrationManager } = require('../integrations')
@@ -186,13 +189,15 @@ async function executeThirdPartyInstall(kind, options) {
   // write happens (including the skill file below) — failing everything up
   // front avoids leaving a partial state (skill file written, no reference
   // injected) on a precondition failure.
+  const { models: resolvedAgentModels, warning: agentModelsWarning } = configModule.resolveAgentModels(scope, os.homedir(), projectRoot)
+  if (agentModelsWarning) process.stderr.write(agentModelsWarning + '\n')
   let identityConfig
   if (options.applyTo && options.applyTo.length) {
     identityConfig = identityStore.load(manager.roots.global)
     for (const agentID of options.applyTo) {
       if (!catalogItems('agents').some(item => item.id === agentID)) throw new Error(`unknown agent item "${agentID}"`)
       for (const rt of resolvedTargets) {
-        const agentPlans = buildPlans('agents', { targets: [rt.targetID], items: [agentID], scope, identity: identityConfig, projectRoot })
+        const agentPlans = buildPlans('agents', { targets: [rt.targetID], items: [agentID], scope, identity: identityConfig, projectRoot, agentModels: resolvedAgentModels })
         if (!agentPlans.length) throw new Error(`target ${rt.targetID} has no supported agents surface for item "${agentID}"`)
         const inspection = manager.inspect([agentPlans[0]])[0]
         // ADR imprecision found and resolved here (reported, not silently
@@ -333,7 +338,7 @@ async function executeThirdPartyInstall(kind, options) {
         // immediately — not only on the next `agents update`. buildPlans
         // picks up the registry entry just written via
         // applyThirdPartyReferences (../integrations/index.js).
-        const agentPlans = buildPlans('agents', { targets: [rt.targetID], items: [agentID], scope, identity: identityConfig, projectRoot })
+        const agentPlans = buildPlans('agents', { targets: [rt.targetID], items: [agentID], scope, identity: identityConfig, projectRoot, agentModels: resolvedAgentModels })
         manager.update(agentPlans, {})
       }
     }

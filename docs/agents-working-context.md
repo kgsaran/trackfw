@@ -4,6 +4,36 @@
 
 ---
 
+## Sessão 2026-08-23 — apolo-tf (FIM: ML-1B — 6 correções cirúrgicas Python/Node.js + cases 11-12 do parity gate)
+
+Branch `fix/agents-update-de-escopo-global-resolve-o-pin-de-modelo-da-config-global`. Sem
+commit/push (autoridade exclusiva do `trackfw_architect`).
+
+**Escopo:** Aplicar 6 correções cirúrgicas (B1-B5 da barreira + 6º site descoberto na busca de
+enumeração) em Python e Node.js. Adicionar Cases 11-12 em `scripts/check-agent-models-parity.sh`
+para `init` e `third-party --apply-to` em escopo global. Provar ausência de 19º site por busca
+explícita nos 3 stacks. Rodar `make quality` e `trackfw validate`.
+
+**Sites a corrigir:**
+- B1: `pypi/trackfw/commands/init.py:160`
+- B5: `pypi/trackfw/commands/thirdparty.py:307`
+- B2: `pypi/trackfw/commands/thirdparty.py:458`
+- 6º site: `npm/src/commands/thirdparty.js:195` (precondition, par do B5)
+- B3: `npm/src/commands/thirdparty.js:336`
+- B4: `npm/src/generators/init.js:1284`
+
+**Resultados:**
+- 6 sites corrigidos (B1–B5 + 6º site `npm/src/commands/thirdparty.js:195`)
+- Prova de ausência de 19º site: busca explícita nos 3 stacks — todos os `buildPlans`/`plan_deployments`/`PlanRequest` produtivos agora passam o modelo resolvido corretamente
+- Cases 11–12 adicionados ao gate e passando: 6/6 OK (Case 11 — init global) + 9/9 OK (Case 12 — thirdparty --apply-to global)
+- `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality` → exit 0
+- `./bin/trackfw validate` → 16 warnings pré-existentes, 0 violations novas
+- ML-1B: ✅ Concluído no roadmap
+
+**Próximo passo:** handoff para `trackfw_architect` — auditoria e commit do ML-1B.
+
+---
+
 ## Sessão 2026-08-23 — hades-tf (FIM: ML-3A — Barreira final / reverificação)
 
 Branch `fix/agents-update-de-escopo-global-resolve-o-pin-de-modelo-da-config-global`. Sem
@@ -18,8 +48,7 @@ adicionais (não na Wave 0) que reproduzem o defeito original em caminhos de esc
 
 **Artefato produzido:** `docs/seguranca/2026-08-23-barreira-da-config-global-de-modelo.md`
 
-**Próximo passo:** ML-xA cirúrgico (apolo-tf) para as 5 correções Python/Node.js pendentes + 2
-novos casos no parity gate (Cases 11–12 para init e thirdparty).
+**Próximo passo:** handoff para `trackfw_architect` — auditoria e commit do ML-1B.
 
 ## Sessão 2026-08-23 — hades-tf (INÍCIO: ML-3A — Barreira final / reverificação)
 
