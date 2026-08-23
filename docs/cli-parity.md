@@ -1777,7 +1777,7 @@ parity, and deleting Go's loses the tested proof.
 
 ### States
 
-<!-- trackfw-contract: gate=scripts/check-barrier.sh partial=os estados pending e running só aparecem mid-run ou em documento abortado; os cenários do gate comparam apenas o documento JSON final (passed/blocked), nunca um snapshot mid-run; not_evaluated cobre o caso do gate não confiável e não tem cenário cross-CLI no check-barrier.sh — escopo do ML-3A -->
+<!-- trackfw-contract: gate=scripts/check-barrier.sh partial=os estados pending e running só aparecem mid-run ou em documento abortado; os cenários do gate comparam apenas o documento JSON final (passed/blocked), nunca um snapshot mid-run; not_evaluated cobre o caso do gate não confiável e os cenários 14-17 do check-barrier.sh verificam os casos cross-CLI -->
 
 
 | State | Meaning |
@@ -1794,7 +1794,7 @@ and exits 1, so the architecture does not allow an unevaluated gate to release a
 
 ### Trust and `--trust-local-gates`
 
-<!-- trackfw-contract: gap reason=a lógica de confiança é nova (ML-2A, REQ-2026-08-23); o check-barrier.sh não tem cenários cross-CLI para not_evaluated — escopo do ML-3A da Wave 3 -->
+<!-- trackfw-contract: gate=scripts/check-barrier.sh -->
 
 `trackfw barrier` determines whether a roadmap's gates can be trusted before executing them. This
 is the defense against the PR-vector: a contributor who opens a PR containing a hostile roadmap
@@ -1814,7 +1814,7 @@ PR-vector.
 
 #### `--trust-local-gates` flag (AC12, AC15)
 
-<!-- trackfw-contract: gap reason=a flag --trust-local-gates é documentação de decisão de desenho (AC12, AC15, ML-2A); o comportamento cross-CLI é coberto pela seção pai (### Trust) como gap; não há gate específico para esse flag ainda — escopo do ML-3A da Wave 3 -->
+<!-- trackfw-contract: gate=scripts/check-barrier.sh -->
 
 The flag `--trust-local-gates` bypasses the trust check and executes gates from local content.
 It is injected by the `/trackfw:barrier` slash command and is intended for the dominant flow:
@@ -1847,7 +1847,7 @@ PR contributor and is not yet merged.
 
 #### Pinned failure strings for `not_evaluated` (AC3, AC6, AC7)
 
-<!-- trackfw-contract: gap reason=as strings pinadas são contrato de parity declarado aqui; o gate check-barrier.sh não tem cenário not_evaluated cross-CLI ainda — escopo do ML-3A da Wave 3 -->
+<!-- trackfw-contract: gate=scripts/check-barrier.sh -->
 
 When the trust check refuses gate execution, the `gates` check gets `status: "not_evaluated"` and
 exactly one entry in `failures`. The `commands` array is still populated from `parseGates` so the

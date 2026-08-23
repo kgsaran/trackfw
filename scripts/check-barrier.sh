@@ -12,7 +12,7 @@ set -euo pipefail
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/trackfw-barrier.XXXXXX")
-trap 'rm -rf "$WORK"' EXIT
+trap 'chmod -R u+w "$WORK" 2>/dev/null; rm -rf "$WORK"' EXIT
 
 # $HOME isolado e sintético — nunca o real. Sem isto, o gate "validate"
 # embutido em `trackfw barrier` enxerga o escopo GLOBAL de guards do usuário
@@ -852,6 +852,292 @@ PY_STDERR4="$BARRIER_STDERR"
 [[ "$GO_STDERR4" == "$NODE_STDERR4" ]] || fail "barrier/wave-label/invalid-arg/parity/go-vs-node" "stderr diverges: go=[$GO_STDERR4] node=[$NODE_STDERR4]"
 [[ "$GO_STDERR4" == "$PY_STDERR4" ]] || fail "barrier/wave-label/invalid-arg/parity/go-vs-py" "stderr diverges: go=[$GO_STDERR4] py=[$PY_STDERR4]"
 ok "barrier/wave-label/invalid-arg/parity/three-runtimes-identical"
+
+# ---------------------------------------------------------------------------
+# Scenario 13 — AC2: roadmap new rejects a title containing newline/CR across
+# all three CLIs. The sanitization check is the sole barrier against the
+# newline-injection vector (REQ-2026-08-23, ML-1A). This scenario proves it
+# cross-CLI and provides the detection target for Cenário 171 of
+# scripts/check-gates-falsify.sh (Direction A: remove sanitization → this
+# scenario fails).
+#
+# Gate of the vacuity guard: a valid title must succeed (exit 0 + file created)
+# so that the exit-1 assertion for the forged title is genuinely about the
+# newline, not a broken command invocation.
+# ---------------------------------------------------------------------------
+S13="$WORK/s13-ac2-sanitization"
+common_dirs "$S13"
+cat >"$S13/trackfw.yaml" <<'EOF'
+req_dir: docs/req
+roadmap_dir: docs/roadmaps
+adr_dirs: []
+EOF
+
+# Vacuity guard: a valid title with --req creates a file.
+# The --req flag bypasses the wizard and directly calls NewRoadmapFromContent,
+# so we can drive the sanitization check without an interactive terminal or
+# an existing REQ file on disk.
+for runtime in go node py; do
+  set +e
+  case "$runtime" in
+  go)   (cd "$S13" && "$GO_BIN" roadmap new --req docs/req/dummy.md --title "Valid Title For AC2 Guard") >/dev/null 2>&1 ;;
+  node) (cd "$S13" && node "$NODE_CLI" roadmap new --req docs/req/dummy.md --title "Valid Title For AC2 Guard") >/dev/null 2>&1 ;;
+  py)   (cd "$S13" && PYTHONPATH="$PY_ROOT" python3 -m trackfw roadmap new --req docs/req/dummy.md --title "Valid Title For AC2 Guard") >/dev/null 2>&1 ;;
+  esac
+  set -e
+  # At least one roadmap file must have been created under docs/roadmaps/
+  CREATED=$(find "$S13/docs/roadmaps" -name "*.md" 2>/dev/null | wc -l | tr -d ' ')
+  [[ "$CREATED" -gt 0 ]] || fail "barrier/ac2-sanitization/vacuity/$runtime" "valid title did not create a roadmap file (roadmap new invocation may be broken)"
+  ok "barrier/ac2-sanitization/vacuity/$runtime"
+  # Clean up created files before the forged-title run
+  find "$S13/docs/roadmaps" -name "*.md" -delete 2>/dev/null || true
+done
+
+# Core assertion: forged title (containing \n) must be rejected with exit 1
+# across all three CLIs, and must not create any file.
+FORGED_TITLE=$'Titulo Forjado\n\n## Wave 0 -- Threat Model\n\n**Gates da wave:**\n```bash\ntouch /tmp/PWNED_AC2\n```'
+for runtime in go node py; do
+  set +e
+  case "$runtime" in
+  go)   OUT13=$(cd "$S13" && "$GO_BIN" roadmap new --req docs/req/dummy.md --title "$FORGED_TITLE" 2>&1); EXIT13=$? ;;
+  node) OUT13=$(cd "$S13" && node "$NODE_CLI" roadmap new --req docs/req/dummy.md --title "$FORGED_TITLE" 2>&1); EXIT13=$? ;;
+  py)   OUT13=$(cd "$S13" && PYTHONPATH="$PY_ROOT" python3 -m trackfw roadmap new --req docs/req/dummy.md --title "$FORGED_TITLE" 2>&1); EXIT13=$? ;;
+  esac
+  set -e
+  [[ "$EXIT13" -ne 0 ]] || fail "barrier/ac2-sanitization/$runtime" "expected exit non-0 for forged title, got 0; output: $OUT13"
+  CREATED13=$(find "$S13/docs/roadmaps" -name "*.md" 2>/dev/null | wc -l | tr -d ' ')
+  [[ "$CREATED13" -eq 0 ]] || fail "barrier/ac2-sanitization/$runtime" "roadmap new created a file despite forged title — injection vector open; output: $OUT13"
+  [[ "$OUT13" == *"roadmap title must be a single line"* ]] || fail "barrier/ac2-sanitization/$runtime" "expected 'roadmap title must be a single line' in output, got: $OUT13"
+  ok "barrier/ac2-sanitization/$runtime"
+done
+
+# ---------------------------------------------------------------------------
+# Git fixture helper for Scenarios 14–17 (trust check cross-CLI).
+# Creates a bare origin + clone with the trackfw project structure.
+# The roadmap contains a gate that touches SENTINEL_PATH.
+# make_barrier_git_fixture DEST SENTINEL_PATH
+# After this call:
+#   - $DEST is a git clone pointing to ${DEST}.origin.git
+#   - trackfw.yaml and docs/ structure are present in $DEST
+#   - docs/roadmaps/wip/ROADMAP-trust-fixture.md is written to disk but NOT committed
+#   - The bare origin has only a "base commit" (trackfw.yaml only)
+#
+# IMPORTANT – macOS symlink issue: $TMPDIR (/var/folders/…) is a symlink to
+# /private/var/folders/…. git rev-parse --show-toplevel resolves symlinks, but
+# Go's filepath.Abs uses os.Getwd() which returns the symlink path. The mismatch
+# makes filepath.Rel produce an "outside repository" path → git show fails with
+# "is outside repository at" → barrier fails-open (trusted). Fix: resolve $WORK
+# to its physical path (WORK_PHYS) and use that for all trust-check fixtures.
+# ---------------------------------------------------------------------------
+WORK_PHYS=$(cd "$WORK" && pwd -P)
+_GITCFG="$WORK_PHYS/barrier-gitcfg"
+printf '[user]\n\temail = barrier@trackfw.test\n\tname = trackfw barrier gate\n[commit]\n\tgpgsign = false\n[core]\n\thooksPath = /dev/null\n' > "$_GITCFG"
+
+make_barrier_git_fixture() {
+  local dest=$1 sentinel=$2
+  local bare="${dest}.origin.git"
+  local -a ge=(
+    "GIT_CONFIG_GLOBAL=$_GITCFG"
+    "GIT_CONFIG_SYSTEM=/dev/null"
+    "GIT_TERMINAL_PROMPT=0"
+    "HOME=$WORK_PHYS/home"
+    "LC_ALL=C"
+  )
+
+  env "${ge[@]}" git init -q --bare -b main "$bare"
+  env "${ge[@]}" git clone -q "$bare" "$dest"
+
+  # Set up project structure
+  common_dirs "$dest"
+  cat >"$dest/trackfw.yaml" <<'YAML'
+req_dir: docs/req
+roadmap_dir: docs/roadmaps
+adr_dirs: []
+YAML
+
+  # Write the roadmap with a gate that creates the sentinel
+  cat >"$dest/docs/roadmaps/wip/ROADMAP-trust-fixture.md" <<EOF
+# Roadmap: Trust Fixture
+
+## Wave 1 — Fixture Wave
+
+**Gates da wave:**
+\`\`\`bash
+touch "$sentinel"
+\`\`\`
+
+### ML-1A — Fixture ML
+**Status:** ✅
+**Critérios de aceite:**
+- [x] done
+EOF
+
+  # Base commit: only trackfw.yaml (no roadmap) — roadmap stays untracked
+  (
+    cd "$dest"
+    env "${ge[@]}" git add trackfw.yaml
+    env "${ge[@]}" git commit -q -m "base commit"
+    env "${ge[@]}" git push -q origin main
+  )
+}
+
+# commit_roadmap_to_origin DEST
+# Commits the roadmap that make_barrier_git_fixture wrote to disk and pushes it
+# to origin/main. Idempotent.
+commit_roadmap_to_origin() {
+  local dest=$1
+  local -a ge=(
+    "GIT_CONFIG_GLOBAL=$_GITCFG"
+    "GIT_CONFIG_SYSTEM=/dev/null"
+    "GIT_TERMINAL_PROMPT=0"
+    "HOME=$WORK_PHYS/home"
+    "LC_ALL=C"
+  )
+  (
+    cd "$dest"
+    env "${ge[@]}" git add docs/roadmaps/wip/ROADMAP-trust-fixture.md
+    env "${ge[@]}" git commit -q -m "add roadmap"
+    env "${ge[@]}" git push -q origin main
+  )
+}
+
+# ---------------------------------------------------------------------------
+# Scenario 14 — trust check: roadmap NOT committed in origin/main, no flag.
+# barrier must report gates.status = not_evaluated and exit 1.
+# AC14: the sentinel MUST NOT be created (the gate must not execute at all).
+# Sentinel-absence is checked FIRST, before exit code — because the original
+# bug executed the gate and then reported "blocked". The detection arm of
+# Cenário 172 (Direction B) targets this diagnostic string.
+# ---------------------------------------------------------------------------
+S14="$WORK_PHYS/s14-not-committed"
+SENTINEL14="$WORK_PHYS/s14-sentinel"
+EXPECTED_NOT_COMMITTED="gates not evaluated: roadmap is not committed in origin/main — pass --trust-local-gates to evaluate local gates"
+make_barrier_git_fixture "$S14" "$SENTINEL14"
+
+for runtime in go node py; do
+  [[ ! -f "$SENTINEL14" ]] || fail "barrier/trust/not-committed/pre-$runtime" "sentinel existed before $runtime run — previous runtime broke trust check"
+  run_barrier "$runtime" "$S14" ROADMAP-trust-fixture --wave 1 --json
+  # AC14: sentinel-absence FIRST
+  [[ ! -f "$SENTINEL14" ]] || fail "barrier/trust/not-committed/$runtime" "hostile gate EXECUTED — sentinel was created; trust check failed to block execution"
+  [[ "$BARRIER_EXIT" -eq 1 ]] || fail "barrier/trust/not-committed/$runtime" "expected exit 1, got $BARRIER_EXIT; stderr: $BARRIER_STDERR"
+  GATES_STATUS14=$(python3 -c "import json,sys; d=json.loads(sys.argv[1]); r=[c['status'] for c in d['checks'] if c['name']=='gates']; print(r[0] if r else 'MISSING')" "$BARRIER_STDOUT")
+  [[ "$GATES_STATUS14" == "not_evaluated" ]] || fail "barrier/trust/not-committed/$runtime" "expected gates.status=not_evaluated, got [$GATES_STATUS14]; stdout: $BARRIER_STDOUT"
+  GATES_FAIL14=$(python3 -c "import json,sys; d=json.loads(sys.argv[1]); r=[c.get('failures',[]) for c in d['checks'] if c['name']=='gates']; print(r[0][0] if r and r[0] else 'MISSING')" "$BARRIER_STDOUT")
+  [[ "$GATES_FAIL14" == "$EXPECTED_NOT_COMMITTED" ]] || fail "barrier/trust/not-committed/$runtime" "failure message mismatch; want [$EXPECTED_NOT_COMMITTED] got [$GATES_FAIL14]"
+  ok "barrier/trust/not-committed/$runtime"
+done
+
+# Cross-CLI JSON parity for not_evaluated (normalized — timestamps stripped)
+STRIP_TS_TRUST='import json,sys; d=json.loads(sys.argv[1]); d.pop("started_at",None); d.pop("finished_at",None); print(json.dumps(d,sort_keys=True))'
+run_barrier go   "$S14" ROADMAP-trust-fixture --wave 1 --json; GO_S14=$(python3 -c "$STRIP_TS_TRUST" "$BARRIER_STDOUT")
+run_barrier node "$S14" ROADMAP-trust-fixture --wave 1 --json; NODE_S14=$(python3 -c "$STRIP_TS_TRUST" "$BARRIER_STDOUT")
+run_barrier py   "$S14" ROADMAP-trust-fixture --wave 1 --json; PY_S14=$(python3 -c "$STRIP_TS_TRUST" "$BARRIER_STDOUT")
+[[ "$GO_S14" == "$NODE_S14" ]] || fail "barrier/trust/not-committed/parity/go-vs-node" "JSON diverges: go=[$GO_S14] node=[$NODE_S14]"
+[[ "$GO_S14" == "$PY_S14" ]]   || fail "barrier/trust/not-committed/parity/go-vs-py"   "JSON diverges: go=[$GO_S14] py=[$PY_S14]"
+ok "barrier/trust/not-committed/parity/three-runtimes-identical"
+
+# ---------------------------------------------------------------------------
+# Scenario 15 — trust check: same fixture (not committed), with --trust-local-gates.
+# barrier must execute the gate. The sentinel IS created, proving --trust-local-gates
+# bypasses the trust check (AC12, AC15). This is the vacuity guard for Scenario 14:
+# if the gate itself were broken, the sentinel would never appear regardless of trust.
+# ---------------------------------------------------------------------------
+S15="$WORK_PHYS/s15-trust-local-gates"
+SENTINEL15="$WORK_PHYS/s15-sentinel"
+make_barrier_git_fixture "$S15" "$SENTINEL15"
+
+for runtime in go node py; do
+  rm -f "$SENTINEL15"
+  run_barrier "$runtime" "$S15" ROADMAP-trust-fixture --wave 1 --json --trust-local-gates
+  # Sentinel-presence proves the gate executed. Do NOT assert exit 0: the
+  # validate check inside barrier may legitimately fail on the minimal git
+  # fixture (branch_has_wip_roadmap etc.) — that is orthogonal to trust.
+  [[ -f "$SENTINEL15" ]] || fail "barrier/trust/trust-local-gates/$runtime" "gate did NOT execute — sentinel was NOT created; --trust-local-gates may be broken"
+  GATES_STATUS15=$(python3 -c "import json,sys; d=json.loads(sys.argv[1]); r=[c['status'] for c in d['checks'] if c['name']=='gates']; print(r[0] if r else 'MISSING')" "$BARRIER_STDOUT")
+  [[ "$GATES_STATUS15" == "passed" ]] || fail "barrier/trust/trust-local-gates/$runtime" "expected gates.status=passed, got [$GATES_STATUS15]"
+  ok "barrier/trust/trust-local-gates/$runtime"
+done
+
+# Cross-CLI JSON parity for --trust-local-gates gates check specifically
+# (strip timestamps; also strip validate block which may diverge on the
+# minimal fixture — parity claim is about the gates check, not validate).
+STRIP_TS_GATES='import json,sys; d=json.loads(sys.argv[1]); d.pop("started_at",None); d.pop("finished_at",None); d["checks"]=[c for c in d.get("checks",[]) if c["name"]=="gates"]; print(json.dumps(d,sort_keys=True))'
+rm -f "$SENTINEL15"
+run_barrier go   "$S15" ROADMAP-trust-fixture --wave 1 --json --trust-local-gates; GO_S15=$(python3 -c "$STRIP_TS_GATES" "$BARRIER_STDOUT")
+rm -f "$SENTINEL15"
+run_barrier node "$S15" ROADMAP-trust-fixture --wave 1 --json --trust-local-gates; NODE_S15=$(python3 -c "$STRIP_TS_GATES" "$BARRIER_STDOUT")
+rm -f "$SENTINEL15"
+run_barrier py   "$S15" ROADMAP-trust-fixture --wave 1 --json --trust-local-gates; PY_S15=$(python3 -c "$STRIP_TS_GATES" "$BARRIER_STDOUT")
+[[ "$GO_S15" == "$NODE_S15" ]] || fail "barrier/trust/trust-local-gates/parity/go-vs-node" "gates-check JSON diverges: go=[$GO_S15] node=[$NODE_S15]"
+[[ "$GO_S15" == "$PY_S15" ]]   || fail "barrier/trust/trust-local-gates/parity/go-vs-py"   "gates-check JSON diverges: go=[$GO_S15] py=[$PY_S15]"
+ok "barrier/trust/trust-local-gates/parity/three-runtimes-identical"
+
+# ---------------------------------------------------------------------------
+# Scenario 16 — trust check: roadmap committed and IDENTICAL to origin/main.
+# barrier must execute gates (trusted). Sentinel IS created.
+# ---------------------------------------------------------------------------
+S16="$WORK_PHYS/s16-trusted-identical"
+SENTINEL16="$WORK_PHYS/s16-sentinel"
+make_barrier_git_fixture "$S16" "$SENTINEL16"
+commit_roadmap_to_origin "$S16"
+
+for runtime in go node py; do
+  rm -f "$SENTINEL16"
+  run_barrier "$runtime" "$S16" ROADMAP-trust-fixture --wave 1 --json
+  # Sentinel-presence proves the gate executed (roadmap trusted).
+  # Do NOT assert exit 0: validate inside barrier may fail on the minimal git
+  # fixture — that is orthogonal to the trust check being exercised here.
+  [[ -f "$SENTINEL16" ]] || fail "barrier/trust/trusted-identical/$runtime" "gate did NOT execute — sentinel was NOT created; trust check may be over-refusing"
+  GATES_STATUS16=$(python3 -c "import json,sys; d=json.loads(sys.argv[1]); r=[c['status'] for c in d['checks'] if c['name']=='gates']; print(r[0] if r else 'MISSING')" "$BARRIER_STDOUT")
+  [[ "$GATES_STATUS16" == "passed" ]] || fail "barrier/trust/trusted-identical/$runtime" "expected gates.status=passed, got [$GATES_STATUS16]"
+  ok "barrier/trust/trusted-identical/$runtime"
+done
+
+# Cross-CLI JSON parity for trusted-identical gates check specifically
+rm -f "$SENTINEL16"
+run_barrier go   "$S16" ROADMAP-trust-fixture --wave 1 --json; GO_S16=$(python3 -c "$STRIP_TS_GATES" "$BARRIER_STDOUT")
+rm -f "$SENTINEL16"
+run_barrier node "$S16" ROADMAP-trust-fixture --wave 1 --json; NODE_S16=$(python3 -c "$STRIP_TS_GATES" "$BARRIER_STDOUT")
+rm -f "$SENTINEL16"
+run_barrier py   "$S16" ROADMAP-trust-fixture --wave 1 --json; PY_S16=$(python3 -c "$STRIP_TS_GATES" "$BARRIER_STDOUT")
+[[ "$GO_S16" == "$NODE_S16" ]] || fail "barrier/trust/trusted-identical/parity/go-vs-node" "gates-check JSON diverges: go=[$GO_S16] node=[$NODE_S16]"
+[[ "$GO_S16" == "$PY_S16" ]]   || fail "barrier/trust/trusted-identical/parity/go-vs-py"   "gates-check JSON diverges: go=[$GO_S16] py=[$PY_S16]"
+ok "barrier/trust/trusted-identical/parity/three-runtimes-identical"
+
+# ---------------------------------------------------------------------------
+# Scenario 17 — trust check: roadmap committed in origin/main but LOCAL CONTENT
+# DIFFERS (one line appended). barrier must refuse gate execution with the
+# "content differs" failure string, not_evaluated, exit 1, sentinel NOT created.
+# This covers the second pinned failure string (docs/cli-parity.md §Pinned
+# failure strings for not_evaluated).
+# ---------------------------------------------------------------------------
+S17="$WORK_PHYS/s17-content-differs"
+SENTINEL17="$WORK_PHYS/s17-sentinel"
+EXPECTED_DIFFERS="gates not evaluated: roadmap content differs from origin/main — pass --trust-local-gates to evaluate local gates"
+make_barrier_git_fixture "$S17" "$SENTINEL17"
+commit_roadmap_to_origin "$S17"
+# Append one byte locally (does not change origin/main)
+echo "# local-only edit" >> "$S17/docs/roadmaps/wip/ROADMAP-trust-fixture.md"
+
+for runtime in go node py; do
+  [[ ! -f "$SENTINEL17" ]] || fail "barrier/trust/content-differs/pre-$runtime" "sentinel existed before $runtime run"
+  run_barrier "$runtime" "$S17" ROADMAP-trust-fixture --wave 1 --json
+  [[ ! -f "$SENTINEL17" ]] || fail "barrier/trust/content-differs/$runtime" "hostile gate EXECUTED — sentinel was created; content-differs check failed"
+  [[ "$BARRIER_EXIT" -eq 1 ]] || fail "barrier/trust/content-differs/$runtime" "expected exit 1, got $BARRIER_EXIT; stderr: $BARRIER_STDERR"
+  GATES_STATUS17=$(python3 -c "import json,sys; d=json.loads(sys.argv[1]); r=[c['status'] for c in d['checks'] if c['name']=='gates']; print(r[0] if r else 'MISSING')" "$BARRIER_STDOUT")
+  [[ "$GATES_STATUS17" == "not_evaluated" ]] || fail "barrier/trust/content-differs/$runtime" "expected gates.status=not_evaluated, got [$GATES_STATUS17]"
+  GATES_FAIL17=$(python3 -c "import json,sys; d=json.loads(sys.argv[1]); r=[c.get('failures',[]) for c in d['checks'] if c['name']=='gates']; print(r[0][0] if r and r[0] else 'MISSING')" "$BARRIER_STDOUT")
+  [[ "$GATES_FAIL17" == "$EXPECTED_DIFFERS" ]] || fail "barrier/trust/content-differs/$runtime" "failure message mismatch; want [$EXPECTED_DIFFERS] got [$GATES_FAIL17]"
+  ok "barrier/trust/content-differs/$runtime"
+done
+
+# Cross-CLI JSON parity for content-differs path
+run_barrier go   "$S17" ROADMAP-trust-fixture --wave 1 --json; GO_S17=$(python3 -c "$STRIP_TS_TRUST" "$BARRIER_STDOUT")
+run_barrier node "$S17" ROADMAP-trust-fixture --wave 1 --json; NODE_S17=$(python3 -c "$STRIP_TS_TRUST" "$BARRIER_STDOUT")
+run_barrier py   "$S17" ROADMAP-trust-fixture --wave 1 --json; PY_S17=$(python3 -c "$STRIP_TS_TRUST" "$BARRIER_STDOUT")
+[[ "$GO_S17" == "$NODE_S17" ]] || fail "barrier/trust/content-differs/parity/go-vs-node" "JSON diverges: go=[$GO_S17] node=[$NODE_S17]"
+[[ "$GO_S17" == "$PY_S17" ]]   || fail "barrier/trust/content-differs/parity/go-vs-py"   "JSON diverges: go=[$GO_S17] py=[$PY_S17]"
+ok "barrier/trust/content-differs/parity/three-runtimes-identical"
 
 echo
 echo "All check-barrier.sh scenarios passed."

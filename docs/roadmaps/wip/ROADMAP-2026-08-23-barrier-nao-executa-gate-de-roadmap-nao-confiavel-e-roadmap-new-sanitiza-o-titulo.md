@@ -195,16 +195,56 @@ verificadas por gate. É exatamente o próximo ML.
 ## Wave 3 — Gate
 
 ### ML-3A — Paridade e falsificação nas duas direções
-**Status:** 🔄 Em andamento · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-2A
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-2A
 
 **Critérios de aceite:** AC7, AC8, AC9, AC10
+
+---
+
+### Auditoria do ML-3A — aprovada; sabotagem minha acusa pelo motivo certo
+
+```
+sabotagem: roadmapTrustForGates() -> retorna trusted:true sempre
+  check-barrier.sh -> EXIT 1
+    FAIL [barrier/trust/not-committed/go]: hostile gate EXECUTED —
+         sentinel was created; trust check failed to block execution
+restaurado -> EXIT 0
+
+make quality (CI-exata, minha)  exit 0, 172 cenarios
+validate                        16 warnings, 0 violations
+```
+
+**A mensagem é a prova certa:** não "status divergiu" nem "exit code errado", mas **"o gate hostil
+EXECUTOU"**, detectado pela criação do arquivo sentinela. É a única forma que serve, porque o defeito
+original executava e **depois** reportava `blocked`. O cenário ainda verifica a ausência do sentinela
+**antes** de cada runtime, para não confundir "não executou agora" com "o runtime anterior já criou".
+
+#### O cenário 171 nasceu com o mesmo defeito do 170 — e o `assert_fails_with` recusou os dois
+
+```
+FAIL [falsify/ac2-sanitization/direction-a-detected]: saiu com 1 mas falta
+  diagnostico 'expected 'roadmap title must be a single line''
+  output real: FAIL [barrier/ac2-sanitization/go]: expected exit non-0 for forged title, got 0
+```
+
+**Causa raiz que ele nomeou na correção, e que explica as duas ocorrências:** o padrão mirava a
+mensagem do **CLI**, mas o `assert_fails_with` observa a saída do **gate**, que emite diagnóstico
+próprio. Dois níveis de mensagem; o padrão apontava para o de baixo.
+
+**O valor do mecanismo ficou demonstrado duas vezes na mesma REQ:** uma prova que falha pelo motivo
+errado não é prova, e sem o `assert_fails_with` teríamos dois cenários "verdes" atestando o que não
+verificam.
+
+**Residual declarado e aceito:** os cenários 171–172 são Go-only, porque a sabotagem é no binário Go
+— mas o `check-barrier.sh`, que eles usam como alvo, verifica os **3** runtimes. A cobertura cross-CLI
+vem por composição, não por triplicar a sabotagem.
 
 ---
 
 ## Wave 4 — Barreira
 
 ### ML-4A — Reverificação
-**Status:** ⬜ Pendente · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
+**Status:** 🔄 Em andamento · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
 
 Quem escreveu a Wave 0 verifica se a implementação honra o que ela decidiu. **Veredito explícito.**
 

@@ -4,6 +4,18 @@
 
 ---
 
+## Sessão 2026-08-23 — apolo-tf (FIM: ML-3A pós-auditoria — cenário 171 / fix padrão assert_fails_with / CONCLUÍDO)
+
+Branch `fix/barrier-nao-executa-gate-de-roadmap-nao-confiavel`.
+
+**Escopo:** corrigir padrão do `assert_fails_with` no cenário 171 de `scripts/check-gates-falsify.sh`.
+O padrão anterior (`expected 'roadmap title must be a single line'`) não casava com a mensagem real emitida por `check-barrier.sh` quando sabotado (`expected exit non-0 for forged title`).
+
+**Diagnóstico confirmado:** rodei o braço de detecção manualmente antes de editar — saída real coletada.
+**Arquivo alterado:** `scripts/check-gates-falsify.sh` linha 8718 — único arquivo tocado.
+
+---
+
 ## Sessão 2026-08-23 — apolo-tf (FIM: ML-1A — Sanitização do título nos 3 CLIs / CONCLUÍDO)
 
 Branch `fix/barrier-nao-executa-gate-de-roadmap-nao-confiavel`.
@@ -24261,3 +24273,40 @@ Documentar AC13 (residual do slash command) em `docs/cli-parity.md`.
 - `docs/roadmaps/wip/ROADMAP-2026-08-23-*.md` — ML-2A marcado ✅ Concluído
 
 **Handoff para:** `trackfw_architect` para auditoria e commit.
+
+---
+
+## apolo-tf — ML-3A — 2026-08-23 — INÍCIO
+
+**Branch:** `fix/barrier-nao-executa-gate-de-roadmap-nao-confiavel`
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-08-23-barrier-nao-executa-gate-de-roadmap-nao-confiavel-e-roadmap-new-sanitiza-o-titulo.md`
+**Scope:** ML-3A — Paridade e falsificação nas duas direções (AC7, AC8, AC9, AC10)
+
+**Pendente:**
+- Cenários 13–17 em `scripts/check-barrier.sh` (AC2 gate + 4 trust-check cases)
+- Cenários 171–172 em `scripts/check-gates-falsify.sh` (Direção A: sanitização; Direção B: trust check)
+- Atualizar anotações `gap` → `gate` em `docs/cli-parity.md`
+
+---
+**Apolo · FIM · 2026-08-23**
+**ML-3A — Paridade e falsificação nas duas direções**
+Roadmap: `ROADMAP-2026-08-23-barrier-nao-executa-gate-de-roadmap-nao-confiavel-e-roadmap-new-sanitiza-o-titulo.md`
+
+**Concluído:**
+- Cenários 13–17 em `scripts/check-barrier.sh` — todos passando (exit 0, "All check-barrier.sh scenarios passed.")
+  - Cenário 13: AC2 sanitização do título (Go/Node/Py + vacuidade)
+  - Cenários 14–17: trust-check cross-CLI (not_evaluated, --trust-local-gates, trusted-identical, content-differs)
+  - Fix colateral: `trap 'chmod -R u+w "$WORK" 2>/dev/null; rm -rf "$WORK"' EXIT` para cleanup do Go module cache read-only
+- Cenários 171–172 em `scripts/check-gates-falsify.sh` — inseridos (count atualizado de 170 → 172)
+  - Cenário 171 (Direção A): sabotagem de `strings.ContainsAny` em roadmap.go → baseline + detecção
+  - Cenário 172 (Direção B): sabotagem de `if !verdict.trusted` em barrier.go → baseline + detecção (AC14: prova por ausência do arquivo sentinel)
+- Anotações `gap` → `gate=scripts/check-barrier.sh` em `docs/cli-parity.md` (linhas 1780, 1797, 1817, 1850)
+  - Linha 1806 (discriminant): mantida como `gap` (razão: testes unitários Go, não gate cross-CLI)
+
+**Gates:**
+- `bash scripts/check-barrier.sh` → exit 0 ("All check-barrier.sh scenarios passed.")
+- `bash scripts/check-parity-contract-coverage.sh` → exit 0 ("OK — nenhuma anotação inválida e nenhuma seção sem anotação")
+- `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality` → exit 0
+- `./bin/trackfw validate` → 16 warnings, 0 violations, exit 0
+
+**Handoff para trackfw_architect:** ML-3A concluído. Aguarda auditoria e commit.
