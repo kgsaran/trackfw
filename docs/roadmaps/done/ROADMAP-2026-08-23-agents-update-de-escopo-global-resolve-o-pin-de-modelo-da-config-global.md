@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-08-23
 req: "docs/req/REQ-2026-08-23-agents-update-de-escopo-global-perde-o-pin-de-modelo-porque-le-agent-models-do-cwd.md"
 adr: "docs/adr/ADR-2026-08-23-config-global-do-trackfw-como-fonte-do-pin-de-modelo-para-instalacao-de-escopo-global.md"
@@ -8,7 +8,7 @@ squad: "hades-tf, apolo-tf"
 
 # Roadmap: `agents update` de escopo global resolve o pin de modelo da config global
 
-> Created: 2026-08-23 | Status: wip
+> Created: 2026-08-23 | Status: done
 
 ## Context
 
@@ -323,6 +323,52 @@ validate                         16 warnings, 0 violations
 achou o 14º; a barreira achou 5 (15–18) e reprovou; o ML-1B achou o 19º por busca própria. É a
 evidência mais forte da sessão de que **lista dada não é lista fechada** — e de que a instrução que
 o harness passou a ensinar (*buscar, não confiar na lista*) é a que fecha a diferença.
+
+---
+
+### ML-3B — Reverificação pós-correção
+**Status:** ✅ Concluído · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
+**Veredito:** APROVADO. Detalhes: `docs/seguranca/2026-08-23-barreira-da-config-global-de-modelo.md` (seção Reverificação — ML-3B).
+
+| Pergunta | Resultado |
+|----------|-----------|
+| Q1 — B1–B5+B6 fechados (medição comportamental, 3 runtimes × 2 caminhos)? | ✅ |
+| Q2 — Existe 20º site? | ✅ Não — busca independente confirma 19 call sites |
+| Q3 — Regressão nos 13 anteriores + §2? | ✅ Nenhuma — gate 71 OK + make quality exit 0 |
+| Q4 — Doctor residual aceitável? | ✅ Medição confirma: comparação por manifesto, não re-render |
+| Q5 — Irmão da assimetria inspect/write? | ✅ Não — discriminante "resolução única no topo" verificado |
+
+---
+
+### Auditoria do ML-3B — **APROVADO**; e ele derrubou a própria previsão medindo
+
+**Ele mediu comportamento, não código** — ambiente construído do zero, `HOME` redirecionado, cwd
+vazio, os dois caminhos nos 3 runtimes:
+
+```
+init --ai-tools claude                 Go/Node/Python -> claude-opus-5 · claude-sonnet-4-6
+third-party install --apply-to         Go/Node/Python -> claude-sonnet-4-6 preservado
+gate cases 11-12                       71 OK, 0 FAIL
+```
+
+**Detalhe que só aparece medindo:** o `trackfw.yaml` que o `init` **escreve** no cwd não contém
+`agent_models` — a resolução não lê o arquivo que ela mesma acabou de criar. Um caminho circular que
+teria sido fácil introduzir sem ninguém notar.
+
+**Q2 — lista fechada em 19**, com a contagem por stack e a razão de cada exclusão (escopo de projeto
+explícito, `update harness` global, display-only). Depois de a lista errar três vezes, ele **disse
+como verificou**, não só que verificou.
+
+**Q4 — ele derrubou a própria ressalva com medição.** Previa falso-positivo do `doctor` com pin
+global e projeto sem config; mediu e deu `no mismatches`. Causa: `inspectResolved` compara contra o
+**hash do manifesto** — o que o trackfw escreveu —, não contra re-render. O resíduo do `doctor.go`
+continua correto **pelo motivo que a medição revelou**, não pelo que ele supunha.
+
+**Q5 — a classe do achado B6 não tem irmão.** Ele verificou os três stacks e mostrou o
+discriminante: resolver `agentModels` **uma vez no topo** e passar o mesmo valor a inspeção e
+escrita. Onde isso acontece, não há assimetria.
+
+**Entrega completa.**
 
 ---
 

@@ -8,12 +8,14 @@
 
 ---
 
-## REPROVADO
+## REPROVADO (ML-3A) → APROVADO (ML-3B)
 
-Os 13 sites enumerados na Wave 0 estão corretamente migrados. A barreira encontrou **5 sites
-adicionais** (3 Python + 2 Node.js) que a Wave 0 não enumerou e que reproduzem o defeito original:
-escopo global lendo `agent_models` do cwd em vez de `~/.trackfw/trackfw.yaml`. Dois deles são
-caminhos de escrita (`manager.update`). AC11 ("todos os sites") não está satisfeito.
+**ML-3A (2026-08-23):** Os 13 sites da Wave 0 estavam corretos, mas a enumeração era incompleta.
+Encontrados 5 sites adicionais (3 Python + 2 Node.js) que reproduziam o defeito original, dois
+deles write-paths reais. AC11 ("todos os sites") não satisfeito. Bloqueio emitido.
+
+**ML-3B (2026-08-23):** Os 6 sites (B1–B5 + B6 descoberto pelo ML-1B) foram corrigidos e
+verificados comportamentalmente nos 3 runtimes. Nenhuma regressão. Não há 20º site. Bloqueio levantado.
 
 ---
 
@@ -352,3 +354,159 @@ dos mesmos. Esses sites produzem a mesma classe de defeito que esta REQ se prop�
 
 Estes são de escopo cirúrgico. Não tocam na arquitetura. O padrão de migração já está estabelecido
 pelos 13 sites anteriores — é questão de aplicar o mesmo resolvedor nas rotas faltantes.
+
+---
+
+## Reverificação — ML-3B (2026-08-23)
+
+**Veredito: APROVADO.** Os 6 sites (B1–B5 + B6) estão fechados. Nenhuma regressão nos 13 sites
+anteriores. Não há 20º site. Residual R4 (`doctor`) mantém-se aceitável, pela razão apurada abaixo.
+
+---
+
+### Q1 — Os 5 sites (B1–B5) e o 6º site estão fechados?
+
+**Medido, não afirmado.** Executei os dois caminhos críticos (`init` e `--apply-to`) em cada
+um dos três runtimes, com `HOME` redirecionado para diretório temporário contendo
+`~/.trackfw/trackfw.yaml: {opus: "5", sonnet: "4.6"}` e cwd sem nenhum `trackfw.yaml`.
+
+#### init — 3 runtimes
+
+| Runtime | Resultado medido | Veredito |
+|---------|-----------------|---------|
+| Go | `model: claude-opus-5` (architect) / `model: claude-sonnet-4-6` (backend) | ✅ pin composto |
+| Node.js | `model: claude-opus-5` / `model: claude-sonnet-4-6` | ✅ pin composto |
+| Python | `model: claude-opus-5` / `model: claude-sonnet-4-6` | ✅ pin composto |
+
+Adicionalmente: o `trackfw.yaml` que `init` escreve no cwd **não contém `agent_models`**, portanto
+a resolução não lê o arquivo que acabou de criar.
+
+#### skills third-party install --apply-to backend --scope global — 3 runtimes
+
+Precondição: agentes instalados globalmente com pin (backend = `claude-sonnet-4-6`). Após
+`--apply-to`, o re-render deve preservar o pin e injetar o bloco de referência.
+
+| Runtime | model: após --apply-to | ref block | Veredito |
+|---------|----------------------|-----------|---------|
+| Go | `claude-sonnet-4-6` | presente (3 linhas) | ✅ |
+| Node.js | `claude-sonnet-4-6` | presente | ✅ |
+| Python | `claude-sonnet-4-6` | presente | ✅ |
+
+Gate Cases 11–12 (escritos pelo ML-1B): 71 OK, 0 FAIL. A sabotagem publicada pelo ML-1B
+(`init.py` revertido → `model: sonnet`) foi reproduzida pelo gate com exit 1 nomino exato
+(`expected 'model: claude-sonnet-4-6' but got: model: sonnet`). O gate discrimina por runtime.
+
+---
+
+### Q2 — Existe um 20º site?
+
+**Não.** Busca independente nos 3 stacks:
+
+**Python** — todas as chamadas a `plan_deployments` fora do `doctor`:
+- `integrations/command.py:354,416` — `run_agent_models` (resolvido em `:351`) ✅
+- `commands/init.py:163,168` — `_am` (resolvido em `:161`) ✅  (B1, corrigido)
+- `commands/thirdparty.py:310,461` — `_tp_agent_models` (resolvido em `:292`) ✅  (B5+B2, corrigidos)
+- `commands/update.py:347,350,454` — `scope="project"` explícito; `config.load()` correto ✅
+- `commands/update_harness.py:1000` — `scope="global"`, `harness_agent_models` resolvido ✅
+- `integrations/doctor.py` — residual R4, diagnóstico puro ✅
+
+**Node.js** — todas as chamadas a `buildPlans`:
+- `integrations/index.js:121` — `printResolvedDestinations` usa `options.agentModels` do caller ✅
+- `commands/update.js:154` — `scope: 'project'`, `projectConfig.load(cwd).agentModels` ✅
+- `commands/update-harness.js:763` — `scope: 'global'`, `harnessAgentModels` resolvido ✅
+- `commands/integrations.js:103` — `options` propagado do caller com `agentModels` resolvido ✅
+- `commands/thirdparty.js:200,341` — `resolvedAgentModels` (resolvido em `:192`) ✅  (B6+B3, corrigidos)
+- `generators/init.js:1296,1297` — `options.agentModels` (resolvido em `:1284`) ✅  (B4, corrigido)
+
+**Go** — todas as chamadas a `config.Load().AgentModels` / `ResolveAgentModels`:
+- `integrations_flags.go:225,339` — `ResolveAgentModels(opts.scope, ...)` ✅
+- `agents_models.go:87` — `LoadGlobalAgentModels(homeDir, cwd)` ✅
+- `init.go:417` — `ResolveAgentModels(scope, home, cwd)` ✅
+- `integrations_thirdparty.go:315` — `ResolveAgentModels(opts.scope, ...)` ✅
+- `generators/update.go:150` — `scope: "project"`, `config.Load().AgentModels` ✅
+- `generators/update.go:1719` — `ResolveAgentModels("global", home, harnessCwd)` ✅
+- `generators/update.go:1968` — `scope: "project"` (dentro de `withChdir(root, ...)`) ✅
+- `commands/doctor.go:86` — residual R4 ✅
+
+Não há 20º site.
+
+---
+
+### Q3 — Regressão nos 13 sites anteriores e nos cenários do §2?
+
+**Nenhuma.** Gate Cases 1–10 passam. `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality` exit 0
+(170 cenários, 23 gates + 11 contratos).
+
+- Config nos dois lugares (global vence): gate Case 7 cobre ✅
+- Config malformada (não-fatal): gate Case 10 cobre ✅
+- Project scope sem regressão: gate Case 9 cobre ✅
+- EACCES em `~/.trackfw/` (medido separadamente sobre a rota nova):
+  `agents models` com `chmod 000 trackfw.yaml` → "não configurado" + canônico, exit 0 ✅
+  A mesma rota `LoadGlobalAgentModels` é partilhada por todos os novos sites. O comportamento
+  de EACCES → "ausente" mantém-se para B1–B6 sem medição individual, porque todos convergem
+  para o mesmo `LoadGlobalAgentModels` Go/equivalentes Node e Python.
+
+---
+
+### Q4 — Residual `doctor.go` ainda aceitável?
+
+**Sim, pelo motivo que a medição revelou.** Minha preocupação era um falso-positivo:
+`doctor` rodando num projeto sem `agent_models` acusaria drift contra agentes globais que têm
+`model: claude-sonnet-4-6`. A medição desfez a preocupação:
+
+```
+$ trackfw doctor   (de cwd sem agent_models, com agentes globais tendo claude-sonnet-4-6)
+trackfw doctor: no mismatches found -- disk matches the manifest for every catalog-managed artifact.
+```
+
+**Causa técnica:** `inspectResolved` (manager.go) compara `actual` contra `manifest.Artifacts[dest].Hash`
+(o hash do que o trackfw escreveu por último), não contra o conteúdo re-renderizado. Quando
+`agents update --scope global` escreve `claude-sonnet-4-6`, o manifesto registra o hash desse
+conteúdo. Uma execução posterior de `doctor` (com `agentModels: {}`) calcula o `desired` com
+canônico, mas o branch `managed` não compara `actual` contra `desired` — só usa `desired` para
+detectar `StateOutdated` (actual == manifest.hash && actual != desired). `StateModified` requer
+`actual != manifest.hash`. O arquivo não mudou; portanto `StateCurrent`.
+
+R4 mantém-se: o doctor usa o manifesto como âncora, não o re-render. O comportamento é correto.
+
+---
+
+### Q5 — Existe irmão da assimetria inspect/write (classe do B6)?
+
+**Não.** A classe é: uma função chama `buildPlans`/`plan_deployments` para inspeção com config A
+e depois chama para escrita com config B. O critério de fechamento é: uma única resolução de
+`agentModels` no topo da função, passada a todos os `buildPlans` subsequentes.
+
+Verificado por busca explícita de todos os call sites de inspect e write:
+
+| Stack | Inspección | Escrita | Mesma config? |
+|-------|-----------|---------|-------------|
+| Go `integrations_thirdparty.go` | `:341` usa plano de `:315` | `:315` mesmos `tpAgentModels` | ✅ |
+| Python `thirdparty.py` | `:310` usa `_tp_agent_models` de `:292` | `:461` idem | ✅ |
+| Node.js `thirdparty.js` | `:200` usa `resolvedAgentModels` de `:192` | `:341` idem | ✅ |
+
+`printResolvedDestinations` (Node.js `integrations.js:103`) só lê `plan.destination`; não chega
+ao conteúdo renderizado e não tem efeito colateral. Não é um call site de inspeção funcional.
+
+Não há outro comando que chame `buildPlans` duas vezes com configs distintas.
+
+---
+
+### `make quality`
+
+```
+TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality   exit 0
+./bin/trackfw validate                              16 warnings, 0 violations
+```
+
+---
+
+### Resumo da reverificação
+
+| Pergunta | Resultado |
+|----------|-----------|
+| Q1 — B1–B5+B6 fechados (medição comportamental)? | ✅ 3 runtimes × 2 caminhos medidos |
+| Q2 — Existe 20º site? | ✅ Não — 19 call sites, busca fechada |
+| Q3 — Regressão nos 13 anteriores + §2? | ✅ Nenhuma — gate + make quality |
+| Q4 — Doctor residual aceitável? | ✅ Sim — comparação por manifesto, não re-render |
+| Q5 — Irmão da assimetria B6? | ✅ Não — discriminante "resolução única no topo" verificado |

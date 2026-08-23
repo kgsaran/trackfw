@@ -1,14 +1,14 @@
 ---
-status: Open
+status: done
 date: 2026-08-23
 author: "Zeus (Arquiteto)"
 adr: "docs/adr/ADR-2026-08-23-config-global-do-trackfw-como-fonte-do-pin-de-modelo-para-instalacao-de-escopo-global.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-23-agents-update-de-escopo-global-resolve-o-pin-de-modelo-da-config-global.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-23-agents-update-de-escopo-global-resolve-o-pin-de-modelo-da-config-global.md"
 ---
 
 # REQ: `agents update` de escopo global perde o pin de modelo porque lê `agent_models` do cwd
 
-> Date: 2026-08-23 | Status: Open
+> Date: 2026-08-23 | Status: done
 | Linear Issue:
 | Jira Issue:
 
@@ -104,4 +104,4 @@ ADR: `docs/adr/ADR-2026-08-23-config-global-do-trackfw-como-fonte-do-pin-de-mode
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-23-agents-update-de-escopo-global-resolve-o-pin-de-modelo-da-config-global.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-08-23-agents-update-de-escopo-global-resolve-o-pin-de-modelo-da-config-global.md`

@@ -4,6 +4,49 @@
 
 ---
 
+## Sessão 2026-08-23 — hades-tf (FIM: ML-3B — Reverificação pós-ML-1B / APROVADO)
+
+Branch `fix/agents-update-de-escopo-global-resolve-o-pin-de-modelo-da-config-global`. Sem
+commit/push (autoridade exclusiva do `trackfw_architect`).
+
+**Escopo:** Confirmar ou negar as 5 ressalvas da barreira ML-3A após o ML-1B corretivo. Buscar
+regressão. Perguntas Q1–Q5 respondidas por medição independente (não pelo gate do ML-1B).
+
+**Veredito:** APROVADO.
+
+**Medições realizadas:**
+- Q1: `init` e `skills third-party install --apply-to` em escopo global, 3 runtimes com HOME
+  redirecionado e cwd sem `trackfw.yaml`. Todos retornam `model: claude-sonnet-4-6`. Independente
+  do gate do ML-1B.
+- Q2: Busca explícita por `plan_deployments`/`buildPlans`/`BuildPlans` nos 3 stacks. 19 call
+  sites, lista fechada.
+- Q3: Gate 71 OK / 0 FAIL. `make quality` exit 0. EACCES em `trackfw.yaml` (novo): "não
+  configurado" + canônico, exit 0 — mesmo comportamento R2.
+- Q4: `doctor` → "no mismatches found" quando agentes globais têm pin mas projeto não tem.
+  Causa: comparação por `manifest.hash`, não re-render. R4 confirmado correto.
+- Q5: Discriminante da classe do B6 ("resolução única no topo da função") verificado em todos
+  os call sites de inspect+write nos 3 stacks. Sem irmão.
+
+**Artefato atualizado:** `docs/seguranca/2026-08-23-barreira-da-config-global-de-modelo.md`
+(seção "Reverificação — ML-3B" adicionada; cabeçalho REPROVADO→APROVADO).
+
+**ML-3B atualizado:** ✅ Concluído no roadmap.
+
+**Próximo passo:** handoff para `trackfw_architect` — auditoria e commit do ML-3B + encerramento
+da Wave 3 (barreira).
+
+---
+
+## Sessão 2026-08-23 — hades-tf (INÍCIO: ML-3B — Reverificação pós-ML-1B)
+
+Branch `fix/agents-update-de-escopo-global-resolve-o-pin-de-modelo-da-config-global`. Sem
+commit/push (autoridade exclusiva do `trackfw_architect`).
+
+**Escopo:** Confirmar ou negar as 5 ressalvas da barreira ML-3A, após o ML-1B ter aplicado as 6
+correções. Buscar regressão. Responder Q1–Q5.
+
+---
+
 ## Sessão 2026-08-23 — apolo-tf (FIM: ML-1B — 6 correções cirúrgicas Python/Node.js + cases 11-12 do parity gate)
 
 Branch `fix/agents-update-de-escopo-global-resolve-o-pin-de-modelo-da-config-global`. Sem
