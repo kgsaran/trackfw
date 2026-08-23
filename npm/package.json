@@ -1,6 +1,6 @@
 {
   "name": "trackfw",
-  "version": "7.1.0",
+  "version": "7.2.0",
   "description": "Governance CLI for AI-native software delivery and AI coding agents. Enforces traceability: ADR → REQ → ROADMAP → kanban. Native support for Codex, Claude Code, Gemini CLI, Cursor, Copilot, Windsurf, Amazon Q, OpenCode, and Kiro.",
   "keywords": [
     "cli",
