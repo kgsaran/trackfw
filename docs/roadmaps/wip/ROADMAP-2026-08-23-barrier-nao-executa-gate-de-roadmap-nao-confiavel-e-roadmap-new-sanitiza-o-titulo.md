@@ -32,7 +32,7 @@ sanitizar newline, é o vetor plantável — o menor dos dois.
 > Dependencies: none. Blocks all implementation.
 
 ### ML-0A — Modelo de ameaça do discriminante de confiança
-**Status:** ⬜ Pendente · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
+**Status:** ✅ Concluído · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
 **Escreve:** `docs/seguranca/2026-08-23-modelo-de-ameaca-do-gate-nao-confiavel.md`
 
 **A decisão central do AC4 está em aberto e é sua:** qual é o discriminante de confiança, e como o

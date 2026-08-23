@@ -63,6 +63,24 @@ Decisão de desenho em
       checker de cobertura exit 0.
 - [ ] **AC10** — `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality` exit 0, com **exit code medido**.
 
+### Acrescentados pela Wave 0 e pela auditoria dela
+
+- [ ] **AC11** — Discriminante: comparação contra **`origin/main`**. `HEAD` **não serve** — o roadmap
+      do PR **está** commitado na branch do PR, então HEAD-comparison o marcaria como confiável:
+      fecharia a usabilidade sem fechar o vetor.
+- [ ] **AC12** — O consentimento do fluxo dominante vem do **slash command**, não de flag digitada:
+      `/trackfw:barrier` inclui a flag; a CLI direta não. Flag obrigatória universal viraria costume
+      de digitá-la sempre — o *"guard que o usuário desliga"* do `ADR-2026-08-17`.
+- [ ] **AC13** — 🔴 **Achado da minha auditoria da Wave 0:** o slash command vive **no repositório**
+      (`.claude/commands/trackfw/barrier.md`). Um PR hostil pode **editar o próprio slash command**
+      para incluir a flag e recuperar a execução. A entrega precisa dizer o que impede isso — ou
+      declarar o residual explicitamente, com o motivo.
+- [ ] **AC14** — O gate da direção (b) verifica **ausência do arquivo** criado pelo gate hostil, não
+      só o código de saída: o defeito original **executava e depois reportava `blocked`**
+      (`barrier.go:506-525` compõe o veredito **depois** de rodar os comandos).
+- [ ] **AC15** — Falso-positivo é critério: o slash command com a flag **passa** em roadmap WIP sem
+      interação — o caso dominante medido pela Wave 0.
+
 ## Negative scope
 
 - **Não** remove o mecanismo de gates nem para de executar comando de shell — o ADR rejeita.

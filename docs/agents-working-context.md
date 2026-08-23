@@ -4,6 +4,47 @@
 
 ---
 
+## Sessão 2026-08-23 — hades-tf (FIM: ML-0A — Wave 0 do barrier não confiável / CONCLUÍDO)
+
+Branch `fix/barrier-nao-executa-gate-de-roadmap-nao-confiavel`.
+
+**Escopo:** Escrever o modelo de ameaça do discriminante de confiança para `barrier` não executar
+gates de roadmap não confiável.
+
+**Artefato entregue:** `docs/seguranca/2026-08-23-modelo-de-ameaca-do-gate-nao-confiavel.md`
+
+**Gates da wave verificados por execução:**
+- `test -f docs/seguranca/2026-08-23-modelo-de-ameaca-do-gate-nao-confiavel.md` → ok
+- `grep -q "Completude de enumera" ...` → ok
+- `grep -q "Residual declarado" ...` → ok
+- `grep -q "discriminante" ...` → ok
+
+**Decisão central (AC4):** discriminante de confiança recomendado é **comparação contra
+origin/main**, com `--trust-local-gates` injetado pelo slash command para o fluxo normal de
+agente. Isso separa o caso dominante (agente, sem fricção) do caso de revisão de PR (CLI direta,
+protegida por padrão). Ver §2 do artefato.
+
+**Enumeração:** `barrier` (Go/Node/Python) é o único ponto de execução de shell derivado de
+arquivo versionado nos três stacks. Lista fechada por busca direta (não por lista da REQ).
+
+**ML-0A:** ✅ Concluído no roadmap.
+
+**Próximo passo:** handoff para `trackfw_architect` — auditoria do ML-0A e sequência para Wave 1
+(ML-1A: sanitização do título nos 3 CLIs, `apolo-tf`).
+
+---
+
+## Sessão 2026-08-23 — hades-tf (INÍCIO: ML-0A — Wave 0 do barrier não confiável)
+
+Branch `fix/barrier-nao-executa-gate-de-roadmap-nao-confiavel`.
+
+**Escopo:** Escrever o modelo de ameaça do discriminante de confiança para `barrier` não executar
+gates de roadmap não confiável. Arquivo entregue:
+`docs/seguranca/2026-08-23-modelo-de-ameaca-do-gate-nao-confiavel.md`.
+Sem commit/push (autoridade exclusiva do `trackfw_architect`).
+
+---
+
 ## Sessão 2026-08-23 — hades-tf (FIM: ML-3B — Reverificação pós-ML-1B / APROVADO)
 
 Branch `fix/agents-update-de-escopo-global-resolve-o-pin-de-modelo-da-config-global`. Sem
