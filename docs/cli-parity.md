@@ -1635,8 +1635,9 @@ in the binary.
 | `<roadmap>` | Basename with or without `.md`, resolved against `wip/` then `done/` under `roadmap_dir` (both `flat` and `by_agent` layouts) |
 | `--wave` | Wave **label**, required. Grammar `<integer>[-<suffix>]` — see "Wave label grammar" below. `0`, `2`, `2-bis`, `2-hotfix` are valid; the integer part must be ≥ 0. |
 | `--json` | Emit the result document instead of the text report |
+| `--trust-local-gates` | Trust the local roadmap content for gate execution without comparing to `origin/main`. Used by the `/trackfw:barrier` slash command. See "Trust and `--trust-local-gates`" below. |
 | Exit 0 | `status: "passed"` |
-| Exit 1 | `status: "blocked"` — at least one check failed |
+| Exit 1 | `status: "blocked"` — at least one check failed or untrusted (`not_evaluated`) |
 | Exit 2 | Usage/resolution error (roadmap not found, wave not found, malformed `--wave`) |
 
 Exit code 2 is **not** `blocked`: a barrier that could not be evaluated is distinct from a
@@ -1776,7 +1777,7 @@ parity, and deleting Go's loses the tested proof.
 
 ### States
 
-<!-- trackfw-contract: gate=scripts/check-barrier.sh partial=os estados pending e running só aparecem mid-run ou em documento abortado; os cenários do gate comparam apenas o documento JSON final (passed/blocked), nunca um snapshot mid-run -->
+<!-- trackfw-contract: gate=scripts/check-barrier.sh partial=os estados pending e running só aparecem mid-run ou em documento abortado; os cenários do gate comparam apenas o documento JSON final (passed/blocked), nunca um snapshot mid-run; not_evaluated cobre o caso do gate não confiável e os cenários 14-17 do check-barrier.sh verificam os casos cross-CLI -->
 
 
 | State | Meaning |
@@ -1785,8 +1786,111 @@ parity, and deleting Go's loses the tested proof.
 | `running` | Check currently executing (text output only; never present in a final JSON document) |
 | `passed` | Check evaluated and green |
 | `blocked` | Check evaluated and red |
+| `not_evaluated` | Check skipped because the roadmap is not trusted for gate execution (see "Trust and `--trust-local-gates`" below). Never `passed`. |
 
 The wave-level `status` is `passed` only when **every** check is `passed`; otherwise `blocked`.
+`not_evaluated` is not `passed` — a wave with an untrusted `gates` check reports `status: "blocked"`
+and exits 1, so the architecture does not allow an unevaluated gate to release a wave silently.
+
+### Trust and `--trust-local-gates`
+
+<!-- trackfw-contract: gate=scripts/check-barrier.sh -->
+
+`trackfw barrier` determines whether a roadmap's gates can be trusted before executing them. This
+is the defense against the PR-vector: a contributor who opens a PR containing a hostile roadmap
+can cause the maintainer to execute arbitrary shell commands by running `trackfw barrier` during
+review. Decision: ADR-2026-08-23.
+
+#### Discriminant (AC4, AC11)
+
+<!-- trackfw-contract: gap reason=o discriminante origin/main é documentação de decisão de desenho (ML-2A); nenhum gate cross-CLI exercita especificamente o discriminante — isso é responsabilidade dos testes unitários Go (TestRoadmapTrustForGates_*) que não são cross-CLI -->
+
+The discriminant is **git**: a roadmap whose content **differs from `origin/main`**, or that **does
+not exist in `origin/main`**, is untrusted for gate execution. The comparison is byte-for-byte.
+
+`HEAD` is NOT the discriminant. A roadmap added by a PR contributor is already committed on the
+PR branch; a HEAD-comparison would mark it as trusted, closing usability without closing the
+PR-vector.
+
+#### `--trust-local-gates` flag (AC12, AC15)
+
+<!-- trackfw-contract: gate=scripts/check-barrier.sh -->
+
+The flag `--trust-local-gates` bypasses the trust check and executes gates from local content.
+It is injected by the `/trackfw:barrier` slash command and is intended for the dominant flow:
+the project architect evaluating a wave in their own repository during implementation, where the
+roadmap is legitimately modified locally and not yet committed to `origin/main`.
+
+The CLI direct (`trackfw barrier <roadmap> --wave <n>`) does NOT include the flag by default.
+This is intentional: the PR-review flow — a maintainer running the barrier on a contributor's
+roadmap — uses the direct CLI and gets protection without having to remember to ask for it.
+
+**Rationale for this separation (AC5):** a flag required on every invocation becomes habit. A
+guard that requires conscious opt-in for the dangerous case stays effective. The dominant
+(safe) flow is frictionless; the rare (risky) flow requires one more word.
+
+#### Fail-open cases (declared residuals)
+
+<!-- trackfw-contract: gap reason=os casos fail-open são decisões de desenho declaradas (ML-2A); não há gate que simule ausência de remote ou falha de git invocation cross-CLI — seriam testes de integração dependentes de ambiente, não cross-CLI -->
+
+The trust check is **fail-open** in the following cases. Gates execute as if trusted:
+
+| Case | Reason | Residual |
+|---|---|---|
+| Roadmap is not inside a git repository | Cannot determine trust; test fixtures run in temp dirs | Declared in AC13 context: environment without git is considered safe enough |
+| `origin/main` reference is not resolvable (no remote configured, not fetched) | Ambiguous — could be a fresh clone | Maintainer should fetch before running barrier on PRs |
+| Any git invocation fails for reasons other than "path absent from origin/main" | Conservative: don't break normal usage for infrastructure issues | Log absence is the only way to detect this |
+
+Gates are NOT fail-open when the path specifically **does not exist in `origin/main`** (exit 128,
+"does not exist in" message from git). That case is the PR-vector: the roadmap was added by the
+PR contributor and is not yet merged.
+
+#### Pinned failure strings for `not_evaluated` (AC3, AC6, AC7)
+
+<!-- trackfw-contract: gate=scripts/check-barrier.sh -->
+
+When the trust check refuses gate execution, the `gates` check gets `status: "not_evaluated"` and
+exactly one entry in `failures`. The `commands` array is still populated from `parseGates` so the
+operator can see what would have been executed. The two pinned strings are:
+
+```
+gates not evaluated: roadmap is not committed in origin/main — pass --trust-local-gates to evaluate local gates
+gates not evaluated: roadmap content differs from origin/main — pass --trust-local-gates to evaluate local gates
+```
+
+All three runtimes must emit these byte-for-byte. The text report symbol for `not_evaluated` is
+`✗` (same as `blocked`) — only one symbol, the status string carries the distinction.
+
+#### AC13 — The slash command lives in the repository (declared residual)
+
+<!-- trackfw-contract: gap reason=AC13 é um residual declarado de segurança (ML-2A, ADR-2026-08-23 §4.1 e §4.2); não existe gate que valide essa mitigação — a proteção é code review do diff, não um script -->
+
+The `/trackfw:barrier` slash command (`.claude/commands/trackfw/barrier.md`) is version-controlled
+in the same repository. A hostile PR contributor can **edit the slash command** to include
+`--trust-local-gates` and recover gate execution via the slash command interface.
+
+This is a **declared and accepted residual**. The CLI cannot verify the provenance of the
+`--trust-local-gates` flag: a flag from a hostile slash command, a hostile `Makefile`, a hostile
+CI step, and the maintainer's own conscious invocation are all indistinguishable in `argv`.
+Checking `.claude/commands/trackfw/barrier.md` against `origin/main` doesn't help — the CLI never
+reads that file; the agent reads and executes it.
+
+**Sibling surfaces in the same residual class** (named by the ML-4A barrier review, 2026-08-23):
+version-controlled Claude hook scripts wired from the project's `.claude/settings.json`, project
+`Makefile` targets, and any CI step. All of them run maintainer-side from a PR checkout without
+passing through the CLI, and none is verifiable by the CLI for the same reason as the slash command.
+The hook surface is **broader** than the gate one: it does not require running `trackfw barrier` at
+all.
+
+**The protection against this residual is the same as the protection against a hostile
+`Makefile` or CI workflow in a PR: the maintainer reads the diff.** Editing the slash command
+in a PR is an observable change in the diff, under the same code-review boundary that governs
+all other infrastructure files. This residual is already named in ADR-2026-08-23 §4.1 and §4.2.
+
+**Consequence for the `/trackfw:barrier` slash command:** the command includes a warning that
+`--trust-local-gates` must NOT be passed when reviewing a third-party PR's roadmap. The
+maintainer who wants to consciously evaluate a PR's gates can pass the flag explicitly to the
+CLI, knowing what they accept.
 
 ### Roadmap parsing rules (string-level — no heuristics)
 

@@ -58,6 +58,13 @@ def register(subparsers):
         default=False,
         help="Emite o documento de resultado em JSON em vez do relatório texto",
     )
+    parser.add_argument(
+        "--trust-local-gates",
+        action="store_true",
+        default=False,
+        dest="trust_local_gates",
+        help="Trust the local roadmap content for gate execution without comparing to origin/main (used by the /trackfw:barrier slash command for WIP roadmaps)",
+    )
     parser.set_defaults(func=run)
     return parser
 
@@ -284,7 +291,102 @@ def _check_acceptance_evidence(mls: list) -> dict:
     return {"name": "acceptance_evidence", "status": status, "evidence": evidence, "failures": failures}
 
 
-def _check_gates(commands) -> dict:
+# ────────────────────────────────────────────────────────────────────────────
+# Roadmap trust check (AC11, AC12 — docs/cli-parity.md § Trust and --trust-local-gates)
+# ────────────────────────────────────────────────────────────────────────────
+
+def _roadmap_trust_for_gates(roadmap_path: str) -> dict:
+    """Determines whether the gates declared in a roadmap can be trusted for execution.
+
+    Decision (AC4, AC11): the discriminant is git — a roadmap whose content
+    differs from origin/main, or that is absent from origin/main, is untrusted.
+
+    Returns {"trusted": True} or {"trusted": False, "failure_msg": str}.
+    Fail-open when not in a git repo, origin/main not resolvable, or any git
+    error other than "path absent from origin/main". See docs/cli-parity.md.
+    """
+    roadmap_dir = os.path.dirname(os.path.abspath(roadmap_path))
+
+    # Step 1: check if we are inside a git repository.
+    r = subprocess.run(
+        ["git", "rev-parse", "--git-dir"],
+        cwd=roadmap_dir,
+        capture_output=True,
+    )
+    if r.returncode != 0:
+        # Not a git repo → fail-open.
+        return {"trusted": True}
+
+    # Step 2: get the repository toplevel.
+    r = subprocess.run(
+        ["git", "rev-parse", "--show-toplevel"],
+        cwd=roadmap_dir,
+        capture_output=True,
+        text=True,
+    )
+    if r.returncode != 0:
+        return {"trusted": True}
+    repo_root = r.stdout.strip()
+
+    # Step 3: compute repo-relative path (git uses forward slashes).
+    abs_roadmap = os.path.abspath(roadmap_path)
+    rel_path = os.path.relpath(abs_roadmap, repo_root).replace(os.sep, "/")
+
+    # Step 4: retrieve the file at origin/main.
+    r = subprocess.run(
+        ["git", "show", f"origin/main:{rel_path}"],
+        cwd=repo_root,
+        capture_output=True,
+    )
+    if r.returncode != 0:
+        # If the path specifically does not exist in origin/main → untrusted.
+        stderr = r.stderr.decode("utf-8", errors="replace")
+        if "does not exist in" in stderr or "exists on disk, but not in" in stderr:
+            return {
+                "trusted": False,
+                "failure_msg": "gates not evaluated: roadmap is not committed in origin/main — pass --trust-local-gates to evaluate local gates",
+            }
+        # Other failures (no remote, not fetched) → fail-open.
+        return {"trusted": True}
+
+    # Step 5: compare content byte-for-byte.
+    main_content = r.stdout
+    try:
+        with open(roadmap_path, "rb") as f:
+            local_content = f.read()
+    except OSError:
+        return {"trusted": True}
+
+    if main_content != local_content:
+        return {
+            "trusted": False,
+            "failure_msg": "gates not evaluated: roadmap content differs from origin/main — pass --trust-local-gates to evaluate local gates",
+        }
+    return {"trusted": True}
+
+
+def _check_gates(commands, trust_result: dict | None = None) -> dict:
+    """Evaluate gate commands, subject to trust check.
+
+    trust_result: {"trusted": True} or {"trusted": False, "failure_msg": str}.
+    When None, defaults to trusted (backward compatibility for unit tests).
+    """
+    if trust_result is None:
+        trust_result = {"trusted": True}
+
+    cmd_list = list(commands) if commands is not None else []
+
+    if not trust_result.get("trusted", True):
+        # Roadmap is not trusted: do not execute gates (AC3, AC14).
+        # Report as not_evaluated — distinct from passed and blocked (AC6).
+        return {
+            "name": "gates",
+            "status": "not_evaluated",
+            "commands": cmd_list,
+            "evidence": [],
+            "failures": [trust_result["failure_msg"]],
+        }
+
     if commands is None:
         return {"name": "gates", "status": "passed", "commands": [], "evidence": [], "failures": []}
 
@@ -307,7 +409,7 @@ def _check_gates(commands) -> dict:
             if result.stderr:
                 sys.stderr.write(result.stderr)
     status = "passed" if not failures else "blocked"
-    return {"name": "gates", "status": status, "commands": list(commands), "evidence": evidence, "failures": failures}
+    return {"name": "gates", "status": status, "commands": cmd_list, "evidence": evidence, "failures": failures}
 
 
 def _check_validate() -> dict:
@@ -347,7 +449,7 @@ def _parse_wave_label(raw: str) -> str:
     return raw
 
 
-def _build_result_document(roadmap_arg: str, roadmap_path: str, wave_label: str) -> dict:
+def _build_result_document(roadmap_arg: str, roadmap_path: str, wave_label: str, trust_local_gates: bool = False) -> dict:
     global _LINES_CACHE
     content = open(roadmap_path, "r", encoding="utf-8").read()
     _LINES_CACHE = content.split("\n")
@@ -358,10 +460,13 @@ def _build_result_document(roadmap_arg: str, roadmap_path: str, wave_label: str)
     mls = _find_mls(_LINES_CACHE, wave_start, wave_end)
     gate_commands = _find_gates(_LINES_CACHE, wave_start, wave_end)
 
+    # Determine trust for gate execution (AC11, AC12).
+    trust_result = {"trusted": True} if trust_local_gates else _roadmap_trust_for_gates(roadmap_path)
+
     checks = [
         _check_mls_complete(mls, wave_label),
         _check_acceptance_evidence(mls),
-        _check_gates(gate_commands),
+        _check_gates(gate_commands, trust_result),
         _check_validate(),
     ]
     finished_at = _now_rfc3339()
@@ -411,7 +516,8 @@ def run(args):
     try:
         wave_label = _parse_wave_label(args.wave)
         roadmap_path = _resolve_roadmap_path(cfg, args.roadmap)
-        doc = _build_result_document(args.roadmap, roadmap_path, wave_label)
+        trust_local_gates = getattr(args, "trust_local_gates", False)
+        doc = _build_result_document(args.roadmap, roadmap_path, wave_label, trust_local_gates=trust_local_gates)
     except BarrierUsageError as exc:
         # No argparse "error:" prefix — pinned literally by docs/cli-parity.md
         # (`## trackfw barrier`), so the message is byte-identical across runtimes.

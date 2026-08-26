@@ -4,6 +4,128 @@
 
 ---
 
+## Sessão 2026-08-23 — hades-tf (FIM: ML-4A — Barreira final / APROVADO com achado adjacente)
+
+Branch `fix/barrier-nao-executa-gate-de-roadmap-nao-confiavel`.
+
+**Veredito:** APROVADO. Discriminante funciona nos 5 casos. Sanitização sem contorno exploitável.
+`not_evaluated` inconfundível com `passed`. Fluxo normal sem atrito. Harness falsifica nas duas
+direções.
+
+**Achado reportado (MEDIUM, fora de escopo desta REQ):** `.claude/settings.json` e os scripts
+`scripts/trackfw-git-branch-guard.sh` (e irmãos) são versioned hook scripts que executam em
+**toda** invocação Bash do Claude Code no repositório. Um PR hostil que os modifique executa no
+shell do mantenedor sem passar por `barrier`. A proteção é a mesma do AC13 (ler o diff), mas o
+inventário de AC13 em `docs/cli-parity.md` não os nomeia. Ação: adicionar ao inventário do
+residual — sem mudança de código de produto.
+
+**Artefato escrito:** `docs/seguranca/2026-08-23-barreira-do-gate-nao-confiavel.md`
+**ML-4A:** ✅ Concluído
+
+---
+
+## Sessão 2026-08-23 — hades-tf (INÍCIO: ML-4A — Barreira final / Wave 0 volta)
+
+Branch `fix/barrier-nao-executa-gate-de-roadmap-nao-confiavel`.
+
+**Escopo:** Reverificação da implementação contra o modelo de ameaça do ML-0A.
+Escreve `docs/seguranca/2026-08-23-barreira-do-gate-nao-confiavel.md`.
+
+---
+
+## Sessão 2026-08-23 — apolo-tf (FIM: ML-3A pós-auditoria — cenário 171 / fix padrão assert_fails_with / CONCLUÍDO)
+
+Branch `fix/barrier-nao-executa-gate-de-roadmap-nao-confiavel`.
+
+**Escopo:** corrigir padrão do `assert_fails_with` no cenário 171 de `scripts/check-gates-falsify.sh`.
+O padrão anterior (`expected 'roadmap title must be a single line'`) não casava com a mensagem real emitida por `check-barrier.sh` quando sabotado (`expected exit non-0 for forged title`).
+
+**Diagnóstico confirmado:** rodei o braço de detecção manualmente antes de editar — saída real coletada.
+**Arquivo alterado:** `scripts/check-gates-falsify.sh` linha 8718 — único arquivo tocado.
+
+---
+
+## Sessão 2026-08-23 — apolo-tf (FIM: ML-1A — Sanitização do título nos 3 CLIs / CONCLUÍDO)
+
+Branch `fix/barrier-nao-executa-gate-de-roadmap-nao-confiavel`.
+
+**Decisão de implementação:** rejeitar (não neutralizar). Mensagem de erro é contrato de paridade.
+
+**Evidências:**
+- `go test ./...` → ok em todos os pacotes, incluindo 5 novos testes em `internal/generators/`
+- `./bin/trackfw validate` → 16 warnings, 0 violations (baseline mantido)
+- Stderr diff Go/Node/Python → byte-idêntico: `Error: roadmap title must be a single line: newline and carriage return are not allowed`
+- Forged title (`--title "$FORGED"`) rejeito por todos 3 CLIs, exit 1, `/tmp/PWNED_TEST` não criado
+- `--from-req` com REQ cujo corpo tem `**Gates da wave:**`: `grep -c "Gates da wave"` → 1 nos 3 CLIs
+- CRLF REQ file: `--from-req` aceito nos 3 CLIs, exit 0, 1 bloco de gate
+- Títulos legítimos (acento, hífen, dois-pontos, parênteses): aceitos nos 3 CLIs
+- `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality` → em andamento (600+ cenários OK, 0 falhas)
+
+**Critérios de aceite atendidos:** AC1, AC2
+**Nota sobre critérios parser:** os parsers nos 3 CLIs são line-based (scanner.Text()/split('\n')/splitlines()) — critérios nunca podem conter `\n` embutido por construção. O fixture de `grep -c` testa o vetor correto.
+**Nota sobre docs/cli-parity.md:** não atualizado — AC9 é escopo do ML-3A.
+
+**Próximo passo:** handoff para `trackfw_architect` — auditoria do ML-1A, branch ML-2A.
+
+---
+
+## Sessão 2026-08-23 — apolo-tf (INÍCIO: ML-1A — Sanitização do título nos 3 CLIs)
+
+Branch `fix/barrier-nao-executa-gate-de-roadmap-nao-confiavel`.
+
+**Escopo:** Rejeitar `\n`/`\r` no título de `roadmap new` e `roadmap new --from-req`, nos três CLIs
+(Go, Node.js, Python). Mensagem de erro byte-idêntica nas três implementações.
+
+**Arquivos a modificar:**
+- `internal/generators/roadmap.go` — `NewRoadmapFromContent`, `NewRoadmapFromREQ`
+- `internal/commands/roadmap.go` — `SilenceUsage` no `RunE`
+- `npm/src/generators/roadmap.js` — `newRoadmap`, `newRoadmapFromReq`
+- `pypi/trackfw/generators/roadmap.py` — `generate_roadmap`, `generate_roadmap_from_req`
+- `internal/generators/roadmap_test.go` — testes de rejeição e falso-positivo
+
+---
+
+## Sessão 2026-08-23 — hades-tf (FIM: ML-0A — Wave 0 do barrier não confiável / CONCLUÍDO)
+
+Branch `fix/barrier-nao-executa-gate-de-roadmap-nao-confiavel`.
+
+**Escopo:** Escrever o modelo de ameaça do discriminante de confiança para `barrier` não executar
+gates de roadmap não confiável.
+
+**Artefato entregue:** `docs/seguranca/2026-08-23-modelo-de-ameaca-do-gate-nao-confiavel.md`
+
+**Gates da wave verificados por execução:**
+- `test -f docs/seguranca/2026-08-23-modelo-de-ameaca-do-gate-nao-confiavel.md` → ok
+- `grep -q "Completude de enumera" ...` → ok
+- `grep -q "Residual declarado" ...` → ok
+- `grep -q "discriminante" ...` → ok
+
+**Decisão central (AC4):** discriminante de confiança recomendado é **comparação contra
+origin/main**, com `--trust-local-gates` injetado pelo slash command para o fluxo normal de
+agente. Isso separa o caso dominante (agente, sem fricção) do caso de revisão de PR (CLI direta,
+protegida por padrão). Ver §2 do artefato.
+
+**Enumeração:** `barrier` (Go/Node/Python) é o único ponto de execução de shell derivado de
+arquivo versionado nos três stacks. Lista fechada por busca direta (não por lista da REQ).
+
+**ML-0A:** ✅ Concluído no roadmap.
+
+**Próximo passo:** handoff para `trackfw_architect` — auditoria do ML-0A e sequência para Wave 1
+(ML-1A: sanitização do título nos 3 CLIs, `apolo-tf`).
+
+---
+
+## Sessão 2026-08-23 — hades-tf (INÍCIO: ML-0A — Wave 0 do barrier não confiável)
+
+Branch `fix/barrier-nao-executa-gate-de-roadmap-nao-confiavel`.
+
+**Escopo:** Escrever o modelo de ameaça do discriminante de confiança para `barrier` não executar
+gates de roadmap não confiável. Arquivo entregue:
+`docs/seguranca/2026-08-23-modelo-de-ameaca-do-gate-nao-confiavel.md`.
+Sem commit/push (autoridade exclusiva do `trackfw_architect`).
+
+---
+
 ## Sessão 2026-08-23 — hades-tf (FIM: ML-3B — Reverificação pós-ML-1B / APROVADO)
 
 Branch `fix/agents-update-de-escopo-global-resolve-o-pin-de-modelo-da-config-global`. Sem
@@ -24131,3 +24253,89 @@ Medições seguras realizadas (sem rodar `agents update` nem `update harness`):
 - Wrong place: `trackfw: agents global: agent_models configurado em trackfw.yaml do projeto mas não vale para escopo global. Mova a chave para ~/.trackfw/trackfw.yaml.`
 - Not configured: `trackfw: agents global: agent_models não configurado em ~/.trackfw/trackfw.yaml — usando tier canônico. Configure em ~/.trackfw/trackfw.yaml para pinar versões.`
 - Malformed: `trackfw: aviso: "~/.trackfw/trackfw.yaml" tem YAML malformado — config global de modelo ignorada; usando tier canônico.`
+
+---
+
+## Sessão 2026-08-23 — apolo-tf (INÍCIO: ML-2A — barrier recusa gate de roadmap não confiável)
+
+Branch `fix/barrier-nao-executa-gate-de-roadmap-nao-confiavel`.
+
+**Escopo:** Adicionar discriminante de confiança ao `barrier` nos 3 CLIs (Go, Node.js, Python).
+Flag `--trust-local-gates` para o slash command. Status `not_evaluated` para gate não avaliado.
+Documentar AC13 (residual do slash command) em `docs/cli-parity.md`.
+
+**Decisão de implementação:**
+- Discriminante: `git show origin/main:<relPath>` (AC11)
+- Fail-open quando não é um git repo (check-barrier.sh usa temp dirs)
+- Fail-closed quando arquivo não está em origin/main (PR-added roadmap)
+- Fail-closed quando conteúdo difere de origin/main
+- Fail-open quando origin/main não é acessível (origem não configurada, ref não fetchado)
+- Status novo: `not_evaluated` (AC6), distinto de `passed` e `blocked`
+- Overall: `not_evaluated` → `blocked` → exit 1 (agregação já existente)
+- AC13: residual declarado — slash command no repo é editável via PR hostile
+
+
+---
+
+## Sessão 2026-08-23 — apolo-tf (FIM: ML-2A — barrier recusa gate de roadmap não confiável)
+
+**Status final:** ✅ ML-2A Concluído.
+
+**Evidências de conclusão:**
+
+- `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality` → exit 0
+  - `check-parity-contract-coverage.sh`: 0 seções sem anotação, 0 violações
+  - Todos os checks de parity passaram (Go, Node.js, Python)
+- `./bin/trackfw validate` → 16 warnings, 0 violations (sem regressão)
+- **AC14 (não-execução):** `./bin/trackfw barrier HOSTILE-AC14-TEST --wave 1 --json` → exit 1, `gates.status: "not_evaluated"`, arquivo hostil NÃO criado
+- **AC5 (WIP frictionless):** `./bin/trackfw barrier ... --trust-local-gates` → `gates.status: "passed"`
+
+**Arquivos modificados nesta sessão:**
+- `internal/commands/barrier.go` — `roadmapTrustForGates()`, flag `--trust-local-gates`, status `not_evaluated`
+- `npm/src/commands/barrier.js` — paridade Node.js
+- `pypi/trackfw/commands/barrier.py` — paridade Python
+- `.claude/commands/trackfw/barrier.md` — slash command injeta `--trust-local-gates`; warning AC13
+- `internal/generators/scaffold.go`, `npm/src/generators/init.js`, `pypi/trackfw/generators/init_gen.py` — template barrier.md atualizado
+- `npm/tests/generators.test.js`, `pypi/tests/test_generators_init.py` — assertions atualizadas
+- `internal/commands/barrier_test.go` — 2 novos testes (fail-open em non-git-repo, --trust-local-gates passa)
+- `docs/cli-parity.md` — seção "Trust and --trust-local-gates" com 5 subsections anotadas (gap)
+- `docs/roadmaps/wip/ROADMAP-2026-08-23-*.md` — ML-2A marcado ✅ Concluído
+
+**Handoff para:** `trackfw_architect` para auditoria e commit.
+
+---
+
+## apolo-tf — ML-3A — 2026-08-23 — INÍCIO
+
+**Branch:** `fix/barrier-nao-executa-gate-de-roadmap-nao-confiavel`
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-08-23-barrier-nao-executa-gate-de-roadmap-nao-confiavel-e-roadmap-new-sanitiza-o-titulo.md`
+**Scope:** ML-3A — Paridade e falsificação nas duas direções (AC7, AC8, AC9, AC10)
+
+**Pendente:**
+- Cenários 13–17 em `scripts/check-barrier.sh` (AC2 gate + 4 trust-check cases)
+- Cenários 171–172 em `scripts/check-gates-falsify.sh` (Direção A: sanitização; Direção B: trust check)
+- Atualizar anotações `gap` → `gate` em `docs/cli-parity.md`
+
+---
+**Apolo · FIM · 2026-08-23**
+**ML-3A — Paridade e falsificação nas duas direções**
+Roadmap: `ROADMAP-2026-08-23-barrier-nao-executa-gate-de-roadmap-nao-confiavel-e-roadmap-new-sanitiza-o-titulo.md`
+
+**Concluído:**
+- Cenários 13–17 em `scripts/check-barrier.sh` — todos passando (exit 0, "All check-barrier.sh scenarios passed.")
+  - Cenário 13: AC2 sanitização do título (Go/Node/Py + vacuidade)
+  - Cenários 14–17: trust-check cross-CLI (not_evaluated, --trust-local-gates, trusted-identical, content-differs)
+  - Fix colateral: `trap 'chmod -R u+w "$WORK" 2>/dev/null; rm -rf "$WORK"' EXIT` para cleanup do Go module cache read-only
+- Cenários 171–172 em `scripts/check-gates-falsify.sh` — inseridos (count atualizado de 170 → 172)
+  - Cenário 171 (Direção A): sabotagem de `strings.ContainsAny` em roadmap.go → baseline + detecção
+  - Cenário 172 (Direção B): sabotagem de `if !verdict.trusted` em barrier.go → baseline + detecção (AC14: prova por ausência do arquivo sentinel)
+- Anotações `gap` → `gate=scripts/check-barrier.sh` em `docs/cli-parity.md` (linhas 1780, 1797, 1817, 1850)
+  - Linha 1806 (discriminant): mantida como `gap` (razão: testes unitários Go, não gate cross-CLI)
+
+**Gates:**
+- `bash scripts/check-barrier.sh` → exit 0 ("All check-barrier.sh scenarios passed.")
+- `bash scripts/check-parity-contract-coverage.sh` → exit 0 ("OK — nenhuma anotação inválida e nenhuma seção sem anotação")
+- `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality` → exit 0
+- `./bin/trackfw validate` → 16 warnings, 0 violations, exit 0
+
+**Handoff para trackfw_architect:** ML-3A concluído. Aguarda auditoria e commit.

@@ -179,7 +179,7 @@ test('generateClaudeCommands creates barrier.md with the operational checklist',
 
     const content = fs.readFileSync(barrierPath, 'utf8')
     assert.ok(content.includes('trackfw_architect'), 'barrier.md should name trackfw_architect as the Git authority')
-    assert.ok(content.includes('trackfw barrier <roadmap> --wave <n> --json'), 'barrier.md should invoke the deterministic core command')
+    assert.ok(content.includes('trackfw barrier <roadmap> --wave <n> --trust-local-gates --json'), 'barrier.md should invoke the deterministic core command with --trust-local-gates')
     assert.ok(content.includes('Todos os MLs da wave concluídos e marcados'), 'barrier.md should contain checklist item 1')
     assert.ok(content.includes('Agente code-quality reportou'), 'barrier.md should require the code-quality agent review')
     assert.ok(content.includes('Agente security reportou'), 'barrier.md should require the security agent review')

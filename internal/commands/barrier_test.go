@@ -599,3 +599,58 @@ func TestBarrierRegression_FourthExitTwoMessage(t *testing.T) {
 		t.Fatalf("fourth pinned message mismatch:\nwant: %q\ngot:  %q", want, stderr)
 	}
 }
+
+// ────────────────────────────────────────────────────────────────────────────
+// Trust check tests (AC11, AC12, AC3, AC6 — ML-2A)
+// ────────────────────────────────────────────────────────────────────────────
+
+// TestRoadmapTrustForGates_FailOpenWhenNotGitRepo verifies that when the roadmap
+// is in a directory that is not a git repository, the trust verdict is open
+// (trusted). This is the fail-open residual for non-git environments such as the
+// check-barrier.sh fixtures in temp dirs.
+func TestRoadmapTrustForGates_FailOpenWhenNotGitRepo(t *testing.T) {
+	dir := t.TempDir()
+	roadmapPath := filepath.Join(dir, "ROADMAP.md")
+	if err := os.WriteFile(roadmapPath, []byte("# Roadmap: test\n"), 0644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	verdict := roadmapTrustForGates(roadmapPath)
+	if !verdict.trusted {
+		t.Fatalf("expected trusted=true for non-git-repo path, got failureMsg=%q", verdict.failureMsg)
+	}
+}
+
+// TestBarrierTrustLocalGatesFlag verifies that --trust-local-gates causes the
+// barrier to evaluate gates from local content without a trust check. The gate
+// command "true" must exit 0 and be recorded in the gates check.
+func TestBarrierTrustLocalGatesFlag(t *testing.T) {
+	dir, _ := setupBarrierFixture(t, barrierFixtureConfig{
+		linkedREQ:     true,
+		mlStatus:      "✅",
+		criteriaLines: []string{"- [x] build passes"},
+		gateCommands:  []string{"true"},
+	})
+
+	stdout, stderr, code := runBarrierCLI(t, dir, "ROADMAP-barrier-fixture", "--wave", "1",
+		"--trust-local-gates", "--json")
+	if code != 0 {
+		t.Fatalf("expected exit 0 with --trust-local-gates, got %d\nstdout: %s\nstderr: %s",
+			code, stdout, stderr)
+	}
+	var doc barrierResultDoc
+	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &doc); err != nil {
+		t.Fatalf("stdout is not valid JSON: %v\nstdout: %s", err, stdout)
+	}
+	found := false
+	for _, c := range doc.Checks {
+		if c.Name == "gates" {
+			found = true
+			if c.Status != "passed" {
+				t.Fatalf("expected gates=passed with --trust-local-gates, got %q", c.Status)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("gates check not found in result document")
+	}
+}

@@ -10,8 +10,18 @@ Você é o `trackfw_architect`, a única autoridade Git deste projeto. Este coma
 
 Execute primeiro:
 ```bash
-trackfw barrier <roadmap> --wave <n> --json
+trackfw barrier <roadmap> --wave <n> --trust-local-gates --json
 ```
+
+`--trust-local-gates` é obrigatório aqui: roadmaps WIP (modificados localmente, ainda não commitados em
+`origin/main`) são marcados como não confiáveis pela CLI direta por padrão, como proteção contra a
+execução de gates de roadmaps chegados por PR de terceiro. O slash command aplica esse flag porque
+ele representa o fluxo legítimo do arquiteto operando no próprio repositório — não porque os gates
+são inspecionados previamente (o diff ainda é responsabilidade do checklist abaixo).
+
+⚠️ **Não use `--trust-local-gates` ao revisar um roadmap chegado por PR de terceiro** — use a CLI
+direta sem o flag (`trackfw barrier <roadmap> --wave <n> --json`) para que os gates sejam marcados
+como `not_evaluated` e não executados.
 
 Este comando é **necessário mas não suficiente**. Ele verifica MLs concluídos, evidências e `trackfw validate`, mas não substitui as inspeções especializadas nem a auditoria de diff abaixo — nenhuma delas é avaliada pelo binário. Consulte a seção `trackfw barrier` em `docs/cli-parity.md` para o contrato completo (estados, exit codes, saída JSON).
 

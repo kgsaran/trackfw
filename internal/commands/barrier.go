@@ -62,6 +62,7 @@ func (e *barrierUsageError) Error() string { return e.msg }
 func newBarrierCmd() *cobra.Command {
 	var waveStr string
 	var jsonOut bool
+	var trustLocalGates bool
 
 	cmd := &cobra.Command{
 		Use:   "barrier <roadmap> --wave <n>",
@@ -94,13 +95,14 @@ zero violations. It never invents a gate and never assumes a build tool.`,
 				os.Exit(2)
 			}
 
-			runBarrier(cmd, args[0], waveLabel, jsonOut)
+			runBarrier(cmd, args[0], waveLabel, jsonOut, trustLocalGates)
 			return nil
 		},
 	}
 
 	cmd.Flags().StringVar(&waveStr, "wave", "", "Wave label to evaluate (required, grammar: <integer>[-<suffix>], e.g. 2 or 2-bis)")
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "Emit the result document as JSON instead of the text report")
+	cmd.Flags().BoolVar(&trustLocalGates, "trust-local-gates", false, "Trust the local roadmap content for gate execution without comparing to origin/main (used by the /trackfw:barrier slash command for WIP roadmaps)")
 	return cmd
 }
 
@@ -384,6 +386,99 @@ func parseGates(lines []string, waveStart, waveEnd int) ([]string, *barrierUsage
 	return []string{}, nil
 }
 
+// ────────────────────────────────────────────────────────────────────────────
+// Roadmap trust check (AC11, AC12 — docs/cli-parity.md § Trust and --trust-local-gates)
+// ────────────────────────────────────────────────────────────────────────────
+
+// gatesTrustVerdict is returned by roadmapTrustForGates.
+type gatesTrustVerdict struct {
+	// trusted is true when gates may be executed from the local roadmap content.
+	trusted bool
+	// failureMsg is the pinned message to record in the gates check failures
+	// when trusted is false. It must be byte-identical across all three runtimes.
+	failureMsg string
+}
+
+// roadmapTrustForGates determines whether the gates declared in a roadmap can
+// be trusted for execution without --trust-local-gates.
+//
+// Decision (AC4, AC11): the discriminant is git — a roadmap whose content
+// differs from origin/main, or that is absent from origin/main, is untrusted.
+//
+// Fail-open cases (trust granted, residual declared in docs/cli-parity.md):
+//   - roadmapPath is not inside a git repository
+//   - origin/main reference is not resolvable (no remote, not fetched)
+//   - any git invocation fails for reasons other than "path absent from origin/main"
+//
+// These fail-open cases preserve the check-barrier.sh fixtures (temp dirs, no
+// git repo) and fresh clones without a fetched remote, without compromising the
+// PR-review protection. The residuals are named in docs/cli-parity.md.
+func roadmapTrustForGates(roadmapPath string) gatesTrustVerdict {
+	roadmapDir := filepath.Dir(roadmapPath)
+
+	// Step 1: check if we are inside a git repository.
+	revParseCmd := exec.Command("git", "rev-parse", "--git-dir")
+	revParseCmd.Dir = roadmapDir
+	if err := revParseCmd.Run(); err != nil {
+		// Not a git repo → fail-open.
+		return gatesTrustVerdict{trusted: true}
+	}
+
+	// Step 2: get the repository toplevel so we can compute a repo-relative path.
+	topCmd := exec.Command("git", "rev-parse", "--show-toplevel")
+	topCmd.Dir = roadmapDir
+	topOut, err := topCmd.Output()
+	if err != nil {
+		return gatesTrustVerdict{trusted: true}
+	}
+	topLevel := strings.TrimSpace(string(topOut))
+
+	// Step 3: compute path relative to the toplevel (git uses forward slashes).
+	absRoadmap, err := filepath.Abs(roadmapPath)
+	if err != nil {
+		return gatesTrustVerdict{trusted: true}
+	}
+	relPath, err := filepath.Rel(topLevel, absRoadmap)
+	if err != nil {
+		return gatesTrustVerdict{trusted: true}
+	}
+	relPath = filepath.ToSlash(relPath)
+
+	// Step 4: retrieve the file at origin/main.
+	showCmd := exec.Command("git", "show", "origin/main:"+relPath)
+	showCmd.Dir = topLevel
+	mainContent, err := showCmd.Output()
+	if err != nil {
+		// If the path specifically does not exist in origin/main, it is a
+		// PR-added file → untrusted.
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			stderr := string(exitErr.Stderr)
+			if strings.Contains(stderr, "does not exist in") ||
+				strings.Contains(stderr, "exists on disk, but not in") {
+				return gatesTrustVerdict{
+					trusted:    false,
+					failureMsg: "gates not evaluated: roadmap is not committed in origin/main — pass --trust-local-gates to evaluate local gates",
+				}
+			}
+		}
+		// Any other failure (origin not configured, ref not fetched) → fail-open.
+		return gatesTrustVerdict{trusted: true}
+	}
+
+	// Step 5: compare content byte-for-byte.
+	localContent, err := os.ReadFile(roadmapPath)
+	if err != nil {
+		return gatesTrustVerdict{trusted: true}
+	}
+	if string(mainContent) != string(localContent) {
+		return gatesTrustVerdict{
+			trusted:    false,
+			failureMsg: "gates not evaluated: roadmap content differs from origin/main — pass --trust-local-gates to evaluate local gates",
+		}
+	}
+	return gatesTrustVerdict{trusted: true}
+}
+
 // runGateCommand executes one gate command from the repository root (the process's
 // current working directory) via the shell, returning its exit code.
 func runGateCommand(command string) int {
@@ -411,7 +506,7 @@ func usageExit(cmd *cobra.Command, format string, args ...interface{}) {
 
 // runBarrier evaluates <roadmap> --wave <label> and prints the report (text or JSON),
 // exiting 0 (passed), 1 (blocked) or 2 (usage/resolution error, handled via usageExit).
-func runBarrier(cmd *cobra.Command, roadmapArg string, waveLabel string, jsonOut bool) {
+func runBarrier(cmd *cobra.Command, roadmapArg string, waveLabel string, jsonOut bool, trustLocalGates bool) {
 	startedAt := time.Now().UTC()
 
 	roadmapPath, err := resolveBarrierRoadmap(roadmapArg)
@@ -510,19 +605,52 @@ func runBarrier(cmd *cobra.Command, roadmapArg string, waveLabel string, jsonOut
 		Commands: &gatesCmds,
 	}
 	gatesOK := true
-	for _, gcmd := range gateCommands {
-		exitCode := runGateCommand(gcmd)
-		if exitCode == 0 {
-			gatesCheck.Evidence = append(gatesCheck.Evidence, fmt.Sprintf("%s: exit 0", gcmd))
-		} else {
-			gatesOK = false
-			gatesCheck.Failures = append(gatesCheck.Failures, fmt.Sprintf("%s: exit %d", gcmd, exitCode))
+
+	// Trust check (AC11, AC12): determine whether this roadmap's gates may be
+	// executed from local content, or whether the roadmap is untrusted (PR vector).
+	// --trust-local-gates bypasses the check (injected by the /trackfw:barrier
+	// slash command for the WIP flow — AC12, AC15).
+	if trustLocalGates {
+		// Explicit consent: evaluate gates from local content.
+		for _, gcmd := range gateCommands {
+			exitCode := runGateCommand(gcmd)
+			if exitCode == 0 {
+				gatesCheck.Evidence = append(gatesCheck.Evidence, fmt.Sprintf("%s: exit 0", gcmd))
+			} else {
+				gatesOK = false
+				gatesCheck.Failures = append(gatesCheck.Failures, fmt.Sprintf("%s: exit %d", gcmd, exitCode))
+			}
 		}
-	}
-	if gatesOK {
-		gatesCheck.Status = "passed"
+		if gatesOK {
+			gatesCheck.Status = "passed"
+		} else {
+			gatesCheck.Status = "blocked"
+		}
 	} else {
-		gatesCheck.Status = "blocked"
+		verdict := roadmapTrustForGates(roadmapPath)
+		if !verdict.trusted {
+			// Roadmap is not trusted: do not execute gates (AC3, AC14).
+			// Report as not_evaluated — distinct from passed and blocked (AC6).
+			gatesCheck.Status = "not_evaluated"
+			gatesCheck.Failures = append(gatesCheck.Failures, verdict.failureMsg)
+			gatesOK = false
+		} else {
+			// Trusted (fail-open): evaluate gates.
+			for _, gcmd := range gateCommands {
+				exitCode := runGateCommand(gcmd)
+				if exitCode == 0 {
+					gatesCheck.Evidence = append(gatesCheck.Evidence, fmt.Sprintf("%s: exit 0", gcmd))
+				} else {
+					gatesOK = false
+					gatesCheck.Failures = append(gatesCheck.Failures, fmt.Sprintf("%s: exit %d", gcmd, exitCode))
+				}
+			}
+			if gatesOK {
+				gatesCheck.Status = "passed"
+			} else {
+				gatesCheck.Status = "blocked"
+			}
+		}
 	}
 
 	// ── check: validate ──────────────────────────────────────────────────────
