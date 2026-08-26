@@ -30,7 +30,7 @@ em silêncio diante de hook novo apontando para script novo.
 > Dependencies: none. Blocks all implementation.
 
 ### ML-0A — Modelo de ameaça da superfície executável
-**Status:** ⬜ Pendente · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
+**Status:** ✅ Concluído · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
 **Escreve:** `docs/seguranca/2026-08-26-modelo-de-ameaca-da-superficie-executavel-de-checkout.md`
 
 **A pergunta que decide o escopo é sua: o que, de fato, executa a partir de um checkout?** O ADR lista
@@ -58,12 +58,45 @@ grep -q "Completude de enumera" docs/seguranca/2026-08-26-modelo-de-ameaca-da-su
 grep -q "Residual declarado" docs/seguranca/2026-08-26-modelo-de-ameaca-da-superficie-executavel-de-checkout.md
 ```
 
+### Auditoria do ML-0A — aprovada; **6 ACs novos, e um deles apaga um resíduo do ADR**
+
+**O achado que muda o desenho:** auditar um ref **sem checkout**, via `git show <ref>:<path>`.
+O ADR declarava como limite estrutural que o comando *"não protege quem já abriu o repositório"* — a
+Wave 0 mostrou que **não precisa ser assim**: sem checkout, a janela vai a **zero**. Virou **AC12**.
+É a segunda vez nesta série que uma Wave 0 derruba um resíduo que o ADR dava por inevitável.
+
+**A enumeração corrigiu um número meu:** escopo de **projeto** tem **8** runtimes — medido em
+`scripts/check-agent-hooks-parity.sh:90` (`claude codex gemini copilot cursor kiro windsurf amazonq`).
+Os 6 do ADR são o escopo **harness/global**. E a instrução que importa: **varrer por padrão de path,
+não por presença** — *ausência é informação, não exclusão*. Virou **AC13**.
+
+**As três variantes de diff limpo** que ele nomeou são o coração do AC14:
+
+```
+A) so o conteudo do script muda      -> diff do settings.json e ZERO
+B) wiring reaponta para outro script -> parece correcao de path
+C) matcher "Bash" -> "*"             -> um token muda, o script nao
+```
+
+Por isso a unidade reportada tem de ser a **tupla (trigger, matcher, caminho, digest)** — qualquer
+componente alterado é superfície.
+
+**E ele achou o falso-positivo antes de existir código, com fixture grátis:** um `grep` por caminho
+literal acusaria `docs/cli-parity.md` e `internal/generators/agentfiles.go`, que **mencionam** os
+paths sem serem wiring. Discriminante: estar no path do runtime **e** ter estrutura de wiring.
+Virou **AC16**.
+
+**Distinção que eu não tinha feito:** arquivos de instrução (`CLAUDE.md`, `AGENTS.md`, slash commands)
+**não executam — instruem**, com efeito em comando futuro. Rótulo próprio no relatório (**AC15**).
+
+---
+
 ## Wave 1 — O comando
 
 > Dependências: ML-0A auditado. **ML único:** os 3 stacks saem byte-idênticos.
 
 ### ML-1A — Comando de auditoria nos 3 CLIs
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-0A
+**Status:** 🔄 Em andamento · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-0A
 
 Escopo conforme a enumeração fechada pelo ML-0A. Reusa `validate`/`doctor` para integridade de
 artefato gerenciado. **Informa, não acusa; nomeia, não julga.**

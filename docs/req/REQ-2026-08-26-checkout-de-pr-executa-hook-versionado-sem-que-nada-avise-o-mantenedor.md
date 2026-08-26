@@ -57,6 +57,31 @@ Decisão de desenho em
       cobertura exit 0.
 - [ ] **AC11** — `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality` exit 0, com **exit code medido**.
 
+### Acrescentados pela Wave 0 (`docs/seguranca/2026-08-26-modelo-de-ameaca-da-superficie-executavel-de-checkout.md`)
+
+- [ ] **AC12** — 🔴 **Auditar um ref SEM checkout**, via `git show <ref>:<path>`. Isto **estreita a
+      janela para zero** — o mantenedor não precisa mais colocar a árvore hostil no disco para
+      decidir. Era resíduo estrutural do ADR e a Wave 0 mostrou que não precisa ser.
+- [ ] **AC13** — Varrer por **padrão de path**, não por presença: o escopo de projeto tem **8**
+      runtimes (`claude codex gemini copilot cursor kiro windsurf amazonq`, medido em
+      `scripts/check-agent-hooks-parity.sh:90`), não 6 — 6 é o escopo **harness/global**. **Ausência é
+      informação**, não exclusão: um path de runtime que não existe hoje precisa ser varrido mesmo
+      assim.
+- [ ] **AC14** — A unidade reportada é a **tupla (trigger, matcher, caminho do script, digest do
+      script)**. Alteração em **qualquer** componente é superfície. Cobre as três variantes de diff
+      limpo que a Wave 0 nomeou: (A) só o conteúdo do script muda — diff do `settings.json` é **zero**;
+      (B) o wiring reaponta para outro script já presente — parece correção de path; (C) o matcher
+      alarga de `"Bash"` para `"*"` — um token muda, o script não.
+- [ ] **AC15** — **Arquivos de instrução** (`CLAUDE.md`, `AGENTS.md`, slash commands em
+      `.claude/commands/**`) são superfície **distinta** de script de shell, com **rótulo próprio** no
+      relatório: eles não executam, **instruem** — e o efeito é em comando futuro.
+- [ ] **AC16** — 🔴 **Falso-positivo tem fixture grátis nesta árvore:** um `grep` por caminho literal
+      acusaria `docs/cli-parity.md` e `internal/generators/agentfiles.go`, que **mencionam** os paths
+      sem serem wiring. O discriminante é **estar no path do runtime E ter estrutura de wiring**, não
+      mencionar o caminho.
+- [ ] **AC17** — `settings.local.json` (não versionado neste repositório) é inventariado **quando
+      presente**.
+
 ## Negative scope
 
 - **Não** bloqueia operação nenhuma do trackfw por causa de hook não reconhecido — o trackfw não é o

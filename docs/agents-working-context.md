@@ -24339,3 +24339,57 @@ Roadmap: `ROADMAP-2026-08-23-barrier-nao-executa-gate-de-roadmap-nao-confiavel-e
 - `./bin/trackfw validate` → 16 warnings, 0 violations, exit 0
 
 **Handoff para trackfw_architect:** ML-3A concluído. Aguarda auditoria e commit.
+
+---
+
+## Sessão 2026-08-26 — hades-tf (INÍCIO: ML-0A — Modelo de ameaça da superfície executável de checkout)
+
+Branch `feat/comando-que-audita-a-superficie-executavel-de-um-checkout-de-pr`.
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-26-comando-que-audita-a-superficie-executavel-de-um-checkout-de-pr.md`
+
+**Escopo:** Wave 0 — enumerar por busca a superfície executável de um checkout de PR; produzir
+`docs/seguranca/2026-08-26-modelo-de-ameaca-da-superficie-executavel-de-checkout.md` com as quatro
+seções obrigatórias. Nenhuma implementação neste ML.
+
+**Evidências coletadas antes de escrever:**
+- Runtimes com hook wiring versionado neste repo: claude (`.claude/settings.json`), codex (`.codex/hooks.json`), gemini (`.gemini/settings.json`)
+- Scripts referenciados pelos três wiring files: `scripts/trackfw-git-branch-guard.sh`, `scripts/trackfw-attention-signal.sh`, `scripts/trackfw-attention-cleanup.sh`, `scripts/trackfw-validate.sh` — todos versionados
+- `check-agent-hooks-parity.sh` cobre 8 CLIs project-scope: claude codex gemini copilot cursor kiro windsurf amazonq
+- `.git/config` local: `hooksPath = /dev/null` (desativa hooks git, inclusive o `.husky/pre-commit` versionado)
+- Sem `prepare`/`preinstall`/`postinstall` em `npm/package.json`; CI usa `npm ci --ignore-scripts`
+- Sem `pull_request_target` nos workflows (sem elevação de permissão em PRs)
+- `.claude/settings.local.json` não é versionado
+- Surfaces ausentes neste repo: `.envrc`, `devcontainer.json`, `.vscode/tasks.json`, `.kiro/`, `.windsurf/`, `.cursor/`, `.github/hooks/`, `.amazonq/cli-agents/`
+
+
+---
+
+## Sessão 2026-08-26 — hades-tf (FIM: ML-0A — Modelo de ameaça da superfície executável de checkout)
+
+**Status final:** ✅ ML-0A Concluído.
+
+**Artefato produzido:**
+`docs/seguranca/2026-08-26-modelo-de-ameaca-da-superficie-executavel-de-checkout.md`
+
+**Gate:**
+- `test -f docs/seguranca/2026-08-26-modelo-de-ameaca-da-superficie-executavel-de-checkout.md` → OK
+- `grep -q "Completude de enumera" ...` → OK
+- `grep -q "Residual declarado" ...` → OK
+
+**Decisões e achados chave:**
+- A lista de 6 runtimes do prompt é o escopo *harness* (global-scope). O escopo *project-scope*
+  (entregável por PR) é **8 runtimes**: claude, codex, gemini, copilot, cursor, kiro, windsurf,
+  amazonq — confirmado por `check-agent-hooks-parity.sh CLIS`.
+- Wiring files presentes e versionados: `.claude/settings.json`, `.codex/hooks.json`,
+  `.gemini/settings.json`. Scripts referenciados: 4 scripts em `scripts/`, todos versionados.
+- `hooksPath = /dev/null` no `.git/config` local desativa `.husky/pre-commit`. Não é garantia
+  para clones novos se um PR adicionar `prepare` ao `package.json`.
+- O Wave 1 deve reportar a tupla completa (trigger, matcher, script path, digest) — não só
+  "wiring presente" — para cobrir repontamento de script e alargamento de matcher.
+- Fixture gratuita de FP: este documento e `agentfiles.go` contêm paths de hook como strings
+  literais; grep ingênuo os reportaria como superfície executável.
+- Recomendação ao Wave 1: aceitar ref como argumento e auditar via `git show <ref>:<path>` (sem
+  checkout) para reduzir a janela de "checkout → primeiro uso" para zero.
+
+**Handoff para:** `trackfw_architect` para auditoria e commit do ML-0A.
+
