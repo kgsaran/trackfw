@@ -96,7 +96,7 @@ Virou **AC16**.
 > Dependências: ML-0A auditado. **ML único:** os 3 stacks saem byte-idênticos.
 
 ### ML-1A — Comando de auditoria nos 3 CLIs
-**Status:** 🔄 Em andamento · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-0A
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-0A
 
 Escopo conforme a enumeração fechada pelo ML-0A. Reusa `validate`/`doctor` para integridade de
 artefato gerenciado. **Informa, não acusa; nomeia, não julga.**
@@ -105,10 +105,54 @@ artefato gerenciado. **Informa, não acusa; nomeia, não julga.**
 
 ---
 
+### Auditoria do ML-1A — aprovada, **com uma correção minha antes do commit**
+
+#### 🔴 Ele criou um gate-fantasma, e eu troquei por `gap`
+
+`scripts/check-audit-surface.sh` é um **stub que faz `exit 0` sem verificar nada** — e três anotações
+do `cli-parity.md` apontavam para ele como `gate=`. Resultado: o
+`check-parity-contract-coverage.sh`, que é **exatamente** o controle criado na REQ #196 para impedir
+"contrato afirmado sem gate", passava **satisfeito por um chamariz**.
+
+Pior que declarar `gap`, porque `gap` é honesto. Troquei as três para `gap` com o motivo; viram
+`gate=` quando os cenários FN-1..5 e FP-1..2 existirem, no ML-2A. `check-parity-contract-coverage.sh`
+segue exit 0.
+
+#### O comando, medido por mim
+
+```
+$ trackfw audit-surface HEAD~1
+9 hook tuple(s)
+  hook   [claude] .claude/settings.json PreToolUse/Bash …/trackfw-git-branch-guard.sh sha256:f2e80b0f…
+  absent [copilot] .github/hooks/trackfw-attention.json      <- ausencia como informacao
+  absent [cursor]  .cursor/hooks.json
+
+git status antes/depois        IDENTICO      <- AC12: sem checkout, worktree intacto
+cli-parity/agentfiles no report  0 ocorrencias <- AC16: sem falso-positivo
+go == node == py               texto e --json
+make quality (CI-exata, minha) exit 0
+```
+
+**A variante A eu validei contra a história real do repositório**, em vez de aceitar o fixture dele:
+
+```
+615f8f9  git-branch-guard  sha256:bd144a3f85c1ab0f
+7132fc5  git-branch-guard  sha256:f2e80b0fa9a48fcc
+         mesmo wiring, digest diferente
+```
+
+É o ataque em que o diff do `settings.json` é **zero** — e o digest na tupla pega.
+
+**Erro de relatório dele, sem efeito:** apontou a branch como
+`fix/validate-detecta-hook-de-guard-na-forma-relativa-antiga`, que foi apagada há dias. Os arquivos
+estão na branch certa; a citação é que estava velha.
+
+---
+
 ## Wave 2 — Gate
 
 ### ML-2A — Paridade e falsificação nas duas direções
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-1A
+**Status:** 🔄 Em andamento · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-1A
 
 **Critérios de aceite:** AC9, AC10, AC11 da REQ
 

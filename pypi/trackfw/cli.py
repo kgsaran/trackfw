@@ -166,6 +166,10 @@ def main():
     from trackfw.commands import doctor as doctor_cmd
     doctor_cmd.register(subparsers)
 
+    # --- audit-surface ---
+    from trackfw.commands import audit_surface as audit_surface_cmd
+    audit_surface_cmd.register(subparsers)
+
     # Snapshot the final command set for the "unknown command" error path
     # above — must run after every .register(subparsers) call, before parsing.
     parser.trackfw_command_names = list(subparsers.choices.keys())

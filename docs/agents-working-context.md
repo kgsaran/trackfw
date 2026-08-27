@@ -24393,3 +24393,58 @@ seções obrigatórias. Nenhuma implementação neste ML.
 
 **Handoff para:** `trackfw_architect` para auditoria e commit do ML-0A.
 
+
+---
+
+**Agente:** apolo-tf | **Data:** 2026-08-27 | **Sessão:** ML-1A (Wave 1)
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-08-26-comando-que-audita-a-superficie-executavel-de-um-checkout-de-pr.md`
+**Branch:** `feat/comando-que-audita-a-superficie-executavel-de-um-checkout-de-pr`
+
+**INÍCIO — ML-1A: Comando `trackfw audit-surface` nos 3 CLIs**
+
+**Baseline antes do trabalho:**
+- `go build ./...` → exit 0
+- `go test ./...` → exit 0, all packages green
+- `./bin/trackfw validate` → 16 warnings, 0 violations
+
+**Escopo lido:**
+- REQ AC1–AC17, threat model, ADR — todos lidos na íntegra
+- Schemas de wiring dos 8 runtimes extraídos de `internal/generators/agentfiles.go`
+- `check-cli-parity.sh` lido: verifica que Node.js e Python têm todos os comandos do Go
+
+**Decisão de nome:** `audit-surface` (único comando hifenizado — autorizado pela threat model §4.1)
+
+**Decisão de formato texto:**
+- Linha flat por entrada: `hook [runtime] wiring-file event/matcher command sha256:digest`
+- Entradas ausentes: `absent [runtime] wiring-file`
+- Arquivos de instrução: `instruction path` / `slash-command path`
+- Ordenação: runtimes em ordem canônica, eventos/matchers ordenados
+- Header: `trackfw audit-surface: N hook tuple(s) at REF`
+
+
+---
+**Agente:** apolo-tf | **Ciclo:** FIM | **Data:** 2026-08-27
+**Tarefa:** ML-1A — `trackfw audit-surface` nos 3 CLIs
+**Branch:** fix/validate-detecta-hook-de-guard-na-forma-relativa-antiga
+**O que foi feito:**
+- `internal/auditsurface/auditsurface.go` — pacote core Go com lógica de 8 runtimes, 5 schemas, AC12/14/16
+- `internal/commands/audit_surface.go` — cobra command com flags `--json`/`--base`
+- `npm/src/commands/audit-surface.js` — implementação Node.js byte-idêntica
+- `pypi/trackfw/commands/audit_surface.py` — implementação Python byte-idêntica
+- Os 3 CLIs registrados nos seus roteadores (root.go, index.js, cli.py)
+- `docs/cli-parity.md` — seção `## trackfw audit-surface` com anotações trackfw-contract
+- `scripts/check-audit-surface.sh` — stub para Wave 2/ML-2A
+**Gates verificados:**
+- `go build ./...` → 0
+- `go test ./...` → todos OK (cached)
+- `go vet ./...` → 0
+- `check-parity-contract-coverage.sh` → 0 (nenhuma seção sem anotação)
+- `check-audit-surface.sh` → 0 (stub)
+- `./bin/trackfw validate` → 0, 16 warnings (idêntico ao baseline)
+**Provas AC:**
+- AC12 (sem checkout): `git status --porcelain` limpo após auditoria de HEAD~1
+- AC14 (3 variantes): fixture 3-commit no /tmp comprova A/B/C
+- AC16 (sem falso-positivo): `grep` em cli-parity.md e agentfiles.go retorna exit 1
+- Saída byte-idêntica: diff golden Go vs Node vs Python → 0
+**Pendência para ML-2A:** `check-audit-surface.sh` com cenários FN-1..5 e FP-1..2
+---

@@ -5489,3 +5489,82 @@ trackfw: aviso: "~/.trackfw/trackfw.yaml" tem YAML malformado — config global 
 | 9 — Escopo de projeto (não-regressão) | Global com `sonnet: "4.6"`, projeto com `sonnet: "9.9"` | Vacuity guard: `model: claude-sonnet-9-9`; cross-runtime byte-idêntico |
 | 10 — Config global malformada | `~/.trackfw/trackfw.yaml` com YAML inválido | Exit 0; aviso malformed em stderr; `model: sonnet` |
 
+
+---
+
+## `trackfw audit-surface`
+
+<!-- trackfw-contract: gap reason=o gate real vem no ML-2A desta REQ; o stub check-audit-surface.sh sai 0 sem verificar nada e NAO deve ser nomeado como gate — anotacao vira gate= quando os cenarios FN-1..5 e FP-1..2 existirem -->
+
+`trackfw audit-surface <ref> [--base <base>] [--json]` reports the executable surface of a git ref **without checking it out** — all file reads go through `git show <ref>:<path>`.
+
+REQ: `docs/req/REQ-2026-08-26-checkout-de-pr-executa-hook-versionado-sem-que-nada-avise-o-mantenedor.md`
+ADR: `docs/adr/ADR-2026-08-26-superficie-executavel-de-um-checkout-de-pr-e-auditada-por-comando-dedicado-nao-por-regra-de-validate.md`
+Implemented: Wave 1 / ML-1A (2026-08-27, apolo-tf)
+
+| Aspect | Contract |
+|---|---|
+| Invocation | `trackfw audit-surface <ref>` |
+| `--base <base>` | Optional. Base ref for Makefile/CI diff. |
+| `--json` | Emit report as JSON. |
+| Runtimes scanned | All 8 project-scope runtimes: claude, codex, gemini, copilot, cursor, kiro, windsurf, amazonq — always, even when absent at the ref. |
+| Unit of reporting | `(event, matcher, raw_command, script_path, script_digest)` — any component changing is a surface change (AC14). |
+| Absence | Reported as `absent [runtime] wiring-file` — absence is information, not exclusion (AC13). |
+| Instruction files | Reported as `instruction [present|absent] path` — distinct label from shell scripts (AC15). |
+| Slash commands | Reported as `slash-command path` (AC15). |
+| False positive guard | The command opens ONLY the 8 exact wiring-file paths. It never greps file content for hook-path strings. `docs/cli-parity.md` and `internal/generators/agentfiles.go` are never opened (AC16, by construction). |
+| No judgment | The command names what executes; it never judges whether a script is hostile (AC5, AC6). |
+| Byte-identical | Text output and `--json` are byte-identical across all 3 CLIs. |
+
+### Text output format
+
+<!-- trackfw-contract: gap reason=o gate real vem no ML-2A desta REQ; o stub check-audit-surface.sh sai 0 sem verificar nada e NAO deve ser nomeado como gate — anotacao vira gate= quando os cenarios FN-1..5 e FP-1..2 existirem -->
+
+```
+trackfw audit-surface: N hook tuple(s) at REF
+[blank line]
+hook [runtime] wiring-file event/matcher raw-command sha256:digest
+...
+absent [runtime] wiring-file
+...
+instruction [present|absent] path
+...
+slash-command path
+...
+lifecycle [present|absent] file key [command]
+```
+
+### JSON output format
+
+<!-- trackfw-contract: gap reason=o gate real vem no ML-2A desta REQ; o stub check-audit-surface.sh sai 0 sem verificar nada e NAO deve ser nomeado como gate — anotacao vira gate= quando os cenarios FN-1..5 e FP-1..2 existirem -->
+
+```json
+{
+  "ref": "...",
+  "base": "...",
+  "hook_wiring": [
+    {
+      "runtime": "...",
+      "wiring_file": "...",
+      "present": true,
+      "tuples": [
+        {
+          "event": "...",
+          "matcher": "...",
+          "raw_command": "...",
+          "script_path": "...",
+          "script_digest": "sha256:..."
+        }
+      ]
+    }
+  ],
+  "instruction_files": [
+    {"path": "...", "kind": "agent-config|slash-command", "present": true}
+  ],
+  "lifecycle_hooks": [
+    {"file": "...", "key": "...", "command": "...", "present": true}
+  ]
+}
+```
+
+Note: `base` field is omitted from JSON across all 3 CLIs when not provided.
