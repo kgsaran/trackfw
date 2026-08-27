@@ -4,6 +4,35 @@
 
 ---
 
+## Sessão 2026-08-27 — hades-tf (FIM: ML-0A — Modelo de ameaca do sandbox por inclusao / CONCLUIDO)
+
+Branch `fix/sandbox-do-update-dry-run-por-lista-de-inclusao-dos-destinos-declarados`.
+
+**Veredito:** Wave 0 concluida. Seis gaps documentados com evidencia de codigo.
+
+**Gaps medidos (codigo lido diretamente):**
+- Gap A: `.windsurf/hooks.json` escrito por `InjectWindsurfHooks` — nao declarado em nenhuma CLI.
+- Gap B: `.amazonq/cli-agents/q_cli_default.json` escrito por `InjectAmazonQHooks` — nao declarado.
+- Gap C: `.github/copilot-instructions.md` e sinal de deteccao para destino declarado (`.github/hooks/trackfw-attention.json`) — nao copiado pelo sandbox de `agent-hooks`.
+- Gap D: `codex-project-agents` bypassa `runFileTarget` inteiramente (update.go:1907-1917); retorna sempre `updated`.
+- Gap E: `trackfw.yaml` lido por `config.ReadAgentConventions` (agentfiles.go:111) e por `config.Load().AgentModels` (update.go:1967) — nao esta em nenhum relPaths.
+- Gap F: Python `AGENT_HOOKS_RELATIVE_PATHS` tem 9 caminhos; Go e Node.js tem 10 (falta `scripts/trackfw-git-branch-guard.sh`).
+
+**Symlink:** Node.js `copyPath` usa `fs.existsSync` (segue symlink; broken → false → skip). Classe de abort nao sobrevive no sandbox por inclusao do Node.js. Go precisa de `os.Lstat` explicito para fechar a mesma classe.
+
+**Artefatos produzidos:**
+- `docs/seguranca/2026-08-27-modelo-de-ameaca-do-sandbox-por-inclusao.md` (arquivo principal da Wave 0)
+- `docs/roadmaps/wip/ROADMAP-*.md` — ML-0A marcado ✅ Concluido
+
+---
+
+## Sessão 2026-08-27 — hades-tf (INÍCIO: ML-0A — Modelo de ameaca do sandbox por inclusao)
+
+Branch `fix/sandbox-do-update-dry-run-por-lista-de-inclusao-dos-destinos-declarados`.
+Tarefa: Wave 0 do roadmap do sandbox por lista de inclusao. Escreve exclusivamente `docs/seguranca/2026-08-27-modelo-de-ameaca-do-sandbox-por-inclusao.md`. Sem codigo, sem commit.
+
+---
+
 ## Sessão 2026-08-27 — hades-tf (FIM: ML-3B — Reverificação pós-ML-1B / APROVADO, bloqueio levantado)
 
 Branch `feat/comando-que-audita-a-superficie-executavel-de-um-checkout-de-pr`.
@@ -24626,3 +24655,44 @@ seções obrigatórias. Nenhuma implementação neste ML.
 - Profundidade (9 hops): `symlink->b.sh|chain-not-supported` (sem sha256)
 - Abs: `symlink->/etc/passwd|not-supported` · Ausente: `symlink->nonexistent.sh|not-found`
 **Resíduos mantidos:** R1 (`env VAR=x`) e R2 (path com espaço) — MEDIUM, fora de escopo deste ML
+
+---
+## apolo-tf | 2026-08-27 | INÍCIO ML-1A
+**Branch:** fix/sandbox-do-update-dry-run-por-lista-de-inclusao-dos-destinos-declarados
+**Roadmap:** ROADMAP-2026-08-27-sandbox-do-update-dry-run-por-lista-de-inclusao-dos-destinos-declarados.md
+**Microbatch:** ML-1A — Lista de inclusão nos 3 CLIs
+**Escopo:**
+- Go: `internal/generators/update.go` — add Gaps A/B to relPaths, replace `copyProjectTree` body with inclusion-union copy (Lstat-safe), add `buildSandboxInclusion`, add detection seeds (Gap C) and trackfw.yaml (Gap E)
+- Python: `pypi/trackfw/commands/update.py` — same changes, fix Gap F, rewrite AGENT_HOOKS_DISPLAY_PATH
+- Node.js: add Gaps A/B to relPaths + displayPath (already per-target sandbox, just declaration fix)
+- D declarado como resíduo em docs/cli-parity.md
+**Iniciado:** 2026-08-27
+
+---
+## apolo-tf | 2026-08-27 | FIM ML-1A
+**Branch:** fix/sandbox-do-update-dry-run-por-lista-de-inclusao-dos-destinos-declarados
+**Roadmap:** ROADMAP-2026-08-27-sandbox-do-update-dry-run-por-lista-de-inclusao-dos-destinos-declarados.md
+**Microbatch:** ML-1A — Lista de inclusão nos 3 CLIs ✅ Concluído
+**Arquivos modificados:**
+- `internal/generators/update.go` — add Gaps A/B to agent-hooks relPaths; add `buildSandboxInclusion` (union of relPaths + trackfw.yaml + detection seeds); add `copyPath` (Lstat-based, broken symlinks skipped); replace `copyProjectTree` body with inclusion-only copy; update call site in `UpdateProject`
+- `npm/src/commands/update.js` — add Gaps A/B to agent-hooks relPaths + displayPath; add `seeds` to agent-hooks (Gap C) and agent-rules (Gap E)
+- `npm/src/lib/update-engine.js` — add optional `seeds` parameter to `runFileTarget`; copy seeds alongside relPaths in dry-run sandbox
+- `pypi/trackfw/commands/update.py` — Gap F (add trackfw-git-branch-guard.sh) + Gap A/B to AGENT_HOOKS_RELATIVE_PATHS; rewrite AGENT_HOOKS_DISPLAY_PATH as explicit string; add `_copy_path` (lstat-based); add `_build_sandbox_inclusion`; replace `_copy_project_tree` body with inclusion-only copy
+- `docs/cli-parity.md` — Gap D declared as residual
+**Gates verificados:**
+- `go build ./...` → EXIT:0
+- `go test ./...` → todos OK, EXIT:0
+- `npm test` → 773/773, EXIT:0
+- `bin/trackfw validate` → 0 violations, 16 pre-existing warnings, EXIT:0
+**Provas AC:**
+- Repro 1 (broken symlink CLAUDE.md→/nao-existe fora do declared set): dry-run completes EXIT:0
+- Repro 2 (.venv/bin/python→/nao-existe-python3.13): dry-run completes EXIT:0
+- Symlink inside declared set: CLAUDE.md broken → treated as "missing", dry-run completes EXIT:0
+- Gap C: Copilot detection signal (.github/copilot-instructions.md) in sandbox → dry-run=real=updated
+- Gap E: trackfw.yaml agent_conventions copied → dry-run=real=updated, content verified in real run
+**Decisões de implementação:**
+- Go: shared sandbox abordagem preservada (não per-target) para proteger codex-project-agents (Gap D residual)
+- `buildSandboxInclusion` computa a union de todos os relPaths dos targets selecionados + seeds de detecção
+- Python display path: string explícita (não slice posicional) para sobreviver inserções futuras
+- Node.js `runFileTarget` aceita `seeds=[]` opcional: backward-compatible, sem quebrar callers existentes
+**Pendência para ML-2A:** testes de falsificação nas duas direções (WalkDir ausente do sandbox, destino declarado omitido)

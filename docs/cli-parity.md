@@ -2770,6 +2770,31 @@ target order, not filesystem order. `summary` always carries all four counters, 
 All three runtimes declare all five. A runtime that cannot manage a target still declares it and
 reports its honest state — silently shortening the list makes the JSON incomparable across runtimes.
 
+#### Declared residual — `codex-project-agents` is structurally outside the hash-comparison guarantee
+
+<!-- trackfw-contract: gap reason=residual declarado (Wave 0 do ROADMAP-2026-08-27, Gap D): codex-project-agents bypassa runFileTarget e sempre reporta updated, logo esta fora do alcance do sandbox de dry-run por inclusao; nao ha gate porque nao ha comportamento a fixar — a secao documenta a AUSENCIA de garantia, e fixa-la exigiria reescrever o target, o que e escopo alheio a esta REQ -->
+
+`codex-project-agents` does not use `runFileTarget` / `_run_file_target`. It calls
+`codexProjectAgentsApply` (Go), `codexProjectAgentsTarget` (Node.js) or `_codex_project_agents_target`
+(Python) directly. These functions resolve plans from a runtime catalog and return `updated`
+unconditionally when any write occurs — they do NOT compute before/after content hashes. As a result:
+
+- `codex-project-agents` reports `updated` even when the catalog content is byte-identical to what
+  is already installed (false positive).
+- `codex-project-agents` verification is via `manager.Inspect`, not content-hash diffing.
+- The target's output paths are determined at runtime from the catalog, not from a static `relPaths`
+  declaration, so they cannot be seeded into the dry-run sandbox — the target operates against the
+  real project root even in dry-run mode (protected by the `if (!dryRun) manager.update()` guard in
+  Node.js and the `opts.InstallMissing` guard in Go/Python, which limit the blast radius but do not
+  provide full dry-run isolation).
+
+This is a **declared and accepted residual** (Gap D, Wave 0 threat model,
+`docs/seguranca/2026-08-27-modelo-de-ameaca-do-sandbox-por-inclusao.md` §R2). Closing it would
+require either (a) a static relPaths declaration for every catalog artifact (impractical — the
+catalog is runtime-resolved) or (b) a separate inspection-based dry-run path for this target.
+Neither is in scope for the inclusion-sandbox ML (ML-1A of
+`ROADMAP-2026-08-27-sandbox-do-update-dry-run-por-lista-de-inclusao-dos-destinos-declarados.md`).
+
 ### `updated` vs `skipped` — the discriminator is content, not action
 
 <!-- trackfw-contract: gate=scripts/check-update-parity.sh -->

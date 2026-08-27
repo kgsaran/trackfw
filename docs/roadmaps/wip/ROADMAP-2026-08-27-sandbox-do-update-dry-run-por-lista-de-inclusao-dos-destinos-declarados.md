@@ -33,7 +33,7 @@ qualquer coisa fora do conjunto declarado deixa de ter efeito.
 > Dependencies: none. Blocks all implementation.
 
 ### ML-0A — Completude da lista de destinos declarados
-**Status:** ⬜ Pendente · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
+**Status:** ✅ Concluído · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
 **Escreve:** `docs/seguranca/2026-08-27-modelo-de-ameaca-do-sandbox-por-inclusao.md`
 
 **A pergunta que decide a entrega:** a lista de destinos declarados está **completa**? Se faltar um
@@ -65,7 +65,7 @@ grep -q "Residual declarado" docs/seguranca/2026-08-27-modelo-de-ameaca-do-sandb
 > Dependências: ML-0A auditado. **ML único:** os 3 stacks saem byte-idênticos.
 
 ### ML-1A — Lista de inclusão nos 3 CLIs
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-0A
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-0A
 
 `internal/generators/update.go:2121` (`copyProjectTree`) e o equivalente Python
 (`pypi/trackfw/commands/update.py:535`) — confirmar se o Node tem o mesmo padrão.
@@ -75,10 +75,56 @@ grep -q "Residual declarado" docs/seguranca/2026-08-27-modelo-de-ameaca-do-sandb
 
 ---
 
+### Auditoria do ML-0A e do ML-1A — aprovadas; a Wave 0 inverteu a ordem do trabalho
+
+**A Wave 0 achou SEIS gaps, três HIGH — e dois deles são defeito HOJE, independente do sandbox:**
+
+```
+A (HIGH)  .windsurf/hooks.json                    escrito por InjectWindsurfHooks, NAO declarado
+B (HIGH)  .amazonq/cli-agents/q_cli_default.json  escrito por InjectAmazonQHooks,  NAO declarado
+C (HIGH)  .github/copilot-instructions.md         SINAL de deteccao; sem ele o dry-run diz missing
+                                                  onde o run real diz updated
+E (MED)   trackfw.yaml                            lido PARA CONTEUDO no sandbox (agent_conventions,
+                                                  agent_models); sem ele o hash de CLAUDE.md diverge
+D (MED)   codex-project-agents                    bypassa runFileTarget — fora do alcance do sandbox
+F (LOW)   Python                                  faltava scripts/trackfw-git-branch-guard.sh
+```
+
+Confirmei A e B por leitura (`update.go:1881-1890` não os continha). **A linha `skipped (...)` que o
+`trackfw update` imprimiu para o KG hoje já omitia dois caminhos que ele de fato escreve.**
+
+**Isso inverteu a ordem do trabalho:** com sandbox por inclusão, declaração incompleta deixa de
+**abortar** e passa a **mentir por omissão** — pior, porque abortar é visível. Mandei corrigir a
+declaração **antes** de inverter o sandbox.
+
+**Achado que evitou trabalho:** o **Node não tinha o defeito** — usa `fs.existsSync`, que segue o
+symlink e devolve `false` no link quebrado. A classe de abort era só de Go e Python.
+
+#### Medição minha, com a repro do KG
+
+```
+fixture com .venv/bin/python -> python3.99 (alvo inexistente)
+  trackfw update --dry-run  ->  exit 0 · updated=1 missing=4     <- era o abort do CMDB
+
+symlink quebrado DENTRO do conjunto (CLAUDE.md -> /nao-existe)
+  trackfw update --dry-run  ->  exit 0 · missing=5               <- tratado como ausente, sem abort
+
+declaracoes corrigidas nos 3 CLIs (update.go:1891-1892, update.py:94)
+make quality (CI-exata, minha)  exit 0
+```
+
+**Correção minha antes do commit:** a seção nova do `cli-parity.md` que documenta o resíduo D veio
+**sem anotação de contrato**, e o `check-parity-contract-coverage.sh` reprovou. Anotei como `gap` com
+o motivo — *não há gate porque não há comportamento a fixar; a seção documenta a **ausência** de
+garantia*. É a segunda vez em dois dias que esse checker pega documentação sem verificação: antes um
+`gate=` apontando para stub vazio, agora uma seção sem anotação nenhuma.
+
+---
+
 ## Wave 2 — Gate
 
 ### ML-2A — Paridade e falsificação nas duas direções
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-1A
+**Status:** 🔄 Em andamento · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-1A
 
 Direção A: destino declarado que **deixa** de ser copiado ⇒ detectado. Direção B: sandbox voltando a
 copiar a árvore inteira ⇒ detectado.
