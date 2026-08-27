@@ -4,6 +4,42 @@
 
 ---
 
+## Sessão 2026-08-27 — apolo-tf (FIM: ML-1B — Correções F1/F2/F3 + gaps de inventário do audit-surface / CONCLUÍDO)
+
+Branch `feat/comando-que-audita-a-superficie-executavel-de-um-checkout-de-pr`.
+
+**Veredito:** APROVADO. 17/17 cenários no gate. SELFTEST_BREAK=A e B confirmados nos cenários designados.
+`trackfw validate` exit 0.
+
+**Entregáveis:**
+- `internal/auditsurface/auditsurface.go` — F1 (normalizeCommand expandido: .bash/.zsh/etc., args, intérprete prefix), F2 (getSymlinkTarget + symlink seguido com digest real), Gap A (.vscode/tasks.json), Gap B (package.json discovery), FormatText lifecycle fix
+- `internal/commands/audit_surface.go` — F3 (validateRef usa ^{commit})
+- `npm/src/commands/audit-surface.js` — paridade completa (F1/F2/F3/Gap A/Gap B)
+- `pypi/trackfw/commands/audit_surface.py` — paridade completa (F1/F2/F3/Gap A/Gap B)
+- `scripts/check-audit-surface.sh` — 10 cenários novos (FN-F1a/b/c, FN-F2, FN-F3 com parity + vacuidade)
+- `docs/cli-parity.md` — vocabulário de digest atualizado, .vscode/tasks.json documentado
+
+**Provas F1 (3 formas):**
+- `.bash`: sha256:bfd918a… → sha256:6c9997… (CHANGED=YES)
+- `--arg`: sha256:bfd918a… → sha256:6c9997… (CHANGED=YES)
+- `bash cmd`: sha256:bfd918a… → sha256:6c9997… (CHANGED=YES)
+
+**Prova F2 (symlink):** `symlink->real.sh|sha256:8bb7138…` → `symlink->real.sh|sha256:335a931…` (CHANGED=YES)
+
+**Prova F3 (ref inválido):** EXIT=1, STDOUT vazio
+
+---
+
+## Sessão 2026-08-27 — apolo-tf (INÍCIO: ML-1B — Correções F1/F2/F3 + gaps de inventário do audit-surface)
+
+Branch `feat/comando-que-audita-a-superficie-executavel-de-um-checkout-de-pr`.
+
+**Escopo:** Corrigir os três achados de segurança da barreira ML-3A (F1 HIGH, F2 HIGH, F3 MEDIUM)
+e os dois gaps de inventário (.vscode/tasks.json, package.json discovery). Paridade nos 3 CLIs,
+gate atualizado com cenários F1/F2/F3.
+
+---
+
 ## Sessão 2026-08-27 — hades-tf (FIM: ML-3A — Barreira do audit-surface / REPROVADO parcial em AC14)
 
 Branch `fix/validate-detecta-hook-de-guard-na-forma-relativa-antiga`.

@@ -90,9 +90,10 @@ func findGitRoot() (string, error) {
 	return strings.TrimRight(string(out), "\n"), nil
 }
 
-// validateRef checks that the ref resolves in the repository.
+// validateRef checks that the ref resolves to a commit object in this repository.
+// Using ^{commit} ensures a 40-hex SHA from another repository is rejected (F3 fix).
 func validateRef(ref, gitRoot string) error {
-	cmd := exec.Command("git", "rev-parse", "--verify", ref)
+	cmd := exec.Command("git", "rev-parse", "--verify", ref+"^{commit}")
 	cmd.Dir = gitRoot
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr

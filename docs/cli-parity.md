@@ -5523,7 +5523,7 @@ Implemented: Wave 1 / ML-1A (2026-08-27, apolo-tf)
 ```
 trackfw audit-surface: N hook tuple(s) at REF
 [blank line]
-hook [runtime] wiring-file event/matcher raw-command sha256:digest
+hook [runtime] wiring-file event/matcher raw-command <digest>
 ...
 absent [runtime] wiring-file
 ...
@@ -5533,6 +5533,25 @@ slash-command path
 ...
 lifecycle [present|absent] file key [command]
 ```
+
+`<digest>` values for hook tuples:
+- `sha256:<hex>` — script resolved and hashed
+- `not-found` — resolved path does not exist at the ref
+- `unresolvable` — command genuinely cannot be resolved to a file path (pipe, builtin, `-c` inline string)
+- `symlink-><target>|sha256:<hex>` — script is a git symlink; target content hashed (F2 fix)
+- `symlink-><target>|not-found` — symlink target absent at the ref
+- `symlink-><target>|not-supported` — absolute symlink target (not followed without checkout)
+
+`normalizeCommand` resolves: bare paths, paths with arguments, interpreter-prefix forms
+(`bash x.sh`, `python3 x.py`, etc.), and `$CLAUDE_PROJECT_DIR/`-prefixed paths.
+Recognised script extensions: `.sh .bash .zsh .py .js .rb .pl .fish`
+
+`lifecycle` lines:
+- `lifecycle [present] file key` for presence-only entries (e.g., `.vscode/tasks.json`)
+- `lifecycle [present] file key command` when a command was extracted
+- `lifecycle [absent] file key` when absent
+Lifecycle inventory: `package.json` (discovered: root first, then `npm/package.json`),
+`.husky/pre-commit`, `.vscode/tasks.json` (presence/absence only).
 
 ### JSON output format
 

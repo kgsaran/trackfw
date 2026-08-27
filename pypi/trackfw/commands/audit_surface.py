@@ -12,6 +12,7 @@ Mirrors internal/auditsurface/auditsurface.go and npm/src/commands/audit-surface
 
 import hashlib
 import json
+import posixpath
 import subprocess
 import sys
 
@@ -80,23 +81,95 @@ def find_git_root(cwd: str | None = None) -> str | None:
 
 def normalize_command(raw_cmd: str) -> str:
     """Strip known project-root env-var prefixes to get a repo-relative script path.
-    Returns '' if the command cannot be resolved to a file path."""
+    Returns '' if genuinely unresolvable (inline pipeline, -c string, builtin, etc.).
+
+    Resolved forms:
+      bare path:           "scripts/hook.sh"
+      path with args:      "scripts/hook.sh --strict" -> "scripts/hook.sh"
+      interpreter prefix:  "bash scripts/hook.sh"     -> "scripts/hook.sh"
+      project-root prefix: "$CLAUDE_PROJECT_DIR/scripts/hook.sh" -> "scripts/hook.sh"
+
+    Recognised script extensions: .sh .bash .zsh .py .js .rb .pl .fish
+    """
     cmd = raw_cmd.strip()
     # Strip surrounding double-quotes (Codex format).
     if cmd.startswith('"') and cmd.endswith('"'):
         cmd = cmd[1:-1]
+
     prefixes = [
         "$CLAUDE_PROJECT_DIR/",
         "$GEMINI_PROJECT_DIR/",
         "$(git rev-parse --show-toplevel)/",
     ]
-    for p in prefixes:
-        if cmd.startswith(p):
-            return cmd[len(p):]
-    # Accept bare relative script path.
-    if " " not in cmd and (cmd.endswith(".sh") or cmd.endswith(".py") or cmd.endswith(".js")):
-        return cmd
-    return ""
+
+    def strip_prefix(s: str) -> str:
+        for p in prefixes:
+            if s.startswith(p):
+                return s[len(p):]
+        return s
+
+    cmd = strip_prefix(cmd)
+
+    script_exts = (".sh", ".bash", ".zsh", ".py", ".js", ".rb", ".pl", ".fish")
+
+    # No spaces: bare path — accept if it has a recognised script extension.
+    if " " not in cmd:
+        return cmd if cmd.endswith(script_exts) else ""
+
+    # Command has spaces: interpreter prefix or path-with-arguments.
+    interpreters = {
+        "bash", "sh", "dash", "zsh",
+        "python", "python3", "python2",
+        "node", "nodejs",
+        "ruby", "perl",
+    }
+    tokens = cmd.split()
+    candidate = ""
+
+    if tokens[0] in interpreters:
+        # Interpreter prefix form: skip flags to find the script argument.
+        for tok in tokens[1:]:
+            if tok == "-c":
+                return ""  # inline script string, not a file path
+            if tok.startswith("-"):
+                continue  # flags: -e, -u, -x, etc.
+            candidate = tok
+            break
+    else:
+        # No interpreter: first token is the script path, rest are arguments.
+        candidate = tokens[0]
+
+    if not candidate:
+        return ""
+
+    # Strip project-root prefixes from candidate too.
+    candidate = strip_prefix(candidate)
+
+    return candidate if candidate.endswith(script_exts) else ""
+
+
+def get_symlink_target(ref: str, script_path: str, git_root: str) -> tuple[str, bool]:
+    """Check whether path at ref is a git symlink (mode 120000).
+    Returns (target, True) if symlink, ('', False) otherwise."""
+    result = subprocess.run(
+        ["git", "ls-tree", ref, "--", script_path],
+        cwd=git_root,
+        capture_output=True,
+    )
+    if result.returncode != 0 or not result.stdout:
+        return "", False
+    line = result.stdout.decode()
+    tab_idx = line.find("\t")
+    if tab_idx < 0:
+        return "", False
+    fields = line[:tab_idx].split()
+    if not fields or fields[0] != "120000":
+        return "", False
+    # Read the symlink target string.
+    target_bytes = git_show(ref, script_path, git_root)
+    if target_bytes is None:
+        return "", False
+    return target_bytes.decode().strip(), True
 
 
 def sha256hex(data: bytes) -> str:
@@ -227,10 +300,21 @@ def extract_windsurf_schema(root: dict) -> list[dict]:
 
 
 def audit_lifecycle_hooks(ref: str, git_root: str) -> list[dict]:
-    """Check npm lifecycle hooks and .husky/pre-commit."""
+    """Check npm lifecycle hooks, .husky/pre-commit, and .vscode/tasks.json."""
     hooks = []
-    npm_content = git_show(ref, "npm/package.json", git_root)
-    if npm_content is not None:
+
+    # npm lifecycle hooks: discover package.json by trying candidate paths in order.
+    npm_candidates = ["package.json", "npm/package.json"]
+    npm_found = None
+    npm_content = None
+    for c in npm_candidates:
+        content = git_show(ref, c, git_root)
+        if content is not None:
+            npm_found = c
+            npm_content = content
+            break
+
+    if npm_found is not None:
         try:
             pkg = json.loads(npm_content.decode())
         except Exception:
@@ -238,12 +322,12 @@ def audit_lifecycle_hooks(ref: str, git_root: str) -> list[dict]:
         scripts = pkg.get("scripts") or {}
         for key in ["preinstall", "postinstall", "prepare"]:
             if key in scripts:
-                hooks.append({"file": "npm/package.json", "key": key, "command": scripts[key], "present": True})
+                hooks.append({"file": npm_found, "key": key, "command": scripts[key], "present": True})
             else:
-                hooks.append({"file": "npm/package.json", "key": key, "present": False})
+                hooks.append({"file": npm_found, "key": key, "present": False})
     else:
         for key in ["preinstall", "postinstall", "prepare"]:
-            hooks.append({"file": "npm/package.json", "key": key, "present": False})
+            hooks.append({"file": "package.json", "key": key, "present": False})
 
     husky_content = git_show(ref, ".husky/pre-commit", git_root)
     if husky_content is not None:
@@ -251,6 +335,10 @@ def audit_lifecycle_hooks(ref: str, git_root: str) -> list[dict]:
         hooks.append({"file": ".husky/pre-commit", "key": "pre-commit", "command": cmd, "present": True})
     else:
         hooks.append({"file": ".husky/pre-commit", "key": "pre-commit", "present": False})
+
+    # .vscode/tasks.json — presence/absence only (AC13 pattern: absence is information).
+    vs_content = git_show(ref, ".vscode/tasks.json", git_root)
+    hooks.append({"file": ".vscode/tasks.json", "key": "tasks", "present": vs_content is not None})
     return hooks
 
 
@@ -279,11 +367,24 @@ def run_audit_surface(ref: str, base: str, git_root: str) -> dict:
             })
             continue
         tuples = extract_tuples(runtime, content)
-        # Compute digests.
+        # Compute digests, detecting git symlinks (mode 120000).
         for t in tuples:
             if t["script_path"]:
-                script_bytes = git_show(ref, t["script_path"], git_root)
-                t["script_digest"] = sha256hex(script_bytes) if script_bytes is not None else "not-found"
+                target, is_link = get_symlink_target(ref, t["script_path"], git_root)
+                if is_link:
+                    if target.startswith("/"):
+                        t["script_digest"] = f"symlink->{target}|not-supported"
+                    else:
+                        link_dir = posixpath.dirname(t["script_path"])
+                        resolved = posixpath.join(link_dir, target)
+                        real_bytes = git_show(ref, resolved, git_root)
+                        if real_bytes is not None:
+                            t["script_digest"] = f"symlink->{target}|" + sha256hex(real_bytes)
+                        else:
+                            t["script_digest"] = f"symlink->{target}|not-found"
+                else:
+                    script_bytes = git_show(ref, t["script_path"], git_root)
+                    t["script_digest"] = sha256hex(script_bytes) if script_bytes is not None else "not-found"
             else:
                 t["script_digest"] = "unresolvable"
         report["hook_wiring"].append({
@@ -337,7 +438,10 @@ def format_text(report: dict) -> str:
 
     for lh in report["lifecycle_hooks"]:
         if lh["present"]:
-            lines.append(f"lifecycle [present] {lh['file']} {lh['key']} {lh['command']}")
+            line = f"lifecycle [present] {lh['file']} {lh['key']}"
+            if lh.get("command"):
+                line += f" {lh['command']}"
+            lines.append(line)
         else:
             lines.append(f"lifecycle [absent] {lh['file']} {lh['key']}")
 
@@ -354,17 +458,18 @@ def run(args) -> int:
     git_root = find_git_root()
     if not git_root:
         sys.stderr.write("audit-surface: not inside a git repository\n")
-        return 1
+        sys.exit(1)
 
-    # Validate ref.
+    # Validate ref resolves to a commit object in this repository (F3 fix: ^{commit} rejects
+    # a 40-hex SHA from another repo that git would otherwise accept without ^{commit}).
     result = subprocess.run(
-        ["git", "rev-parse", "--verify", ref],
+        ["git", "rev-parse", "--verify", ref + "^{commit}"],
         cwd=git_root,
         capture_output=True,
     )
     if result.returncode != 0:
         sys.stderr.write(f'audit-surface: ref "{ref}" does not resolve\n')
-        return 1
+        sys.exit(1)
 
     base = getattr(args, "base", None) or ""
     report = run_audit_surface(ref, base, git_root)

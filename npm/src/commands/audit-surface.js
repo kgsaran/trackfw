@@ -61,7 +61,16 @@ function findGitRoot(cwd) {
 }
 
 // normalizeCommand strips known project-root env-var prefixes and outer quotes
-// to produce a repo-relative script path. Returns '' if unresolvable.
+// to produce a repo-relative script path. Returns '' if genuinely unresolvable
+// (inline pipeline, -c string, builtin, etc.).
+//
+// Resolved forms:
+//   bare path:          "scripts/hook.sh"
+//   path with args:     "scripts/hook.sh --strict" → "scripts/hook.sh"
+//   interpreter prefix: "bash scripts/hook.sh"     → "scripts/hook.sh"
+//   project-root prefix:"$CLAUDE_PROJECT_DIR/scripts/hook.sh" → "scripts/hook.sh"
+//
+// Recognised script extensions: .sh .bash .zsh .py .js .rb .pl .fish
 function normalizeCommand(rawCmd) {
   let cmd = rawCmd.trim()
   // Strip surrounding double-quotes (Codex format).
@@ -73,14 +82,63 @@ function normalizeCommand(rawCmd) {
     '$GEMINI_PROJECT_DIR/',
     '$(git rev-parse --show-toplevel)/',
   ]
-  for (const p of prefixes) {
-    if (cmd.startsWith(p)) return cmd.slice(p.length)
+  const stripPrefix = s => {
+    for (const p of prefixes) {
+      if (s.startsWith(p)) return s.slice(p.length)
+    }
+    return s
   }
-  // Accept bare relative script path.
-  if (!cmd.includes(' ') && (cmd.endsWith('.sh') || cmd.endsWith('.py') || cmd.endsWith('.js'))) {
-    return cmd
+  cmd = stripPrefix(cmd)
+
+  const scriptExts = ['.sh', '.bash', '.zsh', '.py', '.js', '.rb', '.pl', '.fish']
+  const hasScriptExt = s => scriptExts.some(ext => s.endsWith(ext))
+
+  // No spaces: bare path — accept if it has a recognised script extension.
+  if (!cmd.includes(' ')) {
+    return hasScriptExt(cmd) ? cmd : ''
   }
-  return ''
+
+  // Command has spaces: interpreter prefix or path-with-arguments.
+  const interpreters = new Set(['bash', 'sh', 'dash', 'zsh', 'python', 'python3', 'python2', 'node', 'nodejs', 'ruby', 'perl'])
+  const tokens = cmd.trim().split(/\s+/)
+  let candidate = ''
+
+  if (interpreters.has(tokens[0])) {
+    for (let i = 1; i < tokens.length; i++) {
+      if (tokens[i] === '-c') return '' // inline script string, not a file path
+      if (tokens[i].startsWith('-')) continue // flags: -e, -u, -x, etc.
+      candidate = tokens[i]
+      break
+    }
+  } else {
+    // No interpreter: first token is the script path, rest are arguments.
+    candidate = tokens[0]
+  }
+
+  if (!candidate) return ''
+
+  // Strip project-root prefixes from candidate too.
+  candidate = stripPrefix(candidate)
+
+  return hasScriptExt(candidate) ? candidate : ''
+}
+
+// getSymlinkTarget checks whether path at ref is a git symlink (mode 120000).
+// Returns { target, isLink } — isLink is true when it's a symlink.
+function getSymlinkTarget(ref, scriptPath, gitRoot) {
+  const result = spawnSync('git', ['ls-tree', ref, '--', scriptPath], { cwd: gitRoot })
+  if (result.status !== 0 || !result.stdout || result.stdout.length === 0) {
+    return { target: '', isLink: false }
+  }
+  const line = result.stdout.toString()
+  const tabIdx = line.indexOf('\t')
+  if (tabIdx < 0) return { target: '', isLink: false }
+  const fields = line.slice(0, tabIdx).trim().split(/\s+/)
+  if (!fields.length || fields[0] !== '120000') return { target: '', isLink: false }
+  // Read the symlink target string.
+  const targetBuf = gitShow(ref, scriptPath, gitRoot)
+  if (!targetBuf) return { target: '', isLink: false }
+  return { target: targetBuf.toString().trim(), isLink: true }
 }
 
 // sha256hex computes SHA-256 of buffer content.
@@ -223,24 +281,33 @@ function extractWindsurfSchema(root) {
   return tuples
 }
 
-// auditLifecycleHooks checks npm lifecycle hooks and .husky/pre-commit.
+// auditLifecycleHooks checks npm lifecycle hooks, .husky/pre-commit, and .vscode/tasks.json.
 function auditLifecycleHooks(ref, gitRoot) {
   const hooks = []
-  const npmContent = gitShow(ref, 'npm/package.json', gitRoot)
-  if (npmContent) {
+
+  // npm lifecycle hooks: discover package.json by trying candidate paths in order.
+  const npmCandidates = ['package.json', 'npm/package.json']
+  let npmFound = null
+  let npmContent = null
+  for (const c of npmCandidates) {
+    const content = gitShow(ref, c, gitRoot)
+    if (content) { npmFound = c; npmContent = content; break }
+  }
+
+  if (npmFound) {
     let pkg = {}
     try { pkg = JSON.parse(npmContent.toString()) } catch (_) {}
     const scripts = pkg.scripts || {}
     for (const key of ['preinstall', 'postinstall', 'prepare']) {
       if (key in scripts) {
-        hooks.push({ file: 'npm/package.json', key, command: scripts[key], present: true })
+        hooks.push({ file: npmFound, key, command: scripts[key], present: true })
       } else {
-        hooks.push({ file: 'npm/package.json', key, present: false })
+        hooks.push({ file: npmFound, key, present: false })
       }
     }
   } else {
     for (const key of ['preinstall', 'postinstall', 'prepare']) {
-      hooks.push({ file: 'npm/package.json', key, present: false })
+      hooks.push({ file: 'package.json', key, present: false })
     }
   }
 
@@ -251,6 +318,10 @@ function auditLifecycleHooks(ref, gitRoot) {
   } else {
     hooks.push({ file: '.husky/pre-commit', key: 'pre-commit', present: false })
   }
+
+  // .vscode/tasks.json — presence/absence only (AC13 pattern: absence is information).
+  const vsContent = gitShow(ref, '.vscode/tasks.json', gitRoot)
+  hooks.push({ file: '.vscode/tasks.json', key: 'tasks', present: vsContent !== null })
   return hooks
 }
 
@@ -277,11 +348,25 @@ function runAuditSurface(ref, base, gitRoot) {
       continue
     }
     const tuples = extractTuples(runtime, content)
-    // Compute digests for each tuple's script.
+    // Compute digests for each tuple's script, detecting git symlinks (mode 120000).
     for (const t of tuples) {
       if (t.script_path) {
-        const scriptBytes = gitShow(ref, t.script_path, gitRoot)
-        t.script_digest = scriptBytes ? sha256hex(scriptBytes) : 'not-found'
+        const { target, isLink } = getSymlinkTarget(ref, t.script_path, gitRoot)
+        if (isLink) {
+          if (target.startsWith('/')) {
+            t.script_digest = `symlink->${target}|not-supported`
+          } else {
+            const linkDir = path.posix.dirname(t.script_path)
+            const resolved = path.posix.join(linkDir, target)
+            const realBytes = gitShow(ref, resolved, gitRoot)
+            t.script_digest = realBytes
+              ? `symlink->${target}|` + sha256hex(realBytes)
+              : `symlink->${target}|not-found`
+          }
+        } else {
+          const scriptBytes = gitShow(ref, t.script_path, gitRoot)
+          t.script_digest = scriptBytes ? sha256hex(scriptBytes) : 'not-found'
+        }
       } else {
         t.script_digest = 'unresolvable'
       }
@@ -343,7 +428,9 @@ function formatText(report) {
 
   for (const lh of report.lifecycle_hooks) {
     if (lh.present) {
-      lines.push(`lifecycle [present] ${lh.file} ${lh.key} ${lh.command}`)
+      let line = `lifecycle [present] ${lh.file} ${lh.key}`
+      if (lh.command) line += ` ${lh.command}`
+      lines.push(line)
     } else {
       lines.push(`lifecycle [absent] ${lh.file} ${lh.key}`)
     }
@@ -373,8 +460,9 @@ cmd.action((ref, options) => {
     process.exit(1)
   }
 
-  // Validate ref resolves.
-  const validateResult = spawnSync('git', ['rev-parse', '--verify', ref], { cwd: gitRoot })
+  // Validate ref resolves to a commit object in this repository (F3 fix: ^{commit} rejects
+  // a 40-hex SHA from another repo that git would otherwise accept without ^{commit}).
+  const validateResult = spawnSync('git', ['rev-parse', '--verify', ref + '^{commit}'], { cwd: gitRoot })
   if (validateResult.status !== 0) {
     process.stderr.write(`audit-surface: ref "${ref}" does not resolve\n`)
     process.exit(1)

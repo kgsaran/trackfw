@@ -477,4 +477,239 @@ if grep -qF 'internal/generators/agentfiles.go' <<<"$FP1_OUT_GO"; then
 fi
 ok "audit-surface/fp-2/agentfiles-absent"
 
-echo "check-audit-surface: all 7 scenarios passed (FN-1..5, FP-1..2)"
+# ===========================================================================
+# FN-F1a — F1 fix: .bash extension — digest changes when script changes (AC14)
+# ===========================================================================
+FNF1A="$WORK/fn-f1a"
+mkdir -p "$FNF1A/.claude" "$FNF1A/scripts"
+make_repo "$FNF1A"
+
+cat > "$FNF1A/.claude/settings.json" << 'EOF'
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [{"command": "scripts/hook.bash", "type": "command"}]
+      }
+    ]
+  }
+}
+EOF
+printf '#!/usr/bin/env bash\necho "hook-f1a-v1"\n' > "$FNF1A/scripts/hook.bash"
+git -C "$FNF1A" add -A
+git -C "$FNF1A" commit -q -m "init: .bash extension"
+FNF1A_REF1=$(git -C "$FNF1A" rev-parse HEAD)
+
+printf '#!/usr/bin/env bash\necho "hook-f1a-v2-HOSTILE"\n' > "$FNF1A/scripts/hook.bash"
+git -C "$FNF1A" add scripts/hook.bash
+git -C "$FNF1A" commit -q -m "script change only"
+FNF1A_REF2=$(git -C "$FNF1A" rev-parse HEAD)
+
+# Companion guard: settings.json must be identical between refs.
+if [[ -n "$(git -C "$FNF1A" diff "$FNF1A_REF1" "$FNF1A_REF2" -- .claude/settings.json)" ]]; then
+  fail "audit-surface/fn-f1a/settings-unchanged" "settings.json should not differ — fixture setup error"
+fi
+FNF1A_D1=$(cd "$FNF1A" && "$GO_BIN" audit-surface "$FNF1A_REF1" 2>/dev/null | grep 'hook \[claude\]' | awk '{print $NF}')
+FNF1A_D2=$(cd "$FNF1A" && "$GO_BIN" audit-surface "$FNF1A_REF2" 2>/dev/null | grep 'hook \[claude\]' | awk '{print $NF}')
+if [[ -z "$FNF1A_D1" ]]; then
+  fail "audit-surface/fn-f1a/vacuity" "hook [claude] not found at ref1 — vacuity check failed"
+fi
+if [[ "$FNF1A_D1" == "$FNF1A_D2" ]]; then
+  fail "audit-surface/fn-f1a/digest-changes" "digest did not change for .bash extension: both are $FNF1A_D1"
+fi
+ok "audit-surface/fn-f1a/digest-changes"
+assert_parity "audit-surface/fn-f1a" "$FNF1A" "$FNF1A_REF2"
+ok "audit-surface/fn-f1a/parity"
+
+# ===========================================================================
+# FN-F1b — F1 fix: command with arguments — digest changes when script changes
+# ===========================================================================
+FNF1B="$WORK/fn-f1b"
+mkdir -p "$FNF1B/.claude" "$FNF1B/scripts"
+make_repo "$FNF1B"
+
+cat > "$FNF1B/.claude/settings.json" << 'EOF'
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [{"command": "scripts/hook.sh --strict", "type": "command"}]
+      }
+    ]
+  }
+}
+EOF
+printf '#!/usr/bin/env bash\necho "hook-f1b-v1"\n' > "$FNF1B/scripts/hook.sh"
+git -C "$FNF1B" add -A
+git -C "$FNF1B" commit -q -m "init: command with args"
+FNF1B_REF1=$(git -C "$FNF1B" rev-parse HEAD)
+
+printf '#!/usr/bin/env bash\necho "hook-f1b-v2-HOSTILE"\n' > "$FNF1B/scripts/hook.sh"
+git -C "$FNF1B" add scripts/hook.sh
+git -C "$FNF1B" commit -q -m "script change only"
+FNF1B_REF2=$(git -C "$FNF1B" rev-parse HEAD)
+
+if [[ -n "$(git -C "$FNF1B" diff "$FNF1B_REF1" "$FNF1B_REF2" -- .claude/settings.json)" ]]; then
+  fail "audit-surface/fn-f1b/settings-unchanged" "settings.json should not differ — fixture setup error"
+fi
+FNF1B_D1=$(cd "$FNF1B" && "$GO_BIN" audit-surface "$FNF1B_REF1" 2>/dev/null | grep 'hook \[claude\]' | awk '{print $NF}')
+FNF1B_D2=$(cd "$FNF1B" && "$GO_BIN" audit-surface "$FNF1B_REF2" 2>/dev/null | grep 'hook \[claude\]' | awk '{print $NF}')
+if [[ -z "$FNF1B_D1" ]]; then
+  fail "audit-surface/fn-f1b/vacuity" "hook [claude] not found at ref1 — vacuity check failed"
+fi
+if [[ "$FNF1B_D1" == "$FNF1B_D2" ]]; then
+  fail "audit-surface/fn-f1b/digest-changes" "digest did not change for command-with-args: both are $FNF1B_D1"
+fi
+ok "audit-surface/fn-f1b/digest-changes"
+assert_parity "audit-surface/fn-f1b" "$FNF1B" "$FNF1B_REF2"
+ok "audit-surface/fn-f1b/parity"
+
+# ===========================================================================
+# FN-F1c — F1 fix: interpreter prefix — digest changes when script changes
+# ===========================================================================
+FNF1C="$WORK/fn-f1c"
+mkdir -p "$FNF1C/.claude" "$FNF1C/scripts"
+make_repo "$FNF1C"
+
+cat > "$FNF1C/.claude/settings.json" << 'EOF'
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [{"command": "bash scripts/hook.sh", "type": "command"}]
+      }
+    ]
+  }
+}
+EOF
+printf '#!/usr/bin/env bash\necho "hook-f1c-v1"\n' > "$FNF1C/scripts/hook.sh"
+git -C "$FNF1C" add -A
+git -C "$FNF1C" commit -q -m "init: interpreter prefix"
+FNF1C_REF1=$(git -C "$FNF1C" rev-parse HEAD)
+
+printf '#!/usr/bin/env bash\necho "hook-f1c-v2-HOSTILE"\n' > "$FNF1C/scripts/hook.sh"
+git -C "$FNF1C" add scripts/hook.sh
+git -C "$FNF1C" commit -q -m "script change only"
+FNF1C_REF2=$(git -C "$FNF1C" rev-parse HEAD)
+
+if [[ -n "$(git -C "$FNF1C" diff "$FNF1C_REF1" "$FNF1C_REF2" -- .claude/settings.json)" ]]; then
+  fail "audit-surface/fn-f1c/settings-unchanged" "settings.json should not differ — fixture setup error"
+fi
+FNF1C_D1=$(cd "$FNF1C" && "$GO_BIN" audit-surface "$FNF1C_REF1" 2>/dev/null | grep 'hook \[claude\]' | awk '{print $NF}')
+FNF1C_D2=$(cd "$FNF1C" && "$GO_BIN" audit-surface "$FNF1C_REF2" 2>/dev/null | grep 'hook \[claude\]' | awk '{print $NF}')
+if [[ -z "$FNF1C_D1" ]]; then
+  fail "audit-surface/fn-f1c/vacuity" "hook [claude] not found at ref1 — vacuity check failed"
+fi
+if [[ "$FNF1C_D1" == "$FNF1C_D2" ]]; then
+  fail "audit-surface/fn-f1c/digest-changes" "digest did not change for interpreter-prefix: both are $FNF1C_D1"
+fi
+ok "audit-surface/fn-f1c/digest-changes"
+assert_parity "audit-surface/fn-f1c" "$FNF1C" "$FNF1C_REF2"
+ok "audit-surface/fn-f1c/parity"
+
+# ===========================================================================
+# FN-F2 — F2 fix: symlink as script — digest follows real content (AC14)
+# ===========================================================================
+FNF2="$WORK/fn-f2"
+mkdir -p "$FNF2/.claude" "$FNF2/scripts"
+make_repo "$FNF2"
+
+cat > "$FNF2/.claude/settings.json" << 'EOF'
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [{"command": "scripts/link.sh", "type": "command"}]
+      }
+    ]
+  }
+}
+EOF
+printf '#!/usr/bin/env bash\necho "real-v1"\n' > "$FNF2/scripts/real.sh"
+# Create symlink: scripts/link.sh -> real.sh (relative target)
+ln -s real.sh "$FNF2/scripts/link.sh"
+
+git -C "$FNF2" add -A
+git -C "$FNF2" commit -q -m "init: symlink scripts/link.sh -> real.sh"
+FNF2_REF1=$(git -C "$FNF2" rev-parse HEAD)
+
+# Change ONLY real.sh — link.sh symlink and settings.json are untouched.
+printf '#!/usr/bin/env bash\necho "real-v2-HOSTILE"\n' > "$FNF2/scripts/real.sh"
+git -C "$FNF2" add scripts/real.sh
+git -C "$FNF2" commit -q -m "change real.sh only — symlink unchanged"
+FNF2_REF2=$(git -C "$FNF2" rev-parse HEAD)
+
+# Companion guard: settings.json and the symlink entry must be identical between refs.
+if [[ -n "$(git -C "$FNF2" diff "$FNF2_REF1" "$FNF2_REF2" -- .claude/settings.json scripts/link.sh)" ]]; then
+  fail "audit-surface/fn-f2/symlink-wiring-unchanged" "settings.json or link.sh should not differ — fixture setup error"
+fi
+
+FNF2_OUT1=$(cd "$FNF2" && "$GO_BIN" audit-surface "$FNF2_REF1" 2>/dev/null)
+FNF2_D1=$(grep 'hook \[claude\]' <<<"$FNF2_OUT1" | awk '{print $NF}')
+FNF2_D2=$(cd "$FNF2" && "$GO_BIN" audit-surface "$FNF2_REF2" 2>/dev/null | grep 'hook \[claude\]' | awk '{print $NF}')
+
+if [[ -z "$FNF2_D1" ]]; then
+  fail "audit-surface/fn-f2/vacuity" "hook [claude] not found at ref1 — vacuity check failed"
+fi
+# Symlink must be detected: digest field must contain "symlink->".
+FNF2_HOOK_LINE=$(grep 'hook \[claude\]' <<<"$FNF2_OUT1")
+if ! grep -qF 'symlink->' <<<"$FNF2_HOOK_LINE"; then
+  fail "audit-surface/fn-f2/symlink-reported" "expected 'symlink->' in digest for symlink script, got: $FNF2_HOOK_LINE"
+fi
+ok "audit-surface/fn-f2/symlink-reported"
+# Digest must change when real.sh content changes.
+if [[ "$FNF2_D1" == "$FNF2_D2" ]]; then
+  fail "audit-surface/fn-f2/digest-changes" "digest did not change when symlink target content changed: both are $FNF2_D1"
+fi
+ok "audit-surface/fn-f2/digest-changes"
+
+assert_parity "audit-surface/fn-f2" "$FNF2" "$FNF2_REF2"
+ok "audit-surface/fn-f2/parity"
+
+# ===========================================================================
+# FN-F3 — F3 fix: invalid ref → nonzero exit, empty stdout
+# ===========================================================================
+FNF3="$WORK/fn-f3"
+mkdir -p "$FNF3"
+make_repo "$FNF3"
+printf "placeholder\n" > "$FNF3/placeholder.txt"
+git -C "$FNF3" add -A
+git -C "$FNF3" commit -q -m "init: placeholder"
+
+# 40-hex SHA that is NOT an object in this fixture repo.
+FAKE_SHA="0000000000000000000000000000000000000042"
+
+FNF3_GO_EXIT=0
+(cd "$FNF3" && "$GO_BIN" audit-surface "$FAKE_SHA") >/dev/null 2>&1 || FNF3_GO_EXIT=$?
+if [[ "$FNF3_GO_EXIT" -eq 0 ]]; then
+  fail "audit-surface/fn-f3/invalid-ref-go" "expected nonzero exit for invalid ref, got 0"
+fi
+ok "audit-surface/fn-f3/invalid-ref-go"
+
+FNF3_NODE_EXIT=0
+(cd "$FNF3" && node "$NODE_CLI" audit-surface "$FAKE_SHA") >/dev/null 2>&1 || FNF3_NODE_EXIT=$?
+if [[ "$FNF3_NODE_EXIT" -eq 0 ]]; then
+  fail "audit-surface/fn-f3/invalid-ref-node" "expected nonzero exit for invalid ref, got 0"
+fi
+ok "audit-surface/fn-f3/invalid-ref-node"
+
+FNF3_PY_EXIT=0
+(cd "$FNF3" && PYTHONPATH="$PY_ROOT" python3 -m trackfw audit-surface "$FAKE_SHA") >/dev/null 2>&1 || FNF3_PY_EXIT=$?
+if [[ "$FNF3_PY_EXIT" -eq 0 ]]; then
+  fail "audit-surface/fn-f3/invalid-ref-py" "expected nonzero exit for invalid ref, got 0"
+fi
+ok "audit-surface/fn-f3/invalid-ref-py"
+
+# Stdout must be empty on invalid ref (error output goes to stderr).
+FNF3_STDOUT=""
+FNF3_STDOUT=$((cd "$FNF3" && "$GO_BIN" audit-surface "$FAKE_SHA" 2>/dev/null) || true)
+if [[ -n "$FNF3_STDOUT" ]]; then
+  fail "audit-surface/fn-f3/no-stdout-on-error" "expected empty stdout for invalid ref, got: $FNF3_STDOUT"
+fi
+ok "audit-surface/fn-f3/no-stdout-on-error"
+
+echo "check-audit-surface: all 17 scenarios passed (FN-1..5, FP-1..2, FN-F1a/b/c, FN-F2, FN-F3)"

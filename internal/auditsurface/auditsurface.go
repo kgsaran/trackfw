@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"path"
 	"sort"
 	"strings"
 )
@@ -147,12 +148,31 @@ func RunAuditSurface(opts Options) (*Report, error) {
 		// For each tuple, compute the digest of the referenced script.
 		for i := range tuples {
 			if tuples[i].ScriptPath != "" {
-				scriptBytes, scriptErr := gitShow(opts.Ref, tuples[i].ScriptPath, opts.GitRoot)
-				if scriptErr != nil {
-					tuples[i].Digest = "not-found"
+				// Detect git symlinks (mode 120000) before hashing.
+				if target, isLink := getSymlinkTarget(opts.Ref, tuples[i].ScriptPath, opts.GitRoot); isLink {
+					if strings.HasPrefix(target, "/") {
+						// Absolute symlink target — cannot follow safely without checkout.
+						tuples[i].Digest = "symlink->" + target + "|not-supported"
+					} else {
+						// Resolve target relative to the symlink's directory.
+						linkDir := path.Dir(tuples[i].ScriptPath)
+						resolved := path.Join(linkDir, target)
+						realBytes, realErr := gitShow(opts.Ref, resolved, opts.GitRoot)
+						if realErr != nil {
+							tuples[i].Digest = "symlink->" + target + "|not-found"
+						} else {
+							h := sha256.Sum256(realBytes)
+							tuples[i].Digest = "symlink->" + target + "|sha256:" + fmt.Sprintf("%x", h)
+						}
+					}
 				} else {
-					h := sha256.Sum256(scriptBytes)
-					tuples[i].Digest = fmt.Sprintf("sha256:%x", h)
+					scriptBytes, scriptErr := gitShow(opts.Ref, tuples[i].ScriptPath, opts.GitRoot)
+					if scriptErr != nil {
+						tuples[i].Digest = "not-found"
+					} else {
+						h := sha256.Sum256(scriptBytes)
+						tuples[i].Digest = fmt.Sprintf("sha256:%x", h)
+					}
 				}
 			} else {
 				tuples[i].Digest = "unresolvable"
@@ -196,20 +216,33 @@ func RunAuditSurface(opts Options) (*Report, error) {
 	return report, nil
 }
 
-// auditLifecycleHooks checks npm lifecycle hooks and .husky/pre-commit.
+// auditLifecycleHooks checks npm lifecycle hooks, .husky/pre-commit, and .vscode/tasks.json.
 func auditLifecycleHooks(ref, gitRoot string) []LifecycleHook {
 	var hooks []LifecycleHook
 
-	// npm/package.json lifecycle hooks (Rung 4 from threat model).
-	npmContent, err := gitShow(ref, "npm/package.json", gitRoot)
-	if err == nil {
+	// npm lifecycle hooks: discover package.json by trying candidate paths in order.
+	// Try the repo root first (common for external projects), then npm/package.json
+	// (trackfw's own layout). Report whichever is found; if neither, report absent
+	// for "package.json" (the canonical name).
+	npmCandidates := []string{"package.json", "npm/package.json"}
+	npmFound := ""
+	var npmContent []byte
+	for _, c := range npmCandidates {
+		content, err := gitShow(ref, c, gitRoot)
+		if err == nil {
+			npmFound = c
+			npmContent = content
+			break
+		}
+	}
+	if npmFound != "" {
 		var pkg map[string]interface{}
 		if json.Unmarshal(npmContent, &pkg) == nil {
 			scripts, _ := pkg["scripts"].(map[string]interface{})
 			for _, key := range []string{"preinstall", "postinstall", "prepare"} {
 				cmd, ok := scripts[key].(string)
 				hooks = append(hooks, LifecycleHook{
-					File:    "npm/package.json",
+					File:    npmFound,
 					Key:     key,
 					Command: cmd,
 					Present: ok,
@@ -218,7 +251,7 @@ func auditLifecycleHooks(ref, gitRoot string) []LifecycleHook {
 		}
 	} else {
 		for _, key := range []string{"preinstall", "postinstall", "prepare"} {
-			hooks = append(hooks, LifecycleHook{File: "npm/package.json", Key: key, Present: false})
+			hooks = append(hooks, LifecycleHook{File: "package.json", Key: key, Present: false})
 		}
 	}
 
@@ -236,6 +269,15 @@ func auditLifecycleHooks(ref, gitRoot string) []LifecycleHook {
 	} else {
 		hooks = append(hooks, LifecycleHook{File: ".husky/pre-commit", Key: "pre-commit", Present: false})
 	}
+
+	// .vscode/tasks.json — presence/absence only (not parsed; same rationale as the 8
+	// absent runtime wiring files: absence is information, not exclusion — AC13 pattern).
+	_, vsErr := gitShow(ref, ".vscode/tasks.json", gitRoot)
+	hooks = append(hooks, LifecycleHook{
+		File:    ".vscode/tasks.json",
+		Key:     "tasks",
+		Present: vsErr == nil,
+	})
 
 	return hooks
 }
@@ -285,7 +327,17 @@ func gitLsTree(ref, dir, gitRoot string) ([]string, error) {
 
 // normalizeCommand strips known project-root env-var prefixes and outer quotes
 // to produce a repo-relative script path. Returns "" if the command cannot be
-// resolved to a file path (e.g., an inline pipeline like `curl … | sh`).
+// resolved to a file path (e.g., an inline pipeline like `curl … | sh`, or a
+// `-c` inline string). When "" is returned the caller sets Digest = "unresolvable",
+// which means "genuinely could not resolve" — not a normalisation failure.
+//
+// Resolved forms:
+//   - bare path with recognised extension: "scripts/hook.sh"
+//   - path with arguments:                "scripts/hook.sh --strict" → "scripts/hook.sh"
+//   - interpreter prefix + path:          "bash scripts/hook.sh" → "scripts/hook.sh"
+//   - project-root env-var prefix:        "$CLAUDE_PROJECT_DIR/scripts/hook.sh" → "scripts/hook.sh"
+//
+// Recognised script extensions: .sh .bash .zsh .py .js .rb .pl .fish
 func normalizeCommand(rawCmd string) string {
 	cmd := strings.TrimSpace(rawCmd)
 
@@ -300,19 +352,101 @@ func normalizeCommand(rawCmd string) string {
 		"$GEMINI_PROJECT_DIR/",
 		"$(git rev-parse --show-toplevel)/",
 	}
-	for _, p := range prefixes {
-		if strings.HasPrefix(cmd, p) {
-			return cmd[len(p):]
+	stripPrefix := func(s string) string {
+		for _, p := range prefixes {
+			if strings.HasPrefix(s, p) {
+				return s[len(p):]
+			}
 		}
+		return s
+	}
+	cmd = stripPrefix(cmd)
+
+	// Script file extensions we recognise.
+	scriptExts := []string{".sh", ".bash", ".zsh", ".py", ".js", ".rb", ".pl", ".fish"}
+	hasScriptExt := func(s string) bool {
+		for _, ext := range scriptExts {
+			if strings.HasSuffix(s, ext) {
+				return true
+			}
+		}
+		return false
 	}
 
-	// If the result looks like a relative path to a shell script, accept it.
-	if !strings.Contains(cmd, " ") && (strings.HasSuffix(cmd, ".sh") || strings.HasSuffix(cmd, ".py") || strings.HasSuffix(cmd, ".js")) {
-		return cmd
+	// No spaces: bare path — accept if it has a recognised script extension.
+	if !strings.Contains(cmd, " ") {
+		if hasScriptExt(cmd) {
+			return cmd
+		}
+		return ""
 	}
 
-	// Cannot resolve to a file path (inline command, pipe, etc.).
+	// Command has spaces: interpreter prefix or path-with-arguments.
+	interpreters := map[string]bool{
+		"bash": true, "sh": true, "dash": true, "zsh": true,
+		"python": true, "python3": true, "python2": true,
+		"node": true, "nodejs": true,
+		"ruby": true, "perl": true,
+	}
+
+	tokens := strings.Fields(cmd)
+	var candidate string
+	if interpreters[tokens[0]] {
+		// Interpreter prefix form: skip flags to find the script argument.
+		for i := 1; i < len(tokens); i++ {
+			if tokens[i] == "-c" {
+				// -c means the next token is an inline script string, not a file path.
+				return ""
+			}
+			if strings.HasPrefix(tokens[i], "-") {
+				continue // other flags: -e, -u, -x, etc.
+			}
+			candidate = tokens[i]
+			break
+		}
+	} else {
+		// No interpreter: first token is the script path, rest are arguments.
+		candidate = tokens[0]
+	}
+
+	if candidate == "" {
+		return ""
+	}
+
+	// Strip project-root prefixes from the candidate too
+	// (e.g., "bash $CLAUDE_PROJECT_DIR/scripts/hook.sh").
+	candidate = stripPrefix(candidate)
+
+	if hasScriptExt(candidate) {
+		return candidate
+	}
 	return ""
+}
+
+// getSymlinkTarget checks whether the path at ref is a git symlink (mode 120000
+// in the object database). If it is, it returns the raw symlink target string and true.
+// Returns ("", false) for regular files or if the path is absent.
+func getSymlinkTarget(ref, scriptPath, gitRoot string) (string, bool) {
+	// git ls-tree output format: "<mode> <type> <sha>\t<path>\n"
+	out, err := exec.Command("git", "ls-tree", ref, "--", scriptPath).Output()
+	if err != nil || len(out) == 0 {
+		return "", false
+	}
+	// Split on tab to separate mode/type/sha from path.
+	tabIdx := bytes.IndexByte(out, '\t')
+	if tabIdx < 0 {
+		return "", false
+	}
+	fields := strings.Fields(string(out[:tabIdx]))
+	if len(fields) < 1 || fields[0] != "120000" {
+		return "", false
+	}
+	// Read the symlink target: git show <ref>:<symlink> returns the target string.
+	targetBytes, err := gitShow(ref, scriptPath, gitRoot)
+	if err != nil {
+		return "", false
+	}
+	return strings.TrimSpace(string(targetBytes)), true
 }
 
 // extractTuples parses a wiring-file JSON and returns the (event, matcher, command) tuples.
@@ -616,7 +750,11 @@ func FormatText(r *Report) string {
 
 	for _, lh := range r.LifecycleHooks {
 		if lh.Present {
-			body = append(body, fmt.Sprintf("lifecycle [present] %s %s %s", lh.File, lh.Key, lh.Command))
+			line := fmt.Sprintf("lifecycle [present] %s %s", lh.File, lh.Key)
+			if lh.Command != "" {
+				line += " " + lh.Command
+			}
+			body = append(body, line)
 		} else {
 			body = append(body, fmt.Sprintf("lifecycle [absent] %s %s", lh.File, lh.Key))
 		}

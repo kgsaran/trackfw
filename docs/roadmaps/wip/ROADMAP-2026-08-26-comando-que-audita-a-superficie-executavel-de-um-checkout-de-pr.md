@@ -276,7 +276,7 @@ imprime três linhas `lifecycle [absent]` **tranquilizadoras** varrendo o path e
 ## Wave 4 — Correção pós-barreira
 
 ### ML-1B — Os dois casos em que o relatório mente
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
 
 | # | Onde | Correção |
 |---|---|---|
@@ -291,6 +291,44 @@ imprime três linhas `lifecycle [absent]` **tranquilizadoras** varrendo o path e
 - [ ] F3: ref inexistente → erro, **não** relatório vazio com exit 0
 - [ ] Cenários novos no `check-audit-surface.sh` para F1, F2 e F3, com guard de vacuidade
 - [ ] `make quality` CI-exata **exit 0** · `validate` 16 warnings
+
+---
+
+### Auditoria do ML-1B — aprovada; os três casos em que o relatório mentia estão fechados
+
+**F3 confirmado por medição minha:**
+
+```
+$ trackfw audit-surface 0000000000000000000000000000000000000042
+Error: audit-surface: ref "000000…42" does not resolve: fatal: Needed a single revision
+(antes: "0 hook tuple(s)" + exit 0)
+```
+
+**F1 e F2, com a evidência dele:**
+
+```
+F1  .bash · --arg · bash cmd  ->  digest MUDA entre refs   (antes: "unresolvable" fixo)
+    genuinamente irresoluvel (-c, pipes) segue marcado como tal
+F2  symlink->real.sh|sha256:8bb7138 -> sha256:335a931  + marcador de symlink
+```
+
+O F2 é o que importava: o relatório **diz que é symlink** e o digest acompanha o conteúdo real, em vez
+de hashear o nome do alvo e parecer estável para sempre.
+
+**Gaps de inventário fechados:** `.vscode/tasks.json` presente · `package.json` **por descoberta**,
+não path fixo.
+
+```
+check-audit-surface        17/17 cenarios, byte-identicos nos 3 CLIs
+SELFTEST_BREAK=A / =B      falham nos cenarios designados
+make quality (CI-exata, minha)  exit 0
+validate                   16 warnings, 0 violations
+```
+
+**Dado de custo, para a decisão de protocolo:** este ML custou **124.436 tokens**, contra **44.255**
+do ML-2A. O protocolo de economia (sem `make quality` no agente, sem dump de log, ponteiros
+`arquivo::símbolo`) ajudou, mas **o escopo domina**: este mexeu em código de produto nos 3 CLIs mais o
+gate; o outro era só gate. A alavanca é o **tamanho do microlote**, não a forma da comunicação.
 
 ---
 
