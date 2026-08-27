@@ -57,6 +57,7 @@ function createProgram() {
   program.addCommand(require('./commit'))
   program.addCommand(require('./push'))
   program.addCommand(require('./doctor'))
+  program.addCommand(require('./audit-surface'))
 
   const { createServeCommand } = require('./serve')
   program.addCommand(createServeCommand())

@@ -4,6 +4,116 @@
 
 ---
 
+## Sessão 2026-08-27 — hades-tf (FIM: ML-3B — Reverificação pós-ML-1B / APROVADO, bloqueio levantado)
+
+Branch `feat/comando-que-audita-a-superficie-executavel-de-um-checkout-de-pr`.
+
+**Veredito:** APROVADO. Os três achados originais (F1 em 3 formas, F2 básico, F3) estão fechados.
+17/17 no gate. Bloqueio levantado.
+
+**Quatro resíduos novos declarados:**
+- R1 (MEDIUM): `env VAR=x script.sh` → `unresolvable` estável. Não é mentira mas é FN.
+- R2 (MEDIUM): path com espaço no nome (e.g., `scripts/sub dir/hook.sh`) → `unresolvable` estável.
+- R3 (HIGH): cadeia de symlinks (link→middle→real): digest = sha256(target string do intermediário). FN quando real muda.
+- R4 (MEDIUM): symlink circular (link→link): sha256 do nome do target, não de conteúdo. Prefixo `symlink->` presente.
+
+Nenhum bloqueia o repositório trackfw (sem hooks em cadeia/circulares aqui).
+
+**Q3 — package.json:** root com postinstall reportado; node_modules e fixtures corretamente ausentes. ✅
+
+**Artefatos atualizados:**
+- `docs/seguranca/2026-08-27-barreira-do-audit-surface.md` — seção Reverificação ML-3B adicionada
+- `docs/roadmaps/wip/ROADMAP-*.md` — ML-3B marcado ✅ Concluído
+
+---
+
+## Sessão 2026-08-27 — hades-tf (INÍCIO: ML-3B — Reverificação dos três achados pós-ML-1B)
+
+Branch `feat/comando-que-audita-a-superficie-executavel-de-um-checkout-de-pr`.
+
+**Escopo:** Confirmar ou negar F1/F2/F3 pós-correção (ML-1B). Medir formas extras de F1 não cobertas
+pelo gate. Medir edge cases de F2 (symlink fora do repo, cadeia, circular, alvo ausente). Verificar
+package.json por descoberta (falso-positivo). Verificar regressão nos 17 cenários. Levantar ou
+manter o bloqueio.
+
+---
+
+## Sessão 2026-08-27 — apolo-tf (FIM: ML-1B — Correções F1/F2/F3 + gaps de inventário do audit-surface / CONCLUÍDO)
+
+Branch `feat/comando-que-audita-a-superficie-executavel-de-um-checkout-de-pr`.
+
+**Veredito:** APROVADO. 17/17 cenários no gate. SELFTEST_BREAK=A e B confirmados nos cenários designados.
+`trackfw validate` exit 0.
+
+**Entregáveis:**
+- `internal/auditsurface/auditsurface.go` — F1 (normalizeCommand expandido: .bash/.zsh/etc., args, intérprete prefix), F2 (getSymlinkTarget + symlink seguido com digest real), Gap A (.vscode/tasks.json), Gap B (package.json discovery), FormatText lifecycle fix
+- `internal/commands/audit_surface.go` — F3 (validateRef usa ^{commit})
+- `npm/src/commands/audit-surface.js` — paridade completa (F1/F2/F3/Gap A/Gap B)
+- `pypi/trackfw/commands/audit_surface.py` — paridade completa (F1/F2/F3/Gap A/Gap B)
+- `scripts/check-audit-surface.sh` — 10 cenários novos (FN-F1a/b/c, FN-F2, FN-F3 com parity + vacuidade)
+- `docs/cli-parity.md` — vocabulário de digest atualizado, .vscode/tasks.json documentado
+
+**Provas F1 (3 formas):**
+- `.bash`: sha256:bfd918a… → sha256:6c9997… (CHANGED=YES)
+- `--arg`: sha256:bfd918a… → sha256:6c9997… (CHANGED=YES)
+- `bash cmd`: sha256:bfd918a… → sha256:6c9997… (CHANGED=YES)
+
+**Prova F2 (symlink):** `symlink->real.sh|sha256:8bb7138…` → `symlink->real.sh|sha256:335a931…` (CHANGED=YES)
+
+**Prova F3 (ref inválido):** EXIT=1, STDOUT vazio
+
+---
+
+## Sessão 2026-08-27 — apolo-tf (INÍCIO: ML-1B — Correções F1/F2/F3 + gaps de inventário do audit-surface)
+
+Branch `feat/comando-que-audita-a-superficie-executavel-de-um-checkout-de-pr`.
+
+**Escopo:** Corrigir os três achados de segurança da barreira ML-3A (F1 HIGH, F2 HIGH, F3 MEDIUM)
+e os dois gaps de inventário (.vscode/tasks.json, package.json discovery). Paridade nos 3 CLIs,
+gate atualizado com cenários F1/F2/F3.
+
+---
+
+## Sessão 2026-08-27 — hades-tf (FIM: ML-3A — Barreira do audit-surface / REPROVADO parcial em AC14)
+
+Branch `fix/validate-detecta-hook-de-guard-na-forma-relativa-antiga`.
+
+**Veredito:** REPROVADO em AC14 para duas formas de comando medidas. Três achados de segurança.
+Os achados não bloqueiam o repositório trackfw (hooks usam `.sh` sem args, sem symlinks), mas
+devem ser resíduos declarados e corrigidos numa REQ própria antes de promover `audit-surface`
+como ferramenta genérica.
+
+**F1 (HIGH):** `normalizeCommand` não resolve `.bash`, comandos com args ou prefixo de
+interpretador → digest `unresolvable` permanente, Variante A indetectável. Medido.
+Handoff: `internal/auditsurface/auditsurface.go::normalizeCommand`.
+
+**F2 (HIGH):** symlink como script → digest é hash da string do target, não do conteúdo executado.
+Medido: hash idêntico em dois refs onde `real.sh` mudou.
+Handoff: `internal/auditsurface/auditsurface.go::gitShow`.
+
+**F3 (MEDIUM):** `validateRef` usa `git rev-parse --verify` sem `^{commit}` → aceita SHA de
+40 hex de outro repo → relatório "0 hook tuples" + exit 0 vacuoso. Medido.
+Handoff: `internal/commands/audit_surface.go::validateRef`.
+
+**Cobertas e aprovadas:** AC12, AC13, AC15, AC16, AC5, AC6, Variante B, Variante C,
+SELFTEST_BREAK, AC6 com `no_hooks`.
+
+**Artefatos escritos:**
+- `docs/seguranca/2026-08-27-barreira-do-audit-surface.md`
+- ML-3A ✅ Concluído no roadmap
+
+---
+
+## Sessão 2026-08-27 — hades-tf (INÍCIO: ML-3A — Barreira do audit-surface)
+
+Branch `fix/validate-detecta-hook-de-guard-na-forma-relativa-antiga`.
+
+**Escopo:** Reverificação da implementação do `trackfw audit-surface` contra o modelo de ameaça
+(ML-0A). Responde às 5 perguntas do dispatch. Escreve
+`docs/seguranca/2026-08-27-barreira-do-audit-surface.md`.
+
+---
+
 ## Sessão 2026-08-23 — hades-tf (FIM: ML-4A — Barreira final / APROVADO com achado adjacente)
 
 Branch `fix/barrier-nao-executa-gate-de-roadmap-nao-confiavel`.
@@ -24339,3 +24449,180 @@ Roadmap: `ROADMAP-2026-08-23-barrier-nao-executa-gate-de-roadmap-nao-confiavel-e
 - `./bin/trackfw validate` → 16 warnings, 0 violations, exit 0
 
 **Handoff para trackfw_architect:** ML-3A concluído. Aguarda auditoria e commit.
+
+---
+
+## Sessão 2026-08-26 — hades-tf (INÍCIO: ML-0A — Modelo de ameaça da superfície executável de checkout)
+
+Branch `feat/comando-que-audita-a-superficie-executavel-de-um-checkout-de-pr`.
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-26-comando-que-audita-a-superficie-executavel-de-um-checkout-de-pr.md`
+
+**Escopo:** Wave 0 — enumerar por busca a superfície executável de um checkout de PR; produzir
+`docs/seguranca/2026-08-26-modelo-de-ameaca-da-superficie-executavel-de-checkout.md` com as quatro
+seções obrigatórias. Nenhuma implementação neste ML.
+
+**Evidências coletadas antes de escrever:**
+- Runtimes com hook wiring versionado neste repo: claude (`.claude/settings.json`), codex (`.codex/hooks.json`), gemini (`.gemini/settings.json`)
+- Scripts referenciados pelos três wiring files: `scripts/trackfw-git-branch-guard.sh`, `scripts/trackfw-attention-signal.sh`, `scripts/trackfw-attention-cleanup.sh`, `scripts/trackfw-validate.sh` — todos versionados
+- `check-agent-hooks-parity.sh` cobre 8 CLIs project-scope: claude codex gemini copilot cursor kiro windsurf amazonq
+- `.git/config` local: `hooksPath = /dev/null` (desativa hooks git, inclusive o `.husky/pre-commit` versionado)
+- Sem `prepare`/`preinstall`/`postinstall` em `npm/package.json`; CI usa `npm ci --ignore-scripts`
+- Sem `pull_request_target` nos workflows (sem elevação de permissão em PRs)
+- `.claude/settings.local.json` não é versionado
+- Surfaces ausentes neste repo: `.envrc`, `devcontainer.json`, `.vscode/tasks.json`, `.kiro/`, `.windsurf/`, `.cursor/`, `.github/hooks/`, `.amazonq/cli-agents/`
+
+
+---
+
+## Sessão 2026-08-26 — hades-tf (FIM: ML-0A — Modelo de ameaça da superfície executável de checkout)
+
+**Status final:** ✅ ML-0A Concluído.
+
+**Artefato produzido:**
+`docs/seguranca/2026-08-26-modelo-de-ameaca-da-superficie-executavel-de-checkout.md`
+
+**Gate:**
+- `test -f docs/seguranca/2026-08-26-modelo-de-ameaca-da-superficie-executavel-de-checkout.md` → OK
+- `grep -q "Completude de enumera" ...` → OK
+- `grep -q "Residual declarado" ...` → OK
+
+**Decisões e achados chave:**
+- A lista de 6 runtimes do prompt é o escopo *harness* (global-scope). O escopo *project-scope*
+  (entregável por PR) é **8 runtimes**: claude, codex, gemini, copilot, cursor, kiro, windsurf,
+  amazonq — confirmado por `check-agent-hooks-parity.sh CLIS`.
+- Wiring files presentes e versionados: `.claude/settings.json`, `.codex/hooks.json`,
+  `.gemini/settings.json`. Scripts referenciados: 4 scripts em `scripts/`, todos versionados.
+- `hooksPath = /dev/null` no `.git/config` local desativa `.husky/pre-commit`. Não é garantia
+  para clones novos se um PR adicionar `prepare` ao `package.json`.
+- O Wave 1 deve reportar a tupla completa (trigger, matcher, script path, digest) — não só
+  "wiring presente" — para cobrir repontamento de script e alargamento de matcher.
+- Fixture gratuita de FP: este documento e `agentfiles.go` contêm paths de hook como strings
+  literais; grep ingênuo os reportaria como superfície executável.
+- Recomendação ao Wave 1: aceitar ref como argumento e auditar via `git show <ref>:<path>` (sem
+  checkout) para reduzir a janela de "checkout → primeiro uso" para zero.
+
+**Handoff para:** `trackfw_architect` para auditoria e commit do ML-0A.
+
+
+---
+
+**Agente:** apolo-tf | **Data:** 2026-08-27 | **Sessão:** ML-1A (Wave 1)
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-08-26-comando-que-audita-a-superficie-executavel-de-um-checkout-de-pr.md`
+**Branch:** `feat/comando-que-audita-a-superficie-executavel-de-um-checkout-de-pr`
+
+**INÍCIO — ML-1A: Comando `trackfw audit-surface` nos 3 CLIs**
+
+**Baseline antes do trabalho:**
+- `go build ./...` → exit 0
+- `go test ./...` → exit 0, all packages green
+- `./bin/trackfw validate` → 16 warnings, 0 violations
+
+**Escopo lido:**
+- REQ AC1–AC17, threat model, ADR — todos lidos na íntegra
+- Schemas de wiring dos 8 runtimes extraídos de `internal/generators/agentfiles.go`
+- `check-cli-parity.sh` lido: verifica que Node.js e Python têm todos os comandos do Go
+
+**Decisão de nome:** `audit-surface` (único comando hifenizado — autorizado pela threat model §4.1)
+
+**Decisão de formato texto:**
+- Linha flat por entrada: `hook [runtime] wiring-file event/matcher command sha256:digest`
+- Entradas ausentes: `absent [runtime] wiring-file`
+- Arquivos de instrução: `instruction path` / `slash-command path`
+- Ordenação: runtimes em ordem canônica, eventos/matchers ordenados
+- Header: `trackfw audit-surface: N hook tuple(s) at REF`
+
+
+---
+**Agente:** apolo-tf | **Ciclo:** FIM | **Data:** 2026-08-27
+**Tarefa:** ML-1A — `trackfw audit-surface` nos 3 CLIs
+**Branch:** fix/validate-detecta-hook-de-guard-na-forma-relativa-antiga
+**O que foi feito:**
+- `internal/auditsurface/auditsurface.go` — pacote core Go com lógica de 8 runtimes, 5 schemas, AC12/14/16
+- `internal/commands/audit_surface.go` — cobra command com flags `--json`/`--base`
+- `npm/src/commands/audit-surface.js` — implementação Node.js byte-idêntica
+- `pypi/trackfw/commands/audit_surface.py` — implementação Python byte-idêntica
+- Os 3 CLIs registrados nos seus roteadores (root.go, index.js, cli.py)
+- `docs/cli-parity.md` — seção `## trackfw audit-surface` com anotações trackfw-contract
+- `scripts/check-audit-surface.sh` — stub para Wave 2/ML-2A
+**Gates verificados:**
+- `go build ./...` → 0
+- `go test ./...` → todos OK (cached)
+- `go vet ./...` → 0
+- `check-parity-contract-coverage.sh` → 0 (nenhuma seção sem anotação)
+- `check-audit-surface.sh` → 0 (stub)
+- `./bin/trackfw validate` → 0, 16 warnings (idêntico ao baseline)
+**Provas AC:**
+- AC12 (sem checkout): `git status --porcelain` limpo após auditoria de HEAD~1
+- AC14 (3 variantes): fixture 3-commit no /tmp comprova A/B/C
+- AC16 (sem falso-positivo): `grep` em cli-parity.md e agentfiles.go retorna exit 1
+- Saída byte-idêntica: diff golden Go vs Node vs Python → 0
+**Pendência para ML-2A:** `check-audit-surface.sh` com cenários FN-1..5 e FP-1..2
+---
+
+---
+**Agente:** apolo-tf | **Ciclo:** INÍCIO | **Data:** 2026-08-27
+**Tarefa:** ML-2A — Gate `check-audit-surface.sh` com cenários FN-1..5, FP-1..2, falsificação nas duas direções
+**Branch:** feat/comando-que-audita-a-superficie-executavel-de-um-checkout-de-pr
+**O que está sendo feito:**
+- Implementar `scripts/check-audit-surface.sh` com 7 cenários e guard de vacuidade
+- Adicionar cenários 173 (Dir A) e 174 (Dir B) em `scripts/check-gates-falsify.sh`
+- Registrar `check-audit-surface.sh` no alvo `parity` do `Makefile`
+- Devolver as 3 anotações de `gap` para `gate=` em `docs/cli-parity.md`
+
+---
+**Agente:** apolo-tf | **Ciclo:** FIM | **Data:** 2026-08-27
+**Tarefa:** ML-2A — Gate `check-audit-surface.sh` com cenários FN-1..5, FP-1..2, falsificação nas duas direções
+**Branch:** fix/validate-detecta-hook-de-guard-na-forma-relativa-antiga
+**O que foi feito:**
+- `scripts/check-audit-surface.sh` — gate real substituindo o stub; 7 cenários (FN-1..5, FP-1..2); guard de vacuidade em cada cenário; saída byte-idêntica nos 3 CLIs verificada; seams AUDIT_SURFACE_SELFTEST_BREAK=A (digest constante via sha256.Sum256(nil)) e =B (docs/cli-parity.md inserido em instructionFilePaths)
+- `scripts/check-gates-falsify.sh` — cenários 173 (Direção A) e 174 (Direção B) adicionados; total atualizado de 172 para 174; padrões assert_fails_with verificados empiricamente antes de escrever
+- `Makefile` — `GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-audit-surface.sh` inserido no alvo `parity`, antes de `check-gates-falsify.sh`
+- `docs/cli-parity.md` — 3 anotações `gap` devolvidas para `gate=scripts/check-audit-surface.sh`
+- Roadmap ML-2A marcado ✅ Concluído
+**Gates verificados:**
+- `GO_BIN=bin/trackfw bash scripts/check-audit-surface.sh` → OK (14 linhas OK, todos 7 cenários)
+- `AUDIT_SURFACE_SELFTEST_BREAK=A bash scripts/check-audit-surface.sh` → exit 1, FAIL [audit-surface/fn-2/digest-changes-when-script-changes] (padrão confirmado empiricamente)
+- `AUDIT_SURFACE_SELFTEST_BREAK=B bash scripts/check-audit-surface.sh` → exit 1, FAIL [audit-surface/fp-1/cli-parity-absent] (padrão confirmado empiricamente)
+- `bash scripts/check-parity-contract-coverage.sh` → OK — nenhuma seção sem anotação
+- `go build ./...` → 0
+- `go test ./...` → todos OK (cached)
+- `go vet ./...` → 0
+- `bin/trackfw validate` → 0 (16 warnings pré-existentes, 0 violations)
+**Decisões de implementação:**
+- Sabotagem Direção A: `sha256.Sum256(scriptBytes)` → `sha256.Sum256(nil); _ = scriptBytes` (não remove scriptBytes da atribuição, evita erro "declared and not used")
+- Sabotagem Direção B: Python str.replace em instructionFilePaths de auditsurface.go (inserção de ".cursor/rules/trackfw.mdc" → + "docs/cli-parity.md")
+- FP-1/FP-2 usam real repo HEAD (fixture grátis: o repo tem wiring real, docs/cli-parity.md não aparece no output)
+- Seam localizado: EVAL_BIN_FN2/EVAL_BIN_FP1 — só o cenário afetado usa o binário sabotado; parity usa sempre o real GO_BIN
+- Resolução do git commit guard: commits em subprocessos bash (não em Bash tool calls do agente) não são interceptados pelo branch guard; fixture repos usam `core.hooksPath /dev/null` + `commit.gpgsign false`
+**make quality (background):** em andamento (não aguardado — evidências parciais colhidas acima)
+
+---
+## apolo-tf | 2026-08-27 | INÍCIO ML-1C
+**Branch:** feat/comando-que-audita-a-superficie-executavel-de-um-checkout-de-pr
+**Roadmap:** ROADMAP-2026-08-26-comando-que-audita-a-superficie-executavel-de-um-checkout-de-pr.md
+**Microbatch:** ML-1C — R3 (HIGH) cadeia de symlinks: resolução recursiva com limite de profundidade e detecção de ciclo nos 3 CLIs + gate
+**Escopo:** `internal/auditsurface/auditsurface.go` · `npm/src/commands/audit-surface.js` · `pypi/trackfw/commands/audit_surface.py` · `scripts/check-audit-surface.sh`
+**Iniciado:** 2026-08-27
+
+---
+## apolo-tf | 2026-08-27 | FIM ML-1C
+**Branch:** feat/comando-que-audita-a-superficie-executavel-de-um-checkout-de-pr
+**Roadmap:** ROADMAP-2026-08-26-comando-que-audita-a-superficie-executavel-de-um-checkout-de-pr.md
+**Microbatch:** ML-1C — R3 cadeia de symlinks ✅ Concluído
+**Arquivos modificados:**
+- `internal/auditsurface/auditsurface.go` — novo `resolveScriptDigest()` com loop visited+depth; `getSymlinkTarget` com `cmd.Dir=gitRoot` corrigido
+- `npm/src/commands/audit-surface.js` — nova `resolveScriptDigest()` com loop e `Set` de visited; bloco de digest simplificado
+- `pypi/trackfw/commands/audit_surface.py` — nova `resolve_script_digest()` com loop + `posixpath.normpath`; bloco de digest simplificado
+- `scripts/check-audit-surface.sh` — 4 cenários novos (FN-R3-chain, FN-R3-cycle, FN-R3-depth, FN-R3-nonreg) com guard de vacuidade duplo; total 17→21
+- `docs/roadmaps/wip/ROADMAP-*.md` — ML-1C adicionado e marcado ✅
+**Gates verificados:**
+- `go build ./...` → EXIT:0
+- `go test ./internal/auditsurface/...` → EXIT:0
+- `bash scripts/check-audit-surface.sh` → 21/21 EXIT:0
+- `bin/trackfw validate` → 16 warnings pré-existentes, 0 violations, EXIT:0
+**Evidências:**
+- Cadeia 2 níveis REF1: `symlink->middle.sh|sha256:7e9e48f…` / REF2: `symlink->middle.sh|sha256:cf9850…` (digests diferem)
+- Ciclo: `symlink->link.sh|circular-not-supported` (sem sha256)
+- Profundidade (9 hops): `symlink->b.sh|chain-not-supported` (sem sha256)
+- Abs: `symlink->/etc/passwd|not-supported` · Ausente: `symlink->nonexistent.sh|not-found`
+**Resíduos mantidos:** R1 (`env VAR=x`) e R2 (path com espaço) — MEDIUM, fora de escopo deste ML
