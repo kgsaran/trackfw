@@ -94,7 +94,18 @@ function silenceConsole(fn) {
  * - `missing` (nothing present under any of `relPaths`) never triggers
  *   `apply` unless `installMissing` is true.
  */
-function runFileTarget({ id, path: displayPath, root, relPaths, apply, dryRun, installMissing }) {
+// runFileTarget — computes updated/skipped/missing/failed for a target whose
+// only observable effect is writing under a fixed set of paths (files or
+// directories) relative to `root`, by diffing content hashes before/after
+// invoking `apply(root)`.
+//
+// `seeds` (optional) — extra paths copied into the dry-run sandbox but NOT
+// included in the hash comparison. Used for:
+//   - trackfw.yaml: agent-rules reads it for agent_conventions (Gap E)
+//   - detection signals for agent-hooks: .windsurfrules, .github/copilot-
+//     instructions.md, etc. — InjectHooksDetected checks these to decide
+//     which hooks to write; absent → hooks silently omitted (Gap C)
+function runFileTarget({ id, path: displayPath, root, relPaths, seeds = [], apply, dryRun, installMissing }) {
   const before = relPaths.map(rel => hashPath(path.join(root, rel)))
   const allMissingBefore = before.every(h => h === null)
 
@@ -108,6 +119,7 @@ function runFileTarget({ id, path: displayPath, root, relPaths, apply, dryRun, i
       const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-update-'))
       try {
         for (const rel of relPaths) copyPath(path.join(root, rel), path.join(tmp, rel))
+        for (const rel of seeds) copyPath(path.join(root, rel), path.join(tmp, rel))
         silenceConsole(() => apply(tmp))
         after = relPaths.map(rel => hashPath(path.join(tmp, rel)))
       } finally {

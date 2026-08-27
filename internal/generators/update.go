@@ -1849,7 +1849,7 @@ func UpdateProject(cwd string, opts UpdateOptions) (UpdateReport, error) {
 			return UpdateReport{}, fmt.Errorf("preparing dry-run sandbox: %w", mkErr)
 		}
 		defer os.RemoveAll(tmp) //nolint:errcheck
-		if cpErr := copyProjectTree(cwd, tmp); cpErr != nil {
+		if cpErr := copyProjectTree(cwd, tmp, buildSandboxInclusion(selected, cfg)); cpErr != nil {
 			return UpdateReport{}, fmt.Errorf("preparing dry-run sandbox: %w", cpErr)
 		}
 		applyRoot = tmp
@@ -1875,7 +1875,7 @@ func runProjectTarget(id, root string, cfg Config, opts UpdateOptions) TargetRes
 			opts)
 	case "agent-hooks":
 		return runFileTarget(id,
-			".claude/settings.json, .codex/hooks.json, .gemini/settings.json, .kiro/hooks/trackfw-attention.json, .github/hooks/trackfw-attention.json, .cursor/hooks.json, scripts/trackfw-attention-*.sh, scripts/trackfw-credential-guard.sh, scripts/trackfw-git-branch-guard.sh",
+			".claude/settings.json, .codex/hooks.json, .gemini/settings.json, .kiro/hooks/trackfw-attention.json, .github/hooks/trackfw-attention.json, .cursor/hooks.json, scripts/trackfw-attention-*.sh, scripts/trackfw-credential-guard.sh, scripts/trackfw-git-branch-guard.sh, .windsurf/hooks.json, .amazonq/cli-agents/q_cli_default.json",
 			root,
 			[]string{
 				".claude/settings.json",
@@ -1888,6 +1888,8 @@ func runProjectTarget(id, root string, cfg Config, opts UpdateOptions) TargetRes
 				"scripts/trackfw-attention-cleanup.sh",
 				"scripts/trackfw-credential-guard.sh",
 				"scripts/trackfw-git-branch-guard.sh",
+				".windsurf/hooks.json",                   // Gap A: InjectWindsurfHooks writes this
+				".amazonq/cli-agents/q_cli_default.json", // Gap B: InjectAmazonQHooks writes this
 			},
 			func(r string) error {
 				return withChdir(r, func() error {
@@ -2114,36 +2116,176 @@ func withChdir(root string, fn func() error) error {
 	return fn()
 }
 
-// copyProjectTree recursively copies src into dst, skipping .git and
-// node_modules (irrelevant to any project-scope target and potentially
-// large), for use as a --dry-run sandbox that the real project tree is
-// never written through.
-func copyProjectTree(src, dst string) error {
-	return filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
+// buildSandboxInclusion returns the union of paths that must be copied into
+// the --dry-run sandbox for all selected targets to operate correctly.
+//
+// It includes three categories:
+//  1. Each selected target's declared relPaths (the written outputs that
+//     dry-run hashes before and after apply to detect changes).
+//  2. trackfw.yaml — always a prerequisite: agent-rules reads it for
+//     agent_conventions when generating CLAUDE.md (Gap E).
+//  3. Detection-signal files for agent-hooks (Gap C): InjectHooksDetected
+//     checks these files/dirs to decide which hooks to inject. Without them
+//     the sandbox silently skips hooks the real run would write.
+func buildSandboxInclusion(selected []string, cfg Config) []string {
+	seen := make(map[string]struct{})
+	add := func(p string) { seen[p] = struct{}{} }
+
+	// Gap E prerequisite: always copy trackfw.yaml so agent-rules can read
+	// agent_conventions and produce a byte-identical CLAUDE.md.
+	add("trackfw.yaml")
+
+	agentHooksSelected := false
+	for _, id := range selected {
+		switch id {
+		case "agent-rules":
+			for _, p := range []string{
+				"CLAUDE.md",
+				"AGENTS.md",
+				"GEMINI.md",
+				".github/copilot-instructions.md",
+				".windsurfrules",
+				".amazonq/developer/guidelines.md",
+				".cursor/rules/trackfw.mdc",
+			} {
+				add(p)
+			}
+		case "agent-hooks":
+			agentHooksSelected = true
+			for _, p := range []string{
+				".claude/settings.json",
+				".codex/hooks.json",
+				".gemini/settings.json",
+				".kiro/hooks/trackfw-attention.json",
+				".github/hooks/trackfw-attention.json",
+				".cursor/hooks.json",
+				"scripts/trackfw-attention-signal.sh",
+				"scripts/trackfw-attention-cleanup.sh",
+				"scripts/trackfw-credential-guard.sh",
+				"scripts/trackfw-git-branch-guard.sh",
+				".windsurf/hooks.json",                   // Gap A
+				".amazonq/cli-agents/q_cli_default.json", // Gap B
+			} {
+				add(p)
+			}
+		case "validate-script":
+			add("scripts/trackfw-validate.sh")
+		case "claude-commands":
+			add(".claude/commands/trackfw")
+		case "ci-workflow":
+			add(".github/workflows/trackfw-gate.yml")
+			add(".gitlab-ci-trackfw.yml")
+		case "git-hooks":
+			relPath := ".husky/pre-commit"
+			if cfg.Hooks == "lefthook" {
+				relPath = "lefthook.yml"
+			}
+			add(relPath)
 		}
-		rel, relErr := filepath.Rel(src, p)
-		if relErr != nil {
-			return relErr
+	}
+
+	// Gap C: InjectHooksDetected (agent-hooks apply) reads these files to
+	// detect which agents are installed. If only --targets agent-hooks is
+	// requested (without agent-rules), they would be absent from the
+	// sandbox and hooks would be silently omitted.
+	if agentHooksSelected {
+		for _, p := range []string{
+			"CLAUDE.md",
+			"AGENTS.md",
+			"GEMINI.md",
+			".github/copilot-instructions.md",
+			".windsurfrules",
+			".amazonq/developer/guidelines.md",
+		} {
+			add(p)
 		}
-		if rel == "." {
-			return nil
+	}
+
+	result := make([]string, 0, len(seen))
+	for p := range seen {
+		result = append(result, p)
+	}
+	sort.Strings(result)
+	return result
+}
+
+// copyPath copies src to dst using os.Lstat (symlink-aware).
+//
+// Broken symlinks are silently skipped — the destination is simply absent,
+// which causes hashPathContent to return "" (treated as "missing"), matching
+// Node.js's fs.existsSync behaviour (existsSync follows symlinks; broken
+// symlink → false → copyPath returns without copying).
+//
+// Valid symlinks are copied as regular files (the content of the symlink
+// target is written to dst, not the symlink itself), also matching Node.js's
+// fs.copyFileSync behaviour (R6 in the declared residual).
+//
+// Directories are recursed: each entry is copied via copyPath, preserving
+// symlink semantics throughout the subtree. The directory itself is created
+// with os.MkdirAll before the loop so an empty declared directory materialises
+// as present (not absent) in the sandbox.
+func copyPath(src, dst string) error {
+	info, err := os.Lstat(src)
+	if os.IsNotExist(err) {
+		return nil // absent or broken symlink — skip
+	}
+	if err != nil {
+		return err
+	}
+	if info.Mode()&fs.ModeSymlink != 0 {
+		// Symlink: verify it resolves before reading through it.
+		if _, statErr := os.Stat(src); statErr != nil {
+			return nil // broken symlink — skip
 		}
-		if d.IsDir() && (d.Name() == ".git" || d.Name() == "node_modules") {
-			return filepath.SkipDir
-		}
-		target := filepath.Join(dst, rel)
-		if d.IsDir() {
-			return os.MkdirAll(target, 0755)
-		}
-		data, readErr := os.ReadFile(p)
+		// Valid symlink: copy content (os.ReadFile follows symlinks).
+		data, readErr := os.ReadFile(src)
 		if readErr != nil {
 			return readErr
 		}
-		if mkErr := os.MkdirAll(filepath.Dir(target), 0755); mkErr != nil {
+		if mkErr := os.MkdirAll(filepath.Dir(dst), 0755); mkErr != nil {
 			return mkErr
 		}
-		return os.WriteFile(target, data, 0644)
-	})
+		return os.WriteFile(dst, data, 0644)
+	}
+	if info.IsDir() {
+		if mkErr := os.MkdirAll(dst, 0755); mkErr != nil {
+			return mkErr
+		}
+		entries, readErr := os.ReadDir(src)
+		if readErr != nil {
+			return readErr
+		}
+		for _, entry := range entries {
+			if err := copyPath(filepath.Join(src, entry.Name()), filepath.Join(dst, entry.Name())); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	// Regular file.
+	data, readErr := os.ReadFile(src)
+	if readErr != nil {
+		return readErr
+	}
+	if mkErr := os.MkdirAll(filepath.Dir(dst), 0755); mkErr != nil {
+		return mkErr
+	}
+	return os.WriteFile(dst, data, 0644)
+}
+
+// copyProjectTree copies only the declared inclusion paths from src into dst,
+// using copyPath (Lstat-based, symlink-safe) for each entry.
+//
+// This replaces the former WalkDir-based copy that traversed the entire
+// project tree, which aborted on broken symlinks outside the declared
+// target set (KG's CMDB incident: .venv/bin/python → removed python3.13).
+// With inclusion-based copying, anything not in paths is irrelevant —
+// broken symlinks outside the declared set have zero effect.
+func copyProjectTree(src, dst string, paths []string) error {
+	for _, rel := range paths {
+		if err := copyPath(filepath.Join(src, rel), filepath.Join(dst, rel)); err != nil {
+			return fmt.Errorf("sandbox: copying %s: %w", rel, err)
+		}
+	}
+	return nil
 }

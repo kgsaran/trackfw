@@ -2770,6 +2770,98 @@ target order, not filesystem order. `summary` always carries all four counters, 
 All three runtimes declare all five. A runtime that cannot manage a target still declares it and
 reports its honest state — silently shortening the list makes the JSON incomparable across runtimes.
 
+#### Declared residual — `codex-project-agents` is structurally outside the hash-comparison guarantee
+
+<!-- trackfw-contract: gap reason=residual declarado (Wave 0 do ROADMAP-2026-08-27, Gap D): codex-project-agents bypassa runFileTarget e sempre reporta updated, logo esta fora do alcance do sandbox de dry-run por inclusao; nao ha gate porque nao ha comportamento a fixar — a secao documenta a AUSENCIA de garantia, e fixa-la exigiria reescrever o target, o que e escopo alheio a esta REQ -->
+
+`codex-project-agents` does not use `runFileTarget` / `_run_file_target`. It calls
+`codexProjectAgentsApply` (Go), `codexProjectAgentsTarget` (Node.js) or `_codex_project_agents_target`
+(Python) directly. These functions resolve plans from a runtime catalog and return `updated`
+unconditionally when any write occurs — they do NOT compute before/after content hashes. As a result:
+
+- `codex-project-agents` reports `updated` even when the catalog content is byte-identical to what
+  is already installed (false positive).
+- `codex-project-agents` verification is via `manager.Inspect`, not content-hash diffing.
+- The target's output paths are determined at runtime from the catalog, not from a static `relPaths`
+  declaration, so they cannot be seeded into the dry-run sandbox — the target operates against the
+  real project root even in dry-run mode (protected by the `if (!dryRun) manager.update()` guard in
+  Node.js and the `opts.InstallMissing` guard in Go/Python, which limit the blast radius but do not
+  provide full dry-run isolation).
+
+This is a **declared and accepted residual** (Gap D, Wave 0 threat model,
+`docs/seguranca/2026-08-27-modelo-de-ameaca-do-sandbox-por-inclusao.md` §R2). Closing it would
+require either (a) a static relPaths declaration for every catalog artifact (impractical — the
+catalog is runtime-resolved) or (b) a separate inspection-based dry-run path for this target.
+Neither is in scope for the inclusion-sandbox ML (ML-1A of
+`ROADMAP-2026-08-27-sandbox-do-update-dry-run-por-lista-de-inclusao-dos-destinos-declarados.md`).
+
+### `--dry-run` sandbox — inclusion-based copy contract
+
+<!-- trackfw-contract: gate=scripts/check-update-parity.sh -->
+
+`--dry-run` creates a scratch directory seeded with **only the paths declared in each target's
+`relPaths` list** (plus detection-signal seeds, see below). It does **not** walk the whole project
+tree. This closes the class of failures where a broken symlink outside the declared set (e.g.
+`.venv/bin/python → python3.13` deleted by Homebrew) caused `--dry-run` to abort.
+
+**Invariant:** any file or directory outside the declared `relPaths` union has zero effect on
+dry-run state. Broken symlinks outside the set are irrelevant by construction; broken symlinks
+**inside** the set are treated as `missing` (hash returns null), not as errors.
+
+**Detection-signal seeds (not counted in hash comparison):**
+
+| Seed | Purpose |
+|---|---|
+| `trackfw.yaml` | `ReadAgentConventions` reads `agent_conventions` from it; absent → CLAUDE.md hash diverges between dry-run and real run (Gap E) |
+| `.github/copilot-instructions.md` | `InjectHooksDetected` checks this to decide whether to write Copilot hooks; absent → hooks silently omitted (Gap C) |
+| `.windsurfrules` | detection signal for Windsurf presence |
+| `.amazonq/rules.md` | detection signal for Amazon Q presence |
+
+**Gate coverage (Scenarios 9–14 of `check-update-parity.sh`):**
+
+| Scenario | What is proved |
+|---|---|
+| 9 | Dangling symlink **outside** declared set — dry-run exits 0, state unaffected |
+| 10 | Dangling symlink **inside** declared set — dry-run exits 0, target reported as `missing` |
+| 11 (Gap E) | `agent_conventions` in `trackfw.yaml` — dry-run and real-run agree on CLAUDE.md state |
+| 12 (Gap C) | `.github/copilot-instructions.md` present — Copilot hooks written in both dry-run and real run |
+| 13 (Gap A/B) | `.windsurf/hooks.json` and `.amazonq/cli-agents/q_cli_default.json` appear in output paths |
+| 14 (R-novo-1) | `.claude/commands/trackfw` already correct — dry-run and real-run both report `skipped` in all 3 runtimes |
+
+**Falsification (Scenarios 175–176 of `check-gates-falsify.sh`):**
+
+- **Direction A** — `add("trackfw.yaml")` removed from `buildSandboxInclusion` → dry-run reports
+  `skipped` where real run reports `updated` (Gap E regression). Detected by Scenario 11 FAIL line
+  `sandbox/gap-e/dry-vs-real/go`.
+- **Direction B** — `copyProjectTree` body reverted to `filepath.WalkDir + os.ReadFile` →
+  dry-run aborts on broken symlink outside declared set (CMDB regression). Detected by Scenario 9
+  FAIL line `sandbox/dangling-outside-set/exit-zero/go`.
+
+#### Declared residual — declared path or file within a declared directory is unreadable or a special file
+
+<!-- trackfw-contract: gap reason=o comportamento de abort (em vez de failed-por-target) ao encontrar arquivo ilegivel (chmod 000, socket, fifo) em um caminho declarado ou dentro de um diretório declarado é semanticamente defensável (o arquivo é necessário para o target) e consistente nos 3 CLIs; não há comportamento a fixar, logo não há gate; documentado como R-novo-2 da barreira de 2026-08-27 -->
+
+When a file in the declared `relPaths` set (or within a declared directory, after the R-novo-1 fix
+that made `copyPath` recurse) is unreadable (e.g. `chmod 000`) or is a special file (socket, FIFO),
+`copyPath` / `_copy_path` propagates the I/O error up through `copyProjectTree`, causing the
+entire dry-run to abort rather than reporting `failed` for the individual target:
+
+```
+Error: preparing dry-run sandbox: sandbox: copying CLAUDE.md: open /tmp/.../CLAUDE.md: permission denied
+```
+
+This behaviour is the same in all three runtimes (Go, Node.js, Python) and is **semantically
+correct**: the file is needed by the target, so the sandbox cannot be built without it. Treating it
+as `failed` per-target would require the sandbox to proceed with a missing or substitute hash for a
+file that may be central to the before/after comparison.
+
+**Declared and accepted residual** (R-novo-2, barrier review 2026-08-27,
+`docs/seguranca/2026-08-27-barreira-do-sandbox-por-inclusao.md` §3). The surface widened slightly
+after the R-novo-1 fix: before, only a top-level declared path could trigger the abort; now, any
+unreadable or special file **inside** a declared directory (e.g. a `chmod 000` file inside
+`.claude/commands/trackfw`) also triggers it — matching Node.js behaviour, which was already
+recursing and already had this surface.
+
 ### `updated` vs `skipped` — the discriminator is content, not action
 
 <!-- trackfw-contract: gate=scripts/check-update-parity.sh -->

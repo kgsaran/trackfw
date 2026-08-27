@@ -200,6 +200,10 @@ function buildProjectTargets(cwd, cfg, identityConfig, { dryRun, installMissing 
     path: 'CLAUDE.md, AGENTS.md, GEMINI.md, .github/copilot-instructions.md, .windsurfrules, .amazonq/developer/guidelines.md, .cursor/rules/trackfw.mdc',
     root: cwd,
     relPaths: ['CLAUDE.md', 'AGENTS.md', 'GEMINI.md', '.github/copilot-instructions.md', '.windsurfrules', '.amazonq/developer/guidelines.md', '.cursor/rules/trackfw.mdc'],
+    // Gap E: injectRulesDetected → readAgentConventions reads trackfw.yaml from root;
+    // without it in the dry-run sandbox, agent_conventions is silently omitted from
+    // CLAUDE.md, producing a hash that diverges from the real run.
+    seeds: ['trackfw.yaml'],
     apply: (root) => generators.injectRulesDetected(root),
     dryRun,
     installMissing,
@@ -207,7 +211,7 @@ function buildProjectTargets(cwd, cfg, identityConfig, { dryRun, installMissing 
 
   if (include('agent-hooks')) targets.push(runFileTarget({
     id: 'agent-hooks',
-    path: '.claude/settings.json, .codex/hooks.json, .gemini/settings.json, .kiro/hooks/trackfw-attention.json, .github/hooks/trackfw-attention.json, .cursor/hooks.json, scripts/trackfw-attention-*.sh, scripts/trackfw-credential-guard.sh, scripts/trackfw-git-branch-guard.sh',
+    path: '.claude/settings.json, .codex/hooks.json, .gemini/settings.json, .kiro/hooks/trackfw-attention.json, .github/hooks/trackfw-attention.json, .cursor/hooks.json, scripts/trackfw-attention-*.sh, scripts/trackfw-credential-guard.sh, scripts/trackfw-git-branch-guard.sh, .windsurf/hooks.json, .amazonq/cli-agents/q_cli_default.json',
     root: cwd,
     relPaths: [
       '.claude/settings.json',
@@ -220,6 +224,21 @@ function buildProjectTargets(cwd, cfg, identityConfig, { dryRun, installMissing 
       'scripts/trackfw-attention-cleanup.sh',
       'scripts/trackfw-credential-guard.sh',
       'scripts/trackfw-git-branch-guard.sh',
+      '.windsurf/hooks.json',                   // Gap A: injectWindsurfHooks writes this
+      '.amazonq/cli-agents/q_cli_default.json', // Gap B: injectAmazonQHooks writes this
+    ],
+    // Gap C: injectHooksDetected checks these files to decide which hooks to
+    // inject. Without them in the dry-run sandbox, hooks for installed agents
+    // (windsurf, copilot, etc.) are silently omitted — dry-run lies by omission.
+    // Gap E: trackfw.yaml may be read by hooks generators for config.
+    seeds: [
+      'trackfw.yaml',
+      'CLAUDE.md',
+      'AGENTS.md',
+      'GEMINI.md',
+      '.github/copilot-instructions.md',
+      '.windsurfrules',
+      '.amazonq/developer/guidelines.md',
     ],
     apply: (root) => {
       hooksGen.injectHooksDetected(root);

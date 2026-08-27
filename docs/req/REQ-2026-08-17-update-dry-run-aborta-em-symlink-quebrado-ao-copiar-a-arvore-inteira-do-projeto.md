@@ -1,14 +1,14 @@
 ---
-status: Open
+status: done
 date: 2026-08-17
 author: "Zeus (Arquiteto)"
-adr: ""
-roadmap: ""
+adr: "docs/adr/ADR-2026-08-27-sandbox-do-update-dry-run-copia-apenas-os-destinos-declarados-nao-a-arvore-do-projeto.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-27-sandbox-do-update-dry-run-por-lista-de-inclusao-dos-destinos-declarados.md"
 ---
 
 # REQ: `update --dry-run` aborta em symlink quebrado ao copiar a árvore inteira do projeto
 
-> Date: 2026-08-17 | Status: Open (backlog, sem roadmap)
+> Date: 2026-08-17 | Status: done
 | Linear Issue:
 | Jira Issue:
 

@@ -75,22 +75,23 @@ AGENT_HOOKS_RELATIVE_PATHS = [
     os.path.join("scripts", "trackfw-attention-signal.sh"),
     os.path.join("scripts", "trackfw-attention-cleanup.sh"),
     os.path.join("scripts", "trackfw-credential-guard.sh"),
+    os.path.join("scripts", "trackfw-git-branch-guard.sh"),       # Gap F: was missing
+    os.path.join(".windsurf", "hooks.json"),                       # Gap A: InjectWindsurfHooks writes this
+    os.path.join(".amazonq", "cli-agents", "q_cli_default.json"), # Gap B: InjectAmazonQHooks writes this
 ]
 
 # AGENT_HOOKS_DISPLAY_PATH — the reported `path` string for the agent-hooks
 # target. Pinned to match Go's and Node.js's rendering exactly: the two
 # per-file attention scripts are collapsed into a single glob
-# ("scripts/trackfw-attention-*.sh"), not spelled out individually —
-# ML-6H fix (this runtime previously listed both full paths, diverging from
-# the other two even when every underlying state agreed). The credential
-# guard script is listed separately, after the glob, matching Go/Node.js.
-AGENT_HOOKS_DISPLAY_PATH = ", ".join(
-    AGENT_HOOKS_RELATIVE_PATHS[:-3]
-    + [
-        "scripts/trackfw-attention-*.sh",
-        "scripts/trackfw-credential-guard.sh",
-        "scripts/trackfw-git-branch-guard.sh",
-    ]
+# ("scripts/trackfw-attention-*.sh"), not spelled out individually.
+# Rewritten as an explicit string (previously used a positional [:-3] slice
+# that broke whenever a path was inserted into AGENT_HOOKS_RELATIVE_PATHS).
+AGENT_HOOKS_DISPLAY_PATH = (
+    ".claude/settings.json, .codex/hooks.json, .gemini/settings.json"
+    ", .kiro/hooks/trackfw-attention.json, .github/hooks/trackfw-attention.json"
+    ", .cursor/hooks.json, scripts/trackfw-attention-*.sh"
+    ", scripts/trackfw-credential-guard.sh, scripts/trackfw-git-branch-guard.sh"
+    ", .windsurf/hooks.json, .amazonq/cli-agents/q_cli_default.json"
 )
 
 CODEX_PROJECT_AGENTS_DISPLAY_PATH = ".codex/agents, .agents/skills"
@@ -502,21 +503,109 @@ def _silence_stdout(active: bool):
             yield
 
 
-def _copy_project_tree(src: str, dst: str) -> None:
-    """Copies src into dst, skipping .git and node_modules, for use as a
-    --dry-run sandbox that the real project tree is never written through."""
-    def _ignore(directory: str, names: list[str]) -> set[str]:
-        return {name for name in names if name in (".git", "node_modules")}
+def _copy_path(src: str, dst: str) -> None:
+    """Copies src to dst using os.lstat (symlink-aware).
 
-    for name in os.listdir(src):
-        source_path = os.path.join(src, name)
-        dest_path = os.path.join(dst, name)
-        if name in (".git", "node_modules"):
-            continue
-        if os.path.isdir(source_path):
-            shutil.copytree(source_path, dest_path, ignore=_ignore)
-        else:
-            shutil.copy2(source_path, dest_path)
+    Broken symlinks are silently skipped — the destination is simply absent,
+    causing _hash_rel_paths to return '' (treated as 'missing'), matching
+    Node.js's fs.existsSync behaviour (existsSync follows symlinks;
+    broken symlink → false → copyPath returns without copying).
+
+    Valid symlinks are copied as regular files (the content of the symlink
+    target is written to dst, not the symlink itself), matching Node.js's
+    fs.copyFileSync behaviour (R6 in the declared residual).
+
+    Directories are recursed: each entry is copied via _copy_path, preserving
+    symlink semantics throughout the subtree. The directory itself is created
+    with os.makedirs before the loop so an empty declared directory materialises
+    as present (not absent) in the sandbox.
+    """
+    try:
+        st = os.lstat(src)
+    except FileNotFoundError:
+        return  # absent or broken symlink — skip
+    import stat as _stat
+    if _stat.S_ISLNK(st.st_mode):
+        # Follow the symlink to verify it resolves.
+        try:
+            os.stat(src)  # follows symlinks; raises if broken
+        except OSError:
+            return  # broken symlink — skip
+        # Valid symlink: copy content (open(src) follows symlinks).
+        parent = os.path.dirname(dst)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        shutil.copy2(src, dst)  # copy2 follows symlinks — safe for valid ones
+        return
+    if _stat.S_ISDIR(st.st_mode):
+        os.makedirs(dst, exist_ok=True)
+        for name in os.listdir(src):
+            _copy_path(os.path.join(src, name), os.path.join(dst, name))
+        return
+    # Regular file.
+    parent = os.path.dirname(dst)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    shutil.copy2(src, dst)
+
+
+def _build_sandbox_inclusion(selected: list[str], hooks: str | None = None) -> list[str]:
+    """Returns the union of paths to copy into the --dry-run sandbox.
+
+    Three categories:
+    1. Each selected target's declared relPaths (written outputs that
+       dry-run hashes before and after apply to detect changes).
+    2. trackfw.yaml — always a prerequisite: agent-rules reads it for
+       agent_conventions when generating CLAUDE.md (Gap E).
+    3. Detection-signal files for agent-hooks (Gap C): inject_hooks_detected
+       checks these to decide which hooks to inject; without them the sandbox
+       silently skips hooks the real run would write.
+    """
+    seen: set[str] = set()
+
+    # Gap E prerequisite: always copy trackfw.yaml.
+    seen.add("trackfw.yaml")
+
+    agent_hooks_selected = False
+    for target_id in selected:
+        if target_id == "agent-rules":
+            for p in AGENT_RULES_RELATIVE_PATHS:
+                seen.add(p)
+        elif target_id == "agent-hooks":
+            agent_hooks_selected = True
+            for p in AGENT_HOOKS_RELATIVE_PATHS:
+                seen.add(p)
+        elif target_id == "validate-script":
+            seen.add(VALIDATE_SCRIPT_RELATIVE_PATH)
+        elif target_id == "claude-commands":
+            seen.add(CLAUDE_COMMANDS_RELATIVE_PATH)
+        # codex-project-agents has no static relPaths (Gap D residual)
+
+    # Gap C: detection-signal files that inject_hooks_detected checks.
+    if agent_hooks_selected:
+        for p in [
+            "CLAUDE.md",
+            "AGENTS.md",
+            "GEMINI.md",
+            os.path.join(".github", "copilot-instructions.md"),
+            ".windsurfrules",
+            os.path.join(".amazonq", "developer", "guidelines.md"),
+        ]:
+            seen.add(p)
+
+    return sorted(seen)
+
+
+def _copy_project_tree(src: str, dst: str, paths: list[str]) -> None:
+    """Copies only the declared inclusion paths from src into dst.
+
+    Replaces the former shutil.copytree-based copy that traversed the entire
+    project tree, which aborted on broken symlinks outside the declared target
+    set (KG's CMDB incident: .venv/bin/python → removed python3.13). With
+    inclusion-based copying, anything not in paths is irrelevant.
+    """
+    for rel in paths:
+        _copy_path(os.path.join(src, rel), os.path.join(dst, rel))
 
 
 def _run_project(args: argparse.Namespace) -> None:
@@ -533,7 +622,7 @@ def _run_project(args: argparse.Namespace) -> None:
     tmp_dir = None
     if dry_run:
         tmp_dir = tempfile.mkdtemp(prefix="trackfw-update-")
-        _copy_project_tree(cwd, tmp_dir)
+        _copy_project_tree(cwd, tmp_dir, _build_sandbox_inclusion(target_ids))
         apply_root = tmp_dir
 
     # Writes against apply_root (the tmp sandbox during --dry-run, cwd
