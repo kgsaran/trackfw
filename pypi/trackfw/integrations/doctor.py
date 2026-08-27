@@ -27,6 +27,12 @@ from .manager import IntegrationManager
 # UNKNOWN_CONTENT used to fall silently outside classify_doctor's branches).
 UNREGISTERED_WRITE = "unregistered-write"
 HAND_MODIFIED = "hand-modified"
+# SCAFFOLD_DIVERGENT / SCAFFOLD_MISSING: scaffold artifact (property by path —
+# ADR-2026-08-27) exists but content differs from the template, or is absent.
+# These findings have no claim (scaffold artifacts are never in the manifest).
+# Remedy: trackfw update. Mirrors Go's DoctorScaffoldDivergent/DoctorScaffoldMissing.
+SCAFFOLD_DIVERGENT = "scaffold-divergent"
+SCAFFOLD_MISSING = "scaffold-missing"
 # UNKNOWN_CONTENT: neither does any manifest entry exist for this
 # destination, NOR does the on-disk content match the catalog template
 # (registered=False and state="modified"). Genuinely ambiguous between a

@@ -90,7 +90,7 @@ tem base limpa para ser verificado.
 > Dependências: ML-0A auditado. **ML único:** os 3 stacks saem byte-idênticos.
 
 ### ML-1A — `doctor` compara artefatos de scaffold com o template
-**Status:** 🔄 Em andamento · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-0A
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-0A
 
 `internal/integrations/doctor.go` + equivalentes. Propriedade por caminho, comparação com template,
 **sem** tocar o manifesto.
@@ -100,10 +100,57 @@ tem base limpa para ser verificado.
 
 ---
 
+### Auditoria do ML-1A (+1B, +1C) — aprovada; e a regra de pertencimento é decisão minha
+
+**Reprovei o ML-1A num ponto e decidi um bloqueio que o ML-1B levantou.**
+
+**1. "Python reduced surface" não passou.** Ele excluiu `scripts/trackfw-validate.sh` e os workflows
+do scaffold doctor do Python. A **premissa** estava certa — a divergência de bytes desse arquivo é
+pré-existente e documentada (`init_gen.py:489+`), só o contrato de estado é pinado. **A conclusão
+não seguia:** isso justifica não comparar os runtimes entre si, **não** o Python deixar de verificar.
+Excluir reabria, num runtime, a lacuna que a REQ existe para fechar.
+
+**2. O ML-1B então mediu o efeito colateral e sinalizou em vez de decidir** — comportamento certo:
+com template por runtime, o Python acusava `scaffold-divergent` neste repositório, porque o arquivo
+foi escrito pelo Go. **Achado verdadeiro pela regra; a regra é que estava estreita demais.**
+
+**Decisão (ML-1C): pertencimento a conjunto, escopado a este artefato.** O `doctor` aceita **qualquer**
+template de runtime conhecido para `trackfw-validate.sh`, porque um arquivo em qualquer dessas formas
+**é** artefato legítimo do trackfw — acusá-lo é o falso-positivo que o **AC4** proíbe. Todos os demais
+artefatos têm bytes pinados por gate e seguem com igualdade a template único. **Não generalizar.**
+
+#### Medição minha
+
+```
+projeto integro:      Go / Node / Python  ->  no mismatches found     AC4 restaurado
+near-miss (set -e -> set -x na forma do Go):
+                      Go / Node / Python  ->  scaffold-divergent      os 3 acusam
+restaurado         ->  no mismatches
+make quality (CI-exata, minha)  exit 0
+validate                        16 warnings, 0 violations
+```
+
+O **near-miss** é o teste que importa: um caractere de diferença continua sendo acusado nos 3. O
+critério afrouxou **só** onde o produto já declara variação legítima.
+
+**Exclusão dos workflows de CI no Python — aceita, e pelo motivo dele, melhor que o meu
+enquadramento:** o `update` do Python **não gerencia** `ci-workflow`, então um finding cujo remédio é
+`trackfw update` seria **enganoso**. Exclusão por **propriedade**, não por conveniência.
+
+#### 🔴 Risco residual que herda para o ML-2A
+
+`_build_go_node_validate_script` (Python) é uma **terceira cópia** da lógica de `buildValidateScript`.
+Se Go ou Node mudarem o template, o espelho fica velho e o `doctor` do Python passa a aceitar a forma
+nova **sem verificar se bate**. Ele mitigou com 5 testes de membership por runtime — mas isso só pega
+se rodarem no mesmo commit da mudança. **É a mesma classe que motivou o
+`check-attention-scripts-parity`: cópia de string deriva.** O ML-2A precisa de gate para isso.
+
+---
+
 ## Wave 2 — Gate
 
 ### ML-2A — Paridade e falsificação nas duas direções
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-1A
+**Status:** 🔄 Em andamento · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-1A
 
 **Critérios de aceite:** AC8, AC9, AC10 da REQ
 

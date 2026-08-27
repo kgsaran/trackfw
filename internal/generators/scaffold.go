@@ -230,13 +230,17 @@ func generateClaudeCommands() error {
 	return generateClaudeCommandsInner(false)
 }
 
-func generateClaudeCommandsInner(force bool) error {
-	dir := ".claude/commands/trackfw"
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("creating %s: %w", dir, err)
-	}
+// ClaudeCommandsDirPath is the canonical relative path of the directory that holds the
+// trackfw slash commands written by init/update. Scaffold doctor (ADR-2026-08-27) uses
+// this path to detect the surface and to check individual command files.
+const ClaudeCommandsDirPath = ".claude/commands/trackfw"
 
-	commands := map[string]string{
+// claudeCommandsContent returns the template content for every slash command that
+// trackfw writes to ClaudeCommandsDirPath. Extracted from generateClaudeCommandsInner
+// so scaffold doctor can compare disk content against the current template without
+// re-writing anything (ADR-2026-08-27, AC3: no manifest writes).
+func claudeCommandsContent() map[string]string {
+	return map[string]string{
 		"adr.md": `Execute o seguinte comando bash: ` + "`trackfw adr new \"$ARGUMENTS\"`" + `
 
 Se o comando falhar com ` + "`trackfw: command not found`" + ` ou similar, informe ao usuário:
@@ -635,6 +639,15 @@ Roadmap: docs/roadmaps/done/<nome>.md
 Próximo passo: abrir PR com gh pr create
 ` + "```",
 	}
+}
+
+func generateClaudeCommandsInner(force bool) error {
+	dir := ClaudeCommandsDirPath
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("creating %s: %w", dir, err)
+	}
+
+	commands := claudeCommandsContent()
 
 	created, skipped := 0, 0
 	for filename, content := range commands {
@@ -730,20 +743,10 @@ func generateValidateScript(cfg Config) error {
 	return nil
 }
 
-// GenerateAttentionScripts gera os scripts shell de attention signal/cleanup em
-// <rootDir>/scripts. Se rootDir for "", usa o diretório de trabalho atual (mesmo
-// comportamento de antes da exportação). O conteúdo gerado é idêntico ao produzido
-// por `trackfw init`.
-func GenerateAttentionScripts(rootDir string) error {
-	if rootDir == "" {
-		rootDir = "."
-	}
-	scriptsDir := filepath.Join(rootDir, "scripts")
-	if err := os.MkdirAll(scriptsDir, 0755); err != nil {
-		return err
-	}
-
-	signalScript := `#!/usr/bin/env bash
+// attentionSignalScript is the canonical content of the attention-signal hook written
+// by trackfw init/update and compared by scaffold doctor (ADR-2026-08-27).
+// Mirrors npm/src/generators/hooks.js and pypi/trackfw/generators/init_gen.py byte-for-byte.
+const attentionSignalScript = `#!/usr/bin/env bash
 # trackfw attention signal — PreToolUse/BeforeTool hook
 set -euo pipefail
 
@@ -781,7 +784,10 @@ printf '{"tool":"%s","message":"%s","level":"action_required","timestamp":"%s"}\
 exit 0
 `
 
-	cleanupScript := `#!/usr/bin/env bash
+// attentionCleanupScript is the canonical content of the attention-cleanup hook written
+// by trackfw init/update and compared by scaffold doctor (ADR-2026-08-27).
+// Mirrors npm/src/generators/hooks.js and pypi/trackfw/generators/init_gen.py byte-for-byte.
+const attentionCleanupScript = `#!/usr/bin/env bash
 # trackfw attention cleanup — PostToolUse/AfterTool hook
 set -euo pipefail
 
@@ -799,8 +805,21 @@ rm -f "$ROADMAP_DIR/.trackfw-attention.json"
 exit 0
 `
 
+// GenerateAttentionScripts gera os scripts shell de attention signal/cleanup em
+// <rootDir>/scripts. Se rootDir for "", usa o diretório de trabalho atual (mesmo
+// comportamento de antes da exportação). O conteúdo gerado é idêntico ao produzido
+// por `trackfw init`.
+func GenerateAttentionScripts(rootDir string) error {
+	if rootDir == "" {
+		rootDir = "."
+	}
+	scriptsDir := filepath.Join(rootDir, "scripts")
+	if err := os.MkdirAll(scriptsDir, 0755); err != nil {
+		return err
+	}
+
 	signalPath := filepath.Join(scriptsDir, "trackfw-attention-signal.sh")
-	if err := os.WriteFile(signalPath, []byte(signalScript), 0755); err != nil {
+	if err := os.WriteFile(signalPath, []byte(attentionSignalScript), 0755); err != nil {
 		return fmt.Errorf("writing attention signal script: %w", err)
 	}
 	// Mensagem sempre com caminho relativo "scripts/..." — igual ao literal fixo
@@ -810,7 +829,7 @@ exit 0
 	fmt.Printf("  ✓ %s\n", filepath.Join("scripts", "trackfw-attention-signal.sh"))
 
 	cleanupPath := filepath.Join(scriptsDir, "trackfw-attention-cleanup.sh")
-	if err := os.WriteFile(cleanupPath, []byte(cleanupScript), 0755); err != nil {
+	if err := os.WriteFile(cleanupPath, []byte(attentionCleanupScript), 0755); err != nil {
 		return fmt.Errorf("writing attention cleanup script: %w", err)
 	}
 	fmt.Printf("  ✓ %s\n", filepath.Join("scripts", "trackfw-attention-cleanup.sh"))
@@ -1850,12 +1869,21 @@ func generateCIWorkflow(cfg Config) error {
 	return nil
 }
 
-func generateGitHubActionsWorkflow(cfg Config) error {
-	if err := os.MkdirAll(".github/workflows", 0755); err != nil {
-		return err
-	}
+// GitHubActionsWorkflowPath is the canonical relative path of the GitHub Actions
+// workflow written by trackfw init/update. Used by scaffold doctor (ADR-2026-08-27)
+// to identify this artifact by path without reading the manifest.
+const GitHubActionsWorkflowPath = ".github/workflows/trackfw-gate.yml"
 
-	content := fmt.Sprintf(`name: trackfw-gate
+// GitLabCIWorkflowPath is the canonical relative path of the GitLab CI file written
+// when ci: gitlab-ci is configured. Used by scaffold doctor (ADR-2026-08-27).
+const GitLabCIWorkflowPath = ".gitlab-ci-trackfw.yml"
+
+// buildGitHubActionsWorkflowContent returns the template content that trackfw writes
+// to GitHubActionsWorkflowPath. The content is cfg-independent (cfg is accepted for
+// API consistency but unused — ci: github-actions is the gate at the call site).
+// Scaffold doctor calls this to compare disk content against the current template.
+func buildGitHubActionsWorkflowContent(_ Config) string {
+	return `name: trackfw-gate
 on:
   pull_request:
     branches: [main]
@@ -1872,19 +1900,13 @@ jobs:
 
       - name: Governance gate
         run: trackfw validate
-`)
-	_ = cfg
-
-	path := ".github/workflows/trackfw-gate.yml"
-	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-		return fmt.Errorf("writing CI workflow: %w", err)
-	}
-	fmt.Printf("  ✓ %s\n", path)
-	return nil
+`
 }
 
-func generateGitLabCIWorkflow(cfg Config) error {
-	content := `# trackfw governance gate
+// buildGitLabCIWorkflowContent returns the template content that trackfw writes to
+// GitLabCIWorkflowPath. Cfg-independent; ci: gitlab-ci is the gate at the call site.
+func buildGitLabCIWorkflowContent(_ Config) string {
+	return `# trackfw governance gate
 trackfw-gate:
   stage: test
   image: alpine:latest
@@ -1896,9 +1918,23 @@ trackfw-gate:
   only:
     - merge_requests
 `
-	_ = cfg
+}
 
-	if err := os.WriteFile(".gitlab-ci-trackfw.yml", []byte(content), 0644); err != nil {
+func generateGitHubActionsWorkflow(cfg Config) error {
+	if err := os.MkdirAll(".github/workflows", 0755); err != nil {
+		return err
+	}
+
+	path := GitHubActionsWorkflowPath
+	if err := os.WriteFile(path, []byte(buildGitHubActionsWorkflowContent(cfg)), 0644); err != nil {
+		return fmt.Errorf("writing CI workflow: %w", err)
+	}
+	fmt.Printf("  ✓ %s\n", path)
+	return nil
+}
+
+func generateGitLabCIWorkflow(cfg Config) error {
+	if err := os.WriteFile(GitLabCIWorkflowPath, []byte(buildGitLabCIWorkflowContent(cfg)), 0644); err != nil {
 		return fmt.Errorf("writing GitLab CI: %w", err)
 	}
 	fmt.Println("  ✓ .gitlab-ci-trackfw.yml")

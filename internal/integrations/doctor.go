@@ -49,6 +49,23 @@ const (
 	// see vault/notes/doctor-classifydoctor-silences-tampering-when-manifest-
 	// entry-removed-2026-08-19.md.
 	DoctorUnknownContent DoctorFindingKind = "unknown-content"
+
+	// DoctorScaffoldDivergent: a scaffold artifact (property by path — see
+	// ADR-2026-08-27-doctor-cobre-artefatos-de-scaffold-por-comparacao-com-o-
+	// template-com-propriedade-dada-pelo-caminho.md) exists on disk but its
+	// content differs from the template the currently installed binary would
+	// generate. This finding has no Claim (scaffold artifacts are never in the
+	// manifest). The message is intentionally neutral about blame direction:
+	// neither the project nor the binary can be identified as the stale party
+	// without a version stamp on the artifact itself — see AC5/AC16.
+	// Remedy: trackfw update.
+	DoctorScaffoldDivergent DoctorFindingKind = "scaffold-divergent"
+
+	// DoctorScaffoldMissing: a scaffold artifact that should exist for this
+	// project (based on the project's own trackfw.yaml — CI workflow, or a
+	// slash command when the .claude/commands/trackfw/ directory already exists)
+	// is absent from disk. Remedy: trackfw update.
+	DoctorScaffoldMissing DoctorFindingKind = "scaffold-missing"
 )
 
 // DoctorFinding is one artifact requiring the user's attention, plus a

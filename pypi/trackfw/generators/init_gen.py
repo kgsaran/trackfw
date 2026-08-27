@@ -486,6 +486,16 @@ def generate_claude_md(cwd: str, opts: dict) -> None:
     print('  checkmark CLAUDE.md')
 
 
+# _VALIDATE_SCRIPT_CONTENT is the byte-exact content that Python's `trackfw init` and
+# `trackfw update` (validate-script target) write to scripts/trackfw-validate.sh.
+# Exported so scaffold_doctor.py can compare on-disk content against this template without
+# calling the generator (which also does makedirs + chmod, which are side-effects the
+# doctor must not produce). This form is intentionally simpler than Go's/Node's
+# cfg-dependent form — Python's `init` has no --backend/--frontend flags (see
+# docs/cli-parity.md, "Template reference per runtime").
+_VALIDATE_SCRIPT_CONTENT = "#!/usr/bin/env bash\nset -euo pipefail\ntrackfw validate\n"
+
+
 def generate_validate_script(cwd: str) -> None:
     """Escreve scripts/trackfw-validate.sh.
 
@@ -507,11 +517,11 @@ def generate_validate_script(cwd: str) -> None:
     simpler, backend-agnostic form. Only the update-state contract (missing/
     skipped/updated/failed) and the JSON document shape are pinned across
     runtimes for this target — the script's own bytes are not (see
-    docs/cli-parity.md's declared-targets note on Python's reduced surface).
+    docs/cli-parity.md, "Template reference per runtime").
     """
     scripts_dir = os.path.join(cwd, 'scripts')
     os.makedirs(scripts_dir, exist_ok=True)
-    content = "#!/usr/bin/env bash\nset -euo pipefail\ntrackfw validate\n"
+    content = _VALIDATE_SCRIPT_CONTENT
     dest = os.path.join(scripts_dir, 'trackfw-validate.sh')
     with open(dest, "w", encoding="utf-8") as f:
         f.write(content)

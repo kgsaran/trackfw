@@ -7,18 +7,22 @@ npm/src/commands/doctor.js.
 """
 
 import json
+import os
 
-from trackfw.integrations.doctor import HAND_MODIFIED, UNKNOWN_CONTENT, UNREGISTERED_WRITE, run_doctor
+from trackfw.integrations.doctor import HAND_MODIFIED, SCAFFOLD_DIVERGENT, SCAFFOLD_MISSING, UNKNOWN_CONTENT, UNREGISTERED_WRITE, run_doctor
+from trackfw.integrations.scaffold_doctor import run_scaffold_doctor
 
 
 def _print_report(findings: list) -> str:
     if not findings:
-        return "trackfw doctor: no mismatches found -- disk matches the manifest for every catalog-managed artifact."
+        return "trackfw doctor: no mismatches found -- disk matches the manifest for every catalog-managed artifact and all scaffold templates."
     unregistered = sum(1 for finding in findings if finding["finding"] == UNREGISTERED_WRITE)
     hand_modified = sum(1 for finding in findings if finding["finding"] == HAND_MODIFIED)
     unknown_content = sum(1 for finding in findings if finding["finding"] == UNKNOWN_CONTENT)
+    scaffold_divergent = sum(1 for finding in findings if finding["finding"] == SCAFFOLD_DIVERGENT)
+    scaffold_missing = sum(1 for finding in findings if finding["finding"] == SCAFFOLD_MISSING)
     lines = [
-        f"trackfw doctor: {len(findings)} finding(s) -- {unregistered} unregistered-write, {hand_modified} hand-modified, {unknown_content} unknown-content",
+        f"trackfw doctor: {len(findings)} finding(s) -- {unregistered} unregistered-write, {hand_modified} hand-modified, {unknown_content} unknown-content, {scaffold_divergent} scaffold-divergent, {scaffold_missing} scaffold-missing",
         "",
     ]
     for finding in findings:
@@ -29,7 +33,16 @@ def _print_report(findings: list) -> str:
 
 
 def run(args) -> int:
-    findings = run_doctor()
+    project_root = os.getcwd()
+    catalog_findings = run_doctor()
+    # Scaffold coverage (ADR-2026-08-27): compare scaffold artifacts on disk against
+    # the templates the current binary would generate, using the project's own
+    # trackfw.yaml. No manifest entry is written or read (AC3).
+    # Note: Python scaffold doctor excludes validate-script and CI workflows —
+    # see pypi/trackfw/integrations/scaffold_doctor.py module docstring and
+    # docs/cli-parity.md "Reduced surface — Python."
+    scaffold_findings = run_scaffold_doctor(project_root)
+    findings = catalog_findings + scaffold_findings
     if getattr(args, "json", False):
         print(json.dumps(findings, indent=2))
         return 0
