@@ -58,6 +58,26 @@ Decisão de desenho em
       cobertura exit 0.
 - [ ] **AC10** — `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality` exit 0, com **exit code medido**.
 
+### Acrescentados pela Wave 0 (`docs/seguranca/2026-08-27-modelo-de-ameaca-da-cobertura-de-scaffold.md`)
+
+- [ ] **AC11** — Inventário são **17** artefatos, não 13: faltavam `.gitlab-ci-trackfw.yml`
+      (`ci: gitlab-ci`) e os arquivos de hook (husky/lefthook) — todos **condicionais**.
+- [ ] **AC12** — 🔴 **`scripts/trackfw-validate.sh` tem conteúdo dependente de config**
+      (`buildValidateScript` varia com `cfg.Backend`/`cfg.Frontend`). O `doctor` precisa renderizar o
+      template a partir do **`trackfw.yaml` do projeto**, não de um cfg padrão embutido — senão
+      **qualquer projeto com `backend:` configurado vira falso-positivo imediato** e o AC4 reprova.
+- [ ] **AC13** — Artefato **condicional** (CI workflow, hooks) só é in-scope quando o `trackfw.yaml`
+      o declara. Ausência de artefato não configurado **não** é achado.
+- [ ] **AC14** — 🔴 **`discover --init` é um terceiro escritor** (`internal/discover/discover.go:49`):
+      escreve validate-script, CI workflow, attention scripts e guards, **mas não slash commands**.
+      Projeto inicializado só por ele tem ausência **legítima** de `.claude/commands/trackfw/*.md`.
+- [ ] **AC15** — 🔴 **`ClassifyDoctor` não tem case para `!Registered && StateModified`** — hoje cai
+      no `default` implícito e **não gera finding nenhum**. Sem esse case, o falso-negativo é
+      garantido justamente para os artefatos que motivaram a REQ.
+- [ ] **AC16** — **AC5 não é satisfazível por conteúdo:** nenhum artefato de scaffold carrega stamp de
+      versão. A mensagem deve ser **neutra quanto à culpa** — *"difere do template que a versão X.Y.Z
+      instalada geraria; se o projeto foi inicializado com uma versão mais nova, atualize o binário"*.
+
 ## Negative scope
 
 - **Não** registra artefatos de scaffold no manifesto — o ADR rejeita, pelo custo de migração.

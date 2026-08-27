@@ -30,7 +30,7 @@ corrige no mesmo passo: o usuário nunca sabe que esteve defasado.
 > Dependencies: none. Blocks all implementation.
 
 ### ML-0A — Completude do inventário e o risco de falso-positivo
-**Status:** ⬜ Pendente · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
+**Status:** ✅ Concluído · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
 **Escreve:** `docs/seguranca/2026-08-27-modelo-de-ameaca-da-cobertura-de-scaffold.md`
 
 **Duas perguntas decidem a entrega:**
@@ -48,8 +48,8 @@ corrige no mesmo passo: o usuário nunca sabe que esteve defasado.
 3. Falsification targets in both directions — for each surface, what breaks when the behavior regresses, and what breaks when it regresses the opposite way?
 4. Declared residual — what this design accepts not covering.
 **Acceptance criteria:**
-- [ ] The four sections above answered with evidence, not a one-line assertion
-- [ ] No implementation line written for this ML
+- [x] The four sections above answered with evidence, not a one-line assertion
+- [x] No implementation line written for this ML
 
 **Gates da wave:**
 ```bash
@@ -58,12 +58,39 @@ grep -q "Completude de enumera" docs/seguranca/2026-08-27-modelo-de-ameaca-da-co
 grep -q "Residual declarado" docs/seguranca/2026-08-27-modelo-de-ameaca-da-cobertura-de-scaffold.md
 ```
 
+### Auditoria do ML-0A — aprovada; **cinco bloqueios antes de existir código**
+
+**Inventário: 17 artefatos, não 13.** Faltavam `.gitlab-ci-trackfw.yml` e os arquivos de hook
+(husky/lefthook) — todos condicionais. → **AC11**
+
+**Os cinco problemas que a implementação teria encontrado tarde:**
+
+1. 🔴 **`scripts/trackfw-validate.sh` é cfg-dependente** — `buildValidateScript` varia com
+   `cfg.Backend`/`cfg.Frontend`. Comparar contra um cfg padrão embutido faria **todo projeto com
+   `backend:` configurado virar falso-positivo imediato**. O `doctor` tem de renderizar o template a
+   partir do `trackfw.yaml` **do projeto**. → **AC12**
+2. **Condicionais não podem virar "ausente"** quando não configurados. → **AC13**
+3. **`discover --init` é um terceiro escritor** e **não escreve slash commands** — projeto
+   inicializado só por ele tem ausência **legítima**. → **AC14**
+4. 🔴 **`ClassifyDoctor` não tem case para `!Registered && StateModified`** — hoje cai no `default`
+   implícito e **não gera finding nenhum**. Sem esse case, o falso-negativo estaria garantido
+   justamente para os artefatos que motivaram a REQ: eu teria "implementado" a cobertura e ela
+   continuaria cega. → **AC15**
+5. **O AC5 não é satisfazível por conteúdo** — nenhum artefato carrega stamp de versão. A mensagem
+   tem de ser **neutra quanto à culpa**, em vez de afirmar que o projeto está defasado. → **AC16**
+
+**Baseline medido neste repositório:** `update --dry-run` reporta `validate-script: skipped`,
+`ci-workflow: skipped`, `claude-commands: skipped` — **zero divergência** nos targets in-scope. O AC4
+tem base limpa para ser verificado.
+
+---
+
 ## Wave 1 — Cobertura no doctor
 
 > Dependências: ML-0A auditado. **ML único:** os 3 stacks saem byte-idênticos.
 
 ### ML-1A — `doctor` compara artefatos de scaffold com o template
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-0A
+**Status:** 🔄 Em andamento · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-0A
 
 `internal/integrations/doctor.go` + equivalentes. Propriedade por caminho, comparação com template,
 **sem** tocar o manifesto.

@@ -4,6 +4,15 @@
 
 ---
 
+## Sessão 2026-08-27 — hades-tf (INÍCIO: ML-0A — Wave 0 do doctor-cobre-scaffold)
+
+Branch `feat/doctor-cobre-artefatos-de-scaffold`.
+Tarefa: escrever `docs/seguranca/2026-08-27-modelo-de-ameaca-da-cobertura-de-scaffold.md`
+com as quatro seções obrigatórias do Wave 0: completude de enumeração, modelo de ameaça,
+alvos de falsificação nas duas direções, residual declarado.
+
+---
+
 ## Sessão 2026-08-27 — apolo-tf (FIM: ML-1B — R-novo-1 corrigido e R-novo-2 documentado / CONCLUÍDO)
 
 Branch `fix/sandbox-do-update-dry-run-por-lista-de-inclusao-dos-destinos-declarados`.
@@ -24788,3 +24797,28 @@ seções obrigatórias. Nenhuma implementação neste ML.
 - `GO_BIN=/tmp/s176-bin/trackfw bash scripts/check-update-parity.sh` → FAIL `sandbox/dangling-outside-set/exit-zero/go`, exit 1
 - `trackfw validate` → exit 0 (16 warnings pré-existentes)
 **Próximo:** ML-3A (hades-tf) — reverificação
+
+---
+## hades-tf | 2026-08-27 | FIM ML-0A
+**Branch:** feat/doctor-cobre-artefatos-de-scaffold
+**Roadmap:** ROADMAP-2026-08-27-doctor-cobre-artefatos-de-scaffold-por-comparacao-com-o-template.md
+**Microbatch:** ML-0A — Wave 0 — Completude do inventário e o risco de falso-positivo — ✅ Concluído
+**Entregáveis:**
+- `docs/seguranca/2026-08-27-modelo-de-ameaca-da-cobertura-de-scaffold.md` — modelo de ameaça com as 4 seções obrigatórias
+**Evidências coletadas:**
+- 17 artefatos enumerados nos 3 CLIs (Go/Node.js/Python) por leitura direta dos geradores
+- Gate de paridade de slash commands `check-slash-parity.sh` executado — 9 commands × 3 runtimes OK
+- `./bin/trackfw update --dry-run` executado: validate-script=skipped, ci-workflow=skipped, claude-commands=skipped, agent-hooks=skipped — zero FPs neste repo
+- `discover --init` confirmado como terceiro escritor (subconjunto: sem slash commands)
+- Vault notes consultadas: slash-commands-cross-runtime-content-drift, rules-block-content-drift, doctor-classifydoctor-silences-tampering
+**Gates executados:**
+- `test -f docs/seguranca/...md` → OK
+- `grep -q "Completude de enumera" ...` → OK
+- `grep -q "Residual declarado" ...` → OK
+**Achados críticos para ML-1A:**
+1. `scripts/trackfw-validate.sh` tem conteúdo cfg-dependente — template deve ser renderizado a partir do `trackfw.yaml` do projeto
+2. Artefatos condicionais (CI, hooks) só devem ser cobertos se `trackfw.yaml` os declara
+3. `discover --init` cria projetos sem slash commands — ausência é legítima
+4. `ClassifyDoctor` não tem case para `!Registered && State == StateModified` — ML-1A deve adicionar
+5. AC5 requer mensagem neutra quanto à direção de defasagem (sem stamps de versão nos artefatos)
+**Próximo:** ML-1A (apolo-tf) — implementação nos 3 CLIs
