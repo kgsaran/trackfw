@@ -152,16 +152,46 @@ estão na branch certa; a citação é que estava velha.
 ## Wave 2 — Gate
 
 ### ML-2A — Paridade e falsificação nas duas direções
-**Status:** 🔄 Em andamento · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-1A
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-1A
 
 **Critérios de aceite:** AC9, AC10, AC11 da REQ
+
+---
+
+### Auditoria do ML-2A — aprovada; e a costura de autoteste resolve o problema de fundo da série
+
+**Em vez de sabotar código de produto numa cópia isolada** — que é onde os cenários 170 e 171 se
+enrolaram —, ele pôs a costura **no próprio gate**. Rodei as duas:
+
+```
+AUDIT_SURFACE_SELFTEST_BREAK=A  -> binario com digest constante
+  FAIL [audit-surface/fn-2/digest-changes-when-script-changes]: digest did not change
+AUDIT_SURFACE_SELFTEST_BREAK=B  -> binario que estende os paths de instrucao
+  FAIL [audit-surface/fp-1/cli-parity-absent]: docs/cli-parity.md appeared in output
+sem a variavel -> exit 0
+
+Makefile:47   dentro do alvo parity          <- confirmado por LEITURA
+cli-parity    3 anotacoes de volta em gate=
+make quality (CI-exata, minha)  exit 0, 174 cenarios
+validate                        16 warnings, 0 violations
+```
+
+**O gate prova a própria capacidade de detecção nas duas direções** — falso-negativo e
+falso-positivo — com mensagens **específicas do defeito**, não genéricas. É exatamente o que faltou
+nas duas tentativas anteriores desta série, em que o `assert_fails_with` recusou o padrão por mirar a
+mensagem errada.
+
+**Dado de custo, relevante para a decisão de protocolo do KG:** este ML consumiu **44.255 tokens /
+95 tool uses**, contra 276k e 290k dos dois maiores da sessão — mesmo tipo de trabalho (gate +
+falsificação + paridade nos 3 CLIs). A diferença foi **escopo estreito e alvos já enumerados pela
+Wave 0**, não linguagem mais curta.
 
 ---
 
 ## Wave 3 — Barreira
 
 ### ML-3A — Reverificação
-**Status:** ⬜ Pendente · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
+**Status:** 🔄 Em andamento · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
 
 Quem enumerou verifica se a implementação cobre o que ele enumerou. **Veredito explícito.**
 

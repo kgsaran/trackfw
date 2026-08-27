@@ -5494,7 +5494,7 @@ trackfw: aviso: "~/.trackfw/trackfw.yaml" tem YAML malformado — config global 
 
 ## `trackfw audit-surface`
 
-<!-- trackfw-contract: gap reason=o gate real vem no ML-2A desta REQ; o stub check-audit-surface.sh sai 0 sem verificar nada e NAO deve ser nomeado como gate — anotacao vira gate= quando os cenarios FN-1..5 e FP-1..2 existirem -->
+<!-- trackfw-contract: gate=scripts/check-audit-surface.sh -->
 
 `trackfw audit-surface <ref> [--base <base>] [--json]` reports the executable surface of a git ref **without checking it out** — all file reads go through `git show <ref>:<path>`.
 
@@ -5518,7 +5518,7 @@ Implemented: Wave 1 / ML-1A (2026-08-27, apolo-tf)
 
 ### Text output format
 
-<!-- trackfw-contract: gap reason=o gate real vem no ML-2A desta REQ; o stub check-audit-surface.sh sai 0 sem verificar nada e NAO deve ser nomeado como gate — anotacao vira gate= quando os cenarios FN-1..5 e FP-1..2 existirem -->
+<!-- trackfw-contract: gate=scripts/check-audit-surface.sh -->
 
 ```
 trackfw audit-surface: N hook tuple(s) at REF
@@ -5536,7 +5536,7 @@ lifecycle [present|absent] file key [command]
 
 ### JSON output format
 
-<!-- trackfw-contract: gap reason=o gate real vem no ML-2A desta REQ; o stub check-audit-surface.sh sai 0 sem verificar nada e NAO deve ser nomeado como gate — anotacao vira gate= quando os cenarios FN-1..5 e FP-1..2 existirem -->
+<!-- trackfw-contract: gate=scripts/check-audit-surface.sh -->
 
 ```json
 {
