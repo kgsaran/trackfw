@@ -172,6 +172,60 @@ def get_symlink_target(ref: str, script_path: str, git_root: str) -> tuple[str, 
     return target_bytes.decode().strip(), True
 
 
+def resolve_script_digest(ref: str, script_path: str, git_root: str) -> str:
+    """Follow the symlink chain (if any) at script_path with cycle detection and
+    a depth limit, then return the digest string.
+
+    Marker format: "symlink-><first_target>|<outcome>" for symlink chains;
+    plain "sha256:<hex>" or "not-found" for regular files.
+
+    Outcomes for symlink chains:
+      sha256:<hex>            — resolved to real content
+      not-found               — final target absent at this ref
+      not-supported           — absolute symlink target
+      circular-not-supported  — cycle detected
+      chain-not-supported     — depth limit (8 hops) exceeded
+    """
+    max_hops = 8
+    visited: set[str] = {script_path}
+    current = script_path
+    first_target = ""  # first symlink target, for the "symlink->" prefix
+
+    for _ in range(max_hops):
+        target, is_link = get_symlink_target(ref, current, git_root)
+        if not is_link:
+            # current is a regular file (or absent).
+            if not first_target:
+                # No symlink in the chain: plain digest.
+                data = git_show(ref, current, git_root)
+                return sha256hex(data) if data is not None else "not-found"
+            # End of symlink chain.
+            data = git_show(ref, current, git_root)
+            if data is not None:
+                return f"symlink->{first_target}|" + sha256hex(data)
+            return f"symlink->{first_target}|not-found"
+
+        if not first_target:
+            first_target = target
+
+        # Absolute target — cannot follow without checkout.
+        if target.startswith("/"):
+            return f"symlink->{first_target}|not-supported"
+
+        # Resolve relative to current's directory, normalising ".." segments.
+        link_dir = posixpath.dirname(current)
+        resolved = posixpath.normpath(posixpath.join(link_dir, target))
+
+        # Cycle detection.
+        if resolved in visited:
+            return f"symlink->{first_target}|circular-not-supported"
+        visited.add(resolved)
+        current = resolved
+
+    # Depth limit exceeded.
+    return f"symlink->{first_target}|chain-not-supported"
+
+
 def sha256hex(data: bytes) -> str:
     return "sha256:" + hashlib.sha256(data).hexdigest()
 
@@ -367,26 +421,13 @@ def run_audit_surface(ref: str, base: str, git_root: str) -> dict:
             })
             continue
         tuples = extract_tuples(runtime, content)
-        # Compute digests, detecting git symlinks (mode 120000).
+        # Compute digests, following symlink chains.
         for t in tuples:
-            if t["script_path"]:
-                target, is_link = get_symlink_target(ref, t["script_path"], git_root)
-                if is_link:
-                    if target.startswith("/"):
-                        t["script_digest"] = f"symlink->{target}|not-supported"
-                    else:
-                        link_dir = posixpath.dirname(t["script_path"])
-                        resolved = posixpath.join(link_dir, target)
-                        real_bytes = git_show(ref, resolved, git_root)
-                        if real_bytes is not None:
-                            t["script_digest"] = f"symlink->{target}|" + sha256hex(real_bytes)
-                        else:
-                            t["script_digest"] = f"symlink->{target}|not-found"
-                else:
-                    script_bytes = git_show(ref, t["script_path"], git_root)
-                    t["script_digest"] = sha256hex(script_bytes) if script_bytes is not None else "not-found"
-            else:
-                t["script_digest"] = "unresolvable"
+            t["script_digest"] = (
+                resolve_script_digest(ref, t["script_path"], git_root)
+                if t["script_path"]
+                else "unresolvable"
+            )
         report["hook_wiring"].append({
             "runtime": runtime, "wiring_file": wiring_file, "present": True, "tuples": tuples
         })

@@ -712,4 +712,232 @@ if [[ -n "$FNF3_STDOUT" ]]; then
 fi
 ok "audit-surface/fn-f3/no-stdout-on-error"
 
-echo "check-audit-surface: all 17 scenarios passed (FN-1..5, FP-1..2, FN-F1a/b/c, FN-F2, FN-F3)"
+# ===========================================================================
+# FN-R3-chain — R3 fix: 2-level symlink chain — digest follows real content
+# Fixture: link.sh → middle.sh → real.sh (two hops)
+# ===========================================================================
+FNR3C="$WORK/fn-r3-chain"
+mkdir -p "$FNR3C/.claude" "$FNR3C/scripts"
+make_repo "$FNR3C"
+
+cat > "$FNR3C/.claude/settings.json" << 'EOF'
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [{"command": "scripts/link.sh", "type": "command"}]
+      }
+    ]
+  }
+}
+EOF
+printf '#!/usr/bin/env bash\necho "real-v1"\n' > "$FNR3C/scripts/real.sh"
+# middle.sh is a symlink → real.sh; link.sh is a symlink → middle.sh
+ln -s real.sh "$FNR3C/scripts/middle.sh"
+ln -s middle.sh "$FNR3C/scripts/link.sh"
+
+git -C "$FNR3C" add -A
+git -C "$FNR3C" commit -q -m "init: chain link.sh -> middle.sh -> real.sh"
+FNR3C_REF1=$(git -C "$FNR3C" rev-parse HEAD)
+
+# Change ONLY real.sh — the two symlinks are untouched.
+printf '#!/usr/bin/env bash\necho "real-v2-HOSTILE"\n' > "$FNR3C/scripts/real.sh"
+git -C "$FNR3C" add scripts/real.sh
+git -C "$FNR3C" commit -q -m "change real.sh only — symlink chain unchanged"
+FNR3C_REF2=$(git -C "$FNR3C" rev-parse HEAD)
+
+# Companion guard: settings.json and the two symlinks must be identical between refs.
+if [[ -n "$(git -C "$FNR3C" diff "$FNR3C_REF1" "$FNR3C_REF2" -- .claude/settings.json scripts/link.sh scripts/middle.sh)" ]]; then
+  fail "audit-surface/fn-r3-chain/wiring-unchanged" "settings.json or symlinks should not differ — fixture setup error"
+fi
+
+FNR3C_OUT1=$(cd "$FNR3C" && "$GO_BIN" audit-surface "$FNR3C_REF1" 2>/dev/null)
+FNR3C_D1=$(grep 'hook \[claude\]' <<<"$FNR3C_OUT1" | awk '{print $NF}')
+
+# Vacuity guard 1: hook line must exist (chain was detected).
+if [[ -z "$FNR3C_D1" ]]; then
+  fail "audit-surface/fn-r3-chain/vacuity" "hook [claude] not found at ref1 — vacuity check failed"
+fi
+
+# Vacuity guard 2: the digest must actually contain sha256 (resolved to real content).
+if ! grep -qF 'sha256:' <<<"$FNR3C_D1"; then
+  fail "audit-surface/fn-r3-chain/sha256-present" "digest at ref1 does not contain sha256 — resolution failed: $FNR3C_D1"
+fi
+ok "audit-surface/fn-r3-chain/sha256-present"
+
+FNR3C_D2=$(cd "$FNR3C" && "$GO_BIN" audit-surface "$FNR3C_REF2" 2>/dev/null | grep 'hook \[claude\]' | awk '{print $NF}')
+if [[ "$FNR3C_D1" == "$FNR3C_D2" ]]; then
+  fail "audit-surface/fn-r3-chain/digest-changes" "digest did not change when real.sh changed through 2-level chain: both are $FNR3C_D1"
+fi
+ok "audit-surface/fn-r3-chain/digest-changes"
+
+assert_parity "audit-surface/fn-r3-chain" "$FNR3C" "$FNR3C_REF2"
+ok "audit-surface/fn-r3-chain/parity"
+
+# ===========================================================================
+# FN-R3-cycle — R3/R4 fix: circular symlink → circular-not-supported, no sha256
+# Fixture: link.sh → link.sh (self-loop)
+# ===========================================================================
+FNR3CY="$WORK/fn-r3-cycle"
+mkdir -p "$FNR3CY/.claude" "$FNR3CY/scripts"
+make_repo "$FNR3CY"
+
+cat > "$FNR3CY/.claude/settings.json" << 'EOF'
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [{"command": "scripts/link.sh", "type": "command"}]
+      }
+    ]
+  }
+}
+EOF
+# Circular symlink: link.sh → link.sh
+ln -s link.sh "$FNR3CY/scripts/link.sh"
+
+git -C "$FNR3CY" add -A
+git -C "$FNR3CY" commit -q -m "init: circular symlink link.sh -> link.sh"
+FNR3CY_REF=$(git -C "$FNR3CY" rev-parse HEAD)
+
+FNR3CY_OUT=$(cd "$FNR3CY" && "$GO_BIN" audit-surface "$FNR3CY_REF" 2>/dev/null)
+FNR3CY_LINE=$(grep 'hook \[claude\]' <<<"$FNR3CY_OUT")
+
+# Vacuity guard 1: the hook line must appear (the script path is still reported).
+if [[ -z "$FNR3CY_LINE" ]]; then
+  fail "audit-surface/fn-r3-cycle/vacuity" "hook [claude] not found in output — vacuity check failed"
+fi
+
+# Vacuity guard 2: must NOT contain sha256 (we must not hash fake content).
+if grep -qF 'sha256:' <<<"$FNR3CY_LINE"; then
+  fail "audit-surface/fn-r3-cycle/no-sha256" "output must not contain sha256 for circular symlink, got: $FNR3CY_LINE"
+fi
+ok "audit-surface/fn-r3-cycle/no-sha256"
+
+if ! grep -qF 'circular-not-supported' <<<"$FNR3CY_LINE"; then
+  fail "audit-surface/fn-r3-cycle/circular-reported" "expected 'circular-not-supported' in digest, got: $FNR3CY_LINE"
+fi
+ok "audit-surface/fn-r3-cycle/circular-reported"
+
+assert_parity "audit-surface/fn-r3-cycle" "$FNR3CY" "$FNR3CY_REF"
+ok "audit-surface/fn-r3-cycle/parity"
+
+# ===========================================================================
+# FN-R3-depth — depth limit exceeded → chain-not-supported, no sha256
+# Fixture: 9-hop chain (a→b→c→d→e→f→g→h→i→real, exceeds limit of 8)
+# ===========================================================================
+FNR3D="$WORK/fn-r3-depth"
+mkdir -p "$FNR3D/.claude" "$FNR3D/scripts"
+make_repo "$FNR3D"
+
+cat > "$FNR3D/.claude/settings.json" << 'EOF'
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [{"command": "scripts/a.sh", "type": "command"}]
+      }
+    ]
+  }
+}
+EOF
+printf '#!/usr/bin/env bash\necho "real"\n' > "$FNR3D/scripts/real.sh"
+# Build the chain: i→real, h→i, ..., b→c, a→b  (9 symlinks before the real file)
+ln -s real.sh "$FNR3D/scripts/i.sh"
+ln -s i.sh    "$FNR3D/scripts/h.sh"
+ln -s h.sh    "$FNR3D/scripts/g.sh"
+ln -s g.sh    "$FNR3D/scripts/f.sh"
+ln -s f.sh    "$FNR3D/scripts/e.sh"
+ln -s e.sh    "$FNR3D/scripts/d.sh"
+ln -s d.sh    "$FNR3D/scripts/c.sh"
+ln -s c.sh    "$FNR3D/scripts/b.sh"
+ln -s b.sh    "$FNR3D/scripts/a.sh"
+
+git -C "$FNR3D" add -A
+git -C "$FNR3D" commit -q -m "init: 9-hop symlink chain a→…→real"
+FNR3D_REF=$(git -C "$FNR3D" rev-parse HEAD)
+
+FNR3D_OUT=$(cd "$FNR3D" && "$GO_BIN" audit-surface "$FNR3D_REF" 2>/dev/null)
+FNR3D_LINE=$(grep 'hook \[claude\]' <<<"$FNR3D_OUT")
+
+# Vacuity guard 1: the hook line must appear.
+if [[ -z "$FNR3D_LINE" ]]; then
+  fail "audit-surface/fn-r3-depth/vacuity" "hook [claude] not found in output — vacuity check failed"
+fi
+
+# Vacuity guard 2: must NOT contain sha256.
+if grep -qF 'sha256:' <<<"$FNR3D_LINE"; then
+  fail "audit-surface/fn-r3-depth/no-sha256" "output must not contain sha256 for depth-exceeded chain, got: $FNR3D_LINE"
+fi
+ok "audit-surface/fn-r3-depth/no-sha256"
+
+if ! grep -qF 'chain-not-supported' <<<"$FNR3D_LINE"; then
+  fail "audit-surface/fn-r3-depth/chain-reported" "expected 'chain-not-supported' in digest, got: $FNR3D_LINE"
+fi
+ok "audit-surface/fn-r3-depth/chain-reported"
+
+assert_parity "audit-surface/fn-r3-depth" "$FNR3D" "$FNR3D_REF"
+ok "audit-surface/fn-r3-depth/parity"
+
+# ===========================================================================
+# FN-R3-nonreg — non-regression: absolute target → not-supported,
+#                                absent target   → not-found  (1-level, ML-1B)
+# ===========================================================================
+FNR3NR="$WORK/fn-r3-nonreg"
+mkdir -p "$FNR3NR/.claude" "$FNR3NR/scripts"
+make_repo "$FNR3NR"
+
+cat > "$FNR3NR/.claude/settings.json" << 'EOF'
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {"command": "scripts/abs.sh", "type": "command"},
+          {"command": "scripts/miss.sh", "type": "command"}
+        ]
+      }
+    ]
+  }
+}
+EOF
+# abs.sh → /etc/passwd (absolute target)
+ln -s /etc/passwd "$FNR3NR/scripts/abs.sh"
+# miss.sh → nonexistent.sh (absent target)
+ln -s nonexistent.sh "$FNR3NR/scripts/miss.sh"
+
+git -C "$FNR3NR" add -A
+git -C "$FNR3NR" commit -q -m "init: absolute and absent symlink targets"
+FNR3NR_REF=$(git -C "$FNR3NR" rev-parse HEAD)
+
+FNR3NR_OUT=$(cd "$FNR3NR" && "$GO_BIN" audit-surface "$FNR3NR_REF" 2>/dev/null)
+
+# Vacuity guard: both hook lines must appear.
+if ! grep -qF 'scripts/abs.sh' <<<"$FNR3NR_OUT"; then
+  fail "audit-surface/fn-r3-nonreg/vacuity-abs" "scripts/abs.sh not found in output — vacuity check failed"
+fi
+if ! grep -qF 'scripts/miss.sh' <<<"$FNR3NR_OUT"; then
+  fail "audit-surface/fn-r3-nonreg/vacuity-miss" "scripts/miss.sh not found in output — vacuity check failed"
+fi
+
+FNR3NR_ABS_LINE=$(grep 'scripts/abs.sh' <<<"$FNR3NR_OUT")
+FNR3NR_MISS_LINE=$(grep 'scripts/miss.sh' <<<"$FNR3NR_OUT")
+
+if ! grep -qF 'not-supported' <<<"$FNR3NR_ABS_LINE"; then
+  fail "audit-surface/fn-r3-nonreg/abs-not-supported" "expected 'not-supported' for absolute symlink, got: $FNR3NR_ABS_LINE"
+fi
+ok "audit-surface/fn-r3-nonreg/abs-not-supported"
+
+if ! grep -qF 'not-found' <<<"$FNR3NR_MISS_LINE"; then
+  fail "audit-surface/fn-r3-nonreg/miss-not-found" "expected 'not-found' for absent symlink target, got: $FNR3NR_MISS_LINE"
+fi
+ok "audit-surface/fn-r3-nonreg/miss-not-found"
+
+assert_parity "audit-surface/fn-r3-nonreg" "$FNR3NR" "$FNR3NR_REF"
+ok "audit-surface/fn-r3-nonreg/parity"
+
+echo "check-audit-surface: all 21 scenarios passed (FN-1..5, FP-1..2, FN-F1a/b/c, FN-F2, FN-F3, FN-R3-chain, FN-R3-cycle, FN-R3-depth, FN-R3-nonreg)"

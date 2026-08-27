@@ -148,32 +148,7 @@ func RunAuditSurface(opts Options) (*Report, error) {
 		// For each tuple, compute the digest of the referenced script.
 		for i := range tuples {
 			if tuples[i].ScriptPath != "" {
-				// Detect git symlinks (mode 120000) before hashing.
-				if target, isLink := getSymlinkTarget(opts.Ref, tuples[i].ScriptPath, opts.GitRoot); isLink {
-					if strings.HasPrefix(target, "/") {
-						// Absolute symlink target — cannot follow safely without checkout.
-						tuples[i].Digest = "symlink->" + target + "|not-supported"
-					} else {
-						// Resolve target relative to the symlink's directory.
-						linkDir := path.Dir(tuples[i].ScriptPath)
-						resolved := path.Join(linkDir, target)
-						realBytes, realErr := gitShow(opts.Ref, resolved, opts.GitRoot)
-						if realErr != nil {
-							tuples[i].Digest = "symlink->" + target + "|not-found"
-						} else {
-							h := sha256.Sum256(realBytes)
-							tuples[i].Digest = "symlink->" + target + "|sha256:" + fmt.Sprintf("%x", h)
-						}
-					}
-				} else {
-					scriptBytes, scriptErr := gitShow(opts.Ref, tuples[i].ScriptPath, opts.GitRoot)
-					if scriptErr != nil {
-						tuples[i].Digest = "not-found"
-					} else {
-						h := sha256.Sum256(scriptBytes)
-						tuples[i].Digest = fmt.Sprintf("sha256:%x", h)
-					}
-				}
+				tuples[i].Digest = resolveScriptDigest(opts.Ref, tuples[i].ScriptPath, opts.GitRoot)
 			} else {
 				tuples[i].Digest = "unresolvable"
 			}
@@ -423,12 +398,82 @@ func normalizeCommand(rawCmd string) string {
 	return ""
 }
 
+// resolveScriptDigest follows symlinks in the git object database (mode 120000)
+// starting at scriptPath, with cycle detection and a depth limit.
+//
+// Marker format: "symlink-><first_target>|<outcome>" for symlink chains;
+// plain "sha256:<hex>" or "not-found" for regular files.
+//
+// Outcomes for symlink chains:
+//   - "sha256:<hex>"             — resolved to real content
+//   - "not-found"                — final target absent at this ref
+//   - "not-supported"            — absolute symlink target (cannot follow without checkout)
+//   - "circular-not-supported"   — cycle detected in the chain
+//   - "chain-not-supported"      — depth limit (8 hops) exceeded
+func resolveScriptDigest(ref, scriptPath, gitRoot string) string {
+	const maxHops = 8
+
+	// visited is seeded with the origin path to detect self-loops on the first hop.
+	visited := map[string]bool{scriptPath: true}
+	current := scriptPath
+	firstTarget := "" // the first symlink target, for the "symlink->" prefix
+
+	for hop := 0; hop < maxHops; hop++ {
+		target, isLink := getSymlinkTarget(ref, current, gitRoot)
+		if !isLink {
+			// current is a regular file (or absent at this ref).
+			if firstTarget == "" {
+				// No symlink anywhere in the chain: plain digest.
+				scriptBytes, err := gitShow(ref, current, gitRoot)
+				if err != nil {
+					return "not-found"
+				}
+				h := sha256.Sum256(scriptBytes)
+				return fmt.Sprintf("sha256:%x", h)
+			}
+			// End of symlink chain: hash the real content.
+			scriptBytes, err := gitShow(ref, current, gitRoot)
+			if err != nil {
+				return "symlink->" + firstTarget + "|not-found"
+			}
+			h := sha256.Sum256(scriptBytes)
+			return "symlink->" + firstTarget + "|sha256:" + fmt.Sprintf("%x", h)
+		}
+
+		// Record the first target for the marker prefix.
+		if firstTarget == "" {
+			firstTarget = target
+		}
+
+		// Absolute target — cannot follow without a real checkout.
+		if strings.HasPrefix(target, "/") {
+			return "symlink->" + firstTarget + "|not-supported"
+		}
+
+		// Resolve relative to the current symlink's directory.
+		linkDir := path.Dir(current)
+		resolved := path.Join(linkDir, target)
+
+		// Cycle detection: resolved path already in our chain.
+		if visited[resolved] {
+			return "symlink->" + firstTarget + "|circular-not-supported"
+		}
+		visited[resolved] = true
+		current = resolved
+	}
+
+	// Depth limit exceeded.
+	return "symlink->" + firstTarget + "|chain-not-supported"
+}
+
 // getSymlinkTarget checks whether the path at ref is a git symlink (mode 120000
 // in the object database). If it is, it returns the raw symlink target string and true.
 // Returns ("", false) for regular files or if the path is absent.
 func getSymlinkTarget(ref, scriptPath, gitRoot string) (string, bool) {
 	// git ls-tree output format: "<mode> <type> <sha>\t<path>\n"
-	out, err := exec.Command("git", "ls-tree", ref, "--", scriptPath).Output()
+	cmd := exec.Command("git", "ls-tree", ref, "--", scriptPath)
+	cmd.Dir = gitRoot
+	out, err := cmd.Output()
 	if err != nil || len(out) == 0 {
 		return "", false
 	}

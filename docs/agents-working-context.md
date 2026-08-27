@@ -4,6 +4,40 @@
 
 ---
 
+## Sessão 2026-08-27 — hades-tf (FIM: ML-3B — Reverificação pós-ML-1B / APROVADO, bloqueio levantado)
+
+Branch `feat/comando-que-audita-a-superficie-executavel-de-um-checkout-de-pr`.
+
+**Veredito:** APROVADO. Os três achados originais (F1 em 3 formas, F2 básico, F3) estão fechados.
+17/17 no gate. Bloqueio levantado.
+
+**Quatro resíduos novos declarados:**
+- R1 (MEDIUM): `env VAR=x script.sh` → `unresolvable` estável. Não é mentira mas é FN.
+- R2 (MEDIUM): path com espaço no nome (e.g., `scripts/sub dir/hook.sh`) → `unresolvable` estável.
+- R3 (HIGH): cadeia de symlinks (link→middle→real): digest = sha256(target string do intermediário). FN quando real muda.
+- R4 (MEDIUM): symlink circular (link→link): sha256 do nome do target, não de conteúdo. Prefixo `symlink->` presente.
+
+Nenhum bloqueia o repositório trackfw (sem hooks em cadeia/circulares aqui).
+
+**Q3 — package.json:** root com postinstall reportado; node_modules e fixtures corretamente ausentes. ✅
+
+**Artefatos atualizados:**
+- `docs/seguranca/2026-08-27-barreira-do-audit-surface.md` — seção Reverificação ML-3B adicionada
+- `docs/roadmaps/wip/ROADMAP-*.md` — ML-3B marcado ✅ Concluído
+
+---
+
+## Sessão 2026-08-27 — hades-tf (INÍCIO: ML-3B — Reverificação dos três achados pós-ML-1B)
+
+Branch `feat/comando-que-audita-a-superficie-executavel-de-um-checkout-de-pr`.
+
+**Escopo:** Confirmar ou negar F1/F2/F3 pós-correção (ML-1B). Medir formas extras de F1 não cobertas
+pelo gate. Medir edge cases de F2 (symlink fora do repo, cadeia, circular, alvo ausente). Verificar
+package.json por descoberta (falso-positivo). Verificar regressão nos 17 cenários. Levantar ou
+manter o bloqueio.
+
+---
+
 ## Sessão 2026-08-27 — apolo-tf (FIM: ML-1B — Correções F1/F2/F3 + gaps de inventário do audit-surface / CONCLUÍDO)
 
 Branch `feat/comando-que-audita-a-superficie-executavel-de-um-checkout-de-pr`.
@@ -24561,3 +24595,34 @@ seções obrigatórias. Nenhuma implementação neste ML.
 - Seam localizado: EVAL_BIN_FN2/EVAL_BIN_FP1 — só o cenário afetado usa o binário sabotado; parity usa sempre o real GO_BIN
 - Resolução do git commit guard: commits em subprocessos bash (não em Bash tool calls do agente) não são interceptados pelo branch guard; fixture repos usam `core.hooksPath /dev/null` + `commit.gpgsign false`
 **make quality (background):** em andamento (não aguardado — evidências parciais colhidas acima)
+
+---
+## apolo-tf | 2026-08-27 | INÍCIO ML-1C
+**Branch:** feat/comando-que-audita-a-superficie-executavel-de-um-checkout-de-pr
+**Roadmap:** ROADMAP-2026-08-26-comando-que-audita-a-superficie-executavel-de-um-checkout-de-pr.md
+**Microbatch:** ML-1C — R3 (HIGH) cadeia de symlinks: resolução recursiva com limite de profundidade e detecção de ciclo nos 3 CLIs + gate
+**Escopo:** `internal/auditsurface/auditsurface.go` · `npm/src/commands/audit-surface.js` · `pypi/trackfw/commands/audit_surface.py` · `scripts/check-audit-surface.sh`
+**Iniciado:** 2026-08-27
+
+---
+## apolo-tf | 2026-08-27 | FIM ML-1C
+**Branch:** feat/comando-que-audita-a-superficie-executavel-de-um-checkout-de-pr
+**Roadmap:** ROADMAP-2026-08-26-comando-que-audita-a-superficie-executavel-de-um-checkout-de-pr.md
+**Microbatch:** ML-1C — R3 cadeia de symlinks ✅ Concluído
+**Arquivos modificados:**
+- `internal/auditsurface/auditsurface.go` — novo `resolveScriptDigest()` com loop visited+depth; `getSymlinkTarget` com `cmd.Dir=gitRoot` corrigido
+- `npm/src/commands/audit-surface.js` — nova `resolveScriptDigest()` com loop e `Set` de visited; bloco de digest simplificado
+- `pypi/trackfw/commands/audit_surface.py` — nova `resolve_script_digest()` com loop + `posixpath.normpath`; bloco de digest simplificado
+- `scripts/check-audit-surface.sh` — 4 cenários novos (FN-R3-chain, FN-R3-cycle, FN-R3-depth, FN-R3-nonreg) com guard de vacuidade duplo; total 17→21
+- `docs/roadmaps/wip/ROADMAP-*.md` — ML-1C adicionado e marcado ✅
+**Gates verificados:**
+- `go build ./...` → EXIT:0
+- `go test ./internal/auditsurface/...` → EXIT:0
+- `bash scripts/check-audit-surface.sh` → 21/21 EXIT:0
+- `bin/trackfw validate` → 16 warnings pré-existentes, 0 violations, EXIT:0
+**Evidências:**
+- Cadeia 2 níveis REF1: `symlink->middle.sh|sha256:7e9e48f…` / REF2: `symlink->middle.sh|sha256:cf9850…` (digests diferem)
+- Ciclo: `symlink->link.sh|circular-not-supported` (sem sha256)
+- Profundidade (9 hops): `symlink->b.sh|chain-not-supported` (sem sha256)
+- Abs: `symlink->/etc/passwd|not-supported` · Ausente: `symlink->nonexistent.sh|not-found`
+**Resíduos mantidos:** R1 (`env VAR=x`) e R2 (path com espaço) — MEDIUM, fora de escopo deste ML

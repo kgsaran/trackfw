@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-08-26
 req: "docs/req/REQ-2026-08-26-checkout-de-pr-executa-hook-versionado-sem-que-nada-avise-o-mantenedor.md"
 squad: "hades-tf, apolo-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, apolo-tf"
 
 # Roadmap: comando que audita a superficie executavel de um checkout de PR
 
-> Created: 2026-08-26 | Status: wip
+> Created: 2026-08-26 | Status: done
 
 ## Context
 
@@ -329,6 +329,117 @@ validate                   16 warnings, 0 violations
 do ML-2A. O protocolo de economia (sem `make quality` no agente, sem dump de log, ponteiros
 `arquivo::símbolo`) ajudou, mas **o escopo domina**: este mexeu em código de produto nos 3 CLIs mais o
 gate; o outro era só gate. A alavanca é o **tamanho do microlote**, não a forma da comunicação.
+
+---
+
+---
+
+### ML-3B — Reverificação pós-ML-1B
+**Status:** ✅ Concluído · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
+
+Quem reprovada levanta o bloqueio — ou o mantém com evidência.
+
+**Veredito:** APROVADO. Os três achados originais (F1 em 3 formas, F2 básico, F3) estão fechados.
+Bloqueio levantado. Quatro resíduos novos declarados (R1–R4), nenhum bloqueia o trackfw.
+
+**Achados originais:**
+- F1 (.bash, cmd --arg, bash cmd): FECHADO. Gate FN-F1a/b/c 3/3.
+- F2 (link→real.sh): FECHADO. Digest segue conteúdo real; marcador `symlink->` presente.
+- F3 (validateRef): FECHADO. `^{commit}` confirmado no código + gate FN-F3 3/3.
+
+**Resíduos novos descobertos na reverificação:**
+- R1 (MEDIUM): `env VAR=x script.sh` → unresolvable estável. FN mas marcado.
+- R2 (MEDIUM): path com espaço no nome → unresolvable estável. FN mas marcado.
+- R3 (HIGH): cadeia de symlinks (link→middle→real) → digest estável quando real muda. FN silencioso.
+- R4 (MEDIUM): symlink circular → sha256 do nome do target, não de conteúdo real.
+
+**Q3 — package.json discovery sem FP:** root com postinstall encontrado; node_modules e fixtures ausentes. ✅
+
+**Regressão:** 17/17 ✅
+
+**Artefato:** `docs/seguranca/2026-08-27-barreira-do-audit-surface.md` — seção "Reverificação ML-3B".
+
+---
+
+### ML-1C — R3 (HIGH): cadeia de symlinks — resolução recursiva com limite e detecção de ciclo
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+
+Barreira ML-3B declarou R3 (HIGH): cadeia `link.sh → middle.sh → real.sh` produz digest estável
+quando `real.sh` muda, porque o código segue apenas 1 nível e hasheia o blob de `middle.sh`
+(que é outra string de symlink target). Mesmo modo de falha do F2 original, um nível mais fundo.
+
+| # | Onde | Correção |
+|---|---|---|
+| R3 | resolução de symlink em todos os 3 CLIs | loop com visited + depth limit: seguir a cadeia até blob real, ciclo ou profundidade excedida |
+| R4 | mesmo loop | detectar ciclo (resolved == visited path) → `\|circular-not-supported` |
+| — | `getSymlinkTarget` (Go) | `cmd.Dir = gitRoot` ausente — corrigir no mesmo passe |
+| — | Python `posixpath.join` | usar `posixpath.normpath(posixpath.join(...))` para normalizar `..` |
+
+**Arquivos afetados:**
+- `internal/auditsurface/auditsurface.go` — novo `resolveScriptDigest()` com loop + `cmd.Dir` fix
+- `npm/src/commands/audit-surface.js` — mesmo loop no bloco de digest
+- `pypi/trackfw/commands/audit_surface.py` — mesmo loop + `posixpath.normpath`
+- `scripts/check-audit-surface.sh` — 4 novos cenários com guard de vacuidade duplo
+
+**Formato de marcador:** `symlink-><first_target>|<outcome>` onde outcome é:
+- `sha256:<hex>` — conteúdo real do arquivo final
+- `circular-not-supported` — ciclo detectado
+- `chain-not-supported` — profundidade excedida (limit=8)
+- `not-supported` — alvo absoluto (sem regressão do ML-1B)
+- `not-found` — alvo ausente (sem regressão do ML-1B)
+
+**Critérios de aceite:**
+- [x] Cadeia 2 níveis: digest muda quando arquivo final muda — REF1: `symlink->middle.sh|sha256:7e9e48f252767a210ce30377e834683000c9b6b16869fc5360d72c99ffa9eaba` / REF2: `symlink->middle.sh|sha256:cf9850002cd0d4ecd9e70cba267a5f592dae532cc14d748f17e57053139ca0e1`
+- [x] Ciclo: `symlink->link.sh|circular-not-supported`, sem `sha256:` ✅
+- [x] Profundidade excedida: `symlink->b.sh|chain-not-supported`, sem `sha256:` ✅
+- [x] `not-supported` e `not-found` sem regressão — `symlink->/etc/passwd|not-supported` · `symlink->nonexistent.sh|not-found` ✅
+- [x] 4 cenários novos no gate com guard de vacuidade duplo (FN-R3-chain, FN-R3-cycle, FN-R3-depth, FN-R3-nonreg)
+- [x] Byte-idêntico nos 3 CLIs — parity confirmada nos 4 cenários novos
+- [x] `go build ./...` EXIT:0 · `go test ./internal/auditsurface/...` EXIT:0 · `bash scripts/check-audit-surface.sh` 21/21 EXIT:0
+
+**R1 e R2 declarados como resíduo** — não corrigidos neste ML (fora de escopo da barreira).
+
+---
+
+### Auditoria do ML-3B e do ML-1C — **APROVADO**, e o R3 fechado antes do PR
+
+**A barreira aprovou o ML-1B, mas achou o mesmo defeito um nível mais fundo — R3 (HIGH):** a
+resolução de symlink parava no **primeiro** nível, então numa cadeia `link → middle → real` o código
+hasheava a **string** que estava dentro de `middle`:
+
+```
+REF1: symlink->middle.sh|sha256:d7b138374e…
+REF2: symlink->middle.sh|sha256:d7b138374e…    <- IDENTICO, com real.sh alterado
+```
+
+O prefixo `symlink->` alertava, mas o `sha256` **parecia conteúdo e nunca mudava**. Mesmo modo de
+falha do F2: *presente-e-estável engana mais que ausente*. Confirmei no código
+(`auditsurface.go:151-165`, um nível só) e mandei fechar antes do PR.
+
+**Depois do ML-1C:**
+
+```
+cadeia 2 niveis   symlink->middle.sh|sha256:7e9e48f2… -> sha256:cf985000…   MUDA
+ciclo             symlink->link.sh|circular-not-supported                    sem sha256 ficticio
+profundidade      symlink->b.sh|chain-not-supported                          9 hops, limite 8
+nao-regressao     symlink->/etc/passwd|not-supported · symlink->nonexistent.sh|not-found
+
+check-audit-surface  21/21, paridade nos 3 CLIs em cada cenario novo
+make quality (CI-exata, minha)  exit 0
+validate                        16 warnings, 0 violations
+```
+
+**O critério que separa o que corrigi do que declarei:** onde o comando não consegue resolver, ele
+**diz que não conseguiu** (`circular-not-supported`, `chain-not-supported`, `unresolvable`) em vez de
+emitir um `sha256:` que parece conteúdo. **R1** (`env VAR=x script.sh`) e **R2** (path com espaço)
+ficam como resíduo justamente por já serem honestos: admitem que não sabem. **R4** (circular) foi
+coberto de graça pela detecção de ciclo.
+
+**A barreira mediu por conta própria, sem confiar no meu resumo** — inclusive formas que eu não
+listei (`./script.sh`, caminho absoluto, `env VAR=x`), e verificou que `package.json` por descoberta
+**não** reporta `node_modules/**` nem fixture.
+
+**Entrega completa.**
 
 ---
 

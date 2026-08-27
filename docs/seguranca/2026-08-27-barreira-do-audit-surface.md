@@ -330,6 +330,179 @@ satisfeita como escrita para formas fora do whitelist.
 
 ---
 
+## Reverificação — ML-3B (2026-08-27, hades-tf)
+
+> Escopo: confirmar ou negar os três achados pós-ML-1B; medir formas extras de F1 não cobertas pelo
+> gate; medir edge cases de F2 (symlink fora do repo, cadeia, circular, alvo ausente); verificar
+> `package.json` por descoberta (falso-positivo); regressão nos 17 cenários.
+
+**VEREDITO: APROVADO. Os três achados originais estão fechados. Três resíduos novos declarados.**
+
+O bloqueio da entrega é levantado.
+
+---
+
+### Achados originais — status pós-ML-1B
+
+#### F1 — `normalizeCommand` (original: 3 formas) — FECHADO
+
+Medido via gate FN-F1a/b/c (17/17 passam). Os três casos medidos na barreira original:
+
+```
+.bash        → digest MUDA entre refs  (antes: "unresolvable" fixo)
+cmd --arg    → digest MUDA entre refs  (antes: "unresolvable" fixo)
+bash cmd     → digest MUDA entre refs  (antes: "unresolvable" fixo)
+```
+
+Adicionalmente, formas não cobertas pelo gate — medidas agora:
+
+| Forma | Resultado | Conclusão |
+|-------|-----------|-----------|
+| `./scripts/hook.sh` | digest muda (sha256:eb4fe7 → sha256:39ab98) | FECHADO — `./` não bloqueia a extensão |
+| `/usr/local/bin/hardcoded.sh` | `not-found` | CORRETO — path absoluto não existe no repo |
+| `env LOG=1 scripts/hook.sh` | `unresolvable` (estável) | RESÍDUO NOVO R1 — ver abaixo |
+| `scripts/sub dir/hook.sh` | `unresolvable` (estável) | RESÍDUO NOVO R2 — ver abaixo |
+
+#### F2 — symlink como script (original: link→real) — FECHADO para forma básica
+
+Gate FN-F2 passa. Relatório correto para o caso original:
+
+```
+REF1: symlink->real.sh|sha256:8bb7138…
+REF2: symlink->real.sh|sha256:335a931…   <- MUDA quando real.sh muda
+```
+
+Edge cases medidos agora (não cobertos pelo gate):
+
+| Caso | Resultado medido | Conclusão |
+|------|-----------------|-----------|
+| Alvo absoluto (`/etc/passwd`) | `symlink->/etc/passwd\|not-supported` | CORRETO — não enganoso |
+| Alvo ausente (`nonexistent.sh`) | `symlink->nonexistent.sh\|not-found` | CORRETO — não enganoso |
+| Cadeia (link→middle→real) | `symlink->middle.sh\|sha256:d7b138…` estável | RESÍDUO NOVO R3 — ver abaixo |
+| Circular (link→link) | `symlink->link.sh\|sha256:75871769…` | RESÍDUO NOVO R4 — ver abaixo |
+
+#### F3 — `validateRef` aceita SHA estrangeiro — FECHADO
+
+Confirmado por leitura de código (`^{commit}` presente, linha 96 de `internal/commands/audit_surface.go`)
+e por gate FN-F3 (3 cenários, todas as 3 runtimes):
+
+```
+$ trackfw audit-surface 0000000000000000000000000000000000000042
+Error: audit-surface: ref "000000…42" does not resolve: fatal: Needed a single revision
+```
+
+---
+
+### Resíduos novos declarados (descobertos na reverificação)
+
+#### R1 — `env VAR=x script.sh` → `unresolvable` estável (MEDIUM)
+
+`env` não está no mapa `interpreters` de `normalizeCommand`. O token `env` é tratado como "não é
+interpretador" → `candidate = tokens[0] = "env"` → sem extensão de script → retorna `""` →
+`unresolvable`. O relatório mostra `unresolvable` nas duas refs quando `scripts/hook.sh` muda.
+
+Não é uma mentira (o marcador é `unresolvable`, não um sha256 falso), mas é um gap: a Variante A
+é indetectável para comandos prefixados com `env`. Severidade MEDIUM — prática comum em wiring
+files de projetos que precisam injetar env vars.
+
+**Mitigation:** adicionar `env` ao tratamento especial — consumir os tokens `VAR=valor` até
+encontrar o primeiro token sem `=` e usá-lo como candidato de script.
+
+#### R2 — `scripts/sub dir/hook.sh` (espaço no path) → `unresolvable` estável (MEDIUM)
+
+`normalizeCommand`: cmd tem espaço → entra no ramo de "interpreter prefix ou path com argumentos".
+`tokens[0] = "scripts/sub"` não está no mapa de interpretadores → `candidate = "scripts/sub"` → sem
+extensão → retorna `""` → `unresolvable`. Paths com espaço no nome são incomuns mas válidos em
+wiring files (e.g., projetos que usam nomes de diretórios com espaço).
+
+Não é uma mentira (marcador `unresolvable`), mas a Variante A é indetectável para esses paths.
+Severidade MEDIUM.
+
+**Mitigation:** antes de tentar interpretar espaços como separador, tentar o path inteiro
+`git ls-tree ref --name-only -- "scripts/sub dir/hook.sh"`. Se existe, usá-lo diretamente.
+
+#### R3 — Symlink em cadeia (link→middle→real) → digest estável para mudança no final (HIGH)
+
+`getSymlinkTarget` detecta que `link.sh` é modo `120000` → lê o target `middle.sh` (relativo) →
+resolve para `scripts/middle.sh` → chama `gitShow(ref, "scripts/middle.sh")`. `gitShow` faz
+`git show ref:scripts/middle.sh` que retorna o blob de `middle.sh` — que é **também um symlink**,
+cujo blob é a string `"real.sh"`. O código recebe `"real.sh"`, calcula `sha256("real.sh")` e reporta
+esse hash.
+
+**Resultado medido:**
+```
+REF1: symlink->middle.sh|sha256:d7b138374e701b5c7eb55f6ffbcffc56ee27502d936409f39f84f1789843fc7d
+REF2: symlink->middle.sh|sha256:d7b138374e701b5c7eb55f6ffbcffc56ee27502d936409f39f84f1789843fc7d
+```
+
+`real.sh` mudou entre REF1 e REF2. Digest **idêntico**. Este é o mesmo modo de falha do F2
+original, um nível mais fundo. Severidade HIGH — o `symlink->` está no marcador, mas o sha256 parece
+real e é imutável.
+
+**Mitigation:** após seguir um symlink e chamar `gitShow`, verificar se o resultado retornado
+também é um blob de modo `120000` (novo `getSymlinkTarget` recursivo, com profundidade máxima).
+Alternativa: `git cat-file -t ref:resolved` antes de hashear — se `"blob"` e o blob tem modo
+`120000`, reportar `symlink->target|chain-not-supported`.
+
+**Bloqueia o repositório trackfw?** Não. Hooks do repo não usam symlinks em cadeia.
+
+#### R4 — Symlink circular (link→link) → sha256 do nome do target, não de conteúdo (MEDIUM)
+
+`getSymlinkTarget` retorna `"link.sh"` (target string). Resolvido para `"scripts/link.sh"`.
+`gitShow(ref, "scripts/link.sh")` retorna `"link.sh"` novamente (é o blob do symlink).
+sha256(`"link.sh"`) é reportado como digest.
+
+**Resultado medido:**
+```
+symlink->link.sh|sha256:75871769f67f85c6a0315b2ff20b89fdd320940108ac4e7a79bf5e78612182ec
+```
+
+O prefixo `symlink->` está presente (o leitor é alertado de que é um symlink). O sha256 reportado,
+porém, é o hash do **nome do target**, não de conteúdo executável. Prático: um symlink circular não
+executaria em runtime (ELOOP), então o vetor de ataque real é baixo. Severidade MEDIUM.
+
+**Mitigation:** na resolução de symlink, detectar loop (path de destino igual ao path de origem)
+e reportar `symlink->link.sh|circular-not-supported`.
+
+---
+
+### Pergunta 3 — `package.json` por descoberta: falso-positivo? — NEGATIVO
+
+Medido nos três casos preocupantes:
+
+| Caso | Resultado | Conclusão |
+|------|-----------|-----------|
+| `package.json` na raiz com `postinstall` | `lifecycle [present] package.json postinstall…` | Correto ✅ |
+| `node_modules/evil/package.json` com `postinstall` | não aparece no relatório | Correto ✅ |
+| `fixtures/package.json` com `postinstall` | não aparece no relatório | Correto ✅ |
+
+A discovery tenta apenas dois candidatos (`package.json` e `npm/package.json`). `node_modules` e
+subdiretórios arbitrários não são varridos. Risco de falso-positivo: NULO para os padrões testados.
+
+---
+
+### Pergunta 4 — Regressão nos 17 cenários originais — NEGATIVO
+
+```
+check-audit-surface: all 17 scenarios passed (FN-1..5, FP-1..2, FN-F1a/b/c, FN-F2, FN-F3)
+```
+
+---
+
+### Resumo de resíduos aceitos para esta entrega
+
+| ID | Severidade | Superfície | FN confirmado? | Bloqueia trackfw? |
+|----|-----------|-----------|----------------|------------------|
+| R1 | MEDIUM | `env VAR=x script.sh` → unresolvable | Sim (mas marcado) | Não |
+| R2 | MEDIUM | path com espaço → unresolvable | Sim (mas marcado) | Não |
+| R3 | HIGH | cadeia de symlinks → sha256 estável | Sim | Não |
+| R4 | MEDIUM | symlink circular → sha256 do nome | Parcialmente | Não |
+
+R1/R2/R3/R4 devem ser rastreados na REQ existente de F1/F2/F3 ou numa REQ própria antes de
+promover `audit-surface` como ferramenta genérica.
+
+---
+
 ## Referências
 
 - Modelo de ameaça: `docs/seguranca/2026-08-26-modelo-de-ameaca-da-superficie-executavel-de-checkout.md`

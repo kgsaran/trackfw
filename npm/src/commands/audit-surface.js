@@ -141,6 +141,63 @@ function getSymlinkTarget(ref, scriptPath, gitRoot) {
   return { target: targetBuf.toString().trim(), isLink: true }
 }
 
+// resolveScriptDigest follows the symlink chain (if any) at scriptPath with
+// cycle detection and a depth limit, then returns the digest string.
+//
+// Marker format: "symlink-><first_target>|<outcome>" for symlink chains;
+// plain "sha256:<hex>" or "not-found" for regular files.
+//
+// Outcomes for symlink chains:
+//   sha256:<hex>            — resolved to real content
+//   not-found               — final target absent at this ref
+//   not-supported           — absolute symlink target
+//   circular-not-supported  — cycle detected
+//   chain-not-supported     — depth limit (8 hops) exceeded
+function resolveScriptDigest(ref, scriptPath, gitRoot) {
+  const maxHops = 8
+  const visited = new Set([scriptPath])
+  let current = scriptPath
+  let firstTarget = '' // first symlink target, for the "symlink->" prefix
+
+  for (let hop = 0; hop < maxHops; hop++) {
+    const { target, isLink } = getSymlinkTarget(ref, current, gitRoot)
+    if (!isLink) {
+      // current is a regular file (or absent).
+      if (firstTarget === '') {
+        // No symlink in the chain: plain digest.
+        const buf = gitShow(ref, current, gitRoot)
+        return buf ? sha256hex(buf) : 'not-found'
+      }
+      // End of symlink chain.
+      const buf = gitShow(ref, current, gitRoot)
+      return buf
+        ? `symlink->${firstTarget}|` + sha256hex(buf)
+        : `symlink->${firstTarget}|not-found`
+    }
+
+    if (firstTarget === '') firstTarget = target
+
+    // Absolute target — cannot follow without checkout.
+    if (target.startsWith('/')) {
+      return `symlink->${firstTarget}|not-supported`
+    }
+
+    // Resolve relative to current's directory.
+    const linkDir = path.posix.dirname(current)
+    const resolved = path.posix.join(linkDir, target)
+
+    // Cycle detection.
+    if (visited.has(resolved)) {
+      return `symlink->${firstTarget}|circular-not-supported`
+    }
+    visited.add(resolved)
+    current = resolved
+  }
+
+  // Depth limit exceeded.
+  return `symlink->${firstTarget}|chain-not-supported`
+}
+
 // sha256hex computes SHA-256 of buffer content.
 function sha256hex(buf) {
   return 'sha256:' + crypto.createHash('sha256').update(buf).digest('hex')
@@ -348,28 +405,11 @@ function runAuditSurface(ref, base, gitRoot) {
       continue
     }
     const tuples = extractTuples(runtime, content)
-    // Compute digests for each tuple's script, detecting git symlinks (mode 120000).
+    // Compute digests for each tuple's script, following symlink chains.
     for (const t of tuples) {
-      if (t.script_path) {
-        const { target, isLink } = getSymlinkTarget(ref, t.script_path, gitRoot)
-        if (isLink) {
-          if (target.startsWith('/')) {
-            t.script_digest = `symlink->${target}|not-supported`
-          } else {
-            const linkDir = path.posix.dirname(t.script_path)
-            const resolved = path.posix.join(linkDir, target)
-            const realBytes = gitShow(ref, resolved, gitRoot)
-            t.script_digest = realBytes
-              ? `symlink->${target}|` + sha256hex(realBytes)
-              : `symlink->${target}|not-found`
-          }
-        } else {
-          const scriptBytes = gitShow(ref, t.script_path, gitRoot)
-          t.script_digest = scriptBytes ? sha256hex(scriptBytes) : 'not-found'
-        }
-      } else {
-        t.script_digest = 'unresolvable'
-      }
+      t.script_digest = t.script_path
+        ? resolveScriptDigest(ref, t.script_path, gitRoot)
+        : 'unresolvable'
     }
     report.hook_wiring.push({ runtime, wiring_file: wiringFile, present: true, tuples })
   }

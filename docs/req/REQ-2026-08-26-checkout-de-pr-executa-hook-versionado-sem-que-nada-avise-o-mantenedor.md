@@ -1,14 +1,14 @@
 ---
-status: Open
+status: done
 date: 2026-08-26
 author: "Zeus (Arquiteto)"
 adr: "docs/adr/ADR-2026-08-26-superficie-executavel-de-um-checkout-de-pr-e-auditada-por-comando-dedicado-nao-por-regra-de-validate.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-26-comando-que-audita-a-superficie-executavel-de-um-checkout-de-pr.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-26-comando-que-audita-a-superficie-executavel-de-um-checkout-de-pr.md"
 ---
 
 # REQ: checkout de PR executa hook versionado sem que nada avise o mantenedor
 
-> Date: 2026-08-26 | Status: Open
+> Date: 2026-08-26 | Status: done
 | Linear Issue:
 | Jira Issue:
 
@@ -99,4 +99,4 @@ ADR: `docs/adr/ADR-2026-08-26-superficie-executavel-de-um-checkout-de-pr-e-audit
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-26-comando-que-audita-a-superficie-executavel-de-um-checkout-de-pr.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-08-26-comando-que-audita-a-superficie-executavel-de-um-checkout-de-pr.md`
