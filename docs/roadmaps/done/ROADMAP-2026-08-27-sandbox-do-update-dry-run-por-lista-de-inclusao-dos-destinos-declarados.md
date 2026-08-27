@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-08-27
 req: "docs/req/REQ-2026-08-17-update-dry-run-aborta-em-symlink-quebrado-ao-copiar-a-arvore-inteira-do-projeto.md"
 squad: "hades-tf, apolo-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, apolo-tf"
 
 # Roadmap: sandbox do update dry-run por lista de inclusao dos destinos declarados
 
-> Created: 2026-08-27 | Status: wip
+> Created: 2026-08-27 | Status: done
 
 ## Context
 
@@ -155,7 +155,75 @@ descartável — é o que prova ausência de mentira, e não apenas que o dry-ru
 ## Wave 3 — Barreira
 
 ### ML-3A — Reverificação
-**Status:** 🔄 Em andamento · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
+**Status:** ✅ Concluído · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
+
+---
+
+## Wave 4 — Correção dos resíduos R-novo-1 e R-novo-2 (pós-barreira)
+
+> Dependências: ML-3A concluído e aprovado pela barreira.
+
+### ML-1B — Recursão de diretório em Go e Python + documentação de R-novo-2
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-3A
+
+**Arquivos afetados:**
+- `internal/generators/update.go` — `copyPath`: recursa diretório (Go)
+- `pypi/trackfw/commands/update.py` — `_copy_path`: recursa diretório (Python)
+- `scripts/check-update-parity.sh` — Scenario 14: dry-run vs real para diretório já correto
+- `docs/cli-parity.md` — R-novo-2 documentado como residual com anotação `trackfw-contract: gap`
+
+**Critérios de aceite:**
+- [x] Go e Python: `copyPath`/`_copy_path` recursam conteúdo de diretório declarado
+- [x] Scenario 14 no gate: `dry=skipped real=skipped` com guard de vacuidade — OK nos 3 runtimes
+- [x] Node.js sem regressão
+- [x] R-novo-2 documentado em `cli-parity.md` com anotação de contrato
+- [x] `go build ./...` — EXIT:0
+- [x] `go test ./internal/generators/...` — OK
+- [x] `bash scripts/check-update-parity.sh` — EXIT:0 (176 + 1 novo = 177 cenários passando incluindo Scenario 14)
+- [x] `bash scripts/check-parity-contract-coverage.sh` — EXIT:0
+
+---
+
+### Auditoria do ML-3A e do ML-1B — **APROVADO**; entrega completa
+
+**A barreira aprovou e respondeu a pergunta do `trackfw.yaml` hostil de um jeito que vale registrar:**
+
+> `agent_conventions` hostil flui verbatim para o `CLAUDE.md` gerado — **e isso é correto**. O dry-run
+> agora **prevê** a injeção (`updated`), enquanto antes (Gap E) dizia `skipped` em silêncio
+> **enquanto o run real injetava**. O fix tornou o dry-run **honesto sobre a injeção**; não abriu
+> superfície nova.
+
+A superfície já existia; o defeito era o dry-run **esconder** que ela seria usada.
+
+**Dois resíduos novos, e eu tratei os dois de forma diferente:**
+
+**R-novo-1 — corrigido.** Confirmei por leitura que `copyPath` fazia
+`if info.IsDir() { return os.MkdirAll(dst, 0755) }` — criava o diretório **vazio**, sem recursar. Para
+`.claude/commands/trackfw`, o dry-run dizia `updated` onde o real diria `skipped`. **É divergência
+dry-run × run real**, a classe que esta REQ existe para eliminar — menos grave que a omissão porque
+exagera em vez de esconder, mas ainda é o dry-run mentindo. O Node já fazia certo e serviu de
+referência.
+
+```
+copyPath agora: MkdirAll + os.ReadDir + copyPath recursivo, reusando o mesmo
+tratamento de symlink do caminho de arquivo (nao um WalkDir paralelo com regras proprias)
+
+cenario 14: dry=skipped real=skipped, com DOIS guards de vacuidade
+  guard 1: o fixture ficou nao-vazio
+  guard 2: real=skipped
+make quality (CI-exata, minha)  exit 0
+validate                        16 warnings, 0 violations
+```
+
+**R-novo-2 — declarado, não corrigido.** Caminho declarado ilegível (chmod 000, socket, fifo) aborta
+o dry-run em vez de reportar `failed` por target. Semanticamente defensável — o arquivo é
+**necessário** para o target. Documentado no `cli-parity.md` com anotação de contrato.
+
+**Consequência que ele declarou sem eu pedir:** a superfície de abort **ampliou** com a recursão —
+agora inclui arquivos **dentro** de diretório declarado. É paridade com o Node, que já recursava e já
+tinha esse comportamento. Prefiro a consequência declarada à descoberta depois.
+
+**Entrega completa.**
 
 ---
 

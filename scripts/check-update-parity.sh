@@ -1031,6 +1031,84 @@ if [[ "$FAIL" -eq 0 ]]; then
   ok "sandbox/gap-ab/declared-path/three-runtimes"
 fi
 
+# ===========================================================================
+# Scenario 14 — R-novo-1 fix: declared directory already correct
+#
+# claude-commands writes .claude/commands/trackfw (a directory). Before the
+# R-novo-1 fix, Go and Python copyPath created the directory but did NOT
+# recurse into its contents — sandbox received an empty directory. The
+# before-hash was sha256("") and the after-hash was sha256(real content), so
+# dry-run reported `updated` even when real run would report `skipped`
+# (directory already correct).
+#
+# This scenario proves the fix: prime the project with a real run, then run
+# dry vs real — both must report `skipped` in all three runtimes.
+#
+# Vacuity guard 1: .claude/commands/trackfw is non-empty after prime (proves
+#   the prime actually wrote something — fixture is not trivially broken).
+# Vacuity guard 2: real state == skipped (proves the directory content was
+#   already correct when the arms ran — the idempotency scenario holds).
+# ===========================================================================
+S14_FAIL_BEFORE="$FAIL"
+for rt in go node py; do
+  S14_PROJ="$WORK/s14-proj-$rt"
+  mkdir -p "$S14_PROJ"
+  cat > "$S14_PROJ/trackfw.yaml" << 'S14YAML'
+name: s14
+S14YAML
+
+  # Prime: real run with --install-missing to populate .claude/commands/trackfw.
+  # Without --install-missing, the target returns 'missing' without calling apply
+  # when the directory doesn't exist yet (runFileTarget/allEmpty guard).
+  run_update "$rt" "$WORK/s14-home-$rt" "$S14_PROJ" --targets claude-commands --install-missing
+
+  # Vacuity guard 1: directory must exist and be non-empty
+  if [[ ! -d "$S14_PROJ/.claude/commands/trackfw" ]]; then
+    diag "sandbox/dir-already-correct/vacuity-dir-exists/$rt" ".claude/commands/trackfw not created by prime real run — target broken or fixture invalid"
+    continue
+  fi
+  if [[ -z "$(ls -A "$S14_PROJ/.claude/commands/trackfw" 2>/dev/null)" ]]; then
+    diag "sandbox/dir-already-correct/vacuity-dir-nonempty/$rt" ".claude/commands/trackfw is empty after prime — claude-commands wrote no files"
+    continue
+  fi
+
+  # Dry-run arm: same project, directory already correct
+  run_update "$rt" "$WORK/s14-home-$rt" "$S14_PROJ" --dry-run --json --targets claude-commands
+  s14_dry_state=$(python3 -c "
+import json, sys
+try:
+    d = json.loads(sys.argv[1])
+    print(d['targets'][0]['state'])
+except Exception as e:
+    print('PARSE_ERROR:' + str(e))
+" "$UPDATE_STDOUT" 2>/dev/null || echo "PARSE_ERROR")
+
+  # Real arm: same project, idempotent second run
+  run_update "$rt" "$WORK/s14-home-$rt" "$S14_PROJ" --json --targets claude-commands
+  s14_real_state=$(python3 -c "
+import json, sys
+try:
+    d = json.loads(sys.argv[1])
+    print(d['targets'][0]['state'])
+except Exception as e:
+    print('PARSE_ERROR:' + str(e))
+" "$UPDATE_STDOUT" 2>/dev/null || echo "PARSE_ERROR")
+
+  # Vacuity guard 2: real must be skipped (proves idempotency — content was already correct)
+  if [[ "$s14_real_state" != "skipped" ]]; then
+    diag "sandbox/dir-already-correct/vacuity-real-skipped/$rt" "real-run state='$s14_real_state' (expected 'skipped') — prime did not produce correct content, or target is non-idempotent"
+  fi
+
+  # Main assertion: dry == real
+  if [[ "$s14_dry_state" != "$s14_real_state" ]]; then
+    diag "sandbox/dir-already-correct/dry-vs-real/$rt" "dry=$s14_dry_state real=$s14_real_state — dry-run diverged from real for already-correct claude-commands directory; copyPath may not be recursing directory contents into sandbox"
+  fi
+done
+
+if [[ "$FAIL" -eq "$S14_FAIL_BEFORE" ]]; then
+  ok "sandbox/dir-already-correct/dry-vs-real/three-runtimes"
+fi
+
 # ---------------------------------------------------------------------------
 if [[ "$FAIL" -ne 0 ]]; then
   echo "check-update-parity: drift detected — see FAIL lines above." >&2

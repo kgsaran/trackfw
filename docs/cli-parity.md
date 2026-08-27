@@ -2817,7 +2817,7 @@ dry-run state. Broken symlinks outside the set are irrelevant by construction; b
 | `.windsurfrules` | detection signal for Windsurf presence |
 | `.amazonq/rules.md` | detection signal for Amazon Q presence |
 
-**Gate coverage (Scenarios 9–13 of `check-update-parity.sh`):**
+**Gate coverage (Scenarios 9–14 of `check-update-parity.sh`):**
 
 | Scenario | What is proved |
 |---|---|
@@ -2826,6 +2826,7 @@ dry-run state. Broken symlinks outside the set are irrelevant by construction; b
 | 11 (Gap E) | `agent_conventions` in `trackfw.yaml` — dry-run and real-run agree on CLAUDE.md state |
 | 12 (Gap C) | `.github/copilot-instructions.md` present — Copilot hooks written in both dry-run and real run |
 | 13 (Gap A/B) | `.windsurf/hooks.json` and `.amazonq/cli-agents/q_cli_default.json` appear in output paths |
+| 14 (R-novo-1) | `.claude/commands/trackfw` already correct — dry-run and real-run both report `skipped` in all 3 runtimes |
 
 **Falsification (Scenarios 175–176 of `check-gates-falsify.sh`):**
 
@@ -2835,6 +2836,31 @@ dry-run state. Broken symlinks outside the set are irrelevant by construction; b
 - **Direction B** — `copyProjectTree` body reverted to `filepath.WalkDir + os.ReadFile` →
   dry-run aborts on broken symlink outside declared set (CMDB regression). Detected by Scenario 9
   FAIL line `sandbox/dangling-outside-set/exit-zero/go`.
+
+#### Declared residual — declared path or file within a declared directory is unreadable or a special file
+
+<!-- trackfw-contract: gap reason=o comportamento de abort (em vez de failed-por-target) ao encontrar arquivo ilegivel (chmod 000, socket, fifo) em um caminho declarado ou dentro de um diretório declarado é semanticamente defensável (o arquivo é necessário para o target) e consistente nos 3 CLIs; não há comportamento a fixar, logo não há gate; documentado como R-novo-2 da barreira de 2026-08-27 -->
+
+When a file in the declared `relPaths` set (or within a declared directory, after the R-novo-1 fix
+that made `copyPath` recurse) is unreadable (e.g. `chmod 000`) or is a special file (socket, FIFO),
+`copyPath` / `_copy_path` propagates the I/O error up through `copyProjectTree`, causing the
+entire dry-run to abort rather than reporting `failed` for the individual target:
+
+```
+Error: preparing dry-run sandbox: sandbox: copying CLAUDE.md: open /tmp/.../CLAUDE.md: permission denied
+```
+
+This behaviour is the same in all three runtimes (Go, Node.js, Python) and is **semantically
+correct**: the file is needed by the target, so the sandbox cannot be built without it. Treating it
+as `failed` per-target would require the sandbox to proceed with a missing or substitute hash for a
+file that may be central to the before/after comparison.
+
+**Declared and accepted residual** (R-novo-2, barrier review 2026-08-27,
+`docs/seguranca/2026-08-27-barreira-do-sandbox-por-inclusao.md` §3). The surface widened slightly
+after the R-novo-1 fix: before, only a top-level declared path could trigger the abort; now, any
+unreadable or special file **inside** a declared directory (e.g. a `chmod 000` file inside
+`.claude/commands/trackfw`) also triggers it — matching Node.js behaviour, which was already
+recursing and already had this surface.
 
 ### `updated` vs `skipped` — the discriminator is content, not action
 

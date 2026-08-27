@@ -2220,9 +2220,10 @@ func buildSandboxInclusion(selected []string, cfg Config) []string {
 // target is written to dst, not the symlink itself), also matching Node.js's
 // fs.copyFileSync behaviour (R6 in the declared residual).
 //
-// Directories are created with os.MkdirAll; their contents are NOT recursed
-// because the inclusion set is flat — only the explicitly declared paths are
-// needed in the sandbox.
+// Directories are recursed: each entry is copied via copyPath, preserving
+// symlink semantics throughout the subtree. The directory itself is created
+// with os.MkdirAll before the loop so an empty declared directory materialises
+// as present (not absent) in the sandbox.
 func copyPath(src, dst string) error {
 	info, err := os.Lstat(src)
 	if os.IsNotExist(err) {
@@ -2247,7 +2248,19 @@ func copyPath(src, dst string) error {
 		return os.WriteFile(dst, data, 0644)
 	}
 	if info.IsDir() {
-		return os.MkdirAll(dst, 0755)
+		if mkErr := os.MkdirAll(dst, 0755); mkErr != nil {
+			return mkErr
+		}
+		entries, readErr := os.ReadDir(src)
+		if readErr != nil {
+			return readErr
+		}
+		for _, entry := range entries {
+			if err := copyPath(filepath.Join(src, entry.Name()), filepath.Join(dst, entry.Name())); err != nil {
+				return err
+			}
+		}
+		return nil
 	}
 	// Regular file.
 	data, readErr := os.ReadFile(src)

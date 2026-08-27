@@ -515,9 +515,10 @@ def _copy_path(src: str, dst: str) -> None:
     target is written to dst, not the symlink itself), matching Node.js's
     fs.copyFileSync behaviour (R6 in the declared residual).
 
-    Directories are created with os.makedirs only — their contents are NOT
-    recursed because the inclusion set is flat (only the explicitly declared
-    paths are needed in the sandbox).
+    Directories are recursed: each entry is copied via _copy_path, preserving
+    symlink semantics throughout the subtree. The directory itself is created
+    with os.makedirs before the loop so an empty declared directory materialises
+    as present (not absent) in the sandbox.
     """
     try:
         st = os.lstat(src)
@@ -538,6 +539,8 @@ def _copy_path(src: str, dst: str) -> None:
         return
     if _stat.S_ISDIR(st.st_mode):
         os.makedirs(dst, exist_ok=True)
+        for name in os.listdir(src):
+            _copy_path(os.path.join(src, name), os.path.join(dst, name))
         return
     # Regular file.
     parent = os.path.dirname(dst)
