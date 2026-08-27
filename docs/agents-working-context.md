@@ -4,6 +4,46 @@
 
 ---
 
+## Sessão 2026-08-27 — hades-tf (FIM: ML-3A — Barreira do audit-surface / REPROVADO parcial em AC14)
+
+Branch `fix/validate-detecta-hook-de-guard-na-forma-relativa-antiga`.
+
+**Veredito:** REPROVADO em AC14 para duas formas de comando medidas. Três achados de segurança.
+Os achados não bloqueiam o repositório trackfw (hooks usam `.sh` sem args, sem symlinks), mas
+devem ser resíduos declarados e corrigidos numa REQ própria antes de promover `audit-surface`
+como ferramenta genérica.
+
+**F1 (HIGH):** `normalizeCommand` não resolve `.bash`, comandos com args ou prefixo de
+interpretador → digest `unresolvable` permanente, Variante A indetectável. Medido.
+Handoff: `internal/auditsurface/auditsurface.go::normalizeCommand`.
+
+**F2 (HIGH):** symlink como script → digest é hash da string do target, não do conteúdo executado.
+Medido: hash idêntico em dois refs onde `real.sh` mudou.
+Handoff: `internal/auditsurface/auditsurface.go::gitShow`.
+
+**F3 (MEDIUM):** `validateRef` usa `git rev-parse --verify` sem `^{commit}` → aceita SHA de
+40 hex de outro repo → relatório "0 hook tuples" + exit 0 vacuoso. Medido.
+Handoff: `internal/commands/audit_surface.go::validateRef`.
+
+**Cobertas e aprovadas:** AC12, AC13, AC15, AC16, AC5, AC6, Variante B, Variante C,
+SELFTEST_BREAK, AC6 com `no_hooks`.
+
+**Artefatos escritos:**
+- `docs/seguranca/2026-08-27-barreira-do-audit-surface.md`
+- ML-3A ✅ Concluído no roadmap
+
+---
+
+## Sessão 2026-08-27 — hades-tf (INÍCIO: ML-3A — Barreira do audit-surface)
+
+Branch `fix/validate-detecta-hook-de-guard-na-forma-relativa-antiga`.
+
+**Escopo:** Reverificação da implementação do `trackfw audit-surface` contra o modelo de ameaça
+(ML-0A). Responde às 5 perguntas do dispatch. Escreve
+`docs/seguranca/2026-08-27-barreira-do-audit-surface.md`.
+
+---
+
 ## Sessão 2026-08-23 — hades-tf (FIM: ML-4A — Barreira final / APROVADO com achado adjacente)
 
 Branch `fix/barrier-nao-executa-gate-de-roadmap-nao-confiavel`.

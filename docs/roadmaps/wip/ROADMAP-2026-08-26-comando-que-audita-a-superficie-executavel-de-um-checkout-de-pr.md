@@ -191,9 +191,106 @@ Wave 0**, não linguagem mais curta.
 ## Wave 3 — Barreira
 
 ### ML-3A — Reverificação
-**Status:** 🔄 Em andamento · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
+**Status:** ✅ Concluído · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
 
 Quem enumerou verifica se a implementação cobre o que ele enumerou. **Veredito explícito.**
+
+---
+
+### Auditoria do ML-3A — REPROVADO parcialmente em AC14; três achados; dois HIGH
+
+**Veredito:** REPROVADO em AC14 para duas formas de comando. Os achados não bloqueiam o repositório
+trackfw (as formas de comando usadas aqui são cobertas), mas devem ser registrados como resíduos e
+corrigidos numa REQ própria antes de promover `audit-surface` como ferramenta genérica.
+
+**F1 (HIGH) — `normalizeCommand` whitelist:** extensão `.bash`, comando com argumento
+(`scripts/hook.sh --strict`), prefixo de interpretador (`bash scripts/hook.sh`) → digest
+permanentemente `unresolvable`. Variante A não detectável. Medido: saída idêntica em REF1/REF2
+com conteúdo diferente. Handoff: `internal/auditsurface/auditsurface.go::normalizeCommand`.
+
+**F2 (HIGH) — symlink como script:** `git show <ref>:scripts/link.sh` retorna a string do target
+(`real.sh`), não o conteúdo. Digest = `sha256("real.sh")` = imutável quando `real.sh` muda.
+Medido: `sha256:d7b138374e...` idêntico em REF1 e REF2 com `real.sh` modificado.
+Handoff: `internal/auditsurface/auditsurface.go::gitShow` — detectar objeto do tipo `blob`
+que é um symlink e resolver o conteúdo do target.
+
+**F3 (MEDIUM) — `validateRef` aceita SHA de outro repositório:** `git rev-parse --verify <sha>`
+sem `^{commit}` aceita SHA de 40 hex sem confirmar existência do objeto → relatório "0 hook tuples"
++ exit 0 para um ref estrangeiro. Medido: SHA de HEAD~5 do trackfw aceito em repo vazio.
+Fix: `git rev-parse --verify <ref>^{commit}`.
+
+**Gaps de inventário:** `.vscode/tasks.json` prescrito pelo modelo de ameaça Wave 0 não
+implementado; `npm/package.json` hardcoded (não raiz `package.json`). Adicionar à REQ de F1–F3.
+
+**Artefato escrito:** `docs/seguranca/2026-08-27-barreira-do-audit-surface.md`
+
+---
+
+### Auditoria do ML-3A — **REPROVADO parcialmente**; três achados, dois graves
+
+Parecer: `docs/seguranca/2026-08-27-barreira-do-audit-surface.md`.
+
+**A pergunta que eu pedi para ele atacar era "o comando mente em algum caso?" — e a resposta é sim,
+em dois.**
+
+**F1 (HIGH) — `normalizeCommand` só resolve uma forma estreita.** Para qualquer comando que não seja
+`<path>.sh|.py|.js` **sem argumentos e sem prefixo de interpretador**, o digest é fixado em
+`"unresolvable"` **para sempre** — independente do conteúdo do script mudar. Medido em três formas
+comuns: `.bash`, `cmd --arg`, `bash cmd`. **A variante A fica indetectável nessas formas.**
+
+**F2 (HIGH) — symlink como script.** `git show <ref>:scripts/link.sh` devolve a **string do alvo**
+(`real.sh`), não o conteúdo do arquivo real. O digest reportado é o hash do **nome**. Quando
+`real.sh` muda entre dois refs, o digest de `link.sh` **fica idêntico**.
+
+> *"Presente-e-estável engana mais que ausente."*
+
+É exatamente a classe que abriu esta série inteira: o `validate` dando verde enquanto o guard estava
+inerte.
+
+**F3 (MEDIUM) — `validateRef` aceita SHA de outro repositório.** Confirmei por medição própria:
+
+```
+$ trackfw audit-surface 0000000000000000000000000000000000000000
+trackfw audit-surface: 0 hook tuple(s) at 000000…
+absent [claude] .claude/settings.json
+exit=0
+```
+
+Relatório **tranquilizador** para um ref que não existe. Correção de uma linha:
+`git rev-parse --verify <ref>^{commit}`.
+
+**O que passou:** os 8 runtimes, 7 arquivos de instrução, slash commands, lifecycle hooks e
+`.husky/pre-commit` cobertos · variantes B e C detectadas · AC16 sem falso-positivo além das duas
+fixtures · AC6 medido (`settings.json` só com `permissions` → `no_hooks`, não acusado).
+
+**Sobre a costura de autoteste (a superfície nova que mandei ele atacar):** risco baixo, **sem
+bypass** — a variável só faz **falhar**, nunca passar falso; valor não reconhecido comporta-se como
+"sem seam"; não está definida em CI nem no `Makefile`; binário sabotado limpo por `trap`.
+
+**Dois gaps de inventário, não bloqueantes:** `.vscode/tasks.json` prescrito pela Wave 0 e não
+implementado · `npm/package.json` com path fixo — em repositório externo com `package.json` na raiz,
+imprime três linhas `lifecycle [absent]` **tranquilizadoras** varrendo o path errado.
+
+---
+
+## Wave 4 — Correção pós-barreira
+
+### ML-1B — Os dois casos em que o relatório mente
+**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`)
+
+| # | Onde | Correção |
+|---|---|---|
+| F1 | `internal/auditsurface/auditsurface.go::normalizeCommand` | resolver `.bash`, comando com argumentos e prefixo de interpretador — ou, quando não resolver, **dizer que não resolveu** em vez de fixar digest constante |
+| F2 | `internal/auditsurface/auditsurface.go::gitShow` | detectar **symlink** (modo `120000` no `git ls-tree`) e reportar como tal — **nunca** hash do nome do alvo |
+| F3 | `internal/commands/audit_surface.go::validateRef` | `git rev-parse --verify <ref>^{commit}` |
+| — | inventário | `.vscode/tasks.json` · `package.json` por descoberta, não path fixo |
+
+**Critérios de aceite:**
+- [ ] F1: variante A detectada nas 3 formas medidas (`.bash`, `cmd --arg`, `bash cmd`)
+- [ ] F2: symlink reportado como symlink; digest **não** é o hash do nome do alvo
+- [ ] F3: ref inexistente → erro, **não** relatório vazio com exit 0
+- [ ] Cenários novos no `check-audit-surface.sh` para F1, F2 e F3, com guard de vacuidade
+- [ ] `make quality` CI-exata **exit 0** · `validate` 16 warnings
 
 ---
 
