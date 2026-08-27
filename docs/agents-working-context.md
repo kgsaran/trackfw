@@ -24696,3 +24696,31 @@ seções obrigatórias. Nenhuma implementação neste ML.
 - Python display path: string explícita (não slice posicional) para sobreviver inserções futuras
 - Node.js `runFileTarget` aceita `seeds=[]` opcional: backward-compatible, sem quebrar callers existentes
 **Pendência para ML-2A:** testes de falsificação nas duas direções (WalkDir ausente do sandbox, destino declarado omitido)
+
+---
+## apolo-tf | 2026-08-27 | INÍCIO ML-2A
+**Branch:** fix/sandbox-do-update-dry-run-por-lista-de-inclusao-dos-destinos-declarados
+**Roadmap:** ROADMAP-2026-08-27-sandbox-do-update-dry-run-por-lista-de-inclusao-dos-destinos-declarados.md
+**Microbatch:** ML-2A — Paridade e falsificação nas duas direções
+**Escopo:**
+- `scripts/check-update-parity.sh` — 5 novos casos (symlink fora/dentro do conjunto; Gap E; Gap C; Gap A/B)
+- `scripts/check-gates-falsify.sh` — Cenários 175 e 176 (Direction A: destino omitido → divergência dry×real; Direction B: WalkDir re-introduzido → abort no symlink pendurado fora do conjunto)
+- `docs/cli-parity.md` — seção de contrato do sandbox por inclusão com anotação trackfw-contract
+**Iniciado:** 2026-08-27
+
+---
+## apolo-tf | 2026-08-27 | FIM ML-2A
+**Branch:** fix/sandbox-do-update-dry-run-por-lista-de-inclusao-dos-destinos-declarados
+**Roadmap:** ROADMAP-2026-08-27-sandbox-do-update-dry-run-por-lista-de-inclusao-dos-destinos-declarados.md
+**Microbatch:** ML-2A — Paridade e falsificação nas duas direções — ✅ Concluído
+**Entregáveis:**
+- `scripts/check-update-parity.sh`: 5 novos Cenários (9–13) — dangling fora/dentro do conjunto, Gap E, Gap C, Gap A/B — exit 0 com binário real
+- `scripts/check-gates-falsify.sh`: Cenários 175 (Direction A: `add("trackfw.yaml")` removido → `sandbox/gap-e/dry-vs-real/go`) e 176 (Direction B: corpo de `copyProjectTree` revertido para WalkDir+ReadFile → `sandbox/dangling-outside-set/exit-zero/go`) — ambos com baseline OK e detection exit 1 confirmados
+- `docs/cli-parity.md`: seção `### --dry-run sandbox — inclusion-based copy contract` com `<!-- trackfw-contract: gate=scripts/check-update-parity.sh -->`, cobrindo Scenarios 9–13 e Falsification 175–176; `check-parity-contract-coverage.sh` exit 0
+**Gates executados:**
+- `bash scripts/check-update-parity.sh` → exit 0 (real binary)
+- `bash scripts/check-parity-contract-coverage.sh` → exit 0
+- `GO_BIN=/tmp/s175-bin/trackfw bash scripts/check-update-parity.sh` → FAIL `sandbox/gap-e/dry-vs-real/go`, exit 1
+- `GO_BIN=/tmp/s176-bin/trackfw bash scripts/check-update-parity.sh` → FAIL `sandbox/dangling-outside-set/exit-zero/go`, exit 1
+- `trackfw validate` → exit 0 (16 warnings pré-existentes)
+**Próximo:** ML-3A (hades-tf) — reverificação

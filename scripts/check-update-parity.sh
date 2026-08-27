@@ -714,6 +714,323 @@ for h in go node py; do
   fi
 done
 
+# ===========================================================================
+# Scenario 9 — Sandbox by inclusion: dangling symlink OUTSIDE the declared
+# set (.venv/bin/python → nonexistent) does NOT abort --dry-run.
+#
+# Before ML-1A, copyProjectTree walked the whole project tree; os.ReadFile on
+# a broken symlink returned "no such file or directory" and aborted. Now
+# copyProjectTree only visits the declared relPaths — .venv/bin/python is not
+# in any target's relPaths, so the sandbox never touches it.
+#
+# Vacuity guard: JSON output must have dry_run=true (proves --dry-run ran to
+# completion and emitted a real report, not nothing).
+# ===========================================================================
+S9_PROJ="$WORK/s9-proj"
+mkdir -p "$S9_PROJ/.venv/bin"
+ln -sf /nonexistent-python3.99 "$S9_PROJ/.venv/bin/python"
+cat > "$S9_PROJ/trackfw.yaml" << 'S9YAML'
+name: s9
+S9YAML
+
+for rt in go node py; do
+  run_update "$rt" "$WORK/s9-home-$rt" "$S9_PROJ" --dry-run --json
+  # Vacuity guard: must have produced JSON with dry_run=true
+  s9_dry_flag=$(python3 -c "
+import json, sys
+try:
+    d = json.loads(sys.argv[1])
+    print(str(d.get('dry_run', 'MISSING')).lower())
+except Exception as e:
+    print('PARSE_ERROR:' + str(e))
+" "$UPDATE_STDOUT" 2>/dev/null || echo "PARSE_ERROR")
+  if [[ "$s9_dry_flag" != "true" ]]; then
+    diag "sandbox/dangling-outside-set/vacuity/$rt" "dry_run field not true ($s9_dry_flag) — fixture broken or output unparseable"
+  fi
+  if [[ "$UPDATE_EXIT" != "0" ]]; then
+    diag "sandbox/dangling-outside-set/exit-zero/$rt" "$rt exited $UPDATE_EXIT — dangling symlink outside declared set must not abort --dry-run"
+  fi
+done
+
+if [[ "$FAIL" -eq 0 ]]; then
+  ok "sandbox/dangling-outside-set"
+fi
+
+# ===========================================================================
+# Scenario 10 — Sandbox by inclusion: dangling symlink INSIDE the declared
+# set (CLAUDE.md → nonexistent) is treated as absent, not as an error.
+#
+# CLAUDE.md is in agent-rules relPaths. copyPath uses os.Lstat, which
+# succeeds on the symlink itself (does not follow it), then detects the
+# symlink and returns without copying — so the sandbox slot is empty.
+# hashRelPaths then returns "" for CLAUDE.md → allEmpty → state=missing.
+# The run must exit 0 with state=missing (not abort).
+#
+# Vacuity guard: state must be 'missing' — proves the symlink was processed
+# (not skipped because of an early bail-out) and the declared relPath is
+# correctly treated as absent.
+# ===========================================================================
+S10_PROJ="$WORK/s10-proj"
+mkdir -p "$S10_PROJ"
+cat > "$S10_PROJ/trackfw.yaml" << 'S10YAML'
+name: s10
+S10YAML
+ln -sf /nonexistent-claude "$S10_PROJ/CLAUDE.md"
+
+for rt in go node py; do
+  run_update "$rt" "$WORK/s10-home-$rt" "$S10_PROJ" --dry-run --json --targets agent-rules
+  s10_state=$(python3 -c "
+import json, sys
+try:
+    d = json.loads(sys.argv[1])
+    print(d['targets'][0]['state'])
+except Exception as e:
+    print('PARSE_ERROR:' + str(e))
+" "$UPDATE_STDOUT" 2>/dev/null || echo "PARSE_ERROR")
+  if [[ "$s10_state" == "PARSE_ERROR"* ]]; then
+    diag "sandbox/dangling-inside-set/vacuity/$rt" "output unparseable: $s10_state"
+  elif [[ "$s10_state" != "missing" ]]; then
+    diag "sandbox/dangling-inside-set/state/$rt" "$rt: expected state=missing for CLAUDE.md broken symlink, got '$s10_state'"
+  fi
+  if [[ "$UPDATE_EXIT" != "0" ]]; then
+    diag "sandbox/dangling-inside-set/exit-zero/$rt" "$rt exited $UPDATE_EXIT — broken symlink inside declared set must not abort"
+  fi
+done
+
+if [[ "$FAIL" -eq 0 ]]; then
+  ok "sandbox/dangling-inside-set"
+fi
+
+# ===========================================================================
+# Scenario 11 — Gap E: trackfw.yaml with agent_conventions — dry-run and
+# real run report the SAME state for agent-rules.
+#
+# agent-rules calls injectOrUpdateRules(cwd), which reads agent_conventions
+# from trackfw.yaml in the sandbox (or real root). If trackfw.yaml is absent
+# from the sandbox, the convention block is omitted and the content hash
+# diverges from the real run's output — dry-run would say 'skipped' while
+# real says 'updated', a lie by omission (Gap E in the threat model).
+#
+# Fixture: CLAUDE.md seeded with the current trackfw block (no convention),
+# trackfw.yaml with agent_conventions set. Both dry and real arms start from
+# an identical copy so only the sandbox vs real-root difference can explain
+# any state divergence.
+#
+# Vacuity guard: real-run state must be 'updated' — proves the convention was
+# actually absent from the fixture and was genuinely inserted by the real run.
+# Cross-runtime: all 3 dry-run states must be identical.
+# ===========================================================================
+
+# Seed CLAUDE.md with the current block (no conventions) via a real run
+S11_SEED="$WORK/s11-seed"
+mkdir -p "$S11_SEED"
+echo "# S11 Seed" > "$S11_SEED/CLAUDE.md"
+cat > "$S11_SEED/trackfw.yaml" << 'S11SEED'
+name: s11-seed
+S11SEED
+(cd "$S11_SEED" && HOME="$WORK/s11-seed-home" "$GO_BIN" update --targets agent-rules >/dev/null 2>&1) || true
+
+# Verify seed produced CLAUDE.md with trackfw block
+if [[ ! -f "$S11_SEED/CLAUDE.md" ]]; then
+  diag "sandbox/gap-e/seed-setup" "s11 seed: Go update did not write CLAUDE.md — fixture cannot be built"
+  S11_SEED_OK=0
+else
+  S11_SEED_OK=1
+fi
+
+if [[ "$S11_SEED_OK" -eq 1 ]]; then
+  # Now add agent_conventions and prepare per-runtime fixtures
+  for rt in go node py; do
+    S11_DRY="$WORK/s11-dry-$rt"
+    S11_REAL="$WORK/s11-real-$rt"
+    mkdir -p "$S11_DRY" "$S11_REAL"
+    cp "$S11_SEED/CLAUDE.md" "$S11_DRY/CLAUDE.md"
+    cp "$S11_SEED/CLAUDE.md" "$S11_REAL/CLAUDE.md"
+    # trackfw.yaml WITH agent_conventions (triggers the convention block)
+    cat > "$S11_DRY/trackfw.yaml" << 'S11YAML'
+name: s11
+agent_conventions: "Always commit tests alongside code"
+S11YAML
+    cp "$S11_DRY/trackfw.yaml" "$S11_REAL/trackfw.yaml"
+
+    run_update "$rt" "$WORK/s11-home-dry-$rt" "$S11_DRY" --dry-run --json --targets agent-rules
+    s11_dry_state=$(python3 -c "
+import json, sys
+try:
+    d = json.loads(sys.argv[1])
+    print(d['targets'][0]['state'])
+except Exception as e:
+    print('PARSE_ERROR:' + str(e))
+" "$UPDATE_STDOUT" 2>/dev/null || echo "PARSE_ERROR")
+
+    run_update "$rt" "$WORK/s11-home-real-$rt" "$S11_REAL" --json --targets agent-rules
+    s11_real_state=$(python3 -c "
+import json, sys
+try:
+    d = json.loads(sys.argv[1])
+    print(d['targets'][0]['state'])
+except Exception as e:
+    print('PARSE_ERROR:' + str(e))
+" "$UPDATE_STDOUT" 2>/dev/null || echo "PARSE_ERROR")
+
+    # Vacuity guard: real state must be 'updated'
+    if [[ "$s11_real_state" != "updated" ]]; then
+      diag "sandbox/gap-e/vacuity/$rt" "real-run state='$s11_real_state' (expected 'updated') — agent_conventions fixture may be broken or convention already present"
+    fi
+
+    # The main assertion: dry == real
+    if [[ "$s11_dry_state" != "$s11_real_state" ]]; then
+      diag "sandbox/gap-e/dry-vs-real/$rt" "dry=$s11_dry_state real=$s11_real_state — dry-run reported different state than real run for agent_conventions fixture; trackfw.yaml may be missing from sandbox"
+    fi
+  done
+
+  if [[ "$FAIL" -eq 0 ]]; then
+    ok "sandbox/gap-e/dry-vs-real/three-runtimes"
+  fi
+fi
+
+# ===========================================================================
+# Scenario 12 — Gap C: .github/copilot-instructions.md present — dry-run and
+# real run agree on the agent-hooks target state.
+#
+# InjectHooksDetected checks for .github/copilot-instructions.md to decide
+# whether to call InjectCopilotHooks (which writes .github/hooks/trackfw-
+# attention.json, declared in agent-hooks relPaths). If the detection signal
+# is absent from the sandbox, the copilot hook is silently omitted — dry-run
+# says 'missing' or 'skipped' while real run says 'updated' (Gap C).
+#
+# Fixture: .github/copilot-instructions.md present + .claude/settings.json
+# (one existing hook file so allMissingBefore is false and apply is called).
+# .github/hooks/trackfw-attention.json absent (so the copilot hook write is
+# a genuine change).
+#
+# Vacuity guard: .github/hooks/trackfw-attention.json must be written in the
+# real-run fixture — proves the copilot hook injection actually fired.
+# Cross-runtime: all 3 dry-run states must match real-run states.
+# ===========================================================================
+for rt in go node py; do
+  S12_DRY="$WORK/s12-dry-$rt"
+  S12_REAL="$WORK/s12-real-$rt"
+  mkdir -p "$S12_DRY/.github" "$S12_DRY/.claude" "$S12_REAL/.github" "$S12_REAL/.claude"
+
+  cat > "$S12_DRY/trackfw.yaml" << 'S12YAML'
+name: s12
+S12YAML
+  touch "$S12_DRY/.github/copilot-instructions.md"
+  echo '{}' > "$S12_DRY/.claude/settings.json"
+
+  cp "$S12_DRY/trackfw.yaml" "$S12_REAL/trackfw.yaml"
+  touch "$S12_REAL/.github/copilot-instructions.md"
+  echo '{}' > "$S12_REAL/.claude/settings.json"
+
+  run_update "$rt" "$WORK/s12-home-dry-$rt" "$S12_DRY" --dry-run --json --targets agent-hooks
+  s12_dry_state=$(python3 -c "
+import json, sys
+try:
+    d = json.loads(sys.argv[1])
+    print(d['targets'][0]['state'])
+except Exception as e:
+    print('PARSE_ERROR:' + str(e))
+" "$UPDATE_STDOUT" 2>/dev/null || echo "PARSE_ERROR")
+
+  run_update "$rt" "$WORK/s12-home-real-$rt" "$S12_REAL" --json --targets agent-hooks
+  s12_real_state=$(python3 -c "
+import json, sys
+try:
+    d = json.loads(sys.argv[1])
+    print(d['targets'][0]['state'])
+except Exception as e:
+    print('PARSE_ERROR:' + str(e))
+" "$UPDATE_STDOUT" 2>/dev/null || echo "PARSE_ERROR")
+
+  # Vacuity guard: copilot hook must have been written in real run
+  if [[ ! -f "$S12_REAL/.github/hooks/trackfw-attention.json" ]]; then
+    diag "sandbox/gap-c/vacuity/$rt" ".github/hooks/trackfw-attention.json not created in real run — fixture may be missing .github/copilot-instructions.md or fixture is broken"
+  fi
+
+  # Main assertion: dry == real
+  if [[ "$s12_dry_state" != "$s12_real_state" ]]; then
+    diag "sandbox/gap-c/dry-vs-real/$rt" "dry=$s12_dry_state real=$s12_real_state — copilot detection signal (.github/copilot-instructions.md) may be missing from sandbox"
+  fi
+done
+
+if [[ "$FAIL" -eq 0 ]]; then
+  ok "sandbox/gap-c/dry-vs-real/three-runtimes"
+fi
+
+# ===========================================================================
+# Scenario 13 — Gap A/B: .windsurf/hooks.json and .amazonq/cli-agents/
+# q_cli_default.json appear in the agent-hooks declared path list.
+#
+# InjectWindsurfHooks and InjectAmazonQHooks write these two paths but they
+# were absent from the relPaths declaration (Gap A and B in the threat model).
+# ML-1A added them. This scenario proves all three runtimes declare them.
+#
+# Fixture: .windsurfrules present (triggers windsurf detection) + .amazonq/
+# dir + .claude/settings.json (ensures allMissingBefore is false so path
+# field reflects the full declared list, not an early-exit missing state).
+#
+# Vacuity guard: state must not be 'missing' — confirms agent-hooks actually
+# ran apply and the path field is the full declaration, not the short-circuit
+# path that skips apply.
+# ===========================================================================
+S13_PROJ="$WORK/s13-proj"
+mkdir -p "$S13_PROJ/.amazonq" "$S13_PROJ/.claude"
+cat > "$S13_PROJ/trackfw.yaml" << 'S13YAML'
+name: s13
+S13YAML
+touch "$S13_PROJ/.windsurfrules"
+echo '{}' > "$S13_PROJ/.claude/settings.json"
+
+S13_GO_STATE="" S13_NODE_STATE="" S13_PY_STATE=""
+for rt in go node py; do
+  run_update "$rt" "$WORK/s13-home-$rt" "$S13_PROJ" --dry-run --json --targets agent-hooks
+  s13_path=$(python3 -c "
+import json, sys
+try:
+    d = json.loads(sys.argv[1])
+    print(d['targets'][0]['path'])
+except Exception as e:
+    print('PARSE_ERROR:' + str(e))
+" "$UPDATE_STDOUT" 2>/dev/null || echo "PARSE_ERROR")
+  s13_state=$(python3 -c "
+import json, sys
+try:
+    d = json.loads(sys.argv[1])
+    print(d['targets'][0]['state'])
+except Exception as e:
+    print('PARSE_ERROR:' + str(e))
+" "$UPDATE_STDOUT" 2>/dev/null || echo "PARSE_ERROR")
+
+  case "$rt" in
+    go)   S13_GO_STATE="$s13_state"   ;;
+    node) S13_NODE_STATE="$s13_state" ;;
+    py)   S13_PY_STATE="$s13_state"   ;;
+  esac
+
+  # Vacuity guard: must not be missing (apply must have run)
+  if [[ "$s13_state" == "missing" ]]; then
+    diag "sandbox/gap-ab/vacuity/$rt" "agent-hooks state=missing — fixture may be broken (no existing hook file to trigger apply)"
+  fi
+
+  if [[ "$s13_path" == "PARSE_ERROR"* ]]; then
+    diag "sandbox/gap-ab/parse/$rt" "output unparseable: $s13_path"
+  else
+    # Gap A: .windsurf/hooks.json in declared path
+    if ! echo "$s13_path" | grep -qF '.windsurf/hooks.json'; then
+      diag "sandbox/gap-a/declared-path/$rt" ".windsurf/hooks.json absent from agent-hooks path field: $s13_path"
+    fi
+    # Gap B: .amazonq/cli-agents/q_cli_default.json in declared path
+    if ! echo "$s13_path" | grep -qF '.amazonq/cli-agents/q_cli_default.json'; then
+      diag "sandbox/gap-b/declared-path/$rt" ".amazonq/cli-agents/q_cli_default.json absent from agent-hooks path field: $s13_path"
+    fi
+  fi
+done
+
+if [[ "$FAIL" -eq 0 ]]; then
+  ok "sandbox/gap-ab/declared-path/three-runtimes"
+fi
+
 # ---------------------------------------------------------------------------
 if [[ "$FAIL" -ne 0 ]]; then
   echo "check-update-parity: drift detected — see FAIL lines above." >&2

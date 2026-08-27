@@ -124,17 +124,38 @@ garantia*. É a segunda vez em dois dias que esse checker pega documentação se
 ## Wave 2 — Gate
 
 ### ML-2A — Paridade e falsificação nas duas direções
-**Status:** 🔄 Em andamento · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-1A
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-1A
 
 Direção A: destino declarado que **deixa** de ser copiado ⇒ detectado. Direção B: sandbox voltando a
 copiar a árvore inteira ⇒ detectado.
 
 ---
 
+### Auditoria do ML-2A — aprovada; a prova compara dry-run contra o run REAL
+
+**O modo de falha mudou de natureza com esta REQ**, e o gate acompanhou: antes o dry-run **abortava**
+(barulhento); com sandbox por inclusão, destino não copiado passa a **mentir por omissão**
+(silencioso). Um gate que só verificasse exit code passaria com a mentira dentro.
+
+```
+FAIL [sandbox/gap-e/dry-vs-real/go]: dry=skipped real=updated
+     — trackfw.yaml may be missing from sandbox        <- Direcao A
+FAIL [sandbox/dangling-outside-set/exit-zero/go]: go exited 1   <- Direcao B
+
+check-update-parity     5 casos novos, 17 guards de vacuidade, 3 runtimes
+make quality (CI-exata, minha)  exit 0, 176 cenarios
+validate                        16 warnings, 0 violations
+```
+
+Os casos do **Gap C** e do **Gap E** comparam `--dry-run` contra o **run real** num fixture
+descartável — é o que prova ausência de mentira, e não apenas que o dry-run "parece certo".
+
+---
+
 ## Wave 3 — Barreira
 
 ### ML-3A — Reverificação
-**Status:** ⬜ Pendente · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
+**Status:** 🔄 Em andamento · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
 
 ---
 

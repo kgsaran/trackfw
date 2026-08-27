@@ -2795,6 +2795,47 @@ catalog is runtime-resolved) or (b) a separate inspection-based dry-run path for
 Neither is in scope for the inclusion-sandbox ML (ML-1A of
 `ROADMAP-2026-08-27-sandbox-do-update-dry-run-por-lista-de-inclusao-dos-destinos-declarados.md`).
 
+### `--dry-run` sandbox — inclusion-based copy contract
+
+<!-- trackfw-contract: gate=scripts/check-update-parity.sh -->
+
+`--dry-run` creates a scratch directory seeded with **only the paths declared in each target's
+`relPaths` list** (plus detection-signal seeds, see below). It does **not** walk the whole project
+tree. This closes the class of failures where a broken symlink outside the declared set (e.g.
+`.venv/bin/python → python3.13` deleted by Homebrew) caused `--dry-run` to abort.
+
+**Invariant:** any file or directory outside the declared `relPaths` union has zero effect on
+dry-run state. Broken symlinks outside the set are irrelevant by construction; broken symlinks
+**inside** the set are treated as `missing` (hash returns null), not as errors.
+
+**Detection-signal seeds (not counted in hash comparison):**
+
+| Seed | Purpose |
+|---|---|
+| `trackfw.yaml` | `ReadAgentConventions` reads `agent_conventions` from it; absent → CLAUDE.md hash diverges between dry-run and real run (Gap E) |
+| `.github/copilot-instructions.md` | `InjectHooksDetected` checks this to decide whether to write Copilot hooks; absent → hooks silently omitted (Gap C) |
+| `.windsurfrules` | detection signal for Windsurf presence |
+| `.amazonq/rules.md` | detection signal for Amazon Q presence |
+
+**Gate coverage (Scenarios 9–13 of `check-update-parity.sh`):**
+
+| Scenario | What is proved |
+|---|---|
+| 9 | Dangling symlink **outside** declared set — dry-run exits 0, state unaffected |
+| 10 | Dangling symlink **inside** declared set — dry-run exits 0, target reported as `missing` |
+| 11 (Gap E) | `agent_conventions` in `trackfw.yaml` — dry-run and real-run agree on CLAUDE.md state |
+| 12 (Gap C) | `.github/copilot-instructions.md` present — Copilot hooks written in both dry-run and real run |
+| 13 (Gap A/B) | `.windsurf/hooks.json` and `.amazonq/cli-agents/q_cli_default.json` appear in output paths |
+
+**Falsification (Scenarios 175–176 of `check-gates-falsify.sh`):**
+
+- **Direction A** — `add("trackfw.yaml")` removed from `buildSandboxInclusion` → dry-run reports
+  `skipped` where real run reports `updated` (Gap E regression). Detected by Scenario 11 FAIL line
+  `sandbox/gap-e/dry-vs-real/go`.
+- **Direction B** — `copyProjectTree` body reverted to `filepath.WalkDir + os.ReadFile` →
+  dry-run aborts on broken symlink outside declared set (CMDB regression). Detected by Scenario 9
+  FAIL line `sandbox/dangling-outside-set/exit-zero/go`.
+
 ### `updated` vs `skipped` — the discriminator is content, not action
 
 <!-- trackfw-contract: gate=scripts/check-update-parity.sh -->
