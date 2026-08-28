@@ -65,34 +65,43 @@ Consolidado — AC1 a AC15 da REQ. Detalhe por ML abaixo.
 **Gates da wave:**
 ```bash
 # Wave 0 gate — a enumeração declarada tem que bater com a busca real.
-# Medido por hades-tf em 2026-08-28: 4 arquivos de fonte, 18 ocorrências.
 #
-# Auditoria do arquiteto (2026-08-28): a primeira versão deste gate contava com
-# `grep -rn` direto nos diretórios e media 19 numa árvore com `__pycache__` — o 19º
-# era `pypi/trackfw/generators/__pycache__/init_gen.cpython-314.pyc`, um artefato de
-# build ignorado pelo git. O gate falhava em máquina de dev que já rodou pytest e
-# passava em checkout limpo de CI: não hermético. Corrigido para varrer só fonte
-# RASTREADA pelo git.
+# CORREÇÃO 2 (arquiteto, 2026-08-28, após o ML-2B): o padrão estava errado.
+# A versão anterior buscava só "releases/latest" e por isso declarava a lista
+# fechada em 4 arquivos — cega para o SEGUNDO mecanismo de instalação,
+# `go install github.com/kgsaran/trackfw/cmd/trackfw@latest`, usado pelo
+# workflow `.github/workflows/trackfw-validate.yml` que o `discover` escreve
+# nos 3 CLIs. Sinal verde sobre controle inerte: exatamente a classe de
+# defeito que esta REQ existe para matar, cometida pelo gate da REQ.
 #
-# O invariante primário é o CONJUNTO DE ARQUIVOS, não a contagem: a afirmação do
-# ML-0A é "a lista de superfícies está fechada". A Wave 2 pode legitimamente mudar
+# O gate agora varre os DOIS mecanismos. 8 superfícies, não 4.
+#
+# CORREÇÃO 1 (2026-08-28): a versão original contava com `grep -rn` direto nos
+# diretórios e media 19 numa árvore com `__pycache__` — não hermética.
+# Corrigido para varrer só fonte RASTREADA pelo git.
+#
+# O invariante é o CONJUNTO DE ARQUIVOS, não a contagem: a Wave 2 pode mudar
 # o número de ocorrências dentro de um arquivo já declarado; o que não pode é
-# aparecer um quinto arquivo.
+# aparecer uma superfície nova.
 set -eu
-esperado="internal/generators/scaffold.go
+esperado="internal/discover/discover.go
+internal/generators/scaffold.go
+npm/src/commands/discover.js
 npm/src/generators/init.js
+pypi/trackfw/commands/discover.py
 pypi/trackfw/generators/init_gen.py
+scripts/check-install-version-pin.sh
 scripts/install.sh"
 medido=$(git ls-files -z scripts internal npm/src pypi/trackfw \
-  | xargs -0 grep -l "releases/latest" 2>/dev/null | sort)
+  | xargs -0 grep -l -e "releases/latest" -e "@latest" 2>/dev/null | sort)
 if [ "$medido" != "$esperado" ]; then
-  echo "Wave 0: conjunto de superfícies mudou — a enumeração do ML-0A não fecha mais." >&2
+  echo "Wave 0: conjunto de superfícies mudou — a enumeração não fecha mais." >&2
   echo "esperado:"; echo "$esperado" >&2
   echo "medido:";   echo "$medido"   >&2
   exit 1
 fi
 [ -n "$medido" ] || { echo "guarda de vacuidade: nenhum arquivo varrido" >&2; exit 1; }
-echo "Wave 0 gate OK — 4 superfícies declaradas, nenhuma nova."
+echo "Wave 0 gate OK — 8 superfícies declaradas nos dois mecanismos de instalação."
 ```
 
 #### Resultado do ML-0A (hades-tf, 2026-08-28)
@@ -101,6 +110,20 @@ echo "Wave 0 gate OK — 4 superfícies declaradas, nenhuma nova."
 `pypi/`, `Makefile` foi tocada. A única escrita é este bloco e o gate acima.
 
 ##### 1. Completude de enumeração
+
+> **FALSIFICADA PELO ARQUITETO (2026-08-28), após o ML-2B.** A conclusão "a lista fechou" está
+> **errada**, e o erro é meu: eu dei ao ML-0A o padrão de busca `releases/latest`, e a enumeração
+> herdou a cegueira do padrão. Existe um **segundo mecanismo de instalação** no produto —
+> `go install github.com/kgsaran/trackfw/cmd/trackfw@latest` — usado pelo workflow
+> `.github/workflows/trackfw-validate.yml`, que o `discover` escreve nos 3 CLIs
+> (`internal/discover/discover.go:274`, `npm/src/commands/discover.js:320,564`,
+> `pypi/trackfw/commands/discover.py:463`). Ele é tão não pinado quanto o outro.
+>
+> A superfície real é de **8 arquivos**, não 4. O gate da wave foi corrigido para varrer os dois
+> mecanismos. Fica registrado como está: uma Wave 0 que declarou enumeração fechada sobre um
+> padrão incompleto é o mesmo defeito que a REQ combate, cometido pelo controle da própria REQ.
+
+
 
 Comandos rodados e saída integral:
 
