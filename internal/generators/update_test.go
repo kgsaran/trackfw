@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -2033,5 +2034,139 @@ func TestUpdateCiWorkflowClosesDoctorFindingForDiscoverWorkflow(t *testing.T) {
 		if f.Destination == DiscoverGitHubActionsWorkflowPath {
 			t.Fatalf("doctor still flags %s after trackfw update — remedy is still inert:\n%+v", DiscoverGitHubActionsWorkflowPath, f)
 		}
+	}
+}
+
+// TestUpdateNeverWritesThroughSymlinkAtDiscoverWorkflowPath is the corrective
+// falsifier for the symlink-follow arbitrary-write reported by hades-tf's
+// final barrier review (2026-08-28): a project with `ci: none` that has a
+// LIVE symlink at .github/workflows/trackfw-validate.yml pointing OUTSIDE
+// the project must not have the pointed-to file overwritten by `trackfw
+// update`. Before the fix, discoverWorkflowPresent/
+// refreshDiscoverGitHubActionsWorkflowIfPresent used os.Stat (follows
+// symlinks), so this exact scenario let `update` clobber an arbitrary file
+// outside the project tree even though the project opted out of CI
+// management entirely.
+func TestUpdateNeverWritesThroughSymlinkAtDiscoverWorkflowPath(t *testing.T) {
+	config.Reset()
+	t.Cleanup(config.Reset)
+	root := t.TempDir()
+	outside := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	if err := os.WriteFile(filepath.Join(root, "trackfw.yaml"), []byte("hooks: none\nci: none\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	victim := filepath.Join(outside, "vitima.txt")
+	const originalContent = "CONTEUDO ORIGINAL DA VITIMA\n"
+	if err := os.WriteFile(victim, []byte(originalContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	workflowPath := filepath.Join(root, DiscoverGitHubActionsWorkflowPath)
+	if err := os.MkdirAll(filepath.Dir(workflowPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(victim, workflowPath); err != nil {
+		t.Fatal(err)
+	}
+
+	origStderr := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stderr = w
+
+	// Exercised through Update(), the bare `trackfw update` command the
+	// original report reproduced against — NOT UpdateProject/--targets: for
+	// a ci:none project, discoverWorkflowPresent(root) correctly reports the
+	// symlink as "not manageable", so UpdateProject never even declares the
+	// ci-workflow target here — but Update()'s step 3b calls
+	// refreshDiscoverGitHubActionsWorkflowIfPresent(cwd) unconditionally,
+	// independent of the declared-targets list, so it must still refuse and
+	// warn on its own.
+	updateErr := Update(root)
+
+	w.Close()
+	os.Stderr = origStderr
+	var stderrBuf strings.Builder
+	if _, err := io.Copy(&stderrBuf, r); err != nil {
+		t.Fatal(err)
+	}
+
+	if updateErr != nil {
+		t.Fatalf("Update: %v", updateErr)
+	}
+
+	got, err := os.ReadFile(victim)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != originalContent {
+		t.Fatalf("symlink-follow arbitrary write: victim file outside the project was overwritten.\nwant: %q\ngot:  %q", originalContent, got)
+	}
+
+	linkInfo, err := os.Lstat(workflowPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if linkInfo.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("expected %s to remain a symlink (untouched), got mode %v", workflowPath, linkInfo.Mode())
+	}
+
+	if !strings.Contains(stderrBuf.String(), DiscoverGitHubActionsWorkflowPath) || !strings.Contains(stderrBuf.String(), "symlink") {
+		t.Fatalf("expected a stderr warning naming %s as a symlink, got: %q", DiscoverGitHubActionsWorkflowPath, stderrBuf.String())
+	}
+
+	// A live symlink is not "manageable" by update, so — for a ci:none
+	// project — the ci-workflow target must not be declared on its account
+	// via the --targets/--json path (UpdateProject), even though the bare
+	// `trackfw update` path above (Update()) still ran its own refresh
+	// attempt and refused independently.
+	report, err := UpdateProject(root, UpdateOptions{})
+	if err != nil {
+		t.Fatalf("UpdateProject: %v", err)
+	}
+	for _, target := range report.Targets {
+		if target.ID == "ci-workflow" {
+			t.Fatalf("ci-workflow target should not be declared for a ci:none project whose only trackfw-validate.yml is a symlink, got: %+v", target)
+		}
+	}
+}
+
+// TestUpdateNeverWritesThroughDanglingSymlinkAtDiscoverWorkflowPath is the
+// same falsifier for the dangling-symlink variant: the link target does not
+// exist yet, so a naive os.Stat-based presence check reports "not present"
+// and lets os.WriteFile CREATE the file at the attacker-chosen path.
+func TestUpdateNeverWritesThroughDanglingSymlinkAtDiscoverWorkflowPath(t *testing.T) {
+	config.Reset()
+	t.Cleanup(config.Reset)
+	root := t.TempDir()
+	outside := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	if err := os.WriteFile(filepath.Join(root, "trackfw.yaml"), []byte("hooks: none\nci: none\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	danglingTarget := filepath.Join(outside, "does-not-exist-yet")
+	workflowPath := filepath.Join(root, DiscoverGitHubActionsWorkflowPath)
+	if err := os.MkdirAll(filepath.Dir(workflowPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(danglingTarget, workflowPath); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Update(root); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if _, err := UpdateProject(root, UpdateOptions{}); err != nil {
+		t.Fatalf("UpdateProject: %v", err)
+	}
+
+	if _, err := os.Lstat(danglingTarget); !os.IsNotExist(err) {
+		t.Fatalf("dangling-symlink arbitrary write: %s was created outside the project (stat err=%v)", danglingTarget, err)
 	}
 }

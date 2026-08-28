@@ -1,7 +1,7 @@
 ---
 status: wip
 date: 2026-08-28
-req: "REQ-2026-08-28-gate-de-ci-gerado-instala-versao-nao-pinada-do-trackfw-e-nao-ha-como-pinar.md"
+req: "docs/req/REQ-2026-08-28-gate-de-ci-gerado-instala-versao-nao-pinada-do-trackfw-e-nao-ha-como-pinar.md"
 squad: "hades-tf, ares-tf, apolo-tf, artemis-tf"
 ---
 
@@ -54,7 +54,7 @@ Consolidado — AC1 a AC15 da REQ. Detalhe por ML abaixo.
 4. **Residual declarado.** O que este desenho aceita não cobrir. Inclua, no mínimo: a lacuna do
    alvo `ci-workflow` no `update` do Python; o pin que envelhece em silêncio; e o `install.sh`
    publicado numa release antiga que não conhece a variável.
-**Acceptance criteria:**
+**Critérios de aceite:**
 - [x] As quatro seções respondidas com evidência (comando rodado + saída), não asserção de uma linha
 - [x] Nenhuma linha de implementação escrita neste ML
 - [x] Se a enumeração encontrar superfície fora da lista, o roadmap é atualizado antes da Wave 1
@@ -329,7 +329,7 @@ mesma superfície de erro** — quem vai implementar precisa saber qual delas ca
    falha.
 5. Registrar o gate no alvo `quality` do `Makefile`.
 
-**Acceptance criteria:**
+**Critérios de aceite:**
 - [x] AC1, AC2, AC3, AC4, AC5 da REQ verificáveis pelo gate novo
 - [x] `sh -n scripts/install.sh` → exit 0 (sintaxe POSIX válida)
 - [x] `bash scripts/check-install-version-pin.sh` → exit 0, com contagem de cenários impressa
@@ -530,7 +530,7 @@ defeito de referência acima — está fora dos arquivos permitidos a este ML.
    é cfg-independente mas **não** é version-independente (AC12).
 4. Testes Go: workflow gerado contém a versão que `version.Version` reporta; `doctor` reporta
    `no mismatches` logo após gerar (AC11) e `scaffold-divergent` quando o pin é trocado à mão (AC10).
-**Acceptance criteria:**
+**Critérios de aceite:**
 - [ ] AC6, AC7 (Go), AC10, AC11, AC12
 - [ ] `go build ./...` → exit 0
 - [ ] `go test ./internal/generators/...` → exit 0
@@ -551,7 +551,7 @@ defeito de referência acima — está fora dos arquivos permitidos a este ML.
    contraditória.
 3. `scaffold_doctor.js` compara contra o template novo.
 4. Testes Node cobrindo AC6, AC10, AC11.
-**Acceptance criteria:**
+**Critérios de aceite:**
 - [ ] AC6, AC7 (Node), AC10, AC11, AC13 (parte Node)
 - [ ] `npm test --prefix npm` → exit 0
 - [ ] Nenhuma versão literal no template
@@ -592,7 +592,7 @@ defeito de referência acima — está fora dos arquivos permitidos a este ML.
    explicitamente fora do pin, sem deixar instrução contraditória entre os 3 CLIs.
 6. Testes Python cobrindo AC6, AC7, AC9, AC10, AC11.
 
-**Acceptance criteria:**
+**Critérios de aceite:**
 - [ ] AC6, AC7 (Python), AC9 (Python passa a bumpar o pin), AC10, AC11, AC13 (parte Python)
 - [ ] `python -m pytest pypi/tests` → exit 0
 - [ ] Nenhuma versão literal no template
@@ -607,7 +607,7 @@ defeito de referência acima — está fora dos arquivos permitidos a este ML.
 `REQ-2026-08-28-cli-python-nao-oferece-superficie-de-ci-e-git-hooks-no-init-e-nao-declara-git-hooks-como-alvo-do-update.md`,
 que declara dependência desta REQ.
 
-## Wave 2b — Corretivas (ML-2D a ML-2H)
+## Corretivas da Wave 2 (ML-2D a ML-2H)
 > Dependências: Wave 2 auditada. Todas nasceram da auditoria do arquiteto ou de achado de agente,
 > e todas já estão concluídas e commitadas.
 
@@ -676,11 +676,31 @@ reescritos para exercitar o comando nu.
 4. Seção nova em `docs/cli-parity.md` com o contrato do pin, anotada com `gate=` apontando para o
    script novo, mais a lacuna do `ci-workflow` no Python anotada como `gap reason=`.
 5. Registrar no `Makefile`.
-**Acceptance criteria:**
-- [ ] AC8, AC14
-- [ ] `bash scripts/check-ci-workflow-pin-parity.sh` → exit 0 com contagem de cenários
-- [ ] `bash scripts/check-parity-contract-coverage.sh` → exit 0
-- [ ] AC15: `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality` → exit 0
+**Critérios de aceite:**
+- [x] AC8, AC14, AC16 — medidos pelo arquiteto, ver evidência abaixo
+- [x] `bash scripts/check-ci-workflow-pin-parity.sh` → exit 0, **15 cenários**
+- [x] `bash scripts/check-parity-contract-coverage.sh` → exit 0 (217 seções, 0 sem anotação)
+- [x] AC15: `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality` → exit 0
+- [x] Falsificação real (não pelo helper interno): apagar `timeout-minutes: 10` de
+      `internal/generators/scaffold.go` faz o gate reprovar com dois `FAIL` — um nomeando os pares
+      divergentes, outro a linha ausente. Restaurado, gate volta a exit 0.
+- [x] Nenhum resíduo `zz_dump*` na árvore, **inclusive após falha** — o `trap` segurou
+- [x] `docs/cli-parity.md`: seção "CI workflow exclusion — Python (principled)" apagada; tabela de
+      cobertura marca `sim` nos 3; seção nova anotada com `gate=`; `gap reason=` para o `init` do
+      Python
+
+**Evidence:**
+```
+bash scripts/check-ci-workflow-pin-parity.sh        exit 0 — 15 cenários OK
+  regressão injetada (timeout-minutes removido)     exit != 0
+    FAIL [pin-parity/github-actions/byte-identical]: go vs node divergem; go vs py divergem;
+    FAIL [pin-parity/github-actions/timeout-minutes]: timeout-minutes: 10 ausente
+  find . -name "zz_dump*"                           vazio
+bash scripts/check-parity-contract-coverage.sh      exit 0
+bash scripts/check-doctor-parity.sh                 exit 0 — 36 cenários (ML-3B, diff só comentário)
+TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality    exit 0
+grep "CI workflow exclusion — Python"               sem resultado (apagada)
+```
 **Comandos de validação:**
 ```bash
 bash scripts/check-ci-workflow-pin-parity.sh
@@ -718,3 +738,376 @@ cabeçalho de `scripts/check-doctor-parity.sh:404` ("Python's `update` does not 
 Reescrita para dizer o que é verdade — os 3 gerenciam; o motivo de este gate não exercitar o caminho
 é que as fixtures não definem `ci:` — e apontando para onde a cobertura existe. Diff **só de
 comentário**, verificado; 36 cenários, mesma contagem de antes.
+
+#### Parecer de qualidade da barreira final (hefesto-tf, 2026-08-28)
+
+**Veredito: REPROVA**, por um único achado bloqueante — comentário obsoleto em código de produto,
+corretivo estritamente comment-only, sem risco de regressão. Os demais achados são dívida aceitável
+ou observações fora de escopo, registrados abaixo.
+
+##### O que bloqueia o PR
+
+**`internal/generators/update.go:1811-1819`** — o bloco `// NOTE ON CROSS-RUNTIME PARITY:` afirma:
+
+> "the Python CLI intentionally implements a reduced project-scope surface (agent rules + hooks +
+> Codex project agents only — see pypi/trackfw/commands/update.py's own docstring, which points
+> users to the Go/Node.js CLIs for CI/git-hooks/Claude commands)"
+
+Medido contra o estado real do diff: `project_target_ids` (`pypi/trackfw/commands/update.py:152-168`)
+já declara `ci-workflow` condicionalmente — exatamente a mesma regra de Go/Node, entregue por ML-2C
+**desta REQ** — e `_run_project` já despacha `claude-commands`
+(`pypi/trackfw/commands/update.py:819`, pré-existente a esta REQ). O único gap real remanescente é
+`git-hooks` (sem flag `--hooks` no `init` do Python — item explicitamente fora de escopo desta REQ,
+ver Negative Scope da REQ). O próprio docstring de módulo de `update.py` (linhas 17-40) já foi
+atualizado corretamente e diz o oposto do que este comentário em Go afirma.
+
+Esta é a mesma classe de defeito que o **AC16** desta REQ existe para eliminar (a seção "CI workflow
+exclusion — Python (principled)" apagada de `docs/cli-parity.md`) e que o **ML-3B** corrigiu no
+cabeçalho de `scripts/check-doctor-parity.sh:404` ("Python's `update` does not manage ci-workflow").
+A auditoria de ambos os pontos foi feita; este terceiro ponto — no arquivo de produção mais central
+desta REQ — sobreviveu. Pelo precedente que a própria REQ estabeleceu (afirmação de paridade
+obsoleta é entregável, não débito), isto bloqueia.
+
+**Microlote corretivo mínimo:**
+
+- **Arquivo:** `internal/generators/update.go`, linhas 1811-1819 (bloco `NOTE ON CROSS-RUNTIME
+  PARITY`).
+- **Ação:** reescrever para refletir o estado medido — a superfície `--targets` do Python já inclui
+  `ci-workflow` (condicional, ML-2C, mesma regra de Go/Node) e `claude-commands` (pré-existente);
+  `git-hooks` é a única lacuna real, e por quê (sem `--hooks` no `init` do Python). Sem mudança de
+  comportamento — comentário apenas, nenhum arquivo de teste precisa mudar.
+- **Critério de aceite:** `grep -n "reduced project-scope surface" internal/generators/update.go`
+  sem resultado; `go build ./...` e `go test ./internal/generators/...` continuam verdes (nenhuma
+  mudança de comportamento esperada).
+
+##### Dívida aceitável / observações (não bloqueiam)
+
+1. **`internal/generators/ci_workflow_version_pin_test.go:104`** — a asserção nega a presença do
+   literal `"7.3.0"` no bloco dos builders. É a versão corrente hoje; no próximo bump (7.4.0) essa
+   cláusula negativa específica nunca mais dispara — não é vácuo perigoso porque a asserção
+   positiva na linha seguinte (`must reference version.Version`) é quem carrega o peso real da
+   prova, mas é a única das três linguagens com um literal congelado: Node usa
+   `PACKAGE_VERSION` (`ci_workflow_version_pin.test.js:84`) e Python usa `TRACKFW_VERSION`
+   (`test_ci_workflow_pin.py:69`), ambos dinâmicos via `assertNotIn`/`includes`. Sugestão para um
+   ML futuro: trocar para `strings.Contains(block, "\""+version.Version+"\"")` negado, espelhando
+   as outras duas linguagens.
+
+2. **Duplicação do predicado `cfg.CI` — dívida registrada, não é a classe de risco do ML-2G.**
+   `cfg.CI != "" && cfg.CI != "none"` aparece duas vezes em Go (`update.go:97`, gate do print; e
+   `:1835`, gate da lista de alvos declarados) e o equivalente em Python
+   (`update.py:420` e `:167`). À primeira vista parece o mesmo padrão que produziu o ML-2G, mas
+   **não é**: `generateCIWorkflow`/`generate_ci_workflow` se auto-protegem internamente via switch
+   sobre `cfg.CI` (`scaffold.go:1888-1896` e equivalente Python) — o predicado duplicado só governa
+   a linha de status impressa e a lista de alvos declarados, nunca se o write acontece. O Node evita
+   a duplicação por construção: não existe um "caminho simples" separado — `update.js:429-431`
+   chama `buildProjectTargets` incondicionalmente até para o comando puro. Registrando aqui para que
+   um leitor futuro não reabra isto como o mesmo risco do ML-2G sem primeiro checar que o gate real
+   (o write) está unificado.
+
+3. **Fora de escopo desta REQ, não é regressão dela.** `pypi/trackfw/commands/update.py:468-472`
+   imprime "Para atualizar Claude commands, use: trackfw update (CLI Go)" mesmo `_run_project`
+   (caminho `--targets`) já despachando `claude-commands`. Conferido via `git diff` que essa
+   assimetria (o caminho simples `_run` nunca chama `generate_claude_commands`, só o caminho de
+   alvos chama) é **anterior** a esta REQ — os trechos de despacho de `claude-commands` em
+   `_run_project` aparecem como contexto inalterado no diff, não como adição. Não é o mesmo defeito
+   do achado bloqueante acima (que é sobre um comentário no Go tornado falso pelas mudanças *desta*
+   REQ); é uma assimetria pré-existente do Python, fora do escopo aqui. Sinalizando para uma REQ
+   futura, sem bloquear esta.
+
+##### Respostas às 5 perguntas dirigidas
+
+1. **Duplicação do caminho simples vs. alvos do `update`** — a arquitetura do ML-2H está correta
+   nos 3 CLIs: o caminho simples e o caminho de alvos reaproveitam o **mesmo** helper
+   (`refreshDiscoverGitHubActionsWorkflowIfPresent`/`discoverWorkflowPresent` em Go,
+   `refreshDiscoverGitHubActionsWorkflowIfPresent` em Node, `_refresh_discover_github_actions_
+   workflow_if_present`/`_discover_workflow_present` em Python) para decidir **o quê** escrever e
+   **quando**. Não há write duplicado. A única duplicação residual é o predicado `cfg.CI` (item 2
+   acima), que não governa o write — não é a mesma classe de risco.
+
+2. **Os 9 builders (3 templates × 3 runtimes)** — resposta explícita, como pedido: **não há forma
+   estrutural razoável de reduzir a superfície sem violar a regra dos 3 CLIs.** São três artefatos
+   de runtime independentes (binário Go, pacote npm, pacote pypi) sem asset compartilhável em tempo
+   de execução — é o custo da regra de paridade dos 3 CLIs, não um problema de design deste
+   roadmap. O que existe hoje (`scripts/check-ci-workflow-pin-parity.sh`) é o "golden file" possível
+   nesse desenho: compara os 9 builders byte a byte, com guarda de vacuidade (linhas 319-322,
+   verificada presente) e `trap` de limpeza mesmo em falha (linha 33, verificado presente). É
+   exatamente por essa ausência de estrutura compartilhada que esse gate carrega mais peso que o
+   normal — é o único mecanismo segurando a paridade.
+
+3. **Testes novos** — busquei especificamente o padrão do ML-2G (asserção que passaria mesmo com a
+   versão hardcoded; teste de função interna alegando cobrir comportamento de CLI) e não encontrei
+   recorrência, com uma exceção cosmética (achado não bloqueante 1, acima). Os testes de pin de
+   versão em Node (`ci_workflow_version_pin.test.js`) e Python (`test_ci_workflow_pin.py`) usam
+   `PACKAGE_VERSION`/`TRACKFW_VERSION` dinâmicos, nunca literais. Os testes de alvo do `update` em
+   Node (`update_ci_workflow_target*.test.js`) invocam o binário real via `spawnSync`, não função
+   interna. E os três runtimes têm um teste dedicado, comentado citando o ML-2G explicitamente, que
+   prova o caminho que escapou da primeira auditoria: `internal/generators/update_test.go:1969`
+   (`TestUpdateCiWorkflowClosesDoctorFindingForDiscoverWorkflow`, chama `Update()` puro, não
+   `UpdateProject()`); `pypi/tests/test_update_ci_workflow_discover_workflow.py` (`_run_bare_update`,
+   linhas 70-82); Node (`update_ci_workflow_target_discover_workflow.test.js:181`,
+   `run(['update'], ...)` sem `--json`/`--targets`). Essa é a evidência mais forte a favor da
+   barreira: o próprio buraco do ML-2G tem regressão nomeada nos 3 CLIs.
+
+4. **`scripts/install.sh`** — legível e defendido contra a "simplificação" óbvia. O comentário nas
+   linhas 35-43 explica explicitamente por que não é `grep -E` (âncora por linha vs. buffer inteiro
+   do parâmetro do shell), cita a vault note da mesma família de bug
+   (`bash-grep-F-embedded-newline-vacuous-match-2026-08-16.md`) e nomeia o alvo real do path
+   traversal (o `-o` do `curl`, não a URL). A validação em duas etapas (charset via `case`, depois
+   contagem de pontos via `tr -cd '.' | wc -c`) tem comentário acima da média do repositório neste
+   ponto específico — um mantenedor futuro tem o que precisa para não reintroduzir o bug de âncora
+   por linha.
+
+5. **Nomes e convenções entre os 3 runtimes** — consistentes, respeitando o idioma de cada
+   linguagem: `DiscoverGitHubActionsWorkflowPath`/`BuildDiscoverGitHubActionsWorkflowContent`
+   (Go, PascalCase)· `DISCOVER_GITHUB_ACTIONS_WORKFLOW_PATH`/`buildDiscoverGitHubActionsWorkflowContent`
+   (Node) · `DISCOVER_GITHUB_ACTIONS_WORKFLOW_PATH`/`build_discover_github_actions_workflow_content`
+   (Python). Nenhuma divergência de nome encontrada; a única divergência de fundo é o achado
+   bloqueante acima (conteúdo do comentário, não o nome).
+
+**Comandos executados nesta revisão (leitura apenas, nenhum gate re-rodado por instrução do
+arquiteto):** `git diff origin/main...HEAD --stat`, `go build ./...`, inspeção linha a linha de
+`internal/generators/update.go` (2348 linhas, lido em duas partes), `internal/generators/
+scaffold_doctor.go`, `internal/discover/discover.go`, `scripts/install.sh`,
+`scripts/check-ci-workflow-pin-parity.sh`, os 3 arquivos de comando `update.js`/`update.py`, e os
+testes de pin de versão e de alvo `ci-workflow` nos 3 runtimes.
+
+**Fronteiras mantidas:** nenhum arquivo de código de produto tocado; nenhum commit, push ou PR
+executado; nenhum outro arquivo além desta seção apensada a este roadmap.
+
+#### Parecer de segurança da barreira final (hades-tf, 2026-08-28)
+
+**Veredito: REPROVA.**
+
+Achado bloqueante: `trackfw update` (e, num sub-caso, `trackfw discover --init`) escrevem em
+`.github/workflows/trackfw-validate.yml` seguindo symlink, sem `lstat`. Um repositório hostil que o
+mantenedor clona e sobre o qual roda `trackfw update`/`discover --init` consegue sobrescrever, ou
+até **criar**, um arquivo arbitrário fora do projeto, no caminho de sua escolha. Reproduzido ao vivo
+nos 3 CLIs. O conteúdo escrito é sempre o template fixo do trackfw (não é conteúdo do atacante), então
+a classe é "escrita/criação de arquivo arbitrário com conteúdo confiável", não RCE — severidade
+**ALTA**, não crítica.
+
+##### 1. Achado bloqueante — symlink-follow em `.github/workflows/trackfw-validate.yml` (ALTA)
+
+**Mecanismo.** `refreshDiscoverGitHubActionsWorkflowIfPresent` (Go) e seus equivalentes Node/Python
+decidem "o arquivo já existe" com `os.Stat`/`fs.existsSync`/`os.path.isfile` — todas essas chamadas
+seguem symlink. Se `.github/workflows/trackfw-validate.yml` for um symlink para um arquivo fora do
+projeto, a checagem de presença retorna verdadeiro e o passo seguinte escreve (`os.WriteFile`/
+`fs.writeFileSync`/`open(...,'w')`) no alvo do link, não no link em si — todas essas APIs também
+seguem symlink por padrão.
+
+**Localização exata:**
+- `internal/generators/update.go:1852` (`discoverWorkflowPresent`) e `:1865`
+  (`refreshDiscoverGitHubActionsWorkflowIfPresent`, escrita em `:1871`)
+- `npm/src/commands/update.js:179` (`discoverWorkflowPresent`) e `:191`
+  (`refreshDiscoverGitHubActionsWorkflowIfPresent`, escrita em `:196`)
+- `pypi/trackfw/commands/update.py:173` (`_discover_workflow_present`) e `:185`
+  (`_refresh_discover_github_actions_workflow_if_present`, escrita em `:200`)
+
+**Reprodução (Go, idêntico nos outros dois — comandos executados, saída real anexada):**
+```bash
+mkdir -p proj/.github/workflows outside
+echo "PRISTINE-SENTINEL" > outside/authorized_keys
+ln -s "$PWD/outside/authorized_keys" proj/.github/workflows/trackfw-validate.yml
+printf 'version: 1\nproject: poc\nreq_dir: docs/req\nroadmap_dir: docs/roadmaps\nci: none\n' > proj/trackfw.yaml
+cd proj && trackfw update
+cat ../outside/authorized_keys
+# antes: PRISTINE-SENTINEL
+# depois: o template YAML completo do trackfw ("name: trackfw validate\non: [push, pull_request]...")
+```
+Repetido com sucesso (mesmo resultado: sobrescrita confirmada) em Node
+(`node npm/bin/trackfw update`) e Python (`python3 -m trackfw.cli update`), os três com `ci: none`
+no `trackfw.yaml` — nenhum dos três exigiu `ci: github-actions` para disparar a escrita.
+
+**`--dry-run` verificado como seguro** (testado explicitamente): a sandbox de `--dry-run` copia o
+conteúdo do link para dentro da árvore temporária em vez de preservar o symlink absoluto — o arquivo
+fora do projeto permanece intocado nesse modo. O buraco é só no caminho real (sem `--dry-run`).
+
+**Por que isto é um achado desta REQ, não só um defeito antigo em `runFileTarget`.** O mesmo padrão
+já existia antes desta REQ para `trackfw-gate.yml`/`.gitlab-ci-trackfw.yml` (reproduzido também, ver
+seção "Residual" abaixo) — mas esta REQ **amplia o alcance de forma mensurável**, em dois pontos que
+o próprio diff introduz:
+1. `refreshDiscoverGitHubActionsWorkflowIfPresent` é uma função nova, chamada incondicionalmente pelo
+   passo 3b de `Update()` e pelo alvo `ci-workflow` — antes deste diff nenhum caminho de `update`
+   escrevia `trackfw-validate.yml`. É um arquivo novo dentro da superfície de escrita-seguindo-link.
+2. `ProjectTargetIDs`/`project_target_ids`/`PROJECT_TARGET_IDS` passou a incluir `ci-workflow` também
+   quando `discoverWorkflowPresent` é verdadeiro, **independente de `cfg.CI`**. Um projeto com
+   `ci: none` — que declarou explicitamente não querer que `update` mexa em CI — entra na superfície
+   só por ter um arquivo (ou, como provado, um symlink) nesse caminho. A reprodução acima usa
+   exatamente `ci: none` e disparou nos 3 CLIs: esta é a regressão de alcance atribuível a este diff,
+   não o mecanismo em si (que é mais antigo).
+
+**Sub-caso mais grave, achado durante a investigação — `discover --init` com symlink pendurado
+(dangling), pré-existente, não modificado por este diff, mas na mesma família e mesmo arquivo-alvo:**
+`internal/discover/discover.go:254` `writeCIWorkflow` usa `if isFile(dest) { return }` (idempotente)
+antes de escrever. Com um symlink **pendurado** (aponta para um caminho que ainda não existe),
+`isFile`/`os.Stat` retorna falso (arquivo não existe *no destino do link*), a guarda idempotente não
+barra, e `os.WriteFile` segue o link e **cria** o arquivo no destino escolhido pelo atacante — fora do
+projeto. Reproduzido:
+```bash
+mkdir -p proj/.github/workflows outside
+ln -s "$PWD/outside/does-not-exist-yet" proj/.github/workflows/trackfw-validate.yml
+cd proj && trackfw discover --init
+ls ../outside/         # does-not-exist-yet agora existe
+cat ../outside/does-not-exist-yet   # template completo do trackfw
+```
+Confirmado ao vivo (Go). Este `writeCIWorkflow` **não foi tocado por este diff** (só a função que ele
+chama para gerar o conteúdo mudou, de string inline para `generators.BuildDiscoverGitHubActionsWorkflowContent()`)
+— é um residual pré-existente, registrado aqui por ser a mesma família de bug no mesmo arquivo-alvo,
+não como parte do achado bloqueante. Recomendo que a correção do achado bloqueante cubra os dois de
+uma vez (mesmo commit/ML), já que são a mesma classe e o mesmo arquivo de destino.
+
+##### 2. Achados não bloqueantes
+
+- **Validação de `TRACKFW_VERSION` em `scripts/install.sh:32-72`** — robusta. Testada ao vivo com o
+  gate `scripts/check-install-version-pin.sh` (16 cenários, todos OK) e com vetores adicionais fora
+  do gate: CRLF (`v7.3.0\r`, rejeitado), dígito UTF-8 largo/ponto largo (rejeitado pelo charset),
+  entrada de 100 KB só-dígitos (aceita, sem custo perceptível — não é DoS explorável, `case`/`tr` são
+  lineares e o valor só chega via variável de ambiente, cujo tamanho já é limitado pelo próprio SO
+  antes de chegar ao script). NUL byte não é vetor viável (variável de ambiente não pode conter NUL).
+  O comentário do script (linhas 35-48) documenta corretamente por que `case` evita a armadilha de
+  `grep -E` ancorar por linha — mesma causa-raiz já registrada em
+  `vault/notes/bash-grep-F-embedded-newline-vacuous-match-2026-08-16.md`. Nenhuma regressão frente ao
+  modelo de ameaça do ML-0A.
+- **`TRACKFW_INSTALL_DRYRUN`** — confirmado que a variável não aparece em nenhum template gerado
+  (`grep` nos 3 geradores não encontra ocorrência fora dos scripts de gate/teste); não é alcançável no
+  caminho real de CI, não é um seam que um workflow gerado possa disparar por acidente.
+- **Pin `go install .../cmd/trackfw@v<versão>`** — falha fechada quando a tag não existe (`go
+  install` retorna erro, o step falha, `trackfw validate` nunca roda, job fica vermelho). Tag movida:
+  não verificado ao vivo (sem rede neste ambiente), mas por padrão o toolchain Go usa `GOSUMDB`
+  habilitado — uma tag re-apontada para conteúdo diferente do já registrado no sumdb produz
+  `checksum mismatch`, também falha fechada, contanto que `GONOSUMDB`/`GOFLAGS=-insecure` não tenham
+  sido desligados no runner. Não é um ponto a corrigir nesta REQ.
+- **Janela de pin decorativo — confirmada como concreta, não hipotética.** `internal/version/
+  version.go` tem `Version = "7.3.0"` e a tag mais nova do repositório é `v7.3.0` (medido:
+  `git tag --sort=-version:refname | head -1`), ou seja, o `install.sh` publicado em
+  `releases/latest` **hoje** ainda não honra `TRACKFW_VERSION` — é o script anterior a este merge.
+  Um projeto gerado agora, com o binário desta branch, grava `TRACKFW_VERSION: "7.3.0"` no workflow,
+  mas o `install.sh` que esse workflow baixa via `releases/latest/download/install.sh` continua
+  ignorando a variável até a próxima release ser publicada. Já registrado como residual do ML-0A;
+  confirmo que segue válido e que a janela está aberta neste exato commit — o arquiteto/hefesto-tf não
+  devem declarar a REQ "efetiva" antes de confirmar que uma release pós-merge com o `install.sh` novo
+  foi publicada.
+- **`install.sh` de `releases/latest` continua não pinado (ponto 4 do prompt) — decisão defensável
+  para o risco de *drift*, buraco nomeado para o risco de *conta comprometida*.** `TRACKFW_VERSION`
+  pina o binário; o script que o busca continua vindo de `releases/latest/download/install.sh` e é
+  `curl | sh` sem verificação de checksum/assinatura. Se a conta do repositório for comprometida, um
+  atacante que substitua o `install.sh` publicado ganha execução arbitrária em todo consumidor de CI,
+  independente do pin — o pin de versão do binário não mitiga esse cenário, só o de desatualização
+  involuntária. Não é regressão desta REQ (comportamento inalterado), mas é a resposta correta à
+  pergunta: o único fix real seria checksum/assinatura publicada e verificada antes do `sh`, o que é
+  escopo de uma REQ própria, não desta.
+
+##### 3. Residuais do ML-0A — status
+
+- **Lacuna do `update` do Python para `ci-workflow`** — RESOLVIDA. Medido em
+  `pypi/trackfw/integrations/scaffold_doctor.py:308` (`_check_ci_workflow_artifact`, usa
+  `build_github_actions_workflow_content`) e `pypi/trackfw/generators/init_gen.py:559,621`
+  (`build_github_actions_workflow_content`, `generate_ci_workflow`) — o Python agora gera e compara
+  o workflow, como a nota "FALSIFICADA PELO ARQUITETO" já registrava para o ML-2C.
+- **Pin envelhece em silêncio** — segue válido, sem mudança; é comportamento aceito por desenho
+  (ADR), não uma regressão.
+- **`install.sh` publicado em release antiga não conhece a variável** — segue válido, e **confirmado
+  ativo agora** (ver item acima "janela de pin decorativo").
+- **Downgrade dentro do espaço de versões publicadas** — segue válido, aceito por desenho.
+- **Divergência de contagem de textos de ajuda entre os 3 CLIs** — fora do escopo desta REQ, não
+  reavaliado (não é superfície de segurança).
+- **Nenhum residual do ML-0A piorou.** O achado novo desta revisão (symlink-follow) não estava
+  nomeado no ML-0A original — a seção 2 do ML-0A cobriu substituição de comando, separador de shell,
+  path traversal por caractere, newline embutida e versão inexistente, todos sobre
+  `TRACKFW_VERSION`/`install.sh`; não cobriu a superfície de escrita de arquivo do `update`/`discover`
+  em si, que é onde este achado vive. Não é uma falsificação do ML-0A — é um vetor fora do escopo que
+  o próprio ML-0A se deu (validação de `TRACKFW_VERSION`), fica registrado para um ML-0A futuro que
+  cubra escrita de arquivo, não só o script `install.sh`.
+
+##### 4. Microlote corretivo mínimo
+
+**Arquivos exatos:**
+- `internal/generators/update.go:1852,1865` — trocar `os.Stat` por `os.Lstat` em
+  `discoverWorkflowPresent` e em `refreshDiscoverGitHubActionsWorkflowIfPresent`; se
+  `info.Mode()&os.ModeSymlink != 0`, tratar como "não gerenciável por `update`" (não escrever, e não
+  contar como presente para fins de `ProjectTargetIDs`) e reportar a divergência em vez de seguir o
+  link.
+- `internal/discover/discover.go:254` (`writeCIWorkflow`) e o par `writeCIWorkflowForce` — mesma
+  troca (`os.Lstat` antes de decidir presença/escrever), cobrindo o sub-caso do symlink pendurado.
+- `npm/src/commands/update.js:179,191` — `fs.lstatSync(dest, {throwIfNoEntry:false})` +
+  `isSymbolicLink()` em vez de `fs.existsSync`/`fs.writeFileSync` direto.
+- `npm/src/commands/discover.js` (equivalente de `writeCIWorkflow`/`writeCIWorkflowForce`) — mesma
+  troca.
+- `pypi/trackfw/commands/update.py:173,185` — `os.path.islink` antes de `os.path.isfile`/`open`.
+- `pypi/trackfw/commands/discover.py` (`_write_ci_workflow`) — mesma troca.
+- Um teste falsificador por runtime, no molde da reprodução acima (symlink vivo apontando para fora
+  do projeto + `update`; symlink pendurado + `discover --init`), que falha antes da correção e passa
+  depois.
+
+**Não incluir no corretivo:** blindagem contra symlink em todos os outros alvos de `runFileTarget`
+(`trackfw-gate.yml`, `.gitlab-ci-trackfw.yml`, agent-rules, etc.) — confirmado que sofrem do mesmo
+padrão (reproduzido para `trackfw-gate.yml`), mas isso é uma REQ própria de hardening geral de
+escrita de arquivo em `update`, não desta REQ de pin de versão. Registro aqui como residual a abrir,
+não como bloqueio adicional deste PR.
+
+**Comandos executados nesta revisão:** `git log origin/main..HEAD --oneline`, `git diff
+origin/main...HEAD --stat`, leitura de `scripts/install.sh`, `bash scripts/check-install-version-pin.sh`
+(16/16 OK), `go build ./...` e `go test ./internal/generators/... ./internal/discover/...` (verdes),
+vetores manuais contra `install.sh` (CRLF, UTF-8 largo, 100 KB de dígitos), leitura de
+`internal/generators/update.go`, `npm/src/commands/update.js`, `pypi/trackfw/commands/update.py`,
+`internal/discover/discover.go`, e 5 reproduções ao vivo com binário compilado desta branch
+(Go/Node/Python × symlink vivo em `update`, Go × `--dry-run` sobre symlink vivo, Go × symlink
+pendurado em `discover --init`) em diretórios de scratchpad isolados do repositório.
+
+**Fronteiras mantidas:** nenhum arquivo de código de produto tocado; nenhum commit, push ou PR
+executado; nenhum outro arquivo além desta seção apensada a este roadmap — inclusive
+`docs/agents-working-context.md`, cuja atualização normalmente seria obrigatória por este papel, mas
+que fica deliberadamente pulada aqui por instrução explícita do arquiteto de não tocar em nenhum
+outro arquivo (colisão com `hefesto-tf` revisando em paralelo no mesmo roadmap).
+
+#### Resolução da barreira final (trackfw_architect, 2026-08-28)
+
+**Os dois pareceres REPROVARAM, e cada um pegou algo que o outro não veria.**
+
+**ML-3C** (de `hefesto-tf`) — `internal/generators/update.go:1811-1819` afirmava que o CLI Python
+implementa superfície reduzida e aponta o usuário para Go/Node. Falso desde o ML-2C **desta REQ**.
+Era a **terceira** aparição da mesma alegação obsoleta: já apagada de `cli-parity.md` (AC16) e
+reescrita em `check-doctor-parity.sh:404` (ML-3B). Comentário obsoleto não quebra teste nenhum —
+nenhum gate pega, só leitura pega. Corrigido, diff só de comentário. Junto, o literal `"7.3.0"`
+congelado em `ci_workflow_version_pin_test.go:104` virou derivado de `version.Version`; ele passaria
+hoje **mesmo com a versão hardcoded no gerador**.
+
+**ML-3D + ML-3E** (de `hades-tf`) — **escrita fora do projeto através de symlink**. Reproduzido pelo
+arquiteto com o binário da branch: projeto com `ci: none`, symlink vivo em
+`.github/workflows/trackfw-validate.yml`, `trackfw update` sobrescrevia o alvo do link fora da
+árvore. Nenhum dos 3 runtimes usava `lstat`. **O gatilho foi ampliado por uma regra de aceite minha**
+— o AC17(c), que trocou a ativação do alvo de `cfg.ci` para presença em disco. Cobertura maior é
+superfície maior, e nem eu nem a Wave 0 vimos: ela olhava o `install.sh`, e o vetor só nasceu dois
+microlotes depois. Corrigido com `lstat` + recusa explícita nos 3.
+
+O ML-3E foi necessário porque a primeira entrega do Node era **segura mas muda** — o alvo deixava de
+ser declarado e nada era dito. Silêncio aqui vira *"o update não atualizou meu workflow e não falou
+nada"*, que é a mesma classe de falha invisível que esta REQ combateu. Mensagem agora byte-idêntica
+nos 3.
+
+**Auditoria final do arquiteto, com os 3 CLIs reais:**
+
+| | vítima do symlink | stderr |
+|---|---|---|
+| Go | intacta | avisa |
+| Node | intacta | avisa |
+| Python | intacta | avisa |
+
+`diff` das três mensagens: idênticas. Symlink pendurado + `discover --init`: zero arquivos criados
+fora do projeto nos 3.
+
+```
+make quality (TRACKFW_DISABLE_EXTERNAL_COMMANDS=1)   exit 0, 0 erros de make
+barrier --wave 3                                     passed nos 4 checks
+validate                                             16 warnings, 0 violations
+```
+
+**Duas notas de vault escritas e linkadas no índice:**
+`vault/notes/update-segue-symlink-e-escreve-fora-do-projeto-2026-08-28.md` e
+`vault/notes/barrier-so-casa-cabecalho-de-aceite-em-portugues-2026-08-28.md`.
+
+**Achado colateral, virou REQ própria:** o `barrier` só casa `**Critérios de aceite:**` enquanto os
+3 geradores escrevem `**Acceptance criteria:**` — todo roadmap que a ferramenta gera é reprovado pelo
+próprio `barrier`. A paridade entre os 3 CLIs está intacta (os três erram igual), e é exatamente por
+isso que nenhum gate pega: eles medem se as implementações concordam entre si, não se o contrato
+gerador↔verificador fecha. Contornado neste roadmap trocando os 6 cabeçalhos.

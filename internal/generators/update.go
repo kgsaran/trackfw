@@ -1810,13 +1810,19 @@ func harnessCatalogTarget(catalog *integrations.Catalog, id, tool string, kind i
 //
 // NOTE ON CROSS-RUNTIME PARITY: the pinned target list in cli-parity.md
 // covers `update harness` only. The three runtimes' project-scope target
-// SETS are not reconcilable byte-for-byte: the Python CLI intentionally
-// implements a reduced project-scope surface (agent rules + hooks + Codex
-// project agents only — see pypi/trackfw/commands/update.py's own
-// docstring, which points users to the Go/Node.js CLIs for CI/git-hooks/
-// Claude commands). The four states, four flags and JSON document SHAPE are
-// shared; the target ID list is not pinned and is reported here, not
-// silently forced into agreement.
+// SETS are not reconcilable byte-for-byte, but the gap is narrower than it
+// used to be: as of REQ-2026-08-28, the Python CLI declares `ci-workflow`
+// in PROJECT_TARGET_IDS under the same condition as Go and Node.js
+// (pypi/trackfw/commands/update.py's project_target_ids()) and dispatches
+// `claude-commands` like the other two runtimes (pre-existing, not part of
+// that REQ). The one target that remains genuinely absent from Python is
+// `git-hooks`: the Python `init` has no surface to opt into a hook
+// framework in the first place, so `update` has nothing to declare a
+// target for — tracked as its own gap in
+// REQ-2026-08-28-cli-python-nao-oferece-superficie-de-ci-e-git-hooks-no-init-e-nao-declara-git-hooks-como-alvo-do-update.md.
+// The four states, four flags and JSON document SHAPE are shared; the
+// target ID list is not pinned and is reported here, not silently forced
+// into agreement.
 // ────────────────────────────────────────────────────────────────────────────
 
 // ProjectTargetIDs is the declared order of `trackfw update` (project scope)
@@ -1843,29 +1849,55 @@ func ProjectTargetIDs(cfg Config, discoverWorkflowPresent bool) []string {
 }
 
 // discoverWorkflowPresent reports whether DiscoverGitHubActionsWorkflowPath
-// (.github/workflows/trackfw-validate.yml) already exists under root. Used
-// both to decide whether "ci-workflow" is declared (AC17(c)) and, inside its
-// apply function, to decide whether to refresh it — the existence check
-// always reads the real project tree (root passed to ProjectTargetIDs is
-// always cwd, never the --dry-run sandbox, mirroring how cfg itself is
-// loaded from the real cwd before the sandbox is built).
+// (.github/workflows/trackfw-validate.yml) already exists under root as a
+// REGULAR file. Used both to decide whether "ci-workflow" is declared
+// (AC17(c)) and, inside its apply function, to decide whether to refresh it
+// — the existence check always reads the real project tree (root passed to
+// ProjectTargetIDs is always cwd, never the --dry-run sandbox, mirroring how
+// cfg itself is loaded from the real cwd before the sandbox is built).
+//
+// Uses os.Lstat, NOT os.Stat: a symlink at this path is not something
+// `update` owns or can safely refresh — os.Stat follows the link and would
+// make an attacker-controlled path outside the project look "present",
+// pulling "ci-workflow" into the declared target set (and, via
+// refreshDiscoverGitHubActionsWorkflowIfPresent below, into the write path)
+// purely because a symlink exists on disk. Symlinks are therefore treated as
+// NOT present for this file: `update` will not declare/manage a target on
+// their account, and refreshDiscoverGitHubActionsWorkflowIfPresent (which
+// re-checks independently) refuses to write through them either way.
 func discoverWorkflowPresent(root string) bool {
-	_, err := os.Stat(filepath.Join(root, DiscoverGitHubActionsWorkflowPath))
-	return err == nil
+	info, err := os.Lstat(filepath.Join(root, DiscoverGitHubActionsWorkflowPath))
+	if err != nil {
+		return false
+	}
+	return info.Mode()&os.ModeSymlink == 0
 }
 
 // refreshDiscoverGitHubActionsWorkflowIfPresent refreshes
 // .github/workflows/trackfw-validate.yml ONLY when it already exists under
-// root — `update` never creates this file (AC17(b)): ownership of the
-// install decision belongs to `trackfw discover --init`, not `update`.
-// Writes the SAME builder scaffold doctor compares against
+// root as a REGULAR file — `update` never creates this file (AC17(b)):
+// ownership of the install decision belongs to `trackfw discover --init`,
+// not `update`. Writes the SAME builder scaffold doctor compares against
 // (BuildDiscoverGitHubActionsWorkflowContent, scaffold_doctor.go) so what
 // `update` writes and what `doctor` expects can never drift apart by
 // construction (REQ-2026-08-28 AC17).
+//
+// Uses os.Lstat to decide presence, not os.Stat: this path is the most
+// sensitive one `update` can write to (it controls what runs in CI for
+// anyone who checks the project out), so if it is a symlink — live or
+// dangling — this function refuses to write through it. It is not
+// `update`'s call whether to follow a link planted at a path it manages;
+// the file may not even belong to this project. Refusing is loud (stderr),
+// never silent, so "update didn't refresh my workflow" is diagnosable.
 func refreshDiscoverGitHubActionsWorkflowIfPresent(root string) error {
 	path := filepath.Join(root, DiscoverGitHubActionsWorkflowPath)
-	if _, err := os.Stat(path); err != nil {
+	info, err := os.Lstat(path)
+	if err != nil {
 		return nil // not installed — update never creates it (AC17(b))
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		fmt.Fprintf(os.Stderr, "aviso: %s é um symlink; trackfw update não escreve através de symlinks — arquivo não foi tocado\n", DiscoverGitHubActionsWorkflowPath)
+		return nil
 	}
 	return os.WriteFile(path, []byte(BuildDiscoverGitHubActionsWorkflowContent()), 0o644)
 }

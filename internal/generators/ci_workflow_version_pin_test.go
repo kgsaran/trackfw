@@ -83,10 +83,15 @@ func TestCIWorkflowVersionPin_NotHardcoded(t *testing.T) {
 
 // TestCIWorkflowVersionPin_NoLiteralInSource is a source-level falsification guard:
 // it greps scaffold.go for the current binary's version as a literal string within
-// the CI workflow builders' source range. If a future edit hardcodes a version
-// string (e.g. copies "7.3.0" into the template instead of referencing
-// version.Version), this test fails even though the string-content tests above might
-// coincidentally still pass for the version currently checked out.
+// the CI workflow builders' source range. The literal is derived from
+// version.Version at test time (not hardcoded as e.g. "7.3.0") so this test keeps
+// proving what it claims to prove even after a version bump: if a future edit
+// hardcodes a version string into the template instead of referencing
+// version.Version, this test fails regardless of which version is currently
+// checked out — a hardcoded literal that happened to equal version.Version would
+// only pass by coincidence today and silently start failing to catch the
+// regression the moment the version changed, which is exactly the false-comfort
+// this test must not provide.
 func TestCIWorkflowVersionPin_NoLiteralInSource(t *testing.T) {
 	src, err := os.ReadFile("scaffold.go")
 	if err != nil {
@@ -101,8 +106,9 @@ func TestCIWorkflowVersionPin_NoLiteralInSource(t *testing.T) {
 	}
 	block := text[start:end]
 
-	if strings.Contains(block, `"7.3.0"`) {
-		t.Fatalf("scaffold.go CI workflow builders contain hardcoded literal \"7.3.0\" instead of version.Version:\n%s", block)
+	currentVersionLiteral := `"` + version.Version + `"`
+	if strings.Contains(block, currentVersionLiteral) {
+		t.Fatalf("scaffold.go CI workflow builders contain hardcoded literal %s instead of version.Version:\n%s", currentVersionLiteral, block)
 	}
 	if !strings.Contains(block, "version.Version") {
 		t.Fatalf("scaffold.go CI workflow builders do not reference version.Version at all:\n%s", block)

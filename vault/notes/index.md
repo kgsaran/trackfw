@@ -4,6 +4,8 @@
 
 ## Índice
 
+- [update-segue-symlink-e-escreve-fora-do-projeto-2026-08-28](update-segue-symlink-e-escreve-fora-do-projeto-2026-08-28.md) — `update`/`discover` seguiam symlink em `.github/workflows/`; corrigido com `lstat` + recusa
+- [barrier-so-casa-cabecalho-de-aceite-em-portugues-2026-08-28](barrier-so-casa-cabecalho-de-aceite-em-portugues-2026-08-28.md) — NÃO CORRIGIDO: todo roadmap gerado pelo `roadmap new` é reprovado pelo `barrier`
 - [roadmap-title-newline-forges-wave-section-barrier-executes-gate-2026-08-23](roadmap-title-newline-forges-wave-section-barrier-executes-gate-2026-08-23.md) — NÃO CORRIGIDO
 - [rewrite-frontmatter-newline-injection-escape-hatch-2026-08-21](rewrite-frontmatter-newline-injection-escape-hatch-2026-08-21.md)
 - [nil-map-em-projectconfig-campo-novo-atinge-construcoes-antigas-2026-08-21](nil-map-em-projectconfig-campo-novo-atinge-construcoes-antigas-2026-08-21.md)

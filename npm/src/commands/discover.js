@@ -342,7 +342,26 @@ function writeCIWorkflow(rootDir) {
   const workflowsDir = path.join(rootDir, '.github', 'workflows');
   if (!isDir(workflowsDir)) fs.mkdirSync(workflowsDir, { recursive: true });
   const dest = path.join(workflowsDir, 'trackfw-validate.yml');
-  if (isFile(dest)) return; // idempotente
+  // Uses fs.lstatSync directly, NOT the isFile helper (fs.statSync, follows
+  // symlinks): a DANGLING symlink at dest resolves to "does not exist" under
+  // fs.statSync, so the idempotency guard below would not fire, and
+  // fs.writeFileSync would then follow the link and CREATE the workflow
+  // template at whatever path outside the project the symlink points to. A
+  // symlink here — live or dangling — is treated as "already present" so
+  // this function never writes through it; it refuses loudly instead of
+  // silently creating a file somewhere the caller never asked for.
+  let info
+  try {
+    info = fs.lstatSync(dest)
+  } catch (e) {
+    info = null
+  }
+  if (info) {
+    if (info.isSymbolicLink()) {
+      console.error(`aviso: ${DISCOVER_GITHUB_ACTIONS_WORKFLOW_PATH} é um symlink; trackfw discover não escreve através de symlinks — arquivo não foi tocado`)
+    }
+    return; // idempotente — não sobrescreve (nem segue o link)
+  }
   const content = buildDiscoverGitHubActionsWorkflowContent();
   fs.writeFileSync(dest, content, 'utf8');
 }
@@ -575,6 +594,19 @@ function writeCIWorkflowForce(rootDir) {
   const workflowsDir = path.join(rootDir, '.github', 'workflows');
   if (!isDir(workflowsDir)) fs.mkdirSync(workflowsDir, { recursive: true });
   const dest = path.join(workflowsDir, 'trackfw-validate.yml');
+  // Same symlink guard as writeCIWorkflow above: "force" means "overwrite
+  // an existing REGULAR file unconditionally", not "follow whatever this
+  // path resolves to". A symlink here — live or dangling — is refused, not
+  // followed.
+  try {
+    const info = fs.lstatSync(dest)
+    if (info.isSymbolicLink()) {
+      console.error(`aviso: ${DISCOVER_GITHUB_ACTIONS_WORKFLOW_PATH} é um symlink; trackfw discover não escreve através de symlinks — arquivo não foi tocado`)
+      return;
+    }
+  } catch (e) {
+    // does not exist — fine, this is the "force create" case
+  }
   const content = buildDiscoverGitHubActionsWorkflowContent();
   fs.writeFileSync(dest, content, 'utf8');
 }

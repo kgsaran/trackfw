@@ -906,6 +906,76 @@ func TestRunScaffoldDoctor_DiscoverWorkflow_DivergentWhenPinManuallyChanged(t *t
 	}
 }
 
+// TestWriteCIWorkflow_NeverWritesThroughLiveSymlink is the corrective
+// falsifier for the symlink-follow arbitrary-write reported by hades-tf's
+// final barrier review (2026-08-28): `trackfw discover --init` with a LIVE
+// symlink already at .github/workflows/trackfw-validate.yml pointing OUTSIDE
+// the project must not overwrite the file the symlink points to. Before the
+// fix, writeCIWorkflow decided presence with fileExists (os.Stat, follows
+// symlinks), treated the symlink as "already installed" only by accident of
+// its target existing, and os.WriteFile followed the link straight through.
+func TestWriteCIWorkflow_NeverWritesThroughLiveSymlink(t *testing.T) {
+	dir := t.TempDir()
+	outside := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "trackfw.yaml"), "backend: go\n")
+
+	victim := filepath.Join(outside, "vitima.txt")
+	const originalContent = "CONTEUDO ORIGINAL DA VITIMA\n"
+	mustWriteFile(t, victim, originalContent)
+
+	workflowPath := filepath.Join(dir, ".github", "workflows", "trackfw-validate.yml")
+	mustMkdir(t, dir, ".github/workflows")
+	if err := os.Symlink(victim, workflowPath); err != nil {
+		t.Fatal(err)
+	}
+
+	r := DiscoveryResult{CISystem: "github-actions"}
+	if err := InstallGates(r, dir, io.Discard); err != nil {
+		t.Fatalf("InstallGates error: %v", err)
+	}
+
+	got, err := os.ReadFile(victim)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != originalContent {
+		t.Fatalf("symlink-follow arbitrary write: victim file outside the project was overwritten.\nwant: %q\ngot:  %q", originalContent, got)
+	}
+	linkInfo, err := os.Lstat(workflowPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if linkInfo.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("expected %s to remain a symlink (untouched), got mode %v", workflowPath, linkInfo.Mode())
+	}
+}
+
+// TestWriteCIWorkflow_NeverWritesThroughDanglingSymlink is the same
+// falsifier for the dangling-symlink variant: the link target does not
+// exist yet, so a naive os.Stat-based idempotency guard reports "not
+// present" and os.WriteFile CREATES the file at the attacker-chosen path.
+func TestWriteCIWorkflow_NeverWritesThroughDanglingSymlink(t *testing.T) {
+	dir := t.TempDir()
+	outside := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "trackfw.yaml"), "backend: go\n")
+
+	danglingTarget := filepath.Join(outside, "does-not-exist-yet")
+	workflowPath := filepath.Join(dir, ".github", "workflows", "trackfw-validate.yml")
+	mustMkdir(t, dir, ".github/workflows")
+	if err := os.Symlink(danglingTarget, workflowPath); err != nil {
+		t.Fatal(err)
+	}
+
+	r := DiscoveryResult{CISystem: "github-actions"}
+	if err := InstallGates(r, dir, io.Discard); err != nil {
+		t.Fatalf("InstallGates error: %v", err)
+	}
+
+	if _, err := os.Lstat(danglingTarget); !os.IsNotExist(err) {
+		t.Fatalf("dangling-symlink arbitrary write: %s was created outside the project (stat err=%v)", danglingTarget, err)
+	}
+}
+
 // helpers
 
 func mustMkdir(t *testing.T, base, rel string) {

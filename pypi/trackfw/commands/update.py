@@ -55,6 +55,7 @@ import hashlib
 import json
 import os
 import shutil
+import sys
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -172,30 +173,57 @@ def project_target_ids(cfg: dict[str, str] | None, discover_workflow_present: bo
 
 def _discover_workflow_present(cwd: str) -> bool:
     """Reports whether .github/workflows/trackfw-validate.yml already exists
-    under cwd. Used both to decide whether "ci-workflow" is declared
-    (AC17(c)) and, inside its apply, to decide whether to refresh it —
-    existence is always checked against the real cwd, never the --dry-run
-    sandbox, mirroring how cfg itself is read from the real cwd before the
-    sandbox is built."""
+    under cwd AS A REGULAR FILE. Used both to decide whether "ci-workflow"
+    is declared (AC17(c)) and, inside its apply, to decide whether to
+    refresh it — existence is always checked against the real cwd, never
+    the --dry-run sandbox, mirroring how cfg itself is read from the real
+    cwd before the sandbox is built.
+
+    Checks os.path.islink FIRST, before os.path.isfile: os.path.isfile
+    follows symlinks, so a live symlink whose target resolves to a regular
+    file would be reported "present" purely because the link happens to
+    resolve — pulling "ci-workflow" into the declared target set on the
+    strength of a link this command does not own. Symlinks are therefore
+    treated as NOT present here: `update` will not declare/manage a target
+    on their account, and
+    _refresh_discover_github_actions_workflow_if_present below refuses to
+    write through them regardless."""
     from trackfw.commands.discover import DISCOVER_GITHUB_ACTIONS_WORKFLOW_PATH
 
-    return os.path.isfile(os.path.join(cwd, DISCOVER_GITHUB_ACTIONS_WORKFLOW_PATH))
+    dest = os.path.join(cwd, DISCOVER_GITHUB_ACTIONS_WORKFLOW_PATH)
+    if os.path.islink(dest):
+        return False
+    return os.path.isfile(dest)
 
 
 def _refresh_discover_github_actions_workflow_if_present(root: str) -> None:
     """Refreshes .github/workflows/trackfw-validate.yml ONLY when it already
-    exists under root — `update` never creates this file (AC17(b)):
-    ownership of the install decision belongs to `trackfw discover --init`,
-    not `update`. Writes the SAME builder scaffold doctor compares against
-    (build_discover_github_actions_workflow_content,
+    exists under root as a REGULAR FILE — `update` never creates this file
+    (AC17(b)): ownership of the install decision belongs to `trackfw
+    discover --init`, not `update`. Writes the SAME builder scaffold doctor
+    compares against (build_discover_github_actions_workflow_content,
     trackfw.commands.discover) so what `update` writes and what `doctor`
-    expects can never drift apart by construction (REQ-2026-08-28 AC17)."""
+    expects can never drift apart by construction (REQ-2026-08-28 AC17).
+
+    Checks os.path.islink FIRST: this path is the most sensitive one
+    `update` can write to (it controls what runs in CI for anyone who
+    checks the project out), so if it is a symlink — live or dangling —
+    this function refuses to write through it. Refusing is loud (stderr),
+    never silent, so "update didn't refresh my workflow" stays diagnosable
+    instead of a silent no-op."""
     from trackfw.commands.discover import (
         DISCOVER_GITHUB_ACTIONS_WORKFLOW_PATH,
         build_discover_github_actions_workflow_content,
     )
 
     dest = os.path.join(root, DISCOVER_GITHUB_ACTIONS_WORKFLOW_PATH)
+    if os.path.islink(dest):
+        print(
+            f"aviso: {DISCOVER_GITHUB_ACTIONS_WORKFLOW_PATH} é um symlink; "
+            "trackfw update não escreve através de symlinks — arquivo não foi tocado",
+            file=sys.stderr,
+        )
+        return
     if not os.path.isfile(dest):
         return  # not installed — update never creates it (AC17(b))
     with open(dest, "w", encoding="utf-8") as f:

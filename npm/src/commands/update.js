@@ -171,27 +171,59 @@ function codexProjectAgentsTarget(cwd, identityConfig, { dryRun, installMissing 
 // discoverWorkflowPresent — reports whether
 // .github/workflows/trackfw-validate.yml (written by `trackfw discover
 // --init`, DISCOVER_GITHUB_ACTIONS_WORKFLOW_PATH in discover.js) already
-// exists under cwd. Used both to decide whether `ci-workflow` is declared
-// (AC17(c), REQ-2026-08-28) and, inside its apply(), to decide whether to
-// refresh it — existence is checked against the REAL cwd, never the
-// --dry-run sandbox, mirroring how cfg itself is read before the sandbox is
-// built.
+// exists under cwd AS A REGULAR FILE. Used both to decide whether
+// `ci-workflow` is declared (AC17(c), REQ-2026-08-28) and, inside its
+// apply(), to decide whether to refresh it — existence is checked against
+// the REAL cwd, never the --dry-run sandbox, mirroring how cfg itself is
+// read before the sandbox is built.
+//
+// Uses fs.lstatSync, NOT fs.existsSync: fs.existsSync follows symlinks, so a
+// symlink at this path — even a live one pointing outside the project —
+// would report "present" purely because its target resolves, pulling
+// `ci-workflow` into the declared target set on the strength of a link this
+// command does not own. Symlinks are therefore treated as NOT present here:
+// `update` will not declare/manage a target on their account, and
+// refreshDiscoverGitHubActionsWorkflowIfPresent below refuses to write
+// through them regardless.
 function discoverWorkflowPresent(cwd) {
   const { DISCOVER_GITHUB_ACTIONS_WORKFLOW_PATH } = require('./discover')
-  return fs.existsSync(path.join(cwd, DISCOVER_GITHUB_ACTIONS_WORKFLOW_PATH))
+  const dest = path.join(cwd, DISCOVER_GITHUB_ACTIONS_WORKFLOW_PATH)
+  let info
+  try {
+    info = fs.lstatSync(dest)
+  } catch (e) {
+    return false
+  }
+  return !info.isSymbolicLink()
 }
 
 // refreshDiscoverGitHubActionsWorkflowIfPresent — refreshes
 // .github/workflows/trackfw-validate.yml ONLY when it already exists under
-// root — `update` never creates this file (AC17(b)): ownership of the
-// install decision belongs to `trackfw discover --init`, not `update`.
-// Writes the SAME builder scaffold doctor compares against
+// root as a REGULAR FILE — `update` never creates this file (AC17(b)):
+// ownership of the install decision belongs to `trackfw discover --init`,
+// not `update`. Writes the SAME builder scaffold doctor compares against
 // (buildDiscoverGitHubActionsWorkflowContent, discover.js) so what `update`
 // writes and what `doctor` expects can never drift apart by construction.
+//
+// Uses fs.lstatSync to decide presence, not fs.existsSync: this path is the
+// most sensitive one `update` can write to (it controls what runs in CI for
+// anyone who checks the project out), so if it is a symlink — live or
+// dangling — this function refuses to write through it. Refusing is loud
+// (stderr), never silent, so "update didn't refresh my workflow" stays
+// diagnosable instead of a silent no-op.
 function refreshDiscoverGitHubActionsWorkflowIfPresent(root) {
   const { DISCOVER_GITHUB_ACTIONS_WORKFLOW_PATH, buildDiscoverGitHubActionsWorkflowContent } = require('./discover')
   const dest = path.join(root, DISCOVER_GITHUB_ACTIONS_WORKFLOW_PATH)
-  if (!fs.existsSync(dest)) return // not installed — update never creates it (AC17(b))
+  let info
+  try {
+    info = fs.lstatSync(dest)
+  } catch (e) {
+    return // not installed — update never creates it (AC17(b))
+  }
+  if (info.isSymbolicLink()) {
+    console.error(`aviso: ${DISCOVER_GITHUB_ACTIONS_WORKFLOW_PATH} é um symlink; trackfw update não escreve através de symlinks — arquivo não foi tocado`)
+    return
+  }
   fs.writeFileSync(dest, buildDiscoverGitHubActionsWorkflowContent(), 'utf8')
 }
 
@@ -326,7 +358,8 @@ function buildProjectTargets(cwd, cfg, identityConfig, { dryRun, installMissing 
   // gitlab-ci (as before) OR when trackfw-validate.yml already exists on
   // disk — otherwise a `ci: none` project that ran `discover` would have
   // that file outside any command's management.
-  if (include('ci-workflow') && (cfg.ci === 'github-actions' || cfg.ci === 'github_actions' || cfg.ci === 'gitlab-ci' || discoverWorkflowPresent(cwd))) {
+  const ciWorkflowConfigOptIn = cfg.ci === 'github-actions' || cfg.ci === 'github_actions' || cfg.ci === 'gitlab-ci';
+  if (include('ci-workflow') && (ciWorkflowConfigOptIn || discoverWorkflowPresent(cwd))) {
     const isGitLab = cfg.ci === 'gitlab-ci';
     const { DISCOVER_GITHUB_ACTIONS_WORKFLOW_PATH } = require('./discover');
     targets.push(runFileTarget({
@@ -346,6 +379,28 @@ function buildProjectTargets(cwd, cfg, identityConfig, { dryRun, installMissing 
       dryRun,
       installMissing,
     }));
+  } else if (include('ci-workflow')) {
+    // ML-3E (audit of ML-3D): the branch above is skipped exactly when
+    // `ci-workflow` isn't config-opted-in AND discoverWorkflowPresent(cwd)
+    // is false — which is also true when the file at
+    // DISCOVER_GITHUB_ACTIONS_WORKFLOW_PATH is a symlink (live or dangling),
+    // since discoverWorkflowPresent() deliberately treats symlinks as NOT
+    // present (AC17(c) comment above). Without this call, a `ci: none`
+    // project with a discover-installed symlink went completely silent:
+    // no target declared, no write, no warning — the exact failure mode
+    // this REQ exists to close (ML-3D's own stderr warning only fired from
+    // inside the branch above, i.e. only in cases where it was already not
+    // needed). refreshDiscoverGitHubActionsWorkflowIfPresent(cwd) re-checks
+    // the real cwd independently: it is a no-op when the file is absent
+    // (AC17(b) — update never creates it) and prints the SAME stderr
+    // warning Go/Python emit — byte-identical, see
+    // internal/generators/update.go:1899 and
+    // pypi/trackfw/commands/update.py:221-225 — when it is a symlink. No
+    // regular file ever reaches this branch (that case is always declared
+    // above via discoverWorkflowPresent(cwd) === true), so this can never
+    // duplicate the write/warning already performed by the branch above,
+    // and never writes through a symlink itself.
+    refreshDiscoverGitHubActionsWorkflowIfPresent(cwd);
   }
 
   if (include('git-hooks') && (cfg.hooks === 'husky' || cfg.hooks === 'lefthook')) {

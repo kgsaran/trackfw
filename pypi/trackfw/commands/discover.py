@@ -487,6 +487,22 @@ def _write_ci_workflow(root_dir: str) -> None:
     workflows_dir = os.path.join(root_dir, ".github", "workflows")
     os.makedirs(workflows_dir, exist_ok=True)
     dest = os.path.join(workflows_dir, "trackfw-validate.yml")
+    # os.path.islink is checked BEFORE _is_file (os.path.isfile, follows
+    # symlinks): a DANGLING symlink at dest resolves to "does not exist"
+    # under os.path.isfile, so the idempotency guard below would not fire,
+    # and open(dest, "w") would then follow the link and CREATE the
+    # workflow template at whatever path outside the project the symlink
+    # points to. A symlink here — live or dangling — is treated as "already
+    # present" so this function never writes through it; it refuses loudly
+    # instead of silently creating a file somewhere the caller never asked
+    # for.
+    if os.path.islink(dest):
+        print(
+            f"aviso: {DISCOVER_GITHUB_ACTIONS_WORKFLOW_PATH} é um symlink; "
+            "trackfw discover não escreve através de symlinks — arquivo não foi tocado",
+            file=sys.stderr,
+        )
+        return
     if _is_file(dest):
         return  # idempotente
     content = build_discover_github_actions_workflow_content()
