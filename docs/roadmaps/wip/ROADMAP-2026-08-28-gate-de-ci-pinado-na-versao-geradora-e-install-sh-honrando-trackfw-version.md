@@ -220,6 +220,16 @@ mesma superfície de erro** — quem vai implementar precisa saber qual delas ca
 
 ##### 4. Residual declarado
 
+> **CORREÇÃO DO ARQUITETO (2026-08-28) — o residual seguinte está factualmente incorreto e fica
+> registrado apenas como rastro da investigação.** A premissa de que o Python "gera o workflow
+> pinado no `init` e nunca recebe o bump" veio do meu próprio prompt para o ML-0A, não de medição.
+> O CLI Python **nunca escreveu workflow de CI**: não há `--ci` em `pypi/trackfw/commands/init.py`,
+> não há gerador em `pypi/trackfw/generators/`, e as 2 ocorrências de `releases/latest` em
+> `init_gen.py:541,571` são texto de ajuda. Logo o Python não pina uma vez — ele nunca pina.
+> Por decisão de KG, a lacuna deixou de ser residual e virou escopo: o ML-2C acima foi reescrito
+> para fechá-la (gerar + `update` + `doctor`), e a exclusão em `cli-parity.md` será apagada na
+> Wave 3 (AC16).
+
 - **Lacuna do alvo `ci-workflow` no `update` do CLI Python** (`pypi/trackfw/integrations/scaffold_doctor.py:25` e `:382`, confirmado por leitura direta): projetos que só usam o CLI Python geram o
   workflow pinado no `init`, mas nunca recebem o bump automático depois — o `doctor` do Python nunca vai
   acusar `scaffold-divergent` para esse arquivo porque ele está fora da comparação, por desenho. Isto
@@ -516,22 +526,56 @@ defeito de referência acima — está fora dos arquivos permitidos a este ML.
 - [ ] `npm test --prefix npm` → exit 0
 - [ ] Nenhuma versão literal no template
 
-### ML-2C — Python: template pinado + doctor
+### ML-2C — Python: fecha a paridade do workflow de CI (gerar, gerenciar no `update`, cobrir no `doctor`)
 **Status:** ⬜ Pendente
 **Agente:** `apolo-tf`
+
+> **Este ML foi reescrito em 2026-08-28, depois da Wave 0.** A versão original mandava "pinar o
+> template Python". Medição do arquiteto: **não existe template Python.** O CLI Python nunca gerou
+> workflow de CI nenhum — não há `--ci` no `init.py`, não há gerador em `pypi/trackfw/generators/`,
+> e as 2 ocorrências de `releases/latest` em `init_gen.py:541,571` são **texto de ajuda** do
+> "trackfw não está instalado", não template de workflow. O residual do ML-0A que diz que o Python
+> "pina uma vez e nunca mais bumpa" descende dessa mesma premissa errada e **está factualmente
+> incorreto**: o Python não pina porque não escreve o arquivo.
+>
+> Decisão de KG (regra dura de paridade — os 3 CLIs têm as mesmas funcionalidades e funcionam
+> exatamente igual): a lacuna é **fechada**, não estreitada. `pypi/trackfw/config.py:431` **já lê a
+> chave `ci:`** do `trackfw.yaml`, então a exclusão documentada em `cli-parity.md` como "fundamentada
+> em propriedade" não é limite de capacidade — é escolha.
+
 **Files affected:** `pypi/trackfw/generators/init_gen.py`,
-`pypi/trackfw/integrations/scaffold_doctor.py`, `pypi/tests/`
+`pypi/trackfw/integrations/scaffold_doctor.py`, `pypi/trackfw/commands/update.py`, `pypi/tests/`
+
 **Actions:**
-1. Mesmo template, byte-idêntico. Versão vem de `trackfw.__version__`, não literal.
-2. Cobrir `init_gen.py:541` e `:571` (AC13, parte Python).
-3. `scaffold_doctor.py` compara contra o template novo. **Manter** a exclusão documentada do alvo
-   `ci-workflow` no `update` do Python (`scaffold_doctor.py:25`) — está no escopo negativo — mas
-   revisar se o texto da exclusão continua correto depois desta mudança.
-4. Testes Python cobrindo AC6, AC10, AC11.
+1. **Criar os dois builders no Python**, byte-idênticos aos de Go e Node para a mesma versão:
+   `build_github_actions_workflow_content` e `build_gitlab_ci_workflow_content`, já emitindo
+   `TRACKFW_VERSION: "<versão>"` e `timeout-minutes: 10`. A versão vem de `trackfw.__version__` —
+   **nunca literal**.
+2. **Gerar o workflow** quando `cfg["update"]["ci"]` for `github-actions` ou `gitlab-ci`, no mesmo
+   ponto do fluxo em que Go e Node geram.
+3. **Adicionar `ci-workflow` ao `PROJECT_TARGET_IDS`** de `pypi/trackfw/commands/update.py:107`, na
+   **mesma posição** da lista de Go e Node, com o mesmo relatório de estado
+   (`updated`/`skipped`/`missing`).
+4. **Cobrir o workflow no `scaffold_doctor.py`**, removendo a exclusão de `:23-25` e `:382`. O
+   remédio impresso passa a ser `trackfw update`, que agora é verdade neste runtime.
+5. Cobrir `init_gen.py:541` e `:571` conforme AC13 — são texto de ajuda; atualizar ou declarar
+   explicitamente fora do pin, sem deixar instrução contraditória entre os 3 CLIs.
+6. Testes Python cobrindo AC6, AC7, AC9, AC10, AC11.
+
 **Acceptance criteria:**
-- [ ] AC6, AC7 (Python), AC10, AC11, AC13 (parte Python)
+- [ ] AC6, AC7 (Python), AC9 (Python passa a bumpar o pin), AC10, AC11, AC13 (parte Python)
 - [ ] `python -m pytest pypi/tests` → exit 0
 - [ ] Nenhuma versão literal no template
+- [ ] `ci-workflow` aparece no relatório de alvos do `update` do Python, na mesma posição de Go/Node
+- [ ] A seção "CI workflow exclusion — Python" de `docs/cli-parity.md` é **apagada** na Wave 3, não
+      estreitada — e a tabela de cobertura por runtime passa a marcar "sim" para os 3 CLIs nas duas
+      linhas de workflow
+
+**Assimetria que PERMANECE e não é fechada aqui:** o `init` do Python continua sem `--ci` e sem
+`--hooks`, então ele gerencia o workflow de um projeto cujo `trackfw.yaml` já declara `ci:`, mas não
+*escolhe* CI na criação. Coberto por
+`REQ-2026-08-28-cli-python-nao-oferece-superficie-de-ci-e-git-hooks-no-init-e-nao-declara-git-hooks-como-alvo-do-update.md`,
+que declara dependência desta REQ.
 
 ## Wave 3 — Gate de paridade, contrato e evidência
 > Dependências: Wave 2 completa nos três. ML único — toca arquivos compartilhados pelos 3 stacks.

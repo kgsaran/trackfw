@@ -50,8 +50,12 @@ suportada); é o **asset gerado estar errado**, obrigando à customização.
 - [ ] **AC8** — Os 3 CLIs geram workflow **byte-idêntico** para a mesma versão. Gate de paridade
       falsificável cobre isso e falha se um dos três divergir.
 - [ ] **AC9** — `trackfw update` num projeto com workflow pinado numa versão antiga reescreve o pin
-      para a versão do binário e reporta o alvo como `updated` (Go e Node; Python segue sem o alvo
-      `ci-workflow`, lacuna já documentada).
+      para a versão do binário e reporta o alvo como `updated`, **nos 3 CLIs**. O Python passa a
+      declarar `ci-workflow` em `PROJECT_TARGET_IDS` na mesma posição de Go e Node.
+- [ ] **AC16** — A seção "CI workflow exclusion — Python (principled)" de `docs/cli-parity.md` é
+      **apagada**, e a tabela "Cobertura por runtime" passa a marcar `sim` para os 3 CLIs nas linhas
+      `.github/workflows/trackfw-gate.yml` e `.gitlab-ci-trackfw.yml`. A anotação
+      `partial=exclusão de CI workflow no Python…` do contrato deixa de existir.
 - [ ] **AC10** — `trackfw doctor` num projeto cujo workflow está pinado em versão diferente da do
       binário reporta `[scaffold-divergent]` com remédio `trackfw update`, nos 3 CLIs.
 - [ ] **AC11** — `trackfw doctor` num projeto recém-gerado pelo mesmo binário reporta
@@ -69,6 +73,16 @@ suportada); é o **asset gerado estar errado**, obrigando à customização.
       `scripts/check-parity-contract-coverage.sh` continua verde.
 - [ ] **AC15** — `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality` → exit 0.
 
+## Emenda de 2026-08-28 (pós-Wave 0)
+
+Esta REQ nasceu supondo que o CLI Python **gerava** o workflow de CI e apenas não o atualizava.
+Medição posterior do arquiteto: o Python **nunca gerou workflow nenhum** — não há `--ci` no
+`init.py`, não há gerador em `pypi/trackfw/generators/`, e as 2 ocorrências de `releases/latest` em
+`init_gen.py` são texto de ajuda. Por decisão de KG (regra dura de paridade dos 3 CLIs), o escopo
+passou a incluir **fechar** a lacuna: gerar, gerenciar no `update` e cobrir no `doctor` — daí AC9
+reescrito e AC16 novo. O residual do ML-0A que afirma que o Python "pina uma vez e nunca mais
+bumpa" descende da premissa antiga e está marcado como incorreto no roadmap.
+
 ## Negative Scope
 
 Explicitamente **fora** desta REQ:
@@ -77,7 +91,11 @@ Explicitamente **fora** desta REQ:
   inteiro de pé: propriedade pelo caminho, sem migração.
 - **Não** fazer o `update` recusar sobrescrever workflow divergente, nem adicionar `--force` a ele.
   Sobrescrever é o comportamento desenhado; a correção é o template nascer certo.
-- **Não** fechar a lacuna do alvo `ci-workflow` no `update` do CLI Python.
+- **Não** dar ao `init` do CLI Python as flags `--ci` e `--hooks`, nem declarar `git-hooks` como
+  alvo dele. Isso é
+  `REQ-2026-08-28-cli-python-nao-oferece-superficie-de-ci-e-git-hooks-no-init-e-nao-declara-git-hooks-como-alvo-do-update.md`,
+  que depende desta. Aqui o Python passa a **gerenciar** o workflow de um projeto cujo
+  `trackfw.yaml` já declara `ci:`; **escolher** o CI na criação continua fora.
 - **Não** aceitar versão por argumento posicional ou flag no `install.sh` — apenas env var.
 - **Não** tocar em `.github/workflows/` deste repositório (os workflows do próprio trackfw são
   mantidos à mão e não são gerados pelo scaffold).
