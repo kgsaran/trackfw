@@ -25214,3 +25214,39 @@ Branch `fix/doctor-compara-o-bit-de-execucao`.
 - `discover.go:83` (InstallGates) escreve validate.sh com 0755 mas SEM Chmod; como o doctor aponta `trackfw update` (não `trackfw discover --init`) como remédio, isso é residual aceito.
 
 ML-1A marcado ✅ no roadmap. Pronto para auditoria do `trackfw_architect`.
+
+---
+
+## 2026-08-28 — `trackfw_architect` (Zeus) — Release v7.3.0 publicada e validada
+
+**Encerramento do ciclo.** Tag `v7.3.0` publicada (tag object `0c71b40`, commit `89928b1`),
+release do GitHub com os 5 binários + `install.sh` + `checksums.txt`, e
+`repos/kgsaran/trackfw/releases/latest` resolvendo para `v7.3.0` — este último é o que importa,
+porque o `install.sh` resolve a versão pela API de `latest` e ignora de qual tag foi baixado
+(ver `vault/notes/ci-trackfw-regrava-workflows-fora-do-manifesto-2026-08-27.md` no projeto cmdb).
+
+Sete PRs no release (#206–#212): `trackfw audit-surface`, Wave 0 de segurança no harness, e cinco
+correções da mesma classe — mecanismo emitindo sinal verde com o controle inerte.
+
+**Validação pós-release medida:**
+- `./bin/trackfw --version` → `trackfw 7.3.0`; `doctor` → `no mismatches` nos 3 CLIs
+- `validate` → 16 warnings, 0 violations; `wip/`, `analyzing/` e `blocked/` vazios; árvore limpa
+- `agent_models` presente só em `~/.trackfw/trackfw.yaml` (`opus: "5"`, `sonnet: "4.6"`), ausente
+  do `trackfw.yaml` do projeto e do cmdb — que é o contrato do ADR-2026-08-21
+- 13 agentes globais em `~/.claude/agents/` pinados em modelo versionado, zero alias
+- `chore/release-7-3-0` podada; tag local `v7.1.0` reconciliada com o remoto (divergia por ter
+  sido criada antes da migração da publicação para a API — mesmo commit, tagger diferente)
+
+**Armadilha registrada para quem for atualizar o cmdb:** o `doctor` do 7.3.0 aponta
+`.github/workflows/trackfw-gate.yml` como `scaffold-divergent` e sugere `trackfw update` como
+remédio. Naquele repositório a divergência é **intencional** (pin `TRACKFW_VERSION: "7.0.0"`,
+`timeout-minutes: 10` e o comentário do ML-0D). Rodar `trackfw update` lá sem conferir
+`git status .github/workflows/` em seguida recria o incidente de 2026-08-27.
+
+**Aberto, para a sessão do cmdb (não é trabalho deste repositório):** 22 divergências
+manifesto/disco em `.cursor/agents` (12) e `.codex/agents` (10), classificadas como
+`hand-modified` sem que ninguém tenha editado. Discriminante já levantado: o arquivo do cursor tem
+mtime `2026-07-29` e o `integrations-manifest.json` tem `2026-08-27` — a pergunta é se o manifesto
+foi atualizado sem reescrever os arquivos (bug do trackfw) ou se os arquivos precedem um bump de
+catálogo num alvo fora do `--targets` (esperado). A checagem é conteúdo em disco vs. template atual
+do catálogo para `cursor/qa`, não a comparação de hash já feita.
