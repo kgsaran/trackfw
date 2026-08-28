@@ -49,6 +49,19 @@ Branch `feat/doctor-cobre-artefatos-de-scaffold`.
 
 **Pendente para ML-2A:** gate `scripts/check-doctor-parity.sh` com cenários de scaffold incluindo set-membership cross-CLI.
 
+---
+
+## Sessão 2026-08-27 — apolo-tf (INÍCIO: ML-2A — gate de paridade e falsificação de scaffold)
+
+Branch `feat/doctor-cobre-artefatos-de-scaffold`.
+
+Recebido handoff: ML-0A, 1A, 1B, 1C auditados e commitados. Scope exclusivo do ML-2A:
+1. Novos cenários em `scripts/check-doctor-parity.sh` (g–o) cobrindo artefatos de scaffold (baseline íntegro, divergente, ausente, validate.sh Go form, Python form, near-miss, mirror-vs-generator cross-runtime, discover-init sem slash commands, backend:go sem falso-positivo).
+2. Falsificação nas duas direções em `scripts/check-gates-falsify.sh` (Cenários 177 e 178).
+3. Atualizar anotações `gap reason=… ver ML-2A` → `gate=scripts/check-doctor-parity.sh` em `docs/cli-parity.md`.
+
+Proibido modificar: `internal/generators/scaffold_doctor.go`, `npm/src/integrations/scaffold_doctor.js`, `pypi/trackfw/integrations/scaffold_doctor.py`.
+
 (Nota: a entrada FIM anterior a esta — sobre Python validate.sh coverage — foi a sessão que sinalizou o bloqueio. Esta é a resolução após a decisão do arquiteto.)
 
 ---
@@ -24942,3 +24955,35 @@ Decisões declaradas:
 - Eligibilidade slash commands: diretório `.claude/commands/trackfw/` deve existir (AC14).
 - Guards incluídos (cobertura aditiva ao validate, não exclusiva).
 - Hook files excluídos do escopo (Residual-3 do modelo de ameaça).
+
+## Sessão 2026-08-27 — apolo-tf (INÍCIO: ML-2A — paridade e falsificação)
+
+Branch `feat/doctor-cobre-artefatos-de-scaffold`.
+Tarefa: AC8 (falsificação 2 direções), AC9 (cli-parity.md gate annotation), pré-condição AC10.
+
+## Sessão 2026-08-27 — apolo-tf (FIM: ML-2A — paridade e falsificação)
+
+**Entregues:**
+1. `scripts/check-doctor-parity.sh` — helpers `build_scaffold_fixture`, `_normalize_version_in_file`,
+   `run_scaffold_scenario` + 9 cenários (g–o): baseline, divergente, ausente, Go-form, Python-form,
+   near-miss, mirror-vs-generator-backend-go (load-bearing), no-slash-commands-dir, backend-go.
+   Gate: 30 OK, EXIT 0.
+2. `scripts/check-gates-falsify.sh` — Cenários 177 (Direction A: silencia divergência) e 178
+   (Direction B: acusa artefato íntegro). Padrões confirmados empiricamente antes de escrever.
+   Final echo atualizado para "all 178 scenarios".
+3. `docs/cli-parity.md` — 2 anotações `gap reason=… ver ML-2A` convertidas para
+   `gate=scripts/check-doctor-parity.sh`. Coverage checker EXIT 0.
+
+**Evidência dos gates:**
+- `bash scripts/check-doctor-parity.sh` → EXIT 0 (30 OK)
+- `bash scripts/check-parity-contract-coverage.sh` → EXIT 0 (nenhuma seção sem anotação)
+- `trackfw validate` → EXIT 0 (16 warnings, 0 violations)
+
+**Decisão-chave de fixture:** `build_scaffold_fixture` usa só `validate-script,agent-hooks` (sem
+`claude-commands`) porque o Python emite linha de progresso para stdout nesse target — causa divergência
+3-way não relacionada ao que os cenários testam. AC14 satisfeito naturalmente.
+
+**Risco residual herdado:** CI workflow exclusion no Python não coberta por gate cross-CLI único
+(documentado em `cli-parity.md` com `partial=`).
+
+**Status ML-2A no roadmap:** ✅ Concluído. Pronto para auditoria do `trackfw_architect`.

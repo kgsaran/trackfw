@@ -150,16 +150,45 @@ se rodarem no mesmo commit da mudança. **É a mesma classe que motivou o
 ## Wave 2 — Gate
 
 ### ML-2A — Paridade e falsificação nas duas direções
-**Status:** 🔄 Em andamento · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-1A
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-1A
 
 **Critérios de aceite:** AC8, AC9, AC10 da REQ
+
+---
+
+### Auditoria do ML-2A — aprovada; a deriva do espelho é detectada, provado por sabotagem minha
+
+Ele **não colou** a prova de load-bearing que eu exigi, então fiz:
+
+```
+sabotagem: buildValidateScript (Go)  set -e -> set -e -o pipefail
+           SEM tocar o espelho do Python
+
+check-doctor-parity.sh -> EXIT 1
+  FAIL [doctor-parity/scaffold-baseline-clean-text/node]: vacuity guard: stdout missing
+       'no mismatches found'
+  FAIL [doctor-parity/scaffold-baseline-clean-text/py]:   idem
+restaurado -> EXIT 0, scaffold.go com diff vazio
+
+make quality (CI-exata, minha)  exit 0
+validate                        16 warnings, 0 violations
+```
+
+**A proteção é mais direta do que eu tinha desenhado:** a deriva quebra o cenário **baseline-clean**,
+que roda sempre — não só o cenário dedicado de espelho. Mudar o template de um runtime sem atualizar
+os espelhos faz o arquivo gerado pelo Go deixar de ser aceito pelo Node **e** pelo Python.
+
+Isso fecha o risco que ele mesmo declarou no ML-1C: **a deriva não depende mais de alguém lembrar de
+rodar o teste unitário no commit certo.**
+
+30 asserções no gate · cenários 177 e 178 fecham as duas direções · total vai a 178.
 
 ---
 
 ## Wave 3 — Barreira
 
 ### ML-3A — Reverificação
-**Status:** ⬜ Pendente · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
+**Status:** 🔄 Em andamento · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
 
 ---
 

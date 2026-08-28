@@ -5452,7 +5452,7 @@ Os seguintes artefatos são verificados pelo Go e pelo Node.js (sempre que `trac
 
 ### validate.sh — pertencimento a conjunto (set-membership, escopado)
 
-<!-- trackfw-contract: gap reason=AC4 (no mismatches neste repositório nos 3 runtimes) verificado manualmente; o gate scripts/check-doctor-parity.sh ainda não cobre o cenário de projeto inicializado pelo runtime oposto — ver ML-2A -->
+<!-- trackfw-contract: gate=scripts/check-doctor-parity.sh -->
 
 **Decisão arquitetural (2026-08-27):** `scripts/trackfw-validate.sh` é aceito pelo `doctor` quando
 seu conteúdo corresponde a **qualquer** dos templates de runtime conhecidos — pertencimento a
@@ -5488,7 +5488,7 @@ detectam a deriva antes que chegue à main.
 
 ### Cobertura por runtime — tabela completa
 
-<!-- trackfw-contract: gap reason=a tabela lista a cobertura declarada por runtime; a paridade entre runtimes para validate.sh (set-membership) e a exclusão de CI workflows no Python são falsificáveis mas ainda não cobertas por um gate único cross-CLI — ver ML-2A e "CI workflow exclusion" abaixo -->
+<!-- trackfw-contract: gate=scripts/check-doctor-parity.sh partial=exclusão de CI workflow no Python não coberta cross-CLI por gate único (fixtures não usam ci: para evitar divergência legítima Python-vs-Go/Node; ver "CI workflow exclusion" abaixo) -->
 
 | artefato | Go | Node.js | Python |
 |---|---|---|---|
