@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/kgsaran/trackfw/internal/config"
+	"github.com/kgsaran/trackfw/internal/generators"
 	"github.com/kgsaran/trackfw/internal/identity"
 	"github.com/kgsaran/trackfw/internal/integrations"
 	"github.com/spf13/cobra"
@@ -83,19 +84,30 @@ func runDoctor() ([]integrations.DoctorFinding, error) {
 	if err != nil {
 		return nil, fmt.Errorf("doctor: identidade invalida: %w", err)
 	}
-	return integrations.RunDoctor(catalog, manager, ident, config.Load().AgentModels)
+	catalogFindings, err := integrations.RunDoctor(catalog, manager, ident, config.Load().AgentModels)
+	if err != nil {
+		return nil, err
+	}
+	// Scaffold coverage (ADR-2026-08-27): compare scaffold artifacts on disk against
+	// the templates the current binary would generate, using the project's own
+	// trackfw.yaml. No manifest entry is written or read (AC3).
+	scaffoldFindings, err := generators.RunScaffoldDoctor(manager.ProjectRoot)
+	if err != nil {
+		return nil, fmt.Errorf("doctor: scaffold scan: %w", err)
+	}
+	return append(catalogFindings, scaffoldFindings...), nil
 }
 
 func printDoctorReport(cmd *cobra.Command, findings []integrations.DoctorFinding) {
 	out := cmd.OutOrStdout()
 	if len(findings) == 0 {
-		fmt.Fprintln(out, "trackfw doctor: no mismatches found -- disk matches the manifest for every catalog-managed artifact.")
+		fmt.Fprintln(out, "trackfw doctor: no mismatches found -- disk matches the manifest for every catalog-managed artifact and all scaffold templates.")
 		return
 	}
 	// Counted explicitly by kind (never an if/else fallback into the last
-	// bucket) so a fourth class introduced later fails loudly here instead
-	// of silently inflating hand-modified's count.
-	var unregistered, handModified, unknownContent int
+	// bucket) so a new class introduced later fails loudly here instead
+	// of silently inflating another kind's count.
+	var unregistered, handModified, unknownContent, scaffoldDivergent, scaffoldMissing int
 	for _, finding := range findings {
 		switch finding.FindingKind {
 		case integrations.DoctorUnregisteredWrite:
@@ -104,9 +116,14 @@ func printDoctorReport(cmd *cobra.Command, findings []integrations.DoctorFinding
 			handModified++
 		case integrations.DoctorUnknownContent:
 			unknownContent++
+		case integrations.DoctorScaffoldDivergent:
+			scaffoldDivergent++
+		case integrations.DoctorScaffoldMissing:
+			scaffoldMissing++
 		}
 	}
-	fmt.Fprintf(out, "trackfw doctor: %d finding(s) -- %d unregistered-write, %d hand-modified, %d unknown-content\n\n", len(findings), unregistered, handModified, unknownContent)
+	fmt.Fprintf(out, "trackfw doctor: %d finding(s) -- %d unregistered-write, %d hand-modified, %d unknown-content, %d scaffold-divergent, %d scaffold-missing\n\n",
+		len(findings), unregistered, handModified, unknownContent, scaffoldDivergent, scaffoldMissing)
 	// One blank line BETWEEN findings, none trailing after the last one — matches Node's
 	// `lines.join('\n').replace(/\n$/, '')` and Python's `"\n".join(lines).rstrip("\n")`
 	// (npm/src/commands/doctor.js, pypi/trackfw/commands/doctor.py). A naive per-finding

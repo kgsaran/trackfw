@@ -2255,4 +2255,13 @@ module.exports = {
   mergeCopilotHookArray,
   normalizeGuardPath,
   samePathCommand,
+  // Template constants — exported for scaffold doctor (ADR-2026-08-27).
+  // These are the single source of truth for each script's content; the
+  // scaffold doctor compares on-disk files against these exact bytes, using
+  // the same constants the write path uses, so drift between the comparison
+  // and the generator is structurally impossible.
+  SIGNAL_SCRIPT,
+  CLEANUP_SCRIPT,
+  CREDENTIAL_GUARD_SCRIPT,
+  GIT_BRANCH_GUARD_SCRIPT,
 }

@@ -390,6 +390,229 @@ retarget_manifest_claim_item "$f_project" "$f_destination" "architect"
 printf 'x' >>"$f_destination"
 run_scenario "registered-under-different-claim-content-drifted" "$f_project" "$f_home" "no mismatches found"
 
+# ===========================================================================
+# Scaffold-artifact scenarios (g–o) — added by ML-2A of
+# ROADMAP-2026-08-27-doctor-cobre-artefatos-de-scaffold-por-comparacao-com-o-
+# template.md. Unlike the catalog-based scenarios (a–f) above, these exercise
+# RunScaffoldDoctor (internal/generators/scaffold_doctor.go), which checks
+# scripts/trackfw-*.sh, .claude/commands/trackfw/*.md, and CI workflow files
+# by PATH-based ownership, never via the integrations manifest.
+#
+# Fixture hard constraints inherited from the catalog scenarios (see file
+# header), plus two scaffold-specific rules:
+#   5. No `ci:` field in any fixture trackfw.yaml — Python's RunScaffoldDoctor
+#      intentionally omits CI-workflow checks (Python's `update` does not
+#      manage ci-workflow), so adding ci: would produce a legitimate 3-way
+#      divergence that assert_three_way correctly catches — masking the
+#      scaffold-content assertions this block exists to make.
+#   6. build_scaffold_fixture uses `trackfw update --install-missing` via the
+#      real Go binary to generate all scaffold files, never hardcoded literals
+#      — restriction 2 applied to scaffold content.
+# ===========================================================================
+
+# ---------------------------------------------------------------------------
+# build_scaffold_fixture DEST [BACKEND]
+# Generates a fixture project with scaffold SCRIPTS (no slash commands)
+# produced by the real Go binary via `trackfw update --install-missing`.
+# Slash commands are intentionally omitted for all scaffold scenarios because
+# Python's RunScaffoldDoctor prints an extra "  ✓ .claude/commands/trackfw/"
+# progress line to stdout when the directory exists and all commands are
+# intact — a known Python-side stdout verbosity divergence (not a product
+# bug — Python's update subcommand uses this style broadly); including the
+# directory would produce a permanent 3-way diff failure that has nothing to
+# do with the scaffold SCRIPT assertions these scenarios exist to prove.
+# Scenario (n) specifically tests the AC14 "no slash-commands-dir → silent"
+# invariant, which is satisfied by the same fixture shape.
+# BACKEND: if non-empty, adds `backend: <BACKEND>` to trackfw.yaml.
+# Returns "project home" on stdout (same contract as build_fixture).
+# ---------------------------------------------------------------------------
+build_scaffold_fixture() {
+  local dest=$1
+  local backend=${2:-}
+  local project="$dest/project"
+  local home="$dest/home"
+  mkdir -p "$project" "$home/.trackfw"
+  printf '%s\n' "$IDENTITY_JSON" >"$home/.trackfw/identity.json"
+
+  if [[ -n "$backend" ]]; then
+    printf 'governance_mode: lenient\nadr_dirs:\n  - docs/adr\nreq_dir: docs/req\nroadmap_dir: docs/roadmaps\nroadmap_namespacing: flat\nbackend: %s\n' \
+      "$backend" >"$project/trackfw.yaml"
+  else
+    printf 'governance_mode: lenient\nadr_dirs:\n  - docs/adr\nreq_dir: docs/req\nroadmap_dir: docs/roadmaps\nroadmap_namespacing: flat\n' \
+      >"$project/trackfw.yaml"
+  fi
+
+  # validate-script + agent-hooks only (no claude-commands — see comment above).
+  (cd "$project" && HOME="$home" "$GO_BIN" update --install-missing --targets validate-script,agent-hooks) >/dev/null
+
+  project=$(cd "$project" && pwd -P)
+  home=$(cd "$home" && pwd -P)
+  echo "$project $home"
+}
+
+# ---------------------------------------------------------------------------
+# run_scaffold_scenario LABEL PROJECT HOME EXPECT_SUBSTRING
+# Like run_scenario but normalises the binary version string in text and JSON
+# outputs before the three-way diff. Go/Node report the compiled version
+# (e.g. "v7.2.0"); Python's importlib.metadata lookup falls back to "vunknown"
+# when the package is run from source via PYTHONPATH=pypi (no dist-info).
+# The normalization replaces any `trackfw vX.Y.Z` (including `vunknown`) with
+# `trackfw vTEST` — the diff then asserts on finding KIND, DESTINATION and
+# REMEDY STRUCTURE, not version provenance, which is acceptable because
+# version provenance is already tested by unit tests in each runtime's test
+# suite and by the python-version fixture used in check-doctor-parity.sh.
+# ---------------------------------------------------------------------------
+_normalize_version_in_file() {
+  python3 - "$1" <<'PY'
+import pathlib, re, sys
+p = pathlib.Path(sys.argv[1])
+p.write_text(
+    re.sub(r'trackfw v[\w.]+', 'trackfw vTEST', p.read_text(encoding='utf-8')),
+    encoding='utf-8',
+)
+PY
+}
+
+run_scaffold_scenario() {
+  local label=$1 project=$2 home=$3 expect_substring=$4
+  for runtime in go node py; do
+    run_doctor "$runtime" "$project" "$home" \
+      "$WORK/$label-text.$runtime.out" "$WORK/$label-text.$runtime.err"
+    echo "$DR_EXIT" >"$WORK/$label-text.$runtime.exit"
+    if [[ "$DR_EXIT" -ne 0 ]]; then
+      fail "doctor-parity/$label-text/$runtime" \
+        "doctor exited $DR_EXIT unexpectedly; stderr: $(cat "$WORK/$label-text.$runtime.err")"
+      continue
+    fi
+    if ! grep -qF "$expect_substring" "$WORK/$label-text.$runtime.out"; then
+      fail "doctor-parity/$label-text/$runtime" \
+        "vacuity guard: stdout missing '$expect_substring'; stdout: $(cat "$WORK/$label-text.$runtime.out")"
+      continue
+    fi
+    _normalize_version_in_file "$WORK/$label-text.$runtime.out"
+
+    run_doctor "$runtime" "$project" "$home" \
+      "$WORK/$label-json.$runtime.out" "$WORK/$label-json.$runtime.err" --json
+    echo "$DR_EXIT" >"$WORK/$label-json.$runtime.exit"
+    if [[ "$DR_EXIT" -ne 0 ]]; then
+      fail "doctor-parity/$label-json/$runtime" \
+        "doctor --json exited $DR_EXIT unexpectedly; stderr: $(cat "$WORK/$label-json.$runtime.err")"
+      continue
+    fi
+    if ! python3 -c "import json,sys; json.load(open(sys.argv[1]))" \
+        "$WORK/$label-json.$runtime.out"; then
+      fail "doctor-parity/$label-json/$runtime" "--json did not emit a decodable document"
+      continue
+    fi
+    _normalize_version_in_file "$WORK/$label-json.$runtime.out"
+    normalize_json "$WORK/$label-json.$runtime.out"
+  done
+  assert_three_way "$label-text"
+  assert_three_way "$label-json"
+}
+
+# ---------------------------------------------------------------------------
+# Scenario (g) — scaffold clean baseline: all scaffold files match the
+# template the installed binary would generate; no mismatches in all 3 CLIs.
+# This is AC4's analogue for scaffold surfaces — zero false positives on an
+# intact project — and also the baseline the Direction-B falsification
+# scenario (Cenário 178, check-gates-falsify.sh) will sabotage.
+# ---------------------------------------------------------------------------
+read -r g_project g_home <<<"$(build_scaffold_fixture "$WORK/g")"
+run_scaffold_scenario "scaffold-baseline-clean" "$g_project" "$g_home" "no mismatches found"
+
+# ---------------------------------------------------------------------------
+# Scenario (h) — scaffold divergent: append one byte to
+# scripts/trackfw-attention-signal.sh. All 3 CLIs must report
+# [scaffold-divergent]. This is also the fixture the Direction-A
+# falsification scenario (Cenário 177, check-gates-falsify.sh) will sabotage:
+# a silenced checkScaffoldArtifact must make the vacuity guard fail here.
+# ---------------------------------------------------------------------------
+read -r h_project h_home <<<"$(build_scaffold_fixture "$WORK/h")"
+printf 'x' >>"$h_project/scripts/trackfw-attention-signal.sh"
+run_scaffold_scenario "scaffold-attention-signal-divergent" "$h_project" "$h_home" "[scaffold-divergent]"
+
+# ---------------------------------------------------------------------------
+# Scenario (i) — scaffold missing: remove scripts/trackfw-attention-cleanup.sh.
+# All 3 CLIs must report [scaffold-missing].
+# ---------------------------------------------------------------------------
+read -r i_project i_home <<<"$(build_scaffold_fixture "$WORK/i")"
+rm "$i_project/scripts/trackfw-attention-cleanup.sh"
+run_scaffold_scenario "scaffold-attention-cleanup-missing" "$i_project" "$i_home" "[scaffold-missing]"
+
+# ---------------------------------------------------------------------------
+# Scenario (j) — validate.sh in Go/sh form: the file generated by Go binary
+# (#!/usr/bin/env sh ...) must be accepted by all 3 CLIs — "no mismatches
+# found". Validates the set-membership decision for the Go form.
+# ---------------------------------------------------------------------------
+read -r j_project j_home <<<"$(build_scaffold_fixture "$WORK/j")"
+run_scaffold_scenario "validate-sh-go-form-accepted" "$j_project" "$j_home" "no mismatches found"
+
+# ---------------------------------------------------------------------------
+# Scenario (k) — validate.sh in Python/bash form: replace validate.sh with
+# the Python runtime's fixed form (#!/usr/bin/env bash ...). All 3 CLIs must
+# still report "no mismatches found" — the set-membership rule accepts any
+# known runtime form (Go/Node or Python), not a single canonical form (AC4).
+# ---------------------------------------------------------------------------
+read -r k_project k_home <<<"$(build_scaffold_fixture "$WORK/k")"
+printf '#!/usr/bin/env bash\nset -euo pipefail\ntrackfw validate\n' \
+  >"$k_project/scripts/trackfw-validate.sh"
+run_scaffold_scenario "validate-sh-python-form-accepted" "$k_project" "$k_home" "no mismatches found"
+
+# ---------------------------------------------------------------------------
+# Scenario (l) — validate.sh near-miss (one character changed): take the
+# Go-generated file and change "set -e" to "set -x". All 3 CLIs must report
+# [scaffold-divergent]. This is the sharpness test: the set-membership window
+# accepts only the exact known forms, not any nearby mutation — a single
+# character difference falls outside all members of the set (neither the Go
+# form with "set -e" nor the Python form with "#!/usr/bin/env bash" matches).
+# ---------------------------------------------------------------------------
+read -r l_project l_home <<<"$(build_scaffold_fixture "$WORK/l")"
+python3 -c "
+import pathlib
+p = pathlib.Path('$l_project/scripts/trackfw-validate.sh')
+content = p.read_text(encoding='utf-8')
+assert 'set -e' in content, 'near-miss setup: expected \"set -e\" in Go-generated validate.sh'
+p.write_text(content.replace('set -e', 'set -x', 1), encoding='utf-8')
+"
+run_scaffold_scenario "validate-sh-near-miss-rejected" "$l_project" "$l_home" "[scaffold-divergent]"
+
+# ---------------------------------------------------------------------------
+# Scenario (m) — mirror-vs-generator cross-runtime: Go binary generates
+# validate.sh for a project with `backend: go` (content includes `go build
+# ./...`). Python's _build_go_node_validate_script mirror must produce the
+# same content — if the mirror drifts from buildValidateScript (Go), Python
+# doctor reports scaffold-divergent on a file Go considers correct. All 3
+# CLIs must report "no mismatches found".
+# This is the load-bearing gate for the risco residual documented in the
+# ML-1A audit: _build_go_node_validate_script is a third copy of Go's
+# buildValidateScript, and this scenario detects drift at runtime rather than
+# via a unit test that would simply mirror the mirror.
+# ---------------------------------------------------------------------------
+read -r m_project m_home <<<"$(build_scaffold_fixture "$WORK/m" "go")"
+run_scaffold_scenario "validate-sh-mirror-vs-generator-backend-go" "$m_project" "$m_home" "no mismatches found"
+
+# ---------------------------------------------------------------------------
+# Scenario (n) — discover-init style (no .claude/commands/trackfw/ directory):
+# when the directory is absent, slash commands are not in scope — the doctor
+# must stay silent (AC14). All 3 CLIs must report "no mismatches found".
+# build_scaffold_fixture produces a project whose .claude/commands/trackfw/
+# directory does not exist (claude-commands target not run), matching the
+# footprint of a project initialised via `discover --init`.
+# ---------------------------------------------------------------------------
+read -r n_project n_home <<<"$(build_scaffold_fixture "$WORK/n")"
+run_scaffold_scenario "scaffold-no-slash-commands-dir-silent" "$n_project" "$n_home" "no mismatches found"
+
+# ---------------------------------------------------------------------------
+# Scenario (o) — backend: go configured, no false positive (AC12): with
+# `backend: go` in trackfw.yaml, the doctor renders the validate.sh template
+# from the project's own config (not a hardcoded default). The file generated
+# by `trackfw update` already matches that config-rendered template, so all 3
+# CLIs must report "no mismatches found".
+# ---------------------------------------------------------------------------
+read -r o_project o_home <<<"$(build_scaffold_fixture "$WORK/o" "go")"
+run_scaffold_scenario "scaffold-backend-go-no-false-positive" "$o_project" "$o_home" "no mismatches found"
+
 # ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------

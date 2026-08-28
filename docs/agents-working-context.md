@@ -4,6 +4,162 @@
 
 ---
 
+## Sessão 2026-08-27 — hades-tf (INÍCIO: ML-3A — barreira final da cobertura de scaffold)
+
+Branch `feat/doctor-cobre-artefatos-de-scaffold`.
+
+Recebido handoff do arquiteto: Waves 0–2 commitadas. Scope: reverificação dos cinco bloqueios da Wave 0 contra o entregue; escrever `docs/seguranca/2026-08-27-barreira-da-cobertura-de-scaffold.md`.
+
+---
+
+## Sessão 2026-08-27 — hades-tf (FIM: ML-3A — barreira APROVADA / CONCLUÍDO)
+
+Branch `feat/doctor-cobre-artefatos-de-scaffold`.
+
+**O que foi feito:**
+
+- Executado `bash scripts/check-doctor-parity.sh` → 28 cenários, all passed, exit 0.
+- Medido AC15 nos 3 runtimes: injetar `INJECTED_LINE` em `scripts/trackfw-validate.sh` → `scaffold-divergent` em Go, Node e Python.
+- Três vetores de ataque contra set-membership: Python form + linha extra, Go form com última linha removida, concatenação das duas formas — todos retornam `scaffold-divergent` nos 3 runtimes.
+- Três fixtures de campo: `backend: go`, `ci: none`, `frontend: react + pnpm` — todos retornam `no mismatches found` nos 3 runtimes. Ameaça 1 fechada nos três eixos de cfg.
+- Identificado que `RunScaffoldDoctor` é caminho separado de `ClassifyDoctor` — bloqueio 5 fechado por arquitetura, não pelo case adicionado.
+- Identificado Residual A: Python emite `trackfw vunknown` por `PackageNotFoundError` quando não pip-installed (verificado).
+- Escrito `docs/seguranca/2026-08-27-barreira-da-cobertura-de-scaffold.md`.
+- ML-3A marcado ✅ no roadmap.
+
+**Veredito:** APROVADO. 3 residuais nomeados (A: Python version unknown; B: Python form aceita em projeto Go; C: artefato estrangeiro em caminho trackfw-nomeado). Nenhum bloqueia.
+
+---
+
+## Sessão 2026-08-27 — apolo-tf (INÍCIO: correção final ML-1A — set-membership para validate.sh)
+
+Branch `feat/doctor-cobre-artefatos-de-scaffold`.
+
+Recebido handoff do arquiteto com decisão: para `scripts/trackfw-validate.sh`, o doctor aceita QUALQUER dos templates de runtime conhecidos (pertencimento a conjunto, não igualdade a um único template).
+
+---
+
+## Sessão 2026-08-27 — apolo-tf (FIM: correção final ML-1A — set-membership para validate.sh / CONCLUÍDO)
+
+Branch `feat/doctor-cobre-artefatos-de-scaffold`.
+
+**O que foi feito:**
+
+- **Go** `internal/generators/scaffold_doctor.go`: adicionado `pythonValidateScriptForm` como constante; novo `checkValidateScriptArtifact(path, relPath, cfg)` com set-membership; `scripts/trackfw-validate.sh` removido do slice `staticScripts` e roteado para a nova função.
+- **Node.js** `npm/src/integrations/scaffold_doctor.js`: adicionado `PYTHON_VALIDATE_SCRIPT_FORM`; nova `checkValidateScriptArtifact(absPath, relPath, cfg)` exportada; staticScripts atualizado.
+- **Python** `pypi/trackfw/integrations/scaffold_doctor.py`: adicionado `_load_project_config()`; adicionado `_build_go_node_validate_script(cfg)` mirror de Go/Node; adicionado `_check_validate_script_artifact(project_root, cfg)`; `run_scaffold_doctor` carrega cfg e usa a nova função; docstring atualizado.
+- **Testes (15 novos — 5 por runtime):**
+  - Go: `internal/generators/scaffold_doctor_test.go`
+  - Node.js: `npm/tests/scaffold_doctor_membership.test.js`
+  - Python: `pypi/tests/test_scaffold_doctor_membership.py`
+- **Contrato** `docs/cli-parity.md`: seção reescrita ("validate.sh — pertencimento a conjunto (set-membership, escopado)" + "Cobertura por runtime — tabela completa"); afirmação "achado verdadeiro, não falso-positivo" removida.
+
+**Evidências AC4 (no mismatches nos 3 CLIs):**
+- Go: `./bin/trackfw doctor` → `no mismatches found` — EXIT 0
+- Node.js: `node npm/bin/trackfw doctor` → `no mismatches found` — EXIT 0
+- Python: `PYTHONPATH=pypi python3 -m trackfw doctor` → `no mismatches found` — EXIT 0
+
+**Evidência AC3 (near-miss recusado nos 3 CLIs):**
+- Go form com `set -x` em vez de `set -e` → todos 3: `[scaffold-divergent] scripts/trackfw-validate.sh`
+
+**Evidências quality gate:**
+- `go test ./...` → EXIT 0 (17 pacotes)
+- `npm test` → 778 pass — EXIT 0
+- `python3 -m pytest pypi/tests/` → 1490 passed — EXIT 0
+- `go vet ./...` → EXIT 0
+- `scripts/check-cli-parity.sh` → EXIT 0
+- `scripts/check-validate-parity.sh` → EXIT 0
+- `scripts/check-referential-integrity.sh` → EXIT 0
+- `scripts/check-static-assets.sh` → EXIT 0
+- `scripts/check-parity-contract-coverage.sh` → EXIT 0
+- `trackfw validate` → 16 warnings (pré-existentes) — EXIT 0
+
+**Pendente para ML-2A:** gate `scripts/check-doctor-parity.sh` com cenários de scaffold incluindo set-membership cross-CLI.
+
+---
+
+## Sessão 2026-08-27 — apolo-tf (INÍCIO: ML-2A — gate de paridade e falsificação de scaffold)
+
+Branch `feat/doctor-cobre-artefatos-de-scaffold`.
+
+Recebido handoff: ML-0A, 1A, 1B, 1C auditados e commitados. Scope exclusivo do ML-2A:
+1. Novos cenários em `scripts/check-doctor-parity.sh` (g–o) cobrindo artefatos de scaffold (baseline íntegro, divergente, ausente, validate.sh Go form, Python form, near-miss, mirror-vs-generator cross-runtime, discover-init sem slash commands, backend:go sem falso-positivo).
+2. Falsificação nas duas direções em `scripts/check-gates-falsify.sh` (Cenários 177 e 178).
+3. Atualizar anotações `gap reason=… ver ML-2A` → `gate=scripts/check-doctor-parity.sh` em `docs/cli-parity.md`.
+
+Proibido modificar: `internal/generators/scaffold_doctor.go`, `npm/src/integrations/scaffold_doctor.js`, `pypi/trackfw/integrations/scaffold_doctor.py`.
+
+(Nota: a entrada FIM anterior a esta — sobre Python validate.sh coverage — foi a sessão que sinalizou o bloqueio. Esta é a resolução após a decisão do arquiteto.)
+
+---
+
+## Sessão anterior — apolo-tf (FIM bloqueado: Python validate.sh coverage — SUBSTITUÍDO)
+
+**Evidências:**
+- `go build ./...` → EXIT 0
+- `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 go test -timeout 2m ./...` → EXIT 0 (17 packages)
+- `npm test` (Node.js) → 773 pass, 0 fail → EXIT 0
+- `python3 -m pytest pypi/tests/ -q` → 1485 passed → EXIT 0
+- `go vet ./...` → EXIT 0
+- `GO_BIN=bin/trackfw scripts/check-cli-parity.sh` → EXIT 0
+- `scripts/check-validate-parity.sh` → EXIT 0
+- `scripts/check-referential-integrity.sh` → EXIT 0
+- `scripts/check-parity-contract-coverage.sh` → EXIT 0
+- `scripts/check-static-assets.sh` → EXIT 0
+- `./bin/trackfw doctor` → `no mismatches found` (Go) — EXIT 0
+- `node npm/bin/trackfw doctor` → `no mismatches found` (Node.js) — EXIT 0
+- `PYTHONPATH=pypi python3 -m trackfw doctor` → `1 finding(s) — scaffold-divergent: scripts/trackfw-validate.sh` (Python, achado esperado)
+- Fixture 3 casos (match/divergent/missing) → todos corretos
+
+**CI workflows mantidos excluídos (principled):** Python's `update` não gerencia `ci-workflow` target (`PROJECT_TARGET_IDS` em `update.py` não inclui `ci-workflow`); o remedy `trackfw update` seria enganoso.
+
+---
+
+## Sessão 2026-08-27 — apolo-tf (FIM: ML-1A — doctor cobre artefatos de scaffold / CONCLUÍDO)
+
+Branch `feat/doctor-cobre-artefatos-de-scaffold`.
+
+**Implementação completa nos 3 CLIs:**
+
+- **Go:** `internal/integrations/doctor.go` (2 novas constantes: `DoctorScaffoldDivergent`, `DoctorScaffoldMissing`); `internal/generators/scaffold.go` (templates extraídos como constantes exportáveis); `internal/generators/scaffold_doctor.go` (novo: `RunScaffoldDoctor`); `internal/commands/doctor.go` (integra scaffold doctor, atualiza `printDoctorReport`).
+- **Node.js:** `npm/src/generators/hooks.js` (exporta 4 constantes de script); `npm/src/generators/init.js` (exporta `CLAUDE_COMMANDS`, `buildValidateScript`, `buildGitHubActionsWorkflowContent`, `buildGitLabCIWorkflowContent`); `npm/src/integrations/scaffold_doctor.js` (novo: `runScaffoldDoctor`); `npm/src/commands/doctor.js` (integra, atualiza `printReport`).
+- **Python:** `pypi/trackfw/integrations/doctor.py` (2 novas constantes: `SCAFFOLD_DIVERGENT`, `SCAFFOLD_MISSING`); `pypi/trackfw/integrations/scaffold_doctor.py` (novo: `run_scaffold_doctor`); `pypi/trackfw/commands/doctor.py` (integra, atualiza `_print_report`).
+- **Contrato:** `docs/cli-parity.md` (nova seção com declared reduced surface do Python — validate-script e CI workflows excluídos por declaração).
+- **Roadmap:** ML-1A marcado ✅ Concluído.
+
+**Evidências AC4 (no mismatches no projeto íntegro):**
+- Go: `./bin/trackfw doctor` → `"no mismatches found -- disk matches the manifest for every catalog-managed artifact and all scaffold templates."` (EXIT 0)
+- Node.js: `node npm/bin/trackfw doctor` → id. (EXIT 0)
+- Python: `PYTHONPATH=pypi python3 -m trackfw doctor` → id. (EXIT 0)
+
+**Evidências AC15 (scaffold-divergent gerado para artefato modificado):**
+- Go fixture: `[scaffold-divergent] scripts/trackfw-attention-cleanup.sh` — EXIT 0
+- Node.js fixture: id. — EXIT 0
+- Python fixture: id. — EXIT 0
+
+**Evidências AC14 (sem false positive quando `.claude/commands/trackfw/` ausente):**
+- Go fixture (dir removido): `no mismatches found` — EXIT 0
+
+**Testes:**
+- `go test ./...` → todos 17 pacotes passam.
+- `npm test` → 773 passam, 0 falham.
+- `python3 -m pytest tests/` → 1485 passam.
+
+**Nota Python reduced surface (AC12 análogo):** `scripts/trackfw-validate.sh` e CI workflows excluídos do Python scaffold doctor porque os templates diferem do Go/Node (formulário simplificado vs cfg-dependente). Declarado em `docs/cli-parity.md`. Os 4 scripts restantes e os slash commands são byte-idênticos.
+
+**Pendente para ML-2A:** gate `scripts/check-doctor-parity.sh` com cenários de scaffold (AC8, AC9, AC10).
+
+---
+
+## Sessão 2026-08-27 — hades-tf (INÍCIO: ML-0A — Wave 0 do doctor-cobre-scaffold)
+
+Branch `feat/doctor-cobre-artefatos-de-scaffold`.
+Tarefa: escrever `docs/seguranca/2026-08-27-modelo-de-ameaca-da-cobertura-de-scaffold.md`
+com as quatro seções obrigatórias do Wave 0: completude de enumeração, modelo de ameaça,
+alvos de falsificação nas duas direções, residual declarado.
+
+---
+
 ## Sessão 2026-08-27 — apolo-tf (FIM: ML-1B — R-novo-1 corrigido e R-novo-2 documentado / CONCLUÍDO)
 
 Branch `fix/sandbox-do-update-dry-run-por-lista-de-inclusao-dos-destinos-declarados`.
@@ -24788,3 +24944,73 @@ seções obrigatórias. Nenhuma implementação neste ML.
 - `GO_BIN=/tmp/s176-bin/trackfw bash scripts/check-update-parity.sh` → FAIL `sandbox/dangling-outside-set/exit-zero/go`, exit 1
 - `trackfw validate` → exit 0 (16 warnings pré-existentes)
 **Próximo:** ML-3A (hades-tf) — reverificação
+
+---
+## hades-tf | 2026-08-27 | FIM ML-0A
+**Branch:** feat/doctor-cobre-artefatos-de-scaffold
+**Roadmap:** ROADMAP-2026-08-27-doctor-cobre-artefatos-de-scaffold-por-comparacao-com-o-template.md
+**Microbatch:** ML-0A — Wave 0 — Completude do inventário e o risco de falso-positivo — ✅ Concluído
+**Entregáveis:**
+- `docs/seguranca/2026-08-27-modelo-de-ameaca-da-cobertura-de-scaffold.md` — modelo de ameaça com as 4 seções obrigatórias
+**Evidências coletadas:**
+- 17 artefatos enumerados nos 3 CLIs (Go/Node.js/Python) por leitura direta dos geradores
+- Gate de paridade de slash commands `check-slash-parity.sh` executado — 9 commands × 3 runtimes OK
+- `./bin/trackfw update --dry-run` executado: validate-script=skipped, ci-workflow=skipped, claude-commands=skipped, agent-hooks=skipped — zero FPs neste repo
+- `discover --init` confirmado como terceiro escritor (subconjunto: sem slash commands)
+- Vault notes consultadas: slash-commands-cross-runtime-content-drift, rules-block-content-drift, doctor-classifydoctor-silences-tampering
+**Gates executados:**
+- `test -f docs/seguranca/...md` → OK
+- `grep -q "Completude de enumera" ...` → OK
+- `grep -q "Residual declarado" ...` → OK
+**Achados críticos para ML-1A:**
+1. `scripts/trackfw-validate.sh` tem conteúdo cfg-dependente — template deve ser renderizado a partir do `trackfw.yaml` do projeto
+2. Artefatos condicionais (CI, hooks) só devem ser cobertos se `trackfw.yaml` os declara
+3. `discover --init` cria projetos sem slash commands — ausência é legítima
+4. `ClassifyDoctor` não tem case para `!Registered && State == StateModified` — ML-1A deve adicionar
+5. AC5 requer mensagem neutra quanto à direção de defasagem (sem stamps de versão nos artefatos)
+**Próximo:** ML-1A (apolo-tf) — implementação nos 3 CLIs
+
+---
+
+## Sessão 2026-08-27 — apolo-tf (INÍCIO: ML-1A — doctor cobre artefatos de scaffold)
+
+Branch `feat/doctor-cobre-artefatos-de-scaffold`.
+Tarefa: implementar cobertura de scaffold no `doctor` nos 3 CLIs.
+Decisões declaradas:
+- AC15 bloqueador é FALSO nos 3 CLIs (case `!Registered && StateModified` já existe em Go ML-2C, Node.js e Python).
+- Classifier de scaffold separado do `ClassifyDoctor` (Claim zerado, remedy = `trackfw update`).
+- Eligibilidade slash commands: diretório `.claude/commands/trackfw/` deve existir (AC14).
+- Guards incluídos (cobertura aditiva ao validate, não exclusiva).
+- Hook files excluídos do escopo (Residual-3 do modelo de ameaça).
+
+## Sessão 2026-08-27 — apolo-tf (INÍCIO: ML-2A — paridade e falsificação)
+
+Branch `feat/doctor-cobre-artefatos-de-scaffold`.
+Tarefa: AC8 (falsificação 2 direções), AC9 (cli-parity.md gate annotation), pré-condição AC10.
+
+## Sessão 2026-08-27 — apolo-tf (FIM: ML-2A — paridade e falsificação)
+
+**Entregues:**
+1. `scripts/check-doctor-parity.sh` — helpers `build_scaffold_fixture`, `_normalize_version_in_file`,
+   `run_scaffold_scenario` + 9 cenários (g–o): baseline, divergente, ausente, Go-form, Python-form,
+   near-miss, mirror-vs-generator-backend-go (load-bearing), no-slash-commands-dir, backend-go.
+   Gate: 30 OK, EXIT 0.
+2. `scripts/check-gates-falsify.sh` — Cenários 177 (Direction A: silencia divergência) e 178
+   (Direction B: acusa artefato íntegro). Padrões confirmados empiricamente antes de escrever.
+   Final echo atualizado para "all 178 scenarios".
+3. `docs/cli-parity.md` — 2 anotações `gap reason=… ver ML-2A` convertidas para
+   `gate=scripts/check-doctor-parity.sh`. Coverage checker EXIT 0.
+
+**Evidência dos gates:**
+- `bash scripts/check-doctor-parity.sh` → EXIT 0 (30 OK)
+- `bash scripts/check-parity-contract-coverage.sh` → EXIT 0 (nenhuma seção sem anotação)
+- `trackfw validate` → EXIT 0 (16 warnings, 0 violations)
+
+**Decisão-chave de fixture:** `build_scaffold_fixture` usa só `validate-script,agent-hooks` (sem
+`claude-commands`) porque o Python emite linha de progresso para stdout nesse target — causa divergência
+3-way não relacionada ao que os cenários testam. AC14 satisfeito naturalmente.
+
+**Risco residual herdado:** CI workflow exclusion no Python não coberta por gate cross-CLI único
+(documentado em `cli-parity.md` com `partial=`).
+
+**Status ML-2A no roadmap:** ✅ Concluído. Pronto para auditoria do `trackfw_architect`.

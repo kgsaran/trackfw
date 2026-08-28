@@ -201,10 +201,13 @@ function generateCIWorkflow(cfg) {
   }
 }
 
-function generateGitHubActionsWorkflow() {
-  fs.mkdirSync('.github/workflows', { recursive: true })
-
-  const content = `name: trackfw-gate
+// buildGitHubActionsWorkflowContent returns the byte-identical content the GitHub Actions
+// workflow generator would write. Exported for scaffold doctor (ADR-2026-08-27): the
+// comparison uses the same function the write path uses, so drift is structurally impossible.
+// The cfg parameter is accepted for API symmetry with Go's buildGitHubActionsWorkflowContent
+// (which also ignores cfg for now — the template is not cfg-dependent).
+function buildGitHubActionsWorkflowContent(_cfg) {
+  return `name: trackfw-gate
 on:
   pull_request:
     branches: [main]
@@ -222,14 +225,11 @@ jobs:
       - name: Governance gate
         run: trackfw validate
 `
-
-  const filePath = '.github/workflows/trackfw-gate.yml'
-  fs.writeFileSync(filePath, content, 'utf8')
-  console.log(`  ✓ ${filePath}`)
 }
 
-function generateGitLabCIWorkflow() {
-  const content = `# trackfw governance gate
+// buildGitLabCIWorkflowContent mirrors buildGitHubActionsWorkflowContent for GitLab CI.
+function buildGitLabCIWorkflowContent(_cfg) {
+  return `# trackfw governance gate
 trackfw-gate:
   stage: test
   image: alpine:latest
@@ -241,8 +241,17 @@ trackfw-gate:
   only:
     - merge_requests
 `
+}
 
-  fs.writeFileSync('.gitlab-ci-trackfw.yml', content, 'utf8')
+function generateGitHubActionsWorkflow() {
+  fs.mkdirSync('.github/workflows', { recursive: true })
+  const filePath = '.github/workflows/trackfw-gate.yml'
+  fs.writeFileSync(filePath, buildGitHubActionsWorkflowContent(null), 'utf8')
+  console.log(`  ✓ ${filePath}`)
+}
+
+function generateGitLabCIWorkflow() {
+  fs.writeFileSync('.gitlab-ci-trackfw.yml', buildGitLabCIWorkflowContent(null), 'utf8')
   console.log('  ✓ .gitlab-ci-trackfw.yml')
 }
 
@@ -1418,4 +1427,12 @@ module.exports = {
   injectHooksDetected,
   trackfwRulesBlock,
   printArchitectNextSteps,
+  // Template constants and builders — exported for scaffold doctor (ADR-2026-08-27).
+  // Same single-source-of-truth principle as hooks.js exports: comparing against the
+  // same object the write path uses makes drift structurally impossible.
+  CLAUDE_COMMANDS,
+  buildValidateScript,
+  // CI workflow content builders (inline content from generateGitHub/GitLabCIWorkflow)
+  buildGitHubActionsWorkflowContent,
+  buildGitLabCIWorkflowContent,
 }

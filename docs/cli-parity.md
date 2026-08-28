@@ -5412,6 +5412,102 @@ Nenhuma divergência de **nomes de campo** no `--json` foi encontrada: `finding`
 
 ---
 
+## `trackfw doctor` — cobertura de artefatos de scaffold (ADR-2026-08-27, ML-1A)
+
+<!-- trackfw-contract: gate=scripts/check-doctor-parity.sh -->
+
+Cobertura adicional integrada ao `trackfw doctor` em ML-1A: os artefatos de scaffold (scripts de
+hook, slash commands do Claude) são comparados contra o template que o binário instalado geraria,
+usando o `trackfw.yaml` do próprio projeto. Nenhuma entrada é gravada no manifesto — propriedade
+por caminho, não por manifesto (ADR-2026-08-27).
+
+### As duas novas classes de finding
+
+<!-- trackfw-contract: gate=scripts/check-doctor-parity.sh -->
+
+| classe | condição | remédio |
+|---|---|---|
+| `scaffold-divergent` | artefato de scaffold existe em disco mas o conteúdo difere do template que o binário atual geraria | `trackfw update` — a mensagem é neutra quanto à culpa (AC16): não há stamp de versão no artefato, então nem o binário nem o projeto podem ser identificados como o lado defasado |
+| `scaffold-missing` | artefato de scaffold que deveria existir está ausente do disco | `trackfw update` |
+
+Ambas as classes têm `claim` zerado (`kind`, `item`, `target`, `surface`, `scope` = string vazia)
+— artefatos de scaffold nunca têm entrada no manifesto.
+
+### Propriedade por caminho — artefatos cobertos pelos 3 CLIs
+
+<!-- trackfw-contract: gate=scripts/check-doctor-parity.sh -->
+
+Os seguintes artefatos são verificados pelo Go e pelo Node.js (sempre que `trackfw.yaml` existe):
+
+| artefato | condicional |
+|---|---|
+| `scripts/trackfw-validate.sh` | sempre (conteúdo renderizado a partir do `trackfw.yaml` do projeto — AC12) |
+| `scripts/trackfw-attention-signal.sh` | sempre |
+| `scripts/trackfw-attention-cleanup.sh` | sempre |
+| `scripts/trackfw-credential-guard.sh` | sempre |
+| `scripts/trackfw-git-branch-guard.sh` | sempre |
+| `.claude/commands/trackfw/<cmd>.md` (9 arquivos) | somente se `.claude/commands/trackfw/` já existir (AC14: `discover --init` não escreve slash commands — ausência legítima) |
+| `.github/workflows/trackfw-gate.yml` | somente se `ci: github-actions` no `trackfw.yaml` (AC13) |
+| `.gitlab-ci-trackfw.yml` | somente se `ci: gitlab-ci` no `trackfw.yaml` (AC13) |
+
+### validate.sh — pertencimento a conjunto (set-membership, escopado)
+
+<!-- trackfw-contract: gate=scripts/check-doctor-parity.sh -->
+
+**Decisão arquitetural (2026-08-27):** `scripts/trackfw-validate.sh` é aceito pelo `doctor` quando
+seu conteúdo corresponde a **qualquer** dos templates de runtime conhecidos — pertencimento a
+conjunto, não igualdade a um único template.
+
+A divergência de bytes entre os runtimes para este arquivo é **pré-existente, intencional e
+documentada**: Go/Node produzem uma forma `#!/usr/bin/env sh` cfg-dependente (com blocos de
+build por backend/frontend); Python produz uma forma simples `#!/usr/bin/env bash` agnóstica de
+backend (`_VALIDATE_SCRIPT_CONTENT`). Aceitar qualquer das formas conhecidas elimina o
+falso-positivo que ocorria quando o doctor de um runtime julgava um arquivo escrito por outro.
+
+| forma conhecida | conteúdo | runtime de origem |
+|---|---|---|
+| Go/Node form | `buildValidateScript(cfg)` renderizado a partir do `trackfw.yaml` do projeto | Go (`internal/generators/scaffold.go`) · Node.js (`npm/src/generators/init.js`) |
+| Python form | `#!/usr/bin/env bash\nset -euo pipefail\ntrackfw validate\n` (`_VALIDATE_SCRIPT_CONTENT`) | Python (`pypi/trackfw/generators/init_gen.py`) |
+
+**O que continua sendo acusado:** arquivo que não casa com **nenhuma** das formas conhecidas —
+editado à mão, corrompido, ou gerado por uma versão futura que alterou o template sem atualizar
+o conjunto. A cobertura não diminui; apenas o critério deixa de ser runtime-específico para este
+artefato.
+
+**Escopo da exceção: apenas `scripts/trackfw-validate.sh`.** Todos os demais artefatos de scaffold
+(`trackfw-attention-signal.sh`, `trackfw-attention-cleanup.sh`, `trackfw-credential-guard.sh`,
+`trackfw-git-branch-guard.sh`, slash commands, CI workflows) têm bytes pinados entre os runtimes
+por gate e continuam usando igualdade a template único.
+
+**Parity liability:** `pypi/trackfw/integrations/scaffold_doctor.py` mantém um mirror de
+`_build_go_node_validate_script` que replica a lógica de `buildValidateScript(cfg)`. Se Go ou
+Node alterarem o template, esse mirror deve ser atualizado no mesmo commit. Os testes de
+pertencimento nos 3 runtimes (`TestValidateScriptMembership` em Go,
+`scaffold_doctor_membership.test.js` em Node, `test_scaffold_doctor_membership.py` em Python)
+detectam a deriva antes que chegue à main.
+
+### Cobertura por runtime — tabela completa
+
+<!-- trackfw-contract: gate=scripts/check-doctor-parity.sh partial=exclusão de CI workflow no Python não coberta cross-CLI por gate único (fixtures não usam ci: para evitar divergência legítima Python-vs-Go/Node; ver "CI workflow exclusion" abaixo) -->
+
+| artefato | Go | Node.js | Python |
+|---|---|---|---|
+| `scripts/trackfw-validate.sh` | sim — **set-membership** (Go/Node form ∪ Python form) | sim — **set-membership** | sim — **set-membership** |
+| `scripts/trackfw-attention-signal.sh` | sim | sim | sim |
+| `scripts/trackfw-attention-cleanup.sh` | sim | sim | sim |
+| `scripts/trackfw-credential-guard.sh` | sim | sim | sim |
+| `scripts/trackfw-git-branch-guard.sh` | sim | sim | sim |
+| `.claude/commands/trackfw/<cmd>.md` | sim (AC14) | sim (AC14) | sim (AC14) |
+| `.github/workflows/trackfw-gate.yml` | sim (AC13: `ci: github-actions`) | sim (AC13) | não — ver abaixo |
+| `.gitlab-ci-trackfw.yml` | sim (AC13: `ci: gitlab-ci`) | sim (AC13) | não — ver abaixo |
+
+**CI workflow exclusion — Python (principled):** o `update` do Python não inclui `ci-workflow` em
+`PROJECT_TARGET_IDS` (ver `pypi/trackfw/commands/update.py`). O remedy de qualquer finding do
+doctor é `trackfw update`; se o `update` do Python não gerencia o caminho, o remedy seria
+enganoso. A exclusão dos CI workflows é fundamentada em propriedade, não em conveniência.
+
+---
+
 ## `agent_models` — versão de modelo por tier com composição por alvo
 
 <!-- trackfw-contract: gate=scripts/check-agent-models-parity.sh -->
