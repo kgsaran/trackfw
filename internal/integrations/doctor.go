@@ -66,6 +66,19 @@ const (
 	// slash command when the .claude/commands/trackfw/ directory already exists)
 	// is absent from disk. Remedy: trackfw update.
 	DoctorScaffoldMissing DoctorFindingKind = "scaffold-missing"
+
+	// DoctorScaffoldWrongMode: a scaffold artifact whose content is correct
+	// (byte-equal to the template) but whose execute bit is missing. This is a
+	// distinct state from DoctorScaffoldDivergent (content mismatch) — AC3 of
+	// REQ-2026-08-28. Only applies to the 5 scripts the generator intentionally
+	// writes with mode 0755; the 12 non-executable artifacts are never checked
+	// for mode (AC4/AC11). The check uses mode & 0o100 != 0 (bit presence,
+	// not equality to 0755) so umask-narrowed modes like 0750/0700 are accepted
+	// (AC10). Remedy: trackfw update (which now calls os.Chmod after WriteFile
+	// to ensure the bit is restored even on existing files — AC9).
+	// Not emitted on Windows (runtime.GOOS == "windows") where the execute bit
+	// is not representable on NTFS — AC5.
+	DoctorScaffoldWrongMode DoctorFindingKind = "scaffold-wrong-mode"
 )
 
 // DoctorFinding is one artifact requiring the user's attention, plus a

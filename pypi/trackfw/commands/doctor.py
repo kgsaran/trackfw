@@ -9,7 +9,7 @@ npm/src/commands/doctor.js.
 import json
 import os
 
-from trackfw.integrations.doctor import HAND_MODIFIED, SCAFFOLD_DIVERGENT, SCAFFOLD_MISSING, UNKNOWN_CONTENT, UNREGISTERED_WRITE, run_doctor
+from trackfw.integrations.doctor import HAND_MODIFIED, SCAFFOLD_DIVERGENT, SCAFFOLD_MISSING, SCAFFOLD_WRONG_MODE, UNKNOWN_CONTENT, UNREGISTERED_WRITE, run_doctor
 from trackfw.integrations.scaffold_doctor import run_scaffold_doctor
 
 
@@ -21,8 +21,9 @@ def _print_report(findings: list) -> str:
     unknown_content = sum(1 for finding in findings if finding["finding"] == UNKNOWN_CONTENT)
     scaffold_divergent = sum(1 for finding in findings if finding["finding"] == SCAFFOLD_DIVERGENT)
     scaffold_missing = sum(1 for finding in findings if finding["finding"] == SCAFFOLD_MISSING)
+    scaffold_wrong_mode = sum(1 for finding in findings if finding["finding"] == SCAFFOLD_WRONG_MODE)
     lines = [
-        f"trackfw doctor: {len(findings)} finding(s) -- {unregistered} unregistered-write, {hand_modified} hand-modified, {unknown_content} unknown-content, {scaffold_divergent} scaffold-divergent, {scaffold_missing} scaffold-missing",
+        f"trackfw doctor: {len(findings)} finding(s) -- {unregistered} unregistered-write, {hand_modified} hand-modified, {unknown_content} unknown-content, {scaffold_divergent} scaffold-divergent, {scaffold_missing} scaffold-missing, {scaffold_wrong_mode} scaffold-wrong-mode",
         "",
     ]
     for finding in findings:

@@ -64,7 +64,7 @@ grep -q "Residual declarado" docs/seguranca/2026-08-28-modelo-de-ameaca-do-bit-d
 > Dependências: ML-0A auditado.
 
 ### ML-1A — Restaurar o modo e comparar o bit nos 3 CLIs
-**Status:** 🔄 Em andamento · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-0A
+**Status:** ✅ Concluído (apolo-tf, 2026-08-28) · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-0A
 
 **Critérios de aceite:** AC1–AC6 da REQ · `make quality` exit 0 medido
 
@@ -101,10 +101,48 @@ produz `0750`/`0700`, que são executáveis e seriam acusados à toa.
 
 ---
 
+### Auditoria do ML-1A — aprovada; o remédio deixou de ser inerte, medido por mim
+
+```
+antes                    .rw-r--r--     (bit rebaixado a mao)
+doctor                ->  2 findings [scaffold-wrong-mode]
+depois do update Go   ->  .rwxr-xr-x    restaurou
+depois do update Node ->  .rwxr-xr-x    restaurou
+make quality (CI-exata, minha)  exit 0
+validate                        16 warnings, 0 violations
+```
+
+O ciclo fecha: o `doctor` acusa, o `update` remedia, o `doctor` cala. Antes do AC9 o remédio impresso
+apontava para um comando que **não** consertava.
+
+#### O `make quality` reprovou uma vez, e a falha foi instrutiva
+
+```
+make: *** [test-node] Error 1
+npm/tests/scaffold_doctor_membership.test.js:40
+  actual: { finding: 'scaffold-wrong-mode', ... }   expected: null
+```
+
+O fixture escrito **ontem** no ML-1C gravava o script sem o bit — irrelevante até existir verificação
+de modo. Com ela, **o fixture que representava "artefato íntegro" deixou de ser íntegro**.
+
+Deixei explícito no handoff o que eu **não** aceitaria: relaxar a verificação no produto para o teste
+passar. É a tentação óbvia, e apagaria justamente a detecção recém-construída. Ele corrigiu o
+fixture, e notou o que importa: **os casos negativos não foram afetados** — a verificação de conteúdo
+tem precedência sobre a de modo, então continuam falhando pelo motivo original, sem virar asserção
+decorativa.
+
+**Residuais nomeados e aceitos:** a guarda de Windows tem teste unitário só no Go (Node/Python
+dependem do parity script) · `discover.go:83` escreve o validate script sem `Chmod` posterior — fora
+de escopo porque o remédio que o `doctor` imprime é `trackfw update`, que já tem o `Chmod`, **mas a
+barreira deve olhar**, já que o `discover --init` é escritor legítimo.
+
+---
+
 ## Wave 2 — Gate
 
 ### ML-2A — Falsificação nas duas direções
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-1A
+**Status:** 🔄 Em andamento · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-1A
 
 **Critérios de aceite:** AC7, AC8 da REQ
 

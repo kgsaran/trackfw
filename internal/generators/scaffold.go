@@ -739,6 +739,14 @@ func generateValidateScript(cfg Config) error {
 	if err := os.WriteFile(path, []byte(script), 0755); err != nil {
 		return fmt.Errorf("writing validate script: %w", err)
 	}
+	// AC9 (REQ-2026-08-28): os.WriteFile applies perm only on O_CREATE; for an existing
+	// file O_TRUNC rewrites content but leaves the inode mode unchanged. os.Chmod is
+	// unconditional and restores 0755 even when the file already existed with 0644.
+	// This matches Python's os.chmod behavior (which was already correct) and raises
+	// three-runtime parity for the update path.
+	if err := os.Chmod(path, 0755); err != nil {
+		return fmt.Errorf("setting execute bit on validate script: %w", err)
+	}
 	fmt.Printf("  ✓ %s\n", path)
 	return nil
 }
@@ -822,6 +830,10 @@ func GenerateAttentionScripts(rootDir string) error {
 	if err := os.WriteFile(signalPath, []byte(attentionSignalScript), 0755); err != nil {
 		return fmt.Errorf("writing attention signal script: %w", err)
 	}
+	// AC9: restore execute bit unconditionally — see generateValidateScript for rationale.
+	if err := os.Chmod(signalPath, 0755); err != nil {
+		return fmt.Errorf("setting execute bit on attention signal script: %w", err)
+	}
 	// Mensagem sempre com caminho relativo "scripts/..." — igual ao literal fixo
 	// que o Node.js imprime (npm/src/generators/hooks.js:generateAttentionScripts)
 	// — independente de rootDir ser "" (cwd, usado por init/update) ou um caminho
@@ -831,6 +843,10 @@ func GenerateAttentionScripts(rootDir string) error {
 	cleanupPath := filepath.Join(scriptsDir, "trackfw-attention-cleanup.sh")
 	if err := os.WriteFile(cleanupPath, []byte(attentionCleanupScript), 0755); err != nil {
 		return fmt.Errorf("writing attention cleanup script: %w", err)
+	}
+	// AC9: restore execute bit unconditionally.
+	if err := os.Chmod(cleanupPath, 0755); err != nil {
+		return fmt.Errorf("setting execute bit on attention cleanup script: %w", err)
 	}
 	fmt.Printf("  ✓ %s\n", filepath.Join("scripts", "trackfw-attention-cleanup.sh"))
 
@@ -863,6 +879,10 @@ func GenerateCredentialGuardScript(rootDir string) error {
 	path := filepath.Join(scriptsDir, "trackfw-credential-guard.sh")
 	if err := os.WriteFile(path, []byte(credentialGuardScript), 0755); err != nil {
 		return fmt.Errorf("writing credential guard script: %w", err)
+	}
+	// AC9: restore execute bit unconditionally.
+	if err := os.Chmod(path, 0755); err != nil {
+		return fmt.Errorf("setting execute bit on credential guard script: %w", err)
 	}
 	fmt.Printf("  ✓ %s\n", filepath.Join("scripts", "trackfw-credential-guard.sh"))
 
@@ -1183,6 +1203,10 @@ func GenerateGitBranchGuardScript(rootDir string) error {
 	path := filepath.Join(scriptsDir, "trackfw-git-branch-guard.sh")
 	if err := os.WriteFile(path, []byte(gitBranchGuardScript), 0755); err != nil {
 		return fmt.Errorf("writing git branch guard script: %w", err)
+	}
+	// AC9: restore execute bit unconditionally.
+	if err := os.Chmod(path, 0755); err != nil {
+		return fmt.Errorf("setting execute bit on git branch guard script: %w", err)
 	}
 	fmt.Printf("  ✓ %s\n", filepath.Join("scripts", "trackfw-git-branch-guard.sh"))
 

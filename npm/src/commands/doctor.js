@@ -2,7 +2,7 @@
 
 const { Command } = require('commander')
 const { runDoctor, UNREGISTERED_WRITE, HAND_MODIFIED, UNKNOWN_CONTENT } = require('../integrations/doctor')
-const { runScaffoldDoctor, SCAFFOLD_DIVERGENT, SCAFFOLD_MISSING } = require('../integrations/scaffold_doctor')
+const { runScaffoldDoctor, SCAFFOLD_DIVERGENT, SCAFFOLD_MISSING, SCAFFOLD_WRONG_MODE } = require('../integrations/scaffold_doctor')
 const projectConfig = require('../config')
 
 function printReport(findings) {
@@ -14,8 +14,9 @@ function printReport(findings) {
   const unknownContent = findings.filter(finding => finding.finding === UNKNOWN_CONTENT).length
   const scaffoldDivergent = findings.filter(finding => finding.finding === SCAFFOLD_DIVERGENT).length
   const scaffoldMissing = findings.filter(finding => finding.finding === SCAFFOLD_MISSING).length
+  const scaffoldWrongMode = findings.filter(finding => finding.finding === SCAFFOLD_WRONG_MODE).length
   const lines = [
-    `trackfw doctor: ${findings.length} finding(s) -- ${unregistered} unregistered-write, ${handModified} hand-modified, ${unknownContent} unknown-content, ${scaffoldDivergent} scaffold-divergent, ${scaffoldMissing} scaffold-missing`,
+    `trackfw doctor: ${findings.length} finding(s) -- ${unregistered} unregistered-write, ${handModified} hand-modified, ${unknownContent} unknown-content, ${scaffoldDivergent} scaffold-divergent, ${scaffoldMissing} scaffold-missing, ${scaffoldWrongMode} scaffold-wrong-mode`,
     '',
   ]
   for (const finding of findings) {

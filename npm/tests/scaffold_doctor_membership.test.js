@@ -25,6 +25,7 @@ function withFile(content, fn) {
   fs.mkdirSync(scriptsDir)
   const absPath = path.join(scriptsDir, 'trackfw-validate.sh')
   fs.writeFileSync(absPath, content, 'utf8')
+  fs.chmodSync(absPath, 0o755)
   return fn(absPath)
 }
 

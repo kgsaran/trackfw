@@ -107,7 +107,7 @@ func printDoctorReport(cmd *cobra.Command, findings []integrations.DoctorFinding
 	// Counted explicitly by kind (never an if/else fallback into the last
 	// bucket) so a new class introduced later fails loudly here instead
 	// of silently inflating another kind's count.
-	var unregistered, handModified, unknownContent, scaffoldDivergent, scaffoldMissing int
+	var unregistered, handModified, unknownContent, scaffoldDivergent, scaffoldMissing, scaffoldWrongMode int
 	for _, finding := range findings {
 		switch finding.FindingKind {
 		case integrations.DoctorUnregisteredWrite:
@@ -120,10 +120,12 @@ func printDoctorReport(cmd *cobra.Command, findings []integrations.DoctorFinding
 			scaffoldDivergent++
 		case integrations.DoctorScaffoldMissing:
 			scaffoldMissing++
+		case integrations.DoctorScaffoldWrongMode:
+			scaffoldWrongMode++
 		}
 	}
-	fmt.Fprintf(out, "trackfw doctor: %d finding(s) -- %d unregistered-write, %d hand-modified, %d unknown-content, %d scaffold-divergent, %d scaffold-missing\n\n",
-		len(findings), unregistered, handModified, unknownContent, scaffoldDivergent, scaffoldMissing)
+	fmt.Fprintf(out, "trackfw doctor: %d finding(s) -- %d unregistered-write, %d hand-modified, %d unknown-content, %d scaffold-divergent, %d scaffold-missing, %d scaffold-wrong-mode\n\n",
+		len(findings), unregistered, handModified, unknownContent, scaffoldDivergent, scaffoldMissing, scaffoldWrongMode)
 	// One blank line BETWEEN findings, none trailing after the last one — matches Node's
 	// `lines.join('\n').replace(/\n$/, '')` and Python's `"\n".join(lines).rstrip("\n")`
 	// (npm/src/commands/doctor.js, pypi/trackfw/commands/doctor.py). A naive per-finding

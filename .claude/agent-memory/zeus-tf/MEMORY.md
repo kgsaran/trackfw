@@ -9,3 +9,4 @@
 - [Fronteira de escrita dos auditores](feedback_hefesto_recusa_docs.md) — Hefesto/Hades/Atena escrevem docs designadas; corrigido no gerador (#165), exige `trackfw agents update`
 - [Verbosidade das respostas](feedback_verbosidade_das_respostas.md) — curto por padrão; detalhe só em bloqueio, decisão ou erro meu
 - [Ler a REQ, não o ADR vizinho](feedback_ler_a_req_nao_o_adr_vizinho.md) — antes de dizer "fora de escopo", abrir a REQ que governa a feature; AC marcado que contradiz o medido é bug
+- [Não narrar despacho antes de fazer](feedback_nao_narrar_despacho_antes_de_fazer.md) — "despachado" só depois da chamada do Agent no mesmo turno; aconteceu 2x

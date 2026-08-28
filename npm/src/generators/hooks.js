@@ -1047,6 +1047,8 @@ function generateGitBranchGuardScript(cwd) {
 
   const scriptPath = path.join(scriptsDir, 'trackfw-git-branch-guard.sh')
   fs.writeFileSync(scriptPath, GIT_BRANCH_GUARD_SCRIPT, { encoding: 'utf8', mode: 0o755 })
+  // AC9: chmodSync restores execute bit on existing files.
+  fs.chmodSync(scriptPath, 0o755)
 
   console.log('  ✓ scripts/trackfw-git-branch-guard.sh')
 }
@@ -1084,6 +1086,8 @@ function generateCredentialGuardScript(cwd) {
 
   const scriptPath = path.join(scriptsDir, 'trackfw-credential-guard.sh')
   fs.writeFileSync(scriptPath, CREDENTIAL_GUARD_SCRIPT, { encoding: 'utf8', mode: 0o755 })
+  // AC9: chmodSync restores execute bit on existing files.
+  fs.chmodSync(scriptPath, 0o755)
 
   console.log('  ✓ scripts/trackfw-credential-guard.sh')
 }
@@ -1489,9 +1493,14 @@ function generateAttentionScripts(cfg, cwd) {
 
   const signalPath = path.join(scriptsDir, 'trackfw-attention-signal.sh')
   fs.writeFileSync(signalPath, SIGNAL_SCRIPT, { encoding: 'utf8', mode: 0o755 })
+  // AC9 (REQ-2026-08-28): chmodSync restores the execute bit on existing files
+  // where writeFileSync's {mode} option has no effect (applies only on O_CREAT).
+  fs.chmodSync(signalPath, 0o755)
 
   const cleanupPath = path.join(scriptsDir, 'trackfw-attention-cleanup.sh')
   fs.writeFileSync(cleanupPath, CLEANUP_SCRIPT, { encoding: 'utf8', mode: 0o755 })
+  // AC9: same rationale as signalPath above.
+  fs.chmodSync(cleanupPath, 0o755)
 
   console.log('  ✓ scripts/trackfw-attention-signal.sh')
   console.log('  ✓ scripts/trackfw-attention-cleanup.sh')

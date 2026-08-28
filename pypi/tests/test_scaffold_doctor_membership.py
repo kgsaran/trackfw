@@ -29,6 +29,7 @@ def _write_validate_file(tmpdir: str, content: str) -> str:
     dest = os.path.join(scripts_dir, 'trackfw-validate.sh')
     with open(dest, 'w', encoding='utf-8') as f:
         f.write(content)
+    os.chmod(dest, 0o755)
     return tmpdir
 
 

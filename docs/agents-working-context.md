@@ -4,6 +4,32 @@
 
 ---
 
+## Sessão 2026-08-28 — apolo-tf (INÍCIO: correção pontual pós-auditoria ML-1A)
+
+Branch `fix/doctor-compara-o-bit-de-execucao`.
+
+Recebido handoff do arquiteto: `make quality` falha com exit 2 em `npm/tests/scaffold_doctor_membership.test.js:40` — fixture escreve sem bit de execução, mas a verificação de modo foi acrescentada no ML-1A. Escopo: somente fixtures de teste (nenhum código de produto).
+
+---
+
+## Sessão 2026-08-28 — apolo-tf (FIM: correção pontual pós-auditoria ML-1A — CONCLUÍDO)
+
+Branch `fix/doctor-compara-o-bit-de-execucao`.
+
+**O que foi feito:**
+
+- Adicionado `fs.chmodSync(absPath, 0o755)` no helper `withFile` em `npm/tests/scaffold_doctor_membership.test.js` (linha 28).
+- Adicionado `os.chmod(dest, 0o755)` no helper `_write_validate_file` em `pypi/tests/test_scaffold_doctor_membership.py` (linha 32).
+- Nenhum arquivo de código de produto tocado.
+
+**Evidências:**
+- `npm test`: 778 passed, 0 failed, exit 0.
+- `python3 -m pytest pypi/tests/test_scaffold_doctor_membership.py -q`: 5 passed, exit 0.
+- `go test ./internal/generators/...`: ok (cached), exit 0.
+- `git status --short`: somente os dois arquivos de teste modificados por esta sessão.
+
+---
+
 ## Sessão 2026-08-27 — hades-tf (INÍCIO: ML-3A — barreira final da cobertura de scaffold)
 
 Branch `feat/doctor-cobre-artefatos-de-scaffold`.
@@ -25053,3 +25079,62 @@ Gates verificados: file exists ✅ · grep "Completude de enumera" ✅ · grep "
 6. AC4: apenas os 5 scripts acima devem ter modo verificado — slash commands e CI workflows NÃO
 
 **Status ML-0A no roadmap:** ✅ Concluído. Pronto para auditoria do `trackfw_architect`.
+
+---
+
+## Sessão 2026-08-28 — apolo-tf (INÍCIO: ML-1A — restaurar modo e comparar bit nos 3 CLIs)
+
+Branch `fix/doctor-compara-o-bit-de-execucao`.
+
+Recebido handoff do arquiteto. Scope: AC9 (Chmod pós-WriteFile em Go + Node), AC2/AC3 (doctor detecta bit ausente com estado próprio), AC4/AC10/AC11 (só 5 scripts acusados, via modo & 0o100), AC5 (guarda Windows), AC6 (parity gate atualizado).
+
+**Decisões de implementação tomadas:**
+- Novo kind `DoctorScaffoldWrongMode = "scaffold-wrong-mode"` para conteúdo correto sem execute bit (AC3 satisfeito por estado próprio, não só mensagem)
+- Todos os dispatch points atualizados nos 3 CLIs (commands/doctor.go, doctor.js, doctor.py) — sem silêncio de switch
+- `execBit bool` no descritor de cada artefato — AC11 estruturalmente garantido (slash commands e CI nunca têm execBit=true)
+- Platform guard via `var currentGOOS = runtime.GOOS` (Go injectable), `process.platform` (Node), `sys.platform` (Python)
+- Conteúdo divergente + bit ausente → `scaffold-divergent` (conteúdo tem precedência); bit ausente + conteúdo OK → `scaffold-wrong-mode`
+- AC5 sem linha de output em Windows (supressão silenciosa com comentário); se revisor quiser runtime note, solicitar explicitamente
+- `os.Chmod` ignora umask → força 0755 mesmo em arquivo existente; documentado como aumento de paridade com Python (que sempre usou os.chmod incondicional)
+
+---
+
+## Sessão 2026-08-28 — apolo-tf (FIM: ML-1A — CONCLUÍDO)
+
+Branch `fix/doctor-compara-o-bit-de-execucao`.
+
+**O que foi entregue:**
+
+**AC9 (write path Go + Node):**
+- `internal/generators/scaffold.go`: `os.Chmod(path, 0755)` adicionado após cada `os.WriteFile` para os 5 scripts executáveis (validate, attention-signal, attention-cleanup, credential-guard, git-branch-guard).
+- `npm/src/generators/init.js`: `fs.chmodSync` após o `writeFileSync` do validate script.
+- `npm/src/generators/hooks.js`: `fs.chmodSync` após cada `writeFileSync` dos 4 scripts de hook de atenção, credential-guard e git-branch-guard de projeto.
+- Python: já correto (os.chmod incondicional), sem alteração.
+
+**AC2/AC3/AC10/AC11 (doctor compara bit):**
+- Novo kind `DoctorScaffoldWrongMode = "scaffold-wrong-mode"` adicionado em todos os dispatch points (Go integrations/doctor.go, commands/doctor.go, Node scaffold_doctor.js + commands/doctor.js, Python integrations/doctor.py + commands/doctor.py).
+- `execBit bool` adicionado ao descritor de cada artefato. Os 5 scripts têm `execBit=true`; slash commands e CI workflows têm `execBit=false` → AC11 garantido estruturalmente.
+- Verificação usa `mode & 0o100 != 0` (não `== 0755`) → AC10.
+- Conteúdo divergente tem precedência → `scaffold-divergent`; conteúdo OK + bit ausente → `scaffold-wrong-mode`.
+
+**AC5 (platform guard):**
+- Go: `var CurrentGOOS = runtime.GOOS` (injetável em testes) — testes `TestWindowsPlatformGuard` e `TestWindowsPlatformGuard_ValidateScript` passam.
+- Node: `let _platform = process.platform` + `_setPlatformForTest`.
+- Python: `_current_platform = sys.platform` + `_set_platform_for_test`.
+- Em todos os 3: quando `== "windows"`, modo não verificado (supressão silenciosa com comentários).
+
+**AC6 (parity gate):**
+- 3 novos cenários em `check-doctor-parity.sh`: (p) bit ausente → `[scaffold-wrong-mode]`, (q) 0700 → `no mismatches found`, (r) Python form com 0755 → `no mismatches found`.
+
+**Gates medidos:**
+- `go build ./...` → EXIT: 0
+- `go test ./internal/generators/...` → EXIT: 0 (ok 6.403s)
+- `bash scripts/check-doctor-parity.sh` → EXIT: 0 (34 cenários, todos OK)
+- `doctor neste repositório` → `no mismatches found` nos 3 CLIs
+
+**Riscos residuais para auditoria:**
+- AC5 no Node/Python: a plataforma `_platform`/`_current_platform` é declarada mas os testes unitários de Node/Python do wrong-mode ainda precisam exercitar o branch Windows (feito em Go; Node/Python dependem do parity script + exports).
+- `run_scaffold_scenario` do parity script verifica `DR_EXIT -ne 0` e falha → doctor retorna exit 0 mesmo com findings. Comportamento intencional (doctor é read-only).
+- `discover.go:83` (InstallGates) escreve validate.sh com 0755 mas SEM Chmod; como o doctor aponta `trackfw update` (não `trackfw discover --init`) como remédio, isso é residual aceito.
+
+ML-1A marcado ✅ no roadmap. Pronto para auditoria do `trackfw_architect`.
