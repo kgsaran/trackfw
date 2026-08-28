@@ -33,6 +33,13 @@ HAND_MODIFIED = "hand-modified"
 # Remedy: trackfw update. Mirrors Go's DoctorScaffoldDivergent/DoctorScaffoldMissing.
 SCAFFOLD_DIVERGENT = "scaffold-divergent"
 SCAFFOLD_MISSING = "scaffold-missing"
+# SCAFFOLD_WRONG_MODE: a scaffold artifact whose content is correct (byte-equal to the
+# template) but whose owner-execute bit is missing. Distinct from SCAFFOLD_DIVERGENT
+# (content mismatch) — AC3 of REQ-2026-08-28. Only emitted for the 5 scripts the
+# generator writes with mode 0o755 (AC11). Uses mode & 0o100 != 0 (not == 0o755) so
+# umask-narrowed modes 0o750/0o700 are accepted (AC10). Not emitted on Windows
+# (sys.platform == "win32") where the execute bit is not representable (AC5).
+SCAFFOLD_WRONG_MODE = "scaffold-wrong-mode"
 # UNKNOWN_CONTENT: neither does any manifest entry exist for this
 # destination, NOR does the on-disk content match the catalog template
 # (registered=False and state="modified"). Genuinely ambiguous between a

@@ -123,6 +123,10 @@ function generateValidateScript(cfg, cwd) {
   const script = buildValidateScript(cfg)
   const scriptPath = path.join(root, 'scripts', 'trackfw-validate.sh')
   fs.writeFileSync(scriptPath, script, { encoding: 'utf8', mode: 0o755 })
+  // AC9 (REQ-2026-08-28): writeFileSync's {mode} option applies only on O_CREAT;
+  // for an existing file the mode is not changed. fs.chmodSync restores 0o755
+  // unconditionally, matching Python's os.chmod behavior (which was already correct).
+  fs.chmodSync(scriptPath, 0o755)
   console.log(`  ✓ ${path.join('scripts', 'trackfw-validate.sh')}`)
 }
 

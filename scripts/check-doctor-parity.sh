@@ -614,6 +614,50 @@ read -r o_project o_home <<<"$(build_scaffold_fixture "$WORK/o" "go")"
 run_scaffold_scenario "scaffold-backend-go-no-false-positive" "$o_project" "$o_home" "no mismatches found"
 
 # ---------------------------------------------------------------------------
+# Scenario (p) — execute bit missing (AC2/AC3/AC9, REQ-2026-08-28):
+# Strip the owner-execute bit from scripts/trackfw-attention-signal.sh (correct
+# content, wrong mode). All 3 CLIs must report [scaffold-wrong-mode], NOT
+# scaffold-divergent — demonstrating the distinct state required by AC3. Exit
+# code must remain 0 (same as other scaffold findings — doctor is read-only).
+# This is the falsification target for the AC9 chain: doctor sees wrong-mode,
+# user runs `trackfw update`, Go and Node now call os.Chmod/fs.chmodSync to
+# restore the bit even on existing files. The unit tests in each runtime
+# (TestWrongModeDetection_ValidateScript etc.) prove the detection half; this
+# scenario proves that all three runtimes agree on the finding KIND.
+# ---------------------------------------------------------------------------
+read -r p_project p_home <<<"$(build_scaffold_fixture "$WORK/p")"
+chmod 0644 "$p_project/scripts/trackfw-attention-signal.sh"
+run_scaffold_scenario "scaffold-wrong-mode-detected" "$p_project" "$p_home" "[scaffold-wrong-mode]"
+
+# ---------------------------------------------------------------------------
+# Scenario (q) — AC4/AC11 — non-executable artifact (validate.sh at Python
+# form with 0644 mode) NOT accused of wrong-mode when Python form is forced
+# WITHOUT execute bit on validate-script.
+# Actually: verify that a static script with mode 0700 (umask-narrowed — the
+# execute bit IS set) does NOT produce a wrong-mode finding (AC10). Mode 0700
+# means (0700 & 0o100) != 0 → execute bit present → silent.
+# ---------------------------------------------------------------------------
+read -r q_project q_home <<<"$(build_scaffold_fixture "$WORK/q")"
+chmod 0700 "$q_project/scripts/trackfw-credential-guard.sh"
+run_scaffold_scenario "scaffold-0700-mode-accepted-ac10" "$q_project" "$q_home" "no mismatches found"
+
+# ---------------------------------------------------------------------------
+# Scenario (r) — AC4/AC11 — validate.sh in Python form with execute bit
+# present: replace the file with Python's fixed form (keeping the mode that
+# was set by `trackfw update`, which is 0755 after AC9 fix). All 3 CLIs must
+# still report "no mismatches found" — Python form + correct mode is accepted.
+# This is a complement to scenario (k) that also exercises the mode check
+# path (in (k) the mode was already 0755 because > redirect doesn't change
+# mode on an existing file, but this scenario makes it explicit).
+# ---------------------------------------------------------------------------
+read -r r_project r_home <<<"$(build_scaffold_fixture "$WORK/r")"
+# Write Python form with explicit 0755.
+printf '#!/usr/bin/env bash\nset -euo pipefail\ntrackfw validate\n' \
+  >"$r_project/scripts/trackfw-validate.sh"
+chmod 0755 "$r_project/scripts/trackfw-validate.sh"
+run_scaffold_scenario "validate-sh-python-form-with-exec-bit" "$r_project" "$r_home" "no mismatches found"
+
+# ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
 echo

@@ -27,11 +27,28 @@ All three runtimes cover the same artifact classes. What varies is described bel
     finding is `trackfw update`; if Python's update doesn't manage a path, that remedy
     would be misleading. Declared in docs/cli-parity.md under "CI workflow exclusion —
     Python (principled)."
+
+  Execute-bit checking (REQ-2026-08-28, AC2–AC5, AC10, AC11):
+    The five scripts the generator writes with mode 0o755 are additionally checked for
+    the owner-execute bit. The check uses (stat.st_mode & 0o100) != 0 (not == 0o755)
+    so umask-narrowed modes (0o750, 0o700) are also accepted (AC10). Non-executable
+    artifacts carry exec_bit=False and are never mode-checked (AC4/AC11). Content
+    divergence takes precedence over mode (at most one finding per artifact). Content
+    correct + bit missing → SCAFFOLD_WRONG_MODE (AC3 distinct state). On Windows
+    (sys.platform == "win32") the execute bit is not representable on NTFS, so the
+    mode check is suppressed entirely — AC5.
+
+    Python's generator was already correct (open(...,'w') + os.chmod(0o755) is
+    unconditional and ignores umask). No change needed to the Python write path.
+
+  _current_platform is seeded from sys.platform at import time and can be overridden
+  in tests via _set_platform_for_test to exercise the Windows guard (AC5 testability).
 """
 
 from __future__ import annotations
 
 import os
+import sys
 import tempfile
 from typing import Any
 
@@ -54,10 +71,49 @@ from trackfw.generators.init_gen import (
     _VALIDATE_SCRIPT_CONTENT,
     generate_claude_commands,
 )
-from trackfw.integrations.doctor import SCAFFOLD_DIVERGENT, SCAFFOLD_MISSING
+from trackfw.integrations.doctor import SCAFFOLD_DIVERGENT, SCAFFOLD_MISSING, SCAFFOLD_WRONG_MODE
 
 # Path constants — mirror Go's exported constants and Node's module-level strings.
 CLAUDE_COMMANDS_DIR_PATH = '.claude/commands/trackfw'
+
+# _current_platform is seeded from sys.platform at import time.
+# Tests override it via _set_platform_for_test to exercise the Windows guard (AC5).
+_current_platform: str = sys.platform
+
+
+def _set_platform_for_test(platform: str) -> Any:
+    """Override _current_platform for unit tests. Returns a restore callable.
+
+    Usage::
+
+        restore = _set_platform_for_test('win32')
+        try:
+            ...assertions...
+        finally:
+            restore()
+    """
+    global _current_platform
+    prev = _current_platform
+    _current_platform = platform
+
+    def _restore() -> None:
+        global _current_platform
+        _current_platform = prev
+
+    return _restore
+
+
+def _exec_bit_present(path: str) -> bool:
+    """Return True if the file at path has the owner-execute bit set
+    (stat.st_mode & 0o100 != 0). Returns False on any stat error.
+
+    Uses bit mask rather than equality to 0o755 so that umask-narrowed modes
+    like 0o750 or 0o700 are also accepted — AC10 of REQ-2026-08-28.
+    """
+    try:
+        return bool(os.stat(path).st_mode & 0o100)
+    except OSError:
+        return False
 
 
 def _load_project_config(project_root: str) -> dict[str, str | None]:
@@ -148,6 +204,36 @@ def _build_go_node_validate_script(cfg: dict[str, str | None]) -> str:
     return base
 
 
+def _scaffold_remedy(action: str, rel_path: str) -> str:
+    """Returns a ready-to-copy remedy command for a scaffold finding.
+    The message is neutral about blame direction (AC16): binary version stated
+    but direction (project stale vs binary stale) left to the user to determine.
+    """
+    try:
+        import importlib.metadata
+        ver = importlib.metadata.version('trackfw')
+    except Exception:
+        ver = 'unknown'
+    return (
+        f"trackfw update   # {action} {rel_path}: content differs from the template "
+        f"trackfw v{ver} generates; if this project was initialized with a newer binary, "
+        f"update the binary instead"
+    )
+
+
+def _scaffold_wrong_mode_remedy(rel_path: str) -> str:
+    """Returns a remedy command for the scaffold-wrong-mode finding.
+    Names the missing execute bit explicitly to distinguish it from content divergence
+    (AC3 of REQ-2026-08-28). The message is runtime-neutral so the parity check can
+    diff Go, Node, and Python outputs byte-for-byte on this finding kind.
+    """
+    return (
+        f"trackfw update   # restore execute bit on {rel_path}: content is correct but "
+        f"the owner-execute bit is missing (mode 0755 required); trackfw update now "
+        f"restores the mode unconditionally on existing files"
+    )
+
+
 def _check_validate_script_artifact(
     project_root: str,
     cfg: dict[str, str | None],
@@ -157,6 +243,9 @@ def _check_validate_script_artifact(
     Accepted if the on-disk content matches EITHER Go/Node's cfg-rendered form OR
     Python's fixed form (_VALIDATE_SCRIPT_CONTENT). A file that matches NONE of the
     known forms is reported as scaffold-divergent. A missing file is scaffold-missing.
+
+    After content membership passes, the execute bit is checked (AC2/AC3) unless on
+    Windows (AC5). Content divergence always takes precedence over mode.
 
     This is the ONLY artifact with set-membership; all others use single-template
     equality via _check_scaffold_artifact. See module docstring.
@@ -182,31 +271,26 @@ def _check_validate_script_artifact(
         }
 
     go_node_form = _build_go_node_validate_script(cfg)
-    if actual == _VALIDATE_SCRIPT_CONTENT or actual == go_node_form:
-        return None
-    return {
-        'finding': SCAFFOLD_DIVERGENT,
-        'claim': {'kind': '', 'item': '', 'target': '', 'surface': '', 'scope': ''},
-        'destination': rel_path,
-        'remedy': _scaffold_remedy('resync', rel_path),
-    }
+    if actual != _VALIDATE_SCRIPT_CONTENT and actual != go_node_form:
+        # Content diverges — scaffold-divergent takes precedence.
+        return {
+            'finding': SCAFFOLD_DIVERGENT,
+            'claim': {'kind': '', 'item': '', 'target': '', 'surface': '', 'scope': ''},
+            'destination': rel_path,
+            'remedy': _scaffold_remedy('resync', rel_path),
+        }
 
+    # Content accepted. Check the execute bit (AC2/AC3).
+    # Suppressed on Windows where the bit is not representable (AC5).
+    if _current_platform != 'win32' and not _exec_bit_present(abs_path):
+        return {
+            'finding': SCAFFOLD_WRONG_MODE,
+            'claim': {'kind': '', 'item': '', 'target': '', 'surface': '', 'scope': ''},
+            'destination': rel_path,
+            'remedy': _scaffold_wrong_mode_remedy(rel_path),
+        }
 
-def _scaffold_remedy(action: str, rel_path: str) -> str:
-    """Returns a ready-to-copy remedy command for a scaffold finding.
-    The message is neutral about blame direction (AC16): binary version stated
-    but direction (project stale vs binary stale) left to the user to determine.
-    """
-    try:
-        import importlib.metadata
-        ver = importlib.metadata.version('trackfw')
-    except Exception:
-        ver = 'unknown'
-    return (
-        f"trackfw update   # {action} {rel_path}: content differs from the template "
-        f"trackfw v{ver} generates; if this project was initialized with a newer binary, "
-        f"update the binary instead"
-    )
+    return None
 
 
 def _check_scaffold_artifact(
@@ -214,9 +298,17 @@ def _check_scaffold_artifact(
     rel_path: str,
     expected: str,
     report_missing: bool,
+    exec_bit: bool = False,
 ) -> dict[str, Any] | None:
     """Compare on-disk content at abs_path against expected.
     Returns a finding dict if divergent or (when report_missing=True) absent; else None.
+
+    exec_bit controls whether the owner-execute bit is checked after content passes:
+      True  → artifact written with 0o755; bit absence → SCAFFOLD_WRONG_MODE (AC2/AC3).
+              Suppressed on Windows (AC5).
+      False → artifact expected 0o644; never mode-checked (AC4/AC11).
+
+    Content divergence takes precedence over mode (at most one finding per artifact).
     """
     try:
         with open(abs_path, 'r', encoding='utf-8') as f:
@@ -238,14 +330,26 @@ def _check_scaffold_artifact(
             'destination': rel_path,
             'remedy': _scaffold_remedy('resync', rel_path),
         }
-    if actual == expected:
-        return None
-    return {
-        'finding': SCAFFOLD_DIVERGENT,
-        'claim': {'kind': '', 'item': '', 'target': '', 'surface': '', 'scope': ''},
-        'destination': rel_path,
-        'remedy': _scaffold_remedy('resync', rel_path),
-    }
+    if actual != expected:
+        # Content diverges — takes precedence over any mode issue.
+        return {
+            'finding': SCAFFOLD_DIVERGENT,
+            'claim': {'kind': '', 'item': '', 'target': '', 'surface': '', 'scope': ''},
+            'destination': rel_path,
+            'remedy': _scaffold_remedy('resync', rel_path),
+        }
+
+    # Content matches. Check the execute bit when required (AC2/AC3).
+    # Suppressed on Windows where the bit is not representable (AC5).
+    if exec_bit and _current_platform != 'win32' and not _exec_bit_present(abs_path):
+        return {
+            'finding': SCAFFOLD_WRONG_MODE,
+            'claim': {'kind': '', 'item': '', 'target': '', 'surface': '', 'scope': ''},
+            'destination': rel_path,
+            'remedy': _scaffold_wrong_mode_remedy(rel_path),
+        }
+
+    return None
 
 
 def _get_expected_claude_commands() -> dict[str, str]:
@@ -278,6 +382,10 @@ def run_scaffold_doctor(project_root: str | None = None) -> list[dict[str, Any]]
     Excluded: CI workflows — Python's `update` does not manage the `ci-workflow` target
     (see module docstring and docs/cli-parity.md, "CI workflow exclusion — Python").
 
+    Execute-bit checking (REQ-2026-08-28): the five executable scripts carry exec_bit=True;
+    slash commands carry exec_bit=False — never accused of missing execute bit (AC11).
+    Platform guard: mode check suppressed on Windows (AC5).
+
     @param project_root: absolute path to the project root (default: os.getcwd())
     @returns: list of finding dicts with keys finding, claim, destination, remedy
     """
@@ -297,6 +405,7 @@ def run_scaffold_doctor(project_root: str | None = None) -> list[dict[str, Any]]
     # scripts/trackfw-validate.sh uses set-membership (Go/Node form OR Python form) —
     # see _check_validate_script_artifact and module docstring.
     # The four remaining scripts use single-template equality via _check_scaffold_artifact.
+    # All five have exec_bit=True: the generator writes them with mode 0o755 (AC11).
     # The .lstrip('\n') mirrors the write path in _generate_attention_scripts and
     # _generate_credential_guard_script, which call .lstrip('\n') before writing.
     f = _check_validate_script_artifact(project_root, cfg)
@@ -304,14 +413,14 @@ def run_scaffold_doctor(project_root: str | None = None) -> list[dict[str, Any]]
         findings.append(f)
 
     static_scripts = [
-        ('scripts/trackfw-attention-signal.sh', _ATTENTION_SIGNAL_SH.lstrip('\n')),
-        ('scripts/trackfw-attention-cleanup.sh', _ATTENTION_CLEANUP_SH.lstrip('\n')),
-        ('scripts/trackfw-credential-guard.sh', _CREDENTIAL_GUARD_SH.lstrip('\n')),
-        ('scripts/trackfw-git-branch-guard.sh', _GIT_BRANCH_GUARD_SH.lstrip('\n')),
+        ('scripts/trackfw-attention-signal.sh', _ATTENTION_SIGNAL_SH.lstrip('\n'), True),
+        ('scripts/trackfw-attention-cleanup.sh', _ATTENTION_CLEANUP_SH.lstrip('\n'), True),
+        ('scripts/trackfw-credential-guard.sh', _CREDENTIAL_GUARD_SH.lstrip('\n'), True),
+        ('scripts/trackfw-git-branch-guard.sh', _GIT_BRANCH_GUARD_SH.lstrip('\n'), True),
     ]
-    for rel_path, expected in static_scripts:
+    for rel_path, expected, exec_bit in static_scripts:
         f = _check_scaffold_artifact(
-            os.path.join(project_root, rel_path), rel_path, expected, True
+            os.path.join(project_root, rel_path), rel_path, expected, True, exec_bit
         )
         if f is not None:
             findings.append(f)
@@ -321,12 +430,13 @@ def run_scaffold_doctor(project_root: str | None = None) -> list[dict[str, Any]]
     # `trackfw discover --init` (which does NOT write slash commands) will not have
     # this directory, so we report no missing commands. A project initialized via
     # `trackfw init` or `trackfw update` will have it, and any absent file is a finding.
+    # Slash commands are markdown files (0o644) — exec_bit=False (AC11).
     claude_dir = os.path.join(project_root, CLAUDE_COMMANDS_DIR_PATH)
     if os.path.isdir(claude_dir):
         for filename, content in _get_expected_claude_commands().items():
             rel_path = f'{CLAUDE_COMMANDS_DIR_PATH}/{filename}'
             f = _check_scaffold_artifact(
-                os.path.join(project_root, rel_path), rel_path, content, True
+                os.path.join(project_root, rel_path), rel_path, content, True, False
             )
             if f is not None:
                 findings.append(f)
