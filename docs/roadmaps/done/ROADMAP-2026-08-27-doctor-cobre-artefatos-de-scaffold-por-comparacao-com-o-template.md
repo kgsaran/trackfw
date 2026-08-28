@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-08-27
 req: "docs/req/REQ-2026-08-27-doctor-nao-cobre-os-artefatos-do-scaffold-e-um-slash-command-defasado-nao-e-acusado.md"
 squad: "hades-tf, apolo-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, apolo-tf"
 
 # Roadmap: doctor cobre artefatos de scaffold por comparacao com o template
 
-> Created: 2026-08-27 | Status: wip
+> Created: 2026-08-27 | Status: done
 
 ## Context
 
@@ -188,7 +188,48 @@ rodar o teste unitário no commit certo.**
 ## Wave 3 — Barreira
 
 ### ML-3A — Reverificação
-**Status:** 🔄 Em andamento · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
+**Status:** ✅ Concluído · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
+
+**Escreve:** `docs/seguranca/2026-08-27-barreira-da-cobertura-de-scaffold.md`
+
+**Veredito:** APROVADO com residuais nomeados. Os cinco bloqueios da Wave 0 estão fechados.
+Três residuais declarados: (A) Python remedy omite versão binária quando não pip-installed;
+(B) forma Python aceita em projeto Go — lacuna de capability, custo declarado da decisão ML-1C;
+(C) artefato de outro produto no caminho `trackfw-*.yml` — teórico, probabilidade baixa.
+
+---
+
+### Auditoria do ML-3A — **APROVADO**; e ele corrigiu uma premissa minha
+
+**A correção que importa: o meu AC15 estava mal formulado.** Eu exigi um case
+`!Registered && StateModified` no `ClassifyDoctor`. Ele mediu: **o case existe** (`doctor.go:135`,
+gera `DoctorUnknownContent`) **mas serve aos artefatos do manifesto** — o scaffold segue por
+`RunScaffoldDoctor` → `checkScaffoldArtifact`, que **nunca passa por `ClassifyDoctor`**.
+
+Ou seja: **o bloqueio foi fechado por arquitetura, não pelo case que eu pedi.** A prova que vale é
+comportamental, e ele a fez: `INJECTED_LINE` → `scaffold-divergent` nos 3 runtimes. Registro porque
+eu poderia ter "verificado o AC15" olhando o case certo e concluindo errado sobre o caminho errado.
+
+**A minha decisão de pertencimento foi atacada e sobreviveu.** Conjunto de cardinalidade **2**, com
+`bytes.Equal` exato. Três ataques testados — **linha extra**, **linha removida**, **concatenação das
+duas formas** — todos rejeitados nos 3 runtimes. O afrouxamento não virou porta.
+
+**Falso-positivo em campo: zero medido.** Três configurações (`backend: go`, `ci: none`,
+`frontend: react + pnpm`) × 3 runtimes = **9 execuções**, todas `no mismatches found`. O AC4 deixou de
+ser verificado só neste repositório.
+
+**Inventário: 16 de 17 cobertos.** Os arquivos de hook (#17) ficam fora, **declarado** na Wave 0 e na
+REQ — exclusão não silenciosa.
+
+**Três residuais nomeados, todos aceitos:**
+- **A** — Python emite `vunknown` na mensagem quando não está pip-installed (`PackageNotFoundError`);
+  degrada só em desenvolvimento a partir do fonte.
+- **B** — forma do Python aceita em projeto Go: o `go build ./...` daquele projeto não roda. É lacuna
+  de **capacidade**, não de **detecção de adulteração**. **Custo declarado da minha decisão do ML-1C.**
+- **C** — artefato de outro produto no mesmo caminho: aceito, o nome de arquivo é específico do
+  trackfw.
+
+**Entrega completa.**
 
 ---
 

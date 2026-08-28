@@ -4,6 +4,33 @@
 
 ---
 
+## Sessão 2026-08-27 — hades-tf (INÍCIO: ML-3A — barreira final da cobertura de scaffold)
+
+Branch `feat/doctor-cobre-artefatos-de-scaffold`.
+
+Recebido handoff do arquiteto: Waves 0–2 commitadas. Scope: reverificação dos cinco bloqueios da Wave 0 contra o entregue; escrever `docs/seguranca/2026-08-27-barreira-da-cobertura-de-scaffold.md`.
+
+---
+
+## Sessão 2026-08-27 — hades-tf (FIM: ML-3A — barreira APROVADA / CONCLUÍDO)
+
+Branch `feat/doctor-cobre-artefatos-de-scaffold`.
+
+**O que foi feito:**
+
+- Executado `bash scripts/check-doctor-parity.sh` → 28 cenários, all passed, exit 0.
+- Medido AC15 nos 3 runtimes: injetar `INJECTED_LINE` em `scripts/trackfw-validate.sh` → `scaffold-divergent` em Go, Node e Python.
+- Três vetores de ataque contra set-membership: Python form + linha extra, Go form com última linha removida, concatenação das duas formas — todos retornam `scaffold-divergent` nos 3 runtimes.
+- Três fixtures de campo: `backend: go`, `ci: none`, `frontend: react + pnpm` — todos retornam `no mismatches found` nos 3 runtimes. Ameaça 1 fechada nos três eixos de cfg.
+- Identificado que `RunScaffoldDoctor` é caminho separado de `ClassifyDoctor` — bloqueio 5 fechado por arquitetura, não pelo case adicionado.
+- Identificado Residual A: Python emite `trackfw vunknown` por `PackageNotFoundError` quando não pip-installed (verificado).
+- Escrito `docs/seguranca/2026-08-27-barreira-da-cobertura-de-scaffold.md`.
+- ML-3A marcado ✅ no roadmap.
+
+**Veredito:** APROVADO. 3 residuais nomeados (A: Python version unknown; B: Python form aceita em projeto Go; C: artefato estrangeiro em caminho trackfw-nomeado). Nenhum bloqueia.
+
+---
+
 ## Sessão 2026-08-27 — apolo-tf (INÍCIO: correção final ML-1A — set-membership para validate.sh)
 
 Branch `feat/doctor-cobre-artefatos-de-scaffold`.
