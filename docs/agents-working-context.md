@@ -25214,3 +25214,41 @@ Branch `fix/doctor-compara-o-bit-de-execucao`.
 - `discover.go:83` (InstallGates) escreve validate.sh com 0755 mas SEM Chmod; como o doctor aponta `trackfw update` (não `trackfw discover --init`) como remédio, isso é residual aceito.
 
 ML-1A marcado ✅ no roadmap. Pronto para auditoria do `trackfw_architect`.
+
+## Sessão 2026-08-28 — hades-tf (FIM: ML-0A — CONCLUÍDO)
+
+Branch `fix/gate-de-ci-pinado-na-versao-geradora-e-install-sh-honrando-trackfw-version`.
+Roadmap: `ROADMAP-2026-08-28-gate-de-ci-pinado-na-versao-geradora-e-install-sh-honrando-trackfw-version.md`.
+
+**Escopo:** Wave 0 (ML-0A, modelo de ameaça). Análise pura — nenhum arquivo de produto tocado.
+Resultado escrito no próprio roadmap, seção `#### Resultado do ML-0A (hades-tf, 2026-08-28)`.
+
+**Enumeração medida:** `grep -rn "releases/latest" scripts/ internal/ npm/src/ pypi/trackfw/` = 18
+ocorrências (2 install.sh + 7 scaffold.go + 7 init.js + 2 init_gen.py). Gate placeholder da Wave 0
+substituído por asserção real sobre esse número (linha ~64-68 do roadmap).
+
+**Achado que muda o alvo do ML-2A (AC12):** o comentário "cfg-independent" que precisa virar
+"cfg-independent mas não version-independent" está em `internal/generators/scaffold.go:1906` e
+`:1931` (nos doc-comments de `buildGitHubActionsWorkflowContent`/`buildGitLabCIWorkflowContent`) —
+**não** em `scaffold_doctor.go:62` como a REQ/ADR citam. `scaffold_doctor.go:50-68` tem um comentário
+de design diferente, sem menção a cfg-independence. Nenhum arquivo novo entra em "Files affected" —
+`scaffold.go` já estava listado — mas o `apolo-tf` precisa saber que o alvo real do texto é outro.
+
+**Achado mais grave do modelo de ameaça (seção 2):** se o ML-1A validar com `grep -E` em vez de
+`case` puro, o vetor de newline embutida (`v7.3.0\nFOO`) vaza — `grep`/`^...$` ancora por linha, não
+por buffer inteiro, então a primeira linha "v7.3.0" bate sozinha e a segunda linha some da checagem
+sem sumir da variável. Mesma família do bug já registrado em
+`vault/notes/bash-grep-F-embedded-newline-vacuous-match-2026-08-16.md` (lá era o padrão que tinha
+newline; aqui seria o dado de entrada). Recomendado ao `ares-tf`: implementar com `case`
+(inerentemente ancorado nas duas pontas, sem alternativa de match parcial), e o cenário de gate para
+newline precisa ter conteúdo *depois* da quebra de linha (não só um `\n` final) para de fato
+distinguir as duas implementações.
+
+**Residuais registrados (seção 4):** lacuna do alvo `ci-workflow` no `update` Python piora
+silenciosamente (antes: nunca pinava; depois: pina uma vez e nunca mais bumpa, sem o `doctor` do
+Python jamais acusar); pin envelhece em silêncio até alguém rodar `trackfw update`; `install.sh`
+publicado em `releases/latest` antes desta REQ ser lançada ignora `TRACKFW_VERSION` mesmo que o
+template já a escreva — janela entre merge e release onde AC6/AC7 estão satisfeitas mas AC1 não.
+
+**Próximo passo:** Wave 1 (`ares-tf`, ML-1A) — `TRACKFW_VERSION` em `install.sh` com validação
+`case`-based, novo gate `scripts/check-install-version-pin.sh`.

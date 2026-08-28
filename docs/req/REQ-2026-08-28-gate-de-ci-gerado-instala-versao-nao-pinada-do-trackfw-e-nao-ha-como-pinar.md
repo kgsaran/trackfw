@@ -56,9 +56,12 @@ suportada); é o **asset gerado estar errado**, obrigando à customização.
       binário reporta `[scaffold-divergent]` com remédio `trackfw update`, nos 3 CLIs.
 - [ ] **AC11** — `trackfw doctor` num projeto recém-gerado pelo mesmo binário reporta
       `no mismatches` — o pin não pode gerar divergência contra si mesmo.
-- [ ] **AC12** — O comentário de `scaffold_doctor.go:62` (e equivalentes Node/Python) que declara o
-      builder cfg-independente é corrigido: continua cfg-independente, deixou de ser
-      version-independente.
+- [ ] **AC12** — Os doc-comments que declaram o builder cfg-independente são corrigidos: continuam
+      cfg-independentes, deixaram de ser version-independentes. Localização **medida** pela Wave 0:
+      `internal/generators/scaffold.go:1906` (`buildGitHubActionsWorkflowContent`) e `:1931`
+      (`buildGitLabCIWorkflowContent`), mais os equivalentes Node/Python. **Não é**
+      `scaffold_doctor.go:62` — aquele é um comentário de desenho sobre propriedade-por-caminho, sem
+      menção a cfg-independence; a referência original desta REQ estava errada.
 - [ ] **AC13** — As ocorrências da linha não pinada em textos gerados de CLAUDE.md/docs
       (`npm/src/generators/init.js`, `pypi/trackfw/generators/init_gen.py`) são atualizadas ou
       explicitamente declaradas fora do pin, sem sobrar instrução contraditória em nenhum dos 3.

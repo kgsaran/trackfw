@@ -90,9 +90,10 @@ consequência direta da decisão 3, e está detalhada abaixo.
   versão que eu tenho instalada?"* — e aqui a resposta tem consequência real: o pin no CI está
   atrasado em relação ao binário local, o que significa que o gate local e o gate do PR rodam
   versões diferentes. O remédio impresso (`trackfw update`) resolve em um passo e converge.
-- O template deixa de ser função só de `cfg` e passa a ser função de `(cfg, versão)`. O comentário em
-  `scaffold_doctor.go:62` que declara o builder cfg-independente precisa ser corrigido: ele continua
-  cfg-independente, mas não é mais version-independente. Um binário velho num projeto novo reporta
+- O template deixa de ser função só de `cfg` e passa a ser função de `(cfg, versão)`. Os doc-comments em
+  `internal/generators/scaffold.go:1906` e `:1931` que declaram o builder cfg-independente precisam
+  ser corrigidos: continuam cfg-independentes, mas não são mais version-independentes. (A redação
+  original deste ADR apontava `scaffold_doctor.go:62`; a Wave 0 mediu e o comentário não está lá.) Um binário velho num projeto novo reporta
   divergência que é do binário — risco já registrado no `ADR-2026-08-27`, que esta decisão amplia.
 - **O `update` do CLI Python não gerencia o alvo `ci-workflow`** (lacuna intencional e documentada em
   `pypi/trackfw/integrations/scaffold_doctor.py:25`). Projetos que só usam o CLI Python geram o
