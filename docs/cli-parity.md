@@ -5421,7 +5421,7 @@ hook, slash commands do Claude) são comparados contra o template que o binário
 usando o `trackfw.yaml` do próprio projeto. Nenhuma entrada é gravada no manifesto — propriedade
 por caminho, não por manifesto (ADR-2026-08-27).
 
-### As duas novas classes de finding
+### As três classes de finding
 
 <!-- trackfw-contract: gate=scripts/check-doctor-parity.sh -->
 
@@ -5429,8 +5429,9 @@ por caminho, não por manifesto (ADR-2026-08-27).
 |---|---|---|
 | `scaffold-divergent` | artefato de scaffold existe em disco mas o conteúdo difere do template que o binário atual geraria | `trackfw update` — a mensagem é neutra quanto à culpa (AC16): não há stamp de versão no artefato, então nem o binário nem o projeto podem ser identificados como o lado defasado |
 | `scaffold-missing` | artefato de scaffold que deveria existir está ausente do disco | `trackfw update` |
+| `scaffold-wrong-mode` | artefato de scaffold existe com conteúdo correto, mas o bit de execução do owner está ausente (`mode & 0o100 == 0`) em um artefato que deve ser executável | `trackfw update` — o `update` restaura o conteúdo **e** o modo (ver AC9 abaixo) |
 
-Ambas as classes têm `claim` zerado (`kind`, `item`, `target`, `surface`, `scope` = string vazia)
+As três classes têm `claim` zerado (`kind`, `item`, `target`, `surface`, `scope` = string vazia)
 — artefatos de scaffold nunca têm entrada no manifesto.
 
 ### Propriedade por caminho — artefatos cobertos pelos 3 CLIs
@@ -5505,6 +5506,57 @@ detectam a deriva antes que chegue à main.
 `PROJECT_TARGET_IDS` (ver `pypi/trackfw/commands/update.py`). O remedy de qualquer finding do
 doctor é `trackfw update`; se o `update` do Python não gerencia o caminho, o remedy seria
 enganoso. A exclusão dos CI workflows é fundamentada em propriedade, não em conveniência.
+
+### Estado `scaffold-wrong-mode` — bit de execução ausente (REQ-2026-08-28)
+
+<!-- trackfw-contract: gate=scripts/check-doctor-parity.sh,scripts/check-gates-falsify.sh -->
+
+Adicionado em REQ-2026-08-28 (ROADMAP-2026-08-28-doctor-compara-o-bit-de-execucao-dos-artefatos-de-scaffold).
+Três estados são agora distintos para artefatos de scaffold executáveis: conteúdo correto + bit
+presente (silêncio), conteúdo errado (`scaffold-divergent`, não importa o modo), conteúdo correto
++ bit ausente (`scaffold-wrong-mode`, AC3).
+
+**Quais artefatos têm `execBit=true` (os únicos que podem receber `scaffold-wrong-mode`):**
+
+| artefato | execBit | razão |
+|---|---|---|
+| `scripts/trackfw-validate.sh` | `true` | gerado com `0755` nos 3 runtimes |
+| `scripts/trackfw-attention-signal.sh` | `true` | idem |
+| `scripts/trackfw-attention-cleanup.sh` | `true` | idem |
+| `scripts/trackfw-credential-guard.sh` | `true` | idem |
+| `scripts/trackfw-git-branch-guard.sh` | `true` | idem |
+| `.claude/commands/trackfw/*.md` (9 arquivos) | `false` | markdown 0644 — nunca executável (AC4/AC11) |
+| `.github/workflows/trackfw-gate.yml` | `false` | YAML 0644 — nunca executável (AC4/AC11) |
+| `.gitlab-ci-trackfw.yml` | `false` | YAML 0644 — nunca executável (AC4/AC11) |
+
+**AC10 — máscara de bit, não igualdade:** o teste é `mode & 0o100 != 0`, não `mode == 0755`.
+Modos umask-narrowed como `0750` ou `0700` têm o bit de execução do owner e são aceitos. Um
+arquivo em `0755` que perdeu o bit para `0644` não tem o bit e é acusado.
+
+**AC5 — guarda de plataforma Windows:** no Windows (`CurrentGOOS == "windows"`) o bit de execução
+não é representável em NTFS. A verificação de modo é suprimida inteiramente — `scaffold-wrong-mode`
+nunca é emitido nesta plataforma. O doctor imprime uma nota informando a supressão. O gate
+`check-doctor-parity.sh` não cobre Windows (os CI runners do projeto são Linux/macOS); testes
+unitários específicos de plataforma no Go cobrem a guarda via `generators.CurrentGOOS`.
+
+**AC9 — `trackfw update` restaura o modo em arquivos existentes:** `os.WriteFile` / `writeFileSync`
+aplicam `perm` somente no evento `O_CREATE`; em arquivo existente (`O_TRUNC`) o conteúdo é
+reescrito mas o inode mode não é tocado. Cada runtime adiciona uma chamada explícita de Chmod
+**após** a escrita para restaurar `0755` mesmo quando o arquivo já existia:
+
+| runtime | chamada | local |
+|---|---|---|
+| Go | `os.Chmod(path, 0755)` | `generateValidateScript` em `internal/generators/scaffold.go` |
+| Node.js | `fs.chmodSync(path, 0o755)` | `generateValidateScript` em `npm/src/generators/init.js` |
+| Python | `os.chmod(path, 0o755)` | `_generate_validate_script` em `pypi/trackfw/generators/init_gen.py` — já era incondicional antes de AC9 |
+
+**Falsificação nas três direções (gate `check-gates-falsify.sh`, Cenários 179–181):**
+
+| cenário | sabotagem | o que o gate detecta |
+|---|---|---|
+| 179 (direção A) | `execBit &&` → `false  &&` em `scaffold_doctor.go:324` — a condição de modo nunca dispara | `check-doctor-parity.sh` reprova: cenário (p) `scaffold-wrong-mode-detected` não encontra `[scaffold-wrong-mode]` no Go |
+| 180 (direção B) | `execBit &&` → `true   &&` — discriminante AC11 silenciado: todos os artefatos têm o bit verificado, incluindo os 0644 | doctor Go invocado diretamente em fixture com slash commands (`--targets validate-script,agent-hooks,claude-commands`): 9 `scaffold-wrong-mode` falsos positivos em `.claude/commands/trackfw/*.md` |
+| 181 (direção C) | `os.Chmod` removido de `generateValidateScript` — `update` reescreve o conteúdo mas não restaura o bit | `cmp -s` confirma que `apply()` rodou (conteúdo restaurado); `test ! -x` confirma que o bit permanece ausente após o update |
 
 ---
 

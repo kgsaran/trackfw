@@ -4,6 +4,44 @@
 
 ---
 
+## Sessão 2026-08-28 — apolo-tf (INÍCIO: ML-2A — falsificação nas duas direções, bit de execução)
+
+Branch `fix/doctor-compara-o-bit-de-execucao`.
+
+Recebido handoff do arquiteto: ML-0A e ML-1A concluídos e auditados. Escopo: Cenários 179, 180, 181 em `scripts/check-gates-falsify.sh` + contrato `scaffold-wrong-mode` em `docs/cli-parity.md`.
+
+---
+
+## Sessão 2026-08-28 — apolo-tf (FIM: ML-2A — falsificação nas duas direções, bit de execução — CONCLUÍDO)
+
+Branch `fix/doctor-compara-o-bit-de-execucao`.
+
+**O que foi feito:**
+
+- `scripts/check-gates-falsify.sh`: Cenários 179/180/181 acrescentados (linhas antes da última linha do script). Contagem atualizada de 178 para 181. Descrições dos três cenários adicionadas ao echo final.
+  - Cenário 179 (Direção A): `execBit &&` → `false  &&` — gate `check-doctor-parity.sh` detecta via cenário (p).
+  - Cenário 180 (Direção B): `execBit &&` → `true   &&` — doctor Go invocado diretamente em fixture com slash commands (execBit=false); 9 falsos positivos em `.claude/commands/trackfw/*.md`.
+  - Cenário 181 (Direção C): `os.Chmod` removido de `generateValidateScript` — `cmp -s` confirma conteúdo restaurado (apply() rodou); `test ! -x` confirma bit ainda ausente.
+- `docs/cli-parity.md`: Seção "As duas novas classes" renomeada para "As três classes de finding" com `scaffold-wrong-mode` adicionado na tabela. Nova subseção `### Estado scaffold-wrong-mode` com anotação `<!-- trackfw-contract: gate=scripts/check-doctor-parity.sh,scripts/check-gates-falsify.sh -->` documentando AC5, AC9, AC10, AC11 e os três cenários de falsificação.
+- `docs/roadmaps/wip/ROADMAP-2026-08-28-doctor-compara-o-bit-de-execucao-dos-artefatos-de-scaffold.md`: ML-2A marcado como `✅ Concluído`.
+
+**Evidências:**
+
+- `bash scripts/check-doctor-parity.sh`: exit 0, "All check-doctor-parity.sh scenarios passed."
+- `bash scripts/check-parity-contract-coverage.sh`: exit 0, "OK — nenhuma anotação inválida e nenhuma seção sem anotação"
+- Cenários 179, 180, 181 rodados isoladamente: todos 6 braços OK (baseline + detecção × 3).
+- `make build`: exit 0.
+- `make test` (go test ./...): todos ok, exit 0.
+- `trackfw validate`: 0 violations, 16 warnings pre-existentes.
+
+**Fronteiras mantidas:**
+
+- Nenhum arquivo de código de produto (Go/Node.js/Python) tocado neste ciclo.
+- Fixtures em `/tmp`, nunca contra o `$HOME` real.
+- Sem commit, sem push (exclusivos do trackfw-architect).
+
+---
+
 ## Sessão 2026-08-28 — apolo-tf (INÍCIO: correção pontual pós-auditoria ML-1A)
 
 Branch `fix/doctor-compara-o-bit-de-execucao`.

@@ -142,9 +142,42 @@ barreira deve olhar**, já que o `discover --init` é escritor legítimo.
 ## Wave 2 — Gate
 
 ### ML-2A — Falsificação nas duas direções
-**Status:** 🔄 Em andamento · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-1A
+**Status:** ✅ Concluído (apolo-tf, 2026-08-28) · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-1A
 
 **Critérios de aceite:** AC7, AC8 da REQ
+
+---
+
+### Auditoria do ML-2A — aprovada; e o terceiro cenário é o que protege o remédio
+
+Pedi **três** direções, não duas. A terceira não estava no roadmap e é a mais valiosa:
+
+- **179 (A)** — verificação de modo silenciada ⇒ `check-doctor-parity` reprova.
+- **180 (B)** — verificação aplicada a **todos** os artefatos ⇒ 9 falsos-positivos nos slash commands
+  (`0644`) detectados.
+- **181 (C)** — 🔴 **o `os.Chmod` do ML-1A removido** ⇒ o remédio volta a ser inerte.
+
+**O 181 está construído do jeito certo**, e conferi as asserções:
+
+```bash
+if ! cmp -s "$WORK/s181-canonical.sh" "$T181_SCRIPT"; then
+  FAIL: binario sabotado nao restaurou o CONTEUDO      <- guard de vacuidade
+if test -x "$T181_SCRIPT"; then
+  FAIL: binario sabotado restaurou o BIT               <- o que se quer provar
+```
+
+A primeira asserção é o que dá valor à segunda: prova que o `update` **rodou** e fez o trabalho dele.
+Sem ela, *"o bit não voltou"* seria compatível com *"o comando nem executou"*, e o cenário passaria
+por acidente. Mesma disciplina do sentinela no `barrier`: verificar o **efeito**, e provar que a
+máquina estava ligada quando o efeito não veio.
+
+**Sem o 181**, alguém removeria o `Chmod` num refactor e o `doctor` voltaria a apontar para um comando
+que não conserta — em silêncio, porque o `update` continuaria saindo com exit 0.
+
+```
+make quality (CI-exata, minha)  exit 0 · 181 cenarios
+validate                        16 warnings, 0 violations
+```
 
 ---
 
