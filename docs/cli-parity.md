@@ -5438,7 +5438,10 @@ As três classes têm `claim` zerado (`kind`, `item`, `target`, `surface`, `scop
 
 <!-- trackfw-contract: gate=scripts/check-doctor-parity.sh -->
 
-Os seguintes artefatos são verificados pelo Go e pelo Node.js (sempre que `trackfw.yaml` existe):
+Os seguintes artefatos são verificados pelos 3 CLIs (sempre que `trackfw.yaml` existe). Até
+REQ-2026-08-28 os dois workflows de CI eram exclusivos de Go/Node — a exclusão foi fechada (ver
+"Contrato do pin de versão nos templates de CI" abaixo); os 3 CLIs cobrem os 8 artefatos desta
+tabela hoje.
 
 | artefato | condicional |
 |---|---|
@@ -5489,7 +5492,7 @@ detectam a deriva antes que chegue à main.
 
 ### Cobertura por runtime — tabela completa
 
-<!-- trackfw-contract: gate=scripts/check-doctor-parity.sh partial=exclusão de CI workflow no Python não coberta cross-CLI por gate único (fixtures não usam ci: para evitar divergência legítima Python-vs-Go/Node; ver "CI workflow exclusion" abaixo) -->
+<!-- trackfw-contract: gate=scripts/check-doctor-parity.sh,scripts/check-ci-workflow-pin-parity.sh partial=as fixtures (g–r) de check-doctor-parity.sh nunca declaram `ci:` em trackfw.yaml (restrição 5 do cabeçalho do gate) — checkCIWorkflowArtifact nunca dispara para NENHUM dos 3 runtimes nesse gate, então as 2 linhas de CI workflow desta tabela não são exercitadas cross-CLI pela detecção do doctor; a byte-identidade dos 3 templates entre os 3 runtimes É coberta por check-ci-workflow-pin-parity.sh, mas isso prova o CONTEÚDO gerado, não a DETECÇÃO de divergência pelo doctor nesses 2 caminhos -->
 
 | artefato | Go | Node.js | Python |
 |---|---|---|---|
@@ -5499,13 +5502,89 @@ detectam a deriva antes que chegue à main.
 | `scripts/trackfw-credential-guard.sh` | sim | sim | sim |
 | `scripts/trackfw-git-branch-guard.sh` | sim | sim | sim |
 | `.claude/commands/trackfw/<cmd>.md` | sim (AC14) | sim (AC14) | sim (AC14) |
-| `.github/workflows/trackfw-gate.yml` | sim (AC13: `ci: github-actions`) | sim (AC13) | não — ver abaixo |
-| `.gitlab-ci-trackfw.yml` | sim (AC13: `ci: gitlab-ci`) | sim (AC13) | não — ver abaixo |
+| `.github/workflows/trackfw-gate.yml` | sim (AC13: `ci: github-actions`) | sim (AC13) | sim (AC13/AC16, REQ-2026-08-28) |
+| `.gitlab-ci-trackfw.yml` | sim (AC13: `ci: gitlab-ci`) | sim (AC13) | sim (AC13/AC16, REQ-2026-08-28) |
 
-**CI workflow exclusion — Python (principled):** o `update` do Python não inclui `ci-workflow` em
-`PROJECT_TARGET_IDS` (ver `pypi/trackfw/commands/update.py`). O remedy de qualquer finding do
-doctor é `trackfw update`; se o `update` do Python não gerencia o caminho, o remedy seria
-enganoso. A exclusão dos CI workflows é fundamentada em propriedade, não em conveniência.
+**Exclusão apagada (AC16, REQ-2026-08-28):** até aqui esta seção documentava uma exclusão
+"principiada" do Python para os dois workflows de CI — o `update` do Python não declarava
+`ci-workflow` em `PROJECT_TARGET_IDS`, então o `doctor` nunca podia acusar divergência sem um
+remédio funcional. A REQ-2026-08-28 mediu que a premissa da exclusão nunca foi verdadeira: o
+Python **nunca gerou** workflow de CI (não havia `--ci` no `init`, nem gerador em
+`pypi/trackfw/generators/`) — não era uma exclusão de propriedade, era uma lacuna de escopo. A
+REQ fechou a lacuna: Python agora gera os 2 templates (`build_github_actions_workflow_content`,
+`build_gitlab_ci_workflow_content` em `pypi/trackfw/generators/init_gen.py`), declara
+`ci-workflow` em `PROJECT_TARGET_IDS` (`pypi/trackfw/commands/update.py`) e cobre os 2 arquivos
+no `doctor` (`pypi/trackfw/integrations/scaffold_doctor.py`) — nas mesmas condições que Go e
+Node. Ver "Contrato do pin de versão nos templates de CI" abaixo para o detalhe do que ficou
+byte-idêntico entre os 3.
+
+### Contrato do pin de versão nos templates de CI (REQ-2026-08-28, AC6-AC9, AC14, AC17)
+
+<!-- trackfw-contract: gate=scripts/check-ci-workflow-pin-parity.sh -->
+
+Três templates de CI, cada um com um builder por runtime, nascem pinados na versão do binário
+que gerou/atualizou o projeto — não mais "cfg-independente e version-independente": os doc
+comments de `buildGitHubActionsWorkflowContent`/`buildGitLabCIWorkflowContent`
+(`internal/generators/scaffold.go:1906`/`:1931`) foram corrigidos para "cfg-independente, mas
+NÃO version-independente" (AC12).
+
+| template | caminho | builder Go | builder Node.js | builder Python |
+|---|---|---|---|---|
+| GitHub Actions gate | `.github/workflows/trackfw-gate.yml` | `buildGitHubActionsWorkflowContent` (`internal/generators/scaffold.go`, não exportado) | `buildGitHubActionsWorkflowContent` (`npm/src/generators/init.js`, exportado) | `build_github_actions_workflow_content` (`pypi/trackfw/generators/init_gen.py`) |
+| GitLab CI gate | `.gitlab-ci-trackfw.yml` | `buildGitLabCIWorkflowContent` (idem, não exportado) | `buildGitLabCIWorkflowContent` (idem, exportado) | `build_gitlab_ci_workflow_content` (idem) |
+| Discover validate workflow | `.github/workflows/trackfw-validate.yml` | `BuildDiscoverGitHubActionsWorkflowContent` (`internal/generators/scaffold_doctor.go`, exportado) | `buildDiscoverGitHubActionsWorkflowContent` (`npm/src/commands/discover.js`, exportado) | `build_discover_github_actions_workflow_content` (`pypi/trackfw/commands/discover.py`) |
+
+**De onde vem a versão em cada runtime** — nunca um literal hardcoded no template, sempre lida da
+fonte de versão do próprio runtime:
+
+| runtime | fonte |
+|---|---|
+| Go | `internal/version.Version` |
+| Node.js | `version` de `npm/package.json` |
+| Python | `trackfw.__version__` |
+
+**O que cada template pina:**
+
+- `trackfw-gate.yml` / `.gitlab-ci-trackfw.yml`: bloco `env:`/`variables:` com
+  `TRACKFW_VERSION: "<versão>"` (AC6/AC7) — a variável que `scripts/install.sh` passou a honrar
+  (AC1-AC5, gate `scripts/check-install-version-pin.sh`) e **valida** com `case` POSIX (não
+  `grep -E`, que âncora por linha, não por buffer inteiro) contra `^v?[0-9]+\.[0-9]+\.[0-9]+$`
+  **antes** de compor qualquer URL, `curl`/`wget`. `timeout-minutes: 10` (GitHub Actions) e
+  `timeout: 10 minutes` (GitLab CI) são pinados junto — perder qualquer um dos dois foi o defeito
+  real que motivou esta REQ (incidente de 2026-08-27 no cmdb, ver Motivation da REQ).
+- `trackfw-validate.yml`: o passo `go install github.com/kgsaran/trackfw/cmd/trackfw@v<versão>`
+  usa a versão pinada, nunca `@latest` — este é o **segundo mecanismo de instalação** do gate de
+  CI, distinto do `install.sh` acima; a Wave 0 original não o enumerou porque o padrão de busca
+  dado a ela (`releases/latest`) nunca casa com `@latest` (registrado na seção 1 do resultado do
+  ML-0A do roadmap).
+
+**`trackfw update` gerencia os três arquivos, nos 3 CLIs, com uma assimetria deliberada
+(AC17):** o alvo `ci-workflow` sempre reescreve `trackfw-gate.yml`/`.gitlab-ci-trackfw.yml` quando
+declarado (condição: `ci: github-actions`/`gitlab-ci` no `trackfw.yaml`), mas **só refresca**
+`trackfw-validate.yml` **quando o arquivo já existe em disco** — nunca cria. Quem decide se esse
+arquivo existe é `trackfw discover --init` (o sinal de descoberta), não `update`; sem essa regra,
+um projeto com `ci: none` que rodou `discover` teria o arquivo fora de qualquer gestão (o alvo
+`ci-workflow` também passa a ser incluído quando `trackfw-validate.yml` já existe, mesmo com
+`ci: none`, fechando exatamente esse buraco). Idempotência: `update` duas vezes seguidas com o
+mesmo binário não reporta `updated` na segunda chamada.
+
+**Gate falsificável:** `scripts/check-ci-workflow-pin-parity.sh` dumpa os 9 builders (3 templates
+× 3 runtimes) em sandbox e compara byte a byte, nomeando o par que diverge quando falha; falsifica
+nas duas direções — template sem `TRACKFW_VERSION`, com versão diferente da que o binário
+reporta, sem `timeout-minutes`/`timeout: 10 minutes`, e `trackfw-validate.yml` com `@latest` em
+vez de `@v<versão>` — todos reprovam com a razão que o **próprio gate** emite. Guarda de vacuidade
+e idempotência (duas execuções sobre o mesmo commit produzem os mesmos 9 arquivos) inclusas.
+
+#### Assimetria residual — `init` do Python sem `--ci`/`--hooks` (fora de escopo)
+
+<!-- trackfw-contract: gap reason=o `init` do CLI Python continua sem as flags `--ci`/`--hooks`, e o alvo `git-hooks` continua não declarado no `update` do Python — o Python agora GERENCIA o workflow de um projeto cujo trackfw.yaml já declara `ci:` (esta REQ), mas ESCOLHER o CI/hooks na criação (`init`) continua fora de escopo. Fechamento rastreado em REQ-2026-08-28-cli-python-nao-oferece-superficie-de-ci-e-git-hooks-no-init-e-nao-declara-git-hooks-como-alvo-do-update.md, que declara dependência desta REQ. -->
+
+O `init` do CLI Python não tem as flags `--ci` nem `--hooks`, e o alvo `git-hooks` continua não
+declarado no `update` do Python. O Python passou a **gerenciar** o workflow de um projeto cujo
+`trackfw.yaml` já declara `ci:`; **escolher** o CI na criação do projeto continua fora. Rastreado
+em
+`REQ-2026-08-28-cli-python-nao-oferece-superficie-de-ci-e-git-hooks-no-init-e-nao-declara-git-hooks-como-alvo-do-update.md`,
+que declara dependência desta REQ.
 
 ### Estado `scaffold-wrong-mode` — bit de execução ausente (REQ-2026-08-28)
 

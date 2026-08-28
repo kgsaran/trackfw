@@ -607,11 +607,62 @@ defeito de referência acima — está fora dos arquivos permitidos a este ML.
 `REQ-2026-08-28-cli-python-nao-oferece-superficie-de-ci-e-git-hooks-no-init-e-nao-declara-git-hooks-como-alvo-do-update.md`,
 que declara dependência desta REQ.
 
+## Wave 2b — Corretivas (ML-2D a ML-2H)
+> Dependências: Wave 2 auditada. Todas nasceram da auditoria do arquiteto ou de achado de agente,
+> e todas já estão concluídas e commitadas.
+
+### ML-2D — `timeout: 10 minutes` no GitLab de Go e Node
+**Status:** ✅ Concluído · `apolo-tf`
+O Python emitia a linha, Go e Node não. Alinhado **para cima**: o análogo GitHub
+(`timeout-minutes: 10`) já existia, e foi a perda desse controle que causou o incidente de
+2026-08-27 no cmdb. Verificado por diff byte a byte dos 3.
+
+### ML-2E — retarget do alvo `ci-workflow` do `update` do Node
+**Status:** ✅ Concluído · `apolo-tf`
+O alvo apontava para `trackfw-validate.yml` via `discover.writeCIWorkflowForce` — arquivo
+diferente do que o Go gerencia. O pin desta REQ nunca receberia bump no Node: **AC9
+insatisfazível**. Retargetado para o mesmo par do Go, e passou a cobrir `gitlab-ci`, que estava
+fora da condição.
+
+### ML-2F — segundo mecanismo de instalação (`go install …@latest`)
+**Status:** ✅ Concluído · `apolo-tf`
+`.github/workflows/trackfw-validate.yml`, escrito pelo `discover` nos 3 CLIs, instalava por
+`go install …@latest` — tão não pinado quanto o `install.sh` era. Passou a `@v<versão do binário>`
+e ganhou cobertura no `doctor` dos 3, que não existia em nenhum. **A Wave 0 não tinha visto porque
+o padrão de busca que eu dei a ela (`releases/latest`) nunca casa com `@latest`** — ver a nota de
+falsificação na seção 1 do ML-0A.
+
+### ML-2G — `update` gerencia o `trackfw-validate.yml`
+**Status:** ❌ Reprovado na auditoria, corrigido pelo ML-2H · `apolo-tf`
+Implementou o AC17 no caminho de **alvos** (`runFileTarget`, usado por `--targets`/`--json`) e
+declarou a prova ponta-a-ponta feita. Mas o `trackfw update` tem dois caminhos, e o que o usuário
+digita — e que o `doctor` manda rodar — é o outro. Os testes dele asseriam pelo caminho de alvos
+enquanto alegavam provar o remédio do `doctor`. **Registrado como reprovado, não apagado:** é a
+mesma família dos cinco defeitos da 7.3.0, cometida dentro da REQ que os combate.
+
+### ML-2H — o caminho simples do `update`
+**Status:** ✅ Concluído · `apolo-tf`
+`Update()` (`update.go:37`) e `_run()` (`update.py:420`) chamavam o gerador direto, sem passar pelo
+caminho de alvos; o Node nunca teve essa cisão. Corrigido **reaproveitando o helper** que o caminho
+de alvos já usava, em vez de copiar a regra — duplicação foi como o bug nasceu. Testes do 2G
+reescritos para exercitar o comando nu.
+
+**Auditoria do arquiteto — os 3 CLIs reais, não chamada de função:**
+
+| | doctor→update→doctor | não cria | `ci: none` refresca |
+|---|---|---|---|
+| Go (`bin/trackfw`) | acusa → `@v7.3.0` → limpo | não cria | `@v7.3.0` |
+| Node (`npm/bin/trackfw`) | acusa → `@v7.3.0` → limpo | não cria | `@v7.3.0` |
+| Python (`-m trackfw`) | acusa → `@v7.3.0` → limpo | não cria | `@v7.3.0` |
+
+**Byte-identidade dos 9 builders (3 templates × 3 CLIs):** idênticos.
+**`make quality` completo:** exit 0, 181 cenários de falsificação.
+
 ## Wave 3 — Gate de paridade, contrato e evidência
 > Dependências: Wave 2 completa nos três. ML único — toca arquivos compartilhados pelos 3 stacks.
 
 ### ML-3A — Gate falsificável de paridade do pin + `docs/cli-parity.md`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** `artemis-tf`
 **Files affected:** `scripts/check-ci-workflow-pin-parity.sh` (novo), `docs/cli-parity.md`,
 `Makefile`
@@ -641,3 +692,29 @@ TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality
 Antes do PR: revisão `hefesto-tf` (qualidade) e `hades-tf` (segurança — a validação de AC3/AC4 é o
 ponto de maior risco do roadmap), auditoria de diff pelo arquiteto, e
 `trackfw barrier <roadmap> --wave 3`.
+
+#### Resultado da Wave 3 (artemis-tf, 2026-08-28)
+
+**ML-3A — ✅ Concluído.** `scripts/check-ci-workflow-pin-parity.sh`, 15 cenários, exit 0. Extrai os
+9 builders (3 templates × 3 runtimes) e compara byte a byte; os dois builders Go do primeiro par não
+são exportados e saem por um `_test.go` temporário removido por `trap` — verificado que não sobra
+resíduo nem quando o gate falha.
+
+Auditoria do arquiteto, falsificando de verdade: apagar `timeout-minutes: 10` de `scaffold.go` faz o
+gate reprovar com dois `FAIL` — um nomeando os pares divergentes, outro nomeando a linha ausente.
+
+`docs/cli-parity.md`: a seção "CI workflow exclusion — Python (principled)" foi **apagada** (AC16),
+a tabela de cobertura marca `sim` para os 3, e há seção nova com o contrato do pin anotada com
+`gate=`. A assimetria que permanece — `init` do Python sem `--ci`/`--hooks` — está anotada como
+`gap reason=` apontando para a REQ dependente.
+
+**Correção da própria agente, digna de registro:** no primeiro passe ela removeu o `partial=` inteiro
+da anotação da tabela, o que passaria a alegar que o `check-doctor-parity.sh` exercita aquelas linhas
+cross-CLI. Não exercita — as fixtures dele nunca definem `ci:`, então o check de CI workflow não
+dispara em runtime nenhum. Reintroduziu o `partial=` nomeando a limitação exata.
+
+**ML-3B — ✅ Concluído.** A mesma afirmação falsa que o AC16 apagou do `cli-parity.md` sobrevivia no
+cabeçalho de `scripts/check-doctor-parity.sh:404` ("Python's `update` does not manage ci-workflow").
+Reescrita para dizer o que é verdade — os 3 gerenciam; o motivo de este gate não exercitar o caminho
+é que as fixtures não definem `ci:` — e apontando para onde a cobertura existe. Diff **só de
+comentário**, verificado; 36 cenários, mesma contagem de antes.
