@@ -443,13 +443,31 @@ def _install_lefthook(root_dir: str) -> None:
         print("Aviso: lefthook não encontrado no PATH — lefthook.yml criado, mas 'lefthook install' foi ignorado")
 
 
-def _write_ci_workflow(root_dir: str) -> None:
-    workflows_dir = os.path.join(root_dir, ".github", "workflows")
-    os.makedirs(workflows_dir, exist_ok=True)
-    dest = os.path.join(workflows_dir, "trackfw-validate.yml")
-    if _is_file(dest):
-        return  # idempotente
-    content = (
+# DISCOVER_GITHUB_ACTIONS_WORKFLOW_PATH is the canonical relative path of the second,
+# independent CI workflow trackfw writes — the one `trackfw discover --init` generates
+# via install_gates, distinct from GITHUB_ACTIONS_WORKFLOW_PATH (trackfw-gate.yml,
+# written by init/update, trackfw.generators.init_gen). Both files can coexist in the
+# same project (ADR-2026-08-28). Exported so scaffold_doctor.py can compare against it
+# by path.
+DISCOVER_GITHUB_ACTIONS_WORKFLOW_PATH = ".github/workflows/trackfw-validate.yml"
+
+
+def build_discover_github_actions_workflow_content() -> str:
+    """Returns the content trackfw writes to DISCOVER_GITHUB_ACTIONS_WORKFLOW_PATH.
+
+    Mirrors generators.BuildDiscoverGitHubActionsWorkflowContent in
+    internal/generators/scaffold_doctor.go (Go, canonical source of truth) and
+    npm/src/commands/discover.js's buildDiscoverGitHubActionsWorkflowContent
+    byte-for-byte for the same version.
+
+    NOT version-independent (ADR-2026-08-28, REQ-2026-08-28 AC6/AC7): the
+    `go install .../cmd/trackfw@vX.Y.Z` step pins the second install mechanism
+    (`go install ...@latest`) to trackfw.__version__ — never a literal. Scaffold
+    doctor calls this to compare disk content against the current template
+    (AC10/AC11).
+    """
+    from trackfw import __version__
+    return (
         "name: trackfw validate\n"
         "on: [push, pull_request]\n"
         "jobs:\n"
@@ -460,9 +478,18 @@ def _write_ci_workflow(root_dir: str) -> None:
         "      - uses: actions/setup-go@v5\n"
         "        with:\n"
         '          go-version: "1.22"\n'
-        "      - run: go install github.com/kgsaran/trackfw/cmd/trackfw@latest\n"
+        f"      - run: go install github.com/kgsaran/trackfw/cmd/trackfw@v{__version__}\n"
         "      - run: trackfw validate\n"
     )
+
+
+def _write_ci_workflow(root_dir: str) -> None:
+    workflows_dir = os.path.join(root_dir, ".github", "workflows")
+    os.makedirs(workflows_dir, exist_ok=True)
+    dest = os.path.join(workflows_dir, "trackfw-validate.yml")
+    if _is_file(dest):
+        return  # idempotente
+    content = build_discover_github_actions_workflow_content()
     with open(dest, "w", encoding="utf-8") as f:
         f.write(content)
 

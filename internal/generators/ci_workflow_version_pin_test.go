@@ -37,6 +37,9 @@ func TestBuildGitLabCIWorkflowContent_PinsCurrentVersion(t *testing.T) {
 	if !strings.Contains(content, "variables:") {
 		t.Fatalf("gitlab-ci content missing variables: block\ngot:\n%s", content)
 	}
+	if !strings.Contains(content, "timeout: 10 minutes") {
+		t.Fatalf("gitlab-ci content missing timeout: 10 minutes (GitLab analogue of GitHub Actions' timeout-minutes: 10 — ADR-2026-08-28)\ngot:\n%s", content)
+	}
 }
 
 // TestCIWorkflowVersionPin_NotHardcoded proves the pinned version tracks

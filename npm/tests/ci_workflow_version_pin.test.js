@@ -63,6 +63,12 @@ test('buildGitLabCIWorkflowContent pins TRACKFW_VERSION to package.json version'
   const varsIdx = content.indexOf('variables:')
   const beforeScriptIdx = content.indexOf('before_script:')
   assert.ok(varsIdx > -1 && beforeScriptIdx > -1 && varsIdx < beforeScriptIdx, 'variables: must precede before_script:')
+  assert.ok(
+    content.includes('timeout: 10 minutes'),
+    'expected timeout: 10 minutes (GitLab analogue of GitHub Actions\' timeout-minutes: 10 — ADR-2026-08-28)',
+  )
+  const timeoutIdx = content.indexOf('timeout: 10 minutes')
+  assert.ok(timeoutIdx > -1 && timeoutIdx < varsIdx, 'timeout: 10 minutes must precede variables:')
 })
 
 test('no hardcoded version literal in the CI workflow builders (source-level)', () => {

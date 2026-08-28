@@ -64,44 +64,51 @@ Consolidado — AC1 a AC15 da REQ. Detalhe por ML abaixo.
 
 **Gates da wave:**
 ```bash
-# Wave 0 gate — a enumeração declarada tem que bater com a busca real.
+# Wave 0 gate — nenhum mecanismo de instalação não pinado sobra em código de produto.
 #
-# CORREÇÃO 2 (arquiteto, 2026-08-28, após o ML-2B): o padrão estava errado.
-# A versão anterior buscava só "releases/latest" e por isso declarava a lista
-# fechada em 4 arquivos — cega para o SEGUNDO mecanismo de instalação,
-# `go install github.com/kgsaran/trackfw/cmd/trackfw@latest`, usado pelo
-# workflow `.github/workflows/trackfw-validate.yml` que o `discover` escreve
-# nos 3 CLIs. Sinal verde sobre controle inerte: exatamente a classe de
-# defeito que esta REQ existe para matar, cometida pelo gate da REQ.
+# CORREÇÃO 3 (arquiteto, 2026-08-28, após ML-2D/2E/2F): o invariante "conjunto de
+# arquivos que contêm o padrão" virou ruído. Depois que os MLs corretivos pinaram
+# tudo, os arquivos que ainda casam com "@latest" casam por CITAREM a string em
+# comentário ou em asserção negativa de teste — prosa, não superfície. Um gate que
+# não distingue as duas coisas volta a ser inerte.
 #
-# O gate agora varre os DOIS mecanismos. 8 superfícies, não 4.
+# O invariante certo é DIRETO: zero ocorrência do defeito em código de produto.
+# Testes que asseguram a ausência, README e site (instrução de instalação para
+# humano, onde @latest é o correto) ficam fora por construção.
 #
-# CORREÇÃO 1 (2026-08-28): a versão original contava com `grep -rn` direto nos
-# diretórios e media 19 numa árvore com `__pycache__` — não hermética.
-# Corrigido para varrer só fonte RASTREADA pelo git.
-#
-# O invariante é o CONJUNTO DE ARQUIVOS, não a contagem: a Wave 2 pode mudar
-# o número de ocorrências dentro de um arquivo já declarado; o que não pode é
-# aparecer uma superfície nova.
+# Histórico das correções anteriores, mantido porque cada uma foi um controle que
+# falhou: (1) contava com `grep -rn` nos diretórios e media um .pyc de __pycache__,
+# não hermético; (2) buscava só "releases/latest" e era cega para o segundo
+# mecanismo, `go install ...@latest` — a Wave 0 declarou enumeração fechada sobre
+# um padrão incompleto.
 set -eu
-esperado="internal/discover/discover.go
-internal/generators/scaffold.go
-npm/src/commands/discover.js
+
+# 1. O defeito: instalação por go install sem pin, em código de produto.
+prod=$(git ls-files -z scripts internal npm/src pypi/trackfw \
+  | xargs -0 grep -l "trackfw@latest" 2>/dev/null \
+  | grep -v -e "_test\.go$" -e "\.test\.js$" -e "/tests/" || true)
+if [ -n "$prod" ]; then
+  echo "Wave 0: go install sem pin ainda presente em codigo de produto:" >&2
+  echo "$prod" >&2
+  exit 1
+fi
+
+# 2. O fetch do install.sh continua apontando para releases/latest — INTENCIONAL:
+#    o script e sempre o mais recente, e quem pina o binario e TRACKFW_VERSION.
+#    O conjunto e fechado nos 3 geradores; superficie nova aqui exige revisao.
+esperado="internal/generators/scaffold.go
 npm/src/generators/init.js
-pypi/trackfw/commands/discover.py
-pypi/trackfw/generators/init_gen.py
-scripts/check-install-version-pin.sh
-scripts/install.sh"
+pypi/trackfw/generators/init_gen.py"
 medido=$(git ls-files -z scripts internal npm/src pypi/trackfw \
-  | xargs -0 grep -l -e "releases/latest" -e "@latest" 2>/dev/null | sort)
+  | xargs -0 grep -l "releases/latest/download/install.sh" 2>/dev/null | sort)
 if [ "$medido" != "$esperado" ]; then
-  echo "Wave 0: conjunto de superfícies mudou — a enumeração não fecha mais." >&2
+  echo "Wave 0: conjunto de geradores que buscam install.sh mudou." >&2
   echo "esperado:"; echo "$esperado" >&2
   echo "medido:";   echo "$medido"   >&2
   exit 1
 fi
 [ -n "$medido" ] || { echo "guarda de vacuidade: nenhum arquivo varrido" >&2; exit 1; }
-echo "Wave 0 gate OK — 8 superfícies declaradas nos dois mecanismos de instalação."
+echo "Wave 0 gate OK — zero go install sem pin; 3 geradores buscando install.sh."
 ```
 
 #### Resultado do ML-0A (hades-tf, 2026-08-28)

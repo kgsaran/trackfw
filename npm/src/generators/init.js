@@ -253,6 +253,7 @@ function buildGitLabCIWorkflowContent(_cfg) {
 trackfw-gate:
   stage: test
   image: alpine:latest
+  timeout: 10 minutes
   variables:
     TRACKFW_VERSION: "${PACKAGE_VERSION}"
   before_script:

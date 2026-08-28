@@ -261,19 +261,7 @@ func writeCIWorkflow(rootDir string) error {
 		// idempotente — não sobrescreve
 		return nil
 	}
-	content := `name: trackfw validate
-on: [push, pull_request]
-jobs:
-  governance:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.22"
-      - run: go install github.com/kgsaran/trackfw/cmd/trackfw@latest
-      - run: trackfw validate
-`
+	content := generators.BuildDiscoverGitHubActionsWorkflowContent()
 	if err := os.WriteFile(dest, []byte(content), 0644); err != nil {
 		return fmt.Errorf("writing CI workflow: %w", err)
 	}

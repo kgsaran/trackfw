@@ -1947,6 +1947,7 @@ func buildGitLabCIWorkflowContent(_ Config) string {
 trackfw-gate:
   stage: test
   image: alpine:latest
+  timeout: 10 minutes
   variables:
     TRACKFW_VERSION: "` + version.Version + `"
   before_script:

@@ -189,7 +189,6 @@ const PROJECT_TARGET_IDS = [
 // filtering afterwards would still have written every unrequested target.
 function buildProjectTargets(cwd, cfg, identityConfig, { dryRun, installMissing }, wanted) {
   const generators = require('../generators/init');
-  const discover = require('./discover');
   const hooksGen = require('../generators/hooks');
   const include = (id) => !wanted || wanted.includes(id);
 
@@ -274,13 +273,32 @@ function buildProjectTargets(cwd, cfg, identityConfig, { dryRun, installMissing 
     installMissing,
   }));
 
-  if (include('ci-workflow') && (cfg.ci === 'github-actions' || cfg.ci === 'github_actions')) {
+  // ci-workflow mirrors Go's internal/generators/update.go:1925 target: it manages
+  // the SAME pair of files Go manages — .github/workflows/trackfw-gate.yml (the
+  // generated, version-pinned governance gate, ADR-2026-08-28) and
+  // .gitlab-ci-trackfw.yml — not .github/workflows/trackfw-validate.yml, which is a
+  // different file written by discover.js (own template, `go install …@latest`,
+  // no version pin) and remains that command's target, unrelated to this one.
+  // Writing directly with the byte-identical builders (instead of calling
+  // generateCIWorkflow/generateGitHubActionsWorkflow from generators/init.js) is
+  // deliberate: those functions hardcode paths relative to process.cwd() with no
+  // root parameter, which would silently escape the dry-run tmp sandbox that
+  // runFileTarget builds for every other target here.
+  if (include('ci-workflow') && (cfg.ci === 'github-actions' || cfg.ci === 'github_actions' || cfg.ci === 'gitlab-ci')) {
+    const isGitLab = cfg.ci === 'gitlab-ci';
     targets.push(runFileTarget({
       id: 'ci-workflow',
-      path: '.github/workflows/trackfw-validate.yml',
+      path: '.github/workflows/trackfw-gate.yml, .gitlab-ci-trackfw.yml',
       root: cwd,
-      relPaths: ['.github/workflows/trackfw-validate.yml'],
-      apply: (root) => discover.writeCIWorkflowForce(root),
+      relPaths: ['.github/workflows/trackfw-gate.yml', '.gitlab-ci-trackfw.yml'],
+      apply: (root) => {
+        if (isGitLab) {
+          fs.writeFileSync(path.join(root, '.gitlab-ci-trackfw.yml'), generators.buildGitLabCIWorkflowContent(cfg), 'utf8');
+        } else {
+          fs.mkdirSync(path.join(root, '.github/workflows'), { recursive: true });
+          fs.writeFileSync(path.join(root, '.github/workflows/trackfw-gate.yml'), generators.buildGitHubActionsWorkflowContent(cfg), 'utf8');
+        }
+      },
       dryRun,
       installMissing,
     }));

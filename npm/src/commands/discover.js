@@ -302,12 +302,28 @@ function installLefthook(rootDir) {
   }
 }
 
-function writeCIWorkflow(rootDir) {
-  const workflowsDir = path.join(rootDir, '.github', 'workflows');
-  if (!isDir(workflowsDir)) fs.mkdirSync(workflowsDir, { recursive: true });
-  const dest = path.join(workflowsDir, 'trackfw-validate.yml');
-  if (isFile(dest)) return; // idempotente
-  const content = `name: trackfw validate
+// DISCOVER_GITHUB_ACTIONS_WORKFLOW_PATH is the canonical relative path of the second,
+// independent CI workflow trackfw writes — the one `trackfw discover --init` generates
+// via installGates, distinct from GITHUB_ACTIONS_WORKFLOW_PATH (trackfw-gate.yml,
+// written by init/update). Both files can coexist in the same project
+// (ADR-2026-08-28). Exported so scaffold_doctor.js can compare against it by path.
+const DISCOVER_GITHUB_ACTIONS_WORKFLOW_PATH = '.github/workflows/trackfw-validate.yml';
+
+// buildDiscoverGitHubActionsWorkflowContent returns the template content trackfw writes
+// to DISCOVER_GITHUB_ACTIONS_WORKFLOW_PATH. Mirrors
+// generators.BuildDiscoverGitHubActionsWorkflowContent in
+// internal/generators/scaffold_doctor.go (Go, canonical source of truth) byte-for-byte
+// for the same version.
+//
+// NOT version-independent (ADR-2026-08-28, REQ-2026-08-28 AC6/AC7): the `go install
+// .../cmd/trackfw@vX.Y.Z` step pins the second install mechanism (`go install ...@latest`)
+// to the version of npm/package.json — the version of the CLI that generated/updated the
+// project — mirroring the install.sh pin already applied to
+// buildGitHubActionsWorkflowContent (trackfw-gate.yml) in generators/init.js. Never
+// hardcoded: read lazily to avoid a circular require at module load time.
+function buildDiscoverGitHubActionsWorkflowContent() {
+  const { version } = require('../../package.json');
+  return `name: trackfw validate
 on: [push, pull_request]
 jobs:
   governance:
@@ -317,9 +333,17 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.22"
-      - run: go install github.com/kgsaran/trackfw/cmd/trackfw@latest
+      - run: go install github.com/kgsaran/trackfw/cmd/trackfw@v${version}
       - run: trackfw validate
 `;
+}
+
+function writeCIWorkflow(rootDir) {
+  const workflowsDir = path.join(rootDir, '.github', 'workflows');
+  if (!isDir(workflowsDir)) fs.mkdirSync(workflowsDir, { recursive: true });
+  const dest = path.join(workflowsDir, 'trackfw-validate.yml');
+  if (isFile(dest)) return; // idempotente
+  const content = buildDiscoverGitHubActionsWorkflowContent();
   fs.writeFileSync(dest, content, 'utf8');
 }
 
@@ -551,19 +575,7 @@ function writeCIWorkflowForce(rootDir) {
   const workflowsDir = path.join(rootDir, '.github', 'workflows');
   if (!isDir(workflowsDir)) fs.mkdirSync(workflowsDir, { recursive: true });
   const dest = path.join(workflowsDir, 'trackfw-validate.yml');
-  const content = `name: trackfw validate
-on: [push, pull_request]
-jobs:
-  governance:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.22"
-      - run: go install github.com/kgsaran/trackfw/cmd/trackfw@latest
-      - run: trackfw validate
-`;
+  const content = buildDiscoverGitHubActionsWorkflowContent();
   fs.writeFileSync(dest, content, 'utf8');
 }
 
@@ -575,3 +587,5 @@ module.exports.writeValidateScript = writeValidateScript;
 module.exports.writeCIWorkflow = writeCIWorkflow;
 module.exports.writeCIWorkflowForce = writeCIWorkflowForce;
 module.exports.detectTestFramework = detectTestFramework;
+module.exports.buildDiscoverGitHubActionsWorkflowContent = buildDiscoverGitHubActionsWorkflowContent;
+module.exports.DISCOVER_GITHUB_ACTIONS_WORKFLOW_PATH = DISCOVER_GITHUB_ACTIONS_WORKFLOW_PATH;

@@ -79,6 +79,10 @@ from trackfw.generators.init_gen import (
     generate_claude_commands,
 )
 from trackfw.integrations.doctor import SCAFFOLD_DIVERGENT, SCAFFOLD_MISSING, SCAFFOLD_WRONG_MODE
+from trackfw.commands.discover import (
+    DISCOVER_GITHUB_ACTIONS_WORKFLOW_PATH,
+    build_discover_github_actions_workflow_content,
+)
 
 # Path constants — mirror Go's exported constants and Node's module-level strings.
 CLAUDE_COMMANDS_DIR_PATH = '.claude/commands/trackfw'
@@ -470,6 +474,27 @@ def run_scaffold_doctor(project_root: str | None = None) -> list[dict[str, Any]]
     f = _check_ci_workflow_artifact(project_root, cfg)
     if f is not None:
         findings.append(f)
+
+    # --- Discover CI workflow (second, independent install mechanism, ML-2F) ---
+    #
+    # .github/workflows/trackfw-validate.yml (written by `trackfw discover --init`,
+    # install_gates) is a separate artifact from GITHUB_ACTIONS_WORKFLOW_PATH above —
+    # both can coexist in the same project (ADR-2026-08-28). Only checked when the file
+    # is already present, mirroring the "conditional artifact" treatment above but using
+    # presence-on-disk instead of cfg["ci"], because install_gates decides on its own
+    # discovery signal (github-actions detection), not on trackfw.yaml's `ci:` key — a
+    # project can have discover's workflow without cfg["ci"] ever being set.
+    discover_workflow_path = os.path.join(project_root, DISCOVER_GITHUB_ACTIONS_WORKFLOW_PATH)
+    if os.path.isfile(discover_workflow_path):
+        f = _check_scaffold_artifact(
+            discover_workflow_path,
+            DISCOVER_GITHUB_ACTIONS_WORKFLOW_PATH,
+            build_discover_github_actions_workflow_content(),
+            True,
+            False,
+        )
+        if f is not None:
+            findings.append(f)
 
     # --- Slash commands (AC14: only when the directory already exists) ---
     # The directory's presence is the eligibility signal: a project initialized via
