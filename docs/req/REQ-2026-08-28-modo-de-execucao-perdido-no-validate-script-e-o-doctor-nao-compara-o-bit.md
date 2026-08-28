@@ -53,6 +53,26 @@ ainda assim estar **inerte** — e a ferramenta criada para detectar artefato de
       artefato não-executável acusado indevidamente.
 - [ ] **AC8** — `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality` exit 0, com **exit code medido**.
 
+### Acrescentado pela Wave 0 — e muda o escopo
+
+- [ ] **AC9** — 🔴 **O remédio impresso pelo `doctor` é INERTE em Go e Node.** Medido pela Wave 0 e
+      **reproduzido por mim**: `os.WriteFile` / `fs.writeFileSync` aplicam `perm` **apenas** no evento
+      `O_CREATE`; em arquivo **existente**, o `O_TRUNC` reescreve o conteúdo e **não toca o modo**.
+
+      ```
+      Go   os.WriteFile(existente_0644, conteudo, 0755)  ->  permanece 0644   [reproduzido]
+      Node fs.writeFileSync(existente_0644, ..., {mode}) ->  permanece 0644
+      Py   open(...,'w') + os.chmod(0o755)               ->  vira 0755
+      ```
+
+      Sem `os.Chmod`/`fs.chmodSync` **após** a escrita, o `doctor` acusaria, o usuário rodaria
+      `trackfw update`, e o bit **continuaria perdido** — em loop. **Corrigir Go e Node é parte desta
+      REQ**, não escopo alheio.
+- [ ] **AC10** — Comparação por **`mode & 0o100 != 0`**, nunca `== 0755`: umask não-padrão produz
+      `0750`/`0700`, que são executáveis e não podem ser acusados.
+- [ ] **AC11** — **5 artefatos** requerem o bit (validate script, os 2 attention, os 2 guards); os
+      **12** restantes são `0644` nos 3 runtimes e **não** podem ser acusados por não tê-lo.
+
 ## Negative scope
 
 - **Não** muda o que o gerador escreve nem os modos que ele usa.

@@ -31,7 +31,7 @@ entregue no mesmo PR, reportou `no mismatches`:** ele compara **conteúdo**, nã
 > Dependencies: none. Blocks all implementation.
 
 ### ML-0A — Quais artefatos são executáveis, e onde o modo não existe
-**Status:** ⬜ Pendente · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
+**Status:** ✅ Concluído · **Agente:** `hades-tf` (`subagent_type: hades-tf`)
 **Escreve:** `docs/seguranca/2026-08-28-modelo-de-ameaca-do-bit-de-execucao.md`
 
 **Duas perguntas:**
@@ -64,9 +64,40 @@ grep -q "Residual declarado" docs/seguranca/2026-08-28-modelo-de-ameaca-do-bit-d
 > Dependências: ML-0A auditado.
 
 ### ML-1A — Restaurar o modo e comparar o bit nos 3 CLIs
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-0A
+**Status:** 🔄 Em andamento · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`) · **Dep.:** ML-0A
 
 **Critérios de aceite:** AC1–AC6 da REQ · `make quality` exit 0 medido
+
+---
+
+### Auditoria do ML-0A — aprovada; **e ela achou que o remédio é inerte**
+
+**Enumeração fechada:** **5** artefatos requerem o bit (validate script, 2 attention, 2 guards), com
+`arquivo:linha` da escrita nos 3 runtimes. Os outros **12** são `0644` em todos — **não** podem ser
+acusados (AC11).
+
+#### 🔴 O achado que muda o escopo, e eu reproduzi
+
+```
+Go   os.WriteFile(existente_0644, conteudo, 0755)   ->  permanece 0644   [medido por mim]
+Node fs.writeFileSync(existente_0644, ..., {mode})  ->  permanece 0644
+Py   open(...,'w') + os.chmod(0o755)                ->  vira 0755
+```
+
+`perm` só é aplicado no evento **`O_CREATE`**; em arquivo existente o `O_TRUNC` reescreve o
+**conteúdo** e não toca o **modo**. O Python é exceção porque `os.chmod` é incondicional.
+
+**A cascata:** o `doctor` acusaria → o usuário rodaria `trackfw update` → o Go/Node reescreveriam o
+conteúdo **sem restaurar o modo** → o `doctor` acusaria de novo. **Remédio que não remedia** — a mesma
+classe do *"bloqueado não significa não executou"* da REQ do `barrier`.
+
+Vira **AC9**: corrigir Go e Node faz parte desta REQ.
+
+**AC10, do mesmo parecer:** comparar por **`mode & 0o100 != 0`**, nunca `== 0755` — umask não-padrão
+produz `0750`/`0700`, que são executáveis e seriam acusados à toa.
+
+**Residuais nomeados:** `noexec` não é detectável · Windows suprime a verificação, declarado na saída ·
+`core.fileMode=false` como vetor de git não é coberto · hook files seguem fora de escopo.
 
 ---
 

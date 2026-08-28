@@ -25014,3 +25014,42 @@ Tarefa: AC8 (falsificação 2 direções), AC9 (cli-parity.md gate annotation), 
 (documentado em `cli-parity.md` com `partial=`).
 
 **Status ML-2A no roadmap:** ✅ Concluído. Pronto para auditoria do `trackfw_architect`.
+
+---
+
+**Agente:** `hades-tf` | **Data:** 2026-08-28 | **Status:** INÍCIO
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-08-28-doctor-compara-o-bit-de-execucao-dos-artefatos-de-scaffold.md`
+**ML em andamento:** ML-0A — Wave 0 Threat Model (bit de execução dos artefatos de scaffold)
+**Branch:** `fix/doctor-compara-o-bit-de-execucao`
+
+Tarefa: produzir `docs/seguranca/2026-08-28-modelo-de-ameaca-do-bit-de-execucao.md` com as quatro
+seções exigidas pelo roadmap. Sem código, sem commit, sem push.
+
+Evidências coletadas antes de escrever:
+- 5 scripts escrevem 0755 nos 3 CLIs (scaffold.go:739/822/832/864/1184 · init.js:125 / hooks.js:1491/1494/1086/1049 · init_gen.py:528/1738/1743/1759/1776)
+- Todos os demais artefatos de scaffold (slash commands, CI workflows) escritos com 0644 / sem modo → não devem ser acusados (AC4)
+- MEDIDO: Go `os.WriteFile(existente_0644, content, 0755)` → arquivo permanece 0644
+- MEDIDO: Node `fs.writeFileSync(existente_0644, content, {mode:0o755})` → arquivo permanece 0644
+- MEDIDO: Python `open()+os.chmod(0o755)` → restaura para 0755 (chmod ignora umask)
+- MEDIDO: zip/tar.gz no macOS preservam o bit 755 no roundtrip
+- Divergência de remédio: `trackfw update` (Go/Node) não restaura o modo de arquivo existente; Python sim
+- `InstallGates` (discover.go:83) usa `os.WriteFile` com 0755 — mesma semântica de criação-somente; conteúdo fixo igual ao form Python coberto pelo set-membership
+
+---
+
+**Agente:** `hades-tf` | **Data:** 2026-08-28 | **Status:** FIM
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-08-28-doctor-compara-o-bit-de-execucao-dos-artefatos-de-scaffold.md`
+**ML concluído:** ML-0A — Wave 0 Threat Model (bit de execução dos artefatos de scaffold)
+
+**Entregável:** `docs/seguranca/2026-08-28-modelo-de-ameaca-do-bit-de-execucao.md`
+Gates verificados: file exists ✅ · grep "Completude de enumera" ✅ · grep "Residual declarado" ✅
+
+**Achados principais para ML-1A:**
+1. 5 scripts executáveis (0755): scripts/trackfw-validate.sh, attention-signal.sh, attention-cleanup.sh, credential-guard.sh, git-branch-guard.sh — confirmados nos 3 CLIs por file:line
+2. MEDIDO: Go `os.WriteFile(existente_0644, content, 0755)` NÃO restaura o modo; Node.js igual; Python sim
+3. Constraint crítica: ML-1A DEVE corrigir o caminho de update em Go (`os.Chmod` pós-WriteFile) e Node (`fs.chmodSync` pós-writeFileSync), caso contrário o remédio impresso pelo doctor é inerte em 2/3 runtimes
+4. Verificação de modo deve usar `mode & 0o100 != 0` (não igualdade exata 0755) para aceitar umasks não-padrão
+5. Guarda de plataforma obrigatória antes de qualquer comparação de modo (Windows: `runtime.GOOS == "windows"`)
+6. AC4: apenas os 5 scripts acima devem ter modo verificado — slash commands e CI workflows NÃO
+
+**Status ML-0A no roadmap:** ✅ Concluído. Pronto para auditoria do `trackfw_architect`.
