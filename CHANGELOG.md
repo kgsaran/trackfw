@@ -10,6 +10,95 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 > backfill. A partir de `2.16.0`, este arquivo é atualizado como parte
 > obrigatória do protocolo de release (ver `CLAUDE.md`).
 
+## [7.3.0] - 2026-08-28
+
+Um comando novo de auditoria, a revisão de segurança movida para **antes** da
+implementação, e cinco correções em mecanismos que davam sinal verde enquanto o
+controle estava inerte. **Sem breaking changes** — atualização direta.
+
+### Added
+
+- **`trackfw audit-surface <ref>`** — responde *"o que neste PR roda na minha
+  máquina?"* **sem checkout**, lendo hook wiring e arquivos de instrução direto do
+  object database. Um checkout de PR hostil executa hook na máquina do mantenedor
+  **sem exigir comando nenhum do trackfw** — basta abrir o repositório e usar a
+  ferramenta. O comando fecha a janela entre o checkout e o primeiro uso.
+
+  A unidade reportada é a tupla **(trigger, matcher, caminho, digest)**, porque as
+  três variantes de ataque produzem diff de wiring **limpo**: só o script muda
+  (diff do `settings.json` é zero), o wiring reaponta para outro script existente,
+  ou o matcher alarga de `"Bash"` para `"*"`. Varre os **8 runtimes** de escopo de
+  projeto por padrão de path — ausência é informação, não exclusão. Arquivos de
+  instrução (`CLAUDE.md`, `AGENTS.md`, slash commands) têm rótulo próprio: não
+  executam, **instruem**.
+
+- **Wave 0 de modelo de ameaça no harness** — o gerador de roadmap passa a emitir
+  uma wave de red team **antes** da implementação, com quatro seções verificáveis:
+  completude de enumeração, modelo de ameaça, alvos de falsificação nas duas
+  direções e residual declarado. O gate da wave é **fail-closed**: uma Wave 0
+  gerada e não preenchida **reprova** no `trackfw barrier`.
+
+  `trackfw barrier` passa a aceitar `--wave 0`, e o asset do arquiteto exige a wave
+  antes de despachar implementação.
+
+- **`doctor` cobre os artefatos de scaffold** — 9 slash commands, scripts de
+  attention, `trackfw-validate.sh` e workflows de CI passam a ser comparados com o
+  template, com propriedade dada pelo **caminho**. Antes, um projeto podia ficar
+  com o slash command defasado e **nada acusava**: só o `update` revelava, e ele
+  corrige no mesmo passo, então o usuário nunca sabia.
+
+- **Estado `scaffold-wrong-mode`** — artefato com conteúdo correto e **bit de
+  execução ausente** passa a ser reportado, verificado por `mode & 0o100`.
+
+### Fixed
+
+- **`barrier` executava o gate de roadmap não confiável.** Um roadmap chegado por
+  PR de terceiro fazia o mantenedor executar shell que ele nunca aceitou — e
+  *"bloqueado" não significava "não executou"*: os gates rodavam **antes** de o
+  veredito ser composto. Agora o conteúdo é comparado com `origin/main` e o gate de
+  roadmap não confiável sai como **`not_evaluated`**, com o consentimento do fluxo
+  normal vindo do slash command, não de flag digitada.
+
+- **`roadmap new` aceitava newline no título**, permitindo forjar uma seção
+  Markdown inteira com bloco de gate próprio. Rejeitado nos dois caminhos (`new` e
+  `--from-req`), antes de escrever qualquer arquivo.
+
+- **O pin de modelo dos agentes dependia do diretório de invocação.** `agent_models`
+  de escopo global passa a ser resolvido **exclusivamente** de
+  `~/.trackfw/trackfw.yaml`, em **19 call sites** dos 3 CLIs. Antes, rodar
+  `agents update` de outro diretório revertia o pin **em silêncio** — e dois
+  caminhos escritos (`.windsurf/hooks.json`, `.amazonq/cli-agents/…`) nem sequer
+  eram declarados na saída do comando.
+
+  Config global malformada **não é fatal**: reusar a política do carregador de
+  projeto faria um arquivo global quebrado derrubar todo comando do trackfw, em
+  todo diretório.
+
+- **`update --dry-run` abortava em symlink pendurado.** O sandbox copiava a árvore
+  inteira do projeto — um `.venv` com interpretador removido derrubava a operação.
+  Agora copia **apenas os destinos declarados**; o que está fora do conjunto deixa
+  de existir como problema.
+
+- **`update` não restaurava o bit de execução.** `os.WriteFile` e
+  `fs.writeFileSync` aplicam `perm` **apenas** na criação do arquivo; em arquivo
+  existente o conteúdo é reescrito e o modo não é tocado. O `doctor` acusaria e o
+  remédio não remediaria — em loop.
+
+### Internal
+
+- Suíte de falsificação vai a **181 cenários** e **23 gates**. Novos:
+  `check-push-force-parity.sh`, `check-audit-surface.sh`, e cobertura de
+  `not_evaluated`, resolução por escopo, sandbox por inclusão e bit de execução.
+- `check-artifact-parity.sh` passa a comparar contra **conteúdo esperado**, não só
+  entre os 3 runtimes: uma regressão **sincronizada** passava em silêncio.
+
+### Nota de atualização
+
+Rode **`trackfw update`** e **`trackfw agents update --force`** depois de atualizar.
+Se você usa `agent_models`, mova a chave do `trackfw.yaml` do projeto para
+**`~/.trackfw/trackfw.yaml`** — o comando avisa qual é o caso quando não encontra a
+configuração no lugar certo.
+
 ## [7.2.0] - 2026-08-22
 
 Um comando novo, contratos de paridade transformados em gates executáveis e três
