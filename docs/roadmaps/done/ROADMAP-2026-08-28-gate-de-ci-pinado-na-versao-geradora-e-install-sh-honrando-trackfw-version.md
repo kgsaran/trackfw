@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-08-28
 req: "docs/req/REQ-2026-08-28-gate-de-ci-gerado-instala-versao-nao-pinada-do-trackfw-e-nao-ha-como-pinar.md"
 squad: "hades-tf, ares-tf, apolo-tf, artemis-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, ares-tf, apolo-tf, artemis-tf"
 
 # Roadmap: Gate de CI pinado na versão geradora e `install.sh` honrando `TRACKFW_VERSION`
 
-> Created: 2026-08-28 | Status: wip
+> Created: 2026-08-28 | Status: done
 
 ## Context
 

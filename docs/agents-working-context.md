@@ -25402,3 +25402,53 @@ com o AC17; o teste foi atualizado (não removido) para continuar provando que o
 
 **Não commitado, não pushed** — devolvido para `trackfw_architect` auditar e commitar (regra do
 projeto: Backend nunca opera Git).
+
+---
+
+## 2026-08-28 — `trackfw_architect` (Zeus) — REQ do pin de versão no gate de CI: FIM
+
+Branch `fix/gate-de-ci-pinado-na-versao-geradora-e-install-sh-honrando-trackfw-version`.
+REQ `REQ-2026-08-28-gate-de-ci-gerado-instala-versao-nao-pinada-do-trackfw-e-nao-ha-como-pinar`,
+ADR `ADR-2026-08-28-gate-de-ci-gerado-nasce-pinado-na-versao-que-o-gerou-e-o-install-sh-honra-trackfw-version`.
+
+**O problema:** `scripts/install.sh` resolvia a versão pela API de `releases/latest` **ignorando de
+qual tag ele próprio foi baixado**, e não aceitava versão por env var, argumento nem flag. Ninguém
+conseguia pinar — o gate bloqueante de PR era não reprodutível por construção.
+
+**Entregue:** `TRACKFW_VERSION` honrada e validada antes de compor URL; os 3 templates de CI nascem
+pinados na versão do binário gerador, byte-idênticos nos 3 CLIs; a paridade de CI do Python fechada
+por decisão de KG (ele nunca gerou workflow nenhum); e a exceção do `cli-parity.md` apagada.
+
+**11 microlotes**, 5 deles corretivos nascidos de auditoria. Registro do que foi encontrado, porque
+é isto que economiza tempo amanhã:
+
+1. **A Wave 0 declarou enumeração fechada sobre um padrão incompleto.** Eu dei a ela `releases/latest`
+   como padrão de busca, que nunca casa com `go install …@latest` — o segundo mecanismo de
+   instalação, no `trackfw-validate.yml` que o `discover` escreve. Metade da superfície ficou
+   invisível. Marcado como falsificado no roadmap, não reescrito.
+2. **O gate da Wave 0 foi refeito 3 vezes.** Contava um `.pyc` de `__pycache__` (não hermético);
+   depois era cego para `@latest`; por fim o invariante "conjunto de arquivos que casam" apodreceu,
+   porque após as correções quem casa com `@latest` casa por **citar** a string em comentário ou
+   asserção negativa. Invariante final: zero ocorrência em código de produto.
+3. **ML-2G reprovado.** Implementou o AC17 no caminho de **alvos** do `update` e provou por ele,
+   enquanto o remédio que o `doctor` imprime é o comando **nu**. Os testes asseriam o mecanismo
+   errado. Corrigido pelo ML-2H reaproveitando o helper, não duplicando a regra.
+4. **Escrita fora do projeto por symlink**, achada pelo `hades-tf` na barreira final e reproduzida
+   por mim. O gatilho foi ampliado por uma regra de aceite **minha** (AC17(c), presença em disco no
+   lugar de `cfg.ci`). Cobertura maior é superfície maior.
+5. **A mesma alegação obsoleta sobre o Python apareceu em 3 arquivos** — `cli-parity.md`,
+   `check-doctor-parity.sh`, `update.go`. Comentário obsoleto não quebra teste; só revisão de
+   leitura pega.
+
+**Estado final medido:** `make quality` exit 0 · `barrier --wave 3` passed nos 4 checks ·
+`validate` 16 warnings, 0 violations · 9 builders byte-idênticos · vítima do symlink intacta e aviso
+idêntico nos 3 CLIs.
+
+**Deixado para trás, rastreado:**
+- `REQ-2026-08-28-cli-python-nao-oferece-superficie-de-ci-e-git-hooks-no-init-e-nao-declara-git-hooks-como-alvo-do-update` — o `init` do Python sem `--ci`/`--hooks`
+- `REQ-2026-08-28-barrier-so-reconhece-cabecalho-de-aceite-em-portugues-mas-os-3-geradores-de-roadmap-escrevem-em-ingles` — **todo roadmap que a ferramenta gera é reprovado pelo próprio `barrier`**
+- Notas de vault: `update-segue-symlink-e-escreve-fora-do-projeto-2026-08-28`,
+  `barrier-so-casa-cabecalho-de-aceite-em-portugues-2026-08-28`
+- Backlog menor: `package-lock.json` em 6.1.0 · sanitização do valor de `agent_models` · mensagens de
+  `~usuario/` e `"~/"` · `vunknown` na mensagem do `doctor` do Python · `pypi/build/lib/` poluindo
+  `grep -r` na árvore

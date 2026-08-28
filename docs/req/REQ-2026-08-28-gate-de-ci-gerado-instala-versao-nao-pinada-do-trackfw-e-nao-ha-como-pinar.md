@@ -1,9 +1,9 @@
 ---
-status: Open
+status: Done
 date: 2026-08-28
 author: "trackfw_architect (Zeus)"
 adr: "docs/adr/ADR-2026-08-28-gate-de-ci-gerado-nasce-pinado-na-versao-que-o-gerou-e-o-install-sh-honra-trackfw-version.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-28-gate-de-ci-pinado-na-versao-geradora-e-install-sh-honrando-trackfw-version.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-28-gate-de-ci-pinado-na-versao-geradora-e-install-sh-honrando-trackfw-version.md"
 ---
 
 # REQ: Gate de CI gerado instala versão não pinada do trackfw e não há como pinar
@@ -122,4 +122,4 @@ ADR: ADR-2026-08-28-gate-de-ci-gerado-nasce-pinado-na-versao-que-o-gerou-e-o-ins
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-08-28-gate-de-ci-pinado-na-versao-geradora-e-install-sh-honrando-trackfw-version.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-08-28-gate-de-ci-pinado-na-versao-geradora-e-install-sh-honrando-trackfw-version.md
