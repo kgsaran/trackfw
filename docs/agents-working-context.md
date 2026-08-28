@@ -4,6 +4,44 @@
 
 ---
 
+## Sessão 2026-08-28 — hades-tf (INÍCIO: ML-3A — barreira do bit de execução)
+
+Branch `fix/doctor-compara-o-bit-de-execucao`.
+
+Reverificação final pós-ML-2A. Escopo: as 5 perguntas do arquiteto sobre AC9, resíduos, falsos-positivos, mascaramento e mentiras novas do doctor.
+
+---
+
+## Sessão 2026-08-28 — hades-tf (FIM: ML-3A — barreira do bit de execução — CONCLUÍDO)
+
+Branch `fix/doctor-compara-o-bit-de-execucao`.
+
+**O que foi feito:**
+
+- Verificação artefato por artefato dos 5 pontos de `os.Chmod`/`fs.chmodSync` em Go (`scaffold.go`) e Node (`init.js` + `hooks.js`) — todos confirmados. Nenhum ponto faltando.
+- Identificado e confirmado sexto escritor: `discover/discover.go:writeValidateScript` sem `os.Chmod` posterior — resíduo nomeado no roadmap, cadeia de remédio fecha o loop via `trackfw update`.
+- Guarda de Windows em Node: implementação correta (`_platform !== 'win32'`), mas `_setPlatformForTest` não é invocado em nenhum teste. Resíduo aceito.
+- Falsos-positivos de modo: nenhum novo. `0700`, `0750`, `0555`, setuid aceitam via `& 0o100`. Medido via parity scenario `scaffold-0700-mode-accepted-ac10`.
+- Mascaramento conteúdo por modo: impossível — conteúdo tem precedência explícita no código Go e Node.
+- Mentira nova: nenhuma encontrada.
+
+**Artefatos:**
+
+- `docs/seguranca/2026-08-28-barreira-do-bit-de-execucao.md` — escrito.
+- `docs/roadmaps/wip/ROADMAP-2026-08-28-doctor-compara-o-bit-de-execucao-dos-artefatos-de-scaffold.md` — ML-3A criado e marcado `✅ Concluído`.
+
+**Evidências:**
+
+- `bash scripts/check-doctor-parity.sh`: exit 0, "All check-doctor-parity.sh scenarios passed."
+- Inspeção linha por linha de `scaffold.go` (5 `os.Chmod`), `init.js` (1 `chmodSync`), `hooks.js` (4 `chmodSync`), `discover/discover.go` (0 `Chmod` em `writeValidateScript` — confirmado resíduo).
+
+**Fronteiras mantidas:**
+
+- Nenhum arquivo de código de produto tocado.
+- Nenhum commit, push ou PR executado.
+
+---
+
 ## Sessão 2026-08-28 — apolo-tf (INÍCIO: ML-2A — falsificação nas duas direções, bit de execução)
 
 Branch `fix/doctor-compara-o-bit-de-execucao`.

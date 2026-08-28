@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-08-28
 req: "docs/req/REQ-2026-08-28-modo-de-execucao-perdido-no-validate-script-e-o-doctor-nao-compara-o-bit.md"
 squad: "hades-tf, apolo-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, apolo-tf"
 
 # Roadmap: doctor compara o bit de execucao dos artefatos de scaffold
 
-> Created: 2026-08-28 | Status: wip
+> Created: 2026-08-28 | Status: done
 
 ## Context
 
@@ -178,6 +178,56 @@ que não conserta — em silêncio, porque o `update` continuaria saindo com exi
 make quality (CI-exata, minha)  exit 0 · 181 cenarios
 validate                        16 warnings, 0 violations
 ```
+
+---
+
+## Wave 3 — Barreira de segurança
+
+### ML-3A — Reverificação final pós-ML-2A (barreira)
+**Status:** ✅ Concluído (hades-tf, 2026-08-28) · **Agente:** `hades-tf` · **Dep.:** ML-2A
+
+**Escreve:** `docs/seguranca/2026-08-28-barreira-do-bit-de-execucao.md`
+
+**Veredito:** APROVADO. AC9 fechado nos 5 pontos de Go e Node (medido artefato por artefato).
+Dois resíduos aceitos: `discover/discover.go:writeValidateScript` sem `os.Chmod` posterior (cadeia de remédio fecha o loop); guarda de Windows em Node sem teste unitário que injete `_setPlatformForTest` (implementação correta, cobertura mais fraca que Go). Nenhum falso-positivo novo de modo. Sem mascaramento de conteúdo por modo. Nenhuma mentira nova do doctor.
+
+```
+bash scripts/check-doctor-parity.sh → All check-doctor-parity.sh scenarios passed.
+```
+
+---
+
+### Auditoria do ML-3A — **APROVADO**; e a pergunta 4 era a que podia derrubar a entrega
+
+**A resposta que eu mais queria:** um arquivo com **conteúdo errado E bit ausente** reporta apenas
+`scaffold-divergent`. O código verifica **conteúdo primeiro** (`scaffold_doctor.go:313`,
+`scaffold_doctor.js:244`) e encerra — o modo só é avaliado quando o conteúdo passou. **A correção não
+esconde o pior dos dois defeitos**, e o `update` restaura ambos.
+
+**Ele achou o sexto escritor que eu tinha perguntado:** `internal/discover/discover.go:83`
+(`writeValidateScript`) usa `os.WriteFile(..., 0755)` **sem `Chmod` posterior`. Os outros quatro
+artefatos do `InstallGates` passam pelas funções centrais de `generators/`, que já têm o `Chmod`.
+
+**Mas ele fechou o raciocínio em vez de parar no achado:** a cadeia de remédio funciona — o `doctor`
+detecta `scaffold-wrong-mode` e o remédio impresso é `trackfw update`, que chama
+`generateValidateScript` **com** `Chmod`. O `discover --init` pode criar o problema; o `update` o
+resolve. Resíduo aceito.
+
+**Resíduo real e nomeado:** a guarda de plataforma tem `_setPlatformForTest` no código de produção do
+Node **e nenhum teste a invoca** — confirmei: `grep -rn "_setPlatformForTest" npm/tests/` → **0**. A
+implementação está correta (`_platform !== 'win32'`); falta o teste unitário isolado. O Go tem
+`TestWindowsPlatformGuard`.
+
+**Nenhum falso-positivo novo:** `0750`, `0700`, `0555`, setuid e outro dono passam — o discriminante
+`mode & 0o100` aceita qualquer modo com bit de execução do dono, independente de umask ou bits extras.
+
+```
+grep -c "Chmod" scaffold.go   ->  6   (5 write sites + a constante/uso auxiliar)
+check-doctor-parity           ->  All scenarios passed
+make quality (CI-exata)       ->  exit 0 · 181 cenarios
+```
+
+**Entrega completa. A release 7.3.0 está desbloqueada.**
 
 ---
 

@@ -1,14 +1,14 @@
 ---
-status: Open
+status: done
 date: 2026-08-28
 author: "Zeus (Arquiteto)"
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-28-doctor-compara-o-bit-de-execucao-dos-artefatos-de-scaffold.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-28-doctor-compara-o-bit-de-execucao-dos-artefatos-de-scaffold.md"
 ---
 
 # REQ: modo de execução perdido no validate script, e o `doctor` não compara o bit
 
-> Date: 2026-08-28 | Status: Open
+> Date: 2026-08-28 | Status: done
 | Linear Issue:
 | Jira Issue:
 
@@ -87,4 +87,4 @@ ADR: <!-- correcao direta; a decisao de desenho ja esta no ADR-2026-08-27 do sca
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-28-doctor-compara-o-bit-de-execucao-dos-artefatos-de-scaffold.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-08-28-doctor-compara-o-bit-de-execucao-dos-artefatos-de-scaffold.md`
