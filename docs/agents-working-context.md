@@ -25332,3 +25332,73 @@ cruzada baixo, mas o resultado não foi conferido antes deste registro; conferir
 **Próximo passo:** arquiteto corrige `adr:` no frontmatter do REQ (prefixo `docs/adr/`,
 consistente com `roadmap:`), audita este ML-1A, e libera a Wave 2 (`apolo-tf`, ML-2A/2B/2C —
 templates pinados nos 3 CLIs, dependem desta Wave 1 estar mergeada/aprovada).
+
+---
+
+## apolo-tf — ML-2G (Wave 2, corretiva final) — 2026-08-28
+
+**Início:** executando ML-2G sozinho na branch
+`fix/gate-de-ci-pinado-na-versao-geradora-e-install-sh-honrando-trackfw-version`
+(já criada). Escopo: `internal/generators/update.go`/`update_test.go`,
+`npm/src/commands/update.js` + teste novo em `npm/tests/`,
+`pypi/trackfw/commands/update.py` + teste novo em `pypi/tests/`.
+
+**Defeito corrigido (REQ-2026-08-28 AC17):** o ML-2F deu ao `doctor` cobertura de
+`.github/workflows/trackfw-validate.yml` (arquivo escrito por `trackfw discover --init`,
+independente de `trackfw-gate.yml`), mas nenhum alvo de `trackfw update` nos 3 CLIs tocava
+nesse arquivo — o remédio `trackfw update` impresso pelo doctor era inerte.
+
+**Fix:** o alvo `ci-workflow` (nos 3 CLIs) passou a gerenciar também
+`.github/workflows/trackfw-validate.yml`, com as 4 regras do AC17:
+- (a) critério de inclusão/refresh é **existência em disco**, não `cfg.ci` — mesmo critério do
+  doctor (ML-2F).
+- (b) `update` **nunca cria** esse arquivo — só refresca se já existir. Implementado como um
+  passo extra dentro do `apply()` do alvo (`refreshDiscoverGitHubActionsWorkflowIfPresent` em Go,
+  equivalentes em Node/Python) que faz seu próprio `stat`/`isfile` antes de escrever — evita a
+  armadilha do `allEmpty`/`_all_missing` do `runFileTarget` (se `trackfw-gate.yml` já existe mas
+  `trackfw-validate.yml` não, o before-hash não é "tudo vazio", então `apply()` roda mesmo sem
+  `--install-missing`; sem a checagem interna, isso criaria o segundo arquivo indevidamente).
+- (c) alvo `ci-workflow` agora é declarado quando `cfg.ci` opta por github-actions/gitlab-ci **OU**
+  quando `trackfw-validate.yml` já existe em disco (fecha o buraco de projetos `ci: none` que
+  rodaram `discover`).
+- (d) idempotência preservada pelo mecanismo de hash já existente do `runFileTarget`.
+
+Reusa os builders que o ML-2F já criou (`BuildDiscoverGitHubActionsWorkflowContent` em Go,
+`buildDiscoverGitHubActionsWorkflowContent` exportado de `discover.js`,
+`build_discover_github_actions_workflow_content` de `discover.py`) — só importados, não editados
+— garantindo por construção que o que `update` escreve é exatamente o que `doctor` espera.
+
+**Nota:** um teste pré-existente em `npm/tests/update_ci_workflow_target.test.js` (do ML-2E)
+afirmava que o alvo *nunca* referenciaria `trackfw-validate.yml` — isso mudou intencionalmente
+com o AC17; o teste foi atualizado (não removido) para continuar provando que o arquivo não é
+*criado* quando ausente, apenas que ele agora aparece no `path` declarado do alvo.
+
+**Evidência (todos exit 0):**
+- `go build ./...` → 0
+- `go test ./...` → 0 (inclui 4 testes novos em `internal/generators/update_test.go`:
+  `TestUpdateCiWorkflowRefreshesDiscoverWorkflowWhenPresent`,
+  `TestUpdateCiWorkflowNeverCreatesDiscoverWorkflow`,
+  `TestUpdateCiWorkflowNotDeclaredWithoutCIOrDiscoverWorkflow`,
+  `TestUpdateCiWorkflowClosesDoctorFindingForDiscoverWorkflow` — este último é a prova
+  doctor-antes(scaffold-divergent)/update/doctor-depois(sem findings) end-to-end)
+- `npm test --prefix npm` → 805/805 passed (inclui
+  `npm/tests/update_ci_workflow_target_discover_workflow.test.js`, 5 testes novos, incluindo o
+  mesmo E2E doctor-antes/update/doctor-depois via `runScaffoldDoctor`)
+- `PYTHONPATH=pypi python3 -m pytest pypi/tests` → 1520 passed, 28 subtests passed (inclui
+  `pypi/tests/test_update_ci_workflow_discover_workflow.py`, 5 testes novos, mesmo E2E). Nota:
+  `trackfw.config.load()` é singleton por processo — os testes novos usam
+  `setUp/tearDown` com `project_config.reset()` (mesmo padrão de `test_ci_workflow_pin.py`) para
+  não vazar `trackfw.yaml` de um tmpdir para o teste seguinte na mesma classe.
+- `bash scripts/check-doctor-parity.sh` → 0 (36 cenários, incluindo os de ML-2F)
+- `bash scripts/check-update-parity.sh` → 0 (todos os 14 cenários, incluindo target-list dos 3
+  CLIs idêntico)
+- `./bin/trackfw validate` → exit 0 (17 warnings pré-existentes, nenhum novo; nenhum arquivo fora
+  do escopo permitido foi tocado)
+
+**Arquivos tocados:** `internal/generators/update.go`, `internal/generators/update_test.go`,
+`npm/src/commands/update.js`, `npm/tests/update_ci_workflow_target.test.js` (ajuste),
+`npm/tests/update_ci_workflow_target_discover_workflow.test.js` (novo),
+`pypi/trackfw/commands/update.py`, `pypi/tests/test_update_ci_workflow_discover_workflow.py` (novo).
+
+**Não commitado, não pushed** — devolvido para `trackfw_architect` auditar e commitar (regra do
+projeto: Backend nunca opera Git).

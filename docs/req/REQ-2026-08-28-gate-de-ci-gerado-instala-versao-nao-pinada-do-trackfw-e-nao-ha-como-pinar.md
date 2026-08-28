@@ -72,6 +72,17 @@ suportada); é o **asset gerado estar errado**, obrigando à customização.
 - [ ] **AC14** — `docs/cli-parity.md` tem seção anotada com `gate=` para o contrato do pin;
       `scripts/check-parity-contract-coverage.sh` continua verde.
 - [ ] **AC15** — `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality` → exit 0.
+- [ ] **AC17** — O remédio impresso pelo `doctor` para `.github/workflows/trackfw-validate.yml` não
+      pode ser inerte. Hoje ele imprime `trackfw update`, e nenhum alvo de `update` nos 3 CLIs toca
+      nesse arquivo. O alvo `ci-workflow` passa a gerenciá-lo também, nos 3, com estas regras:
+      (a) o arquivo é **refrescado quando já existe** em disco, e a existência — não `cfg.ci` — é o
+      critério, porque quem o escreve é o `discover`, pelo sinal de descoberta, e é o mesmo critério
+      que o `doctor` já usa desde o ML-2F;
+      (b) o `update` **nunca cria** esse arquivo em projeto que não o tem;
+      (c) o alvo passa a ser incluído quando `cfg.ci` é `github-actions`/`gitlab-ci` **ou** quando o
+      `trackfw-validate.yml` existe — senão um projeto com `ci: none` que rodou `discover` ficaria
+      com o arquivo fora de qualquer gestão, que é o buraco que este AC fecha;
+      (d) idempotência: `update` duas vezes com o mesmo binário não reporta `updated` na segunda.
 
 ## Emenda de 2026-08-28 (pós-Wave 0)
 

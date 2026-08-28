@@ -2,10 +2,16 @@
 
 // ML-2E (ROADMAP-2026-08-28-gate-de-ci-pinado-na-versao-geradora-e-install-sh-honrando-trackfw-version)
 // — REQ-2026-08-28 AC9: `trackfw update`'s ci-workflow target must manage the SAME
-// file pair Go manages (.github/workflows/trackfw-gate.yml, .gitlab-ci-trackfw.yml),
-// not .github/workflows/trackfw-validate.yml (a different file, owned by discover.js,
-// covered separately by ML-2F). See internal/generators/update.go:1925-1929 for the
-// Go reference behavior this file mirrors.
+// file pair Go manages (.github/workflows/trackfw-gate.yml, .gitlab-ci-trackfw.yml).
+//
+// ML-2G (AC17) expanded the target's scope: it now ALSO manages
+// .github/workflows/trackfw-validate.yml (owned by discover.js), but only
+// refresh-if-present — `update` never creates it (AC17(b)). See
+// update_ci_workflow_target_discover_workflow.test.js for that half of the
+// contract; the tests below (unchanged since ML-2E, except where AC17
+// changed the observable `path` string) keep proving the trackfw-gate.yml/
+// .gitlab-ci-trackfw.yml half. See internal/generators/update.go:1925-1938
+// for the Go reference behavior this file mirrors.
 //
 // EVERY test in this file redirects HOME to a scratch directory — never run
 // `trackfw update` against the real HOME here (see update.test.js header note).
@@ -118,31 +124,35 @@ test('ci-workflow target does not appear when cfg.ci is none', () => {
   assert.ok(!doc.targets.some((t) => t.id === 'ci-workflow'), 'ci-workflow must not be a target when cfg.ci is none')
 })
 
-// --- Falsification: this test must FAIL if the target regresses to managing
-// trackfw-validate.yml (the discover.js file) instead of trackfw-gate.yml. ---
+// --- Falsification: this test must FAIL if the target regresses to writing
+// trackfw-validate.yml (the discover.js file) when it was never present —
+// AC17(b): refresh-only-if-present, never create. ---
 
-test('regression guard: ci-workflow target does NOT write or track trackfw-validate.yml', () => {
+test('regression guard: ci-workflow target does NOT create trackfw-validate.yml when absent', () => {
   const { projectRoot, homeRoot } = scratch('ci: github-actions\n')
 
   const result = run(['update', '--json', '--install-missing', '--targets', 'ci-workflow'], projectRoot, homeRoot)
   assert.equal(result.status, 0, result.stderr)
   const doc = JSON.parse(result.stdout)
 
-  // The declared path for this target must reference trackfw-gate.yml, never
-  // trackfw-validate.yml — this is the exact defect ML-2E fixes.
+  // Since ML-2G (AC17), the declared path for this target references all
+  // three files it manages, trackfw-validate.yml included — it is declared,
+  // even though this scratch project never had it installed.
   assert.ok(
     doc.targets[0].path.includes('trackfw-gate.yml'),
     `expected target path to reference trackfw-gate.yml, got: ${doc.targets[0].path}`,
   )
   assert.ok(
-    !doc.targets[0].path.includes('trackfw-validate.yml'),
-    `ci-workflow target must not reference trackfw-validate.yml, got: ${doc.targets[0].path}`,
+    doc.targets[0].path.includes('trackfw-validate.yml'),
+    `expected target path to also reference trackfw-validate.yml (AC17), got: ${doc.targets[0].path}`,
   )
-  // And it must not have written that file as a side effect of this target.
+  // But it must not have CREATED that file as a side effect: it was never
+  // installed by discover in this fixture, and AC17(b) forbids `update`
+  // from installing it.
   assert.equal(
     fs.existsSync(path.join(projectRoot, GH_VALIDATE_REL)),
     false,
-    'ci-workflow target must not write .github/workflows/trackfw-validate.yml',
+    'ci-workflow target must not create .github/workflows/trackfw-validate.yml when it was never present (AC17(b))',
   )
   assert.ok(fs.existsSync(path.join(projectRoot, GH_WORKFLOW_REL)), 'ci-workflow target must write trackfw-gate.yml')
 })

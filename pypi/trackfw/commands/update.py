@@ -119,11 +119,20 @@ CLAUDE_COMMANDS_RELATIVE_PATH = os.path.join(".claude", "commands", "trackfw")
 # the before/after diff) — mirrors Go's runFileTarget relPaths for
 # "ci-workflow" (internal/generators/update.go), which declares both paths
 # for the same reason.
+#
+# ML-2G (AC17) added a THIRD relPath: .github/workflows/trackfw-validate.yml
+# (DISCOVER_GITHUB_ACTIONS_WORKFLOW_PATH, trackfw.commands.discover) — a
+# different file, owned by `trackfw discover --init`, that `update` now
+# refreshes-only-if-present (AC17(a)/(b)) alongside the trackfw-gate.yml/
+# .gitlab-ci-trackfw.yml pair above.
 CI_WORKFLOW_RELATIVE_PATHS = [
     os.path.join(".github", "workflows", "trackfw-gate.yml"),
     ".gitlab-ci-trackfw.yml",
+    os.path.join(".github", "workflows", "trackfw-validate.yml"),
 ]
-CI_WORKFLOW_DISPLAY_PATH = ".github/workflows/trackfw-gate.yml, .gitlab-ci-trackfw.yml"
+CI_WORKFLOW_DISPLAY_PATH = (
+    ".github/workflows/trackfw-gate.yml, .gitlab-ci-trackfw.yml, .github/workflows/trackfw-validate.yml"
+)
 
 # PROJECT_TARGET_IDS — this runtime's base declared project-scope target
 # list, without the config-conditional "ci-workflow" entry. See module
@@ -140,18 +149,57 @@ PROJECT_TARGET_IDS = [
 ]
 
 
-def project_target_ids(cfg: dict[str, str] | None) -> list[str]:
+def project_target_ids(cfg: dict[str, str] | None, discover_workflow_present: bool = False) -> list[str]:
     """Returns the declared project-scope target ids for this invocation,
     inserting "ci-workflow" right after "validate-script" — same relative
     position as Go's ProjectTargetIDs (internal/generators/update.go) and
     Node's PROJECT_TARGET_IDS (npm/src/commands/update.js) — when cfg["ci"]
-    is "github-actions" or "gitlab-ci". `git-hooks` is never added: this
-    runtime has no `init`-time surface to configure a hooks framework."""
+    is "github-actions" or "gitlab-ci" OR (AC17(c), REQ-2026-08-28, ML-2G)
+    trackfw-validate.yml (written by `trackfw discover --init`, an
+    independent install mechanism — DISCOVER_GITHUB_ACTIONS_WORKFLOW_PATH in
+    trackfw.commands.discover) already exists on disk — that second clause
+    lets `update` manage a discover-installed workflow even in a `ci: none`
+    project, closing the gap where that file was otherwise outside any
+    command's management and the doctor's `trackfw update` remedy for it was
+    inert. `git-hooks` is never added: this runtime has no `init`-time
+    surface to configure a hooks framework."""
     ids = ["agent-rules", "agent-hooks", "codex-project-agents", "validate-script"]
-    if cfg and cfg.get("ci") in ("github-actions", "gitlab-ci"):
+    if (cfg and cfg.get("ci") in ("github-actions", "gitlab-ci")) or discover_workflow_present:
         ids.append("ci-workflow")
     ids.append("claude-commands")
     return ids
+
+
+def _discover_workflow_present(cwd: str) -> bool:
+    """Reports whether .github/workflows/trackfw-validate.yml already exists
+    under cwd. Used both to decide whether "ci-workflow" is declared
+    (AC17(c)) and, inside its apply, to decide whether to refresh it —
+    existence is always checked against the real cwd, never the --dry-run
+    sandbox, mirroring how cfg itself is read from the real cwd before the
+    sandbox is built."""
+    from trackfw.commands.discover import DISCOVER_GITHUB_ACTIONS_WORKFLOW_PATH
+
+    return os.path.isfile(os.path.join(cwd, DISCOVER_GITHUB_ACTIONS_WORKFLOW_PATH))
+
+
+def _refresh_discover_github_actions_workflow_if_present(root: str) -> None:
+    """Refreshes .github/workflows/trackfw-validate.yml ONLY when it already
+    exists under root — `update` never creates this file (AC17(b)):
+    ownership of the install decision belongs to `trackfw discover --init`,
+    not `update`. Writes the SAME builder scaffold doctor compares against
+    (build_discover_github_actions_workflow_content,
+    trackfw.commands.discover) so what `update` writes and what `doctor`
+    expects can never drift apart by construction (REQ-2026-08-28 AC17)."""
+    from trackfw.commands.discover import (
+        DISCOVER_GITHUB_ACTIONS_WORKFLOW_PATH,
+        build_discover_github_actions_workflow_content,
+    )
+
+    dest = os.path.join(root, DISCOVER_GITHUB_ACTIONS_WORKFLOW_PATH)
+    if not os.path.isfile(dest):
+        return  # not installed — update never creates it (AC17(b))
+    with open(dest, "w", encoding="utf-8") as f:
+        f.write(build_discover_github_actions_workflow_content())
 
 
 # ---------------------------------------------------------------------------
@@ -375,6 +423,20 @@ def _run(args: argparse.Namespace) -> None:
             generate_ci_workflow(cwd, update_cfg)
         except Exception as e:
             print(f'  ⚠ ci workflow: {e}')
+
+    # discover-installed CI workflow (.github/workflows/trackfw-validate.yml),
+    # present regardless of update_cfg["ci"] (AC17(c), REQ-2026-08-28) — same
+    # shared writer _run_project's "ci-workflow" target uses, so the simple
+    # `trackfw update` path and the `--targets ci-workflow` path can never
+    # drift apart on what "refreshed" means. No-ops when the file isn't
+    # present (AC17(b) — update never installs it, only `trackfw discover
+    # --init` does).
+    try:
+        _refresh_discover_github_actions_workflow_if_present(cwd)
+        if _discover_workflow_present(cwd):
+            print('  ✓ CI workflow (discover) atualizado')
+    except Exception as e:
+        print(f'  ⚠ ci workflow (discover): {e}')
 
     if os.path.exists(os.path.join(cwd, "AGENTS.md")) or os.path.isdir(os.path.join(cwd, ".codex")):
         from trackfw import identity
@@ -668,9 +730,11 @@ def _run_project(args: argparse.Namespace) -> None:
 
     # ci-workflow's declared presence depends on cfg["ci"] (trackfw.yaml),
     # read from the real cwd — same as Go's ProjectTargetIDs(loadUpdateConfig())
-    # and Node's cfg read before building PROJECT_TARGET_IDS' effective set.
+    # and Node's cfg read before building PROJECT_TARGET_IDS' effective set —
+    # OR (AC17(c), ML-2G) on trackfw-validate.yml already existing on disk,
+    # also read from the real cwd, never the --dry-run sandbox.
     update_cfg = _load_update_config(cwd)
-    declared_ids = project_target_ids(update_cfg)
+    declared_ids = project_target_ids(update_cfg, _discover_workflow_present(cwd))
     target_ids = _resolve_project_targets(args.targets, declared_ids)
     dry_run = bool(args.dry_run)
     install_missing = bool(args.install_missing)
@@ -737,13 +801,17 @@ def _run_project(args: argparse.Namespace) -> None:
                 elif target_id == "ci-workflow":
                     from trackfw.generators.init_gen import generate_ci_workflow
 
+                    def _apply_ci_workflow(root: str, _cfg: dict = update_cfg) -> None:
+                        generate_ci_workflow(root, _cfg)
+                        _refresh_discover_github_actions_workflow_if_present(root)
+
                     targets.append(
                         _run_file_target(
                             "ci-workflow",
                             CI_WORKFLOW_DISPLAY_PATH,
                             apply_root,
                             CI_WORKFLOW_RELATIVE_PATHS,
-                            lambda root: generate_ci_workflow(root, update_cfg),
+                            _apply_ci_workflow,
                             dry_run,
                             install_missing,
                         )

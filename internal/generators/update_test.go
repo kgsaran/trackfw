@@ -1809,3 +1809,229 @@ func TestUpdateBackfillsCredentialGuardScriptForPreExistingProject(t *testing.T)
 		t.Fatalf("pre-existing attention signal script should not be removed: %v", err)
 	}
 }
+
+// ────────────────────────────────────────────────────────────────────────────
+// ci-workflow target manages .github/workflows/trackfw-validate.yml too
+// (AC17, REQ-2026-08-28, ML-2G) — the doctor's "trackfw update" remedy for
+// that file must stop being inert.
+// ────────────────────────────────────────────────────────────────────────────
+
+// TestUpdateCiWorkflowRefreshesDiscoverWorkflowWhenPresent covers AC17(a):
+// existence on disk (not cfg.ci) is the criterion — a project with `ci:
+// none` but an already-installed, stale trackfw-validate.yml gets it
+// refreshed to the current template.
+func TestUpdateCiWorkflowRefreshesDiscoverWorkflowWhenPresent(t *testing.T) {
+	config.Reset()
+	t.Cleanup(config.Reset)
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	if err := os.WriteFile(filepath.Join(root, "trackfw.yaml"), []byte("hooks: none\nci: none\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	workflowPath := filepath.Join(root, DiscoverGitHubActionsWorkflowPath)
+	if err := os.MkdirAll(filepath.Dir(workflowPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	stale := "name: trackfw validate\non: [push, pull_request]\njobs:\n  governance:\n    runs-on: ubuntu-latest\n    steps:\n      - run: go install github.com/kgsaran/trackfw/cmd/trackfw@v0.0.1\n      - run: trackfw validate\n"
+	if err := os.WriteFile(workflowPath, []byte(stale), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := UpdateProject(root, UpdateOptions{})
+	if err != nil {
+		t.Fatalf("UpdateProject: %v", err)
+	}
+	var ciResult *TargetResult
+	for i := range report.Targets {
+		if report.Targets[i].ID == "ci-workflow" {
+			ciResult = &report.Targets[i]
+		}
+	}
+	if ciResult == nil {
+		t.Fatal("ci-workflow target not declared for a project with ci:none but an existing trackfw-validate.yml (AC17(c))")
+	}
+	if ciResult.State != TargetUpdated {
+		t.Fatalf("ci-workflow state = %q, want %q", ciResult.State, TargetUpdated)
+	}
+
+	got, err := os.ReadFile(workflowPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != BuildDiscoverGitHubActionsWorkflowContent() {
+		t.Fatalf("trackfw-validate.yml was not refreshed to the current template:\n%s", got)
+	}
+
+	// AC17(d): running update again against the now-current file must not
+	// report "updated" a second time.
+	report2, err := UpdateProject(root, UpdateOptions{})
+	if err != nil {
+		t.Fatalf("UpdateProject (second run): %v", err)
+	}
+	var ciResult2 *TargetResult
+	for i := range report2.Targets {
+		if report2.Targets[i].ID == "ci-workflow" {
+			ciResult2 = &report2.Targets[i]
+		}
+	}
+	if ciResult2 == nil {
+		t.Fatal("ci-workflow target missing on second run")
+	}
+	if ciResult2.State != TargetSkipped {
+		t.Fatalf("second UpdateProject run: ci-workflow state = %q, want %q (idempotency, AC17(d))", ciResult2.State, TargetSkipped)
+	}
+}
+
+// TestUpdateCiWorkflowNeverCreatesDiscoverWorkflow covers AC17(b): `update`
+// never creates trackfw-validate.yml for a project that doesn't already have
+// it — including the trap case where trackfw-gate.yml (managed by ci:
+// github-actions) IS present, which must not make runFileTarget's allEmpty
+// check treat the target as "not missing" and let apply() create the second
+// file.
+func TestUpdateCiWorkflowNeverCreatesDiscoverWorkflow(t *testing.T) {
+	config.Reset()
+	t.Cleanup(config.Reset)
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	if err := os.WriteFile(filepath.Join(root, "trackfw.yaml"), []byte("hooks: none\nci: github-actions\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gatePath := filepath.Join(root, ".github", "workflows", "trackfw-gate.yml")
+	if err := os.MkdirAll(filepath.Dir(gatePath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(gatePath, []byte("stale gate content\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	validatePath := filepath.Join(root, DiscoverGitHubActionsWorkflowPath)
+	if _, err := os.Stat(validatePath); !os.IsNotExist(err) {
+		t.Fatalf("test precondition failed: %s should not exist yet", validatePath)
+	}
+
+	report, err := UpdateProject(root, UpdateOptions{})
+	if err != nil {
+		t.Fatalf("UpdateProject: %v", err)
+	}
+	var ciResult *TargetResult
+	for i := range report.Targets {
+		if report.Targets[i].ID == "ci-workflow" {
+			ciResult = &report.Targets[i]
+		}
+	}
+	if ciResult == nil {
+		t.Fatal("ci-workflow target not declared for a project with ci: github-actions")
+	}
+	// trackfw-gate.yml WAS refreshed (stale -> current), so the target as a
+	// whole is "updated" — but that must not have created the sibling file.
+	if ciResult.State != TargetUpdated {
+		t.Fatalf("ci-workflow state = %q, want %q (trackfw-gate.yml refresh)", ciResult.State, TargetUpdated)
+	}
+	if _, err := os.Stat(validatePath); !os.IsNotExist(err) {
+		t.Fatalf("AC17(b) violated: trackfw update created %s for a project that never had it (stat err=%v)", validatePath, err)
+	}
+}
+
+// TestUpdateCiWorkflowNotDeclaredWithoutCIOrDiscoverWorkflow is the negative
+// control for AC17(c): a project with ci:none and no trackfw-validate.yml on
+// disk must not declare "ci-workflow" at all — same behavior as before this
+// ML.
+func TestUpdateCiWorkflowNotDeclaredWithoutCIOrDiscoverWorkflow(t *testing.T) {
+	config.Reset()
+	t.Cleanup(config.Reset)
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	if err := os.WriteFile(filepath.Join(root, "trackfw.yaml"), []byte("hooks: none\nci: none\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := UpdateProject(root, UpdateOptions{})
+	if err != nil {
+		t.Fatalf("UpdateProject: %v", err)
+	}
+	for _, target := range report.Targets {
+		if target.ID == "ci-workflow" {
+			t.Fatalf("ci-workflow must not be declared for ci:none with no trackfw-validate.yml on disk, got target: %+v", target)
+		}
+	}
+}
+
+// TestUpdateCiWorkflowClosesDoctorFindingForDiscoverWorkflow is the
+// end-to-end proof the remedy stopped being inert: a stale
+// trackfw-validate.yml produces a scaffold-divergent doctor finding; after
+// `trackfw update` (the exact remedy doctor prints) the SAME project reports
+// no mismatches for that path.
+func TestUpdateCiWorkflowClosesDoctorFindingForDiscoverWorkflow(t *testing.T) {
+	config.Reset()
+	t.Cleanup(config.Reset)
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	if err := Update(root); err == nil {
+		// Update() requires trackfw.yaml — write it first, then scaffold via
+		// a real Update() run so every other doctor-checked artifact
+		// (scripts, validate-script, etc.) is already current and only the
+		// discover workflow under test is stale, isolating the assertion.
+		t.Fatal("Update() unexpectedly succeeded before trackfw.yaml existed")
+	}
+	if err := os.WriteFile(filepath.Join(root, "trackfw.yaml"), []byte("hooks: none\nci: none\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := Update(root); err != nil {
+		t.Fatalf("Update (initial scaffold): %v", err)
+	}
+
+	workflowPath := filepath.Join(root, DiscoverGitHubActionsWorkflowPath)
+	if err := os.MkdirAll(filepath.Dir(workflowPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	stale := "name: trackfw validate\non: [push, pull_request]\njobs:\n  governance:\n    runs-on: ubuntu-latest\n    steps:\n      - run: go install github.com/kgsaran/trackfw/cmd/trackfw@v0.0.1\n      - run: trackfw validate\n"
+	if err := os.WriteFile(workflowPath, []byte(stale), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	before, err := RunScaffoldDoctor(root)
+	if err != nil {
+		t.Fatalf("RunScaffoldDoctor (before): %v", err)
+	}
+	foundDivergent := false
+	for _, f := range before {
+		if f.Destination == DiscoverGitHubActionsWorkflowPath {
+			foundDivergent = true
+			if f.FindingKind != integrations.DoctorScaffoldDivergent {
+				t.Fatalf("expected scaffold-divergent for %s, got %q", DiscoverGitHubActionsWorkflowPath, f.FindingKind)
+			}
+		}
+	}
+	if !foundDivergent {
+		t.Fatalf("doctor did not flag the stale %s before update — test precondition failed:\n%+v", DiscoverGitHubActionsWorkflowPath, before)
+	}
+
+	// The remedy doctor actually prints is bare `trackfw update` — no
+	// --targets flag — which the CLI wires to Update(), NOT UpdateProject().
+	// This is the exact spot ML-2G's regression escaped review: it proved
+	// the fix through UpdateProject (the --targets/--json path) and declared
+	// the end-to-end remedy closed without ever exercising the code path the
+	// user (and the doctor's own remedy text) actually runs. Asserting
+	// through Update() here is what makes this test fail again if that
+	// simple path ever stops refreshing the discover workflow.
+	if err := Update(root); err != nil {
+		t.Fatalf("Update (the remedy doctor prints — bare `trackfw update`): %v", err)
+	}
+
+	after, err := RunScaffoldDoctor(root)
+	if err != nil {
+		t.Fatalf("RunScaffoldDoctor (after): %v", err)
+	}
+	for _, f := range after {
+		if f.Destination == DiscoverGitHubActionsWorkflowPath {
+			t.Fatalf("doctor still flags %s after trackfw update — remedy is still inert:\n%+v", DiscoverGitHubActionsWorkflowPath, f)
+		}
+	}
+}
