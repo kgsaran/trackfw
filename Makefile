@@ -47,6 +47,7 @@ parity: build
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-audit-surface.sh
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-gates-falsify.sh
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-thirdparty-parity.sh
+	scripts/check-install-version-pin.sh
 
 sync-integration-assets:
 	scripts/sync-integration-assets.sh

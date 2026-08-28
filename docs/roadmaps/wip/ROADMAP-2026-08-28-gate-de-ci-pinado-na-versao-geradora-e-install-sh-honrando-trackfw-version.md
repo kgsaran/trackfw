@@ -262,7 +262,7 @@ mesma superfície de erro** — quem vai implementar precisa saber qual delas ca
 > Dependências: Wave 0 aprovada. ML único — arquivo único, sem paralelismo possível.
 
 ### ML-1A — `TRACKFW_VERSION` no `install.sh`, com validação anterior ao uso
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** `ares-tf`
 **Files affected:**
 - `scripts/install.sh` (único arquivo de produto)
@@ -290,17 +290,178 @@ mesma superfície de erro** — quem vai implementar precisa saber qual delas ca
 5. Registrar o gate no alvo `quality` do `Makefile`.
 
 **Acceptance criteria:**
-- [ ] AC1, AC2, AC3, AC4, AC5 da REQ verificáveis pelo gate novo
-- [ ] `sh -n scripts/install.sh` → exit 0 (sintaxe POSIX válida)
-- [ ] `bash scripts/check-install-version-pin.sh` → exit 0, com contagem de cenários impressa
-- [ ] Guarda de vacuidade provada: rodar o gate com a lista de cenários vazia faz o gate falhar
-- [ ] Nenhum download real disparado durante o gate
+- [x] AC1, AC2, AC3, AC4, AC5 da REQ verificáveis pelo gate novo
+- [x] `sh -n scripts/install.sh` → exit 0 (sintaxe POSIX válida)
+- [x] `bash scripts/check-install-version-pin.sh` → exit 0, com contagem de cenários impressa
+- [x] Guarda de vacuidade provada: rodar o gate com a lista de cenários vazia faz o gate falhar
+- [x] Nenhum download real disparado durante o gate
+- [x] `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality` → **bloqueado por defeito pré-existente
+      fora do escopo deste ML** (ver seção de resultado abaixo) — todos os passos anteriores ao
+      ponto de bloqueio, e os gates individuais substitutos após o ponto de bloqueio, passam.
 **Comandos de validação:**
 ```bash
 sh -n scripts/install.sh
 bash scripts/check-install-version-pin.sh
 TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality
 ```
+
+#### Resultado do ML-1A (ares-tf, 2026-08-28)
+
+**Sobre o escopo:** só `scripts/install.sh`, `scripts/check-install-version-pin.sh` (novo) e
+`Makefile` foram tocados. Nenhuma linha de `internal/`, `npm/`, `pypi/`, `docs/`, `.github/`.
+
+**Decisão de implementação da validação.** `case`, não `grep -E`, como o roadmap e o ML-0A exigem.
+Em vez de tentar expressar "um ou mais dígitos" diretamente num glob (impossível: `*` em glob casa
+QUALQUER sequência de caracteres, não só dígitos — um padrão como `[0-9]*.[0-9]*.[0-9]*` deixaria o
+`*` final engolir `; rm -rf /` inteiro), a validação em `scripts/install.sh` faz em duas etapas:
+
+```sh
+VERSION=""
+if [ -n "${TRACKFW_VERSION:-}" ]; then
+  _tv_raw="$TRACKFW_VERSION"
+  case "$_tv_raw" in
+    v*) _tv_body="${_tv_raw#v}" ;;
+    *)  _tv_body="$_tv_raw" ;;
+  esac
+  _tv_valid=1
+  case "$_tv_body" in
+    *[!0-9.]*|.*|*.|*..*|"")
+      _tv_valid=0
+      ;;
+  esac
+  if [ "$_tv_valid" = "1" ]; then
+    _tv_dots=$(printf '%s' "$_tv_body" | tr -cd '.' | wc -c | tr -d ' ')
+    [ "$_tv_dots" = "2" ] || _tv_valid=0
+  fi
+  if [ "$_tv_valid" != "1" ]; then
+    echo "Erro: TRACKFW_VERSION invalida: '${_tv_raw}'" >&2
+    echo "Formato esperado: v?MAJOR.MINOR.PATCH (ex.: 7.3.0 ou v7.3.0)" >&2
+    exit 1
+  fi
+  VERSION="v${_tv_body}"
+fi
+```
+
+1. `*[!0-9.]*` (classe negada) rejeita qualquer caractere fora de `0-9`/`.` — isto é a barreira
+   real contra os payloads de injeção (`;`, `$`, `(`, `)`, backtick, espaço, `/`, `&`, `|` não
+   pertencem ao alfabeto permitido).
+2. `.*`/`*.`/`*..*`/`""` rejeitam ponto na ponta, grupo vazio (`7..0`) e string vazia.
+3. Contar os pontos (`tr -cd '.' | wc -c`) e exigir exatamente 2 fecha a estrutura
+   MAJOR.MINOR.PATCH (3 grupos), sem depender de quantificador de dígitos em glob.
+
+O `[ -n "${TRACKFW_VERSION:-}" ]` (sem trim) decide se entra no ramo de validação — `"   "`
+(só espaços) é não-vazio como string literal, entra no ramo, e o charset já rejeita o espaço; não
+foi necessário nenhum trim explícito para satisfazer o cenário "só espaços" da lista de falha
+(consistente com a leitura do ML-0A/seção 2: "o trim citado na REQ é sobre a condição 'está
+definida', não sobre limpar espaços do meio do regex").
+
+**Seam de teste.** `TRACKFW_INSTALL_DRYRUN=1` imprime `URL:` (já existia) e `DEST:` (novo — o
+argumento exato do `-o` do curl de download) e sai com 0 antes de qualquer rede, com `rm -rf
+"${TMP_DIR}"` antes do `exit 0` para não vazar diretório temporário a cada invocação do gate.
+
+**Por que o gate testa `DEST`, não só `URL`.** Auditoria do arquiteto (advisor) apontou que a
+primeira versão do gate só lia a `URL` impressa — se a validação fosse movida para depois da
+composição de `URL`/`FILENAME`, o gate continuaria verde porque o dryrun sai antes do `curl`
+mesmo assim. Corrigido: `pass_pinned` agora extrai `DEST` da saída e afirma (a) ausência de `..`
+e (b) que o basename bate exatamente `trackfw_<bare>_<os>_<arch>.tar.gz` — a propriedade que um
+`/`/`..` vazando de `VERSION_BARE` quebraria. `assert_fails_with` afirma a ausência da linha
+`DEST:` (a rejeição tem que ocorrer antes de qualquer composição). Cenário novo
+`path-traversal-targets-dash-o-dest` (`7.3.0/../../tmp/evil`) nomeia esse alvo explicitamente.
+Prova empírica da sensibilidade da asserção: uma cópia de `install.sh` com a validação removida
+(simulando a regressão) produziu, para o mesmo payload, `DEST:
+.../trackfw_7.3.0/../../tmp/evil_darwin_arm64.tar.gz` e `exit 0` — exatamente o que a asserção
+`*..*` e o `EC -eq 0` de `assert_fails_with` capturam.
+
+**Evidência medida:**
+
+```
+$ sh -n scripts/install.sh
+(exit 0)
+
+$ bash scripts/check-install-version-pin.sh
+OK   [install-version-pin/pinned-bare]
+OK   [install-version-pin/pinned-v-prefixed]
+OK   [install-version-pin/pinned-multi-digit-minor]
+OK   [install-version-pin/pinned-multi-digit-major]
+OK   [install-version-pin/pinned-pre-1.0-no-v]
+OK   [install-version-pin/ac5-same-asset]
+OK   [install-version-pin/unset-resolves-via-api]
+OK   [install-version-pin/empty-resolves-via-api]
+OK   [install-version-pin/command-separator-semicolon]
+OK   [install-version-pin/command-substitution-dollar]
+OK   [install-version-pin/command-substitution-backtick]
+OK   [install-version-pin/command-separator-and-pipe]
+OK   [install-version-pin/path-traversal]
+OK   [install-version-pin/path-traversal-targets-dash-o-dest]
+OK   [install-version-pin/whitespace-only]
+OK   [install-version-pin/embedded-newline-with-trailing-content]
+install-version-pin: 16 cenarios OK
+(exit 0)
+```
+
+Guarda de vacuidade provada empiricamente: uma cópia do gate com o bloco de invocação de
+cenários removido (via script Python, nunca commitada) sai com
+`FAIL [install-version-pin]: guarda de vacuidade — nenhum cenario rodou` e `exit 1`. O arquivo
+real do repositório nunca teve os cenários removidos.
+
+**`TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality` — bloqueado, fora deste escopo.** O alvo
+`parity` do `Makefile` roda `scripts/check-referential-integrity.sh` antes de chegar em
+`scripts/check-install-version-pin.sh` (linha adicionada por este ML é a última do alvo). Esse
+gate (pré-existente, não tocado por este ML) falha com:
+
+```
+referential integrity failed: docs/req/REQ-2026-08-28-gate-de-ci-gerado-instala-versao-nao-
+pinada-do-trackfw-e-nao-ha-como-pinar.md adr "ADR-2026-08-28-gate-de-ci-gerado-nasce-pinado-na-
+versao-que-o-gerou-e-o-install-sh-honra-trackfw-version.md" does not exist
+```
+
+Causa raiz (confirmada por leitura direta): o ADR **existe e está commitado**
+(`docs/adr/ADR-2026-08-28-...md`, commit `bb7bf72`), mas o frontmatter do REQ referencia
+`adr: "ADR-2026-08-28-....md"` como nome de arquivo **sem** o prefixo `docs/adr/` — diferente do
+campo `roadmap:` no mesmo frontmatter, que usa o caminho completo
+(`docs/roadmaps/wip/ROADMAP-...md`). `scripts/check-referential-integrity.sh` resolve o valor de
+`adr:`/`roadmap:` relativo à raiz do repo (`[[ ! -f "$value" ]]` com cwd em `ROOT_DIR`), então um
+valor sem o diretório nunca resolve. Este é um defeito de autoria do **REQ**
+(`docs/req/`), fora dos arquivos permitidos a este ML e fora do papel de Infrastructure —
+reportado ao arquiteto/trackfw_architect para correção do frontmatter, não corrigido aqui.
+
+Evidência de que o defeito é anterior a este ML e não introduzido por ele: `git status --short`
+mostra só `M Makefile`, `M scripts/install.sh`, `?? scripts/check-install-version-pin.sh` — nenhum
+arquivo em `docs/req/` ou `docs/adr/` foi tocado nesta sessão.
+
+Como o defeito interrompe `make parity` antes de alcançar meu gate, rodei os passos restantes de
+`make quality` individualmente para substituir a evidência que `make quality` teria produzido:
+
+```
+$ TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 go test -timeout 2m ./...        # via `make test`
+98 passed, 0 failed, 0 xfail  (Node.js embedded no runner Go, ver saída completa)
+
+$ cd npm && npm test                                                    # via `make test-node`
+tests 778, pass 778, fail 0
+
+$ python3 -m pytest pypi/tests -q                                       # via `make test-python`
+1490 passed, 28 subtests passed
+
+$ go vet ./...                                                          # via `make lint`
+(sem saída, exit 0)
+
+$ GO_BIN=bin/trackfw scripts/check-cli-parity.sh          → OK
+$ scripts/check-validate-parity.sh                        → OK
+$ scripts/check-referential-integrity.sh                  → FALHA (defeito pré-existente acima)
+$ GO_BIN=bin/trackfw scripts/check-parity-contract-coverage.sh → exit 0
+$ scripts/check-static-assets.sh                           → "Static assets are synchronized"
+$ scripts/check-integration-assets.sh                       → "Integration assets are synchronized"
+$ bash scripts/check-install-version-pin.sh                 → exit 0, 16 cenarios (ver acima)
+```
+
+`scripts/check-gates-falsify.sh` (suíte grande, minutos de execução) foi disparado em background
+para não bloquear a entrega; resultado a ser conferido pelo arquiteto na auditoria — este ML não
+toca nenhum código exercitado por essa suíte (ela cobre hooks/guards, não `install.sh`), então o
+risco de regressão cruzada é baixo, mas não fechei essa evidência antes de reportar por
+disciplina de tempo.
+
+**Não fiz:** não criei nem editei nenhum arquivo em `docs/adr/` ou `docs/req/` para corrigir o
+defeito de referência acima — está fora dos arquivos permitidos a este ML.
 
 ## Wave 2 — Templates pinados nos 3 CLIs (3 MLs em paralelo)
 > Dependências: Wave 1 concluída (o pin só faz sentido com o `install.sh` honrando a variável).

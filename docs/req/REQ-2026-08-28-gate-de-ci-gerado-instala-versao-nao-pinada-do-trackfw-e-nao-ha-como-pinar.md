@@ -2,7 +2,7 @@
 status: Open
 date: 2026-08-28
 author: "trackfw_architect (Zeus)"
-adr: "ADR-2026-08-28-gate-de-ci-gerado-nasce-pinado-na-versao-que-o-gerou-e-o-install-sh-honra-trackfw-version.md"
+adr: "docs/adr/ADR-2026-08-28-gate-de-ci-gerado-nasce-pinado-na-versao-que-o-gerou-e-o-install-sh-honra-trackfw-version.md"
 roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-28-gate-de-ci-pinado-na-versao-geradora-e-install-sh-honrando-trackfw-version.md"
 ---
 

@@ -25288,3 +25288,47 @@ template já a escreva — janela entre merge e release onde AC6/AC7 estão sati
 
 **Próximo passo:** Wave 1 (`ares-tf`, ML-1A) — `TRACKFW_VERSION` em `install.sh` com validação
 `case`-based, novo gate `scripts/check-install-version-pin.sh`.
+
+## Sessão 2026-08-28 — ares-tf (FIM: ML-1A — CONCLUÍDO)
+
+Branch `fix/gate-de-ci-pinado-na-versao-geradora-e-install-sh-honrando-trackfw-version`.
+Roadmap: `ROADMAP-2026-08-28-gate-de-ci-pinado-na-versao-geradora-e-install-sh-honrando-trackfw-version.md`.
+
+**Escopo:** Wave 1 (ML-1A) — `scripts/install.sh` passa a honrar `TRACKFW_VERSION` (AC1, AC2),
+validando com `case` POSIX (não `grep -E`, achado do ML-0A) antes de compor `URL`/`FILENAME`.
+Novo gate `scripts/check-install-version-pin.sh` (16 cenários), `Makefile` atualizado (linha
+final do alvo `parity`). Resultado detalhado no roadmap, seção
+`#### Resultado do ML-1A (ares-tf, 2026-08-28)` — inclui o bloco `case` completo e o raciocínio
+de por que um glob com quantificador de dígitos é impossível (`*` engole qualquer coisa).
+
+**Validação:** `sh -n scripts/install.sh` OK; `bash scripts/check-install-version-pin.sh` → 16/16
+OK, exit 0; guarda de vacuidade provada empiricamente (cópia com cenários removidos falha com a
+mensagem exata); nenhum download real (seam `TRACKFW_INSTALL_DRYRUN` + stubs de `curl`/`wget` por
+`PATH`, hermético mesmo offline).
+
+**Correção pós-auditoria do advisor:** a primeira versão do gate só afirmava sobre a `URL`
+impressa — não provava nada sobre o `DEST` (o argumento real do `-o` do curl, o alvo verdadeiro
+de um path traversal via `VERSION_BARE`). Corrigido: `pass_pinned`/`assert_fails_with` agora leem
+e afirmam sobre `DEST` explicitamente, com um cenário novo (`7.3.0/../../tmp/evil`) nomeando esse
+alvo. Prova empírica feita contra uma cópia de `install.sh` com a validação removida (nunca
+commitada), confirmando que a asserção de fato captura a regressão.
+
+**Defeito pré-existente encontrado, fora do escopo permitido (não corrigido):** o frontmatter do
+REQ desta feature (`docs/req/REQ-2026-08-28-...md`) referencia `adr:
+"ADR-2026-08-28-....md"` sem o prefixo `docs/adr/`, ao contrário do campo `roadmap:` no mesmo
+frontmatter (que usa o caminho completo). O ADR **existe e está commitado**
+(`docs/adr/ADR-2026-08-28-...md`, commit `bb7bf72`) — não é um ADR faltando, é uma referência
+relativa incompleta. `scripts/check-referential-integrity.sh` resolve o valor relativo à raiz do
+repo e por isso nunca encontra o arquivo, interrompendo `make parity` (e portanto `make quality`)
+antes de alcançar `check-install-version-pin.sh` e ~25 outros gates. `docs/req/` está fora dos
+arquivos permitidos a este ML (Infrastructure não autora artefato de governança) — reportado ao
+arquiteto/trackfw_architect para correção do frontmatter do REQ. Substituí a evidência de `make
+quality` rodando os passos individualmente (test/test-node/test-python/lint + os gates de
+`parity` que rodam antes e depois do ponto de bloqueio); todos passaram, exceto
+`check-referential-integrity.sh` pelo motivo acima. `check-gates-falsify.sh` (suíte longa) foi
+disparado em background por disciplina de tempo — não toca `install.sh`, risco de regressão
+cruzada baixo, mas o resultado não foi conferido antes deste registro; conferir na auditoria.
+
+**Próximo passo:** arquiteto corrige `adr:` no frontmatter do REQ (prefixo `docs/adr/`,
+consistente com `roadmap:`), audita este ML-1A, e libera a Wave 2 (`apolo-tf`, ML-2A/2B/2C —
+templates pinados nos 3 CLIs, dependem desta Wave 1 estar mergeada/aprovada).
