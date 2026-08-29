@@ -4,6 +4,7 @@
 
 ## Índice
 
+- [paridade-cross-runtime-dentro-do-go-test-quebra-o-job-go-2026-08-29](paridade-cross-runtime-dentro-do-go-test-quebra-o-job-go-2026-08-29.md) — teste cross-CLI no job de um runtime só; e o gate que parecia cobrir chamava só o Go
 - [barrier-crlf-divergencia-node-regex-2026-08-29](barrier-crlf-divergencia-node-regex-2026-08-29.md) — CRLF: `.` do JS exclui `\r` e o do RE2 inclui; roadmap do Windows fica ilegível no CLI Node
 - [barrier-trust-check-fail-open-em-tmpdir-simbolico-2026-08-29](barrier-trust-check-fail-open-em-tmpdir-simbolico-2026-08-29.md) — NÃO CORRIGIDO: `roadmapTrustForGates` cai em fail-open (executa gates de verdade) quando o sandbox vive sob `$TMPDIR` com componente simbólico (macOS)
 - [update-segue-symlink-e-escreve-fora-do-projeto-2026-08-28](update-segue-symlink-e-escreve-fora-do-projeto-2026-08-28.md) — `update`/`discover` seguiam symlink em `.github/workflows/`; corrigido com `lstat` + recusa

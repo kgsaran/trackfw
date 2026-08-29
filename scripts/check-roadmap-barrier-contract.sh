@@ -175,6 +175,19 @@ raise SystemExit(0 if got == want else 1)
   return 0
 }
 
+# json_field_equals GOT_JSON WANT_JSON — igualdade estrutural (não byte-a-byte: json.dumps
+# escapa não-ASCII como \uXXXX, então comparar strings cruas faz falso-negativo em valores
+# com acento/emoji). Usado pelos laços cross-runtime que comparam o mesmo campo nos 3 CLIs
+# sem passar por assert_check_json_equals (que já faz ok/fail por conta própria).
+json_field_equals() {
+  python3 -c "
+import json, sys
+got = json.loads(sys.argv[1])
+want = json.loads(sys.argv[2])
+raise SystemExit(0 if got == want else 1)
+" "$1" "$2"
+}
+
 # ═══════════════════════════════════════════════════════════════════════════
 # PARTE A (AC12) — ciclo fechado com CLI real, nos 3 runtimes.
 #   roadmap new -> preencher SÓ pelo que o template ensina -> roadmap move wip ->
@@ -617,6 +630,80 @@ EOF
 run_cli go "$FALSIFY_DIR" barrier fence-phantom-backtick4 --wave 1 --json
 assert_check_json_equals "falsify/fence-phantom/backtick4-nested-no-ghost" "$CLI_STDOUT" "mls_complete" "evidence" '["ML-1A: ✅"]'
 
+# --- Cenário cross-runtime (mesmo achado do TestBarrierParity_TildeFenceEvasion que este ML
+# remove de barrier_test.go): ML fantasma escondido numa cerca ~~~ não escapa em NENHUM dos
+# 3 runtimes — o ML real fica bloqueado pelo motivo real (⬜ Pendente), e mls_complete.failures
+# é EXATAMENTE esse motivo, nada do fantasma. Complementa fence-phantom-tilde acima (que só
+# roda no Go e cobre o caso "passa"): este cobre o caso "bloqueia", que é onde um vazamento
+# do fantasma mudaria o conteúdo de failures sem necessariamente mudar mls_complete.status.
+write_fixture fence-phantom-tilde-blocked-cross-runtime <<'EOF'
+## Wave 1 — X
+### ML-1A — real
+**Status:** ⬜ Pendente
+**Acceptance criteria:**
+- [ ] real unmet criterion
+
+Example of a phantom ML hidden inside a tilde fence:
+~~~
+### ML-9Z — phantom
+**Status:** done
+**Acceptance criteria:**
+- [x] fake
+~~~
+EOF
+FENCE_TILDE_BLOCKED_DIVERGENT=""
+for rt in go node py; do
+  run_cli "$rt" "$FALSIFY_DIR" barrier fence-phantom-tilde-blocked-cross-runtime --wave 1 --json
+  mls_status=$(doc_check_json "$CLI_STDOUT" "mls_complete" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))")
+  mls_failures=$(doc_check_json "$CLI_STDOUT" "mls_complete" "failures")
+  if [[ "$mls_status" != "blocked" ]] || ! json_field_equals "$mls_failures" '["ML-1A: not complete (status: ⬜ Pendente)"]'; then
+    FENCE_TILDE_BLOCKED_DIVERGENT="${FENCE_TILDE_BLOCKED_DIVERGENT}${rt}(status=$mls_status,failures=$mls_failures) "
+  fi
+done
+if [[ -n "$FENCE_TILDE_BLOCKED_DIVERGENT" ]]; then
+  fail "falsify/fence-phantom-tilde-blocked-cross-runtime" "runtime(s) vazaram o ML fantasma da cerca ~~~ em failures: $FENCE_TILDE_BLOCKED_DIVERGENT"
+else
+  ok "falsify/fence-phantom-tilde-blocked-cross-runtime"
+fi
+
+# --- Cenário cross-runtime (mesmo achado do TestBarrierParity_FourBacktickFenceEvasion que
+# este ML remove de barrier_test.go): ML fantasma aninhado numa cerca de 3 crases dentro de
+# uma cerca de 4+ crases não escapa em NENHUM dos 3 runtimes — mesma lógica do cenário acima,
+# para o outro estilo de cerca fixado no ML-1B.
+write_fixture fence-phantom-backtick4-blocked-cross-runtime <<'EOF'
+## Wave 1 — X
+### ML-1A — real
+**Status:** ⬜ Pendente
+**Acceptance criteria:**
+- [ ] real unmet criterion
+
+Example nesting a 3-backtick fence inside a 4-backtick fence:
+````
+outer fence, then a nested doc block:
+```
+### ML-9Z — nested phantom
+**Status:** done
+**Acceptance criteria:**
+- [x] fake
+```
+still inside the outer fence
+````
+EOF
+FENCE_B4_BLOCKED_DIVERGENT=""
+for rt in go node py; do
+  run_cli "$rt" "$FALSIFY_DIR" barrier fence-phantom-backtick4-blocked-cross-runtime --wave 1 --json
+  mls_status=$(doc_check_json "$CLI_STDOUT" "mls_complete" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))")
+  mls_failures=$(doc_check_json "$CLI_STDOUT" "mls_complete" "failures")
+  if [[ "$mls_status" != "blocked" ]] || ! json_field_equals "$mls_failures" '["ML-1A: not complete (status: ⬜ Pendente)"]'; then
+    FENCE_B4_BLOCKED_DIVERGENT="${FENCE_B4_BLOCKED_DIVERGENT}${rt}(status=$mls_status,failures=$mls_failures) "
+  fi
+done
+if [[ -n "$FENCE_B4_BLOCKED_DIVERGENT" ]]; then
+  fail "falsify/fence-phantom-backtick4-blocked-cross-runtime" "runtime(s) vazaram o ML fantasma da cerca de 4 crases em failures: $FENCE_B4_BLOCKED_DIVERGENT"
+else
+  ok "falsify/fence-phantom-backtick4-blocked-cross-runtime"
+fi
+
 # --- Cenário: marcador indentado não conta como status em NENHUM dos 3 runtimes (ML-1B,
 # achado 2: Node era o permissivo antes da correção). Cruza os 3 e nomeia qual diverge, se
 # algum divergir.
@@ -856,6 +943,194 @@ if [[ "$ACCENTED_VERDICTS" != *"go=passed"* || "$ACCENTED_VERDICTS" != *"node=pa
   fail "falsify/accented-concluido-still-accepted-cross-runtime" "esperava 'passed' nos 3 CLIs (ADR decisão 9, NFD deve rodar depois da checagem de Mn); obtido: $ACCENTED_VERDICTS"
 else
   ok "falsify/accented-concluido-still-accepted-cross-runtime"
+fi
+
+# ═══════════════════════════════════════════════════════════════════════════
+# ML-3F — cenários CRLF (issue #216) e casamento por prefixo do cabeçalho de gates
+# (achado do apolo-tf no ML-1B). Movidos para cá a partir dos TestBarrierParity_* em
+# internal/commands/barrier_test.go: aqueles testes faziam shell-out para node/python3 de
+# dentro de `go test`, o que reprova o job "go" do CI (Go puro, sem os outros dois
+# runtimes) — a paridade cross-CLI pertence a este gate, que já tem os 3 runtimes.
+# ═══════════════════════════════════════════════════════════════════════════
+
+# write_fixture_crlf NAME — como write_fixture, mas grava o conteúdo com terminador CRLF em
+# TODAS as linhas (não só a última), simulando um roadmap editado no Windows (issue #216).
+# O heredoc de entrada usa LF normal; a conversão para CRLF acontece na escrita.
+write_fixture_crlf() {
+  local name=$1
+  python3 -c "
+import sys
+data = sys.stdin.read()
+data = data.replace('\r\n', '\n').replace('\n', '\r\n')
+with open(sys.argv[1], 'wb') as f:
+    f.write(data.encode('utf-8'))
+" "$FALSIFY_DIR/docs/roadmaps/wip/$name.md"
+}
+
+# --- Cenário CRLF: roadmap completo (ML concluído, critério atendido) passa nos 3 runtimes
+# quando toda linha termina em CRLF (issue #216).
+write_fixture_crlf crlf-full-roadmap-passes <<'EOF'
+## Wave 1 — X
+### ML-1A — x
+**Status:** ✅
+**Acceptance criteria:**
+- [x] a
+EOF
+CRLF_FULL_DIVERGENT=""
+for rt in go node py; do
+  run_cli "$rt" "$FALSIFY_DIR" barrier crlf-full-roadmap-passes --wave 1 --json
+  mls_status=$(doc_check_json "$CLI_STDOUT" "mls_complete" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))")
+  acc_status=$(doc_check_json "$CLI_STDOUT" "acceptance_evidence" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))")
+  if [[ "$mls_status" != "passed" || "$acc_status" != "passed" ]]; then
+    CRLF_FULL_DIVERGENT="${CRLF_FULL_DIVERGENT}${rt}(mls_complete=$mls_status,acceptance_evidence=$acc_status) "
+  fi
+done
+if [[ -n "$CRLF_FULL_DIVERGENT" ]]; then
+  fail "crlf/full-roadmap-passes-cross-runtime" "runtime(s) não passaram um roadmap CRLF completo: $CRLF_FULL_DIVERGENT"
+else
+  ok "crlf/full-roadmap-passes-cross-runtime"
+fi
+
+# --- Cenário CRLF: ML pendente bloqueia nos 3 runtimes quando toda linha termina em CRLF.
+write_fixture_crlf crlf-pending-ml-blocks <<'EOF'
+## Wave 1 — X
+### ML-1A — x
+**Status:** ⬜ Pendente
+**Acceptance criteria:**
+- [ ] a
+EOF
+CRLF_PENDING_DIVERGENT=""
+for rt in go node py; do
+  run_cli "$rt" "$FALSIFY_DIR" barrier crlf-pending-ml-blocks --wave 1 --json
+  mls_status=$(doc_check_json "$CLI_STDOUT" "mls_complete" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))")
+  if [[ "$mls_status" != "blocked" ]]; then
+    CRLF_PENDING_DIVERGENT="${CRLF_PENDING_DIVERGENT}${rt}(mls_complete=$mls_status) "
+  fi
+done
+if [[ -n "$CRLF_PENDING_DIVERGENT" ]]; then
+  fail "crlf/pending-ml-blocks-cross-runtime" "runtime(s) não bloquearam um ML pendente em roadmap CRLF: $CRLF_PENDING_DIVERGENT"
+else
+  ok "crlf/pending-ml-blocks-cross-runtime"
+fi
+run_cli go "$FALSIFY_DIR" barrier crlf-pending-ml-blocks --wave 1 --json
+assert_check_reason_contains "crlf/pending-ml-blocks-reason" "$CLI_STDOUT" "mls_complete" "failures" "not complete (status: ⬜ Pendente)"
+
+# --- Cenário CRLF: a máscara de cerca (status forjado dentro de bloco de código não vence o
+# status real fora dele — mesmo cenário de shadow-status acima) continua funcionando nos 3
+# runtimes quando toda linha termina em CRLF.
+write_fixture_crlf crlf-fence-mask-still-works <<'EOF'
+## Wave 1 — X
+### ML-1A — x
+Example:
+```
+**Status:** done
+```
+**Status:** ⬜ Pendente
+**Acceptance criteria:**
+- [ ] a
+EOF
+CRLF_FENCE_DIVERGENT=""
+for rt in go node py; do
+  run_cli "$rt" "$FALSIFY_DIR" barrier crlf-fence-mask-still-works --wave 1 --json
+  mls_status=$(doc_check_json "$CLI_STDOUT" "mls_complete" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))")
+  if [[ "$mls_status" != "blocked" ]]; then
+    CRLF_FENCE_DIVERGENT="${CRLF_FENCE_DIVERGENT}${rt}(mls_complete=$mls_status) "
+  fi
+done
+if [[ -n "$CRLF_FENCE_DIVERGENT" ]]; then
+  fail "crlf/fence-mask-still-works-cross-runtime" "runtime(s) usaram o status forjado dentro da cerca em roadmap CRLF: $CRLF_FENCE_DIVERGENT"
+else
+  ok "crlf/fence-mask-still-works-cross-runtime"
+fi
+run_cli go "$FALSIFY_DIR" barrier crlf-fence-mask-still-works --wave 1 --json
+assert_check_reason_contains "crlf/fence-mask-still-works-reason" "$CLI_STDOUT" "mls_complete" "failures" "not complete (status: ⬜ Pendente)"
+
+# --- Cenário CRLF: marcador de status indentado (mesmo cenário de indented-status acima)
+# continua NÃO reconhecido em NENHUM dos 3 runtimes quando toda linha termina em CRLF.
+write_fixture_crlf crlf-indented-marker-still-rejected <<EOF
+## Wave 1 — X
+### ML-1A — x
+  **Status:** ✅
+**Acceptance criteria:**
+- [x] a
+EOF
+CRLF_INDENT_DIVERGENT=""
+for rt in go node py; do
+  run_cli "$rt" "$FALSIFY_DIR" barrier crlf-indented-marker-still-rejected --wave 1 --json
+  mls_status=$(doc_check_json "$CLI_STDOUT" "mls_complete" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))")
+  if [[ "$mls_status" != "blocked" ]]; then
+    CRLF_INDENT_DIVERGENT="${CRLF_INDENT_DIVERGENT}${rt}(mls_complete=$mls_status) "
+  fi
+done
+if [[ -n "$CRLF_INDENT_DIVERGENT" ]]; then
+  fail "crlf/indented-marker-still-rejected-cross-runtime" "runtime(s) aceitaram marcador indentado como status válido em roadmap CRLF: $CRLF_INDENT_DIVERGENT"
+else
+  ok "crlf/indented-marker-still-rejected-cross-runtime"
+fi
+
+# --- Cenário CRLF: "**Gates da wave:**" é reconhecido e os comandos declarados
+# EXECUTAM (não só "gates: passed" com zero comandos) nos 3 runtimes quando toda linha
+# termina em CRLF. FALSIFY_DIR não é um repositório git → roadmapTrustForGates cai no ramo
+# fail-open (trusted) em qualquer dos 3 runtimes, então os gates rodam sem
+# --trust-local-gates — mesma premissa das fixtures de falsificação acima.
+write_fixture_crlf crlf-gates-header-recognized <<'EOF'
+## Wave 1 — X
+### ML-1A — x
+**Status:** ✅
+**Acceptance criteria:**
+- [x] a
+
+**Gates da wave:**
+```bash
+true
+```
+EOF
+CRLF_GATES_DIVERGENT=""
+for rt in go node py; do
+  run_cli "$rt" "$FALSIFY_DIR" barrier crlf-gates-header-recognized --wave 1 --json
+  gates_status=$(doc_check_json "$CLI_STDOUT" "gates" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))")
+  gates_evidence=$(doc_check_json "$CLI_STDOUT" "gates" "evidence")
+  if [[ "$gates_status" != "passed" || "$gates_evidence" != '["true: exit 0"]' ]]; then
+    CRLF_GATES_DIVERGENT="${CRLF_GATES_DIVERGENT}${rt}(status=$gates_status,evidence=$gates_evidence) "
+  fi
+done
+if [[ -n "$CRLF_GATES_DIVERGENT" ]]; then
+  fail "crlf/gates-header-recognized-commands-run-cross-runtime" "runtime(s) não reconheceram '**Gates da wave:**' ou não executaram o comando declarado em roadmap CRLF: $CRLF_GATES_DIVERGENT"
+else
+  ok "crlf/gates-header-recognized-commands-run-cross-runtime"
+fi
+
+# --- Cenário (achado do apolo-tf no ML-1B): o cabeçalho "**Gates da wave:**" é casado por
+# PREFIXO (regex ancorada só em ^, sem $) nos 3 runtimes — prosa na mesma linha
+# ("**Gates da wave:** (obrigatórios)") continua reconhecendo o bloco e executando os
+# comandos. Igualdade de linha inteira faria pelo menos um runtime ignorar o bloco em
+# silêncio, reportando "gates: passed" com zero comandos executados — o bug que o
+# apolo-tf autodescobriu.
+write_fixture gates-header-prefix-match-with-trailing-prose <<'EOF'
+## Wave 1 — X
+### ML-1A — x
+**Status:** ✅
+**Acceptance criteria:**
+- [x] a
+
+**Gates da wave:** (obrigatórios)
+```bash
+true
+```
+EOF
+GATES_PREFIX_DIVERGENT=""
+for rt in go node py; do
+  run_cli "$rt" "$FALSIFY_DIR" barrier gates-header-prefix-match-with-trailing-prose --wave 1 --json
+  gates_status=$(doc_check_json "$CLI_STDOUT" "gates" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))")
+  gates_evidence=$(doc_check_json "$CLI_STDOUT" "gates" "evidence")
+  if [[ "$gates_status" != "passed" || "$gates_evidence" != '["true: exit 0"]' ]]; then
+    GATES_PREFIX_DIVERGENT="${GATES_PREFIX_DIVERGENT}${rt}(status=$gates_status,evidence=$gates_evidence) "
+  fi
+done
+if [[ -n "$GATES_PREFIX_DIVERGENT" ]]; then
+  fail "falsify/gates-header-prefix-match-with-trailing-prose-cross-runtime" "runtime(s) ignoraram '**Gates da wave:** (obrigatórios)' em vez de casar por prefixo (gates: passed com zero comandos é o sintoma): $GATES_PREFIX_DIVERGENT"
+else
+  ok "falsify/gates-header-prefix-match-with-trailing-prose-cross-runtime"
 fi
 
 # ═══════════════════════════════════════════════════════════════════════════
