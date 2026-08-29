@@ -403,7 +403,7 @@ nos 3.
 > Dependências: Wave 1 concluída. Toca os 3 geradores; ML único pela mesma razão da Wave 1.
 
 ### ML-2A — `roadmap new` escreve a forma canônica e ensina a legenda
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** `apolo-tf`
 **Files affected:** `internal/generators/roadmap.go`, `npm/src/generators/roadmap.js`,
 `pypi/trackfw/generators/roadmap.py` e testes.
@@ -414,9 +414,39 @@ nos 3.
 3. `**Acceptance criteria:**` **permanece** — é a forma canônica pelo ADR. Não traduzir.
 4. `**Gates da wave:**` **não muda**. Está no escopo negativo da REQ.
 **Critérios de aceite:**
-- [ ] AC11
-- [ ] Template gerado byte-idêntico nos 3, provado por `diff`
-- [ ] Testes dos 3 runtimes verdes
+- [x] AC11
+- [x] Template gerado byte-idêntico nos 3, provado por `diff`
+- [x] Testes dos 3 runtimes verdes
+
+
+#### Resultado do ML-2A (apolo-tf, 2026-08-29)
+
+Legenda colocada **uma vez**, antes da primeira wave, dentro do bloco compartilhado `wave0Block` —
+então vale nos dois caminhos (`new` e `--from-req`) sem duplicação e sem repetir por ML. Todo
+`**Status:** pending` virou `**Status:** ⬜ Pendente`.
+
+`**Acceptance criteria:**` e `**Gates da wave:**` **intocados**, provado por
+`git diff | grep -E "^[+-].*(Acceptance criteria|Gates da wave)"` → zero linhas.
+
+**Auditoria do arquiteto, com os 3 CLIs reais:**
+
+```
+template gerado           diff go/node · diff go/py     IDÊNTICO nos 3
+ocorrências de "pending"  0
+legenda                   ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
+
+AC12 — ciclo fechado, preenchendo SÓ pelo que a legenda ensina:
+  go    mls_complete ✓   acceptance_evidence ✓
+  node  mls_complete ✓   acceptance_evidence ✓
+  py    mls_complete ✓   acceptance_evidence ✓
+```
+
+`check-artifact-parity.sh` → exit 0, cobrindo também o caminho `--from-req`.
+
+**Testes acrescentados por revisão do próprio agente**, fechando uma lacuna que ele mesmo notou: a
+legenda e a forma canônica não tinham cobertura unitária nenhuma. Cada teste assere a legenda
+aparecendo **uma vez**, `**Status:** ⬜ Pendente` presente e `**Status:** pending` presente **zero**
+vezes — que é a direção de falsificação.
 
 ## Wave 3 — Gate de ciclo fechado e contrato
 > Dependências: Waves 1 e 2 concluídas.

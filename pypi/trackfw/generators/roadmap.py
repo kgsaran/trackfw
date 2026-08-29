@@ -14,6 +14,16 @@ from trackfw import config as cfg_module
 VALID_STATES = ["backlog", "analyzing", "wip", "blocked", "done", "abandoned"]
 STATE_ORDER = ["analyzing", "wip", "backlog", "blocked", "done", "abandoned"]
 
+# STATUS_LEGEND ensina o vocabulário que o parser do `barrier` aceita para "**Status:**"
+# (AC11, decisão 5 do ADR): a forma canônica que o template passa a escrever (⬜ Pendente) e os
+# outros três estados. Colocada uma única vez, logo antes da primeira wave — perto da primeira
+# linha "**Status:**" que aparece, sem repetir por ML (poluiria) e sem esconder no fim (ninguém
+# lê até lá). Byte-idêntica nos 3 CLIs (gate: scripts/check-artifact-parity.sh).
+STATUS_LEGEND = """## Status Legend
+⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
+
+"""
+
 # WAVE0_BLOCK — seção "## Wave 0 — Threat Model" pré-anexada a todo roadmap gerado, antes da
 # primeira wave de implementação (AC1, AC12). Byte-idêntica a internal/generators/roadmap.go
 # (wave0Block/wave0GateFence) e a npm/src/generators/roadmap.js (WAVE0_BLOCK) — gate:
@@ -26,11 +36,11 @@ STATE_ORDER = ["analyzing", "wip", "backlog", "blocked", "done", "abandoned"]
 #
 # O ML é sempre ML-0A, nunca ML-1A — generate_roadmap_from_req rotula os MLs derivados dos
 # critérios de aceite da REQ como "ML-1A", "ML-1B", ... a partir do primeiro critério.
-WAVE0_BLOCK = """## Wave 0 — Threat Model
+WAVE0_BLOCK = STATUS_LEGEND + """## Wave 0 — Threat Model
 > Dependencies: none. Blocks all implementation.
 
 ### ML-0A — Threat model for this roadmap
-**Status:** pending
+**Status:** ⬜ Pendente
 **Files affected:**
 **Actions:**
 1. Enumeration completeness — is the list of surfaces in this roadmap complete? Name what is missing, or show the list is closed. Do not limit the search to the files already named by the REQ — before declaring the list closed, search the repository for other places that emit the same artifact or the same pattern (for example, grep for the literal the final artifact contains).
@@ -247,7 +257,7 @@ REQ: {req_path}
 > Dependencies: none
 
 ### ML-1A — {title}
-**Status:** pending
+**Status:** ⬜ Pendente
 **Files affected:**
 **Actions:**
 **Acceptance criteria:**
@@ -369,7 +379,7 @@ def generate_roadmap_from_req(req_path: str, cfg: dict, agent: str = None) -> st
         ml_lines.extend([
             "",
             f"### {ml_label} — {criterion}",
-            "**Status:** pending",
+            "**Status:** ⬜ Pendente",
             "**Files affected:**",
             "**Actions:**",
             "**Acceptance criteria:**",

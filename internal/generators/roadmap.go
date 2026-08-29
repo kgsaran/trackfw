@@ -40,6 +40,16 @@ const wave0GateFence = "```bash\n" +
 	"exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli-parity.md\n" +
 	"```\n"
 
+// statusLegendBlock teaches the vocabulary the `barrier` parser accepts for "**Status:**"
+// (AC11, ADR decision 5): the canonical form the template now writes (⬜ Pendente) plus the
+// other three states. Placed once, right before the first wave, so it is close to the first
+// place a "**Status:**" line appears — not repeated per-ML (would clutter) and not left for
+// the end (nobody reads that far). Byte-identical across the 3 CLIs
+// (gate: scripts/check-artifact-parity.sh).
+const statusLegendBlock = "## Status Legend\n" +
+	"⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado\n" +
+	"\n"
+
 // wave0Block is the "## Wave 0 — Threat Model" section prepended to every generated roadmap,
 // before the first implementation wave (AC1, AC12). It is a plain (non-raw) Go string — not a
 // backtick raw string literal — because it embeds a fenced ```bash block itself: a raw string
@@ -50,11 +60,12 @@ const wave0GateFence = "```bash\n" +
 // acceptance criteria "ML-1A", "ML-1B", ... starting at the first criterion, so "ML-0A" is the
 // only label available to Wave 0 without colliding with a derived ML
 // (docs/seguranca/2026-08-22-modelo-de-ameaca-da-wave-0-no-harness.md, §1.2).
-const wave0Block = "## Wave 0 — Threat Model\n" +
+const wave0Block = statusLegendBlock +
+	"## Wave 0 — Threat Model\n" +
 	"> Dependencies: none. Blocks all implementation.\n" +
 	"\n" +
 	"### ML-0A — Threat model for this roadmap\n" +
-	"**Status:** pending\n" +
+	"**Status:** ⬜ Pendente\n" +
 	"**Files affected:**\n" +
 	"**Actions:**\n" +
 	"1. Enumeration completeness — is the list of surfaces in this roadmap complete? Name what is missing, or show the list is closed. Do not limit the search to the files already named by the REQ — before declaring the list closed, search the repository for other places that emit the same artifact or the same pattern (for example, grep for the literal the final artifact contains).\n" +
@@ -170,7 +181,7 @@ REQ: %s
 > Dependencies: none
 
 ### ML-1A — %s
-**Status:** pending
+**Status:** ⬜ Pendente
 **Files affected:**
 **Actions:**
 **Acceptance criteria:**
@@ -219,7 +230,7 @@ func NewRoadmapFromREQ(reqPath string) error {
 	for i, criterion := range criteria {
 		mlLabel := fmt.Sprintf("ML-1%c", rune('A'+i))
 		mlSection.WriteString(fmt.Sprintf("\n### %s — %s\n", mlLabel, criterion))
-		mlSection.WriteString("**Status:** pending\n")
+		mlSection.WriteString("**Status:** ⬜ Pendente\n")
 		mlSection.WriteString("**Files affected:**\n")
 		mlSection.WriteString("**Actions:**\n")
 		mlSection.WriteString("**Acceptance criteria:**\n")
