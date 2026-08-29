@@ -4,6 +4,57 @@
 
 ---
 
+## Sessão 2026-08-29 — hades-tf (INÍCIO: ML-0A — modelo de ameaça, lista de agentes por namespace)
+
+Branch `fix/lista-de-agentes-complementa-o-disco-e-namespace-nao-declarado-vira-violacao` (não criada por mim).
+
+Escopo: enumeração da superfície de consumo de `roadmap_namespacing: by_agent` nos 3 runtimes, modelo
+de ameaça da união disco+`agents:`, alvos de falsificação nas duas direções, residual. Trabalho de
+análise apenas — nenhum arquivo de produto tocado.
+
+---
+
+## Sessão 2026-08-29 — hades-tf (FIM: ML-0A — modelo de ameaça, lista de agentes por namespace — CONCLUÍDO)
+
+Branch `fix/lista-de-agentes-complementa-o-disco-e-namespace-nao-declarado-vira-violacao`.
+
+**O que foi feito:**
+
+- Enumeração ponto-a-ponto de Go e Node (função+linha); Python fechado a nível de arquivo (14) com os
+  pontos de duplicação centrais confirmados por inspeção.
+- **Achado grave, reproduzido ao vivo**: `docs/roadmaps/<symlink-para-fora> → wip/arquivo.md` faz
+  `trackfw roadmap move` em **Node e Python** escrever fora do projeto através do symlink (mesma
+  classe do defeito de `update`/`discover` já documentado). Go não reproduz — `os.ReadDir`+`IsDir()`
+  não segue symlink; Node (`fs.statSync`) e Python (`os.path.isdir`) seguem. Isso **bloqueia** a Wave 1:
+  o resolvedor canônico precisa usar `fs.readdirSync(dir,{withFileTypes:true})`+`dirent.isDirectory()`
+  (Node) e `os.scandir`+`entry.is_dir(follow_symlinks=False)` (Python) — não `fs.statSync`/`os.path.isdir`.
+- Achado: `npm/src/validator/index.js` (o maior arquivo, com as 6 regras) é detectado como `data` por
+  `file`/`grep -rln` sem `-a` — sweep ingênuo perde o arquivo mais importante. Nota de vault escrita.
+- Achado: `internal/commands/barrier.go` duplica a própria resolução em vez de reusar
+  `validator.resolveStateDirs`; `barrier.js`/`barrier.py` já delegam. AC6 exige corrigir isso também.
+- Achado: comentário em `npm/src/validator/index.js:resolveStateDirs` afirma ser "fonte única", mas
+  3 funções de regra a ignoram e duplicam a lógica — comentário mentiroso, deve virar verdadeiro ou sair.
+
+**Artefatos:**
+
+- `docs/roadmaps/wip/ROADMAP-2026-08-29-lista-de-agentes-complementa-o-disco-e-namespace-nao-declarado-vira-violacao.md`
+  — seção "Resultado do ML-0A" adicionada, ML-0A marcado `✅ Concluído`, Waves 1 e 2 "Files affected"
+  atualizados.
+- `vault/notes/serve-validator-index-detectado-como-binario-grep-silencioso-2026-08-29.md` — escrito.
+
+**Evidências:**
+
+- Reprodução ao vivo (Node e Python): `trackfw roadmap move` moveu arquivo através de symlink para
+  `$TMPDIR` fora do projeto — path final confirmado com `find` pós-move.
+- Teste de controle em Go: mesmo cenário, `roadmap move` falha com "not found" — não segue o symlink.
+
+**Fronteiras mantidas:**
+
+- Nenhum arquivo de `internal/`, `npm/`, `pypi/`, `scripts/`, `Makefile` tocado. Nenhuma branch criada,
+  nenhum commit, nenhum push.
+
+---
+
 ## Sessão 2026-08-28 — hades-tf (INÍCIO: ML-3A — barreira do bit de execução)
 
 Branch `fix/doctor-compara-o-bit-de-execucao`.

@@ -32,7 +32,7 @@ Consolidado — AC1 a AC11 da REQ.
 > Dependencies: none. Blocks all implementation.
 
 ### ML-0A — Modelo de ameaça e enumeração da superfície
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** `hades-tf`
 **Files affected:** apenas este roadmap. Nenhum arquivo de produto.
 **Actions:**
