@@ -25620,3 +25620,60 @@ Branch `fix/dialeto-canonico-do-roadmap-e-vocabulario-de-status-do-barrier` (nã
 - `bash scripts/check-gates-falsify.sh` → `exit 0`, 0 FAILs (rodado limpo em background, sem edições concorrentes).
 
 **Não fiz (fora do meu escopo/autoridade):** não commitei, não fiz push, não marquei o ML como `✅ Concluído` no roadmap (arquivo fora da minha lista de arquivos autorizados nesta tarefa).
+
+---
+
+## 2026-08-29 — `trackfw_architect` (Zeus) — REQ do dialeto do `barrier`: FIM
+
+Branch `fix/dialeto-canonico-do-roadmap-e-vocabulario-de-status-do-barrier`.
+REQ `REQ-2026-08-28-barrier-so-reconhece-cabecalho-de-aceite-em-portugues-...`,
+ADR `ADR-2026-08-29-dialeto-canonico-do-roadmap-e-vocabulario-de-status-que-o-barrier-reconhece`.
+
+**O problema declarado:** o `barrier` só reconhecia `**Critérios de aceite:**` enquanto os 3
+geradores escrevem `**Acceptance criteria:**` — todo roadmap que a ferramenta gera era reprovado
+pelo próprio `barrier`, dizendo que não havia bloco de aceite quando havia.
+
+**O que a medição revelou:** eram **dois** checks falhando, não um, e o segundo não era de idioma.
+O gerador escrevia `**Status:** pending` e os 3 barriers exigiam que a linha **contivesse** `✅`.
+Traduzir o template não resolveria.
+
+**O que a Wave 0 e as barreiras acharam além disso — 8 microlotes, 4 corretivos:**
+
+1. **`**Status:** ⬜ Pendente ✅` liberava wave**, em produção. `contains` não olha posição.
+2. **Prosa em cerca virava ML fantasma.** Hoje falhava fechado; com o primeiro token passaria a
+   **liberar**. Virou decisão 7 do ADR — a Wave 0 evitou que a Wave 1 introduzisse regressão nova.
+3. **Evasão da própria máscara:** só conhecia 3 crases; `~~~` e 4+ crases passavam.
+4. **Node liberava wave que Go e Python bloqueavam** (marcador indentado). O check que autoriza o
+   PR era mais fraco num runtime, sem ninguém saber.
+5. **CRLF:** o `.` do JS exclui `\r`, o do RE2 inclui, o Python normaliza na leitura. Roadmap do
+   Windows ficava ilegível para o CLI Node — cruza com a issue #216.
+6. **Bypass de fechamento de cerca**, achado pelo `hades-tf` na barreira final: linha de fechamento
+   com sufixo fechava a máscara antes da hora e o exemplo virava conteúdo real. **Bypass da própria
+   proteção que esta REQ introduziu.**
+7. **Marca combinante dobrada** fazia `d<U+1DC0>one` valer como `done`. Decisão 9 do ADR: rejeitar,
+   exceto VS16.
+8. **Default permissivo por omissão** no Node (`fenced = []`), achado pelo `hefesto-tf`.
+
+**Estado final medido:** `make quality` exit 0 · `barrier --wave 3` passed nos 4 checks ·
+`validate` 16 warnings, 0 violations · gate do contrato 31 → 42 cenários · corpus de 144 roadmaps
+com 1 reclassificação, investigada e explicada.
+
+**Lição de método, a mais importante do ciclo:** os 31 cenários do gate cobriam a classe de ameaça
+do bypass e **não o pegaram** — nenhum usava linha de fechamento com sufixo. *Gate de falsificação
+prova o que alguém lembrou de falsificar.* Quem achou foi a revisão especializada sobre o diff
+entregue. Wave 0 e barreira final não são redundantes: a primeira pega vetor de desenho, a segunda
+pega vetor **criado pelo próprio trabalho**.
+
+**Deixado para trás, rastreado:**
+- **`roadmapTrustForGates` falha aberto** (`barrier.go:568`) — confirmado com o binário: roadmap
+  nunca commitado, gate executou. Todo caminho de erro devolve `trusted: true`. Pré-existente do
+  `ADR-2026-08-23`. **REQ própria, prioridade acima do Windows** — é defeito de harness em produção,
+  e atinge quem clona fork para revisar PR sem `origin/main` fetchado.
+- **Issue #216 (Windows), 7 defeitos + 3 que achamos:** CRLF na leitura (corrigido aqui), `sh -c`
+  hardcodado no Go contra shell nativo em Node/Python, e postura divergente de `\` em `manager.go`.
+- Dívidas registradas nos pareceres: fonte única de vetores de teste para as 3 suítes; comparação
+  diferencial parser-velho-vs-novo do AC10 como artefato, não prosa.
+- Notas de vault: `barrier-so-casa-cabecalho-de-aceite-em-portugues-2026-08-29`,
+  `barrier-crlf-divergencia-node-regex-2026-08-29`,
+  `barrier-fence-closing-trailing-content-bypass-2026-08-29`,
+  `barrier-trust-check-fail-open-em-tmpdir-simbolico-2026-08-29`
