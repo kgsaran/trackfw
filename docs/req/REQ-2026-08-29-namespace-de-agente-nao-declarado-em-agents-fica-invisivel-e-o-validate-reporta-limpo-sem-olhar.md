@@ -55,6 +55,13 @@ em 9 arquivos no Go, 11 sítios no Node e 24 no Python. Corrigir um ponto não c
 - [ ] **AC10** — Gate falsificável cobrindo AC1, AC4 e AC5 nos 3 runtimes.
 - [ ] **AC11** — `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality` → exit 0, e o CI verde. **Verde
       local não é conclusão** — ver `vault/notes/ambiente-do-dev-e-mais-rico-que-o-do-ci-2026-08-29.md`.
+- [ ] **AC12** — A enumeração **não segue symlink**. Verificável nos 3 CLIs: namespace que é symlink
+      apontando para fora do projeto → `roadmap move` **não** escreve fora da árvore. Reproduzido
+      hoje: Go imune, **Node e Python escapam**. Primitivas exigidas: `os.ReadDir` + `entry.IsDir()`
+      (Go, preservar), `readdirSync(..., {withFileTypes:true})` + `dirent.isDirectory()` (Node),
+      `os.scandir` + `is_dir(follow_symlinks=False)` (Python).
+- [ ] **AC13** — Bloqueia a AC1: a união **não pode** ser entregue sem a AC12. Hoje o escape é
+      condicionado a `agents:` vazia; a união o tornaria incondicional para todo projeto `by_agent`.
 
 ## Negative Scope
 

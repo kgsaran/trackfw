@@ -71,6 +71,34 @@ A duplicação é o que tornou o defeito onipresente e é o que faria a correç�
 
 **4. Vale para `req_dir` também, não só `roadmap_dir`.** No cmdb as duas árvores estavam cegas.
 
+**5. A enumeração de diretórios NÃO segue symlink — decisão acrescentada em 2026-08-29, após a
+Wave 0.** O `hades-tf` achou, e eu reproduzi com os três binários: um namespace que é **symlink**
+apontando para fora do projeto faz o `roadmap move` **escrever fora da árvore**.
+
+```
+docs/roadmaps/evil → /fora/do/projeto
+
+go     escreveu fora?  não      (os.ReadDir + entry.IsDir() não segue symlink)
+node   escreveu fora?  SIM      (fs.statSync().isDirectory() segue)
+py     escreveu fora?  SIM      (os.path.isdir() segue)
+```
+
+O Go é imune **por acidente** de qual primitiva usa, não por decisão.
+
+**E aqui está o motivo de isso bloquear a Wave 1:** hoje o escape é **condicionado à configuração** —
+só dispara quando `agents:` está vazia, porque só então o disco é lido. **A união torna a leitura de
+disco incondicional**, e com ela o escape passa a valer para **todo projeto `by_agent`**. Implementar
+a decisão 1 sem esta seria transformar um buraco estreito em universal.
+
+É a segunda fuga por symlink em dois dias — a primeira foi o `update`/`discover` escrevendo fora do
+projeto (`vault/notes/update-segue-symlink-e-escreve-fora-do-projeto-2026-08-28.md`) — e a segunda vez
+que ampliar cobertura ampliou superfície. *Cobertura maior é superfície maior* deixou de ser
+observação e virou regra de desenho aqui.
+
+**A enumeração usa checagem que não segue link**, nos 3 runtimes: `os.ReadDir` + `entry.IsDir()` em
+Go (preservar, **não** "simplificar" para `os.Stat`), `fs.readdirSync(dir, {withFileTypes: true})` +
+`dirent.isDirectory()` em Node, e `os.scandir` + `is_dir(follow_symlinks=False)` em Python.
+
 ## Consequences
 
 **Positivas**
