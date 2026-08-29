@@ -649,7 +649,7 @@ fato cobre paridade nem rodou.
    diretório do `go`, conferindo `command -v` vazio antes de rodar.
 
 ### ML-3G — Congelamento do corpus sem depender de história do git
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** `artemis-tf`
 **Files affected:** `scripts/check-roadmap-barrier-contract.sh` e um arquivo de snapshot versionado.
 **Actions:**
@@ -667,13 +667,40 @@ fato cobre paridade nem rodou.
 4. Política de colisão de basename **explícita**. Medido pela agente: hoje não há colisão
    (`uniq -d` vazio), mas nada impede — declare o comportamento em vez de deixá-lo indefinido.
 **Critérios de aceite:**
-- [ ] Gate exit 0, contagem ≥ 52
-- [ ] Nenhuma leitura de história do git no gate — `grep` prova
-- [ ] **Reprodução em clone raso**: `git clone --depth 1` e rodar o gate lá dentro
-- [ ] Falsificação: veredito alterado no snapshot → reprova nomeando qual; roadmap novo → **não**
+- [x] Gate exit 0, contagem ≥ 52
+- [x] Nenhuma leitura de história do git no gate — `grep` prova
+- [x] **Reprodução em clone raso**: `git clone --depth 1` e rodar o gate lá dentro
+- [x] Falsificação: veredito alterado no snapshot → reprova nomeando qual; roadmap novo → **não**
       reprova; roadmap do snapshot removido → reprova
-- [ ] Guarda de vacuidade provada; `check-gates-falsify.sh` → 0
-- [ ] Nenhum arquivo de produto tocado
+- [x] Guarda de vacuidade provada; `check-gates-falsify.sh` → 0
+- [x] Nenhum arquivo de produto tocado
+
+#### Resultado do ML-3G (artemis-tf, 2026-08-29)
+
+Snapshot versionado em `scripts/testdata/` — 144 arquivos, chaveados por `basename`, extraídos
+**uma vez** na autoria (fora do gate) e agora commitados como bytes. O gate faz **zero** chamadas a
+`git show`/`cat-file`/`ls-tree`/`archive`; as 4 menções ao SHA que restam são comentário explicando
+o histórico.
+
+Ela foi além do meu desenho num ponto que melhora: o conteúdo para calcular veredito vem do
+**snapshot**, não do disco. O disco é consultado só para **existência**. Isso preserva a semântica
+de congelamento do AC10 de verdade — o gate testa o **parser** contra entrada fixa, e não fica
+refém de alguém editar um roadmap em `done/`.
+
+Acrescentou também um `.tsv` com a tabela de vereditos, hash-idêntico ao pin, para que uma
+reclassificação **nomeie a linha divergente** via `diff` em vez de dizer só "o hash mudou".
+
+**Prova de fidelidade:** rodar o gate migrado contra o snapshot reproduziu o `PINNED_CORPUS_HASH` e
+as seis contagens **sem alteração** — nenhum pin foi re-pinado. Se o snapshot estivesse errado, ao
+menos um teria se movido.
+
+**Três falsificações, em cópias descartáveis:** veredito alterado → reprova nomeando a linha;
+roadmap novo → **não** reprova; roadmap do snapshot removido do disco → reprova nomeando o basename.
+Mais a guarda de vacuidade, onde ela achou e corrigiu um FAIL duplicado no próprio rascunho.
+
+**Custo aceito:** 2,4 MB de corpus duplicado no repositório. É o preço de um pin de regressão de
+parser que não depende de história do git — e história do git é justamente o que o clone raso do CI
+não tem.
 
 **Gates da wave:**
 ```bash

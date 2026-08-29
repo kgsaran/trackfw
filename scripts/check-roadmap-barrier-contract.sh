@@ -11,9 +11,10 @@
 #      (provou o mecanismo, não o efeito).
 #   B. AC10 — não reclassificação do corpus. Congela a tabela de vereditos (mls_complete +
 #      acceptance_evidence, por ML, por wave, por roadmap) do corpus REAL em
-#      docs/roadmaps/**, fixado no commit FREEZE_REF (git show, não o working tree — ver
-#      "Por que FREEZE_REF" abaixo), como um hash SHA-256 pinado. Uma mudança futura no parser
-#      que reclassifique qualquer ML desse corpus muda o hash e reprova o gate.
+#      docs/roadmaps/**, fixado em um SNAPSHOT versionado (scripts/testdata/roadmap-barrier-
+#      corpus-snapshot/, ver "Por que snapshot versionado" abaixo), como um hash SHA-256
+#      pinado. Uma mudança futura no parser que reclassifique qualquer ML desse corpus muda o
+#      hash e reprova o gate.
 #   C. Falsificação — cenários com assert_fails_with mirando a razão que o PRÓPRIO `barrier`
 #      emite (pinada em docs/cli-parity.md), cobrindo os alvos do ML-0A/ML-3A: cabeçalho
 #      bilíngue, vocabulário de status por token, `⬜ Pendente ✅`, ML fantasma dentro de cerca,
@@ -35,8 +36,9 @@ WORK=$(mktemp -d "${TMPDIR:-/tmp}/trackfw-roadmap-barrier-contract.XXXXXX")
 # /var/folders/... -> /private/var/folders/... (symlink). Sem isto, o `roadmapTrustForGates`
 # do barrier (internal/commands/barrier.go) calcula `git rev-parse --show-toplevel` (que git
 # sempre resolve para o caminho físico) contra um `roadmapPath` absolutizado a partir de um
-# cwd NÃO resolvido — o `filepath.Rel` resultante fica errado, `git show origin/main:<relpath
-# errado>` falha com uma mensagem que NÃO bate em nenhum dos dois padrões esperados
+# cwd NÃO resolvido — o `filepath.Rel` resultante fica errado, a leitura de blob que o próprio
+# barrier faz contra `origin/main:<relpath errado>` (via git, internamente) falha com uma
+# mensagem que NÃO bate em nenhum dos dois padrões esperados
 # ("does not exist in" / "exists on disk, but not in"), e o trust-check cai no ramo
 # fail-open: `gates` deixa de reportar not_evaluated e EXECUTA de verdade os comandos que os
 # 144 roadmaps históricos declaram (inclusive `make quality`, ~25 min, e potencialmente
@@ -338,19 +340,41 @@ fi
 
 # ═══════════════════════════════════════════════════════════════════════════
 # PARTE B (AC10) — não reclassificação do corpus. Congela a tabela de vereditos do corpus
-# REAL de docs/roadmaps/** fixado no commit FREEZE_REF (não o working tree — ver nota).
+# REAL de docs/roadmaps/** num SNAPSHOT VERSIONADO (não o working tree, não história do git
+# — ver "Por que snapshot versionado" abaixo).
 #
-# Por que FREEZE_REF, não o working tree: o corpus cresce a cada roadmap novo mesclado —
-# hashar o working tree ao vivo faria este gate reprovar em TODO commit futuro que
-# adicionasse ou completasse um roadmap, o que não é o que AC10 pede ("nenhum ML HOJE
-# reconhecido pode deixar de ser"). Fixar o conteúdo em FREEZE_REF via `git show` (não
-# `cp` do disco) faz da comparação um verdadeiro congelamento: os MESMOS bytes, para
-# sempre, independente de quantos roadmaps novos o projeto ganhe depois. FREEZE_REF é o
-# commit "feat(roadmap): template escreve a forma canonica de status e ensina a legenda
-# (ML-2A)" desta mesma branch — tip da Wave 2, medido por hades-tf/apolo-tf como
-# "144 roadmaps / 788 MLs, zero mudanças de veredito" no corpo deste roadmap. Este gate
-# não repete aquela medição fresca a cada execução (custaria git-log walking indefinido);
-# ele fixa o ponto em que ela foi feita e protege dali para frente.
+# Por que snapshot versionado, não o working tree: o corpus cresce a cada roadmap novo
+# mesclado — hashar o working tree ao vivo faria este gate reprovar em TODO commit futuro
+# que adicionasse ou completasse um roadmap, o que não é o que AC10 pede ("nenhum ML HOJE
+# reconhecido pode deixar de ser").
+#
+# Por que snapshot versionado, não história do git (ML-3G, corretivo — a abordagem anterior
+# lia blobs históricos via `git`, pinados no commit "feat(roadmap): template escreve a forma
+# canonica de status e ensina a legenda (ML-2A)" desta mesma branch, sha curto a4e8f35): o job
+# `parity` do CI reprovava com "fatal: Not a valid object name a4e8f35" por dois motivos
+# independentes. (a) `actions/checkout@v7` usa `fetch-depth: 1` — nenhum SHA histórico é
+# alcançável no clone raso do CI. (b) a4e8f35 é commit DESTA branch, confirmado não-ancestral
+# de origin/main; o projeto faz squash-merge, então o SHA vira órfão no merge e o gate
+# quebraria na main permanentemente — `fetch-depth: 0` não corrige, só adia a falha por horas
+# (até o squash-merge). A correção: os MESMOS 144 arquivos, byte-a-byte idênticos ao que a
+# leitura histórica produzia (extraídos uma única vez, no momento de autoria deste ML, e
+# commitados como scripts/testdata/roadmap-barrier-corpus-snapshot/<basename>.md), viram o
+# "congelamento" — sem nenhuma dependência de história do git em tempo de execução do gate.
+# Chaveado por basename (não por caminho completo) porque um roadmap muda de pasta o tempo
+# todo (backlog -> wip -> done, operação diária); snapshot por caminho reprovaria a cada
+# transição de estado, que não é o que AC10 protege.
+#
+# Política de basename: um basename do snapshot AUSENTE do disco (docs/roadmaps/**) reprova —
+# indica que um arquivo do corpus congelado foi apagado/renomeado sem atualizar o snapshot.
+# Um roadmap NOVO (basename ausente do snapshot) é ignorado — preserva a imunidade ao
+# crescimento do corpus, que era a intenção original do congelamento e continua certa.
+# Colisão de basename: hoje não há nenhuma no corpus real (`find docs/roadmaps -name '*.md'
+# | xargs -n1 basename | sort | uniq -d` vazio, medido em 2026-08-29) — mas o mecanismo NÃO
+# detecta colisão silenciosamente: dois arquivos-fonte com o mesmo basename sobrescreveriam um
+# ao outro na extração do snapshot (um `set -e` sobre contagem de origem vs. contagem escrita,
+# abaixo, é o detector). Basename, não caminho, é uma escolha que aceita esse risco em troca de
+# não reprovar a cada `roadmap move` — julgado correto porque o corpus é de 144 arquivos com
+# nomes descritivos únicos, não uma fonte de dados adversarial.
 #
 # gates de cada wave copiada NÃO são executados: o roadmap copiado nunca existe em
 # origin/main do sandbox (bare repo vazio), então o trust-check do barrier falha FECHADO
@@ -364,7 +388,7 @@ fi
 # investigado linha a linha antes de re-pinar, não apenas aceito porque "o script mandou":
 # `docs/roadmaps/done/ROADMAP-2026-08-22-wave-0-de-modelo-de-ameaca-no-harness-e-o-asset-do-
 # arquiteto-ensina-trackfw-push.md`, seção "Auditoria do ML-1A e do ML-2A" (linhas ~223-236 no
-# FREEZE_REF): um bloco ``` (3 crases, sem info string) abre em "$ trackfw roadmap new..." e
+# snapshot): um bloco ``` (3 crases, sem info string) abre em "$ trackfw roadmap new..." e
 # aninha um "```bash...```" de MESMO comprimento sem escalar para 4+ crases — o próprio defeito
 # de nesting que o ML-0A/AC10 deste roadmap identifica e corrige no exemplo do template
 # (comentário "Fence externo... alargado de 3 para 4 crases", poucas linhas acima no mesmo
@@ -380,10 +404,16 @@ fi
 # regressão: um renderer CommonMark real trataria o mesmo texto exatamente assim. O arquivo é
 # histórico (`done/`, já mesclado antes desta REQ existir) — não é reaberto nem editado por
 # este ML. Confirmado por comparação binária dos dois parsers (pré/pós-fix) sobre os 144
-# arquivos do FREEZE_REF: SOMENTE estas 6 linhas (3 evidence + 3 failure em mls_complete; 1
+# arquivos do snapshot: SOMENTE estas 6 linhas (3 evidence + 3 failure em mls_complete; 1
 # evidence + 2 failures em acceptance_evidence) mudam; as outras 143 roadmaps são bit-a-bit
 # idênticos.
-FREEZE_REF="a4e8f35"
+#
+# CORPUS_SNAPSHOT_DIR: extraído uma única vez (ML-3G, 2026-08-29) do commit que era referenciado
+# como FREEZE_REF="a4e8f35" nesta mesma branch — leitura histórica feita FORA deste gate, no
+# momento de autoria, e commitada como bytes versionados. O gate, a partir daqui, nunca mais
+# consulta história do git.
+CORPUS_SNAPSHOT_DIR="$ROOT_DIR/scripts/testdata/roadmap-barrier-corpus-snapshot"
+CORPUS_VERDICTS_PIN="$ROOT_DIR/scripts/testdata/roadmap-barrier-corpus-verdicts.tsv"
 PINNED_CORPUS_HASH="44676e539400dd8c43410ce0750cc2eaf3a9f2bf69795bc144aa920774510226"
 PINNED_CORPUS_FILES=144
 PINNED_CORPUS_WAVES=432
@@ -427,14 +457,28 @@ CORPUS_FILES=0
 CORPUS_WAVES=0
 CORPUS_EXIT2=0
 
-CORPUS_FILELIST=$(cd "$ROOT_DIR" && git ls-tree -r --name-only "$FREEZE_REF" -- docs/roadmaps | grep '\.md$')
-if [[ -z "$CORPUS_FILELIST" ]]; then
-  fail "corpus/non-vacuous" "git ls-tree em $FREEZE_REF:docs/roadmaps não retornou nenhum .md — guarda de vacuidade do corpus"
+if [[ ! -d "$CORPUS_SNAPSHOT_DIR" ]]; then
+  fail "corpus/non-vacuous" "$CORPUS_SNAPSHOT_DIR não existe — guarda de vacuidade do corpus"
 else
-  while IFS= read -r relpath; do
-    base=$(basename "$relpath")
+  CORPUS_FILELIST=$(find "$CORPUS_SNAPSHOT_DIR" -maxdepth 1 -type f -name '*.md' | sort)
+fi
+if [[ -d "$CORPUS_SNAPSHOT_DIR" && -z "${CORPUS_FILELIST:-}" ]]; then
+  fail "corpus/non-vacuous" "$CORPUS_SNAPSHOT_DIR não contém nenhum .md — guarda de vacuidade do corpus"
+elif [[ -n "${CORPUS_FILELIST:-}" ]]; then
+  MISSING_FROM_DISK=""
+  while IFS= read -r snapshot_path; do
+    base=$(basename "$snapshot_path")
+    # Basename ausente do disco (docs/roadmaps/**) reprova: o corpus congelado referencia um
+    # arquivo que já não existe na árvore de trabalho em NENHUM estado (wip/done/backlog/...).
+    on_disk=$(find "$ROOT_DIR/docs/roadmaps" -type f -name "$base" | head -n1)
+    if [[ -z "$on_disk" ]]; then
+      MISSING_FROM_DISK="${MISSING_FROM_DISK}${MISSING_FROM_DISK:+, }$base"
+      continue
+    fi
     CORPUS_FILES=$((CORPUS_FILES + 1))
-    (cd "$ROOT_DIR" && git show "$FREEZE_REF:$relpath") >"$CORPUS_SANDBOX/docs/roadmaps/wip/$base"
+    # Conteúdo vem do SNAPSHOT (bytes congelados), nunca do disco — o disco só prova
+    # existência acima, o veredito é sempre computado sobre o conteúdo pinado.
+    cp "$snapshot_path" "$CORPUS_SANDBOX/docs/roadmaps/wip/$base"
     name="${base%.md}"
     labels=$( (grep -oE '^## Wave [^ ]+ ' "$CORPUS_SANDBOX/docs/roadmaps/wip/$base" || true) \
       | sed -E 's/^## Wave ([^ ]+) $/\1/' | sort -u)
@@ -467,6 +511,12 @@ PYEOF
     rm -f "$CORPUS_SANDBOX/docs/roadmaps/wip/$base"
   done <<<"$CORPUS_FILELIST"
 
+  if [[ -n "$MISSING_FROM_DISK" ]]; then
+    fail "corpus/basename-missing-from-disk" "basename(s) do snapshot ausente(s) de docs/roadmaps/**: $MISSING_FROM_DISK"
+  else
+    ok "corpus/basename-missing-from-disk"
+  fi
+
   if [[ ! -s "$CORPUS_LINES_FILE" ]]; then
     fail "corpus/non-vacuous" "tabela de vereditos do corpus ficou vazia — guarda de vacuidade"
   else
@@ -479,13 +529,13 @@ PYEOF
     ACC_EVIDENCE=$(awk -F'\t' '$3=="acceptance_evidence" && $4=="evidence"' "$CORPUS_LINES_FILE" | wc -l | tr -d ' ')
     ACC_FAILURE=$(awk -F'\t' '$3=="acceptance_evidence" && $4=="failure"' "$CORPUS_LINES_FILE" | wc -l | tr -d ' ')
 
-    echo "corpus (FREEZE_REF=$FREEZE_REF): files=$CORPUS_FILES waves=$CORPUS_WAVES exit2=$CORPUS_EXIT2 lines=$CORPUS_LINES"
+    echo "corpus (snapshot=$CORPUS_SNAPSHOT_DIR): files=$CORPUS_FILES waves=$CORPUS_WAVES exit2=$CORPUS_EXIT2 lines=$CORPUS_LINES"
     echo "  mls_complete: $MLS_EVIDENCE evidence / $MLS_FAILURE failure"
     echo "  acceptance_evidence: $ACC_EVIDENCE evidence / $ACC_FAILURE failure"
     echo "  hash: $CORPUS_HASH"
 
     if [[ "$CORPUS_FILES" -ne "$PINNED_CORPUS_FILES" ]]; then
-      fail "corpus/files-count" "arquivos varridos em $FREEZE_REF: $CORPUS_FILES, pinado $PINNED_CORPUS_FILES — FREEZE_REF mudou de conteúdo?"
+      fail "corpus/files-count" "arquivos varridos no snapshot: $CORPUS_FILES, pinado $PINNED_CORPUS_FILES — snapshot mudou de conteúdo?"
     else
       ok "corpus/files-count"
     fi
@@ -510,7 +560,18 @@ PYEOF
       ok "corpus/acceptance-evidence-verdict-counts"
     fi
     if [[ "$CORPUS_HASH" != "$PINNED_CORPUS_HASH" ]]; then
-      fail "corpus/non-reclassification" "corpus reclassificado: hash da tabela de vereditos mudou (pinado $PINNED_CORPUS_HASH, obtido $CORPUS_HASH) — algum ML de $FREEZE_REF trocou de veredito (mls_complete ou acceptance_evidence) sem que este ML tenha mudado o pin"
+      # Nomeia QUAL entrada mudou: diff contra a tabela de vereditos versionada
+      # (CORPUS_VERDICTS_PIN, mesmas 1500 linhas ordenadas que produzem PINNED_CORPUS_HASH).
+      # O hash pinado no script protege a tabela de adulteração; a tabela em si dá o nome.
+      DIFF_OUT=""
+      if [[ -f "$CORPUS_VERDICTS_PIN" ]]; then
+        DIFF_OUT=$(diff "$CORPUS_VERDICTS_PIN" "$CORPUS_LINES_FILE" || true)
+      fi
+      if [[ -n "$DIFF_OUT" ]]; then
+        fail "corpus/non-reclassification" "corpus reclassificado: hash da tabela de vereditos mudou (pinado $PINNED_CORPUS_HASH, obtido $CORPUS_HASH). Linhas divergentes vs. $CORPUS_VERDICTS_PIN: $DIFF_OUT"
+      else
+        fail "corpus/non-reclassification" "corpus reclassificado: hash da tabela de vereditos mudou (pinado $PINNED_CORPUS_HASH, obtido $CORPUS_HASH), mas $CORPUS_VERDICTS_PIN está ausente ou idêntico — não foi possível nomear a linha divergente"
+      fi
     else
       ok "corpus/non-reclassification"
     fi

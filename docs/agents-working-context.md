@@ -25677,3 +25677,72 @@ pega vetor **criado pelo próprio trabalho**.
   `barrier-crlf-divergencia-node-regex-2026-08-29`,
   `barrier-fence-closing-trailing-content-bypass-2026-08-29`,
   `barrier-trust-check-fail-open-em-tmpdir-simbolico-2026-08-29`
+
+---
+
+## Sessão 2026-08-29 — artemis-tf (INÍCIO: ML-3G — congelamento do corpus sem história do git)
+
+Branch `fix/dialeto-canonico-do-roadmap-e-vocabulario-de-status-do-barrier`.
+
+Roadmap reaberto para `wip/` pelo arquiteto (erro dele: fechou com CI vermelho). Escopo: substituir
+`git show a4e8f35:<path>` / `git ls-tree -r a4e8f35` em `scripts/check-roadmap-barrier-contract.sh`
+por um snapshot versionado do corpus (144 arquivos, chaveado por basename), lido da árvore de
+trabalho, sem nenhuma leitura de história do git. `actions/checkout@v7` no CI usa
+`fetch-depth: 1` e o SHA `a4e8f35` não é ancestral de `origin/main` (vira órfão em squash-merge).
+Não commito, não faço push — handoff exige entrega ao arquiteto para auditoria/commit.
+
+---
+
+## Sessão 2026-08-29 — artemis-tf (FIM: ML-3G — congelamento do corpus sem história do git — CONCLUÍDO)
+
+Branch `fix/dialeto-canonico-do-roadmap-e-vocabulario-de-status-do-barrier`.
+
+**O que foi feito:**
+
+- `scripts/testdata/roadmap-barrier-corpus-snapshot/` — 144 arquivos extraídos uma única vez de
+  `a4e8f35` (leitura de git feita FORA do gate, no momento de autoria; commitáveis como bytes
+  versionados a partir daqui). Zero colisão de basename na extração (contagem paths=144 ==
+  arquivos escritos=144).
+- `scripts/testdata/roadmap-barrier-corpus-verdicts.tsv` — a tabela de vereditos ordenada
+  (1500 linhas) cujo hash é `PINNED_CORPUS_HASH`; usada para nomear a linha divergente quando o
+  corpus reclassifica (antes só o hash mudava, sem apontar qual entrada).
+- `scripts/check-roadmap-barrier-contract.sh` reescrito: nenhuma chamada `git show`/`git
+  ls-tree`/`git cat-file`/`git archive` restante (confirmado por grep). Basename do snapshot
+  ausente do disco → reprova (`corpus/basename-missing-from-disk`, nomeando o arquivo). Roadmap
+  novo (basename ausente do snapshot) → ignorado, sem reprovar.
+- Verificado que o snapshot é byte-fiel ao antigo `git show a4e8f35`: rodando o gate migrado
+  contra o snapshot, hash e as 6 contagens pinadas (`PINNED_CORPUS_*`) saíram idênticas às
+  pinadas antes desta mudança — nenhum pin foi remexido.
+
+**Evidências:**
+
+- `GO_BIN=/tmp/trackfw-go bash scripts/check-roadmap-barrier-contract.sh`: exit 0, 53 cenários OK
+  (52 do ML-3F + 1 novo `corpus/basename-missing-from-disk`).
+- **Reprodução em clone raso**: `git clone --depth 1 file://$PWD <dir>` → `git rev-list --count
+  HEAD` = 1, `git rev-parse a4e8f35` falha com "Not a valid object name" (reproduz o erro exato
+  do CI). Copiando o script modificado + `scripts/testdata/` (não commitados) para dentro do
+  clone e rodando o gate lá: exit 0, 53/53 OK — prova que a leitura não depende de história
+  disponível, não de "estar commitado".
+- Falsificação, as três, em cópias descartáveis do clone raso (nunca a árvore viva):
+  1. Veredito alterado no snapshot (ML-1A de um roadmap flipado de ✅ para ⬜ Pendente) →
+     reprova `corpus/non-reclassification` nomeando exatamente a linha divergente via diff
+     contra o `.tsv` pinado.
+  2. Roadmap novo (basename ausente do snapshot) → **não** reprova, 53/53 OK.
+  3. Roadmap do snapshot removido do disco → reprova `corpus/basename-missing-from-disk`
+     nomeando o basename ausente.
+- Guarda de vacuidade (snapshot dir renomeado/ausente) → reprova `corpus/non-vacuous` (corrigido
+  duplo-FAIL redundante do primeiro rascunho antes de reportar).
+- `bash scripts/check-gates-falsify.sh`: 0 FAILs, "Falsification checks passed (all 181
+  scenarios...)".
+- `git diff --stat`: só `docs/agents-working-context.md` e
+  `scripts/check-roadmap-barrier-contract.sh`; `scripts/testdata/` é novo/untracked. Nenhum
+  arquivo de código de produto tocado.
+
+**Fronteiras mantidas:**
+
+- Não commitei, não fiz push — entrega ao arquiteto para auditoria/commit.
+- `docs/cli-parity.md` não menciona `FREEZE_REF`/`a4e8f35` — não precisou de edição; achado
+  reportado ao arquiteto, não corrigido (fora de escopo deste ML).
+- `scripts/testdata/` fica FORA de `docs/roadmaps/` (`roadmap_dir` do `trackfw.yaml`) — não
+  interfere na contagem de roadmaps nem em `check-gates-falsify.sh:660` (`cp -r
+  docs/roadmaps`).
