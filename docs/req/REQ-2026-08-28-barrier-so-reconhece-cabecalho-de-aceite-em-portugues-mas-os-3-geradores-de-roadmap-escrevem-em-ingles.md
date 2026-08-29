@@ -2,8 +2,8 @@
 status: Open
 date: 2026-08-28
 author: "trackfw_architect (Zeus)"
-adr: ""
-roadmap: ""
+adr: "docs/adr/ADR-2026-08-29-dialeto-canonico-do-roadmap-e-vocabulario-de-status-que-o-barrier-reconhece.md"
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-29-dialeto-canonico-do-roadmap-e-vocabulario-de-status-do-barrier.md"
 ---
 
 # REQ: `barrier` só reconhece cabeçalho de aceite em português, mas os 3 geradores de roadmap escrevem em inglês
@@ -43,6 +43,25 @@ acabou de escrever, e não há como adivinhar isso — a mensagem de erro diz qu
 Foi exatamente o que aconteceu aqui: converti os 6 cabeçalhos do roadmap para a forma portuguesa
 como contorno.
 
+## Emenda de 2026-08-29 — o escopo é maior do que esta REQ descrevia
+
+Sonda com o binário 7.3.0: um roadmap gerado pelo `roadmap new` e preenchido **exatamente como o
+próprio template instrui** falha em **dois** checks do `barrier`, não um:
+
+```
+- ML-1A: not complete (status: done)      ← mls_complete
+✗ acceptance_evidence: blocked
+- ML-1A: no acceptance block              ← acceptance_evidence
+```
+
+O segundo defeito **não é de idioma**: o gerador escreve `**Status:** pending` e os 3 barriers
+exigem que o restante da linha **contenha `✅`** (`barrier.go:554`, `barrier.js:134`,
+`barrier.py:207`). Traduzir o template não resolveria — a marca é um glifo, e o template não ensina
+glifo nenhum nem traz legenda.
+
+Decisões de KG registradas no ADR: **inglês é canônico** para os cabeçalhos, com PT seguindo aceito;
+e o status passa a aceitar **emoji e palavra**, por **token exato**, nunca substring.
+
 ## Acceptance Criteria
 
 - [ ] **AC1** — `trackfw barrier` reconhece o bloco de aceite escrito pelo `roadmap new` **sem
@@ -62,6 +81,31 @@ como contorno.
 - [ ] **AC6** — `docs/cli-parity.md` documenta o contrato gerador↔`barrier` com anotação `gate=`.
 - [ ] **AC7** — `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality` → exit 0.
 
+### Status do ML (acrescentados pela emenda de 2026-08-29)
+
+- [ ] **AC8** — `mls_complete` reconhece como concluído, nos 3 CLIs, quando o **primeiro token** do
+      restante da linha de status é `✅`, `done` ou `Concluído` (insensível a caixa e acento).
+      Verificável com os 6 casos aceitos listados no ADR, incluindo os que têm sufixo
+      (`✅ Concluído · **Agente:** \`apolo-tf\``, `✅ concluído (auditado 2026-08-02)`).
+- [ ] **AC9** — **Falsificação na direção oposta**, obrigatória: `**Status:** não done`,
+      `**Status:** pending (era done)`, `**Status:** notdone`, `**Status:** ⬜ Pendente`,
+      `**Status:** 🔄 Em andamento`, `**Status:** ❌ Bloqueado` **não** são reconhecidos como
+      concluídos. Hoje os 3 CLIs usam `contains`; ampliar o vocabulário sem trocar o mecanismo faria
+      os dois primeiros passarem. Ver
+      `vault/notes/adr-status-substring-livre-falso-positivo-2026-08-01.md` — substring em campo de
+      status já produziu falso-positivo neste projeto.
+- [ ] **AC10** — **Não reclassificação do corpus.** Rodar o parser novo sobre os 143 roadmaps de
+      `docs/roadmaps/**` e comparar, ML a ML, com o veredito do parser atual. A única diferença
+      permitida é ML que hoje é `not complete` por dizer `done`/`Concluído` e passa a ser
+      reconhecido. **Nenhum** ML hoje reconhecido pode deixar de ser, e **nenhum** ML hoje não
+      concluído (`⬜`, `🔄`, `❌`) pode passar a ser. Evidência é a tabela do antes/depois.
+- [ ] **AC11** — O template do `roadmap new` passa a escrever a forma canônica de status e a incluir
+      a **legenda dos quatro estados**, nos 3 geradores, byte-idêntico entre eles.
+- [ ] **AC12** — **Prova de ciclo fechado, com CLI real**: `roadmap new` → marcar os critérios e o
+      status seguindo **apenas** o que o template diz → `roadmap move wip` → `barrier --wave N`
+      → `passed`. Sem edição manual de cabeçalho. Nos 3 CLIs. Esta é a AC que define a REQ; se ela
+      não passar, nada mais importa.
+
 ## Negative Scope
 
 - **Não** traduzir o resto do template de roadmap nem padronizar o idioma dos artefatos do projeto.
@@ -69,7 +113,12 @@ como contorno.
   i18n é `REQ-2026-08-16-conformidade-estrutural-e-comportamental-de-i18n-entre-os-tres-clis`.)
 - **Não** mexer nos outros checks do `barrier` (`mls_complete`, `gates`, `validate`).
 - **Não** migrar roadmaps existentes em `done/`, `wip/` ou `backlog/`.
-- **Não** alterar o cabeçalho de status do ML (`**Status:**`) nem o parsing de wave.
+- **Não** alterar o token `**Status:**` em si, nem o parsing de wave (`## Wave <label>`).
+- **Não** renomear `**Gates da wave:**`. Gerador e `barrier` já concordam nesse token, em português,
+  nos 3 CLIs — não há defeito. Renomear criaria exigência de forma dupla para corrigir nada. Se você
+  veio "consertar a inconsistência de idioma" do template, é aqui que para.
+- **Não** ampliar o vocabulário de status além de `✅`, `done` e `Concluído`. Vocabulário fechado e
+  explícito, não heurística de linguagem natural. `feito`, `ok`, `finalizado` ficam de fora.
 
 ## Observação de método
 
@@ -80,7 +129,7 @@ gates de paridade medem. Paridade entre implementações não é o mesmo que cor
 
 ## Linked ADR
 <!-- Um ADR é necessário para AC5: qual forma é canônica e por quê. -->
-ADR:
+ADR: docs/adr/ADR-2026-08-29-dialeto-canonico-do-roadmap-e-vocabulario-de-status-que-o-barrier-reconhece.md
 
 ## Blocked by ADRs
 <!-- none -->
