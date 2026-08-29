@@ -25804,3 +25804,45 @@ Branch `fix/dialeto-canonico-do-roadmap-e-vocabulario-de-status-do-barrier`.
   trap de limpeza desativado para diagnóstico) — fora do repositório, inofensivos, não removidos
   por terem module cache read-only do Go embaixo (mesmo padrão de permissão que o próprio script
   trata via `chmod -R u+w` no seu trap normal).
+
+---
+
+## 2026-08-29 — `trackfw_architect` (Zeus) — REQ do dialeto do `barrier`: FIM (desta vez com o CI verde)
+
+Fechamento **real**, com os 10 checks do PR #217 verdes e `MERGEABLE / CLEAN`. O fechamento anterior
+foi meu erro — declarei conclusão com o `make quality` local verde enquanto o CI estava vermelho, e
+a `artemis-tf` bloqueou o handoff seguinte apontando `wip/` vazio. Reabri, criei a Wave 4 e só
+fechei agora.
+
+**Wave 4 — quatro corretivos, todos da mesma família:** o ambiente da minha máquina é mais rico que
+o do CI, e é nessa diferença que os defeitos moravam.
+
+| ML | diferença | manifestação |
+|---|---|---|
+| 3F | `node`/`python3` no PATH | teste cross-runtime dentro do `go test`; job `go` é Go puro |
+| 3G | história do git | pin via `git show <sha>`; CI usa `fetch-depth: 1`, e o SHA era desta branch — sumiria no squash-merge |
+| 3H | locale `en_US.UTF-8` | `sort` dependente de locale; hash do pin diferente do runner Linux |
+| — | (meu) gate da Wave 4 | escrito como script multilinha; o formato executa **uma linha por comando** |
+
+**O último merece atenção de quem escrever roadmap.** `parseGates` (`barrier.go:623-633`) coleta
+cada linha não vazia e não comentada como **comando independente** — não é script, não há estado
+entre linhas. Meu gate era `grep -q "padrão" arquivo && { echo erro; exit 1; }`: quando o `grep`
+**não acha** (o caso bom), a lista devolve 1 e o `barrier` **bloqueia**. O gate reprovava exatamente
+quando deveria passar. Rodado à mão como script, o mesmo texto passa — por isso sobreviveu à
+verificação manual. Corrigido para `! grep -q ...`, uma linha, cujo exit code é a asserção.
+
+Escrevi gates nesse formato errado em **três roadmaps** hoje antes de perceber, e só percebi porque
+um reprovou na direção errada.
+
+**Estado final:** `barrier --wave 4` passed nos 4 checks · PR #217 10/10 verdes · `validate` 16
+warnings, 0 violations · gate do contrato em 53 cenários · corpus de 144 roadmaps congelado sem
+dependência de história do git e invariante a locale.
+
+**Notas de vault desta sessão:** `barrier-so-casa-cabecalho-de-aceite-em-portugues`,
+`barrier-crlf-divergencia-node-regex`, `barrier-fence-closing-trailing-content-bypass`,
+`barrier-trust-check-fail-open-em-tmpdir-simbolico`,
+`paridade-cross-runtime-dentro-do-go-test-quebra-o-job-go`,
+`ambiente-do-dev-e-mais-rico-que-o-do-ci`, `gates-da-wave-sao-um-comando-por-linha`.
+
+**Próximo, já acordado com KG:** REQ do job de Windows alargado + workflow sob demanda. Depois, a
+REQ do `roadmapTrustForGates` que falha aberto — defeito de harness em produção.

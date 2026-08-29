@@ -1,9 +1,9 @@
 ---
-status: Open
+status: Done
 date: 2026-08-28
 author: "trackfw_architect (Zeus)"
 adr: "docs/adr/ADR-2026-08-29-dialeto-canonico-do-roadmap-e-vocabulario-de-status-que-o-barrier-reconhece.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-29-dialeto-canonico-do-roadmap-e-vocabulario-de-status-do-barrier.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-29-dialeto-canonico-do-roadmap-e-vocabulario-de-status-do-barrier.md"
 ---
 
 # REQ: `barrier` só reconhece cabeçalho de aceite em português, mas os 3 geradores de roadmap escrevem em inglês

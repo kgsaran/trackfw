@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-08-29
 req: "docs/req/REQ-2026-08-28-barrier-so-reconhece-cabecalho-de-aceite-em-portugues-mas-os-3-geradores-de-roadmap-escrevem-em-ingles.md"
 squad: "hades-tf, apolo-tf, artemis-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, apolo-tf, artemis-tf"
 
 # Roadmap: Dialeto canônico do roadmap e vocabulário de status do `barrier`
 
-> Created: 2026-08-29 | Status: wip
+> Created: 2026-08-29 | Status: done
 
 ## Context
 
@@ -704,9 +704,8 @@ não tem.
 
 **Gates da wave:**
 ```bash
-set -eu
-grep -q "git show" scripts/check-roadmap-barrier-contract.sh && { echo "gate ainda lê história do git" >&2; exit 1; }
-echo "Wave 4 gate OK — congelamento sem dependência de história."
+! grep -q "git show" scripts/check-roadmap-barrier-contract.sh
+! grep -q "git cat-file" scripts/check-roadmap-barrier-contract.sh
 ```
 
 ### ML-3H — Ordenação do corpus dependente de locale (corretiva)

@@ -4,6 +4,7 @@
 
 ## Índice
 
+- [gates-da-wave-sao-um-comando-por-linha-2026-08-29](gates-da-wave-sao-um-comando-por-linha-2026-08-29.md) — bloco de gate não é script: cada linha é um comando isolado; `grep && {}` reprova quando o grep NÃO acha
 - [ambiente-do-dev-e-mais-rico-que-o-do-ci-2026-08-29](ambiente-do-dev-e-mais-rico-que-o-do-ci-2026-08-29.md) — PATH, história do git e locale: três defeitos no mesmo dia, verde local e vermelho no CI
 - [paridade-cross-runtime-dentro-do-go-test-quebra-o-job-go-2026-08-29](paridade-cross-runtime-dentro-do-go-test-quebra-o-job-go-2026-08-29.md) — teste cross-CLI no job de um runtime só; e o gate que parecia cobrir chamava só o Go
 - [barrier-crlf-divergencia-node-regex-2026-08-29](barrier-crlf-divergencia-node-regex-2026-08-29.md) — CRLF: `.` do JS exclui `\r` e o do RE2 inclui; roadmap do Windows fica ilegível no CLI Node
