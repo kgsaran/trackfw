@@ -555,7 +555,380 @@ mantive.
 
 Registrado em `vault/notes/barrier-crlf-divergencia-node-regex-2026-08-29.md` e no `cli-parity.md`.
 
+### ML-3D — Bypass de fechamento de cerca (corretiva de segurança, REPROVAÇÃO da barreira)
+**Status:** ✅ Concluído · **Agente:** `apolo-tf`
+**Critérios de aceite:**
+- [x] Bypass bloqueado nos 3, citando status e critério reais
+- [x] Info string continua abrindo; fechamento com espaços continua fechando
+- [x] Default de `fenced` no Node falha fechado
+- [x] Gate 31 → 39 cenários
+
+### ML-3E — Marca combinante rejeitada no primeiro token (decisão 9 do ADR)
+**Status:** ✅ Concluído · **Agente:** `apolo-tf`
+**Critérios de aceite:**
+- [x] AC15 nas duas direções, nos 3
+- [x] `Concluído` acentuado continua concluído — o caso que quebra com a ordem errada
+- [x] Gate 39 → 42 cenários; corpus sem reclassificação
+
+#### Resultado dos ML-3D e ML-3E (apolo-tf, 2026-08-29)
+
+**O `hades-tf` REPROVOU a barreira final com um bypass ao vivo nos 3 CLIs**, sobre a própria
+proteção que esta REQ introduziu. Uma linha ` ```qualquer-coisa ` **fechava** a cerca antes da hora,
+porque a implementação contava a corrida de caracteres e ignorava o que vinha à direita — correto
+para **abertura** (o CommonMark permite info string), errado para **fechamento** (exige só os
+caracteres da cerca e espaços). Resultado: o exemplo virava conteúdo real.
+
+Reproduzido por mim antes e depois. Um ML com `**Status:** ⬜ Pendente` e `- [ ]` não atendido
+liberava `mls_complete` **e** `acceptance_evidence` nos 3; agora bloqueia nos 3, citando o status e o
+critério **reais**.
+
+**A lição do gate:** os 31 cenários cobriam cerca de 3 crases, de 4, til e conteúdo forjado em cerca
+"limpa" — **nenhum** usava linha de fechamento com sufixo. A suíte foi desenhada para essa classe de
+ameaça e não a pegou. *Gate de falsificação prova o que alguém lembrou de falsificar.*
+
+**Re-pin do corpus investigado, não aceito.** A correção reclassifica **1 de 144** roadmaps, e o
+agente foi ver qual: um bloco de 3 crases aninhando um ` ```bash ` de mesmo comprimento sem escalar
+para 4. Confirmou por diff binário dos dois parsers sobre os 144 arquivos que só aquelas 6 linhas
+mudam.
+
+**Decisão 9 do ADR (ML-3E).** Ele implementou o lado permissivo do achado Unicode e **escalou** a
+direção, com o censo na mão: zero marcas `Mn` no primeiro token de status nos 144 roadmaps, VS16
+incluído. Decidi **contra** o que ele tinha implementado — apertar, não alinhar por baixo. O motivo
+não é custo, é engano: `d<U+1DC0>one` renderiza como algo que um revisor humano não lê como `done`.
+
+**A ordem que ele escolheu é a parte fina do ML, e está certa:** remover VS16 → checar `Mn`
+remanescente **no token bruto, antes do NFD** → só então dobrar diacríticos para comparar. Checar
+depois do NFD rejeitaria `Concluído`, porque a decomposição **sintetiza** um `Mn` que o autor nunca
+digitou. Ele viu isso sozinho.
+
+**Auditoria do arquiteto — 4 casos × 3 CLIs:**
+
+| status | go | node | py |
+|---|---|---|---|
+| `d<U+1DC0>one` (injetado) | rejeitado | rejeitado | rejeitado |
+| `✅️` (VS16) | concluído | concluído | concluído |
+| `Concluído` (acentuado) | concluído | concluído | concluído |
+| `done` | concluído | concluído | concluído |
+
 ## Barreira final
 Revisão `hefesto-tf` (qualidade) e `hades-tf` (segurança — o `barrier` é um check que **libera
 wave**: falso positivo aqui é trabalho incompleto dado como pronto). Auditoria de diff pelo
 arquiteto e `trackfw barrier --wave 3`.
+
+#### Parecer de qualidade da barreira final (hefesto-tf, 2026-08-29)
+
+**Método:** leitura integral do `git diff origin/main...HEAD` dos 3 runtimes
+(`internal/commands/barrier.go`, `npm/src/commands/barrier.js`, `pypi/trackfw/commands/barrier.py`
+e geradores), da REQ (AC1–AC14), deste roadmap, e leitura direcionada dos testes (não só grep de
+nomes): corpo de `TestBarrierParity_CRLFLineEndings_*` e do helper `assertParity`/
+`runAllThreeRuntimes` (confirma shell-out real a `node`/`python3`, não simulação em Go), uso dos
+símbolos exportados (`statusIsComplete`, `computeFenceMask`, `splitRoadmapLines`,
+`CRITERIA_HEADER_RE`) nas suítes Node/Python, e a lógica de `scripts/check-roadmap-barrier-contract.sh`
+(FREEZE_REF, hash pinado, guarda de vacuidade).
+
+**Veredito: APROVA.**
+
+---
+
+**1. CRLF inerte em Go/Python (pergunta 1) — concordo em manter, não é peso morto.**
+
+O doc-comment em cada `splitRoadmapLines`/`_split_roadmap_lines` já diz, explicitamente, que a
+normalização é no-op nesses dois runtimes hoje, nomeia o mecanismo acidental que a torna no-op
+(`TrimSpace`/universal-newlines) e nomeia o tipo exato de mudança futura que reintroduziria o
+defeito (um marcador novo comparado por igualdade exata sem passar por `TrimSpace`, ou um `.` sob
+modo mais estrito). Isso não é código que "mente sobre o que protege" — é o oposto: o comentário
+se recusa a reivindicar proteção que não tem hoje. O teste unitário
+(`TestSplitRoadmapLines_StripsTrailingCROnlyAtBoundary` em Go, equivalentes em JS/Python) documenta
+a mesma lacuna em vez de escondê-la com um mock de call-site — é precisamente a lição do ML-2G
+aplicada corretamente. A alternativa (normalizar por runtime, no ponto onde cada um "precisar") é
+pior: o próximo marcador nasceria sem saber qual runtime absorve `\r` por acidente. Concordo com o
+apolo-tf: fronteira única, mesmo sendo hoje inerte em dois terços dos runtimes, é a decisão certa.
+Dívida aceita, não bloqueia.
+
+**2. Duplicação de `statusIsComplete`/`_status_is_complete` (pergunta 2) — inevitável no mecanismo,
+mas a mitigação real não é extrair código, é compartilhar a lista de vetores.**
+
+Não há build step nem runtime compartilhado entre os 3 CLIs (regra dura de paridade do projeto);
+extrair ~15 linhas atrás de um gerador de código custaria mais do que economiza. O padrão de erro
+observado nesta própria REQ — VS16 (ML-1A) e o `.trim()` do Node (ML-1B) — não nasceu de "três
+implementações da regra", nasceu de **três listas de vetores de teste escritas à mão de forma
+independente**. Verifiquei: os vetores aceitos/rejeitados de `statusIsComplete` aparecem
+hard-coded, separadamente, em `internal/commands/barrier_test.go`, `npm/tests/barrier.test.js` e
+`pypi/tests/test_barrier.py` — não há um fixture de dados único que as 3 suítes leiam. Recomendo,
+como dívida a registrar (não bloqueia esta REQ): um arquivo de vetores canônico (ex.:
+`docs/cli-parity.md` já pinado, ou um `.json`/`.txt` versionado) que as 3 suítes carreguem, para que
+adicionar um vetor de teste o adicione nos 3 runtimes por construção. É a mitigação que a paridade
+comportamental (AC3) está tentando alcançar por convenção hoje.
+
+**3. Testes que passam sem provar nada (pergunta 3) — não encontrei a forma ML-2G nesta REQ.**
+
+Verifiquei especificamente os candidatos mais prováveis:
+
+- `TestBarrierParity_CRLFLineEndings_*` (Go) chamam `assertParity` → `runAllThreeRuntimes`, que
+  invoca `exec.Command("node", ...)` e `exec.Command("python3", ...)` de verdade
+  (`internal/commands/barrier_test.go:1133,1159`) — não é simulação Go-only com nome enganoso.
+- As suítes Node e Python usam os símbolos internos exportados (`statusIsComplete`,
+  `computeFenceMask`, `_status_is_complete`, `_fence_mask` etc.) para testes unitários de vetor,
+  **mas também** têm testes e2e reais via CLI (`pypi/tests/test_barrier.py:679` em diante,
+  `test_barrier_cli_*_e2e`, subprocess real) cobrindo os mesmos casos (cabeçalho bilíngue, cerca
+  forjada, marcador indentado, CRLF). Unitário + e2e, não unitário no lugar de e2e.
+- O único gap reportado explicitamente é o do item 1 acima (CRLF inerte em Go/Python), e ele é
+  **declarado** no doc-comment do teste, não maquiado como cobertura.
+
+**Achado que reporto, não bloqueia:** o `AC10` (não reclassificação) pede comparar o parser novo
+contra "o veredito do parser atual" — ou seja, uma comparação diferencial parser-velho vs.
+parser-novo. O gate (`scripts/check-roadmap-barrier-contract.sh`, `FREEZE_REF=a4e8f35`) roda o
+binário **atual** (já com o parser novo — `a4e8f35` é o commit do ML-2A, posterior ao ML-1A/1B)
+contra o conteúdo do corpus congelado, e pina o hash resultante. Isso prova **determinismo daqui pra
+frente** (nenhuma reclassificação futura passa despercebida) — mas não é, em si, a prova
+diferencial "parser velho vs. parser novo" que o AC10 descreve; essa comparação foi feita ao vivo
+pelo hades-tf/apolo-tf e está registrada como afirmação em prosa neste roadmap ("144 roadmaps / 788
+MLs, zero mudanças de veredito"), não como artefato re-executável no repositório. É reproduzível
+manualmente (checkout de um commit anterior ao ML-1A, rebuild, rodar contra o mesmo `FREEZE_REF`,
+diff), mas não está automatizado. Não é uma fixture que "coincide por acaso" — é uma afirmação
+correta, mas cujo re-teste depende de reconstrução manual em vez de comando único. Recomendo
+registrar como dívida: um script (ou a mesma tabela) que compare explicitamente contra o binário
+pré-ML-1A, preservado como artefato, não só como prosa de roadmap.
+
+**Achado adicional, menor, fora das 4 perguntas — Node por omissão de default fica permissivo.**
+`mlCompletionStatus(mlLines, fenced = [])` e `mlAcceptanceEvidence(mlLines, fenced = [])`
+(`npm/src/commands/barrier.js:272,294`) usam default `[]` — chamado sem o segundo argumento, TODA
+linha é tratada como fora de cerca, ou seja, a proteção de AC13 desaparece silenciosamente. O
+call-site de produção (`evalMlsComplete`/`evalAcceptanceEvidence`, linhas 369/383) sempre passa
+`ml.fenced`, então **não há exploração hoje**. Mas as duas funções são exportadas
+(`module.exports.mlCompletionStatus`/`mlAcceptanceEvidence`, usadas diretamente pelos testes) e o
+default silenciosamente permissivo é exatamente a forma do ML-1B achado 2 (Node era o runtime
+permissivo por omissão) — já mordeu esta REQ uma vez. Não bloqueia porque não há call-site real
+afetado, mas registro para correção de baixo custo: tornar `fenced` obrigatório (sem default), ou
+default para `computeFenceMask(mlLines)` em vez de `[]`.
+
+**4. Legibilidade (pergunta 4) — boa, com uma ressalva sobre onde a garantia mora.**
+
+Os três mecanismos (máscara de cerca, normalização Unicode do primeiro token, leitura por primeiro
+token) têm doc-comments que carregam o *porquê*, não só o *o quê* — cada um cita o ADR/AC específico
+que o motiva e, nos pontos mais sutis (VS16 em `normalizeStatusToken`, CommonMark em
+`detectFenceMarker`/`fenceMask`), explica o efeito colateral que a implementação ingênua teria
+("Go's `runes.In(unicode.Mn)` folds VS16 too... without stripping it here both barrier.go and
+barrier.py would accept the VS16 form while barrier.js rejected it"). Isso é o padrão certo: o
+comentário não apenas descreve o código, ele preserva o raciocínio que motivou a escolha, então um
+mantenedor que tentar "simplificar" a máscara de cerca ou o first-token tem, na própria função, o
+motivo escrito de por que a versão simples já foi tentada e rejeitada. `docs/cli-parity.md` §2-bis
+e §3/§4 espelham a mesma explicação em nível de contrato cross-runtime, não só em comentário de
+código — reduz o risco de a garantia existir só na cabeça de quem escreveu.
+
+---
+
+**Resumo — bloqueia o PR:** nenhum item.
+
+**Dívida aceita a registrar** (nenhuma bloqueia; ordem de valor):
+1. AC10 — a comparação diferencial parser-velho vs. parser-novo existe como prosa de roadmap, não
+   como artefato re-executável; recomendo script/tabela dedicados numa REQ futura de manutenção do
+   gate.
+2. Vetores de teste de `statusIsComplete`/`_status_is_complete` duplicados manualmente nos 3
+   runtimes, sem fonte de dados única — é como VS16 e `.trim()` nasceram nesta própria REQ.
+3. `mlCompletionStatus`/`mlAcceptanceEvidence` (Node) com default `fenced = []` silenciosamente
+   permissivo; sem exploração hoje (call-site de produção sempre passa a máscara), mas é a mesma
+   forma do ML-1B achado 2.
+4. CRLF inerte em Go/Python — aceito como fronteira única e bem documentada, não como dívida a
+   remover.
+
+**Nota de processo:** por instrução explícita desta tarefa ("não toque em nenhum outro arquivo" —
+`hades-tf` revisa em paralelo no mesmo roadmap), não escrevi a entrada correspondente em
+`docs/agents-working-context.md`; fica para quem consolidar os dois pareceres.
+
+#### Parecer de segurança da barreira final (hades-tf, 2026-08-29)
+
+**Método:** leitura do `git diff origin/main...HEAD` completo dos 3 runtimes, confronto linha a
+linha com o modelo de ameaça que eu mesmo escrevi no ML-0A, e reprodução ao vivo — binário Go
+compilado deste branch (`go build ./cmd/trackfw`), `npm/bin/trackfw` e
+`PYTHONPATH=pypi python3 -m pypi.trackfw.cli` — contra roadmaps de sonda num projeto descartável
+fora deste repositório, seguindo `feedback_verify_by_execution` do meu memory: nenhum veredito
+abaixo é dedução de leitura de código sem confirmação por execução real.
+
+**Veredito: REPROVA.**
+
+Achado #1 é um bypass completo de liberação de wave, ao vivo, nos **3 CLIs simultaneamente**,
+sobre exatamente a proteção que esta REQ (AC13, ADR decisão 7) foi desenhada para fechar. Isto não
+é hipótese nem leitura de código — é `mls_complete: passed` e `acceptance_evidence: passed`
+reproduzidos para uma ML cujo conteúdo real é `**Status:** pending` e
+`- [ ] critério real não atendido`.
+
+---
+
+**Achado #1 (Crítico, bloqueia) — fechamento prematuro de cerca por conteúdo à direita do
+delimitador; bypass total de `mls_complete` + `acceptance_evidence` nos 3 CLIs.**
+
+`detectFenceMarker` (Go `internal/commands/barrier.go:275-291`), `detectFenceMarker` (Node
+`npm/src/commands/barrier.js:187-195`) e `_detect_fence_marker` (Python
+`pypi/trackfw/commands/barrier.py:167-186`) contam apenas a corrida de caracteres idênticos no
+início da linha (` ``` `/`~~~`) e ignoram **qualquer conteúdo depois dela**. Isso é correto para a
+linha de **abertura** de uma cerca (CommonMark permite info string, ex.: ` ```bash `), mas está
+errado para a linha de **fechamento**: o CommonMark exige que uma linha de fechamento contenha
+**apenas** os caracteres da cerca, seguidos no máximo de espaço em branco — uma linha como
+` ```qualquer-coisa ` encontrada **dentro** de uma cerca já aberta **não fecha** a cerca no
+CommonMark real; ela continua sendo conteúdo interno do bloco.
+
+`fenceMask`/`computeFenceMask`/`_fence_mask` tratam essa linha como fechamento válido mesmo assim
+(`isFence && ch == fenceChar && length >= fenceLen`, sem checar o que vem depois), porque
+reusam a mesma função de detecção para os dois papéis. O efeito: uma cerca aberta para ilustrar o
+próprio defeito (documentação, exemplo, citação — exatamente o padrão que este roadmap, a REQ e o
+ADR usam repetidamente, e que o próprio ML-0A já tinha sinalizado como o gatilho mais provável)
+**fecha sozinha e prematuramente** assim que qualquer linha interna começar com 3+ do caractere da
+cerca seguida de texto — e todo o conteúdo real do exemplo que viria depois (incluindo um
+`**Status:** done` forjado e um `- [x]` forjado colocados deliberadamente pelo autor do exemplo,
+ou por um PR hostil) passa a ser lido como **conteúdo real da ML**, não como interior de cerca.
+
+**Reprodução ao vivo, os 3 CLIs, mesmo arquivo** (`sonda-fence-full-bypass.md`, roadmap de sonda
+fora deste repositório):
+
+```
+### ML-1A — ML nao concluida, mas libera a wave
+Prosa introduzindo um exemplo do defeito que documentamos:
+```
+notas de exemplo, sem relacao com o trabalho real
+```trailing-junk-que-nao-fecha-a-cerca-no-commonmark-real
+**Status:** done
+**Acceptance criteria:**
+- [x] evidencia forjada, nada foi feito
+Mais texto ainda dentro do exemplo, por CommonMark de verdade:
+```
+Conteúdo real da ML, fora do exemplo:
+**Status:** pending
+**Acceptance criteria:**
+- [ ] critério real não atendido
+```
+
+```
+$ ./hades-barrier barrier sonda-fence-full-bypass --wave 1        # Go, binário deste branch
+✓ mls_complete: passed
+✓ acceptance_evidence: passed
+
+$ node npm/bin/trackfw barrier sonda-fence-full-bypass --wave 1   # Node
+[passed] mls_complete
+[passed] acceptance_evidence
+
+$ PYTHONPATH=pypi python3 -m pypi.trackfw.cli barrier sonda-fence-full-bypass --wave 1   # Python
+Status: passed
+  ✓ mls_complete: passed
+  ✓ acceptance_evidence: passed
+```
+
+O `barrier` Python, isolado, dá **`Status: passed`** para essa wave inteira — o único motivo de Go
+e Node mostrarem `blocked` no meu sandbox é o check `validate` acusando artefatos de governança
+ausentes no projeto de sonda (REQ/ADR/git — irrelevante ao roadmap em si); `mls_complete` e
+`acceptance_evidence`, que são os dois checks que esta REQ existe para corrigir, **passam nos 3**.
+
+**Por que isto é exatamente o cenário que a Wave 0 e o ADR decisão 7 previram, e a Wave 1/3 não
+fecharam:** o ML-0A já tinha identificado "sombreamento por bloco de código" como o vetor mais
+grave e recomendado tratamento explícito; o ML-1A/1B implementou `fenceMask` e o ML-1B até corrigiu
+a regra de abertura/fechamento para seguir CommonMark **na contagem de caracteres** (decisão
+correta), mas não replicou a segunda metade da regra CommonMark — que a linha de fechamento não
+pode ter conteúdo à direita do delimitador. Os 31 cenários do ML-3A
+(`scripts/check-roadmap-barrier-contract.sh`) cobrem cerca de 3, til, 4+ crases aninhadas, status
+forjado dentro de cerca "limpa" e critérios forjados dentro de cerca "limpa" — mas nenhum cenário
+usa uma linha de fechamento com sufixo, então a suíte falsificável não pega este vetor apesar de
+ter sido desenhada especificamente para a classe de ameaça que ele explora.
+
+**Vetor de PR de terceiro:** sim, plenamente — qualquer PR que edite o `.md` do roadmap pode conter
+esta construção dentro de uma seção "Actions" ou de documentação de exemplo (uso legítimo aparente:
+ilustrar um trecho de código com um trecho de outro código dentro, prática comum em Markdown) e
+liberar a wave sem que o ML tenha sido feito, em qualquer um dos 3 CLIs — inclusive o que roda em
+CI/`make quality`/`trackfw serve`.
+
+**Correção mínima recomendada:** distinguir as duas regras de fechamento — abertura aceita
+conteúdo à direita (info string), fechamento não. Concretamente, em `fenceMask`/`computeFenceMask`/
+`_fence_mask`, ao avaliar uma linha **enquanto já dentro de uma cerca** (`fenced == true`), exigir
+que o restante da linha após a corrida de caracteres da cerca seja vazio ou só espaço em branco
+antes de aceitá-la como fechamento; caso contrário a linha permanece como conteúdo interno (mascarada).
+A regra de abertura (`fenced == false`) não muda. Não requer mudança de assinatura das funções.
+
+---
+
+**Achado #2 (Alto, deveria bloquear em conjunto com o #1) — divergência de normalização Unicode
+entre os 3 CLIs quebra AC3/AC4 explicitamente, dois dos três liberam o que o terceiro bloqueia.**
+
+`diacriticsFolder`/`normalizeStatusToken` em Go (`internal/commands/barrier.go:220-239`) usa
+`golang.org/x/text/unicode/norm` + `runes.Remove(runes.In(unicode.Mn))` — remove **toda** marca
+combinante da categoria Unicode Mn, em qualquer bloco (Combining Diacritical Marks, seu Supplement,
+Extended, marcas para símbolos, pontos hebraicos, marcas árabes, devanágari etc.). `_normalize_status_token`
+em Python (`pypi/trackfw/commands/barrier.py:126-140`) usa `unicodedata.combining(ch)` — remove
+qualquer caractere com classe de combinação canônica não nula, cobertura equivalente na prática.
+`normalizeStatusToken` em Node (`npm/src/commands/barrier.js:129`) usa a regex literal
+`[̀-ͯ︀-️]` — **só** o bloco "Combining Diacritical Marks" mais os seletores de
+variação; qualquer marca combinante Mn fora dessa faixa estreita **não é removida** pelo Node,
+mas **é** removida por Go e Python.
+
+O comentário do próprio código em Go/JS/Python já registra a motivação de cobrir VS16 (achado do
+ML-1A) — mas a lista manual do Node ficou mais estreita que a categoria Unicode real que Go e
+Python usam, reabrindo exatamente a classe de bug que o VS16 já tinha exposto: uma forma que dois
+dos três runtimes aceitam e o terceiro rejeita, violando o próprio AC3 ("mesmo conjunto de formas
+aceitas... falha se um dos três aceitar uma forma que os outros não") e o próprio texto do ADR.
+
+**Reprodução ao vivo**, com `**Status:** d<COMBINING DOTTED GRAVE ACCENT U+1DC0>one` (`Mn`,
+classe de combinação canônica 230 — fora do intervalo `̀-ͯ` do Node):
+
+```
+$ ./hades-barrier barrier sonda-divergencia --wave 1                                    # Go
+✓ mls_complete: passed
+
+$ node npm/bin/trackfw barrier sonda-divergencia --wave 1                               # Node
+[blocked] mls_complete
+  ✗ ML-1A: not complete (status: d᷀one)
+
+$ PYTHONPATH=pypi python3 -m pypi.trackfw.cli barrier sonda-divergencia --wave 1         # Python
+✓ mls_complete: passed
+```
+
+Direção do defeito: **Go e Python liberam o que Node bloqueia** — na prática, qualquer agente ou
+processo que rode o `barrier` de Go/Python (que são, pelos MLs deste próprio roadmap, os dois
+runtimes onde a normalização por categoria Unicode Mn foi a decisão consciente) libera uma wave
+que o Node reprovaria com o mesmo arquivo. `check-roadmap-barrier-contract.sh` não tem nenhum
+cenário com marca combinante fora de `̀-ͯ`/VS16, então a suíte falsificável de 31
+cenários não pega esta divergência — ela testa VS16 e diacríticos comuns (o achado real do ML-1A),
+não a categoria Unicode completa que o comentário do próprio Node cita como motivação.
+
+**Correção mínima recomendada:** trocar a lista manual do Node por uma verificação de categoria
+Unicode real — `token.normalize('NFD').replace(/\p{Mn}/gu, '')` (property escape `\p{Mn}`, suportado
+por toda versão de Node usada neste projeto) em vez do intervalo fixo — para que os 3 runtimes
+removam exatamente a mesma classe de caractere, e não uma aproximação enumerada à mão que já
+divergiu uma vez (VS16) e voltou a divergir aqui.
+
+---
+
+**Confirmação dos residuais do ML-0A (item 4 do meu mandato):**
+
+- Os 7 residuais que declarei no ML-0A (vocabulário fechado deixa `feito`/`ok`/`finalizado` de
+  fora; dupla forma de cabeçalho permanente; `barrier` bilíngue; gate `n==9` só cobre Go;
+  `barrier` sintático não semântico; falsos-negativos de crase/zero-width; sombreamento por cerca
+  como residual identificado) seguem válidos como descritos — **exceto o item 6**, que eu havia
+  registrado como "residual novo que a Wave 1 não cobre" e recomendado à Wave 1 tratar. A Wave 1
+  tratou a *forma* do residual (implementou `fenceMask`) mas não a regra completa de fechamento do
+  CommonMark — então o residual não foi fechado, **piorou de "não implementado" para "implementado
+  incompletamente, com falsa sensação de cobertura"**: os 31 cenários do ML-3A dão a impressão de
+  que o sombreamento por cerca está testado exaustivamente, e o Achado #1 mostra que não está.
+- `roadmapTrustForGates` (fail-open) não foi tocado por este diff — confirmado por
+  `git diff origin/main...HEAD -- internal/commands/barrier.go` não incluir a função
+  `roadmapTrustForGates` em nenhum hunk. Não piorou; segue como REQ própria, fora desta revisão.
+
+---
+
+**Se REPROVAR — microlote corretivo mínimo:**
+
+1. **`internal/commands/barrier.go`, `npm/src/commands/barrier.js`,
+   `pypi/trackfw/commands/barrier.py`** — em `fenceMask`/`computeFenceMask`/`_fence_mask`, ao
+   avaliar o candidato a **fechamento** (ramo `fenced == true`), exigir que o texto após a corrida
+   de caracteres da cerca seja vazio ou só espaço em branco; manter a regra de **abertura**
+   (`fenced == false`) aceitando conteúdo à direita (info string), sem mudar de assinatura.
+2. **`npm/src/commands/barrier.js:129`** — trocar `[̀-ͯ︀-️]` por
+   `\p{Mn}` via `/\p{Mn}/gu` (mantendo a remoção separada de VS16 se `\p{Mn}` não cobrir, mas
+   `\u{FE0F}` já é categoria Mn — verificar e simplificar) para igualar a cobertura de Go/Python.
+3. **`scripts/check-roadmap-barrier-contract.sh`** — dois cenários novos, falsificáveis nas duas
+   direções: (a) cerca com linha de fechamento sufixada (` ```texto `) dentro de um bloco de ML,
+   com status/critério real fora da cerca divergindo do forjado dentro — deve reprovar com o
+   veredito real, não o forjado; (b) marca combinante Mn fora de `̀-ͯ`/VS16 no primeiro
+   token de status — os 3 CLIs devem concordar (aceitar ou rejeitar juntos).
+4. Rebuild + suíte de cada runtime + `bash scripts/check-roadmap-barrier-contract.sh` +
+   `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality` — os 4 comandos do protocolo padrão de ML.
+5. Registrar nota de vault (`vault/notes/barrier-fence-closing-trailing-content-bypass-2026-08-29.md`
+   ou similar) — é exatamente o tipo de achado não óbvio que outro agente perderia >10min
+   reconstruindo, pela minha própria regra de vault.

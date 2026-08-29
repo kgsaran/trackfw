@@ -123,22 +123,56 @@ _GATES_HEADER_RE = re.compile(r"^\*\*Gates da wave:\*\*")
 _STATUS_VOCABULARY = {"✅", "done", "concluido"}
 
 
+_VS16 = "\ufe0f"
+
+
+def _strip_vs16(token: str) -> str:
+    """Removes only U+FE0F occurrences from token. Deliberately narrower than
+    "strip every variation selector" or "strip every Mn": VS16 is the one
+    documented cosmetic exception (ADR 2026-08-29 decision 9) — the seletor
+    emoji keyboards insert after "✅" to force text-style presentation,
+    producing "✅️", visually identical to "✅". Anything else of category Mn
+    is now a rejection, not a fold (see _has_disallowed_combining_mark)."""
+    return token.replace(_VS16, "")
+
+
+def _has_disallowed_combining_mark(token: str) -> bool:
+    """Reports whether token (with VS16 already removed) contains any
+    Unicode category Mn (Mark, Nonspacing) codepoint. ADR 2026-08-29
+    decision 9: after the single VS16 exception, any combining mark on the
+    first status token is rejected outright — the ML is NOT complete —
+    rather than folded away. A vocabulary this small exists to refuse
+    ambiguity; silently folding combining marks reopens exactly the
+    ambiguity it exists to close ("d<U+1DC0>one" must not read as "done").
+    Uses unicodedata.category(ch) == "Mn" rather than
+    unicodedata.combining(ch), to match Go's unicode.Mn and Node's \\p{Mn}
+    exactly (category, not canonical combining class).
+
+    ORDER IS LOAD-BEARING: this check MUST run on the token BEFORE NFD
+    decomposition, not after. "Concluído" in its authored (NFC) form has no
+    literal Mn codepoint — the accented "í" is a single precomposed
+    codepoint. NFD-decomposing it *produces* a trailing Mn (U+0301,
+    COMBINING ACUTE ACCENT) that _normalize_status_token then strips for
+    vocabulary matching. Running this rejection check on the
+    already-decomposed string would treat that legitimate,
+    vocabulary-sanctioned accent the same as an injected combining mark and
+    reject "Concluído" outright, breaking AC15's own positive case. Checking
+    the raw, pre-decomposition token instead lets it through here (no
+    literal Mn present) while still catching a combining mark authored
+    directly onto the token, which is category Mn in either form, decomposed
+    or not."""
+    return any(unicodedata.category(ch) == "Mn" for ch in token)
+
+
 def _normalize_status_token(token: str) -> str:
-    """Folds diacritics (NFD + strip combining marks, unicodedata.combining())
-    and Unicode variation selectors (U+FE00-U+FE0F — e.g. VS16 in the
-    text-style emoji presentation "checkmark + VS16"), then lower-cases the
-    token for vocabulary comparison. unicodedata.combining() returns 0 for
-    VS16 (it is not a combining mark by canonical combining class), so it
-    must be stripped separately. Go's runes.In(unicode.Mn) folds VS16 too (it
-    IS General_Category=Mn there), so without this barrier.py would reject
-    the VS16 form while barrier.go accepted it — a cross-runtime divergence
-    on the single most common status marker in the corpus (AC3). Never
-    mutates the emoji base codepoint itself."""
+    """Folds diacritics (NFD + strip combining marks by
+    unicodedata.category(ch) == "Mn"), then lower-cases the token for
+    vocabulary comparison. Callers MUST have already rejected via
+    _has_disallowed_combining_mark before calling this — see that
+    function's docstring for why. Never mutates the emoji base codepoint
+    itself."""
     decomposed = unicodedata.normalize("NFD", token)
-    stripped = "".join(
-        ch for ch in decomposed
-        if not unicodedata.combining(ch) and not ("\ufe00" <= ch <= "\ufe0f")
-    )
+    stripped = "".join(ch for ch in decomposed if unicodedata.category(ch) != "Mn")
     return stripped.lower()
 
 
@@ -156,11 +190,17 @@ def _status_is_complete(marker: str) -> bool:
     `"✅" in marker` would classify "**Status:** ⬜ Pendente ✅" as complete
     (reproduced live against 7.3.0 — ADR decision 8). First-token comparison
     rejects it because the first token is "⬜", not the marker.
+
+    ADR decision 9: VS16 is stripped first (the one cosmetic exception),
+    then any remaining combining mark on the raw token rejects outright —
+    see _has_disallowed_combining_mark for why this must happen before NFD.
     """
     trimmed = marker.strip()
     if not trimmed:
         return False
-    first = trimmed.split()[0]
+    first = _strip_vs16(trimmed.split()[0])
+    if _has_disallowed_combining_mark(first):
+        return False
     return _normalize_status_token(first) in _STATUS_VOCABULARY
 
 
@@ -204,7 +244,8 @@ def _fence_mask(lines: list) -> list:
     fence_char = None
     fence_len = 0
     for i, line in enumerate(lines):
-        marker = _detect_fence_marker(line.strip())
+        trimmed = line.strip()
+        marker = _detect_fence_marker(trimmed)
         if not fenced:
             if marker:
                 fenced = True
@@ -212,8 +253,17 @@ def _fence_mask(lines: list) -> list:
             continue
         # Currently inside a fence: only a marker of the SAME character with
         # length >= the opening run closes it (a nested shorter/different
-        # marker stays masked as interior content).
-        if marker and marker[0] == fence_char and marker[1] >= fence_len:
+        # marker stays masked as interior content) — AND, per CommonMark, a
+        # closing fence line contains NOTHING besides the fence run and
+        # (already-stripped) surrounding whitespace: marker[1] == len(trimmed).
+        # Fix for hades-tf security review (2026-08-29, achado #1 /
+        # vault/notes/barrier-fence-closing-trailing-content-bypass-2026-08-29.md):
+        # a line like "```trailing-junk" found INSIDE an open fence does not
+        # close it in real CommonMark — it stays interior content — but the
+        # prior check treated any run of length >= fence_len as a valid close
+        # regardless of trailing text. The opening branch above is unchanged:
+        # CommonMark allows an info string after the opening run (` ```bash `).
+        if marker and marker[0] == fence_char and marker[1] >= fence_len and marker[1] == len(trimmed):
             fenced = False
             continue
         mask[i] = True

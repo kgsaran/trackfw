@@ -220,6 +220,9 @@ var (
 // diacriticsFolder normalizes to NFD and strips combining marks (unicode.Mn),
 // folding accented Latin letters to their base form — e.g. "Concluído" →
 // "Concluido". Used only by statusIsComplete (rule 3), never for display.
+// SAFE to run only AFTER hasDisallowedCombiningMark has cleared the raw
+// (pre-decomposition) token — see that function's doc comment for why order
+// matters.
 var diacriticsFolder = transform.Chain(norm.NFD, runes.Remove(runes.In(unicode.Mn)), norm.NFC)
 
 // statusVocabulary is the closed set of first-token markers recognised as
@@ -233,8 +236,59 @@ var statusVocabulary = map[string]bool{
 	"concluido": true,
 }
 
+// vs16 is the single variation selector this package treats as cosmetic
+// noise: the one emoji keyboards insert after "✅" to force text-style
+// presentation, producing "✅️" — visually identical to "✅" (ADR
+// 2026-08-29 decision 9, exception clause). No other variation selector or
+// combining mark gets this treatment.
+const vs16 rune = 0xFE0F
+
+// stripVS16 removes only U+FE0F occurrences from token. Deliberately narrower
+// than "strip every variation selector" or "strip every Mn": VS16 is the one
+// documented cosmetic exception (ADR decision 9); anything else of category
+// Mn is now a rejection, not a fold (see hasDisallowedCombiningMark).
+func stripVS16(token string) string {
+	return strings.Map(func(r rune) rune {
+		if r == vs16 {
+			return -1
+		}
+		return r
+	}, token)
+}
+
+// hasDisallowedCombiningMark reports whether token (with VS16 already
+// removed) contains any Unicode category Mn (Mark, Nonspacing) codepoint.
+// ADR 2026-08-29 decision 9: after the single VS16 exception, any combining
+// mark on the first status token is rejected outright — the ML is NOT
+// complete — rather than folded away. A vocabulary this small exists to
+// refuse ambiguity; silently dobrar combining marks reopens exactly the
+// ambiguity it exists to close ("d<U+1DC0>one" must not read as "done").
+//
+// ORDER IS LOAD-BEARING: this check MUST run on the token BEFORE NFD
+// decomposition, not after. "Concluído" in its authored (NFC) form has no
+// literal Mn codepoint — the accented "í" is a single precomposed Ll
+// codepoint. NFD-decomposing it *produces* a trailing Mn (U+0301, COMBINING
+// ACUTE ACCENT) that diacriticsFolder then strips for vocabulary matching.
+// Running this rejection check on the already-decomposed string would treat
+// that legitimate, vocabulary-sanctioned accent the same as an injected
+// combining mark and reject "Concluído" outright, breaking AC15's own
+// positive case. Checking the raw, pre-decomposition token instead lets it
+// through here (no literal Mn present) while still catching a combining
+// mark that was authored directly onto the token, which is category Mn in
+// either form, decomposed or not.
+func hasDisallowedCombiningMark(token string) bool {
+	for _, r := range token {
+		if unicode.Is(unicode.Mn, r) {
+			return true
+		}
+	}
+	return false
+}
+
 // normalizeStatusToken folds diacritics and lower-cases token for vocabulary
 // comparison. Never mutates the emoji marker (no combining marks, no case).
+// Callers MUST have already rejected via hasDisallowedCombiningMark before
+// calling this — see that function's doc comment for why.
 func normalizeStatusToken(token string) string {
 	folded, _, err := transform.String(diacriticsFolder, token)
 	if err != nil {
@@ -255,12 +309,20 @@ func normalizeStatusToken(token string) string {
 // `strings.Contains(marker, "✅")` would classify "**Status:** ⬜ Pendente ✅" as
 // complete (reproduced live against 7.3.0 — ADR decision 8). First-token
 // comparison rejects it because the first token is "⬜", not the marker.
+//
+// ADR decision 9: VS16 is stripped first (the one cosmetic exception), then
+// any remaining combining mark on the raw token rejects outright — see
+// hasDisallowedCombiningMark for why this must happen before NFD.
 func statusIsComplete(marker string) bool {
 	fields := strings.Fields(marker)
 	if len(fields) == 0 {
 		return false
 	}
-	return statusVocabulary[normalizeStatusToken(fields[0])]
+	first := stripVS16(fields[0])
+	if hasDisallowedCombiningMark(first) {
+		return false
+	}
+	return statusVocabulary[normalizeStatusToken(first)]
 }
 
 // detectFenceMarker inspects a whitespace-trimmed line and reports whether it
@@ -320,8 +382,19 @@ func fenceMask(lines []string) []bool {
 		}
 		// Currently inside a fence: only a marker of the SAME character with
 		// length >= the opening run closes it (a nested shorter/different
-		// marker stays masked as interior content).
-		if isFence && ch == fenceChar && length >= fenceLen {
+		// marker stays masked as interior content) — AND, per CommonMark,
+		// a closing fence line contains NOTHING besides the fence run and
+		// (already-stripped) surrounding whitespace: length == len(trimmed).
+		// This is the fix for the hades-tf security review (2026-08-29,
+		// achado #1 / vault/notes/barrier-fence-closing-trailing-content-bypass-2026-08-29.md):
+		// a line like "```trailing-junk" found INSIDE an open fence does not
+		// close it in real CommonMark — it stays interior content — but the
+		// prior check treated any run of length >= fenceLen as a valid close
+		// regardless of trailing text, letting a forged "example" fence close
+		// early and expose the rest of the example as real ML content. The
+		// opening branch above is intentionally unchanged: CommonMark allows
+		// an info string after the opening run (` ```bash `).
+		if isFence && ch == fenceChar && length >= fenceLen && length == len(trimmed) {
 			fenced = false
 			continue
 		}

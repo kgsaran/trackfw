@@ -113,6 +113,10 @@ e o status passa a aceitar **emoji e palavra**, por **token exato**, nunca subst
       regressão: a cerca passaria a **liberar** wave, quando hoje apenas bloqueia.
 - [ ] **AC14** — `**Status:** ⬜ Pendente ✅` **não** é reconhecido como concluído. Hoje é —
       reproduzido com o binário 7.3.0, `mls_complete: passed` num ML marcado como pendente.
+- [ ] **AC15** — Marca combinante (`Mn`) no primeiro token de status faz o ML **não** ser reconhecido
+      como concluído, nos 3 CLIs, **exceto VS16** (`U+FE0F`), que continua sendo removido. Verificável
+      nas duas direções: `**Status:** d<U+1DC0>one` → **não** concluído nos 3; `**Status:** ✅️`
+      (com VS16) → concluído nos 3.
 
 ## Negative Scope
 

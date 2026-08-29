@@ -25556,3 +25556,67 @@ Branch `fix/dialeto-canonico-do-roadmap-e-vocabulario-de-status-do-barrier` (nã
 - `git status --short` → só os 3 arquivos autorizados + a nota de vault + `docs/agents-working-context.md`.
 
 **Não fiz (fora do meu escopo/autoridade):** não commitei, não fiz push, não marquei o ML-3A como `✅ Concluído` no roadmap (proibido tocar o roadmap nesta sessão) — protocolo de microlote exige que isso aconteça após a auditoria do `trackfw_architect`. Não corrigi o achado de fail-open em `internal/` (fora do escopo de arquivos autorizados para este ML) — só reportei e mitiguei no meu próprio gate.
+
+## Sessão 2026-08-29 — hades-tf (revisão de segurança da barreira final) — INÍCIO
+
+Branch `fix/dialeto-canonico-do-roadmap-e-vocabulario-de-status-do-barrier` (não criada por mim; nenhum commit/push feito). Escopo: revisão de segurança do `git diff origin/main...HEAD` inteiro, antes do PR, contra o modelo de ameaça que eu mesmo escrevi no ML-0A. Único artefato que eu poderia tocar: o roadmap `ROADMAP-2026-08-29-dialeto-canonico-do-roadmap-e-vocabulario-de-status-do-barrier.md` (seção de parecer, ao fim, sem reescrever o que `hefesto-tf` já escreveu), a nota de vault e este arquivo.
+
+## Sessão 2026-08-29 — hades-tf (revisão de segurança da barreira final) — FIM
+
+**Veredito: REPROVA.**
+
+**Achado #1 (Crítico) — bypass total de `mls_complete` + `acceptance_evidence` nos 3 CLIs.** `detectFenceMarker`/`fenceMask` (Go `internal/commands/barrier.go:275-291`, Node `npm/src/commands/barrier.js:187-195`, Python `pypi/trackfw/commands/barrier.py:167-186`) tratam uma linha de fechamento de cerca com conteúdo à direita (`` ```qualquer-coisa ``) como fechamento válido — CommonMark exige que a linha de fechamento contenha só os caracteres da cerca + espaço. Reproduzido ao vivo, os 3 binários deste branch, `mls_complete: passed` + `acceptance_evidence: passed` para uma ML cujo conteúdo real é `**Status:** pending` e `- [ ] critério real não atendido`. Detalhes, reprodução completa e correção mínima recomendada: parecer no roadmap e `vault/notes/barrier-fence-closing-trailing-content-bypass-2026-08-29.md`.
+
+**Achado #2 (Alto) — divergência de normalização Unicode quebra AC3/AC4.** `normalizeStatusToken` do Node (`npm/src/commands/barrier.js:129`) usa faixa fixa `[̀-ͯ︀-️]`; Go (`internal/commands/barrier.go:220-239`) e Python (`pypi/trackfw/commands/barrier.py:126-140`) removem toda marca Unicode categoria Mn. Reproduzido ao vivo: marca combinante fora da faixa do Node (U+1DC0) faz Go/Python aceitarem como "done" e Node rejeitar. Correção recomendada: `\p{Mn}` no Node em vez da faixa manual.
+
+**Não fiz (fora do meu escopo/autoridade):** não editei nenhum arquivo de produto (`internal/`, `npm/src/`, `pypi/trackfw/`) — os dois achados acima são reportados, não corrigidos, conforme o limite de papel do Security. Não commitei, não fiz push. Testes reproduzidos em projeto de sonda fora deste repositório (scratchpad), não em `docs/roadmaps/wip/` deste repo.
+
+## Sessão 2026-08-29 — apolo-tf (ML-3D — corretiva de segurança bloqueante, achados 1-4 do parecer hades-tf) — INÍCIO
+
+Branch `fix/dialeto-canonico-do-roadmap-e-vocabulario-de-status-do-barrier` (não criada por mim; nenhum commit/push feito). Escopo: corrigir os 3 achados críticos/altos/menores do parecer `hades-tf` e ampliar `scripts/check-roadmap-barrier-contract.sh` (só acrescentar). Arquivos autorizados: `internal/commands/barrier.go`(+`_test.go`), `npm/src/commands/barrier.js`(+`.test.js`), `pypi/trackfw/commands/barrier.py`(+`_test.py`), `scripts/check-roadmap-barrier-contract.sh`.
+
+## Sessão 2026-08-29 — apolo-tf (ML-3D) — FIM
+
+**Achado #1 (crítico, fechado nos 3 CLIs):** `fenceMask`/`computeFenceMask`/`_fence_mask` — ramo de FECHAMENTO agora exige `length == len(trimmed)` (nada além dos caracteres da cerca + espaço já trimado), além de `ch==fenceChar && length>=fenceLen`. Ramo de ABERTURA inalterado (info string continua permitida). Reprodução do parecer (`fence-close-with-trailing-content-bypass`) verificada bloqueando nos 3 runtimes, com o status/critério REAIS usados na razão (`⬜ Pendente`, `1 unmet acceptance criteria`), antes só forjava `passed`/`passed`.
+
+**Achado #2 (alto, implementado; direção em aberto — PEDIDO DE DECISÃO DE ADR):** `normalizeStatusToken` do Node trocado de faixa fixa para `/\p{Mn}/gu`, igualando Go/Python (folding total de marca combinante). U+1DC0 confirmado dando o MESMO veredito (`passed`) nos 3 agora. **Mas não decidi a direção** — implementei o lado permissivo por ser o pedido literal do achado. Censo do corpus real (144 roadmaps, `FREEZE_REF=a4e8f35`): **zero** ocorrências de qualquer marca Mn (incluindo VS16) em qualquer `**Status:**` do corpus hoje — evidência a favor de "rejeitar com exceção pontual de VS16" custar zero ao corpus atual, mas a decisão fica para o dono do ADR (ver relatório final da sessão / vault note).
+
+**Achado #3 (menor, fechado no Node):** `mlCompletionStatus`/`mlAcceptanceEvidence` — default de `fenced` trocado de `[]` (fail-open, nada mascarado) para `mlLines.map(() => true)` (fail-closed, tudo mascarado). Go/Python já exigiam o parâmetro (sem default de linguagem) — não afetados. 10 call-sites de teste em `npm/tests/barrier.test.js` atualizados para passar `fenced` explícito (8 via helper `unfenced(n)`, 2 via literal `fenced: [false...]` nos testes de formato pinado de `evalMlsComplete`/`evalAcceptanceEvidence`); os 2 testes de fence-awareness que já passavam `ml.fenced` (vindo de `findMLs`) não precisaram de mudança.
+
+**Achado #4 (suíte falsificável):** `scripts/check-roadmap-barrier-contract.sh` — 31 → **39** cenários (8 novos, nenhum dos 31 reescrito): bypass crítico cross-runtime, regressão "abertura com info string ainda abre", regressão "fechamento com espaço à direita ainda fecha", e acordo cross-runtime U+1DC0.
+
+**Re-pin do corpus (PARTE B, AC10):** a correção reclassifica exatamente 1/144 roadmaps do `FREEZE_REF` — `docs/roadmaps/done/ROADMAP-2026-08-22-wave-0-de-modelo-de-ameaca-...md`, seção "Auditoria do ML-1A e do ML-2A" (nesting de cerca de mesmo comprimento sem escalar para 4+ crases, o MESMO defeito que o AC10 daquele roadmap corrige no exemplo do template mas não corrigiu no bloco irmão). Confirmado por diff binário dos dois parsers (pré/pós-fix, via `git worktree` + binário antigo) sobre os 144 arquivos: só essas 6 linhas de veredito mudam; as outras 143 são bit-a-bit idênticas. Pin atualizado (`PINNED_CORPUS_HASH` etc.) com o diagnóstico completo em comentário no local do pin e em `vault/notes/barrier-fence-closing-trailing-content-bypass-2026-08-29.md`.
+
+**Evidência de verificação (comandos reais):**
+- `go build ./...` → 0 · `go test ./...` → 0 (todos os pacotes).
+- `npm test --prefix npm` → 839 testes, 0 falhas.
+- `PYTHONPATH=pypi python3 -m pytest pypi/tests` → 1554 testes, 0 falhas.
+- `bash scripts/check-roadmap-barrier-contract.sh` → `exit 0`, "39 cenários OK".
+- `bash scripts/check-gates-falsify.sh` → `exit 0`, "Falsification checks passed (all 181 scenarios...)" — rodado em background devido a outro subagente compartilhando o worktree simultaneamente (mesmo comando, mesmo horário); confirmado via output completo capturado, não apenas o tail.
+- `./bin/trackfw barrier ROADMAP-2026-08-29-...-do-barrier --wave 3 --trust-local-gates` → `passed` nos 4 checks.
+
+**Não fiz (fora do meu escopo/autoridade):** não commitei, não fiz push, não marquei nenhum ML como `✅ Concluído` no roadmap. Não decidi a direção do achado #2 (pedido explícito de ADR ao orquestrador). Worktrees temporários criados em scratchpad para o diff binário pré/pós-fix (`git worktree add --detach`) — não removidos (força de remoção bloqueada pelo guard; inofensivos, fora do repo principal).
+
+## Sessão 2026-08-29 — apolo-tf (ML-3E — resposta à decisão 9 do ADR, achado #2 apertado) — INÍCIO
+
+Branch `fix/dialeto-canonico-do-roadmap-e-vocabulario-de-status-do-barrier` (não criada por mim; nenhum commit/push feito). Escopo: implementar a decisão 9 do ADR (registrada após meu pedido de decisão no ML-3D) — marca combinante `Mn` no primeiro token de status agora REJEITA (não dobra), exceto VS16 (`U+FE0F`), que continua sendo removido. Arquivos autorizados: `internal/commands/barrier.go`(+`_test.go`), `npm/src/commands/barrier.js`(+`.test.js`), `pypi/trackfw/commands/barrier.py`(+`_test.py`), `scripts/check-roadmap-barrier-contract.sh` (só acrescentar).
+
+## Sessão 2026-08-29 — apolo-tf (ML-3E) — FIM
+
+**Implementado nos 3 CLIs, mesma ordem de operações:**
+1. Remover só VS16 (`U+FE0F`) do token bruto (`stripVS16`/`_strip_vs16`) — não a faixa completa de seletores de variação nem `Mn` em geral.
+2. **Checar por `Mn` remanescente ANTES de qualquer decomposição NFD** (`hasDisallowedCombiningMark`/`_has_disallowed_combining_mark`, categoria Unicode `Mn` exata, igual nos 3: `unicode.Is(unicode.Mn, r)` no Go, `/\p{Mn}/u` no Node, `unicodedata.category(ch) == "Mn"` no Python — não `unicodedata.combining()`, que não é 1:1 com a categoria). Se achar `Mn` → `statusIsComplete` retorna `false` direto, sem consultar o vocabulário.
+3. **Só depois**, para o token que passou no passo 2, aplicar o fold de diacríticos existente (NFD + strip `Mn` + casefold) para casamento com o vocabulário.
+
+**Por que essa ordem e não "NFD primeiro, depois checa Mn":** `"Concluído"` na forma autorada (NFC) não tem nenhum codepoint `Mn` literal — o "í" é um único codepoint precomposto (categoria `Ll`). Decompor primeiro (NFD) PRODUZ um `Mn` (U+0301, acento agudo combinante) que só existe por causa do fold de comparação — não é uma marca injetada pelo autor do roadmap. Checar por `Mn` na string já decomposta trataria esse acento legítimo como se fosse `d<U+1DC0>one`, quebrando o próprio AC15 positivo (`Concluído` deixaria de ser reconhecido). Checar no token bruto, antes da decomposição, deixa passar o acento legítimo (nada de `Mn` literal na forma autorada) e ainda pega uma marca combinante literalmente digitada no token (que É `Mn` em qualquer forma, decomposta ou não).
+
+**Testes acrescentados nos 3 runtimes** (`d᷀one`, `do᷀ne`, `done᷀`, `✅᷀` → rejeitados; `✅️` com VS16 e `Concluído`/`CONCLUÍDO` acentuados → continuam aceitos) e 3 cenários novos no gate falsificável (`scripts/check-roadmap-barrier-contract.sh`, 39 → **42**): reforço do cenário existente `combining-mark-u1dc0` para exigir veredito `blocked` (antes só exigia concordância entre os 3, que ML-3D deixou como `passed`), `vs16-still-accepted-cross-runtime` e `accented-concluido-still-accepted-cross-runtime` (o caso que quebra com a ordem errada).
+
+**Evidência de verificação (comandos reais):**
+- `go build ./...` → 0 · `go vet ./...` → 0 · `go test ./...` → 0 (todos os pacotes).
+- `npm test --prefix npm` → 839 testes, 0 falhas.
+- `PYTHONPATH=pypi python3 -m pytest pypi/tests` → 1554 testes, 0 falhas.
+- `bash scripts/check-roadmap-barrier-contract.sh` → `exit 0`, "42 cenários OK", incluindo `corpus/mls-complete-verdict-counts` e `corpus/non-reclassification` (hash/contagens pinados por ML-3D permanecem idênticos — **nenhum dos 144 roadmaps do corpus mudou de veredito** com a decisão 9, confirmando o censo "zero ocorrências de Mn no corpus" citado no ADR).
+- `bash scripts/check-gates-falsify.sh` → `exit 0`, 0 FAILs (rodado limpo em background, sem edições concorrentes).
+
+**Não fiz (fora do meu escopo/autoridade):** não commitei, não fiz push, não marquei o ML como `✅ Concluído` no roadmap (arquivo fora da minha lista de arquivos autorizados nesta tarefa).

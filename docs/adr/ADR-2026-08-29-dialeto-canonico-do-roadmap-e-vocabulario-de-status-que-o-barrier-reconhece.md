@@ -115,6 +115,26 @@ dentro de cerca não é conteúdo do ML: é ilustração.
 libera a wave, porque `contains` não olha posição. É a prova concreta de que a decisão 3 não é
 refinamento — é correção de falso-positivo já ativo.
 
+**9. Marca combinante no primeiro token é REJEITADA, com uma exceção — decisão de 2026-08-29,
+após a barreira final.** A normalização original dobrava toda marca Unicode de categoria `Mn` antes
+de comparar com o vocabulário. O `hades-tf` mediu que Go e Python dobravam **toda** `Mn` enquanto o
+Node usava uma faixa fixa estreita: `**Status:** d<U+1DC0>one` era aceito por dois e rejeitado pelo
+terceiro. O corretivo óbvio seria alinhar os três no comportamento permissivo — e é o errado.
+
+Censo do corpus, pedido antes de decidir: **zero** ocorrências de qualquer marca `Mn` no primeiro
+token de status nos 144 roadmaps, **incluindo VS16**. Apertar custa nada hoje.
+
+E o motivo de apertar não é custo, é **engano**. `d<U+1DC0>one` renderiza como algo que um revisor
+humano não lê como `done`. Um vocabulário fechado existe justamente para recusar ambiguidade; dobrar
+marcas combinantes reintroduz ambiguidade pela porta dos fundos, num controle que autoriza *"o
+trabalho está pronto"*. A postura correta para um controle de liberação é rejeitar o que não
+reconhece, não adivinhar a intenção.
+
+**Exceção única: VS16 (`U+FE0F`)**, que continua sendo removido. É o seletor que os teclados de
+emoji inserem depois de `✅`, produz `✅️` visualmente idêntico a `✅`, e o ML-1A já teve que corrigir
+uma divergência entre runtimes por causa dele. É ambiguidade tipográfica sem valor semântico, não
+tentativa de parecer outra coisa.
+
 ## Consequences
 
 **Positivas**

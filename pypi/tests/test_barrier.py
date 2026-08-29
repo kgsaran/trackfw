@@ -529,7 +529,7 @@ def test_status_is_complete_formas_aceitas():
         "concluido",
         "done\t· extra",  # tab após o marcador é separador válido
         "done\u00a0· extra",  # NBSP (U+00A0) após o marcador é separador válido
-        "✅️",  # VS16 (U+FE0F) apresentação de emoji estilo texto — deve dobrar igual ao Go
+        "✅️",  # VS16 (U+FE0F) apresentação de emoji estilo texto — a única exceção Mn (ADR decisão 9)
     ]
     for marker in aceitos:
         assert _status_is_complete(marker), f"_status_is_complete({marker!r}) deveria ser True"
@@ -555,6 +555,10 @@ def test_status_is_complete_formas_rejeitadas():
         "\u200bdone",  # espaço de largura zero antes do token — não é whitespace, gruda
         "",
         "   ",
+        "d᷀one",  # AC15 (ADR decisão 9) — marca combinante (U+1DC0) no primeiro token, rejeitada, não dobrada
+        "do᷀ne",  # AC15 — mesma marca, em outro codepoint do token
+        "done᷀",  # AC15 — mesma marca, ao final do token
+        "✅᷀",  # AC15 — marca combinante sobre o próprio marcador de emoji, ainda rejeitada
     ]
     for marker in rejeitados:
         assert not _status_is_complete(marker), f"_status_is_complete({marker!r}) deveria ser False"

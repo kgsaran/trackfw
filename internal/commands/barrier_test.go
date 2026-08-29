@@ -169,7 +169,7 @@ func TestStatusIsComplete_Accepted(t *testing.T) {
 		"concluido",
 		"done\t· extra", // tab after the marker is a valid separator per unicode.IsSpace
 		"done · extra",  // NBSP (U+00A0) after the marker is a valid separator
-		"✅️",            // VS16 (U+FE0F) text-style emoji presentation — Mn-folded away
+		"✅️",            // VS16 (U+FE0F) text-style emoji presentation — the single Mn exception (ADR decision 9)
 	}
 	for _, marker := range cases {
 		marker := marker
@@ -199,6 +199,10 @@ func TestStatusIsComplete_Rejected(t *testing.T) {
 		"​done",        // zero-width space before the token — not unicode.IsSpace, stays glued
 		"",
 		"   ",
+		"d᷀one", // AC15 — combining mark (U+1DC0) on the first token, rejected outright, not folded
+		"do᷀ne", // AC15 — same, mark on a different codepoint of the token
+		"done᷀", // AC15 — same, mark trailing the token
+		"✅᷀",    // AC15 — combining mark on the emoji marker itself, still rejected
 	}
 	for _, marker := range cases {
 		marker := marker

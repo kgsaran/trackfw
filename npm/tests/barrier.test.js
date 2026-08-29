@@ -15,6 +15,14 @@ const barrier = require('../src/commands/barrier')
 
 const CLI = path.resolve(__dirname, '../bin/trackfw')
 
+// unfenced(n) builds a "nothing is inside a fence" mask for tests that
+// exercise mlCompletionStatus/mlAcceptanceEvidence directly with hand-built
+// line arrays. Required explicitly since hades-tf achado #3 (2026-08-29)
+// made the `fenced` default fail CLOSED (mask everything) instead of open —
+// see the comment on mlCompletionStatus/mlAcceptanceEvidence in
+// src/commands/barrier.js.
+const unfenced = (n) => new Array(n).fill(false)
+
 // ────────────────────────────────────────────────────────────────────────────
 // CLI-level regression fixtures — the two defects found while cross-checking
 // the three runtimes over the same fixture (ML-2D). These are NOT part of the
@@ -333,20 +341,20 @@ test('findMLs: splits MLs at the next ### or ## boundary', () => {
 // ────────────────────────────────────────────────────────────────────────────
 
 test('mlCompletionStatus: ✅ marker is complete', () => {
-  const result = barrier.mlCompletionStatus(['**Status:** ✅ Concluído'])
+  const result = barrier.mlCompletionStatus(['**Status:** ✅ Concluído'], unfenced(1))
   assert.equal(result.complete, true)
 })
 
 test('mlCompletionStatus: any other marker is incomplete', () => {
   for (const marker of ['⬜ Pendente', '🔄 Em andamento', '❌ Bloqueado']) {
-    const result = barrier.mlCompletionStatus([`**Status:** ${marker}`])
+    const result = barrier.mlCompletionStatus([`**Status:** ${marker}`], unfenced(1))
     assert.equal(result.complete, false, `expected ${marker} to be incomplete`)
     assert.equal(result.marker, marker)
   }
 })
 
 test('mlCompletionStatus: absence of a **Status:** line is incomplete with marker "missing"', () => {
-  const result = barrier.mlCompletionStatus(['no status line here'])
+  const result = barrier.mlCompletionStatus(['no status line here'], unfenced(1))
   assert.equal(result.complete, false)
   assert.equal(result.marker, 'missing')
 })
@@ -356,47 +364,51 @@ test('mlCompletionStatus: absence of a **Status:** line is incomplete with marke
 // ────────────────────────────────────────────────────────────────────────────
 
 test('mlAcceptanceEvidence: all criteria met', () => {
-  const result = barrier.mlAcceptanceEvidence([
+  const lines = [
     '**Critérios de aceite:**',
     '- [x] build passes',
     '- [x] tests pass',
-  ])
+  ]
+  const result = barrier.mlAcceptanceEvidence(lines, unfenced(lines.length))
   assert.equal(result.hasBlock, true)
   assert.equal(result.total, 2)
   assert.equal(result.unmet, 0)
 })
 
 test('mlAcceptanceEvidence: unmet criteria counted', () => {
-  const result = barrier.mlAcceptanceEvidence([
+  const lines = [
     '**Critérios de aceite:**',
     '- [x] build passes',
     '- [ ] tests pass',
     '- [ ] gate passes',
-  ])
+  ]
+  const result = barrier.mlAcceptanceEvidence(lines, unfenced(lines.length))
   assert.equal(result.hasBlock, true)
   assert.equal(result.unmet, 2)
 })
 
 test('mlAcceptanceEvidence: absent block is not vacuously satisfied', () => {
-  const result = barrier.mlAcceptanceEvidence(['no acceptance block at all'])
+  const result = barrier.mlAcceptanceEvidence(['no acceptance block at all'], unfenced(1))
   assert.equal(result.hasBlock, false)
 })
 
 test('mlAcceptanceEvidence: block header with zero criteria lines is treated as absent', () => {
-  const result = barrier.mlAcceptanceEvidence([
+  const lines = [
     '**Critérios de aceite:**',
     '**Next section:**',
-  ])
+  ]
+  const result = barrier.mlAcceptanceEvidence(lines, unfenced(lines.length))
   assert.equal(result.hasBlock, false)
 })
 
 test('mlAcceptanceEvidence: block ends at the next ** line', () => {
-  const result = barrier.mlAcceptanceEvidence([
+  const lines = [
     '**Critérios de aceite:**',
     '- [x] build passes',
     '**Files affected:**',
     '- [ ] this line is outside the block and must not count',
-  ])
+  ]
+  const result = barrier.mlAcceptanceEvidence(lines, unfenced(lines.length))
   assert.equal(result.hasBlock, true)
   assert.equal(result.total, 1)
   assert.equal(result.unmet, 0)
@@ -460,9 +472,13 @@ test('parseGates: unterminated fence is a usage error naming the line number', (
 // ────────────────────────────────────────────────────────────────────────────
 
 test('evalMlsComplete: pinned evidence/failures string formats', () => {
+  // fenced: [false] explicit — hades-tf achado #3 made the "fenced" default
+  // fail CLOSED (everything masked) instead of open, so a hand-built ml
+  // object exercising this path must say explicitly that its line is not
+  // inside a fence.
   const mls = [
-    { id: 'ML-1A', lines: ['**Status:** ✅'] },
-    { id: 'ML-1B', lines: ['**Status:** ⬜ Pendente'] },
+    { id: 'ML-1A', lines: ['**Status:** ✅'], fenced: [false] },
+    { id: 'ML-1B', lines: ['**Status:** ⬜ Pendente'], fenced: [false] },
   ]
   const check = barrier.evalMlsComplete(mls)
   assert.equal(check.name, 'mls_complete')
@@ -482,10 +498,12 @@ test('evalMlsComplete: wave with zero MLs pins the failure message literally (do
 })
 
 test('evalAcceptanceEvidence: pinned evidence/failures string formats', () => {
+  // fenced explicit, all-false — see the comment on the equivalent
+  // evalMlsComplete test above (hades-tf achado #3, fail-closed default).
   const mls = [
-    { id: 'ML-1A', lines: ['**Critérios de aceite:**', '- [x] a', '- [x] b'] },
-    { id: 'ML-1B', lines: ['**Critérios de aceite:**', '- [x] a', '- [ ] b'] },
-    { id: 'ML-1C', lines: ['no block'] },
+    { id: 'ML-1A', lines: ['**Critérios de aceite:**', '- [x] a', '- [x] b'], fenced: [false, false, false] },
+    { id: 'ML-1B', lines: ['**Critérios de aceite:**', '- [x] a', '- [ ] b'], fenced: [false, false, false] },
+    { id: 'ML-1C', lines: ['no block'], fenced: [false] },
   ]
   const check = barrier.evalAcceptanceEvidence(mls)
   assert.equal(check.name, 'acceptance_evidence')
@@ -582,7 +600,7 @@ test('statusIsComplete: accepted forms (ADR-pinned, including suffixed ones)', (
     'concluido',
     'done\t· extra', // tab after the marker is a valid separator
     'done · extra', // NBSP (U+00A0) after the marker is a valid separator
-    '✅️', // VS16 (U+FE0F) text-style emoji presentation — must fold identically to Go
+    '✅️', // VS16 (U+FE0F) text-style emoji presentation — the single Mn exception (ADR decision 9)
   ]
   for (const marker of accepted) {
     assert.equal(barrier.statusIsComplete(marker), true, `expected ${JSON.stringify(marker)} to be complete`)
@@ -603,6 +621,10 @@ test('statusIsComplete: rejected forms — AC9 falsified in the opposite directi
     '​done', // zero-width space before the token — not \s, stays glued
     '',
     '   ',
+    'd᷀one', // AC15 (ADR decision 9) — combining mark (U+1DC0) on the first token, rejected outright, not folded
+    'do᷀ne', // AC15 — same, mark on a different codepoint of the token
+    'done᷀', // AC15 — same, mark trailing the token
+    '✅᷀', // AC15 — combining mark on the emoji marker itself, still rejected
   ]
   for (const marker of rejected) {
     assert.equal(barrier.statusIsComplete(marker), false, `expected ${JSON.stringify(marker)} to be incomplete`)

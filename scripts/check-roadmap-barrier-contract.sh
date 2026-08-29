@@ -345,16 +345,41 @@ fi
 # algum dos 144 roadmaps históricos declare um gate perigoso ou lento.
 # ═══════════════════════════════════════════════════════════════════════════
 
+# Re-pinado em ML-3D (hades-tf security review, 2026-08-29, achado #1 / vault/notes/
+# barrier-fence-closing-trailing-content-bypass-2026-08-29.md), único ponto do corpus inteiro
+# de 144 arquivos/432 waves que muda de veredito com a correção de fechamento de cerca —
+# investigado linha a linha antes de re-pinar, não apenas aceito porque "o script mandou":
+# `docs/roadmaps/done/ROADMAP-2026-08-22-wave-0-de-modelo-de-ameaca-no-harness-e-o-asset-do-
+# arquiteto-ensina-trackfw-push.md`, seção "Auditoria do ML-1A e do ML-2A" (linhas ~223-236 no
+# FREEZE_REF): um bloco ``` (3 crases, sem info string) abre em "$ trackfw roadmap new..." e
+# aninha um "```bash...```" de MESMO comprimento sem escalar para 4+ crases — o próprio defeito
+# de nesting que o ML-0A/AC10 deste roadmap identifica e corrige no exemplo do template
+# (comentário "Fence externo... alargado de 3 para 4 crases", poucas linhas acima no mesmo
+# arquivo) mas NÃO corrigiu neste bloco de auditoria irmão, que cita o mesmo padrão. Sob o
+# parser ANTIGO (achado #1, bug), o "```bash" fechava cedo o bloco externo por acidente,
+# reabria e refechava logo depois — por coincidência de paridade par/ímpar, o resto do
+# documento (Waves 2-bis/3/4) voltava a parsear normalmente. Sob o parser CORRIGIDO, o
+# "```bash" não fecha mais (tem sufixo) e a cerca externa só fecha no próximo "```" bare — que
+# deixa a contagem de abertura/fechamento REALMENTE desbalanceada dali até o fim do arquivo
+# (nenhum "```" bare subsequente reequilibra), então as Waves 2-bis/3/4 caem dentro de uma
+# cerca nunca fechada e `mls_complete`/`acceptance_evidence` corretamente reportam "no ML
+# found"/vazio em vez de ler ML-1B/ML-3A/ML-1C como conteúdo real. Isto é uma correção, não uma
+# regressão: um renderer CommonMark real trataria o mesmo texto exatamente assim. O arquivo é
+# histórico (`done/`, já mesclado antes desta REQ existir) — não é reaberto nem editado por
+# este ML. Confirmado por comparação binária dos dois parsers (pré/pós-fix) sobre os 144
+# arquivos do FREEZE_REF: SOMENTE estas 6 linhas (3 evidence + 3 failure em mls_complete; 1
+# evidence + 2 failures em acceptance_evidence) mudam; as outras 143 roadmaps são bit-a-bit
+# idênticos.
 FREEZE_REF="a4e8f35"
-PINNED_CORPUS_HASH="fb5ef780e1bc3b4980726ef0b5a4b8870668f5523f3297ab46401196017c0ce9"
+PINNED_CORPUS_HASH="44676e539400dd8c43410ce0750cc2eaf3a9f2bf69795bc144aa920774510226"
 PINNED_CORPUS_FILES=144
 PINNED_CORPUS_WAVES=432
 PINNED_CORPUS_EXIT2=14
-PINNED_CORPUS_LINES=1503
-PINNED_MLS_COMPLETE_EVIDENCE=642
-PINNED_MLS_COMPLETE_FAILURE=110
-PINNED_ACCEPTANCE_EVIDENCE_EVIDENCE=315
-PINNED_ACCEPTANCE_EVIDENCE_FAILURE=436
+PINNED_CORPUS_LINES=1500
+PINNED_MLS_COMPLETE_EVIDENCE=639
+PINNED_MLS_COMPLETE_FAILURE=113
+PINNED_ACCEPTANCE_EVIDENCE_EVIDENCE=314
+PINNED_ACCEPTANCE_EVIDENCE_FAILURE=434
 
 if [[ -z "${HASH_CMD_BIN:-}" ]]; then
   if command -v sha256sum >/dev/null 2>&1; then
@@ -649,6 +674,189 @@ EOF
 run_cli go "$FALSIFY_DIR" barrier shadow-acceptance --wave 1 --json
 assert_check_status "falsify/shadow-acceptance/no-real-block-blocked" "$CLI_STDOUT" "acceptance_evidence" "blocked"
 assert_check_reason_contains "falsify/shadow-acceptance/reason" "$CLI_STDOUT" "acceptance_evidence" "failures" "no acceptance block"
+
+# --- Cenário CRÍTICO (hades-tf, parecer de segurança 2026-08-29, achado #1 / vault/notes/
+# barrier-fence-closing-trailing-content-bypass-2026-08-29.md): uma linha de "fechamento" com
+# sufixo (` ```trailing-junk `) DENTRO de uma cerca já aberta não fecha a cerca no CommonMark
+# real — permanece conteúdo interno — mas antes da correção os 3 CLIs a tratavam como
+# fechamento válido, encerrando a máscara cedo e liberando um "**Status:** done" e um
+# "- [x]" forjados como se fossem conteúdo real da ML. Reprodução mínima do parecer,
+# verbatim (sonda-fence-full-bypass.md), testada nos 3 runtimes: deve bloquear usando o
+# status/critério REAIS (fora do exemplo), nunca os forjados.
+write_fixture fence-close-with-trailing-content-bypass <<'EOF'
+## Wave 1 — X
+### ML-1A — x
+Prosa introduzindo um exemplo do defeito que documentamos:
+```
+notas de exemplo, sem relacao com o trabalho real
+```trailing-junk-que-nao-fecha-a-cerca-no-commonmark-real
+**Status:** done
+**Acceptance criteria:**
+- [x] evidencia forjada, nada foi feito
+Mais texto ainda dentro do exemplo, por CommonMark de verdade:
+```
+Conteúdo real da ML, fora do exemplo:
+**Status:** ⬜ Pendente
+**Acceptance criteria:**
+- [ ] criterio real nao atendido
+EOF
+FENCE_BYPASS_DIVERGENT=""
+for rt in go node py; do
+  run_cli "$rt" "$FALSIFY_DIR" barrier fence-close-with-trailing-content-bypass --wave 1 --json
+  mls_status=$(doc_check_json "$CLI_STDOUT" "mls_complete" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))")
+  ev_status=$(doc_check_json "$CLI_STDOUT" "acceptance_evidence" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))")
+  if [[ "$mls_status" != "blocked" || "$ev_status" != "blocked" ]]; then
+    FENCE_BYPASS_DIVERGENT="${FENCE_BYPASS_DIVERGENT}${rt}(mls_complete=$mls_status,acceptance_evidence=$ev_status) "
+  fi
+done
+if [[ -n "$FENCE_BYPASS_DIVERGENT" ]]; then
+  fail "falsify/fence-closing-line-with-trailing-content-does-not-close-cross-runtime" "runtime(s) liberaram a wave via fechamento forjado com sufixo: $FENCE_BYPASS_DIVERGENT"
+else
+  ok "falsify/fence-closing-line-with-trailing-content-does-not-close-cross-runtime"
+fi
+# Confirma, no Go (razão exata pinada em docs/cli-parity.md), que é o status/critério REAIS
+# (fora do exemplo) que determinam o bloqueio — não um efeito colateral não relacionado.
+run_cli go "$FALSIFY_DIR" barrier fence-close-with-trailing-content-bypass --wave 1 --json
+assert_check_reason_contains "falsify/fence-closing-line-with-trailing-content/real-status-used" "$CLI_STDOUT" "mls_complete" "failures" "not complete (status: ⬜ Pendente)"
+assert_check_reason_contains "falsify/fence-closing-line-with-trailing-content/real-criterion-used" "$CLI_STDOUT" "acceptance_evidence" "failures" "1 unmet acceptance criteria"
+
+# --- Cenário de regressão (deve continuar ABRINDO): a linha de ABERTURA de uma cerca aceita
+# conteúdo à direita do delimitador (info string CommonMark, ex.: ` ```bash `) — a correção do
+# achado #1 muda só a regra de FECHAMENTO. Um bloco aberto com info string ainda mascara o
+# "**Status:** done" forjado no seu interior.
+write_fixture fence-open-with-info-string-still-opens <<'EOF'
+## Wave 1 — X
+### ML-1A — x
+Example:
+```bash
+**Status:** done
+```
+**Status:** ⬜ Pendente
+**Acceptance criteria:**
+- [ ] a
+EOF
+run_cli go "$FALSIFY_DIR" barrier fence-open-with-info-string-still-opens --wave 1 --json
+assert_check_status "falsify/fence-open-info-string-still-masks/blocked" "$CLI_STDOUT" "mls_complete" "blocked"
+assert_check_reason_contains "falsify/fence-open-info-string-still-masks/uses-real-status" "$CLI_STDOUT" "mls_complete" "failures" "not complete (status: ⬜ Pendente)"
+
+# --- Cenário de regressão (deve continuar FECHANDO): uma linha de fechamento com só espaço em
+# branco após os caracteres da cerca (` ```   `, sem conteúdo real) ainda fecha normalmente —
+# a correção do achado #1 exige "vazio OU só espaço em branco", não "vazio estrito".
+python3 - "$FALSIFY_DIR/docs/roadmaps/wip/fence-close-with-trailing-whitespace-still-closes.md" <<'PYEOF'
+import sys
+path = sys.argv[1]
+content = (
+    "## Wave 1 — X\n"
+    "### ML-1A — x\n"
+    "Example:\n"
+    "```\n"
+    "**Status:** done\n"
+    "```   \n"
+    "**Status:** ⬜ Pendente\n"
+    "**Acceptance criteria:**\n"
+    "- [ ] a\n"
+)
+with open(path, "w", encoding="utf-8") as f:
+    f.write(content)
+PYEOF
+run_cli go "$FALSIFY_DIR" barrier fence-close-with-trailing-whitespace-still-closes --wave 1 --json
+assert_check_status "falsify/fence-close-trailing-whitespace-still-closes/blocked" "$CLI_STDOUT" "mls_complete" "blocked"
+assert_check_reason_contains "falsify/fence-close-trailing-whitespace-still-closes/uses-real-status" "$CLI_STDOUT" "mls_complete" "failures" "not complete (status: ⬜ Pendente)"
+
+# --- Cenário (hades-tf, achado #2): marca combinante Mn fora do bloco "Combining Diacritical
+# Marks" (U+1DC0, COMBINING DOTTED GRAVE ACCENT, ccc 230) no primeiro token de status — os 3
+# CLIs devem CONCORDAR (aceitar ou rejeitar juntos), nunca divergir (AC3/AC4). Antes da
+# correção, Go/Python aceitavam ("done") e Node rejeitava — reproduzido ao vivo no parecer.
+python3 - "$FALSIFY_DIR/docs/roadmaps/wip/combining-mark-out-of-range-u1dc0.md" <<'PYEOF'
+import sys
+path = sys.argv[1]
+marker = "d" + "᷀" + "one"
+content = (
+    "## Wave 1 — X\n"
+    "### ML-1A — x\n"
+    f"**Status:** {marker}\n"
+    "**Acceptance criteria:**\n"
+    "- [x] a\n"
+)
+with open(path, "w", encoding="utf-8") as f:
+    f.write(content)
+PYEOF
+COMBINING_VERDICTS=""
+for rt in go node py; do
+  run_cli "$rt" "$FALSIFY_DIR" barrier combining-mark-out-of-range-u1dc0 --wave 1 --json
+  status=$(doc_check_json "$CLI_STDOUT" "mls_complete" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))")
+  COMBINING_VERDICTS="${COMBINING_VERDICTS}${rt}=${status} "
+done
+COMBINING_DIVERGENT=""
+COMBINING_FIRST=""
+for pair in $COMBINING_VERDICTS; do
+  v="${pair#*=}"
+  if [[ -z "$COMBINING_FIRST" ]]; then
+    COMBINING_FIRST="$v"
+  elif [[ "$v" != "$COMBINING_FIRST" ]]; then
+    COMBINING_DIVERGENT="${COMBINING_DIVERGENT}${pair} "
+  fi
+done
+if [[ -n "$COMBINING_DIVERGENT" ]]; then
+  fail "falsify/combining-mark-u1dc0-cross-runtime-agreement" "runtimes divergiram: $COMBINING_VERDICTS"
+else
+  ok "falsify/combining-mark-u1dc0-cross-runtime-agreement"
+fi
+# Reforço pós ADR-2026-08-29 decisão 9 (AC15): a concordância acima não basta mais — o
+# veredito CONCORDADO tem que ser especificamente "blocked". Antes da decisão 9 os 3
+# CLIs concordavam em ACEITAR (dobrando Mn); a decisão inverteu a direção para REJEITAR.
+if [[ "$COMBINING_FIRST" != "blocked" ]]; then
+  fail "falsify/combining-mark-u1dc0-rejected-not-just-agreed" "veredito concordado foi '$COMBINING_FIRST', esperado 'blocked' (ADR decisão 9/AC15)"
+else
+  ok "falsify/combining-mark-u1dc0-rejected-not-just-agreed"
+fi
+
+# --- Cenário (AC15, exceção única): checkmark + VS16 (U+FE0F) — "✅️" — continua sendo
+# reconhecido como concluído nos 3 CLIs. VS16 é a única marca de categoria Mn que a decisão 9
+# ainda remove (não rejeita): é o seletor que teclados de emoji inserem depois de "✅",
+# visualmente idêntico, sem valor semântico. Reproduz AC3/AC4 sob a regra nova.
+write_fixture vs16-still-accepted <<'EOF'
+## Wave 1 — X
+### ML-1A — x
+**Status:** ✅️
+**Acceptance criteria:**
+- [x] a
+EOF
+VS16_VERDICTS=""
+for rt in go node py; do
+  run_cli "$rt" "$FALSIFY_DIR" barrier vs16-still-accepted --wave 1 --json
+  status=$(doc_check_json "$CLI_STDOUT" "mls_complete" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))")
+  VS16_VERDICTS="${VS16_VERDICTS}${rt}=${status} "
+done
+if [[ "$VS16_VERDICTS" != *"go=passed"* || "$VS16_VERDICTS" != *"node=passed"* || "$VS16_VERDICTS" != *"py=passed"* ]]; then
+  fail "falsify/vs16-still-accepted-cross-runtime" "esperava 'passed' nos 3 CLIs (ADR decisão 9, exceção única); obtido: $VS16_VERDICTS"
+else
+  ok "falsify/vs16-still-accepted-cross-runtime"
+fi
+
+# --- Cenário (AC15, caso de ordem): "Concluído" acentuado (sem emoji) como único marcador de
+# status continua sendo reconhecido como concluído nos 3 CLIs. É o caso que quebra se a
+# checagem de Mn "sobrando" rodar DEPOIS da decomposição NFD em vez de ANTES: o "í" só vira
+# combinante (U+0301) na forma decomposta — na forma autorada (NFC) não há Mn literal. Ver
+# comentário de hasDisallowedCombiningMark/_has_disallowed_combining_mark nos 3 runtimes.
+write_fixture accented-concluido-still-accepted <<'EOF'
+## Wave 1 — X
+### ML-1A — x
+**Status:** Concluído
+**Acceptance criteria:**
+- [x] a
+EOF
+ACCENTED_VERDICTS=""
+for rt in go node py; do
+  run_cli "$rt" "$FALSIFY_DIR" barrier accented-concluido-still-accepted --wave 1 --json
+  status=$(doc_check_json "$CLI_STDOUT" "mls_complete" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))")
+  ACCENTED_VERDICTS="${ACCENTED_VERDICTS}${rt}=${status} "
+done
+if [[ "$ACCENTED_VERDICTS" != *"go=passed"* || "$ACCENTED_VERDICTS" != *"node=passed"* || "$ACCENTED_VERDICTS" != *"py=passed"* ]]; then
+  fail "falsify/accented-concluido-still-accepted-cross-runtime" "esperava 'passed' nos 3 CLIs (ADR decisão 9, NFD deve rodar depois da checagem de Mn); obtido: $ACCENTED_VERDICTS"
+else
+  ok "falsify/accented-concluido-still-accepted-cross-runtime"
+fi
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Guarda de vacuidade — obrigatória e provada empiricamente: um sub-shell roda a MESMA

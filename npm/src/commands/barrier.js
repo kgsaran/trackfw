@@ -118,33 +118,80 @@ const CRITERIA_HEADER_RE = /^\*\*(?:Acceptance criteria|Crit[ée]rios de aceite)
 // Considered — "accept any non-empty status" is the rejected no-op design).
 const STATUS_VOCABULARY = new Set(['✅', 'done', 'concluido'])
 
-// normalizeStatusToken folds diacritics (NFD + strip combining marks,
-// U+0300-U+036F) and Unicode variation selectors (U+FE00-U+FE0F \u2014 e.g. VS16
-// in the text-style emoji presentation "checkmark + VS16"), then lower-cases
-// the token for vocabulary comparison. Go's runes.In(unicode.Mn) folds VS16
-// too (it is General_Category=Mn), so without stripping it here both
-// barrier.go and barrier.py would accept the VS16 form while barrier.js
-// rejected it \u2014 a cross-runtime divergence on the single most common status
-// marker in the corpus (AC3). Never mutates the emoji base codepoint itself.
+// VS16 is the single variation selector this module treats as cosmetic
+// noise: the one emoji keyboards insert after "checkmark" to force
+// text-style presentation (ADR 2026-08-29 decision 9, exception clause). No
+// other variation selector or combining mark gets this treatment.
+const VS16 = '\u{FE0F}'
+
+// stripVS16 removes only U+FE0F occurrences from token. Deliberately
+// narrower than "strip every variation selector" or "strip every Mn": VS16
+// is the one documented cosmetic exception (ADR decision 9); anything else
+// of category Mn is now a rejection, not a fold (see
+// hasDisallowedCombiningMark).
+function stripVS16(token) {
+  return token.split(VS16).join('')
+}
+
+// hasDisallowedCombiningMark reports whether token (with VS16 already
+// removed) contains any Unicode category Mn (Mark, Nonspacing) codepoint.
+// ADR 2026-08-29 decision 9: after the single VS16 exception, any combining
+// mark on the first status token is rejected outright \u2014 the ML is NOT
+// complete \u2014 rather than folded away. A vocabulary this small exists to
+// refuse ambiguity; silently folding combining marks reopens exactly the
+// ambiguity it exists to close ("d<U+1DC0>one" must not read as "done").
+//
+// ORDER IS LOAD-BEARING: this check MUST run on the token BEFORE NFD
+// decomposition, not after. "Conclu\u00eddo" in its authored (NFC) form has
+// no literal Mn codepoint \u2014 the accented "\u00ed" is a single
+// precomposed codepoint. NFD-decomposing it *produces* a trailing Mn
+// (U+0301, COMBINING ACUTE ACCENT) that normalizeStatusToken then strips
+// for vocabulary matching. Running this rejection check on the
+// already-decomposed string would treat that legitimate,
+// vocabulary-sanctioned accent the same as an injected combining mark and
+// reject "Conclu\u00eddo" outright, breaking AC15's own positive case.
+// Checking the raw, pre-decomposition token instead lets it through here
+// (no literal Mn present) while still catching a combining mark authored
+// directly onto the token, which is category Mn in either form, decomposed
+// or not.
+function hasDisallowedCombiningMark(token) {
+  return /\p{Mn}/u.test(token)
+}
+
+// normalizeStatusToken folds diacritics and lower-cases the token for
+// vocabulary comparison. Uses the \p{Mn} Unicode property escape (General
+// Category "Mark, Nonspacing") instead of a hand-enumerated code point range,
+// to match Go's runes.In(unicode.Mn) and Python's unicodedata.category(ch) \u2014
+// all three fold every combining mark that survives to this point, which,
+// after hasDisallowedCombiningMark has already run, only happens as a
+// byproduct of NFD-decomposing an accented Latin letter (e.g. "Conclu\u00eddo"
+// -> "Concluido"). Callers MUST have already rejected via
+// hasDisallowedCombiningMark before calling this \u2014 see that function's
+// doc comment for why.
 function normalizeStatusToken(token) {
-  return token.normalize('NFD').replace(/[\u0300-\u036f\ufe00-\ufe0f]/g, '').toLowerCase()
+  return token.normalize('NFD').replace(/\p{Mn}/gu, '').toLowerCase()
 }
 
 // statusIsComplete implements rule 3 by FIRST TOKEN, not substring (ADR
 // decision 3, AC8/AC9/AC14). marker is the already-trimmed remainder of the
-// "**Status:**" line. Splitting on /\s+/ treats U+00A0 (NBSP) as a separator —
-// matching the accepted "NBSP separator" case — while a zero-width character
+// "**Status:**" line. Splitting on /\s+/ treats U+00A0 (NBSP) as a separator \u2014
+// matching the accepted "NBSP separator" case \u2014 while a zero-width character
 // (U+200B, not matched by \s) stays glued to the token and safely causes
 // rejection (a usability false-negative, not a security concern).
 //
 // This is the fix for vault/notes/adr-status-substring-livre-falso-positivo-2026-08-01.md:
-// `marker.includes('✅')` would classify "**Status:** ⬜ Pendente ✅" as
-// complete (reproduced live against 7.3.0 — ADR decision 8). First-token
-// comparison rejects it because the first token is "⬜", not the marker.
+// `marker.includes('checkmark')` would classify "**Status:** [pending] checkmark" as
+// complete (reproduced live against 7.3.0 \u2014 ADR decision 8). First-token
+// comparison rejects it because the first token is the pending glyph, not the marker.
+//
+// ADR decision 9: VS16 is stripped first (the one cosmetic exception), then
+// any remaining combining mark on the raw token rejects outright \u2014 see
+// hasDisallowedCombiningMark for why this must happen before NFD.
 function statusIsComplete(marker) {
   const trimmed = marker.trim()
   if (trimmed.length === 0) return false
-  const first = trimmed.split(/\s+/)[0]
+  const first = stripVS16(trimmed.split(/\s+/)[0])
+  if (hasDisallowedCombiningMark(first)) return false
   return STATUS_VOCABULARY.has(normalizeStatusToken(first))
 }
 
@@ -211,7 +258,8 @@ function computeFenceMask(lines) {
   let fenceChar = null
   let fenceLen = 0
   for (let i = 0; i < lines.length; i++) {
-    const marker = detectFenceMarker(lines[i].trim())
+    const trimmed = lines[i].trim()
+    const marker = detectFenceMarker(trimmed)
     if (!fenced) {
       if (marker) {
         fenced = true
@@ -223,8 +271,17 @@ function computeFenceMask(lines) {
     }
     // Currently inside a fence: only a marker of the SAME character with
     // length >= the opening run closes it (a nested shorter/different
-    // marker stays masked as interior content).
-    if (marker && marker.char === fenceChar && marker.length >= fenceLen) {
+    // marker stays masked as interior content) — AND, per CommonMark, a
+    // closing fence line contains NOTHING besides the fence run and
+    // (already-trimmed) surrounding whitespace: marker.length === trimmed.length.
+    // Fix for hades-tf security review (2026-08-29, achado #1 /
+    // vault/notes/barrier-fence-closing-trailing-content-bypass-2026-08-29.md):
+    // a line like "```trailing-junk" found INSIDE an open fence does not
+    // close it in real CommonMark — it stays interior content — but the
+    // prior check treated any run of length >= fenceLen as a valid close
+    // regardless of trailing text. The opening branch above is unchanged:
+    // CommonMark allows an info string after the opening run (` ```bash `).
+    if (marker && marker.char === fenceChar && marker.length >= fenceLen && marker.length === trimmed.length) {
       fenced = false
       continue
     }
@@ -264,12 +321,21 @@ function findMLs(lines, startLine, endLine, fenceMask = computeFenceMask(lines))
 // decision 3), not substring. Returns { complete, marker } where marker is
 // "missing" when no `**Status:**` line exists at all. Lines inside a fenced
 // code block are ignored (ADR decision 7, AC13-a) — `fenced` is aligned to
-// `mlLines`; defaults to "no fences" for backward compatibility. Matched
-// against the RAW line (no per-line .trim()) — an indented marker does not
-// count (ML-1B, achado 2): Go and Python already require column 0 via `^`
-// against the untrimmed line, and Node's prior .trim() made it the only
-// runtime that released a wave on indented markers.
-function mlCompletionStatus(mlLines, fenced = []) {
+// `mlLines`. Matched against the RAW line (no per-line .trim()) — an indented
+// marker does not count (ML-1B, achado 2): Go and Python already require
+// column 0 via `^` against the untrimmed line, and Node's prior .trim() made
+// it the only runtime that released a wave on indented markers.
+//
+// Default omitted on purpose (hades-tf security review, 2026-08-29, achado
+// #3 / hefesto-tf): a `fenced = []` default left every `fenced[i]` as
+// `undefined` when the caller forgot the argument — indistinguishable from
+// "nothing is fenced", silently turning OFF the fence-masking protection this
+// very function exists to enforce. Production call sites always pass
+// `ml.fenced` (never exploitable today), but a completion gate must fail
+// CLOSED on a missing argument, not open. The default below marks every line
+// as fenced (masked) instead, so an accidentally omitted argument yields
+// "missing"/not-complete rather than "everything counts as real content".
+function mlCompletionStatus(mlLines, fenced = mlLines.map(() => true)) {
   for (let i = 0; i < mlLines.length; i++) {
     if (fenced[i]) continue
     const m = /^\*\*Status:\*\*(.*)$/.exec(mlLines[i])
@@ -285,13 +351,18 @@ function mlCompletionStatus(mlLines, fenced = []) {
 // Lines inside a fenced code block are ignored throughout — for the header
 // search, for the "**" block-end boundary, and for counting criterion lines —
 // otherwise a cerca citing the acceptance header/`- [x]` as an example would
-// forge acceptance evidence (ADR decision 7, AC13-a). `fenced` defaults to
-// "no fences" for backward compatibility. All markers are matched against the
-// RAW line (no per-line .trim()) — an indented marker does not count (ML-1B,
-// achado 2): Go and Python already require column 0 via `^` against the
-// untrimmed line, and Node's prior .trim() made it the only runtime that
-// released a wave on indented markers.
-function mlAcceptanceEvidence(mlLines, fenced = []) {
+// forge acceptance evidence (ADR decision 7, AC13-a). All markers are matched
+// against the RAW line (no per-line .trim()) — an indented marker does not
+// count (ML-1B, achado 2): Go and Python already require column 0 via `^`
+// against the untrimmed line, and Node's prior .trim() made it the only
+// runtime that released a wave on indented markers.
+//
+// Default omitted on purpose — same rationale as mlCompletionStatus above
+// (hades-tf security review, 2026-08-29, achado #3 / hefesto-tf): fail
+// CLOSED (every line treated as fenced/masked, so `hasBlock: false` and no
+// forged criteria are counted) if the caller omits `fenced`, instead of
+// silently disabling the fence mask.
+function mlAcceptanceEvidence(mlLines, fenced = mlLines.map(() => true)) {
   let blockStart = -1
   for (let i = 0; i < mlLines.length; i++) {
     if (fenced[i]) continue
