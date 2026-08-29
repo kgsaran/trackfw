@@ -319,7 +319,7 @@ seção 4.
 > (ML-2C acrescentou uma linha; ML-3D deixou o Node mudo). Um agente, os 3 arquivos.
 
 ### ML-1A — Cabeçalho bilíngue e status por primeiro token
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** `apolo-tf`
 **Files affected:** `internal/commands/barrier.go`, `npm/src/commands/barrier.js`,
 `pypi/trackfw/commands/barrier.py` e os testes correspondentes de cada runtime.
@@ -347,15 +347,57 @@ seção 4.
    indevidamente** — é regressão de segurança introduzida pela própria mudança desta Wave se não for
    tratada aqui.
 **Critérios de aceite:**
-- [ ] AC1, AC2, AC3, AC8
-- [ ] **AC9 provado por teste**, com os 6 casos negativos nomeados na REQ
-- [ ] Caso de teste nomeado para o item 5: ML com `**Status:** done` dentro de cerca de código e
+- [x] AC1, AC2, AC3, AC8
+- [x] **AC9 provado por teste**, com os 6 casos negativos nomeados na REQ
+- [x] Caso de teste nomeado para o item 5: ML com `**Status:** done` dentro de cerca de código e
       `**Status:** pending` real fora da cerca → `mls_complete` reporta **não concluído** (usa o
       status real, ignora o cercado); ML com `**Critérios de aceite:**`/`- [x]` dentro de cerca e sem
       bloco real fora dela → `acceptance_evidence` reporta **sem bloco de aceite**, não `passed`
-- [ ] `go build ./...` → 0 · `go test ./...` → 0 · `npm test --prefix npm` → 0 ·
+- [x] `go build ./...` → 0 · `go test ./...` → 0 · `npm test --prefix npm` → 0 ·
       `PYTHONPATH=pypi python3 -m pytest pypi/tests` → 0
-- [ ] `./bin/trackfw barrier` sobre este próprio roadmap continua `passed`
+- [x] `./bin/trackfw barrier` sobre este próprio roadmap continua `passed`
+
+
+#### Resultado do ML-1A + ML-1B (apolo-tf, 2026-08-29)
+
+**ML-1A** — cabeçalho bilíngue ancorado em `^`; status por primeiro token com vocabulário fechado
+`{✅, done, concluido}` sob normalização NFD + strip de combining marks e variation selectors;
+máscara de cerca aplicada nos 3 pontos (heading de ML, status, bloco de aceite). O agente achou e
+corrigiu uma divergência de VS16 (`✅️` com U+FE0F) que Go aceitava e Node/Python rejeitavam.
+
+**ML-1B — corretiva da minha auditoria.** Dois pontos que o relatório do ML-1A classificava como
+residual e como pendência não corrigida, e que medidos bloqueavam:
+
+1. **Evasão da própria proteção.** A máscara só conhecia três crases: `~~~` nunca era mascarado e
+   cerca de 4+ crases tinha o interior desmascarado por aninhamento. Agora segue CommonMark —
+   abertura com 3+ do mesmo caractere, fechamento com o mesmo caractere e comprimento ≥.
+2. **Os 3 CLIs discordavam, e o Node era o permissivo.** Marcadores indentados: Go e Python
+   bloqueavam, Node liberava. O check que autoriza o PR era mais fraco num runtime.
+
+O agente ainda achou sozinho, durante o fix, que trocar `.trim()` por igualdade de linha inteira no
+cabeçalho de gates do Node faria o Node **ignorar o bloco de gates em silêncio** (`gates: passed`
+com zero comandos) quando houvesse prosa ou CRLF na linha. Corrigido para casamento por prefixo,
+como Go e Python.
+
+**Auditoria do arquiteto — 3 CLIs reais:**
+
+| caso | Go | Node | Python |
+|---|---|---|---|
+| `**Status:** ⬜ Pendente ✅` | blocked | blocked | blocked |
+| marcadores indentados | blocked | blocked | blocked |
+| `### ML-9Z` em `~~~` | 0 fantasmas | 0 | 0 |
+| `### ML-8Y` em cerca de 4 crases | 0 fantasmas | 0 | 0 |
+| bloco de aceite vazio | blocked | blocked | blocked |
+| roadmap gerado + preenchido | `mls_complete` ✓ e `acceptance_evidence` ✓ | | |
+
+Corpus: 144 roadmaps / 788 MLs, **zero** mudanças de veredito pela máscara. A única reclassificação
+do ciclo é o caso da AC14, previsto pelo ADR, num roadmap em `abandoned/`.
+
+**Residual aceito:** esconder um `- [ ]` não atendido dentro de cerca faz `unmet == 0`. Vale desde o
+ML-1A, para qualquer forma de cerca. **Não amplia poder de ataque**: quem escreve o roadmap pode
+simplesmente marcar `- [x]`. É o limite de confiança que o próprio ML-0A declarou na seção 2 — o
+`barrier` é verificador **sintático**, não semântico. Bloco de aceite vazio, esse sim, é rejeitado
+nos 3.
 
 ## Wave 2 — Template e legenda (ML único)
 > Dependências: Wave 1 concluída. Toca os 3 geradores; ML único pela mesma razão da Wave 1.

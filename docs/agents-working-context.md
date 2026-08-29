@@ -25495,3 +25495,38 @@ Branch `fix/dialeto-canonico-do-roadmap-e-vocabulario-de-status-do-barrier` (nã
 - **Estado final verificado, comando real:** `./bin/trackfw barrier <roadmap> --wave 0
   --trust-local-gates` → `mls_complete: passed`, `acceptance_evidence: passed`, `gates: passed`,
   `validate: passed`, `result: passed`.
+
+## Sessão 2026-08-29 — apolo-tf (ML-1A — cabeçalho bilíngue e status por primeiro token no `barrier`, 3 CLIs — EXECUTADO, aguardando auditoria)
+
+Branch `fix/dialeto-canonico-do-roadmap-e-vocabulario-de-status-do-barrier` (não criada por mim — trabalho de implementação; nenhum commit/push feito por mim, autoridade de Git é do `trackfw_architect`).
+
+**Escopo:** ML-1A do roadmap `ROADMAP-2026-08-29-dialeto-canonico-do-roadmap-e-vocabulario-de-status-do-barrier.md`, único agente para os 3 runtimes (ML sequencial por desenho, para evitar a divergência que 3 agentes em paralelo produziram no ciclo anterior).
+
+**O que foi feito, nos 3 CLIs (`internal/commands/barrier.go`, `npm/src/commands/barrier.js`, `pypi/trackfw/commands/barrier.py`):**
+
+1. **Cabeçalho de aceite bilíngue (AC1-3):** `criteriaHeaderRe`/`CRITERIA_HEADER_RE`/`_ACCEPTANCE_HEADER_RE` passam a aceitar `**Acceptance criteria:**` e `**Critérios de aceite:**`, ambos ancorados (`^`).
+2. **Status por primeiro token, não substring (AC8/AC9/AC14):** `statusIsComplete`/`statusIsComplete`/`_status_is_complete` — vocabulário fechado `{✅, done, concluido}` após NFD + strip de combining marks + strip de variation selectors (U+FE00–U+FE0F) + lowercase, comparado contra o primeiro token do restante da linha (`strings.Fields`/`split(/\s+/)`/`str.split()`, que tratam NBSP como separador mas não zero-width).
+3. **Consciência de cerca de código (AC13, achado do ML-0A):** máscara de fence (`fenceMask`/`computeFenceMask`/`_fence_mask`) calculada uma vez sobre o documento inteiro e aplicada nos três pontos: detecção de heading de ML, linha de `**Status:**`, e bloco de `**Critérios de aceite:**` (busca do header, boundary `**` de fim de bloco, e contagem de itens `- [...]`).
+
+**Achado não previsto pelo roadmap, corrigido nesta sessão (via `advisor`, antes de reportar):** os três folders de acento não eram equivalentes para o marcador `✅️` (checkmark + VS16, U+FE0F) — Go (`unicode.Mn` via `golang.org/x/text`) já dobrava VS16 para `✅` porque VS16 é `General_Category=Mn`; Node (`[̀-ͯ]`) e Python (`unicodedata.combining()`, que retorna 0 para VS16) não dobravam, então aceitavam Go e rejeitavam Node/Python — quebra de AC3 (mesmo conjunto de formas aceitas) no marcador mais comum do corpus. Corrigido adicionando strip de `[︀-️]` em Node e Python; teste de regressão adicionado nos 3 runtimes.
+
+**Evidência de verificação (comandos reais, não hipotéticos):**
+- `go build ./...`, `go vet ./...`, `go test ./...` → 0 erros, todos os pacotes verdes (inclui `internal/commands` com os testes novos).
+- `npm test --prefix npm` → 824 testes, 0 falhas.
+- `PYTHONPATH=pypi python3 -m pytest pypi/tests` → 1536 testes, 28 subtests, 0 falhas.
+- `./bin/trackfw barrier ROADMAP-2026-08-29-... --wave 0 --trust-local-gates` → `passed` nos 4 checks, antes e depois da mudança — prova de regressão exigida pelo roadmap (esse roadmap tem, na própria seção de resultado do ML-0A, cercas de código citando os literais `**Status:** done`/`**Critérios de aceite:**`/`- [x]` como exemplo do próprio bug; sem fence-awareness essas cercas forjariam evidência).
+- `--wave 1`, `--wave 2`, `--wave 3` do mesmo roadmap → todos `blocked` corretamente, citando o status real não-cercado (`⬜ Pendente`) — prova de que a máscara de fence não vazou para além da seção do ML-0A (checado a pedido do `advisor`, que apontou que a prova de wave 0 sozinha não bastava).
+- `bash scripts/check-gates-falsify.sh` → `EXIT:0`, 181 cenários, incluindo os 2 cenários existentes de `barrier` (limite inferior de `--wave 0`), não tocados por este ML.
+- Varredura do corpus (790 linhas `**Status:**` em `docs/roadmaps/`): exatamente **1** reclassificação, e é a prevista pelo ADR — `⬜ Pendente · ... ML-1A ✅` em `docs/roadmaps/abandoned/ROADMAP-2026-08-15-...md` (roadmap abandonado, não gate de wave viva), primeiro token `⬜` → deixa de ser aceito pelo `contains` antigo, que dava falso positivo. É exatamente o AC14/decisão 8 do ADR.
+
+**Arquivos tocados:** `internal/commands/barrier.go`, `internal/commands/barrier_test.go`, `npm/src/commands/barrier.js`, `npm/tests/barrier.test.js`, `pypi/trackfw/commands/barrier.py`, `pypi/tests/test_barrier.py`. Nenhum gerador (`internal/generators/roadmap.go`, `npm/src/generators/roadmap.js`, `pypi/trackfw/generators/roadmap.py`) tocado — é escopo da Wave 2. Nenhum `scripts/`, `Makefile`, `docs/` de contrato tocado.
+
+**Não fiz (fora do meu escopo/autoridade):**
+- Não commitei, não fiz push, não marquei o ML-1A como `✅ Concluído` no roadmap — protocolo do microbatch exige que isso só aconteça após a auditoria do `trackfw_architect`.
+- **Divergência pré-existente registrada, não corrigida** (fora do escopo desta REQ, mesma classe do achado `**Gates da wave:** <sufixo>` do ML-0A): Node faz `.trim()` em cada linha antes de casar `**Status:**`/`**Acceptance criteria:**`/`**Critérios de aceite:**`; Go e Python casam a linha crua. Um `  **Status:** done` ou `  **Acceptance criteria:**` **indentado** casaria em Node e não em Go/Python. Nenhum roadmap do corpus atual usa indentação nesses marcadores (verificado). Recomendo abrir achado separado se aparecer.
+
+**Residual do mecanismo de fence (declarado, não corrigido — mesma classe dos residuais do ML-0A):** `fenceMask`/`computeFenceMask`/`_fence_mask` reconhece apenas cerca de três backticks (`` ``` ``), o literal especificado pela decisão 7 do ADR e pelo roadmap ("cerca de código (` ``` `)"). Duas classes de bypass, ambas na direção **liberar** (a mesma que a decisão 7 existe para fechar): (a) cercas `~~~` nunca são mascaradas; (b) um bloco de quatro backticks (` ```` `) tem seu interior desmascarado por uma cerca de três backticks aninhada, porque o toggle vira on/off/on independente da contagem de crases. Verificado: `grep -rn '^ *````' docs/roadmaps/` e `grep -rn '^ *~~~' docs/roadmaps/` não retornam nenhuma ocorrência no corpus atual — não é uma falha ativa, é um limite do desenho a declarar para a auditoria de segurança (`hades-tf`), não um achado a corrigir neste ML (ampliar o reconhecimento de cerca é mecanismo novo, não threat-modelado pelo ML-0A, e fora do literal que o ADR especifica).
+
+**Nota sobre a varredura de corpus (item 4 acima):** rodada com uma reimplementação Python isolada de `_status_is_complete` (não os três parsers reais dos 3 CLIs) — é evidência preventiva de que nenhuma reclassificação inesperada existe, não prova de AC10 (que é entregável do ML-3A, sobre os 143 roadmaps reais via os parsers reais dos 3 runtimes).
+
+**Por que ML-1A permanece `⬜ Pendente` nesta sessão:** os próprios critérios de aceite do ML-1A ainda estão `- [ ]` no roadmap — marcá-lo `✅ Concluído` sem marcar os critérios faria `barrier --wave 1` reportar `mls_complete: passed` com `acceptance_evidence: blocked`, um estado inconsistente. Ambos (status + critérios) são virados juntos pelo `trackfw_architect` após a auditoria, conforme o protocolo de microlote — não é descuido, é a ordem correta do protocolo.

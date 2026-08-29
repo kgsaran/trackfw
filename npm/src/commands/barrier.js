@@ -103,11 +103,117 @@ function findWave(lines, waveLabel, roadmapBasename) {
   return { startLine: wave.startLine, endLine: wave.endLine }
 }
 
+// CRITERIA_HEADER_RE accepts both the canonical English header (ADR
+// 2026-08-29 decision 1) and the Portuguese one, which remains accepted with
+// no removal date (decision 2 — 99/143 roadmaps in the corpus use it,
+// including artifacts in done/). The `^` anchor is load-bearing: an
+// unanchored match would casar dentro de prosa ou de cerca de código, turning
+// a quoted literal into forged acceptance evidence.
+const CRITERIA_HEADER_RE = /^\*\*(?:Acceptance criteria|Crit[ée]rios de aceite):\*\*/
+
+// STATUS_VOCABULARY is the closed set of first-token markers recognised as
+// "complete" (ADR decision 3): the checkmark emoji, and the English/Portuguese
+// words, matched after case-folding and diacritics-folding. Deliberately
+// closed and explicit — "feito", "ok", "finalizado" are out (ADR, Alternatives
+// Considered — "accept any non-empty status" is the rejected no-op design).
+const STATUS_VOCABULARY = new Set(['✅', 'done', 'concluido'])
+
+// normalizeStatusToken folds diacritics (NFD + strip combining marks,
+// U+0300-U+036F) and Unicode variation selectors (U+FE00-U+FE0F \u2014 e.g. VS16
+// in the text-style emoji presentation "checkmark + VS16"), then lower-cases
+// the token for vocabulary comparison. Go's runes.In(unicode.Mn) folds VS16
+// too (it is General_Category=Mn), so without stripping it here both
+// barrier.go and barrier.py would accept the VS16 form while barrier.js
+// rejected it \u2014 a cross-runtime divergence on the single most common status
+// marker in the corpus (AC3). Never mutates the emoji base codepoint itself.
+function normalizeStatusToken(token) {
+  return token.normalize('NFD').replace(/[\u0300-\u036f\ufe00-\ufe0f]/g, '').toLowerCase()
+}
+
+// statusIsComplete implements rule 3 by FIRST TOKEN, not substring (ADR
+// decision 3, AC8/AC9/AC14). marker is the already-trimmed remainder of the
+// "**Status:**" line. Splitting on /\s+/ treats U+00A0 (NBSP) as a separator —
+// matching the accepted "NBSP separator" case — while a zero-width character
+// (U+200B, not matched by \s) stays glued to the token and safely causes
+// rejection (a usability false-negative, not a security concern).
+//
+// This is the fix for vault/notes/adr-status-substring-livre-falso-positivo-2026-08-01.md:
+// `marker.includes('✅')` would classify "**Status:** ⬜ Pendente ✅" as
+// complete (reproduced live against 7.3.0 — ADR decision 8). First-token
+// comparison rejects it because the first token is "⬜", not the marker.
+function statusIsComplete(marker) {
+  const trimmed = marker.trim()
+  if (trimmed.length === 0) return false
+  const first = trimmed.split(/\s+/)[0]
+  return STATUS_VOCABULARY.has(normalizeStatusToken(first))
+}
+
+// detectFenceMarker inspects a whitespace-trimmed line and reports whether it
+// opens or closes a CommonMark-style fence: a run of 3+ identical backtick
+// (`) or tilde (~) characters at the start of the line. Returns
+// { char, length } or null. ADR decision (ML-1B, achado 1): CommonMark
+// defines a fence as 3+ of the SAME character (backtick or tilde), closed by
+// a run of the same character with length >= the opening run — masking only
+// "```" left both "~~~" fences and 4+-backtick fences (whose interior can
+// nest a 3-backtick block) unmasked, which is the escape route a hostile
+// roadmap would use.
+function detectFenceMarker(trimmed) {
+  if (trimmed.length === 0) return null
+  const first = trimmed[0]
+  if (first !== '`' && first !== '~') return null
+  let i = 0
+  while (i < trimmed.length && trimmed[i] === first) i++
+  if (i < 3) return null
+  return { char: first, length: i }
+}
+
+// computeFenceMask returns, for each line index, whether that line lies
+// strictly inside a fenced code block (``` ... ``` or ~~~ ... ~~~, per
+// CommonMark: 3+ of the same fence character, closed by a run of the same
+// character with length >= the opening run's length). A line that is itself
+// a fence delimiter is never reported as "inside" — only the lines between an
+// opening and a closing delimiter are masked. ADR decision 7 / AC13: ML
+// detection, status and acceptance-header parsing must ignore documentation/
+// examples inside a cerca — otherwise a roadmap that cites those literals (as
+// this very roadmap, its REQ and its ADR do, repeatedly) is read as real ML
+// content. parseGates already has its own, independent fence-matching for the
+// "```bash ... ```" gates block and is untouched by this mask.
+function computeFenceMask(lines) {
+  const mask = new Array(lines.length).fill(false)
+  let fenced = false
+  let fenceChar = null
+  let fenceLen = 0
+  for (let i = 0; i < lines.length; i++) {
+    const marker = detectFenceMarker(lines[i].trim())
+    if (!fenced) {
+      if (marker) {
+        fenced = true
+        fenceChar = marker.char
+        fenceLen = marker.length
+        continue
+      }
+      continue
+    }
+    // Currently inside a fence: only a marker of the SAME character with
+    // length >= the opening run closes it (a nested shorter/different
+    // marker stays masked as interior content).
+    if (marker && marker.char === fenceChar && marker.length >= fenceLen) {
+      fenced = false
+      continue
+    }
+    mask[i] = true
+  }
+  return mask
+}
+
 // findMLs locates every `### ML-` heading inside [startLine, endLine) and returns
-// { id, lines } for each, where `lines` is the ML body (heading excluded).
-function findMLs(lines, startLine, endLine) {
+// { id, lines, fenced } for each, where `lines` is the ML body (heading excluded)
+// and `fenced` is the fence mask aligned to `lines`. fenceMask defaults to "no
+// fences" so existing call sites that omit it keep working (ML-1A, AC13).
+function findMLs(lines, startLine, endLine, fenceMask = computeFenceMask(lines)) {
   const headings = []
   for (let i = startLine; i < endLine; i++) {
+    if (fenceMask[i]) continue
     if (/^### ML-/.test(lines[i])) {
       const m = /^### (\S+)/.exec(lines[i])
       headings.push({ id: m[1], headingLine: i })
@@ -116,57 +222,90 @@ function findMLs(lines, startLine, endLine) {
   return headings.map((h, idx) => {
     let end = endLine
     for (let j = h.headingLine + 1; j < endLine; j++) {
+      if (fenceMask[j]) continue
       if (/^### /.test(lines[j]) || /^## /.test(lines[j])) { end = j; break }
     }
-    return { id: h.id, lines: lines.slice(h.headingLine + 1, end) }
+    return {
+      id: h.id,
+      lines: lines.slice(h.headingLine + 1, end),
+      fenced: fenceMask.slice(h.headingLine + 1, end),
+    }
   })
 }
 
-// mlCompletionStatus applies rule 3 — completion is a `**Status:**` line whose
-// remainder contains ✅. Returns { complete, marker } where marker is "missing"
-// when no `**Status:**` line exists at all.
-function mlCompletionStatus(mlLines) {
-  for (const raw of mlLines) {
-    const line = raw.trim()
-    const m = /^\*\*Status:\*\*(.*)$/.exec(line)
+// mlCompletionStatus applies rule 3 — completion is by FIRST TOKEN (ADR
+// decision 3), not substring. Returns { complete, marker } where marker is
+// "missing" when no `**Status:**` line exists at all. Lines inside a fenced
+// code block are ignored (ADR decision 7, AC13-a) — `fenced` is aligned to
+// `mlLines`; defaults to "no fences" for backward compatibility. Matched
+// against the RAW line (no per-line .trim()) — an indented marker does not
+// count (ML-1B, achado 2): Go and Python already require column 0 via `^`
+// against the untrimmed line, and Node's prior .trim() made it the only
+// runtime that released a wave on indented markers.
+function mlCompletionStatus(mlLines, fenced = []) {
+  for (let i = 0; i < mlLines.length; i++) {
+    if (fenced[i]) continue
+    const m = /^\*\*Status:\*\*(.*)$/.exec(mlLines[i])
     if (m) {
       const marker = m[1].trim()
-      return { complete: marker.includes('✅'), marker: marker.length > 0 ? marker : 'missing' }
+      return { complete: statusIsComplete(marker), marker: marker.length > 0 ? marker : 'missing' }
     }
   }
   return { complete: false, marker: 'missing' }
 }
 
 // mlAcceptanceEvidence applies rule 4. Returns { hasBlock, total, unmet }.
-function mlAcceptanceEvidence(mlLines) {
+// Lines inside a fenced code block are ignored throughout — for the header
+// search, for the "**" block-end boundary, and for counting criterion lines —
+// otherwise a cerca citing the acceptance header/`- [x]` as an example would
+// forge acceptance evidence (ADR decision 7, AC13-a). `fenced` defaults to
+// "no fences" for backward compatibility. All markers are matched against the
+// RAW line (no per-line .trim()) — an indented marker does not count (ML-1B,
+// achado 2): Go and Python already require column 0 via `^` against the
+// untrimmed line, and Node's prior .trim() made it the only runtime that
+// released a wave on indented markers.
+function mlAcceptanceEvidence(mlLines, fenced = []) {
   let blockStart = -1
   for (let i = 0; i < mlLines.length; i++) {
-    if (/^\*\*Crit[ée]rios de aceite:\*\*/.test(mlLines[i].trim())) { blockStart = i; break }
+    if (fenced[i]) continue
+    if (CRITERIA_HEADER_RE.test(mlLines[i])) { blockStart = i; break }
   }
   if (blockStart === -1) return { hasBlock: false, total: 0, unmet: 0 }
 
   let blockEnd = mlLines.length
   for (let j = blockStart + 1; j < mlLines.length; j++) {
-    if (/^\*\*/.test(mlLines[j].trim())) { blockEnd = j; break }
+    if (fenced[j]) continue
+    if (/^\*\*/.test(mlLines[j])) { blockEnd = j; break }
   }
 
-  const blockLines = mlLines.slice(blockStart + 1, blockEnd)
-    .map(l => l.trim())
-    .filter(l => l.length > 0)
-
-  const criteria = blockLines.filter(l => /^- \[/.test(l))
+  const criteria = []
+  for (let i = blockStart + 1; i < blockEnd; i++) {
+    if (fenced[i]) continue
+    const l = mlLines[i]
+    if (/^- \[.\]/.test(l)) criteria.push(l)
+  }
   if (criteria.length === 0) return { hasBlock: false, total: 0, unmet: 0 }
 
   const unmet = criteria.filter(l => /^- \[ \]/.test(l))
   return { hasBlock: true, total: criteria.length, unmet: unmet.length }
 }
 
+// GATES_HEADER_RE mirrors Go's gatesHeaderRe / Python's _GATES_HEADER_RE: a
+// PREFIX match at column 0, not full-line equality — a header followed by
+// trailing prose/whitespace on the same line ("**Gates da wave:** (obrigatórios)")
+// or a CRLF-terminated line ("**Gates da wave:**\r") must still be recognised,
+// exactly as Go/Python already do.
+const GATES_HEADER_RE = /^\*\*Gates da wave:\*\*/
+
 // parseGates applies rule 5. Returns { commands }. Throws UsageError naming the
-// offending line number for an unterminated fence.
+// offending line number for an unterminated fence. The header marker is
+// matched against the RAW line (no per-line .trim()) — an indented
+// '**Gates da wave:**' does not count (ML-1B, achado 2): Go and Python
+// already require column 0 for this marker.
 function parseGates(lines, startLine, endLine) {
   let markerLine = -1
   for (let i = startLine; i < endLine; i++) {
-    if (lines[i].trim() === '**Gates da wave:**') { markerLine = i; break }
+    if (GATES_HEADER_RE.test(lines[i])) { markerLine = i; break }
   }
   if (markerLine === -1) return { commands: [] }
 
@@ -200,7 +339,7 @@ function evalMlsComplete(mls, waveLabel) {
   const evidence = []
   const failures = []
   for (const ml of mls) {
-    const { complete, marker } = mlCompletionStatus(ml.lines)
+    const { complete, marker } = mlCompletionStatus(ml.lines, ml.fenced)
     if (complete) evidence.push(`${ml.id}: ✅`)
     else failures.push(`${ml.id}: not complete (status: ${marker})`)
   }
@@ -214,7 +353,7 @@ function evalAcceptanceEvidence(mls) {
   const evidence = []
   const failures = []
   for (const ml of mls) {
-    const ev = mlAcceptanceEvidence(ml.lines)
+    const ev = mlAcceptanceEvidence(ml.lines, ml.fenced)
     if (!ev.hasBlock) {
       failures.push(`${ml.id}: no acceptance block`)
     } else if (ev.unmet > 0) {
@@ -476,6 +615,9 @@ module.exports.findMLs = findMLs
 module.exports.mlCompletionStatus = mlCompletionStatus
 module.exports.mlAcceptanceEvidence = mlAcceptanceEvidence
 module.exports.parseGates = parseGates
+module.exports.statusIsComplete = statusIsComplete
+module.exports.computeFenceMask = computeFenceMask
+module.exports.CRITERIA_HEADER_RE = CRITERIA_HEADER_RE
 module.exports.roadmapTrustForGates = roadmapTrustForGates
 module.exports.evalMlsComplete = evalMlsComplete
 module.exports.evalAcceptanceEvidence = evalAcceptanceEvidence

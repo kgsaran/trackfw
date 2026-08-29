@@ -17,6 +17,7 @@ import os
 import re
 import subprocess
 import sys
+import unicodedata
 from datetime import datetime, timezone
 
 from .. import config as _config
@@ -102,11 +103,121 @@ _H2_BOUNDARY_RE = re.compile(r"^## ")
 _ML_HEADING_RE = re.compile(r"^### (ML-\S+)")
 _H3_OR_H2_BOUNDARY_RE = re.compile(r"^(?:### |## )")
 _STATUS_LINE_RE = re.compile(r"^\*\*Status:\*\*(.*)$")
-_ACCEPTANCE_HEADER_RE = re.compile(r"^\*\*Crit[ée]rios de aceite:\*\*")
+# _ACCEPTANCE_HEADER_RE accepts both the canonical English header (ADR
+# 2026-08-29 decision 1) and the Portuguese one, which remains accepted with
+# no removal date (decision 2 — 99/143 roadmaps in the corpus use it,
+# including artifacts in done/). The `^` anchor is load-bearing: an
+# unanchored match would casar dentro de prosa ou de cerca de código, turning
+# a quoted literal into forged acceptance evidence.
+_ACCEPTANCE_HEADER_RE = re.compile(r"^\*\*(?:Acceptance criteria|Crit[ée]rios de aceite):\*\*")
 _STAR_BOUNDARY_RE = re.compile(r"^\*\*")
 _CRITERIA_ITEM_RE = re.compile(r"^- \[.\]")
 _CRITERIA_UNMET_RE = re.compile(r"^- \[ \]")
 _GATES_HEADER_RE = re.compile(r"^\*\*Gates da wave:\*\*")
+
+# _STATUS_VOCABULARY is the closed set of first-token markers recognised as
+# "complete" (ADR decision 3): the checkmark emoji, and the English/Portuguese
+# words, matched after case-folding and diacritics-folding. Deliberately
+# closed and explicit — "feito", "ok", "finalizado" are out (ADR, Alternatives
+# Considered — "accept any non-empty status" is the rejected no-op design).
+_STATUS_VOCABULARY = {"✅", "done", "concluido"}
+
+
+def _normalize_status_token(token: str) -> str:
+    """Folds diacritics (NFD + strip combining marks, unicodedata.combining())
+    and Unicode variation selectors (U+FE00-U+FE0F — e.g. VS16 in the
+    text-style emoji presentation "checkmark + VS16"), then lower-cases the
+    token for vocabulary comparison. unicodedata.combining() returns 0 for
+    VS16 (it is not a combining mark by canonical combining class), so it
+    must be stripped separately. Go's runes.In(unicode.Mn) folds VS16 too (it
+    IS General_Category=Mn there), so without this barrier.py would reject
+    the VS16 form while barrier.go accepted it — a cross-runtime divergence
+    on the single most common status marker in the corpus (AC3). Never
+    mutates the emoji base codepoint itself."""
+    decomposed = unicodedata.normalize("NFD", token)
+    stripped = "".join(
+        ch for ch in decomposed
+        if not unicodedata.combining(ch) and not ("\ufe00" <= ch <= "\ufe0f")
+    )
+    return stripped.lower()
+
+
+def _status_is_complete(marker: str) -> bool:
+    """Implements rule 3 by FIRST TOKEN, not substring (ADR decision 3,
+    AC8/AC9/AC14). marker is the already-trimmed remainder of the
+    "**Status:**" line. str.split() with no arguments splits on any
+    whitespace per str.isspace(), which treats U+00A0 (NBSP) as a separator —
+    matching the accepted "NBSP separator" case — while a zero-width
+    character (U+200B, not str.isspace()) stays glued to the token and safely
+    causes rejection (a usability false-negative, not a security concern).
+
+    This is the fix for
+    vault/notes/adr-status-substring-livre-falso-positivo-2026-08-01.md:
+    `"✅" in marker` would classify "**Status:** ⬜ Pendente ✅" as complete
+    (reproduced live against 7.3.0 — ADR decision 8). First-token comparison
+    rejects it because the first token is "⬜", not the marker.
+    """
+    trimmed = marker.strip()
+    if not trimmed:
+        return False
+    first = trimmed.split()[0]
+    return _normalize_status_token(first) in _STATUS_VOCABULARY
+
+
+def _detect_fence_marker(trimmed: str):
+    """Inspects a whitespace-trimmed line and reports whether it opens or
+    closes a CommonMark-style fence: a run of 3+ identical backtick (`) or
+    tilde (~) characters at the start of the line. Returns (char, length) or
+    None. ADR decision (ML-1B, achado 1): CommonMark defines a fence as 3+ of
+    the SAME character (backtick or tilde), closed by a run of the same
+    character with length >= the opening run — masking only "```" left both
+    "~~~" fences and 4+-backtick fences (whose interior can nest a
+    3-backtick block) unmasked, which is the escape route a hostile roadmap
+    would use."""
+    if not trimmed:
+        return None
+    first = trimmed[0]
+    if first != "`" and first != "~":
+        return None
+    i = 0
+    while i < len(trimmed) and trimmed[i] == first:
+        i += 1
+    if i < 3:
+        return None
+    return (first, i)
+
+
+def _fence_mask(lines: list) -> list:
+    """Returns, for each line index, whether that line lies strictly inside a
+    fenced code block (``` ... ``` or ~~~ ... ~~~, per CommonMark: 3+ of the
+    same fence character, closed by a run of the same character with length
+    >= the opening run's length). A line that is itself a fence delimiter
+    is never reported as "inside" — only the lines between an opening and a
+    closing delimiter are masked. ADR decision 7 / AC13: ML detection, status
+    and acceptance-header parsing must ignore documentation/examples inside a
+    cerca — otherwise a roadmap that cites those literals (as this very
+    roadmap, its REQ and its ADR do, repeatedly) is read as real ML content.
+    _find_gates already has its own, independent fence-matching for the
+    "```bash ... ```" gates block and is untouched by this mask."""
+    mask = [False] * len(lines)
+    fenced = False
+    fence_char = None
+    fence_len = 0
+    for i, line in enumerate(lines):
+        marker = _detect_fence_marker(line.strip())
+        if not fenced:
+            if marker:
+                fenced = True
+                fence_char, fence_len = marker
+            continue
+        # Currently inside a fence: only a marker of the SAME character with
+        # length >= the opening run closes it (a nested shorter/different
+        # marker stays masked as interior content).
+        if marker and marker[0] == fence_char and marker[1] >= fence_len:
+            fenced = False
+            continue
+        mask[i] = True
+    return mask
 
 
 def _is_valid_wave_label(token: str) -> bool:
@@ -179,16 +290,23 @@ def _find_wave(lines: list, wave_label: str, roadmap_basename: str) -> tuple:
     )
 
 
-def _find_mls(lines: list, start: int, end: int) -> list:
+def _find_mls(lines: list, fenced: list, start: int, end: int) -> list:
+    """fenced marks, per line index into lines, whether that line lies inside
+    a fenced code block (_fence_mask) — a "### ML-XX" heading inside a cerca
+    is documentation, not a real ML, and must not become a phantom ML (ADR
+    decision 7, AC13-b)."""
     mls = []
     i = start
     while i < end:
+        if fenced[i]:
+            i += 1
+            continue
         line = lines[i]
         if _ML_HEADING_RE.match(line):
             m = _ML_HEADING_RE.match(line)
             ml_id = m.group(1)
             j = i + 1
-            while j < end and not _H3_OR_H2_BOUNDARY_RE.match(lines[j]):
+            while j < end and (fenced[j] or not _H3_OR_H2_BOUNDARY_RE.match(lines[j])):
                 j += 1
             mls.append({"id": ml_id, "start": i, "end": j})
             i = j
@@ -197,33 +315,49 @@ def _find_mls(lines: list, start: int, end: int) -> list:
     return mls
 
 
-def _ml_status(lines: list, start: int, end: int):
+def _ml_status(lines: list, fenced: list, start: int, end: int):
     """Retorna (complete: bool, marker: str|None). marker é None quando a linha
-    **Status:** está ausente (rule 3)."""
+    **Status:** está ausente (rule 3). Conclusão é por PRIMEIRO TOKEN, não
+    substring (ADR decision 3, AC8/AC9/AC14). Linhas dentro de cerca de código
+    são ignoradas — um "**Status:**" citado dentro de uma cerca (ex.: como
+    documentação deste próprio defeito) não é o status real do ML (ADR
+    decision 7, AC13-a)."""
     for idx in range(start, end):
+        if fenced[idx]:
+            continue
         m = _STATUS_LINE_RE.match(lines[idx])
         if m:
             remainder = m.group(1).strip()
-            return ("✅" in remainder), remainder
+            return _status_is_complete(remainder), remainder
     return False, None
 
 
-def _ml_acceptance(lines: list, start: int, end: int):
+def _ml_acceptance(lines: list, fenced: list, start: int, end: int):
     """Retorna dict {"total": n, "unmet": n} ou None quando não há bloco de
-    critérios de aceite (rule 4)."""
+    critérios de aceite (rule 4). Linhas dentro de cerca de código são
+    ignoradas em toda a função — na busca do cabeçalho, no limite "**" de fim
+    de bloco, e na contagem de critérios — do contrário uma cerca citando o
+    cabeçalho de aceite/"- [x]" como exemplo forjaria evidência de aceite (ADR
+    decision 7, AC13-a)."""
     block_start = None
     block_end = end
     for idx in range(start, end):
+        if fenced[idx]:
+            continue
         if _ACCEPTANCE_HEADER_RE.match(lines[idx]):
             block_start = idx + 1
             j = idx + 1
-            while j < end and not _STAR_BOUNDARY_RE.match(lines[j]):
+            while j < end and (fenced[j] or not _STAR_BOUNDARY_RE.match(lines[j])):
                 j += 1
             block_end = j
             break
     if block_start is None:
         return None
-    items = [lines[idx] for idx in range(block_start, block_end) if _CRITERIA_ITEM_RE.match(lines[idx])]
+    items = [
+        lines[idx]
+        for idx in range(block_start, block_end)
+        if not fenced[idx] and _CRITERIA_ITEM_RE.match(lines[idx])
+    ]
     unmet = [it for it in items if _CRITERIA_UNMET_RE.match(it)]
     return {"total": len(items), "unmet": len(unmet)}
 
@@ -264,7 +398,7 @@ def _check_mls_complete(mls: list, wave_label: str) -> dict:
     evidence = []
     failures = []
     for ml in mls:
-        complete, marker = _ml_status(_LINES_CACHE, ml["start"], ml["end"])
+        complete, marker = _ml_status(_LINES_CACHE, _FENCE_MASK_CACHE, ml["start"], ml["end"])
         if complete:
             evidence.append(f"{ml['id']}: ✅")
         else:
@@ -280,7 +414,7 @@ def _check_acceptance_evidence(mls: list) -> dict:
     evidence = []
     failures = []
     for ml in mls:
-        block = _ml_acceptance(_LINES_CACHE, ml["start"], ml["end"])
+        block = _ml_acceptance(_LINES_CACHE, _FENCE_MASK_CACHE, ml["start"], ml["end"])
         if block is None or block["total"] == 0:
             failures.append(f"{ml['id']}: no acceptance block")
         elif block["unmet"] == 0:
@@ -427,6 +561,7 @@ def _check_validate() -> dict:
 # ────────────────────────────────────────────────────────────────────────────
 
 _LINES_CACHE: list = []
+_FENCE_MASK_CACHE: list = []
 
 
 def _parse_wave_label(raw: str) -> str:
@@ -450,14 +585,15 @@ def _parse_wave_label(raw: str) -> str:
 
 
 def _build_result_document(roadmap_arg: str, roadmap_path: str, wave_label: str, trust_local_gates: bool = False) -> dict:
-    global _LINES_CACHE
+    global _LINES_CACHE, _FENCE_MASK_CACHE
     content = open(roadmap_path, "r", encoding="utf-8").read()
     _LINES_CACHE = content.split("\n")
+    _FENCE_MASK_CACHE = _fence_mask(_LINES_CACHE)
 
     roadmap_basename = os.path.basename(roadmap_path)
     started_at = _now_rfc3339()
     wave_start, wave_end = _find_wave(_LINES_CACHE, wave_label, roadmap_basename)
-    mls = _find_mls(_LINES_CACHE, wave_start, wave_end)
+    mls = _find_mls(_LINES_CACHE, _FENCE_MASK_CACHE, wave_start, wave_end)
     gate_commands = _find_gates(_LINES_CACHE, wave_start, wave_end)
 
     # Determine trust for gate execution (AC11, AC12).

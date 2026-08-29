@@ -16,10 +16,14 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/kgsaran/trackfw/internal/config"
 	"github.com/kgsaran/trackfw/internal/validator"
 	"github.com/spf13/cobra"
+	"golang.org/x/text/runes"
+	"golang.org/x/text/transform"
+	"golang.org/x/text/unicode/norm"
 )
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -160,15 +164,135 @@ var (
 	// waveLabelRe validates a wave label token in isolation against the grammar pinned in
 	// docs/cli-parity.md ("Wave label grammar"): <integer>[-<suffix>] where suffix is [a-z0-9]+.
 	// Equivalent to the capture group of the heading regex ^## Wave (\d+(?:-[a-z0-9]+)?) .
-	waveLabelRe      = regexp.MustCompile(`^\d+(?:-[a-z0-9]+)?$`)
-	mlHeadingRe      = regexp.MustCompile(`^### (ML-\S+)`)
-	statusLineRe     = regexp.MustCompile(`^\*\*Status:\*\*(.*)$`)
-	criteriaHeaderRe = regexp.MustCompile(`^\*\*Crit[eé]rios de aceite:\*\*`)
+	waveLabelRe  = regexp.MustCompile(`^\d+(?:-[a-z0-9]+)?$`)
+	mlHeadingRe  = regexp.MustCompile(`^### (ML-\S+)`)
+	statusLineRe = regexp.MustCompile(`^\*\*Status:\*\*(.*)$`)
+	// criteriaHeaderRe accepts both the canonical English header (ADR
+	// 2026-08-29 decision 1) and the Portuguese one, which remains accepted
+	// with no removal date (decision 2 — 99/143 roadmaps in the corpus use
+	// it, including artifacts in done/). The `^` anchor is load-bearing: an
+	// unanchored match would casar dentro de prosa ou de cerca de código
+	// (docs/roadmaps/wip/ROADMAP-2026-08-29-.../"Resultado do ML-0A"), turning
+	// a quoted literal into forged acceptance evidence.
+	criteriaHeaderRe = regexp.MustCompile(`^\*\*(?:Acceptance criteria|Crit[eé]rios de aceite):\*\*`)
 	unmetCriterionRe = regexp.MustCompile(`^- \[ \]`)
 	criterionLineRe  = regexp.MustCompile(`^- \[.\]`)
 	boldLineRe       = regexp.MustCompile(`^\*\*`)
 	gatesHeaderRe    = regexp.MustCompile(`^\*\*Gates da wave:\*\*`)
 )
+
+// diacriticsFolder normalizes to NFD and strips combining marks (unicode.Mn),
+// folding accented Latin letters to their base form — e.g. "Concluído" →
+// "Concluido". Used only by statusIsComplete (rule 3), never for display.
+var diacriticsFolder = transform.Chain(norm.NFD, runes.Remove(runes.In(unicode.Mn)), norm.NFC)
+
+// statusVocabulary is the closed set of first-token markers recognised as
+// "complete" (ADR decision 3): the checkmark emoji, and the English/Portuguese
+// words, matched after case-folding and diacritics-folding. Deliberately
+// closed and explicit — "feito", "ok", "finalizado" are out (ADR, Alternatives
+// Considered — "accept any non-empty status" is the rejected no-op design).
+var statusVocabulary = map[string]bool{
+	"✅":         true,
+	"done":      true,
+	"concluido": true,
+}
+
+// normalizeStatusToken folds diacritics and lower-cases token for vocabulary
+// comparison. Never mutates the emoji marker (no combining marks, no case).
+func normalizeStatusToken(token string) string {
+	folded, _, err := transform.String(diacriticsFolder, token)
+	if err != nil {
+		folded = token
+	}
+	return strings.ToLower(folded)
+}
+
+// statusIsComplete implements rule 3 by FIRST TOKEN, not substring (ADR
+// decision 3, AC8/AC9/AC14). marker is the already-trimmed remainder of the
+// "**Status:**" line. strings.Fields splits on unicode.IsSpace, which treats
+// U+00A0 (NBSP) as a separator — matching the accepted "NBSP separator" case —
+// while a zero-width character (U+200B, not in unicode.IsSpace) stays glued to
+// the token and safely causes rejection (a usability false-negative, not a
+// security concern — see the ML-0A threat model, § residual 7).
+//
+// This is the fix for vault/notes/adr-status-substring-livre-falso-positivo-2026-08-01.md:
+// `strings.Contains(marker, "✅")` would classify "**Status:** ⬜ Pendente ✅" as
+// complete (reproduced live against 7.3.0 — ADR decision 8). First-token
+// comparison rejects it because the first token is "⬜", not the marker.
+func statusIsComplete(marker string) bool {
+	fields := strings.Fields(marker)
+	if len(fields) == 0 {
+		return false
+	}
+	return statusVocabulary[normalizeStatusToken(fields[0])]
+}
+
+// detectFenceMarker inspects a whitespace-trimmed line and reports whether it
+// opens or closes a CommonMark-style fence: a run of 3+ identical backtick
+// (`) or tilde (~) characters at the start of the line. Returns the fence
+// character and the length of the run. ADR decision (ML-1B, achado 1):
+// CommonMark defines a fence as 3+ of the SAME character (backtick or tilde),
+// closed by a run of the same character with length >= the opening run —
+// masking only "```" left both "~~~" fences and 4+-backtick fences (whose
+// interior can nest a 3-backtick block) unmasked, which is the escape route a
+// hostile roadmap would use.
+func detectFenceMarker(trimmed string) (ch byte, length int, ok bool) {
+	if trimmed == "" {
+		return 0, 0, false
+	}
+	first := trimmed[0]
+	if first != '`' && first != '~' {
+		return 0, 0, false
+	}
+	i := 0
+	for i < len(trimmed) && trimmed[i] == first {
+		i++
+	}
+	if i < 3 {
+		return 0, 0, false
+	}
+	return first, i, true
+}
+
+// fenceMask returns, for each line index, whether that line lies strictly
+// inside a fenced code block (``` ... ``` or ~~~ ... ~~~, per CommonMark: 3+
+// of the same fence character, closed by a run of the same character with
+// length >= the opening run's length). A line that is itself a fence
+// delimiter is never reported as "inside" — only the lines between an opening
+// and a closing delimiter are masked. ADR decision 7 / AC13: mlHeadingRe,
+// statusLineRe and criteriaHeaderRe must ignore documentation/examples inside
+// a cerca — otherwise a roadmap that cites those literals (as this very
+// roadmap, its REQ and its ADR do, repeatedly) is read as real ML content.
+// parseGates already has its own, independent fence-matching for the
+// "```bash ... ```" gates block and is untouched by this mask.
+func fenceMask(lines []string) []bool {
+	mask := make([]bool, len(lines))
+	fenced := false
+	var fenceChar byte
+	var fenceLen int
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		ch, length, isFence := detectFenceMarker(trimmed)
+		if !fenced {
+			if isFence {
+				fenced = true
+				fenceChar = ch
+				fenceLen = length
+				continue
+			}
+			continue
+		}
+		// Currently inside a fence: only a marker of the SAME character with
+		// length >= the opening run closes it (a nested shorter/different
+		// marker stays masked as interior content).
+		if isFence && ch == fenceChar && length >= fenceLen {
+			fenced = false
+			continue
+		}
+		mask[i] = true
+	}
+	return mask
+}
 
 // waveBlock delimits one "## Wave <label> ..." section: [start, end) line indices (0-based).
 // label is the wave label string (e.g. "1", "2-bis") per the grammar in docs/cli-parity.md.
@@ -270,16 +394,25 @@ func compareWaveLabels(a, b string) int {
 	return 0
 }
 
-// parseMLs splits a wave block into ML blocks (rule 2).
-func parseMLs(lines []string, waveStart, waveEnd int) []mlBlock {
+// parseMLs splits a wave block into ML blocks (rule 2). fenced marks, per
+// line index into lines, whether that line lies inside a fenced code block
+// (fenceMask) — a "### ML-XX" heading inside a cerca is documentation, not a
+// real ML, and must not become a phantom ML (ADR decision 7, AC13-b).
+func parseMLs(lines []string, fenced []bool, waveStart, waveEnd int) []mlBlock {
 	var mls []mlBlock
 	for i := waveStart; i < waveEnd; i++ {
+		if fenced[i] {
+			continue
+		}
 		m := mlHeadingRe.FindStringSubmatch(lines[i])
 		if m == nil {
 			continue
 		}
 		end := waveEnd
 		for j := i + 1; j < waveEnd; j++ {
+			if fenced[j] {
+				continue
+			}
 			if strings.HasPrefix(lines[j], "### ") || strings.HasPrefix(lines[j], "## ") {
 				end = j
 				break
@@ -290,9 +423,15 @@ func parseMLs(lines []string, waveStart, waveEnd int) []mlBlock {
 	return mls
 }
 
-// mlStatusMarker returns the trimmed remainder of the ML's "**Status:**" line, if any (rule 3).
-func mlStatusMarker(lines []string, ml mlBlock) (marker string, found bool) {
+// mlStatusMarker returns the trimmed remainder of the ML's "**Status:**" line,
+// if any (rule 3). Lines inside a fenced code block are ignored — a "**Status:**"
+// cited inside a cerca (e.g. as documentation of this very defect) is not the
+// ML's real status (ADR decision 7, AC13-a).
+func mlStatusMarker(lines []string, fenced []bool, ml mlBlock) (marker string, found bool) {
 	for i := ml.start; i < ml.end; i++ {
+		if fenced[i] {
+			continue
+		}
 		if m := statusLineRe.FindStringSubmatch(lines[i]); m != nil {
 			return strings.TrimSpace(m[1]), true
 		}
@@ -301,12 +440,19 @@ func mlStatusMarker(lines []string, ml mlBlock) (marker string, found bool) {
 }
 
 // acceptanceEvaluate implements rule 4. hasBlock is false both when the
-// "**Critérios de aceite:**" header is absent and when it is present but the body between
-// it and the next "**" line (or ML boundary) contains zero "- [...]" criterion lines —
-// an empty block is not vacuously passed, per the contract.
-func acceptanceEvaluate(lines []string, ml mlBlock) (met, unmet int, hasBlock bool) {
+// acceptance header (English or Portuguese) is absent and when it is present but
+// the body between it and the next "**" line (or ML boundary) contains zero
+// "- [...]" criterion lines — an empty block is not vacuously passed, per the
+// contract. Lines inside a fenced code block are ignored throughout — for the
+// header search, for the "**" block-end boundary, and for counting criterion
+// lines — otherwise a cerca citing "**Critérios de aceite:**"/"- [x]" as an
+// example would forge acceptance evidence (ADR decision 7, AC13-a).
+func acceptanceEvaluate(lines []string, fenced []bool, ml mlBlock) (met, unmet int, hasBlock bool) {
 	headerLine := -1
 	for i := ml.start; i < ml.end; i++ {
+		if fenced[i] {
+			continue
+		}
 		if criteriaHeaderRe.MatchString(lines[i]) {
 			headerLine = i
 			break
@@ -317,6 +463,9 @@ func acceptanceEvaluate(lines []string, ml mlBlock) (met, unmet int, hasBlock bo
 	}
 	blockEnd := ml.end
 	for j := headerLine + 1; j < ml.end; j++ {
+		if fenced[j] {
+			continue
+		}
 		if boldLineRe.MatchString(lines[j]) {
 			blockEnd = j
 			break
@@ -326,6 +475,9 @@ func acceptanceEvaluate(lines []string, ml mlBlock) (met, unmet int, hasBlock bo
 	total := 0
 	unmetCount := 0
 	for i := headerLine + 1; i < blockEnd; i++ {
+		if fenced[i] {
+			continue
+		}
 		line := lines[i]
 		if unmetCriterionRe.MatchString(line) {
 			total++
@@ -521,6 +673,7 @@ func runBarrier(cmd *cobra.Command, roadmapArg string, waveLabel string, jsonOut
 		return
 	}
 	lines := strings.Split(string(data), "\n")
+	fenced := fenceMask(lines)
 
 	waves, uerr := parseWaves(lines)
 	if uerr != nil {
@@ -540,7 +693,7 @@ func runBarrier(cmd *cobra.Command, roadmapArg string, waveLabel string, jsonOut
 		return
 	}
 
-	mls := parseMLs(lines, target.start, target.end)
+	mls := parseMLs(lines, fenced, target.start, target.end)
 
 	// ── check: mls_complete ──────────────────────────────────────────────────
 	mlsCheck := barrierCheck{Name: "mls_complete", Evidence: []string{}, Failures: []string{}}
@@ -550,8 +703,8 @@ func runBarrier(cmd *cobra.Command, roadmapArg string, waveLabel string, jsonOut
 	} else {
 		ok := true
 		for _, ml := range mls {
-			marker, found := mlStatusMarker(lines, ml)
-			if found && strings.Contains(marker, "✅") {
+			marker, found := mlStatusMarker(lines, fenced, ml)
+			if found && statusIsComplete(marker) {
 				mlsCheck.Evidence = append(mlsCheck.Evidence, fmt.Sprintf("%s: ✅", ml.id))
 				continue
 			}
@@ -573,7 +726,7 @@ func runBarrier(cmd *cobra.Command, roadmapArg string, waveLabel string, jsonOut
 	accCheck := barrierCheck{Name: "acceptance_evidence", Evidence: []string{}, Failures: []string{}}
 	accOK := len(mls) > 0
 	for _, ml := range mls {
-		met, unmet, hasBlock := acceptanceEvaluate(lines, ml)
+		met, unmet, hasBlock := acceptanceEvaluate(lines, fenced, ml)
 		switch {
 		case !hasBlock:
 			accOK = false
