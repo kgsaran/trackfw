@@ -25746,3 +25746,61 @@ Branch `fix/dialeto-canonico-do-roadmap-e-vocabulario-de-status-do-barrier`.
 - `scripts/testdata/` fica FORA de `docs/roadmaps/` (`roadmap_dir` do `trackfw.yaml`) — não
   interfere na contagem de roadmaps nem em `check-gates-falsify.sh:660` (`cp -r
   docs/roadmaps`).
+
+---
+
+## Sessão 2026-08-29 — artemis-tf (ML-3H — ordenação do corpus dependente de locale — CONCLUÍDO)
+
+Branch `fix/dialeto-canonico-do-roadmap-e-vocabulario-de-status-do-barrier`.
+
+**O que foi feito:**
+
+- `scripts/check-roadmap-barrier-contract.sh` — três `sort` sem `LC_ALL` (listagem de basenames
+  do snapshot, labels de wave por arquivo, linhas de veredito que alimentam `CORPUS_HASH`) agora
+  levam `LC_ALL=C` prefixado individualmente, seguindo a convenção já usada em
+  `check-integration-assets.sh`, `check-static-assets.sh` e `check-identity-parity.sh`. Rejeitado
+  `export LC_ALL=C` global no topo do script: afetaria também o locale herdado pelos 3
+  subprocessos CLI invocados por `run_cli` (risco de mascarar regressão de i18n textual não
+  coberta por este gate).
+- `scripts/testdata/roadmap-barrier-corpus-verdicts.tsv` re-ordenado sob `LC_ALL=C`;
+  `PINNED_CORPUS_HASH` no gate atualizado de `44676e53...` para
+  `4fe2e7a4d0b6bf51a25515dec1d45671b84cf9d2b0c722cc0f35192bf59ca311`. As seis contagens pinadas
+  (files/waves/exit2/mls-evidence/mls-failure/acc-evidence/acc-failure) não mudaram.
+- Roadmap `ROADMAP-2026-08-29-dialeto-canonico-do-roadmap-e-vocabulario-de-status-do-barrier.md`
+  (`wip/`) — acrescentado ML-3H com o resultado, autorização explícita do arquiteto para este ML.
+
+**Evidências:**
+
+- `GO_BIN=... LC_ALL=C LANG=C bash scripts/check-roadmap-barrier-contract.sh`: exit 0, 53
+  cenários OK, hash `4fe2e7a4...`.
+- `GO_BIN=... LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8 bash scripts/check-roadmap-barrier-contract.sh`:
+  exit 0, 53 cenários OK, hash `4fe2e7a4...` — idêntico ao run sob `C`. `diff` das listas OK/FAIL
+  entre as duas execuções: vazio.
+- Prova de conteúdo: 1500 linhas na tabela nova e na antiga; `diff` das duas re-ordenadas sob o
+  mesmo locale (`LC_ALL=C sort` em ambas): vazio. As quatro contagens de evidence/failure
+  (639/113/314/434) idênticas antes e depois.
+- As três falsificações do ML-3G re-provadas sem tocar arquivo rastreado do corpus (snapshot
+  mutado em cópia de scratch + cópia temporária do gate apontando para lá): veredito alterado →
+  reprova `corpus/non-reclassification` nomeando a linha (`1126d1125`); roadmap novo em
+  `docs/roadmaps/wip/` → não reprova (53/53 OK); `docs/roadmaps/done/
+  agent-rules-inject-2026-06-18.md` movido para fora e restaurado → reprova
+  `corpus/basename-missing-from-disk` nomeando o basename; `git status` limpo após a restauração.
+- `bash scripts/check-gates-falsify.sh`: exit 0, 0 FAILs, "Falsification checks passed (all 181
+  scenarios...)".
+- `trackfw validate`: só os 16 warnings pré-existentes (ADR/REQ sem link), nenhum erro novo.
+- `go build ./...`: sem erros.
+- `git diff --stat`: `scripts/check-roadmap-barrier-contract.sh`,
+  `scripts/testdata/roadmap-barrier-corpus-verdicts.tsv`, o roadmap (autorizado explicitamente
+  para este ML) e este arquivo. Nenhum arquivo de código de produto tocado.
+
+**Fronteiras mantidas:**
+
+- Não commitei, não fiz push — entrega ao arquiteto para auditoria/commit.
+- Não editei `vault/` — recomendação registrada no ML-3H do roadmap: nota própria do vault sobre
+  o padrão "ambiente do dev mais rico/diferente do que o do CI" (PATH no ML-3F, história do git
+  no ML-3G, locale no ML-3H), não um parágrafo na nota existente do ML-3F (mecanismo diferente:
+  shell-out dentro de `go test`).
+- Diretórios `trackfw-roadmap-barrier-contract.*` órfãos em `$TMPDIR` (de execuções manuais com
+  trap de limpeza desativado para diagnóstico) — fora do repositório, inofensivos, não removidos
+  por terem module cache read-only do Go embaixo (mesmo padrão de permissão que o próprio script
+  trata via `chmod -R u+w` no seu trap normal).

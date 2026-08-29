@@ -412,9 +412,26 @@ fi
 # como FREEZE_REF="a4e8f35" nesta mesma branch — leitura histórica feita FORA deste gate, no
 # momento de autoria, e commitada como bytes versionados. O gate, a partir daqui, nunca mais
 # consulta história do git.
+#
+# Re-pinado em ML-3H (2026-08-29, corretivo): as três ordenações que alimentam este pin (a
+# listagem de basenames do snapshot, os labels de wave por arquivo, e as linhas de veredito
+# que produzem CORPUS_HASH) rodavam sob o `sort` do locale ATIVO do processo — determinístico
+# na máquina de quem gerou o pin, mas não entre ambientes: `LC_ALL=C sort` intercala dígitos/
+# símbolos antes de letras e ignora maiúsculas/minúsculas por posição de byte puro, enquanto
+# `en_US.UTF-8` intercala por regra de colação linguística (ex.: "ROADMAP-" ordena antes de
+# "npm-"/"pypi-" em C, depois em en_US). O CI (runner Linux) roda sob `C`/`POSIX`; macOS de
+# desenvolvimento comumente roda `en_US.UTF-8` — o pin anterior carregava a ordem de quem o
+# gerou, não uma ordem fixa. Todas as três ordenações (linhas 463, 484, 523) passam a fixar
+# `LC_ALL=C` no próprio comando (convenção já usada em check-integration-assets.sh,
+# check-static-assets.sh e check-identity-parity.sh — não um `export LC_ALL=C` global no topo
+# do script, que afetaria também o locale herdado pelos 3 subprocessos CLI invocados por
+# run_cli, incluindo eventual saída textual i18n não coberta por este gate). O CONTEÚDO da
+# tabela de vereditos (quais linhas existem) não mudou — só a ORDEM em que aparecem no arquivo
+# hasheado; PINNED_CORPUS_FILES/WAVES/EXIT2 e as quatro contagens de evidence/failure abaixo
+# permanecem idênticas ao ML-3G. Só PINNED_CORPUS_HASH muda.
 CORPUS_SNAPSHOT_DIR="$ROOT_DIR/scripts/testdata/roadmap-barrier-corpus-snapshot"
 CORPUS_VERDICTS_PIN="$ROOT_DIR/scripts/testdata/roadmap-barrier-corpus-verdicts.tsv"
-PINNED_CORPUS_HASH="44676e539400dd8c43410ce0750cc2eaf3a9f2bf69795bc144aa920774510226"
+PINNED_CORPUS_HASH="4fe2e7a4d0b6bf51a25515dec1d45671b84cf9d2b0c722cc0f35192bf59ca311"
 PINNED_CORPUS_FILES=144
 PINNED_CORPUS_WAVES=432
 PINNED_CORPUS_EXIT2=14
@@ -460,7 +477,7 @@ CORPUS_EXIT2=0
 if [[ ! -d "$CORPUS_SNAPSHOT_DIR" ]]; then
   fail "corpus/non-vacuous" "$CORPUS_SNAPSHOT_DIR não existe — guarda de vacuidade do corpus"
 else
-  CORPUS_FILELIST=$(find "$CORPUS_SNAPSHOT_DIR" -maxdepth 1 -type f -name '*.md' | sort)
+  CORPUS_FILELIST=$(find "$CORPUS_SNAPSHOT_DIR" -maxdepth 1 -type f -name '*.md' | LC_ALL=C sort)
 fi
 if [[ -d "$CORPUS_SNAPSHOT_DIR" && -z "${CORPUS_FILELIST:-}" ]]; then
   fail "corpus/non-vacuous" "$CORPUS_SNAPSHOT_DIR não contém nenhum .md — guarda de vacuidade do corpus"
@@ -481,7 +498,7 @@ elif [[ -n "${CORPUS_FILELIST:-}" ]]; then
     cp "$snapshot_path" "$CORPUS_SANDBOX/docs/roadmaps/wip/$base"
     name="${base%.md}"
     labels=$( (grep -oE '^## Wave [^ ]+ ' "$CORPUS_SANDBOX/docs/roadmaps/wip/$base" || true) \
-      | sed -E 's/^## Wave ([^ ]+) $/\1/' | sort -u)
+      | sed -E 's/^## Wave ([^ ]+) $/\1/' | LC_ALL=C sort -u)
     for label in $labels; do
       CORPUS_WAVES=$((CORPUS_WAVES + 1))
       set +e
@@ -520,7 +537,7 @@ PYEOF
   if [[ ! -s "$CORPUS_LINES_FILE" ]]; then
     fail "corpus/non-vacuous" "tabela de vereditos do corpus ficou vazia — guarda de vacuidade"
   else
-    sort "$CORPUS_LINES_FILE" -o "$CORPUS_LINES_FILE"
+    LC_ALL=C sort "$CORPUS_LINES_FILE" -o "$CORPUS_LINES_FILE"
     CORPUS_LINES=$(wc -l <"$CORPUS_LINES_FILE" | tr -d ' ')
     CORPUS_HASH=$("${HASH_CMD_BIN[@]}" "$CORPUS_LINES_FILE" | awk '{print $1}')
 

@@ -1,107 +1,3 @@
-agent-rules-inject-2026-06-18.md	1	acceptance_evidence	failure	ML-1A: 5 unmet acceptance criteria
-agent-rules-inject-2026-06-18.md	1	acceptance_evidence	failure	ML-1B: 4 unmet acceptance criteria
-agent-rules-inject-2026-06-18.md	1	mls_complete	evidence	ML-1A: ✅
-agent-rules-inject-2026-06-18.md	1	mls_complete	evidence	ML-1B: ✅
-agent-rules-inject-2026-06-18.md	2	acceptance_evidence	failure	ML-2A: 3 unmet acceptance criteria
-agent-rules-inject-2026-06-18.md	2	acceptance_evidence	failure	ML-2B: 3 unmet acceptance criteria
-agent-rules-inject-2026-06-18.md	2	mls_complete	evidence	ML-2A: ✅
-agent-rules-inject-2026-06-18.md	2	mls_complete	evidence	ML-2B: ✅
-agent-rules-inject-2026-06-18.md	3	acceptance_evidence	failure	ML-3A: 2 unmet acceptance criteria
-agent-rules-inject-2026-06-18.md	3	acceptance_evidence	failure	ML-3B: 2 unmet acceptance criteria
-agent-rules-inject-2026-06-18.md	3	mls_complete	evidence	ML-3A: ✅
-agent-rules-inject-2026-06-18.md	3	mls_complete	evidence	ML-3B: ✅
-analyzing-state-ml-status-rules-2026-06-19.md	1	acceptance_evidence	failure	ML-1A: 2 unmet acceptance criteria
-analyzing-state-ml-status-rules-2026-06-19.md	1	acceptance_evidence	failure	ML-1B: 2 unmet acceptance criteria
-analyzing-state-ml-status-rules-2026-06-19.md	1	acceptance_evidence	failure	ML-1C: 2 unmet acceptance criteria
-analyzing-state-ml-status-rules-2026-06-19.md	1	mls_complete	failure	ML-1A: not complete (status: ⬜ Pendente)
-analyzing-state-ml-status-rules-2026-06-19.md	1	mls_complete	failure	ML-1B: not complete (status: ⬜ Pendente)
-analyzing-state-ml-status-rules-2026-06-19.md	1	mls_complete	failure	ML-1C: not complete (status: ⬜ Pendente)
-analyzing-state-ml-status-rules-2026-06-19.md	2	acceptance_evidence	failure	ML-2A: 2 unmet acceptance criteria
-analyzing-state-ml-status-rules-2026-06-19.md	2	acceptance_evidence	failure	ML-2B: 2 unmet acceptance criteria
-analyzing-state-ml-status-rules-2026-06-19.md	2	mls_complete	failure	ML-2A: not complete (status: ⬜ Pendente)
-analyzing-state-ml-status-rules-2026-06-19.md	2	mls_complete	failure	ML-2B: not complete (status: ⬜ Pendente)
-analyzing-state-ml-status-rules-2026-06-19.md	3	acceptance_evidence	failure	ML-3A: 3 unmet acceptance criteria
-analyzing-state-ml-status-rules-2026-06-19.md	3	acceptance_evidence	failure	ML-3B: 1 unmet acceptance criteria
-analyzing-state-ml-status-rules-2026-06-19.md	3	acceptance_evidence	failure	ML-3C: 1 unmet acceptance criteria
-analyzing-state-ml-status-rules-2026-06-19.md	3	mls_complete	failure	ML-3A: not complete (status: ⬜ Pendente)
-analyzing-state-ml-status-rules-2026-06-19.md	3	mls_complete	failure	ML-3B: not complete (status: ⬜ Pendente)
-analyzing-state-ml-status-rules-2026-06-19.md	3	mls_complete	failure	ML-3C: not complete (status: ⬜ Pendente)
-analyzing-state-ml-status-rules-2026-06-19.md	4	acceptance_evidence	failure	ML-4A: 3 unmet acceptance criteria
-analyzing-state-ml-status-rules-2026-06-19.md	4	mls_complete	failure	ML-4A: not complete (status: ⬜ Pendente)
-discover-init-hook-autoinstall-2026-06-15.md	1	acceptance_evidence	failure	ML-1A: 3 unmet acceptance criteria
-discover-init-hook-autoinstall-2026-06-15.md	1	mls_complete	failure	ML-1A: not complete (status: ⬜ Pendente)
-discover-init-hook-autoinstall-2026-06-15.md	2	acceptance_evidence	failure	ML-2A: 2 unmet acceptance criteria
-discover-init-hook-autoinstall-2026-06-15.md	2	mls_complete	failure	ML-2A: not complete (status: ⬜ Pendente)
-discover-init-hook-autoinstall-2026-06-15.md	3	acceptance_evidence	failure	ML-3A: 2 unmet acceptance criteria
-discover-init-hook-autoinstall-2026-06-15.md	3	mls_complete	failure	ML-3A: not complete (status: ⬜ Pendente)
-docs-site-vitepress-2026-06-13.md	1	acceptance_evidence	failure	ML-1A: 3 unmet acceptance criteria
-docs-site-vitepress-2026-06-13.md	1	mls_complete	failure	ML-1A: not complete (status: ⬜ Pendente)
-docs-site-vitepress-2026-06-13.md	2	acceptance_evidence	failure	ML-2A: no acceptance block
-docs-site-vitepress-2026-06-13.md	2	acceptance_evidence	failure	ML-2B: no acceptance block
-docs-site-vitepress-2026-06-13.md	2	acceptance_evidence	failure	ML-2C: no acceptance block
-docs-site-vitepress-2026-06-13.md	2	acceptance_evidence	failure	ML-2D: no acceptance block
-docs-site-vitepress-2026-06-13.md	2	mls_complete	failure	ML-2A: not complete (status: ⬜ Pendente)
-docs-site-vitepress-2026-06-13.md	2	mls_complete	failure	ML-2B: not complete (status: ⬜ Pendente)
-docs-site-vitepress-2026-06-13.md	2	mls_complete	failure	ML-2C: not complete (status: ⬜ Pendente)
-docs-site-vitepress-2026-06-13.md	2	mls_complete	failure	ML-2D: not complete (status: ⬜ Pendente)
-goreleaser-release-pipeline-2026-06-11.md	1	acceptance_evidence	failure	ML-1A: 2 unmet acceptance criteria
-goreleaser-release-pipeline-2026-06-11.md	1	acceptance_evidence	failure	ML-1B: 3 unmet acceptance criteria
-goreleaser-release-pipeline-2026-06-11.md	1	mls_complete	evidence	ML-1A: ✅
-goreleaser-release-pipeline-2026-06-11.md	1	mls_complete	evidence	ML-1B: ✅
-goreleaser-release-pipeline-2026-06-11.md	2	acceptance_evidence	failure	ML-2A: 3 unmet acceptance criteria
-goreleaser-release-pipeline-2026-06-11.md	2	mls_complete	evidence	ML-2A: ✅
-goreleaser-release-pipeline-2026-06-11.md	3	acceptance_evidence	failure	ML-3A: 3 unmet acceptance criteria
-goreleaser-release-pipeline-2026-06-11.md	3	mls_complete	evidence	ML-3A: ✅
-kanban-live-features-2026-06-18.md	1	acceptance_evidence	failure	ML-1A: 4 unmet acceptance criteria
-kanban-live-features-2026-06-18.md	1	mls_complete	failure	ML-1A: not complete (status: ⬜ Pendente)
-kanban-live-features-2026-06-18.md	2	acceptance_evidence	failure	ML-2A: 4 unmet acceptance criteria
-kanban-live-features-2026-06-18.md	2	acceptance_evidence	failure	ML-2B: 3 unmet acceptance criteria
-kanban-live-features-2026-06-18.md	2	acceptance_evidence	failure	ML-2C: 6 unmet acceptance criteria
-kanban-live-features-2026-06-18.md	2	mls_complete	failure	ML-2A: not complete (status: ⬜ Pendente)
-kanban-live-features-2026-06-18.md	2	mls_complete	failure	ML-2B: not complete (status: ⬜ Pendente)
-kanban-live-features-2026-06-18.md	2	mls_complete	failure	ML-2C: not complete (status: ⬜ Pendente)
-kanban-roadmap-progress-2026-06-17.md	1	acceptance_evidence	failure	ML-1A: 4 unmet acceptance criteria
-kanban-roadmap-progress-2026-06-17.md	1	mls_complete	evidence	ML-1A: ✅
-kanban-roadmap-progress-2026-06-17.md	2	acceptance_evidence	failure	ML-2A: 5 unmet acceptance criteria
-kanban-roadmap-progress-2026-06-17.md	2	mls_complete	evidence	ML-2A: ✅
-npm-nodejs-rewrite-2026-06-12.md	1	acceptance_evidence	failure	ML-1A: 2 unmet acceptance criteria
-npm-nodejs-rewrite-2026-06-12.md	1	acceptance_evidence	failure	ML-1B: 2 unmet acceptance criteria
-npm-nodejs-rewrite-2026-06-12.md	1	mls_complete	failure	ML-1A: not complete (status: ⬜ Pendente)
-npm-nodejs-rewrite-2026-06-12.md	1	mls_complete	failure	ML-1B: not complete (status: ⬜ Pendente)
-npm-nodejs-rewrite-2026-06-12.md	2	acceptance_evidence	failure	ML-2A: 2 unmet acceptance criteria
-npm-nodejs-rewrite-2026-06-12.md	2	acceptance_evidence	failure	ML-2B: 3 unmet acceptance criteria
-npm-nodejs-rewrite-2026-06-12.md	2	acceptance_evidence	failure	ML-2C: 1 unmet acceptance criteria
-npm-nodejs-rewrite-2026-06-12.md	2	mls_complete	failure	ML-2A: not complete (status: ⬜ Pendente)
-npm-nodejs-rewrite-2026-06-12.md	2	mls_complete	failure	ML-2B: not complete (status: ⬜ Pendente)
-npm-nodejs-rewrite-2026-06-12.md	2	mls_complete	failure	ML-2C: not complete (status: ⬜ Pendente)
-npm-nodejs-rewrite-2026-06-12.md	3	acceptance_evidence	failure	ML-3A: 2 unmet acceptance criteria
-npm-nodejs-rewrite-2026-06-12.md	3	acceptance_evidence	failure	ML-3B: 3 unmet acceptance criteria
-npm-nodejs-rewrite-2026-06-12.md	3	acceptance_evidence	failure	ML-3C: 2 unmet acceptance criteria
-npm-nodejs-rewrite-2026-06-12.md	3	mls_complete	failure	ML-3A: not complete (status: ⬜ Pendente)
-npm-nodejs-rewrite-2026-06-12.md	3	mls_complete	failure	ML-3B: not complete (status: ⬜ Pendente)
-npm-nodejs-rewrite-2026-06-12.md	3	mls_complete	failure	ML-3C: not complete (status: ⬜ Pendente)
-npm-nodejs-rewrite-2026-06-12.md	4	acceptance_evidence	failure	ML-4A: 1 unmet acceptance criteria
-npm-nodejs-rewrite-2026-06-12.md	4	acceptance_evidence	failure	ML-4B: 2 unmet acceptance criteria
-npm-nodejs-rewrite-2026-06-12.md	4	acceptance_evidence	failure	ML-4C: 2 unmet acceptance criteria
-npm-nodejs-rewrite-2026-06-12.md	4	mls_complete	evidence	ML-4A: ✅
-npm-nodejs-rewrite-2026-06-12.md	4	mls_complete	evidence	ML-4B: ✅
-npm-nodejs-rewrite-2026-06-12.md	4	mls_complete	evidence	ML-4C: ✅
-npm-wrapper-2026-06-11.md	1	acceptance_evidence	failure	ML-1A: 4 unmet acceptance criteria
-npm-wrapper-2026-06-11.md	1	acceptance_evidence	failure	ML-1B: 4 unmet acceptance criteria
-npm-wrapper-2026-06-11.md	1	acceptance_evidence	failure	ML-1C: 4 unmet acceptance criteria
-npm-wrapper-2026-06-11.md	1	mls_complete	failure	ML-1A: not complete (status: ⬜ Pendente)
-npm-wrapper-2026-06-11.md	1	mls_complete	failure	ML-1B: not complete (status: ⬜ Pendente)
-npm-wrapper-2026-06-11.md	1	mls_complete	failure	ML-1C: not complete (status: ⬜ Pendente)
-npm-wrapper-2026-06-11.md	2	acceptance_evidence	failure	ML-2A: 3 unmet acceptance criteria
-npm-wrapper-2026-06-11.md	2	mls_complete	failure	ML-2A: not complete (status: ⬜ Pendente)
-pypi-wrapper-2026-06-11.md	1	acceptance_evidence	failure	ML-1A: 4 unmet acceptance criteria
-pypi-wrapper-2026-06-11.md	1	acceptance_evidence	failure	ML-1B: 1 unmet acceptance criteria
-pypi-wrapper-2026-06-11.md	1	acceptance_evidence	failure	ML-1C: 6 unmet acceptance criteria
-pypi-wrapper-2026-06-11.md	1	mls_complete	failure	ML-1A: not complete (status: ⬜ Pendente)
-pypi-wrapper-2026-06-11.md	1	mls_complete	failure	ML-1B: not complete (status: ⬜ Pendente)
-pypi-wrapper-2026-06-11.md	1	mls_complete	failure	ML-1C: not complete (status: ⬜ Pendente)
-pypi-wrapper-2026-06-11.md	2	acceptance_evidence	failure	ML-2A: 3 unmet acceptance criteria
-pypi-wrapper-2026-06-11.md	2	mls_complete	failure	ML-2A: not complete (status: ⬜ Pendente)
 ROADMAP-2026-06-14-serve-api-tests-nodejs.md	1	acceptance_evidence	evidence	ML-1A: 2 criteria met
 ROADMAP-2026-06-14-serve-api-tests-nodejs.md	1	mls_complete	evidence	ML-1A: ✅
 ROADMAP-2026-06-19-architect-command-guidelines.md	1	acceptance_evidence	evidence	ML-1A: 3 criteria met
@@ -1209,8 +1105,6 @@ ROADMAP-2026-08-29-dialeto-canonico-do-roadmap-e-vocabulario-de-status-do-barrie
 ROADMAP-2026-08-29-dialeto-canonico-do-roadmap-e-vocabulario-de-status-do-barrier.md	2	mls_complete	evidence	ML-2A: ✅
 ROADMAP-2026-08-29-dialeto-canonico-do-roadmap-e-vocabulario-de-status-do-barrier.md	3	acceptance_evidence	failure	ML-3A: 5 unmet acceptance criteria
 ROADMAP-2026-08-29-dialeto-canonico-do-roadmap-e-vocabulario-de-status-do-barrier.md	3	mls_complete	failure	ML-3A: not complete (status: ⬜ Pendente)
-roadmap-adr-wizard-e-list-2026-06-11.md	1	acceptance_evidence	failure	ML-1A: 6 unmet acceptance criteria
-roadmap-adr-wizard-e-list-2026-06-11.md	1	mls_complete	evidence	ML-1A: ✅
 ROADMAP-i18n-npm-2026-06-12.md	1	acceptance_evidence	evidence	ML-1A: 3 criteria met
 ROADMAP-i18n-npm-2026-06-12.md	1	mls_complete	evidence	ML-1A: ✅
 ROADMAP-i18n-npm-2026-06-12.md	2	acceptance_evidence	failure	ML-2A: no acceptance block
@@ -1221,6 +1115,118 @@ ROADMAP-i18n-npm-2026-06-12.md	2	mls_complete	evidence	ML-2A: ✅
 ROADMAP-i18n-npm-2026-06-12.md	2	mls_complete	evidence	ML-2B: ✅
 ROADMAP-i18n-npm-2026-06-12.md	2	mls_complete	evidence	ML-2C: ✅
 ROADMAP-i18n-npm-2026-06-12.md	2	mls_complete	evidence	ML-2D: ✅
+ROADMAP-testes-unitarios-go-2026-06-11.md	1	acceptance_evidence	failure	ML-1A: no acceptance block
+ROADMAP-testes-unitarios-go-2026-06-11.md	1	acceptance_evidence	failure	ML-1B: no acceptance block
+ROADMAP-testes-unitarios-go-2026-06-11.md	1	acceptance_evidence	failure	ML-1C: no acceptance block
+ROADMAP-testes-unitarios-go-2026-06-11.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-testes-unitarios-go-2026-06-11.md	1	mls_complete	evidence	ML-1B: ✅
+ROADMAP-testes-unitarios-go-2026-06-11.md	1	mls_complete	evidence	ML-1C: ✅
+agent-rules-inject-2026-06-18.md	1	acceptance_evidence	failure	ML-1A: 5 unmet acceptance criteria
+agent-rules-inject-2026-06-18.md	1	acceptance_evidence	failure	ML-1B: 4 unmet acceptance criteria
+agent-rules-inject-2026-06-18.md	1	mls_complete	evidence	ML-1A: ✅
+agent-rules-inject-2026-06-18.md	1	mls_complete	evidence	ML-1B: ✅
+agent-rules-inject-2026-06-18.md	2	acceptance_evidence	failure	ML-2A: 3 unmet acceptance criteria
+agent-rules-inject-2026-06-18.md	2	acceptance_evidence	failure	ML-2B: 3 unmet acceptance criteria
+agent-rules-inject-2026-06-18.md	2	mls_complete	evidence	ML-2A: ✅
+agent-rules-inject-2026-06-18.md	2	mls_complete	evidence	ML-2B: ✅
+agent-rules-inject-2026-06-18.md	3	acceptance_evidence	failure	ML-3A: 2 unmet acceptance criteria
+agent-rules-inject-2026-06-18.md	3	acceptance_evidence	failure	ML-3B: 2 unmet acceptance criteria
+agent-rules-inject-2026-06-18.md	3	mls_complete	evidence	ML-3A: ✅
+agent-rules-inject-2026-06-18.md	3	mls_complete	evidence	ML-3B: ✅
+analyzing-state-ml-status-rules-2026-06-19.md	1	acceptance_evidence	failure	ML-1A: 2 unmet acceptance criteria
+analyzing-state-ml-status-rules-2026-06-19.md	1	acceptance_evidence	failure	ML-1B: 2 unmet acceptance criteria
+analyzing-state-ml-status-rules-2026-06-19.md	1	acceptance_evidence	failure	ML-1C: 2 unmet acceptance criteria
+analyzing-state-ml-status-rules-2026-06-19.md	1	mls_complete	failure	ML-1A: not complete (status: ⬜ Pendente)
+analyzing-state-ml-status-rules-2026-06-19.md	1	mls_complete	failure	ML-1B: not complete (status: ⬜ Pendente)
+analyzing-state-ml-status-rules-2026-06-19.md	1	mls_complete	failure	ML-1C: not complete (status: ⬜ Pendente)
+analyzing-state-ml-status-rules-2026-06-19.md	2	acceptance_evidence	failure	ML-2A: 2 unmet acceptance criteria
+analyzing-state-ml-status-rules-2026-06-19.md	2	acceptance_evidence	failure	ML-2B: 2 unmet acceptance criteria
+analyzing-state-ml-status-rules-2026-06-19.md	2	mls_complete	failure	ML-2A: not complete (status: ⬜ Pendente)
+analyzing-state-ml-status-rules-2026-06-19.md	2	mls_complete	failure	ML-2B: not complete (status: ⬜ Pendente)
+analyzing-state-ml-status-rules-2026-06-19.md	3	acceptance_evidence	failure	ML-3A: 3 unmet acceptance criteria
+analyzing-state-ml-status-rules-2026-06-19.md	3	acceptance_evidence	failure	ML-3B: 1 unmet acceptance criteria
+analyzing-state-ml-status-rules-2026-06-19.md	3	acceptance_evidence	failure	ML-3C: 1 unmet acceptance criteria
+analyzing-state-ml-status-rules-2026-06-19.md	3	mls_complete	failure	ML-3A: not complete (status: ⬜ Pendente)
+analyzing-state-ml-status-rules-2026-06-19.md	3	mls_complete	failure	ML-3B: not complete (status: ⬜ Pendente)
+analyzing-state-ml-status-rules-2026-06-19.md	3	mls_complete	failure	ML-3C: not complete (status: ⬜ Pendente)
+analyzing-state-ml-status-rules-2026-06-19.md	4	acceptance_evidence	failure	ML-4A: 3 unmet acceptance criteria
+analyzing-state-ml-status-rules-2026-06-19.md	4	mls_complete	failure	ML-4A: not complete (status: ⬜ Pendente)
+discover-init-hook-autoinstall-2026-06-15.md	1	acceptance_evidence	failure	ML-1A: 3 unmet acceptance criteria
+discover-init-hook-autoinstall-2026-06-15.md	1	mls_complete	failure	ML-1A: not complete (status: ⬜ Pendente)
+discover-init-hook-autoinstall-2026-06-15.md	2	acceptance_evidence	failure	ML-2A: 2 unmet acceptance criteria
+discover-init-hook-autoinstall-2026-06-15.md	2	mls_complete	failure	ML-2A: not complete (status: ⬜ Pendente)
+discover-init-hook-autoinstall-2026-06-15.md	3	acceptance_evidence	failure	ML-3A: 2 unmet acceptance criteria
+discover-init-hook-autoinstall-2026-06-15.md	3	mls_complete	failure	ML-3A: not complete (status: ⬜ Pendente)
+docs-site-vitepress-2026-06-13.md	1	acceptance_evidence	failure	ML-1A: 3 unmet acceptance criteria
+docs-site-vitepress-2026-06-13.md	1	mls_complete	failure	ML-1A: not complete (status: ⬜ Pendente)
+docs-site-vitepress-2026-06-13.md	2	acceptance_evidence	failure	ML-2A: no acceptance block
+docs-site-vitepress-2026-06-13.md	2	acceptance_evidence	failure	ML-2B: no acceptance block
+docs-site-vitepress-2026-06-13.md	2	acceptance_evidence	failure	ML-2C: no acceptance block
+docs-site-vitepress-2026-06-13.md	2	acceptance_evidence	failure	ML-2D: no acceptance block
+docs-site-vitepress-2026-06-13.md	2	mls_complete	failure	ML-2A: not complete (status: ⬜ Pendente)
+docs-site-vitepress-2026-06-13.md	2	mls_complete	failure	ML-2B: not complete (status: ⬜ Pendente)
+docs-site-vitepress-2026-06-13.md	2	mls_complete	failure	ML-2C: not complete (status: ⬜ Pendente)
+docs-site-vitepress-2026-06-13.md	2	mls_complete	failure	ML-2D: not complete (status: ⬜ Pendente)
+goreleaser-release-pipeline-2026-06-11.md	1	acceptance_evidence	failure	ML-1A: 2 unmet acceptance criteria
+goreleaser-release-pipeline-2026-06-11.md	1	acceptance_evidence	failure	ML-1B: 3 unmet acceptance criteria
+goreleaser-release-pipeline-2026-06-11.md	1	mls_complete	evidence	ML-1A: ✅
+goreleaser-release-pipeline-2026-06-11.md	1	mls_complete	evidence	ML-1B: ✅
+goreleaser-release-pipeline-2026-06-11.md	2	acceptance_evidence	failure	ML-2A: 3 unmet acceptance criteria
+goreleaser-release-pipeline-2026-06-11.md	2	mls_complete	evidence	ML-2A: ✅
+goreleaser-release-pipeline-2026-06-11.md	3	acceptance_evidence	failure	ML-3A: 3 unmet acceptance criteria
+goreleaser-release-pipeline-2026-06-11.md	3	mls_complete	evidence	ML-3A: ✅
+kanban-live-features-2026-06-18.md	1	acceptance_evidence	failure	ML-1A: 4 unmet acceptance criteria
+kanban-live-features-2026-06-18.md	1	mls_complete	failure	ML-1A: not complete (status: ⬜ Pendente)
+kanban-live-features-2026-06-18.md	2	acceptance_evidence	failure	ML-2A: 4 unmet acceptance criteria
+kanban-live-features-2026-06-18.md	2	acceptance_evidence	failure	ML-2B: 3 unmet acceptance criteria
+kanban-live-features-2026-06-18.md	2	acceptance_evidence	failure	ML-2C: 6 unmet acceptance criteria
+kanban-live-features-2026-06-18.md	2	mls_complete	failure	ML-2A: not complete (status: ⬜ Pendente)
+kanban-live-features-2026-06-18.md	2	mls_complete	failure	ML-2B: not complete (status: ⬜ Pendente)
+kanban-live-features-2026-06-18.md	2	mls_complete	failure	ML-2C: not complete (status: ⬜ Pendente)
+kanban-roadmap-progress-2026-06-17.md	1	acceptance_evidence	failure	ML-1A: 4 unmet acceptance criteria
+kanban-roadmap-progress-2026-06-17.md	1	mls_complete	evidence	ML-1A: ✅
+kanban-roadmap-progress-2026-06-17.md	2	acceptance_evidence	failure	ML-2A: 5 unmet acceptance criteria
+kanban-roadmap-progress-2026-06-17.md	2	mls_complete	evidence	ML-2A: ✅
+npm-nodejs-rewrite-2026-06-12.md	1	acceptance_evidence	failure	ML-1A: 2 unmet acceptance criteria
+npm-nodejs-rewrite-2026-06-12.md	1	acceptance_evidence	failure	ML-1B: 2 unmet acceptance criteria
+npm-nodejs-rewrite-2026-06-12.md	1	mls_complete	failure	ML-1A: not complete (status: ⬜ Pendente)
+npm-nodejs-rewrite-2026-06-12.md	1	mls_complete	failure	ML-1B: not complete (status: ⬜ Pendente)
+npm-nodejs-rewrite-2026-06-12.md	2	acceptance_evidence	failure	ML-2A: 2 unmet acceptance criteria
+npm-nodejs-rewrite-2026-06-12.md	2	acceptance_evidence	failure	ML-2B: 3 unmet acceptance criteria
+npm-nodejs-rewrite-2026-06-12.md	2	acceptance_evidence	failure	ML-2C: 1 unmet acceptance criteria
+npm-nodejs-rewrite-2026-06-12.md	2	mls_complete	failure	ML-2A: not complete (status: ⬜ Pendente)
+npm-nodejs-rewrite-2026-06-12.md	2	mls_complete	failure	ML-2B: not complete (status: ⬜ Pendente)
+npm-nodejs-rewrite-2026-06-12.md	2	mls_complete	failure	ML-2C: not complete (status: ⬜ Pendente)
+npm-nodejs-rewrite-2026-06-12.md	3	acceptance_evidence	failure	ML-3A: 2 unmet acceptance criteria
+npm-nodejs-rewrite-2026-06-12.md	3	acceptance_evidence	failure	ML-3B: 3 unmet acceptance criteria
+npm-nodejs-rewrite-2026-06-12.md	3	acceptance_evidence	failure	ML-3C: 2 unmet acceptance criteria
+npm-nodejs-rewrite-2026-06-12.md	3	mls_complete	failure	ML-3A: not complete (status: ⬜ Pendente)
+npm-nodejs-rewrite-2026-06-12.md	3	mls_complete	failure	ML-3B: not complete (status: ⬜ Pendente)
+npm-nodejs-rewrite-2026-06-12.md	3	mls_complete	failure	ML-3C: not complete (status: ⬜ Pendente)
+npm-nodejs-rewrite-2026-06-12.md	4	acceptance_evidence	failure	ML-4A: 1 unmet acceptance criteria
+npm-nodejs-rewrite-2026-06-12.md	4	acceptance_evidence	failure	ML-4B: 2 unmet acceptance criteria
+npm-nodejs-rewrite-2026-06-12.md	4	acceptance_evidence	failure	ML-4C: 2 unmet acceptance criteria
+npm-nodejs-rewrite-2026-06-12.md	4	mls_complete	evidence	ML-4A: ✅
+npm-nodejs-rewrite-2026-06-12.md	4	mls_complete	evidence	ML-4B: ✅
+npm-nodejs-rewrite-2026-06-12.md	4	mls_complete	evidence	ML-4C: ✅
+npm-wrapper-2026-06-11.md	1	acceptance_evidence	failure	ML-1A: 4 unmet acceptance criteria
+npm-wrapper-2026-06-11.md	1	acceptance_evidence	failure	ML-1B: 4 unmet acceptance criteria
+npm-wrapper-2026-06-11.md	1	acceptance_evidence	failure	ML-1C: 4 unmet acceptance criteria
+npm-wrapper-2026-06-11.md	1	mls_complete	failure	ML-1A: not complete (status: ⬜ Pendente)
+npm-wrapper-2026-06-11.md	1	mls_complete	failure	ML-1B: not complete (status: ⬜ Pendente)
+npm-wrapper-2026-06-11.md	1	mls_complete	failure	ML-1C: not complete (status: ⬜ Pendente)
+npm-wrapper-2026-06-11.md	2	acceptance_evidence	failure	ML-2A: 3 unmet acceptance criteria
+npm-wrapper-2026-06-11.md	2	mls_complete	failure	ML-2A: not complete (status: ⬜ Pendente)
+pypi-wrapper-2026-06-11.md	1	acceptance_evidence	failure	ML-1A: 4 unmet acceptance criteria
+pypi-wrapper-2026-06-11.md	1	acceptance_evidence	failure	ML-1B: 1 unmet acceptance criteria
+pypi-wrapper-2026-06-11.md	1	acceptance_evidence	failure	ML-1C: 6 unmet acceptance criteria
+pypi-wrapper-2026-06-11.md	1	mls_complete	failure	ML-1A: not complete (status: ⬜ Pendente)
+pypi-wrapper-2026-06-11.md	1	mls_complete	failure	ML-1B: not complete (status: ⬜ Pendente)
+pypi-wrapper-2026-06-11.md	1	mls_complete	failure	ML-1C: not complete (status: ⬜ Pendente)
+pypi-wrapper-2026-06-11.md	2	acceptance_evidence	failure	ML-2A: 3 unmet acceptance criteria
+pypi-wrapper-2026-06-11.md	2	mls_complete	failure	ML-2A: not complete (status: ⬜ Pendente)
+roadmap-adr-wizard-e-list-2026-06-11.md	1	acceptance_evidence	failure	ML-1A: 6 unmet acceptance criteria
+roadmap-adr-wizard-e-list-2026-06-11.md	1	mls_complete	evidence	ML-1A: ✅
 roadmap-multi-ai-support-2026-06-11.md	1	acceptance_evidence	failure	ML-1A: 3 unmet acceptance criteria
 roadmap-multi-ai-support-2026-06-11.md	1	acceptance_evidence	failure	ML-1B: 4 unmet acceptance criteria
 roadmap-multi-ai-support-2026-06-11.md	1	acceptance_evidence	failure	ML-1C: 4 unmet acceptance criteria
@@ -1275,12 +1281,6 @@ roadmap-roadmap-ai-generation-2026-06-11.md	2	mls_complete	failure	ML-2A: not co
 roadmap-roadmap-ai-generation-2026-06-11.md	2	mls_complete	failure	ML-2B: not complete (status: ⬜ Pendente)
 roadmap-roadmap-ai-generation-2026-06-11.md	3	acceptance_evidence	failure	ML-3A: 2 unmet acceptance criteria
 roadmap-roadmap-ai-generation-2026-06-11.md	3	mls_complete	failure	ML-3A: not complete (status: ⬜ Pendente)
-ROADMAP-testes-unitarios-go-2026-06-11.md	1	acceptance_evidence	failure	ML-1A: no acceptance block
-ROADMAP-testes-unitarios-go-2026-06-11.md	1	acceptance_evidence	failure	ML-1B: no acceptance block
-ROADMAP-testes-unitarios-go-2026-06-11.md	1	acceptance_evidence	failure	ML-1C: no acceptance block
-ROADMAP-testes-unitarios-go-2026-06-11.md	1	mls_complete	evidence	ML-1A: ✅
-ROADMAP-testes-unitarios-go-2026-06-11.md	1	mls_complete	evidence	ML-1B: ✅
-ROADMAP-testes-unitarios-go-2026-06-11.md	1	mls_complete	evidence	ML-1C: ✅
 roadmap-v1-remaining-features-2026-06-12.md	1	acceptance_evidence	failure	ML-1A: 5 unmet acceptance criteria
 roadmap-v1-remaining-features-2026-06-12.md	1	acceptance_evidence	failure	ML-1B: 5 unmet acceptance criteria
 roadmap-v1-remaining-features-2026-06-12.md	1	acceptance_evidence	failure	ML-1C: 5 unmet acceptance criteria

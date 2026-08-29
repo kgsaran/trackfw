@@ -709,6 +709,72 @@ grep -q "git show" scripts/check-roadmap-barrier-contract.sh && { echo "gate ain
 echo "Wave 4 gate OK — congelamento sem dependência de história."
 ```
 
+### ML-3H — Ordenação do corpus dependente de locale (corretiva)
+**Status:** ✅ Concluído · **Agente:** `artemis-tf`
+**Files affected:** `scripts/check-roadmap-barrier-contract.sh`, `scripts/testdata/roadmap-barrier-corpus-verdicts.tsv`
+**Critérios de aceite:**
+- [x] Gate exit 0, contagem ≥ 53
+- [x] Prova de invariância de locale: mesmo hash sob `LC_ALL=C` e `LC_ALL=en_US.UTF-8`
+- [x] Conteúdo dos vereditos inalterado — só a ordem
+- [x] Guarda de vacuidade continua provada
+- [x] As três falsificações do ML-3G continuam valendo
+- [x] `check-gates-falsify.sh` → 0
+- [x] Nenhum arquivo de produto tocado
+
+#### Resultado do ML-3H (artemis-tf, 2026-08-29)
+
+O job `parity` do PR #217 reprovava `corpus/non-reclassification` com um `diff` cujas linhas `>`/`<`
+tinham conteúdo idêntico, só em posições diferentes — não era reclassificação, era ordenação
+dependente de locale. Três `sort` sem `LC_ALL` alimentavam o pin (listagem de basenames do
+snapshot, labels de wave por arquivo, e a tabela de vereditos que produz `CORPUS_HASH`):
+`LC_ALL=C sort` intercala por byte puro; `en_US.UTF-8` intercala por regra de colação linguística
+(`ROADMAP-` ordena antes de `npm-`/`pypi-` em `C`, depois em `en_US`). O CI (Linux) roda `C`/
+`POSIX`; a máquina que gerou o pin rodava `en_US.UTF-8` — o pin carregava a ordem de quem o gerou,
+não uma ordem fixa.
+
+Correção: `LC_ALL=C` prefixado nos três `sort` individualmente (linhas que hoje leem
+`find ... | LC_ALL=C sort`, `sed ... | LC_ALL=C sort -u`, `LC_ALL=C sort "$CORPUS_LINES_FILE" -o
+...`), seguindo a convenção já usada em `check-integration-assets.sh`, `check-static-assets.sh` e
+`check-identity-parity.sh` — **não** um `export LC_ALL=C` global no topo do script, que afetaria
+também o locale herdado pelos 3 subprocessos CLI invocados por `run_cli` (risco de mascarar uma
+regressão de i18n textual não coberta por este gate).
+
+Pin regenerado sob `LC_ALL=C`: `PINNED_CORPUS_HASH` mudou de `44676e53...` para
+`4fe2e7a4d0b6bf51a25515dec1d45671b84cf9d2b0c722cc0f35192bf59ca311`; as seis contagens
+(`PINNED_CORPUS_FILES=144`, `PINNED_CORPUS_WAVES=432`, `PINNED_CORPUS_EXIT2=14`,
+`PINNED_MLS_COMPLETE_EVIDENCE=639`, `PINNED_MLS_COMPLETE_FAILURE=113`,
+`PINNED_ACCEPTANCE_EVIDENCE_EVIDENCE=314`, `PINNED_ACCEPTANCE_EVIDENCE_FAILURE=434`) **não**
+mudaram. Prova de conteúdo: as 1500 linhas da nova tabela, re-ordenadas sob o mesmo locale que a
+tabela antiga, produziram `diff` vazio — só a ordem mudou, nenhuma linha apareceu ou sumiu.
+
+**Prova de invariância de locale:** o gate rodou duas vezes com o binário fixo (`GO_BIN` já
+compilado), uma sob `LC_ALL=C LANG=C` e outra sob `LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8` — ambas
+exit 0, 53 cenários, hash idêntico (`4fe2e7a4...`), e a lista OK/FAIL por cenário idêntica entre as
+duas execuções (`diff` vazio).
+
+**As três falsificações do ML-3G, re-provadas sem tocar arquivo rastreado do corpus** (cópia de
+snapshot em scratch + cópia do gate apontando `CORPUS_SNAPSHOT_DIR` para lá, removida depois):
+veredito alterado (um `**Status:**` flipado numa cópia) → reprova `corpus/non-reclassification`
+nomeando a linha divergente (`1126d1125`); roadmap novo em `docs/roadmaps/wip/` (basename ausente
+do snapshot) → **não** reprova, 53/53 OK; roadmap real do corpus movido para fora de
+`docs/roadmaps/**` (`docs/roadmaps/done/agent-rules-inject-2026-06-18.md` movido para fora e
+restaurado logo em seguida) → reprova `corpus/basename-missing-from-disk` nomeando o basename.
+
+`bash scripts/check-gates-falsify.sh`: exit 0, 0 FAILs, "Falsification checks passed (all 181
+scenarios...)".
+
+`git diff --stat`: só `scripts/check-roadmap-barrier-contract.sh` e
+`scripts/testdata/roadmap-barrier-corpus-verdicts.tsv` — nenhum arquivo de código de produto
+tocado (mais este roadmap e `docs/agents-working-context.md`, autorizados explicitamente para
+este ML).
+
+**Terceiro defeito da mesma família no dia** (ambiente do dev mais rico/diferente do que o do CI):
+ML-3F (runtimes extras no PATH), ML-3G (história do git no clone completo, ausente no clone raso),
+ML-3H (locale `en_US.UTF-8` no macOS, `C` no runner Linux). Recomendação ao arquiteto: registrar
+como nota própria do vault sobre o padrão (não um parágrafo na nota do ML-3F, que documenta um
+mecanismo diferente — shell-out dentro de `go test` — e não a classe geral de "ambiente do dev
+mais permissivo que o do CI").
+
 ## Barreira final
 Revisão `hefesto-tf` (qualidade) e `hades-tf` (segurança — o `barrier` é um check que **libera
 wave**: falso positivo aqui é trabalho incompleto dado como pronto). Auditoria de diff pelo
