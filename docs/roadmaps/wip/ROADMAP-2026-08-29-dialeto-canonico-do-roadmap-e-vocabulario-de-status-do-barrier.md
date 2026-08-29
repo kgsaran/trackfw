@@ -39,7 +39,7 @@ Consolidado — AC1 a AC12 da REQ. **AC12 é a que define a REQ:** ciclo `roadma
 > Dependencies: none. Blocks all implementation.
 
 ### ML-0A — Modelo de ameaça deste roadmap
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** `hades-tf`
 **Files affected:** apenas este roadmap. Nenhum arquivo de produto.
 **Actions:**
@@ -70,19 +70,248 @@ Consolidado — AC1 a AC12 da REQ. **AC12 é a que define a REQ:** ciclo `roadma
    históricos com status fora do vocabulário fechado (`feito`, `ok`); a dupla forma de cabeçalho
    como superfície permanente; e o fato de o `barrier` passar a conhecer dois idiomas.
 **Critérios de aceite:**
-- [ ] As quatro seções respondidas com evidência (comando + saída), não asserção de uma linha
-- [ ] A enumeração cobre **todos** os tokens do parser, não só os dois já conhecidos
-- [ ] Nenhuma linha de implementação escrita neste ML
+- [x] As quatro seções respondidas com evidência (comando + saída), não asserção de uma linha
+- [x] A enumeração cobre **todos** os tokens do parser, não só os dois já conhecidos
+- [x] Nenhuma linha de implementação escrita neste ML
 
 **Gates da wave:**
 ```bash
 # Wave 0 gate — o conjunto de regexes de parsing do barrier tem que ser o que o ML-0A enumerou.
 # Superfície nova no parser sem passar pela Wave 0 reabre a wave.
-set -eu
-n=$(sed -n '/^var (/,/^)/p' internal/commands/barrier.go | grep -c 'regexp.MustCompile' || true)
-[ "$n" -eq 9 ] || { echo "barrier.go tem $n regexes de parsing, ML-0A enumerou 9 — reabrir a Wave 0" >&2; exit 1; }
-echo "Wave 0 gate OK — 9 regexes de parsing enumeradas."
+# Uma linha só: `parseGates` (barrier.go/js/py) executa cada linha não-comentário como um `sh -c`
+# INDEPENDENTE — a versão original deste gate (4 linhas, `set -eu`/`n=$(...)`/`[ "$n" -eq 9 ]`
+# separados) nunca funcionou, porque `$n` não sobrevive entre invocações separadas. Achado e
+# corrigido pelo hades-tf no ML-0A, reproduzido ao vivo contra `./bin/trackfw barrier` real.
+n=$(sed -n '/^var (/,/^)/p' internal/commands/barrier.go | grep -c 'regexp.MustCompile'); [ "$n" -eq 9 ] && echo "Wave 0 gate OK — 9 regexes de parsing enumeradas." || { echo "barrier.go tem $n regexes de parsing, ML-0A enumerou 9 — reabrir a Wave 0" >&2; exit 1; }
 ```
+
+#### Resultado do ML-0A (hades-tf, 2026-08-29)
+
+**Método:** enumeração pelo `var (...)` real de `internal/commands/barrier.go` (`grep -n "^var (" -A 40`),
+leitura completa das 3 funções que os consomem (`mlStatusMarker`, `acceptanceEvaluate`, `parseGates`),
+grep de todo `RegExp`/regex literal em `npm/src/commands/barrier.js` e `re.compile` em
+`pypi/trackfw/commands/barrier.py`, e reprodução ao vivo contra o binário compilado
+(`go build ./cmd/trackfw`) sobre roadmaps de sonda em `docs/roadmaps/wip/` de um projeto descartável —
+não análise de código sozinha, conforme `feedback_verify_by_execution` do meu memory. Todos os
+comandos abaixo rodaram de fato; a saída colada é saída real, não reconstruída.
+
+##### 1. Completude de enumeração
+
+`internal/commands/barrier.go:156-171` — bloco `var (...)` tem exatamente **9** `regexp.MustCompile`,
+confirmando o gate da Wave 0:
+
+```
+$ grep -n "^var (" -A 40 internal/commands/barrier.go | head -18
+156:var (
+159:	waveHeadingRe = regexp.MustCompile(`^## Wave (\S+) `)
+163:	waveLabelRe      = regexp.MustCompile(`^\d+(?:-[a-z0-9]+)?$`)
+164:	mlHeadingRe      = regexp.MustCompile(`^### (ML-\S+)`)
+165:	statusLineRe     = regexp.MustCompile(`^\*\*Status:\*\*(.*)$`)
+166:	criteriaHeaderRe = regexp.MustCompile(`^\*\*Crit[eé]rios de aceite:\*\*`)
+167:	unmetCriterionRe = regexp.MustCompile(`^- \[ \]`)
+168:	criterionLineRe  = regexp.MustCompile(`^- \[.\]`)
+169:	boldLineRe       = regexp.MustCompile(`^\*\*`)
+170:	gatesHeaderRe    = regexp.MustCompile(`^\*\*Gates da wave:\*\*`)
+171:)
+```
+
+| # | Regex Go | O que os 3 geradores escrevem | Casa? |
+|---|---|---|---|
+| 1 | `waveHeadingRe` `^## Wave (\S+) ` | `## Wave 0 — Threat Model`, `## Wave 1 — <name> (parallel MLs)` (`internal/generators/roadmap.go:53,169`; espelhado em `.js`/`.py`) | **Sim** — `\S+` captura `0`/`1`, exige espaço depois, presente |
+| 2 | `waveLabelRe` `^\d+(?:-[a-z0-9]+)?$` | token capturado acima (`0`, `1`) | **Sim** — grafia numérica simples sempre válida |
+| 3 | `mlHeadingRe` `^### (ML-\S+)` | `### ML-0A — Threat model for this roadmap`, `### ML-1A — %s` | **Sim** |
+| 4 | `statusLineRe` `^\*\*Status:\*\*(.*)$` | `**Status:** pending` | **Sim, sintaticamente** — a linha casa; o *valor* capturado (`pending`) é o defeito já conhecido (não está no vocabulário atual `✅`/futuro `✅\|done\|Concluído` até a Wave 1 trocar o template) |
+| 5 | `criteriaHeaderRe` `^\*\*Crit[eé]rios de aceite:\*\*` (só PT) | `**Acceptance criteria:**` (`roadmap.go:64,176,225`; `.js:31,495,558`; `.py:40`) | **Não** — diverge, já sabido, é o AC1–AC5 desta REQ |
+| 6 | `unmetCriterionRe` `^- \[ \]` | `- [ ] <critério>` | **Sim** |
+| 7 | `criterionLineRe` `^- \[.\]` | idem (cobre `- [x]` após marcado) | **Sim** |
+| 8 | `boldLineRe` `^\*\*` | linha em branco seguida de `**Gates da wave:**` logo após a lista de critérios (`wave0Block`) | **Sim** — delimita corretamente o fim do bloco de aceite |
+| 9 | `gatesHeaderRe` `^\*\*Gates da wave:\*\*` | `**Gates da wave:**` | **Sim** — concorda, fora de escopo desta REQ (Negative Scope) |
+
+**Resultado:** confirma o que o roadmap já sabia (#4 status e #5 cabeçalho divergem) e fecha a
+enumeração dos 7 tokens restantes — nenhum deles diverge do que os 3 geradores escrevem. **Não há
+décimo token no parser Go**, verificado no arquivo inteiro, não só no bloco `var (...)`:
+
+```
+$ grep -c 'regexp.MustCompile' internal/commands/barrier.go
+9
+```
+
+Whole-file count = block count = 9; não há `regexp.MustCompile` fora do bloco enumerado.
+
+**Node e Python têm a MESMA cobertura semântica, mas NÃO têm literalmente "9 regexes" cada um — o
+número 9 é um artefato de implementação do Go, não um invariante cross-CLI**, também verificado no
+arquivo inteiro de cada um, não só por leitura:
+
+```
+$ grep -c 're.compile' pypi/trackfw/commands/barrier.py
+11
+$ grep -oE '/\^[^/]*/' npm/src/commands/barrier.js | sort -u | wc -l
+11
+```
+
+- **Node** (`npm/src/commands/barrier.js`): 11 regex *literais* distintos (`WAVE_SCAN_RE`,
+  `WAVE_LABEL_RE`, `/^## /` usado 2x em pontos de código diferentes, `/^### ML-/`, `/^### (\S+)/`
+  — recaptura redundante do mesmo heading —, `/^### /`, `/^\*\*Status:\*\*(.*)$/`,
+  `/^\*\*Crit[ée]rios de aceite:\*\*/`, `/^\*\*/`, `/^- \[/`, `/^- \[ \]/`), **e o cabeçalho de gates
+  não é regex**: `barrier.js:169` usa `lines[i].trim() === '**Gates da wave:**'` — igualdade exata de
+  string, não prefixo.
+- **Python** (`pypi/trackfw/commands/barrier.py:97-109`): 11 constantes `re.compile` nomeadas
+  (inclui `_ANY_WAVE_H2_RE` separado de `_WAVE_HEADING_RE`, e `_H2_BOUNDARY_RE` separado de
+  `_H3_OR_H2_BOUNDARY_RE` — Go resolve os dois papéis reaproveitando `waveHeadingRe`/checagem de
+  prefixo inline).
+- **Divergência de parsing já existente HOJE, fora do escopo desta REQ mas achada pela enumeração
+  pedida**: `**Gates da wave:** com sufixo` (ex.: `**Gates da wave:** (placeholder)`) **casaria** em
+  Go e Python (`MatchString`/`.match` não ancoram `$`, então é prefixo) mas **não casaria** em Node
+  (igualdade exata pós-`trim()`). Não é nova nem introduzida por este ADR — é pré-existente, e o
+  Negative Scope da REQ proíbe mexer em `**Gates da wave:**`, então não é ação desta REQ; registro
+  aqui porque a instrução era ir pelo parser e não pela memória, e a memória (a REQ/ADR) não citava
+  isso. Recomendo abrir achado separado se algum roadmap real algum dia escrever um sufixo ali — hoje
+  nenhum dos 143 do corpus o faz (`grep -rn "Gates da wave:\*\*." docs/roadmaps` não retorna sufixo).
+- **Conclusão prática:** o gate da Wave 0 (`n -eq 9` sobre `barrier.go`) protege só o Go de crescer
+  superfície silenciosamente. Ele **não** gate-ia Node/Python. Isso é aceitável porque a Wave 1 exige
+  paridade comportamental nos 3 (AC3, `criteria: mesmo conjunto de formas aceitas`), verificada por
+  teste, não por contagem de regex — mas o residual fica declarado na seção 4.
+
+##### 2. Modelo de ameaça
+
+Simulação executável do desenho do ADR (primeiro token do restante de `**Status:**`, `strip` de
+acento via NFD, `casefold`, vocabulário fechado `{✅, done, concluido}`) — script em
+`sim_first_token.py`, saída real:
+
+```
+'não done'                     tok='não'                -> complete=False
+'pending (era done)'           tok='pending'            -> complete=False
+'notdone'                      tok='notdone'            -> complete=False
+'done-not-really'              tok='done-not-really'    -> complete=False
+'empty after Status'           tok=None                 -> complete=False
+'inline code `done`'           tok='`done`'             -> complete=False
+'zero-width before'            tok='​done'         -> complete=False
+'posicao nao inicial'          tok='⬜'                  -> complete=False
+'DONE uppercase'                tok='DONE'               -> complete=True
+'concluido sem acento'          tok='concluido'          -> complete=True
+'tab separator'                 tok='done'               -> complete=True
+'NBSP separator'                tok='done'               -> complete=True
+'Concluido accent'              tok='Concluído'          -> complete=True
+```
+
+Cobertura dos 13 vetores pedidos, todos passam pelo desenho de primeiro-token **exceto os dois
+achados abaixo, que não são deste script — são reproduzidos direto contra o binário real**:
+
+- `não done`, `pending (era done)`, `notdone`, `done-not-really` → **rejeitados**, corretamente.
+- `` `Status:` `` seguido de linha vazia → primeiro token é `None` → **rejeitado**, corretamente.
+- marcador dentro de código inline (`` `done` ``) → o token inclui os backticks (`` `done` ``), não
+  casa com `done` → **rejeitado**. Efeito colateral: se um autor *pretendesse* usar crase como ênfase
+  em torno do marcador real, isso viraria falso-negativo (bloqueia trabalho concluído) — não é risco
+  de segurança, é usabilidade; registrado no residual.
+- caractere zero-width antes do token → o zero-width **não é whitespace Unicode**, então gruda no
+  token (`​done` ≠ `done`) → **rejeitado**. Mesma classe de falso-negativo inofensivo.
+- `✅` em posição não inicial (`⬜ Pendente ✅`) → primeiro token é `⬜` → **rejeitado pelo desenho
+  novo**. **Isto já é explorável HOJE, contra o binário real, com o mecanismo atual (substring)** —
+  reproduzido ao vivo:
+  ```
+  $ ./hades-barrier barrier docs/roadmaps/wip/posnaoinicial.md --wave 1 --trust-local-gates
+  ✓ mls_complete: passed
+  ✗ acceptance_evidence: blocked
+      - ML-1A: no acceptance block
+  ```
+  Com `**Status:** ⬜ Pendente ✅`, o `Contains(marker, "✅")` de hoje (`barrier.go:554`) dá
+  `mls_complete: passed` — falso positivo **já em produção**, não hipotético. É a prova concreta de
+  por que a mudança para primeiro-token é necessária *já*, não só para o vocabulário novo.
+- `DONE` maiúsculo, `concluido` sem acento, tab, NBSP → **aceitos**, conforme o ADR pede
+  (case/acento-insensível).
+- status multilinha → **não é vetor executável por construção**: `statusLineRe`/equivalentes usam
+  `.` sem modo multilinha/DOTALL nos 3 runtimes (Go RE2 default, JS sem flag `s`, Python sem
+  `re.DOTALL`), então o "restante da linha" nunca atravessa `\n`. Uma segunda linha só conta se
+  **ela própria** começar com `**Status:**` — e `mlStatusMarker` já para no primeiro match. Risco
+  nulo por desenho, não por mitigação adicional.
+
+**Vetor não coberto pela lista de 13, achado durante a reprodução, e o mais grave dos quatro que
+reporto no fechamento** — **sombreamento por bloco de código (`mlStatusMarker`/`acceptanceEvaluate`
+não têm consciência de cerca ```` ``` ````, só `parseGates` tem)**. Reproduzido ao vivo, roadmap real,
+binário real:
+
+> ### ML-1A — probe
+> Example of the bug we are documenting:
+> ```
+> **Status:** done
+> ```
+> **Status:** pending
+> ...
+
+*(bloco acima em blockquote de propósito — a versão sem `>` na frente de cada linha seria, ela
+mesma, um `### ML-\S+` real para o parser do `barrier`, exatamente o defeito que esta seção
+descreve. A reprodução real usou um arquivo `.md` separado, `forged.md`, fora deste roadmap; ver
+`docs/agents-working-context.md` desta sessão para o caminho de sonda usado.)*
+
+```
+$ ./hades-barrier barrier forged.md --wave 1 --trust-local-gates
+✗ mls_complete: blocked
+    - ML-1A: not complete (status: done)
+✓ acceptance_evidence: passed
+```
+
+Hoje (mecanismo `contains("✅")`), a linha `**Status:** done` dentro da cerca é lida **primeiro** (o
+loop de `mlStatusMarker` para no primeiro `**Status:**` que encontra, cercado ou não) e vence sobre a
+linha `**Status:** pending` real, que nunca é alcançada — hoje isso **falha fechado** (bloqueia um ML
+que talvez estivesse `pending` mesmo, ou mascara o status real, mas nunca libera indevidamente,
+porque `"done"` sem `✅` não casa a regra atual).
+
+**Sob o desenho proposto (primeiro token = marcador válido), o mesmo roadmap passaria a reportar
+`mls_complete: passed`** — a linha cercada `**Status:** done` teria primeiro-token `done`, que
+**é** marcador válido no vocabulário novo. Isto inverte a direção de falha: de "bloqueia
+indevidamente" para **"libera indevidamente"**, e o gatilho é justamente o tipo de prosa que este
+próprio roadmap, a REQ e o ADR usam repetidamente para *documentar* o bug (citam
+`**Status:** pending` e `**Status:** done` como literais, em blocos de código, várias vezes). Um ML
+real cujo "Actions" inclua um trecho de exemplo assim — inclusive copiado desta própria REQ como
+referência — passaria a fechar `mls_complete` sem estar concluído. Confirmei o mesmo padrão do lado
+do cabeçalho de aceite: uma cerca contendo `- [x] fake evidence, nothing built` sob um
+`**Critérios de aceite:**` de exemplo é lida como o bloco de aceite real quando não há nenhum outro
+depois, dando `acceptance_evidence: passed` sem nenhum critério genuíno (`forged3.md`, reproduzido).
+
+**Vetor de PR de terceiro:** sim, qualquer um que edite o `.md` do roadmap — incluindo por PR —
+pode escrever `**Status:** done` sem ter feito o trabalho; isso não é um bug de parsing, é o limite
+de confiança inerente ao desenho inteiro (o `barrier` lê o que o arquivo declara, não verifica a
+realidade). Isso já é verdade hoje com `✅` (é só mais fácil de digitar `done` que copiar/colar um
+emoji, o que **baixa a barreira de erro humano ou automação descuidada**, mesmo sem má-fé) — ver
+seção 4.
+
+##### 3. Alvos de falsificação nas duas direções
+
+| Mudança | Regride para trás (volta ao antigo) | Regride para o lado oposto (super-permissivo) |
+|---|---|---|
+| Cabeçalho bilíngue (`criteriaHeaderRe` aceita EN+PT) | Só PT: os 43/143 roadmaps EN e todo `roadmap new` recém-gerado voltam a falhar `acceptance_evidence` com `no acceptance block` — é o próprio bug desta REQ, reintroduzido | Regex vira `\*\*(Acceptance criteria\|Crit[eé]rios de aceite):\*\*` **sem `^`** ou aplicada ao documento inteiro: casa dentro de prosa/cerca (como reproduzido no `forged2.md`/`forged3.md` acima) — critérios forjados por citação passam a "evidência" |
+| Status por primeiro token (`✅\|done\|Concluído`) | Volta a `contains("✅")`: `⬜ Pendente ✅` volta a passar (falso positivo **já em produção hoje**, reproduzido acima) — regressão para um bug já conhecido e catalogado no vault | Token comparado por `contains`/regex solto em vez de igualdade exata pós-normalização: `**Status:** não done` passaria (`não` contém `nao`? não — mas um regex mal escrito tipo `done` sem `\b`/comparação exata casaria `notdone`, `done-not-really` e `pendingdone`) |
+| Vocabulário fechado `{✅, done, Concluído}` | N/A (não há vocabulário "antes" a regredir aqui) | Aceitar **qualquer** primeiro token não vazio como conclusão — vira no-op, é exatamente a alternativa que o ADR já rejeita explicitamente ("Fazer o barrier aceitar qualquer status não vazio") |
+| Fence-awareness em `mlStatusMarker`/`acceptanceEvaluate` (achado nesta Wave 0, ainda **não implementado**, nem no ADR) | Se a Wave 1 não adicionar isso: qualquer ML cujo corpo cite `**Status:** done`/`**Critérios de aceite:**` com `[x]` dentro de uma cerca de código (documentação, exemplo, citação desta própria REQ) passa a liberar wave indevidamente — cenário concreto de gate para a Wave 3 | Se a implementação de fence-awareness for feita errado e ignorar cercas *legítimas* de status real (o que não deveria existir, mas por exemplo se alguém formatar `**Status:**` dentro de um bloco por engano), o efeito é falso-negativo (bloqueia trabalho real) — direção segura, mas vale caso de teste |
+
+##### 4. Residual declarado
+
+1. **Vocabulário fechado deixa fora `feito`, `ok`, `finalizado`** — decisão explícita do ADR
+   (Alternatives Considered), aceito.
+2. **Dupla forma de cabeçalho é superfície permanente**, nos 3 runtimes, para sempre — aceito pelo
+   ADR (Consequences).
+3. **`barrier` passa a conhecer dois idiomas** — dívida conceitual aceita pelo ADR.
+4. **O gate da Wave 0 (`n -eq 9`) só cobre Go.** Node e Python têm implementações com contagens de
+   regex diferentes (11 e 11, respectivamente) para a mesma cobertura semântica — não há hoje um
+   gate automatizado que trave "os 3 runtimes reconhecem exatamente os mesmos 9 tokens de sintaxe";
+   a garantia real vem do teste comportamental de paridade da Wave 1 (AC3), não de contagem
+   estrutural. Aceito como o desenho atual, mas registrado para não ser confundido com paridade
+   estrutural que não existe.
+5. **`barrier` é um verificador sintático, não semântico.** Nenhuma versão deste desenho (substring
+   ou primeiro-token) verifica se o trabalho descrito foi de fato feito — ele confia no que o arquivo
+   declara. Baixar a barreira de digitação (de um emoji para a palavra `done`) reduz o atrito para
+   marcar algo concluído por engano ou automação descuidada; é um residual aceito pelo ADR
+   implicitamente (não discutido lá), tornado explícito aqui.
+6. **Sombreamento por bloco de código/prosa (`mlStatusMarker` e `acceptanceEvaluate` sem consciência
+   de cerca) é um residual NOVO que a Wave 1, como especificada hoje no roadmap, não cobre** — ver
+   tabela da seção 3. Recomendo à Wave 1 tratar isto como parte do "mecanismo muda de contains para
+   primeiro-token" (mesma função, mesmo arquivo, sem exigir novo ML), e à Wave 3 incluir os cenários
+   `forged.md`/`forged3.md` (reproduzidos aqui) na bateria de `assert_fails_with`. Não bloqueio a
+   Wave 0 por isto porque é achado, não pré-requisito de enumeração — mas registro como ação
+   obrigatória de escopo para quem executar o ML-1A.
+7. **Falsos-negativos de usabilidade** (crase ao redor do marcador, caractere zero-width) —
+   direção segura (bloqueiam em vez de liberar), não tratados, não é responsabilidade de segurança
+   corrigir.
 
 ## Wave 1 — Parser do `barrier` nos 3 CLIs (ML único)
 > Dependências: Wave 0 aprovada. **ML único e sequencial**: os 3 runtimes implementam a mesma regra
@@ -106,9 +335,24 @@ echo "Wave 0 gate OK — 9 regexes de parsing enumeradas."
 3. Sufixos continuam válidos: `✅ Concluído · **Agente:** \`apolo-tf\`` e
    `✅ concluído (auditado 2026-08-02)` seguem sendo concluídos — são 48 ocorrências no corpus.
 4. Paridade exata nos 3: mesmas formas aceitas, mesmas rejeitadas, mesma saída.
+5. **[Adicionado pelo ML-0A/hades-tf — fence-awareness]** `mlStatusMarker` e `acceptanceEvaluate` (e
+   equivalentes Node/Python) passam a ignorar linhas dentro de blocos de código cercado
+   (` ``` `...` ``` `) ao procurar a linha `**Status:**`/`**Acceptance criteria:**`/
+   `**Critérios de aceite:**` real do ML. Sem isso, um ML cujo corpo cite `**Status:** done` ou
+   `**Critérios de aceite:**` com `- [x]` dentro de uma cerca (documentação, exemplo, citação de uma
+   REQ como esta) é lido como o status/bloco de aceite real — reproduzido ao vivo em
+   `docs/roadmaps/wip/ROADMAP-2026-08-29-dialeto-canonico-do-roadmap-e-vocabulario-de-status-do-barrier.md`
+   §"Resultado do ML-0A", seção 2 (`forged.md`, `forged3.md`). Sob `contains("✅")` isso falha
+   fechado (mecanismo atual); sob primeiro-token, sem fence-awareness, passa a **liberar wave
+   indevidamente** — é regressão de segurança introduzida pela própria mudança desta Wave se não for
+   tratada aqui.
 **Critérios de aceite:**
 - [ ] AC1, AC2, AC3, AC8
 - [ ] **AC9 provado por teste**, com os 6 casos negativos nomeados na REQ
+- [ ] Caso de teste nomeado para o item 5: ML com `**Status:** done` dentro de cerca de código e
+      `**Status:** pending` real fora da cerca → `mls_complete` reporta **não concluído** (usa o
+      status real, ignora o cercado); ML com `**Critérios de aceite:**`/`- [x]` dentro de cerca e sem
+      bloco real fora dela → `acceptance_evidence` reporta **sem bloco de aceite**, não `passed`
 - [ ] `go build ./...` → 0 · `go test ./...` → 0 · `npm test --prefix npm` → 0 ·
       `PYTHONPATH=pypi python3 -m pytest pypi/tests` → 0
 - [ ] `./bin/trackfw barrier` sobre este próprio roadmap continua `passed`
@@ -150,7 +394,11 @@ echo "Wave 0 gate OK — 9 regexes de parsing enumeradas."
    permitida é ML que dizia `done`/`Concluído` e passa a ser reconhecido.
 3. Falsificação nas duas direções, com `assert_fails_with` mirando a razão que o **próprio gate**
    emite: cabeçalho PT deixa de ser aceito → reprova; `**Status:** não done` passa a ser aceito →
-   reprova; template deixa de trazer a legenda → reprova.
+   reprova; template deixa de trazer a legenda → reprova. **[Adicionado pelo ML-0A/hades-tf]** incluir
+   os dois cenários de sombreamento por cerca de código reproduzidos no ML-0A: ML com
+   `**Status:** done` dentro de bloco cercado e `**Status:** pending` real fora dele → deve continuar
+   reprovado; ML com `**Critérios de aceite:**`/`- [x]` só dentro de cerca, sem bloco real → deve
+   continuar reprovado com `no acceptance block`.
 4. Guarda de vacuidade obrigatória; contagem de cenários no fim.
 5. Seção em `docs/cli-parity.md` documentando o contrato gerador↔`barrier`, anotada com `gate=`.
 6. Registrar no `Makefile`.

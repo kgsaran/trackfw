@@ -25452,3 +25452,46 @@ idêntico nos 3 CLIs.
 - Backlog menor: `package-lock.json` em 6.1.0 · sanitização do valor de `agent_models` · mensagens de
   `~usuario/` e `"~/"` · `vunknown` na mensagem do `doctor` do Python · `pypi/build/lib/` poluindo
   `grep -r` na árvore
+
+---
+
+## Sessão 2026-08-29 — hades-tf (ML-0A — modelo de ameaça do dialeto/vocabulário do `barrier` — CONCLUÍDO)
+
+Branch `fix/dialeto-canonico-do-roadmap-e-vocabulario-de-status-do-barrier` (não criada por mim; trabalho de análise, nenhum commit/push feito por mim — autoridade de Git é do `trackfw_architect`).
+
+**O que foi feito:**
+
+- Enumeração pelo parser (não pela memória): os 9 `regexp.MustCompile` de `internal/commands/barrier.go:156-171` confirmados um a um contra o que os 3 geradores escrevem. Confirma as duas divergências já conhecidas (cabeçalho de aceite, vocabulário de status) e fecha os 7 tokens restantes — nenhum diverge.
+- Node e Python **não** têm literalmente "9 regexes" (11 cada, por não-DRY e por `**Gates da wave:**` do Node ser igualdade de string exata, não regex/prefixo) — cobertura semântica equivalente, mas o gate `n -eq 9` da Wave 0 só protege o Go; documentado como residual, sem exigir novo gate (fora do escopo desta REQ).
+- Simulação executável do desenho "primeiro token, insensível a caixa/acento" contra os 13 vetores pedidos — todos se comportam como o ADR espera.
+- **Achado central, reproduzido ao vivo contra o binário real (não hipotético):** `mlStatusMarker`/`acceptanceEvaluate` não têm consciência de bloco de código cercado. Hoje (`contains("✅")`) isso falha fechado; sob o desenho novo (primeiro token), um ML cujo corpo cite `**Status:** done` ou `**Critérios de aceite:**`/`- [x]` dentro de uma cerca (ex.: citando esta própria REQ como exemplo) passaria a **liberar wave indevidamente**. Reproduzido com `forged.md` e `forged3.md`.
+- Confirmado também, ao vivo, que `**Status:** ⬜ Pendente ✅` já passa `mls_complete` **hoje**, em produção — prova concreta (não hipotética) de por que o mecanismo precisa virar primeiro-token.
+- Adicionei o requisito de fence-awareness como Action/AC obrigatório do ML-1A (mesma função, mesmo arquivo, sem novo ML) e os dois cenários de sombreamento à falsificação de duas direções do ML-3A.
+
+**Artefatos:**
+
+- `docs/roadmaps/wip/ROADMAP-2026-08-29-dialeto-canonico-do-roadmap-e-vocabulario-de-status-do-barrier.md` — seção `#### Resultado do ML-0A (hades-tf, 2026-08-29)` escrita; ML-0A marcado `✅ Concluído`; ML-1A e ML-3A amendados com o achado de fence-awareness.
+
+**Evidências:** todos os comandos e saídas colados na seção do roadmap são reprodução real contra `go build ./cmd/trackfw` sobre roadmaps de sonda descartáveis (fora do repo, em scratchpad) — não análise de código sozinha.
+
+**Fronteiras mantidas:** nenhum arquivo de `internal/`, `npm/`, `pypi/`, `scripts/` ou `Makefile` tocado. Nenhum branch criado, nenhum commit, nenhum push.
+
+**Deixado para trás, rastreado (não bloqueia a Wave 0, mas é ação obrigatória para quem executar o ML-1A/ML-3A):**
+- Fence-awareness em `mlStatusMarker`/`acceptanceEvaluate` (e equivalentes Node/Python) — sem isso, a Wave 1 introduz uma regressão de segurança nova além das que corrige.
+- Divergência pré-existente `**Gates da wave:** <sufixo>` (Go/Python casam por prefixo, Node exige igualdade exata) — fora do escopo desta REQ (Negative Scope proíbe mexer em `**Gates da wave:**`), registrada para achado futuro se algum roadmap real vier a usar sufixo ali.
+
+**Autocorreção pós-advisor (mesma sessão, antes de encerrar):**
+- Meu próprio bloco de evidência ("forged.md") tinha sido colado sem blockquote no roadmap — o
+  parser real do `barrier` não distingue cerca de código de conteúdo real, então `### ML-1A — probe`
+  e `**Status:** done` viraram um ML fantasma dentro da própria Wave 0. Corrigido prefixando `>` em
+  cada linha do trecho ilustrativo.
+- Ao inserir a seção de resultado, apaguei sem querer a linha de heading `## Wave 1 — Parser do
+  \`barrier\` nos 3 CLIs (ML único)` — Wave 1 ficou sem cabeçalho de wave, o que o `waveHeadingRe`/
+  equivalentes não reconheceriam. Restaurada.
+- O gate da própria Wave 0, como escrito originalmente no roadmap (4 linhas: `set -eu` / `n=$(...)` /
+  `[ "$n" -eq 9 ]` / `echo`), nunca poderia ter passado: `parseGates` (Go/Node/Python) executa cada
+  linha não-comentário como um `sh -c` **independente**, então `$n` não sobrevive entre linhas — achado
+  pré-existente, não introduzido por mim, corrigido para uma linha única.
+- **Estado final verificado, comando real:** `./bin/trackfw barrier <roadmap> --wave 0
+  --trust-local-gates` → `mls_complete: passed`, `acceptance_evidence: passed`, `gates: passed`,
+  `validate: passed`, `result: passed`.

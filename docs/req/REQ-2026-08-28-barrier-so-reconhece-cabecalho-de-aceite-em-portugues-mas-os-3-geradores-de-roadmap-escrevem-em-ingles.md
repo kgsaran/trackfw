@@ -105,6 +105,14 @@ e o status passa a aceitar **emoji e palavra**, por **token exato**, nunca subst
       status seguindo **apenas** o que o template diz → `roadmap move wip` → `barrier --wave N`
       → `passed`. Sem edição manual de cabeçalho. Nos 3 CLIs. Esta é a AC que define a REQ; se ela
       não passar, nada mais importa.
+- [ ] **AC13** — **Consciência de cerca de código** (acrescentado após a Wave 0). `mlStatusMarker` e
+      `acceptanceEvaluate` ignoram linhas dentro de bloco cercado (` ``` `), nos 3 CLIs. Verificável
+      nas duas direções: (a) um ML cujo corpo cite `**Status:** done` ou `- [x]` dentro de cerca
+      **não** tem esse conteúdo contado como status nem como evidência; (b) um `### ML-XX` dentro de
+      cerca **não** vira ML fantasma — hoje vira, reproduzido ao vivo. Sem isto, a AC8 introduz
+      regressão: a cerca passaria a **liberar** wave, quando hoje apenas bloqueia.
+- [ ] **AC14** — `**Status:** ⬜ Pendente ✅` **não** é reconhecido como concluído. Hoje é —
+      reproduzido com o binário 7.3.0, `mls_complete: passed` num ML marcado como pendente.
 
 ## Negative Scope
 

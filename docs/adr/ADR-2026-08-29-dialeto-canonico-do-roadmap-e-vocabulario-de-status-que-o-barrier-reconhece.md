@@ -91,6 +91,30 @@ estados. Sem isso, corrigir o parser deixa o usuário adivinhando.
 **6. `**Gates da wave:**` fica como está — em português, nos dois lados.** Gerador e `barrier` já
 concordam nesse token; não há defeito. Renomear criaria exigência de forma dupla para corrigir nada.
 
+**7. O parser passa a ter consciência de cerca de código (` ``` `) — decisão acrescentada em
+2026-08-29, após a Wave 0.** `mlStatusMarker` e `acceptanceEvaluate` leem qualquer linha do bloco do
+ML, inclusive dentro de bloco cercado; só `parseGates` distingue cerca hoje. Verificado ao vivo com o
+binário 7.3.0:
+
+```
+### ML-1A — real, concluído          ← ML de verdade
+### ML-9Z — dentro de ```markdown    ← prosa; o barrier reporta "ML-9Z: not complete"
+```
+
+Hoje isso falha **fechado**: prosa que cita os literais **bloqueia** indevidamente. **Sob a decisão 3
+passaria a liberar**: uma cerca contendo `**Status:** done` tem primeiro token `done`, e uma cerca
+contendo `- [x]` sob um cabeçalho de aceite citado vira evidência forjada. A documentação desta
+própria REQ, deste ADR e deste roadmap cita esses literais — o gatilho não é hipotético, é o texto
+que estamos escrevendo agora.
+
+Sem esta decisão, a Wave 1 **introduziria uma regressão nova** ao corrigir as duas antigas. Conteúdo
+dentro de cerca não é conteúdo do ML: é ilustração.
+
+**8. `⬜ Pendente ✅` é reconhecido como concluído HOJE, em produção.** Reproduzido:
+`**Status:** ⬜ Pendente ✅` → `mls_complete: passed`. Um ML explicitamente marcado como pendente
+libera a wave, porque `contains` não olha posição. É a prova concreta de que a decisão 3 não é
+refinamento — é correção de falso-positivo já ativo.
+
 ## Consequences
 
 **Positivas**
