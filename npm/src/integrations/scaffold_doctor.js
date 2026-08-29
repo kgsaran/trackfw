@@ -44,6 +44,10 @@ const { SIGNAL_SCRIPT, CLEANUP_SCRIPT, CREDENTIAL_GUARD_SCRIPT, GIT_BRANCH_GUARD
   require('../generators/hooks')
 const { CLAUDE_COMMANDS, buildValidateScript, buildGitHubActionsWorkflowContent, buildGitLabCIWorkflowContent } =
   require('../generators/init')
+const {
+  buildDiscoverGitHubActionsWorkflowContent,
+  DISCOVER_GITHUB_ACTIONS_WORKFLOW_PATH,
+} = require('../commands/discover')
 
 // Finding kind constants — mirrors Go's DoctorScaffoldDivergent / DoctorScaffoldMissing /
 // DoctorScaffoldWrongMode.
@@ -343,6 +347,31 @@ function runScaffoldDoctor(projectRoot) {
       path.join(projectRoot, relPath),
       relPath,
       buildGitLabCIWorkflowContent(cfg),
+      true,
+      false,
+    )
+    if (f) findings.push(f)
+  }
+
+  // --- Discover CI workflow (second, independent install mechanism) ---
+  //
+  // trackfw-validate.yml (written by `trackfw discover --init`, installGates) is a
+  // separate artifact from trackfw-gate.yml above — both can coexist in the same
+  // project (ADR-2026-08-28). Only checked when the file is already present, mirroring
+  // the "conditional artifact" treatment of trackfw-gate.yml above but using
+  // presence-on-disk instead of cfg.ci, because installGates decides on its own
+  // discovery signal (github-actions detection), not on trackfw.yaml's `ci:` key — a
+  // project can have discover's workflow without cfg.ci ever being set.
+  let discoverWorkflowExists = false
+  try {
+    fs.statSync(path.join(projectRoot, DISCOVER_GITHUB_ACTIONS_WORKFLOW_PATH))
+    discoverWorkflowExists = true
+  } catch (_) {}
+  if (discoverWorkflowExists) {
+    const f = checkScaffoldArtifact(
+      path.join(projectRoot, DISCOVER_GITHUB_ACTIONS_WORKFLOW_PATH),
+      DISCOVER_GITHUB_ACTIONS_WORKFLOW_PATH,
+      buildDiscoverGitHubActionsWorkflowContent(),
       true,
       false,
     )

@@ -20,13 +20,16 @@ All three runtimes cover the same artifact classes. What varies is described bel
     Python's form). A file that matches NONE of the known forms continues to be accused —
     AC3 coverage is preserved. See _check_validate_script_artifact.
 
-  CI workflows (.github/workflows/trackfw-gate.yml, .gitlab-ci-trackfw.yml and
-               .github/workflows/trackfw-validate.yml)
-    EXCLUDED — principled, not a gap. Python's `update` does NOT include `ci-workflow` in
-    its PROJECT_TARGET_IDS (pypi/trackfw/commands/update.py). The doctor's remedy for any
-    finding is `trackfw update`; if Python's update doesn't manage a path, that remedy
-    would be misleading. Declared in docs/cli-parity.md under "CI workflow exclusion —
-    Python (principled)."
+  CI workflow (.github/workflows/trackfw-gate.yml, .gitlab-ci-trackfw.yml)
+    COVERED (ML-2C, REQ-2026-08-28-gate-de-ci-pinado-na-versao-geradora-e-install-sh-
+    honrando-trackfw-version). Python's `update` now includes `ci-workflow` in
+    PROJECT_TARGET_IDS (pypi/trackfw/commands/update.py) whenever trackfw.yaml declares
+    `ci: github-actions` or `ci: gitlab-ci`, so the doctor's remedy of `trackfw update` is
+    now accurate for this runtime too. Only the path the project's `ci:` config selects is
+    checked — the other one is never expected to exist. Absent `ci:` (or an unrecognized
+    value) means neither path is expected, so nothing is checked (mirrors Go's/Node's own
+    doctor: a project that never opted into a CI system is never accused of missing one).
+    The former exclusion is gone from docs/cli-parity.md as of Wave 3 of the same REQ.
 
   Execute-bit checking (REQ-2026-08-28, AC2–AC5, AC10, AC11):
     The five scripts the generator writes with mode 0o755 are additionally checked for
@@ -69,9 +72,17 @@ from trackfw.generators.init_gen import (
     _CREDENTIAL_GUARD_SH,
     _GIT_BRANCH_GUARD_SH,
     _VALIDATE_SCRIPT_CONTENT,
+    GITHUB_ACTIONS_WORKFLOW_PATH,
+    GITLAB_CI_WORKFLOW_PATH,
+    build_github_actions_workflow_content,
+    build_gitlab_ci_workflow_content,
     generate_claude_commands,
 )
 from trackfw.integrations.doctor import SCAFFOLD_DIVERGENT, SCAFFOLD_MISSING, SCAFFOLD_WRONG_MODE
+from trackfw.commands.discover import (
+    DISCOVER_GITHUB_ACTIONS_WORKFLOW_PATH,
+    build_discover_github_actions_workflow_content,
+)
 
 # Path constants — mirror Go's exported constants and Node's module-level strings.
 CLAUDE_COMMANDS_DIR_PATH = '.claude/commands/trackfw'
@@ -129,7 +140,7 @@ def _load_project_config(project_root: str) -> dict[str, str | None]:
         with open(yaml_path, 'r', encoding='utf-8') as f:
             raw = f.read()
     except OSError:
-        return {'backend': None, 'frontend': None, 'pkg_manager': None}
+        return {'backend': None, 'frontend': None, 'pkg_manager': None, 'ci': None}
 
     if _YAML_AVAILABLE:
         try:
@@ -150,6 +161,7 @@ def _load_project_config(project_root: str) -> dict[str, str | None]:
         'backend': parsed.get('backend') or None,
         'frontend': parsed.get('frontend') or None,
         'pkg_manager': parsed.get('pkg_manager') or None,
+        'ci': parsed.get('ci') or None,
     }
 
 
@@ -293,6 +305,37 @@ def _check_validate_script_artifact(
     return None
 
 
+def _check_ci_workflow_artifact(
+    project_root: str,
+    cfg: dict[str, str | None],
+) -> dict[str, Any] | None:
+    """Checks the CI workflow declared by cfg["ci"] (ML-2C, REQ-2026-08-28).
+
+    Only the path matching cfg["ci"] is checked — "github-actions" checks
+    GITHUB_ACTIONS_WORKFLOW_PATH, "gitlab-ci" checks GITLAB_CI_WORKFLOW_PATH.
+    Absent or unrecognized cfg["ci"] means this runtime expects neither path
+    to exist, so no finding is produced either way (a project that never
+    opted into a CI system is never accused of missing one — same principle
+    as Go's and Node's own scaffold doctor). Content divergence takes
+    precedence over the execute bit, but this artifact carries no execute
+    bit expectation (workflow files are 0o644, exec_bit=False), matching
+    _check_scaffold_artifact's default.
+    """
+    ci = cfg.get('ci')
+    if ci == 'github-actions':
+        rel_path = GITHUB_ACTIONS_WORKFLOW_PATH
+        expected = build_github_actions_workflow_content(cfg)
+    elif ci == 'gitlab-ci':
+        rel_path = GITLAB_CI_WORKFLOW_PATH
+        expected = build_gitlab_ci_workflow_content(cfg)
+    else:
+        return None
+
+    return _check_scaffold_artifact(
+        os.path.join(project_root, rel_path), rel_path, expected, True, False
+    )
+
+
 def _check_scaffold_artifact(
     abs_path: str,
     rel_path: str,
@@ -378,9 +421,9 @@ def run_scaffold_doctor(project_root: str | None = None) -> list[dict[str, Any]]
     """Compare scaffold artifacts on disk against the templates the current Python CLI
     binary would generate, and return findings for any artifact that is divergent or missing.
 
-    Scope: validate script, attention scripts, guards, slash commands (AC14 eligibility gate).
-    Excluded: CI workflows — Python's `update` does not manage the `ci-workflow` target
-    (see module docstring and docs/cli-parity.md, "CI workflow exclusion — Python").
+    Scope: validate script, attention scripts, guards, slash commands (AC14 eligibility gate),
+    and the CI workflow declared by cfg["ci"] (ML-2C, REQ-2026-08-28 — see
+    _check_ci_workflow_artifact).
 
     Execute-bit checking (REQ-2026-08-28): the five executable scripts carry exec_bit=True;
     slash commands carry exec_bit=False — never accused of missing execute bit (AC11).
@@ -421,6 +464,34 @@ def run_scaffold_doctor(project_root: str | None = None) -> list[dict[str, Any]]
     for rel_path, expected, exec_bit in static_scripts:
         f = _check_scaffold_artifact(
             os.path.join(project_root, rel_path), rel_path, expected, True, exec_bit
+        )
+        if f is not None:
+            findings.append(f)
+
+    # --- CI workflow (ML-2C, REQ-2026-08-28) — only checked when cfg["ci"] is
+    # "github-actions" or "gitlab-ci"; a no-op otherwise (see
+    # _check_ci_workflow_artifact).
+    f = _check_ci_workflow_artifact(project_root, cfg)
+    if f is not None:
+        findings.append(f)
+
+    # --- Discover CI workflow (second, independent install mechanism, ML-2F) ---
+    #
+    # .github/workflows/trackfw-validate.yml (written by `trackfw discover --init`,
+    # install_gates) is a separate artifact from GITHUB_ACTIONS_WORKFLOW_PATH above —
+    # both can coexist in the same project (ADR-2026-08-28). Only checked when the file
+    # is already present, mirroring the "conditional artifact" treatment above but using
+    # presence-on-disk instead of cfg["ci"], because install_gates decides on its own
+    # discovery signal (github-actions detection), not on trackfw.yaml's `ci:` key — a
+    # project can have discover's workflow without cfg["ci"] ever being set.
+    discover_workflow_path = os.path.join(project_root, DISCOVER_GITHUB_ACTIONS_WORKFLOW_PATH)
+    if os.path.isfile(discover_workflow_path):
+        f = _check_scaffold_artifact(
+            discover_workflow_path,
+            DISCOVER_GITHUB_ACTIONS_WORKFLOW_PATH,
+            build_discover_github_actions_workflow_content(),
+            True,
+            False,
         )
         if f is not None:
             findings.append(f)

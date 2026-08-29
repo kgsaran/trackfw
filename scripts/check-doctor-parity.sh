@@ -400,11 +400,20 @@ run_scenario "registered-under-different-claim-content-drifted" "$f_project" "$f
 #
 # Fixture hard constraints inherited from the catalog scenarios (see file
 # header), plus two scaffold-specific rules:
-#   5. No `ci:` field in any fixture trackfw.yaml — Python's RunScaffoldDoctor
-#      intentionally omits CI-workflow checks (Python's `update` does not
-#      manage ci-workflow), so adding ci: would produce a legitimate 3-way
-#      divergence that assert_three_way correctly catches — masking the
-#      scaffold-content assertions this block exists to make.
+#   5. No `ci:` field in any fixture trackfw.yaml — all 3 runtimes DO manage
+#      ci-workflow (Python generates the workflows, declares `ci-workflow` in
+#      PROJECT_TARGET_IDS, and covers the artifacts in doctor, same as Go and
+#      Node.js; see docs/req/REQ-2026-08-28-gate-de-ci-gerado-instala-versao-
+#      nao-pinada-do-trackfw-e-nao-ha-como-pinar.md), but none of these fixtures set
+#      `ci:` in trackfw.yaml, so checkCIWorkflowArtifact (and its Node/Python
+#      equivalents) never fires here regardless — adding ci: would produce a
+#      legitimate 3-way divergence that assert_three_way correctly catches —
+#      masking the scaffold-content assertions this block exists to make. The
+#      byte-identity of the 3 generated CI-workflow templates across runtimes
+#      IS covered, separately, by scripts/check-ci-workflow-pin-parity.sh —
+#      see docs/cli-parity.md's `partial=` annotation on the artifact table
+#      for the exact boundary between what that gate proves and what this one
+#      does not exercise.
 #   6. build_scaffold_fixture uses `trackfw update --install-missing` via the
 #      real Go binary to generate all scaffold files, never hardcoded literals
 #      — restriction 2 applied to scaffold content.

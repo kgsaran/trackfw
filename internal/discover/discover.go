@@ -257,23 +257,23 @@ func writeCIWorkflow(rootDir string) error {
 		return fmt.Errorf("creating workflows dir: %w", err)
 	}
 	dest := filepath.Join(workflowsDir, "trackfw-validate.yml")
-	if fileExists(dest) {
+	// Uses os.Lstat, NOT the fileExists helper (which is os.Stat and follows
+	// symlinks): a dangling symlink at dest resolves to "does not exist" under
+	// os.Stat, so the idempotency guard below would not fire, and os.WriteFile
+	// would then follow the link and CREATE the workflow template at whatever
+	// path outside the project the symlink points to. A symlink here — live or
+	// dangling — is treated as "already present" so this function never writes
+	// through it; it refuses loudly instead of silently creating a file
+	// somewhere the caller never asked for.
+	if info, err := os.Lstat(dest); err == nil {
+		if info.Mode()&os.ModeSymlink != 0 {
+			fmt.Fprintf(os.Stderr, "aviso: %s é um symlink; trackfw discover não escreve através de symlinks — arquivo não foi tocado\n", filepath.Join(".github", "workflows", "trackfw-validate.yml"))
+			return nil
+		}
 		// idempotente — não sobrescreve
 		return nil
 	}
-	content := `name: trackfw validate
-on: [push, pull_request]
-jobs:
-  governance:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.22"
-      - run: go install github.com/kgsaran/trackfw/cmd/trackfw@latest
-      - run: trackfw validate
-`
+	content := generators.BuildDiscoverGitHubActionsWorkflowContent()
 	if err := os.WriteFile(dest, []byte(content), 0644); err != nil {
 		return fmt.Errorf("writing CI workflow: %w", err)
 	}

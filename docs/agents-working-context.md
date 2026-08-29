@@ -25250,3 +25250,205 @@ mtime `2026-07-29` e o `integrations-manifest.json` tem `2026-08-27` — a pergu
 foi atualizado sem reescrever os arquivos (bug do trackfw) ou se os arquivos precedem um bump de
 catálogo num alvo fora do `--targets` (esperado). A checagem é conteúdo em disco vs. template atual
 do catálogo para `cursor/qa`, não a comparação de hash já feita.
+
+## Sessão 2026-08-28 — hades-tf (FIM: ML-0A — CONCLUÍDO)
+
+Branch `fix/gate-de-ci-pinado-na-versao-geradora-e-install-sh-honrando-trackfw-version`.
+Roadmap: `ROADMAP-2026-08-28-gate-de-ci-pinado-na-versao-geradora-e-install-sh-honrando-trackfw-version.md`.
+
+**Escopo:** Wave 0 (ML-0A, modelo de ameaça). Análise pura — nenhum arquivo de produto tocado.
+Resultado escrito no próprio roadmap, seção `#### Resultado do ML-0A (hades-tf, 2026-08-28)`.
+
+**Enumeração medida:** `grep -rn "releases/latest" scripts/ internal/ npm/src/ pypi/trackfw/` = 18
+ocorrências (2 install.sh + 7 scaffold.go + 7 init.js + 2 init_gen.py). Gate placeholder da Wave 0
+substituído por asserção real sobre esse número (linha ~64-68 do roadmap).
+
+**Achado que muda o alvo do ML-2A (AC12):** o comentário "cfg-independent" que precisa virar
+"cfg-independent mas não version-independent" está em `internal/generators/scaffold.go:1906` e
+`:1931` (nos doc-comments de `buildGitHubActionsWorkflowContent`/`buildGitLabCIWorkflowContent`) —
+**não** em `scaffold_doctor.go:62` como a REQ/ADR citam. `scaffold_doctor.go:50-68` tem um comentário
+de design diferente, sem menção a cfg-independence. Nenhum arquivo novo entra em "Files affected" —
+`scaffold.go` já estava listado — mas o `apolo-tf` precisa saber que o alvo real do texto é outro.
+
+**Achado mais grave do modelo de ameaça (seção 2):** se o ML-1A validar com `grep -E` em vez de
+`case` puro, o vetor de newline embutida (`v7.3.0\nFOO`) vaza — `grep`/`^...$` ancora por linha, não
+por buffer inteiro, então a primeira linha "v7.3.0" bate sozinha e a segunda linha some da checagem
+sem sumir da variável. Mesma família do bug já registrado em
+`vault/notes/bash-grep-F-embedded-newline-vacuous-match-2026-08-16.md` (lá era o padrão que tinha
+newline; aqui seria o dado de entrada). Recomendado ao `ares-tf`: implementar com `case`
+(inerentemente ancorado nas duas pontas, sem alternativa de match parcial), e o cenário de gate para
+newline precisa ter conteúdo *depois* da quebra de linha (não só um `\n` final) para de fato
+distinguir as duas implementações.
+
+**Residuais registrados (seção 4):** lacuna do alvo `ci-workflow` no `update` Python piora
+silenciosamente (antes: nunca pinava; depois: pina uma vez e nunca mais bumpa, sem o `doctor` do
+Python jamais acusar); pin envelhece em silêncio até alguém rodar `trackfw update`; `install.sh`
+publicado em `releases/latest` antes desta REQ ser lançada ignora `TRACKFW_VERSION` mesmo que o
+template já a escreva — janela entre merge e release onde AC6/AC7 estão satisfeitas mas AC1 não.
+
+**Próximo passo:** Wave 1 (`ares-tf`, ML-1A) — `TRACKFW_VERSION` em `install.sh` com validação
+`case`-based, novo gate `scripts/check-install-version-pin.sh`.
+
+## Sessão 2026-08-28 — ares-tf (FIM: ML-1A — CONCLUÍDO)
+
+Branch `fix/gate-de-ci-pinado-na-versao-geradora-e-install-sh-honrando-trackfw-version`.
+Roadmap: `ROADMAP-2026-08-28-gate-de-ci-pinado-na-versao-geradora-e-install-sh-honrando-trackfw-version.md`.
+
+**Escopo:** Wave 1 (ML-1A) — `scripts/install.sh` passa a honrar `TRACKFW_VERSION` (AC1, AC2),
+validando com `case` POSIX (não `grep -E`, achado do ML-0A) antes de compor `URL`/`FILENAME`.
+Novo gate `scripts/check-install-version-pin.sh` (16 cenários), `Makefile` atualizado (linha
+final do alvo `parity`). Resultado detalhado no roadmap, seção
+`#### Resultado do ML-1A (ares-tf, 2026-08-28)` — inclui o bloco `case` completo e o raciocínio
+de por que um glob com quantificador de dígitos é impossível (`*` engole qualquer coisa).
+
+**Validação:** `sh -n scripts/install.sh` OK; `bash scripts/check-install-version-pin.sh` → 16/16
+OK, exit 0; guarda de vacuidade provada empiricamente (cópia com cenários removidos falha com a
+mensagem exata); nenhum download real (seam `TRACKFW_INSTALL_DRYRUN` + stubs de `curl`/`wget` por
+`PATH`, hermético mesmo offline).
+
+**Correção pós-auditoria do advisor:** a primeira versão do gate só afirmava sobre a `URL`
+impressa — não provava nada sobre o `DEST` (o argumento real do `-o` do curl, o alvo verdadeiro
+de um path traversal via `VERSION_BARE`). Corrigido: `pass_pinned`/`assert_fails_with` agora leem
+e afirmam sobre `DEST` explicitamente, com um cenário novo (`7.3.0/../../tmp/evil`) nomeando esse
+alvo. Prova empírica feita contra uma cópia de `install.sh` com a validação removida (nunca
+commitada), confirmando que a asserção de fato captura a regressão.
+
+**Defeito pré-existente encontrado, fora do escopo permitido (não corrigido):** o frontmatter do
+REQ desta feature (`docs/req/REQ-2026-08-28-...md`) referencia `adr:
+"ADR-2026-08-28-....md"` sem o prefixo `docs/adr/`, ao contrário do campo `roadmap:` no mesmo
+frontmatter (que usa o caminho completo). O ADR **existe e está commitado**
+(`docs/adr/ADR-2026-08-28-...md`, commit `bb7bf72`) — não é um ADR faltando, é uma referência
+relativa incompleta. `scripts/check-referential-integrity.sh` resolve o valor relativo à raiz do
+repo e por isso nunca encontra o arquivo, interrompendo `make parity` (e portanto `make quality`)
+antes de alcançar `check-install-version-pin.sh` e ~25 outros gates. `docs/req/` está fora dos
+arquivos permitidos a este ML (Infrastructure não autora artefato de governança) — reportado ao
+arquiteto/trackfw_architect para correção do frontmatter do REQ. Substituí a evidência de `make
+quality` rodando os passos individualmente (test/test-node/test-python/lint + os gates de
+`parity` que rodam antes e depois do ponto de bloqueio); todos passaram, exceto
+`check-referential-integrity.sh` pelo motivo acima. `check-gates-falsify.sh` (suíte longa) foi
+disparado em background por disciplina de tempo — não toca `install.sh`, risco de regressão
+cruzada baixo, mas o resultado não foi conferido antes deste registro; conferir na auditoria.
+
+**Próximo passo:** arquiteto corrige `adr:` no frontmatter do REQ (prefixo `docs/adr/`,
+consistente com `roadmap:`), audita este ML-1A, e libera a Wave 2 (`apolo-tf`, ML-2A/2B/2C —
+templates pinados nos 3 CLIs, dependem desta Wave 1 estar mergeada/aprovada).
+
+---
+
+## apolo-tf — ML-2G (Wave 2, corretiva final) — 2026-08-28
+
+**Início:** executando ML-2G sozinho na branch
+`fix/gate-de-ci-pinado-na-versao-geradora-e-install-sh-honrando-trackfw-version`
+(já criada). Escopo: `internal/generators/update.go`/`update_test.go`,
+`npm/src/commands/update.js` + teste novo em `npm/tests/`,
+`pypi/trackfw/commands/update.py` + teste novo em `pypi/tests/`.
+
+**Defeito corrigido (REQ-2026-08-28 AC17):** o ML-2F deu ao `doctor` cobertura de
+`.github/workflows/trackfw-validate.yml` (arquivo escrito por `trackfw discover --init`,
+independente de `trackfw-gate.yml`), mas nenhum alvo de `trackfw update` nos 3 CLIs tocava
+nesse arquivo — o remédio `trackfw update` impresso pelo doctor era inerte.
+
+**Fix:** o alvo `ci-workflow` (nos 3 CLIs) passou a gerenciar também
+`.github/workflows/trackfw-validate.yml`, com as 4 regras do AC17:
+- (a) critério de inclusão/refresh é **existência em disco**, não `cfg.ci` — mesmo critério do
+  doctor (ML-2F).
+- (b) `update` **nunca cria** esse arquivo — só refresca se já existir. Implementado como um
+  passo extra dentro do `apply()` do alvo (`refreshDiscoverGitHubActionsWorkflowIfPresent` em Go,
+  equivalentes em Node/Python) que faz seu próprio `stat`/`isfile` antes de escrever — evita a
+  armadilha do `allEmpty`/`_all_missing` do `runFileTarget` (se `trackfw-gate.yml` já existe mas
+  `trackfw-validate.yml` não, o before-hash não é "tudo vazio", então `apply()` roda mesmo sem
+  `--install-missing`; sem a checagem interna, isso criaria o segundo arquivo indevidamente).
+- (c) alvo `ci-workflow` agora é declarado quando `cfg.ci` opta por github-actions/gitlab-ci **OU**
+  quando `trackfw-validate.yml` já existe em disco (fecha o buraco de projetos `ci: none` que
+  rodaram `discover`).
+- (d) idempotência preservada pelo mecanismo de hash já existente do `runFileTarget`.
+
+Reusa os builders que o ML-2F já criou (`BuildDiscoverGitHubActionsWorkflowContent` em Go,
+`buildDiscoverGitHubActionsWorkflowContent` exportado de `discover.js`,
+`build_discover_github_actions_workflow_content` de `discover.py`) — só importados, não editados
+— garantindo por construção que o que `update` escreve é exatamente o que `doctor` espera.
+
+**Nota:** um teste pré-existente em `npm/tests/update_ci_workflow_target.test.js` (do ML-2E)
+afirmava que o alvo *nunca* referenciaria `trackfw-validate.yml` — isso mudou intencionalmente
+com o AC17; o teste foi atualizado (não removido) para continuar provando que o arquivo não é
+*criado* quando ausente, apenas que ele agora aparece no `path` declarado do alvo.
+
+**Evidência (todos exit 0):**
+- `go build ./...` → 0
+- `go test ./...` → 0 (inclui 4 testes novos em `internal/generators/update_test.go`:
+  `TestUpdateCiWorkflowRefreshesDiscoverWorkflowWhenPresent`,
+  `TestUpdateCiWorkflowNeverCreatesDiscoverWorkflow`,
+  `TestUpdateCiWorkflowNotDeclaredWithoutCIOrDiscoverWorkflow`,
+  `TestUpdateCiWorkflowClosesDoctorFindingForDiscoverWorkflow` — este último é a prova
+  doctor-antes(scaffold-divergent)/update/doctor-depois(sem findings) end-to-end)
+- `npm test --prefix npm` → 805/805 passed (inclui
+  `npm/tests/update_ci_workflow_target_discover_workflow.test.js`, 5 testes novos, incluindo o
+  mesmo E2E doctor-antes/update/doctor-depois via `runScaffoldDoctor`)
+- `PYTHONPATH=pypi python3 -m pytest pypi/tests` → 1520 passed, 28 subtests passed (inclui
+  `pypi/tests/test_update_ci_workflow_discover_workflow.py`, 5 testes novos, mesmo E2E). Nota:
+  `trackfw.config.load()` é singleton por processo — os testes novos usam
+  `setUp/tearDown` com `project_config.reset()` (mesmo padrão de `test_ci_workflow_pin.py`) para
+  não vazar `trackfw.yaml` de um tmpdir para o teste seguinte na mesma classe.
+- `bash scripts/check-doctor-parity.sh` → 0 (36 cenários, incluindo os de ML-2F)
+- `bash scripts/check-update-parity.sh` → 0 (todos os 14 cenários, incluindo target-list dos 3
+  CLIs idêntico)
+- `./bin/trackfw validate` → exit 0 (17 warnings pré-existentes, nenhum novo; nenhum arquivo fora
+  do escopo permitido foi tocado)
+
+**Arquivos tocados:** `internal/generators/update.go`, `internal/generators/update_test.go`,
+`npm/src/commands/update.js`, `npm/tests/update_ci_workflow_target.test.js` (ajuste),
+`npm/tests/update_ci_workflow_target_discover_workflow.test.js` (novo),
+`pypi/trackfw/commands/update.py`, `pypi/tests/test_update_ci_workflow_discover_workflow.py` (novo).
+
+**Não commitado, não pushed** — devolvido para `trackfw_architect` auditar e commitar (regra do
+projeto: Backend nunca opera Git).
+
+---
+
+## 2026-08-28 — `trackfw_architect` (Zeus) — REQ do pin de versão no gate de CI: FIM
+
+Branch `fix/gate-de-ci-pinado-na-versao-geradora-e-install-sh-honrando-trackfw-version`.
+REQ `REQ-2026-08-28-gate-de-ci-gerado-instala-versao-nao-pinada-do-trackfw-e-nao-ha-como-pinar`,
+ADR `ADR-2026-08-28-gate-de-ci-gerado-nasce-pinado-na-versao-que-o-gerou-e-o-install-sh-honra-trackfw-version`.
+
+**O problema:** `scripts/install.sh` resolvia a versão pela API de `releases/latest` **ignorando de
+qual tag ele próprio foi baixado**, e não aceitava versão por env var, argumento nem flag. Ninguém
+conseguia pinar — o gate bloqueante de PR era não reprodutível por construção.
+
+**Entregue:** `TRACKFW_VERSION` honrada e validada antes de compor URL; os 3 templates de CI nascem
+pinados na versão do binário gerador, byte-idênticos nos 3 CLIs; a paridade de CI do Python fechada
+por decisão de KG (ele nunca gerou workflow nenhum); e a exceção do `cli-parity.md` apagada.
+
+**11 microlotes**, 5 deles corretivos nascidos de auditoria. Registro do que foi encontrado, porque
+é isto que economiza tempo amanhã:
+
+1. **A Wave 0 declarou enumeração fechada sobre um padrão incompleto.** Eu dei a ela `releases/latest`
+   como padrão de busca, que nunca casa com `go install …@latest` — o segundo mecanismo de
+   instalação, no `trackfw-validate.yml` que o `discover` escreve. Metade da superfície ficou
+   invisível. Marcado como falsificado no roadmap, não reescrito.
+2. **O gate da Wave 0 foi refeito 3 vezes.** Contava um `.pyc` de `__pycache__` (não hermético);
+   depois era cego para `@latest`; por fim o invariante "conjunto de arquivos que casam" apodreceu,
+   porque após as correções quem casa com `@latest` casa por **citar** a string em comentário ou
+   asserção negativa. Invariante final: zero ocorrência em código de produto.
+3. **ML-2G reprovado.** Implementou o AC17 no caminho de **alvos** do `update` e provou por ele,
+   enquanto o remédio que o `doctor` imprime é o comando **nu**. Os testes asseriam o mecanismo
+   errado. Corrigido pelo ML-2H reaproveitando o helper, não duplicando a regra.
+4. **Escrita fora do projeto por symlink**, achada pelo `hades-tf` na barreira final e reproduzida
+   por mim. O gatilho foi ampliado por uma regra de aceite **minha** (AC17(c), presença em disco no
+   lugar de `cfg.ci`). Cobertura maior é superfície maior.
+5. **A mesma alegação obsoleta sobre o Python apareceu em 3 arquivos** — `cli-parity.md`,
+   `check-doctor-parity.sh`, `update.go`. Comentário obsoleto não quebra teste; só revisão de
+   leitura pega.
+
+**Estado final medido:** `make quality` exit 0 · `barrier --wave 3` passed nos 4 checks ·
+`validate` 16 warnings, 0 violations · 9 builders byte-idênticos · vítima do symlink intacta e aviso
+idêntico nos 3 CLIs.
+
+**Deixado para trás, rastreado:**
+- `REQ-2026-08-28-cli-python-nao-oferece-superficie-de-ci-e-git-hooks-no-init-e-nao-declara-git-hooks-como-alvo-do-update` — o `init` do Python sem `--ci`/`--hooks`
+- `REQ-2026-08-28-barrier-so-reconhece-cabecalho-de-aceite-em-portugues-mas-os-3-geradores-de-roadmap-escrevem-em-ingles` — **todo roadmap que a ferramenta gera é reprovado pelo próprio `barrier`**
+- Notas de vault: `update-segue-symlink-e-escreve-fora-do-projeto-2026-08-28`,
+  `barrier-so-casa-cabecalho-de-aceite-em-portugues-2026-08-28`
+- Backlog menor: `package-lock.json` em 6.1.0 · sanitização do valor de `agent_models` · mensagens de
+  `~usuario/` e `"~/"` · `vunknown` na mensagem do `doctor` do Python · `pypi/build/lib/` poluindo
+  `grep -r` na árvore

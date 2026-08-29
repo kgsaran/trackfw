@@ -98,6 +98,18 @@ func Update(cwd string) error {
 		fmt.Println("  ✓ CI workflow atualizado")
 	}
 
+	// 3b. discover-installed CI workflow (.github/workflows/trackfw-validate.yml),
+	// present regardless of cfg.CI (AC17(c), REQ-2026-08-28) — same shared writer
+	// the "ci-workflow" project target uses (runProjectTarget, below), so the
+	// simple `trackfw update` path and the `--targets ci-workflow` path can never
+	// drift apart on what "refreshed" means. No-ops when the file isn't present
+	// (AC17(b) — update never installs it, only `trackfw discover --init` does).
+	if err := refreshDiscoverGitHubActionsWorkflowIfPresent(cwd); err != nil {
+		fmt.Printf("  ⚠ CI workflow (discover): %v\n", err)
+	} else if discoverWorkflowPresent(cwd) {
+		fmt.Println("  ✓ CI workflow (discover) atualizado")
+	}
+
 	// 4. Git hooks — cirúrgico (categoria 3 — shared user files)
 	updateHooksSurgical(cfg)
 
@@ -1798,21 +1810,35 @@ func harnessCatalogTarget(catalog *integrations.Catalog, id, tool string, kind i
 //
 // NOTE ON CROSS-RUNTIME PARITY: the pinned target list in cli-parity.md
 // covers `update harness` only. The three runtimes' project-scope target
-// SETS are not reconcilable byte-for-byte: the Python CLI intentionally
-// implements a reduced project-scope surface (agent rules + hooks + Codex
-// project agents only — see pypi/trackfw/commands/update.py's own
-// docstring, which points users to the Go/Node.js CLIs for CI/git-hooks/
-// Claude commands). The four states, four flags and JSON document SHAPE are
-// shared; the target ID list is not pinned and is reported here, not
-// silently forced into agreement.
+// SETS are not reconcilable byte-for-byte, but the gap is narrower than it
+// used to be: as of REQ-2026-08-28, the Python CLI declares `ci-workflow`
+// in PROJECT_TARGET_IDS under the same condition as Go and Node.js
+// (pypi/trackfw/commands/update.py's project_target_ids()) and dispatches
+// `claude-commands` like the other two runtimes (pre-existing, not part of
+// that REQ). The one target that remains genuinely absent from Python is
+// `git-hooks`: the Python `init` has no surface to opt into a hook
+// framework in the first place, so `update` has nothing to declare a
+// target for — tracked as its own gap in
+// REQ-2026-08-28-cli-python-nao-oferece-superficie-de-ci-e-git-hooks-no-init-e-nao-declara-git-hooks-como-alvo-do-update.md.
+// The four states, four flags and JSON document SHAPE are shared; the
+// target ID list is not pinned and is reported here, not silently forced
+// into agreement.
 // ────────────────────────────────────────────────────────────────────────────
 
 // ProjectTargetIDs is the declared order of `trackfw update` (project scope)
-// targets for this runtime. "ci-workflow" and "git-hooks" only appear when
-// the project's trackfw.yaml opted into a CI system / hook framework.
-func ProjectTargetIDs(cfg Config) []string {
+// targets for this runtime. "git-hooks" only appears when the project's
+// trackfw.yaml opted into a hook framework. "ci-workflow" appears when
+// EITHER the project's trackfw.yaml opted into a CI system OR
+// trackfw-validate.yml (written by `trackfw discover --init`, an independent
+// install mechanism — DiscoverGitHubActionsWorkflowPath, scaffold_doctor.go)
+// is already present on disk (AC17(c), REQ-2026-08-28) — that second clause
+// is what lets `update` manage a discover-installed workflow even in a
+// `ci: none` project, closing the gap where that file was otherwise outside
+// any command's management and the doctor's `trackfw update` remedy for it
+// was inert.
+func ProjectTargetIDs(cfg Config, discoverWorkflowPresent bool) []string {
 	ids := []string{"agent-rules", "agent-hooks", "codex-project-agents", "validate-script"}
-	if cfg.CI != "" && cfg.CI != "none" {
+	if (cfg.CI != "" && cfg.CI != "none") || discoverWorkflowPresent {
 		ids = append(ids, "ci-workflow")
 	}
 	if cfg.Hooks == "husky" || cfg.Hooks == "lefthook" {
@@ -1820,6 +1846,60 @@ func ProjectTargetIDs(cfg Config) []string {
 	}
 	ids = append(ids, "claude-commands")
 	return ids
+}
+
+// discoverWorkflowPresent reports whether DiscoverGitHubActionsWorkflowPath
+// (.github/workflows/trackfw-validate.yml) already exists under root as a
+// REGULAR file. Used both to decide whether "ci-workflow" is declared
+// (AC17(c)) and, inside its apply function, to decide whether to refresh it
+// — the existence check always reads the real project tree (root passed to
+// ProjectTargetIDs is always cwd, never the --dry-run sandbox, mirroring how
+// cfg itself is loaded from the real cwd before the sandbox is built).
+//
+// Uses os.Lstat, NOT os.Stat: a symlink at this path is not something
+// `update` owns or can safely refresh — os.Stat follows the link and would
+// make an attacker-controlled path outside the project look "present",
+// pulling "ci-workflow" into the declared target set (and, via
+// refreshDiscoverGitHubActionsWorkflowIfPresent below, into the write path)
+// purely because a symlink exists on disk. Symlinks are therefore treated as
+// NOT present for this file: `update` will not declare/manage a target on
+// their account, and refreshDiscoverGitHubActionsWorkflowIfPresent (which
+// re-checks independently) refuses to write through them either way.
+func discoverWorkflowPresent(root string) bool {
+	info, err := os.Lstat(filepath.Join(root, DiscoverGitHubActionsWorkflowPath))
+	if err != nil {
+		return false
+	}
+	return info.Mode()&os.ModeSymlink == 0
+}
+
+// refreshDiscoverGitHubActionsWorkflowIfPresent refreshes
+// .github/workflows/trackfw-validate.yml ONLY when it already exists under
+// root as a REGULAR file — `update` never creates this file (AC17(b)):
+// ownership of the install decision belongs to `trackfw discover --init`,
+// not `update`. Writes the SAME builder scaffold doctor compares against
+// (BuildDiscoverGitHubActionsWorkflowContent, scaffold_doctor.go) so what
+// `update` writes and what `doctor` expects can never drift apart by
+// construction (REQ-2026-08-28 AC17).
+//
+// Uses os.Lstat to decide presence, not os.Stat: this path is the most
+// sensitive one `update` can write to (it controls what runs in CI for
+// anyone who checks the project out), so if it is a symlink — live or
+// dangling — this function refuses to write through it. It is not
+// `update`'s call whether to follow a link planted at a path it manages;
+// the file may not even belong to this project. Refusing is loud (stderr),
+// never silent, so "update didn't refresh my workflow" is diagnosable.
+func refreshDiscoverGitHubActionsWorkflowIfPresent(root string) error {
+	path := filepath.Join(root, DiscoverGitHubActionsWorkflowPath)
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil // not installed — update never creates it (AC17(b))
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		fmt.Fprintf(os.Stderr, "aviso: %s é um symlink; trackfw update não escreve através de symlinks — arquivo não foi tocado\n", DiscoverGitHubActionsWorkflowPath)
+		return nil
+	}
+	return os.WriteFile(path, []byte(BuildDiscoverGitHubActionsWorkflowContent()), 0o644)
 }
 
 // UpdateProject evaluates (and, unless DryRun, applies) every declared
@@ -1836,7 +1916,7 @@ func UpdateProject(cwd string, opts UpdateOptions) (UpdateReport, error) {
 		return UpdateReport{}, fmt.Errorf("loading trackfw.yaml: %w", err)
 	}
 
-	declared := ProjectTargetIDs(cfg)
+	declared := ProjectTargetIDs(cfg, discoverWorkflowPresent(cwd))
 	selected, err := selectDeclaredTargets(declared, opts.Targets)
 	if err != nil {
 		return UpdateReport{}, err
@@ -1923,9 +2003,16 @@ func runProjectTarget(id, root string, cfg Config, opts UpdateOptions) TargetRes
 			func(r string) error { return withChdir(r, func() error { return generateValidateScript(cfg) }) },
 			opts)
 	case "ci-workflow":
-		return runFileTarget(id, ".github/workflows/trackfw-gate.yml, .gitlab-ci-trackfw.yml", root,
-			[]string{".github/workflows/trackfw-gate.yml", ".gitlab-ci-trackfw.yml"},
-			func(r string) error { return withChdir(r, func() error { return generateCIWorkflow(cfg) }) },
+		return runFileTarget(id,
+			".github/workflows/trackfw-gate.yml, .gitlab-ci-trackfw.yml, "+DiscoverGitHubActionsWorkflowPath,
+			root,
+			[]string{".github/workflows/trackfw-gate.yml", ".gitlab-ci-trackfw.yml", DiscoverGitHubActionsWorkflowPath},
+			func(r string) error {
+				if err := withChdir(r, func() error { return generateCIWorkflow(cfg) }); err != nil {
+					return err
+				}
+				return refreshDiscoverGitHubActionsWorkflowIfPresent(r)
+			},
 			opts)
 	case "git-hooks":
 		relPath := ".husky/pre-commit"
@@ -2175,6 +2262,7 @@ func buildSandboxInclusion(selected []string, cfg Config) []string {
 		case "ci-workflow":
 			add(".github/workflows/trackfw-gate.yml")
 			add(".gitlab-ci-trackfw.yml")
+			add(DiscoverGitHubActionsWorkflowPath)
 		case "git-hooks":
 			relPath := ".husky/pre-commit"
 			if cfg.Hooks == "lefthook" {

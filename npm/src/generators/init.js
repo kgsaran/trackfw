@@ -5,6 +5,16 @@ const path = require('path')
 const os = require('os')
 const { readAgentConventions } = require('../config/index.js')
 
+// PACKAGE_VERSION — the version of the trackfw binary generating the CI
+// workflow templates. Read once from package.json (never a literal), so
+// the pin written into the workflow always tracks the generator that
+// wrote it (ADR-2026-08-28: gate de CI nasce pinado na versão que o
+// gerou). Reused by buildGitHubActionsWorkflowContent /
+// buildGitLabCIWorkflowContent AND by scaffold doctor's comparison
+// (which calls the same functions), so drift between write and compare
+// paths is structurally impossible.
+const { version: PACKAGE_VERSION } = require('../../package.json')
+
 const GOV_DIRS = [
   'docs/adr',
   'docs/req',
@@ -209,7 +219,9 @@ function generateCIWorkflow(cfg) {
 // workflow generator would write. Exported for scaffold doctor (ADR-2026-08-27): the
 // comparison uses the same function the write path uses, so drift is structurally impossible.
 // The cfg parameter is accepted for API symmetry with Go's buildGitHubActionsWorkflowContent
-// (which also ignores cfg for now — the template is not cfg-dependent).
+// (which also ignores cfg for now — the template is cfg-independent but, since
+// ADR-2026-08-28, NOT version-independent: it pins TRACKFW_VERSION to the version of the
+// trackfw binary that generated it, read from package.json — never a literal).
 function buildGitHubActionsWorkflowContent(_cfg) {
   return `name: trackfw-gate
 on:
@@ -219,6 +231,9 @@ on:
 jobs:
   governance:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TRACKFW_VERSION: "${PACKAGE_VERSION}"
     steps:
       - uses: actions/checkout@v4
 
@@ -232,11 +247,15 @@ jobs:
 }
 
 // buildGitLabCIWorkflowContent mirrors buildGitHubActionsWorkflowContent for GitLab CI.
+// Same version-pin rationale as above — see buildGitHubActionsWorkflowContent.
 function buildGitLabCIWorkflowContent(_cfg) {
   return `# trackfw governance gate
 trackfw-gate:
   stage: test
   image: alpine:latest
+  timeout: 10 minutes
+  variables:
+    TRACKFW_VERSION: "${PACKAGE_VERSION}"
   before_script:
     - apk add --no-cache curl
     - curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.sh | sh
@@ -789,6 +808,13 @@ function backendCommands(cfg) {
 // (missing roadmap.md, implement.md, barrier.md) undetected.
 // ---------------------------------------------------------------------------
 
+// CLAUDE_COMMANDS "trackfw não está instalado" blurbs (AC13) are deliberately
+// OUT of the version pin introduced by ADR-2026-08-28. This text is shown when
+// the `trackfw` command fails because it is not installed — recommending the
+// exact old version that generated the project would be worse UX than
+// pointing at `releases/latest`, since the reason to (re)install is usually
+// being outdated. Do not pin these on a future pass without a product
+// decision; see ROADMAP-2026-08-28 Wave 0 §3 (AC13 row).
 const CLAUDE_COMMANDS = {
     'adr.md': `Execute o seguinte comando bash: \`trackfw adr new "$ARGUMENTS"\`
 

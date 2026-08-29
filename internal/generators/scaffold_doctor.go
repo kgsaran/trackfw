@@ -22,6 +22,42 @@ import (
 // production code only reads it through checkMode below.
 var CurrentGOOS = runtime.GOOS
 
+// DiscoverGitHubActionsWorkflowPath is the canonical relative path of the second,
+// independent CI workflow trackfw writes: the one `trackfw discover --init` (and its
+// Node/Python equivalents) generates via InstallGates, distinct from
+// GitHubActionsWorkflowPath (trackfw-gate.yml, written by init/update). Both files can
+// coexist in the same project — ADR-2026-08-28 names this exact case as the motivation
+// for pinning both install mechanisms, not just the install.sh one.
+const DiscoverGitHubActionsWorkflowPath = ".github/workflows/trackfw-validate.yml"
+
+// BuildDiscoverGitHubActionsWorkflowContent returns the template content trackfw writes
+// to DiscoverGitHubActionsWorkflowPath. It lives in the generators package (not in
+// internal/discover) so that internal/discover can import it for writing — package
+// internal/discover already imports internal/generators, and internal/generators must
+// never import internal/discover (that would be circular).
+//
+// NOT version-independent (ADR-2026-08-28, REQ-2026-08-28 AC6/AC7): the `go install
+// .../cmd/trackfw@vX.Y.Z` step pins the second install mechanism (`go install ...@latest`)
+// to internal/version.Version, the version of the binary that generated/updated the
+// project — mirroring the install.sh pin already applied to buildGitHubActionsWorkflowContent
+// (trackfw-gate.yml) in scaffold.go. Scaffold doctor calls this to compare disk content
+// against the current template (AC10/AC11).
+func BuildDiscoverGitHubActionsWorkflowContent() string {
+	return `name: trackfw validate
+on: [push, pull_request]
+jobs:
+  governance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+      - run: go install github.com/kgsaran/trackfw/cmd/trackfw@v` + version.Version + `
+      - run: trackfw validate
+`
+}
+
 // pythonValidateScriptForm is the byte-exact content Python's `trackfw init` and
 // `trackfw update` (validate-script target) write to scripts/trackfw-validate.sh.
 // It is accepted by the set-membership check in checkValidateScriptArtifact so that
@@ -206,6 +242,23 @@ func RunScaffoldDoctor(projectRoot string) ([]integrations.DoctorFinding, error)
 		relPath := GitLabCIWorkflowPath
 		path := filepath.Join(projectRoot, relPath)
 		f := checkScaffoldArtifact(path, relPath, []byte(buildGitLabCIWorkflowContent(cfg)), true, false)
+		if f != nil {
+			findings = append(findings, *f)
+		}
+	}
+
+	// --- Discover CI workflow (second, independent install mechanism) ---
+	//
+	// trackfw-validate.yml (written by `trackfw discover --init`, InstallGates) is a
+	// separate artifact from trackfw-gate.yml above — both can coexist in the same
+	// project (ADR-2026-08-28). Only checked when the file is already present, mirroring
+	// the "conditional artifact" treatment of the trackfw-gate.yml case above but using
+	// presence-on-disk instead of cfg.CI, because InstallGates decides on its own
+	// DiscoveryResult.CISystem signal (github-actions detection), not on trackfw.yaml's
+	// `ci:` key — a project can have discover's workflow without cfg.CI ever being set.
+	discoverWorkflowPath := filepath.Join(projectRoot, DiscoverGitHubActionsWorkflowPath)
+	if _, err := os.Stat(discoverWorkflowPath); err == nil {
+		f := checkScaffoldArtifact(discoverWorkflowPath, DiscoverGitHubActionsWorkflowPath, []byte(BuildDiscoverGitHubActionsWorkflowContent()), true, false)
 		if f != nil {
 			findings = append(findings, *f)
 		}
