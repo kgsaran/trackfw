@@ -452,7 +452,7 @@ vezes — que é a direção de falsificação.
 > Dependências: Waves 1 e 2 concluídas.
 
 ### ML-3A — Gate falsificável do contrato gerador↔`barrier`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** `artemis-tf`
 **Files affected:** `scripts/check-roadmap-barrier-contract.sh` (novo), `docs/cli-parity.md`,
 `Makefile`.
@@ -475,11 +475,44 @@ vezes — que é a direção de falsificação.
 5. Seção em `docs/cli-parity.md` documentando o contrato gerador↔`barrier`, anotada com `gate=`.
 6. Registrar no `Makefile`.
 **Critérios de aceite:**
-- [ ] AC10, AC12, AC6 da REQ
-- [ ] `bash scripts/check-roadmap-barrier-contract.sh` → exit 0 com contagem
-- [ ] Guarda de vacuidade provada empiricamente
-- [ ] `bash scripts/check-parity-contract-coverage.sh` → exit 0
-- [ ] AC7: `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality` → exit 0
+- [x] AC10, AC12, AC6 da REQ
+- [x] `bash scripts/check-roadmap-barrier-contract.sh` → exit 0 com contagem
+- [x] Guarda de vacuidade provada empiricamente
+- [x] `bash scripts/check-parity-contract-coverage.sh` → exit 0
+- [x] AC7: `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality` → exit 0
+
+
+#### Resultado do ML-3A (artemis-tf, 2026-08-29)
+
+`scripts/check-roadmap-barrier-contract.sh`, **31 cenários**, exit 0. Determinismo provado rodando
+3× com hash de corpus idêntico. Guarda de vacuidade com auto-teste embutido: roda o próprio guard
+com `SCENARIOS_RUN=0` num subshell e assere exit 1 **antes** de confiar na execução real.
+
+**AC10 — não reclassificação.** A tabela de vereditos dos 144 roadmaps foi congelada por hash, com o
+conteúdo lido de `git show a4e8f35:<path>` e **não** da árvore viva — decisão dela, e é a certa: um
+hash sobre a árvore viva quebraria a cada roadmap novo, virando gate que todo mundo aprende a
+atualizar sem olhar.
+
+**AC12 — ciclo fechado** com CLI real nos 3 runtimes, preenchendo só pelo que o template ensina.
+
+Ela também corrigiu as regras 2-4 de "Roadmap parsing rules" do `cli-parity.md`, que estavam
+desatualizadas desde a Wave 1 e que eu não tinha mandado revisar.
+
+**Auditoria do arquiteto:** falsifiquei revertendo o template para `**Status:** pending` — o gate
+reprova em `closed-cycle/go/mls-complete-passed` citando o veredito real. Restaurado, volta a exit 0.
+`check-parity-contract-coverage.sh` verde. Árvore sem resíduo.
+
+**Achado dela, fora do escopo, e mais grave que esta REQ:** `roadmapTrustForGates`
+(`internal/commands/barrier.go:568`) **falha aberto**. Confirmei com o binário: `barrier` sem
+`--trust-local-gates`, roadmap nunca commitado, gate `touch /tmp/... && echo EXECUTOU` →
+`gates: passed` e o arquivo **criado**. Lendo o código, todo caminho de erro devolve
+`trusted: true`, e o comentário admite: *"Any other failure (origin not configured, ref not fetched)
+→ fail-open"*. Fecha só quando o `git show` falha com uma de duas substrings em inglês.
+
+Consequência: sem remote `origin`, com `origin/main` não fetchado, com remote de outro nome, ou —
+hipótese não confirmada — com git em outro idioma, o gate de um roadmap não confiável **executa**.
+É exatamente o cenário para o qual o `ADR-2026-08-23` criou o controle. Pré-existente, não
+introduzido por esta REQ. **REQ própria, prioridade acima do Windows.**
 
 ## Barreira final
 Revisão `hefesto-tf` (qualidade) e `hades-tf` (segurança — o `barrier` é um check que **libera

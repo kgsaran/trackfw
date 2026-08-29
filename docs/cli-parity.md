@@ -1903,15 +1903,25 @@ These are literal parsing rules. All three runtimes must implement them identica
    `Wave`, the **label**, then a space). The wave ends at the next `^## ` line or EOF. See
    "Wave label grammar" below — the label is not necessarily an integer.
 2. **ML heading.** Inside a wave, an ML starts at a line matching `^### ML-` (H3). The ML ends
-   at the next `^### ` or `^## ` line or EOF.
-3. **ML completion.** An ML is complete when its body contains a line matching
-   `^\*\*Status:\*\*` whose remainder contains `✅`. Any other marker (`⬜`, `🔄`, `❌`) is
-   incomplete. Absence of a `**Status:**` line is incomplete.
-4. **Acceptance evidence.** Inside an ML, the acceptance block starts at a line matching
-   `^\*\*Critérios de aceite:\*\*` and ends at the next `^\*\*` line or at the ML boundary.
-   Every line in that block matching `^- \[ \]` is unmet evidence. The ML has evidence only
-   when the block exists, is non-empty, and contains zero `- [ ]` lines.
-   **An ML with no acceptance block at all is `blocked`, not vacuously passed.**
+   at the next `^### ` or `^## ` line or EOF. **Fence-aware (ADR-2026-08-29, decision 7):** a
+   line matching this pattern **inside** a fenced code block is not a real ML heading — see
+   "Contrato gerador↔`barrier`: dialeto e vocabulário" below for the fence rule.
+3. **ML completion.** An ML is complete when its body contains a line, **at column 0 and
+   outside any fenced code block**, matching `^\*\*Status:\*\*`, and the **first whitespace-
+   delimited token** of the remainder — after Unicode NFD normalization and combining-mark
+   stripping (diacritics folded) and case-folding — is one of the closed vocabulary
+   `✅` / `done` / `concluído` (ADR-2026-08-29, decision 3). This replaced substring matching
+   (`contains(marker, "✅")`) precisely because substring accepted `**Status:** ⬜ Pendente ✅`
+   as complete — see "Contrato gerador↔`barrier`" below for the full rule and its history.
+   Any other first token (`⬜`, `🔄`, `❌`, or any word outside the closed vocabulary) is
+   incomplete. Absence of a `**Status:**` line at column 0 outside a fence is incomplete.
+4. **Acceptance evidence.** Inside an ML, the acceptance block starts at a line, **at column 0
+   and outside any fenced code block**, matching `^\*\*(?:Acceptance criteria|Crit[eé]rios de
+   aceite):\*\*` — both the English and the Portuguese header are accepted (ADR-2026-08-29,
+   decisions 1–2; English is canonical, Portuguese has no removal date) — and ends at the next
+   `^\*\*` line or at the ML boundary. Every line in that block matching `^- \[ \]` is unmet
+   evidence. The ML has evidence only when the block exists, is non-empty, and contains zero
+   `- [ ]` lines. **An ML with no acceptance block at all is `blocked`, not vacuously passed.**
 5. **Wave gates.** Gates are declared per wave by a `**Gates da wave:**` line immediately
    followed by a fenced ```` ```bash ```` block. Each non-empty, non-comment line in that block
    is one gate command, executed from the repository root, in declaration order.
@@ -1921,6 +1931,91 @@ These are literal parsing rules. All three runtimes must implement them identica
 6. **Malformed input.** A wave heading whose number is not parseable, an ML whose body cannot
    be delimited, or an unterminated fence is a usage error (exit 2) with an explicit message
    naming the offending line number — never a silent pass.
+
+### Contrato gerador↔`barrier`: dialeto e vocabulário (ADR-2026-08-29)
+
+<!-- trackfw-contract: gate=scripts/check-roadmap-barrier-contract.sh -->
+
+Um roadmap gerado por `trackfw roadmap new` e preenchido **exatamente como o próprio template
+instrui** tem que ser reconhecido pelo `barrier` sem edição manual (AC1, AC12). Isto é um
+contrato entre duas superfícies que já tinham paridade **cada uma consigo mesma** nos 3
+runtimes — os 3 geradores escreviam o mesmo texto entre si, os 3 barriers procuravam o mesmo
+texto entre si — mas divergiam **entre gerador e verificador**
+(`REQ-2026-08-28-barrier-so-reconhece-cabecalho-de-aceite-em-portugues-mas-os-3-geradores-de-
+roadmap-escrevem-em-ingles.md`). Nenhum gate de paridade cross-CLI pegava isso, porque paridade
+mede se as implementações concordam entre si, não se o contrato gerador↔verificador está correto.
+
+**1. Cabeçalho de aceite — duas formas aceitas, inglês é canônico.** `**Acceptance criteria:**`
+e `**Critérios de aceite:**` são ambas reconhecidas (regra 4 acima). O inglês é a forma
+**canônica** — é o que os 3 geradores escrevem, e o que o resto do template já usa
+(`**Status:**`, `**Files affected:**`, `**Actions:**`). A forma portuguesa **continua aceita
+sem prazo de remoção**: 99 dos 143 roadmaps do corpus histórico a usam, inclusive em `done/`, e
+migrar artefato concluído é reescrita de registro (ADR-2026-08-29, decisões 1–2, Alternatives
+Considered).
+
+**2. Vocabulário de status — conjunto fechado, casado por PRIMEIRO TOKEN, nunca substring
+(ADR-2026-08-29, decisão 3).** O restante da linha `**Status:**` é tokenizado por espaço em
+branco Unicode (NBSP conta como separador; caractere zero-width não conta — fica grudado no
+token, causando rejeição, não aceitação: falso-negativo de usabilidade, nunca falso-positivo de
+segurança); o ML é concluído quando o **primeiro** token, após dobra de maiúsculas/minúsculas e
+remoção de acentos (NFD + remoção de marcas combinantes), é `✅`, `done` ou `concluido`.
+`feito`, `ok`, `finalizado` ficam de fora — vocabulário fechado e explícito, não heurística de
+linguagem natural (ADR, Alternatives Considered rejeita "aceitar qualquer status não vazio").
+
+Por que **primeiro token**, e não substring: o mecanismo anterior
+(`strings.Contains(marker, "✅")`) classifica `**Status:** ⬜ Pendente ✅` como concluído — um
+falso-positivo **já em produção** no binário 7.3.0, não hipotético (ADR decisão 8). É a mesma
+classe de defeito registrada em
+`vault/notes/adr-status-substring-livre-falso-positivo-2026-08-01.md`: substring livre em campo
+de status, ao ser ampliado para aceitar palavras além de um único emoji, teria classificado
+`**Status:** não done` e `**Status:** pending (era done)` como concluídos. Primeiro token é o
+discriminante: `⬜`, `não` e `pending` não são marcadores, não importa o que vier depois na
+linha.
+
+**3. Consciência de cerca de código — as três leituras (ADR-2026-08-29, decisão 7).**
+`mlHeadingRe`, `statusLineRe` e `criteriaHeaderRe`/`unmetCriterionRe` ignoram qualquer linha
+dentro de um bloco cercado ao procurar, respectivamente, o heading real de um ML, a linha real
+de `**Status:**`, e o bloco real de aceite. Regra CommonMark, não "conta até 3": um fence abre
+com uma corrida de **3 ou mais** caracteres idênticos (` ``` ` ou `~~~`) no início da linha
+(após trim de espaço) e fecha com uma corrida do **mesmo caractere** de comprimento **maior ou
+igual** à de abertura — cobre os três casos falsificados pelo gate: 3 crases, til, e 4+ crases
+aninhando um bloco de 3. Antes desta regra (ML-1B), a máscara só reconhecia exatamente 3 crases:
+`~~~` nunca era mascarado, e um bloco de 4+ crases tinha o interior desmascarado por
+aninhamento — ambos escapavam da proteção.
+
+Sem esta consciência de cerca, a mudança de mecanismo do item 2 (substring → primeiro token)
+introduziria uma regressão nova: um ML cujo corpo **cite** `**Status:** done` ou
+`**Critérios de aceite:**`/`- [x]` dentro de um bloco de exemplo (documentação, ilustração, ou
+— como esta própria REQ, este ADR e este roadmap fazem — citação do próprio literal para
+descrever o bug) passaria a **liberar** a wave indevidamente, quando hoje (substring, sem
+consciência de cerca) o mesmo caso **bloqueia** indevidamente. A direção de falha se inverteria
+de "conservador demais" para "permissivo demais" — a classe de regressão que este ADR existe
+para evitar.
+
+**4. Marcadores exigem coluna 0, nos 3 runtimes.** `**Status:**`, `**Acceptance criteria:**` /
+`**Critérios de aceite:**` e `### ML-` só contam ancorados no início da linha (`^`). Um
+marcador indentado (por exemplo, uma citação em bloco ou uma lista aninhada que reproduza o
+literal) não é reconhecido como o status/aceite/heading real do ML — descoberto como divergência
+entre runtimes no ML-1B (Node aceitava marcador indentado; Go e Python já exigiam coluna 0),
+corrigido para exigir coluna 0 nos 3.
+
+**5. O template ensina o vocabulário (ADR-2026-08-29, decisão 5; AC11).** Os 3 geradores
+escrevem a forma canônica de status (`**Status:** ⬜ Pendente`) e incluem, uma única vez, antes
+da primeira wave, a legenda dos quatro estados: `⬜ Pendente · 🔄 Em andamento · ✅ Concluído ·
+❌ Bloqueado`. Sem isto, corrigir só o parser deixaria quem preenche o roadmap adivinhando qual
+palavra ou glifo o `barrier` exige — o defeito original desta REQ não era só de idioma, era de o
+template não ensinar o marcador de conclusão nenhum.
+
+**6. Residual declarado — o `barrier` é verificador sintático, não semântico (`gap
+reason=`).** Esconder um `- [ ]` (critério não atendido) dentro de um bloco cercado faz
+`unmet == 0` para aquele bloco — o critério "desaparece" da contagem. Isto **não amplia poder de
+ataque**: quem escreve o roadmap já pode simplesmente marcar `- [x]` sem cercar nada; o
+`barrier` nunca verificou se o trabalho descrito foi de fato feito, só se o arquivo declara que
+foi. Este residual vale desde antes desta REQ, para qualquer forma de cerca, e é o mesmo limite
+de confiança que `docs/cli-parity.md` § "Trust and `--trust-local-gates`" já declara para o
+próprio mecanismo de gates: o `barrier` lê o que o arquivo diz, não o que o repositório prova.
+Um bloco de aceite **vazio** (zero critérios, cercados ou não) continua rejeitado nos 3
+runtimes — a regra 4 acima exige o bloco não-vazio, não só presente.
 
 ### Built-in checks
 
