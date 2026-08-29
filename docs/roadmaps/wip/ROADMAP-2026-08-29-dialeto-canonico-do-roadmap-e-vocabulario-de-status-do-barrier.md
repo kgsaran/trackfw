@@ -1,5 +1,5 @@
 ---
-status: done
+status: wip
 date: 2026-08-29
 req: "docs/req/REQ-2026-08-28-barrier-so-reconhece-cabecalho-de-aceite-em-portugues-mas-os-3-geradores-de-roadmap-escrevem-em-ingles.md"
 squad: "hades-tf, apolo-tf, artemis-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, apolo-tf, artemis-tf"
 
 # Roadmap: Dialeto canônico do roadmap e vocabulário de status do `barrier`
 
-> Created: 2026-08-29 | Status: done
+> Created: 2026-08-29 | Status: wip
 
 ## Context
 
@@ -609,6 +609,78 @@ digitou. Ele viu isso sozinho.
 | `✅️` (VS16) | concluído | concluído | concluído |
 | `Concluído` (acentuado) | concluído | concluído | concluído |
 | `done` | concluído | concluído | concluído |
+
+## Wave 4 — Fronteira de CI (reaberta em 2026-08-29)
+
+> **Por que esta wave existe, e o erro é do arquiteto.** Eu movi este roadmap para `done/` e fechei a
+> REQ **antes** de o CI estar verde. O `barrier --wave 3` e o `make quality` local passavam, e eu
+> tratei isso como conclusão — mas o PR #217 subiu com o job `go` vermelho, e depois o `parity`.
+> Dois MLs corretivos nasceram **depois** do fechamento. A `artemis-tf` recusou o handoff do ML-3G
+> apontando exatamente isso: roadmap em `done/`, `wip/` vazio, e um ML que não existia em roadmap
+> nenhum. Recusa correta — eu estava pedindo trabalho fora da cadeia de governança que este projeto
+> existe para impor.
+>
+> **Lição:** verde local não é conclusão. A conclusão é o CI verde, porque é o CI que roda no
+> ambiente mais pobre — e foi na diferença entre os dois ambientes que os dois defeitos moraram.
+
+### ML-3F — Paridade cross-runtime sai do `go test` e vai para o gate
+**Status:** ✅ Concluído · **Agente:** `artemis-tf`
+**Files affected:** `scripts/check-roadmap-barrier-contract.sh`, `internal/commands/barrier_test.go`
+**Critérios de aceite:**
+- [x] Gate 42 → 52 cenários, incluindo os 5 de CRLF e o de cabeçalho de gates com prosa
+- [x] `go test ./internal/commands/...` com PATH sem `node` e sem `python3` → exit 0
+- [x] Nenhum arquivo de produto tocado
+
+#### Resultado do ML-3F (artemis-tf, 2026-08-29)
+
+O job `go` do CI reprovou com 9 testes: os `TestBarrierParity_*` faziam shell-out para `node` e
+`python3` de dentro do `go test`, e o job `go` é Go puro. Passava na minha máquina porque ela tem os
+três runtimes. O job `parity`, onde os três existem, ficou `skipping` em cascata — o gate que de
+fato cobre paridade nem rodou.
+
+**Duas correções dela sobre mim, ambas materiais:**
+
+1. Afirmei no despacho que os cenários `fence-phantom` do gate já cobriam cross-runtime. **Não
+   cobriam** — chamavam só `run_cli go`. As únicas coberturas cross-runtime daquele achado eram
+   dois dos nove testes que eu mandei remover. Ela verificou em vez de confiar, e acrescentou os
+   cenários **antes** de remover.
+2. O comando que sugeri para reproduzir o CI (`env PATH=/usr/bin:/bin`) **não** reproduz no macOS:
+   `/usr/bin/python3` existe como stub das Xcode CLT. Ela montou um PATH com só `git`, `/bin` e o
+   diretório do `go`, conferindo `command -v` vazio antes de rodar.
+
+### ML-3G — Congelamento do corpus sem depender de história do git
+**Status:** ⬜ Pendente
+**Agente:** `artemis-tf`
+**Files affected:** `scripts/check-roadmap-barrier-contract.sh` e um arquivo de snapshot versionado.
+**Actions:**
+1. O congelamento do AC10 lê o corpus via `git show a4e8f35:<path>` e o job `parity` reprova com
+   `fatal: Not a valid object name a4e8f35`. Dois motivos independentes:
+   **(a)** `actions/checkout@v7` usa `fetch-depth: 1` — nenhum SHA histórico é alcançável no CI;
+   **(b)** `a4e8f35` é commit **desta branch**, confirmado não-ancestral de `origin/main`, e o
+   projeto faz **squash-merge** — o SHA vira órfão no merge e o gate quebraria na `main`
+   **permanentemente**. Por isso `fetch-depth: 0` não é a correção: adia a falha por horas.
+2. Trocar por **snapshot versionado chaveado por `basename`**, lido da árvore de trabalho. Roadmap
+   novo é ignorado (preserva a imunidade ao crescimento do corpus, que era a intenção original e
+   está certa); basename do snapshot ausente do disco **reprova**.
+3. **Por que basename e não caminho:** roadmap muda de pasta o tempo todo (`backlog` → `wip` →
+   `done`); snapshot por caminho reprovaria a cada transição, que é operação diária.
+4. Política de colisão de basename **explícita**. Medido pela agente: hoje não há colisão
+   (`uniq -d` vazio), mas nada impede — declare o comportamento em vez de deixá-lo indefinido.
+**Critérios de aceite:**
+- [ ] Gate exit 0, contagem ≥ 52
+- [ ] Nenhuma leitura de história do git no gate — `grep` prova
+- [ ] **Reprodução em clone raso**: `git clone --depth 1` e rodar o gate lá dentro
+- [ ] Falsificação: veredito alterado no snapshot → reprova nomeando qual; roadmap novo → **não**
+      reprova; roadmap do snapshot removido → reprova
+- [ ] Guarda de vacuidade provada; `check-gates-falsify.sh` → 0
+- [ ] Nenhum arquivo de produto tocado
+
+**Gates da wave:**
+```bash
+set -eu
+grep -q "git show" scripts/check-roadmap-barrier-contract.sh && { echo "gate ainda lê história do git" >&2; exit 1; }
+echo "Wave 4 gate OK — congelamento sem dependência de história."
+```
 
 ## Barreira final
 Revisão `hefesto-tf` (qualidade) e `hades-tf` (segurança — o `barrier` é um check que **libera
