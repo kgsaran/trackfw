@@ -54,29 +54,59 @@ inofensiva. Esta REQ trata a **escrita**: evitar que a deriva aconteça.
 - [ ] **AC2** — O registro **não** acontece em modo `flat` — ali a chave não tem função.
 - [ ] **AC3** — O registro preserva ordem e formatação do resto do `trackfw.yaml`. Verificável por
       diff: só a chave `agents:` muda.
-- [ ] **AC4** — `roadmap new` em `by_agent` passa a permitir **escolher o namespace de destino**, em
-      vez de sempre usar `Agents[0]`. O mecanismo é decisão do ADR — ver "Questão em aberto".
-- [ ] **AC5** — Comportamento atual preservado como **default explícito**: sem indicação de agente,
-      continua indo para `Agents[0]`, e isso passa a estar **documentado**, não implícito.
+- [ ] **AC4** — `roadmap new --agent <nome>` em `by_agent` escreve o roadmap no namespace informado
+      **e** registra o mesmo valor no frontmatter. Uma entrada, dois efeitos, sem possibilidade de
+      divergirem.
+- [ ] **AC5** — Sem `--agent`: com **um** namespace em `agents:`, usa aquele; com **vários**,
+      **falha** nomeando as opções. O silêncio atual (`Agents[0]`) deixa de existir.
+- [ ] **AC5b** — `--agent` com valor fora de `agents:` **funciona** (cria o namespace) e produz a
+      violação de namespace não declarado da REQ irmã. Verificável nos 3 CLIs.
 - [ ] **AC6** — `roadmap move` continua funcionando entre namespaces distintos.
 - [ ] **AC7** — Paridade exata nos 3 CLIs.
 - [ ] **AC8** — Gate falsificável nas duas direções: agente instalado aparece em `agents:`; e
       instalar em `flat` **não** cria a chave.
 - [ ] **AC9** — `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality` → exit 0 **e o CI verde**.
 
-## Questão em aberto — precisa de ADR antes da implementação
+## Mecanismo decidido (KG, 2026-08-29)
 
-**Como o trackfw sabe qual agente está agindo?** As opções não são equivalentes e a escolha muda o
-desenho:
+**Flag explícita `--agent`, que alimenta o frontmatter e o caminho a partir do MESMO valor.**
 
-- **Flag explícita** (`roadmap new --agent zeus`): simples e auditável; obriga quem chama a saber.
-- **Variável de ambiente** (`TRACKFW_AGENT`): conveniente para subagente que já roda com contexto
-  próprio; invisível no comando, difícil de auditar depois.
-- **Frontmatter do roadmap** (`squad:` já existe): o artefato declara o dono; mas a pasta precisa ser
-  decidida **antes** de o arquivo existir.
-- **Inferir do ambiente do assistente**: frágil e implícito — provavelmente a pior das quatro.
+A REQ nascia tratando flag, variável de ambiente, frontmatter e inferência como quatro opções
+concorrentes. Estava errado: `--agent` é *como se diz*, o frontmatter é *onde fica registrado*, e o
+caminho é *derivado*. Uma entrada, três consequências. Tratá-los como mecanismos independentes
+convida a divergência entre pasta e frontmatter — a mesma classe de defeito que a REQ irmã corrige
+entre `agents:` e disco.
 
-Não decidir isso antes de implementar seria repetir o erro de escolher mecanismo por acidente.
+**A reformulação que decidiu:** a pergunta não é *"qual agente está executando o comando?"*, é
+*"de quem é este trabalho?"*. Dono é propriedade da obra, não do processo que a criou. Na prática o
+`roadmap new` é chamado pelo arquiteto em nome do especialista que vai executar — "quem digita"
+nunca foi a informação relevante.
+
+**Rejeitados, com motivo:**
+
+- **Variável de ambiente** — some do comando e some da auditoria. Seis meses depois ninguém sabe por
+  que aquele roadmap foi parar naquela pasta. Numa ferramenta cujo propósito é rastreabilidade, é o
+  defeito mais caro possível.
+- **Inferir do ambiente do assistente** — implícito, frágil, não reproduzível. Erra em silêncio.
+- **Frontmatter como *entrada*** — a objeção original ("a pasta precisa ser decidida antes de o
+  arquivo existir") **não** se sustenta: o `roadmap new` monta o conteúdo em memória antes de
+  escrever. Mas como entrada ele é pior que a flag, porque exigiria o usuário editar o artefato
+  depois de criado. Como **destino de registro**, é exatamente o certo — e é o que a decisão faz.
+
+**Comportamento na ausência da flag — distinguir ausência de ambiguidade:**
+
+- `agents:` com **um** namespace e sem `--agent` → usa aquele. Não há o que escolher.
+- `agents:` com **vários** e sem `--agent` → **erro**, nomeando as opções disponíveis.
+
+Falhar na ambiguidade, não na ausência. Hoje o comando escolhe `Agents[0]` em silêncio, que é
+precisamente como a deriva do cmdb começou: a ferramenta decidiu e não contou a ninguém. A regra é a
+mesma que adotamos no `barrier` (`ADR-2026-08-29`): controle que não reconhece **rejeita e avisa**,
+em vez de adivinhar. E é precisa o bastante para não virar atrito — quem tem um agente só nunca vê o
+erro.
+
+**Encaixe com a REQ irmã:** `--agent` com valor **fora** de `agents:` cria namespace novo. Sob o
+desenho da união isso é permitido — a enumeração enxerga — e gera a violação de namespace não
+declarado, que instrui a registrar. As duas REQs se compõem sem contradição.
 
 ## Negative Scope
 
@@ -91,7 +121,7 @@ Não decidir isso antes de implementar seria repetir o erro de escolher mecanism
 
 ## Linked ADR
 <!-- Necessário antes da implementação: como o trackfw sabe qual agente está agindo (AC4). -->
-ADR:
+ADR: <!-- a criar: formaliza o mecanismo decidido acima antes da implementação -->
 
 ## Blocked by ADRs
 <!-- none -->
