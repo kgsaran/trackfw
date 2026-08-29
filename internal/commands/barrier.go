@@ -157,6 +157,42 @@ func resolveBarrierRoadmap(name string) (string, error) {
 // ("Roadmap parsing rules — string-level — no heuristics").
 // ────────────────────────────────────────────────────────────────────────────
 
+// splitRoadmapLines is the single boundary where the raw file content becomes
+// the []string every marker regex operates on. It normalizes CRLF line
+// endings by stripping a trailing "\r" from each line produced by splitting
+// on "\n" — every downstream marker (ML heading, "**Status:**", acceptance
+// header, criterion lines, "**Gates da wave:**", the fence delimiter) then
+// sees the same content it would see for an LF-only file. It does NOT handle
+// a lone-CR (old-Mac-style) file: splitting on "\n" alone leaves such a file
+// as one giant line, in both this function and its Node.js counterpart.
+// Python's universal-newlines read (see pypi/trackfw/commands/barrier.py
+// _split_roadmap_lines) does handle lone CR — a known, accepted asymmetry:
+// issue #216 (the defect motivating this fix) is CRLF specifically, and nothing
+// in this REQ's scope produces or is known to produce lone-CR roadmaps.
+//
+// This runtime does not currently depend on this normalization to pass a
+// CRLF roadmap end-to-end — statusLineRe's "(.*)$" already matches a trailing
+// "\r" (Go's RE2 "." excludes only "\n"), and every downstream comparison
+// goes through strings.TrimSpace, which treats "\r" as whitespace. That is an
+// accident of the specific combination of primitives used today, not a
+// contract: a future marker added with an exact-equality comparison (no
+// TrimSpace) or a "." used together with a stricter multiline mode would
+// reintroduce the defect this function exists to prevent once, at the
+// boundary, instead of at every regex site (mirrors npm/src/commands/barrier.js
+// splitRoadmapLines and the universal-newline read in pypi/trackfw/commands/barrier.py).
+//
+// Only the trailing "\r" immediately before the split point is stripped —
+// this must never be confused with per-line indentation trimming, which
+// ML-1B deliberately removed: leading whitespace on a marker line still fails
+// to match (markers are anchored at column 0, untouched by this function).
+func splitRoadmapLines(data string) []string {
+	lines := strings.Split(data, "\n")
+	for i, line := range lines {
+		lines[i] = strings.TrimSuffix(line, "\r")
+	}
+	return lines
+}
+
 var (
 	// waveHeadingRe detects any "## Wave <token> " heading, including malformed ones.
 	// The captured token is validated separately by waveLabelRe before being stored.
@@ -672,7 +708,7 @@ func runBarrier(cmd *cobra.Command, roadmapArg string, waveLabel string, jsonOut
 		usageExit(cmd, "could not read roadmap %q: %s", roadmapPath, err.Error())
 		return
 	}
-	lines := strings.Split(string(data), "\n")
+	lines := splitRoadmapLines(string(data))
 	fenced := fenceMask(lines)
 
 	waves, uerr := parseWaves(lines)

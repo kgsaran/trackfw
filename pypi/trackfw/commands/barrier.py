@@ -564,6 +564,34 @@ _LINES_CACHE: list = []
 _FENCE_MASK_CACHE: list = []
 
 
+def _split_roadmap_lines(content: str) -> list:
+    """Single boundary where the raw file content becomes the list every
+    marker regex operates on. Strips a trailing "\\r" from each line
+    produced by splitting on "\\n" — every downstream marker (ML heading,
+    "**Status:**", acceptance header, criterion lines, "**Gates da wave:**",
+    the fence delimiter) then sees the same content it would see for an
+    LF-only file.
+
+    This runtime does not currently depend on this normalization to pass a
+    CRLF roadmap end-to-end — ``open(path, "r", encoding="utf-8")`` already
+    runs Python's universal-newlines translation (default ``newline=None``),
+    so ``\\r\\n``/``\\r`` are converted to ``\\n`` before ``content`` ever
+    reaches this function. This is defensive, not load-bearing today: it
+    keeps the three runtimes symmetric (mirrors
+    internal/commands/barrier.go splitRoadmapLines and
+    npm/src/commands/barrier.js splitRoadmapLines) and keeps this codepath
+    correct even if a future change reads the file in binary mode or with
+    ``newline=''`` and loses the automatic translation.
+
+    Only the trailing "\\r" immediately before the split point is stripped —
+    this must never be confused with per-line indentation trimming, which
+    ML-1B deliberately removed: leading whitespace on a marker line still
+    fails to match (markers are anchored at column 0, untouched by this
+    function).
+    """
+    return [line[:-1] if line.endswith("\r") else line for line in content.split("\n")]
+
+
 def _parse_wave_label(raw: str) -> str:
     """Valida e retorna o rótulo de wave passado via --wave.
 
@@ -587,7 +615,7 @@ def _parse_wave_label(raw: str) -> str:
 def _build_result_document(roadmap_arg: str, roadmap_path: str, wave_label: str, trust_local_gates: bool = False) -> dict:
     global _LINES_CACHE, _FENCE_MASK_CACHE
     content = open(roadmap_path, "r", encoding="utf-8").read()
-    _LINES_CACHE = content.split("\n")
+    _LINES_CACHE = _split_roadmap_lines(content)
     _FENCE_MASK_CACHE = _fence_mask(_LINES_CACHE)
 
     roadmap_basename = os.path.basename(roadmap_path)

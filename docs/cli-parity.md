@@ -1906,6 +1906,20 @@ These are literal parsing rules. All three runtimes must implement them identica
    at the next `^### ` or `^## ` line or EOF. **Fence-aware (ADR-2026-08-29, decision 7):** a
    line matching this pattern **inside** a fenced code block is not a real ML heading — see
    "Contrato gerador↔`barrier`: dialeto e vocabulário" below for the fence rule.
+2-bis. **CRLF normalization boundary (ML-3C, REQ-2026-08-28).** Roadmap content is split into
+   lines once per runtime, and a trailing `\r` is stripped at that boundary
+   (`splitRoadmapLines` in Go/Node, `_split_roadmap_lines` in Python) — never per-regex. All
+   markers below therefore see LF-terminated lines regardless of the file's line endings.
+
+   **Asymmetry, deliberate and documented:** the normalization is only *load-bearing* in Node.
+   JavaScript's `.` excludes `\r` (it is an ECMAScript `LineTerminator`), so
+   `/^\*\*Status:\*\*(.*)$/` fails to match a CRLF line — that was the defect. Go's RE2 `.`
+   includes `\r`, and every comparison goes through `strings.TrimSpace`; Python's text-mode
+   `open()` applies universal newlines before the parser runs. In those two runtimes the boundary
+   function is a no-op today, kept for cross-runtime symmetry and as a guard for any future marker
+   that does not route through those primitives. A file with **lone CR** endings is handled by
+   Python only — pre-existing, out of scope, no defect forces it.
+
 3. **ML completion.** An ML is complete when its body contains a line, **at column 0 and
    outside any fenced code block**, matching `^\*\*Status:\*\*`, and the **first whitespace-
    delimited token** of the remainder — after Unicode NFD normalization and combining-mark

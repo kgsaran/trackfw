@@ -148,6 +148,33 @@ function statusIsComplete(marker) {
   return STATUS_VOCABULARY.has(normalizeStatusToken(first))
 }
 
+// splitRoadmapLines is the single boundary where the raw file content becomes
+// the array every marker regex operates on. It normalizes CRLF line endings
+// by stripping a trailing "\r" from each line produced by splitting on
+// "\n" — every downstream marker (ML heading, "**Status:**", acceptance
+// header, criterion lines, "**Gates da wave:**", the fence delimiter) then
+// sees the same content it would see for an LF-only file. It does NOT handle
+// a lone-CR (old-Mac-style) file: splitting on "\n" alone leaves such a file
+// as one giant line, same as internal/commands/barrier.go's splitRoadmapLines.
+// Python's universal-newlines read does handle lone CR — a known, accepted
+// asymmetry; issue #216 (the defect motivating this fix) is CRLF specifically.
+//
+// Unlike Go and Python, this runtime DOES depend on this normalization: JS
+// regex "." excludes "\r" (it is a LineTerminator per the ECMAScript spec,
+// unlike Go's RE2 "."), so `/^\*\*Status:\*\*(.*)$/.exec("**Status:** done\r")`
+// returns null — a CRLF roadmap with every ML fully completed was reported as
+// "not complete (status: missing)" (mirrors internal/commands/barrier.go
+// splitRoadmapLines and the universal-newline read in
+// pypi/trackfw/commands/barrier.py).
+//
+// Only the trailing "\r" immediately before the split point is stripped —
+// this must never be confused with per-line indentation trimming, which
+// ML-1B deliberately removed: leading whitespace on a marker line still fails
+// to match (markers are anchored at column 0, untouched by this function).
+function splitRoadmapLines(content) {
+  return content.split('\n').map((line) => (line.endsWith('\r') ? line.slice(0, -1) : line))
+}
+
 // detectFenceMarker inspects a whitespace-trimmed line and reports whether it
 // opens or closes a CommonMark-style fence: a run of 3+ identical backtick
 // (`) or tilde (~) characters at the start of the line. Returns
@@ -546,7 +573,7 @@ async function runBarrier(roadmapArg, waveOption, jsonOutput, trustLocalGates) {
   const cfg = config.load()
   const resolved = resolveRoadmapFile(cfg, roadmapArg)
   const content = fs.readFileSync(resolved.path, 'utf8')
-  const lines = content.split('\n')
+  const lines = splitRoadmapLines(content)
 
   const startedAt = new Date()
   const wave = findWave(lines, waveLabel, resolved.basename)
@@ -617,6 +644,7 @@ module.exports.mlAcceptanceEvidence = mlAcceptanceEvidence
 module.exports.parseGates = parseGates
 module.exports.statusIsComplete = statusIsComplete
 module.exports.computeFenceMask = computeFenceMask
+module.exports.splitRoadmapLines = splitRoadmapLines
 module.exports.CRITERIA_HEADER_RE = CRITERIA_HEADER_RE
 module.exports.roadmapTrustForGates = roadmapTrustForGates
 module.exports.evalMlsComplete = evalMlsComplete

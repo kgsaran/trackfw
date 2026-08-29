@@ -1398,3 +1398,214 @@ func TestFenceMask_LongerClosingRunOfSameCharacterCloses(t *testing.T) {
 		t.Fatalf("fenceMask(open 3, close 5) = %v, want %v", got, want)
 	}
 }
+
+// ────────────────────────────────────────────────────────────────────────────
+// ML-3C — CRLF roadmaps must reach the SAME verdict in all three runtimes.
+//
+// Found in audit: a roadmap saved with CRLF line endings reported
+// mls_complete: passed in Go and Python but blocked ("status: missing") in
+// Node.js, on a ML whose "**Status:**" line was fully filled in. JS regex "."
+// excludes "\r" (a LineTerminator per the ECMAScript spec), so the marker
+// regex silently failed to match against "**Status:** ✅ Concluído\r". Go's
+// "." includes "\r" and Python's text-mode read already translates CRLF to
+// LF, so both happened to work — by accident, not by contract.
+//
+// crlf joins fixture lines with "\r\n" instead of "\n", mirroring the shape
+// of a roadmap written on Windows (see issue #216: every roadmap the Python
+// CLI's generators write on Windows is CRLF, and Node was the runtime that
+// could not read it back).
+// ────────────────────────────────────────────────────────────────────────────
+
+func crlf(lines []string) string {
+	return strings.Join(lines, "\r\n")
+}
+
+// TestBarrierParity_CRLFLineEndings_CompleteRoadmapPassesInAllThree is the
+// direct falsification of the ML-3C defect: a CRLF roadmap with its one ML
+// fully completed must report mls_complete: passed identically in Go,
+// Node.js and Python. Before the fix, Node reported "status: missing".
+func TestBarrierParity_CRLFLineEndings_CompleteRoadmapPassesInAllThree(t *testing.T) {
+	content := crlf([]string{
+		"# Roadmap: Barrier Parity Fixture",
+		"",
+		"## Acceptance Criteria",
+		"- [x] fixture roadmap-level criterion",
+		"",
+		"## Wave 1 — Fixture Wave",
+		"",
+		"### ML-1A — Real ML",
+		"**Status:** ✅ Concluído",
+		"**Critérios de aceite:**",
+		"- [x] real met criterion",
+		"",
+	})
+	assertParity(t, content, []string{}, "passed")
+}
+
+// TestBarrierParity_CRLFLineEndings_PendingMLBlocksInAllThree proves the fix
+// does not launder a genuinely pending ML: a CRLF roadmap whose ML is still
+// pending must block, identically, in all three runtimes. Fixing "status:
+// missing" by making the parser permissive (e.g. treating "missing" as
+// vacuously not-blocking) would have passed this test's mirror-image
+// scenario without actually reading the "\r"-terminated line.
+func TestBarrierParity_CRLFLineEndings_PendingMLBlocksInAllThree(t *testing.T) {
+	content := crlf([]string{
+		"# Roadmap: Barrier Parity Fixture",
+		"",
+		"## Acceptance Criteria",
+		"- [x] fixture roadmap-level criterion",
+		"",
+		"## Wave 1 — Fixture Wave",
+		"",
+		"### ML-1A — Real ML",
+		"**Status:** ⬜ Pendente",
+		"**Critérios de aceite:**",
+		"- [ ] real unmet criterion",
+		"",
+	})
+	assertParity(t, content, []string{"ML-1A: not complete (status: ⬜ Pendente)"}, "blocked")
+}
+
+// TestBarrierParity_CRLFLineEndings_FenceMaskingStillWorksInAllThree proves
+// the CRLF fix did not weaken fence detection: a phantom ML and a phantom
+// "**Status:** done" hidden inside a "```...\r\n...```" fence must still be
+// masked, and the real pending status outside the fence must still block —
+// in all three runtimes. A naive fix that only patched statusLineRe (instead
+// of normalizing at the line-split boundary) could pass the previous two
+// tests while leaving the fence delimiter regex blind to a trailing "\r",
+// unmasking the fence and letting the phantom ML/status leak through.
+func TestBarrierParity_CRLFLineEndings_FenceMaskingStillWorksInAllThree(t *testing.T) {
+	content := crlf([]string{
+		"# Roadmap: Barrier Parity Fixture",
+		"",
+		"## Acceptance Criteria",
+		"- [x] fixture roadmap-level criterion",
+		"",
+		"## Wave 1 — Fixture Wave",
+		"",
+		"### ML-1A — Real ML",
+		"**Status:** ⬜ Pendente",
+		"**Critérios de aceite:**",
+		"- [ ] real unmet criterion",
+		"",
+		"Example of a phantom ML hidden inside a fence:",
+		"```",
+		"### ML-9Z — phantom",
+		"**Status:** done",
+		"**Critérios de aceite:**",
+		"- [x] fake",
+		"```",
+		"",
+	})
+	assertParity(t, content, []string{"ML-1A: not complete (status: ⬜ Pendente)"}, "blocked")
+}
+
+// TestBarrierParity_CRLFLineEndings_IndentedMarkerStillNotRecognisedInAllThree
+// proves the CRLF fix (stripping only a trailing "\r" at the line-split
+// boundary) did not reintroduce leading-whitespace tolerance, which ML-1B
+// deliberately removed. An indented "**Status:**" line inside a CRLF
+// roadmap must stay unrecognised ("status: missing"), identically, in all
+// three runtimes — trimming "\r" is not the same operation as trimming
+// leading indentation, and the CRLF fix must not conflate the two.
+func TestBarrierParity_CRLFLineEndings_IndentedMarkerStillNotRecognisedInAllThree(t *testing.T) {
+	content := crlf([]string{
+		"# Roadmap: Barrier Parity Fixture",
+		"",
+		"## Acceptance Criteria",
+		"- [x] fixture roadmap-level criterion",
+		"",
+		"## Wave 1 — Fixture Wave",
+		"",
+		"### ML-1A — Real ML",
+		"  **Status:** done",
+		"  **Critérios de aceite:**",
+		"  - [x] indented criterion",
+		"",
+	})
+	assertParity(t, content, []string{"ML-1A: not complete (status: missing)"}, "blocked")
+}
+
+// TestBarrierParity_CRLFLineEndings_GatesHeaderRecognisedAndCommandsRunInAllThree
+// proves "**Gates da wave:**" and its "```bash\r\n...\r\n```" fence are
+// still recognised on a CRLF roadmap, and the command inside actually runs,
+// in all three runtimes — not just the ML-level markers exercised by the
+// other CRLF tests above.
+func TestBarrierParity_CRLFLineEndings_GatesHeaderRecognisedAndCommandsRunInAllThree(t *testing.T) {
+	content := crlf([]string{
+		"# Roadmap: Barrier Parity Fixture",
+		"",
+		"REQ: REQ-2026-08-29-barrier-fixture",
+		"",
+		"## Acceptance Criteria",
+		"- [x] fixture roadmap-level criterion",
+		"",
+		"## Wave 1 — Fixture Wave",
+		"",
+		"**Gates da wave:**",
+		"```bash",
+		"false",
+		"```",
+		"",
+		"### ML-1A — Real ML",
+		"**Status:** done",
+		"**Critérios de aceite:**",
+		"- [x] build passes",
+		"",
+	})
+	goDoc, nodeDoc, pyDoc := runAllThreeRuntimes(t, content)
+
+	if !reflect.DeepEqual(parserChecks(goDoc.Checks), parserChecks(nodeDoc.Checks)) {
+		t.Errorf("GO and NODE parser checks diverge:\nGO:   %+v\nNODE: %+v", parserChecks(goDoc.Checks), parserChecks(nodeDoc.Checks))
+	}
+	if !reflect.DeepEqual(parserChecks(goDoc.Checks), parserChecks(pyDoc.Checks)) {
+		t.Errorf("GO and PY parser checks diverge:\nGO: %+v\nPY: %+v", parserChecks(goDoc.Checks), parserChecks(pyDoc.Checks))
+	}
+
+	gatesCheck := namedCheck(t, goDoc, "gates")
+	if gatesCheck.Status != "blocked" {
+		t.Fatalf("expected gates=blocked (the CRLF fence must still be recognised and \"false\" executed), got %q with commands=%v",
+			gatesCheck.Status, gatesCheck.Commands)
+	}
+	if len(gatesCheck.Commands) != 1 || gatesCheck.Commands[0] != "false" {
+		t.Fatalf("expected the gates block to contain exactly [\"false\"], got %v", gatesCheck.Commands)
+	}
+}
+
+// TestSplitRoadmapLines_StripsTrailingCROnlyAtBoundary is the unit-level
+// falsification of splitRoadmapLines itself: it must strip exactly a
+// trailing "\r" per line and nothing else — no leading-whitespace trimming
+// (that would reintroduce the ML-1B regression) and no merging of lines.
+//
+// KNOWN GAP, reported rather than hidden: this test only fails if the
+// FUNCTION is deleted or changed, not if runBarrier stops CALLING it. In Go
+// specifically, the call-site revert (lines := strings.Split(string(data),
+// "\n") instead of splitRoadmapLines(string(data))) is behaviorally a no-op —
+// verified empirically: statusLineRe's "." already matches "\r" (Go's RE2 "."
+// excludes only "\n", unlike JS), mlHeadingRe/waveHeadingRe/criterionLineRe/
+// boldLineRe are all prefix-anchored (unaffected by a trailing "\r"), and
+// every downstream comparison in mlStatusMarker/parseGates goes through
+// strings.TrimSpace, which treats "\r" as whitespace regardless. No CRLF
+// fixture — including every TestBarrierParity_CRLFLineEndings_* test in this
+// file — can distinguish "Go calls splitRoadmapLines" from "Go still splits
+// on \n alone", because the two are equivalent for every marker this parser
+// currently recognises. A call-site assertion (asserting runBarrier invokes
+// this exact function) was deliberately rejected — see ML-3A's own note on
+// why testing through the internal call graph, instead of observable CLI
+// behavior, is how the ML-2G defect escaped audit. The call is still made,
+// for symmetry with Node.js (where it IS load-bearing) and as a guard against
+// a FUTURE marker that does not go through TrimSpace; it is simply, today,
+// unfalsifiable in Go by a black-box test. Python has the same gap for a
+// different reason: os.ReadFile-equivalent open(path, "r", encoding="utf-8")
+// already runs universal-newlines translation, so _split_roadmap_lines never
+// even sees a "\r" in production. Node.js is the one runtime where this
+// normalization is genuinely load-bearing and where its removal is caught —
+// see TestBarrierParity_CRLFLineEndings_CompleteRoadmapPassesInAllThree,
+// empirically confirmed by reverting npm/src/commands/barrier.js's call site
+// during this ML and observing the test fail with the exact original defect.
+func TestSplitRoadmapLines_StripsTrailingCROnlyAtBoundary(t *testing.T) {
+	got := splitRoadmapLines("  **Status:** done\r\n**Status:** done\r\nlast\r")
+	want := []string{"  **Status:** done", "**Status:** done", "last"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("splitRoadmapLines = %#v, want %#v", got, want)
+	}
+}

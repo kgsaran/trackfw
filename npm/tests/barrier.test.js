@@ -925,3 +925,127 @@ test('barrier CLI: gates header with trailing prose still runs the gate (ML-1B r
     fs.rmSync(dir, { recursive: true, force: true })
   }
 })
+
+// ────────────────────────────────────────────────────────────────────────────
+// ML-3C — CRLF roadmaps. Found in audit: a roadmap saved with CRLF line
+// endings reported mls_complete: passed in Go and Python but blocked
+// ("status: missing") in Node, on a ML whose "**Status:**" line was fully
+// filled in. JS regex "." excludes "\r" (a LineTerminator per the ECMAScript
+// spec), so `/^\*\*Status:\*\*(.*)$/` never matched
+// "**Status:** ✅ Concluído\r". Fixed by normalizing CRLF once, at the
+// line-split boundary (splitRoadmapLines), instead of patching every marker
+// regex.
+// ────────────────────────────────────────────────────────────────────────────
+
+test('splitRoadmapLines: strips exactly a trailing \\r per line, nothing more (ML-3C)', () => {
+  assert.deepEqual(
+    barrier.splitRoadmapLines('  **Status:** done\r\n**Status:** done\r\nlast\r'),
+    ['  **Status:** done', '**Status:** done', 'last'],
+  )
+})
+
+test('barrier regression: CRLF roadmap with a fully completed ML passes (ML-3C)', () => {
+  const content = [
+    '# Roadmap: CRLF Fixture',
+    '',
+    'REQ: REQ-2026-07-29-barrier-fixture',
+    '',
+    '## Acceptance Criteria',
+    '- [x] fixture roadmap-level criterion',
+    '',
+    '## Wave 1 — Fixture Wave',
+    '',
+    '### ML-1A — Real ML',
+    '**Status:** ✅ Concluído',
+    '**Critérios de aceite:**',
+    '- [x] real met criterion',
+    '',
+  ].join('\r\n')
+  const dir = setupRegressionFixture(content)
+  try {
+    const { stdout, stderr, status } = runBarrierCLI(dir, 'ROADMAP-regression', '--wave', '1', '--json')
+    assert.equal(status, 0, `expected exit 0 (passed), got ${status}\nstdout: ${stdout}\nstderr: ${stderr}`)
+    const doc = JSON.parse(stdout)
+    assert.equal(doc.status, 'passed')
+    const mlsCheck = doc.checks.find((c) => c.name === 'mls_complete')
+    assert.equal(mlsCheck.status, 'passed')
+    assert.deepEqual(mlsCheck.failures, [])
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('barrier regression: CRLF roadmap with a pending ML still blocks (ML-3C — not laundered by the fix)', () => {
+  const content = [
+    '# Roadmap: CRLF Fixture',
+    '',
+    'REQ: REQ-2026-07-29-barrier-fixture',
+    '',
+    '## Acceptance Criteria',
+    '- [x] fixture roadmap-level criterion',
+    '',
+    '## Wave 1 — Fixture Wave',
+    '',
+    '### ML-1A — Real ML',
+    '**Status:** ⬜ Pendente',
+    '**Critérios de aceite:**',
+    '- [ ] real unmet criterion',
+    '',
+  ].join('\r\n')
+  const dir = setupRegressionFixture(content)
+  try {
+    const { stdout, stderr, status } = runBarrierCLI(dir, 'ROADMAP-regression', '--wave', '1', '--json')
+    assert.equal(status, 1, `expected exit 1 (blocked), got ${status}\nstdout: ${stdout}\nstderr: ${stderr}`)
+    const doc = JSON.parse(stdout)
+    const mlsCheck = doc.checks.find((c) => c.name === 'mls_complete')
+    assert.deepEqual(mlsCheck.failures, ['ML-1A: not complete (status: ⬜ Pendente)'])
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('barrier regression: CRLF roadmap — fence masking and indented-marker strictness (ML-1B) both still hold (ML-3C)', () => {
+  const content = [
+    '# Roadmap: CRLF Fixture',
+    '',
+    'REQ: REQ-2026-07-29-barrier-fixture',
+    '',
+    '## Acceptance Criteria',
+    '- [x] fixture roadmap-level criterion',
+    '',
+    '## Wave 1 — Fixture Wave',
+    '',
+    '### ML-1A — Real ML',
+    '**Status:** ⬜ Pendente',
+    '**Critérios de aceite:**',
+    '- [ ] real unmet criterion',
+    '',
+    'Example of a phantom ML hidden inside a fence:',
+    '```',
+    '### ML-9Z — phantom',
+    '**Status:** done',
+    '**Critérios de aceite:**',
+    '- [x] fake',
+    '```',
+    '',
+    '### ML-1B — indented marker must stay unrecognised',
+    '  **Status:** done',
+    '  **Critérios de aceite:**',
+    '  - [x] indented criterion',
+    '',
+  ].join('\r\n')
+  const dir = setupRegressionFixture(content)
+  try {
+    const { stdout, stderr, status } = runBarrierCLI(dir, 'ROADMAP-regression', '--wave', '1', '--json')
+    assert.equal(status, 1, `expected exit 1 (blocked), got ${status}\nstdout: ${stdout}\nstderr: ${stderr}`)
+    const doc = JSON.parse(stdout)
+    const mlsCheck = doc.checks.find((c) => c.name === 'mls_complete')
+    // No "ML-9Z" anywhere: the fence hid the phantom ML entirely.
+    assert.deepEqual(mlsCheck.failures, [
+      'ML-1A: not complete (status: ⬜ Pendente)',
+      'ML-1B: not complete (status: missing)',
+    ])
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})

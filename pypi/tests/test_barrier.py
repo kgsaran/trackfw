@@ -951,3 +951,161 @@ def test_barrier_cli_cabecalho_de_gates_com_prosa_final_ainda_executa_o_gate_e2e
     checks = {c["name"]: c for c in doc["checks"]}
     assert checks["gates"]["status"] == "blocked", checks["gates"]
     assert checks["gates"]["commands"] == ["false"]
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# ML-3C — roadmaps CRLF. Achado em auditoria: um roadmap salvo com fins de
+# linha CRLF reportava mls_complete: passed em Go e Python, mas blocked
+# ("status: missing") em Node — o "." do regex de JS exclui "\r" (é um
+# LineTerminator no ECMAScript), então `/^\*\*Status:\*\*(.*)$/` nunca casava
+# com "**Status:** ✅ Concluído\r". Corrigido normalizando CRLF uma única vez,
+# no limite onde o arquivo vira lista de linhas (_split_roadmap_lines), em vez
+# de remendar cada regex de marcador.
+#
+# Python não dependia dessa normalização para passar um roadmap CRLF de ponta
+# a ponta — `open(path, "r", encoding="utf-8")` já roda a tradução universal
+# de newlines (newline=None por padrão) antes do content.split("\n"). A
+# normalização explícita em _split_roadmap_lines é defensiva (mantém os três
+# runtimes simétricos), não é o que faz este runtime passar hoje — por isso os
+# testes abaixo exercitam o comportamento observável do CLI (que já
+# funcionava), e o teste unitário isolado de _split_roadmap_lines documenta o
+# contrato da função em si.
+# ────────────────────────────────────────────────────────────────────────────
+
+def test_split_roadmap_lines_remove_apenas_o_r_final_de_cada_linha():
+    from trackfw.commands.barrier import _split_roadmap_lines
+
+    got = _split_roadmap_lines("  **Status:** done\r\n**Status:** done\r\nlast\r")
+    assert got == ["  **Status:** done", "**Status:** done", "last"]
+
+
+def test_barrier_cli_crlf_roadmap_com_ml_completo_passa_e2e():
+    dir_ = _setup_regression_dir()
+    content = "\r\n".join([
+        "# Roadmap: CRLF Fixture",
+        "",
+        "REQ: REQ-2026-08-29-barrier-fixture",
+        "",
+        "## Acceptance Criteria",
+        "- [x] fixture roadmap-level criterion",
+        "",
+        "## Wave 1 — Fixture Wave",
+        "",
+        "### ML-1A — Real ML",
+        "**Status:** ✅ Concluído",
+        "**Critérios de aceite:**",
+        "- [x] real met criterion",
+        "",
+    ])
+    _write_roadmap(dir_, content)
+    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-regression", "--wave", "1", "--json")
+    assert code == 0, f"esperava exit 0 (passed), stdout={stdout} stderr={stderr}"
+    doc = json.loads(stdout)
+    assert doc["status"] == "passed"
+    checks = {c["name"]: c for c in doc["checks"]}
+    assert checks["mls_complete"]["status"] == "passed"
+    assert checks["mls_complete"]["failures"] == []
+
+
+def test_barrier_cli_crlf_roadmap_com_ml_pendente_continua_bloqueando_e2e():
+    """Prova que a correção não é permissiva: um ML genuinamente pendente,
+    num roadmap CRLF, continua bloqueando."""
+    dir_ = _setup_regression_dir()
+    content = "\r\n".join([
+        "# Roadmap: CRLF Fixture",
+        "",
+        "REQ: REQ-2026-08-29-barrier-fixture",
+        "",
+        "## Acceptance Criteria",
+        "- [x] fixture roadmap-level criterion",
+        "",
+        "## Wave 1 — Fixture Wave",
+        "",
+        "### ML-1A — Real ML",
+        "**Status:** ⬜ Pendente",
+        "**Critérios de aceite:**",
+        "- [ ] real unmet criterion",
+        "",
+    ])
+    _write_roadmap(dir_, content)
+    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-regression", "--wave", "1", "--json")
+    assert code == 1, f"esperava exit 1 (blocked), stdout={stdout} stderr={stderr}"
+    doc = json.loads(stdout)
+    checks = {c["name"]: c for c in doc["checks"]}
+    assert checks["mls_complete"]["failures"] == ["ML-1A: not complete (status: ⬜ Pendente)"]
+
+
+def test_barrier_cli_crlf_roadmap_cerca_e_marcador_indentado_continuam_corretos_e2e():
+    """Roadmap CRLF combinando um ML fantasma dentro de cerca (deve ficar
+    mascarado) e um marcador indentado (ML-1B — não pode ser reconhecido)."""
+    dir_ = _setup_regression_dir()
+    content = "\r\n".join([
+        "# Roadmap: CRLF Fixture",
+        "",
+        "REQ: REQ-2026-08-29-barrier-fixture",
+        "",
+        "## Acceptance Criteria",
+        "- [x] fixture roadmap-level criterion",
+        "",
+        "## Wave 1 — Fixture Wave",
+        "",
+        "### ML-1A — Real ML",
+        "**Status:** ⬜ Pendente",
+        "**Critérios de aceite:**",
+        "- [ ] real unmet criterion",
+        "",
+        "Exemplo de ML fantasma dentro de uma cerca:",
+        "```",
+        "### ML-9Z — phantom",
+        "**Status:** done",
+        "**Critérios de aceite:**",
+        "- [x] fake",
+        "```",
+        "",
+        "### ML-1B — marcador indentado não pode contar",
+        "  **Status:** done",
+        "  **Critérios de aceite:**",
+        "  - [x] indented criterion",
+        "",
+    ])
+    _write_roadmap(dir_, content)
+    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-regression", "--wave", "1", "--json")
+    assert code == 1, f"esperava exit 1 (blocked), stdout={stdout} stderr={stderr}"
+    doc = json.loads(stdout)
+    checks = {c["name"]: c for c in doc["checks"]}
+    assert checks["mls_complete"]["failures"] == [
+        "ML-1A: not complete (status: ⬜ Pendente)",
+        "ML-1B: not complete (status: missing)",
+    ]
+
+
+def test_barrier_cli_crlf_roadmap_gates_da_wave_e_reconhecido_e_comando_roda_e2e():
+    dir_ = _setup_regression_dir()
+    content = "\r\n".join([
+        "# Roadmap: CRLF Fixture",
+        "",
+        "REQ: REQ-2026-08-29-barrier-fixture",
+        "",
+        "## Acceptance Criteria",
+        "- [x] fixture roadmap-level criterion",
+        "",
+        "## Wave 1 — Fixture Wave",
+        "",
+        "**Gates da wave:**",
+        "```bash",
+        "false",
+        "```",
+        "",
+        "### ML-1A — Real ML",
+        "**Status:** done",
+        "**Critérios de aceite:**",
+        "- [x] build passes",
+        "",
+    ])
+    _write_roadmap(dir_, content)
+    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-regression", "--wave", "1", "--json")
+    assert code == 1, f"esperava exit 1 (blocked pelo gate), stdout={stdout} stderr={stderr}"
+    doc = json.loads(stdout)
+    checks = {c["name"]: c for c in doc["checks"]}
+    assert checks["gates"]["status"] == "blocked", checks["gates"]
+    assert checks["gates"]["commands"] == ["false"]

@@ -514,6 +514,47 @@ hipótese não confirmada — com git em outro idioma, o gate de um roadmap não
 É exatamente o cenário para o qual o `ADR-2026-08-23` criou o controle. Pré-existente, não
 introduzido por esta REQ. **REQ própria, prioridade acima do Windows.**
 
+### ML-3C — Normalização de CRLF na leitura (corretiva, achada na auditoria)
+**Status:** ✅ Concluído
+**Agente:** `apolo-tf`
+**Files affected:** `internal/commands/barrier.go`, `npm/src/commands/barrier.js`,
+`pypi/trackfw/commands/barrier.py` e os três testes.
+**Critérios de aceite:**
+- [x] Roadmap CRLF: os 3 dão o mesmo veredito, e é o correto
+- [x] Não regride ML-1A (`⬜ Pendente ✅`) nem ML-1B (indentado), em CRLF
+- [x] Cerca e `**Gates da wave:**` reconhecidos em CRLF
+- [x] Suítes dos 3 verdes; `check-roadmap-barrier-contract.sh` e `check-gates-falsify.sh` exit 0
+
+#### Resultado do ML-3C (apolo-tf, 2026-08-29)
+
+Defeito que **eu achei na auditoria** e que nasceu no nosso próprio diff. Três primitivas, três
+comportamentos: o `.` do JS **exclui** `\r` (é `LineTerminator` na spec do ECMAScript), então
+`/^\*\*Status:\*\*(.*)$/` não casava a linha CRLF; o `.` do RE2 **inclui**, e o Go ainda passa por
+`TrimSpace`; o Python lê em modo texto com universal newlines e o `\r` nunca chega ao parser.
+
+Corrigido **na fronteira de entrada**, onde o arquivo vira linhas — não remendando regex por regex,
+que seriam nove marcadores por runtime e o próximo a ser acrescentado nasceria com o bug.
+
+**Auditoria do arquiteto, 3 CLIs reais:**
+
+```
+roadmap CRLF completo      go ✓ passed   node ✓ passed   py ✓ passed
+roadmap CRLF ⬜ Pendente ✅ go blocked    node blocked    py blocked
+```
+
+**A honestidade dele vale registro.** Ele reportou que a normalização **só é load-bearing no Node** —
+em Go e Python é no-op hoje, porque `TrimSpace` e universal-newlines já absorvem o `\r`, e nenhuma
+fixture CRLF consegue distinguir "chamou a função" de "não chamou". Em vez de forjar a prova com
+asserção de call-site ou mock, documentou a lacuna no doc-comment do teste. Está certo, e é
+exatamente a lição do ML-2G do ciclo anterior: teste que prova que uma função foi chamada não prova
+que ela faz diferença.
+
+Ele também **recusou** tornar load-bearing no Python via `open(..., newline="")`, porque regrediria
+o tratamento de CR solto que o Python ganha de graça — mudança sem defeito que a force. Concordo e
+mantive.
+
+Registrado em `vault/notes/barrier-crlf-divergencia-node-regex-2026-08-29.md` e no `cli-parity.md`.
+
 ## Barreira final
 Revisão `hefesto-tf` (qualidade) e `hades-tf` (segurança — o `barrier` é um check que **libera
 wave**: falso positivo aqui é trabalho incompleto dado como pronto). Auditoria de diff pelo

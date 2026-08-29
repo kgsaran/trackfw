@@ -4,6 +4,7 @@
 
 ## Índice
 
+- [barrier-crlf-divergencia-node-regex-2026-08-29](barrier-crlf-divergencia-node-regex-2026-08-29.md) — CRLF: `.` do JS exclui `\r` e o do RE2 inclui; roadmap do Windows fica ilegível no CLI Node
 - [barrier-trust-check-fail-open-em-tmpdir-simbolico-2026-08-29](barrier-trust-check-fail-open-em-tmpdir-simbolico-2026-08-29.md) — NÃO CORRIGIDO: `roadmapTrustForGates` cai em fail-open (executa gates de verdade) quando o sandbox vive sob `$TMPDIR` com componente simbólico (macOS)
 - [update-segue-symlink-e-escreve-fora-do-projeto-2026-08-28](update-segue-symlink-e-escreve-fora-do-projeto-2026-08-28.md) — `update`/`discover` seguiam symlink em `.github/workflows/`; corrigido com `lstat` + recusa
 - [barrier-so-casa-cabecalho-de-aceite-em-portugues-2026-08-28](barrier-so-casa-cabecalho-de-aceite-em-portugues-2026-08-28.md) — NÃO CORRIGIDO: todo roadmap gerado pelo `roadmap new` é reprovado pelo `barrier`
