@@ -505,3 +505,611 @@ def test_is_valid_wave_label_tabela_completa():
         assert not _is_valid_wave_label(lbl), (
             f"_is_valid_wave_label({lbl!r}) deve retornar False (rótulo inválido per contrato)"
         )
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# _status_is_complete — vocabulário por primeiro token (ADR decisão 3/4/8,
+# AC8/AC9/AC14)
+# ────────────────────────────────────────────────────────────────────────────
+
+def test_status_is_complete_formas_aceitas():
+    """Cobre as seis formas aceitas pinadas pelo ADR, incluindo as duas com
+    sufixo que hoje passam só porque o casamento é substring (48 ocorrências
+    no corpus) — precisam continuar passando sob primeiro-token."""
+    from trackfw.commands.barrier import _status_is_complete
+
+    aceitos = [
+        "✅",
+        "✅ Concluído",
+        "✅ Concluído · **Agente:** `apolo-tf`",
+        "✅ concluído (auditado 2026-08-02)",
+        "done",
+        "Concluído",
+        "DONE",
+        "concluido",
+        "done\t· extra",  # tab após o marcador é separador válido
+        "done\u00a0· extra",  # NBSP (U+00A0) após o marcador é separador válido
+        "✅️",  # VS16 (U+FE0F) apresentação de emoji estilo texto — a única exceção Mn (ADR decisão 9)
+    ]
+    for marker in aceitos:
+        assert _status_is_complete(marker), f"_status_is_complete({marker!r}) deveria ser True"
+
+
+def test_status_is_complete_formas_rejeitadas():
+    """AC9 falsificado na direção oposta — cada caso é um vetor nomeado
+    explicitamente pelo modelo de ameaça da Wave 0. Ampliar o vocabulário sem
+    trocar contains()->primeiro-token faria os quatro primeiros passarem
+    (vault/notes/adr-status-substring-livre-falso-positivo-2026-08-01.md)."""
+    from trackfw.commands.barrier import _status_is_complete
+
+    rejeitados = [
+        "não done",
+        "pending (era done)",
+        "notdone",
+        "done-not-really",
+        "⬜ Pendente",
+        "🔄 Em andamento",
+        "❌ Bloqueado",
+        "⬜ Pendente ✅",  # AC14 — posição importa; hoje (contains) isso passa em produção
+        "`done`",  # marcador dentro de código inline — as crases grudam no token
+        "\u200bdone",  # espaço de largura zero antes do token — não é whitespace, gruda
+        "",
+        "   ",
+        "d᷀one",  # AC15 (ADR decisão 9) — marca combinante (U+1DC0) no primeiro token, rejeitada, não dobrada
+        "do᷀ne",  # AC15 — mesma marca, em outro codepoint do token
+        "done᷀",  # AC15 — mesma marca, ao final do token
+        "✅᷀",  # AC15 — marca combinante sobre o próprio marcador de emoji, ainda rejeitada
+    ]
+    for marker in rejeitados:
+        assert not _status_is_complete(marker), f"_status_is_complete({marker!r}) deveria ser False"
+
+
+def test_acceptance_header_re_aceita_ingles_e_portugues():
+    """AC1/AC2/AC3: o cabeçalho canônico em inglês e o em português devem
+    casar, ambos ancorados."""
+    from trackfw.commands.barrier import _ACCEPTANCE_HEADER_RE
+
+    aceitos = [
+        "**Acceptance criteria:**",
+        "**Critérios de aceite:**",
+        "**Criterios de aceite:**",
+    ]
+    for line in aceitos:
+        assert _ACCEPTANCE_HEADER_RE.match(line), f"esperava casar {line!r}"
+
+    # A âncora é o discriminante: citar o cabeçalho em prosa NÃO deve casar.
+    rejeitados = [
+        "o cabeçalho é **Acceptance criteria:**",
+        "> **Critérios de aceite:**",
+        "prosa citando **Acceptance criteria:** no meio da frase",
+    ]
+    for line in rejeitados:
+        assert not _ACCEPTANCE_HEADER_RE.match(line), f"esperava NÃO casar {line!r} (âncora deve rejeitar citação no meio da linha)"
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Consciência de cerca de código (ADR decisão 7, AC13) — _find_mls/_ml_status/
+# _ml_acceptance devem ignorar conteúdo dentro de cercas ```. Reproduz
+# forged.md e forged3.md do resultado do ML-0A, na íntegra.
+# ────────────────────────────────────────────────────────────────────────────
+
+def test_fence_awareness_status_dentro_de_cerca_e_ignorado():
+    """forged.md: um exemplo cercado citando "**Status:** done" não pode
+    sombrear o "**Status:** pending" real fora da cerca."""
+    from trackfw.commands.barrier import _fence_mask, _find_mls, _ml_status, _status_is_complete
+
+    lines = [
+        "### ML-1A — probe",
+        "Example of the bug we are documenting:",
+        "```",
+        "**Status:** done",
+        "```",
+        "**Status:** pending",
+    ]
+    fenced = _fence_mask(lines)
+    mls = _find_mls(lines, fenced, 0, len(lines))
+    assert len(mls) == 1
+    complete, marker = _ml_status(lines, fenced, mls[0]["start"], mls[0]["end"])
+    assert marker == "pending", "esperava o status real, não cercado"
+    assert not complete, "o \"done\" cercado não pode vazar para o status real"
+    assert not _status_is_complete(marker)
+
+
+def test_fence_awareness_bloco_de_aceite_dentro_de_cerca_e_ignorado():
+    """forged3.md: um exemplo cercado citando "**Critérios de aceite:**" com
+    "- [x]" não pode ser lido como o bloco de aceite real do ML quando não há
+    bloco real fora dela."""
+    from trackfw.commands.barrier import _fence_mask, _find_mls, _ml_acceptance
+
+    lines = [
+        "### ML-1A — probe",
+        "Example of the bug we are documenting:",
+        "```",
+        "**Critérios de aceite:**",
+        "- [x] fake evidence, nothing built",
+        "```",
+        "**Status:** ✅",
+    ]
+    fenced = _fence_mask(lines)
+    mls = _find_mls(lines, fenced, 0, len(lines))
+    assert len(mls) == 1
+    block = _ml_acceptance(lines, fenced, mls[0]["start"], mls[0]["end"])
+    assert block is None, "o bloco de aceite citado dentro da cerca não pode contar como evidência real"
+
+
+def test_fence_awareness_cabecalho_ml_dentro_de_cerca_nao_vira_ml_fantasma():
+    """AC13-b: um cabeçalho "### ML-XX" dentro de uma cerca não pode ser
+    detectado como um ML real. Reproduzido ao vivo contra o binário 7.3.0
+    (ADR: "### ML-9Z ... prosa; o barrier reporta 'ML-9Z: not complete'")."""
+    from trackfw.commands.barrier import _fence_mask, _find_mls
+
+    lines = [
+        "## Wave 1 — Foo",
+        "### ML-1A — Real ML",
+        "**Status:** ✅",
+        "**Critérios de aceite:**",
+        "- [x] real criterion",
+        "",
+        "Example of a malformed heading inside a fence, cited as documentation:",
+        "```markdown",
+        "### ML-9Z — phantom, must not be detected",
+        "**Status:** ⬜ Pendente",
+        "```",
+    ]
+    fenced = _fence_mask(lines)
+    mls = _find_mls(lines, fenced, 0, len(lines))
+    assert len(mls) == 1, f"esperava 1 ML (o ML-9Z cercado não pode ser detectado), got {[m['id'] for m in mls]}"
+    assert mls[0]["id"] == "ML-1A"
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Regressões end-to-end com o CLI real (AC1/AC12, AC13)
+# ────────────────────────────────────────────────────────────────────────────
+
+def _write_roadmap(dir_: Path, content: str, filename: str = "ROADMAP-regression.md") -> None:
+    (dir_ / f"docs/roadmaps/wip/{filename}").write_text(content, encoding="utf-8")
+
+
+def _setup_regression_dir() -> Path:
+    dir_ = Path(tempfile.mkdtemp(prefix="tw-barrier-regression-"))
+    for d in (
+        "docs/roadmaps/wip", "docs/roadmaps/backlog", "docs/roadmaps/blocked",
+        "docs/roadmaps/done", "docs/roadmaps/abandoned", "docs/req", "docs/adr",
+    ):
+        (dir_ / d).mkdir(parents=True, exist_ok=True)
+    return dir_
+
+
+def test_barrier_cli_cabecalho_ingles_e_status_por_palavra_passam_e2e():
+    """Regressão ponta a ponta AC1/AC12: um roadmap escrito exatamente como o
+    `roadmap new` escreve hoje (cabeçalho de aceite em inglês, status por
+    palavra) deve passar mls_complete e acceptance_evidence com o binário
+    real, sem editar o cabeçalho à mão."""
+    dir_ = _setup_regression_dir()
+    content = (
+        "# Roadmap: English dialect fixture\n\n"
+        "REQ: REQ-2026-08-29-barrier-fixture\n\n"
+        "## Acceptance Criteria\n- [x] fixture roadmap-level criterion\n\n"
+        "## Wave 1 — Fixture Wave\n> Dependencies: none\n\n"
+        "### ML-1A — Fixture ML\n"
+        "**Status:** done\n"
+        "**Acceptance criteria:**\n"
+        "- [x] build passes\n"
+    )
+    _write_roadmap(dir_, content)
+    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-regression", "--wave", "1", "--json")
+    assert code == 0, f"stdout={stdout} stderr={stderr}"
+    doc = json.loads(stdout)
+    checks = {c["name"]: c for c in doc["checks"]}
+    assert checks["mls_complete"]["status"] == "passed", checks["mls_complete"]
+    assert checks["acceptance_evidence"]["status"] == "passed", checks["acceptance_evidence"]
+
+
+def test_barrier_cli_conteudo_forjado_em_cerca_nao_libera_wave_e2e():
+    """Regressão ponta a ponta para ADR decisão 7 (AC13): uma wave cujo único
+    ML tem o status real, não cercado, "pending" (não concluído) e o único
+    bloco de aceite cercado (forjado) deve continuar bloqueada no binário
+    real — o "done" cercado e o "- [x]" cercado não podem vazar para
+    mls_complete / acceptance_evidence."""
+    dir_ = _setup_regression_dir()
+    content = (
+        "# Roadmap: Forged fence fixture\n\n"
+        "REQ: REQ-2026-08-29-barrier-fixture\n\n"
+        "## Acceptance Criteria\n- [x] fixture roadmap-level criterion\n\n"
+        "## Wave 1 — Fixture Wave\n> Dependencies: none\n\n"
+        "### ML-1A — Fixture ML\n"
+        "Example of the bug we are documenting:\n"
+        "```\n"
+        "**Status:** done\n"
+        "**Critérios de aceite:**\n"
+        "- [x] fake evidence, nothing built\n"
+        "```\n"
+        "**Status:** pending\n"
+    )
+    _write_roadmap(dir_, content)
+    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-regression", "--wave", "1", "--json")
+    assert code == 1, f"esperava exit 1 (blocked), stdout={stdout} stderr={stderr}"
+    doc = json.loads(stdout)
+    checks = {c["name"]: c for c in doc["checks"]}
+    assert checks["mls_complete"]["status"] == "blocked"
+    assert checks["mls_complete"]["failures"] == ["ML-1A: not complete (status: pending)"]
+    assert checks["acceptance_evidence"]["status"] == "blocked"
+    assert checks["acceptance_evidence"]["failures"] == ["ML-1A: no acceptance block"]
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# ML-1B achado 1 — _fence_mask deve reconhecer ~~~ e cercas de 4+ crases, por
+# CommonMark (3+ do MESMO caractere, fechada por uma corrida do mesmo
+# caractere com comprimento >= o da abertura).
+# ────────────────────────────────────────────────────────────────────────────
+
+def test_fence_mask_tio_de_3_mais_masca_igual_a_crases():
+    """~~~ (3+ tis) deve mascarar exatamente como ``` (ML-1B achado 1)."""
+    from trackfw.commands.barrier import _fence_mask
+
+    lines = ["before", "~~~", "inside", "~~~", "after"]
+    assert _fence_mask(lines) == [False, False, True, False, False]
+
+
+def test_fence_mask_4_crases_masca_interior_com_cerca_de_3_aninhada():
+    """Uma cerca de 4 crases mascara o interior inteiro, inclusive um bloco
+    de 3 crases aninhado (ML-1B achado 1)."""
+    from trackfw.commands.barrier import _fence_mask
+
+    lines = [
+        "before",
+        "````",
+        "outer",
+        "```",
+        "nested (corrida mais curta, deve continuar mascarada como interior)",
+        "```",
+        "still outer",
+        "````",
+        "after",
+    ]
+    assert _fence_mask(lines) == [False, False, True, True, True, True, True, False, False]
+
+
+def test_fence_mask_fechamento_exige_mesmo_caractere_e_comprimento_maior_ou_igual():
+    """Uma linha ``` dentro de uma cerca ~~~ não a fecha (caractere diferente)."""
+    from trackfw.commands.barrier import _fence_mask
+
+    lines = ["~~~", "```", "still inside", "~~~"]
+    assert _fence_mask(lines) == [False, True, True, False]
+
+
+def test_fence_mask_fechamento_mais_longo_do_mesmo_caractere_fecha():
+    """Uma corrida de fechamento MAIS LONGA do mesmo caractere fecha a cerca
+    (comprimento >= o de abertura, per CommonMark)."""
+    from trackfw.commands.barrier import _fence_mask
+
+    lines = ["before", "```", "inside", "`````", "after"]
+    assert _fence_mask(lines) == [False, False, True, False, False]
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# ML-1B achado 2 — marcadores (status, cabeçalho de aceite, itens de
+# critério, cabeçalho de gates) devem ser casados contra a linha CRUA
+# (coluna 0), nunca uma linha stripada por linha — alinhando o Python (que já
+# exige coluna 0 via `^`) e garantindo que o Node também exija.
+# ────────────────────────────────────────────────────────────────────────────
+
+def test_ml_status_linha_indentada_nao_e_reconhecida():
+    from trackfw.commands.barrier import _fence_mask, _find_mls, _ml_status
+
+    lines = ["### ML-1A — Real ML", "  **Status:** done"]
+    fenced = _fence_mask(lines)
+    mls = _find_mls(lines, fenced, 0, len(lines))
+    assert len(mls) == 1
+    complete, marker = _ml_status(lines, fenced, mls[0]["start"], mls[0]["end"])
+    assert complete is False
+    assert marker is None
+
+
+def test_ml_acceptance_cabecalho_e_criterios_indentados_nao_sao_reconhecidos():
+    from trackfw.commands.barrier import _fence_mask, _find_mls, _ml_acceptance
+
+    lines = [
+        "### ML-1A — Real ML",
+        "  **Critérios de aceite:**",
+        "  - [x] indented criterion",
+    ]
+    fenced = _fence_mask(lines)
+    mls = _find_mls(lines, fenced, 0, len(lines))
+    assert len(mls) == 1
+    block = _ml_acceptance(lines, fenced, mls[0]["start"], mls[0]["end"])
+    assert block is None
+
+
+def test_barrier_cli_cerca_de_til_forjada_nao_libera_wave_e2e():
+    """Teste de evasão (ML-1B): um ML fantasma escondido dentro de uma cerca
+    ~~~ não pode existir nem contar como conteúdo real."""
+    dir_ = _setup_regression_dir()
+    content = (
+        "# Roadmap: Tilde fence fixture\n\n"
+        "REQ: REQ-2026-08-29-barrier-fixture\n\n"
+        "## Acceptance Criteria\n- [x] fixture roadmap-level criterion\n\n"
+        "## Wave 1 — Fixture Wave\n> Dependencies: none\n\n"
+        "### ML-1A — Real ML\n"
+        "**Status:** ⬜ Pendente\n"
+        "**Critérios de aceite:**\n"
+        "- [ ] real unmet criterion\n\n"
+        "Example of a phantom ML hidden inside a tilde fence:\n"
+        "~~~\n"
+        "### ML-9Z — phantom\n"
+        "**Status:** done\n"
+        "**Critérios de aceite:**\n"
+        "- [x] fake\n"
+        "~~~\n"
+    )
+    _write_roadmap(dir_, content)
+    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-regression", "--wave", "1", "--json")
+    assert code == 1, f"esperava exit 1 (blocked), stdout={stdout} stderr={stderr}"
+    doc = json.loads(stdout)
+    checks = {c["name"]: c for c in doc["checks"]}
+    assert checks["mls_complete"]["failures"] == ["ML-1A: not complete (status: ⬜ Pendente)"], \
+        "o ML-9Z fantasma não pode existir"
+
+
+def test_barrier_cli_cerca_de_4_crases_com_bloco_de_3_aninhado_nao_libera_wave_e2e():
+    """Teste de evasão (ML-1B): um ML fantasma aninhado em um bloco de 3
+    crases dentro de uma cerca de 4 crases não pode existir nem contar."""
+    dir_ = _setup_regression_dir()
+    content = (
+        "# Roadmap: Nested fence fixture\n\n"
+        "REQ: REQ-2026-08-29-barrier-fixture\n\n"
+        "## Acceptance Criteria\n- [x] fixture roadmap-level criterion\n\n"
+        "## Wave 1 — Fixture Wave\n> Dependencies: none\n\n"
+        "### ML-1A — Real ML\n"
+        "**Status:** ⬜ Pendente\n"
+        "**Critérios de aceite:**\n"
+        "- [ ] real unmet criterion\n\n"
+        "Example nesting a 3-backtick fence inside a 4-backtick fence:\n"
+        "````\n"
+        "outer fence, then a nested doc block:\n"
+        "```\n"
+        "### ML-9Z — nested phantom\n"
+        "**Status:** done\n"
+        "**Critérios de aceite:**\n"
+        "- [x] fake\n"
+        "```\n"
+        "still inside the outer fence\n"
+        "````\n"
+    )
+    _write_roadmap(dir_, content)
+    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-regression", "--wave", "1", "--json")
+    assert code == 1, f"esperava exit 1 (blocked), stdout={stdout} stderr={stderr}"
+    doc = json.loads(stdout)
+    checks = {c["name"]: c for c in doc["checks"]}
+    assert checks["mls_complete"]["failures"] == ["ML-1A: not complete (status: ⬜ Pendente)"], \
+        "o ML-9Z fantasma não pode existir"
+
+
+def test_barrier_cli_marcadores_indentados_nao_reconhecidos_e2e():
+    """Regressão ponta a ponta (ML-1B achado 2): marcadores indentados por 2
+    espaços não são reconhecidos — o veredito é o estrito (bloqueado)."""
+    dir_ = _setup_regression_dir()
+    content = (
+        "# Roadmap: Indented marker fixture\n\n"
+        "REQ: REQ-2026-08-29-barrier-fixture\n\n"
+        "## Acceptance Criteria\n- [x] fixture roadmap-level criterion\n\n"
+        "## Wave 1 — Fixture Wave\n> Dependencies: none\n\n"
+        "### ML-1A — Real ML\n"
+        "  **Status:** done\n"
+        "  **Critérios de aceite:**\n"
+        "  - [x] indented criterion\n"
+    )
+    _write_roadmap(dir_, content)
+    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-regression", "--wave", "1", "--json")
+    assert code == 1, f"esperava exit 1 (blocked), stdout={stdout} stderr={stderr}"
+    doc = json.loads(stdout)
+    checks = {c["name"]: c for c in doc["checks"]}
+    assert checks["mls_complete"]["status"] == "blocked"
+    assert checks["mls_complete"]["failures"] == ["ML-1A: not complete (status: missing)"]
+    assert checks["acceptance_evidence"]["status"] == "blocked"
+    assert checks["acceptance_evidence"]["failures"] == ["ML-1A: no acceptance block"]
+
+
+def test_find_gates_cabecalho_e_casamento_por_prefixo():
+    """_GATES_HEADER_RE já é casamento por PREFIXO (não igualdade de linha
+    inteira) — um cabeçalho seguido de prosa na mesma linha continua sendo
+    reconhecido. Fecha a cobertura de paridade para o defeito que o Node
+    introduziu brevemente ao remover seu .trim() por linha (ML-1B)."""
+    from trackfw.commands.barrier import _find_gates
+
+    lines = [
+        "## Wave 1 — X",
+        "**Gates da wave:** (obrigatórios)",
+        "```bash",
+        "make build",
+        "```",
+        "## Wave 2 — Y",
+    ]
+    commands = _find_gates(lines, 0, 5)
+    assert commands == ["make build"]
+
+
+def test_barrier_cli_cabecalho_de_gates_com_prosa_final_ainda_executa_o_gate_e2e():
+    """Regressão ponta a ponta (ML-1B): '**Gates da wave:**' seguido de prosa
+    na mesma linha continua sendo reconhecido — o gate `false` deve rodar e
+    bloquear a wave, não ser silenciosamente ignorado."""
+    dir_ = _setup_regression_dir()
+    content = (
+        "# Roadmap: Gates header prefix fixture\n\n"
+        "REQ: REQ-2026-08-29-barrier-fixture\n\n"
+        "## Acceptance Criteria\n- [x] fixture roadmap-level criterion\n\n"
+        "## Wave 1 — Fixture Wave\n\n"
+        "**Gates da wave:** (obrigatórios)\n"
+        "```bash\n"
+        "false\n"
+        "```\n\n"
+        "### ML-1A — Real ML\n"
+        "**Status:** done\n"
+        "**Critérios de aceite:**\n"
+        "- [x] build passes\n"
+    )
+    _write_roadmap(dir_, content)
+    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-regression", "--wave", "1", "--json")
+    assert code == 1, f"esperava exit 1 (blocked), stdout={stdout} stderr={stderr}"
+    doc = json.loads(stdout)
+    checks = {c["name"]: c for c in doc["checks"]}
+    assert checks["gates"]["status"] == "blocked", checks["gates"]
+    assert checks["gates"]["commands"] == ["false"]
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# ML-3C — roadmaps CRLF. Achado em auditoria: um roadmap salvo com fins de
+# linha CRLF reportava mls_complete: passed em Go e Python, mas blocked
+# ("status: missing") em Node — o "." do regex de JS exclui "\r" (é um
+# LineTerminator no ECMAScript), então `/^\*\*Status:\*\*(.*)$/` nunca casava
+# com "**Status:** ✅ Concluído\r". Corrigido normalizando CRLF uma única vez,
+# no limite onde o arquivo vira lista de linhas (_split_roadmap_lines), em vez
+# de remendar cada regex de marcador.
+#
+# Python não dependia dessa normalização para passar um roadmap CRLF de ponta
+# a ponta — `open(path, "r", encoding="utf-8")` já roda a tradução universal
+# de newlines (newline=None por padrão) antes do content.split("\n"). A
+# normalização explícita em _split_roadmap_lines é defensiva (mantém os três
+# runtimes simétricos), não é o que faz este runtime passar hoje — por isso os
+# testes abaixo exercitam o comportamento observável do CLI (que já
+# funcionava), e o teste unitário isolado de _split_roadmap_lines documenta o
+# contrato da função em si.
+# ────────────────────────────────────────────────────────────────────────────
+
+def test_split_roadmap_lines_remove_apenas_o_r_final_de_cada_linha():
+    from trackfw.commands.barrier import _split_roadmap_lines
+
+    got = _split_roadmap_lines("  **Status:** done\r\n**Status:** done\r\nlast\r")
+    assert got == ["  **Status:** done", "**Status:** done", "last"]
+
+
+def test_barrier_cli_crlf_roadmap_com_ml_completo_passa_e2e():
+    dir_ = _setup_regression_dir()
+    content = "\r\n".join([
+        "# Roadmap: CRLF Fixture",
+        "",
+        "REQ: REQ-2026-08-29-barrier-fixture",
+        "",
+        "## Acceptance Criteria",
+        "- [x] fixture roadmap-level criterion",
+        "",
+        "## Wave 1 — Fixture Wave",
+        "",
+        "### ML-1A — Real ML",
+        "**Status:** ✅ Concluído",
+        "**Critérios de aceite:**",
+        "- [x] real met criterion",
+        "",
+    ])
+    _write_roadmap(dir_, content)
+    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-regression", "--wave", "1", "--json")
+    assert code == 0, f"esperava exit 0 (passed), stdout={stdout} stderr={stderr}"
+    doc = json.loads(stdout)
+    assert doc["status"] == "passed"
+    checks = {c["name"]: c for c in doc["checks"]}
+    assert checks["mls_complete"]["status"] == "passed"
+    assert checks["mls_complete"]["failures"] == []
+
+
+def test_barrier_cli_crlf_roadmap_com_ml_pendente_continua_bloqueando_e2e():
+    """Prova que a correção não é permissiva: um ML genuinamente pendente,
+    num roadmap CRLF, continua bloqueando."""
+    dir_ = _setup_regression_dir()
+    content = "\r\n".join([
+        "# Roadmap: CRLF Fixture",
+        "",
+        "REQ: REQ-2026-08-29-barrier-fixture",
+        "",
+        "## Acceptance Criteria",
+        "- [x] fixture roadmap-level criterion",
+        "",
+        "## Wave 1 — Fixture Wave",
+        "",
+        "### ML-1A — Real ML",
+        "**Status:** ⬜ Pendente",
+        "**Critérios de aceite:**",
+        "- [ ] real unmet criterion",
+        "",
+    ])
+    _write_roadmap(dir_, content)
+    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-regression", "--wave", "1", "--json")
+    assert code == 1, f"esperava exit 1 (blocked), stdout={stdout} stderr={stderr}"
+    doc = json.loads(stdout)
+    checks = {c["name"]: c for c in doc["checks"]}
+    assert checks["mls_complete"]["failures"] == ["ML-1A: not complete (status: ⬜ Pendente)"]
+
+
+def test_barrier_cli_crlf_roadmap_cerca_e_marcador_indentado_continuam_corretos_e2e():
+    """Roadmap CRLF combinando um ML fantasma dentro de cerca (deve ficar
+    mascarado) e um marcador indentado (ML-1B — não pode ser reconhecido)."""
+    dir_ = _setup_regression_dir()
+    content = "\r\n".join([
+        "# Roadmap: CRLF Fixture",
+        "",
+        "REQ: REQ-2026-08-29-barrier-fixture",
+        "",
+        "## Acceptance Criteria",
+        "- [x] fixture roadmap-level criterion",
+        "",
+        "## Wave 1 — Fixture Wave",
+        "",
+        "### ML-1A — Real ML",
+        "**Status:** ⬜ Pendente",
+        "**Critérios de aceite:**",
+        "- [ ] real unmet criterion",
+        "",
+        "Exemplo de ML fantasma dentro de uma cerca:",
+        "```",
+        "### ML-9Z — phantom",
+        "**Status:** done",
+        "**Critérios de aceite:**",
+        "- [x] fake",
+        "```",
+        "",
+        "### ML-1B — marcador indentado não pode contar",
+        "  **Status:** done",
+        "  **Critérios de aceite:**",
+        "  - [x] indented criterion",
+        "",
+    ])
+    _write_roadmap(dir_, content)
+    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-regression", "--wave", "1", "--json")
+    assert code == 1, f"esperava exit 1 (blocked), stdout={stdout} stderr={stderr}"
+    doc = json.loads(stdout)
+    checks = {c["name"]: c for c in doc["checks"]}
+    assert checks["mls_complete"]["failures"] == [
+        "ML-1A: not complete (status: ⬜ Pendente)",
+        "ML-1B: not complete (status: missing)",
+    ]
+
+
+def test_barrier_cli_crlf_roadmap_gates_da_wave_e_reconhecido_e_comando_roda_e2e():
+    dir_ = _setup_regression_dir()
+    content = "\r\n".join([
+        "# Roadmap: CRLF Fixture",
+        "",
+        "REQ: REQ-2026-08-29-barrier-fixture",
+        "",
+        "## Acceptance Criteria",
+        "- [x] fixture roadmap-level criterion",
+        "",
+        "## Wave 1 — Fixture Wave",
+        "",
+        "**Gates da wave:**",
+        "```bash",
+        "false",
+        "```",
+        "",
+        "### ML-1A — Real ML",
+        "**Status:** done",
+        "**Critérios de aceite:**",
+        "- [x] build passes",
+        "",
+    ])
+    _write_roadmap(dir_, content)
+    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-regression", "--wave", "1", "--json")
+    assert code == 1, f"esperava exit 1 (blocked pelo gate), stdout={stdout} stderr={stderr}"
+    doc = json.loads(stdout)
+    checks = {c["name"]: c for c in doc["checks"]}
+    assert checks["gates"]["status"] == "blocked", checks["gates"]
+    assert checks["gates"]["commands"] == ["false"]

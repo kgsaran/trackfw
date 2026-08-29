@@ -5,6 +5,17 @@ const config = require('../config')
 const { localDateISO } = require('./date')
 const { resolveReqFiles } = require('../validator/index.js')
 
+// STATUS_LEGEND teaches the vocabulary the `barrier` parser accepts for "**Status:**"
+// (AC11, ADR decision 5): the canonical form the template now writes (⬜ Pendente) plus the
+// other three states. Placed once, right before the first wave, so it is close to the first
+// place a "**Status:**" line appears — not repeated per-ML (would clutter) and not left for
+// the end (nobody reads that far). Byte-identical across the 3 CLIs
+// (gate: scripts/check-artifact-parity.sh).
+const STATUS_LEGEND = `## Status Legend
+⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
+
+`
+
 // wave0Block — "## Wave 0 — Threat Model" section prepended to every generated roadmap, before
 // the first implementation wave (AC1, AC12). Byte-identical to internal/generators/roadmap.go's
 // wave0Block/wave0GateFence and to pypi/trackfw/generators/roadmap.py's WAVE0_BLOCK (gate:
@@ -17,11 +28,11 @@ const { resolveReqFiles } = require('../validator/index.js')
 //
 // The ML is always ML-0A, never ML-1A — newRoadmapFromReq labels MLs derived from REQ acceptance
 // criteria "ML-1A", "ML-1B", ... starting at the first criterion.
-const WAVE0_BLOCK = `## Wave 0 — Threat Model
+const WAVE0_BLOCK = STATUS_LEGEND + `## Wave 0 — Threat Model
 > Dependencies: none. Blocks all implementation.
 
 ### ML-0A — Threat model for this roadmap
-**Status:** pending
+**Status:** ⬜ Pendente
 **Files affected:**
 **Actions:**
 1. Enumeration completeness — is the list of surfaces in this roadmap complete? Name what is missing, or show the list is closed. Do not limit the search to the files already named by the REQ — before declaring the list closed, search the repository for other places that emit the same artifact or the same pattern (for example, grep for the literal the final artifact contains).
@@ -489,7 +500,7 @@ ${WAVE0_BLOCK}## Wave 1 — <name> (parallel MLs)
 > Dependencies: none
 
 ### ML-1A — ${title}
-**Status:** pending
+**Status:** ⬜ Pendente
 **Files affected:**
 **Actions:**
 **Acceptance criteria:**
@@ -552,7 +563,7 @@ function newRoadmapFromReq(reqPath) {
     const mlLabel = `ML-1${String.fromCharCode(65 + i)}`
     const crit = criteria[i]
     mlLines.push(`\n### ${mlLabel} — ${crit}`)
-    mlLines.push('**Status:** pending')
+    mlLines.push('**Status:** ⬜ Pendente')
     mlLines.push('**Files affected:**')
     mlLines.push('**Actions:**')
     mlLines.push('**Acceptance criteria:**')

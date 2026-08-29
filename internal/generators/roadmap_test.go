@@ -66,6 +66,53 @@ func TestNewRoadmap_CreatesFile(t *testing.T) {
 	}
 }
 
+// TestNewRoadmap_StatusLegendAndCanonicalForm — AC11: o template escreve a forma canônica de
+// status (⬜ Pendente) e a legenda dos quatro estados, exatamente uma vez; a forma antiga
+// "pending" não aparece em lugar nenhum. Falsificação: um regresso que reintroduza "pending" ou
+// duplique/remova a legenda deve reprovar este teste.
+func TestNewRoadmap_StatusLegendAndCanonicalForm(t *testing.T) {
+	dir := t.TempDir()
+	chdirRoadmap(t, dir)
+
+	if err := NewRoadmap("Legend Check"); err != nil {
+		t.Fatalf("NewRoadmap() erro: %v", err)
+	}
+
+	matches, err := filepath.Glob("docs/roadmaps/backlog/*.md")
+	if err != nil {
+		t.Fatalf("Glob erro: %v", err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("esperado 1 arquivo em backlog, obteve %d: %v", len(matches), matches)
+	}
+
+	content, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	body := string(content)
+
+	const legendLine = "⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado"
+	if n := strings.Count(body, legendLine); n != 1 {
+		t.Errorf("legenda deveria aparecer exatamente 1 vez, obteve %d:\n%s", n, body)
+	}
+	if !strings.Contains(body, "## Status Legend") {
+		t.Errorf("arquivo deveria conter o heading '## Status Legend', obteve:\n%s", body)
+	}
+	if !strings.Contains(body, "**Status:** ⬜ Pendente") {
+		t.Errorf("arquivo deveria conter '**Status:** ⬜ Pendente', obteve:\n%s", body)
+	}
+	if strings.Contains(body, "**Status:** pending") {
+		t.Errorf("forma antiga '**Status:** pending' não deveria aparecer, obteve:\n%s", body)
+	}
+	if !strings.Contains(body, "**Acceptance criteria:**") {
+		t.Errorf("'**Acceptance criteria:**' (forma canônica pelo ADR) deveria continuar presente, obteve:\n%s", body)
+	}
+	if !strings.Contains(body, "**Gates da wave:**") {
+		t.Errorf("'**Gates da wave:**' não deveria ter sido tocado, obteve:\n%s", body)
+	}
+}
+
 // mkRoadmapDirs cria a estrutura padrão de diretórios de roadmap no diretório corrente.
 func mkRoadmapDirs(t *testing.T) {
 	t.Helper()
@@ -593,6 +640,56 @@ func TestNewRoadmapFromREQ_SingleGateBlockFromLegitREQ(t *testing.T) {
 	// O comando forjado NÃO deve aparecer no roadmap
 	if strings.Contains(body, "PWNED_TEST") {
 		t.Errorf("roadmap NÃO deve conter 'PWNED_TEST':\n%s", body)
+	}
+}
+
+// TestNewRoadmapFromREQ_StatusLegendAndCanonicalForm — AC11 no caminho --from-req: os MLs
+// derivados dos critérios de aceite (ML-1A, ML-1B, ...) também escrevem a forma canônica, e a
+// legenda aparece exatamente uma vez mesmo com múltiplos MLs (ML-0A + N MLs derivados). Este é o
+// caminho de construção de string diferente (mlSection.WriteString em loop) do caminho "new"
+// simples — divergiu entre runtimes no ciclo anterior, por isso testado à parte.
+func TestNewRoadmapFromREQ_StatusLegendAndCanonicalForm(t *testing.T) {
+	dir := t.TempDir()
+	chdirRoadmap(t, dir)
+
+	reqContent := strings.Join([]string{
+		"---",
+		"status: Open",
+		"---",
+		"",
+		"# REQ: legend from req",
+		"",
+		"## Acceptance Criteria",
+		"- [ ] AC1 — primeiro criterio",
+		"- [ ] AC2 — segundo criterio",
+		"",
+	}, "\n")
+	reqPath := dir + "/REQ-2026-01-01-legend-from-req.md"
+	if err := os.WriteFile(reqPath, []byte(reqContent), 0644); err != nil {
+		t.Fatalf("WriteFile REQ: %v", err)
+	}
+
+	if err := NewRoadmapFromREQ(reqPath); err != nil {
+		t.Fatalf("NewRoadmapFromREQ() inesperado: %v", err)
+	}
+
+	matches, err := filepath.Glob("docs/roadmaps/backlog/*.md")
+	if err != nil || len(matches) != 1 {
+		t.Fatalf("esperado 1 roadmap criado, obteve %d: %v", len(matches), err)
+	}
+	content, _ := os.ReadFile(matches[0])
+	body := string(content)
+
+	const legendLine = "⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado"
+	if n := strings.Count(body, legendLine); n != 1 {
+		t.Errorf("legenda deveria aparecer exatamente 1 vez mesmo com 2 MLs derivados, obteve %d:\n%s", n, body)
+	}
+	// ML-0A (Wave 0) + ML-1A + ML-1B derivados dos 2 critérios = 3 ocorrências da forma canônica.
+	if n := strings.Count(body, "**Status:** ⬜ Pendente"); n != 3 {
+		t.Errorf("esperava 3 ocorrências de '**Status:** ⬜ Pendente' (ML-0A, ML-1A, ML-1B), obteve %d:\n%s", n, body)
+	}
+	if strings.Contains(body, "**Status:** pending") {
+		t.Errorf("forma antiga '**Status:** pending' não deveria aparecer, obteve:\n%s", body)
 	}
 }
 

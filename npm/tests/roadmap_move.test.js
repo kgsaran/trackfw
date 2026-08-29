@@ -10,7 +10,7 @@ const os = require('os')
 const path = require('path')
 
 const config = require('../src/config/index.js')
-const { listRoadmaps, showRoadmap, moveRoadmap, rewriteRoadmapStatus, newRoadmap } = require('../src/generators/roadmap')
+const { listRoadmaps, showRoadmap, moveRoadmap, rewriteRoadmapStatus, newRoadmap, newRoadmapFromReq } = require('../src/generators/roadmap')
 const { validateFolderStatusCoherence } = require('../src/validator/index.js')
 
 let passed = 0, failed = 0
@@ -814,6 +814,65 @@ test('syncReqReferences — validateRefTargetsExist: zero violações ref_target
     const refViolations = violations.filter(v => v.includes('REQ-vsync.md') && v.includes('ref_targets_exist') || (v.includes('REQ-vsync') && v.includes('does not exist')))
     assert.strictEqual(refViolations.length, 0,
       `não deve haver violação ref_targets_exist para REQ-vsync.md; violations: ${JSON.stringify(violations)}`)
+  })
+})
+
+// ─── ML-2A: legenda de status e forma canônica (AC11) ─────────────────────────
+
+test('newRoadmap — escreve a forma canônica de status e a legenda exatamente 1 vez', () => {
+  withRoadmapDir((tmp, roadmapDir) => {
+    mkStateDirs(roadmapDir)
+    newRoadmap('Legend Check Node')
+
+    const files = fs.readdirSync(path.join(roadmapDir, 'backlog')).filter(f => f.endsWith('.md'))
+    assert.strictEqual(files.length, 1, 'deve ter 1 arquivo criado em backlog')
+    const body = fs.readFileSync(path.join(roadmapDir, 'backlog', files[0]), 'utf8')
+
+    const legendLine = '⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado'
+    const legendCount = body.split(legendLine).length - 1
+    assert.strictEqual(legendCount, 1, `legenda deveria aparecer exatamente 1 vez, obteve ${legendCount}:\n${body}`)
+    assert.ok(body.includes('## Status Legend'), `deveria conter o heading '## Status Legend':\n${body}`)
+    assert.ok(body.includes('**Status:** ⬜ Pendente'), `deveria conter '**Status:** ⬜ Pendente':\n${body}`)
+    assert.ok(!body.includes('**Status:** pending'), `forma antiga '**Status:** pending' não deveria aparecer:\n${body}`)
+    assert.ok(body.includes('**Acceptance criteria:**'), `'**Acceptance criteria:**' deveria continuar presente:\n${body}`)
+    assert.ok(body.includes('**Gates da wave:**'), `'**Gates da wave:**' não deveria ter sido tocado:\n${body}`)
+  })
+})
+
+test('newRoadmapFromReq — MLs derivados também escrevem a forma canônica, legenda 1 vez só', () => {
+  withRoadmapDir((tmp, roadmapDir) => {
+    mkStateDirs(roadmapDir)
+    const reqDir = path.join(tmp, 'docs', 'req')
+    fs.mkdirSync(reqDir, { recursive: true })
+    const reqPath = path.join(reqDir, 'REQ-legend-from-req.md')
+    const reqContent = [
+      '---',
+      'status: Open',
+      '---',
+      '',
+      '# REQ: legend from req node',
+      '',
+      '## Acceptance Criteria',
+      '- [ ] AC1 — primeiro criterio',
+      '- [ ] AC2 — segundo criterio',
+      '',
+    ].join('\n')
+    fs.writeFileSync(reqPath, reqContent, 'utf8')
+
+    newRoadmapFromReq(reqPath)
+
+    const files = fs.readdirSync(path.join(roadmapDir, 'backlog')).filter(f => f.endsWith('.md'))
+    assert.strictEqual(files.length, 1, 'deve ter 1 roadmap criado em backlog')
+    const body = fs.readFileSync(path.join(roadmapDir, 'backlog', files[0]), 'utf8')
+
+    const legendLine = '⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado'
+    const legendCount = body.split(legendLine).length - 1
+    assert.strictEqual(legendCount, 1, `legenda deveria aparecer exatamente 1 vez mesmo com 2 MLs derivados, obteve ${legendCount}:\n${body}`)
+
+    // ML-0A (Wave 0) + ML-1A + ML-1B derivados dos 2 critérios = 3 ocorrências da forma canônica.
+    const statusCount = body.split('**Status:** ⬜ Pendente').length - 1
+    assert.strictEqual(statusCount, 3, `esperava 3 ocorrências de '**Status:** ⬜ Pendente' (ML-0A, ML-1A, ML-1B), obteve ${statusCount}:\n${body}`)
+    assert.ok(!body.includes('**Status:** pending'), `forma antiga '**Status:** pending' não deveria aparecer:\n${body}`)
   })
 })
 

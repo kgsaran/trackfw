@@ -136,6 +136,70 @@ class TestGenerateFlat(unittest.TestCase):
         self.assertIn("**Acceptance criteria:**", content)
 
 
+class TestStatusLegendAndCanonicalForm(unittest.TestCase):
+    """AC11: o template escreve a forma canônica de status (⬜ Pendente) e a legenda dos
+    quatro estados. Falsificação: reintroduzir 'pending' ou duplicar/remover a legenda deve
+    reprovar este teste."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        cfg_module.reset()
+
+    def tearDown(self):
+        cfg_module.reset()
+
+    def test_generate_roadmap_legend_and_canonical_status(self):
+        cfg = _make_cfg(self.tmpdir)
+        path = generate_roadmap("Legend Check Python", cfg)
+
+        with open(path, encoding="utf-8") as f:
+            content = f.read()
+
+        legend_line = "⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado"
+        self.assertEqual(
+            content.count(legend_line), 1,
+            f"legenda deveria aparecer exatamente 1 vez, obteve {content.count(legend_line)}:\n{content}",
+        )
+        self.assertIn("## Status Legend", content)
+        self.assertIn("**Status:** ⬜ Pendente", content)
+        self.assertNotIn("**Status:** pending", content)
+        self.assertIn("**Acceptance criteria:**", content)
+        self.assertIn("**Gates da wave:**", content)
+
+    def test_generate_roadmap_from_req_legend_and_canonical_status(self):
+        cfg = _make_cfg(self.tmpdir)
+        req_dir = os.path.join(self.tmpdir, "docs", "req")
+        os.makedirs(req_dir, exist_ok=True)
+        req_path = os.path.join(req_dir, "REQ-legend-from-req.md")
+        with open(req_path, "w", encoding="utf-8") as f:
+            f.write(
+                "---\nstatus: Open\n---\n\n"
+                "# REQ: legend from req python\n\n"
+                "## Acceptance Criteria\n\n"
+                "- [ ] AC1 — primeiro criterio\n"
+                "- [ ] AC2 — segundo criterio\n"
+            )
+
+        path = generate_roadmap_from_req(req_path, cfg)
+
+        with open(path, encoding="utf-8") as f:
+            content = f.read()
+
+        legend_line = "⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado"
+        self.assertEqual(
+            content.count(legend_line), 1,
+            f"legenda deveria aparecer exatamente 1 vez mesmo com 2 MLs derivados, "
+            f"obteve {content.count(legend_line)}:\n{content}",
+        )
+        # ML-0A (Wave 0) + ML-1A + ML-1B derivados dos 2 critérios = 3 ocorrências.
+        self.assertEqual(
+            content.count("**Status:** ⬜ Pendente"), 3,
+            f"esperava 3 ocorrências de '**Status:** ⬜ Pendente' (ML-0A, ML-1A, ML-1B), "
+            f"obteve {content.count('**Status:** ⬜ Pendente')}:\n{content}",
+        )
+        self.assertNotIn("**Status:** pending", content)
+
+
 class TestGenerateByAgent(unittest.TestCase):
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp()

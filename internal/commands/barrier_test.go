@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -125,7 +126,7 @@ func TestParseMLs_MultipleMLsInWave(t *testing.T) {
 		"**Status:** ⬜ Pendente",
 	}, "\n")
 	lines := strings.Split(content, "\n")
-	mls := parseMLs(lines, 0, len(lines))
+	mls := parseMLs(lines, fenceMask(lines), 0, len(lines))
 	if len(mls) != 2 {
 		t.Fatalf("expected 2 MLs, got %d", len(mls))
 	}
@@ -137,13 +138,309 @@ func TestParseMLs_MultipleMLsInWave(t *testing.T) {
 func TestMLStatusMarker_MissingLine(t *testing.T) {
 	content := "### ML-1A — Foo\nno status line here\n"
 	lines := strings.Split(content, "\n")
-	mls := parseMLs(lines, 0, len(lines))
+	mls := parseMLs(lines, fenceMask(lines), 0, len(lines))
 	if len(mls) != 1 {
 		t.Fatalf("expected 1 ML, got %d", len(mls))
 	}
-	_, found := mlStatusMarker(lines, mls[0])
+	_, found := mlStatusMarker(lines, fenceMask(lines), mls[0])
 	if found {
 		t.Fatal("expected found=false when no **Status:** line is present")
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// statusIsComplete — first-token vocabulary (ADR decision 3/4/8, AC8/AC9/AC14).
+// ────────────────────────────────────────────────────────────────────────────
+
+// TestStatusIsComplete_Accepted covers the six accepted forms pinned by the
+// ADR, including the two with a suffix that today pass only because matching
+// is substring-based (48 occurrences in the corpus) — they must keep passing
+// under first-token matching.
+func TestStatusIsComplete_Accepted(t *testing.T) {
+	cases := []string{
+		"✅",
+		"✅ Concluído",
+		"✅ Concluído · **Agente:** `apolo-tf`",
+		"✅ concluído (auditado 2026-08-02)",
+		"done",
+		"Concluído",
+		"DONE",
+		"concluido",
+		"done\t· extra", // tab after the marker is a valid separator per unicode.IsSpace
+		"done · extra",  // NBSP (U+00A0) after the marker is a valid separator
+		"✅️",            // VS16 (U+FE0F) text-style emoji presentation — the single Mn exception (ADR decision 9)
+	}
+	for _, marker := range cases {
+		marker := marker
+		t.Run(marker, func(t *testing.T) {
+			if !statusIsComplete(marker) {
+				t.Errorf("statusIsComplete(%q) = false, want true", marker)
+			}
+		})
+	}
+}
+
+// TestStatusIsComplete_Rejected is AC9 falsified in the opposite direction —
+// each case is a vector the Wave 0 threat model named explicitly. Ampliar o
+// vocabulário sem trocar contains()->first-token faria os quatro primeiros
+// passarem (vault/notes/adr-status-substring-livre-falso-positivo-2026-08-01.md).
+func TestStatusIsComplete_Rejected(t *testing.T) {
+	cases := []string{
+		"não done",
+		"pending (era done)",
+		"notdone",
+		"done-not-really",
+		"⬜ Pendente",
+		"🔄 Em andamento",
+		"❌ Bloqueado",
+		"⬜ Pendente ✅", // AC14 — position matters; today (contains) this passes in prod
+		"`done`",       // marker inside inline code — backticks glue to the token
+		"​done",        // zero-width space before the token — not unicode.IsSpace, stays glued
+		"",
+		"   ",
+		"d᷀one", // AC15 — combining mark (U+1DC0) on the first token, rejected outright, not folded
+		"do᷀ne", // AC15 — same, mark on a different codepoint of the token
+		"done᷀", // AC15 — same, mark trailing the token
+		"✅᷀",    // AC15 — combining mark on the emoji marker itself, still rejected
+	}
+	for _, marker := range cases {
+		marker := marker
+		t.Run(marker, func(t *testing.T) {
+			if statusIsComplete(marker) {
+				t.Errorf("statusIsComplete(%q) = true, want false", marker)
+			}
+		})
+	}
+}
+
+// TestCriteriaHeaderRe_AcceptsEnglishAndPortuguese is AC1/AC2/AC3: the
+// canonical English header and the Portuguese one must both match, anchored.
+func TestCriteriaHeaderRe_AcceptsEnglishAndPortuguese(t *testing.T) {
+	accepted := []string{
+		"**Acceptance criteria:**",
+		"**Critérios de aceite:**",
+		"**Criterios de aceite:**", // accentless PT variant already covered by [eé]
+	}
+	for _, line := range accepted {
+		if !criteriaHeaderRe.MatchString(line) {
+			t.Errorf("criteriaHeaderRe: expected %q to match", line)
+		}
+	}
+	// The anchor is load-bearing: quoting the header in prose must NOT match.
+	rejected := []string{
+		"the header is **Acceptance criteria:**",
+		"> **Critérios de aceite:**",
+		"prose citing **Acceptance criteria:** mid-sentence",
+	}
+	for _, line := range rejected {
+		if criteriaHeaderRe.MatchString(line) {
+			t.Errorf("criteriaHeaderRe: expected %q NOT to match (anchor must reject mid-line quotes)", line)
+		}
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Fence-awareness (ADR decision 7, AC13) — mlStatusMarker/acceptanceEvaluate/
+// parseMLs must ignore content inside ``` fences. Reproduces forged.md and
+// forged3.md from the ML-0A threat-model result, verbatim.
+// ────────────────────────────────────────────────────────────────────────────
+
+// TestFenceAwareness_StatusInsideFenceIsIgnored is forged.md: a fenced example
+// citing "**Status:** done" must not shadow the real "**Status:** pending"
+// outside the fence.
+func TestFenceAwareness_StatusInsideFenceIsIgnored(t *testing.T) {
+	content := strings.Join([]string{
+		"### ML-1A — probe",
+		"Example of the bug we are documenting:",
+		"```",
+		"**Status:** done",
+		"```",
+		"**Status:** pending",
+	}, "\n")
+	lines := strings.Split(content, "\n")
+	fenced := fenceMask(lines)
+	mls := parseMLs(lines, fenced, 0, len(lines))
+	if len(mls) != 1 {
+		t.Fatalf("expected 1 ML, got %d", len(mls))
+	}
+	marker, found := mlStatusMarker(lines, fenced, mls[0])
+	if !found {
+		t.Fatal("expected found=true (the real, unfenced **Status:** line)")
+	}
+	if marker != "pending" {
+		t.Fatalf("expected marker %q (the unfenced status), got %q", "pending", marker)
+	}
+	if statusIsComplete(marker) {
+		t.Fatal("expected the real status (\"pending\") to be incomplete — the fenced \"done\" must not leak in")
+	}
+}
+
+// TestFenceAwareness_AcceptanceInsideFenceIsIgnored is forged3.md: a fenced
+// example citing "**Critérios de aceite:**" with "- [x]" must not be read as
+// the ML's real acceptance block when there is no real block outside it.
+func TestFenceAwareness_AcceptanceInsideFenceIsIgnored(t *testing.T) {
+	content := strings.Join([]string{
+		"### ML-1A — probe",
+		"Example of the bug we are documenting:",
+		"```",
+		"**Critérios de aceite:**",
+		"- [x] fake evidence, nothing built",
+		"```",
+		"**Status:** ✅",
+	}, "\n")
+	lines := strings.Split(content, "\n")
+	fenced := fenceMask(lines)
+	mls := parseMLs(lines, fenced, 0, len(lines))
+	if len(mls) != 1 {
+		t.Fatalf("expected 1 ML, got %d", len(mls))
+	}
+	_, _, hasBlock := acceptanceEvaluate(lines, fenced, mls[0])
+	if hasBlock {
+		t.Fatal("expected hasBlock=false — the acceptance block cited inside the fence must not count as real evidence")
+	}
+}
+
+// TestFenceAwareness_MLHeadingInsideFenceIsNotPhantomML is AC13-b: a
+// "### ML-XX" heading inside a fence must not be detected as a real ML.
+// Reproduced live against 7.3.0 per the ADR ("### ML-9Z ... prosa; o barrier
+// reporta 'ML-9Z: not complete'").
+func TestFenceAwareness_MLHeadingInsideFenceIsNotPhantomML(t *testing.T) {
+	content := strings.Join([]string{
+		"## Wave 1 — Foo",
+		"### ML-1A — Real ML",
+		"**Status:** ✅",
+		"**Critérios de aceite:**",
+		"- [x] real criterion",
+		"",
+		"Example of a malformed heading inside a fence, cited as documentation:",
+		"```markdown",
+		"### ML-9Z — phantom, must not be detected",
+		"**Status:** ⬜ Pendente",
+		"```",
+	}, "\n")
+	lines := strings.Split(content, "\n")
+	fenced := fenceMask(lines)
+	mls := parseMLs(lines, fenced, 0, len(lines))
+	if len(mls) != 1 {
+		t.Fatalf("expected 1 ML (the fenced ML-9Z must not be detected), got %d: %+v", len(mls), mls)
+	}
+	if mls[0].id != "ML-1A" {
+		t.Fatalf("expected the single ML to be ML-1A, got %q", mls[0].id)
+	}
+}
+
+// TestBarrierCLI_EnglishHeaderAndWordStatusPass is the end-to-end AC1/AC12
+// regression: a roadmap written exactly the way `roadmap new` writes it today
+// (English acceptance header, word status) must pass mls_complete and
+// acceptance_evidence with the real compiled binary, without editing the
+// header by hand.
+func TestBarrierCLI_EnglishHeaderAndWordStatusPass(t *testing.T) {
+	dir := t.TempDir()
+	for _, d := range []string{"docs/roadmaps/wip", "docs/req", "docs/adr"} {
+		if err := os.MkdirAll(filepath.Join(dir, d), 0755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+	}
+	content := strings.Join([]string{
+		"# Roadmap: English dialect fixture",
+		"",
+		"REQ: REQ-2026-08-29-barrier-fixture",
+		"",
+		"## Acceptance Criteria",
+		"- [x] fixture roadmap-level criterion",
+		"",
+		"## Wave 1 — Fixture Wave",
+		"> Dependencies: none",
+		"",
+		"### ML-1A — Fixture ML",
+		"**Status:** done",
+		"**Acceptance criteria:**",
+		"- [x] build passes",
+	}, "\n")
+	roadmapPath := filepath.Join(dir, "docs/roadmaps/wip/ROADMAP-english-fixture.md")
+	if err := os.WriteFile(roadmapPath, []byte(content), 0644); err != nil {
+		t.Fatalf("write roadmap: %v", err)
+	}
+
+	stdout, stderr, code := runBarrierCLI(t, dir, "ROADMAP-english-fixture", "--wave", "1", "--json")
+	if code != 0 {
+		t.Fatalf("expected exit 0 (passed), got %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	var doc barrierResultDoc
+	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &doc); err != nil {
+		t.Fatalf("stdout is not valid JSON: %v\nstdout: %s", err, stdout)
+	}
+	for _, name := range []string{"mls_complete", "acceptance_evidence"} {
+		for _, c := range doc.Checks {
+			if c.Name == name && c.Status != "passed" {
+				t.Fatalf("expected %s=passed, got %q (failures: %v)", name, c.Status, c.Failures)
+			}
+		}
+	}
+}
+
+// TestBarrierCLI_ForgedFenceContentDoesNotLiberateWave is the end-to-end
+// regression for ADR decision 7 (AC13): a wave whose only ML has its real,
+// unfenced status as "pending" (not complete) and its only acceptance block
+// fenced (forged) must stay blocked on the real binary — the fenced "done"
+// and fenced "- [x]" must not leak into mls_complete / acceptance_evidence.
+func TestBarrierCLI_ForgedFenceContentDoesNotLiberateWave(t *testing.T) {
+	dir := t.TempDir()
+	for _, d := range []string{"docs/roadmaps/wip", "docs/req", "docs/adr"} {
+		if err := os.MkdirAll(filepath.Join(dir, d), 0755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+	}
+	content := strings.Join([]string{
+		"# Roadmap: Forged fence fixture",
+		"",
+		"REQ: REQ-2026-08-29-barrier-fixture",
+		"",
+		"## Acceptance Criteria",
+		"- [x] fixture roadmap-level criterion",
+		"",
+		"## Wave 1 — Fixture Wave",
+		"> Dependencies: none",
+		"",
+		"### ML-1A — Fixture ML",
+		"Example of the bug we are documenting:",
+		"```",
+		"**Status:** done",
+		"**Critérios de aceite:**",
+		"- [x] fake evidence, nothing built",
+		"```",
+		"**Status:** pending",
+	}, "\n")
+	roadmapPath := filepath.Join(dir, "docs/roadmaps/wip/ROADMAP-forged-fence-fixture.md")
+	if err := os.WriteFile(roadmapPath, []byte(content), 0644); err != nil {
+		t.Fatalf("write roadmap: %v", err)
+	}
+
+	stdout, stderr, code := runBarrierCLI(t, dir, "ROADMAP-forged-fence-fixture", "--wave", "1", "--json")
+	if code != 1 {
+		t.Fatalf("expected exit 1 (blocked — the forged fenced content must not liberate the wave), got %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	var doc barrierResultDoc
+	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &doc); err != nil {
+		t.Fatalf("stdout is not valid JSON: %v\nstdout: %s", err, stdout)
+	}
+	for _, c := range doc.Checks {
+		if c.Name == "mls_complete" {
+			if c.Status != "blocked" {
+				t.Fatalf("expected mls_complete=blocked (real status is \"pending\"), got %q", c.Status)
+			}
+			if len(c.Failures) != 1 || !strings.Contains(c.Failures[0], "status: pending") {
+				t.Fatalf("expected mls_complete failure to name the real status \"pending\", got %v", c.Failures)
+			}
+		}
+		if c.Name == "acceptance_evidence" {
+			if c.Status != "blocked" {
+				t.Fatalf("expected acceptance_evidence=blocked (fenced block must not count), got %q", c.Status)
+			}
+			if len(c.Failures) != 1 || !strings.Contains(c.Failures[0], "no acceptance block") {
+				t.Fatalf("expected acceptance_evidence failure \"no acceptance block\", got %v", c.Failures)
+			}
+		}
 	}
 }
 
@@ -156,8 +453,8 @@ func TestAcceptanceEvaluate_AllMet(t *testing.T) {
 		"- [x] tests pass",
 	}, "\n")
 	lines := strings.Split(content, "\n")
-	mls := parseMLs(lines, 0, len(lines))
-	met, unmet, hasBlock := acceptanceEvaluate(lines, mls[0])
+	mls := parseMLs(lines, fenceMask(lines), 0, len(lines))
+	met, unmet, hasBlock := acceptanceEvaluate(lines, fenceMask(lines), mls[0])
 	if !hasBlock {
 		t.Fatal("expected hasBlock=true")
 	}
@@ -177,8 +474,8 @@ func TestAcceptanceEvaluate_EmptyBlockIsNotVacuouslyPassed(t *testing.T) {
 		"**Files affected:**",
 	}, "\n")
 	lines := strings.Split(content, "\n")
-	mls := parseMLs(lines, 0, len(lines))
-	_, _, hasBlock := acceptanceEvaluate(lines, mls[0])
+	mls := parseMLs(lines, fenceMask(lines), 0, len(lines))
+	_, _, hasBlock := acceptanceEvaluate(lines, fenceMask(lines), mls[0])
 	if hasBlock {
 		t.Fatal("expected hasBlock=false for an empty acceptance block (anti-vacuity)")
 	}
@@ -190,8 +487,8 @@ func TestAcceptanceEvaluate_NoHeaderAtAll(t *testing.T) {
 		"**Status:** ✅",
 	}, "\n")
 	lines := strings.Split(content, "\n")
-	mls := parseMLs(lines, 0, len(lines))
-	_, _, hasBlock := acceptanceEvaluate(lines, mls[0])
+	mls := parseMLs(lines, fenceMask(lines), 0, len(lines))
+	_, _, hasBlock := acceptanceEvaluate(lines, fenceMask(lines), mls[0])
 	if hasBlock {
 		t.Fatal("expected hasBlock=false when no **Critérios de aceite:** header exists")
 	}
@@ -236,6 +533,32 @@ func TestParseGates_ParsesCommandsIgnoringBlankAndComment(t *testing.T) {
 		if cmds[i] != want[i] {
 			t.Fatalf("expected %v, got %v", want, cmds)
 		}
+	}
+}
+
+// TestParseGates_HeaderIsAPrefixMatchNotFullLineEquality is ML-1B: the
+// '**Gates da wave:**' header must be recognised as a PREFIX (gatesHeaderRe),
+// not full-line equality — a header followed by trailing prose on the same
+// line must still be recognised. This is the contract Node.js briefly
+// regressed while removing its per-line .trim() (see the cross-runtime
+// scenario "falsify/gates-header-prefix-match-with-trailing-prose-cross-runtime"
+// in scripts/check-roadmap-barrier-contract.sh, ML-3F).
+func TestParseGates_HeaderIsAPrefixMatchNotFullLineEquality(t *testing.T) {
+	content := strings.Join([]string{
+		"## Wave 1 — Foo",
+		"**Gates da wave:** (obrigatórios)",
+		"```bash",
+		"make build",
+		"```",
+	}, "\n")
+	lines := strings.Split(content, "\n")
+	cmds, uerr := parseGates(lines, 0, len(lines))
+	if uerr != nil {
+		t.Fatalf("unexpected usage error: %v", uerr)
+	}
+	want := []string{"make build"}
+	if len(cmds) != 1 || cmds[0] != want[0] {
+		t.Fatalf("expected %v, got %v", want, cmds)
 	}
 }
 
@@ -398,28 +721,28 @@ func TestParseWaves_MalformedHeadingAbortsEntireDocument_Regression(t *testing.T
 	// Build a multi-wave roadmap where Wave 1 is fully green and Wave X is malformed.
 	// Line positions are fixed so we can assert the exact pinned error message.
 	content := strings.Join([]string{
-		"# Roadmap: Malformed Wave Regression",             // line 1
-		"",                                                  // line 2
-		"REQ: REQ-regression-test",                         // line 3
-		"",                                                  // line 4
-		"## Acceptance Criteria",                            // line 5
-		"- [x] fixture criterion",                           // line 6
-		"",                                                  // line 7
-		"## Wave 1 — Green Wave",                            // line 8
-		"> Dependências: nenhuma",                           // line 9
-		"",                                                  // line 10
-		"### ML-1A — Green ML",                              // line 11
-		"**Status:** ✅ Concluído",                          // line 12
-		"**Critérios de aceite:**",                          // line 13
-		"- [x] criterion met",                               // line 14
-		"",                                                  // line 15
-		"## Wave X — Malformed Label",                       // line 16 ← bad heading
-		"> body of malformed wave",                          // line 17
-		"",                                                  // line 18
-		"### ML-X1 — Irrelevant ML",                         // line 19
-		"**Status:** ✅",                                    // line 20
-		"**Critérios de aceite:**",                          // line 21
-		"- [x] whatever",                                    // line 22
+		"# Roadmap: Malformed Wave Regression", // line 1
+		"",                                     // line 2
+		"REQ: REQ-regression-test",             // line 3
+		"",                                     // line 4
+		"## Acceptance Criteria",               // line 5
+		"- [x] fixture criterion",              // line 6
+		"",                                     // line 7
+		"## Wave 1 — Green Wave",               // line 8
+		"> Dependências: nenhuma",              // line 9
+		"",                                     // line 10
+		"### ML-1A — Green ML",                 // line 11
+		"**Status:** ✅ Concluído",              // line 12
+		"**Critérios de aceite:**",             // line 13
+		"- [x] criterion met",                  // line 14
+		"",                                     // line 15
+		"## Wave X — Malformed Label",          // line 16 ← bad heading
+		"> body of malformed wave",             // line 17
+		"",                                     // line 18
+		"### ML-X1 — Irrelevant ML",            // line 19
+		"**Status:** ✅",                        // line 20
+		"**Critérios de aceite:**",             // line 21
+		"- [x] whatever",                       // line 22
 	}, "\n")
 
 	lines := strings.Split(content, "\n")
@@ -652,5 +975,142 @@ func TestBarrierTrustLocalGatesFlag(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("gates check not found in result document")
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// ML-1B achado 1 — fenceMask must recognise ~~~ and 4+-backtick fences per
+// CommonMark (3+ of the SAME character, closed by a run of the same character
+// with length >= the opening run's length).
+// ────────────────────────────────────────────────────────────────────────────
+
+func TestFenceMask_TildeFenceMasksSameAsBacktick(t *testing.T) {
+	lines := []string{"before", "~~~", "inside", "~~~", "after"}
+	got := fenceMask(lines)
+	want := []bool{false, false, true, false, false}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("fenceMask(~~~) = %v, want %v", got, want)
+	}
+}
+
+func TestFenceMask_FourBacktickFenceMasksNestedThreeBacktickBlock(t *testing.T) {
+	lines := []string{
+		"before",
+		"````",
+		"outer",
+		"```",
+		"nested (shorter run, must stay masked as interior)",
+		"```",
+		"still outer",
+		"````",
+		"after",
+	}
+	got := fenceMask(lines)
+	want := []bool{false, false, true, true, true, true, true, false, false}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("fenceMask(4-backtick nesting 3-backtick) = %v, want %v", got, want)
+	}
+}
+
+func TestFenceMask_ClosingRequiresSameCharacterAndLengthGE(t *testing.T) {
+	// A ``` line inside a ~~~ fence does not close it (different character).
+	lines := []string{"~~~", "```", "still inside", "~~~"}
+	got := fenceMask(lines)
+	want := []bool{false, true, true, false}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("fenceMask(mismatched char) = %v, want %v", got, want)
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// ML-1B achado 2 — status/acceptance-header/criterion-item markers must be
+// matched against the RAW line (column 0), never a per-line-trimmed line.
+// Go was already strict; these tests pin that contract explicitly so a future
+// change cannot silently regress it.
+// ────────────────────────────────────────────────────────────────────────────
+
+func TestMLStatusMarker_IndentedStatusLineIsNotRecognised(t *testing.T) {
+	content := "### ML-1A — Real ML\n  **Status:** done\n"
+	lines := strings.Split(content, "\n")
+	fenced := fenceMask(lines)
+	mls := parseMLs(lines, fenced, 0, len(lines))
+	if len(mls) != 1 {
+		t.Fatalf("expected 1 ML, got %d", len(mls))
+	}
+	_, found := mlStatusMarker(lines, fenced, mls[0])
+	if found {
+		t.Fatal("expected found=false — an indented \"**Status:**\" line must not be recognised")
+	}
+}
+
+func TestAcceptanceEvaluate_IndentedHeaderAndCriteriaAreNotRecognised(t *testing.T) {
+	content := "### ML-1A — Real ML\n  **Critérios de aceite:**\n  - [x] indented criterion\n"
+	lines := strings.Split(content, "\n")
+	fenced := fenceMask(lines)
+	mls := parseMLs(lines, fenced, 0, len(lines))
+	if len(mls) != 1 {
+		t.Fatalf("expected 1 ML, got %d", len(mls))
+	}
+	_, _, hasBlock := acceptanceEvaluate(lines, fenced, mls[0])
+	if hasBlock {
+		t.Fatal("expected hasBlock=false — an indented acceptance header must not be recognised")
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// ML-1B achado 1 — closing-fence positive case: a LONGER closing run of the
+// same character must close the fence (length >= opening, per CommonMark).
+// The two adjacent negatives (different char; shorter nested run) are already
+// pinned by TestFenceMask_ClosingRequiresSameCharacterAndLengthGE and
+// TestFenceMask_FourBacktickFenceMasksNestedThreeBacktickBlock.
+// ────────────────────────────────────────────────────────────────────────────
+
+func TestFenceMask_LongerClosingRunOfSameCharacterCloses(t *testing.T) {
+	lines := []string{"before", "```", "inside", "`````", "after"}
+	got := fenceMask(lines)
+	want := []bool{false, false, true, false, false}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("fenceMask(open 3, close 5) = %v, want %v", got, want)
+	}
+}
+
+// TestSplitRoadmapLines_StripsTrailingCROnlyAtBoundary is the unit-level
+// falsification of splitRoadmapLines itself: it must strip exactly a
+// trailing "\r" per line and nothing else — no leading-whitespace trimming
+// (that would reintroduce the ML-1B regression) and no merging of lines.
+//
+// KNOWN GAP, reported rather than hidden: this test only fails if the
+// FUNCTION is deleted or changed, not if runBarrier stops CALLING it. In Go
+// specifically, the call-site revert (lines := strings.Split(string(data),
+// "\n") instead of splitRoadmapLines(string(data))) is behaviorally a no-op —
+// verified empirically: statusLineRe's "." already matches "\r" (Go's RE2 "."
+// excludes only "\n", unlike JS), mlHeadingRe/waveHeadingRe/criterionLineRe/
+// boldLineRe are all prefix-anchored (unaffected by a trailing "\r"), and
+// every downstream comparison in mlStatusMarker/parseGates goes through
+// strings.TrimSpace, which treats "\r" as whitespace regardless. No CRLF
+// fixture — including every CRLF cross-runtime scenario in
+// scripts/check-roadmap-barrier-contract.sh (ML-3C/ML-3F) — can distinguish
+// "Go calls splitRoadmapLines" from "Go still splits on \n alone", because
+// the two are equivalent for every marker this parser currently recognises.
+// A call-site assertion (asserting runBarrier invokes this exact function)
+// was deliberately rejected — see ML-3A's own note on why testing through
+// the internal call graph, instead of observable CLI behavior, is how the
+// ML-2G defect escaped audit. The call is still made, for symmetry with
+// Node.js (where it IS load-bearing) and as a guard against a FUTURE marker
+// that does not go through TrimSpace; it is simply, today, unfalsifiable in
+// Go by a black-box test. Python has the same gap for a different reason:
+// os.ReadFile-equivalent open(path, "r", encoding="utf-8") already runs
+// universal-newlines translation, so _split_roadmap_lines never even sees a
+// "\r" in production. Node.js is the one runtime where this normalization is
+// genuinely load-bearing and where its removal is caught — see the
+// "crlf/full-roadmap-passes-cross-runtime" scenario in
+// scripts/check-roadmap-barrier-contract.sh, empirically confirmed by
+// reverting npm/src/commands/barrier.js's call site during ML-3C and
+// observing the scenario fail with the exact original defect.
+func TestSplitRoadmapLines_StripsTrailingCROnlyAtBoundary(t *testing.T) {
+	got := splitRoadmapLines("  **Status:** done\r\n**Status:** done\r\nlast\r")
+	want := []string{"  **Status:** done", "**Status:** done", "last"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("splitRoadmapLines = %#v, want %#v", got, want)
 	}
 }

@@ -1,0 +1,1500 @@
+ROADMAP-2026-06-14-serve-api-tests-nodejs.md	1	acceptance_evidence	evidence	ML-1A: 2 criteria met
+ROADMAP-2026-06-14-serve-api-tests-nodejs.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-06-19-architect-command-guidelines.md	1	acceptance_evidence	evidence	ML-1A: 3 criteria met
+ROADMAP-2026-06-19-architect-command-guidelines.md	1	acceptance_evidence	evidence	ML-1B: 2 criteria met
+ROADMAP-2026-06-19-architect-command-guidelines.md	1	acceptance_evidence	evidence	ML-1C: 2 criteria met
+ROADMAP-2026-06-19-architect-command-guidelines.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-06-19-architect-command-guidelines.md	1	mls_complete	evidence	ML-1B: ✅
+ROADMAP-2026-06-19-architect-command-guidelines.md	1	mls_complete	evidence	ML-1C: ✅
+ROADMAP-2026-06-20-attention-hooks-agent-clis.md	1	acceptance_evidence	evidence	ML-1A: 3 criteria met
+ROADMAP-2026-06-20-attention-hooks-agent-clis.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-06-20-attention-hooks-agent-clis.md	2	acceptance_evidence	evidence	ML-2A: 3 criteria met
+ROADMAP-2026-06-20-attention-hooks-agent-clis.md	2	acceptance_evidence	evidence	ML-2B: 2 criteria met
+ROADMAP-2026-06-20-attention-hooks-agent-clis.md	2	acceptance_evidence	evidence	ML-2C: 2 criteria met
+ROADMAP-2026-06-20-attention-hooks-agent-clis.md	2	acceptance_evidence	evidence	ML-2D: 2 criteria met
+ROADMAP-2026-06-20-attention-hooks-agent-clis.md	2	acceptance_evidence	evidence	ML-2E: 2 criteria met
+ROADMAP-2026-06-20-attention-hooks-agent-clis.md	2	acceptance_evidence	evidence	ML-2F: 1 criteria met
+ROADMAP-2026-06-20-attention-hooks-agent-clis.md	2	acceptance_evidence	evidence	ML-2G: 2 criteria met
+ROADMAP-2026-06-20-attention-hooks-agent-clis.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-06-20-attention-hooks-agent-clis.md	2	mls_complete	evidence	ML-2B: ✅
+ROADMAP-2026-06-20-attention-hooks-agent-clis.md	2	mls_complete	evidence	ML-2C: ✅
+ROADMAP-2026-06-20-attention-hooks-agent-clis.md	2	mls_complete	evidence	ML-2D: ✅
+ROADMAP-2026-06-20-attention-hooks-agent-clis.md	2	mls_complete	evidence	ML-2E: ✅
+ROADMAP-2026-06-20-attention-hooks-agent-clis.md	2	mls_complete	evidence	ML-2F: ✅
+ROADMAP-2026-06-20-attention-hooks-agent-clis.md	2	mls_complete	evidence	ML-2G: ✅
+ROADMAP-2026-06-20-attention-hooks-agent-clis.md	3	acceptance_evidence	evidence	ML-3A: 2 criteria met
+ROADMAP-2026-06-20-attention-hooks-agent-clis.md	3	acceptance_evidence	evidence	ML-3B: 1 criteria met
+ROADMAP-2026-06-20-attention-hooks-agent-clis.md	3	acceptance_evidence	failure	ML-3C: no acceptance block
+ROADMAP-2026-06-20-attention-hooks-agent-clis.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-06-20-attention-hooks-agent-clis.md	3	mls_complete	evidence	ML-3B: ✅
+ROADMAP-2026-06-20-attention-hooks-agent-clis.md	3	mls_complete	evidence	ML-3C: ✅
+ROADMAP-2026-06-20-gate-pre-trabalho-branch-wip-roadmap-e-fallback-husky-node.md	1	acceptance_evidence	failure	ML-1A: 3 unmet acceptance criteria
+ROADMAP-2026-06-20-gate-pre-trabalho-branch-wip-roadmap-e-fallback-husky-node.md	1	acceptance_evidence	failure	ML-1B: 2 unmet acceptance criteria
+ROADMAP-2026-06-20-gate-pre-trabalho-branch-wip-roadmap-e-fallback-husky-node.md	1	acceptance_evidence	failure	ML-1C: 2 unmet acceptance criteria
+ROADMAP-2026-06-20-gate-pre-trabalho-branch-wip-roadmap-e-fallback-husky-node.md	1	acceptance_evidence	failure	ML-1D: 2 unmet acceptance criteria
+ROADMAP-2026-06-20-gate-pre-trabalho-branch-wip-roadmap-e-fallback-husky-node.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-06-20-gate-pre-trabalho-branch-wip-roadmap-e-fallback-husky-node.md	1	mls_complete	evidence	ML-1B: ✅
+ROADMAP-2026-06-20-gate-pre-trabalho-branch-wip-roadmap-e-fallback-husky-node.md	1	mls_complete	evidence	ML-1C: ✅
+ROADMAP-2026-06-20-gate-pre-trabalho-branch-wip-roadmap-e-fallback-husky-node.md	1	mls_complete	evidence	ML-1D: ✅
+ROADMAP-2026-06-20-gate-pre-trabalho-branch-wip-roadmap-e-fallback-husky-node.md	2	acceptance_evidence	failure	ML-2A: 3 unmet acceptance criteria
+ROADMAP-2026-06-20-gate-pre-trabalho-branch-wip-roadmap-e-fallback-husky-node.md	2	acceptance_evidence	failure	ML-2B: 2 unmet acceptance criteria
+ROADMAP-2026-06-20-gate-pre-trabalho-branch-wip-roadmap-e-fallback-husky-node.md	2	acceptance_evidence	failure	ML-2C: 2 unmet acceptance criteria
+ROADMAP-2026-06-20-gate-pre-trabalho-branch-wip-roadmap-e-fallback-husky-node.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-06-20-gate-pre-trabalho-branch-wip-roadmap-e-fallback-husky-node.md	2	mls_complete	evidence	ML-2B: ✅
+ROADMAP-2026-06-20-gate-pre-trabalho-branch-wip-roadmap-e-fallback-husky-node.md	2	mls_complete	evidence	ML-2C: ✅
+ROADMAP-2026-06-20-gate-pre-trabalho-branch-wip-roadmap-e-fallback-husky-node.md	3	acceptance_evidence	failure	ML-3A: 1 unmet acceptance criteria
+ROADMAP-2026-06-20-gate-pre-trabalho-branch-wip-roadmap-e-fallback-husky-node.md	3	acceptance_evidence	failure	ML-3B: 1 unmet acceptance criteria
+ROADMAP-2026-06-20-gate-pre-trabalho-branch-wip-roadmap-e-fallback-husky-node.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-06-20-gate-pre-trabalho-branch-wip-roadmap-e-fallback-husky-node.md	3	mls_complete	evidence	ML-3B: ✅
+ROADMAP-2026-07-18-agents-skills-lifecycle-multi-cli.md	1	acceptance_evidence	evidence	ML-1A: 3 criteria met
+ROADMAP-2026-07-18-agents-skills-lifecycle-multi-cli.md	1	acceptance_evidence	evidence	ML-1B: 3 criteria met
+ROADMAP-2026-07-18-agents-skills-lifecycle-multi-cli.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-07-18-agents-skills-lifecycle-multi-cli.md	1	mls_complete	evidence	ML-1B: ✅
+ROADMAP-2026-07-18-agents-skills-lifecycle-multi-cli.md	2	acceptance_evidence	evidence	ML-2A: 2 criteria met
+ROADMAP-2026-07-18-agents-skills-lifecycle-multi-cli.md	2	acceptance_evidence	evidence	ML-2B: 2 criteria met
+ROADMAP-2026-07-18-agents-skills-lifecycle-multi-cli.md	2	acceptance_evidence	evidence	ML-2C: 2 criteria met
+ROADMAP-2026-07-18-agents-skills-lifecycle-multi-cli.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-07-18-agents-skills-lifecycle-multi-cli.md	2	mls_complete	evidence	ML-2B: ✅
+ROADMAP-2026-07-18-agents-skills-lifecycle-multi-cli.md	2	mls_complete	evidence	ML-2C: ✅
+ROADMAP-2026-07-18-agents-skills-lifecycle-multi-cli.md	3	acceptance_evidence	evidence	ML-3A: 2 criteria met
+ROADMAP-2026-07-18-agents-skills-lifecycle-multi-cli.md	3	acceptance_evidence	evidence	ML-3B: 2 criteria met
+ROADMAP-2026-07-18-agents-skills-lifecycle-multi-cli.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-07-18-agents-skills-lifecycle-multi-cli.md	3	mls_complete	evidence	ML-3B: ✅
+ROADMAP-2026-07-18-agents-skills-lifecycle-multi-cli.md	4	acceptance_evidence	evidence	ML-4A: 2 criteria met
+ROADMAP-2026-07-18-agents-skills-lifecycle-multi-cli.md	4	acceptance_evidence	evidence	ML-4B: 3 criteria met
+ROADMAP-2026-07-18-agents-skills-lifecycle-multi-cli.md	4	mls_complete	evidence	ML-4A: ✅
+ROADMAP-2026-07-18-agents-skills-lifecycle-multi-cli.md	4	mls_complete	evidence	ML-4B: ✅
+ROADMAP-2026-07-19-antigravity-agent-tools.md	1	acceptance_evidence	failure	ML-1A: 3 unmet acceptance criteria
+ROADMAP-2026-07-19-antigravity-agent-tools.md	1	acceptance_evidence	failure	ML-1B: 2 unmet acceptance criteria
+ROADMAP-2026-07-19-antigravity-agent-tools.md	1	acceptance_evidence	failure	ML-1C: 2 unmet acceptance criteria
+ROADMAP-2026-07-19-antigravity-agent-tools.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-07-19-antigravity-agent-tools.md	1	mls_complete	evidence	ML-1B: ✅
+ROADMAP-2026-07-19-antigravity-agent-tools.md	1	mls_complete	evidence	ML-1C: ✅
+ROADMAP-2026-07-19-antigravity-agent-tools.md	2	acceptance_evidence	failure	ML-2: 3 unmet acceptance criteria
+ROADMAP-2026-07-19-antigravity-agent-tools.md	2	mls_complete	evidence	ML-2: ✅
+ROADMAP-2026-07-19-global-adrs-governance.md	1	acceptance_evidence	failure	ML-1A: no acceptance block
+ROADMAP-2026-07-19-global-adrs-governance.md	1	acceptance_evidence	failure	ML-1B: no acceptance block
+ROADMAP-2026-07-19-global-adrs-governance.md	1	acceptance_evidence	failure	ML-1C: no acceptance block
+ROADMAP-2026-07-19-global-adrs-governance.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-07-19-global-adrs-governance.md	1	mls_complete	evidence	ML-1B: ✅
+ROADMAP-2026-07-19-global-adrs-governance.md	1	mls_complete	evidence	ML-1C: ✅
+ROADMAP-2026-07-19-global-adrs-governance.md	2	acceptance_evidence	failure	ML-2A: no acceptance block
+ROADMAP-2026-07-19-global-adrs-governance.md	2	acceptance_evidence	failure	ML-2B: no acceptance block
+ROADMAP-2026-07-19-global-adrs-governance.md	2	acceptance_evidence	failure	ML-2C: no acceptance block
+ROADMAP-2026-07-19-global-adrs-governance.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-07-19-global-adrs-governance.md	2	mls_complete	evidence	ML-2B: ✅
+ROADMAP-2026-07-19-global-adrs-governance.md	2	mls_complete	evidence	ML-2C: ✅
+ROADMAP-2026-07-19-global-adrs-governance.md	3	acceptance_evidence	failure	ML-3A: no acceptance block
+ROADMAP-2026-07-19-global-adrs-governance.md	3	acceptance_evidence	failure	ML-3B: no acceptance block
+ROADMAP-2026-07-19-global-adrs-governance.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-07-19-global-adrs-governance.md	3	mls_complete	evidence	ML-3B: ✅
+ROADMAP-2026-07-19-global-adrs-governance.md	4	acceptance_evidence	failure	ML-4A: no acceptance block
+ROADMAP-2026-07-19-global-adrs-governance.md	4	mls_complete	evidence	ML-4A: ✅
+ROADMAP-2026-07-20-corrigir-attention-hooks-e-hardening-pos-auditoria-pr56-pr57.md	1	acceptance_evidence	evidence	ML-1A: 4 criteria met
+ROADMAP-2026-07-20-corrigir-attention-hooks-e-hardening-pos-auditoria-pr56-pr57.md	1	acceptance_evidence	evidence	ML-1B: 2 criteria met
+ROADMAP-2026-07-20-corrigir-attention-hooks-e-hardening-pos-auditoria-pr56-pr57.md	1	acceptance_evidence	evidence	ML-1C: 2 criteria met
+ROADMAP-2026-07-20-corrigir-attention-hooks-e-hardening-pos-auditoria-pr56-pr57.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-07-20-corrigir-attention-hooks-e-hardening-pos-auditoria-pr56-pr57.md	1	mls_complete	evidence	ML-1B: ✅
+ROADMAP-2026-07-20-corrigir-attention-hooks-e-hardening-pos-auditoria-pr56-pr57.md	1	mls_complete	evidence	ML-1C: ✅
+ROADMAP-2026-07-20-corrigir-attention-hooks-e-hardening-pos-auditoria-pr56-pr57.md	2	acceptance_evidence	evidence	ML-2A: 1 criteria met
+ROADMAP-2026-07-20-corrigir-attention-hooks-e-hardening-pos-auditoria-pr56-pr57.md	2	acceptance_evidence	evidence	ML-2B: 1 criteria met
+ROADMAP-2026-07-20-corrigir-attention-hooks-e-hardening-pos-auditoria-pr56-pr57.md	2	acceptance_evidence	evidence	ML-2C: 1 criteria met
+ROADMAP-2026-07-20-corrigir-attention-hooks-e-hardening-pos-auditoria-pr56-pr57.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-07-20-corrigir-attention-hooks-e-hardening-pos-auditoria-pr56-pr57.md	2	mls_complete	evidence	ML-2B: ✅
+ROADMAP-2026-07-20-corrigir-attention-hooks-e-hardening-pos-auditoria-pr56-pr57.md	2	mls_complete	evidence	ML-2C: ✅
+ROADMAP-2026-07-20-corrigir-attention-hooks-e-hardening-pos-auditoria-pr56-pr57.md	3	acceptance_evidence	evidence	ML-3A: 3 criteria met
+ROADMAP-2026-07-20-corrigir-attention-hooks-e-hardening-pos-auditoria-pr56-pr57.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-07-20-hardening-qualidade-attention-hooks-pos-pr59.md	1	acceptance_evidence	evidence	ML-1A: 3 criteria met
+ROADMAP-2026-07-20-hardening-qualidade-attention-hooks-pos-pr59.md	1	acceptance_evidence	evidence	ML-1B: 2 criteria met
+ROADMAP-2026-07-20-hardening-qualidade-attention-hooks-pos-pr59.md	1	acceptance_evidence	evidence	ML-1C: 2 criteria met
+ROADMAP-2026-07-20-hardening-qualidade-attention-hooks-pos-pr59.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-07-20-hardening-qualidade-attention-hooks-pos-pr59.md	1	mls_complete	evidence	ML-1B: ✅
+ROADMAP-2026-07-20-hardening-qualidade-attention-hooks-pos-pr59.md	1	mls_complete	evidence	ML-1C: ✅
+ROADMAP-2026-07-20-hardening-qualidade-attention-hooks-pos-pr59.md	2	acceptance_evidence	evidence	ML-2A: 3 criteria met
+ROADMAP-2026-07-20-hardening-qualidade-attention-hooks-pos-pr59.md	2	acceptance_evidence	evidence	ML-2B: 1 criteria met
+ROADMAP-2026-07-20-hardening-qualidade-attention-hooks-pos-pr59.md	2	acceptance_evidence	evidence	ML-2C: 1 criteria met
+ROADMAP-2026-07-20-hardening-qualidade-attention-hooks-pos-pr59.md	2	acceptance_evidence	evidence	ML-2D: 2 criteria met
+ROADMAP-2026-07-20-hardening-qualidade-attention-hooks-pos-pr59.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-07-20-hardening-qualidade-attention-hooks-pos-pr59.md	2	mls_complete	evidence	ML-2B: ✅
+ROADMAP-2026-07-20-hardening-qualidade-attention-hooks-pos-pr59.md	2	mls_complete	evidence	ML-2C: ✅
+ROADMAP-2026-07-20-hardening-qualidade-attention-hooks-pos-pr59.md	2	mls_complete	evidence	ML-2D: ✅
+ROADMAP-2026-07-20-hardening-qualidade-attention-hooks-pos-pr59.md	3	acceptance_evidence	evidence	ML-3A: 4 criteria met
+ROADMAP-2026-07-20-hardening-qualidade-attention-hooks-pos-pr59.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-07-24-fix-windows-path-resolve-em-integrations-(node+go)-e-guard-de-regressao.md	1	acceptance_evidence	failure	ML-1A: 3 unmet acceptance criteria
+ROADMAP-2026-07-24-fix-windows-path-resolve-em-integrations-(node+go)-e-guard-de-regressao.md	1	acceptance_evidence	failure	ML-1B: 3 unmet acceptance criteria
+ROADMAP-2026-07-24-fix-windows-path-resolve-em-integrations-(node+go)-e-guard-de-regressao.md	1	acceptance_evidence	failure	ML-1C: 2 unmet acceptance criteria
+ROADMAP-2026-07-24-fix-windows-path-resolve-em-integrations-(node+go)-e-guard-de-regressao.md	1	acceptance_evidence	failure	ML-1D: 2 unmet acceptance criteria
+ROADMAP-2026-07-24-fix-windows-path-resolve-em-integrations-(node+go)-e-guard-de-regressao.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-07-24-fix-windows-path-resolve-em-integrations-(node+go)-e-guard-de-regressao.md	1	mls_complete	evidence	ML-1B: ✅
+ROADMAP-2026-07-24-fix-windows-path-resolve-em-integrations-(node+go)-e-guard-de-regressao.md	1	mls_complete	evidence	ML-1C: ✅
+ROADMAP-2026-07-24-fix-windows-path-resolve-em-integrations-(node+go)-e-guard-de-regressao.md	1	mls_complete	evidence	ML-1D: ✅
+ROADMAP-2026-07-24-fix-windows-path-resolve-em-integrations-(node+go)-e-guard-de-regressao.md	2	acceptance_evidence	failure	ML-2A: 3 unmet acceptance criteria
+ROADMAP-2026-07-24-fix-windows-path-resolve-em-integrations-(node+go)-e-guard-de-regressao.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-07-25-escopo-de-instalacao-selecionavel-para-agents-e-skills.md	1	acceptance_evidence	evidence	ML-1A: 6 criteria met
+ROADMAP-2026-07-25-escopo-de-instalacao-selecionavel-para-agents-e-skills.md	1	acceptance_evidence	evidence	ML-1B: 4 criteria met
+ROADMAP-2026-07-25-escopo-de-instalacao-selecionavel-para-agents-e-skills.md	1	acceptance_evidence	evidence	ML-1C: 4 criteria met
+ROADMAP-2026-07-25-escopo-de-instalacao-selecionavel-para-agents-e-skills.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-07-25-escopo-de-instalacao-selecionavel-para-agents-e-skills.md	1	mls_complete	evidence	ML-1B: ✅
+ROADMAP-2026-07-25-escopo-de-instalacao-selecionavel-para-agents-e-skills.md	1	mls_complete	evidence	ML-1C: ✅
+ROADMAP-2026-07-25-escopo-de-instalacao-selecionavel-para-agents-e-skills.md	2	acceptance_evidence	evidence	ML-2Z: 4 criteria met
+ROADMAP-2026-07-25-escopo-de-instalacao-selecionavel-para-agents-e-skills.md	2	mls_complete	failure	ML-2Z: not complete (status: ⬜ Pendente)
+ROADMAP-2026-07-25-escopo-de-instalacao-selecionavel-para-agents-e-skills.md	3	acceptance_evidence	evidence	ML-2A: 5 criteria met
+ROADMAP-2026-07-25-escopo-de-instalacao-selecionavel-para-agents-e-skills.md	3	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-07-25-identidade-humanizada-agentes.md	1	acceptance_evidence	evidence	ML-1D: 3 criteria met
+ROADMAP-2026-07-25-identidade-humanizada-agentes.md	1	acceptance_evidence	failure	ML-1A: 5 unmet acceptance criteria
+ROADMAP-2026-07-25-identidade-humanizada-agentes.md	1	acceptance_evidence	failure	ML-1B: 3 unmet acceptance criteria
+ROADMAP-2026-07-25-identidade-humanizada-agentes.md	1	acceptance_evidence	failure	ML-1C: 6 unmet acceptance criteria
+ROADMAP-2026-07-25-identidade-humanizada-agentes.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-07-25-identidade-humanizada-agentes.md	1	mls_complete	evidence	ML-1C: ✅
+ROADMAP-2026-07-25-identidade-humanizada-agentes.md	1	mls_complete	evidence	ML-1D: ✅
+ROADMAP-2026-07-25-identidade-humanizada-agentes.md	1	mls_complete	failure	ML-1B: not complete (status: ABANDONADO — abordagem revertida (commit `9ef17b3` revertido))
+ROADMAP-2026-07-25-identidade-humanizada-agentes.md	2	acceptance_evidence	failure	ML-2A: 6 unmet acceptance criteria
+ROADMAP-2026-07-25-identidade-humanizada-agentes.md	2	acceptance_evidence	failure	ML-2B: 5 unmet acceptance criteria
+ROADMAP-2026-07-25-identidade-humanizada-agentes.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-07-25-identidade-humanizada-agentes.md	2	mls_complete	evidence	ML-2B: ✅
+ROADMAP-2026-07-25-identidade-humanizada-agentes.md	3	acceptance_evidence	failure	ML-3A: 5 unmet acceptance criteria
+ROADMAP-2026-07-25-identidade-humanizada-agentes.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-07-25-identidade-humanizada-agentes.md	4	acceptance_evidence	failure	ML-4A: 4 unmet acceptance criteria
+ROADMAP-2026-07-25-identidade-humanizada-agentes.md	4	acceptance_evidence	failure	ML-4B: 4 unmet acceptance criteria
+ROADMAP-2026-07-25-identidade-humanizada-agentes.md	4	mls_complete	evidence	ML-4A: ✅
+ROADMAP-2026-07-25-identidade-humanizada-agentes.md	4	mls_complete	evidence	ML-4B: ✅
+ROADMAP-2026-07-25-identidade-humanizada-agentes.md	5	acceptance_evidence	evidence	ML-5B: 4 criteria met
+ROADMAP-2026-07-25-identidade-humanizada-agentes.md	5	acceptance_evidence	failure	ML-5A: 2 unmet acceptance criteria
+ROADMAP-2026-07-25-identidade-humanizada-agentes.md	5	mls_complete	evidence	ML-5A: ✅
+ROADMAP-2026-07-25-identidade-humanizada-agentes.md	5	mls_complete	evidence	ML-5B: ✅
+ROADMAP-2026-07-25-identidade-humanizada-agentes.md	6	acceptance_evidence	evidence	ML-6A: 5 criteria met
+ROADMAP-2026-07-25-identidade-humanizada-agentes.md	6	mls_complete	evidence	ML-6A: ✅
+ROADMAP-2026-07-25-wizard-guiado-identidade-agents-install.md	1	acceptance_evidence	evidence	ML-1B: 5 criteria met
+ROADMAP-2026-07-25-wizard-guiado-identidade-agents-install.md	1	acceptance_evidence	failure	ML-1A: 9 unmet acceptance criteria
+ROADMAP-2026-07-25-wizard-guiado-identidade-agents-install.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-07-25-wizard-guiado-identidade-agents-install.md	1	mls_complete	evidence	ML-1B: ✅
+ROADMAP-2026-07-25-wizard-guiado-identidade-agents-install.md	2	acceptance_evidence	failure	ML-2A: 4 unmet acceptance criteria
+ROADMAP-2026-07-25-wizard-guiado-identidade-agents-install.md	2	acceptance_evidence	failure	ML-2B: 4 unmet acceptance criteria
+ROADMAP-2026-07-25-wizard-guiado-identidade-agents-install.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-07-25-wizard-guiado-identidade-agents-install.md	2	mls_complete	evidence	ML-2B: ✅
+ROADMAP-2026-07-25-wizard-guiado-identidade-agents-install.md	3	acceptance_evidence	evidence	ML-3A: 5 criteria met
+ROADMAP-2026-07-25-wizard-guiado-identidade-agents-install.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-07-26-comando-trackfw-ship-agnostico-de-forge.md	1	acceptance_evidence	failure	ML-1A: 6 unmet acceptance criteria
+ROADMAP-2026-07-26-comando-trackfw-ship-agnostico-de-forge.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-07-26-comando-trackfw-ship-agnostico-de-forge.md	2	acceptance_evidence	failure	ML-2A: 5 unmet acceptance criteria
+ROADMAP-2026-07-26-comando-trackfw-ship-agnostico-de-forge.md	2	acceptance_evidence	failure	ML-2B: 5 unmet acceptance criteria
+ROADMAP-2026-07-26-comando-trackfw-ship-agnostico-de-forge.md	2	acceptance_evidence	failure	ML-2C: 4 unmet acceptance criteria
+ROADMAP-2026-07-26-comando-trackfw-ship-agnostico-de-forge.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-07-26-comando-trackfw-ship-agnostico-de-forge.md	2	mls_complete	evidence	ML-2B: ✅
+ROADMAP-2026-07-26-comando-trackfw-ship-agnostico-de-forge.md	2	mls_complete	evidence	ML-2C: ✅
+ROADMAP-2026-07-26-comando-trackfw-ship-agnostico-de-forge.md	3	acceptance_evidence	failure	ML-3A: 4 unmet acceptance criteria
+ROADMAP-2026-07-26-comando-trackfw-ship-agnostico-de-forge.md	3	acceptance_evidence	failure	ML-3B: 3 unmet acceptance criteria
+ROADMAP-2026-07-26-comando-trackfw-ship-agnostico-de-forge.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-07-26-comando-trackfw-ship-agnostico-de-forge.md	3	mls_complete	evidence	ML-3B: ✅
+ROADMAP-2026-07-26-comando-trackfw-ship-agnostico-de-forge.md	4	acceptance_evidence	failure	ML-4A: 4 unmet acceptance criteria
+ROADMAP-2026-07-26-comando-trackfw-ship-agnostico-de-forge.md	4	mls_complete	evidence	ML-4A: ✅
+ROADMAP-2026-07-27-bloqueadores-de-release-de-paridade-e-precisao-contratual.md	1	acceptance_evidence	evidence	ML-1A: 3 criteria met
+ROADMAP-2026-07-27-bloqueadores-de-release-de-paridade-e-precisao-contratual.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-07-27-bloqueadores-de-release-de-paridade-e-precisao-contratual.md	2	acceptance_evidence	evidence	ML-2A: 3 criteria met
+ROADMAP-2026-07-27-bloqueadores-de-release-de-paridade-e-precisao-contratual.md	2	acceptance_evidence	evidence	ML-2B: 2 criteria met
+ROADMAP-2026-07-27-bloqueadores-de-release-de-paridade-e-precisao-contratual.md	2	acceptance_evidence	evidence	ML-2C: 2 criteria met
+ROADMAP-2026-07-27-bloqueadores-de-release-de-paridade-e-precisao-contratual.md	2	acceptance_evidence	evidence	ML-2D: 3 criteria met
+ROADMAP-2026-07-27-bloqueadores-de-release-de-paridade-e-precisao-contratual.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-07-27-bloqueadores-de-release-de-paridade-e-precisao-contratual.md	2	mls_complete	evidence	ML-2B: ✅
+ROADMAP-2026-07-27-bloqueadores-de-release-de-paridade-e-precisao-contratual.md	2	mls_complete	evidence	ML-2C: ✅
+ROADMAP-2026-07-27-bloqueadores-de-release-de-paridade-e-precisao-contratual.md	2	mls_complete	evidence	ML-2D: ✅
+ROADMAP-2026-07-27-bloqueadores-de-release-de-paridade-e-precisao-contratual.md	3	acceptance_evidence	evidence	ML-3A: 5 criteria met
+ROADMAP-2026-07-27-bloqueadores-de-release-de-paridade-e-precisao-contratual.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-07-27-contrato-canonico-do-roadmap-e-estado-analyzing.md	1	acceptance_evidence	evidence	ML-1A: 4 criteria met
+ROADMAP-2026-07-27-contrato-canonico-do-roadmap-e-estado-analyzing.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-07-27-contrato-canonico-do-roadmap-e-estado-analyzing.md	2	acceptance_evidence	evidence	ML-2A: 4 criteria met
+ROADMAP-2026-07-27-contrato-canonico-do-roadmap-e-estado-analyzing.md	2	acceptance_evidence	evidence	ML-2B: 5 criteria met
+ROADMAP-2026-07-27-contrato-canonico-do-roadmap-e-estado-analyzing.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-07-27-contrato-canonico-do-roadmap-e-estado-analyzing.md	2	mls_complete	evidence	ML-2B: ✅
+ROADMAP-2026-07-27-contrato-canonico-do-roadmap-e-estado-analyzing.md	3	acceptance_evidence	evidence	ML-3A: 6 criteria met
+ROADMAP-2026-07-27-contrato-canonico-do-roadmap-e-estado-analyzing.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-07-27-convergencia-dos-templates-de-artefato-do-cli-python.md	1	acceptance_evidence	failure	ML-1A: 4 unmet acceptance criteria
+ROADMAP-2026-07-27-convergencia-dos-templates-de-artefato-do-cli-python.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-07-27-convergencia-dos-templates-de-artefato-do-cli-python.md	2	acceptance_evidence	failure	ML-2A: 5 unmet acceptance criteria
+ROADMAP-2026-07-27-convergencia-dos-templates-de-artefato-do-cli-python.md	2	acceptance_evidence	failure	ML-2B: 5 unmet acceptance criteria
+ROADMAP-2026-07-27-convergencia-dos-templates-de-artefato-do-cli-python.md	2	acceptance_evidence	failure	ML-2C: 3 unmet acceptance criteria
+ROADMAP-2026-07-27-convergencia-dos-templates-de-artefato-do-cli-python.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-07-27-convergencia-dos-templates-de-artefato-do-cli-python.md	2	mls_complete	evidence	ML-2B: ✅
+ROADMAP-2026-07-27-convergencia-dos-templates-de-artefato-do-cli-python.md	2	mls_complete	evidence	ML-2C: ✅
+ROADMAP-2026-07-27-convergencia-dos-templates-de-artefato-do-cli-python.md	3	acceptance_evidence	failure	ML-3A: 4 unmet acceptance criteria
+ROADMAP-2026-07-27-convergencia-dos-templates-de-artefato-do-cli-python.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-07-27-debitos-tecnicos-pos-release-de-robustez-e-manutenibilidade.md	1	acceptance_evidence	evidence	ML-1A: 3 criteria met
+ROADMAP-2026-07-27-debitos-tecnicos-pos-release-de-robustez-e-manutenibilidade.md	1	acceptance_evidence	evidence	ML-1B: 2 criteria met
+ROADMAP-2026-07-27-debitos-tecnicos-pos-release-de-robustez-e-manutenibilidade.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-07-27-debitos-tecnicos-pos-release-de-robustez-e-manutenibilidade.md	1	mls_complete	evidence	ML-1B: ✅
+ROADMAP-2026-07-27-debitos-tecnicos-pos-release-de-robustez-e-manutenibilidade.md	2	acceptance_evidence	evidence	ML-2A: 2 criteria met
+ROADMAP-2026-07-27-debitos-tecnicos-pos-release-de-robustez-e-manutenibilidade.md	2	acceptance_evidence	evidence	ML-2B: 3 criteria met
+ROADMAP-2026-07-27-debitos-tecnicos-pos-release-de-robustez-e-manutenibilidade.md	2	acceptance_evidence	evidence	ML-2C: 3 criteria met
+ROADMAP-2026-07-27-debitos-tecnicos-pos-release-de-robustez-e-manutenibilidade.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-07-27-debitos-tecnicos-pos-release-de-robustez-e-manutenibilidade.md	2	mls_complete	evidence	ML-2B: ✅
+ROADMAP-2026-07-27-debitos-tecnicos-pos-release-de-robustez-e-manutenibilidade.md	2	mls_complete	evidence	ML-2C: ✅
+ROADMAP-2026-07-27-debitos-tecnicos-pos-release-de-robustez-e-manutenibilidade.md	3	acceptance_evidence	evidence	ML-3A: 4 criteria met
+ROADMAP-2026-07-27-debitos-tecnicos-pos-release-de-robustez-e-manutenibilidade.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-07-27-integridade-das-referencias-e-ciclo-de-vida-da-req.md	1	acceptance_evidence	evidence	ML-1A: 4 criteria met
+ROADMAP-2026-07-27-integridade-das-referencias-e-ciclo-de-vida-da-req.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-07-27-integridade-das-referencias-e-ciclo-de-vida-da-req.md	2	acceptance_evidence	evidence	ML-2A: 6 criteria met
+ROADMAP-2026-07-27-integridade-das-referencias-e-ciclo-de-vida-da-req.md	2	acceptance_evidence	evidence	ML-2B: 4 criteria met
+ROADMAP-2026-07-27-integridade-das-referencias-e-ciclo-de-vida-da-req.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-07-27-integridade-das-referencias-e-ciclo-de-vida-da-req.md	2	mls_complete	evidence	ML-2B: ✅
+ROADMAP-2026-07-27-integridade-das-referencias-e-ciclo-de-vida-da-req.md	3	acceptance_evidence	evidence	ML-3A: 5 criteria met
+ROADMAP-2026-07-27-integridade-das-referencias-e-ciclo-de-vida-da-req.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-07-27-roadmap-move-sincroniza-o-status-do-artefato.md	1	acceptance_evidence	failure	ML-1A: 8 unmet acceptance criteria
+ROADMAP-2026-07-27-roadmap-move-sincroniza-o-status-do-artefato.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-07-27-roadmap-move-sincroniza-o-status-do-artefato.md	2	acceptance_evidence	failure	ML-2A: 3 unmet acceptance criteria
+ROADMAP-2026-07-27-roadmap-move-sincroniza-o-status-do-artefato.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-07-27-robustez-dos-gates-de-governanca-e-paridade.md	1	acceptance_evidence	failure	ML-1A: 6 unmet acceptance criteria
+ROADMAP-2026-07-27-robustez-dos-gates-de-governanca-e-paridade.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-07-27-robustez-dos-gates-de-governanca-e-paridade.md	2	acceptance_evidence	failure	ML-2A: 4 unmet acceptance criteria
+ROADMAP-2026-07-27-robustez-dos-gates-de-governanca-e-paridade.md	2	acceptance_evidence	failure	ML-2B: 4 unmet acceptance criteria
+ROADMAP-2026-07-27-robustez-dos-gates-de-governanca-e-paridade.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-07-27-robustez-dos-gates-de-governanca-e-paridade.md	2	mls_complete	evidence	ML-2B: ✅
+ROADMAP-2026-07-27-robustez-dos-gates-de-governanca-e-paridade.md	3	acceptance_evidence	failure	ML-3A: 5 unmet acceptance criteria
+ROADMAP-2026-07-27-robustez-dos-gates-de-governanca-e-paridade.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-07-29-barrier-aceita-wave-com-sufixo-bis.md	1	acceptance_evidence	evidence	ML-1A: 4 criteria met
+ROADMAP-2026-07-29-barrier-aceita-wave-com-sufixo-bis.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-07-29-barrier-aceita-wave-com-sufixo-bis.md	2	acceptance_evidence	evidence	ML-2A: 3 criteria met
+ROADMAP-2026-07-29-barrier-aceita-wave-com-sufixo-bis.md	2	acceptance_evidence	evidence	ML-2B: 3 criteria met
+ROADMAP-2026-07-29-barrier-aceita-wave-com-sufixo-bis.md	2	acceptance_evidence	evidence	ML-2C: 5 criteria met
+ROADMAP-2026-07-29-barrier-aceita-wave-com-sufixo-bis.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-07-29-barrier-aceita-wave-com-sufixo-bis.md	2	mls_complete	evidence	ML-2B: ✅
+ROADMAP-2026-07-29-barrier-aceita-wave-com-sufixo-bis.md	2	mls_complete	evidence	ML-2C: ✅
+ROADMAP-2026-07-29-barrier-aceita-wave-com-sufixo-bis.md	3	acceptance_evidence	evidence	ML-2D: 5 criteria met
+ROADMAP-2026-07-29-barrier-aceita-wave-com-sufixo-bis.md	3	acceptance_evidence	evidence	ML-2E: 3 criteria met
+ROADMAP-2026-07-29-barrier-aceita-wave-com-sufixo-bis.md	3	mls_complete	evidence	ML-2D: ✅
+ROADMAP-2026-07-29-barrier-aceita-wave-com-sufixo-bis.md	3	mls_complete	evidence	ML-2E: ✅
+ROADMAP-2026-07-29-barrier-aceita-wave-com-sufixo-bis.md	4	acceptance_evidence	evidence	ML-3A: 5 criteria met
+ROADMAP-2026-07-29-barrier-aceita-wave-com-sufixo-bis.md	4	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md	1	acceptance_evidence	evidence	ML-1A: 5 criteria met
+ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md	2	acceptance_evidence	evidence	ML-2A: 6 criteria met
+ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md	2	acceptance_evidence	evidence	ML-2B: 4 criteria met
+ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md	2	acceptance_evidence	evidence	ML-2C: 4 criteria met
+ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md	2	acceptance_evidence	evidence	ML-2D: 4 criteria met
+ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md	2	acceptance_evidence	evidence	ML-2E: 4 criteria met
+ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md	2	mls_complete	evidence	ML-2B: ✅
+ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md	2	mls_complete	evidence	ML-2C: ✅
+ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md	2	mls_complete	evidence	ML-2D: ✅
+ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md	2	mls_complete	evidence	ML-2E: ✅
+ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md	3	acceptance_evidence	evidence	ML-3A: 6 criteria met
+ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md	4	acceptance_evidence	evidence	ML-4A: 6 criteria met
+ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md	4	mls_complete	evidence	ML-4A: ✅
+ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md	5	acceptance_evidence	evidence	ML-5A: 5 criteria met
+ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md	5	acceptance_evidence	evidence	ML-5B: 6 criteria met
+ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md	5	acceptance_evidence	evidence	ML-5C: 4 criteria met
+ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md	5	acceptance_evidence	evidence	ML-5D: 5 criteria met
+ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md	5	acceptance_evidence	evidence	ML-5E: 5 criteria met
+ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md	5	acceptance_evidence	evidence	ML-5F: 3 criteria met
+ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md	5	acceptance_evidence	evidence	ML-5G: 5 criteria met
+ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md	5	mls_complete	evidence	ML-5A: ✅
+ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md	5	mls_complete	evidence	ML-5B: ✅
+ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md	5	mls_complete	evidence	ML-5C: ✅
+ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md	5	mls_complete	evidence	ML-5D: ✅
+ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md	5	mls_complete	evidence	ML-5E: ✅
+ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md	5	mls_complete	evidence	ML-5F: ✅
+ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md	5	mls_complete	evidence	ML-5G: ✅
+ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md	6	acceptance_evidence	evidence	ML-6A: 4 criteria met
+ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md	6	acceptance_evidence	evidence	ML-6B: 4 criteria met
+ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md	6	acceptance_evidence	evidence	ML-6C: 4 criteria met
+ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md	6	acceptance_evidence	evidence	ML-6D: 5 criteria met
+ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md	6	acceptance_evidence	evidence	ML-6F: 5 criteria met
+ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md	6	acceptance_evidence	evidence	ML-6H: 3 criteria met
+ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md	6	acceptance_evidence	evidence	ML-6I: 3 criteria met
+ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md	6	mls_complete	evidence	ML-6A: ✅
+ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md	6	mls_complete	evidence	ML-6B: ✅
+ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md	6	mls_complete	evidence	ML-6C: ✅
+ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md	6	mls_complete	evidence	ML-6D: ✅
+ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md	6	mls_complete	evidence	ML-6F: ✅
+ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md	6	mls_complete	evidence	ML-6H: ✅
+ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md	6	mls_complete	evidence	ML-6I: ✅
+ROADMAP-2026-07-29-install-pula-artefato-desatualizado-em-vez-de-abortar.md	1	acceptance_evidence	evidence	ML-1A: 4 criteria met
+ROADMAP-2026-07-29-install-pula-artefato-desatualizado-em-vez-de-abortar.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-07-29-install-pula-artefato-desatualizado-em-vez-de-abortar.md	2	acceptance_evidence	evidence	ML-2A: 6 criteria met
+ROADMAP-2026-07-29-install-pula-artefato-desatualizado-em-vez-de-abortar.md	2	acceptance_evidence	evidence	ML-2B: 5 criteria met
+ROADMAP-2026-07-29-install-pula-artefato-desatualizado-em-vez-de-abortar.md	2	acceptance_evidence	evidence	ML-2C: 5 criteria met
+ROADMAP-2026-07-29-install-pula-artefato-desatualizado-em-vez-de-abortar.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-07-29-install-pula-artefato-desatualizado-em-vez-de-abortar.md	2	mls_complete	evidence	ML-2B: ✅
+ROADMAP-2026-07-29-install-pula-artefato-desatualizado-em-vez-de-abortar.md	2	mls_complete	evidence	ML-2C: ✅
+ROADMAP-2026-07-29-install-pula-artefato-desatualizado-em-vez-de-abortar.md	3	acceptance_evidence	evidence	ML-2D: 6 criteria met
+ROADMAP-2026-07-29-install-pula-artefato-desatualizado-em-vez-de-abortar.md	3	acceptance_evidence	evidence	ML-2E: 6 criteria met
+ROADMAP-2026-07-29-install-pula-artefato-desatualizado-em-vez-de-abortar.md	3	mls_complete	evidence	ML-2D: ✅
+ROADMAP-2026-07-29-install-pula-artefato-desatualizado-em-vez-de-abortar.md	3	mls_complete	evidence	ML-2E: ✅
+ROADMAP-2026-07-29-install-pula-artefato-desatualizado-em-vez-de-abortar.md	4	acceptance_evidence	evidence	ML-3A: 6 criteria met
+ROADMAP-2026-07-29-install-pula-artefato-desatualizado-em-vez-de-abortar.md	4	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-07-30-padrao-unico-de-saida-de-versao-nos-tres-clis.md	1	acceptance_evidence	evidence	ML-1A: 5 criteria met
+ROADMAP-2026-07-30-padrao-unico-de-saida-de-versao-nos-tres-clis.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-07-30-padrao-unico-de-saida-de-versao-nos-tres-clis.md	2	acceptance_evidence	evidence	ML-2A: 3 criteria met
+ROADMAP-2026-07-30-padrao-unico-de-saida-de-versao-nos-tres-clis.md	2	acceptance_evidence	evidence	ML-2B: 2 criteria met
+ROADMAP-2026-07-30-padrao-unico-de-saida-de-versao-nos-tres-clis.md	2	acceptance_evidence	evidence	ML-2C: 4 criteria met
+ROADMAP-2026-07-30-padrao-unico-de-saida-de-versao-nos-tres-clis.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-07-30-padrao-unico-de-saida-de-versao-nos-tres-clis.md	2	mls_complete	evidence	ML-2B: ✅
+ROADMAP-2026-07-30-padrao-unico-de-saida-de-versao-nos-tres-clis.md	2	mls_complete	evidence	ML-2C: ✅
+ROADMAP-2026-07-30-padrao-unico-de-saida-de-versao-nos-tres-clis.md	3	acceptance_evidence	evidence	ML-3A: 4 criteria met
+ROADMAP-2026-07-30-padrao-unico-de-saida-de-versao-nos-tres-clis.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-07-30-reservar-v-para-verbose-e-remover-atalho-de-versao-no-go.md	1	acceptance_evidence	evidence	ML-1A: 4 criteria met
+ROADMAP-2026-07-30-reservar-v-para-verbose-e-remover-atalho-de-versao-no-go.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-07-30-reservar-v-para-verbose-e-remover-atalho-de-versao-no-go.md	2	acceptance_evidence	evidence	ML-2A: 4 criteria met
+ROADMAP-2026-07-30-reservar-v-para-verbose-e-remover-atalho-de-versao-no-go.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-07-30-reservar-v-para-verbose-e-remover-atalho-de-versao-no-go.md	3	acceptance_evidence	evidence	ML-3A: 4 criteria met
+ROADMAP-2026-07-30-reservar-v-para-verbose-e-remover-atalho-de-versao-no-go.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-07-30-roadmap-move-sincroniza-a-referencia-da-req-pareada.md	1	acceptance_evidence	evidence	ML-1A: 6 criteria met
+ROADMAP-2026-07-30-roadmap-move-sincroniza-a-referencia-da-req-pareada.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-07-30-roadmap-move-sincroniza-a-referencia-da-req-pareada.md	2	acceptance_evidence	evidence	ML-2A: 4 criteria met
+ROADMAP-2026-07-30-roadmap-move-sincroniza-a-referencia-da-req-pareada.md	2	acceptance_evidence	evidence	ML-2B: 5 criteria met
+ROADMAP-2026-07-30-roadmap-move-sincroniza-a-referencia-da-req-pareada.md	2	acceptance_evidence	evidence	ML-2C: 5 criteria met
+ROADMAP-2026-07-30-roadmap-move-sincroniza-a-referencia-da-req-pareada.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-07-30-roadmap-move-sincroniza-a-referencia-da-req-pareada.md	2	mls_complete	evidence	ML-2B: ✅
+ROADMAP-2026-07-30-roadmap-move-sincroniza-a-referencia-da-req-pareada.md	2	mls_complete	evidence	ML-2C: ✅
+ROADMAP-2026-07-30-roadmap-move-sincroniza-a-referencia-da-req-pareada.md	3	acceptance_evidence	evidence	ML-2D: 3 criteria met
+ROADMAP-2026-07-30-roadmap-move-sincroniza-a-referencia-da-req-pareada.md	3	acceptance_evidence	evidence	ML-2E: 4 criteria met
+ROADMAP-2026-07-30-roadmap-move-sincroniza-a-referencia-da-req-pareada.md	3	acceptance_evidence	evidence	ML-2F: 4 criteria met
+ROADMAP-2026-07-30-roadmap-move-sincroniza-a-referencia-da-req-pareada.md	3	mls_complete	evidence	ML-2D: ✅
+ROADMAP-2026-07-30-roadmap-move-sincroniza-a-referencia-da-req-pareada.md	3	mls_complete	evidence	ML-2E: ✅
+ROADMAP-2026-07-30-roadmap-move-sincroniza-a-referencia-da-req-pareada.md	3	mls_complete	evidence	ML-2F: ✅
+ROADMAP-2026-07-30-roadmap-move-sincroniza-a-referencia-da-req-pareada.md	4	acceptance_evidence	evidence	ML-3A: 7 criteria met
+ROADMAP-2026-07-30-roadmap-move-sincroniza-a-referencia-da-req-pareada.md	4	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-07-31-alinhar-marcador-de-criterios-de-aceite-do-gerador-de-roadmap.md	1	acceptance_evidence	failure	ML-1A: 6 unmet acceptance criteria
+ROADMAP-2026-07-31-alinhar-marcador-de-criterios-de-aceite-do-gerador-de-roadmap.md	1	acceptance_evidence	failure	ML-1B: 5 unmet acceptance criteria
+ROADMAP-2026-07-31-alinhar-marcador-de-criterios-de-aceite-do-gerador-de-roadmap.md	1	acceptance_evidence	failure	ML-1C: 5 unmet acceptance criteria
+ROADMAP-2026-07-31-alinhar-marcador-de-criterios-de-aceite-do-gerador-de-roadmap.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-07-31-alinhar-marcador-de-criterios-de-aceite-do-gerador-de-roadmap.md	1	mls_complete	evidence	ML-1B: ✅
+ROADMAP-2026-07-31-alinhar-marcador-de-criterios-de-aceite-do-gerador-de-roadmap.md	1	mls_complete	evidence	ML-1C: ✅
+ROADMAP-2026-07-31-alinhar-marcador-de-criterios-de-aceite-do-gerador-de-roadmap.md	2	acceptance_evidence	evidence	ML-2A: 6 criteria met
+ROADMAP-2026-07-31-alinhar-marcador-de-criterios-de-aceite-do-gerador-de-roadmap.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-07-31-sanitizar-html-do-drawer-do-dashboard-com-dompurify.md	1	acceptance_evidence	evidence	ML-1A: 4 criteria met
+ROADMAP-2026-07-31-sanitizar-html-do-drawer-do-dashboard-com-dompurify.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-07-31-sanitizar-html-do-drawer-do-dashboard-com-dompurify.md	2	acceptance_evidence	evidence	ML-2A: 7 criteria met
+ROADMAP-2026-07-31-sanitizar-html-do-drawer-do-dashboard-com-dompurify.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-07-31-sanitizar-html-do-drawer-do-dashboard-com-dompurify.md	3	acceptance_evidence	evidence	ML-3A: 5 criteria met
+ROADMAP-2026-07-31-sanitizar-html-do-drawer-do-dashboard-com-dompurify.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-07-31-views-de-lista-para-adrs-e-reqs-no-dashboard.md	1	acceptance_evidence	evidence	ML-1A: 8 criteria met
+ROADMAP-2026-07-31-views-de-lista-para-adrs-e-reqs-no-dashboard.md	1	acceptance_evidence	evidence	ML-1B: 4 criteria met
+ROADMAP-2026-07-31-views-de-lista-para-adrs-e-reqs-no-dashboard.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-07-31-views-de-lista-para-adrs-e-reqs-no-dashboard.md	1	mls_complete	evidence	ML-1B: ✅
+ROADMAP-2026-07-31-views-de-lista-para-adrs-e-reqs-no-dashboard.md	2	acceptance_evidence	evidence	ML-2A: 6 criteria met
+ROADMAP-2026-07-31-views-de-lista-para-adrs-e-reqs-no-dashboard.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-01-corrigir-403-em-links-markdown-relativos-dentro-do-drawer.md	1	acceptance_evidence	evidence	ML-1A: 4 criteria met
+ROADMAP-2026-08-01-corrigir-403-em-links-markdown-relativos-dentro-do-drawer.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-01-corrigir-403-em-links-markdown-relativos-dentro-do-drawer.md	2	acceptance_evidence	evidence	ML-2A: 6 criteria met
+ROADMAP-2026-08-01-corrigir-403-em-links-markdown-relativos-dentro-do-drawer.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-01-corrigir-403-em-links-markdown-relativos-dentro-do-drawer.md	3	acceptance_evidence	evidence	ML-3A: 4 criteria met
+ROADMAP-2026-08-01-corrigir-403-em-links-markdown-relativos-dentro-do-drawer.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-08-01-corrigir-falso-positivo-ref-targets-exist-em-roadmap-new-from-req.md	1	acceptance_evidence	failure	ML-1A: 7 unmet acceptance criteria
+ROADMAP-2026-08-01-corrigir-falso-positivo-ref-targets-exist-em-roadmap-new-from-req.md	1	acceptance_evidence	failure	ML-1B: 1 unmet acceptance criteria
+ROADMAP-2026-08-01-corrigir-falso-positivo-ref-targets-exist-em-roadmap-new-from-req.md	1	acceptance_evidence	failure	ML-1C: 1 unmet acceptance criteria
+ROADMAP-2026-08-01-corrigir-falso-positivo-ref-targets-exist-em-roadmap-new-from-req.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-01-corrigir-falso-positivo-ref-targets-exist-em-roadmap-new-from-req.md	1	mls_complete	evidence	ML-1B: ✅
+ROADMAP-2026-08-01-corrigir-falso-positivo-ref-targets-exist-em-roadmap-new-from-req.md	1	mls_complete	evidence	ML-1C: ✅
+ROADMAP-2026-08-01-corrigir-falso-positivo-ref-targets-exist-em-roadmap-new-from-req.md	2	acceptance_evidence	evidence	ML-2A: 5 criteria met
+ROADMAP-2026-08-01-corrigir-falso-positivo-ref-targets-exist-em-roadmap-new-from-req.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-01-detectar-adr-nao-aceito-referenciado-por-req-concluida.md	1	acceptance_evidence	failure	ML-1A: 8 unmet acceptance criteria
+ROADMAP-2026-08-01-detectar-adr-nao-aceito-referenciado-por-req-concluida.md	1	acceptance_evidence	failure	ML-1B: 1 unmet acceptance criteria
+ROADMAP-2026-08-01-detectar-adr-nao-aceito-referenciado-por-req-concluida.md	1	acceptance_evidence	failure	ML-1C: 1 unmet acceptance criteria
+ROADMAP-2026-08-01-detectar-adr-nao-aceito-referenciado-por-req-concluida.md	1	acceptance_evidence	failure	ML-1D: no acceptance block
+ROADMAP-2026-08-01-detectar-adr-nao-aceito-referenciado-por-req-concluida.md	1	acceptance_evidence	failure	ML-1E: no acceptance block
+ROADMAP-2026-08-01-detectar-adr-nao-aceito-referenciado-por-req-concluida.md	1	acceptance_evidence	failure	ML-1F: no acceptance block
+ROADMAP-2026-08-01-detectar-adr-nao-aceito-referenciado-por-req-concluida.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-01-detectar-adr-nao-aceito-referenciado-por-req-concluida.md	1	mls_complete	evidence	ML-1B: ✅
+ROADMAP-2026-08-01-detectar-adr-nao-aceito-referenciado-por-req-concluida.md	1	mls_complete	evidence	ML-1C: ✅
+ROADMAP-2026-08-01-detectar-adr-nao-aceito-referenciado-por-req-concluida.md	1	mls_complete	evidence	ML-1D: ✅
+ROADMAP-2026-08-01-detectar-adr-nao-aceito-referenciado-por-req-concluida.md	1	mls_complete	evidence	ML-1E: ✅
+ROADMAP-2026-08-01-detectar-adr-nao-aceito-referenciado-por-req-concluida.md	1	mls_complete	evidence	ML-1F: ✅
+ROADMAP-2026-08-01-detectar-adr-nao-aceito-referenciado-por-req-concluida.md	2	acceptance_evidence	evidence	ML-2A: 5 criteria met
+ROADMAP-2026-08-01-detectar-adr-nao-aceito-referenciado-por-req-concluida.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-01-proteger-dependencias-cdn-do-dashboard-com-sri-e-remover-htmx-morto.md	1	acceptance_evidence	evidence	ML-1A: 5 criteria met
+ROADMAP-2026-08-01-proteger-dependencias-cdn-do-dashboard-com-sri-e-remover-htmx-morto.md	1	acceptance_evidence	evidence	ML-1B: 4 criteria met
+ROADMAP-2026-08-01-proteger-dependencias-cdn-do-dashboard-com-sri-e-remover-htmx-morto.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-01-proteger-dependencias-cdn-do-dashboard-com-sri-e-remover-htmx-morto.md	1	mls_complete	evidence	ML-1B: ✅
+ROADMAP-2026-08-01-proteger-dependencias-cdn-do-dashboard-com-sri-e-remover-htmx-morto.md	2	acceptance_evidence	evidence	ML-2A: 4 criteria met
+ROADMAP-2026-08-01-proteger-dependencias-cdn-do-dashboard-com-sri-e-remover-htmx-morto.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-01-proteger-dependencias-cdn-do-dashboard-com-sri-e-remover-htmx-morto.md	3	acceptance_evidence	evidence	ML-3A: 4 criteria met
+ROADMAP-2026-08-01-proteger-dependencias-cdn-do-dashboard-com-sri-e-remover-htmx-morto.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-08-02-backticks-em-campos-de-referencia-e-mensagem-de-sucesso-do-validate-no-python.md	1	acceptance_evidence	failure	ML-1A: 7 unmet acceptance criteria
+ROADMAP-2026-08-02-backticks-em-campos-de-referencia-e-mensagem-de-sucesso-do-validate-no-python.md	1	acceptance_evidence	failure	ML-1B: 1 unmet acceptance criteria
+ROADMAP-2026-08-02-backticks-em-campos-de-referencia-e-mensagem-de-sucesso-do-validate-no-python.md	1	acceptance_evidence	failure	ML-1C: 3 unmet acceptance criteria
+ROADMAP-2026-08-02-backticks-em-campos-de-referencia-e-mensagem-de-sucesso-do-validate-no-python.md	1	acceptance_evidence	failure	ML-1D: no acceptance block
+ROADMAP-2026-08-02-backticks-em-campos-de-referencia-e-mensagem-de-sucesso-do-validate-no-python.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-02-backticks-em-campos-de-referencia-e-mensagem-de-sucesso-do-validate-no-python.md	1	mls_complete	evidence	ML-1B: ✅
+ROADMAP-2026-08-02-backticks-em-campos-de-referencia-e-mensagem-de-sucesso-do-validate-no-python.md	1	mls_complete	evidence	ML-1C: ✅
+ROADMAP-2026-08-02-backticks-em-campos-de-referencia-e-mensagem-de-sucesso-do-validate-no-python.md	1	mls_complete	evidence	ML-1D: ✅
+ROADMAP-2026-08-02-backticks-em-campos-de-referencia-e-mensagem-de-sucesso-do-validate-no-python.md	2	acceptance_evidence	evidence	ML-2A: 6 criteria met
+ROADMAP-2026-08-02-backticks-em-campos-de-referencia-e-mensagem-de-sucesso-do-validate-no-python.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-02-convergir-o-comando-status-dos-tres-clis-num-formato-unico.md	1	acceptance_evidence	failure	ML-1A: 5 unmet acceptance criteria
+ROADMAP-2026-08-02-convergir-o-comando-status-dos-tres-clis-num-formato-unico.md	1	acceptance_evidence	failure	ML-1B: 1 unmet acceptance criteria
+ROADMAP-2026-08-02-convergir-o-comando-status-dos-tres-clis-num-formato-unico.md	1	acceptance_evidence	failure	ML-1C: 3 unmet acceptance criteria
+ROADMAP-2026-08-02-convergir-o-comando-status-dos-tres-clis-num-formato-unico.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-02-convergir-o-comando-status-dos-tres-clis-num-formato-unico.md	1	mls_complete	evidence	ML-1B: ✅
+ROADMAP-2026-08-02-convergir-o-comando-status-dos-tres-clis-num-formato-unico.md	1	mls_complete	evidence	ML-1C: ✅
+ROADMAP-2026-08-02-convergir-o-comando-status-dos-tres-clis-num-formato-unico.md	2	acceptance_evidence	evidence	ML-2A: 3 criteria met
+ROADMAP-2026-08-02-convergir-o-comando-status-dos-tres-clis-num-formato-unico.md	2	acceptance_evidence	failure	ML-2B: no acceptance block
+ROADMAP-2026-08-02-convergir-o-comando-status-dos-tres-clis-num-formato-unico.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-02-convergir-o-comando-status-dos-tres-clis-num-formato-unico.md	2	mls_complete	evidence	ML-2B: ✅
+ROADMAP-2026-08-02-convergir-o-comando-status-dos-tres-clis-num-formato-unico.md	3	acceptance_evidence	evidence	ML-3A: 5 criteria met
+ROADMAP-2026-08-02-convergir-o-comando-status-dos-tres-clis-num-formato-unico.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-08-02-fechar-as-duas-divergencias-de-parsing-remanescentes-no-python.md	1	acceptance_evidence	failure	ML-1A: 5 unmet acceptance criteria
+ROADMAP-2026-08-02-fechar-as-duas-divergencias-de-parsing-remanescentes-no-python.md	1	acceptance_evidence	failure	ML-1B: 6 unmet acceptance criteria
+ROADMAP-2026-08-02-fechar-as-duas-divergencias-de-parsing-remanescentes-no-python.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-02-fechar-as-duas-divergencias-de-parsing-remanescentes-no-python.md	1	mls_complete	evidence	ML-1B: ✅
+ROADMAP-2026-08-02-fechar-as-duas-divergencias-de-parsing-remanescentes-no-python.md	2	acceptance_evidence	evidence	ML-2A: 5 criteria met
+ROADMAP-2026-08-02-fechar-as-duas-divergencias-de-parsing-remanescentes-no-python.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-02-substituir-os-parsers-artesanais-de-config-por-biblioteca-yaml-nos-tres-clis.md	0	acceptance_evidence	evidence	ML-0A: 4 criteria met
+ROADMAP-2026-08-02-substituir-os-parsers-artesanais-de-config-por-biblioteca-yaml-nos-tres-clis.md	0	mls_complete	evidence	ML-0A: ✅
+ROADMAP-2026-08-02-substituir-os-parsers-artesanais-de-config-por-biblioteca-yaml-nos-tres-clis.md	1	acceptance_evidence	failure	ML-1A: 8 unmet acceptance criteria
+ROADMAP-2026-08-02-substituir-os-parsers-artesanais-de-config-por-biblioteca-yaml-nos-tres-clis.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-02-substituir-os-parsers-artesanais-de-config-por-biblioteca-yaml-nos-tres-clis.md	2	acceptance_evidence	failure	ML-2A: 5 unmet acceptance criteria
+ROADMAP-2026-08-02-substituir-os-parsers-artesanais-de-config-por-biblioteca-yaml-nos-tres-clis.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-02-suportar-lista-yaml-inline-nas-chaves-de-config-dos-tres-clis.md	1	acceptance_evidence	evidence	ML-1A: 6 criteria met
+ROADMAP-2026-08-02-suportar-lista-yaml-inline-nas-chaves-de-config-dos-tres-clis.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-02-suportar-lista-yaml-inline-nas-chaves-de-config-dos-tres-clis.md	2	acceptance_evidence	evidence	ML-2A: 5 criteria met
+ROADMAP-2026-08-02-suportar-lista-yaml-inline-nas-chaves-de-config-dos-tres-clis.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-02-unificar-a-leitura-do-trackfw-yaml-em-um-unico-carregador-nos-tres-clis.md	1	acceptance_evidence	failure	ML-1A: 4 unmet acceptance criteria
+ROADMAP-2026-08-02-unificar-a-leitura-do-trackfw-yaml-em-um-unico-carregador-nos-tres-clis.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-02-unificar-a-leitura-do-trackfw-yaml-em-um-unico-carregador-nos-tres-clis.md	2	acceptance_evidence	failure	ML-2A: 5 unmet acceptance criteria
+ROADMAP-2026-08-02-unificar-a-leitura-do-trackfw-yaml-em-um-unico-carregador-nos-tres-clis.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-02-unificar-a-leitura-do-trackfw-yaml-em-um-unico-carregador-nos-tres-clis.md	3	acceptance_evidence	failure	ML-3A: 3 unmet acceptance criteria
+ROADMAP-2026-08-02-unificar-a-leitura-do-trackfw-yaml-em-um-unico-carregador-nos-tres-clis.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-08-02-unificar-a-leitura-do-trackfw-yaml-em-um-unico-carregador-nos-tres-clis.md	4	acceptance_evidence	failure	ML-4A: 2 unmet acceptance criteria
+ROADMAP-2026-08-02-unificar-a-leitura-do-trackfw-yaml-em-um-unico-carregador-nos-tres-clis.md	4	mls_complete	evidence	ML-4A: ✅
+ROADMAP-2026-08-04-comando-trackfw-branch-new-para-bloquear-criacao-de-branch-sem-req-roadmap-em-wip.md	1	acceptance_evidence	evidence	ML-1A: 2 criteria met
+ROADMAP-2026-08-04-comando-trackfw-branch-new-para-bloquear-criacao-de-branch-sem-req-roadmap-em-wip.md	1	acceptance_evidence	evidence	ML-1B: 3 criteria met
+ROADMAP-2026-08-04-comando-trackfw-branch-new-para-bloquear-criacao-de-branch-sem-req-roadmap-em-wip.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-04-comando-trackfw-branch-new-para-bloquear-criacao-de-branch-sem-req-roadmap-em-wip.md	1	mls_complete	evidence	ML-1B: ✅
+ROADMAP-2026-08-04-comando-trackfw-branch-new-para-bloquear-criacao-de-branch-sem-req-roadmap-em-wip.md	2	acceptance_evidence	evidence	ML-2A: 2 criteria met
+ROADMAP-2026-08-04-comando-trackfw-branch-new-para-bloquear-criacao-de-branch-sem-req-roadmap-em-wip.md	2	acceptance_evidence	evidence	ML-2B: 2 criteria met
+ROADMAP-2026-08-04-comando-trackfw-branch-new-para-bloquear-criacao-de-branch-sem-req-roadmap-em-wip.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-04-comando-trackfw-branch-new-para-bloquear-criacao-de-branch-sem-req-roadmap-em-wip.md	2	mls_complete	evidence	ML-2B: ✅
+ROADMAP-2026-08-04-comando-trackfw-branch-new-para-bloquear-criacao-de-branch-sem-req-roadmap-em-wip.md	3	acceptance_evidence	evidence	ML-3A: 2 criteria met
+ROADMAP-2026-08-04-comando-trackfw-branch-new-para-bloquear-criacao-de-branch-sem-req-roadmap-em-wip.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-08-04-compatibilidade-com-opencode-opencode-ai-para-uso-de-modelos-open-source.md	1	acceptance_evidence	evidence	ML-1A: 2 criteria met
+ROADMAP-2026-08-04-compatibilidade-com-opencode-opencode-ai-para-uso-de-modelos-open-source.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-04-compatibilidade-com-opencode-opencode-ai-para-uso-de-modelos-open-source.md	2	acceptance_evidence	evidence	ML-2A: 2 criteria met
+ROADMAP-2026-08-04-compatibilidade-com-opencode-opencode-ai-para-uso-de-modelos-open-source.md	2	acceptance_evidence	evidence	ML-2B: 2 criteria met
+ROADMAP-2026-08-04-compatibilidade-com-opencode-opencode-ai-para-uso-de-modelos-open-source.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-04-compatibilidade-com-opencode-opencode-ai-para-uso-de-modelos-open-source.md	2	mls_complete	evidence	ML-2B: ✅
+ROADMAP-2026-08-04-compatibilidade-com-opencode-opencode-ai-para-uso-de-modelos-open-source.md	3	acceptance_evidence	evidence	ML-3A: 2 criteria met
+ROADMAP-2026-08-04-compatibilidade-com-opencode-opencode-ai-para-uso-de-modelos-open-source.md	3	acceptance_evidence	evidence	ML-3B: 2 criteria met
+ROADMAP-2026-08-04-compatibilidade-com-opencode-opencode-ai-para-uso-de-modelos-open-source.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-08-04-compatibilidade-com-opencode-opencode-ai-para-uso-de-modelos-open-source.md	3	mls_complete	evidence	ML-3B: ✅
+ROADMAP-2026-08-04-compatibilidade-com-opencode-opencode-ai-para-uso-de-modelos-open-source.md	4	acceptance_evidence	evidence	ML-4A: 2 criteria met
+ROADMAP-2026-08-04-compatibilidade-com-opencode-opencode-ai-para-uso-de-modelos-open-source.md	4	mls_complete	evidence	ML-4A: ✅
+ROADMAP-2026-08-04-corrigir-dispatch-sem-subagent-type-no-template-do-architect.md	1	acceptance_evidence	evidence	ML-1A: 4 criteria met
+ROADMAP-2026-08-04-corrigir-dispatch-sem-subagent-type-no-template-do-architect.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-04-discover-init-nao-gera-os-scripts-de-attention-hooks-em-go-e-node-quebra-de-paridade-com-python.md	1	acceptance_evidence	evidence	ML-1A: 3 criteria met
+ROADMAP-2026-08-04-discover-init-nao-gera-os-scripts-de-attention-hooks-em-go-e-node-quebra-de-paridade-com-python.md	1	acceptance_evidence	evidence	ML-1B: 2 criteria met
+ROADMAP-2026-08-04-discover-init-nao-gera-os-scripts-de-attention-hooks-em-go-e-node-quebra-de-paridade-com-python.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-04-discover-init-nao-gera-os-scripts-de-attention-hooks-em-go-e-node-quebra-de-paridade-com-python.md	1	mls_complete	evidence	ML-1B: ✅
+ROADMAP-2026-08-04-discover-init-nao-gera-os-scripts-de-attention-hooks-em-go-e-node-quebra-de-paridade-com-python.md	2	acceptance_evidence	evidence	ML-2A: 2 criteria met
+ROADMAP-2026-08-04-discover-init-nao-gera-os-scripts-de-attention-hooks-em-go-e-node-quebra-de-paridade-com-python.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-04-job-parity-do-ci-so-roda-4-de-14-scripts-do-make-parity-falsificacao-e-identity-parity-nunca-rodam-em-ci.md	1	acceptance_evidence	evidence	ML-1A: 3 criteria met
+ROADMAP-2026-08-04-job-parity-do-ci-so-roda-4-de-14-scripts-do-make-parity-falsificacao-e-identity-parity-nunca-rodam-em-ci.md	1	acceptance_evidence	evidence	ML-1B: 2 criteria met
+ROADMAP-2026-08-04-job-parity-do-ci-so-roda-4-de-14-scripts-do-make-parity-falsificacao-e-identity-parity-nunca-rodam-em-ci.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-04-job-parity-do-ci-so-roda-4-de-14-scripts-do-make-parity-falsificacao-e-identity-parity-nunca-rodam-em-ci.md	1	mls_complete	evidence	ML-1B: ✅
+ROADMAP-2026-08-04-json-marshalindent-do-go-escapa-html-e-diverge-de-node-python-em-3-targets-do-catalogo-kiro-amazonq-antigravity-legacy.md	1	acceptance_evidence	evidence	ML-1A: 3 criteria met
+ROADMAP-2026-08-04-json-marshalindent-do-go-escapa-html-e-diverge-de-node-python-em-3-targets-do-catalogo-kiro-amazonq-antigravity-legacy.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-04-json-marshalindent-do-go-escapa-html-e-diverge-de-node-python-em-3-targets-do-catalogo-kiro-amazonq-antigravity-legacy.md	2	acceptance_evidence	evidence	ML-2A: 4 criteria met
+ROADMAP-2026-08-04-json-marshalindent-do-go-escapa-html-e-diverge-de-node-python-em-3-targets-do-catalogo-kiro-amazonq-antigravity-legacy.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-04-make-quality-locale-fixo-no-falsify.md	1	acceptance_evidence	evidence	ML-1A: 3 criteria met
+ROADMAP-2026-08-04-make-quality-locale-fixo-no-falsify.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-04-req-move-list-subpastas-e-move-fisico.md	1	acceptance_evidence	evidence	ML-1A: 3 criteria met
+ROADMAP-2026-08-04-req-move-list-subpastas-e-move-fisico.md	1	acceptance_evidence	evidence	ML-1B: 2 criteria met
+ROADMAP-2026-08-04-req-move-list-subpastas-e-move-fisico.md	1	acceptance_evidence	evidence	ML-1C: 2 criteria met
+ROADMAP-2026-08-04-req-move-list-subpastas-e-move-fisico.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-04-req-move-list-subpastas-e-move-fisico.md	1	mls_complete	evidence	ML-1B: ✅
+ROADMAP-2026-08-04-req-move-list-subpastas-e-move-fisico.md	1	mls_complete	evidence	ML-1C: ✅
+ROADMAP-2026-08-04-req-move-list-subpastas-e-move-fisico.md	2	acceptance_evidence	evidence	ML-2A: 2 criteria met
+ROADMAP-2026-08-04-req-move-list-subpastas-e-move-fisico.md	2	acceptance_evidence	evidence	ML-2B: 2 criteria met
+ROADMAP-2026-08-04-req-move-list-subpastas-e-move-fisico.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-04-req-move-list-subpastas-e-move-fisico.md	2	mls_complete	evidence	ML-2B: ✅
+ROADMAP-2026-08-04-req-move-list-subpastas-e-move-fisico.md	3	acceptance_evidence	evidence	ML-3A: 3 criteria met
+ROADMAP-2026-08-04-req-move-list-subpastas-e-move-fisico.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-08-04-req-move-node-try-catch-local.md	1	acceptance_evidence	evidence	ML-1A: 2 criteria met
+ROADMAP-2026-08-04-req-move-node-try-catch-local.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-04-scripts-de-attention-hooks-divergem-em-conteudo-entre-go-node-e-python-sem-gate-de-paridade.md	1	acceptance_evidence	evidence	ML-1A: 5 criteria met
+ROADMAP-2026-08-04-scripts-de-attention-hooks-divergem-em-conteudo-entre-go-node-e-python-sem-gate-de-paridade.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-04-scripts-de-attention-hooks-divergem-em-conteudo-entre-go-node-e-python-sem-gate-de-paridade.md	2	acceptance_evidence	evidence	ML-2A: 4 criteria met
+ROADMAP-2026-08-04-scripts-de-attention-hooks-divergem-em-conteudo-entre-go-node-e-python-sem-gate-de-paridade.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-05-atualiza-protocolo-de-criacao-de-branch-do-architect-para-usar-trackfw-branch-new.md	1	acceptance_evidence	evidence	ML-1A: 4 criteria met
+ROADMAP-2026-08-05-atualiza-protocolo-de-criacao-de-branch-do-architect-para-usar-trackfw-branch-new.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-05-hooks-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md	1	acceptance_evidence	failure	ML-1A: 4 unmet acceptance criteria
+ROADMAP-2026-08-05-hooks-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-05-hooks-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md	2	acceptance_evidence	evidence	ML-2C: 3 criteria met
+ROADMAP-2026-08-05-hooks-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md	2	acceptance_evidence	evidence	ML-2D: 3 criteria met
+ROADMAP-2026-08-05-hooks-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md	2	acceptance_evidence	evidence	ML-2E: 3 criteria met
+ROADMAP-2026-08-05-hooks-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md	2	acceptance_evidence	evidence	ML-2F: 2 criteria met
+ROADMAP-2026-08-05-hooks-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md	2	acceptance_evidence	failure	ML-2A: 3 unmet acceptance criteria
+ROADMAP-2026-08-05-hooks-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md	2	acceptance_evidence	failure	ML-2B: 3 unmet acceptance criteria
+ROADMAP-2026-08-05-hooks-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-05-hooks-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md	2	mls_complete	evidence	ML-2B: ✅
+ROADMAP-2026-08-05-hooks-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md	2	mls_complete	evidence	ML-2C: ✅
+ROADMAP-2026-08-05-hooks-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md	2	mls_complete	evidence	ML-2D: ✅
+ROADMAP-2026-08-05-hooks-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md	2	mls_complete	evidence	ML-2E: ✅
+ROADMAP-2026-08-05-hooks-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md	2	mls_complete	evidence	ML-2F: ✅
+ROADMAP-2026-08-05-hooks-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md	3	acceptance_evidence	evidence	ML-3A: 2 criteria met
+ROADMAP-2026-08-05-hooks-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-08-05-hooks-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md	4	acceptance_evidence	evidence	ML-4A: 3 criteria met
+ROADMAP-2026-08-05-hooks-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md	4	mls_complete	evidence	ML-4A: ✅
+ROADMAP-2026-08-05-hooks-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md	5	acceptance_evidence	failure	ML-5A: 2 unmet acceptance criteria
+ROADMAP-2026-08-05-hooks-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md	5	mls_complete	evidence	ML-5A: ✅
+ROADMAP-2026-08-06-corrige-divergencia-de-versao-pypi-e-schema-legado-de-hooks-do-cursor.md	1	acceptance_evidence	evidence	ML-1A: 3 criteria met
+ROADMAP-2026-08-06-corrige-divergencia-de-versao-pypi-e-schema-legado-de-hooks-do-cursor.md	1	acceptance_evidence	failure	ML-1B: 4 unmet acceptance criteria
+ROADMAP-2026-08-06-corrige-divergencia-de-versao-pypi-e-schema-legado-de-hooks-do-cursor.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-06-corrige-divergencia-de-versao-pypi-e-schema-legado-de-hooks-do-cursor.md	1	mls_complete	evidence	ML-1B: ✅
+ROADMAP-2026-08-06-corrige-divergencia-de-versao-pypi-e-schema-legado-de-hooks-do-cursor.md	2	acceptance_evidence	evidence	ML-2A: 2 criteria met
+ROADMAP-2026-08-06-corrige-divergencia-de-versao-pypi-e-schema-legado-de-hooks-do-cursor.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-06-hooks-de-credential-guard-como-escopo-global-cross-project-via-trackfw-update-harness.md	1	acceptance_evidence	failure	ML-1A: 3 unmet acceptance criteria
+ROADMAP-2026-08-06-hooks-de-credential-guard-como-escopo-global-cross-project-via-trackfw-update-harness.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-06-hooks-de-credential-guard-como-escopo-global-cross-project-via-trackfw-update-harness.md	2	acceptance_evidence	evidence	ML-2C: 2 criteria met
+ROADMAP-2026-08-06-hooks-de-credential-guard-como-escopo-global-cross-project-via-trackfw-update-harness.md	2	acceptance_evidence	evidence	ML-2D: 2 criteria met
+ROADMAP-2026-08-06-hooks-de-credential-guard-como-escopo-global-cross-project-via-trackfw-update-harness.md	2	acceptance_evidence	evidence	ML-2E: 3 criteria met
+ROADMAP-2026-08-06-hooks-de-credential-guard-como-escopo-global-cross-project-via-trackfw-update-harness.md	2	acceptance_evidence	evidence	ML-2F: 3 criteria met
+ROADMAP-2026-08-06-hooks-de-credential-guard-como-escopo-global-cross-project-via-trackfw-update-harness.md	2	acceptance_evidence	failure	ML-2A: 3 unmet acceptance criteria
+ROADMAP-2026-08-06-hooks-de-credential-guard-como-escopo-global-cross-project-via-trackfw-update-harness.md	2	acceptance_evidence	failure	ML-2B: 3 unmet acceptance criteria
+ROADMAP-2026-08-06-hooks-de-credential-guard-como-escopo-global-cross-project-via-trackfw-update-harness.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-06-hooks-de-credential-guard-como-escopo-global-cross-project-via-trackfw-update-harness.md	2	mls_complete	evidence	ML-2B: ✅
+ROADMAP-2026-08-06-hooks-de-credential-guard-como-escopo-global-cross-project-via-trackfw-update-harness.md	2	mls_complete	evidence	ML-2C: ✅
+ROADMAP-2026-08-06-hooks-de-credential-guard-como-escopo-global-cross-project-via-trackfw-update-harness.md	2	mls_complete	evidence	ML-2D: ✅
+ROADMAP-2026-08-06-hooks-de-credential-guard-como-escopo-global-cross-project-via-trackfw-update-harness.md	2	mls_complete	evidence	ML-2E: ✅
+ROADMAP-2026-08-06-hooks-de-credential-guard-como-escopo-global-cross-project-via-trackfw-update-harness.md	2	mls_complete	evidence	ML-2F: ✅
+ROADMAP-2026-08-06-hooks-de-credential-guard-como-escopo-global-cross-project-via-trackfw-update-harness.md	3	acceptance_evidence	failure	ML-3A: 4 unmet acceptance criteria
+ROADMAP-2026-08-06-hooks-de-credential-guard-como-escopo-global-cross-project-via-trackfw-update-harness.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-08-06-hooks-de-credential-guard-como-escopo-global-cross-project-via-trackfw-update-harness.md	4	acceptance_evidence	evidence	ML-4A: 2 criteria met
+ROADMAP-2026-08-06-hooks-de-credential-guard-como-escopo-global-cross-project-via-trackfw-update-harness.md	4	mls_complete	evidence	ML-4A: ✅
+ROADMAP-2026-08-06-hooks-de-credential-guard-como-escopo-global-cross-project-via-trackfw-update-harness.md	5	acceptance_evidence	evidence	ML-5A: 1 criteria met
+ROADMAP-2026-08-06-hooks-de-credential-guard-como-escopo-global-cross-project-via-trackfw-update-harness.md	5	mls_complete	evidence	ML-5A: ✅
+ROADMAP-2026-08-07-atualiza-actions-do-github-para-versoes-com-node24-nativo.md	1	acceptance_evidence	failure	ML-1A: 3 unmet acceptance criteria
+ROADMAP-2026-08-07-atualiza-actions-do-github-para-versoes-com-node24-nativo.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-08-adr-new-com-escopo-global-scope-global-escrevendo-em-trackfw-adr.md	1	acceptance_evidence	failure	ML-1A: 3 unmet acceptance criteria
+ROADMAP-2026-08-08-adr-new-com-escopo-global-scope-global-escrevendo-em-trackfw-adr.md	1	acceptance_evidence	failure	ML-1B: 2 unmet acceptance criteria
+ROADMAP-2026-08-08-adr-new-com-escopo-global-scope-global-escrevendo-em-trackfw-adr.md	1	acceptance_evidence	failure	ML-1C: 2 unmet acceptance criteria
+ROADMAP-2026-08-08-adr-new-com-escopo-global-scope-global-escrevendo-em-trackfw-adr.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-08-adr-new-com-escopo-global-scope-global-escrevendo-em-trackfw-adr.md	1	mls_complete	evidence	ML-1B: ✅
+ROADMAP-2026-08-08-adr-new-com-escopo-global-scope-global-escrevendo-em-trackfw-adr.md	1	mls_complete	evidence	ML-1C: ✅
+ROADMAP-2026-08-08-adr-new-com-escopo-global-scope-global-escrevendo-em-trackfw-adr.md	2	acceptance_evidence	evidence	ML-2A: 4 criteria met
+ROADMAP-2026-08-08-adr-new-com-escopo-global-scope-global-escrevendo-em-trackfw-adr.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-08-conectar-adrs-globais-aos-agentes-auto-registro-em-adr-dirs-via-update-e-escolha-local-global-ao-criar-adr-de-req.md	1	acceptance_evidence	failure	ML-1A: 5 unmet acceptance criteria
+ROADMAP-2026-08-08-conectar-adrs-globais-aos-agentes-auto-registro-em-adr-dirs-via-update-e-escolha-local-global-ao-criar-adr-de-req.md	1	acceptance_evidence	failure	ML-1B: 2 unmet acceptance criteria
+ROADMAP-2026-08-08-conectar-adrs-globais-aos-agentes-auto-registro-em-adr-dirs-via-update-e-escolha-local-global-ao-criar-adr-de-req.md	1	acceptance_evidence	failure	ML-1C: 2 unmet acceptance criteria
+ROADMAP-2026-08-08-conectar-adrs-globais-aos-agentes-auto-registro-em-adr-dirs-via-update-e-escolha-local-global-ao-criar-adr-de-req.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-08-conectar-adrs-globais-aos-agentes-auto-registro-em-adr-dirs-via-update-e-escolha-local-global-ao-criar-adr-de-req.md	1	mls_complete	evidence	ML-1B: ✅
+ROADMAP-2026-08-08-conectar-adrs-globais-aos-agentes-auto-registro-em-adr-dirs-via-update-e-escolha-local-global-ao-criar-adr-de-req.md	1	mls_complete	evidence	ML-1C: ✅
+ROADMAP-2026-08-08-conectar-adrs-globais-aos-agentes-auto-registro-em-adr-dirs-via-update-e-escolha-local-global-ao-criar-adr-de-req.md	2	acceptance_evidence	failure	ML-2A: 2 unmet acceptance criteria
+ROADMAP-2026-08-08-conectar-adrs-globais-aos-agentes-auto-registro-em-adr-dirs-via-update-e-escolha-local-global-ao-criar-adr-de-req.md	2	acceptance_evidence	failure	ML-2B: 2 unmet acceptance criteria
+ROADMAP-2026-08-08-conectar-adrs-globais-aos-agentes-auto-registro-em-adr-dirs-via-update-e-escolha-local-global-ao-criar-adr-de-req.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-08-conectar-adrs-globais-aos-agentes-auto-registro-em-adr-dirs-via-update-e-escolha-local-global-ao-criar-adr-de-req.md	2	mls_complete	evidence	ML-2B: ✅
+ROADMAP-2026-08-08-conectar-adrs-globais-aos-agentes-auto-registro-em-adr-dirs-via-update-e-escolha-local-global-ao-criar-adr-de-req.md	3	acceptance_evidence	evidence	ML-3A: 4 criteria met
+ROADMAP-2026-08-08-conectar-adrs-globais-aos-agentes-auto-registro-em-adr-dirs-via-update-e-escolha-local-global-ao-criar-adr-de-req.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-08-08-credential-guard-modo-block-por-padrao-cobertura-de-read-write-e-resolucao-de-arquivo-referenciado.md	1	acceptance_evidence	failure	ML-1A: 5 unmet acceptance criteria
+ROADMAP-2026-08-08-credential-guard-modo-block-por-padrao-cobertura-de-read-write-e-resolucao-de-arquivo-referenciado.md	1	acceptance_evidence	failure	ML-1B: 2 unmet acceptance criteria
+ROADMAP-2026-08-08-credential-guard-modo-block-por-padrao-cobertura-de-read-write-e-resolucao-de-arquivo-referenciado.md	1	acceptance_evidence	failure	ML-1C: 1 unmet acceptance criteria
+ROADMAP-2026-08-08-credential-guard-modo-block-por-padrao-cobertura-de-read-write-e-resolucao-de-arquivo-referenciado.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-08-credential-guard-modo-block-por-padrao-cobertura-de-read-write-e-resolucao-de-arquivo-referenciado.md	1	mls_complete	evidence	ML-1B: ✅
+ROADMAP-2026-08-08-credential-guard-modo-block-por-padrao-cobertura-de-read-write-e-resolucao-de-arquivo-referenciado.md	1	mls_complete	evidence	ML-1C: ✅
+ROADMAP-2026-08-08-credential-guard-modo-block-por-padrao-cobertura-de-read-write-e-resolucao-de-arquivo-referenciado.md	2	acceptance_evidence	failure	ML-2A: 4 unmet acceptance criteria
+ROADMAP-2026-08-08-credential-guard-modo-block-por-padrao-cobertura-de-read-write-e-resolucao-de-arquivo-referenciado.md	2	acceptance_evidence	failure	ML-2C: 1 unmet acceptance criteria
+ROADMAP-2026-08-08-credential-guard-modo-block-por-padrao-cobertura-de-read-write-e-resolucao-de-arquivo-referenciado.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-08-credential-guard-modo-block-por-padrao-cobertura-de-read-write-e-resolucao-de-arquivo-referenciado.md	2	mls_complete	evidence	ML-2C: ✅
+ROADMAP-2026-08-08-credential-guard-modo-block-por-padrao-cobertura-de-read-write-e-resolucao-de-arquivo-referenciado.md	3	acceptance_evidence	failure	ML-3A: 1 unmet acceptance criteria
+ROADMAP-2026-08-08-credential-guard-modo-block-por-padrao-cobertura-de-read-write-e-resolucao-de-arquivo-referenciado.md	3	acceptance_evidence	failure	ML-3B: 1 unmet acceptance criteria
+ROADMAP-2026-08-08-credential-guard-modo-block-por-padrao-cobertura-de-read-write-e-resolucao-de-arquivo-referenciado.md	3	acceptance_evidence	failure	ML-3C: 1 unmet acceptance criteria
+ROADMAP-2026-08-08-credential-guard-modo-block-por-padrao-cobertura-de-read-write-e-resolucao-de-arquivo-referenciado.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-08-08-credential-guard-modo-block-por-padrao-cobertura-de-read-write-e-resolucao-de-arquivo-referenciado.md	3	mls_complete	evidence	ML-3B: ✅
+ROADMAP-2026-08-08-credential-guard-modo-block-por-padrao-cobertura-de-read-write-e-resolucao-de-arquivo-referenciado.md	3	mls_complete	evidence	ML-3C: ✅
+ROADMAP-2026-08-08-credential-guard-modo-block-por-padrao-cobertura-de-read-write-e-resolucao-de-arquivo-referenciado.md	4	acceptance_evidence	evidence	ML-4A: 2 criteria met
+ROADMAP-2026-08-08-credential-guard-modo-block-por-padrao-cobertura-de-read-write-e-resolucao-de-arquivo-referenciado.md	4	mls_complete	evidence	ML-4A: ✅
+ROADMAP-2026-08-08-harness-credential-guard-script-nao-e-gerado-por-trackfw-update-harness.md	1	acceptance_evidence	evidence	ML-1A: 3 criteria met
+ROADMAP-2026-08-08-harness-credential-guard-script-nao-e-gerado-por-trackfw-update-harness.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-08-remover-geradores-legados-orfaos-installcodex-copilot-cursor-gemini-windsurf-amazonq-e-installglobalskill.md	1	acceptance_evidence	failure	ML-1A: 3 unmet acceptance criteria
+ROADMAP-2026-08-08-remover-geradores-legados-orfaos-installcodex-copilot-cursor-gemini-windsurf-amazonq-e-installglobalskill.md	1	acceptance_evidence	failure	ML-1B: 2 unmet acceptance criteria
+ROADMAP-2026-08-08-remover-geradores-legados-orfaos-installcodex-copilot-cursor-gemini-windsurf-amazonq-e-installglobalskill.md	1	acceptance_evidence	failure	ML-1C: 2 unmet acceptance criteria
+ROADMAP-2026-08-08-remover-geradores-legados-orfaos-installcodex-copilot-cursor-gemini-windsurf-amazonq-e-installglobalskill.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-08-remover-geradores-legados-orfaos-installcodex-copilot-cursor-gemini-windsurf-amazonq-e-installglobalskill.md	1	mls_complete	evidence	ML-1B: ✅
+ROADMAP-2026-08-08-remover-geradores-legados-orfaos-installcodex-copilot-cursor-gemini-windsurf-amazonq-e-installglobalskill.md	1	mls_complete	evidence	ML-1C: ✅
+ROADMAP-2026-08-08-remover-geradores-legados-orfaos-installcodex-copilot-cursor-gemini-windsurf-amazonq-e-installglobalskill.md	2	acceptance_evidence	evidence	ML-2A: 4 criteria met
+ROADMAP-2026-08-08-remover-geradores-legados-orfaos-installcodex-copilot-cursor-gemini-windsurf-amazonq-e-installglobalskill.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-11-resolucao-de-caminho-dos-hooks-de-agente-independente-do-cwd.md	0	acceptance_evidence	failure	ML-0A: 5 unmet acceptance criteria
+ROADMAP-2026-08-11-resolucao-de-caminho-dos-hooks-de-agente-independente-do-cwd.md	0	mls_complete	evidence	ML-0A: ✅
+ROADMAP-2026-08-11-resolucao-de-caminho-dos-hooks-de-agente-independente-do-cwd.md	1	acceptance_evidence	failure	ML-1A: 3 unmet acceptance criteria
+ROADMAP-2026-08-11-resolucao-de-caminho-dos-hooks-de-agente-independente-do-cwd.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-11-resolucao-de-caminho-dos-hooks-de-agente-independente-do-cwd.md	2	acceptance_evidence	failure	ML-2A: 7 unmet acceptance criteria
+ROADMAP-2026-08-11-resolucao-de-caminho-dos-hooks-de-agente-independente-do-cwd.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-11-resolucao-de-caminho-dos-hooks-de-agente-independente-do-cwd.md	8	acceptance_evidence	evidence	ML-8B: 3 criteria met
+ROADMAP-2026-08-11-resolucao-de-caminho-dos-hooks-de-agente-independente-do-cwd.md	8	acceptance_evidence	failure	ML-8A: 5 unmet acceptance criteria
+ROADMAP-2026-08-11-resolucao-de-caminho-dos-hooks-de-agente-independente-do-cwd.md	8	acceptance_evidence	failure	ML-8C: no acceptance block
+ROADMAP-2026-08-11-resolucao-de-caminho-dos-hooks-de-agente-independente-do-cwd.md	8	mls_complete	evidence	ML-8A: ✅
+ROADMAP-2026-08-11-resolucao-de-caminho-dos-hooks-de-agente-independente-do-cwd.md	8	mls_complete	evidence	ML-8B: ✅
+ROADMAP-2026-08-11-resolucao-de-caminho-dos-hooks-de-agente-independente-do-cwd.md	8	mls_complete	evidence	ML-8C: ✅
+ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard.md	0	acceptance_evidence	evidence	ML-0A: 4 criteria met
+ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard.md	0	mls_complete	evidence	ML-0A: ✅
+ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard.md	1	acceptance_evidence	failure	ML-1A: no acceptance block
+ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard.md	1-bis	acceptance_evidence	failure	ML-1B: no acceptance block
+ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard.md	1-bis	mls_complete	evidence	ML-1B: ✅
+ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard.md	2	acceptance_evidence	failure	ML-2A: no acceptance block
+ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard.md	2-bis	acceptance_evidence	failure	ML-2B: no acceptance block
+ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard.md	2-bis	mls_complete	evidence	ML-2B: ✅
+ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard.md	3	acceptance_evidence	failure	ML-3A: no acceptance block
+ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard.md	3	acceptance_evidence	failure	ML-3B: no acceptance block
+ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard.md	3	mls_complete	evidence	ML-3B: ✅
+ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate.md	0	acceptance_evidence	evidence	ML-0A: 3 criteria met
+ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate.md	0	mls_complete	evidence	ML-0A: ✅
+ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate.md	0-bis	acceptance_evidence	evidence	ML-0B: 4 criteria met
+ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate.md	0-bis	mls_complete	evidence	ML-0B: ✅
+ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate.md	1	acceptance_evidence	failure	ML-1A: no acceptance block
+ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate.md	2	acceptance_evidence	evidence	ML-2A: 4 criteria met
+ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate.md	3	acceptance_evidence	failure	ML-3A: no acceptance block
+ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate.md	3	acceptance_evidence	failure	ML-3B: no acceptance block
+ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate.md	3	mls_complete	evidence	ML-3B: ✅
+ROADMAP-2026-08-12-guard-global-por-padrao-wave-0-medicao-bloqueante-da-premissa-de-sandbox.md	0	acceptance_evidence	evidence	ML-0A: 7 criteria met
+ROADMAP-2026-08-12-guard-global-por-padrao-wave-0-medicao-bloqueante-da-premissa-de-sandbox.md	0	mls_complete	evidence	ML-0A: ✅
+ROADMAP-2026-08-12-guard-global-por-padrao-wave-0-medicao-bloqueante-da-premissa-de-sandbox.md	1	acceptance_evidence	evidence	ML-1A: 3 criteria met
+ROADMAP-2026-08-12-guard-global-por-padrao-wave-0-medicao-bloqueante-da-premissa-de-sandbox.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-12-mitigacao-do-fail-open-do-credential-guard-wave-1-controle-positivo-e-failclosed.md	1	acceptance_evidence	evidence	ML-1A: 7 criteria met
+ROADMAP-2026-08-12-mitigacao-do-fail-open-do-credential-guard-wave-1-controle-positivo-e-failclosed.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-12-mitigacao-do-fail-open-do-credential-guard-wave-1-controle-positivo-e-failclosed.md	2	acceptance_evidence	evidence	ML-2A: 5 criteria met
+ROADMAP-2026-08-12-mitigacao-do-fail-open-do-credential-guard-wave-1-controle-positivo-e-failclosed.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-12-mitigacao-do-fail-open-do-credential-guard-wave-1-controle-positivo-e-failclosed.md	3	acceptance_evidence	evidence	ML-3A: 5 criteria met
+ROADMAP-2026-08-12-mitigacao-do-fail-open-do-credential-guard-wave-1-controle-positivo-e-failclosed.md	3	acceptance_evidence	evidence	ML-3B: 8 criteria met
+ROADMAP-2026-08-12-mitigacao-do-fail-open-do-credential-guard-wave-1-controle-positivo-e-failclosed.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-08-12-mitigacao-do-fail-open-do-credential-guard-wave-1-controle-positivo-e-failclosed.md	3	mls_complete	evidence	ML-3B: ✅
+ROADMAP-2026-08-12-mitigacao-do-fail-open-do-credential-guard-wave-1-controle-positivo-e-failclosed.md	3-bis	acceptance_evidence	failure	ML-3C: no acceptance block
+ROADMAP-2026-08-12-mitigacao-do-fail-open-do-credential-guard-wave-1-controle-positivo-e-failclosed.md	3-bis	mls_complete	evidence	ML-3C: ✅
+ROADMAP-2026-08-12-mitigacao-do-fail-open-do-credential-guard-wave-1-controle-positivo-e-failclosed.md	4	acceptance_evidence	failure	ML-4A: no acceptance block
+ROADMAP-2026-08-12-mitigacao-do-fail-open-do-credential-guard-wave-1-controle-positivo-e-failclosed.md	4	acceptance_evidence	failure	ML-4B: no acceptance block
+ROADMAP-2026-08-12-mitigacao-do-fail-open-do-credential-guard-wave-1-controle-positivo-e-failclosed.md	4	mls_complete	evidence	ML-4A: ✅
+ROADMAP-2026-08-12-mitigacao-do-fail-open-do-credential-guard-wave-1-controle-positivo-e-failclosed.md	4	mls_complete	evidence	ML-4B: ✅
+ROADMAP-2026-08-12-prova-negativa-dedicada-para-o-guard-de-vacuidade-credential-guard-present.md	1	acceptance_evidence	evidence	ML-1A: 5 criteria met
+ROADMAP-2026-08-12-prova-negativa-dedicada-para-o-guard-de-vacuidade-credential-guard-present.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-12-prova-negativa-dedicada-para-o-guard-de-vacuidade-credential-guard-present.md	2	acceptance_evidence	evidence	ML-2A: 3 criteria met
+ROADMAP-2026-08-12-prova-negativa-dedicada-para-o-guard-de-vacuidade-credential-guard-present.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-12-prova-negativa-dedicada-para-o-guard-de-vacuidade-credential-guard-present.md	3	acceptance_evidence	evidence	ML-1B: 6 criteria met
+ROADMAP-2026-08-12-prova-negativa-dedicada-para-o-guard-de-vacuidade-credential-guard-present.md	3	mls_complete	evidence	ML-1B: ✅
+ROADMAP-2026-08-12-semantica-de-falha-de-hook-fail-open-vs-fail-closed-nucleo-empirico-no-codex.md	1	acceptance_evidence	evidence	ML-1A: 6 criteria met
+ROADMAP-2026-08-12-semantica-de-falha-de-hook-fail-open-vs-fail-closed-nucleo-empirico-no-codex.md	1	acceptance_evidence	evidence	ML-1B: 4 criteria met
+ROADMAP-2026-08-12-semantica-de-falha-de-hook-fail-open-vs-fail-closed-nucleo-empirico-no-codex.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-12-semantica-de-falha-de-hook-fail-open-vs-fail-closed-nucleo-empirico-no-codex.md	1	mls_complete	evidence	ML-1B: ✅
+ROADMAP-2026-08-12-semantica-de-falha-de-hook-fail-open-vs-fail-closed-nucleo-empirico-no-codex.md	2	acceptance_evidence	evidence	ML-2A: 3 criteria met
+ROADMAP-2026-08-12-semantica-de-falha-de-hook-fail-open-vs-fail-closed-nucleo-empirico-no-codex.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-12-semantica-de-falha-de-hook-fail-open-vs-fail-closed-nucleo-empirico-no-codex.md	2-bis	acceptance_evidence	evidence	ML-1C: 5 criteria met
+ROADMAP-2026-08-12-semantica-de-falha-de-hook-fail-open-vs-fail-closed-nucleo-empirico-no-codex.md	2-bis	mls_complete	evidence	ML-1C: ✅
+ROADMAP-2026-08-12-semantica-de-falha-de-hook-fail-open-vs-fail-closed-nucleo-empirico-no-codex.md	2-ter	acceptance_evidence	failure	ML-2B: no acceptance block
+ROADMAP-2026-08-12-semantica-de-falha-de-hook-fail-open-vs-fail-closed-nucleo-empirico-no-codex.md	2-ter	mls_complete	evidence	ML-2B: ✅
+ROADMAP-2026-08-12-semantica-de-falha-de-hook-fail-open-vs-fail-closed-nucleo-empirico-no-codex.md	3	acceptance_evidence	evidence	ML-3A: 3 criteria met
+ROADMAP-2026-08-12-semantica-de-falha-de-hook-fail-open-vs-fail-closed-nucleo-empirico-no-codex.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-08-13-fronteira-de-escrita-dos-agentes-auditores.md	1	acceptance_evidence	failure	ML-1A: no acceptance block
+ROADMAP-2026-08-13-fronteira-de-escrita-dos-agentes-auditores.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-13-fronteira-de-escrita-dos-agentes-auditores.md	2	acceptance_evidence	evidence	ML-2A: 3 criteria met
+ROADMAP-2026-08-13-fronteira-de-escrita-dos-agentes-auditores.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-14-bloqueio-tecnico-de-comandos-git-brutos-por-subagente-via-deny-hooks-nos-7-runtimes-suportados.md	1	acceptance_evidence	failure	ML-1A: 3 unmet acceptance criteria
+ROADMAP-2026-08-14-bloqueio-tecnico-de-comandos-git-brutos-por-subagente-via-deny-hooks-nos-7-runtimes-suportados.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-14-bloqueio-tecnico-de-comandos-git-brutos-por-subagente-via-deny-hooks-nos-7-runtimes-suportados.md	2	acceptance_evidence	evidence	ML-2A: 2 criteria met
+ROADMAP-2026-08-14-bloqueio-tecnico-de-comandos-git-brutos-por-subagente-via-deny-hooks-nos-7-runtimes-suportados.md	2	acceptance_evidence	failure	ML-2B: 2 unmet acceptance criteria
+ROADMAP-2026-08-14-bloqueio-tecnico-de-comandos-git-brutos-por-subagente-via-deny-hooks-nos-7-runtimes-suportados.md	2	acceptance_evidence	failure	ML-2C: 2 unmet acceptance criteria
+ROADMAP-2026-08-14-bloqueio-tecnico-de-comandos-git-brutos-por-subagente-via-deny-hooks-nos-7-runtimes-suportados.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-14-bloqueio-tecnico-de-comandos-git-brutos-por-subagente-via-deny-hooks-nos-7-runtimes-suportados.md	2	mls_complete	evidence	ML-2B: ✅
+ROADMAP-2026-08-14-bloqueio-tecnico-de-comandos-git-brutos-por-subagente-via-deny-hooks-nos-7-runtimes-suportados.md	2	mls_complete	evidence	ML-2C: ✅
+ROADMAP-2026-08-14-bloqueio-tecnico-de-comandos-git-brutos-por-subagente-via-deny-hooks-nos-7-runtimes-suportados.md	3	acceptance_evidence	failure	ML-3A: 3 unmet acceptance criteria
+ROADMAP-2026-08-14-bloqueio-tecnico-de-comandos-git-brutos-por-subagente-via-deny-hooks-nos-7-runtimes-suportados.md	3	acceptance_evidence	failure	ML-3B: 2 unmet acceptance criteria
+ROADMAP-2026-08-14-bloqueio-tecnico-de-comandos-git-brutos-por-subagente-via-deny-hooks-nos-7-runtimes-suportados.md	3	acceptance_evidence	failure	ML-3C: 2 unmet acceptance criteria
+ROADMAP-2026-08-14-bloqueio-tecnico-de-comandos-git-brutos-por-subagente-via-deny-hooks-nos-7-runtimes-suportados.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-08-14-bloqueio-tecnico-de-comandos-git-brutos-por-subagente-via-deny-hooks-nos-7-runtimes-suportados.md	3	mls_complete	evidence	ML-3B: ✅
+ROADMAP-2026-08-14-bloqueio-tecnico-de-comandos-git-brutos-por-subagente-via-deny-hooks-nos-7-runtimes-suportados.md	3	mls_complete	evidence	ML-3C: ✅
+ROADMAP-2026-08-14-bloqueio-tecnico-de-comandos-git-brutos-por-subagente-via-deny-hooks-nos-7-runtimes-suportados.md	4	acceptance_evidence	failure	ML-4A: 5 unmet acceptance criteria
+ROADMAP-2026-08-14-bloqueio-tecnico-de-comandos-git-brutos-por-subagente-via-deny-hooks-nos-7-runtimes-suportados.md	4	mls_complete	evidence	ML-4A: ✅
+ROADMAP-2026-08-14-bloqueio-tecnico-de-comandos-git-brutos-por-subagente-via-deny-hooks-nos-7-runtimes-suportados.md	5	acceptance_evidence	failure	ML-5A: 1 unmet acceptance criteria
+ROADMAP-2026-08-14-bloqueio-tecnico-de-comandos-git-brutos-por-subagente-via-deny-hooks-nos-7-runtimes-suportados.md	5	mls_complete	evidence	ML-5A: ✅
+ROADMAP-2026-08-14-comando-trackfw-changelog-para-consultar-o-changelog-md-pelo-proprio-cli.md	1	acceptance_evidence	failure	ML-1A: 4 unmet acceptance criteria
+ROADMAP-2026-08-14-comando-trackfw-changelog-para-consultar-o-changelog-md-pelo-proprio-cli.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-14-comando-trackfw-changelog-para-consultar-o-changelog-md-pelo-proprio-cli.md	2	acceptance_evidence	failure	ML-2A: 2 unmet acceptance criteria
+ROADMAP-2026-08-14-comando-trackfw-changelog-para-consultar-o-changelog-md-pelo-proprio-cli.md	2	acceptance_evidence	failure	ML-2B: 2 unmet acceptance criteria
+ROADMAP-2026-08-14-comando-trackfw-changelog-para-consultar-o-changelog-md-pelo-proprio-cli.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-14-comando-trackfw-changelog-para-consultar-o-changelog-md-pelo-proprio-cli.md	2	mls_complete	evidence	ML-2B: ✅
+ROADMAP-2026-08-14-comando-trackfw-changelog-para-consultar-o-changelog-md-pelo-proprio-cli.md	3	acceptance_evidence	evidence	ML-3A: 2 criteria met
+ROADMAP-2026-08-14-comando-trackfw-changelog-para-consultar-o-changelog-md-pelo-proprio-cli.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-08-14-roteamento-de-model-tier-no-render-de-agentes-para-codex-toml-e-cursor-frontmatter.md	1	acceptance_evidence	failure	ML-1A: 3 unmet acceptance criteria
+ROADMAP-2026-08-14-roteamento-de-model-tier-no-render-de-agentes-para-codex-toml-e-cursor-frontmatter.md	1	acceptance_evidence	failure	ML-1B: 2 unmet acceptance criteria
+ROADMAP-2026-08-14-roteamento-de-model-tier-no-render-de-agentes-para-codex-toml-e-cursor-frontmatter.md	1	acceptance_evidence	failure	ML-1C: 2 unmet acceptance criteria
+ROADMAP-2026-08-14-roteamento-de-model-tier-no-render-de-agentes-para-codex-toml-e-cursor-frontmatter.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-14-roteamento-de-model-tier-no-render-de-agentes-para-codex-toml-e-cursor-frontmatter.md	1	mls_complete	evidence	ML-1B: ✅
+ROADMAP-2026-08-14-roteamento-de-model-tier-no-render-de-agentes-para-codex-toml-e-cursor-frontmatter.md	1	mls_complete	evidence	ML-1C: ✅
+ROADMAP-2026-08-14-roteamento-de-model-tier-no-render-de-agentes-para-codex-toml-e-cursor-frontmatter.md	2	acceptance_evidence	failure	ML-2A: 3 unmet acceptance criteria
+ROADMAP-2026-08-14-roteamento-de-model-tier-no-render-de-agentes-para-codex-toml-e-cursor-frontmatter.md	2	acceptance_evidence	failure	ML-2B: 2 unmet acceptance criteria
+ROADMAP-2026-08-14-roteamento-de-model-tier-no-render-de-agentes-para-codex-toml-e-cursor-frontmatter.md	2	acceptance_evidence	failure	ML-2C: 2 unmet acceptance criteria
+ROADMAP-2026-08-14-roteamento-de-model-tier-no-render-de-agentes-para-codex-toml-e-cursor-frontmatter.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-14-roteamento-de-model-tier-no-render-de-agentes-para-codex-toml-e-cursor-frontmatter.md	2	mls_complete	evidence	ML-2B: ✅
+ROADMAP-2026-08-14-roteamento-de-model-tier-no-render-de-agentes-para-codex-toml-e-cursor-frontmatter.md	2	mls_complete	evidence	ML-2C: ✅
+ROADMAP-2026-08-14-roteamento-de-model-tier-no-render-de-agentes-para-codex-toml-e-cursor-frontmatter.md	3	acceptance_evidence	failure	ML-3A: 3 unmet acceptance criteria
+ROADMAP-2026-08-14-roteamento-de-model-tier-no-render-de-agentes-para-codex-toml-e-cursor-frontmatter.md	3	acceptance_evidence	failure	ML-3B: 2 unmet acceptance criteria
+ROADMAP-2026-08-14-roteamento-de-model-tier-no-render-de-agentes-para-codex-toml-e-cursor-frontmatter.md	3	acceptance_evidence	failure	ML-3C: 2 unmet acceptance criteria
+ROADMAP-2026-08-14-roteamento-de-model-tier-no-render-de-agentes-para-codex-toml-e-cursor-frontmatter.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-08-14-roteamento-de-model-tier-no-render-de-agentes-para-codex-toml-e-cursor-frontmatter.md	3	mls_complete	evidence	ML-3B: ✅
+ROADMAP-2026-08-14-roteamento-de-model-tier-no-render-de-agentes-para-codex-toml-e-cursor-frontmatter.md	3	mls_complete	evidence	ML-3C: ✅
+ROADMAP-2026-08-14-roteamento-de-model-tier-no-render-de-agentes-para-codex-toml-e-cursor-frontmatter.md	4	acceptance_evidence	evidence	ML-4A: 2 criteria met
+ROADMAP-2026-08-14-roteamento-de-model-tier-no-render-de-agentes-para-codex-toml-e-cursor-frontmatter.md	4	acceptance_evidence	evidence	ML-4B: 1 criteria met
+ROADMAP-2026-08-14-roteamento-de-model-tier-no-render-de-agentes-para-codex-toml-e-cursor-frontmatter.md	4	mls_complete	evidence	ML-4A: ✅
+ROADMAP-2026-08-14-roteamento-de-model-tier-no-render-de-agentes-para-codex-toml-e-cursor-frontmatter.md	4	mls_complete	evidence	ML-4B: ✅
+ROADMAP-2026-08-14-roteamento-de-model-tier-no-render-de-agentes-para-codex-toml-e-cursor-frontmatter.md	5	acceptance_evidence	evidence	ML-5A: 1 criteria met
+ROADMAP-2026-08-14-roteamento-de-model-tier-no-render-de-agentes-para-codex-toml-e-cursor-frontmatter.md	5	mls_complete	evidence	ML-5A: ✅
+ROADMAP-2026-08-15-agentes-especialistas-aceitam-contexto-de-convencoes-especifico-do-projeto.md	1	acceptance_evidence	failure	ML-1A: 4 unmet acceptance criteria
+ROADMAP-2026-08-15-agentes-especialistas-aceitam-contexto-de-convencoes-especifico-do-projeto.md	1	acceptance_evidence	failure	ML-1B: 2 unmet acceptance criteria
+ROADMAP-2026-08-15-agentes-especialistas-aceitam-contexto-de-convencoes-especifico-do-projeto.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-15-agentes-especialistas-aceitam-contexto-de-convencoes-especifico-do-projeto.md	1	mls_complete	evidence	ML-1B: ✅
+ROADMAP-2026-08-15-agentes-especialistas-aceitam-contexto-de-convencoes-especifico-do-projeto.md	2	acceptance_evidence	failure	ML-2A: 2 unmet acceptance criteria
+ROADMAP-2026-08-15-agentes-especialistas-aceitam-contexto-de-convencoes-especifico-do-projeto.md	2	acceptance_evidence	failure	ML-2B: 2 unmet acceptance criteria
+ROADMAP-2026-08-15-agentes-especialistas-aceitam-contexto-de-convencoes-especifico-do-projeto.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-15-agentes-especialistas-aceitam-contexto-de-convencoes-especifico-do-projeto.md	2	mls_complete	evidence	ML-2B: ✅
+ROADMAP-2026-08-15-agentes-especialistas-aceitam-contexto-de-convencoes-especifico-do-projeto.md	3	acceptance_evidence	evidence	ML-3A: 3 criteria met
+ROADMAP-2026-08-15-agentes-especialistas-aceitam-contexto-de-convencoes-especifico-do-projeto.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-08-15-gate-de-seguranca-para-trackfw-plugins-add-binario-de-terceiro.md	0	acceptance_evidence	failure	ML-0A: 3 unmet acceptance criteria
+ROADMAP-2026-08-15-gate-de-seguranca-para-trackfw-plugins-add-binario-de-terceiro.md	0	acceptance_evidence	failure	ML-0B: no acceptance block
+ROADMAP-2026-08-15-gate-de-seguranca-para-trackfw-plugins-add-binario-de-terceiro.md	0	mls_complete	evidence	ML-0A: ✅
+ROADMAP-2026-08-15-gate-de-seguranca-para-trackfw-plugins-add-binario-de-terceiro.md	0	mls_complete	failure	ML-0B: not complete (status: 🔄 Em andamento — ADR escrito (D1–D9); Waves 1+ pendentes de reescrita · **Agente:** Zeus (não delegável))
+ROADMAP-2026-08-15-gate-de-seguranca-para-trackfw-plugins-add-binario-de-terceiro.md	1	acceptance_evidence	failure	ML-1A: no acceptance block
+ROADMAP-2026-08-15-gate-de-seguranca-para-trackfw-plugins-add-binario-de-terceiro.md	1	acceptance_evidence	failure	ML-1B: no acceptance block
+ROADMAP-2026-08-15-gate-de-seguranca-para-trackfw-plugins-add-binario-de-terceiro.md	1	mls_complete	failure	ML-1A: not complete (status: ⬜ Pendente · **Agente:** `apolo-tf`)
+ROADMAP-2026-08-15-gate-de-seguranca-para-trackfw-plugins-add-binario-de-terceiro.md	1	mls_complete	failure	ML-1B: not complete (status: ⬜ Pendente · **Agente:** `apolo-tf` · **Dep.:** ML-1A ✅)
+ROADMAP-2026-08-15-gate-de-seguranca-para-trackfw-plugins-add-binario-de-terceiro.md	2	acceptance_evidence	failure	ML-2A: no acceptance block
+ROADMAP-2026-08-15-gate-de-seguranca-para-trackfw-plugins-add-binario-de-terceiro.md	2	mls_complete	failure	ML-2A: not complete (status: ⬜ Pendente · **Agente:** `apolo-tf`)
+ROADMAP-2026-08-15-gate-de-seguranca-para-trackfw-plugins-add-binario-de-terceiro.md	3	acceptance_evidence	failure	ML-3A: no acceptance block
+ROADMAP-2026-08-15-gate-de-seguranca-para-trackfw-plugins-add-binario-de-terceiro.md	3	mls_complete	failure	ML-3A: not complete (status: ⬜ Pendente · **Agente:** `apolo-tf`)
+ROADMAP-2026-08-15-gate-de-seguranca-para-trackfw-plugins-add-binario-de-terceiro.md	4	acceptance_evidence	failure	ML-4A: no acceptance block
+ROADMAP-2026-08-15-gate-de-seguranca-para-trackfw-plugins-add-binario-de-terceiro.md	4	mls_complete	failure	ML-4A: not complete (status: ⬜ Pendente — paralelos, escrevem em `docs/seguranca/` e `docs/qualidade/`.)
+ROADMAP-2026-08-15-instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas.md	0	acceptance_evidence	failure	ML-0A: 5 unmet acceptance criteria
+ROADMAP-2026-08-15-instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas.md	0	acceptance_evidence	failure	ML-0B: 6 unmet acceptance criteria
+ROADMAP-2026-08-15-instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas.md	0	mls_complete	evidence	ML-0A: ✅
+ROADMAP-2026-08-15-instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas.md	0	mls_complete	evidence	ML-0B: ✅
+ROADMAP-2026-08-15-instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas.md	1	acceptance_evidence	failure	ML-1A: 3 unmet acceptance criteria
+ROADMAP-2026-08-15-instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas.md	1	acceptance_evidence	failure	ML-1B: 6 unmet acceptance criteria
+ROADMAP-2026-08-15-instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas.md	1	acceptance_evidence	failure	ML-1C: 7 unmet acceptance criteria
+ROADMAP-2026-08-15-instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-15-instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas.md	1	mls_complete	evidence	ML-1B: ✅
+ROADMAP-2026-08-15-instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas.md	1	mls_complete	evidence	ML-1C: ✅
+ROADMAP-2026-08-15-instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas.md	2	acceptance_evidence	failure	ML-2A: 2 unmet acceptance criteria
+ROADMAP-2026-08-15-instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas.md	2	acceptance_evidence	failure	ML-2B: 2 unmet acceptance criteria
+ROADMAP-2026-08-15-instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-15-instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas.md	2	mls_complete	evidence	ML-2B: ✅
+ROADMAP-2026-08-15-instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas.md	3	acceptance_evidence	failure	ML-3A: 5 unmet acceptance criteria
+ROADMAP-2026-08-15-instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas.md	3	acceptance_evidence	failure	ML-3B: 4 unmet acceptance criteria
+ROADMAP-2026-08-15-instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-08-15-instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas.md	3	mls_complete	evidence	ML-3B: ✅
+ROADMAP-2026-08-15-instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas.md	4	acceptance_evidence	failure	ML-4A: 3 unmet acceptance criteria
+ROADMAP-2026-08-15-instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas.md	4	acceptance_evidence	failure	ML-4B: 2 unmet acceptance criteria
+ROADMAP-2026-08-15-instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas.md	4	acceptance_evidence	failure	ML-4C: 7 unmet acceptance criteria
+ROADMAP-2026-08-15-instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas.md	4	mls_complete	evidence	ML-4A: ✅
+ROADMAP-2026-08-15-instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas.md	4	mls_complete	evidence	ML-4B: ✅
+ROADMAP-2026-08-15-instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas.md	4	mls_complete	evidence	ML-4C: ✅
+ROADMAP-2026-08-15-remocao-do-subsistema-de-plugins-do-trackfw.md	1	acceptance_evidence	failure	ML-1A: no acceptance block
+ROADMAP-2026-08-15-remocao-do-subsistema-de-plugins-do-trackfw.md	1	acceptance_evidence	failure	ML-1B: no acceptance block
+ROADMAP-2026-08-15-remocao-do-subsistema-de-plugins-do-trackfw.md	1	acceptance_evidence	failure	ML-1C: no acceptance block
+ROADMAP-2026-08-15-remocao-do-subsistema-de-plugins-do-trackfw.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-15-remocao-do-subsistema-de-plugins-do-trackfw.md	1	mls_complete	evidence	ML-1B: ✅
+ROADMAP-2026-08-15-remocao-do-subsistema-de-plugins-do-trackfw.md	1	mls_complete	evidence	ML-1C: ✅
+ROADMAP-2026-08-15-remocao-do-subsistema-de-plugins-do-trackfw.md	2	acceptance_evidence	evidence	ML-2B: 3 criteria met
+ROADMAP-2026-08-15-remocao-do-subsistema-de-plugins-do-trackfw.md	2	acceptance_evidence	failure	ML-2A: no acceptance block
+ROADMAP-2026-08-15-remocao-do-subsistema-de-plugins-do-trackfw.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-15-remocao-do-subsistema-de-plugins-do-trackfw.md	2	mls_complete	evidence	ML-2B: ✅
+ROADMAP-2026-08-15-remocao-do-subsistema-de-plugins-do-trackfw.md	3	acceptance_evidence	evidence	ML-3C: 4 criteria met
+ROADMAP-2026-08-15-remocao-do-subsistema-de-plugins-do-trackfw.md	3	acceptance_evidence	evidence	ML-3D: 3 criteria met
+ROADMAP-2026-08-15-remocao-do-subsistema-de-plugins-do-trackfw.md	3	acceptance_evidence	failure	ML-3A: no acceptance block
+ROADMAP-2026-08-15-remocao-do-subsistema-de-plugins-do-trackfw.md	3	acceptance_evidence	failure	ML-3B: no acceptance block
+ROADMAP-2026-08-15-remocao-do-subsistema-de-plugins-do-trackfw.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-08-15-remocao-do-subsistema-de-plugins-do-trackfw.md	3	mls_complete	evidence	ML-3B: ✅
+ROADMAP-2026-08-15-remocao-do-subsistema-de-plugins-do-trackfw.md	3	mls_complete	evidence	ML-3C: ✅
+ROADMAP-2026-08-15-remocao-do-subsistema-de-plugins-do-trackfw.md	3	mls_complete	evidence	ML-3D: ✅
+ROADMAP-2026-08-15-trackfw-commit-sugere-mensagem-de-commit-a-partir-do-diff-staged.md	1	acceptance_evidence	failure	ML-1A: 3 unmet acceptance criteria
+ROADMAP-2026-08-15-trackfw-commit-sugere-mensagem-de-commit-a-partir-do-diff-staged.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-15-trackfw-commit-sugere-mensagem-de-commit-a-partir-do-diff-staged.md	2	acceptance_evidence	failure	ML-2A: 2 unmet acceptance criteria
+ROADMAP-2026-08-15-trackfw-commit-sugere-mensagem-de-commit-a-partir-do-diff-staged.md	2	acceptance_evidence	failure	ML-2B: 2 unmet acceptance criteria
+ROADMAP-2026-08-15-trackfw-commit-sugere-mensagem-de-commit-a-partir-do-diff-staged.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-15-trackfw-commit-sugere-mensagem-de-commit-a-partir-do-diff-staged.md	2	mls_complete	evidence	ML-2B: ✅
+ROADMAP-2026-08-15-trackfw-commit-sugere-mensagem-de-commit-a-partir-do-diff-staged.md	3	acceptance_evidence	failure	ML-3A: 2 unmet acceptance criteria
+ROADMAP-2026-08-15-trackfw-commit-sugere-mensagem-de-commit-a-partir-do-diff-staged.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-08-15-trackfw-ship-gera-corpo-de-pr-minimo-sem-agregar-historico-de-commits-da-branch.md	1	acceptance_evidence	failure	ML-1A: 3 unmet acceptance criteria
+ROADMAP-2026-08-15-trackfw-ship-gera-corpo-de-pr-minimo-sem-agregar-historico-de-commits-da-branch.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-15-trackfw-ship-gera-corpo-de-pr-minimo-sem-agregar-historico-de-commits-da-branch.md	2	acceptance_evidence	failure	ML-2A: 2 unmet acceptance criteria
+ROADMAP-2026-08-15-trackfw-ship-gera-corpo-de-pr-minimo-sem-agregar-historico-de-commits-da-branch.md	2	acceptance_evidence	failure	ML-2B: 2 unmet acceptance criteria
+ROADMAP-2026-08-15-trackfw-ship-gera-corpo-de-pr-minimo-sem-agregar-historico-de-commits-da-branch.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-15-trackfw-ship-gera-corpo-de-pr-minimo-sem-agregar-historico-de-commits-da-branch.md	2	mls_complete	evidence	ML-2B: ✅
+ROADMAP-2026-08-15-trackfw-ship-gera-corpo-de-pr-minimo-sem-agregar-historico-de-commits-da-branch.md	3	acceptance_evidence	failure	ML-3A: 2 unmet acceptance criteria
+ROADMAP-2026-08-15-trackfw-ship-gera-corpo-de-pr-minimo-sem-agregar-historico-de-commits-da-branch.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-08-15-trackfw-validate-deve-detectar-scripts-de-hook-ausentes-ou-desatualizados.md	1	acceptance_evidence	failure	ML-1A: 4 unmet acceptance criteria
+ROADMAP-2026-08-15-trackfw-validate-deve-detectar-scripts-de-hook-ausentes-ou-desatualizados.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-15-trackfw-validate-deve-detectar-scripts-de-hook-ausentes-ou-desatualizados.md	2	acceptance_evidence	evidence	ML-2A: 2 criteria met
+ROADMAP-2026-08-15-trackfw-validate-deve-detectar-scripts-de-hook-ausentes-ou-desatualizados.md	2	acceptance_evidence	evidence	ML-2B: 2 criteria met
+ROADMAP-2026-08-15-trackfw-validate-deve-detectar-scripts-de-hook-ausentes-ou-desatualizados.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-15-trackfw-validate-deve-detectar-scripts-de-hook-ausentes-ou-desatualizados.md	2	mls_complete	evidence	ML-2B: ✅
+ROADMAP-2026-08-15-trackfw-validate-deve-detectar-scripts-de-hook-ausentes-ou-desatualizados.md	3	acceptance_evidence	evidence	ML-3A: 2 criteria met
+ROADMAP-2026-08-15-trackfw-validate-deve-detectar-scripts-de-hook-ausentes-ou-desatualizados.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-08-16-handler-global-de-erro-nos-entrypoints-node-e-python.md	1	acceptance_evidence	failure	ML-1A: 5 unmet acceptance criteria
+ROADMAP-2026-08-16-handler-global-de-erro-nos-entrypoints-node-e-python.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-16-handler-global-de-erro-nos-entrypoints-node-e-python.md	2	acceptance_evidence	failure	ML-2A: no acceptance block
+ROADMAP-2026-08-16-handler-global-de-erro-nos-entrypoints-node-e-python.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-16-higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-da-release-7-0-0.md	1	acceptance_evidence	evidence	ML-1A: 5 criteria met
+ROADMAP-2026-08-16-higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-da-release-7-0-0.md	1	acceptance_evidence	failure	ML-1B: no acceptance block
+ROADMAP-2026-08-16-higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-da-release-7-0-0.md	1	acceptance_evidence	failure	ML-1C: no acceptance block
+ROADMAP-2026-08-16-higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-da-release-7-0-0.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-16-higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-da-release-7-0-0.md	1	mls_complete	evidence	ML-1B: ✅
+ROADMAP-2026-08-16-higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-da-release-7-0-0.md	1	mls_complete	evidence	ML-1C: ✅
+ROADMAP-2026-08-16-higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-da-release-7-0-0.md	2	acceptance_evidence	evidence	ML-2C: 5 criteria met
+ROADMAP-2026-08-16-higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-da-release-7-0-0.md	2	acceptance_evidence	failure	ML-2A: no acceptance block
+ROADMAP-2026-08-16-higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-da-release-7-0-0.md	2	acceptance_evidence	failure	ML-2B: no acceptance block
+ROADMAP-2026-08-16-higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-da-release-7-0-0.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-16-higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-da-release-7-0-0.md	2	mls_complete	evidence	ML-2B: ✅
+ROADMAP-2026-08-16-higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-da-release-7-0-0.md	2	mls_complete	evidence	ML-2C: ✅
+ROADMAP-2026-08-16-higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-da-release-7-0-0.md	3	acceptance_evidence	failure	ML-3A: no acceptance block
+ROADMAP-2026-08-16-higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-da-release-7-0-0.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-08-16-higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-da-release-7-0-0.md	4	acceptance_evidence	failure	ML-4A: no acceptance block
+ROADMAP-2026-08-16-higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-da-release-7-0-0.md	4	mls_complete	evidence	ML-4A: ✅
+ROADMAP-2026-08-16-higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-da-release-7-0-0.md	5	acceptance_evidence	evidence	ML-4B: 7 criteria met
+ROADMAP-2026-08-16-higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-da-release-7-0-0.md	5	mls_complete	evidence	ML-4B: ✅
+ROADMAP-2026-08-16-higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-da-release-7-0-0.md	6	acceptance_evidence	evidence	ML-4C: 5 criteria met
+ROADMAP-2026-08-16-higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-da-release-7-0-0.md	6	mls_complete	evidence	ML-4C: ✅
+ROADMAP-2026-08-16-trackfw-branch-new-aceita-tipos-chore-e-docs-sem-gate-de-roadmap.md	1	acceptance_evidence	failure	ML-1A: 5 unmet acceptance criteria
+ROADMAP-2026-08-16-trackfw-branch-new-aceita-tipos-chore-e-docs-sem-gate-de-roadmap.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-16-trackfw-ship-aceita-branches-chore-e-docs-sem-gate-de-roadmap.md	1	acceptance_evidence	evidence	ML-1A: 4 criteria met
+ROADMAP-2026-08-16-trackfw-ship-aceita-branches-chore-e-docs-sem-gate-de-roadmap.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-e-integridade-independente-de-fiacao.md	1	acceptance_evidence	evidence	ML-1A: 7 criteria met
+ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-e-integridade-independente-de-fiacao.md	1	acceptance_evidence	evidence	ML-1B: 6 criteria met
+ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-e-integridade-independente-de-fiacao.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-e-integridade-independente-de-fiacao.md	1	mls_complete	evidence	ML-1B: ✅
+ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-e-integridade-independente-de-fiacao.md	2	acceptance_evidence	evidence	ML-2A: 6 criteria met
+ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-e-integridade-independente-de-fiacao.md	2	acceptance_evidence	evidence	ML-2B: 7 criteria met
+ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-e-integridade-independente-de-fiacao.md	2	acceptance_evidence	evidence	ML-2C: 5 criteria met
+ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-e-integridade-independente-de-fiacao.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-e-integridade-independente-de-fiacao.md	2	mls_complete	evidence	ML-2B: ✅
+ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-e-integridade-independente-de-fiacao.md	2	mls_complete	evidence	ML-2C: ✅
+ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-e-integridade-independente-de-fiacao.md	3	acceptance_evidence	evidence	ML-3A: 6 criteria met
+ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-e-integridade-independente-de-fiacao.md	3	acceptance_evidence	evidence	ML-3B: 6 criteria met
+ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-e-integridade-independente-de-fiacao.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-e-integridade-independente-de-fiacao.md	3	mls_complete	evidence	ML-3B: ✅
+ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-e-integridade-independente-de-fiacao.md	4	acceptance_evidence	evidence	ML-4B: 7 criteria met
+ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-e-integridade-independente-de-fiacao.md	4	acceptance_evidence	evidence	ML-4C: 4 criteria met
+ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-e-integridade-independente-de-fiacao.md	4	acceptance_evidence	failure	ML-4A: no acceptance block
+ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-e-integridade-independente-de-fiacao.md	4	mls_complete	evidence	ML-4A: ✅
+ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-e-integridade-independente-de-fiacao.md	4	mls_complete	evidence	ML-4B: ✅
+ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-e-integridade-independente-de-fiacao.md	4	mls_complete	evidence	ML-4C: ✅
+ROADMAP-2026-08-18-branch-prune-com-dry-run-por-padrao-e-heuristica-de-arquivos-tocados.md	1	acceptance_evidence	evidence	ML-1A: 7 criteria met
+ROADMAP-2026-08-18-branch-prune-com-dry-run-por-padrao-e-heuristica-de-arquivos-tocados.md	1	acceptance_evidence	evidence	ML-1B: 9 criteria met
+ROADMAP-2026-08-18-branch-prune-com-dry-run-por-padrao-e-heuristica-de-arquivos-tocados.md	1	acceptance_evidence	evidence	ML-1C: 6 criteria met
+ROADMAP-2026-08-18-branch-prune-com-dry-run-por-padrao-e-heuristica-de-arquivos-tocados.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-18-branch-prune-com-dry-run-por-padrao-e-heuristica-de-arquivos-tocados.md	1	mls_complete	evidence	ML-1B: ✅
+ROADMAP-2026-08-18-branch-prune-com-dry-run-por-padrao-e-heuristica-de-arquivos-tocados.md	1	mls_complete	evidence	ML-1C: ✅
+ROADMAP-2026-08-18-branch-prune-com-dry-run-por-padrao-e-heuristica-de-arquivos-tocados.md	2	acceptance_evidence	evidence	ML-2A: 5 criteria met
+ROADMAP-2026-08-18-branch-prune-com-dry-run-por-padrao-e-heuristica-de-arquivos-tocados.md	2	acceptance_evidence	evidence	ML-2B: 4 criteria met
+ROADMAP-2026-08-18-branch-prune-com-dry-run-por-padrao-e-heuristica-de-arquivos-tocados.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-18-branch-prune-com-dry-run-por-padrao-e-heuristica-de-arquivos-tocados.md	2	mls_complete	evidence	ML-2B: ✅
+ROADMAP-2026-08-18-branch-prune-com-dry-run-por-padrao-e-heuristica-de-arquivos-tocados.md	3	acceptance_evidence	failure	ML-3A: no acceptance block
+ROADMAP-2026-08-18-branch-prune-com-dry-run-por-padrao-e-heuristica-de-arquivos-tocados.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-08-18-doctor-detecta-artefato-fora-do-manifesto-e-inverte-a-ordem-de-persistencia.md	1	acceptance_evidence	evidence	ML-1A: 5 criteria met
+ROADMAP-2026-08-18-doctor-detecta-artefato-fora-do-manifesto-e-inverte-a-ordem-de-persistencia.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-18-doctor-detecta-artefato-fora-do-manifesto-e-inverte-a-ordem-de-persistencia.md	2	acceptance_evidence	evidence	ML-2A: 4 criteria met
+ROADMAP-2026-08-18-doctor-detecta-artefato-fora-do-manifesto-e-inverte-a-ordem-de-persistencia.md	2	acceptance_evidence	evidence	ML-2B: 5 criteria met
+ROADMAP-2026-08-18-doctor-detecta-artefato-fora-do-manifesto-e-inverte-a-ordem-de-persistencia.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-18-doctor-detecta-artefato-fora-do-manifesto-e-inverte-a-ordem-de-persistencia.md	2	mls_complete	evidence	ML-2B: ✅
+ROADMAP-2026-08-18-doctor-detecta-artefato-fora-do-manifesto-e-inverte-a-ordem-de-persistencia.md	3	acceptance_evidence	failure	ML-3A: no acceptance block
+ROADMAP-2026-08-18-doctor-detecta-artefato-fora-do-manifesto-e-inverte-a-ordem-de-persistencia.md	3	acceptance_evidence	failure	ML-3A: no acceptance block
+ROADMAP-2026-08-18-doctor-detecta-artefato-fora-do-manifesto-e-inverte-a-ordem-de-persistencia.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-08-18-doctor-detecta-artefato-fora-do-manifesto-e-inverte-a-ordem-de-persistencia.md	3	mls_complete	failure	ML-3A: not complete (status: missing)
+ROADMAP-2026-08-18-doctor-detecta-artefato-fora-do-manifesto-e-inverte-a-ordem-de-persistencia.md	4	acceptance_evidence	evidence	ML-2C: 6 criteria met
+ROADMAP-2026-08-18-doctor-detecta-artefato-fora-do-manifesto-e-inverte-a-ordem-de-persistencia.md	4	mls_complete	failure	ML-2C: not complete (status: 🔄 Em andamento · **Agente:** `apolo-tf` (`subagent_type: apolo-tf`))
+ROADMAP-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md	1	acceptance_evidence	evidence	ML-1A: 6 criteria met
+ROADMAP-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md	1	acceptance_evidence	evidence	ML-1B: 5 criteria met
+ROADMAP-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md	1	mls_complete	evidence	ML-1B: ✅
+ROADMAP-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md	2	acceptance_evidence	evidence	ML-2A: 5 criteria met
+ROADMAP-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md	2	acceptance_evidence	evidence	ML-2B: 5 criteria met
+ROADMAP-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md	2	mls_complete	evidence	ML-2B: ✅
+ROADMAP-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md	3	acceptance_evidence	evidence	ML-3A: 10 criteria met
+ROADMAP-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md	3	acceptance_evidence	evidence	ML-3B: 3 criteria met
+ROADMAP-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md	3	mls_complete	evidence	ML-3B: ✅
+ROADMAP-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md	4	acceptance_evidence	failure	ML-4A: no acceptance block
+ROADMAP-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md	4	mls_complete	evidence	ML-4A: ✅
+ROADMAP-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md	5	acceptance_evidence	evidence	ML-4D: 3 criteria met
+ROADMAP-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md	5	acceptance_evidence	failure	ML-4B: 7 unmet acceptance criteria
+ROADMAP-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md	5	acceptance_evidence	failure	ML-4C: no acceptance block
+ROADMAP-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md	5	mls_complete	evidence	ML-4B: ✅
+ROADMAP-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md	5	mls_complete	evidence	ML-4C: ✅
+ROADMAP-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md	5	mls_complete	evidence	ML-4D: ✅
+ROADMAP-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md	6	acceptance_evidence	evidence	ML-6B: 5 criteria met
+ROADMAP-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md	6	acceptance_evidence	failure	ML-6A: 5 unmet acceptance criteria
+ROADMAP-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md	6	mls_complete	evidence	ML-6A: ✅
+ROADMAP-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md	6	mls_complete	evidence	ML-6B: ✅
+ROADMAP-2026-08-20-contrato-pinado-no-cli-parity-sem-gate-nomeado.md	1	acceptance_evidence	evidence	ML-1A-bis: 5 criteria met
+ROADMAP-2026-08-20-contrato-pinado-no-cli-parity-sem-gate-nomeado.md	1	acceptance_evidence	evidence	ML-1A: 4 criteria met
+ROADMAP-2026-08-20-contrato-pinado-no-cli-parity-sem-gate-nomeado.md	1	acceptance_evidence	failure	ML-1B-bis: no acceptance block
+ROADMAP-2026-08-20-contrato-pinado-no-cli-parity-sem-gate-nomeado.md	1	acceptance_evidence	failure	ML-1B-ter: no acceptance block
+ROADMAP-2026-08-20-contrato-pinado-no-cli-parity-sem-gate-nomeado.md	1	acceptance_evidence	failure	ML-1B: 7 unmet acceptance criteria
+ROADMAP-2026-08-20-contrato-pinado-no-cli-parity-sem-gate-nomeado.md	1	mls_complete	evidence	ML-1A-bis: ✅
+ROADMAP-2026-08-20-contrato-pinado-no-cli-parity-sem-gate-nomeado.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-20-contrato-pinado-no-cli-parity-sem-gate-nomeado.md	1	mls_complete	evidence	ML-1B-ter: ✅
+ROADMAP-2026-08-20-contrato-pinado-no-cli-parity-sem-gate-nomeado.md	1	mls_complete	failure	ML-1B-bis: not complete (status: 🔄 Em andamento (implementado, aguardando auditoria) · **Agente:** `apolo-tf` · **Dependência:** ML-1B.)
+ROADMAP-2026-08-20-contrato-pinado-no-cli-parity-sem-gate-nomeado.md	1	mls_complete	failure	ML-1B: not complete (status: ⬜ Pendente · **Agente:** `apolo-tf` · **Dependência:** ML-1A)
+ROADMAP-2026-08-20-contrato-pinado-no-cli-parity-sem-gate-nomeado.md	2	acceptance_evidence	failure	ML-2A: 5 unmet acceptance criteria
+ROADMAP-2026-08-20-contrato-pinado-no-cli-parity-sem-gate-nomeado.md	2	mls_complete	failure	ML-2A: not complete (status: 🔄 Em andamento — lote 1/4 concluído (linhas 35–1209, 44 seções); lotes 2–4 pendentes ·)
+ROADMAP-2026-08-20-contrato-pinado-no-cli-parity-sem-gate-nomeado.md	3	acceptance_evidence	evidence	ML-3A: 3 criteria met
+ROADMAP-2026-08-20-contrato-pinado-no-cli-parity-sem-gate-nomeado.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-08-20-gates-para-os-tres-contratos-de-maior-risco.md	1	acceptance_evidence	evidence	ML-1A: 3 criteria met
+ROADMAP-2026-08-20-gates-para-os-tres-contratos-de-maior-risco.md	1	acceptance_evidence	evidence	ML-1B: 4 criteria met
+ROADMAP-2026-08-20-gates-para-os-tres-contratos-de-maior-risco.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-20-gates-para-os-tres-contratos-de-maior-risco.md	1	mls_complete	evidence	ML-1B: ✅
+ROADMAP-2026-08-20-gates-para-os-tres-contratos-de-maior-risco.md	2	acceptance_evidence	failure	ML-2A: 5 unmet acceptance criteria
+ROADMAP-2026-08-20-gates-para-os-tres-contratos-de-maior-risco.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-20-gates-para-os-tres-contratos-de-maior-risco.md	3	acceptance_evidence	failure	ML-3A: 5 unmet acceptance criteria
+ROADMAP-2026-08-20-gates-para-os-tres-contratos-de-maior-risco.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-08-20-gates-para-os-tres-contratos-de-maior-risco.md	4	acceptance_evidence	failure	ML-4A: no acceptance block
+ROADMAP-2026-08-20-gates-para-os-tres-contratos-de-maior-risco.md	4	mls_complete	evidence	ML-4A: ✅
+ROADMAP-2026-08-21-regra-de-verbosidade-no-asset-do-arquiteto-e-nas-regras-semeadas.md	1	acceptance_evidence	failure	ML-1A: 6 unmet acceptance criteria
+ROADMAP-2026-08-21-regra-de-verbosidade-no-asset-do-arquiteto-e-nas-regras-semeadas.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-21-release-tag-ancora-versao-e-mensagem-no-forge.md	1	acceptance_evidence	failure	ML-1A: 2 unmet acceptance criteria
+ROADMAP-2026-08-21-release-tag-ancora-versao-e-mensagem-no-forge.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-21-release-tag-ancora-versao-e-mensagem-no-forge.md	2	acceptance_evidence	failure	ML-2A: 5 unmet acceptance criteria
+ROADMAP-2026-08-21-release-tag-ancora-versao-e-mensagem-no-forge.md	2	acceptance_evidence	failure	ML-2B: 5 unmet acceptance criteria
+ROADMAP-2026-08-21-release-tag-ancora-versao-e-mensagem-no-forge.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-21-release-tag-ancora-versao-e-mensagem-no-forge.md	2	mls_complete	evidence	ML-2B: ✅
+ROADMAP-2026-08-21-release-tag-ancora-versao-e-mensagem-no-forge.md	3	acceptance_evidence	failure	ML-3A: no acceptance block
+ROADMAP-2026-08-21-release-tag-ancora-versao-e-mensagem-no-forge.md	3	mls_complete	failure	ML-3A: not complete (status: ❌ Bloqueado — veredito BLOQUEAR, novo achado (`refs/replace/`) · **Agente:** `hades-tf`)
+ROADMAP-2026-08-21-release-tag-ancora-versao-e-mensagem-no-forge.md	4	acceptance_evidence	evidence	ML-4A: 5 criteria met
+ROADMAP-2026-08-21-release-tag-ancora-versao-e-mensagem-no-forge.md	4	acceptance_evidence	failure	ML-4B: no acceptance block
+ROADMAP-2026-08-21-release-tag-ancora-versao-e-mensagem-no-forge.md	4	mls_complete	evidence	ML-4A: ✅
+ROADMAP-2026-08-21-release-tag-ancora-versao-e-mensagem-no-forge.md	4	mls_complete	evidence	ML-4B: ✅
+ROADMAP-2026-08-21-validate-detecta-hook-de-guard-na-forma-relativa-antiga.md	1	acceptance_evidence	evidence	ML-1A: 2 criteria met
+ROADMAP-2026-08-21-validate-detecta-hook-de-guard-na-forma-relativa-antiga.md	1	acceptance_evidence	failure	ML-1B: no acceptance block
+ROADMAP-2026-08-21-validate-detecta-hook-de-guard-na-forma-relativa-antiga.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-21-validate-detecta-hook-de-guard-na-forma-relativa-antiga.md	1	mls_complete	evidence	ML-1B: ✅
+ROADMAP-2026-08-21-validate-detecta-hook-de-guard-na-forma-relativa-antiga.md	2	acceptance_evidence	evidence	ML-2A: 5 criteria met
+ROADMAP-2026-08-21-validate-detecta-hook-de-guard-na-forma-relativa-antiga.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-21-validate-detecta-hook-de-guard-na-forma-relativa-antiga.md	3	acceptance_evidence	failure	ML-3A: no acceptance block
+ROADMAP-2026-08-21-validate-detecta-hook-de-guard-na-forma-relativa-antiga.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-08-21-versao-do-modelo-por-tier-com-composicao-por-alvo.md	1	acceptance_evidence	failure	ML-1A: no acceptance block
+ROADMAP-2026-08-21-versao-do-modelo-por-tier-com-composicao-por-alvo.md	1	acceptance_evidence	failure	ML-1B: 4 unmet acceptance criteria
+ROADMAP-2026-08-21-versao-do-modelo-por-tier-com-composicao-por-alvo.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-21-versao-do-modelo-por-tier-com-composicao-por-alvo.md	1	mls_complete	evidence	ML-1B: ✅
+ROADMAP-2026-08-21-versao-do-modelo-por-tier-com-composicao-por-alvo.md	2	acceptance_evidence	evidence	ML-2A: 4 criteria met
+ROADMAP-2026-08-21-versao-do-modelo-por-tier-com-composicao-por-alvo.md	2	acceptance_evidence	evidence	ML-2B: 3 criteria met
+ROADMAP-2026-08-21-versao-do-modelo-por-tier-com-composicao-por-alvo.md	2	acceptance_evidence	failure	ML-2C: no acceptance block
+ROADMAP-2026-08-21-versao-do-modelo-por-tier-com-composicao-por-alvo.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-21-versao-do-modelo-por-tier-com-composicao-por-alvo.md	2	mls_complete	evidence	ML-2B: ✅
+ROADMAP-2026-08-21-versao-do-modelo-por-tier-com-composicao-por-alvo.md	2	mls_complete	evidence	ML-2C: ✅
+ROADMAP-2026-08-21-versao-do-modelo-por-tier-com-composicao-por-alvo.md	3	acceptance_evidence	failure	ML-3A: 4 unmet acceptance criteria
+ROADMAP-2026-08-21-versao-do-modelo-por-tier-com-composicao-por-alvo.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-08-21-versao-do-modelo-por-tier-com-composicao-por-alvo.md	4	acceptance_evidence	failure	ML-4A: no acceptance block
+ROADMAP-2026-08-21-versao-do-modelo-por-tier-com-composicao-por-alvo.md	4	mls_complete	failure	ML-4A: not complete (status: ⬜ Pendente · **Agente:** `hades-tf` (`subagent_type: hades-tf`))
+ROADMAP-2026-08-21-versao-do-modelo-por-tier-com-composicao-por-alvo.md	5	acceptance_evidence	evidence	ML-5A: 6 criteria met
+ROADMAP-2026-08-21-versao-do-modelo-por-tier-com-composicao-por-alvo.md	5	acceptance_evidence	evidence	ML-5C: 6 criteria met
+ROADMAP-2026-08-21-versao-do-modelo-por-tier-com-composicao-por-alvo.md	5	acceptance_evidence	failure	ML-5B: no acceptance block
+ROADMAP-2026-08-21-versao-do-modelo-por-tier-com-composicao-por-alvo.md	5	mls_complete	evidence	ML-5A: ✅
+ROADMAP-2026-08-21-versao-do-modelo-por-tier-com-composicao-por-alvo.md	5	mls_complete	evidence	ML-5B: ✅
+ROADMAP-2026-08-21-versao-do-modelo-por-tier-com-composicao-por-alvo.md	5	mls_complete	evidence	ML-5C: ✅
+ROADMAP-2026-08-22-trackfw-push-comando-proprio-para-empurrar-commits-ja-criados.md	1	acceptance_evidence	failure	ML-1A: 5 unmet acceptance criteria
+ROADMAP-2026-08-22-trackfw-push-comando-proprio-para-empurrar-commits-ja-criados.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-22-trackfw-push-comando-proprio-para-empurrar-commits-ja-criados.md	2	acceptance_evidence	failure	ML-2A: 5 unmet acceptance criteria
+ROADMAP-2026-08-22-trackfw-push-comando-proprio-para-empurrar-commits-ja-criados.md	2	acceptance_evidence	failure	ML-2B: 6 unmet acceptance criteria
+ROADMAP-2026-08-22-trackfw-push-comando-proprio-para-empurrar-commits-ja-criados.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-22-trackfw-push-comando-proprio-para-empurrar-commits-ja-criados.md	2	mls_complete	evidence	ML-2B: ✅
+ROADMAP-2026-08-22-trackfw-push-comando-proprio-para-empurrar-commits-ja-criados.md	3	acceptance_evidence	failure	ML-3A: no acceptance block
+ROADMAP-2026-08-22-trackfw-push-comando-proprio-para-empurrar-commits-ja-criados.md	3	acceptance_evidence	failure	ML-3B: no acceptance block
+ROADMAP-2026-08-22-trackfw-push-comando-proprio-para-empurrar-commits-ja-criados.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-08-22-trackfw-push-comando-proprio-para-empurrar-commits-ja-criados.md	3	mls_complete	evidence	ML-3B: ✅
+ROADMAP-2026-08-22-trackfw-push-comando-proprio-para-empurrar-commits-ja-criados.md	4	acceptance_evidence	failure	ML-4A: 5 unmet acceptance criteria
+ROADMAP-2026-08-22-trackfw-push-comando-proprio-para-empurrar-commits-ja-criados.md	4	acceptance_evidence	failure	ML-4B: 4 unmet acceptance criteria
+ROADMAP-2026-08-22-trackfw-push-comando-proprio-para-empurrar-commits-ja-criados.md	4	mls_complete	evidence	ML-4A: ✅
+ROADMAP-2026-08-22-trackfw-push-comando-proprio-para-empurrar-commits-ja-criados.md	4	mls_complete	evidence	ML-4B: ✅
+ROADMAP-2026-08-22-validate-detecta-hook-com-pwd-que-falha-fora-da-raiz.md	1	acceptance_evidence	failure	ML-1A: 9 unmet acceptance criteria
+ROADMAP-2026-08-22-validate-detecta-hook-com-pwd-que-falha-fora-da-raiz.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-22-validate-detecta-hook-com-pwd-que-falha-fora-da-raiz.md	2	acceptance_evidence	failure	ML-2A: 5 unmet acceptance criteria
+ROADMAP-2026-08-22-validate-detecta-hook-com-pwd-que-falha-fora-da-raiz.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-22-validate-detecta-hook-com-pwd-que-falha-fora-da-raiz.md	3	acceptance_evidence	failure	ML-3A: no acceptance block
+ROADMAP-2026-08-22-validate-detecta-hook-com-pwd-que-falha-fora-da-raiz.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-08-22-validate-detecta-hook-com-pwd-que-falha-fora-da-raiz.md	4	acceptance_evidence	evidence	ML-4A: 7 criteria met
+ROADMAP-2026-08-22-validate-detecta-hook-com-pwd-que-falha-fora-da-raiz.md	4	mls_complete	evidence	ML-4A: ✅
+ROADMAP-2026-08-22-wave-0-de-modelo-de-ameaca-no-harness-e-o-asset-do-arquiteto-ensina-trackfw-push.md	0	acceptance_evidence	evidence	ML-0A: 4 criteria met
+ROADMAP-2026-08-22-wave-0-de-modelo-de-ameaca-no-harness-e-o-asset-do-arquiteto-ensina-trackfw-push.md	0	mls_complete	evidence	ML-0A: ✅
+ROADMAP-2026-08-22-wave-0-de-modelo-de-ameaca-no-harness-e-o-asset-do-arquiteto-ensina-trackfw-push.md	1	acceptance_evidence	failure	ML-1A: 1 unmet acceptance criteria
+ROADMAP-2026-08-22-wave-0-de-modelo-de-ameaca-no-harness-e-o-asset-do-arquiteto-ensina-trackfw-push.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-22-wave-0-de-modelo-de-ameaca-no-harness-e-o-asset-do-arquiteto-ensina-trackfw-push.md	2	acceptance_evidence	failure	ML-2A: no acceptance block
+ROADMAP-2026-08-22-wave-0-de-modelo-de-ameaca-no-harness-e-o-asset-do-arquiteto-ensina-trackfw-push.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-22-wave-0-de-modelo-de-ameaca-no-harness-e-o-asset-do-arquiteto-ensina-trackfw-push.md	2-bis	mls_complete	failure	wave 2-bis: no ML found
+ROADMAP-2026-08-22-wave-0-de-modelo-de-ameaca-no-harness-e-o-asset-do-arquiteto-ensina-trackfw-push.md	3	mls_complete	failure	wave 3: no ML found
+ROADMAP-2026-08-22-wave-0-de-modelo-de-ameaca-no-harness-e-o-asset-do-arquiteto-ensina-trackfw-push.md	4	mls_complete	failure	wave 4: no ML found
+ROADMAP-2026-08-23-agents-update-de-escopo-global-resolve-o-pin-de-modelo-da-config-global.md	0	acceptance_evidence	evidence	ML-0A: 3 criteria met
+ROADMAP-2026-08-23-agents-update-de-escopo-global-resolve-o-pin-de-modelo-da-config-global.md	0	mls_complete	evidence	ML-0A: ✅
+ROADMAP-2026-08-23-agents-update-de-escopo-global-resolve-o-pin-de-modelo-da-config-global.md	1	acceptance_evidence	failure	ML-1A: no acceptance block
+ROADMAP-2026-08-23-agents-update-de-escopo-global-resolve-o-pin-de-modelo-da-config-global.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-23-agents-update-de-escopo-global-resolve-o-pin-de-modelo-da-config-global.md	2	acceptance_evidence	failure	ML-2A: no acceptance block
+ROADMAP-2026-08-23-agents-update-de-escopo-global-resolve-o-pin-de-modelo-da-config-global.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-23-agents-update-de-escopo-global-resolve-o-pin-de-modelo-da-config-global.md	3	acceptance_evidence	failure	ML-3A: no acceptance block
+ROADMAP-2026-08-23-agents-update-de-escopo-global-resolve-o-pin-de-modelo-da-config-global.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-08-23-agents-update-de-escopo-global-resolve-o-pin-de-modelo-da-config-global.md	4	acceptance_evidence	failure	ML-1B: 4 unmet acceptance criteria
+ROADMAP-2026-08-23-agents-update-de-escopo-global-resolve-o-pin-de-modelo-da-config-global.md	4	acceptance_evidence	failure	ML-3B: no acceptance block
+ROADMAP-2026-08-23-agents-update-de-escopo-global-resolve-o-pin-de-modelo-da-config-global.md	4	mls_complete	evidence	ML-1B: ✅
+ROADMAP-2026-08-23-agents-update-de-escopo-global-resolve-o-pin-de-modelo-da-config-global.md	4	mls_complete	evidence	ML-3B: ✅
+ROADMAP-2026-08-23-barrier-nao-executa-gate-de-roadmap-nao-confiavel-e-roadmap-new-sanitiza-o-titulo.md	0	acceptance_evidence	failure	ML-0A: 2 unmet acceptance criteria
+ROADMAP-2026-08-23-barrier-nao-executa-gate-de-roadmap-nao-confiavel-e-roadmap-new-sanitiza-o-titulo.md	0	mls_complete	evidence	ML-0A: ✅
+ROADMAP-2026-08-23-barrier-nao-executa-gate-de-roadmap-nao-confiavel-e-roadmap-new-sanitiza-o-titulo.md	1	acceptance_evidence	failure	ML-1A: no acceptance block
+ROADMAP-2026-08-23-barrier-nao-executa-gate-de-roadmap-nao-confiavel-e-roadmap-new-sanitiza-o-titulo.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-23-barrier-nao-executa-gate-de-roadmap-nao-confiavel-e-roadmap-new-sanitiza-o-titulo.md	2	acceptance_evidence	failure	ML-2A: no acceptance block
+ROADMAP-2026-08-23-barrier-nao-executa-gate-de-roadmap-nao-confiavel-e-roadmap-new-sanitiza-o-titulo.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-23-barrier-nao-executa-gate-de-roadmap-nao-confiavel-e-roadmap-new-sanitiza-o-titulo.md	3	acceptance_evidence	failure	ML-3A: no acceptance block
+ROADMAP-2026-08-23-barrier-nao-executa-gate-de-roadmap-nao-confiavel-e-roadmap-new-sanitiza-o-titulo.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-08-23-barrier-nao-executa-gate-de-roadmap-nao-confiavel-e-roadmap-new-sanitiza-o-titulo.md	4	acceptance_evidence	failure	ML-4A: no acceptance block
+ROADMAP-2026-08-23-barrier-nao-executa-gate-de-roadmap-nao-confiavel-e-roadmap-new-sanitiza-o-titulo.md	4	mls_complete	evidence	ML-4A: ✅
+ROADMAP-2026-08-26-comando-que-audita-a-superficie-executavel-de-um-checkout-de-pr.md	0	acceptance_evidence	failure	ML-0A: 2 unmet acceptance criteria
+ROADMAP-2026-08-26-comando-que-audita-a-superficie-executavel-de-um-checkout-de-pr.md	0	mls_complete	evidence	ML-0A: ✅
+ROADMAP-2026-08-26-comando-que-audita-a-superficie-executavel-de-um-checkout-de-pr.md	1	acceptance_evidence	failure	ML-1A: no acceptance block
+ROADMAP-2026-08-26-comando-que-audita-a-superficie-executavel-de-um-checkout-de-pr.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-26-comando-que-audita-a-superficie-executavel-de-um-checkout-de-pr.md	2	acceptance_evidence	failure	ML-2A: no acceptance block
+ROADMAP-2026-08-26-comando-que-audita-a-superficie-executavel-de-um-checkout-de-pr.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-26-comando-que-audita-a-superficie-executavel-de-um-checkout-de-pr.md	3	acceptance_evidence	failure	ML-3A: no acceptance block
+ROADMAP-2026-08-26-comando-que-audita-a-superficie-executavel-de-um-checkout-de-pr.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-08-26-comando-que-audita-a-superficie-executavel-de-um-checkout-de-pr.md	4	acceptance_evidence	evidence	ML-1C: 7 criteria met
+ROADMAP-2026-08-26-comando-que-audita-a-superficie-executavel-de-um-checkout-de-pr.md	4	acceptance_evidence	failure	ML-1B: 5 unmet acceptance criteria
+ROADMAP-2026-08-26-comando-que-audita-a-superficie-executavel-de-um-checkout-de-pr.md	4	acceptance_evidence	failure	ML-3B: no acceptance block
+ROADMAP-2026-08-26-comando-que-audita-a-superficie-executavel-de-um-checkout-de-pr.md	4	mls_complete	evidence	ML-1B: ✅
+ROADMAP-2026-08-26-comando-que-audita-a-superficie-executavel-de-um-checkout-de-pr.md	4	mls_complete	evidence	ML-1C: ✅
+ROADMAP-2026-08-26-comando-que-audita-a-superficie-executavel-de-um-checkout-de-pr.md	4	mls_complete	evidence	ML-3B: ✅
+ROADMAP-2026-08-27-doctor-cobre-artefatos-de-scaffold-por-comparacao-com-o-template.md	0	acceptance_evidence	evidence	ML-0A: 2 criteria met
+ROADMAP-2026-08-27-doctor-cobre-artefatos-de-scaffold-por-comparacao-com-o-template.md	0	mls_complete	evidence	ML-0A: ✅
+ROADMAP-2026-08-27-doctor-cobre-artefatos-de-scaffold-por-comparacao-com-o-template.md	1	acceptance_evidence	failure	ML-1A: no acceptance block
+ROADMAP-2026-08-27-doctor-cobre-artefatos-de-scaffold-por-comparacao-com-o-template.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-27-doctor-cobre-artefatos-de-scaffold-por-comparacao-com-o-template.md	2	acceptance_evidence	failure	ML-2A: no acceptance block
+ROADMAP-2026-08-27-doctor-cobre-artefatos-de-scaffold-por-comparacao-com-o-template.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-27-doctor-cobre-artefatos-de-scaffold-por-comparacao-com-o-template.md	3	acceptance_evidence	failure	ML-3A: no acceptance block
+ROADMAP-2026-08-27-doctor-cobre-artefatos-de-scaffold-por-comparacao-com-o-template.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-08-27-sandbox-do-update-dry-run-por-lista-de-inclusao-dos-destinos-declarados.md	0	acceptance_evidence	failure	ML-0A: 2 unmet acceptance criteria
+ROADMAP-2026-08-27-sandbox-do-update-dry-run-por-lista-de-inclusao-dos-destinos-declarados.md	0	mls_complete	evidence	ML-0A: ✅
+ROADMAP-2026-08-27-sandbox-do-update-dry-run-por-lista-de-inclusao-dos-destinos-declarados.md	1	acceptance_evidence	failure	ML-1A: no acceptance block
+ROADMAP-2026-08-27-sandbox-do-update-dry-run-por-lista-de-inclusao-dos-destinos-declarados.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-27-sandbox-do-update-dry-run-por-lista-de-inclusao-dos-destinos-declarados.md	2	acceptance_evidence	failure	ML-2A: no acceptance block
+ROADMAP-2026-08-27-sandbox-do-update-dry-run-por-lista-de-inclusao-dos-destinos-declarados.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-27-sandbox-do-update-dry-run-por-lista-de-inclusao-dos-destinos-declarados.md	3	acceptance_evidence	failure	ML-3A: no acceptance block
+ROADMAP-2026-08-27-sandbox-do-update-dry-run-por-lista-de-inclusao-dos-destinos-declarados.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-08-27-sandbox-do-update-dry-run-por-lista-de-inclusao-dos-destinos-declarados.md	4	acceptance_evidence	evidence	ML-1B: 8 criteria met
+ROADMAP-2026-08-27-sandbox-do-update-dry-run-por-lista-de-inclusao-dos-destinos-declarados.md	4	mls_complete	evidence	ML-1B: ✅
+ROADMAP-2026-08-28-doctor-compara-o-bit-de-execucao-dos-artefatos-de-scaffold.md	0	acceptance_evidence	failure	ML-0A: 2 unmet acceptance criteria
+ROADMAP-2026-08-28-doctor-compara-o-bit-de-execucao-dos-artefatos-de-scaffold.md	0	mls_complete	evidence	ML-0A: ✅
+ROADMAP-2026-08-28-doctor-compara-o-bit-de-execucao-dos-artefatos-de-scaffold.md	1	acceptance_evidence	failure	ML-1A: no acceptance block
+ROADMAP-2026-08-28-doctor-compara-o-bit-de-execucao-dos-artefatos-de-scaffold.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-28-doctor-compara-o-bit-de-execucao-dos-artefatos-de-scaffold.md	2	acceptance_evidence	failure	ML-2A: no acceptance block
+ROADMAP-2026-08-28-doctor-compara-o-bit-de-execucao-dos-artefatos-de-scaffold.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-28-doctor-compara-o-bit-de-execucao-dos-artefatos-de-scaffold.md	3	acceptance_evidence	failure	ML-3A: no acceptance block
+ROADMAP-2026-08-28-doctor-compara-o-bit-de-execucao-dos-artefatos-de-scaffold.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-08-28-gate-de-ci-pinado-na-versao-geradora-e-install-sh-honrando-trackfw-version.md	0	acceptance_evidence	evidence	ML-0A: 3 criteria met
+ROADMAP-2026-08-28-gate-de-ci-pinado-na-versao-geradora-e-install-sh-honrando-trackfw-version.md	0	mls_complete	evidence	ML-0A: ✅
+ROADMAP-2026-08-28-gate-de-ci-pinado-na-versao-geradora-e-install-sh-honrando-trackfw-version.md	1	acceptance_evidence	evidence	ML-1A: 6 criteria met
+ROADMAP-2026-08-28-gate-de-ci-pinado-na-versao-geradora-e-install-sh-honrando-trackfw-version.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-28-gate-de-ci-pinado-na-versao-geradora-e-install-sh-honrando-trackfw-version.md	2	acceptance_evidence	failure	ML-2A: 4 unmet acceptance criteria
+ROADMAP-2026-08-28-gate-de-ci-pinado-na-versao-geradora-e-install-sh-honrando-trackfw-version.md	2	acceptance_evidence	failure	ML-2B: 3 unmet acceptance criteria
+ROADMAP-2026-08-28-gate-de-ci-pinado-na-versao-geradora-e-install-sh-honrando-trackfw-version.md	2	acceptance_evidence	failure	ML-2C: 5 unmet acceptance criteria
+ROADMAP-2026-08-28-gate-de-ci-pinado-na-versao-geradora-e-install-sh-honrando-trackfw-version.md	2	mls_complete	failure	ML-2A: not complete (status: ⬜ Pendente)
+ROADMAP-2026-08-28-gate-de-ci-pinado-na-versao-geradora-e-install-sh-honrando-trackfw-version.md	2	mls_complete	failure	ML-2B: not complete (status: ⬜ Pendente)
+ROADMAP-2026-08-28-gate-de-ci-pinado-na-versao-geradora-e-install-sh-honrando-trackfw-version.md	2	mls_complete	failure	ML-2C: not complete (status: ⬜ Pendente)
+ROADMAP-2026-08-28-gate-de-ci-pinado-na-versao-geradora-e-install-sh-honrando-trackfw-version.md	3	acceptance_evidence	evidence	ML-3A: 7 criteria met
+ROADMAP-2026-08-28-gate-de-ci-pinado-na-versao-geradora-e-install-sh-honrando-trackfw-version.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-08-29-dialeto-canonico-do-roadmap-e-vocabulario-de-status-do-barrier.md	0	acceptance_evidence	evidence	ML-0A: 3 criteria met
+ROADMAP-2026-08-29-dialeto-canonico-do-roadmap-e-vocabulario-de-status-do-barrier.md	0	mls_complete	evidence	ML-0A: ✅
+ROADMAP-2026-08-29-dialeto-canonico-do-roadmap-e-vocabulario-de-status-do-barrier.md	1	acceptance_evidence	evidence	ML-1A: 5 criteria met
+ROADMAP-2026-08-29-dialeto-canonico-do-roadmap-e-vocabulario-de-status-do-barrier.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-29-dialeto-canonico-do-roadmap-e-vocabulario-de-status-do-barrier.md	2	acceptance_evidence	evidence	ML-2A: 3 criteria met
+ROADMAP-2026-08-29-dialeto-canonico-do-roadmap-e-vocabulario-de-status-do-barrier.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-29-dialeto-canonico-do-roadmap-e-vocabulario-de-status-do-barrier.md	3	acceptance_evidence	failure	ML-3A: 5 unmet acceptance criteria
+ROADMAP-2026-08-29-dialeto-canonico-do-roadmap-e-vocabulario-de-status-do-barrier.md	3	mls_complete	failure	ML-3A: not complete (status: ⬜ Pendente)
+ROADMAP-i18n-npm-2026-06-12.md	1	acceptance_evidence	evidence	ML-1A: 3 criteria met
+ROADMAP-i18n-npm-2026-06-12.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-i18n-npm-2026-06-12.md	2	acceptance_evidence	failure	ML-2A: no acceptance block
+ROADMAP-i18n-npm-2026-06-12.md	2	acceptance_evidence	failure	ML-2B: no acceptance block
+ROADMAP-i18n-npm-2026-06-12.md	2	acceptance_evidence	failure	ML-2C: no acceptance block
+ROADMAP-i18n-npm-2026-06-12.md	2	acceptance_evidence	failure	ML-2D: no acceptance block
+ROADMAP-i18n-npm-2026-06-12.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-i18n-npm-2026-06-12.md	2	mls_complete	evidence	ML-2B: ✅
+ROADMAP-i18n-npm-2026-06-12.md	2	mls_complete	evidence	ML-2C: ✅
+ROADMAP-i18n-npm-2026-06-12.md	2	mls_complete	evidence	ML-2D: ✅
+ROADMAP-testes-unitarios-go-2026-06-11.md	1	acceptance_evidence	failure	ML-1A: no acceptance block
+ROADMAP-testes-unitarios-go-2026-06-11.md	1	acceptance_evidence	failure	ML-1B: no acceptance block
+ROADMAP-testes-unitarios-go-2026-06-11.md	1	acceptance_evidence	failure	ML-1C: no acceptance block
+ROADMAP-testes-unitarios-go-2026-06-11.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-testes-unitarios-go-2026-06-11.md	1	mls_complete	evidence	ML-1B: ✅
+ROADMAP-testes-unitarios-go-2026-06-11.md	1	mls_complete	evidence	ML-1C: ✅
+agent-rules-inject-2026-06-18.md	1	acceptance_evidence	failure	ML-1A: 5 unmet acceptance criteria
+agent-rules-inject-2026-06-18.md	1	acceptance_evidence	failure	ML-1B: 4 unmet acceptance criteria
+agent-rules-inject-2026-06-18.md	1	mls_complete	evidence	ML-1A: ✅
+agent-rules-inject-2026-06-18.md	1	mls_complete	evidence	ML-1B: ✅
+agent-rules-inject-2026-06-18.md	2	acceptance_evidence	failure	ML-2A: 3 unmet acceptance criteria
+agent-rules-inject-2026-06-18.md	2	acceptance_evidence	failure	ML-2B: 3 unmet acceptance criteria
+agent-rules-inject-2026-06-18.md	2	mls_complete	evidence	ML-2A: ✅
+agent-rules-inject-2026-06-18.md	2	mls_complete	evidence	ML-2B: ✅
+agent-rules-inject-2026-06-18.md	3	acceptance_evidence	failure	ML-3A: 2 unmet acceptance criteria
+agent-rules-inject-2026-06-18.md	3	acceptance_evidence	failure	ML-3B: 2 unmet acceptance criteria
+agent-rules-inject-2026-06-18.md	3	mls_complete	evidence	ML-3A: ✅
+agent-rules-inject-2026-06-18.md	3	mls_complete	evidence	ML-3B: ✅
+analyzing-state-ml-status-rules-2026-06-19.md	1	acceptance_evidence	failure	ML-1A: 2 unmet acceptance criteria
+analyzing-state-ml-status-rules-2026-06-19.md	1	acceptance_evidence	failure	ML-1B: 2 unmet acceptance criteria
+analyzing-state-ml-status-rules-2026-06-19.md	1	acceptance_evidence	failure	ML-1C: 2 unmet acceptance criteria
+analyzing-state-ml-status-rules-2026-06-19.md	1	mls_complete	failure	ML-1A: not complete (status: ⬜ Pendente)
+analyzing-state-ml-status-rules-2026-06-19.md	1	mls_complete	failure	ML-1B: not complete (status: ⬜ Pendente)
+analyzing-state-ml-status-rules-2026-06-19.md	1	mls_complete	failure	ML-1C: not complete (status: ⬜ Pendente)
+analyzing-state-ml-status-rules-2026-06-19.md	2	acceptance_evidence	failure	ML-2A: 2 unmet acceptance criteria
+analyzing-state-ml-status-rules-2026-06-19.md	2	acceptance_evidence	failure	ML-2B: 2 unmet acceptance criteria
+analyzing-state-ml-status-rules-2026-06-19.md	2	mls_complete	failure	ML-2A: not complete (status: ⬜ Pendente)
+analyzing-state-ml-status-rules-2026-06-19.md	2	mls_complete	failure	ML-2B: not complete (status: ⬜ Pendente)
+analyzing-state-ml-status-rules-2026-06-19.md	3	acceptance_evidence	failure	ML-3A: 3 unmet acceptance criteria
+analyzing-state-ml-status-rules-2026-06-19.md	3	acceptance_evidence	failure	ML-3B: 1 unmet acceptance criteria
+analyzing-state-ml-status-rules-2026-06-19.md	3	acceptance_evidence	failure	ML-3C: 1 unmet acceptance criteria
+analyzing-state-ml-status-rules-2026-06-19.md	3	mls_complete	failure	ML-3A: not complete (status: ⬜ Pendente)
+analyzing-state-ml-status-rules-2026-06-19.md	3	mls_complete	failure	ML-3B: not complete (status: ⬜ Pendente)
+analyzing-state-ml-status-rules-2026-06-19.md	3	mls_complete	failure	ML-3C: not complete (status: ⬜ Pendente)
+analyzing-state-ml-status-rules-2026-06-19.md	4	acceptance_evidence	failure	ML-4A: 3 unmet acceptance criteria
+analyzing-state-ml-status-rules-2026-06-19.md	4	mls_complete	failure	ML-4A: not complete (status: ⬜ Pendente)
+discover-init-hook-autoinstall-2026-06-15.md	1	acceptance_evidence	failure	ML-1A: 3 unmet acceptance criteria
+discover-init-hook-autoinstall-2026-06-15.md	1	mls_complete	failure	ML-1A: not complete (status: ⬜ Pendente)
+discover-init-hook-autoinstall-2026-06-15.md	2	acceptance_evidence	failure	ML-2A: 2 unmet acceptance criteria
+discover-init-hook-autoinstall-2026-06-15.md	2	mls_complete	failure	ML-2A: not complete (status: ⬜ Pendente)
+discover-init-hook-autoinstall-2026-06-15.md	3	acceptance_evidence	failure	ML-3A: 2 unmet acceptance criteria
+discover-init-hook-autoinstall-2026-06-15.md	3	mls_complete	failure	ML-3A: not complete (status: ⬜ Pendente)
+docs-site-vitepress-2026-06-13.md	1	acceptance_evidence	failure	ML-1A: 3 unmet acceptance criteria
+docs-site-vitepress-2026-06-13.md	1	mls_complete	failure	ML-1A: not complete (status: ⬜ Pendente)
+docs-site-vitepress-2026-06-13.md	2	acceptance_evidence	failure	ML-2A: no acceptance block
+docs-site-vitepress-2026-06-13.md	2	acceptance_evidence	failure	ML-2B: no acceptance block
+docs-site-vitepress-2026-06-13.md	2	acceptance_evidence	failure	ML-2C: no acceptance block
+docs-site-vitepress-2026-06-13.md	2	acceptance_evidence	failure	ML-2D: no acceptance block
+docs-site-vitepress-2026-06-13.md	2	mls_complete	failure	ML-2A: not complete (status: ⬜ Pendente)
+docs-site-vitepress-2026-06-13.md	2	mls_complete	failure	ML-2B: not complete (status: ⬜ Pendente)
+docs-site-vitepress-2026-06-13.md	2	mls_complete	failure	ML-2C: not complete (status: ⬜ Pendente)
+docs-site-vitepress-2026-06-13.md	2	mls_complete	failure	ML-2D: not complete (status: ⬜ Pendente)
+goreleaser-release-pipeline-2026-06-11.md	1	acceptance_evidence	failure	ML-1A: 2 unmet acceptance criteria
+goreleaser-release-pipeline-2026-06-11.md	1	acceptance_evidence	failure	ML-1B: 3 unmet acceptance criteria
+goreleaser-release-pipeline-2026-06-11.md	1	mls_complete	evidence	ML-1A: ✅
+goreleaser-release-pipeline-2026-06-11.md	1	mls_complete	evidence	ML-1B: ✅
+goreleaser-release-pipeline-2026-06-11.md	2	acceptance_evidence	failure	ML-2A: 3 unmet acceptance criteria
+goreleaser-release-pipeline-2026-06-11.md	2	mls_complete	evidence	ML-2A: ✅
+goreleaser-release-pipeline-2026-06-11.md	3	acceptance_evidence	failure	ML-3A: 3 unmet acceptance criteria
+goreleaser-release-pipeline-2026-06-11.md	3	mls_complete	evidence	ML-3A: ✅
+kanban-live-features-2026-06-18.md	1	acceptance_evidence	failure	ML-1A: 4 unmet acceptance criteria
+kanban-live-features-2026-06-18.md	1	mls_complete	failure	ML-1A: not complete (status: ⬜ Pendente)
+kanban-live-features-2026-06-18.md	2	acceptance_evidence	failure	ML-2A: 4 unmet acceptance criteria
+kanban-live-features-2026-06-18.md	2	acceptance_evidence	failure	ML-2B: 3 unmet acceptance criteria
+kanban-live-features-2026-06-18.md	2	acceptance_evidence	failure	ML-2C: 6 unmet acceptance criteria
+kanban-live-features-2026-06-18.md	2	mls_complete	failure	ML-2A: not complete (status: ⬜ Pendente)
+kanban-live-features-2026-06-18.md	2	mls_complete	failure	ML-2B: not complete (status: ⬜ Pendente)
+kanban-live-features-2026-06-18.md	2	mls_complete	failure	ML-2C: not complete (status: ⬜ Pendente)
+kanban-roadmap-progress-2026-06-17.md	1	acceptance_evidence	failure	ML-1A: 4 unmet acceptance criteria
+kanban-roadmap-progress-2026-06-17.md	1	mls_complete	evidence	ML-1A: ✅
+kanban-roadmap-progress-2026-06-17.md	2	acceptance_evidence	failure	ML-2A: 5 unmet acceptance criteria
+kanban-roadmap-progress-2026-06-17.md	2	mls_complete	evidence	ML-2A: ✅
+npm-nodejs-rewrite-2026-06-12.md	1	acceptance_evidence	failure	ML-1A: 2 unmet acceptance criteria
+npm-nodejs-rewrite-2026-06-12.md	1	acceptance_evidence	failure	ML-1B: 2 unmet acceptance criteria
+npm-nodejs-rewrite-2026-06-12.md	1	mls_complete	failure	ML-1A: not complete (status: ⬜ Pendente)
+npm-nodejs-rewrite-2026-06-12.md	1	mls_complete	failure	ML-1B: not complete (status: ⬜ Pendente)
+npm-nodejs-rewrite-2026-06-12.md	2	acceptance_evidence	failure	ML-2A: 2 unmet acceptance criteria
+npm-nodejs-rewrite-2026-06-12.md	2	acceptance_evidence	failure	ML-2B: 3 unmet acceptance criteria
+npm-nodejs-rewrite-2026-06-12.md	2	acceptance_evidence	failure	ML-2C: 1 unmet acceptance criteria
+npm-nodejs-rewrite-2026-06-12.md	2	mls_complete	failure	ML-2A: not complete (status: ⬜ Pendente)
+npm-nodejs-rewrite-2026-06-12.md	2	mls_complete	failure	ML-2B: not complete (status: ⬜ Pendente)
+npm-nodejs-rewrite-2026-06-12.md	2	mls_complete	failure	ML-2C: not complete (status: ⬜ Pendente)
+npm-nodejs-rewrite-2026-06-12.md	3	acceptance_evidence	failure	ML-3A: 2 unmet acceptance criteria
+npm-nodejs-rewrite-2026-06-12.md	3	acceptance_evidence	failure	ML-3B: 3 unmet acceptance criteria
+npm-nodejs-rewrite-2026-06-12.md	3	acceptance_evidence	failure	ML-3C: 2 unmet acceptance criteria
+npm-nodejs-rewrite-2026-06-12.md	3	mls_complete	failure	ML-3A: not complete (status: ⬜ Pendente)
+npm-nodejs-rewrite-2026-06-12.md	3	mls_complete	failure	ML-3B: not complete (status: ⬜ Pendente)
+npm-nodejs-rewrite-2026-06-12.md	3	mls_complete	failure	ML-3C: not complete (status: ⬜ Pendente)
+npm-nodejs-rewrite-2026-06-12.md	4	acceptance_evidence	failure	ML-4A: 1 unmet acceptance criteria
+npm-nodejs-rewrite-2026-06-12.md	4	acceptance_evidence	failure	ML-4B: 2 unmet acceptance criteria
+npm-nodejs-rewrite-2026-06-12.md	4	acceptance_evidence	failure	ML-4C: 2 unmet acceptance criteria
+npm-nodejs-rewrite-2026-06-12.md	4	mls_complete	evidence	ML-4A: ✅
+npm-nodejs-rewrite-2026-06-12.md	4	mls_complete	evidence	ML-4B: ✅
+npm-nodejs-rewrite-2026-06-12.md	4	mls_complete	evidence	ML-4C: ✅
+npm-wrapper-2026-06-11.md	1	acceptance_evidence	failure	ML-1A: 4 unmet acceptance criteria
+npm-wrapper-2026-06-11.md	1	acceptance_evidence	failure	ML-1B: 4 unmet acceptance criteria
+npm-wrapper-2026-06-11.md	1	acceptance_evidence	failure	ML-1C: 4 unmet acceptance criteria
+npm-wrapper-2026-06-11.md	1	mls_complete	failure	ML-1A: not complete (status: ⬜ Pendente)
+npm-wrapper-2026-06-11.md	1	mls_complete	failure	ML-1B: not complete (status: ⬜ Pendente)
+npm-wrapper-2026-06-11.md	1	mls_complete	failure	ML-1C: not complete (status: ⬜ Pendente)
+npm-wrapper-2026-06-11.md	2	acceptance_evidence	failure	ML-2A: 3 unmet acceptance criteria
+npm-wrapper-2026-06-11.md	2	mls_complete	failure	ML-2A: not complete (status: ⬜ Pendente)
+pypi-wrapper-2026-06-11.md	1	acceptance_evidence	failure	ML-1A: 4 unmet acceptance criteria
+pypi-wrapper-2026-06-11.md	1	acceptance_evidence	failure	ML-1B: 1 unmet acceptance criteria
+pypi-wrapper-2026-06-11.md	1	acceptance_evidence	failure	ML-1C: 6 unmet acceptance criteria
+pypi-wrapper-2026-06-11.md	1	mls_complete	failure	ML-1A: not complete (status: ⬜ Pendente)
+pypi-wrapper-2026-06-11.md	1	mls_complete	failure	ML-1B: not complete (status: ⬜ Pendente)
+pypi-wrapper-2026-06-11.md	1	mls_complete	failure	ML-1C: not complete (status: ⬜ Pendente)
+pypi-wrapper-2026-06-11.md	2	acceptance_evidence	failure	ML-2A: 3 unmet acceptance criteria
+pypi-wrapper-2026-06-11.md	2	mls_complete	failure	ML-2A: not complete (status: ⬜ Pendente)
+roadmap-adr-wizard-e-list-2026-06-11.md	1	acceptance_evidence	failure	ML-1A: 6 unmet acceptance criteria
+roadmap-adr-wizard-e-list-2026-06-11.md	1	mls_complete	evidence	ML-1A: ✅
+roadmap-multi-ai-support-2026-06-11.md	1	acceptance_evidence	failure	ML-1A: 3 unmet acceptance criteria
+roadmap-multi-ai-support-2026-06-11.md	1	acceptance_evidence	failure	ML-1B: 4 unmet acceptance criteria
+roadmap-multi-ai-support-2026-06-11.md	1	acceptance_evidence	failure	ML-1C: 4 unmet acceptance criteria
+roadmap-multi-ai-support-2026-06-11.md	1	acceptance_evidence	failure	ML-1D: 3 unmet acceptance criteria
+roadmap-multi-ai-support-2026-06-11.md	1	acceptance_evidence	failure	ML-1E: 2 unmet acceptance criteria
+roadmap-multi-ai-support-2026-06-11.md	1	mls_complete	evidence	ML-1A: ✅
+roadmap-multi-ai-support-2026-06-11.md	1	mls_complete	evidence	ML-1B: ✅
+roadmap-multi-ai-support-2026-06-11.md	1	mls_complete	evidence	ML-1C: ✅
+roadmap-multi-ai-support-2026-06-11.md	1	mls_complete	evidence	ML-1D: ✅
+roadmap-multi-ai-support-2026-06-11.md	1	mls_complete	evidence	ML-1E: ✅
+roadmap-multi-ai-support-2026-06-11.md	2	acceptance_evidence	failure	ML-2A: 2 unmet acceptance criteria
+roadmap-multi-ai-support-2026-06-11.md	2	acceptance_evidence	failure	ML-2B: 1 unmet acceptance criteria
+roadmap-multi-ai-support-2026-06-11.md	2	acceptance_evidence	failure	ML-2C: 1 unmet acceptance criteria
+roadmap-multi-ai-support-2026-06-11.md	2	acceptance_evidence	failure	ML-2D: 2 unmet acceptance criteria
+roadmap-multi-ai-support-2026-06-11.md	2	acceptance_evidence	failure	ML-2E: 1 unmet acceptance criteria
+roadmap-multi-ai-support-2026-06-11.md	2	mls_complete	evidence	ML-2A: ✅
+roadmap-multi-ai-support-2026-06-11.md	2	mls_complete	evidence	ML-2B: ✅
+roadmap-multi-ai-support-2026-06-11.md	2	mls_complete	evidence	ML-2C: ✅
+roadmap-multi-ai-support-2026-06-11.md	2	mls_complete	evidence	ML-2D: ✅
+roadmap-multi-ai-support-2026-06-11.md	2	mls_complete	evidence	ML-2E: ✅
+roadmap-multi-ai-support-2026-06-11.md	3	acceptance_evidence	failure	ML-3A: 3 unmet acceptance criteria
+roadmap-multi-ai-support-2026-06-11.md	3	mls_complete	evidence	ML-3A: ✅
+roadmap-multi-ai-support-2026-06-11.md	4	acceptance_evidence	failure	ML-4A: 3 unmet acceptance criteria
+roadmap-multi-ai-support-2026-06-11.md	4	mls_complete	evidence	ML-4A: ✅
+roadmap-req-driven-adr-discovery-2026-06-12.md	1	acceptance_evidence	failure	ML-1A: 4 unmet acceptance criteria
+roadmap-req-driven-adr-discovery-2026-06-12.md	1	acceptance_evidence	failure	ML-1B: 4 unmet acceptance criteria
+roadmap-req-driven-adr-discovery-2026-06-12.md	1	mls_complete	evidence	ML-1A: ✅
+roadmap-req-driven-adr-discovery-2026-06-12.md	1	mls_complete	evidence	ML-1B: ✅
+roadmap-req-driven-adr-discovery-2026-06-12.md	2	acceptance_evidence	failure	ML-2A: no acceptance block
+roadmap-req-driven-adr-discovery-2026-06-12.md	2	mls_complete	evidence	ML-2A: ✅
+roadmap-req-driven-adr-discovery-2026-06-12.md	3	acceptance_evidence	failure	ML-3A: 3 unmet acceptance criteria
+roadmap-req-driven-adr-discovery-2026-06-12.md	3	acceptance_evidence	failure	ML-3B: 3 unmet acceptance criteria
+roadmap-req-driven-adr-discovery-2026-06-12.md	3	mls_complete	evidence	ML-3A: ✅
+roadmap-req-driven-adr-discovery-2026-06-12.md	3	mls_complete	evidence	ML-3B: ✅
+roadmap-req-driven-adr-discovery-2026-06-12.md	4	acceptance_evidence	failure	ML-4A: no acceptance block
+roadmap-req-driven-adr-discovery-2026-06-12.md	4	acceptance_evidence	failure	ML-4B: no acceptance block
+roadmap-req-driven-adr-discovery-2026-06-12.md	4	acceptance_evidence	failure	ML-4C: no acceptance block
+roadmap-req-driven-adr-discovery-2026-06-12.md	4	acceptance_evidence	failure	ML-4D: no acceptance block
+roadmap-req-driven-adr-discovery-2026-06-12.md	4	mls_complete	evidence	ML-4A: ✅
+roadmap-req-driven-adr-discovery-2026-06-12.md	4	mls_complete	evidence	ML-4B: ✅
+roadmap-req-driven-adr-discovery-2026-06-12.md	4	mls_complete	evidence	ML-4C: ✅
+roadmap-req-driven-adr-discovery-2026-06-12.md	4	mls_complete	evidence	ML-4D: ✅
+roadmap-req-wizard-e-list-2026-06-11.md	1	acceptance_evidence	failure	ML-1A: 7 unmet acceptance criteria
+roadmap-req-wizard-e-list-2026-06-11.md	1	mls_complete	failure	ML-1A: not complete (status: ⬜ Pendente)
+roadmap-roadmap-ai-generation-2026-06-11.md	1	acceptance_evidence	failure	ML-1A: 3 unmet acceptance criteria
+roadmap-roadmap-ai-generation-2026-06-11.md	1	acceptance_evidence	failure	ML-1B: 3 unmet acceptance criteria
+roadmap-roadmap-ai-generation-2026-06-11.md	1	mls_complete	failure	ML-1A: not complete (status: ⬜ Pendente)
+roadmap-roadmap-ai-generation-2026-06-11.md	1	mls_complete	failure	ML-1B: not complete (status: ⬜ Pendente)
+roadmap-roadmap-ai-generation-2026-06-11.md	2	acceptance_evidence	failure	ML-2A: 2 unmet acceptance criteria
+roadmap-roadmap-ai-generation-2026-06-11.md	2	acceptance_evidence	failure	ML-2B: 4 unmet acceptance criteria
+roadmap-roadmap-ai-generation-2026-06-11.md	2	mls_complete	failure	ML-2A: not complete (status: ⬜ Pendente)
+roadmap-roadmap-ai-generation-2026-06-11.md	2	mls_complete	failure	ML-2B: not complete (status: ⬜ Pendente)
+roadmap-roadmap-ai-generation-2026-06-11.md	3	acceptance_evidence	failure	ML-3A: 2 unmet acceptance criteria
+roadmap-roadmap-ai-generation-2026-06-11.md	3	mls_complete	failure	ML-3A: not complete (status: ⬜ Pendente)
+roadmap-v1-remaining-features-2026-06-12.md	1	acceptance_evidence	failure	ML-1A: 5 unmet acceptance criteria
+roadmap-v1-remaining-features-2026-06-12.md	1	acceptance_evidence	failure	ML-1B: 5 unmet acceptance criteria
+roadmap-v1-remaining-features-2026-06-12.md	1	acceptance_evidence	failure	ML-1C: 5 unmet acceptance criteria
+roadmap-v1-remaining-features-2026-06-12.md	1	mls_complete	failure	ML-1A: not complete (status: ⬜ Pendente)
+roadmap-v1-remaining-features-2026-06-12.md	1	mls_complete	failure	ML-1B: not complete (status: ⬜ Pendente)
+roadmap-v1-remaining-features-2026-06-12.md	1	mls_complete	failure	ML-1C: not complete (status: ⬜ Pendente)
+roadmap-v1-remaining-features-2026-06-12.md	2	acceptance_evidence	failure	ML-2A: 5 unmet acceptance criteria
+roadmap-v1-remaining-features-2026-06-12.md	2	mls_complete	failure	ML-2A: not complete (status: ⬜ Pendente)
+slash-commands-2026-06-11.md	1	mls_complete	failure	wave 1: no ML found
+trackfw-ai-agent-rail-2026-06-13.md	1	acceptance_evidence	failure	ML-1A: 2 unmet acceptance criteria
+trackfw-ai-agent-rail-2026-06-13.md	1	acceptance_evidence	failure	ML-1B: 3 unmet acceptance criteria
+trackfw-ai-agent-rail-2026-06-13.md	1	mls_complete	evidence	ML-1A: ✅
+trackfw-ai-agent-rail-2026-06-13.md	1	mls_complete	evidence	ML-1B: ✅
+trackfw-ai-agent-rail-2026-06-13.md	2	acceptance_evidence	failure	ML-2A: 2 unmet acceptance criteria
+trackfw-ai-agent-rail-2026-06-13.md	2	mls_complete	evidence	ML-2A: ✅
+trackfw-ai-agent-rail-2026-06-13.md	3	acceptance_evidence	failure	ML-3A: 3 unmet acceptance criteria
+trackfw-ai-agent-rail-2026-06-13.md	3	mls_complete	evidence	ML-3A: ✅
+v1.1.0-i18n-wizard-java-2026-06-12.md	1	acceptance_evidence	failure	ML-1A: 3 unmet acceptance criteria
+v1.1.0-i18n-wizard-java-2026-06-12.md	1	acceptance_evidence	failure	ML-1B: 2 unmet acceptance criteria
+v1.1.0-i18n-wizard-java-2026-06-12.md	1	mls_complete	failure	ML-1A: not complete (status: ⬜ Pendente)
+v1.1.0-i18n-wizard-java-2026-06-12.md	1	mls_complete	failure	ML-1B: not complete (status: ⬜ Pendente)
+v1.1.0-i18n-wizard-java-2026-06-12.md	2	acceptance_evidence	failure	ML-2A: 2 unmet acceptance criteria
+v1.1.0-i18n-wizard-java-2026-06-12.md	2	acceptance_evidence	failure	ML-2B: 1 unmet acceptance criteria
+v1.1.0-i18n-wizard-java-2026-06-12.md	2	mls_complete	failure	ML-2A: not complete (status: ⬜ Pendente)
+v1.1.0-i18n-wizard-java-2026-06-12.md	2	mls_complete	failure	ML-2B: not complete (status: ⬜ Pendente)
+v1.1.0-i18n-wizard-java-2026-06-12.md	3	acceptance_evidence	failure	ML-3A: 3 unmet acceptance criteria
+v1.1.0-i18n-wizard-java-2026-06-12.md	3	acceptance_evidence	failure	ML-3B: 2 unmet acceptance criteria
+v1.1.0-i18n-wizard-java-2026-06-12.md	3	mls_complete	failure	ML-3A: not complete (status: ⬜ Pendente)
+v1.1.0-i18n-wizard-java-2026-06-12.md	3	mls_complete	failure	ML-3B: not complete (status: ⬜ Pendente)
+v1.1.0-i18n-wizard-java-2026-06-12.md	4	acceptance_evidence	failure	ML-4A: 3 unmet acceptance criteria
+v1.1.0-i18n-wizard-java-2026-06-12.md	4	acceptance_evidence	failure	ML-4B: 2 unmet acceptance criteria
+v1.1.0-i18n-wizard-java-2026-06-12.md	4	acceptance_evidence	failure	ML-4C: 2 unmet acceptance criteria
+v1.1.0-i18n-wizard-java-2026-06-12.md	4	mls_complete	failure	ML-4A: not complete (status: ⬜ Pendente)
+v1.1.0-i18n-wizard-java-2026-06-12.md	4	mls_complete	failure	ML-4B: not complete (status: ⬜ Pendente)
+v1.1.0-i18n-wizard-java-2026-06-12.md	4	mls_complete	failure	ML-4C: not complete (status: ⬜ Pendente)
+v2.0-gaps-implementacao-2026-06-13.md	1	acceptance_evidence	failure	ML-1A: 6 unmet acceptance criteria
+v2.0-gaps-implementacao-2026-06-13.md	1	acceptance_evidence	failure	ML-1B: 6 unmet acceptance criteria
+v2.0-gaps-implementacao-2026-06-13.md	1	mls_complete	failure	ML-1A: not complete (status: ⬜ Pendente)
+v2.0-gaps-implementacao-2026-06-13.md	1	mls_complete	failure	ML-1B: not complete (status: ⬜ Pendente)
+v2.0-gaps-implementacao-2026-06-13.md	2	acceptance_evidence	failure	ML-2A: 4 unmet acceptance criteria
+v2.0-gaps-implementacao-2026-06-13.md	2	acceptance_evidence	failure	ML-2B: 5 unmet acceptance criteria
+v2.0-gaps-implementacao-2026-06-13.md	2	mls_complete	failure	ML-2A: not complete (status: ⬜ Pendente)
+v2.0-gaps-implementacao-2026-06-13.md	2	mls_complete	failure	ML-2B: not complete (status: ⬜ Pendente)
+v2.0-gaps-implementacao-2026-06-13.md	3	acceptance_evidence	failure	ML-3A: 4 unmet acceptance criteria
+v2.0-gaps-implementacao-2026-06-13.md	3	acceptance_evidence	failure	ML-3B: 5 unmet acceptance criteria
+v2.0-gaps-implementacao-2026-06-13.md	3	mls_complete	failure	ML-3A: not complete (status: ⬜ Pendente)
+v2.0-gaps-implementacao-2026-06-13.md	3	mls_complete	failure	ML-3B: not complete (status: ⬜ Pendente)
+v2.0-gaps-implementacao-2026-06-13.md	4	acceptance_evidence	failure	ML-4A: 6 unmet acceptance criteria
+v2.0-gaps-implementacao-2026-06-13.md	4	mls_complete	failure	ML-4A: not complete (status: ⬜ Pendente)
+v2.1-discovery-mode-2026-06-13.md	1	acceptance_evidence	failure	ML-1A: 4 unmet acceptance criteria
+v2.1-discovery-mode-2026-06-13.md	1	acceptance_evidence	failure	ML-1B: 4 unmet acceptance criteria
+v2.1-discovery-mode-2026-06-13.md	1	acceptance_evidence	failure	ML-1C: 2 unmet acceptance criteria
+v2.1-discovery-mode-2026-06-13.md	1	mls_complete	evidence	ML-1A: ✅
+v2.1-discovery-mode-2026-06-13.md	1	mls_complete	evidence	ML-1B: ✅
+v2.1-discovery-mode-2026-06-13.md	1	mls_complete	evidence	ML-1C: ✅
+v2.1-discovery-mode-2026-06-13.md	2	acceptance_evidence	failure	ML-2A: no acceptance block
+v2.1-discovery-mode-2026-06-13.md	2	acceptance_evidence	failure	ML-2B: no acceptance block
+v2.1-discovery-mode-2026-06-13.md	2	acceptance_evidence	failure	ML-2C: no acceptance block
+v2.1-discovery-mode-2026-06-13.md	2	mls_complete	evidence	ML-2A: ✅
+v2.1-discovery-mode-2026-06-13.md	2	mls_complete	evidence	ML-2B: ✅
+v2.1-discovery-mode-2026-06-13.md	2	mls_complete	evidence	ML-2C: ✅
+v2.1-discovery-mode-2026-06-13.md	3	acceptance_evidence	failure	ML-3A: no acceptance block
+v2.1-discovery-mode-2026-06-13.md	3	acceptance_evidence	failure	ML-3B: no acceptance block
+v2.1-discovery-mode-2026-06-13.md	3	mls_complete	evidence	ML-3A: ✅
+v2.1-discovery-mode-2026-06-13.md	3	mls_complete	evidence	ML-3B: ✅
+v2.2-python-cli-nativo-2026-06-13.md	1	acceptance_evidence	evidence	ML-1A: 3 criteria met
+v2.2-python-cli-nativo-2026-06-13.md	1	acceptance_evidence	evidence	ML-1B: 1 criteria met
+v2.2-python-cli-nativo-2026-06-13.md	1	acceptance_evidence	evidence	ML-1C: 2 criteria met
+v2.2-python-cli-nativo-2026-06-13.md	1	mls_complete	evidence	ML-1A: ✅
+v2.2-python-cli-nativo-2026-06-13.md	1	mls_complete	evidence	ML-1B: ✅
+v2.2-python-cli-nativo-2026-06-13.md	1	mls_complete	evidence	ML-1C: ✅
+v2.2-python-cli-nativo-2026-06-13.md	2	acceptance_evidence	evidence	ML-2A: 2 criteria met
+v2.2-python-cli-nativo-2026-06-13.md	2	acceptance_evidence	evidence	ML-2B: 1 criteria met
+v2.2-python-cli-nativo-2026-06-13.md	2	acceptance_evidence	evidence	ML-2C: 3 criteria met
+v2.2-python-cli-nativo-2026-06-13.md	2	acceptance_evidence	evidence	ML-2D: 2 criteria met
+v2.2-python-cli-nativo-2026-06-13.md	2	mls_complete	evidence	ML-2A: ✅
+v2.2-python-cli-nativo-2026-06-13.md	2	mls_complete	evidence	ML-2B: ✅
+v2.2-python-cli-nativo-2026-06-13.md	2	mls_complete	evidence	ML-2C: ✅
+v2.2-python-cli-nativo-2026-06-13.md	2	mls_complete	evidence	ML-2D: ✅
+v2.2-python-cli-nativo-2026-06-13.md	3	acceptance_evidence	evidence	ML-3A: 3 criteria met
+v2.2-python-cli-nativo-2026-06-13.md	3	acceptance_evidence	evidence	ML-3B: 3 criteria met
+v2.2-python-cli-nativo-2026-06-13.md	3	acceptance_evidence	evidence	ML-3C: 4 criteria met
+v2.2-python-cli-nativo-2026-06-13.md	3	acceptance_evidence	evidence	ML-3D: 3 criteria met
+v2.2-python-cli-nativo-2026-06-13.md	3	mls_complete	evidence	ML-3A: ✅
+v2.2-python-cli-nativo-2026-06-13.md	3	mls_complete	evidence	ML-3B: ✅
+v2.2-python-cli-nativo-2026-06-13.md	3	mls_complete	evidence	ML-3C: ✅
+v2.2-python-cli-nativo-2026-06-13.md	3	mls_complete	evidence	ML-3D: ✅
+v2.2-python-cli-nativo-2026-06-13.md	4	acceptance_evidence	evidence	ML-4A: 2 criteria met
+v2.2-python-cli-nativo-2026-06-13.md	4	acceptance_evidence	evidence	ML-4B: 3 criteria met
+v2.2-python-cli-nativo-2026-06-13.md	4	mls_complete	evidence	ML-4A: ✅
+v2.2-python-cli-nativo-2026-06-13.md	4	mls_complete	evidence	ML-4B: ✅
+v2.3-validator-improvements-2026-06-13.md	1	acceptance_evidence	evidence	ML-1A: 7 criteria met
+v2.3-validator-improvements-2026-06-13.md	1	acceptance_evidence	evidence	ML-1B: 2 criteria met
+v2.3-validator-improvements-2026-06-13.md	1	acceptance_evidence	evidence	ML-1C: 2 criteria met
+v2.3-validator-improvements-2026-06-13.md	1	mls_complete	evidence	ML-1A: ✅
+v2.3-validator-improvements-2026-06-13.md	1	mls_complete	evidence	ML-1B: ✅
+v2.3-validator-improvements-2026-06-13.md	1	mls_complete	evidence	ML-1C: ✅
+v2.4-config-evolution-2026-06-13.md	1	acceptance_evidence	failure	ML-1A: 4 unmet acceptance criteria
+v2.4-config-evolution-2026-06-13.md	1	acceptance_evidence	failure	ML-1B: 2 unmet acceptance criteria
+v2.4-config-evolution-2026-06-13.md	1	acceptance_evidence	failure	ML-1C: 2 unmet acceptance criteria
+v2.4-config-evolution-2026-06-13.md	1	mls_complete	evidence	ML-1A: ✅
+v2.4-config-evolution-2026-06-13.md	1	mls_complete	evidence	ML-1B: ✅
+v2.4-config-evolution-2026-06-13.md	1	mls_complete	evidence	ML-1C: ✅
+v2.4-config-evolution-2026-06-13.md	2	acceptance_evidence	failure	ML-2A: 4 unmet acceptance criteria
+v2.4-config-evolution-2026-06-13.md	2	acceptance_evidence	failure	ML-2B: 2 unmet acceptance criteria
+v2.4-config-evolution-2026-06-13.md	2	acceptance_evidence	failure	ML-2C: 1 unmet acceptance criteria
+v2.4-config-evolution-2026-06-13.md	2	mls_complete	evidence	ML-2A: ✅
+v2.4-config-evolution-2026-06-13.md	2	mls_complete	evidence	ML-2B: ✅
+v2.4-config-evolution-2026-06-13.md	2	mls_complete	evidence	ML-2C: ✅
+v2.4-config-evolution-2026-06-13.md	3	acceptance_evidence	evidence	ML-3A: 3 criteria met
+v2.4-config-evolution-2026-06-13.md	3	acceptance_evidence	evidence	ML-3B: 2 criteria met
+v2.4-config-evolution-2026-06-13.md	3	acceptance_evidence	evidence	ML-3C: 2 criteria met
+v2.4-config-evolution-2026-06-13.md	3	mls_complete	evidence	ML-3A: ✅
+v2.4-config-evolution-2026-06-13.md	3	mls_complete	evidence	ML-3B: ✅
+v2.4-config-evolution-2026-06-13.md	3	mls_complete	evidence	ML-3C: ✅
+v2.4-config-evolution-2026-06-13.md	4	acceptance_evidence	evidence	ML-4A: 4 criteria met
+v2.4-config-evolution-2026-06-13.md	4	acceptance_evidence	evidence	ML-4B: 3 criteria met
+v2.4-config-evolution-2026-06-13.md	4	acceptance_evidence	evidence	ML-4C: 3 criteria met
+v2.4-config-evolution-2026-06-13.md	4	mls_complete	evidence	ML-4A: ✅
+v2.4-config-evolution-2026-06-13.md	4	mls_complete	evidence	ML-4B: ✅
+v2.4-config-evolution-2026-06-13.md	4	mls_complete	evidence	ML-4C: ✅
+v2.4.1-baseline-ratchet-warnings-2026-06-13.md	1	acceptance_evidence	evidence	ML-1A: 1 criteria met
+v2.4.1-baseline-ratchet-warnings-2026-06-13.md	1	acceptance_evidence	evidence	ML-1B: 1 criteria met
+v2.4.1-baseline-ratchet-warnings-2026-06-13.md	1	acceptance_evidence	evidence	ML-1C: 1 criteria met
+v2.4.1-baseline-ratchet-warnings-2026-06-13.md	1	mls_complete	evidence	ML-1A: ✅
+v2.4.1-baseline-ratchet-warnings-2026-06-13.md	1	mls_complete	evidence	ML-1B: ✅
+v2.4.1-baseline-ratchet-warnings-2026-06-13.md	1	mls_complete	evidence	ML-1C: ✅
+v2.4.1-baseline-ratchet-warnings-2026-06-13.md	2	acceptance_evidence	evidence	ML-2A: 2 criteria met
+v2.4.1-baseline-ratchet-warnings-2026-06-13.md	2	acceptance_evidence	evidence	ML-2B: 1 criteria met
+v2.4.1-baseline-ratchet-warnings-2026-06-13.md	2	acceptance_evidence	evidence	ML-2C: 1 criteria met
+v2.4.1-baseline-ratchet-warnings-2026-06-13.md	2	mls_complete	evidence	ML-2A: ✅
+v2.4.1-baseline-ratchet-warnings-2026-06-13.md	2	mls_complete	evidence	ML-2B: ✅
+v2.4.1-baseline-ratchet-warnings-2026-06-13.md	2	mls_complete	evidence	ML-2C: ✅
+v2.5-discovery-json-traceid-2026-06-13.md	1	acceptance_evidence	failure	ML-1A: 5 unmet acceptance criteria
+v2.5-discovery-json-traceid-2026-06-13.md	1	acceptance_evidence	failure	ML-1B: 4 unmet acceptance criteria
+v2.5-discovery-json-traceid-2026-06-13.md	1	acceptance_evidence	failure	ML-1C: 3 unmet acceptance criteria
+v2.5-discovery-json-traceid-2026-06-13.md	1	mls_complete	failure	ML-1A: not complete (status: ⬜ Pendente)
+v2.5-discovery-json-traceid-2026-06-13.md	1	mls_complete	failure	ML-1B: not complete (status: ⬜ Pendente)
+v2.5-discovery-json-traceid-2026-06-13.md	1	mls_complete	failure	ML-1C: not complete (status: ⬜ Pendente)
+v2.5-discovery-json-traceid-2026-06-13.md	2	acceptance_evidence	failure	ML-2A: 4 unmet acceptance criteria
+v2.5-discovery-json-traceid-2026-06-13.md	2	acceptance_evidence	failure	ML-2B: 4 unmet acceptance criteria
+v2.5-discovery-json-traceid-2026-06-13.md	2	acceptance_evidence	failure	ML-2C: 4 unmet acceptance criteria
+v2.5-discovery-json-traceid-2026-06-13.md	2	mls_complete	failure	ML-2A: not complete (status: ⬜ Pendente)
+v2.5-discovery-json-traceid-2026-06-13.md	2	mls_complete	failure	ML-2B: not complete (status: ⬜ Pendente)
+v2.5-discovery-json-traceid-2026-06-13.md	2	mls_complete	failure	ML-2C: not complete (status: ⬜ Pendente)
+v2.5-discovery-json-traceid-2026-06-13.md	3	acceptance_evidence	failure	ML-3A: 5 unmet acceptance criteria
+v2.5-discovery-json-traceid-2026-06-13.md	3	acceptance_evidence	failure	ML-3B: 4 unmet acceptance criteria
+v2.5-discovery-json-traceid-2026-06-13.md	3	acceptance_evidence	failure	ML-3C: 3 unmet acceptance criteria
+v2.5-discovery-json-traceid-2026-06-13.md	3	mls_complete	failure	ML-3A: not complete (status: ⬜ Pendente)
+v2.5-discovery-json-traceid-2026-06-13.md	3	mls_complete	failure	ML-3B: not complete (status: ⬜ Pendente)
+v2.5-discovery-json-traceid-2026-06-13.md	3	mls_complete	failure	ML-3C: not complete (status: ⬜ Pendente)
+v2.5-discovery-json-traceid-2026-06-13.md	4	acceptance_evidence	failure	ML-4A: 6 unmet acceptance criteria
+v2.5-discovery-json-traceid-2026-06-13.md	4	acceptance_evidence	failure	ML-4B: 2 unmet acceptance criteria
+v2.5-discovery-json-traceid-2026-06-13.md	4	acceptance_evidence	failure	ML-4C: 2 unmet acceptance criteria
+v2.5-discovery-json-traceid-2026-06-13.md	4	mls_complete	failure	ML-4A: not complete (status: ⬜ Pendente)
+v2.5-discovery-json-traceid-2026-06-13.md	4	mls_complete	failure	ML-4B: not complete (status: ⬜ Pendente)
+v2.5-discovery-json-traceid-2026-06-13.md	4	mls_complete	failure	ML-4C: not complete (status: ⬜ Pendente)
+v2.5-discovery-json-traceid-2026-06-13.md	5	acceptance_evidence	failure	ML-5A: 4 unmet acceptance criteria
+v2.5-discovery-json-traceid-2026-06-13.md	5	acceptance_evidence	failure	ML-5B: 2 unmet acceptance criteria
+v2.5-discovery-json-traceid-2026-06-13.md	5	acceptance_evidence	failure	ML-5C: 2 unmet acceptance criteria
+v2.5-discovery-json-traceid-2026-06-13.md	5	mls_complete	failure	ML-5A: not complete (status: ⬜ Pendente)
+v2.5-discovery-json-traceid-2026-06-13.md	5	mls_complete	failure	ML-5B: not complete (status: ⬜ Pendente)
+v2.5-discovery-json-traceid-2026-06-13.md	5	mls_complete	failure	ML-5C: not complete (status: ⬜ Pendente)
+v2.5.1-json-fields-help-traceid-2026-06-13.md	1	acceptance_evidence	evidence	ML-1A: 3 criteria met
+v2.5.1-json-fields-help-traceid-2026-06-13.md	1	acceptance_evidence	evidence	ML-1B: 2 criteria met
+v2.5.1-json-fields-help-traceid-2026-06-13.md	1	acceptance_evidence	evidence	ML-1C: 3 criteria met
+v2.5.1-json-fields-help-traceid-2026-06-13.md	1	mls_complete	evidence	ML-1A: ✅
+v2.5.1-json-fields-help-traceid-2026-06-13.md	1	mls_complete	evidence	ML-1B: ✅
+v2.5.1-json-fields-help-traceid-2026-06-13.md	1	mls_complete	evidence	ML-1C: ✅
+v2.5.2-traceid-by-agent-2026-06-14.md	1	acceptance_evidence	failure	ML-1A: no acceptance block
+v2.5.2-traceid-by-agent-2026-06-14.md	1	acceptance_evidence	failure	ML-1B: no acceptance block
+v2.5.2-traceid-by-agent-2026-06-14.md	1	acceptance_evidence	failure	ML-1C: no acceptance block
+v2.5.2-traceid-by-agent-2026-06-14.md	1	mls_complete	evidence	ML-1A: ✅
+v2.5.2-traceid-by-agent-2026-06-14.md	1	mls_complete	evidence	ML-1B: ✅
+v2.5.2-traceid-by-agent-2026-06-14.md	1	mls_complete	evidence	ML-1C: ✅
+v2.5.3-req-indexing-by-agent-2026-06-14.md	1	acceptance_evidence	failure	ML-1A: 3 unmet acceptance criteria
+v2.5.3-req-indexing-by-agent-2026-06-14.md	1	acceptance_evidence	failure	ML-1B: 2 unmet acceptance criteria
+v2.5.3-req-indexing-by-agent-2026-06-14.md	1	acceptance_evidence	failure	ML-1C: 2 unmet acceptance criteria
+v2.5.3-req-indexing-by-agent-2026-06-14.md	1	mls_complete	evidence	ML-1A: ✅
+v2.5.3-req-indexing-by-agent-2026-06-14.md	1	mls_complete	evidence	ML-1B: ✅
+v2.5.3-req-indexing-by-agent-2026-06-14.md	1	mls_complete	evidence	ML-1C: ✅
+v2.5.4-context-req-by-agent-2026-06-14.md	1	acceptance_evidence	evidence	ML-1A: 2 criteria met
+v2.5.4-context-req-by-agent-2026-06-14.md	1	acceptance_evidence	evidence	ML-1B: 2 criteria met
+v2.5.4-context-req-by-agent-2026-06-14.md	1	acceptance_evidence	evidence	ML-1C: 2 criteria met
+v2.5.4-context-req-by-agent-2026-06-14.md	1	mls_complete	evidence	ML-1A: ✅
+v2.5.4-context-req-by-agent-2026-06-14.md	1	mls_complete	evidence	ML-1B: ✅
+v2.5.4-context-req-by-agent-2026-06-14.md	1	mls_complete	evidence	ML-1C: ✅
+v2.6.0-rules-req-configuraveis-2026-06-14.md	1	acceptance_evidence	failure	ML-1A: 2 unmet acceptance criteria
+v2.6.0-rules-req-configuraveis-2026-06-14.md	1	acceptance_evidence	failure	ML-1B: 2 unmet acceptance criteria
+v2.6.0-rules-req-configuraveis-2026-06-14.md	1	acceptance_evidence	failure	ML-1C: 2 unmet acceptance criteria
+v2.6.0-rules-req-configuraveis-2026-06-14.md	1	mls_complete	evidence	ML-1A: ✅
+v2.6.0-rules-req-configuraveis-2026-06-14.md	1	mls_complete	evidence	ML-1B: ✅
+v2.6.0-rules-req-configuraveis-2026-06-14.md	1	mls_complete	evidence	ML-1C: ✅
+v2.7.0-trackfw-serve-ui-2026-06-14.md	0	acceptance_evidence	failure	ML-0A: 6 unmet acceptance criteria
+v2.7.0-trackfw-serve-ui-2026-06-14.md	0	mls_complete	failure	ML-0A: not complete (status: ⬜ Pendente)
+v2.7.0-trackfw-serve-ui-2026-06-14.md	1	acceptance_evidence	failure	ML-1B: 3 unmet acceptance criteria
+v2.7.0-trackfw-serve-ui-2026-06-14.md	1	acceptance_evidence	failure	ML-1C: 2 unmet acceptance criteria
+v2.7.0-trackfw-serve-ui-2026-06-14.md	1	acceptance_evidence	failure	ML-1D: 3 unmet acceptance criteria
+v2.7.0-trackfw-serve-ui-2026-06-14.md	1	acceptance_evidence	failure	ML-1E: 3 unmet acceptance criteria
+v2.7.0-trackfw-serve-ui-2026-06-14.md	1	mls_complete	failure	ML-1B: not complete (status: ⬜ Pendente)
+v2.7.0-trackfw-serve-ui-2026-06-14.md	1	mls_complete	failure	ML-1C: not complete (status: ⬜ Pendente)
+v2.7.0-trackfw-serve-ui-2026-06-14.md	1	mls_complete	failure	ML-1D: not complete (status: ⬜ Pendente)
+v2.7.0-trackfw-serve-ui-2026-06-14.md	1	mls_complete	failure	ML-1E: not complete (status: ⬜ Pendente)
+v2.7.0-trackfw-serve-ui-2026-06-14.md	2	acceptance_evidence	failure	ML-2A: 5 unmet acceptance criteria
+v2.7.0-trackfw-serve-ui-2026-06-14.md	2	mls_complete	failure	ML-2A: not complete (status: ⬜ Pendente)
+v2.7.0-trackfw-serve-ui-2026-06-14.md	3	acceptance_evidence	failure	ML-3A: 5 unmet acceptance criteria
+v2.7.0-trackfw-serve-ui-2026-06-14.md	3	mls_complete	failure	ML-3A: not complete (status: ⬜ Pendente)
+v2.7.0-trackfw-serve-ui-2026-06-14.md	4	acceptance_evidence	failure	ML-4A: 3 unmet acceptance criteria
+v2.7.0-trackfw-serve-ui-2026-06-14.md	4	acceptance_evidence	failure	ML-4B: 2 unmet acceptance criteria
+v2.7.0-trackfw-serve-ui-2026-06-14.md	4	acceptance_evidence	failure	ML-4C: 1 unmet acceptance criteria
+v2.7.0-trackfw-serve-ui-2026-06-14.md	4	acceptance_evidence	failure	ML-4D: 4 unmet acceptance criteria
+v2.7.0-trackfw-serve-ui-2026-06-14.md	4	acceptance_evidence	failure	ML-4E: 2 unmet acceptance criteria
+v2.7.0-trackfw-serve-ui-2026-06-14.md	4	mls_complete	failure	ML-4A: not complete (status: ⬜ Pendente)
+v2.7.0-trackfw-serve-ui-2026-06-14.md	4	mls_complete	failure	ML-4B: not complete (status: ⬜ Pendente)
+v2.7.0-trackfw-serve-ui-2026-06-14.md	4	mls_complete	failure	ML-4C: not complete (status: ⬜ Pendente)
+v2.7.0-trackfw-serve-ui-2026-06-14.md	4	mls_complete	failure	ML-4D: not complete (status: ⬜ Pendente)
+v2.7.0-trackfw-serve-ui-2026-06-14.md	4	mls_complete	failure	ML-4E: not complete (status: ⬜ Pendente)

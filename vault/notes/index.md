@@ -4,8 +4,14 @@
 
 ## Índice
 
+- [gates-da-wave-sao-um-comando-por-linha-2026-08-29](gates-da-wave-sao-um-comando-por-linha-2026-08-29.md) — bloco de gate não é script: cada linha é um comando isolado; `grep && {}` reprova quando o grep NÃO acha
+- [ambiente-do-dev-e-mais-rico-que-o-do-ci-2026-08-29](ambiente-do-dev-e-mais-rico-que-o-do-ci-2026-08-29.md) — PATH, história do git e locale: três defeitos no mesmo dia, verde local e vermelho no CI
+- [paridade-cross-runtime-dentro-do-go-test-quebra-o-job-go-2026-08-29](paridade-cross-runtime-dentro-do-go-test-quebra-o-job-go-2026-08-29.md) — teste cross-CLI no job de um runtime só; e o gate que parecia cobrir chamava só o Go
+- [barrier-crlf-divergencia-node-regex-2026-08-29](barrier-crlf-divergencia-node-regex-2026-08-29.md) — CRLF: `.` do JS exclui `\r` e o do RE2 inclui; roadmap do Windows fica ilegível no CLI Node
+- [barrier-trust-check-fail-open-em-tmpdir-simbolico-2026-08-29](barrier-trust-check-fail-open-em-tmpdir-simbolico-2026-08-29.md) — NÃO CORRIGIDO: `roadmapTrustForGates` cai em fail-open (executa gates de verdade) quando o sandbox vive sob `$TMPDIR` com componente simbólico (macOS)
 - [update-segue-symlink-e-escreve-fora-do-projeto-2026-08-28](update-segue-symlink-e-escreve-fora-do-projeto-2026-08-28.md) — `update`/`discover` seguiam symlink em `.github/workflows/`; corrigido com `lstat` + recusa
 - [barrier-so-casa-cabecalho-de-aceite-em-portugues-2026-08-28](barrier-so-casa-cabecalho-de-aceite-em-portugues-2026-08-28.md) — NÃO CORRIGIDO: todo roadmap gerado pelo `roadmap new` é reprovado pelo `barrier`
+- [barrier-fence-closing-trailing-content-bypass-2026-08-29](barrier-fence-closing-trailing-content-bypass-2026-08-29.md) — NÃO CORRIGIDO: linha de fechamento de cerca com sufixo não fecha (CommonMark), bypass total de `mls_complete`+`acceptance_evidence` nos 3 CLIs
 - [roadmap-title-newline-forges-wave-section-barrier-executes-gate-2026-08-23](roadmap-title-newline-forges-wave-section-barrier-executes-gate-2026-08-23.md) — NÃO CORRIGIDO
 - [rewrite-frontmatter-newline-injection-escape-hatch-2026-08-21](rewrite-frontmatter-newline-injection-escape-hatch-2026-08-21.md)
 - [nil-map-em-projectconfig-campo-novo-atinge-construcoes-antigas-2026-08-21](nil-map-em-projectconfig-campo-novo-atinge-construcoes-antigas-2026-08-21.md)
