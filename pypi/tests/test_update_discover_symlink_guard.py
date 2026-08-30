@@ -19,6 +19,7 @@ npm/tests/update_discover_symlink_guard.test.js.
 
 import argparse
 import contextlib
+import errno
 import io
 import os
 import tempfile
@@ -30,6 +31,29 @@ from trackfw.commands.discover import (
     _write_ci_workflow,
 )
 from trackfw.commands.update import _run, _run_project
+
+
+def _symlink_or_skip(test_case: unittest.TestCase, target: str, link_path: str) -> None:
+    """Mirrors os.symlink, but if creation fails because the process lacks
+    the privilege Windows requires to create symlinks (Developer Mode or an
+    elevated process — WinError 1314, ERROR_PRIVILEGE_NOT_HELD), it skips
+    the calling test instead of failing it, naming the guarantee that was
+    not exercised.
+
+    Detection is on the CONDITION (the failed syscall), not on
+    sys.platform: on a Windows runner with Developer Mode enabled, or on
+    Linux/macOS, os.symlink succeeds and the test executes normally.
+    """
+    try:
+        os.symlink(target, link_path)
+    except OSError as err:
+        winerror = getattr(err, 'winerror', None)
+        if winerror == 1314 or err.errno in (errno.EPERM, errno.EACCES):
+            test_case.skipTest(
+                'guarda de escrita através de symlink não exercitada: criação de '
+                f'symlink exige Developer Mode (ou processo elevado) neste Windows: {err}'
+            )
+        raise
 
 
 def _write_trackfw_yaml(tmpdir: str, ci: str | None) -> None:
@@ -76,7 +100,7 @@ class TestUpdateNeverWritesThroughSymlink(unittest.TestCase):
 
             workflow_path = _workflow_path(tmpdir)
             os.makedirs(os.path.dirname(workflow_path), exist_ok=True)
-            os.symlink(victim, workflow_path)
+            _symlink_or_skip(self, victim, workflow_path)
 
             _run_bare_update(tmpdir)
 
@@ -94,7 +118,7 @@ class TestUpdateNeverWritesThroughSymlink(unittest.TestCase):
 
             workflow_path = _workflow_path(tmpdir)
             os.makedirs(os.path.dirname(workflow_path), exist_ok=True)
-            os.symlink(victim, workflow_path)
+            _symlink_or_skip(self, victim, workflow_path)
 
             stderr = _run_bare_update(tmpdir)
 
@@ -115,7 +139,7 @@ class TestUpdateNeverWritesThroughSymlink(unittest.TestCase):
 
             workflow_path = _workflow_path(tmpdir)
             os.makedirs(os.path.dirname(workflow_path), exist_ok=True)
-            os.symlink(victim, workflow_path)
+            _symlink_or_skip(self, victim, workflow_path)
 
             cwd = os.getcwd()
             os.chdir(tmpdir)
@@ -140,7 +164,7 @@ class TestDiscoverInitNeverWritesThroughDanglingSymlink(unittest.TestCase):
             workflows_dir = os.path.join(tmpdir, '.github', 'workflows')
             os.makedirs(workflows_dir, exist_ok=True)
             link = os.path.join(workflows_dir, 'trackfw-validate.yml')
-            os.symlink(dangling_target, link)
+            _symlink_or_skip(self, dangling_target, link)
 
             _write_ci_workflow(tmpdir)
 
@@ -159,7 +183,7 @@ class TestDiscoverInitNeverWritesThroughDanglingSymlink(unittest.TestCase):
             workflows_dir = os.path.join(tmpdir, '.github', 'workflows')
             os.makedirs(workflows_dir, exist_ok=True)
             link = os.path.join(workflows_dir, 'trackfw-validate.yml')
-            os.symlink(victim, link)
+            _symlink_or_skip(self, victim, link)
 
             stderr_buf = io.StringIO()
             with contextlib.redirect_stderr(stderr_buf):

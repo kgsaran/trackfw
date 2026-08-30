@@ -26243,3 +26243,36 @@ condição de corrida — resultado não determinístico mascarado como "teste W
 
 **Próximo:** `ares-tf` (Ares) para ML-1A (Wave 1), com o mapeamento da seção 1 do ML-0A como insumo
 obrigatório para não superestimar o que o job largo realmente reproduz na primeira execução.
+
+## 2026-08-30 — `apolo-tf` (Apolo) — ML-2A: `skip` explícito dos testes de symlink sem privilégio (REQ-2026-08-30, Wave 2) — CONCLUÍDO
+
+**Branch:** `fix/job-de-windows-largo-que-nasce-vermelho-e-sonda-sob-demanda` (não commitei — sem
+autoridade de Git; handoff para `trackfw_architect`).
+
+**Entregue (AC7/AC8):** helper por runtime que envolve a criação do symlink e pula o teste — com
+mensagem nomeando a garantia não exercitada e o motivo (Developer Mode) — só quando a falha é de
+privilégio, nunca por plataforma:
+- Go (`internal/generators/update_test.go`): `symlinkOrSkip`/`isSymlinkPrivilegeError` — detecta
+  `os.IsPermission` OU `syscall.Errno(1314)` (`ERROR_PRIVILEGE_NOT_HELD`). 2 testes.
+- Node (`npm/tests/update_discover_symlink_guard.test.js`): `symlinkOrSkip(t, target, link)` —
+  detecta `err.code in ('EPERM','EACCES')`, chama `t.skip(msg)`. 8 testes (a varredura achou 8, não
+  5 — todo teste do arquivo que cria symlink foi coberto; não há equivalente de `roadmap move` fora
+  deste arquivo).
+- Python (`pypi/tests/test_update_discover_symlink_guard.py`): `_symlink_or_skip(self, target,
+  link_path)` — detecta `err.winerror == 1314` OU `err.errno in (EPERM, EACCES)`, chama
+  `self.skipTest(msg)`. 5 testes.
+
+**Falsificação (AC8), evidência em Linux/macOS — nenhum skip disparou, todos executaram e passaram:**
+- `go test ./internal/generators/... -run TestUpdateNeverWritesThroughSymlink -v` → 2/2 PASS
+- `node --test npm/tests/update_discover_symlink_guard.test.js` → `tests 10, pass 10, skipped 0`
+- `PYTHONPATH=pypi python3 -m pytest pypi/tests/test_update_discover_symlink_guard.py -v` → 5/5 PASSED
+- Full suites: `go test ./...` OK, `npm test --prefix npm` → 839/839, `pytest pypi/tests` → 1555
+  passed, `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality` → exit 0.
+- `git diff --stat` só toca os 3 arquivos de teste listados — nenhum código de produto.
+
+**Decisão registrada:** critério de skip é a CONDIÇÃO medida (falha de privilégio na chamada de
+symlink), nunca `runtime.GOOS`/`process.platform`/`sys.platform` — para que um Windows com Developer
+Mode continue exercitando os 12 testes normalmente.
+
+**Próximo:** `ares-tf` para ML-3A (Wave 3, sonda `workflow_dispatch`), e barreira final
+(`hefesto-tf`/`hades-tf` + arquiteto) só com CI verde nos termos do roadmap.
