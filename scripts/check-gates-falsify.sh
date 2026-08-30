@@ -2566,16 +2566,21 @@ fi
 T33C_PY="$WORK/s33-corrupt-python"
 mkdir -p "$T33C_PY"
 cp -r "$ROOT_DIR/pypi" "$T33C_PY/pypi"
+# Literal atualizado pelo ML-2A (REQ-2026-08-29): resolveAgentNamespaces passou a filtrar
+# entradas comprovadamente infra (isInfraDirName — nomes iniciando com "." e "node_modules") antes
+# de ordenar; o bloco `sorted(...)` corrompido abaixo precisa casar com essa forma nova.
 corrupt_literal \
   "$ROOT_DIR/pypi/trackfw/config.py" "$T33C_PY/pypi/trackfw/config.py" \
   '            from_disk = sorted(
                 e.name for e in it
                 if e.is_dir(follow_symlinks=False)  # symlinks retornam False — nunca seguidos
+                and not is_infra_dir_name(e.name)  # ML-2A: nunca vira namespace, ver comentário abaixo
             )
 ' \
   '            from_disk = sorted(
                 (e.name for e in it
-                 if e.is_dir(follow_symlinks=False)),  # symlinks retornam False — nunca seguidos
+                 if e.is_dir(follow_symlinks=False)  # symlinks retornam False — nunca seguidos
+                 and not is_infra_dir_name(e.name)),  # ML-2A: nunca vira namespace, ver comentário abaixo
                 reverse=True,
             )
 ' \

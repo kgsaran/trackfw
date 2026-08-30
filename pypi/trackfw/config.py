@@ -52,6 +52,7 @@ def resolve_agent_namespaces(cfg: dict, directory: str) -> list:
             from_disk = sorted(
                 e.name for e in it
                 if e.is_dir(follow_symlinks=False)  # symlinks retornam False — nunca seguidos
+                and not is_infra_dir_name(e.name)  # ML-2A: nunca vira namespace, ver comentário abaixo
             )
     except OSError:
         return ordered
@@ -62,6 +63,22 @@ def resolve_agent_namespaces(cfg: dict, directory: str) -> list:
         seen.add(name)
         ordered.append(name)
     return ordered
+
+
+def is_infra_dir_name(name: str) -> bool:
+    """
+    Decide, no ponto único de leitura de disco do resolvedor, se uma entrada é COMPROVADAMENTE
+    infraestrutura e nunca um namespace de agente — nem para efeito de união (decisão 1 do ADR), nem
+    para a violação (ML-2A). Critério deliberadamente estreito, dois casos fechados (ML-0A, seção 4,
+    e instrução do ML-2A): (a) qualquer nome iniciando com "." — nenhum agente legítimo começa com
+    ponto, e ".git"/".trackfw"/".DS_Store" são os exemplos concretos do modelo de ameaça; (b)
+    "node_modules" — citado nominalmente no mesmo modelo de ameaça como o outro caso óbvio. NÃO
+    filtra por heurística de nome além disso — um diretório cujo nome colide com um nome de estado
+    (ex.: "wip" órfão no topo de roadmap_dir) continua entrando na união normalmente; só é excluído
+    da VIOLAÇÃO (não do resolvedor) em validate_agent_namespace_undeclared, porque ali a informação
+    de que é um nome de estado reservado é o sinal relevante, não um sinal de "não é diretório real".
+    """
+    return name.startswith(".") or name == "node_modules"
 
 # MALFORMED_CONFIG_MESSAGE is written to stderr, verbatim, when trackfw.yaml exists but fails to
 # parse as YAML. Kept identical, character-for-character, to Go's MalformedConfigMessage and

@@ -390,7 +390,7 @@ gate verde e mudo. É a conduta certa.
 > Dependências: Wave 1 concluída. A violação só é segura de emitir depois que a união existe.
 
 ### ML-2A — Violação nomeando o namespace não declarado
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** `apolo-tf`
 **Files affected:** `internal/validator/validator.go` (+ testes), `npm/src/validator/index.js`
 (+ testes), `pypi/trackfw/validator.py` (+ testes) — o resolvedor canônico da Wave 1 nos 3 runtimes,
@@ -409,10 +409,45 @@ mais o ponto que formata a mensagem de violação (AC4, AC9).
    declarados primeiro; o `roadmap list` do Python mantém ordenação alfabética. A ordem virou
    **load-bearing para um gate** — alinhe os 3.
 **Critérios de aceite:**
-- [ ] AC4, AC5, AC9
-- [ ] Os artefatos do namespace não declarado continuam sendo **enumerados** mesmo com a violação
+- [x] AC4, AC5, AC9
+- [x] Os artefatos do namespace não declarado continuam sendo **enumerados** mesmo com a violação
       ativa — a união não depende da declaração
-- [ ] Suítes dos 3 verdes
+- [x] Suítes dos 3 verdes
+
+
+#### Resultado do ML-2A (apolo-tf, 2026-08-29)
+
+Regra `agent_namespace_undeclared`, com dedupe por nome entre `roadmap_dir` e `req_dir`, filtro de
+infraestrutura (`isInfraDirName`: nome iniciado por ponto, `node_modules`) e exclusão dos 6 nomes de
+estado reservados. Mensagem **byte-idêntica** nos 3:
+
+```
+agent namespace "zeus" exists in roadmap_dir, req_dir but is not declared in agents: — add it to trackfw.yaml
+```
+
+Ele também fechou a pendência de paridade que eu tinha herdado do ML-1A: o `_list_by_agent` do
+Python usava `sorted(agents)` puro; agora respeita a ordem do resolvedor.
+
+**Auditoria do arquiteto — 3 CLIs reais:**
+
+| verificação | go | node | py |
+|---|---|---|---|
+| violação com mensagem idêntica | ✓ | ✓ | ✓ |
+| `.git`, `node_modules`, `wip` órfão acusados | 0 | 0 | 0 |
+| **enumeração independente da violação** (`status` vê o namespace com a violação ativa) | ✓ | ✓ | ✓ |
+| declarar o namespace zera a violação | ✓ | ✓ | ✓ |
+| ordenação declarado-primeiro (`zulu` antes de `alfa`) | ✓ | ✓ | ✓ |
+
+`check-gates-falsify`: **181 cenários, 0 FAIL**. `validate` **deste** repositório (que é `flat`):
+16 warnings, 0 violations — inalterado.
+
+A independência entre enumeração e violação é o critério que define a REQ: se o artefato do
+namespace não declarado deixasse de ser lido quando a violação dispara, a união teria virado refém da
+declaração e não teríamos corrigido nada.
+
+**Observação, não bloqueia:** o formato de saída do `roadmap list` do Python difere de Go/Node —
+`[zulu]` + `[backlog] arquivo` contra `[zulu/backlog]` + arquivo. Divergência de **formatação**,
+pré-existente e fora do escopo desta REQ; a **ordenação**, que era o que importava, está alinhada.
 
 ## Wave 3 — Gate e contrato
 > Dependências: Waves 1 e 2 concluídas.

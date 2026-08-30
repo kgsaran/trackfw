@@ -496,6 +496,11 @@ func ValidateUnfiltered() (violations []string, warnings []string, err error) {
 	}
 	applyRule("thirdparty_artifact_has_provenance", thirdPartyProvenanceMsgs, &violations, &warnings)
 
+	// ML-2A (REQ-2026-08-29): namespace de agente em disco e não declarado em agents: — violação,
+	// não aviso (ver comentário em validateAgentNamespaceUndeclared).
+	agentNamespaceMsgs := validateAgentNamespaceUndeclared()
+	applyRule("agent_namespace_undeclared", agentNamespaceMsgs, &violations, &warnings)
+
 	return violations, warnings, nil
 }
 
@@ -790,6 +795,10 @@ func validateUnfilteredTagged() (violations []TaggedMsg, warnings []TaggedMsg, e
 	}
 	applyRuleTagged("thirdparty_artifact_has_provenance", thirdPartyProvenanceMsgsT, &violations, &warnings)
 
+	// ML-2A (REQ-2026-08-29): namespace de agente em disco e não declarado em agents:.
+	agentNamespaceMsgsT := validateAgentNamespaceUndeclared()
+	applyRuleTagged("agent_namespace_undeclared", agentNamespaceMsgsT, &violations, &warnings)
+
 	return violations, warnings, nil
 }
 
@@ -1023,6 +1032,9 @@ func resolveAgentNamespaces(cfg config.ProjectConfig, dir string) []string {
 		if !e.IsDir() { // symlinks reportam false aqui — nunca seguidos (AC12/AC13)
 			continue
 		}
+		if isInfraDirName(e.Name()) { // ML-2A: nunca vira namespace, ver comentário na função
+			continue
+		}
 		fromDisk = append(fromDisk, e.Name())
 	}
 	sort.Strings(fromDisk)
@@ -1034,6 +1046,119 @@ func resolveAgentNamespaces(cfg config.ProjectConfig, dir string) []string {
 		ordered = append(ordered, name)
 	}
 	return ordered
+}
+
+// isInfraDirName decide, no ponto único de leitura de disco do resolvedor, se uma entrada é
+// COMPROVADAMENTE infraestrutura e nunca um namespace de agente — nem para efeito de união (decisão
+// 1 do ADR), nem para a violação (ML-2A). Critério deliberadamente estreito, dois casos fechados
+// (ML-0A, seção 4, e instrução do ML-2A): (a) qualquer nome iniciando com "." — nenhum agente
+// legítimo começa com ponto, e ".git"/".trackfw"/".DS_Store" são os exemplos concretos do modelo de
+// ameaça; (b) "node_modules" — citado nominalmente no mesmo modelo de ameaça como o outro caso óbvio.
+// NÃO filtra por heurística de nome além disso — um diretório cujo nome colide com um nome de estado
+// (ex.: "wip" órfão no topo de roadmap_dir) continua entrando na união normalmente; só é excluído da
+// VIOLAÇÃO (não do resolvedor) em validateAgentNamespaceUndeclared, porque ali a informação de que é
+// um nome de estado reservado é o sinal relevante, não um sinal de "não é diretório real".
+func isInfraDirName(name string) bool {
+	return strings.HasPrefix(name, ".") || name == "node_modules"
+}
+
+// agentNamespaceStateNames replica, só para esta regra, os 6 nomes de estado reservados de roadmap/
+// REQ — já repetidos como literal em outros pontos deste arquivo (ex.: validateFolderStatusCoherence,
+// validateFilenameUniqueness); não existe hoje uma constante compartilhada no pacote validator, e
+// introduzir uma só para este ML alargaria o escopo. Um diretório com um desses nomes no topo de
+// roadmap_dir/req_dir é, na prática, resto de migração incompleta flat→by_agent (ex.: "wip" órfão) —
+// não um agente. A união (decisão 1 do ADR) continua enumerando esses diretórios normalmente — nada
+// fica invisível —, mas eles NÃO disparam validateAgentNamespaceUndeclared: pedir para declarar "wip"
+// como agente em agents: seria ruído confuso, não uma correção real (ML-0A, seção 3, item 3;
+// recomendação adotada sem alteração). Esta exclusão vive só aqui, não no resolvedor — a colisão de
+// nome não é "comprovadamente infraestrutura" como isInfraDirName, é uma inferência sobre o
+// significado do nome, então só afeta a violação, nunca a união/enumeração.
+var agentNamespaceStateNames = map[string]bool{
+	"backlog": true, "analyzing": true, "wip": true, "blocked": true, "done": true, "abandoned": true,
+}
+
+// undeclaredNamespacesOnDisk devolve, a partir do resolvedor canônico (que já filtra infra e não
+// segue symlink), os nomes de namespace presentes em dir e ausentes de agents:, excluindo colisões
+// com nome de estado reservado (agentNamespaceStateNames).
+func undeclaredNamespacesOnDisk(cfg config.ProjectConfig, dir string, declared map[string]bool) []string {
+	var out []string
+	for _, name := range resolveAgentNamespaces(cfg, dir) {
+		if declared[name] || agentNamespaceStateNames[name] {
+			continue
+		}
+		out = append(out, name)
+	}
+	return out
+}
+
+// validateAgentNamespaceUndeclared implementa a regra "agent_namespace_undeclared"
+// (ADR-2026-08-29, decisão 2 / REQ AC4, AC5, AC9): em modo by_agent, um namespace presente em disco
+// (roadmap_dir e/ou req_dir — AC2 estende a união às duas árvores, e esta violação segue) e ausente
+// de agents: é VIOLAÇÃO, não aviso — é defeito de configuração que escondeu artefatos de governança
+// (ver ADR, "a correção é de uma linha"), e usa o mesmo default "error" de toda regra sem entrada em
+// ruleDefaults (diskRuleSeverity).
+//
+// A união já garante (Wave 1) que o namespace continua sendo ENUMERADO por todo consumidor mesmo com
+// esta violação ativa — esta função só ADICIONA o sinal de configuração incompleta, nunca CONDICIONA
+// a enumeração a ele (AC5-b).
+//
+// Deduplicação por namespace, não por árvore: o caso motivador (cmdb, "zeus" ausente de agents: e em
+// disco em roadmap_dir E req_dir ao mesmo tempo) produziria duas violações quase-idênticas se o
+// laço fosse por árvore — ruído no caso comum, não no caso raro. Uma violação por nome, nomeando
+// todas as árvores onde ele foi encontrado.
+func validateAgentNamespaceUndeclared() []string {
+	cfg := config.Load()
+	if cfg.RoadmapNamespacing != config.NamespacingByAgent {
+		return nil
+	}
+	declared := make(map[string]bool, len(cfg.Agents))
+	for _, a := range cfg.Agents {
+		declared[a] = true
+	}
+
+	roadmapNames := undeclaredNamespacesOnDisk(cfg, cfg.RoadmapDir, declared)
+	reqNames := undeclaredNamespacesOnDisk(cfg, cfg.REQDir, declared)
+
+	inRoadmap := make(map[string]bool, len(roadmapNames))
+	for _, n := range roadmapNames {
+		inRoadmap[n] = true
+	}
+	inReq := make(map[string]bool, len(reqNames))
+	for _, n := range reqNames {
+		inReq[n] = true
+	}
+
+	seen := make(map[string]bool, len(roadmapNames)+len(reqNames))
+	var names []string
+	for _, n := range roadmapNames {
+		if !seen[n] {
+			seen[n] = true
+			names = append(names, n)
+		}
+	}
+	for _, n := range reqNames {
+		if !seen[n] {
+			seen[n] = true
+			names = append(names, n)
+		}
+	}
+	sort.Strings(names)
+
+	var msgs []string
+	for _, name := range names {
+		var trees []string
+		if inRoadmap[name] {
+			trees = append(trees, "roadmap_dir")
+		}
+		if inReq[name] {
+			trees = append(trees, "req_dir")
+		}
+		msgs = append(msgs, fmt.Sprintf(
+			"agent namespace \"%s\" exists in %s but is not declared in agents: — add it to trackfw.yaml",
+			name, strings.Join(trees, ", "),
+		))
+	}
+	return msgs
 }
 
 // resolveStateDirs retorna todos os diretórios de um estado (ex: "wip", "done") conforme o modo de

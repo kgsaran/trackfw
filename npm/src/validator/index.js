@@ -180,6 +180,7 @@ function resolveAgentNamespaces(cfg, dir) {
   const fromDisk = entries
     .filter(e => e.isDirectory()) // symlinks retornam false aqui — nunca seguidos (AC12/AC13)
     .map(e => e.name)
+    .filter(name => !isInfraDirName(name)) // ML-2A: nunca vira namespace, ver comentário na função
     .sort()
   for (const name of fromDisk) {
     if (seen.has(name)) continue
@@ -187,6 +188,86 @@ function resolveAgentNamespaces(cfg, dir) {
     ordered.push(name)
   }
   return ordered
+}
+
+// isInfraDirName decide, no ponto único de leitura de disco do resolvedor, se uma entrada é
+// COMPROVADAMENTE infraestrutura e nunca um namespace de agente — nem para efeito de união (decisão
+// 1 do ADR), nem para a violação (ML-2A). Critério deliberadamente estreito, dois casos fechados
+// (ML-0A, seção 4, e instrução do ML-2A): (a) qualquer nome iniciando com "." — nenhum agente
+// legítimo começa com ponto, e ".git"/".trackfw"/".DS_Store" são os exemplos concretos do modelo de
+// ameaça; (b) "node_modules" — citado nominalmente no mesmo modelo de ameaça como o outro caso óbvio.
+// NÃO filtra por heurística de nome além disso — um diretório cujo nome colide com um nome de estado
+// (ex.: "wip" órfão no topo de roadmap_dir) continua entrando na união normalmente; só é excluído da
+// VIOLAÇÃO (não do resolvedor) em validateAgentNamespaceUndeclared, porque ali a informação de que é
+// um nome de estado reservado é o sinal relevante, não um sinal de "não é diretório real".
+function isInfraDirName(name) {
+  return name.startsWith('.') || name === 'node_modules'
+}
+
+// AGENT_NAMESPACE_STATE_NAMES replica, só para esta regra, os 6 nomes de estado reservados de
+// roadmap/REQ. Um diretório com um desses nomes no topo de roadmap_dir/req_dir é, na prática, resto
+// de migração incompleta flat→by_agent (ex.: "wip" órfão) — não um agente. A união (decisão 1 do
+// ADR) continua enumerando esses diretórios normalmente — nada fica invisível —, mas eles NÃO
+// disparam validateAgentNamespaceUndeclared: pedir para declarar "wip" como agente em agents: seria
+// ruído confuso, não uma correção real (ML-0A, seção 3, item 3; recomendação adotada sem alteração).
+// Esta exclusão vive só aqui, não no resolvedor — a colisão de nome não é "comprovadamente
+// infraestrutura" como isInfraDirName, é uma inferência sobre o significado do nome, então só afeta
+// a violação, nunca a união/enumeração.
+const AGENT_NAMESPACE_STATE_NAMES = new Set(['backlog', 'analyzing', 'wip', 'blocked', 'done', 'abandoned'])
+
+// undeclaredNamespacesOnDisk devolve, a partir do resolvedor canônico (que já filtra infra e não
+// segue symlink), os nomes de namespace presentes em dir e ausentes de agents:, excluindo colisões
+// com nome de estado reservado (AGENT_NAMESPACE_STATE_NAMES).
+function undeclaredNamespacesOnDisk(cfg, dir, declared) {
+  const out = []
+  for (const name of resolveAgentNamespaces(cfg, dir)) {
+    if (declared.has(name) || AGENT_NAMESPACE_STATE_NAMES.has(name)) continue
+    out.push(name)
+  }
+  return out
+}
+
+// validateAgentNamespaceUndeclared implementa a regra "agent_namespace_undeclared"
+// (ADR-2026-08-29, decisão 2 / REQ AC4, AC5, AC9): em modo by_agent, um namespace presente em disco
+// (roadmapDir e/ou reqDir — AC2 estende a união às duas árvores, e esta violação segue) e ausente de
+// agents: é VIOLAÇÃO, não aviso — usa o mesmo default 'error' de toda regra sem entrada em
+// RULE_DEFAULTS (diskRuleSeverity).
+//
+// A união já garante (Wave 1) que o namespace continua sendo ENUMERADO por todo consumidor mesmo com
+// esta violação ativa — esta função só ADICIONA o sinal de configuração incompleta, nunca CONDICIONA
+// a enumeração a ele (AC5-b).
+//
+// Deduplicação por namespace, não por árvore: o caso motivador (cmdb, "zeus" ausente de agents: e em
+// disco em roadmapDir E reqDir ao mesmo tempo) produziria duas violações quase-idênticas se o laço
+// fosse por árvore — ruído no caso comum, não no caso raro. Uma violação por nome, nomeando todas as
+// árvores onde ele foi encontrado.
+function validateAgentNamespaceUndeclared(cfg) {
+  if (cfg.roadmapNamespacing !== config.NAMESPACING_BY_AGENT) return []
+  const declared = new Set(cfg.agents || [])
+
+  const roadmapNames = undeclaredNamespacesOnDisk(cfg, cfg.roadmapDir, declared)
+  const reqNames = undeclaredNamespacesOnDisk(cfg, cfg.reqDir || cfg.req_dir || '', declared)
+
+  const inRoadmap = new Set(roadmapNames)
+  const inReq = new Set(reqNames)
+
+  const names = []
+  const seen = new Set()
+  for (const n of [...roadmapNames, ...reqNames]) {
+    if (seen.has(n)) continue
+    seen.add(n)
+    names.push(n)
+  }
+  names.sort()
+
+  const msgs = []
+  for (const name of names) {
+    const trees = []
+    if (inRoadmap.has(name)) trees.push('roadmap_dir')
+    if (inReq.has(name)) trees.push('req_dir')
+    msgs.push(`agent namespace "${name}" exists in ${trees.join(', ')} but is not declared in agents: — add it to trackfw.yaml`)
+  }
+  return msgs
 }
 
 // resolveReqFiles retorna array de paths completos de arquivos .md de REQs.
@@ -3038,6 +3119,11 @@ async function validateUnfiltered() {
 
   // Verificação bidirecional de trace ID (somente se traceIdField configurado)
   const cfg = config.load()
+
+  // ML-2A (REQ-2026-08-29): namespace de agente em disco e não declarado em agents: — violação, não
+  // aviso (ver comentário em validateAgentNamespaceUndeclared).
+  applyRule('agent_namespace_undeclared', validateAgentNamespaceUndeclared(cfg), violations, warnings)
+
   if (cfg.traceIdField) {
     for (const msg of checkTraceIds(cfg.reqDir, cfg.roadmapDir, cfg.traceIdField)) {
       // O prefixo da mensagem traceid já carrega o nome da regra (ex: "traceid_orphan_roadmap: ...")
