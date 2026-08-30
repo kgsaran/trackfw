@@ -305,6 +305,29 @@ sob `sh` POSIX contra Node e Python sob `cmd.exe`, avaliando semânticas diferen
 **continua sem teste**, exatamente como a Wave 0 previu. `ABSENT` aqui significa *"a pergunta que o
 teste faz foi respondida, e não era a pergunta certa"*.
 
+### ML-1C — Corretivas do instrumento (da linha de base)
+**Status:** ⬜ Pendente
+**Agente:** `ares-tf`
+**Files affected:** `.github/workflows/quality.yml`, `scripts/windows-repro/`.
+**Actions:**
+1. **Camada 1 mede os 3 runtimes sempre.** Hoje o `Go` reprova e `Node`/`Python` viram `skipped` —
+   medimos um de três. Os passos de suíte passam a rodar independentemente do resultado dos
+   anteriores, preservando a precondição da AC12 como única condição.
+2. **Desacoplar a medição dos itens 5 e 6 do item 1.** Eles vieram `INCONCLUSIVE` com *"init não
+   completou"* porque o `init` do Python morre no cp1252 do item 1. Encontrar caminho que meça CRLF e
+   `isatty` **sem** depender de um `init` que sabidamente falha — ou, se for impossível, declarar a
+   dependência explicitamente no veredito, em vez de `INCONCLUSIVE` genérico.
+3. **Reclassificar o item 7.** `ABSENT` está correto para a pergunta feita (`sh` existe), mas a
+   pergunta útil é outra: **Go sob `sh` contra Node e Python sob `cmd.exe` avaliam o mesmo gate de
+   wave igual?** Trocar a verificação para comparar o **veredito dos 3** sobre um gate com sintaxe
+   que se comporta diferente nos dois shells.
+**Critérios de aceite:**
+- [ ] Uma execução mede os 3 runtimes da camada 1, mesmo com falha em um deles
+- [ ] Itens 5 e 6 saem de `INCONCLUSIVE` genérico: ou medidos, ou com dependência declarada
+- [ ] Item 7 passa a comparar semântica de shell entre os 3, não presença de `sh`
+- [ ] A camada 2 **continua vermelha** — não é para consertar defeito, é para medir melhor
+- [ ] `actionlint` limpo; YAML válido; nenhum arquivo de produto tocado
+
 ## Wave 2 — `skip` explícito (ML único)
 > Dependências: Wave 1 concluída — precisamos ver os 12 vermelhos antes de silenciá-los.
 
