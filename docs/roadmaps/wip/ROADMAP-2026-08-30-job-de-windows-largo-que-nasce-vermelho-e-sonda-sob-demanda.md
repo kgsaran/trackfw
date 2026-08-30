@@ -306,7 +306,7 @@ sob `sh` POSIX contra Node e Python sob `cmd.exe`, avaliando semânticas diferen
 teste faz foi respondida, e não era a pergunta certa"*.
 
 ### ML-1C — Corretivas do instrumento (da linha de base)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** `ares-tf`
 **Files affected:** `.github/workflows/quality.yml`, `scripts/windows-repro/`.
 **Actions:**
@@ -322,11 +322,65 @@ teste faz foi respondida, e não era a pergunta certa"*.
    wave igual?** Trocar a verificação para comparar o **veredito dos 3** sobre um gate com sintaxe
    que se comporta diferente nos dois shells.
 **Critérios de aceite:**
-- [ ] Uma execução mede os 3 runtimes da camada 1, mesmo com falha em um deles
-- [ ] Itens 5 e 6 saem de `INCONCLUSIVE` genérico: ou medidos, ou com dependência declarada
-- [ ] Item 7 passa a comparar semântica de shell entre os 3, não presença de `sh`
-- [ ] A camada 2 **continua vermelha** — não é para consertar defeito, é para medir melhor
-- [ ] `actionlint` limpo; YAML válido; nenhum arquivo de produto tocado
+- [x] Uma execução mede os 3 runtimes da camada 1, mesmo com falha em um deles
+- [x] Itens 5 e 6 saem de `INCONCLUSIVE` genérico: ou medidos, ou com dependência declarada
+- [x] Item 7 passa a comparar semântica de shell entre os 3, não presença de `sh`
+- [x] A camada 2 **continua vermelha** — não é para consertar defeito, é para medir melhor
+- [x] `actionlint` limpo; YAML válido; nenhum arquivo de produto tocado
+
+
+#### Resultado do ML-1C (ares-tf, 2026-08-30) — LINHA DE BASE DEFINITIVA
+
+Medido no runner real, run `33324283015`.
+
+**1. Camada 1 mede os 3 runtimes.** A causa era sutil e invisível por inspeção: o GitHub Actions
+**prepende `success()`** a todo `if:` sem função de status, então
+`if: steps.precondition.outcome == 'success'` virava
+`success() && steps.precondition.outcome == 'success'`. Com o Go reprovando, o `success()` invisível
+derrubava Node e Python — apesar de a condição escrita continuar verdadeira.
+
+```
+antes   12. Go → failure   13. Node → skipped   14. Python → skipped
+depois  12. Go → failure   13. Node → failure   14. Python → failure
+        15. "Camada 1 pulada" → skipped   (correto: a precondição passou)
+```
+
+**Os três reprovam em Windows, com evidência própria** — não mais extrapolação a partir do Go.
+Nota em `vault/notes/if-sem-funcao-de-status-tem-success-implicito-2026-08-30.md`.
+
+**2. Itens 5 e 6 saíram de `INCONCLUSIVE` para `REPRODUCED`.** Estavam bloqueados pelo item 1 — o
+`scaffold()` do `init_gen.py` imprime caractere que crasha em cp1252 antes de CRLF e `isatty` serem
+alcançáveis. Medidos com `PYTHONIOENCODING=utf-8` só no subprocesso, com o veredito
+`BLOCKED-BY-ITEM-1` reservado para o caso de ainda assim falhar.
+
+**3. Item 7 — de `ABSENT` para `REPRODUCED`, e é a prova que faltava:**
+
+```
+Go     (sh -c, POSIX)             -> trackfw-gate-verdict-A
+Node   (spawnSync shell:true)     -> 'trackfw-gate-verdict-B'
+Python (subprocess shell=True)    -> 'trackfw-gate-verdict-B'
+```
+
+Mesmo gate, **vereditos opostos**. E as aspas simples saem literais no Node e no Python — o
+`cmd.exe` não as remove, segunda divergência na mesma linha. **No Windows, uma wave que passa pelo
+CLI Go bloqueia pelo Node.** O `ABSENT` anterior estava certo para a pergunta errada.
+
+---
+
+### Linha de base definitiva — 8 de 8 itens no escopo reproduzem
+
+| item | veredito |
+|---|---|
+| 1 cp1252 no `--help` · 2 `$HOME` · 3 bit de execução · 4 gate de cobertura | **REPRODUCED** |
+| 5 CRLF · 6 `isatty` sobre `NUL` · 7 semântica de shell · 10 separador no frontmatter | **REPRODUCED** |
+| 8 postura com `\` | declarado fora de escopo (símbolo não exportado) |
+| 9 `ref_targets_exist` | fora de escopo — não é defeito de Windows, tem REQ própria |
+| 11 12 testes de symlink | coberto pela camada 1 |
+
+**AC10:** camada 1 em **25m34s** (17:05:51 → 17:31:25); camada 2 em **1m23s**.
+
+O contraste entre as duas camadas é o argumento da separação de CI que o KG aprovou tratar depois:
+a camada 2 dá o sinal inteiro em 1m23s; a camada 1 custa 25 minutos para dizer "os três reprovam".
 
 ## Wave 2 — `skip` explícito (ML único)
 > Dependências: Wave 1 concluída — precisamos ver os 12 vermelhos antes de silenciá-los.
