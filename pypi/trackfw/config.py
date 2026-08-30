@@ -68,17 +68,30 @@ def resolve_agent_namespaces(cfg: dict, directory: str) -> list:
 def is_infra_dir_name(name: str) -> bool:
     """
     Decide, no ponto único de leitura de disco do resolvedor, se uma entrada é COMPROVADAMENTE
-    infraestrutura e nunca um namespace de agente — nem para efeito de união (decisão 1 do ADR), nem
-    para a violação (ML-2A). Critério deliberadamente estreito, dois casos fechados (ML-0A, seção 4,
-    e instrução do ML-2A): (a) qualquer nome iniciando com "." — nenhum agente legítimo começa com
-    ponto, e ".git"/".trackfw"/".DS_Store" são os exemplos concretos do modelo de ameaça; (b)
-    "node_modules" — citado nominalmente no mesmo modelo de ameaça como o outro caso óbvio. NÃO
-    filtra por heurística de nome além disso — um diretório cujo nome colide com um nome de estado
-    (ex.: "wip" órfão no topo de roadmap_dir) continua entrando na união normalmente; só é excluído
-    da VIOLAÇÃO (não do resolvedor) em validate_agent_namespace_undeclared, porque ali a informação
-    de que é um nome de estado reservado é o sinal relevante, não um sinal de "não é diretório real".
+    infraestrutura e nunca um namespace de agente — filtrada da união (decisão 1 do ADR) e portanto
+    invisível a todo consumidor.
+
+    CORREÇÃO (ML-4A, achado 1 do parecer hades-tf 2026-08-30, REPROVA original — espelha
+    internal/validator/validator.go's isInfraDirName, ver o comentário lá para a justificativa
+    completa): esta lista já incluiu "qualquer nome iniciando com '.'", reabrindo a invisibilidade
+    que a REQ existe para fechar (um namespace real ".ghost" desaparecia de union, status, wip limit
+    e `move` sem sinal algum). A lista fechada agora tem UMA entrada:
+      - "node_modules": artefato de tooling JS. Nenhum operador digita isto como nome de agente por
+        acidente ou por design — ruído inequívoco, sem a ambiguidade de um nome iniciado por ponto.
+    Nomes iniciados por "." NÃO são mais filtrados aqui — continuam entrando na união (nunca
+    invisíveis) — mas o sinal de "não declarado" é rebaixado de violação para aviso de baixo ruído
+    (ver is_dot_prefixed_name / hidden_namespace_warnings em validator.py), nunca zero sinal.
     """
-    return name.startswith(".") or name == "node_modules"
+    return name == "node_modules"
+
+
+def is_dot_prefixed_name(name: str) -> bool:
+    """
+    Reporta se name começa com "." — sinal ambíguo (pode ser um namespace legítimo, ou tooling que
+    nunca deveria estar dentro de roadmap_dir/req_dir), não mais um filtro de invisibilidade (ver
+    is_infra_dir_name). Só rebaixa "não declarado em agents:" de violação para aviso.
+    """
+    return name.startswith(".")
 
 # MALFORMED_CONFIG_MESSAGE is written to stderr, verbatim, when trackfw.yaml exists but fails to
 # parse as YAML. Kept identical, character-for-character, to Go's MalformedConfigMessage and

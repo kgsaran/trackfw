@@ -17,10 +17,34 @@
 #   AC12 — the disk scan never follows a symlink (`roadmap move` must not
 #          write outside the project through a namespace dir that is a
 #          symlink).
-#   infra filter — `.git`, `node_modules` and an orphan state-name dir
-#          (`wip/` alone at the top of roadmap_dir) never trigger the
-#          undeclared-namespace violation.
+#   infra filter — `node_modules` and an orphan state-name dir (`wip/` alone
+#          at the top of roadmap_dir) never trigger the undeclared-namespace
+#          violation; `.git`-like dot-prefixed dirs neither (ML-4A: see
+#          "hidden namespace" below — they get a low-noise WARNING instead of
+#          silence AND instead of the hard violation).
+#   hidden namespace (ML-4A, achado 1) — a dot-prefixed namespace with real
+#          roadmap content on disk (e.g. `.ghost`) is NEVER invisible: it
+#          stays enumerated by status/validate/move exactly like any other
+#          undeclared namespace, but the undeclared-namespace signal is the
+#          low-noise `agent_namespace_hidden` warning, not the hard
+#          `agent_namespace_undeclared` violation.
+#   glob metacharacter safety (ML-4A, achado 2) — an on-disk namespace named
+#          literally "*" does not cross-match every other namespace's wip/
+#          (silent WIP-count corruption), and a namespace with an unbalanced
+#          "[" does not abort `validate` with a raw pattern error (Go's
+#          filepath.Glob receiving an unescaped, disk-derived path segment).
 #   flat  — `roadmap_namespacing: flat` never emits `agent_namespace_undeclared`.
+#   declared-first ordering (artemis-tf, 2026-08-30, ML-4B docs follow-up) —
+#          the resolver returns declared namespaces first (in `agents:` order,
+#          deduplicated), then disk-only extras alphabetically. This property
+#          was already documented in docs/cli-parity.md as
+#          "load-bearing for gate", but until this addition no scenario in
+#          this file (or in check-gates-falsify.sh, whose Cenários 34/35 were
+#          RETARGETED away from ordering onto the `agent_namespace_undeclared`
+#          violation signal in ML-3A) actually asserted it — the annotation
+#          was overclaiming coverage the gate didn't have. `roadmap list` is
+#          checked (the surface docs/cli-parity.md names explicitly), across
+#          all 3 runtimes.
 #
 # Falsification, BOTH directions, SELF-CONTAINED (this script has no external
 # caller — check-gates-falsify.sh is out of scope for new scenarios in this
@@ -30,8 +54,8 @@
 #   Direction A  — union reverts to substitution (the pre-REQ-2026-08-29
 #                  defect): an undeclared-but-on-disk namespace goes
 #                  invisible again the moment `agents:` is non-empty.
-#   Direction B1 — infra filter disabled: `.git`/`node_modules` start being
-#                  treated as namespaces (the REQ's "ADR-2026-08-17: a guard
+#   Direction B1 — infra filter disabled: `node_modules` starts being
+#                  treated as a namespace (the REQ's "ADR-2026-08-17: a guard
 #                  that annoys is a guard that gets turned off" failure mode).
 #   Direction B2 — AC12 regression: the disk scan starts following symlinks
 #                  again (reproduced live in Node/Python during ML-0A;
@@ -43,6 +67,27 @@
 #                  primitive with a stat-based walk, which is not what "one
 #                  wrong edit regressed this" looks like for Go. Proven only
 #                  in Node/Python, where it was proven live in ML-0A).
+#   Direction B3 — ML-4A, achado 1 corrective, hades-tf 2026-08-30: the
+#                  dot-prefix carve-out reverts to isInfraDirName's old,
+#                  overbroad "any name starting with '.'" — a dot-prefixed
+#                  namespace with real content (`.ghost`) goes fully invisible
+#                  again (the exact defect this ML exists to close).
+#   Direction B4 — ML-4A, achado 2 corrective, hades-tf 2026-08-30 (Go only —
+#                  Node/Python were never exposed, see achado 2's runtime
+#                  note): ListMDFiles reverts to filepath.Glob on a
+#                  disk-derived agent name — a namespace literally named "*"
+#                  cross-matches every other namespace's wip/ again.
+#   Direction C  — declared-first ordering regresses to plain alphabetical
+#                  (the resolver stops putting `agents:`-declared namespaces
+#                  first): a single `sort()`/`sort.Strings()`/`.sort()` added
+#                  right before the resolver returns is enough in all 3
+#                  runtimes — there is no "invisibility vs. over-visibility"
+#                  duality here (unlike Directions A/B1/B2/B3/B4, which each
+#                  pair an under- and an over-enumeration failure mode), so
+#                  this direction is proved once per runtime, not paired with
+#                  an opposite-direction arm — same precedent as
+#                  check-gates-falsify.sh's Cenário 33 (Python-only ordering
+#                  falsification, single direction, reverse-sort corruption).
 set -euo pipefail
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -316,8 +361,13 @@ for runtime in go node python; do
 done
 
 # ===========================================================================
-# Infra filter — .git / node_modules / orphan state-name dir never trigger
-# the violation.
+# Infra filter — node_modules / orphan state-name dir never trigger the hard
+# violation NOR the hidden-namespace warning (they carry zero ambiguity: no
+# operator names an agent "node_modules", and "wip" is a reserved state
+# name). `.git` — a dot-prefixed name — is NOT filtered from the union
+# anymore (ML-4A, achado 1): it must never be accused via the hard
+# `agent_namespace_undeclared` violation, but it MUST surface via the new
+# low-noise `agent_namespace_hidden` warning — never zero signal.
 # ===========================================================================
 P2="$WORK/p2-infra"
 scaffold_by_agent "$P2" "- alice"
@@ -330,7 +380,7 @@ for runtime in go node python; do
     fail "infra-filter/$runtime/liveness-anchor" "validate produced no usable output at all (alice's expected wip_has_req violation is absent too) — cannot distinguish 'infra correctly filtered' from 'validate crashed/empty output'; output: $(printf '%q' "$validate_out")"
   fi
   if grep -qiF 'agent namespace ".git"' <<<"$validate_out"; then
-    fail "infra-filter/$runtime/dotgit" ".git accused as undeclared namespace — output: $(printf '%q' "$validate_out")"
+    fail "infra-filter/$runtime/dotgit-not-hard-violation" ".git accused as undeclared namespace (hard violation) — output: $(printf '%q' "$validate_out")"
   fi
   if grep -qF 'agent namespace "node_modules"' <<<"$validate_out"; then
     fail "infra-filter/$runtime/node_modules" "node_modules accused as undeclared namespace — output: $(printf '%q' "$validate_out")"
@@ -338,7 +388,144 @@ for runtime in go node python; do
   if grep -qF 'agent namespace "wip"' <<<"$validate_out"; then
     fail "infra-filter/$runtime/orphan-wip" "orphan wip/ accused as undeclared namespace — output: $(printf '%q' "$validate_out")"
   fi
-  ok "infra-filter/$runtime/dotgit-node_modules-orphan-wip-silent"
+  if grep -qF 'dot-prefixed directory "node_modules"' <<<"$validate_out"; then
+    fail "infra-filter/$runtime/node_modules-not-hidden-either" "node_modules should be fully filtered by the closed infra list, not merely downgraded to a hidden-namespace warning — output: $(printf '%q' "$validate_out")"
+  fi
+  ok "infra-filter/$runtime/node_modules-orphan-wip-silent"
+
+  if ! grep -qF 'dot-prefixed directory ".git"' <<<"$validate_out"; then
+    fail "hidden-namespace/$runtime/dotgit-never-invisible" ".git is no longer in the closed infra list — it must surface via the agent_namespace_hidden warning (ML-4A, achado 1); it disappeared with zero signal instead — output: $(printf '%q' "$validate_out")"
+  fi
+  ok "hidden-namespace/$runtime/dotgit-surfaces-as-warning"
+done
+
+# ===========================================================================
+# ML-4A, achado 1 — a dot-prefixed namespace with REAL roadmap content
+# (`.ghost`, not just an empty dir) must never be invisible: enumerated by
+# status/validate/move exactly like `bob` in P1 (AC1), the undeclared signal
+# is the low-noise warning (not the hard violation), and `roadmap move`
+# actually relocates the file.
+# ===========================================================================
+P5="$WORK/p5-hidden-namespace"
+scaffold_by_agent "$P5" "- alice"
+mkdir -p "$P5/docs/roadmaps/alice/wip"
+write_wip_roadmap "$P5/docs/roadmaps/alice/wip/ROADMAP-alice-wip.md" "alice wip"
+write_wip_roadmap "$P5/docs/roadmaps/.ghost/wip/ROADMAP-ghost-wip.md" "ghost wip (dot-prefixed, não declarado)"
+
+for runtime in go node python; do
+  status_out=$(run_"$runtime" "$P5" status; true)
+  if ! grep -qF "ROADMAP-ghost-wip.md" <<<"$status_out"; then
+    fail "hidden-namespace/$runtime/status-enumerates-dotghost" "'status' did not list .ghost's roadmap — dot-prefixed namespace went invisible (the exact defect this ML exists to close)"
+  fi
+  ok "hidden-namespace/$runtime/status-enumerates-dotghost"
+
+  validate_out=$(run_"$runtime" "$P5" validate; true)
+  if ! grep -qF 'roadmap "ROADMAP-ghost-wip.md" is in wip but has no linked REQ' <<<"$validate_out"; then
+    fail "hidden-namespace/$runtime/validate-scans-dotghost" "'validate' did not scan .ghost's roadmap file content — union not applied to a dot-prefixed namespace"
+  fi
+  if grep -qiF 'agent namespace ".ghost"' <<<"$validate_out"; then
+    fail "hidden-namespace/$runtime/dotghost-not-hard-violation" ".ghost accused via the hard agent_namespace_undeclared violation — should be the low-noise agent_namespace_hidden warning instead — output: $(printf '%q' "$validate_out")"
+  fi
+  if ! grep -qF 'dot-prefixed directory ".ghost"' <<<"$validate_out"; then
+    fail "hidden-namespace/$runtime/dotghost-surfaces-as-warning" ".ghost produced no signal at all (neither hard violation nor hidden-namespace warning) — zero-signal invisibility — output: $(printf '%q' "$validate_out")"
+  fi
+  ok "hidden-namespace/$runtime/dotghost-validate-signal"
+done
+
+for runtime in go node python; do
+  P5_MOVE="$WORK/p5-move-$runtime"
+  cp -r "$P5" "$P5_MOVE"
+  move_out=$(run_"$runtime" "$P5_MOVE" roadmap move ROADMAP-ghost-wip done; true)
+  if [[ ! -f "$P5_MOVE/docs/roadmaps/.ghost/done/ROADMAP-ghost-wip.md" ]]; then
+    fail "hidden-namespace/$runtime/roadmap-move-finds-dotghost" "roadmap move did not relocate .ghost's roadmap to done/ — output: $(printf '%q' "$move_out")"
+  fi
+  ok "hidden-namespace/$runtime/roadmap-move-finds-dotghost"
+done
+
+# ===========================================================================
+# ML-4A, achado 2 — an on-disk agent namespace named "*" must not
+# cross-match every other namespace's wip/ (silent WIP-count corruption),
+# and one named with an unbalanced "[" must not abort `validate` (Go's
+# filepath.Glob receiving an unescaped, disk-derived path segment) nor break
+# `--json`. Fixture mirrors hades-tf's live repro: alfa 3 files, beta 1 file
+# (undeclared, ordinary control), a namespace LITERALLY named "*" with 1
+# file, wip_limit: 1.
+# ===========================================================================
+P6="$WORK/p6-glob-metachar"
+mkdir -p "$P6/docs/adr" "$P6/docs/req"
+mkdir -p "$P6/docs/roadmaps/alfa/wip" "$P6/docs/roadmaps/beta/wip" "$P6/docs/roadmaps/*/wip"
+cat > "$P6/trackfw.yaml" <<'EOF'
+governance_mode: strict
+adr_dirs:
+  - docs/adr
+req_dir: docs/req
+roadmap_dir: docs/roadmaps
+roadmap_namespacing: by_agent
+agents:
+  - alfa
+wip_limit: 1
+EOF
+write_wip_roadmap "$P6/docs/roadmaps/alfa/wip/ROADMAP-alfa-1.md" "alfa 1"
+write_wip_roadmap "$P6/docs/roadmaps/alfa/wip/ROADMAP-alfa-2.md" "alfa 2"
+write_wip_roadmap "$P6/docs/roadmaps/alfa/wip/ROADMAP-alfa-3.md" "alfa 3"
+write_wip_roadmap "$P6/docs/roadmaps/beta/wip/ROADMAP-beta-1.md" "beta 1"
+write_wip_roadmap "$P6/docs/roadmaps/*/wip/ROADMAP-star-1.md" "star 1"
+write_wip_roadmap "$P6/docs/roadmaps/*/wip/ROADMAP-star-2.md" "star 2"
+
+for runtime in go node python; do
+  validate_out=$(run_"$runtime" "$P6" validate; true)
+  if ! grep -qF '3 roadmaps in wip/ for agent "alfa"' <<<"$validate_out"; then
+    fail "glob-metachar/$runtime/liveness-anchor" "validate produced no usable wip_limit warning for alfa at all — cannot distinguish 'star correctly isolated' from 'validate crashed/empty output'; output: $(printf '%q' "$validate_out")"
+  fi
+  if ! grep -qF '2 roadmaps in wip/ for agent "*"' <<<"$validate_out"; then
+    fail "glob-metachar/$runtime/star-count-not-inflated" "the \"*\" namespace's WIP count is not exactly 2 (its own files only) — a literal \"*\" namespace is cross-matching other namespaces' wip/ via an unescaped glob pattern — output: $(printf '%q' "$validate_out")"
+  fi
+  ok "glob-metachar/$runtime/star-namespace-isolated-count"
+done
+
+P7="$WORK/p7-glob-bracket"
+mkdir -p "$P7/docs/adr" "$P7/docs/req"
+mkdir -p "$P7/docs/roadmaps/alfa/wip" "$P7/docs/roadmaps/unmatched[bracket/wip"
+cat > "$P7/trackfw.yaml" <<'EOF'
+governance_mode: strict
+adr_dirs:
+  - docs/adr
+req_dir: docs/req
+roadmap_dir: docs/roadmaps
+roadmap_namespacing: by_agent
+agents:
+  - alfa
+EOF
+write_wip_roadmap "$P7/docs/roadmaps/alfa/wip/ROADMAP-alfa-1.md" "alfa 1"
+write_wip_roadmap "$P7/docs/roadmaps/unmatched[bracket/wip/ROADMAP-bracket-1.md" "bracket 1"
+
+for runtime in go node python; do
+  set +e
+  validate_out=$(run_"$runtime" "$P7" validate)
+  validate_status=$?
+  set -e
+  if grep -qF 'syntax error in pattern' <<<"$validate_out"; then
+    fail "glob-metachar/$runtime/bracket-no-crash" "'validate' leaked a raw Go pattern error instead of the intended agent_namespace_undeclared violation — output: $(printf '%q' "$validate_out"), exit=$validate_status"
+  fi
+  if ! grep -qF 'agent namespace "unmatched[bracket"' <<<"$validate_out"; then
+    fail "glob-metachar/$runtime/bracket-still-enumerated" "the bracket-named namespace produced no agent_namespace_undeclared violation at all — output: $(printf '%q' "$validate_out"), exit=$validate_status"
+  fi
+  ok "glob-metachar/$runtime/bracket-no-crash-still-violates"
+
+  # stdout-only (NOT run_*, which merges stderr via 2>&1 — the "N violation(s) found" line goes to
+  # stderr and would corrupt the JSON payload if merged; Node pretty-prints JSON across many lines,
+  # so a naive "first line only" split doesn't isolate it either).
+  set +e
+  case "$runtime" in
+    go)     validate_json_stdout=$(cd "$P7" && "$GO_BIN" validate --json 2>/dev/null) ;;
+    node)   validate_json_stdout=$(cd "$P7" && node "$NODE_CLI" validate --json 2>/dev/null) ;;
+    python) validate_json_stdout=$(cd "$P7" && env PYTHONPATH="$PY_ROOT" python3 -m trackfw validate --json 2>/dev/null) ;;
+  esac
+  set -e
+  if ! python3 -c "import json,sys; json.loads(sys.argv[1])" "$validate_json_stdout" >/dev/null 2>&1; then
+    fail "glob-metachar/$runtime/bracket-json-valid" "'validate --json' did not emit valid JSON for the bracket-named namespace — stdout: $(printf '%q' "$validate_json_stdout")"
+  fi
+  ok "glob-metachar/$runtime/bracket-json-valid"
 done
 
 # ===========================================================================
@@ -398,6 +585,60 @@ for runtime in go node python; do
     fail "ac12/$runtime/no-false-success" "roadmap move reported exit 0 for a file it never actually relocated — output: $(printf '%q' "$move_out")"
   fi
   ok "ac12/$runtime/no-symlink-escape"
+done
+
+# ===========================================================================
+# Declared-first ordering — the resolver returns `agents:`-declared
+# namespaces first (in declared order, deduplicated), then disk-only extras
+# alphabetically. docs/cli-parity.md names this "load-bearing for gate" but,
+# until this scenario, nothing in this repo actually asserted it for Go/Node
+# — check-gates-falsify.sh's Cenários 34/35 were RETARGETED away from order
+# onto the `agent_namespace_undeclared` violation signal (ML-3A), and its
+# only remaining order-sensitive scenario (Cenário 33,
+# falsify/status-by-agent-fallback-order) is Python-only and exercises
+# `status`, not `roadmap list` — the surface docs/cli-parity.md names
+# explicitly. `agents: [zulu, alfa]` deliberately inverts alphabetical order
+# (zulu declared BEFORE alfa) so a plain-alphabetical regression is
+# distinguishable from the correct declared-first output; `extra` is
+# disk-only and undeclared, expected last.
+# ===========================================================================
+P7="$WORK/p7-ordering"
+scaffold_by_agent "$P7" $'- zulu\n- alfa'
+mkdir -p "$P7/docs/roadmaps/zulu/wip" "$P7/docs/roadmaps/alfa/wip" "$P7/docs/roadmaps/extra/wip"
+write_wip_roadmap "$P7/docs/roadmaps/zulu/wip/ROADMAP-zulu-wip.md" "zulu wip (declared 1st in agents:, alphabetically 2nd)"
+write_wip_roadmap "$P7/docs/roadmaps/alfa/wip/ROADMAP-alfa-wip.md" "alfa wip (declared 2nd in agents:, alphabetically 1st)"
+write_wip_roadmap "$P7/docs/roadmaps/extra/wip/ROADMAP-extra-wip.md" "extra wip (undeclared, disk-only)"
+
+# assert_order OUTPUT RUNTIME LABEL MARKER... — fails unless each marker's
+# first line number strictly increases through the given output, in the
+# given sequence. A marker missing entirely is a distinct failure from a
+# marker present but out of order (both are diagnosed by name, not by a
+# single generic "order wrong" message).
+assert_order() {
+  local out=$1 runtime=$2 label=$3
+  shift 3
+  local prev_ln=0 marker ln
+  for marker in "$@"; do
+    ln=$(printf '%s\n' "$out" | grep -n -F -- "$marker" | head -1 | cut -d: -f1)
+    if [[ -z "$ln" ]]; then
+      fail "$label/$runtime/marker-missing" "marker '$marker' not found in output — output: $(printf '%q' "$out")"
+    fi
+    if (( ln <= prev_ln )); then
+      fail "$label/$runtime/order-wrong" "marker '$marker' at line $ln did not come strictly after the previous marker (line $prev_ln) — output: $(printf '%q' "$out")"
+    fi
+    prev_ln=$ln
+  done
+}
+
+for runtime in go node python; do
+  list_out=$(run_"$runtime" "$P7" roadmap list; true)
+  # "[zulu" matches both Go/Node's "[zulu/wip]" and Python's "[zulu]" — a
+  # substring, not the full bracketed token, is deliberate so the same
+  # markers work across the 3 runtimes' differing `roadmap list` formatting
+  # (see the known `gap` for that formatting divergence elsewhere in
+  # docs/cli-parity.md; only ORDER is asserted here, never presentation).
+  assert_order "$list_out" "$runtime" "ordering" "[zulu" "[alfa" "[extra"
+  ok "ordering/$runtime/declared-first-then-disk-only-alphabetical"
 done
 
 echo "--- positive scenarios: $SCENARIOS passed. Starting falsification (both directions). ---"
@@ -470,8 +711,12 @@ fi
 ok "direction-a/python/detects-substitution-regression"
 
 # ===========================================================================
-# Direction B1 — infra filter disabled: `.git`/`node_modules` start being
-# accused as undeclared namespaces.
+# Direction B1 — infra filter disabled: `node_modules` starts being accused
+# as an undeclared namespace. (`.git` is deliberately NOT part of this
+# direction anymore — ML-4A narrowed the closed list to `node_modules` only;
+# `.git`'s regression is Direction B3 below, and it regresses to invisibility,
+# not to an accusation, because dot-prefixed names get a different — and
+# lower-severity — treatment now.)
 # ===========================================================================
 
 # --- Go ---
@@ -482,7 +727,7 @@ cp -r "$ROOT_DIR/internal/." "$TB1_GO_MOD/internal/"
 cp "$ROOT_DIR/go.mod" "$ROOT_DIR/go.sum" "$TB1_GO_MOD/"
 corrupt_literal \
   "$ROOT_DIR/internal/validator/validator.go" "$TB1_GO_MOD/internal/validator/validator.go" \
-  'return strings.HasPrefix(name, ".") || name == "node_modules"' \
+  'return name == "node_modules"' \
   'return false' \
   "direction-b1-go"
 TB1_GO_BIN="$WORK/dirb1-go-bin/trackfw"
@@ -490,8 +735,8 @@ mkdir -p "$(dirname "$TB1_GO_BIN")"
 build_go_or_fail "direction-b1/go/build" "$TB1_GO_MOD" "$TB1_GO_BIN"
 
 dirb1_go_out=$(cd "$P2" && "$TB1_GO_BIN" validate 2>&1; true)
-if ! grep -qF 'agent namespace ".git"' <<<"$dirb1_go_out"; then
-  fail "direction-b1/go/detects-infra-filter-regression" "corrupted binary did not accuse .git — checagem vácua"
+if ! grep -qF 'agent namespace "node_modules"' <<<"$dirb1_go_out"; then
+  fail "direction-b1/go/detects-infra-filter-regression" "corrupted binary did not accuse node_modules — checagem vácua"
 fi
 ok "direction-b1/go/detects-infra-filter-regression"
 
@@ -500,13 +745,13 @@ TB1_N="$WORK/dirb1-node"
 setup_npm_tree "$TB1_N"
 corrupt_literal \
   "$ROOT_DIR/npm/src/validator/index.js" "$TB1_N/npm/src/validator/index.js" \
-  "return name.startsWith('.') || name === 'node_modules'" \
+  "return name === 'node_modules'" \
   "return false" \
   "direction-b1-node"
 
 dirb1_node_out=$(cd "$P2" && node "$TB1_N/npm/bin/trackfw" validate 2>&1; true)
-if ! grep -qF 'agent namespace ".git"' <<<"$dirb1_node_out"; then
-  fail "direction-b1/node/detects-infra-filter-regression" "corrupted binary did not accuse .git — checagem vácua"
+if ! grep -qF 'agent namespace "node_modules"' <<<"$dirb1_node_out"; then
+  fail "direction-b1/node/detects-infra-filter-regression" "corrupted binary did not accuse node_modules — checagem vácua"
 fi
 ok "direction-b1/node/detects-infra-filter-regression"
 
@@ -515,15 +760,122 @@ TB1_P="$WORK/dirb1-python"
 setup_py_tree "$TB1_P"
 corrupt_literal \
   "$ROOT_DIR/pypi/trackfw/config.py" "$TB1_P/pypi/trackfw/config.py" \
-  'return name.startswith(".") or name == "node_modules"' \
+  'return name == "node_modules"' \
   'return False' \
   "direction-b1-python"
 
 dirb1_python_out=$(cd "$P2" && env PYTHONPATH="$TB1_P/pypi" python3 -m trackfw validate 2>&1; true)
-if ! grep -qF 'agent namespace ".git"' <<<"$dirb1_python_out"; then
-  fail "direction-b1/python/detects-infra-filter-regression" "corrupted binary did not accuse .git — checagem vácua"
+if ! grep -qF 'agent namespace "node_modules"' <<<"$dirb1_python_out"; then
+  fail "direction-b1/python/detects-infra-filter-regression" "corrupted binary did not accuse node_modules — checagem vácua"
 fi
 ok "direction-b1/python/detects-infra-filter-regression"
+
+# ===========================================================================
+# Direction B3 (ML-4A, achado 1) — the dot-prefix carve-out reverts to
+# isInfraDirName's old, overbroad "any name starting with '.'": `.ghost`
+# (P5, WITH real roadmap content) must go fully invisible again — the exact
+# defect this ML exists to close. Corrupts isDotPrefixedName to always
+# return false, which collapses undeclaredNamespacesOnDisk back to treating
+# every dot-prefixed name as ordinary AND removes it from the union filter
+# emulation is not needed here: the real regression under test is
+# "isInfraDirName absorbs the dot-prefix check again", so corrupt
+# isInfraDirName directly (same function, opposite direction from B1).
+# ===========================================================================
+
+# --- Go ---
+TB3_GO_MOD="$WORK/dirb3-go-mod"
+mkdir -p "$TB3_GO_MOD/cmd" "$TB3_GO_MOD/internal"
+cp -r "$ROOT_DIR/cmd/." "$TB3_GO_MOD/cmd/"
+cp -r "$ROOT_DIR/internal/." "$TB3_GO_MOD/internal/"
+cp "$ROOT_DIR/go.mod" "$ROOT_DIR/go.sum" "$TB3_GO_MOD/"
+corrupt_literal \
+  "$ROOT_DIR/internal/validator/validator.go" "$TB3_GO_MOD/internal/validator/validator.go" \
+  'func isInfraDirName(name string) bool {
+	return name == "node_modules"
+}' \
+  'func isInfraDirName(name string) bool {
+	return strings.HasPrefix(name, ".") || name == "node_modules"
+}' \
+  "direction-b3-go"
+TB3_GO_BIN="$WORK/dirb3-go-bin/trackfw"
+mkdir -p "$(dirname "$TB3_GO_BIN")"
+build_go_or_fail "direction-b3/go/build" "$TB3_GO_MOD" "$TB3_GO_BIN"
+
+dirb3_go_status=$(cd "$P5" && "$TB3_GO_BIN" status 2>&1; true)
+if ! grep -qF "ROADMAP-alice-wip.md" <<<"$dirb3_go_status"; then
+  fail "direction-b3/go/detects-dotprefix-invisibility-regression" "the corrupted binary produced no usable output at all (alice, the DECLARED namespace, is absent too) — cannot distinguish '.ghost correctly vanished' from 'the binary crashed/empty output'; output: $(printf '%q' "$dirb3_go_status")"
+fi
+if grep -qF "ROADMAP-ghost-wip.md" <<<"$dirb3_go_status"; then
+  fail "direction-b3/go/detects-dotprefix-invisibility-regression" "corrupted binary still shows .ghost's roadmap — checagem vácua"
+fi
+ok "direction-b3/go/detects-dotprefix-invisibility-regression"
+
+# --- Node ---
+TB3_N="$WORK/dirb3-node"
+setup_npm_tree "$TB3_N"
+corrupt_literal \
+  "$ROOT_DIR/npm/src/validator/index.js" "$TB3_N/npm/src/validator/index.js" \
+  $'function isInfraDirName(name) {\n  return name === \'node_modules\'\n}' \
+  $'function isInfraDirName(name) {\n  return name.startsWith(\'.\') || name === \'node_modules\'\n}' \
+  "direction-b3-node"
+
+dirb3_node_status=$(cd "$P5" && node "$TB3_N/npm/bin/trackfw" status 2>&1; true)
+if ! grep -qF "ROADMAP-alice-wip.md" <<<"$dirb3_node_status"; then
+  fail "direction-b3/node/detects-dotprefix-invisibility-regression" "the corrupted tree produced no usable output at all (alice, the DECLARED namespace, is absent too) — cannot distinguish '.ghost correctly vanished' from 'node crashed/empty output'; output: $(printf '%q' "$dirb3_node_status")"
+fi
+if grep -qF "ROADMAP-ghost-wip.md" <<<"$dirb3_node_status"; then
+  fail "direction-b3/node/detects-dotprefix-invisibility-regression" "corrupted binary still shows .ghost's roadmap — checagem vácua"
+fi
+ok "direction-b3/node/detects-dotprefix-invisibility-regression"
+
+# --- Python ---
+TB3_P="$WORK/dirb3-python"
+setup_py_tree "$TB3_P"
+corrupt_literal \
+  "$ROOT_DIR/pypi/trackfw/config.py" "$TB3_P/pypi/trackfw/config.py" \
+  'return name == "node_modules"' \
+  'return name.startswith(".") or name == "node_modules"' \
+  "direction-b3-python"
+
+dirb3_python_status=$(cd "$P5" && env PYTHONPATH="$TB3_P/pypi" python3 -m trackfw status 2>&1; true)
+if ! grep -qF "ROADMAP-alice-wip.md" <<<"$dirb3_python_status"; then
+  fail "direction-b3/python/detects-dotprefix-invisibility-regression" "the corrupted tree produced no usable output at all (alice, the DECLARED namespace, is absent too) — cannot distinguish '.ghost correctly vanished' from 'python crashed/empty output'; output: $(printf '%q' "$dirb3_python_status")"
+fi
+if grep -qF "ROADMAP-ghost-wip.md" <<<"$dirb3_python_status"; then
+  fail "direction-b3/python/detects-dotprefix-invisibility-regression" "corrupted binary still shows .ghost's roadmap — checagem vácua"
+fi
+ok "direction-b3/python/detects-dotprefix-invisibility-regression"
+
+# ===========================================================================
+# Direction B4 (ML-4A, achado 2, Go only — Node/Python were never exposed to
+# this vector, see achado 2's runtime note in the header comment) —
+# ListMDFiles reverts to filepath.Glob on a disk-derived agent name: the
+# literal "*" namespace (P6) cross-matches every other namespace's wip/
+# again, inflating its WIP count.
+# ===========================================================================
+
+TB4_GO_MOD="$WORK/dirb4-go-mod"
+mkdir -p "$TB4_GO_MOD/cmd" "$TB4_GO_MOD/internal"
+cp -r "$ROOT_DIR/cmd/." "$TB4_GO_MOD/cmd/"
+cp -r "$ROOT_DIR/internal/." "$TB4_GO_MOD/internal/"
+cp "$ROOT_DIR/go.mod" "$ROOT_DIR/go.sum" "$TB4_GO_MOD/"
+corrupt_literal \
+  "$ROOT_DIR/internal/validator/validator.go" "$TB4_GO_MOD/internal/validator/validator.go" \
+  $'\t\t\tfiles := ListMDFiles(filepath.Join(projectCfg.RoadmapDir, agent, "wip"))\n' \
+  $'\t\t\tfiles, _ := filepath.Glob(filepath.Join(projectCfg.RoadmapDir, agent, "wip", "*.md")) // CORRUPTED (direction-b4)\n' \
+  "direction-b4-go"
+TB4_GO_BIN="$WORK/dirb4-go-bin/trackfw"
+mkdir -p "$(dirname "$TB4_GO_BIN")"
+build_go_or_fail "direction-b4/go/build" "$TB4_GO_MOD" "$TB4_GO_BIN"
+
+dirb4_go_out=$(cd "$P6" && "$TB4_GO_BIN" validate 2>&1; true)
+if ! grep -qF '3 roadmaps in wip/ for agent "alfa"' <<<"$dirb4_go_out"; then
+  fail "direction-b4/go/detects-glob-crossmatch-regression" "the corrupted binary produced no usable wip_limit warning for alfa at all — cannot distinguish 'star correctly isolated' from 'the binary crashed/empty output'; output: $(printf '%q' "$dirb4_go_out")"
+fi
+if grep -qF '2 roadmaps in wip/ for agent "*"' <<<"$dirb4_go_out"; then
+  fail "direction-b4/go/detects-glob-crossmatch-regression" "corrupted binary still reports the isolated count of 2 for \"*\" — checagem vácua (expected the inflated, cross-matched count)"
+fi
+ok "direction-b4/go/detects-glob-crossmatch-regression"
 
 # ===========================================================================
 # Direction B2 — AC12 regression: disk scan follows symlinks again
@@ -584,4 +936,86 @@ if [[ ! -f "$P4_LEAK_OUT_PY/done/ROADMAP-leak.md" ]]; then
 fi
 ok "direction-b2/python/detects-symlink-regression"
 
-echo "check-agent-namespace-union: all $SCENARIOS scenarios passed (AC1 x3 runtimes x3 checks, AC4 x3, AC5 x3+x3, infra-filter x3, flat-untouched x3, AC12 x3, direction-a x3, direction-b1 x3, direction-b2 x2)."
+# ===========================================================================
+# Direction C — declared-first ordering regresses to plain alphabetical: a
+# single sort of the FULL `ordered` slice/array/list right before the
+# resolver returns is enough to lose the property in all 3 runtimes. Proved
+# via `roadmap list` against P7 (agents: [zulu, alfa] — zulu declared first,
+# alphabetically second): the corrupted output must still contain all 3
+# namespaces (liveness — a crash or empty output must not be confused with
+# "the order regression was detected") but with alfa now ahead of zulu.
+# ===========================================================================
+
+# --- Go ---
+TC_GO_MOD="$WORK/dirc-go-mod"
+mkdir -p "$TC_GO_MOD/cmd" "$TC_GO_MOD/internal"
+cp -r "$ROOT_DIR/cmd/." "$TC_GO_MOD/cmd/"
+cp -r "$ROOT_DIR/internal/." "$TC_GO_MOD/internal/"
+cp "$ROOT_DIR/go.mod" "$ROOT_DIR/go.sum" "$TC_GO_MOD/"
+corrupt_literal \
+  "$ROOT_DIR/internal/validator/validator.go" "$TC_GO_MOD/internal/validator/validator.go" \
+  $'\t\tordered = append(ordered, name)\n\t}\n\treturn ordered\n}' \
+  $'\t\tordered = append(ordered, name)\n\t}\n\tsort.Strings(ordered)\n\treturn ordered\n}' \
+  "direction-c-go"
+TC_GO_BIN="$WORK/dirc-go-bin/trackfw"
+mkdir -p "$(dirname "$TC_GO_BIN")"
+build_go_or_fail "direction-c/go/build" "$TC_GO_MOD" "$TC_GO_BIN"
+
+dirc_go_out=$(cd "$P7" && "$TC_GO_BIN" roadmap list 2>&1; true)
+for marker in "[zulu" "[alfa" "[extra"; do
+  if ! grep -qF -- "$marker" <<<"$dirc_go_out"; then
+    fail "direction-c/go/detects-order-regression" "the corrupted binary produced no usable output at all (marker '$marker' absent too) — cannot distinguish 'order regressed' from 'binary crashed/empty output'; output: $(printf '%q' "$dirc_go_out")"
+  fi
+done
+alfa_ln=$(grep -n -F -- "[alfa" <<<"$dirc_go_out" | head -1 | cut -d: -f1)
+zulu_ln=$(grep -n -F -- "[zulu" <<<"$dirc_go_out" | head -1 | cut -d: -f1)
+if (( zulu_ln < alfa_ln )); then
+  fail "direction-c/go/detects-order-regression" "corrupted binary still put zulu (declared 1st) before alfa (declared 2nd) — checagem vácua, output: $(printf '%q' "$dirc_go_out")"
+fi
+ok "direction-c/go/detects-order-regression"
+
+# --- Node ---
+TC_N="$WORK/dirc-node"
+setup_npm_tree "$TC_N"
+corrupt_literal \
+  "$ROOT_DIR/npm/src/validator/index.js" "$TC_N/npm/src/validator/index.js" \
+  $'    ordered.push(name)\n  }\n  return ordered\n}' \
+  $'    ordered.push(name)\n  }\n  ordered.sort()\n  return ordered\n}' \
+  "direction-c-node"
+
+dirc_node_out=$(cd "$P7" && node "$TC_N/npm/bin/trackfw" roadmap list 2>&1; true)
+for marker in "[zulu" "[alfa" "[extra"; do
+  if ! grep -qF -- "$marker" <<<"$dirc_node_out"; then
+    fail "direction-c/node/detects-order-regression" "the corrupted tree produced no usable output at all (marker '$marker' absent too) — cannot distinguish 'order regressed' from 'node crashed/empty output'; output: $(printf '%q' "$dirc_node_out")"
+  fi
+done
+alfa_ln=$(grep -n -F -- "[alfa" <<<"$dirc_node_out" | head -1 | cut -d: -f1)
+zulu_ln=$(grep -n -F -- "[zulu" <<<"$dirc_node_out" | head -1 | cut -d: -f1)
+if (( zulu_ln < alfa_ln )); then
+  fail "direction-c/node/detects-order-regression" "corrupted tree still put zulu (declared 1st) before alfa (declared 2nd) — checagem vácua, output: $(printf '%q' "$dirc_node_out")"
+fi
+ok "direction-c/node/detects-order-regression"
+
+# --- Python ---
+TC_P="$WORK/dirc-python"
+setup_py_tree "$TC_P"
+corrupt_literal \
+  "$ROOT_DIR/pypi/trackfw/config.py" "$TC_P/pypi/trackfw/config.py" \
+  $'        ordered.append(name)\n    return ordered\n' \
+  $'        ordered.append(name)\n    ordered.sort()\n    return ordered\n' \
+  "direction-c-python"
+
+dirc_python_out=$(cd "$P7" && env PYTHONPATH="$TC_P/pypi" python3 -m trackfw roadmap list 2>&1; true)
+for marker in "[zulu" "[alfa" "[extra"; do
+  if ! grep -qF -- "$marker" <<<"$dirc_python_out"; then
+    fail "direction-c/python/detects-order-regression" "the corrupted tree produced no usable output at all (marker '$marker' absent too) — cannot distinguish 'order regressed' from 'python crashed/empty output'; output: $(printf '%q' "$dirc_python_out")"
+  fi
+done
+alfa_ln=$(grep -n -F -- "[alfa" <<<"$dirc_python_out" | head -1 | cut -d: -f1)
+zulu_ln=$(grep -n -F -- "[zulu" <<<"$dirc_python_out" | head -1 | cut -d: -f1)
+if (( zulu_ln < alfa_ln )); then
+  fail "direction-c/python/detects-order-regression" "corrupted tree still put zulu (declared 1st) before alfa (declared 2nd) — checagem vácua, output: $(printf '%q' "$dirc_python_out")"
+fi
+ok "direction-c/python/detects-order-regression"
+
+echo "check-agent-namespace-union: all $SCENARIOS scenarios passed (AC1 x3 runtimes x3 checks, AC4 x3, AC5 x3+x3, infra-filter x3, hidden-namespace x3x4, glob-metachar x3x3, flat-untouched x3, AC12 x3, ordering x3, direction-a x3, direction-b1 x3, direction-b3 x3, direction-b4 x1, direction-b2 x2, direction-c x3)."

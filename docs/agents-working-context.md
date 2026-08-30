@@ -26063,3 +26063,100 @@ vira-violacao`, já criada pelo arquiteto.
 
 **Fronteiras mantidas:** não commitei, não fiz push — entrego ao arquiteto para auditoria/commit.
 Não toquei no roadmap nem nos outros `scripts/check-*.sh`.
+
+## 2026-08-30 — `hefesto-tf` (Hefesto) — Revisão de qualidade da barreira final (REQ-2026-08-29)
+
+**Escopo:** revisão de qualidade (não implementação) do diff completo dos 4 MLs de
+`ROADMAP-2026-08-29-lista-de-agentes-complementa-o-disco-e-namespace-nao-declarado-vira-violacao.md`
+antes do PR. Nenhum arquivo de produto tocado — só o parecer, anexado ao final do roadmap.
+
+**Veredito: APROVA**, sem bloqueios. Rastreei todo call site de `cfg.Agents`/enumeração de disco nos
+3 runtimes (não me apoiei nas alegações do diff) e confirmei: zero pontos resolvendo por conta própria
+fora do resolvedor canônico; a decisão de colocar `resolve_agent_namespaces` em `config.py` (Python)
+em vez de `validator.py` é justificada pela topologia real de import (`validator.py` → `traceid.py` →
+`config.py`, confirmado por leitura, não pela alegação do commit); os testes auditados (pypi
+`test_modo_by_agent_agents_configurados_complementados_pelo_disco`, cenários 34/35 de
+`check-gates-falsify.sh`) provam genuinamente o que alegam provar, sem vacuidade.
+
+**Achado de escopo (dívida, não bloqueio):** assimetria de paridade na indexação de traceid, alargada
+por este diff — Go e Python passaram a filtrar `.git`/`node_modules` na indexação `by_agent` como
+efeito colateral de herdar o filtro do resolvedor canônico (ML-1A); `npm/src/validator/traceid.js::walkMd`
+(não tocado por este diff) continua recursando `reqDir`/`roadmapDir` inteiro sem filtro de infra e sem
+noção de `agents:`. Condição de disparo estreita (`trace_id_field` configurado + `.md` com esse campo
+dentro de dir de infra), não bloqueante. Sugerido: REQ curta separada.
+
+Reli o arquivo completo `check-agent-namespace-union.sh` (588 linhas, não só o cabeçalho) após reconciliar
+com o revisor — confirmei que as 35 chamadas `ok()` estão todas atrás de condição real e que não sobrou
+uma terceira asserção decorativa além das 2 que o arquiteto já tinha corrigido antes desta linha.
+
+**Parecer completo:** anexado ao final do próprio roadmap, seção `#### Parecer de qualidade da
+barreira final (hefesto-tf, 2026-08-30)`.
+
+**Fronteiras mantidas:** não commitei, não fiz push, não toquei em `internal/`, `npm/src/`,
+`pypi/trackfw/` nem em nenhum outro arquivo além do próprio roadmap.
+
+## 2026-08-30 — `artemis-tf` (Ártemis) — ML-4B: dois ajustes de contrato pós-barreira (REQ-2026-08-29)
+
+**Início.** Auditoria da minha própria anotação `gate=` em `docs/cli-parity.md` (seção "Ordenação
+declarado-primeiro") e da documentação dos dois achados corrigidos pelo `apolo-tf` (ML-4A, achados 1 e
+2 do parecer `hades-tf` na barreira final) que ainda não estavam refletidos em `docs/cli-parity.md`.
+Branch `fix/lista-de-agentes-complementa-o-disco-e-namespace-nao-declarado-vira-violacao`, roadmap em
+`wip/`, Wave 4 (fora das waves formais do roadmap — trabalho de fechamento de contrato pedido
+diretamente pelo arquiteto). Arquivos permitidos: `docs/cli-parity.md`,
+`scripts/check-agent-namespace-union.sh`, `docs/agents-working-context.md`.
+
+**Item 1 — a anotação `gate=` da seção de ordenação superdeclarava cobertura.** Medi:
+`grep -ci "orden\|declared-first\|zulu" scripts/check-agent-namespace-union.sh` devolvia `0` — o gate
+provava união, violação, symlink e filtro de infra, mas nunca ordem. O único cenário de
+`check-gates-falsify.sh` que um dia testou ordem (Cenários 34/35) foi retargetado pelo próprio `ML-3A`
+para o sinal da violação; o único remanescente sensível a ordem (Cenário 33,
+`falsify/status-by-agent-fallback-order`) é Python-only e testa `status`, não `roadmap list` — a
+superfície que a seção nomeia explicitamente como "o contrato ativo". Escolhi **acrescentar cenários
+de ordenação ao gate** (não rebaixar para `partial=`): o contrato é vivo, observável por CLI (medi ao
+vivo com `agents: [zulu, alfa]` — zulu aparece primeiro nos 3 CLIs, apesar de "alfa" vir antes
+alfabeticamente), e já divergiu uma vez (formatação do `roadmap list` do Python, achado do `apolo-tf`
+no ML-2A) — rebaixar deixaria sem gate algo que a paridade real depende de manter.
+
+Acrescentei a `scripts/check-agent-namespace-union.sh`: fixture P7 (`agents: [zulu, alfa]` — ordem
+alfabética deliberadamente invertida — mais `extra/wip` só-disco), cenários positivos
+`ordering/{go,node,python}/declared-first-then-disk-only-alphabetical` (via `roadmap list`, com um
+helper `assert_order` que compara posição por linha dos 3 marcadores), e uma nova **Direção C** de
+falsificação (`direction-c/{go,node,python}/detects-order-regression`) que corrompe cada resolvedor
+canônico com um `sort.Strings(ordered)`/`ordered.sort()`/`ordered.sort()` final antes do `return` e
+confirma que o gate reprova (com âncora de vivacidade: os 3 namespaces continuam presentes, só a ordem
+muda). Documentado no cabeçalho do script como falsificação de via única (sem par "direção oposta"),
+mesmo precedente do Cenário 33.
+
+**Item 2 — regra nova e achado de glob não estavam no contrato.** `docs/cli-parity.md` ainda descrevia
+o `isInfraDirName` **pré-ML-4A** (dizia que qualquer nome iniciado por "." era filtrado da união E da
+violação — isso deixou de ser verdade em 2026-08-30, achado 1 BLOQUEIA do `hades-tf`). Reescrevi a
+seção "Filtro de infraestrutura" para o comportamento atual (lista fechada de UMA entrada,
+`node_modules`), com nota explícita marcando a versão anterior como incorreta e por quê (mesmo erro do
+`partial=` na REQ do pin de CI — anotação alegando cobertura/comportamento que o código não tem mais).
+Adicionei duas seções novas: "A regra `agent_namespace_hidden`" (aviso de baixo ruído, default
+`warning`, com correção de precisão importante — medi ao vivo nos 3 CLIs que `rules:
+agent_namespace_hidden: off` em `trackfw.yaml` **é honrado como qualquer outra regra** e silencia o
+aviso; "nunca `off`" no comentário do código descreve o *default*, não uma trava incondicional contra
+reconfiguração — documentar do jeito que o comentário do código sugere teria sido outra
+superdeclaração) e "Segurança contra metacaractere de glob no nome do namespace" (o achado 2 — `*`
+inflava contagem em silêncio, `[` derrubava `validate`, corrigido via `ListMDFiles`/`_list_md_files`
+sem `filepath.Glob`/`glob.glob`, só Go tinha o defeito). Atualizei a tabela de falsificação com as
+Direções B3 e B4 (que já existiam no gate, sem entrada na tabela) e a nova Direção C.
+
+**Evidência.**
+- `bash scripts/check-agent-namespace-union.sh` → **66/66 OK, exit 0** (era 60 antes desta sessão;
+  +6 cenários novos: 3 positivos de ordenação + 3 Direção C). Repetido sob `LC_ALL=C` e
+  `LC_ALL=en_US.UTF-8` — mesmo resultado.
+- `bash scripts/check-parity-contract-coverage.sh` → exit 0, 0 seções sem anotação, 0 anotações
+  inválidas (as 2 seções novas e a seção reescrita foram capturadas corretamente).
+- Mensagem do aviso `agent_namespace_hidden` confirmada byte-idêntica nos 3 CLIs por leitura direta
+  das 3 fontes (`internal/validator/validator.go:1278`, `npm/src/validator/index.js:325`,
+  `pypi/trackfw/validator.py:567`).
+- `rules: agent_namespace_hidden: off` testado ao vivo nos 3 CLIs (Go, Node, Python) — aviso
+  silenciado nos 3, confirmando a correção de precisão do item 2.
+- `git diff --stat`: `docs/cli-parity.md` (+~90/-9), `scripts/check-agent-namespace-union.sh`
+  (+~230), `docs/agents-working-context.md` (esta entrada). Nenhum arquivo em `internal/`,
+  `npm/src/`, `pypi/trackfw/`, no roadmap ou em outro `scripts/check-*.sh` tocado por mim.
+
+**Fronteiras mantidas:** não commitei, não fiz push, não toquei no roadmap nem em nenhum arquivo fora
+da lista permitida.

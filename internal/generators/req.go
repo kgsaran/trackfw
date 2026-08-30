@@ -144,9 +144,12 @@ func listREQFiles(cfg config.ProjectConfig) []string {
 	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
 		agents := validator.ResolveAgentNamespaces(cfg, reqDir)
 		for _, agent := range agents {
+			// ML-4A (achado 2, hades-tf 2026-08-30): agent vem do disco (nome de diretório sem
+			// validação de formato) — validator.ListMDFiles em vez de filepath.Glob para não
+			// interpretar o nome como padrão de glob (metacaracteres como "*"/"[" corrompiam
+			// contagem silenciosamente ou derrubavam o comando).
 			for _, state := range roadmapStateOrder {
-				matches, _ := filepath.Glob(filepath.Join(reqDir, agent, state, "*.md"))
-				files = append(files, matches...)
+				files = append(files, validator.ListMDFiles(filepath.Join(reqDir, agent, state))...)
 			}
 		}
 	}

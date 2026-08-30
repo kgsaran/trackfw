@@ -111,6 +111,12 @@ var ruleDefaults = map[string]string{
 	// tell legitimate drift from tampering. git_branch_guard_hook_resolvable is deliberately
 	// absent from this map (falls through to "error"), mirroring credential_guard_hook_resolvable.
 	"git_branch_guard_script_integrity": "warning",
+	// ML-4A (REQ-2026-08-29, achado 1 do parecer hades-tf 2026-08-30): namespace oculto/ambíguo
+	// (nome iniciado por ".") é sinal de baixo ruído por natureza — pode ser um namespace legítimo
+	// escolhido deliberadamente, não um defeito de configuração como agent_namespace_undeclared
+	// (que fica "error"). Nunca "off" por default: silêncio total é exatamente o defeito que esta
+	// REQ existe para fechar.
+	"agent_namespace_hidden": "warning",
 }
 
 // ruleSeverity retorna a severidade configurada para a regra.
@@ -220,10 +226,9 @@ func validateWIPLimit() (violations []string, warnings []string, err error) {
 		agents := resolveAgentNamespaces(projectCfg, projectCfg.RoadmapDir)
 		wipCfg := wipConfigFrom(projectCfg)
 		for _, agent := range agents {
-			files, globErr := filepath.Glob(filepath.Join(projectCfg.RoadmapDir, agent, "wip", "*.md"))
-			if globErr != nil {
-				return nil, nil, globErr
-			}
+			// ML-4A (achado 2): agent vem do disco (resolveAgentNamespaces), não de config — usa
+			// ListMDFiles em vez de filepath.Glob para não interpretar o nome como padrão.
+			files := ListMDFiles(filepath.Join(projectCfg.RoadmapDir, agent, "wip"))
 			if len(files) > wipCfg.Limit {
 				warnings = append(warnings, fmt.Sprintf(
 					"%d roadmaps in wip/ for agent %q (limit: %d) — consider focusing",
@@ -500,6 +505,11 @@ func ValidateUnfiltered() (violations []string, warnings []string, err error) {
 	// não aviso (ver comentário em validateAgentNamespaceUndeclared).
 	agentNamespaceMsgs := validateAgentNamespaceUndeclared()
 	applyRule("agent_namespace_undeclared", agentNamespaceMsgs, &violations, &warnings)
+
+	// ML-4A (achado 1, hades-tf 2026-08-30): contraponto de baixo ruído para nomes ocultos/ambíguos
+	// (iniciados por ".") — aviso, nunca silêncio total, nunca erro (rule default abaixo).
+	hiddenNamespaceMsgs := hiddenNamespaceWarnings()
+	applyRule("agent_namespace_hidden", hiddenNamespaceMsgs, &violations, &warnings)
 
 	return violations, warnings, nil
 }
@@ -799,6 +809,11 @@ func validateUnfilteredTagged() (violations []TaggedMsg, warnings []TaggedMsg, e
 	agentNamespaceMsgsT := validateAgentNamespaceUndeclared()
 	applyRuleTagged("agent_namespace_undeclared", agentNamespaceMsgsT, &violations, &warnings)
 
+	// ML-4A (achado 1, hades-tf 2026-08-30): contraponto de baixo ruído para nomes ocultos/ambíguos
+	// (iniciados por ".") — aviso, nunca silêncio total, nunca erro (rule default abaixo).
+	hiddenNamespaceMsgsT := hiddenNamespaceWarnings()
+	applyRuleTagged("agent_namespace_hidden", hiddenNamespaceMsgsT, &violations, &warnings)
+
 	return violations, warnings, nil
 }
 
@@ -1049,17 +1064,44 @@ func resolveAgentNamespaces(cfg config.ProjectConfig, dir string) []string {
 }
 
 // isInfraDirName decide, no ponto único de leitura de disco do resolvedor, se uma entrada é
-// COMPROVADAMENTE infraestrutura e nunca um namespace de agente — nem para efeito de união (decisão
-// 1 do ADR), nem para a violação (ML-2A). Critério deliberadamente estreito, dois casos fechados
-// (ML-0A, seção 4, e instrução do ML-2A): (a) qualquer nome iniciando com "." — nenhum agente
-// legítimo começa com ponto, e ".git"/".trackfw"/".DS_Store" são os exemplos concretos do modelo de
-// ameaça; (b) "node_modules" — citado nominalmente no mesmo modelo de ameaça como o outro caso óbvio.
-// NÃO filtra por heurística de nome além disso — um diretório cujo nome colide com um nome de estado
-// (ex.: "wip" órfão no topo de roadmap_dir) continua entrando na união normalmente; só é excluído da
-// VIOLAÇÃO (não do resolvedor) em validateAgentNamespaceUndeclared, porque ali a informação de que é
-// um nome de estado reservado é o sinal relevante, não um sinal de "não é diretório real".
+// COMPROVADAMENTE infraestrutura e nunca um namespace de agente — filtrada da união (decisão 1 do
+// ADR) e portanto invisível a todo consumidor (validate, status, move, wip limit...).
+//
+// CORREÇÃO (ML-4A, achado 1 do parecer hades-tf 2026-08-30, REPROVA original): esta lista já incluiu
+// "qualquer nome iniciando com '.'". Isso reabria, byte-a-byte, o defeito que a REQ existe para
+// fechar (cmdb: artefato de governança invisível, `validate` reportando limpo sobre o que nunca
+// enumerou) — só que atrás de um ponto no nome em vez de um `agents:` incompleto. Um namespace real
+// batizado ".ghost" desaparecia de union, status, wip limit e `move` sem nenhum sinal, e virava canal
+// de ocultação deliberada para quem quisesse esconder trabalho da governança.
+//
+// A lista fechada agora tem UMA entrada, cada uma justificada:
+//   - "node_modules": artefato de tooling JS (npm/yarn/pnpm). Nenhum operador digita isto como nome
+//     de agente por acidente ou por design — é ruído inequívoco, sem a ambiguidade de um nome
+//     iniciado por ponto (que pode ser um namespace legítimo escolhido deliberadamente). Seguro
+//     excluir até da enumeração.
+//
+// Nomes iniciados por "." (ex.: ".git", ".trackfw", ".ghost") NÃO são mais filtrados aqui — dentro de
+// roadmap_dir/req_dir praticamente não existe diretório de infraestrutura real (".git" fica na raiz
+// do repositório, não em roadmap_dir); o benefício do filtro é pequeno e o custo — um canal de
+// ocultação silenciosa — é alto. Esses nomes continuam ENTRANDO na união (nunca invisíveis), mas são
+// tratados como um caso ambíguo, não como violação plena: ver isDotPrefixedName e
+// hiddenNamespaceWarnings, que rebaixam o sinal para um aviso de baixo ruído nomeando o diretório —
+// nunca zero sinal.
+//
+// Um diretório cujo nome colide com um nome de estado (ex.: "wip" órfão no topo de roadmap_dir)
+// continua entrando na união normalmente; só é excluído da VIOLAÇÃO (não do resolvedor) em
+// validateAgentNamespaceUndeclared, porque ali a informação de que é um nome de estado reservado é o
+// sinal relevante, não um sinal de "não é diretório real".
 func isInfraDirName(name string) bool {
-	return strings.HasPrefix(name, ".") || name == "node_modules"
+	return name == "node_modules"
+}
+
+// isDotPrefixedName reporta se name começa com "." — um sinal ambíguo (pode ser um namespace
+// legítimo, ou resto de tooling que nunca deveria ter parado dentro de roadmap_dir/req_dir), não mais
+// um filtro de invisibilidade (ver isInfraDirName). Usado só para rebaixar o sinal de
+// "não declarado em agents:" de violação para aviso — nunca para remover o nome da união.
+func isDotPrefixedName(name string) bool {
+	return strings.HasPrefix(name, ".")
 }
 
 // agentNamespaceStateNames replica, só para esta regra, os 6 nomes de estado reservados de roadmap/
@@ -1079,11 +1121,27 @@ var agentNamespaceStateNames = map[string]bool{
 
 // undeclaredNamespacesOnDisk devolve, a partir do resolvedor canônico (que já filtra infra e não
 // segue symlink), os nomes de namespace presentes em dir e ausentes de agents:, excluindo colisões
-// com nome de estado reservado (agentNamespaceStateNames).
+// com nome de estado reservado (agentNamespaceStateNames) e nomes iniciados por "." (ML-4A: esses
+// continuam na união — resolveAgentNamespaces não os filtra mais — mas não disparam a violação plena;
+// ver hiddenNamespaceWarnings para o aviso de baixo ruído que os substitui).
 func undeclaredNamespacesOnDisk(cfg config.ProjectConfig, dir string, declared map[string]bool) []string {
 	var out []string
 	for _, name := range resolveAgentNamespaces(cfg, dir) {
-		if declared[name] || agentNamespaceStateNames[name] {
+		if declared[name] || agentNamespaceStateNames[name] || isDotPrefixedName(name) {
+			continue
+		}
+		out = append(out, name)
+	}
+	return out
+}
+
+// dotPrefixedUndeclaredOnDisk é o espelho de undeclaredNamespacesOnDisk para o caso ambíguo (nome
+// iniciado por "."): mesmo resolvedor canônico, mesma exclusão de nomes já declarados, mas mantendo
+// (em vez de excluir) exatamente os nomes que undeclaredNamespacesOnDisk descarta por causa do ponto.
+func dotPrefixedUndeclaredOnDisk(cfg config.ProjectConfig, dir string, declared map[string]bool) []string {
+	var out []string
+	for _, name := range resolveAgentNamespaces(cfg, dir) {
+		if declared[name] || !isDotPrefixedName(name) {
 			continue
 		}
 		out = append(out, name)
@@ -1161,6 +1219,69 @@ func validateAgentNamespaceUndeclared() []string {
 	return msgs
 }
 
+// hiddenNamespaceWarnings implementa a regra "agent_namespace_hidden" — o contraponto de baixo ruído
+// de validateAgentNamespaceUndeclared para nomes iniciados por "." (ML-4A, achado 1 do parecer
+// hades-tf 2026-08-30). Um diretório oculto/ambíguo em disco (roadmap_dir e/ou req_dir), ausente de
+// agents:, NÃO é filtrado da união (resolveAgentNamespaces mantém — nunca fica invisível a nenhum
+// consumidor) e NÃO dispara a violação plena (undeclaredNamespacesOnDisk descarta esses nomes) — mas
+// também não é silêncio total: esta função emite um aviso nomeando explicitamente o diretório, para
+// que quem estiver olhando `validate` perceba o namespace ambíguo e decida — declará-lo em agents: ou
+// removê-lo, se for só resto de tooling.
+func hiddenNamespaceWarnings() []string {
+	cfg := config.Load()
+	if cfg.RoadmapNamespacing != config.NamespacingByAgent {
+		return nil
+	}
+	declared := make(map[string]bool, len(cfg.Agents))
+	for _, a := range cfg.Agents {
+		declared[a] = true
+	}
+
+	roadmapNames := dotPrefixedUndeclaredOnDisk(cfg, cfg.RoadmapDir, declared)
+	reqNames := dotPrefixedUndeclaredOnDisk(cfg, cfg.REQDir, declared)
+
+	inRoadmap := make(map[string]bool, len(roadmapNames))
+	for _, n := range roadmapNames {
+		inRoadmap[n] = true
+	}
+	inReq := make(map[string]bool, len(reqNames))
+	for _, n := range reqNames {
+		inReq[n] = true
+	}
+
+	seen := make(map[string]bool, len(roadmapNames)+len(reqNames))
+	var names []string
+	for _, n := range roadmapNames {
+		if !seen[n] {
+			seen[n] = true
+			names = append(names, n)
+		}
+	}
+	for _, n := range reqNames {
+		if !seen[n] {
+			seen[n] = true
+			names = append(names, n)
+		}
+	}
+	sort.Strings(names)
+
+	var msgs []string
+	for _, name := range names {
+		var trees []string
+		if inRoadmap[name] {
+			trees = append(trees, "roadmap_dir")
+		}
+		if inReq[name] {
+			trees = append(trees, "req_dir")
+		}
+		msgs = append(msgs, fmt.Sprintf(
+			"dot-prefixed directory %q found in %s is treated as an agent namespace (fully enumerated, not declared in agents:) — declare it in trackfw.yaml if intentional, or remove it if it is leftover tooling",
+			name, strings.Join(trees, ", "),
+		))
+	}
+	return msgs
+}
+
 // resolveStateDirs retorna todos os diretórios de um estado (ex: "wip", "done") conforme o modo de
 // namespacing. É a fonte única de resolução de caminho por estado — resolveWIPDirs e resolveDoneDirs
 // são wrappers finos sobre esta função. Duplicar a lógica aqui foi a causa raiz de defeitos
@@ -1199,6 +1320,44 @@ func ResolveDoneDirs(cfg config.ProjectConfig) []string {
 	return resolveDoneDirs(cfg)
 }
 
+// ListMDFiles lista os arquivos .md diretamente dentro de dir (sem subdiretórios, sem glob) —
+// substitui filepath.Glob(filepath.Join(dir, "*.md")) em todo ponto onde um COMPONENTE do caminho
+// vem de um nome de diretório lido do disco (ex.: um namespace de agente resolvido por
+// resolveAgentNamespaces), em vez de vir de config ou de uma constante do código.
+//
+// CORREÇÃO (ML-4A, achado 2 do parecer hades-tf 2026-08-30, REPROVA original): antes da união
+// (Wave 1 desta REQ), `agent` só vinha de string digitada em `agents:` pelo operador. A união faz
+// qualquer nome de diretório em disco chegar ao mesmo `filepath.Glob` sem validação de formato —
+// diferente de nome de arquivo de REQ/roadmap, que precisa casar TYPE-YYYY-MM-DD-slug.md antes de
+// entrar em qualquer regra. Um namespace literalmente chamado "*" fazia o padrão
+// "roadmap_dir/*/wip/*.md" (com "*" no lugar do nome do agente) casar com o wip/ de TODOS os
+// namespaces, inflando a contagem de WIP daquele agente silenciosamente com arquivos de outros —
+// número plausível e errado, não ruído perceptível. Um namespace com um "[" desbalanceado
+// (path/filepath.Glob não escapa metacaracteres) derrubava `validate` inteiro com um ErrBadPattern
+// cru, inclusive vazando texto puro no canal --json (a chamada de Marshal nunca era alcançada).
+//
+// os.ReadDir não tem etapa de casamento de padrão para explorar: cada nome retornado é comparado ao
+// conteúdo real de dir pelo sistema de arquivos, nunca interpretado como um padrão — não há
+// diferença de comportamento entre um nome de diretório comum e um que contenha "*", "?", "[" ou "\".
+func ListMDFiles(dir string) []string {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var files []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		if filepath.Ext(e.Name()) != ".md" {
+			continue
+		}
+		files = append(files, filepath.Join(dir, e.Name()))
+	}
+	sort.Strings(files)
+	return files
+}
+
 // ResolveAgentNamespaces é o wrapper exportado de resolveAgentNamespaces — o resolvedor canônico
 // de namespaces em modo by_agent (união entre agents: e o disco, sem seguir symlink — ver o
 // comentário da função não-exportada). Consumido por internal/generators e internal/serve, que não
@@ -1220,12 +1379,9 @@ func resolveREQFiles(cfg config.ProjectConfig) []string {
 		agents := resolveAgentNamespaces(cfg, reqDir)
 		var files []string
 		for _, agent := range agents {
+			// ML-4A (achado 2): agent vem do disco — ListMDFiles em vez de filepath.Glob.
 			for _, state := range stateDirs {
-				pattern := filepath.Join(reqDir, agent, state, "*.md")
-				matches, err := filepath.Glob(pattern)
-				if err == nil {
-					files = append(files, matches...)
-				}
+				files = append(files, ListMDFiles(filepath.Join(reqDir, agent, state))...)
 			}
 		}
 		return files

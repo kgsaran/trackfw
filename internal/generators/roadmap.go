@@ -649,10 +649,10 @@ func scanREQFiles(cfg config.ProjectConfig) []string {
 		agents := validator.ResolveAgentNamespaces(cfg, reqDir)
 		var files []string
 		for _, agent := range agents {
+			// ML-4A (achado 2, hades-tf 2026-08-30): agent vem do disco — validator.ListMDFiles em
+			// vez de filepath.Glob (ver comentário de ListMDFiles em internal/validator/validator.go).
 			for _, state := range stateDirs {
-				pattern := filepath.Join(reqDir, agent, state, "*.md")
-				matches, _ := filepath.Glob(pattern)
-				files = append(files, matches...)
+				files = append(files, validator.ListMDFiles(filepath.Join(reqDir, agent, state))...)
 			}
 		}
 		return files

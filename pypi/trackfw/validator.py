@@ -118,6 +118,11 @@ _RULE_DEFAULTS = {
     # deliberadamente ausente deste mapa (cai no default "error"), espelhando
     # credential_guard_hook_resolvable.
     "git_branch_guard_script_integrity": "warning",
+    # ML-4A (REQ-2026-08-29, achado 1 do parecer hades-tf 2026-08-30): namespace oculto/ambíguo (nome
+    # iniciado por ".") é sinal de baixo ruído por natureza, não um defeito de configuração como
+    # agent_namespace_undeclared ("error"). Nunca "off" por default — silêncio total é o defeito que
+    # esta REQ existe para fechar.
+    "agent_namespace_hidden": "warning",
 }
 
 
@@ -448,10 +453,24 @@ _AGENT_NAMESPACE_STATE_NAMES = {"backlog", "analyzing", "wip", "blocked", "done"
 def _undeclared_namespaces_on_disk(cfg: dict, directory: str, declared: set) -> list:
     """Devolve, a partir do resolvedor canônico (que já filtra infra e não segue symlink), os nomes
     de namespace presentes em directory e ausentes de agents:, excluindo colisões com nome de estado
-    reservado (_AGENT_NAMESPACE_STATE_NAMES)."""
+    reservado (_AGENT_NAMESPACE_STATE_NAMES) e nomes iniciados por "." (ML-4A: esses continuam na
+    união — resolve_agent_namespaces não os filtra mais — mas não disparam a violação plena; ver
+    _hidden_namespace_warnings para o aviso de baixo ruído que os substitui)."""
     out = []
     for name in resolve_agent_namespaces(cfg, directory):
-        if name in declared or name in _AGENT_NAMESPACE_STATE_NAMES:
+        if name in declared or name in _AGENT_NAMESPACE_STATE_NAMES or _config.is_dot_prefixed_name(name):
+            continue
+        out.append(name)
+    return out
+
+
+def _dot_prefixed_undeclared_on_disk(cfg: dict, directory: str, declared: set) -> list:
+    """Espelho de _undeclared_namespaces_on_disk para o caso ambíguo (nome iniciado por "."): mesmo
+    resolvedor canônico, mesma exclusão de nomes já declarados, mas mantendo exatamente os nomes que
+    _undeclared_namespaces_on_disk descarta por causa do ponto."""
+    out = []
+    for name in resolve_agent_namespaces(cfg, directory):
+        if name in declared or not _config.is_dot_prefixed_name(name):
             continue
         out.append(name)
     return out
@@ -508,6 +527,51 @@ def validate_agent_namespace_undeclared(cfg: dict) -> list:
     return msgs
 
 
+def hidden_namespace_warnings(cfg: dict) -> list:
+    """
+    Regra "agent_namespace_hidden" — contraponto de baixo ruído de validate_agent_namespace_undeclared
+    para nomes iniciados por "." (ML-4A, achado 1 do parecer hades-tf 2026-08-30). Um diretório
+    oculto/ambíguo em disco (roadmap_dir e/ou req_dir), ausente de agents:, NÃO é filtrado da união
+    (resolve_agent_namespaces mantém) e NÃO dispara a violação plena — mas também não é silêncio
+    total: esta função emite um aviso nomeando explicitamente o diretório.
+    """
+    if cfg.get("roadmap_namespacing") != _config.NAMESPACING_BY_AGENT:
+        return []
+    declared = set(cfg.get("agents") or [])
+
+    roadmap_dir = cfg.get("roadmap_dir", "docs/roadmaps")
+    req_dir = cfg.get("req_dir", "docs/req")
+    roadmap_names = _dot_prefixed_undeclared_on_disk(cfg, roadmap_dir, declared)
+    req_names = _dot_prefixed_undeclared_on_disk(cfg, req_dir, declared)
+
+    in_roadmap = set(roadmap_names)
+    in_req = set(req_names)
+
+    seen = set()
+    names = []
+    for n in roadmap_names + req_names:
+        if n in seen:
+            continue
+        seen.add(n)
+        names.append(n)
+    names.sort()
+
+    msgs = []
+    for name in names:
+        trees = []
+        if name in in_roadmap:
+            trees.append("roadmap_dir")
+        if name in in_req:
+            trees.append("req_dir")
+        msgs.append(
+            'dot-prefixed directory "%s" found in %s is treated as an agent namespace (fully '
+            "enumerated, not declared in agents:) — declare it in trackfw.yaml if intentional, or "
+            "remove it if it is leftover tooling"
+            % (name, ", ".join(trees))
+        )
+    return msgs
+
+
 def resolve_req_files(cfg: dict) -> list:
     """
     Retorna lista de paths completos de .md em req_dir,
@@ -520,12 +584,37 @@ def resolve_req_files(cfg: dict) -> list:
         agents = resolve_agent_namespaces(cfg, req_dir)
         files = []
         for agent in agents:
+            # ML-4A (achado 2, hades-tf 2026-08-30): agent vem do disco (nome de diretório sem
+            # validação de formato), não de config — usa _list_md_files em vez de glob.glob para não
+            # interpretar o nome como padrão (espelha internal/validator/validator.go's ListMDFiles;
+            # glob.glob degradava graciosamente para "[" desbalanceado neste runtime, mas ainda
+            # cross-casava "*" com todos os agentes, igual ao Go).
             for state in states:
-                pattern = os.path.join(req_dir, agent, state, "*.md")
-                files.extend(_glob.glob(pattern))
+                files.extend(_list_md_files(os.path.join(req_dir, agent, state)))
         return files
     # flat (comportamento anterior)
     return _glob.glob(os.path.join(req_dir, "*.md"))
+
+
+def _list_md_files(directory: str) -> list:
+    """
+    Lista os arquivos .md diretamente dentro de directory (sem subdiretórios, sem glob) — substitui
+    glob.glob(os.path.join(directory, "*.md")) em todo ponto onde um COMPONENTE do caminho vem de um
+    nome de diretório lido do disco (ex.: um namespace de agente resolvido por
+    resolve_agent_namespaces), em vez de vir de config ou de uma constante do código. Ver o
+    comentário completo em ListMDFiles (internal/validator/validator.go) para a justificativa.
+    """
+    try:
+        entries = os.listdir(directory)
+    except OSError:
+        return []
+    files = [
+        os.path.join(directory, name)
+        for name in entries
+        if name.endswith(".md") and not os.path.isdir(os.path.join(directory, name))
+    ]
+    files.sort()
+    return files
 
 
 def _resolve_state_dirs(cfg: dict, state: str) -> list:
@@ -3429,6 +3518,10 @@ def validate_unfiltered(cwd: str = None) -> dict:
     # ML-2A (REQ-2026-08-29): namespace de agente em disco e não declarado em agents: — violação, não
     # aviso (ver comentário em validate_agent_namespace_undeclared).
     _apply_rule("agent_namespace_undeclared", validate_agent_namespace_undeclared(cfg), violations, warnings, cfg)
+
+    # ML-4A (achado 1, hades-tf 2026-08-30): contraponto de baixo ruído para nomes ocultos/ambíguos
+    # (iniciados por ".") — aviso, nunca silêncio total, nunca erro (_RULE_DEFAULTS abaixo).
+    _apply_rule("agent_namespace_hidden", hidden_namespace_warnings(cfg), violations, warnings, cfg)
 
     return {"violations": violations, "warnings": warnings}
 

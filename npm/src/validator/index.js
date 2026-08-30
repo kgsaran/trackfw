@@ -191,17 +191,28 @@ function resolveAgentNamespaces(cfg, dir) {
 }
 
 // isInfraDirName decide, no ponto único de leitura de disco do resolvedor, se uma entrada é
-// COMPROVADAMENTE infraestrutura e nunca um namespace de agente — nem para efeito de união (decisão
-// 1 do ADR), nem para a violação (ML-2A). Critério deliberadamente estreito, dois casos fechados
-// (ML-0A, seção 4, e instrução do ML-2A): (a) qualquer nome iniciando com "." — nenhum agente
-// legítimo começa com ponto, e ".git"/".trackfw"/".DS_Store" são os exemplos concretos do modelo de
-// ameaça; (b) "node_modules" — citado nominalmente no mesmo modelo de ameaça como o outro caso óbvio.
-// NÃO filtra por heurística de nome além disso — um diretório cujo nome colide com um nome de estado
-// (ex.: "wip" órfão no topo de roadmap_dir) continua entrando na união normalmente; só é excluído da
-// VIOLAÇÃO (não do resolvedor) em validateAgentNamespaceUndeclared, porque ali a informação de que é
-// um nome de estado reservado é o sinal relevante, não um sinal de "não é diretório real".
+// COMPROVADAMENTE infraestrutura e nunca um namespace de agente — filtrada da união (decisão 1 do
+// ADR) e portanto invisível a todo consumidor.
+//
+// CORREÇÃO (ML-4A, achado 1 do parecer hades-tf 2026-08-30, REPROVA original — espelha
+// internal/validator/validator.go, ver o comentário lá para a justificativa completa): esta lista já
+// incluiu "qualquer nome iniciando com '.'", reabrindo a invisibilidade que a REQ existe para fechar
+// (um namespace real ".ghost" desaparecia de union, status, wip limit e `move` sem sinal algum — um
+// canal de ocultação deliberada). A lista fechada agora tem UMA entrada:
+//   - "node_modules": artefato de tooling JS. Nenhum operador digita isto como nome de agente por
+//     acidente ou por design — ruído inequívoco, sem a ambiguidade de um nome iniciado por ponto.
+// Nomes iniciados por "." NÃO são mais filtrados aqui — continuam entrando na união (nunca
+// invisíveis) — mas o sinal de "não declarado" é rebaixado de violação para aviso de baixo ruído
+// (ver isDotPrefixedName / hiddenNamespaceWarnings), nunca zero sinal.
 function isInfraDirName(name) {
-  return name.startsWith('.') || name === 'node_modules'
+  return name === 'node_modules'
+}
+
+// isDotPrefixedName reporta se name começa com "." — sinal ambíguo (pode ser um namespace legítimo,
+// ou tooling que nunca deveria estar dentro de roadmapDir/reqDir), não mais um filtro de
+// invisibilidade (ver isInfraDirName). Só rebaixa "não declarado em agents:" de violação para aviso.
+function isDotPrefixedName(name) {
+  return name.startsWith('.')
 }
 
 // AGENT_NAMESPACE_STATE_NAMES replica, só para esta regra, os 6 nomes de estado reservados de
@@ -221,7 +232,19 @@ const AGENT_NAMESPACE_STATE_NAMES = new Set(['backlog', 'analyzing', 'wip', 'blo
 function undeclaredNamespacesOnDisk(cfg, dir, declared) {
   const out = []
   for (const name of resolveAgentNamespaces(cfg, dir)) {
-    if (declared.has(name) || AGENT_NAMESPACE_STATE_NAMES.has(name)) continue
+    if (declared.has(name) || AGENT_NAMESPACE_STATE_NAMES.has(name) || isDotPrefixedName(name)) continue
+    out.push(name)
+  }
+  return out
+}
+
+// dotPrefixedUndeclaredOnDisk é o espelho de undeclaredNamespacesOnDisk para o caso ambíguo (nome
+// iniciado por "."): mesmo resolvedor canônico, mesma exclusão de nomes já declarados, mas mantendo
+// exatamente os nomes que undeclaredNamespacesOnDisk descarta por causa do ponto.
+function dotPrefixedUndeclaredOnDisk(cfg, dir, declared) {
+  const out = []
+  for (const name of resolveAgentNamespaces(cfg, dir)) {
+    if (declared.has(name) || !isDotPrefixedName(name)) continue
     out.push(name)
   }
   return out
@@ -266,6 +289,40 @@ function validateAgentNamespaceUndeclared(cfg) {
     if (inRoadmap.has(name)) trees.push('roadmap_dir')
     if (inReq.has(name)) trees.push('req_dir')
     msgs.push(`agent namespace "${name}" exists in ${trees.join(', ')} but is not declared in agents: — add it to trackfw.yaml`)
+  }
+  return msgs
+}
+
+// hiddenNamespaceWarnings implementa a regra "agent_namespace_hidden" — o contraponto de baixo ruído
+// de validateAgentNamespaceUndeclared para nomes iniciados por "." (ML-4A, achado 1 do parecer
+// hades-tf 2026-08-30). Um diretório oculto/ambíguo em disco (roadmapDir e/ou reqDir), ausente de
+// agents:, NÃO é filtrado da união (resolveAgentNamespaces mantém) e NÃO dispara a violação plena —
+// mas também não é silêncio total: esta função emite um aviso nomeando explicitamente o diretório.
+function hiddenNamespaceWarnings(cfg) {
+  if (cfg.roadmapNamespacing !== config.NAMESPACING_BY_AGENT) return []
+  const declared = new Set(cfg.agents || [])
+
+  const roadmapNames = dotPrefixedUndeclaredOnDisk(cfg, cfg.roadmapDir, declared)
+  const reqNames = dotPrefixedUndeclaredOnDisk(cfg, cfg.reqDir || cfg.req_dir || '', declared)
+
+  const inRoadmap = new Set(roadmapNames)
+  const inReq = new Set(reqNames)
+
+  const names = []
+  const seen = new Set()
+  for (const n of [...roadmapNames, ...reqNames]) {
+    if (seen.has(n)) continue
+    seen.add(n)
+    names.push(n)
+  }
+  names.sort()
+
+  const msgs = []
+  for (const name of names) {
+    const trees = []
+    if (inRoadmap.has(name)) trees.push('roadmap_dir')
+    if (inReq.has(name)) trees.push('req_dir')
+    msgs.push(`dot-prefixed directory "${name}" found in ${trees.join(', ')} is treated as an agent namespace (fully enumerated, not declared in agents:) — declare it in trackfw.yaml if intentional, or remove it if it is leftover tooling`)
   }
   return msgs
 }
@@ -2832,6 +2889,11 @@ const RULE_DEFAULTS = {
   // git_branch_guard_hook_resolvable is deliberately absent from this map (falls through to
   // 'error'), mirroring credential_guard_hook_resolvable.
   git_branch_guard_script_integrity: 'warning',
+  // ML-4A (REQ-2026-08-29, achado 1 do parecer hades-tf 2026-08-30): namespace oculto/ambíguo (nome
+  // iniciado por ".") é sinal de baixo ruído por natureza, não um defeito de configuração como
+  // agent_namespace_undeclared ('error'). Nunca 'off' por default — silêncio total é o defeito que
+  // esta REQ existe para fechar.
+  agent_namespace_hidden: 'warning',
 }
 
 // ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard, ML-1A.
@@ -3123,6 +3185,10 @@ async function validateUnfiltered() {
   // ML-2A (REQ-2026-08-29): namespace de agente em disco e não declarado em agents: — violação, não
   // aviso (ver comentário em validateAgentNamespaceUndeclared).
   applyRule('agent_namespace_undeclared', validateAgentNamespaceUndeclared(cfg), violations, warnings)
+
+  // ML-4A (achado 1, hades-tf 2026-08-30): contraponto de baixo ruído para nomes ocultos/ambíguos
+  // (iniciados por ".") — aviso, nunca silêncio total, nunca erro (RULE_DEFAULTS abaixo).
+  applyRule('agent_namespace_hidden', hiddenNamespaceWarnings(cfg), violations, warnings)
 
   if (cfg.traceIdField) {
     for (const msg of checkTraceIds(cfg.reqDir, cfg.roadmapDir, cfg.traceIdField)) {

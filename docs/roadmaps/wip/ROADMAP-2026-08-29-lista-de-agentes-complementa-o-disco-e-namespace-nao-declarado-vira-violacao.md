@@ -496,6 +496,328 @@ volta a 35/35. `check-parity-contract-coverage.sh` verde. `git status` sem nenhu
 `make quality` completo: exit 0, 43 gates de `parity`, `check-gates-falsify` 181/181, npm 839,
 pytest 1555.
 
+## Wave 4 — Corretivas da barreira final
+
+### ML-4A — Filtro fechado e glob seguro (REPROVAÇÃO do `hades-tf`)
+**Status:** ✅ Concluído · **Agente:** `apolo-tf`
+
+**Achado 1, crítico — o filtro recriava a cegueira que a REQ existe para fechar.** `isInfraDirName`
+suprimia **qualquer** nome iniciado por ponto, da união **e** da violação, sem sinal. Reproduzido por
+mim: `docs/roadmaps/.ghost/wip/ROADMAP-...md` → violação 0 e `status` 0 nos 3. Byte-a-byte o defeito
+do cmdb, só que atrás de um ponto no nome — e pior, **canal de ocultação deliberada**.
+
+O `hades-tf` retratou a própria recomendação do ML-0A; **eu a endossei** no despacho do ML-2A,
+apoiado no `ADR-2026-08-17`. O erro é dos dois.
+
+**A solução dele é melhor que a que eu especifiquei.** Eu mandei usar lista fechada de nomes de
+infraestrutura. Ele reduziu a lista a **uma entrada** (`node_modules`) e criou a regra
+`agent_namespace_hidden` — aviso, default `warning`, para diretório com ponto, que passa a ser
+**enumerado normalmente** e apenas **sinalizado**. Separou **visibilidade** de **severidade**; eu
+tinha tratado as duas como a mesma coisa, e foi por isso que aprovei um filtro largo demais.
+
+**Critérios de aceite:**
+- [x] `.ghost` enumerado e sinalizado nos 3 CLIs, nunca em silêncio
+- [x] Lista fechada de infraestrutura documentada, com uma única entrada
+- [x] `[abc` não quebra o `validate`; `*` conta corretamente; `--json` válido
+- [x] Sem regressão da união, do não-seguir-symlink, da violação e da ordenação
+- [x] Gate 35 → 60 cenários; `flat` intocado; 16 warnings neste repositório
+
+**Achado 2, alto — metacaractere de glob.** Nome vindo do disco alimentava `filepath.Glob`.
+Namespace `[abc` matava o `validate` do Go inteiro; `*` inflava contagem de WIP. Corrigido com
+`ListMDFiles`/`_list_md_files` (`ReadDir` + filtro), sem glob.
+
+**Auditoria do arquiteto, 3 CLIs:**
+
+| | antes | depois |
+|---|---|---|
+| `.ghost/` | invisível | enumerado + avisado |
+| namespace `[abc` | `validate` morre, exit 1 | não quebra |
+| namespace `*` | contagem inflada | conta 2, correto |
+| `--json` | vazava texto cru | JSON válido |
+
+### ML-4B — Contrato da regra nova e cobertura de ordenação
+**Status:** ✅ Concluído · **Agente:** `artemis-tf`
+
+**Achado meu na auditoria:** a seção "Ordenação declarado-primeiro — load-bearing para gate" estava
+anotada `gate=check-agent-namespace-union.sh`, e o gate **não asseria ordenação em lugar nenhum**
+(`grep` = 0). Anotação prometendo cobertura inexistente — o mesmo erro que ela própria corrigiu na
+REQ do pin de CI, ao reintroduzir um `partial=` que tinha removido.
+
+Ela escolheu **acrescentar os cenários** em vez de rebaixar a anotação, e justificou: o contrato é
+vivo, observável por CLI, e **já divergiu uma vez** (o `roadmap list` do Python, que o ML-2A alinhou).
+Gate 60 → **66 cenários**, com Direção C corrompendo o resolvedor de cada runtime.
+
+**E corrigiu uma imprecisão minha:** eu repeti do relatório do ML-4A que `agent_namespace_hidden` é
+"nunca `off`". Ela mediu ao vivo — `rules: agent_namespace_hidden: off` **é honrado nos 3**. "Nunca
+off" descreve o **default**, não uma trava. O `cli-parity.md` agora diz o que o código faz.
+
+**Critérios de aceite:**
+- [x] Nenhuma anotação `gate=` prometendo o que o gate não faz
+- [x] `agent_namespace_hidden` e o achado de glob documentados com anotação coerente
+- [x] Gate 60 → 66 cenários, com falsificação da ordenação nas duas direções
+- [x] `check-parity-contract-coverage.sh` → exit 0
+- [x] Nenhum arquivo de produto tocado neste ML
+
+**Auditoria do arquiteto:** injetei `sort.Strings(ordered)` no resolvedor do Go — o gate **reprova**.
+Restaurado, volta a 66/66. `check-parity-contract-coverage` verde.
+
 ## Barreira final
 Revisão `hefesto-tf` e `hades-tf` sobre o diff entregue, auditoria do arquiteto e
 `trackfw barrier --wave 3`. **Só declarar concluído com o CI verde**, não com o verde local.
+
+#### Parecer de qualidade da barreira final (hefesto-tf, 2026-08-30)
+
+**Veredito: APROVA.**
+
+Método: li `git diff origin/main...HEAD` completo (40 arquivos), a REQ (AC1–AC13), este roadmap e
+verifiquei cada afirmação por leitura direta de código — não me apoiei em nenhuma alegação do diff
+sem confirmar o call site. Não rodei os gates de novo (já rodados pelo autor); rastreei chamadores.
+
+**1. Duplicação — acabou de verdade.**
+Rastreei todo call site de `cfg.Agents`/`cfg.agents`/`cfg["agents"]` e todo `os.ReadDir`/`readdirSync`/
+`os.scandir` nos três runtimes que pudesse enumerar namespace de agente. Todos os consumidores —
+`internal/generators/context.go`, `internal/generators/req.go` (`resolveREQFiles`),
+`internal/generators/roadmap.go` (`findRoadmap`, `ListRoadmaps`), `internal/serve/api_board.go`,
+`internal/serve/api_metrics.go`, `internal/commands/barrier.go` (`resolveBarrierRoadmap`, que
+explicitamente comenta ter sido apontado pelo ML-0A como um dos dois pontos de divergência e reusa
+`validator.ResolveWIPDirs`/`ResolveDoneDirs`) — passam pelo resolvedor canônico
+(`resolveAgentNamespaces`/`ResolveAgentNamespaces` em Go; `resolveAgentNamespaces` exportado de
+`npm/src/validator/index.js`, consumido por `context.js`, `api_board.js`, `api_chain.js`,
+`generators/roadmap.js`, `generators/req.js`, `api_metrics.js`; `resolve_agent_namespaces` em
+`pypi/trackfw/config.py`, consumido por `context.py`, `traceid.py`, `commands/roadmap.py`,
+`commands/status.py`, `generators/roadmap.py`, `serve/api_board.py`, `generators/req.py`,
+`traceid.py`, `serve/api_chain.py`, `serve/api_metrics.py`, e reexportado por `validator.py`).
+`grep` confirma zero ocorrências do padrão de substituição (`len(agents) == 0` /
+`!agents.length`/`agents.length === 0` / `not agents`) fora do próprio resolvedor nos três runtimes.
+`internal/generators/roadmap.go:108` e `npm/src/generators/roadmap.js:72` (`if len(cfg.Agents) > 0 {
+agent = cfg.Agents[0] }`) são o **caminho de escrita** — escolher o agente default ao criar um roadmap
+novo sem `--agent` — não o de leitura/enumeração; não é o mesmo defeito e não deveria passar pelo
+resolvedor (a REQ ADR-2026-08-29 sobre o mecanismo de escrita, commit `35b79f9`, trata esse caso à
+parte). Confirmei que não é um bypass disfarçado lendo o contexto ao redor.
+
+Sobre se a estrutura empurra para reuso ou só espera boa vontade: empurra, com dois reforços reais,
+não só o comentário. (a) O contrato de paridade (`docs/cli-parity.md`, `<!-- trackfw-contract:
+gate=scripts/check-agent-namespace-union.sh -->`) e o próprio gate tornam qualquer reintrodução do
+padrão antigo **failável por gate**, não só revisável por humano — a Direção A da falsificação em
+`check-agent-namespace-union.sh` corrompe exatamente esse ponto e prova que o gate reprova. (b) Os
+wrappers exportados (`ResolveWIPDirs`, `ResolveDoneDirs`, `ResolveAgentNamespaces` em Go) e o único
+ponto de export em Node/Python tornam "escrever de novo" estritamente mais trabalho que "importar e
+chamar" — a fricção estrutural favorece o caminho correto. O comentário no topo da função (linhas
+1002–1014 de `validator.go`, espelhado em Node/Python) é reforço, não a única defesa.
+
+**2. Resolvedor do Python em `config.py`.**
+Defensável, não é gambiarra escondendo problema de camadas. Confirmei a cadeia de import real:
+`pypi/trackfw/validator.py` importa `from .traceid import check_traceid` (linha 15), e
+`pypi/trackfw/traceid.py` importa `from . import config as _config` (linha 19) — ambos os módulos que
+precisam do resolvedor (`validator.py` e `traceid.py`) já dependem de `config.py`; `config.py` não
+depende de nenhum dos dois. É o ancestral comum correto pela topologia de import já existente, não uma
+escolha arbitrária. Confirma-se por comparação: em Go, `validator_traceid.go` está no MESMO pacote
+`validator` (chama `resolveAgentNamespaces` sem import extra) — não há cycle porque não há fronteira de
+pacote; em Node, `traceid.js` é um arquivo separado mas requerido por `validator/index.js` na mesma
+direção do Python (`index.js` → `require('./traceid')`), e o próprio `resolveAgentNamespaces` vive em
+`index.js`, então Node também não tem o cycle porque o resolvedor está do lado que já importa traceid,
+não do lado importado. As três soluções são coerentes com a topologia de cada runtime, não
+just-Python-different-by-accident. `validator.py:434` reexporta `resolve_agent_namespaces` por
+compatibilidade — comportamento idêntico ao original em todo call site que já importava de lá.
+
+**3. Testes vacuous — não encontrei nenhum, mas na primeira passada só tinha lido o cabeçalho de
+`check-agent-namespace-union.sh` (linhas 1–50) e aceitei a alegação do próprio script sobre o que ele
+cobre, em vez das 537 linhas. É a única evidência de AC1/AC4/AC5/AC12 nos 3 runtimes (não há teste
+unitário Go), e a nota de trabalho já registrava que o arquiteto tinha encontrado 2 asserções
+decorativas nesse mesmo arquivo antes desta linha (AC5(b) sem asserção própria; Direção A e os filtros
+de infra/flat comparando só ausência sem âncora de presença). Reli o arquivo inteiro (588 linhas) para
+confirmar se sobrou uma terceira.**
+- Auditei as 35 chamadas de `ok(...)`: todas estão atrás de um `if ... fail ...` que testa uma condição
+  real sobre a saída capturada — nenhuma `ok()` incondicional após um `; true` que engoliria uma saída
+  vazia. As duas lacunas que o arquiteto encontrou e corrigiu (AC5(b) e a âncora de presença de
+  Direção A/infra-filter/flat) estão de fato corrigidas: AC5(b) hoje é uma conjunção única (violação de
+  bob presente E evidência de que o arquivo de bob foi escaneado — linhas 289–298); Direção A verifica
+  `alice` (declarado) presente antes de checar `bob` ausente (linhas 428–433, e os pares Node/Python
+  espelhados); infra-filter e flat-untouched têm âncora de vivacidade (violação de `alice`/roadmap-flat
+  presente) antes de checar ausência da violação indevida (linhas 329–330, 362–363). Não encontrei uma
+  terceira lacuna do mesmo padrão.
+- Todo `corrupt_literal` (Direções A, B1, B2, e os retargets 34/35 em `check-gates-falsify.sh`) valida
+  `count != 1` antes de escrever — uma corrupção que deixasse de casar por retarget futuro do código-alvo
+  falha alto (`SystemExit`), nunca vira no-op silencioso.
+- `pypi/tests/test_validator.py::test_modo_by_agent_agents_configurados_complementados_pelo_disco`
+  cria `zeus/` em disco SEM declará-lo em `agents:` e afirma que aparece no resultado — reverter a
+  correção (voltar à substituição) quebra esta asserção de verdade, não é fixture que coincide por
+  acaso.
+- Os retargets 34/35 de `check-gates-falsify.sh` seguem o mesmo padrão "corrompe a implementação, nunca
+  a asserção" com prova de não-vacuidade em duas pontas (braço limpo E corrompido) — auditei os cenários
+  34 e 35 na íntegra (linhas 2603–3047) e a violação `agent_namespace_undeclared` como discriminante é
+  byte-específica (mensagem cita o nome do namespace), não posicional.
+- Não há testes unitários Go dedicados ao resolvedor ou à violação (`grep` não encontra
+  `resolveAgentNamespaces`/`agent_namespace_undeclared` em nenhum `_test.go`) — cobertura em Go vive
+  inteiramente nos gates de shell. Isto é consistente com o padrão já estabelecido neste repositório
+  (REQs anteriores também dependem primariamente de `check-gates-falsify.sh`/gates dedicados em vez de
+  testes unitários Go para regras de `validate`) e a REQ pede explicitamente "gate falsificável" como
+  critério (AC10), não teste unitário — não é uma lacuna introduzida por este ML, é debt pré-existente
+  do projeto. Registro como observação, não bloqueio.
+
+**4. Retarget dos Cenários 34/35 — ainda prova o que deveriam provar.**
+Segue provando parsing de `agents:`, não virou teste de outra coisa com nome antigo. A cadeia completa
+(presença/ausência → ordem → violação `agent_namespace_undeclared`) é honestamente documentada nos
+próprios comentários do gate como degradação progressiva do discriminante à medida que a união e depois
+a violação tornaram os discriminantes anteriores vácuos — e cada retarget é comprovado empiricamente
+(rodado ao vivo antes de codar, conforme o comentário RETARGET 3) e mede exatamente
+`cfg.Agents = items` / `cfg.agents = items` / `cfg["agents"] = items`, o ponto de atribuição final do
+valor já parseado pela biblioteca YAML — não um proxy indireto. É o ponto genérico mais próximo que
+ainda preserva a intenção operacional ("a chave `agents:` é lida, não descartada") depois que
+`isListItem`/`splitTopLevelCommas` deixaram de existir (substituídos por `yaml.v3`/`yaml` 2.x em Wave
+anterior). Concordo com a leitura do autor: não há mais nada mais específico para corromper nesses
+runtimes porque o parsing propriamente dito é responsabilidade da biblioteca, não de código do
+projeto.
+
+**5. Legibilidade — boa, comentários carregam o porquê.**
+Os quatro pontos sutis (união, filtro de infra, não-seguir-symlink, ordenação declarado-primeiro) têm
+cada um seção própria em `docs/cli-parity.md` e comentário correspondente no código-fonte. Confirmei
+especificamente que o comentário de `entry.IsDir()` (linhas 1010–1014 de `validator.go`) explica por
+que não pode virar `os.Stat`: `entry.IsDir()` reflete o `dirent` da própria entrada do diretório (via
+Lstat interno), nunca o alvo do link, enquanto `os.Stat` segue symlink e reintroduziria o vetor que
+hoje escreve fora da árvore em Node/Python — motivo, não só a regra. A tabela de primitivas por runtime
+em `cli-parity.md` reforça isso com uma coluna "por que não segue symlink" nomeando o mecanismo
+(`dirent.d_type` vs `stat()` do alvo) para os três runtimes.
+
+**Achado de escopo, não bloqueante — registrar como dívida (reformulado após reconciliação).**
+Framing inicial ("symlink-follow em `walkMd`") era a versão mais fraca do achado — `walkMd` só *lê*,
+então não toca a garantia literal de AC12 (`roadmap move` escrever fora da árvore). O achado correto,
+mais específico, é uma **assimetria de paridade de filtro de infraestrutura na indexação de traceid,
+alargada por este diff**: antes do ML-1A, nenhum dos 3 runtimes filtrava `.git`/`node_modules` na
+indexação de traceid em modo `by_agent`. Depois do ML-1A, Go (`collectTraceIdEntriesByAgent`, que passou
+a chamar `resolveAgentNamespaces`) e Python (`_index_reqs_by_agent`/`_index_roadmaps_by_agent`, que
+passaram a chamar `resolve_agent_namespaces`) filtram infra automaticamente, porque herdam o filtro do
+resolvedor canônico — efeito colateral correto do ML-1A, não intencional para traceid especificamente.
+`npm/src/validator/traceid.js::walkMd` (não tocado por este diff, nem por nenhum ML anterior) continua
+recursando `reqDir`/`roadmapDir` inteiro sem filtro de infra e sem noção de `agents:`/`by_agent` — se
+`trace_id_field` estiver configurado e existir um `.md` com esse campo dentro de `.git`/`node_modules`,
+Node o indexa e Go/Python não. É uma divergência de paridade (AC9-adjacente) **entre os 3 runtimes**,
+não apenas um detalhe de symlink de um arquivo isolado — e ficou mais larga com este diff, ainda que
+não introduzida por ele. Debt real, condição de disparo estreita (exige `trace_id_field` configurado +
+arquivo dentro de dir de infra) — não bloqueia. Sugiro REQ curta para alinhar `walkMd` ao filtro de
+infra e à primitiva `withFileTypes`+`dirent.isDirectory()` (esta segunda parte por consistência com
+AC12, ainda que a garantia de escrita não esteja em jogo aqui).
+
+**Nit de doc, não bloqueante.** `docs/cli-parity.md`, seção "Ordenação declarado-primeiro — load-bearing
+para gate", termina com "não removê-la nem alterar sua semântica de exibição no `serve` sem reavaliar os
+dois cenários citados [34/35]". Isso ficou desatualizado pela própria narrativa do parágrafo anterior:
+depois do RETARGET 3 (ML-3A), os Cenários 34/35 não dependem mais de ordem — dependem da violação
+`agent_namespace_undeclared`. A instrução de "reavaliar 34/35" antes de mexer na ordenação já não é o
+guard-rail correto; o texto deveria dizer que a ordenação continua sendo o contrato ativo do `roadmap
+list`, sem mais depender dos Cenários 34/35 para isso.
+
+**Resumo do que bloqueia vs. dívida:**
+- Bloqueia o PR: nada encontrado.
+- Dívida a registrar (não bloqueante): (a) assimetria de paridade — `npm/src/validator/traceid.js::walkMd`
+  não filtra `.git`/`node_modules` nem segue a mesma primitiva não-symlink que Go/Python passaram a usar
+  via `resolveAgentNamespaces` — REQ curta separada; (b) ausência de testes unitários Go dedicados ao
+  resolvedor/violação — padrão pré-existente do projeto, não introduzido aqui, mas vale avaliar em algum
+  momento se a superfície cresce; (c) nit de doc em `cli-parity.md` (seção de ordenação) referenciando os
+  Cenários 34/35 como guard-rail depois que RETARGET 3 os desacoplou de ordem — corrigir o texto na
+  próxima edição dessa seção, não vale um ML dedicado.
+
+#### Parecer de segurança da barreira final (hades-tf, 2026-08-30)
+
+**Veredito: REPROVA.** Dois achados diretamente introduzidos por esta REQ reproduzem, ou pioram, exatamente o defeito que o ADR nomeia como motivação ("nada em disco fica invisível, em nenhum modo, por nenhuma configuração" / "atestado de saúde sobre o que nunca abriu é pior que quebrar"). Um terceiro achado, pré-existente e mais amplo que `by_agent`, foi reproduzido ao vivo dentro do vetor que o próprio ADR pediu para atacar ("symlink dentro de um namespace legítimo") e é reportado para rotear a uma REQ própria, não para bloquear esta.
+
+Toda evidência abaixo foi executada ao vivo nos 3 CLIs (binário Go compilado desta branch, `npm/bin/trackfw`, `PYTHONPATH=pypi python3 -m trackfw.cli`), não inferida.
+
+##### 1. BLOQUEIA — Namespace com nome iniciado por "." atinge invisibilidade total, nos 3 runtimes
+
+`isInfraDirName` (`internal/validator/validator.go:1061`, espelhado em Node/Python) filtra incondicionalmente qualquer nome iniciado por "." **tanto da união quanto da violação**. Isso não é o mesmo tratamento dado a `node_modules` ou a colisão com nome de estado (`wip/` órfão) — esses dois casos continuam **enumerados** (só não disparam a violação); o prefixo "." os remove dos dois, e portanto não deixa nenhum sinal.
+
+Reprodução: `docs/roadmaps/.ghost/wip/RM-ghost.md` (frontmatter válido, `status: wip`), projeto `by_agent` com `agents: [alfa]`.
+
+```
+go     validate -> "No violations found."      (exit 0)
+node   validate -> "No violations found."      (exit 0)
+py     validate -> "No violations found."      (exit 0)
+
+go     status   -> Roadmaps 0, wip 0 (todas as colunas)
+node   status   -> idem
+py     status   -> idem
+
+go     roadmap move RM-ghost done -> "not found in any state directory"
+node   roadmap move RM-ghost done -> idem
+py     roadmap move RM-ghost done -> "nao encontrado em nenhum estado"
+```
+
+E byte-a-byte a manifestação original do cmdb (REQ, Motivation): `move` falha "not found" para um arquivo que existe, e `validate` reporta limpo sobre o que nunca enumerou — só que agora **reintroduzida pelo próprio código que fecha o defeito**, atrás de uma condição trivial (nomear o namespace com "." na frente) em vez de `agents:` incompleto. Qualquer agente ou colaborador — malicioso ou só copiando um padrão de nome oculto (`.cache`, `.tmp`) para um namespace de verdade — reabre a cegueira sem que nada avise.
+
+**Isto é o residual que o próprio ML-0A declarou e a recomendação que eu mesmo dei** (seção 4: "excluir nomes iniciando com '.' da união e da violação incondicionalmente — nenhum agente legítimo começa com ponto"). A premissa era estreita demais: cobre `.git`/`.trackfw`/`.DS_Store` (nomes que o SO ou uma ferramenta cria, nunca um humano digitando um namespace), mas não distingue esses de um namespace real batizado com ponto por engano ou por design deliberado de ocultação. A recomendação deveria ter sido: excluir da **violação** (não gerar ruído pedindo para declarar `.git`), mas **manter na união e emitir um sinal de baixo ruído** (aviso, não erro) nomeando o diretório oculto ignorado — o mesmo padrão que o ML-2A corretamente aplicou à colisão de nome de estado.
+
+##### 2. BLOQUEIA — Metacaractere de glob no nome do namespace corrompe a contagem do Go, silenciosamente quando e "*", com crash quando e "["
+
+`resolveAgentNamespaces` (Wave 1) alimenta `agent`, agora derivado de qualquer nome de diretório em disco, direto em `filepath.Glob(filepath.Join(roadmapDir, agent, "wip", "*.md"))` sem escapar (`validator.go:223`, e o mesmo padrão em `generators/req.go:148`). Antes da união, `agent` só vinha de string digitada em `agents:` pelo operador; a união faz qualquer nome de diretório em disco chegar ao mesmo `Glob` sem validação de formato — diferente de nome de arquivo de REQ/roadmap, que precisa casar `TYPE-YYYY-MM-DD-slug.md` antes de entrar em qualquer violação.
+
+**Caso "*" — corrupção silenciosa da contagem, confirmada ao vivo:**
+
+Fixture: `alfa/wip/` com 3 arquivos, `beta/wip/` com 1 arquivo (não declarado), `*/wip/` (nome literal "*") com 1 arquivo, `wip.limit: 1`.
+
+```
+3 roadmaps in wip/ for agent "alfa" (limit: 1)
+5 roadmaps in wip/ for agent "*" (limit: 1)      <- deveria ser 1
+```
+
+`filepath.Glob("docs/roadmaps/*/wip/*.md")` — o padrão que o `Glob` recebe quando `agent` é literalmente "*" — casa com **todos** os `wip/` de todos os namespaces (alfa, beta e o próprio "*"), não com o diretório "*" sozinho. O aviso de WIP limit atribuído ao namespace "*" soma artefatos de outros agentes; ninguém lendo "5 roadmaps in wip/ for agent *" sabe que é contagem cruzada. É exatamente o vetor que o ADR nomeia e o ML-0A pediu para vigiar ("passa a enumerar qualquer coisa... ou a violação vira tão barulhenta") — só que na direção pior: não é ruído, é **número plausível e errado**, o oposto do "quebra alguém percebe" que o próprio ADR usa como critério de desenho.
+
+**Caso "[" (ou qualquer classe de caractere não fechada) — DoS total do `validate`, confirmado ao vivo:**
+
+```
+$ trackfw validate    (namespace "unmatched[bracket" em disco)
+Error: syntax error in pattern
+Usage:
+  trackfw validate [flags]
+...
+exit=1
+```
+
+`ErrBadPattern` do pacote `path/filepath` sobe cru como erro de `validateWIPLimit`, sem passar pela regra `agent_namespace_undeclared` pretendida — o usuário vê um erro de "Usage" de CLI, não a violação de configuração que a REQ existe para produzir. **`--json` também vaza texto puro no canal que deveria ser JSON**: `trackfw validate --json` no mesmo fixture imprime `syntax error in pattern` sem estrutura, quebrando qualquer consumidor que faça `json.loads` da saída.
+
+Python (`glob.glob`) degrada graciosamente no mesmo fixture — confirmado ao vivo, continua enumerando e emite a violação `agent_namespace_undeclared` pretendida, sem crash. Node não usa padrão de glob nesse caminho (`readdir`-based), não está exposto a esta classe. **É um defeito específico do Go**, mas o Go é a implementação de referência do projeto.
+
+**Por que isto bloqueia:** os dois casos ("*" e "[") são o mesmo defeito raiz (string de disco não validada em posição de padrão de `Glob`) manifestando de dois jeitos — um barulhento (crash), um silencioso (contagem errada). Corrigir só o crash sem corrigir o "*" deixaria o pior dos dois de pé.
+
+##### 3. NÃO BLOQUEIA ESTA REQ, roteia para REQ própria — symlink de ARQUIVO dentro de namespace legítimo, reproduzido ao vivo, pré-existente e mais amplo que `by_agent`
+
+Isto é resposta direta ao pedido de atacar "symlink dentro de um namespace legítimo (não o namespace em si)". AC12 só cobre symlink no **diretório** de namespace (`entry.IsDir()`/`dirent.isDirectory()`/`is_dir(follow_symlinks=False)`); nada nos 3 runtimes verifica se o **arquivo** `.md` dentro de um namespace já validado é, ele mesmo, um symlink.
+
+Fixture: `docs/roadmaps/alfa/wip/RM-leak.md` é um symlink para um arquivo com frontmatter válido **fora do projeto** (`$SCRATCH/victim.txt`, com `status: wip` e `| Status: wip |`). Comando: `trackfw roadmap move RM-leak done` — uso normal, não uma chamada adversária de baixo nível.
+
+```
+go    -> victim.txt (fora do projeto): status: wip -> status: done   MUTADO
+node  -> victim.txt (fora do projeto): status: wip -> status: done   MUTADO
+py    -> nao muta o victim.txt, mas GRAVA seu conteudo INTEIRO dereferenciado
+         dentro de docs/roadmaps/alfa/done/RM-leak.md (arquivo real, rastreavel por git)
+```
+
+**Precisão sobre o que Go/Node realmente fazem — não é "arbitrary file write" genérico:** `os.Rename(src, dst)` sobre um symlink move o link em si (não segue para renomear o alvo); a mutação acontece no passo seguinte, `os.ReadFile(dst)` + `os.WriteFile(dst, ...)` (`internal/generators/roadmap.go` em torno de `MoveRoadmap`, equivalente em Node), que abrem `dst` — agora o link, já realocado para dentro de `done/` — sem O_NOFOLLOW, e por isso leem/escrevem através dele. O escritor (`rewriteRoadmapStatus`) só toca a linha `status:` do frontmatter e o `| Status: |` do corpo — é uma **mutação de conteúdo preservado, restrita a essas duas linhas**, não conteúdo arbitrário do atacante, e não muda permissão do arquivo-alvo (só se aplica em criação). Ainda assim é integridade violada em um arquivo fora da árvore do projeto, disparada por um comando de rotina — e o link em si fica realocado dentro de `done/`, rastreável por git se commitado.
+**Variante Python, e por que pode ser pior:** não muta o alvo, mas **copia o conteúdo dereferenciado inteiro** para um arquivo novo e real dentro da árvore rastreada (`done/RM-leak.md`). Isso é um primitivo de exfiltração de conteúdo local — sobrevive a um patch que só feche a escrita (Go/Node), porque a causa em Python é a leitura seguindo o link, não a escrita.
+**Hardlink não é coberto por uma checagem `islink`/`Lstat` em `src`:** um `.md` hardlinkado é indistinguível de um arquivo comum para o sistema de arquivos — qualquer remediação baseada só em detectar symlink não fecha esse caso; precisa ser dito explicitamente para quem implementar, para a correção não ser declarada completa cedo demais.
+**Reproduzido também em modo `flat`** (sem `by_agent`, sem união, sem este ADR) — não é causado nem alargado pela Wave 1/2 desta REQ; é pré-existente em `MoveRoadmap`/`moveRoadmap`/`move_roadmap` e mais amplo que o escopo desta REQ. Sigo o precedente que o próprio `hefesto-tf` registrou nesta auditoria para o `walkMd` do Node (achado de symlink fora do escopo literal, roteado para REQ curta separada em vez de reabrir esta): recomendo o mesmo aqui — **REQ própria, bloqueante para `roadmap move` antes do próximo release**, não bloqueante para este PR. Registro aqui, e não em `docs/agents-working-context.md` nem em nota de vault — o escopo desta tarefa pede para não tocar em nenhum outro arquivo; a lacuna fica anotada nesta frase para quem processar o handoff.
+
+##### 4. Confirmado — `roadmap_dir == req_dir` não duplica nem pior
+
+Fixture com as duas chaves apontando para o mesmo diretório físico produz **uma única violação deduplicada**, nomeando as duas árvores ('agent namespace "zeta" exists in roadmap_dir, req_dir but is not declared...'). Confirmado como projetado — o residual do ML-0A ("config-error pré-existente, não piora nem resolve") permanece correto sem alteração.
+
+##### 5. Reconfirmação/correção dos residuais que eu declarei no ML-0A
+
+- **"Caractere de controle não testado" — testado agora, e o resultado é pior do que eu havia sinalizado.** Não é só corrupção visual: um "[" desbalanceado (que nem é caractere de controle, é ASCII imprimível comum) **derruba o `validate` inteiro** (achado 2). Byte de controle puro (ESC/OSC/CR) sem colchete não derruba nada, mas — confirmado ao vivo — grava sequência de escape crua no stdout em texto puro (`internal/commands/validate.go:67`, `fmt.Printf("- %s\n", v)`): um OSC de título de terminal (ESC ] 0 ; ... BEL) seta o título do terminal, e um CR (retorno de carro) seguido de texto forjado sobrescreve a linha visível com um "tudo certo" falso — enquanto o exit code continua 1 e `--json` escapa corretamente todos os bytes de controle (confirmado ao vivo: aparecem como sequências `\u00XX` no JSON), então só engana quem olha o terminal ao vivo ou um log renderizado ingenuamente, não quem checa exit code ou `--json`. Não é vetor novo — nomes de arquivo já entravam sem sanitização em outras violações deste mesmo arquivo (`validator.go:1254`, `1722`, `2368`) e há precedente registrado em `vault/notes/rewrite-frontmatter-newline-injection-escape-hatch-2026-08-21.md` — mas esta REQ **amplia** a superfície: antes, o universo de nomes que aparecem em `agent_namespace_undeclared` era limitado a `agents:` declarado pelo operador; agora é qualquer nome de diretório em disco, sem validação de formato. Severidade: Média — impacto é encenação/UX enganosa em terminal, não execução de código nem perda de dado; não bloqueia esta barreira, mas deveria constar como residual explícito no ADR/REQ (não consta hoje).
+- **"`..`/caminho absoluto não é vetor real" — reconfirmo, sem mudança.** Continua não construível: o SO recusa "/" ou ".." literal como nome de entrada de diretório.
+- **TOCTOU entre enumeração e escrita do `move` — permanece residual nomeado, não elevo a severidade porque não reproduzi, só raciocinei.** `resolveAgentNamespaces` faz Lstat no momento da enumeração; `MoveRoadmap`/`moveRoadmap`/`move_roadmap` fazem `MkdirAll`+`Rename` (ou leitura+escrita) minutos ou milissegundos depois, sem reter descritor nem relock — resolução de caminho por componente sempre segue symlink para diretórios intermediários no SO, então um componente do caminho trocado por symlink entre os dois passos escaparia da checagem inicial. Pré-condição real: escritor concorrente com acesso de escrita ao mesmo worktree correndo contra o `move` — não é ataque passivo (checar um PR malicioso não dispara isso sozinho), mas é o modelo operacional do próprio projeto (múltiplos subagentes com escrita concorrente no mesmo checkout). Não fechável portavelmente nos 3 runtimes sem primitivas `*at` (ex.: `openat2(RESOLVE_NO_SYMLINKS)`, só Linux). Documentar, não prometer fechar aqui.
+- **Junction/reparse point do Windows — não verificável neste ambiente (Darwin), sem máquina Windows.** As primitivas do AC12 (`entry.IsDir()`/`dirent.isDirectory()`/`is_dir(follow_symlinks=False)`) são cientes de symlink POSIX; o comportamento delas contra reparse point NTFS é desconhecido daqui. Cross-referência: issue #216, já fora de escopo por instrução desta tarefa.
+- **Enumeração Python não fechada linha a linha — sem mudança, meus achados 1 e 2 não abriram novo ponto fora dos ~16 confirmados.**
+
+##### Resumo — bloqueia vs. roteia vs. não bloqueia
+
+- **Bloqueia o PR:** achado 1 (invisibilidade total por prefixo ".", 3 runtimes) e achado 2 (metacaractere de glob no Go — "*" corrompe contagem em silêncio, "[" derruba `validate` e vaza texto puro no canal `--json`).
+- **Roteia para REQ própria, não bloqueia esta:** achado 3 (symlink de arquivo dentro de namespace legítimo em `roadmap move`, pré-existente, mais amplo que `by_agent`, reproduzido em Go/Node/Python com variante de mutação em Go/Node e variante de exfiltração de conteúdo em Python; sem cobertura por checagem só de symlink devido a hardlink).
+- **Não bloqueia, registrar como residual explícito:** injeção de escape de terminal/CR em nome de namespace (achado 5, severidade Média, superfície ampliada por esta REQ mesmo não sendo nova), TOCTOU do `move` (sem reprodução, só raciocínio), junction/reparse Windows (não verificável aqui).
+
+**Microlote corretivo mínimo, se a squad optar por consertar em vez de reabrir Wave 2:**
+- **ML-4A (bloqueante, 3 runtimes):** decidir e implementar o tratamento de namespace "."-prefixado como aviso de baixo ruído nomeando o diretório ignorado (mesma classe do tratamento já dado à colisão de nome de estado), nunca como "zero sinal, zero enumeração" — fecha achado 1.
+- **ML-4B (bloqueante, Go — verificar Node/Python para o mesmo padrão em `req.go`/equivalentes):** trocar `filepath.Glob(join(dir, agent, "wip", "*.md"))` por `os.ReadDir(join(dir, agent, "wip"))` + filtro de sufixo ".md" em código, ou escapar os metacaracteres de glob ("*?[\\") em `agent` antes de montar o padrão — fecha achado 2 nas duas manifestações (crash e contagem silenciosa), sem depender de `agent` nunca conter esses caracteres.
+- **ML-4C (não bloqueante, recomendado):** REQ curta e independente para o symlink de arquivo em `roadmap move`/`move_roadmap`/`moveRoadmap` (achado 3) — Lstat em `src` antes de ler/mover, recusar se for symlink, e nomear explicitamente que isso não cobre hardlink.
+- **ML-4D (não bloqueante, recomendado):** declarar no ADR/REQ, como residual explícito, a superfície de injeção de escape de terminal em nome de namespace (achado 5) — não corrigir aqui necessariamente, mas parar de deixá-la implícita.
+
+**Nota de processo:** a instrução desta tarefa pede para não tocar em nenhum arquivo além deste roadmap; por isso o achado 3 (symlink de arquivo) não gerou nota de vault nem entrada em `docs/agents-working-context.md` apesar de ambos serem, em circunstância normal, obrigatórios para um achado desta natureza — quem processar este handoff deve criar os dois.
