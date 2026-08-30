@@ -496,7 +496,7 @@ uma mudança de contagem. Viram REQ separada.
 - [x] Falha de startup em `cmd_help`/`cmd_cp1252_print` produz `INCONCLUSIVE`, nunca `ABSENT`
 - [x] Falsificação: com uma dependência artificialmente ausente, os itens 1 e 4 **não** reportam `ABSENT`
 - [x] `actionlint` limpo; `make quality` verde em Linux
-- [ ] **A contagem segue 8 REPRODUCED no runner Windows real** — qualquer item que mude de veredito
+- [x] **A contagem segue 8 REPRODUCED no runner Windows real** — qualquer item que mude de veredito
       é explicado no roadmap antes de o PR sair do rascunho
 
 
@@ -542,6 +542,28 @@ do item 10, então o braço Node passando a medir de verdade muda o **detail** d
 **Resta o único critério que esta branch não pode fechar:** a contagem seguir **8 REPRODUCED** no
 runner Windows real. Verde local não prova — é exatamente o tipo de coisa em que o ambiente do dev
 já nos enganou três vezes nesta REQ.
+
+**Confirmação no runner Windows real (run `33335579443`, commit `062128a`):**
+
+```
+Reproduzidos: 8 | Inconclusivos: 0 | Bloqueados por dependencia (item 1): 0 | Total de linhas: 11
+```
+
+A contagem **não se moveu** — o critério que só o CI podia fechar está fechado, e a linha de base
+segue citável.
+
+**E ganhamos uma medição que antes não existia.** Com o `npm ci` presente, o braço Node do item 10
+deixou de degradar para `INCONCLUSIVE` e passou a medir:
+
+```
+node: REPRODUCED — move exit=0; roadmap-line=roadmap: docs\roadmaps\wip\ROADMAP-item10.md
+```
+
+Ou seja: o separador de SO vazando para o frontmatter da REQ agora está confirmado
+**independentemente** pelo braço Node, não só pelo Go. A contagem agregada não mudou porque
+`run.ps1:301` prioriza `REPRODUCED` sobre `INCONCLUSIVE` — exatamente a previsão registrada antes do
+run. O ganho é de **confiança na evidência**, não de contagem: um item sustentado por dois runtimes
+independentes é mais difícil de refutar do que um sustentado por um só.
 
 ## Wave 2 — `skip` explícito (ML único)
 > Dependências: Wave 1 concluída — precisamos ver os 12 vermelhos antes de silenciá-los.
