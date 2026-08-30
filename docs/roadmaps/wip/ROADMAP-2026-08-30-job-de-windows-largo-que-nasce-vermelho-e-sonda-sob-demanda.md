@@ -250,6 +250,61 @@ dele (ou uma máquina real de terceiro com configuração diferente do runner ho
 - [ ] Mapeamento falha → item da issue #216 (AC3); falha sem correspondência é achado novo
 - [ ] Demais jobs do CI seguem verdes; `make quality` em Linux inalterado
 
+#### Resultado do ML-1A + ML-1B (ares-tf, 2026-08-30) — LINHA DE BASE MEDIDA
+
+Instrumento entregue e **executado num runner Windows real** (PR #221, run `33322373895`).
+
+**AC2 satisfeita: a camada 2 nasceu vermelha.** `windows-defect-reproduction` → `failure` em
+**1m13s**, no passo *"Suíte de reprodução de defeito — 11 itens"*. Os passos de infraestrutura
+passaram todos.
+
+**Linha de base, item a item:**
+
+| item | defeito | veredito |
+|---|---|---|
+| 1 | cp1252 no `cli.py --help` | **REPRODUCED** |
+| 2 | `$HOME` ignorado nos 3 runtimes | **REPRODUCED** |
+| 3 | bit de execução sempre presente | **REPRODUCED** |
+| 4 | gate de cobertura crasha em cp1252 | **REPRODUCED** |
+| 5 | geradores Python escrevem CRLF | INCONCLUSIVE — *"init não completou"* |
+| 6 | `isatty()` mente `True` para `NUL` | INCONCLUSIVE |
+| 7 | `sh -c` hardcodado no Go | **ABSENT** |
+| 8 | postura divergente com `\` | declarado fora de escopo |
+| 9 | `ref_targets_exist` vácuo | fora de escopo (não é Windows) |
+| 10 | separador de SO no frontmatter | **REPRODUCED** (Go) · INCONCLUSIVE (Node, Python) |
+| 11 | 12 testes de symlink sem privilégio | coberto pela camada 1 |
+
+**Cinco reproduzidos com evidência.** O item 10 tem a prova mais literal:
+
+```
+go: REPRODUCED — roadmap-line=roadmap: docs\roadmaps\wip\ROADMAP-item10.md
+```
+
+**AC12 respondida, e a favor:** o passo *"confirmar que a isolação de HOME/USERPROFILE vale antes de
+rodar as suítes"* → **success**. O isolamento sintético segura os três runtimes no Windows, então a
+camada 1 é viável. Era a pergunta que podia derrubar metade do instrumento.
+
+**AC10 medida:** camada 1 em **23 minutos** (16:24:41 → 16:47:43); camada 2 em **1m13s**.
+
+---
+
+#### Três achados sobre o próprio instrumento — viram ML-1C
+
+**1. A camada 1 para na primeira falha.** `Go — suíte completa` → `failure`, e `Node` e `Python`
+→ **skipped**. Medimos **um** dos três runtimes. Para um instrumento de medição isso é defeito: o
+passo seguinte precisa de `if: always()`, senão cada execução mede só até o primeiro tropeço.
+
+**2. Os itens 5 e 6 vieram INCONCLUSIVE por cascata, não por ausência de defeito.** A mensagem é
+*"init não completou"* — e o `init` do Python é justamente o que morre no cp1252 do item 1. **Um
+defeito está mascarando a medição de outros dois.** Enquanto o item 1 não for corrigido, 5 e 6
+seguem sem medição — o que ordena as correções por dependência, não por gravidade.
+
+**3. O item 7 veio ABSENT, e isso descarta metade da hipótese.** `sh` **existe** na imagem do
+runner, então a hipótese *"o Go quebra porque não acha `sh`"* está descartada. A outra metade — Go
+sob `sh` POSIX contra Node e Python sob `cmd.exe`, avaliando semânticas diferentes do mesmo gate —
+**continua sem teste**, exatamente como a Wave 0 previu. `ABSENT` aqui significa *"a pergunta que o
+teste faz foi respondida, e não era a pergunta certa"*.
+
 ## Wave 2 — `skip` explícito (ML único)
 > Dependências: Wave 1 concluída — precisamos ver os 12 vermelhos antes de silenciá-los.
 
