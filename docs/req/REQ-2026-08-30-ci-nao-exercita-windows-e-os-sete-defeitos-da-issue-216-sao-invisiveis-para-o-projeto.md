@@ -31,9 +31,13 @@ guarda funcionar — na plataforma onde o comportamento de link é mais ambíguo
 
 - [ ] **AC1** — O job de Windows roda as **três suítes completas** (`go test ./...`,
       `npm test`, `pytest pypi/tests`), não invocações dirigidas.
-- [ ] **AC2** — **Nasce vermelho.** Antes de qualquer correção, o job **reprova** reproduzindo
-      defeitos da issue #216. A saída do job é anexada ao roadmap como medição — é a linha de base.
-      **Se nascer verde, o job está errado**, não o relatório.
+- [ ] **AC2** — **Suíte de reprodução de defeito**, uma verificação explícita por defeito conhecido,
+      mapeada um-para-um aos itens da issue #216, exercitando o **caminho real, sem mock**. É ela que
+      **nasce vermelha**. A Wave 0 mediu que as três suítes sozinhas expõem **2 dos 11** — entregar
+      só elas produziria a falsa sensação de cobertura que esta REQ existe para eliminar.
+- [ ] **AC2b** — A saída da primeira execução é anexada ao roadmap como **linha de base**. Cada
+      verificação que **não** falhar precisa de justificativa medida: ou o defeito não se manifesta
+      no runner (e isso vira residual declarado), ou a verificação está errada.
 - [ ] **AC3** — Mapeamento explícito entre cada falha do job e o item correspondente da issue.
       Falha do job que **não** corresponda a defeito conhecido é achado novo e vira registro.
 - [ ] **AC4** — O job entra **não bloqueante** (`continue-on-error`) até a última correção, e só
@@ -55,6 +59,12 @@ guarda funcionar — na plataforma onde o comportamento de link é mais ambíguo
       recorte é explícita, não silenciosa.
 - [ ] **AC11** — `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality` continua exit 0 em Linux, e os
       demais jobs do CI seguem verdes. Esta REQ **não** corrige defeito de produto.
+- [ ] **AC12** — **Isolação de `$HOME` da própria suíte.** `pypi/tests/conftest.py` e
+      `internal/validator/main_test.go` isolam via a variável `HOME`, que a produção **não lê no
+      Windows**. `go test ./...` pode escrever na home real do runner — e o Go paraleliza pacotes,
+      então é condição de corrida dentro de uma única execução. Ou a isolação passa a valer em
+      Windows, ou o job largo é **inviável** até a correção de `$HOME` entrar. Decidir com medição,
+      não com suposição.
 
 ## Negative Scope
 

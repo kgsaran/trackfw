@@ -68,6 +68,42 @@ Sem shell POSIX, controles de segurança do produto não executam. A dependênci
 não existe é o aviso. Formalizar isso é REQ própria, já acordada, e esta decisão apenas fixa a
 postura.
 
+**6. Rodar as três suítes NÃO é o instrumento — decisão acrescentada em 2026-08-30, após a Wave 0.**
+
+O `hades-tf` mediu item a item e o resultado derruba a premissa da decisão 1: das **onze** falhas
+conhecidas, o job largo expõe com confiança **duas** — o bit de execução e os 12 testes de symlink.
+Uma terceira (`$HOME`) acende como ruído, não como asserção. **As outras oito não acendem**, cada
+uma por um motivo diferente:
+
+- **mock substitui o caminho real** — `monkeypatch.setattr("sys.stdin.isatty", ...)` em
+  `pypi/tests/test_init_identity.py:83,98`. O `isatty` de verdade nunca é chamado, então o defeito
+  do `NUL` no Windows é invisível para a suíte.
+- **o teste tem o mecanismo e falta a asserção de conteúdo** — CRLF.
+- **o caminho de produção que falha não é atingido pela via testada** — `--help` de topo contra help
+  de subparser.
+- **o item está estruturalmente fora das três suítes** — o gate de cobertura é script bash; o
+  `ref_targets_exist` vácuo nem é defeito de Windows.
+
+Verifiquei os dois primeiros por leitura direta. **Se tivéssemos entregue o job largo como
+especificado, ele passaria quase inteiro e concluiríamos que o Windows está bem** — produzindo
+exatamente a falsa sensação de cobertura que esta REQ existe para eliminar, só que com mais
+credibilidade que o job estreito de hoje.
+
+**O instrumento passa a ter duas camadas:**
+
+- **As três suítes**, como base de regressão do que elas de fato cobrem.
+- **Uma suíte de reprodução de defeito** — uma verificação explícita por defeito conhecido, mapeada
+  um-para-um aos itens da issue #216, exercitando o **caminho real**, sem mock. É ela que precisa
+  nascer vermelha.
+
+A distinção importa: a suíte de reprodução prova que o defeito existe **hoje** e desaparece quando
+corrigido; as suítes provam que não volta. Sem a primeira, "job vermelho" seria uma expectativa
+minha, não uma medição.
+
+**7. Nenhum defeito é declarado corrigido sem uma verificação que falhe antes.** É a generalização
+do que a Wave 0 mostrou: teste que passa antes e depois da correção não é evidência de nada. Vale
+para as onze correções que virão.
+
 ## Consequences
 
 **Positivas**

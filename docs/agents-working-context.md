@@ -26210,3 +26210,36 @@ de segunda mão e ela mediu ser falsa.
 pré-existentes achados no caminho — `status` do Python contando REQs por listagem flat, e
 `context.js:136` sem `await` num `validate()` assíncrono, que quebra o `trackfw context` do Node
 **sempre**.
+
+## 2026-08-30 — `hades-tf` (Hades) — ML-0A: modelo de ameaça do job de Windows largo (REQ-2026-08-30, Wave 0) — CONCLUÍDO
+
+**Branch:** `fix/job-de-windows-largo-que-nasce-vermelho-e-sonda-sob-demanda` (não commitei — Security
+não tem autoridade de Git; handoff para `trackfw_architect`).
+
+**Entregue:** as quatro seções do ML-0A no roadmap
+(`docs/roadmaps/wip/ROADMAP-2026-08-30-job-de-windows-largo-que-nasce-vermelho-e-sonda-sob-demanda.md`),
+verificando código E teste para cada um dos 11 defeitos, não só a existência de um arquivo de teste.
+
+**Achado principal, contraintuitivo:** dos 11 defeitos, o job largo **como desenhado hoje** (só rodar
+`go test ./...`, `npm test`, `pytest pypi/tests`) expõe com confiança direta apenas **2** (bit de
+execução no `validate`; os 12 testes de symlink, mas mal-mapeados) e um terceiro de forma ruidosa
+(`$HOME`). Os outros **8** — cp1252 no `--help` top-level, gate de cobertura, CRLF na escrita (assert
+ausente, não teste ausente), `isatty`/`NUL`, `sh -c`, postura `\`, `ref_targets_exist` em `by_agent`,
+separador de SO no `roadmap move` — não vão acender vermelho, cada um por um motivo diferente
+(monkeypatch substitui a chamada real, oráculo de teste ausente, escopo fora das 3 suítes, ou o
+defeito nem é de plataforma). Recomendação passada ao `ares-tf`: a tabela de mapeamento do AC3 da
+ML-1A precisa nomear explicitamente os 8 como "não exposto, rastreado", não deixar o roadmap herdar
+o mesmo viés que a REQ existe para corrigir.
+
+**Vetor mais grave do próprio instrumento:** a isolação de `$HOME` dos testes é **vácua no Windows
+nos 3 runtimes ao mesmo tempo** — `pypi/tests/conftest.py` seta `os.environ["HOME"]` (produção lê
+`%USERPROFILE%`), `internal/validator/main_test.go` faz o mesmo (`os.UserHomeDir()` idem), e há 101
+outros sites de `t.Setenv("HOME",...)` em `internal/` sem `TestMain` de pacote. `go test ./...`
+pode escrever de verdade na home real do runner, e como Go paraleliza pacotes por padrão, isso é
+condição de corrida — resultado não determinístico mascarado como "teste Windows instável".
+
+**Não corrigi nada** — proibição explícita do escopo (Security não edita `.github/`, `internal/`,
+`npm/`, `pypi/`). Não criei branch nova, não commitei, não fiz push.
+
+**Próximo:** `ares-tf` (Ares) para ML-1A (Wave 1), com o mapeamento da seção 1 do ML-0A como insumo
+obrigatório para não superestimar o que o job largo realmente reproduz na primeira execução.
