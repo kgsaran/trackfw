@@ -461,6 +461,88 @@ O critério de "parar e reportar se a camada 1 inteira ficar verde" continua vá
 seguem vermelhos por motivo de produto —, mas **um Python verde isoladamente não é sinal de
 correção**. Sem esse registro, a próxima pessoa a olhar o job tiraria a conclusão errada.
 
+### ML-1E — Vacuidade e drift de dependência na camada 2 (corretiva da barreira)
+**Status:** ✅ Concluído
+**Agente:** `ares-tf`
+**Origem:** barreira final. `hefesto-tf` (bloqueante) + `hades-tf` (A1), pareceres em
+`docs/qualidade/` e `docs/seguranca/` de 2026-08-30.
+**Files affected:** `.github/workflows/quality.yml` (só o job `windows-defect-reproduction`),
+`scripts/windows-repro/python/checks.py`.
+**Diagnóstico:** a camada 2 declara `VERDICT=ABSENT` — "defeito ausente" — em situações onde o
+código medido **nunca chegou a executar**. `cmd_help` e `cmd_cp1252_print` decidem por
+`"UnicodeEncodeError" in stderr`; `proc.returncode` é **impresso e nunca consultado**. Somada ao
+drift de dependência (a camada 2 instala `pyyaml` por nome, enquanto a camada 1 instala o pacote),
+a consequência é: uma segunda dependência de runtime em `pypi/pyproject.toml` faz
+`import trackfw.cli` morrer com `ModuleNotFoundError`, e os itens 1 e 4 reportam sucesso sem ter
+medido nada. É o instrumento declarando vitória por vacuidade.
+**Actions:**
+1. `quality.yml`, job `windows-defect-reproduction`: trocar
+   `python -m pip install --upgrade pip pyyaml` por `python -m pip install pypi/`, idêntico à linha
+   do `windows-full-suites`, **com o mesmo comentário de zero-drift**.
+2. `quality.yml`, mesmo job: adicionar `npm ci` em `npm/` — hoje ausente. O braço Node do item 10
+   invoca `npm/bin/trackfw`, que exige `commander`, `yaml` e `@inquirer/prompts`; sem isso degrada
+   para `INCONCLUSIVE` em vez de medir.
+3. `checks.py`, `cmd_help` e `cmd_cp1252_print`: consultar `proc.returncode` **antes** de decidir.
+   Falha de startup **não é `ABSENT`** — imprimir `VERDICT=INCONCLUSIVE`. O agregador já trata
+   `INCONCLUSIVE` como primeira classe e já sai 1 (`run.ps1:339`), então nenhuma mudança é
+   necessária lá — **confirmar, não presumir**.
+**Fora de escopo (não fazer):** piso de contagem de `Add-Result`, comparação automática contra a
+linha de base, e deduplicação do literal `GATE_QUOTE_COMMAND`. Todos mudam **como o agregado
+reporta**, e re-baselinar junto com a correção de vacuidade tornaria impossível atribuir causa a
+uma mudança de contagem. Viram REQ separada.
+**Critérios de aceite:**
+- [x] `windows-defect-reproduction` instala o pacote Python, não a dependência por nome
+- [x] `npm ci` presente; o braço Node do item 10 deixa de depender de `node_modules` ausente
+- [x] Falha de startup em `cmd_help`/`cmd_cp1252_print` produz `INCONCLUSIVE`, nunca `ABSENT`
+- [x] Falsificação: com uma dependência artificialmente ausente, os itens 1 e 4 **não** reportam `ABSENT`
+- [x] `actionlint` limpo; `make quality` verde em Linux
+- [ ] **A contagem segue 8 REPRODUCED no runner Windows real** — qualquer item que mude de veredito
+      é explicado no roadmap antes de o PR sair do rascunho
+
+
+#### Resultado do ML-1E (ares-tf, 2026-08-30) — auditado pelo arquiteto
+
+**As três correções, no job certo.** Diff de **um único hunk**, em
+`windows-defect-reproduction`. Verifiquei por comparação de bloco que o job vizinho
+`windows-full-suites` está **byte-idêntico** ao de antes — a corretiva não vazou para a camada 1.
+
+1. `python -m pip install pypi/`, com o comentário de zero-drift do padrão já usado nos jobs
+   `python`, `parity` e `windows-full-suites`.
+2. `npm ci --ignore-scripts` com `working-directory: npm`, idêntico aos outros quatro jobs.
+3. `_is_startup_failure()` novo, consultado num ramo inserido **entre** o `REPRODUCED` e o `ABSENT`.
+
+**Falsificação nas duas direções, reproduzida por mim** (não aceita por relato):
+
+```
+ANTES     TRACKFW_PYPI_SRC=/nonexistent  →  exit=1  VERDICT=ABSENT          ← o bug
+DEPOIS    TRACKFW_PYPI_SRC=/nonexistent  →  exit=1  VERDICT=INCONCLUSIVE    ← corrigido
+CONTROLE  TRACKFW_PYPI_SRC=pypi/         →  exit=0  VERDICT=ABSENT          ← não super-dispara
+```
+
+O controle é a metade que importa e que quase se esquece de exigir: o guard **não** transforma todo
+`ABSENT` em `INCONCLUSIVE`. Sem ele, teríamos trocado vacuidade por um instrumento que nunca mais
+consegue dizer "defeito ausente" — e que portanto nunca poderia confirmar uma correção.
+
+**A ordem dos ramos preserva o caso real.** `if "UnicodeEncodeError"` é avaliado **antes** do novo
+`elif`. Num runner Windows com o defeito presente, o veredito continua `REPRODUCED`
+incondicionalmente. Consequência que vale registrar: para os itens 1 e 4 no Windows real, o ramo
+novo é **código morto enquanto o defeito existir** — se algum dia disparar, isso por si só é sinal
+de que algo upstream quebrou, não uma mudança esperada de veredito.
+
+**Por que a contagem não deve mudar** (verificado por leitura, não por hipótese): `pip install pypi/`
+publica o pacote em `site-packages`, mas o item 10 Python injeta `PYTHONPATH=$TRACKFW_PYPI_SRC`
+explicitamente, e `PYTHONPATH` precede `site-packages` na resolução de import — resolve para a mesma
+árvore-fonte antes e depois. E `run.ps1:301` prioriza `REPRODUCED` sobre `INCONCLUSIVE` na agregação
+do item 10, então o braço Node passando a medir de verdade muda o **detail** do log, não o veredito.
+
+**`run.ps1` não precisou de mudança** — confirmado, não presumido: o fallback do `if/elseif/else`
+(linhas 93-99) já cai em `INCONCLUSIVE` para qualquer string desconhecida, e a linha 339 já soma
+`$inconclusive.Count` no `exit 1`. Falha de instrumento já era vermelha por construção.
+
+**Resta o único critério que esta branch não pode fechar:** a contagem seguir **8 REPRODUCED** no
+runner Windows real. Verde local não prova — é exatamente o tipo de coisa em que o ambiente do dev
+já nos enganou três vezes nesta REQ.
+
 ## Wave 2 — `skip` explícito (ML único)
 > Dependências: Wave 1 concluída — precisamos ver os 12 vermelhos antes de silenciá-los.
 

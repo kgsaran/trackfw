@@ -26276,3 +26276,154 @@ Mode continue exercitando os 12 testes normalmente.
 
 **Próximo:** `ares-tf` para ML-3A (Wave 3, sonda `workflow_dispatch`), e barreira final
 (`hefesto-tf`/`hades-tf` + arquiteto) só com CI verde nos termos do roadmap.
+
+## 2026-08-30 — `hefesto-tf` (Hefesto) — Barreira de qualidade do instrumento de Windows (REQ-2026-08-30, PR #221) — CONCLUÍDO
+
+**Branch:** `fix/job-de-windows-largo-que-nasce-vermelho-e-sonda-sob-demanda` (não commitei — Code
+Quality não modifica código de produto nem de teste, só diagnostica; handoff para
+`trackfw_architect`).
+
+**Entregue:** parecer completo em
+`docs/qualidade/2026-08-30-barreira-do-instrumento-de-windows.md`. Veredito: **APROVA COM
+RESSALVAS**.
+
+**Achado bloqueante:** `.github/workflows/quality.yml:374` (job `windows-defect-reproduction`)
+instala `pyyaml` por nome (`pip install --upgrade pip pyyaml`) em vez de `pip install pypi/` — o
+exato padrão de drift que o **ML-1D** já corrigiu na camada 1 (`windows-full-suites`, linha 219) duas
+commits antes, com o mesmo mecanismo (`ModuleNotFoundError`) e comentário explícito registrando o
+motivo ("zero drift, sem hardcodar nomes de dependência"). A camada 2 ficou de fora dessa correção.
+Efeito: se `pyproject.toml` ganhar uma segunda dependência de runtime sem tocar esta linha isolada,
+`checks.py` falha ao importar `trackfw.cli` **antes** de alcançar o código medido, e os itens 1/4
+reportam `VERDICT=ABSENT` por vacuidade (ausência de sintoma por não ter chegado lá, não por defeito
+corrigido) — `proc.returncode` é impresso mas nunca consultado na decisão do veredito
+(`checks.py:44-56`). Achado secundário do mesmo tipo em `run.ps1:287-294` (item 10): `ABSENT` não
+confirma que `roadmap move` de fato sincronizou o frontmatter, só que a linha final não contém `\`.
+
+**Achados de acompanhamento (não bloqueantes):** ausência de piso de contagem em `run.ps1` (11
+`Add-Result` esperados, nunca verificado); ausência de pino comparando a execução atual contra a
+linha de base 8/8 já registrada no roadmap; `GATE_QUOTE_COMMAND` triplicado byte-a-byte em
+`go/checks.go`/`node/checks.js`/`python/checks.py` (hoje sincronizado, sem checagem automática —
+melhor remédio é `run.ps1` passar o literal como argumento em vez de cada script hardcodar cópia);
+caso degenerado do item 7 se os três runtimes falharem ao iniciar simultaneamente; duplicação
+cosmética do step "Fixar caches" entre os dois jobs de `quality.yml`; amplitude de
+`os.IsPermission`/`EACCES` no ML-2A (risco baixo, não exposto pela falsificação atual).
+
+**ML-2A confirmado por reexecução própria** (não só leitura): `go test
+./internal/generators/... -run TestUpdateNeverWritesThroughSymlink -v` → PASS; `node --test
+npm/tests/update_discover_symlink_guard.test.js` → 10/10, 0 skipped. Condição medida corretamente
+(privilégio, não plataforma).
+
+**Verificado nesta auditoria:** `go build ./...` limpo, `go vet ./...` limpo, `actionlint` limpo nos
+dois workflows novos.
+
+**Próximo:** `trackfw_architect` decide se o achado bloqueante impede tirar o PR do rascunho;
+`ares-tf` aplica o fix de uma linha (`pip install pypi/`) seguindo o mesmo padrão já usado na camada
+1, e os achados de acompanhamento viram REQ/ML futuro a critério do arquiteto.
+
+## 2026-08-30 — `hades-tf` (Hades) — Barreira final do roadmap: diff completo (PR #221) — CONCLUÍDO
+
+**Branch:** `fix/job-de-windows-largo-que-nasce-vermelho-e-sonda-sob-demanda` (não commitei — Security
+não tem autoridade de Git; handoff para `trackfw_architect`).
+
+**Entregue:** `docs/seguranca/2026-08-30-barreira-do-instrumento-de-windows.md` — revisão do diff
+completo contra `origin/main` (21 arquivos, +2743/-28): os dois workflows novos (`quality.yml`,
+`windows-probe.yml`), `probe.go`/`checks.go`/`checks.js`/`checks.py`/`run.ps1`, e os testes de
+symlink guard do ML-2A nos 3 runtimes.
+
+**VEREDITO: APROVA COM RESSALVAS.** Nenhum achado bloqueante.
+
+**Confirmado, item por item das duas preocupações do KG:**
+- Sonda como primitiva de execução/exfiltração: não é vetor novo (`workflow_dispatch` já exige
+  permissão de escrita); único input externo (`inputs.motivo`) passado via `env:`, nunca
+  interpolado em `run:`; nenhum log imprime caminho de home real, `$GITHUB_ENV` ou segredo; junction
+  (`mklink /J`) e symlink de plumbing (`git update-index --cacheinfo 120000`) sempre dentro de
+  `RUNNER_TEMP`/`MkdirTemp`, nunca fora do workspace.
+- `$HOME` sintético compartilhado: camada 1 (`windows-full-suites`) isola `HOME`+`USERPROFILE` para
+  o job inteiro com `-p 1 -parallel 1`/`--test-concurrency=1`, resíduo de compartilhamento
+  sequencial já nomeado no próprio YAML. Camada 2 (`run.ps1`) isola só nos itens 2/5/6 (correto por
+  design); item 10 roda os 3 CLIs com o perfil ambiente do processo — nunca `~/.trackfw/` real fora
+  do runner (efêmero por job), mas relevante para reprodução local.
+
+**Achados de acompanhamento (não bloqueantes):** (A1) `windows-defect-reproduction` nunca roda `npm
+ci` — o braço Node do item 10 pode nunca medir o defeito de verdade, sem contaminar o veredito
+vermelho geral (AC2 continua satisfeita); (A2) `run.ps1` falha com erro pouco informativo fora do
+CI sem `RUNNER_TEMP` setado (`Join-Path` com parâmetro nulo é erro terminante, `$ErrorActionPreference`
+não protege) — só afeta reprodução local, testado com `pwsh` instalado; (A3) item 10 mede o perfil
+ambiente do processo, não um diretório sintético — documentar no script.
+
+`TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality` rodado na branch: `test`/`test-node`/`test-python`/
+`lint` verdes; `parity` acompanhado em tempo real até 181+ cenários de falsificação OK (incluindo
+`check-thirdparty-parity.sh`, `check-install-version-pin.sh`, `check-ci-workflow-pin-parity.sh`,
+`check-roadmap-barrier-contract.sh` iniciado) sem nenhum achado — interrompido manualmente após
+cobertura suficiente (script de duração conhecida ~4min, não relacionado ao diff). `actionlint`
+limpo nos dois workflows.
+
+**Não corrigi nada** — proibição explícita do escopo. Não criei branch, não commitei, não fiz push.
+
+**Próximo:** `trackfw_architect` decide sobre tirar o PR do rascunho; achados A1/A2/A3 viram REQ/ML
+de acompanhamento a critério do arquiteto — nenhum bloqueia.
+
+---
+
+## Sessão 2026-08-30 — ares-tf (INÍCIO: ML-1E — corretiva da barreira final, vacuidade da camada 2)
+
+Branch `fix/job-de-windows-largo-que-nasce-vermelho-e-sonda-sob-demanda` (não criada por mim).
+
+Escopo: corrigir o bloqueante de `hefesto-tf` (drift `pyyaml`→`pip install pypi/`) e o achado A1 de
+`hades-tf` (`npm ci` ausente) em `.github/workflows/quality.yml` (só job
+`windows-defect-reproduction`), e a vacuidade de `proc.returncode` nunca consultado em
+`cmd_help`/`cmd_cp1252_print` de `scripts/windows-repro/python/checks.py`. Arquivos tocados: só
+esses dois.
+
+---
+
+## Sessão 2026-08-30 — ares-tf (FIM: ML-1E — corretiva da barreira final — CONCLUÍDO)
+
+Branch `fix/job-de-windows-largo-que-nasce-vermelho-e-sonda-sob-demanda`.
+
+**O que foi feito:**
+
+1. `quality.yml`, job `windows-defect-reproduction`: `python -m pip install --upgrade pip pyyaml` →
+   `python -m pip install --upgrade pip` + `python -m pip install pypi/`, com o mesmo comentário de
+   zero-drift usado na linha 219 (`windows-full-suites`).
+2. Mesmo job: adicionado `npm ci --ignore-scripts` (working-directory `npm`), mesmo padrão do
+   `windows-full-suites`. Antes ausente — braço Node do item 10 rodava sem `node_modules`.
+3. `checks.py`, `cmd_help` e `cmd_cp1252_print`: novo ramo `elif proc.returncode != 0 and
+   _is_startup_failure(stderr)` → `VERDICT=INCONCLUSIVE`, antes de cair no `else: ABSENT`. Sinal
+   escolhido: `ModuleNotFoundError`/`ImportError`/`Traceback (most recent call last)` no stderr,
+   **combinado** com `returncode != 0` (documentado no docstring de `_is_startup_failure` por quê
+   `returncode != 0` sozinho não basta).
+
+**Falsificação (evidência real, não hipotética):**
+`TRACKFW_PYPI_SRC=/nonexistent/path python3 scripts/windows-repro/python/checks.py help` —
+- ANTES do fix (`git show HEAD:...` copiado para scratchpad): `ModuleNotFoundError: No module named
+  'trackfw'`, `exit=1`, **`VERDICT=ABSENT`** (o bug — declarava defeito ausente sem o código medido
+  ter rodado).
+- DEPOIS do fix: mesmo `ModuleNotFoundError`, mesmo `exit=1`, **`VERDICT=INCONCLUSIVE`**.
+- `cmd_cp1252_print` não importa `trackfw.cli` (subprocess isolado com só `print('→')`) —
+  sobrevive ao mesmo gatilho em ambas as versões (`ABSENT` correto, sem `ModuleNotFoundError`),
+  confirmando a leitura do parecer de qualidade §2.1. O guard em `cmd_cp1252_print` fica por
+  simetria/defesa, não porque este gatilho específico o exercite.
+- Sanity check com `TRACKFW_PYPI_SRC` correto: ambas as funções seguem `VERDICT=ABSENT` (console
+  utf-8 local, sem o bug cp1252 — esperado fora do Windows).
+
+**Confirmação sobre `run.ps1` (pedida pelo KG, não presumida):** lido `run.ps1:93-99` — o parsing já
+trata qualquer string que não bata `VERDICT=REPRODUCED` nem `VERDICT=ABSENT` como `INCONCLUSIVE`
+(fallback do `if/elseif/else`), e `run.ps1:321-340` já soma `$inconclusive.Count -gt 0` no `exit 1`.
+**Nenhuma mudança foi necessária em `run.ps1`** — confirmado, não só presumido.
+
+**Verificação:** `actionlint .github/workflows/quality.yml` → exit 0, zero achados.
+`TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality` → exit 0 (test, test-node, test-python, lint,
+parity — incluindo os 15 cenários de `check-ci-workflow-pin-parity` e os 53 de
+`check-roadmap-barrier-contract`, ambos OK).
+
+**Fora de escopo, não feito** (conforme instrução explícita do KG): piso de contagem de
+`Add-Result`, comparação automática contra a linha de base 8/8, deduplicação de
+`GATE_QUOTE_COMMAND` — registrados para REQ separada, não tocados.
+
+**Não commitei, não fiz push, não toquei o roadmap** — autoridade de Git é do `trackfw_architect`;
+o roadmap é atualizado pelo KG após auditoria.
+
+**Próximo:** o único item que só o CI real pode confirmar é se a contagem permanece 8/8
+`REPRODUCED` no runner Windows — pendente do próximo run em `windows-defect-reproduction` após o
+merge/push desta correção.

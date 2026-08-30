@@ -52,6 +52,13 @@ def cmd_help():
     print(f"stderr_tail={stderr[-400:]!r}")
     if "UnicodeEncodeError" in stderr:
         print("VERDICT=REPRODUCED")
+    elif proc.returncode != 0 and _is_startup_failure(stderr):
+        # O codigo medido (cli.py --help de topo) nao chegou a rodar — o
+        # processo morreu ANTES do ponto onde o UnicodeEncodeError apareceria
+        # (ex.: ModuleNotFoundError por drift de dependencia em pip install,
+        # ver quality.yml). ABSENT aqui seria vacuidade: declarar "defeito
+        # ausente" sobre um caminho que nunca foi exercitado.
+        print("VERDICT=INCONCLUSIVE (processo morreu antes de alcancar o codigo medido — ver stderr_tail)")
     else:
         print("VERDICT=ABSENT")
 
@@ -88,8 +95,37 @@ def cmd_cp1252_print():
     print(f"stderr_tail={stderr[-400:]!r}")
     if "UnicodeEncodeError" in stderr:
         print("VERDICT=REPRODUCED")
+    elif proc.returncode != 0 and _is_startup_failure(stderr):
+        # Mesmo raciocinio do item 1 (cmd_help): este subprocesso e um
+        # print() isolado que nao depende do import de trackfw.cli, mas o
+        # guard fica aqui tambem por simetria e porque um interpretador
+        # Python que falhe ao subir (ex.: ambiente quebrado) e igualmente
+        # "nao chegou a executar o codigo medido".
+        print("VERDICT=INCONCLUSIVE (processo morreu antes de alcancar o codigo medido — ver stderr_tail)")
     else:
         print("VERDICT=ABSENT")
+
+
+def _is_startup_failure(stderr: str) -> bool:
+    """True se o stderr indica que o processo morreu ANTES de alcancar o
+    codigo medido (falha de import/startup), nao por causa do defeito sob
+    medicao. Sinal escolhido: ModuleNotFoundError/ImportError (drift de
+    dependencia — o gatilho concreto identificado na barreira de qualidade
+    de 2026-08-30, quality.yml:374) OU um traceback de import do proprio
+    interpretador ANTES da primeira linha de output esperada (import de
+    trackfw.cli falhando no topo do -c). `returncode != 0` sozinho NAO
+    basta — o CLI pode legitimamente sair != 0 (ex.: argparse.error) sem
+    que isso signifique "nao rodou". Combinar com a string do traceback de
+    import e o sinal mais especifico disponivel sem instrumentar o
+    subprocesso; qualquer caso genuinamente ambiguo cai em INCONCLUSIVE por
+    este mesmo caminho (nao ha ramo que force ABSENT quando o sinal e
+    incerto), que e o lado seguro exigido pela barreira.
+    """
+    return (
+        "ModuleNotFoundError" in stderr
+        or "ImportError" in stderr
+        or "Traceback (most recent call last)" in stderr
+    )
 
 
 def _is_cp1252_cascade(stderr: str) -> bool:
