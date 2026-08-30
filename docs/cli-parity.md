@@ -6015,3 +6015,150 @@ Lifecycle inventory: `package.json` (discovered: root first, then `npm/package.j
 ```
 
 Note: `base` field is omitted from JSON across all 3 CLIs when not provided.
+
+---
+
+## `roadmap_namespacing: by_agent` — `agents:` complementa o disco; namespace não declarado vira violação (REQ-2026-08-29, ADR-2026-08-29, ML-3A)
+
+<!-- trackfw-contract: gate=scripts/check-agent-namespace-union.sh -->
+
+Antes desta REQ, em `roadmap_namespacing: by_agent`, a lista `agents:` **substituía** o disco: se
+declarada e não-vazia, o resolvedor nunca lia `roadmap_dir`/`req_dir` para descobrir namespaces —
+qualquer subdiretório presente em disco e ausente de `agents:` ficava **invisível** para `validate`,
+`status`, `context`, `serve` e `roadmap move`. Desde o resolvedor canônico (Wave 1, `ML-1A`), `agents:`
+**complementa** o disco: a enumeração é sempre a **união** entre a lista declarada (ordem preservada,
+deduplicada) e os subdiretórios de primeiro nível encontrados em disco (ordenados
+alfabeticamente), com os declarados vindo **primeiro** na ordem final. Um namespace só-disco e ausente
+de `agents:` continua sendo enumerado — e, desde a Wave 2 (`ML-2A`), passa a gerar uma **violação**
+nomeando-o, em vez de ficar em silêncio.
+
+### O resolvedor canônico — um por runtime
+
+<!-- trackfw-contract: gate=scripts/check-agent-namespace-union.sh -->
+
+- Go: `resolveAgentNamespaces` (`internal/validator/validator.go`).
+- Node.js: `resolveAgentNamespaces` (`npm/src/validator/index.js`).
+- Python: `resolve_agent_namespaces` (`pypi/trackfw/config.py` — não em `validator.py`, para evitar o
+  ciclo de import `validator → traceid → validator`; `pypi/trackfw/validator.py` reexporta a mesma
+  função por compatibilidade com quem já a importava de lá).
+
+Todo consumidor que precisa enumerar namespaces em modo `by_agent` (regras de `validate`, `status`,
+`context`, `serve`, `roadmap move`/`show`, geradores de REQ/roadmap) passa por este ponto único — o
+padrão antigo (`len(agents) == 0` / `!agents.length` / `not agents` como gate para decidir "ler disco
+ou não") só pode existir dentro do próprio resolvedor; reintroduzi-lo em qualquer outro ponto é a
+Direção A da falsificação abaixo.
+
+### Segurança — a enumeração nunca segue symlink (AC12/AC13)
+
+<!-- trackfw-contract: gate=scripts/check-agent-namespace-union.sh -->
+
+Um namespace que é um symlink apontando para fora do projeto **não** pode ser tratado como diretório
+pelo resolvedor — do contrário, `roadmap move` (cujo diretório de destino deriva do diretório onde o
+`src` foi encontrado) escreve fora da árvore do projeto através dele. Reproduzido ao vivo durante o
+threat-model desta REQ (ML-0A): com a lista `agents:` vazia (o caminho de fallback pré-união, hoje o
+caminho *incondicional* de todo projeto `by_agent`), Node.js e Python seguiam o symlink e o Go não —
+por desenho de API, não por acidente:
+
+| Runtime | Primitiva exigida | Por que não segue symlink |
+|---|---|---|
+| Go | `os.ReadDir(dir)` + `entry.IsDir()` | O bit de tipo vem do `dirent` do próprio `readdir`, nunca de um `stat` do alvo |
+| Node.js | `fs.readdirSync(dir, {withFileTypes: true})` + `dirent.isDirectory()` | Mesma garantia do `dirent` — `fs.statSync(...).isDirectory()` **segue** e é proibido aqui |
+| Python | `os.scandir(dir)` + `entry.is_dir(follow_symlinks=False)` | `follow_symlinks=False` explícito — `os.path.isdir()` **segue** e é proibido aqui |
+
+`entry.IsDir()`/`dirent.isDirectory()`/`entry.is_dir(follow_symlinks=False)` **preservados
+literalmente** é o requisito — uma "simplificação" para `os.Stat`/`fs.statSync`/`os.path.isdir()`
+reintroduz o vetor. É a Direção B2 da falsificação abaixo, provada apenas em Node/Python: o Go não tem
+uma variante "um edit errado" equivalente, porque seguir symlink ali exigiria trocar a primitiva
+inteira, não corromper um literal.
+
+### Filtro de infraestrutura (`isInfraDirName`)
+
+<!-- trackfw-contract: gate=scripts/check-agent-namespace-union.sh -->
+
+Dois casos, fechados e deliberadamente estreitos (nenhuma heurística adicional de nome) — filtram a
+união **e** a violação, no ponto único de leitura de disco do resolvedor:
+
+1. Qualquer nome iniciado por `.` (`.git`, `.trackfw`, `.DS_Store` — nenhum agente legítimo começa com
+   ponto).
+2. `node_modules` — citado nominalmente pelo mesmo modelo de ameaça.
+
+Um diretório cujo nome **colide com um dos 6 nomes de estado reservados** (`backlog`, `analyzing`,
+`wip`, `blocked`, `done`, `abandoned` — tipicamente um resto de migração incompleta `flat`→`by_agent`,
+ex.: `wip/` órfão solto no topo de `roadmap_dir`) **não** é filtrado por `isInfraDirName` e **continua**
+entrando na união normalmente (nada fica invisível) — mas é excluído só da regra
+`agent_namespace_undeclared`: pedir para declarar `wip` como agente em `agents:` seria ruído confuso,
+não uma correção real (decisão do ML-2A, recomendação do ML-0A adotada sem alteração).
+
+### A regra `agent_namespace_undeclared`
+
+<!-- trackfw-contract: gate=scripts/check-agent-namespace-union.sh -->
+
+Em `roadmap_namespacing: by_agent`, um namespace presente em `roadmap_dir` e/ou `req_dir` e ausente de
+`agents:` é **violação** (severidade `error`, mesmo default de toda regra sem entrada em
+`ruleDefaults`/`diskRuleSeverity` — não é aviso), deduplicada por nome (não por árvore: um namespace
+ausente das duas árvores ao mesmo tempo gera uma única violação, nomeando ambas). Mensagem
+byte-idêntica nos 3 CLIs:
+
+```
+agent namespace "<nome>" exists in <árvore[, árvore]> but is not declared in agents: — add it to trackfw.yaml
+```
+
+`<árvore>` é `roadmap_dir`, `req_dir`, ou ambas separadas por `, ` (nessa ordem — roadmap_dir primeiro)
+quando o namespace existe nas duas.
+
+### Independência entre união e violação (AC5 — a propriedade que define a REQ)
+
+<!-- trackfw-contract: gate=scripts/check-agent-namespace-union.sh -->
+
+A violação **soma** um sinal de configuração incompleta; ela nunca **condiciona** a enumeração. Um
+namespace só-disco continua sendo enumerado por `status`/`validate`/`roadmap move` **enquanto a
+violação está ativa** — se a união dependesse da declaração, o defeito original desta REQ (artefatos
+invisíveis) teria voltado disfarçado de "agora com um aviso". Declarar o namespace em `agents:` silencia
+a violação sem alterar a enumeração (o namespace já estava sendo lido do disco antes de ser declarado).
+
+### Ordenação declarado-primeiro — load-bearing para gate
+
+<!-- trackfw-contract: gate=scripts/check-agent-namespace-union.sh -->
+
+O resolvedor devolve os namespaces **declarados primeiro** (na ordem de `agents:`, deduplicada),
+seguidos dos extras encontrados só em disco (ordem alfabética). Esta ordenação nasceu neutra
+(cosmética) mas **se tornou load-bearing para gate**: era o único discriminante que sobrevivia à união
+para dois cenários herdados de `check-gates-falsify.sh` (34 — sequência YAML de bloco não indentada; 35
+— vírgula dentro de aspas em lista inline) depois que a união tornou vácua a asserção original de
+presença/ausência de um item na saída (`vault/notes/uniao-disco-agents-mascara-gate-por-presenca-2026-08-29.md`).
+A Wave 3 (`ML-3A`, este arquivo) retargetou os dois cenários para o sinal mais forte da violação
+`agent_namespace_undeclared` (mensagem citando por nome um namespace que deveria estar declarado — ver
+seção acima), mas a ordenação continua sendo o contrato ativo consumido pelo `roadmap list` do Python
+(alinhado ao Go/Node.js desde o `ML-2A`) — não removê-la nem alterar sua semântica de exibição no
+`serve` sem reavaliar os dois cenários citados.
+
+### `gap` conhecido — formatação do `roadmap list` do Python
+
+<!-- trackfw-contract: gap reason=o roadmap list do Python formata a saída por agente diferente de Go/Node.js — "[zulu]" seguido de "[backlog] arquivo" por linha, contra "[zulu/backlog]" seguido só do arquivo em Go/Node.js. Divergência de formatação pré-existente, encontrada durante o ML-2A (REQ-2026-08-29), fora do escopo desta REQ — a ordenação (que é o que este roadmap corrige e sobre o que os gates acima dependem) já está alinhada nos 3 CLIs; só a apresentação de linha diverge. Nenhum gate cross-CLI compara a saída completa do roadmap list byte-a-byte entre os 3 CLIs neste ponto -->
+
+### Não-regressão de `flat`
+
+<!-- trackfw-contract: gate=scripts/check-agent-namespace-union.sh -->
+
+`roadmap_namespacing: flat` nunca passa pelo resolvedor de namespaces e nunca emite
+`agent_namespace_undeclared` — esta REQ não altera nenhum comportamento de projeto `flat` (Negative
+Scope da REQ).
+
+### Falsificação — ambas as direções, provadas por `check-agent-namespace-union.sh`
+
+<!-- trackfw-contract: gate=scripts/check-agent-namespace-union.sh -->
+
+O gate é auto-contido (constrói seus próprios binários corrompidos; não depende de
+`check-gates-falsify.sh`) e prova, empiricamente, que cada regressão abaixo faz o próprio gate
+reprovar com o diagnóstico que ele mesmo emite:
+
+| Direção | O que regride | Runtimes provados | Por que não os 3 |
+|---|---|---|---|
+| A | União volta a ser substituição (`agents:` não-vazio pula a varredura de disco) — o defeito original desta REQ | Go, Node.js, Python | — |
+| B1 | Filtro de infraestrutura desligado — `.git`/`node_modules` viram "namespace não declarado" | Go, Node.js, Python | — |
+| B2 | Varredura de disco volta a seguir symlink (AC12) | Node.js, Python | Go é imune por desenho de API (`entry.IsDir()` nunca segue symlink) — não há uma corrupção de "um literal errado" equivalente em Go; ver seção de segurança acima |
+
+Cada direção usa uma prova de não-vacuidade própria: o binário/árvore **limpo** é verificado primeiro
+contra o mesmo fixture (o namespace declarado nunca é acusado; a violação do namespace só-disco está
+sempre presente antes de qualquer corrupção — sem isso, a ausência do namespace declarado no diagnóstico
+não distinguiria "a regra funciona" de "a regra não rodou").

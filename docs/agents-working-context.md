@@ -25984,3 +25984,82 @@ dependência de história do git e invariante a locale.
 
 **Próximo, já acordado com KG:** REQ do job de Windows alargado + workflow sob demanda. Depois, a
 REQ do `roadmapTrustForGates` que falha aberto — defeito de harness em produção.
+
+---
+
+## 2026-08-30 — `artemis-tf` (Ártemis) — ML-3A: gate falsificável + contrato (REQ-2026-08-29, Wave 3)
+
+**Início.** Roadmap `docs/roadmaps/wip/ROADMAP-2026-08-29-lista-de-agentes-complementa-o-disco-e-
+namespace-nao-declarado-vira-violacao.md`, ML-3A. Escopo: `scripts/check-agent-namespace-union.sh`
+(novo), retarget dos Cenários 34/35 de `check-gates-falsify.sh`, seção nova em `docs/cli-parity.md`,
+registro no `Makefile`. Branch `fix/lista-de-agentes-complementa-o-disco-e-namespace-nao-declarado-
+vira-violacao`, já criada pelo arquiteto.
+
+**Entrega.**
+
+1. **`scripts/check-agent-namespace-union.sh` (novo, 35 cenários, exec bit setado, registrado no
+   `Makefile` como `GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-agent-namespace-union.sh`)** — gate
+   auto-contido (não depende de `check-gates-falsify.sh`; corrompe seus próprios binários Go/Node/
+   Python inline, mesma técnica de `corrupt_literal`, duplicada por não ter de onde importar).
+   Cobre AC1 (união em `status`/`validate`/`roadmap move`, 3 runtimes), AC4 (mensagem byte-idêntica),
+   AC5 (independência nas duas direções — declarar silencia sem esconder; união não depende da
+   violação), AC12 (symlink não seguido), filtro de infraestrutura (`.git`/`node_modules`/`wip`
+   órfão) e não-regressão de `flat`. Falsificação em 3 direções, todas com prova de não-vacuidade
+   empírica antes de escrever a asserção:
+   - **Direção A** (união volta a substituição — o defeito original da REQ): Go/Node/Python.
+   - **Direção B1** (filtro de infra desligado — `.git` vira namespace): Go/Node/Python.
+   - **Direção B2** (AC12 regride — volta a seguir symlink): só Node/Python. Go **deliberadamente
+     excluído** — `entry.IsDir()` nunca segue symlink por desenho de API (`dirent` do `readdir`, não
+     um `stat` do alvo), então não existe uma corrupção de "um literal errado" equivalente à de
+     Node/Python (`fs.statSync().isDirectory()`/`os.path.isdir()`); documentado no cabeçalho do gate
+     e na seção de `docs/cli-parity.md`, não é lacuna silenciosa.
+2. **Retarget dos Cenários 34/35 de `check-gates-falsify.sh`** — a Wave 1 (`apolo-tf`) já tinha
+   retargetado de presença/ausência para ORDEM (declarado-primeiro) porque a união tornou vácua a
+   asserção original. Este ML trocou ORDEM pelo sinal mais forte da violação
+   `agent_namespace_undeclared` (Wave 2): com `agents:` corrompido (lista descartada), namespaces
+   antes declarados passam a aparecer citados por nome na violação — presença de um item que só pode
+   aparecer se o parsing genuinamente quebrou, não um detalhe de apresentação (ordem) que uma
+   refatoração de UI poderia mudar sem tocar parsing. Provado empiricamente nos 3 CLIs (baseline:
+   `zeus`/`obi`/`"ka, tsu"` nunca acusados; corrompido: todos acusados) antes de escrever a asserção.
+   Cada braço de baseline ganhou uma checagem de vivacidade positiva (o namespace só-disco DEVE estar
+   presente) — sem ela, saída vazia por `cd`/binário quebrado passaria como "OK" por engolir o
+   `; true`. Cenário 35 manteve os 3 arms (Go/Node/Python); Cenário 34 manteve a exclusão histórica
+   do Python (decisão herdada, documentada).
+3. **`docs/cli-parity.md`** — seção nova `## roadmap_namespacing: by_agent — agents: complementa o
+   disco...`, 10 subseções cada uma anotada `<!-- trackfw-contract: gate=scripts/check-agent-
+   namespace-union.sh -->`, incluindo a tabela de primitivas AC12 por runtime, o motivo da exclusão
+   do Go na Direção B2, e a ordenação declarado-primeiro registrada como load-bearing para gate. Uma
+   subseção com `gap reason=` documentando a divergência de formatação (não ordenação) do
+   `roadmap list` do Python, achado do `apolo-tf` no ML-2A.
+4. **`Makefile`** — uma linha nova no alvo `parity`.
+
+**Evidência.**
+- `bash scripts/check-agent-namespace-union.sh` → 35/35 OK, exit 0. Repetido sob `LC_ALL=C` e
+  `LC_ALL=en_US.UTF-8` — mesmo resultado. Gate não usa `git` (nem em subprocess nem em history), logo
+  irrelevante a clone raso. Revisão do arquiteto apontou 2 lacunas na guarda de vacuidade (todas
+  corrigidas antes desta linha): AC5(b) era um `ok` decorativo sem asserção própria — virou
+  conjunção num único `validate` por runtime (violação presente E evidência de que o arquivo de bob
+  foi escaneado, mesma saída); Direção A e os filtros de infra/flat comparavam só ausência, sem
+  âncora de presença — saída vazia por crash passaria como "OK". Cada um ganhou uma âncora de
+  vivacidade (alice/wip_has_req) antes da asserção de ausência.
+- `bash scripts/check-gates-falsify.sh` (standalone, pós-retarget) → **181/181 cenários OK**, exit 0
+  — inclui Cenários 34/35 retargetados, com o novo braço de baseline de vivacidade (`apolo`/`zeta`
+  presentes) provado nos 3 CLIs antes do braço de detecção.
+- `bash scripts/check-parity-contract-coverage.sh` → exit 0, 0 seções sem anotação, 0 anotações
+  inválidas.
+- `go build ./...` / `go vet ./...` → limpos (nenhum arquivo de produto tocado).
+- **`TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality` → exit 0** (evidência final, AC11): `go test`
+  limpo em todos os pacotes, `npm test` 839/839, `pytest` 1555 passed + 28 subtests, `go vet` limpo,
+  e o alvo `parity` inteiro (43 gates, incluindo `check-agent-namespace-union.sh` 35/35 e
+  `check-gates-falsify.sh` 181/181 rodando DENTRO do `make quality`, `check-parity-contract-coverage.sh`
+  e `check-roadmap-barrier-contract.sh` 53 cenários) verde de ponta a ponta, um único run, sem
+  interferência de edição concorrente (lição aplicada: `no-repo-mutation` falsamente reprovou numa
+  tentativa anterior porque eu editava este arquivo enquanto o gate rodava — corrigido escrevendo
+  o fechamento só depois do `make quality` terminar).
+- `git diff --stat`: `Makefile` (+1), `docs/cli-parity.md` (+147), `docs/agents-working-context.md`
+  (+entradas), `scripts/check-gates-falsify.sh` (retarget), `scripts/check-agent-namespace-union.sh`
+  (novo, exec bit setado). Nenhum arquivo em `internal/`, `npm/src/`, `pypi/trackfw/`, no roadmap ou
+  em outro `scripts/check-*.sh`.
+
+**Fronteiras mantidas:** não commitei, não fiz push — entrego ao arquiteto para auditoria/commit.
+Não toquei no roadmap nem nos outros `scripts/check-*.sh`.

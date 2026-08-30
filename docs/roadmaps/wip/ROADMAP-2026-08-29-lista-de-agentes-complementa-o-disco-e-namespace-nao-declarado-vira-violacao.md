@@ -453,7 +453,7 @@ pré-existente e fora do escopo desta REQ; a **ordenação**, que era o que impo
 > Dependências: Waves 1 e 2 concluídas.
 
 ### ML-3A — Gate falsificável e `docs/cli-parity.md`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** `artemis-tf`
 **Files affected:** `scripts/check-agent-namespace-union.sh` (novo), `docs/cli-parity.md`, `Makefile`.
 **Actions:**
@@ -463,15 +463,38 @@ pré-existente e fora do escopo desta REQ; a **ordenação**, que era o que impo
 3. Seção em `docs/cli-parity.md` anotada com `gate=`.
 4. Registrar no `Makefile`.
 **Critérios de aceite:**
-- [ ] AC10, AC11
-- [ ] Gate exit 0 com contagem; vacuidade provada
-- [ ] **Rodar no ambiente empobrecido** antes de declarar pronto: locale `C` e `en_US.UTF-8`, e sem
+- [x] AC10, AC11
+- [x] Gate exit 0 com contagem; vacuidade provada
+- [x] **Rodar no ambiente empobrecido** antes de declarar pronto: locale `C` e `en_US.UTF-8`, e sem
       `node`/`python3` no PATH quando aplicável. Ver
       `vault/notes/ambiente-do-dev-e-mais-rico-que-o-do-ci-2026-08-29.md`
-- [ ] `check-parity-contract-coverage.sh` → 0
+- [x] `check-parity-contract-coverage.sh` → 0
 
 > **Formato do bloco de gate:** cada linha é um **comando independente** — não é script, não há
 > estado entre linhas. Ver `vault/notes/gates-da-wave-sao-um-comando-por-linha-2026-08-29.md`.
+
+
+#### Resultado do ML-3A (artemis-tf, 2026-08-30)
+
+`scripts/check-agent-namespace-union.sh`, **35 cenários**, exit 0. Cobre AC1, AC4, AC5, AC12, filtro
+de infraestrutura e `flat` intocado, nos 3 runtimes, com falsificação em ambas as direções.
+
+**Uma exclusão que ela documentou em vez de esconder:** a direção B2 (regressão do AC12 — voltar a
+seguir symlink) cobre só Node e Python. O Go é **imune por desenho da API** — `entry.IsDir()` nunca
+segue symlink, então não há regressão a injetar. Registrado no cabeçalho do gate e no
+`cli-parity.md`. É a diferença entre "não testei" e "não é testável, e eis por quê".
+
+**Retarget dos cenários 34 e 35** do `check-gates-falsify.sh`: saíram de ordenação para o sinal da
+violação `agent_namespace_undeclared`. Ordem era o melhor discriminante disponível quando o
+`apolo-tf` a escolheu no ML-1A; a Wave 2 criou um melhor. Ordem é detalhe de apresentação que uma
+refatoração de UI muda sem ninguém perceber que quebrou um gate.
+
+**Auditoria do arquiteto:** injetei a regressão da substituição no `resolveAgentNamespaces` do Go
+(`if len(ordered) > 0 { return ordered }` antes do `os.ReadDir`) — o gate **reprova**. Restaurado,
+volta a 35/35. `check-parity-contract-coverage.sh` verde. `git status` sem nenhum arquivo de produto.
+
+`make quality` completo: exit 0, 43 gates de `parity`, `check-gates-falsify` 181/181, npm 839,
+pytest 1555.
 
 ## Barreira final
 Revisão `hefesto-tf` e `hades-tf` sobre o diff entregue, auditoria do arquiteto e
