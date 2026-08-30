@@ -2,6 +2,7 @@
 
 const fs = require('fs')
 const path = require('path')
+const { resolveAgentNamespaces } = require('../validator')
 
 const STATES = ['wip', 'backlog', 'blocked', 'done', 'abandoned']
 
@@ -68,14 +69,7 @@ function handleBoard(cfg, req, res) {
   const agentSet = new Set()
 
   if (namespacing === 'by_agent') {
-    let agents = cfg.agents || []
-    if (!agents.length) {
-      try {
-        agents = fs.readdirSync(roadmapDir).filter(f => {
-          try { return fs.statSync(path.join(roadmapDir, f)).isDirectory() } catch (_) { return false }
-        })
-      } catch (_) { agents = [] }
-    }
+    const agents = resolveAgentNamespaces(cfg, roadmapDir)
     for (const agent of agents) {
       agentSet.add(agent)
       for (const state of STATES) {

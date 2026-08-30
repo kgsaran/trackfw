@@ -285,7 +285,8 @@ mínimo de Wave 3.
 > paralelo produziram divergência de comportamento três vezes no ciclo anterior.
 
 ### ML-1A — Um resolvedor por runtime, união de `agents:` com o disco
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído (implementação e evidência completas; aguardando auditoria do
+`trackfw_architect` antes de marcar ✅ — ver protocolo de conclusão de microlote)
 **Agente:** `apolo-tf`
 **Files affected (fechado pelo ML-0A — ver "Resultado do ML-0A" acima para linha exata e justificativa):**
 - Go: `internal/validator/validator.go` (6 pontos: `validateWIPLimit`, `GetStatus`, `resolveStateDirs`,
@@ -333,11 +334,57 @@ mínimo de Wave 3.
    **não trocar por `os.Stat`** sob pretexto de "simplificação", isso reintroduziria o vetor no único
    runtime hoje imune.
 **Critérios de aceite:**
-- [ ] AC1, AC2, AC3, AC6, AC8
-- [ ] AC7 — não-regressão: `validate`, `status` e `context` sobre este repositório produzem saída
+- [x] AC1, AC2, AC3, AC6, AC8
+- [x] AC7 — não-regressão: `validate`, `status` e `context` sobre este repositório produzem saída
       idêntica à de antes. Compare byte a byte.
-- [ ] `go build ./...` → 0 · `go test ./...` → 0 · `npm test --prefix npm` → 0 ·
+- [x] `go build ./...` → 0 · `go test ./...` → 0 · `npm test --prefix npm` → 0 ·
       `PYTHONPATH=pypi python3 -m pytest pypi/tests` → 0
+
+
+#### Resultado do ML-1A (apolo-tf, 2026-08-29)
+
+Um resolvedor por runtime: `resolveAgentNamespaces` (`validator.go:1006`, exportado para
+`generators` e `serve` para evitar ciclo de import), `resolveAgentNamespaces`
+(`npm/src/validator/index.js`), e `resolve_agent_namespaces` — este último em
+`pypi/trackfw/config.py`, **não** no validator, para evitar o ciclo `validator → traceid → validator`.
+Decisão dele, e é a certa.
+
+**Auditoria do arquiteto — os dois pontos centrais, 3 CLIs reais:**
+
+```
+symlink apontando para fora do projeto    go: não escapou  node: não escapou  py: não escapou
+união (agents: só "alfa", zeus em disco)  go: enxerga      node: enxerga      py: enxerga
+check-gates-falsify                       181 cenários, 0 FAIL
+grep "len(agents) == 0" em internal/      2 — ambas no COMENTÁRIO do resolvedor
+                                            avisando para nunca reimplementar o padrão
+```
+
+**O que ele fez com os gates que a própria união tornou vácuos, e por que aceito.** Os cenários 34 e
+35 provavam o parsing de `agents:` verificando se um item **aparecia** na saída. Com a união o item
+aparece de qualquer forma — no 35 de modo estrutural, porque o diretório de teste tem o mesmo nome
+literal do item declarado, então a união o acha mesmo com `cfg.Agents` inteiramente apagado.
+
+Ele retargetou de **presença** para **ordem** (declarados primeiro), que ainda discrimina, e nomeou a
+perda em `vault/notes/uniao-disco-agents-mascara-gate-por-presenca-2026-08-29.md` em vez de deixar o
+gate verde e mudo. É a conduta certa.
+
+**Duas pendências que EU assumo a partir disso:**
+
+1. **A ordenação declarado-primeiro vale em Go e Node; o `roadmap list` do Python mantém
+   alfabética.** Ele preservou por ser divergência pré-existente — mas ela agora é **load-bearing
+   para um gate**, e sob a regra de paridade não pode ficar. Entra no ML-2A.
+2. **A Wave 2 devolve o sinal perdido, e melhor.** Com a violação de namespace não declarado, um
+   `agents:` que falha ao parsear faz **todos** os namespaces virarem não declarados — violações em
+   massa. Isso é discriminação por presença de novo, mais forte que ordem. **O ML-3A deve retargetar
+   os cenários 34 e 35 sobre o sinal da violação**, aposentando o retarget por ordem.
+
+**Defeitos pré-existentes que ele achou e não corrigiu, corretamente reportados:**
+- `pypi/trackfw/commands/status.py:_count_reqs_by_status` nunca soube de `by_agent` — conta REQs por
+  listagem flat, e o Inventory do `status` mostra **0** em projeto `by_agent`. Divergente de Go/Node.
+- `npm/src/commands/context.js:136` não dá `await` num `validate()` assíncrono — `trackfw context`
+  **sempre** falha no Node com `Cannot read properties of undefined`, inclusive em projeto `flat`.
+  Grave e independente desta REQ.
+- `pypi/trackfw/commands/status.py:_list_dirs` virou código morto.
 
 ## Wave 2 — Violação de namespace não declarado (ML único)
 > Dependências: Wave 1 concluída. A violação só é segura de emitir depois que a união existe.
@@ -358,6 +405,9 @@ mais o ponto que formata a mensagem de violação (AC4, AC9).
    da violação** (nenhum agente legítimo começa com ponto); colisão com nome de estado deve virar aviso
    silencioso opcional, não violação de namespace — decisão final e justificativa por escrito ficam com
    quem implementa este ML, não é obrigação seguir a recomendação sem reavaliar.
+3. **Paridade de ordenação** (herdada do ML-1A): Go e Node passaram a devolver os namespaces
+   declarados primeiro; o `roadmap list` do Python mantém ordenação alfabética. A ordem virou
+   **load-bearing para um gate** — alinhe os 3.
 **Critérios de aceite:**
 - [ ] AC4, AC5, AC9
 - [ ] Os artefatos do namespace não declarado continuam sendo **enumerados** mesmo com a violação

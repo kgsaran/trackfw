@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/kgsaran/trackfw/internal/config"
+	"github.com/kgsaran/trackfw/internal/validator"
 )
 
 // burndownPoint holds open/closed counts for one calendar week.
@@ -206,13 +207,11 @@ func countStateDistribution(cfg config.ProjectConfig) map[string]int {
 	}
 
 	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
-		agents, _ := os.ReadDir(cfg.RoadmapDir)
-		for _, a := range agents {
-			if !a.IsDir() {
-				continue
-			}
+		// resolvedor canônico (validator.ResolveAgentNamespaces): união entre agents: e disco,
+		// sem seguir symlink (REQ-2026-08-29).
+		for _, agent := range validator.ResolveAgentNamespaces(cfg, cfg.RoadmapDir) {
 			for state := range distrib {
-				dir := filepath.Join(cfg.RoadmapDir, a.Name(), state)
+				dir := filepath.Join(cfg.RoadmapDir, agent, state)
 				distrib[state] += countMDFiles(dir)
 			}
 		}

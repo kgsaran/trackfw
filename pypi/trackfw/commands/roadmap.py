@@ -14,6 +14,7 @@ from trackfw.generators.roadmap import (
     sync_paired_req_references,
     VALID_STATES,
 )
+from trackfw.validator import resolve_agent_namespaces
 
 
 # ---------------------------------------------------------------------------
@@ -35,16 +36,12 @@ def _list_flat(roadmap_dir: str, filter_state: str = None) -> list[tuple[str, st
 
 
 def _list_by_agent(roadmap_dir: str, filter_state: str = None, agents=None) -> list[tuple[str, str, str]]:
-    """Retorna lista de (state, agent, filename) em modo by_agent."""
+    """Retorna lista de (state, agent, filename) em modo by_agent — união entre `agents` (declarados
+    em trackfw.yaml) e os subdiretórios em disco (resolve_agent_namespaces, resolvedor canônico —
+    REQ-2026-08-29). `agents` já vem em ordem determinística do chamador (sorted abaixo preserva a
+    saída antiga, que também ordenava alfabeticamente)."""
     results = []
-    if not agents:
-        try:
-            agents = [
-                e for e in os.listdir(roadmap_dir)
-                if os.path.isdir(os.path.join(roadmap_dir, e))
-            ]
-        except OSError:
-            agents = []
+    agents = resolve_agent_namespaces({"agents": agents or []}, roadmap_dir)
 
     states = [filter_state] if filter_state else VALID_STATES
     for agent in sorted(agents):

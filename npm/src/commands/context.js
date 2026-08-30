@@ -4,7 +4,7 @@ const { Command } = require('commander')
 const fs = require('fs')
 const path = require('path')
 const config = require('../config')
-const { validate } = require('../validator')
+const { validate, resolveAgentNamespaces } = require('../validator')
 
 /**
  * extractFrontmatterField — extrai valor de campo YAML dentro de bloco --- ... ---.
@@ -104,14 +104,7 @@ function getContext(format) {
   const reqNamespacing = cfg.roadmapNamespacing || cfg.roadmap_namespacing || ''
   if (reqNamespacing === 'by_agent') {
     const STATES = ['backlog', 'wip', 'blocked', 'done', 'abandoned']
-    let agents = cfg.agents || []
-    if (!agents.length) {
-      try {
-        agents = fs.readdirSync(reqDir).filter(f => {
-          try { return fs.statSync(path.join(reqDir, f)).isDirectory() } catch (_) { return false }
-        })
-      } catch (_) {}
-    }
+    const agents = resolveAgentNamespaces(cfg, reqDir)
     for (const agent of agents) {
       for (const state of STATES) {
         reqs.push(...collectEntries(path.join(reqDir, agent, state), 'REQ', state))
@@ -125,14 +118,7 @@ function getContext(format) {
   const roadmaps = []
   const states = ['wip', 'backlog', 'blocked', 'done', 'abandoned']
   if (cfg.roadmapNamespacing === 'by_agent') {
-    let agents = cfg.agents || []
-    if (agents.length === 0) {
-      try {
-        agents = fs.readdirSync(cfg.roadmapDir).filter(f => {
-          try { return fs.statSync(path.join(cfg.roadmapDir, f)).isDirectory() } catch (_) { return false }
-        })
-      } catch (_) { agents = [] }
-    }
+    const agents = resolveAgentNamespaces(cfg, cfg.roadmapDir)
     for (const agent of agents) {
       for (const state of states) {
         const dir = path.join(cfg.roadmapDir, agent, state)

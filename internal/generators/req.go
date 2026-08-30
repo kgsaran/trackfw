@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/kgsaran/trackfw/internal/config"
+	"github.com/kgsaran/trackfw/internal/validator"
 )
 
 // REQContent contém os campos de uma REQ a ser gerada.
@@ -141,17 +142,7 @@ func listREQFiles(cfg config.ProjectConfig) []string {
 
 	// 3. by_agent.
 	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
-		agents := cfg.Agents
-		if len(agents) == 0 {
-			entries, err := os.ReadDir(reqDir)
-			if err == nil {
-				for _, e := range entries {
-					if e.IsDir() {
-						agents = append(agents, e.Name())
-					}
-				}
-			}
-		}
+		agents := validator.ResolveAgentNamespaces(cfg, reqDir)
 		for _, agent := range agents {
 			for _, state := range roadmapStateOrder {
 				matches, _ := filepath.Glob(filepath.Join(reqDir, agent, state, "*.md"))

@@ -231,15 +231,7 @@ def list_req_files(cfg: dict) -> list[str]:
 
     # 3. by_agent.
     if cfg.get("roadmap_namespacing") == cfg_module.NAMESPACING_BY_AGENT:
-        agents = list(cfg.get("agents") or [])
-        if not agents:
-            try:
-                for entry in os.listdir(req_dir):
-                    full = os.path.join(req_dir, entry)
-                    if os.path.isdir(full):
-                        agents.append(entry)
-            except OSError:
-                agents = []
+        agents = cfg_module.resolve_agent_namespaces(cfg, req_dir)
         for agent in agents:
             for state in STATE_ORDER:
                 d = os.path.join(req_dir, agent, state)

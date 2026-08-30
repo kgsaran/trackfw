@@ -12,7 +12,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -120,28 +119,12 @@ func resolveBarrierRoadmap(name string) (string, error) {
 	base := strings.TrimSuffix(filepath.Base(name), ".md")
 	filename := base + ".md"
 
-	var wipDirs, doneDirs []string
-	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
-		agents := cfg.Agents
-		if len(agents) == 0 {
-			entries, err := os.ReadDir(cfg.RoadmapDir)
-			if err == nil {
-				for _, e := range entries {
-					if e.IsDir() {
-						agents = append(agents, e.Name())
-					}
-				}
-			}
-		}
-		sort.Strings(agents)
-		for _, agent := range agents {
-			wipDirs = append(wipDirs, filepath.Join(cfg.RoadmapDir, agent, "wip"))
-			doneDirs = append(doneDirs, filepath.Join(cfg.RoadmapDir, agent, "done"))
-		}
-	} else {
-		wipDirs = []string{filepath.Join(cfg.RoadmapDir, "wip")}
-		doneDirs = []string{filepath.Join(cfg.RoadmapDir, "done")}
-	}
+	// Reusa o resolvedor canônico do validator (validator.ResolveWIPDirs/ResolveDoneDirs, que
+	// delega a resolveStateDirs → resolveAgentNamespaces) em vez de reimplementar a resolução de
+	// namespace aqui — duplicar essa lógica foi apontado pelo ML-0A como um dos dois pontos de
+	// divergência arquitetural do sweep (REQ-2026-08-29).
+	wipDirs := validator.ResolveWIPDirs(cfg)
+	doneDirs := validator.ResolveDoneDirs(cfg)
 
 	for _, dir := range append(wipDirs, doneDirs...) {
 		candidate := filepath.Join(dir, filename)

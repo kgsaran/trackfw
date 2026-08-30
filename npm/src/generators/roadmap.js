@@ -3,7 +3,7 @@ const fs = require('fs')
 const path = require('path')
 const config = require('../config')
 const { localDateISO } = require('./date')
-const { resolveReqFiles } = require('../validator/index.js')
+const { resolveReqFiles, resolveAgentNamespaces } = require('../validator/index.js')
 
 // STATUS_LEGEND teaches the vocabulary the `barrier` parser accepts for "**Status:**"
 // (AC11, ADR decision 5): the canonical form the template now writes (⬜ Pendente) plus the
@@ -88,14 +88,7 @@ function listRoadmaps() {
   let found = false
 
   if (cfg.roadmapNamespacing === config.NAMESPACING_BY_AGENT) {
-    let agents = cfg.agents || []
-    if (agents.length === 0) {
-      try {
-        agents = fs.readdirSync(cfg.roadmapDir).filter(f => {
-          try { return fs.statSync(path.join(cfg.roadmapDir, f)).isDirectory() } catch (_) { return false }
-        })
-      } catch (_) { agents = [] }
-    }
+    const agents = resolveAgentNamespaces(cfg, cfg.roadmapDir)
     for (const agent of agents) {
       for (const state of STATE_ORDER) {
         const dir = cfg.roadmapDir + '/' + agent + '/' + state
@@ -666,14 +659,7 @@ function findRoadmapMatches(name) {
   const nameLower = name.toLowerCase()
 
   if (cfg.roadmapNamespacing === config.NAMESPACING_BY_AGENT) {
-    let agents = cfg.agents || []
-    if (agents.length === 0) {
-      try {
-        agents = fs.readdirSync(cfg.roadmapDir).filter(f => {
-          try { return fs.statSync(path.join(cfg.roadmapDir, f)).isDirectory() } catch (_) { return false }
-        })
-      } catch (_) { agents = ['default'] }
-    }
+    const agents = resolveAgentNamespaces(cfg, cfg.roadmapDir)
     for (const agent of agents) {
       for (const state of STATE_ORDER) {
         const dir = cfg.roadmapDir + '/' + agent + '/' + state

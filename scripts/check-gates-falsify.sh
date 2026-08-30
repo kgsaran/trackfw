@@ -2555,22 +2555,35 @@ else
   exit 1
 fi
 
-# --- braço de detecção: Python reverte _list_dirs para ordem determinística
-# invertida (ver nota acima sobre por que não usar os.listdir cru) --------
+# --- braço de detecção: Python reverte a ordenação do resolvedor canônico
+# (config.resolve_agent_namespaces) para ordem determinística invertida.
+# RETARGET (ML-1A, REQ-2026-08-29): _get_agents (status.py) parou de chamar
+# _list_dirs diretamente e passou a delegar em validator.resolve_agent_namespaces
+# (re-export de config.resolve_agent_namespaces) — o resolvedor canônico único
+# desta REQ. Corromper _list_dirs não afeta mais a saída de `status`, tornando
+# a checagem vácua; o ponto que de fato ordena a lista de agentes agora é o
+# `sorted(...)` dentro de resolve_agent_namespaces em config.py.
 T33C_PY="$WORK/s33-corrupt-python"
 mkdir -p "$T33C_PY"
 cp -r "$ROOT_DIR/pypi" "$T33C_PY/pypi"
 corrupt_literal \
-  "$ROOT_DIR/pypi/trackfw/commands/status.py" "$T33C_PY/pypi/trackfw/commands/status.py" \
-  '            name for name in sorted(os.listdir(path))
+  "$ROOT_DIR/pypi/trackfw/config.py" "$T33C_PY/pypi/trackfw/config.py" \
+  '            from_disk = sorted(
+                e.name for e in it
+                if e.is_dir(follow_symlinks=False)  # symlinks retornam False — nunca seguidos
+            )
 ' \
-  '            name for name in sorted(os.listdir(path), reverse=True)
+  '            from_disk = sorted(
+                (e.name for e in it
+                 if e.is_dir(follow_symlinks=False)),  # symlinks retornam False — nunca seguidos
+                reverse=True,
+            )
 ' \
   "s33-python"
 
 s33c_python_out=$(cd "$S33_PROJECT" && env PYTHONPATH="$T33C_PY/pypi" python3 -m trackfw status)$'\n'
 if [[ "$s33c_python_out" == "$S33_EXPECTED" ]]; then
-  echo "FAIL [falsify/status-by-agent-fallback-order/python-detects-order-regression]: _list_dirs revertido para ordem invertida mas a comparação continuou passando (checagem vácua)" >&2
+  echo "FAIL [falsify/status-by-agent-fallback-order/python-detects-order-regression]: resolve_agent_namespaces revertido para ordem invertida mas a comparação continuou passando (checagem vácua)" >&2
   exit 1
 fi
 if grep -qF $'[zeus] WIP (1)\n    ROADMAP-zeus-wip.md\n  [apolo]' <<<"$s33c_python_out"; then
@@ -2615,23 +2628,37 @@ fi
 # histórico original, mas o BRAÇO de detecção não é mais seletivo por
 # indentação.
 # Fixture discriminante: `agents:` em lista de bloco NÃO indentada,
-# configurando SÓ `apolo`, enquanto `docs/roadmaps/` no disco tem `apolo`
-# **e** `zeus` (zeus com roadmap em wip/). Os cenários existentes (ex. 31)
-# usam forma indentada — não exercitam o defeito. Se a fixture configurasse
-# o MESMO conjunto de agentes que existe no disco, reverter o parser cairia
-# no fallback e reproduziria a MESMA saída (fallback enumera exatamente
-# [apolo, zeus] = o que o parser corrigido já devolvia) — o braço de
-# detecção seria vácuo. Com `agents: [apolo]` configurado e `zeus/` extra no
-# disco, a divergência é inequívoca: parser correto → só apolo aparece
-# (zeus invisível); parser quebrado → cai no fallback → zeus reaparece.
+# configurando SÓ `zeus`, enquanto `docs/roadmaps/` no disco tem `apolo`
+# **e** `zeus` (ambos com roadmap em wip/). Os cenários existentes (ex. 31)
+# usam forma indentada — não exercitam o defeito.
+#
+# RETARGET 2 (ML-1A, REQ-2026-08-29, apolo-tf): resolveAgentNamespaces/
+# resolve_agent_namespaces (o resolvedor canônico desta REQ) passou a devolver
+# a UNIÃO entre `agents:` e o disco — não mais a substituição. Com isso,
+# `zeus` deixou de ficar invisível quando `agents: [apolo]` e `zeus/` existe
+# só em disco (é exatamente o comportamento que a REQ corrige), e a
+# divergência "zeus aparece ou não" que discriminava este cenário até
+# REQ-2026-08-29 ficou vácua: zeus agora aparece nos dois braços (parser
+# correto OU quebrado), porque o resolvedor sempre lê o disco também.
+# A propriedade que ainda sobrevive e continua discriminante é a ORDEM: o
+# resolvedor devolve os agentes DECLARADOS primeiro (na ordem de `agents:`),
+# seguidos dos extras encontrados só em disco (ordem alfabética). Com
+# `agents: [zeus]` corretamente parseado, a saída lista `[zeus]` antes de
+# `[apolo]` (zeus é declarado, apolo é só disco). Se a atribuição de
+# `cfg.Agents`/`cfg.agents` for corrompida (lista descartada, fica vazia), o
+# resolvedor cai para união vazia + disco, que é puramente alfabético —
+# `[apolo]` antes de `[zeus]` — ORDEM INVERTIDA em relação ao baseline. Este
+# é o mesmo tipo de troca de alvo já feito no Cenário 33
+# (status-by-agent-fallback-order) para a mesma razão.
 #
 #   - baseline: os 3 CLIs, contra o literal PINADO (capturado rodando os 3
-#     CLIs reais contra a fixture), byte-idênticos — só [apolo] aparece,
-#     Inventory Roadmaps total 1 (wip 1); zeus invisível nos 3.
+#     CLIs reais contra a fixture), byte-idênticos — `[zeus]` aparece ANTES
+#     de `[apolo]`; Inventory Roadmaps total 2 (wip 2); ambos os agentes
+#     visíveis (união, não mais substituição).
 #   - detecção: Go e Node revertem o ponto exato alterado por d208971
 #     (continuesOpenList sempre false — a lista não-indentada volta a ser
-#     descartada) e provam, por asserção POSITIVA, que zeus reaparece na
-#     saída corrompida.
+#     descartada) e provam, por asserção POSITIVA, que a ordem inverte para
+#     `[apolo]` antes de `[zeus]` na saída corrompida.
 #
 # Corrompe a IMPLEMENTAÇÃO (o ponto exato revertido por d208971), nunca a
 # asserção — mesmo padrão dos Cenários 14/16/17/20/21/24/25/26/27/28/29/30/
@@ -2651,12 +2678,12 @@ req_dir: docs/req
 roadmap_dir: docs/roadmaps
 roadmap_namespacing: by_agent
 agents:
-- apolo
+- zeus
 EOF
-write_roadmap_state_fixture "$S34_PROJECT/docs/roadmaps/zeus/wip/ROADMAP-zeus-wip.md" "wip" "zeus wip fixture (fora da lista configurada)"
-write_roadmap_state_fixture "$S34_PROJECT/docs/roadmaps/apolo/wip/ROADMAP-apolo-wip.md" "wip" "apolo wip fixture"
+write_roadmap_state_fixture "$S34_PROJECT/docs/roadmaps/zeus/wip/ROADMAP-zeus-wip.md" "wip" "zeus wip fixture (declarado em agents:)"
+write_roadmap_state_fixture "$S34_PROJECT/docs/roadmaps/apolo/wip/ROADMAP-apolo-wip.md" "wip" "apolo wip fixture (só em disco)"
 
-S34_EXPECTED=$'── trackfw status ──────────────────────\n\n📊 Inventory\n   ADRs        0\n   REQs        0  (0 Open · 0 Done · 0 Closed)\n   Roadmaps    1\n     backlog 0 · analyzing 0 · wip 1\n     blocked 0 · done 0 · abandoned 0\n\n⚙ WIP by Agent\n  [apolo] WIP (1)\n    ROADMAP-apolo-wip.md\n\n────────────────────────────────────────\n'
+S34_EXPECTED=$'── trackfw status ──────────────────────\n\n📊 Inventory\n   ADRs        0\n   REQs        0  (0 Open · 0 Done · 0 Closed)\n   Roadmaps    2\n     backlog 0 · analyzing 0 · wip 2\n     blocked 0 · done 0 · abandoned 0\n\n⚙ WIP by Agent\n  [zeus] WIP (1)\n    ROADMAP-zeus-wip.md\n  [apolo] WIP (1)\n    ROADMAP-apolo-wip.md\n\n────────────────────────────────────────\n'
 
 s34_go_out=$(cd "$S34_PROJECT" && "$T27_GO_BIN" status)$'\n'
 s34_node_out=$(cd "$S34_PROJECT" && node "$ROOT_DIR/npm/bin/trackfw" status)$'\n'
@@ -2696,10 +2723,10 @@ if [[ "$s34c_go_out" == "$S34_EXPECTED" ]]; then
   echo "FAIL [falsify/config-unindented-agents/go-detects-list-discarded]: cfg.Agents deixou de ser atribuido mas a comparação continuou passando (checagem vácua)" >&2
   exit 1
 fi
-if grep -qF "[zeus]" <<<"$s34c_go_out"; then
+if grep -qF $'[apolo] WIP (1)\n    ROADMAP-apolo-wip.md\n  [zeus]' <<<"$s34c_go_out"; then
   echo "OK   [falsify/config-unindented-agents/go-detects-list-discarded]"
 else
-  echo "FAIL [falsify/config-unindented-agents/go-detects-list-discarded]: saída corrompida diverge do pinado, mas zeus não reapareceu — diagnóstico pelo motivo errado" >&2
+  echo "FAIL [falsify/config-unindented-agents/go-detects-list-discarded]: saída corrompida diverge do pinado, mas a ordem não inverteu para [apolo] antes de [zeus] — diagnóstico pelo motivo errado" >&2
   echo "  output: $(printf '%q' "$s34c_go_out")" >&2
   exit 1
 fi
@@ -2719,10 +2746,10 @@ if [[ "$s34c_node_out" == "$S34_EXPECTED" ]]; then
   echo "FAIL [falsify/config-unindented-agents/node-detects-list-discarded]: cfg.agents deixou de ser atribuido mas a comparação continuou passando (checagem vácua)" >&2
   exit 1
 fi
-if grep -qF "[zeus]" <<<"$s34c_node_out"; then
+if grep -qF $'[apolo] WIP (1)\n    ROADMAP-apolo-wip.md\n  [zeus]' <<<"$s34c_node_out"; then
   echo "OK   [falsify/config-unindented-agents/node-detects-list-discarded]"
 else
-  echo "FAIL [falsify/config-unindented-agents/node-detects-list-discarded]: saída corrompida diverge do pinado, mas zeus não reapareceu — diagnóstico pelo motivo errado" >&2
+  echo "FAIL [falsify/config-unindented-agents/node-detects-list-discarded]: saída corrompida diverge do pinado, mas a ordem não inverteu para [apolo] antes de [zeus] — diagnóstico pelo motivo errado" >&2
   echo "  output: $(printf '%q' "$s34c_node_out")" >&2
   exit 1
 fi
@@ -2807,6 +2834,25 @@ fi
 # padrão dos Cenários 14/16/17/20/21/24/25/26/27/28/29/30/31/32/33/34. Não
 # amplia o suporte YAML (mapas inline, listas aninhadas) — fora de escopo,
 # registrado no ADR.
+#
+# RETARGET 2 (ML-1A, REQ-2026-08-29, apolo-tf): o resolvedor canônico
+# (resolveAgentNamespaces) passou a devolver a UNIÃO entre `agents:` e o
+# disco. Isso desarma a asserção "presença/ausência de [zeta]" da mesma forma
+# que no Cenário 34 (zeta agora aparece nos dois braços) — E piora aqui
+# especificamente: o diretório físico `docs/roadmaps/ka, tsu/` já existe em
+# disco com esse nome LITERAL, então a união encontra "ka, tsu" via
+# varredura de disco mesmo que a atribuição de `cfg.Agents`/`cfg.agents`
+# seja corrompida por completo — a fixture original ficou incapaz de provar
+# qualquer coisa por presença/ausência. A propriedade que sobrevive é a
+# ORDEM: agentes declarados vêm primeiro (na ordem de `agents:`), extras só-
+# disco vêm depois (ordem alfabética). Fixture reordenada para
+# `agents: ["obi", "ka, tsu"]` (obi PRIMEIRO), com `obi` também ganhando um
+# roadmap em wip/ (senão fica fora da seção "WIP by Agent", que omite
+# agentes com wip=0, e não haveria posição para comparar). Parser correto →
+# ordem declarada [obi, "ka, tsu", zeta(extra)]. Parser corrompido (`agents:`
+# descartado) → ordem puramente alfabética do disco: ["ka, tsu", obi, zeta]
+# ("ka, tsu" < "obi" < "zeta") — INVERTE as duas primeiras posições em
+# relação ao baseline. Mesma técnica do Cenário 34.
 # ---------------------------------------------------------------------------
 
 S35_PROJECT="$WORK/s35-config-inline-comma-in-quotes-project"
@@ -2821,12 +2867,13 @@ adr_dirs:
 req_dir: docs/req
 roadmap_dir: docs/roadmaps
 roadmap_namespacing: by_agent
-agents: ["ka, tsu", "obi"]
+agents: ["obi", "ka, tsu"]
 EOF
 write_roadmap_state_fixture "$S35_PROJECT/docs/roadmaps/ka, tsu/wip/ROADMAP-ka-tsu-wip.md" "wip" "ka tsu wip fixture (caso 8)"
-write_roadmap_state_fixture "$S35_PROJECT/docs/roadmaps/zeta/wip/ROADMAP-zeta-wip.md" "wip" "zeta wip fixture (fora da lista configurada)"
+write_roadmap_state_fixture "$S35_PROJECT/docs/roadmaps/obi/wip/ROADMAP-obi-wip.md" "wip" "obi wip fixture (declarado primeiro, discrimina ordem)"
+write_roadmap_state_fixture "$S35_PROJECT/docs/roadmaps/zeta/wip/ROADMAP-zeta-wip.md" "wip" "zeta wip fixture (fora da lista configurada — só disco, union)"
 
-S35_EXPECTED=$'── trackfw status ──────────────────────\n\n📊 Inventory\n   ADRs        0\n   REQs        0  (0 Open · 0 Done · 0 Closed)\n   Roadmaps    1\n     backlog 0 · analyzing 0 · wip 1\n     blocked 0 · done 0 · abandoned 0\n\n⚙ WIP by Agent\n  [ka, tsu] WIP (1)\n    ROADMAP-ka-tsu-wip.md\n\n────────────────────────────────────────\n'
+S35_EXPECTED=$'── trackfw status ──────────────────────\n\n📊 Inventory\n   ADRs        0\n   REQs        0  (0 Open · 0 Done · 0 Closed)\n   Roadmaps    3\n     backlog 0 · analyzing 0 · wip 3\n     blocked 0 · done 0 · abandoned 0\n\n⚙ WIP by Agent\n  [obi] WIP (1)\n    ROADMAP-obi-wip.md\n  [ka, tsu] WIP (1)\n    ROADMAP-ka-tsu-wip.md\n  [zeta] WIP (1)\n    ROADMAP-zeta-wip.md\n\n────────────────────────────────────────\n'
 
 s35_go_out=$(cd "$S35_PROJECT" && "$T27_GO_BIN" status)$'\n'
 s35_node_out=$(cd "$S35_PROJECT" && node "$ROOT_DIR/npm/bin/trackfw" status)$'\n'
@@ -2866,10 +2913,10 @@ if [[ "$s35c_go_out" == "$S35_EXPECTED" ]]; then
   echo "FAIL [falsify/config-inline-comma-in-quotes/go-detects-agents-discarded]: cfg.Agents deixou de ser atribuido mas a comparação continuou passando (checagem vácua)" >&2
   exit 1
 fi
-if grep -qF "[zeta]" <<<"$s35c_go_out"; then
+if grep -qF $'[ka, tsu] WIP (1)\n    ROADMAP-ka-tsu-wip.md\n  [obi]' <<<"$s35c_go_out"; then
   echo "OK   [falsify/config-inline-comma-in-quotes/go-detects-agents-discarded]"
 else
-  echo "FAIL [falsify/config-inline-comma-in-quotes/go-detects-agents-discarded]: saída corrompida diverge do pinado, mas zeta não reapareceu — diagnóstico pelo motivo errado" >&2
+  echo "FAIL [falsify/config-inline-comma-in-quotes/go-detects-agents-discarded]: saída corrompida diverge do pinado, mas a ordem não inverteu para [ka, tsu] antes de [obi] — diagnóstico pelo motivo errado" >&2
   echo "  output: $(printf '%q' "$s35c_go_out")" >&2
   exit 1
 fi
@@ -2889,10 +2936,10 @@ if [[ "$s35c_node_out" == "$S35_EXPECTED" ]]; then
   echo "FAIL [falsify/config-inline-comma-in-quotes/node-detects-agents-discarded]: cfg.agents deixou de ser atribuido mas a comparação continuou passando (checagem vácua)" >&2
   exit 1
 fi
-if grep -qF "[zeta]" <<<"$s35c_node_out"; then
+if grep -qF $'[ka, tsu] WIP (1)\n    ROADMAP-ka-tsu-wip.md\n  [obi]' <<<"$s35c_node_out"; then
   echo "OK   [falsify/config-inline-comma-in-quotes/node-detects-agents-discarded]"
 else
-  echo "FAIL [falsify/config-inline-comma-in-quotes/node-detects-agents-discarded]: saída corrompida diverge do pinado, mas zeta não reapareceu — diagnóstico pelo motivo errado" >&2
+  echo "FAIL [falsify/config-inline-comma-in-quotes/node-detects-agents-discarded]: saída corrompida diverge do pinado, mas a ordem não inverteu para [ka, tsu] antes de [obi] — diagnóstico pelo motivo errado" >&2
   echo "  output: $(printf '%q' "$s35c_node_out")" >&2
   exit 1
 fi
@@ -2913,10 +2960,10 @@ if [[ "$s35c_python_out" == "$S35_EXPECTED" ]]; then
   echo "FAIL [falsify/config-inline-comma-in-quotes/python-detects-agents-discarded]: cfg[\"agents\"] deixou de ser atribuido mas a comparação continuou passando (checagem vácua)" >&2
   exit 1
 fi
-if grep -qF "[zeta]" <<<"$s35c_python_out"; then
+if grep -qF $'[ka, tsu] WIP (1)\n    ROADMAP-ka-tsu-wip.md\n  [obi]' <<<"$s35c_python_out"; then
   echo "OK   [falsify/config-inline-comma-in-quotes/python-detects-agents-discarded]"
 else
-  echo "FAIL [falsify/config-inline-comma-in-quotes/python-detects-agents-discarded]: saída corrompida diverge do pinado, mas zeta não reapareceu — diagnóstico pelo motivo errado" >&2
+  echo "FAIL [falsify/config-inline-comma-in-quotes/python-detects-agents-discarded]: saída corrompida diverge do pinado, mas a ordem não inverteu para [ka, tsu] antes de [obi] — diagnóstico pelo motivo errado" >&2
   echo "  output: $(printf '%q' "$s35c_python_out")" >&2
   exit 1
 fi

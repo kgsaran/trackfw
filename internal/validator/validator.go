@@ -217,17 +217,7 @@ func validateWIPLimit() (violations []string, warnings []string, err error) {
 	projectCfg := config.Load()
 
 	if projectCfg.RoadmapNamespacing == config.NamespacingByAgent {
-		agents := projectCfg.Agents
-		if len(agents) == 0 {
-			entries, readErr := os.ReadDir(projectCfg.RoadmapDir)
-			if readErr == nil {
-				for _, e := range entries {
-					if e.IsDir() {
-						agents = append(agents, e.Name())
-					}
-				}
-			}
-		}
+		agents := resolveAgentNamespaces(projectCfg, projectCfg.RoadmapDir)
 		wipCfg := wipConfigFrom(projectCfg)
 		for _, agent := range agents {
 			files, globErr := filepath.Glob(filepath.Join(projectCfg.RoadmapDir, agent, "wip", "*.md"))
@@ -908,17 +898,7 @@ func GetStatus() (string, error) {
 	sb.WriteString(inventoryBlock(cfg))
 
 	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
-		agents := cfg.Agents
-		if len(agents) == 0 {
-			entries, err := os.ReadDir(cfg.RoadmapDir)
-			if err == nil {
-				for _, e := range entries {
-					if e.IsDir() {
-						agents = append(agents, e.Name())
-					}
-				}
-			}
-		}
+		agents := resolveAgentNamespaces(cfg, cfg.RoadmapDir)
 		sb.WriteString("\n⚙ WIP by Agent\n")
 		for _, agent := range agents {
 			wip, _ := listDir(cfg.RoadmapDir + "/" + agent + "/wip")
@@ -1010,23 +990,59 @@ func GetStatus() (string, error) {
 	return sb.String(), nil
 }
 
+// resolveAgentNamespaces é o resolvedor canônico de namespaces em modo by_agent — o ÚNICO lugar do
+// pacote onde a lista `agents:` do trackfw.yaml é lida ao lado do disco. Devolve a UNIÃO entre
+// cfg.Agents (na ordem declarada, deduplicada) e os subdiretórios de primeiro nível encontrados em
+// dir (ordenados). Todo outro ponto do pacote que precisar enumerar agentes DEVE chamar esta função
+// — nunca reimplementar "if len(agents) == 0 { ler disco }": esse padrão SUBSTITUÍA o disco em vez de
+// complementá-lo, deixando invisível qualquer namespace em disco não declarado em agents:
+// (REQ-2026-08-29). O padrão `len(agents) == 0` só pode existir aqui dentro.
+//
+// Segurança — NÃO segue symlink (AC12/AC13, bloqueante): usa os.ReadDir + entry.IsDir(), que reflete
+// o tipo da própria entrada do diretório (via Lstat interno), não o alvo do link — um namespace que é
+// symlink para fora do projeto nunca é tratado como diretório aqui. NÃO trocar por os.Stat("simplificação"):
+// os.Stat segue symlink e reintroduziria o vetor que hoje escreve fora da árvore em Node/Python
+// (ver ADR-2026-08-29, decisão 5, e vault/notes/update-segue-symlink-e-escreve-fora-do-projeto-2026-08-28.md).
+func resolveAgentNamespaces(cfg config.ProjectConfig, dir string) []string {
+	seen := make(map[string]bool, len(cfg.Agents))
+	ordered := make([]string, 0, len(cfg.Agents))
+	for _, a := range cfg.Agents {
+		if a == "" || seen[a] {
+			continue
+		}
+		seen[a] = true
+		ordered = append(ordered, a)
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return ordered
+	}
+	var fromDisk []string
+	for _, e := range entries {
+		if !e.IsDir() { // symlinks reportam false aqui — nunca seguidos (AC12/AC13)
+			continue
+		}
+		fromDisk = append(fromDisk, e.Name())
+	}
+	sort.Strings(fromDisk)
+	for _, name := range fromDisk {
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+		ordered = append(ordered, name)
+	}
+	return ordered
+}
+
 // resolveStateDirs retorna todos os diretórios de um estado (ex: "wip", "done") conforme o modo de
 // namespacing. É a fonte única de resolução de caminho por estado — resolveWIPDirs e resolveDoneDirs
 // são wrappers finos sobre esta função. Duplicar a lógica aqui foi a causa raiz de defeitos
 // anteriores (roadmap_dir divergente entre runtimes).
 func resolveStateDirs(cfg config.ProjectConfig, state string) []string {
 	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
-		agents := cfg.Agents
-		if len(agents) == 0 {
-			entries, err := os.ReadDir(cfg.RoadmapDir)
-			if err == nil {
-				for _, e := range entries {
-					if e.IsDir() {
-						agents = append(agents, e.Name())
-					}
-				}
-			}
-		}
+		agents := resolveAgentNamespaces(cfg, cfg.RoadmapDir)
 		var dirs []string
 		for _, agent := range agents {
 			dirs = append(dirs, cfg.RoadmapDir+"/"+agent+"/"+state)
@@ -1058,6 +1074,15 @@ func ResolveDoneDirs(cfg config.ProjectConfig) []string {
 	return resolveDoneDirs(cfg)
 }
 
+// ResolveAgentNamespaces é o wrapper exportado de resolveAgentNamespaces — o resolvedor canônico
+// de namespaces em modo by_agent (união entre agents: e o disco, sem seguir symlink — ver o
+// comentário da função não-exportada). Consumido por internal/generators e internal/serve, que não
+// podem importar o pacote internal/validator sem cuidado por causa de import cycles pré-existentes
+// (generators/context.go já importa validator; validator não pode importar generators de volta).
+func ResolveAgentNamespaces(cfg config.ProjectConfig, dir string) []string {
+	return resolveAgentNamespaces(cfg, dir)
+}
+
 // resolveREQFiles retorna paths completos de todos os .md em req_dir,
 // consciente de roadmap_namespacing: by_agent percorre req_dir/<agente>/<estado>/.
 func resolveREQFiles(cfg config.ProjectConfig) []string {
@@ -1067,17 +1092,7 @@ func resolveREQFiles(cfg config.ProjectConfig) []string {
 	}
 	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
 		stateDirs := []string{"backlog", "analyzing", "wip", "blocked", "done", "abandoned"}
-		agents := cfg.Agents
-		if len(agents) == 0 {
-			entries, err := os.ReadDir(reqDir)
-			if err == nil {
-				for _, e := range entries {
-					if e.IsDir() {
-						agents = append(agents, e.Name())
-					}
-				}
-			}
-		}
+		agents := resolveAgentNamespaces(cfg, reqDir)
 		var files []string
 		for _, agent := range agents {
 			for _, state := range stateDirs {
@@ -1955,15 +1970,7 @@ func validateFolderStatusCoherence() ([]string, error) {
 	var dirs []dirState
 
 	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
-		agents := cfg.Agents
-		if len(agents) == 0 {
-			entries, _ := os.ReadDir(cfg.RoadmapDir)
-			for _, e := range entries {
-				if e.IsDir() {
-					agents = append(agents, e.Name())
-				}
-			}
-		}
+		agents := resolveAgentNamespaces(cfg, cfg.RoadmapDir)
 		for _, agent := range agents {
 			for _, state := range states {
 				dirs = append(dirs, dirState{
@@ -2032,15 +2039,7 @@ func validateFilenameUniqueness() ([]string, error) {
 
 	var listErrors []string
 	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
-		agents := cfg.Agents
-		if len(agents) == 0 {
-			entries, _ := os.ReadDir(cfg.RoadmapDir)
-			for _, e := range entries {
-				if e.IsDir() {
-					agents = append(agents, e.Name())
-				}
-			}
-		}
+		agents := resolveAgentNamespaces(cfg, cfg.RoadmapDir)
 		for _, agent := range agents {
 			for _, state := range states {
 				dir := filepath.Join(cfg.RoadmapDir, agent, state)

@@ -15,6 +15,54 @@ import yaml
 NAMESPACING_FLAT = "flat"
 NAMESPACING_BY_AGENT = "by_agent"
 
+
+def resolve_agent_namespaces(cfg: dict, directory: str) -> list:
+    """
+    Resolvedor canônico de namespaces em modo by_agent — o ÚNICO lugar deste runtime onde a lista
+    `agents:` do trackfw.yaml é lida ao lado do disco. Devolve a UNIÃO entre cfg["agents"] (na ordem
+    declarada, deduplicada) e os subdiretórios de primeiro nível encontrados em `directory`
+    (ordenados). Todo outro ponto do runtime (trackfw.validator, trackfw.traceid,
+    trackfw.commands.*, trackfw.generators.*) que precisar enumerar agentes DEVE chamar esta função
+    — nunca reimplementar "if not agents: ler disco": esse padrão SUBSTITUÍA o disco em vez de
+    complementá-lo, deixando invisível qualquer namespace em disco não declarado em agents:
+    (REQ-2026-08-29). O padrão `not agents`/`if not agents` só pode existir aqui dentro.
+
+    Vive em config.py (não em validator.py) para que trackfw.traceid — importado por
+    trackfw.validator — também possa chamá-la sem introduzir um import cycle
+    (validator → traceid → validator). trackfw.validator.resolve_agent_namespaces é um re-export
+    fino desta função, mantido por compatibilidade com quem já a importa de lá.
+
+    Segurança — NÃO segue symlink (AC12/AC13, bloqueante): usa os.scandir(directory) +
+    entry.is_dir(follow_symlinks=False) — um namespace que é symlink para fora do projeto nunca é
+    tratado como diretório aqui. NÃO trocar por os.path.isdir() (que SEGUE symlink por padrão e
+    reproduziu ao vivo escrita fora do projeto via `roadmap move` — ver ADR-2026-08-29, decisão 5, e
+    vault/notes/update-segue-symlink-e-escreve-fora-do-projeto-2026-08-28.md).
+    """
+    declared = cfg.get("agents") or []
+    seen = set()
+    ordered = []
+    for a in declared:
+        if not a or a in seen:
+            continue
+        seen.add(a)
+        ordered.append(a)
+
+    try:
+        with os.scandir(directory) as it:
+            from_disk = sorted(
+                e.name for e in it
+                if e.is_dir(follow_symlinks=False)  # symlinks retornam False — nunca seguidos
+            )
+    except OSError:
+        return ordered
+
+    for name in from_disk:
+        if name in seen:
+            continue
+        seen.add(name)
+        ordered.append(name)
+    return ordered
+
 # MALFORMED_CONFIG_MESSAGE is written to stderr, verbatim, when trackfw.yaml exists but fails to
 # parse as YAML. Kept identical, character-for-character, to Go's MalformedConfigMessage and
 # Node's MALFORMED_CONFIG_MESSAGE — see the comment on _parse() below for why the text is static

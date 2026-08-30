@@ -56,15 +56,7 @@ func GetContext(format string) error {
 	var reqs []ContextEntry
 	reqStates := []string{"backlog", "wip", "blocked", "done", "abandoned"}
 	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
-		agents := cfg.Agents
-		if len(agents) == 0 {
-			dirEntries, _ := os.ReadDir(cfg.REQDir)
-			for _, de := range dirEntries {
-				if de.IsDir() {
-					agents = append(agents, de.Name())
-				}
-			}
-		}
+		agents := validator.ResolveAgentNamespaces(cfg, cfg.REQDir)
 		for _, agent := range agents {
 			for _, state := range reqStates {
 				dir := filepath.Join(cfg.REQDir, agent, state)
@@ -105,15 +97,7 @@ func GetContext(format string) error {
 	var roadmaps []ContextEntry
 	states := []string{"wip", "backlog", "blocked", "done", "abandoned"}
 	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
-		agents := cfg.Agents
-		if len(agents) == 0 {
-			dirEntries, _ := os.ReadDir(cfg.RoadmapDir)
-			for _, de := range dirEntries {
-				if de.IsDir() {
-					agents = append(agents, de.Name())
-				}
-			}
-		}
+		agents := validator.ResolveAgentNamespaces(cfg, cfg.RoadmapDir)
 		for _, agent := range agents {
 			for _, state := range states {
 				dir := filepath.Join(cfg.RoadmapDir, agent, state)

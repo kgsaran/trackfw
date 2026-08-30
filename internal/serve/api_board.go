@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/kgsaran/trackfw/internal/config"
+	"github.com/kgsaran/trackfw/internal/validator"
 )
 
 // boardItem represents a single roadmap entry on the kanban board.
@@ -44,17 +45,9 @@ func boardHandler(w http.ResponseWriter, _ *http.Request, cfg config.ProjectConf
 	agentSet := map[string]bool{}
 
 	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
-		// layout: rootDir/agent/state/file.md
-		entries, err := os.ReadDir(cfg.RoadmapDir)
-		if err != nil && !os.IsNotExist(err) {
-			http.Error(w, "cannot read roadmap dir", http.StatusInternalServerError)
-			return
-		}
-		for _, agentEntry := range entries {
-			if !agentEntry.IsDir() {
-				continue
-			}
-			agent := agentEntry.Name()
+		// layout: rootDir/agent/state/file.md — resolvedor canônico (validator.ResolveAgentNamespaces):
+		// união entre agents: e os subdiretórios em disco, sem seguir symlink (REQ-2026-08-29).
+		for _, agent := range validator.ResolveAgentNamespaces(cfg, cfg.RoadmapDir) {
 			agentDir := filepath.Join(cfg.RoadmapDir, agent)
 			for _, state := range boardStates {
 				stateDir := filepath.Join(agentDir, state)

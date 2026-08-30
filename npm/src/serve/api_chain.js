@@ -2,6 +2,7 @@
 
 const fs = require('fs')
 const path = require('path')
+const { resolveAgentNamespaces } = require('../validator')
 
 const ROADMAP_STATES = ['wip', 'backlog', 'blocked', 'done', 'abandoned']
 
@@ -102,14 +103,7 @@ function handleChain(cfg, req, res) {
 
   // REQs
   if (namespacing === 'by_agent') {
-    let agents = cfg.agents || []
-    if (!agents.length) {
-      try {
-        agents = fs.readdirSync(reqDir).filter(f => {
-          try { return fs.statSync(path.join(reqDir, f)).isDirectory() } catch (_) { return false }
-        })
-      } catch (_) {}
-    }
+    const agents = resolveAgentNamespaces(cfg, reqDir)
     for (const agent of agents) {
       for (const state of ROADMAP_STATES) {
         const dir = path.join(reqDir, agent, state)
@@ -122,14 +116,7 @@ function handleChain(cfg, req, res) {
 
   // Roadmaps
   if (namespacing === 'by_agent') {
-    let agents = cfg.agents || []
-    if (!agents.length) {
-      try {
-        agents = fs.readdirSync(roadmapDir).filter(f => {
-          try { return fs.statSync(path.join(roadmapDir, f)).isDirectory() } catch (_) { return false }
-        })
-      } catch (_) {}
-    }
+    const agents = resolveAgentNamespaces(cfg, roadmapDir)
     for (const agent of agents) {
       for (const state of ROADMAP_STATES) {
         const dir = path.join(roadmapDir, agent, state)

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/kgsaran/trackfw/internal/config"
+	"github.com/kgsaran/trackfw/internal/validator"
 )
 
 // RoadmapContent contém os dados para criação de um roadmap.
@@ -482,17 +483,7 @@ func findRoadmap(name string) (string, error) {
 	cfg := config.Load()
 
 	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
-		agents := cfg.Agents
-		if len(agents) == 0 {
-			dirEntries, err := os.ReadDir(cfg.RoadmapDir)
-			if err == nil {
-				for _, e := range dirEntries {
-					if e.IsDir() {
-						agents = append(agents, e.Name())
-					}
-				}
-			}
-		}
+		agents := validator.ResolveAgentNamespaces(cfg, cfg.RoadmapDir)
 		for _, agent := range agents {
 			for _, state := range roadmapStateOrder {
 				dir := cfg.RoadmapDir + "/" + agent + "/" + state
@@ -588,18 +579,7 @@ func ListRoadmaps() error {
 	found := false
 
 	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
-		agents := cfg.Agents
-		if len(agents) == 0 {
-			// descobrir subdirs dinamicamente
-			entries, err := os.ReadDir(cfg.RoadmapDir)
-			if err == nil {
-				for _, e := range entries {
-					if e.IsDir() {
-						agents = append(agents, e.Name())
-					}
-				}
-			}
-		}
+		agents := validator.ResolveAgentNamespaces(cfg, cfg.RoadmapDir)
 		for _, agent := range agents {
 			for _, state := range roadmapStateOrder {
 				dir := cfg.RoadmapDir + "/" + agent + "/" + state
@@ -666,17 +646,7 @@ func scanREQFiles(cfg config.ProjectConfig) []string {
 	}
 	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
 		stateDirs := []string{"backlog", "analyzing", "wip", "blocked", "done", "abandoned"}
-		agents := cfg.Agents
-		if len(agents) == 0 {
-			entries, err := os.ReadDir(reqDir)
-			if err == nil {
-				for _, e := range entries {
-					if e.IsDir() {
-						agents = append(agents, e.Name())
-					}
-				}
-			}
-		}
+		agents := validator.ResolveAgentNamespaces(cfg, reqDir)
 		var files []string
 		for _, agent := range agents {
 			for _, state := range stateDirs {

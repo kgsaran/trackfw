@@ -147,6 +147,48 @@ function gitLastModifiedTime(filePath) {
   return null
 }
 
+// resolveAgentNamespaces é o resolvedor canônico de namespaces em modo by_agent — o ÚNICO lugar do
+// módulo onde a lista `agents:` do trackfw.yaml é lida ao lado do disco. Devolve a UNIÃO entre
+// cfg.agents (na ordem declarada, deduplicada) e os subdiretórios de primeiro nível encontrados em
+// dir (ordenados). Todo outro ponto do módulo que precisar enumerar agentes DEVE chamar esta função
+// — nunca reimplementar "if (!agents.length) { ler disco }": esse padrão SUBSTITUÍA o disco em vez
+// de complementá-lo, deixando invisível qualquer namespace em disco não declarado em agents:
+// (REQ-2026-08-29). O padrão `!agents.length`/`agents.length === 0` só pode existir aqui dentro.
+//
+// Segurança — NÃO segue symlink (AC12/AC13, bloqueante): usa fs.readdirSync(dir, {withFileTypes:
+// true}) + dirent.isDirectory(), que reflete o tipo da própria entrada do diretório, não o alvo do
+// link — um namespace que é symlink para fora do projeto nunca é tratado como diretório aqui. NÃO
+// trocar por fs.statSync (que SEGUE symlink e reproduziu ao vivo escrita fora do projeto via
+// `roadmap move` — ver ADR-2026-08-29, decisão 5, e
+// vault/notes/update-segue-symlink-e-escreve-fora-do-projeto-2026-08-28.md).
+function resolveAgentNamespaces(cfg, dir) {
+  const declared = cfg.agents || []
+  const seen = new Set()
+  const ordered = []
+  for (const a of declared) {
+    if (!a || seen.has(a)) continue
+    seen.add(a)
+    ordered.push(a)
+  }
+
+  let entries = []
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true })
+  } catch (_) {
+    return ordered
+  }
+  const fromDisk = entries
+    .filter(e => e.isDirectory()) // symlinks retornam false aqui — nunca seguidos (AC12/AC13)
+    .map(e => e.name)
+    .sort()
+  for (const name of fromDisk) {
+    if (seen.has(name)) continue
+    seen.add(name)
+    ordered.push(name)
+  }
+  return ordered
+}
+
 // resolveReqFiles retorna array de paths completos de arquivos .md de REQs.
 // Em modo by_agent percorre reqDir/<agente>/<estado>/; em modo flat varre reqDir/ diretamente.
 function resolveReqFiles(cfg) {
@@ -155,14 +197,7 @@ function resolveReqFiles(cfg) {
   const namespacing = cfg.roadmapNamespacing || cfg.roadmap_namespacing || ''
   if (namespacing === 'by_agent') {
     const STATES = ['backlog', 'analyzing', 'wip', 'blocked', 'done', 'abandoned']
-    let agents = cfg.agents || []
-    if (!agents.length) {
-      try {
-        agents = fs.readdirSync(reqDir).filter(e => {
-          try { return fs.statSync(path.join(reqDir, e)).isDirectory() } catch (_) { return false }
-        })
-      } catch (_) { return [] }
-    }
+    const agents = resolveAgentNamespaces(cfg, reqDir)
     const files = []
     for (const agent of agents) {
       for (const state of STATES) {
@@ -190,14 +225,7 @@ function resolveReqFiles(cfg) {
 // anteriores (roadmap_dir divergente entre runtimes).
 function resolveStateDirs(cfg, state) {
   if (cfg.roadmapNamespacing === config.NAMESPACING_BY_AGENT) {
-    let agents = cfg.agents || []
-    if (agents.length === 0) {
-      try {
-        agents = fs.readdirSync(cfg.roadmapDir).filter(f => {
-          try { return fs.statSync(path.join(cfg.roadmapDir, f)).isDirectory() } catch (_) { return false }
-        })
-      } catch (_) { agents = [] }
-    }
+    const agents = resolveAgentNamespaces(cfg, cfg.roadmapDir)
     return agents.map(agent => cfg.roadmapDir + '/' + agent + '/' + state)
   }
   return [cfg.roadmapDir + '/' + state]
@@ -526,14 +554,7 @@ function validateWIPLimit() {
   const warnings = []
 
   if (cfg.roadmapNamespacing === config.NAMESPACING_BY_AGENT) {
-    let agents = cfg.agents || []
-    if (agents.length === 0) {
-      try {
-        agents = fs.readdirSync(cfg.roadmapDir).filter(f => {
-          try { return fs.statSync(path.join(cfg.roadmapDir, f)).isDirectory() } catch (_) { return false }
-        })
-      } catch (_) { agents = [] }
-    }
+    const agents = resolveAgentNamespaces(cfg, cfg.roadmapDir)
     const limit = cfg.wipLimit > 0 ? cfg.wipLimit : 1
     for (const agent of agents) {
       const entries = listDir(cfg.roadmapDir + '/' + agent + '/wip')
@@ -932,12 +953,7 @@ function validateFolderStatusCoherence() {
 
   let dirs = []
   if (cfg.roadmapNamespacing === config.NAMESPACING_BY_AGENT) {
-    let agents = cfg.agents || []
-    if (agents.length === 0) {
-      try { agents = fs.readdirSync(cfg.roadmapDir).filter(f => {
-        try { return fs.statSync(path.join(cfg.roadmapDir, f)).isDirectory() } catch (_) { return false }
-      }) } catch (_) { agents = [] }
-    }
+    const agents = resolveAgentNamespaces(cfg, cfg.roadmapDir)
     for (const agent of agents) {
       for (const state of states) {
         dirs.push({ dir: path.join(cfg.roadmapDir, agent, state), state })
@@ -992,12 +1008,7 @@ function validateFilenameUniqueness() {
 
   const listErrors = []
   if (cfg.roadmapNamespacing === config.NAMESPACING_BY_AGENT) {
-    let agents = cfg.agents || []
-    if (agents.length === 0) {
-      try { agents = fs.readdirSync(cfg.roadmapDir).filter(f => {
-        try { return fs.statSync(path.join(cfg.roadmapDir, f)).isDirectory() } catch (_) { return false }
-      }) } catch (_) { agents = [] }
-    }
+    const agents = resolveAgentNamespaces(cfg, cfg.roadmapDir)
     for (const agent of agents) {
       for (const state of states) {
         const dir = path.join(cfg.roadmapDir, agent, state)
@@ -3129,14 +3140,7 @@ async function getStatus() {
   out += buildInventorySection(cfg)
 
   if (cfg.roadmapNamespacing === config.NAMESPACING_BY_AGENT) {
-    let agents = cfg.agents || []
-    if (agents.length === 0) {
-      try {
-        agents = fs.readdirSync(cfg.roadmapDir).filter(f => {
-          try { return fs.statSync(path.join(cfg.roadmapDir, f)).isDirectory() } catch (_) { return false }
-        })
-      } catch (_) { agents = [] }
-    }
+    const agents = resolveAgentNamespaces(cfg, cfg.roadmapDir)
     out += '\n⚙ WIP by Agent\n'
     for (const agent of agents) {
       const wip = listDir(cfg.roadmapDir + '/' + agent + '/wip')
@@ -3232,6 +3236,7 @@ module.exports = {
   resolveStateDirs,
   resolveWIPDirs,
   resolveDoneDirs,
+  resolveAgentNamespaces,
   parseSquadFromFrontmatter,
   validateFrontmatterPresence,
   // novas funções ML-1B

@@ -426,6 +426,14 @@ def _extract_ref_path(content: str, field: str) -> str:
     return ""
 
 
+# resolve_agent_namespaces é re-exportado de trackfw.config (não definido aqui): trackfw.traceid é
+# importado por este módulo (linha ~15) e também precisa do resolvedor canônico, então a
+# implementação vive em config.py — o único módulo que nem validator nem traceid dependem de volta
+# — para não introduzir um import cycle (validator → traceid → validator). Mantido acessível como
+# `trackfw.validator.resolve_agent_namespaces` por compatibilidade com quem já importa daqui.
+resolve_agent_namespaces = _config.resolve_agent_namespaces
+
+
 def resolve_req_files(cfg: dict) -> list:
     """
     Retorna lista de paths completos de .md em req_dir,
@@ -435,13 +443,7 @@ def resolve_req_files(cfg: dict) -> list:
     namespacing = cfg.get("roadmap_namespacing", "")
     if namespacing == "by_agent":
         states = ["backlog", "analyzing", "wip", "blocked", "done", "abandoned"]
-        agents = cfg.get("agents", [])
-        if not agents:
-            try:
-                agents = [e for e in os.listdir(req_dir)
-                          if os.path.isdir(os.path.join(req_dir, e))]
-            except OSError:
-                return []
+        agents = resolve_agent_namespaces(cfg, req_dir)
         files = []
         for agent in agents:
             for state in states:
@@ -462,17 +464,8 @@ def _resolve_state_dirs(cfg: dict, state: str) -> list:
     by_agent → [cfg["roadmap_dir"] + "/" + agent + "/" + state for agent in agents]
     """
     if cfg.get("roadmap_namespacing") == _config.NAMESPACING_BY_AGENT:
-        agents = cfg.get("agents") or []
-        if not agents:
-            roadmap_dir = cfg.get("roadmap_dir", "docs/roadmaps")
-            try:
-                agents = [
-                    f for f in os.listdir(roadmap_dir)
-                    if os.path.isdir(os.path.join(roadmap_dir, f))
-                ]
-            except OSError:
-                agents = []
         roadmap_dir = cfg.get("roadmap_dir", "docs/roadmaps")
+        agents = resolve_agent_namespaces(cfg, roadmap_dir)
         return [roadmap_dir + "/" + agent + "/" + state for agent in agents]
 
     return [cfg.get("roadmap_dir", "docs/roadmaps") + "/" + state]
@@ -861,16 +854,7 @@ def validate_wip_limit(cfg: dict) -> dict:
     warnings = []
 
     if cfg.get("roadmap_namespacing") == _config.NAMESPACING_BY_AGENT:
-        agents = cfg.get("agents") or []
-        if not agents:
-            roadmap_dir = cfg.get("roadmap_dir", "docs/roadmaps")
-            try:
-                agents = [
-                    f for f in os.listdir(roadmap_dir)
-                    if os.path.isdir(os.path.join(roadmap_dir, f))
-                ]
-            except OSError:
-                agents = []
+        agents = resolve_agent_namespaces(cfg, cfg.get("roadmap_dir", "docs/roadmaps"))
         limit = cfg.get("wip_limit", 1)
         if limit <= 0:
             limit = 1
@@ -1274,12 +1258,7 @@ def validate_folder_status_coherence(cfg: dict) -> list:
 
     dirs = []
     if cfg.get("roadmap_namespacing") == _config.NAMESPACING_BY_AGENT:
-        agents = cfg.get("agents") or []
-        if not agents:
-            try:
-                agents = [f for f in os.listdir(roadmap_dir) if os.path.isdir(os.path.join(roadmap_dir, f))]
-            except OSError:
-                agents = []
+        agents = resolve_agent_namespaces(cfg, roadmap_dir)
         for agent in agents:
             for state in states:
                 dirs.append((os.path.join(roadmap_dir, agent, state), state))
@@ -1326,12 +1305,7 @@ def validate_filename_uniqueness(cfg: dict) -> list:
 
     list_errors = []
     if cfg.get("roadmap_namespacing") == _config.NAMESPACING_BY_AGENT:
-        agents = cfg.get("agents") or []
-        if not agents:
-            try:
-                agents = [f for f in os.listdir(roadmap_dir) if os.path.isdir(os.path.join(roadmap_dir, f))]
-            except OSError:
-                agents = []
+        agents = resolve_agent_namespaces(cfg, roadmap_dir)
         for agent in agents:
             for state in states:
                 dir_path = os.path.join(roadmap_dir, agent, state)

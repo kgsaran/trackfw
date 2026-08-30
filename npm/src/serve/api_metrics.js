@@ -3,6 +3,7 @@
 const fs = require('fs')
 const path = require('path')
 const { parseLog, calculate } = require('../commands/metrics')
+const { resolveAgentNamespaces } = require('../validator')
 
 const STATES = ['wip', 'backlog', 'blocked', 'done', 'abandoned']
 const MS_PER_DAY = 24 * 60 * 60 * 1000
@@ -34,14 +35,7 @@ function buildStateDistribution(cfg) {
   const namespacing = cfg.roadmapNamespacing || 'flat'
 
   if (namespacing === 'by_agent') {
-    let agents = cfg.agents || []
-    if (!agents.length) {
-      try {
-        agents = fs.readdirSync(roadmapDir).filter(f => {
-          try { return fs.statSync(path.join(roadmapDir, f)).isDirectory() } catch (_) { return false }
-        })
-      } catch (_) { agents = [] }
-    }
+    const agents = resolveAgentNamespaces(cfg, roadmapDir)
     for (const agent of agents) {
       for (const state of STATES) {
         dist[state] = (dist[state] || 0) + countFilesInState(path.join(roadmapDir, agent, state))

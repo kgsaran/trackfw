@@ -95,7 +95,7 @@ def _get_context(fmt, output_file=None):
     Espelha getContext do JS.
     """
     from trackfw import config as _config
-    from trackfw.validator import validate
+    from trackfw.validator import validate, resolve_agent_namespaces
 
     cfg = _config.load()
 
@@ -110,13 +110,7 @@ def _get_context(fmt, output_file=None):
     reqs = []
     if namespacing == "by_agent":
         STATES = ["backlog", "wip", "blocked", "done", "abandoned"]
-        agents = cfg.get("agents", [])
-        if not agents:
-            try:
-                agents = [e for e in os.listdir(req_dir)
-                          if os.path.isdir(os.path.join(req_dir, e))]
-            except OSError:
-                agents = []
+        agents = resolve_agent_namespaces(cfg, req_dir)
         for agent in agents:
             for state in STATES:
                 reqs.extend(_collect_entries(os.path.join(req_dir, agent, state), "REQ", state))
@@ -129,15 +123,7 @@ def _get_context(fmt, output_file=None):
     roadmap_dir = cfg.get("roadmap_dir", "docs/roadmaps")
 
     if cfg.get("roadmap_namespacing") == "by_agent":
-        agents = cfg.get("agents") or []
-        if not agents:
-            try:
-                agents = [
-                    f for f in os.listdir(roadmap_dir)
-                    if os.path.isdir(os.path.join(roadmap_dir, f))
-                ]
-            except OSError:
-                agents = []
+        agents = resolve_agent_namespaces(cfg, roadmap_dir)
         for agent in agents:
             for state in states:
                 d = os.path.join(roadmap_dir, agent, state)

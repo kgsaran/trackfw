@@ -55,6 +55,93 @@ Branch `fix/lista-de-agentes-complementa-o-disco-e-namespace-nao-declarado-vira-
 
 ---
 
+## Sessão 2026-08-29 — apolo-tf (INÍCIO: ML-1A — resolvedor canônico e união, Wave 1)
+
+Branch `fix/lista-de-agentes-complementa-o-disco-e-namespace-nao-declarado-vira-violacao` (não criada por
+mim).
+
+Escopo: um resolvedor canônico por runtime (`resolveAgentNamespaces`/`resolve_agent_namespaces`) que
+devolve a união entre `agents:` e o disco, para `roadmap_dir` e `req_dir`, migrando todos os pontos
+enumerados pelo ML-0A. Bloqueante de segurança: a enumeração não pode seguir symlink (AC12/AC13).
+ML único e sequencial — mesma regra nos 3 runtimes, sem paralelismo entre agentes.
+
+---
+
+## Sessão 2026-08-29 — apolo-tf (FIM: ML-1A — resolvedor canônico e união, Wave 1 — CONCLUÍDO)
+
+Branch `fix/lista-de-agentes-complementa-o-disco-e-namespace-nao-declarado-vira-violacao`.
+
+**O que foi feito:**
+
+- **Go**: `resolveAgentNamespaces(cfg, dir)` novo em `internal/validator/validator.go` (não segue
+  symlink — `os.ReadDir`+`entry.IsDir()`, preservado). Migrados: `validateWIPLimit`, `GetStatus`,
+  `resolveStateDirs`, `resolveREQFiles`, `validateFolderStatusCoherence`, `validateFilenameUniqueness`
+  (validator.go), `collectTraceIdEntriesByAgent` (validator_traceid.go). `internal/commands/barrier.go`
+  parou de duplicar e passou a chamar `validator.ResolveWIPDirs`/`ResolveDoneDirs` (achado arquitetural
+  do ML-0A corrigido). `internal/generators/roadmap.go` (`findRoadmap`, `ListRoadmaps`, `scanREQFiles`),
+  `internal/generators/req.go`, `internal/generators/context.go` (2 blocos), `internal/serve/api_board.go`,
+  `internal/serve/api_metrics.go` migrados por consistência (AC9), mesmo já "seguros" antes.
+  `ResolveAgentNamespaces` exportado para consumo por `generators`/`serve` (evita import cycle com
+  `validator`, que não pode importar `generators`).
+- **Node**: `resolveAgentNamespaces(cfg, dir)` novo em `npm/src/validator/index.js` (não segue symlink —
+  `fs.readdirSync(dir,{withFileTypes:true})`+`dirent.isDirectory()`). Migrados os 6 pontos do
+  `validator/index.js` (`resolveReqFiles`, `resolveStateDirs`, `validateWIPLimit`,
+  `validateFolderStatusCoherence`, `validateFilenameUniqueness`, `getStatus`), `commands/context.js` (2
+  blocos), `generators/req.js`, `generators/roadmap.js` (`listRoadmaps`, `findRoadmapMatches` — este é o
+  que alimenta `move`, fecha AC3+AC12 juntos), `serve/api_board.js`, `serve/api_chain.js` (3 blocos, não
+  2 — ML-0A tinha contado 2; havia um terceiro para ADRs), `serve/api_metrics.js`. `barrier.js` não
+  precisou mudança (já delegava).
+- **Python**: `resolve_agent_namespaces(cfg, dir)` vive em **`config.py`**, não em `validator.py` —
+  decisão arquitetural: `validator.py` importa `traceid.py`, que também precisa do resolvedor; colocar
+  em `validator.py` criaria import cycle (`validator → traceid → validator`). `validator.py` reexporta
+  (`resolve_agent_namespaces = _config.resolve_agent_namespaces`) por compatibilidade. Não segue
+  symlink — `os.scandir(dir)`+`entry.is_dir(follow_symlinks=False)`. Migrados: `resolve_req_files`,
+  `_resolve_state_dirs`, `validate_wip_limit`, `validate_folder_status_coherence`,
+  `validate_filename_uniqueness` (validator.py), `commands/status.py:_get_agents` (parava de usar
+  `_list_dirs`, que seguia symlink via `os.path.isdir`), `commands/context.py` (2 blocos),
+  `commands/roadmap.py:_list_by_agent` (alimenta `_find_file` → `_cmd_show`),
+  `generators/req.py:list_req_files`, `generators/roadmap.py:_find_roadmap_matches` (fecha AC3+AC12 do
+  `move` em Python), `traceid.py` (`_index_reqs_by_agent`, `_index_roadmaps_by_agent`),
+  `serve/api_board.py`, `serve/api_chain.py` (3 blocos, mesmo motivo do Node), `serve/api_metrics.py`.
+- Enumeração Python (não fechada linha a linha pelo ML-0A) confirmada com novo grep nos 14 arquivos —
+  nenhum ponto adicional fora da lista.
+- **Achado arquitetural (ML-0A item 1) endereçado**: `internal/commands/barrier.go` não duplica mais.
+- **Achado arquitetural (ML-0A item 2) NÃO endereçado nesta ML** — dívida registrada: o comentário em
+  `npm/src/validator/index.js:resolveStateDirs` que se descreve como "fonte única" segue tecnicamente
+  verdadeiro agora (as 3 funções de regra que o contornavam foram migradas para chamar
+  `resolveAgentNamespaces`, que é o resolvedor real), então este item ficou resolvido como efeito
+  colateral da migração — não precisou de ação separada.
+- **3 gates de `scripts/check-gates-falsify.sh` pré-existentes ficaram vácuos ou com baseline errado
+  por causa da correção legítima do AC1 (união) e foram retargetados** (mesmo padrão do vault
+  `cenarios-de-falsificacao-quebram-em-refactor-do-alvo-2026-08-02.md`, mas causa nova — não é refactor
+  do alvo, é mudança de comportamento pretendida pela REQ):
+  - Cenário 33 (`status-by-agent-fallback-order`): `_list_dirs` (status.py) parou de ser chamado por
+    `_get_agents`; retargetado para corromper `config.resolve_agent_namespaces`.
+  - Cenário 34 (`config-unindented-agents`): baseline pinado assumia zeus invisível (o defeito da REQ);
+    atualizado para união (zeus visível) e braço de detecção trocado de presença/ausência para ORDEM
+    (declarado-primeiro vs. alfabético do disco) — presença deixou de discriminar.
+  - Cenário 35 (`config-inline-comma-in-quotes`): mesmo problema do 34, agravado — o diretório físico
+    `docs/roadmaps/ka, tsu/` já existe em disco com esse nome literal, então a união o encontra via
+    disco mesmo com `agents:` totalmente corrompido; presença NUNCA mais discrimina aqui. Fixture
+    reordenada (`agents: ["obi", "ka, tsu"]`, obi ganhou wip próprio) para tornar a ORDEM discriminante.
+
+**Evidências:**
+
+- `go build ./...`, `go test ./...`, `npm test --prefix npm` (839 testes), `PYTHONPATH=pypi python3 -m
+  pytest pypi/tests` (1555 testes) — todos verdes.
+- AC7 (não-regressão): `validate`/`status`/`context` deste repositório (modo `flat`) byte-idênticos
+  antes/depois nos 3 CLIs (comparado via `git worktree` no HEAD pré-mudança).
+- AC12/AC13 (symlink): reproduzido o escape em Node e Python (`roadmap move` escrevia fora do projeto
+  via `docs/roadmaps/evil → /fora`), confirmado bloqueado após a correção nos 3 CLIs; Go imune
+  antes/depois.
+- AC1/AC2/AC3 (união): projeto `by_agent` com `agents: [apolo]` e namespace `zeus` só em disco —
+  `zeus` enumerado por `status` e movido por `roadmap move` nos 3 CLIs, byte-idêntico entre eles.
+- `bash scripts/check-gates-falsify.sh` — todos os cenários OK após os 3 retargets acima.
+
+**Não commitado, não pushado** — aguardando auditoria do `trackfw_architect`.
+
+---
+
 ## Sessão 2026-08-28 — hades-tf (INÍCIO: ML-3A — barreira do bit de execução)
 
 Branch `fix/doctor-compara-o-bit-de-execucao`.
