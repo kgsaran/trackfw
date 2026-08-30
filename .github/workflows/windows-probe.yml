@@ -1,0 +1,370 @@
+name: Windows Probe (sonda sob demanda)
+
+# ADR-2026-08-30-ci-de-windows-como-instrumento-de-medicao-job-largo-que-
+# nasce-vermelho-mais-sonda-sob-demanda.md, decisão 3. ML-3A do
+# ROADMAP-2026-08-30-job-de-windows-largo-que-nasce-vermelho-e-sonda-sob-
+# demanda.md.
+#
+# ESTA SONDA NÃO É O JOB DE REGRESSÃO (AC6, INVIOLÁVEL).
+#
+#   - windows-full-suites / windows-defect-reproduction (quality.yml) rodam
+#     em TODO push/PR, com veredito (pass/fail), e provam que os 11 defeitos
+#     conhecidos da issue #216 não voltaram. É o instrumento de governança:
+#     verde/vermelho decide se um PR pode mergear.
+#   - ESTA sonda roda só sob demanda (workflow_dispatch), NUNCA em push/PR,
+#     NÃO tem veredito — imprime o valor BRUTO que o SO devolveu para cada
+#     pergunta e para aí. Quem lê decide o que o valor significa.
+#
+# São ferramentas distintas e não se substituem: sonda prova o que alguém
+# LEMBROU de perguntar; regressão prova que um defeito já mapeado não
+# voltou. Confundi-las é o mesmo erro do gate de falsificação que não pegou
+# o bypass de cerca — cobria a classe (existe skip? existe continue-on-error?)
+# e não tinha o caso concreto. Uma suíte de regressão só responde perguntas
+# que alguém já pensou em transformar em asserção; a sonda existe
+# precisamente para o dia em que a pergunta ainda não virou asserção nenhuma
+# — ex.: "o Lstat do Go marca ModeSymlink para uma junction do jeito que
+# marcaria para um symlink?", que é a pergunta que o autor da issue #216 fez
+# e que nenhuma das duas camadas de regressão responde hoje.
+#
+# NÃO adicionar `push`/`pull_request` a este workflow. Se uma das perguntas
+# abaixo virar preocupação de regressão permanente, o caminho certo é uma
+# verificação NOVA em scripts/windows-repro/ + quality.yml (camada 2), não
+# transformar este `workflow_dispatch` em gate.
+
+on:
+  workflow_dispatch:
+    inputs:
+      motivo:
+        description: "Por que está rodando a sonda agora (fica no log, para anexar em REQ)"
+        required: false
+        default: "investigação ad hoc"
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: windows-latest
+    # Guardrail, não meta: a sonda existe para responder em poucos minutos
+    # (AC5/AC6/ADR decisão 3). Se este timeout disparar, a sonda deixou de
+    # cumprir seu propósito e o motivo precisa virar achado, não um aumento
+    # silencioso do número.
+    timeout-minutes: 10
+    steps:
+      - name: Motivo desta execução
+        shell: pwsh
+        # Passado via env:, não interpolado direto no script pwsh — o input
+        # é texto livre de quem dispara o workflow_dispatch, e o log é
+        # público (restrição do ML-3A). env: evita que um valor adversarial
+        # (ex.: contendo `; Get-ChildItem env:`) seja executado como parte
+        # do próprio comando em vez de tratado como string.
+        env:
+          MOTIVO: ${{ inputs.motivo }}
+        run: |
+          Write-Host "Motivo: $env:MOTIVO"
+
+      - uses: actions/checkout@v7
+
+      - name: Registrar início
+        shell: pwsh
+        run: echo "started=$(Get-Date -AsUTC -Format o)" >> $env:GITHUB_ENV
+
+      # Diretório de trabalho isolado, fora da home real do runner —
+      # recomendação do ML-0A/Wave 0 (§2): mesmo sem segredo, um log público
+      # não deve carregar caminhos do perfil real do runner (%USERPROFILE%
+      # real) além do necessário. Todas as sondas abaixo operam dentro deste
+      # diretório ou de subdiretórios temporários dele.
+      - name: Preparar diretório de trabalho isolado
+        id: work
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP "probe-work"
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          "dir=$dir" >> $env:GITHUB_OUTPUT
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip pyyaml
+      - run: npm ci --ignore-scripts
+        working-directory: npm
+
+      # ---------------------------------------------------------------
+      # Pergunta 1 — modo devolvido por os.Stat: arquivo comum vs chmod +x.
+      # Mesmo primitivo que internal/validator/validator_credential_guard.go
+      # e validator_git_branch_guard.go chamam em produção (info.Mode()&0111).
+      # ---------------------------------------------------------------
+      - name: "Pergunta 1 — os.Stat: arquivo comum vs chmod +x"
+        if: always()
+        shell: pwsh
+        run: |
+          go run scripts/windows-repro/go/probe.go statmode-common
+          go run scripts/windows-repro/go/probe.go statmode-chmod
+
+      # ---------------------------------------------------------------
+      # Pergunta 2 — a pergunta central desta sonda (ver cabeçalho do YAML
+      # e de probe.go): Lstat diante de symlink (os.Symlink) vs junction
+      # (mklink /J) vs arquivo comum. mklink /J não exige privilégio
+      # elevado — funciona no runner hospedado padrão, ao contrário de
+      # os.Symlink (que tipicamente falha sem Developer Mode/admin; o erro
+      # bruto de criação também é sinal e é impresso, não escondido).
+      # ---------------------------------------------------------------
+      - name: "Pergunta 2 — Lstat: arquivo comum vs symlink (os.Symlink) vs junction (mklink /J)"
+        if: always()
+        shell: pwsh
+        run: |
+          go run scripts/windows-repro/go/probe.go lstat-common
+          go run scripts/windows-repro/go/probe.go lstat-symlink
+          go run scripts/windows-repro/go/probe.go lstat-junction
+
+      # ---------------------------------------------------------------
+      # Pergunta 3 — isatty sobre NUL, sobre pipe, e "sobre o console" (com
+      # a ressalva de que o runner do Actions já captura o stdout do step
+      # via redirecionamento próprio — não é um console interativo real;
+      # ver residual declarado no rodapé deste job). cmd.exe é o único shell
+      # com semântica de "<" garantida para NUL nesta imagem sem depender
+      # de bash/sh estarem no PATH — por isso a variante NUL usa `cmd /c`.
+      # ---------------------------------------------------------------
+      - name: "Pergunta 3 — isatty(): NUL, pipe, e stdout do step sem redirecionamento explícito"
+        if: always()
+        shell: pwsh
+        run: |
+          Write-Host "-- isatty sobre NUL (cmd /c com '< NUL') --"
+          cmd /c "python -c ""import sys; print('stdin.isatty()=', sys.stdin.isatty())"" < NUL"
+
+          Write-Host "-- isatty sobre pipe (stdin vem de outro processo) --"
+          "linha-de-teste" | python -c "import sys; print('stdin.isatty()=', sys.stdin.isatty())"
+
+          Write-Host "-- isatty sem redirecionamento explícito (stdout do STEP do Actions, não um console interativo) --"
+          python -c "import sys; print('stdin.isatty()=', sys.stdin.isatty(), 'stdout.isatty()=', sys.stdout.isatty())"
+
+      # ---------------------------------------------------------------
+      # Pergunta 4 — encoding do console e do stdout: chcp (codepage ANSI
+      # ativa), sys.stdout.encoding com e sem PYTHONIOENCODING setado.
+      # ---------------------------------------------------------------
+      - name: "Pergunta 4 — encoding do console e do stdout"
+        if: always()
+        shell: pwsh
+        run: |
+          Write-Host "-- chcp (codepage ANSI ativa do console) --"
+          cmd /c chcp
+
+          Write-Host "-- sys.stdout.encoding / sys.stderr.encoding, PYTHONIOENCODING não setado --"
+          $env:PYTHONIOENCODING = $null
+          python -c "import sys; print('stdout.encoding=', sys.stdout.encoding, 'stderr.encoding=', sys.stderr.encoding)"
+
+          Write-Host "-- idem, com PYTHONIOENCODING=utf-8 --"
+          $env:PYTHONIOENCODING = "utf-8"
+          python -c "import sys; print('stdout.encoding=', sys.stdout.encoding, 'stderr.encoding=', sys.stderr.encoding)"
+          Remove-Item Env:\PYTHONIOENCODING
+
+      # ---------------------------------------------------------------
+      # Pergunta 5 — terminador de linha dos arquivos que os geradores
+      # escrevem. Regra dura de paridade do projeto (docs/cli-parity.md):
+      # os 3 CLIs têm gerador de artefato PRÓPRIO (internal/generators/,
+      # npm/src/generators/, pypi/trackfw/generators/ — reimplementações,
+      # não wrapper), então as 3 sub-perguntas medem os 3, não só o que já
+      # tinha script pronto:
+      #   5a. Python — reusa scripts/windows-repro/python/checks.py
+      #       (comando `crlf`, já existente na camada 2) em vez de duplicar
+      #       a lógica — mesmo caminho real de produção (`trackfw init` de
+      #       verdade, sem mock), agora só para leitura bruta.
+      #   5b. Go — `trackfw roadmap new` de verdade (mesmo binário
+      #       compilado do repositório), sem mock, lendo os bytes crus do
+      #       .md gerado.
+      #   5c. Node — `trackfw roadmap new` de verdade via o CLI Node
+      #       (npm/src/generators/roadmap.js), mesmo mecanismo do 5b.
+      # ---------------------------------------------------------------
+      - name: "Pergunta 5a — terminador de linha dos arquivos gerados (trackfw init real, Python)"
+        if: always()
+        shell: pwsh
+        env:
+          # evita que o item 1 (cp1252) mascare esta leitura — mesma técnica
+          # documentada em scripts/windows-repro/python/checks.py (ML-1C)
+          PYTHONIOENCODING: "utf-8"
+        run: |
+          $env:TRACKFW_PYPI_SRC = Join-Path $env:GITHUB_WORKSPACE "pypi"
+          python scripts/windows-repro/python/checks.py crlf
+
+      - name: "Pergunta 5b — terminador de linha dos arquivos gerados (trackfw roadmap new real, Go)"
+        if: always()
+        shell: pwsh
+        run: |
+          $binDir = Join-Path $env:RUNNER_TEMP "probe-bin"
+          New-Item -ItemType Directory -Force -Path $binDir | Out-Null
+          $exe = Join-Path $binDir "trackfw-probe.exe"
+          go build -o $exe ./cmd/trackfw
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "go build falhou -- Pergunta 5b não pôde medir"
+            exit 0
+          }
+
+          $genDir = Join-Path "${{ steps.work.outputs.dir }}" "go-gen"
+          New-Item -ItemType Directory -Force -Path $genDir | Out-Null
+          Push-Location $genDir
+          & $exe init --identity-preset none | Out-Null
+          & $exe roadmap new "sonda go crlf" | Out-Null
+          Pop-Location
+
+          $mdFiles = Get-ChildItem -Path (Join-Path $genDir "docs\roadmaps") -Filter "*.md" -Recurse
+          if (-not $mdFiles) {
+            Write-Host "VERDICT=INCONCLUSIVE (nenhum .md gerado)"
+          } else {
+            foreach ($f in $mdFiles) {
+              $raw = [System.IO.File]::ReadAllBytes($f.FullName)
+              $hasCrlf = ([System.Text.Encoding]::UTF8.GetString($raw)) -match "`r`n"
+              Write-Host "$($f.Name): crlf=$hasCrlf bytes=$($raw.Length)"
+            }
+          }
+
+      - name: "Pergunta 5c — terminador de linha dos arquivos gerados (trackfw roadmap new real, Node)"
+        if: always()
+        shell: pwsh
+        run: |
+          $genDir = Join-Path "${{ steps.work.outputs.dir }}" "node-gen"
+          New-Item -ItemType Directory -Force -Path $genDir | Out-Null
+          $nodeBin = Join-Path $env:GITHUB_WORKSPACE "npm\bin\trackfw"
+          Push-Location $genDir
+          node $nodeBin init --identity-preset none | Out-Null
+          node $nodeBin roadmap new "sonda node crlf" | Out-Null
+          Pop-Location
+
+          $mdFiles = Get-ChildItem -Path (Join-Path $genDir "docs\roadmaps") -Filter "*.md" -Recurse
+          if (-not $mdFiles) {
+            Write-Host "VERDICT=INCONCLUSIVE (nenhum .md gerado)"
+          } else {
+            foreach ($f in $mdFiles) {
+              $raw = [System.IO.File]::ReadAllBytes($f.FullName)
+              $hasCrlf = ([System.Text.Encoding]::UTF8.GetString($raw)) -match "`r`n"
+              Write-Host "$($f.Name): crlf=$hasCrlf bytes=$($raw.Length)"
+            }
+          }
+
+      # ---------------------------------------------------------------
+      # Pergunta 6 — sh, bash e pwsh no PATH: versão e caminho resolvido.
+      # ---------------------------------------------------------------
+      - name: "Pergunta 6 — sh, bash, pwsh no PATH (versão e caminho)"
+        if: always()
+        shell: pwsh
+        run: |
+          foreach ($exe in "sh", "bash", "pwsh") {
+            $cmd = Get-Command $exe -ErrorAction SilentlyContinue
+            if (-not $cmd) {
+              Write-Host "$exe -> NÃO ENCONTRADO no PATH"
+              continue
+            }
+            Write-Host "$exe -> $($cmd.Source)"
+            try {
+              $version = & $exe --version 2>&1 | Select-Object -First 1
+              Write-Host "$exe --version -> $version"
+            } catch {
+              Write-Host "$exe --version -> erro ao invocar: $_"
+            }
+          }
+
+      # ---------------------------------------------------------------
+      # Pergunta 7 — core.symlinks efetivo do Git, e o que `git checkout`
+      # faz com um symlink versionado (blob modo 120000) sob esse valor.
+      # O objeto symlink é criado via plumbing (`update-index --cacheinfo
+      # 120000,...`), não via os.Symlink — funciona independente de
+      # privilégio/Developer Mode do runner, porque não pede ao SO para
+      # criar um reparse point na hora de ADICIONAR ao índice, só na hora
+      # do checkout (que é exatamente o comportamento sob teste).
+      # ---------------------------------------------------------------
+      - name: "Pergunta 7 — core.symlinks efetivo, e o que git checkout faz com um symlink versionado"
+        if: always()
+        shell: pwsh
+        working-directory: ${{ steps.work.outputs.dir }}
+        run: |
+          Write-Host "-- core.symlinks efetivo no ambiente do runner (antes de qualquer repo novo) --"
+          $global = git config --get core.symlinks
+          if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrEmpty($global)) {
+            Write-Host "core.symlinks (global/system): não setado explicitamente -- Git usa o default detectado na criação de cada repo"
+          } else {
+            Write-Host "core.symlinks (global/system): $global"
+          }
+
+          git init -q symlink-checkout
+          Set-Location symlink-checkout
+          git config --get core.symlinks
+
+          # target.txt PRECISA existir no worktree antes do checkout: se o
+          # Git materializar um symlink real (core.symlinks=true), um alvo
+          # ausente deixa o link "dangling" e Get-Content abaixo falharia de
+          # forma terminante (shell: pwsh roda com $ErrorActionPreference
+          # efetivamente Stop), derrubando o resto do step antes de imprimir
+          # o resultado — exatamente o defeito que este ML existe para não
+          # repetir (mesma classe do ML-1C).
+          "conteudo-alvo`n" | Out-File -NoNewline -Encoding ascii target.txt
+
+          "target.txt" | Out-File -NoNewline -Encoding ascii link_target.tmp
+          $blob = (git hash-object -w link_target.tmp).Trim()
+          Remove-Item link_target.tmp
+          git update-index --add --cacheinfo 120000,$blob,mylink
+          git checkout -- mylink
+
+          Write-Host "-- o que ficou em disco depois do checkout --"
+          $item = Get-Item mylink -Force -ErrorAction SilentlyContinue
+          if ($item) {
+            Write-Host "Attributes: $($item.Attributes)"
+            Write-Host "LinkType: $($item.LinkType)"
+          } else {
+            Write-Host "Get-Item mylink falhou -- ver stderr acima"
+          }
+          Write-Host "Conteúdo bruto (se for arquivo texto, mostra o alvo como STRING; se for reparse point, PowerShell resolve via o próprio link):"
+          Get-Content mylink -Raw -ErrorAction SilentlyContinue | Write-Host
+
+      - name: "Lstat do Go sobre o resultado da Pergunta 7"
+        if: always()
+        shell: pwsh
+        # Roda da raiz do repo (mesmo padrão das Perguntas 1/2 acima), NÃO
+        # do diretório isolado: `go run <arquivo>.go` fora de qualquer
+        # go.mod pode se comportar de forma imprevisível em modo módulo
+        # (probe.go só usa stdlib, então tende a funcionar, mas não vale
+        # gastar um dispatch para descobrir). O caminho de mylink é
+        # absoluto, então o cwd do processo não importa para o resultado.
+        run: |
+          $mylinkPath = Join-Path "${{ steps.work.outputs.dir }}" "symlink-checkout\mylink"
+          go run scripts/windows-repro/go/probe.go lstat-path $mylinkPath
+          Get-Item $mylinkPath -Force -ErrorAction SilentlyContinue | Format-List *
+
+      - name: Registrar duração
+        if: always()
+        shell: pwsh
+        run: |
+          $start = [DateTimeOffset]::Parse($env:started)
+          $elapsed = [DateTimeOffset]::UtcNow - $start
+          $msg = "Duração medida da sonda (workflow windows-probe): $($elapsed.ToString())"
+          Write-Host $msg
+          if ($env:GITHUB_STEP_SUMMARY) { Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Tempo da sonda`n`n$msg`n`nLembrete: esta sonda NÃO substitui o job de regressão (windows-full-suites / windows-defect-reproduction em quality.yml) — ver comentário no topo deste workflow." }
+
+      # ---------------------------------------------------------------
+      # Residual declarado — o que esta sonda NÃO responde (mesmo lista do
+      # ML-0A/Wave 0, §4, para não se perder do roadmap):
+      #   - core.symlinks=false real de uma clonagem de terceiro fora deste
+      #     runner: a Pergunta 7 mede o comportamento NESTE runner, com o
+      #     default do Git aqui — não o de uma máquina de terceiro que
+      #     tenha configurado core.symlinks explicitamente.
+      #   - console cp1252 REAL, interativo (usuário sentado num
+      #     cmd.exe/Windows Terminal): todo stdout aqui passa pelo
+      #     redirecionamento próprio do Actions runner, não por um console
+      #     interativo de verdade — Pergunta 3/4 medem a aproximação mais
+      #     próxima disponível em CI, não o caso relatado na issue.
+      #   - Codepage além de cp1252 (cp936, cp1251, etc.) — o runner
+      #     hospedado roda locale en-US.
+      #   - Developer Mode habilitado — de propósito NÃO habilitado aqui;
+      #     é por isso que a Pergunta 2 espera (e reporta, sem falhar) o
+      #     erro de privilégio na criação do symlink via os.Symlink.
+      # ---------------------------------------------------------------
+      - name: Residual declarado (sempre impresso, para ficar no log)
+        if: always()
+        shell: pwsh
+        run: |
+          Write-Host "Esta sonda NÃO responde: core.symlinks=false de clone de terceiro fora deste runner; console cp1252 REAL interativo (aqui o stdout é capturado pelo Actions, não por um console interativo); codepage diferente de cp1252; comportamento com Developer Mode habilitado (de propósito não habilitado nesta execução)."

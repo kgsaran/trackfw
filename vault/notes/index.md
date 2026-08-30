@@ -4,6 +4,8 @@
 
 ## Índice
 
+- [if-sem-funcao-de-status-tem-success-implicito-2026-08-30](if-sem-funcao-de-status-tem-success-implicito-2026-08-30.md) — passo pulado com condição verdadeira: o Actions prepende `success()` a todo `if:` sem função de status
+- [job-de-windows-largo-so-reproduz-2-dos-11-defeitos-2026-08-30](job-de-windows-largo-so-reproduz-2-dos-11-defeitos-2026-08-30.md) — rodar as 3 suítes completas em Windows não basta: mock/monkeypatch, oráculo ausente ou caminho de produção não atingido escondem 8 dos 11 defeitos da issue #216; e a isolação de `$HOME` dos próprios testes é vácua no Windows nos 3 runtimes
 - [uniao-disco-agents-mascara-gate-por-presenca-2026-08-29](uniao-disco-agents-mascara-gate-por-presenca-2026-08-29.md) — a união agents:+disco (REQ-2026-08-29) desarma gates que discriminavam por presença/ausência de namespace; só ordem (declarado-primeiro vs. alfabético) sobrevive como técnica de retarget
 - [serve-validator-index-detectado-como-binario-grep-silencioso-2026-08-29](serve-validator-index-detectado-como-binario-grep-silencioso-2026-08-29.md) — `npm/src/validator/index.js` é classificado `data` por `file`; `grep -rln` sem `-a` pula o arquivo mais importante do sweep by_agent em silêncio
 - [gates-da-wave-sao-um-comando-por-linha-2026-08-29](gates-da-wave-sao-um-comando-por-linha-2026-08-29.md) — bloco de gate não é script: cada linha é um comando isolado; `grep && {}` reprova quando o grep NÃO acha

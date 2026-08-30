@@ -113,6 +113,298 @@ jobs:
       - run: python -m pip install --upgrade pip pytest
       - run: python -m pytest pypi/tests/test_integrations_resolve.py -v
 
+  windows-full-suites:
+    # Camada 1 do instrumento de medição — ADR-2026-08-30-ci-de-windows-como-
+    # instrumento-de-medicao-job-largo-que-nasce-vermelho-mais-sonda-sob-
+    # demanda.md, decisão 1/2. As TRÊS suítes completas (go test ./...,
+    # npm test, pytest pypi/tests) em windows-latest — sem invocação
+    # dirigida (não confundir com o job windows-integrations-resolve acima,
+    # que é intocado e continua sendo um guard estreito e honesto).
+    #
+    # NÃO CORRIGE nada (ADR decisão 7). O critério de aceite é que este job
+    # REPROVE reproduzindo os defeitos da issue #216 — um job de Windows que
+    # nasce verde não prova nada (foi assim que chegamos aqui).
+    #
+    # continue-on-error: true é TEMPORÁRIO (AC4) — só remover depois que TODAS
+    # as REQs de correção dos 11 itens da issue #216 fecharem. Até lá este
+    # job aparece como ⚠️, nunca ❌, e branch protection com "required status
+    # checks" não trava PR por causa dele — decisão deliberada para não
+    # paralisar trabalho não relacionado. Revisão obrigatória antes de
+    # remover: confirmar que os 11 itens estão corrigidos E cobertos por
+    # verificação que falhava antes (ADR decisão 7).
+    #
+    # AC12 — isolação de $HOME/USERPROFILE: pypi/tests/conftest.py e
+    # internal/validator/main_test.go isolam via a env var HOME, que a
+    # produção NÃO lê no Windows (verificado contra o stdlib: os.UserHomeDir
+    # do Go usa exclusivamente %USERPROFILE% no branch "windows" — sem
+    # fallback para $HOME —, e ntpath.expanduser do Python idem). Sem
+    # mitigação, `go test ./...` escreveria de verdade no perfil do runner, e
+    # o Go paraleliza pacotes por padrão: condição de corrida DENTRO da
+    # mesma execução (Wave 0, hades-tf — ML-0A). Mitigação aplicada AQUI, no
+    # job, não no produto nem nos arquivos de teste (fora do escopo desta
+    # ML):
+    #   1. USERPROFILE/HOME sobrescritos para um diretório sintético só nos
+    #      passos que RODAM as suítes — não no job inteiro, para não
+    #      desviar os caches do setup-go/setup-node/pip (por isso
+    #      GOPATH/GOMODCACHE/GOCACHE/npm_config_cache/PIP_CACHE_DIR abaixo
+    #      são fixados fora do home sintético, e valem para o job inteiro).
+    #   2. `go test` roda com -p 1 -parallel 1 e `node --test` com
+    #      --test-concurrency=1, eliminando a concorrência ENTRE
+    #      pacotes/arquivos de teste que dividiriam o mesmo home sintético.
+    #      pytest já é serial por padrão aqui (sem pytest-xdist configurado).
+    # Isto NÃO corrige o defeito 2/6 (a produção continua ignorando $HOME em
+    # runtime real — a suíte de reprodução, job windows-defect-reproduction
+    # abaixo, é que precisa provar isso) — só torna a MEDIÇÃO reproduzível.
+    # Um passo de precondição confirma que a isolação vale antes de rodar
+    # qualquer suíte; se não valer, as suítes são puladas nesta execução e o
+    # job reporta a razão em vez de produzir um resultado não confiável — a
+    # suíte de reprodução roda de qualquer forma, independente deste job.
+    #
+    # RESIDUAL DECLARADO (AC12, sempre vale, não só quando a precondição
+    # falha): mesmo com a precondição passando, a mitigação acima NÃO
+    # produz isolação POR TESTE — todos os pacotes/arquivos de teste desta
+    # execução compartilham UM ÚNICO diretório sintético, sequencialmente,
+    # sem limpeza entre eles. Resíduo deixado por um teste pode interferir
+    # em outro dentro da mesma execução (mesma classe de problema que a
+    # Wave 0 mediu para a home real, só que num diretório descartável em
+    # vez do perfil do runner). Uma falha nesta camada sem correspondência
+    # clara a um item da issue #216 pode ser efeito colateral disto, não um
+    # 12º defeito — triar como resíduo do instrumento antes de assumir
+    # achado novo. Corrigir isolação por-teste em
+    # pypi/tests/conftest.py e internal/validator/main_test.go (usar
+    # USERPROFILE, não só HOME) está fora do escopo desta ML.
+    runs-on: windows-latest
+    continue-on-error: true
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Fixar caches fora do home sintético (AC12)
+        # env: de JOB não aceita o contexto `runner` (só github, inputs, vars,
+        # secrets, strategy, matrix, needs) — por isso este step grava em
+        # $GITHUB_ENV, herdado por todos os steps seguintes do job, em vez de
+        # um `env:` de job. Continua valendo para o job inteiro, como a AC12
+        # exige (setup-go/setup-node/pip incluídos, não só as suítes).
+        shell: pwsh
+        run: |
+          "GOPATH=$env:RUNNER_TEMP\gopath" >> $env:GITHUB_ENV
+          "GOMODCACHE=$env:RUNNER_TEMP\gomodcache" >> $env:GITHUB_ENV
+          "GOCACHE=$env:RUNNER_TEMP\gocache" >> $env:GITHUB_ENV
+          "npm_config_cache=$env:RUNNER_TEMP\npm-cache" >> $env:GITHUB_ENV
+          "PIP_CACHE_DIR=$env:RUNNER_TEMP\pip-cache" >> $env:GITHUB_ENV
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: npm ci --ignore-scripts
+        working-directory: npm
+      - run: python -m pip install --upgrade pip pytest
+      # Instala o pacote (e suas dependências declaradas em pypi/pyproject.toml,
+      # ex. PyYAML>=6.0) para que a suíte pytest completa tenha as libs de
+      # runtime disponíveis — mesmo padrão dos jobs `python` (linha 73) e
+      # `parity` (linha 407) acima: zero drift, sem hardcodar nomes de
+      # dependência aqui. Faltava aqui (ML-1D): o job só instalava pytest,
+      # então `python -m pytest pypi/tests` falhava na COLETA de 40 módulos
+      # com `ModuleNotFoundError: No module named 'yaml'` antes de exercitar
+      # qualquer defeito real da issue #216 — resíduo do instrumento, não a
+      # medição pretendida (ver comentário AC12 acima sobre residual do
+      # instrumento vs. achado novo).
+      - run: python -m pip install pypi/
+
+      - name: Registrar início (AC10)
+        shell: pwsh
+        run: echo "started=$(Get-Date -AsUTC -Format o)" >> $env:GITHUB_ENV
+
+      - name: Preparar diretório sintético de home (AC12)
+        id: home
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP "winhome"
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          "home=$dir" >> $env:GITHUB_OUTPUT
+
+      - name: AC12 — confirmar que a isolação de HOME/USERPROFILE vale antes de rodar as suítes
+        id: precondition
+        shell: pwsh
+        continue-on-error: true
+        env:
+          HOME: ${{ steps.home.outputs.home }}
+          USERPROFILE: ${{ steps.home.outputs.home }}
+        run: |
+          $expected = $env:USERPROFILE
+          $failed = $false
+          $goHome = (go run scripts/windows-repro/go/checks.go home) 2>&1 | Out-String
+          Write-Host "Go   os.UserHomeDir()      -> $($goHome.Trim())"
+          if ($goHome.Trim() -ne $expected) { $failed = $true }
+          $nodeHome = (node -e "console.log(require('os').homedir())") 2>&1 | Out-String
+          Write-Host "Node os.homedir()          -> $($nodeHome.Trim())"
+          if ($nodeHome.Trim() -ne $expected) { $failed = $true }
+          $pyHome = (python -c "import os; print(os.path.expanduser('~'))") 2>&1 | Out-String
+          Write-Host "Py   os.path.expanduser(~) -> $($pyHome.Trim())"
+          if ($pyHome.Trim() -ne $expected) { $failed = $true }
+          if ($failed) {
+            Write-Host "::error::AC12 — a isolação de HOME/USERPROFILE não vale para pelo menos um runtime. Pulando as três suítes completas nesta execução (ver step 'Camada 1 pulada' abaixo)."
+            exit 1
+          }
+          Write-Host "AC12 — isolação confirmada para os 3 runtimes."
+
+      - name: Go — suíte completa (camada 1, AC1)
+        # always() && <condição>: sem always() aqui, o GitHub Actions
+        # prepende success() implicitamente a qualquer if: sem função de
+        # status (doc oficial) — então, quando o step Go falha, os steps
+        # Node/Python seguintes eram pulados mesmo com
+        # `steps.precondition.outcome == 'success'` == true, porque o
+        # success() implícito já era falso (medido no PR #221, run
+        # 33322373895: Go -> failure, Node/Python -> skipped). always()
+        # substitui esse success() implícito por "sempre avalia minha
+        # condição", preservando a precondição da AC12 como ÚNICO portão de
+        # entrada — não é um always() cego (não roda quando a precondição
+        # falhou).
+        if: always() && steps.precondition.outcome == 'success'
+        shell: pwsh
+        env:
+          HOME: ${{ steps.home.outputs.home }}
+          USERPROFILE: ${{ steps.home.outputs.home }}
+          TRACKFW_DISABLE_EXTERNAL_COMMANDS: "1"
+        run: go test -p 1 -parallel 1 -timeout 20m ./...
+
+      - name: Node — suíte completa (camada 1, AC1)
+        # always() && <condição>: ver comentário no step "Go — suíte
+        # completa" acima — mesmo motivo, mesma correção (ML-1C).
+        if: always() && steps.precondition.outcome == 'success'
+        shell: pwsh
+        working-directory: npm
+        env:
+          HOME: ${{ steps.home.outputs.home }}
+          USERPROFILE: ${{ steps.home.outputs.home }}
+        # SEM argumento de caminho, de propósito: com Node 20/26 testados
+        # localmente, `node --test tests/` (positional de diretório) falha
+        # com MODULE_NOT_FOUND — parece tratar o positional como um módulo a
+        # exigir, não como raiz de descoberta, nesta versão. `node --test`
+        # (sem positional) usa a descoberta padrão a partir do cwd e achou os
+        # MESMOS 839 testes que `npm test` (verificado localmente) — mesma
+        # suíte completa, não um filtro (não é a regressão "sem invocação
+        # dirigida" que a Wave 0 e o AC1 proíbem).
+        run: node --test --test-concurrency=1
+
+      - name: Python — suíte completa (camada 1, AC1)
+        # always() && <condição>: ver comentário no step "Go — suíte
+        # completa" acima — mesmo motivo, mesma correção (ML-1C).
+        if: always() && steps.precondition.outcome == 'success'
+        shell: pwsh
+        env:
+          HOME: ${{ steps.home.outputs.home }}
+          USERPROFILE: ${{ steps.home.outputs.home }}
+        run: python -m pytest pypi/tests -q
+
+      - name: Camada 1 pulada — AC12 impediu execução segura
+        if: steps.precondition.outcome != 'success'
+        shell: pwsh
+        run: |
+          Write-Host "::warning::Camada 1 (as três suítes completas) foi pulada porque a precondição de isolação de HOME/USERPROFILE falhou (AC12). A suíte de reprodução de defeito (job windows-defect-reproduction) roda de qualquer forma e é o instrumento que precisa nascer vermelho. Residual: a isolação por-teste em pypi/tests/conftest.py e internal/validator/main_test.go continua vazia no Windows (usa `$HOME`, produção lê `USERPROFILE`) — corrigir esses dois arquivos está fora do escopo do ML-1A."
+
+      - name: Registrar duração (AC10)
+        if: always()
+        shell: pwsh
+        run: |
+          $start = [DateTimeOffset]::Parse($env:started)
+          $elapsed = [DateTimeOffset]::UtcNow - $start
+          $msg = "Duração medida do job windows-full-suites: $($elapsed.ToString())"
+          Write-Host $msg
+          if ($env:GITHUB_STEP_SUMMARY) { Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## AC10 — tempo do job`n`n$msg" }
+
+  windows-defect-reproduction:
+    # Camada 2 do instrumento — ADR decisão 6/AC2/AC2b/AC3. Uma verificação
+    # por defeito conhecido da issue #216, mapeada 1:1, exercitando o
+    # caminho real de produção — sem mock. É ESTA que precisa nascer
+    # vermelha: a Wave 0 (hades-tf, ML-0A) mediu que as três suítes completas
+    # sozinhas (job windows-full-suites acima) só expõem 2 dos 11 itens com
+    # confiança direta — entregar só elas produziria falsa sensação de
+    # cobertura sobre os outros 9. Ver scripts/windows-repro/run.ps1 para o
+    # mapeamento completo item a item (comentário de cabeçalho do arquivo).
+    #
+    # continue-on-error: true é TEMPORÁRIO (AC4), mesmo motivo e mesmo
+    # critério de remoção do job windows-full-suites acima.
+    #
+    # NÃO CORRIGE nada (ADR decisão 7): uma verificação que passar quando
+    # deveria reproduzir o defeito é achado (defeito ausente/já corrigido, ou
+    # a verificação está errada) — nunca motivo para alterar código de
+    # produto neste job.
+    #
+    # Independente do job windows-full-suites: não compartilha `needs`, não
+    # depende do resultado dele. Roda mesmo se a camada 1 for pulada por
+    # AC12.
+    runs-on: windows-latest
+    continue-on-error: true
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Fixar caches fora do home sintético (AC12)
+        # Mesmo motivo do job windows-full-suites acima: env: de JOB não
+        # aceita o contexto `runner` — só env: de step, with: e run: o
+        # aceitam. Step de setup gravando em $GITHUB_ENV replica o efeito de
+        # um env: de job (vale para todos os steps seguintes) sem violar o
+        # schema.
+        shell: pwsh
+        run: |
+          "GOPATH=$env:RUNNER_TEMP\gopath" >> $env:GITHUB_ENV
+          "GOMODCACHE=$env:RUNNER_TEMP\gomodcache" >> $env:GITHUB_ENV
+          "GOCACHE=$env:RUNNER_TEMP\gocache" >> $env:GITHUB_ENV
+          "npm_config_cache=$env:RUNNER_TEMP\npm-cache" >> $env:GITHUB_ENV
+          "PIP_CACHE_DIR=$env:RUNNER_TEMP\pip-cache" >> $env:GITHUB_ENV
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: npm ci --ignore-scripts
+        working-directory: npm
+      - run: python -m pip install --upgrade pip
+      # Instala o pacote (e suas dependências declaradas em pypi/pyproject.toml,
+      # ex. PyYAML>=6.0) para que checks.py tenha as libs de runtime
+      # disponíveis — mesmo padrão dos jobs `python` (linha 73), `parity`
+      # (linha 407) e `windows-full-suites` (linha 219) acima: zero drift,
+      # sem hardcodar nomes de dependência aqui. Faltava aqui (achado
+      # bloqueante da barreira de qualidade, 2026-08-30): o job instalava
+      # `pyyaml` por nome, desacoplado de pyproject.toml — uma segunda
+      # dependência de runtime entrando no pacote sem editar esta linha faria
+      # `import trackfw.cli` morrer com ModuleNotFoundError antes de alcançar
+      # qualquer ponto medido pelos itens 1/4/5/6, reportando ABSENT por
+      # vacuidade (mesmo mecanismo que o ML-1D já corrigiu na camada 1).
+      - run: python -m pip install pypi/
+
+      - name: Registrar início (AC10)
+        shell: pwsh
+        run: echo "started=$(Get-Date -AsUTC -Format o)" >> $env:GITHUB_ENV
+
+      - name: Suíte de reprodução de defeito — 11 itens da issue #216 (AC2, AC2b, AC3)
+        shell: pwsh
+        run: pwsh -File scripts/windows-repro/run.ps1
+
+      - name: Registrar duração (AC10)
+        if: always()
+        shell: pwsh
+        run: |
+          $start = [DateTimeOffset]::Parse($env:started)
+          $elapsed = [DateTimeOffset]::UtcNow - $start
+          $msg = "Duração medida do job windows-defect-reproduction: $($elapsed.ToString())"
+          Write-Host $msg
+          if ($env:GITHUB_STEP_SUMMARY) { Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## AC10 — tempo do job`n`n$msg" }
+
   parity:
     runs-on: ubuntu-latest
     needs: [go, node, python, package-smoke, windows-integrations-resolve]

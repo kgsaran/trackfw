@@ -53,7 +53,30 @@ function run(args, cwd, homeRoot) {
 
 const VALIDATE_ABS_REL = path.join('.github', 'workflows', 'trackfw-validate.yml')
 
-test('trackfw update (ci: none) never writes through a live symlink pointing outside the project', () => {
+// symlinkOrSkip mirrors fs.symlinkSync, but if creation fails because the
+// process lacks the privilege Windows requires to create symlinks
+// (Developer Mode or an elevated process — WinError 1314,
+// ERROR_PRIVILEGE_NOT_HELD), it skips the calling test via node:test's
+// TestContext#skip instead of throwing, naming the guarantee that was not
+// exercised. Detection is on the CONDITION (the failed syscall), not on
+// process.platform: on a Windows runner with Developer Mode enabled, or on
+// Linux/macOS, fs.symlinkSync succeeds and the test executes normally.
+// Returns true if the symlink was created (caller should proceed), false if
+// the test was skipped (caller must return immediately).
+function symlinkOrSkip(t, target, link) {
+  try {
+    fs.symlinkSync(target, link)
+    return true
+  } catch (err) {
+    if (err && (err.code === 'EPERM' || err.code === 'EACCES')) {
+      t.skip(`guarda de escrita através de symlink não exercitada: criação de symlink exige Developer Mode (ou processo elevado) neste Windows: ${err.message}`)
+      return false
+    }
+    throw err
+  }
+}
+
+test('trackfw update (ci: none) never writes through a live symlink pointing outside the project', (t) => {
   const { projectRoot, homeRoot, outsideRoot } = scratch('ci: none\n')
   const victim = path.join(outsideRoot, 'vitima.txt')
   const originalContent = 'CONTEUDO ORIGINAL DA VITIMA\n'
@@ -62,7 +85,7 @@ test('trackfw update (ci: none) never writes through a live symlink pointing out
   const workflowsDir = path.join(projectRoot, '.github', 'workflows')
   fs.mkdirSync(workflowsDir, { recursive: true })
   const link = path.join(workflowsDir, 'trackfw-validate.yml')
-  fs.symlinkSync(victim, link)
+  if (!symlinkOrSkip(t, victim, link)) return
 
   const result = run(['update'], projectRoot, homeRoot)
   assert.equal(result.status, 0, result.stderr)
@@ -74,14 +97,14 @@ test('trackfw update (ci: none) never writes through a live symlink pointing out
   assert.ok(linkInfo.isSymbolicLink(), 'trackfw-validate.yml symlink should remain untouched')
 })
 
-test('trackfw discover --init never creates a file through a dangling symlink outside the project', () => {
+test('trackfw discover --init never creates a file through a dangling symlink outside the project', (t) => {
   const { projectRoot, homeRoot, outsideRoot } = scratch('ci: github-actions\n')
   const danglingTarget = path.join(outsideRoot, 'does-not-exist-yet')
 
   const workflowsDir = path.join(projectRoot, '.github', 'workflows')
   fs.mkdirSync(workflowsDir, { recursive: true })
   const link = path.join(workflowsDir, 'trackfw-validate.yml')
-  fs.symlinkSync(danglingTarget, link)
+  if (!symlinkOrSkip(t, danglingTarget, link)) return
 
   const result = run(['discover', '--init'], projectRoot, homeRoot)
   assert.equal(result.status, 0, result.stderr)
@@ -93,7 +116,7 @@ test('trackfw discover --init never creates a file through a dangling symlink ou
   )
 })
 
-test('discover.writeCIWorkflow refuses a live symlink pointing outside the project and warns on stderr', () => {
+test('discover.writeCIWorkflow refuses a live symlink pointing outside the project and warns on stderr', (t) => {
   const { writeCIWorkflow, DISCOVER_GITHUB_ACTIONS_WORKFLOW_PATH } = require('../src/commands/discover')
   const { projectRoot, outsideRoot } = scratch('ci: github-actions\n')
   const victim = path.join(outsideRoot, 'vitima.txt')
@@ -103,7 +126,7 @@ test('discover.writeCIWorkflow refuses a live symlink pointing outside the proje
   const workflowsDir = path.join(projectRoot, '.github', 'workflows')
   fs.mkdirSync(workflowsDir, { recursive: true })
   const link = path.join(workflowsDir, 'trackfw-validate.yml')
-  fs.symlinkSync(victim, link)
+  if (!symlinkOrSkip(t, victim, link)) return
 
   const originalError = console.error
   let stderrOutput = ''
@@ -118,7 +141,7 @@ test('discover.writeCIWorkflow refuses a live symlink pointing outside the proje
   assert.ok(stderrOutput.includes(DISCOVER_GITHUB_ACTIONS_WORKFLOW_PATH) && stderrOutput.includes('symlink'), `expected a warning naming ${DISCOVER_GITHUB_ACTIONS_WORKFLOW_PATH} as a symlink, got: ${stderrOutput}`)
 })
 
-test('update.js refreshDiscoverGitHubActionsWorkflowIfPresent (via ci: github-actions update) refuses a live symlink and warns on stderr', () => {
+test('update.js refreshDiscoverGitHubActionsWorkflowIfPresent (via ci: github-actions update) refuses a live symlink and warns on stderr', (t) => {
   const { projectRoot, homeRoot, outsideRoot } = scratch('ci: github-actions\n')
   const victim = path.join(outsideRoot, 'vitima.txt')
   const originalContent = 'CONTEUDO ORIGINAL DA VITIMA\n'
@@ -127,7 +150,7 @@ test('update.js refreshDiscoverGitHubActionsWorkflowIfPresent (via ci: github-ac
   const workflowsDir = path.join(projectRoot, '.github', 'workflows')
   fs.mkdirSync(workflowsDir, { recursive: true })
   const link = path.join(workflowsDir, 'trackfw-validate.yml')
-  fs.symlinkSync(victim, link)
+  if (!symlinkOrSkip(t, victim, link)) return
 
   const result = run(['update'], projectRoot, homeRoot)
   assert.equal(result.status, 0, result.stderr)
@@ -148,7 +171,7 @@ test('update.js refreshDiscoverGitHubActionsWorkflowIfPresent (via ci: github-ac
 // pypi/trackfw/commands/update.py:221-223).
 const EXPECTED_SYMLINK_WARNING = 'aviso: .github/workflows/trackfw-validate.yml é um symlink; trackfw update não escreve através de symlinks — arquivo não foi tocado'
 
-test('trackfw update (ci: none, bare command) warns on stderr about a live symlink at trackfw-validate.yml instead of going silent', () => {
+test('trackfw update (ci: none, bare command) warns on stderr about a live symlink at trackfw-validate.yml instead of going silent', (t) => {
   const { projectRoot, homeRoot, outsideRoot } = scratch('ci: none\n')
   const victim = path.join(outsideRoot, 'vitima.txt')
   const originalContent = 'CONTEUDO ORIGINAL DA VITIMA\n'
@@ -157,7 +180,7 @@ test('trackfw update (ci: none, bare command) warns on stderr about a live symli
   const workflowsDir = path.join(projectRoot, '.github', 'workflows')
   fs.mkdirSync(workflowsDir, { recursive: true })
   const link = path.join(workflowsDir, 'trackfw-validate.yml')
-  fs.symlinkSync(victim, link)
+  if (!symlinkOrSkip(t, victim, link)) return
 
   const result = run(['update'], projectRoot, homeRoot)
   assert.equal(result.status, 0, result.stderr)
@@ -170,14 +193,14 @@ test('trackfw update (ci: none, bare command) warns on stderr about a live symli
   assert.ok(fs.lstatSync(link).isSymbolicLink(), 'trackfw-validate.yml symlink should remain untouched')
 })
 
-test('trackfw update (ci: none, bare command) warns on stderr about a DANGLING symlink at trackfw-validate.yml', () => {
+test('trackfw update (ci: none, bare command) warns on stderr about a DANGLING symlink at trackfw-validate.yml', (t) => {
   const { projectRoot, homeRoot, outsideRoot } = scratch('ci: none\n')
   const danglingTarget = path.join(outsideRoot, 'does-not-exist-yet')
 
   const workflowsDir = path.join(projectRoot, '.github', 'workflows')
   fs.mkdirSync(workflowsDir, { recursive: true })
   const link = path.join(workflowsDir, 'trackfw-validate.yml')
-  fs.symlinkSync(danglingTarget, link)
+  if (!symlinkOrSkip(t, danglingTarget, link)) return
 
   const result = run(['update'], projectRoot, homeRoot)
   assert.equal(result.status, 0, result.stderr)
@@ -188,7 +211,7 @@ test('trackfw update (ci: none, bare command) warns on stderr about a DANGLING s
   assert.equal(fs.existsSync(danglingTarget), false, 'dangling symlink target should not have been created')
 })
 
-test('trackfw update --targets ci-workflow (ci: none) warns on stderr about a live symlink at trackfw-validate.yml', () => {
+test('trackfw update --targets ci-workflow (ci: none) warns on stderr about a live symlink at trackfw-validate.yml', (t) => {
   const { projectRoot, homeRoot, outsideRoot } = scratch('ci: none\n')
   const victim = path.join(outsideRoot, 'vitima.txt')
   const originalContent = 'CONTEUDO ORIGINAL DA VITIMA\n'
@@ -197,7 +220,7 @@ test('trackfw update --targets ci-workflow (ci: none) warns on stderr about a li
   const workflowsDir = path.join(projectRoot, '.github', 'workflows')
   fs.mkdirSync(workflowsDir, { recursive: true })
   const link = path.join(workflowsDir, 'trackfw-validate.yml')
-  fs.symlinkSync(victim, link)
+  if (!symlinkOrSkip(t, victim, link)) return
 
   const result = run(['update', '--targets', 'ci-workflow'], projectRoot, homeRoot)
   assert.equal(result.status, 0, result.stderr)
@@ -208,7 +231,7 @@ test('trackfw update --targets ci-workflow (ci: none) warns on stderr about a li
   assert.equal(fs.readFileSync(victim, 'utf8'), originalContent, 'victim file outside the project was touched')
 })
 
-test('trackfw update --targets ci-workflow --json (ci: none) still warns on stderr about the symlink and keeps stdout as clean JSON', () => {
+test('trackfw update --targets ci-workflow --json (ci: none) still warns on stderr about the symlink and keeps stdout as clean JSON', (t) => {
   const { projectRoot, homeRoot, outsideRoot } = scratch('ci: none\n')
   const victim = path.join(outsideRoot, 'vitima.txt')
   const originalContent = 'CONTEUDO ORIGINAL DA VITIMA\n'
@@ -217,7 +240,7 @@ test('trackfw update --targets ci-workflow --json (ci: none) still warns on stde
   const workflowsDir = path.join(projectRoot, '.github', 'workflows')
   fs.mkdirSync(workflowsDir, { recursive: true })
   const link = path.join(workflowsDir, 'trackfw-validate.yml')
-  fs.symlinkSync(victim, link)
+  if (!symlinkOrSkip(t, victim, link)) return
 
   const result = run(['update', '--targets', 'ci-workflow', '--json'], projectRoot, homeRoot)
   assert.equal(result.status, 0, result.stderr)

@@ -8,11 +8,50 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/kgsaran/trackfw/internal/config"
 	"github.com/kgsaran/trackfw/internal/integrations"
 )
+
+// symlinkOrSkip creates a symlink at link pointing to target, mirroring
+// os.Symlink. If creation fails because the process lacks the privilege
+// Windows requires to create symlinks (Developer Mode or an elevated
+// process — WinError 1314, ERROR_PRIVILEGE_NOT_HELD), it skips the calling
+// test instead of failing it, naming the guarantee that was not exercised.
+//
+// The detection is on the CONDITION (a privilege failure), not on
+// runtime.GOOS: on a Windows runner with Developer Mode enabled, or on
+// Linux/macOS, os.Symlink succeeds and the test executes normally. Only the
+// specific privilege-denied failure is treated as "not exercisable here".
+func symlinkOrSkip(t *testing.T, target, link string) {
+	t.Helper()
+	err := os.Symlink(target, link)
+	if err == nil {
+		return
+	}
+	if isSymlinkPrivilegeError(err) {
+		t.Skipf("guarda de escrita através de symlink não exercitada: criação de symlink exige Developer Mode (ou processo elevado) neste Windows: %v", err)
+	}
+	t.Fatalf("os.Symlink(%q, %q): %v", target, link, err)
+}
+
+// isSymlinkPrivilegeError reports whether err is the "caller lacks the
+// privilege to create a symlink" failure — WinError 1314
+// (ERROR_PRIVILEGE_NOT_HELD) on Windows without Developer Mode/elevation,
+// or a generic permission-denied on any platform. It does not match on
+// GOOS/platform, only on the underlying error.
+func isSymlinkPrivilegeError(err error) bool {
+	if os.IsPermission(err) {
+		return true
+	}
+	var errno syscall.Errno
+	if errors.As(err, &errno) && errno == 1314 {
+		return true
+	}
+	return false
+}
 
 func TestUpdateDoesNotImplicitlyInstallAgentIntegrations(t *testing.T) {
 	config.Reset()
@@ -2067,9 +2106,7 @@ func TestUpdateNeverWritesThroughSymlinkAtDiscoverWorkflowPath(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(workflowPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(victim, workflowPath); err != nil {
-		t.Fatal(err)
-	}
+	symlinkOrSkip(t, victim, workflowPath)
 
 	origStderr := os.Stderr
 	r, w, err := os.Pipe()
@@ -2155,9 +2192,7 @@ func TestUpdateNeverWritesThroughDanglingSymlinkAtDiscoverWorkflowPath(t *testin
 	if err := os.MkdirAll(filepath.Dir(workflowPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(danglingTarget, workflowPath); err != nil {
-		t.Fatal(err)
-	}
+	symlinkOrSkip(t, danglingTarget, workflowPath)
 
 	if err := Update(root); err != nil {
 		t.Fatalf("Update: %v", err)
