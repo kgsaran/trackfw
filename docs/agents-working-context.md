@@ -26160,3 +26160,53 @@ Direções B3 e B4 (que já existiam no gate, sem entrada na tabela) e a nova Di
 
 **Fronteiras mantidas:** não commitei, não fiz push, não toquei no roadmap nem em nenhum arquivo fora
 da lista permitida.
+
+---
+
+## 2026-08-30 — `trackfw_architect` (Zeus) — REQ da cegueira de namespace: FIM
+
+Reportado por um agente no **cmdb** — projeto consumidor. `roadmap move` falhava com
+`not found in any state directory` para arquivo que existe. Causa: em `by_agent`, a lista `agents:`
+**substituía** o disco. `docs/roadmaps/zeus/` invisível, e o `validate` reportando `No violations`
+sobre o que nunca enumerou.
+
+**Entregue:** resolvedor canônico por runtime com **união** entre `agents:` e disco; violação
+`agent_namespace_undeclared`; aviso `agent_namespace_hidden`; enumeração que **não segue symlink**;
+gate de **66 cenários**.
+
+**Cinco defeitos além do declarado, todos achados por Wave 0 ou barreira final:**
+
+1. **Escape por symlink de diretório** — namespace que é link fazia o `move` escrever fora da árvore
+   (Node e Python; Go imune por acidente da primitiva). Hoje era condicionado a `agents:` vazia; a
+   união o tornaria **incondicional**. Bloqueou a Wave 1 até virar decisão 5 do ADR.
+2. **O filtro de infraestrutura recriava a cegueira que a REQ existe para fechar** — qualquer nome
+   com ponto sumia da união **e** da violação. `.ghost/` invisível nos 3, byte-a-byte o defeito do
+   cmdb, e canal de ocultação deliberada. **Eu endossei esse filtro**; o `hades-tf` o recomendara e
+   se retratou.
+3. **Metacaractere de glob** — namespace `[abc` matava o `validate` do Go inteiro; `*` inflava
+   contagem de WIP.
+4. **Anotação `gate=` superdeclarando** — a seção de ordenação prometia cobertura que o gate não
+   tinha.
+5. **Symlink de ARQUIVO `.md`** — `roadmap move` reescreve o alvo fora do projeto, **em modo `flat`**.
+   Pré-existente, fora do escopo, virou
+   `REQ-2026-08-30-roadmap-move-segue-symlink-de-arquivo-md-e-altera-arquivo-fora-do-projeto`.
+
+**A lição que eu levo, e é sobre mim:** aprovei o filtro largo porque minha preocupação era ruído —
+`ADR-2026-08-17`, *"guard que atrapalha é guard que o usuário desliga"*. A preocupação era legítima e
+a solução tratava **visibilidade e severidade como a mesma coisa**. O `apolo-tf` separou: enumera
+sempre, sinaliza com aviso. Usei um ADR correto para justificar o oposto do que a REQ existia para
+fazer.
+
+**Três vezes um agente corrigiu premissa minha, sempre por medir:** a `artemis-tf` verificando que os
+cenários `fence-phantom` não cobriam cross-runtime; o comando de reprodução de CI que eu sugeri e não
+funcionava no macOS; e a afirmação de que `agent_namespace_hidden` é "nunca `off`" — que eu propaguei
+de segunda mão e ela mediu ser falsa.
+
+**Estado final:** `make quality` exit 0 · `barrier --wave 4` passed · gate 35 → 60 → 66 cenários ·
+`validate` deste repositório 16 warnings, 0 violations.
+
+**Aberto, rastreado:** as três REQs de symlink/escrita, a REQ do caminho de escrita do namespace
+(`--agent`), o `roadmapTrustForGates` que falha aberto, os defeitos de Windows da issue #216, e dois
+pré-existentes achados no caminho — `status` do Python contando REQs por listagem flat, e
+`context.js:136` sem `await` num `validate()` assíncrono, que quebra o `trackfw context` do Node
+**sempre**.

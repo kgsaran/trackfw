@@ -1,9 +1,9 @@
 ---
-status: Open
+status: Done
 date: 2026-08-29
 author: "trackfw_architect (Zeus)"
 adr: "docs/adr/ADR-2026-08-29-lista-de-agentes-complementa-o-disco-em-vez-de-substitui-lo-e-namespace-nao-declarado-vira-violacao.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-29-lista-de-agentes-complementa-o-disco-e-namespace-nao-declarado-vira-violacao.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-29-lista-de-agentes-complementa-o-disco-e-namespace-nao-declarado-vira-violacao.md"
 ---
 
 # REQ: Namespace de agente não declarado em `agents:` fica invisível, e o `validate` reporta limpo sem olhar
@@ -88,4 +88,4 @@ ADR: docs/adr/ADR-2026-08-29-lista-de-agentes-complementa-o-disco-em-vez-de-subs
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-08-29-lista-de-agentes-complementa-o-disco-e-namespace-nao-declarado-vira-violacao.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-08-29-lista-de-agentes-complementa-o-disco-e-namespace-nao-declarado-vira-violacao.md
