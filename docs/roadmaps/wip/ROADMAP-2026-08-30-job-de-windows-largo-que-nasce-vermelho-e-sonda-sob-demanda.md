@@ -417,6 +417,45 @@ a camada 2 dá o sinal inteiro em 1m23s; a camada 1 custa 25 minutos para dizer 
 - [ ] Saída legível e citável em REQ — é o propósito
 - [ ] Tempo de execução em poucos minutos, não dezenas
 
+#### Resultado do ML-3A (ares-tf, 2026-08-30)
+
+`.github/workflows/windows-probe.yml` + `scripts/windows-repro/go/probe.go`. `workflow_dispatch`
+puro, sem segredo, sem escrita no repositório. O YAML documenta que **não substitui** o job de
+regressão.
+
+**Duas soluções dele que eu não tinha antecipado, e são o que torna a sonda capaz de responder o
+que não sabíamos:**
+
+- A **junction é criada com `cmd /c mklink /J`**, que **não exige privilégio** — ao contrário do
+  `os.Symlink`. Era a pergunta central, a mesma que fizemos ao autor da issue, e deixa de depender
+  da máquina dele: a sonda imprime o `Mode()` cru do `Lstat`, os bits e o booleano `ModeSymlink`
+  para a junction, mais um `Stat` no mesmo caminho para comparar.
+- O **symlink do git é materializado via `git update-index --cacheinfo` com modo `120000`** —
+  plumbing, não `os.Symlink` —, então o `checkout` acontece sem Developer Mode e mede o que um clone
+  de verdade produz.
+
+Ele também corrigiu no meio do caminho, após revisão, que o **Node tem gerador próprio** e não um
+wrapper: a pergunta 5 passou a rodar `roadmap new` de verdade pelos três e despejar os bytes.
+
+**Residuais declarados no próprio YAML:** console interativo real (o Actions sempre redireciona),
+codepage fora de cp1252, `core.symlinks=false` de clone de terceiro, e Developer Mode ligado — este
+deliberadamente não habilitado, porque a falha do `os.Symlink` é ela própria o sinal da pergunta 2.
+
+**Achado do arquiteto ao tentar disparar:**
+
+```
+HTTP 404: workflow windows-probe.yml not found on the default branch
+```
+
+**`workflow_dispatch` só é despachável se o workflow existir na branch padrão.** A sonda só fica
+utilizável **depois do merge** — o que limita justamente o uso durante o desenvolvimento da REQ que
+a cria. Não é defeito do ML; é restrição do GitHub Actions que ninguém tinha considerado, e vale
+registrar porque afeta qualquer ferramenta de investigação que a gente construa assim no futuro.
+
+Consequência prática: a resposta da junction — se o `Lstat` do Go marca `ModeSymlink` para o reparse
+point do `mklink /J`, e portanto se a guarda que entregamos esta semana vale em Windows — só sai
+**após o merge**. Fica como primeira ação pós-merge.
+
 ## Barreira final
 Revisão `hefesto-tf` e `hades-tf`, auditoria do arquiteto e `barrier --wave 3`. **Só declarar
 concluído com o CI verde** — e aqui "verde" significa: os demais jobs verdes **e** o job de Windows
