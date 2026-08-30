@@ -480,6 +480,53 @@ Consequência prática: a resposta da junction — se o `Lstat` do Go marca `Mod
 point do `mklink /J`, e portanto se a guarda que entregamos esta semana vale em Windows — só sai
 **após o merge**. Fica como primeira ação pós-merge.
 
+#### Resultado do ML-1D (ares-tf, 2026-08-30) — e dois residuais que mudam como ler a camada 1
+
+**A correção:** `pip install pypi/` no `windows-full-suites`. A falha era
+`ModuleNotFoundError: No module named 'yaml'` em **40 módulos de teste**, todos porque
+`pypi/trackfw/config.py:13` importa `yaml` em tempo de import.
+
+Ele **não chutou a lista de dependências**: copiou o padrão do job `python` do Linux, que instala o
+pacote em vez de nomear libs — o comentário lá documenta o motivo como *"zero drift"*, e o
+`pyproject.toml` declara `PyYAML>=6.0` como única dependência de runtime. Conferiu também Node e Go
+do mesmo job, com origem declarada, e nada faltava.
+
+**Verificação que ele fez sem eu pedir:** instalar `pypi/` publica `trackfw.exe` no `Scripts` do
+Python, que entra no `PATH`. Se algum teste resolvesse `trackfw` por nome, a posição do step mudaria
+a linha de base medida. Ele varreu Go e Node: os testes compilam o binário local ou invocam por
+caminho absoluto, **nunca por PATH**. Sem contaminação.
+
+---
+
+**Residual 1 — o `skip` do ML-2A não é exercitável neste CI.** Evidência do log:
+
+```
+# Subtest: trackfw update (ci: none) never writes through a live symlink...
+ok 825 - ... (duration_ms: 261.09)
+```
+
+Os testes **executaram**, e uma falha posterior ocorreu **depois** da criação do symlink — prova de
+que passaram pelo `symlinkOrSkip` sem abortar. **A criação de symlink funciona no runner
+`windows-latest`.** A causa exata — Developer Mode ligado ou o processo já com
+`SeCreateSymbolicLinkPrivilege` — é indistinguível pelo stdout, e ele foi explícito sobre isso.
+
+Consequência: **o caminho do `skip` só é testável numa máquina Windows sem esse privilégio** — ou
+seja, na do autor da issue. Vira pergunta para ele, não para o CI.
+
+**Residual 2 — a mitigação da AC12 mascara o defeito 2 dentro da camada 1.** Este é o que muda
+como ler o job.
+
+Para tornar a camada 1 segura, o job sobrescreve **`HOME` e `USERPROFILE`** para o mesmo diretório
+sintético. Mas o defeito 2 é justamente *"a produção lê `USERPROFILE` e os testes isolam via
+`HOME`"*. Com as duas apontando para o mesmo lugar, **a divergência desaparece dentro deste job**.
+
+Ou seja: **a camada 1 nunca vai medir o defeito 2** — quem o mede é a camada 2, e mediu
+(`REPRODUCED`). E se o step Python ficar verde no próximo run, **não** significa defeito corrigido.
+
+O critério de "parar e reportar se a camada 1 inteira ficar verde" continua válido — Go e Node
+seguem vermelhos por motivo de produto —, mas **um Python verde isoladamente não é sinal de
+correção**. Sem esse registro, a próxima pessoa a olhar o job tiraria a conclusão errada.
+
 ## Barreira final
 Revisão `hefesto-tf` e `hades-tf`, auditoria do arquiteto e `barrier --wave 3`. **Só declarar
 concluído com o CI verde** — e aqui "verde" significa: os demais jobs verdes **e** o job de Windows
