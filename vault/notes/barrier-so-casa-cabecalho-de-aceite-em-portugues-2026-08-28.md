@@ -63,3 +63,29 @@ motivo acima.
 `REQ-2026-08-28-barrier-so-reconhece-cabecalho-de-aceite-em-portugues-mas-os-3-geradores-de-roadmap-escrevem-em-ingles.md`
 (aberta, `status: Open`). Ela exige que a forma portuguesa **continue** aceita — há roadmaps em
 `done/` e `wip/` com ela — e que um ADR decida qual é a forma canônica daqui pra frente.
+
+---
+
+## Faceta adicional (2026-08-30): o cabeçalho não tolera qualificador
+
+A mesma mensagem `no acceptance block` aparece quando o cabeçalho está **em português e correto**,
+mas **qualificado**:
+
+```markdown
+**Critérios de aceite (verificáveis nesta branch):**    ← barrier NÃO reconhece
+**Critérios de aceite:**                                ← única forma aceita
+```
+
+O padrão exige `:` **imediatamente** antes de `**` (`...de aceite:\*\*`), então qualquer texto
+inserido antes dos dois-pontos derruba o casamento. Não há mensagem distinguindo "cabeçalho ausente"
+de "cabeçalho quase certo" — os dois casos produzem `no acceptance block`, o que faz o diagnóstico
+custar muito mais do que deveria.
+
+**Consequência prática de governança:** não dá para usar o cabeçalho para comunicar escopo do
+aceite. Quando parte dos critérios de um ML é inverificável na branch (ex.: `workflow_dispatch` só
+é acionável a partir da branch default), a saída **não** é qualificar o cabeçalho, nem marcar a
+caixa sem medição — é **tirar o item da lista de aceite** e registrá-lo abaixo como verificação
+diferida com gatilho e dono explícitos. O `barrier` volta a passar e o roadmap continua honesto:
+nenhuma caixa marcada afirma algo que não foi medido.
+
+Encontrado ao fechar a Wave 3 do roadmap do instrumento de Windows (PR #221).

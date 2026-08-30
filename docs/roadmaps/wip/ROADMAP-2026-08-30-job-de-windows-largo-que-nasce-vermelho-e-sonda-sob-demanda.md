@@ -230,11 +230,11 @@ O que o runner **não** responde, mesmo com o job largo e a sonda completos:
 **Esta lista é o pedido de validação ao autor da issue** — cada item acima é algo que só a máquina
 dele (ou uma máquina real de terceiro com configuração diferente do runner hospedado) pode confirmar.
 
-## Wave 1 — O job largo (ML único)
+## Wave 1 — O job largo (ML-1A planejado + três corretivas emergentes, sequenciais: todas tocam `quality.yml`)
 > Dependências: Wave 0 aprovada.
 
 ### ML-1A — Job de Windows rodando as três suítes, não bloqueante
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** `ares-tf`
 **Files affected:** `.github/workflows/quality.yml` (job novo; **não alterar** o
 `windows-integrations-resolve` existente).
@@ -245,10 +245,10 @@ dele (ou uma máquina real de terceiro com configuração diferente do runner ho
 3. Registrar o **tempo** de execução (AC10).
 4. **Não corrigir nada.** Se um teste falhar, é a medição.
 **Critérios de aceite:**
-- [ ] As três suítes rodam por inteiro
-- [ ] **O job REPROVA** — colar a saída no roadmap como linha de base (AC2)
-- [ ] Mapeamento falha → item da issue #216 (AC3); falha sem correspondência é achado novo
-- [ ] Demais jobs do CI seguem verdes; `make quality` em Linux inalterado
+- [x] As três suítes rodam por inteiro
+- [x] **O job REPROVA** — colar a saída no roadmap como linha de base (AC2)
+- [x] Mapeamento falha → item da issue #216 (AC3); falha sem correspondência é achado novo
+- [x] Demais jobs do CI seguem verdes; `make quality` em Linux inalterado
 
 #### Resultado do ML-1A + ML-1B (ares-tf, 2026-08-30) — LINHA DE BASE MEDIDA
 
@@ -304,6 +304,21 @@ runner, então a hipótese *"o Go quebra porque não acha `sh`"* está descartad
 sob `sh` POSIX contra Node e Python sob `cmd.exe`, avaliando semânticas diferentes do mesmo gate —
 **continua sem teste**, exatamente como a Wave 0 previu. `ABSENT` aqui significa *"a pergunta que o
 teste faz foi respondida, e não era a pergunta certa"*.
+
+### ML-1B — Variáveis de cache via `GITHUB_ENV`
+**Status:** ✅ Concluído
+**Agente:** `ares-tf`
+**Files affected:** `.github/workflows/quality.yml`
+**Origem:** corretiva emergencial — o job foi **rejeitado em 0s** pelo GitHub Actions. `env:` em
+nível de job não aceita o contexto `runner`, e `yaml.safe_load` não pega isso (YAML válido, schema
+inválido). Levantado só depois de adotarmos `actionlint`.
+**Actions:**
+1. Mover as variáveis de cache de `env:` de job para um step que escreve em `$GITHUB_ENV`.
+**Critérios de aceite:**
+- [x] O workflow é aceito pelo GitHub Actions (deixa de morrer em 0s)
+- [x] `actionlint` passa sobre `quality.yml`
+- [x] O cache continua resolvendo para os mesmos caminhos
+**Evidência:** commit `68921c0`; resultado consolidado na seção do ML-1A acima.
 
 ### ML-1C — Corretivas do instrumento (da linha de base)
 **Status:** ✅ Concluído
@@ -382,103 +397,22 @@ CLI Go bloqueia pelo Node.** O `ABSENT` anterior estava certo para a pergunta er
 O contraste entre as duas camadas é o argumento da separação de CI que o KG aprovou tratar depois:
 a camada 2 dá o sinal inteiro em 1m23s; a camada 1 custa 25 minutos para dizer "os três reprovam".
 
-## Wave 2 — `skip` explícito (ML único)
-> Dependências: Wave 1 concluída — precisamos ver os 12 vermelhos antes de silenciá-los.
-
-### ML-2A — `skip` nomeando a garantia não exercitada
+### ML-1D — Dependência Python no job de suítes
 **Status:** ✅ Concluído
-**Agente:** `apolo-tf`
-**Files affected:** testes de symlink dos 3 runtimes —
-`internal/generators/update_test.go` (2 testes),
-`npm/tests/update_discover_symlink_guard.test.js` (8 testes que criam symlink; varredura não achou
-equivalente de `roadmap move` fora deste arquivo),
-`pypi/tests/test_update_discover_symlink_guard.py` (5 testes).
-**Actions:**
-1. Detectar falha de privilégio ao criar symlink e **pular**, com mensagem dizendo **qual garantia
-   não foi exercitada** e que exige Developer Mode. A formulação é do autor da issue: *"é diferente
-   de ficar em silêncio"*.
-2. Vale para os 12 testes nos 3 runtimes.
-
-Implementado com um helper por runtime (`symlinkOrSkip`/`_symlink_or_skip`) que envolve a criação
-do symlink: sucesso segue o teste normalmente; falha por privilégio (`os.IsPermission` ou
-`syscall.Errno(1314)`/`ERROR_PRIVILEGE_NOT_HELD` em Go; `err.code in ('EPERM','EACCES')` em Node;
-`err.winerror == 1314` ou `err.errno in (EPERM, EACCES)` em Python) pula o teste com mensagem
-nomeando a garantia não exercitada; qualquer outra falha continua propagando como erro real. O
-critério é a falha medida na chamada de symlink, não `runtime.GOOS`/`process.platform`/`sys.platform`.
-**Critérios de aceite:**
-- [x] AC7, AC8 — com privilégio executam; sem privilégio pulam **com mensagem**
-- [x] `skip` **não** é incondicional — falsificado: em Linux/macOS os 15 testes (2 Go + 8 Node + 5
-      Python) executam e passam, 0 skipped — evidência abaixo
-- [x] Suítes verdes em Linux; job de Windows deixa de reportar esses 12 como falha (sem privilégio)
-
-**Evidência (2026-08-30, macOS/Linux-like runner local):**
-- `go test ./internal/generators/... -run TestUpdateNeverWritesThroughSymlink -v` → 2/2 PASS
-- `go test ./...` → todos os pacotes OK
-- `node --test npm/tests/update_discover_symlink_guard.test.js` → `tests 10, pass 10, fail 0,
-  skipped 0`
-- `npm test --prefix npm` → `tests 839, pass 839, fail 0, skipped 0`
-- `PYTHONPATH=pypi python3 -m pytest pypi/tests/test_update_discover_symlink_guard.py -v` → 5/5 PASSED
-- `PYTHONPATH=pypi python3 -m pytest pypi/tests` → `1555 passed`
-- `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality` → exit code 0 (test, test-node, test-python,
-  lint, parity todos verdes)
-- `git diff --stat` — só os 3 arquivos de teste listados acima; nenhum código de produto tocado.
-
-## Wave 3 — A sonda (ML único)
-> Dependências: Wave 1 concluída.
-
-### ML-3A — Workflow `workflow_dispatch` de sondagem
-**Status:** ⬜ Pendente
 **Agente:** `ares-tf`
-**Files affected:** `.github/workflows/` (workflow novo).
+**Files affected:** `.github/workflows/quality.yml`
+**Origem:** corretiva da linha de base — a camada 1 não estava medindo Python. `ModuleNotFoundError:
+No module named 'yaml'` abortava a **coleta** em 40 módulos, então o job reprovava por dependência
+ausente e não pelos defeitos que existe para medir. Falso vermelho.
 **Actions:**
-1. Sonda respondendo, com saída **bruta**: modo devolvido por `os.Stat` num arquivo comum e num
-   `chmod +x`; `Lstat` diante de symlink e de junction (`mklink /J`); `isatty` sobre `NUL`; encoding
-   do console; terminador de linha dos arquivos que os geradores escrevem; `sh`/`bash` no `PATH`.
-2. Sem segredo, sem escrita no repositório, `workflow_dispatch` puro (AC9).
-3. Documentar no próprio YAML que **não substitui** o job de regressão (AC6).
+1. `pip install pypi/` no `windows-full-suites`, replicando o padrão *zero drift* do job `python` do
+   Linux (instalar o pacote em vez de nomear libs).
 **Critérios de aceite:**
-- [ ] AC5, AC6, AC9
-- [ ] Saída legível e citável em REQ — é o propósito
-- [ ] Tempo de execução em poucos minutos, não dezenas
-
-#### Resultado do ML-3A (ares-tf, 2026-08-30)
-
-`.github/workflows/windows-probe.yml` + `scripts/windows-repro/go/probe.go`. `workflow_dispatch`
-puro, sem segredo, sem escrita no repositório. O YAML documenta que **não substitui** o job de
-regressão.
-
-**Duas soluções dele que eu não tinha antecipado, e são o que torna a sonda capaz de responder o
-que não sabíamos:**
-
-- A **junction é criada com `cmd /c mklink /J`**, que **não exige privilégio** — ao contrário do
-  `os.Symlink`. Era a pergunta central, a mesma que fizemos ao autor da issue, e deixa de depender
-  da máquina dele: a sonda imprime o `Mode()` cru do `Lstat`, os bits e o booleano `ModeSymlink`
-  para a junction, mais um `Stat` no mesmo caminho para comparar.
-- O **symlink do git é materializado via `git update-index --cacheinfo` com modo `120000`** —
-  plumbing, não `os.Symlink` —, então o `checkout` acontece sem Developer Mode e mede o que um clone
-  de verdade produz.
-
-Ele também corrigiu no meio do caminho, após revisão, que o **Node tem gerador próprio** e não um
-wrapper: a pergunta 5 passou a rodar `roadmap new` de verdade pelos três e despejar os bytes.
-
-**Residuais declarados no próprio YAML:** console interativo real (o Actions sempre redireciona),
-codepage fora de cp1252, `core.symlinks=false` de clone de terceiro, e Developer Mode ligado — este
-deliberadamente não habilitado, porque a falha do `os.Symlink` é ela própria o sinal da pergunta 2.
-
-**Achado do arquiteto ao tentar disparar:**
-
-```
-HTTP 404: workflow windows-probe.yml not found on the default branch
-```
-
-**`workflow_dispatch` só é despachável se o workflow existir na branch padrão.** A sonda só fica
-utilizável **depois do merge** — o que limita justamente o uso durante o desenvolvimento da REQ que
-a cria. Não é defeito do ML; é restrição do GitHub Actions que ninguém tinha considerado, e vale
-registrar porque afeta qualquer ferramenta de investigação que a gente construa assim no futuro.
-
-Consequência prática: a resposta da junction — se o `Lstat` do Go marca `ModeSymlink` para o reparse
-point do `mklink /J`, e portanto se a guarda que entregamos esta semana vale em Windows — só sai
-**após o merge**. Fica como primeira ação pós-merge.
+- [x] Zero ocorrências de `No module named 'yaml'` no log
+- [x] A suíte Python **coleta e executa**, reportando falhas de produto e não erro de coleta
+- [x] Sem contaminação de `PATH` por `trackfw.exe` publicado em `Scripts/`
+- [x] Os dois residuais que mudam a leitura da camada 1 ficam registrados
+**Evidência:** commit `243cd17`; `293 failed, 1265 passed, 3 skipped`. Detalhe e residuais abaixo.
 
 #### Resultado do ML-1D (ares-tf, 2026-08-30) — e dois residuais que mudam como ler a camada 1
 
@@ -526,6 +460,119 @@ Ou seja: **a camada 1 nunca vai medir o defeito 2** — quem o mede é a camada 
 O critério de "parar e reportar se a camada 1 inteira ficar verde" continua válido — Go e Node
 seguem vermelhos por motivo de produto —, mas **um Python verde isoladamente não é sinal de
 correção**. Sem esse registro, a próxima pessoa a olhar o job tiraria a conclusão errada.
+
+## Wave 2 — `skip` explícito (ML único)
+> Dependências: Wave 1 concluída — precisamos ver os 12 vermelhos antes de silenciá-los.
+
+### ML-2A — `skip` nomeando a garantia não exercitada
+**Status:** ✅ Concluído
+**Agente:** `apolo-tf`
+**Files affected:** testes de symlink dos 3 runtimes —
+`internal/generators/update_test.go` (2 testes),
+`npm/tests/update_discover_symlink_guard.test.js` (8 testes que criam symlink; varredura não achou
+equivalente de `roadmap move` fora deste arquivo),
+`pypi/tests/test_update_discover_symlink_guard.py` (5 testes).
+**Actions:**
+1. Detectar falha de privilégio ao criar symlink e **pular**, com mensagem dizendo **qual garantia
+   não foi exercitada** e que exige Developer Mode. A formulação é do autor da issue: *"é diferente
+   de ficar em silêncio"*.
+2. Vale para os 12 testes nos 3 runtimes.
+
+Implementado com um helper por runtime (`symlinkOrSkip`/`_symlink_or_skip`) que envolve a criação
+do symlink: sucesso segue o teste normalmente; falha por privilégio (`os.IsPermission` ou
+`syscall.Errno(1314)`/`ERROR_PRIVILEGE_NOT_HELD` em Go; `err.code in ('EPERM','EACCES')` em Node;
+`err.winerror == 1314` ou `err.errno in (EPERM, EACCES)` em Python) pula o teste com mensagem
+nomeando a garantia não exercitada; qualquer outra falha continua propagando como erro real. O
+critério é a falha medida na chamada de symlink, não `runtime.GOOS`/`process.platform`/`sys.platform`.
+**Critérios de aceite:**
+- [x] AC7, AC8 — com privilégio executam; sem privilégio pulam **com mensagem**
+- [x] `skip` **não** é incondicional — falsificado: em Linux/macOS os 15 testes (2 Go + 8 Node + 5
+      Python) executam e passam, 0 skipped — evidência abaixo
+- [x] Suítes verdes em Linux; job de Windows deixa de reportar esses 12 como falha (sem privilégio)
+
+**Evidência (2026-08-30, macOS/Linux-like runner local):**
+- `go test ./internal/generators/... -run TestUpdateNeverWritesThroughSymlink -v` → 2/2 PASS
+- `go test ./...` → todos os pacotes OK
+- `node --test npm/tests/update_discover_symlink_guard.test.js` → `tests 10, pass 10, fail 0,
+  skipped 0`
+- `npm test --prefix npm` → `tests 839, pass 839, fail 0, skipped 0`
+- `PYTHONPATH=pypi python3 -m pytest pypi/tests/test_update_discover_symlink_guard.py -v` → 5/5 PASSED
+- `PYTHONPATH=pypi python3 -m pytest pypi/tests` → `1555 passed`
+- `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality` → exit code 0 (test, test-node, test-python,
+  lint, parity todos verdes)
+- `git diff --stat` — só os 3 arquivos de teste listados acima; nenhum código de produto tocado.
+
+## Wave 3 — A sonda (ML único)
+> Dependências: Wave 1 concluída.
+
+### ML-3A — Workflow `workflow_dispatch` de sondagem
+**Status:** ✅ Concluído
+**Agente:** `ares-tf`
+**Files affected:** `.github/workflows/` (workflow novo).
+**Actions:**
+1. Sonda respondendo, com saída **bruta**: modo devolvido por `os.Stat` num arquivo comum e num
+   `chmod +x`; `Lstat` diante de symlink e de junction (`mklink /J`); `isatty` sobre `NUL`; encoding
+   do console; terminador de linha dos arquivos que os geradores escrevem; `sh`/`bash` no `PATH`.
+2. Sem segredo, sem escrita no repositório, `workflow_dispatch` puro (AC9).
+3. Documentar no próprio YAML que **não substitui** o job de regressão (AC6).
+**Critérios de aceite:**
+- [x] AC5, AC6, AC9 — sem segredo, sem escrita no repositório, `workflow_dispatch` puro
+- [x] `actionlint` aceita `windows-probe.yml`
+- [x] A sonda imprime saída **bruta** (modo cru, bits, booleano), não interpretada — auditável no código
+
+**Verificação diferida para pós-merge — NÃO é critério de aceite deste ML:**
+
+`workflow_dispatch` só é acionável quando o workflow já está na branch default. Enquanto a sonda
+vive apenas nesta branch, ela **não pode ser executada** — logo "saída legível na prática" e "tempo
+de execução real" são **estruturalmente inverificáveis antes do merge**. Marcá-las como atendidas
+seria declarar medido o que não foi medido; deixá-las como AC aberta bloquearia a barreira por algo
+que nenhum trabalho adicional nesta branch resolve. Por isso saem da lista de aceite e viram ação
+nomeada, com dono e gatilho:
+
+| Ação | Gatilho | Dono | O que fecha |
+|---|---|---|---|
+| Disparar `windows-probe.yml` | primeiro push em `main` após o merge do #221 | arquiteto | Responde a pergunta da junction (`Lstat` marca `ModeSymlink` no reparse point do `mklink /J`?) e mede o tempo real da sonda |
+
+Essa é a **primeira ação pós-merge** e está registrada como tal na Barreira final.
+
+#### Resultado do ML-3A (ares-tf, 2026-08-30)
+
+`.github/workflows/windows-probe.yml` + `scripts/windows-repro/go/probe.go`. `workflow_dispatch`
+puro, sem segredo, sem escrita no repositório. O YAML documenta que **não substitui** o job de
+regressão.
+
+**Duas soluções dele que eu não tinha antecipado, e são o que torna a sonda capaz de responder o
+que não sabíamos:**
+
+- A **junction é criada com `cmd /c mklink /J`**, que **não exige privilégio** — ao contrário do
+  `os.Symlink`. Era a pergunta central, a mesma que fizemos ao autor da issue, e deixa de depender
+  da máquina dele: a sonda imprime o `Mode()` cru do `Lstat`, os bits e o booleano `ModeSymlink`
+  para a junction, mais um `Stat` no mesmo caminho para comparar.
+- O **symlink do git é materializado via `git update-index --cacheinfo` com modo `120000`** —
+  plumbing, não `os.Symlink` —, então o `checkout` acontece sem Developer Mode e mede o que um clone
+  de verdade produz.
+
+Ele também corrigiu no meio do caminho, após revisão, que o **Node tem gerador próprio** e não um
+wrapper: a pergunta 5 passou a rodar `roadmap new` de verdade pelos três e despejar os bytes.
+
+**Residuais declarados no próprio YAML:** console interativo real (o Actions sempre redireciona),
+codepage fora de cp1252, `core.symlinks=false` de clone de terceiro, e Developer Mode ligado — este
+deliberadamente não habilitado, porque a falha do `os.Symlink` é ela própria o sinal da pergunta 2.
+
+**Achado do arquiteto ao tentar disparar:**
+
+```
+HTTP 404: workflow windows-probe.yml not found on the default branch
+```
+
+**`workflow_dispatch` só é despachável se o workflow existir na branch padrão.** A sonda só fica
+utilizável **depois do merge** — o que limita justamente o uso durante o desenvolvimento da REQ que
+a cria. Não é defeito do ML; é restrição do GitHub Actions que ninguém tinha considerado, e vale
+registrar porque afeta qualquer ferramenta de investigação que a gente construa assim no futuro.
+
+Consequência prática: a resposta da junction — se o `Lstat` do Go marca `ModeSymlink` para o reparse
+point do `mklink /J`, e portanto se a guarda que entregamos esta semana vale em Windows — só sai
+**após o merge**. Fica como primeira ação pós-merge.
 
 ## Barreira final
 Revisão `hefesto-tf` e `hades-tf`, auditoria do arquiteto e `barrier --wave 3`. **Só declarar
