@@ -26427,3 +26427,23 @@ o roadmap é atualizado pelo KG após auditoria.
 **Próximo:** o único item que só o CI real pode confirmar é se a contagem permanece 8/8
 `REPRODUCED` no runner Windows — pendente do próximo run em `windows-defect-reproduction` após o
 merge/push desta correção.
+
+## 2026-08-30 — Wave 0 da REQ de medição de junction (zeus-tf)
+
+**Início:** após o merge do #221 e a primeira execução da sonda em `main` (run `33338382066`), que
+mediu `Lstat` de junction como `ModeIrregular` e não `ModeSymlink`.
+
+**Encerramento da Wave 0.** `hades-tf` entregou o modelo de ameaça em
+`docs/seguranca/2026-08-30-modelo-de-ameaca-da-extensao-da-sonda.md` e **corrigiu uma classificação
+minha**: o freio contra junction em `removeEmptyAncestors` existe só no Go; Node (`manager.js:420`)
+e Python (`manager.py:589`) não testam `isDirectory()`. Verifiquei lendo os três. A REQ foi corrigida
+e a classificação errada ficou registrada como errada, não reescrita.
+
+Também derrubou um AC meu que já nascera falso (`RUNNER_TEMP` vs `%TEMP%` em `probe.go:117,147`).
+
+**Próximo:** Wave 1 (`ares-tf`) — pergunta 7, junction em Node/Python, `rmdir` sobre junction vazia
+e tabela comparativa. Wave 2 é minha: nota de correção na `REQ-2026-08-29` e nota de vault.
+
+**Nota de processo:** meu prompt para o `hades-tf` restringiu a escrita ao documento de segurança e
+colidiu com a obrigação de protocolo do role dele de atualizar este arquivo. Ele sinalizou em vez de
+desobedecer silenciosamente uma das duas. O prompt estava mal formulado, não o role.

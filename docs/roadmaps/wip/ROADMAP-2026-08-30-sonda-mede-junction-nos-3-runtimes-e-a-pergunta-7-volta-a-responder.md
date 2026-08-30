@@ -39,7 +39,7 @@ de paridade, "defeito só do Go" e "divergência entre os três" são correçõe
 > Dependências: nenhuma. Bloqueia toda a implementação.
 
 ### ML-0A — Modelo de ameaça da extensão da sonda
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** `hades-tf`
 **Files affected:** nenhum (documento em `docs/seguranca/`)
 **Contexto que importa:** a sonda **cria** links no runner (symlink via `os.Symlink`, junction via
@@ -58,9 +58,9 @@ em `workflow_dispatch` com **log público**.
    ou passar a esconder um valor cru atrás de interpretação).
 4. **Residual declarado** — o que este desenho aceita não cobrir.
 **Critérios de aceite:**
-- [ ] As quatro seções respondidas com evidência, não asserção de uma linha
-- [ ] Nenhuma linha de implementação escrita neste ML
-- [ ] Parecer em `docs/seguranca/2026-08-30-modelo-de-ameaca-da-extensao-da-sonda.md`
+- [x] As quatro seções respondidas com evidência, não asserção de uma linha
+- [x] Nenhuma linha de implementação escrita neste ML
+- [x] Parecer em `docs/seguranca/2026-08-30-modelo-de-ameaca-da-extensao-da-sonda.md`
 
 **Gates da wave:**
 ```bash
@@ -68,6 +68,45 @@ test -f docs/seguranca/2026-08-30-modelo-de-ameaca-da-extensao-da-sonda.md
 ! grep -qi "placeholder" docs/seguranca/2026-08-30-modelo-de-ameaca-da-extensao-da-sonda.md
 grep -q "Residual" docs/seguranca/2026-08-30-modelo-de-ameaca-da-extensao-da-sonda.md
 ```
+
+#### Resultado do ML-0A (hades-tf, 2026-08-30) — auditado pelo arquiteto
+
+**A Wave 0 fez o que existe para fazer: derrubou uma classificação minha antes que virasse roadmap.**
+
+Eu pedi que ele *contestasse* minha separação das guardas em três classes, não que a confirmasse.
+Ele confirmou duas e **corrigiu a terceira** — e a correção é a que mais importa:
+
+| CLI | Freio contra junction em `removeEmptyAncestors`/`cleanEmpty`/`_remove_empty` |
+|---|---|
+| Go `manager.go:582` | `if !info.IsDir() { return nil }` → **para** (`ModeDir=false` para junction) |
+| Node `manager.js:420` | **nenhum teste de `isDirectory()`** — depende de `readdirSync(dir).length` |
+| Python `manager.py:589` | **nenhum teste de `IsDir` nem de vazio** — só `except OSError` em volta do `rmdir()` |
+
+Verifiquei lendo os três. O freio acidental **existe só no Go**. Consequência: no Go o remédio é
+tornar intencional um freio que já existe; em Node e Python pode ser preciso **adicionar** um freio
+que hoje não existe. Eu teria escrito o roadmap de correção errado em dois dos três CLIs — e ele
+passaria pelos gates de paridade, porque paridade mede se as implementações concordam entre si, não
+se o contrato está correto. A REQ foi corrigida; a tabela original ficou registrada como errada em
+vez de reescrita.
+
+**Segundo achado, contra um AC meu:** `probe.go:117,147` usa `os.MkdirTemp("", ...)`, que resolve
+para `%TEMP%` e **não** para `RUNNER_TEMP` — o log do run `33338382066` mostra
+`C:\Users\RUNNER~1\AppData\Local\Temp\...` enquanto `RUNNER_TEMP` é `D:\a\_temp`. O AC que eu
+escrevi (*"todo link fica dentro de `RUNNER_TEMP`/workspace"*) **já era falso quando foi escrito**, e
+um agente diligente o teria "satisfeito" por asserção. Reescrito para exigir **medição impressa**.
+
+**Duas superfícies fora da minha enumeração:** `update.go:2323` `copyPath` / `update.py:667`
+`_copy_path` (cegueira de junction no sandbox do `--dry-run`; classe DoS-local, inferida e não
+medida ao vivo) e `discover.js:593` `writeCIWorkflowForce`, **código morto sem chamador nos 3 CLIs**.
+Nenhuma bloqueante; ambas entram na REQ de correção.
+
+**Residual aceito:** `%TEMP%` ≠ `RUNNER_TEMP`; o comportamento de libuv e CPython sobre junction é o
+que a Wave 1 existe para medir, não para prever; a verificação é estruturalmente pós-merge.
+
+**Nota de processo:** ele não escreveu em `docs/agents-working-context.md` porque meu prompt
+restringiu a escrita ao documento de segurança, e sinalizou o conflito em vez de silenciosamente
+desobedecer uma das duas instruções. Registro eu, na auditoria — mas o prompt estava mal formulado:
+restrição de escrita não deveria colidir com obrigação de protocolo do role.
 
 ## Wave 1 — A medição (ML único)
 > Dependências: Wave 0 completa. **ML único porque as três ações tocam `windows-probe.yml`** — dois
@@ -88,13 +127,26 @@ regressão, não sonda).
    `isSymbolicLink()`, `isDirectory()`, `isFile()` **crus**. Mesmo formato comparativo do braço Go.
 3. **Junction em Python**: `os.path.islink()`, `os.lstat().st_mode`, `stat.S_ISLNK()` e
    `os.readlink()` (com o erro, se levantar), sobre os mesmos três alvos.
-4. **Tabela final** `runtime × (arquivo | symlink | junction)` — é o artefato que a REQ de correção
+4. **`rmdir` sobre junction vazia nos 3 runtimes** — `os.Remove` (Go), `fs.rmdirSync` (Node),
+   `Path.rmdir()` (Python) sobre uma junction cujo alvo está vazio. Imprimir sucesso/erro **cru** e,
+   depois, se a **junction** sumiu e se o **alvo** sobreviveu. Entrou no escopo por causa do achado
+   do ML-0A: `manager.py:589` depende **só** de `except OSError` para parar, então *"o `rmdir` teve
+   sucesso?"* é literalmente o discriminante entre "Python para" e "Python sobe removendo
+   ancestrais". A fixture de junction já existirá — custo marginal baixo, valor alto.
+5. **Tabela final** `runtime × (arquivo | symlink | junction)` — é o artefato que a REQ de correção
    vai citar. Sem ela, comparar exige cruzar log à mão.
 **Critérios de aceite:**
 - [ ] AC1, AC2, AC3, AC4, AC5 da REQ
 - [ ] 🔴 **AC6 da REQ — a sonda continua SEM veredito.** Nenhuma pergunta nova emite pass/fail nem
       `exit 1` por causa do *valor* medido. Sonda com veredito vira job de regressão disfarçado.
-- [ ] Todo link criado fica dentro de `RUNNER_TEMP`/workspace
+- [ ] 🔴 **Medir, não afirmar, onde os links são criados.** O AC original dizia *"todo link fica
+      dentro de `RUNNER_TEMP`/workspace"* — **já era falso quando eu o escrevi**: `probe.go:117,147`
+      usa `os.MkdirTemp("", ...)`, que resolve para `%TEMP%`
+      (`C:\Users\RUNNER~1\AppData\Local\Temp`), enquanto `RUNNER_TEMP` é `D:\a\_temp`. Achado
+      do `hades-tf`, confirmado no log do run `33338382066`. O critério passa a ser: **cada braço
+      imprime o tempdir resolvido ao lado de `$env:RUNNER_TEMP`**, para que a diferença seja lida no
+      log em vez de asseverada num AC. Consequência prática é baixa (diretório efêmero e vazio); o
+      problema era o AC não ser verificável por construção.
 - [ ] `actionlint` limpo; `make quality` verde; `quality.yml` byte-idêntico
 
 **Gates da wave:**
