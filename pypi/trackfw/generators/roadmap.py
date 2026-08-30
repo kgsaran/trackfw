@@ -10,6 +10,7 @@ import datetime
 import unicodedata
 
 from trackfw import config as cfg_module
+from trackfw.validator import resolve_agent_namespaces
 
 VALID_STATES = ["backlog", "analyzing", "wip", "blocked", "done", "abandoned"]
 STATE_ORDER = ["analyzing", "wip", "backlog", "blocked", "done", "abandoned"]
@@ -179,16 +180,7 @@ def _find_roadmap_matches(name: str, cfg: dict) -> list[str]:
     name_lower = name.lower()
 
     if cfg.get("roadmap_namespacing") == cfg_module.NAMESPACING_BY_AGENT:
-        agents = list(cfg.get("agents") or [])
-        if not agents:
-            roadmap_dir = cfg["roadmap_dir"]
-            try:
-                for entry in os.listdir(roadmap_dir):
-                    full = os.path.join(roadmap_dir, entry)
-                    if os.path.isdir(full):
-                        agents.append(entry)
-            except OSError:
-                agents = ["default"]
+        agents = resolve_agent_namespaces(cfg, cfg["roadmap_dir"])
         for agent in agents:
             for state in STATE_ORDER:
                 d = os.path.join(cfg["roadmap_dir"], agent, state)

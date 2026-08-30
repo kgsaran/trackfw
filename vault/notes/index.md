@@ -4,6 +4,8 @@
 
 ## Índice
 
+- [uniao-disco-agents-mascara-gate-por-presenca-2026-08-29](uniao-disco-agents-mascara-gate-por-presenca-2026-08-29.md) — a união agents:+disco (REQ-2026-08-29) desarma gates que discriminavam por presença/ausência de namespace; só ordem (declarado-primeiro vs. alfabético) sobrevive como técnica de retarget
+- [serve-validator-index-detectado-como-binario-grep-silencioso-2026-08-29](serve-validator-index-detectado-como-binario-grep-silencioso-2026-08-29.md) — `npm/src/validator/index.js` é classificado `data` por `file`; `grep -rln` sem `-a` pula o arquivo mais importante do sweep by_agent em silêncio
 - [gates-da-wave-sao-um-comando-por-linha-2026-08-29](gates-da-wave-sao-um-comando-por-linha-2026-08-29.md) — bloco de gate não é script: cada linha é um comando isolado; `grep && {}` reprova quando o grep NÃO acha
 - [ambiente-do-dev-e-mais-rico-que-o-do-ci-2026-08-29](ambiente-do-dev-e-mais-rico-que-o-do-ci-2026-08-29.md) — PATH, história do git e locale: três defeitos no mesmo dia, verde local e vermelho no CI
 - [paridade-cross-runtime-dentro-do-go-test-quebra-o-job-go-2026-08-29](paridade-cross-runtime-dentro-do-go-test-quebra-o-job-go-2026-08-29.md) — teste cross-CLI no job de um runtime só; e o gate que parecia cobrir chamava só o Go

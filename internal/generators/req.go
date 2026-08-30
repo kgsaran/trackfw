@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/kgsaran/trackfw/internal/config"
+	"github.com/kgsaran/trackfw/internal/validator"
 )
 
 // REQContent contém os campos de uma REQ a ser gerada.
@@ -141,21 +142,14 @@ func listREQFiles(cfg config.ProjectConfig) []string {
 
 	// 3. by_agent.
 	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
-		agents := cfg.Agents
-		if len(agents) == 0 {
-			entries, err := os.ReadDir(reqDir)
-			if err == nil {
-				for _, e := range entries {
-					if e.IsDir() {
-						agents = append(agents, e.Name())
-					}
-				}
-			}
-		}
+		agents := validator.ResolveAgentNamespaces(cfg, reqDir)
 		for _, agent := range agents {
+			// ML-4A (achado 2, hades-tf 2026-08-30): agent vem do disco (nome de diretório sem
+			// validação de formato) — validator.ListMDFiles em vez de filepath.Glob para não
+			// interpretar o nome como padrão de glob (metacaracteres como "*"/"[" corrompiam
+			// contagem silenciosamente ou derrubavam o comando).
 			for _, state := range roadmapStateOrder {
-				matches, _ := filepath.Glob(filepath.Join(reqDir, agent, state, "*.md"))
-				files = append(files, matches...)
+				files = append(files, validator.ListMDFiles(filepath.Join(reqDir, agent, state))...)
 			}
 		}
 	}

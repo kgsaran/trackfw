@@ -118,6 +118,11 @@ _RULE_DEFAULTS = {
     # deliberadamente ausente deste mapa (cai no default "error"), espelhando
     # credential_guard_hook_resolvable.
     "git_branch_guard_script_integrity": "warning",
+    # ML-4A (REQ-2026-08-29, achado 1 do parecer hades-tf 2026-08-30): namespace oculto/ambíguo (nome
+    # iniciado por ".") é sinal de baixo ruído por natureza, não um defeito de configuração como
+    # agent_namespace_undeclared ("error"). Nunca "off" por default — silêncio total é o defeito que
+    # esta REQ existe para fechar.
+    "agent_namespace_hidden": "warning",
 }
 
 
@@ -426,6 +431,147 @@ def _extract_ref_path(content: str, field: str) -> str:
     return ""
 
 
+# resolve_agent_namespaces é re-exportado de trackfw.config (não definido aqui): trackfw.traceid é
+# importado por este módulo (linha ~15) e também precisa do resolvedor canônico, então a
+# implementação vive em config.py — o único módulo que nem validator nem traceid dependem de volta
+# — para não introduzir um import cycle (validator → traceid → validator). Mantido acessível como
+# `trackfw.validator.resolve_agent_namespaces` por compatibilidade com quem já importa daqui.
+resolve_agent_namespaces = _config.resolve_agent_namespaces
+
+# _AGENT_NAMESPACE_STATE_NAMES replica, só para esta regra, os 6 nomes de estado reservados de
+# roadmap/REQ. Um diretório com um desses nomes no topo de roadmap_dir/req_dir é, na prática, resto
+# de migração incompleta flat→by_agent (ex.: "wip" órfão) — não um agente. A união (decisão 1 do
+# ADR) continua enumerando esses diretórios normalmente — nada fica invisível —, mas eles NÃO
+# disparam validate_agent_namespace_undeclared: pedir para declarar "wip" como agente em agents:
+# seria ruído confuso, não uma correção real (ML-0A, seção 3, item 3; recomendação adotada sem
+# alteração). Esta exclusão vive só aqui, não no resolvedor — a colisão de nome não é
+# "comprovadamente infraestrutura" como is_infra_dir_name, é uma inferência sobre o significado do
+# nome, então só afeta a violação, nunca a união/enumeração.
+_AGENT_NAMESPACE_STATE_NAMES = {"backlog", "analyzing", "wip", "blocked", "done", "abandoned"}
+
+
+def _undeclared_namespaces_on_disk(cfg: dict, directory: str, declared: set) -> list:
+    """Devolve, a partir do resolvedor canônico (que já filtra infra e não segue symlink), os nomes
+    de namespace presentes em directory e ausentes de agents:, excluindo colisões com nome de estado
+    reservado (_AGENT_NAMESPACE_STATE_NAMES) e nomes iniciados por "." (ML-4A: esses continuam na
+    união — resolve_agent_namespaces não os filtra mais — mas não disparam a violação plena; ver
+    _hidden_namespace_warnings para o aviso de baixo ruído que os substitui)."""
+    out = []
+    for name in resolve_agent_namespaces(cfg, directory):
+        if name in declared or name in _AGENT_NAMESPACE_STATE_NAMES or _config.is_dot_prefixed_name(name):
+            continue
+        out.append(name)
+    return out
+
+
+def _dot_prefixed_undeclared_on_disk(cfg: dict, directory: str, declared: set) -> list:
+    """Espelho de _undeclared_namespaces_on_disk para o caso ambíguo (nome iniciado por "."): mesmo
+    resolvedor canônico, mesma exclusão de nomes já declarados, mas mantendo exatamente os nomes que
+    _undeclared_namespaces_on_disk descarta por causa do ponto."""
+    out = []
+    for name in resolve_agent_namespaces(cfg, directory):
+        if name in declared or not _config.is_dot_prefixed_name(name):
+            continue
+        out.append(name)
+    return out
+
+
+def validate_agent_namespace_undeclared(cfg: dict) -> list:
+    """
+    Regra "agent_namespace_undeclared" (ADR-2026-08-29, decisão 2 / REQ AC4, AC5, AC9): em modo
+    by_agent, um namespace presente em disco (roadmap_dir e/ou req_dir — AC2 estende a união às duas
+    árvores, e esta violação segue) e ausente de agents: é VIOLAÇÃO, não aviso — usa o mesmo default
+    "error" de toda regra sem entrada em _RULE_DEFAULTS (_disk_rule_severity).
+
+    A união já garante (Wave 1) que o namespace continua sendo ENUMERADO por todo consumidor mesmo
+    com esta violação ativa — esta função só ADICIONA o sinal de configuração incompleta, nunca
+    CONDICIONA a enumeração a ele (AC5-b).
+
+    Deduplicação por namespace, não por árvore: o caso motivador (cmdb, "zeus" ausente de agents: e
+    em disco em roadmap_dir E req_dir ao mesmo tempo) produziria duas violações quase-idênticas se o
+    laço fosse por árvore — ruído no caso comum, não no caso raro. Uma violação por nome, nomeando
+    todas as árvores onde ele foi encontrado.
+    """
+    if cfg.get("roadmap_namespacing") != _config.NAMESPACING_BY_AGENT:
+        return []
+    declared = set(cfg.get("agents") or [])
+
+    roadmap_dir = cfg.get("roadmap_dir", "docs/roadmaps")
+    req_dir = cfg.get("req_dir", "docs/req")
+    roadmap_names = _undeclared_namespaces_on_disk(cfg, roadmap_dir, declared)
+    req_names = _undeclared_namespaces_on_disk(cfg, req_dir, declared)
+
+    in_roadmap = set(roadmap_names)
+    in_req = set(req_names)
+
+    seen = set()
+    names = []
+    for n in roadmap_names + req_names:
+        if n in seen:
+            continue
+        seen.add(n)
+        names.append(n)
+    names.sort()
+
+    msgs = []
+    for name in names:
+        trees = []
+        if name in in_roadmap:
+            trees.append("roadmap_dir")
+        if name in in_req:
+            trees.append("req_dir")
+        msgs.append(
+            'agent namespace "%s" exists in %s but is not declared in agents: — add it to trackfw.yaml'
+            % (name, ", ".join(trees))
+        )
+    return msgs
+
+
+def hidden_namespace_warnings(cfg: dict) -> list:
+    """
+    Regra "agent_namespace_hidden" — contraponto de baixo ruído de validate_agent_namespace_undeclared
+    para nomes iniciados por "." (ML-4A, achado 1 do parecer hades-tf 2026-08-30). Um diretório
+    oculto/ambíguo em disco (roadmap_dir e/ou req_dir), ausente de agents:, NÃO é filtrado da união
+    (resolve_agent_namespaces mantém) e NÃO dispara a violação plena — mas também não é silêncio
+    total: esta função emite um aviso nomeando explicitamente o diretório.
+    """
+    if cfg.get("roadmap_namespacing") != _config.NAMESPACING_BY_AGENT:
+        return []
+    declared = set(cfg.get("agents") or [])
+
+    roadmap_dir = cfg.get("roadmap_dir", "docs/roadmaps")
+    req_dir = cfg.get("req_dir", "docs/req")
+    roadmap_names = _dot_prefixed_undeclared_on_disk(cfg, roadmap_dir, declared)
+    req_names = _dot_prefixed_undeclared_on_disk(cfg, req_dir, declared)
+
+    in_roadmap = set(roadmap_names)
+    in_req = set(req_names)
+
+    seen = set()
+    names = []
+    for n in roadmap_names + req_names:
+        if n in seen:
+            continue
+        seen.add(n)
+        names.append(n)
+    names.sort()
+
+    msgs = []
+    for name in names:
+        trees = []
+        if name in in_roadmap:
+            trees.append("roadmap_dir")
+        if name in in_req:
+            trees.append("req_dir")
+        msgs.append(
+            'dot-prefixed directory "%s" found in %s is treated as an agent namespace (fully '
+            "enumerated, not declared in agents:) — declare it in trackfw.yaml if intentional, or "
+            "remove it if it is leftover tooling"
+            % (name, ", ".join(trees))
+        )
+    return msgs
+
+
 def resolve_req_files(cfg: dict) -> list:
     """
     Retorna lista de paths completos de .md em req_dir,
@@ -435,21 +581,40 @@ def resolve_req_files(cfg: dict) -> list:
     namespacing = cfg.get("roadmap_namespacing", "")
     if namespacing == "by_agent":
         states = ["backlog", "analyzing", "wip", "blocked", "done", "abandoned"]
-        agents = cfg.get("agents", [])
-        if not agents:
-            try:
-                agents = [e for e in os.listdir(req_dir)
-                          if os.path.isdir(os.path.join(req_dir, e))]
-            except OSError:
-                return []
+        agents = resolve_agent_namespaces(cfg, req_dir)
         files = []
         for agent in agents:
+            # ML-4A (achado 2, hades-tf 2026-08-30): agent vem do disco (nome de diretório sem
+            # validação de formato), não de config — usa _list_md_files em vez de glob.glob para não
+            # interpretar o nome como padrão (espelha internal/validator/validator.go's ListMDFiles;
+            # glob.glob degradava graciosamente para "[" desbalanceado neste runtime, mas ainda
+            # cross-casava "*" com todos os agentes, igual ao Go).
             for state in states:
-                pattern = os.path.join(req_dir, agent, state, "*.md")
-                files.extend(_glob.glob(pattern))
+                files.extend(_list_md_files(os.path.join(req_dir, agent, state)))
         return files
     # flat (comportamento anterior)
     return _glob.glob(os.path.join(req_dir, "*.md"))
+
+
+def _list_md_files(directory: str) -> list:
+    """
+    Lista os arquivos .md diretamente dentro de directory (sem subdiretórios, sem glob) — substitui
+    glob.glob(os.path.join(directory, "*.md")) em todo ponto onde um COMPONENTE do caminho vem de um
+    nome de diretório lido do disco (ex.: um namespace de agente resolvido por
+    resolve_agent_namespaces), em vez de vir de config ou de uma constante do código. Ver o
+    comentário completo em ListMDFiles (internal/validator/validator.go) para a justificativa.
+    """
+    try:
+        entries = os.listdir(directory)
+    except OSError:
+        return []
+    files = [
+        os.path.join(directory, name)
+        for name in entries
+        if name.endswith(".md") and not os.path.isdir(os.path.join(directory, name))
+    ]
+    files.sort()
+    return files
 
 
 def _resolve_state_dirs(cfg: dict, state: str) -> list:
@@ -462,17 +627,8 @@ def _resolve_state_dirs(cfg: dict, state: str) -> list:
     by_agent → [cfg["roadmap_dir"] + "/" + agent + "/" + state for agent in agents]
     """
     if cfg.get("roadmap_namespacing") == _config.NAMESPACING_BY_AGENT:
-        agents = cfg.get("agents") or []
-        if not agents:
-            roadmap_dir = cfg.get("roadmap_dir", "docs/roadmaps")
-            try:
-                agents = [
-                    f for f in os.listdir(roadmap_dir)
-                    if os.path.isdir(os.path.join(roadmap_dir, f))
-                ]
-            except OSError:
-                agents = []
         roadmap_dir = cfg.get("roadmap_dir", "docs/roadmaps")
+        agents = resolve_agent_namespaces(cfg, roadmap_dir)
         return [roadmap_dir + "/" + agent + "/" + state for agent in agents]
 
     return [cfg.get("roadmap_dir", "docs/roadmaps") + "/" + state]
@@ -861,16 +1017,7 @@ def validate_wip_limit(cfg: dict) -> dict:
     warnings = []
 
     if cfg.get("roadmap_namespacing") == _config.NAMESPACING_BY_AGENT:
-        agents = cfg.get("agents") or []
-        if not agents:
-            roadmap_dir = cfg.get("roadmap_dir", "docs/roadmaps")
-            try:
-                agents = [
-                    f for f in os.listdir(roadmap_dir)
-                    if os.path.isdir(os.path.join(roadmap_dir, f))
-                ]
-            except OSError:
-                agents = []
+        agents = resolve_agent_namespaces(cfg, cfg.get("roadmap_dir", "docs/roadmaps"))
         limit = cfg.get("wip_limit", 1)
         if limit <= 0:
             limit = 1
@@ -1274,12 +1421,7 @@ def validate_folder_status_coherence(cfg: dict) -> list:
 
     dirs = []
     if cfg.get("roadmap_namespacing") == _config.NAMESPACING_BY_AGENT:
-        agents = cfg.get("agents") or []
-        if not agents:
-            try:
-                agents = [f for f in os.listdir(roadmap_dir) if os.path.isdir(os.path.join(roadmap_dir, f))]
-            except OSError:
-                agents = []
+        agents = resolve_agent_namespaces(cfg, roadmap_dir)
         for agent in agents:
             for state in states:
                 dirs.append((os.path.join(roadmap_dir, agent, state), state))
@@ -1326,12 +1468,7 @@ def validate_filename_uniqueness(cfg: dict) -> list:
 
     list_errors = []
     if cfg.get("roadmap_namespacing") == _config.NAMESPACING_BY_AGENT:
-        agents = cfg.get("agents") or []
-        if not agents:
-            try:
-                agents = [f for f in os.listdir(roadmap_dir) if os.path.isdir(os.path.join(roadmap_dir, f))]
-            except OSError:
-                agents = []
+        agents = resolve_agent_namespaces(cfg, roadmap_dir)
         for agent in agents:
             for state in states:
                 dir_path = os.path.join(roadmap_dir, agent, state)
@@ -3377,6 +3514,14 @@ def validate_unfiltered(cwd: str = None) -> dict:
 
     # Verificação bidirecional de req_id (desativada se trace_id_field não configurado)
     violations += _enrich_items(check_traceid(cfg), "traceid")
+
+    # ML-2A (REQ-2026-08-29): namespace de agente em disco e não declarado em agents: — violação, não
+    # aviso (ver comentário em validate_agent_namespace_undeclared).
+    _apply_rule("agent_namespace_undeclared", validate_agent_namespace_undeclared(cfg), violations, warnings, cfg)
+
+    # ML-4A (achado 1, hades-tf 2026-08-30): contraponto de baixo ruído para nomes ocultos/ambíguos
+    # (iniciados por ".") — aviso, nunca silêncio total, nunca erro (_RULE_DEFAULTS abaixo).
+    _apply_rule("agent_namespace_hidden", hidden_namespace_warnings(cfg), violations, warnings, cfg)
 
     return {"violations": violations, "warnings": warnings}
 

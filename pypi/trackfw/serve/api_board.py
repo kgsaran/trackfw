@@ -5,6 +5,8 @@ Espelho Python de internal/serve/api_board.go e npm/src/serve/api_board.js.
 
 import os
 
+from trackfw import config as _config
+
 STATES = ["wip", "backlog", "blocked", "done", "abandoned"]
 
 
@@ -68,15 +70,7 @@ def get_board(cfg):
     agents_found = set()
 
     if namespacing == "by_agent":
-        agents = cfg.get("agents") or []
-        if not agents:
-            try:
-                agents = sorted(
-                    e for e in os.listdir(roadmap_dir)
-                    if os.path.isdir(os.path.join(roadmap_dir, e))
-                )
-            except OSError:
-                agents = []
+        agents = _config.resolve_agent_namespaces(cfg, roadmap_dir)
 
         for agent in agents:
             for state in STATES:

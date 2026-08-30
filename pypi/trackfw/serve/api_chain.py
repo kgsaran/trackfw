@@ -6,6 +6,8 @@ Espelho Python de internal/serve/api_chain.go e npm/src/serve/api_chain.js.
 import os
 import re
 
+from trackfw import config as _config
+
 STATES = ["wip", "backlog", "blocked", "done", "abandoned"]
 
 
@@ -124,15 +126,7 @@ def get_chain(cfg):
     for adr_dir in adr_dirs:
         # Suporte a by_agent: verificar subpastas done/wip/...
         if namespacing == "by_agent":
-            agents = cfg.get("agents") or []
-            if not agents:
-                try:
-                    agents = sorted(
-                        e for e in os.listdir(adr_dir)
-                        if os.path.isdir(os.path.join(adr_dir, e))
-                    )
-                except OSError:
-                    agents = []
+            agents = _config.resolve_agent_namespaces(cfg, adr_dir)
             for agent in agents:
                 for state in STATES:
                     nodes.extend(_scan_dir(os.path.join(adr_dir, agent, state), "adr", state))
@@ -149,15 +143,7 @@ def get_chain(cfg):
 
     # --- REQs ---
     if namespacing == "by_agent":
-        agents = cfg.get("agents") or []
-        if not agents:
-            try:
-                agents = sorted(
-                    e for e in os.listdir(req_dir)
-                    if os.path.isdir(os.path.join(req_dir, e))
-                )
-            except OSError:
-                agents = []
+        agents = _config.resolve_agent_namespaces(cfg, req_dir)
         for agent in agents:
             for state in STATES:
                 nodes.extend(_scan_dir(os.path.join(req_dir, agent, state), "req", state))
@@ -171,15 +157,7 @@ def get_chain(cfg):
 
     # --- Roadmaps ---
     if namespacing == "by_agent":
-        agents = cfg.get("agents") or []
-        if not agents:
-            try:
-                agents = sorted(
-                    e for e in os.listdir(roadmap_dir)
-                    if os.path.isdir(os.path.join(roadmap_dir, e))
-                )
-            except OSError:
-                agents = []
+        agents = _config.resolve_agent_namespaces(cfg, roadmap_dir)
         for agent in agents:
             for state in STATES:
                 nodes.extend(_scan_dir(os.path.join(roadmap_dir, agent, state), "roadmap", state))

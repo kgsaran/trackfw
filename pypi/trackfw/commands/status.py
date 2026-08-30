@@ -105,12 +105,11 @@ def _roadmap_counts_by_agent(roadmap_dir: str, agents: list) -> dict:
 
 
 def _get_agents(cfg: dict) -> list:
-    """Descobre os agentes: da config ou do filesystem."""
-    agents = cfg.get("agents") or []
-    if not agents:
-        roadmap_dir = cfg.get("roadmap_dir", "docs/roadmaps")
-        agents = _list_dirs(roadmap_dir)
-    return agents
+    """Descobre os agentes: união entre agents: e o disco (validator.resolve_agent_namespaces,
+    resolvedor canônico — REQ-2026-08-29). Não usar _list_dirs aqui: segue symlink via
+    os.path.isdir()."""
+    roadmap_dir = cfg.get("roadmap_dir", "docs/roadmaps")
+    return _validator.resolve_agent_namespaces(cfg, roadmap_dir)
 
 
 def _resolve(base: str, path: str) -> str:

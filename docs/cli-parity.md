@@ -6015,3 +6015,245 @@ Lifecycle inventory: `package.json` (discovered: root first, then `npm/package.j
 ```
 
 Note: `base` field is omitted from JSON across all 3 CLIs when not provided.
+
+---
+
+## `roadmap_namespacing: by_agent` — `agents:` complementa o disco; namespace não declarado vira violação (REQ-2026-08-29, ADR-2026-08-29, ML-3A, ML-4A, ML-4B)
+
+<!-- trackfw-contract: gate=scripts/check-agent-namespace-union.sh -->
+
+Antes desta REQ, em `roadmap_namespacing: by_agent`, a lista `agents:` **substituía** o disco: se
+declarada e não-vazia, o resolvedor nunca lia `roadmap_dir`/`req_dir` para descobrir namespaces —
+qualquer subdiretório presente em disco e ausente de `agents:` ficava **invisível** para `validate`,
+`status`, `context`, `serve` e `roadmap move`. Desde o resolvedor canônico (Wave 1, `ML-1A`), `agents:`
+**complementa** o disco: a enumeração é sempre a **união** entre a lista declarada (ordem preservada,
+deduplicada) e os subdiretórios de primeiro nível encontrados em disco (ordenados
+alfabeticamente), com os declarados vindo **primeiro** na ordem final. Um namespace só-disco e ausente
+de `agents:` continua sendo enumerado — e, desde a Wave 2 (`ML-2A`), passa a gerar uma **violação**
+nomeando-o, em vez de ficar em silêncio. Duas correções pós-barreira (`ML-4A`, achados 1 e 2 do
+parecer `hades-tf`) fecharam dois jeitos de a própria correção reabrir invisibilidade ou instabilidade:
+um namespace iniciado por `.` não é mais filtrado incondicionalmente (vira aviso de baixo ruído, nunca
+silêncio — ver "A regra `agent_namespace_hidden`" abaixo), e um nome de disco não alimenta mais um
+padrão de glob sem escapar (ver "Segurança contra metacaractere de glob" abaixo).
+
+### O resolvedor canônico — um por runtime
+
+<!-- trackfw-contract: gate=scripts/check-agent-namespace-union.sh -->
+
+- Go: `resolveAgentNamespaces` (`internal/validator/validator.go`).
+- Node.js: `resolveAgentNamespaces` (`npm/src/validator/index.js`).
+- Python: `resolve_agent_namespaces` (`pypi/trackfw/config.py` — não em `validator.py`, para evitar o
+  ciclo de import `validator → traceid → validator`; `pypi/trackfw/validator.py` reexporta a mesma
+  função por compatibilidade com quem já a importava de lá).
+
+Todo consumidor que precisa enumerar namespaces em modo `by_agent` (regras de `validate`, `status`,
+`context`, `serve`, `roadmap move`/`show`, geradores de REQ/roadmap) passa por este ponto único — o
+padrão antigo (`len(agents) == 0` / `!agents.length` / `not agents` como gate para decidir "ler disco
+ou não") só pode existir dentro do próprio resolvedor; reintroduzi-lo em qualquer outro ponto é a
+Direção A da falsificação abaixo.
+
+### Segurança — a enumeração nunca segue symlink (AC12/AC13)
+
+<!-- trackfw-contract: gate=scripts/check-agent-namespace-union.sh -->
+
+Um namespace que é um symlink apontando para fora do projeto **não** pode ser tratado como diretório
+pelo resolvedor — do contrário, `roadmap move` (cujo diretório de destino deriva do diretório onde o
+`src` foi encontrado) escreve fora da árvore do projeto através dele. Reproduzido ao vivo durante o
+threat-model desta REQ (ML-0A): com a lista `agents:` vazia (o caminho de fallback pré-união, hoje o
+caminho *incondicional* de todo projeto `by_agent`), Node.js e Python seguiam o symlink e o Go não —
+por desenho de API, não por acidente:
+
+| Runtime | Primitiva exigida | Por que não segue symlink |
+|---|---|---|
+| Go | `os.ReadDir(dir)` + `entry.IsDir()` | O bit de tipo vem do `dirent` do próprio `readdir`, nunca de um `stat` do alvo |
+| Node.js | `fs.readdirSync(dir, {withFileTypes: true})` + `dirent.isDirectory()` | Mesma garantia do `dirent` — `fs.statSync(...).isDirectory()` **segue** e é proibido aqui |
+| Python | `os.scandir(dir)` + `entry.is_dir(follow_symlinks=False)` | `follow_symlinks=False` explícito — `os.path.isdir()` **segue** e é proibido aqui |
+
+`entry.IsDir()`/`dirent.isDirectory()`/`entry.is_dir(follow_symlinks=False)` **preservados
+literalmente** é o requisito — uma "simplificação" para `os.Stat`/`fs.statSync`/`os.path.isdir()`
+reintroduz o vetor. É a Direção B2 da falsificação abaixo, provada apenas em Node/Python: o Go não tem
+uma variante "um edit errado" equivalente, porque seguir symlink ali exigiria trocar a primitiva
+inteira, não corromper um literal.
+
+### Filtro de infraestrutura (`isInfraDirName`) — REVISADO pelo ML-4A, achado 1
+
+<!-- trackfw-contract: gate=scripts/check-agent-namespace-union.sh -->
+
+**Esta seção descreve o comportamento atual (pós-ML-4A). A versão anterior desta seção afirmava que
+qualquer nome iniciado por `.` era filtrado da união e da violação — isso deixou de ser verdade em
+2026-08-30 e é o motivo do achado 1 (BLOQUEIA) do parecer de segurança `hades-tf` na barreira final
+desta REQ: o filtro por prefixo `.` reabria, byte-a-byte, a invisibilidade total que a própria REQ
+existe para fechar (um namespace real `.ghost` desaparecia de `union`, `status`, `wip limit` e `move`
+sem nenhum sinal — canal de ocultação deliberada). Documentar a versão pré-ML-4A como se ainda
+valesse seria o mesmo erro que este ML-4B (documentação) foi aberto para evitar no item da
+ordenação: uma anotação `gate=` cobrindo um comportamento que o código não tem mais.**
+
+`isInfraDirName` hoje filtra a união **e** a violação (nunca vira namespace, em nenhuma hipótese) com
+uma lista fechada de **uma única entrada**:
+
+- `node_modules` — artefato de tooling JS (npm/yarn/pnpm). Nenhum operador digita isto como nome de
+  agente por acidente ou por design — ruído inequívoco, sem a ambiguidade de um nome iniciado por
+  ponto (que pode ser um namespace legítimo escolhido deliberadamente).
+
+Nomes iniciados por `.` (`.git`, `.trackfw`, `.ghost`, ...) **não são mais filtrados aqui** — eles
+continuam entrando normalmente na união (nunca ficam invisíveis), e o sinal de "não declarado" é
+rebaixado de violação plena para o aviso de baixo ruído `agent_namespace_hidden` (ver seção própria
+abaixo), nunca silêncio total. É a Direção B3 da falsificação abaixo.
+
+Um diretório cujo nome **colide com um dos 6 nomes de estado reservados** (`backlog`, `analyzing`,
+`wip`, `blocked`, `done`, `abandoned` — tipicamente um resto de migração incompleta `flat`→`by_agent`,
+ex.: `wip/` órfão solto no topo de `roadmap_dir`) **não** é filtrado por `isInfraDirName` e **continua**
+entrando na união normalmente (nada fica invisível) — mas é excluído tanto de `agent_namespace_undeclared`
+quanto de `agent_namespace_hidden`: pedir para declarar `wip` como agente em `agents:` seria ruído
+confuso, não uma correção real (decisão do ML-2A, recomendação do ML-0A adotada sem alteração).
+
+### A regra `agent_namespace_hidden` — aviso de baixo ruído para nome iniciado por `.` (ML-4A, achado 1)
+
+<!-- trackfw-contract: gate=scripts/check-agent-namespace-union.sh -->
+
+Contraponto de `agent_namespace_undeclared` para o caso ambíguo (nome iniciado por `.`): o diretório
+**continua sendo enumerado normalmente** pela união (`status`, `validate`, `roadmap move`, contagem de
+WIP) — a regra só rebaixa o SINAL, nunca remove o namespace da leitura. Severidade default `warning`
+(nunca `off` **por default** — `ruleDefaults["agent_namespace_hidden"] = "warning"`, ao contrário de
+regras que não constam desse mapa e cairiam em `error`). Como qualquer outra regra de `validate` neste
+projeto, a severidade efetiva ainda é resolvida por `diskRuleSeverity`/equivalente — `trackfw.yaml
+rules: agent_namespace_hidden: off` **é honrado como em qualquer outra regra do CLI** e silencia o
+aviso; "nunca `off`" descreve o **default**, não uma trava incondicional contra reconfiguração — medido
+diretamente no binário desta branch (`rules: agent_namespace_hidden: off` em `trackfw.yaml` suprime o
+aviso, exit continua não-zero só pelas outras violações do fixture).
+
+Mensagem byte-idêntica nos 3 CLIs (confirmado por leitura direta das 3 fontes — `internal/validator/
+validator.go`, `npm/src/validator/index.js`, `pypi/trackfw/validator.py`); o gate reforça isso
+indiretamente usando o mesmo literal exato como marcador nos 3 runtimes, mas não faz uma comparação
+byte-a-byte dedicada como faz para `agent_namespace_undeclared` (AC4) — ver Direção B3 abaixo, que
+falsifica só a propriedade "nunca fica em silêncio total", não a paridade de texto:
+
+```
+dot-prefixed directory "<nome>" found in <árvore[, árvore]> is treated as an agent namespace
+(fully enumerated, not declared in agents:) — declare it in trackfw.yaml if intentional, or remove it
+if it is leftover tooling
+```
+
+### Segurança contra metacaractere de glob no nome do namespace (ML-4A, achado 2)
+
+<!-- trackfw-contract: gate=scripts/check-agent-namespace-union.sh -->
+
+Antes da união (Wave 1), o segmento `agent` usado para montar o caminho de varredura de `wip/` sempre
+vinha de uma string digitada em `agents:` pelo operador. Depois da união, `agent` também vem de
+**qualquer nome de diretório em disco**, sem validação de formato — e alimentava
+`filepath.Glob(join(dir, agent, "wip", "*.md"))` sem escapar, em Go (`internal/validator/validator.go`,
+`internal/generators/req.go`). Dois efeitos, achados ao vivo por `hades-tf` na barreira final:
+
+- Um namespace nomeado literalmente `*` fazia `filepath.Glob("docs/roadmaps/*/wip/*.md")` casar com o
+  `wip/` de **todos** os namespaces, não só o do namespace `*` — contagem de WIP inflada em silêncio
+  (número plausível e errado, não um crash).
+- Um namespace com um `[` desbalanceado derrubava `validate` inteiro com `syntax error in pattern`
+  (`ErrBadPattern` do `path/filepath` subindo cru, inclusive vazando texto puro no canal `--json`).
+
+**Corrigido nos 3 runtimes** trocando a leitura de `wip/`/estado por listagem direta de diretório com
+filtro de sufixo `.md` em código, nunca por padrão de glob interpretando um nome vindo do disco:
+
+- Go: `ListMDFiles` (`internal/validator/validator.go`) — `os.ReadDir` + filtro `.md`, sem
+  `filepath.Glob`.
+- Node.js: não exposto — `fs.readdirSync`-based, nunca usou padrão de glob nesse caminho.
+- Python: `_list_md_files` (`pypi/trackfw/validator.py`) — `os.listdir` + filtro `.md`, sem
+  `glob.glob` (Python já degradava graciosamente antes da correção — não crashava, mas ainda tinha o
+  risco de contaminação de padrão em teoria; alinhado por consistência de AC9, não por urgência de
+  bug observado).
+
+É a Direção B4 da falsificação abaixo — provada só em Go, o único runtime onde o defeito existiu
+(Node/Python nunca usaram glob interpretando um nome de disco nesse ponto).
+
+### A regra `agent_namespace_undeclared`
+
+<!-- trackfw-contract: gate=scripts/check-agent-namespace-union.sh -->
+
+Em `roadmap_namespacing: by_agent`, um namespace presente em `roadmap_dir` e/ou `req_dir` e ausente de
+`agents:` é **violação** (severidade `error`, mesmo default de toda regra sem entrada em
+`ruleDefaults`/`diskRuleSeverity` — não é aviso), deduplicada por nome (não por árvore: um namespace
+ausente das duas árvores ao mesmo tempo gera uma única violação, nomeando ambas). Mensagem
+byte-idêntica nos 3 CLIs:
+
+```
+agent namespace "<nome>" exists in <árvore[, árvore]> but is not declared in agents: — add it to trackfw.yaml
+```
+
+`<árvore>` é `roadmap_dir`, `req_dir`, ou ambas separadas por `, ` (nessa ordem — roadmap_dir primeiro)
+quando o namespace existe nas duas.
+
+### Independência entre união e violação (AC5 — a propriedade que define a REQ)
+
+<!-- trackfw-contract: gate=scripts/check-agent-namespace-union.sh -->
+
+A violação **soma** um sinal de configuração incompleta; ela nunca **condiciona** a enumeração. Um
+namespace só-disco continua sendo enumerado por `status`/`validate`/`roadmap move` **enquanto a
+violação está ativa** — se a união dependesse da declaração, o defeito original desta REQ (artefatos
+invisíveis) teria voltado disfarçado de "agora com um aviso". Declarar o namespace em `agents:` silencia
+a violação sem alterar a enumeração (o namespace já estava sendo lido do disco antes de ser declarado).
+
+### Ordenação declarado-primeiro — load-bearing para gate, e agora provada diretamente
+
+<!-- trackfw-contract: gate=scripts/check-agent-namespace-union.sh -->
+
+O resolvedor devolve os namespaces **declarados primeiro** (na ordem de `agents:`, deduplicada),
+seguidos dos extras encontrados só em disco (ordem alfabética). Esta ordenação nasceu neutra
+(cosmética) mas **se tornou load-bearing para gate**: era o único discriminante que sobrevivia à união
+para dois cenários herdados de `check-gates-falsify.sh` (34 — sequência YAML de bloco não indentada; 35
+— vírgula dentro de aspas em lista inline) depois que a união tornou vácua a asserção original de
+presença/ausência de um item na saída (`vault/notes/uniao-disco-agents-mascara-gate-por-presenca-2026-08-29.md`).
+A Wave 3 (`ML-3A`) retargetou os dois cenários para o sinal mais forte da violação
+`agent_namespace_undeclared` (mensagem citando por nome um namespace que deveria estar declarado — ver
+seção acima) — os Cenários 34/35 **não dependem mais de ordem** e não são mais o guard-rail relevante
+para este contrato.
+
+**Correção de cobertura (artemis-tf, 2026-08-30, ML-4B docs follow-up).** Até esta correção, esta seção
+carregava a anotação `gate=` acima **sem que nenhum gate realmente asserisse ordenação** — nem este
+script (que provava união, violação, symlink e filtro de infra, mas não ordem) nem
+`check-gates-falsify.sh` (cujos únicos cenários que um dia testaram ordem, 34/35, foram retargetados
+para outra coisa pelo próprio `ML-3A`, e o único remanescente sensível a ordem, Cenário 33 —
+`falsify/status-by-agent-fallback-order` — é Python-only e exercita `status`, não `roadmap list`, que é
+a superfície que este parágrafo nomeia). Era exatamente o padrão que a REQ do pin de CI já havia
+corrigido uma vez (uma anotação `partial=` removida e depois reintroduzida ao perceber que alegava
+cobertura demais) — mesmo defeito, arquivo diferente. `check-agent-namespace-union.sh` agora tem uma
+seção de cenários dedicada (`ordering/{go,node,python}/declared-first-then-disk-only-alphabetical`) que
+roda `roadmap list` contra `agents: [zulu, alfa]` (ordem alfabética deliberadamente invertida da ordem
+declarada) mais um namespace só-disco (`extra`), e afirma que os 3 aparecem nessa ordem exata nos 3
+CLIs — mais uma **Direção C** de falsificação (`direction-c/{go,node,python}/detects-order-regression`)
+que corrompe cada resolvedor com um `sort()`/`sort.Strings()`/`.sort()` final e confirma que o gate
+reprova. A ordenação continua sendo o contrato ativo consumido pelo `roadmap list` do Python (alinhado
+ao Go/Node.js desde o `ML-2A`) — agora com prova direta, não apenas por herança de um cenário
+retargetado para outra finalidade.
+
+### `gap` conhecido — formatação do `roadmap list` do Python
+
+<!-- trackfw-contract: gap reason=o roadmap list do Python formata a saída por agente diferente de Go/Node.js — "[zulu]" seguido de "[backlog] arquivo" por linha, contra "[zulu/backlog]" seguido só do arquivo em Go/Node.js. Divergência de formatação pré-existente, encontrada durante o ML-2A (REQ-2026-08-29), fora do escopo desta REQ — a ordenação (que é o que este roadmap corrige e sobre o que os gates acima dependem) já está alinhada nos 3 CLIs; só a apresentação de linha diverge. Nenhum gate cross-CLI compara a saída completa do roadmap list byte-a-byte entre os 3 CLIs neste ponto -->
+
+### Não-regressão de `flat`
+
+<!-- trackfw-contract: gate=scripts/check-agent-namespace-union.sh -->
+
+`roadmap_namespacing: flat` nunca passa pelo resolvedor de namespaces e nunca emite
+`agent_namespace_undeclared` — esta REQ não altera nenhum comportamento de projeto `flat` (Negative
+Scope da REQ).
+
+### Falsificação — ambas as direções, provadas por `check-agent-namespace-union.sh`
+
+<!-- trackfw-contract: gate=scripts/check-agent-namespace-union.sh -->
+
+O gate é auto-contido (constrói seus próprios binários corrompidos; não depende de
+`check-gates-falsify.sh`) e prova, empiricamente, que cada regressão abaixo faz o próprio gate
+reprovar com o diagnóstico que ele mesmo emite:
+
+| Direção | O que regride | Runtimes provados | Por que não os 3 |
+|---|---|---|---|
+| A | União volta a ser substituição (`agents:` não-vazio pula a varredura de disco) — o defeito original desta REQ | Go, Node.js, Python | — |
+| B1 | Filtro de infraestrutura desligado — `node_modules` vira "namespace não declarado" | Go, Node.js, Python | — |
+| B2 | Varredura de disco volta a seguir symlink (AC12) | Node.js, Python | Go é imune por desenho de API (`entry.IsDir()` nunca segue symlink) — não há uma corrupção de "um literal errado" equivalente em Go; ver seção de segurança acima |
+| B3 | Filtro de infraestrutura volta a incluir "qualquer nome iniciado por `.`" (ML-4A, achado 1 corretivo) — `.ghost` com conteúdo real vira totalmente invisível de novo | Go, Node.js, Python | — |
+| B4 | `ListMDFiles`/`_list_md_files` volta a `filepath.Glob` sobre um nome de namespace vindo do disco (ML-4A, achado 2 corretivo) — namespace `*` volta a cross-matchear o `wip/` de outros namespaces | Go | Node.js e Python nunca usaram padrão de glob interpretando um nome de disco nesse ponto (Node é `readdir`-based; Python usava `glob.glob`, que já degradava graciosamente antes da correção, sem o efeito de cross-match observado em Go) — não há regressão equivalente a injetar |
+| C | Ordenação declarado-primeiro regride para alfabética pura (`sort()`/`sort.Strings()`/`.sort()` final no resolvedor) | Go, Node.js, Python | — (falsificação de uma via só, sem par oposto — ver comentário no cabeçalho do script) |
+
+Cada direção usa uma prova de não-vacuidade própria: o binário/árvore **limpo** é verificado primeiro
+contra o mesmo fixture (o namespace declarado nunca é acusado; a violação do namespace só-disco está
+sempre presente antes de qualquer corrupção — sem isso, a ausência do namespace declarado no diagnóstico
+não distinguiria "a regra funciona" de "a regra não rodou").

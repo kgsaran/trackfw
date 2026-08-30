@@ -88,17 +88,7 @@ func collectTraceIdEntries(rootDir, traceField string) ([]traceIdEntry, error) {
 // Estrutura esperada: rootDir/<agente>/<estado>/*.md
 func collectTraceIdEntriesByAgent(roadmapDir, traceField string, cfg config.ProjectConfig) ([]traceIdEntry, error) {
 	stateDirs := []string{"wip", "done", "backlog", "analyzing", "blocked", "abandoned"}
-	agents := cfg.Agents
-	if len(agents) == 0 {
-		entries, err := os.ReadDir(roadmapDir)
-		if err == nil {
-			for _, e := range entries {
-				if e.IsDir() {
-					agents = append(agents, e.Name())
-				}
-			}
-		}
-	}
+	agents := resolveAgentNamespaces(cfg, roadmapDir)
 	var all []traceIdEntry
 	for _, agent := range agents {
 		agentDir := filepath.Join(roadmapDir, agent)

@@ -8,6 +8,7 @@ import os
 from datetime import datetime, timedelta
 
 from trackfw.commands.metrics import _parse_log
+from trackfw import config as _config
 
 STATES = ["wip", "backlog", "blocked", "done", "abandoned"]
 
@@ -32,15 +33,7 @@ def _state_distribution(cfg):
             return 0
 
     if namespacing == "by_agent":
-        agents = cfg.get("agents") or []
-        if not agents:
-            try:
-                agents = [
-                    e for e in os.listdir(roadmap_dir)
-                    if os.path.isdir(os.path.join(roadmap_dir, e))
-                ]
-            except OSError:
-                agents = []
+        agents = _config.resolve_agent_namespaces(cfg, roadmap_dir)
         for agent in agents:
             for state in STATES:
                 distribution[state] += _count_dir(os.path.join(roadmap_dir, agent, state), state)

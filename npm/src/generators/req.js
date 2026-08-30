@@ -4,6 +4,7 @@ const path = require('path')
 const { localDateISO } = require('./date')
 const roadmapGen = require('./roadmap')
 const config = require('../config')
+const { resolveAgentNamespaces } = require('../validator')
 
 const VALID_STATES = roadmapGen.VALID_STATES
 const STATE_ORDER = roadmapGen.STATE_ORDER
@@ -43,14 +44,7 @@ function listREQFiles(cfg) {
 
   // (c) by_agent — reqDir/<agente>/<estado>/*.md
   if (cfg.roadmapNamespacing === config.NAMESPACING_BY_AGENT) {
-    let agents = cfg.agents || []
-    if (agents.length === 0) {
-      try {
-        agents = fs.readdirSync(reqDir).filter(f => {
-          try { return fs.statSync(path.join(reqDir, f)).isDirectory() } catch (_) { return false }
-        })
-      } catch (_) { agents = [] }
-    }
+    const agents = resolveAgentNamespaces(cfg, reqDir)
     for (const agent of agents) {
       for (const state of STATE_ORDER) {
         const dir = path.join(reqDir, agent, state)

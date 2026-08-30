@@ -15,6 +15,84 @@ import yaml
 NAMESPACING_FLAT = "flat"
 NAMESPACING_BY_AGENT = "by_agent"
 
+
+def resolve_agent_namespaces(cfg: dict, directory: str) -> list:
+    """
+    Resolvedor canônico de namespaces em modo by_agent — o ÚNICO lugar deste runtime onde a lista
+    `agents:` do trackfw.yaml é lida ao lado do disco. Devolve a UNIÃO entre cfg["agents"] (na ordem
+    declarada, deduplicada) e os subdiretórios de primeiro nível encontrados em `directory`
+    (ordenados). Todo outro ponto do runtime (trackfw.validator, trackfw.traceid,
+    trackfw.commands.*, trackfw.generators.*) que precisar enumerar agentes DEVE chamar esta função
+    — nunca reimplementar "if not agents: ler disco": esse padrão SUBSTITUÍA o disco em vez de
+    complementá-lo, deixando invisível qualquer namespace em disco não declarado em agents:
+    (REQ-2026-08-29). O padrão `not agents`/`if not agents` só pode existir aqui dentro.
+
+    Vive em config.py (não em validator.py) para que trackfw.traceid — importado por
+    trackfw.validator — também possa chamá-la sem introduzir um import cycle
+    (validator → traceid → validator). trackfw.validator.resolve_agent_namespaces é um re-export
+    fino desta função, mantido por compatibilidade com quem já a importa de lá.
+
+    Segurança — NÃO segue symlink (AC12/AC13, bloqueante): usa os.scandir(directory) +
+    entry.is_dir(follow_symlinks=False) — um namespace que é symlink para fora do projeto nunca é
+    tratado como diretório aqui. NÃO trocar por os.path.isdir() (que SEGUE symlink por padrão e
+    reproduziu ao vivo escrita fora do projeto via `roadmap move` — ver ADR-2026-08-29, decisão 5, e
+    vault/notes/update-segue-symlink-e-escreve-fora-do-projeto-2026-08-28.md).
+    """
+    declared = cfg.get("agents") or []
+    seen = set()
+    ordered = []
+    for a in declared:
+        if not a or a in seen:
+            continue
+        seen.add(a)
+        ordered.append(a)
+
+    try:
+        with os.scandir(directory) as it:
+            from_disk = sorted(
+                e.name for e in it
+                if e.is_dir(follow_symlinks=False)  # symlinks retornam False — nunca seguidos
+                and not is_infra_dir_name(e.name)  # ML-2A: nunca vira namespace, ver comentário abaixo
+            )
+    except OSError:
+        return ordered
+
+    for name in from_disk:
+        if name in seen:
+            continue
+        seen.add(name)
+        ordered.append(name)
+    return ordered
+
+
+def is_infra_dir_name(name: str) -> bool:
+    """
+    Decide, no ponto único de leitura de disco do resolvedor, se uma entrada é COMPROVADAMENTE
+    infraestrutura e nunca um namespace de agente — filtrada da união (decisão 1 do ADR) e portanto
+    invisível a todo consumidor.
+
+    CORREÇÃO (ML-4A, achado 1 do parecer hades-tf 2026-08-30, REPROVA original — espelha
+    internal/validator/validator.go's isInfraDirName, ver o comentário lá para a justificativa
+    completa): esta lista já incluiu "qualquer nome iniciando com '.'", reabrindo a invisibilidade
+    que a REQ existe para fechar (um namespace real ".ghost" desaparecia de union, status, wip limit
+    e `move` sem sinal algum). A lista fechada agora tem UMA entrada:
+      - "node_modules": artefato de tooling JS. Nenhum operador digita isto como nome de agente por
+        acidente ou por design — ruído inequívoco, sem a ambiguidade de um nome iniciado por ponto.
+    Nomes iniciados por "." NÃO são mais filtrados aqui — continuam entrando na união (nunca
+    invisíveis) — mas o sinal de "não declarado" é rebaixado de violação para aviso de baixo ruído
+    (ver is_dot_prefixed_name / hidden_namespace_warnings em validator.py), nunca zero sinal.
+    """
+    return name == "node_modules"
+
+
+def is_dot_prefixed_name(name: str) -> bool:
+    """
+    Reporta se name começa com "." — sinal ambíguo (pode ser um namespace legítimo, ou tooling que
+    nunca deveria estar dentro de roadmap_dir/req_dir), não mais um filtro de invisibilidade (ver
+    is_infra_dir_name). Só rebaixa "não declarado em agents:" de violação para aviso.
+    """
+    return name.startswith(".")
+
 # MALFORMED_CONFIG_MESSAGE is written to stderr, verbatim, when trackfw.yaml exists but fails to
 # parse as YAML. Kept identical, character-for-character, to Go's MalformedConfigMessage and
 # Node's MALFORMED_CONFIG_MESSAGE — see the comment on _parse() below for why the text is static

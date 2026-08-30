@@ -16,6 +16,8 @@ Sem trace_id_field configurado → retorna lista vazia (comportamento inalterado
 
 import os
 
+from . import config as _config
+
 # Estados canônicos de pastas de roadmap
 _ROADMAP_STATES = ["backlog", "analyzing", "wip", "blocked", "done", "abandoned"]
 
@@ -91,13 +93,10 @@ def _index_reqs(req_dir: str, field: str) -> list:
 
 
 def _index_reqs_by_agent(req_dir: str, field: str, agents: list) -> list:
-    """Indexa REQs em layout by_agent: req_dir/<agente>/<estado>/"""
-    if not agents:
-        try:
-            agents = [e for e in os.listdir(req_dir)
-                      if os.path.isdir(os.path.join(req_dir, e))]
-        except OSError:
-            return []
+    """Indexa REQs em layout by_agent: req_dir/<agente>/<estado>/. `agents` é complementado pelo
+    disco via resolve_agent_namespaces, o resolvedor canônico (REQ-2026-08-29) — não substituído
+    quando declarado."""
+    agents = _config.resolve_agent_namespaces({"agents": agents or []}, req_dir)
     entries = []
     for agent in agents:
         agent_dir = os.path.join(req_dir, agent)
@@ -155,13 +154,10 @@ def _index_roadmaps(roadmap_dir: str, field: str) -> list:
 
 
 def _index_roadmaps_by_agent(roadmap_dir: str, field: str, agents: list) -> list:
-    """Indexa roadmaps em layout by_agent: roadmap_dir/<agente>/<estado>/"""
-    if not agents:
-        try:
-            agents = [e for e in os.listdir(roadmap_dir)
-                      if os.path.isdir(os.path.join(roadmap_dir, e))]
-        except OSError:
-            return []
+    """Indexa roadmaps em layout by_agent: roadmap_dir/<agente>/<estado>/. `agents` é complementado
+    pelo disco via resolve_agent_namespaces, o resolvedor canônico (REQ-2026-08-29) — não
+    substituído quando declarado."""
+    agents = _config.resolve_agent_namespaces({"agents": agents or []}, roadmap_dir)
     entries = []
     for agent in agents:
         agent_dir = os.path.join(roadmap_dir, agent)

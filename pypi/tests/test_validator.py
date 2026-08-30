@@ -48,6 +48,12 @@ class TestListDir(unittest.TestCase):
 
 
 class TestResolveWipDirs(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
     def test_modo_flat(self):
         cfg = _config.defaults()
         cfg["roadmap_namespacing"] = "flat"
@@ -55,15 +61,35 @@ class TestResolveWipDirs(unittest.TestCase):
         result = v.resolve_wip_dirs(cfg)
         self.assertEqual(result, ["docs/roadmaps/wip"])
 
-    def test_modo_by_agent_com_agents_configurados(self):
+    def test_modo_by_agent_com_agents_configurados_e_nada_em_disco(self):
+        """agents: configurados, sem nada em disco (roadmap_dir isolado, inexistente) — resultado
+        é exatamente a lista declarada, na ordem declarada (não-regressão do caso comum, AC7)."""
+        roadmap_dir = os.path.join(self.tmp, "docs", "roadmaps")
         cfg = _config.defaults()
         cfg["roadmap_namespacing"] = "by_agent"
-        cfg["roadmap_dir"] = "docs/roadmaps"
+        cfg["roadmap_dir"] = roadmap_dir
         cfg["agents"] = ["apolo", "afrodite"]
         result = v.resolve_wip_dirs(cfg)
         self.assertEqual(result, [
-            "docs/roadmaps/apolo/wip",
-            "docs/roadmaps/afrodite/wip",
+            os.path.join(roadmap_dir, "apolo", "wip"),
+            os.path.join(roadmap_dir, "afrodite", "wip"),
+        ])
+
+    def test_modo_by_agent_agents_configurados_complementados_pelo_disco(self):
+        """AC1 — agents: declara [apolo, afrodite], mas há um 3º namespace ('zeus') só em disco.
+        A união deve incluir 'zeus' também — não substitui o disco, complementa."""
+        roadmap_dir = os.path.join(self.tmp, "docs", "roadmaps")
+        for agent in ["apolo", "zeus"]:
+            os.makedirs(os.path.join(roadmap_dir, agent, "wip"))
+        cfg = _config.defaults()
+        cfg["roadmap_namespacing"] = "by_agent"
+        cfg["roadmap_dir"] = roadmap_dir
+        cfg["agents"] = ["apolo", "afrodite"]
+        result = v.resolve_wip_dirs(cfg)
+        self.assertEqual(result, [
+            os.path.join(roadmap_dir, "apolo", "wip"),
+            os.path.join(roadmap_dir, "afrodite", "wip"),
+            os.path.join(roadmap_dir, "zeus", "wip"),
         ])
 
 
