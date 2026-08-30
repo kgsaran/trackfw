@@ -176,14 +176,23 @@ jobs:
     runs-on: windows-latest
     continue-on-error: true
     timeout-minutes: 60
-    env:
-      GOPATH: ${{ runner.temp }}\gopath
-      GOMODCACHE: ${{ runner.temp }}\gomodcache
-      GOCACHE: ${{ runner.temp }}\gocache
-      npm_config_cache: ${{ runner.temp }}\npm-cache
-      PIP_CACHE_DIR: ${{ runner.temp }}\pip-cache
     steps:
       - uses: actions/checkout@v7
+
+      - name: Fixar caches fora do home sintético (AC12)
+        # env: de JOB não aceita o contexto `runner` (só github, inputs, vars,
+        # secrets, strategy, matrix, needs) — por isso este step grava em
+        # $GITHUB_ENV, herdado por todos os steps seguintes do job, em vez de
+        # um `env:` de job. Continua valendo para o job inteiro, como a AC12
+        # exige (setup-go/setup-node/pip incluídos, não só as suítes).
+        shell: pwsh
+        run: |
+          "GOPATH=$env:RUNNER_TEMP\gopath" >> $env:GITHUB_ENV
+          "GOMODCACHE=$env:RUNNER_TEMP\gomodcache" >> $env:GITHUB_ENV
+          "GOCACHE=$env:RUNNER_TEMP\gocache" >> $env:GITHUB_ENV
+          "npm_config_cache=$env:RUNNER_TEMP\npm-cache" >> $env:GITHUB_ENV
+          "PIP_CACHE_DIR=$env:RUNNER_TEMP\pip-cache" >> $env:GITHUB_ENV
+
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
@@ -309,14 +318,23 @@ jobs:
     runs-on: windows-latest
     continue-on-error: true
     timeout-minutes: 20
-    env:
-      GOPATH: ${{ runner.temp }}\gopath
-      GOMODCACHE: ${{ runner.temp }}\gomodcache
-      GOCACHE: ${{ runner.temp }}\gocache
-      npm_config_cache: ${{ runner.temp }}\npm-cache
-      PIP_CACHE_DIR: ${{ runner.temp }}\pip-cache
     steps:
       - uses: actions/checkout@v7
+
+      - name: Fixar caches fora do home sintético (AC12)
+        # Mesmo motivo do job windows-full-suites acima: env: de JOB não
+        # aceita o contexto `runner` — só env: de step, with: e run: o
+        # aceitam. Step de setup gravando em $GITHUB_ENV replica o efeito de
+        # um env: de job (vale para todos os steps seguintes) sem violar o
+        # schema.
+        shell: pwsh
+        run: |
+          "GOPATH=$env:RUNNER_TEMP\gopath" >> $env:GITHUB_ENV
+          "GOMODCACHE=$env:RUNNER_TEMP\gomodcache" >> $env:GITHUB_ENV
+          "GOCACHE=$env:RUNNER_TEMP\gocache" >> $env:GITHUB_ENV
+          "npm_config_cache=$env:RUNNER_TEMP\npm-cache" >> $env:GITHUB_ENV
+          "PIP_CACHE_DIR=$env:RUNNER_TEMP\pip-cache" >> $env:GITHUB_ENV
+
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
