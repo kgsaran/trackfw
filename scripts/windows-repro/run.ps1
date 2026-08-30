@@ -18,11 +18,17 @@
 #      mecanismo compartilhado com o item 1 (NAO via o wrapper .sh, para
 #      nao confundir com o item 7 no mapeamento)
 #   5  CRLF na escrita dos geradores Python          -> checado aqui (REAL,
-#      via `trackfw init` de verdade + varredura de bytes)
+#      via `trackfw init` de verdade + varredura de bytes). ML-1C: medido
+#      com o item 1 (cp1252) neutralizado SO neste subprocesso via
+#      PYTHONIOENCODING=utf-8, para nao mascarar o item 5 atras do crash
+#      do item 1 — documentado no proprio veredito.
 #   6  isatty() mente para NUL no Windows            -> checado aqui (REAL,
-#      via `trackfw init` com stdin=NUL, sem monkeypatch)
-#   7  sh -c hardcodado no Go (barrier.go:729)       -> checado aqui
-#      (incerto por design — depende da imagem do runner, ver ADR)
+#      via `trackfw init` com stdin=NUL, sem monkeypatch). ML-1C: mesma
+#      neutralizacao do item 5.
+#   7  sh -c hardcodado no Go (barrier.go:729)       -> checado aqui. ML-1C:
+#      reclassificado — a pergunta "sh existe?" ja foi respondida (ABSENT);
+#      agora compara o VEREDITO do mesmo gate nos 3 runtimes (Go via sh -c
+#      POSIX, Node/Python via cmd.exe no Windows).
 #   8  postura divergente com \ (manager.go/js)      -> NAO checado aqui.
 #      resolve() e nao-exportado em internal/integrations/manager.go — nao
 #      da para chamar de fora sem tocar internal/ (fora do escopo desta
@@ -144,8 +150,8 @@ $item5Home = Join-Path $env:RUNNER_TEMP "item5-fake-USERPROFILE"
 New-Item -ItemType Directory -Force -Path $item5Home | Out-Null
 $r5 = Run-Capture -Exe "python" -ArgList @("scripts/windows-repro/python/checks.py", "crlf") `
     -EnvVars @{ RUNNER_TEMP = $env:RUNNER_TEMP; USERPROFILE = $item5Home; HOME = $item5Home }
-$item5Verdict = if ($r5.Stdout -match "VERDICT=REPRODUCED") { "REPRODUCED" } elseif ($r5.Stdout -match "VERDICT=ABSENT") { "ABSENT" } else { "INCONCLUSIVE" }
-Add-Result -Item "5" -Title "geradores Python escrevem CRLF (open sem newline=)" -Verdict $item5Verdict -Detail $r5.Stdout
+$item5Verdict = if ($r5.Stdout -match "VERDICT=REPRODUCED") { "REPRODUCED" } elseif ($r5.Stdout -match "VERDICT=ABSENT") { "ABSENT" } elseif ($r5.Stdout -match "VERDICT=BLOCKED-BY-ITEM-1") { "BLOCKED-BY-ITEM-1" } else { "INCONCLUSIVE" }
+Add-Result -Item "5" -Title "geradores Python escrevem CRLF (open sem newline=; ML-1C: medido com item 1 neutralizado via PYTHONIOENCODING=utf-8)" -Verdict $item5Verdict -Detail $r5.Stdout
 
 # ---------------------------------------------------------------------
 # item 6 — isatty() mente para NUL
@@ -159,15 +165,56 @@ $item6Home = Join-Path $env:RUNNER_TEMP "item6-fake-USERPROFILE"
 New-Item -ItemType Directory -Force -Path $item6Home | Out-Null
 $r6 = Run-Capture -Exe "python" -ArgList @("scripts/windows-repro/python/checks.py", "isatty") `
     -EnvVars @{ USERPROFILE = $item6Home; HOME = $item6Home }
-$item6Verdict = if ($r6.Stdout -match "VERDICT=REPRODUCED") { "REPRODUCED" } elseif ($r6.Stdout -match "VERDICT=ABSENT") { "ABSENT" } else { "INCONCLUSIVE" }
-Add-Result -Item "6" -Title "sys.stdin.isatty() mente True para NUL" -Verdict $item6Verdict -Detail $r6.Stdout
+$item6Verdict = if ($r6.Stdout -match "VERDICT=REPRODUCED") { "REPRODUCED" } elseif ($r6.Stdout -match "VERDICT=ABSENT") { "ABSENT" } elseif ($r6.Stdout -match "VERDICT=BLOCKED-BY-ITEM-1") { "BLOCKED-BY-ITEM-1" } else { "INCONCLUSIVE" }
+Add-Result -Item "6" -Title "sys.stdin.isatty() mente True para NUL (ML-1C: medido com item 1 neutralizado via PYTHONIOENCODING=utf-8)" -Verdict $item6Verdict -Detail $r6.Stdout
 
 # ---------------------------------------------------------------------
-# item 7 — sh -c hardcodado (incerto por design)
+# item 7 — sh -c hardcodado (reclassificado, ML-1C)
+#
+# A pergunta "sh existe no PATH do runner?" ja foi respondida (ABSENT, ML-1A
+# via checks.go shc) e essa evidencia auxiliar e mantida abaixo. A pergunta
+# que falta e a que a Wave 0 apontou: Go avalia gates via `sh -c` (POSIX,
+# barrier.go:729) enquanto Node (spawnSync shell:true, barrier.js:561) e
+# Python (subprocess.run shell=True, barrier.py:582) resolvem para cmd.exe
+# no Windows — o MESMO texto de `**Gates da wave:**` produz o MESMO
+# veredito visivel nos 3? Roda o MESMO literal de comando (aspas simples +
+# redirecionamento POSIX /dev/null, que diverge de proposito entre sh e
+# cmd.exe) via os 3 primitivos reais e compara o stdout bruto.
 # ---------------------------------------------------------------------
-$r7 = Run-Capture -Exe "go" -ArgList @("run", "scripts/windows-repro/go/checks.go", "shc")
-$item7Verdict = if ($r7.Stdout -match "sh-not-found") { "REPRODUCED" } elseif ($r7.Stdout -match "sh-ran-ok") { "ABSENT" } else { "INCONCLUSIVE" }
-Add-Result -Item "7" -Title "sh -c hardcodado no Go (incerto — depende da imagem do runner)" -Verdict $item7Verdict -Detail $r7.Stdout
+$r7shPresence = Run-Capture -Exe "go" -ArgList @("run", "scripts/windows-repro/go/checks.go", "shc")
+$r7ShPresenceVerdict = if ($r7shPresence.Stdout -match "sh-not-found") { "ausente" } elseif ($r7shPresence.Stdout -match "sh-ran-ok") { "presente" } else { "indeterminado" }
+
+$r7Go = Run-Capture -Exe "go" -ArgList @("run", "scripts/windows-repro/go/checks.go", "gatequote")
+$r7Node = Run-Capture -Exe "node" -ArgList @("scripts/windows-repro/node/checks.js", "gatequote")
+$r7Py = Run-Capture -Exe "python" -ArgList @("scripts/windows-repro/python/checks.py", "gatequote")
+
+function Get-GateQuoteToken {
+    param([string]$Stdout)
+    # Normaliza CRLF/LF (artefato de captura, nao de semantica de shell) e
+    # extrai o texto entre os marcadores STDOUT_BEGIN/STDOUT_END.
+    $normalized = ($Stdout -replace "`r`n", "`n").Trim()
+    if ($normalized -match "(?s)STDOUT_BEGIN\n(.*)\nSTDOUT_END") {
+        return $matches[1].Trim()
+    }
+    return "<sem-STDOUT_BEGIN/END: $normalized>"
+}
+
+$goToken = Get-GateQuoteToken -Stdout $r7Go.Stdout
+$nodeToken = Get-GateQuoteToken -Stdout $r7Node.Stdout
+$pyToken = Get-GateQuoteToken -Stdout $r7Py.Stdout
+
+$item7Detail = @"
+Evidencia auxiliar (ML-1A): sh no PATH do runner -> $r7ShPresenceVerdict
+$($r7shPresence.Stdout)
+
+Comparacao de veredito do MESMO gate nos 3 runtimes (ML-1C):
+Go   (sh -c, POSIX)          -> $goToken
+Node (spawnSync shell:true)  -> $nodeToken
+Python (subprocess shell=True) -> $pyToken
+"@
+
+$item7Verdict = if (($goToken -ne $nodeToken) -or ($goToken -ne $pyToken) -or ($nodeToken -ne $pyToken)) { "REPRODUCED" } else { "ABSENT" }
+Add-Result -Item "7" -Title "Go (sh POSIX) vs Node/Python (cmd.exe) avaliam o MESMO gate de wave diferente" -Verdict $item7Verdict -Detail $item7Detail
 
 # ---------------------------------------------------------------------
 # item 8 — declarado, nao checado (residual)
@@ -272,8 +319,9 @@ $results | Format-Table -AutoSize | Out-String | Write-Host
 
 $reproduced = @($results | Where-Object { $_.Verdict -eq "REPRODUCED" })
 $inconclusive = @($results | Where-Object { $_.Verdict -eq "INCONCLUSIVE" })
+$blocked = @($results | Where-Object { $_.Verdict -eq "BLOCKED-BY-ITEM-1" })
 
-Write-Host "Reproduzidos: $($reproduced.Count) | Inconclusivos: $($inconclusive.Count) | Total de linhas: $($results.Count)"
+Write-Host "Reproduzidos: $($reproduced.Count) | Inconclusivos: $($inconclusive.Count) | Bloqueados por dependencia (item 1): $($blocked.Count) | Total de linhas: $($results.Count)"
 
 if ($env:GITHUB_STEP_SUMMARY) {
     $md = "## Suite de reproducao de defeito — AC2/AC2b/AC3`n`n"
@@ -283,9 +331,12 @@ if ($env:GITHUB_STEP_SUMMARY) {
 }
 
 # A suite PRECISA nascer vermelha (AC2): sai 1 se algum item reproduziu o
-# defeito conhecido (esperado, pre-correcao) OU se algo ficou inconclusivo
-# sem justificativa esperada.
-if ($reproduced.Count -gt 0 -or $inconclusive.Count -gt 0) {
+# defeito conhecido (esperado, pre-correcao), se algo ficou inconclusivo
+# sem justificativa esperada, ou se um item ficou BLOQUEADO por dependencia
+# de outro defeito ainda nao corrigido (ML-1C: informacao perdida != item
+# resolvido — precisa continuar sinalizando vermelho ate a dependencia
+# (item 1) ser corrigida).
+if ($reproduced.Count -gt 0 -or $inconclusive.Count -gt 0 -or $blocked.Count -gt 0) {
     exit 1
 }
 exit 0

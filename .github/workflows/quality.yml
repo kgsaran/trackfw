@@ -245,7 +245,18 @@ jobs:
           Write-Host "AC12 — isolação confirmada para os 3 runtimes."
 
       - name: Go — suíte completa (camada 1, AC1)
-        if: steps.precondition.outcome == 'success'
+        # always() && <condição>: sem always() aqui, o GitHub Actions
+        # prepende success() implicitamente a qualquer if: sem função de
+        # status (doc oficial) — então, quando o step Go falha, os steps
+        # Node/Python seguintes eram pulados mesmo com
+        # `steps.precondition.outcome == 'success'` == true, porque o
+        # success() implícito já era falso (medido no PR #221, run
+        # 33322373895: Go -> failure, Node/Python -> skipped). always()
+        # substitui esse success() implícito por "sempre avalia minha
+        # condição", preservando a precondição da AC12 como ÚNICO portão de
+        # entrada — não é um always() cego (não roda quando a precondição
+        # falhou).
+        if: always() && steps.precondition.outcome == 'success'
         shell: pwsh
         env:
           HOME: ${{ steps.home.outputs.home }}
@@ -254,7 +265,9 @@ jobs:
         run: go test -p 1 -parallel 1 -timeout 20m ./...
 
       - name: Node — suíte completa (camada 1, AC1)
-        if: steps.precondition.outcome == 'success'
+        # always() && <condição>: ver comentário no step "Go — suíte
+        # completa" acima — mesmo motivo, mesma correção (ML-1C).
+        if: always() && steps.precondition.outcome == 'success'
         shell: pwsh
         working-directory: npm
         env:
@@ -271,7 +284,9 @@ jobs:
         run: node --test --test-concurrency=1
 
       - name: Python — suíte completa (camada 1, AC1)
-        if: steps.precondition.outcome == 'success'
+        # always() && <condição>: ver comentário no step "Go — suíte
+        # completa" acima — mesmo motivo, mesma correção (ML-1C).
+        if: always() && steps.precondition.outcome == 'success'
         shell: pwsh
         env:
           HOME: ${{ steps.home.outputs.home }}

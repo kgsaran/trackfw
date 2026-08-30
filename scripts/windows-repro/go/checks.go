@@ -26,7 +26,7 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "uso: checks.go <home|execbit|shc>")
+		fmt.Fprintln(os.Stderr, "uso: checks.go <home|execbit|shc|gatequote>")
 		os.Exit(2)
 	}
 	switch os.Args[1] {
@@ -36,6 +36,8 @@ func main() {
 		cmdExecBit()
 	case "shc":
 		cmdShC()
+	case "gatequote":
+		cmdGateQuote()
 	default:
 		fmt.Fprintf(os.Stderr, "subcomando desconhecido: %s\n", os.Args[1])
 		os.Exit(2)
@@ -104,4 +106,39 @@ func cmdShC() {
 		return
 	}
 	fmt.Printf("sh-ran-ok output=%q\n", string(out))
+}
+
+// gateQuoteCommand é o MESMO literal usado pelos 3 runtimes (run.ps1 chama
+// o node/checks.js e o python/checks.py equivalentes com este texto). Não é
+// um teste de "sh existe" (isso o item 7 antigo já respondeu — ver cmdShC
+// acima, mantido como evidência auxiliar) — é um teste de "o mesmo texto de
+// gate produz o MESMO veredito visível nos 3 runtimes". Combina os dois
+// vetores que a Wave 0/ML-1C sugeriram: aspas simples (sh remove, cmd.exe
+// NÃO remove — cmd.exe não trata ' como caractere de quoting) e um
+// redirecionamento POSIX (`/dev/null`, que não existe como device no
+// Windows — cmd.exe tenta resolver como caminho de arquivo e falha). Em vez
+// de comparar código de saída (frágil — algumas falhas de redirecionamento
+// no cmd.exe ainda retornam 0 dependendo da build), compara o TOKEN visível
+// que sobrevive no stdout, que é o que um `**Gates da wave:**` real usaria
+// para decidir passou/não passou caso o comando fizesse `grep` no próprio
+// output.
+const gateQuoteCommand = "echo start > /dev/null 2>&1 && echo 'trackfw-gate-verdict-A' || echo 'trackfw-gate-verdict-B'"
+
+// item 7 (reclassificado, ML-1C) — replica o MESMO primitivo que
+// internal/commands/barrier.go:729 usa em produção: exec.Command("sh", "-c",
+// command). npm/src/commands/barrier.js:561 usa spawnSync(command, {shell:
+// true}) e pypi/trackfw/commands/barrier.py:582 usa subprocess.run(cmd,
+// shell=True) — no Windows, ambos resolvem para cmd.exe. run.ps1 roda os
+// equivalentes Node/Python com o MESMO gateQuoteCommand e compara os 3
+// stdouts brutos.
+func cmdGateQuote() {
+	c := exec.Command("sh", "-c", gateQuoteCommand)
+	out, err := c.CombinedOutput()
+	if err != nil {
+		if _, ok := err.(*exec.Error); ok {
+			fmt.Printf("sh-not-found err=%v\n", err)
+			return
+		}
+	}
+	fmt.Printf("STDOUT_BEGIN\n%s\nSTDOUT_END\n", string(out))
 }
