@@ -10,8 +10,8 @@
 - [barrier-crlf-divergencia-node-regex-2026-08-29](barrier-crlf-divergencia-node-regex-2026-08-29.md) — CRLF: `.` do JS exclui `\r` e o do RE2 inclui; roadmap do Windows fica ilegível no CLI Node
 - [barrier-trust-check-fail-open-em-tmpdir-simbolico-2026-08-29](barrier-trust-check-fail-open-em-tmpdir-simbolico-2026-08-29.md) — NÃO CORRIGIDO: `roadmapTrustForGates` cai em fail-open (executa gates de verdade) quando o sandbox vive sob `$TMPDIR` com componente simbólico (macOS)
 - [update-segue-symlink-e-escreve-fora-do-projeto-2026-08-28](update-segue-symlink-e-escreve-fora-do-projeto-2026-08-28.md) — `update`/`discover` seguiam symlink em `.github/workflows/`; corrigido com `lstat` + recusa
-- [barrier-so-casa-cabecalho-de-aceite-em-portugues-2026-08-28](barrier-so-casa-cabecalho-de-aceite-em-portugues-2026-08-28.md) — NÃO CORRIGIDO: todo roadmap gerado pelo `roadmap new` é reprovado pelo `barrier`
-- [barrier-fence-closing-trailing-content-bypass-2026-08-29](barrier-fence-closing-trailing-content-bypass-2026-08-29.md) — NÃO CORRIGIDO: linha de fechamento de cerca com sufixo não fecha (CommonMark), bypass total de `mls_complete`+`acceptance_evidence` nos 3 CLIs
+- [barrier-so-casa-cabecalho-de-aceite-em-portugues-2026-08-28](barrier-so-casa-cabecalho-de-aceite-em-portugues-2026-08-28.md) — **CORRIGIDO** no PR #217: `barrier` aceita as duas formas de cabeçalho
+- [barrier-fence-closing-trailing-content-bypass-2026-08-29](barrier-fence-closing-trailing-content-bypass-2026-08-29.md) — **CORRIGIDO** no PR #217 (ML-3D): fechamento exige só os caracteres da cerca
 - [roadmap-title-newline-forges-wave-section-barrier-executes-gate-2026-08-23](roadmap-title-newline-forges-wave-section-barrier-executes-gate-2026-08-23.md) — NÃO CORRIGIDO
 - [rewrite-frontmatter-newline-injection-escape-hatch-2026-08-21](rewrite-frontmatter-newline-injection-escape-hatch-2026-08-21.md)
 - [nil-map-em-projectconfig-campo-novo-atinge-construcoes-antigas-2026-08-21](nil-map-em-projectconfig-campo-novo-atinge-construcoes-antigas-2026-08-21.md)
