@@ -26725,3 +26725,88 @@ edição do workflow.
 
 **Discordância do diagnóstico:** nenhuma — o diagnóstico do `hefesto-tf`/arquiteto está correto e a
 medição fecha exatamente a lacuna apontada.
+
+---
+
+## Sessão 2026-08-31 — hades-tf (INÍCIO: ML-0A — modelo de ameaça da guarda de ancestral)
+
+Branch `fix/guarda-de-folha-resolve-o-caminho-e-afirma-contencao-antes-de-escrever`.
+
+Escopo: Wave 0 (análise, sem implementação) do
+`ROADMAP-2026-08-31-guarda-de-folha-resolve-o-caminho-e-afirma-contencao-antes-de-escrever.md`.
+Defeito: guarda de folha faz `Lstat` só no último componente do caminho; ancestral symlink nunca é
+inspecionado — vale em todo SO e todo runtime, sem precisar de junction. Entregável: enumeração real
+pelos primitivos de escrita (não por `ModeSymlink`, que é cego para quem escreve sem checar link
+nenhum), modelo de ameaça, falsificação nas duas direções (incluindo controle de não-regressão), e
+residual, em `docs/seguranca/2026-08-31-modelo-de-ameaca-da-guarda-de-ancestral.md`. A REQ já nomeia
+a forma do remédio (resolver-e-afirmar-contenção) e pede contestação explícita se eu vir problema.
+
+---
+
+## Sessão 2026-08-31 — hades-tf (FIM: ML-0A — modelo de ameaça da guarda de ancestral — CONCLUÍDO)
+
+Branch `fix/guarda-de-folha-resolve-o-caminho-e-afirma-contencao-antes-de-escrever`.
+
+**Entregável:** `docs/seguranca/2026-08-31-modelo-de-ameaca-da-guarda-de-ancestral.md` (297 linhas,
+gate local rodado: existe, sem "placeholder", contém "Residual" — todos OK). Nenhuma linha de
+implementação escrita, conforme critério de aceite do ML.
+
+**Achado principal — a enumeração da REQ era subestimação, não erro de leitura.** Além das 3 guardas
+de folha já nomeadas (`update.go:1869,1894`, `discover.go:268` + pares), encontrei uma família nova e
+maior (~150 sites vs ~10) de escritas **sem checagem alguma** — nem de folha, nem de ancestral:
+`trackfw update harness` (escopo global, `$HOME/.claude`, `.codex`, `.gemini`, `.cursor`, `.copilot`,
+`.kiro` — SKILL.md, `settings.json`, `hooks.json`, scripts de credential-guard/git-branch-guard) e os
+geradores de artefato de projeto (`req new`, `roadmap new`, `adr new`, `note new`, hooks de
+`init`/husky/lefthook). Comprovei exploração ao vivo com o binário Go real, fora do repositório
+(scratchpad):
+- **PoC A** — symlink ancestral em `docs/req/` → `trackfw req new` escreveu o REQ fora da árvore do
+  projeto, `exit 0`, sem aviso.
+- **PoC B** — symlink pré-existente em `$HOME/.claude` → `trackfw update harness --install-missing`
+  escreveu `SKILL.md` fora de `$HOME`, `updated=1 failed=0`, sem aviso.
+
+**Contra-proposta à forma resolver-e-afirmar-contenção (não contestei a forma, contestei a
+soletração):** medi dois jeitos concretos de a implementação "óbvia" quebrar sem link malicioso
+nenhum — (i) `EvalSymlinks`/`realpathSync` erram sobre caminho cuja folha ainda não existe (o caso
+dominante: criar arquivo novo), então a Wave 1 tem que resolver o **diretório-pai** e só depois juntar
+a folha, não resolver o caminho completo; (ii) comparar `destination` resolvido contra `root` **não**
+resolvido produz falso positivo — medido com `/tmp`→`/private/tmp` no macOS (symlink de sistema, não
+malicioso) — a Wave 1 tem que resolver os dois lados antes de comparar. Ambos viram requisito
+explícito no documento, seção 3.2, não nota de rodapé. Terceiro achado: Python `Path.resolve(strict=
+False)` tolera folha inexistente nativamente, Go/Node não — confirma que a REQ acertou ao nomear
+primitivas diferentes por runtime em vez de uma fórmula única; a Wave 1 tem que soletrar a sequência
+por runtime.
+
+**Residual declarado:** TOCTOU entre resolver e escrever não é eliminado (aceito, mesma janela que a
+REQ já aceitou ao descartar `Lstat` por componente); `root` em `rejectSymlinks`/`assertNoSymlinks`
+(padrão já correto) não verifica se o próprio `root` é symlink (fora de escopo desta REQ); delta de
+contagem Go (80 medido vs 85 citado pela REQ) não reconciliado; `.trackfw-attention.json` sem
+checagem mas risco baixo; enumeração por família, não site-a-site dos ~228 brutos; PoCs só em macOS.
+
+**Decisão que deixo explícita para o arquiteto, não tomada por mim:** a Wave 1 cobrir só os 3 sites
+de folha (fecha a letra da REQ, deixa os PoCs A e B abertos) ou generalizar para um helper único
+chamado por toda escrita derivada de `root`/`home` (fecha a ameaça real, exige repartição maior).
+
+**Vault:** nenhuma nota nova escrita — o achado já está inteiramente documentado no parecer de
+`docs/seguranca/`, que é o artefato correto para threat model, e o vault já tem
+`lstat-nao-ve-junction-e-guarda-de-folha-nao-olha-ancestral-2026-08-31.md` cobrindo o contexto de
+origem do defeito.
+
+## 2026-08-31 — Fecho do instrumento de Windows e parada da guarda em `analyzing` (zeus-tf)
+
+**Fechada** a `REQ-2026-08-30-ci-nao-exercita-windows-...` e seu roadmap movido a `done/`. O critério
+*"o job de Windows reprovando pelos motivos esperados"* **expirou de propósito**: correto enquanto o
+entregável era o instrumento, ele se inverteria contra nós a partir da primeira correção, porque cada
+item corrigido sai de `REPRODUCED`. `hefesto-tf` identificou a contradição ao analisar os PRs do
+Lourival. Linha de base congelada: **8/11**.
+
+**Guarda de ancestral** movida de `wip/` para `analyzing/` — Wave 0 concluída, **nenhuma linha de
+código escrita**, então `wip` estava mentindo sobre o estado.
+
+**Observação de governança:** com o roadmap em `analyzing/`, o `validate` avisa que a branch `fix/`
+não tem roadmap em `wip/`. É `exit 0` (aviso, não erro), mas revela que a regra `branch_has_wip_roadmap`
+não modela o estado *"branch que fez só análise de Wave 0"* — que é legítimo e foi exatamente o nosso
+caso. Candidato a REQ futura; **não** aberta agora para não expandir escopo.
+
+**Próximo:** portar as correções dos PRs #222–#225 do Lourival (os quatro valem inteiros, ver
+`docs/analises/2026-08-31-aproveitamento-dos-prs-222-225.md`), começando pelo #223 (item 1, cp1252),
+que destrava a medição dos itens 5 e 6. Guarda de ancestral em seguida.

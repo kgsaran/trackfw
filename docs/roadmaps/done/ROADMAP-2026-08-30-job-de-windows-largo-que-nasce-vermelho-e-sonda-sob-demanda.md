@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-08-30
 req: "docs/req/REQ-2026-08-30-ci-nao-exercita-windows-e-os-sete-defeitos-da-issue-216-sao-invisiveis-para-o-projeto.md"
 squad: "hades-tf, ares-tf, artemis-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, ares-tf, artemis-tf"
 
 # Roadmap: Job de Windows largo que nasce vermelho, e sonda sob demanda
 
-> Created: 2026-08-30 | Status: wip
+> Created: 2026-08-30 | Status: done
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
@@ -682,3 +682,28 @@ point do `mklink /J`, e portanto se a guarda que entregamos esta semana vale em 
 Revisão `hefesto-tf` e `hades-tf`, auditoria do arquiteto e `barrier --wave 3`. **Só declarar
 concluído com o CI verde** — e aqui "verde" significa: os demais jobs verdes **e** o job de Windows
 reprovando pelos motivos esperados e mapeados.
+
+### Barreira final SATISFEITA e roadmap encerrado (2026-08-31)
+
+`hefesto-tf` e `hades-tf` revisaram (pareceres de 2026-08-30), o arquiteto auditou, `barrier --wave 3`
+passou nos quatro checks, e o CI ficou verde no sentido definido acima: **demais jobs verdes e o job
+de Windows reprovando pelos motivos esperados e mapeados** — `8 REPRODUCED / 0 inconclusivos / 11
+itens`, no PR #221 e reconfirmado no #226.
+
+#### O critério "reprovando pelos motivos esperados" expira aqui — de propósito
+
+Este roadmap entregou o **instrumento**. A partir do próximo PR de **correção**, cada item corrigido
+sai de `REPRODUCED` e a contagem **tem de cair** — é o sinal de progresso, não de regressão. Manter
+este roadmap aberto com o critério acima tornaria toda correção uma violação da própria governança:
+`hefesto-tf` identificou exatamente essa contradição ao analisar os PRs #222–#225.
+
+**A linha de base fica congelada e citável como estava**: 8 de 11, medida nos runs `33322373895`
+(#221) e no run de quality do #226. Quem for portar correção cita **este** número.
+
+**Regra que passa a valer para as REQs de correção:** todo item que sair de `REPRODUCED` é explicado
+no roadmap da REQ que o corrigiu, com o run que mediu a mudança. A contagem deixa de ser um alvo
+fixo e passa a ser um **contador decrescente com histórico**.
+
+**Restam 3 `REPRODUCED` fora do alcance dos PRs do Lourival:** item 4 (gate de cobertura, cp1252),
+item 7 (semântica de shell entre Go e Node/Python) e item 10 (separador de SO no frontmatter,
+confirmado em Go **e** Node).
