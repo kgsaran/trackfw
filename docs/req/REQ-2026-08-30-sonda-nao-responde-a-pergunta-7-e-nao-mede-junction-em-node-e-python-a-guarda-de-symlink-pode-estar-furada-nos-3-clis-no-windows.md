@@ -1,0 +1,153 @@
+---
+status: Open
+date: 2026-08-30
+author: "zeus-tf"
+adr: "docs/adr/ADR-2026-08-30-ci-de-windows-como-instrumento-de-medicao-job-largo-que-nasce-vermelho-mais-sonda-sob-demanda.md"
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-30-sonda-mede-junction-nos-3-runtimes-e-a-pergunta-7-volta-a-responder.md"
+---
+
+# REQ: Sonda não responde a pergunta 7 e não mede junction em Node e Python — a guarda de symlink pode estar furada nos 3 CLIs no Windows
+
+> Date: 2026-08-30 | Status: Open
+
+## Motivation
+
+**A sonda pagou o próprio custo na primeira execução pós-merge** (run `33338382066`, `main`) e o que
+ela devolveu invalida uma premissa que já tratávamos como fechada.
+
+### O que a sonda mediu
+
+```
+lstat-symlink   →  ModeSymlink=true    ModeIrregular=false   ModeDir=false
+lstat-junction  →  ModeSymlink=false   ModeIrregular=TRUE    ModeDir=false
+stat-junction   →  ModeDir=true   (seguindo o link)
+```
+
+**O `os.Lstat` do Go não marca uma junction como `ModeSymlink`; marca como `ModeIrregular`.** E a
+junction é criada com `cmd /c mklink /J`, que **não exige privilégio algum** — ao contrário de
+`os.Symlink`, que exige Developer Mode. A consequência é perversa: no Windows a guarda captura o
+caso que exige privilégio e deixa passar o que não exige.
+
+### O que isso quebra — e o que NÃO quebra
+
+A primeira leitura ("as nove guardas estão furadas") está errada, e a forma correta muda a
+severidade. **Junction é reparse point de diretório**: não se planta uma junction num caminho de
+arquivo. Separando:
+
+| Guarda | Alvo | Situação |
+|---|---|---|
+| `internal/integrations/manager.go:702` `rejectSymlinks` | caminha ancestrais | 🔴 **Furada.** É a única guarda que percorre a cadeia justamente para recusar link em qualquer ponto dela. Junction num ancestral tem `ModeSymlink=false`, não é recusada, o caminho segue. |
+| `internal/integrations/manager.go:582` `removeEmptyAncestors` **(só Go)** | diretório | 🟡 **Salva por acidente — e só no Go.** `Lstat` de junction devolve `ModeDir=false`, então cai no `if !info.IsDir() { return nil }` e para. Funciona pelo motivo errado. |
+| `npm/src/integrations/manager.js:420` `cleanEmpty` | diretório | 🔴 **Sem o teste de tipo.** Não testa `isDirectory()`; depende de `readdirSync(directory).length` ser truthy. Se `readdirSync` seguir a junction e o alvo estiver vazio, segue para o `rmdirSync`. **Contenção geográfica já existe** (`rel`/`isAbsolute`). |
+| `pypi/trackfw/integrations/manager.py:589` `_remove_empty` | diretório | 🔴 **Sem o teste de tipo.** Não testa `IsDir` nem vazio — depende só de `except OSError: return` em volta do `rmdir()`. Se o `rmdir()` tiver sucesso sobre uma junction, o laço **continua subindo**, ao contrário do Go, que para. **A subida é limitada ao `root`** (`while directory != root and root in directory.parents`) — a contenção geográfica existe; falta o teste de tipo. |
+| `internal/generators/update.go:1869`, `:1894`, `internal/discover/discover.go:268` | arquivo (folha) | 🔴 **Furadas por outra via, e não só no Windows.** Fazem `Lstat` apenas na folha. `Lstat` só deixa de seguir o **último** componente do caminho; ancestrais são **sempre** seguidos. Logo um symlink — ou uma junction — num diretório ancestral redireciona a escrita para fora do projeto sem que nenhuma delas olhe. **Esta metade é independente de plataforma.** |
+
+### Correção da classificação acima (ML-0A, `hades-tf`, 2026-08-30)
+
+**A primeira versão desta tabela tratava a segunda classe como uma só, "salva por acidente".
+Errado — o freio existe apenas no Go.** `hades-tf` leu `manager.js:420` e `manager.py:589` linha a
+linha e nenhum dos dois testa `isDirectory()`/`S_ISDIR` antes de agir sobre o diretório. Confirmado
+por leitura direta na auditoria.
+
+Isso muda o remédio, e é exatamente por isso que a Wave 0 existe: **no Go a correção é tornar
+intencional um freio que já existe; em Node e Python é *adicionar o teste de tipo ao lado do teste de
+link que já está lá*** — não "adicionar contenção", que já existe nos três (correção do `hades-tf` na
+barreira final). Tratar os três como a mesma classe teria produzido o roadmap de correção errado em
+dois dos três CLIs — e passaria pelos gates de paridade, porque paridade mede se as implementações
+concordam entre si, não se o contrato está correto.
+
+### As duas coisas que ainda não sabemos — e por isso esta REQ existe
+
+1. **A pergunta 7 da sonda falhou** (step 19, run `33338382066`). Não é "a sonda rodou com sucesso":
+   uma de sete perguntas voltou sem resposta, e é a irmã desta — *o que um `git checkout`
+   materializa para um symlink versionado no Windows*. Salvou-se um dado: `core.symlinks = true`.
+
+   **Correção do diagnóstico (2026-08-31).** A primeira redação desta REQ dizia que *"em PowerShell
+   a vírgula constrói array, então o git recebeu três argumentos"*. **Errado.** `ares-tf` reproduziu
+   localmente e eu confirmei com `pwsh` + exe nativo:
+
+   ```
+   modo expressão   $arr = 120000,$blob,"mylink"   →  Object[], 3 elementos      ← vírgula constrói array
+   modo argumento   & exe 120000,$blob,mylink      →  1 arg, "$blob" LITERAL     ← nem array, nem interpolação
+   forma citada     & exe "120000,$blob,mylink"    →  1 arg, interpolado         ← o remédio
+   ```
+
+   A vírgula constrói array **em modo expressão**; em **modo argumento** (invocação de executável
+   nativo) o token chega como **uma** string e, pior, **a variável não é interpolada** — o git
+   recebeu o texto literal `$blob` como sha1. O erro
+   `option 'cacheinfo' expects <mode>,<sha1>,<path>` me levou à conclusão errada porque é compatível
+   com as duas hipóteses. **O remédio muda com o diagnóstico**: não é "juntar os argumentos", é
+   **citar a string**. Quem aplicasse a correção pela leitura antiga poderia escapar vírgulas e
+   continuar sem interpolação.
+2. **Node e Python não foram medidos.** Há hipótese — libuv mapeia reparse points para symlink, o
+   que faria `lstatSync().isSymbolicLink()` pegar junction; `os.path.islink` do Python
+   provavelmente não pega — mas **hipótese não decide nada**. Sob a regra dura de paridade,
+   *"defeito só do Go"* e *"divergência entre os três"* são correções diferentes, com roadmaps
+   diferentes. Medir primeiro é o que impede escrever o roadmap errado.
+
+### Consequência de governança que esta REQ registra
+
+A `REQ-2026-08-29-namespace-de-agente-nao-declarado-em-agents-fica-invisivel-e-o-validate-reporta-limpo-sem-olhar.md`
+está **`Done`** com o **AC12** afirmando *"a enumeração **não segue symlink**. Verificável nos 3
+CLIs"*. Essa afirmação é **verdadeira no Linux e falsa no Windows para junction**. Pela regra do
+projeto, AC marcado que contradiz o medido é bug no artefato — não rodapé. Esta REQ exige a nota de
+correção **na REQ original**, sem reabri-la nem reescrever seu histórico.
+
+### Por que medir antes de corrigir
+
+O candidato a correção já saiu da própria sonda — testar `ModeSymlink|ModeIrregular` em vez de só
+`ModeSymlink`. Mas `ModeIrregular` no Windows também cobre devices, pipes nomeados e outros reparse
+points; adotá-lo sem medir arrisca trocar um falso negativo por um falso positivo que quebra uso
+legítimo. **Esta REQ não corrige guarda nenhuma** — ela produz o número que decide a correção.
+
+## Acceptance Criteria
+
+- [ ] **AC1** — A pergunta 7 volta a responder. `git update-index --cacheinfo` recebe **um único
+      argumento**, não um array do PowerShell. O step conclui `success` e imprime o que ficou em
+      disco após o `checkout` de um symlink versionado.
+- [ ] **AC2** — 🔴 **Falsificação da correção da AC1**: provar que o argumento chega íntegro, não
+      apenas que o comando parou de errar. Um `git update-index` que falhasse por outro motivo e
+      fosse silenciado também faria o step passar.
+- [ ] **AC3** — A sonda passa a medir **junction em Node**: `lstatSync()` sobre junction, imprimindo
+      `isSymbolicLink()`, `isDirectory()` e `isFile()` **crus**, ao lado do mesmo trio para um
+      symlink real e para um arquivo comum — o mesmo formato comparativo que o braço Go já usa.
+- [ ] **AC4** — A sonda passa a medir **junction em Python**: `os.path.islink()`, `os.lstat().st_mode`,
+      `stat.S_ISLNK()` e `os.readlink()` (com o erro, se levantar) sobre junction, symlink e arquivo
+      comum.
+- [ ] **AC5** — **Saída comparável entre os 3 runtimes**: a sonda imprime uma tabela final
+      `runtime × (arquivo | symlink | junction)` que permite ler a divergência sem cruzar logs à mão.
+      É o artefato que a REQ de correção vai citar.
+- [ ] **AC6** — 🔴 **A sonda continua sem veredito.** Nenhuma das perguntas novas emite pass/fail nem
+      `exit 1` por causa do *valor* medido. Sonda que ganha veredito vira job de regressão disfarçado
+      — o AC6 do ADR é explícito e inviolável.
+- [ ] **AC7** — **Nota de correção na REQ-2026-08-29**, registrando que o AC12 é verdadeiro no Linux
+      e falso no Windows para junction, com link para o run que mediu. Sem reabrir a REQ, sem
+      reescrever o AC original.
+- [ ] **AC8** — Nota de vault sobre `Lstat`/junction/`ModeIrregular`, com a separação
+      guarda-de-diretório vs guarda-de-folha-sem-ancestral. Critério: outro agente perderia mais de
+      dez minutos amanhã sem ela.
+- [ ] **AC9** — A sonda roda em `windows-latest` e o log traz as respostas novas. **Verificável só
+      pós-merge** (`workflow_dispatch` exige o workflow na branch default) — registrado como
+      verificação diferida, não marcado como satisfeito antes de existir.
+- [ ] **AC10** — `actionlint` limpo; `make quality` verde; nenhum job de `quality.yml` alterado.
+
+## Negative Scope — o que esta REQ NÃO faz
+
+- **Não corrige guarda nenhuma.** Nem `rejectSymlinks`, nem as guardas de folha, nem
+  `removeEmptyAncestors`. A correção é a REQ seguinte, e depende do número que esta produz.
+- **Não adota `ModeSymlink|ModeIrregular`.** É candidato, não decisão — carece da medição de falso
+  positivo em devices e pipes.
+- **Não reabre a REQ-2026-08-29** nem altera seu AC12. Só anexa nota de correção.
+- **Não toca `quality.yml`** nem as duas camadas de regressão. Esta REQ é só sobre a sonda.
+- **Não trata a fuga por ancestral independente de plataforma** (a metade Linux do achado). É defeito
+  real e mais grave, mas é escopo da REQ de correção — misturar as duas faria a medição competir com
+  a correção no mesmo roadmap.
+
+## Linked ADR
+
+ADR: `ADR-2026-08-30-ci-de-windows-como-instrumento-de-medicao-job-largo-que-nasce-vermelho-mais-sonda-sob-demanda.md`
+— decisão 3 (sonda sob demanda) e AC6 (sonda não é o job de regressão).
+
+## Linked Roadmap
+
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-30-sonda-mede-junction-nos-3-runtimes-e-a-pergunta-7-volta-a-responder.md`

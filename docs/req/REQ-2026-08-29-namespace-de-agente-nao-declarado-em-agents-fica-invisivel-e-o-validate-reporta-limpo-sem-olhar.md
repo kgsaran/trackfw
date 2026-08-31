@@ -81,6 +81,43 @@ defeito de harness em produção descoberto assim em dois dias — o primeiro fo
 evidência de que o nosso próprio uso não é amostra suficiente: aqui usamos `flat`, e por isso nunca
 vimos.
 
+---
+
+## Nota de correção (2026-08-31) — o AC12 é verdadeiro no Linux e **falso no Windows**
+
+> Anexada por `zeus-tf`. **A REQ não é reaberta e o AC12 acima não é reescrito** — o histórico do que
+> acreditávamos, e por quê, vale mais do que um artefato limpo.
+
+O **AC12** afirma que *"a enumeração **não segue symlink**. Verificável nos 3 CLIs"*, e exige as
+primitivas `entry.IsDir()` (Go), `dirent.isDirectory()` (Node) e `is_dir(follow_symlinks=False)`
+(Python). **Isso foi medido e é verdade — no Linux.**
+
+A sonda de Windows (`windows-probe.yml`, run
+[`33338382066`](https://github.com/kgsaran/trackfw/actions/runs/33338382066), primeira execução
+pós-merge do #221) mediu:
+
+```
+lstat-symlink   →  ModeSymlink=true    ModeIrregular=false   ModeDir=false
+lstat-junction  →  ModeSymlink=false   ModeIrregular=TRUE    ModeDir=false
+stat-junction   →  ModeDir=true   (seguindo o link)
+```
+
+**Uma *junction* do Windows não é reportada como symlink.** E ela é criada por `mklink /J`, que
+**não exige privilégio algum** — ao contrário de `os.Symlink`, que exige Developer Mode. No Windows,
+portanto, a defesa cobre o caso que exige privilégio e deixa passar o que não exige.
+
+O AC12 não está errado sobre o que mediu; está **incompleto sobre onde vale**. "Verificável nos 3
+CLIs" foi lido como "verificado em toda plataforma", e nenhum dos três CLIs foi exercitado em
+Windows quando esta REQ fechou — o instrumento que torna Windows mensurável só existiu depois
+(#221). Registrar isso importa porque a mesma frase aparece em outras REQs desta família.
+
+**O que esta nota NÃO faz:** não classifica as guardas nem propõe remédio. A separação por classe —
+guarda de diretório, guarda salva por acidente, guarda de folha que nunca olha ancestral — está na
+`REQ-2026-08-30-sonda-nao-responde-a-pergunta-7-...`, junto com a descoberta de que o freio acidental
+existe **só no Go**. A correção depende de medição que só roda pós-merge.
+
+Ver `vault/notes/lstat-nao-ve-junction-e-guarda-de-folha-nao-olha-ancestral-2026-08-31.md`.
+
 ## Linked ADR
 ADR: docs/adr/ADR-2026-08-29-lista-de-agentes-complementa-o-disco-em-vez-de-substitui-lo-e-namespace-nao-declarado-vira-violacao.md
 
