@@ -210,7 +210,7 @@ vez de simular — que era o risco que eu tinha sinalizado no handoff.
 > Dependências: Wave 1 completa.
 
 ### ML-2A — Nota de correção na REQ-2026-08-29 e nota de vault
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** arquiteto (`zeus-tf`)
 **Files affected:**
 `docs/req/REQ-2026-08-29-namespace-de-agente-nao-declarado-em-agents-fica-invisivel-e-o-validate-reporta-limpo-sem-olhar.md`,
@@ -225,15 +225,41 @@ vez de simular — que era o risco que eu tinha sinalizado no handoff.
    `IsDir()`, e guarda de **folha que nunca olha ancestral** — esta última independente de
    plataforma, porque `Lstat` só não segue o **último** componente.
 **Critérios de aceite:**
-- [ ] AC7 e AC8 da REQ
-- [ ] A nota separa as três classes de guarda — a versão ampla demais ("todas furadas") é errada
-- [ ] Nota linkada em `vault/notes/index.md`
+- [x] AC7 e AC8 da REQ
+- [x] A nota separa as três classes de guarda — a versão ampla demais ("todas furadas") é errada
+- [x] Nota linkada em `vault/notes/index.md`
 
 **Gates da wave:**
 ```bash
 grep -q "junction" docs/req/REQ-2026-08-29-namespace-de-agente-nao-declarado-em-agents-fica-invisivel-e-o-validate-reporta-limpo-sem-olhar.md
 grep -q "junction" vault/notes/index.md
 ```
+
+#### Resultado do ML-2A (arquiteto, 2026-08-31)
+
+**Nota de correção anexada à `REQ-2026-08-29`** (que segue `Done`, não reaberta, AC12 não reescrito).
+O ponto registrado: o AC12 **não está errado sobre o que mediu — está incompleto sobre onde vale**.
+*"Verificável nos 3 CLIs"* foi lido como *"verificado em toda plataforma"*, e nenhum dos três havia
+sido exercitado em Windows quando aquela REQ fechou. O instrumento que torna Windows mensurável só
+passou a existir depois, no #221. A mesma frase aparece em outras REQs desta família — por isso a
+nota fica no artefato, não só no vault.
+
+**Duas notas de vault**, ambas linkadas no índice:
+
+1. `lstat-nao-ve-junction-e-guarda-de-folha-nao-olha-ancestral-2026-08-31.md` — a medição crua, a
+   inversão de privilégio (`mklink /J` não exige, `os.Symlink` exige), as **três classes de guarda**
+   com a tabela mostrando que o freio existe só no Go, e a Classe 3 que **não tem nada de Windows**.
+   Registra também por que os gates de paridade são cegos aqui: paridade mede se as implementações
+   concordam, não se o contrato está correto.
+2. `powershell-modo-argumento-nao-interpola-nem-divide-2026-08-31.md` — **não estava previsto no
+   ML**, e entra porque passa o critério dos dez minutos com folga. O mecanismo real (modo argumento
+   não interpola *e* não divide) muda o remédio: citar, não escapar. Quem aplicasse a correção pela
+   minha leitura errada escaparia vírgulas e seguiria sem interpolação, falhando por outra mensagem
+   ou em silêncio.
+
+A lição que atravessa as duas e que eu quero encontrar de novo daqui a três meses: **uma mensagem de
+erro compatível com a sua hipótese não é evidência a favor dela.** `expects <mode>,<sha1>,<path>`
+casava com as duas explicações; só o teste que as separa discrimina.
 
 ## Verificação diferida para pós-merge — NÃO é critério de aceite de nenhum ML
 

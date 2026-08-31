@@ -4,6 +4,8 @@
 
 ## Índice
 
+- [lstat-nao-ve-junction-e-guarda-de-folha-nao-olha-ancestral-2026-08-31](lstat-nao-ve-junction-e-guarda-de-folha-nao-olha-ancestral-2026-08-31.md) — `Lstat` classifica junction como `ModeIrregular`, não `ModeSymlink`, e `mklink /J` não exige privilégio; o freio acidental existe só no Go; guarda de folha nunca olha ancestral, em todo SO
+- [powershell-modo-argumento-nao-interpola-nem-divide-2026-08-31](powershell-modo-argumento-nao-interpola-nem-divide-2026-08-31.md) — em `shell: pwsh` a vírgula só constrói array em modo expressão; em modo argumento o token é único e a variável **não** é interpolada — o remédio é citar, não escapar
 - [if-sem-funcao-de-status-tem-success-implicito-2026-08-30](if-sem-funcao-de-status-tem-success-implicito-2026-08-30.md) — passo pulado com condição verdadeira: o Actions prepende `success()` a todo `if:` sem função de status
 - [job-de-windows-largo-so-reproduz-2-dos-11-defeitos-2026-08-30](job-de-windows-largo-so-reproduz-2-dos-11-defeitos-2026-08-30.md) — rodar as 3 suítes completas em Windows não basta: mock/monkeypatch, oráculo ausente ou caminho de produção não atingido escondem 8 dos 11 defeitos da issue #216; e a isolação de `$HOME` dos próprios testes é vácua no Windows nos 3 runtimes
 - [uniao-disco-agents-mascara-gate-por-presenca-2026-08-29](uniao-disco-agents-mascara-gate-por-presenca-2026-08-29.md) — a união agents:+disco (REQ-2026-08-29) desarma gates que discriminavam por presença/ausência de namespace; só ordem (declarado-primeiro vs. alfabético) sobrevive como técnica de retarget
