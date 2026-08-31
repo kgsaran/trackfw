@@ -72,7 +72,7 @@ def run(args):
 
     content = "\n".join(lines) + "\n"
 
-    with open(yaml_path, "w", encoding="utf-8") as f:
+    with open(yaml_path, "w", encoding="utf-8", newline="\n") as f:
         f.write(content)
 
     print(f"trackfw.yaml gravado com {len(custom)} campos customizados")

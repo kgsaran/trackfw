@@ -62,7 +62,7 @@ def new_note(title: str, cwd: str = None) -> str:
         f"<!-- Como foi resolvido ou mitigado? O que deve ser feito? -->\n"
     )
 
-    with open(note_path, "w", encoding="utf-8") as f:
+    with open(note_path, "w", encoding="utf-8", newline="\n") as f:
         f.write(body)
 
     append_note_to_index(filename, base)
@@ -85,7 +85,7 @@ def append_note_to_index(filename: str, cwd: str = None) -> None:
             "> Ponto de entrada de conhecimento do projeto para agentes e pessoas.\n\n"
             "## Índice\n\n"
         )
-        with open(index_path, "w", encoding="utf-8") as f:
+        with open(index_path, "w", encoding="utf-8", newline="\n") as f:
             f.write(initial)
 
     with open(index_path, "r", encoding="utf-8") as f:
@@ -102,7 +102,7 @@ def append_note_to_index(filename: str, cwd: str = None) -> None:
         return
 
     link = f"- [{name_without_ext}]({filename})\n"
-    with open(index_path, "a", encoding="utf-8") as f:
+    with open(index_path, "a", encoding="utf-8", newline="\n") as f:
         f.write(link)
 
 

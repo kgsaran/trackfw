@@ -358,11 +358,11 @@ def _install_hook(framework: str, root_dir: str) -> None:
             content = f.read()
         if "trackfw" in content:
             return  # idempotente
-        with open(cfg_path, "a", encoding="utf-8") as f:
+        with open(cfg_path, "a", encoding="utf-8", newline="\n") as f:
             f.write(hook_entry)
     elif framework == "husky":
         husky_hook = os.path.join(root_dir, ".husky", "pre-commit")
-        with open(husky_hook, "a", encoding="utf-8") as f:
+        with open(husky_hook, "a", encoding="utf-8", newline="\n") as f:
             f.write(husky_entry)
     else:
         pkg_json = os.path.join(root_dir, "package.json")
@@ -390,7 +390,7 @@ def _install_husky(root_dir: str) -> None:
         husky_dir = os.path.join(root_dir, ".husky")
         os.makedirs(husky_dir, exist_ok=True)
         hook_file = os.path.join(husky_dir, "pre-commit")
-        with open(hook_file, "a", encoding="utf-8") as f:
+        with open(hook_file, "a", encoding="utf-8", newline="\n") as f:
             f.write("\nscripts/trackfw-validate.sh\n")
     except subprocess.CalledProcessError as exc:
         print(f"Aviso: falha ao instalar husky: {exc}")
@@ -408,7 +408,7 @@ def _install_husky_npx(root_dir: str) -> None:
     husky_dir = os.path.join(root_dir, ".husky")
     os.makedirs(husky_dir, exist_ok=True)
     hook_path = os.path.join(husky_dir, "pre-commit")
-    with open(hook_path, "a", encoding="utf-8") as f:
+    with open(hook_path, "a", encoding="utf-8", newline="\n") as f:
         f.write("\nscripts/trackfw-validate.sh\n")
     os.chmod(hook_path, 0o755)
     print("✓ trackfw entry added to .husky/pre-commit")
@@ -430,7 +430,7 @@ def _install_lefthook(root_dir: str) -> None:
         "    trackfw-validate:\n"
         "      run: scripts/trackfw-validate.sh\n"
     )
-    with open(lefthook_yml, "w", encoding="utf-8") as f:
+    with open(lefthook_yml, "w", encoding="utf-8", newline="\n") as f:
         f.write(content)
 
     try:
@@ -490,7 +490,7 @@ def _write_ci_workflow(root_dir: str) -> None:
     # os.path.islink is checked BEFORE _is_file (os.path.isfile, follows
     # symlinks): a DANGLING symlink at dest resolves to "does not exist"
     # under os.path.isfile, so the idempotency guard below would not fire,
-    # and open(dest, "w") would then follow the link and CREATE the
+    # and open(dest, "w", newline="\n") would then follow the link and CREATE the
     # workflow template at whatever path outside the project the symlink
     # points to. A symlink here — live or dangling — is treated as "already
     # present" so this function never writes through it; it refuses loudly
@@ -506,7 +506,7 @@ def _write_ci_workflow(root_dir: str) -> None:
     if _is_file(dest):
         return  # idempotente
     content = build_discover_github_actions_workflow_content()
-    with open(dest, "w", encoding="utf-8") as f:
+    with open(dest, "w", encoding="utf-8", newline="\n") as f:
         f.write(content)
 
 
@@ -581,7 +581,7 @@ def _cmd_discover(args):
             print("\nAviso: trackfw.yaml ja existe — remova-o primeiro se quiser regenerar")
             return
         yaml_content = generate_yaml(r)
-        with open(yaml_path, "w", encoding="utf-8") as f:
+        with open(yaml_path, "w", encoding="utf-8", newline="\n") as f:
             f.write(yaml_content)
         print("\ntrackfw.yaml gerado")
         try:
@@ -648,7 +648,7 @@ def _cmd_discover(args):
 
         log_content = generate_bootstrap_log(r, cwd)
         written = 0
-        with open(log_path, "a", encoding="utf-8") as f:
+        with open(log_path, "a", encoding="utf-8", newline="\n") as f:
             for line in log_content.splitlines():
                 if not line.strip():
                     continue

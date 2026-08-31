@@ -856,7 +856,7 @@ def save_baseline(violations: list, warnings: list) -> None:
         "violations": _extract_messages(violations),
         "warnings": _extract_messages(warnings),
     }
-    with open(_BASELINE_FILE, "w", encoding="utf-8") as f:
+    with open(_BASELINE_FILE, "w", encoding="utf-8", newline="\n") as f:
         json.dump(bf, f, indent=2, ensure_ascii=False)
 
 
