@@ -1,5 +1,5 @@
 ---
-status: wip
+status: analyzing
 date: 2026-08-31
 req: "docs/req/REQ-2026-08-31-guarda-de-folha-faz-lstat-so-no-ultimo-componente-e-nunca-inspeciona-ancestral-escrita-fora-do-projeto-em-todo-so-e-todo-runtime.md"
 squad: "hades-tf, apolo-tf, artemis-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, apolo-tf, artemis-tf"
 
 # Roadmap: Guarda de folha resolve o caminho e afirma contenção antes de escrever
 
-> Created: 2026-08-31 | Status: wip
+> Created: 2026-08-31 | Status: analyzing
 
 ## Context
 

@@ -26790,3 +26790,23 @@ chamado por toda escrita derivada de `root`/`home` (fecha a ameaça real, exige 
 `docs/seguranca/`, que é o artefato correto para threat model, e o vault já tem
 `lstat-nao-ve-junction-e-guarda-de-folha-nao-olha-ancestral-2026-08-31.md` cobrindo o contexto de
 origem do defeito.
+
+## 2026-08-31 — Fecho do instrumento de Windows e parada da guarda em `analyzing` (zeus-tf)
+
+**Fechada** a `REQ-2026-08-30-ci-nao-exercita-windows-...` e seu roadmap movido a `done/`. O critério
+*"o job de Windows reprovando pelos motivos esperados"* **expirou de propósito**: correto enquanto o
+entregável era o instrumento, ele se inverteria contra nós a partir da primeira correção, porque cada
+item corrigido sai de `REPRODUCED`. `hefesto-tf` identificou a contradição ao analisar os PRs do
+Lourival. Linha de base congelada: **8/11**.
+
+**Guarda de ancestral** movida de `wip/` para `analyzing/` — Wave 0 concluída, **nenhuma linha de
+código escrita**, então `wip` estava mentindo sobre o estado.
+
+**Observação de governança:** com o roadmap em `analyzing/`, o `validate` avisa que a branch `fix/`
+não tem roadmap em `wip/`. É `exit 0` (aviso, não erro), mas revela que a regra `branch_has_wip_roadmap`
+não modela o estado *"branch que fez só análise de Wave 0"* — que é legítimo e foi exatamente o nosso
+caso. Candidato a REQ futura; **não** aberta agora para não expandir escopo.
+
+**Próximo:** portar as correções dos PRs #222–#225 do Lourival (os quatro valem inteiros, ver
+`docs/analises/2026-08-31-aproveitamento-dos-prs-222-225.md`), começando pelo #223 (item 1, cp1252),
+que destrava a medição dos itens 5 e 6. Guarda de ancestral em seguida.

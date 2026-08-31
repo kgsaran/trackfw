@@ -3,7 +3,7 @@ status: Open
 date: 2026-08-31
 author: "zeus-tf"
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-31-guarda-de-folha-resolve-o-caminho-e-afirma-contencao-antes-de-escrever.md"
+roadmap: "docs/roadmaps/analyzing/ROADMAP-2026-08-31-guarda-de-folha-resolve-o-caminho-e-afirma-contencao-antes-de-escrever.md"
 ---
 
 # REQ: Guarda de folha faz `Lstat` só no último componente e nunca inspeciona ancestral — escrita fora do projeto em todo SO e todo runtime
@@ -76,6 +76,38 @@ especialistas inventam três.
 (`path.isAbsolute(rel)`, `root in directory.parents`). Adotar a mesma forma evita uma segunda
 checagem conflitante com a primeira.
 
+## Decisões tomadas após a Wave 0 (2026-08-31)
+
+### Decisão 1 — quebra de comportamento: **recusa audível, sem opt-out**
+
+A Wave 0 mostrou que um diretório compartilhado **fora** da árvore do projeto (padrão real: um
+`.github`/templates central apontado por vários repositórios) é **indistinguível do ataque** e será
+recusado. KG decidiu: **recusa audível nomeando o caminho resolvido**, sem opt-out.
+
+Razão: o opt-out é escopo novo, e um opt-out mal desenhado vira a própria porta que a guarda existe
+para fechar. Se aparecer usuário real com esse padrão legítimo, a recusa audível dá o diagnóstico
+imediato e a REQ de opt-out nasce com caso de uso concreto em vez de hipótese.
+
+### Decisão 2 — grafia do remédio, corrigida pela Wave 0
+
+**A forma segue sendo resolver-e-afirmar-contenção. A grafia que eu escrevi estava errada em três
+pontos**, todos medidos:
+
+| # | armadilha | correto |
+|---|---|---|
+| 1 | **`path.resolve()` do Node é léxico — nunca segue symlink.** Usá-lo faria a guarda virar **no-op que passa em todo teste escrito contra o comportamento do Go**: verde, paritária e inútil | **`fs.realpathSync`** |
+| 2 | `EvalSymlinks`/`realpathSync` **falham com folha inexistente**, e o caso dominante é *criar* arquivo | resolver o **diretório pai** e concatenar a folha. `Path.resolve(strict=False)` (Python) tolera nativamente |
+| 3 | comparar destino resolvido contra `root` **não** resolvido → falso positivo (medido: `/tmp` → `/private/tmp` no macOS) | **resolver os dois lados** antes de comparar |
+
+A armadilha 1 é a mais perigosa das três porque **não falha** — produz uma guarda que passa nos
+gates. Qualquer ML da Wave 1 tem de nomear a primitiva por runtime, nunca "resolver o caminho".
+
+### Escopo real, revisado
+
+A enumeração original (3 guardas) estava subcontada em uma ordem de grandeza: **187 pontos que não
+checam link algum**, em 4 famílias. A família de maior severidade é `trackfw update harness`
+(**escopo global**, escreve no `$HOME`), com PoC executada. O particionamento da Wave 1 sai daí.
+
 ## Acceptance Criteria
 
 - [ ] **AC1** — 🔴 **Wave 0 enumera de verdade.** A lista de pontos que escrevem em caminho derivado
@@ -115,4 +147,4 @@ o Node de volta à simetria. -->
 
 ## Linked Roadmap
 
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-31-guarda-de-folha-resolve-o-caminho-e-afirma-contencao-antes-de-escrever.md`
+Roadmap: `docs/roadmaps/analyzing/ROADMAP-2026-08-31-guarda-de-folha-resolve-o-caminho-e-afirma-contencao-antes-de-escrever.md`

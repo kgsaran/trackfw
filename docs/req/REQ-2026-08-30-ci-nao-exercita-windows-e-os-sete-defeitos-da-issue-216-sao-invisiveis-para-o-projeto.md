@@ -1,9 +1,9 @@
 ---
-status: Open
+status: Done
 date: 2026-08-30
 author: "trackfw_architect (Zeus)"
 adr: "docs/adr/ADR-2026-08-30-ci-de-windows-como-instrumento-de-medicao-job-largo-que-nasce-vermelho-mais-sonda-sob-demanda.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-30-job-de-windows-largo-que-nasce-vermelho-e-sonda-sob-demanda.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-30-job-de-windows-largo-que-nasce-vermelho-e-sonda-sob-demanda.md"
 ---
 
 # REQ: O CI não exercita Windows, e os sete defeitos da issue #216 são invisíveis para o projeto
@@ -87,6 +87,27 @@ funcionando** — e escreveríamos correção validada no ambiente errado, que �
 Vale registrar o custo do modelo atual: **um usuário fez o trabalho que o nosso pipeline deveria ter
 feito**, e o descobriu adotando a ferramenta em produção.
 
+## REQ fechada em 2026-08-31
+
+**Entregue:** instrumento de medição em duas camadas (`windows-full-suites`, `windows-defect-reproduction`)
++ sonda sob demanda (`windows-probe.yml`), nos PRs **#221** e **#226**.
+
+**Linha de base congelada e citável: `8 REPRODUCED / 0 inconclusivos / 11 itens`.**
+
+O critério da barreira — *"o job de Windows reprovando pelos motivos esperados"* — **expira com esta
+REQ, de propósito**. Ele era correto enquanto o entregável era o instrumento; a partir da primeira
+REQ de **correção** ele se inverteria contra nós, porque cada item corrigido sai de `REPRODUCED` e a
+contagem **deve** cair. `hefesto-tf` identificou a contradição ao analisar os PRs #222–#225: manter
+esta REQ aberta faria de toda correção uma violação da própria governança.
+
+**Regra que passa a valer:** cada item que sair de `REPRODUCED` é explicado no roadmap da REQ que o
+corrigiu, citando o run que mediu. Contador decrescente com histórico, não alvo fixo.
+
+**O instrumento provou seu valor duas vezes antes mesmo de corrigirmos qualquer defeito:** a sonda
+respondeu a pergunta da junction, que nenhuma suíte de regressão respondia — e a resposta revelou que
+o Node **não** tem o defeito, invertendo a expectativa e evitando que corrigíssemos o que não estava
+quebrado. Ver `REQ-2026-08-30-sonda-nao-responde-a-pergunta-7-...`.
+
 ## Linked ADR
 ADR: docs/adr/ADR-2026-08-30-ci-de-windows-como-instrumento-de-medicao-job-largo-que-nasce-vermelho-mais-sonda-sob-demanda.md
 
@@ -94,4 +115,4 @@ ADR: docs/adr/ADR-2026-08-30-ci-de-windows-como-instrumento-de-medicao-job-largo
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-08-30-job-de-windows-largo-que-nasce-vermelho-e-sonda-sob-demanda.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-08-30-job-de-windows-largo-que-nasce-vermelho-e-sonda-sob-demanda.md
