@@ -191,7 +191,7 @@ func validateGuardGlobalHookResolvable(ruleName, scriptMarker string) ([]string,
 					"~/%s (%s, global scope) references %s resolved to %q, but the script does not exist — run `trackfw update harness` to regenerate it",
 					relPath, gf.cli, scriptMarker, m.raw,
 				))
-			case info.Mode()&0111 == 0:
+			case CurrentGOOS != "windows" && info.Mode()&0111 == 0:
 				msgs = append(msgs, fmt.Sprintf(
 					"~/%s (%s, global scope) references %s resolved to %q, but the script is not executable — run `trackfw update harness` to regenerate it",
 					relPath, gf.cli, scriptMarker, m.raw,

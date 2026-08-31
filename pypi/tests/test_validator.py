@@ -19,6 +19,22 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from trackfw import config as _config
 from trackfw import validator as v
+from trackfw.homedir import home_dir
+
+def _exec_bit_representavel():
+    """Este sistema de arquivos consegue dizer que um arquivo NAO e executavel?
+
+    Em NTFS nao consegue: os.access(path, os.X_OK) responde True para todo arquivo
+    existente, inclusive um 0o644 recem-criado. Medido, nao inferido de sys.platform.
+    """
+    fd, p = tempfile.mkstemp(suffix='.sh')
+    os.close(fd)
+    try:
+        os.chmod(p, 0o644)
+        return not os.access(p, os.X_OK)
+    finally:
+        os.remove(p)
+
 
 
 def _write(path: str, content: str = ""):
@@ -928,7 +944,10 @@ class TestExpandTildeAdrDirs(unittest.TestCase):
 
     def test_find_adr_file_com_tilde(self):
         """_find_adr_file localiza arquivo ADR em adr_dir especificado com ~/."""
-        home = os.path.expanduser("~")
+        # home_dir(), nao expanduser: a producao expande `~` pelo mesmo helper e o
+        # conftest isola HOME num tempdir. Com expanduser no Windows o teste escreveria
+        # na home REAL enquanto a producao leria a isolada.
+        home = home_dir()
         test_dir_name = f".tmp_trackfw_test_{int(time.time())}"
         test_dir = os.path.join(home, test_dir_name)
         os.makedirs(test_dir, exist_ok=True)
@@ -942,7 +961,10 @@ class TestExpandTildeAdrDirs(unittest.TestCase):
 
     def test_validate_adrs_are_referenced_com_tilde(self):
         """validate_adrs_are_referenced expande ~/ em adr_dirs ao verificar referências."""
-        home = os.path.expanduser("~")
+        # home_dir(), nao expanduser: a producao expande `~` pelo mesmo helper e o
+        # conftest isola HOME num tempdir. Com expanduser no Windows o teste escreveria
+        # na home REAL enquanto a producao leria a isolada.
+        home = home_dir()
         test_dir_name = f".tmp_trackfw_test_ref_{int(time.time())}"
         test_dir = os.path.join(home, test_dir_name)
         os.makedirs(test_dir, exist_ok=True)
@@ -1031,6 +1053,16 @@ class TestCredentialGuardHookResolvable(unittest.TestCase):
         )
 
     def test_dispara_quando_script_nao_executavel(self):
+        # Deteccao pela CONDICAO, nao por sys.platform: onde o SO nao consegue
+        # representar a ausencia do bit de execucao (NTFS), os.access(X_OK) responde
+        # True para todo arquivo existente e esta garantia nao e exercitavel. Num
+        # Linux/macOS — e num Windows que um dia represente o bit — o teste roda
+        # normalmente. Nomeia a garantia que deixou de ser verificada em vez de
+        # passar em silencio.
+        if not _exec_bit_representavel():
+            self.skipTest(
+                'regra "script nao executavel" nao exercitada: neste sistema de arquivos os.access(X_OK) responde True mesmo para um arquivo 0o644'
+            )
         _write(
             os.path.join(self.tmp, ".claude/settings.json"),
             _guard_entry_claude_settings("$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh"),
@@ -1045,6 +1077,38 @@ class TestCredentialGuardHookResolvable(unittest.TestCase):
             any("not executable" in m["message"] for m in msgs),
             f"esperado violation de script não executável, obteve: {msgs}",
         )
+
+    def test_windows_nao_dispara_pelo_bit_de_execucao(self):
+        # No Windows o bit de execucao nao e representavel em NTFS: a mensagem "the
+        # script is not executable" seria SEMPRE verdadeira la, e nenhuma acao do
+        # usuario a tornaria falsa — `trackfw update`, o remedio que ela prescreve,
+        # regenera o script com o mesmo modo irrepresentavel. Mesmo precedente de
+        # _current_platform em trackfw/integrations/scaffold_doctor.py (AC5).
+        restore = v._set_platform_for_test('win32')
+        try:
+            _write(
+                os.path.join(self.tmp, ".claude/settings.json"),
+                _guard_entry_claude_settings("$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh"),
+            )
+            script_path = os.path.join(self.tmp, "scripts", "trackfw-credential-guard.sh")
+            _write(script_path, "#!/bin/sh\nexit 0\n")
+            os.chmod(script_path, 0o644)  # sem bit +x
+
+            cfg = _config.defaults()
+            msgs = v.validate_credential_guard_hook_resolvable(cfg, cwd=self.tmp)
+            cfg = _config.defaults()
+            msgs = v.validate_credential_guard_hook_resolvable(cfg, cwd=self.tmp)
+            self.assertFalse(
+                any('not executable' in m['message'] for m in msgs),
+                f'no Windows o bit nao e representavel — nao deveria disparar: {msgs}',
+            )
+            # O script EXISTE: a checagem de existencia continua valendo no Windows.
+            self.assertFalse(
+                any('does not exist' in m['message'] for m in msgs),
+                f'script existe; ausencia nao deveria aparecer: {msgs}',
+            )
+        finally:
+            restore()
 
     def test_nao_dispara_sem_entrada_de_guard(self):
         _write(

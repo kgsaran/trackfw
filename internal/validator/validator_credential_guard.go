@@ -374,7 +374,7 @@ func validateGuardHookResolvable(ruleName, scriptMarker string) ([]string, error
 					"%s (%s) references %s resolved to %q, but the script does not exist — run `trackfw update` to regenerate it",
 					hf.path, hf.cli, scriptMarker, resolved,
 				))
-			case info.Mode()&0111 == 0:
+			case CurrentGOOS != "windows" && info.Mode()&0111 == 0:
 				msgs = append(msgs, fmt.Sprintf(
 					"%s (%s) references %s resolved to %q, but the script is not executable — run `trackfw update` to regenerate it",
 					hf.path, hf.cli, scriptMarker, resolved,
