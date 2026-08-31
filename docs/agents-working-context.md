@@ -26553,3 +26553,115 @@ nenhum script de parity/gate) permanece a evidência de referência.
 **Próximo:** Wave 2 (arquiteto) — nota de correção na `REQ-2026-08-29` e nota de vault sobre
 `Lstat`/junction/`ModeIrregular`. Sugestão para essa nota: incluir também o mecanismo real da pergunta
 7 (item 2 acima), já que diverge do texto atual da REQ-2026-08-30.
+
+---
+
+## Sessão 2026-08-31 — hades-tf (INÍCIO: barreira final de segurança — extensão da sonda)
+
+Branch `fix/sonda-mede-junction-nos-3-runtimes-e-a-pergunta-7-volta-a-responder` (não criada por
+mim). Escopo: barreira final sobre `git diff origin/main...HEAD`, verificando se o ML-1A respeitou o
+próprio modelo de ameaça do ML-0A (meu). Só diagnóstico — nenhum arquivo de produto/workflow tocado,
+só o parecer em `docs/seguranca/`.
+
+---
+
+## Sessão 2026-08-31 — hades-tf (FIM: barreira final de segurança — extensão da sonda — CONCLUÍDO)
+
+Branch `fix/sonda-mede-junction-nos-3-runtimes-e-a-pergunta-7-volta-a-responder`.
+
+**Veredito: APROVA COM RESSALVAS. Nenhum bloqueante.**
+
+**O que foi feito:** auditei `windows-probe.yml` (steps novos das Perguntas 7-11) e os três braços
+`probe.{go,js,py}` linha a linha contra os cinco alvos de falsificação que eu mesmo defini no ML-0A.
+Todos respeitados: sem veredito, sem interpretação no lugar de valor cru, criação/remoção de link
+sempre confinada ao tempdir do próprio subcomando, `checks.{go,js,py}` não importam as funções
+novas, `quality.yml` byte-idêntico, nenhuma `uses:` nova, nenhum `${{ }}` novo em `run:`, `$blob` na
+pergunta 7 é sempre hex de `git hash-object` (não controlável). `actionlint` limpo, `go build`/
+`GOOS=windows go build` limpos, `node -c`/`python -m py_compile` limpos.
+
+**Achados de acompanhamento (não bloqueantes):**
+1. `probe.py` nunca limpa os tempdirs que cria (`shutil` nem é importado) — assimetria com Go
+   (`defer os.RemoveAll`) e Node (`fs.rmSync` em todo caminho de saída); deixa junction viva em
+   disco ao sair de `lstat-junction`/`table`. Remédio: `try/finally` + `shutil.rmtree`.
+2. Pergunta 10 mede o discriminante completo de `_remove_empty` (Python) mas só parcial de
+   `cleanEmpty` (Node) — falta medir `readdirSync`/`listdir` sobre a junction.
+3. `pwsh` propaga só o exit code do último comando por step nas Perguntas 8-11 — falha parcial num
+   dos três braços pode ser engolida pela cor do step (dado continua no log).
+
+**Correção ao meu próprio ML-0A/vault** (não é achado novo — é precisão que muda o remédio da REQ de
+correção subsequente): a subida do `_remove_empty` do Python é limitada ao `root` gerenciado (`while
+directory != root and root in directory.parents`), não "sobe removendo diretórios do usuário" como o
+roadmap ML-2A descreveu; e `cleanEmpty` do Node já tem contenção geográfica (`rel`/`isAbsolute`) —
+falta só o teste de tipo (`isDirectory()`), não "contenção" em si. Escrever o remédio da REQ de
+correção como "adicionar teste de tipo ao lado do teste de link", não "adicionar contenção".
+
+**Artefato:** `docs/seguranca/2026-08-31-barreira-da-extensao-da-sonda.md`.
+
+**Fronteiras mantidas:** nenhum arquivo de `internal/`, `npm/`, `pypi/`, workflow ou `docs/qualidade/`
+tocado. Nenhuma branch criada, nenhum commit, nenhum push.
+
+---
+
+## Sessão 2026-08-31 — hefesto-tf (INÍCIO: barreira final de qualidade — extensão da sonda de junction)
+
+Branch `fix/sonda-mede-junction-nos-3-runtimes-e-a-pergunta-7-volta-a-responder` (não criada por mim).
+
+Escopo: barreira de **qualidade** sobre `git diff origin/main...HEAD` — vacuidade, comparabilidade
+dos 3 braços, AC6 (sem veredito), integridade da pergunta 7 (AC2), pergunta 10 (rmdir sobre
+junction), manutenibilidade/duplicação. Não modifico código nem workflow; só diagnostico e escrevo
+o parecer em `docs/qualidade/`.
+
+## Sessão 2026-08-31 — hefesto-tf (FIM: barreira final de qualidade — extensão da sonda de junction — CONCLUÍDA)
+
+**Veredito: APROVA COM RESSALVAS. Nenhum bloqueante.**
+
+**O que foi feito:** li `windows-probe.yml` completo e os três braços `probe.{go,js,py}` linha a
+linha, seguindo os cinco pontos pedidos na revisão, **mais execução real** (não só compilação/
+sintaxe): `probe.go` compilado explicitamente por nome de arquivo — `go build ./...`/`GOOS=windows
+go build ./...` da raiz **não cobrem `probe.go`** por causa da tag `//go:build ignore` — cross-build
+Windows OK, `go vet scripts/windows-repro/go/probe.go` limpo, build nativo + execução de
+`table`/`rmdir-junction` em macOS; `node probe.js table`/`rmdir-junction` executados de fato;
+`python3 probe.py table`/`rmdir-junction` executados de fato. Todas as três execuções exercitaram o
+caminho de erro de infraestrutura (`cmd`/`mklink` ausentes no macOS), impresso cru em todos os
+casos, sem disfarçar como sucesso. Nenhuma vacuidade encontrada — os três checam
+`error`/`status`/`returncode` do `mklink` antes de qualquer `lstat`/`stat`, inclusive no caminho
+sintético de `_mklink_junction` (Python) para `cmd.exe` ausente. Fixture de junction confirmada
+idêntica nos três (`cmd /c mklink /J`, via grep) — nenhum resquício de `fs.symlinkSync(...,
+'junction')`. AC6 confirmado limpo (nenhum `exit 1`/PASS/FAIL condicionado a valor medido; os únicos
+`os.Exit(1)`/`sys.exit` são falhas de infraestrutura pré-existentes). Pergunta 7 (AC2): `git
+ls-files --stage mylink` lê o índice antes do checkout com valor cru ao lado do esperado — prova
+real, não cosmética. Pergunta 10: os três reportam separadamente resultado do rmdir, sobrevivência
+da junction e do alvo, usando a primitiva exata da produção (`Path(junction).rmdir()` em Python) —
+com uma ressalva no braço Node (achado 1 abaixo). `actionlint` limpo, `quality.yml` byte-idêntico,
+`make quality` rodado até o fim sobre o repositório completo com **exit code capturado corretamente
+fora de pipe** (`MAKE_EXIT=0` — a primeira tentativa usava `| tail -200`, que em zsh sem `pipefail`
+mede o exit code do `tail`, não do `make`; refeito sem pipe para medir o real).
+
+**Achados de acompanhamento (não bloqueantes):**
+1. **(Novo, próprio)** O braço Node da Pergunta 10 mede `fs.rmdirSync(junction)`, não o
+   discriminante real de produção — `cleanEmpty` (`npm/src/integrations/manager.js:420`) decide por
+   `fs.readdirSync(dir).length`, nunca chama `rmdirSync`. Substituição documentada pelo próprio
+   comentário de `probe.js:131-136`, não descuido silencioso — mas significa que nenhuma pergunta
+   mede `readdirSync(junction).length`, e como `workflow_dispatch` só dispara da branch default,
+   obter esse número específico exige outro ciclo de merge+dispatch se a REQ de correção precisar
+   dele. Remédio sugerido: acrescentar leitura crua de `fs.readdirSync(junction)` em `probe.js`.
+2. `probe.py` não limpa nenhum dos 5 tempdirs que cria (`shutil` nem é importado) — mesmo achado do
+   `hades-tf` (lente de segurança), confirmado aqui sob lente de manutenibilidade **e por execução
+   real**: rodei `table`/`rmdir-junction` e os tempdirs ficaram em `$TMPDIR` (precisei limpar
+   manualmente), enquanto Go (build nativo) e Node não deixaram resíduo nas mesmas duas chamadas.
+   Assimetria de padrão dentro do mesmo diff (Go usa `defer os.RemoveAll`, Node usa `fs.rmSync` em
+   todo caminho de saída). Remédio: `try/finally` + `shutil.rmtree`, ou `tempfile.TemporaryDirectory()`.
+3. A fixture `mklink /J` está inline/duplicada dentro de cada probe (3x por arquivo); quando a REQ
+   de correção adicionar a mesma fixture a `checks.{go,js,py}` (camada 2, com veredito), o risco é
+   recriá-la do zero em vez de reaproveitar — reabrindo o mesmo risco que este ML fechou para a
+   sonda (medir objetos diferentes por engano). Aviso para quem escrever essa REQ, não correção
+   deste PR.
+4. `pwsh` propaga só o exit code do último comando por step nas Perguntas 2/8/9/10/11 — uma falha de
+   infraestrutura no meio do step (ex.: `MkdirTemp` falhando na 1ª chamada) pode ficar mascarada pelo
+   ícone verde do step se a 2ª/3ª chamada tiver sucesso; o dado continua no log (não é vacuidade),
+   mas quem só olhar a cor do step pode perder o `err_mkdtemp`. Nota operacional, não muda o design.
+
+**Artefato:** `docs/qualidade/2026-08-31-barreira-da-extensao-da-sonda.md`.
+
+**Fronteiras mantidas:** nenhum arquivo de `internal/`, `npm/`, `pypi/`, workflow ou
+`docs/seguranca/` tocado. Nenhuma branch criada, nenhum commit, nenhum push.

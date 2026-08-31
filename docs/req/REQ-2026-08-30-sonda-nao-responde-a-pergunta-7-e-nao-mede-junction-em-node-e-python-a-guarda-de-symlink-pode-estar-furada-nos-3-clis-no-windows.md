@@ -38,8 +38,8 @@ arquivo. Separando:
 |---|---|---|
 | `internal/integrations/manager.go:702` `rejectSymlinks` | caminha ancestrais | 🔴 **Furada.** É a única guarda que percorre a cadeia justamente para recusar link em qualquer ponto dela. Junction num ancestral tem `ModeSymlink=false`, não é recusada, o caminho segue. |
 | `internal/integrations/manager.go:582` `removeEmptyAncestors` **(só Go)** | diretório | 🟡 **Salva por acidente — e só no Go.** `Lstat` de junction devolve `ModeDir=false`, então cai no `if !info.IsDir() { return nil }` e para. Funciona pelo motivo errado. |
-| `npm/src/integrations/manager.js:420` `cleanEmpty` | diretório | 🔴 **Sem o freio.** Não testa `isDirectory()`; depende de `readdirSync(directory).length` ser truthy. Se `readdirSync` seguir a junction e o alvo estiver vazio, segue para o `rmdirSync`. |
-| `pypi/trackfw/integrations/manager.py:589` `_remove_empty` | diretório | 🔴 **Sem o freio, e o pior dos três.** Não testa `IsDir` nem vazio — depende só de `except OSError: return` em volta do `rmdir()`. **Se o `rmdir()` tiver sucesso sobre uma junction, o laço continua subindo e removendo ancestrais**, ao contrário do Go, que para incondicionalmente. |
+| `npm/src/integrations/manager.js:420` `cleanEmpty` | diretório | 🔴 **Sem o teste de tipo.** Não testa `isDirectory()`; depende de `readdirSync(directory).length` ser truthy. Se `readdirSync` seguir a junction e o alvo estiver vazio, segue para o `rmdirSync`. **Contenção geográfica já existe** (`rel`/`isAbsolute`). |
+| `pypi/trackfw/integrations/manager.py:589` `_remove_empty` | diretório | 🔴 **Sem o teste de tipo.** Não testa `IsDir` nem vazio — depende só de `except OSError: return` em volta do `rmdir()`. Se o `rmdir()` tiver sucesso sobre uma junction, o laço **continua subindo**, ao contrário do Go, que para. **A subida é limitada ao `root`** (`while directory != root and root in directory.parents`) — a contenção geográfica existe; falta o teste de tipo. |
 | `internal/generators/update.go:1869`, `:1894`, `internal/discover/discover.go:268` | arquivo (folha) | 🔴 **Furadas por outra via, e não só no Windows.** Fazem `Lstat` apenas na folha. `Lstat` só deixa de seguir o **último** componente do caminho; ancestrais são **sempre** seguidos. Logo um symlink — ou uma junction — num diretório ancestral redireciona a escrita para fora do projeto sem que nenhuma delas olhe. **Esta metade é independente de plataforma.** |
 
 ### Correção da classificação acima (ML-0A, `hades-tf`, 2026-08-30)
@@ -50,8 +50,9 @@ linha e nenhum dos dois testa `isDirectory()`/`S_ISDIR` antes de agir sobre o di
 por leitura direta na auditoria.
 
 Isso muda o remédio, e é exatamente por isso que a Wave 0 existe: **no Go a correção é tornar
-intencional um freio que já existe; em Node e Python pode ser preciso *adicionar* um freio que hoje
-não existe.** Tratar os três como a mesma classe teria produzido o roadmap de correção errado em
+intencional um freio que já existe; em Node e Python é *adicionar o teste de tipo ao lado do teste de
+link que já está lá*** — não "adicionar contenção", que já existe nos três (correção do `hades-tf` na
+barreira final). Tratar os três como a mesma classe teria produzido o roadmap de correção errado em
 dois dos três CLIs — e passaria pelos gates de paridade, porque paridade mede se as implementações
 concordam entre si, não se o contrato está correto.
 

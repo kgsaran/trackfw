@@ -57,12 +57,28 @@ Esta é a que mais custou. Achado do `hades-tf` na Wave 0, confirmado por leitur
 | Python | `manager.py:589` `_remove_empty` | **sem** teste de `IsDir` nem de vazio — só `except OSError: return` em volta do `rmdir()` |
 
 O Go para **por acidente**: o teste `!IsDir()` existe para outra finalidade e, como `Lstat` de
-junction devolve `ModeDir=false`, ele freia. Node e Python não têm esse freio. No Python, se o
-`rmdir()` **tiver sucesso** sobre a junction, o laço **continua subindo e removendo ancestrais**.
+junction devolve `ModeDir=false`, ele freia. Node e Python não têm esse teste.
 
-**Consequência para o remédio:** no Go é *tornar intencional um freio que já existe*; em Node e
-Python pode ser preciso **adicionar** um freio inexistente. Tratar os três como a mesma classe
-produziria correção errada em dois dos três CLIs.
+**Precisão sobre o raio de dano (correção do `hades-tf` na barreira final, 2026-08-31).** A primeira
+redação desta nota dizia que no Python *"o laço continua subindo e removendo ancestrais"*, sem
+qualificar até onde. **A subida é limitada ao `root` gerenciado**, não ao sistema de arquivos do
+usuário:
+
+```python
+while directory != root and root in directory.parents:   # Python: contenção existe
+```
+```javascript
+if (!rel || rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) return   // Node: idem
+```
+
+Ou seja: **a contenção geográfica já existe nos três**. O que falta em Node e Python é o **teste de
+tipo**, ao lado do teste de link que já está lá.
+
+**Consequência para o remédio — e é por isso que a precisão importa:** escrever *"adicionar
+contenção"* produziria trabalho redundante e provavelmente uma segunda checagem conflitante. O
+remédio correto é **"adicionar o teste de tipo ao lado do teste de link já existente"**. No Go é
+*tornar intencional um freio que já existe*. Tratar os três como a mesma classe produziria correção
+errada em dois dos três CLIs — e descrever mal o defeito produziria o remédio errado nos três.
 
 ### Classe 3 — guarda de folha: furada por outra via, e **em todo SO**
 
