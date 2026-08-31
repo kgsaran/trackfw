@@ -97,13 +97,44 @@ mede se as implementações concordam, não se o contrato está correto** — um
 runtimes é cego para erro cometido igualmente nos três. É o mesmo cego do cabeçalho de aceite
 (`barrier-so-casa-cabecalho-de-aceite-em-portugues-2026-08-28`).
 
-## Candidato a correção — e por que não foi adotado ainda
+## MEDIDO nos 3 runtimes (run `33447191373`, 2026-08-31) — e o resultado inverte a expectativa
 
-`Mode()&(os.ModeSymlink|os.ModeIrregular) != 0` é o candidato óbvio, saído da própria medição. **Não
-foi adotado** porque `ModeIrregular` no Windows também cobre devices, pipes nomeados e outros reparse
-points: trocaríamos um falso negativo por um falso positivo que quebra uso legítimo. E o
-comportamento de Node (libuv) e Python (CPython) sobre junction **ainda não foi medido** — é o que a
-`REQ-2026-08-30-sonda-nao-responde-a-pergunta-7-...` existe para produzir.
+| runtime | primitiva | junction | veredito |
+|---|---|---|---|
+| **Go** | `Lstat().Mode()` | `ModeSymlink=false` **`ModeIrregular=true`** `ModeDir=false` | cego, mas **distinguível** |
+| **Node** | `lstatSync()` | **`isSymbolicLink=true`** | **ENXERGA** — guarda já funciona |
+| **Python** | `islink` / `S_ISLNK` | `islink=False` `S_ISLNK=False` **`S_ISDIR=True`** | cego **e indistinguível de diretório comum** |
+
+**Eu esperava três cegos e encontrei um vidente.** O libuv mapeia o reparse point para symlink, então
+**Node não tem o defeito**. A regra de paridade se inverte: os três divergem, e o Node é o certo.
+
+**Python é o pior caso e não era o previsto** — `S_ISDIR` é *verdadeiro*, então pelas primitivas em
+uso a junction é igual a um diretório vazio. Mas existe discriminante, medido no mesmo run:
+
+```
+junction:  os.readlink() → '\\?\C:\...\targetdir'        ← resolve
+comum:     os.readlink() → [WinError 4390] not a reparse point  ← falha
+```
+
+O Python **consegue** distinguir — só não pelas primitivas que escolhemos.
+
+### `rmdir` sobre junction vazia: remove a junction, **não o alvo**
+
+Nos três runtimes: `err=nil/null/None`, junction sumiu, **alvo sobreviveu**. **Não há destruição de
+dados.** Isto derruba a formulação alarmista que circulou antes ("sobe removendo diretórios do
+usuário"): errada por duas vias independentes — a subida é limitada ao `root`, *e* a remoção não
+alcança o alvo.
+
+## Remédio — diferente por runtime, o que só se soube medindo
+
+- **Node** — nada na detecção. Mexer seria corrigir o que não está quebrado.
+- **Go** — `ModeIrregular` é o discriminante. Ressalva permanece: no Windows também cobre devices e
+  pipes nomeados; `ModeSymlink|ModeIrregular` exige medir falso positivo antes.
+- **Python** — `islink`/`S_ISLNK` **não servem**. Usar sucesso de `os.readlink()` ou
+  `FILE_ATTRIBUTE_REPARSE_POINT` em `st_file_attributes`. **Trocar a primitiva**, não só adicionar teste.
+
+A severidade cai: sem destruição de dados, contida ao `root`, um runtime já imune. **O defeito real e
+universal é a Classe 3** — guarda de folha que não olha ancestral, em todo SO e todo runtime.
 
 ## Como foi descoberto
 

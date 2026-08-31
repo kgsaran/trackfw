@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-08-30
 req: "docs/req/REQ-2026-08-30-sonda-nao-responde-a-pergunta-7-e-nao-mede-junction-em-node-e-python-a-guarda-de-symlink-pode-estar-furada-nos-3-clis-no-windows.md"
 squad: "hades-tf, ares-tf, zeus-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, ares-tf, zeus-tf"
 
 # Roadmap: Sonda mede junction nos 3 runtimes e a pergunta 7 volta a responder
 
-> Created: 2026-08-30 | Status: wip
+> Created: 2026-08-30 | Status: done
 
 ## Context
 
@@ -345,7 +345,85 @@ ser executada nesta branch**. A AC9 da REQ é estruturalmente inverificável ant
 
 | Ação | Gatilho | Dono | O que fecha |
 |---|---|---|---|
-| Disparar `windows-probe.yml` | merge deste PR em `main` | arquiteto | AC9 — produz a tabela `runtime × alvo` e decide se a correção é só do Go ou divergência dos 3 |
+| ~~Disparar `windows-probe.yml`~~ ✅ **FEITO** | — | arquiteto | AC9 **fechada** — run `33447191373`. Resultado na seção *MEDIÇÃO CONCLUÍDA* acima. |
+
+## MEDIÇÃO CONCLUÍDA — run `33447191373`, `main`, 2026-08-31 (fecha a AC9)
+
+**As 14 perguntas responderam, incluindo a 7**, que falhava. Este é o entregável de toda a REQ.
+
+### Detecção de junction — divergência de três vias, e não a que eu esperava
+
+| runtime | primitiva | junction | veredito |
+|---|---|---|---|
+| **Go** | `Lstat().Mode()` | `ModeSymlink=false` `ModeDir=false` **`ModeIrregular=true`** | **cego** — mas *distinguível* |
+| **Node** | `lstatSync()` | **`isSymbolicLink=true`** `isDirectory=false` | **ENXERGA** — a guarda já funciona |
+| **Python** | `os.path.islink` / `S_ISLNK` | `islink=False` `S_ISLNK=False` **`S_ISDIR=True`** `st_mode=0o40777` | **cego, e indistinguível de diretório comum** |
+
+**Eu esperava três cegos e encontrei um vidente.** O libuv mapeia o reparse point da junction para
+symlink, então **Node não tem o defeito** — as guardas dele já recusam junction. A "regra dura de
+paridade" aqui se inverte: os três **divergem**, e é o Node que está certo.
+
+**O Python é o pior caso**, e não era o previsto. Não só `islink` é falso: `S_ISDIR` é **verdadeiro**.
+Pelas primitivas que o código usa hoje, uma junction é **indistinguível de um diretório vazio comum**.
+Mas há um discriminante disponível, medido no mesmo run:
+
+```
+lstat-junction readlink='\\?\C:\...\targetdir'      ← os.readlink() FUNCIONA sobre a junction
+lstat-common   readlink_err=[WinError 4390] The file or directory is not a reparse point
+```
+
+`os.readlink()` **resolve** a junction e **falha com `WinError 4390`** num diretório comum. Ou seja:
+o Python consegue distinguir — só não pelas primitivas que escolhemos.
+
+### `rmdir` sobre junction vazia — os três removem, e o alvo sobrevive
+
+```
+Go       os.Remove(junction)_err=<nil>     junction_ainda_existe=false   alvo_ainda_existe=true
+Node     fs.rmdirSync(junction)_err=null   junction_ainda_existe=false   alvo_ainda_existe=true
+Python   Path(junction).rmdir()_err=None   junction_ainda_existe=False   alvo_ainda_existe=True
+```
+
+**Notícia boa e importante para calibrar a severidade:** o `rmdir` remove **a junction, não o alvo**.
+Nos três runtimes o conteúdo apontado sobrevive. **Não há destruição de dados** — o que eu havia
+sugerido no handoff do ML-1A ("Python sobe removendo diretórios do usuário") estava errado por duas
+vias independentes: a subida é limitada ao `root` (corrigido na barreira) **e** a remoção não alcança
+o alvo (medido agora).
+
+### O portão do Node (ML-1B) — respondido, e o resultado inverte a leitura
+
+```
+fs.existsSync(junction)=true
+fs.readdirSync(junction)=[] length=0     ← o portão ABRE
+```
+
+O `readdirSync` **segue a junction**, vê o alvo vazio e devolve `[]`. O portão abriria. **Mas o
+`cleanEmpty` nunca chega lá**, porque o termo anterior (`isSymbolicLink`) é `true` no Node e a função
+retorna antes. Foi exatamente por isso que valeu medir os dois termos: medir só o `rmdirSync` teria
+sugerido que o Node prossegue, quando na prática ele para um termo antes.
+
+### O que isso significa para cada guarda de produção
+
+| guarda | Go | Node | Python |
+|---|---|---|---|
+| `rejectSymlinks` / pares (Classe 1) | 🔴 passa junction | ✅ recusa | 🔴 passa junction |
+| `removeEmptyAncestors` / pares (Classe 2) | 🟡 para por acidente (`!IsDir()`, pois `ModeDir=false`) | ✅ para no termo `isSymbolicLink` | 🔴 **o único que prossegue** — `S_ISLNK` falso, `rmdir()` tem sucesso, o laço sobe (limitado ao `root`) |
+| guardas de folha (Classe 3) | 🔴 não olham ancestral | 🔴 não olham ancestral | 🔴 não olham ancestral |
+
+A Classe 3 segue **independente de plataforma e de runtime** — é a mais grave e nada aqui a atenua.
+
+### Consequência para a REQ de correção
+
+O remédio é **diferente por runtime**, o que só se soube medindo:
+
+- **Node** — nada a fazer na *detecção*. Mexer aqui seria corrigir o que não está quebrado.
+- **Go** — `ModeIrregular` é o discriminante disponível. Segue valendo a ressalva: no Windows ele
+  também cobre devices e pipes nomeados, então adotar `ModeSymlink|ModeIrregular` precisa de medição
+  de falso positivo antes.
+- **Python** — `islink`/`S_ISLNK` **não servem**. O discriminante é `os.readlink()` ter sucesso (ou
+  `FILE_ATTRIBUTE_REPARSE_POINT` em `st_file_attributes`). Trocar a primitiva, não só adicionar teste.
+
+E a severidade cai: **sem destruição de dados**, contida ao `root`, e um dos três runtimes já imune.
+O defeito real e universal é a **Classe 3**.
 
 ## Barreira final
 
