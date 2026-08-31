@@ -44,7 +44,41 @@ class TrackfwArgumentParser(argparse.ArgumentParser):
         sys.exit(1)
 
 
+def _force_utf8_output():
+    """Reconfigura stdout e stderr para UTF-8 antes de qualquer escrita.
+
+    Console Windows entrega cp1252, que nao representa nada do vocabulario visual
+    da ferramenta — setas, marcas, caixas, acentos. Sem isto, `trackfw --help`,
+    `status` e `validate` morrem com UnicodeEncodeError num Windows padrao, antes
+    de imprimir a primeira linha. A `description=` do parser raiz sozinha ja
+    basta: ela contem \u2192.
+
+    UTF-8 e nao a codificacao do console porque e o que os outros dois runtimes
+    fazem — Go e Node.js escrevem bytes UTF-8 direto, sem consultar codepage. Sem
+    isto o Python e o unico dos tres que depende de `PYTHONUTF8=1` na frente para
+    rodar, o que nao e paridade.
+
+    O `newline` explicito desliga a traducao de quebra de linha: sem ele o Python
+    emite CRLF no Windows enquanto os outros dois emitem LF, e as tres saidas
+    ficam diferentes byte a byte para o mesmo comando.
+
+    `errors="replace"` degrada em vez de abortar. Silencioso quando o stream nao
+    suporta `reconfigure`: testes e pipelines substituem sys.stdout por objetos
+    que nao tem o metodo.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            reconfigure(encoding="utf-8", errors="replace", newline="\n")
+        except (ValueError, OSError, TypeError):
+            pass
+
+
 def main():
+    _force_utf8_output()
+
     parser = TrackfwArgumentParser(
         prog="trackfw",
         description="trackfw — governed software delivery framework\nADR → REQ → ROADMAP → kanban",
