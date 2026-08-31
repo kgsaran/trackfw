@@ -10,6 +10,8 @@ import sys
 import tempfile
 from pathlib import Path
 from typing import Any
+# alias: o parametro `home_dir` sombreia o nome importado
+from trackfw.homedir import home_dir as _user_home_dir
 
 
 class IntegrationError(RuntimeError):
@@ -29,7 +31,7 @@ class IntegrationManager:
         on_skip=None,
     ):
         self.project_root = Path(project_root).absolute()
-        self.home_dir = Path(home_dir or Path.home()).absolute()
+        self.home_dir = Path(home_dir or _user_home_dir()).absolute()
         # Optional observer: called once per skipped artifact (outdated+owned+no-force)
         # in resolved order, never twice for the same destination.
         # Signature: on_skip(destination: str, reason: str) -> None.

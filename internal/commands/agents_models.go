@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"github.com/kgsaran/trackfw/internal/homedir"
 	"os"
 	"sort"
 
@@ -76,7 +77,7 @@ func executeAgentModels(cmd *cobra.Command, _ []string) error {
 
 	// AC5 + AC11: read agent_models from the global config (~/.trackfw/trackfw.yaml),
 	// not from the cwd singleton. Show origin before the table.
-	homeDir, err := os.UserHomeDir()
+	homeDir, err := homedir.Dir()
 	if err != nil {
 		return fmt.Errorf("resolving home directory: %w", err)
 	}

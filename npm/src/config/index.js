@@ -4,14 +4,15 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { parseDocument, isScalar, isAlias, isSeq, isMap } = require('yaml');
+const { homedir } = require('../homedir')
 
 function expandPath(filePath) {
   if (!filePath || typeof filePath !== 'string') return filePath;
   if (filePath === '~') {
-    return os.homedir();
+    return homedir();
   }
   if (filePath.startsWith('~/') || filePath.startsWith('~\\')) {
-    return path.join(os.homedir(), filePath.slice(2));
+    return path.join(homedir(), filePath.slice(2));
   }
   return filePath;
 }
@@ -369,7 +370,7 @@ function _cwdAgentModelsSource(cwd) {
 }
 
 // loadGlobalAgentModels reads agent_models from ~/.trackfw/trackfw.yaml, bypassing the load()
-// singleton. homeDir is os.homedir(); cwd is process.cwd() (used only for AC14 diagnostic).
+// singleton. homeDir is homedir(); cwd is process.cwd() (used only for AC14 diagnostic).
 // Returns { models: {}, source } where source is one of:
 //   'global'            — agent_models resolved from ~/.trackfw/trackfw.yaml
 //   'none'              — global config absent or has no agent_models; cwd also has none

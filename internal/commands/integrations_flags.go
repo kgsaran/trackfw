@@ -3,6 +3,7 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/kgsaran/trackfw/internal/homedir"
 	"os"
 	"sort"
 	"strconv"
@@ -297,7 +298,7 @@ func applyIdentityPresetFlag(presetValue, operation string) error {
 	if !shouldSave {
 		return nil
 	}
-	home, err := os.UserHomeDir()
+	home, err := homedir.Dir()
 	if err != nil {
 		return err
 	}
@@ -399,7 +400,7 @@ func integrationsManager() (integrations.Manager, error) {
 	if err != nil {
 		return integrations.Manager{}, err
 	}
-	home, err := os.UserHomeDir()
+	home, err := homedir.Dir()
 	if err != nil {
 		return integrations.Manager{}, err
 	}

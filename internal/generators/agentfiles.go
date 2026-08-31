@@ -3,6 +3,7 @@ package generators
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/kgsaran/trackfw/internal/homedir"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1573,7 +1574,7 @@ func mergeCursorGuardMatcherEntry(existing interface{}, matcher, command string)
 // ok=false if $HOME cannot be resolved (fail-open: caller treats this as
 // "not installed globally").
 func globalCredentialGuardScriptPath() (path string, ok bool) {
-	home, err := os.UserHomeDir()
+	home, err := homedir.Dir()
 	if err != nil || home == "" {
 		return "", false
 	}
@@ -1585,7 +1586,7 @@ func globalCredentialGuardScriptPath() (path string, ok bool) {
 // or $HOME unresolvable) — the fail-open contract for every caller in this
 // section.
 func readGlobalHookJSON(relParts ...string) (root map[string]interface{}, ok bool) {
-	home, err := os.UserHomeDir()
+	home, err := homedir.Dir()
 	if err != nil || home == "" {
 		return nil, false
 	}
@@ -1819,7 +1820,7 @@ func globalCredentialGuardInstalledCopilot() bool {
 // so presence + non-empty content is sufficient, matching the roadmap's
 // explicit instruction for Kiro. Fail-open: any stat error → false.
 func globalCredentialGuardInstalledKiro() bool {
-	home, err := os.UserHomeDir()
+	home, err := homedir.Dir()
 	if err != nil || home == "" {
 		return false
 	}
@@ -1860,7 +1861,7 @@ func globalCredentialGuardInstalledKiro() bool {
 // if $HOME cannot be resolved (fail-open: caller treats this as "not
 // installed globally").
 func globalGitBranchGuardScriptPath() (path string, ok bool) {
-	home, err := os.UserHomeDir()
+	home, err := homedir.Dir()
 	if err != nil || home == "" {
 		return "", false
 	}

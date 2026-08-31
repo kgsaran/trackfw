@@ -3,6 +3,7 @@
 const fs = require('fs')
 const path = require('path')
 const os = require('os')
+const { homedir } = require('../homedir')
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1257,14 +1258,14 @@ const GBG_CMD_WINDSURF = 'bash scripts/trackfw-git-branch-guard.sh'
 
 /** Mirrors Go's globalCredentialGuardScriptPath. */
 function globalCredentialGuardScriptPath() {
-  const home = os.homedir()
+  const home = homedir()
   if (!home) return null
   return path.join(home, '.trackfw', 'scripts', 'trackfw-credential-guard.sh')
 }
 
 /** Reads+parses JSON at $HOME/<...relParts>; returns null on any failure (fail-open). */
 function readGlobalHookJSON(...relParts) {
-  const home = os.homedir()
+  const home = homedir()
   if (!home) return null
   try {
     const raw = fs.readFileSync(path.join(home, ...relParts), 'utf8')
@@ -1410,7 +1411,7 @@ function globalCredentialGuardInstalledCopilot() {
  * explicit instruction for Kiro.
  */
 function globalCredentialGuardInstalledKiro() {
-  const home = os.homedir()
+  const home = homedir()
   if (!home) return false
   try {
     const stat = fs.statSync(path.join(home, '.kiro', 'hooks', 'trackfw-credential-guard.json'))
@@ -1437,7 +1438,7 @@ function globalCredentialGuardInstalledKiro() {
 
 /** Mirrors Go's globalGitBranchGuardScriptPath. */
 function globalGitBranchGuardScriptPath() {
-  const home = os.homedir()
+  const home = homedir()
   if (!home) return null
   return path.join(home, '.trackfw', 'scripts', 'trackfw-git-branch-guard.sh')
 }

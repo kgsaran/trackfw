@@ -8,6 +8,7 @@ const projectConfig = require('../config')
 const { catalog, buildPlans, IntegrationManager, globalGroupPath } = require('../integrations')
 const { tildeify, validateTargets, buildDocument, humanReport, silenceConsole } = require('../lib/update-engine')
 const { mergeClaudeHookArray, mergeSimpleCommandArray, mergeCopilotHookArray, generateGlobalCredentialGuardScript, generateGlobalGitBranchGuardScript } = require('../generators/hooks')
+const { homedir } = require('../homedir')
 
 // `trackfw update harness` is the global counterpart to `trackfw update` —
 // see docs/cli-parity.md, "`trackfw update` vs `trackfw update harness`".
@@ -40,7 +41,7 @@ const { mergeClaudeHookArray, mergeSimpleCommandArray, mergeCopilotHookArray, ge
 
 // claudeSkillContent — mirrors generators/init.js:installSkillsForce
 // (npm/src/generators/init.js:1242) byte-for-byte. Duplicated here, not
-// imported, because installSkillsForce() bakes os.homedir() internally with
+// imported, because installSkillsForce() bakes homedir() internally with
 // an unconditional overwrite and no dry-run mode — it cannot be reused
 // without either mutating on --dry-run or forking its signature. Reported
 // as a follow-up cleanup opportunity in the ML-6C handoff report.
@@ -880,7 +881,7 @@ function run(options) {
     process.exit(1)
   }
 
-  const homeRoot = os.homedir()
+  const homeRoot = homedir()
   const dryRun = Boolean(options.dryRun)
   const installMissing = Boolean(options.installMissing)
 

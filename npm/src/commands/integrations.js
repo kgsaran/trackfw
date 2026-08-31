@@ -10,6 +10,7 @@ const identityWizard = require('./identity-wizard')
 const { t } = require('../i18n')
 const { createThirdPartyCommand } = require('./thirdparty')
 const configModule = require('../config')
+const { homedir } = require('../homedir')
 
 const csv = value => String(value).split(',').map(entry => entry.trim()).filter(Boolean)
 const collect = (value, previous) => previous.concat(value)
@@ -179,7 +180,7 @@ function createLifecycleCommand(kind) {
       let presetChanged = false
       if (mutation && kind === 'agents') {
         presetChanged = cmd.getOptionValueSource('identityPreset') === 'cli'
-        if (presetChanged) identityWizard.applyIdentityPresetFlag(os.homedir(), options.identityPreset, operation)
+        if (presetChanged) identityWizard.applyIdentityPresetFlag(homedir(), options.identityPreset, operation)
       }
 
       if (mutation && (!options.targets || !options.targets.length)) {
@@ -197,7 +198,7 @@ function createLifecycleCommand(kind) {
       // planos abaixo. Espelha
       // internal/commands/integrations_flags.go:executeIntegrationMutation.
       if (mutation && kind === 'agents' && !presetChanged) {
-        const homeRoot = os.homedir()
+        const homeRoot = homedir()
         const identityExists = identityWizard.identityFileExists(homeRoot)
         const isTTY = Boolean(process.stdin.isTTY)
         if (identityWizard.shouldPromptIdentity(kind, isTTY, identityExists, forceIdentity)) {
@@ -221,7 +222,7 @@ function createLifecycleCommand(kind) {
         }
       }
 
-      const { models: resolvedModels, warning: modelsWarning } = configModule.resolveAgentModels(options.scope, os.homedir(), process.cwd())
+      const { models: resolvedModels, warning: modelsWarning } = configModule.resolveAgentModels(options.scope, homedir(), process.cwd())
       if (modelsWarning) process.stderr.write(modelsWarning + '\n')
       options.agentModels = resolvedModels
       const output = execute(kind, operation, options)
@@ -254,7 +255,7 @@ function createAgentModelsCommand() {
   cmd.action(() => {
     // AC5 + AC11: read agent_models from the global config (~/.trackfw/trackfw.yaml),
     // not from the cwd singleton. Show origin before the table.
-    const { models: agentModels, source: modelsSource } = configModule.loadGlobalAgentModels(os.homedir(), process.cwd())
+    const { models: agentModels, source: modelsSource } = configModule.loadGlobalAgentModels(homedir(), process.cwd())
 
     // Source line (AC5): show origin before the table; advisory to stderr when not resolved.
     const sourceLines = {

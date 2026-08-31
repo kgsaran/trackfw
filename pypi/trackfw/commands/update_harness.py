@@ -52,6 +52,7 @@ from trackfw.generators.init_gen import (
     generate_global_credential_guard_script,
     generate_global_git_branch_guard_script,
 )
+from trackfw.homedir import home_dir
 
 STATE_UPDATED = "updated"
 STATE_SKIPPED = "skipped"
@@ -1054,7 +1055,7 @@ def _catalog_group_result(
 
 
 def _run(args: argparse.Namespace) -> None:
-    home = os.path.expanduser("~")
+    home = home_dir()
 
     try:
         identity_cfg = load_identity(home)

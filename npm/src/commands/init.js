@@ -5,6 +5,7 @@ const identityStore = require('../identity')
 const identityWizard = require('./identity-wizard')
 const { resolveIdentityPreset, identityFileExists } = identityWizard
 const { resolveScope } = require('./integrations')
+const { homedir } = require('../homedir')
 
 const cmd = new Command('init')
 cmd.description(t('init.description'))
@@ -16,7 +17,7 @@ cmd.action(async (options, command) => {
   const path = require('path')
   const generators = require('../generators/init')
 
-  const home = os.homedir()
+  const home = homedir()
 
   // A validação e persistência da flag acontecem incondicionalmente, acima
   // do early-return não-TTY abaixo — é isso que faz um --identity-preset

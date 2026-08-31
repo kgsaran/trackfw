@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 
 from . import config as _config
 from .traceid import check_traceid
+from trackfw.homedir import home_dir, expand_path
 
 STALE_WIP_DAYS = 7
 
@@ -365,7 +366,7 @@ def _is_subpath(path: str, parent: str) -> bool:
 def _find_adr_file(basename: str, adr_dirs: list) -> str:
     """Busca basename recursivamente em todos os adr_dirs. Retorna caminho completo ou ''."""
     for adr_dir in adr_dirs:
-        expanded_dir = os.path.expanduser(adr_dir)
+        expanded_dir = expand_path(adr_dir)
         try:
             for root, dirs, files in os.walk(expanded_dir):
                 if basename in files:
@@ -759,7 +760,7 @@ def _adr_draft_status_for_rule(basename: str, cfg: dict, messages: list | None):
     _adr_not_accepted) em algum dos adrDirs configurados.
     Busca recursivamente nas subpastas via _find_adr_file.
     """
-    adr_dirs = [os.path.expanduser(d) for d in cfg.get("adr_dirs", ["docs/adr"])]
+    adr_dirs = [expand_path(d) for d in cfg.get("adr_dirs", ["docs/adr"])]
     p = _find_adr_file(basename, adr_dirs)
     if not p:
         return False, True
@@ -963,9 +964,9 @@ def validate_adrs_are_referenced(cfg: dict, cwd: str = None) -> list:
     abs_cwd = os.path.realpath(os.path.abspath(cwd or os.getcwd()))
     violations = []
     adrs = []
-    adr_dirs = [os.path.expanduser(d) for d in cfg.get("adr_dirs", ["docs/adr"])]
+    adr_dirs = [expand_path(d) for d in cfg.get("adr_dirs", ["docs/adr"])]
     for adr_dir in adr_dirs:
-        expanded_dir = os.path.expanduser(adr_dir)
+        expanded_dir = expand_path(adr_dir)
         for file_path in _walk_dir_md_paths_for_rule("adr_orphan", expanded_dir, violations):
             real_path = os.path.realpath(file_path)
             # Isenta arquivos localizados fora do CWD (ex.: ADRs globais compartilhados ou symlinks externos)
@@ -1221,7 +1222,7 @@ def validate_reqs_not_blocked_by_draft_adrs(cfg: dict) -> list:
 def validate_frontmatter_presence(cfg: dict) -> list:
     """Verifica presença de frontmatter em ADRs e REQs (busca recursiva em adr_dirs)."""
     violations = []
-    adr_dirs = [os.path.expanduser(d) for d in cfg.get("adr_dirs", ["docs/adr"])]
+    adr_dirs = [expand_path(d) for d in cfg.get("adr_dirs", ["docs/adr"])]
 
     for adr_dir in adr_dirs:
         files = [f for f in _walk_dir_md(adr_dir) if f.endswith(".md")]
@@ -1298,7 +1299,7 @@ def validate_ref_targets_exist(cfg: dict) -> list:
 
 
 def _reference_exists(ref: str) -> bool:
-    return os.path.exists(os.path.expanduser(ref))
+    return os.path.exists(expand_path(ref))
 
 
 def validate_req_roadmap_lifecycle(cfg: dict) -> list:
@@ -1313,7 +1314,7 @@ def validate_req_roadmap_lifecycle(cfg: dict) -> list:
             ref = _extract_ref_path(content, "Roadmap")
             if not ref:
                 continue
-            expanded_ref = os.path.expanduser(ref)
+            expanded_ref = expand_path(ref)
             if not os.path.isfile(expanded_ref):
                 continue
             if os.path.basename(os.path.dirname(expanded_ref)) == "done":
@@ -1371,7 +1372,7 @@ def validate_adr_accepted_when_req_done(cfg: dict) -> list:
     histórico legítimo. REQ que não está Done nunca dispara esta regra.
     """
     violations = []
-    adr_dirs = [os.path.expanduser(d) for d in cfg.get("adr_dirs", ["docs/adr"])]
+    adr_dirs = [expand_path(d) for d in cfg.get("adr_dirs", ["docs/adr"])]
     for file_path in resolve_req_files(cfg):
         req_name = os.path.basename(file_path)
         content = _read_file_for_rule("adr_accepted_when_req_done", file_path, violations)
@@ -3093,7 +3094,7 @@ def validate_guard_global_hook_resolvable(script_marker: str, cwd: str = None) -
     Fail-open: $HOME não resolvível, arquivo ilegível ou JSON inválido pulam esse arquivo em
     silêncio -- mesmo contrato que validate_guard_hook_resolvable já tem para arquivos de projeto.
     """
-    home = os.path.expanduser("~")
+    home = home_dir()
     if not home or home == "~":
         return []
 
@@ -3191,7 +3192,7 @@ def validate_guard_global_script_integrity(script_file_name: str, reference_cont
     nos dois call sites abaixo -- ambos já são o nome literal do arquivo do script, mesma
     equivalência que o port Go/Node também reaproveita.
     """
-    home = os.path.expanduser("~")
+    home = home_dir()
     if not home or home == "~":
         return []
 
@@ -3291,7 +3292,7 @@ def validate_adr_dirs_exist(cfg: dict) -> dict:
     violations = []
     warnings = []
     strict_ci = cfg.get("strict_ci_paths", False)
-    adr_dirs = [os.path.expanduser(d) for d in cfg.get("adr_dirs", ["docs/adr"])]
+    adr_dirs = [expand_path(d) for d in cfg.get("adr_dirs", ["docs/adr"])]
     for adr_dir in adr_dirs:
         if not os.path.exists(adr_dir) or not os.path.isdir(adr_dir):
             msg = f'adr_dir "{adr_dir}" does not exist'

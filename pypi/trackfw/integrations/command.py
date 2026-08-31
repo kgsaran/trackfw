@@ -15,6 +15,7 @@ from trackfw import config as trackfw_config
 from .catalog import plan_deployments
 from .manager import IntegrationError, IntegrationManager
 from trackfw.generators.init_gen import inject_rules_for_tool
+from trackfw.homedir import home_dir
 
 # trackfw.commands.identity_wizard is imported lazily inside run(), as a
 # defensive measure: this module lives in trackfw.integrations, and
@@ -199,7 +200,7 @@ def _run_models(_args: argparse.Namespace) -> int:
 
     # AC5 + AC11: read agent_models from the global config (~/.trackfw/trackfw.yaml),
     # not from the cwd singleton. Show origin before the table.
-    home = os.path.expanduser("~")
+    home = home_dir()
     cwd = os.getcwd()
     agent_models, models_source = trackfw_config.load_global_agent_models(home, cwd)
     agent_models = agent_models or {}
@@ -329,7 +330,7 @@ def add_lifecycle_parser(subparsers, kind: str):
 
 def run(args: argparse.Namespace, kind: str) -> int:
     try:
-        home = os.path.expanduser("~")
+        home = home_dir()
         mutation = args.action != "list"
 
         # Scope resolution is a gate independent of --targets/--items (ADR

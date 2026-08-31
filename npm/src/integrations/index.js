@@ -9,6 +9,7 @@ const { legacyHashes } = require('./legacy')
 const identityStore = require('../identity')
 const { injectRulesForTool } = require('../generators/init')
 const { applyThirdPartyReferences } = require('../thirdparty/references')
+const { homedir } = require('../homedir')
 
 function parseSurfaces(values = []) {
   const result = {}
@@ -109,7 +110,7 @@ function execute(kind, operation, options = {}, roots = {}) {
   // reverteria silenciosamente os nomes customizados dos agentes para os
   // defaults neutros (espelha internal/commands/integrations_flags.go:
   // executeIntegrationMutation/executeIntegrationList).
-  const homeRoot = roots.homeRoot || os.homedir()
+  const homeRoot = roots.homeRoot || homedir()
   const identityConfig = options.identity !== undefined ? options.identity : identityStore.load(homeRoot)
   const manager = new IntegrationManager(roots, { onSkip: options.onSkip })
   // D5/D9: manager.roots.project lets buildPlans reproduce any persisted

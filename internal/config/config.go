@@ -3,6 +3,7 @@ package config
 import (
 	"bytes"
 	"fmt"
+	"github.com/kgsaran/trackfw/internal/homedir"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -147,7 +148,7 @@ const GlobalAgentModelsNoneMessage = `trackfw: agents global: agent_models não 
 const GlobalAgentModelsProjectOnlyMessage = `trackfw: agents global: agent_models configurado em trackfw.yaml do projeto mas não vale para escopo global. Mova a chave para ~/.trackfw/trackfw.yaml.`
 
 // LoadGlobalAgentModels reads agent_models from ~/.trackfw/trackfw.yaml, bypassing the Load()
-// singleton. homeDir is the user home directory (e.g. from os.UserHomeDir()); cwd is the
+// singleton. homeDir is the user home directory (e.g. from homedir.Dir()); cwd is the
 // working directory used only for the AC14 diagnostic (detect "configured in project, not global").
 //
 // Never calls osExit. Returns an empty map and the appropriate AgentModelsSource for the caller
@@ -615,18 +616,18 @@ func parseInt(s string, def int) int {
 	return n
 }
 
-// ExpandPath substitui o prefixo ~ ou ~/ pelo diretório home do usuário (os.UserHomeDir()).
+// ExpandPath substitui o prefixo ~ ou ~/ pelo diretório home do usuário (homedir.Dir()).
 // Se p não iniciar com ~ ou se falhar ao obter homeDir, retorna o caminho inalterado.
 func ExpandPath(p string) string {
 	if p == "~" {
-		home, err := os.UserHomeDir()
+		home, err := homedir.Dir()
 		if err != nil {
 			return p
 		}
 		return home
 	}
 	if strings.HasPrefix(p, "~/") || strings.HasPrefix(p, "~\\") {
-		home, err := os.UserHomeDir()
+		home, err := homedir.Dir()
 		if err != nil {
 			return p
 		}

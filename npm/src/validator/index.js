@@ -8,6 +8,7 @@ const { gitOutput } = require('./git-exec')
 const config = require('../config')
 const { checkTraceIds } = require('./traceid')
 const { loadProvenance } = require('../thirdparty/provenance')
+const { homedir } = require('../homedir')
 
 const STALE_WIP_DAYS = 7
 let staleWipNowMs = () => Date.now()
@@ -2638,7 +2639,7 @@ function globalGuardConfigPath(gf, scriptMarker) {
 // Fail-open: unresolvable $HOME, unreadable file, or invalid JSON all skip that file in silence —
 // same contract validateGuardHookResolvable already has for project-scope files.
 function validateGuardGlobalHookResolvable(scriptMarker) {
-  const home = os.homedir()
+  const home = homedir()
   if (!home) return []
 
   const msgs = []
@@ -2723,7 +2724,7 @@ function validateGuardGlobalHookResolvable(scriptMarker) {
 // scriptMarker doubles as the script's own filename (trackfw-credential-guard.sh /
 // trackfw-git-branch-guard.sh) in both call sites below — same equivalence the Go port relies on.
 function validateGuardGlobalScriptIntegrity(scriptFileName, referenceContent) {
-  const home = os.homedir()
+  const home = homedir()
   if (!home) return []
 
   const scriptPath = path.join(home, '.trackfw', 'scripts', scriptFileName)
