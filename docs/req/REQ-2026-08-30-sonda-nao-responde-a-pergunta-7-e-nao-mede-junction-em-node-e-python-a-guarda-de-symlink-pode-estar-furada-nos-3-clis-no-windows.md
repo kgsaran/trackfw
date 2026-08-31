@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-08-30
 author: "zeus-tf"
 adr: "docs/adr/ADR-2026-08-30-ci-de-windows-como-instrumento-de-medicao-job-largo-que-nasce-vermelho-mais-sonda-sob-demanda.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-30-sonda-mede-junction-nos-3-runtimes-e-a-pergunta-7-volta-a-responder.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-30-sonda-mede-junction-nos-3-runtimes-e-a-pergunta-7-volta-a-responder.md"
 ---
 
 # REQ: Sonda não responde a pergunta 7 e não mede junction em Node e Python — a guarda de symlink pode estar furada nos 3 CLIs no Windows
 
-> Date: 2026-08-30 | Status: Open
+> Date: 2026-08-30 | Status: Done
 
 ## Motivation
 
@@ -102,34 +102,34 @@ legítimo. **Esta REQ não corrige guarda nenhuma** — ela produz o número que
 
 ## Acceptance Criteria
 
-- [ ] **AC1** — A pergunta 7 volta a responder. `git update-index --cacheinfo` recebe **um único
+- [x] **AC1** — A pergunta 7 volta a responder. `git update-index --cacheinfo` recebe **um único
       argumento**, não um array do PowerShell. O step conclui `success` e imprime o que ficou em
       disco após o `checkout` de um symlink versionado.
-- [ ] **AC2** — 🔴 **Falsificação da correção da AC1**: provar que o argumento chega íntegro, não
+- [x] **AC2** — 🔴 **Falsificação da correção da AC1**: provar que o argumento chega íntegro, não
       apenas que o comando parou de errar. Um `git update-index` que falhasse por outro motivo e
       fosse silenciado também faria o step passar.
-- [ ] **AC3** — A sonda passa a medir **junction em Node**: `lstatSync()` sobre junction, imprimindo
+- [x] **AC3** — A sonda passa a medir **junction em Node**: `lstatSync()` sobre junction, imprimindo
       `isSymbolicLink()`, `isDirectory()` e `isFile()` **crus**, ao lado do mesmo trio para um
       symlink real e para um arquivo comum — o mesmo formato comparativo que o braço Go já usa.
-- [ ] **AC4** — A sonda passa a medir **junction em Python**: `os.path.islink()`, `os.lstat().st_mode`,
+- [x] **AC4** — A sonda passa a medir **junction em Python**: `os.path.islink()`, `os.lstat().st_mode`,
       `stat.S_ISLNK()` e `os.readlink()` (com o erro, se levantar) sobre junction, symlink e arquivo
       comum.
-- [ ] **AC5** — **Saída comparável entre os 3 runtimes**: a sonda imprime uma tabela final
+- [x] **AC5** — **Saída comparável entre os 3 runtimes**: a sonda imprime uma tabela final
       `runtime × (arquivo | symlink | junction)` que permite ler a divergência sem cruzar logs à mão.
       É o artefato que a REQ de correção vai citar.
-- [ ] **AC6** — 🔴 **A sonda continua sem veredito.** Nenhuma das perguntas novas emite pass/fail nem
+- [x] **AC6** — 🔴 **A sonda continua sem veredito.** Nenhuma das perguntas novas emite pass/fail nem
       `exit 1` por causa do *valor* medido. Sonda que ganha veredito vira job de regressão disfarçado
       — o AC6 do ADR é explícito e inviolável.
-- [ ] **AC7** — **Nota de correção na REQ-2026-08-29**, registrando que o AC12 é verdadeiro no Linux
+- [x] **AC7** — **Nota de correção na REQ-2026-08-29**, registrando que o AC12 é verdadeiro no Linux
       e falso no Windows para junction, com link para o run que mediu. Sem reabrir a REQ, sem
       reescrever o AC original.
-- [ ] **AC8** — Nota de vault sobre `Lstat`/junction/`ModeIrregular`, com a separação
+- [x] **AC8** — Nota de vault sobre `Lstat`/junction/`ModeIrregular`, com a separação
       guarda-de-diretório vs guarda-de-folha-sem-ancestral. Critério: outro agente perderia mais de
       dez minutos amanhã sem ela.
-- [ ] **AC9** — A sonda roda em `windows-latest` e o log traz as respostas novas. **Verificável só
+- [x] **AC9** — A sonda roda em `windows-latest` e o log traz as respostas novas. **Verificável só
       pós-merge** (`workflow_dispatch` exige o workflow na branch default) — registrado como
       verificação diferida, não marcado como satisfeito antes de existir.
-- [ ] **AC10** — `actionlint` limpo; `make quality` verde; nenhum job de `quality.yml` alterado.
+- [x] **AC10** — `actionlint` limpo; `make quality` verde; nenhum job de `quality.yml` alterado.
 
 ## Negative Scope — o que esta REQ NÃO faz
 
@@ -143,6 +143,35 @@ legítimo. **Esta REQ não corrige guarda nenhuma** — ela produz o número que
   real e mais grave, mas é escopo da REQ de correção — misturar as duas faria a medição competir com
   a correção no mesmo roadmap.
 
+## Resultado — REQ fechada em 2026-08-31 (run `33447191373`)
+
+**A medição existe e inverteu a expectativa.** Eu esperava três runtimes cegos a junction; encontrei
+um vidente:
+
+| runtime | junction | veredito |
+|---|---|---|
+| Go | `ModeSymlink=false` **`ModeIrregular=true`** | cego, **distinguível** |
+| Node | **`isSymbolicLink=true`** | **ENXERGA — sem defeito** |
+| Python | `islink=False` **`S_ISDIR=True`** | cego **e indistinguível de diretório comum** |
+
+O libuv mapeia o reparse point para symlink: **Node não precisa de correção na detecção**. A regra
+dura de paridade se inverte aqui — os três divergem, e o certo é o Node.
+
+**Python é o pior caso, e não era o previsto.** Existe discriminante (`os.readlink()` resolve a
+junction e falha com `WinError 4390` num diretório comum), mas **não é a primitiva em uso** — o
+remédio é *trocar a primitiva*, não adicionar um teste ao lado.
+
+**A severidade cai.** O `rmdir` remove a junction e **não o alvo**, nos três runtimes: **não há
+destruição de dados**. Somado à contenção ao `root` (achada na barreira), a formulação alarmista que
+eu havia usado estava errada por duas vias independentes.
+
+**O defeito real e universal é a Classe 3** — guarda de folha que faz `Lstat` só na folha e nunca
+olha o ancestral. Vale em todo SO e todo runtime, e não tem nada de Windows. É o que a REQ de
+correção deve priorizar.
+
+Detalhe completo em `docs/roadmaps/done/ROADMAP-2026-08-30-sonda-mede-junction-...md`, seção
+*MEDIÇÃO CONCLUÍDA*, e em `vault/notes/lstat-nao-ve-junction-e-guarda-de-folha-nao-olha-ancestral-2026-08-31.md`.
+
 ## Linked ADR
 
 ADR: `ADR-2026-08-30-ci-de-windows-como-instrumento-de-medicao-job-largo-que-nasce-vermelho-mais-sonda-sob-demanda.md`
@@ -150,4 +179,4 @@ ADR: `ADR-2026-08-30-ci-de-windows-como-instrumento-de-medicao-job-largo-que-nas
 
 ## Linked Roadmap
 
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-30-sonda-mede-junction-nos-3-runtimes-e-a-pergunta-7-volta-a-responder.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-08-30-sonda-mede-junction-nos-3-runtimes-e-a-pergunta-7-volta-a-responder.md`
