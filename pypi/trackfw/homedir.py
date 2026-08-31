@@ -9,7 +9,9 @@ HOME=<tempdir>, which on Windows isolates nothing — the process keeps reading 
 writing the developer's real home.
 
 home_dir() makes Windows behave like the other platforms: $HOME first,
-expanduser("~") as the fallback. Where $HOME is unset nothing changes.
+expanduser("~") as the fallback — **on Windows only**. See the function's own
+docstring for why the platform guard is there. Where $HOME is unset nothing
+changes.
 
 The empty string does NOT count as set: HOME="" would resolve to "" and every
 derived path would silently become relative.
@@ -22,13 +24,40 @@ Two families, and both matter:
 """
 
 import os
+import sys
 
 
 def home_dir() -> str:
-    """The user's home directory, preferring $HOME when set and non-empty."""
-    from_env = os.environ.get("HOME")
-    if from_env:
-        return from_env
+    """The user's home directory. Prefers $HOME **on Windows only**.
+
+    On Linux and macOS os.path.expanduser("~") already reads $HOME, so preferring
+    the variable there fixes nothing — and it BREAKS the home isolation of several
+    tests in this repository, which isolate by patching the FUNCTION rather than
+    the variable:
+
+        monkeypatch.setattr("os.path.expanduser",
+                            lambda p: str(home) if p == "~" else os.path.expanduser(p))
+
+    Reading os.environ["HOME"] first bypasses that patch, and production walks to
+    the runner's REAL home. Measured on a Linux CI run: three tests failing —
+    test_identity_wizard.py::test_agents_install_with_existing_identity_and_no_flag_does_not_invoke,
+    test_scope_resolution.py::test_targets_flag_with_tty_and_no_scope_still_triggers_scope_resolver
+    and test_thirdparty.py::test_install_global_scope_requires_its_own_confirmation.
+    One of them fails with "OSError: pytest: reading from stdin while output is
+    captured!" — production found the wrong home, did not find the identity the
+    test had written, and went on to prompt.
+
+    The platform guard keeps Linux and macOS byte-for-byte identical to the
+    previous behavior and fixes only where the defect exists.
+
+    Go and Node.js need no such guard: os.UserHomeDir() and os.homedir() already
+    read $HOME on POSIX, so preferring the variable there is a no-op, and both
+    suites isolate by environment variable rather than by patching a function.
+    """
+    if sys.platform == "win32":
+        from_env = os.environ.get("HOME")
+        if from_env:
+            return from_env
     return os.path.expanduser("~")
 
 
