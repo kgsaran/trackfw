@@ -4,6 +4,7 @@
 
 ## Índice
 
+- [resolve-symlinks-primitivas-divergem-nos-3-runtimes-folha-inexistente-2026-08-31](resolve-symlinks-primitivas-divergem-nos-3-runtimes-folha-inexistente-2026-08-31.md) — `path.resolve()` do Node não segue symlink (guard no-op); `EvalSymlinks`/`realpathSync` erram sobre folha inexistente (resolver só o diretório-pai); comparar destino resolvido contra `root` não resolvido produz falso positivo (`/tmp`→`/private/tmp` no macOS)
 - [lstat-nao-ve-junction-e-guarda-de-folha-nao-olha-ancestral-2026-08-31](lstat-nao-ve-junction-e-guarda-de-folha-nao-olha-ancestral-2026-08-31.md) — `Lstat` classifica junction como `ModeIrregular`, não `ModeSymlink`, e `mklink /J` não exige privilégio; o freio acidental existe só no Go; guarda de folha nunca olha ancestral, em todo SO
 - [powershell-modo-argumento-nao-interpola-nem-divide-2026-08-31](powershell-modo-argumento-nao-interpola-nem-divide-2026-08-31.md) — em `shell: pwsh` a vírgula só constrói array em modo expressão; em modo argumento o token é único e a variável **não** é interpolada — o remédio é citar, não escapar
 - [if-sem-funcao-de-status-tem-success-implicito-2026-08-30](if-sem-funcao-de-status-tem-success-implicito-2026-08-30.md) — passo pulado com condição verdadeira: o Actions prepende `success()` a todo `if:` sem função de status
