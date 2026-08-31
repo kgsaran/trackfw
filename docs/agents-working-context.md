@@ -26447,3 +26447,109 @@ e tabela comparativa. Wave 2 é minha: nota de correção na `REQ-2026-08-29` e 
 **Nota de processo:** meu prompt para o `hades-tf` restringiu a escrita ao documento de segurança e
 colidiu com a obrigação de protocolo do role dele de atualizar este arquivo. Ele sinalizou em vez de
 desobedecer silenciosamente uma das duas. O prompt estava mal formulado, não o role.
+
+---
+
+## 2026-08-31 — ML-1A: pergunta 7 responde e junction é medida em Node/Python (ares-tf)
+
+**Início:** branch `fix/sonda-mede-junction-nos-3-runtimes-e-a-pergunta-7-volta-a-responder`,
+roadmap `ROADMAP-2026-08-30-sonda-mede-junction-nos-3-runtimes-e-a-pergunta-7-volta-a-responder.md`,
+Wave 1 (ML único — todas as ações tocam `windows-probe.yml`).
+
+**Encerramento.** As cinco ações do ML-1A:
+
+1. **Pergunta 7 corrigida** — `git update-index --add --cacheinfo 120000,$blob,mylink` era passado
+   direto no `run:` do pwsh; a vírgula do PowerShell construía um array e o git recebia três
+   argumentos. Corrigido montando `$cacheinfo = "120000,$blob,mylink"` numa variável antes de invocar.
+   **AC2 (prova de integridade)**: em vez de veredito, adicionei `git ls-files --stage mylink` logo
+   após o `update-index` (antes do `checkout`) e imprimi o valor bruto do índice ao lado do valor
+   esperado (`esperado_mode=120000 esperado_blob=$blob esperado_path=mylink`) — quem lê o log compara,
+   a sonda não decide.
+2. **Junction em Node** (`scripts/windows-repro/node/probe.js`, novo) — `lstatSync()` sobre arquivo
+   comum, symlink real (`fs.symlinkSync(..., 'file')`) e junction (`fs.symlinkSync(..., 'junction')`,
+   mesmo reparse tag `IO_REPARSE_TAG_MOUNT_POINT` que `mklink /J` produz), imprimindo
+   `isSymbolicLink()`/`isDirectory()`/`isFile()` crus.
+3. **Junction em Python** (`scripts/windows-repro/python/probe.py`, novo) — mesmos três alvos;
+   junction criada via `cmd /c mklink /J` (Python não tem primitivo nativo de junction), imprimindo
+   `os.path.islink()`, `os.lstat().st_mode`, `stat.S_ISLNK()` e `os.readlink()` (erro cru se levantar).
+4. **`rmdir` sobre junction vazia nos 3 runtimes** (`rmdir-junction` em `probe.go`/`probe.js`/`probe.py`)
+   — achado do ML-0A: `manager.py:589 _remove_empty` depende só de `except OSError` para parar de subir
+   removendo ancestrais; isto mede diretamente se o `rmdir`/`rmdirSync`/`os.Remove` tem sucesso sobre a
+   junction e, separadamente, se a junction sumiu e se o alvo sobreviveu.
+5. **Tabela comparativa final** — subcomando `table` nos três probes, cada um recriando fixtures do
+   zero e imprimindo linhas `TABELA runtime=<go|node|python> target=<arquivo|symlink|junction> ...`
+   com prefixo comum, chamados em sequência no mesmo step do workflow (Pergunta 11).
+
+Também: achado do ML-0A sobre `%TEMP%` ≠ `RUNNER_TEMP` endereçado por **medição, não reescrita de
+alegação** — `printTempDirInfo`/`_print_tempdir_info` imprime `tempdir_resolvido=... runner_temp=...`
+em toda função que cria link/junction/rmdir/table, nos 3 braços.
+
+**Sem veredito (AC6):** nenhuma pergunta nova usa `exit 1`/pass-fail sobre o valor medido; erros de
+criação (privilégio ausente, `cmd` ausente) são impressos como dado e a função retorna, nunca aborta o
+step (`if: always()` preservado em todos os steps novos).
+
+**Verificado localmente (fora do escopo Windows):**
+- `actionlint .github/workflows/windows-probe.yml` → OK.
+- `git diff --quiet origin/main -- .github/workflows/quality.yml` → sem diff (arquivo intocado).
+- `grep -nE "^\s*exit 1" windows-probe.yml` → nenhum.
+- `probe.go`: compila para `GOOS=windows GOARCH=amd64` (verificado via cópia sem a tag
+  `//go:build ignore`, já que ela oculta o arquivo de `go build ./...`/`go vet ./...` de propósito).
+  `go build ./...`/`go vet ./...` do repo real permanecem limpos (arquivo continua invisível a eles).
+- `probe.js`/`probe.py`: todos os subcomandos rodados no macOS local — `lstat-junction`/`table`
+  criam a "junction" como symlink comum no macOS (comportamento correto e esperado fora do Windows,
+  reportado como dado, não escondido); `mklink`/`cmd` ausente no Python é capturado como
+  `CompletedProcess` sintético (`err_spawn_cmd=...`) em vez de crashar o processo.
+- `make quality` completo: Go (`go test ./...`, `go vet ./...`) verde; Node 839/839 passed; Python
+  1555 passed/28 subtests; `check-cli-parity.sh`, `check-validate-parity.sh`,
+  `check-agent-namespace-union` (66 cenários), `check-gates-falsify.sh`, `check-roadmap-barrier-contract`
+  (53 cenários) — todos OK, exit code 0.
+
+**Não verificado (estruturalmente pós-merge, registrado no roadmap):** a sonda real em
+`windows-latest` — `workflow_dispatch` só é acionável a partir da branch default. Nenhuma evidência de
+execução Windows foi inventada; AC9 permanece diferido para o arquiteto disparar após o merge.
+
+**Arquivos tocados:** `.github/workflows/windows-probe.yml`, `scripts/windows-repro/go/probe.go`,
+`scripts/windows-repro/node/probe.js` (novo), `scripts/windows-repro/python/probe.py` (novo).
+`quality.yml`, `run.ps1`, `checks.go`/`checks.js`/`checks.py` intocados (confirmado por
+`git diff --stat`).
+
+**Correções pós-revisão (mesma sessão, antes do handoff):**
+
+1. **Achado bloqueante corrigido**: `probe.js` criava a junction via `fs.symlinkSync(target, link,
+   'junction')` (API nativa do libuv), diferente de `probe.go`/`probe.py`, que usam
+   `cmd /c mklink /J`. Ambos produzem o mesmo reparse tag (`IO_REPARSE_TAG_MOUNT_POINT`), mas o
+   `REPARSE_DATA_BUFFER` escrito por libuv difere do escrito por `mklink.exe` nos campos
+   `SubstituteName`/`PrintName` — exatamente o que `readlink()`/`LinkType` leem. Isso confundiria "o
+   Lstat de cada runtime diverge" com "o objeto medido é diferente", contaminando o próprio artefato
+   que este ML existe para produzir (a tabela comparativa). Corrigido: `probe.js` agora cria a
+   junction via `spawnSync('cmd', ['/c','mklink','/J',...])`, mesmo mecanismo dos outros dois braços,
+   nos três subcomandos que criam junction (`lstat-junction`, `rmdir-junction`, `table`).
+2. **Mecanismo da pergunta 7 corrigido no comentário do workflow** — reproduzi o bug original
+   localmente com `pwsh` + `git` real (fora do CI, comprovando que não é exclusivo do Windows): a
+   causa NÃO é "a vírgula constrói um array de 3 argumentos" (como o comentário original e a REQ
+   descrevem) — é que o PowerShell, ao passar um argumento sem espaços contendo vírgula para um
+   executável NATIVO, não interpola a variável dentro dele; `$blob` chega ao processo como o texto
+   literal `"$blob"`, não como o hash, e git recebe UM argumento malformado (sha1 inválido) — daí
+   exatamente o erro `"option 'cacheinfo' expects <mode>,<sha1>,<path>"`. Repro:
+   `pwsh -File run.ps1` local com `/bin/echo`/`node` como alvo mostrou 1 argumento literal
+   `120000,$blob,mylink` na forma antiga, contra `120000,<hash-real>,mylink` corretamente interpolado
+   na forma nova (que usa uma variável de string com aspas duplas antes de invocar o git). Corrigi o
+   comentário em `windows-probe.yml` para descrever o mecanismo real — **não editei a REQ nem o
+   roadmap** (fora do meu escopo), só sinalizo aqui a divergência entre o texto da REQ e o mecanismo
+   comprovado, para quem escrever a REQ de correção subsequente.
+3. **Não-bloqueante, aplicado**: `rmdir-junction` do Python agora chama `Path(junction).rmdir()` em
+   vez de `os.rmdir(junction)` — mesmo primitivo exato que `manager.py:589 _remove_empty` usa em
+   produção (`directory.rmdir()` sobre um `pathlib.Path`), não apenas o mesmo syscall por baixo.
+4. **Não-bloqueante, registrado em comentário**: `timeout-minutes: 10` ficou mais apertado com os 4
+   steps novos (múltiplos `go run`, cada um recompila, mais `mklink` x3 runtimes) — não subi o número
+   (é guardrail proposital), só documentei no YAML que se ele disparar pela primeira vez logo após
+   este ML, isso é esperado como orçamento mais justo, não necessariamente uma regressão nova.
+
+Todos os gates da wave (`actionlint`, `quality.yml` intocado, sem `exit 1`) e `go build`/`go vet`
+revalidados depois destas correções — continuam verdes. `make quality` completo (rodado antes destas
+correções pontuais, que não tocam nada coberto por `make quality` — `windows-repro/` não aparece em
+nenhum script de parity/gate) permanece a evidência de referência.
+
+**Próximo:** Wave 2 (arquiteto) — nota de correção na `REQ-2026-08-29` e nota de vault sobre
+`Lstat`/junction/`ModeIrregular`. Sugestão para essa nota: incluir também o mecanismo real da pergunta
+7 (item 2 acima), já que diverge do texto atual da REQ-2026-08-30.

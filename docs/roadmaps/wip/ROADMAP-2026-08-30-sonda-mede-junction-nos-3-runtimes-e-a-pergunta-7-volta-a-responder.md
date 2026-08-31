@@ -113,16 +113,20 @@ restrição de escrita não deveria colidir com obrigação de protocolo do role
 > agentes no mesmo arquivo é a colisão que este projeto proíbe.
 
 ### ML-1A — Pergunta 7 responde e junction é medida em Node e Python
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** `ares-tf`
-**Files affected:** `.github/workflows/windows-probe.yml`, `scripts/windows-repro/node/` (arquivo
-novo de sonda), `scripts/windows-repro/python/` (arquivo novo de sonda). **Não tocar**
-`quality.yml`, nem `run.ps1`, nem `checks.go`/`checks.js`/`checks.py` (esses são da camada 2, que é
-regressão, não sonda).
+**Files affected:** `.github/workflows/windows-probe.yml`, `scripts/windows-repro/go/probe.go`
+(braço Go da **sonda** — é escopo, ao contrário de `checks.go`), `scripts/windows-repro/node/`
+(arquivo novo de sonda), `scripts/windows-repro/python/` (arquivo novo de sonda). **Não tocar**
+`quality.yml`, nem `run.ps1`, nem `checks.go`/`checks.js`/`checks.py` — esses três são a **camada 2**,
+que é regressão com veredito, não sonda. A distinção importa: `probe.go` imprime valor cru sem
+veredito; `checks.go` decide `REPRODUCED`/`ABSENT`.
 **Actions:**
-1. **Corrigir a pergunta 7.** `git update-index --add --cacheinfo 120000,$blob,mylink` falhou porque
-   **em PowerShell a vírgula constrói array** — chegaram três argumentos ao git. Passar como
-   **string única**. Provar que o argumento chega íntegro, não apenas que o comando parou de errar.
+1. **Corrigir a pergunta 7.** `git update-index --add --cacheinfo 120000,$blob,mylink` falhou.
+   ⚠️ **O mecanismo escrito aqui originalmente estava errado** — ver correção na REQ: em **modo
+   argumento** a vírgula **não** constrói array; o token chega como **uma** string com `$blob`
+   **literal, não interpolado**. Remédio: **citar** (`"120000,$blob,mylink"`), não desmembrar.
+   Provar que o argumento chega íntegro, não apenas que o comando parou de errar.
 2. **Junction em Node**: `lstatSync()` sobre junction, symlink real e arquivo comum, imprimindo
    `isSymbolicLink()`, `isDirectory()`, `isFile()` **crus**. Mesmo formato comparativo do braço Go.
 3. **Junction em Python**: `os.path.islink()`, `os.lstat().st_mode`, `stat.S_ISLNK()` e
@@ -136,10 +140,10 @@ regressão, não sonda).
 5. **Tabela final** `runtime × (arquivo | symlink | junction)` — é o artefato que a REQ de correção
    vai citar. Sem ela, comparar exige cruzar log à mão.
 **Critérios de aceite:**
-- [ ] AC1, AC2, AC3, AC4, AC5 da REQ
-- [ ] 🔴 **AC6 da REQ — a sonda continua SEM veredito.** Nenhuma pergunta nova emite pass/fail nem
+- [x] AC1, AC2, AC3, AC4, AC5 da REQ
+- [x] 🔴 **AC6 da REQ — a sonda continua SEM veredito.** Nenhuma pergunta nova emite pass/fail nem
       `exit 1` por causa do *valor* medido. Sonda com veredito vira job de regressão disfarçado.
-- [ ] 🔴 **Medir, não afirmar, onde os links são criados.** O AC original dizia *"todo link fica
+- [x] 🔴 **Medir, não afirmar, onde os links são criados.** O AC original dizia *"todo link fica
       dentro de `RUNNER_TEMP`/workspace"* — **já era falso quando eu o escrevi**: `probe.go:117,147`
       usa `os.MkdirTemp("", ...)`, que resolve para `%TEMP%`
       (`C:\Users\RUNNER~1\AppData\Local\Temp`), enquanto `RUNNER_TEMP` é `D:\a\_temp`. Achado
@@ -147,7 +151,7 @@ regressão, não sonda).
       imprime o tempdir resolvido ao lado de `$env:RUNNER_TEMP`**, para que a diferença seja lida no
       log em vez de asseverada num AC. Consequência prática é baixa (diretório efêmero e vazio); o
       problema era o AC não ser verificável por construção.
-- [ ] `actionlint` limpo; `make quality` verde; `quality.yml` byte-idêntico
+- [x] `actionlint` limpo; `make quality` verde; `quality.yml` byte-idêntico
 
 **Gates da wave:**
 ```bash
@@ -155,6 +159,52 @@ actionlint .github/workflows/windows-probe.yml
 git diff --quiet origin/main -- .github/workflows/quality.yml
 ! grep -nE "^\s*exit 1" .github/workflows/windows-probe.yml
 ```
+
+#### Resultado do ML-1A (ares-tf, 2026-08-31) — auditado pelo arquiteto
+
+**Entregue:** pergunta 7 corrigida + perguntas 8/9/10/11 novas em `windows-probe.yml`;
+`rmdir-junction` e `table` em `probe.go`; `probe.js` e `probe.py` novos.
+
+**Gates rodados por mim:** `actionlint` limpo · `quality.yml` **byte-idêntico** a `origin/main` ·
+nenhum `exit 1` no workflow · `go build ./...` · **cross-build `GOOS=windows`** limpo.
+
+**Duas autocorreções dele, ambas substantivas.**
+
+**(1) A que salva a medição.** A primeira versão do `probe.js` criava junction com
+`fs.symlinkSync(..., 'junction')` — primitiva nativa do libuv — enquanto Go e Python usam
+`cmd /c mklink /J`. As duas produzem o mesmo *reparse tag*, mas conteúdo diferente no
+`REPARSE_DATA_BUFFER` (`SubstituteName`/`PrintName`), que é **exatamente** o que `readlink()` lê.
+Teríamos confundido *"o `lstat` do Node diverge"* com *"o objeto medido é outro"* — envenenando a
+tabela comparativa que é a razão de existir deste ML. Verifiquei: os três braços agora chamam
+`mklink /J`. Uma medição comparativa só vale se o **objeto** for o mesmo nos três; a variável sob
+teste tem de ser o runtime, não a fixture.
+
+**(2) A que corrige um erro meu.** Ele reproduziu a falha da pergunta 7 localmente e reportou que
+**meu diagnóstico estava errado**. Confirmei com `pwsh` antes de aceitar, porque a mensagem do git
+era compatível com a minha hipótese:
+
+```
+modo expressão   $arr = 120000,$blob,"mylink"   →  Object[], 3 elementos    ← vírgula constrói array
+modo argumento   & exe 120000,$blob,mylink      →  1 arg, "$blob" LITERAL   ← nem array, nem interpolação
+forma citada     & exe "120000,$blob,mylink"    →  1 arg, interpolado       ← o remédio
+```
+
+Eu apliquei semântica de **modo expressão** ao **modo argumento**. E o remédio **muda com o
+diagnóstico**: não é "juntar os argumentos", é **citar a string** — quem lesse a versão antiga
+poderia escapar vírgulas e seguir sem interpolação. REQ e roadmap corrigidos; a versão errada ficou
+registrada como errada.
+
+**AC2 satisfeita pelo mecanismo certo:** `git ls-files --stage mylink` é lido logo após o
+`update-index` e **antes** do checkout, com o valor cru impresso ao lado do esperado — sem veredito.
+Prova que o argumento chegou íntegro, não só que o comando devolveu `exit 0`.
+
+**Também:** `Path(junction).rmdir()` em vez de `os.rmdir()` — a primitiva **exata** de
+`manager.py:589`, que é o alvo da medição. Medir a primitiva vizinha teria respondido a pergunta
+errada.
+
+**O que ele explicitamente NÃO verificou, e está certo em não ter:** a execução real. Junction não
+existe fora do Windows e `workflow_dispatch` só dispara da branch default. Ele nomeou a lacuna em
+vez de simular — que era o risco que eu tinha sinalizado no handoff.
 
 ## Wave 2 — Governança (ML único)
 > Dependências: Wave 1 completa.

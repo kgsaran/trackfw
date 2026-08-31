@@ -49,6 +49,12 @@ jobs:
     # (AC5/AC6/ADR decisão 3). Se este timeout disparar, a sonda deixou de
     # cumprir seu propósito e o motivo precisa virar achado, não um aumento
     # silencioso do número.
+    #
+    # ML-1A (2026-08-31) apertou a margem: +4 steps (Perguntas 8/9/10/11),
+    # com múltiplos `go run` (cada um recompila) e chamadas a `mklink`. Se
+    # este timeout disparar pela primeira vez logo após este ML, ler como
+    # orçamento ficou mais justo, não necessariamente como regressão nova —
+    # mas o número em si continua sem subir (mesma régua acima).
     timeout-minutes: 10
     steps:
       - name: Motivo desta execução
@@ -277,6 +283,25 @@ jobs:
       # privilégio/Developer Mode do runner, porque não pede ao SO para
       # criar um reparse point na hora de ADICIONAR ao índice, só na hora
       # do checkout (que é exatamente o comportamento sob teste).
+      #
+      # Corrigido no ML-1A (ROADMAP-2026-08-30-sonda-mede-junction-nos-3-
+      # runtimes-e-a-pergunta-7-volta-a-responder.md): a primeira versão
+      # passava `--cacheinfo 120000,$blob,mylink` direto no run: do pwsh e
+      # falhou ("option 'cacheinfo' expects <mode>,<sha1>,<path>", step 19
+      # do run 33338382066).
+      #
+      # Mecanismo confirmado por reprodução local (pwsh 7.6.5 + git real,
+      # fora deste CI — não é exclusivo do Windows): quando um argumento SEM
+      # espaços contendo vírgula é passado cru a um executável NATIVO, o
+      # PowerShell NÃO interpola a variável dentro dele — `$blob` chega ao
+      # processo como o texto literal "$blob", não como o hash. git recebe
+      # UM argumento (`120000,$blob,mylink`, com o `$` literal), cujo campo
+      # de sha1 não é hex válido — daí o erro. (Não é "a vírgula constrói um
+      # array de 3 argumentos": comprovado que o processo nativo recebe um
+      # único argv com o `$blob` não expandido — ver nota no relatório do
+      # ML-1A em docs/agents-working-context.md.) A correção monta a string
+      # numa VARIÁVEL com aspas duplas (que sempre interpola) antes de
+      # invocar o git — nesse contexto, `$blob` é expandido normalmente.
       # ---------------------------------------------------------------
       - name: "Pergunta 7 — core.symlinks efetivo, e o que git checkout faz com um symlink versionado"
         if: always()
@@ -307,7 +332,30 @@ jobs:
           "target.txt" | Out-File -NoNewline -Encoding ascii link_target.tmp
           $blob = (git hash-object -w link_target.tmp).Trim()
           Remove-Item link_target.tmp
-          git update-index --add --cacheinfo 120000,$blob,mylink
+
+          # AC1 — montar a string ÚNICA numa variável (contexto de aspas
+          # duplas, onde $blob É interpolado) antes de invocar o git — em
+          # vez de deixar o pwsh passar `$blob` cru e sem espaços dentro de
+          # um argumento com vírgula direto para o processo nativo, caso em
+          # que a variável NÃO é expandida (ver comentário acima do step).
+          $cacheinfo = "120000,$blob,mylink"
+          Write-Host "-- argumento --cacheinfo montado (string única) --"
+          Write-Host "cacheinfo=$cacheinfo"
+          git update-index --add --cacheinfo $cacheinfo
+
+          # AC2 — falsificação: provar que o argumento chegou ÍNTEGRO ao
+          # git, não só que o comando devolveu exit 0. `git ls-files
+          # --stage` lê de volta a entrada que ficou no índice, ANTES do
+          # checkout — se `update-index` tivesse falhado silenciosamente
+          # por outro motivo (blob mal formado, path errado) e o erro fosse
+          # engolido, esta linha ficaria vazia ou divergente do valor
+          # esperado impresso acima. Valores crus lado a lado — comparação é
+          # de quem lê o log, não desta sonda (AC6: sem veredito impresso).
+          Write-Host "-- entrada no índice após update-index, ANTES do checkout --"
+          $indexEntry = git ls-files --stage mylink
+          Write-Host "index_entry_bruta=$indexEntry"
+          Write-Host "esperado_mode=120000 esperado_blob=$blob esperado_path=mylink"
+
           git checkout -- mylink
 
           Write-Host "-- o que ficou em disco depois do checkout --"
@@ -334,6 +382,66 @@ jobs:
           $mylinkPath = Join-Path "${{ steps.work.outputs.dir }}" "symlink-checkout\mylink"
           go run scripts/windows-repro/go/probe.go lstat-path $mylinkPath
           Get-Item $mylinkPath -Force -ErrorAction SilentlyContinue | Format-List *
+
+      # ---------------------------------------------------------------
+      # Pergunta 8 — Lstat (Node): arquivo comum vs symlink real vs
+      # junction. AC3 da REQ-2026-08-30: junction nunca havia sido medida em
+      # Node. Mesmo formato comparativo bruto que o braço Go já usa na
+      # Pergunta 2 (probe.js, ML-1A).
+      # ---------------------------------------------------------------
+      - name: "Pergunta 8 — lstatSync (Node): arquivo comum vs symlink vs junction"
+        if: always()
+        shell: pwsh
+        run: |
+          node scripts/windows-repro/node/probe.js lstat-common
+          node scripts/windows-repro/node/probe.js lstat-symlink
+          node scripts/windows-repro/node/probe.js lstat-junction
+
+      # ---------------------------------------------------------------
+      # Pergunta 9 — Lstat (Python): arquivo comum vs symlink real vs
+      # junction. AC4 da REQ-2026-08-30: junction nunca havia sido medida em
+      # Python (probe.py, ML-1A).
+      # ---------------------------------------------------------------
+      - name: "Pergunta 9 — os.lstat (Python): arquivo comum vs symlink vs junction"
+        if: always()
+        shell: pwsh
+        run: |
+          python scripts/windows-repro/python/probe.py lstat-common
+          python scripts/windows-repro/python/probe.py lstat-symlink
+          python scripts/windows-repro/python/probe.py lstat-junction
+
+      # ---------------------------------------------------------------
+      # Pergunta 10 — rmdir sobre uma junction VAZIA, nos 3 runtimes. Entrou
+      # no escopo do ML-1A por causa do achado do ML-0A (hades-tf):
+      # pypi/trackfw/integrations/manager.py:589 _remove_empty depende SÓ de
+      # `except OSError` ao redor do rmdir() para parar de subir removendo
+      # ancestrais — este é literalmente o discriminante entre "Python para"
+      # e "Python sobe removendo diretórios do usuário". A fixture de
+      # junction já existe no momento certo (custo marginal baixo).
+      # ---------------------------------------------------------------
+      - name: "Pergunta 10 — rmdir sobre junction vazia (Go, Node, Python)"
+        if: always()
+        shell: pwsh
+        run: |
+          go run scripts/windows-repro/go/probe.go rmdir-junction
+          node scripts/windows-repro/node/probe.js rmdir-junction
+          python scripts/windows-repro/python/probe.py rmdir-junction
+
+      # ---------------------------------------------------------------
+      # Pergunta 11 — tabela comparativa final runtime × (arquivo | symlink
+      # | junction). AC5 da REQ-2026-08-30: cada runtime recria seus
+      # próprios fixtures do zero e imprime uma linha "TABELA ..." com
+      # prefixo comum, no MESMO step, para ser lida sem cruzar logs.
+      # Valores CRUS, nunca veredito (AC6) — nenhuma linha aqui decide
+      # pass/fail; é o artefato que a REQ de correção subsequente vai citar.
+      # ---------------------------------------------------------------
+      - name: "Pergunta 11 — tabela comparativa final (runtime x arquivo|symlink|junction)"
+        if: always()
+        shell: pwsh
+        run: |
+          go run scripts/windows-repro/go/probe.go table
+          node scripts/windows-repro/node/probe.js table
+          python scripts/windows-repro/python/probe.py table
 
       - name: Registrar duração
         if: always()

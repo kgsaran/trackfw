@@ -59,10 +59,25 @@ concordam entre si, não se o contrato está correto.
 
 1. **A pergunta 7 da sonda falhou** (step 19, run `33338382066`). Não é "a sonda rodou com sucesso":
    uma de sete perguntas voltou sem resposta, e é a irmã desta — *o que um `git checkout`
-   materializa para um symlink versionado no Windows*. Causa: em PowerShell a **vírgula constrói
-   array**, então `git update-index --cacheinfo 120000,$blob,mylink` chegou ao git como três
-   argumentos separados (`error: option 'cacheinfo' expects <mode>,<sha1>,<path>`). Salvou-se um
-   dado: `core.symlinks = true` no runner.
+   materializa para um symlink versionado no Windows*. Salvou-se um dado: `core.symlinks = true`.
+
+   **Correção do diagnóstico (2026-08-31).** A primeira redação desta REQ dizia que *"em PowerShell
+   a vírgula constrói array, então o git recebeu três argumentos"*. **Errado.** `ares-tf` reproduziu
+   localmente e eu confirmei com `pwsh` + exe nativo:
+
+   ```
+   modo expressão   $arr = 120000,$blob,"mylink"   →  Object[], 3 elementos      ← vírgula constrói array
+   modo argumento   & exe 120000,$blob,mylink      →  1 arg, "$blob" LITERAL     ← nem array, nem interpolação
+   forma citada     & exe "120000,$blob,mylink"    →  1 arg, interpolado         ← o remédio
+   ```
+
+   A vírgula constrói array **em modo expressão**; em **modo argumento** (invocação de executável
+   nativo) o token chega como **uma** string e, pior, **a variável não é interpolada** — o git
+   recebeu o texto literal `$blob` como sha1. O erro
+   `option 'cacheinfo' expects <mode>,<sha1>,<path>` me levou à conclusão errada porque é compatível
+   com as duas hipóteses. **O remédio muda com o diagnóstico**: não é "juntar os argumentos", é
+   **citar a string**. Quem aplicasse a correção pela leitura antiga poderia escapar vírgulas e
+   continuar sem interpolação.
 2. **Node e Python não foram medidos.** Há hipótese — libuv mapeia reparse points para symlink, o
    que faria `lstatSync().isSymbolicLink()` pegar junction; `os.path.islink` do Python
    provavelmente não pega — mas **hipótese não decide nada**. Sob a regra dura de paridade,
