@@ -206,6 +206,83 @@ errada.
 existe fora do Windows e `workflow_dispatch` só dispara da branch default. Ele nomeou a lacuna em
 vez de simular — que era o risco que eu tinha sinalizado no handoff.
 
+### ML-1B — O portão do `cleanEmpty` do Node não é medido (corretiva da barreira)
+**Status:** ✅ Concluído
+**Agente:** `ares-tf`
+**Origem:** achado 1 do `hefesto-tf` na barreira final, afiado na auditoria do arquiteto. **Nenhuma
+das duas barreiras classificou isto como bloqueante** — é achado meu, ao auditar os achados delas.
+**Files affected:** `scripts/windows-repro/node/probe.js` **apenas**. Não tocar `probe.go`,
+`probe.py`, `windows-probe.yml`, nem nada da camada 2.
+**Diagnóstico:** a condição de `npm/src/integrations/manager.js:420` é um curto-circuito de três
+termos, e a pergunta da junction atinge **dois** deles:
+
+```javascript
+if (!fs.existsSync(directory) || fs.lstatSync(directory).isSymbolicLink() || fs.readdirSync(directory).length) return
+//     ①  segue o link — NÃO medido        ②  medido por lstat-junction        ③  o portão — NÃO medido
+fs.rmdirSync(directory)   // ← só isto é medido hoje
+```
+
+A sonda mede `rmdirSync`, que é o **último** passo, e o termo ②. Mas ③ decide se a produção **chega**
+lá: se `readdirSync` sobre a junction lançar, `cleanEmpty` lança e nunca remove; se devolver o
+conteúdo do alvo vazio, prossegue. Sem ①e ③, a linha do Node na tabela não responde pelo próprio
+caminho de produção.
+
+**Go e Python já estão completos** e não entram neste ML: o `IsDir()` do Go é coberto por
+`lstat-junction`; o `_remove_empty` do Python não tem teste de vazio algum — depende do `rmdir()`
+levantar, que já é medido.
+**Por que agora e não na próxima REQ:** a sonda **só dispara da branch default**. Uma linha do Node
+incompleta custa um ciclo inteiro de merge → run → REQ nova → merge → run. O custo de corrigir aqui
+é uma adição a um arquivo, numa branch aberta com as duas barreiras verdes.
+**Actions:**
+1. No braço Node, sobre a **mesma** fixture de junction: medir `fs.existsSync(junction)` e
+   `fs.readdirSync(junction)`, imprimindo **resultado cru ou erro cru**.
+2. `readdirSync` lançar é **resultado**, não falha de infraestrutura: imprimir o texto do erro e
+   **continuar**, nunca abortar o step.
+3. Mesma fixture `cmd /c mklink /J`, mesmo print de tempdir. Foi o modo de falha que já mordeu uma
+   vez neste roadmap.
+**Critérios de aceite:**
+- [x] `existsSync` e `readdirSync` sobre a junction, valor cru ou erro cru
+- [x] 🔴 `readdirSync` lançando **não** aborta o step nem vira veredito
+- [x] Fixture idêntica à dos outros braços (`mklink /J`), tempdir impresso
+- [x] Só `probe.js` alterado; `actionlint` limpo; `make quality` verde
+
+**Gates da wave:**
+```bash
+# NB: base é HEAD, não origin/main. Contra origin/main este gate reprova por
+# construção — o ML-1A já commitou mudanças nesses dois arquivos NESTA branch,
+# então mediria "a branch tocou Go/Python", não "o ML-1B tocou". Erro meu,
+# apontado pelo ares-tf.
+git diff --quiet HEAD -- scripts/windows-repro/go/probe.go scripts/windows-repro/python/probe.py
+grep -q "readdirSync" scripts/windows-repro/node/probe.js
+grep -q "existsSync" scripts/windows-repro/node/probe.js
+```
+
+#### Resultado do ML-1B (ares-tf, 2026-08-31) — auditado pelo arquiteto
+
+`existsSync` e `readdirSync` sobre a junction, na **ordem do curto-circuito de produção** e antes do
+`rmdirSync`. Erro capturado, texto cru impresso, execução continua — sem veredito. Fixture idêntica
+(`mklink /J`), tempdir impresso. Auditei o diff: **só `probe.js` mudou**.
+
+**Ele corrigiu um gate meu.** Eu havia escrito
+`git diff --quiet origin/main -- probe.go probe.py`. Contra `origin/main` isso **reprova por
+construção**: o ML-1A já commitou mudanças nesses arquivos **nesta branch**, então o gate mediria
+*"a branch tocou Go/Python"* em vez de *"o ML-1B tocou"*. A base certa é `HEAD`. Confirmei os dois
+lados — a forma antiga reprova, a nova passa. Gate corrigido no roadmap.
+
+Vale nomear a classe do erro, porque é a terceira variante dela nesta REQ: **escolher a base de
+comparação errada faz o gate medir uma pergunta parecida com a que se queria.** Já tinha acontecido
+com o `git show` de ref congelado e com o `tail` capturando o exit code do `make` em vez do próprio
+`make`.
+
+**Fiação do workflow confirmada, sem edição:** o `windows-probe.yml:427` já invoca
+`node probe.js rmdir-junction`, então as medições novas entram no run pós-merge sem tocar o
+workflow — que era a condição para eu não reavaliar custo.
+
+**Limite local declarado por ele, sem simulação:** em macOS o `spawnSync cmd` devolve `ENOENT`, o
+braço aborta antes de criar a junction e **nunca alcança as linhas novas**. Existe evidência local
+apenas de que o caminho de erro imprime cru e segue sem abortar. Os valores reais são estruturalmente
+diferidos ao run pós-merge — mesmo limite do ML-1A.
+
 ## Wave 2 — Governança (ML único)
 > Dependências: Wave 1 completa.
 

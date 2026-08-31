@@ -26665,3 +26665,63 @@ mede o exit code do `tail`, não do `make`; refeito sem pipe para medir o real).
 
 **Fronteiras mantidas:** nenhum arquivo de `internal/`, `npm/`, `pypi/`, workflow ou
 `docs/seguranca/` tocado. Nenhuma branch criada, nenhum commit, nenhum push.
+
+---
+
+## Sessão 2026-08-31 — ares-tf (INÍCIO: ML-1B — cleanEmpty do Node, portão readdirSync/existsSync não medido)
+
+Branch `fix/sonda-mede-junction-nos-3-runtimes-e-a-pergunta-7-volta-a-responder`.
+
+Escopo: corretiva pós-barreira (achado do `hefesto-tf`, afiado pelo arquiteto). `cleanEmpty` em
+`npm/src/integrations/manager.js:420` é curto-circuito de 3 termos; a sonda do ML-1A só media o
+termo ② (`isSymbolicLink`, via `lstat-junction`) e o resultado de `rmdirSync`. Faltam ① `existsSync`
+e ③ `readdirSync` sobre a junction — o portão que decide se a produção chega ao `rmdirSync`. Único
+arquivo em escopo: `scripts/windows-repro/node/probe.js`.
+
+
+---
+
+## Sessão 2026-08-31 — ares-tf (FIM: ML-1B — cleanEmpty do Node, portão readdirSync/existsSync — CONCLUÍDO)
+
+Branch `fix/sonda-mede-junction-nos-3-runtimes-e-a-pergunta-7-volta-a-responder`.
+
+**O que foi feito:** em `scripts/windows-repro/node/probe.js`, dentro de `cmdRmdirJunction` (mesma
+fixture de junction que já existia via `mklink /J`), adicionadas duas medições cruas ANTES do
+`rmdirSync` já existente:
+
+- `fs.existsSync(junction)` — termo ① do curto-circuito de `cleanEmpty` (segue o link).
+- `fs.readdirSync(junction)` — termo ③, o portão que decide se a produção chega ao `rmdirSync`.
+  Lançar é resultado, não falha de infraestrutura: capturado, impresso cru (`err.message`) e o step
+  segue sem abortar — nenhum `exit`/veredito.
+
+Nenhum outro arquivo tocado (`probe.go`, `probe.py`, `windows-probe.yml`, `checks.*` intocados).
+Não editei o roadmap nem a REQ (achei o roadmap já com a seção ML-1B pré-existente, não commitada,
+provavelmente do handoff do arquiteto — confirmado por diff, não fui eu quem escreveu).
+
+**Gates rodados localmente:**
+- `actionlint .github/workflows/windows-probe.yml` → limpo.
+- `git diff --quiet origin/main -- .github/workflows/quality.yml` → byte-idêntico.
+- `grep readdirSync`/`grep existsSync` em `probe.js` → ambos presentes.
+- `node --check probe.js` → sintaxe OK.
+- `node probe.js rmdir-junction` local (macOS, sem `cmd`/mklink) → imprime `tempdir_resolvido=...`,
+  depois `mklink_error=spawnSync cmd ENOENT` e `create_failed` — o braço aborta ANTES de chegar às
+  medições novas (não há junction para medir fora do Windows). **Estruturalmente inverificável
+  aqui** — o valor real de `existsSync`/`readdirSync` sobre junction só sai no run pós-merge do
+  `windows-probe.yml`, mesma limitação já registrada no ML-1A.
+- `make quality` (Go+Node+Python+contratos de paridade) → verde, 0 `--- FAIL`, log termina em
+  "53 cenários OK".
+
+**Divergência da nota do gate do roadmap:** o gate `git diff --quiet origin/main -- probe.go
+probe.py` falha por construção nesta branch — ele compara contra `origin/main`, e `probe.go`/
+`probe.py` já foram alterados (e commitados) no ML-1A, que é anterior a este ML e está na mesma
+branch. Não é uma regressão minha: `git diff --quiet HEAD -- probe.go probe.py` (forma que testa
+"ML-1B não tocou Go/Python", já que meu diff está uncommitted) → **OK**. Sinalizando para o
+arquiteto o gate substituto correto.
+
+**Confirmado via `grep -n "probe.js" windows-probe.yml`:** a linha 427 já invoca
+`node scripts/windows-repro/node/probe.js rmdir-junction` (Pergunta 10, adicionada no ML-1A) — as
+medições novas de `existsSync`/`readdirSync` rodam automaticamente no run pós-merge, sem exigir
+edição do workflow.
+
+**Discordância do diagnóstico:** nenhuma — o diagnóstico do `hefesto-tf`/arquiteto está correto e a
+medição fecha exatamente a lacuna apontada.

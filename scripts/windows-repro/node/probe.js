@@ -134,6 +134,16 @@ function cmdLstatJunction() {
 // fs.readdirSync(directory).length, sem testar isDirectory() — aqui medimos
 // diretamente se rmdirSync tem sucesso sobre a propria junction e se o alvo
 // sobrevive, em vez de inferir do comportamento do readdirSync.
+//
+// ML-1B (corretiva de barreira, achado do hefesto-tf): a condicao real de
+// cleanEmpty (manager.js:420) e um curto-circuito de 3 termos —
+//   !fs.existsSync(directory) || fs.lstatSync(directory).isSymbolicLink() || fs.readdirSync(directory).length
+// — e o ML-1A so media o termo do meio (isSymbolicLink, via lstat-junction)
+// e o rmdirSync final. Os termos ① existsSync e ③ readdirSync NUNCA foram
+// medidos sobre a junction: e o readdirSync que decide se a producao CHEGA
+// ao rmdirSync (se lancar, cleanEmpty lanca e nunca remove; se devolver o
+// conteudo do alvo vazio, prossegue). Medidos aqui, na MESMA fixture, antes
+// do rmdirSync — sem veredito: valor cru ou erro cru, nunca aborta o step.
 function cmdRmdirJunction() {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-probe-rmdir-'))
   printTempDirInfo(tmp)
@@ -150,6 +160,29 @@ function cmdRmdirJunction() {
     )
     fs.rmSync(tmp, { recursive: true, force: true })
     return
+  }
+
+  // ① existsSync — o primeiro termo do curto-circuito de cleanEmpty. Segue o
+  // link (nao e lstat): mede se, do ponto de vista de existsSync, a junction
+  // "existe" como diretorio navegavel.
+  let existsResult
+  try {
+    existsResult = fs.existsSync(junction)
+    process.stdout.write(`rmdir-junction fs.existsSync(junction)=${existsResult}\n`)
+  } catch (err) {
+    process.stdout.write(`rmdir-junction fs.existsSync(junction)_err=${err.message}\n`)
+  }
+
+  // ③ readdirSync — o portao que decide se cleanEmpty CHEGA ao rmdirSync.
+  // Lancar aqui e RESULTADO, nao falha de infraestrutura: captura, imprime
+  // o erro cru e segue — nunca aborta o step por causa do valor.
+  try {
+    const entries = fs.readdirSync(junction)
+    process.stdout.write(
+      `rmdir-junction fs.readdirSync(junction)=${JSON.stringify(entries)} length=${entries.length}\n`
+    )
+  } catch (err) {
+    process.stdout.write(`rmdir-junction fs.readdirSync(junction)_err=${err.message}\n`)
   }
 
   let removeErr = null
