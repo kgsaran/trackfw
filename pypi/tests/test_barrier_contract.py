@@ -77,11 +77,16 @@ def _setup_barrier_fixture(**kwargs) -> Path:
     return dir_
 
 
-def _run_barrier_cli(cwd: Path, *args: str):
+def _run_barrier_cli(cwd: Path, *args: str, curated_path: str | None = None):
     """Invoca `python -m trackfw barrier <args>` em cwd e devolve
-    (stdout, stderr, returncode)."""
+    (stdout, stderr, returncode).
+
+    curated_path: quando informado, substitui $PATH inteiramente por esse valor
+    no subprocesso (usado para simular ausência de `sh` — ML-1A)."""
     env = dict(os.environ)
     env["PYTHONPATH"] = str(PYPI_ROOT)
+    if curated_path is not None:
+        env["PATH"] = curated_path
     result = subprocess.run(
         [sys.executable, "-m", "trackfw", "barrier", *args],
         cwd=cwd,

@@ -141,7 +141,7 @@ já que runner POSIX **não consegue falsificar** um defeito específico de Wind
 > idêntica entre eles — separar convidaria à divergência que a REQ existe para fechar.
 
 ### ML-1A — `sh -c` nos dois CLIs, com `not_evaluated` para `sh` ausente
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** `apolo-tf`
 **Files affected:** `npm/src/commands/barrier.js`, `pypi/trackfw/commands/barrier.py`
 **Actions:**
@@ -155,11 +155,62 @@ já que runner POSIX **não consegue falsificar** um defeito específico de Wind
    devolve 127 — *ferramenta interna ausente*, não *`sh` ausente*. O sinal correto é falha no nível
    do **spawn**.
 **Critérios de aceite:**
-- [ ] Gate com idioma POSIX (`! grep -q`, `test -f`, `$( )`) dá **o mesmo veredito nos 3 CLIs**
-- [ ] 🔴 **Controle:** gate que **deve reprovar** continua reprovando nos três — uniformizar para
+- [x] Gate com idioma POSIX (`! grep -q`, `test -f`, `$( )`) dá **o mesmo veredito nos 3 CLIs**
+- [x] 🔴 **Controle:** gate que **deve reprovar** continua reprovando nos três — uniformizar para
       "passa" seria pior que o defeito
-- [ ] `sh` ausente → `not_evaluated`, mensagem **byte-idêntica** nos 3, nomeando o remédio
-- [ ] `make quality` verde
+- [x] `sh` ausente → `not_evaluated`, mensagem **byte-idêntica** nos 3, nomeando o remédio
+- [x] `make quality` verde
+
+#### Resultado do ML-1A (apolo-tf, 2026-09-01) — auditado pelo arquiteto
+
+### O desvio de escopo foi dele, e a lista errada era minha
+
+`barrier.go` **não estava** em *Files affected*. Ele o tocou e declarou por quê: a **AC3 exige
+mensagem byte-idêntica nos 3**, e o Go colapsava falha de spawn em `"<cmd>: exit 1"` genérico —
+**não satisfaria a AC mesmo já usando `sh -c`**. Eu escrevi a lista assumindo que o Go estava
+pronto porque acertava o *shell*; a AC era sobre a **mensagem**.
+
+`runGateCommand` passou a devolver `(exitCode, spawnFailed)`, com `evalGateCommands` extraído para
+eliminar duplicação entre os dois ramos de trust. Não tocou o `roadmapTrustForGates`.
+
+### Verificação por execução, não por `grep` no fonte
+
+O `grep` mostrava o Go quebrado em concatenação — comparar fonte não provaria nada. **Rodei os três
+binários** com `$PATH` curado sem `sh`:
+
+```
+gates not evaluated: sh not found in PATH — install a POSIX shell (e.g. Git Bash, WSL) to evaluate gates
+```
+
+**Byte-idêntica nos três.** E nomeia o remédio, em vez de vazar `exec: "sh": executable file not
+found` — que era o ponto da AC3.
+
+### O controle, que é a metade que impede o falso sucesso
+
+Gate que **deve** reprovar, com `$PATH` normal:
+
+```
+go       ✗ gates: blocked
+python   ✗ gates: blocked
+node     • gates: grep -q "notpresent" trackfw.yaml: exit 1
+```
+
+**A uniformização não virou "tudo passa"** — que seria pior que o defeito, porque provaria
+consistência sem provar correção. E os três distinguem `blocked` de `not_evaluated`: a AC4.
+
+### O padrão reusado, não inventado
+
+`not_evaluated` já existia no `roadmapTrustForGates` nos três CLIs. Reusar significa que o conceito
+tem **um** vocabulário no projeto, já revisado — em vez de dois nomes para a mesma ideia.
+
+E ele respeitou a medição do ML-0A: **`exit 127` não é sinal de `sh` ausente**. Verificado —
+`sh -c 'nosuchtool-xyz'` dá `exit 127` e `status: blocked` nos três, nunca `not_evaluated`.
+
+**`MAKE_EXIT=0`**, zero `FAIL`, `go test` verde, Node 70/70, Python 60/60.
+
+**Limite declarado:** o defeito original é específico de Windows e não há runner aqui. A mudança de
+pino fixo para resolução por `$PATH` **é real em POSIX** — confirmada pelo próprio teste de `$PATH`
+curado. O veredito Windows só o CI fecha.
 
 ## Wave 2 — Gate e contrato
 > Dependências: Wave 1. 🔴 Nasce ligado, com guarda de vacuidade ancorada no mesmo cwd, `python3`

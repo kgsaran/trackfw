@@ -27686,3 +27686,69 @@ citado alhures nesta mesma página, não só em runner POSIX onde a mudança é 
 funcional. Nenhuma linha de implementação escrita; não toquei roadmap/REQ/ADR. Gate local conferido
 manualmente (arquivo existe,
 sem "placeholder", contém "Residual").
+
+## apolo-tf — 2026-09-01 — INÍCIO: ML-1A, `sh -c` nos 3 CLIs com `not_evaluated` para `sh` ausente (issue #216 item 7)
+
+Roadmap `docs/roadmaps/wip/ROADMAP-2026-09-01-os-3-clis-executam-gate-de-wave-com-sh-c.md`, ADR
+`docs/adr/ADR-2026-09-01-gate-de-wave-e-contrato-portavel-em-shell-posix-nao-script-do-sistema-operacional.md`.
+Escopo declarado: `npm/src/commands/barrier.js`, `pypi/trackfw/commands/barrier.py` (`sh -c` explícito
+via `$PATH`, substituindo `shell: true`/`shell=True`) + reuso do padrão `not_evaluated` do
+`roadmapTrustForGates` para `sh` ausente.
+
+## apolo-tf — 2026-09-01 — FIM: ML-1A, `sh -c` nos 3 CLIs com `not_evaluated` para `sh` ausente — CONCLUÍDO
+
+**Desvio de escopo, declarado**: `internal/commands/barrier.go` também foi tocado, apesar de "Files
+affected" do ML listar só `barrier.js`/`barrier.py`. Motivo: AC3 exige mensagem **byte-idêntica nos
+3 CLIs** para `sh` ausente; o Go pré-existente colapsava falha de spawn em `return 1` genérico
+(`"<cmd>: exit 1"`), sem nomear o remédio — não satisfaria a AC mesmo com Go já usando `sh -c` desde
+sempre (Go não precisava trocar de shell, mas precisava da mesma distinção `not_evaluated`). Diff
+cirúrgico: `runGateCommand` passou a devolver `(exitCode int, spawnFailed bool)` — `spawnFailed` só é
+`true` quando o erro não é `*exec.ExitError` (processo nunca iniciou; sinal idêntico ao nomeado no
+parecer do ML-0A). Extraído `evalGateCommands` para eliminar duplicação entre os dois branches
+(`--trust-local-gates` e trust fail-open) e garantir a mesma regra nos dois: na falha de spawn, o
+check inteiro vira `not_evaluated` com `evidence: []` e exatamente 1 `failures[]`, parando a
+iteração imediatamente (gates seguintes nunca foram observados).
+
+**Mensagem pinada (idêntica nos 3, byte a byte)**:
+```
+gates not evaluated: sh not found in PATH — install a POSIX shell (e.g. Git Bash, WSL) to evaluate gates
+```
+Segue o formato de `docs/cli-parity.md` § "Pinned failure strings for not_evaluated" (`gates not
+evaluated: <razão> — <remédio>"`). Contrato ainda **não** atualizado em `docs/cli-parity.md` — é
+Wave 2 (`artemis-tf`), fora deste ML.
+
+**Node/Python**: `spawnSync(cmd,{shell:true})`/`subprocess.run(cmd,shell=True)` (pinados em
+`/bin/sh`, medido pelo ML-0A) → `spawnSync('sh',['-c',cmd],{...})`/
+`subprocess.run(["sh","-c",cmd],...)` (resolvido via `$PATH`, como o Go sempre fez — **não é
+no-op**, é mudança real de superfície declarada no parecer do ML-0A). Discriminante de spawn-falho:
+Node = `result.error` truthy (não `result.status === null`, que também ocorre em morte por sinal,
+caso já coberto por teste existente — colidir os dois quebraria esse teste); Python = `except
+OSError` ao redor do `subprocess.run(["sh", "-c", cmd], ...)` (antes descoberto, `FileNotFoundError`
+subia como traceback cru).
+
+**Falsificação nas duas direções, saída real** (fixture em scratchpad, fora da árvore real):
+idioma POSIX (`!`, `test`, `$()`) com 4 gates que devem passar + 1 controle que deve reprovar
+(`grep -q "notpresent" target.txt` sem negação) — os 3 CLIs (binário Go compilado, `node
+npm/bin/trackfw`, `python3 -m trackfw` via `pypi/`) devolveram **o mesmo `evidence`/`failures`
+byte a byte**, controle incluso (não uniformizou para "tudo passa"). Direção oposta: `$PATH`
+curado sem `sh` (Go: `t.Setenv`; CLI: diretório com symlink só para `git`, necessário pelo
+`roadmapTrustForGates` fora de escopo) → os 3 devolveram `not_evaluated` com a mensagem pinada
+idêntica. Controle de não-confusão: `sh -c 'nosuchtool-xyz'` → `exit 127`, `status: "blocked"` nos
+3 — nunca `not_evaluated` (medido também via CLI direto, não só unitário).
+
+**Testes**: Go (`barrier_test.go` — `TestRunGateCommand_ExitCodes` estendido para 127,
+`TestRunGateCommand_ShMissing_SpawnFailed`, `TestEvalGateCommands_ShMissing_NotEvaluated`, `$PATH`
+curado via `t.Setenv`), Node (`npm/tests/barrier.test.js` — teste de 127 e teste de `sh` ausente via
+`$PATH` curado com `mkdtempSync`), Python (`pypi/tests/test_barrier.py` — mesmos dois casos via CLI
+subprocess com `curated_path` novo em `_run_barrier_cli`, symlink só para `git`). `go test ./...`
+verde, `node --test npm/tests/barrier*.test.js` 70/70 verde, `pytest pypi/tests/test_barrier*.py`
+60/60 verde.
+
+**Limite honesto**: o defeito original é Windows-específico (Node/Python interpretados por
+`cmd.exe`) — não há runner Windows neste ambiente. Tudo acima foi medido em macOS (a mudança
+`shell:true`→`sh -c` **é** real em POSIX, conforme ML-0A: pino fixo → resolução por `$PATH`, e isso
+foi confirmado pela própria existência do teste de `$PATH` curado passando). O veredito "mesmo
+resultado nos 3 CLIs em Windows" só o CI (`windows-full-suites`) fecha, como o ML-0A já recomendava.
+
+**Fora de escopo, não tocado**: `serve.js`/`serve.py`, gates de roadmap existentes,
+`roadmapTrustForGates`, `docs/cli-parity.md` (Wave 2).
