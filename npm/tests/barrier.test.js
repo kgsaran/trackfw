@@ -534,6 +534,34 @@ test('evalGates: passing and failing commands are recorded with pinned formats',
   assert.deepEqual(check.failures, ['false: exit 1'])
 })
 
+// exit 127 signals "tool not found inside sh" — sh itself started and ran.
+// This must NEVER be confused with sh itself being missing (ML-0A measurement).
+test('evalGates: a missing tool inside sh is a normal exit 127, not not_evaluated', () => {
+  const check = barrier.evalGates(['nosuchtool-xyz'], process.cwd())
+  assert.equal(check.status, 'blocked')
+  assert.deepEqual(check.failures, ['nosuchtool-xyz: exit 127'])
+})
+
+test('evalGates: sh missing from $PATH reports not_evaluated with the pinned message', () => {
+  const fs = require('fs')
+  const os = require('os')
+  const path = require('path')
+  const curated = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-no-sh-'))
+  const originalPath = process.env.PATH
+  try {
+    process.env.PATH = curated
+    const check = barrier.evalGates(['true', 'false'], process.cwd())
+    assert.equal(check.status, 'not_evaluated')
+    assert.deepEqual(check.evidence, [])
+    assert.deepEqual(check.failures, [
+      'gates not evaluated: sh not found in PATH — install a POSIX shell (e.g. Git Bash, WSL) to evaluate gates',
+    ])
+  } finally {
+    process.env.PATH = originalPath
+    fs.rmSync(curated, { recursive: true, force: true })
+  }
+})
+
 // ────────────────────────────────────────────────────────────────────────────
 // buildDoc — determinism contract (key order, arrays never null, commands only on gates)
 // ────────────────────────────────────────────────────────────────────────────

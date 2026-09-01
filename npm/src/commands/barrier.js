@@ -541,6 +541,13 @@ function roadmapTrustForGates(roadmapPath) {
   return { trusted: true }
 }
 
+// SH_MISSING_MSG is the pinned failure string for a `gates` check that could not
+// be evaluated because `sh` is not on $PATH (AC3, AC4). All three runtimes (Go,
+// Node, Python) must emit this byte-for-byte — see docs/cli-parity.md
+// "Pinned failure strings for not_evaluated".
+const SH_MISSING_MSG =
+  'gates not evaluated: sh not found in PATH — install a POSIX shell (e.g. Git Bash, WSL) to evaluate gates'
+
 function evalGates(commands, cwd, trustResult = { trusted: true }) {
   // trustResult: { trusted: true } | { trusted: false, failureMsg: string }
   if (!trustResult.trusted) {
@@ -557,12 +564,31 @@ function evalGates(commands, cwd, trustResult = { trusted: true }) {
   const evidence = []
   const failures = []
   for (const command of commands) {
-    const result = spawnSync(command, {
-      shell: true,
+    // `sh` is invoked explicitly, as argv[0], and resolved through $PATH — NOT
+    // spawnSync's `shell: true`, which is pinned to a fixed /bin/sh. This is the
+    // same $PATH resolution Go has always used via exec.LookPath, and it is
+    // required for Windows: the Git Bash `sh.exe` is never at /bin/sh and is
+    // only reachable via $PATH.
+    const result = spawnSync('sh', ['-c', command], {
       cwd,
       encoding: 'utf8',
       stdio: 'pipe',
     })
+    if (result.error) {
+      // The process never started at all (e.g. `sh` missing from $PATH) —
+      // distinct from the gate command itself failing inside a running `sh`,
+      // which surfaces as a normal exit code (e.g. 127 for "tool not found")
+      // and never sets result.error. "Could not measure" is not "measured and
+      // failed" (AC3, AC4) — stop immediately: gates after this one were never
+      // observed, so they must not appear in evidence or failures.
+      return {
+        name: 'gates',
+        status: 'not_evaluated',
+        commands,
+        evidence: [],
+        failures: [SH_MISSING_MSG],
+      }
+    }
     const code = result.status === null || result.status === undefined ? 1 : result.status
     if (code === 0) evidence.push(`${command}: exit 0`)
     else failures.push(`${command}: exit ${code}`)

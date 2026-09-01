@@ -409,6 +409,61 @@ def test_gates_multiplos_comandos_ordem_preservada():
     assert gates_check["failures"] == ["false: exit 1"]
 
 
+# exit 127 sinaliza "ferramenta ausente dentro do sh" — o sh iniciou e rodou.
+# Nunca deve ser confundido com o próprio sh estar ausente (medido no ML-0A).
+def test_gates_ferramenta_ausente_dentro_do_sh_e_exit_127_normal_nao_not_evaluated():
+    dir_ = _setup_dir(
+        linked_req=True,
+        ml_status="✅",
+        criteria_lines=["- [x] build passes"],
+        gate_commands=["nosuchtool-xyz"],
+    )
+    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-barrier-fixture", "--wave", "1", "--json")
+    assert code == 1
+    doc = json.loads(stdout)
+    gates_check = next(c for c in doc["checks"] if c["name"] == "gates")
+    assert gates_check["status"] == "blocked"
+    assert gates_check["failures"] == ["nosuchtool-xyz: exit 127"]
+
+
+def test_gates_sh_ausente_do_path_reporta_not_evaluated_com_mensagem_pinada():
+    dir_ = _setup_dir(
+        linked_req=True,
+        ml_status="✅",
+        criteria_lines=["- [x] build passes"],
+        gate_commands=["true", "false"],
+    )
+    # Diretório curado com `git` (necessário por _roadmap_trust_for_gates, que
+    # não faz parte do escopo deste ML) mas sem `sh` — simula a ausência
+    # especificamente de `sh` no $PATH, não do ambiente inteiro.
+    curated = tempfile.mkdtemp(prefix="tw-no-sh-")
+    git_path = None
+    for candidate in os.environ.get("PATH", "").split(os.pathsep):
+        found = Path(candidate) / "git"
+        if found.is_file():
+            git_path = found
+            break
+    assert git_path is not None, "git not found in current $PATH — cannot build curated fixture"
+    os.symlink(git_path, Path(curated) / "git")
+    try:
+        stdout, stderr, code = _run_barrier_cli(
+            dir_, "ROADMAP-barrier-fixture", "--wave", "1", "--json", curated_path=curated,
+        )
+        assert code == 1
+        doc = json.loads(stdout)
+        gates_check = next(c for c in doc["checks"] if c["name"] == "gates")
+        assert gates_check["status"] == "not_evaluated"
+        assert gates_check["evidence"] == []
+        assert gates_check["failures"] == [
+            "gates not evaluated: sh not found in PATH — install a POSIX shell "
+            "(e.g. Git Bash, WSL) to evaluate gates"
+        ]
+    finally:
+        import shutil
+
+        shutil.rmtree(curated, ignore_errors=True)
+
+
 def test_gates_stdout_nao_polui_documento_json():
     dir_ = _setup_dir(
         linked_req=True,

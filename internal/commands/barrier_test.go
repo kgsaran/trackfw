@@ -643,14 +643,46 @@ func TestBarrierCheck_JSONKeyOrderMatchesCliParityContract(t *testing.T) {
 }
 
 func TestRunGateCommand_ExitCodes(t *testing.T) {
-	if code := runGateCommand("true"); code != 0 {
-		t.Fatalf("expected exit 0 for 'true', got %d", code)
+	if code, spawnFailed := runGateCommand("true"); code != 0 || spawnFailed {
+		t.Fatalf("expected exit 0/spawnFailed=false for 'true', got %d/%v", code, spawnFailed)
 	}
-	if code := runGateCommand("false"); code != 1 {
-		t.Fatalf("expected exit 1 for 'false', got %d", code)
+	if code, spawnFailed := runGateCommand("false"); code != 1 || spawnFailed {
+		t.Fatalf("expected exit 1/spawnFailed=false for 'false', got %d/%v", code, spawnFailed)
 	}
-	if code := runGateCommand("exit 7"); code != 7 {
-		t.Fatalf("expected exit 7 for 'exit 7', got %d", code)
+	if code, spawnFailed := runGateCommand("exit 7"); code != 7 || spawnFailed {
+		t.Fatalf("expected exit 7/spawnFailed=false for 'exit 7', got %d/%v", code, spawnFailed)
+	}
+	// exit 127 signals "tool not found inside sh" — sh itself started and ran.
+	// This must NEVER be confused with spawnFailed (ML-0A measurement).
+	if code, spawnFailed := runGateCommand("nosuchtool-xyz"); code != 127 || spawnFailed {
+		t.Fatalf("expected exit 127/spawnFailed=false for a missing tool inside sh, got %d/%v", code, spawnFailed)
+	}
+}
+
+// TestRunGateCommand_ShMissing_SpawnFailed proves the spawn-failure signal by
+// curating a $PATH that genuinely lacks `sh` — not by asserting on exit code 127
+// (which is the "tool inside sh missing" case, proven not to collide above).
+func TestRunGateCommand_ShMissing_SpawnFailed(t *testing.T) {
+	curated := t.TempDir()
+	t.Setenv("PATH", curated)
+	code, spawnFailed := runGateCommand("true")
+	if !spawnFailed {
+		t.Fatalf("expected spawnFailed=true when sh is absent from $PATH, got code=%d spawnFailed=%v", code, spawnFailed)
+	}
+}
+
+func TestEvalGateCommands_ShMissing_NotEvaluated(t *testing.T) {
+	curated := t.TempDir()
+	t.Setenv("PATH", curated)
+	status, evidence, failures := evalGateCommands([]string{"true", "false"})
+	if status != "not_evaluated" {
+		t.Fatalf("expected status not_evaluated, got %q", status)
+	}
+	if len(evidence) != 0 {
+		t.Fatalf("expected empty evidence, got %v", evidence)
+	}
+	if len(failures) != 1 || failures[0] != shMissingMsg {
+		t.Fatalf("expected exactly one pinned failure %q, got %v", shMissingMsg, failures)
 	}
 }
 

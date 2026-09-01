@@ -549,6 +549,16 @@ def _roadmap_trust_for_gates(roadmap_path: str) -> dict:
     return {"trusted": True}
 
 
+# Pinned failure string for a `gates` check that could not be evaluated because
+# `sh` is not on $PATH (AC3, AC4). All three runtimes (Go, Node, Python) must
+# emit this byte-for-byte — see docs/cli-parity.md "Pinned failure strings for
+# not_evaluated".
+_SH_MISSING_MSG = (
+    "gates not evaluated: sh not found in PATH — install a POSIX shell "
+    "(e.g. Git Bash, WSL) to evaluate gates"
+)
+
+
 def _check_gates(commands, trust_result: dict | None = None) -> dict:
     """Evaluate gate commands, subject to trust check.
 
@@ -577,13 +587,33 @@ def _check_gates(commands, trust_result: dict | None = None) -> dict:
     evidence = []
     failures = []
     for cmd in commands:
-        result = subprocess.run(
-            cmd,
-            shell=True,
-            cwd=os.getcwd(),
-            capture_output=True,
-            text=True,
-        )
+        try:
+            # `sh` is invoked explicitly as argv[0] and resolved through $PATH —
+            # NOT subprocess.run(cmd, shell=True), which is pinned to a fixed
+            # /bin/sh. This is the same $PATH resolution Go has always used via
+            # exec.LookPath, and it is required for Windows: the Git Bash
+            # `sh.exe` is never at /bin/sh and is only reachable via $PATH.
+            result = subprocess.run(
+                ["sh", "-c", cmd],
+                cwd=os.getcwd(),
+                capture_output=True,
+                text=True,
+            )
+        except OSError:
+            # The process never started at all (e.g. `sh` missing from $PATH) —
+            # distinct from the gate command itself failing inside a running
+            # `sh`, which surfaces as a normal exit code (e.g. 127 for "tool not
+            # found") and never raises here. "Could not measure" is not
+            # "measured and failed" (AC3, AC4) — stop immediately: gates after
+            # this one were never observed, so they must not appear in evidence
+            # or failures.
+            return {
+                "name": "gates",
+                "status": "not_evaluated",
+                "commands": cmd_list,
+                "evidence": [],
+                "failures": [_SH_MISSING_MSG],
+            }
         if result.returncode == 0:
             evidence.append(f"{cmd}: exit 0")
         else:

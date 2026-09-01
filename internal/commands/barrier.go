@@ -723,17 +723,58 @@ func roadmapTrustForGates(roadmapPath string) gatesTrustVerdict {
 	return gatesTrustVerdict{trusted: true}
 }
 
+// shMissingMsg is the pinned failure string for a `gates` check that could not be
+// evaluated because `sh` is not on $PATH (AC3, AC4). All three runtimes (Go, Node,
+// Python) must emit this byte-for-byte — see docs/cli-parity.md
+// "Pinned failure strings for not_evaluated".
+const shMissingMsg = "gates not evaluated: sh not found in PATH — install a POSIX shell (e.g. Git Bash, WSL) to evaluate gates"
+
 // runGateCommand executes one gate command from the repository root (the process's
-// current working directory) via the shell, returning its exit code.
-func runGateCommand(command string) int {
+// current working directory) via `sh -c`. `sh` is resolved through $PATH
+// (exec.LookPath, the same as Go has always done) — NOT a fixed /bin/sh path.
+//
+// Returns the exit code and spawnFailed, which is true only when the process
+// never started at all (e.g. `sh` missing from $PATH). This is distinct from the
+// gate command itself failing inside a running `sh`: `sh -c 'nosuchtool'` returns
+// exit 127 with spawnFailed=false — sh started and ran, then reported that its
+// child command doesn't exist. 127 is a normal (if unusual) exit code, never a
+// signal for "sh is missing" (measured in ML-0A).
+func runGateCommand(command string) (exitCode int, spawnFailed bool) {
 	c := exec.Command("sh", "-c", command)
 	if err := c.Run(); err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
-			return exitErr.ExitCode()
+			return exitErr.ExitCode(), false
 		}
-		return 1
+		// Not an *exec.ExitError: the process never started (e.g. LookPath
+		// failed to find "sh" in $PATH) — sh's own exit code was never observed.
+		return 1, true
 	}
-	return 0
+	return 0, false
+}
+
+// evalGateCommands runs each gate command in order via runGateCommand. If `sh`
+// cannot be spawned at all, the whole check becomes not_evaluated (AC3, AC4) —
+// "could not measure" is distinct from "measured and failed" — and evaluation
+// stops immediately: gates after the spawn failure were never observed, so they
+// must not appear in evidence or failures.
+func evalGateCommands(gateCommands []string) (status string, evidence []string, failures []string) {
+	evidence = []string{}
+	failures = []string{}
+	for _, gcmd := range gateCommands {
+		exitCode, spawnFailed := runGateCommand(gcmd)
+		if spawnFailed {
+			return "not_evaluated", []string{}, []string{shMissingMsg}
+		}
+		if exitCode == 0 {
+			evidence = append(evidence, fmt.Sprintf("%s: exit 0", gcmd))
+		} else {
+			failures = append(failures, fmt.Sprintf("%s: exit %d", gcmd, exitCode))
+		}
+	}
+	if len(failures) == 0 {
+		return "passed", evidence, failures
+	}
+	return "blocked", evidence, failures
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -849,28 +890,16 @@ func runBarrier(cmd *cobra.Command, roadmapArg string, waveLabel string, jsonOut
 		Failures: []string{},
 		Commands: &gatesCmds,
 	}
-	gatesOK := true
-
 	// Trust check (AC11, AC12): determine whether this roadmap's gates may be
 	// executed from local content, or whether the roadmap is untrusted (PR vector).
 	// --trust-local-gates bypasses the check (injected by the /trackfw:barrier
 	// slash command for the WIP flow — AC12, AC15).
 	if trustLocalGates {
 		// Explicit consent: evaluate gates from local content.
-		for _, gcmd := range gateCommands {
-			exitCode := runGateCommand(gcmd)
-			if exitCode == 0 {
-				gatesCheck.Evidence = append(gatesCheck.Evidence, fmt.Sprintf("%s: exit 0", gcmd))
-			} else {
-				gatesOK = false
-				gatesCheck.Failures = append(gatesCheck.Failures, fmt.Sprintf("%s: exit %d", gcmd, exitCode))
-			}
-		}
-		if gatesOK {
-			gatesCheck.Status = "passed"
-		} else {
-			gatesCheck.Status = "blocked"
-		}
+		status, evidence, failures := evalGateCommands(gateCommands)
+		gatesCheck.Status = status
+		gatesCheck.Evidence = evidence
+		gatesCheck.Failures = failures
 	} else {
 		verdict := roadmapTrustForGates(roadmapPath)
 		if !verdict.trusted {
@@ -878,23 +907,12 @@ func runBarrier(cmd *cobra.Command, roadmapArg string, waveLabel string, jsonOut
 			// Report as not_evaluated — distinct from passed and blocked (AC6).
 			gatesCheck.Status = "not_evaluated"
 			gatesCheck.Failures = append(gatesCheck.Failures, verdict.failureMsg)
-			gatesOK = false
 		} else {
 			// Trusted (fail-open): evaluate gates.
-			for _, gcmd := range gateCommands {
-				exitCode := runGateCommand(gcmd)
-				if exitCode == 0 {
-					gatesCheck.Evidence = append(gatesCheck.Evidence, fmt.Sprintf("%s: exit 0", gcmd))
-				} else {
-					gatesOK = false
-					gatesCheck.Failures = append(gatesCheck.Failures, fmt.Sprintf("%s: exit %d", gcmd, exitCode))
-				}
-			}
-			if gatesOK {
-				gatesCheck.Status = "passed"
-			} else {
-				gatesCheck.Status = "blocked"
-			}
+			status, evidence, failures := evalGateCommands(gateCommands)
+			gatesCheck.Status = status
+			gatesCheck.Evidence = evidence
+			gatesCheck.Failures = failures
 		}
 	}
 
