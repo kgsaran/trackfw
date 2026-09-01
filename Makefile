@@ -54,6 +54,7 @@ parity: build
 	scripts/check-install-version-pin.sh
 	scripts/check-ci-workflow-pin-parity.sh
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-roadmap-barrier-contract.sh
+	scripts/check-ref-separator-portability.sh
 
 sync-integration-assets:
 	scripts/sync-integration-assets.sh

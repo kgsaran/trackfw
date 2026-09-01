@@ -507,6 +507,19 @@ def _rewrite_req_roadmap_ref(content: str, new_path: str) -> tuple[str, bool]:
     return "---\n" + "\n".join(fm_lines) + new_rest, True
 
 
+def _normalize_ref_separator(p: str) -> str:
+    """
+    Normaliza um valor já extraído de um campo (roadmap:, req:, adr:, ou basename de
+    .trackfw-log) para o separador portável (/) antes de ele ser escrito ou comparado como
+    referência dentro de conteúdo versionado. Substituição incondicional (não os.sep): em
+    POSIX, os.path.join nunca produz "\\", então isto só atua sobre um valor herdado de um
+    commit feito no Windows — exatamente o defeito que esta função existe para curar. NÃO
+    aplicar ao buffer inteiro de um arquivo, só ao valor pontual já extraído
+    (docs/seguranca/2026-09-01-modelo-de-ameaca-do-separador-em-artefato.md, limite duro).
+    """
+    return p.replace("\\", "/")
+
+
 def sync_paired_req_references(
     new_roadmap_path: str, cfg: dict
 ) -> tuple[list[str], list[tuple[str, str]]]:
@@ -550,7 +563,10 @@ def sync_paired_req_references(
         current_ref = _get_frontmatter_roadmap_value(content)
         if not current_ref:
             continue
-        if os.path.basename(current_ref) != roadmap_basename:
+        # os.path.basename sobre um valor sujo com "\" (gravado no Windows antes do fix de
+        # escrita) não separa nada em POSIX — normaliza antes de comparar, senão uma REQ já
+        # suja nunca é curada por um roadmap move subsequente.
+        if os.path.basename(_normalize_ref_separator(current_ref)) != roadmap_basename:
             continue  # aponta para outro roadmap → não toca
         if current_ref == new_roadmap_path:
             continue  # já correta → idempotente, nenhuma escrita
@@ -608,7 +624,10 @@ def move_roadmap(filename: str, to_state: str, cfg: dict) -> str:
         agent_dir = os.path.dirname(os.path.dirname(src))
         agent = os.path.basename(agent_dir)
         target_dir = _agent_state_dir(agent, to_state, cfg)
-        log_basename = os.path.join(agent, basename)
+        # log_basename vira uma linha do .trackfw-log — dado portável dentro de artefato
+        # versionado, nunca separador nativo (os.path.join usaria "\" no Windows). Concatenação
+        # explícita, igualando o padrão que Go (roadmap.go) e Node (roadmap.js) já seguem.
+        log_basename = agent + "/" + basename
     else:
         target_dir = _state_dir(to_state, cfg)
         log_basename = basename

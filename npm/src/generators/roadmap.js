@@ -293,8 +293,24 @@ function moveRoadmap(name, state) {
   appendTransitionLog(logBasename, fromState, state)
   console.log(`✓ moved ${basename} → ${targetDir}`)
 
-  // Sincroniza o roadmap: das REQs que apontem para este roadmap.
-  syncReqReferences(basename, dst, cfg)
+  // Sincroniza o roadmap: das REQs que apontem para este roadmap. O valor escrito no
+  // frontmatter da REQ pareada é dado portável, nunca separador nativo — normaliza antes de
+  // sincronizar (dst continua nativo acima, para rename/read/write no filesystem).
+  syncReqReferences(basename, normalizeRefSeparator(dst), cfg)
+}
+
+/**
+ * normalizeRefSeparator — normaliza um valor já extraído (não o buffer inteiro do arquivo)
+ * para o separador portável (/) antes de ele ser escrito ou comparado como referência dentro
+ * de conteúdo versionado. Substituição incondicional: em POSIX, path.join nunca produz "\",
+ * então isto só atua sobre um valor herdado de um commit feito no Windows — exatamente o
+ * defeito que esta função existe para curar
+ * (docs/seguranca/2026-09-01-modelo-de-ameaca-do-separador-em-artefato.md).
+ * @param {string} p
+ * @returns {string}
+ */
+function normalizeRefSeparator(p) {
+  return p.replace(/\\/g, '/')
 }
 
 /**
@@ -414,7 +430,10 @@ function syncReqReferences(movedBasename, newRoadmapPath, cfg) {
 
     const currentRef = extractFrontmatterRoadmap(content)
     if (!currentRef) continue
-    if (path.basename(currentRef) !== movedBasename) continue // aponta para outro roadmap
+    // path.basename sobre um valor sujo com "\" (gravado no Windows antes do fix de escrita)
+    // não separa nada em POSIX — normaliza antes de comparar, senão uma REQ já suja nunca é
+    // curada por um roadmap move subsequente.
+    if (path.basename(normalizeRefSeparator(currentRef)) !== movedBasename) continue // aponta para outro roadmap
     if (currentRef === newRoadmapPath) {
       // Guarda rápida: frontmatter já correto — confirma idempotência com reescrita estrutural
       const updated = rewriteReqRoadmapRef(content, currentRef, newRoadmapPath)
@@ -709,6 +728,7 @@ module.exports = {
   extractFrontmatterRoadmap,
   rewriteReqRoadmapRef,
   syncReqReferences,
+  normalizeRefSeparator,
   newRoadmap,
   newRoadmapFromReq,
   stateDir,

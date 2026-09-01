@@ -69,6 +69,14 @@ func chainHandler(w http.ResponseWriter, _ *http.Request, cfg config.ProjectConf
 	_ = json.NewEncoder(w).Encode(chainResponse{Nodes: nodes, Edges: edges})
 }
 
+// normalizeRefSeparator normaliza um valor já extraído (node ID vindo do WalkDir, ou valor de
+// campo de frontmatter) para o separador portável (/). NÃO aplicar ao buffer inteiro de um
+// arquivo — só ao valor pontual usado para casar node.ID com edge.To
+// (docs/seguranca/2026-09-01-modelo-de-ameaca-do-separador-em-artefato.md, limite duro #2).
+func normalizeRefSeparator(p string) string {
+	return strings.ReplaceAll(p, "\\", "/")
+}
+
 // scanChainDir walks a directory tree, reading each .md file and extracting
 // frontmatter link fields to build nodes and edges.
 func scanChainDir(root, nodeType string) ([]chainNode, []chainEdge) {
@@ -94,8 +102,16 @@ func scanChainDir(root, nodeType string) ([]chainNode, []chainEdge) {
 		// Extract frontmatter fields
 		fm := parseFrontmatter(content)
 
+		// nodeID normaliza o separador de path para "/": filepath.WalkDir devolve o caminho
+		// no separador nativo do SO que roda `serve`, enquanto o valor de referência lido do
+		// frontmatter (edge.To, abaixo) é dado portável e — após o fix de escrita — sempre
+		// "/", mas pode ainda ser "\" num artefato herdado do Windows. Sem normalizar os dois
+		// lados para a mesma forma, a aresta nunca casa por igualdade de string e o link some
+		// silenciosamente do grafo (docs/seguranca/2026-09-01-modelo-de-ameaca-do-separador-em-artefato.md, PoC B).
+		nodeID := normalizeRefSeparator(path)
+
 		nodes = append(nodes, chainNode{
-			ID:    path,
+			ID:    nodeID,
 			Type:  nodeType,
 			Title: title,
 			State: state,
@@ -109,8 +125,8 @@ func scanChainDir(root, nodeType string) ([]chainNode, []chainEdge) {
 		// Build edges from link fields: req:, adr:, roadmap:
 		// Only add edges for values that look like real file paths (skip placeholders like "—")
 		for _, field := range []string{"req", "adr", "roadmap"} {
-			if val, ok := fm[field]; ok && strings.HasSuffix(val, ".md") {
-				edges = append(edges, chainEdge{From: path, To: val})
+			if val, ok := fm[field]; ok && strings.HasSuffix(normalizeRefSeparator(val), ".md") {
+				edges = append(edges, chainEdge{From: nodeID, To: normalizeRefSeparator(val)})
 			}
 		}
 

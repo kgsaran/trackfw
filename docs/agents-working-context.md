@@ -27165,3 +27165,283 @@ lourivalgarciajunior`, o 5º (`ee8a735`, ML-4A) corretamente não traz porque n�
 dele, é documentação original. Veredito mantido: **APROVA**, zero bloqueante, 4 achados de
 acompanhamento (duplicação leve entre os 3 gates, diagnóstico degradado de uma guarda num cenário,
 cobertura de `tty.py`, par duplicado não localizado).
+
+---
+
+## hades-tf — 2026-09-01 — ML-0A (Wave 0), modelo de ameaça do separador em artefato
+
+**Início.** Branch `fix/caminho-dentro-de-artefato-versionado-usa-sempre-barra`. Tarefa: ML-0A do
+roadmap `docs/roadmaps/wip/ROADMAP-2026-09-01-caminho-dentro-de-artefato-versionado-usa-sempre-barra.md`
+(REQ `docs/req/REQ-2026-08-30-caminho-portavel-montado-com-separador-do-sistema-vaza-para-dentro-de-artefato-versionado.md`).
+Enumerar pontos que escrevem caminho (não que só acessam arquivo) dentro de conteúdo versionado,
+modelo de ameaça, falsificação nas duas direções (com atenção à normalização agressiva demais que
+quebre leitura de artefato já sujo), residual. Só documento em `docs/seguranca/`, nenhuma linha de
+implementação. Ler primeiro código real (roadmap.go/js/py, req.go/js/py, validator, serve/api_chain,
+thirdparty/*, metrics.go), rodar PoC no binário Go real em `/tmp` (sem depender de máquina Windows).
+
+**Fim.** Confirmados os 2 pontos nomeados pela REQ nos 3 runtimes: `dst := filepath.Join(...)` em
+`roadmap.go:452`/`roadmap.js:283`/`roadmap.py:622` vira `newRoadmapPath` escrito no `roadmap:`/
+`Roadmap:` da REQ pareada; `log_basename = os.path.join(agent, basename)` em
+`pypi/trackfw/generators/roadmap.py:611` — **só existe furado no Python**, Go (`roadmap.go:467`) e
+Node (`roadmap.js:269`) já usam `agent + "/" + basename` explícito. **Achado novo não previsto pela
+REQ:** `internal/validator/validator_thirdparty_provenance.go:142` usa `filepath.Rel(root,
+destination)` como chave de busca contra `.trackfw/thirdparty-provenance.json`, cujas chaves são
+sempre gravadas com `/` (`ResolveThirdPartySkillDestination`, `render.go:821`) — é bug do lado da
+**leitura**, Go-only (regra não implementada em Node/Python, gap de paridade já documentado). PoCs ao
+vivo com o binário Go real em `/tmp` (simulando o valor `\` à mão, sem precisar de Windows):
+`trackfw validate` recusa uma referência que existe de verdade
+(`req "REQ-poc.md" links to Roadmap "docs\\roadmaps\\wip\\ROADMAP-poc.md" which does not exist`); o
+board do `serve` (`/api/chain`) desenha node com `id` em `/` e edge com `to` em `\` — aresta órfã,
+grafo quebrado silenciosamente. Terceiro sintoma (métrica de cycle time descartando roadmap por
+agrupar `map[string][]stateEntry` chaveado em `Basename` exato) derivado por leitura de código, não
+executado ao vivo — declarado como residual mais fraco. Falsificação da direção simétrica (KG pediu
+prioridade): hoje **não existe nenhuma tentativa de normalização de leitura em lugar nenhum** — o
+risco não é regressão de algo que já funcionava, é escopo da normalização nova. Nomeados 3 limites
+duros que não podem ser normalizados: `content_base64` da quarentena de terceiros (âncora
+anti-TOCTOU, D8b/D8c — nunca tocar), prosa/blocos de código em corpo de ADR/REQ/Roadmap (normalizar
+só campo extraído, nunca arquivo inteiro), e a chave absoluta de `integrations-manifest.json`
+(não-portável por design, contrato já pinado em `docs/cli-parity.md` — fora do escopo desta REQ).
+Verificado que `toSlug` (`internal/generators/adr.go:151`) nunca produz `\` em basename gerado pelo
+trackfw, então o risco de normalizar um nome de arquivo legítimo com `\` literal é teórico, não
+medido. Documento em `docs/seguranca/2026-09-01-modelo-de-ameaca-do-separador-em-artefato.md`, gate
+local (3 comandos do roadmap) verde. Nenhum arquivo de produto tocado; roadmap e REQ não editados;
+sem git.
+
+---
+
+## apolo-tf — 2026-09-01 — Wave 1 (ML-1A, ML-1B, ML-1C)
+
+**Início.** Branch `fix/caminho-dentro-de-artefato-versionado-usa-sempre-barra`. Tarefa: Wave 1 do
+roadmap `docs/roadmaps/wip/ROADMAP-2026-09-01-caminho-dentro-de-artefato-versionado-usa-sempre-barra.md`
+(REQ ligada, parecer `docs/seguranca/2026-09-01-modelo-de-ameaca-do-separador-em-artefato.md`, ML-0A
+de `hades-tf` lido por completo). ML-1A: escrita sempre com `/` no `newRoadmapPath` sincronizado na
+REQ pareada (3 runtimes) e no `.trackfw-log` do Python. ML-1B: leitura tolerante a `\` já gravado,
+com os 3 limites duros do ML-0A preservados. ML-1C: confirmar (não implementar) se
+`thirdparty_artifact_has_provenance` existe fora do Go. Não editar roadmap/REQ; git é do arquiteto.
+Advisor consultado antes de codar — apontou: (1) o predicado de descoberta `filepath.Base(fmVal) !=
+roadmapBasename` em `syncREQReferences` bloqueia a cura de uma REQ já suja, e é onde a reprodução
+fica falsificável em macOS sem Windows; (2) paridade de stdout no Python entre `✓ moved` (nativo) e
+`✓ synced` (portável); (3) ML-1B item 1 é dos 3 runtimes, não só Go — `validate`/`barrier`/`/api/chain`
+em Node e Python também resolvem referência; (4) `validateREQRoadmapLifecycle` no Go também lê o
+valor cru, é um segundo call site além de `referenceExists`; (5) checar o que `rewriteREQRoadmapRef`
+já faz com bloco de código citando `Roadmap:` antes de escrever o teste de controle, não inventar
+requisito novo.
+
+**Fim.** ML-1A e ML-1B implementados nos 3 runtimes; ML-1C confirmado (achado corrige a premissa
+do roadmap, nada implementado além do já coberto por ML-1B). Escrita: `newRoadmapPath` sincronizado
+na REQ pareada normalizado para "/" antes de gravar (`normalizeRefSeparator`/`normalizeRefSeparator`/
+`_normalize_ref_separator` — Go `internal/generators/roadmap.go`, Node `npm/src/generators/roadmap.js`,
+Python `pypi/trackfw/generators/roadmap.py` + `pypi/trackfw/commands/roadmap.py`); `.trackfw-log` do
+Python (`log_basename`) trocado de `os.path.join` para concatenação explícita, igualando Go/Node.
+Leitura tolerante: `referenceExists`/`validateREQRoadmapLifecycle` (Go `internal/validator/validator.go`)
+e `_reference_exists`/`validate_req_roadmap_lifecycle` (Python `pypi/trackfw/validator.py`) normalizam
+o valor antes de `os.Stat`/`os.path.exists`; `/api/chain` do serve (Go `internal/serve/api_chain.go`)
+normaliza node.ID (WalkDir) e edge.To (frontmatter) para o mesmo separador antes de comparar — cura o
+PoC B do ML-0A (aresta órfã), testado com REQ real gravada com "\" à mão. Cura (healing): a REQ já
+suja num commit anterior ao fix de escrita é reconhecida e reescrita no próximo `roadmap move`/
+`sync_paired_req_references`/`syncReqReferences` — exigiu normalizar tanto o predicado de descoberta
+quanto (no Go) os dois pontos de comparação de basename dentro de `rewriteREQRoadmapRef` (frontmatter
+e corpo); sem o segundo, a descoberta encontrava a REQ suja mas a reescrita não acontecia. Achado do
+advisor, corrigido: o teste de controle original (linha de prosa sem ":") não testava nada — reescrito
+para uma linha `Roadmap:` de verdade dentro de cerca, com basename diferente (continua intocada) e um
+segundo teste que documenta o efeito colateral aceito (uma linha `Roadmap:` cercada com o MESMO
+basename do roadmap movido passa a ser reescrita — comportamento pré-existente ampliado pela
+normalização, verificado sem ocorrência real hoje em `docs/req/`, reportado, não expandido).
+
+**ML-1C — achado que corrige a premissa do roadmap:** `thirdparty_artifact_has_provenance` **não** é
+Go-only — existe também em Python (`pypi/trackfw/validator.py:3361`, `validate_thirdparty_artifact_has_provenance`)
+com o **mesmo defeito** (`os.path.relpath` nativo vs chave sempre gravada com "/", mesmo comentário
+"inverte exatamente" falso para casamento de string) — corrigido ali também (mesma classe de fix do
+Go, não é expansão de escopo: completa ML-1B para o runtime onde a regra existe). A regra está
+**ausente apenas no Node** — gap de paridade não documentado em `docs/cli-parity.md`, registrado para
+o arquiteto, nada implementado (ML-1C, decisão do arquiteto).
+
+**Achado adicional reportado, não implementado:** `ref_targets_exist`/`req_roadmap_lifecycle`
+(a regra que resolve `Roadmap:`/`ADR:` de REQ, cujo `referenceExists` corrigi) **não existe no Node**
+— Go e Python têm; Node não tem a regra nenhuma. Gap de paridade pré-existente, não documentado em
+`docs/cli-parity.md`, fora do escopo desta REQ.
+
+**Divergência cross-runtime na reescrita de corpo, reportada e não tocada:** Go reescreve toda linha
+`Roadmap:` do corpo cujo basename normalizado bate (sem `break`); Python reescreve incondicionalmente
+a PRIMEIRA linha `Roadmap:` do corpo, sem checar basename nenhum (pré-existente, não introduzido por
+este ML); Node substitui por igualdade de string exata do valor cru extraído do frontmatter (nem
+basename nem normalização no corpo). Resultado: uma REQ com múltiplas linhas `Roadmap:` no corpo
+(ex.: exemplo + referência real) se comporta diferente nos 3 runtimes. Pré-existente, ampliado em
+visibilidade pela normalização — reportado para REQ própria, não corrigido aqui.
+
+**Provenance (Go e Python) não coberto por teste end-to-end** — mesmo limite do ML-0A: `filepath.Rel`
+(Go) e `os.path.relpath` (Python) sempre devolvem "/" em macOS/Linux, então o defeito real
+(separador nativo "\" só em Windows) não é reproduzível localmente sem monkeypatch. Declarado como
+residual, não coberto — `normalizeRefSeparator`/`_normalize_ref_separator` isolados têm teste direto.
+
+**Achado ao vivo, não previsto: `/api/chain` do Node já não desenha aresta REQ→Roadmap nenhuma,
+mesmo com caminho limpo (sem "\").** Reproduzido com o CLI Node real: REQ com
+`roadmap: "docs/roadmaps/wip/ROADMAP-poc.md"` (já portável) produz `{"nodes":[...],"edges":[]}`.
+Causa: `resolveRef` (`npm/src/serve/api_chain.js`) nunca reduz `val` a basename antes de consultar
+`fileIndex` — compara o caminho completo contra chaves que são só basename, então nunca bate,
+separador ou não. É por isso que a normalização de separador não teria efeito nenhum no sintoma 2 em
+Node: o link já está quebrado por um motivo anterior e não relacionado a esta REQ. Reportado ao
+arquiteto como achado de produto, fora do escopo desta REQ — não corrigido aqui.
+
+**Python também não produz a aresta REQ→Roadmap do PoC B, por um motivo estrutural diferente:**
+`get_chain` (`pypi/trackfw/serve/api_chain.py`) só constrói arestas `req.adr`, `roadmap.req` e
+`roadmap.adr` — nunca lê o campo `req:` de uma REQ apontando para seu roadmap na direção do PoC B
+(`roadmap:` da REQ). O node ID já é normalizado com `.replace("\\", "/")` (linha 98, pré-existente),
+mas não há aresta na direção que o PoC B descreve para normalizar. Reportado, não corrigido.
+
+**Residual declarado, não implementado:** `internal/metrics/metrics.go: Calculate` (sintoma 3 do
+ML-0A) continua vulnerável a `.trackfw-log` já sujo — o fix do `log_basename` do Python impede
+*novas* linhas sujas, mas não repara histórico existente; um roadmap cuja história de transições já
+mistura `agent/x.md` e `agent\x.md` ainda parte em dois artefatos e some do `cycleTimeMean`. Fora da
+AC de ML-1B, sintoma nunca executado (nem por hades-tf nem por mim) — declarado, não corrigido.
+
+Evidência: `go build ./...` limpo; `go test ./...` 0 falhas; `npm test` 840/840; `python3 -m pytest`
+1575 passed + 28 subtests; `bin/trackfw validate` exit 0, 16 warnings pré-existentes sem relação com
+este ML. Duas rodadas paralelas acidentais do mesmo `make quality` (erro meu, corrigido em
+andamento) foram mortas por escreverem no mesmo arquivo de log — **não** citando
+`falsify/no-repo-mutation` como prova (esse gate testa o comportamento normal dos scripts, não um
+SIGKILL no meio de um deles); a evidência real de que nada ficou sujo é `git status --porcelain`
+limpo (só os arquivos deste ML, nenhum arquivo temporário/de teste órfão), confirmado depois do kill
+e de novo ao final. `make quality` foi então rerodado do zero, numa única execução limpa sobre a
+árvore final (pós todos os edits, incluindo o fix tardio de `pypi/trackfw/validator.py` e a reescrita
+do teste de controle em `roadmap_test.go`) — MAKE_EXIT reportado é dessa rodada final, não da rodada
+anterior que rodou sobre uma árvore parcialmente editada. Roadmap e REQ não editados; nenhum comando
+git de escrita executado.
+
+## artemis-tf — 2026-09-01 — Wave 2 (ML-2A), gate falsificável do separador em artefato — INÍCIO
+
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-09-01-caminho-dentro-de-artefato-versionado-usa-sempre-barra.md`
+REQ: `docs/req/REQ-2026-08-30-caminho-portavel-montado-com-separador-do-sistema-vaza-para-dentro-de-artefato-versionado.md`
+
+Entrando para escrever o gate falsificável da AC5 sobre o trabalho já commitado das Waves 0/1
+(`normalizeRefSeparator`/`_normalize_ref_separator` nos 3 runtimes). O gate precisa provar a escrita
+sempre-`/` sem máquina Windows.
+
+## artemis-tf — 2026-09-01 — Wave 2 (ML-2A), gate falsificável do separador em artefato — FIM
+
+Entregue `scripts/check-ref-separator-portability.sh`: gate estático (sem `python`, sem depender de
+SO) que confirma 17 assinaturas de código exatas — 6 pontos de escrita (`portableDst`/`portable_path`
+normalizados antes de `sync*Reférences`, e `logBasename` por concatenação explícita com `/` nos 3
+runtimes) e 11 pontos de leitura tolerante (`referenceExists`, `validateREQRoadmapLifecycle`,
+`provenanceKey`/`provenance_key`, node ID e `edge.To` do `/api/chain`, e a cura de REQ já suja —
+`fmVal`/`currentRef`/`current_ref` normalizado antes da comparação de basename em `syncREQReferences`
+nos 3 runtimes; achado ausente na Wave 1 original, adicionado após revisão do arquiteto).
+
+Nasce ligado ao `Makefile` (`parity:` alvo, `make -n parity` confirma). Duas guardas de vacuidade:
+contagem de `assert_has` (pega remoção de checagem) e existência de arquivo por assinatura (pega
+diretório/arquivo movido — falsificado apontando o gate para diretório ausente e para diretório vazio,
+ambos reprovam nomeando cada assinatura ausente, nunca em silêncio). Falsificado nas duas direções em
+cópias de `/tmp` (nunca na árvore real): revertendo `portableDst`→`dst` no Go (regressão de escrita) e
+revertendo `normalizeRefSeparator(currentRef)`→`currentRef` no Node (regressão de leitura) — o gate
+reprova nomeando a assinatura exata. Registrado em `docs/cli-parity.md` (`<!-- trackfw-contract:
+gate=scripts/check-ref-separator-portability.sh -->`), verificado por `check-parity-contract-coverage.sh`.
+
+`make quality` completo (build + testes Go/Node/Python + toda a suíte `parity`, incluindo
+`check-gates-falsify.sh` — 181 cenários — e `check-roadmap-barrier-contract.sh` — 53 cenários) rodou
+verde do zero após todas as edições: `MAKE_EXIT=0`. `git status --porcelain` limpo (só os 4 arquivos
+deste ML: `Makefile`, `docs/cli-parity.md`, `scripts/check-ref-separator-portability.sh` novo,
+`docs/agents-working-context.md`). Roadmap e REQ não editados; nenhum comando git de escrita executado.
+
+## artemis-tf — 2026-09-01 — Wave 2 (ML-2A), gate falsificável do separador em artefato — CORREÇÃO PÓS-AUDITORIA
+
+Revisão encontrou um buraco de cobertura no gate entregue no ciclo anterior: `referenceExists` e
+`validateREQRoadmapLifecycle` em `internal/validator/validator.go` produzem, coincidentemente, a
+mesma linha `expandedRef := config.ExpandPath(normalizeRefSeparator(ref))` — o `assert_has` original
+(um `grep -qF` simples) passava com só UMA das duas normalizando, escondendo uma regressão de
+leitura na segunda função. Também faltava assinatura equivalente para
+`validate_req_roadmap_lifecycle` no Python (`pypi/trackfw/validator.py`), que nunca foi coberta.
+
+Correções em `scripts/check-ref-separator-portability.sh`:
+- Nova função `assert_count` (exige N ocorrências exatas, não só "existe") aplicada à linha duplicada
+  do Go — falsificado revertendo a normalização SÓ de `validateREQRoadmapLifecycle`, mantendo
+  `referenceExists` intacto: `assert_count` reprova "esperava 2 ocorrência(s), achou 1", o buraco
+  exato que o `assert_has` simples não pegava.
+- Assinatura nova para `validate_req_roadmap_lifecycle` (Python) — falsificada isoladamente.
+- As 3 assinaturas de "cura de REQ suja" foram encurtadas do texto de linha inteira (frágil a
+  reformatação/condicional) para o substring da propriedade normalizada
+  (`filepath.Base(normalizeRefSeparator(fmVal))`, etc.) — confirmadas ainda únicas em cada arquivo.
+- Total de checagens: 18 (`expected=18`), confirmado por 4 falsificações independentes em cópias de
+  `/tmp` (nunca na árvore real): regressão de escrita (Go `portableDst`→`dst`), o buraco de cobertura
+  do `assert_count` acima, regressão de leitura Python (`validate_req_roadmap_lifecycle`), e vacuidade
+  por remoção de checagem (17 vs. 18 esperado).
+
+`docs/cli-parity.md` atualizado com `partial=` na anotação do gate (nomeando que a cobertura é
+estrutural, falsificada manualmente fora de `check-gates-falsify.sh`) e prosa revisada descrevendo o
+`assert_count` e as 4 direções de falsificação. `scripts/check-parity-contract-coverage.sh` confirma
+"OK — nenhuma anotação inválida e nenhuma seção sem anotação".
+
+`make quality` completo rodou verde do zero após as correções: `MAKE_EXIT=0`,
+`check-ref-separator-portability: OK — 18 assinaturas de escrita/leitura portavel confirmadas`.
+`git status --porcelain` continua só com os 4 arquivos deste ML.
+
+---
+
+## Sessão 2026-09-01 — hefesto-tf (INÍCIO: barreira de qualidade — PR #231, item 10 do #216)
+
+Branch `fix/caminho-dentro-de-artefato-versionado-usa-sempre-barra` (não criada por mim). Worktree
+limpo, único agente.
+
+Escopo: barreira final de qualidade sobre `git diff origin/main...HEAD` — normalização de separador
+de caminho no valor do campo do frontmatter (não no buffer do arquivo), limites do ML-0A (quarentena,
+prosa/código, chave absoluta do manifest), paridade Go/Node/Python, gate
+`scripts/check-ref-separator-portability.sh` (assert_count vs assert_has), risco de
+super-normalização em POSIX, cobertura dos testes novos. Não modifico código — apenas diagnóstico em
+`docs/qualidade/2026-09-01-barreira-do-separador-em-artefato.md`.
+
+
+---
+
+## Sessão 2026-09-01 — hefesto-tf (FIM: barreira de qualidade — PR #231, item 10 do #216 — CONCLUÍDO)
+
+Branch `fix/caminho-dentro-de-artefato-versionado-usa-sempre-barra`.
+
+**Veredito: APROVA COM RESSALVAS.** Nenhum achado bloqueia o PR. Relatório completo em
+`docs/qualidade/2026-09-01-barreira-do-separador-em-artefato.md`.
+
+**O que foi feito:**
+
+- Confirmado, nos 3 runtimes, que a normalização de separador atua só sobre o valor já extraído
+  do campo (`dst`/`ref`/`provenanceKey`/`val`), nunca sobre o buffer do arquivo — com teste de
+  controle dedicado por runtime (`TestSyncREQ_ControlDoesNotTouchUnrelatedBackslashInBody` e
+  equivalentes Node/Python).
+- Falsifiquei eu mesma o gate `scripts/check-ref-separator-portability.sh` em cópias de `/tmp`:
+  revertendo só uma das duas ocorrências normalizadas em `validator.go` (o gate reprova, nomeando
+  a contagem que faltou) e removendo uma chamada `assert_has` do próprio script (guarda de
+  vacuidade reprova, "checou 17" em vez de 18). Confirmei também que as outras 17 needles do gate
+  são únicas nos arquivos-alvo — nenhum outro `assert_has` deveria ser `assert_count`. Gate
+  confirmado ligado ao target `parity:` do `Makefile`.
+- Achado de acompanhamento (não bloqueante): 2 dos 3 limites duros do ML-0A (`content_base64` da
+  quarentena, chave absoluta do `integrations-manifest.json`) não têm teste de regressão — o
+  próprio roadmap (ML-1B) já declara este AC como pendente (`- [ ]`).
+- Achado de acompanhamento (não bloqueante): a escrita do `.trackfw-log` em modo `by_agent`
+  (ML-1A) não tem teste que leia o log de volta — só a assinatura de código do gate garante isto.
+- Achado de acompanhamento (não bloqueante, reproduzido ao vivo, não só por leitura de código):
+  o sintoma 2 do parecer de ameaça (aresta órfã no `/api/chain`) reproduz de verdade em
+  `pypi/trackfw/serve/api_chain.py` (não tocado por este diff) — clean `/` desenha aresta, dirty
+  `\` produz zero arestas. Em `npm/src/serve/api_chain.js` (também não tocado), o grafo já não
+  desenha aresta nenhuma mesmo com referência limpa — bug estrutural mais amplo e anterior a esta
+  REQ (`resolveRef` nunca aplica `path.basename` ao valor comparado). Nenhum dos dois é regressão
+  desta REQ; recomendo REQ de acompanhamento, mesmo tratamento já dado ao gap de
+  `thirdparty_artifact_has_provenance` no Node.
+- Risco de super-normalização em POSIX (nome de arquivo `\`-legítimo) avaliado como teórico —
+  concordo com a classificação do parecer de ameaça (`toSlug` nunca produz `\` em basenames
+  gerados pelo trackfw).
+
+**`make quality`**: rodado limpo, sem pipe, exit code capturado (ver documento de qualidade para
+o número exato e a contagem OK/FAIL — nota de processo: a primeira tentativa rodou dois `make
+quality` em paralelo acidentalmente, escrita descartada, processos mortos, reexecutado uma vez).
+
+**Fronteiras mantidas:**
+
+- Nenhum arquivo de `internal/`, `npm/`, `pypi/`, `scripts/`, `Makefile`, roadmap ou REQ tocado.
+  Nenhuma branch criada, nenhum commit, nenhum push. Falsificações feitas só em cópias de
+  `/tmp`/scratchpad.
+
+
+**Nota final sobre `make quality`**: a execução limpa acompanhada por ~70 min chegou a 3370
+linhas de log, 697 `OK`, zero `FAIL`, processo confirmado ativo em todos os pontos de checagem
+(inclui `test`/`test-node`/`test-python`/`lint` e a maior parte de `parity:`). O `MAKE_EXIT` não
+foi capturado dentro do tempo desta sessão — `scripts/check-gates-falsify.sh` é muito longo
+(rebuilds de binário e subprocessos por cenário). Recomendo ao arquiteto confirmar o exit code
+final antes do merge; toda a evidência coletada aponta para verde.
+

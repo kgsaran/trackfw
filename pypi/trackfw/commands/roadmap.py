@@ -12,6 +12,7 @@ from trackfw.generators.roadmap import (
     generate_roadmap_from_req,
     move_roadmap,
     sync_paired_req_references,
+    _normalize_ref_separator,
     VALID_STATES,
 )
 from trackfw.validator import resolve_agent_namespaces
@@ -103,17 +104,25 @@ def _cmd_move(args):
     state = args.state
     try:
         new_path = move_roadmap(filename, state, cfg)
+        # "✓ moved" usa new_path nativo (mesmo separador de os.path.dirname/os.path.join usado
+        # para o rename no filesystem) — mantém paridade com o Go, que também imprime o
+        # targetDir nativo nesta linha.
         print(f"✓ moved {os.path.basename(new_path)} → {os.path.dirname(new_path)}")
     except (ValueError, FileNotFoundError) as e:
         print(f"Erro: {e}", file=sys.stderr)
         sys.exit(1)
 
+    # portable_path é o valor escrito no frontmatter da REQ pareada — dado portável, nunca
+    # separador nativo (item 10 do issue #216). new_path continua nativo acima, só para
+    # operações de filesystem.
+    portable_path = _normalize_ref_separator(new_path)
+
     # Sincroniza referências das REQs pareadas após o move bem-sucedido.
     # Cardinalidades: zero → no-op silencioso; uma/várias → reescreve;
     # outra → não toca; já correta → idempotente.
-    synced, failures = sync_paired_req_references(new_path, cfg)
+    synced, failures = sync_paired_req_references(portable_path, cfg)
     for req_basename in synced:
-        print(f"✓ synced {req_basename} → {new_path}")
+        print(f"✓ synced {req_basename} → {portable_path}")
     for req_basename, cause in failures:
         print(
             f"trackfw roadmap move: failed to sync {req_basename}: {cause}",

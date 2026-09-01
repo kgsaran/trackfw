@@ -1,9 +1,9 @@
 ---
-status: Open
+status: Done
 date: 2026-08-30
 author: "trackfw_architect (Zeus)"
 adr: ""
-roadmap: ""
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-01-caminho-dentro-de-artefato-versionado-usa-sempre-barra.md"
 ---
 
 # REQ: Caminho portável montado com separador do sistema vaza para dentro de artefato versionado
@@ -36,18 +36,18 @@ caminho de sistema de arquivos — é **dado portável**, e tem que ser sempre `
 
 ## Acceptance Criteria
 
-- [ ] **AC1** — Todo caminho **escrito dentro** de artefato versionado usa `/`, independentemente do
+- [x] **AC1** — Todo caminho **escrito dentro** de artefato versionado usa `/`, independentemente do
       SO: frontmatter (`adr:`, `roadmap:`, `req:`), `.trackfw-log`, e o que a varredura encontrar.
-- [ ] **AC2** — **Varredura obrigatória**: enumerar todos os pontos, nos 3 runtimes, onde um caminho
+- [x] **AC2** — **Varredura obrigatória**: enumerar todos os pontos, nos 3 runtimes, onde um caminho
       vira conteúdo de artefato. Corrigir a classe, não as duas instâncias relatadas. O relato já
       sugere isso; é o pedido dele e está certo.
-- [ ] **AC3** — **Leitura tolerante:** caminho já gravado com `\` continua sendo resolvido, para não
+- [x] **AC3** — **Leitura tolerante:** caminho já gravado com `\` continua sendo resolvido, para não
       quebrar quem já tem o artefato sujo. Tolerar na leitura, normalizar na escrita.
-- [ ] **AC4** — Falsificação nas duas direções: escrita produz `/` mesmo com separador nativo `\`;
+- [x] **AC4** — Falsificação nas duas direções: escrita produz `/` mesmo com separador nativo `\`;
       leitura resolve as duas grafias.
-- [ ] **AC5** — Paridade nos 3 CLIs; gate falsificável — que precisa provar a escrita **sem** máquina
+- [x] **AC5** — Paridade nos 3 CLIs; gate falsificável — que precisa provar a escrita **sem** máquina
       Windows, provavelmente injetando o separador em vez de depender do SO.
-- [ ] **AC6** — `make quality` exit 0 e CI verde.
+- [x] **AC6** — `make quality` exit 0 e CI verde.
 
 ## Negative Scope
 
@@ -60,6 +60,34 @@ caminho de sistema de arquivos — é **dado portável**, e tem que ser sempre `
 O relato pediu explicitamente a varredura, não só a correção dos dois pontos. É o mesmo pedido que
 fizemos a nós mesmos no `newline=` do Python e no `lstat` — e nas duas vezes a varredura achou mais
 do que o relato original.
+
+## REQ fechada em 2026-09-01 — item 10 do issue #216 corrigido e medido
+
+**Camada 2: 5 → 4 `REPRODUCED`**, com os 3 runtimes gravando `/`:
+
+```
+go:      ABSENT — roadmap: docs/roadmaps/wip/ROADMAP-item10.md
+node:    ABSENT — roadmap: docs/roadmaps/wip/ROADMAP-item10.md
+python:  ABSENT — roadmap: docs/roadmaps/wip/ROADMAP-item10.md
+```
+
+**O número previsto bateu** — ao contrário da REQ anterior, onde previ 3 e o CI deu 5. A diferença
+foi verificar **o que o check mede** antes de fixar o critério.
+
+**Entregue:** escrita portável nos 3 runtimes; **tolerância de leitura, que não existia** — sem ela,
+todo artefato já commitado por usuário Windows continuaria quebrado; correção do `provenanceKey` em
+Go **e** Python; e um gate falsificável que prova a escrita **sem máquina Windows**.
+
+**Barreira final:** `hefesto-tf`, APROVA COM RESSALVAS, zero bloqueantes. O risco mais provável —
+normalização vazando para o corpo do artefato — **não se materializou**, com teste de controle por
+runtime.
+
+**Duas REQs de acompanhamento abertas**, nomeadas e não escondidas: o `/api/chain` (Python perde
+aresta, Node não desenha nenhuma — bug estrutural anterior) e a ausência da regra
+`thirdparty_artifact_has_provenance` no validator do Node.
+
+**Restam os itens 4 e 7** para fechar o issue #216 — mais os itens 2 e 3, que reproduzem por
+limitação do instrumento e têm REQ de retarget própria.
 
 ## Linked ADR
 <!-- Provável: caminho em conteúdo de artefato é sempre POSIX. -->

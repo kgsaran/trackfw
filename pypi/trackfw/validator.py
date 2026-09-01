@@ -1327,8 +1327,21 @@ def validate_ref_targets_exist(cfg: dict) -> list:
     return warnings
 
 
+def _normalize_ref_separator(ref: str) -> str:
+    """
+    Normaliza um valor já extraído de um campo (roadmap:, req:, adr:) para o separador
+    portável (/) antes de resolvê-lo no filesystem local. Um valor gravado no Windows antes do
+    fix de escrita (ou por qualquer runtime que ainda não normalize) chega aqui com "\\"
+    literal, que em POSIX não é separador — é caractere de nome de arquivo — e faz
+    os.path.exists falhar numa referência que na verdade existe
+    (docs/seguranca/2026-09-01-modelo-de-ameaca-do-separador-em-artefato.md). NÃO aplicar ao
+    buffer inteiro do arquivo — só ao valor já extraído do campo.
+    """
+    return ref.replace("\\", "/")
+
+
 def _reference_exists(ref: str) -> bool:
-    return os.path.exists(expand_path(ref))
+    return os.path.exists(expand_path(_normalize_ref_separator(ref)))
 
 
 def validate_req_roadmap_lifecycle(cfg: dict) -> list:
@@ -1343,7 +1356,7 @@ def validate_req_roadmap_lifecycle(cfg: dict) -> list:
             ref = _extract_ref_path(content, "Roadmap")
             if not ref:
                 continue
-            expanded_ref = expand_path(ref)
+            expanded_ref = expand_path(_normalize_ref_separator(ref))
             if not os.path.isfile(expanded_ref):
                 continue
             if os.path.basename(os.path.dirname(expanded_ref)) == "done":
@@ -3410,10 +3423,18 @@ def validate_thirdparty_artifact_has_provenance(cwd: str = None) -> list:
         # absolute manifest key. Every claim reached here came from the
         # PROJECT manifest, so its scope is always "project" (a
         # global-scope claim lives in the home manifest instead, which this
-        # rule intentionally never reads). os.path.relpath inverts
-        # _resolve()'s os.path.join(root, relative) exactly. Mirrors
-        # internal/validator/validator_thirdparty_provenance.go.
-        provenance_key = os.path.relpath(destination, root)
+        # rule intentionally never reads).
+        #
+        # os.path.relpath inverts _resolve()'s os.path.join(root, relative) for PATH
+        # SEMANTICS — but NOT for STRING-KEY matching, which is how this value is actually used
+        # two lines below. os.path.relpath returns a path using the native OS separator, while
+        # the provenance JSON key is always written with "/" (a key inside a versioned artifact
+        # is portable data, not a filesystem path — mirrors
+        # internal/validator/validator_thirdparty_provenance.go and the same fix there). On a
+        # platform whose native separator is "\", the two would never be byte-equal even though
+        # they name the same destination. Normalize before the dict lookup
+        # (docs/seguranca/2026-09-01-modelo-de-ameaca-do-separador-em-artefato.md).
+        provenance_key = _normalize_ref_separator(os.path.relpath(destination, root))
         entry = (prov.get("entries") or {}).get(provenance_key)
         if not entry:
             msgs.append({

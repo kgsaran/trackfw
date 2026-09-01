@@ -1330,3 +1330,180 @@ func TestMoveRoadmap_SyncsREQFrontmatter(t *testing.T) {
 		t.Errorf("corpo da REQ não atualizado (backticks);\nconteúdo:\n%s", s)
 	}
 }
+
+// ─── ML-1A/ML-1B — separador portável (item 10 do issue #216) ─────────────────
+
+// TestNormalizeRefSeparator_ConvertsNativeToPortable e TestNormalizeRefSeparator_ControlLeavesCleanValueUnchanged
+// cobrem a função isoladamente: converte "\" para "/", e não altera um valor já portável.
+func TestNormalizeRefSeparator_ConvertsNativeToPortable(t *testing.T) {
+	dirty := `docs\roadmaps\wip\ROADMAP-x.md`
+	want := "docs/roadmaps/wip/ROADMAP-x.md"
+	if got := normalizeRefSeparator(dirty); got != want {
+		t.Errorf("queria %q, obteve %q", want, got)
+	}
+}
+
+func TestNormalizeRefSeparator_ControlLeavesCleanValueUnchanged(t *testing.T) {
+	clean := "docs/roadmaps/wip/ROADMAP-x.md"
+	if got := normalizeRefSeparator(clean); got != clean {
+		t.Errorf("valor já portável não deveria mudar; queria %q, obteve %q", clean, got)
+	}
+}
+
+// TestSyncREQ_HealsDirtyBackslashReference — ML-1B: uma REQ cujo frontmatter roadmap: já foi
+// gravado com separador nativo ("\", simulando um commit feito no Windows antes do fix de
+// escrita) é curada por um roadmap move subsequente: o predicado de descoberta normaliza o
+// valor antes de comparar o basename, então a REQ suja É encontrada e reescrita com "/".
+// Sem essa normalização, filepath.Base(fmVal) em Linux/macOS devolve o valor sujo inteiro (não
+// há "/" para separar), nunca bate com roadmapBasename, e a REQ nunca é curada.
+func TestSyncREQ_HealsDirtyBackslashReference(t *testing.T) {
+	dir := t.TempDir()
+	chdirRoadmap(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	reqDir := mkReqDir(t)
+	reqPath := filepath.Join(reqDir, "REQ-dirty.md")
+	newPath := "docs/roadmaps/wip/ROADMAP-dirty.md"
+	dirtyRef := strings.ReplaceAll(newPath, "/", `\`)
+	writeREQ(t, reqPath, dirtyRef)
+
+	out := captureStdout(t, func() {
+		if err := syncREQReferences("ROADMAP-dirty.md", newPath); err != nil {
+			t.Errorf("esperado nil, obteve: %v", err)
+		}
+	})
+
+	wantLine := "✓ synced REQ-dirty.md → " + newPath + "\n"
+	if out != wantLine {
+		t.Errorf("output incorreto (referência suja deveria ser curada)\nqueria:  %q\nobteve: %q", wantLine, out)
+	}
+
+	content, _ := os.ReadFile(reqPath)
+	s := string(content)
+	if !strings.Contains(s, "roadmap: \""+newPath+"\"") {
+		t.Errorf("frontmatter não curado para separador portável;\nconteúdo:\n%s", s)
+	}
+	if strings.Contains(s, dirtyRef) {
+		t.Errorf("valor sujo com \"\\\\\" ainda presente após a cura;\nconteúdo:\n%s", s)
+	}
+}
+
+// TestSyncREQ_ControlDoesNotTouchUnrelatedBackslashInBody — limite duro do parecer de ameaça:
+// prosa/código no corpo da REQ com "\" legítimo, cujo basename NÃO coincide com o roadmap
+// movido, não é tocado pela sincronização. A linha citada precisa começar com "Roadmap:" —
+// esse é o único formato que rewriteREQRoadmapRef examina no corpo; uma linha sem esse prefixo
+// (ex.: comentário Python com "#") nunca chega ao comparador de basename, normalizado ou não, e
+// por isso não seria um controle real do limite duro (ver advisor review: a primeira versão
+// desta função usava uma linha sem ":", que já era ignorada por strings.Cut antes mesmo desta
+// mudança — não provava nada). Este teste usa uma linha "Roadmap:" de verdade, com um basename
+// DIFERENTE do roadmap movido, dentro de uma cerca de código.
+func TestSyncREQ_ControlDoesNotTouchUnrelatedBackslashInBody(t *testing.T) {
+	dir := t.TempDir()
+	chdirRoadmap(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	reqDir := mkReqDir(t)
+	reqPath := filepath.Join(reqDir, "REQ-with-prose.md")
+	oldPath := "docs/roadmaps/backlog/ROADMAP-real.md"
+	newPath := "docs/roadmaps/wip/ROADMAP-real.md"
+
+	// Basename diferente do roadmap movido (ROADMAP-outro.md != ROADMAP-real.md) — mesmo após
+	// normalizar o separador, o basename não bate, então esta linha não deveria ser tocada.
+	unrelatedFencedLine := "Roadmap: `docs\\roadmaps\\wip\\ROADMAP-outro.md`"
+	unrelatedProse := "```\n" + unrelatedFencedLine + "\n```\n"
+	content := "---\nstatus: Open\ndate: 2026-07-30\nroadmap: \"" + oldPath + "\"\n---\n\n" +
+		"# REQ: With prose\n\n## Exemplo (não tocar)\n" + unrelatedProse +
+		"\n## Linked Roadmap\nRoadmap: `" + oldPath + "`\n"
+	if err := os.WriteFile(reqPath, []byte(content), 0644); err != nil {
+		t.Fatalf("write REQ: %v", err)
+	}
+
+	if err := syncREQReferences("ROADMAP-real.md", newPath); err != nil {
+		t.Fatalf("syncREQReferences: %v", err)
+	}
+
+	updated, _ := os.ReadFile(reqPath)
+	s := string(updated)
+	if !strings.Contains(s, unrelatedFencedLine) {
+		t.Errorf("linha \"Roadmap:\" de basename diferente foi alterada; conteúdo:\n%s", s)
+	}
+	if !strings.Contains(s, "roadmap: \""+newPath+"\"") {
+		t.Errorf("frontmatter real não foi atualizado; conteúdo:\n%s", s)
+	}
+}
+
+// TestSyncREQ_KnownWideningRewritesFencedExampleWithMatchingBasename documenta um efeito
+// colateral aceito, não um limite duro: rewriteREQRoadmapRef só examina a PRIMEIRA linha
+// "Roadmap:" do corpo (sem distinguir se está dentro de uma cerca de código), e a normalização
+// do ML-1B amplia o conjunto de linhas que ela reconhece como "aponta para o roadmap movido" —
+// antes, uma linha "Roadmap: `docs\roadmaps\wip\ROADMAP-x.md`" suja nunca batia por basename
+// (filepath.Base do valor sujo inteiro != roadmapBasename) e por isso nunca era tocada, mesmo
+// citando de propósito o roadmap certo; depois desta mudança, ela é reconhecida e reescrita —
+// mesmo se essa linha estiver dentro de um bloco de exemplo/prosa. Verificado no repositório
+// real (grep por 'Roadmap:.*\\' em docs/req/) que não há ocorrência hoje — o risco é latente,
+// não um incidente ativo. Reportado ao arquiteto; não é o limite duro #2 do parecer de ameaça
+// (esse cobre "\" em prosa cujo basename NÃO coincide, que é o teste acima).
+func TestSyncREQ_KnownWideningRewritesFencedExampleWithMatchingBasename(t *testing.T) {
+	dir := t.TempDir()
+	chdirRoadmap(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	reqDir := mkReqDir(t)
+	reqPath := filepath.Join(reqDir, "REQ-with-matching-fence.md")
+	oldPath := "docs/roadmaps/backlog/ROADMAP-real.md"
+	newPath := "docs/roadmaps/wip/ROADMAP-real.md"
+
+	// Mesmo basename do roadmap movido (ROADMAP-real.md), citado suja dentro de uma cerca —
+	// é a única linha "Roadmap:" do corpo, então é ela quem é reescrita (rewriteREQRoadmapRef
+	// só processa a primeira ocorrência).
+	fencedExampleLine := "Roadmap: `docs\\roadmaps\\wip\\ROADMAP-real.md`"
+	content := "---\nstatus: Open\ndate: 2026-07-30\nroadmap: \"" + oldPath + "\"\n---\n\n" +
+		"# REQ: With matching fence\n\n## Exemplo\n```\n" + fencedExampleLine + "\n```\n"
+	if err := os.WriteFile(reqPath, []byte(content), 0644); err != nil {
+		t.Fatalf("write REQ: %v", err)
+	}
+
+	if err := syncREQReferences("ROADMAP-real.md", newPath); err != nil {
+		t.Fatalf("syncREQReferences: %v", err)
+	}
+
+	updated, _ := os.ReadFile(reqPath)
+	s := string(updated)
+	if strings.Contains(s, fencedExampleLine) {
+		t.Errorf("comportamento documentado mudou: exemplo com basename coincidente deixou de ser reescrito; conteúdo:\n%s", s)
+	}
+}
+
+// TestMoveRoadmap_SyncsREQFrontmatterWithPortableSeparator — controle de regressão: o valor
+// escrito no frontmatter da REQ pareada nunca contém "\", mesmo indiretamente (nesta máquina
+// filepath.Join já produz "/", então isto documenta o comportamento esperado sem depender de
+// rodar em Windows — a prova cross-plataforma real é o gate de CI da Wave 2).
+func TestMoveRoadmap_SyncsREQFrontmatterWithPortableSeparator(t *testing.T) {
+	dir := t.TempDir()
+	chdirRoadmap(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+	mkRoadmapDirs(t)
+
+	reqDir := mkReqDir(t)
+	roadmapBase := "ROADMAP-portable.md"
+	backlogPath := "docs/roadmaps/backlog/" + roadmapBase
+
+	mkMinimalRoadmap(t, backlogPath, "backlog")
+
+	reqPath := filepath.Join(reqDir, "REQ-portable.md")
+	writeREQ(t, reqPath, backlogPath)
+
+	if err := MoveRoadmap("portable", "wip"); err != nil {
+		t.Fatalf("MoveRoadmap: %v", err)
+	}
+
+	content, _ := os.ReadFile(reqPath)
+	s := string(content)
+	if strings.Contains(s, `\`) {
+		t.Errorf("frontmatter da REQ contém separador nativo \"\\\\\"; conteúdo:\n%s", s)
+	}
+}

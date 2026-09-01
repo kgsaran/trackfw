@@ -2087,8 +2087,19 @@ func validateRefTargetsExist() ([]string, error) {
 	return warnings, nil
 }
 
+// normalizeRefSeparator normaliza um valor de referência já extraído de um campo (roadmap:,
+// req:, adr:) para o separador portável (/) antes de resolvê-lo no filesystem local. Caminho
+// dentro de artefato versionado é dado portável — um valor gravado no Windows antes do fix de
+// escrita (ou por qualquer runtime que ainda não normalize) chega aqui com "\" literal, que em
+// Linux/macOS não é separador, é caractere de nome de arquivo, e faz os.Stat falhar numa
+// referência que na verdade existe (docs/seguranca/2026-09-01-modelo-de-ameaca-do-separador-em-artefato.md).
+// NÃO aplicar ao buffer inteiro do arquivo — só ao valor já extraído do campo.
+func normalizeRefSeparator(ref string) string {
+	return strings.ReplaceAll(ref, "\\", "/")
+}
+
 func referenceExists(ref string) bool {
-	expandedRef := config.ExpandPath(ref)
+	expandedRef := config.ExpandPath(normalizeRefSeparator(ref))
 	if _, err := os.Stat(expandedRef); err == nil {
 		return true
 	}
@@ -2111,7 +2122,7 @@ func validateREQRoadmapLifecycle() ([]string, error) {
 		if ref == "" {
 			continue
 		}
-		expandedRef := config.ExpandPath(ref)
+		expandedRef := config.ExpandPath(normalizeRefSeparator(ref))
 		info, err := os.Stat(expandedRef)
 		if err != nil || info.IsDir() {
 			continue

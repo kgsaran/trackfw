@@ -453,6 +453,10 @@ func MoveRoadmap(name, state string) error {
 	if err := os.Rename(src, dst); err != nil {
 		return fmt.Errorf("moving roadmap: %w", err)
 	}
+	// portableDst is the value written into paired REQs' roadmap: frontmatter — a caminho
+	// dentro de artefato versionado é dado portável, nunca separador nativo (ADR do item 10 do
+	// issue #216). dst continua nativo para todas as operações de filesystem abaixo.
+	portableDst := normalizeRefSeparator(dst)
 
 	// Synchronize status: in the frontmatter (and header line in body) to match the new state.
 	if rawContent, readErr := os.ReadFile(dst); readErr == nil {
@@ -473,10 +477,22 @@ func MoveRoadmap(name, state string) error {
 	// Synchronize roadmap: reference in every paired REQ that points at the moved roadmap.
 	// Runs after ✓ moved is printed so ✓ synced always follows it in stdout.
 	// A sync failure does NOT roll back the move; the error causes non-zero exit.
-	if syncErr := syncREQReferences(filepath.Base(src), dst); syncErr != nil {
+	if syncErr := syncREQReferences(filepath.Base(src), portableDst); syncErr != nil {
 		return syncErr
 	}
 	return nil
+}
+
+// normalizeRefSeparator normaliza um caminho para o separador portável (/) antes de ele ser
+// escrito ou comparado como valor de campo dentro de conteúdo versionado (frontmatter,
+// .trackfw-log). NÃO deve ser aplicado ao buffer inteiro de um arquivo — só ao valor já
+// extraído de um campo específico (docs/seguranca/2026-09-01-modelo-de-ameaca-do-separador-em-artefato.md,
+// limite duro #2). Substituição incondicional (não filepath.ToSlash): em Linux/macOS,
+// filepath.ToSlash é no-op porque filepath.Separator já é '/', então não normalizaria um valor
+// sujo herdado de um commit feito no Windows — o próprio defeito que esta função existe para
+// curar.
+func normalizeRefSeparator(p string) string {
+	return strings.ReplaceAll(p, "\\", "/")
 }
 
 func findRoadmap(name string) (string, error) {
@@ -727,7 +743,10 @@ func rewriteREQRoadmapRef(content []byte, roadmapBasename, newRoadmapPath string
 				if ok && strings.EqualFold(strings.TrimSpace(k), "roadmap") {
 					rawVal := strings.TrimSpace(v)
 					plainVal := strings.Trim(rawVal, `"'`)
-					if filepath.Base(plainVal) == roadmapBasename {
+					// Normaliza antes de comparar: um valor sujo com "\" (herdado de um
+					// commit no Windows, antes do fix de escrita) não separa nada em
+					// filepath.Base em Linux/macOS — sem normalizar, esta REQ nunca é curada.
+					if filepath.Base(normalizeRefSeparator(plainVal)) == roadmapBasename {
 						// Preservar estilo de aspas do valor original
 						var newLine string
 						switch {
@@ -754,7 +773,8 @@ func rewriteREQRoadmapRef(content []byte, roadmapBasename, newRoadmapPath string
 			if ok && strings.EqualFold(strings.TrimSpace(k), "Roadmap") {
 				rawVal := strings.TrimSpace(v)
 				plainVal := strings.Trim(rawVal, "`\"'")
-				if filepath.Base(plainVal) == roadmapBasename {
+				// Mesma normalização do bloco de frontmatter acima — ver comentário lá.
+				if filepath.Base(normalizeRefSeparator(plainVal)) == roadmapBasename {
 					// Preservar backticks ou aspas do valor original
 					var newVal string
 					switch {
@@ -820,8 +840,11 @@ func syncREQReferences(roadmapBasename, newRoadmapPath string) error {
 		}
 
 		// Descoberta: frontmatter roadmap: aponta para este roadmap?
+		// filepath.Base sobre um valor sujo com "\" (gravado no Windows antes do fix de
+		// escrita) não separa nada em Linux/macOS — normaliza antes de comparar, senão uma
+		// REQ já suja nunca é curada por um roadmap move subsequente.
 		fmVal := extractFrontmatterRoadmap(string(content))
-		if fmVal == "" || filepath.Base(fmVal) != roadmapBasename {
+		if fmVal == "" || filepath.Base(normalizeRefSeparator(fmVal)) != roadmapBasename {
 			continue // sem referência ou aponta para outro roadmap
 		}
 
