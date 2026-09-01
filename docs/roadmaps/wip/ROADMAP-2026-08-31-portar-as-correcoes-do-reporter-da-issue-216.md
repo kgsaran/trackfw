@@ -446,7 +446,164 @@ contrato de barrier.
 A **contagem cair para 3 `REPRODUCED`** só se verifica em runner Windows real, no push. Verde local
 não prova. Cada transição `REPRODUCED → ABSENT` é explicada aqui citando o run.
 
-## Barreira final
+## MEDIÇÃO NO CI — a contagem caiu para 5, e o critério dizia 3
 
-`hefesto-tf` e `hades-tf` sobre o diff completo, auditoria do arquiteto, `barrier`. **CI verde** — e
-aqui "verde" significa a camada 2 reportando **3**, com os cinco itens corrigidos explicados.
+Run de Quality do PR #229, `windows-defect-reproduction`:
+
+```
+Reproduzidos: 5 | Inconclusivos: 0 | Bloqueados: 0 | Total de linhas: 11
+```
+
+**Escrevi na AC3 que qualquer número diferente de 3 é achado, não arredondamento. É achado — e o
+erro é meu, na definição do critério.**
+
+### Item a item (ordem do `Add-Result`: 1, 4, 2, 3, 5, 6, 7, 8, 9, 10, 11)
+
+| item | veredito | esperado? |
+|---|---|---|
+| 1 — cp1252 no `--help` | **ABSENT** | ✓ corrigido (#223) |
+| 4 — gate de cobertura em cp1252 | REPRODUCED | ✓ escopo negativo declarado |
+| **2 — `HOME` ignorado** | **REPRODUCED** | ✗ **inesperado** |
+| **3 — bit de execução** | **REPRODUCED** | ✗ **inesperado** |
+| 5 — CRLF nos geradores | **ABSENT** | ✓ corrigido (#225) |
+| 6 — `isatty` sobre `NUL` | **ABSENT** | ✓ corrigido (#224) |
+| 7 — semântica de shell | REPRODUCED | ✓ não corrigido |
+| 10 — separador de SO | REPRODUCED | ✓ não corrigido |
+
+**As três correções que a camada 2 consegue medir funcionaram: 1, 5 e 6 foram para `ABSENT`.**
+
+### Por que 2 e 3 não caem — e nunca cairiam
+
+Os dois **não medem o `trackfw`. Medem o sistema operacional.**
+
+```powershell
+# item 2 — mede os RUNTIMES, não o produto
+node   -e "console.log(require('os').homedir())"
+python -c "import os; print(os.path.expanduser('~'))"
+
+# item 3 — mede NTFS
+if ($r3.Stdout -match "bit0111=0") { "REPRODUCED" }
+```
+
+Nossa correção **desvia** o `trackfw` do comportamento da plataforma (via `homedir.Dir()` e via
+guarda de plataforma); ela não muda a plataforma. `os.homedir()` do Node vai ignorar `$HOME` no
+Windows para sempre, e o bit `0111` vai ser 0 em NTFS para sempre. **Esses dois checks são
+estruturalmente incapazes de ir a `ABSENT`.**
+
+O item 3 chega a **declarar isso no próprio comentário**: *"confirmatório; primário = camada 1"*.
+Estava escrito, e eu não li antes de fixar o número.
+
+### O erro é meu, e é de uma classe conhecida
+
+Peguei o número previsto na análise do `hefesto-tf` e o transformei em critério **sem verificar o que
+aqueles dois checks de fato medem**. É a mesma classe do `success()` implícito, do `VERDICT=ABSENT`
+por vacuidade e da base `origin/main` no gate: **medir uma pergunta parecida com a pretendida**. Aqui
+a pergunta medida é *"a plataforma tem o defeito?"* e a pretendida era *"o trackfw ainda sofre com
+ele?"*.
+
+**5 é o número correto para o instrumento como ele está construído.** O erro estava na expectativa,
+não na medição — e foi a AC exigindo explicação de qualquer desvio que forçou o diagnóstico em vez de
+deixar passar como ruído.
+
+### A camada 1 mostra o que a camada 2 não consegue ver
+
+Eu tinha parado na camada 2. O item 3 **se declara** *"confirmatório; primário = camada 1"* — a
+medição que importa para ele estava no outro job, e eu não fui buscar.
+
+```
+linha de base:  293 failed, 1265 passed, 3 skipped
+depois do port: 145 failed, 1422 passed, 5 skipped
+                ─────────────────────────────────
+                −148 falhas,  +157 passes
+```
+
+**As correções funcionaram.** "5 e não 3" nunca significou *"duas correções não pegaram"*; significa
+*"dois checks da camada 2 medem a plataforma, não o produto"*.
+
+### Evidência positiva no nível do produto, para os itens 2 e 3
+
+A camada 2 não os vê, mas **outras medições vêem**:
+
+| item | evidência de produto |
+|---|---|
+| **2** — `HOME` | `scripts/check-homedir-parity.sh`, que veio do próprio #222 **para verificar o produto** com `HOME` ≠ `USERPROFILE`. Agora **ligado** (ML-2B) e rodando em `parity`. |
+| **3** — bit de execução | `hades-tf` rodou 30 testes Go + 99 Node + os Python, e **reverteu o guard** para confirmar que o teste *"não dispara no Windows"* **quebra sem ele** — falsificação nas duas direções, no caminho de produto. |
+
+Ou seja: o instrumento que faltava para o item 2 **veio no próprio PR do reporter**, e estava
+desligado. Ligá-lo foi o ML-2B.
+
+### A AC3 fica FALSIFICADA, não reescrita
+
+**Não vou trocar "3" por "5".** Reescrever o alvo para casar com o resultado é mover a trave — e
+seria a versão pior do exato comportamento que recusei a sessão inteira, marcar caixa para fechar
+critério. Já há precedente nesta REQ: a enumeração da Wave 0 do roadmap anterior foi **marcada como
+FALSIFICADA em vez de reescrita**.
+
+O registro honesto é: **a AC3, como escrita, estava errada sobre o que o instrumento consegue
+medir.** O motivo está acima, e a correção é REQ própria.
+
+### A REQ de retarget precisa de um requisito nomeado agora
+
+Se os itens 2 e 3 forem retargetados para medir o produto, eles vão a `ABSENT` **imediatamente** —
+porque a correção já está aplicada. **Um check que passa no instante em que é escrito não prova
+nada.** O retarget só vale se for falsificado **revertendo temporariamente a correção** e confirmando
+que o check volta a `REPRODUCED`. Fica registrado aqui para não se perder junto com o motivo.
+
+### Consequência
+
+Os itens 2 e 3 precisam ser **retargetados** para medir o comportamento do **produto** — o `trackfw`
+resolvendo home com `HOME` ≠ `USERPROFILE`, e o validator deixando de alarmar em Windows. Isso é
+mudança de **instrumento**, não de correção: **vira REQ própria**, para não misturar retarget de
+medição com port de correção no mesmo diff — exatamente o motivo pelo qual o `hefesto-tf` recomendou
+não re-baselinar junto com o ML-1E.
+
+## Barreira final — ambas APROVAM, zero bloqueantes
+
+**`hades-tf` (segurança) e `hefesto-tf` (qualidade)**, pareceres em `docs/seguranca/` e
+`docs/qualidade/` de 2026-09-01. Os dois corrigiram a **própria metodologia** antes de declarar
+pronto: o Hades tinha alegado *"li o diff completo"* sem ter lido ~30 arquivos e fechou a lacuna; o
+Hefesto refez verificações que estavam apoiadas em registro em vez de execução.
+
+**Verificações que eles fizeram e que eu não teria feito:**
+
+- Comparação **programática** dos 78 arquivos do diff contra os 68 tocados pelos 4 PRs: zero ausente,
+  zero divergência de lógica além dos 5 desvios declarados.
+- Falsificação das **três** guardas de vacuidade em fixtures próprias, nos dois cenários (vazio e
+  ausente) — não confiou no registro.
+- Reprodução da causalidade do cp1252: copiou `pypi/` para `/tmp`, **desabilitou**
+  `_force_utf8_output()`, confirmou o `UnicodeEncodeError`, e confirmou que passa com o código real.
+- Falsificação do item 3 revertendo o guard e confirmando que o teste *"não dispara no Windows"*
+  quebra sem ele.
+
+**Achado do Hades que eleva a importância do item 6:** `stdin_is_interactive()` governa também o
+portão de confiança de `trackfw thirdparty install --yes-i-trust-this-source`, não só o wizard do
+`init`. O `isatty()` cru mentindo `True` sob `NUL` atingia **um gate de segurança**, não apenas UX.
+
+**Achado do Hades que desarma o susto do item 3:** o guard é por `GOOS`/plataforma do **binário**,
+não do host — **WSL continua protegido**. E o docstring revela que o Python **já estava inerte**
+nessa checagem no Windows antes da REQ; o port não abre capacidade nova, uniformiza um estado que já
+existia. Nota de vault escrita.
+
+**Acompanhamento (não bloqueante):** `pypi/trackfw/tty.py` **sem teste unitário direto** — lacuna
+herdada do #224; o `test_scope_resolution.py` faz stub da função inteira em vez de exercitá-la. Vira
+REQ. Mais: duplicação leve do idioma de guarda de vacuidade entre os 3 gates (convenção herdada,
+30/39 gates já assim) e diagnóstico degradado do `check-python-writes-lf.sh` no cenário
+"diretório ausente".
+
+**Atribuição verificada por ele:** 4 dos 5 commits trazem `Co-Authored-By: lourivalgarciajunior`; o
+quinto (contratos no `cli-parity.md`) corretamente **não** traz, por não portar nenhuma linha dele.
+
+## CI final — PR #229
+
+```
+go · node · python (3.10/3.12) · package-smoke · parity · governance   pass
+windows-integrations-resolve                                            pass
+windows-defect-reproduction   fail   5 REPRODUCED (era 8)
+windows-full-suites           fail   145 failed / 1422 passed (era 293/1265)
+```
+
+Os três gates novos **executaram no `parity` do CI**, não só localmente.
+
+Os dois vermelhos seguem `continue-on-error` e não bloqueiam merge — e continuam vermelhos **por
+projeto**, até os itens 4, 7 e 10 serem corrigidos. Os itens 2 e 3 permanecem `REPRODUCED` por
+limitação do instrumento, documentada acima e endereçada em REQ própria.

@@ -51,9 +51,17 @@ deveria mudar, pare e avise — não corrija em voo.**
       #222–#225, com os testes que os acompanham.
 - [ ] **AC2** — 🔴 **Atribuição:** todo commit de port carrega
       `Co-Authored-By: lourivalgarciajunior <lourival.garcia@gmail.com>`.
-- [ ] **AC3** — 🔴 **A contagem cai para 3 `REPRODUCED`** na camada 2, em runner Windows real: restam
-      **item 4** (gate de cobertura), **item 7** (semântica de shell) e **item 10** (separador de SO
-      no frontmatter). **Qualquer outro número é achado, não arredondamento.**
+- [ ] **AC3** — ❌ **FALSIFICADA, não reescrita.** Previa a contagem caindo para **3** na camada 2;
+      o CI mediu **5**. O achado não é que duas correções falharam — é que **os checks dos itens 2 e
+      3 medem a plataforma, não o produto** (`node -e "os.homedir()"`, `bit0111=0` em NTFS), e por
+      isso são estruturalmente incapazes de ir a `ABSENT`. O item 3 chega a declarar isso no próprio
+      comentário: *"confirmatório; primário = camada 1"*. **Eu peguei o número previsto na análise e
+      o transformei em critério sem verificar o que aqueles dois checks medem.**
+      A evidência de que as correções funcionaram está na camada 1 (**293→145 falhas, 1265→1422
+      passes**), no `check-homedir-parity.sh` (item 2, no nível do produto) e na falsificação nas
+      duas direções feita pelo `hades-tf` (item 3). **Não troco "3" por "5"** — reescrever o alvo
+      para casar com o resultado é mover a trave. Retarget dos dois checks vira REQ própria, com o
+      requisito de ser falsificada revertendo temporariamente a correção.
 - [ ] **AC4** — 🔴 **Cada item que sai de `REPRODUCED` é explicado no roadmap, citando o run que
       mediu a transição.** É a regra estabelecida ao fechar a `REQ-2026-08-30` (PR #228): contador
       decrescente **com histórico**, não alvo fixo.

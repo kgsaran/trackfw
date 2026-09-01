@@ -27118,3 +27118,50 @@ Nenhum arquivo fora de `docs/cli-parity.md` e `docs/agents-working-context.md` t
 não editados, conforme restrição.
 
 ---
+
+---
+
+## 2026-09-01 — hefesto-tf: Barreira final de qualidade sobre o PR #229 (port do reporter #216)
+
+**Início.** Recebido para revisar o diff completo de `fix/portar-as-correcoes-do-reporter-da-issue-216`
+(PR #229) contra `origin/main`. Objetivo: barreira de qualidade — fidelidade do port contra
+`gh pr diff 222|223|224|225`, os desvios declarados no roadmap (`python`→`python3`, modo 755, par
+duplicado cosmético mantido, retarget do Cenário 81, ligação dos gates ao `Makefile`, guardas de
+vacuidade), falsificação própria das 3 guardas de vacuidade com fixture em `/tmp`, cobertura de
+teste (falsificação nas duas direções vs guarda-de-regressão-fora-do-Windows), leitura de
+`pypi/trackfw/tty.py`, duplicação entre os 3 gates novos e os existentes, e se os 3 gates novos
+cumprem o próprio Contrato 3 que escrevi no ML-4A (`partial=`). Sem tocar `docs/seguranca/`
+(hades-tf em paralelo), sem editar roadmap/REQ, sem git.
+
+**Fim.** Veredito: **APROVA**, zero bloqueante. Fidelidade do port confirmada por comparação
+programática linha a linha entre `git diff origin/main...HEAD` e `gh pr diff 222|223|224|225` — zero
+arquivo ausente, zero divergência de lógica além dos 5 desvios já declarados no roadmap (todos
+verificados como execução, não lógica). As três guardas de vacuidade (`check-python-writes-lf.sh`,
+`check-homedir-parity.sh`, `check-tty-detection.sh`) foram falsificadas por mim em fixtures isoladas
+em `/tmp` — todas reprovam corretamente tanto com diretório vazio quanto com diretório ausente. O
+teste `TestCliEmConsoleCp1252` foi reproduzido empiricamente (cópia do `pypi/` em `/tmp`, chamada a
+`_force_utf8_output()` desabilitada): quebra com `UnicodeEncodeError` sem a correção, passa com ela —
+causalidade real, não presumida. `pypi/trackfw/tty.py` lido e confirmado no-op fora do Windows por
+execução direta neste macOS. `make quality` completo (Go+Node+Python+lint+parity, incluindo os 181
+cenários de `check-gates-falsify.sh` e os 53 de `check-roadmap-barrier-contract.sh`): `MAKE_EXIT=0`.
+Os 3 gates novos cumprem o próprio Contrato 3 do `docs/cli-parity.md` (ligados ao `Makefile` e
+reprovam vácuo). Dois achados de acompanhamento, não bloqueantes: duplicação leve (~10 linhas × 3) do
+idioma de guarda de vacuidade entre os 3 gates novos sem helper compartilhado (convenção herdada, não
+regressão); diagnóstico degradado (mas não a segurança) de `check-python-writes-lf.sh` no cenário
+"diretório ausente" (falha por `set -e` cru, sem mensagem custom). Relatório completo em
+`docs/qualidade/2026-09-01-barreira-do-port-do-reporter-da-issue-216.md`. Nenhum arquivo de produto
+tocado; roadmap e REQ não editados; `docs/seguranca/` não tocado.
+
+**Correção pós-revisão do advisor, antes de fechar:** a primeira versão do §7 só checava 2 das 4
+propriedades do Contrato 3 (ligado + reprova vácuo) — mesma classe de over-claim que o próprio ML-4A
+tinha corrigido em si mesmo. Reli o texto verbatim de `docs/cli-parity.md` e verifiquei as 4 (ligado,
+reprova vácuo, guarda usa mesmo cwd/caminho da varredura real, `python3` nunca `python`) — as 3
+satisfazem as 4, mas por verificação explícita, não por tabela incompleta. Também adicionados: nota
+de que `pypi/trackfw/tty.py` não tem teste unitário direto (lacuna herdada de #224, `test_scope_
+resolution.py` faz stub da função inteira em vez de exercitá-la); downgrade honesto do ✅ sobre o "par
+duplicado cosmético" do #225 (não localizei o par específico, reportado como não confirmado por mim);
+checagem de atribuição nos 5 commits (`git log`, só leitura) — 4/5 trazem `Co-Authored-By:
+lourivalgarciajunior`, o 5º (`ee8a735`, ML-4A) corretamente não traz porque não porta nenhuma linha
+dele, é documentação original. Veredito mantido: **APROVA**, zero bloqueante, 4 achados de
+acompanhamento (duplicação leve entre os 3 gates, diagnóstico degradado de uma guarda num cenário,
+cobertura de `tty.py`, par duplicado não localizado).
