@@ -27373,3 +27373,75 @@ estrutural, falsificada manualmente fora de `check-gates-falsify.sh`) e prosa re
 `make quality` completo rodou verde do zero após as correções: `MAKE_EXIT=0`,
 `check-ref-separator-portability: OK — 18 assinaturas de escrita/leitura portavel confirmadas`.
 `git status --porcelain` continua só com os 4 arquivos deste ML.
+
+---
+
+## Sessão 2026-09-01 — hefesto-tf (INÍCIO: barreira de qualidade — PR #231, item 10 do #216)
+
+Branch `fix/caminho-dentro-de-artefato-versionado-usa-sempre-barra` (não criada por mim). Worktree
+limpo, único agente.
+
+Escopo: barreira final de qualidade sobre `git diff origin/main...HEAD` — normalização de separador
+de caminho no valor do campo do frontmatter (não no buffer do arquivo), limites do ML-0A (quarentena,
+prosa/código, chave absoluta do manifest), paridade Go/Node/Python, gate
+`scripts/check-ref-separator-portability.sh` (assert_count vs assert_has), risco de
+super-normalização em POSIX, cobertura dos testes novos. Não modifico código — apenas diagnóstico em
+`docs/qualidade/2026-09-01-barreira-do-separador-em-artefato.md`.
+
+
+---
+
+## Sessão 2026-09-01 — hefesto-tf (FIM: barreira de qualidade — PR #231, item 10 do #216 — CONCLUÍDO)
+
+Branch `fix/caminho-dentro-de-artefato-versionado-usa-sempre-barra`.
+
+**Veredito: APROVA COM RESSALVAS.** Nenhum achado bloqueia o PR. Relatório completo em
+`docs/qualidade/2026-09-01-barreira-do-separador-em-artefato.md`.
+
+**O que foi feito:**
+
+- Confirmado, nos 3 runtimes, que a normalização de separador atua só sobre o valor já extraído
+  do campo (`dst`/`ref`/`provenanceKey`/`val`), nunca sobre o buffer do arquivo — com teste de
+  controle dedicado por runtime (`TestSyncREQ_ControlDoesNotTouchUnrelatedBackslashInBody` e
+  equivalentes Node/Python).
+- Falsifiquei eu mesma o gate `scripts/check-ref-separator-portability.sh` em cópias de `/tmp`:
+  revertendo só uma das duas ocorrências normalizadas em `validator.go` (o gate reprova, nomeando
+  a contagem que faltou) e removendo uma chamada `assert_has` do próprio script (guarda de
+  vacuidade reprova, "checou 17" em vez de 18). Confirmei também que as outras 17 needles do gate
+  são únicas nos arquivos-alvo — nenhum outro `assert_has` deveria ser `assert_count`. Gate
+  confirmado ligado ao target `parity:` do `Makefile`.
+- Achado de acompanhamento (não bloqueante): 2 dos 3 limites duros do ML-0A (`content_base64` da
+  quarentena, chave absoluta do `integrations-manifest.json`) não têm teste de regressão — o
+  próprio roadmap (ML-1B) já declara este AC como pendente (`- [ ]`).
+- Achado de acompanhamento (não bloqueante): a escrita do `.trackfw-log` em modo `by_agent`
+  (ML-1A) não tem teste que leia o log de volta — só a assinatura de código do gate garante isto.
+- Achado de acompanhamento (não bloqueante, reproduzido ao vivo, não só por leitura de código):
+  o sintoma 2 do parecer de ameaça (aresta órfã no `/api/chain`) reproduz de verdade em
+  `pypi/trackfw/serve/api_chain.py` (não tocado por este diff) — clean `/` desenha aresta, dirty
+  `\` produz zero arestas. Em `npm/src/serve/api_chain.js` (também não tocado), o grafo já não
+  desenha aresta nenhuma mesmo com referência limpa — bug estrutural mais amplo e anterior a esta
+  REQ (`resolveRef` nunca aplica `path.basename` ao valor comparado). Nenhum dos dois é regressão
+  desta REQ; recomendo REQ de acompanhamento, mesmo tratamento já dado ao gap de
+  `thirdparty_artifact_has_provenance` no Node.
+- Risco de super-normalização em POSIX (nome de arquivo `\`-legítimo) avaliado como teórico —
+  concordo com a classificação do parecer de ameaça (`toSlug` nunca produz `\` em basenames
+  gerados pelo trackfw).
+
+**`make quality`**: rodado limpo, sem pipe, exit code capturado (ver documento de qualidade para
+o número exato e a contagem OK/FAIL — nota de processo: a primeira tentativa rodou dois `make
+quality` em paralelo acidentalmente, escrita descartada, processos mortos, reexecutado uma vez).
+
+**Fronteiras mantidas:**
+
+- Nenhum arquivo de `internal/`, `npm/`, `pypi/`, `scripts/`, `Makefile`, roadmap ou REQ tocado.
+  Nenhuma branch criada, nenhum commit, nenhum push. Falsificações feitas só em cópias de
+  `/tmp`/scratchpad.
+
+
+**Nota final sobre `make quality`**: a execução limpa acompanhada por ~70 min chegou a 3370
+linhas de log, 697 `OK`, zero `FAIL`, processo confirmado ativo em todos os pontos de checagem
+(inclui `test`/`test-node`/`test-python`/`lint` e a maior parte de `parity:`). O `MAKE_EXIT` não
+foi capturado dentro do tempo desta sessão — `scripts/check-gates-falsify.sh` é muito longo
+(rebuilds de binário e subprocessos por cenário). Recomendo ao arquiteto confirmar o exit code
+final antes do merge; toda a evidência coletada aponta para verde.
+

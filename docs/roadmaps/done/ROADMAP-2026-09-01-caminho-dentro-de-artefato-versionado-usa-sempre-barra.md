@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-01
 req: "docs/req/REQ-2026-08-30-caminho-portavel-montado-com-separador-do-sistema-vaza-para-dentro-de-artefato-versionado.md"
 squad: "hades-tf, apolo-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, apolo-tf"
 
 # Roadmap: Caminho dentro de artefato versionado usa sempre barra
 
-> Created: 2026-09-01 | Status: wip
+> Created: 2026-09-01 | Status: done
 
 ## Context
 
@@ -293,3 +293,67 @@ Verifiquei o que ele mede antes de escrever o número, que foi exatamente o pass
 ## Barreira final
 
 `hefesto-tf` e `hades-tf`, auditoria do arquiteto, `barrier`. **CI verde**, não só verde local.
+
+
+## MEDIÇÃO NO CI — camada 2 de 5 para 4, como previsto
+
+Run de Quality do PR #231:
+
+```
+Reproduzidos: 4 | Inconclusivos: 0 | Total de linhas: 11
+
+go:      ABSENT — roadmap: docs/roadmaps/wip/ROADMAP-item10.md
+node:    ABSENT — roadmap: docs/roadmaps/wip/ROADMAP-item10.md
+python:  ABSENT — roadmap: docs/roadmaps/wip/ROADMAP-item10.md
+```
+
+**O número bateu com a previsão — e bateu por um motivo específico:** verifiquei **o que o check
+mede antes de escrever o critério**. Na REQ anterior previ 3, o CI deu 5, e a causa foi exatamente
+ter pulado esse passo. A diferença entre as duas previsões não foi sorte; foi um minuto de leitura.
+
+O Python era o pior dos três antes, gravando o caso **misto** (`docs/roadmaps\wip\`) — pior porque
+parece parcialmente correto e passa numa inspeção superficial.
+
+## Barreira final — APROVA COM RESSALVAS, zero bloqueantes
+
+`hefesto-tf`, parecer em `docs/qualidade/2026-09-01-barreira-do-separador-em-artefato.md`.
+
+**O risco mais provável não se materializou.** Ela confirmou que a normalização atua **só sobre o
+valor extraído do campo** (`dst`/`ref`/`provenanceKey`/`val`), nunca sobre o buffer do arquivo — nos
+3 runtimes, **com teste de controle dedicado por runtime** provando que prosa e regex com `\`
+legítimo no corpo de ADR/REQ/roadmap sobrevivem intactas.
+
+**Falsificou o gate ela mesma**, em cópias em `/tmp`: revertendo **uma** das duas ocorrências
+normalizadas, o gate reprova nomeando a contagem que faltou — confirmando que um `assert_has` teria
+passado ali. E verificou que **as outras 17 needles são únicas** nos arquivos-alvo, ou seja, nenhuma
+sofre do mesmo risco.
+
+**Ela declarou uma limitação em vez de reportar verde presumido:** acompanhou o `make quality` por
+~70 min, 697 `OK`, zero `FAIL`, e disse que **não capturou o exit code final**, pedindo confirmação.
+Um agente menos disciplinado teria escrito "verde".
+
+**Resolvido por evidência mais forte que a local — o CI:**
+
+```
+parity = SUCCESS
+  check-ref-separator-portability: OK — 18 assinaturas confirmadas
+go · node · python (3.10/3.12) · package-smoke · governance = SUCCESS
+```
+
+### Ressalvas de acompanhamento — nenhuma é regressão deste PR
+
+1. Dois dos três limites duros (`content_base64` da quarentena, chave absoluta do
+   `integrations-manifest.json`) **não têm teste de regressão dedicado** — o próprio ML-1B já declara
+   esse AC como pendente.
+2. A escrita do `.trackfw-log` em modo `by_agent` não tem teste que **leia o log de volta**; só a
+   assinatura de código do gate garante hoje.
+3. 🔴 **O `/api/chain` é pior do que sabíamos**, verificado ao vivo por ela:
+
+   | runtime | comportamento |
+   |---|---|
+   | Python | com `/` desenha aresta; com `\` produz **zero** |
+   | Node | **não desenha aresta nenhuma, nem com referência limpa** |
+
+   O Node tem **bug estrutural mais amplo e anterior** a esta REQ — o grafo do board não liga nada.
+   Vira REQ de acompanhamento, **nomeado e não escondido**, mesmo tratamento dado ao gap do
+   `thirdparty_artifact_has_provenance`.
