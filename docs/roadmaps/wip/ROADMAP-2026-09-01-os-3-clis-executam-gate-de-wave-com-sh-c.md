@@ -213,9 +213,52 @@ pino fixo para resolução por `$PATH` **é real em POSIX** — confirmada pelo 
 curado. O veredito Windows só o CI fecha.
 
 ## Wave 2 — Gate e contrato
-> Dependências: Wave 1. 🔴 Nasce ligado, com guarda de vacuidade ancorada no mesmo cwd, `python3`
-> nunca `python`. E **prefira `assert_count` a `assert_has`** onde a assinatura puder repetir — o
-> gate precisa reprovar se **um** dos dois CLIs regredir, não só se ambos.
+> Dependências: Wave 1 completa.
+
+### ML-2A — Gate contra regressão e contrato
+**Status:** ✅ Concluído
+**Agente:** `artemis-tf`
+**Entregue:** `scripts/check-shell-posix-portability.sh` — **10 assinaturas** em `barrier.js` e
+`barrier.py`, ligado ao `parity:`, contrato anotado com **cobertura plena** (`gate=`, não `partial=`).
+
+#### A armadilha auto-referente, pela terceira vez nesta sessão
+
+**Os comentários do ML-1A citam `shell: true` e `shell=True` em prosa**, para documentar o que não
+repetir. Um `grep` no arquivo inteiro **reprovaria a árvore correta, em cima da própria
+documentação**. Ela adicionou `assert_no_code_match`, que exclui linhas de comentário antes de
+grepar.
+
+É o mesmo padrão do gate do separador, que teria reprovado sobre os documentos que descrevem o
+defeito. **Um artefato que documenta um antipadrão contém o antipadrão** — e gate ingênuo não
+distingue menção de uso.
+
+#### `assert_count` onde a presença não basta
+
+O literal `not_evaluated` ocorre **legitimamente duas vezes por arquivo** — ramo de trust e ramo de
+`sh` ausente. `assert_count(2)` distingue *"os dois ramos ainda reportam o terceiro estado"* de
+*"um colapsou em `blocked`"*. `assert_has` não distinguiria.
+
+#### Falsificação — verifiquei o caso decisivo
+
+```
+árvore correta          →  exit 0, "10 assinaturas confirmadas"
+regressão SÓ no Node    →  exit 1, nomeando barrier.js — Python não mencionado
+```
+
+**Detecta regressão em um só CLI e diz qual.** Ela também falsificou o simétrico (só Python) e a
+vacuidade (`ROOT` vazio → as 10 reprovam individualmente, cada uma nomeando o arquivo ausente).
+
+#### O contrato registra o custo, não só o benefício
+
+Anotação de **cobertura plena**, e o texto declara o que era tentador omitir: a mudança troca
+**interpretador fixo em `/bin/sh`** por **resolvido via `$PATH`** — necessário para Windows, mas
+**não é no-op em POSIX**. Quem controla o `$PATH` controla o interpretador do gate, e isso **compõe**
+com a REQ aberta de fail-open do `roadmapTrustForGates`.
+
+Um contrato que descreve só o lado bom é meio-caminho para o contrato falso que quase publiquei no
+ciclo do `fchmod`.
+
+**`MAKE_EXIT=0`**, `go test` nos 17 pacotes, Node 842 testes, cobertura de contrato limpa.
 
 ## Verificação que só o CI fecha
 

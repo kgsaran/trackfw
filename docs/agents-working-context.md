@@ -27752,3 +27752,66 @@ resultado nos 3 CLIs em Windows" só o CI (`windows-full-suites`) fecha, como o 
 
 **Fora de escopo, não tocado**: `serve.js`/`serve.py`, gates de roadmap existentes,
 `roadmapTrustForGates`, `docs/cli-parity.md` (Wave 2).
+
+---
+
+## artemis-tf — 2026-09-01 — INÍCIO: ML-2A, gate contra regressão de `sh -c` e contrato em `docs/cli-parity.md`
+
+Branch `fix/os-3-clis-executam-gate-de-wave-com-sh-c`. Wave 2 do
+`docs/roadmaps/wip/ROADMAP-2026-09-01-os-3-clis-executam-gate-de-wave-com-sh-c.md`, ML-1A já
+concluído por `apolo-tf`.
+
+Escopo: (1) `scripts/check-shell-posix-portability.sh` — gate falsificável, ligado ao `parity:` do
+Makefile, contra regressão de `barrier.js`/`barrier.py` para `shell: true`/`shell=True`; (2) contrato
+do ADR-2026-09-01 em `docs/cli-parity.md`, incluindo a consequência não-no-op medida pelo ML-0A
+(resolução de `sh` via `$PATH` em vez de caminho fixo). Não toco `internal/`, `barrier.js`/`barrier.py`
+(já corrigidos), `serve.js`/`serve.py` (REQ própria), nem o roadmap/REQ/ADR (arquiteto audita e
+registra o resultado).
+
+---
+
+## artemis-tf — 2026-09-01 — FIM: ML-2A, gate contra regressão de `sh -c` e contrato em `docs/cli-parity.md` — CONCLUÍDO
+
+Branch `fix/os-3-clis-executam-gate-de-wave-com-sh-c`.
+
+**`scripts/check-shell-posix-portability.sh`** — ligado ao `parity:` do Makefile. 10 assinaturas
+pinadas (`assert_count`, não `assert_has` — lição do `check-ref-separator-portability.sh`), em
+`npm/src/commands/barrier.js` e `pypi/trackfw/commands/barrier.py`: a chamada `sh -c` explícita
+(count=1 cada), a mensagem pinada de `sh` ausente (count=1 cada), o `not_evaluated` reportado no
+ramo de spawn-falho (count=1 cada) e nos dois ramos combinados — trust E `sh` ausente — do check
+`gates` (count=2 cada, porque o literal `status: 'not_evaluated',`/`"status": "not_evaluated",`
+aparece legitimamente duas vezes por arquivo). Mais uma checagem negativa por arquivo
+(`assert_no_code_match`) que exclui linha de comentário antes de procurar `shell:\s*true`/
+`shell\s*=\s*True` — necessário porque os próprios comentários do ML-1A citam essas strings em
+prosa para explicar o que NÃO fazer mais; um grep ingênuo no arquivo inteiro reprovaria a árvore
+correta pelo próprio comentário que documenta a correção (medido antes de escrever o gate).
+Guarda de vacuidade: contagem de `assert_*` (10, nomeado) + `[[ ! -f ]]` por arquivo.
+
+**Falsificação, saída real, cópias em scratchpad (nunca na árvore real)**:
+1. Árvore correta → `OK` (10/10).
+2. Regressão em SÓ `barrier.js` (revertido para `spawnSync(command, {shell:true,...})`, `barrier.py`
+   intocado) → reprova nomeando `npm/src/commands/barrier.js` nas duas assinaturas afetadas, sem
+   mencionar Python. Regressão em SÓ `barrier.py` (revertido para `subprocess.run(cmd, shell=True,
+   ...)`, `barrier.js` intocado) → reprova nomeando só `pypi/trackfw/commands/barrier.py`. Este é o
+   caso que um `assert_has` sozinho, sem cobertura simétrica por arquivo, poderia mascarar se as
+   duas checagens estivessem fundidas — aqui cada arquivo tem suas próprias 5 assinaturas
+   independentes, então um regride sem o outro reprova.
+3. `ROOT` vazio e `ROOT` inexistente → reprova todas as 10 assinaturas, cada uma nomeando o arquivo
+   ausente — nunca "0 encontrado, gate passa" silencioso.
+
+**`docs/cli-parity.md`** — nova seção `### Wave gates are a portable POSIX-shell contract, not an
+OS script (ADR-2026-09-01)`, anotada `<!-- trackfw-contract: gate=scripts/check-shell-posix-portability.sh -->`
+(verificado com `scripts/check-parity-contract-coverage.sh`, exit 0, seção não aparece na lista de
+gap/partial). Conteúdo: as 83 evidências do ADR, o `sh` como pré-requisito Windows,
+`not_evaluated` vs `exit 127` (não confundir), por que as alternativas foram descartadas, e — 🔴
+sem tratar como no-op — a consequência medida pelo ML-0A: a troca move Node/Python de interpretador
+fixo `/bin/sh` para resolução por `$PATH`, ampliação real de superfície em POSIX mesmo sendo
+funcionalmente inerte para a sintaxe aceita, composta com a REQ já aberta de fail-open do
+`roadmapTrustForGates`.
+
+**Evidência de `make quality`**: rodado sem pipe, exit code do `make` capturado diretamente —
+`go test` 17 pacotes `ok`, Node `842` testes, `check-shell-posix-portability.sh` → `OK — 10
+assinaturas...`, `check-parity-contract-coverage.sh` → `nenhuma seção sem anotação`, `MAKE_EXIT=0`.
+
+**Não tocado**: `internal/`, `npm/src/commands/barrier.js`, `pypi/trackfw/commands/barrier.py`
+(fix já commitado no ML-1A), `serve.js`/`serve.py`, roadmap/REQ/ADR.
