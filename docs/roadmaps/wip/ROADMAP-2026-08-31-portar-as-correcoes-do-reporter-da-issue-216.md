@@ -225,16 +225,98 @@ verificação real é o CI.
 > Dependências: **Wave 0 aprovada**. Não iniciar antes do veredito do `hades-tf`.
 
 ### ML-2A — #222 Grupo A: `$HOME` nos 3 runtimes
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** `apolo-tf`
 **Fonte:** `gh pr diff 222`, **só o grupo `$HOME`**.
 **Critérios de aceite:**
-- [ ] Port fiel, com testes. A Wave 0 **liberou o port como está** — o vetor que ela achou
+- [x] Port fiel, com testes. A Wave 0 **liberou o port como está** — o vetor que ela achou
       (instalação fantasma) vira REQ própria, não entra aqui
-- [ ] 🔴 **Não repetir a alegação "API nativa → env var"** em comentário, commit ou doc: a âncora já
+- [x] 🔴 **Não repetir a alegação "API nativa → env var"** em comentário, commit ou doc: a âncora já
       era env var nos 3 runtimes. Formulação imprecisa posta em circulação pelo arquiteto
-- [ ] Paridade nos 3 runtimes — este defeito é dos três
+- [x] Paridade nos 3 runtimes — este defeito é dos três
 - [x] `make quality` verde
+
+### ML-2B — Ligar o `check-homedir-parity` e dar-lhe guarda de vacuidade
+**Status:** ✅ Concluído
+**Agente:** `apolo-tf`
+**Files affected:** `Makefile` (alvo `parity:`), `scripts/check-homedir-parity.sh`
+**Origem:** auditoria do arquiteto sobre o ML-2A. **Exatamente o mesmo par de defeitos do ML-1C**, e
+desta vez eu procurei porque já sabia onde olhar:
+
+| | `check-python-writes-lf.sh` (#225) | `check-homedir-parity.sh` (#222) |
+|---|---|---|
+| veio do PR | sim | sim (2 ocorrências no diff) |
+| ligado no `Makefile` pelo PR | **não** | **não** |
+| guarda de vacuidade | **não** | **não** (só um `exit 1` na linha 61) |
+
+**Dois gates do mesmo autor, os dois inertes e os dois sem guarda de vacuidade. Deixou de ser
+acaso.** Não é crítica ao contribuidor — é lacuna nossa: **em lugar nenhum está escrito que um gate,
+para contar como gate, precisa estar ligado e precisa reprovar quando não mede nada.** Quem contribui
+de fora não tem como adivinhar um contrato que não existe. Vira item da Wave 4, junto com os outros
+dois contratos.
+
+**Actions:**
+1. Ligar `scripts/check-homedir-parity.sh` ao alvo `parity:` do `Makefile`.
+2. Guarda de vacuidade no mesmo padrão do ML-1C — e **com o mesmo cuidado que quase escapou lá**: a
+   guarda precisa usar **o mesmo cwd e o mesmo caminho** que a varredura real, ou ela própria vira
+   vácua.
+**Critérios de aceite:**
+- [x] `make -n parity` expande o gate
+- [x] 🔴 Falsificação da vacuidade nas duas direções, com saída real
+- [x] A lógica de comparação do PR original **não** é alterada
+- [x] `make quality` verde, exit code do `make` capturado **sem pipe**
+
+#### Resultado da Wave 2 (apolo-tf, 2026-08-31) — auditado pelo arquiteto
+
+**Port entregue e fiel.** Helper `homedir` nos 3 runtimes, todos os call sites de resolução de home
+reroteados, `internal/validator/validator_test.go` (puro Grupo A, deixado de fora no ML-1A)
+finalmente portado. Grep final: **zero call site cru** fora do helper. A alegação banida não aparece
+em nenhum arquivo, e nenhuma detecção de divergência foi implementada.
+
+O docstring do helper traz evidência que eu não tinha: *"uma única rodada de `go test ./...` numa
+máquina Windows criou arquivos de ADR, um manifesto de integrações e dois scripts de guard dentro do
+`~/.trackfw` real"*. E no CI vira **corrida**, não só sujeira — `go test` paraleliza pacotes, e a
+falha aparece como *"teste flaky no Windows"* em vez do defeito de isolamento que é.
+
+### O gate do #222 tinha TRÊS defeitos, não dois
+
+Cada um escondia o seguinte:
+
+| # | defeito | como apareceu |
+|---|---|---|
+| 1 | não ligado ao `Makefile` | achado na auditoria, por eu já saber onde olhar depois do ML-1C |
+| 2 | sem guarda de vacuidade | só visível depois de ligar |
+| 3 | invoca `python`, não `python3` | **só visível depois de ligar** — reprova em toda máquina sem o alias |
+
+**Ligar o gate foi o que revelou os outros dois** — que é exatamente o argumento para ligá-lo.
+
+O defeito 3 é sério e sutil: `actions/setup-python` cria o alias `python`, então **o CI passaria** e a
+máquina do dev não. É a nota *"ambiente do dev é mais rico que o do CI"* **invertida**. `apolo-tf`
+obteve `MAKE_QUALITY_EXIT=0` apenas com um shim de PATH, e **declarou isso** em vez de reportar verde
+liso. Corrigido no ML-3C, mesma classe de desvio já autorizada no ML-1B.
+
+### A guarda de vacuidade quase escapou pela segunda vez, e ele pegou de novo
+
+A primeira falsificação dele cobria diretório **vazio**, não diretório **ausente**. Sob
+`set -euo pipefail`, `find <dir-inexistente>` dentro de `$(...)` mataria o script **silenciosamente,
+sem a mensagem da guarda** — o caso exato para o qual a guarda existe. Corrigiu com
+`2>/dev/null || true` e refalsificou. É a segunda vez nesta REQ que uma guarda de vacuidade quase
+nasce vácua por um caminho diferente.
+
+### Erro de processo do arquiteto, registrado
+
+**Despachei o ML-2B enquanto o ML-2A ainda estava vivo.** Li "completed" na notificação e agi,
+ignorando que o próprio corpo dela mencionava um loop de espera em background — e o aviso do sistema
+diz explicitamente que a mesma tarefa pode notificar mais de uma vez. Dois agentes no mesmo worktree,
+violando a regra de paralelização que eu mesmo imponho.
+
+**O ML-2A se comportou melhor que eu:** reverteu a linha do `Makefile` uma vez, viu reaparecer,
+**parou e registrou a anomalia** em vez de insistir — e recusou reivindicar o ML-2B como entregue,
+mesmo com o arquivo já mudado no disco. Nada se perdeu, por disciplina dele e não por cuidado meu.
+
+E, ao verificar o gate, caí **de novo** no `script | head; echo $?`, que reporta o exit do `head`:
+li `0` onde o gate devolvia `1`. Sexta ocorrência dessa forma na sessão, desta vez minutos depois de
+eu a descrever em texto.
 
 ## Wave 3 — cp1252 e isatty (sequencial: diffs empilhados)
 > Dependências: Wave 1 completa. **ML-3B depois de ML-3A** — o diff do #224 **contém** o do #223.

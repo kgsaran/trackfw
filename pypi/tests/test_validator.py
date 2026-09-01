@@ -19,6 +19,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from trackfw import config as _config
 from trackfw import validator as v
+from trackfw.homedir import home_dir
 
 def _exec_bit_representavel():
     """Este sistema de arquivos consegue dizer que um arquivo NAO e executavel?
@@ -942,7 +943,10 @@ class TestExpandTildeAdrDirs(unittest.TestCase):
 
     def test_find_adr_file_com_tilde(self):
         """_find_adr_file localiza arquivo ADR em adr_dir especificado com ~/."""
-        home = os.path.expanduser("~")
+        # home_dir(), nao expanduser: a producao expande `~` pelo mesmo helper e o
+        # conftest isola HOME num tempdir. Com expanduser no Windows o teste escreveria
+        # na home REAL enquanto a producao leria a isolada.
+        home = home_dir()
         test_dir_name = f".tmp_trackfw_test_{int(time.time())}"
         test_dir = os.path.join(home, test_dir_name)
         os.makedirs(test_dir, exist_ok=True)
@@ -956,7 +960,10 @@ class TestExpandTildeAdrDirs(unittest.TestCase):
 
     def test_validate_adrs_are_referenced_com_tilde(self):
         """validate_adrs_are_referenced expande ~/ em adr_dirs ao verificar referências."""
-        home = os.path.expanduser("~")
+        # home_dir(), nao expanduser: a producao expande `~` pelo mesmo helper e o
+        # conftest isola HOME num tempdir. Com expanduser no Windows o teste escreveria
+        # na home REAL enquanto a producao leria a isolada.
+        home = home_dir()
         test_dir_name = f".tmp_trackfw_test_ref_{int(time.time())}"
         test_dir = os.path.join(home, test_dir_name)
         os.makedirs(test_dir, exist_ok=True)

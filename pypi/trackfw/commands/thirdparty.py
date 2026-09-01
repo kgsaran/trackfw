@@ -22,6 +22,7 @@ from trackfw import identity, thirdparty
 from trackfw import config as trackfw_config
 from trackfw.integrations.catalog import load_catalog, plan_deployments
 from trackfw.integrations.manager import IntegrationError, IntegrationManager
+from trackfw.homedir import home_dir
 
 # thirdPartyProvenanceRule (Go) equivalent — the name of the trackfw
 # validate rule that is the real (git-anchored) enforcement behind the
@@ -244,7 +245,7 @@ def execute_install(kind: str, args: argparse.Namespace) -> None:
         print(_THIRD_PARTY_GLOBAL_SCOPE_WARNING)
 
     project_root = os.getcwd()
-    home = os.path.expanduser("~")
+    home = home_dir()
 
     entry = thirdparty.read_quarantine(project_root, checksum)
     content = thirdparty.decode_content(entry)

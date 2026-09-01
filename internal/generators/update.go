@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/kgsaran/trackfw/internal/homedir"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -147,7 +148,7 @@ func updateDetectedCodexIntegrations(cwd string) error {
 		fmt.Printf("  ⚠ Codex integration catalog: %v\n", err)
 		return nil
 	}
-	home, err := os.UserHomeDir()
+	home, err := homedir.Dir()
 	if err != nil {
 		fmt.Printf("  ⚠ Codex integration home: %v\n", err)
 		return nil
@@ -232,7 +233,7 @@ func updateHooksSurgical(cfg Config) {
 // `trackfw update` from cluttering every project's trackfw.yaml with a
 // pointer to a directory that is empty or doesn't exist on this machine.
 func ensureGlobalADRDirRegistered(cwd string) error {
-	home, err := os.UserHomeDir()
+	home, err := homedir.Dir()
 	if err != nil {
 		return fmt.Errorf("resolving home directory: %w", err)
 	}
@@ -488,7 +489,7 @@ func UpdateHarness(opts UpdateOptions) (UpdateReport, error) {
 		return UpdateReport{}, err
 	}
 
-	home, homeErr := os.UserHomeDir()
+	home, homeErr := homedir.Dir()
 	if homeErr != nil {
 		return UpdateReport{}, fmt.Errorf("resolving home directory: %w", homeErr)
 	}
@@ -2043,7 +2044,7 @@ func codexProjectAgentsApply(root string, opts UpdateOptions) error {
 	if err != nil {
 		return err
 	}
-	home, err := os.UserHomeDir()
+	home, err := homedir.Dir()
 	if err != nil {
 		return err
 	}

@@ -18,6 +18,8 @@ from trackfw.identity import load as load_identity
 
 from .catalog import plan_deployments
 from .manager import IntegrationManager
+# alias: o parametro `home_dir` sombreia o nome importado
+from trackfw.homedir import home_dir as _user_home_dir
 
 # The three disk/manifest mismatches doctor reports. They require different
 # remedies and must never be merged — see
@@ -161,7 +163,7 @@ def run_doctor(
     requests — so no extra per-surface filtering is needed here.
     """
     project_root = project_root or os.getcwd()
-    home_dir = home_dir or os.path.expanduser("~")
+    home_dir = home_dir or _user_home_dir()
     # Identity must be resolved from disk before plan_deployments — skipping
     # this step would silently revert custom agent names to the neutral
     # defaults, manufacturing a hash mismatch and a false positive. Mirrors

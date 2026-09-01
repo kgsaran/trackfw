@@ -23,6 +23,7 @@ parity: build
 	scripts/check-static-assets.sh
 	scripts/check-integration-assets.sh
 	scripts/check-python-writes-lf.sh
+	scripts/check-homedir-parity.sh
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-identity-parity.sh
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-artifact-parity.sh
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-barrier.sh

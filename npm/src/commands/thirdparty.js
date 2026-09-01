@@ -19,6 +19,7 @@ const { checkMarkers, checksum: sha256hex } = require('../thirdparty/markers')
 const { quarantinePath, newQuarantineEntry, writeQuarantine, readQuarantine, decodeContent } = require('../thirdparty/quarantine')
 const { loadProvenance, verifyApproval, upsertProvenanceEntry } = require('../thirdparty/provenance')
 const { upsertThirdPartyReference, normalizeThirdPartyContent, resolveThirdPartySkillDestination } = require('../thirdparty/references')
+const { homedir } = require('../homedir')
 
 // api is the module.exports object itself, referenced internally via
 // `api.thirdPartyFetch(...)` so tests can substitute the network fetch by
@@ -189,7 +190,7 @@ async function executeThirdPartyInstall(kind, options) {
   // write happens (including the skill file below) — failing everything up
   // front avoids leaving a partial state (skill file written, no reference
   // injected) on a precondition failure.
-  const { models: resolvedAgentModels, warning: agentModelsWarning } = configModule.resolveAgentModels(scope, os.homedir(), projectRoot)
+  const { models: resolvedAgentModels, warning: agentModelsWarning } = configModule.resolveAgentModels(scope, homedir(), projectRoot)
   if (agentModelsWarning) process.stderr.write(agentModelsWarning + '\n')
   let identityConfig
   if (options.applyTo && options.applyTo.length) {

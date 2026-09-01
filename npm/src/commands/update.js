@@ -7,6 +7,7 @@ const path = require('path');
 const identityStore = require('../identity');
 const projectConfig = require('../config');
 const { runFileTarget, validateTargets, buildDocument, humanReport, silenceConsole } = require('../lib/update-engine');
+const { homedir } = require('../homedir')
 
 // `trackfw update` is project-scoped only — see docs/cli-parity.md,
 // "`trackfw update` vs `trackfw update harness`". It must NEVER touch global
@@ -37,7 +38,7 @@ function loadUpdateConfig(rootDir) {
 // (line-based text splice, not a YAML parse+reserialize) to preserve 100% of
 // the user's existing trackfw.yaml content (comments, key order, formatting).
 function ensureGlobalAdrDirRegistered(cwd) {
-  const home = os.homedir();
+  const home = homedir();
   const globalDir = path.join(home, '.trackfw', 'adr');
   if (!fs.existsSync(globalDir)) return;
 
@@ -476,7 +477,7 @@ cmd.action((mode, options) => {
   // A identidade é carregada uma única vez, fora de qualquer try/catch —
   // um identity.json corrompido deve abortar o comando inteiro, nunca cair
   // silenciosamente para os nomes neutros default.
-  const identityConfig = identityStore.load(os.homedir());
+  const identityConfig = identityStore.load(homedir());
 
   // With --json, stdout must carry only the result document — apply()
   // functions log human progress lines as a side effect; silence them so a

@@ -5,6 +5,7 @@ Registra o grupo de subcomandos ADR no argparse principal.
 
 import os
 import sys
+from trackfw.homedir import home_dir
 
 
 def register(subparsers):
@@ -88,7 +89,7 @@ def _resolve_adr_dirs(args):
             sys.exit(1)
         from trackfw.generators.adr import global_adr_dir
 
-        home = os.path.expanduser("~")
+        home = home_dir()
         return [global_adr_dir(home)]
 
     from trackfw.config import load as load_config

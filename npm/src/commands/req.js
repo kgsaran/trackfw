@@ -4,6 +4,7 @@ const os = require('os')
 const { Command } = require('commander')
 const { listREQs, moveREQ } = require('../generators/req')
 const { t } = require('../i18n')
+const { homedir } = require('../homedir')
 
 const cmd = new Command('req')
 cmd.description(t('req.description'))
@@ -38,7 +39,7 @@ cmd.command('new <title>')
         default: 'local',
       })
       const adrDir = adrScope === 'global'
-        ? path.join(os.homedir(), '.trackfw', 'adr')
+        ? path.join(homedir(), '.trackfw', 'adr')
         : require('../config').load().adrDirs[0]
 
       // Perguntas dinâmicas por probe
