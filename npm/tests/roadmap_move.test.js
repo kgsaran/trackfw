@@ -341,7 +341,7 @@ test('rewriteRoadmapStatus — preserva aspas ao redor do valor', () => {
 
 // ─── ML-2B: syncReqReferences — cinco cardinalidades + idempotência + by_agent ───────────────
 
-const { extractFrontmatterRoadmap, rewriteReqRoadmapRef, syncReqReferences } = require('../src/generators/roadmap')
+const { extractFrontmatterRoadmap, rewriteReqRoadmapRef, syncReqReferences, normalizeRefSeparator } = require('../src/generators/roadmap')
 const { validateRefTargetsExist } = require('../src/validator/index.js')
 
 /**
@@ -873,6 +873,79 @@ test('newRoadmapFromReq — MLs derivados também escrevem a forma canônica, le
     const statusCount = body.split('**Status:** ⬜ Pendente').length - 1
     assert.strictEqual(statusCount, 3, `esperava 3 ocorrências de '**Status:** ⬜ Pendente' (ML-0A, ML-1A, ML-1B), obteve ${statusCount}:\n${body}`)
     assert.ok(!body.includes('**Status:** pending'), `forma antiga '**Status:** pending' não deveria aparecer:\n${body}`)
+  })
+})
+
+// ─── ML-1A/ML-1B — separador portável (item 10 do issue #216) ────────────────
+
+test('normalizeRefSeparator — converte "\\" nativo para "/" portável', () => {
+  const dirty = 'docs\\roadmaps\\wip\\ROADMAP-x.md'
+  assert.strictEqual(normalizeRefSeparator(dirty), 'docs/roadmaps/wip/ROADMAP-x.md')
+})
+
+test('normalizeRefSeparator — controle: valor já portável não é alterado', () => {
+  const clean = 'docs/roadmaps/wip/ROADMAP-x.md'
+  assert.strictEqual(normalizeRefSeparator(clean), clean)
+})
+
+test('syncReqReferences — cura referência suja gravada com "\\" (simulando commit do Windows antes do fix de escrita)', () => {
+  withReqAndRoadmapDir((tmp, roadmapDir, reqDir) => {
+    mkAllStateDirs(roadmapDir)
+    const roadmapFile = 'ROADMAP-dirty.md'
+    const newPath = `docs/roadmaps/wip/${roadmapFile}`
+    const dirtyRef = newPath.replace(/\//g, '\\')
+    const reqPath = path.join(reqDir, 'REQ-dirty.md')
+
+    fs.writeFileSync(path.join(roadmapDir, 'wip', roadmapFile), canonicalRoadmap('Dirty', 'wip'), 'utf8')
+    fs.writeFileSync(reqPath, makeReqContent(dirtyRef), 'utf8')
+
+    const { stdout } = captureOutput(() => syncReqReferences(roadmapFile, newPath, config.load()))
+
+    assert.ok(stdout.includes(`✓ synced REQ-dirty.md → ${newPath}`), `referência suja deveria ser curada; stdout: ${stdout}`)
+    const reqContent = fs.readFileSync(reqPath, 'utf8')
+    assert.ok(reqContent.includes(`roadmap: "${newPath}"`), `frontmatter deveria estar curado para "/"; got:\n${reqContent}`)
+    assert.ok(!reqContent.includes(dirtyRef), `valor sujo com "\\\\" não deveria mais estar presente; got:\n${reqContent}`)
+  })
+})
+
+test('syncReqReferences — controle: prosa não relacionada com "\\" legítimo no corpo não é tocada', () => {
+  withReqAndRoadmapDir((tmp, roadmapDir, reqDir) => {
+    mkAllStateDirs(roadmapDir)
+    const roadmapFile = 'ROADMAP-real.md'
+    const oldPath = `docs/roadmaps/backlog/${roadmapFile}`
+    const newPath = `docs/roadmaps/wip/${roadmapFile}`
+    const reqPath = path.join(reqDir, 'REQ-with-prose.md')
+
+    fs.writeFileSync(path.join(roadmapDir, 'backlog', roadmapFile), canonicalRoadmap('Real'), 'utf8')
+    const unrelatedProse = '```\nconst logBasename = agent + "\\\\" + basename // exemplo Windows: docs\\\\roadmaps\\\\wip\\\\ROADMAP-outro.md\n```\n'
+    const reqContent =
+      `---\nstatus: Open\ndate: 2026-07-30\nroadmap: "${oldPath}"\n---\n\n` +
+      `# REQ: With prose\n\n## Exemplo (não tocar)\n${unrelatedProse}\n` +
+      `## Linked Roadmap\nRoadmap: \`${oldPath}\`\n`
+    fs.writeFileSync(reqPath, reqContent, 'utf8')
+
+    syncReqReferences(roadmapFile, newPath, config.load())
+
+    const updated = fs.readFileSync(reqPath, 'utf8')
+    assert.ok(updated.includes(unrelatedProse), `prosa não relacionada com "\\\\" legítimo foi alterada; got:\n${updated}`)
+    assert.ok(updated.includes(`roadmap: "${newPath}"`), `frontmatter real deveria ter sido atualizado; got:\n${updated}`)
+  })
+})
+
+test('moveRoadmap — controle de regressão: frontmatter sincronizado nunca contém "\\"', () => {
+  withReqAndRoadmapDir((tmp, roadmapDir, reqDir) => {
+    mkAllStateDirs(roadmapDir)
+    const roadmapFile = 'ROADMAP-portable.md'
+    const backlogPath = `docs/roadmaps/backlog/${roadmapFile}`
+    const reqPath = path.join(reqDir, 'REQ-portable.md')
+
+    fs.writeFileSync(path.join(roadmapDir, 'backlog', roadmapFile), canonicalRoadmap('Portable'), 'utf8')
+    fs.writeFileSync(reqPath, makeReqContent(backlogPath), 'utf8')
+
+    moveRoadmap('portable', 'wip')
+
+    const reqContent = fs.readFileSync(reqPath, 'utf8')
+    assert.ok(!reqContent.includes('\\'), `frontmatter da REQ não deveria conter "\\"; got:\n${reqContent}`)
   })
 })
 

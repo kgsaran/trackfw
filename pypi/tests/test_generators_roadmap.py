@@ -17,6 +17,7 @@ from trackfw.generators.roadmap import (
     _rewrite_roadmap_status,
     _get_frontmatter_roadmap_value,
     _rewrite_req_roadmap_ref,
+    _normalize_ref_separator,
     VALID_STATES,
 )
 from trackfw.validator import validate_folder_status_coherence
@@ -934,6 +935,124 @@ class TestSyncPairedReqReferences(unittest.TestCase):
         # U+2192 RIGHTWARDS ARROW
         arrow_idx = synced_line.index("→")
         self.assertEqual(synced_line[arrow_idx], "→")
+
+
+# ─── ML-1A/ML-1B — separador portável (item 10 do issue #216) ────────────────
+
+
+class TestNormalizeRefSeparator(unittest.TestCase):
+    """_normalize_ref_separator: converte "\\" nativo para "/" e não toca valor já portável."""
+
+    def test_converte_nativo_para_portavel(self):
+        dirty = "docs\\roadmaps\\wip\\ROADMAP-x.md"
+        self.assertEqual(_normalize_ref_separator(dirty), "docs/roadmaps/wip/ROADMAP-x.md")
+
+    def test_controle_nao_altera_valor_ja_portavel(self):
+        clean = "docs/roadmaps/wip/ROADMAP-x.md"
+        self.assertEqual(_normalize_ref_separator(clean), clean)
+
+
+class TestSyncPairedReqReferencesHealsDirtyReference(unittest.TestCase):
+    """
+    ML-1B: uma REQ cujo frontmatter roadmap: já foi gravado com separador nativo ("\\",
+    simulando um commit feito no Windows antes do fix de escrita) é curada por um
+    sync_paired_req_references subsequente — o predicado de descoberta normaliza o valor
+    antes de comparar o basename, então a REQ suja É encontrada e reescrita com "/". Sem essa
+    normalização, os.path.basename(current_ref) em POSIX devolve o valor sujo inteiro (não há
+    "/" para separar), nunca bate com roadmap_basename, e a REQ nunca é curada.
+    """
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        cfg_module.reset()
+
+    def tearDown(self):
+        cfg_module.reset()
+
+    def test_cura_referencia_suja(self):
+        cfg = _make_full_cfg(self.tmpdir)
+        req_dir = cfg["req_dir"]
+        os.makedirs(req_dir, exist_ok=True)
+
+        new_path = "docs/roadmaps/wip/ROADMAP-dirty.md"
+        dirty_ref = new_path.replace("/", "\\")
+        req_file = os.path.join(req_dir, "REQ-dirty.md")
+        _write_req_file(req_file, dirty_ref, body_backtick=True)
+
+        synced, failures = sync_paired_req_references(new_path, cfg)
+
+        self.assertEqual(failures, [])
+        self.assertEqual(synced, ["REQ-dirty.md"], f"referência suja deveria ser curada; synced={synced}")
+
+        with open(req_file, encoding="utf-8") as f:
+            content = f.read()
+        self.assertIn(f'roadmap: "{new_path}"', content)
+        self.assertNotIn(dirty_ref, content, f"valor sujo com \"\\\\\" ainda presente; conteúdo:\n{content}")
+
+    def test_controle_prosa_nao_relacionada_com_backslash_nao_e_tocada(self):
+        """Limite duro do parecer de ameaça: prosa/código no corpo com "\\" legítimo, cujo
+        basename não coincide com o roadmap movido, não é tocada."""
+        cfg = _make_full_cfg(self.tmpdir)
+        req_dir = cfg["req_dir"]
+        os.makedirs(req_dir, exist_ok=True)
+
+        old_path = "docs/roadmaps/backlog/ROADMAP-real.md"
+        new_path = "docs/roadmaps/wip/ROADMAP-real.md"
+        req_file = os.path.join(req_dir, "REQ-with-prose.md")
+
+        unrelated_prose = (
+            "```\nlog_basename = os.path.join(agent, basename)"
+            "  # docs\\\\roadmaps\\\\wip\\\\ROADMAP-outro.md\n```\n"
+        )
+        content = (
+            f'---\nstatus: Open\ndate: 2026-07-30\nroadmap: "{old_path}"\n---\n\n'
+            f"# REQ: With prose\n\n## Exemplo (não tocar)\n{unrelated_prose}\n"
+            f"## Linked Roadmap\nRoadmap: `{old_path}`\n"
+        )
+        os.makedirs(os.path.dirname(req_file), exist_ok=True)
+        with open(req_file, "w", encoding="utf-8") as f:
+            f.write(content)
+
+        sync_paired_req_references(new_path, cfg)
+
+        with open(req_file, encoding="utf-8") as f:
+            updated = f.read()
+        self.assertIn(unrelated_prose, updated, f"prosa não relacionada foi alterada; conteúdo:\n{updated}")
+        self.assertIn(f'roadmap: "{new_path}"', updated)
+
+
+class TestMoveRoadmapPortableSeparatorControl(unittest.TestCase):
+    """Controle de regressão: o valor sincronizado no frontmatter da REQ pareada nunca contém
+    "\\", mesmo indiretamente (nesta máquina os.path.join já produz "/")."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        cfg_module.reset()
+
+    def tearDown(self):
+        cfg_module.reset()
+
+    def test_frontmatter_sincronizado_sem_backslash(self):
+        cfg = _make_full_cfg(self.tmpdir)
+        req_dir = cfg["req_dir"]
+        roadmap_dir = cfg["roadmap_dir"]
+        for state in VALID_STATES:
+            os.makedirs(os.path.join(roadmap_dir, state), exist_ok=True)
+        os.makedirs(req_dir, exist_ok=True)
+
+        backlog_path = os.path.join(roadmap_dir, "backlog", "ROADMAP-portable.md")
+        with open(backlog_path, "w", encoding="utf-8") as f:
+            f.write("---\nstatus: backlog\ndate: 2026-07-30\nreq: \"\"\nsquad: \"\"\n---\n\n# Roadmap: Portable\n")
+
+        req_file = os.path.join(req_dir, "REQ-portable.md")
+        _write_req_file(req_file, backlog_path, body_backtick=True)
+
+        new_path = move_roadmap("ROADMAP-portable.md", "wip", cfg)
+        sync_paired_req_references(_normalize_ref_separator(new_path), cfg)
+
+        with open(req_file, encoding="utf-8") as f:
+            content = f.read()
+        self.assertNotIn("\\", content, f"frontmatter da REQ contém separador nativo; conteúdo:\n{content}")
 
 
 if __name__ == "__main__":

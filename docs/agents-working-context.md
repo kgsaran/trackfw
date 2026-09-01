@@ -27206,3 +27206,104 @@ trackfw, então o risco de normalizar um nome de arquivo legítimo com `\` liter
 medido. Documento em `docs/seguranca/2026-09-01-modelo-de-ameaca-do-separador-em-artefato.md`, gate
 local (3 comandos do roadmap) verde. Nenhum arquivo de produto tocado; roadmap e REQ não editados;
 sem git.
+
+---
+
+## apolo-tf — 2026-09-01 — Wave 1 (ML-1A, ML-1B, ML-1C)
+
+**Início.** Branch `fix/caminho-dentro-de-artefato-versionado-usa-sempre-barra`. Tarefa: Wave 1 do
+roadmap `docs/roadmaps/wip/ROADMAP-2026-09-01-caminho-dentro-de-artefato-versionado-usa-sempre-barra.md`
+(REQ ligada, parecer `docs/seguranca/2026-09-01-modelo-de-ameaca-do-separador-em-artefato.md`, ML-0A
+de `hades-tf` lido por completo). ML-1A: escrita sempre com `/` no `newRoadmapPath` sincronizado na
+REQ pareada (3 runtimes) e no `.trackfw-log` do Python. ML-1B: leitura tolerante a `\` já gravado,
+com os 3 limites duros do ML-0A preservados. ML-1C: confirmar (não implementar) se
+`thirdparty_artifact_has_provenance` existe fora do Go. Não editar roadmap/REQ; git é do arquiteto.
+Advisor consultado antes de codar — apontou: (1) o predicado de descoberta `filepath.Base(fmVal) !=
+roadmapBasename` em `syncREQReferences` bloqueia a cura de uma REQ já suja, e é onde a reprodução
+fica falsificável em macOS sem Windows; (2) paridade de stdout no Python entre `✓ moved` (nativo) e
+`✓ synced` (portável); (3) ML-1B item 1 é dos 3 runtimes, não só Go — `validate`/`barrier`/`/api/chain`
+em Node e Python também resolvem referência; (4) `validateREQRoadmapLifecycle` no Go também lê o
+valor cru, é um segundo call site além de `referenceExists`; (5) checar o que `rewriteREQRoadmapRef`
+já faz com bloco de código citando `Roadmap:` antes de escrever o teste de controle, não inventar
+requisito novo.
+
+**Fim.** ML-1A e ML-1B implementados nos 3 runtimes; ML-1C confirmado (achado corrige a premissa
+do roadmap, nada implementado além do já coberto por ML-1B). Escrita: `newRoadmapPath` sincronizado
+na REQ pareada normalizado para "/" antes de gravar (`normalizeRefSeparator`/`normalizeRefSeparator`/
+`_normalize_ref_separator` — Go `internal/generators/roadmap.go`, Node `npm/src/generators/roadmap.js`,
+Python `pypi/trackfw/generators/roadmap.py` + `pypi/trackfw/commands/roadmap.py`); `.trackfw-log` do
+Python (`log_basename`) trocado de `os.path.join` para concatenação explícita, igualando Go/Node.
+Leitura tolerante: `referenceExists`/`validateREQRoadmapLifecycle` (Go `internal/validator/validator.go`)
+e `_reference_exists`/`validate_req_roadmap_lifecycle` (Python `pypi/trackfw/validator.py`) normalizam
+o valor antes de `os.Stat`/`os.path.exists`; `/api/chain` do serve (Go `internal/serve/api_chain.go`)
+normaliza node.ID (WalkDir) e edge.To (frontmatter) para o mesmo separador antes de comparar — cura o
+PoC B do ML-0A (aresta órfã), testado com REQ real gravada com "\" à mão. Cura (healing): a REQ já
+suja num commit anterior ao fix de escrita é reconhecida e reescrita no próximo `roadmap move`/
+`sync_paired_req_references`/`syncReqReferences` — exigiu normalizar tanto o predicado de descoberta
+quanto (no Go) os dois pontos de comparação de basename dentro de `rewriteREQRoadmapRef` (frontmatter
+e corpo); sem o segundo, a descoberta encontrava a REQ suja mas a reescrita não acontecia. Achado do
+advisor, corrigido: o teste de controle original (linha de prosa sem ":") não testava nada — reescrito
+para uma linha `Roadmap:` de verdade dentro de cerca, com basename diferente (continua intocada) e um
+segundo teste que documenta o efeito colateral aceito (uma linha `Roadmap:` cercada com o MESMO
+basename do roadmap movido passa a ser reescrita — comportamento pré-existente ampliado pela
+normalização, verificado sem ocorrência real hoje em `docs/req/`, reportado, não expandido).
+
+**ML-1C — achado que corrige a premissa do roadmap:** `thirdparty_artifact_has_provenance` **não** é
+Go-only — existe também em Python (`pypi/trackfw/validator.py:3361`, `validate_thirdparty_artifact_has_provenance`)
+com o **mesmo defeito** (`os.path.relpath` nativo vs chave sempre gravada com "/", mesmo comentário
+"inverte exatamente" falso para casamento de string) — corrigido ali também (mesma classe de fix do
+Go, não é expansão de escopo: completa ML-1B para o runtime onde a regra existe). A regra está
+**ausente apenas no Node** — gap de paridade não documentado em `docs/cli-parity.md`, registrado para
+o arquiteto, nada implementado (ML-1C, decisão do arquiteto).
+
+**Achado adicional reportado, não implementado:** `ref_targets_exist`/`req_roadmap_lifecycle`
+(a regra que resolve `Roadmap:`/`ADR:` de REQ, cujo `referenceExists` corrigi) **não existe no Node**
+— Go e Python têm; Node não tem a regra nenhuma. Gap de paridade pré-existente, não documentado em
+`docs/cli-parity.md`, fora do escopo desta REQ.
+
+**Divergência cross-runtime na reescrita de corpo, reportada e não tocada:** Go reescreve toda linha
+`Roadmap:` do corpo cujo basename normalizado bate (sem `break`); Python reescreve incondicionalmente
+a PRIMEIRA linha `Roadmap:` do corpo, sem checar basename nenhum (pré-existente, não introduzido por
+este ML); Node substitui por igualdade de string exata do valor cru extraído do frontmatter (nem
+basename nem normalização no corpo). Resultado: uma REQ com múltiplas linhas `Roadmap:` no corpo
+(ex.: exemplo + referência real) se comporta diferente nos 3 runtimes. Pré-existente, ampliado em
+visibilidade pela normalização — reportado para REQ própria, não corrigido aqui.
+
+**Provenance (Go e Python) não coberto por teste end-to-end** — mesmo limite do ML-0A: `filepath.Rel`
+(Go) e `os.path.relpath` (Python) sempre devolvem "/" em macOS/Linux, então o defeito real
+(separador nativo "\" só em Windows) não é reproduzível localmente sem monkeypatch. Declarado como
+residual, não coberto — `normalizeRefSeparator`/`_normalize_ref_separator` isolados têm teste direto.
+
+**Achado ao vivo, não previsto: `/api/chain` do Node já não desenha aresta REQ→Roadmap nenhuma,
+mesmo com caminho limpo (sem "\").** Reproduzido com o CLI Node real: REQ com
+`roadmap: "docs/roadmaps/wip/ROADMAP-poc.md"` (já portável) produz `{"nodes":[...],"edges":[]}`.
+Causa: `resolveRef` (`npm/src/serve/api_chain.js`) nunca reduz `val` a basename antes de consultar
+`fileIndex` — compara o caminho completo contra chaves que são só basename, então nunca bate,
+separador ou não. É por isso que a normalização de separador não teria efeito nenhum no sintoma 2 em
+Node: o link já está quebrado por um motivo anterior e não relacionado a esta REQ. Reportado ao
+arquiteto como achado de produto, fora do escopo desta REQ — não corrigido aqui.
+
+**Python também não produz a aresta REQ→Roadmap do PoC B, por um motivo estrutural diferente:**
+`get_chain` (`pypi/trackfw/serve/api_chain.py`) só constrói arestas `req.adr`, `roadmap.req` e
+`roadmap.adr` — nunca lê o campo `req:` de uma REQ apontando para seu roadmap na direção do PoC B
+(`roadmap:` da REQ). O node ID já é normalizado com `.replace("\\", "/")` (linha 98, pré-existente),
+mas não há aresta na direção que o PoC B descreve para normalizar. Reportado, não corrigido.
+
+**Residual declarado, não implementado:** `internal/metrics/metrics.go: Calculate` (sintoma 3 do
+ML-0A) continua vulnerável a `.trackfw-log` já sujo — o fix do `log_basename` do Python impede
+*novas* linhas sujas, mas não repara histórico existente; um roadmap cuja história de transições já
+mistura `agent/x.md` e `agent\x.md` ainda parte em dois artefatos e some do `cycleTimeMean`. Fora da
+AC de ML-1B, sintoma nunca executado (nem por hades-tf nem por mim) — declarado, não corrigido.
+
+Evidência: `go build ./...` limpo; `go test ./...` 0 falhas; `npm test` 840/840; `python3 -m pytest`
+1575 passed + 28 subtests; `bin/trackfw validate` exit 0, 16 warnings pré-existentes sem relação com
+este ML. Duas rodadas paralelas acidentais do mesmo `make quality` (erro meu, corrigido em
+andamento) foram mortas por escreverem no mesmo arquivo de log — **não** citando
+`falsify/no-repo-mutation` como prova (esse gate testa o comportamento normal dos scripts, não um
+SIGKILL no meio de um deles); a evidência real de que nada ficou sujo é `git status --porcelain`
+limpo (só os arquivos deste ML, nenhum arquivo temporário/de teste órfão), confirmado depois do kill
+e de novo ao final. `make quality` foi então rerodado do zero, numa única execução limpa sobre a
+árvore final (pós todos os edits, incluindo o fix tardio de `pypi/trackfw/validator.py` e a reescrita
+do teste de controle em `roadmap_test.go`) — MAKE_EXIT reportado é dessa rodada final, não da rodada
+anterior que rodou sobre uma árvore parcialmente editada. Roadmap e REQ não editados; nenhum comando
+git de escrita executado.

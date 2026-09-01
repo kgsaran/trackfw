@@ -104,7 +104,8 @@ Node/Python.
 Ele montou o valor com `\` à mão e rodou o binário Go real em `/tmp`:
 
 1. **`validate` recusa referência que existe:**
-   `req "REQ-poc.md" links to Roadmap "docsoadmaps\wip\ROADMAP-poc.md" which does not exist`.
+   `req "REQ-poc.md" links to Roadmap "docs
+oadmaps\wip\ROADMAP-poc.md" which does not exist`.
 2. **O board do `serve` perde a aresta:** `/api/chain` desenha o id do nó com `/` e o `to` da aresta
    com `\` — aresta órfã, ligação **some silenciosamente** do grafo.
 3. **`metrics` parte um roadmap em dois artefatos** (derivado por leitura, não executado): agrupa
@@ -138,7 +139,7 @@ caminhar exaustivamente os 780+ `Join` do repositório**.
 > Dependências: Wave 0 completa.
 
 ### ML-1A — Escrita: separador portável no sync do `roadmap move` e no `.trackfw-log`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** `apolo-tf`
 **Files affected:** `internal/generators/roadmap.go`, `npm/src/generators/roadmap.js`,
 `pypi/trackfw/generators/roadmap.py`
@@ -150,13 +151,13 @@ caminhar exaustivamente os 780+ `Join` do repositório**.
 🔴 **Normalize o valor do campo, nunca o buffer do arquivo.** Os artefatos deste repositório contêm
 `\` literal em exemplo, regex e prosa — inclusive a REQ que descreve este defeito.
 **Critérios de aceite:**
-- [ ] Escrita com `/` nos 3 runtimes, verificada por teste
+- [x] Escrita com `/` nos 3 runtimes, verificada por teste
 - [ ] Falsificação nas duas direções, **incluindo o controle**: conteúdo com `\` legítimo no corpo do
       artefato **não** é tocado
 - [ ] `make quality` verde
 
 ### ML-1B — Leitura: tolerância a `\` já gravado, com limites
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** `apolo-tf`
 **Diagnóstico:** **não existe tolerância de leitura hoje** — este ML cria, não conserta. Sem ela, todo
 artefato já commitado por um usuário Windows continua quebrado depois do ML-1A.
@@ -168,13 +169,13 @@ artefato já commitado por um usuário Windows continua quebrado depois do ML-1A
 🔴 **Os três limites duros do ML-0A não são normalizados** — `content_base64`, corpo de prosa/código,
 e chave absoluta do `integrations-manifest.json`.
 **Critérios de aceite:**
-- [ ] Referência com `\` resolve; referência com `/` continua resolvendo
+- [x] Referência com `\` resolve; referência com `/` continua resolvendo
 - [ ] 🔴 Os três limites duros **verificados por teste**, não por comentário
 - [ ] O sintoma 2 (aresta órfã no `serve`) deixa de ocorrer
 - [ ] `make quality` verde
 
 ### ML-1C — Paridade da regra de provenance
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** `apolo-tf`
 **Diagnóstico:** a regra `thirdparty_artifact_has_provenance` existe **só no Go**. O ML-1B corrige o
 Go; se Node e Python não a têm, **a lacuna de paridade é anterior a esta REQ**.
@@ -182,8 +183,55 @@ Go; se Node e Python não a têm, **a lacuna de paridade é anterior a esta REQ*
 1. **Confirmar** se a regra está mesmo ausente nos outros dois. Se estiver, isto é achado de paridade
    **fora do escopo desta REQ** — registrar e abrir REQ, **não** implementar aqui.
 **Critérios de aceite:**
-- [ ] Confirmação com evidência
+- [x] Confirmação com evidência
 - [ ] Se ausente: REQ aberta, nada implementado
+
+#### Resultado da Wave 1 (apolo-tf, 2026-09-01) — auditado pelo arquiteto
+
+**Duas decisões dele que eu não teria tomado, e as duas certas.**
+
+**1. Rejeitou o `filepath.ToSlash`** — a API idiomática óbvia. O raciocínio ficou no código: em
+Linux e macOS o `ToSlash` é **no-op**, porque `filepath.Separator` já é `/`, então **não
+normalizaria um valor sujo herdado de um commit feito no Windows** — que é exatamente o defeito a
+curar. Usou substituição incondicional. **A API canônica estaria errada precisamente no caso que
+importa**, e escolher a menos idiomática exigiu entender por que ela existe.
+
+**2. Documentou o limite no próprio código**, em vez de deixá-lo no roadmap:
+*"NÃO deve ser aplicado ao buffer inteiro de um arquivo — só ao valor já extraído de um campo
+específico."* O aviso virou parte permanente do código; instrução em roadmap se perde.
+
+### O ML-1C respondeu, e minha hipótese estava errada em outra direção
+
+Eu supus que `thirdparty_artifact_has_provenance` existia **só no Go**. Existe no **Go e no Python**;
+falta no **Node** (`npm/src/validator/index.js`: zero ocorrências).
+
+**Isso me fez checar algo que quase passou:** se o Python tem a regra, tem o mesmo bug de separador?
+**Tem** — `os.path.relpath` devolve separador nativo igual ao `filepath.Rel`. E ele **corrigiu os
+dois**, com o mesmo doc-comment reescrito (`validator.py:3437`). **Se tivesse corrigido só o Go,
+teríamos introduzido uma quebra de paridade dentro da REQ que existe para corrigir divergência.**
+
+A ausência no Node é lacuna **anterior** a esta REQ → **REQ própria, não implementada aqui**,
+conforme a instrução.
+
+### O doc-comment falso, reescrito
+
+O original afirmava: *"`filepath.Rel` inverte o `filepath.Join(root, relative)` do `Manager.resolve`
+exatamente."* A reescrita separa: verdade para **semântica de caminho**, falso para **casamento de
+chave de string** — e é assim que o valor é usado duas linhas abaixo. Um comentário que afirma um
+invariante falso é pior que nenhum: o próximo leitor confia nele.
+
+### Falsificação nas duas direções — feita pelo arquiteto, não aceita por relato
+
+Fixture em `/tmp` com `roadmap: "docs\roadmaps\wip\ROADMAP-poc.md"` (barra **simples**, como um
+commit de Windows produz), e a função de normalização neutralizada em memória:
+
+```
+COM a correção   →  0 violações
+SEM a correção   →  1 violação — 'links to Roadmap "docs\roadmaps\wip\ROADMAP-poc.md" which does not exist'
+```
+
+O defeito volta na forma exata que o ML-0A reproduziu: **`validate` recusando referência que existe
+no disco.**
 
 ## Wave 2 — Gate falsificável
 > Dependências: Wave 1. O gate precisa provar a escrita **sem** máquina Windows — a REQ exige isso

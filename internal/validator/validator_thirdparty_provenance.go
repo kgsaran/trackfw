@@ -137,8 +137,17 @@ func validateThirdPartyArtifactHasProvenance() ([]string, error) {
 		// so its scope is always "project" (a global-scope claim would live
 		// in the home manifest instead, which this rule intentionally never
 		// reads — see this file's package doc: git-anchored detection
-		// cannot reach ~/.trackfw/ regardless). filepath.Rel inverts
-		// Manager.resolve's filepath.Join(root, relative) exactly.
+		// cannot reach ~/.trackfw/ regardless).
+		//
+		// filepath.Rel inverts Manager.resolve's filepath.Join(root, relative) for PATH
+		// SEMANTICS — but it does NOT invert it for STRING-KEY matching, which is how this
+		// value is actually used two lines below. filepath.Rel returns a path using the
+		// native OS separator; ResolveThirdPartySkillDestination always builds the
+		// provenance JSON key with "/" (render.go:821, explicit concatenation, never
+		// filepath.Join — a key inside a versioned artifact is portable data, not a
+		// filesystem path). On a platform whose native separator is "\", the two would
+		// never be byte-equal even though they name the same destination. Normalize before
+		// the map lookup (docs/seguranca/2026-09-01-modelo-de-ameaca-do-separador-em-artefato.md).
 		provenanceKey, relErr := filepath.Rel(root, destination)
 		if relErr != nil {
 			msgs = append(msgs, fmt.Sprintf(
@@ -148,6 +157,7 @@ func validateThirdPartyArtifactHasProvenance() ([]string, error) {
 			))
 			continue
 		}
+		provenanceKey = normalizeRefSeparator(provenanceKey)
 		entry, ok := prov.Entries[provenanceKey]
 		if !ok {
 			msgs = append(msgs, fmt.Sprintf(

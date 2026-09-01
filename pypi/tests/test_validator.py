@@ -690,6 +690,119 @@ class TestValidatorImprovements(unittest.TestCase):
             f"esperava warning citando basename '{req_basename}'; warnings={warnings}",
         )
 
+    # ── ML-1B — separador portável (item 10 do issue #216) ──────────────────
+
+    def test_reference_exists_tolerates_dirty_backslash_reference(self):
+        """
+        Reproduz o PoC A do parecer de ameaça
+        (docs/seguranca/2026-09-01-modelo-de-ameaca-do-separador-em-artefato.md): uma REQ cujo
+        frontmatter roadmap: foi gravado com separador nativo do Windows ("\\") não deve ser
+        reprovada por ref_targets_exist — o arquivo referenciado existe de verdade.
+        """
+        from trackfw.validator import validate_ref_targets_exist
+
+        req_dir = os.path.join(self.tmp, "docs", "req")
+        roadmap_wip = os.path.join(self.tmp, "docs", "roadmaps", "wip")
+        os.makedirs(req_dir)
+        os.makedirs(roadmap_wip)
+
+        with open(os.path.join(roadmap_wip, "ROADMAP-dirty.md"), "w") as f:
+            f.write("---\nstatus: wip\n---\n# Roadmap dirty\n## Acceptance Criteria\n- [ ] x\n")
+
+        # Caminho absoluto real (como os outros testes desta classe fazem — validate_ref_targets_exist
+        # não faz chdir), montado à mão com "\" simulando o que um `roadmap move` no Windows teria
+        # gravado antes do fix de escrita.
+        clean_ref = os.path.join(roadmap_wip, "ROADMAP-dirty.md")
+        dirty_ref = clean_ref.replace("/", "\\")
+        with open(os.path.join(req_dir, "REQ-dirty.md"), "w") as f:
+            f.write(
+                "---\nstatus: Open\nroadmap: \"" + dirty_ref + "\"\n---\n\n"
+                "# REQ: Dirty\n\n> Date: 2026-09-01 | Status: Open\n"
+            )
+
+        cfg = {
+            "adr_dirs": [os.path.join(self.tmp, "docs", "adr")],
+            "req_dir": req_dir,
+            "roadmap_dir": os.path.join(self.tmp, "docs", "roadmaps"),
+            "roadmap_namespacing": "flat",
+            "agents": [],
+        }
+        warnings = validate_ref_targets_exist(cfg)
+        self.assertFalse(
+            any("which does not exist" in w["message"] for w in warnings),
+            f"referência suja com separador nativo deveria resolver; warnings={warnings}",
+        )
+
+    def test_reference_exists_control_broken_reference_still_fails(self):
+        """Controle: uma referência genuinamente quebrada continua reprovando, com ou sem \"\\\"."""
+        from trackfw.validator import validate_ref_targets_exist
+
+        req_dir = os.path.join(self.tmp, "docs", "req")
+        os.makedirs(req_dir)
+
+        with open(os.path.join(req_dir, "REQ-broken.md"), "w") as f:
+            f.write(
+                "---\nstatus: Open\nroadmap: \"docs\\\\roadmaps\\\\wip\\\\ROADMAP-nonexistent.md\"\n---\n\n"
+                "# REQ: Broken\n\n> Date: 2026-09-01 | Status: Open\n"
+            )
+
+        cfg = {
+            "adr_dirs": [os.path.join(self.tmp, "docs", "adr")],
+            "req_dir": req_dir,
+            "roadmap_dir": os.path.join(self.tmp, "docs", "roadmaps"),
+            "roadmap_namespacing": "flat",
+            "agents": [],
+        }
+        warnings = validate_ref_targets_exist(cfg)
+        self.assertTrue(
+            any("which does not exist" in w["message"] for w in warnings),
+            f"referência para arquivo inexistente deveria continuar reprovando; warnings={warnings}",
+        )
+
+    def test_validate_req_roadmap_lifecycle_tolerates_dirty_backslash_reference(self):
+        """
+        Manifestação #2 do parecer de ameaça: validate_req_roadmap_lifecycle falha fechado
+        silenciosamente quando a referência está suja (os.path.isfile erra silenciosamente por
+        não achar o caminho, o código faz continue). Uma REQ Open cujo roadmap (referenciado
+        com "\\") já está em done/ deve continuar sendo sinalizada.
+        """
+        from trackfw.validator import validate_req_roadmap_lifecycle
+
+        req_dir = os.path.join(self.tmp, "docs", "req")
+        roadmap_done = os.path.join(self.tmp, "docs", "roadmaps", "done")
+        os.makedirs(req_dir)
+        os.makedirs(roadmap_done)
+
+        with open(os.path.join(roadmap_done, "DONE-ROADMAP-dirty.md"), "w") as f:
+            f.write("---\nstatus: Done\ndate: 2026-07-01\n---\n# Roadmap concluído\n## Acceptance Criteria\n- [x] done\n")
+
+        clean_ref = os.path.join(roadmap_done, "DONE-ROADMAP-dirty.md")
+        dirty_ref = clean_ref.replace("/", "\\")
+        with open(os.path.join(req_dir, "REQ-dirty-lifecycle.md"), "w") as f:
+            f.write(
+                "---\nstatus: Open\ndate: 2026-07-01\nroadmap: \"" + dirty_ref + "\"\n---\n\n"
+                "# REQ: Dirty lifecycle\n\n> Date: 2026-07-01 | Status: Open\n"
+            )
+
+        cfg = {
+            "adr_dirs": [os.path.join(self.tmp, "docs", "adr")],
+            "req_dir": req_dir,
+            "roadmap_dir": os.path.join(self.tmp, "docs", "roadmaps"),
+            "roadmap_namespacing": "flat",
+            "agents": [],
+        }
+        warnings = validate_req_roadmap_lifecycle(cfg)
+        self.assertTrue(
+            any("is Open but linked Roadmap" in w["message"] for w in warnings),
+            f"REQ Open com roadmap sujo em done/ deveria ser sinalizada; warnings={warnings}",
+        )
+
+    def test_normalize_ref_separator_control_does_not_alter_clean_value(self):
+        from trackfw.validator import _normalize_ref_separator
+
+        clean = "docs/roadmaps/wip/ROADMAP-x.md"
+        self.assertEqual(_normalize_ref_separator(clean), clean)
+
     def test_validate_folder_status_coherence_warning(self):
         """Arquivo em wip/ com status: Done gera warning."""
         from trackfw import config as cfg_mod
