@@ -30,7 +30,7 @@ for rt in go node python; do
   case "$rt" in
     go)     out=$(cd "$FAKE" && HOME="$expected" "$ROOT/bin/trackfw" adr list --scope global 2>&1 || true) ;;
     node)   out=$(cd "$FAKE" && HOME="$expected" node "$ROOT/npm/bin/trackfw" adr list --scope global 2>&1 || true) ;;
-    python) out=$(cd "$FAKE" && HOME="$expected" PYTHONPATH="$ROOT/pypi" python -m trackfw adr list --scope global 2>&1 || true) ;;
+    python) out=$(cd "$FAKE" && HOME="$expected" PYTHONPATH="$ROOT/pypi" python3 -m trackfw adr list --scope global 2>&1 || true) ;;
   esac
   if ! printf '%s' "$out" | grep -qF "$token"; then
     echo "homedir parity: $rt nao resolveu para \$HOME"

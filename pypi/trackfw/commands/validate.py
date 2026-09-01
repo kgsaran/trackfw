@@ -11,6 +11,7 @@ import sys
 from .. import validator as _validator
 from .. import config as _config
 from trackfw.i18n import t as i18n_t
+from trackfw.tty import stdout_is_interactive
 
 # Códigos ANSI
 _RED = "\033[31m"
@@ -21,7 +22,7 @@ _RESET = "\033[0m"
 
 def _supports_color() -> bool:
     """Retorna True se o terminal suporta cores ANSI."""
-    return hasattr(sys.stdout, "isatty") and sys.stdout.isatty()
+    return hasattr(sys.stdout, "isatty") and stdout_is_interactive()
 
 
 def _red(text: str) -> str:

@@ -322,7 +322,7 @@ eu a descrever em texto.
 > Dependências: Wave 1 completa. **ML-3B depois de ML-3A** — o diff do #224 **contém** o do #223.
 
 ### ML-3A — #223: UTF-8 na saída do CLI Python (item 1)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** `apolo-tf`
 **Fonte:** `gh pr diff 223`.
 **Correção na origem:** `_force_utf8_output()` chamada no início de `main()`, reconfigurando
@@ -330,18 +330,63 @@ eu a descrever em texto.
 🔴 **Isto NÃO corrige o item 4.** O item 4 é um `print()` cru em
 `scripts/check-parity-contract-coverage.sh`, que nunca entra em `main()`. Não tente corrigi-lo aqui.
 **Critérios de aceite:**
-- [ ] Port fiel, incluindo os testes (`TestCliEmConsoleCp1252` reproduz console cp1252 em **qualquer
+- [x] Port fiel, incluindo os testes (`TestCliEmConsoleCp1252` reproduz console cp1252 em **qualquer
       SO** via `PYTHONIOENCODING=cp1252` — roda no CI Linux todo dia)
-- [ ] Item 4 **não** tocado
+- [x] Item 4 **não** tocado
 - [x] `make quality` verde
 
 ### ML-3B — #224: `isatty()` mente `True` para `NUL` (item 6)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** `apolo-tf`
 **Fonte:** `gh pr diff 224`. **O diff dele inclui o do #223** — porte só o que for do item 6.
 **Critérios de aceite:**
-- [ ] Port fiel apenas da parte do item 6, sem duplicar o ML-3A
+- [x] Port fiel apenas da parte do item 6, sem duplicar o ML-3A
 - [x] `make quality` verde
+
+### ML-3C — `python3` no gate de homedir (corretiva)
+**Status:** ✅ Concluído
+**Agente:** `apolo-tf`
+Terceiro defeito do `check-homedir-parity.sh`, invisível até o gate ser ligado: invocava `python`,
+que **não existe** nesta máquina nem em muitas distribuições modernas. `actions/setup-python` cria o
+alias, então **o CI passaria e o dev não** — a nota *"ambiente do dev é mais rico que o do CI"*
+invertida. Mesma classe de desvio já autorizada no ML-1B.
+
+#### Resultado da Wave 3 (apolo-tf, 2026-09-01) — auditado pelo arquiteto
+
+**A sessão do agente morreu por erro de API antes de relatar. O trabalho estava inteiro em disco.**
+Auditei a completude contra o diff original em vez de esperar o relatório:
+
+| verificação | resultado |
+|---|---|
+| arquivos do #224 (que **contém** o #223) | **12 de 12** presentes no working tree |
+| `_force_utf8_output` em `cli.py` | 2 ocorrências — definição + chamada, **sem duplicar** o ML-3A |
+| item 4 (`check-parity-contract-coverage.sh`) | **intocado** — não aparece no diff |
+| `python3` no gate de homedir | ✓ |
+| `make quality` **sem shim de PATH** | `MAKE_EXIT=0`, **zero** `FAIL` |
+| os 3 gates novos executaram | linhas 2405, 2407, 2409 do log |
+
+`which python` → **não existe neste PATH**, então o verde é honesto e não repousa na muleta que a
+Wave 2 precisou usar.
+
+### A pré-autorização funcionou, e economizou um ML
+
+Depois de dois gates que chegaram inertes (#225 e #222), pré-autorizei: *se um PR trouxer gate,
+ligue e dê guarda de vacuidade no mesmo ML, sem perguntar*. O terceiro gate
+(`scripts/check-tty-detection.sh`) **nasceu ligado e com guarda de vacuidade** — mensagem
+*"scan visited zero .py files ... refusing to pass silently"*, mesmo padrão dos anteriores. Os dois
+primeiros custaram um ML corretivo cada; o terceiro, nenhum.
+
+### A decisão de projeto que mais vale registrar
+
+O `pypi/trackfw/tty.py` usa **o mesmo `GetConsoleMode` que o Go já usa** (`charmbracelet/x/term`),
+deliberadamente, e o docstring explica por quê: *"o que um console real fizer para o Go, fará para o
+Python. Não é uma heurística paralela."* E o `isatty()` continua sendo a base — o `GetConsoleMode`
+apenas **estreita** o resultado, e só no Windows.
+
+Numa correção de paridade isso é estritamente mais forte que inventar detecção equivalente: elimina
+a chance de os dois divergirem num caso de borda que ninguém pensou em testar. É o oposto do que
+fizemos com a junction, onde três runtimes chegaram a três respostas diferentes justamente por usarem
+primitivas diferentes.
 
 ## Wave 4 — Contratos em `docs/cli-parity.md`
 > Dependências: Waves 1 e 3 completas.

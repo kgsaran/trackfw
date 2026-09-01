@@ -9,6 +9,7 @@ from trackfw.commands import identity_wizard
 from trackfw.generators.init_gen import scaffold
 from trackfw.i18n import t as i18n_t
 from trackfw.homedir import home_dir
+from trackfw.tty import stdin_is_interactive
 
 
 def _parse_agents(raw: str) -> list[str]:
@@ -114,7 +115,7 @@ def run(args):
     # re-running init must never silently overwrite a configured identity.
     skip_identity_wizard = preset_changed or _identity_file_exists(home)
 
-    if not skip_identity_wizard and sys.stdin.isatty():
+    if not skip_identity_wizard and stdin_is_interactive():
         from trackfw.integrations.catalog import load_catalog
 
         try:
