@@ -27165,3 +27165,44 @@ lourivalgarciajunior`, o 5º (`ee8a735`, ML-4A) corretamente não traz porque n�
 dele, é documentação original. Veredito mantido: **APROVA**, zero bloqueante, 4 achados de
 acompanhamento (duplicação leve entre os 3 gates, diagnóstico degradado de uma guarda num cenário,
 cobertura de `tty.py`, par duplicado não localizado).
+
+---
+
+## hades-tf — 2026-09-01 — ML-0A (Wave 0), modelo de ameaça do separador em artefato
+
+**Início.** Branch `fix/caminho-dentro-de-artefato-versionado-usa-sempre-barra`. Tarefa: ML-0A do
+roadmap `docs/roadmaps/wip/ROADMAP-2026-09-01-caminho-dentro-de-artefato-versionado-usa-sempre-barra.md`
+(REQ `docs/req/REQ-2026-08-30-caminho-portavel-montado-com-separador-do-sistema-vaza-para-dentro-de-artefato-versionado.md`).
+Enumerar pontos que escrevem caminho (não que só acessam arquivo) dentro de conteúdo versionado,
+modelo de ameaça, falsificação nas duas direções (com atenção à normalização agressiva demais que
+quebre leitura de artefato já sujo), residual. Só documento em `docs/seguranca/`, nenhuma linha de
+implementação. Ler primeiro código real (roadmap.go/js/py, req.go/js/py, validator, serve/api_chain,
+thirdparty/*, metrics.go), rodar PoC no binário Go real em `/tmp` (sem depender de máquina Windows).
+
+**Fim.** Confirmados os 2 pontos nomeados pela REQ nos 3 runtimes: `dst := filepath.Join(...)` em
+`roadmap.go:452`/`roadmap.js:283`/`roadmap.py:622` vira `newRoadmapPath` escrito no `roadmap:`/
+`Roadmap:` da REQ pareada; `log_basename = os.path.join(agent, basename)` em
+`pypi/trackfw/generators/roadmap.py:611` — **só existe furado no Python**, Go (`roadmap.go:467`) e
+Node (`roadmap.js:269`) já usam `agent + "/" + basename` explícito. **Achado novo não previsto pela
+REQ:** `internal/validator/validator_thirdparty_provenance.go:142` usa `filepath.Rel(root,
+destination)` como chave de busca contra `.trackfw/thirdparty-provenance.json`, cujas chaves são
+sempre gravadas com `/` (`ResolveThirdPartySkillDestination`, `render.go:821`) — é bug do lado da
+**leitura**, Go-only (regra não implementada em Node/Python, gap de paridade já documentado). PoCs ao
+vivo com o binário Go real em `/tmp` (simulando o valor `\` à mão, sem precisar de Windows):
+`trackfw validate` recusa uma referência que existe de verdade
+(`req "REQ-poc.md" links to Roadmap "docs\\roadmaps\\wip\\ROADMAP-poc.md" which does not exist`); o
+board do `serve` (`/api/chain`) desenha node com `id` em `/` e edge com `to` em `\` — aresta órfã,
+grafo quebrado silenciosamente. Terceiro sintoma (métrica de cycle time descartando roadmap por
+agrupar `map[string][]stateEntry` chaveado em `Basename` exato) derivado por leitura de código, não
+executado ao vivo — declarado como residual mais fraco. Falsificação da direção simétrica (KG pediu
+prioridade): hoje **não existe nenhuma tentativa de normalização de leitura em lugar nenhum** — o
+risco não é regressão de algo que já funcionava, é escopo da normalização nova. Nomeados 3 limites
+duros que não podem ser normalizados: `content_base64` da quarentena de terceiros (âncora
+anti-TOCTOU, D8b/D8c — nunca tocar), prosa/blocos de código em corpo de ADR/REQ/Roadmap (normalizar
+só campo extraído, nunca arquivo inteiro), e a chave absoluta de `integrations-manifest.json`
+(não-portável por design, contrato já pinado em `docs/cli-parity.md` — fora do escopo desta REQ).
+Verificado que `toSlug` (`internal/generators/adr.go:151`) nunca produz `\` em basename gerado pelo
+trackfw, então o risco de normalizar um nome de arquivo legítimo com `\` literal é teórico, não
+medido. Documento em `docs/seguranca/2026-09-01-modelo-de-ameaca-do-separador-em-artefato.md`, gate
+local (3 comandos do roadmap) verde. Nenhum arquivo de produto tocado; roadmap e REQ não editados;
+sem git.

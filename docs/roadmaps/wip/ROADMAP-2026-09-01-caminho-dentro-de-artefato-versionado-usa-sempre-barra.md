@@ -40,7 +40,7 @@ Medido no CI (PR #229): **reproduz nos 3 runtimes**, incluindo o caso misto no P
 > Dependências: nenhuma. Bloqueia a implementação.
 
 ### ML-0A — Enumerar os pontos que escrevem caminho dentro de conteúdo
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** `hades-tf`
 **Files affected:** nenhum (documento em `docs/seguranca/`)
 **Por que a enumeração é o entregável, e não um preâmbulo:** a REQ nomeia **dois** pontos conhecidos
@@ -61,10 +61,10 @@ o ignora.**
    pior — repositórios existentes quebram no upgrade. Nomeie o que **não** pode ser normalizado.
 4. Residual declarado.
 **Critérios de aceite:**
-- [ ] Enumeração distingue "caminho escrito em conteúdo" de "caminho usado para acessar arquivo"
-- [ ] A lista dos 2 pontos da REQ é tratada como ponto de partida, não como escopo
-- [ ] Nenhuma linha de implementação escrita
-- [ ] Parecer em `docs/seguranca/2026-09-01-modelo-de-ameaca-do-separador-em-artefato.md`
+- [x] Enumeração distingue "caminho escrito em conteúdo" de "caminho usado para acessar arquivo"
+- [x] A lista dos 2 pontos da REQ é tratada como ponto de partida, não como escopo
+- [x] Nenhuma linha de implementação escrita
+- [x] Parecer em `docs/seguranca/2026-09-01-modelo-de-ameaca-do-separador-em-artefato.md`
 
 **Gates da wave:**
 ```bash
@@ -73,9 +73,117 @@ test -f docs/seguranca/2026-09-01-modelo-de-ameaca-do-separador-em-artefato.md
 grep -q "Residual" docs/seguranca/2026-09-01-modelo-de-ameaca-do-separador-em-artefato.md
 ```
 
-## Wave 1 — A correção
-> Dependências: Wave 0 completa. **O particionamento sai da enumeração** — escrever os MLs agora
-> seria escopo inventado, pelo mesmo motivo que na REQ da guarda de ancestral.
+#### Resultado do ML-0A (hades-tf, 2026-09-01) — auditado pelo arquiteto
+
+**Desta vez a enumeração da REQ estava quase certa — e o que mudou foi mais fino que "faltam pontos".**
+
+### O bug do `.trackfw-log` é só do Python
+
+| runtime | código | situação |
+|---|---|---|
+| Python `generators/roadmap.py:611` | `os.path.join(agent, basename)` | 🔴 separador **nativo** |
+| Go `generators/roadmap.go:467` | `agent + "/" + filepath.Base(src)` | ✅ já correto |
+| Node `generators/roadmap.js:269` | `agent + '/' + basename` | ✅ já correto |
+
+A REQ tratava como defeito geral; **é divergência de paridade com dois runtimes já certos.** Verifiquei
+as três linhas.
+
+### Achado novo, e é do lado da LEITURA
+
+`internal/validator/validator_thirdparty_provenance.go:142` monta a chave de busca com
+`filepath.Rel(root, destination)` — **separador nativo** — e compara contra as chaves de
+`.trackfw/thirdparty-provenance.json`, que são **sempre gravadas com `/`**.
+
+O doc-comment ali afirma: *"`filepath.Rel` inverte o `filepath.Join(root, relative)` do
+`Manager.resolve` exatamente."* **É verdade para semântica de caminho e falso para casamento de
+chave de string** — e é justamente como a chave é usada. Go-only; a regra não foi portada para
+Node/Python.
+
+### Três sintomas concretos, dois reproduzidos ao vivo — sem Windows
+
+Ele montou o valor com `\` à mão e rodou o binário Go real em `/tmp`:
+
+1. **`validate` recusa referência que existe:**
+   `req "REQ-poc.md" links to Roadmap "docsoadmaps\wip\ROADMAP-poc.md" which does not exist`.
+2. **O board do `serve` perde a aresta:** `/api/chain` desenha o id do nó com `/` e o `to` da aresta
+   com `\` — aresta órfã, ligação **some silenciosamente** do grafo.
+3. **`metrics` parte um roadmap em dois artefatos** (derivado por leitura, não executado): agrupa
+   transições do `.trackfw-log` por string exata de basename, então um roadmap com transições
+   misturando `agent/file.md` e `agentile.md` — o bug Python acima — **cai fora do cycle-time**.
+
+O sintoma 2 é o pior dos três: **não falha, some.**
+
+### Ele corrigiu a premissa da minha direção simétrica
+
+Eu tinha escrito que o risco era *"quebrar a leitura de artefato já gravado com `\`"*. **Não existe
+tolerância de leitura em lugar nenhum hoje** — então não há o que regredir. **O risco real é o
+escopo da normalização nova**, e ele nomeou três limites duros:
+
+| não normalizar | por quê |
+|---|---|
+| `content_base64` do registro de quarentena de terceiro | âncora de TOCTOU, checksummada, verbatim por design |
+| corpo de prosa/código de ADR, REQ e roadmap | normalizar **o valor do campo extraído**, nunca o buffer do arquivo — os artefatos deste repo estão cheios de `\` literal em exemplo e regex |
+| chave de caminho absoluto do `integrations-manifest.json` | não-portável por design, contrato já fixado no `cli-parity.md` |
+
+O segundo limite é o que teria estragado tudo: uma normalização ingênua rodando sobre o arquivo
+inteiro corromperia a documentação que **descreve** o defeito.
+
+### Residual declarado
+
+O achado do `filepath.Rel` é Go-only e **não testado em Windows real**; o sintoma 3 não foi
+executado; e a enumeração seguiu cada `dst`/`logBasename`/chave até o ponto de escrita **em vez de
+caminhar exaustivamente os 780+ `Join` do repositório**.
+
+## Wave 1 — A correção (3 MLs, sequência definida pela enumeração)
+> Dependências: Wave 0 completa.
+
+### ML-1A — Escrita: separador portável no sync do `roadmap move` e no `.trackfw-log`
+**Status:** ⬜ Pendente
+**Agente:** `apolo-tf`
+**Files affected:** `internal/generators/roadmap.go`, `npm/src/generators/roadmap.js`,
+`pypi/trackfw/generators/roadmap.py`
+**Actions:**
+1. O `newRoadmapPath` escrito no campo `roadmap:`/`Roadmap:` da REQ pareada usa `/` nos 3 runtimes.
+2. `pypi/trackfw/generators/roadmap.py:611` — `os.path.join(agent, basename)` vira concatenação
+   explícita com `/`, **igualando ao que Go e Node já fazem**. Não é feature nova: é fechar
+   divergência de paridade com dois runtimes já corretos.
+🔴 **Normalize o valor do campo, nunca o buffer do arquivo.** Os artefatos deste repositório contêm
+`\` literal em exemplo, regex e prosa — inclusive a REQ que descreve este defeito.
+**Critérios de aceite:**
+- [ ] Escrita com `/` nos 3 runtimes, verificada por teste
+- [ ] Falsificação nas duas direções, **incluindo o controle**: conteúdo com `\` legítimo no corpo do
+      artefato **não** é tocado
+- [ ] `make quality` verde
+
+### ML-1B — Leitura: tolerância a `\` já gravado, com limites
+**Status:** ⬜ Pendente
+**Agente:** `apolo-tf`
+**Diagnóstico:** **não existe tolerância de leitura hoje** — este ML cria, não conserta. Sem ela, todo
+artefato já commitado por um usuário Windows continua quebrado depois do ML-1A.
+**Actions:**
+1. Resolução de referência (`validate`, `barrier`, o `/api/chain` do `serve`) aceita `\` e `/`.
+2. `internal/validator/validator_thirdparty_provenance.go:142` — a chave de busca é normalizada para
+   `/` antes de comparar com as do JSON. **Corrigir também o doc-comment**, que afirma uma
+   equivalência verdadeira para caminho e falsa para chave de string.
+🔴 **Os três limites duros do ML-0A não são normalizados** — `content_base64`, corpo de prosa/código,
+e chave absoluta do `integrations-manifest.json`.
+**Critérios de aceite:**
+- [ ] Referência com `\` resolve; referência com `/` continua resolvendo
+- [ ] 🔴 Os três limites duros **verificados por teste**, não por comentário
+- [ ] O sintoma 2 (aresta órfã no `serve`) deixa de ocorrer
+- [ ] `make quality` verde
+
+### ML-1C — Paridade da regra de provenance
+**Status:** ⬜ Pendente
+**Agente:** `apolo-tf`
+**Diagnóstico:** a regra `thirdparty_artifact_has_provenance` existe **só no Go**. O ML-1B corrige o
+Go; se Node e Python não a têm, **a lacuna de paridade é anterior a esta REQ**.
+**Actions:**
+1. **Confirmar** se a regra está mesmo ausente nos outros dois. Se estiver, isto é achado de paridade
+   **fora do escopo desta REQ** — registrar e abrir REQ, **não** implementar aqui.
+**Critérios de aceite:**
+- [ ] Confirmação com evidência
+- [ ] Se ausente: REQ aberta, nada implementado
 
 ## Wave 2 — Gate falsificável
 > Dependências: Wave 1. O gate precisa provar a escrita **sem** máquina Windows — a REQ exige isso
