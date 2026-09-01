@@ -7732,12 +7732,18 @@ assert_fails_with "validate-parity/credential-guard-hook-resolvable-not-detected
 # vacuo sem este cenário P4 — ele poderia estar verde por acidente sem jamais
 # provar que reprovaria se a detecção do exec-bit quebrasse.
 #
-# Seam: internal/validator/validator_credential_guard.go linha
-# `case info.Mode()&0111 == 0:` — condição que detecta script não-executável.
-# Delta de literal único: `== 0` vira `!= 0` (inversão — agora só dispara
-# quando o script É executável, nunca quando não é). Go fica cego ao caminho
-# não-executável; Node.js/Python ficam reais e corretos, expondo a divergência
-# no caso cg-claude-noexec.
+# Seam: internal/validator/validator_credential_guard.go, condição
+# `info.Mode()&0111 == 0:` dentro de `case CurrentGOOS != "windows" && info.Mode()&0111 == 0:`
+# — o sed mira o SUBSTRING da checagem de modo, não a cláusula `case` inteira,
+# porque o port do #222 Grupo B (ROADMAP-2026-08-31-portar-as-correcoes-do-
+# reporter-da-issue-216, ML-1A) prefixou a condição com o guard `CurrentGOOS !=
+# "windows" &&` — mesmo precedente do Cenário 179 (`execBit &&` em
+# scaffold_doctor.go), que também mira o substring em vez da cláusula
+# completa para sobreviver a um guard de plataforma adicionado depois.
+# RETARGETED 2026-08-31 ML-1A: âncora era `case info\.Mode()&0111 == 0:`
+# (casava a cláusula inteira); virou `info\.Mode()&0111 == 0:` (substring) —
+# ver vault/notes/falsify-cenario-pina-linha-de-fonte-por-sed-guard-de-
+# plataforma-quebra-2026-08-31.md.
 #
 # GO_BIN override (mesma convenção dos Cenários 79/80) aponta
 # check-validate-parity.sh para o binário sabotado.
@@ -7749,7 +7755,7 @@ cp -r "$ROOT_DIR/internal/." "$T81/internal/"
 cp "$ROOT_DIR/go.mod" "$T81/go.mod"
 cp "$ROOT_DIR/go.sum" "$T81/go.sum"
 
-sed 's/case info\.Mode()&0111 == 0:/case false \&\& info.Mode()\&0111 == 0: \/\/ [falsified]/' \
+sed 's/info\.Mode()&0111 == 0:/false \&\& info.Mode()\&0111 == 0: \/\/ [falsified]/' \
   "$ROOT_DIR/internal/validator/validator_credential_guard.go" > "$T81/internal/validator/validator_credential_guard.go"
 
 if cmp -s "$ROOT_DIR/internal/validator/validator_credential_guard.go" "$T81/internal/validator/validator_credential_guard.go"; then

@@ -9,6 +9,25 @@ const config = require('../config')
 const { checkTraceIds } = require('./traceid')
 const { loadProvenance } = require('../thirdparty/provenance')
 
+// _platform is seeded from process.platform at module load time. Tests override
+// it via _setPlatformForTest to exercise the Windows guard on any host.
+//
+// Why the mode checks need it: on Windows the POSIX execute bit is not
+// representable on NTFS. fs.statSync().mode & 0o111 is 0 for every regular file,
+// even immediately after fs.chmodSync(path, 0o755). A check written as "the
+// script is not executable" is therefore ALWAYS true there, and no action the
+// user takes can make it false.
+//
+// Mirrors internal/validator/goos.go (Go, canonical) and
+// pypi/trackfw/validator.py (Python).
+let _platform = process.platform
+
+function _setPlatformForTest(plat) {
+  const prev = _platform
+  _platform = plat
+  return () => { _platform = prev }
+}
+
 const STALE_WIP_DAYS = 7
 let staleWipNowMs = () => Date.now()
 
@@ -1584,7 +1603,7 @@ function validateGuardHookResolvable(scriptMarker, cwd) {
 
       if (!stat) {
         msgs.push(`${hf.relPath} (${hf.cli}) references ${scriptMarker} resolved to "${resolved}", but the script does not exist — run \`trackfw update\` to regenerate it`)
-      } else if ((stat.mode & 0o111) === 0) {
+      } else if (_platform !== 'win32' && (stat.mode & 0o111) === 0) {
         msgs.push(`${hf.relPath} (${hf.cli}) references ${scriptMarker} resolved to "${resolved}", but the script is not executable — run \`trackfw update\` to regenerate it`)
       }
     }
@@ -2690,7 +2709,7 @@ function validateGuardGlobalHookResolvable(scriptMarker) {
 
       if (!stat) {
         msgs.push(`~/${relPath} (${gf.cli}, global scope) references ${scriptMarker} resolved to "${m.raw}", but the script does not exist — run \`trackfw update harness\` to regenerate it`)
-      } else if ((stat.mode & 0o111) === 0) {
+      } else if (_platform !== 'win32' && (stat.mode & 0o111) === 0) {
         msgs.push(`~/${relPath} (${gf.cli}, global scope) references ${scriptMarker} resolved to "${m.raw}", but the script is not executable — run \`trackfw update harness\` to regenerate it`)
       }
     }
@@ -3361,6 +3380,7 @@ async function getStatus() {
 }
 
 module.exports = {
+  _setPlatformForTest,
   validate,
   validateUnfiltered,
   loadBaseline,

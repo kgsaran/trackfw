@@ -26810,3 +26810,122 @@ caso. Candidato a REQ futura; **não** aberta agora para não expandir escopo.
 **Próximo:** portar as correções dos PRs #222–#225 do Lourival (os quatro valem inteiros, ver
 `docs/analises/2026-08-31-aproveitamento-dos-prs-222-225.md`), começando pelo #223 (item 1, cp1252),
 que destrava a medição dos itens 5 e 6. Guarda de ancestral em seguida.
+
+## 2026-08-31 — ML-1A/ML-1B do roadmap de port dos PRs #222–#225 (apolo-tf)
+
+**Início.** Recebido handoff para portar ML-1A (#222 Grupo B, bit de execução no validator) e ML-1B
+(#225, CRLF nos geradores Python) da `ROADMAP-2026-08-31-portar-as-correcoes-do-reporter-da-issue-216.md`.
+Regra dura do handoff: porte fiel, atribuição `Co-Authored-By: lourivalgarciajunior`, parar e avisar
+se achar sobreposição com o Grupo A ($HOME, Wave 2, bloqueado).
+
+**ML-1B (#225) — feito.** `git apply` do diff aplicou limpo (zero drift) contra a árvore atual: 15
+arquivos em `pypi/trackfw/` ganharam `newline="\n"`, `pypi/tests/test_generators_write_lf.py` novo (4
+testes, todos verdes localmente — guarda de regressão em macOS/Linux, não reprodução, como o próprio
+teste declara), `scripts/check-python-writes-lf.sh` novo. **Um desvio do diff literal**: troquei
+`python` por `python3` na linha do interpretador (script original do PR usa `python` puro, que não
+existe neste ambiente nem é a convenção de nenhum outro `check-*.sh` do repo — todos usam `python3`).
+`python3 -m pytest pypi/tests -q` → 1559 passed. Gate roda e passa. **Achado que preciso reportar sem
+decidir**: o gate **não tem guarda de vacuidade** — se `pypi/trackfw/` sumisse ou o walk não achasse
+nenhum `.py`, o gate passaria vazio e silencioso. O handoff pediu para avisar em vez de adicionar por
+conta própria.
+
+**ML-1A (#222 Grupo B) — sobreposição real com o Grupo A, reportada e resolvida por separação de
+hunk.** O handoff pediu para confirmar ausência de sobreposição antes de editar e parar se achasse.
+Achei: `internal/validator/validator_git_branch_guard.go` e `internal/validator/validator_test.go`
+(Go), `pypi/trackfw/validator.py` e `pypi/tests/test_validator.py` (Python), `npm/src/validator/
+index.js` (Node) misturam hunks do Grupo A (`homedir.Dir()`/`home_dir()`/`homedir()`, módulo novo que
+não existe ainda) com hunks do Grupo B (guard `CurrentGOOS/_platform/_current_platform != "windows"`)
+**no mesmo arquivo**, às vezes na mesma função. A separação da análise técnica ("zero overlap de
+arquivo") vale para `validator_credential_guard.go`/`_test.go` e `goos.go`, mas não para os demais.
+
+**Resolução aplicada**: portei só os hunks do Grupo B, hunk a hunk, deixando `os.UserHomeDir()`/
+`os.homedir()`/`os.path.expanduser("~")` intocados em todos os arquivos (nenhum módulo `homedir` foi
+criado). `internal/validator/validator_test.go` (único hunk é puro Grupo A) **não foi tocado**. Em
+`pypi/trackfw/validator.py` a nova seção `_current_platform`/`_set_platform_for_test` foi inserida sem
+o `from trackfw.homedir import ...`; os dois `os.access(X_OK)` ganharam o guard
+`_current_platform != "win32" and`; as duas linhas `home = os.path.expanduser("~")` da mesma função
+ficaram como estavam. `npm/src/validator/index.js`: idem, com `_platform`/`_setPlatformForTest`, sem
+`require('../homedir')`, sem trocar `os.homedir()`. `pypi/tests/test_validator.py`: portei o helper
+`_exec_bit_representavel` e `test_windows_nao_dispara_pelo_bit_de_execucao`; os dois testes de tilde
+(`test_find_adr_file_com_tilde`, `test_validate_adrs_are_referenced_com_tilde`, que importariam
+`home_dir`) ficaram intocados. Testes novos verdes nos três runtimes (`go test ./internal/validator/...`,
+`node --test`, `python3 -m pytest`).
+
+**Nota de precisão levada ao report, não ao código**: a análise técnica descreveu o item 3 como o PR
+"unificando o mecanismo" Go/Node vs Python (`os.access(X_OK)` → bits). Isso é impreciso — o diff só
+**guarda** `os.access(X_OK)` com a checagem de plataforma; não substitui o mecanismo. A divergência
+pré-existente entre Python e Go/Node fora do Windows continua.
+
+**Achado extra do próprio `make quality`, resolvido no mesmo ML**: o Cenário 81 de
+`scripts/check-gates-falsify.sh` faz `sed` sobre `internal/validator/validator_credential_guard.go`
+ancorado na cláusula `case info.Mode()&0111 == 0:` **inteira**, para provar que
+`check-validate-parity.sh` detectaria regressão na checagem de bit de execução. Prefixar a condição
+com `CurrentGOOS != "windows" &&` (Grupo B) quebrou o casamento textual e o cenário reprovou
+corretamente (`FAIL [falsify/setup-s81]: padrão não encontrado`) — não é defeito do port, é o
+cenário recusando prosseguir sem confirmar a sabotagem. Retarget: mirar o **substring** da checagem
+de modo em vez da cláusula inteira (mesmo precedente do Cenário 179, `execBit &&` em
+`scaffold_doctor.go`). Nota escrita:
+`vault/notes/falsify-cenario-pina-linha-de-fonte-por-sed-guard-de-plataforma-quebra-2026-08-31.md`
+(linkada no índice) — **relevante para a Wave 2 (ML-2A)**, que toca os mesmos três arquivos de
+validator e deve grepar `check-gates-falsify.sh` pela condição exata antes de editar.
+
+**`make quality` rodado com ML-1A + ML-1B juntos, evidência completa no relatório final ao
+arquiteto.** `scripts/check-gates-falsify.sh` faz parte dos arquivos do **ML-1A** (causa e correção
+vêm da mudança do ML-1A), junto com o vault note e o índice.
+
+---
+
+## apolo-tf — ML-1C (2026-08-31) — INÍCIO
+
+Autorizado pelo arquiteto: ligar `scripts/check-python-writes-lf.sh` ao alvo `parity:` do
+`Makefile` e dar-lhe guarda de vacuidade, seguindo o padrão de
+`scripts/check-static-assets.sh`/`check-integration-assets.sh` ("P2 vacuity guard"). Não toco
+em Wave 2/3/4, roadmap nem REQ. Sem git (worktree compartilhado com ML-1A/1B não commitado).
+
+## apolo-tf — ML-1C (2026-08-31) — FIM
+
+Feito: `scripts/check-python-writes-lf.sh` ligado ao alvo `parity:` do `Makefile` (linha após
+`check-integration-assets.sh`, sem prefixo `bash`, mantendo o 755 do ML-1B). Guarda de vacuidade
+adicionada ao próprio script: um `find pypi/trackfw -name __pycache__ -prune -o -name '*.py' -print`
+roda ANTES do `os.walk` de detecção (mesmo critério de varredura) e reprova se visitar zero arquivos
+— forma copiada de `scripts/check-static-assets.sh`/`check-integration-assets.sh` ("P2 vacuity
+guard"), não inventada. A lógica de detecção (`open(`/`.write_text(` sem `newline=`) não foi tocada.
+
+Falsificação nas duas direções (corpus real fora do repo, cópia isolada do script em scratch):
+corpus normal → `Escrita em LF: nenhuma chamada sem newline explicito.` (exit 0); corpus vazio →
+`check-python-writes-lf: scan visited zero .py files under pypi/trackfw/ — refusing to pass
+silently` (exit 1). Confirmado que o gate roda dentro de `make parity` real: rodada completa saiu
+com `exited with code 0`, e a sequência exata do Makefile (`check-static-assets.sh` →
+`check-integration-assets.sh` → `check-python-writes-lf.sh`) executada manualmente mostra a saída
+do gate no meio da cadeia. Sem git (autoridade do arquiteto). Arquivos alterados: `Makefile`,
+`scripts/check-python-writes-lf.sh`. Roadmap e REQ não tocados por restrição explícita do handoff.
+
+## apolo-tf — ML-1C (2026-08-31) — CORREÇÃO pós-audit interno
+
+Revisão (auto-aplicada antes do handoff, achado ao consultar o advisor): a primeira versão da
+guarda usava `ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)` e fazia `cd "$ROOT_DIR"`
+antes do `find` — um ancoradouro absoluto que o `os.walk('pypi/trackfw')` da detecção NÃO tem (ele
+usa o cwd do chamador). Rodando o script de um cwd diferente da raiz do repo, a guarda passaria
+(via `cd`) enquanto a varredura real veria zero arquivos — o mesmo silêncio que a guarda existe
+para impedir. Corrigido: removida a âncora `ROOT_DIR`/`cd`; `SCANNED=$(find pypi/trackfw ...)` usa
+agora exatamente o mesmo cwd relativo que o `os.walk` de baixo. Verificado: de `/tmp`, o script
+agora falha explicitamente (`find: pypi/trackfw: No such file or directory`, exit 1) em vez de
+passar silenciosamente. Também confirmado que o critério do `find` (`-name __pycache__ -prune`)
+concorda com o filtro Python (`'__pycache__' in root`) na árvore atual (`diff` vazio). Falsificação
+das duas direções refeita após a correção — mesmos resultados reportados abaixo. Prova de execução
+dentro de `make parity` real (não `make -n` isolado): `make parity` (build cacheado, `bin/trackfw`
+já existia) produziu no log completo, na ordem exata do Makefile e seguindo adiante para o próximo
+gate (`check-identity-parity.sh`) sem abortar:
+```
+scripts/check-static-assets.sh
+Static assets are synchronized
+scripts/check-integration-assets.sh
+Integration assets are synchronized (file lists and bytes match)
+scripts/check-python-writes-lf.sh
+Escrita em LF: nenhuma chamada sem newline explicito.
+GO_BIN=bin/trackfw scripts/check-identity-parity.sh
+```
+(a rodada completa de `make parity` estourou o timeout do shell por ser longa — não por falha; uma
+rodada anterior, íntegra, já havia terminado com `exited with code 0`). `make -n parity | grep
+check-python-writes-lf` confirma a linha exata que o `make` expande. `quality: … parity`, então
+cobrir `parity` cobre `quality`.

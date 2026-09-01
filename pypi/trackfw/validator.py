@@ -1,7 +1,7 @@
 """
 validator.py — Validações de governança do trackfw.
 Espelho Python de npm/src/validator/index.js (paridade de comportamento).
-Stdlib apenas: os, pathlib, re, datetime, subprocess.
+Stdlib apenas: os, pathlib, re, sys, datetime, subprocess.
 """
 
 import glob as _glob
@@ -9,10 +9,39 @@ import json
 import os
 import re
 import subprocess
+import sys
 from datetime import datetime, timezone
 
 from . import config as _config
 from .traceid import check_traceid
+
+# _current_platform is seeded from sys.platform at import time. Tests override it
+# via _set_platform_for_test to exercise the Windows guard on any host.
+#
+# Why the mode checks need it: on Windows the POSIX execute bit is not
+# representable on NTFS, so "is this script executable?" has no truthful answer.
+# os.access(path, os.X_OK) answers True for every existing file there — which
+# means this runtime SILENTLY DIVERGED from Go and Node.js, that answer False for
+# the same file. Same repo, three runtimes, two different `validate` outputs.
+# Guarding explicitly makes all three agree, and says so in the code.
+#
+# Mirrors internal/validator/goos.go (Go, canonical) and
+# npm/src/validator/index.js (Node.js).
+_current_platform: str = sys.platform
+
+
+def _set_platform_for_test(platform: str):
+    """Override _current_platform for unit tests. Returns a restore callable."""
+    global _current_platform
+    prev = _current_platform
+    _current_platform = platform
+
+    def restore():
+        global _current_platform
+        _current_platform = prev
+
+    return restore
+
 
 STALE_WIP_DAYS = 7
 
@@ -856,7 +885,7 @@ def save_baseline(violations: list, warnings: list) -> None:
         "violations": _extract_messages(violations),
         "warnings": _extract_messages(warnings),
     }
-    with open(_BASELINE_FILE, "w", encoding="utf-8") as f:
+    with open(_BASELINE_FILE, "w", encoding="utf-8", newline="\n") as f:
         json.dump(bf, f, indent=2, ensure_ascii=False)
 
 
@@ -1950,7 +1979,7 @@ def validate_guard_hook_resolvable(script_marker: str, cwd: str = None) -> list:
                         f'regenerate it'
                     ),
                 })
-            elif not os.access(resolved, os.X_OK):
+            elif _current_platform != "win32" and not os.access(resolved, os.X_OK):
                 msgs.append({
                     "type": "violation",
                     "message": (
@@ -3151,7 +3180,7 @@ def validate_guard_global_hook_resolvable(script_marker: str, cwd: str = None) -
                         f'to regenerate it'
                     ),
                 })
-            elif not os.access(m["raw"], os.X_OK):
+            elif _current_platform != "win32" and not os.access(m["raw"], os.X_OK):
                 msgs.append({
                     "type": "violation",
                     "message": (

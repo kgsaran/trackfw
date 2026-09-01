@@ -381,11 +381,47 @@ test('credential_guard_hook_resolvable: dispara quando o script não é executá
   fs.writeFileSync(path.join(tmp, 'scripts', 'trackfw-credential-guard.sh'), '#!/bin/sh\nexit 0\n', { mode: 0o644 })
   process.chdir(tmp)
   config.reset()
+  // O bit de execução não é representável em NTFS: no Windows (stat.mode & 0o111) é 0
+  // para todo arquivo, inclusive após fs.chmodSync(0o755). Este teste afirma que a regra
+  // DISPARA quando o bit falta, o que só tem sentido onde o bit existe — fixamos a
+  // plataforma em vez de pular, para a garantia continuar verificada em qualquer host.
+  const restorePlatform = validator._setPlatformForTest('linux')
   try {
     const msgs = validator.validateCredentialGuardHookResolvable()
     assert(msgs.some(m => m.includes('not executable')),
       'esperava violation de script não executável: ' + JSON.stringify(msgs))
   } finally {
+    restorePlatform()
+    process.chdir(origDir)
+    config.reset()
+    fs.rmSync(tmp, { recursive: true, force: true })
+  }
+})
+
+// No Windows o bit de execução não é representável em NTFS: a mensagem "the script is
+// not executable" é SEMPRE verdadeira lá, e nenhuma ação do usuário a torna falsa —
+// `trackfw update`, o remédio que ela prescreve, regenera o script com o mesmo modo.
+// Mesmo precedente de _platform em src/integrations/scaffold_doctor.js (AC5).
+test('credential_guard_hook_resolvable: no Windows não dispara pelo bit de execução', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-cg-'))
+  const origDir = process.cwd()
+  fs.mkdirSync(path.join(tmp, '.claude'), { recursive: true })
+  fs.writeFileSync(path.join(tmp, '.claude', 'settings.json'),
+    guardEntryClaudeSettings('$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh'))
+  fs.mkdirSync(path.join(tmp, 'scripts'), { recursive: true })
+  fs.writeFileSync(path.join(tmp, 'scripts', 'trackfw-credential-guard.sh'), '#!/bin/sh\nexit 0\n', { mode: 0o644 })
+  process.chdir(tmp)
+  config.reset()
+  const restorePlatform = validator._setPlatformForTest('win32')
+  try {
+    const msgs = validator.validateCredentialGuardHookResolvable()
+    assert(!msgs.some(m => m.includes('not executable')),
+      'no Windows o bit não é representável — não deveria disparar: ' + JSON.stringify(msgs))
+    // O script EXISTE: a checagem de existência continua valendo no Windows.
+    assert(!msgs.some(m => m.includes('does not exist')),
+      'script existe; ausência não deveria aparecer: ' + JSON.stringify(msgs))
+  } finally {
+    restorePlatform()
     process.chdir(origDir)
     config.reset()
     fs.rmSync(tmp, { recursive: true, force: true })

@@ -41,7 +41,7 @@ All three runtimes cover the same artifact classes. What varies is described bel
     (sys.platform == "win32") the execute bit is not representable on NTFS, so the
     mode check is suppressed entirely — AC5.
 
-    Python's generator was already correct (open(...,'w') + os.chmod(0o755) is
+    Python's generator was already correct (open(...,'w', newline="\n") + os.chmod(0o755) is
     unconditional and ignores umask). No change needed to the Python write path.
 
   _current_platform is seeded from sys.platform at import time and can be overridden

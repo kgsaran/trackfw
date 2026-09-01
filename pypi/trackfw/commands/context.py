@@ -153,7 +153,7 @@ def _get_context(fmt, output_file=None):
     out = sys.stdout
     if output_file:
         try:
-            out = open(output_file, "w", encoding="utf-8")
+            out = open(output_file, "w", encoding="utf-8", newline="\n")
         except OSError as e:
             print(f"Error opening output file: {e}", file=sys.stderr)
             sys.exit(1)

@@ -3,6 +3,7 @@ package validator
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/kgsaran/trackfw/internal/config"
@@ -50,6 +51,14 @@ func TestGitBranchGuardHookResolvable_DisparaScriptAusente(t *testing.T) {
 }
 
 func TestGitBranchGuardHookResolvable_DisparaScriptNaoExecutavel(t *testing.T) {
+	// O bit de execução não é representável em NTFS: no Windows info.Mode()&0111
+	// é 0 para todo arquivo, inclusive após os.Chmod(0o755). Este teste afirma
+	// que a regra DISPARA quando o bit falta, o que só tem sentido onde o bit
+	// existe — fixamos a plataforma em vez de pular, para que a garantia
+	// continue verificada em qualquer host.
+	CurrentGOOS = "linux"
+	t.Cleanup(func() { CurrentGOOS = runtime.GOOS })
+
 	dir := t.TempDir()
 	chdir(t, dir)
 	t.Cleanup(config.Reset)
@@ -828,5 +837,37 @@ func TestGitBranchGuardGlobalHookResolvable_KiroSemArquivoDedicado_Silencio(t *t
 	}
 	if len(msgs) != 0 {
 		t.Errorf("esperado silêncio sem arquivo dedicado do Kiro, obteve: %v", msgs)
+	}
+}
+
+// TestGitBranchGuardHookResolvable_WindowsNaoDisparaBitDeExecucao — espelha
+// TestCredentialGuardHookResolvable_WindowsNaoDisparaBitDeExecucao para a regra do
+// git branch guard. Ver o comentário de CurrentGOOS em goos.go.
+func TestGitBranchGuardHookResolvable_WindowsNaoDisparaBitDeExecucao(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	CurrentGOOS = "windows"
+	t.Cleanup(func() { CurrentGOOS = runtime.GOOS })
+
+	writeFile(t, dir, ".claude/settings.json", gitBranchGuardEntryClaudeSettings(`$CLAUDE_PROJECT_DIR/scripts/trackfw-git-branch-guard.sh`))
+	scriptPath := filepath.Join(dir, "scripts", "trackfw-git-branch-guard.sh")
+	if err := os.MkdirAll(filepath.Dir(scriptPath), 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(scriptPath, []byte("#!/bin/sh\nexit 0\n"), 0644); err != nil { // sem bit +x
+		t.Fatalf("write script: %v", err)
+	}
+
+	msgs, err := validateGitBranchGuardHookResolvable()
+	if err != nil {
+		t.Fatalf("validateGitBranchGuardHookResolvable() erro: %v", err)
+	}
+	if hasViolation(msgs, "not executable") {
+		t.Errorf("no Windows o bit de execução não é representável — a regra não deve disparar. Obteve: %v", msgs)
+	}
+	if hasViolation(msgs, "does not exist") {
+		t.Errorf("script existe; violation de ausência não deveria aparecer: %v", msgs)
 	}
 }

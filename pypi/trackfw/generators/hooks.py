@@ -26,7 +26,7 @@ def _read_json(file_path: str) -> dict:
 def _write_json(file_path: str, data: dict) -> None:
     """Escreve JSON com indent 2."""
     os.makedirs(os.path.dirname(os.path.abspath(file_path)), exist_ok=True)
-    with open(file_path, 'w', encoding='utf-8') as f:
+    with open(file_path, 'w', encoding='utf-8', newline="\n") as f:
         json.dump(data, f, indent=2)
         f.write('\n')
 

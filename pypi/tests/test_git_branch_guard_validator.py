@@ -17,6 +17,20 @@ from trackfw import config as _config
 from trackfw import validator as v
 from trackfw.generators.init_gen import _generate_git_branch_guard_script
 
+def _exec_bit_representavel():
+    """Este sistema de arquivos consegue dizer que um arquivo NAO e executavel?
+
+    Em NTFS nao consegue: os.access(path, os.X_OK) responde True para todo arquivo
+    existente, inclusive um 0o644 recem-criado. Medido, nao inferido de sys.platform.
+    """
+    fd, p = tempfile.mkstemp(suffix='.sh')
+    os.close(fd)
+    try:
+        os.chmod(p, 0o644)
+        return not os.access(p, os.X_OK)
+    finally:
+        os.remove(p)
+
 
 def _write(path: str, content: str = ""):
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -69,6 +83,15 @@ class TestGitBranchGuardHookResolvable(unittest.TestCase):
         )
 
     def test_dispara_script_nao_executavel(self):
+        # Deteccao pela CONDICAO, nao por sys.platform: onde o SO nao consegue
+        # representar a ausencia do bit de execucao (NTFS), os.access(X_OK) responde
+        # True para todo arquivo existente e esta garantia nao e exercitavel. Num
+        # Linux/macOS o teste roda normalmente. Nomeia a garantia que deixou de ser
+        # verificada em vez de passar em silencio.
+        if not _exec_bit_representavel():
+            self.skipTest(
+                'regra "script nao executavel" nao exercitada: neste sistema de arquivos os.access(X_OK) responde True mesmo para um arquivo 0o644'
+            )
         _write(
             os.path.join(self.tmp, ".claude/settings.json"),
             _git_branch_guard_entry_claude_settings("$CLAUDE_PROJECT_DIR/scripts/trackfw-git-branch-guard.sh"),
@@ -83,6 +106,34 @@ class TestGitBranchGuardHookResolvable(unittest.TestCase):
             any("not executable" in m["message"] for m in msgs),
             f"esperado violation de script não executável, obteve: {msgs}",
         )
+
+    def test_windows_nao_dispara_pelo_bit_de_execucao(self):
+        # No Windows o bit de execucao nao e representavel em NTFS: a mensagem "the
+        # script is not executable" seria SEMPRE verdadeira la, e nenhuma acao do
+        # usuario a tornaria falsa. Mesmo precedente de _current_platform em
+        # trackfw/integrations/scaffold_doctor.py (AC5).
+        restore = v._set_platform_for_test('win32')
+        try:
+            _write(
+                os.path.join(self.tmp, ".claude/settings.json"),
+                _git_branch_guard_entry_claude_settings("$CLAUDE_PROJECT_DIR/scripts/trackfw-git-branch-guard.sh"),
+            )
+            script_path = os.path.join(self.tmp, "scripts", "trackfw-git-branch-guard.sh")
+            _write(script_path, "#!/bin/sh\nexit 0\n")
+            os.chmod(script_path, 0o644)  # sem bit +x
+
+            cfg = _config.defaults()
+            msgs = v.validate_git_branch_guard_hook_resolvable(cfg, cwd=self.tmp)
+            self.assertFalse(
+                any('not executable' in m['message'] for m in msgs),
+                f'no Windows o bit nao e representavel — nao deveria disparar: {msgs}',
+            )
+            self.assertFalse(
+                any('does not exist' in m['message'] for m in msgs),
+                f'script existe; ausencia nao deveria aparecer: {msgs}',
+            )
+        finally:
+            restore()
 
     def test_nao_dispara_sem_entrada(self):
         _write(
