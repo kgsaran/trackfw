@@ -6421,3 +6421,61 @@ exatamente o motivo do `assert_count`); revertendo a normalização de
 que sumiu; sobre a árvore correta, passa com `checked=18`.
 
 Origem: `lourivalgarciajunior`, issue #216, item 10.
+
+## Escrita atômica — chmod no descritor vs. chmod no caminho (REQ-2026-09-01-os-fchmod, ML-1A/ML-1B)
+
+<!-- trackfw-contract: gate=scripts/check-atomic-write-anti-divergence.sh,pypi/trackfw/identity/__init__.py,pypi/trackfw/thirdparty/quarantine.py,pypi/trackfw/integrations/manager.py partial=cobre só a não-divergência das três cópias Python entre si; não mede Go nem Node, nem a janela pré-existente do os.replace(path) descrita em docs/seguranca/2026-09-01-modelo-de-ameaca-da-escrita-atomica-no-windows.md secao 6 -->
+
+Os três CLIs escrevem artefatos sensíveis (identidade, manifesto de integrações, registro de
+quarentena de terceiro) por escrita atômica: arquivo temporário no mesmo diretório, permissão
+aplicada, `write`/`fsync`, `rename`/`replace` para o destino final. **O contrato não é "os 3
+runtimes preservam a garantia de descritor" — isso seria falso hoje.** Estado real, medido:
+
+| runtime | primitiva de permissão | opera sobre | garantia TOCTOU |
+|---|---|---|---|
+| Go | `temporary.Chmod(mode)` | descritor | ✅ sem janela |
+| Python | `os.fchmod(fd, mode)`, com fallback **condicional** (`getattr(os, "fchmod", None)`) para `os.chmod(path, mode)` só quando `os.fchmod` não existe (Windows) | descritor em POSIX; caminho só no Windows | ✅ sem janela em POSIX (byte a byte o comportamento anterior a esta REQ); janela aceita explicitamente no Windows, onde o modelo de ameaça do NTFS/ACL não é o do POSIX |
+| **Node** | `chmodSync(path, mode)` — **nunca usa `fchmodSync(fd, mode)`, que existe no Node** | caminho, nos 3 SOs, inclusive POSIX | ❌ **janela aberta hoje, em produção, sem relação com Windows** — `npm/src/thirdparty/quarantine.js:28-30` e `npm/src/integrations/manager.js:94-97`; `manager.js` ainda chama `chmod` **uma segunda vez depois do `rename`**, janela extra que `npm/src/identity/config.js` do próprio Node não tem — **e aquele arquivo é a forma mais forte das três**: `fs.openSync(temporaryName, 'w', mode)` aplica o modo **na criação**, sem janela alguma, nem a do `chmod` no descritor. Ver `docs/req/REQ-2026-09-01-cli-node-usa-chmodsync-no-caminho-em-vez-de-fchmodsync-no-descritor-e-reabre-toctou-na-escrita-atomica.md` |
+
+**Por que o Python não trocou para `chmod(path)` incondicionalmente:** consertaria o `AttributeError`
+do Windows (`os.fchmod` é `Availability: Unix` na documentação do CPython) trocando um crash
+barulhento por uma degradação silenciosa da garantia POSIX — os três arquivos protegidos são
+justamente os que não se pode enfraquecer. O fallback é condicionado à ausência da API
+(`getattr(os, "fchmod", None) is None`), nunca ao nome da plataforma (`sys.platform`/`os.name`) —
+decisão medida, não palpite de SO (ver `docs/seguranca/2026-09-01-modelo-de-ameaca-da-escrita-
+atomica-no-windows.md`, seção 3.2, tabela de vetores de regressão silenciosa).
+
+**Residual aceito, nomeado explicitamente para não ser lido como "resolvido":** mesmo com o
+fallback correto nos três runtimes, o `os.replace`/`fs.renameSync`/`os.Rename` final ainda opera
+sobre o **caminho** do temporário, não sobre o descritor — uma janela de TOCTOU pré-existente,
+independente desta REQ, presente hoje nos três (seção 6 do parecer de ameaça). Não é regressão desta
+REQ e não é fechada por este gate; acompanhamento fica para REQ própria.
+
+### Triplicação deliberada no Python — não extraída, gateada
+
+<!-- trackfw-contract: gate=scripts/check-atomic-write-anti-divergence.sh -->
+
+`pypi/trackfw/identity/__init__.py`, `pypi/trackfw/thirdparty/quarantine.py` e
+`pypi/trackfw/integrations/manager.py` cada um define sua própria `_atomic_write`, sem import
+cruzado. `quarantine.py` documenta a razão desde antes desta REQ: manter o pacote `thirdparty` (que
+processa conteúdo baixado de terceiros, a superfície de maior desconfiança do projeto) independente
+de `trackfw.integrations`. Estender um helper compartilhado violaria essa garantia; `identity.py`
+ganhou o mesmo doc-comment nesta REQ (ML-1A), fechando a assimetria em que só uma das três cópias
+explicava por que não importa das outras.
+
+**Sem extração, o risco nomeado é "corrigir duas de três e esquecer a terceira"** — nada mais no
+projeto detectaria isso, porque os três arquivos são independentes por desenho. `scripts/check-
+atomic-write-anti-divergence.sh` existe para fechar exatamente esse risco: compara o corpo
+normalizado (dedentado, para tolerar o deslocamento de indentação de `integrations/manager.py`
+definir `_atomic_write` como `@staticmethod` dentro de classe, um nível mais fundo que as duas
+funções de módulo) do trecho `fchmod = getattr(os, "fchmod", None)` até `os.chmod(temporary, mode)`
+nas três cópias, exigindo igualdade textual exata entre elas — nunca contra um texto fixo congelado
+no próprio gate. Falsificado nas duas direções em cópias de `/tmp`: as três iguais passam;
+divergindo uma (mudança isolada no comentário de uma única cópia) o gate reprova nomeando qual;
+apontar para um diretório sem os três arquivos, ou para uma cópia em que a âncora de extração não
+bate mais (fallback removido/reescrito), reprova por vacuidade em vez de comparar silenciosamente
+menos de três. Ligado a `parity:` no `Makefile`, `python3` (nunca `python`) para a extração/dedent.
+
+Origem: achado do `hades-tf` na Wave 0 de `docs/roadmaps/wip/ROADMAP-2026-09-01-escrita-atomica-do-
+cli-python-funciona-no-windows.md`; `docs/req/REQ-2026-09-01-os-fchmod-e-unix-only-e-derruba-as-
+tres-escritas-atomicas-do-cli-python-no-windows.md`.

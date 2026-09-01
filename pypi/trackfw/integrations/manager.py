@@ -117,7 +117,17 @@ class IntegrationManager:
         filename.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         descriptor, temporary = tempfile.mkstemp(prefix=".trackfw-tmp-", dir=filename.parent)
         try:
-            os.fchmod(descriptor, mode)
+            fchmod = getattr(os, "fchmod", None)
+            if fchmod is not None:
+                fchmod(descriptor, mode)
+            else:
+                # os.fchmod is Unix-only (CPython docs: "Availability: Unix").
+                # On platforms without it (Windows), fall back to chmod on the
+                # temp file's own path. This reopens a narrow TOCTOU window
+                # that fchmod(fd) does not have, but only on platforms where
+                # fchmod never existed to begin with — os.fchmod continues to
+                # be used unconditionally wherever it is available.
+                os.chmod(temporary, mode)
             with os.fdopen(descriptor, "wb") as stream:
                 stream.write(content)
                 stream.flush()

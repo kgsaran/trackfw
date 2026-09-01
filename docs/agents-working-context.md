@@ -27445,3 +27445,195 @@ foi capturado dentro do tempo desta sessão — `scripts/check-gates-falsify.sh`
 (rebuilds de binário e subprocessos por cenário). Recomendo ao arquiteto confirmar o exit code
 final antes do merge; toda a evidência coletada aponta para verde.
 
+
+
+---
+
+## Sessão 2026-09-01 — hades-tf (INÍCIO/FIM: ML-0A, modelo de ameaça da escrita atômica no Windows)
+
+Branch `fix/escrita-atomica-do-cli-python-funciona-no-windows`. Roadmap
+`docs/roadmaps/wip/ROADMAP-2026-09-01-escrita-atomica-do-cli-python-funciona-no-windows.md`.
+
+**Parecer completo:** `docs/seguranca/2026-09-01-modelo-de-ameaca-da-escrita-atomica-no-windows.md`.
+
+**Veredito 1 (janela TOCTOU):** `os.fchmod(fd)` de hoje não tem janela — a troca ingênua para
+`os.chmod(path)` reabre uma janela **real, não teórica**, comprovada por PoC ao vivo (symlink swap
+corrompe o alvo do atacante e transforma `identity.json` em symlink), mas condicionada a um
+pré-requisito que hoje **não é garantido**: `.trackfw` (o diretório-pai) frequentemente fica em
+`0o755`, não `0o700`, porque `mode=` do `makedirs`/`mkdir` é ignorado quando o diretório já existe e
+não se propaga a pais intermediários — comprovado ao vivo em dois cenários (instalador de scripts
+cria `.trackfw` antes do `identity.save()`; `quarantine._atomic_write` num projeto totalmente novo).
+Sob umask padrão (022) isso não é explorável por outro usuário (falta write no diretório); vira
+explorável com umask=0 ou diretório relaxado manualmente.
+
+**Achado extra, fora do escopo desta REQ:** o `os.replace(temporary, filename)` final opera sobre
+caminho, não descritor, em TODAS as variantes (inclusive o `os.fchmod` atual) — uma segunda janela
+pré-existente, independente da decisão de chmod, presente hoje nos três arquivos. Recomendo REQ de
+acompanhamento.
+
+**Veredito 2 (enumeração):** `os.fchmod` é a única API POSIX-only usada como decisão de
+segurança em `pypi/` — os três da REQ batem, sem subestimativa desta vez.
+
+**Veredito 3 (triplicação):** não extrair. `references.py`/`provenance.py` já reusam
+`quarantine._atomic_write` por import (não são cópias) — a "triplicação" real é só
+`identity/__init__.py` + `integrations/manager.py` + `quarantine.py`. Recomendo: (a) gate estrutural
+anti-divergência entre as três definições, (b) adicionar à Wave 1 um doc-comment em
+`identity/__init__.py` — hoje é a única das três sem justificativa registrada para não importar.
+
+**Residual declarado:** seção 5 do parecer (janela do `os.replace`, `.trackfw` não confiavelmente
+`0o700`, ausência de paridade de garantia TOCTOU no Windows, multiusuário/umask não é modelo de
+ameaça nomeado do projeto).
+
+**Fronteiras mantidas:** nenhuma linha de `pypi/`, `internal/`, `npm/`, `scripts/`, roadmap ou REQ
+tocada. Nenhum commit/push/branch. PoCs só em `/tmp`/scratchpad.
+
+**Revisão pós-advisor (2 rodadas):** achado adicional decisivo — `os.fchmod` só é *load-bearing* em
+1 dos 7 pontos de chamada reais (`integrations/manager.py:_plan_artifact_write`, `mode=0o644`); nos
+outros 5 (`0o600`) o `fchmod` é redundante porque `tempfile.mkstemp()` já entrega `0o600` por
+padrão — o teste de controle do AC3(b) só prova algo real se mirar esse único site (seção 0 do
+parecer). PoC refeita com o valor literal `0o644` (alargamento de permissão de arquivo alheio, não
+só aperto). Corrigida afirmação não verificada sobre umask=0 em CI (nenhum workflow deste repo seta
+umask). **Achado novo fora de `pypi/`:** `npm/src/thirdparty/quarantine.js:28-29` e
+`npm/src/integrations/manager.js:94-97` têm um `fs.chmodSync(path, mode)` **redundante e já
+explorável hoje** depois de um `writeFileSync({mode})` que já aplicou o modo corretamente na
+criação — TOCTOU real, em produção, no CLI Node, sem nenhuma relação com o Windows/Python desta REQ.
+`manager.js` chama `chmodSync` uma segunda vez **depois** do rename (linha 97), janela extra que nem
+o próprio Node tem em `identity/config.js`. Relevante para o contrato do AC6 em
+`docs/cli-parity.md`: publicá-lo sem qualificar tornaria o contrato falso para o Node hoje.
+Recomendo REQ de acompanhamento dedicada ao Node (seção 7 do parecer). `trackfw context`/`trackfw
+validate` rodados — score 100/100, só warnings pré-existentes não relacionados a esta REQ.
+
+## apolo-tf — 2026-09-01 — INÍCIO: ML-1A, fallback condicional de os.fchmod nos três _atomic_write
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-09-01-escrita-atomica-do-cli-python-funciona-no-windows.md`
+**REQ:** `docs/req/REQ-2026-09-01-os-fchmod-e-unix-only-e-derruba-as-tres-escritas-atomicas-do-cli-python-no-windows.md`
+
+Escopo: `pypi/trackfw/identity/__init__.py`, `pypi/trackfw/thirdparty/quarantine.py`,
+`pypi/trackfw/integrations/manager.py`. Fallback condicional `getattr(os, "fchmod", None)` — nunca
+substituição incondicional — e doc-comment em `identity/__init__.py` (única das três sem
+justificativa de replicação registrada). Nada além disso: sem extração de helper (veredito do
+ML-0A), sem tocar `npm/`.
+
+## apolo-tf — 2026-09-01 — FIM: ML-1A, fallback condicional de os.fchmod nos três _atomic_write
+
+**Arquivos modificados:** `pypi/trackfw/identity/__init__.py`, `pypi/trackfw/thirdparty/quarantine.py`,
+`pypi/trackfw/integrations/manager.py` (todos: `getattr(os, "fchmod", None)` — condicional, nunca
+substituição incondicional; POSIX permanece byte a byte o de hoje). Doc-comment adicionado em
+`identity/__init__.py`, citando o símbolo (não linha) de `quarantine.py`, por pedido do
+revisor — evita drift de citação.
+**Testes novos:** `pypi/tests/test_atomic_write_windows_fallback.py` (7 casos). Direção (a) usa
+`monkeypatch.delattr(os, "fchmod", raising=False)` — não `raising=True` — para que os mesmos testes
+sejam evidência real de CI no `windows-full-suites` (delattr vira no-op lá) em vez de simulação só
+em POSIX. Controle no único site não-vácuo (`manager.py` com `mode=0o644`, os outros 6 pedem `0o600`
+que `mkstemp` já entrega) assertando `st_mode & 0o777 == 0o644` — gate de bits exatos restrito a
+POSIX (NTFS só honra o bit de escrita). Direção (b), a simétrica: spies em `os.fchmod`/`os.chmod`
+provam que o fallback **não** dispara em POSIX quando `os.fchmod` existe — `@pytest.mark.skipif(not
+hasattr(os, "fchmod"), ...)`, não `skipif(os.name != "posix")` (nada para espiar sem a API).
+**Falsificação real, ambas direções, saída capturada e revertida (backup em scratchpad, `git diff
+--stat` vazio após restaurar):**
+- Direção (a): removido o fallback de `manager.py` (voltou a `os.fchmod(descriptor, mode)` cru) →
+  `AttributeError: module 'os' has no attribute 'fchmod'` em `manager.py:120`, 2 testes vermelhos
+  (`test_manager_atomic_write_survives_missing_fchmod`,
+  `test_manager_0o644_fallback_produces_observable_mode`), os outros 5 continuaram verdes (esperado
+  — só `manager.py` foi sabotado).
+- Direção (b): trocado o condicional por `os.chmod(temporary, mode)` incondicional em `manager.py`
+  → `test_manager_0o644_uses_fchmod_not_chmod_on_posix` vermelho com `assert 0 == 1` (`calls["fchmod"]`
+  vazio) — o spy pegou o fallback disparando por engano em POSIX.
+`make quality`: exit 0, `OK [falsify/no-repo-mutation]`, sem `FAIL`. (Primeira execução deu falso
+`FAIL [falsify/no-repo-mutation]` por corrida — editei `agents-working-context.md` enquanto o gate
+media diff antes/depois; reexecução limpa, sem editar a árvore durante o run, passou.) Suíte
+completa `pypi`: 1582 passed, 28 subtests. Fora de escopo (conforme instrução): sem extração de
+helper, sem tocar `npm/`, sem gate anti-divergência (ML-1B, artemis-tf).
+
+---
+
+## artemis-tf — 2026-09-01 — INÍCIO: ML-1B, gate anti-divergência + contrato com exceção do Node
+
+Branch `fix/escrita-atomica-do-cli-python-funciona-no-windows`. Escopo: gate novo em `scripts/`
+comparando as três cópias de `_atomic_write` (identity/quarantine/manager) para reprovar quando UMA
+divergir das outras; ligar ao `Makefile` (`parity:`); seção nova em `docs/cli-parity.md` nomeando a
+exceção do Node (REQ própria já aberta) sem afirmar garantia de descritor nos 3 runtimes. Não toco
+`pypi/`, `internal/`, `npm/`. Não faço git.
+
+---
+
+## artemis-tf — 2026-09-01 — FIM: ML-1B, gate anti-divergência + contrato com exceção do Node — CONCLUÍDO
+
+Branch `fix/escrita-atomica-do-cli-python-funciona-no-windows`.
+
+**Arquivo novo:** `scripts/check-atomic-write-anti-divergence.sh`. Compara o corpo NORMALIZADO
+(dedent via `textwrap.dedent`, `python3`) do trecho de segurança `fchmod = getattr(os, "fchmod",
+None)` .. `os.chmod(temporary, mode)` nas três cópias de `_atomic_write`
+(`identity/__init__.py`, `thirdparty/quarantine.py`, `integrations/manager.py`), exigindo igualdade
+textual exata entre elas — nunca contra um texto fixo congelado no gate. Escolhido em vez de
+`assert_has` por string fixa (padrão de `check-ref-separator-portability.sh`) porque
+`integrations/manager.py` define `_atomic_write` como `@staticmethod` (12 espaços) enquanto as
+outras duas são função de módulo (8 espaços) — uma constante fixa por arquivo provaria "bate com uma
+cópia congelada no gate", não "as três são iguais entre si"; dedent normaliza o deslocamento
+incidental de indentação sem perder a estrutura relativa if/else. Duas guardas de vacuidade:
+existência dos 3 arquivos (checada no MESMO `ROOT` da extração real) e contagem de blocos extraídos
+com sucesso (=3, nomeando qual falhou na âncora). Ligado a `parity:` no `Makefile`.
+
+**Falsificação real em cópias de `/tmp`** (`scratchpad/atomic-gate-falsify{,2}`, nunca na árvore
+real):
+1. Árvore correta → `OK`, exit 0.
+2. Cópia idêntica em `/tmp` → `OK`, exit 0.
+3. Uma cópia divergindo só no texto do comentário (`quarantine.py`) → `DIVERGÊNCIA`, nomeia
+   `pypi/trackfw/thirdparty/quarantine.py` contra a referência `identity/__init__.py`, exit 1.
+   Restaurada, voltou a `OK`.
+4. Vacuidade — `ROOT` vazio → reprova nomeando os 3 arquivos ausentes, exit 1.
+5. Vacuidade — âncora removida em `manager.py` (fallback reescrito irreconhecível) → "extração
+   falhou" + "esperava extrair 3 blocos, extraiu 2", exit 1.
+
+**Contrato em `docs/cli-parity.md`** — nova seção "Escrita atômica — chmod no descritor vs. chmod no
+caminho": tabela Go/Python/Node com o estado medido de cada runtime, **nomeando explicitamente que o
+Node usa `chmodSync(path)` e reabre TOCTOU hoje, em produção**, com link para
+`REQ-2026-09-01-cli-node-usa-chmodsync-...` — não afirma "os 3 runtimes preservam a garantia de
+descritor" (seria falso). Subseção "Triplicação deliberada no Python — não extraída, gateada"
+explica o veredito do ML-0A e aponta para o gate novo. Anotação `trackfw-contract: gate=...
+partial=...` em ambas as seções — `partial=` no cabeçalho principal nomeia explicitamente que o gate
+só cobre a não-divergência Python, não Go/Node nem a janela do `os.replace`.
+`scripts/check-parity-contract-coverage.sh`: `OK — nenhuma anotação inválida e nenhuma seção sem
+anotação`.
+
+**`make quality`: `MAKE_EXIT=0`.** `scripts/check-atomic-write-anti-divergence.sh` roda dentro de
+`parity:` (linha nova no `Makefile`, logo após `check-ref-separator-portability.sh`) e imprime `OK —
+3 cópias ... com bloco de fallback idêntico após normalização`. `git status --porcelain` após o run:
+só `Makefile`, `docs/agents-working-context.md`, `docs/cli-parity.md` modificados e
+`scripts/check-atomic-write-anti-divergence.sh` novo — nenhum arquivo de `pypi/`, `internal/`,
+`npm/` tocado, conforme restrição. Não fiz nenhum comando `git` (add/commit/branch/push).
+
+---
+
+## hefesto-tf — 2026-09-01 — INÍCIO: barreira final de qualidade, PR #234 (escrita atômica no Windows)
+
+Branch `fix/escrita-atomica-do-cli-python-funciona-no-windows`. Escopo: barreira de qualidade sobre
+`git diff origin/main...HEAD` — controle de vacuidade em
+`pypi/tests/test_atomic_write_windows_fallback.py`, skip escopo correto, falsificação independente
+do gate `scripts/check-atomic-write-anti-divergence.sh`, honestidade do contrato em
+`docs/cli-parity.md`. Não modifico código. Não toco `docs/seguranca/` (hades-tf em paralelo). Sem
+git.
+
+---
+
+## hefesto-tf — 2026-09-01 — FIM: barreira final de qualidade, PR #234 — APROVA
+
+Branch `fix/escrita-atomica-do-cli-python-funciona-no-windows`. Parecer em
+`docs/qualidade/2026-09-01-barreira-da-escrita-atomica-no-windows.md`. Veredito **APROVA**, nenhum
+achado bloqueante. Confirmado: controle não-vácuo em `manager.py` (função `IntegrationManager.
+_atomic_write` com `mode=0o644`, único site dos 7 com efeito observável — `mkstemp` já entrega
+`0o600` nos outros 6), asserção sobre `st_mode` resultante, não sobre a chamada; skip de
+`hasattr(os,"fchmod")` escopado a só 3 dos 7 testes, os 4 restantes rodam incondicionalmente
+inclusive Windows (confirmado `pytest pypi/tests -q` sem filtro no job `windows-full-suites`,
+aritmética 1567→1580 testes coletados compatível); gate `check-atomic-write-anti-divergence.sh`
+falsificado de forma independente em `/tmp` nas 4 direções (árvore correta, comentário divergente,
+indentação relativa divergente dentro do bloco — testa diretamente se `textwrap.dedent` mascara
+divergência real: não mascara —, `ROOT` vazio, âncora removida); contrato em `docs/cli-parity.md`
+nomeia a falha do Node com arquivo/linha exatos, e verifiquei a terceira cópia Go
+(`internal/thirdparty/quarantine.go:152`, não tocada pelo diff) para confirmar que a célula Go ✅ da
+tabela não é falsa. `make quality` rodado até o fim: `MAKE_EXIT=0`. Achados de acompanhamento
+(não bloqueantes, sem gate travado): (1) literal `0o644` do teste sem ponte testada até a constante
+de produção `manager.py:595`; (2) números de linha do roadmap (`:343`/`:358`) desatualizados
+(`:353`/`:368` hoje); (3) mensagem de divergência do gate nomeia sempre os não-primeiros da lista de
+arquivos, imprecisa quando o editado é o próprio baseline implícito (`identity/__init__.py`).
+Não toquei código de produto nem `docs/seguranca/`.
