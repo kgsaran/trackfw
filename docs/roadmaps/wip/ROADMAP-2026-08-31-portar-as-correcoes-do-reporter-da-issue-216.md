@@ -391,8 +391,8 @@ primitivas diferentes.
 ## Wave 4 — Contratos em `docs/cli-parity.md`
 > Dependências: Waves 1 e 3 completas.
 
-### ML-4A — Escrever os dois contratos que as correções passam a impor
-**Status:** ⬜ Pendente
+### ML-4A — Escrever os contratos que as correções passam a impor
+**Status:** ✅ Concluído
 **Agente:** `hefesto-tf`
 **Files affected:** `docs/cli-parity.md`
 **Diagnóstico:** o #225 introduz um gate que **impõe** um contrato que **não está escrito em lugar
@@ -402,8 +402,44 @@ nenhum**. Gate sem contrato escrito é exatamente o drift que aquele documento e
 2. *"Os 3 runtimes escrevem UTF-8 na saída, independente da codepage do console"* — cumprido pelo
    `_force_utf8_output()`.
 **Critérios de aceite:**
-- [ ] Os dois contratos escritos no formato das seções existentes, apontando o gate que os impõe
+- [x] Os dois contratos escritos no formato das seções existentes, apontando o gate que os impõe
 - [x] `make quality` verde
+
+#### Resultado do ML-4A (hefesto-tf, 2026-09-01) — auditado pelo arquiteto
+
+**Três contratos**, não dois — o terceiro nasceu durante a execução desta REQ:
+
+| # | contrato | anotação |
+|---|---|---|
+| 1 | escrita de artefato em **LF** nos 3 runtimes | `gate=check-python-writes-lf.sh` |
+| 2 | **UTF-8 na saída do CLI**, independente da codepage | `gap reason=...` — coberto por teste Python-only, não por gate cross-CLI |
+| 3 | **um gate, para contar como gate, precisa estar ligado e reprovar quando não mede nada** | `partial=...` |
+
+### Ele pegou um over-claim próprio, e é o detalhe que mais importa
+
+A primeira anotação da seção 3 dizia `gate=`, que o checker de cobertura conta como **cobertura
+plena**. Mas `grep` confirma que **nenhum gate** verifica as quatro propriedades por fora: nenhum
+cenário registrado em `check-gates-falsify.sh` para os três gates novos, nenhuma varredura por
+`python` nu, nenhuma checagem de ausência no `Makefile`. Corrigiu para `partial=`, nomeando a lacuna
+e declarando que *"as quatro propriedades são checklist de revisão humana, não asserção
+automatizada"*.
+
+**A seção cujo argumento é "contrato só na cabeça de alguém não é contrato" não podia carregar uma
+alegação de cobertura que ela própria não prova.** Teria sido a mesma vacuidade que estamos
+documentando, em prosa — e passaria pelo checker justamente por estar bem formatada.
+
+### A fronteira do contrato 2, explícita
+
+UTF-8 vale para o **CLI** (o que passa por `main()`), **não** para os scripts de shell que imprimem
+direto. E o exemplo citado é o próprio `check-parity-contract-coverage.sh` — que lê o `→` deste
+documento por um heredoc `python3` que nunca entra em `main()`. **É o item 4, ainda aberto.** O
+documento nomeia o próprio gate que o audita como exemplo vivo do que fica de fora.
+
+### Verificação
+
+`check-parity-contract-coverage.sh` standalone: `EXIT=0`, **233 seções**, *sem anotação: 0*,
+*anotação inválida: 0*. `make quality`: **`MAKE_EXIT=0`**, 181 cenários de falsificação, 53 do
+contrato de barrier.
 
 ## Verificação que só o CI fecha
 

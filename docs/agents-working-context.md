@@ -27065,3 +27065,56 @@ desta sessão (nunca escrito na árvore real nem no ambiente permanente). Máqui
 comparação do PR #222 — não alterada, conforme restrição. Candidato a entrar no item de Wave 4 (gate
 precisa estar ligado e reprovar quando vazio) junto com o contrato de "todo runtime chamado pelo nome
 que existe no ambiente-alvo".
+
+---
+
+## Sessão 2026-09-01 — hefesto-tf (INÍCIO: ML-4A — três contratos em `docs/cli-parity.md`)
+
+Branch `fix/portar-as-correcoes-do-reporter-da-issue-216`.
+
+Escopo: `docs/cli-parity.md` **apenas** (nenhum código, workflow, Makefile ou script). Fechar a
+lacuna que eu mesma apontei na análise dos PRs #222–#225: gates novos (`check-python-writes-lf.sh`,
+`check-homedir-parity.sh`/`check-tty-detection.sh`) impondo contratos que não estavam escritos.
+Três contratos: (1) escrita em LF nos 3 runtimes, (2) UTF-8 na saída do CLI independente da
+codepage — com a fronteira do item 4 (scripts de shell auxiliares) explícita, (3) um gate só conta
+como gate se estiver ligado ao `Makefile` e reprovar quando não mede nada (achado desta sessão,
+generalizando ML-1C/ML-2B/ML-3C). Não edito roadmap nem REQ; não uso git. Vou rodar
+`make quality` ao final e reportar `MAKE_EXIT` sem pipe.
+
+---
+
+## Sessão 2026-09-01 — hefesto-tf (FIM: ML-4A — três contratos em `docs/cli-parity.md` — CONCLUÍDO)
+
+Branch `fix/portar-as-correcoes-do-reporter-da-issue-216`.
+
+Três seções novas em `docs/cli-parity.md`, cada uma com anotação `trackfw-contract`:
+
+1. **"Escrita de artefatos em LF nos 3 runtimes"** (fim do documento) — `gate=scripts/check-python-writes-lf.sh`.
+2. **"UTF-8 na saída do CLI, independente da codepage do console"** (fim do documento) —
+   `gap reason=...` (só teste unitário Python-only, sem gate cross-CLI, porque só o Python precisava
+   da correção). Fronteira do item 4 (`scripts/check-parity-contract-coverage.sh` continua fora do
+   contrato) explícita, com o próprio gate de cobertura citado como exemplo vivo do que fica de fora.
+3. **"Gate ligado é o que revela os outros defeitos"** — subseção nova dentro de "Princípios de
+   design de gates (P1–P4)", com a tabela dos 3 gates portados (`check-python-writes-lf.sh`,
+   `check-homedir-parity.sh`, `check-tty-detection.sh`) e as 4 propriedades exigidas.
+
+**Correção feita a partir da revisão do advisor, antes de fechar:** a primeira versão da anotação
+da seção 3 alegava `gate=...,scripts/check-gates-falsify.sh`, o que a checker registra como
+"cobertura plena" — mas `grep` confirma zero ocorrência de `python-writes-lf`/`homedir-parity`/
+`tty-detection` em `check-gates-falsify.sh`, e nenhum gate verifica a listagem no `Makefile` (P1) nem
+varre `check-*.sh` por invocação nua de `python` (P4 da seção). Corrigido para `partial=` nomeando
+exatamente o que não é verificado automaticamente — a seção cujo argumento é "contrato só na cabeça
+de alguém não é contrato" não podia carregar ela mesma uma alegação de cobertura que o gate não prova.
+
+**Verificação:** `scripts/check-parity-contract-coverage.sh docs/cli-parity.md` rodado standalone
+após a correção — `EXIT=0`, 233 seções reais, `sem anotação: 0`, `anotação inválida: 0`, as 3 seções
+novas aparecem no relatório (2 `gate=` plenos + 1 `gap`), confirmando que o checker **reagiu** ao
+texto novo.
+
+`make quality` completo (test, test-node, test-python, lint, parity — incluindo `check-gates-falsify.sh`,
+181 cenários, e `check-roadmap-barrier-contract.sh`, 53 cenários, ambos OK): **`MAKE_EXIT=0`**.
+
+Nenhum arquivo fora de `docs/cli-parity.md` e `docs/agents-working-context.md` tocado. Roadmap e REQ
+não editados, conforme restrição.
+
+---
