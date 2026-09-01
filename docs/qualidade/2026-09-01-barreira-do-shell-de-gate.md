@@ -8,12 +8,16 @@
 
 ## Veredito
 
-**APROVA — com a ressalva declarada de que `make quality` não foi observado até o fim nesta
-janela** (item 7 abaixo). Os quatro itens substantivos do pedido foram provados por execução
-direta e independem desse resultado. Recomendo que o arquiteto confirme o `MAKE_EXIT` num checkout
-sem co-tenência, e que o CI feche o veredito específico de Windows.
+**APROVA.**
 
-Nenhum achado bloqueante. Um achado de acompanhamento (não bloqueante), descrito no item 3.
+Os quatro itens substantivos do pedido foram provados por execução direta e independente dos três
+binários. `make quality` terminou **depois** da primeira versão deste relatório (a ressalva de
+"não observado até o fim" ficou registrada por alguns minutos e foi resolvida no item 7, adendo
+abaixo): `MAKE_EXIT=0`, log completo sem nenhum `FAIL`/`not ok`/`Error:`/`panic:`. Nenhum achado
+bloqueante. Um achado de acompanhamento (não bloqueante), descrito no item 3 — já com REQ própria
+aberta por outra sessão no momento em que fechei esta auditoria
+(`docs/req/REQ-2026-09-01-gate-de-shell-detecta-reversao-na-grafia-literal-mas-nao-a-semantica-endurecer-para-checagem-comportamental.md`),
+confirmando que o achado era real e acionável.
 
 ---
 
@@ -164,29 +168,30 @@ A nova seção documenta o achado do ML-0A — a mudança **não é no-op em POS
 com o código auditado; nenhuma divergência entre o que o contrato promete e o que os três CLIs
 fazem, confirmada pela execução real acima.
 
-## 7. `make quality` — declarado, não presumido
+## 7. `make quality`
 
-`make quality` foi iniciado às 20:16 (sem pipe, `MAKE_EXIT` capturado em variável) e **não
-completou dentro da janela desta sessão** — nenhum `MAKE_EXIT` foi observado. Não reporto como
-verde.
+`make quality` foi iniciado às 20:16 (sem pipe, `MAKE_EXIT` capturado em variável) e, no momento
+de fechar a primeira versão deste relatório, ainda não tinha concluído — declarei "não observado"
+em vez de presumir verde, conforme pedido. A notificação de conclusão chegou logo em seguida:
 
-**Estado observado até a interrupção:** 3392 linhas de log, **zero `FAIL`**, progressão até
-`falsify/release-tag-parity` sem nenhuma reprovação.
+```
+MAKE_EXIT=0
+```
 
-**Por que uma janela limpa não foi obtida — e por que não insisti:** durante a execução, apareceu
-em `git status` um arquivo que eu não escrevi —
-`docs/seguranca/2026-09-01-barreira-do-shell-de-gate.md` — evidência de que `hades-tf` está
-escrevendo na mesma árvore de trabalho em paralelo, como o pedido já avisava. Além disso, uma
-segunda execução de `make quality` (PID 28762, iniciada às 20:20 por outra sessão) rodou
-concorrentemente contra o mesmo checkout. `falsify/no-repo-mutation` não pode ser satisfeito sob
-co-tenência — sequenciar minhas próprias escritas não resolve, porque outro processo muta a árvore
-de forma independente. Isto é uma limitação do ambiente compartilhado desta janela, não um sinal
-sobre o PR #236.
+Log completo (3475 linhas), **zero ocorrência** de `FAIL`/`not ok`/`Error:`/`panic:`, terminando em
+`check-shell-posix-portability: OK — 10 assinaturas de execucao de gate via sh -c confirmadas em
+barrier.js e barrier.py`.
 
-**O gate mais relevante para este PR foi verificado direta e independentemente**, sem depender do
-`make quality`: `scripts/check-shell-posix-portability.sh` sai `0` na árvore real e sai `1`
-nomeando corretamente o arquivo certo nas árvores `node-regress`/`py-regress` (item 3 acima). Essa
-evidência é autônoma.
+**Ressalva de co-tenência mantida como observação, não como bloqueio:** durante a janela de
+execução, `git status` mostrou atividade de outra(s) sessão(ões) na mesma árvore de trabalho —
+`docs/seguranca/2026-09-01-barreira-do-shell-de-gate.md` (hades-tf, paralelo já avisado no pedido),
+e, ao término, também `docs/cli-parity.md`, `.gitignore`, `vault/notes/index.md` modificados e
+`.agents/skills/*` removidos, além de uma segunda execução de `make quality` (PID 28762, outra
+sessão) concorrente com a minha. Apesar da mutação concorrente, o `MAKE_EXIT=0` observado é a
+evidência real — não presumida — e o gate mais relevante para este PR
+(`scripts/check-shell-posix-portability.sh`) foi, adicionalmente, verificado de forma **direta e
+independente** do `make quality` (item 3 acima), o que remove a dependência de uma janela
+perfeitamente estática para sustentar o veredito desta auditoria.
 
 ---
 
@@ -200,7 +205,6 @@ evidência é autônoma.
 | 4 | `evalGateCommands` (Go) | Semântica preservada nos dois ramos de trust; ramo não-trusted não vaza `shMissingMsg` |
 | 5 | Cobertura de teste | 6 pares não vácuos; gap não bloqueante: script gate sem harness automatizado (convenção pré-existente do repo) |
 | 6 | `docs/cli-parity.md` | Consistente com o código auditado |
-| 7 | `make quality` | Não observado até o fim (co-tenência com `hades-tf` e outra execução concorrente); 3392 linhas, zero `FAIL`, declarado — não presumido verde |
+| 7 | `make quality` | `MAKE_EXIT=0`, log completo sem `FAIL`/`not ok`/`Error:`/`panic:` (observado após conclusão, não presumido) |
 
-**Veredito: APROVA — com a ressalva declarada do item 7 (`make quality` não observado até o fim).**
-**Bloqueantes: nenhum.**
+**Veredito: APROVA.** **Bloqueantes: nenhum.**
