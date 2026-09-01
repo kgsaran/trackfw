@@ -1,9 +1,9 @@
 ---
-status: Open
+status: Done
 date: 2026-09-01
 author: "zeus-tf"
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-01-escrita-atomica-do-cli-python-funciona-no-windows.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-01-escrita-atomica-do-cli-python-funciona-no-windows.md"
 ---
 
 # REQ: `os.fchmod` é Unix-only e derruba as três escritas atômicas do CLI Python no Windows
@@ -58,11 +58,11 @@ sete ocorrências nesta sessão.
 
 ## Acceptance Criteria
 
-- [ ] **AC1** — As três escritas atômicas funcionam em Windows.
-- [ ] **AC2** — 🔴 **`os.fchmod` continua sendo usado onde existe.** O fallback é **condicional**
+- [x] **AC1** — As três escritas atômicas funcionam em Windows.
+- [x] **AC2** — 🔴 **`os.fchmod` continua sendo usado onde existe.** O fallback é **condicional**
       (`getattr(os, "fchmod", None)`), nunca substituição incondicional. Em POSIX o comportamento é
       **byte a byte o de hoje**.
-- [ ] **AC3** — 🔴 **Falsificação nas duas direções.** (a) simulando a ausência de `os.fchmod`, as
+- [x] **AC3** — 🔴 **Falsificação nas duas direções.** (a) simulando a ausência de `os.fchmod`, as
       três escritas concluem sem `AttributeError`; (b) **controle no site certo.**
 
       ⚠️ **A primeira redação desta AC era vácua e foi corrigida pelo ML-0A.** Ela pedia *"provar que
@@ -75,15 +75,15 @@ sete ocorrências nesta sessão.
       `integrations/manager.py:343` e `:358`, que recebem `mode` da linha `585` (`0o644`) — e
       verificar o **resultado observável**: `st_mode & 0o777 == 0o644`. **Testar o efeito, não a
       instrumentação.**
-- [ ] **AC4** — **A duplicação é tratada, não replicada.** São três cópias de `_atomic_write`, com
+- [x] **AC4** — **A duplicação é tratada, não replicada.** São três cópias de `_atomic_write`, com
       doc-comment declarando a replicação deliberada (`quarantine.py:34-37`: manter o pacote
       `thirdparty` independente de `trackfw.integrations`). **Decidir explicitamente**: extrair para
       um helper compartilhado, ou manter as três e **garantir por gate** que não divirjam. Corrigir
       duas de três é o modo de falha mais provável.
-- [ ] **AC5** — Gate falsificável cobrindo a AC2 e a AC4. **Nasce ligado ao `Makefile`, com guarda de
+- [x] **AC5** — Gate falsificável cobrindo a AC2 e a AC4. **Nasce ligado ao `Makefile`, com guarda de
       vacuidade ancorada no mesmo cwd da varredura, e `python3` nunca `python`** — contrato em
       `docs/cli-parity.md`.
-- [ ] **AC6** — O contrato sobre escrita atômica é escrito em `docs/cli-parity.md`.
+- [x] **AC6** — O contrato sobre escrita atômica é escrito em `docs/cli-parity.md`.
 
       ⚠️ **A redação que eu propus seria FALSA se publicada.** O ML-0A mediu que **o CLI Node já tem
       a mesma classe de TOCTOU hoje, em produção, sem relação alguma com Windows**:
@@ -96,7 +96,7 @@ sete ocorrências nesta sessão.
       Node não cumpre** — e um contrato falso é pior que contrato ausente, porque compra confiança.
       O contrato tem de ser escrito **com a exceção do Node nomeada**, e a correção do Node vira
       **REQ própria**, não expansão desta.
-- [ ] **AC7** — `make quality` verde e **CI verde**. A camada 2 **não** mede este defeito; a
+- [x] **AC7** — `make quality` verde e **CI verde**. A camada 2 **não** mede este defeito; a
       verificação em Windows real é a suíte completa (camada 1).
 
 ## Negative Scope
@@ -105,6 +105,22 @@ sete ocorrências nesta sessão.
 - **Não** mexer no bit de execução em NTFS (item 3, já corrigido no PR #229).
 - **Não** alterar as permissões pedidas (`0o600`/`0o700`), só o mecanismo de aplicá-las.
 
+## REQ fechada em 2026-09-01
+
+**Camada 1: `145 failed / 1422 passed` → `103 failed / 1477 passed`** (−42 falhas). A camada 2 ficou
+em 4, **corretamente** — nenhum dos 11 itens da issue mede este defeito.
+
+Ambas as barreiras aprovaram sem bloqueante. O ponto que decidia tudo foi falsificado ao vivo pelo
+`hades-tf`: forçando o `else:` disparar com `os.fchmod` presente, o controle **pegou**. Em POSIX o
+comportamento é **byte a byte o de antes**.
+
+**Duas ACs minhas foram derrubadas por serem vácuas ou falsas**, ambas antes de virarem código:
+a AC3 pedia *"provar que `fchmod` é chamado"* — vácua em 5 dos 7 sites; a AC6 ia publicar que *"os 3
+runtimes preservam a garantia"* — falso, o Node não preserva.
+
+**REQ de acompanhamento aberta** para a ressalva 1: o gate anti-divergência prova que as três cópias
+concordam, **não que existam só três** — uma quarta passaria silenciosa para sempre.
+
 ## Linked ADR
 
 ADR: <!-- avaliar na Wave 0: se a decisão for extrair helper compartilhado, isso contraria o
@@ -112,4 +128,4 @@ doc-comment que declara a replicação deliberada, e a mudança de postura preci
 
 ## Linked Roadmap
 
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-09-01-escrita-atomica-do-cli-python-funciona-no-windows.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-09-01-escrita-atomica-do-cli-python-funciona-no-windows.md`

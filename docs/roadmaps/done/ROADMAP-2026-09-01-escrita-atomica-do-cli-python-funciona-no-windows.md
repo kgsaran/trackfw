@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-01
 req: "docs/req/REQ-2026-09-01-os-fchmod-e-unix-only-e-derruba-as-tres-escritas-atomicas-do-cli-python-no-windows.md"
 squad: "hades-tf, apolo-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, apolo-tf"
 
 # Roadmap: Escrita atômica do CLI Python funciona no Windows
 
-> Created: 2026-09-01 | Status: wip
+> Created: 2026-09-01 | Status: done
 
 ## Context
 
@@ -261,3 +261,66 @@ de fixar número** — foi o passo que faltou na REQ do port, quando previ 3 e o
 ## Barreira final
 
 `hefesto-tf` e `hades-tf`, auditoria do arquiteto, `barrier`. **CI verde**, não só verde local.
+
+
+## MEDIÇÃO NO CI — a camada 1 caiu 42 falhas
+
+PR #234:
+
+```
+camada 2 (defect-reproduction)   4 REPRODUCED — INALTERADO, e correto
+camada 1 (full-suites)           103 failed, 1477 passed   (era 145 / 1422)
+                                 −42 falhas, +55 passes
+```
+
+**Os dois números estão certos por motivos diferentes.** A camada 2 **não devia** mudar — nenhum dos
+11 itens da issue mede `os.fchmod`; o achado 13 veio dos comentários novos, não da lista original. Se
+tivesse mudado, seria achado. A camada 1 **devia** cair, e caiu: é lá que `init --ai-tools`,
+`agents install`, `skills install` e o install de terceiro morriam com `AttributeError`.
+
+Acumulado desde que o instrumento existe: **camada 1 de 293 → 145 → 103 falhas** (−190).
+
+## Barreira final — ambas APROVAM, zero bloqueantes
+
+`hefesto-tf`: **APROVA**, `MAKE_EXIT=0` acompanhado até o fim.
+`hades-tf`: **APROVA COM RESSALVAS**.
+
+O ponto que decidia o PR, confirmado por falsificação ao vivo do Hades: ele **forçou o `else:`
+disparar com `os.fchmod` presente** numa cópia, e o controle pegou. *"O fallback condicional está
+correto **byte a byte** nos três arquivos."* Em POSIX nada mudou — era a única forma de este trabalho
+nos deixar piores.
+
+A Hefesto verificou o que eu não teria pensado: leu a **terceira cópia Go**
+(`internal/thirdparty/quarantine.go:152`, **fora do diff**) para confirmar que a célula ✅ do Go na
+tabela do contrato **não é falsa**. Auditar a afirmação, não só o diff.
+
+### 🔴 A barreira pegou uma afirmação FALSA em dois documentos meus
+
+`npm/src/identity.js`, citado no contrato **e** na REQ do Node, **não existe**. O real é
+`npm/src/identity/config.js` — e ele não é apenas "menos ruim":
+
+```javascript
+const fd = fs.openSync(temporaryName, 'w', mode)   // modo na CRIAÇÃO — zero janela
+```
+
+**É a forma mais forte das três**, superior ao `fchmod` do Python e ao `Chmod` do Go. Isso **inverte
+o remédio da REQ do Node**: deixa de ser *"adote `fchmodSync`"* e passa a ser *"os outros dois adotem
+a forma que o `identity/config.js` já usa"* — com precedente dentro do próprio runtime.
+
+**E eu errei ao verificar a ressalva**, do jeito que venho alertando a sessão inteira: grepei por
+`writeFileSync` e `chmod` — os **sintomas** — em vez da **capacidade** (escrever arquivo). `openSync`
+não bate com nenhum dos dois, e conclui que o módulo não escrevia. Cheguei a afirmar isso ao KG.
+Corrigido nos dois documentos, com o erro registrado.
+
+### Ressalvas de acompanhamento — nenhuma bloqueia
+
+1. 🔴 **O gate prova que as três cópias não divergem, não que existam só três.** A lista de arquivos
+   é **fixa** — uma quarta cópia futura passaria silenciosamente **para sempre**. Mesma classe do
+   `global-guard-dedup-...` no vault. **REQ de acompanhamento.**
+2. **A execução real do fallback em Windows depende de um passo condicionado** a uma pré-condição que
+   o vault já documenta como **vácua hoje** (`job-de-windows-largo-so-reproduz-2-dos-11-defeitos`). A
+   afirmação *"verificado no CI"* precisava desse estreitamento — e o job irmão não tem item para
+   este defeito.
+3. Números de linha do roadmap desatualizados (`manager.py:343`/`:358` → hoje `:353`/`:368`), e a
+   mensagem de divergência do gate nomeia os itens diferentes do **primeiro** arquivo da lista, o que
+   confunde se o editado for o próprio baseline. O gate reprova corretamente em todos os casos.

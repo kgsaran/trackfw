@@ -27602,3 +27602,38 @@ anotação`.
 só `Makefile`, `docs/agents-working-context.md`, `docs/cli-parity.md` modificados e
 `scripts/check-atomic-write-anti-divergence.sh` novo — nenhum arquivo de `pypi/`, `internal/`,
 `npm/` tocado, conforme restrição. Não fiz nenhum comando `git` (add/commit/branch/push).
+
+---
+
+## hefesto-tf — 2026-09-01 — INÍCIO: barreira final de qualidade, PR #234 (escrita atômica no Windows)
+
+Branch `fix/escrita-atomica-do-cli-python-funciona-no-windows`. Escopo: barreira de qualidade sobre
+`git diff origin/main...HEAD` — controle de vacuidade em
+`pypi/tests/test_atomic_write_windows_fallback.py`, skip escopo correto, falsificação independente
+do gate `scripts/check-atomic-write-anti-divergence.sh`, honestidade do contrato em
+`docs/cli-parity.md`. Não modifico código. Não toco `docs/seguranca/` (hades-tf em paralelo). Sem
+git.
+
+---
+
+## hefesto-tf — 2026-09-01 — FIM: barreira final de qualidade, PR #234 — APROVA
+
+Branch `fix/escrita-atomica-do-cli-python-funciona-no-windows`. Parecer em
+`docs/qualidade/2026-09-01-barreira-da-escrita-atomica-no-windows.md`. Veredito **APROVA**, nenhum
+achado bloqueante. Confirmado: controle não-vácuo em `manager.py` (função `IntegrationManager.
+_atomic_write` com `mode=0o644`, único site dos 7 com efeito observável — `mkstemp` já entrega
+`0o600` nos outros 6), asserção sobre `st_mode` resultante, não sobre a chamada; skip de
+`hasattr(os,"fchmod")` escopado a só 3 dos 7 testes, os 4 restantes rodam incondicionalmente
+inclusive Windows (confirmado `pytest pypi/tests -q` sem filtro no job `windows-full-suites`,
+aritmética 1567→1580 testes coletados compatível); gate `check-atomic-write-anti-divergence.sh`
+falsificado de forma independente em `/tmp` nas 4 direções (árvore correta, comentário divergente,
+indentação relativa divergente dentro do bloco — testa diretamente se `textwrap.dedent` mascara
+divergência real: não mascara —, `ROOT` vazio, âncora removida); contrato em `docs/cli-parity.md`
+nomeia a falha do Node com arquivo/linha exatos, e verifiquei a terceira cópia Go
+(`internal/thirdparty/quarantine.go:152`, não tocada pelo diff) para confirmar que a célula Go ✅ da
+tabela não é falsa. `make quality` rodado até o fim: `MAKE_EXIT=0`. Achados de acompanhamento
+(não bloqueantes, sem gate travado): (1) literal `0o644` do teste sem ponte testada até a constante
+de produção `manager.py:595`; (2) números de linha do roadmap (`:343`/`:358`) desatualizados
+(`:353`/`:368` hoje); (3) mensagem de divergência do gate nomeia sempre os não-primeiros da lista de
+arquivos, imprecisa quando o editado é o próprio baseline implícito (`identity/__init__.py`).
+Não toquei código de produto nem `docs/seguranca/`.

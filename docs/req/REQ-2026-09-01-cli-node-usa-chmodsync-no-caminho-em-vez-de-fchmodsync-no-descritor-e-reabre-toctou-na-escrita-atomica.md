@@ -29,7 +29,7 @@ primitiva.
 
 `chmodSync(path)` opera no **caminho**, reabrindo a janela entre a criação do temporário e a
 aplicação da permissão. E a segunda chamada, **após o `rename`**, é uma janela extra que o próprio
-`npm/src/identity.js` do Node **não tem** — ou seja, a divergência existe **dentro do mesmo runtime**.
+`npm/src/identity/config.js` do Node **não tem** — ou seja, a divergência existe **dentro do mesmo runtime**.
 
 O `manager.js:362` usa o mesmo literal `0o644` do Python, então é o mesmo site sensível: o modo pedido
 **difere** do padrão do temporário, e a permissão realmente muda.
@@ -57,8 +57,28 @@ apontar para esta REQ.
       (`manager.js:362`) e verifique o **resultado observável** — o modo final do arquivo.
 - [ ] **AC4** — Falsificação da janela: PoC que demonstre a corrupção via `chmodSync(path)` e sua
       ausência via `fchmodSync(fd)`. O `hades-tf` já fez o equivalente em Python; replicar em Node.
-- [ ] **AC5** — 🔴 **Divergência interna resolvida:** `identity.js` **não** tem a segunda janela e os
-      outros dois têm. Os três pontos do Node ficam com a mesma forma, ou a diferença é justificada.
+- [ ] **AC5** — 🔴 **O remédio já existe dentro do próprio Node — adotem-no.**
+
+      ⚠️ **A primeira redação desta AC estava apoiada em premissa falsa**, e a correção veio da
+      barreira. Eu escrevi que *"`identity.js` não tem a segunda janela"*, citando um arquivo que
+      **não existe**. O real é `npm/src/identity/config.js`, e ele não é apenas "menos ruim":
+
+      ```javascript
+      // npm/src/identity/config.js:77
+      const fd = fs.openSync(temporaryName, 'w', mode)
+      ```
+
+      **O modo é aplicado na criação — zero janela**, nem a do `chmod` no descritor. É **mais forte
+      que o `fchmod` do Python e que o `Chmod` do Go**.
+
+      Logo esta REQ **não** é *"adote `fchmodSync`"*. É: **`quarantine.js` e `manager.js` adotam a
+      forma que o `identity/config.js` já usa.** Remédio mais forte, com precedente dentro do
+      próprio runtime — não é padrão importado de outra linguagem.
+
+      **Como eu errei, e vale registrar:** grepei por `writeFileSync` e `chmod` — os **sintomas** —
+      em vez de procurar a **capacidade** (escrever arquivo). `openSync` não bate com nenhum dos
+      dois, então concluí que o módulo não escrevia. É a mesma falha que fez duas enumerações minhas
+      errarem por uma ordem de grandeza nesta sessão, cometida por mim ao *verificar* uma ressalva.
 - [ ] **AC6** — Depois desta REQ, o contrato de `docs/cli-parity.md` pode ser escrito **sem exceção**.
 
 ## Negative Scope
