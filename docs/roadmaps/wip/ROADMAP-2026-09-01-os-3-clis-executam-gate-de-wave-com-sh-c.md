@@ -218,6 +218,21 @@ curado. O veredito Windows só o CI fecha.
 ### ML-2A — Gate contra regressão e contrato
 **Status:** ✅ Concluído
 **Agente:** `artemis-tf`
+**Files affected:** `scripts/check-shell-posix-portability.sh` (novo), `Makefile`, `docs/cli-parity.md`
+**Actions:**
+1. Gate impedindo regressão de `barrier.js`/`barrier.py` para `shell: true`/`shell=True` na execução
+   de gate.
+2. Contrato do ADR em `docs/cli-parity.md`, **registrando também o custo** medido no ML-0A.
+**Critérios de aceite:**
+- [x] O gate reprova **regressão em apenas um** dos dois CLIs, **nomeando qual** — o caso que
+      `assert_has` deixaria passar
+- [x] Guarda de vacuidade: `ROOT` vazio faz as 10 checagens reprovarem individualmente
+- [x] 🔴 O gate **não reprova por menção legítima** — os comentários do ML-1A citam `shell: true` em
+      prosa, e um `grep` ingênuo reprovaria a árvore correta
+- [x] Nasce **ligado** ao `parity:`; `make -n parity` expande
+- [x] O contrato declara que a mudança **não é no-op em POSIX**
+- [x] `make quality` verde
+
 **Entregue:** `scripts/check-shell-posix-portability.sh` — **10 assinaturas** em `barrier.js` e
 `barrier.py`, ligado ao `parity:`, contrato anotado com **cobertura plena** (`gate=`, não `partial=`).
 
