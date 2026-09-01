@@ -3,7 +3,7 @@ status: Open
 date: 2026-08-30
 author: "trackfw_architect (Zeus)"
 adr: ""
-roadmap: ""
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-01-caminho-dentro-de-artefato-versionado-usa-sempre-barra.md"
 ---
 
 # REQ: Caminho portável montado com separador do sistema vaza para dentro de artefato versionado
