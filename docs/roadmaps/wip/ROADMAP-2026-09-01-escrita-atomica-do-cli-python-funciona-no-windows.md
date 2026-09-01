@@ -133,7 +133,7 @@ duplicam. A triplicação real é só `identity/__init__.py` + `integrations/man
 > pontual nos três e o gate garante a não-divergência.
 
 ### ML-1A — Fallback condicional nos três `_atomic_write`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** `apolo-tf`
 **Files affected:** `pypi/trackfw/identity/__init__.py`, `pypi/trackfw/integrations/manager.py`,
 `pypi/trackfw/thirdparty/quarantine.py`
@@ -143,13 +143,57 @@ duplicam. A triplicação real é só `identity/__init__.py` + `integrations/man
 2. Doc-comment em `identity/__init__.py` registrando a replicação deliberada, como
    `quarantine.py:34-37` já faz. É a única das três sem justificativa escrita.
 **Critérios de aceite:**
-- [ ] As três concluem sem `AttributeError` quando `os.fchmod` está ausente
-- [ ] 🔴 **Controle no site de `0o644`** (`manager.py:343`/`:358`), verificando
+- [x] As três concluem sem `AttributeError` quando `os.fchmod` está ausente
+- [x] 🔴 **Controle no site de `0o644`** (`manager.py:343`/`:358`), verificando
       `st_mode & 0o777 == 0o644` — **o resultado, não a chamada**. Nos sites de `0o600` a asserção
       seria vácua, porque `mkstemp` já entrega esse modo.
-- [ ] 🔴 O fallback **não dispara em POSIX** — provar, porque um fallback disparando por engano
+- [x] 🔴 O fallback **não dispara em POSIX** — provar, porque um fallback disparando por engano
       enfraquece a garantia **sem falhar nenhum teste**
-- [ ] `make quality` verde
+- [x] `make quality` verde
+
+#### Resultado do ML-1A (apolo-tf, 2026-09-01) — auditado pelo arquiteto
+
+**O achado dele teria anulado o ML inteiro, e é o mesmo padrão que a Wave 0 me impôs.**
+
+Ele ia colocar `pytestmark = skipif(os.name != "posix", ...)` no nível do módulo. **Isso pularia os
+7 testes no runner `windows-full-suites`** — precisamente a camada que este roadmap nomeia como a
+verificação real. **O teste que prova o comportamento no Windows seria pulado no Windows.**
+
+Escopou o skip para **apenas os 3 testes de espionagem**, e condicionado a
+`hasattr(os, "fchmod")` — **condição medida, não nome de plataforma**. Verifiquei: 7 testes, 3 com
+skip. É a mesma disciplina do `symlinkOrSkip` do ML-2A da REQ do instrumento: **pular por condição
+medida, nunca por palpite de plataforma.**
+
+### O controle mira o site certo
+
+```python
+IntegrationManager._atomic_write(target, b"payload", 0o644)   # o único site com efeito observável
+```
+
+Verifica o **`st_mode` resultante, não a chamada** — a correção que o ML-0A impôs à minha AC vácua.
+Rodei os 7 aqui: **passam**.
+
+E ele antecipou um detalhe que eu não tinha: **no Windows, `0o644` pode ser lido de volta como
+`0o666`**, então a asserção de modo fica restrita a POSIX enquanto a de *"não lança
+`AttributeError`"* roda em todo lugar. **Asserção certa em cada plataforma**, em vez de uma só,
+frouxa nas duas.
+
+### Falsificação executada, não deduzida
+
+| direção | sabotagem | resultado |
+|---|---|---|
+| (a) | fallback removido, `os.fchmod` nu | `AttributeError` em `manager.py:120`; 2 dos 7 vermelhos |
+| (b) | fallback **incondicional** | `test_..._uses_fchmod_not_chmod_on_posix` vermelho — o espião pegou o fallback disparando com `os.fchmod` presente |
+
+A direção (b) é a que me preocupava: um fallback disparando por engano em POSIX **enfraquece a
+garantia sem falhar nenhum teste** — a menos que exista esse controle. Agora existe.
+
+### Um falso positivo que ele diagnosticou corretamente
+
+A primeira rodada deu `FAIL [falsify/no-repo-mutation]` porque ele editava o
+`docs/agents-working-context.md` **enquanto** a janela de `git status` do gate estava aberta.
+**Não é defeito** — é o gate funcionando. Ele identificou, refez limpo: `MAKE_EXIT=0`,
+`OK [falsify/no-repo-mutation]`, suíte `pypi` com 1582 passed.
 
 ### ML-1B — Gate anti-divergência e contrato com a exceção do Node
 **Status:** ⬜ Pendente

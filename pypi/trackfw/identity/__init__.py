@@ -90,11 +90,30 @@ def load(home_dir: str | os.PathLike[str]) -> Config:
 
 
 def _atomic_write(filename: str, content: bytes, mode: int) -> None:
+    """Writes content to filename via a temp file in the same directory
+    followed by os.replace, so a reader never observes a partially
+    written file. Shared shape with
+    pypi/trackfw/thirdparty/quarantine.py's _atomic_write and
+    pypi/trackfw/integrations/manager.py's
+    IntegrationManager._atomic_write (replicated here rather than
+    imported, to keep trackfw.identity independent of
+    trackfw.integrations and trackfw.thirdparty — same rationale as the
+    one documented in quarantine.py's own _atomic_write docstring)."""
     directory = os.path.dirname(filename)
     os.makedirs(directory, exist_ok=True, mode=0o700)
     descriptor, temporary = tempfile.mkstemp(prefix=".trackfw-tmp-", dir=directory)
     try:
-        os.fchmod(descriptor, mode)
+        fchmod = getattr(os, "fchmod", None)
+        if fchmod is not None:
+            fchmod(descriptor, mode)
+        else:
+            # os.fchmod is Unix-only (CPython docs: "Availability: Unix").
+            # On platforms without it (Windows), fall back to chmod on the
+            # temp file's own path. This reopens a narrow TOCTOU window
+            # that fchmod(fd) does not have, but only on platforms where
+            # fchmod never existed to begin with — os.fchmod continues to
+            # be used unconditionally wherever it is available.
+            os.chmod(temporary, mode)
         with os.fdopen(descriptor, "wb") as stream:
             stream.write(content)
             stream.flush()

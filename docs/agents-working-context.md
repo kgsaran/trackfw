@@ -27502,3 +27502,45 @@ o próprio Node tem em `identity/config.js`. Relevante para o contrato do AC6 em
 `docs/cli-parity.md`: publicá-lo sem qualificar tornaria o contrato falso para o Node hoje.
 Recomendo REQ de acompanhamento dedicada ao Node (seção 7 do parecer). `trackfw context`/`trackfw
 validate` rodados — score 100/100, só warnings pré-existentes não relacionados a esta REQ.
+
+## apolo-tf — 2026-09-01 — INÍCIO: ML-1A, fallback condicional de os.fchmod nos três _atomic_write
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-09-01-escrita-atomica-do-cli-python-funciona-no-windows.md`
+**REQ:** `docs/req/REQ-2026-09-01-os-fchmod-e-unix-only-e-derruba-as-tres-escritas-atomicas-do-cli-python-no-windows.md`
+
+Escopo: `pypi/trackfw/identity/__init__.py`, `pypi/trackfw/thirdparty/quarantine.py`,
+`pypi/trackfw/integrations/manager.py`. Fallback condicional `getattr(os, "fchmod", None)` — nunca
+substituição incondicional — e doc-comment em `identity/__init__.py` (única das três sem
+justificativa de replicação registrada). Nada além disso: sem extração de helper (veredito do
+ML-0A), sem tocar `npm/`.
+
+## apolo-tf — 2026-09-01 — FIM: ML-1A, fallback condicional de os.fchmod nos três _atomic_write
+
+**Arquivos modificados:** `pypi/trackfw/identity/__init__.py`, `pypi/trackfw/thirdparty/quarantine.py`,
+`pypi/trackfw/integrations/manager.py` (todos: `getattr(os, "fchmod", None)` — condicional, nunca
+substituição incondicional; POSIX permanece byte a byte o de hoje). Doc-comment adicionado em
+`identity/__init__.py`, citando o símbolo (não linha) de `quarantine.py`, por pedido do
+revisor — evita drift de citação.
+**Testes novos:** `pypi/tests/test_atomic_write_windows_fallback.py` (7 casos). Direção (a) usa
+`monkeypatch.delattr(os, "fchmod", raising=False)` — não `raising=True` — para que os mesmos testes
+sejam evidência real de CI no `windows-full-suites` (delattr vira no-op lá) em vez de simulação só
+em POSIX. Controle no único site não-vácuo (`manager.py` com `mode=0o644`, os outros 6 pedem `0o600`
+que `mkstemp` já entrega) assertando `st_mode & 0o777 == 0o644` — gate de bits exatos restrito a
+POSIX (NTFS só honra o bit de escrita). Direção (b), a simétrica: spies em `os.fchmod`/`os.chmod`
+provam que o fallback **não** dispara em POSIX quando `os.fchmod` existe — `@pytest.mark.skipif(not
+hasattr(os, "fchmod"), ...)`, não `skipif(os.name != "posix")` (nada para espiar sem a API).
+**Falsificação real, ambas direções, saída capturada e revertida (backup em scratchpad, `git diff
+--stat` vazio após restaurar):**
+- Direção (a): removido o fallback de `manager.py` (voltou a `os.fchmod(descriptor, mode)` cru) →
+  `AttributeError: module 'os' has no attribute 'fchmod'` em `manager.py:120`, 2 testes vermelhos
+  (`test_manager_atomic_write_survives_missing_fchmod`,
+  `test_manager_0o644_fallback_produces_observable_mode`), os outros 5 continuaram verdes (esperado
+  — só `manager.py` foi sabotado).
+- Direção (b): trocado o condicional por `os.chmod(temporary, mode)` incondicional em `manager.py`
+  → `test_manager_0o644_uses_fchmod_not_chmod_on_posix` vermelho com `assert 0 == 1` (`calls["fchmod"]`
+  vazio) — o spy pegou o fallback disparando por engano em POSIX.
+`make quality`: exit 0, `OK [falsify/no-repo-mutation]`, sem `FAIL`. (Primeira execução deu falso
+`FAIL [falsify/no-repo-mutation]` por corrida — editei `agents-working-context.md` enquanto o gate
+media diff antes/depois; reexecução limpa, sem editar a árvore durante o run, passou.) Suíte
+completa `pypi`: 1582 passed, 28 subtests. Fora de escopo (conforme instrução): sem extração de
+helper, sem tocar `npm/`, sem gate anti-divergência (ML-1B, artemis-tf).
