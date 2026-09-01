@@ -1,4 +1,4 @@
-# run.ps1 — suite de reproducao de defeito (camada 2 do instrumento).
+﻿# run.ps1 — suite de reproducao de defeito (camada 2 do instrumento).
 #
 # ROADMAP-2026-08-30-job-de-windows-largo-que-nasce-vermelho-e-sonda-sob-
 # demanda, ML-1A. Uma verificacao por defeito conhecido da issue #216,
@@ -45,6 +45,20 @@
 #      incluem esses arquivos de teste) — Wave 0: "SIM, mas mal-mapeado".
 #      O skip explicito com mensagem e a Wave 2 (ML-2A), fora desta ML.
 
+# RUNNER_TEMP so existe dentro do GitHub Actions. Fora dele era $null, e
+# `Join-Path $null "x"` devolve STRING VAZIA no PowerShell 5.1 — sem erro. O
+# efeito era pior que falhar: o item 2 comparava a saida dos runtimes contra ""
+# e, como nunca sao iguais, emitia REPRODUCED **incondicionalmente** — inclusive
+# numa arvore onde o defeito ja esta corrigido. Os itens 5, 6 e 10 iam a
+# INCONCLUSIVE pelo mesmo caminho.
+#
+# Medido: `Join-Path $null "item2-fake-HOME"` -> [] (vazio, sem erro).
+if (-not $env:RUNNER_TEMP) {
+    $env:RUNNER_TEMP = Join-Path ([System.IO.Path]::GetTempPath()) "trackfw-windows-repro"
+    New-Item -ItemType Directory -Force -Path $env:RUNNER_TEMP | Out-Null
+    Write-Host "RUNNER_TEMP ausente (execucao fora do GitHub Actions) - usando $env:RUNNER_TEMP"
+}
+
 $ErrorActionPreference = "Continue"
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
 Set-Location $repoRoot
@@ -71,7 +85,25 @@ function Run-Capture {
     param([string]$Exe, [string[]]$ArgList, [string]$WorkDir = $null, [hashtable]$EnvVars = @{})
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = $Exe
-    foreach ($a in $ArgList) { $psi.ArgumentList.Add($a) }
+    # ProcessStartInfo.ArgumentList so existe no .NET Core (pwsh 7+). No Windows
+    # PowerShell 5.1 (.NET Framework, PSEdition=Desktop) a propriedade e $null, e
+    # `$psi.ArgumentList.Add($a)` estoura com "nao e possivel chamar um metodo em
+    # uma expressao de valor nulo" — o processo entao roda SEM ARGUMENTO NENHUM e
+    # toda medicao vira vazia. Medido: $psi.PSObject.Properties["ArgumentList"]
+    # e $null em CLR 4.0.30319.
+    #
+    # O fallback monta a linha de comando com as regras de aspas do Windows, em
+    # vez de interpolar — argumento com espaco ou com aspas passa intacto.
+    if ($null -ne $psi.PSObject.Properties["ArgumentList"]) {
+        foreach ($a in $ArgList) { $psi.ArgumentList.Add($a) }
+    } else {
+        $psi.Arguments = ($ArgList | ForEach-Object {
+            $s = [string]$_
+            if ($s -eq "") { '""' }
+            elseif ($s -match '[\s"]') { '"' + ($s -replace '(\*)"', '$1$1\"' -replace '(\+)$', '$1$1') + '"' }
+            else { $s }
+        }) -join " "
+    }
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError = $true
     $psi.UseShellExecute = $false
@@ -124,7 +156,13 @@ Py   os.path.expanduser(~) -> $($pyHome.Stdout.Trim())
 $goIgnoresHome = $goHome.Stdout.Trim() -ne $fakeHome
 $nodeIgnoresHome = $nodeHome.Stdout.Trim() -ne $fakeHome
 $pyIgnoresHome = $pyHome.Stdout.Trim() -ne $fakeHome
-$item2Verdict = if ($goIgnoresHome -or $nodeIgnoresHome -or $pyIgnoresHome) { "REPRODUCED" } else { "ABSENT" }
+# Guarda de vacuidade: sem as tres saidas nao ha o que comparar, e um
+# "REPRODUCED" aqui afirmaria o defeito sem medicao. O item 1 ja reporta
+# INCONCLUSIVE quando o processo morre antes do codigo medido; este faz o mesmo.
+$item2Medido = $goHome.Stdout.Trim() -and $nodeHome.Stdout.Trim() -and $pyHome.Stdout.Trim() -and $fakeHome
+$item2Verdict = if (-not $item2Medido) { "INCONCLUSIVE" }
+                elseif ($goIgnoresHome -or $nodeIgnoresHome -or $pyIgnoresHome) { "REPRODUCED" }
+                else { "ABSENT" }
 Add-Result -Item "2" -Title 'HOME ignorado nos 3 runtimes no Windows' -Verdict $item2Verdict -Detail $item2Detail
 
 # ---------------------------------------------------------------------
