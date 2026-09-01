@@ -27445,3 +27445,60 @@ foi capturado dentro do tempo desta sessão — `scripts/check-gates-falsify.sh`
 (rebuilds de binário e subprocessos por cenário). Recomendo ao arquiteto confirmar o exit code
 final antes do merge; toda a evidência coletada aponta para verde.
 
+
+
+---
+
+## Sessão 2026-09-01 — hades-tf (INÍCIO/FIM: ML-0A, modelo de ameaça da escrita atômica no Windows)
+
+Branch `fix/escrita-atomica-do-cli-python-funciona-no-windows`. Roadmap
+`docs/roadmaps/wip/ROADMAP-2026-09-01-escrita-atomica-do-cli-python-funciona-no-windows.md`.
+
+**Parecer completo:** `docs/seguranca/2026-09-01-modelo-de-ameaca-da-escrita-atomica-no-windows.md`.
+
+**Veredito 1 (janela TOCTOU):** `os.fchmod(fd)` de hoje não tem janela — a troca ingênua para
+`os.chmod(path)` reabre uma janela **real, não teórica**, comprovada por PoC ao vivo (symlink swap
+corrompe o alvo do atacante e transforma `identity.json` em symlink), mas condicionada a um
+pré-requisito que hoje **não é garantido**: `.trackfw` (o diretório-pai) frequentemente fica em
+`0o755`, não `0o700`, porque `mode=` do `makedirs`/`mkdir` é ignorado quando o diretório já existe e
+não se propaga a pais intermediários — comprovado ao vivo em dois cenários (instalador de scripts
+cria `.trackfw` antes do `identity.save()`; `quarantine._atomic_write` num projeto totalmente novo).
+Sob umask padrão (022) isso não é explorável por outro usuário (falta write no diretório); vira
+explorável com umask=0 ou diretório relaxado manualmente.
+
+**Achado extra, fora do escopo desta REQ:** o `os.replace(temporary, filename)` final opera sobre
+caminho, não descritor, em TODAS as variantes (inclusive o `os.fchmod` atual) — uma segunda janela
+pré-existente, independente da decisão de chmod, presente hoje nos três arquivos. Recomendo REQ de
+acompanhamento.
+
+**Veredito 2 (enumeração):** `os.fchmod` é a única API POSIX-only usada como decisão de
+segurança em `pypi/` — os três da REQ batem, sem subestimativa desta vez.
+
+**Veredito 3 (triplicação):** não extrair. `references.py`/`provenance.py` já reusam
+`quarantine._atomic_write` por import (não são cópias) — a "triplicação" real é só
+`identity/__init__.py` + `integrations/manager.py` + `quarantine.py`. Recomendo: (a) gate estrutural
+anti-divergência entre as três definições, (b) adicionar à Wave 1 um doc-comment em
+`identity/__init__.py` — hoje é a única das três sem justificativa registrada para não importar.
+
+**Residual declarado:** seção 5 do parecer (janela do `os.replace`, `.trackfw` não confiavelmente
+`0o700`, ausência de paridade de garantia TOCTOU no Windows, multiusuário/umask não é modelo de
+ameaça nomeado do projeto).
+
+**Fronteiras mantidas:** nenhuma linha de `pypi/`, `internal/`, `npm/`, `scripts/`, roadmap ou REQ
+tocada. Nenhum commit/push/branch. PoCs só em `/tmp`/scratchpad.
+
+**Revisão pós-advisor (2 rodadas):** achado adicional decisivo — `os.fchmod` só é *load-bearing* em
+1 dos 7 pontos de chamada reais (`integrations/manager.py:_plan_artifact_write`, `mode=0o644`); nos
+outros 5 (`0o600`) o `fchmod` é redundante porque `tempfile.mkstemp()` já entrega `0o600` por
+padrão — o teste de controle do AC3(b) só prova algo real se mirar esse único site (seção 0 do
+parecer). PoC refeita com o valor literal `0o644` (alargamento de permissão de arquivo alheio, não
+só aperto). Corrigida afirmação não verificada sobre umask=0 em CI (nenhum workflow deste repo seta
+umask). **Achado novo fora de `pypi/`:** `npm/src/thirdparty/quarantine.js:28-29` e
+`npm/src/integrations/manager.js:94-97` têm um `fs.chmodSync(path, mode)` **redundante e já
+explorável hoje** depois de um `writeFileSync({mode})` que já aplicou o modo corretamente na
+criação — TOCTOU real, em produção, no CLI Node, sem nenhuma relação com o Windows/Python desta REQ.
+`manager.js` chama `chmodSync` uma segunda vez **depois** do rename (linha 97), janela extra que nem
+o próprio Node tem em `identity/config.js`. Relevante para o contrato do AC6 em
+`docs/cli-parity.md`: publicá-lo sem qualificar tornaria o contrato falso para o Node hoje.
+Recomendo REQ de acompanhamento dedicada ao Node (seção 7 do parecer). `trackfw context`/`trackfw
+validate` rodados — score 100/100, só warnings pré-existentes não relacionados a esta REQ.

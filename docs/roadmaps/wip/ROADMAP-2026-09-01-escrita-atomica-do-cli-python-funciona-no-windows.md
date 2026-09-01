@@ -39,7 +39,7 @@ barulhento por falha silenciosa.**
 > Dependências: nenhuma. Bloqueia a implementação.
 
 ### ML-0A — TOCTOU, escopo real e a decisão sobre a triplicação
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** `hades-tf`
 **Files affected:** nenhum (documento em `docs/seguranca/`)
 **Por que esta Wave 0 é sobre segurança e não sobre portabilidade:** o defeito é trivial de
@@ -63,11 +63,11 @@ contornar; **o remédio é que tem risco**. Trocar `fchmod(fd)` por `chmod(path)
    corrigir dois de três? Se sim, o remédio é **gate que garanta não divergirem**, não extração.
 5. **Residual declarado.**
 **Critérios de aceite:**
-- [ ] Veredito sobre a janela de TOCTOU ser alcançável **neste** código, com evidência
-- [ ] Enumeração de APIs POSIX-only além das três conhecidas
-- [ ] Veredito sobre extrair vs. manter-e-gatear a triplicação
-- [ ] Nenhuma linha de implementação escrita
-- [ ] Parecer em `docs/seguranca/2026-09-01-modelo-de-ameaca-da-escrita-atomica-no-windows.md`
+- [x] Veredito sobre a janela de TOCTOU ser alcançável **neste** código, com evidência
+- [x] Enumeração de APIs POSIX-only além das três conhecidas
+- [x] Veredito sobre extrair vs. manter-e-gatear a triplicação
+- [x] Nenhuma linha de implementação escrita
+- [x] Parecer em `docs/seguranca/2026-09-01-modelo-de-ameaca-da-escrita-atomica-no-windows.md`
 
 **Gates da wave:**
 ```bash
@@ -76,14 +76,97 @@ test -f docs/seguranca/2026-09-01-modelo-de-ameaca-da-escrita-atomica-no-windows
 grep -q "Residual" docs/seguranca/2026-09-01-modelo-de-ameaca-da-escrita-atomica-no-windows.md
 ```
 
-## Wave 1 — A correção
-> Dependências: Wave 0. **O particionamento sai do veredito sobre a triplicação** — extrair helper e
-> manter-e-gatear produzem MLs diferentes. Escrever agora seria escopo inventado.
+#### Resultado do ML-0A (hades-tf, 2026-09-01) — auditado pelo arquiteto
 
-## Wave 2 — Gate e contrato
-> Dependências: Wave 1. Gate falsificável + o contrato em `docs/cli-parity.md`.
-> 🔴 Nasce ligado, com guarda de vacuidade ancorada no mesmo cwd da varredura, `python3` nunca
-> `python`. Contrato escrito nesta sessão, depois de dois gates chegarem inertes.
+**A Wave 0 derrubou dois critérios meus, os dois pela mesma razão: eu tinha escrito asserções que
+passariam sem provar nada.**
+
+### 1. A AC3 que escrevi era vácua — em 5 dos 7 sites
+
+Eu pedia *"provar que `os.fchmod` é chamado"*. **Medi e confirmei:** `tempfile.mkstemp()` já entrega
+`0o600` por padrão, e **5 dos 7 pontos de chamada pedem exatamente `0o600`**. Ali o `fchmod` **não
+tem efeito observável** — um teste que instrumenta a chamada fica verde sem provar garantia alguma.
+
+Os únicos dois sites com efeito real são `integrations/manager.py:343` e `:358`, que recebem `mode`
+da linha `585` (`0o644`). **O controle tem de mirar lá e verificar o resultado** —
+`st_mode & 0o777 == 0o644` — **não a instrumentação.**
+
+**Escrevi um critério vácuo dentro da REQ cujo propósito é impedir vacuidade.** AC3 corrigida.
+
+### 2. A AC6 teria publicado um contrato FALSO
+
+Eu ia escrever em `docs/cli-parity.md` que *"os 3 runtimes preservam a garantia de descritor"*. O
+ML-0A mediu que **o Node já tem a mesma classe de TOCTOU hoje, em produção, sem relação com
+Windows**: `chmodSync(path)` em vez de `fchmodSync(fd)` — **que existe no Node** — e o `manager.js`
+ainda chama `chmod` **uma segunda vez depois do `rename`**, janela extra que o `identity.js` do
+próprio Node não tem.
+
+**Contrato falso é pior que contrato ausente: compra confiança que não existe.** AC6 corrigida para
+nomear a exceção; **REQ própria aberta** para o Node.
+
+### 3. A janela é real — provada por execução, não por argumento
+
+PoCs no parecer demonstram corrupção de permissão de arquivo alheio via troca de symlink, e o
+alargamento `0o600 → 0o644` com o literal que o código de fato usa.
+
+**E o pré-requisito que eu supunha protetor não é garantido pelo nosso próprio código:** o `mode=` de
+`os.makedirs`/`Path.mkdir` é **ignorado quando o diretório já existe** e **não se propaga a pais
+intermediários** criados por `parents=True`. Ele reproduziu os dois cenários ao vivo — `.trackfw`
+frequentemente fica `0o755`, não `0o700`. Sob umask padrão não é explorável por outro usuário; passa
+a ser sob umask relaxado. **Nota de vault escrita.**
+
+### 4. Enumeração — desta vez sem subestimativa
+
+`os.fchmod` é a **única** API POSIX-only usada como decisão de segurança em `pypi/`. Varredura
+ampliada incluiu `tests/`, `st_ino`/`st_dev`, `O_NOFOLLOW`, `os.lchmod`, `shutil.chown` — zero
+ocorrências. Os três da REQ batem.
+
+### 5. Triplicação: **não extrair** — e por um motivo que eu não sabia
+
+`references.py` e `provenance.py` **já reusam** o `quarantine._atomic_write` **por import**, não
+duplicam. A triplicação real é só `identity/__init__.py` + `integrations/manager.py` +
+`quarantine.py`. Remédio: **gate estrutural anti-divergência**, mais doc-comment em
+`identity/__init__.py` — a única das três **sem justificativa registrada**.
+
+## Wave 1 — A correção (2 MLs)
+> Dependências: Wave 0. Particionamento derivado do veredito: **não extrair**, logo a correção é
+> pontual nos três e o gate garante a não-divergência.
+
+### ML-1A — Fallback condicional nos três `_atomic_write`
+**Status:** ⬜ Pendente
+**Agente:** `apolo-tf`
+**Files affected:** `pypi/trackfw/identity/__init__.py`, `pypi/trackfw/integrations/manager.py`,
+`pypi/trackfw/thirdparty/quarantine.py`
+**Actions:**
+1. Fallback **condicional** — `getattr(os, "fchmod", None)` —, nunca substituição incondicional. Em
+   POSIX o comportamento fica **byte a byte o de hoje**.
+2. Doc-comment em `identity/__init__.py` registrando a replicação deliberada, como
+   `quarantine.py:34-37` já faz. É a única das três sem justificativa escrita.
+**Critérios de aceite:**
+- [ ] As três concluem sem `AttributeError` quando `os.fchmod` está ausente
+- [ ] 🔴 **Controle no site de `0o644`** (`manager.py:343`/`:358`), verificando
+      `st_mode & 0o777 == 0o644` — **o resultado, não a chamada**. Nos sites de `0o600` a asserção
+      seria vácua, porque `mkstemp` já entrega esse modo.
+- [ ] 🔴 O fallback **não dispara em POSIX** — provar, porque um fallback disparando por engano
+      enfraquece a garantia **sem falhar nenhum teste**
+- [ ] `make quality` verde
+
+### ML-1B — Gate anti-divergência e contrato com a exceção do Node
+**Status:** ⬜ Pendente
+**Agente:** `artemis-tf`
+**Files affected:** `scripts/` (gate novo), `Makefile`, `docs/cli-parity.md`
+**Actions:**
+1. Gate estrutural garantindo que as **três** cópias de `_atomic_write` não divirjam. **Corrigir duas
+   de três é o modo de falha mais provável** — o veredito de não extrair depende deste gate existir.
+2. Contrato em `docs/cli-parity.md` **com a exceção do Node nomeada** e apontando para a
+   `REQ-2026-09-01-cli-node-usa-chmodsync-...`. **Não escrever "os 3 runtimes preservam a garantia"** —
+   seria falso hoje.
+**Critérios de aceite:**
+- [ ] Gate falsificado nas duas direções: com as três iguais passa; divergindo **uma**, reprova
+- [ ] 🔴 Nasce **ligado** ao `Makefile`, com **guarda de vacuidade ancorada no mesmo cwd** da
+      varredura, e `python3` nunca `python`
+- [ ] O contrato **não afirma** o que o Node não cumpre
+- [ ] `make quality` verde
 
 ## Verificação que só o CI fecha
 

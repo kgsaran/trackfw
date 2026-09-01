@@ -63,9 +63,18 @@ sete ocorrências nesta sessão.
       (`getattr(os, "fchmod", None)`), nunca substituição incondicional. Em POSIX o comportamento é
       **byte a byte o de hoje**.
 - [ ] **AC3** — 🔴 **Falsificação nas duas direções.** (a) simulando a ausência de `os.fchmod`, as
-      três escritas concluem sem `AttributeError`; (b) **controle:** com `os.fchmod` presente, ele
-      **é chamado** — provar que o caminho POSIX não foi silenciosamente abandonado. Sem (b),
-      trocaríamos o defeito por uma regressão invisível de segurança.
+      três escritas concluem sem `AttributeError`; (b) **controle no site certo.**
+
+      ⚠️ **A primeira redação desta AC era vácua e foi corrigida pelo ML-0A.** Ela pedia *"provar que
+      `os.fchmod` é chamado"* — e isso **passaria vacuamente em 5 dos 7 pontos de chamada**, porque
+      `tempfile.mkstemp()` **já entrega `0o600` por padrão** (medido: `oct(0o600)`), exatamente o
+      modo que 5 dos 7 sites pedem. Ali o `fchmod` não tem efeito observável, e um teste que
+      instrumenta a chamada ficaria verde sem provar garantia nenhuma.
+
+      O controle tem de mirar os **dois** sites onde o modo difere do padrão do `mkstemp` —
+      `integrations/manager.py:343` e `:358`, que recebem `mode` da linha `585` (`0o644`) — e
+      verificar o **resultado observável**: `st_mode & 0o777 == 0o644`. **Testar o efeito, não a
+      instrumentação.**
 - [ ] **AC4** — **A duplicação é tratada, não replicada.** São três cópias de `_atomic_write`, com
       doc-comment declarando a replicação deliberada (`quarantine.py:34-37`: manter o pacote
       `thirdparty` independente de `trackfw.integrations`). **Decidir explicitamente**: extrair para
@@ -74,8 +83,19 @@ sete ocorrências nesta sessão.
 - [ ] **AC5** — Gate falsificável cobrindo a AC2 e a AC4. **Nasce ligado ao `Makefile`, com guarda de
       vacuidade ancorada no mesmo cwd da varredura, e `python3` nunca `python`** — contrato em
       `docs/cli-parity.md`.
-- [ ] **AC6** — O contrato *"escrita atômica preserva a garantia de descritor onde a plataforma
-      oferece"* é escrito em `docs/cli-parity.md`. Hoje não existe — foi o que permitiu a divergência.
+- [ ] **AC6** — O contrato sobre escrita atômica é escrito em `docs/cli-parity.md`.
+
+      ⚠️ **A redação que eu propus seria FALSA se publicada.** O ML-0A mediu que **o CLI Node já tem
+      a mesma classe de TOCTOU hoje, em produção, sem relação alguma com Windows**:
+      `npm/src/thirdparty/quarantine.js:28-30` e `npm/src/integrations/manager.js:94-97` usam
+      `chmodSync(path, mode)` em vez de `fchmodSync(fd, mode)` — **que existe no Node**. E o
+      `manager.js` chama `chmod` **uma segunda vez depois do rename**, uma janela extra que o próprio
+      `identity.js` do Node não tem.
+
+      Escrever *"os 3 runtimes preservam a garantia de descritor"* seria **afirmar um contrato que o
+      Node não cumpre** — e um contrato falso é pior que contrato ausente, porque compra confiança.
+      O contrato tem de ser escrito **com a exceção do Node nomeada**, e a correção do Node vira
+      **REQ própria**, não expansão desta.
 - [ ] **AC7** — `make quality` verde e **CI verde**. A camada 2 **não** mede este defeito; a
       verificação em Windows real é a suíte completa (camada 1).
 
