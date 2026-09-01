@@ -27637,3 +27637,52 @@ de produção `manager.py:595`; (2) números de linha do roadmap (`:343`/`:358`)
 (`:353`/`:368` hoje); (3) mensagem de divergência do gate nomeia sempre os não-primeiros da lista de
 arquivos, imprecisa quando o editado é o próprio baseline implícito (`identity/__init__.py`).
 Não toquei código de produto nem `docs/seguranca/`.
+
+---
+
+## hades-tf — 2026-09-01 — INÍCIO: ML-0A, modelo de ameaça da troca de shell de gate (issue #216 item 7)
+
+Branch `fix/os-3-clis-executam-gate-de-wave-com-sh-c`. Roadmap
+`docs/roadmaps/wip/ROADMAP-2026-09-01-os-3-clis-executam-gate-de-wave-com-sh-c.md`, REQ e ADR ligados
+lidos. Escopo: só `docs/seguranca/2026-09-01-modelo-de-ameaca-do-shell-de-gate.md` — nenhuma linha em
+`internal/`, `npm/`, `pypi/`. Sem git.
+
+---
+
+## hades-tf — 2026-09-01 — FIM: ML-0A, modelo de ameaça da troca de shell de gate — parecer entregue
+
+Parecer em `docs/seguranca/2026-09-01-modelo-de-ameaca-do-shell-de-gate.md`. Veredito de superfície
+(**revisado após PoC** — a primeira leitura concluiu "não amplia" por suposição, não medição; o
+advisor pediu execução e a medição inverteu a conclusão): **amplia, de forma pequena mas real**, em
+duas frentes independentes. (1) **Medida com PoC** (`/tmp/fakesh/sh` injetado no início do `$PATH`):
+`spawnSync(cmd,{shell:true})`/`subprocess.run(cmd,shell=True)` são **pinados em `/bin/sh`** — o fake
+nunca roda; `spawnSync('sh',[...])`/`subprocess.run(["sh",...])` (o que Wave 1 vai escrever) **resolvem
+via `$PATH`** — o fake roda. Isso move Node/Python de interpretador fixo para resolvido por `$PATH`,
+igualando-os ao Go (que já fazia `exec.LookPath`) — quem controla `$PATH` do processo `barrier` ganha,
+pela 1ª vez em Node/Python, controle sobre qual binário interpreta o gate. (2) **Inferida, não medida**
+(sem Windows disponível neste ambiente, marcado explicitamente como hipótese no documento): no Windows,
+`cmd.exe` já reinterpreta parte da sintaxe POSIX hostil hoje (`|`/`&&`/`||` são operadores nativos dele
+também) — o fix remove essa mitigação acidental. Nenhuma das duas justifica reverter o ADR (`$PATH` é
+estrutural no Windows; a inversão "divergente é o correto" já vale para a superfície, não só para a
+corretude) mas ambas devem ser **declaradas no contrato**, não tratadas como não-eventos.
+Argumento pelo lado fail-closed de "não pôde medir": o próprio `roadmapTrustForGates` já resolveu essa
+escolha para o mesmo arquivo/função — estado `not_evaluated` distinto de `passed`/`blocked`, que já
+bloqueia a wave na agregação (`checks.every(status==='passed')`) e nomeia o remédio na mensagem;
+recomendo reusar literalmente esse padrão para "sh ausente", sem inventar exit code novo (o exit 2 já
+é reservado a erro de resolução, não a "não pude avaliar o conteúdo"). Enumeração nos 3 CLIs: só
+`barrier.go:729`/`barrier.js:560`/`barrier.py:580` recebem conteúdo de artefato versionado; achei dois
+pontos adicionais de `shell:true`/`shell=True` fora do escopo da REQ mas dentro da Action 4 —
+`npm/src/commands/serve.js:205-211` (`exec` com `--host` interpolado sem sanitização, injeção local
+real confirmada por leitura) e `pypi/trackfw/commands/serve.py:196` — nomeados como residual para REQ
+própria, não tratados aqui. Falsificação simétrica: nomeei Windows self-hosted sem Git
+Bash/WSL, contêineres distroless/scratch sem `/bin/sh`, Windows Server Core mínimo. Residuais também
+registrados: composição desta REQ com a REQ já aberta de fail-open do `roadmapTrustForGates` (mesmo
+runner Windows sem `origin` configurado + `sh.exe` no PATH soma os dois fail-opens); "$PATH adulterado"
+como vetor a citar no contrato; medido `sh -c 'nosuchtool'` → exit 127 (ferramenta interna ausente,
+não `sh` ausente — já fail-closed hoje, não bloqueante, mas AC4 não deve usar 127 como sinal de "sh
+ausente", já que 127 nunca ocorre nesse caso — o sinal certo é falha de spawn, não código de saída do
+`sh`); recomendação de rodar a falsificação da AC2/AC3 e o fechamento da AC7 no job `windows-full-suites`
+citado alhures nesta mesma página, não só em runner POSIX onde a mudança é inerte para o veredito
+funcional. Nenhuma linha de implementação escrita; não toquei roadmap/REQ/ADR. Gate local conferido
+manualmente (arquivo existe,
+sem "placeholder", contém "Residual").
