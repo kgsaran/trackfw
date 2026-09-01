@@ -27544,3 +27544,61 @@ hasattr(os, "fchmod"), ...)`, não `skipif(os.name != "posix")` (nada para espia
 media diff antes/depois; reexecução limpa, sem editar a árvore durante o run, passou.) Suíte
 completa `pypi`: 1582 passed, 28 subtests. Fora de escopo (conforme instrução): sem extração de
 helper, sem tocar `npm/`, sem gate anti-divergência (ML-1B, artemis-tf).
+
+---
+
+## artemis-tf — 2026-09-01 — INÍCIO: ML-1B, gate anti-divergência + contrato com exceção do Node
+
+Branch `fix/escrita-atomica-do-cli-python-funciona-no-windows`. Escopo: gate novo em `scripts/`
+comparando as três cópias de `_atomic_write` (identity/quarantine/manager) para reprovar quando UMA
+divergir das outras; ligar ao `Makefile` (`parity:`); seção nova em `docs/cli-parity.md` nomeando a
+exceção do Node (REQ própria já aberta) sem afirmar garantia de descritor nos 3 runtimes. Não toco
+`pypi/`, `internal/`, `npm/`. Não faço git.
+
+---
+
+## artemis-tf — 2026-09-01 — FIM: ML-1B, gate anti-divergência + contrato com exceção do Node — CONCLUÍDO
+
+Branch `fix/escrita-atomica-do-cli-python-funciona-no-windows`.
+
+**Arquivo novo:** `scripts/check-atomic-write-anti-divergence.sh`. Compara o corpo NORMALIZADO
+(dedent via `textwrap.dedent`, `python3`) do trecho de segurança `fchmod = getattr(os, "fchmod",
+None)` .. `os.chmod(temporary, mode)` nas três cópias de `_atomic_write`
+(`identity/__init__.py`, `thirdparty/quarantine.py`, `integrations/manager.py`), exigindo igualdade
+textual exata entre elas — nunca contra um texto fixo congelado no gate. Escolhido em vez de
+`assert_has` por string fixa (padrão de `check-ref-separator-portability.sh`) porque
+`integrations/manager.py` define `_atomic_write` como `@staticmethod` (12 espaços) enquanto as
+outras duas são função de módulo (8 espaços) — uma constante fixa por arquivo provaria "bate com uma
+cópia congelada no gate", não "as três são iguais entre si"; dedent normaliza o deslocamento
+incidental de indentação sem perder a estrutura relativa if/else. Duas guardas de vacuidade:
+existência dos 3 arquivos (checada no MESMO `ROOT` da extração real) e contagem de blocos extraídos
+com sucesso (=3, nomeando qual falhou na âncora). Ligado a `parity:` no `Makefile`.
+
+**Falsificação real em cópias de `/tmp`** (`scratchpad/atomic-gate-falsify{,2}`, nunca na árvore
+real):
+1. Árvore correta → `OK`, exit 0.
+2. Cópia idêntica em `/tmp` → `OK`, exit 0.
+3. Uma cópia divergindo só no texto do comentário (`quarantine.py`) → `DIVERGÊNCIA`, nomeia
+   `pypi/trackfw/thirdparty/quarantine.py` contra a referência `identity/__init__.py`, exit 1.
+   Restaurada, voltou a `OK`.
+4. Vacuidade — `ROOT` vazio → reprova nomeando os 3 arquivos ausentes, exit 1.
+5. Vacuidade — âncora removida em `manager.py` (fallback reescrito irreconhecível) → "extração
+   falhou" + "esperava extrair 3 blocos, extraiu 2", exit 1.
+
+**Contrato em `docs/cli-parity.md`** — nova seção "Escrita atômica — chmod no descritor vs. chmod no
+caminho": tabela Go/Python/Node com o estado medido de cada runtime, **nomeando explicitamente que o
+Node usa `chmodSync(path)` e reabre TOCTOU hoje, em produção**, com link para
+`REQ-2026-09-01-cli-node-usa-chmodsync-...` — não afirma "os 3 runtimes preservam a garantia de
+descritor" (seria falso). Subseção "Triplicação deliberada no Python — não extraída, gateada"
+explica o veredito do ML-0A e aponta para o gate novo. Anotação `trackfw-contract: gate=...
+partial=...` em ambas as seções — `partial=` no cabeçalho principal nomeia explicitamente que o gate
+só cobre a não-divergência Python, não Go/Node nem a janela do `os.replace`.
+`scripts/check-parity-contract-coverage.sh`: `OK — nenhuma anotação inválida e nenhuma seção sem
+anotação`.
+
+**`make quality`: `MAKE_EXIT=0`.** `scripts/check-atomic-write-anti-divergence.sh` roda dentro de
+`parity:` (linha nova no `Makefile`, logo após `check-ref-separator-portability.sh`) e imprime `OK —
+3 cópias ... com bloco de fallback idêntico após normalização`. `git status --porcelain` após o run:
+só `Makefile`, `docs/agents-working-context.md`, `docs/cli-parity.md` modificados e
+`scripts/check-atomic-write-anti-divergence.sh` novo — nenhum arquivo de `pypi/`, `internal/`,
+`npm/` tocado, conforme restrição. Não fiz nenhum comando `git` (add/commit/branch/push).

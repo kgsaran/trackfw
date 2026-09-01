@@ -196,7 +196,7 @@ A primeira rodada deu `FAIL [falsify/no-repo-mutation]` porque ele editava o
 `OK [falsify/no-repo-mutation]`, suíte `pypi` com 1582 passed.
 
 ### ML-1B — Gate anti-divergência e contrato com a exceção do Node
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** `artemis-tf`
 **Files affected:** `scripts/` (gate novo), `Makefile`, `docs/cli-parity.md`
 **Actions:**
@@ -206,11 +206,50 @@ A primeira rodada deu `FAIL [falsify/no-repo-mutation]` porque ele editava o
    `REQ-2026-09-01-cli-node-usa-chmodsync-...`. **Não escrever "os 3 runtimes preservam a garantia"** —
    seria falso hoje.
 **Critérios de aceite:**
-- [ ] Gate falsificado nas duas direções: com as três iguais passa; divergindo **uma**, reprova
-- [ ] 🔴 Nasce **ligado** ao `Makefile`, com **guarda de vacuidade ancorada no mesmo cwd** da
+- [x] Gate falsificado nas duas direções: com as três iguais passa; divergindo **uma**, reprova
+- [x] 🔴 Nasce **ligado** ao `Makefile`, com **guarda de vacuidade ancorada no mesmo cwd** da
       varredura, e `python3` nunca `python`
-- [ ] O contrato **não afirma** o que o Node não cumpre
-- [ ] `make quality` verde
+- [x] O contrato **não afirma** o que o Node não cumpre
+- [x] `make quality` verde
+
+#### Resultado do ML-1B (artemis-tf, 2026-09-01) — auditado pelo arquiteto
+
+**Ela escolheu um mecanismo mais forte do que o que eu instruí.** Eu sugeri `assert_count` por
+assinatura; ela **compara os três blocos normalizados entre si**.
+
+A justificativa é o que decide: um *golden string* fixo provaria *"bate com uma cópia congelada
+dentro do gate"*, e não *"as três concordam entre si"* — que é a propriedade real. E o
+`integrations/manager.py` define `_atomic_write` como `@staticmethod`, um nível mais fundo (12
+espaços contra 8), então comparação literal exigiria uma segunda constante só para tolerar o offset.
+`textwrap.dedent` resolve sem congelar nada.
+
+**Falsificação — quatro direções, e a segunda eu não tinha testado:**
+
+| # | sabotagem | resultado |
+|---|---|---|
+| 1 | árvore correta | `OK`, exit 0 |
+| 2 | divergência **só na redação de um comentário** | `DIVERGÊNCIA`, nomeando `quarantine.py` contra a referência |
+| 3 | `ROOT` vazio | nomeia os três arquivos ausentes |
+| 4 | âncora removida em `manager.py` | *"extração falhou"* **+** *"esperava extrair 3 blocos, extraiu 2"* |
+
+**Verifiquei a 4 por conta própria** divergindo o `identity`: **duas mensagens independentes
+disparam**. As defesas se cobrem — uma detecta divergência de conteúdo, a outra detecta
+desaparecimento. Reescrever o bloco além do reconhecível não escapa: cai na guarda de vacuidade.
+
+Isso responde à faixa estreita que eu tinha apontado no handoff — frouxo demais passa, rígido demais
+vira ruído. A sensibilidade a comentário é deliberada: **nas três cópias, o comentário É parte do
+contrato**, porque é ele que registra por que a replicação é intencional.
+
+### O contrato ficou honesto nos dois eixos
+
+Nomeia a exceção do Node **com arquivo e linha** (`quarantine.js:28-30`, `manager.js:94-97`, mais a
+segunda chamada de `chmod` após o `rename`), aponta para a REQ dedicada, e **não** afirma que os 3
+runtimes preservam a garantia. A anotação declara o que **não** é verificado:
+
+> `partial=cobre só a não-divergência das três cópias Python entre si; não mede Go nem Node, nem a
+> janela pré-existente do os.replace(path)`
+
+**`MAKE_EXIT=0`**, gate executando na cadeia, `check-parity-contract-coverage` limpo.
 
 ## Verificação que só o CI fecha
 
