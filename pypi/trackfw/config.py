@@ -11,6 +11,7 @@ import os
 import sys
 
 import yaml
+from trackfw.homedir import home_dir, expand_path
 
 NAMESPACING_FLAT = "flat"
 NAMESPACING_BY_AGENT = "by_agent"
@@ -357,7 +358,7 @@ def _cwd_agent_models_source(cwd: str | None) -> str:
 def load_global_agent_models(home_dir: str, cwd: str | None = None) -> tuple[dict, str]:
     """Reads agent_models from ~/.trackfw/trackfw.yaml, bypassing the load() singleton.
 
-    home_dir is the user's home directory (e.g. os.path.expanduser('~')); cwd is the
+    home_dir is the user's home directory (e.g. home_dir()); cwd is the
     working directory used only for the AC14 diagnostic (detect 'configured in project,
     not global'). Never calls sys.exit. Pattern mirrors read_agent_conventions above.
 
@@ -444,7 +445,7 @@ def _parse(content, cfg):
     if "adr_dirs" in m:
         items = _string_list(m["adr_dirs"])
         if items is not None:
-            cfg["adr_dirs"] = [os.path.expanduser(v) for v in items]
+            cfg["adr_dirs"] = [expand_path(v) for v in items]
     if isinstance(m.get("req_dir"), str):
         cfg["req_dir"] = m["req_dir"]
     if isinstance(m.get("roadmap_dir"), str):

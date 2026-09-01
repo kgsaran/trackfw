@@ -145,8 +145,39 @@ test('git_branch_guard_hook_resolvable: dispara com script não executável', ()
   fs.mkdirSync(path.dirname(scriptPath), { recursive: true })
   fs.writeFileSync(scriptPath, '#!/bin/sh\nexit 0\n', { mode: 0o644 }) // sem bit +x
 
-  const msgs = validateGitBranchGuardHookResolvable(dir)
-  assert.equal(msgs.some(m => m.includes('not executable')), true)
+  // O bit de execução não é representável em NTFS: no Windows (stat.mode & 0o111) é 0
+  // para todo arquivo, inclusive após fs.chmodSync(0o755). Este teste afirma que a
+  // regra DISPARA quando o bit falta, o que só tem sentido onde o bit existe — fixamos
+  // a plataforma em vez de pular, para a garantia continuar verificada em qualquer host.
+  const restorePlatform = validator._setPlatformForTest('linux')
+  try {
+    const msgs = validateGitBranchGuardHookResolvable(dir)
+    assert.equal(msgs.some(m => m.includes('not executable')), true)
+  } finally {
+    restorePlatform()
+  }
+})
+
+// No Windows o bit de execução não é representável em NTFS, então "o script não é
+// executável" é SEMPRE verdadeiro lá, e nenhuma ação do usuário torna a mensagem falsa —
+// `trackfw update`, o remédio que ela prescreve, regenera o script com o mesmo modo.
+// Mesmo precedente de _platform em src/integrations/scaffold_doctor.js (AC5).
+test('git_branch_guard_hook_resolvable: no Windows não dispara pelo bit de execução', () => {
+  const dir = tmpDir()
+  writeFile(dir, '.claude/settings.json', gitBranchGuardEntryClaudeSettings('$CLAUDE_PROJECT_DIR/scripts/trackfw-git-branch-guard.sh'))
+  const scriptPath = path.join(dir, 'scripts', 'trackfw-git-branch-guard.sh')
+  fs.mkdirSync(path.dirname(scriptPath), { recursive: true })
+  fs.writeFileSync(scriptPath, '#!/bin/sh\nexit 0\n', { mode: 0o644 }) // sem bit +x
+
+  const restorePlatform = validator._setPlatformForTest('win32')
+  try {
+    const msgs = validateGitBranchGuardHookResolvable(dir)
+    assert.equal(msgs.some(m => m.includes('not executable')), false)
+    // O script EXISTE: a checagem de existência continua valendo no Windows.
+    assert.equal(msgs.some(m => m.includes('does not exist')), false)
+  } finally {
+    restorePlatform()
+  }
 })
 
 test('git_branch_guard_hook_resolvable: não dispara sem entrada', () => {

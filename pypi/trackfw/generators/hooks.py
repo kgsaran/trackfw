@@ -8,6 +8,7 @@ para sinalizar o board do `trackfw serve` automaticamente.
 import json
 import os
 from pathlib import Path
+from trackfw.homedir import home_dir
 
 
 # ---------------------------------------------------------------------------
@@ -26,7 +27,7 @@ def _read_json(file_path: str) -> dict:
 def _write_json(file_path: str, data: dict) -> None:
     """Escreve JSON com indent 2."""
     os.makedirs(os.path.dirname(os.path.abspath(file_path)), exist_ok=True)
-    with open(file_path, 'w', encoding='utf-8') as f:
+    with open(file_path, 'w', encoding='utf-8', newline="\n") as f:
         json.dump(data, f, indent=2)
         f.write('\n')
 
@@ -90,7 +91,7 @@ def _merge_copilot_hook_array(hook_list: list, script_path: str) -> None:
 def _global_credential_guard_script_path() -> str | None:
     """Mirrors Go's globalCredentialGuardScriptPath / Node's
     globalCredentialGuardScriptPath."""
-    home = os.path.expanduser('~')
+    home = home_dir()
     if not home or home == '~':
         return None
     return os.path.join(home, '.trackfw', 'scripts', 'trackfw-credential-guard.sh')
@@ -99,7 +100,7 @@ def _global_credential_guard_script_path() -> str | None:
 def _read_global_hook_json(*rel_parts: str) -> dict | None:
     """Reads+parses JSON at $HOME/<...rel_parts>; returns None on any failure
     (fail-open)."""
-    home = os.path.expanduser('~')
+    home = home_dir()
     if not home or home == '~':
         return None
     try:
@@ -282,7 +283,7 @@ def _global_credential_guard_installed_kiro() -> bool:
     global credential-guard wiring (overwritten wholesale, never merged), so
     presence + non-empty content is sufficient -- matches the roadmap's
     explicit instruction for Kiro."""
-    home = os.path.expanduser('~')
+    home = home_dir()
     if not home or home == '~':
         return False
     path = os.path.join(home, '.kiro', 'hooks', 'trackfw-credential-guard.json')
@@ -310,7 +311,7 @@ def _global_credential_guard_installed_kiro() -> bool:
 def _global_git_branch_guard_script_path() -> str | None:
     """Mirrors Go's globalGitBranchGuardScriptPath / Node's
     globalGitBranchGuardScriptPath."""
-    home = os.path.expanduser('~')
+    home = home_dir()
     if not home or home == '~':
         return None
     return os.path.join(home, '.trackfw', 'scripts', 'trackfw-git-branch-guard.sh')

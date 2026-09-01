@@ -3,6 +3,7 @@ package validator
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/kgsaran/trackfw/internal/homedir"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -130,7 +131,7 @@ func globalGuardConfigPath(gf globalGuardConfigFile, scriptMarker string) string
 // Fail-open: unresolvable $HOME, unreadable file, or invalid JSON all skip that file in silence —
 // same contract validateGuardHookResolvable already has for project-scope files.
 func validateGuardGlobalHookResolvable(ruleName, scriptMarker string) ([]string, error) {
-	home, err := os.UserHomeDir()
+	home, err := homedir.Dir()
 	if err != nil || home == "" {
 		return nil, nil
 	}
@@ -190,7 +191,7 @@ func validateGuardGlobalHookResolvable(ruleName, scriptMarker string) ([]string,
 					"~/%s (%s, global scope) references %s resolved to %q, but the script does not exist — run `trackfw update harness` to regenerate it",
 					relPath, gf.cli, scriptMarker, m.raw,
 				))
-			case info.Mode()&0111 == 0:
+			case CurrentGOOS != "windows" && info.Mode()&0111 == 0:
 				msgs = append(msgs, fmt.Sprintf(
 					"~/%s (%s, global scope) references %s resolved to %q, but the script is not executable — run `trackfw update harness` to regenerate it",
 					relPath, gf.cli, scriptMarker, m.raw,
@@ -228,7 +229,7 @@ func validateGuardGlobalHookResolvable(ruleName, scriptMarker string) ([]string,
 // checking the one fixed on-disk path exactly once caps it at 1 regardless of how many (or how
 // few — including zero) configs reference it.
 func validateGuardGlobalScriptIntegrity(scriptFileName, referenceContent string) ([]string, error) {
-	home, err := os.UserHomeDir()
+	home, err := homedir.Dir()
 	if err != nil || home == "" {
 		return nil, nil
 	}

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -50,6 +51,14 @@ func TestCredentialGuardHookResolvable_DisparaScriptAusente(t *testing.T) {
 // TestCredentialGuardHookResolvable_DisparaScriptNaoExecutavel — a regra dispara quando o script
 // existe mas não tem permissão de execução.
 func TestCredentialGuardHookResolvable_DisparaScriptNaoExecutavel(t *testing.T) {
+	// O bit de execução não é representável em NTFS: no Windows info.Mode()&0111
+	// é 0 para todo arquivo, inclusive após os.Chmod(0o755). Este teste afirma
+	// que a regra DISPARA quando o bit falta, o que só tem sentido onde o bit
+	// existe — fixamos a plataforma em vez de pular, para que a garantia
+	// continue verificada em qualquer host.
+	CurrentGOOS = "linux"
+	t.Cleanup(func() { CurrentGOOS = runtime.GOOS })
+
 	dir := t.TempDir()
 	chdir(t, dir)
 	t.Cleanup(config.Reset)
@@ -889,5 +898,45 @@ func TestCredentialGuardHookResolvable_NaoDisparaFormaRelativaEmCursor(t *testin
 	}
 	if len(msgs) != 0 {
 		t.Errorf("AC3: Cursor com relativo deve estar limpo (falso-positivo eliminado por construção), obteve: %v", msgs)
+	}
+}
+
+// TestCredentialGuardHookResolvable_WindowsNaoDisparaBitDeExecucao — no Windows o bit de
+// execução não é representável em NTFS: os.Stat().Mode()&0111 é 0 para todo arquivo
+// comum, inclusive imediatamente depois de os.Chmod(path, 0o755). Uma checagem escrita
+// como "o script não é executável" é, portanto, SEMPRE verdadeira lá, e nenhuma ação do
+// usuário a torna falsa — `trackfw update`, o remédio que a mensagem prescreve, regenera
+// o script com o mesmo modo irrepresentável.
+//
+// Mesmo precedente de generators.CurrentGOOS (scaffold_doctor.go, AC5), agora na camada
+// do validator.
+func TestCredentialGuardHookResolvable_WindowsNaoDisparaBitDeExecucao(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	CurrentGOOS = "windows"
+	t.Cleanup(func() { CurrentGOOS = runtime.GOOS })
+
+	writeFile(t, dir, ".claude/settings.json", guardEntryClaudeSettings(`$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh`))
+	scriptPath := filepath.Join(dir, "scripts", "trackfw-credential-guard.sh")
+	if err := os.MkdirAll(filepath.Dir(scriptPath), 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(scriptPath, []byte("#!/bin/sh\nexit 0\n"), 0644); err != nil { // sem bit +x
+		t.Fatalf("write script: %v", err)
+	}
+
+	msgs, err := validateCredentialGuardHookResolvable()
+	if err != nil {
+		t.Fatalf("validateCredentialGuardHookResolvable() erro: %v", err)
+	}
+	if hasViolation(msgs, "not executable") {
+		t.Errorf("no Windows o bit de execução não é representável — a regra não deve disparar. Obteve: %v", msgs)
+	}
+	// O script EXISTE: a checagem de existência continua valendo no Windows, e é
+	// ela que ainda protege contra a fiação apontar para lugar nenhum.
+	if hasViolation(msgs, "does not exist") {
+		t.Errorf("script existe; violation de ausência não deveria aparecer: %v", msgs)
 	}
 }

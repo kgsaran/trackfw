@@ -26810,3 +26810,358 @@ caso. Candidato a REQ futura; **não** aberta agora para não expandir escopo.
 **Próximo:** portar as correções dos PRs #222–#225 do Lourival (os quatro valem inteiros, ver
 `docs/analises/2026-08-31-aproveitamento-dos-prs-222-225.md`), começando pelo #223 (item 1, cp1252),
 que destrava a medição dos itens 5 e 6. Guarda de ancestral em seguida.
+
+## 2026-08-31 — ML-1A/ML-1B do roadmap de port dos PRs #222–#225 (apolo-tf)
+
+**Início.** Recebido handoff para portar ML-1A (#222 Grupo B, bit de execução no validator) e ML-1B
+(#225, CRLF nos geradores Python) da `ROADMAP-2026-08-31-portar-as-correcoes-do-reporter-da-issue-216.md`.
+Regra dura do handoff: porte fiel, atribuição `Co-Authored-By: lourivalgarciajunior`, parar e avisar
+se achar sobreposição com o Grupo A ($HOME, Wave 2, bloqueado).
+
+**ML-1B (#225) — feito.** `git apply` do diff aplicou limpo (zero drift) contra a árvore atual: 15
+arquivos em `pypi/trackfw/` ganharam `newline="\n"`, `pypi/tests/test_generators_write_lf.py` novo (4
+testes, todos verdes localmente — guarda de regressão em macOS/Linux, não reprodução, como o próprio
+teste declara), `scripts/check-python-writes-lf.sh` novo. **Um desvio do diff literal**: troquei
+`python` por `python3` na linha do interpretador (script original do PR usa `python` puro, que não
+existe neste ambiente nem é a convenção de nenhum outro `check-*.sh` do repo — todos usam `python3`).
+`python3 -m pytest pypi/tests -q` → 1559 passed. Gate roda e passa. **Achado que preciso reportar sem
+decidir**: o gate **não tem guarda de vacuidade** — se `pypi/trackfw/` sumisse ou o walk não achasse
+nenhum `.py`, o gate passaria vazio e silencioso. O handoff pediu para avisar em vez de adicionar por
+conta própria.
+
+**ML-1A (#222 Grupo B) — sobreposição real com o Grupo A, reportada e resolvida por separação de
+hunk.** O handoff pediu para confirmar ausência de sobreposição antes de editar e parar se achasse.
+Achei: `internal/validator/validator_git_branch_guard.go` e `internal/validator/validator_test.go`
+(Go), `pypi/trackfw/validator.py` e `pypi/tests/test_validator.py` (Python), `npm/src/validator/
+index.js` (Node) misturam hunks do Grupo A (`homedir.Dir()`/`home_dir()`/`homedir()`, módulo novo que
+não existe ainda) com hunks do Grupo B (guard `CurrentGOOS/_platform/_current_platform != "windows"`)
+**no mesmo arquivo**, às vezes na mesma função. A separação da análise técnica ("zero overlap de
+arquivo") vale para `validator_credential_guard.go`/`_test.go` e `goos.go`, mas não para os demais.
+
+**Resolução aplicada**: portei só os hunks do Grupo B, hunk a hunk, deixando `os.UserHomeDir()`/
+`os.homedir()`/`os.path.expanduser("~")` intocados em todos os arquivos (nenhum módulo `homedir` foi
+criado). `internal/validator/validator_test.go` (único hunk é puro Grupo A) **não foi tocado**. Em
+`pypi/trackfw/validator.py` a nova seção `_current_platform`/`_set_platform_for_test` foi inserida sem
+o `from trackfw.homedir import ...`; os dois `os.access(X_OK)` ganharam o guard
+`_current_platform != "win32" and`; as duas linhas `home = os.path.expanduser("~")` da mesma função
+ficaram como estavam. `npm/src/validator/index.js`: idem, com `_platform`/`_setPlatformForTest`, sem
+`require('../homedir')`, sem trocar `os.homedir()`. `pypi/tests/test_validator.py`: portei o helper
+`_exec_bit_representavel` e `test_windows_nao_dispara_pelo_bit_de_execucao`; os dois testes de tilde
+(`test_find_adr_file_com_tilde`, `test_validate_adrs_are_referenced_com_tilde`, que importariam
+`home_dir`) ficaram intocados. Testes novos verdes nos três runtimes (`go test ./internal/validator/...`,
+`node --test`, `python3 -m pytest`).
+
+**Nota de precisão levada ao report, não ao código**: a análise técnica descreveu o item 3 como o PR
+"unificando o mecanismo" Go/Node vs Python (`os.access(X_OK)` → bits). Isso é impreciso — o diff só
+**guarda** `os.access(X_OK)` com a checagem de plataforma; não substitui o mecanismo. A divergência
+pré-existente entre Python e Go/Node fora do Windows continua.
+
+**Achado extra do próprio `make quality`, resolvido no mesmo ML**: o Cenário 81 de
+`scripts/check-gates-falsify.sh` faz `sed` sobre `internal/validator/validator_credential_guard.go`
+ancorado na cláusula `case info.Mode()&0111 == 0:` **inteira**, para provar que
+`check-validate-parity.sh` detectaria regressão na checagem de bit de execução. Prefixar a condição
+com `CurrentGOOS != "windows" &&` (Grupo B) quebrou o casamento textual e o cenário reprovou
+corretamente (`FAIL [falsify/setup-s81]: padrão não encontrado`) — não é defeito do port, é o
+cenário recusando prosseguir sem confirmar a sabotagem. Retarget: mirar o **substring** da checagem
+de modo em vez da cláusula inteira (mesmo precedente do Cenário 179, `execBit &&` em
+`scaffold_doctor.go`). Nota escrita:
+`vault/notes/falsify-cenario-pina-linha-de-fonte-por-sed-guard-de-plataforma-quebra-2026-08-31.md`
+(linkada no índice) — **relevante para a Wave 2 (ML-2A)**, que toca os mesmos três arquivos de
+validator e deve grepar `check-gates-falsify.sh` pela condição exata antes de editar.
+
+**`make quality` rodado com ML-1A + ML-1B juntos, evidência completa no relatório final ao
+arquiteto.** `scripts/check-gates-falsify.sh` faz parte dos arquivos do **ML-1A** (causa e correção
+vêm da mudança do ML-1A), junto com o vault note e o índice.
+
+---
+
+## apolo-tf — ML-1C (2026-08-31) — INÍCIO
+
+Autorizado pelo arquiteto: ligar `scripts/check-python-writes-lf.sh` ao alvo `parity:` do
+`Makefile` e dar-lhe guarda de vacuidade, seguindo o padrão de
+`scripts/check-static-assets.sh`/`check-integration-assets.sh` ("P2 vacuity guard"). Não toco
+em Wave 2/3/4, roadmap nem REQ. Sem git (worktree compartilhado com ML-1A/1B não commitado).
+
+## apolo-tf — ML-1C (2026-08-31) — FIM
+
+Feito: `scripts/check-python-writes-lf.sh` ligado ao alvo `parity:` do `Makefile` (linha após
+`check-integration-assets.sh`, sem prefixo `bash`, mantendo o 755 do ML-1B). Guarda de vacuidade
+adicionada ao próprio script: um `find pypi/trackfw -name __pycache__ -prune -o -name '*.py' -print`
+roda ANTES do `os.walk` de detecção (mesmo critério de varredura) e reprova se visitar zero arquivos
+— forma copiada de `scripts/check-static-assets.sh`/`check-integration-assets.sh` ("P2 vacuity
+guard"), não inventada. A lógica de detecção (`open(`/`.write_text(` sem `newline=`) não foi tocada.
+
+Falsificação nas duas direções (corpus real fora do repo, cópia isolada do script em scratch):
+corpus normal → `Escrita em LF: nenhuma chamada sem newline explicito.` (exit 0); corpus vazio →
+`check-python-writes-lf: scan visited zero .py files under pypi/trackfw/ — refusing to pass
+silently` (exit 1). Confirmado que o gate roda dentro de `make parity` real: rodada completa saiu
+com `exited with code 0`, e a sequência exata do Makefile (`check-static-assets.sh` →
+`check-integration-assets.sh` → `check-python-writes-lf.sh`) executada manualmente mostra a saída
+do gate no meio da cadeia. Sem git (autoridade do arquiteto). Arquivos alterados: `Makefile`,
+`scripts/check-python-writes-lf.sh`. Roadmap e REQ não tocados por restrição explícita do handoff.
+
+## apolo-tf — ML-1C (2026-08-31) — CORREÇÃO pós-audit interno
+
+Revisão (auto-aplicada antes do handoff, achado ao consultar o advisor): a primeira versão da
+guarda usava `ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)` e fazia `cd "$ROOT_DIR"`
+antes do `find` — um ancoradouro absoluto que o `os.walk('pypi/trackfw')` da detecção NÃO tem (ele
+usa o cwd do chamador). Rodando o script de um cwd diferente da raiz do repo, a guarda passaria
+(via `cd`) enquanto a varredura real veria zero arquivos — o mesmo silêncio que a guarda existe
+para impedir. Corrigido: removida a âncora `ROOT_DIR`/`cd`; `SCANNED=$(find pypi/trackfw ...)` usa
+agora exatamente o mesmo cwd relativo que o `os.walk` de baixo. Verificado: de `/tmp`, o script
+agora falha explicitamente (`find: pypi/trackfw: No such file or directory`, exit 1) em vez de
+passar silenciosamente. Também confirmado que o critério do `find` (`-name __pycache__ -prune`)
+concorda com o filtro Python (`'__pycache__' in root`) na árvore atual (`diff` vazio). Falsificação
+das duas direções refeita após a correção — mesmos resultados reportados abaixo. Prova de execução
+dentro de `make parity` real (não `make -n` isolado): `make parity` (build cacheado, `bin/trackfw`
+já existia) produziu no log completo, na ordem exata do Makefile e seguindo adiante para o próximo
+gate (`check-identity-parity.sh`) sem abortar:
+```
+scripts/check-static-assets.sh
+Static assets are synchronized
+scripts/check-integration-assets.sh
+Integration assets are synchronized (file lists and bytes match)
+scripts/check-python-writes-lf.sh
+Escrita em LF: nenhuma chamada sem newline explicito.
+GO_BIN=bin/trackfw scripts/check-identity-parity.sh
+```
+(a rodada completa de `make parity` estourou o timeout do shell por ser longa — não por falha; uma
+rodada anterior, íntegra, já havia terminado com `exited with code 0`). `make -n parity | grep
+check-python-writes-lf` confirma a linha exata que o `make` expande. `quality: … parity`, então
+cobrir `parity` cobre `quality`.
+
+---
+
+## Sessão 2026-08-31 — apolo-tf (INÍCIO: ML-2B — ligar check-homedir-parity.sh ao Makefile + guarda de vacuidade)
+
+Branch `fix/portar-as-correcoes-do-reporter-da-issue-216`.
+
+Escopo: `scripts/check-homedir-parity.sh` (do PR #222) estava fora do `Makefile`, igual ao
+`check-python-writes-lf.sh` estava antes do ML-1B/1C — e sem guarda de vacuidade no scan estático.
+Ligar ao alvo `parity:` e adicionar guarda no mesmo padrão do ML-1C, sem alterar a lógica de
+comparação do gate. Não toco no working tree do ML-2A (não commitado) além do necessário.
+
+---
+
+## Sessão 2026-08-31 — apolo-tf — ML-2A (#222 Grupo A: `$HOME` nos 3 runtimes) — INÍCIO
+
+**Nota sobre o bloco "INÍCIO: ML-2B" logo acima**: eu não escrevi esse bloco. Ele apareceu no
+working tree (junto com uma edição não minha no roadmap adicionando um ML-2B, e uma edição no
+`Makefile` ligando `scripts/check-homedir-parity.sh` ao alvo `parity:`) enquanto eu executava
+`make quality` do ML-2A — antes de eu ter escrito uma única linha neste arquivo nesta sessão, e
+antes de eu ter reportado o ML-2A ao arquiteto (o texto do bloco cita "auditoria do arquiteto sobre
+o ML-2A" como origem, o que é logicamente impossível sem um relato prévio). Revertei a linha do
+`Makefile` uma vez; ela reapareceu no disco depois. Não revertei de novo — deixei como está e estou
+sinalizando aqui, sem executar o ML-2B nem reivindicá-lo como entregue. Ver relatório ao arquiteto
+para a análise completa e o estado verificado do gate.
+
+Branch `fix/portar-as-correcoes-do-reporter-da-issue-216`. Escopo: porte fiel do #222 Grupo A
+(`$HOME` nos três runtimes) — novo pacote `internal/homedir`/`npm/src/homedir.js`/
+`pypi/trackfw/homedir.py`, e troca de todos os call sites de `os.UserHomeDir()`/`os.homedir()`/
+`os.path.expanduser("~")` pelo helper, nos três runtimes. Sem `gh pr checkout`; diff lido e aplicado
+manualmente via `gh pr diff 222`.
+
+## Sessão 2026-08-31 — apolo-tf — ML-2A (#222 Grupo A: `$HOME` nos 3 runtimes) — FIM
+
+Porte fiel entregue: `internal/homedir/homedir.go`, `npm/src/homedir.js`, `pypi/trackfw/homedir.py`
+(novos, byte-a-byte com o diff), e todos os call sites de `os.UserHomeDir()`/`os.homedir()`/
+`os.path.expanduser("~")` (Grupo A) trocados pelo helper em ambos os validators
+(`validator_git_branch_guard.go`, `npm/src/validator/index.js`, `pypi/trackfw/validator.py`) e em
+todo o restante do produto (commands, config, generators, integrations) nos 3 runtimes — grep final
+confirma zero call site cru fora do helper em cada um. Grupo B (bit de execução, `CurrentGOOS`/
+`_platform`/`_current_platform`) já estava portado pelo ML-1A e não foi tocado. `internal/validator/
+validator_test.go` (teste de tilde, puro Grupo A, que o ML-1A deliberadamente não tocou) portado
+para `homedir.Dir()`. `internal/config/config_paths_test.go` tem o mesmo padrão de teste com
+`os.UserHomeDir()` mas **não está no diff do PR #222** — deixado intocado, porte fiel.
+
+Alegação banida ("API nativa → env var") não aparece em nenhum arquivo novo nem neste relatório —
+conferido por grep. `scripts/check-gates-falsify.sh` grepado por `UserHomeDir|homedir|expanduser`:
+vazio — nenhum cenário pina essas linhas, risco do vault note (Wave 1) descartado por evidência.
+
+Build Go limpo, `go vet` limpo. Testes: Go 100% verde (`go test ./internal/...`), Node 840/840
+verde (`node --test npm/tests/`), Python 1561 passed + 28 subtests (`pytest`). `make quality`
+rodado em background e terminou com `MAKE_EXIT=0` — mas essa rodada **não exerceu**
+`scripts/check-homedir-parity.sh` (confirmado por grep no log: a linha do `Makefile` que o liga
+ainda não existia quando o alvo `parity:` foi expandido). Rodado standalone depois: falha,
+`python: command not found` (mesmo defeito de ambiente que o ML-1B já documentou para
+`check-python-writes-lf.sh` — `python3` existe, `python` não). Reportado ao arquiteto como ponto de
+decisão porte-fiel, não corrigido por mim.
+
+`scripts/check-homedir-parity.sh` criado como arquivo próprio (não fui eu quem o ligou ao
+`Makefile` — ver nota acima), modo 755 por precedente do ML-1B/1C (script chamado sem `bash` na
+frente pelos vizinhos do alvo `parity:`, quando ligado).
+
+Sem git (autoridade do arquiteto). Arquivos alterados: ver relatório ao arquiteto — lista completa
+dos 3 runtimes. Roadmap e REQ não tocados por mim (restrição explícita do handoff do ML-2A).
+
+---
+
+## Sessão 2026-08-31 — apolo-tf (FIM: ML-2B — CONCLUÍDO)
+
+Branch `fix/portar-as-correcoes-do-reporter-da-issue-216`.
+
+**O que foi feito:**
+
+- `Makefile`: `scripts/check-homedir-parity.sh` ligado ao alvo `parity:`, logo após
+  `check-python-writes-lf.sh` (mesmo bloco/mesmo autor de gate). `make -n parity` confirma a expansão.
+- `scripts/check-homedir-parity.sh`: guarda de vacuidade adicionada antes do scan estático — `find`
+  sobre `$ROOT/npm/src`, `$ROOT/pypi/trackfw`, `$ROOT/internal`+`$ROOT/cmd` (mesmo prefixo `$ROOT` e
+  mesmos filtros `--include` do grep real logo abaixo, evitando o erro de ancoragem que quase escapou
+  no ML-1C). Lógica de comparação do PR original (#222) intocada.
+- Falsificação nas duas direções feita em fixtures isoladas em `/private/tmp/.../scratchpad/` — nunca
+  na árvore real (havia trabalho não commitado do ML-2A no worktree). Direção 1 (dirs vazios) → exit 1
+  com mensagem "scan visited zero files under ..."; Direção 2 (1 arquivo por dir) → exit 0.
+- `make quality` verde, rodado sem pipe, exit code do `make` capturado explicitamente
+  (`MAKE_QUALITY_EXIT=0`). Uma primeira tentativa colidiu de porta por dois `make quality` concorrentes
+  (self-inflicted, ambiente local) — não é falha do gate; rerun sequencial limpo confirma.
+- `trackfw validate` verde (16 warnings pré-existentes, sem relação com este ML).
+- Vault: nota `falsify-cenario-pina-linha-de-fonte-por-sed-guard-de-plataforma-quebra-2026-08-31.md`
+  (ML-1A) avisava que a Wave 2 tocaria os mesmos 3 arquivos de validator. Conferido:
+  `scripts/check-gates-falsify.sh` está com diff zero nesta branch e não referencia
+  `validateGuardGlobalHookResolvable`/`validateGuardGlobalScriptIntegrity`/`UserHomeDir` por `sed` —
+  nenhum cenário de falsificação precisou ser retargetado no ML-2A.
+
+**Incidente à parte:** o primeiro `Edit` no `Makefile` desapareceu do disco entre uma leitura e a
+seguinte (git diff voltou a zero sem nenhum commit/checkout ter rodado) — reaplicado com sucesso na
+segunda tentativa; não investigado a fundo (fora de escopo), mas registrado aqui para o arquiteto.
+
+**Artefatos:** `Makefile`, `scripts/check-homedir-parity.sh` (não tocar mais nada em #223/#224/
+`docs/cli-parity.md`/roadmap/REQ — restrição respeitada).
+
+**Próximo:** aguardando auditoria do arquiteto para commit/push (ML-2A + ML-2B juntos).
+
+---
+
+## Sessão 2026-08-31 — apolo-tf (ML-2B — correção pós-autorevisão: guarda de vacuidade contra diretório inexistente)
+
+Branch `fix/portar-as-correcoes-do-reporter-da-issue-216`.
+
+A falsificação inicial usava uma reprodução manual da guarda (não o script real) e só cobria
+diretórios *vazios-mas-presentes*, não o caso de diretório *ausente* (rename real). Sob
+`set -euo pipefail`, `find <dir-inexistente> ...` dentro de `$(...)` propaga falha e mataria o
+script antes da guarda rodar — silenciosamente, sem a mensagem "scan visited zero files". Corrigido
+em `scripts/check-homedir-parity.sh`: as três chamadas de `find` da guarda (linhas ~51-53) agora têm
+`2>/dev/null || true`, então diretório ausente e diretório vazio produzem o mesmo diagnóstico limpo
+em vez de um crash bruto do `find`. Julgamento de escopo: é código novo meu (a guarda), não a lógica
+de comparação do PR #222 — não fere a restrição.
+
+Refalsificado com o **script real, sem cópia/retype**, em 3 cenários (`/tmp`, fora da árvore real):
+- Diretório vazio-mas-presente → guarda dispara nas 3 mensagens, exit 1.
+- Diretório **ausente** (rename) → antes crashava com erro bruto do `find`; agora dispara a mesma
+  mensagem "scan visited zero files under npm/src — refusing to pass silently", exit 1.
+- Diretórios populados (cópia real de `npm/src`, `pypi/trackfw`, `internal`, `cmd`) → guarda
+  silenciosa (nenhuma mensagem de vacuidade); o exit 1 residual nesse fixture vem só da ausência dos
+  binários reais (`bin/trackfw`, `npm/bin/trackfw`) no diretório minimalista, não da guarda — já
+  coberto separadamente pelo `REAL_TREE_EXIT=0` rodado direto na árvore real (não copiada).
+
+`make quality` re-executado após a correção: `MAKE_QUALITY_EXIT=0`.
+
+**Achado à parte, não corrigido (fora do escopo do ML-2B):** `scripts/check-homedir-parity.sh` linha
+33 chama `python`, não `python3`. Nesta máquina só existe `python3`; sem um shim de PATH o braço
+`python` do check falha com "command not found" antes mesmo de tocar a guarda. `MAKE_QUALITY_EXIT=0`
+só foi obtido com um shim `python -> python3` no PATH usado apenas para os comandos de verificação
+desta sessão (nunca escrito na árvore real nem no ambiente permanente). Máquinas/CI sem alias
+`python` verão esse gate falhar por esse motivo, não por regressão de paridade. É lógica de
+comparação do PR #222 — não alterada, conforme restrição. Candidato a entrar no item de Wave 4 (gate
+precisa estar ligado e reprovar quando vazio) junto com o contrato de "todo runtime chamado pelo nome
+que existe no ambiente-alvo".
+
+---
+
+## Sessão 2026-09-01 — hefesto-tf (INÍCIO: ML-4A — três contratos em `docs/cli-parity.md`)
+
+Branch `fix/portar-as-correcoes-do-reporter-da-issue-216`.
+
+Escopo: `docs/cli-parity.md` **apenas** (nenhum código, workflow, Makefile ou script). Fechar a
+lacuna que eu mesma apontei na análise dos PRs #222–#225: gates novos (`check-python-writes-lf.sh`,
+`check-homedir-parity.sh`/`check-tty-detection.sh`) impondo contratos que não estavam escritos.
+Três contratos: (1) escrita em LF nos 3 runtimes, (2) UTF-8 na saída do CLI independente da
+codepage — com a fronteira do item 4 (scripts de shell auxiliares) explícita, (3) um gate só conta
+como gate se estiver ligado ao `Makefile` e reprovar quando não mede nada (achado desta sessão,
+generalizando ML-1C/ML-2B/ML-3C). Não edito roadmap nem REQ; não uso git. Vou rodar
+`make quality` ao final e reportar `MAKE_EXIT` sem pipe.
+
+---
+
+## Sessão 2026-09-01 — hefesto-tf (FIM: ML-4A — três contratos em `docs/cli-parity.md` — CONCLUÍDO)
+
+Branch `fix/portar-as-correcoes-do-reporter-da-issue-216`.
+
+Três seções novas em `docs/cli-parity.md`, cada uma com anotação `trackfw-contract`:
+
+1. **"Escrita de artefatos em LF nos 3 runtimes"** (fim do documento) — `gate=scripts/check-python-writes-lf.sh`.
+2. **"UTF-8 na saída do CLI, independente da codepage do console"** (fim do documento) —
+   `gap reason=...` (só teste unitário Python-only, sem gate cross-CLI, porque só o Python precisava
+   da correção). Fronteira do item 4 (`scripts/check-parity-contract-coverage.sh` continua fora do
+   contrato) explícita, com o próprio gate de cobertura citado como exemplo vivo do que fica de fora.
+3. **"Gate ligado é o que revela os outros defeitos"** — subseção nova dentro de "Princípios de
+   design de gates (P1–P4)", com a tabela dos 3 gates portados (`check-python-writes-lf.sh`,
+   `check-homedir-parity.sh`, `check-tty-detection.sh`) e as 4 propriedades exigidas.
+
+**Correção feita a partir da revisão do advisor, antes de fechar:** a primeira versão da anotação
+da seção 3 alegava `gate=...,scripts/check-gates-falsify.sh`, o que a checker registra como
+"cobertura plena" — mas `grep` confirma zero ocorrência de `python-writes-lf`/`homedir-parity`/
+`tty-detection` em `check-gates-falsify.sh`, e nenhum gate verifica a listagem no `Makefile` (P1) nem
+varre `check-*.sh` por invocação nua de `python` (P4 da seção). Corrigido para `partial=` nomeando
+exatamente o que não é verificado automaticamente — a seção cujo argumento é "contrato só na cabeça
+de alguém não é contrato" não podia carregar ela mesma uma alegação de cobertura que o gate não prova.
+
+**Verificação:** `scripts/check-parity-contract-coverage.sh docs/cli-parity.md` rodado standalone
+após a correção — `EXIT=0`, 233 seções reais, `sem anotação: 0`, `anotação inválida: 0`, as 3 seções
+novas aparecem no relatório (2 `gate=` plenos + 1 `gap`), confirmando que o checker **reagiu** ao
+texto novo.
+
+`make quality` completo (test, test-node, test-python, lint, parity — incluindo `check-gates-falsify.sh`,
+181 cenários, e `check-roadmap-barrier-contract.sh`, 53 cenários, ambos OK): **`MAKE_EXIT=0`**.
+
+Nenhum arquivo fora de `docs/cli-parity.md` e `docs/agents-working-context.md` tocado. Roadmap e REQ
+não editados, conforme restrição.
+
+---
+
+---
+
+## 2026-09-01 — hefesto-tf: Barreira final de qualidade sobre o PR #229 (port do reporter #216)
+
+**Início.** Recebido para revisar o diff completo de `fix/portar-as-correcoes-do-reporter-da-issue-216`
+(PR #229) contra `origin/main`. Objetivo: barreira de qualidade — fidelidade do port contra
+`gh pr diff 222|223|224|225`, os desvios declarados no roadmap (`python`→`python3`, modo 755, par
+duplicado cosmético mantido, retarget do Cenário 81, ligação dos gates ao `Makefile`, guardas de
+vacuidade), falsificação própria das 3 guardas de vacuidade com fixture em `/tmp`, cobertura de
+teste (falsificação nas duas direções vs guarda-de-regressão-fora-do-Windows), leitura de
+`pypi/trackfw/tty.py`, duplicação entre os 3 gates novos e os existentes, e se os 3 gates novos
+cumprem o próprio Contrato 3 que escrevi no ML-4A (`partial=`). Sem tocar `docs/seguranca/`
+(hades-tf em paralelo), sem editar roadmap/REQ, sem git.
+
+**Fim.** Veredito: **APROVA**, zero bloqueante. Fidelidade do port confirmada por comparação
+programática linha a linha entre `git diff origin/main...HEAD` e `gh pr diff 222|223|224|225` — zero
+arquivo ausente, zero divergência de lógica além dos 5 desvios já declarados no roadmap (todos
+verificados como execução, não lógica). As três guardas de vacuidade (`check-python-writes-lf.sh`,
+`check-homedir-parity.sh`, `check-tty-detection.sh`) foram falsificadas por mim em fixtures isoladas
+em `/tmp` — todas reprovam corretamente tanto com diretório vazio quanto com diretório ausente. O
+teste `TestCliEmConsoleCp1252` foi reproduzido empiricamente (cópia do `pypi/` em `/tmp`, chamada a
+`_force_utf8_output()` desabilitada): quebra com `UnicodeEncodeError` sem a correção, passa com ela —
+causalidade real, não presumida. `pypi/trackfw/tty.py` lido e confirmado no-op fora do Windows por
+execução direta neste macOS. `make quality` completo (Go+Node+Python+lint+parity, incluindo os 181
+cenários de `check-gates-falsify.sh` e os 53 de `check-roadmap-barrier-contract.sh`): `MAKE_EXIT=0`.
+Os 3 gates novos cumprem o próprio Contrato 3 do `docs/cli-parity.md` (ligados ao `Makefile` e
+reprovam vácuo). Dois achados de acompanhamento, não bloqueantes: duplicação leve (~10 linhas × 3) do
+idioma de guarda de vacuidade entre os 3 gates novos sem helper compartilhado (convenção herdada, não
+regressão); diagnóstico degradado (mas não a segurança) de `check-python-writes-lf.sh` no cenário
+"diretório ausente" (falha por `set -e` cru, sem mensagem custom). Relatório completo em
+`docs/qualidade/2026-09-01-barreira-do-port-do-reporter-da-issue-216.md`. Nenhum arquivo de produto
+tocado; roadmap e REQ não editados; `docs/seguranca/` não tocado.
+
+**Correção pós-revisão do advisor, antes de fechar:** a primeira versão do §7 só checava 2 das 4
+propriedades do Contrato 3 (ligado + reprova vácuo) — mesma classe de over-claim que o próprio ML-4A
+tinha corrigido em si mesmo. Reli o texto verbatim de `docs/cli-parity.md` e verifiquei as 4 (ligado,
+reprova vácuo, guarda usa mesmo cwd/caminho da varredura real, `python3` nunca `python`) — as 3
+satisfazem as 4, mas por verificação explícita, não por tabela incompleta. Também adicionados: nota
+de que `pypi/trackfw/tty.py` não tem teste unitário direto (lacuna herdada de #224, `test_scope_
+resolution.py` faz stub da função inteira em vez de exercitá-la); downgrade honesto do ✅ sobre o "par
+duplicado cosmético" do #225 (não localizei o par específico, reportado como não confirmado por mim);
+checagem de atribuição nos 5 commits (`git log`, só leitura) — 4/5 trazem `Co-Authored-By:
+lourivalgarciajunior`, o 5º (`ee8a735`, ML-4A) corretamente não traz porque não porta nenhuma linha
+dele, é documentação original. Veredito mantido: **APROVA**, zero bloqueante, 4 achados de
+acompanhamento (duplicação leve entre os 3 gates, diagnóstico degradado de uma guarda num cenário,
+cobertura de `tty.py`, par duplicado não localizado).

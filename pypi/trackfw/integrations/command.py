@@ -15,6 +15,8 @@ from trackfw import config as trackfw_config
 from .catalog import plan_deployments
 from .manager import IntegrationError, IntegrationManager
 from trackfw.generators.init_gen import inject_rules_for_tool
+from trackfw.homedir import home_dir
+from trackfw.tty import stdin_is_interactive
 
 # trackfw.commands.identity_wizard is imported lazily inside run(), as a
 # defensive measure: this module lives in trackfw.integrations, and
@@ -124,7 +126,7 @@ def resolve_scope(scope: str | None, operation: str | None = None) -> str:
     """
     if scope is not None:
         return scope
-    if not sys.stdin.isatty():
+    if not stdin_is_interactive():
         if operation == "uninstall":
             raise ValueError("uninstall requires --scope in non-interactive mode")
         return "global"
@@ -199,7 +201,7 @@ def _run_models(_args: argparse.Namespace) -> int:
 
     # AC5 + AC11: read agent_models from the global config (~/.trackfw/trackfw.yaml),
     # not from the cwd singleton. Show origin before the table.
-    home = os.path.expanduser("~")
+    home = home_dir()
     cwd = os.getcwd()
     agent_models, models_source = trackfw_config.load_global_agent_models(home, cwd)
     agent_models = agent_models or {}
@@ -329,7 +331,7 @@ def add_lifecycle_parser(subparsers, kind: str):
 
 def run(args: argparse.Namespace, kind: str) -> int:
     try:
-        home = os.path.expanduser("~")
+        home = home_dir()
         mutation = args.action != "list"
 
         # Scope resolution is a gate independent of --targets/--items (ADR
@@ -366,14 +368,14 @@ def run(args: argparse.Namespace, kind: str) -> int:
             identity_wizard.apply_identity_preset_flag(args.identity_preset, args.action, home)
 
         if mutation and not targets:
-            if sys.stdin.isatty():
+            if stdin_is_interactive():
                 targets = _select("target CLIs", [(entry["id"], entry["name"]) for entry in catalog["targets"]])
             else:
                 raise ValueError(f"--targets is required for non-interactive {args.action}")
-        if mutation and not items and sys.stdin.isatty():
+        if mutation and not items and stdin_is_interactive():
             items = _select(kind, [(entry["id"], entry["name"]) for entry in catalog[kind]])
         selected_surfaces = surface_values(args.surface)
-        if mutation and sys.stdin.isatty():
+        if mutation and stdin_is_interactive():
             _prompt_ambiguous_surfaces(catalog, kind, targets or [], selected_surfaces)
 
         # Identity wizard trigger (ADR ADR-2026-07-25-wizard-unificado-de-
@@ -385,7 +387,7 @@ def run(args: argparse.Namespace, kind: str) -> int:
         if kind == "agents" and mutation and not preset_changed:
             identity_exists = identity_wizard.identity_file_exists(home)
             force_flag = bool(getattr(args, "identity", False))
-            if identity_wizard.should_prompt_identity(kind, sys.stdin.isatty(), identity_exists, force_flag):
+            if identity_wizard.should_prompt_identity(kind, stdin_is_interactive(), identity_exists, force_flag):
                 identity_wizard.identity_wizard_runner(catalog, home)
             elif identity_exists and not args.json:
                 existing = load_identity(home)

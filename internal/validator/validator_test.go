@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/kgsaran/trackfw/internal/config"
+	"github.com/kgsaran/trackfw/internal/homedir"
 )
 
 // initGitRepo inicializa um repo git no diretório e cria+faz checkout de uma branch.
@@ -1107,9 +1108,13 @@ func TestValidateBranchHasWIPRoadmap_RuleOff(t *testing.T) {
 
 // TestValidate_WithTildeInADRDirs — verifica que adr_dirs com ~/ encontra ADRs no diretório home.
 func TestValidate_WithTildeInADRDirs(t *testing.T) {
-	home, err := os.UserHomeDir()
+	// homedir.Dir(), não os.UserHomeDir(): a produção expande `~` pelo mesmo
+	// helper, e o TestMain deste pacote isola HOME num tempdir. Com
+	// os.UserHomeDir() no Windows o teste escreveria na home REAL enquanto a
+	// produção leria a isolada, e o ADR nunca seria encontrado.
+	home, err := homedir.Dir()
 	if err != nil {
-		t.Skipf("os.UserHomeDir() falhou: %v", err)
+		t.Skipf("homedir.Dir() falhou: %v", err)
 	}
 
 	// Criar um diretório temporário dentro do home dir do usuário para simular ~/my-global-adrs

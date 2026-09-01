@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"github.com/kgsaran/trackfw/internal/homedir"
 	"os"
 	"path/filepath"
 	"strings"
@@ -56,7 +57,7 @@ func identityFileExists(home string) bool {
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
-	home, err := os.UserHomeDir()
+	home, err := homedir.Dir()
 	if err != nil {
 		return fmt.Errorf("init: nao foi possivel resolver o diretorio home: %w", err)
 	}
@@ -403,7 +404,7 @@ func installAITools(aiTools []string, cwd string, scope string) error {
 	if err != nil {
 		return err
 	}
-	home, err := os.UserHomeDir()
+	home, err := homedir.Dir()
 	if err != nil {
 		return err
 	}

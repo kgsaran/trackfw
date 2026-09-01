@@ -6,6 +6,7 @@ const { Command } = require('commander')
 const { input } = require('@inquirer/prompts')
 const generators = require('../generators/adr')
 const { t } = require('../i18n')
+const { homedir } = require('../homedir')
 
 const cmd = new Command('adr')
 cmd.description(t('adr.description'))
@@ -19,7 +20,7 @@ cmd.description(t('adr.description'))
  */
 function resolveAdrDir(scope) {
   if (scope === 'global') {
-    return path.join(os.homedir(), '.trackfw', 'adr')
+    return path.join(homedir(), '.trackfw', 'adr')
   }
   if (scope === 'project') {
     return require('../config').load().adrDirs[0]

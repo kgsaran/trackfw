@@ -97,7 +97,7 @@ ADR: {linked_adr_section}
 Roadmap: {linked_roadmap_section}
 """
 
-    with open(filepath, "w", encoding="utf-8") as f:
+    with open(filepath, "w", encoding="utf-8", newline="\n") as f:
         f.write(content)
 
     return filepath
@@ -281,7 +281,7 @@ def _append_req_transition_log(basename: str, from_state: str, to_state: str, cf
     log_path = os.path.join(req_dir, ".trackfw-log")
     try:
         os.makedirs(req_dir, exist_ok=True)
-        with open(log_path, "a", encoding="utf-8") as f:
+        with open(log_path, "a", encoding="utf-8", newline="\n") as f:
             f.write(line)
     except OSError:
         pass
@@ -321,7 +321,7 @@ def move_req(name: str, status: str, cfg: dict = None, req_dir: str = None, cwd:
 
     # Modo in-place: REQ solta em req_dir.
     if os.path.normpath(parent_dir) == req_dir_clean:
-        with open(filepath, "w", encoding="utf-8") as f:
+        with open(filepath, "w", encoding="utf-8", newline="\n") as f:
             f.write(updated)
         return filepath
 
@@ -349,13 +349,13 @@ def move_req(name: str, status: str, cfg: dict = None, req_dir: str = None, cwd:
 
     if target_dir is None:
         # Layout não reconhecido — fallback in-place, sem mover.
-        with open(filepath, "w", encoding="utf-8") as f:
+        with open(filepath, "w", encoding="utf-8", newline="\n") as f:
             f.write(updated)
         return filepath
 
     os.makedirs(target_dir, exist_ok=True)
     dst = os.path.join(target_dir, os.path.basename(filepath))
-    with open(dst, "w", encoding="utf-8") as f:
+    with open(dst, "w", encoding="utf-8", newline="\n") as f:
         f.write(updated)
     if os.path.normpath(dst) != os.path.normpath(filepath):
         os.remove(filepath)

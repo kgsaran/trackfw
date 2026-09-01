@@ -7,6 +7,7 @@ const path = require('node:path')
 
 const { frontmatterName } = require('./render')
 const { tildeify } = require('../lib/update-engine')
+const { homedir } = require('../homedir')
 
 const SCHEMA_VERSION = 1
 const sha256 = content => crypto.createHash('sha256').update(content).digest('hex')
@@ -27,7 +28,7 @@ const cleanClaim = claim => {
 }
 
 class IntegrationManager {
-  constructor({ projectRoot = process.cwd(), homeRoot = os.homedir() } = {}, { onSkip } = {}) {
+  constructor({ projectRoot = process.cwd(), homeRoot = homedir() } = {}, { onSkip } = {}) {
     this.roots = { project: path.resolve(projectRoot), global: path.resolve(homeRoot) }
     this.onSkip = onSkip
     // _afterManifestPersist, when set, runs immediately after manifests are

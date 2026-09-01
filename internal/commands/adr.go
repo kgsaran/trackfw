@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"github.com/kgsaran/trackfw/internal/homedir"
 	"os"
 
 	"github.com/charmbracelet/huh"
@@ -107,7 +108,7 @@ func resolveADRDir(scope string) (string, error) {
 	case "project", "":
 		return config.Load().ADRDirs[0], nil
 	case "global":
-		home, err := os.UserHomeDir()
+		home, err := homedir.Dir()
 		if err != nil {
 			return "", fmt.Errorf("localizando home dir: %w", err)
 		}

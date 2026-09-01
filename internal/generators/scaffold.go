@@ -2,6 +2,7 @@ package generators
 
 import (
 	"fmt"
+	"github.com/kgsaran/trackfw/internal/homedir"
 	"os"
 	"path/filepath"
 	"strings"
@@ -136,7 +137,7 @@ func installSkillsInner(force bool) error {
 }
 
 func installGlobalSkillInner(force bool) error {
-	home, err := os.UserHomeDir()
+	home, err := homedir.Dir()
 	if err != nil {
 		return fmt.Errorf("localizando home dir: %w", err)
 	}

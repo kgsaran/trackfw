@@ -52,6 +52,7 @@ from trackfw.generators.init_gen import (
     generate_global_credential_guard_script,
     generate_global_git_branch_guard_script,
 )
+from trackfw.homedir import home_dir
 
 STATE_UPDATED = "updated"
 STATE_SKIPPED = "skipped"
@@ -235,7 +236,7 @@ def _credential_guard_claude_result(home: str, dry_run: bool, install_missing: b
         desired = json.dumps(root, indent=2) + "\n"
         try:
             Path(path).parent.mkdir(parents=True, exist_ok=True)
-            Path(path).write_text(desired, encoding="utf-8")
+            Path(path).write_text(desired, encoding="utf-8", newline="\n")
         except OSError as error:
             return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
         return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
@@ -258,7 +259,7 @@ def _credential_guard_claude_result(home: str, dry_run: bool, install_missing: b
     if dry_run:
         return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
     try:
-        Path(path).write_text(desired, encoding="utf-8")
+        Path(path).write_text(desired, encoding="utf-8", newline="\n")
     except OSError as error:
         return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
     return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
@@ -303,7 +304,7 @@ def _credential_guard_codex_result(home: str, dry_run: bool, install_missing: bo
         desired = json.dumps(root, indent=2) + "\n"
         try:
             Path(path).parent.mkdir(parents=True, exist_ok=True)
-            Path(path).write_text(desired, encoding="utf-8")
+            Path(path).write_text(desired, encoding="utf-8", newline="\n")
         except OSError as error:
             return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
         return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
@@ -326,7 +327,7 @@ def _credential_guard_codex_result(home: str, dry_run: bool, install_missing: bo
     if dry_run:
         return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
     try:
-        Path(path).write_text(desired, encoding="utf-8")
+        Path(path).write_text(desired, encoding="utf-8", newline="\n")
     except OSError as error:
         return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
     return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
@@ -367,7 +368,7 @@ def _credential_guard_gemini_result(home: str, dry_run: bool, install_missing: b
         desired = json.dumps(root, indent=2) + "\n"
         try:
             Path(path).parent.mkdir(parents=True, exist_ok=True)
-            Path(path).write_text(desired, encoding="utf-8")
+            Path(path).write_text(desired, encoding="utf-8", newline="\n")
         except OSError as error:
             return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
         return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
@@ -390,7 +391,7 @@ def _credential_guard_gemini_result(home: str, dry_run: bool, install_missing: b
     if dry_run:
         return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
     try:
-        Path(path).write_text(desired, encoding="utf-8")
+        Path(path).write_text(desired, encoding="utf-8", newline="\n")
     except OSError as error:
         return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
     return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
@@ -433,7 +434,7 @@ def _credential_guard_cursor_result(home: str, dry_run: bool, install_missing: b
         desired = json.dumps(root, indent=2) + "\n"
         try:
             Path(path).parent.mkdir(parents=True, exist_ok=True)
-            Path(path).write_text(desired, encoding="utf-8")
+            Path(path).write_text(desired, encoding="utf-8", newline="\n")
         except OSError as error:
             return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
         return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
@@ -457,7 +458,7 @@ def _credential_guard_cursor_result(home: str, dry_run: bool, install_missing: b
     if dry_run:
         return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
     try:
-        Path(path).write_text(desired, encoding="utf-8")
+        Path(path).write_text(desired, encoding="utf-8", newline="\n")
     except OSError as error:
         return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
     return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
@@ -511,7 +512,7 @@ def _credential_guard_copilot_result(home: str, dry_run: bool, install_missing: 
         desired = json.dumps(root, indent=2) + "\n"
         try:
             Path(path).parent.mkdir(parents=True, exist_ok=True)
-            Path(path).write_text(desired, encoding="utf-8")
+            Path(path).write_text(desired, encoding="utf-8", newline="\n")
         except OSError as error:
             return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
         return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
@@ -534,7 +535,7 @@ def _credential_guard_copilot_result(home: str, dry_run: bool, install_missing: 
     if dry_run:
         return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
     try:
-        Path(path).write_text(desired, encoding="utf-8")
+        Path(path).write_text(desired, encoding="utf-8", newline="\n")
     except OSError as error:
         return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
     return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
@@ -663,7 +664,7 @@ def _git_branch_guard_claude_result(home: str, dry_run: bool, install_missing: b
         desired = json.dumps(root, indent=2) + "\n"
         try:
             Path(path).parent.mkdir(parents=True, exist_ok=True)
-            Path(path).write_text(desired, encoding="utf-8")
+            Path(path).write_text(desired, encoding="utf-8", newline="\n")
         except OSError as error:
             return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
         return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
@@ -686,7 +687,7 @@ def _git_branch_guard_claude_result(home: str, dry_run: bool, install_missing: b
     if dry_run:
         return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
     try:
-        Path(path).write_text(desired, encoding="utf-8")
+        Path(path).write_text(desired, encoding="utf-8", newline="\n")
     except OSError as error:
         return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
     return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
@@ -716,7 +717,7 @@ def _git_branch_guard_codex_result(home: str, dry_run: bool, install_missing: bo
         desired = json.dumps(root, indent=2) + "\n"
         try:
             Path(path).parent.mkdir(parents=True, exist_ok=True)
-            Path(path).write_text(desired, encoding="utf-8")
+            Path(path).write_text(desired, encoding="utf-8", newline="\n")
         except OSError as error:
             return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
         return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
@@ -739,7 +740,7 @@ def _git_branch_guard_codex_result(home: str, dry_run: bool, install_missing: bo
     if dry_run:
         return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
     try:
-        Path(path).write_text(desired, encoding="utf-8")
+        Path(path).write_text(desired, encoding="utf-8", newline="\n")
     except OSError as error:
         return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
     return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
@@ -770,7 +771,7 @@ def _git_branch_guard_gemini_result(home: str, dry_run: bool, install_missing: b
         desired = json.dumps(root, indent=2) + "\n"
         try:
             Path(path).parent.mkdir(parents=True, exist_ok=True)
-            Path(path).write_text(desired, encoding="utf-8")
+            Path(path).write_text(desired, encoding="utf-8", newline="\n")
         except OSError as error:
             return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
         return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
@@ -793,7 +794,7 @@ def _git_branch_guard_gemini_result(home: str, dry_run: bool, install_missing: b
     if dry_run:
         return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
     try:
-        Path(path).write_text(desired, encoding="utf-8")
+        Path(path).write_text(desired, encoding="utf-8", newline="\n")
     except OSError as error:
         return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
     return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
@@ -825,7 +826,7 @@ def _git_branch_guard_cursor_result(home: str, dry_run: bool, install_missing: b
         desired = json.dumps(root, indent=2) + "\n"
         try:
             Path(path).parent.mkdir(parents=True, exist_ok=True)
-            Path(path).write_text(desired, encoding="utf-8")
+            Path(path).write_text(desired, encoding="utf-8", newline="\n")
         except OSError as error:
             return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
         return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
@@ -849,7 +850,7 @@ def _git_branch_guard_cursor_result(home: str, dry_run: bool, install_missing: b
     if dry_run:
         return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
     try:
-        Path(path).write_text(desired, encoding="utf-8")
+        Path(path).write_text(desired, encoding="utf-8", newline="\n")
     except OSError as error:
         return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
     return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
@@ -881,7 +882,7 @@ def _git_branch_guard_copilot_result(home: str, dry_run: bool, install_missing: 
         desired = json.dumps(root, indent=2) + "\n"
         try:
             Path(path).parent.mkdir(parents=True, exist_ok=True)
-            Path(path).write_text(desired, encoding="utf-8")
+            Path(path).write_text(desired, encoding="utf-8", newline="\n")
         except OSError as error:
             return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
         return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
@@ -904,7 +905,7 @@ def _git_branch_guard_copilot_result(home: str, dry_run: bool, install_missing: 
     if dry_run:
         return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
     try:
-        Path(path).write_text(desired, encoding="utf-8")
+        Path(path).write_text(desired, encoding="utf-8", newline="\n")
     except OSError as error:
         return {"id": target_id, "state": STATE_FAILED, "path": display_path, "message": str(error)}
     return {"id": target_id, "state": STATE_UPDATED, "path": display_path}
@@ -1054,7 +1055,7 @@ def _catalog_group_result(
 
 
 def _run(args: argparse.Namespace) -> None:
-    home = os.path.expanduser("~")
+    home = home_dir()
 
     try:
         identity_cfg = load_identity(home)

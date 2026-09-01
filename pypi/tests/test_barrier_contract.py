@@ -88,6 +88,11 @@ def _run_barrier_cli(cwd: Path, *args: str):
         env=env,
         capture_output=True,
         text=True,
+        # encoding explicito: o CLI escreve UTF-8 nos tres runtimes (ver
+        # _force_utf8_output em trackfw/cli.py). text=True sozinho decodifica
+        # pelo locale — cp1252 no Windows — e transforma o travessao U+2014
+        # desta mensagem pinada em mojibake.
+        encoding="utf-8",
         check=False,
     )
     return result.stdout, result.stderr, result.returncode

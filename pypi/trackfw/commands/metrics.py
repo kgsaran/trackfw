@@ -146,7 +146,7 @@ def _export_csv(metrics, transitions, file_path):
     rows.append(f"cycle_time_mean_hours,{cycle_hours:.2f}")
     rows.append(f"throughput_per_week,{metrics['throughput']:.2f}")
     rows.append(f"wip_count,{len(metrics['wip_entries'])}")
-    with open(file_path, "w", encoding="utf-8") as f:
+    with open(file_path, "w", encoding="utf-8", newline="\n") as f:
         f.write("\n".join(rows) + "\n")
 
 

@@ -232,7 +232,7 @@ def _sync_to_provider(create_fn, issue_field, req_dir="docs/req"):
         try:
             issue_id = create_fn(title, desc)
             updated = _inject_field(text, issue_field, issue_id)
-            with open(file_path, "w", encoding="utf-8") as f:
+            with open(file_path, "w", encoding="utf-8", newline="\n") as f:
                 f.write(updated)
             results.append({"req_path": file_path, "issue_id": issue_id, "skipped": False})
         except Exception as e:

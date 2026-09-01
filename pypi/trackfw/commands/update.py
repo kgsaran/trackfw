@@ -69,6 +69,7 @@ from trackfw.commands.update_harness import (
     STATE_UPDATED,
 )
 from trackfw.generators.adr import global_adr_dir
+from trackfw.homedir import home_dir
 
 AGENT_RULES_RELATIVE_PATHS = [
     "CLAUDE.md",
@@ -226,7 +227,7 @@ def _refresh_discover_github_actions_workflow_if_present(root: str) -> None:
         return
     if not os.path.isfile(dest):
         return  # not installed — update never creates it (AC17(b))
-    with open(dest, "w", encoding="utf-8") as f:
+    with open(dest, "w", encoding="utf-8", newline="\n") as f:
         f.write(build_discover_github_actions_workflow_content())
 
 
@@ -269,7 +270,7 @@ def _update_hooks_surgical(hooks: str, root_dir: str) -> None:
             print("  ✓ .husky/pre-commit — trackfw validate já presente")
             return
         os.makedirs(os.path.join(root_dir, ".husky"), exist_ok=True)
-        with open(hook_path, "a", encoding="utf-8") as f:
+        with open(hook_path, "a", encoding="utf-8", newline="\n") as f:
             f.write("\ntrackfw validate\n")
         try:
             os.chmod(hook_path, 0o755)
@@ -285,7 +286,7 @@ def _update_hooks_surgical(hooks: str, root_dir: str) -> None:
         if "trackfw-validate:" in content or "trackfw validate" in content:
             print("  ✓ lefthook.yml — trackfw já presente")
             return
-        with open(lefthook_path, "a", encoding="utf-8") as f:
+        with open(lefthook_path, "a", encoding="utf-8", newline="\n") as f:
             f.write("\npre-commit:\n  commands:\n    trackfw-validate:\n      run: trackfw validate\n")
         print("  ✓ lefthook.yml — trackfw-validate injetado")
 
@@ -360,7 +361,7 @@ def _ensure_global_adr_dir_registered(cwd: str) -> None:
     ensureGlobalADRDirRegistered (internal/generators/update.go) and Node's
     ensureGlobalAdrDirRegistered (npm/src/commands/update.js) message-for-
     message."""
-    home = os.path.expanduser("~")
+    home = home_dir()
     global_dir = global_adr_dir(home)
     if not os.path.isdir(global_dir):
         return  # global ADR dir doesn't exist — no-op
@@ -381,7 +382,7 @@ def _ensure_global_adr_dir_registered(cwd: str) -> None:
         return  # already registered (literal "~/.trackfw/adr" or the expanded absolute path)
 
     updated = _insert_global_adr_dir_entry(content)
-    with open(yaml_path, "w", encoding="utf-8") as f:
+    with open(yaml_path, "w", encoding="utf-8", newline="\n") as f:
         f.write(updated)
     print("  ✓ adr_dirs: ~/.trackfw/adr registrado")
 
@@ -473,7 +474,7 @@ def _run(args: argparse.Namespace) -> None:
         # Identity errors must abort the command — never fall back silently
         # to the neutral default, which would revert the user's identity.
         try:
-            ident = identity.load(os.path.expanduser("~"))
+            ident = identity.load(home_dir())
         except IdentityError as e:
             print(f"update: identidade invalida: {e}")
             raise SystemExit(2) from e
@@ -584,7 +585,7 @@ def _codex_project_agents_target(root: str, dry_run: bool, install_missing: bool
         from trackfw.integrations.manager import IntegrationManager
 
         try:
-            ident = identity.load(os.path.expanduser("~"))
+            ident = identity.load(home_dir())
         except IdentityError as error:
             raise RuntimeError(f"identidade invalida: {error}") from error
 
@@ -637,7 +638,7 @@ def _silence_stdout(active: bool):
     if not active:
         yield
         return
-    with open(os.devnull, "w", encoding="utf-8") as devnull:
+    with open(os.devnull, "w", encoding="utf-8", newline="\n") as devnull:
         with contextlib.redirect_stdout(devnull):
             yield
 

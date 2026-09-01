@@ -22,6 +22,8 @@ from trackfw import identity, thirdparty
 from trackfw import config as trackfw_config
 from trackfw.integrations.catalog import load_catalog, plan_deployments
 from trackfw.integrations.manager import IntegrationError, IntegrationManager
+from trackfw.homedir import home_dir
+from trackfw.tty import stdin_is_interactive
 
 # thirdPartyProvenanceRule (Go) equivalent — the name of the trackfw
 # validate rule that is the real (git-anchored) enforcement behind the
@@ -244,7 +246,7 @@ def execute_install(kind: str, args: argparse.Namespace) -> None:
         print(_THIRD_PARTY_GLOBAL_SCOPE_WARNING)
 
     project_root = os.getcwd()
-    home = os.path.expanduser("~")
+    home = home_dir()
 
     entry = thirdparty.read_quarantine(project_root, checksum)
     content = thirdparty.decode_content(entry)
@@ -349,7 +351,7 @@ def execute_install(kind: str, args: argparse.Namespace) -> None:
     for rt in resolved_targets:
         print(f"  {rt['target_id']}: {rt['destination']}")
 
-    if not sys.stdin.isatty():
+    if not stdin_is_interactive():
         if not args.yes_i_trust_this_source:
             raise IntegrationError("install requires --yes-i-trust-this-source in non-interactive mode (AC1)")
     elif not args.yes_i_trust_this_source:
