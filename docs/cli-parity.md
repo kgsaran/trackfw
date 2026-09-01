@@ -1948,7 +1948,7 @@ These are literal parsing rules. All three runtimes must implement them identica
 
 ### Wave gates are a portable POSIX-shell contract, not an OS script (ADR-2026-09-01)
 
-<!-- trackfw-contract: gate=scripts/check-shell-posix-portability.sh -->
+<!-- trackfw-contract: gate=scripts/check-shell-posix-portability.sh partial=o gate detecta a reversao ESCRITA NA GRAFIA LITERAL, nao a reversao semantica. Duas evasoes reproduzidas por execucao na barreira de 2026-09-01 (hades-tf): (a) a metade positiva assert_count NAO exclui comentarios, entao a assinatura viva comentada satisfaz o grep; (b) a metade negativa assert_no_code_match usa regex literal, evadida por grafia equivalente e funcional — {["shell"]: true} em JS e **{"shell": True} em Python, ambas verificadas como sintaxe valida e comportamento real de shell do SO. Endurecer para checagem COMPORTAMENTAL (observar o interpretador em runtime, nao o texto) e REQ propria; ate la esta e defesa contra reversao acidental, NAO contra reversao deliberada. Ver vault/notes/gate-literal-regex-syntax-equivalent-bypass-2026-09-01.md -->
 
 The `**Gates da wave:**` block (rule 5 above) is a **contract written in POSIX shell**, not a
 script interpreted by whatever shell the host OS defaults to. All three CLIs execute it with
@@ -2017,7 +2017,7 @@ has no accidental syntax mitigation left in the middle. Full measurement and arg
 **Regression gate.** `scripts/check-shell-posix-portability.sh` pins the `sh -c` call signature,
 the `not_evaluated` status on both branches (untrusted roadmap and missing `sh`), and the pinned
 failure message in `npm/src/commands/barrier.js` and `pypi/trackfw/commands/barrier.py`, and
-reproves if either file's gate-execution point reverts to `shell: true` / `shell=True` (host-shell
+reproves if either file's gate-execution point reverts to the **literal spelling** `shell: true` / `shell=True` (see the `partial=` annotation: equivalent spellings evade it) (host-shell
 execution) — checked outside comment lines, since both files' own comments document the old
 pattern in prose as the thing *not* to do again. It reproves independently per file: a regression
 in only one of the two CLIs fails, naming which. It does not touch `serve.js`/`serve.py`, which

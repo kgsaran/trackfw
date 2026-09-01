@@ -27815,3 +27815,66 @@ assinaturas...`, `check-parity-contract-coverage.sh` → `nenhuma seção sem an
 
 **Não tocado**: `internal/`, `npm/src/commands/barrier.js`, `pypi/trackfw/commands/barrier.py`
 (fix já commitado no ML-1A), `serve.js`/`serve.py`, roadmap/REQ/ADR.
+
+---
+
+## Sessão 2026-09-01 — hefesto-tf (INÍCIO: barreira final de qualidade — PR #236, item 7 do #216)
+
+Branch `fix/os-3-clis-executam-gate-de-wave-com-sh-c` (não criada por mim). Escopo: auditoria de
+qualidade sobre o diff completo (ML-1A + ML-2A) — controle de "tudo passa", distinção
+`not_evaluated`/`blocked` (falsificada nos 3 CLIs, independentemente), o gate
+`check-shell-posix-portability.sh`, a extração de `evalGateCommands` em Go, e cobertura de teste.
+Não modifico código de produto. `docs/qualidade/2026-09-01-barreira-do-shell-de-gate.md` sendo
+escrito. `docs/seguranca/` não tocado (paralelo com hades-tf).
+
+---
+
+## Sessão 2026-09-01 — hefesto-tf (FIM: barreira final de qualidade — PR #236 — CONCLUÍDO)
+
+Branch `fix/os-3-clis-executam-gate-de-wave-com-sh-c`.
+
+**O que foi feito:** auditoria de qualidade completa sobre `git diff origin/main...HEAD`
+(internal/commands/barrier.go, npm/src/commands/barrier.js, pypi/trackfw/commands/barrier.py,
+scripts/check-shell-posix-portability.sh, docs/cli-parity.md, e os testes correspondentes).
+Reproduzi de forma independente (fixtures novas em scratchpad, não reaproveitando as evidências do
+próprio roadmap) as 3 falsificações centrais: (1) controle — gate que deve reprovar continua
+reprovando `blocked` nos 3 CLIs, mesmo veredito; (2) `exit 127` (ferramenta ausente dentro do
+`sh`) vira `blocked`, nunca `not_evaluated`, nos 3; (3) `sh` ausente do `$PATH` vira
+`not_evaluated` com mensagem byte-idêntica, nos 3. Também rodei o gate
+`check-shell-posix-portability.sh` contra as árvores `good`/`node-regress`/`py-regress`/
+`empty-root` já deixadas em scratchpad pelo ML-2A e confirmei os 4 vereditos batem com o relatado.
+
+**Veredito: APROVA — com ressalva declarada de que `make quality` não foi observado até o fim**
+(20:16-20:28+, log parou de avançar em 3392 linhas / zero FAIL antes de mim declarar; co-tenência
+confirmada: `docs/seguranca/2026-09-01-barreira-do-shell-de-gate.md` apareceu em `git status` sem
+eu ter escrito, evidência de `hades-tf` escrevendo na mesma árvore em paralelo, mais uma segunda
+`make quality` PID 28762 de outra sessão). O gate mais relevante (`check-shell-posix-portability.sh`)
+foi verificado direto, sem depender do `make quality`. Nenhum bloqueante. Um achado de
+acompanhamento (não bloqueante): o gate `assert_no_code_match` só cobre a sintaxe literal
+`shell: true`/`shell=True`; uma reintrodução via `opts.shell = true` (atribuição, não literal)
+escaparia — mesma classe de limitação de todos os `check-*.sh` baseados em grep já existentes no
+repo (`check-homedir-parity.sh`, `check-ref-separator-portability.sh`), não uma regressão desta
+REQ. Também falsifiquei o ramo não-trusted do `roadmapTrustForGates` (roadmap real diverge de
+`origin/main`): `not_evaluated` com a mensagem própria do ramo de trust, byte-idêntica nos 3 CLIs,
+sem contaminação por `shMissingMsg`.
+
+**Artefato:** `docs/qualidade/2026-09-01-barreira-do-shell-de-gate.md`.
+
+**Fronteiras mantidas:** nenhum arquivo de `internal/`, `npm/`, `pypi/`, `scripts/` tocado; nenhum
+commit/branch/push; `docs/seguranca/` não tocado.
+
+---
+
+## Sessão 2026-09-01 — hefesto-tf (ADENDO: `make quality` concluiu — MAKE_EXIT=0)
+
+O `make quality` iniciado às 20:16 (ver entrada FIM acima) **concluiu depois** de eu já ter
+declarado "não observado até o fim" — a notificação de background chegou após a resposta final.
+Resultado: `MAKE_EXIT=0`, log completo sem nenhum `FAIL`/`not ok`/`Error:`/`panic:`, terminando em
+`check-shell-posix-portability: OK — 10 assinaturas...`. **A ressalva do item 7 do relatório fica
+resolvida a favor do verde** — atualizado em
+`docs/qualidade/2026-09-01-barreira-do-shell-de-gate.md`. Observação: `git status` no momento da
+conferência mostra bastante atividade concorrente de outra sessão (REQ nova sobre o achado de
+acompanhamento que registrei — bypass por atribuição em `assert_no_code_match` —, e mudanças em
+`docs/cli-parity.md`, `.gitignore`, `vault/notes/index.md`, `.agents/skills/`) — não tocada por
+mim, apenas observada para contextualizar por que a árvore não estava estática durante a janela do
+`make quality`.
