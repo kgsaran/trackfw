@@ -27307,3 +27307,69 @@ e de novo ao final. `make quality` foi então rerodado do zero, numa única exec
 do teste de controle em `roadmap_test.go`) — MAKE_EXIT reportado é dessa rodada final, não da rodada
 anterior que rodou sobre uma árvore parcialmente editada. Roadmap e REQ não editados; nenhum comando
 git de escrita executado.
+
+## artemis-tf — 2026-09-01 — Wave 2 (ML-2A), gate falsificável do separador em artefato — INÍCIO
+
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-09-01-caminho-dentro-de-artefato-versionado-usa-sempre-barra.md`
+REQ: `docs/req/REQ-2026-08-30-caminho-portavel-montado-com-separador-do-sistema-vaza-para-dentro-de-artefato-versionado.md`
+
+Entrando para escrever o gate falsificável da AC5 sobre o trabalho já commitado das Waves 0/1
+(`normalizeRefSeparator`/`_normalize_ref_separator` nos 3 runtimes). O gate precisa provar a escrita
+sempre-`/` sem máquina Windows.
+
+## artemis-tf — 2026-09-01 — Wave 2 (ML-2A), gate falsificável do separador em artefato — FIM
+
+Entregue `scripts/check-ref-separator-portability.sh`: gate estático (sem `python`, sem depender de
+SO) que confirma 17 assinaturas de código exatas — 6 pontos de escrita (`portableDst`/`portable_path`
+normalizados antes de `sync*Reférences`, e `logBasename` por concatenação explícita com `/` nos 3
+runtimes) e 11 pontos de leitura tolerante (`referenceExists`, `validateREQRoadmapLifecycle`,
+`provenanceKey`/`provenance_key`, node ID e `edge.To` do `/api/chain`, e a cura de REQ já suja —
+`fmVal`/`currentRef`/`current_ref` normalizado antes da comparação de basename em `syncREQReferences`
+nos 3 runtimes; achado ausente na Wave 1 original, adicionado após revisão do arquiteto).
+
+Nasce ligado ao `Makefile` (`parity:` alvo, `make -n parity` confirma). Duas guardas de vacuidade:
+contagem de `assert_has` (pega remoção de checagem) e existência de arquivo por assinatura (pega
+diretório/arquivo movido — falsificado apontando o gate para diretório ausente e para diretório vazio,
+ambos reprovam nomeando cada assinatura ausente, nunca em silêncio). Falsificado nas duas direções em
+cópias de `/tmp` (nunca na árvore real): revertendo `portableDst`→`dst` no Go (regressão de escrita) e
+revertendo `normalizeRefSeparator(currentRef)`→`currentRef` no Node (regressão de leitura) — o gate
+reprova nomeando a assinatura exata. Registrado em `docs/cli-parity.md` (`<!-- trackfw-contract:
+gate=scripts/check-ref-separator-portability.sh -->`), verificado por `check-parity-contract-coverage.sh`.
+
+`make quality` completo (build + testes Go/Node/Python + toda a suíte `parity`, incluindo
+`check-gates-falsify.sh` — 181 cenários — e `check-roadmap-barrier-contract.sh` — 53 cenários) rodou
+verde do zero após todas as edições: `MAKE_EXIT=0`. `git status --porcelain` limpo (só os 4 arquivos
+deste ML: `Makefile`, `docs/cli-parity.md`, `scripts/check-ref-separator-portability.sh` novo,
+`docs/agents-working-context.md`). Roadmap e REQ não editados; nenhum comando git de escrita executado.
+
+## artemis-tf — 2026-09-01 — Wave 2 (ML-2A), gate falsificável do separador em artefato — CORREÇÃO PÓS-AUDITORIA
+
+Revisão encontrou um buraco de cobertura no gate entregue no ciclo anterior: `referenceExists` e
+`validateREQRoadmapLifecycle` em `internal/validator/validator.go` produzem, coincidentemente, a
+mesma linha `expandedRef := config.ExpandPath(normalizeRefSeparator(ref))` — o `assert_has` original
+(um `grep -qF` simples) passava com só UMA das duas normalizando, escondendo uma regressão de
+leitura na segunda função. Também faltava assinatura equivalente para
+`validate_req_roadmap_lifecycle` no Python (`pypi/trackfw/validator.py`), que nunca foi coberta.
+
+Correções em `scripts/check-ref-separator-portability.sh`:
+- Nova função `assert_count` (exige N ocorrências exatas, não só "existe") aplicada à linha duplicada
+  do Go — falsificado revertendo a normalização SÓ de `validateREQRoadmapLifecycle`, mantendo
+  `referenceExists` intacto: `assert_count` reprova "esperava 2 ocorrência(s), achou 1", o buraco
+  exato que o `assert_has` simples não pegava.
+- Assinatura nova para `validate_req_roadmap_lifecycle` (Python) — falsificada isoladamente.
+- As 3 assinaturas de "cura de REQ suja" foram encurtadas do texto de linha inteira (frágil a
+  reformatação/condicional) para o substring da propriedade normalizada
+  (`filepath.Base(normalizeRefSeparator(fmVal))`, etc.) — confirmadas ainda únicas em cada arquivo.
+- Total de checagens: 18 (`expected=18`), confirmado por 4 falsificações independentes em cópias de
+  `/tmp` (nunca na árvore real): regressão de escrita (Go `portableDst`→`dst`), o buraco de cobertura
+  do `assert_count` acima, regressão de leitura Python (`validate_req_roadmap_lifecycle`), e vacuidade
+  por remoção de checagem (17 vs. 18 esperado).
+
+`docs/cli-parity.md` atualizado com `partial=` na anotação do gate (nomeando que a cobertura é
+estrutural, falsificada manualmente fora de `check-gates-falsify.sh`) e prosa revisada descrevendo o
+`assert_count` e as 4 direções de falsificação. `scripts/check-parity-contract-coverage.sh` confirma
+"OK — nenhuma anotação inválida e nenhuma seção sem anotação".
+
+`make quality` completo rodou verde do zero após as correções: `MAKE_EXIT=0`,
+`check-ref-separator-portability: OK — 18 assinaturas de escrita/leitura portavel confirmadas`.
+`git status --porcelain` continua só com os 4 arquivos deste ML.

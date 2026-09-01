@@ -6360,3 +6360,64 @@ permanece `REPRODUCED`/aberto — não é resolvido por #223, e não deve ser co
 
 Origem: porte fiel de `lourivalgarciajunior`, PR #223 (fechado por conflito de governança,
 aproveitado integralmente — `docs/analises/2026-08-31-aproveitamento-dos-prs-222-225.md`).
+
+## Caminho dentro de artefato versionado usa sempre "/" (item 10, issue #216, REQ-2026-08-30)
+
+<!-- trackfw-contract: gate=scripts/check-ref-separator-portability.sh partial=cobertura estrutural (assinaturas de código, não execução real do defeito) validada por falsificação manual em cópias de /tmp durante o ML que introduziu o gate; não está registrada como cenário formal em scripts/check-gates-falsify.sh -->
+
+Caminho dentro de artefato versionado (frontmatter `roadmap:`/`req:`/`adr:`, linha do
+`.trackfw-log`, chave de `.trackfw/thirdparty-provenance.json`) é **dado portável**, não caminho de
+sistema de arquivos — e usa sempre `/`, independente do SO em que o comando roda.
+`filepath.Join`/`path.join`/`os.path.join` continuam corretos e intocados para acessar o
+filesystem local; o escopo é só o valor que acaba **escrito como texto** dentro de conteúdo
+versionado.
+
+**Escrita (AC1):** `roadmap move` normaliza o `dst` nativo com
+`normalizeRefSeparator`/`_normalize_ref_separator` (substituição incondicional de `\` por `/`, não
+`filepath.ToSlash` — este último é no-op em Linux/macOS, o que não normalizaria um valor sujo
+herdado de um commit feito no Windows, exatamente o defeito a curar) antes de gravá-lo no
+frontmatter da REQ pareada, nos 3 runtimes. O `.trackfw-log` (modo `by_agent`) usa concatenação
+explícita `agent + "/" + basename` nos 3 runtimes — Go e Node já seguiam o padrão; Python foi
+corrigido para igualar.
+
+**Leitura tolerante (AC3):** todo ponto que resolve uma referência de conteúdo versionado no
+filesystem, ou compara chave de string contra conteúdo sempre gravado com `/`, normaliza o valor
+**já extraído do campo** antes de comparar — nunca o buffer inteiro do arquivo, que corromperia `\`
+literal legítimo em exemplo/regex/prosa de ADR, REQ e roadmap (inclusive os que descrevem este
+próprio defeito). Cobre: `trackfw validate` (`referenceExists`,
+`validateREQRoadmapLifecycle`, `thirdparty_artifact_has_provenance`), o grafo do `serve`
+(`/api/chain`, tanto o node ID quanto `edge.To`), e a cura de REQ já suja — `syncREQReferences`/
+`syncReqReferences`/`sync_paired_req_references` normalizam o `roadmap:` já gravado antes de casar
+por basename, senão uma REQ suja por um `roadmap move` anterior no Windows nunca é curada por um
+`roadmap move` subsequente.
+
+**Fora de escopo, nomeado explicitamente** (não tocado por esta REQ):
+`content_base64` da quarentena de terceiros (âncora de checksum/TOCTOU); corpo de prosa/código de
+ADR/REQ/roadmap (normalização é por campo extraído, nunca por arquivo inteiro); a chave absoluta de
+`integrations-manifest.json` (não-portável por design, domínio de chave já pinado nesta mesma
+página).
+
+**Gate:** `scripts/check-ref-separator-portability.sh` — estático, de propósito: em Linux/macOS
+`filepath.Join`/`path.join`/`os.path.join` sempre produzem `/`, então rodar o comando de verdade
+neste SO nunca reproduz o defeito (só aparece com separador nativo do Windows) — falsificar em
+runtime exigiria runner Windows no CI. O gate mira **substrings de chamada de função específicas em
+arquivos específicos** (18 checagens de escrita/leitura, cobrindo cada site conhecido nos 3
+runtimes — uma delas, `assert_count`, exige exatamente 2 ocorrências porque `referenceExists` e
+`validateREQRoadmapLifecycle` produzem coincidentemente a mesma linha de normalização em
+`validator.go`, e um `grep -qF` simples passaria com apenas um dos dois normalizando) — nunca grepa
+`\` solto em `docs/**`, que reprovaria sobre a própria documentação deste defeito. As assinaturas
+miram o substring da propriedade normalizada, não a linha condicional inteira, para não quebrar por
+reformatação inofensiva (achado do vault:
+`falsify-cenario-pina-linha-de-fonte-por-sed-guard-de-plataforma-quebra-2026-08-31`). Duas guardas
+de vacuidade distintas: contagem de checagens (pega alguém removendo uma chamada `assert_has`/
+`assert_count` do corpo do script) e existência de arquivo por assinatura (pega diretório/arquivo
+movido ou ausente, reprovando nomeadamente em vez de "0 encontrados, gate passa"). Falsificado em
+cópias de `/tmp` (nunca na árvore real) em quatro cenários: revertendo o `portableDst` do Go
+(regressão de escrita); revertendo a normalização só de `validateREQRoadmapLifecycle` mantendo
+`referenceExists` intacto (regressão de leitura que um `assert_has` simples não pegaria — é
+exatamente o motivo do `assert_count`); revertendo a normalização de
+`validate_req_roadmap_lifecycle` no Python; e removendo uma chamada `assert_has` do próprio script
+(vacuidade de contagem). Em todos os quatro, o gate reprova nomeando a assinatura ou contagem exata
+que sumiu; sobre a árvore correta, passa com `checked=18`.
+
+Origem: `lourivalgarciajunior`, issue #216, item 10.

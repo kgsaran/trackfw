@@ -234,10 +234,55 @@ O defeito volta na forma exata que o ML-0A reproduziu: **`validate` recusando re
 no disco.**
 
 ## Wave 2 — Gate falsificável
-> Dependências: Wave 1. O gate precisa provar a escrita **sem** máquina Windows — a REQ exige isso
-> na AC5, e é o que torna a regressão detectável no CI Linux todo dia.
-> 🔴 **O gate nasce ligado ao `Makefile` e com guarda de vacuidade** — contrato escrito em
-> `docs/cli-parity.md` nesta sessão, depois de dois gates chegarem inertes.
+> Dependências: Wave 1. O gate prova a escrita **sem** máquina Windows (AC5) — é o que torna a
+> regressão detectável no CI Linux todo dia.
+
+### ML-2A — Gate falsificável, sem máquina Windows
+**Status:** ✅ Concluído
+**Agente:** `artemis-tf`
+**Entregue:** `scripts/check-ref-separator-portability.sh` — **18 checagens de assinatura de código**,
+ligado ao `parity:` do `Makefile`, com contrato anotado em `docs/cli-parity.md`.
+
+**O gate mira assinatura de código, nunca `grep` livre por `\` em `docs/**`** — que era a armadilha
+auto-referente: reprovaria em cima da documentação que **descreve** o defeito. 6 checagens cobrem a
+escrita (AC1), 12 cobrem a leitura tolerante (AC3), incluindo a "cura de REQ já suja".
+
+#### O achado dela, e é a instância mais sutil da família que nos persegue
+
+A primeira versão usava `assert_has` — *"a string existe"* — para
+`expandedRef := config.ExpandPath(normalizeRefSeparator(ref))`, que aparece **duas vezes** em
+`validator.go`: em `referenceExists` **e** em `validateREQRoadmapLifecycle`. **Um `grep -q` fica
+satisfeito com uma só**, então reverter a outra passaria verde com metade da garantia perdida.
+
+Trocou por `assert_count`, exigindo o número exato. **Verifiquei por falsificação própria**, revertendo
+só a segunda ocorrência numa cópia em `/tmp`:
+
+```
+árvore correta               →  exit 0, "18 assinaturas confirmadas"
+regressão PARCIAL (1 de 2)   →  exit 1, "esperava 2 ocorrencia(s), achou 1"
+```
+
+**Não é um controle inerte — é um controle que cobre parcialmente e se reporta como completo.**
+Sétima instância desta família na sessão, e a que mais custa a enxergar: o controle roda, mede algo
+real, e mesmo assim mente sobre a cobertura.
+
+Ela também descobriu que `validate_req_roadmap_lifecycle` do **Python não tinha cobertura nenhuma** e
+acrescentou assinatura própria.
+
+#### Guarda de vacuidade em forma mais forte
+
+`"esperava checar 18 assinaturas, checou 17"` — afirma **contagem esperada**, não *"visitou mais que
+zero"*. Um ponto de escrita renomeado derruba o gate; a forma antiga passaria com 17 de 18.
+Falsificada nas duas formas independentes: assinatura removida do corpo, e `ROOT` apontando para
+diretório inexistente **e** vazio — cada uma das 18 reprovando individualmente, nunca "0 encontrados,
+gate passa".
+
+**`make quality`:** `MAKE_EXIT=0`, zero `FAIL`, com o gate executando na cadeia. Contrato validado
+pelo `check-parity-contract-coverage.sh`.
+
+**Terceiro gate seguido nascendo sob o contrato completo** — ligado, com guarda ancorada corretamente,
+`python3`, e contrato escrito no mesmo diff. Os dois primeiros da série custaram um microlote
+corretivo cada.
 
 ## Verificação que só o CI fecha
 
