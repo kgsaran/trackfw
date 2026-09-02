@@ -53,6 +53,7 @@ parity: build
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-thirdparty-parity.sh
 	scripts/check-install-version-pin.sh
 	scripts/check-ci-workflow-pin-parity.sh
+	scripts/check-ci-workflow-job-id-collision.sh
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-roadmap-barrier-contract.sh
 	scripts/check-ref-separator-portability.sh
 	scripts/check-atomic-write-anti-divergence.sh
