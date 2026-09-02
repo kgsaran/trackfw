@@ -161,8 +161,14 @@ EXPECTED_ROADMAP_FROM_REQ="docs/roadmaps/backlog/ROADMAP-${DATE}-fluxo-de-pagame
 EXPECTED_SLASH_ROADMAP=".claude/commands/trackfw/roadmap.md"
 EXPECTED_NOTE="vault/notes/${SLUG}-${DATE}.md"
 EXPECTED_INDEX="vault/notes/index.md"
+# .gitattributes: emitido por `init` nos 3 runtimes (ML-1A,
+# ROADMAP-2026-09-02-gitattributes-com-merge-union-para-o-trackfw-log-nos-3-clis).
+# Entra no mesmo diff byte-a-byte dos demais artefatos — o caminho de CRIAÇÃO é o
+# que este gate cobre; o de APPEND (projeto que já tem .gitattributes) é coberto
+# pelos testes de cada runtime, não aqui.
+EXPECTED_GITATTRIBUTES=".gitattributes"
 
-KINDS=("req" "adr" "roadmap" "roadmap_flags" "roadmap_from_req" "slash_roadmap" "note" "note_index")
+KINDS=("req" "adr" "roadmap" "roadmap_flags" "roadmap_from_req" "slash_roadmap" "note" "note_index" "gitattributes")
 
 expected_path() {
   case "$1" in
@@ -174,6 +180,7 @@ expected_path() {
     slash_roadmap) echo "$EXPECTED_SLASH_ROADMAP" ;;
     note)       echo "$EXPECTED_NOTE"    ;;
     note_index) echo "$EXPECTED_INDEX"   ;;
+    gitattributes) echo "$EXPECTED_GITATTRIBUTES" ;;
   esac
 }
 
@@ -566,4 +573,6 @@ if [[ "$FAIL" -ne 0 ]]; then
 fi
 
 echo "OK   [artifact-parity/claude-md-architect-responses-byte-identical]"
-echo "Artifact parity checks passed (8 artifact types × 3 runtimes; roadmap flags, quoted status, analyzing cycle flat/by_agent; CLAUDE.md ## Architect responses section)"
+# Contagem derivada de KINDS: literal fixo já ficou defasado ao entrar o 9º tipo
+# (.gitattributes) — número derivado não pode mentir sobre o que foi comparado.
+echo "Artifact parity checks passed (${#KINDS[@]} artifact types × 3 runtimes; roadmap flags, quoted status, analyzing cycle flat/by_agent; CLAUDE.md ## Architect responses section)"

@@ -53,6 +53,10 @@ func Scaffold(cfg Config) error {
 		return err
 	}
 
+	if err := generateGitAttributes(); err != nil {
+		return err
+	}
+
 	if err := writeTrackfwConfig(cfg); err != nil {
 		return err
 	}
@@ -2091,6 +2095,83 @@ func generateVaultIndex() error {
 		return fmt.Errorf("writing vault/notes/index.md: %w", err)
 	}
 	fmt.Println("  ✓ vault/notes/index.md")
+	return nil
+}
+
+// gitAttributesRuleTarget é o primeiro campo da regra que este gerador mantém.
+// A regra casa o BASENAME (padrão sem barra) de propósito: `roadmap_dir` e
+// `req_dir` são configuráveis por projeto (trackfw.yaml) e ambos carregam um
+// `.trackfw-log` (roadmap.go logPath / req.go appendREQTransitionLog), então um
+// caminho fixo nasceria quebrado em quem configurou diretório diferente e
+// deixaria o log do req_dir descoberto.
+const gitAttributesRuleTarget = ".trackfw-log"
+
+// gitAttributesBlock é o bloco emitido no caminho de criação E no de append.
+// Byte-idêntico ao equivalente em npm/src/generators/init.js e
+// pypi/trackfw/generators/init_gen.py (regra dura de paridade) e ao
+// .gitattributes da raiz deste repositório.
+const gitAttributesBlock = `# trackfw: .trackfw-log is append-only — every write lands on the last line, so
+# two parallel branches conflict on every merge. merge=union keeps the lines
+# from both sides (chronological order is not guaranteed). The pattern has no
+# slash, so it matches the file in any directory — roadmap_dir and req_dir both
+# carry one, and both are configurable per project.
+.trackfw-log merge=union
+`
+
+// hasGitAttributesRule decide idempotência: verdadeiro quando ALGUMA linha
+// não-comentário tem `.trackfw-log` como primeiro campo delimitado por espaço.
+// Predicado deliberadamente sobre o CAMPO, não sobre a string literal da linha
+// inteira: `.trackfw-log  merge=union` (dois espaços) ou uma regra manual com
+// outro atributo já são "a regra existe" — reescrever por cima seria sobrescrever
+// decisão do projeto.
+func hasGitAttributesRule(content string) bool {
+	for _, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		if strings.Fields(trimmed)[0] == gitAttributesRuleTarget {
+			return true
+		}
+	}
+	return false
+}
+
+// generateGitAttributes garante a regra `merge=union` para o `.trackfw-log` no
+// `.gitattributes` da raiz do projeto. Três ramos, todos idempotentes:
+//   - arquivo ausente  → cria com o bloco
+//   - existe sem regra → APPEND do bloco (nunca sobrescreve o arquivo do projeto)
+//   - existe com regra → no-op
+func generateGitAttributes() error {
+	const path = ".gitattributes"
+	existing, err := os.ReadFile(path)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return fmt.Errorf("reading .gitattributes: %w", err)
+		}
+		if err := os.WriteFile(path, []byte(gitAttributesBlock), 0644); err != nil {
+			return fmt.Errorf("writing .gitattributes: %w", err)
+		}
+		fmt.Println("  ✓ .gitattributes")
+		return nil
+	}
+
+	if hasGitAttributesRule(string(existing)) {
+		return nil
+	}
+
+	// Arquivo preexistente sem newline final: emendar o bloco direto grudaria a
+	// primeira linha do bloco na última linha do projeto, corrompendo a config
+	// dele em silêncio.
+	out := string(existing)
+	if out != "" && !strings.HasSuffix(out, "\n") {
+		out += "\n"
+	}
+	out += gitAttributesBlock
+	if err := os.WriteFile(path, []byte(out), 0644); err != nil {
+		return fmt.Errorf("appending to .gitattributes: %w", err)
+	}
+	fmt.Println("  ✓ .gitattributes")
 	return nil
 }
 

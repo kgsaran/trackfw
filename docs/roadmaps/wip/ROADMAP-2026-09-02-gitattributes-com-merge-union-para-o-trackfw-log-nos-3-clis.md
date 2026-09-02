@@ -2,12 +2,16 @@
 status: wip
 date: 2026-09-02
 squad: ares-tf
-req: REQ-2026-09-02-reconciliacao-pos-merge-dos-prs-238-e-240-e-o-trackfw-log-que-conflita-em-toda-branch-paralela.md
+req: "docs/req/REQ-2026-09-02-reconciliacao-pos-merge-dos-prs-238-e-240-e-o-trackfw-log-que-conflita-em-toda-branch-paralela.md"
 ---
 
 # Roadmap: `.gitattributes` com `merge=union` para o `.trackfw-log` nos 3 CLIs
 
 > Criado em: 2026-09-02 | Status: wip
+
+## Context
+
+REQ: docs/req/REQ-2026-09-02-reconciliacao-pos-merge-dos-prs-238-e-240-e-o-trackfw-log-que-conflita-em-toda-branch-paralela.md
 
 ## Diagnóstico
 
@@ -94,6 +98,17 @@ ROADMAP-2026-09-02-saida-nao-ascii-declara-codificacao-em-script-gerado-e-em-gat
       (usar `trackfw roadmap move`, nunca `git mv`)
 - [ ] `wip/` contém **apenas** roadmaps com trabalho em andamento de fato
 - [ ] A política de **quem** move roadmap trazido por PR externo está escrita (AC5 da REQ)
+
+## Acceptance Criteria
+
+- [ ] Duas branches que movem roadmaps distintos mergeiam **sem conflito** no `.trackfw-log`
+- [ ] 🔴 **Controle:** as linhas dos **dois** lados sobrevivem — igualdade de conjunto, sem perda e
+      sem duplicação
+- [ ] Falsificação na direção oposta: **sem** o `.gitattributes`, o mesmo cenário **conflita**
+- [ ] `trackfw init` gera o arquivo nos **3 CLIs**, byte-idêntico
+- [ ] Append idempotente sobre `.gitattributes` preexistente; `init` duas vezes não duplica a regra
+- [ ] Os 5 roadmaps concluídos estão em `done/` (Wave 2)
+- [ ] `make quality` verde e `trackfw validate` exit 0
 
 ## Verificação
 

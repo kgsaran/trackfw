@@ -42,6 +42,7 @@ async function scaffold(cfg, cwd) {
   }
 
   generateVaultIndex(root)
+  generateGitAttributes(root)
   writeTrackfwConfig(cfg, root)
   generateValidateScript(cfg, root)
   generateAttentionScripts(cfg, root)
@@ -54,6 +55,60 @@ async function scaffold(cfg, cwd) {
   if (cfg.backend === 'java') generatePomXml(cfg, root)
   generateClaudeCommands(root)
   injectHooksDetected(root)
+}
+
+// gitAttributesRuleTarget — primeiro campo da regra mantida por este gerador.
+// Casa o BASENAME (padrão sem barra) de propósito: `roadmap_dir` e `req_dir` são
+// configuráveis por projeto (trackfw.yaml) e ambos carregam um `.trackfw-log`,
+// então caminho fixo nasceria quebrado em quem configurou diretório diferente.
+const GITATTRIBUTES_RULE_TARGET = '.trackfw-log'
+
+// GITATTRIBUTES_BLOCK — byte-idêntico ao de internal/generators/scaffold.go e
+// pypi/trackfw/generators/init_gen.py (regra dura de paridade).
+const GITATTRIBUTES_BLOCK = `# trackfw: .trackfw-log is append-only — every write lands on the last line, so
+# two parallel branches conflict on every merge. merge=union keeps the lines
+# from both sides (chronological order is not guaranteed). The pattern has no
+# slash, so it matches the file in any directory — roadmap_dir and req_dir both
+# carry one, and both are configurable per project.
+.trackfw-log merge=union
+`
+
+/**
+ * hasGitAttributesRule — verdadeiro quando ALGUMA linha não-comentário tem
+ * `.trackfw-log` como primeiro campo. Predicado sobre o CAMPO, não sobre a
+ * string literal da linha inteira: espaçamento diferente ou outro atributo já
+ * são "a regra existe", e reescrever por cima sobrescreveria decisão do projeto.
+ * @param {string} content
+ */
+function hasGitAttributesRule(content) {
+  for (const line of content.split('\n')) {
+    const trimmed = line.trim()
+    if (trimmed === '' || trimmed.startsWith('#')) continue
+    if (trimmed.split(/\s+/)[0] === GITATTRIBUTES_RULE_TARGET) return true
+  }
+  return false
+}
+
+/**
+ * generateGitAttributes — garante `merge=union` para o `.trackfw-log` no
+ * `.gitattributes` da raiz. Três ramos, todos idempotentes: ausente → cria;
+ * existe sem a regra → APPEND (nunca sobrescreve); existe com a regra → no-op.
+ * @param {string} root
+ */
+function generateGitAttributes(root) {
+  const filePath = path.join(root || process.cwd(), '.gitattributes')
+  if (!fs.existsSync(filePath)) {
+    fs.writeFileSync(filePath, GITATTRIBUTES_BLOCK, 'utf8')
+    console.log('  ✓ .gitattributes')
+    return
+  }
+  const existing = fs.readFileSync(filePath, 'utf8')
+  if (hasGitAttributesRule(existing)) return
+  // Arquivo preexistente sem newline final: emendar direto grudaria a primeira
+  // linha do bloco na última linha do projeto, corrompendo a config em silêncio.
+  const prefix = existing !== '' && !existing.endsWith('\n') ? existing + '\n' : existing
+  fs.writeFileSync(filePath, prefix + GITATTRIBUTES_BLOCK, 'utf8')
+  console.log('  ✓ .gitattributes')
 }
 
 /**
@@ -1454,6 +1509,8 @@ module.exports = {
   generateClaudeCommands,
   generateClaudeCommandsForce,
   generateVaultIndex,
+  generateGitAttributes,
+  GITATTRIBUTES_BLOCK,
   installSkillsForce,
   installAgents,
   installGemini,

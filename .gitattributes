@@ -1,0 +1,6 @@
+# trackfw: .trackfw-log is append-only — every write lands on the last line, so
+# two parallel branches conflict on every merge. merge=union keeps the lines
+# from both sides (chronological order is not guaranteed). The pattern has no
+# slash, so it matches the file in any directory — roadmap_dir and req_dir both
+# carry one, and both are configurable per project.
+.trackfw-log merge=union

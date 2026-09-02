@@ -163,6 +163,69 @@ Regra de validação `note_orphan` — notas em `vault/notes/` não referenciada
 | `index.md` | não conta como nota órfã |
 | Detecção de link | aceita `[texto](arquivo.md)` e `[[nome-da-nota]]` |
 
+## `.gitattributes` — `merge=union` para o `.trackfw-log`
+
+<!-- trackfw-contract: gate=scripts/check-artifact-parity.sh partial=o gate compara byte a byte só o caminho de CRIAÇÃO (projeto novo, sem .gitattributes); o caminho de APPEND (projeto que já tem o arquivo), o predicado de idempotência e o arquivo sem newline final são cobertos por teste em cada runtime (internal/generators/gitattributes_test.go, npm/tests/gitattributes.test.js, pypi/tests/test_gitattributes.py), não cross-runtime -->
+
+> REQ-2026-09-02-reconciliacao-pos-merge-dos-prs-238-e-240-e-o-trackfw-log-que-conflita-em-toda-branch-paralela.md (AC6/AC7)
+
+`trackfw init` emite `.gitattributes` na raiz do projeto nos três CLIs, **byte-idêntico**, com o
+mesmo bloco que este repositório versiona na própria raiz:
+
+```
+# trackfw: .trackfw-log is append-only — every write lands on the last line, so
+# two parallel branches conflict on every merge. merge=union keeps the lines
+# from both sides (chronological order is not guaranteed). The pattern has no
+# slash, so it matches the file in any directory — roadmap_dir and req_dir both
+# carry one, and both are configurable per project.
+.trackfw-log merge=union
+```
+
+**Por que basename e não caminho.** `roadmap_dir` e `req_dir` são configuráveis por projeto
+(`trackfw.yaml`) e **os dois** carregam um `.trackfw-log`: o de roadmap (`internal/generators/roadmap.go`
+e equivalentes) e o de REQ (`internal/generators/req.go` `appendREQTransitionLog` e equivalentes).
+Um padrão com caminho fixo (`docs/roadmaps/.trackfw-log`) nasceria quebrado em quem configurou
+diretório diferente e deixaria o log do `req_dir` descoberto. Padrão sem barra casa em **qualquer
+diretório** — medido com `git check-attr merge` sobre `docs/roadmaps/`, `docs/req/` e um
+`custom/rm/` arbitrário: `merge: union` nos três.
+
+**O que `merge=union` garante e o que não garante.**
+
+| Aspecto | Comportamento medido |
+|---|---|
+| Conflito | Nunca — o driver resolve, `git merge` sai 0 |
+| Perda de linha | Não ocorre: as linhas dos dois lados sobrevivem (igualdade de conjunto) |
+| Duplicação | Não ocorre quando os dois lados acrescentam a **mesma** linha (o xdiff a trata como mudança comum) nem em sobreposição parcial |
+| **Ordem** | **Não é cronológica** — o bloco de `ours` vem inteiro antes do bloco de `theirs`; a ordem *dentro* de cada bloco é preservada |
+
+A ordem é o único efeito colateral, e ele é aceito conscientemente. Dos leitores do log,
+`trackfw log --tail` é apresentação; a regra `stale_wip` do validador e o throughput de `metrics`
+comparam **timestamps** (`.After`, min/max), não posição. A única dependência posicional é o cálculo
+de cycle time / WIP age em `internal/metrics/metrics.go` (`Calculate`), que toma a primeira entrada
+`backlog`/`wip` e a última `done`/`wip` **na ordem do arquivo**. Ela só é atingida por um roadmap com
+transições registradas nos **dois** lados do merge — e a alternativa (resolução manual) é
+demonstravelmente pior: o `.trackfw-log` deste repositório carrega uma linha **duplicada**
+(`2026-09-02 10:46 … gate-do-barrier`) produzida por uma resolução manual de conflito. `merge=union`
+não teria duplicado.
+
+**Idempotência — três ramos, idênticos nos três runtimes.**
+
+| Estado do projeto | Comportamento |
+|---|---|
+| Sem `.gitattributes` | Cria com o bloco acima |
+| Com `.gitattributes` **sem** a regra | **Append** do bloco — o arquivo do projeto nunca é sobrescrito. Se o arquivo existente não termina em `\n`, um `\n` é inserido antes do bloco (senão a primeira linha do bloco grudaria na última linha do projeto) |
+| Com `.gitattributes` **com** a regra | No-op |
+
+O predicado de "a regra já existe" é pinado: **alguma linha não-comentário cujo primeiro campo
+delimitado por espaço seja exatamente `.trackfw-log`** — não a string literal da linha inteira.
+Assim `.trackfw-log  merge=union` (dois espaços) ou uma regra manual com outro atributo contam como
+"existe" e não são sobrescritas, e uma linha comentada (`# .trackfw-log merge=union`) **não** conta.
+
+**Fora do contrato (não coberto):** `trackfw update` **não** emite este arquivo — só projetos
+inicializados depois desta versão recebem a regra; projeto já existente precisa acrescentá-la à mão
+(ou rodar `init` de novo, que faz o append idempotente). E a falsificação foi feita sobre `git merge`
+local; se o merge do lado do servidor da forge honra o atributo é questão separada, não medida aqui.
+
 ## i18n locale keys — no orphan keys (ML-2A)
 
 <!-- trackfw-contract: gap reason=a seção fixa fato falsificável (errors.notFound ausente e sem consumidor nos 3 CLIs) mas nenhum gate compara chaves de locale entre runtimes; ver REQ-2026-08-16-conformidade-estrutural-e-comportamental-de-i18n-entre-os-tres-clis -->
@@ -6625,6 +6688,27 @@ próprio defeito). Cobre: `trackfw validate` (`referenceExists`,
 `syncReqReferences`/`sync_paired_req_references` normalizam o `roadmap:` já gravado antes de casar
 por basename, senão uma REQ suja por um `roadmap move` anterior no Windows nunca é curada por um
 `roadmap move` subsequente.
+
+> 🔴 **CORREÇÃO 2026-09-02 — a cobertura acima vale para Go e Python, NÃO para o Node.** Medido com
+> `grep -a` (o `npm/src/validator/index.js` é classificado como binário pelo `file`, e um `grep` sem
+> `-a` o pula **em silêncio** — ver `vault/notes/serve-validator-index-detectado-como-binario-grep-silencioso-2026-08-29.md`):
+>
+> ```
+> normalizeRefSeparator / toSlash   Go: 1   Python: 4   Node: 0
+> npm/src/validator/index.js:3110   const provenanceKey = path.relative(root, destination)   <- separador nativo
+> npm/src/serve/api_chain.js        0 normalizacoes, e indexa por basename (linha 145)
+> ```
+>
+> Consequência no Node: em Windows a chave de proveniência **nunca casa**, então todo artefato de
+> terceiro é reportado como sem entrada — falso positivo em massa, não falsa garantia. E o
+> `/api/chain` do Node monta 14 arestas onde o Go monta 350 sobre o mesmo corpus.
+>
+> **Este parágrafo documentava um estado que não existe.** Um contrato de paridade que afirma
+> cobertura maior que a real é pior que a ausência dele: é a fonte de verdade que o próximo leitor
+> usa para decidir que não precisa olhar. Rastreado em
+> `REQ-2026-09-01-regra-thirdparty-artifact-has-provenance-existe-em-go-e-python-mas-nao-no-validator-do-node.md`,
+> cuja premissa também está errada — a regra **existe** no Node desde o PR #175 (7 ocorrências,
+> ligada em `applyRule`); o que falta é a normalização, não a regra.
 
 **Fora de escopo, nomeado explicitamente** (não tocado por esta REQ):
 `content_base64` da quarentena de terceiros (âncora de checksum/TOCTOU); corpo de prosa/código de
