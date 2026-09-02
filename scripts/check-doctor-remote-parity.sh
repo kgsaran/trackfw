@@ -86,15 +86,20 @@ ln -s "$REAL_GIT" "$RUNTIME_BIN/git"
 
 unset TRACKFW_DISABLE_EXTERNAL_COMMANDS || true
 
-# BASE_PATH: RUNTIME_BIN plus /usr/bin:/bin — the gh STUB's own "#!/usr/bin/env bash" shebang
-# needs `env` and `bash` to resolve, and both live outside RUNTIME_BIN. Without this, every
-# scenario's gh stub fails to even launch (an exec error at the shebang, not the credential/
-# permission condition the scenario means to test) — the exact non-vacuity trap
-# check-release-tag-parity.sh's BASE_PATH already accounts for; missing it here silently
-# turned every "gh answered X" scenario into "gh could not be launched at all" during this
-# gate's own development, which happened to also produce a not-evaluated finding — the right
-# finding kind for the wrong reason, which the vacuity guards below exist to catch.
-BASE_PATH="$RUNTIME_BIN:/usr/bin:/bin"
+# BASE_PATH: RUNTIME_BIN only — no /usr/bin:/bin. An earlier version of this gate added
+# /usr/bin:/bin here because the gh STUB's shebang was "#!/usr/bin/env bash", and `env` needs
+# something on PATH to resolve `bash`. That fixed the stub locally but broke the "no gh on
+# PATH" scenario's own premise on GitHub's runners, where `gh` ships preinstalled at
+# /usr/bin/gh: BASE_PATH="$RUNTIME_BIN:/usr/bin:/bin" made `gh` resolvable again by construction,
+# and the vacuity guard below correctly refused to validate a "no gh" scenario that in fact had
+# one (see vault/notes/gh-stub-shebang-needs-usr-bin-in-restricted-path-2026-09-02.md for the
+# original finding, and the note this gate's own CI failure produced on 2026-09-02 for the
+# sequel). The fix is upstream of BASE_PATH: the gh STUB below uses an ABSOLUTE shebang
+# ("#!/bin/bash", present at that exact path on both macOS and every GitHub-hosted Linux/macOS
+# runner) instead of "#!/usr/bin/env bash", so it never depends on PATH to resolve its own
+# interpreter. That removes the only reason /usr/bin:/bin was ever in BASE_PATH — RUNTIME_BIN
+# alone is sufficient (proven: `git init`/`remote add`/`config` need nothing outside it either).
+BASE_PATH="$RUNTIME_BIN"
 
 # Vacuity guard — fails BEFORE any scenario runs if gh somehow resolves on BASE_PATH alone
 # (the "no gh CLI" scenario's PATH). A scenario claiming "no gh on PATH" that secretly still
@@ -120,8 +125,11 @@ fail() { echo "FAIL [$1]: $2" >&2; FAIL=1; }
 write_gh_stub() {
   local dir=$1 mode=$2
   mkdir -p "$dir"
+  # Absolute shebang, not "#!/usr/bin/env bash": the stub must launch under BASE_PATH="$RUNTIME_BIN"
+  # alone (no /usr/bin:/bin), and "env" would need something on PATH to resolve "bash". /bin/bash
+  # exists at that exact absolute path on macOS and on every GitHub-hosted Linux/macOS runner.
   cat >"$dir/gh" <<EOF
-#!/usr/bin/env bash
+#!/bin/bash
 set -euo pipefail
 case "\$1 \$2" in
   "auth status")

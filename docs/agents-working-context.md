@@ -28117,3 +28117,52 @@ Fora de escopo (mantido): nenhum código/gate/hook/config alterado; nenhuma oper
 `trackfw validate`/`trackfw doctor --remote`/`git config --local --list` (real, sem escrita) mais um
 fixture descartável em `/tmp`, apagado ao final, para medir o comportamento das 5 regras contra
 tentativas de sabotagem sem tocar no clone real.
+
+## Sessão 2026-09-02 — apolo-tf (INÍCIO: corretiva no gate do ML-3A — CI reprovou a guarda de vacuidade)
+
+Branch `fix/o-repositorio-do-trackfw-sob-os-cuidados-do-trackfw` (não criada por mim). Worktree
+limpo, único agente. Escopo: `scripts/check-doctor-remote-parity.sh` reprovou no CI —
+`required_status_checks` bloqueia o PR. Causa: `BASE_PATH="$RUNTIME_BIN:/usr/bin:/bin"` inclui
+`/usr/bin:/bin` para o shebang `#!/usr/bin/env bash` do stub `gh` resolver `env`/`bash` (fix do
+ML-3A, ver `vault/notes/gh-stub-shebang-needs-usr-bin-in-restricted-path-2026-09-02.md`) — mas no
+runner do GitHub `gh` já mora em `/usr/bin/gh`, então `BASE_PATH` reintroduz `gh` no PATH do
+cenário "sem gh", e a própria guarda de vacuidade (corretamente) recusa validar isso.
+
+## Sessão 2026-09-02 — apolo-tf (FIM: corretiva no gate do ML-3A — CONCLUÍDO)
+
+**Direção escolhida:** shebang absoluto no stub (`#!/bin/bash` em vez de `#!/usr/bin/env bash`),
+tornando-o independente de `PATH` para resolver seu próprio interpretador — o que elimina a única
+razão de `/usr/bin:/bin` estar em `BASE_PATH`. `BASE_PATH` passa a ser só `$RUNTIME_BIN`.
+Justificativa da escolha (vs. diretório de sistema sanitizado): medi antes — `git init`/`remote
+add`/`config` sob `PATH=$RUNTIME_BIN` isolado (sem `/usr/bin:/bin`) funcionam sem erro; `/bin/bash`
+existe no caminho absoluto tanto no macOS quanto em todo runner Linux/macOS hospedado pelo GitHub;
+logo nenhum utilitário adicional de `/usr/bin` era necessário — a alternativa (diretório
+sanitizado) teria sido trabalho extra sem necessidade real.
+
+**Falsificação nas duas direções** (medida com `RUNTIME_BIN` real do script — `node`/`python3`/`git`
+symlinkados — mais um `gh` falso plantado em diretório de scratch sob `/tmp`, nunca em `/usr/bin`
+real):
+- (a) `gh` presente artificialmente no `PATH` do cenário → guarda REJEITA: `check-doctor-remote-
+  parity: vacuity guard failed — 'gh' resolves on the no-gh PATH (.../rtbin:.../fake-usr-bin) at
+  .../fake-usr-bin/gh` — `GUARD_RESULT=REJECTED (expected)`.
+- (b) controle, `PATH=$RUNTIME_BIN` correto (sem `/usr/bin:/bin`, sem `gh`) → guarda PASSA:
+  `GUARD_RESULT=PASSED (expected) — gh genuinely absent on .../rtbin`.
+
+**Rodada completa do gate real** (`bash scripts/check-doctor-remote-parity.sh`): todos os 32
+asserts `OK`, incluindo `no-gh/vacuity-guard/not-evaluated`; `check-doctor-remote-parity.sh: all
+scenarios passed.`, exit 0.
+
+**Verificado localmente:** guarda de vacuidade ativa com a mesma severidade (`exit 1` se `gh`
+resolver); todos os 8 cenários (a–j) passam; falsificação nas duas direções medida diretamente
+(não inferida). **Só o CI confirma:** que o runner GitHub-hosted realmente resolve `/bin/bash` no
+caminho absoluto sob o `PATH` restrito do job (assumido com alta confiança — padrão em runners
+`ubuntu-latest`/`macos-latest` — mas não executado literalmente dentro do container do runner
+nesta sessão) e que `required_status_checks`/`parity` fecha verde com o binário `gh` real do
+runner em `/usr/bin/gh` presente no ambiente mas fora do `PATH` restrito construído pelo gate.
+
+**Escopo respeitado:** só `scripts/check-doctor-remote-parity.sh` tocado (mudei o `BASE_PATH` e o
+shebang do stub `gh` que o próprio script gera — nada além disso). Nenhum roadmap/REQ/ADR editado.
+Nenhuma operação de git executada. Toda escrita de fixture de teste ficou sob o scratch
+`/private/tmp/claude-501/.../scratchpad` — nada escrito em `/usr/bin` real nem fora do scratch.
+`make quality` reportado no fechamento do ML pelo protocolo de conclusão (ver saída anexa ao
+relatório desta corretiva).
