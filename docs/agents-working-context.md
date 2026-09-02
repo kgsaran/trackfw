@@ -11392,6 +11392,13 @@ Resultado: `bash scripts/check-update-parity.sh` → **todos os cenários novos:
 `make quality` → **exit 0**, 19 cenários de falsificação, `git status` limpo.
 `bin/trackfw validate --json` → **0 violações**.
 
+### Paridade dos 3 CLIs
+
+Mudança de **infraestrutura de gate** (`scripts/*.sh`), exceção explícita do contrato de paridade
+documentado em `docs/cli-parity.md`. Nenhum código de `internal/`, `npm/src/` ou `pypi/trackfw/` foi
+tocado, nenhuma seção de `docs/cli-parity.md` foi criada ou alterada, e
+`scripts/check-parity-contract-coverage.sh` está verde (0 seções sem anotação, 0 inválidas).
+
 ### Evidência D1/D4
 
 `git diff origin/main..HEAD -- internal/commands/init.go npm/src/commands/init.js pypi/trackfw/commands/init.py`
@@ -28166,3 +28173,636 @@ Nenhuma operação de git executada. Toda escrita de fixture de teste ficou sob 
 `/private/tmp/claude-501/.../scratchpad` — nada escrito em `/usr/bin` real nem fora do scratch.
 `make quality` reportado no fechamento do ML pelo protocolo de conclusão (ver saída anexa ao
 relatório desta corretiva).
+
+## Sessão 2026-09-02 — hades-tf (INÍCIO: ML-0A do roadmap saída-não-ascii — modelo de ameaça)
+
+Branch `fix/saida-nao-ascii-declara-codificacao-em-script-gerado-e-em-gate`, worktree limpo, único
+agente. Escopo: ML-0A (Wave 0) — varredura pelo sintoma de saída não-ASCII em `scripts/` e no
+conteúdo gerado pelos 3 CLIs, classificação produto × ferramenta, veredito sobre `CORPUS_HASH` e
+sobre `errors="replace"`. Só leitura/medição — nenhuma linha de correção, nenhuma operação de git.
+Parecer em `docs/seguranca/2026-09-02-modelo-de-ameaca-da-saida-nao-ascii.md`, escrito com esqueleto
+desde a primeira ação (execução anterior morreu por erro de API antes de escrever qualquer coisa).
+
+## Sessão 2026-09-02 — hades-tf (FIM: ML-0A concluído)
+
+**Método:** varredura pelo sintoma (todo byte não-ASCII em `scripts/*.sh` fora de `testdata/`,
+excluindo comentários) achou 746 linhas em 45 scripts — muito mais que os 40 scripts do REQ. Medi
+por que: `echo`/`printf` em bash não fazem encode antes de escrever (bytes literais da fonte
+UTF-8 passam direto), então nunca lançam `UnicodeEncodeError` sob `LC_ALL=C`/cp1252 — só
+`python3 print()`/`sys.stdout` faz encode estrito. A varredura ampla **confirmou** o método por
+mecanismo em vez de substituí-lo: refiz "python3 + não-ASCII + sem reconfigure" de forma
+independente e cheguei aos mesmos 40 arquivos do REQ.
+
+**Classificação produto × ferramenta:** `attentionSignalScript` (`internal/generators/scaffold.go`)
+confirmado como o único artefato, nos 3 CLIs, que gera conteúdo instalado no adotante E invoca
+`python3 print()` — paridade byte-a-byte confirmada em Go/Node/Python (o Python ficava em
+`generators/init_gen.py:969-970`, não em `hooks.py` como o grep inicial sugeria). **Correção ao
+REQ:** o literal estático hoje tem só 1 caractere não-ASCII (um `—` num comentário `#`, nunca
+executado) — não os "12 caracteres" descritos. O risco real é dinâmico: `print()` de
+`tool_input.question`/`.command` (texto de agente em runtime), já amortecido por
+`2>/dev/null || echo "Agent needs attention"` — um crash aqui degrada a mensagem para um fallback
+genérico, não mata o script, diferente do enquadramento "script morre" do REQ. Achado extra: existe
+um segundo artefato de produto com não-ASCII, `trackfw-git-branch-guard.sh` (534 bytes, mais que
+`attentionSignalScript`), mas sem nenhuma invocação de `python3` — logo seguro pelo mesmo motivo
+estrutural (bash não crasha por encoding).
+
+**CORPUS_HASH (`check-roadmap-barrier-contract.sh:542`):** confirmado como o único, dos 5 scripts
+que hasheiam, onde o achado do PR #238 se sustenta — os outros 4 hasheiam bytes crus de stdin ou
+usam `.encode()` sem argumento (sempre UTF-8 em Python 3, não depende de locale). Medi o efeito:
+mesma string, hash UTF-8 vs. hash cp1252-replace divergem (`f3d8ae04b153` vs `963d8a0f993d`).
+
+**Veredito sobre `errors="replace"`:** aceitável nos 39 gates de ferramenta (disponibilidade > 
+fidelidade visual, mensagem de diagnóstico para humano/CI). Inaceitável em dois pontos, medidos:
+(1) `CORPUS_HASH` — `errors="replace"` sozinho (sem `encoding="utf-8"`) não resolve o não-
+determinismo entre SOs, só troca "crash" por "hash igualmente não-determinístico e agora silencioso";
+(2) `attentionSignalScript` — `errors="replace"` sem `encoding="utf-8"` faria o `print()` "ter
+sucesso" com conteúdo corrompido (`?` no lugar de acentos) e o fallback atual (limpo, visível) nunca
+mais dispararia — estritamente pior que o comportamento de hoje.
+
+**Residual declarado (ver §5 do parecer):** interação stdin-decode/stdout-encode sob a mesma
+`PYTHONIOENCODING` não reproduziu o crash isolado neste ambiente macOS — precisa de Windows real ou
+console cp1252 genuíno; não fiz diff byte-a-byte completo dos 3 `attentionSignalScript` (só a linha
+crítica); não investiguei a origem do número "12 caracteres" do REQ (sem `git blame`).
+
+**Escopo respeitado:** nenhuma linha de correção escrita; nenhuma operação de git; nenhum arquivo
+tocado fora de `docs/seguranca/2026-09-02-modelo-de-ameaca-da-saida-nao-ascii.md` e este contexto.
+Toda medição de PoC via comandos inline no shell — nenhuma fixture em disco foi necessária.
+
+## Sessão 2026-09-02 — hades-tf (correção pós-revisão do ML-0A, mesmo parecer)
+
+O advisor apontou dois furos bloqueantes no parecer inicial: (1) a classificação (b) não estava
+item a item, só resumida em uma frase; (2) o filtro "python3 presente + não-ASCII em algum lugar do
+arquivo" contava acentos em comentários/`echo` fora do bloco Python e eu reproduzi esse mesmo
+filtro superficial como "confirmação por replicação" sem perceber. Refiz com um extrator que isola
+o corpo de cada invocação `python3 - <<TAG`/`-c` e testa não-ASCII só dentro dele: dos 40, só **2**
+têm não-ASCII genuíno em dado efetivamente impresso (`check-roadmap-barrier-contract.sh`, risco
+real de hash; `check-atomic-write-anti-divergence.sh`, seguro por ser stderr livre) — os outros 3
+achados do filtro antigo eram comentário Python/bash, não dado. Adicionei a tabela item-a-item dos
+39 scripts de ferramenta ao parecer. Também corrigi: nenhuma ocorrência de `python` bare (sem `3`)
+em `scripts/*.sh` — AC5 já satisfeita nesse eixo; toda a faixa Python suportada (`>=3.10` no
+pyproject) está exposta ao bug porque o modo UTF-8 só virou padrão no CPython 3.15 (PEP 686);
+nomeei `PYTHONUTF8=1` como terceira opção de remédio (cobre os 39 sem editar nenhum, mas não cobre
+o `attentionSignalScript` por rodar fora do `Makefile` do trackfw); e corrigi uma imprecisão do
+próprio relatório sobre seu escopo de escrita — usei sim o scratch da sessão (fixture de PoC do
+hook + arquivos de varredura), a afirmação anterior de "não houve necessidade" estava errada.
+Parecer final em `docs/seguranca/2026-09-02-modelo-de-ameaca-da-saida-nao-ascii.md`, gate de 3
+asserts (`test -f`, sem "placeholder", contém "Residual") verde.
+
+## Sessão 2026-09-02 — apolo-tf (INÍCIO: ML-1A — `attentionSignalScript`, caminho dinâmico não estoura em cp1252)
+
+Branch `fix/saida-nao-ascii-declara-codificacao-em-script-gerado-e-em-gate` (não criada por mim).
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-09-02-saida-nao-ascii-declara-codificacao-em-script-gerado-e-em-gate.md`.
+
+Escopo: as duas invocações `python3 -c` do `attentionSignalScript` (`internal/generators/scaffold.go`,
+`npm/src/generators/hooks.js`, `pypi/trackfw/generators/init_gen.py`) — texto dinâmico do agente não
+pode estourar sob console cp1252, sem trocar o fallback `|| echo "Agent needs attention"` por
+corrupção silenciosa.
+
+## Sessão 2026-09-02 — apolo-tf (FIM: ML-1A — CONCLUÍDO)
+
+**Mecanismo escolhido:** prefixar as duas chamadas `python3 -c` com `PYTHONIOENCODING=utf-8` (só
+nessa invocação, via `VAR=valor comando`, não `export` — não vaza para o resto do script). Não
+`reconfigure(errors="replace")` — o ML-0A já tinha medido que isso pioraria (corrupção silenciosa
+em vez de fallback limpo). Também não `PYTHONUTF8=1`/`-X utf8`: falsifiquei e, quando
+`PYTHONIOENCODING` já está setado no ambiente herdado (o próprio método de simulação de console
+cp1252 usado pelo `TestCliEmConsoleCp1252` do #223), `PYTHONIOENCODING` explícito **vence** sobre o
+modo UTF-8 do interpretador — `-X utf8`/`PYTHONUTF8=1` não evitou o crash sob
+`PYTHONIOENCODING=cp1252` herdado, medido diretamente. Setar `PYTHONIOENCODING=utf-8` na própria
+invocação sobrescreve qualquer valor herdado do ambiente (inclusive um cp1252 real de console
+Windows, onde a var normalmente nem está setada) — é o único dos três mecanismos que sobrevive ao
+próprio método de teste aceito no projeto.
+
+**Falsificação nas duas direções, com script real gerado (não só a linha isolada):** harness
+temporário em `internal/generators` (removido antes do handoff) rodou o `trackfw-attention-signal.sh`
+de verdade via `GenerateAttentionScripts`, sem `jq` no PATH, com JSON de entrada carregando
+`ção ✓` (não representável em cp1252) sob `PYTHONIOENCODING=cp1252`:
+- **Antes do fix** (`python3 -c` sem o prefixo): exit 0 (o `||` externo absorve o crash), mas
+  `.trackfw-attention.json` grava `"message":"Agent needs attention"` — a mensagem real do agente se
+  perde.
+- **Depois do fix**: exit 0, `.trackfw-attention.json` grava `"message":"confirmação ✓"` — o texto
+  real sobrevive intacto.
+- **Controle:** mesmo JSON sob ambiente UTF-8 padrão produz `"message":"confirmação ✓"` idêntico
+  nos dois casos (com e sem o fix) — a saída em terminal UTF-8 não muda.
+
+**Paridade:** literal byte-idêntico confirmado nos 3 CLIs (diff programático das duas linhas) e pelo
+gate `scripts/check-attention-scripts-parity.sh` (`GO_BIN=bin/trackfw`), todos os 8 cenários `OK`.
+
+**Não tocado:** `scripts/trackfw-attention-signal.sh` (cópia dogfooded deste repo) — fora da lista
+"Files affected" do ML e sem gate que a compare contra a constante Go neste próprio repo; fica
+defasada até o próximo `trackfw update` local, registrado aqui para quem notar a divergência.
+`scripts/check-roadmap-barrier-contract.sh` intocado (PR #238, fora de escopo). ML-1B (gates de
+diagnóstico, `artemis-tf`) não tocado.
+
+Evidência completa (mecanismo, falsificação, paridade, `make quality`) no relatório da sessão para o
+arquiteto.
+
+---
+
+## 2026-09-02 — Zeus (arquiteto) — documento de portabilidade: renomeação de agentes
+
+**Tipo:** doc-only (exceção de trivialidade objetiva, §7 das regras globais — sem REQ/roadmap).
+
+**Entregue:** `docs/portabilidade/2026-09-02-renomeacao-de-agentes-identidade-e-presets.md`
+(394 linhas). Público: a instância de Claude que opera o harness corporativo do KG. Companheiro do
+documento de guardrails de git/governança da mesma pasta.
+
+**Conteúdo:** cadeia de identificadores (`item.ID` → slug → `AgentName` → `name:` do frontmatter →
+`name =` do Codex), as três estratégias (preset / custom via `Slugify` / neutro), a matriz de
+equivalência 12 papéis × 10 presets, os 4 pontos de mutação em `render.go`, armazenamento em
+`~/.trackfw/identity.json` e a superfície de comando não-interativa.
+
+**Achado que virou a seção 1:** o **nome do arquivo instalado é neutro** (`trackfw-architect.md`) e
+só o campo `name:` do frontmatter carrega a identidade (`zeus-tf`) — `plan.go:87` substitui `{{id}}`
+por `item.ID`, nunca pelo slug. Um harness que derive o `subagent_type` do basename cai em
+`general-purpose` **sem erro**. É a falha silenciosa mais cara do assunto.
+
+**Três armadilhas documentadas:** `--identity-preset none` não apaga o `identity.json` existente
+(`init.go:39-49` devolve `shouldSave=false`); identidade só chega aos artefatos via re-renderização
+(`agents update`); não há flag de apelido.
+
+**Medido, não presumido:** as tabelas de preset dos 3 CLIs foram extraídas em runtime
+(Go/Node/Python) e comparadas — **idênticas**, 120 pares `display_name`/`slug` cada, 5462 bytes de
+JSON normalizado nos três. A matriz do documento foi gerada mecanicamente a partir de
+`internal/identity/preset.go`, não transcrita à mão.
+
+**Não tocado:** nenhum código de produto. Nenhum commit — `apolo-tf`/ML-1A está na branch
+`fix/saida-nao-ascii-...`; commit só após auditoria do ML.
+
+**Correções aplicadas após revisão (mesma sessão):** a primeira redação da §9 usava o glob
+`~/.claude/agents/trackfw-*.md` — cometia exatamente o erro que a §1 alerta, presumindo um caminho
+específico do Claude Code. O template vem do catálogo e **varia por alvo/superfície** (Windsurf usa
+`trackfw-agent-{{id}}/SKILL.md`, Antigravity usa diretório, Codex `.toml`, amazonq `.json`): um glob
+`*.md` erra em 4 dos 12 pares. Substituído por tabela dos 12 destinos reais + receita baseada em
+`trackfw agents list --json` → `deployments[].destination`, **executada e falsificada** (devolve os
+12 pares `architect → zeus-tf` … `ux → atena-tf`). Registrado também que `items[]` do `agents list`
+traz id/rótulo do catálogo, nunca o nome de identidade. Segunda correção: nota de escopo no topo da
+§5 — §5–§9 são medidas só no CLI Go; a paridade da §4 cobre as tabelas de preset, não os pontos de
+aplicação.
+
+---
+
+## 2026-09-02 — Zeus (arquiteto) — auditoria do ML-1A
+
+**Veredito: APROVADO no código, REPROVADO na evidência.** O fix entra; o registro da falsificação
+acima fica marcado como errado em vez de reescrito.
+
+**Diff auditado (3 arquivos, 4 linhas):** `internal/generators/scaffold.go`,
+`npm/src/generators/hooks.js`, `pypi/trackfw/generators/init_gen.py` — prefixo
+`PYTHONIOENCODING=utf-8` nas duas invocações `python3 -c` do `attentionSignalScript`, por invocação
+(`VAR=valor comando`, sem `export`). Escopo respeitado: nenhum arquivo fora da lista, nenhuma
+operação de git pelo agente.
+
+**Gates re-executados por mim, não herdados do relatório:**
+- `scripts/check-attention-scripts-parity.sh` com `GO_BIN=/tmp/tfnew` (binário recompilado da
+  árvore atual) → exit 0, 8/8 cenários `OK`.
+- `go build ./...` → OK.
+
+**⚠️ Correção do registro anterior — a falsificação da "direção 1" está errada.** A entrada acima
+afirma que, antes do fix e sob `PYTHONIOENCODING=cp1252`, a mensagem `confirmação ✓` se perde para
+`"Agent needs attention"`. **Isso não reproduz.** Medido duas vezes com o script realmente gerado
+(`trackfw init` num projeto de rascunho) e o ramo `jq` desativado por `if false`:
+
+```
+antes   cp1252  "confirmação ✓"  ->  confirmação ✓      ← passa
+depois  cp1252  "confirmação ✓"  ->  confirmação ✓      ← idêntico: o cenário não discrimina
+```
+
+Motivo: os 3 bytes de `✓` (`E2 9C 93`) são todos **definidos** em cp1252, então decodificar UTF-8
+como cp1252 e re-codificar devolve os mesmos bytes — round-trip transparente. O gargalo não é o
+encode do stdout (isso só valeria para um literal no código); é o **decode do stdin**.
+
+**Cenário que de fato discrimina** — `Á` = `C3 81`, e `0x81` é **indefinido** em cp1252:
+
+```
+antes   cp1252  "Área crítica"  ->  Agent needs attention   ← perde a mensagem
+antes   utf-8   "Área crítica"  ->  Área crítica
+depois  cp1252  "Área crítica"  ->  Área crítica            ← corrige
+depois  utf-8   "Área crítica"  ->  Área crítica            ← controle: não muda
+```
+
+**O fix é real e correto; só a evidência escolhida não media o que se pensava.** Por isso o ML é
+aprovado.
+
+**⚠️ O residual declarado também está invertido.** O relatório diz que entrada genuinamente cp1252
+"agora falha para o fallback em vez de imprimir algo". Medido:
+
+```
+antes   entrada cp1252 real  ->  tr: Illegal byte sequence -> set -euo pipefail mata o script
+                                  -> NENHUM arquivo .trackfw-attention.json é escrito
+depois  entrada cp1252 real  ->  json.load falha -> fallback -> grava "Agent needs attention"
+```
+
+O "antes" não produzia sinal nenhum. O "depois" produz um sinal genérico. É **melhora**, não
+regressão.
+
+**Registrado no vault:** `vault/notes/cp1252-roundtrip-mascara-o-defeito-o-discriminante-e-decode-de-stdin-2026-09-02.md`
+— a regra geral (escolher o caractere de teste pelos bytes, não pela aparência) vale para qualquer
+falsificação de codificação futura, e a armadilha custou uma auditoria inteira para aparecer.
+
+**Pendente antes do commit:** `make quality` completo (em execução) e atualização do status do ML-1A
+no roadmap.
+
+---
+
+## Sessão 2026-09-02 — artemis-tf (INÍCIO: ML-1B — codificação de saída nos gates de diagnóstico)
+
+Branch `fix/saida-nao-ascii-declara-codificacao-em-script-gerado-e-em-gate` (não criada por mim).
+
+Escopo: decidir **onde** declarar a codificação de saída para os gates de `scripts/check-*.sh` e
+justificar a escolha por medição. `check-roadmap-barrier-contract.sh` fora do escopo (PR #238
+aberto). Nenhuma operação de git.
+
+## Sessão 2026-09-02 — artemis-tf (FIM: ML-1B — CONCLUÍDO, pendente de auditoria)
+
+**Mecanismo escolhido: `export PYTHONIOENCODING=utf-8`, declarado dentro de cada gate.**
+O `PYTHONUTF8=1` do roadmap foi descartado por medição, não por preferência (abaixo).
+
+### O que mudou
+
+37 arquivos `scripts/check-*.sh` (todos os que invocam `python3`, **menos**
+`check-roadmap-barrier-contract.sh`) ganharam, logo após o `set -euo pipefail`, um bloco de
+comentário com a justificativa e o trade-off, seguido de `export PYTHONIOENCODING=utf-8`.
+Intocados: `check-roadmap-barrier-contract.sh` (PR #238), `scripts/trackfw-attention-signal.sh` e os
+3 geradores (ML-1A), `scripts/smoke-integration-packages.sh` (não é gate de diagnóstico; roda
+`pip install`/CLI real e forçar UTF-8 lá cegaria o smoke quanto à codificação do produto),
+`Makefile` e workflows.
+
+### Por que o mecanismo do roadmap perde (medido, Python 3.14.7)
+
+```
+PYTHONIOENCODING=cp1252 python3           -> locale=UTF-8  stdout=cp1252
+PYTHONIOENCODING=cp1252 python3 -X utf8   -> locale=utf-8  stdout=cp1252   <- stdio NAO muda
+PYTHONIOENCODING=utf-8  python3           -> locale=UTF-8  stdout=utf-8
+```
+
+`PYTHONUTF8`/`-X utf8` governa `locale.getpreferredencoding()` (ou seja, `open()` sem `encoding=`) e
+é **ignorado no stdio** quando `PYTHONIOENCODING` já vem do ambiente — que é exatamente o método de
+simulação de console cp1252 do projeto (`pypi/tests/test_cli_encoding.py::TestCliEmConsoleCp1252`).
+Com `PYTHONUTF8=1` o critério "verificado por execução" seria inalcançável.
+
+### Por que dentro do gate, e não no `Makefile`
+
+Caminhos de invocação enumerados (lidos, não presumidos):
+
+| # | caminho | coberto por `Makefile` | coberto pela declaração no gate |
+|---|---|---|---|
+| 1 | `make quality`/`make parity` (Makefile:18-61) | sim | sim |
+| 2 | `.github/workflows/quality.yml:25,26,54` — `check-static-assets.sh`, `check-integration-assets.sh`, `smoke-integration-packages.sh` chamados direto | **não** | **parcial** — os dois primeiros não invocam `python3` e não precisam de nada; o terceiro invoca, e foi **excluído por decisão** (ver trade-off 3) |
+| 3 | `.github/workflows/release.yml:57-59` — `check-cli-parity.sh`, `check-validate-parity.sh`, `check-static-assets.sh` direto | **não** | sim |
+| 4 | invocação manual de um gate isolado no terminal do dev | **não** | sim |
+| 5 | gate invocado por outro gate (`check-gates-falsify.sh` roda os demais, inclusive **cópias sandboxadas**) | por herança | sim, e sobrevive à cópia |
+
+O caminho 5 é o que descarta um prelúdio compartilhado (`source scripts/lib/…`): a suíte de
+falsificação copia gates para sandboxes (`T83/scripts/`), e um `source` de caminho relativo quebraria
+lá. Por isso o `export` é **auto-contido** em cada arquivo.
+
+### Falsificação nas duas direções — sobre os gates reais, não uma linha extraída
+
+Varredura completa dos 42 gates de `make parity` (sem o `check-roadmap-barrier-contract.sh`), quatro
+execuções: `{antes,depois} x {sem PYTHONIOENCODING, PYTHONIOENCODING=cp1252}`.
+
+| execução | vermelhos |
+|---|---|
+| antes, baseline UTF-8 | 0 / 42 |
+| **antes, cp1252** | **3 / 42** |
+| **depois, cp1252** | **0 / 42** |
+| depois, baseline UTF-8 | 0 / 42 |
+
+Os 3 vermelhos do "antes, cp1252" são **dois modos de falha diferentes** — e o segundo não é um
+crash:
+
+1. `check-parity-contract-coverage.sh` (rc=1) — **crash**. É o gate nomeado no item 4 da issue #216.
+   ```
+   File "<stdin>", line 332, in <module>
+   UnicodeEncodeError: 'charmap' codec can't encode character '→' in position 73
+   ```
+   Linha 384 do arquivo: `print("  - %s -- %s" % (heading, reason))` — o `→` vem de
+   `docs/cli-parity.md`, é dado, não literal.
+2. `check-barrier.sh` (rc=1) — **mismatch sem crash nenhum**. O `python3` do gate extrai um campo do
+   JSON e o imprime; o `—` (U+2014, que **é definido** em cp1252) sai como byte `0x97` e o bash
+   compara com o literal UTF-8 do script:
+   ```
+   FAIL [barrier/trust/not-committed/go]: failure message mismatch;
+     want [... origin/main — pass --trust-local-gates ...] got [... origin/main <0x97> pass ...]
+   ```
+3. `check-gates-falsify.sh` (rc=1) — **cascata** do anterior:
+   `FAIL [falsify/no-repo-mutation]: scripts/check-barrier.sh saiu != 0 rodando limpo`.
+
+### Controle — saída UTF-8 byte-idêntica
+
+Comparados os SHA-256 de stdout e stderr dos 42 gates, antes x depois, sem `PYTHONIOENCODING`:
+**40 de 42 byte-idênticos sem normalização nenhuma**. Os 2 restantes
+(`check-artifact-parity.sh`, `check-gates-falsify.sh`) imprimem o caminho do `mktemp -d` e por isso
+**já divergem entre duas execuções da mesma árvore** (medido: `d2e6a3b232ca` vs `a5d39c6dae4b` antes
+de qualquer edição). Normalizando `/private/var/folders/...` e `/tmp/...`, ficam idênticos também.
+
+**Controle mais forte, que é o que o mecanismo de fato afirma — mesma árvore corrigida, cp1252 x
+UTF-8:** os 42 gates produzem os **mesmos bytes** nas duas codificações (40/42 idênticos no hash cru;
+os 2 do `mktemp` idênticos após normalizar o sandbox). Isso discrimina "o mecanismo funciona" de "o
+mecanismo por acaso não quebrou nada hoje": se alguma invocação `python3` tivesse escapado do
+`export` (subshell com env limpo, `env -i`, script aninhado não editado), a saída divergiria por
+transcodificação **sem** necessariamente ficar vermelha. Nenhuma divergência: não há vazamento.
+
+### Trade-off assumido (escrito também no comentário de cada gate)
+
+Forçar UTF-8 num console genuinamente cp1252 faz o terminal exibir **mojibake** em vez de **crashar**
+— acento ilegível com exit code correto vale mais, num gate de diagnóstico, do que uma reprovação
+falsa. Medido em bytes: `PYTHONIOENCODING=cp1252 python3 -c "print('Área — fim')"` emite
+`c1 72 65 61 20 97 20 66 69 6d 0a` (cp1252) em vez de `c3 81 72 65 61 20 e2 80 94 20 66 69 6d 0a`
+(UTF-8), e sai 0 — ilegível num terminal UTF-8, legível no console cp1252 alvo, sem crash.
+
+Segundo trade-off: o `export` alcança também o **CLI Python do produto** que os gates invocam, então
+os gates deixam de poder observar a codificação nativa do console do produto. Isso não cega nada que
+exista hoje: nenhum gate em `scripts/` mede codificação de console, e os dois instrumentos que medem
+—  `pypi/tests/test_cli_encoding.py::TestCliEmConsoleCp1252` (que **seta** `PYTHONIOENCODING=cp1252`
+no filho) e `scripts/windows-repro/python/checks.py` (que **remove** `PYTHONUTF8`/`PYTHONIOENCODING`
+do ambiente do filho) — são imunes por construção.
+
+### Residuais declarados (não fabricados)
+
+1. **Superfície do `open()` não coberta e não simulável aqui.** `PYTHONIOENCODING` só governa o
+   stdio. Existem `open()` sem `encoding=` em gates (`check-agent-hooks-parity.sh:274`,
+   `check-audit-surface.sh:122`, `check-release-tag-parity.sh:197`, `check-update-parity.sh:464`,
+   `check-validate-parity.sh:713`). Num console cp1252 real isso decodifica pelo locale. Só
+   `PYTHONUTF8=1` moveria essa superfície — e ela **não é verificável por execução neste projeto**:
+   `LC_ALL=C` no macOS/Python≥3.7 cai no UTF-8 Mode do PEP 540 e `locale` continua `utf-8` (medido).
+   Não adicionei `PYTHONUTF8=1` para não introduzir um knob que eu não consigo falsificar.
+2. 🔴 **ACHADO — `check-roadmap-barrier-contract.sh` TAMBÉM estoura sob cp1252, e o `make parity`
+   inteiro cai com ele.** Não editei o arquivo; **rodei** (leitura, não escrita), porque sem medir eu
+   não poderia dizer se a AC "os gates de diagnóstico não estouram" vale para `make parity`.
+   ```
+   baseline UTF-8 -> rc=0
+   PYTHONIOENCODING=cp1252 -> rc=1
+     File "<stdin>", line 7, in <module>
+     UnicodeEncodeError: 'charmap' codec can't encode character '\u2705' (✅)
+   ```
+   O `<stdin>` linha 7 é o `print(f"{base}\t{label}\t...")` da **linha 523**, dentro do heredoc
+   aberto na linha 516 — que escreve `$CORPUS_LINES_FILE`, e é exatamente o arquivo cujo sha vira
+   `CORPUS_HASH` na linha 542. Ou seja: **é o mesmo sítio de código do defeito do PR #238**, não um
+   segundo defeito noutro lugar; mas é um **sintoma diferente** — sob cp1252 o gate **crasha antes**
+   de o hash sequer poder divergir. Consequência para a AC: a afirmação correta é **42 de 43** gates
+   de `make parity`, não `make parity` inteiro. Decisão de rota (aplicar aqui vs. deixar para o #238)
+   é do arquiteto — não toquei no arquivo, e a variável **não** conserta a não-determinação do hash,
+   só o crash.
+3. **Nenhum job de CI roda `scripts/check-*.sh` no Windows.** `parity` é `ubuntu-latest`
+   (quality.yml:409); os jobs `windows-*` rodam `go test`/`npm test`/`pytest`/`windows-repro`. A
+   exposição real hoje é o caminho 4 (dev em console Windows), não o CI.
+4. **O instrumento do item 4 mede uma réplica, não o gate.**
+   `scripts/windows-repro/python/checks.py::cmd_cp1252_print` roda `print('→')` em isolamento e
+   declara explicitamente que **não** invoca o wrapper `.sh`. O gate ficou verde; o veredito daquele
+   instrumento não muda por isso. Antes de fixar "camada 2 de 4 → 3", verificar o que o check mede.
+5. **Não há gate contra reintrodução** — é a Wave 2 do roadmap, não este ML.
+
+### Evidência
+
+- `make quality` → **MAKE_EXIT=0**, 0 FAIL.
+- `bin/trackfw validate` → **VALIDATE_EXIT=0**, 18 warnings, todos pré-existentes (mesmos 18 do ML-3A
+  do apolo-tf).
+- `bash -n` em todos os `scripts/check-*.sh` → 0 erros de sintaxe.
+- `grep -c "^export PYTHONIOENCODING=utf-8$" scripts/check-roadmap-barrier-contract.sh` → **0**.
+
+### Vault
+
+`vault/notes/gate-em-cp1252-tem-duas-falhas-distintas-crash-de-print-e-mismatch-por-transcodificacao-2026-09-02.md`,
+linkada no `index.md`.
+
+**Arquivos afetados:** 37 `scripts/check-*.sh`, `vault/notes/index.md`, a nota nova e este arquivo.
+Nenhuma operação de git. Status do ML no roadmap **não** alterado — aguarda auditoria do arquiteto.
+
+---
+
+## 2026-09-02 — artemis-tf — ML-2A (INÍCIO)
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-09-02-saida-nao-ascii-declara-codificacao-em-script-gerado-e-em-gate.md`
+**Branch:** `fix/saida-nao-ascii-declara-codificacao-em-script-gerado-e-em-gate`
+
+Wave 2 — gate anti-reintrodução com dois alvos: (1) ferramenta — todo `scripts/check-*.sh` que
+invoca `python3` declara `export PYTHONIOENCODING=utf-8`, com allowlist nomeada de
+`check-roadmap-barrier-contract.sh`; (2) produto — o literal `attentionSignalScript` dos 3 CLIs
+mantém o prefixo `PYTHONIOENCODING=utf-8`, alvo que `check-attention-scripts-parity.sh` não cobre
+(ele compara os 3 entre si). Sem operações de git.
+
+## 2026-09-02 — artemis-tf — ML-2A (FIM)
+
+**Entregue:** `scripts/check-output-encoding-declared.sh` (novo), ligado a `parity:` no `Makefile`;
+comentário do job `parity` em `.github/workflows/quality.yml` atualizado (estava com contagem
+obsoleta e não citava o gate novo); seção "Codificação de saída declarada" em `docs/cli-parity.md`
+com anotação `partial=`; nota de vault nova + `index.md`.
+
+### A forma exata que o gate aceita e recusa
+
+**Aceita (alvo 1):** `export` + `PYTHONIOENCODING=` + valor alias do codec `utf_8` do Python
+(`utf-8`/`utf8`/`utf_8`/`u8`), case-insensitive, aspas simples/duplas opcionais, espaços extras,
+sufixo `:errorhandler` opcional — em **linha de código**, **antes** da primeira invocação de
+`python3`. Controle positivo por execução: as 4 formas equivalentes aplicadas a 4 gates → **OK,
+exit 0** (regex literal ingênua reprovaria as quatro).
+
+**Recusa, com motivo escrito no arquivo:** valor não-utf8 (`cp1252` — o `grep -q PYTHONIOENCODING`
+ingênuo passaria); declaração só em comentário ou em corpo de heredoc (menção morta — a "metade
+positiva" de `vault/notes/gate-literal-regex-syntax-equivalent-bypass-2026-09-01.md`); declaração
+**depois** da primeira invocação; assignment sem `export`; forma de prefixo por invocação no alvo 1
+(semanticamente válida, recusada **por decisão** — asseverá-la exigiria parsear pipeline de bash e
+nenhum dos 37 gates a usa; no alvo 2 é o inverso: lá é a única forma aceita).
+
+### Falsificações — todas por execução
+
+| # | mutação | resultado |
+|---|---|---|
+| controle | árvore íntegra | **exit 0** |
+| F1 | remove `export` de `check-tty-detection.sh` | exit 1, **nomeia o arquivo e a linha 37** |
+| F2 | troca valor por `cp1252` em `check-audit-surface.sh` | exit 1 |
+| F3 | comenta a declaração em `check-cli-parity.sh` | exit 1 |
+| F4 | remove o `export` (assignment solto) em `check-homedir-parity.sh` | exit 1 |
+| F5 | move a declaração para depois da 1ª invocação | exit 1, "linha 691, DEPOIS ... (linha 123)" |
+| F6 | remove o `export` **do próprio gate** | exit 1, **o gate se nomeia** |
+| F7 | allowlisted ganha a declaração | exit 1, "ALLOWLIST OBSOLETA" |
+| F8 | allowlisted renomeado | exit 1, "protegendo um caminho morto" + nomeia o renomeado |
+| F9 | **vacuidade**: glob enumera 0 | exit 1, "recuso passar em silencio" |
+| F10 | remove o prefixo dos **3 CLIs** | exit 1, nomeia os 3 |
+| F11 | remove o prefixo de **1** | exit 1, nomeia o divergente |
+| F12 | **vacuidade alvo 2**: âncora quebrada | exit 1, "encontrei 0" |
+| P | 4 formas equivalentes aceitas | exit 0 |
+
+**O cego da paridade, medido — não argumentado.** Cópia completa da árvore, prefixo removido dos 3,
+`GO_BIN` recompilado dessa cópia:
+
+```
+check-attention-scripts-parity.sh   -> PARITY_EXIT=0   (8/8 OK)
+check-output-encoding-declared.sh   -> NEW_GATE_EXIT=1
+```
+
+**Prova comportamental do mecanismo** (stub de `python3` no `$PATH`, `PYTHONIOENCODING=cp1252` no
+ambiente), em `check-python-writes-lf.sh`: sem a declaração o filho vê `cp1252`; com ela vê `utf-8`.
+
+**Auto-aplicação provada por execução, não só por estrutura** — o mesmo stub apontado ao **próprio
+gate novo**, com `PYTHONIOENCODING=cp1252` no ambiente:
+
+```
+o python3 do proprio gate viu PYTHONIOENCODING=utf-8
+```
+
+F6 prova que a asserção dispara; isto prova que o `python3` deste gate de fato enxerga `utf-8`.
+
+**F13 — allowlist SEM OBJETO** (o único ramo que não tinha execução por trás): removendo o `python3`
+da cópia sandboxada do arquivo excecionado → exit 1, *"ALLOWLIST SEM OBJETO: ... não invoca mais
+python3; a exceção não tem mais razão de existir."*
+
+### Ligação nos dois caminhos
+
+- `make -n parity | grep check-output-encoding-declared` → linha 45. `quality: ... parity`.
+- `.github/workflows/quality.yml:445` roda `make parity` → o gate roda no CI por essa aresta.
+- **Não** foi acrescentado ao subconjunto reduzido de `release.yml` (3 gates), decisão já registrada
+  na `REQ-2026-08-04-job-parity-do-ci-so-roda-4-de-14-scripts-do-make-parity...`; e **não** foi
+  acrescentada uma `- run:` avulsa em `quality.yml`, que reintroduziria a lista manual parcial que
+  aquela mesma REQ removeu.
+
+### Evidência
+
+- `make quality` → **QUALITY_EXIT=0**. As 3 ocorrências de "FAIL" no log são linhas `PROOF ...` e o
+  sumário "181 scenarios", nenhuma é reprovação. O gate novo roda por último em `make parity`.
+- `bin/trackfw validate` → **VALIDATE_EXIT=0**, 18 warnings, os mesmos pré-existentes do ML-1B.
+- `grep -c PYTHONIOENCODING scripts/check-roadmap-barrier-contract.sh` → **0**, arquivo intocado
+  (mtime 2026-08-29).
+- `scripts/check-parity-contract-coverage.sh` → **exit 0**, nenhuma seção sem anotação.
+- Reexecutados **depois** das últimas escritas (a nota de vault, o link no `index.md` e este
+  registro foram escritos após o `make quality` ter começado, então os gates que rodam no início do
+  `parity` não os tinham visto): `scripts/check-referential-integrity.sh` → **REF=0**,
+  `bin/trackfw validate` → **VALIDATE=0**, `scripts/check-output-encoding-declared.sh` → **exit 0**.
+
+### Descoberto — reportado, não corrigido
+
+1. 🔴 **`scripts/trackfw-attention-signal.sh` (a cópia versionada) está obsoleta**: continua sem o
+   prefixo, divergente dos 3 literais desde o ML-1A. **Nada a compara com o gerador** — o parity
+   roda em `mktemp -d` e os testes Go fazem `os.Chdir(t.TempDir())`. Nota de vault escrita.
+2. `internal/generators/scaffold.go:1873` emite outro `python3 -c` (build-check `py_compile` de
+   projetos Python) **sem** o prefixo. Fora do contrato do alvo 2 por decisão explícita — a âncora
+   usa a assinatura `json.load(sys.stdin)` para não arrastá-lo. Não avaliado se precisa.
+3. `scripts/check-shell-posix-portability.sh` declara `PYTHONIOENCODING` mas **não invoca**
+   `python3` — sobra inofensiva do ML-1B (casou pela palavra no comentário). O gate não reprova
+   por sobra-declaração, de propósito.
+4. Existe um diretório `$T/` na raiz do repositório (lixo de expansão de variável); não toquei.
+
+**Cobertura parcial declarada (2 itens, ambos na anotação `partial=`):** (a) a asserção é estática
+sobre o texto-fonte; Provar por observação de
+runtime nos 38 gates exigiria executá-los com `python3` instrumentado, e dois (`check-gates-falsify`
+~3m05s, `check-barrier` que executa git) inviabilizam isso dentro de `make parity`. Anotado
+`partial=` em `docs/cli-parity.md`, nunca `gate=` puro. (b) O rastreador de heredoc é **heurístico**
+— procura o delimitador na linha inteira, então um comentário inline citando `<<` iniciaria estado
+de heredoc. Hoje é comprovadamente **inerte**: a contagem independente por strip de comentário (37
+invocadores) mais o próprio gate bate exatamente com os 38 que a varredura enumera, logo a exclusão
+de heredoc não descartou nada. Declarado em vez de "corrigido" porque mexer no parser de um gate
+verde é trocar risco por estética.
+
+**Nenhuma operação de git.** Status do ML no roadmap **não** alterado — aguarda auditoria do
+arquiteto.
+
+## 2026-09-02 — hefesto-tf (Code Quality) — INÍCIO
+**Escopo:** barreira final de qualidade do `ROADMAP-2026-09-02-saida-nao-ascii-declara-codificacao-em-script-gerado-e-em-gate` (branch `fix/saida-nao-ascii-declara-codificacao-em-script-gerado-e-em-gate`, 57 arquivos, ML-1A/ML-1B/ML-2A).
+**Alvo:** manutenibilidade do gate novo `scripts/check-output-encoding-declared.sh`, custo da repetição de 37 blocos de comentário, risco do rastreador heurístico de heredoc, honestidade da anotação `partial=` em `docs/cli-parity.md`, sobra-declaração e code smells.
+**Fronteira:** somente leitura de código; único arquivo escrito é `docs/qualidade/2026-09-02-parecer-codificacao-declarada.md`. Nenhuma operação de git.
+
+## 2026-09-02 — hades-tf (Security) — INÍCIO
+**Escopo:** barreira final de segurança do `ROADMAP-2026-09-02-saida-nao-ascii-declara-codificacao-em-script-gerado-e-em-gate` (branch `fix/saida-nao-ascii-declara-codificacao-em-script-gerado-e-em-gate`, 57 arquivos, ML-1A `5b5391e` / ML-1B `6721078` / ML-2A `486b5a0`).
+**Alvo:** o `attentionSignalScript` é código de PRODUTO que roda como hook `PreToolUse` e decodifica **stdin não confiável**. Medir se a troca de decode locale→UTF-8 estrito muda a superfície; procurar injeção no `.trackfw-attention.json` (lido pelo `trackfw serve` e renderizado no browser); truncamento em 300 code points; alcance do `export` do ML-1B a processos-filho; execução de conteúdo de arquivo pelo gate novo; identidade byte a byte da cópia versionada.
+**Fronteira:** somente leitura de código; único arquivo escrito é `docs/seguranca/2026-09-02-parecer-codificacao-declarada.md`. Nenhuma operação de git.
+
+## 2026-09-02 — hades-tf (Security) — FIM
+**Veredito: APROVA COM RESSALVAS.** Parecer em `docs/seguranca/2026-09-02-parecer-codificacao-declarada.md`.
+**Nada bloqueia o merge.** A troca de decode locale→UTF-8 estrito **não abre primitivo de injeção novo** — conjunto-delta medido é 100% não-ASCII, e `"`/`\`/C0 codificam idêntico nos dois codecs. Medido o inverso do temido: **antes** do ML-1A, sob `PYTHONIOENCODING=cp1252`, o hook escrevia `.trackfw-attention.json` **inválido em UTF-8** (`—`→`0x97`, `Á`→`0xC1`); depois, correto. O defeito era rotulado de disponibilidade e também era de integridade do artefato.
+**Achado S3 (REQ de acompanhamento):** `scripts/check-output-encoding-declared.sh:45-49` justifica aceitar `utf-8:<handler>` com "nenhum str do Python é inencodável em utf-8" — **falso**: `json.load` preserva surrogate isolado de `\udXXX`. As formas `utf-8:surrogatepass` e `utf-8:surrogateescape`, **aceitas hoje** pelas duas regex (`:141-146`, `:283-287`), escrevem `ED A0 80` / `0xFF` crus no artefato — provado por execução, com a forma canônica como controle (cai no fallback, seguro). Consequência medida: Go e Node devolvem `active:true` com U+FFFD; **Python devolve `active:false`** (`UnicodeDecodeError` ⊂ `ValueError`, capturado em `api_attention.py:15`) — o banner some num dos 3 runtimes. Divergência pré-existente e já alcançável pelo braço cp1252, por isso ressalva e não bloqueio.
+**Achado S4:** ML-2A regenerou `scripts/trackfw-attention-signal.sh` (confirmei **byte-idêntico** aos 3 literais: 1581/1581/1580) mas **não criou guarda** — `ATTENTION_SOURCES` cobre só os 3 geradores; `check-doctor-parity.sh` usa cópia em `mktemp -d` e `scaffold_doctor.go:205` mede o projeto do adopter. A condição de órfão da nota de vault persiste.
+**Sem achado (negativos medidos, com controle):** sink do browser é `textContent` e `markCardAttention` compara `getAttribute` por igualdade — bypass de escape seria cosmético, não XSS; escape resiste (4 chaves exatas com payload de fechamento de string, nos 3 braços); `[:300]` fatia `str`, corte no meio de multibyte não é construível; gate não avalia conteúdo (heredoc `<<'PYEOF'`, args citados, zero `eval`/`exec`/`subprocess`); `export` do ML-1B não cega nada — `test_cli_encoding.py:76` **seta**, `checks.py:34-35,78-79` **removem**, e `cli.py:47 _force_utf8_output()` faz `reconfigure()` que sobrescreve o herdado; trade-off do mojibake não introduz fail-open (crash dava exit≠0 e o que sumiu foi uma falha *falsa*).
+**Falsificação do gate, 4 execuções em sandbox:** fiel→0; prefixo removido dos 3→1 (nomeia as 6 linhas); `cp1252` no ALVO 1→1; `utf-8:surrogatepass`→**0** (o achado).
+**Fronteira respeitada:** nenhum código de produto tocado; escritos só o parecer e estas duas entradas. Nenhuma operação de git. Status do ML no roadmap não alterado — aguarda `trackfw_architect`.
+**Adendo (pós-revisão do parecer):** §1 foi dividida em **1a encode / 1b decode / 1c conclusão** porque os payloads de `json.dump` são ASCII puro (`ensure_ascii=True`) e só exercitavam o encode. O **decode** de stdin — o discriminante segundo a nota de vault — foi medido com bytes crus, nas duas direções: `\xc3\x81` (UTF-8 válido, `0x81` indefinido em cp1252) **antes** caía em `UnicodeDecodeError`→fallback e **agora** é aceito íntegro; `\xe9` (latin-1, inválido em UTF-8) **antes** passava e escrevia artefato malformado e **agora** cai no fallback fail-safe (S5.5, disponibilidade). A afirmação estrutural "nenhum ponto não-ASCII codifica em cp1252 para 0x22/0x5C/C0" passou de assumida a **medida** por varredura exaustiva dos 1.114.112 pontos de código: **NENHUM**. §6 refeita **byte a byte contra a transformação de cada escritor** (`os.WriteFile`, `fs.writeFileSync(SIGNAL_SCRIPT)`, `f.write(_ATTENTION_SIGNAL_SH.lstrip('\n'))`), carregando os módulos reais em vez de re-extrair por regex: **1583 == 1583 nos três**. Isso importa porque descasamento de newline faria `scaffold_doctor` acusar adulteração falsa no projeto do adopter. Nota de vault escrita e linkada: `handler-de-erro-em-pythonioencoding-reintroduz-byte-invalido-e-os-3-serve-divergem-2026-09-02.md`.
+
+## 2026-09-02 — hefesto-tf (Code Quality) — FIM
+**Entregue:** `docs/qualidade/2026-09-02-parecer-codificacao-declarada.md`.
+**Veredito:** APROVA COM RESSALVAS. **2 bloqueantes**, ambos em
+`scripts/check-output-encoding-declared.sh`, ambos *fail-open* e falsificados por execução com
+controle negativo: (B1) `HEREDOC_RE:152` casa `<<` em comentário inline e derruba o arquivo da
+população em silêncio — o gate fica cego à remoção do `export` naquele arquivo (exit 0 onde o
+controle dá exit 1); remédio verificado: separar o predicado de POPULAÇÃO (loose) do de
+DECLARAÇÃO (heredoc-aware) — medi strict 38 = loose 38, delta vazio, drop-in. (B2)
+`re.IGNORECASE` nas TRÊS regexes (`:140-148` e `PREFIX_RE:285-289`) casa o NOME da variável sem
+distinguir caixa — B2a: `export pythonioencoding=utf-8` aceito no alvo 1; **B2b: prefixo
+minúsculo aceito no alvo 2, que é o PRODUTO — reversão completa do ML-1A num runtime reportada
+como `2/2` e exit 0**. Remédio (caixa exata no nome, `(?i:...)` só no valor, nas 3 regexes)
+verificado nas 4 direções: árvore atual OK sem falso positivo, t5 FAIL, t6 FAIL, valor em caixa
+alta ainda aceito. Um único handoff, <15 linhas,
+para o especialista de infra de gate. **Produto (internal/, npm/src/, pypi/trackfw/): sem
+achados.** 5 achados de acompanhamento (S1..S5) — inclusive: a justificativa de não centralizar
+o bloco de 12 linhas nos 37 gates **se sustenta** (`check-gates-falsify.sh` copia gates
+individualmente para sandbox), e a anotação `partial=` de `docs/cli-parity.md` é **honesta** —
+a fronteira declarada bate com o código e ela nomeia o próprio furo de B1.
+**Evidência:** `make quality` → `MAKE_EXIT=0` (3.613 linhas, 3 matches de `FAIL` todos benignos,
+inspecionados); `trackfw validate` → exit 0.
+**Pendente para outro papel:** nota de vault do mecanismo de B1 (fora da minha fronteira de
+escrita neste ciclo). Nenhuma operação de git; status do ML no roadmap não alterado.
+
+## 2026-09-02 — artemis-tf (QA) — INÍCIO
+**Handoff:** `trackfw_architect`, ML-2B do
+`ROADMAP-2026-09-02-saida-nao-ascii-declara-codificacao-em-script-gerado-e-em-gate` (wip) —
+microlote corretivo da barreira final: 3 bloqueantes *fail-open* em
+`scripts/check-output-encoding-declared.sh` (B1 do parecer de qualidade, B2 do mesmo parecer, S3 do
+parecer de segurança) mais S4 (comentário falso em `check-shell-posix-portability.sh`).
+**Escopo:** os 3 defeitos vivem no mesmo bloco de regex/parsing do gate que eu escrevi no ML-2A.
+Proibido tocar `internal/`, `npm/src/`, `pypi/trackfw/`, `check-roadmap-barrier-contract.sh` e os
+demais 36 gates. Falsificação em cópias de sandbox, nunca por mutação da árvore. Nenhuma operação
+de git.
+**Leitura prévia:** ML-2B no roadmap, `docs/qualidade/2026-09-02-parecer-codificacao-declarada.md`,
+`docs/seguranca/2026-09-02-parecer-codificacao-declarada.md`, `vault/notes/index.md` e as 3 notas
+de codificação de 2026-09-02.
+
+## 2026-09-02 — artemis-tf (QA) — FIM
+**Entregue (não commitado, para auditoria do `trackfw_architect`):**
+`scripts/check-output-encoding-declared.sh`, `scripts/check-shell-posix-portability.sh` (só o
+comentário), `docs/cli-parity.md` (anotação `partial=` do próprio gate), nota de vault
+`comentario-inline-com-heredoc-derruba-arquivo-da-populacao-do-gate-2026-09-02.md` + link no
+`index.md`, estas duas entradas e 3 arquivos de memória do próprio papel em
+`.claude/agent-memory/artemis-tf/` (`MEMORY.md` + 2 memórias de feedback). As mudanças em
+`.claude/agent-memory/zeus-tf/` que aparecem no `git status` **não são minhas** — são escrita
+concorrente do orquestrador.
+
+**B1 — população loose × declaração strict.** `population_lines()` (exclui só a linha inteiramente
+comentada, sem estado de heredoc) passa a decidir `first_py3` e a assertiva (c) da allowlist;
+`code_lines()` (com exclusão de heredoc) segue decidindo declaração. Falsificado nas duas direções:
+comentário inline com `<<` **+** `export` removido de `check-tty-detection.sh` → **`FAIL`, exit 1**
+(antes: `OK`, exit 0); árvore íntegra → `OK`, exit 0; **população inalterada em 38** com o
+comentário presente.
+
+**B2 — caixa.** `re.IGNORECASE` removido das 3 regexes; `(?i:...)` só no grupo de aliases.
+`export pythonioencoding=utf-8` (alvo 1) → `FAIL`; `pythonioencoding=utf-8 python3 -c` nas 2
+invocações de `npm/src/generators/hooks.js` (alvo 2, **produto**) → `FAIL` nomeando as linhas 147 e
+148 (antes: `2/2 invocacoes com prefixo`, exit 0); `export PYTHONIOENCODING=UTF-8` (caixa alta no
+**valor**) → segue aceito.
+
+**S3 — handler.** Sufixo restrito de `(?::[A-Za-z0-9_]+)?` para `(?::strict)?` nas duas regexes.
+`utf-8:surrogatepass` e `utf-8:replace` → `FAIL` nos dois alvos; `utf-8` e `utf-8:strict` → `OK`.
+Minúsculo de propósito: `codecs.lookup_error('STRICT')` → `unknown error handler name` (medido).
+**O comentário falso foi corrigido**, não só a regex: as linhas que afirmavam "com encoding utf-8
+nenhum `str` do Python é inencodável" foram substituídas pelos dois motivos reais — surrogate solto
+preservado por `json.load` (`ED A0 80` gravado no artefato) e o handler valendo também para o
+**decode do stdin**, onde `:replace` reintroduz a corrupção que o ML-0A reprovou.
+
+**S4.** Comentário de `check-shell-posix-portability.sh` corrigido: o gate **não** invoca `python3`
+(as 2 ocorrências são prosa); a declaração fica como preventiva e uniforme. Veredito idêntico antes
+e depois, medido contra a versão de `HEAD`: `OK — 10 assinaturas ... confirmadas`, exit 0 nos dois.
+
+**3 guardas de vacuidade re-falsificadas por execução** (não presumidas): (a) raiz isolada, glob
+vazio → `ALVO 1 vacuo: ... ZERO arquivos`; (b) população totalmente vazia → `NENHUM foi
+classificado como invocador`; (c) só o próprio gate fora da população → `o gate deixou de se
+aplicar a si mesmo`. Mais: allowlist (a) caminho morto, (b) obsoleta, (c) sem objeto; alvo 2 vácuo
+por âncora quebrada; e auto-aplicação (remover o `export` **deste** gate → ele se nomeia).
+
+**Residual declarado, na direção FECHADA (reportado, não corrigido):** do lado da *declaração* o
+mecanismo de B1 sobrevive — comentário inline com `<<` acima do `export` faz o gate reprovar com
+`NAO declara` um arquivo que declara (`rc=1`). Ruidoso, nunca permissivo. Não o corrigi porque a
+heurística que o fecharia (`#` = comentário) falha na direção **aberta** em `echo "a # b" <<EOF`, e
+seria uma 4ª mudança no bloco que os dois auditores já revisaram. Documentado na nota de vault e na
+anotação de `docs/cli-parity.md`; candidato a REQ de acompanhamento.
+
+**Evidência:** `make quality` → exit 0 (3.612 linhas, rodado DEPOIS de todas as escritas, inclusive `docs/cli-parity.md` e a nota de vault); `bin/trackfw validate` → exit 0 (18 warnings pré-existentes). `(?i:...)` (flag inline com escopo) exige Python 3.6+; a matriz do `quality.yml` é 3.10/3.12 — verificado.
+**Não commitado; nenhuma operação de git. Status do ML-2B no roadmap deliberadamente NÃO alterado**
+— o corpus de `check-roadmap-barrier-contract.sh` é pinado sobre as linhas de veredito dos roadmaps
+(`PINNED_CORPUS_HASH:434`), e a transição de status cabe ao `trackfw_architect` após a auditoria.

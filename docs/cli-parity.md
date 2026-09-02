@@ -6586,6 +6586,13 @@ cmd_cp1252_print` reproduz esse mecanismo em isolamento, deliberadamente sem inv
 `.sh` (para não confundir o item 4 com o item 7, incerto, do mapeamento da issue). O item 4
 permanece `REPRODUCED`/aberto — não é resolvido por #223, e não deve ser confundido com ele.
 
+**Atualização 2026-09-02 (Wave 1 da REQ-2026-09-02):** os gates deixaram de "continuar
+quebrando" — 37 dos 38 `scripts/check-*.sh` que invocam `python3` passaram a declarar
+`export PYTHONIOENCODING=utf-8` no próprio arquivo, e o gerado
+`attentionSignalScript` ganhou o prefixo por invocação. A única exceção nomeada é
+`scripts/check-roadmap-barrier-contract.sh` (PR #238 aberto sobre o mesmo sítio). Ver a
+seção "Codificação de saída declarada" no fim deste documento.
+
 Origem: porte fiel de `lourivalgarciajunior`, PR #223 (fechado por conflito de governança,
 aproveitado integralmente — `docs/analises/2026-08-31-aproveitamento-dos-prs-222-225.md`).
 
@@ -6707,3 +6714,42 @@ menos de três. Ligado a `parity:` no `Makefile`, `python3` (nunca `python`) par
 Origem: achado do `hades-tf` na Wave 0 de `docs/roadmaps/wip/ROADMAP-2026-09-01-escrita-atomica-do-
 cli-python-funciona-no-windows.md`; `docs/req/REQ-2026-09-01-os-fchmod-e-unix-only-e-derruba-as-
 tres-escritas-atomicas-do-cli-python-no-windows.md`.
+
+## Codificação de saída declarada — gate e script gerado (item 4, issue #216, REQ-2026-09-02)
+
+<!-- trackfw-contract: gate=scripts/check-output-encoding-declared.sh partial=a asserção é ESTÁTICA sobre o texto-fonte. Ela prova que a declaração existe, é exportada, tem valor alias de utf_8 e precede a primeira invocação de python3 no arquivo; NÃO prova por observação de runtime que aquele python3 enxergou utf-8. Provar comportamentalmente exigiria executar os 38 gates com um python3 instrumentado, e dois deles inviabilizam isso no caminho de make parity (check-gates-falsify ~3m05s; check-barrier executa git). O mecanismo foi provado por execução UMA vez, com stub de python3 e PYTHONIOENCODING=cp1252 no ambiente: sem a declaração o filho vê cp1252, com ela vê utf-8. Formas recusadas por decisão e não por descuido: assignment sem export, e a forma de prefixo por invocação no alvo 1 (semanticamente válida, mas asseverá-la exigiria parsear pipeline de bash; zero falso positivo hoje, os 37 usam export). Tambem sao recusados handler de erro diferente de :strict (medido: com utf-8:surrogatepass um surrogate solto preservado por json.load sai como os bytes ED A0 80, UTF-8 invalido; e o handler vale tambem para o decode do stdin, onde :replace reintroduz a corrupcao silenciosa que o ML-0A reprovou) e o nome da variavel em outra caixa (pythonioencoding= e outra variavel em shell POSIX; o (?i:...) cobre so o grupo de aliases do valor). CORRECAO DO ML-2B: a afirmacao anterior desta anotacao — de que o rastreador de heredoc era heuristico mas 'comprovadamente inerte' — foi FALSIFICADA (achado B1 do parecer de qualidade de 2026-09-02): um comentario INLINE citando << armava HEREDOC_RE e derrubava o arquivo inteiro da populacao, e com isso um gate sem a declaracao passava com exit 0. O gate agora usa dois predicados: populacao (loose, sem estado de heredoc, usado para first_py3 e para a assercao (c) da allowlist) e declaracao (strict, com exclusao de heredoc). Residual declarado, agora na direcao FECHADA: do lado da declaracao o mesmo comentario inline com << ainda esconde a declaracao seguinte e o gate reprova com 'NAO declara' um arquivo que declara — ruidoso, nunca permissivo; o remedio para quem topar com isso e mover o << para comentario de linha inteira, nao reverter a separacao. Ver vault/notes/gate-literal-regex-syntax-equivalent-bypass-2026-09-01.md e vault/notes/comentario-inline-com-heredoc-derruba-arquivo-da-populacao-do-gate-2026-09-02.md -->
+
+**Infra de gate — exceção explícita da regra dura de paridade dos 3 CLIs**, pelo mesmo critério já
+aplicado no ML-1B (37 gates): `scripts/check-*.sh` é ferramenta do repositório, não superfície de
+CLI; não há nada a implementar em `internal/`, `npm/src/` ou `pypi/trackfw/`. O **alvo 2** deste
+gate, porém, incide sobre os 3 runtimes — ele exige que o literal `attentionSignalScript` mantenha o
+prefixo `PYTHONIOENCODING=utf-8` **nos três**, byte-idêntico.
+
+**Alvo 1 — ferramenta.** Todo `scripts/check-*.sh` que invoca `python3` em linha de código declara
+`export PYTHONIOENCODING=utf-8` antes da primeira invocação. Formas equivalentes são aceitas
+(aspas, espaços extras, caixa, aliases `utf-8`/`utf8`/`utf_8`/`u8`, sufixo `:errorhandler`); menção
+morta em comentário ou em corpo de heredoc **não** conta, e valor não-utf8 (`cp1252`) reprova — os
+dois casos falsificados por execução. Exceção única e nomeada:
+`scripts/check-roadmap-barrier-contract.sh`, porque o PR #238 está aberto sobre exatamente o sítio
+do `CORPUS_HASH` e forçar a codificação lá mataria o crash **sem** tornar o hash independente do
+SO. A allowlist é verificada em três frentes — o caminho existe, o arquivo **continua** sem a
+declaração (se ganhar uma, o gate reprova com "exceção obsoleta" em vez de aceitar os dois estados)
+e ele continua invocando `python3`.
+
+**Alvo 2 — produto, e é o que a paridade não cobre.** `scripts/check-attention-scripts-parity.sh`
+compara os 3 CLIs **entre si**: removendo o prefixo dos três, ele devolve **exit 0** — medido, com
+`GO_BIN` recompilado da árvore mutada — enquanto `check-output-encoding-declared.sh` devolve
+**exit 1** nomeando os três arquivos. Paridade mede se as implementações concordam, não se o
+contrato está correto (mesmo cego de
+`vault/notes/barrier-so-casa-cabecalho-de-aceite-em-portugues-2026-08-28.md`).
+
+**Guarda de vacuidade nos dois alvos, falsificada por execução.** Glob `scripts/check-*.sh` vazio,
+população de invocadores vazia, ou âncora do literal que deixou de casar (menos de 2 invocações
+`python3 -c ... json.load(sys.stdin)` por runtime) **reprovam**, em vez de passar em silêncio. O
+gate também assevera a própria auto-inclusão na população: removendo o `export` dele mesmo, ele se
+nomeia como infrator.
+
+Ligado a `parity:` no `Makefile` — e, por isso, ao `make quality` e ao job `parity` de
+`.github/workflows/quality.yml`, que roda `make parity`. **Não** foi acrescentado ao subconjunto
+reduzido de `release.yml` (3 gates), por decisão já registrada na
+`REQ-2026-08-04-job-parity-do-ci-so-roda-4-de-14-scripts-do-make-parity...`.
