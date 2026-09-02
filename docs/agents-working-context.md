@@ -27878,3 +27878,44 @@ acompanhamento que registrei — bypass por atribuição em `assert_no_code_matc
 `docs/cli-parity.md`, `.gitignore`, `vault/notes/index.md`, `.agents/skills/`) — não tocada por
 mim, apenas observada para contextualizar por que a árvore não estava estática durante a janela do
 `make quality`.
+
+---
+
+## Sessão 2026-09-01 — hades-tf (ML-0A — modelo de ameaça do portão do repositório)
+
+Branch `fix/o-repositorio-do-trackfw-sob-os-cuidados-do-trackfw` (não criada por mim, herdada do
+worktree). Escopo: ML-0A do roadmap `ROADMAP-2026-09-01-o-repositorio-do-trackfw-sob-os-cuidados-do-trackfw`
+— enumeração do que o `trackfw` instala em terceiros e este repositório não usa, modelo de ameaça
+do portão de merge (`required_status_checks`, `enforce_admins`), falsificação nas duas direções.
+Análise apenas — nenhuma configuração alterada. Medições ao vivo via `gh api` (branch protection,
+check-runs de `main` e do PR #241), leitura de `internal/generators/scaffold.go`,
+`scaffold_doctor.go`, `hooks.go`, `agentfiles.go`, `doctor.go`, `update_harness.go`,
+`integrations_flags.go`.
+
+**Achados principais:**
+1. Confirmado ao vivo: `required_status_checks` ausente, `required_approving_review_count: 0`,
+   `enforce_admins: false` na `main` — exatamente como o ADR mediu.
+2. `windows-full-suites`/`windows-defect-reproduction` estão `failure` no HEAD da `main` agora
+   mesmo (não hipótese) — `continue-on-error: true` por desenho, instrumento da issue #216.
+3. 🔴 Achado novo (não estava no ADR): dois mecanismos de instalação (`trackfw-gate.yml` via
+   init/update, `trackfw-validate.yml` via discover) escrevem `job: governance` com o mesmo nome;
+   `trackfw-validate.yml` roda em `[push, pull_request]`, produzindo **3 check-runs homônimos**
+   por push de PR (confirmado no PR #241) — pré-requisito para Wave 1: nomes únicos antes de
+   exigir o check.
+4. 🔴 O único gerador de hook Git real do produto (`generateCommitMsgHook`) só escreve para
+   `husky`/`lefthook` — não existe caminho hoje para gerar hook Git num projeto Go puro como este.
+   Além disso, mesmo com essa capacidade construída, `commit-msg` não cobre 2 dos 3 incidentes
+   citados como motivação do AC3 (`git stash`, `checkout --`) — git não tem hook nativo
+   equivalente ao `PreToolUse`/matcher `Bash` do harness de agente.
+5. `trackfw doctor` hoje só compara manifesto de catálogo e templates de scaffold em disco — não
+   tem nenhuma visão sobre branch protection (API do GitHub) nem `core.hooksPath`. AC6 exige uma
+   segunda modalidade de verificação (rede + auth), não apenas mais um check no que já existe.
+6. `enforce_admins`: argumento completo escrito recomendando `true` — com `required_approving_review_count`
+   preso em `0` (auto-aprovação impossível para mantenedor único), `enforce_admins` decide só se o
+   portão vale para o admin; os 4 incidentes citados na REQ foram todos cometidos pelo admin e
+   nenhum apareceu no CI verde porque o CI nunca precisou ser esperado.
+
+**Artefato:** `docs/seguranca/2026-09-01-modelo-de-ameaca-do-portao-do-repositorio.md`.
+
+**Fronteiras mantidas:** nenhum arquivo de `internal/`, `npm/`, `pypi/`, workflow ou configuração
+de branch protection tocado; nenhum commit/branch/push; roadmap/REQ/ADR não editados.
