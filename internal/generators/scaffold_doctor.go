@@ -42,11 +42,19 @@ const DiscoverGitHubActionsWorkflowPath = ".github/workflows/trackfw-validate.ym
 // project — mirroring the install.sh pin already applied to buildGitHubActionsWorkflowContent
 // (trackfw-gate.yml) in scaffold.go. Scaffold doctor calls this to compare disk content
 // against the current template (AC10/AC11).
+//
+// Job id is `governance-go-install` (ML-1A, ROADMAP-2026-09-01) — was `governance`,
+// colliding with the job id in buildGitHubActionsWorkflowContent (trackfw-gate.yml,
+// scaffold.go), which produced two identically-named check-runs on any PR of a project
+// with both workflows installed. See the doc comment there for the full rationale; the
+// two ids are named after the install mechanism (`go install` here vs install.sh
+// there), not the workflow file, since that's what the reader of
+// required_status_checks needs to know.
 func BuildDiscoverGitHubActionsWorkflowContent() string {
 	return `name: trackfw validate
 on: [push, pull_request]
 jobs:
-  governance:
+  governance-go-install:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

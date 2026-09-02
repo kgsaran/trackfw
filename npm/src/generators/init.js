@@ -223,6 +223,15 @@ function generateCIWorkflow(cfg) {
 // (which also ignores cfg for now — the template is cfg-independent but, since
 // ADR-2026-08-28, NOT version-independent: it pins TRACKFW_VERSION to the version of the
 // trackfw binary that generated it, read from package.json — never a literal).
+//
+// Job id is `governance-install-script` (ML-1A, ROADMAP-2026-09-01): was `governance`,
+// colliding with the discover-installed sibling workflow's job id (trackfw-validate.yml,
+// buildDiscoverGitHubActionsWorkflowContent in commands/discover.js) — both previously
+// `governance`, producing two identically-named check-runs on any PR of a project with
+// both workflows installed, which makes required_status_checks ambiguous (GitHub
+// matches by name). Named after the install mechanism (install.sh here, `go install`
+// there) rather than the workflow file, since that's what a required_status_checks
+// reader needs to tell the two apart without opening the YAML.
 function buildGitHubActionsWorkflowContent(_cfg) {
   return `name: trackfw-gate
 on:
@@ -230,7 +239,7 @@ on:
     branches: [main]
 
 jobs:
-  governance:
+  governance-install-script:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:

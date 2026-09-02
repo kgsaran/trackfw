@@ -465,13 +465,19 @@ def build_discover_github_actions_workflow_content() -> str:
     (`go install ...@latest`) to trackfw.__version__ — never a literal. Scaffold
     doctor calls this to compare disk content against the current template
     (AC10/AC11).
+
+    Job id is `governance-go-install` (ML-1A, ROADMAP-2026-09-01) — was
+    `governance`, colliding with build_github_actions_workflow_content's job
+    id (trackfw-gate.yml, generators/init_gen.py). See that function's doc
+    comment for the full rationale; named after the install mechanism
+    (`go install`), not the workflow file.
     """
     from trackfw import __version__
     return (
         "name: trackfw validate\n"
         "on: [push, pull_request]\n"
         "jobs:\n"
-        "  governance:\n"
+        "  governance-go-install:\n"
         "    runs-on: ubuntu-latest\n"
         "    steps:\n"
         "      - uses: actions/checkout@v4\n"

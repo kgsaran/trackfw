@@ -27878,3 +27878,103 @@ acompanhamento que registrei — bypass por atribuição em `assert_no_code_matc
 `docs/cli-parity.md`, `.gitignore`, `vault/notes/index.md`, `.agents/skills/`) — não tocada por
 mim, apenas observada para contextualizar por que a árvore não estava estática durante a janela do
 `make quality`.
+
+---
+
+## Sessão 2026-09-01 — hades-tf (ML-0A — modelo de ameaça do portão do repositório)
+
+Branch `fix/o-repositorio-do-trackfw-sob-os-cuidados-do-trackfw` (não criada por mim, herdada do
+worktree). Escopo: ML-0A do roadmap `ROADMAP-2026-09-01-o-repositorio-do-trackfw-sob-os-cuidados-do-trackfw`
+— enumeração do que o `trackfw` instala em terceiros e este repositório não usa, modelo de ameaça
+do portão de merge (`required_status_checks`, `enforce_admins`), falsificação nas duas direções.
+Análise apenas — nenhuma configuração alterada. Medições ao vivo via `gh api` (branch protection,
+check-runs de `main` e do PR #241), leitura de `internal/generators/scaffold.go`,
+`scaffold_doctor.go`, `hooks.go`, `agentfiles.go`, `doctor.go`, `update_harness.go`,
+`integrations_flags.go`.
+
+**Achados principais:**
+1. Confirmado ao vivo: `required_status_checks` ausente, `required_approving_review_count: 0`,
+   `enforce_admins: false` na `main` — exatamente como o ADR mediu.
+2. `windows-full-suites`/`windows-defect-reproduction` estão `failure` no HEAD da `main` agora
+   mesmo (não hipótese) — `continue-on-error: true` por desenho, instrumento da issue #216.
+3. 🔴 Achado novo (não estava no ADR): dois mecanismos de instalação (`trackfw-gate.yml` via
+   init/update, `trackfw-validate.yml` via discover) escrevem `job: governance` com o mesmo nome;
+   `trackfw-validate.yml` roda em `[push, pull_request]`, produzindo **3 check-runs homônimos**
+   por push de PR (confirmado no PR #241) — pré-requisito para Wave 1: nomes únicos antes de
+   exigir o check.
+4. 🔴 O único gerador de hook Git real do produto (`generateCommitMsgHook`) só escreve para
+   `husky`/`lefthook` — não existe caminho hoje para gerar hook Git num projeto Go puro como este.
+   Além disso, mesmo com essa capacidade construída, `commit-msg` não cobre 2 dos 3 incidentes
+   citados como motivação do AC3 (`git stash`, `checkout --`) — git não tem hook nativo
+   equivalente ao `PreToolUse`/matcher `Bash` do harness de agente.
+5. `trackfw doctor` hoje só compara manifesto de catálogo e templates de scaffold em disco — não
+   tem nenhuma visão sobre branch protection (API do GitHub) nem `core.hooksPath`. AC6 exige uma
+   segunda modalidade de verificação (rede + auth), não apenas mais um check no que já existe.
+6. `enforce_admins`: argumento completo escrito recomendando `true` — com `required_approving_review_count`
+   preso em `0` (auto-aprovação impossível para mantenedor único), `enforce_admins` decide só se o
+   portão vale para o admin; os 4 incidentes citados na REQ foram todos cometidos pelo admin e
+   nenhum apareceu no CI verde porque o CI nunca precisou ser esperado.
+
+**Artefato:** `docs/seguranca/2026-09-01-modelo-de-ameaca-do-portao-do-repositorio.md`.
+
+**Fronteiras mantidas:** nenhum arquivo de `internal/`, `npm/`, `pypi/`, workflow ou configuração
+de branch protection tocado; nenhum commit/branch/push; roadmap/REQ/ADR não editados.
+
+---
+
+## Sessão 2026-09-02 — apolo-tf (ML-1A — job ids únicos nos dois workflows, 3 CLIs)
+
+Branch `fix/o-repositorio-do-trackfw-sob-os-cuidados-do-trackfw` (herdada, worktree único).
+Escopo: ML-1A do roadmap `ROADMAP-2026-09-01-o-repositorio-do-trackfw-sob-os-cuidados-do-trackfw`
+— desfazer a colisão de job id `governance` entre `trackfw-gate.yml` (init/update) e
+`trackfw-validate.yml` (discover --init), nos 3 CLIs.
+
+**Nomes escolhidos** (ancorados no mecanismo de instalação, não no arquivo — os dois workflows
+verificam a mesma propriedade `trackfw validate` por dois caminhos de instalação diferentes):
+`governance-install-script` (trackfw-gate.yml, `curl | sh`) e `governance-go-install`
+(trackfw-validate.yml, `go install ...@versão`). Justificativa completa em
+`docs/cli-parity.md` (nova seção "Job ids únicos entre `trackfw-gate.yml` e
+`trackfw-validate.yml`").
+
+**Arquivos alterados:** `internal/generators/scaffold.go`, `internal/generators/scaffold_doctor.go`,
+`npm/src/generators/init.js`, `npm/src/commands/discover.js`,
+`pypi/trackfw/generators/init_gen.py`, `pypi/trackfw/commands/discover.py` (job id nos 6 builders,
+com doc comment explicando a colisão e a escolha do nome). Testes que pinam conteúdo gerado
+(`internal/generators/update_test.go:1877/2034`, `npm/tests/update_ci_workflow_target_discover_workflow.test.js:70/137/171`,
+`pypi/tests/test_update_ci_workflow_discover_workflow.py:105/172/213`) foram inspecionados e
+**não** precisaram de edição — são fixtures de conteúdo "stale" (job id antigo ou pin de versão
+antiga) comparadas contra o template atual gerado dinamicamente pelos builders já corrigidos; a
+divergência que o teste explora já não depende do job id específico.
+
+**Além do escopo listado:** os dois workflows reais deste repositório
+(`.github/workflows/trackfw-gate.yml`, `.github/workflows/trackfw-validate.yml`, que divergem
+deliberadamente do template — `go build` local em vez de `go install`, `checkout@v7` — porque o
+repo não pode se auto-instalar via release durante o próprio PR) também tiveram o job id renomeado
+(edição cirúrgica de uma linha cada; confirmado sem `needs:` dependendo de `governance` em nenhum
+workflow do repositório antes de editar). Sem essa edição a colisão medida ao vivo no PR #241
+continuaria presente neste repositório mesmo com os geradores corrigidos.
+
+**Gate novo:** `scripts/check-ci-workflow-job-id-collision.sh`, wired em `make parity` (após
+`check-ci-workflow-pin-parity.sh`). 6 pontos (2 workflows × 3 CLIs) via `assert_count`
+(não `assert_has` — a assinatura pode repetir por engano), mais anti-regressão do id antigo
+colidente (`  governance:`, ancorado com indentação+dois-pontos) nos mesmos 6 arquivos, mais
+checagem de que os dois ids nunca coincidem. Falsificado nas duas direções: fixture com o id
+antigo é detectada pela mesma assinatura da validação real; reintroduzi a colisão manualmente em
+`scaffold.go` para confirmar que o gate reprova (`exit=1`, mensagem nomeando o arquivo e a
+ocorrência), depois revertida e confirmado `exit=0`. Documentado em `docs/cli-parity.md` (nova
+seção, `trackfw-contract: gate=scripts/check-ci-workflow-job-id-collision.sh`) —
+`check-parity-contract-coverage.sh` confirma zero seção sem anotação.
+
+**Controle (a linha que a REQ pede para auditar primeiro):** `check-ci-workflow-pin-parity.sh`
+(que dumpa os 9 builders reais e compara byte a byte) continua OK — 15/15 cenários — provando que
+os dois workflows continuam gerando conteúdo válido, byte-idêntico entre os 3 CLIs, apenas com o
+job id renomeado; nada além do job id mudou.
+
+**Limite honesto:** o efeito real — check-runs com nomes distintos num PR — só o CI mostra; não
+observado aqui, só o conteúdo gerado e os testes locais. `required_status_checks` (Wave 2) não foi
+tocado — decisão de qual(is) dos dois ids exigir fica para lá, com o argumento (mesma propriedade,
+dois caminhos de instalação redundantes → provavelmente só um precisa ser exigido) já registrado em
+`docs/cli-parity.md` para uso na Wave 2.
+
+**Fronteiras mantidas:** nenhuma configuração de branch protection/`gh api`/`git config` tocada;
+nenhum commit/branch/push/stash/add executado; roadmap/REQ/ADR não editados.
