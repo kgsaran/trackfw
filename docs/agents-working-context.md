@@ -28568,3 +28568,130 @@ linkada no `index.md`.
 
 **Arquivos afetados:** 37 `scripts/check-*.sh`, `vault/notes/index.md`, a nota nova e este arquivo.
 Nenhuma operação de git. Status do ML no roadmap **não** alterado — aguarda auditoria do arquiteto.
+
+---
+
+## 2026-09-02 — artemis-tf — ML-2A (INÍCIO)
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-09-02-saida-nao-ascii-declara-codificacao-em-script-gerado-e-em-gate.md`
+**Branch:** `fix/saida-nao-ascii-declara-codificacao-em-script-gerado-e-em-gate`
+
+Wave 2 — gate anti-reintrodução com dois alvos: (1) ferramenta — todo `scripts/check-*.sh` que
+invoca `python3` declara `export PYTHONIOENCODING=utf-8`, com allowlist nomeada de
+`check-roadmap-barrier-contract.sh`; (2) produto — o literal `attentionSignalScript` dos 3 CLIs
+mantém o prefixo `PYTHONIOENCODING=utf-8`, alvo que `check-attention-scripts-parity.sh` não cobre
+(ele compara os 3 entre si). Sem operações de git.
+
+## 2026-09-02 — artemis-tf — ML-2A (FIM)
+
+**Entregue:** `scripts/check-output-encoding-declared.sh` (novo), ligado a `parity:` no `Makefile`;
+comentário do job `parity` em `.github/workflows/quality.yml` atualizado (estava com contagem
+obsoleta e não citava o gate novo); seção "Codificação de saída declarada" em `docs/cli-parity.md`
+com anotação `partial=`; nota de vault nova + `index.md`.
+
+### A forma exata que o gate aceita e recusa
+
+**Aceita (alvo 1):** `export` + `PYTHONIOENCODING=` + valor alias do codec `utf_8` do Python
+(`utf-8`/`utf8`/`utf_8`/`u8`), case-insensitive, aspas simples/duplas opcionais, espaços extras,
+sufixo `:errorhandler` opcional — em **linha de código**, **antes** da primeira invocação de
+`python3`. Controle positivo por execução: as 4 formas equivalentes aplicadas a 4 gates → **OK,
+exit 0** (regex literal ingênua reprovaria as quatro).
+
+**Recusa, com motivo escrito no arquivo:** valor não-utf8 (`cp1252` — o `grep -q PYTHONIOENCODING`
+ingênuo passaria); declaração só em comentário ou em corpo de heredoc (menção morta — a "metade
+positiva" de `vault/notes/gate-literal-regex-syntax-equivalent-bypass-2026-09-01.md`); declaração
+**depois** da primeira invocação; assignment sem `export`; forma de prefixo por invocação no alvo 1
+(semanticamente válida, recusada **por decisão** — asseverá-la exigiria parsear pipeline de bash e
+nenhum dos 37 gates a usa; no alvo 2 é o inverso: lá é a única forma aceita).
+
+### Falsificações — todas por execução
+
+| # | mutação | resultado |
+|---|---|---|
+| controle | árvore íntegra | **exit 0** |
+| F1 | remove `export` de `check-tty-detection.sh` | exit 1, **nomeia o arquivo e a linha 37** |
+| F2 | troca valor por `cp1252` em `check-audit-surface.sh` | exit 1 |
+| F3 | comenta a declaração em `check-cli-parity.sh` | exit 1 |
+| F4 | remove o `export` (assignment solto) em `check-homedir-parity.sh` | exit 1 |
+| F5 | move a declaração para depois da 1ª invocação | exit 1, "linha 691, DEPOIS ... (linha 123)" |
+| F6 | remove o `export` **do próprio gate** | exit 1, **o gate se nomeia** |
+| F7 | allowlisted ganha a declaração | exit 1, "ALLOWLIST OBSOLETA" |
+| F8 | allowlisted renomeado | exit 1, "protegendo um caminho morto" + nomeia o renomeado |
+| F9 | **vacuidade**: glob enumera 0 | exit 1, "recuso passar em silencio" |
+| F10 | remove o prefixo dos **3 CLIs** | exit 1, nomeia os 3 |
+| F11 | remove o prefixo de **1** | exit 1, nomeia o divergente |
+| F12 | **vacuidade alvo 2**: âncora quebrada | exit 1, "encontrei 0" |
+| P | 4 formas equivalentes aceitas | exit 0 |
+
+**O cego da paridade, medido — não argumentado.** Cópia completa da árvore, prefixo removido dos 3,
+`GO_BIN` recompilado dessa cópia:
+
+```
+check-attention-scripts-parity.sh   -> PARITY_EXIT=0   (8/8 OK)
+check-output-encoding-declared.sh   -> NEW_GATE_EXIT=1
+```
+
+**Prova comportamental do mecanismo** (stub de `python3` no `$PATH`, `PYTHONIOENCODING=cp1252` no
+ambiente), em `check-python-writes-lf.sh`: sem a declaração o filho vê `cp1252`; com ela vê `utf-8`.
+
+**Auto-aplicação provada por execução, não só por estrutura** — o mesmo stub apontado ao **próprio
+gate novo**, com `PYTHONIOENCODING=cp1252` no ambiente:
+
+```
+o python3 do proprio gate viu PYTHONIOENCODING=utf-8
+```
+
+F6 prova que a asserção dispara; isto prova que o `python3` deste gate de fato enxerga `utf-8`.
+
+**F13 — allowlist SEM OBJETO** (o único ramo que não tinha execução por trás): removendo o `python3`
+da cópia sandboxada do arquivo excecionado → exit 1, *"ALLOWLIST SEM OBJETO: ... não invoca mais
+python3; a exceção não tem mais razão de existir."*
+
+### Ligação nos dois caminhos
+
+- `make -n parity | grep check-output-encoding-declared` → linha 45. `quality: ... parity`.
+- `.github/workflows/quality.yml:445` roda `make parity` → o gate roda no CI por essa aresta.
+- **Não** foi acrescentado ao subconjunto reduzido de `release.yml` (3 gates), decisão já registrada
+  na `REQ-2026-08-04-job-parity-do-ci-so-roda-4-de-14-scripts-do-make-parity...`; e **não** foi
+  acrescentada uma `- run:` avulsa em `quality.yml`, que reintroduziria a lista manual parcial que
+  aquela mesma REQ removeu.
+
+### Evidência
+
+- `make quality` → **QUALITY_EXIT=0**. As 3 ocorrências de "FAIL" no log são linhas `PROOF ...` e o
+  sumário "181 scenarios", nenhuma é reprovação. O gate novo roda por último em `make parity`.
+- `bin/trackfw validate` → **VALIDATE_EXIT=0**, 18 warnings, os mesmos pré-existentes do ML-1B.
+- `grep -c PYTHONIOENCODING scripts/check-roadmap-barrier-contract.sh` → **0**, arquivo intocado
+  (mtime 2026-08-29).
+- `scripts/check-parity-contract-coverage.sh` → **exit 0**, nenhuma seção sem anotação.
+- Reexecutados **depois** das últimas escritas (a nota de vault, o link no `index.md` e este
+  registro foram escritos após o `make quality` ter começado, então os gates que rodam no início do
+  `parity` não os tinham visto): `scripts/check-referential-integrity.sh` → **REF=0**,
+  `bin/trackfw validate` → **VALIDATE=0**, `scripts/check-output-encoding-declared.sh` → **exit 0**.
+
+### Descoberto — reportado, não corrigido
+
+1. 🔴 **`scripts/trackfw-attention-signal.sh` (a cópia versionada) está obsoleta**: continua sem o
+   prefixo, divergente dos 3 literais desde o ML-1A. **Nada a compara com o gerador** — o parity
+   roda em `mktemp -d` e os testes Go fazem `os.Chdir(t.TempDir())`. Nota de vault escrita.
+2. `internal/generators/scaffold.go:1873` emite outro `python3 -c` (build-check `py_compile` de
+   projetos Python) **sem** o prefixo. Fora do contrato do alvo 2 por decisão explícita — a âncora
+   usa a assinatura `json.load(sys.stdin)` para não arrastá-lo. Não avaliado se precisa.
+3. `scripts/check-shell-posix-portability.sh` declara `PYTHONIOENCODING` mas **não invoca**
+   `python3` — sobra inofensiva do ML-1B (casou pela palavra no comentário). O gate não reprova
+   por sobra-declaração, de propósito.
+4. Existe um diretório `$T/` na raiz do repositório (lixo de expansão de variável); não toquei.
+
+**Cobertura parcial declarada (2 itens, ambos na anotação `partial=`):** (a) a asserção é estática
+sobre o texto-fonte; Provar por observação de
+runtime nos 38 gates exigiria executá-los com `python3` instrumentado, e dois (`check-gates-falsify`
+~3m05s, `check-barrier` que executa git) inviabilizam isso dentro de `make parity`. Anotado
+`partial=` em `docs/cli-parity.md`, nunca `gate=` puro. (b) O rastreador de heredoc é **heurístico**
+— procura o delimitador na linha inteira, então um comentário inline citando `<<` iniciaria estado
+de heredoc. Hoje é comprovadamente **inerte**: a contagem independente por strip de comentário (37
+invocadores) mais o próprio gate bate exatamente com os 38 que a varredura enumera, logo a exclusão
+de heredoc não descartou nada. Declarado em vez de "corrigido" porque mexer no parser de um gate
+verde é trocar risco por estética.
+
+**Nenhuma operação de git.** Status do ML no roadmap **não** alterado — aguarda auditoria do
+arquiteto.

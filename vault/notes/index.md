@@ -110,3 +110,4 @@
 - [reason-do-guard-diverge-por-escaping-de-aspas-entre-python-e-go-node-2026-08-22](reason-do-guard-diverge-por-escaping-de-aspas-entre-python-e-go-node-2026-08-22.md)
 - [classify-hook-anchorage-tilde-false-positive-2026-08-22](classify-hook-anchorage-tilde-false-positive-2026-08-22.md)
 - [gh-stub-shebang-needs-usr-bin-in-restricted-path-2026-09-02](gh-stub-shebang-needs-usr-bin-in-restricted-path-2026-09-02.md)
+- [copia-versionada-do-attention-signal-esta-obsoleta-e-sem-guarda-2026-09-02](copia-versionada-do-attention-signal-esta-obsoleta-e-sem-guarda-2026-09-02.md) — `scripts/trackfw-attention-signal.sh` da raiz é artefato **órfão**: o ML-1A corrigiu os 3 literais-fonte e a cópia versionada ficou sem o prefixo; nenhum teste ou gate compara a cópia com o literal (o parity roda em `mktemp -d`, os testes Go fazem `os.Chdir(t.TempDir())`), então auditar pelo arquivo de nome óbvio dá o veredito errado

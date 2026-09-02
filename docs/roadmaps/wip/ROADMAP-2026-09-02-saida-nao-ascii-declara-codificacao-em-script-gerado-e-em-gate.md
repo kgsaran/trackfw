@@ -285,7 +285,7 @@ reintrodução". A correção uniforme já saiu inteira no ML-1B (37 gates). Sob
 mostrou que ele tem **dois alvos**, não um.
 
 ### ML-2A — O gate que impede a regressão, nos dois alvos
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** `artemis-tf`
 **Files affected:** `scripts/check-output-encoding-declared.sh` (novo), `Makefile`,
 `.github/workflows/quality.yml`, `docs/cli-parity.md` (registrar a exceção de infra de gate)
@@ -313,14 +313,65 @@ não passa em silêncio. Um `glob` que deixa de casar é a forma mais comum de u
 verdade por execução, não por boa intenção.
 
 **Critérios de aceite:**
-- [ ] Alvo 1 falsificado nas duas direções: remover a declaração de um gate qualquer → check **reprova**
+- [x] Alvo 1 falsificado nas duas direções: remover a declaração de um gate qualquer → check **reprova**
       nomeando o arquivo; árvore íntegra → check **passa**
-- [ ] Alvo 2 falsificado nas duas direções: remover o prefixo do literal **nos 3 CLIs** → check
+- [x] Alvo 2 falsificado nas duas direções: remover o prefixo do literal **nos 3 CLIs** → check
       **reprova**; árvore íntegra → check **passa**
-- [ ] 🔴 Guarda de vacuidade falsificada: varredura vazia → check **falha**, verificado por execução
-- [ ] `check-roadmap-barrier-contract.sh` na allowlist **com motivo escrito**, e o arquivo segue intocado
-- [ ] O check está ligado ao `make quality` **e** ao workflow — verificado, não presumido
-- [ ] `make quality` verde
+- [x] 🔴 Guarda de vacuidade falsificada: varredura vazia → check **falha**, verificado por execução
+- [x] `check-roadmap-barrier-contract.sh` na allowlist **com motivo escrito**, e o arquivo segue intocado
+- [x] O check está ligado ao `make quality` **e** ao workflow — verificado, não presumido
+- [x] `make quality` verde
+
+
+**Entregue:** `scripts/check-output-encoding-declared.sh`, ligado ao alvo `parity:` do `Makefile`
+(que o `quality.yml:445` executa via `make parity`). Sem `- run:` avulsa no workflow: a
+`REQ-2026-08-04` removeu deliberadamente a lista manual parcial, e reintroduzi-la desfaria aquela
+decisão.
+
+**Evidência de aceite — auditoria do arquiteto (2026-09-02), reproduzida de forma independente:**
+
+*Alvo 2, o cego da paridade — prefixo removido dos **3** geradores, `GO_BIN` recompilado da árvore
+modificada:*
+
+```
+check-attention-scripts-parity     rc=0   <- 8/8 OK: VERDE sobre a regressao
+check-output-encoding-declared     rc=1   <- nomeia os 3 arquivos e as 6 linhas
+```
+
+A mensagem de falha explica o próprio cego em linha. Geradores restaurados; `git status` confirma
+idênticos ao HEAD.
+
+*Alvo 1, duas direções:* declaração removida de `check-attention-scripts-parity.sh` → reprova com
+`invoca python3 (linha 117) e NAO declara ...`; restaurado → `rc=0`.
+
+*Vacuidade, por execução:* glob apontado para padrão inexistente numa cópia →
+`ALVO 1 vacuo: ... enumerou ZERO arquivos (cwd=...). Recuso passar em silencio.` São **três**
+guardas — glob vazio, população de invocadores vazia, e **auto-aplicação** (o gate reprova se ele
+próprio sumir da população).
+
+*Baseline:* `45 scripts/check-*.sh enumerados, 38 invocam python3, 1 na allowlist, 37 checados` +
+`2/2 invocações com prefixo` em cada um dos 3 geradores. `make quality` → exit 0, zero `FAIL`.
+`grep -c PYTHONIOENCODING scripts/check-roadmap-barrier-contract.sh` → 0, intocado.
+
+**Cobertura declarada como `partial=`, não `gate=`:** a asserção é **estática**. Prova que a
+declaração existe, é exportada, tem valor alias de `utf_8` e precede a primeira invocação; **não**
+prova por runtime que aquele `python3` enxergou UTF-8. Provar comportamentalmente exigiria executar
+os 38 gates com `python3` instrumentado, e dois deles inviabilizam isso dentro de `make parity`
+(`check-gates-falsify` ~3m05s; `check-barrier` executa git). O mecanismo foi provado por execução
+uma vez, com stub. Honestidade preferida a um `gate=` que promete mais do que mede.
+
+**Correção aplicada pelo arquiteto no fecho da wave:** `scripts/trackfw-attention-signal.sh` — a
+cópia versionada e *dogfooded* neste repo — estava sem o prefixo desde o ML-1A. Regenerada pelo
+binário da árvore atual; o diff contra o gerador é agora **vazio**, e a divergência era exatamente
+as 2 linhas do ML-1A. Estávamos entregando o conserto para os adotantes com o nosso próprio harness
+ainda quebrado sob cp1252.
+
+🔴 **O que continua descoberto — vira REQ, não este ML:** *nada* compara essa cópia versionada com o
+literal do gerador. O `check-attention-scripts-parity.sh` roda em `mktemp -d` e o
+`scaffold_parity_test.go` faz `os.Chdir(t.TempDir())` antes do `ReadFile` — os dois olham para uma
+cópia efêmera, nunca para o arquivo no repo. Auditar pelo arquivo de nome mais óbvio dá o veredito
+errado. Registrado em
+`vault/notes/copia-versionada-do-attention-signal-esta-obsoleta-e-sem-guarda-2026-09-02.md`.
 
 **Comandos de validação:** `bash scripts/check-output-encoding-declared.sh`, `make quality`
 
