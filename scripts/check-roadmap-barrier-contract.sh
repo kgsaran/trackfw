@@ -1046,7 +1046,13 @@ write_fixture_crlf() {
   local name=$1
   python3 -c "
 import sys
-data = sys.stdin.read()
+# stdin em BINARIO, decodificado como UTF-8 de forma explicita. sys.stdin.read()
+# usa a codificacao do locale — cp1252 no Windows — e o heredoc chega em UTF-8.
+# Medido: 'e2 ac 9c' (U+2B1C) entra, sai 'c3 a2 c2 ac c5 93' apos o .encode('utf-8')
+# seguinte, porque a leitura ja tinha virado 3 caracteres. A fixture ia para o disco
+# com DUPLA CODIFICACAO, e o CLI reportava fielmente o lixo — o defeito parecia do
+# produto e era do gerador de fixture.
+data = sys.stdin.buffer.read().decode('utf-8')
 data = data.replace('\r\n', '\n').replace('\n', '\r\n')
 with open(sys.argv[1], 'wb') as f:
     f.write(data.encode('utf-8'))
