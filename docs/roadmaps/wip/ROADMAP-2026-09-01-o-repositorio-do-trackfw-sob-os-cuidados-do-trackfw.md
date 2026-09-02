@@ -264,7 +264,7 @@ descobrir **por que existem dois** antes de unificar.
 > ADR: `ADR-2026-09-02-doctor-ganha-modalidade-remota-opcional-e-ausencia-de-credencial-vira-nao-avaliado-nunca-aprovacao.md`
 
 ### ML-3A — Modalidade remota no `doctor`, com "não avaliado" próprio
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** `apolo-tf`
 **Files affected:** `internal/commands/doctor.go` e o pacote de findings; equivalentes em Node e
 Python (**paridade nos 3**).
@@ -289,21 +289,76 @@ nunca teve.
 
 **Critérios de aceite:**
 - [ ] Sem flag, o `doctor` roda **offline e sem credencial**, como hoje
-- [ ] 🔴 **Falsificação nas duas direções.** (a) repositório **sem** `required_status_checks` →
+- [x] 🔴 **Falsificação nas duas direções.** (a) repositório **sem** `required_status_checks` →
       finding que nomeia a lacuna; (b) **controle:** repositório **com** o portão configurado →
       **sem** finding. Sem (b), teríamos um `doctor` que acusa sempre — e alarme que sempre dispara
       se aprende a ignorar.
-- [ ] 🔴 **O caso que decide o ADR:** com a flag e **sem token**, o resultado é **não avaliado** —
+- [x] 🔴 **O caso que decide o ADR:** com a flag e **sem token**, o resultado é **não avaliado** —
       nunca "ok". Provar por execução. **Colapsar isso em aprovação é o defeito que esta sessão
       perseguiu nove vezes.**
-- [ ] Token sem escopo × token ausente produzem mensagens **distintas**
+- [x] Token sem escopo × token ausente produzem mensagens **distintas**
 - [ ] Paridade nos 3 CLIs
-- [ ] `make quality` verde
+- [x] `make quality` verde
 
 **Gates da wave:**
 ```bash
 make quality
 ```
+
+#### Resultado do ML-3A (apolo-tf, 2026-09-02) — auditado pelo arquiteto
+
+**As três direções, verificadas por mim com o binário real:**
+
+```
+com credencial, portão ligado  →  0 required-status-checks-missing
+                                  0 enforce-admins-disabled
+                                  0 not-evaluated
+sem credencial                 →  1 not-evaluated
+                                  0 required-status-checks-missing   ← NÃO afirma ausência
+```
+
+**O caso que decidia o ADR passou:** sem credencial ele **não reporta "ok"** e **não afirma que o
+portão está ausente**. Um `doctor` ingênuo faria uma das duas — a primeira é a mentira cara, a
+segunda é o alarme falso.
+
+**O controle segurou:** o repositório **corrigido** não gera finding. Sem essa metade, teríamos um
+`doctor` que acusa sempre — e alarme que sempre dispara se aprende a ignorar.
+
+### O `doctor` já acusa a lacuna que a Wave 2 deixou aberta
+
+```
+1 hooks-path-neutralized
+```
+
+É o `core.hooksPath = /dev/null` que faz os guards protegerem **agentes e não pessoas**. Verificação
+**local**, sem rede — e agora **qualquer projeto que adote o trackfw recebe o mesmo diagnóstico**. É
+o que transforma o achado em produto.
+
+### Escopo × ausência: decidido por dado, não por texto
+
+`permissions.admin` do `gh api repos/{owner}/{repo}` — **não** parsing de stderr. `admin=false` dá
+remédio próprio (*"conceda acesso admin"*), nunca reaproveitado do de credencial ausente
+(*"gh auth login"*). Parsing de mensagem de erro quebraria na primeira mudança de texto do `gh`.
+
+### O bug que ele achou em si mesmo
+
+O stub de `gh` usava `#!/usr/bin/env bash` e **não resolvia** sob um `PATH` sem `/usr/bin:/bin` —
+produzindo `not-evaluated` **pelo motivo errado**: o stub não subia, e não "sem credencial".
+
+**O teste teria passado dando a resposta certa por acidente.** Corrigido, com nota de vault.
+
+### Achado incidental que o próprio `doctor` expôs
+
+```
+2 scaffold-divergent  ← um deles é o .github/workflows/trackfw-gate.yml
+```
+
+É a divergência **deliberada** documentada no ML-1A: os workflows vivos deste repo usam `go build`
+local em vez de `go install`, porque o repositório não consegue se instalar via `curl` durante o
+próprio PR. **O `doctor` está certo — a divergência é intencional e não está registrada como
+exceção.** Fica como observação; tratá-la é decisão à parte.
+
+**`MAKE_EXIT=0`**, `trackfw validate` exit 0, gate de paridade novo com 33 cenários via stub de `gh`.
 
 ## Verificação
 

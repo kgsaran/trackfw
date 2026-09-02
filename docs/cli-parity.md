@@ -5928,6 +5928,109 @@ reescrito mas o inode mode não é tocado. Cada runtime adiciona uma chamada exp
 
 ---
 
+## `trackfw doctor --remote` — modalidade remota opcional (ADR-2026-09-02, ML-3A)
+
+<!-- trackfw-contract: gate=scripts/check-doctor-remote-parity.sh -->
+
+Gate: **`scripts/check-doctor-remote-parity.sh`** (alvo `parity`) + testes unitários por CLI
+(`internal/commands/doctor_remote_test.go`, `npm/tests/doctor_remote.test.js`,
+`pypi/tests/test_doctor_remote.py`).
+
+`trackfw doctor` ganhou uma segunda modalidade de verificação — rede + credencial — que ele nunca
+teve: `required_status_checks` e `enforce_admins` da branch protection do GitHub, mais, localmente
+(sem rede), `core.hooksPath` neutralizado (`/dev/null`/`NUL`). **Opt-in via `--remote`**; sem a
+flag, `doctor` continua idêntico ao comportamento anterior — offline, sem credencial.
+
+**A decisão central do ADR:** uma verificação que depende de rede/credencial tem três resultados,
+não dois — `ok`, `finding`, e **`not-evaluated`** ("não deu para verificar": offline, sem token,
+sem permissão, forja diferente de GitHub). O terceiro nunca pode colapsar no primeiro (mentira
+mais cara: "protegido" quando ninguém olhou) nem no segundo (alarme que sempre dispara e se
+aprende a ignorar). O vocabulário é reusado do `not_evaluated` que `barrier` já validou
+(`internal/commands/barrier.go`'s `gatesCheck`), não reinventado.
+
+### Mecanismo de transporte: `gh api`, não HTTP+token direto
+
+<!-- trackfw-contract: gate=scripts/check-doctor-remote-parity.sh -->
+
+Como `trackfw release tag` (`internal/commands/release.go`'s `execForgeAPI`), a modalidade remota
+do `doctor` shell-a para `gh api` em vez de implementar um cliente HTTP com parsing de
+owner/repo e token — o `gh` CLI já resolve ambos a partir do remote git e da sessão autenticada
+(`GITHUB_TOKEN`/`GH_TOKEN` ou `gh auth login`). Evita reinventar esse cliente 3× e mantém a mesma
+convenção de dependência injetável (`execGit`/`execForgeAPI`/`availFn`) já estabelecida em
+`release.go`, `npm/src/release/runner.js`, `pypi/trackfw/release/runner.py`.
+
+| runtime | orquestração da modalidade remota | executor padrão de `gh` |
+|---|---|---|
+| Go | `runDoctorRemote` (`internal/commands/doctor_remote.go`) | `defaultExecForgeAPI` (compartilhado com `release.go`) |
+| Node.js | `runDoctorRemote` (`npm/src/integrations/doctor_remote.js`) | `defaultExecForgeAPI` local ao módulo, mesma forma `{stdout, error}` de `release/runner.js` |
+| Python | `run_doctor_remote` (`pypi/trackfw/commands/doctor_remote.py`) | `default_exec_forge_api` local ao módulo, mesma forma `(stdout, error)` de `release/runner.py` |
+
+### Distinção que a mensagem precisa fazer: credencial AUSENTE × credencial sem ESCOPO
+
+<!-- trackfw-contract: gate=scripts/check-doctor-remote-parity.sh -->
+
+Ambas resultam em `not-evaluated`, mas com remédios distintos — um se resolve autenticando, o
+outro sendo promovido a admin do repositório:
+
+1. **Ausência de credencial**: `gh auth status` falha → remédio nomeia `gh auth login` (ou
+   `GITHUB_TOKEN`/`GH_TOKEN`). A chamada de branch protection nunca acontece.
+2. **Credencial presente, sem permissão de admin**: `gh api repos/{owner}/{repo}` responde, mas
+   `permissions.admin` é `false` — ler branch protection exige admin no repositório. Remédio
+   nomeia "solicitar acesso de admin", nunca reaproveita o texto do remédio (1). Este
+   discriminante vem do campo estruturado `permissions.admin` da própria resposta da API, **não**
+   de parsing de texto de stderr do `gh` — mensagens de erro HTTP mudam entre versões do `gh`;
+   um campo JSON documentado não.
+
+### O caso 404: **não** é sempre "sem proteção" — só depois de confirmado o admin
+
+<!-- trackfw-contract: gate=scripts/check-doctor-remote-parity.sh -->
+
+`GET /repos/{owner}/{repo}/branches/{branch}/protection` responde 404 tanto quando a branch
+genuinamente não tem proteção quanto quando a credencial não tem acesso de admin ao repositório.
+Mapear 404 direto para "finding" sem checar `permissions.admin` primeiro produziria exatamente o
+defeito simétrico que o ADR nomeia: um token sem escopo geraria uma `finding` afirmando que o
+portão está ausente quando na verdade a checagem nunca rodou. Por isso a ordem é fixa nos 3 CLIs:
+`auth status` → `repos/{owner}/{repo}` (resolve `default_branch` **e** `permissions.admin`) →
+somente com `admin=true`, a chamada de `branches/<branch>/protection` decide entre finding e
+control.
+
+### `contexts` × `checks` — o controle não pode false-fail na forma mais nova da API
+
+<!-- trackfw-contract: gate=scripts/check-doctor-remote-parity.sh -->
+
+A resposta de branch protection carrega tanto o campo legado `required_status_checks.contexts`
+quanto o mais novo `required_status_checks.checks` (com `app_id` por check). Os 3 CLIs tratam
+"configurado" como `len(contexts) > 0 || len(checks) > 0` — ler só `contexts` faria o cenário de
+controle (repositório com o portão configurado através da API nova) reprovar por engano, o que
+tenderia a "consertar" enfraquecendo a checagem em vez de corrigir a leitura.
+
+### `core.hooksPath` neutralizado — escopo estreito de propósito
+
+<!-- trackfw-contract: gate=scripts/check-doctor-remote-parity.sh -->
+
+Só `/dev/null` (POSIX) e `NUL` (Windows) disparam `hooks-path-neutralized`; qualquer outro valor
+(incluindo um diretório husky/lefthook legítimo como `.husky/_`) e o valor **ausente** (default do
+git, `.git/hooks`) nunca disparam. Um heurístico mais amplo ("parece neutralizado?") produziria
+falso positivo exatamente no fluxo legítimo que a Wave 0 deste roadmap listou como "não pode
+quebrar". Esta checagem não precisa de rede, mas só roda atrás de `--remote` como as outras duas —
+sem a flag, `doctor` não ganha nenhum caminho de código novo (critério de aceite "zero regressão").
+
+### Mecanismo do gate cross-CLI: stub de `gh`, não rede real
+
+<!-- trackfw-contract: gate=scripts/check-doctor-remote-parity.sh -->
+
+`scripts/check-doctor-remote-parity.sh` segue a convenção de `check-release-tag-parity.sh`: um
+executável `gh` STUB é colocado no início do `PATH` de cada cenário, respondendo
+deterministicamente `auth status` / `api repos/{owner}/{repo}` / `api .../branches/<b>/protection`
+— nunca uma chamada de rede real. Cobre as 3 direções de falsificação exigidas pelo roadmap
+(sem portão → finding; com portão → controle limpo; sem credencial → `not-evaluated` nunca `ok`)
+mais a distinção escopo×ausência e os dois controles de `core.hooksPath` (unset, husky). O
+caminho que só existe com uma rede real e um token genuíno — se o `gh` real de fato responde como
+os fixtures presumem — **não é coberto por nenhum CI offline**; isso é uma limitação reconhecida
+do próprio ADR, não uma lacuna deste gate.
+
+---
+
 ## `agent_models` — versão de modelo por tier com composição por alvo
 
 <!-- trackfw-contract: gate=scripts/check-agent-models-parity.sh -->

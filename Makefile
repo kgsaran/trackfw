@@ -46,6 +46,7 @@ parity: build
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-harness-hooks-parity.sh
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-serve-address-parity.sh
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-doctor-parity.sh
+	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-doctor-remote-parity.sh
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-agent-models-parity.sh
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-audit-surface.sh
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-agent-namespace-union.sh

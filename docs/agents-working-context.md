@@ -4,6 +4,63 @@
 
 ---
 
+## Sessão 2026-09-02 — apolo-tf (INÍCIO: ML-3A — modalidade remota no `doctor`, com "não avaliado" próprio)
+
+Branch `fix/o-repositorio-do-trackfw-sob-os-cuidados-do-trackfw` (não criada por mim).
+
+Escopo: `trackfw doctor --remote` (ADR-2026-09-02) — GitHub branch protection
+(`required_status_checks`, `enforce_admins`) + `core.hooksPath` local, nos 3 CLIs. Transporte via
+`gh api` (mesmo padrão de `release tag`), nunca HTTP+token direto.
+
+## Sessão 2026-09-02 — apolo-tf (FIM: ML-3A — CONCLUÍDO)
+
+**O que foi feito:**
+
+- `internal/integrations/doctor.go`: 4 novos `DoctorFindingKind` — `required-status-checks-missing`,
+  `enforce-admins-disabled`, `hooks-path-neutralized`, `not-evaluated` (reusa o vocabulário do
+  `not_evaluated` já validado em `barrier.go`, não inventa nome novo).
+- `internal/commands/doctor_remote.go` (novo): `runDoctorRemote` — ordem fixa `gh auth status` →
+  `gh api repos/{owner}/{repo}` (resolve `default_branch` **e** `permissions.admin`) → só com
+  `admin=true` chama `branches/<branch>/protection`. 404 só vira finding depois de confirmado o
+  admin — sem essa ordem, um token sem escopo geraria um finding falso de "portão ausente" quando a
+  checagem nunca rodou (o defeito simétrico que o ADR nomeia). `contexts` e `checks` (API legada e
+  nova) tratados como equivalentes para não false-failar o controle. `--remote` é flag opt-in nos 3
+  CLIs; sem ela, `doctor` roda exatamente como antes.
+- Espelhado em `npm/src/integrations/doctor_remote.js` e `pypi/trackfw/commands/doctor_remote.py`,
+  reusando a mesma convenção `execGit`/`execForgeAPI`/`availFn` injetável já usada em `release.go`/
+  `runner.js`/`runner.py`.
+- Testes unitários por CLI (10 cenários cada, 30 total): falsificação nas duas direções (sem
+  portão → finding; com portão, `contexts` e `checks` → controle limpo), o caso que decide o ADR
+  (sem credencial → `not-evaluated`, nunca `ok`), escopo insuficiente com mensagem DISTINTA de
+  credencial ausente, `gh` ausente, forja não-GitHub, e `core.hooksPath` (`/dev/null` → finding;
+  unset e `.husky/_` → controle).
+- `scripts/check-doctor-remote-parity.sh` (novo, plugado no `Makefile`): gate cross-CLI real via
+  stub de `gh` no PATH (mesmo mecanismo de `check-release-tag-parity.sh`), 33 cenários, prova
+  byte-a-byte Go/Node/Python. Achado durante a construção: `BASE_PATH` precisa incluir
+  `/usr/bin:/bin` (não só os interpretes) — o shebang `#!/usr/bin/env bash` do stub `gh` falha ao
+  resolver sem eles, e o erro batia como `not-evaluated` "sem credencial" pela razão errada
+  (vacuidade que os próprios guards do gate existem para pegar).
+- `docs/cli-parity.md`: nova seção `trackfw doctor --remote` com as 6 subseções anotadas
+  (`check-parity-contract-coverage.sh` verde).
+- `make quality`: **MAKE_EXIT=0**, 0 FAIL. `trackfw validate`: exit 0, 0 violations (18 warnings
+  pré-existentes, nenhum relacionado a este ML).
+
+**Limite honesto (não fabricado):** o caminho que só existe com rede real e um token genuíno —
+se o `gh` de verdade responde como os fixtures presumem — não é coberto por nenhum CI offline;
+isso é reconhecido no próprio ADR, e documentado em `docs/cli-parity.md`.
+
+**Arquivos afetados:** `internal/integrations/doctor.go`, `internal/commands/doctor.go`,
+`internal/commands/doctor_remote.go` (novo), `internal/commands/doctor_remote_test.go` (novo),
+`npm/src/integrations/doctor.js`, `npm/src/integrations/doctor_remote.js` (novo),
+`npm/src/commands/doctor.js`, `npm/tests/doctor_remote.test.js` (novo),
+`pypi/trackfw/integrations/doctor.py`, `pypi/trackfw/commands/doctor_remote.py` (novo),
+`pypi/trackfw/commands/doctor.py`, `pypi/tests/test_doctor_remote.py` (novo),
+`scripts/check-doctor-remote-parity.sh` (novo), `Makefile`, `docs/cli-parity.md`.
+
+Não toquei roadmap/REQ/ADR (autoridade do arquiteto) nem executei nenhum comando git.
+
+---
+
 ## Sessão 2026-08-29 — hades-tf (INÍCIO: ML-0A — modelo de ameaça, lista de agentes por namespace)
 
 Branch `fix/lista-de-agentes-complementa-o-disco-e-namespace-nao-declarado-vira-violacao` (não criada por mim).

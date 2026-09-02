@@ -52,6 +52,15 @@ SCAFFOLD_WRONG_MODE = "scaffold-wrong-mode"
 # branches, instead of picking a side.
 UNKNOWN_CONTENT = "unknown-content"
 
+# --remote modality findings (ADR-2026-09-02, ML-3A) — see
+# trackfw.commands.doctor_remote for the full rationale. Mirrors Go's
+# DoctorRequiredStatusChecksMissing/DoctorEnforceAdminsDisabled/
+# DoctorHooksPathNeutralized/DoctorNotEvaluated.
+REQUIRED_STATUS_CHECKS_MISSING = "required-status-checks-missing"
+ENFORCE_ADMINS_DISABLED = "enforce-admins-disabled"
+HOOKS_PATH_NEUTRALIZED = "hooks-path-neutralized"
+NOT_EVALUATED = "not-evaluated"
+
 
 def _doctor_remedy(destination: str, claim: dict[str, Any], effect: str) -> str:
     return (
