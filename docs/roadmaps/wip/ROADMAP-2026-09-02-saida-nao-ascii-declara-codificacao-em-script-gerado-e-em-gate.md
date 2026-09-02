@@ -375,6 +375,79 @@ errado. Registrado em
 
 **Comandos de validação:** `bash scripts/check-output-encoding-declared.sh`, `make quality`
 
+### ML-2B — Microlote corretivo da barreira final (3 bloqueantes, todos fail-open)
+**Status:** ⬜ Pendente
+**Agente:** `artemis-tf`
+**Files affected:** `scripts/check-output-encoding-declared.sh`,
+`scripts/check-shell-posix-portability.sh` (só o comentário), nota de vault + `vault/notes/index.md`
+**Origem:** `docs/qualidade/2026-09-02-parecer-codificacao-declarada.md` (B1, B2) e
+`docs/seguranca/2026-09-02-parecer-codificacao-declarada.md` (S3). Os três reproduzidos pelo
+arquiteto antes do despacho.
+
+**Por que bloqueiam e o `make quality` verde não os contradiz:** os três são *fail-open* — o gate
+devolve `exit 0` sobre a regressão que ele existe para pegar. Um controle verde sobre o defeito é
+pior que controle nenhum, porque compra confiança falsa.
+
+**B1 — comentário inline com `<<` derruba o arquivo da população, em silêncio.** `COMMENT_RE`
+protege a linha inteiramente comentada, não o comentário inline; `HEREDOC_RE:152` entra em estado de
+heredoc e engole o resto. Medido: inserindo `true  # exemplo de heredoc: <<EOF ... EOF` **e**
+removendo o `export` de `check-tty-detection.sh`, o gate imprime
+`38 invocam python3` → `37 invocam python3, 36 checados` e devolve **rc=0**. Nenhuma das 3 guardas de
+vacuidade pega: a (b) só dispara com população *totalmente* vazia. A árvore já tem 5 comentários com
+`<<`, inertes só por serem de linha inteira.
+**Remédio (verificado pelo `hefesto-tf`, delta vazio):** separar o predicado de **população** (loose,
+sem estado de heredoc) do de **declaração** (`code_lines` como está). Strict 38 = loose 38 hoje.
+
+**B2 — `re.IGNORECASE` sobre o nome da variável, nas 3 regexes.** Nomes de variável em bash são
+*case-sensitive*: `pythonioencoding=utf-8` seta outra variável e o Python ignora.
+🔴 **B2b atinge o alvo 2, que é PRODUTO.** Medido pelo arquiteto: trocando as 2 invocações de
+`npm/src/generators/hooks.js` para `pythonioencoding=utf-8 python3 -c` — reversão **completa** do
+ML-1A — o gate reporta `2/2 invocacoes com prefixo` e **rc=0**.
+**Remédio:** tirar `re.IGNORECASE` das 3 regexes e aplicar `(?i:...)` **só** ao grupo de aliases.
+Verificado nas 4 direções pelo `hefesto-tf`; `PYTHONIOENCODING=UTF-8` continua aceito.
+
+**S3 — o gate aceita handler de erro que derrota o próprio controle, com justificativa falsa.**
+`(?::[A-Za-z0-9_]+)?` aceita *qualquer* handler. O comentário das linhas 45-49 afirma que "com
+encoding utf-8, nenhum `str` do Python é inencodável" — **empiricamente falso**, medido pelo
+arquiteto:
+
+```
+json.load de "a\ud800b"        -> preserva o surrogate solto
+  utf-8:surrogatepass          -> emite  61 ed a0 80 62   <- UTF-8 INVALIDO
+  utf-8 estrito (controle)     -> UnicodeEncodeError -> fallback limpo
+gate com export PYTHONIOENCODING=utf-8:surrogatepass  -> rc=0
+```
+
+🔴 **E há um segundo argumento, que nenhum dos dois pareceres levanta:** o handler do
+`PYTHONIOENCODING` vale para o **decode do stdin**, não só para o encode. Logo `utf-8:replace` — hoje
+aceito — produziria exatamente a **corrupção silenciosa** que o ML-0A mediu e reprovou. O gate está
+aceitando o que a Wave 0 decidiu recusar.
+**Remédio:** aceitar apenas ausência de handler ou `:strict`. Zero falso positivo — os 37 usam
+`utf-8` puro. E **corrigir o comentário**, não só a regex: o comentário errado é o que faria o
+próximo leitor reabrir o furo.
+
+**S4 (barato, junto) —** `check-shell-posix-portability.sh:44-56` afirma forçar UTF-8 em "todo
+`python3` deste gate", **onde não há nenhum**. Corrigir o texto; se remover a declaração, garantir
+que o veredito do gate não muda.
+
+**Critérios de aceite:**
+- [ ] B1 falsificado nas duas direções: comentário inline com `<<` + `export` removido → **reprova**;
+      árvore íntegra → passa. E a contagem de população **não muda** (38) com o comentário presente
+- [ ] B2a e B2b falsificados: `pythonioencoding` minúsculo no alvo 1 **e** no alvo 2 → **reprova**;
+      `PYTHONIOENCODING=UTF-8` (caixa alta no valor) **continua aceito**
+- [ ] S3 falsificado: `utf-8:surrogatepass` e `utf-8:replace` → **reprovam**; `utf-8` e `utf-8:strict`
+      → passam; **comentário corrigido**
+- [ ] As 3 guardas de vacuidade continuam funcionando (re-falsificar, não presumir)
+- [ ] Nota de vault do mecanismo de B1 escrita e linkada no `index.md`
+- [ ] `make quality` verde e `trackfw validate` exit 0
+
+🔴 **Não toque em `internal/`, `npm/src/`, `pypi/trackfw/`** — o produto foi revisado e está sem
+achados nos dois pareceres. 🔴 **`check-roadmap-barrier-contract.sh` segue intocado.**
+
+**Follow-up, NÃO neste ML (vira REQ):** S1 (allowlist vazia + bash 3.2 sob `set -u` → `unbound
+variable`; falha fechada), S2 (`ATTENTION_SOURCES` pode encolher sem asserção), cópia versionada do
+`trackfw-attention-signal.sh` sem guarda, e o racional de 11 linhas × 37 virar ponteiro.
+
 ## Verificação que só o CI fecha
 
 O item 4 saindo de `REPRODUCED`: camada 2 de **4 para 3**. 🔴 **Verificar o que o check mede antes de

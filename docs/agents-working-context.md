@@ -28695,3 +28695,47 @@ verde é trocar risco por estética.
 
 **Nenhuma operação de git.** Status do ML no roadmap **não** alterado — aguarda auditoria do
 arquiteto.
+
+## 2026-09-02 — hefesto-tf (Code Quality) — INÍCIO
+**Escopo:** barreira final de qualidade do `ROADMAP-2026-09-02-saida-nao-ascii-declara-codificacao-em-script-gerado-e-em-gate` (branch `fix/saida-nao-ascii-declara-codificacao-em-script-gerado-e-em-gate`, 57 arquivos, ML-1A/ML-1B/ML-2A).
+**Alvo:** manutenibilidade do gate novo `scripts/check-output-encoding-declared.sh`, custo da repetição de 37 blocos de comentário, risco do rastreador heurístico de heredoc, honestidade da anotação `partial=` em `docs/cli-parity.md`, sobra-declaração e code smells.
+**Fronteira:** somente leitura de código; único arquivo escrito é `docs/qualidade/2026-09-02-parecer-codificacao-declarada.md`. Nenhuma operação de git.
+
+## 2026-09-02 — hades-tf (Security) — INÍCIO
+**Escopo:** barreira final de segurança do `ROADMAP-2026-09-02-saida-nao-ascii-declara-codificacao-em-script-gerado-e-em-gate` (branch `fix/saida-nao-ascii-declara-codificacao-em-script-gerado-e-em-gate`, 57 arquivos, ML-1A `5b5391e` / ML-1B `6721078` / ML-2A `486b5a0`).
+**Alvo:** o `attentionSignalScript` é código de PRODUTO que roda como hook `PreToolUse` e decodifica **stdin não confiável**. Medir se a troca de decode locale→UTF-8 estrito muda a superfície; procurar injeção no `.trackfw-attention.json` (lido pelo `trackfw serve` e renderizado no browser); truncamento em 300 code points; alcance do `export` do ML-1B a processos-filho; execução de conteúdo de arquivo pelo gate novo; identidade byte a byte da cópia versionada.
+**Fronteira:** somente leitura de código; único arquivo escrito é `docs/seguranca/2026-09-02-parecer-codificacao-declarada.md`. Nenhuma operação de git.
+
+## 2026-09-02 — hades-tf (Security) — FIM
+**Veredito: APROVA COM RESSALVAS.** Parecer em `docs/seguranca/2026-09-02-parecer-codificacao-declarada.md`.
+**Nada bloqueia o merge.** A troca de decode locale→UTF-8 estrito **não abre primitivo de injeção novo** — conjunto-delta medido é 100% não-ASCII, e `"`/`\`/C0 codificam idêntico nos dois codecs. Medido o inverso do temido: **antes** do ML-1A, sob `PYTHONIOENCODING=cp1252`, o hook escrevia `.trackfw-attention.json` **inválido em UTF-8** (`—`→`0x97`, `Á`→`0xC1`); depois, correto. O defeito era rotulado de disponibilidade e também era de integridade do artefato.
+**Achado S3 (REQ de acompanhamento):** `scripts/check-output-encoding-declared.sh:45-49` justifica aceitar `utf-8:<handler>` com "nenhum str do Python é inencodável em utf-8" — **falso**: `json.load` preserva surrogate isolado de `\udXXX`. As formas `utf-8:surrogatepass` e `utf-8:surrogateescape`, **aceitas hoje** pelas duas regex (`:141-146`, `:283-287`), escrevem `ED A0 80` / `0xFF` crus no artefato — provado por execução, com a forma canônica como controle (cai no fallback, seguro). Consequência medida: Go e Node devolvem `active:true` com U+FFFD; **Python devolve `active:false`** (`UnicodeDecodeError` ⊂ `ValueError`, capturado em `api_attention.py:15`) — o banner some num dos 3 runtimes. Divergência pré-existente e já alcançável pelo braço cp1252, por isso ressalva e não bloqueio.
+**Achado S4:** ML-2A regenerou `scripts/trackfw-attention-signal.sh` (confirmei **byte-idêntico** aos 3 literais: 1581/1581/1580) mas **não criou guarda** — `ATTENTION_SOURCES` cobre só os 3 geradores; `check-doctor-parity.sh` usa cópia em `mktemp -d` e `scaffold_doctor.go:205` mede o projeto do adopter. A condição de órfão da nota de vault persiste.
+**Sem achado (negativos medidos, com controle):** sink do browser é `textContent` e `markCardAttention` compara `getAttribute` por igualdade — bypass de escape seria cosmético, não XSS; escape resiste (4 chaves exatas com payload de fechamento de string, nos 3 braços); `[:300]` fatia `str`, corte no meio de multibyte não é construível; gate não avalia conteúdo (heredoc `<<'PYEOF'`, args citados, zero `eval`/`exec`/`subprocess`); `export` do ML-1B não cega nada — `test_cli_encoding.py:76` **seta**, `checks.py:34-35,78-79` **removem**, e `cli.py:47 _force_utf8_output()` faz `reconfigure()` que sobrescreve o herdado; trade-off do mojibake não introduz fail-open (crash dava exit≠0 e o que sumiu foi uma falha *falsa*).
+**Falsificação do gate, 4 execuções em sandbox:** fiel→0; prefixo removido dos 3→1 (nomeia as 6 linhas); `cp1252` no ALVO 1→1; `utf-8:surrogatepass`→**0** (o achado).
+**Fronteira respeitada:** nenhum código de produto tocado; escritos só o parecer e estas duas entradas. Nenhuma operação de git. Status do ML no roadmap não alterado — aguarda `trackfw_architect`.
+**Adendo (pós-revisão do parecer):** §1 foi dividida em **1a encode / 1b decode / 1c conclusão** porque os payloads de `json.dump` são ASCII puro (`ensure_ascii=True`) e só exercitavam o encode. O **decode** de stdin — o discriminante segundo a nota de vault — foi medido com bytes crus, nas duas direções: `\xc3\x81` (UTF-8 válido, `0x81` indefinido em cp1252) **antes** caía em `UnicodeDecodeError`→fallback e **agora** é aceito íntegro; `\xe9` (latin-1, inválido em UTF-8) **antes** passava e escrevia artefato malformado e **agora** cai no fallback fail-safe (S5.5, disponibilidade). A afirmação estrutural "nenhum ponto não-ASCII codifica em cp1252 para 0x22/0x5C/C0" passou de assumida a **medida** por varredura exaustiva dos 1.114.112 pontos de código: **NENHUM**. §6 refeita **byte a byte contra a transformação de cada escritor** (`os.WriteFile`, `fs.writeFileSync(SIGNAL_SCRIPT)`, `f.write(_ATTENTION_SIGNAL_SH.lstrip('\n'))`), carregando os módulos reais em vez de re-extrair por regex: **1583 == 1583 nos três**. Isso importa porque descasamento de newline faria `scaffold_doctor` acusar adulteração falsa no projeto do adopter. Nota de vault escrita e linkada: `handler-de-erro-em-pythonioencoding-reintroduz-byte-invalido-e-os-3-serve-divergem-2026-09-02.md`.
+
+## 2026-09-02 — hefesto-tf (Code Quality) — FIM
+**Entregue:** `docs/qualidade/2026-09-02-parecer-codificacao-declarada.md`.
+**Veredito:** APROVA COM RESSALVAS. **2 bloqueantes**, ambos em
+`scripts/check-output-encoding-declared.sh`, ambos *fail-open* e falsificados por execução com
+controle negativo: (B1) `HEREDOC_RE:152` casa `<<` em comentário inline e derruba o arquivo da
+população em silêncio — o gate fica cego à remoção do `export` naquele arquivo (exit 0 onde o
+controle dá exit 1); remédio verificado: separar o predicado de POPULAÇÃO (loose) do de
+DECLARAÇÃO (heredoc-aware) — medi strict 38 = loose 38, delta vazio, drop-in. (B2)
+`re.IGNORECASE` nas TRÊS regexes (`:140-148` e `PREFIX_RE:285-289`) casa o NOME da variável sem
+distinguir caixa — B2a: `export pythonioencoding=utf-8` aceito no alvo 1; **B2b: prefixo
+minúsculo aceito no alvo 2, que é o PRODUTO — reversão completa do ML-1A num runtime reportada
+como `2/2` e exit 0**. Remédio (caixa exata no nome, `(?i:...)` só no valor, nas 3 regexes)
+verificado nas 4 direções: árvore atual OK sem falso positivo, t5 FAIL, t6 FAIL, valor em caixa
+alta ainda aceito. Um único handoff, <15 linhas,
+para o especialista de infra de gate. **Produto (internal/, npm/src/, pypi/trackfw/): sem
+achados.** 5 achados de acompanhamento (S1..S5) — inclusive: a justificativa de não centralizar
+o bloco de 12 linhas nos 37 gates **se sustenta** (`check-gates-falsify.sh` copia gates
+individualmente para sandbox), e a anotação `partial=` de `docs/cli-parity.md` é **honesta** —
+a fronteira declarada bate com o código e ela nomeia o próprio furo de B1.
+**Evidência:** `make quality` → `MAKE_EXIT=0` (3.613 linhas, 3 matches de `FAIL` todos benignos,
+inspecionados); `trackfw validate` → exit 0.
+**Pendente para outro papel:** nota de vault do mecanismo de B1 (fora da minha fronteira de
+escrita neste ciclo). Nenhuma operação de git; status do ML no roadmap não alterado.
