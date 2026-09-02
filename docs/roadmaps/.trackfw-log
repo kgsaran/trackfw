@@ -236,3 +236,5 @@
 2026-09-02 19:47  ROADMAP-2026-09-02-gerador-de-fixture-le-stdin-em-binario.md  wip → done
 2026-09-02 19:47  ROADMAP-2026-09-02-governanca-dos-prs-238-e-240-do-reporter.md  wip → done
 2026-09-02 19:47  ROADMAP-2026-09-02-saida-nao-ascii-declara-codificacao-em-script-gerado-e-em-gate.md  wip → done
+2026-09-02 20:27  ROADMAP-2026-09-02-gitattributes-com-merge-union-para-o-trackfw-log-nos-3-clis.md  wip → done
+2026-09-02 20:27  ROADMAP-2026-09-02-context-do-cli-node-aguarda-validate-e-ganha-teste-que-executa-o-binario.md  backlog → wip
