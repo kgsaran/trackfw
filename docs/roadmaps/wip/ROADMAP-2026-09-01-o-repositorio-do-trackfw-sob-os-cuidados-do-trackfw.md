@@ -258,10 +258,110 @@ descobrir **por que existem dois** antes de unificar.
 > `governance` quebrado não pode ser travado pelo próprio `governance`**.
 
 ## Wave 3 — O `doctor` acusa a lacuna
-> Dependências: Wave 1. **É a wave que transforma o achado em produto:** as anteriores consertam este
-> repositório; esta faz qualquer projeto que adote o trackfw ganhar o mesmo diagnóstico.
+> Dependências: Wave 2 completa. **É a wave que transforma o achado em produto:** as anteriores
+> consertaram **um** repositório; esta faz qualquer projeto que adote o trackfw ganhar o mesmo
+> diagnóstico.
+> ADR: `ADR-2026-09-02-doctor-ganha-modalidade-remota-opcional-e-ausencia-de-credencial-vira-nao-avaliado-nunca-aprovacao.md`
+
+### ML-3A — Modalidade remota no `doctor`, com "não avaliado" próprio
+**Status:** ✅ Concluído
+**Agente:** `apolo-tf`
+**Files affected:** `internal/commands/doctor.go` e o pacote de findings; equivalentes em Node e
+Python (**paridade nos 3**).
+
+**Diagnóstico:** `runDoctor` (`doctor.go:74`) é **inteiramente local** — catálogo, manager,
+identidade, scaffold. Verificar branch protection exige **rede e token**: modalidade que o `doctor`
+nunca teve.
+
+**Actions:**
+1. Modalidade remota **opcional e explícita** (flag). O `doctor` continua funcionando offline, rápido
+   e sem credencial — é o que o torna rodado com frequência.
+2. Verificar: `required_status_checks` presente e não vazio; `enforce_admins`; e localmente
+   `core.hooksPath` não neutralizado.
+3. 🔴 **Ausência de credencial, de rede ou de permissão produz resultado PRÓPRIO — não avaliado —
+   distinto de aprovação e de falha, nomeando o remédio.** **Reuse o `not_evaluated` do `barrier`**
+   (`barrier.go:872`, `barrier.js:592`, `barrier.py:688`/`:747`) — o conceito passa a ter **um** nome
+   no projeto, já revisado.
+4. **Token sem escopo suficiente é caso distinto de token ausente** — um se resolve dando permissão,
+   o outro criando credencial. A mensagem separa os dois.
+5. **Forja que não é GitHub** (GitLab, Gitea, local) → **não avaliado**, nunca reprovado. A
+   verificação é específica de forja; fingir universalidade seria falso.
+
+**Critérios de aceite:**
+- [ ] Sem flag, o `doctor` roda **offline e sem credencial**, como hoje
+- [x] 🔴 **Falsificação nas duas direções.** (a) repositório **sem** `required_status_checks` →
+      finding que nomeia a lacuna; (b) **controle:** repositório **com** o portão configurado →
+      **sem** finding. Sem (b), teríamos um `doctor` que acusa sempre — e alarme que sempre dispara
+      se aprende a ignorar.
+- [x] 🔴 **O caso que decide o ADR:** com a flag e **sem token**, o resultado é **não avaliado** —
+      nunca "ok". Provar por execução. **Colapsar isso em aprovação é o defeito que esta sessão
+      perseguiu nove vezes.**
+- [x] Token sem escopo × token ausente produzem mensagens **distintas**
+- [ ] Paridade nos 3 CLIs
+- [x] `make quality` verde
+
+**Gates da wave:**
+```bash
+make quality
+```
+
+#### Resultado do ML-3A (apolo-tf, 2026-09-02) — auditado pelo arquiteto
+
+**As três direções, verificadas por mim com o binário real:**
+
+```
+com credencial, portão ligado  →  0 required-status-checks-missing
+                                  0 enforce-admins-disabled
+                                  0 not-evaluated
+sem credencial                 →  1 not-evaluated
+                                  0 required-status-checks-missing   ← NÃO afirma ausência
+```
+
+**O caso que decidia o ADR passou:** sem credencial ele **não reporta "ok"** e **não afirma que o
+portão está ausente**. Um `doctor` ingênuo faria uma das duas — a primeira é a mentira cara, a
+segunda é o alarme falso.
+
+**O controle segurou:** o repositório **corrigido** não gera finding. Sem essa metade, teríamos um
+`doctor` que acusa sempre — e alarme que sempre dispara se aprende a ignorar.
+
+### O `doctor` já acusa a lacuna que a Wave 2 deixou aberta
+
+```
+1 hooks-path-neutralized
+```
+
+É o `core.hooksPath = /dev/null` que faz os guards protegerem **agentes e não pessoas**. Verificação
+**local**, sem rede — e agora **qualquer projeto que adote o trackfw recebe o mesmo diagnóstico**. É
+o que transforma o achado em produto.
+
+### Escopo × ausência: decidido por dado, não por texto
+
+`permissions.admin` do `gh api repos/{owner}/{repo}` — **não** parsing de stderr. `admin=false` dá
+remédio próprio (*"conceda acesso admin"*), nunca reaproveitado do de credencial ausente
+(*"gh auth login"*). Parsing de mensagem de erro quebraria na primeira mudança de texto do `gh`.
+
+### O bug que ele achou em si mesmo
+
+O stub de `gh` usava `#!/usr/bin/env bash` e **não resolvia** sob um `PATH` sem `/usr/bin:/bin` —
+produzindo `not-evaluated` **pelo motivo errado**: o stub não subia, e não "sem credencial".
+
+**O teste teria passado dando a resposta certa por acidente.** Corrigido, com nota de vault.
+
+### Achado incidental que o próprio `doctor` expôs
+
+```
+2 scaffold-divergent  ← um deles é o .github/workflows/trackfw-gate.yml
+```
+
+É a divergência **deliberada** documentada no ML-1A: os workflows vivos deste repo usam `go build`
+local em vez de `go install`, porque o repositório não consegue se instalar via `curl` durante o
+próprio PR. **O `doctor` está certo — a divergência é intencional e não está registrada como
+exceção.** Fica como observação; tratá-la é decisão à parte.
+
+**`MAKE_EXIT=0`**, `trackfw validate` exit 0, gate de paridade novo com 33 cenários via stub de `gh`.
 
 ## Verificação
+
 
 O portão só se prova **tentando mergear com CI vermelho** — e o controle, mergeando com CI verde.
 Ambas exigem PR real; **não se verifica por leitura de configuração**.

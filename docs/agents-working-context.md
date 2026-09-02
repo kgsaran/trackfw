@@ -4,6 +4,63 @@
 
 ---
 
+## Sessão 2026-09-02 — apolo-tf (INÍCIO: ML-3A — modalidade remota no `doctor`, com "não avaliado" próprio)
+
+Branch `fix/o-repositorio-do-trackfw-sob-os-cuidados-do-trackfw` (não criada por mim).
+
+Escopo: `trackfw doctor --remote` (ADR-2026-09-02) — GitHub branch protection
+(`required_status_checks`, `enforce_admins`) + `core.hooksPath` local, nos 3 CLIs. Transporte via
+`gh api` (mesmo padrão de `release tag`), nunca HTTP+token direto.
+
+## Sessão 2026-09-02 — apolo-tf (FIM: ML-3A — CONCLUÍDO)
+
+**O que foi feito:**
+
+- `internal/integrations/doctor.go`: 4 novos `DoctorFindingKind` — `required-status-checks-missing`,
+  `enforce-admins-disabled`, `hooks-path-neutralized`, `not-evaluated` (reusa o vocabulário do
+  `not_evaluated` já validado em `barrier.go`, não inventa nome novo).
+- `internal/commands/doctor_remote.go` (novo): `runDoctorRemote` — ordem fixa `gh auth status` →
+  `gh api repos/{owner}/{repo}` (resolve `default_branch` **e** `permissions.admin`) → só com
+  `admin=true` chama `branches/<branch>/protection`. 404 só vira finding depois de confirmado o
+  admin — sem essa ordem, um token sem escopo geraria um finding falso de "portão ausente" quando a
+  checagem nunca rodou (o defeito simétrico que o ADR nomeia). `contexts` e `checks` (API legada e
+  nova) tratados como equivalentes para não false-failar o controle. `--remote` é flag opt-in nos 3
+  CLIs; sem ela, `doctor` roda exatamente como antes.
+- Espelhado em `npm/src/integrations/doctor_remote.js` e `pypi/trackfw/commands/doctor_remote.py`,
+  reusando a mesma convenção `execGit`/`execForgeAPI`/`availFn` injetável já usada em `release.go`/
+  `runner.js`/`runner.py`.
+- Testes unitários por CLI (10 cenários cada, 30 total): falsificação nas duas direções (sem
+  portão → finding; com portão, `contexts` e `checks` → controle limpo), o caso que decide o ADR
+  (sem credencial → `not-evaluated`, nunca `ok`), escopo insuficiente com mensagem DISTINTA de
+  credencial ausente, `gh` ausente, forja não-GitHub, e `core.hooksPath` (`/dev/null` → finding;
+  unset e `.husky/_` → controle).
+- `scripts/check-doctor-remote-parity.sh` (novo, plugado no `Makefile`): gate cross-CLI real via
+  stub de `gh` no PATH (mesmo mecanismo de `check-release-tag-parity.sh`), 33 cenários, prova
+  byte-a-byte Go/Node/Python. Achado durante a construção: `BASE_PATH` precisa incluir
+  `/usr/bin:/bin` (não só os interpretes) — o shebang `#!/usr/bin/env bash` do stub `gh` falha ao
+  resolver sem eles, e o erro batia como `not-evaluated` "sem credencial" pela razão errada
+  (vacuidade que os próprios guards do gate existem para pegar).
+- `docs/cli-parity.md`: nova seção `trackfw doctor --remote` com as 6 subseções anotadas
+  (`check-parity-contract-coverage.sh` verde).
+- `make quality`: **MAKE_EXIT=0**, 0 FAIL. `trackfw validate`: exit 0, 0 violations (18 warnings
+  pré-existentes, nenhum relacionado a este ML).
+
+**Limite honesto (não fabricado):** o caminho que só existe com rede real e um token genuíno —
+se o `gh` de verdade responde como os fixtures presumem — não é coberto por nenhum CI offline;
+isso é reconhecido no próprio ADR, e documentado em `docs/cli-parity.md`.
+
+**Arquivos afetados:** `internal/integrations/doctor.go`, `internal/commands/doctor.go`,
+`internal/commands/doctor_remote.go` (novo), `internal/commands/doctor_remote_test.go` (novo),
+`npm/src/integrations/doctor.js`, `npm/src/integrations/doctor_remote.js` (novo),
+`npm/src/commands/doctor.js`, `npm/tests/doctor_remote.test.js` (novo),
+`pypi/trackfw/integrations/doctor.py`, `pypi/trackfw/commands/doctor_remote.py` (novo),
+`pypi/trackfw/commands/doctor.py`, `pypi/tests/test_doctor_remote.py` (novo),
+`scripts/check-doctor-remote-parity.sh` (novo), `Makefile`, `docs/cli-parity.md`.
+
+Não toquei roadmap/REQ/ADR (autoridade do arquiteto) nem executei nenhum comando git.
+
+---
+
 ## Sessão 2026-08-29 — hades-tf (INÍCIO: ML-0A — modelo de ameaça, lista de agentes por namespace)
 
 Branch `fix/lista-de-agentes-complementa-o-disco-e-namespace-nao-declarado-vira-violacao` (não criada por mim).
@@ -27978,3 +28035,134 @@ dois caminhos de instalação redundantes → provavelmente só um precisa ser e
 
 **Fronteiras mantidas:** nenhuma configuração de branch protection/`gh api`/`git config` tocada;
 nenhum commit/branch/push/stash/add executado; roadmap/REQ/ADR não editados.
+
+## 2026-09-02 — Hefesto (Code Quality) — INÍCIO
+
+Tarefa: documentação técnica de portabilidade para reimplementação externa (harness de agente de
+outra empresa, sem acesso a este repo). Escopo: apenas o que o trackfw **instala/provê como
+produto** — comandos de git governados (`branch`, `branch prune`, `commit`, `push`, `ship`,
+`release`), hooks gerados (`internal/generators/hooks.go`), regras de `trackfw validate`. Fora de
+escopo: `quality.yml`, `scripts/check-*.sh` deste repo (gates do desenvolvimento do trackfw, não do
+produto). Destino único: `docs/portabilidade/2026-09-02-guardrails-de-git-e-governanca-para-harness-de-agente.md`.
+Nenhuma alteração de código/gate/config; nenhuma operação de git (autoridade exclusiva do
+arquiteto). Doc-only → dispensa REQ/roadmap novo por §7 do CLAUDE.md global.
+
+## 2026-09-02 — Hefesto (Code Quality) — FIM
+
+Documento escrito em `docs/portabilidade/2026-09-02-guardrails-de-git-e-governanca-para-harness-de-agente.md`
+(6 seções: limitação hook-de-agente-vs-hook-de-git com medição ao vivo `.git/hooks` vazio +
+`core.hooksPath=/dev/null`; os 6 comandos de git — `branch new`, `branch prune`, `commit`, `push`,
+`ship`, `release tag` — com mecanismo/dependências/citação arquivo:linha; os 2 hooks gerados
+(`trackfw-git-branch-guard.sh`, `trackfw-credential-guard.sh`) com modos de falha; as ~25 regras de
+`trackfw validate` agrupadas por tema; 4 padrões recorrentes citados com evidência
+(`not_evaluated`, guarda de vacuidade, falsificação nas duas direções, mensagem que nomeia o
+remédio); seção final "o que eu faria diferente" com 5 itens, incluindo o fail-open real (não
+declarado) do trust-check de `barrier` documentado em
+`vault/notes/barrier-trust-check-fail-open-em-tmpdir-simbolico-2026-08-29.md`.
+
+Fora de escopo (por instrução explícita): `quality.yml`, `scripts/check-*.sh` deste repo — gates de
+desenvolvimento do trackfw, não do produto. Não alterado nenhum código/gate/config; nenhuma
+operação de git executada (leitura, grep e execução de `trackfw`/`git status`/`git config` para
+medir comportamento, sem escrita).
+
+## 2026-09-02 — Hefesto (Code Quality) — INÍCIO (seção adicional: validação de integridade de hooks/gates)
+
+Tarefa: acrescentar ao mesmo documento (`docs/portabilidade/2026-09-02-guardrails-de-git-e-governanca-para-harness-de-agente.md`)
+uma seção nova sobre validação de integridade dos hooks/gates — a defesa contra o usuário apagar ou
+adulterar o guard para burlar o harness, pedida explicitamente pelo KG. Mesmas restrições: só o
+documento de portabilidade e este arquivo; nenhum código/gate/hook/config alterado; nenhuma
+operação de git. Preferir medir a inferir.
+
+## 2026-09-02 — Hefesto (Code Quality) — FIM (seção adicional: validação de integridade de hooks/gates)
+
+Nova `## 6. Validação de integridade dos hooks e gates` inserida antes de "O que eu faria diferente"
+(renumerada para `## 7`), com 6 subseções:
+
+- **6.1** — tabela das 5 regras (`credential_guard_hook_resolvable`/`git_branch_guard_hook_resolvable`,
+  `credential_guard_script_integrity`/`git_branch_guard_script_integrity`,
+  `credential_guard_mode_downgrade`) com o que cada uma compara e onde a referência mora.
+- **6.2** — a âncora em HEAD (`ADR-2026-08-12-severidade-das-regras-de-credential-guard-resolvida-
+  pela-mais-estrita-entre-head-e-disco.md`, mecanismo M4): por que comparar só contra disco não
+  protege nada, e por que o carve-out do baseline (`.trackfw-baseline.json`, não versionado) é um
+  canal separado fechado por exclusão de nome, não pela âncora.
+- **6.3** — achado de leitura de código, não de ADR: `git_branch_guard_hook_resolvable`/
+  `git_branch_guard_script_integrity` **não estão** em `credentialGuardAnchoredRules`
+  (`internal/validator/validator_credential_guard_integrity.go:196-200`) — a âncora em HEAD e a
+  exclusão de baseline valem só para as 3 regras de `credential_guard`, não para as 2 de
+  `git_branch_guard`. Sem ADR ou comentário que declare isso como decisão deliberada.
+- **6.4** — tabela de severidade default por regra, com a citação do porquê de cada uma
+  (`*_hook_resolvable`/`credential_guard_mode_downgrade` = error; `*_script_integrity` = warning,
+  por ausência de marcador de versão no script).
+- **6.5** — fail-open/fail-closed: sem HEAD resolvível cai no disco (aceito, ADR); manipulação de
+  `GIT_DIR`/`GIT_WORK_TREE`/`GIT_CONFIG_COUNT`/`GIT_CEILING_DIRECTORIES` derrotava a resolução
+  silenciosamente (corrigido: limpeza por prefixo `GIT_`, não denylist fechada); nenhum terceiro
+  estado "não avaliado" aqui, ao contrário do padrão do §5.1.
+- **6.6** — 4 medições reais nesta sessão (não inferidas): (a) `.husky/pre-commit` versionado neste
+  repo + `.git/config` local com `hooksPath=/dev/null` desativando-o, agora; (b) `trackfw validate`
+  não vê isso, por design de escopo (guards são de harness, não de git nativo); (c) `trackfw doctor
+  --remote` tem a checagem (`internal/commands/doctor_remote.go:36-59`) e **encontrou** a finding
+  `hooks-path-neutralized` rodando neste repo agora — mas é opt-in, não wired a nenhum workflow, e
+  `doctor` nunca chama `os.Exit` (exit 0 sempre, medido); (d) o achado mais forte — testado num
+  fixture isolado em `/tmp` (cópia de `trackfw.yaml`/`.claude/settings.json`/scripts deste repo,
+  sem link com o clone real): apagar o script do disco (script ainda referenciado no config) É
+  pego como violação real em modo strict; remover a chave `hooks.PreToolUse` inteira do config
+  (script intacto no disco) **não é pego por nenhuma das 5 regras, em nenhum modo** — nenhuma
+  delas audita "a entrada ainda está registrada?", só "se está registrada, resolve?".
+
+Itens 6 e 7 acrescentados à seção "O que eu faria diferente" (agora §7) apontando os dois achados
+acima (5) como os limites mais consequentes da seção nova, com cross-link de volta para §6.
+
+Fora de escopo (mantido): nenhum código/gate/hook/config alterado; nenhuma operação de git
+(`checkout`/`commit`/`push`/`branch`/`stash`) executada — só leitura, grep, e execução de
+`trackfw validate`/`trackfw doctor --remote`/`git config --local --list` (real, sem escrita) mais um
+fixture descartável em `/tmp`, apagado ao final, para medir o comportamento das 5 regras contra
+tentativas de sabotagem sem tocar no clone real.
+
+## Sessão 2026-09-02 — apolo-tf (INÍCIO: corretiva no gate do ML-3A — CI reprovou a guarda de vacuidade)
+
+Branch `fix/o-repositorio-do-trackfw-sob-os-cuidados-do-trackfw` (não criada por mim). Worktree
+limpo, único agente. Escopo: `scripts/check-doctor-remote-parity.sh` reprovou no CI —
+`required_status_checks` bloqueia o PR. Causa: `BASE_PATH="$RUNTIME_BIN:/usr/bin:/bin"` inclui
+`/usr/bin:/bin` para o shebang `#!/usr/bin/env bash` do stub `gh` resolver `env`/`bash` (fix do
+ML-3A, ver `vault/notes/gh-stub-shebang-needs-usr-bin-in-restricted-path-2026-09-02.md`) — mas no
+runner do GitHub `gh` já mora em `/usr/bin/gh`, então `BASE_PATH` reintroduz `gh` no PATH do
+cenário "sem gh", e a própria guarda de vacuidade (corretamente) recusa validar isso.
+
+## Sessão 2026-09-02 — apolo-tf (FIM: corretiva no gate do ML-3A — CONCLUÍDO)
+
+**Direção escolhida:** shebang absoluto no stub (`#!/bin/bash` em vez de `#!/usr/bin/env bash`),
+tornando-o independente de `PATH` para resolver seu próprio interpretador — o que elimina a única
+razão de `/usr/bin:/bin` estar em `BASE_PATH`. `BASE_PATH` passa a ser só `$RUNTIME_BIN`.
+Justificativa da escolha (vs. diretório de sistema sanitizado): medi antes — `git init`/`remote
+add`/`config` sob `PATH=$RUNTIME_BIN` isolado (sem `/usr/bin:/bin`) funcionam sem erro; `/bin/bash`
+existe no caminho absoluto tanto no macOS quanto em todo runner Linux/macOS hospedado pelo GitHub;
+logo nenhum utilitário adicional de `/usr/bin` era necessário — a alternativa (diretório
+sanitizado) teria sido trabalho extra sem necessidade real.
+
+**Falsificação nas duas direções** (medida com `RUNTIME_BIN` real do script — `node`/`python3`/`git`
+symlinkados — mais um `gh` falso plantado em diretório de scratch sob `/tmp`, nunca em `/usr/bin`
+real):
+- (a) `gh` presente artificialmente no `PATH` do cenário → guarda REJEITA: `check-doctor-remote-
+  parity: vacuity guard failed — 'gh' resolves on the no-gh PATH (.../rtbin:.../fake-usr-bin) at
+  .../fake-usr-bin/gh` — `GUARD_RESULT=REJECTED (expected)`.
+- (b) controle, `PATH=$RUNTIME_BIN` correto (sem `/usr/bin:/bin`, sem `gh`) → guarda PASSA:
+  `GUARD_RESULT=PASSED (expected) — gh genuinely absent on .../rtbin`.
+
+**Rodada completa do gate real** (`bash scripts/check-doctor-remote-parity.sh`): todos os 32
+asserts `OK`, incluindo `no-gh/vacuity-guard/not-evaluated`; `check-doctor-remote-parity.sh: all
+scenarios passed.`, exit 0.
+
+**Verificado localmente:** guarda de vacuidade ativa com a mesma severidade (`exit 1` se `gh`
+resolver); todos os 8 cenários (a–j) passam; falsificação nas duas direções medida diretamente
+(não inferida). **Só o CI confirma:** que o runner GitHub-hosted realmente resolve `/bin/bash` no
+caminho absoluto sob o `PATH` restrito do job (assumido com alta confiança — padrão em runners
+`ubuntu-latest`/`macos-latest` — mas não executado literalmente dentro do container do runner
+nesta sessão) e que `required_status_checks`/`parity` fecha verde com o binário `gh` real do
+runner em `/usr/bin/gh` presente no ambiente mas fora do `PATH` restrito construído pelo gate.
+
+**Escopo respeitado:** só `scripts/check-doctor-remote-parity.sh` tocado (mudei o `BASE_PATH` e o
+shebang do stub `gh` que o próprio script gera — nada além disso). Nenhum roadmap/REQ/ADR editado.
+Nenhuma operação de git executada. Toda escrita de fixture de teste ficou sob o scratch
+`/private/tmp/claude-501/.../scratchpad` — nada escrito em `/usr/bin` real nem fora do scratch.
+`make quality` reportado no fechamento do ML pelo protocolo de conclusão (ver saída anexa ao
+relatório desta corretiva).

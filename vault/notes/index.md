@@ -107,3 +107,4 @@
 - [deteccao-de-hook-relativo-nao-cobre-pwd-aspas-e-var-indefinida-2026-08-22](deteccao-de-hook-relativo-nao-cobre-pwd-aspas-e-var-indefinida-2026-08-22.md)
 - [reason-do-guard-diverge-por-escaping-de-aspas-entre-python-e-go-node-2026-08-22](reason-do-guard-diverge-por-escaping-de-aspas-entre-python-e-go-node-2026-08-22.md)
 - [classify-hook-anchorage-tilde-false-positive-2026-08-22](classify-hook-anchorage-tilde-false-positive-2026-08-22.md)
+- [gh-stub-shebang-needs-usr-bin-in-restricted-path-2026-09-02](gh-stub-shebang-needs-usr-bin-in-restricted-path-2026-09-02.md)

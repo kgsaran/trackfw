@@ -79,6 +79,38 @@ const (
 	// Not emitted on Windows (runtime.GOOS == "windows") where the execute bit
 	// is not representable on NTFS — AC5.
 	DoctorScaffoldWrongMode DoctorFindingKind = "scaffold-wrong-mode"
+
+	// DoctorRequiredStatusChecksMissing: the --remote modality (ADR-2026-09-02) evaluated
+	// this repository's GitHub branch protection — credential present, admin permission
+	// confirmed — and found required_status_checks absent, or present with no contexts and
+	// no checks. Only emitted when the evaluation actually completed; see DoctorNotEvaluated
+	// for every path where it could not. Has no Claim (not a catalog artifact).
+	DoctorRequiredStatusChecksMissing DoctorFindingKind = "required-status-checks-missing"
+
+	// DoctorEnforceAdminsDisabled: same evaluation as above, found enforce_admins.enabled
+	// false (or branch protection absent entirely, which implies both are off).
+	DoctorEnforceAdminsDisabled DoctorFindingKind = "enforce-admins-disabled"
+
+	// DoctorHooksPathNeutralized: core.hooksPath (merged git config) is explicitly set to a
+	// value that discards every hook invocation (/dev/null on POSIX, NUL on Windows) — the
+	// exact pattern found in this repository's own history (docs/seguranca/2026-09-01-modelo-
+	// de-ameaca-do-portao-do-repositorio.md). An UNSET core.hooksPath is the ordinary default
+	// (git falls back to .git/hooks) and never produces this finding — only an explicit
+	// neutralizing value does. Purely local, no network needed, but only evaluated behind
+	// --remote alongside the other two checks (ADR-2026-09-02: no new checks fire without the
+	// flag, so `doctor` without --remote never regresses).
+	DoctorHooksPathNeutralized DoctorFindingKind = "hooks-path-neutralized"
+
+	// DoctorNotEvaluated: the --remote modality could not evaluate branch protection at all —
+	// forge is not GitHub, the gh CLI is absent, no credential, or the credential lacks admin
+	// permission on this repository (distinct from "no credential": one is fixed by
+	// authenticating, the other by granting permission — ADR-2026-09-02). This is the THIRD
+	// result the ADR names, reusing the concept `barrier` already named "not_evaluated"
+	// (internal/commands/barrier.go's gatesCheck) so the project has one word for "we did not
+	// look" — it must never be collapsed into "ok" (silently absent) nor into a finding that
+	// claims the control is actually missing when the truth is nobody checked. Remedy always
+	// names the exact next step.
+	DoctorNotEvaluated DoctorFindingKind = "not-evaluated"
 )
 
 // DoctorFinding is one artifact requiring the user's attention, plus a
