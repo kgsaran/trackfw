@@ -1,9 +1,9 @@
 ---
-status: Open
+status: Done
 date: 2026-09-01
 author: "zeus-tf"
 adr: "docs/adr/ADR-2026-09-01-gate-de-wave-e-contrato-portavel-em-shell-posix-nao-script-do-sistema-operacional.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-01-os-3-clis-executam-gate-de-wave-com-sh-c.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-01-os-3-clis-executam-gate-de-wave-com-sh-c.md"
 ---
 
 # REQ: Mesmo gate de wave dá vereditos diferentes conforme o CLI que executa o `barrier`
@@ -42,26 +42,26 @@ ADR ligado.
 
 ## Acceptance Criteria
 
-- [ ] **AC1** — `barrier.js` e `barrier.py` executam gate com `sh -c`, deixando de usar o shell do SO.
-- [ ] **AC2** — 🔴 **Falsificação nas duas direções.** (a) um gate com idioma POSIX (`! grep -q`,
+- [x] **AC1** — `barrier.js` e `barrier.py` executam gate com `sh -c`, deixando de usar o shell do SO.
+- [x] **AC2** — 🔴 **Falsificação nas duas direções.** (a) um gate com idioma POSIX (`! grep -q`,
       `test -f`, `$( )`) produz **o mesmo veredito nos 3 CLIs**; (b) **controle:** um gate que
       **deve** reprovar continua reprovando nos três — não basta uniformizar para "passa".
-- [ ] **AC3** — 🔴 **`sh` ausente falha nomeando o remédio.** Um usuário Windows sem shell POSIX tem
+- [x] **AC3** — 🔴 **`sh` ausente falha nomeando o remédio.** Um usuário Windows sem shell POSIX tem
       de ler *"instale um shell POSIX"*, não `exec: "sh": executable file not found`. **Mensagem
       byte-idêntica nos 3 CLIs** — é o contrato de paridade de mensagem que o projeto já pratica.
-- [ ] **AC4** — 🔴 **Distinguir "gate reprovou" de "gate não pôde ser avaliado".** Hoje ambos viram
+- [x] **AC4** — 🔴 **Distinguir "gate reprovou" de "gate não pôde ser avaliado".** Hoje ambos viram
       falha. Se o `sh` não existe, o resultado **não é** *"a wave não passou"* — é *"não deu para
       medir"*. Confundir os dois é a mesma classe de falha que atravessou esta REQ inteira: **tratar
       ausência de medição como medição negativa.**
-- [ ] **AC5** — Gate falsificável que impeça regressão para `shell: true` / `shell=True` nos dois
+- [x] **AC5** — Gate falsificável que impeça regressão para `shell: true` / `shell=True` nos dois
       CLIs. **Nasce ligado ao `Makefile`, com guarda de vacuidade ancorada no mesmo cwd, `python3`
       nunca `python`** — contrato em `docs/cli-parity.md`.
-- [ ] **AC6** — O contrato do ADR escrito em `docs/cli-parity.md`.
-- [ ] **AC7** — 🔴 **O item 7 sai de `REPRODUCED` na camada 2** (de 4 para 3), com a transição
+- [x] **AC6** — O contrato do ADR escrito em `docs/cli-parity.md`.
+- [ ] ❌ **AC7 — FALSIFICADA, não reescrita.** — 🔴 **O item 7 sai de `REPRODUCED` na camada 2** (de 4 para 3), com a transição
       explicada e o run citado. **Verificar o que o check mede antes de fixar o número** — o check
       compara o veredito do mesmo gate nos 3 runtimes, que **é** comportamento de produto, então deve
       genuinamente virar.
-- [ ] **AC8** — `make quality` e **CI** verdes.
+- [x] **AC8** — `make quality` e **CI** verdes.
 
 ## Negative Scope
 
@@ -70,10 +70,38 @@ ADR ligado.
 - **Não** implementar detecção de SO nem tradução de sintaxe. O ADR descarta explicitamente.
 - **Não** tratar os itens 4, 8, 9 e 11 da issue.
 
+## REQ fechada em 2026-09-01 — com a AC7 falsificada
+
+**A correção está entregue e verificada** (PR #235 + #236): os 3 CLIs executam gate com `sh -c`,
+`sh` ausente vira `not_evaluated` com mensagem **byte-idêntica** nomeando o remédio, e o **controle**
+segurou — gate que deve reprovar continua reprovando nos três. Verificado por **execução dos três
+binários reais**, não por leitura.
+
+**A AC7 previa a camada 2 caindo de 4 para 3. O CI mediu 4.** E o motivo não é a correção:
+
+```go
+// scripts/windows-repro/go/checks.go:135 — cmdGateQuote
+c := exec.Command("sh", "-c", gateQuoteCommand)   // réplica, não o barrier
+```
+
+O check do item 7 roda **réplicas dentro do próprio harness**. Corrigimos `barrier.js`/`barrier.py`;
+ele exercita os `checks.*`.
+
+**Eu cometi o erro que tinha escrito nesta REQ para evitar.** A AC7 dizia *"verificar o que o check
+mede antes de fixar o número"* — e verifiquei a **descrição** (`run.ps1`: *"compara o veredito do
+mesmo gate nos 3 runtimes"*), não a **implementação**. O texto descrevia a intenção; o código compara
+três réplicas. **Fica falsificada, não reescrita** — trocar 3 por 4 seria mover a trave.
+
+Com os itens 2, 3 e **7**, são **três** instâncias: a camada 2 mede **substitutos**, não o produto.
+Ampliei a `REQ-2026-09-01-camada-2-mede-a-plataforma-...` em vez de abrir REQ nova — fragmentar
+esconderia o padrão.
+
+**Resta o item 4** para fechar o issue #216.
+
 ## Linked ADR
 
 ADR: `docs/adr/ADR-2026-09-01-gate-de-wave-e-contrato-portavel-em-shell-posix-nao-script-do-sistema-operacional.md`
 
 ## Linked Roadmap
 
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-09-01-os-3-clis-executam-gate-de-wave-com-sh-c.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-09-01-os-3-clis-executam-gate-de-wave-com-sh-c.md`
