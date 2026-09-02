@@ -92,9 +92,28 @@ fi
 # on this machine can never leak into a scenario that must see none.
 RUNTIME_BIN="$WORK/runtimebin"
 mkdir -p "$RUNTIME_BIN"
-ln -s "$REAL_NODE" "$RUNTIME_BIN/node"
-ln -s "$REAL_PYTHON3" "$RUNTIME_BIN/python3"
-ln -s "$REAL_GIT" "$RUNTIME_BIN/git"
+# Wrapper em vez de symlink. `ln -s` falha num Windows comum quando o alvo e um App
+# Execution Alias da Microsoft Store — o default de quem instala Python pela Store:
+#
+#   command -v python3  ->  .../WindowsApps/python3  (109 bytes -> C:/Program Files/WindowsApps/)
+#   ln -s para /bin/ls          ->  criou
+#   ln -s para esse python3     ->  Permission denied
+#
+# O MSYS enxerga o alias como symlink e, sem winsymlinks:nativestrict, COPIA o alvo;
+# copiar um reparse point de WindowsApps e negado. Nao e Developer Mode: o ln -s
+# funciona na mesma maquina para um alvo comum.
+#
+# O symlink era o meio, nao o requisito. A garantia deste diretorio e que SO node,
+# python3 e git resolvam a partir dele — o wrapper entrega a mesma coisa sem exigir
+# privilegio. Shebang ABSOLUTO pelo mesmo motivo ja registrado abaixo para o stub do
+# gh: nao depender de PATH para resolver o proprio interpretador.
+mk_runtime_shim() {
+  printf '#!/bin/bash\nexec "%s" "$@"\n' "$2" > "$RUNTIME_BIN/$1"
+  chmod +x "$RUNTIME_BIN/$1"
+}
+mk_runtime_shim node "$REAL_NODE"
+mk_runtime_shim python3 "$REAL_PYTHON3"
+mk_runtime_shim git "$REAL_GIT"
 
 unset TRACKFW_DISABLE_EXTERNAL_COMMANDS || true
 
