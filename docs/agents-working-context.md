@@ -11392,6 +11392,13 @@ Resultado: `bash scripts/check-update-parity.sh` → **todos os cenários novos:
 `make quality` → **exit 0**, 19 cenários de falsificação, `git status` limpo.
 `bin/trackfw validate --json` → **0 violações**.
 
+### Paridade dos 3 CLIs
+
+Mudança de **infraestrutura de gate** (`scripts/*.sh`), exceção explícita do contrato de paridade
+documentado em `docs/cli-parity.md`. Nenhum código de `internal/`, `npm/src/` ou `pypi/trackfw/` foi
+tocado, nenhuma seção de `docs/cli-parity.md` foi criada ou alterada, e
+`scripts/check-parity-contract-coverage.sh` está verde (0 seções sem anotação, 0 inválidas).
+
 ### Evidência D1/D4
 
 `git diff origin/main..HEAD -- internal/commands/init.go npm/src/commands/init.js pypi/trackfw/commands/init.py`
@@ -28394,3 +28401,170 @@ falsificação de codificação futura, e a armadilha custou uma auditoria intei
 
 **Pendente antes do commit:** `make quality` completo (em execução) e atualização do status do ML-1A
 no roadmap.
+
+---
+
+## Sessão 2026-09-02 — artemis-tf (INÍCIO: ML-1B — codificação de saída nos gates de diagnóstico)
+
+Branch `fix/saida-nao-ascii-declara-codificacao-em-script-gerado-e-em-gate` (não criada por mim).
+
+Escopo: decidir **onde** declarar a codificação de saída para os gates de `scripts/check-*.sh` e
+justificar a escolha por medição. `check-roadmap-barrier-contract.sh` fora do escopo (PR #238
+aberto). Nenhuma operação de git.
+
+## Sessão 2026-09-02 — artemis-tf (FIM: ML-1B — CONCLUÍDO, pendente de auditoria)
+
+**Mecanismo escolhido: `export PYTHONIOENCODING=utf-8`, declarado dentro de cada gate.**
+O `PYTHONUTF8=1` do roadmap foi descartado por medição, não por preferência (abaixo).
+
+### O que mudou
+
+37 arquivos `scripts/check-*.sh` (todos os que invocam `python3`, **menos**
+`check-roadmap-barrier-contract.sh`) ganharam, logo após o `set -euo pipefail`, um bloco de
+comentário com a justificativa e o trade-off, seguido de `export PYTHONIOENCODING=utf-8`.
+Intocados: `check-roadmap-barrier-contract.sh` (PR #238), `scripts/trackfw-attention-signal.sh` e os
+3 geradores (ML-1A), `scripts/smoke-integration-packages.sh` (não é gate de diagnóstico; roda
+`pip install`/CLI real e forçar UTF-8 lá cegaria o smoke quanto à codificação do produto),
+`Makefile` e workflows.
+
+### Por que o mecanismo do roadmap perde (medido, Python 3.14.7)
+
+```
+PYTHONIOENCODING=cp1252 python3           -> locale=UTF-8  stdout=cp1252
+PYTHONIOENCODING=cp1252 python3 -X utf8   -> locale=utf-8  stdout=cp1252   <- stdio NAO muda
+PYTHONIOENCODING=utf-8  python3           -> locale=UTF-8  stdout=utf-8
+```
+
+`PYTHONUTF8`/`-X utf8` governa `locale.getpreferredencoding()` (ou seja, `open()` sem `encoding=`) e
+é **ignorado no stdio** quando `PYTHONIOENCODING` já vem do ambiente — que é exatamente o método de
+simulação de console cp1252 do projeto (`pypi/tests/test_cli_encoding.py::TestCliEmConsoleCp1252`).
+Com `PYTHONUTF8=1` o critério "verificado por execução" seria inalcançável.
+
+### Por que dentro do gate, e não no `Makefile`
+
+Caminhos de invocação enumerados (lidos, não presumidos):
+
+| # | caminho | coberto por `Makefile` | coberto pela declaração no gate |
+|---|---|---|---|
+| 1 | `make quality`/`make parity` (Makefile:18-61) | sim | sim |
+| 2 | `.github/workflows/quality.yml:25,26,54` — `check-static-assets.sh`, `check-integration-assets.sh`, `smoke-integration-packages.sh` chamados direto | **não** | **parcial** — os dois primeiros não invocam `python3` e não precisam de nada; o terceiro invoca, e foi **excluído por decisão** (ver trade-off 3) |
+| 3 | `.github/workflows/release.yml:57-59` — `check-cli-parity.sh`, `check-validate-parity.sh`, `check-static-assets.sh` direto | **não** | sim |
+| 4 | invocação manual de um gate isolado no terminal do dev | **não** | sim |
+| 5 | gate invocado por outro gate (`check-gates-falsify.sh` roda os demais, inclusive **cópias sandboxadas**) | por herança | sim, e sobrevive à cópia |
+
+O caminho 5 é o que descarta um prelúdio compartilhado (`source scripts/lib/…`): a suíte de
+falsificação copia gates para sandboxes (`T83/scripts/`), e um `source` de caminho relativo quebraria
+lá. Por isso o `export` é **auto-contido** em cada arquivo.
+
+### Falsificação nas duas direções — sobre os gates reais, não uma linha extraída
+
+Varredura completa dos 42 gates de `make parity` (sem o `check-roadmap-barrier-contract.sh`), quatro
+execuções: `{antes,depois} x {sem PYTHONIOENCODING, PYTHONIOENCODING=cp1252}`.
+
+| execução | vermelhos |
+|---|---|
+| antes, baseline UTF-8 | 0 / 42 |
+| **antes, cp1252** | **3 / 42** |
+| **depois, cp1252** | **0 / 42** |
+| depois, baseline UTF-8 | 0 / 42 |
+
+Os 3 vermelhos do "antes, cp1252" são **dois modos de falha diferentes** — e o segundo não é um
+crash:
+
+1. `check-parity-contract-coverage.sh` (rc=1) — **crash**. É o gate nomeado no item 4 da issue #216.
+   ```
+   File "<stdin>", line 332, in <module>
+   UnicodeEncodeError: 'charmap' codec can't encode character '→' in position 73
+   ```
+   Linha 384 do arquivo: `print("  - %s -- %s" % (heading, reason))` — o `→` vem de
+   `docs/cli-parity.md`, é dado, não literal.
+2. `check-barrier.sh` (rc=1) — **mismatch sem crash nenhum**. O `python3` do gate extrai um campo do
+   JSON e o imprime; o `—` (U+2014, que **é definido** em cp1252) sai como byte `0x97` e o bash
+   compara com o literal UTF-8 do script:
+   ```
+   FAIL [barrier/trust/not-committed/go]: failure message mismatch;
+     want [... origin/main — pass --trust-local-gates ...] got [... origin/main <0x97> pass ...]
+   ```
+3. `check-gates-falsify.sh` (rc=1) — **cascata** do anterior:
+   `FAIL [falsify/no-repo-mutation]: scripts/check-barrier.sh saiu != 0 rodando limpo`.
+
+### Controle — saída UTF-8 byte-idêntica
+
+Comparados os SHA-256 de stdout e stderr dos 42 gates, antes x depois, sem `PYTHONIOENCODING`:
+**40 de 42 byte-idênticos sem normalização nenhuma**. Os 2 restantes
+(`check-artifact-parity.sh`, `check-gates-falsify.sh`) imprimem o caminho do `mktemp -d` e por isso
+**já divergem entre duas execuções da mesma árvore** (medido: `d2e6a3b232ca` vs `a5d39c6dae4b` antes
+de qualquer edição). Normalizando `/private/var/folders/...` e `/tmp/...`, ficam idênticos também.
+
+**Controle mais forte, que é o que o mecanismo de fato afirma — mesma árvore corrigida, cp1252 x
+UTF-8:** os 42 gates produzem os **mesmos bytes** nas duas codificações (40/42 idênticos no hash cru;
+os 2 do `mktemp` idênticos após normalizar o sandbox). Isso discrimina "o mecanismo funciona" de "o
+mecanismo por acaso não quebrou nada hoje": se alguma invocação `python3` tivesse escapado do
+`export` (subshell com env limpo, `env -i`, script aninhado não editado), a saída divergiria por
+transcodificação **sem** necessariamente ficar vermelha. Nenhuma divergência: não há vazamento.
+
+### Trade-off assumido (escrito também no comentário de cada gate)
+
+Forçar UTF-8 num console genuinamente cp1252 faz o terminal exibir **mojibake** em vez de **crashar**
+— acento ilegível com exit code correto vale mais, num gate de diagnóstico, do que uma reprovação
+falsa. Medido em bytes: `PYTHONIOENCODING=cp1252 python3 -c "print('Área — fim')"` emite
+`c1 72 65 61 20 97 20 66 69 6d 0a` (cp1252) em vez de `c3 81 72 65 61 20 e2 80 94 20 66 69 6d 0a`
+(UTF-8), e sai 0 — ilegível num terminal UTF-8, legível no console cp1252 alvo, sem crash.
+
+Segundo trade-off: o `export` alcança também o **CLI Python do produto** que os gates invocam, então
+os gates deixam de poder observar a codificação nativa do console do produto. Isso não cega nada que
+exista hoje: nenhum gate em `scripts/` mede codificação de console, e os dois instrumentos que medem
+—  `pypi/tests/test_cli_encoding.py::TestCliEmConsoleCp1252` (que **seta** `PYTHONIOENCODING=cp1252`
+no filho) e `scripts/windows-repro/python/checks.py` (que **remove** `PYTHONUTF8`/`PYTHONIOENCODING`
+do ambiente do filho) — são imunes por construção.
+
+### Residuais declarados (não fabricados)
+
+1. **Superfície do `open()` não coberta e não simulável aqui.** `PYTHONIOENCODING` só governa o
+   stdio. Existem `open()` sem `encoding=` em gates (`check-agent-hooks-parity.sh:274`,
+   `check-audit-surface.sh:122`, `check-release-tag-parity.sh:197`, `check-update-parity.sh:464`,
+   `check-validate-parity.sh:713`). Num console cp1252 real isso decodifica pelo locale. Só
+   `PYTHONUTF8=1` moveria essa superfície — e ela **não é verificável por execução neste projeto**:
+   `LC_ALL=C` no macOS/Python≥3.7 cai no UTF-8 Mode do PEP 540 e `locale` continua `utf-8` (medido).
+   Não adicionei `PYTHONUTF8=1` para não introduzir um knob que eu não consigo falsificar.
+2. 🔴 **ACHADO — `check-roadmap-barrier-contract.sh` TAMBÉM estoura sob cp1252, e o `make parity`
+   inteiro cai com ele.** Não editei o arquivo; **rodei** (leitura, não escrita), porque sem medir eu
+   não poderia dizer se a AC "os gates de diagnóstico não estouram" vale para `make parity`.
+   ```
+   baseline UTF-8 -> rc=0
+   PYTHONIOENCODING=cp1252 -> rc=1
+     File "<stdin>", line 7, in <module>
+     UnicodeEncodeError: 'charmap' codec can't encode character '\u2705' (✅)
+   ```
+   O `<stdin>` linha 7 é o `print(f"{base}\t{label}\t...")` da **linha 523**, dentro do heredoc
+   aberto na linha 516 — que escreve `$CORPUS_LINES_FILE`, e é exatamente o arquivo cujo sha vira
+   `CORPUS_HASH` na linha 542. Ou seja: **é o mesmo sítio de código do defeito do PR #238**, não um
+   segundo defeito noutro lugar; mas é um **sintoma diferente** — sob cp1252 o gate **crasha antes**
+   de o hash sequer poder divergir. Consequência para a AC: a afirmação correta é **42 de 43** gates
+   de `make parity`, não `make parity` inteiro. Decisão de rota (aplicar aqui vs. deixar para o #238)
+   é do arquiteto — não toquei no arquivo, e a variável **não** conserta a não-determinação do hash,
+   só o crash.
+3. **Nenhum job de CI roda `scripts/check-*.sh` no Windows.** `parity` é `ubuntu-latest`
+   (quality.yml:409); os jobs `windows-*` rodam `go test`/`npm test`/`pytest`/`windows-repro`. A
+   exposição real hoje é o caminho 4 (dev em console Windows), não o CI.
+4. **O instrumento do item 4 mede uma réplica, não o gate.**
+   `scripts/windows-repro/python/checks.py::cmd_cp1252_print` roda `print('→')` em isolamento e
+   declara explicitamente que **não** invoca o wrapper `.sh`. O gate ficou verde; o veredito daquele
+   instrumento não muda por isso. Antes de fixar "camada 2 de 4 → 3", verificar o que o check mede.
+5. **Não há gate contra reintrodução** — é a Wave 2 do roadmap, não este ML.
+
+### Evidência
+
+- `make quality` → **MAKE_EXIT=0**, 0 FAIL.
+- `bin/trackfw validate` → **VALIDATE_EXIT=0**, 18 warnings, todos pré-existentes (mesmos 18 do ML-3A
+  do apolo-tf).
+- `bash -n` em todos os `scripts/check-*.sh` → 0 erros de sintaxe.
+- `grep -c "^export PYTHONIOENCODING=utf-8$" scripts/check-roadmap-barrier-contract.sh` → **0**.
+
+### Vault
+
+`vault/notes/gate-em-cp1252-tem-duas-falhas-distintas-crash-de-print-e-mismatch-por-transcodificacao-2026-09-02.md`,
+linkada no `index.md`.
+
+**Arquivos afetados:** 37 `scripts/check-*.sh`, `vault/notes/index.md`, a nota nova e este arquivo.
+Nenhuma operação de git. Status do ML no roadmap **não** alterado — aguarda auditoria do arquiteto.
