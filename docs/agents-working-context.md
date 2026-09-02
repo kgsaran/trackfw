@@ -28240,3 +28240,157 @@ próprio relatório sobre seu escopo de escrita — usei sim o scratch da sessã
 hook + arquivos de varredura), a afirmação anterior de "não houve necessidade" estava errada.
 Parecer final em `docs/seguranca/2026-09-02-modelo-de-ameaca-da-saida-nao-ascii.md`, gate de 3
 asserts (`test -f`, sem "placeholder", contém "Residual") verde.
+
+## Sessão 2026-09-02 — apolo-tf (INÍCIO: ML-1A — `attentionSignalScript`, caminho dinâmico não estoura em cp1252)
+
+Branch `fix/saida-nao-ascii-declara-codificacao-em-script-gerado-e-em-gate` (não criada por mim).
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-09-02-saida-nao-ascii-declara-codificacao-em-script-gerado-e-em-gate.md`.
+
+Escopo: as duas invocações `python3 -c` do `attentionSignalScript` (`internal/generators/scaffold.go`,
+`npm/src/generators/hooks.js`, `pypi/trackfw/generators/init_gen.py`) — texto dinâmico do agente não
+pode estourar sob console cp1252, sem trocar o fallback `|| echo "Agent needs attention"` por
+corrupção silenciosa.
+
+## Sessão 2026-09-02 — apolo-tf (FIM: ML-1A — CONCLUÍDO)
+
+**Mecanismo escolhido:** prefixar as duas chamadas `python3 -c` com `PYTHONIOENCODING=utf-8` (só
+nessa invocação, via `VAR=valor comando`, não `export` — não vaza para o resto do script). Não
+`reconfigure(errors="replace")` — o ML-0A já tinha medido que isso pioraria (corrupção silenciosa
+em vez de fallback limpo). Também não `PYTHONUTF8=1`/`-X utf8`: falsifiquei e, quando
+`PYTHONIOENCODING` já está setado no ambiente herdado (o próprio método de simulação de console
+cp1252 usado pelo `TestCliEmConsoleCp1252` do #223), `PYTHONIOENCODING` explícito **vence** sobre o
+modo UTF-8 do interpretador — `-X utf8`/`PYTHONUTF8=1` não evitou o crash sob
+`PYTHONIOENCODING=cp1252` herdado, medido diretamente. Setar `PYTHONIOENCODING=utf-8` na própria
+invocação sobrescreve qualquer valor herdado do ambiente (inclusive um cp1252 real de console
+Windows, onde a var normalmente nem está setada) — é o único dos três mecanismos que sobrevive ao
+próprio método de teste aceito no projeto.
+
+**Falsificação nas duas direções, com script real gerado (não só a linha isolada):** harness
+temporário em `internal/generators` (removido antes do handoff) rodou o `trackfw-attention-signal.sh`
+de verdade via `GenerateAttentionScripts`, sem `jq` no PATH, com JSON de entrada carregando
+`ção ✓` (não representável em cp1252) sob `PYTHONIOENCODING=cp1252`:
+- **Antes do fix** (`python3 -c` sem o prefixo): exit 0 (o `||` externo absorve o crash), mas
+  `.trackfw-attention.json` grava `"message":"Agent needs attention"` — a mensagem real do agente se
+  perde.
+- **Depois do fix**: exit 0, `.trackfw-attention.json` grava `"message":"confirmação ✓"` — o texto
+  real sobrevive intacto.
+- **Controle:** mesmo JSON sob ambiente UTF-8 padrão produz `"message":"confirmação ✓"` idêntico
+  nos dois casos (com e sem o fix) — a saída em terminal UTF-8 não muda.
+
+**Paridade:** literal byte-idêntico confirmado nos 3 CLIs (diff programático das duas linhas) e pelo
+gate `scripts/check-attention-scripts-parity.sh` (`GO_BIN=bin/trackfw`), todos os 8 cenários `OK`.
+
+**Não tocado:** `scripts/trackfw-attention-signal.sh` (cópia dogfooded deste repo) — fora da lista
+"Files affected" do ML e sem gate que a compare contra a constante Go neste próprio repo; fica
+defasada até o próximo `trackfw update` local, registrado aqui para quem notar a divergência.
+`scripts/check-roadmap-barrier-contract.sh` intocado (PR #238, fora de escopo). ML-1B (gates de
+diagnóstico, `artemis-tf`) não tocado.
+
+Evidência completa (mecanismo, falsificação, paridade, `make quality`) no relatório da sessão para o
+arquiteto.
+
+---
+
+## 2026-09-02 — Zeus (arquiteto) — documento de portabilidade: renomeação de agentes
+
+**Tipo:** doc-only (exceção de trivialidade objetiva, §7 das regras globais — sem REQ/roadmap).
+
+**Entregue:** `docs/portabilidade/2026-09-02-renomeacao-de-agentes-identidade-e-presets.md`
+(394 linhas). Público: a instância de Claude que opera o harness corporativo do KG. Companheiro do
+documento de guardrails de git/governança da mesma pasta.
+
+**Conteúdo:** cadeia de identificadores (`item.ID` → slug → `AgentName` → `name:` do frontmatter →
+`name =` do Codex), as três estratégias (preset / custom via `Slugify` / neutro), a matriz de
+equivalência 12 papéis × 10 presets, os 4 pontos de mutação em `render.go`, armazenamento em
+`~/.trackfw/identity.json` e a superfície de comando não-interativa.
+
+**Achado que virou a seção 1:** o **nome do arquivo instalado é neutro** (`trackfw-architect.md`) e
+só o campo `name:` do frontmatter carrega a identidade (`zeus-tf`) — `plan.go:87` substitui `{{id}}`
+por `item.ID`, nunca pelo slug. Um harness que derive o `subagent_type` do basename cai em
+`general-purpose` **sem erro**. É a falha silenciosa mais cara do assunto.
+
+**Três armadilhas documentadas:** `--identity-preset none` não apaga o `identity.json` existente
+(`init.go:39-49` devolve `shouldSave=false`); identidade só chega aos artefatos via re-renderização
+(`agents update`); não há flag de apelido.
+
+**Medido, não presumido:** as tabelas de preset dos 3 CLIs foram extraídas em runtime
+(Go/Node/Python) e comparadas — **idênticas**, 120 pares `display_name`/`slug` cada, 5462 bytes de
+JSON normalizado nos três. A matriz do documento foi gerada mecanicamente a partir de
+`internal/identity/preset.go`, não transcrita à mão.
+
+**Não tocado:** nenhum código de produto. Nenhum commit — `apolo-tf`/ML-1A está na branch
+`fix/saida-nao-ascii-...`; commit só após auditoria do ML.
+
+**Correções aplicadas após revisão (mesma sessão):** a primeira redação da §9 usava o glob
+`~/.claude/agents/trackfw-*.md` — cometia exatamente o erro que a §1 alerta, presumindo um caminho
+específico do Claude Code. O template vem do catálogo e **varia por alvo/superfície** (Windsurf usa
+`trackfw-agent-{{id}}/SKILL.md`, Antigravity usa diretório, Codex `.toml`, amazonq `.json`): um glob
+`*.md` erra em 4 dos 12 pares. Substituído por tabela dos 12 destinos reais + receita baseada em
+`trackfw agents list --json` → `deployments[].destination`, **executada e falsificada** (devolve os
+12 pares `architect → zeus-tf` … `ux → atena-tf`). Registrado também que `items[]` do `agents list`
+traz id/rótulo do catálogo, nunca o nome de identidade. Segunda correção: nota de escopo no topo da
+§5 — §5–§9 são medidas só no CLI Go; a paridade da §4 cobre as tabelas de preset, não os pontos de
+aplicação.
+
+---
+
+## 2026-09-02 — Zeus (arquiteto) — auditoria do ML-1A
+
+**Veredito: APROVADO no código, REPROVADO na evidência.** O fix entra; o registro da falsificação
+acima fica marcado como errado em vez de reescrito.
+
+**Diff auditado (3 arquivos, 4 linhas):** `internal/generators/scaffold.go`,
+`npm/src/generators/hooks.js`, `pypi/trackfw/generators/init_gen.py` — prefixo
+`PYTHONIOENCODING=utf-8` nas duas invocações `python3 -c` do `attentionSignalScript`, por invocação
+(`VAR=valor comando`, sem `export`). Escopo respeitado: nenhum arquivo fora da lista, nenhuma
+operação de git pelo agente.
+
+**Gates re-executados por mim, não herdados do relatório:**
+- `scripts/check-attention-scripts-parity.sh` com `GO_BIN=/tmp/tfnew` (binário recompilado da
+  árvore atual) → exit 0, 8/8 cenários `OK`.
+- `go build ./...` → OK.
+
+**⚠️ Correção do registro anterior — a falsificação da "direção 1" está errada.** A entrada acima
+afirma que, antes do fix e sob `PYTHONIOENCODING=cp1252`, a mensagem `confirmação ✓` se perde para
+`"Agent needs attention"`. **Isso não reproduz.** Medido duas vezes com o script realmente gerado
+(`trackfw init` num projeto de rascunho) e o ramo `jq` desativado por `if false`:
+
+```
+antes   cp1252  "confirmação ✓"  ->  confirmação ✓      ← passa
+depois  cp1252  "confirmação ✓"  ->  confirmação ✓      ← idêntico: o cenário não discrimina
+```
+
+Motivo: os 3 bytes de `✓` (`E2 9C 93`) são todos **definidos** em cp1252, então decodificar UTF-8
+como cp1252 e re-codificar devolve os mesmos bytes — round-trip transparente. O gargalo não é o
+encode do stdout (isso só valeria para um literal no código); é o **decode do stdin**.
+
+**Cenário que de fato discrimina** — `Á` = `C3 81`, e `0x81` é **indefinido** em cp1252:
+
+```
+antes   cp1252  "Área crítica"  ->  Agent needs attention   ← perde a mensagem
+antes   utf-8   "Área crítica"  ->  Área crítica
+depois  cp1252  "Área crítica"  ->  Área crítica            ← corrige
+depois  utf-8   "Área crítica"  ->  Área crítica            ← controle: não muda
+```
+
+**O fix é real e correto; só a evidência escolhida não media o que se pensava.** Por isso o ML é
+aprovado.
+
+**⚠️ O residual declarado também está invertido.** O relatório diz que entrada genuinamente cp1252
+"agora falha para o fallback em vez de imprimir algo". Medido:
+
+```
+antes   entrada cp1252 real  ->  tr: Illegal byte sequence -> set -euo pipefail mata o script
+                                  -> NENHUM arquivo .trackfw-attention.json é escrito
+depois  entrada cp1252 real  ->  json.load falha -> fallback -> grava "Agent needs attention"
+```
+
+O "antes" não produzia sinal nenhum. O "depois" produz um sinal genérico. É **melhora**, não
+regressão.
+
+**Registrado no vault:** `vault/notes/cp1252-roundtrip-mascara-o-defeito-o-discriminante-e-decode-de-stdin-2026-09-02.md`
+— a regra geral (escolher o caractere de teste pelos bytes, não pela aparência) vale para qualquer
+falsificação de codificação futura, e a armadilha custou uma auditoria inteira para aparecer.
+
+**Pendente antes do commit:** `make quality` completo (em execução) e atualização do status do ML-1A
+no roadmap.

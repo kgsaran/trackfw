@@ -145,7 +145,7 @@ o seguramos por processo. **Decisão do KG**, não minha.
 > resto.
 
 ### ML-1A — `attentionSignalScript`: o caminho dinâmico
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** `apolo-tf`
 **Files affected:** `internal/generators/scaffold.go`, `npm/src/generators/hooks.js`,
 `pypi/trackfw/generators/init_gen.py` (o literal é **byte-idêntico** nos 3)
@@ -154,10 +154,43 @@ já amortecido por `2>/dev/null || echo`.
 🔴 **Não trocar o fallback por `errors="replace"`** — o ML-0A mediu que isso **pioraria**: troca
 degradação limpa por corrupção silenciosa.
 **Critérios de aceite:**
-- [ ] O caminho dinâmico não estoura sob `PYTHONIOENCODING=cp1252`
-- [ ] 🔴 **Controle:** o fallback atual **continua funcionando** — não pode ser substituído
-- [ ] Literal segue **byte-idêntico** nos 3 CLIs
-- [ ] `make quality` verde
+- [x] O caminho dinâmico não estoura sob `PYTHONIOENCODING=cp1252`
+- [x] 🔴 **Controle:** o fallback atual **continua funcionando** — não pode ser substituído
+- [x] Literal segue **byte-idêntico** nos 3 CLIs
+- [x] `make quality` verde — `QUALITY_EXIT=0`, re-executado pelo arquiteto (não herdado do relatório)
+
+**Solução:** prefixo `PYTHONIOENCODING=utf-8` nas duas invocações `python3 -c`, por invocação
+(`VAR=valor comando`, sem `export` — não vaza para o resto do script). `PYTHONUTF8=1`/`-X utf8` foi
+falsificado e **perde**: é ignorado quando `PYTHONIOENCODING` já vem setado no ambiente — que é
+exatamente o método de simulação de console cp1252 adotado no projeto (`TestCliEmConsoleCp1252`,
+\#223). O fallback `2>/dev/null || echo` foi preservado; `errors="replace"` não foi usado.
+
+**Evidência de aceite — auditoria do arquiteto (2026-09-02), medida com o script realmente gerado
+por `trackfw init` e o ramo `jq` desativado por `if false`:**
+
+```
+antes   cp1252  "Área crítica"  ->  Agent needs attention   ← perde a mensagem
+antes   utf-8   "Área crítica"  ->  Área crítica
+depois  cp1252  "Área crítica"  ->  Área crítica            ← corrige
+depois  utf-8   "Área crítica"  ->  Área crítica            ← controle: saída UTF-8 não muda
+depois  cp1252  JSON malformado ->  Agent needs attention   ← controle: fallback intacto
+```
+
+Paridade: `scripts/check-attention-scripts-parity.sh` com `GO_BIN` recompilado da árvore → exit 0,
+8/8 `OK` (compara Node e Python de verdade, não regex sobre a fonte).
+
+🔴 **Correção de evidência — o cenário do relatório do agente não discrimina.** O relatório provou a
+direção 1 com `confirmação ✓`; **isso não reproduz**: antes e depois devolvem `confirmação ✓`
+idêntico. Os 3 bytes de `✓` (`E2 9C 93`) são todos definidos em cp1252, então decodificar UTF-8 como
+cp1252 e re-codificar é **round-trip byte-a-byte**. O gargalo não é o encode do stdout (isso só
+valeria para um literal no código) — é o **decode do stdin**, e só quebra com um byte **indefinido**
+em cp1252: `Á` = `C3 81`. O fix é correto; a evidência escolhida é que não media o que se pensava.
+Registrado em `vault/notes/cp1252-roundtrip-mascara-o-defeito-o-discriminante-e-decode-de-stdin-2026-09-02.md`.
+
+🔴 **O residual declarado pelo agente está invertido.** Ele registrou que entrada genuinamente
+cp1252 "agora falha para o fallback em vez de imprimir algo". Medido: **antes**, `tr` morre com
+`Illegal byte sequence` e o `set -euo pipefail` mata o script — **nenhum** `.trackfw-attention.json`
+é escrito; **depois**, grava `"Agent needs attention"`. É melhora, não regressão.
 
 ### ML-1B — `PYTHONUTF8=1` para os gates de diagnóstico
 **Status:** ⬜ Pendente
