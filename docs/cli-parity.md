@@ -1946,6 +1946,84 @@ These are literal parsing rules. All three runtimes must implement them identica
    be delimited, or an unterminated fence is a usage error (exit 2) with an explicit message
    naming the offending line number — never a silent pass.
 
+### Wave gates are a portable POSIX-shell contract, not an OS script (ADR-2026-09-01)
+
+<!-- trackfw-contract: gate=scripts/check-shell-posix-portability.sh partial=o gate detecta a reversao ESCRITA NA GRAFIA LITERAL, nao a reversao semantica. Duas evasoes reproduzidas por execucao na barreira de 2026-09-01 (hades-tf): (a) a metade positiva assert_count NAO exclui comentarios, entao a assinatura viva comentada satisfaz o grep; (b) a metade negativa assert_no_code_match usa regex literal, evadida por grafia equivalente e funcional — {["shell"]: true} em JS e **{"shell": True} em Python, ambas verificadas como sintaxe valida e comportamento real de shell do SO. Endurecer para checagem COMPORTAMENTAL (observar o interpretador em runtime, nao o texto) e REQ propria; ate la esta e defesa contra reversao acidental, NAO contra reversao deliberada. Ver vault/notes/gate-literal-regex-syntax-equivalent-bypass-2026-09-01.md -->
+
+The `**Gates da wave:**` block (rule 5 above) is a **contract written in POSIX shell**, not a
+script interpreted by whatever shell the host OS defaults to. All three CLIs execute it with
+`sh -c`, resolved through `$PATH`, on every operating system — the Go CLI has always done this
+(`exec.Command("sh", "-c", command)`); Node and Python previously used `spawnSync(cmd, { shell:
+true })` / `subprocess.run(cmd, shell=True)`, which run through the host shell — `cmd.exe` on
+Windows.
+
+**The evidence that decided this, not a preference.** A scan of every `**Gates da wave:**` block
+across the project's roadmaps found **83 commands**: 35 `grep`/`sed`/`awk`, 14 `test`/`[`, 8
+negations with `!`, 3 `&&`/`||`, 3 `$( )` substitutions, 2 pipes. **None of these idioms exist in
+`cmd.exe`.** `test -f x` is not a `cmd.exe` command; `! grep -q` is not its syntax; `$(...)` is
+not its substitution form. So on Windows, Node and Python did not evaluate the gate
+*differently* from Go — they **failed to evaluate it at all**. Go was the only CLI executing what
+the roadmaps actually contain; see
+[`ADR-2026-09-01-gate-de-wave-e-contrato-portavel-em-shell-posix-nao-script-do-sistema-operacional.md`](adr/ADR-2026-09-01-gate-de-wave-e-contrato-portavel-em-shell-posix-nao-script-do-sistema-operacional.md).
+
+**Consequence: `sh` becomes a prerequisite on Windows.** It already was, de facto, for anyone
+using the Go CLI; this decision makes explicit what the project already depended on. When `sh`
+cannot be spawned at all — the process never starts, e.g. `ENOENT`/`LookPath` failure, **not** a
+command that ran and exited non-zero — the `gates` check reports `status: "not_evaluated"`,
+**distinct from `passed` and `blocked`** (same third state already used by
+`roadmapTrustForGates`, see "Pinned failure strings for `not_evaluated`" above), and the wave
+still reports `status: "blocked"` overall — **"could not measure" is fail-closed, never silently
+treated as "passed."** All three runtimes emit, byte-for-byte:
+
+```
+gates not evaluated: sh not found in PATH — install a POSIX shell (e.g. Git Bash, WSL) to evaluate gates
+```
+
+**Do not confuse this with exit 127.** `sh -c 'nosuchtool'` returns exit 127 — the shell started
+and ran, then reported that *its* child command doesn't exist. That is a normal gate failure
+(`status: "blocked"`, the command's own failure line in `failures`), never the `not_evaluated`
+signal. The `not_evaluated` signal is a **spawn-level** failure of `sh` itself (Go: a non-
+`*exec.ExitError` from `cmd.Run()`; Node: `result.error` set, i.e. the child process never
+started; Python: `OSError` raised by `subprocess.run`) — measured, not assumed, because
+conflating "the tool inside `sh` is missing" with "`sh` itself is missing" would make AC4
+(distinguishing "gate failed" from "gate could not be measured") silently wrong for the one case
+it exists to catch.
+
+**Existing gates need no edits.** They were already POSIX — that is the point of the measurement
+above. A gate that depends on `cmd.exe` syntax stops working; none exists today (measured).
+Restricting gate syntax to the intersection of `sh` and `cmd.exe`, or detecting the OS and
+translating syntax, were both rejected: the intersection is close to empty (excludes `test`,
+`grep`, negation, and substitution — it would invalidate 83 of 83 existing commands), and OS
+detection would make the `barrier` reinterpret artifact content instead of treating it as a fixed
+contract.
+
+**Consequence not to describe as a no-op, even in POSIX (declared residual, ML-0A).** Moving
+Node/Python from `spawnSync(cmd, { shell: true })` / `subprocess.run(cmd, shell=True)` to an
+explicit `spawnSync('sh', ['-c', command])` / `subprocess.run(["sh", "-c", cmd])` is not
+functionally inert on macOS/Linux, even though the *syntax accepted* does not change there.
+Measured with a fake `sh` prepended to `$PATH`: Node's `shell: true` and Python's `shell=True`
+are **pinned to the fixed path `/bin/sh`**; the explicit `sh` invocation is **resolved through
+`$PATH`** — the same resolution Go's `exec.LookPath` has always done. This resolution is
+**required** for Windows (Git for Windows' `sh.exe` is never at `/bin/sh`, only reachable via
+`$PATH`), so it cannot be avoided while still meeting the ADR's goal — but it is a real,
+structural amplification of surface in POSIX too: **whoever controls the `$PATH` ordering of the
+process running `trackfw barrier` now controls which binary interprets gate content, in Node and
+Python — a property that previously only existed for Go.** Declared, not treated as a non-event;
+composes with the already-open REQ for `roadmapTrustForGates` fail-open cases (see "Fail-open
+cases" above) — an environment where both fail-open trust *and* a `$PATH`-adulterated `sh` align
+has no accidental syntax mitigation left in the middle. Full measurement and argument:
+`docs/seguranca/2026-09-01-modelo-de-ameaca-do-shell-de-gate.md`.
+
+**Regression gate.** `scripts/check-shell-posix-portability.sh` pins the `sh -c` call signature,
+the `not_evaluated` status on both branches (untrusted roadmap and missing `sh`), and the pinned
+failure message in `npm/src/commands/barrier.js` and `pypi/trackfw/commands/barrier.py`, and
+reproves if either file's gate-execution point reverts to the **literal spelling** `shell: true` / `shell=True` (see the `partial=` annotation: equivalent spellings evade it) (host-shell
+execution) — checked outside comment lines, since both files' own comments document the old
+pattern in prose as the thing *not* to do again. It reproves independently per file: a regression
+in only one of the two CLIs fails, naming which. It does not touch `serve.js`/`serve.py`, which
+retain a legitimate, unrelated `shell: true` / `shell=True` for opening a browser, tracked by its
+own REQ (ML-0A, finding 4.2).
+
 ### Contrato gerador↔`barrier`: dialeto e vocabulário (ADR-2026-08-29)
 
 <!-- trackfw-contract: gate=scripts/check-roadmap-barrier-contract.sh -->

@@ -6,7 +6,7 @@ adr: ""
 roadmap: ""
 ---
 
-# REQ: Camada 2 mede a plataforma e não o produto nos itens 2 e 3 — retarget dos checks de `HOME` e bit de execução
+# REQ: Camada 2 mede a plataforma e não o produto nos itens 2, 3 e 7 — retarget dos checks
 
 > Date: 2026-09-01 | Status: Open
 
@@ -40,6 +40,29 @@ escrito antes de a AC ser fixada.
 | camada 1 | `293 failed, 1265 passed` → **`145 failed, 1422 passed`** |
 | item 2, nível de produto | `scripts/check-homedir-parity.sh` passa em `parity` no CI |
 | item 3, nível de produto | `hades-tf` reverteu o guard e confirmou que o teste *"não dispara no Windows"* quebra sem ele |
+
+## Terceira instância — o item 7 (acrescentado em 2026-09-01)
+
+O mesmo padrão apareceu no **item 7**, medido no PR #236: a correção foi verificada por execução dos
+3 binários reais, e **a camada 2 não a enxergou** (contagem ficou em 4, esperava 3).
+
+```go
+// scripts/windows-repro/go/checks.go:135 — cmdGateQuote
+c := exec.Command("sh", "-c", gateQuoteCommand)   // réplica, não o barrier
+```
+
+O check roda **réplicas dentro do harness** (`checks.go`/`checks.js`/`checks.py`), cada uma com sua
+própria invocação de shell. A correção mudou `barrier.js`/`barrier.py`.
+
+**Com três instâncias, isto deixa de ser acidente e vira propriedade do instrumento:** os checks
+2, 3 e 7 medem **substitutos** — a plataforma, ou uma réplica — em vez do produto.
+
+**Consequência para as ACs:** o retarget passa a cobrir **três** itens. E a AC3 (falsificar
+revertendo a correção) vale igualmente para o 7: retargetado, ele iria a `ABSENT` imediatamente,
+porque a correção já está aplicada.
+
+**Por que não abri REQ nova:** é a mesma causa raiz. Fragmentar em três REQs esconderia que o
+instrumento tem um **padrão**, e cada uma pareceria um acidente isolado.
 
 ## Acceptance Criteria
 

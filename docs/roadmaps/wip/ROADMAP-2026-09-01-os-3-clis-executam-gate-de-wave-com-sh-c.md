@@ -213,9 +213,67 @@ pino fixo para resolução por `$PATH` **é real em POSIX** — confirmada pelo 
 curado. O veredito Windows só o CI fecha.
 
 ## Wave 2 — Gate e contrato
-> Dependências: Wave 1. 🔴 Nasce ligado, com guarda de vacuidade ancorada no mesmo cwd, `python3`
-> nunca `python`. E **prefira `assert_count` a `assert_has`** onde a assinatura puder repetir — o
-> gate precisa reprovar se **um** dos dois CLIs regredir, não só se ambos.
+> Dependências: Wave 1 completa.
+
+### ML-2A — Gate contra regressão e contrato
+**Status:** ✅ Concluído
+**Agente:** `artemis-tf`
+**Files affected:** `scripts/check-shell-posix-portability.sh` (novo), `Makefile`, `docs/cli-parity.md`
+**Actions:**
+1. Gate impedindo regressão de `barrier.js`/`barrier.py` para `shell: true`/`shell=True` na execução
+   de gate.
+2. Contrato do ADR em `docs/cli-parity.md`, **registrando também o custo** medido no ML-0A.
+**Critérios de aceite:**
+- [x] O gate reprova **regressão em apenas um** dos dois CLIs, **nomeando qual** — o caso que
+      `assert_has` deixaria passar
+- [x] Guarda de vacuidade: `ROOT` vazio faz as 10 checagens reprovarem individualmente
+- [x] 🔴 O gate **não reprova por menção legítima** — os comentários do ML-1A citam `shell: true` em
+      prosa, e um `grep` ingênuo reprovaria a árvore correta
+- [x] Nasce **ligado** ao `parity:`; `make -n parity` expande
+- [x] O contrato declara que a mudança **não é no-op em POSIX**
+- [x] `make quality` verde
+
+**Entregue:** `scripts/check-shell-posix-portability.sh` — **10 assinaturas** em `barrier.js` e
+`barrier.py`, ligado ao `parity:`, contrato anotado com **cobertura plena** (`gate=`, não `partial=`).
+
+#### A armadilha auto-referente, pela terceira vez nesta sessão
+
+**Os comentários do ML-1A citam `shell: true` e `shell=True` em prosa**, para documentar o que não
+repetir. Um `grep` no arquivo inteiro **reprovaria a árvore correta, em cima da própria
+documentação**. Ela adicionou `assert_no_code_match`, que exclui linhas de comentário antes de
+grepar.
+
+É o mesmo padrão do gate do separador, que teria reprovado sobre os documentos que descrevem o
+defeito. **Um artefato que documenta um antipadrão contém o antipadrão** — e gate ingênuo não
+distingue menção de uso.
+
+#### `assert_count` onde a presença não basta
+
+O literal `not_evaluated` ocorre **legitimamente duas vezes por arquivo** — ramo de trust e ramo de
+`sh` ausente. `assert_count(2)` distingue *"os dois ramos ainda reportam o terceiro estado"* de
+*"um colapsou em `blocked`"*. `assert_has` não distinguiria.
+
+#### Falsificação — verifiquei o caso decisivo
+
+```
+árvore correta          →  exit 0, "10 assinaturas confirmadas"
+regressão SÓ no Node    →  exit 1, nomeando barrier.js — Python não mencionado
+```
+
+**Detecta regressão em um só CLI e diz qual.** Ela também falsificou o simétrico (só Python) e a
+vacuidade (`ROOT` vazio → as 10 reprovam individualmente, cada uma nomeando o arquivo ausente).
+
+#### O contrato registra o custo, não só o benefício
+
+Anotação de **cobertura plena**, e o texto declara o que era tentador omitir: a mudança troca
+**interpretador fixo em `/bin/sh`** por **resolvido via `$PATH`** — necessário para Windows, mas
+**não é no-op em POSIX**. Quem controla o `$PATH` controla o interpretador do gate, e isso **compõe**
+com a REQ aberta de fail-open do `roadmapTrustForGates`.
+
+Um contrato que descreve só o lado bom é meio-caminho para o contrato falso que quase publiquei no
+ciclo do `fchmod`.
+
+**`MAKE_EXIT=0`**, `go test` nos 17 pacotes, Node 842 testes, cobertura de contrato limpa.
 
 ## Verificação que só o CI fecha
 
@@ -226,3 +284,51 @@ Item 7 saindo de `REPRODUCED`: camada 2 de **4 para 3**. O check compara o vered
 ## Barreira final
 
 `hefesto-tf` e `hades-tf`, auditoria do arquiteto, `barrier`. **CI verde**, não só verde local.
+
+
+## MEDIÇÃO NO CI — a contagem NÃO caiu, e o motivo é o instrumento
+
+PR #236, `windows-defect-reproduction`:
+
+```
+Reproduzidos: 4   (esperado: 3)
+## ITEM 7 — Go (sh POSIX) vs Node/Python (cmd.exe) avaliam o MESMO gate de wave diferente
+RESULT: REPRODUCED
+```
+
+**A correção está certa e o check não a enxerga.** O item 7 é medido por
+`scripts/windows-repro/go/checks.go:135`:
+
+```go
+func cmdGateQuote() {
+    c := exec.Command("sh", "-c", gateQuoteCommand)   // réplica, não o barrier
+```
+
+O check roda **réplicas dentro do próprio harness de reprodução** — `checks.go`, `checks.js`,
+`checks.py`, cada uma com sua invocação de shell. A correção mudou `barrier.js` e `barrier.py`; **o
+check exercita os `checks.*`**.
+
+**É a mesma classe dos itens 2 e 3** — o check mede um substituto, não o produto. Agora com três
+instâncias, é padrão do instrumento e não coincidência.
+
+### O erro é meu, e é o que eu tinha escrito para evitar
+
+Escrevi neste roadmap: *"verificado o que ele mede antes de fixar o número"*. **Verifiquei a
+descrição, não a implementação.** O comentário do `run.ps1` diz *"compara o veredito do mesmo gate
+nos 3 runtimes"* — o que descreve a **intenção**. O `cmdGateQuote` compara a saída de **três scripts
+réplica**.
+
+**A documentação do check descrevia o que ele deveria medir, não o que mede.** Terceira variante da
+mesma armadilha nesta sessão, e a mais sutil das três: nas anteriores o texto estava certo e a
+implementação furada; aqui o texto **descreve corretamente uma coisa que o código não faz**.
+
+### Consequência
+
+A **correção do item 7 permanece válida** — verificada por execução dos 3 binários reais: mensagem
+byte-idêntica, `not_evaluated` distinto de `blocked`, e o controle reprovando nos três. O que falha é
+**a capacidade da camada 2 de observar isso**.
+
+O retarget entra na REQ que já existe para os itens 2 e 3
+(`REQ-2026-09-01-camada-2-mede-a-plataforma-e-nao-o-produto-...`), que passa a ter **três** itens em
+vez de dois. **Não abro REQ nova**: é a mesma causa raiz, e fragmentar esconderia que o instrumento
+tem um padrão, não três acidentes.

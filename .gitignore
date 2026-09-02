@@ -17,3 +17,6 @@ npm/node_modules/
 
 # macOS
 .DS_Store
+
+# Residuo de PoC de agente — nunca versionado
+.agents/

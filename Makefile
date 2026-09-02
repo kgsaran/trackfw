@@ -56,6 +56,7 @@ parity: build
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-roadmap-barrier-contract.sh
 	scripts/check-ref-separator-portability.sh
 	scripts/check-atomic-write-anti-divergence.sh
+	scripts/check-shell-posix-portability.sh
 
 sync-integration-assets:
 	scripts/sync-integration-assets.sh
