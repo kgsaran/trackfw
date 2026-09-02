@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-01
 req: "docs/req/REQ-2026-09-01-mesmo-gate-de-wave-da-vereditos-diferentes-conforme-o-cli-que-executa-o-barrier.md"
 squad: "hades-tf, apolo-tf, artemis-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, apolo-tf, artemis-tf"
 
 # Roadmap: Os 3 CLIs executam gate de wave com `sh -c`
 
-> Created: 2026-09-01 | Status: wip
+> Created: 2026-09-01 | Status: done
 
 ## Context
 
