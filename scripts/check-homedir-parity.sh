@@ -11,6 +11,18 @@
 # Ver REQ-2026-08-29-node-e-python-ignoram-home-no-windows.
 set -euo pipefail
 
+# Codificacao de saida (ML-1B, ROADMAP-2026-09-02-saida-nao-ascii-declara-
+# codificacao-em-script-gerado-e-em-gate): forca UTF-8 no stdio de todo
+# python3 deste gate. Sob console cp1252 (Windows) o Python herda a codepage
+# e um print() de caractere fora do cp1252 estoura UnicodeEncodeError -- o
+# gate reprova por um motivo alheio ao que ele mede. Declarado aqui, e nao no
+# Makefile, para valer tambem na invocacao direta pelo workflow de CI, na
+# invocacao manual de um gate isolado e na invocacao de um gate por outro.
+# Trade-off assumido: num console genuinamente cp1252 a saida vira mojibake
+# em vez de crashar -- acento ilegivel com exit code correto vale mais que
+# uma reprovacao falsa.
+export PYTHONIOENCODING=utf-8
+
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 FAKE="$(mktemp -d)"
 trap 'rm -rf "$FAKE"' EXIT
