@@ -28035,3 +28035,32 @@ dois caminhos de instalação redundantes → provavelmente só um precisa ser e
 
 **Fronteiras mantidas:** nenhuma configuração de branch protection/`gh api`/`git config` tocada;
 nenhum commit/branch/push/stash/add executado; roadmap/REQ/ADR não editados.
+
+## 2026-09-02 — Hefesto (Code Quality) — INÍCIO
+
+Tarefa: documentação técnica de portabilidade para reimplementação externa (harness de agente de
+outra empresa, sem acesso a este repo). Escopo: apenas o que o trackfw **instala/provê como
+produto** — comandos de git governados (`branch`, `branch prune`, `commit`, `push`, `ship`,
+`release`), hooks gerados (`internal/generators/hooks.go`), regras de `trackfw validate`. Fora de
+escopo: `quality.yml`, `scripts/check-*.sh` deste repo (gates do desenvolvimento do trackfw, não do
+produto). Destino único: `docs/portabilidade/2026-09-02-guardrails-de-git-e-governanca-para-harness-de-agente.md`.
+Nenhuma alteração de código/gate/config; nenhuma operação de git (autoridade exclusiva do
+arquiteto). Doc-only → dispensa REQ/roadmap novo por §7 do CLAUDE.md global.
+
+## 2026-09-02 — Hefesto (Code Quality) — FIM
+
+Documento escrito em `docs/portabilidade/2026-09-02-guardrails-de-git-e-governanca-para-harness-de-agente.md`
+(6 seções: limitação hook-de-agente-vs-hook-de-git com medição ao vivo `.git/hooks` vazio +
+`core.hooksPath=/dev/null`; os 6 comandos de git — `branch new`, `branch prune`, `commit`, `push`,
+`ship`, `release tag` — com mecanismo/dependências/citação arquivo:linha; os 2 hooks gerados
+(`trackfw-git-branch-guard.sh`, `trackfw-credential-guard.sh`) com modos de falha; as ~25 regras de
+`trackfw validate` agrupadas por tema; 4 padrões recorrentes citados com evidência
+(`not_evaluated`, guarda de vacuidade, falsificação nas duas direções, mensagem que nomeia o
+remédio); seção final "o que eu faria diferente" com 5 itens, incluindo o fail-open real (não
+declarado) do trust-check de `barrier` documentado em
+`vault/notes/barrier-trust-check-fail-open-em-tmpdir-simbolico-2026-08-29.md`.
+
+Fora de escopo (por instrução explícita): `quality.yml`, `scripts/check-*.sh` deste repo — gates de
+desenvolvimento do trackfw, não do produto. Não alterado nenhum código/gate/config; nenhuma
+operação de git executada (leitura, grep e execução de `trackfw`/`git status`/`git config` para
+medir comportamento, sem escrita).
