@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-09-02
 author: "zeus-tf"
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-02-saida-nao-ascii-declara-codificacao-em-script-gerado-e-em-gate.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-02-saida-nao-ascii-declara-codificacao-em-script-gerado-e-em-gate.md"
 ---
 
 # REQ: Heredoc `python3` com não-ASCII morre em cp1252 — em 40 scripts, e um deles é instalado no usuário
 
-> Date: 2026-09-02 | Status: Open
+> Date: 2026-09-02 | Status: Done
 
 ## Motivation
 
@@ -103,4 +103,4 @@ codificação de saída, isso é contrato de projeto e merece registro em docs/c
 
 ## Linked Roadmap
 
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-09-02-saida-nao-ascii-declara-codificacao-em-script-gerado-e-em-gate.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-09-02-saida-nao-ascii-declara-codificacao-em-script-gerado-e-em-gate.md`

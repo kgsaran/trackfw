@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-02
 req: "docs/req/REQ-2026-09-02-heredoc-python3-com-nao-ascii-morre-em-cp1252-em-40-scripts-e-um-deles-e-instalado-no-usuario.md"
 squad: "hades-tf, apolo-tf, artemis-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, apolo-tf, artemis-tf"
 
 # Roadmap: Saída não-ASCII declara codificação, em script gerado e em gate
 
-> Created: 2026-09-02 | Status: wip
+> Created: 2026-09-02 | Status: done
 
 ## Context
 

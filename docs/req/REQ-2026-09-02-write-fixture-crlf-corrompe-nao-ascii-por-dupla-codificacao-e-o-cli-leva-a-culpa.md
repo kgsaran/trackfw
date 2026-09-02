@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-09-02
 author: "lourivalgarciajunior"
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-02-gerador-de-fixture-le-stdin-em-binario.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-02-gerador-de-fixture-le-stdin-em-binario.md"
 ---
 
 # REQ: `write_fixture_crlf` corrompe não-ASCII por dupla codificação, e o CLI leva a culpa
 
-> Date: 2026-09-02 | Status: Open
+> Date: 2026-09-02 | Status: Done
 
 ## Motivation
 
@@ -88,4 +88,4 @@ ADR:
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-09-02-gerador-de-fixture-le-stdin-em-binario.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-09-02-gerador-de-fixture-le-stdin-em-binario.md

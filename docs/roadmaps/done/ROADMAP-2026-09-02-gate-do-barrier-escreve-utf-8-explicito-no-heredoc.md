@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-02
 req: "docs/req/REQ-2026-09-02-check-roadmap-barrier-contract-morre-em-cp1252-e-a-codificacao-entraria-no-corpus-hash.md"
 squad: "lourivalgarciajunior"
@@ -7,7 +7,7 @@ squad: "lourivalgarciajunior"
 
 # Roadmap: Gate do barrier escreve UTF-8 explícito no heredoc
 
-> Created: 2026-09-02 | Status: wip
+> Created: 2026-09-02 | Status: done
 
 ## Context
 

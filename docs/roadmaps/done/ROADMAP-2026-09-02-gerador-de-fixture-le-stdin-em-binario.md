@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-02
 req: "docs/req/REQ-2026-09-02-write-fixture-crlf-corrompe-nao-ascii-por-dupla-codificacao-e-o-cli-leva-a-culpa.md"
 squad: "lourivalgarciajunior"
@@ -7,7 +7,7 @@ squad: "lourivalgarciajunior"
 
 # Roadmap: Gerador de fixture lê stdin em binário
 
-> Created: 2026-09-02 | Status: wip
+> Created: 2026-09-02 | Status: done
 
 ## Context
 

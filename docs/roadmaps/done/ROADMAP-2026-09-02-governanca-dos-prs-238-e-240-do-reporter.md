@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-02
 req: "docs/req/REQ-2026-09-02-gates-morrem-em-cp1252-e-corrompem-fixture-nao-ascii-no-windows-prs-238-e-240.md"
 squad: "zeus-tf"
@@ -7,7 +7,7 @@ squad: "zeus-tf"
 
 # Roadmap: Governança dos PRs #238 e #240 do reporter
 
-> Created: 2026-09-02 | Status: wip
+> Created: 2026-09-02 | Status: done
 
 ## Context
 

@@ -82,6 +82,7 @@ def scaffold(cwd: str, opts: dict) -> None:
         print(f'  checkmark {d}')
 
     generate_vault_index(cwd)
+    generate_gitattributes(cwd)
     _write_trackfw_yaml(cwd, opts)
     _write_example_adr(cwd, opts)
     generate_claude_md(cwd, opts)
@@ -1823,6 +1824,63 @@ printf '{"decision":"block","reason":"%s"}\n' "$REASON"
 echo "$REASON" >&2
 exit 2
 """
+
+
+# gitattributes: o primeiro campo da regra mantida por este gerador. Casa o
+# BASENAME (padrao sem barra) de proposito: `roadmap_dir` e `req_dir` sao
+# configuraveis por projeto (trackfw.yaml) e ambos carregam um `.trackfw-log`,
+# entao caminho fixo nasceria quebrado em quem configurou diretorio diferente.
+GITATTRIBUTES_RULE_TARGET = ".trackfw-log"
+
+# Byte-identico ao bloco de internal/generators/scaffold.go e
+# npm/src/generators/init.js (regra dura de paridade).
+GITATTRIBUTES_BLOCK = (
+    "# trackfw: .trackfw-log is append-only \u2014 every write lands on the last line, so\n"
+    "# two parallel branches conflict on every merge. merge=union keeps the lines\n"
+    "# from both sides (chronological order is not guaranteed). The pattern has no\n"
+    "# slash, so it matches the file in any directory \u2014 roadmap_dir and req_dir both\n"
+    "# carry one, and both are configurable per project.\n"
+    ".trackfw-log merge=union\n"
+)
+
+
+def has_gitattributes_rule(content: str) -> bool:
+    """True quando ALGUMA linha nao-comentario tem `.trackfw-log` como primeiro
+    campo. Predicado sobre o CAMPO, nao sobre a string literal da linha inteira:
+    espacamento diferente ou outro atributo ja sao "a regra existe", e reescrever
+    por cima sobrescreveria decisao do projeto."""
+    for line in content.split("\n"):
+        trimmed = line.strip()
+        if not trimmed or trimmed.startswith("#"):
+            continue
+        if trimmed.split()[0] == GITATTRIBUTES_RULE_TARGET:
+            return True
+    return False
+
+
+def generate_gitattributes(cwd: str) -> None:
+    """Garante `merge=union` para o `.trackfw-log` no `.gitattributes` da raiz.
+
+    Tres ramos, todos idempotentes: ausente -> cria; existe sem a regra ->
+    APPEND (nunca sobrescreve o arquivo do projeto); existe com a regra -> no-op.
+    """
+    file_path = os.path.join(cwd, ".gitattributes")
+    if not os.path.exists(file_path):
+        with open(file_path, "w", encoding="utf-8", newline="\n") as f:
+            f.write(GITATTRIBUTES_BLOCK)
+        print("  \u2713 .gitattributes")
+        return
+    with open(file_path, "r", encoding="utf-8") as f:
+        existing = f.read()
+    if has_gitattributes_rule(existing):
+        return
+    # Arquivo preexistente sem newline final: emendar direto grudaria a primeira
+    # linha do bloco na ultima linha do projeto, corrompendo a config em silencio.
+    if existing and not existing.endswith("\n"):
+        existing += "\n"
+    with open(file_path, "w", encoding="utf-8", newline="\n") as f:
+        f.write(existing + GITATTRIBUTES_BLOCK)
+    print("  \u2713 .gitattributes")
 
 
 def generate_vault_index(cwd: str) -> None:

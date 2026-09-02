@@ -28806,3 +28806,76 @@ anotação de `docs/cli-parity.md`; candidato a REQ de acompanhamento.
 **Não commitado; nenhuma operação de git. Status do ML-2B no roadmap deliberadamente NÃO alterado**
 — o corpus de `check-roadmap-barrier-contract.sh` é pinado sobre as linhas de veredito dos roadmaps
 (`PINNED_CORPUS_HASH:434`), e a transição de status cabe ao `trackfw_architect` após a auditoria.
+
+## 2026-09-02 — ares-tf (Infrastructure) — INÍCIO
+**ML-1A** do `ROADMAP-2026-09-02-gitattributes-com-merge-union-para-o-trackfw-log-nos-3-clis`
+(`wip/`), REQ `REQ-2026-09-02-reconciliacao-pos-merge-dos-prs-238-e-240-e-o-trackfw-log-que-conflita-em-toda-branch-paralela.md`
+(AC6/AC7). Branch já ativa: `fix/gitattributes-com-merge-union-para-o-trackfw-log-nos-3-clis`.
+Escopo: `.gitattributes` na raiz **e** geração pelo `trackfw init` nos 3 CLIs, byte-idêntico, com
+falsificação do merge nas duas direções em repositórios de rascunho fora deste repo. Nenhum roadmap
+movido, nenhuma linha acrescentada ao `.trackfw-log` — a Wave 2 é do `trackfw_architect`.
+
+## 2026-09-02 — ares-tf (Infrastructure) — FIM
+**Entregue (não commitado, para auditoria do `trackfw_architect`):** `.gitattributes` (novo, raiz),
+`internal/generators/scaffold.go`, `npm/src/generators/init.js`,
+`pypi/trackfw/generators/init_gen.py`, `scripts/check-artifact-parity.sh`, `docs/cli-parity.md`,
+3 arquivos de teste novos (`internal/generators/gitattributes_test.go`,
+`npm/tests/gitattributes.test.js`, `pypi/tests/test_gitattributes.py`), nota de vault
+`merge-union-preserva-linhas-mas-nao-ordem-e-metrics-depende-de-posicao-2026-09-02.md` + link no
+`index.md`, e estas duas entradas.
+
+**Padrão: basename, não caminho.** `.trackfw-log merge=union` — padrão sem barra casa em qualquer
+diretório. `roadmap_dir` e `req_dir` são configuráveis por projeto e **os dois** carregam um
+`.trackfw-log` (`roadmap.go` e `req.go:appendREQTransitionLog`); caminho fixo nasceria quebrado em
+quem configurou outro diretório e deixaria o log de REQ descoberto. `git check-attr merge` confirma
+`merge: union` em `docs/roadmaps/`, `docs/req/` e um `custom/rm/` arbitrário. **A cobertura do
+segundo log é desejada e está escrita** no `docs/cli-parity.md` e na nota de vault.
+
+**Falsificação nas duas direções, com o CONTEÚDO (não só exit code).** Base `09:00`/`09:10`;
+`main` acrescenta `10:45` e `11:21`; branch acrescenta `10:46`. **Sem** o `.gitattributes`:
+`CONFLICT (content)`, exit 1, `UU` e marcadores `<<<<<<<`/`>>>>>>>` no arquivo. **Com**: exit 0,
+árvore limpa, e as 5 linhas presentes — igualdade de conjunto, **sem perda e sem duplicação**.
+Dois controles extras: adição **idêntica** dos dois lados → **1** linha (não 2); sobreposição
+parcial (`L1` vs `L1,L2`) → `L0,L1,L2`. O único efeito colateral é a **ordem**: `ours` inteiro antes
+de `theirs`, logo `10:46` cai depois de `11:21`.
+
+**Ordem: medida contra os leitores, não presumida.** `trackfw log --tail` é apresentação;
+`stale_wip` do validador e o throughput do `metrics` comparam timestamp (`.After`, min/max). A única
+dependência posicional é cycle time / WIP age em `internal/metrics/metrics.go` (`Calculate`), e ela
+só é atingida por roadmap com transições nos **dois** lados do merge. Contraprova a favor do union:
+o `.trackfw-log` deste repositório já carrega uma linha **duplicada** (`10:46 … gate-do-barrier`)
+produzida por **resolução manual** — union não teria duplicado. Veredito: `merge=union` é adequado.
+
+**Idempotência falsificada nos 3 ramos × 3 runtimes por execução real do `init`:** ausente → cria
+(6 linhas, 1 regra); `init` duas vezes → byte-idêntico; preexistente **sem newline final**
+(`* text=auto`) → `\n` inserido antes do bloco, primeira linha do projeto preservada, `init` duas
+vezes → 1 regra; regra preexistente com espaçamento diferente (`.trackfw-log  merge=union`) → no-op
+byte a byte; linha **comentada** não conta como regra. Predicado pinado: primeira palavra de linha
+não-comentário igual a `.trackfw-log`.
+
+**Paridade:** os 3 CLIs geram o arquivo byte-idêntico entre si e idêntico ao `.gitattributes`
+versionado na raiz (`cmp`), agora coberto por `scripts/check-artifact-parity.sh` — 9º `KIND`, e a
+linha de sumário passou a derivar a contagem de `${#KINDS[@]}` em vez do literal `8`.
+
+**Descoberto (declarado, não corrigido — não é o ML-1A):** (a) `trackfw update` **não** emite o
+arquivo, então só projeto inicializado depois desta versão recebe a regra — candidato a REQ de
+acompanhamento; (b) a falsificação é sobre `git merge` **local**; se o merge do lado do servidor da
+forge honra o atributo não foi medido.
+
+**Evidência:** `make quality` → **exit 0**, saída capturada em arquivo sem pipe
+(`cmd > log 2>&1; echo $?`). Precisão: o `make quality` foi lançado depois de **todas as escritas de
+código, gate e `docs/cli-parity.md`**, mas **antes** da nota de vault, do link no `index.md` e destas
+entradas de contexto (só markdown). Os dois gates que leem docs foram re-executados **depois** dessas
+escritas: `scripts/check-referential-integrity.sh` → exit 0 (`Referential integrity OK`) e
+`scripts/check-parity-contract-coverage.sh` → exit 0 (nenhuma seção sem anotação).
+`bin/trackfw validate` → exit 0 (21 warnings, todos de severidade warning).
+
+**2 warnings do `validate` apontam para o próprio roadmap deste ML — artefato de governança do
+`trackfw_architect`, NÃO alterado por mim:** (a) `req:` na linha 5 do roadmap está sem o prefixo
+`docs/req/` e sem aspas (`req: REQ-2026-09-02-reconciliacao-...md`), enquanto todos os outros
+roadmaps em `wip/` usam o caminho completo entre aspas — daí o warning "links to REQ ... which does
+not exist", embora o arquivo da REQ exista (ADR-2026-08-01); (b) "in wip but has no acceptance
+criteria block" — o roadmap tem `**Critérios de aceite:**` por ML, mas não o heading consolidado
+(ADR-2026-07-31). Os dois são correção de uma linha, e cabem ao orquestrador. **Nenhuma operação de git neste repositório**; os `git init/commit/merge`
+da falsificação rodaram em repositórios de rascunho sob `mktemp -d`. Roadmap **não** alterado — o
+status do ML e a Wave 2 são do `trackfw_architect`.

@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-09-02
 author: "lourivalgarciajunior"
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-02-gate-do-barrier-escreve-utf-8-explicito-no-heredoc.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-02-gate-do-barrier-escreve-utf-8-explicito-no-heredoc.md"
 ---
 
 # REQ: `check-roadmap-barrier-contract` morre em cp1252, e a codificação entraria no `CORPUS_HASH`
 
-> Date: 2026-09-02 | Status: Open
+> Date: 2026-09-02 | Status: Done
 
 ## Motivation
 
@@ -72,4 +72,4 @@ ADR:
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-09-02-gate-do-barrier-escreve-utf-8-explicito-no-heredoc.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-09-02-gate-do-barrier-escreve-utf-8-explicito-no-heredoc.md
