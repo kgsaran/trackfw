@@ -284,3 +284,51 @@ Item 7 saindo de `REPRODUCED`: camada 2 de **4 para 3**. O check compara o vered
 ## Barreira final
 
 `hefesto-tf` e `hades-tf`, auditoria do arquiteto, `barrier`. **CI verde**, não só verde local.
+
+
+## MEDIÇÃO NO CI — a contagem NÃO caiu, e o motivo é o instrumento
+
+PR #236, `windows-defect-reproduction`:
+
+```
+Reproduzidos: 4   (esperado: 3)
+## ITEM 7 — Go (sh POSIX) vs Node/Python (cmd.exe) avaliam o MESMO gate de wave diferente
+RESULT: REPRODUCED
+```
+
+**A correção está certa e o check não a enxerga.** O item 7 é medido por
+`scripts/windows-repro/go/checks.go:135`:
+
+```go
+func cmdGateQuote() {
+    c := exec.Command("sh", "-c", gateQuoteCommand)   // réplica, não o barrier
+```
+
+O check roda **réplicas dentro do próprio harness de reprodução** — `checks.go`, `checks.js`,
+`checks.py`, cada uma com sua invocação de shell. A correção mudou `barrier.js` e `barrier.py`; **o
+check exercita os `checks.*`**.
+
+**É a mesma classe dos itens 2 e 3** — o check mede um substituto, não o produto. Agora com três
+instâncias, é padrão do instrumento e não coincidência.
+
+### O erro é meu, e é o que eu tinha escrito para evitar
+
+Escrevi neste roadmap: *"verificado o que ele mede antes de fixar o número"*. **Verifiquei a
+descrição, não a implementação.** O comentário do `run.ps1` diz *"compara o veredito do mesmo gate
+nos 3 runtimes"* — o que descreve a **intenção**. O `cmdGateQuote` compara a saída de **três scripts
+réplica**.
+
+**A documentação do check descrevia o que ele deveria medir, não o que mede.** Terceira variante da
+mesma armadilha nesta sessão, e a mais sutil das três: nas anteriores o texto estava certo e a
+implementação furada; aqui o texto **descreve corretamente uma coisa que o código não faz**.
+
+### Consequência
+
+A **correção do item 7 permanece válida** — verificada por execução dos 3 binários reais: mensagem
+byte-idêntica, `not_evaluated` distinto de `blocked`, e o controle reprovando nos três. O que falha é
+**a capacidade da camada 2 de observar isso**.
+
+O retarget entra na REQ que já existe para os itens 2 e 3
+(`REQ-2026-09-01-camada-2-mede-a-plataforma-e-nao-o-produto-...`), que passa a ter **três** itens em
+vez de dois. **Não abro REQ nova**: é a mesma causa raiz, e fragmentar esconderia que o instrumento
+tem um padrão, não três acidentes.
