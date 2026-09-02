@@ -28166,3 +28166,77 @@ Nenhuma operação de git executada. Toda escrita de fixture de teste ficou sob 
 `/private/tmp/claude-501/.../scratchpad` — nada escrito em `/usr/bin` real nem fora do scratch.
 `make quality` reportado no fechamento do ML pelo protocolo de conclusão (ver saída anexa ao
 relatório desta corretiva).
+
+## Sessão 2026-09-02 — hades-tf (INÍCIO: ML-0A do roadmap saída-não-ascii — modelo de ameaça)
+
+Branch `fix/saida-nao-ascii-declara-codificacao-em-script-gerado-e-em-gate`, worktree limpo, único
+agente. Escopo: ML-0A (Wave 0) — varredura pelo sintoma de saída não-ASCII em `scripts/` e no
+conteúdo gerado pelos 3 CLIs, classificação produto × ferramenta, veredito sobre `CORPUS_HASH` e
+sobre `errors="replace"`. Só leitura/medição — nenhuma linha de correção, nenhuma operação de git.
+Parecer em `docs/seguranca/2026-09-02-modelo-de-ameaca-da-saida-nao-ascii.md`, escrito com esqueleto
+desde a primeira ação (execução anterior morreu por erro de API antes de escrever qualquer coisa).
+
+## Sessão 2026-09-02 — hades-tf (FIM: ML-0A concluído)
+
+**Método:** varredura pelo sintoma (todo byte não-ASCII em `scripts/*.sh` fora de `testdata/`,
+excluindo comentários) achou 746 linhas em 45 scripts — muito mais que os 40 scripts do REQ. Medi
+por que: `echo`/`printf` em bash não fazem encode antes de escrever (bytes literais da fonte
+UTF-8 passam direto), então nunca lançam `UnicodeEncodeError` sob `LC_ALL=C`/cp1252 — só
+`python3 print()`/`sys.stdout` faz encode estrito. A varredura ampla **confirmou** o método por
+mecanismo em vez de substituí-lo: refiz "python3 + não-ASCII + sem reconfigure" de forma
+independente e cheguei aos mesmos 40 arquivos do REQ.
+
+**Classificação produto × ferramenta:** `attentionSignalScript` (`internal/generators/scaffold.go`)
+confirmado como o único artefato, nos 3 CLIs, que gera conteúdo instalado no adotante E invoca
+`python3 print()` — paridade byte-a-byte confirmada em Go/Node/Python (o Python ficava em
+`generators/init_gen.py:969-970`, não em `hooks.py` como o grep inicial sugeria). **Correção ao
+REQ:** o literal estático hoje tem só 1 caractere não-ASCII (um `—` num comentário `#`, nunca
+executado) — não os "12 caracteres" descritos. O risco real é dinâmico: `print()` de
+`tool_input.question`/`.command` (texto de agente em runtime), já amortecido por
+`2>/dev/null || echo "Agent needs attention"` — um crash aqui degrada a mensagem para um fallback
+genérico, não mata o script, diferente do enquadramento "script morre" do REQ. Achado extra: existe
+um segundo artefato de produto com não-ASCII, `trackfw-git-branch-guard.sh` (534 bytes, mais que
+`attentionSignalScript`), mas sem nenhuma invocação de `python3` — logo seguro pelo mesmo motivo
+estrutural (bash não crasha por encoding).
+
+**CORPUS_HASH (`check-roadmap-barrier-contract.sh:542`):** confirmado como o único, dos 5 scripts
+que hasheiam, onde o achado do PR #238 se sustenta — os outros 4 hasheiam bytes crus de stdin ou
+usam `.encode()` sem argumento (sempre UTF-8 em Python 3, não depende de locale). Medi o efeito:
+mesma string, hash UTF-8 vs. hash cp1252-replace divergem (`f3d8ae04b153` vs `963d8a0f993d`).
+
+**Veredito sobre `errors="replace"`:** aceitável nos 39 gates de ferramenta (disponibilidade > 
+fidelidade visual, mensagem de diagnóstico para humano/CI). Inaceitável em dois pontos, medidos:
+(1) `CORPUS_HASH` — `errors="replace"` sozinho (sem `encoding="utf-8"`) não resolve o não-
+determinismo entre SOs, só troca "crash" por "hash igualmente não-determinístico e agora silencioso";
+(2) `attentionSignalScript` — `errors="replace"` sem `encoding="utf-8"` faria o `print()` "ter
+sucesso" com conteúdo corrompido (`?` no lugar de acentos) e o fallback atual (limpo, visível) nunca
+mais dispararia — estritamente pior que o comportamento de hoje.
+
+**Residual declarado (ver §5 do parecer):** interação stdin-decode/stdout-encode sob a mesma
+`PYTHONIOENCODING` não reproduziu o crash isolado neste ambiente macOS — precisa de Windows real ou
+console cp1252 genuíno; não fiz diff byte-a-byte completo dos 3 `attentionSignalScript` (só a linha
+crítica); não investiguei a origem do número "12 caracteres" do REQ (sem `git blame`).
+
+**Escopo respeitado:** nenhuma linha de correção escrita; nenhuma operação de git; nenhum arquivo
+tocado fora de `docs/seguranca/2026-09-02-modelo-de-ameaca-da-saida-nao-ascii.md` e este contexto.
+Toda medição de PoC via comandos inline no shell — nenhuma fixture em disco foi necessária.
+
+## Sessão 2026-09-02 — hades-tf (correção pós-revisão do ML-0A, mesmo parecer)
+
+O advisor apontou dois furos bloqueantes no parecer inicial: (1) a classificação (b) não estava
+item a item, só resumida em uma frase; (2) o filtro "python3 presente + não-ASCII em algum lugar do
+arquivo" contava acentos em comentários/`echo` fora do bloco Python e eu reproduzi esse mesmo
+filtro superficial como "confirmação por replicação" sem perceber. Refiz com um extrator que isola
+o corpo de cada invocação `python3 - <<TAG`/`-c` e testa não-ASCII só dentro dele: dos 40, só **2**
+têm não-ASCII genuíno em dado efetivamente impresso (`check-roadmap-barrier-contract.sh`, risco
+real de hash; `check-atomic-write-anti-divergence.sh`, seguro por ser stderr livre) — os outros 3
+achados do filtro antigo eram comentário Python/bash, não dado. Adicionei a tabela item-a-item dos
+39 scripts de ferramenta ao parecer. Também corrigi: nenhuma ocorrência de `python` bare (sem `3`)
+em `scripts/*.sh` — AC5 já satisfeita nesse eixo; toda a faixa Python suportada (`>=3.10` no
+pyproject) está exposta ao bug porque o modo UTF-8 só virou padrão no CPython 3.15 (PEP 686);
+nomeei `PYTHONUTF8=1` como terceira opção de remédio (cobre os 39 sem editar nenhum, mas não cobre
+o `attentionSignalScript` por rodar fora do `Makefile` do trackfw); e corrigi uma imprecisão do
+próprio relatório sobre seu escopo de escrita — usei sim o scratch da sessão (fixture de PoC do
+hook + arquivos de varredura), a afirmação anterior de "não houve necessidade" estava errada.
+Parecer final em `docs/seguranca/2026-09-02-modelo-de-ameaca-da-saida-nao-ascii.md`, gate de 3
+asserts (`test -f`, sem "placeholder", contém "Residual") verde.

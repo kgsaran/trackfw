@@ -26,16 +26,32 @@ com `UnicodeEncodeError` e o script morre.
 ### O que reenquadra a REQ: um deles é produto, não ferramenta nossa
 
 ```
-internal/generators/scaffold.go:757   attentionSignalScript
-                                      "canonical content of the attention-signal hook"
+internal/generators/scaffold.go:759   attentionSignalScript
         ↓ escrito em scripts/trackfw-attention-signal.sh de quem adota
-        12 caracteres não-ASCII: ã ç é ê ó ú — ✓
         usa python3, sem reconfigure
 ```
 
-**Não é chateação da nossa suíte de gates: é `trackfw init` entregando um script quebrado na máquina
-de um usuário Windows.** Os outros 39 são gates de desenvolvimento — incômodo real, mas de outra
-classe.
+### ⚠️ Correção de uma medição minha (ML-0A, 2026-09-02)
+
+A primeira redação afirmava **12 caracteres não-ASCII** no script gerado. **Errado — é 1**, e num
+comentário morto.
+
+**O erro foi de método:** peguei uma **janela arbitrária de 4000 caracteres** a partir do índice do
+nome da variável, o que capturou o **código Go em volta** — e o `scaffold.go` tem comentários
+acentuados. **Medi a vizinhança e reportei como conteúdo.** Extraindo o literal de verdade:
+`1535 chars, 1 não-ASCII`.
+
+É a mesma classe que auditei nos outros a sessão inteira: **medir algo próximo do que se quer e
+tratar como se fosse.**
+
+**A urgência muda.** O risco real no produto não é o texto estático — é **texto dinâmico vindo do
+agente**, e ele **já está amortecido** por `2>/dev/null || echo "Agent needs attention"`: degrada a
+mensagem, **não mata o script**. Continua valendo corrigir, mas **não é "usuário com `init`
+quebrado"**.
+
+**Segundo artefato de produto que a REQ não previu**, achado pelo ML-0A:
+`scripts/trackfw-git-branch-guard.sh`, com **534 bytes** não-ASCII — mas **seguro**, porque não
+invoca `python3`.
 
 ### O reporter achou uma segunda instância sem saber que havia 38
 
