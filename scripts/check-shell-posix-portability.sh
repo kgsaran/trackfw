@@ -41,6 +41,29 @@
 # — nem qualquer outro uso de shell fora deste ponto.
 set -euo pipefail
 
+# Codificacao de saida (ML-1B, ROADMAP-2026-09-02-saida-nao-ascii-declara-
+# codificacao-em-script-gerado-e-em-gate).
+#
+# ATENCAO, correcao do ML-2B (achado S4): este gate NAO invoca python3. As duas
+# unicas ocorrencias da palavra no arquivo (`:29` e esta linha) sao prosa em
+# comentario. O texto anterior afirmava forcar UTF-8 "no stdio de todo python3
+# deste gate", descrevendo um efeito que aqui nao existe -- e comentario falso
+# num gate e o que faz o proximo leitor tirar a conclusao errada.
+#
+# A linha abaixo e PREVENTIVA e uniforme com os 37 gates que de fato invocam
+# python3: ela nao muda o veredito hoje (verificado por execucao no ML-2B) e
+# passa a valer no instante em que alguem adicionar um python3 aqui -- caso em
+# que check-output-encoding-declared.sh tambem passaria a exigi-la. O motivo
+# original continua valendo PARA AQUELES gates: sob console cp1252 (Windows) o
+# Python herda a codepage e um print() de caractere fora do cp1252 estoura
+# UnicodeEncodeError, ou -- pior -- transcodifica e devolve mismatch sem
+# crashar. Declarada no script, e nao no Makefile, para valer tambem na
+# invocacao direta pelo workflow de CI, na invocacao manual de um gate isolado
+# e na invocacao de um gate por outro. Trade-off assumido: num console
+# genuinamente cp1252 a saida vira mojibake em vez de crashar -- acento
+# ilegivel com exit code correto vale mais que uma reprovacao falsa.
+export PYTHONIOENCODING=utf-8
+
 ROOT="${1:-.}"
 
 fail=0

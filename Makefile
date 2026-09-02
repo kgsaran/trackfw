@@ -59,6 +59,7 @@ parity: build
 	scripts/check-ref-separator-portability.sh
 	scripts/check-atomic-write-anti-divergence.sh
 	scripts/check-shell-posix-portability.sh
+	scripts/check-output-encoding-declared.sh
 
 sync-integration-assets:
 	scripts/sync-integration-assets.sh
