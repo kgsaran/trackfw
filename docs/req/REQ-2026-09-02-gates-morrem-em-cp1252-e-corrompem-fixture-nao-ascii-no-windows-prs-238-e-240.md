@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-09-02
 author: "zeus-tf"
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-02-governanca-dos-prs-238-e-240-do-reporter.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-02-governanca-dos-prs-238-e-240-do-reporter.md"
 ---
 
 # REQ: Gates morrem em cp1252 e corrompem fixture não-ASCII no Windows — PRs #238 e #240
 
-> Date: 2026-09-02 | Status: Open
+> Date: 2026-09-02 | Status: Done
 
 ## Nota sobre a autoria e sobre esta REQ
 
@@ -93,4 +93,4 @@ ADR: <!-- nenhum. Correção de codificação em ferramenta; nenhuma decisão ar
 
 ## Linked Roadmap
 
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-09-02-governanca-dos-prs-238-e-240-do-reporter.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-09-02-governanca-dos-prs-238-e-240-do-reporter.md`

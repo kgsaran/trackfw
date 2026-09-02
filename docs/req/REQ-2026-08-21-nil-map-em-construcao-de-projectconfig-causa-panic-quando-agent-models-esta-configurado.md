@@ -1,5 +1,5 @@
 ---
-status: Open
+status: Done
 date: 2026-08-21
 author: ""
 adr: ""
@@ -8,7 +8,7 @@ roadmap: ""
 
 # REQ: nil map em construção de `ProjectConfig` causa panic quando `agent_models` está configurado
 
-> Date: 2026-08-21 | Status: Open
+> Date: 2026-08-21 | Status: Done
 
 ## Motivação
 

@@ -81,7 +81,7 @@ repositório de rascunho.
 > Dependências: Wave 1 mergeada — antes disso, cada movimentação conflita com os 4 PRs abertos.
 
 ### ML-2A — Mover para `done` os 5 roadmaps concluídos
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** `trackfw_architect` (governança)
 **Verificado em 2026-09-02:** os 5 têm **zero** MLs pendentes.
 
@@ -94,10 +94,38 @@ ROADMAP-2026-09-02-saida-nao-ascii-declara-codificacao-em-script-gerado-e-em-gat
 ```
 
 **Critérios de aceite:**
-- [ ] Os 5 em `done/`, com `status:` do frontmatter e linha de cabeçalho sincronizados
+- [x] Os 5 em `done/`, com `status:` do frontmatter e linha de cabeçalho sincronizados
       (usar `trackfw roadmap move`, nunca `git mv`)
-- [ ] `wip/` contém **apenas** roadmaps com trabalho em andamento de fato
-- [ ] A política de **quem** move roadmap trazido por PR externo está escrita (AC5 da REQ)
+- [x] `wip/` contém **apenas** roadmaps com trabalho em andamento de fato
+- [x] A política de **quem** move roadmap trazido por PR externo está escrita (AC5 da REQ)
+
+**Executado.** Os 5 movidos com `trackfw roadmap move`, que sincronizou também o link da REQ em
+cada um. `wip/` ficou com **apenas** este roadmap. `trackfw validate` → exit 0.
+
+**Fechadas junto — 6 REQs cujo trabalho já estava entregue com o status aberto:** as 5 dos roadmaps
+acima, mais `REQ-2026-08-21-nil-map-em-construcao-de-projectconfig...`, que a auditoria de backlog
+mostrou corrigida **no nível da classe** — `initConfigMaps` por reflexão roda como primeira linha de
+`parse()` (`internal/config/config.go:356,375`), e `go test ./internal/config/ -run "NoPanic|MapFields"`
+passa, incluindo o gate anti-regressão do invariante. Verificado por mim antes de fechar.
+
+## Política — quem move roadmap trazido por PR externo (AC5 da REQ)
+
+**O mantenedor que faz o merge, no mesmo dia, e não o contribuidor.**
+
+Razão medida: um PR externo traz o roadmap em `wip/` **já com os MLs marcados ✅**, porque para o
+contribuidor o trabalho terminou quando ele abriu o PR. Pedir que ele mova para `done/` é impossível
+— no momento em que ele escreve, o merge ainda não aconteceu, e um roadmap em `done/` num PR aberto
+seria mentira. Então a transição **só pode** ser feita depois do merge, e quem tem essa informação é
+quem mergeia.
+
+Hoje isso rendeu **5 roadmaps órfãos acumulados**, 2 deles vindos de PR externo. Sem dono explícito,
+`wip/` deixa de significar "trabalho em andamento" e vira depósito — e aí o
+`branch_has_wip_roadmap` e o board do `serve` passam a descrever um estado que não existe.
+
+Esta política é candidata natural ao `CONTRIBUTING.md`
+(`REQ-2026-09-01-projeto-nao-publica-a-exigencia-de-governanca-para-prs-e-nao-tem-contributing.md`),
+com a metade que interessa ao contribuidor escrita do lado dele: *"deixe o roadmap em `wip/` com os
+MLs concluídos; a transição para `done/` é do mantenedor"*.
 
 ## Acceptance Criteria
 

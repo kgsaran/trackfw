@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-09-01
 author: "zeus-tf"
 adr: "docs/adr/ADR-2026-09-01-o-repositorio-do-trackfw-e-governado-pelo-trackfw-com-o-mesmo-rigor-que-o-produto-vende.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-01-o-repositorio-do-trackfw-sob-os-cuidados-do-trackfw.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-01-o-repositorio-do-trackfw-sob-os-cuidados-do-trackfw.md"
 ---
 
 # REQ: O repositório do trackfw não está sob os cuidados do trackfw
 
-> Date: 2026-09-01 | Status: Open
+> Date: 2026-09-01 | Status: Done
 
 ## Motivation
 
@@ -80,4 +80,4 @@ ADR: `docs/adr/ADR-2026-09-01-o-repositorio-do-trackfw-e-governado-pelo-trackfw-
 
 ## Linked Roadmap
 
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-09-01-o-repositorio-do-trackfw-sob-os-cuidados-do-trackfw.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-09-01-o-repositorio-do-trackfw-sob-os-cuidados-do-trackfw.md`

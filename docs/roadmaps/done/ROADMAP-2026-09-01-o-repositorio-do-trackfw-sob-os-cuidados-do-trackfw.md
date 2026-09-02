@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-01
 req: "docs/req/REQ-2026-09-01-o-repositorio-do-trackfw-nao-esta-sob-os-cuidados-do-trackfw.md"
 squad: "hades-tf, ares-tf, apolo-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, ares-tf, apolo-tf"
 
 # Roadmap: O repositório do trackfw sob os cuidados do trackfw
 
-> Created: 2026-09-01 | Status: wip
+> Created: 2026-09-01 | Status: done
 
 ## Context
 
