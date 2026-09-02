@@ -227,4 +227,5 @@
 2026-09-01 21:43  ROADMAP-2026-09-01-os-3-clis-executam-gate-de-wave-com-sh-c.md  wip → done
 2026-09-01 21:47  ROADMAP-2026-09-01-o-repositorio-do-trackfw-sob-os-cuidados-do-trackfw.md  backlog → wip
 2026-09-02 10:45  ROADMAP-2026-09-02-saida-nao-ascii-declara-codificacao-em-script-gerado-e-em-gate.md  backlog → wip
+2026-09-02 10:46  ROADMAP-2026-09-02-gate-do-barrier-escreve-utf-8-explicito-no-heredoc.md  backlog → wip
 2026-09-02 11:21  ROADMAP-2026-09-02-governanca-dos-prs-238-e-240-do-reporter.md  backlog → wip

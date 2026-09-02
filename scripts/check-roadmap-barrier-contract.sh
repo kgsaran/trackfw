@@ -515,6 +515,14 @@ elif [[ -n "${CORPUS_FILELIST:-}" ]]; then
       fi
       python3 - "$out" "$base" "$label" >>"$CORPUS_LINES_FILE" <<'PYEOF'
 import json, sys
+
+# stdout em UTF-8 explicito. Este bloco imprime evidence/failures do barrier,
+# que contem os tokens de status do roadmap (checkmark, quadrado branco). Num
+# console cp1252 o print estoura com UnicodeEncodeError e o gate morre no 11o
+# check. E mesmo sem estourar, a codificacao entraria no CORPUS_HASH (linha 542
+# hasheia este arquivo), fazendo o mesmo corpus dar hash diferente por SO.
+sys.stdout.reconfigure(encoding="utf-8", errors="replace", newline="\n")
+
 doc = json.loads(sys.argv[1])
 base, label = sys.argv[2], sys.argv[3]
 for c in doc["checks"]:
