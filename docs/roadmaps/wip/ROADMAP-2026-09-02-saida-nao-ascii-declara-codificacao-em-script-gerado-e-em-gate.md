@@ -277,8 +277,52 @@ o veredito daquele instrumento **não muda** — verificar o que o check mede an
 **Paridade 3 CLIs:** infra de gate, exceção explícita do contrato. Nada em `internal/`, `npm/src/`,
 `pypi/trackfw/`; `check-parity-contract-coverage.sh` verde.
 
-## Wave 2 — Os gates, com correção uniforme e gate contra reintrodução
-> Dependências: Wave 1.
+## Wave 2 — Gate contra reintrodução
+> Dependências: Wave 1 (fechada — ML-1A `5b5391e`, ML-1B `6721078`, barreira da Wave 1 `passed`).
+
+**Escopo revisado depois da Wave 1.** O título original dizia "correção uniforme **e** gate contra
+reintrodução". A correção uniforme já saiu inteira no ML-1B (37 gates). Sobra o gate — e a Wave 1
+mostrou que ele tem **dois alvos**, não um.
+
+### ML-2A — O gate que impede a regressão, nos dois alvos
+**Status:** ⬜ Pendente
+**Agente:** `artemis-tf`
+**Files affected:** `scripts/check-output-encoding-declared.sh` (novo), `Makefile`,
+`.github/workflows/quality.yml`, `docs/cli-parity.md` (registrar a exceção de infra de gate)
+
+**Alvo 1 — ferramenta.** Todo `scripts/check-*.sh` que invoca `python3` declara
+`export PYTHONIOENCODING=utf-8`. Exceção **única e nomeada**: `check-roadmap-barrier-contract.sh`,
+com o motivo escrito (PR #238 aberto sobre o mesmo sítio). Allowlist explícita, nunca skip silencioso.
+
+**Alvo 2 — produto, e é o que a paridade NÃO cobre.** O literal `attentionSignalScript` dos 3 CLIs
+tem de conter o prefixo `PYTHONIOENCODING=utf-8`. O `check-attention-scripts-parity.sh` compara os 3
+entre si: se alguém remover o prefixo **dos três**, ele continua verde. Paridade mede se as
+implementações concordam, não se o contrato está correto — o mesmo cego já registrado em
+`vault/notes/barrier-so-casa-cabecalho-de-aceite-em-portugues-2026-08-28.md`.
+
+🔴 **Regex literal é evadível — leia `vault/notes/gate-literal-regex-syntax-equivalent-bypass-2026-09-01.md`
+antes de escrever a asserção.** `PYTHONIOENCODING="utf-8"`, `='UTF-8'`, `export  PYTHONIOENCODING=utf-8`
+e `PYTHONIOENCODING=utf8` são semanticamente equivalentes ou próximas. Decida e **documente** quais
+formas aceita e quais recusa; uma regex literal ingênua reprova quem está certo e passa quem está
+errado.
+
+🔴 **Guarda de vacuidade obrigatória.** Se a varredura enumerar **zero** gates, o check **falha** —
+não passa em silêncio. Um `glob` que deixa de casar é a forma mais comum de um gate virar decorativo.
+
+🔴 **O próprio gate novo invoca `python3`?** Se sim, ele se aplica a si mesmo — e isso tem de ser
+verdade por execução, não por boa intenção.
+
+**Critérios de aceite:**
+- [ ] Alvo 1 falsificado nas duas direções: remover a declaração de um gate qualquer → check **reprova**
+      nomeando o arquivo; árvore íntegra → check **passa**
+- [ ] Alvo 2 falsificado nas duas direções: remover o prefixo do literal **nos 3 CLIs** → check
+      **reprova**; árvore íntegra → check **passa**
+- [ ] 🔴 Guarda de vacuidade falsificada: varredura vazia → check **falha**, verificado por execução
+- [ ] `check-roadmap-barrier-contract.sh` na allowlist **com motivo escrito**, e o arquivo segue intocado
+- [ ] O check está ligado ao `make quality` **e** ao workflow — verificado, não presumido
+- [ ] `make quality` verde
+
+**Comandos de validação:** `bash scripts/check-output-encoding-declared.sh`, `make quality`
 
 ## Verificação que só o CI fecha
 
