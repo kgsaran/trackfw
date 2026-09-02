@@ -4,7 +4,7 @@ on:
     branches: [main]
 
 jobs:
-  governance:
+  governance-install-script:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

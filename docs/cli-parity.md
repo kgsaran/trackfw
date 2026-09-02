@@ -5828,6 +5828,53 @@ em
 `REQ-2026-08-28-cli-python-nao-oferece-superficie-de-ci-e-git-hooks-no-init-e-nao-declara-git-hooks-como-alvo-do-update.md`,
 que declara dependência desta REQ.
 
+### Job ids únicos entre `trackfw-gate.yml` e `trackfw-validate.yml` (ML-1A, ROADMAP-2026-09-01)
+
+<!-- trackfw-contract: gate=scripts/check-ci-workflow-job-id-collision.sh -->
+
+Os dois workflows de CI que o produto gera (tabela da seção anterior) declaravam o **mesmo job id**
+`governance` nos 3 CLIs. `trackfw-validate.yml` dispara em `push` **e** `pull_request`; um projeto
+que rodou `init`/`update` (que instala `trackfw-gate.yml`) e também `discover --init` (que instala
+`trackfw-validate.yml`) produzia **três check-runs homônimos** por PR — confirmado ao vivo no PR
+#241 deste repositório (`"governance=SUCCESS"` × 3 no mesmo push). O GitHub casa check exigido por
+**nome**, então `required_status_checks: [governance]` seria satisfeito por qualquer um dos três,
+imprevisivelmente — um portão que parece fechado sem estar. Paridade perfeita no erro: os 3 CLIs
+concordavam entre si e os 3 estavam errados; nenhum gate de paridade byte-a-byte (inclusive
+`check-ci-workflow-pin-parity.sh` acima) pegaria isso, porque paridade mede concordância entre os
+runtimes, não correção do valor em si.
+
+**Os dois workflows verificam a mesma propriedade** (`trackfw validate` passa) por dois mecanismos
+de instalação diferentes — ver "O que cada template pina" acima. Os novos ids nomeiam o
+**mecanismo**, não o arquivo de origem, porque é isso que quem lê `required_status_checks` precisa
+saber sem abrir o YAML:
+
+| workflow | job id (antigo → novo) | mecanismo de instalação |
+|---|---|---|
+| `trackfw-gate.yml` (`buildGitHubActionsWorkflowContent`) | `governance` → `governance-install-script` | `curl \| sh` (`install.sh`) |
+| `trackfw-validate.yml` (`BuildDiscoverGitHubActionsWorkflowContent`) | `governance` → `governance-go-install` | `go install .../trackfw@v<versão>` |
+
+Decisão registrada (sem usuários downstream conhecidos hoje, e este próprio repositório não tinha
+`required_status_checks` configurado — é a lacuna que motivou a REQ): mudar o job id muda o nome do
+check; quem já tivesse `required_status_checks` pinado no nome antigo veria o portão quebrar. Corrigir
+na origem foi julgado melhor que carregar o defeito adiante. `required_status_checks` propriamente
+dito (qual dos dois — ou os dois — exigir) é decisão da Wave 2 deste roadmap, não deste ML: como os
+dois cobrem a mesma propriedade por caminhos de instalação redundantes, o argumento natural é exigir
+apenas um.
+
+**Gate falsificável:** `scripts/check-ci-workflow-job-id-collision.sh` — 6 pontos (2 workflows × 3
+CLIs) via `assert_count` (não `assert_has`: a assinatura de um workflow podendo aparecer mais de uma
+vez por engano exige contagem exata, não presença), mais anti-regressão do id antigo colidente
+(`  governance:`, ancorado com indentação + dois-pontos) nos mesmos 6 arquivos, mais a checagem de
+que os dois ids nunca podem coincidir entre si. Falsifica nas duas direções: uma fixture com o job id
+antigo reintroduzido é detectada pela mesma assinatura usada na validação real, e o arquivo de
+produção corrigido conta zero ocorrências do id antigo. Guarda de vacuidade ancorada no `$ROOT`
+default (`.`, o cwd em que `make parity` roda) — a mesma raiz usada na varredura.
+
+**Fora de escopo deste ML (Wave 2/3 do roadmap):** configurar `required_status_checks` de fato na
+`main` deste repositório, e o `trackfw doctor` acusar a colisão em projetos de terceiro que já a
+tenham (o doctor hoje só compara conteúdo/bit de execução contra o template atual — não tem checagem
+de unicidade de job id entre os dois templates).
+
 ### Estado `scaffold-wrong-mode` — bit de execução ausente (REQ-2026-08-28)
 
 <!-- trackfw-contract: gate=scripts/check-doctor-parity.sh,scripts/check-gates-falsify.sh -->

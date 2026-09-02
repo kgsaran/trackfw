@@ -146,7 +146,7 @@ decisão do KG** — pessoal versus compartilhável —, não de veredito dele.
 > qualquer configuração: não dá para exigir um check cujo nome é ambíguo.
 
 ### ML-1A — Job ids únicos nos dois workflows gerados, nos 3 CLIs
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** `apolo-tf`
 **Files affected:**
 `internal/generators/scaffold.go`, `internal/generators/scaffold_doctor.go`,
@@ -176,17 +176,78 @@ check-runs homônimos. O GitHub casa check exigido **por nome** — exigir `gove
    `required_status_checks` de quem adota — **precisam dizer o que verificam**, não de onde vieram.
 2. Atualizar os testes que pinam o conteúdo gerado.
 **Critérios de aceite:**
-- [ ] Job ids distintos entre os dois workflows, **idênticos entre os 3 CLIs**
-- [ ] 🔴 **Medido num PR real:** os check-runs aparecem com nomes distintos, e nenhum nome se repete
-- [ ] 🔴 **Controle:** os dois workflows **continuam rodando e reprovando** quando devem — renomear
+- [x] Job ids distintos entre os dois workflows, **idênticos entre os 3 CLIs**
+- [x] 🔴 **Medido num PR real:** os check-runs aparecem com nomes distintos, e nenhum nome se repete
+- [x] 🔴 **Controle:** os dois workflows **continuam rodando e reprovando** quando devem — renomear
       não pode desligar o que já funcionava
-- [ ] Gate impedindo a reintrodução de job ids colidentes nos geradores dos 3 CLIs
-- [ ] `make quality` verde
+- [x] Gate impedindo a reintrodução de job ids colidentes nos geradores dos 3 CLIs
+- [x] `make quality` verde
 
 **Gates da wave:**
 ```bash
 make quality
 ```
+
+#### Resultado do ML-1A (apolo-tf, 2026-09-02) — auditado pelo arquiteto
+
+```
+trackfw-gate.yml       governance-install-script   (curl | sh)
+trackfw-validate.yml   governance-go-install       (go install)
+```
+
+Verifiquei: **nenhum `governance:` nu sobrou nos 6 geradores**, e os workflows vivos deste repositório
+também estão corrigidos.
+
+### O desvio de escopo dele é o achado que mais vale
+
+Ele tocou `.github/workflows/trackfw-gate.yml` e `trackfw-validate.yml`, **fora da minha lista** — e
+a justificativa é exata: **os workflows vivos deste repo divergem à mão do template** (usam
+`go build` local em vez de `go install`, porque o repositório não consegue se instalar via `curl`
+durante o próprio PR) e **não são regenerados** por `update`/`discover`.
+
+Sem tocá-los, teríamos corrigido os geradores e **este repositório continuaria com a colisão viva** —
+justamente o que a REQ existe para resolver. **A minha lista de arquivos estava incompleta**, de novo.
+
+Ele também verificou que **nenhum `needs:` dependia do job `governance`** antes de renomear — o risco
+concreto de quebrar cadeia de dependência.
+
+### Os nomes: ele estava certo e eu errado
+
+Eu instruí *"nomes que digam o que verificam, não de onde vieram"*. Mas os dois workflows verificam
+**a mesma propriedade** (`trackfw validate` passa); nomear por propósito produziria **dois nomes
+iguais**. Ancorar no **mecanismo de instalação** é o que distingue de fato — e **torna a redundância
+visível** em vez de disfarçá-la.
+
+Ele ainda escreveu no `docs/cli-parity.md` a dica para a Wave 2: sendo a mesma propriedade,
+**exigir apenas um** é o argumento natural.
+
+### Os testes stale — inspecionados, não presumidos
+
+Os fixtures que pinam YAML (`update_test.go:1877/2034` e equivalentes em Node e Python) foram lidos
+**linha a linha**. São *stale* **de propósito** — job id antigo e pin de versão velho, comparados
+contra o template atual gerado dinamicamente.
+
+**Atualizá-los por reflexo teria quebrado a detecção de conteúdo obsoleto**: o teste passaria a
+comparar o novo contra o novo, e nunca mais acusaria drift.
+
+### Falsificação — verificada por mim
+
+```
+gate novo, árvore correta      →  exit 0
+colisão reintroduzida (cópia)  →  exit 1, nomeando o arquivo e o assert exato
+```
+
+**Controle que prova que nada mais mudou:** o `check-ci-workflow-pin-parity.sh` — que compara os 9
+builders byte a byte — segue **15/15**. Só o job id mudou.
+
+**`MAKE_EXIT=0`**, zero `FAIL`.
+
+### Achado registrado em REQ própria
+
+Os dois workflows **executam a mesma coisa**; diferem só no instalador. Um projeto que roda `init` e
+`discover` paga **dois jobs por push** para uma verificação. **A colisão era o sintoma; a duplicação é
+a causa** — REQ `REQ-2026-09-02-init-e-discover-geram-dois-workflows-...` aberta, com AC1 exigindo
+descobrir **por que existem dois** antes de unificar.
 
 ## Wave 2 — Ligar os controles
 > Dependências: Wave 1. **Só depois de os nomes serem únicos** é que `required_status_checks` pode

@@ -321,12 +321,17 @@ const DISCOVER_GITHUB_ACTIONS_WORKFLOW_PATH = '.github/workflows/trackfw-validat
 // project — mirroring the install.sh pin already applied to
 // buildGitHubActionsWorkflowContent (trackfw-gate.yml) in generators/init.js. Never
 // hardcoded: read lazily to avoid a circular require at module load time.
+//
+// Job id is `governance-go-install` (ML-1A, ROADMAP-2026-09-01) — was `governance`,
+// colliding with buildGitHubActionsWorkflowContent's job id (trackfw-gate.yml,
+// generators/init.js). See that function's doc comment for the full rationale; named
+// after the install mechanism (`go install`), not the workflow file.
 function buildDiscoverGitHubActionsWorkflowContent() {
   const { version } = require('../../package.json');
   return `name: trackfw validate
 on: [push, pull_request]
 jobs:
-  governance:
+  governance-go-install:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
