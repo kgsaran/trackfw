@@ -13,15 +13,21 @@ from datetime import date
 
 def slugify(title: str) -> str:
     """
-    Converte título em slug: lowercase, acentos removidos via NFKD,
-    espaços → hifens, remove chars não-alfanuméricos exceto hífen.
+    Converte string para slug kebab-case portável.
+    NFKD + remoção de diacríticos + lowercase + [^a-z0-9]+ → hífen.
+    Ex: "Autenticação e Sessão" → "autenticacao-e-sessao"
+
+    Colapso, nunca deleção — ver `## Artifact slug contract` em docs/cli-parity.md.
+    Esta função deletava os não-alfanuméricos, que é a regra do slug de *identidade
+    de agente*, não a de artefato: "C/C++" virava "cc" aqui e "c-c" em Go, Node e nos
+    outros três geradores do próprio Python.
     """
-    normalized = unicodedata.normalize('NFKD', title)
-    ascii_str = normalized.encode('ascii', 'ignore').decode('ascii')
-    slug = ascii_str.lower().replace(' ', '-')
-    slug = re.sub(r'[^a-z0-9-]', '', slug)
-    slug = re.sub(r'-+', '-', slug)
-    return slug.strip('-')
+    normalized = unicodedata.normalize("NFKD", title)
+    ascii_str = normalized.encode("ascii", "ignore").decode("ascii")
+    slug = ascii_str.lower()
+    slug = re.sub(r"[^a-z0-9]+", "-", slug)
+    slug = re.sub(r"-+", "-", slug)
+    return slug.strip("-")
 
 
 def _today() -> str:

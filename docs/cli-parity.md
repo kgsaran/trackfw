@@ -3813,7 +3813,7 @@ related: []
 
 ### Slug — normalização NFKD portável nos três runtimes
 
-<!-- trackfw-contract: gate=scripts/check-artifact-parity.sh partial=só o título acentuado ("Autenticação e Sessão") é exercitado pelo gate, conforme a própria seção declara; os outros dois exemplos da tabela ("ADR Config (v2)", "Minha Requisição #1") são apenas ilustrativos, sem prova por gate -->
+<!-- trackfw-contract: gate=scripts/check-artifact-parity.sh -->
 
 
 Os três runtimes usam a mesma semântica: NFKD decomposition → remoção de
@@ -3825,6 +3825,14 @@ combining marks (diacríticos) → lowercase → substituição de sequências
 | `"Autenticação e Sessão"` | `autenticacao-e-sessao` |
 | `"ADR Config (v2)"` | `adr-config-v2` |
 | `"Minha Requisição #1"` | `minha-requisicao-1` |
+
+> **Os exemplos da tabela não discriminam.** Medido: os três dão o mesmo slug tanto sob
+> "colapsar `[^a-z0-9]+`" quanto sob "deletar não-alfanuméricos", porque neles todo trecho
+> não-alfanumérico é adjacente a espaço ou a borda. Um gate montado sobre qualquer um deles
+> fica verde com a semântica errada — foi o que aconteceu com
+> `pypi/trackfw/generators/adr.py`. Por isso `check-artifact-parity.sh` exercita
+> `"Autenticação C/C++ v1.2"`: o não-alfanumérico entre alfanuméricos (`C/C`, `v1.2`) é o que
+> separa as duas semânticas. Não troque esse título por um da tabela.
 
 Títulos com qualquer combinação de acentos (á é í ó ú), cedilha (ç), til (ã õ),
 crase (à) e caracteres não-alfanuméricos produzem slugs idênticos nos três

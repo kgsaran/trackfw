@@ -4,6 +4,7 @@ const fs = require('fs')
 const path = require('path')
 const os = require('os')
 const { readAgentConventions } = require('../config/index.js')
+const { homedir } = require('../homedir');
 
 // PACKAGE_VERSION — the version of the trackfw binary generating the CI
 // workflow templates. Read once from package.json (never a literal), so
@@ -14,7 +15,6 @@ const { readAgentConventions } = require('../config/index.js')
 // (which calls the same functions), so drift between write and compare
 // paths is structurally impossible.
 const { version: PACKAGE_VERSION } = require('../../package.json')
-const { homedir } = require('../homedir')
 
 const GOV_DIRS = [
   'docs/adr',
@@ -417,9 +417,12 @@ function generateCommitMsgHook(cfg) {
 // ---------------------------------------------------------------------------
 
 function generatePomXml(cfg) {
-  const slug = cfg.projectName
-    ? cfg.projectName.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '')
-    : 'my-app'
+  // Usa o toSlug compartilhado em vez de uma variante inline: a versao anterior nao
+  // fazia NFKD e PERDIA a letra acentuada — "Cafe App" (com acento) virava "caf-app"
+  // aqui e "cafe-app" no Go, que usa o toSlug dele. Ver a secao
+  // "Artifact slug contract" em docs/cli-parity.md.
+  const { toSlug } = require('./adr')
+  const slug = cfg.projectName ? toSlug(cfg.projectName) : 'my-app'
   const name = cfg.projectName || 'My App'
   const content = `<?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
