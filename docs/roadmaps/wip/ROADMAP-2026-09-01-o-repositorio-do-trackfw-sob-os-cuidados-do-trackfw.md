@@ -141,10 +141,62 @@ review-count segue ponto único de falha; o flip de emergência é ele próprio 
 revisada; e a ausência de `.claude/agents/` e `.claude/skills/` em escopo de projeto **precisa de
 decisão do KG** — pessoal versus compartilhável —, não de veredito dele.
 
-## Wave 1 — Ligar os controles
-> Dependências: Wave 0. Particionamento sai da enumeração.
+## Wave 1 — Desfazer a colisão de nome (pré-requisito da AC2)
+> Dependências: Wave 0. **O particionamento saiu da enumeração**, e ela apontou um bloqueio antes de
+> qualquer configuração: não dá para exigir um check cujo nome é ambíguo.
 
-## Wave 2 — O `doctor` acusa a lacuna
+### ML-1A — Job ids únicos nos dois workflows gerados, nos 3 CLIs
+**Status:** ⬜ Pendente
+**Agente:** `apolo-tf`
+**Files affected:**
+`internal/generators/scaffold.go`, `internal/generators/scaffold_doctor.go`,
+`npm/src/generators/init.js`, `npm/src/commands/discover.js`,
+`pypi/trackfw/generators/init_gen.py`, `pypi/trackfw/commands/discover.py`,
+mais os testes que pinam o conteúdo gerado.
+
+**Diagnóstico:** os dois workflows que o produto gera declaram **o mesmo job id**:
+
+| CLI | `trackfw-gate.yml` | `trackfw-validate.yml` |
+|---|---|---|
+| Go | `scaffold.go:1924` | `scaffold_doctor.go:49` |
+| Node | `init.js:233` | `discover.js:329` |
+| Python | `init_gen.py:579` | `discover.py:474` |
+
+**Paridade perfeita no erro** — os três concordam e os três estão errados. Nenhum gate de paridade
+pegaria: paridade mede **concordância**, não **correção**.
+
+E o `trackfw-validate.yml` dispara em `push` **e** `pull_request`, então um PR produz **três**
+check-runs homônimos. O GitHub casa check exigido **por nome** — exigir `governance` seria um portão
+**satisfeito por qualquer um dos três, imprevisivelmente**. Um portão que parece fechado.
+
+**Como os geradores são do produto, todo projeto que adota o trackfw herda a colisão.**
+
+**Actions:**
+1. Job ids únicos e descritivos nos dois workflows, nos 3 CLIs. Os nomes entram no
+   `required_status_checks` de quem adota — **precisam dizer o que verificam**, não de onde vieram.
+2. Atualizar os testes que pinam o conteúdo gerado.
+**Critérios de aceite:**
+- [ ] Job ids distintos entre os dois workflows, **idênticos entre os 3 CLIs**
+- [ ] 🔴 **Medido num PR real:** os check-runs aparecem com nomes distintos, e nenhum nome se repete
+- [ ] 🔴 **Controle:** os dois workflows **continuam rodando e reprovando** quando devem — renomear
+      não pode desligar o que já funcionava
+- [ ] Gate impedindo a reintrodução de job ids colidentes nos geradores dos 3 CLIs
+- [ ] `make quality` verde
+
+**Gates da wave:**
+```bash
+make quality
+```
+
+## Wave 2 — Ligar os controles
+> Dependências: Wave 1. **Só depois de os nomes serem únicos** é que `required_status_checks` pode
+> ser configurado sem ambiguidade.
+> 🔴 A Wave 0 corrigiu duas promessas da REQ que precisam constar aqui: a **AC3 não alcança**
+> `git stash` nem `checkout --` — o git não tem hook que dispare antes de subcomando arbitrário, e
+> prometer paridade humano-agente ali seria falso; e **o PR autorreferente que conserta um
+> `governance` quebrado não pode ser travado pelo próprio `governance`**.
+
+## Wave 3 — O `doctor` acusa a lacuna
 > Dependências: Wave 1. **É a wave que transforma o achado em produto:** as anteriores consertam este
 > repositório; esta faz qualquer projeto que adote o trackfw ganhar o mesmo diagnóstico.
 
