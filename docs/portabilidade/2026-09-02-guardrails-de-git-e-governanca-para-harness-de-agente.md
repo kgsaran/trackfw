@@ -514,7 +514,198 @@ propriedade emergente de um comando específico.
 
 ---
 
-## 6. O que eu faria diferente
+## 6. Validação de integridade dos hooks e gates — quem confere se o próprio guard foi apagado ou adulterado
+
+Um guard que o usuário pode apagar sem que nada perceba não é controle, é sugestão. Esta seção
+descreve **o que o trackfw faz para detectar que os hooks/gates do §3 foram desligados, adulterados
+ou removidos** — e, principalmente, mede até onde essa detecção realmente vai neste repositório.
+§4.2 já lista as 5 regras envolvidas; aqui está o mecanismo de cada uma, o que elas comparam contra
+o quê, e o que foi **medido** (rodando `trackfw validate`/`trackfw doctor --remote` de verdade,
+inclusive num fixture isolado em `/tmp`) em vez de apenas lido no código.
+
+### 6.1 As 5 regras, uma a uma — o que cada uma detecta e contra o que compara
+
+| Regra | Detecta | Compara contra | Onde a referência mora |
+|---|---|---|---|
+| `credential_guard_hook_resolvable` / `git_branch_guard_hook_resolvable` | a entrada do guard, **se presente** no arquivo de config do harness, resolve para um script que existe e é executável | o `command` dentro de `.claude/settings.json` (ou equivalente dos outros 7 harnesses) contra o arquivo no disco que ele nomeia | nenhuma — é resolução de caminho, não comparação de conteúdo (`validateGuardHookResolvable`, `internal/validator/validator_credential_guard.go:284-387`) |
+| `credential_guard_script_integrity` / `git_branch_guard_script_integrity` | o **conteúdo** do script no disco foi alterado | o template que **este binário do trackfw** geraria (`credentialGuardScriptReference` / `gitBranchGuardScriptReference`) | uma constante Go embutida no binário em tempo de compilação — `internal/validator/validator_credential_guard_integrity_reference.go` e `internal/validator/validator_git_branch_guard_reference.go:27` (cópia local, sincronizada com o gerador por teste dedicado — ver comentário de topo do segundo arquivo) |
+| `credential_guard_mode_downgrade` | `credential_guard.mode` foi rebaixado de `block` para algo menos estrito | o valor de `credential_guard.mode` no **HEAD do git** vs. o mesmo campo em disco, comparados **semanticamente e direcionalmente** (só dispara `block → não-block`, nunca o inverso) | `git show HEAD:./trackfw.yaml`, via `headTrackfwYAML()` (`internal/validator/validator_credential_guard_integrity.go:135-235`, mecanismo descrito no comentário de topo do arquivo, linhas 1-30) |
+
+`credential_guard_hook_resolvable`/`git_branch_guard_hook_resolvable` cobrem **dois** escopos —
+projeto (`credentialGuardHookFiles`, `internal/validator/validator_credential_guard.go:55-72`) e
+global, `$HOME`-scoped (`globalGuardConfigFiles`,
+`internal/validator/validator_git_branch_guard.go:69-76`) — a mesma lista de 6-8 harnesses do §3.1
+verificada duas vezes, uma por escopo.
+
+### 6.2 A pergunta central: uma âncora que o usuário também controla não protege nada
+
+Este é o ponto que separa controle real de teatro, e é exatamente o que o ADR abaixo resolve para
+**um** dos três canais possíveis, deliberadamente não para os outros dois:
+
+`docs/adr/ADR-2026-08-12-severidade-das-regras-de-credential-guard-resolvida-pela-mais-estrita-entre-head-e-disco.md`
+parte de uma observação simples: `ruleSeverity()` (o resolvedor de severidade de **toda** regra do
+`validate`, ~40 regras) lia a chave `rules:` de `trackfw.yaml` **em disco**, nunca do `HEAD`
+(`internal/validator/validator.go:144-153`, `diskRuleSeverity`). Isso significa que uma edição **não
+commitada** — `rules: { credential_guard_mode_downgrade: off }` — desliga a própria regra que
+denunciaria essa edição, sem deixar rastro nenhum: nem diff, nem revisão de PR, nada. Uma integridade
+que compara o script contra uma cópia que o usuário também controla (o `trackfw.yaml` em disco) não
+protege nada — é exatamente esse buraco.
+
+**A decisão (M4, `ADR-2026-08-12-...-resolvida-pela-mais-estrita-entre-head-e-disco.md`, "Decision"):**
+para as **3 regras de `credential_guard`** apenas — `credential_guard_hook_resolvable`,
+`credential_guard_script_integrity`, `credential_guard_mode_downgrade`
+(`credentialGuardAnchoredRules`, `internal/validator/validator_credential_guard_integrity.go:196-200`)
+— a severidade passa a ser a **mais estrita entre HEAD e disco**
+(`credentialGuardRuleSeverity`, mesmo arquivo, linhas 251-268), não mais disco sozinho. O ADR rejeitou
+três alternativas mais fracas explicitamente por não fecharem o mesmo furo em outro nível: uma
+meta-regra que avisa sobre a divergência é **recursiva** (ela mesma é configurável pelo mesmo canal
+`rules:`); um hash externo em `~/.trackfw/` reabriria um debate de escopo global já fechado por
+medição; ancorar `ruleSeverity()` inteiro no HEAD alteraria o comportamento de ~38 outras regras sem
+relação com segurança.
+
+**O carve-out do baseline é um canal separado, fechado por um mecanismo diferente, não pela âncora.**
+`.trackfw-baseline.json` (o "ratchet" que tolera violações pré-existentes) é **deliberadamente não
+versionado** (`.gitignore:14-15`) — não há `HEAD` dele para comparar. Por isso as 3 regras
+`credential_guard_*` são **excluídas por nome** da elegibilidade de baseline, incondicionalmente
+(`filterBaselineTagged`, `internal/validator/validator.go:554-602`, carve-out explícito nas linhas
+582 e 595): mesmo que `.trackfw-baseline.json` liste a mensagem exata como tolerada, ela nunca é
+suprimida para essas 3 regras. Confirmado lendo o código — não medido isoladamente, porque replicar
+esse cenário exigiria um segundo git worktree sujo, fora do orçamento desta seção.
+
+### 6.3 A assimetria que o código deixa às claras: `git_branch_guard_*` NÃO está ancorado
+
+Isto **não está declarado em nenhum ADR como decisão consciente** — é uma leitura direta do código,
+não uma opinião: `credentialGuardAnchoredRules` (§6.2) contém só as 3 regras de `credential_guard`.
+`git_branch_guard_hook_resolvable` e `git_branch_guard_script_integrity` **não estão no mapa**
+(confirmado por grep — nenhum ADR menciona os dois nomes junto com "HEAD" ou "ancora"). Consequência
+concreta, seguindo a mesma cadeia de código do §6.2:
+
+- A **severidade** de `git_branch_guard_*` continua resolvida só pelo disco
+  (`ruleSeverity` cai direto em `diskRuleSeverity` para esses dois nomes, `validator.go:133-138`) —
+  uma edição não commitada de `rules: { git_branch_guard_script_integrity: off }` em `trackfw.yaml`
+  desliga a regra do guard de git **sem deixar rastro**, o mesmo buraco que o ADR fechou para
+  `credential_guard` mas não estendeu ao guard irmão.
+- O **baseline** também não exclui `git_branch_guard_*` — o carve-out em `filterBaselineTagged`
+  testa só `credentialGuardAnchoredRules[v.Rule]` (`validator.go:582`, `:595`), então uma violação de
+  `git_branch_guard_hook_resolvable` **pode** ser tolerada via `.trackfw-baseline.json`, mesmo não
+  versionado — o canal que o ADR fechou para credential-guard continua aberto aqui.
+
+Para quem for portar: se o motivo de existir da âncora em HEAD é "o guard não pode ser desligado
+pela mesma edição não commitada que ele existiria para denunciar", esse motivo **se aplica igualmente
+aos dois guards** — o projeto resolveu só um dos dois. Não há evidência no código ou nos ADRs de que
+essa diferença tenha sido uma decisão deliberada de escopo (como as exclusões explícitas do §6.2
+foram); é mais provável que seja um efeito de ordem de implementação (`credential_guard` foi ancorado
+primeiro, `git_branch_guard_*` ganhou as regras de integridade num ROADMAP posterior — ver
+`docs/roadmaps/` por data — sem revisitar a âncora).
+
+### 6.4 Violação ou aviso — a tabela completa, com o motivo declarado de cada default
+
+| Regra | Severidade default | Por quê (citação do código) |
+|---|---|---|
+| `credential_guard_hook_resolvable` | **error** (não está em `ruleDefaults`, cai no fallback) | resolução de caminho é factual — "existe e é executável" não tem ambiguidade a hedgear |
+| `git_branch_guard_hook_resolvable` | **error** (idem) | mesmo raciocínio |
+| `credential_guard_script_integrity` | **warning** (`ruleDefaults["credential_guard_script_integrity"]`, `validator.go:107`) | "o script não carrega marcador de versão, então esta regra não consegue distinguir drift legítimo (usuário não rodou `trackfw update` ainda) de adulteração real" (comentário, `validator_credential_guard_integrity.go:14-20`) |
+| `git_branch_guard_script_integrity` | **warning** (`ruleDefaults["git_branch_guard_script_integrity"]`, `validator.go:113`) | mesmo raciocínio, mesma limitação (sem marcador de versão) |
+| `credential_guard_mode_downgrade` | **error** (cai no fallback — comentário explícito diz que não precisa de entrada em `ruleDefaults`) | "`credential_guard.mode` não carrega uma forma gerada sujeita a drift — o único falso-positivo considerado é um relax legítimo ainda não commitado, e é aceito: o remédio é `git commit`" (`validator_credential_guard_integrity.go:26-30`) |
+
+**Consequência prática:** as duas regras de integridade de **conteúdo** de script (`*_script_integrity`)
+nascem em modo aviso — só bloqueiam se o projeto optar explicitamente por `rules: { <nome>: error }`
+commitado. As três regras de **resolução/ausência** (`*_hook_resolvable`) e a de **downgrade de modo**
+nascem bloqueantes. Um controle de integridade que só avisa quando o conteúdo do script muda é, por
+padrão, um aviso — vale repetir isso na cara: adulterar o **texto** do guard (inserir um `exit 0` no
+topo, por exemplo) não impede o `validate` de passar por padrão, só apagar o script ou desconectá-lo
+do config é que bloqueia por padrão.
+
+### 6.5 Fail-open ou fail-closed quando a própria checagem não roda
+
+- `headTrackfwYAML()` — sem `HEAD` resolvível (projeto sem commits, ou `trackfw.yaml` não rastreado
+  no HEAD) → cai só no disco, mesmo comportamento de antes do ADR (Decision point 4, "aceito e
+  escrito"). **Fail-open declarado**, não um bug: sem âncora não há o que comparar.
+- Manipulação de `GIT_DIR`/`GIT_WORK_TREE`/`GIT_CONFIG_COUNT`/`GIT_CEILING_DIRECTORIES` no ambiente
+  do processo derrotava a resolução do HEAD **silenciosamente**, mesmo com um `trackfw.yaml`
+  perfeitamente rastreado — provado por PoC no próprio ADR (Emenda 3, "Reprodução de Zeus": `mode:
+  block` no HEAD, `warn` em disco, `✓ No violations found.` com as variáveis manipuladas). Corrigido
+  (Emenda 4): as chamadas de `git` do validador agora limpam **todo** o ambiente com prefixo `GIT_`
+  antes de invocar o subprocesso, em vez de uma denylist fechada de nomes — a Emenda 3 tinha tentado
+  a denylist primeiro e ela quebrou no primeiro nome não previsto (`GIT_CONFIG_COUNT`).
+- Falha genérica do subprocesso `git` (não instalado, `PATH` vazio, permissão negada) — mesmo branch
+  de "sem âncora, cai no disco" acima. Não há um terceiro estado "não avaliado" aqui, ao contrário do
+  padrão do §5.1 (`barrier`/`doctor --remote`) — as regras de credential-guard **não** distinguem
+  "não consegui verificar o HEAD" de "verifiquei e não há divergência"; ambas resolvem para severidade
+  só-disco. Isto é uma inconsistência com o próprio princípio que o projeto declara alhures (§5.1) —
+  não encontrada documentada em nenhum ADR como exceção deliberada.
+
+### 6.6 Medido, não inferido: o que este repositório expõe agora
+
+Quatro medições feitas nesta sessão, com `trackfw validate` (binário `bin/trackfw` deste checkout) e
+`trackfw doctor --remote`, rodados de verdade — três num fixture isolado em `/tmp` (arquivos deste
+repositório copiados, sem link com o clone real), uma direto neste repositório:
+
+**a) Este repositório tem um hook nativo de git versionado, e ele está desligado agora.**
+`.husky/pre-commit` existe e está versionado (`scripts/trackfw-validate.sh` como corpo, 1 linha) — é
+um hook nativo real, não um guard de harness. O `.git/config` **local** deste checkout tem
+`hooksPath = /dev/null`, medido com `git config --local --list | grep hookspath` → `core.hookspath=/dev/null`.
+Isso **desativa `.husky/pre-commit`** neste clone, agora — nenhum commit local passa por ele.
+
+**b) `trackfw validate` não vê isso — por design de escopo, não por bug.** Rodei `trackfw validate`
+neste repositório: nenhuma menção a `hooksPath`, `.git/hooks` ou husky em 18 warnings, 0 violations.
+Consistente com o §1 deste documento: os guards deste projeto são hooks de **harness de agente**
+(`PreToolUse`), não hooks de git nativos — `validate` nunca teve a intenção de auditar
+`core.hooksPath`.
+
+**c) A única checagem que cobre isso existe, e ela encontrou o problema — mas não bloqueia nada.**
+`trackfw doctor --remote`, rodado neste repositório agora, retorna:
+```
+[hooks-path-neutralized] git:core.hooksPath
+  remedy: git config --unset core.hooksPath   # currently "/dev/null" discards every hook
+  invocation; unset to restore .git/hooks, or point it at your real hooks directory
+```
+(`internal/commands/doctor_remote.go:36-59`, valores que disparam: só `/dev/null`/`NUL` — um
+hooksPath de husky/lefthook legítimo como `.husky/_` nunca dispara falso positivo, testado nos dois
+sentidos em `internal/commands/doctor_remote_test.go:218-262`). Mas: (1) `doctor --remote` é **opt-in**
+via flag — nenhum workflow de `.github/workflows/` deste repositório o invoca (`grep -rl doctor
+.github/workflows/` não retorna nada); (2) `doctor` nunca chama `os.Exit` — o comando reporta e
+retorna 0 sempre, medido rodando `trackfw doctor --remote; echo exit=$?` → `exit=0`, mesmo com a
+finding presente. Um mecanismo de detecção existe, encontrou o problema real, e nada no fluxo do
+projeto o transforma em bloqueio. Este é o `core.hooksPath` que a tarefa original pedia para medir —
+e a resposta medida é: **detectado, não aplicado**.
+
+**d) O achado mais afiado desta seção — silenciável por completo, mesmo em modo estrito.** Testado
+num fixture em `/tmp`, isolado deste clone: copiei `trackfw.yaml`, `.claude/settings.json` (com
+`hooks.PreToolUse` apontando os dois guards, forma que `trackfw update` geraria) e os dois scripts
+para um diretório vazio.
+
+1. Íntegro: `trackfw validate` → limpo (só um aviso de `adr_dir` ausente, sem relação).
+2. Apaguei `scripts/trackfw-git-branch-guard.sh` do disco, mantendo a entrada em
+   `.claude/settings.json` → `git_branch_guard_hook_resolvable` dispara como **violação real**
+   (`✗ ... but the script does not exist`), `exit 1` em modo `strict`. **O mecanismo funciona neste
+   caso.**
+3. Restaurei o script, e em vez de apagá-lo, **removi a chave `hooks.PreToolUse` inteira** de
+   `.claude/settings.json` (`{"hooks": {}}`) — simula um usuário (ou um agente induzido) desligando o
+   guard pelo lado do harness, sem tocar em nenhum script. Rodei `trackfw validate` em modo `strict`:
+   **zero violations, zero warnings, `exit 0`.**
+
+Nenhuma das 5 regras do §6.1 cobre este caso, porque todas elas partem de "a entrada existe no
+config, resolve?" (`validateGuardHookResolvable`, `internal/validator/validator_credential_guard.go:301-314`
+— o laço só produz mensagem quando `collectCommandsWithMarker` **encontra** algo mencionando o
+script; se a entrada some do arquivo, não há nada para encontrar, e a ausência de mensagem é
+indistinguível de "este harness nunca teve o guard"). Isto é diferente do caso do item 6.2 acima
+(edição de `rules:` para desligar a regra) — aqui não é a **severidade** que foi manipulada, é o
+**objeto que a regra teria que auditar** que deixou de existir, e nenhuma das 5 regras audita "o
+harness ainda registra este guard, sim ou não" como fato independente de "se registrado, resolve".
+
+**Isto responde diretamente à pergunta que motivou esta seção:** um usuário — ou um agente, induzido
+ou não — que remove a entrada `PreToolUse` de `.claude/settings.json` (ou o arquivo equivalente dos
+outros 7 harnesses) desliga o guard de git inteiro, sem deixar nenhum traço no `trackfw validate`,
+em nenhum modo, com o script intacto no disco. A cobertura das 5 regras do §6.1 é real onde ela
+existe (script apagado ou adulterado, modo de credential-guard rebaixado, todos com o script *ainda
+referenciado* no config) — mas ela pressupõe que a referência ao guard continua no arquivo de
+config. Remover a referência inteira é o caminho mais simples de desligar o controle, e é
+precisamente o caminho que nenhuma das 5 regras audita.
+
+---
+
+## 7. O que eu faria diferente
 
 Este documento não é só elogio — o próprio código e o vault de conhecimento do projeto registram
 dívidas conhecidas que não valeria a pena reproduzir sem correção:
@@ -524,7 +715,11 @@ dívidas conhecidas que não valeria a pena reproduzir sem correção:
    escolha de produto legítima (menos fricção), mas ela é fácil de esquecer que foi feita — quem
    portar deveria decidir esse padrão conscientemente, documentá-lo tão explicitamente quanto o
    resto do design, e considerar se o contexto do harness-alvo (não um projeto open-source com
-   contribuidores externos, mas um ambiente corporativo interno) pede o inverso.
+   contribuidores externos, mas um ambiente corporativo interno) pede o inverso. O mesmo padrão
+   "nasce em aviso" se repete na regra que audita a integridade do **conteúdo** dos dois scripts de
+   guard (§6.4, `credential_guard_script_integrity`/`git_branch_guard_script_integrity`, ambas
+   `warning` por default) — a diferença é que ali há uma justificativa técnica declarada (ausência
+   de marcador de versão), enquanto aqui é puramente escolha de produto.
 
 2. **O trust-check de `barrier` tem um fail-open real, não declarado, causado por resolução de
    caminho** (`vault/notes/barrier-trust-check-fail-open-em-tmpdir-simbolico-2026-08-29.md`):
@@ -566,3 +761,24 @@ dívidas conhecidas que não valeria a pena reproduzir sem correção:
    "protege agentes" sem que isso fique explícito em nenhum lugar — até alguém medir `.git/hooks/`
    e perceber que está vazio. **Para quem for portar: documente essa fronteira no primeiro ADR do
    sistema de guardrails, não como uma descoberta tardia.**
+
+6. **As 5 regras de integridade (§6) auditam "se a entrada existe no config, ela resolve?" — nunca
+   "a entrada ainda existe?".** Medido em `/tmp` (§6.6.d): remover a chave `hooks.PreToolUse`
+   inteira de `.claude/settings.json` desliga os dois guards de git por completo, e `trackfw
+   validate` não produz nenhuma mensagem em nenhum modo — nem `lenient`, nem `strict`. É o caminho
+   mais simples de desligar o controle (mais simples que adulterar o script, que ao menos a
+   `*_script_integrity` pega como aviso), e é o único dos quatro vetores testados nesta seção que
+   nenhuma das 5 regras cobre. **Para quem for portar:** uma auditoria de integridade de hook
+   completa precisa de uma regra que verifique a **presença** da entrada de wiring como fato
+   independente da sua resolução — não só "se existir, ela é válida". Sem isso, a defesa contra
+   "usuário apaga o hook para burlar o harness" (o motivador original desta seção) tem um buraco
+   maior do que qualquer um dos outros limites documentados aqui.
+
+7. **A âncora em HEAD do §6.2 cobre só `credential_guard`, não `git_branch_guard` (§6.3) — e nada
+   no código ou nos ADRs registra isso como decisão deliberada.** Ao contrário dos limites 1-6
+   acima (todos declarados em algum comentário, ADR ou nota do vault), esta assimetria só apareceu
+   ao comparar `credentialGuardAnchoredRules` com a lista completa das 5 regras de integridade —
+   não há um comentário "git_branch_guard fica de fora de propósito" em lugar nenhum. **Para quem
+   for portar: se decidir replicar o mecanismo de âncora em HEAD, aplique-o a todo controle de
+   integridade equivalente na primeira passada — revisitar depois, regra por regra, é como esta
+   assimetria nasceu aqui.**

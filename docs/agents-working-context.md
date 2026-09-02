@@ -28064,3 +28064,56 @@ Fora de escopo (por instrução explícita): `quality.yml`, `scripts/check-*.sh`
 desenvolvimento do trackfw, não do produto. Não alterado nenhum código/gate/config; nenhuma
 operação de git executada (leitura, grep e execução de `trackfw`/`git status`/`git config` para
 medir comportamento, sem escrita).
+
+## 2026-09-02 — Hefesto (Code Quality) — INÍCIO (seção adicional: validação de integridade de hooks/gates)
+
+Tarefa: acrescentar ao mesmo documento (`docs/portabilidade/2026-09-02-guardrails-de-git-e-governanca-para-harness-de-agente.md`)
+uma seção nova sobre validação de integridade dos hooks/gates — a defesa contra o usuário apagar ou
+adulterar o guard para burlar o harness, pedida explicitamente pelo KG. Mesmas restrições: só o
+documento de portabilidade e este arquivo; nenhum código/gate/hook/config alterado; nenhuma
+operação de git. Preferir medir a inferir.
+
+## 2026-09-02 — Hefesto (Code Quality) — FIM (seção adicional: validação de integridade de hooks/gates)
+
+Nova `## 6. Validação de integridade dos hooks e gates` inserida antes de "O que eu faria diferente"
+(renumerada para `## 7`), com 6 subseções:
+
+- **6.1** — tabela das 5 regras (`credential_guard_hook_resolvable`/`git_branch_guard_hook_resolvable`,
+  `credential_guard_script_integrity`/`git_branch_guard_script_integrity`,
+  `credential_guard_mode_downgrade`) com o que cada uma compara e onde a referência mora.
+- **6.2** — a âncora em HEAD (`ADR-2026-08-12-severidade-das-regras-de-credential-guard-resolvida-
+  pela-mais-estrita-entre-head-e-disco.md`, mecanismo M4): por que comparar só contra disco não
+  protege nada, e por que o carve-out do baseline (`.trackfw-baseline.json`, não versionado) é um
+  canal separado fechado por exclusão de nome, não pela âncora.
+- **6.3** — achado de leitura de código, não de ADR: `git_branch_guard_hook_resolvable`/
+  `git_branch_guard_script_integrity` **não estão** em `credentialGuardAnchoredRules`
+  (`internal/validator/validator_credential_guard_integrity.go:196-200`) — a âncora em HEAD e a
+  exclusão de baseline valem só para as 3 regras de `credential_guard`, não para as 2 de
+  `git_branch_guard`. Sem ADR ou comentário que declare isso como decisão deliberada.
+- **6.4** — tabela de severidade default por regra, com a citação do porquê de cada uma
+  (`*_hook_resolvable`/`credential_guard_mode_downgrade` = error; `*_script_integrity` = warning,
+  por ausência de marcador de versão no script).
+- **6.5** — fail-open/fail-closed: sem HEAD resolvível cai no disco (aceito, ADR); manipulação de
+  `GIT_DIR`/`GIT_WORK_TREE`/`GIT_CONFIG_COUNT`/`GIT_CEILING_DIRECTORIES` derrotava a resolução
+  silenciosamente (corrigido: limpeza por prefixo `GIT_`, não denylist fechada); nenhum terceiro
+  estado "não avaliado" aqui, ao contrário do padrão do §5.1.
+- **6.6** — 4 medições reais nesta sessão (não inferidas): (a) `.husky/pre-commit` versionado neste
+  repo + `.git/config` local com `hooksPath=/dev/null` desativando-o, agora; (b) `trackfw validate`
+  não vê isso, por design de escopo (guards são de harness, não de git nativo); (c) `trackfw doctor
+  --remote` tem a checagem (`internal/commands/doctor_remote.go:36-59`) e **encontrou** a finding
+  `hooks-path-neutralized` rodando neste repo agora — mas é opt-in, não wired a nenhum workflow, e
+  `doctor` nunca chama `os.Exit` (exit 0 sempre, medido); (d) o achado mais forte — testado num
+  fixture isolado em `/tmp` (cópia de `trackfw.yaml`/`.claude/settings.json`/scripts deste repo,
+  sem link com o clone real): apagar o script do disco (script ainda referenciado no config) É
+  pego como violação real em modo strict; remover a chave `hooks.PreToolUse` inteira do config
+  (script intacto no disco) **não é pego por nenhuma das 5 regras, em nenhum modo** — nenhuma
+  delas audita "a entrada ainda está registrada?", só "se está registrada, resolve?".
+
+Itens 6 e 7 acrescentados à seção "O que eu faria diferente" (agora §7) apontando os dois achados
+acima (5) como os limites mais consequentes da seção nova, com cross-link de volta para §6.
+
+Fora de escopo (mantido): nenhum código/gate/hook/config alterado; nenhuma operação de git
+(`checkout`/`commit`/`push`/`branch`/`stash`) executada — só leitura, grep, e execução de
+`trackfw validate`/`trackfw doctor --remote`/`git config --local --list` (real, sem escrita) mais um
+fixture descartável em `/tmp`, apagado ao final, para medir o comportamento das 5 regras contra
+tentativas de sabotagem sem tocar no clone real.
