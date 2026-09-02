@@ -376,7 +376,7 @@ errado. Registrado em
 **Comandos de validação:** `bash scripts/check-output-encoding-declared.sh`, `make quality`
 
 ### ML-2B — Microlote corretivo da barreira final (3 bloqueantes, todos fail-open)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** `artemis-tf`
 **Files affected:** `scripts/check-output-encoding-declared.sh`,
 `scripts/check-shell-posix-portability.sh` (só o comentário), nota de vault + `vault/notes/index.md`
@@ -431,15 +431,46 @@ próximo leitor reabrir o furo.
 que o veredito do gate não muda.
 
 **Critérios de aceite:**
-- [ ] B1 falsificado nas duas direções: comentário inline com `<<` + `export` removido → **reprova**;
+- [x] B1 falsificado nas duas direções: comentário inline com `<<` + `export` removido → **reprova**;
       árvore íntegra → passa. E a contagem de população **não muda** (38) com o comentário presente
-- [ ] B2a e B2b falsificados: `pythonioencoding` minúsculo no alvo 1 **e** no alvo 2 → **reprova**;
+- [x] B2a e B2b falsificados: `pythonioencoding` minúsculo no alvo 1 **e** no alvo 2 → **reprova**;
       `PYTHONIOENCODING=UTF-8` (caixa alta no valor) **continua aceito**
-- [ ] S3 falsificado: `utf-8:surrogatepass` e `utf-8:replace` → **reprovam**; `utf-8` e `utf-8:strict`
+- [x] S3 falsificado: `utf-8:surrogatepass` e `utf-8:replace` → **reprovam**; `utf-8` e `utf-8:strict`
       → passam; **comentário corrigido**
-- [ ] As 3 guardas de vacuidade continuam funcionando (re-falsificar, não presumir)
-- [ ] Nota de vault do mecanismo de B1 escrita e linkada no `index.md`
-- [ ] `make quality` verde e `trackfw validate` exit 0
+- [x] As 3 guardas de vacuidade continuam funcionando (re-falsificar, não presumir)
+- [x] Nota de vault do mecanismo de B1 escrita e linkada no `index.md`
+- [x] `make quality` verde e `trackfw validate` exit 0
+
+
+**Evidência de aceite — auditoria do arquiteto (2026-09-02), reproduzida de forma independente:**
+
+```
+B2b (PRODUTO) pythonioencoding minusculo em hooks.js  -> rc=1, "2 de 2 invocacoes ... sem o prefixo"
+   (antes do ML-2B o mesmo cenario dava rc=0 com "2/2 invocacoes com prefixo")
+S3  utf-8:surrogatepass -> rc=1     utf-8:replace -> rc=1     utf-8:strict -> rc=0
+B1  comentario inline << + export removido -> rc=1, populacao segue 38
+controle de caixa: PYTHONIOENCODING=UTF-8 (valor em caixa alta) -> rc=0, aceito
+vacuidade (a): glob vazio -> "ALVO 1 vacuo: ... ZERO arquivos. Recuso passar em silencio."
+arvore integra -> rc=0
+```
+
+Os três cenários de falsificação foram restaurados; `git status` confirma `internal/`, `npm/src/` e
+`pypi/trackfw/` sem modificação.
+
+🔴 **Residual aceito pelo arquiteto, e a direção importa.** Do lado da **declaração** o mecanismo do
+B1 sobrevive: só o comentário inline com `<<`, sem remover o `export`, faz o gate reprovar com
+`NAO declara` um arquivo que **declara** uma linha abaixo. Mensagem enganosa — mas **fail-closed**,
+nunca permissivo. Aceito por dois motivos, ambos do relatório da `artemis-tf` e ambos corretos:
+(a) a heurística que fecharia isso — tratar `#` como início de comentário antes de procurar `<<` —
+falha na direção **aberta** em `echo "a # b" <<EOF`, trocando um fail-closed por um fail-open novo;
+(b) seria a 4ª mudança num bloco que os dois auditores já revisaram, e obrigaria a barreira a
+recomeçar. **Vira REQ de acompanhamento.**
+
+**Mudança além da lista de arquivos, declarada pela agente e aprovada por mim:** `docs/cli-parity.md`
+— a anotação `partial=` daquele gate afirmava que o rastreador de heredoc era *"comprovadamente
+inerte"*, exatamente o que o B1 falsificou. **Deixar a afirmação falsa seria pior que a edição fora
+de escopo**: é uma anotação de contrato, e é o texto que o próximo leitor usaria para decidir se
+mexe. Corrigida com o achado, o remédio e o residual.
 
 🔴 **Não toque em `internal/`, `npm/src/`, `pypi/trackfw/`** — o produto foi revisado e está sem
 achados nos dois pareceres. 🔴 **`check-roadmap-barrier-contract.sh` segue intocado.**

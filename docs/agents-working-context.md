@@ -28739,3 +28739,70 @@ a fronteira declarada bate com o código e ela nomeia o próprio furo de B1.
 inspecionados); `trackfw validate` → exit 0.
 **Pendente para outro papel:** nota de vault do mecanismo de B1 (fora da minha fronteira de
 escrita neste ciclo). Nenhuma operação de git; status do ML no roadmap não alterado.
+
+## 2026-09-02 — artemis-tf (QA) — INÍCIO
+**Handoff:** `trackfw_architect`, ML-2B do
+`ROADMAP-2026-09-02-saida-nao-ascii-declara-codificacao-em-script-gerado-e-em-gate` (wip) —
+microlote corretivo da barreira final: 3 bloqueantes *fail-open* em
+`scripts/check-output-encoding-declared.sh` (B1 do parecer de qualidade, B2 do mesmo parecer, S3 do
+parecer de segurança) mais S4 (comentário falso em `check-shell-posix-portability.sh`).
+**Escopo:** os 3 defeitos vivem no mesmo bloco de regex/parsing do gate que eu escrevi no ML-2A.
+Proibido tocar `internal/`, `npm/src/`, `pypi/trackfw/`, `check-roadmap-barrier-contract.sh` e os
+demais 36 gates. Falsificação em cópias de sandbox, nunca por mutação da árvore. Nenhuma operação
+de git.
+**Leitura prévia:** ML-2B no roadmap, `docs/qualidade/2026-09-02-parecer-codificacao-declarada.md`,
+`docs/seguranca/2026-09-02-parecer-codificacao-declarada.md`, `vault/notes/index.md` e as 3 notas
+de codificação de 2026-09-02.
+
+## 2026-09-02 — artemis-tf (QA) — FIM
+**Entregue (não commitado, para auditoria do `trackfw_architect`):**
+`scripts/check-output-encoding-declared.sh`, `scripts/check-shell-posix-portability.sh` (só o
+comentário), `docs/cli-parity.md` (anotação `partial=` do próprio gate), nota de vault
+`comentario-inline-com-heredoc-derruba-arquivo-da-populacao-do-gate-2026-09-02.md` + link no
+`index.md`, estas duas entradas e 3 arquivos de memória do próprio papel em
+`.claude/agent-memory/artemis-tf/` (`MEMORY.md` + 2 memórias de feedback). As mudanças em
+`.claude/agent-memory/zeus-tf/` que aparecem no `git status` **não são minhas** — são escrita
+concorrente do orquestrador.
+
+**B1 — população loose × declaração strict.** `population_lines()` (exclui só a linha inteiramente
+comentada, sem estado de heredoc) passa a decidir `first_py3` e a assertiva (c) da allowlist;
+`code_lines()` (com exclusão de heredoc) segue decidindo declaração. Falsificado nas duas direções:
+comentário inline com `<<` **+** `export` removido de `check-tty-detection.sh` → **`FAIL`, exit 1**
+(antes: `OK`, exit 0); árvore íntegra → `OK`, exit 0; **população inalterada em 38** com o
+comentário presente.
+
+**B2 — caixa.** `re.IGNORECASE` removido das 3 regexes; `(?i:...)` só no grupo de aliases.
+`export pythonioencoding=utf-8` (alvo 1) → `FAIL`; `pythonioencoding=utf-8 python3 -c` nas 2
+invocações de `npm/src/generators/hooks.js` (alvo 2, **produto**) → `FAIL` nomeando as linhas 147 e
+148 (antes: `2/2 invocacoes com prefixo`, exit 0); `export PYTHONIOENCODING=UTF-8` (caixa alta no
+**valor**) → segue aceito.
+
+**S3 — handler.** Sufixo restrito de `(?::[A-Za-z0-9_]+)?` para `(?::strict)?` nas duas regexes.
+`utf-8:surrogatepass` e `utf-8:replace` → `FAIL` nos dois alvos; `utf-8` e `utf-8:strict` → `OK`.
+Minúsculo de propósito: `codecs.lookup_error('STRICT')` → `unknown error handler name` (medido).
+**O comentário falso foi corrigido**, não só a regex: as linhas que afirmavam "com encoding utf-8
+nenhum `str` do Python é inencodável" foram substituídas pelos dois motivos reais — surrogate solto
+preservado por `json.load` (`ED A0 80` gravado no artefato) e o handler valendo também para o
+**decode do stdin**, onde `:replace` reintroduz a corrupção que o ML-0A reprovou.
+
+**S4.** Comentário de `check-shell-posix-portability.sh` corrigido: o gate **não** invoca `python3`
+(as 2 ocorrências são prosa); a declaração fica como preventiva e uniforme. Veredito idêntico antes
+e depois, medido contra a versão de `HEAD`: `OK — 10 assinaturas ... confirmadas`, exit 0 nos dois.
+
+**3 guardas de vacuidade re-falsificadas por execução** (não presumidas): (a) raiz isolada, glob
+vazio → `ALVO 1 vacuo: ... ZERO arquivos`; (b) população totalmente vazia → `NENHUM foi
+classificado como invocador`; (c) só o próprio gate fora da população → `o gate deixou de se
+aplicar a si mesmo`. Mais: allowlist (a) caminho morto, (b) obsoleta, (c) sem objeto; alvo 2 vácuo
+por âncora quebrada; e auto-aplicação (remover o `export` **deste** gate → ele se nomeia).
+
+**Residual declarado, na direção FECHADA (reportado, não corrigido):** do lado da *declaração* o
+mecanismo de B1 sobrevive — comentário inline com `<<` acima do `export` faz o gate reprovar com
+`NAO declara` um arquivo que declara (`rc=1`). Ruidoso, nunca permissivo. Não o corrigi porque a
+heurística que o fecharia (`#` = comentário) falha na direção **aberta** em `echo "a # b" <<EOF`, e
+seria uma 4ª mudança no bloco que os dois auditores já revisaram. Documentado na nota de vault e na
+anotação de `docs/cli-parity.md`; candidato a REQ de acompanhamento.
+
+**Evidência:** `make quality` → exit 0 (3.612 linhas, rodado DEPOIS de todas as escritas, inclusive `docs/cli-parity.md` e a nota de vault); `bin/trackfw validate` → exit 0 (18 warnings pré-existentes). `(?i:...)` (flag inline com escopo) exige Python 3.6+; a matriz do `quality.yml` é 3.10/3.12 — verificado.
+**Não commitado; nenhuma operação de git. Status do ML-2B no roadmap deliberadamente NÃO alterado**
+— o corpus de `check-roadmap-barrier-contract.sh` é pinado sobre as linhas de veredito dos roadmaps
+(`PINNED_CORPUS_HASH:434`), e a transição de status cabe ao `trackfw_architect` após a auditoria.

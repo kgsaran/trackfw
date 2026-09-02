@@ -38,17 +38,46 @@
 #
 # ACEITO no alvo 1 (assignment exportado, em linha de CODIGO):
 #   export PYTHONIOENCODING=utf-8        <- forma canonica da arvore hoje (37/37)
-#   export   PYTHONIOENCODING=UTF-8      <- espacos extras, caixa alta
+#   export   PYTHONIOENCODING=UTF-8      <- espacos extras, caixa alta NO VALOR
 #   export PYTHONIOENCODING="utf-8"      <- aspas duplas ou simples
 #   export PYTHONIOENCODING=utf8         <- aliases do codec utf_8 do Python:
 #   export PYTHONIOENCODING=utf_8            utf-8 / utf8 / utf_8 / u8
 #   export PYTHONIOENCODING=u8
-#   export PYTHONIOENCODING=utf-8:replace <- handler de erro opcional. Aceito
-#       porque, com encoding utf-8, nenhum str do Python e inencodavel: o
-#       handler nunca dispara e nao ha dado escondido. E o mesmo veredito do
-#       ML-0A, que so reprovou `errors="replace"` sobre encoding NAO-utf8.
+#   export PYTHONIOENCODING=utf-8:strict <- unico handler de erro aceito, e ele
+#       e o default. Ver a recusa dos demais handlers abaixo.
 #
 # RECUSADO no alvo 1, e o motivo de cada recusa:
+#   - NOME da variavel em outra caixa (`export pythonioencoding=utf-8`). Nome de
+#     variavel em shell POSIX e case-SENSITIVE: `pythonioencoding` e OUTRA
+#     variavel, que o Python nunca le. A declaracao teria efeito ZERO. A
+#     insensibilidade de caixa vale so para o VALOR — os aliases de codec do
+#     Python sao case-insensitive —, e por isso o `(?i:...)` esta aplicado
+#     apenas ao grupo de aliases, e nao a regex inteira. (Um `re.IGNORECASE`
+#     global aqui aceitava, ate o ML-2B, `pythonioencoding=utf-8` como conforme
+#     nos DOIS alvos, inclusive no alvo 2, que e produto.)
+#   - QUALQUER handler de erro que nao seja `strict` (`:replace`,
+#     `:backslashreplace`, `:surrogatepass`, `:surrogateescape`, ...). O
+#     comentario anterior a este afirmava que o handler "nunca dispara, porque
+#     com encoding utf-8 nenhum str do Python e inencodavel". ISSO E FALSO e foi
+#     medido: `json.load` PRESERVA surrogate solto vindo de escape `\udXXX`
+#     (JSON permite; o modulo json nao valida pareamento), e surrogate solto E
+#     inencodavel em utf-8. Com `utf-8:surrogatepass`, "a\ud800b" sai como os
+#     bytes `61 ed a0 80 62` — UTF-8 INVALIDO gravado no artefato; com utf-8
+#     estrito o mesmo dado estoura UnicodeEncodeError e cai no fallback limpo.
+#     Segundo motivo, independente e mais amplo: o handler do PYTHONIOENCODING
+#     vale tambem para o DECODE do stdin, nao so para o encode do stdout. Logo
+#     `utf-8:replace` produziria exatamente a corrupcao silenciosa que o ML-0A
+#     mediu e reprovou (byte indefinido virando U+FFFD sem erro). Aceitar
+#     handler seria o gate homologando o que a Wave 0 decidiu recusar.
+#     Consequencia medida no consumidor, em
+#     vault/notes/handler-de-erro-em-pythonioencoding-reintroduz-byte-invalido-
+#     e-os-3-serve-divergem-2026-09-02.md: o mesmo artefato invalido faz Go e
+#     Node responderem `active:true` com U+FFFD e o Python responder
+#     `active:false` — o banner some em UM dos 3 runtimes, sem crash nem log.
+#     `:strict` e aceito por ser explicitamente o default (nao muda nada); a
+#     caixa dele e minuscula de proposito, porque o proprio Python recusa
+#     `STRICT` (`codecs.lookup_error('STRICT')` -> unknown error handler name).
+#     Zero falso positivo: os 37 gates da arvore usam `utf-8` puro.
 #   - valor que nao seja alias de utf_8 (ex.: PYTHONIOENCODING=cp1252). E a
 #     regressao mais barata de escrever e a que um `grep -q PYTHONIOENCODING`
 #     ingenuo deixaria passar. Falsificada por execucao.
@@ -133,30 +162,70 @@ failures = []
 notes = []
 
 # Aliases do codec utf_8 do Python (encodings/aliases.py), mais o proprio nome.
-UTF8_ALIASES = r"(?:utf-8|utf8|utf_8|u8)"
+# O `(?i:...)` cobre SO o valor: alias de codec e case-insensitive no Python,
+# mas o NOME da variavel de ambiente e case-sensitive no shell. Nenhuma das tres
+# regexes abaixo leva re.IGNORECASE global — ver a recusa de caixa no cabecalho.
+UTF8_ALIASES = r"(?i:utf-8|utf8|utf_8|u8)"
+
+# Handler de erro: so o default explicito. Minusculo de proposito — o Python
+# recusa `STRICT`. Ver a recusa de handler no cabecalho (surrogate solto de
+# json.load + handler valendo tambem para o decode do stdin).
+UTF8_HANDLER = r"(?::strict)?"
 
 # ALVO 1: assignment exportado, valor alias de utf_8, aspas e espacos tolerados,
-# handler de erro opcional.
+# handler de erro opcional e restrito a `strict`.
 DECL_RE = re.compile(
     r'^[ \t]*export[ \t]+PYTHONIOENCODING=(?P<q>["\']?)'
     + UTF8_ALIASES
-    + r'(?::[A-Za-z0-9_]+)?(?P=q)[ \t]*(?:#.*)?$',
-    re.IGNORECASE,
+    + UTF8_HANDLER
+    + r'(?P=q)[ \t]*(?:#.*)?$',
 )
 # Qualquer assignment da variavel, com valor QUALQUER — usado so para
-# diagnosticar "declarada, mas com valor errado" em vez de "ausente".
-ANY_ASSIGN_RE = re.compile(r'^[ \t]*(?:export[ \t]+)?PYTHONIOENCODING=', re.IGNORECASE)
+# diagnosticar "declarada, mas com valor errado" em vez de "ausente". Sem
+# IGNORECASE: `pythonioencoding=` e outra variavel, e chama-la de "forma nao
+# aceita" seria mais generoso do que ela merece — cai em "NAO declara".
+ANY_ASSIGN_RE = re.compile(r'^[ \t]*(?:export[ \t]+)?PYTHONIOENCODING=')
 PY3_RE = re.compile(r'\bpython3\b')
 COMMENT_RE = re.compile(r'^[ \t]*#')
 
 HEREDOC_RE = re.compile(r'<<-?[ \t]*(["\']?)([A-Za-z_][A-Za-z0-9_]*)\1')
 
 
+def population_lines(path):
+    """Predicado de POPULACAO (loose): exclui SO a linha inteiramente
+    comentada, sem rastrear heredoc.
+
+    Por que este predicado e diferente do de DECLARACAO (ML-2B, achado B1):
+    HEREDOC_RE procura o delimitador na linha inteira, entao um comentario
+    INLINE numa linha de codigo — `true  # exemplo: <<EOF` — liga o estado de
+    heredoc e faz `code_lines` descartar TODO o resto do arquivo. Do lado da
+    declaracao isso e conservador (menos linhas candidatas = mais dificil
+    passar). Do lado da populacao e FAIL-OPEN: o arquivo inteiro sai da
+    varredura e sua falta de declaracao deixa de ser vista. Medido: com o
+    comentario inline mais a remocao do `export` de um gate, a arvore mutada
+    passava com exit 0. A arvore ja tem cinco comentarios com `<<`, inertes so
+    por serem de linha inteira — uma reflow de paragrafo os armaria.
+
+    Trade-off assumido, na direcao segura: uma mencao MORTA a `python3` dentro
+    de corpo de heredoc passa a colocar o arquivo na populacao e a exigir dele
+    a declaracao. Isso e falso positivo, ruidoso e FECHADO — reprova pedindo
+    uma linha inofensiva —, ao contrario do falso negativo que substitui. Hoje
+    nao ocorre: as duas populacoes coincidem (38 = 38, delta vazio nas duas
+    direcoes)."""
+    with open(path, encoding="utf-8", errors="replace") as fh:
+        return [
+            (i, raw)
+            for i, raw in enumerate(fh.read().splitlines(), start=1)
+            if not COMMENT_RE.match(raw)
+        ]
+
+
 def code_lines(path):
-    """Devolve [(lineno, texto)] das linhas de CODIGO do script: exclui linhas
-    de comentario e todo corpo de heredoc. As duas exclusoes existem porque
-    mencao morta (comentario, corpo de heredoc) nao tem efeito no ambiente —
-    e a 'metade positiva' do achado de 2026-09-01."""
+    """Predicado de DECLARACAO (strict). Devolve [(lineno, texto)] das linhas de
+    CODIGO do script: exclui linhas de comentario e todo corpo de heredoc. As
+    duas exclusoes existem porque mencao morta (comentario, corpo de heredoc)
+    nao tem efeito no ambiente — e a 'metade positiva' do achado de 2026-09-01.
+    NAO use isto para decidir populacao: ver population_lines."""
     out = []
     delim = None
     with open(path, encoding="utf-8", errors="replace") as fh:
@@ -188,13 +257,17 @@ if not gate_paths:
 else:
     invokers = []
     for path in gate_paths:
-        lines = code_lines(path)
-        first_py3 = next((n for n, t in lines if PY3_RE.search(t)), None)
+        # POPULACAO: predicado loose (ML-2B/B1).
+        first_py3 = next(
+            (n for n, t in population_lines(path) if PY3_RE.search(t)), None
+        )
         if first_py3 is None:
             continue
         invokers.append(path)
         if path in allowlist:
             continue
+        # DECLARACAO: predicado strict, com exclusao de heredoc.
+        lines = code_lines(path)
         decl = next((n for n, t in lines if DECL_RE.match(t)), None)
         if decl is None:
             wrong = next((n for n, t in lines if ANY_ASSIGN_RE.match(t)), None)
@@ -202,8 +275,11 @@ else:
                 failures.append(
                     "%s: invoca python3 (linha %d) e atribui PYTHONIOENCODING na "
                     "linha %d, mas a forma nao e aceita — exige "
-                    "`export PYTHONIOENCODING=<alias de utf_8>`; assignment sem "
-                    "export nao chega ao filho e valor nao-utf8 nao corrige nada."
+                    "`export PYTHONIOENCODING=<alias de utf_8>[:strict]`; "
+                    "assignment sem export nao chega ao filho, valor nao-utf8 "
+                    "nao corrige nada e handler de erro diferente de `strict` "
+                    "reintroduz o defeito (encode de surrogate solto e decode "
+                    "de byte invalido no stdin)."
                     % (path, first_py3, wrong)
                 )
             else:
@@ -260,8 +336,11 @@ else:
                 "mais — remova a entrada de ALLOWLIST neste arquivo." % allowed
             )
         # (c) o arquivo esta de fato na populacao — se deixou de invocar
-        #     python3, a excecao tambem ficou sem objeto.
-        if not any(PY3_RE.search(t) for _n, t in alines):
+        #     python3, a excecao tambem ficou sem objeto. Pergunta de
+        #     POPULACAO, logo predicado loose (ML-2B/B1): sob o strict, um
+        #     comentario inline com `<<` neste arquivo dispararia "SEM OBJETO"
+        #     sem motivo.
+        if not any(PY3_RE.search(t) for _n, t in population_lines(allowed)):
             failures.append(
                 "ALLOWLIST SEM OBJETO: %s nao invoca mais python3; a excecao "
                 "nao tem mais razao de existir." % allowed
@@ -282,10 +361,14 @@ else:
 # py_compile de projetos Python), que nao faz parte deste contrato.
 ATTENTION_CALL_RE = re.compile(r'python3[ \t]+-c\b')
 ATTENTION_SIG_RE = re.compile(r'json\.load\(sys\.stdin\)')
+# Sem re.IGNORECASE, pelas mesmas duas razoes do alvo 1 — e aqui elas incidem
+# sobre PRODUTO: `pythonioencoding=utf-8 python3 -c` no literal seta uma
+# variavel que o Python nunca le (reversao completa do ML-1A na maquina de quem
+# adota o trackfw), e handler que nao seja `strict` grava byte invalido no
+# .trackfw-attention.json — que e exatamente o artefato lido pelos 3 `serve`.
 PREFIX_RE = re.compile(
-    r'PYTHONIOENCODING=(?P<q>["\']?)' + UTF8_ALIASES
-    + r'(?::[A-Za-z0-9_]+)?(?P=q)[ \t]+python3[ \t]+-c\b',
-    re.IGNORECASE,
+    r'PYTHONIOENCODING=(?P<q>["\']?)' + UTF8_ALIASES + UTF8_HANDLER
+    + r'(?P=q)[ \t]+python3[ \t]+-c\b',
 )
 MIN_CALLS = 2  # o literal tem duas invocacoes: TOOL e MSG.
 
