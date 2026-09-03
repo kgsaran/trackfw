@@ -44,7 +44,7 @@ artefato que se reporta saudável estando inerte.
 > Dependências: nenhuma.
 
 ### ML-1A — `.github/PULL_REQUEST_TEMPLATE.md` e gate de palavra-chave
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** `ares-tf`
 **Files affected:** `.github/PULL_REQUEST_TEMPLATE.md` (novo),
 `scripts/check-pr-closing-keyword.sh` (novo), `.github/workflows/quality.yml`, `Makefile`,
@@ -73,14 +73,50 @@ os 4 estão fora desse harness — é a causa raiz de eles sobreviverem ao `make
 novo que nasça fora dele repete a classe.
 
 **Critérios de aceite:**
-- [ ] `Fecha #123` no corpo → **reprova nomeando a linha**; `Closes #123` → **passa**
-- [ ] 🔴 **Falso positivo medido contra os corpos reais dos PRs já mergeados deste repo:** zero
+- [x] `Fecha #123` no corpo → **reprova nomeando a linha**; `Closes #123` → **passa**
+- [x] 🔴 **Falso positivo medido contra os corpos reais dos PRs já mergeados deste repo:** zero
       reprovações indevidas, com o número de corpos testados no relatório
-- [ ] 🔴 **Vacuidade:** corpo vazio / evento sem payload / execução fora de `pull_request` →
+- [x] 🔴 **Vacuidade:** corpo vazio / evento sem payload / execução fora de `pull_request` →
       **falha ou `not_evaluated`**, verificado por execução
-- [ ] O gate tem cenário em `scripts/check-gates-falsify.sh`
-- [ ] Ligado no workflow e **verificado por execução**, não presumido
-- [ ] `make quality` verde e `trackfw validate` exit 0
+- [x] O gate tem cenário em `scripts/check-gates-falsify.sh`
+- [x] Ligado no workflow e **verificado por execução**, não presumido
+- [x] `make quality` verde e `trackfw validate` exit 0
+
+
+**Evidência de aceite — auditoria do arquiteto (2026-09-02), medida de forma independente:**
+
+```
+self-test                    -> rc=0, 25 cenarios
+corpo real do PR #247        -> rc=1  <- o defeito, nomeado
+corpo com Closes + prosa     -> rc=0
+241 corpos reais mergeados   -> 239 passam | reprova so o #247 | 1 not_evaluated (#49, vazio)
+                                ZERO falso positivo
+```
+
+Casamento ingênuo (palavra-chave em qualquer posição da linha) reprovaria **43** linhas no mesmo
+corpus — a adjacência é o que separa o gate útil do gate que seria desligado na primeira semana.
+
+🔴 **O agente corrigiu o enunciado desta REQ, e a correção é boa.** Eu listei `Resolve #` entre as
+formas a proibir. É **falso cognato**: a grafia é idêntica nos dois idiomas e o inglês
+`Resolve|Resolves|Resolved` **é válido** no GitHub. Recusá-la reprovaria um corpo que funciona — o
+pior falso positivo possível. `Resolvido/Resolvida/Resolvem/Resolver` seguem recusados.
+
+🔴 **Achado que justifica o desenho:** só **4 dos 241** PRs deste repositório fecharam issue
+automaticamente. E os PRs #238/#240 **pareciam** defeito — abrem com `Corrige o #237.` — mas têm
+`Fixes #N` no rodapé e fecharam de verdade. Por isso a isenção é **por número de issue**, não global:
+é ela que impede esses dois de virarem falso positivo.
+
+**O gate entrou no harness de falsificação** — Cenário 182 de `scripts/check-gates-falsify.sh`,
+que sabota uma cópia trocando a comparação por número por uma global e prova por execução que a
+cópia sabotada fica **verde** sobre o corpo do defeito. É a correção direta da causa raiz medida
+hoje: 4 gates vácuos, os 4 fora deste harness.
+
+**Vacuidade:** `exit 2 (not_evaluated)`, nunca 0 em silêncio, para corpo vazio, só espaços, arquivo
+ausente, payload sem `.pull_request.body` e evento `push`. Verificado com payloads sintéticos
+rodando **a linha de comando exata do workflow**.
+
+**Não coberto, declarado como `partial=`:** paráfrase (`este PR fecha, por fim, a #246`). Deliberado
+— a adjacência é o que mantém o falso positivo em zero.
 
 **Comandos de validação:** `bash scripts/check-pr-closing-keyword.sh`, `make quality`
 
