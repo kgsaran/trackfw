@@ -56,5 +56,16 @@ def test_comentario_nao_conta_como_regra(tmp_path):
     assert _read(target) == "# .trackfw-log merge=union\n" + GITATTRIBUTES_BLOCK
 
 
-def test_bloco_igual_ao_gitattributes_versionado_na_raiz():
-    assert _read(os.path.join(REPO_ROOT, ".gitattributes")) == GITATTRIBUTES_BLOCK
+def test_bloco_contido_no_gitattributes_versionado_na_raiz():
+    # CONTENCAO, nao igualdade: o `init` ANEXA o bloco a um `.gitattributes` que ja
+    # exista, entao exigir o arquivo inteiro proibiria este repositorio de ter
+    # qualquer regra propria — inclusive `*.go text eol=lf`, sem a qual um checkout
+    # com core.autocrlf=true traz CRLF em todo .go. Medido: 0 de 213 com a regra,
+    # 213 de 213 sem ela. A contencao continua pegando deriva do bloco.
+    # Normaliza o fim de linha dos DOIS lados por simetria com Go e Node. Aqui o
+    # open() em modo texto ja traduz sozinho — e era por isso que o Python passava
+    # no Windows enquanto os outros dois reprovavam, sobre o MESMO arquivo.
+    def _norm(text):
+        return text.replace("\r\n", "\n")
+    
+    assert _norm(GITATTRIBUTES_BLOCK) in _norm(_read(os.path.join(REPO_ROOT, ".gitattributes")))

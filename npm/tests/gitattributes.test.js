@@ -71,7 +71,18 @@ test('linha comentada não conta como regra existente', () => {
   }
 })
 
-test('bloco gerado é igual ao .gitattributes versionado na raiz do repositório', () => {
+test('bloco gerado está contido no .gitattributes versionado na raiz do repositório', () => {
   const versioned = fs.readFileSync(path.join(__dirname, '..', '..', '.gitattributes'), 'utf8')
-  assert.equal(versioned, GITATTRIBUTES_BLOCK)
+  // CONTENCAO, nao igualdade: o `init` ANEXA o bloco a um `.gitattributes` que ja
+  // exista, entao exigir o arquivo inteiro proibiria este repositorio de ter
+  // qualquer regra propria — inclusive `*.go text eol=lf`, sem a qual um checkout
+  // com core.autocrlf=true traz CRLF em todo .go. Medido: 0 de 213 com a regra,
+  // 213 de 213 sem ela. A contencao continua pegando deriva do bloco.
+  // Normaliza o fim de linha dos DOIS lados: com core.autocrlf=true o arquivo da
+  // raiz vem em CRLF no checkout, enquanto o bloco e uma constante em LF.
+  const norm = (t) => t.split("\r\n").join("\n")
+  assert.ok(
+    norm(versioned).includes(norm(GITATTRIBUTES_BLOCK)),
+    '.gitattributes da raiz nao contem o bloco gerado pelo init'
+  )
 })
