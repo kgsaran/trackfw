@@ -13,7 +13,7 @@ ADR:
 
 ## ML-1A — Remover o `continue` que tira o arquivo do corpus congelado
 
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 
 Uma linha. O `continue` que segue o registro em `MISSING_FROM_DISK` fazia o arquivo sair do scan —
 e com ele saíam a contagem, as waves e as linhas de veredito que compõem o hash da AC10.
@@ -40,7 +40,22 @@ FAIL [corpus/non-reclassification]                   "corpus reclassificado: has
 
 Seis falhas: **uma legítima e cinco falsas**. A última afirma reclassificação que não houve.
 
-**Direção da correção — depois.** Mesmo roadmap apagado, mesmo gate: *(preenchido pela medição)*
+**Direção da correção — depois.** Mesmo roadmap apagado, mesmo gate:
+
+```
+FAIL [corpus/basename-missing-from-disk]   <- a legitima, e agora a UNICA
+corpus (snapshot=...): files=144 waves=432 exit2=14 lines=1500
+OK   [corpus/files-count]
+OK   [corpus/waves-count]
+OK   [corpus/exit2-count]
+OK   [corpus/mls-complete-verdict-counts]
+OK   [corpus/acceptance-evidence-verdict-counts]
+OK   [corpus/non-reclassification]
+```
+
+**Seis falhas viraram uma.** As contagens voltam a bater com os pinos — `files=144`, `waves=432`,
+`exit2=14` — e o hash da tabela de vereditos volta a fechar. A tripwire continua reprovando, que é
+o que ela deve fazer; o que parou foi ela arrastar a AC10 junto.
 
 **Controle da AC10** — ela precisa continuar acendendo pelo motivo certo, ou a correção teria
 desligado o contrato em vez de consertá-lo. *(preenchido pela medição)*
