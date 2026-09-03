@@ -235,9 +235,17 @@ fazer.
 (APFS, NTFS). Consequência que decide: **verde no CI Linux, vermelho na máquina do dev** — a AC
 numérica prevê 2 violações e dá 4, nos 3 CLIs.
 
+**B1-bis — SEGUNDO resíduo vácuo não declarado, achado no despacho do ML-2B e confirmado pelo
+arquiteto.** `pypi/trackfw/commands/status.py:50` — `_count_reqs_by_status` chama `_list_files(req_dir)`
+(linha 26), que é `os.listdir` de **um nível só** e **não** passa pelo ponto único. Em `by_agent`, o
+`status` do Python conta **zero REQs**. O arquivo já importa `resolve_req_files` (2 ocorrências) e
+usa em outro ponto — a divergência é interna ao mesmo arquivo. **Mesma espécie do `serve/api_chain`:
+vácuo, não superconjunto.** Entra na lista de resíduos declarados junto com ele.
+
 **Critérios de aceite:**
 - [ ] B1: a afirmação universal do `cli-parity.md` virou enumeração, e `serve/api_chain` está na
       lista de resíduos **com a medição** (1 nó no Go, 0 no Node/Python)
+- [ ] B1-bis: `pypi/.../status.py:50` também está na lista, com a medição do `by_agent`
 - [ ] S5: `agents: ["", "zeus"]` faz os **3** CLIs gravarem em `req_dir/zeus/`. Falsificado nas duas
       direções
 - [ ] §4: em FS case-insensitive, `req_dir/Backlog` ≡ `backlog` deixa de contar em dobro —
