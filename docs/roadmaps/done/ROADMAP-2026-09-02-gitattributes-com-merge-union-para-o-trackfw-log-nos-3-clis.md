@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-02
 squad: ares-tf
 req: "docs/req/REQ-2026-09-02-reconciliacao-pos-merge-dos-prs-238-e-240-e-o-trackfw-log-que-conflita-em-toda-branch-paralela.md"
@@ -7,7 +7,7 @@ req: "docs/req/REQ-2026-09-02-reconciliacao-pos-merge-dos-prs-238-e-240-e-o-trac
 
 # Roadmap: `.gitattributes` com `merge=union` para o `.trackfw-log` nos 3 CLIs
 
-> Criado em: 2026-09-02 | Status: wip
+> Criado em: 2026-09-02 | Status: done
 
 ## Context
 
