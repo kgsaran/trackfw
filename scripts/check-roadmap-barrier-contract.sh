@@ -490,7 +490,14 @@ elif [[ -n "${CORPUS_FILELIST:-}" ]]; then
     on_disk=$(find "$ROOT_DIR/docs/roadmaps" -type f -name "$base" | head -n1)
     if [[ -z "$on_disk" ]]; then
       MISSING_FROM_DISK="${MISSING_FROM_DISK}${MISSING_FROM_DISK:+, }$base"
-      continue
+      # NAO pula o arquivo. O veredito e computado sobre os BYTES DO SNAPSHOT — o disco
+      # so prova existencia, como o comentario logo abaixo diz. Pular aqui removia o
+      # arquivo do corpus CONGELADO, e ai as contagens e o hash da AC10 mudavam por
+      # truncamento em vez de por reclassificacao. Medido: apagando UM roadmap do disco,
+      # o gate emitia 6 falhas — a legitima (basename-missing-from-disk) mais CINCO
+      # falsas, entre elas "corpus reclassificado: hash da tabela de vereditos mudou",
+      # quando nada tinha sido reclassificado. A tripwire de disco e a AC10 sao
+      # contratos distintos e agora reprovam em separado.
     fi
     CORPUS_FILES=$((CORPUS_FILES + 1))
     # Conteúdo vem do SNAPSHOT (bytes congelados), nunca do disco — o disco só prova
