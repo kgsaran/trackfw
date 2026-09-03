@@ -34,8 +34,8 @@ E o executável não é encontrado porque a **fixture substitui o `$PATH` inteir
 npm/tests/ship.test.js:867,944    env: { PATH: tmpBin, HOME: tmpDir, ... }
 ```
 
-`tmpBin` contém um symlink **sem extensão** chamado `git`. No Windows o `PATHEXT` exige `git.exe` —
-e o symlink ainda por cima exige Developer Mode para ser criado. O par Python é literal:
+`tmpBin` contém um symlink **sem extensão** chamado `git`. No Windows o `PATHEXT` exige `git.exe`.
+O par Python é literal:
 
 ```python
 pypi/tests/test_barrier.py:446    os.symlink(git_path, Path(curated) / "git")
@@ -49,6 +49,21 @@ aquele ambiente.
 
 Pior: um conserto no job daria a impressão de ter funcionado se a contagem mudasse por outro motivo,
 e o defeito real continuaria em duas fixtures.
+
+## 🔴 Correção (ML-1E, 2026-09-03): o symlink NÃO é o bloqueio
+
+A primeira redação desta nota dizia que *"o symlink ainda por cima exige Developer Mode para ser
+criado"*. **É falso, e a evidência está no próprio log citado acima:** `git ... exited with null` é
+emitida por `npm/src/ship/runner.js:124`, **dentro do produto já spawnado**. Se o `symlinkSync`
+tivesse sido negado, o teste morreria **antes**, e essa mensagem não existiria.
+
+**O bloqueio é só o nome sem extensão.** E a diferença muda o remédio: no Windows o processo roda com
+o caminho do **alvo**, então o symlink mantém o wrapper do Git for Windows achando a instalação dele
+— enquanto a **cópia**, que a premissa falsa exigiria, pode quebrá-lo. É a mesma classe do shim
+assinado do `/usr/bin/git` do macOS, que o ML-1A mediu ao quebrar o POSIX na primeira tentativa.
+
+Deixar a linha falsa faria o próximo agente projetar contra uma restrição que não existe, e escolher
+cópia onde symlink é melhor.
 
 ## É a MESMA classe do binário sem `.exe`
 

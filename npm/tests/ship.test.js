@@ -818,6 +818,77 @@ test('--no-pr wiring: commander negatable option sets options.pr=false', () => {
 })
 
 // ────────────────────────────────────────────────────────────────────────────
+// Fixture helpers — $PATH curado com um git resolvível (ML-1E)
+//
+// Os dois integration tests abaixo substituem o $PATH inteiro do processo filho
+// por um diretório temporário. Se o `git` desse diretório não resolver, o
+// spawnSync do produto devolve status null (ENOENT) e a mensagem vira
+// "git ... exited with null" — que parece problema de ambiente do job e não é.
+// Ver vault/notes/exited-with-null-e-enoent-e-a-fixture-substitui-o-path-nao-o-job-2026-09-03.md
+// ────────────────────────────────────────────────────────────────────────────
+
+/**
+ * resolveGitPath devolve o caminho absoluto do git no $PATH atual.
+ *
+ * `which` não existe no Windows: o spawnSync falharia com ENOENT, stdout viria
+ * null e `.trim()` quebraria com TypeError antes mesmo da questão do PATHEXT.
+ * Lá o equivalente é `where`, que pode devolver várias linhas — a primeira é a
+ * que o PATH resolveria.
+ * @returns {string}
+ */
+function resolveGitPath() {
+  const finder = process.platform === 'win32' ? 'where' : 'which'
+  const found = spawnSync(finder, ['git'], { encoding: 'utf8' })
+  const gitPath = ((found.stdout || '').split(/\r?\n/)[0] || '').trim()
+  if (!gitPath) throw new Error(`git not found in PATH (\`${finder} git\` returned nothing)`)
+  return gitPath
+}
+
+/**
+ * placeExecutableInPath disponibiliza src dentro de binDir e devolve o caminho
+ * criado. O nome de destino preserva o basename da origem — no Windows isso
+ * mantém o `.exe` que o PATHEXT exige; um arquivo chamado só `git` nunca é
+ * resolvido pelo CreateProcess.
+ *
+ * O symlink é a forma primária nos dois sistemas. No POSIX porque copiar é
+ * regressão medida: o /usr/bin/git do macOS é um shim assinado que morre fora
+ * do próprio diretório. No Windows porque o processo passa a rodar com o
+ * caminho do alvo, então o wrapper do Git for Windows continua encontrando sua
+ * instalação. Hardlink e cópia entram só se o symlink for negado (falta de
+ * Developer Mode / privilégio) — e a cópia é o único ramo em que o wrapper
+ * pode deixar de achar mingw64/, por isso a sonda abaixo nomeia o mecanismo.
+ * @param {string} src
+ * @param {string} binDir
+ * @returns {string}
+ */
+function placeExecutableInPath(src, binDir) {
+  const dst = path.join(binDir, path.basename(src))
+  let mechanism = 'symlink'
+  try {
+    fs.symlinkSync(src, dst)
+  } catch (_symlinkErr) {
+    try {
+      fs.linkSync(src, dst)
+      mechanism = 'hardlink'
+    } catch (_linkErr) {
+      fs.copyFileSync(src, dst)
+      mechanism = 'copy'
+    }
+  }
+  // Sonda: um destino colocado mas inexecutável faria o produto devolver
+  // exatamente "exited with null" — indistinguível do bug que este remendo
+  // corrige. A falha tem que nomear a fixture, não o produto.
+  const probe = spawnSync(dst, ['--version'], { encoding: 'utf8' })
+  assert.equal(
+    probe.status,
+    0,
+    `fixture: git colocado por ${mechanism} em ${dst} não executa ` +
+      `(status=${probe.status}): ${(probe.stderr || '').trim() || probe.error}`
+  )
+  return dst
+}
+
+// ────────────────────────────────────────────────────────────────────────────
 // Integration test — --no-pr wiring at command layer (real subprocess)
 // Discriminates against the bug where `options.noPr || false` made noPR always
 // false, silently ignoring the --no-pr flag.
@@ -831,9 +902,7 @@ test('ship integration: --no-pr wiring reaches runner (command layer)', async ()
   try {
     const tmpBin = path.join(tmpDir, 'bin')
     fs.mkdirSync(tmpBin)
-    const gitWhich = spawnSync('which', ['git'], { encoding: 'utf8' }).stdout.trim()
-    if (!gitWhich) throw new Error('git not found in PATH')
-    fs.symlinkSync(gitWhich, path.join(tmpBin, 'git'))
+    placeExecutableInPath(resolveGitPath(), tmpBin)
 
     const repoDir = path.join(tmpDir, 'repo')
     fs.mkdirSync(repoDir)
@@ -903,9 +972,7 @@ test('ship integration: graceful degradation with clean PATH (no gh/glab/az)', a
     // Build tmpBin with only git
     const tmpBin = path.join(tmpDir, 'bin')
     fs.mkdirSync(tmpBin)
-    const gitWhich = spawnSync('which', ['git'], { encoding: 'utf8' }).stdout.trim()
-    if (!gitWhich) throw new Error('git not found in PATH')
-    fs.symlinkSync(gitWhich, path.join(tmpBin, 'git'))
+    placeExecutableInPath(resolveGitPath(), tmpBin)
 
     // Create git repo
     const repoDir = path.join(tmpDir, 'repo')

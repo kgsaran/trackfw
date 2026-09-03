@@ -29562,3 +29562,43 @@ função** (`monkeypatch.setattr("os.path.expanduser", ...)` — `test_identity_
 `home_dir()` devolve `HOME` antes de chamar `expanduser`; candidato a fatia das 104 falhas Python
 que o ML-2A vai recontar, e **não** é defeito de fixture. O CLI **Node** não tem isolação de sessão.
 O bloco AC12 de `.github/workflows/quality.yml` (~L159-200) fica com a justificativa desatualizada.
+
+---
+
+## 2026-09-03 — `artemis-tf` (QA) — ML-1E (git da fixture resolvível no Windows: Node + Python)
+
+`npm/tests/ship.test.js` e `pypi/tests/test_barrier.py`. As duas fixtures montavam o `git` do `$PATH`
+curado com **nome sem extensão** (`fs.symlinkSync(git, tmpBin/'git')`, `os.symlink(git, curated/'git')`)
+— o `PATHEXT` do Windows nunca resolve isso, e o `spawnSync`/`subprocess` do produto morre com ENOENT
+(`"git ... exited with null"`). **Mesma classe do ML-1A**, órfã por escopo. Defeito confirmado nos
+**dois** arquivos, com um segundo defeito independente só no Node: `spawnSync('which', ['git'])` não
+existe no Windows (stdout `null` → `TypeError` antes do PATHEXT); passou a `where` com a 1ª linha.
+
+Mecanismo: helper `placeExecutableInPath` / `_place_executable_in_path` com destino
+`basename(origem)` (preserva `.exe`) e **symlink como forma primária nos dois sistemas** —
+hardlink→cópia só como queda. 🔴 **Correção medida à nota de vault:** o symlink **não** é o
+bloqueio no Windows. Se `symlinkSync` tivesse falhado por Developer Mode, o teste morreria antes de
+spawnar o produto e a mensagem `exited with null` (que vem de `npm/src/ship/runner.js:124`) não
+existiria no log. O bloqueio é só o **nome sem extensão**. Symlink também é a forma certa lá: o
+processo roda com o caminho do alvo, então o wrapper do Git for Windows continua achando sua
+instalação — o que uma cópia quebraria (mesmo mecanismo do shim assinado do macOS). Cada helper
+sonda o binário colocado (`--version`) e nomeia o mecanismo na falha, para uma cópia quebrada não
+se disfarçar de `exited with null`.
+
+Controle POSIX, antes → depois: `npm test --prefix npm` **859 pass / 0 fail / 0 skipped** → **859 /
+0 / 0**; `python3 -m pytest pypi/tests/` **1604 passed** → **1604 passed**. Falsificação pela lógica
+de resolução (sem Windows aqui): origem `git.exe` → destino `git.exe` symlink, nos dois runtimes;
+forma revertida com a mesma origem → destino literal `git`. Rungs de queda e sonda também
+exercitados fora da suíte (symlink/hardlink negados → hardlink → cópia; binário inexecutável →
+assert nomeando o mecanismo), e o parsing do `where` com stdout multi-linha CRLF → 1ª linha sem
+`\r`. Nenhum `skip`. **Não commitei; nenhuma
+operação de git; `make quality` não rodado (por instrução).**
+
+🔴 Só o CI de Windows fecha: (a) que o ramo `where`/`shutil.which` resolve no runner; (b) que
+`symlinkSync`/`os.symlink` são permitidos lá — se não forem, cai em hardlink e, entre volumes
+(`TEMP` em `D:`, Git em `C:`), em **cópia**, e o wrapper `Git/cmd/git.exe` pode não achar
+`mingw64/` (a sonda torna isso legível, não o evita). Residual não medido: `PATH` de **entrada
+única** (`PATH: tmpBin`, `env["PATH"] = curated_path`) não tem `System32` — inofensivo para as DLLs
+da própria imagem, desconhecido para o que o `git` spawnar. **O mesmo risco de cópia vale para o
+`placeExecutableInPath` do Go (ML-1A), que não tenta symlink no Windows** — não toquei; fica como
+candidato caso o Go volte vermelho.
