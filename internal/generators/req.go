@@ -26,7 +26,12 @@ type REQContent struct {
 // Campos preenchidos são inseridos diretamente; campos vazios mantêm o placeholder original.
 func NewREQ(content REQContent) error {
 	cfg := config.Load()
-	reqDir := cfg.REQDir
+	// Ponto único de decisão de caminho de ESCRITA (ADR-2026-09-03, D2/D4): em by_agent grava no
+	// canônico req_dir/<agente>/; em flat, req_dir/ — o mesmo ponto que alimenta a união de leitura.
+	reqDir := validator.REQWriteDir(cfg)
+	if reqDir == "" {
+		reqDir = cfg.REQDir
+	}
 	if err := os.MkdirAll(reqDir, 0755); err != nil {
 		return err
 	}
@@ -114,47 +119,12 @@ Roadmap: %s
 	return nil
 }
 
-// listREQFiles descobre todos os arquivos .md de REQ nos 3 layouts suportados,
-// espelhando o algoritmo de referência usado por listREQs/list_req_files (Node/Python):
-//  1. REQDir/*.md (flat legado)
-//  2. REQDir/<estado>/*.md para cada estado válido (por-estado, sem agente)
-//  3. Se RoadmapNamespacing == by_agent: REQDir/<agente>/<estado>/*.md para cada agente
-//     (cfg.Agents, ou subpastas de primeiro nível de REQDir se vazio) × cada estado
-//
-// Os três conjuntos não são mutuamente exclusivos — todos são concatenados.
+// listREQFiles descobre todos os arquivos .md de REQ. NÃO reimplementa a descoberta: delega ao
+// ponto único de leitura do validador (validator.ResolveREQFiles — ADR-2026-09-03, D3/D4), o mesmo
+// consumido pelas regras de validate. Duas noções de layout no mesmo runtime foram a causa do
+// defeito da REQ-2026-08-30 (escritor flat, leitor <agente>/<estado>/, campo <agente>/).
 func listREQFiles(cfg config.ProjectConfig) []string {
-	reqDir := cfg.REQDir
-	if reqDir == "" {
-		return nil
-	}
-
-	var files []string
-
-	// 1. Flat legado.
-	flatMatches, _ := filepath.Glob(filepath.Join(reqDir, "*.md"))
-	files = append(files, flatMatches...)
-
-	// 2. Por-estado, sem agente.
-	for _, state := range roadmapStateOrder {
-		matches, _ := filepath.Glob(filepath.Join(reqDir, state, "*.md"))
-		files = append(files, matches...)
-	}
-
-	// 3. by_agent.
-	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
-		agents := validator.ResolveAgentNamespaces(cfg, reqDir)
-		for _, agent := range agents {
-			// ML-4A (achado 2, hades-tf 2026-08-30): agent vem do disco (nome de diretório sem
-			// validação de formato) — validator.ListMDFiles em vez de filepath.Glob para não
-			// interpretar o nome como padrão de glob (metacaracteres como "*"/"[" corrompiam
-			// contagem silenciosamente ou derrubavam o comando).
-			for _, state := range roadmapStateOrder {
-				files = append(files, validator.ListMDFiles(filepath.Join(reqDir, agent, state))...)
-			}
-		}
-	}
-
-	return files
+	return validator.ResolveREQFiles(cfg)
 }
 
 // ListREQs lista todos os REQs encontrados em cfg.REQDir (nos 3 layouts suportados),

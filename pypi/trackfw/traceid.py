@@ -60,63 +60,37 @@ def _extract_trace_id(content: str, field: str) -> str:
     return fm.get(field, "").strip()
 
 
-def _index_reqs(req_dir: str, field: str) -> list:
+# 🔴 _index_reqs e _index_reqs_by_agent foram REMOVIDAS (ADR-2026-09-03, D4): eram a segunda noção
+# de layout de REQ dentro deste runtime — cada uma montava a própria árvore a partir de req_dir e
+# ficava vácua justamente nos layouts que o resolvedor único cobre. A indexação de REQ sai agora de
+# _index_req_files(resolve_req_files(cfg), field), abaixo. Não reintroduzir varredura local aqui.
+
+
+def _index_req_files(paths: list, field: str) -> list:
     """
-    Lê todos os .md em req_dir (não recursivo).
-    Retorna lista de dicts: {"file": basename, "path": caminho_completo,
-                              "trace_id": valor, "state": "req"}.
-    Inclui apenas arquivos onde trace_id não está vazio.
+    Indexa uma lista JÁ RESOLVIDA de arquivos de REQ pelo campo `field`. O "state" das entradas de
+    REQ não participa de traceid_state_mismatch neste runtime (a comparação usa o `status` do
+    frontmatter da REQ contra a pasta do roadmap) — preserva-se "req" como sentinela histórica para
+    arquivos sem pasta de estado, e o nome da pasta quando ela é um estado legado.
     """
     entries = []
-    try:
-        names = [n for n in os.listdir(req_dir)
-                 if n.endswith(".md") and not os.path.isdir(os.path.join(req_dir, n))]
-    except OSError:
-        return entries
-
-    for name in names:
-        path = os.path.join(req_dir, name)
+    for path in paths:
         try:
             with open(path, "r", encoding="utf-8") as f:
                 content = f.read()
         except OSError:
             continue
         trace_id = _extract_trace_id(content, field)
-        if trace_id:
-            entries.append({
-                "file": name,
-                "path": path,
-                "trace_id": trace_id,
-                "state": "req",
-            })
-    return entries
-
-
-def _index_reqs_by_agent(req_dir: str, field: str, agents: list) -> list:
-    """Indexa REQs em layout by_agent: req_dir/<agente>/<estado>/. `agents` é complementado pelo
-    disco via resolve_agent_namespaces, o resolvedor canônico (REQ-2026-08-29) — não substituído
-    quando declarado."""
-    agents = _config.resolve_agent_namespaces({"agents": agents or []}, req_dir)
-    entries = []
-    for agent in agents:
-        agent_dir = os.path.join(req_dir, agent)
-        for state in _ROADMAP_STATES:
-            state_dir = os.path.join(agent_dir, state)
-            try:
-                names = [n for n in os.listdir(state_dir)
-                         if n.endswith(".md") and not os.path.isdir(os.path.join(state_dir, n))]
-            except OSError:
-                continue
-            for name in names:
-                path = os.path.join(state_dir, name)
-                try:
-                    with open(path, "r", encoding="utf-8") as f:
-                        content = f.read()
-                except OSError:
-                    continue
-                trace_id = _extract_trace_id(content, field)
-                if trace_id:
-                    entries.append({"file": name, "path": path, "trace_id": trace_id, "state": state})
+        if not trace_id:
+            continue
+        parent = os.path.basename(os.path.dirname(path))
+        state = parent if parent in _ROADMAP_STATES else "req"
+        entries.append({
+            "file": os.path.basename(path),
+            "path": path,
+            "trace_id": trace_id,
+            "state": state,
+        })
     return entries
 
 
@@ -199,11 +173,16 @@ def check_traceid(cfg: dict) -> list:
 
     namespacing = cfg.get("roadmap_namespacing", "")
     agents = cfg.get("agents", [])
+    # REQs: indexadas pelo PONTO ÚNICO de leitura de REQ (ADR-2026-09-03, D3/D4).
+    # Antes, esta regra montava a própria árvore (flat, ou <agente>/<estado>/ em by_agent) e ficava
+    # vácua exatamente nos layouts que o resolvedor passou a cobrir — traceid é uma das regras que a
+    # ADR exige que deixem de enxergar zero REQs em by_agent.
+    from trackfw.validator import resolve_req_files  # noqa: PLC0415
+
+    req_entries = _index_req_files(resolve_req_files(cfg), field)
     if namespacing == "by_agent":
-        req_entries = _index_reqs_by_agent(req_dir, field, agents)
         roadmap_entries = _index_roadmaps_by_agent(roadmap_dir, field, agents)
     else:
-        req_entries = _index_reqs(req_dir, field)
         roadmap_entries = _index_roadmaps(roadmap_dir, field)
 
     if not req_entries and not roadmap_entries:

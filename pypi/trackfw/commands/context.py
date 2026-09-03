@@ -53,6 +53,37 @@ def _extract_inline_status(content):
     return "unknown"
 
 
+def _collect_req_entries(cfg):
+    """
+    Entradas de REQ para o `context`, derivadas do ponto único de leitura (resolve_req_files).
+    O state sai do nome da pasta-pai quando ela é um estado legado; em layout flat ou no canônico
+    req_dir/<agente>/*.md não há estado (invariante D1: REQ não tem dimensão de estado).
+    """
+    from trackfw.validator import resolve_req_files  # noqa: PLC0415
+
+    states = ["backlog", "analyzing", "wip", "blocked", "done", "abandoned"]
+    entries = []
+    for full in resolve_req_files(cfg):
+        content = ""
+        try:
+            with open(full, "r", encoding="utf-8") as f:
+                content = f.read()
+        except OSError:
+            pass
+        parent = os.path.basename(os.path.dirname(full))
+        state = parent if parent in states else None
+        status = _extract_frontmatter_field(content, "status")
+        if not status:
+            status = _extract_inline_status(content)
+        if not status:
+            status = state or "unknown"
+        entry = {"type": "REQ", "file": os.path.basename(full), "status": status}
+        if state:
+            entry["state"] = state
+        entries.append(entry)
+    return entries
+
+
 def _collect_entries(dir_path, entry_type, state=None):
     """
     Lê diretório e retorna lista de entradas com type, file, status, state.
@@ -104,18 +135,9 @@ def _get_context(fmt, output_file=None):
     for adr_dir in cfg.get("adr_dirs", ["docs/adr"]):
         adrs.extend(_collect_entries(adr_dir, "ADR"))
 
-    # REQs
-    req_dir = cfg.get("req_dir", "docs/req")
-    namespacing = cfg.get("roadmap_namespacing", "")
-    reqs = []
-    if namespacing == "by_agent":
-        STATES = ["backlog", "wip", "blocked", "done", "abandoned"]
-        agents = resolve_agent_namespaces(cfg, req_dir)
-        for agent in agents:
-            for state in STATES:
-                reqs.extend(_collect_entries(os.path.join(req_dir, agent, state), "REQ", state))
-    else:
-        reqs = _collect_entries(req_dir, "REQ")
+    # REQs — pelo PONTO ÚNICO de leitura (ADR-2026-09-03, D3/D4). Antes, `context` montava a própria
+    # árvore (flat, ou <agente>/<estado>/ em by_agent) e não enxergava o canônico <agente>/*.md.
+    reqs = _collect_req_entries(cfg)
 
     # Roadmaps
     roadmaps = []

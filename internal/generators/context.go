@@ -53,45 +53,17 @@ func GetContext(format string) error {
 		}
 	}
 
+	// REQs — pelo PONTO ÚNICO de leitura (ADR-2026-09-03, D3/D4). Antes, o context montava a
+	// própria árvore (flat, ou <agente>/<estado>/ em by_agent) e não enxergava o layout canônico
+	// req_dir/<agente>/*.md — a mesma divergência escritor/leitor da REQ-2026-08-30.
 	var reqs []ContextEntry
-	reqStates := []string{"backlog", "wip", "blocked", "done", "abandoned"}
-	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
-		agents := validator.ResolveAgentNamespaces(cfg, cfg.REQDir)
-		for _, agent := range agents {
-			for _, state := range reqStates {
-				dir := filepath.Join(cfg.REQDir, agent, state)
-				es, err := os.ReadDir(dir)
-				if err != nil {
-					continue
-				}
-				for _, e := range es {
-					if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
-						continue
-					}
-					content, _ := os.ReadFile(filepath.Join(dir, e.Name()))
-					status := extractFrontmatterField(string(content), "status")
-					if status == "" {
-						status = extractInlineStatus(string(content))
-					}
-					reqs = append(reqs, ContextEntry{Type: "REQ", File: e.Name(), Status: status})
-				}
-			}
+	for _, full := range validator.ResolveREQFiles(cfg) {
+		content, _ := os.ReadFile(full)
+		status := extractFrontmatterField(string(content), "status")
+		if status == "" {
+			status = extractInlineStatus(string(content))
 		}
-	} else {
-		reqEntries, err := os.ReadDir(cfg.REQDir)
-		if err == nil {
-			for _, e := range reqEntries {
-				if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
-					continue
-				}
-				content, _ := os.ReadFile(filepath.Join(cfg.REQDir, e.Name()))
-				status := extractFrontmatterField(string(content), "status")
-				if status == "" {
-					status = extractInlineStatus(string(content))
-				}
-				reqs = append(reqs, ContextEntry{Type: "REQ", File: e.Name(), Status: status})
-			}
-		}
+		reqs = append(reqs, ContextEntry{Type: "REQ", File: filepath.Base(full), Status: status})
 	}
 
 	var roadmaps []ContextEntry

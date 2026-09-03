@@ -200,49 +200,14 @@ def _req_agent_state_dir(agent: str | None, state: str, cfg: dict) -> str | None
 
 def list_req_files(cfg: dict) -> list[str]:
     """
-    Descoberta recursiva de arquivos .md em req_dir, nos 3 layouts suportados
-    (não mutuamente exclusivos — concatena todos):
-    1. req_dir/*.md (flat legado)
-    2. req_dir/<estado>/*.md, para cada estado em STATE_ORDER
-    3. Se roadmap_namespacing == "by_agent": req_dir/<agente>/<estado>/*.md,
-       para cada agente (cfg["agents"], ou subpastas de 1o nível de req_dir se vazio)
-       x cada estado.
+    NÃO reimplementa a descoberta: delega ao ponto único de leitura do validador
+    (resolve_req_files — ADR-2026-09-03, D3/D4), o mesmo consumido pelas regras de validate.
+    Duas noções de layout no mesmo runtime foram a causa do defeito da REQ-2026-08-30.
+    Import escopado: validator não importa generators -> sem ciclo.
     """
-    req_dir = cfg.get("req_dir", "docs/req")
-    files: list[str] = []
+    from trackfw.validator import resolve_req_files  # noqa: PLC0415
 
-    # 1. Flat legado.
-    try:
-        for f in sorted(os.listdir(req_dir)):
-            if f.endswith(".md"):
-                files.append(os.path.join(req_dir, f))
-    except OSError:
-        pass
-
-    # 2. Por-estado, sem agente.
-    for state in STATE_ORDER:
-        d = os.path.join(req_dir, state)
-        try:
-            for f in sorted(os.listdir(d)):
-                if f.endswith(".md"):
-                    files.append(os.path.join(d, f))
-        except OSError:
-            continue
-
-    # 3. by_agent.
-    if cfg.get("roadmap_namespacing") == cfg_module.NAMESPACING_BY_AGENT:
-        agents = cfg_module.resolve_agent_namespaces(cfg, req_dir)
-        for agent in agents:
-            for state in STATE_ORDER:
-                d = os.path.join(req_dir, agent, state)
-                try:
-                    for f in sorted(os.listdir(d)):
-                        if f.endswith(".md"):
-                            files.append(os.path.join(d, f))
-                except OSError:
-                    continue
-
-    return files
+    return resolve_req_files(cfg)
 
 
 def list_reqs(cfg: dict) -> None:

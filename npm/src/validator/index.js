@@ -347,34 +347,77 @@ function hiddenNamespaceWarnings(cfg) {
   return msgs
 }
 
-// resolveReqFiles retorna array de paths completos de arquivos .md de REQs.
-// Em modo by_agent percorre reqDir/<agente>/<estado>/; em modo flat varre reqDir/ diretamente.
+// REQ_LAYOUT_STATES é a lista fechada de nomes de pasta de ESTADO reconhecidos nos layouts LEGADOS
+// de REQ. Existe só para o leitor tolerar árvores antigas: pelo invariante D1 da ADR-2026-09-03,
+// REQ NÃO tem dimensão de estado. Nada aqui decide onde ESCREVER uma REQ.
+const REQ_LAYOUT_STATES = ['backlog', 'analyzing', 'wip', 'blocked', 'done', 'abandoned']
+
+// listReqMdFiles lista os .md diretamente dentro de dir (sem recursão, sem seguir para subpastas).
+// Não usa glob: nomes de agente vêm do disco e metacaracteres ("*", "[") corromperiam a contagem.
+function listReqMdFiles(dir) {
+  try {
+    return fs.readdirSync(dir)
+      .filter(n => n.endsWith('.md'))
+      .filter(n => { try { return !fs.statSync(path.join(dir, n)).isDirectory() } catch (_) { return false } })
+      .map(n => path.join(dir, n))
+  } catch (_) { return [] }
+}
+
+// reqWriteDir é o PONTO ÚNICO que decide ONDE uma REQ nova é gravada (ADR-2026-09-03, D2/D4):
+//   flat     → req_dir/
+//   by_agent → req_dir/<agente>/   (primeiro de agents:, ou "default" se a lista é vazia)
+// Consumido pelo gerador (newREQ); a união de leitura abaixo contém este diretório por construção.
+function reqWriteDir(cfg) {
+  const reqDir = cfg.reqDir || cfg.req_dir || ''
+  if (!reqDir) return ''
+  const namespacing = cfg.roadmapNamespacing || cfg.roadmap_namespacing || ''
+  if (namespacing === 'by_agent') {
+    const agents = (cfg.agents || []).filter(a => a)
+    const agent = agents.length > 0 ? agents[0] : 'default'
+    return path.join(reqDir, agent)
+  }
+  return reqDir
+}
+
+// resolveReqFiles é o PONTO ÚNICO de LEITURA de REQ (ADR-2026-09-03, D3/D4): devolve os paths de
+// todos os .md de REQ como UNIÃO dos 4 layouts suportados, nunca como escolha exclusiva:
+//   req_dir/*.md                    flat legado
+//   req_dir/<estado>/*.md           por-estado legado (apesar de D1)
+//   req_dir/<agente>/*.md           CANÔNICO em by_agent
+//   req_dir/<agente>/<estado>/*.md  legado
+// Os dois últimos só valem em by_agent — fora dele não há noção de namespace de agente.
+//
+// Deduplicação é OBRIGATÓRIA: resolveAgentNamespaces devolve agents: ∪ disco, então um
+// req_dir/backlog/ real entra na lista de agentes e o caso <agente>/*.md emite os mesmos paths do
+// caso <estado>/*.md — sem o Set, toda REQ em layout por-estado seria contada (e violada) em dobro.
+// Ordenação final: determinismo igual ao Go/Python (readdirSync não é ordenado por contrato).
 function resolveReqFiles(cfg) {
   const reqDir = cfg.reqDir || cfg.req_dir || ''
   if (!reqDir) return []
   const namespacing = cfg.roadmapNamespacing || cfg.roadmap_namespacing || ''
-  if (namespacing === 'by_agent') {
-    const STATES = ['backlog', 'analyzing', 'wip', 'blocked', 'done', 'abandoned']
-    const agents = resolveAgentNamespaces(cfg, reqDir)
-    const files = []
-    for (const agent of agents) {
-      for (const state of STATES) {
-        const dir = path.join(reqDir, agent, state)
-        try {
-          for (const name of fs.readdirSync(dir)) {
-            if (name.endsWith('.md')) files.push(path.join(dir, name))
-          }
-        } catch (_) {}
-      }
+  const seen = new Set()
+  const files = []
+  const add = (paths) => {
+    for (const p of paths) {
+      const clean = path.normalize(p)
+      if (seen.has(clean)) continue
+      seen.add(clean)
+      files.push(clean)
     }
-    return files
   }
-  // flat (comportamento anterior) — retorna paths completos
-  try {
-    return fs.readdirSync(reqDir)
-      .filter(n => n.endsWith('.md') && !fs.statSync(path.join(reqDir, n)).isDirectory())
-      .map(n => path.join(reqDir, n))
-  } catch (_) { return [] }
+
+  add(listReqMdFiles(reqDir))
+  for (const state of REQ_LAYOUT_STATES) add(listReqMdFiles(path.join(reqDir, state)))
+
+  if (namespacing === 'by_agent') {
+    for (const agent of resolveAgentNamespaces(cfg, reqDir)) {
+      add(listReqMdFiles(path.join(reqDir, agent)))
+      for (const state of REQ_LAYOUT_STATES) add(listReqMdFiles(path.join(reqDir, agent, state)))
+    }
+  }
+
+  files.sort()
+  return files
 }
 
 // resolveStateDirs retorna todos os diretórios de um estado (ex: 'wip', 'done') conforme o modo de
@@ -3406,6 +3449,7 @@ module.exports = {
   listDir,
   tryListDir,
   resolveReqFiles,
+  reqWriteDir,
   resolveStateDirs,
   resolveWIPDirs,
   resolveDoneDirs,

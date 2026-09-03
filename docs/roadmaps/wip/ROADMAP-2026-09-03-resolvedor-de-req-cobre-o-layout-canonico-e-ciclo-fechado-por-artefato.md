@@ -45,7 +45,7 @@ três concorda.**
 > Dependências: nenhuma.
 
 ### ML-1A — Resolvedor de REQ em união, e `req new` no canônico
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** `apolo-tf`
 **Files affected — os 3 stacks, regra dura de paridade sem exceção:**
 `internal/validator/validator.go` (`resolveREQFiles`), `internal/generators/req.go` (`listREQFiles`,
@@ -66,17 +66,64 @@ metacaracteres de glob no nome corrompiam contagem em silêncio (`ListMDFiles` e
 Ao acrescentar o 4º caso, **não reintroduza `Glob` sobre nome vindo do disco.**
 
 **Critérios de aceite:**
-- [ ] A fixture do relato produz **2 violações** em `by_agent`, iguais às de `flat`
-- [ ] 🔴 **Forma mensurável do "não fica mais vácuo":** contar, num projeto `by_agent`, quantas
+- [x] A fixture do relato produz **2 violações** em `by_agent`, iguais às de `flat`
+- [x] 🔴 **Forma mensurável do "não fica mais vácuo":** contar, num projeto `by_agent`, quantas
       regras enxergam **zero** REQs. Tem de ser **zero regras**. Lista a confirmar, não rederivar:
       `ref_targets_exist`, `req_has_adr`, `req_has_roadmap`, `blocked_by_draft_adr`,
       `adr_accepted_when_req_done`, traceid
-- [ ] 🔴 **Compatibilidade falsificada:** REQ em `req_dir/*.md` num projeto `by_agent` **continua
+- [x] 🔴 **Compatibilidade falsificada:** REQ em `req_dir/*.md` num projeto `by_agent` **continua
       encontrada**. Nenhum arquivo movido — `git status` limpo quanto a renomeações
-- [ ] 🔴 **Falsificação na direção oposta:** removendo o 4º caso do resolvedor, a fixture volta a
+- [x] 🔴 **Falsificação na direção oposta:** removendo o 4º caso do resolvedor, a fixture volta a
       dar **0 violações**. Um teste que passa nas duas árvores não mede nada
-- [ ] Paridade: os 3 CLIs dão o **mesmo** número de violações sobre a mesma fixture
-- [ ] `make quality` verde
+- [x] Paridade: os 3 CLIs dão o **mesmo** número de violações sobre a mesma fixture
+- [x] `make quality` verde
+
+
+**Evidência de aceite — auditoria do arquiteto (2026-09-03), reproduzida de forma independente:**
+
+```
+teste de uniao dos 4 layouts (Go)          -> PASS
+SABOTADO (comentado o caso <agente>/*.md)  -> FAIL   <- discrimina
+restaurado                                 -> PASS
+git status: 0 linhas "R"                   <- nenhum arquivo movido
+make quality QUALITY_EXIT=0, zero FAIL · validate exit 0
+```
+
+🔴 **A ADR subestimou o defeito, e o agente corrigiu com número.** Eu escrevi que faltava **um** caso
+em `listREQFiles`. Medido antes de editar, nos 3 CLIs, sobre a fixture do relato:
+
+```
+flat req_dir/*.md            2 violacoes
+by_agent <agente>/<estado>/  2 violacoes
+os outros QUATRO layouts     0            <- vacuos
+```
+
+**Quatro dos seis eram vácuos, não um.** E a razão do meu erro: **`listREQFiles` não é a função que
+as regras usam** — o resolvedor delas era `if/else`, não união. Inventário real: **9 implementações
+de leitura** e 3 de escrita. E o `traceid` recebia um **diretório**, não a lista resolvida (Go e
+Python): corrigir só o resolvedor não o alcançaria.
+
+🔴 **Achado não previsto — a união colide com o namespace vindo do disco.** Como `agents:` é unido ao
+disco, `req_dir/backlog/` também é lido como se fosse agente, e o caso 3 colide com o caso 2. **Sem
+dedup por caminho normalizado, toda REQ por-estado contaria em dobro.** Coberto por teste nos 3
+runtimes.
+
+🔴 **A métrica óbvia era fraca, e o agente trocou.** "A regra apareceu na saída" dá **6/6 mesmo na
+árvore sabotada**, porque `ref_targets_exist` e `traceid` disparam pelo lado do *roadmap*. A métrica
+usada passou a ser *"a violação nomeia um `REQ-*.md` em `file` ou `message`"* — e aí a sabotagem cai
+para **1/6** (Go, Python) e 2/6 (Node). Sem essa troca, a medição teria mentido a favor.
+
+**Por que durou tanto:** **nenhum teste existente codificava o comportamento antigo** — as 3 suítes
+passaram sem edição. O defeito nunca foi testado em nenhuma direção.
+
+**Resíduos declarados, não feitos:** `npm/src/validator/traceid.js` segue fora do ponto único
+(varredura recursiva, superconjunto, nunca vácuo — é por isso que o Node cai para 2/6 e não 1/6);
+`trackfw sync` hardcoda `docs/req` nos 3 CLIs; `req move` ainda move para `<agente>/<estado>/`,
+contra o invariante D1 da ADR. Os três viram REQ própria.
+
+**Consequência que não é só de `by_agent`:** o caso por-estado passou a ser lido
+incondicionalmente, então projeto **flat** com árvore legada `req_dir/<estado>/` também tem suas REQs
+olhadas agora.
 
 **Comandos de validação:** `make quality`, e a fixture do relato executada nos 3 CLIs.
 

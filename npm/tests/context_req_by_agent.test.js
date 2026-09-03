@@ -16,52 +16,10 @@ function writeFile(filePath, content) {
   fs.writeFileSync(filePath, content, 'utf8')
 }
 
-/**
- * Lógica de coleta de REQs extraída do context.js para ser testável sem invocar process.exit.
- * Espelha exatamente o código de context.js.
- */
-function collectEntries(dir, type, state) {
-  const entries = []
-  let files = []
-  try {
-    files = fs.readdirSync(dir).filter(f => f.endsWith('.md') && !fs.statSync(path.join(dir, f)).isDirectory())
-  } catch (_) {
-    return entries
-  }
-  for (const file of files) {
-    let content = ''
-    try { content = fs.readFileSync(path.join(dir, file), 'utf8') } catch (_) {}
-    const entry = { type, file, status: state || 'unknown' }
-    if (state) entry.state = state
-    entries.push(entry)
-  }
-  return entries
-}
-
-function collectReqs(cfg) {
-  const reqs = []
-  const reqDir = cfg.reqDir || cfg.req_dir || 'docs/req'
-  const reqNamespacing = cfg.roadmapNamespacing || cfg.roadmap_namespacing || ''
-  if (reqNamespacing === 'by_agent') {
-    const STATES = ['backlog', 'wip', 'blocked', 'done', 'abandoned']
-    let agents = cfg.agents || []
-    if (!agents.length) {
-      try {
-        agents = fs.readdirSync(reqDir).filter(f => {
-          try { return fs.statSync(path.join(reqDir, f)).isDirectory() } catch (_) { return false }
-        })
-      } catch (_) {}
-    }
-    for (const agent of agents) {
-      for (const state of STATES) {
-        reqs.push(...collectEntries(path.join(reqDir, agent, state), 'REQ', state))
-      }
-    }
-  } else {
-    reqs.push(...collectEntries(reqDir, 'REQ'))
-  }
-  return reqs
-}
+// 🔴 Este arquivo já duplicou a lógica de coleta do context.js e, por isso, ficou VÁCUO: continuou
+// verde enquanto a produção divergia. Agora chama a função de produção (collectReqEntries), que lê
+// pelo ponto único resolveReqFiles (ADR-2026-09-03, D3/D4).
+const { collectReqEntries: collectReqs } = require('../src/commands/context')
 
 // --- Teste 1: by_agent encontra REQ em subdir agente/estado ---
 
@@ -93,6 +51,24 @@ test('flat: encontra REQ na raiz de reqDir (sem by_agent)', () => {
 
     assert.strictEqual(reqs.length, 1, `Esperava 1 REQ, got ${reqs.length}`)
     assert.strictEqual(reqs[0].file, 'req.md')
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true })
+  }
+})
+
+// --- Teste 3: by_agent encontra REQ no layout CANÔNICO agente/*.md (ADR-2026-09-03, D2) ---
+
+test('by_agent: encontra REQ no canônico claude/*.md (sem pasta de estado)', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ctx-req-canonico-'))
+  try {
+    const reqDir = path.join(tmp, 'req')
+    writeFile(path.join(reqDir, 'claude', 'req.md'), '---\nstatus: Open\n---\n# REQ\n')
+
+    const reqs = collectReqs({ reqDir, roadmap_namespacing: 'by_agent', agents: ['claude'], adrDirs: [] })
+
+    assert.strictEqual(reqs.length, 1, `Esperava 1 REQ, got ${reqs.length}`)
+    assert.strictEqual(reqs[0].file, 'req.md')
+    assert.strictEqual(reqs[0].state, undefined, 'REQ não tem dimensão de estado (invariante D1)')
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true })
   }

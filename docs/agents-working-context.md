@@ -29007,3 +29007,88 @@ PRs mergeados não reescritos; issues não reabertas; nada em `internal/`/`npm/s
 
 **Roadmap não movido e ML não marcado `✅`** — cabe ao `trackfw_architect` após a auditoria.
 Nenhuma operação de git executada.
+
+## 2026-09-03 — apolo-tf (Backend) — INÍCIO
+**ML-1A** do `ROADMAP-2026-09-03-resolvedor-de-req-cobre-o-layout-canonico-e-ciclo-fechado-por-artefato`
+(`wip/`), REQ
+`REQ-2026-08-30-req-new-grava-flat-mas-resolvereqfiles-procura-namespaced-por-estado-e-as-regras-de-referencia-ficam-vacuas-em-by-agent.md`,
+ADR `ADR-2026-09-03-layout-canonico-de-req-em-by-agent-...`. Branch já ativa:
+`fix/resolvedor-de-req-cobre-o-layout-canonico-e-ciclo-fechado-por-artefato`.
+Defeito reproduzido na árvore atual, antes de qualquer edição, com a fixture do relato (REQ com
+`adr:`/`roadmap:` apontando para alvos inexistentes), medindo `validate` nos 3 CLIs por layout:
+`flat/req_dir/*.md` → 2 · `flat/<estado>/` → 0 · `by_agent/req_dir/*.md` → 0 ·
+`by_agent/<estado>/` → 0 · `by_agent/<agente>/` → 0 · `by_agent/<agente>/<estado>/` → 2.
+**Quatro dos seis layouts eram vácuos, nos 3 runtimes** — mais amplo do que "falta um caso".
+Escopo: união dos 4 layouts na leitura, `req new` no canônico, ponto único de decisão de caminho
+consumido pelos dois lados, nos 3 CLIs. Ciclo fechado por artefato é ML-2A (outro agente).
+
+## 2026-09-03 — apolo-tf (Backend) — FIM
+**Entregue (não commitado, para auditoria do `trackfw_architect`).** Ponto único por runtime —
+leitura `ResolveREQFiles`/`resolveReqFiles`/`resolve_req_files` e escrita
+`REQWriteDir`/`reqWriteDir`/`req_write_dir` — em `internal/validator/validator.go`,
+`npm/src/validator/index.js` e `pypi/trackfw/validator.py`. Todos os demais leitores passaram a
+delegar: `internal/generators/req.go` (`listREQFiles`), `internal/generators/roadmap.go`
+(`scanREQFiles`), `internal/generators/context.go`, `internal/commands/roadmap.go` (wizard),
+`internal/validator/validator_traceid.go`, `npm/src/generators/req.js`, `npm/src/commands/context.js`,
+`pypi/trackfw/generators/req.py`, `pypi/trackfw/commands/context.py`, `pypi/trackfw/traceid.py`,
+`pypi/trackfw/commands/req.py`. Contrato em `docs/cli-parity.md` (seção nova *REQ layout — union on
+read, single path on write*).
+
+**Correção de custo, com número.** A ADR dizia "falta um caso" em `listREQFiles`. Medido: eram
+**9 implementações de leitura** (3 runtimes × validator + generators/req + generators/roadmap/context)
+e **3 pontos de escrita**; o resolvedor que as regras realmente usam não era união nenhuma — era
+`if/else`, e por isso **4 dos 6 layouts** ficavam vácuos, não 1. E `traceid` recebia um **diretório**,
+não a lista resolvida: corrigir só o resolvedor não a alcançaria (Go e Python; o Node já varria
+recursivamente).
+
+**Achado que a ADR não previa — deduplicação obrigatória.** `resolveAgentNamespaces` devolve
+`agents:` ∪ disco, então um `req_dir/backlog/` real também é reportado como agente e o caso 3
+(`<agente>/*.md`) emite exatamente os mesmos paths do caso 2 (`<estado>/*.md`). Sem dedup por caminho
+normalizado, toda REQ em layout por-estado seria contada **duas vezes** e cada violação sairia em
+dobro. Coberto por teste nos 3 runtimes.
+
+**Números (mesma fixture, 3 CLIs).** Depois: os 6 layouts dão **2 violações** em Go, Node e Python —
+paridade exata. Regras que enxergam **zero REQs** num projeto `by_agent`: **0 de 6**
+(`ref_targets_exist`, `req_has_adr`, `req_has_roadmap`, `blocked_by_draft_adr`,
+`adr_accepted_when_req_done`, `traceid`), em todos os layouts e nos 3 CLIs.
+**Falsificação na direção oposta:** removendo só o 4º caso (`req_dir/<agente>/*.md`) dos 3
+resolvedores, a fixture canônica volta a **0** violações e **4 das 6** regras voltam a enxergar zero
+REQs — as 2 restantes só disparam por artefato de roadmap. Sabotagem revertida e medida de novo.
+**Compatibilidade:** REQ em `req_dir/*.md` num projeto `by_agent` continua encontrada (2 violações);
+nenhum arquivo movido.
+
+**Teste vácuo encontrado e fechado.** `npm/tests/context_req_by_agent.test.js` duplicava a lógica de
+coleta do `context.js` e testava a **cópia** — continuaria verde com a produção divergindo. Passou a
+chamar a função de produção (`collectReqEntries`, exposta no módulo) e ganhou o caso do layout
+canônico.
+
+**Métrica corrigida durante a execução.** "A regra apareceu na saída" é **fraca**: na árvore
+sabotada o Go continua dando 6/6 porque `ref_targets_exist` e `traceid` disparam pelo lado do
+**roadmap**, com zero REQs lidas. A métrica usada é **por artefato** — a violação tem de nomear um
+basename `REQ-*.md` no campo `file` **ou** na `message` (em Go, `blocked_by_draft_adr` sai com
+`file: ""`). Com ela: árvore boa **6/6** regras nos 3 CLIs e nos 6 layouts; árvore sabotada **1/6**
+(Go, Python) e **2/6** (Node).
+
+**Resíduo declarado, com número.** `npm/src/validator/traceid.js` continua fora do ponto único:
+indexa REQ com varredura **recursiva**, superconjunto dos 4 layouts — nunca vácuo, mas é a segunda
+noção de layout naquele runtime, e é exatamente por isso que o Node cai para 2/6 na sabotagem
+enquanto Go e Python caem para 1/6. Convergir **estreita** o Node ao contrato e obriga os testes de
+traceid a declarar `roadmap_namespacing`; registrado em `docs/cli-parity.md` e no vault, não feito de
+carona. Também declarados: `trackfw sync` hardcoda `docs/req` nos 3 CLIs (ignora `req_dir`), e
+`req move` continua movendo REQ para `<agente>/<estado>/`, contra o invariante D1.
+
+**Consequência que não é só de `by_agent`:** o caso por-estado passou a ser lido incondicionalmente,
+então um projeto **flat** com árvore legada `req_dir/<estado>/` também passa a ter suas REQs olhadas
+(antes: 0 violações; agora: 2 na mesma fixture). Nada é movido.
+
+**Nenhum teste existente codificava o comportamento antigo** — nada afirmava "REQ flat NÃO é
+encontrada em by_agent". As 3 suítes passaram sem edição (Go, 859 testes Node, 1608 Python), o que é
+evidência de que o defeito nunca foi testado em nenhuma das duas direções — e reforça o ML-2A.
+`npm/tests/context_req_by_agent.test.js` foi reescrito para chamar a produção.
+
+**Evidência final:** `make quality` **EXIT=0** (execução única, ~13 min, exit capturado sem pipe);
+`bin/trackfw validate` **EXIT=0** (22 warnings, os mesmos de antes); `git status --porcelain` sem
+nenhuma linha `R` (zero renomeações — 18 arquivos `M`, 4 `??` novos: 3 testes + 1 nota de vault).
+
+**Roadmap não movido e ML não marcado `✅`** — cabe ao `trackfw_architect` após a auditoria.
+Nenhuma operação de git executada.

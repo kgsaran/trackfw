@@ -114,6 +114,32 @@ func collectTraceIdEntriesByAgent(roadmapDir, traceField string, cfg config.Proj
 	return all, nil
 }
 
+// collectTraceIdEntriesFromFiles indexa uma lista JÁ RESOLVIDA de arquivos pelo campo traceField.
+// O estado de cada entrada é o nome da pasta-pai quando ele é um estado conhecido, e vazio caso
+// contrário — o que preserva o comportamento histórico (arquivo na raiz de req_dir tem estado "")
+// e é coerente com o invariante D1 (REQ em req_dir/<agente>/*.md não tem estado). Estado vazio
+// nunca participa de traceid_state_mismatch, que só compara quando os dois lados têm estado.
+func collectTraceIdEntriesFromFiles(files []string, traceField string) []traceIdEntry {
+	stateSet := map[string]bool{"wip": true, "done": true, "backlog": true, "analyzing": true, "blocked": true, "abandoned": true}
+	var entries []traceIdEntry
+	for _, f := range files {
+		content, err := os.ReadFile(f)
+		if err != nil {
+			continue
+		}
+		val := extractFrontmatterField(string(content), traceField)
+		if val == "" {
+			continue
+		}
+		state := ""
+		if parent := filepath.Base(filepath.Dir(f)); stateSet[parent] {
+			state = parent
+		}
+		entries = append(entries, traceIdEntry{reqID: val, state: state, path: f})
+	}
+	return entries
+}
+
 // validateTraceId executa as 5 verificações bidirecionais REQ↔Roadmap via trace_id_field.
 // Retorna violations e warnings separados por tipo de regra.
 func validateTraceId(cfg config.ProjectConfig) (violations []string, warnings []string) {
@@ -122,13 +148,12 @@ func validateTraceId(cfg config.ProjectConfig) (violations []string, warnings []
 		return nil, nil
 	}
 
-	// Indexar REQs — usa by_agent quando configurado
-	var reqEntries []traceIdEntry
-	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
-		reqEntries, _ = collectTraceIdEntriesByAgent(cfg.REQDir, traceField, cfg)
-	} else {
-		reqEntries, _ = collectTraceIdEntries(cfg.REQDir, traceField)
-	}
+	// Indexar REQs — pelo PONTO ÚNICO de leitura de REQ (ADR-2026-09-03, D3/D4).
+	// 🔴 Antes, esta regra montava a própria árvore (flat+estado, ou <agente>/<estado>/ em by_agent)
+	// e ficava vácua exatamente nos layouts que o resolvedor passou a cobrir — traceid é uma das
+	// regras que a ADR exige que deixem de enxergar zero REQs em by_agent. Corrigir só
+	// resolveREQFiles não a alcançaria, porque ela recebia um DIRETÓRIO, não a lista resolvida.
+	reqEntries := collectTraceIdEntriesFromFiles(ResolveREQFiles(cfg), traceField)
 	// Indexar Roadmaps — usa by_agent quando configurado
 	var roadmapEntries []traceIdEntry
 	if cfg.RoadmapNamespacing == config.NamespacingByAgent {

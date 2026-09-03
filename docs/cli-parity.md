@@ -295,8 +295,9 @@ where the roadmap's own `status:` is already rewritten — never before, so a fa
 dangling edit.
 
 **Discovery source.** Scan `req_dir` for REQs whose `roadmap:` **basename** equals the moved roadmap's
-basename. Cover both the flat layout (`req_dir/*.md`) and `by_agent`
-(`req_dir/<agent>/<state>/*.md`), mirroring what the validator already scans.
+basename. Discovery is **not reimplemented here**: it calls the single REQ read point
+(`ResolveREQFiles` / `resolveReqFiles` / `resolve_req_files`), which returns the union of the four
+supported layouts — see *REQ layout — union on read, single path on write* below.
 
 Do **not** use the roadmap's own `req:` field for discovery. `trackfw roadmap new` writes `req: ""`, and
 existing roadmaps carry a bare slug there with no path and no `.md`. Discovery must run in the inverse
@@ -348,15 +349,11 @@ after processing all of them, so one unwritable file does not hide the rest.
 <!-- trackfw-contract: gap reason=nenhum gate cross-CLI exercita req list/req move — nem a descoberta por layout (flat/by_agent) nem a discriminação in-place-vs-physical-move são comparadas entre Go, Node.js e Python -->
 
 `req_dir` reuses the roadmap's own `roadmap_namespacing` field — there is no separate `req_namespacing`
-key (see ADR-2026-08-04). `req list` and `req move <name> <status>` discover REQs by concatenating three
-fixed, non-recursive globs (not mutually exclusive, all three are always scanned):
+key (see ADR-2026-08-04). `req list` and `req move <name> <status>` do **not** implement their own
+discovery: they call the single REQ read point described in *REQ layout — union on read, single path on
+write* below, which scans the four fixed, non-recursive layouts as a union.
 
-1. `req_dir/*.md` — flat legacy layout.
-2. `req_dir/<state>/*.md` for each of the six governance states — per-state layout, no agent segment.
-3. `req_dir/<agent>/<state>/*.md`, only when `roadmap_namespacing: by_agent` — by_agent layout, agents
-   from `agents:` in config or, if unset, the first-level subdirectories of `req_dir`.
-
-A REQ nested deeper than these three fixed patterns is invisible to both commands.
+A REQ nested deeper than those four fixed patterns is invisible to both commands.
 
 **`req move` mode is discriminated by where the file currently lives**, not by a flag:
 
@@ -376,6 +373,83 @@ A REQ nested deeper than these three fixed patterns is invisible to both command
 The transition is appended to `<req_dir>/.trackfw-log` — a log file separate from
 `<roadmap_dir>/.trackfw-log`; `trackfw log` reads only the roadmap log, so REQ transitions do not appear
 in `trackfw log` output.
+
+### REQ layout — union on read, single path on write
+
+<!-- trackfw-contract: gap reason=nenhum gate cross-CLI exercita a descoberta de REQ por layout nem o ciclo new-then-validate; a cobertura hoje e por teste unitario em cada runtime (internal/validator/validator_req_layout_test.go, npm/tests/req_layout_union.test.js, pypi/tests/test_req_layout_union.py), que nunca compara os 3 CLIs sobre a mesma arvore. O gate cross-CLI e o entregavel do ML-2A do ROADMAP-2026-09-03 -->
+
+Governs ADR-2026-09-03. **A REQ has no state dimension** (invariant D1): `backlog`/`analyzing`/`wip`/
+`blocked`/`done`/`abandoned` are a *roadmap* concept; a REQ carries `status:` in its frontmatter. The
+per-state folders below are tolerated **legacy** trees, never a target for new REQs.
+
+**One single point decides the path, and both sides consume it** (D4). Per runtime there is exactly one
+read function and one write function; every rule, generator and command calls them instead of rebuilding
+the tree:
+
+| | Go (`internal/validator`) | Node.js (`npm/src/validator`) | Python (`trackfw/validator.py`) |
+|---|---|---|---|
+| read | `ResolveREQFiles(cfg)` | `resolveReqFiles(cfg)` | `resolve_req_files(cfg)` |
+| write | `REQWriteDir(cfg)` | `reqWriteDir(cfg)` | `req_write_dir(cfg)` |
+
+**Read is a union of the four layouts** (D3) — never an exclusive choice between them:
+
+1. `req_dir/*.md` — flat legacy.
+2. `req_dir/<state>/*.md` for each of the six governance states — per-state legacy, no agent segment.
+3. `req_dir/<agent>/*.md` — **canonical in `by_agent`**.
+4. `req_dir/<agent>/<state>/*.md` — legacy.
+
+Cases 3 and 4 apply **only** when `roadmap_namespacing: by_agent`; outside it there is no agent
+namespace and an arbitrary subdirectory must not be read as one. Agents come from the canonical
+namespace resolver (`agents:` ∪ first-level subdirectories of `req_dir`).
+
+**Write is single** (D2): `by_agent` → `req_dir/<agent>/` where `<agent>` is the first entry of `agents:`
+or `default` when the list is empty (same convention as `roadmap new`); flat → `req_dir/`. The write
+directory is contained in the read union **by construction** — that containment is the contract, and the
+unit test that asserts it (`REQ created at the write dir is found by the resolver`) exists in all three
+runtimes.
+
+**Canonical does not mean exclusive.** Choosing a canonical write layout never rejects the others: no
+project's `req_dir` is migrated, and a REQ sitting in `req_dir/*.md` inside a `by_agent` project stays
+visible.
+
+**Deduplication is part of the contract, not hygiene.** Because the namespace resolver unions `agents:`
+with what is on disk, a real `req_dir/backlog/` directory is also reported as an agent — so case 3 emits
+exactly the same paths as case 2. Implementations deduplicate by normalized path; without it every REQ in
+a per-state tree would be counted twice and each violation would be emitted twice. Do **not** deduplicate
+by filtering state names out of the agent list: an agent legitimately named `done` exists and would
+disappear.
+
+**Order is pinned:** the resolved list is sorted by full path. Scan order is agent-major and would not be
+stable across runtimes (`fs.readdirSync` guarantees no order).
+
+**Declared residuals.**
+
+- **`traceid` in the Node.js CLI does not go through the resolver.** `npm/src/validator/traceid.js`
+  indexes REQs with a **recursive** walk of `req_dir`, so it is a strict *superset* of the four
+  layouts and is never vacuous — but it is a second layout notion inside that runtime, and it indexes
+  REQs nested deeper than the four patterns (`req_dir/a/b/c/REQ.md`), which Go and Python do not.
+  Measured: with the canonical case removed from all three resolvers, Go and Python drop to 5 rules
+  seeing no REQ artifact while Node drops to 4 — the difference *is* this residual. Converging it
+  **narrows** Node to the contract and requires the existing traceid tests to declare
+  `roadmap_namespacing`, which is why it is declared here instead of done in passing.
+- **`trackfw sync` hardcodes `docs/req`** in all three CLIs and ignores `req_dir` entirely — a defect
+  of its own, unrelated to the layout union.
+- **`req move` still relocates REQs into `req_dir/<agent>/<state>/`**, which contradicts invariant D1.
+  Read tolerates it; changing the move is explicitly out of this decision's scope.
+
+**Consequence for `flat` projects, not just `by_agent`.** Layout 2 is scanned unconditionally, so a
+`flat` project holding a legacy `req_dir/<state>/` tree also stops being invisible: REQs there were
+never read by the rules before and their violations now surface. Nothing is moved — they were always
+reachable by `req list`, only the validator ignored them.
+
+**Why this is a contract and not an implementation note.** The writer wrote flat, the reader looked in
+`<agent>/<state>/`, and the field in the field used `<agent>/` — none of the three agreed, so in every
+`by_agent` project the rules that consume REQ passed **without reading anything**: same REQ, same broken
+reference, `flat` → 2 violations, `by_agent` → 0 (issue #216). Measurable form of the fix: in a `by_agent`
+project, the number of rules seeing zero REQs must be **zero** — `ref_targets_exist`, `req_has_adr`,
+`req_has_roadmap`, `blocked_by_draft_adr`, `adr_accepted_when_req_done` and the `traceid_*` family. A rule
+that receives a *directory* instead of the resolved list (as `traceid` did) stays vacuous even after the
+resolver is fixed.
 
 ## JSON Schema artifacts
 

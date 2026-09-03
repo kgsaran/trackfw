@@ -1367,31 +1367,106 @@ func ResolveAgentNamespaces(cfg config.ProjectConfig, dir string) []string {
 	return resolveAgentNamespaces(cfg, dir)
 }
 
-// resolveREQFiles retorna paths completos de todos os .md em req_dir,
-// consciente de roadmap_namespacing: by_agent percorre req_dir/<agente>/<estado>/.
-func resolveREQFiles(cfg config.ProjectConfig) []string {
+// reqLayoutStates é a lista fechada de nomes de pasta de ESTADO reconhecidos nos layouts LEGADOS de
+// REQ. Ela existe apenas para o leitor tolerar árvores antigas: pelo invariante D1 da
+// ADR-2026-09-03, REQ NÃO tem dimensão de estado — backlog/analyzing/wip/blocked/done/abandoned são
+// conceito de roadmap. Nada aqui deve ser usado para ESCREVER REQ.
+var reqLayoutStates = []string{"backlog", "analyzing", "wip", "blocked", "done", "abandoned"}
+
+// REQWriteDir é o PONTO ÚNICO que decide ONDE uma REQ nova é gravada (ADR-2026-09-03, D2/D4):
+//   - flat      → req_dir/
+//   - by_agent  → req_dir/<agente>/   (agente = primeiro de agents:, ou "default" se a lista é vazia;
+//     mesma convenção de agentStateDir em internal/generators/roadmap.go)
+//
+// 🔴 O par escritor/leitor não pode ter duas noções de layout (D4). Este ponto e ResolveREQFiles
+// abaixo são consumidos pelos DOIS lados; a união de leitura contém, por construção, o diretório
+// devolvido aqui. Alterar um sem o outro é exatamente o defeito que a REQ-2026-08-30 fecha.
+func REQWriteDir(cfg config.ProjectConfig) string {
+	reqDir := cfg.REQDir
+	if reqDir == "" {
+		return ""
+	}
+	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
+		agent := "default"
+		if len(cfg.Agents) > 0 && cfg.Agents[0] != "" {
+			agent = cfg.Agents[0]
+		}
+		return filepath.Join(reqDir, agent)
+	}
+	return reqDir
+}
+
+// ResolveREQFiles é o PONTO ÚNICO de LEITURA de REQ (ADR-2026-09-03, D3/D4): devolve os paths de
+// todos os .md de REQ como UNIÃO dos 4 layouts suportados, nunca como escolha exclusiva entre eles:
+//
+//	req_dir/*.md                     flat legado
+//	req_dir/<estado>/*.md            por-estado legado (apesar de D1)
+//	req_dir/<agente>/*.md            CANÔNICO em by_agent
+//	req_dir/<agente>/<estado>/*.md   legado
+//
+// Os dois últimos só se aplicam quando roadmap_namespacing == by_agent — fora dele não há noção de
+// namespace de agente e um subdiretório qualquer não pode ser tratado como agente.
+//
+// 🔴 Layout canônico NÃO significa recusar os demais: a união é o que torna a migração de
+// req_dir desnecessária (D3). Nenhum arquivo de ninguém é movido.
+//
+// 🔴 DEDUPLICAÇÃO É OBRIGATÓRIA, não higiene: resolveAgentNamespaces devolve agents: ∪ disco, então
+// um req_dir/backlog/ real entra na lista de agentes e o caso <agente>/*.md emite exatamente os
+// mesmos paths do caso <estado>/*.md. Sem o conjunto `seen`, toda REQ em layout por-estado seria
+// contada duas vezes e cada violação apareceria em duplicata. Não resolver isso filtrando nomes de
+// estado da lista de agentes: um agente legitimamente chamado "done" existiria e sumiria.
+func ResolveREQFiles(cfg config.ProjectConfig) []string {
 	reqDir := cfg.REQDir
 	if reqDir == "" {
 		return nil
 	}
+
+	seen := make(map[string]bool)
+	var files []string
+	add := func(paths []string) {
+		for _, p := range paths {
+			clean := filepath.Clean(p)
+			if seen[clean] {
+				continue
+			}
+			seen[clean] = true
+			files = append(files, clean)
+		}
+	}
+
+	// (1) flat legado — req_dir/*.md
+	add(ListMDFiles(reqDir))
+
+	// (2) por-estado legado — req_dir/<estado>/*.md
+	for _, state := range reqLayoutStates {
+		add(ListMDFiles(filepath.Join(reqDir, state)))
+	}
+
 	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
-		stateDirs := []string{"backlog", "analyzing", "wip", "blocked", "done", "abandoned"}
 		agents := resolveAgentNamespaces(cfg, reqDir)
-		var files []string
 		for _, agent := range agents {
-			// ML-4A (achado 2): agent vem do disco — ListMDFiles em vez de filepath.Glob.
-			for _, state := range stateDirs {
-				files = append(files, ListMDFiles(filepath.Join(reqDir, agent, state))...)
+			// ML-4A (achado 2): agent vem do disco (nome de diretório sem validação de formato) —
+			// ListMDFiles em vez de filepath.Glob, para que metacaracteres ("*", "[") no nome não
+			// sejam interpretados como padrão e corrompam a contagem em silêncio.
+			// (3) canônico — req_dir/<agente>/*.md
+			add(ListMDFiles(filepath.Join(reqDir, agent)))
+			// (4) legado — req_dir/<agente>/<estado>/*.md
+			for _, state := range reqLayoutStates {
+				add(ListMDFiles(filepath.Join(reqDir, agent, state)))
 			}
 		}
-		return files
 	}
-	// flat (comportamento anterior)
-	matches, err := filepath.Glob(filepath.Join(reqDir, "*.md"))
-	if err != nil {
-		return nil
-	}
-	return matches
+
+	// Ordem determinística e igual nos 3 CLIs — a ordem de varredura é agent-major e não seria
+	// estável entre runtimes (readdir do Node não é ordenado).
+	sort.Strings(files)
+	return files
+}
+
+// resolveREQFiles é o alias interno do ponto único ResolveREQFiles — mantido para os consumidores
+// dentro do pacote. NÃO reimplementar a descoberta aqui (D4).
+func resolveREQFiles(cfg config.ProjectConfig) []string {
+	return ResolveREQFiles(cfg)
 }
 
 func validateWIPHasREQ() ([]string, error) {
