@@ -875,7 +875,7 @@ func inventoryBlock(cfg config.ProjectConfig) string {
 	}
 
 	reqFiles := resolveREQFiles(cfg)
-	var reqOpen, reqDone, reqClosed int
+	var reqOpen, reqDone, reqClosed, reqOther int
 	for _, p := range reqFiles {
 		content, err := os.ReadFile(p)
 		if err != nil {
@@ -888,6 +888,13 @@ func inventoryBlock(cfg config.ProjectConfig) string {
 			reqDone++
 		case "closed":
 			reqClosed++
+		default:
+			// Toda grafia fora de open/done/closed cai aqui. Sem este bucket o total
+			// bate e a quebra some com a diferenca EM SILENCIO: um acervo com
+			// approved/backlog/abandoned mostra "53 (8 Open · 36 Done · 0 Closed)" sem
+			// indicar que 9 existem e nao estao em lugar nenhum da conta.
+			// O Python ja fazia isto (pypi/trackfw/commands/status.py:58,199).
+			reqOther++
 		}
 	}
 
@@ -906,7 +913,11 @@ func inventoryBlock(cfg config.ProjectConfig) string {
 
 	sb.WriteString("\n📊 Inventory\n")
 	sb.WriteString(fmt.Sprintf("   %-12s%d\n", "ADRs", adrCount))
-	sb.WriteString(fmt.Sprintf("   %-12s%d  (%d Open · %d Done · %d Closed)\n", "REQs", len(reqFiles), reqOpen, reqDone, reqClosed))
+	reqDetail := fmt.Sprintf("%d Open · %d Done · %d Closed", reqOpen, reqDone, reqClosed)
+	if reqOther > 0 {
+		reqDetail += fmt.Sprintf(" · %d Other", reqOther)
+	}
+	sb.WriteString(fmt.Sprintf("   %-12s%d  (%s)\n", "REQs", len(reqFiles), reqDetail))
 	sb.WriteString(fmt.Sprintf("   %-12s%d\n", "Roadmaps", roadmapTotal))
 	sb.WriteString(fmt.Sprintf("     backlog %d · analyzing %d · wip %d\n", roadmapCounts["backlog"], roadmapCounts["analyzing"], roadmapCounts["wip"]))
 	sb.WriteString(fmt.Sprintf("     blocked %d · done %d · abandoned %d\n", roadmapCounts["blocked"], roadmapCounts["done"], roadmapCounts["abandoned"]))

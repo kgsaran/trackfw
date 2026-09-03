@@ -3347,6 +3347,7 @@ function buildInventorySection(cfg) {
   let reqOpen = 0
   let reqDone = 0
   let reqClosed = 0
+  let reqOther = 0
   for (const filePath of reqFiles) {
     let content
     try {
@@ -3357,6 +3358,7 @@ function buildInventorySection(cfg) {
     if (reqStatusEquals(content, 'open')) reqOpen++
     else if (reqStatusEquals(content, 'done')) reqDone++
     else if (reqStatusEquals(content, 'closed')) reqClosed++
+    else reqOther++
   }
 
   const roadmapCounts = {}
@@ -3372,7 +3374,14 @@ function buildInventorySection(cfg) {
 
   let section = '\n📊 Inventory\n'
   section += `   ${'ADRs'.padEnd(12)}${adrCount}\n`
-  section += `   ${'REQs'.padEnd(12)}${reqFiles.length}  (${reqOpen} Open · ${reqDone} Done · ${reqClosed} Closed)\n`
+  // Toda grafia fora de open/done/closed cai em reqOther. Sem este bucket o total
+  // bate e a quebra some com a diferenca EM SILENCIO: um acervo com
+  // approved/backlog/abandoned mostra "53 (8 Open · 36 Done · 0 Closed)" sem
+  // indicar que 9 existem e nao estao em lugar nenhum da conta.
+  // O Python ja fazia isto (pypi/trackfw/commands/status.py:58,199).
+  let reqDetail = `${reqOpen} Open · ${reqDone} Done · ${reqClosed} Closed`
+  if (reqOther > 0) reqDetail += ` · ${reqOther} Other`
+  section += `   ${'REQs'.padEnd(12)}${reqFiles.length}  (${reqDetail})\n`
   section += `   ${'Roadmaps'.padEnd(12)}${roadmapTotal}\n`
   section += `     backlog ${roadmapCounts.backlog} · analyzing ${roadmapCounts.analyzing} · wip ${roadmapCounts.wip}\n`
   section += `     blocked ${roadmapCounts.blocked} · done ${roadmapCounts.done} · abandoned ${roadmapCounts.abandoned}\n`
