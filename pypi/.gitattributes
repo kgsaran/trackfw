@@ -1,0 +1,11 @@
+# trackfw / ML-1C — metade FIXTURE do grupo CRLF.
+#
+# Mesmo racional de npm/.gitattributes: os testes de paridade em Go leem
+# pypi/trackfw/generators/init_gen.py e hooks.py como TEXTO, extraem os blocos
+# `_CG_*` / `_ATTENTION_*` por regex e comparam com as constantes Go. Sob
+# `core.autocrlf=true` o bloco extraído vem com `\r` e a comparação diverge.
+#
+# O escopo é `trackfw/generators/` apenas. `trackfw/integrations/assets/**` fica
+# de fora de propósito — é entrada do parser de frontmatter, cujo defeito sob
+# CRLF deve continuar visível no CI.
+trackfw/generators/*.py text eol=lf

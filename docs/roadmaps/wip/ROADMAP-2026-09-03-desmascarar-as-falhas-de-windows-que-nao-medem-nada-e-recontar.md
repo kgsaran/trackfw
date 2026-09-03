@@ -76,6 +76,38 @@ workflow, **não nos 3 CLIs** — zero trabalho de paridade.
 - [ ] Os testes que dependem de `git` deixam de quebrar por ambiente
 - [ ] 🔴 **Controle:** nenhum teste passa a ser pulado para conseguir isso
 
+### ML-1E — As metades órfãs da classe PATHEXT, em Node e Python
+**Status:** ⬜ Pendente · **Agente:** `artemis-tf`
+**Files affected:** `npm/tests/ship.test.js`, `pypi/tests/test_barrier.py`
+**Origem:** achado do ML-1D, que **falsificou a premissa do próprio ML**.
+
+As mensagens `git ... exited with null` e `git not found in current $PATH` **não vêm do home
+sintético**. `exited with null` é **ENOENT** do `spawnSync` (`npm/src/ship/runner.js:124`), e o
+executável não é achado porque a **fixture substitui o `$PATH` inteiro** por um `tmpBin` que contém
+um symlink **sem extensão** chamado `git`. O `PATHEXT` do Windows exige `git.exe`.
+
+```
+npm/tests/ship.test.js:867,944   env: { PATH: tmpBin, HOME: tmpDir, ... }
+pypi/tests/test_barrier.py:446   os.symlink(git_path, Path(curated) / "git")
+```
+
+🔴 **É a MESMA classe do ML-1A**, em outros dois runtimes. Ficou órfã por **erro meu de atribuição**:
+classifiquei pelo *sintoma* (mensagem de `git`) e mandei para o ML de infraestrutura; pelo
+*mecanismo* (PATHEXT) pertencia ao ML de fixtures. O ML-1A foi escopado "só Go" e o ML-1D "só
+workflow" — ninguém ficou com isto.
+
+O ML-1A já resolveu o par Go com `placeExecutableInPath` (`internal/commands/ship_test.go`), que
+mantém **symlink em POSIX** e usa hardlink→cópia só no Windows. 🔴 **Reaproveite a forma, não
+copie cega:** ele mediu que trocar o symlink por cópia **quebra o POSIX** — em macOS o `/usr/bin/git`
+é um shim assinado que morre fora do diretório dele.
+
+**Critérios de aceite:**
+- [ ] Node e Python montam o `git` da fixture de forma resolvível no Windows
+- [ ] 🔴 **Controle POSIX:** `npm test` e `pytest` com os mesmos números de antes — o remendo do Go
+      quebrou o POSIX na primeira tentativa; não repita
+- [ ] 🔴 Nenhum teste marcado `skip`
+- [ ] Nada fora dos 2 arquivos
+
 ## Wave 2 — Recontar
 > Dependências: Wave 1 mergeada **e CI executado**.
 
