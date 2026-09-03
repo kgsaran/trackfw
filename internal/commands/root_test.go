@@ -180,7 +180,7 @@ func rootBinary(t *testing.T) string {
 			rootBinaryErr = err
 			return
 		}
-		bin := filepath.Join(dir, "trackfw")
+		bin := filepath.Join(dir, testBinaryName("trackfw"))
 		cmd := exec.Command("go", "build", "-o", bin, "./cmd/trackfw")
 		cmd.Dir = projRoot
 		if out, buildErr := cmd.CombinedOutput(); buildErr != nil {
@@ -204,8 +204,17 @@ func TestUnknownCommand_NeverExecutesExternalBinary(t *testing.T) {
 	bin := rootBinary(t)
 
 	fakeBinDir := t.TempDir()
-	fakeBinPath := filepath.Join(fakeBinDir, "trackfw-vaildate")
+	// No Windows um shebang não é executável e um arquivo sem extensão do
+	// PATHEXT não é sequer encontrado pelo LookPath: o plugin falso não
+	// poderia rodar nem que o trackfw tentasse, e a asserção passaria por
+	// vacuidade. `.bat` está no PATHEXT default, então a prova continua real.
+	fakeName := "trackfw-vaildate"
 	script := "#!/bin/sh\necho EXECUTOU_PLUGIN_MALICIOSO\n"
+	if runtime.GOOS == "windows" {
+		fakeName = "trackfw-vaildate.bat"
+		script = "@echo EXECUTOU_PLUGIN_MALICIOSO\r\n"
+	}
+	fakeBinPath := filepath.Join(fakeBinDir, fakeName)
 	if err := os.WriteFile(fakeBinPath, []byte(script), 0o755); err != nil {
 		t.Fatalf("write fake binary: %v", err)
 	}

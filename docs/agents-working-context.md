@@ -29463,3 +29463,142 @@ Também confirmado que **nenhum** cenário edita `validator.go` por número de l
 nenhum gate consome `check-gates-falsify.sh` como **dado** (as 15 menções em `scripts/*.sh` são
 prosa/referência), então as linhas que acrescentei ao cabeçalho do Cenário 183 não movem contagem de
 gate nenhum. `bin/trackfw validate` exit 0.
+
+---
+
+## 2026-09-03 — `ares-tf` — ML-1A (binário de teste sem `.exe` no Windows)
+
+Helper único `testBinaryNameFor(goos, base)` + wrapper `testBinaryName` em
+`barrier_contract_test.go`; aplicado nos **3** pontos que montam caminho de binário em
+`internal/commands/` (`barrier_contract_test.go:63`, `root_test.go:183`, `ship_test.go:1188`).
+Dois bloqueios adjacentes na mesma classe também corrigidos: o plugin falso `trackfw-vaildate`
+(shebang inerte no Windows → `.bat`) e o `os.Symlink` do `git` em `ship_test.go` (privilegiado no
+Windows → hardlink/cópia **só** no Windows; POSIX segue symlink).
+
+Medido: `GOOS=windows go build -o .../trackfw` produz PE32+ chamado `trackfw`, **sem extensão** —
+confirma o diagnóstico. Falsificação do helper nas duas direções por teste de unidade. Controle
+POSIX: `go test ./internal/commands/` exit 0 antes **e** depois. `GOOS=windows go vet` OK.
+Nenhum `t.Skip` acrescentado. **Não commitei; nenhuma operação de git.**
+
+Cobertura: os 3 sites atendem **20** funções de teste que executam o binário (10 em
+`barrier_contract_test.go` + 7 em `barrier_test.go` via `runBarrierCLI` + 2 em `root_test.go` + 1 em
+`ship_test.go`) — fecha os 17 do run de Windows. `barrier_test.go` não precisou de edição: depende
+do binário indiretamente pelo runner compartilhado.
+
+🔴 **Residual em `TestShip_Integration_GracefulDegradation_RealBinary`:** desmascarado **só** pela
+causa `.exe`/symlink. No Windows o teste monta `PATH=tmpBin` com uma única entrada; o `git.exe` do
+Git for Windows resolve DLLs colocadas no diretório de instalação e um PATH sem `System32` pode
+mantê-lo vermelho por causa **não medida**. ML-2A não deve assumir que ele vira verde.
+
+`gofmt -l` acusa `ship_test.go` (e `help.go`, `status.go`, `push_test.go`, `doctor_remote_test.go`)
+— divergência **pré-existente**, nas linhas 968–1050; minhas regiões estão gofmt-limpas.
+
+🔴 Reportado, **não corrigido** (defeito de PRODUTO, deve continuar visível): `barrier.go:743`
+hard-coda `exec.Command("sh","-c",...)` — `TestRunGateCommand_*` quebra no Windows por defeito do
+runner de gates, não por fixture. Mesma lógica de carve-out do ML-1C.
+
+---
+
+## 2026-09-03 — `dedalo-tf` — ML-1D (`git`/branch no home sintético — só `quality.yml`)
+
+**A premissa do AC5 ("vive no `quality.yml`") não se sustenta na leitura das fontes, e o resultado
+deste ML é essa falsificação.** As duas strings citadas vêm de **fixtures que substituem o `$PATH`**,
+não do home sintético do job: `git symbolic-ref --short HEAD exited with null` é
+`npm/src/ship/runner.js:124` com `result.status === null` (ENOENT de `spawnSync('git')`), alcançável
+só porque `npm/tests/ship.test.js:866,943` roda o CLI com `env: { PATH: tmpBin, ... }` onde `tmpBin`
+tem um `git` **sem extensão**; e `git not found in current $PATH` é `pypi/tests/test_barrier.py:446`,
+que varre o `$PATH` procurando um arquivo literalmente chamado `git`. É a classe do ML-1A (PATHEXT),
+cuja correção já cobriu a metade **Go** (`ship_test.go`, `placeExecutableInPath`). As metades **Node
+e Python continuam abertas** — achado sem dono, fora do escopo declarado do ML-1A e do ML-1D.
+Nenhum `$PATH` configurado no job as alcança: a fixture **descarta** o `$PATH` do job.
+
+**Hipótese própria também falsificada, e por isso NÃO aplicada:** cheguei a semear `.gitconfig` de
+identidade no home sintético (home vazio → `git commit` = "Author identity unknown"). Revertido
+depois de medir por leitura que **todo** helper que commita de verdade nos 3 runtimes seta
+identidade **local** antes do primeiro commit (`internal/validator/validator_test.go:26`,
+`pypi/tests/test_credential_guard_integrity.py:27`, `npm/tests/credential_guard_integrity.test.js:36`),
+e que os testes que exigem config global limpa pinam `GIT_CONFIG_GLOBAL` num arquivo vazio próprio
+(`internal/commands/branch_prune_test.go:435`). A semente não desbloquearia teste nenhum — só
+acrescentaria variável não medida ao instrumento.
+
+**Único acréscimo ao `quality.yml`:** uma **sonda observacional** em `windows-full-suites`, sob o
+mesmo `HOME`/`USERPROFILE` das suítes, que mede se `git` resolve, `init/add/commit` completa e
+`symbolic-ref --short HEAD` responde. É o que torna a conclusão acima **falsificável no Windows**
+(ela foi obtida por leitura, e eu não tenho Windows): verde ⇒ triar falhas de `git` como fixture;
+vermelho ⇒ existe bloqueio de ambiente que a leitura não viu. 🔴 `continue-on-error: true` e **fora**
+do `if:` das três suítes — nunca vira portão, nenhum teste é pulado (AC7), e o `success()` implícito
+do step "Camada 1 pulada" fica intacto.
+
+Isolação da AC12 intacta: o step de confirmação está **byte-idêntico** e compara **caminhos**
+(`os.UserHomeDir`/`os.homedir`/`expanduser('~')` vs `$env:USERPROFILE`); a sonda roda num repo
+descartável em `RUNNER_TEMP`, **fora** do home sintético, sem deixar resíduo. Só
+`.github/workflows/quality.yml`, só o job `windows-full-suites`, 2 hunks, 100% adição — nenhum outro
+job tocado. `bin/trackfw validate` RC=0. Suítes **não** rodadas de propósito: 3 agentes editam
+arquivos de teste nesta branch agora, e qualquer resultado local seria contaminado.
+**Não commitei; nenhuma operação de git.**
+
+---
+
+## 2026-09-03 — `artemis-tf` (QA) — ML-1B (isolação de home vácua no Windows)
+
+`pypi/tests/conftest.py` e `internal/validator/main_test.go` passam a apontar **`HOME` e
+`USERPROFILE` para o mesmo diretório sintético**. 🔴 **O diagnóstico do ML estava desatualizado:** a
+isolação **não** é vácua — o shim `internal/homedir/homedir.go:32` / `pypi/trackfw/homedir.py:58`
+(commit `c88b81e`, 2026-09-01) faz a produção ler `HOME` em qualquer plataforma. O defeito é
+**divergência de canal**: produção via `HOME`, teste/gate via `%USERPROFILE%`. O log do run
+`33742756936` confirma a direção (o *actual* é a home da fixture, não a do job). Nota de vault nova:
+`isolacao-de-home-no-windows-o-defeito-e-divergencia-de-canal-nao-vacuidade-2026-09-03.md`.
+
+Falsificação nas duas direções (macOS, `HOME`≠`USERPROFILE` semeados): Python via driver da fixture
+(antes → WRONG-PATH BIND; depois → ISOLATED); Go via `TestIsolatedHomeCoversBothChannels` novo
+(sem o `Setenv` → FAIL; árvore íntegra → PASS). Controle POSIX: `pytest pypi/tests/` **1604 passed**
+antes e depois; `go test ./internal/validator/` **204 → 205 PASS** (delta = só o teste novo).
+Nenhum `t.Skip`/`skip`. **Não commitei; nenhuma operação de git.**
+
+🔴 Residual/paridade (reportado, **não** corrigido): isolação por-teste (`globalGuardHome`, `setUp`s
+do pytest) ainda sobrescreve só `HOME`. Classe pior e distinta: testes que isolam por **patch da
+função** (`monkeypatch.setattr("os.path.expanduser", ...)` — `test_identity_wizard.py`,
+`test_scope_resolution.py`, `test_thirdparty.py`) ficam **inalcançáveis** no win32, porque
+`home_dir()` devolve `HOME` antes de chamar `expanduser`; candidato a fatia das 104 falhas Python
+que o ML-2A vai recontar, e **não** é defeito de fixture. O CLI **Node** não tem isolação de sessão.
+O bloco AC12 de `.github/workflows/quality.yml` (~L159-200) fica com a justificativa desatualizada.
+
+---
+
+## 2026-09-03 — `artemis-tf` (QA) — ML-1E (git da fixture resolvível no Windows: Node + Python)
+
+`npm/tests/ship.test.js` e `pypi/tests/test_barrier.py`. As duas fixtures montavam o `git` do `$PATH`
+curado com **nome sem extensão** (`fs.symlinkSync(git, tmpBin/'git')`, `os.symlink(git, curated/'git')`)
+— o `PATHEXT` do Windows nunca resolve isso, e o `spawnSync`/`subprocess` do produto morre com ENOENT
+(`"git ... exited with null"`). **Mesma classe do ML-1A**, órfã por escopo. Defeito confirmado nos
+**dois** arquivos, com um segundo defeito independente só no Node: `spawnSync('which', ['git'])` não
+existe no Windows (stdout `null` → `TypeError` antes do PATHEXT); passou a `where` com a 1ª linha.
+
+Mecanismo: helper `placeExecutableInPath` / `_place_executable_in_path` com destino
+`basename(origem)` (preserva `.exe`) e **symlink como forma primária nos dois sistemas** —
+hardlink→cópia só como queda. 🔴 **Correção medida à nota de vault:** o symlink **não** é o
+bloqueio no Windows. Se `symlinkSync` tivesse falhado por Developer Mode, o teste morreria antes de
+spawnar o produto e a mensagem `exited with null` (que vem de `npm/src/ship/runner.js:124`) não
+existiria no log. O bloqueio é só o **nome sem extensão**. Symlink também é a forma certa lá: o
+processo roda com o caminho do alvo, então o wrapper do Git for Windows continua achando sua
+instalação — o que uma cópia quebraria (mesmo mecanismo do shim assinado do macOS). Cada helper
+sonda o binário colocado (`--version`) e nomeia o mecanismo na falha, para uma cópia quebrada não
+se disfarçar de `exited with null`.
+
+Controle POSIX, antes → depois: `npm test --prefix npm` **859 pass / 0 fail / 0 skipped** → **859 /
+0 / 0**; `python3 -m pytest pypi/tests/` **1604 passed** → **1604 passed**. Falsificação pela lógica
+de resolução (sem Windows aqui): origem `git.exe` → destino `git.exe` symlink, nos dois runtimes;
+forma revertida com a mesma origem → destino literal `git`. Rungs de queda e sonda também
+exercitados fora da suíte (symlink/hardlink negados → hardlink → cópia; binário inexecutável →
+assert nomeando o mecanismo), e o parsing do `where` com stdout multi-linha CRLF → 1ª linha sem
+`\r`. Nenhum `skip`. **Não commitei; nenhuma
+operação de git; `make quality` não rodado (por instrução).**
+
+🔴 Só o CI de Windows fecha: (a) que o ramo `where`/`shutil.which` resolve no runner; (b) que
+`symlinkSync`/`os.symlink` são permitidos lá — se não forem, cai em hardlink e, entre volumes
+(`TEMP` em `D:`, Git em `C:`), em **cópia**, e o wrapper `Git/cmd/git.exe` pode não achar
+`mingw64/` (a sonda torna isso legível, não o evita). Residual não medido: `PATH` de **entrada
+única** (`PATH: tmpBin`, `env["PATH"] = curated_path`) não tem `System32` — inofensivo para as DLLs
+da própria imagem, desconhecido para o que o `git` spawnar. **O mesmo risco de cópia vale para o
+`placeExecutableInPath` do Go (ML-1A), que não tenta symlink no Windows** — não toquei; fica como
+candidato caso o Go volte vermelho.

@@ -1,0 +1,13 @@
+# trackfw / ML-1C — metade FIXTURE do grupo CRLF.
+#
+# Os testes de paridade em Go (TestCredentialGuardScript_ParityAcrossStacks,
+# TestGlobalCredentialGuardScript_ParityAcrossStacks,
+# TestScriptsParity_GoldenCanonicalBlocks) leem estes arquivos como TEXTO,
+# extraem os template literals por regex e comparam byte-a-byte com as
+# constantes Go. Sob `core.autocrlf=true` o literal extraído carrega `\r` e
+# diverge da constante Go — falha de encoding de checkout, não de paridade.
+#
+# O escopo é `src/generators/` apenas. `src/integrations/assets/**` fica de fora
+# de propósito: são as entradas que o parser de frontmatter processa, e o defeito
+# do parser sob CRLF tem de permanecer visível.
+src/generators/*.js text eol=lf

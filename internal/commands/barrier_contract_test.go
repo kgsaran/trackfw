@@ -50,6 +50,47 @@ func barrierFindProjectRoot(t *testing.T) string {
 	}
 }
 
+// ────────────────────────────────────────────────────────────────────────────
+// Nome de executável de teste por SO.
+//
+// `go build -o <path>` grava o artefato com o nome LITERAL de <path>: medido
+// por cross-compile (`GOOS=windows go build -o .../trackfw ./cmd/trackfw`
+// produz um PE32+ chamado `trackfw`, sem extensão). No Windows o LookPath de
+// os/exec só aceita nomes com extensão do PATHEXT, então esse artefato existe
+// e não é executável — o binário nunca roda e o teste falha sem nunca ter
+// exercitado o código de produto.
+//
+// testBinaryNameFor é parametrizado pelo SO justamente para ser falsificável
+// nas duas direções sem precisar de uma máquina Windows.
+func testBinaryNameFor(goos, base string) string {
+	if goos == "windows" {
+		return base + ".exe"
+	}
+	return base
+}
+
+// testBinaryName aplica testBinaryNameFor ao SO em que o teste está rodando.
+func testBinaryName(base string) string {
+	return testBinaryNameFor(runtime.GOOS, base)
+}
+
+func TestTestBinaryNameFor_WindowsGetsExeAndPosixIsUnchanged(t *testing.T) {
+	cases := []struct {
+		goos, base, want string
+	}{
+		{"windows", "trackfw", "trackfw.exe"},
+		{"windows", "git", "git.exe"},
+		{"linux", "trackfw", "trackfw"},
+		{"darwin", "trackfw", "trackfw"},
+		{"freebsd", "trackfw", "trackfw"},
+	}
+	for _, tc := range cases {
+		if got := testBinaryNameFor(tc.goos, tc.base); got != tc.want {
+			t.Errorf("testBinaryNameFor(%q, %q) = %q, quer %q", tc.goos, tc.base, got, tc.want)
+		}
+	}
+}
+
 // barrierBinary compila o binário trackfw uma única vez e devolve o caminho.
 func barrierBinary(t *testing.T) string {
 	t.Helper()
@@ -60,7 +101,7 @@ func barrierBinary(t *testing.T) string {
 			barrierBinaryErr = err
 			return
 		}
-		bin := filepath.Join(dir, "trackfw")
+		bin := filepath.Join(dir, testBinaryName("trackfw"))
 		cmd := exec.Command("go", "build", "-o", bin, "./cmd/trackfw")
 		cmd.Dir = projRoot
 		if out, buildErr := cmd.CombinedOutput(); buildErr != nil {

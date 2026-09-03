@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -34,6 +35,56 @@ def _setup_dir(state: str = "wip", **kwargs) -> Path:
     content = _build_barrier_roadmap(**kwargs)
     (dir_ / f"docs/roadmaps/{state}/ROADMAP-barrier-fixture.md").write_text(content, encoding="utf-8")
     return dir_
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Fixture helper — $PATH curado com um git resolvível (ML-1E)
+# ────────────────────────────────────────────────────────────────────────────
+
+def _place_executable_in_path(src: str, bin_dir: str) -> str:
+    """Disponibiliza ``src`` dentro de ``bin_dir`` e devolve o caminho criado.
+
+    O nome de destino preserva o basename da origem — no Windows isso mantém o
+    ``.exe`` que o PATHEXT exige; um arquivo chamado só ``git`` nunca é
+    resolvido pelo CreateProcess, e o subprocess do produto morre com
+    FileNotFoundError/ENOENT (a classe corrigida no Go pelo ML-1A).
+
+    O symlink é a forma primária nos dois sistemas. No POSIX porque copiar é
+    regressão medida: o ``/usr/bin/git`` do macOS é um shim assinado que morre
+    fora do próprio diretório. No Windows porque o processo passa a rodar com o
+    caminho do alvo, então o wrapper do Git for Windows continua encontrando sua
+    instalação. Hardlink e cópia entram só se o symlink for negado (WinError
+    1314 sem Developer Mode; ``os.link`` recusa entre volumes) — e a cópia é o
+    único ramo em que o wrapper pode deixar de achar ``mingw64/``, por isso a
+    sonda abaixo nomeia o mecanismo.
+
+    Coloca exatamente um arquivo: acrescentar o *diretório* do git ao PATH
+    resolveria o PATHEXT, mas no Windows o ``git.exe`` pode estar em
+    ``Git/usr/bin``, que também contém ``sh.exe`` — e destruiria em silêncio o
+    poder discriminante do teste que exige git presente e sh ausente.
+    """
+    dst = str(Path(bin_dir) / os.path.basename(src))
+    mechanism = "symlink"
+    try:
+        os.symlink(src, dst)
+    except OSError:
+        try:
+            os.link(src, dst)
+            mechanism = "hardlink"
+        except OSError:
+            shutil.copy2(src, dst)
+            mechanism = "copy"
+    # Sonda: um destino colocado mas inexecutável faria o produto falhar de um
+    # jeito indistinguível do bug que este remendo corrige. A falha tem que
+    # nomear a fixture, não o produto.
+    try:
+        probe = subprocess.run([dst, "--version"], capture_output=True)
+        detail = f"returncode={probe.returncode}: {probe.stderr.decode('utf-8', errors='replace')}"
+        ok = probe.returncode == 0
+    except OSError as exc:  # ENOENT/EACCES ao spawnar o próprio destino
+        detail, ok = f"{type(exc).__name__}: {exc}", False
+    assert ok, f"fixture: git colocado por {mechanism} em {dst} não executa ({detail})"
+    return dst
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -437,14 +488,12 @@ def test_gates_sh_ausente_do_path_reporta_not_evaluated_com_mensagem_pinada():
     # não faz parte do escopo deste ML) mas sem `sh` — simula a ausência
     # especificamente de `sh` no $PATH, não do ambiente inteiro.
     curated = tempfile.mkdtemp(prefix="tw-no-sh-")
-    git_path = None
-    for candidate in os.environ.get("PATH", "").split(os.pathsep):
-        found = Path(candidate) / "git"
-        if found.is_file():
-            git_path = found
-            break
+    # shutil.which honra o PATHEXT: no Windows devolve `git.exe`, que a varredura
+    # anterior (procurar um arquivo chamado literalmente "git") nunca encontrava —
+    # o teste morria no próprio assert com "git not found in current $PATH".
+    git_path = shutil.which("git")
     assert git_path is not None, "git not found in current $PATH — cannot build curated fixture"
-    os.symlink(git_path, Path(curated) / "git")
+    _place_executable_in_path(git_path, curated)
     try:
         stdout, stderr, code = _run_barrier_cli(
             dir_, "ROADMAP-barrier-fixture", "--wave", "1", "--json", curated_path=curated,
@@ -459,8 +508,6 @@ def test_gates_sh_ausente_do_path_reporta_not_evaluated_com_mensagem_pinada():
             "(e.g. Git Bash, WSL) to evaluate gates"
         ]
     finally:
-        import shutil
-
         shutil.rmtree(curated, ignore_errors=True)
 
 

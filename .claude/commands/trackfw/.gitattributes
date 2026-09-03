@@ -1,0 +1,10 @@
+# trackfw / ML-1C — metade FIXTURE do grupo CRLF.
+#
+# Estes slash commands versionados são comparados byte-a-byte contra a saída dos
+# geradores (ex.: TestSlashRoadmapCommandRequiresCanonicalFrontmatter, que lê
+# .claude/commands/trackfw/roadmap.md e exige igualdade com o arquivo gerado).
+# O gerador sempre escreve LF; sob `core.autocrlf=true` o lado versionado chega
+# com CRLF e a comparação diverge por encoding de checkout, não por conteúdo.
+#
+# Nenhum código de produto lê estes arquivos — só o teste. Por isso são fixture.
+*.md text eol=lf

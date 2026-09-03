@@ -248,6 +248,20 @@ jobs:
       - name: Preparar diretório sintético de home (AC12)
         id: home
         shell: pwsh
+        # ML-1D — este step é deliberadamente MÍNIMO: cria o diretório e nada
+        # mais. A hipótese de que o home sintético vazio quebrava o `git` das
+        # fixtures (sem `.gitconfig` global → "Author identity unknown" no
+        # `git commit`) foi MEDIDA POR LEITURA e FALSIFICADA: todo helper que
+        # commita de verdade nos 3 runtimes seta identidade LOCAL no próprio
+        # repositório antes do primeiro commit
+        # (internal/validator/validator_test.go:26 initGitRepo,
+        # pypi/tests/test_credential_guard_integrity.py:27 _init_git_repo,
+        # npm/tests/credential_guard_integrity.test.js:36), e os que exigem
+        # config global limpa pinam GIT_CONFIG_GLOBAL num arquivo vazio próprio
+        # (internal/commands/branch_prune_test.go:435 e equivalentes). Semear
+        # identidade aqui não desbloquearia teste nenhum — só acrescentaria uma
+        # variável não medida ao instrumento. Ver o step de sonda abaixo, que é
+        # o que converte essa leitura em medição no Windows.
         run: |
           $dir = Join-Path $env:RUNNER_TEMP "winhome"
           New-Item -ItemType Directory -Force -Path $dir | Out-Null
@@ -277,6 +291,77 @@ jobs:
             exit 1
           }
           Write-Host "AC12 — isolação confirmada para os 3 runtimes."
+
+      - name: ML-1D — sonda de `git` sob o home sintético (observacional)
+        # O ML-1D nasceu da hipótese (REQ AC5) de que
+        # `git symbolic-ref --short HEAD exited with null` e
+        # `git not found in current $PATH` vinham DESTE job — do home sintético.
+        # A leitura das fontes falsifica isso: as duas strings são emitidas por
+        # fixtures que SUBSTITUEM o $PATH por um diretório curado contendo um
+        # `git` SEM extensão — npm/src/ship/runner.js:124 (spawnSync devolve
+        # status null = ENOENT) alcançado por npm/tests/ship.test.js:866,943
+        # (`env: { PATH: tmpBin, ... }`), e pypi/tests/test_barrier.py:446, que
+        # varre o $PATH procurando um arquivo literalmente chamado `git`. É a
+        # classe do ML-1A (PATHEXT do Windows), resolvida em arquivo de TESTE —
+        # nenhum $PATH configurado aqui as alcança, porque a fixture descarta o
+        # $PATH do job.
+        #
+        # Esta sonda é o que torna essa conclusão FALSIFICÁVEL no Windows, já
+        # que ela foi obtida por leitura: mede, sob exatamente o mesmo
+        # HOME/USERPROFILE das três suítes, se o `git` resolve, se um
+        # `init/add/commit` completa e se `symbolic-ref --short HEAD` responde.
+        # Verde ⇒ o home sintético não é a causa (a conclusão acima se sustenta,
+        # e as falhas de `git` devem ser triadas como fixture). Vermelho ⇒ existe
+        # um bloqueio de ambiente que a leitura não viu, e o log diz qual.
+        #
+        # 🔴 continue-on-error + fora do `if:` das suítes, de propósito: esta
+        # sonda NUNCA pode virar portão. O único portão de entrada das três
+        # suítes continua sendo `steps.precondition.outcome` (AC12); encadear a
+        # sonda ali faria testes serem PULADOS — exatamente o que o AC7 da REQ
+        # proíbe. Com continue-on-error, o `conclusion` dela é success, então o
+        # `success()` implícito do step "Camada 1 pulada" também fica intacto.
+        #
+        # Roda num repositório descartável em RUNNER_TEMP, FORA do home
+        # sintético, para não deixar resíduo no diretório compartilhado pelas
+        # suítes (residual declarado da AC12 acima).
+        if: always() && steps.precondition.outcome == 'success'
+        continue-on-error: true
+        shell: pwsh
+        env:
+          HOME: ${{ steps.home.outputs.home }}
+          USERPROFILE: ${{ steps.home.outputs.home }}
+        run: |
+          # O wrapper `shell: pwsh` do GitHub prepende $ErrorActionPreference='stop', e no
+          # PowerShell 7.4+ (o do windows-latest) $PSNativeCommandUseErrorActionPreference
+          # e $true por padrao: um comando NATIVO que sai != 0 vira erro TERMINANTE. Sem
+          # estas duas linhas, um `git commit` que falha mataria o script na hora e o
+          # ::warning:: abaixo — a unica razao de esta sonda existir — nunca seria impresso,
+          # exatamente na execucao em que ele importa.
+          $ErrorActionPreference = 'Continue'
+          $PSNativeCommandUseErrorActionPreference = $false
+          $probe = Join-Path $env:RUNNER_TEMP "gitprobe"
+          Remove-Item -Recurse -Force -Path $probe -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path $probe | Out-Null
+          Write-Host "git --version                 -> $((git --version) 2>&1)"
+          Write-Host "git config --show-origin --get user.email:"
+          Write-Host "  $((git config --show-origin --get user.email) 2>&1)"
+          git -C $probe init --quiet
+          Set-Content -Path (Join-Path $probe "a.txt") -Value "probe"
+          git -C $probe add a.txt
+          # Identidade LOCAL, igual ao que todo helper de fixture dos 3 runtimes
+          # faz (initGitRepo / _init_git_repo / git(dir,'config',...)) — a sonda
+          # mede a MESMA condição que as suítes, não uma mais permissiva.
+          git -C $probe config user.email "probe@trackfw.invalid"
+          git -C $probe config user.name "probe"
+          $commit = (git -C $probe commit -m "probe") 2>&1 | Out-String
+          Write-Host $commit
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "::warning::ML-1D — 'git commit' falhou sob o home sintético mesmo com identidade local. Existe bloqueio de ambiente que a leitura das fontes não previu: as falhas de git desta execucao NAO devem ser triadas como fixture antes de investigar isto."
+          } else {
+            $head = (git -C $probe symbolic-ref --short HEAD) 2>&1 | Out-String
+            Write-Host "symbolic-ref --short HEAD     -> $($head.Trim())"
+            Write-Host "ML-1D — nenhum bloqueio de ambiente detectado: sob este HOME/USERPROFILE o git resolve, commita e responde symbolic-ref. Resultado CONSISTENTE com causa de fixture para as falhas de git desta execucao — nao e prova de que toda falha de git seja de fixture."
+          }
 
       - name: Go — suíte completa (camada 1, AC1)
         # always() && <condição>: sem always() aqui, o GitHub Actions

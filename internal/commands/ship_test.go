@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1185,7 +1186,7 @@ func TestShip_Integration_GracefulDegradation_RealBinary(t *testing.T) {
 
 	// ── Build binary ──────────────────────────────────────────────────────────
 	binaryDir := t.TempDir()
-	binary := filepath.Join(binaryDir, "trackfw")
+	binary := filepath.Join(binaryDir, testBinaryName("trackfw"))
 	buildCmd := exec.Command("go", "build", "-o", binary, "./cmd/trackfw")
 	buildCmd.Dir = projRoot
 	if out, err := buildCmd.CombinedOutput(); err != nil {
@@ -1201,8 +1202,10 @@ func TestShip_Integration_GracefulDegradation_RealBinary(t *testing.T) {
 	if err != nil {
 		t.Skip("git not found in PATH — cannot run integration test")
 	}
-	if err := os.Symlink(gitPath, filepath.Join(tmpBin, "git")); err != nil {
-		t.Fatalf("symlink git: %v", err)
+	// filepath.Base preserva a extensão: "git" em POSIX, "git.exe" no Windows,
+	// onde um nome sem extensão do PATHEXT não seria encontrado pelo LookPath.
+	if err := placeExecutableInPath(gitPath, filepath.Join(tmpBin, filepath.Base(gitPath))); err != nil {
+		t.Fatalf("place git into tmpbin: %v", err)
 	}
 	cleanPATH := tmpBin
 
@@ -1684,4 +1687,36 @@ func TestShip_ForceFlagDoesNotExist(t *testing.T) {
 	if flag := cmd.Flags().Lookup("force-with-lease"); flag == nil {
 		t.Fatal("expected --force-with-lease flag to be registered")
 	}
+}
+
+// placeExecutableInPath disponibiliza src em dst para montar um $PATH curado.
+//
+// POSIX mantém symlink — comportamento idêntico ao anterior. Copiar seria uma
+// regressão real e medida: em macOS /usr/bin/git é um shim assinado que morre
+// (exit -1) quando executado fora do seu diretório.
+//
+// No Windows os.Symlink exige Developer Mode ou privilégio de admin, então o
+// symlink falha e o teste nunca chega a rodar o produto. Lá tenta hardlink
+// (não privilegiado em NTFS) e cai para cópia.
+func placeExecutableInPath(src, dst string) error {
+	if runtime.GOOS != "windows" {
+		return os.Symlink(src, dst)
+	}
+	if err := os.Link(src, dst); err == nil {
+		return nil
+	}
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = in.Close() }()
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o755)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		_ = out.Close()
+		return err
+	}
+	return out.Close()
 }
