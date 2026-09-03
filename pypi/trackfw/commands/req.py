@@ -72,7 +72,12 @@ def _cmd_new(args):
         sys.exit(1)
 
     cfg = load_config()
-    req_dir = cfg.get("req_dir", "docs/req")
+    # Ponto único de decisão de caminho de ESCRITA (ADR-2026-09-03, D2/D4): by_agent grava no
+    # canônico req_dir/<agente>/; flat grava em req_dir/ — o mesmo ponto que alimenta a união de
+    # leitura de resolve_req_files.
+    from trackfw.validator import req_write_dir  # noqa: PLC0415
+
+    req_dir = req_write_dir(cfg) or cfg.get("req_dir", "docs/req")
 
     filepath = generate_req(title=title, req_dir=req_dir)
     print(f"created {filepath}")

@@ -602,28 +602,121 @@ def hidden_namespace_warnings(cfg: dict) -> list:
     return msgs
 
 
-def resolve_req_files(cfg: dict) -> list:
+# Lista fechada de nomes de pasta de ESTADO reconhecidos nos layouts LEGADOS de REQ. Existe só
+# para o leitor tolerar árvores antigas: pelo invariante D1 da ADR-2026-09-03, REQ NÃO tem dimensão
+# de estado. Nada aqui decide onde ESCREVER uma REQ.
+_REQ_LAYOUT_STATES = ["backlog", "analyzing", "wip", "blocked", "done", "abandoned"]
+
+
+def req_write_dir(cfg: dict) -> str:
     """
-    Retorna lista de paths completos de .md em req_dir,
-    consciente de roadmap_namespacing: by_agent percorre req_dir/<agente>/<estado>/.
+    PONTO ÚNICO que decide ONDE uma REQ nova é gravada (ADR-2026-09-03, D2/D4):
+      flat     -> req_dir/
+      by_agent -> req_dir/<agente>/   (primeiro de agents:, ou "default" se a lista é vazia)
+
+    O par escritor/leitor não pode ter duas noções de layout (D4): a união devolvida por
+    resolve_req_files contém, por construção, o diretório devolvido aqui.
     """
     req_dir = cfg.get("req_dir", "docs/req")
-    namespacing = cfg.get("roadmap_namespacing", "")
-    if namespacing == "by_agent":
-        states = ["backlog", "analyzing", "wip", "blocked", "done", "abandoned"]
-        agents = resolve_agent_namespaces(cfg, req_dir)
-        files = []
-        for agent in agents:
-            # ML-4A (achado 2, hades-tf 2026-08-30): agent vem do disco (nome de diretório sem
-            # validação de formato), não de config — usa _list_md_files em vez de glob.glob para não
-            # interpretar o nome como padrão (espelha internal/validator/validator.go's ListMDFiles;
-            # glob.glob degradava graciosamente para "[" desbalanceado neste runtime, mas ainda
-            # cross-casava "*" com todos os agentes, igual ao Go).
-            for state in states:
-                files.extend(_list_md_files(os.path.join(req_dir, agent, state)))
-        return files
-    # flat (comportamento anterior)
-    return _glob.glob(os.path.join(req_dir, "*.md"))
+    if not req_dir:
+        return ""
+    if cfg.get("roadmap_namespacing", "") == "by_agent":
+        agents = [a for a in (cfg.get("agents") or []) if a]
+        agent = agents[0] if agents else "default"
+        return os.path.join(req_dir, agent)
+    return req_dir
+
+
+def resolve_req_files(cfg: dict) -> list:
+    """
+    PONTO ÚNICO de LEITURA de REQ (ADR-2026-09-03, D3/D4): união dos 4 layouts suportados, nunca
+    escolha exclusiva entre eles:
+
+        req_dir/*.md                    flat legado
+        req_dir/<estado>/*.md           por-estado legado (apesar de D1)
+        req_dir/<agente>/*.md           CANÔNICO em by_agent
+        req_dir/<agente>/<estado>/*.md  legado
+
+    Os dois últimos só valem em by_agent — fora dele não há noção de namespace de agente.
+
+    Deduplicação é OBRIGATÓRIA: resolve_agent_namespaces devolve agents: união disco, então um
+    req_dir/backlog/ real entra na lista de agentes e o caso <agente>/*.md emite exatamente os
+    mesmos paths do caso <estado>/*.md — sem o set, toda REQ em layout por-estado seria contada
+    (e violada) em dobro. Não filtrar nomes de estado da lista de agentes: um agente legitimamente
+    chamado "done" existe e sumiria.
+    """
+    req_dir = cfg.get("req_dir", "docs/req")
+    if not req_dir:
+        return []
+
+    seen = set()
+    files = []
+
+    def _add(paths):
+        for p in paths:
+            clean = os.path.normpath(p)
+            if clean in seen:
+                continue
+            seen.add(clean)
+            files.append(clean)
+
+    # §4 (hades-tf 2026-09-03): a dedup por STRING não vê req_dir/Backlog == req_dir/backlog em
+    # filesystem case-INSENSITIVE (APFS, NTFS) — "Backlog" entra na lista de agentes pelo disco e
+    # emite req_dir/Backlog/*.md, enquanto o laço de estados emite req_dir/backlog/*.md hardcoded em
+    # minúscula. Mesmo diretório, strings diferentes: toda REQ contada em DOBRO (medido em APFS:
+    # 2 REQs e 4 violações para 1 arquivo real). Verde no CI Linux, vermelho na máquina do dev.
+    #
+    # MECANISMO: só enumeramos um candidato de subdiretório se o nome existir VERBATIM na listagem
+    # do pai — a grafia do disco é a autoridade, medimos o disco em vez de presumir a propriedade do
+    # filesystem.
+    #   - NÃO troca dupla contagem por SUPRESSÃO: em FS case-SENSITIVE o listdir devolve "Backlog" E
+    #     "backlog" (dois diretórios reais distintos) e ambos seguem enumerados. Normalizar por
+    #     lowercase colapsaria os dois e suprimiria um arquivo real.
+    #   - NÃO usa st_ino/st_dev: a primitiva não tem contrato medido em NTFS (a lei da nota
+    #     lstat-nao-ve-junction-...-2026-08-31: no Python a primitiva tem de ser TROCADA, não
+    #     complementada), e ino colidente colapsaria arquivos distintos — supressão, a direção
+    #     proibida.
+    #   - Cobre também o eixo NFC/NFD, que case-folding não cobre.
+    #   - FALLBACK É JOIN CEGO, NUNCA LISTA VAZIA: pai ilegível → não filtra nada e volta ao
+    #     comportamento anterior (dupla contagem, benigna). Devolver vazio aqui seria supressão.
+    #   - Não filtra por TIPO de entrada: um <estado> que seja symlink segue enumerado exatamente
+    #     como antes (§3 é outro escopo).
+    # Paridade: mesma lógica em internal/validator/validator.go e npm/src/validator/index.js.
+    _child_cache = {}
+
+    def _has_child_verbatim(parent: str, name: str) -> bool:
+        if parent not in _child_cache:
+            try:
+                _child_cache[parent] = set(os.listdir(parent))
+            except OSError:
+                _child_cache[parent] = None
+        children = _child_cache[parent]
+        if children is None:
+            return True
+        return name in children
+
+    def _add_child(parent: str, name: str):
+        if not _has_child_verbatim(parent, name):
+            return
+        _add(_list_md_files(os.path.join(parent, name)))
+
+    # (1) flat legado e (2) por-estado legado.
+    _add(_list_md_files(req_dir))
+    for state in _REQ_LAYOUT_STATES:
+        _add_child(req_dir, state)
+
+    if cfg.get("roadmap_namespacing", "") == "by_agent":
+        # ML-4A (achado 2, hades-tf 2026-08-30): agent vem do disco (nome de diretório sem validação
+        # de formato) — _list_md_files em vez de glob.glob, para que metacaracteres no nome não sejam
+        # interpretados como padrão e corrompam a contagem em silêncio.
+        for agent in resolve_agent_namespaces(cfg, req_dir):
+            # (3) canônico e (4) legado.
+            _add_child(req_dir, agent)
+            for state in _REQ_LAYOUT_STATES:
+                _add_child(os.path.join(req_dir, agent), state)
+
+    files.sort()
+    return files
 
 
 def _list_md_files(directory: str) -> list:

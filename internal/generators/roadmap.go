@@ -651,30 +651,10 @@ func ListRoadmaps() error {
 
 // ─── REQ synchronization helpers ─────────────────────────────────────────────
 
-// scanREQFiles retorna os caminhos de todos os .md no req_dir,
-// espelhando exatamente o comportamento de resolveREQFiles do validador:
-//   - flat (padrão)   → req_dir/*.md
-//   - by_agent        → req_dir/<agente>/<estado>/*.md
+// scanREQFiles retorna os caminhos de todos os .md de REQ. NÃO reimplementa a descoberta: delega ao
+// ponto único de leitura (validator.ResolveREQFiles — ADR-2026-09-03, D3/D4).
 func scanREQFiles(cfg config.ProjectConfig) []string {
-	reqDir := cfg.REQDir
-	if reqDir == "" {
-		return nil
-	}
-	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
-		stateDirs := []string{"backlog", "analyzing", "wip", "blocked", "done", "abandoned"}
-		agents := validator.ResolveAgentNamespaces(cfg, reqDir)
-		var files []string
-		for _, agent := range agents {
-			// ML-4A (achado 2, hades-tf 2026-08-30): agent vem do disco — validator.ListMDFiles em
-			// vez de filepath.Glob (ver comentário de ListMDFiles em internal/validator/validator.go).
-			for _, state := range stateDirs {
-				files = append(files, validator.ListMDFiles(filepath.Join(reqDir, agent, state))...)
-			}
-		}
-		return files
-	}
-	matches, _ := filepath.Glob(filepath.Join(reqDir, "*.md"))
-	return matches
+	return validator.ResolveREQFiles(cfg)
 }
 
 // extractFrontmatterRoadmap extrai o valor do campo roadmap: do bloco frontmatter YAML.

@@ -4,7 +4,7 @@ const { Command } = require('commander')
 const fs = require('fs')
 const path = require('path')
 const config = require('../config')
-const { validate, resolveAgentNamespaces } = require('../validator')
+const { validate, resolveAgentNamespaces, resolveReqFiles } = require('../validator')
 
 /**
  * extractFrontmatterField — extrai valor de campo YAML dentro de bloco --- ... ---.
@@ -86,6 +86,31 @@ function collectEntries(dir, type, state) {
 }
 
 /**
+ * collectReqEntries — entradas de REQ para o `context`, derivadas do ponto único de leitura
+ * (resolveReqFiles). O `state` sai do nome da pasta-pai quando ela é um estado legado; em layout
+ * flat ou no canônico req_dir/<agente>/*.md não há estado (invariante D1: REQ não tem estado).
+ * @param {object} cfg
+ * @returns {Array<{type:string,file:string,status:string,state?:string}>}
+ */
+function collectReqEntries(cfg) {
+  const STATES = ['backlog', 'analyzing', 'wip', 'blocked', 'done', 'abandoned']
+  const entries = []
+  for (const full of resolveReqFiles(cfg)) {
+    let content = ''
+    try { content = fs.readFileSync(full, 'utf8') } catch (_) {}
+    const parent = path.basename(path.dirname(full))
+    const state = STATES.includes(parent) ? parent : ''
+    let status = extractFrontmatterField(content, 'status')
+    if (!status) status = extractInlineStatus(content)
+    if (!status) status = state || 'unknown'
+    const entry = { type: 'REQ', file: path.basename(full), status }
+    if (state) entry.state = state
+    entries.push(entry)
+  }
+  return entries
+}
+
+/**
  * getContext — coleta governança e imprime em md ou json.
  * @param {string} format - 'md' | 'json'
  * @returns {Promise<void>}
@@ -99,21 +124,9 @@ async function getContext(format) {
     adrs.push(...collectEntries(adrDir, 'ADR'))
   }
 
-  // REQs
-  const reqs = []
-  const reqDir = cfg.reqDir || cfg.req_dir || 'docs/req'
-  const reqNamespacing = cfg.roadmapNamespacing || cfg.roadmap_namespacing || ''
-  if (reqNamespacing === 'by_agent') {
-    const STATES = ['backlog', 'wip', 'blocked', 'done', 'abandoned']
-    const agents = resolveAgentNamespaces(cfg, reqDir)
-    for (const agent of agents) {
-      for (const state of STATES) {
-        reqs.push(...collectEntries(path.join(reqDir, agent, state), 'REQ', state))
-      }
-    }
-  } else {
-    reqs.push(...collectEntries(reqDir, 'REQ'))
-  }
+  // REQs — pelo PONTO ÚNICO de leitura (ADR-2026-09-03, D3/D4). Antes, `context` montava a própria
+  // árvore (flat, ou <agente>/<estado>/ em by_agent) e não enxergava o layout canônico <agente>/*.md.
+  const reqs = collectReqEntries(cfg)
 
   // Roadmaps
   const roadmaps = []
@@ -195,3 +208,8 @@ module.exports = (function () {
     .action((opts) => getContext(opts.format))
   return cmd
 })()
+
+// Exposto para teste: o teste de context em by_agent duplicava a lógica de coleta e, por isso,
+// continuava verde mesmo quando a produção mudava (asserção sobre uma CÓPIA). Anexar a função ao
+// Command exportado é o menor caminho para o teste exercitar o código de produção de fato.
+module.exports.collectReqEntries = collectReqEntries

@@ -145,7 +145,7 @@ fail, and most likely reach for a hack in one framework's error path.
 
 ## Vault de conhecimento
 
-<!-- trackfw-contract: gate=scripts/check-artifact-parity.sh partial=regra note_orphan não comparada entre os 3 CLIs -->
+<!-- trackfw-contract: gate=scripts/check-artifact-closed-cycle.sh partial=check-artifact-parity.sh compara byte a byte a NOTA gerada entre os 3 CLIs mas nunca alimentou o verificador com ela; check-artifact-closed-cycle.sh fecha o ciclo `note new` → `note_orphan` nos 3 CLIs (nota indexada não é acusada + nota não indexada é acusada), e a severidade/`rules: note_orphan: error`/projeto sem vault continuam sem comparação cross-CLI -->
 
 `trackfw init` cria `vault/notes/` e gera `vault/notes/index.md` nos três CLIs.
 
@@ -295,8 +295,9 @@ where the roadmap's own `status:` is already rewritten — never before, so a fa
 dangling edit.
 
 **Discovery source.** Scan `req_dir` for REQs whose `roadmap:` **basename** equals the moved roadmap's
-basename. Cover both the flat layout (`req_dir/*.md`) and `by_agent`
-(`req_dir/<agent>/<state>/*.md`), mirroring what the validator already scans.
+basename. Discovery is **not reimplemented here**: it calls the single REQ read point
+(`ResolveREQFiles` / `resolveReqFiles` / `resolve_req_files`), which returns the union of the four
+supported layouts — see *REQ layout — union on read, single path on write* below.
 
 Do **not** use the roadmap's own `req:` field for discovery. `trackfw roadmap new` writes `req: ""`, and
 existing roadmaps carry a bare slug there with no path and no `.md`. Discovery must run in the inverse
@@ -348,15 +349,11 @@ after processing all of them, so one unwritable file does not hide the rest.
 <!-- trackfw-contract: gap reason=nenhum gate cross-CLI exercita req list/req move — nem a descoberta por layout (flat/by_agent) nem a discriminação in-place-vs-physical-move são comparadas entre Go, Node.js e Python -->
 
 `req_dir` reuses the roadmap's own `roadmap_namespacing` field — there is no separate `req_namespacing`
-key (see ADR-2026-08-04). `req list` and `req move <name> <status>` discover REQs by concatenating three
-fixed, non-recursive globs (not mutually exclusive, all three are always scanned):
+key (see ADR-2026-08-04). `req list` and `req move <name> <status>` do **not** implement their own
+discovery: they call the single REQ read point described in *REQ layout — union on read, single path on
+write* below, which scans the four fixed, non-recursive layouts as a union.
 
-1. `req_dir/*.md` — flat legacy layout.
-2. `req_dir/<state>/*.md` for each of the six governance states — per-state layout, no agent segment.
-3. `req_dir/<agent>/<state>/*.md`, only when `roadmap_namespacing: by_agent` — by_agent layout, agents
-   from `agents:` in config or, if unset, the first-level subdirectories of `req_dir`.
-
-A REQ nested deeper than these three fixed patterns is invisible to both commands.
+A REQ nested deeper than those four fixed patterns is invisible to both commands.
 
 **`req move` mode is discriminated by where the file currently lives**, not by a flag:
 
@@ -376,6 +373,166 @@ A REQ nested deeper than these three fixed patterns is invisible to both command
 The transition is appended to `<req_dir>/.trackfw-log` — a log file separate from
 `<roadmap_dir>/.trackfw-log`; `trackfw log` reads only the roadmap log, so REQ transitions do not appear
 in `trackfw log` output.
+
+### REQ layout — union on read, single path on write
+
+<!-- trackfw-contract: gap reason=nenhum gate cross-CLI exercita a descoberta de REQ por layout nem o ciclo new-then-validate; a cobertura hoje e por teste unitario em cada runtime (internal/validator/validator_req_layout_test.go, npm/tests/req_layout_union.test.js, pypi/tests/test_req_layout_union.py), que nunca compara os 3 CLIs sobre a mesma arvore. O gate cross-CLI e o entregavel do ML-2A do ROADMAP-2026-09-03 -->
+
+Governs ADR-2026-09-03. **A REQ has no state dimension** (invariant D1): `backlog`/`analyzing`/`wip`/
+`blocked`/`done`/`abandoned` are a *roadmap* concept; a REQ carries `status:` in its frontmatter. The
+per-state folders below are tolerated **legacy** trees, never a target for new REQs.
+
+**One single point decides the path, and both sides consume it** (D4). Per runtime there is exactly one
+read function and one write function:
+
+| | Go (`internal/validator`) | Node.js (`npm/src/validator`) | Python (`trackfw/validator.py`) |
+|---|---|---|---|
+| read | `ResolveREQFiles(cfg)` | `resolveReqFiles(cfg)` | `resolve_req_files(cfg)` |
+| write | `REQWriteDir(cfg)` | `reqWriteDir(cfg)` | `req_write_dir(cfg)` |
+
+**Who delegates, enumerated — not "everything".** The set is not uniform across runtimes, so it is
+stated per runtime; a universal claim here would be false, and asserting coverage a document does not
+have is the exact defect this section was written to close.
+
+| Consumer | Go | Node.js | Python |
+|---|---|---|---|
+| `validate` rules | ✓ | ✓ | ✓ |
+| `trackfw context` | ✓ | ✓ | ✓ |
+| REQ generator (`req new` / `req list`) | ✓ | ✓ | ✓ |
+| `roadmap new` REQ picker | ✓ | ✓ | ✓ |
+| `trackfw status` inventory | ✓ | ✓ | **partial** — the REQ-by-status count does not (residual below) |
+| `traceid` indexer | ✓ | **no** (residual below) | ✓ |
+| `trackfw serve` (`/api/chain`) | **no** (residual below) | **no** | **no** |
+| `trackfw sync` | **no** (residual below) | **no** | **no** |
+
+Everything marked **no** or **partial** is enumerated under *Declared residuals*, with the measurement
+that shows whether it is a benign superset or a vacuous read.
+
+**Read is a union of the four layouts** (D3) — never an exclusive choice between them:
+
+1. `req_dir/*.md` — flat legacy.
+2. `req_dir/<state>/*.md` for each of the six governance states — per-state legacy, no agent segment.
+3. `req_dir/<agent>/*.md` — **canonical in `by_agent`**.
+4. `req_dir/<agent>/<state>/*.md` — legacy.
+
+Cases 3 and 4 apply **only** when `roadmap_namespacing: by_agent`; outside it there is no agent
+namespace and an arbitrary subdirectory must not be read as one. Agents come from the canonical
+namespace resolver (`agents:` ∪ first-level subdirectories of `req_dir`).
+
+**Write is single** (D2): `by_agent` → `req_dir/<agent>/` where `<agent>` is the **first non-empty** entry
+of `agents:`, or `default` when the list is empty or holds only empty strings; flat → `req_dir/`. *First
+non-empty*, not *index 0*: an empty string is not an agent name, it is an absent entry — which is already
+how the **read** side treats it (the namespace resolver discards `""`), so the writer/reader pair keeps a
+single notion of agent (D4). Measured in the three runtimes, `agents: ["", "zeus"]` → `req_dir/zeus/`;
+`agents: [""]` → `req_dir/default/`; `agents: ["zeus"]` → `req_dir/zeus/`. `roadmap new` still tests index
+0 in all three runtimes and is listed as a residual above. The write
+directory is contained in the read union **by construction** — that containment is the contract, and the
+unit test that asserts it (`REQ created at the write dir is found by the resolver`) exists in all three
+runtimes.
+
+**Canonical does not mean exclusive.** Choosing a canonical write layout never rejects the others: no
+project's `req_dir` is migrated, and a REQ sitting in `req_dir/*.md` inside a `by_agent` project stays
+visible.
+
+**Deduplication is part of the contract, not hygiene.** Because the namespace resolver unions `agents:`
+with what is on disk, a real `req_dir/backlog/` directory is also reported as an agent — so case 3 emits
+exactly the same paths as case 2. Implementations deduplicate by normalized path; without it every REQ in
+a per-state tree would be counted twice and each violation would be emitted twice. Do **not** deduplicate
+by filtering state names out of the agent list: an agent legitimately named `done` exists and would
+disappear.
+
+🔴 **String deduplication is not enough on a case-insensitive filesystem, and the obvious fix is worse
+than the bug.** On APFS/NTFS, `req_dir/Backlog` and `req_dir/backlog` are the *same* directory but
+*different* strings: `Backlog` enters the agent list from disk and emits `req_dir/Backlog/*.md`, while the
+state loop emits the hardcoded-lowercase `req_dir/backlog/*.md`. Measured on APFS with **one** real file:
+`REQs (2)` and 4 violations in all three CLIs — green on Linux CI, red on the developer's machine.
+**The mechanism is a verbatim-existence filter, not case folding and not inode identity:** a subdirectory
+candidate is only enumerated if its name appears **verbatim** in the parent's directory listing. The disk
+spelling is the authority — the disk is *measured* instead of the filesystem's case behaviour being
+*assumed*. Why the alternatives were rejected:
+
+- **Lowercase folding would trade double counting for suppression.** On a case-*sensitive* filesystem
+  `Backlog` and `backlog` are two real, distinct directories; folding collapses them and a real file
+  disappears. Suppression is strictly worse than double counting. Verified by execution on a
+  case-sensitive APFS volume: two distinguishable files under the two spellings, both still enumerated,
+  each violation once, in all three CLIs.
+- **Inode identity was rejected on portability, not taste.** Go has no portable hashable `(dev,ino)` key
+  (`syscall.Stat_t` is absent on Windows; `os.SameFile` is pairwise → O(n²)), and an inode that repeats or
+  reads as `0` on some Windows/network filesystems collapses distinct files — suppression again. The
+  Python primitive in particular has no measured NTFS contract.
+- **Verbatim matching also covers the NFC/NFD axis**, which case folding does not: an `agents:` entry in a
+  different Unicode form is filtered rather than duplicated.
+- **The fallback is a blind join, never an empty list.** If the parent cannot be read, nothing is filtered
+  and the previous behaviour (benign double counting) returns. Returning `[]` there would be suppression.
+- **Entry *type* is not filtered.** A `<state>` that is a symlink is still enumerated exactly as before;
+  closing that door is a separate decision.
+
+**Order is pinned:** the resolved list is sorted by full path. Scan order is agent-major and would not be
+stable across runtimes (`fs.readdirSync` guarantees no order).
+
+**Declared residuals.** They are of **two different species, and the distinction is the point**: a
+*superset* reads more than the four layouts (never vacuous, benign) while a *vacuous* read returns **zero
+REQs in the canonical layout** — it silently sees nothing. Both are listed; the species is named for each.
+
+- 🔴 **`serve` (`/api/chain`) does not go through the resolver in any runtime — and is VACUOUS in the
+  canonical layout in two of them.** Node (`npm/src/serve/api_chain.js:104-115`) and Python
+  (`pypi/trackfw/serve/api_chain.py:144-156`) still branch `flat` vs `req_dir/<agent>/<state>/`, which is
+  literally the `if/else` the single point exists to remove, and neither branch matches
+  `req_dir/<agent>/*.md`. Go (`internal/serve/api_chain.go:81`, `filepath.WalkDir`) is a recursive
+  **superset**. Measured on the same canonical `by_agent` fixture
+  (`docs/req/apolo/REQ-2026-09-03-fixture.md`), `GET /api/chain`, nodes of `type: "req"`:
+
+  ```
+  go -> 1 node    node -> 0 nodes    py -> 0 nodes
+  ```
+
+  So in a `by_agent` project the board's `ADR → REQ → ROADMAP` chain view shows **zero** REQs in 2 of the
+  3 runtimes. Pre-existing, not a regression of the layout union (`serve` was untouched, and the branch
+  it does take never matched the old write layout either). Tracked as its own REQ — it is 3-CLI parity
+  work, so all three are named.
+- 🔴 **The Python `status` inventory counts REQs outside the single point — VACUOUS in `by_agent`.**
+  `pypi/trackfw/commands/status.py:50` (`_count_reqs_by_status`) calls `_list_files(req_dir)` (`:26`), a
+  **single-level** `os.listdir`, while the same file already imports and uses `resolve_req_files` at
+  `:133` — the divergence is internal to one file. Measured on the canonical fixture above,
+  `trackfw status`:
+
+  ```
+  go -> REQs 1    node -> REQs 1    py -> REQs 0
+  ```
+
+  Python-only: Go (`internal/validator/validator.go:877`, `inventoryBlock`) and Node
+  (`npm/src/validator/index.js:3315`, `getStatus`) both delegate. Tracked as its own REQ.
+- **`traceid` in the Node.js CLI does not go through the resolver — SUPERSET, never vacuous.** `npm/src/validator/traceid.js`
+  indexes REQs with a **recursive** walk of `req_dir`, so it is a strict *superset* of the four
+  layouts and is never vacuous — but it is a second layout notion inside that runtime, and it indexes
+  REQs nested deeper than the four patterns (`req_dir/a/b/c/REQ.md`), which Go and Python do not.
+  Measured: with the canonical case removed from all three resolvers, Go and Python drop to 5 rules
+  seeing no REQ artifact while Node drops to 4 — the difference *is* this residual. Converging it
+  **narrows** Node to the contract and requires the existing traceid tests to declare
+  `roadmap_namespacing`, which is why it is declared here instead of done in passing.
+- **`trackfw sync` hardcodes `docs/req`** in all three CLIs and ignores `req_dir` entirely — a defect
+  of its own, unrelated to the layout union.
+- **`roadmap new` picks the first `agents:` entry without filtering empty strings** in all three CLIs
+  (`internal/generators/roadmap.go:108`, `npm/src/generators/roadmap.js:72`,
+  `pypi/trackfw/generators/roadmap.py:170`), so `agents: ["", "zeus"]` sends a **roadmap** to a degenerate
+  path while `req new` now correctly resolves `zeus` (see *Write is single* below). Pre-existing on `main`,
+  identical in the three runtimes, and a shared-guard change across the three writers — its own REQ.
+- **`req move` still relocates REQs into `req_dir/<agent>/<state>/`**, which contradicts invariant D1.
+  Read tolerates it; changing the move is explicitly out of this decision's scope.
+
+**Consequence for `flat` projects, not just `by_agent`.** Layout 2 is scanned unconditionally, so a
+`flat` project holding a legacy `req_dir/<state>/` tree also stops being invisible: REQs there were
+never read by the rules before and their violations now surface. Nothing is moved — they were always
+reachable by `req list`, only the validator ignored them.
+
+**Why this is a contract and not an implementation note.** The writer wrote flat, the reader looked in
+`<agent>/<state>/`, and the field in the field used `<agent>/` — none of the three agreed, so in every
+`by_agent` project the rules that consume REQ passed **without reading anything**: same REQ, same broken
+reference, `flat` → 2 violations, `by_agent` → 0 (issue #216). Measurable form of the fix: in a `by_agent`
+project, the number of rules seeing zero REQs must be **zero** — `ref_targets_exist`, `req_has_adr`,
+`req_has_roadmap`, `blocked_by_draft_adr`, `adr_accepted_when_req_done` and the `traceid_*` family. A rule
+that receives a *directory* instead of the resolved list (as `traceid` did) stays vacuous even after the
+resolver is fixed.
 
 ## JSON Schema artifacts
 
@@ -3875,6 +4032,50 @@ Dois cenários negativos (P4) estão em `scripts/check-gates-falsify.sh`:
 - **Cenário 9** — drift de **slash-command roadmap**: corrompe o gerador de init
   do Node.js para emitir `status: backlogged` no `/trackfw:roadmap`; asserta
   exit != 0 com `artifact parity drift: slash_roadmap (go vs node)`.
+
+### Ciclo fechado gerador → verificador (ML-2A, ROADMAP-2026-09-03-resolvedor-de-req-cobre-o-layout-canonico-e-ciclo-fechado-por-artefato)
+
+<!-- trackfw-contract: gate=scripts/check-artifact-closed-cycle.sh partial=cobre req/adr/note nos 3 CLIs em flat e by_agent pelas regras req_has_adr, adr_orphan, adr_accepted_when_req_done e note_orphan; roadmap não entra (o ciclo E2E backlog→analyzing de check-artifact-parity.sh já o cobre) e o eixo de layout do braço de nota é degenerado porque vault/notes é constante do gerador -->
+
+`check-artifact-parity.sh` prova que os 3 CLIs **geram a mesma coisa**. Ele nunca provou que o
+**verificador enxerga o que o gerador escreveu** — e essa lacuna já produziu três defeitos nesta
+base: cabeçalho de aceite (gerador em português, `barrier` casando só inglês), vocabulário de
+status (gerador emitindo emoji, verificador esperando `pending`) e layout de REQ (`req new`
+gravando flat, o validator procurando `<agente>/<estado>/`). Nenhum dos três foi pego por teste.
+
+`scripts/check-artifact-closed-cycle.sh` fecha esse ciclo **executando o CLI**, nunca importando o
+módulo — a fronteira comando↔validator é exatamente onde os defeitos moram. Para cada uma das 18
+combinações (3 artefatos × 3 CLIs × `flat`/`by_agent`) ele gera com `req new`/`adr new`/`note new` e
+depois pergunta ao `validate --json`:
+
+| Artefato | Asserção | O que prova |
+|---|---|---|
+| REQ | `req_has_adr` cita o basename gerado | o resolvedor achou a REQ no caminho onde o gerador a gravou |
+| REQ | o caminho de escrita é `req_dir/<agente>/` em `by_agent` | o canônico D2 da ADR-2026-09-03, que a união de leitura poderia mascarar |
+| ADR | `adr_orphan` cita o basename gerado | o ADR é enumerado pelo verificador |
+| ADR | `adr_accepted_when_req_done` cita o basename **e** `status: Proposed` | o literal de status que `adr new` gravou é o que o verificador lê |
+| ADR | `adr_orphan` some depois de a REQ referenciar o ADR | a referência gravada é reconhecida |
+| NOTE | `note_orphan` **não** cita a nota gerada | o link que `note new` escreve no `index.md` é o que `note_orphan` reconhece |
+| NOTE | `note_orphan` cita uma nota **não** indexada | a regra acima está viva e olha esse diretório (antídoto de vacuidade) |
+
+**Métrica, e por que ela discrimina:** a asserção é *"a entrada do `validate --json` cita, em `file`
+ou `message`, o basename exato do arquivo que o gerador acabou de escrever"* — não *"a regra apareceu
+na saída"*. A forma fraca mente: medida no ML-1A, ela dava **6/6 verde sobre a árvore sabotada**,
+porque `ref_targets_exist` e `traceid` disparam pelo lado do *roadmap* sem ler REQ nenhuma. O
+basename carrega data e slug do título, então nenhum outro artefato pode satisfazê-lo por acidente,
+e só há um caminho para ele chegar à saída: o verificador ter resolvido o arquivo onde o gerador o
+gravou. `file` **ou** `message` porque no Go `blocked_by_draft_adr` sai com `file: ""`.
+
+Três cenários P4 em `scripts/check-gates-falsify.sh`, **um por artefato, cada um na sua fronteira**
+— sabotagem única não serviria, porque quebrar o resolvedor de REQ deixa `adr_orphan` e `note_orphan`
+intactos:
+
+- **Cenário 183** — verificador: o caso `req_dir/<agente>/*.md` sai de `ResolveREQFiles` (Go);
+  reprova em `req/go/by_agent/req_has_adr-names-generated`, e `go/flat` continua passando.
+- **Cenário 184** — gerador: `note new` do Node passa a escrever `(notes/<arquivo>.md)` no index;
+  reprova em `note/node/flat/note_orphan-silent-for-indexed`.
+- **Cenário 185** — gerador: o default de `--status` do `adr new` do Python vira `Rascunho`;
+  reprova em `adr/python/flat/status-literal-read-back`.
 
 ## CLAUDE.md — seção `## Architect responses` byte-idêntica nos 3 runtimes (ML-1A, ROADMAP-2026-08-21-regra-de-verbosidade-no-asset-do-arquiteto-e-nas-regras-semeadas)
 

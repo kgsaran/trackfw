@@ -4,60 +4,20 @@ const path = require('path')
 const { localDateISO } = require('./date')
 const roadmapGen = require('./roadmap')
 const config = require('../config')
-const { resolveAgentNamespaces } = require('../validator')
+const { resolveAgentNamespaces, resolveReqFiles, reqWriteDir } = require('../validator')
 
 const VALID_STATES = roadmapGen.VALID_STATES
 const STATE_ORDER = roadmapGen.STATE_ORDER
 
 /**
- * listREQFiles — descoberta recursiva de REQs nos 3 layouts suportados, mesmo algoritmo usado
- * em Go/Python (ADR-2026-08-04): flat (reqDir/*.md), por-estado (reqDir/<estado>/*.md) e,
- * quando roadmapNamespacing === 'by_agent', by_agent (reqDir/<agente>/<estado>/*.md).
- * Os três conjuntos não são mutuamente exclusivos — concatena todos.
+ * listREQFiles — NÃO reimplementa a descoberta: delega ao ponto único de leitura do validador
+ * (resolveReqFiles — ADR-2026-09-03, D3/D4), o mesmo consumido pelas regras de validate. Duas
+ * noções de layout no mesmo runtime foram a causa do defeito da REQ-2026-08-30.
  * @param {object} cfg — config completo (ver npm/src/config)
- * @returns {string[]} paths completos, na ordem flat → por-estado → by_agent
+ * @returns {string[]} paths completos, união dos 4 layouts, deduplicados e ordenados
  */
 function listREQFiles(cfg) {
-  const reqDir = cfg.reqDir
-  const files = []
-
-  // (a) flat legado — reqDir/*.md
-  try {
-    for (const f of fs.readdirSync(reqDir)) {
-      if (!f.endsWith('.md')) continue
-      const full = path.join(reqDir, f)
-      try {
-        if (!fs.statSync(full).isDirectory()) files.push(full)
-      } catch (_) { /* ignora */ }
-    }
-  } catch (_) { /* reqDir não existe */ }
-
-  // (b) por-estado, sem agente — reqDir/<estado>/*.md
-  for (const state of STATE_ORDER) {
-    const dir = path.join(reqDir, state)
-    try {
-      for (const f of fs.readdirSync(dir)) {
-        if (f.endsWith('.md')) files.push(path.join(dir, f))
-      }
-    } catch (_) { /* estado não existe */ }
-  }
-
-  // (c) by_agent — reqDir/<agente>/<estado>/*.md
-  if (cfg.roadmapNamespacing === config.NAMESPACING_BY_AGENT) {
-    const agents = resolveAgentNamespaces(cfg, reqDir)
-    for (const agent of agents) {
-      for (const state of STATE_ORDER) {
-        const dir = path.join(reqDir, agent, state)
-        try {
-          for (const f of fs.readdirSync(dir)) {
-            if (f.endsWith('.md')) files.push(path.join(dir, f))
-          }
-        } catch (_) { /* agente/estado não existe */ }
-      }
-    }
-  }
-
-  return files
+  return resolveReqFiles(cfg)
 }
 
 /**
@@ -280,7 +240,10 @@ function toSlug(s) {
  * @returns {Promise<void>}
  */
 async function newREQ(content) {
-  const reqDir = require('../config').load().reqDir
+  // Ponto único de decisão de caminho de ESCRITA (ADR-2026-09-03, D2/D4): by_agent grava no
+  // canônico req_dir/<agente>/; flat grava em req_dir/ — o mesmo ponto que alimenta a união de leitura.
+  const cfg = require('../config').load()
+  const reqDir = reqWriteDir(cfg) || cfg.reqDir
   fs.mkdirSync(reqDir, { recursive: true })
 
   const slug = toSlug(content.title)

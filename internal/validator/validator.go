@@ -1367,31 +1367,183 @@ func ResolveAgentNamespaces(cfg config.ProjectConfig, dir string) []string {
 	return resolveAgentNamespaces(cfg, dir)
 }
 
-// resolveREQFiles retorna paths completos de todos os .md em req_dir,
-// consciente de roadmap_namespacing: by_agent percorre req_dir/<agente>/<estado>/.
-func resolveREQFiles(cfg config.ProjectConfig) []string {
+// reqLayoutStates é a lista fechada de nomes de pasta de ESTADO reconhecidos nos layouts LEGADOS de
+// REQ. Ela existe apenas para o leitor tolerar árvores antigas: pelo invariante D1 da
+// ADR-2026-09-03, REQ NÃO tem dimensão de estado — backlog/analyzing/wip/blocked/done/abandoned são
+// conceito de roadmap. Nada aqui deve ser usado para ESCREVER REQ.
+var reqLayoutStates = []string{"backlog", "analyzing", "wip", "blocked", "done", "abandoned"}
+
+// REQWriteDir é o PONTO ÚNICO que decide ONDE uma REQ nova é gravada (ADR-2026-09-03, D2/D4):
+//   - flat      → req_dir/
+//   - by_agent  → req_dir/<agente>/   (agente = primeiro de agents:, ou "default" se a lista é vazia;
+//     mesma convenção de agentStateDir em internal/generators/roadmap.go)
+//
+// 🔴 O par escritor/leitor não pode ter duas noções de layout (D4). Este ponto e ResolveREQFiles
+// abaixo são consumidos pelos DOIS lados; a união de leitura contém, por construção, o diretório
+// devolvido aqui. Alterar um sem o outro é exatamente o defeito que a REQ-2026-08-30 fecha.
+func REQWriteDir(cfg config.ProjectConfig) string {
+	reqDir := cfg.REQDir
+	if reqDir == "" {
+		return ""
+	}
+	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
+		// S5 (hades-tf 2026-09-03): FILTRAR os vazios, não testar só o índice 0. Com
+		// agents: ["", "zeus"] o teste em cfg.Agents[0] caía em "default" enquanto Node e Python
+		// escolhiam "zeus" — mesmo trackfw.yaml, dois destinos de escrita, regra dura de paridade
+		// violada dentro da função criada por este PR. Filtrar é também o que o LADO LEITOR já faz
+		// (resolveAgentNamespaces descarta a == ""), então o par escritor/leitor volta a ter UMA
+		// noção de agente (D4). String vazia não é nome de agente: é ausência de entrada.
+		agent := "default"
+		for _, a := range cfg.Agents {
+			if a != "" {
+				agent = a
+				break
+			}
+		}
+		return filepath.Join(reqDir, agent)
+	}
+	return reqDir
+}
+
+// ResolveREQFiles é o PONTO ÚNICO de LEITURA de REQ (ADR-2026-09-03, D3/D4): devolve os paths de
+// todos os .md de REQ como UNIÃO dos 4 layouts suportados, nunca como escolha exclusiva entre eles:
+//
+//	req_dir/*.md                     flat legado
+//	req_dir/<estado>/*.md            por-estado legado (apesar de D1)
+//	req_dir/<agente>/*.md            CANÔNICO em by_agent
+//	req_dir/<agente>/<estado>/*.md   legado
+//
+// Os dois últimos só se aplicam quando roadmap_namespacing == by_agent — fora dele não há noção de
+// namespace de agente e um subdiretório qualquer não pode ser tratado como agente.
+//
+// 🔴 Layout canônico NÃO significa recusar os demais: a união é o que torna a migração de
+// req_dir desnecessária (D3). Nenhum arquivo de ninguém é movido.
+//
+// 🔴 DEDUPLICAÇÃO É OBRIGATÓRIA, não higiene: resolveAgentNamespaces devolve agents: ∪ disco, então
+// um req_dir/backlog/ real entra na lista de agentes e o caso <agente>/*.md emite exatamente os
+// mesmos paths do caso <estado>/*.md. Sem o conjunto `seen`, toda REQ em layout por-estado seria
+// contada duas vezes e cada violação apareceria em duplicata. Não resolver isso filtrando nomes de
+// estado da lista de agentes: um agente legitimamente chamado "done" existiria e sumiria.
+func ResolveREQFiles(cfg config.ProjectConfig) []string {
 	reqDir := cfg.REQDir
 	if reqDir == "" {
 		return nil
 	}
-	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
-		stateDirs := []string{"backlog", "analyzing", "wip", "blocked", "done", "abandoned"}
-		agents := resolveAgentNamespaces(cfg, reqDir)
-		var files []string
-		for _, agent := range agents {
-			// ML-4A (achado 2): agent vem do disco — ListMDFiles em vez de filepath.Glob.
-			for _, state := range stateDirs {
-				files = append(files, ListMDFiles(filepath.Join(reqDir, agent, state))...)
+
+	seen := make(map[string]bool)
+	var files []string
+	add := func(paths []string) {
+		for _, p := range paths {
+			clean := filepath.Clean(p)
+			if seen[clean] {
+				continue
+			}
+			seen[clean] = true
+			files = append(files, clean)
+		}
+	}
+
+	// 🔴 §4 (hades-tf 2026-09-03): a dedup por STRING não vê req_dir/Backlog ≡ req_dir/backlog em
+	// filesystem case-INSENSITIVE (APFS, NTFS). O nome "Backlog" entra na lista de agentes pelo
+	// disco e emite req_dir/Backlog/*.md; o laço de estados emite req_dir/backlog/*.md, hardcoded
+	// em minúscula. Mesmo diretório, strings diferentes, `seen` cego: toda REQ contada em DOBRO e
+	// cada violação emitida duas vezes (medido em APFS: 2 REQs e 4 violações para 1 arquivo real).
+	// Verde no CI Linux, vermelho na máquina do dev.
+	//
+	// MECANISMO: só enumeramos um candidato de subdiretório se o nome existir VERBATIM na listagem
+	// do pai. A grafia do disco é a autoridade — medimos o disco em vez de presumir a propriedade do
+	// filesystem. Consequências que decidiram a escolha:
+	//   - NÃO troca dupla contagem por SUPRESSÃO: em FS case-SENSITIVE, "Backlog" e "backlog" são
+	//     dois diretórios reais e DISTINTOS, e o readdir lista os DOIS — ambos continuam
+	//     enumerados. Normalizar por lowercase colapsaria os dois e suprimiria um arquivo real.
+	//   - NÃO usa identidade de inode: Go não tem chave hasheável portátil de (dev,ino)
+	//     (syscall.Stat_t não existe no Windows, e os.SameFile é par-a-par → O(n²)); e ino == 0 em
+	//     alguns FS de rede/Windows colapsaria arquivos distintos — supressão, a direção proibida.
+	//   - Cobre também o eixo NFC/NFD, que o case-folding não cobre: a grafia do disco é a
+	//     autoridade, então um agents: em outra forma Unicode é filtrado, não duplicado.
+	//   - FALLBACK É JOIN CEGO, NUNCA LISTA VAZIA: se o pai não pode ser lido, não filtramos nada e
+	//     voltamos ao comportamento anterior (dupla contagem, benigna). Devolver vazio aqui seria
+	//     supressão.
+	//   - Não filtra por TIPO de entrada: um <estado> que seja symlink continua sendo enumerado
+	//     exatamente como antes (fechar essa porta é decisão do §3, fora deste microlote).
+	childCache := make(map[string][]string)
+	hasChildVerbatim := func(parent, name string) bool {
+		children, cached := childCache[parent]
+		if !cached {
+			entries, err := os.ReadDir(parent)
+			if err != nil {
+				childCache[parent] = nil // marca "ilegível" → join cego
+				return true
+			}
+			children = make([]string, 0, len(entries))
+			for _, e := range entries {
+				children = append(children, e.Name())
+			}
+			childCache[parent] = children
+		}
+		if children == nil {
+			return true
+		}
+		for _, n := range children {
+			if n == name {
+				return true
 			}
 		}
-		return files
+		return false
 	}
-	// flat (comportamento anterior)
-	matches, err := filepath.Glob(filepath.Join(reqDir, "*.md"))
-	if err != nil {
-		return nil
+	addChild := func(parent, name string) {
+		if !hasChildVerbatim(parent, name) {
+			return
+		}
+		add(ListMDFiles(filepath.Join(parent, name)))
 	}
-	return matches
+
+	// (1) flat legado — req_dir/*.md
+	add(ListMDFiles(reqDir))
+
+	// (2) por-estado legado — req_dir/<estado>/*.md
+	for _, state := range reqLayoutStates {
+		addChild(reqDir, state)
+	}
+
+	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
+		agents := resolveAgentNamespaces(cfg, reqDir)
+		for _, agent := range agents {
+			// ML-4A (achado 2): agent vem do disco (nome de diretório sem validação de formato) —
+			// ListMDFiles em vez de filepath.Glob, para que metacaracteres ("*", "[") no nome não
+			// sejam interpretados como padrão e corrompam a contagem em silêncio.
+			// (3) canônico — req_dir/<agente>/*.md
+			//
+			// ⚠️ ÂNCORA DE FALSIFICAÇÃO — a chamada logo abaixo é pinada VERBATIM pelo Cenário
+			// 183 de scripts/check-gates-falsify.sh, que prova que
+			// check-artifact-closed-cycle.sh REPROVA quando este caso canônico sai do resolvedor.
+			// O `corrupt_literal` do cenário exige EXATAMENTE 1 ocorrência da chamada e reprova
+			// fail-closed ("expected exactly 1 occurrence, got 0") se a grafia mudar. É a 3ª vez
+			// que uma âncora literal deste harness quebra por renomeação (Cenários 81 e 179 antes
+			// desta): ao renomear o helper, trocar a ordem dos argumentos ou duplicar a chamada,
+			// RETARGETAR o cenário junto — senão só o `make quality` de 13 min avisa.
+			//
+			// 🔴 NÃO reproduzir a grafia exata da chamada em NENHUM comentário deste arquivo: a
+			// contagem do `corrupt_literal` é sobre o arquivo inteiro e uma menção morta a levaria
+			// a 2, reprovando o cenário do mesmo jeito (medido ao escrever este aviso).
+			addChild(reqDir, agent)
+			// (4) legado — req_dir/<agente>/<estado>/*.md
+			for _, state := range reqLayoutStates {
+				addChild(filepath.Join(reqDir, agent), state)
+			}
+		}
+	}
+
+	// Ordem determinística e igual nos 3 CLIs — a ordem de varredura é agent-major e não seria
+	// estável entre runtimes (readdir do Node não é ordenado).
+	sort.Strings(files)
+	return files
+}
+
+// resolveREQFiles é o alias interno do ponto único ResolveREQFiles — mantido para os consumidores
+// dentro do pacote. NÃO reimplementar a descoberta aqui (D4).
+func resolveREQFiles(cfg config.ProjectConfig) []string {
+	return ResolveREQFiles(cfg)
 }
 
 func validateWIPHasREQ() ([]string, error) {

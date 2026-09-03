@@ -9453,3 +9453,152 @@ else
   bash "$S182_REAL" --self-test 2>&1 | sed 's/^/    /' >&2
   exit 1
 fi
+
+# ===========================================================================
+# Cenários 183/184/185 — check-artifact-closed-cycle.sh: o ciclo fechado
+# gerador → verificador REPROVA quando gerador e verificador discordam.
+#
+# (ML-2A, ROADMAP-2026-09-03-resolvedor-de-req-cobre-o-layout-canonico-e-
+#  ciclo-fechado-por-artefato)
+#
+# Objetivo (P4): um gate de ciclo fechado que passa nas DUAS árvores — a íntegra
+# e a sabotada — não mede nada. As três ocorrências históricas do padrão
+# (cabeçalho de aceite PT×EN, vocabulário de status emoji×`pending`, layout de
+# REQ flat×`<agente>/<estado>/`) sobreviveram porque nenhum teste as codificava
+# em NENHUMA direção. Aqui cada artefato tem a sua própria sabotagem, no seu
+# próprio lado da fronteira:
+#
+#   183 · REQ  — sabotagem do VERIFICADOR: o caso canônico `req_dir/<agente>/*.md`
+#                sai do resolvedor. É literalmente o defeito da REQ-2026-08-30.
+#   184 · NOTE — sabotagem do GERADOR: `note new` passa a escrever no index.md um
+#                link que `note_orphan` não reconhece. É a classe nº1 (o gerador
+#                emite uma forma, o verificador casa outra).
+#   185 · ADR  — sabotagem do GERADOR: `adr new` passa a emitir o vocabulário de
+#                status em português. É a classe nº2, exata.
+#
+# 🔴 Uma sabotagem única NÃO serviria para os três. Sabotar o resolvedor de REQ
+# deixa `note_orphan` INTACTO (nunca toca `req_dir`) — o braço de NOTE ficaria sem
+# falsificação nenhuma. Cada braço precisa da sabotagem que atinge a SUA fronteira.
+#
+# CORREÇÃO DE PROSA (artemis-tf, 2026-09-03, auditoria do retarget do ML-2B): a
+# versão original desta nota dizia que `adr_orphan` também ficava INTACTO. Medido:
+# é falso, e sempre foi (idêntico com a sabotagem antiga sobre o validator.go do
+# HEAD). A sabotagem do resolvedor de REQ reprova TRÊS asserções, não uma —
+# `req/go/by_agent/req_has_adr-names-generated`, `adr/go/by_agent/status-literal-
+# read-back` e `adr/go/by_agent/adr_orphan-clears-after-link` — porque o ADR
+# linkado pela REQ deixa de ser enxergado junto com ela. O `assert_fails_with`
+# abaixo casa só a primeira; as outras duas são efeito colateral esperado e NÃO
+# invalidam a prova (nenhum braço `flat`, `node` ou `python` reprova, o que mantém
+# a especificidade a `by_agent`/Go). O que se sustenta é a tese: `note_orphan` fica
+# intacto, então uma sabotagem só não cobre os três artefatos.
+#
+# Por que a asserção é sobre o diagnóstico do PRÓPRIO gate, e não sobre o exit
+# code de `validate`: `adr_orphan` e `note_orphan` são severidade `warning`
+# (validator.go:101 e ruleDefaults) e warning não move o exit code do `validate`
+# — `assert_fails_with` sobre `validate` passaria sempre, provando nada
+# (armadilha nº2 de vault/notes/armadilhas-ao-escrever-cenario-em-check-gates-
+# falsify-2026-08-12.md). O gate parseia o JSON e reprova por conta própria.
+# ---------------------------------------------------------------------------
+CLOSED_CYCLE_GATE="$ROOT_DIR/scripts/check-artifact-closed-cycle.sh"
+
+# Baseline compartilhado dos três: a árvore ÍNTEGRA passa. Sem este braço, um
+# gate que reprova por qualquer motivo (ambiente, binário quebrado) daria os três
+# cenários como "detecção" — prova P4 inválida.
+if ! GO_BIN="$ROOT_DIR/bin/trackfw" bash "$CLOSED_CYCLE_GATE" >/dev/null 2>&1; then
+  echo 'FAIL [falsify/setup-s183-baseline]: check-artifact-closed-cycle.sh já reprova com os 3 runtimes íntegros — prova P4 inválida' >&2
+  exit 1
+fi
+echo 'OK   [falsify/closed-cycle/arvore-integra-passa-baseline]'
+
+# ── Cenário 183 — REQ, sabotagem do verificador (Go) ───────────────────────
+# Seam: internal/validator/validator.go, o caso (3) de ResolveREQFiles. Node e
+# Python ficam íntegros, então o gate reprova SÓ no braço go/by_agent — e o
+# braço go/flat continua passando, o que também prova que a sabotagem é
+# específica de `by_agent` e não uma quebra genérica do binário.
+T183="$WORK/s183"
+mkdir -p "$T183/cmd" "$T183/internal" "$T183/scripts" "$T183/pypi"
+cp -r "$ROOT_DIR/cmd/." "$T183/cmd/"
+cp -r "$ROOT_DIR/internal/." "$T183/internal/"
+cp "$ROOT_DIR/go.mod" "$T183/go.mod"
+cp "$ROOT_DIR/go.sum" "$T183/go.sum"
+setup_npm_tree "$T183"
+cp -r "$ROOT_DIR/pypi/." "$T183/pypi/"
+cp "$CLOSED_CYCLE_GATE" "$T183/scripts/"
+
+# RETARGETED 2026-09-03 (ML-2B): o literal era
+# `add(ListMDFiles(filepath.Join(reqDir, agent)))`. A correção do §4 (dedup lexical não vê
+# `req_dir/Backlog` ≡ `backlog` em FS case-insensitive) passou os candidatos de subdiretório pelo
+# filtro de existência verbatim `addChild`, e o join literal deixou de existir — `corrupt_literal`
+# reprovou com "expected exactly 1 occurrence, got 0". O SEAM é o mesmo (o caso (3) de
+# ResolveREQFiles sai do resolvedor); só a grafia da chamada mudou.
+corrupt_literal \
+  "$ROOT_DIR/internal/validator/validator.go" "$T183/internal/validator/validator.go" \
+  'addChild(reqDir, agent)' \
+  '// [falsified] addChild(reqDir, agent)' \
+  's183-req-canonical-case'
+
+# ⚠️ `go build ./...` NÃO regenera bin/trackfw — sabotar sem reconstruir testaria
+# o binário antigo e o cenário passaria por engano (vault/notes/armadilhas-ao-
+# escrever-cenario-em-check-gates-falsify-2026-08-12.md, seção de auditoria).
+T183_BIN="$WORK/s183-bin/trackfw"
+mkdir -p "$(dirname "$T183_BIN")"
+build_go_or_fail "setup-s183-build" "$T183" "$T183_BIN"
+
+assert_fails_with 'closed-cycle/req-resolver-sem-caso-canonico-reprova' \
+  'closed cycle broken: req/go/by_agent/req_has_adr-names-generated' \
+  env GO_BIN="$T183_BIN" bash "$T183/scripts/check-artifact-closed-cycle.sh"
+
+# ── Cenário 184 — NOTE, sabotagem do gerador (Node) ────────────────────────
+# Seam: npm/src/generators/note.js — o link escrito no index.md vira
+# `(notes/<arquivo>.md)`, que não contém `(<arquivo>.md)` e portanto não casa o
+# reconhecimento de `validateNoteOrphan`. A nota existe, está listada, e o
+# verificador a acusa de órfã: gerador e verificador discordando do contrato,
+# sem nenhum erro visível. Go e Python íntegros → reprova só no braço node.
+T184="$WORK/s184"
+mkdir -p "$T184/scripts" "$T184/pypi"
+setup_npm_tree "$T184"
+cp -r "$ROOT_DIR/pypi/." "$T184/pypi/"
+cp "$CLOSED_CYCLE_GATE" "$T184/scripts/"
+
+corrupt_literal \
+  "$ROOT_DIR/npm/src/generators/note.js" "$T184/npm/src/generators/note.js" \
+  'const link = `- [${nameWithoutExt}](${filename})\n`' \
+  'const link = `- [${nameWithoutExt}](notes/${filename})\n` // [falsified]' \
+  's184-node-note-index-link-format'
+
+assert_fails_with 'closed-cycle/note-link-do-gerador-nao-reconhecido-reprova' \
+  'closed cycle broken: note/node/flat/note_orphan-silent-for-indexed' \
+  env GO_BIN="$ROOT_DIR/bin/trackfw" bash "$T184/scripts/check-artifact-closed-cycle.sh"
+
+# ── Cenário 185 — ADR, sabotagem do gerador (Python) ───────────────────────
+# Seam: pypi/trackfw/commands/adr.py — o default de `--status` vira "Rascunho".
+# O ADR continua sendo gerado, enumerado e linkado; só o VOCABULÁRIO de status
+# deixa de ser o que o verificador conhece, e `adr_accepted_when_req_done` para
+# de acusar a REQ Done ligada a um ADR não aceito. É a regressão silenciosa da
+# classe nº2, e sem este braço ela passaria: o número de violações continua
+# plausível e nenhum comando erra.
+#
+# 🔴 O ponto de decisão do status no Python é o default do ARGPARSE, não o
+# default de `generate_adr()` — sabotar o segundo não muda nada, porque o
+# comando sempre passa `status=args.status` explicitamente. Medido.
+T185="$WORK/s185"
+mkdir -p "$T185/scripts" "$T185/pypi"
+setup_npm_tree "$T185"
+cp -r "$ROOT_DIR/pypi/." "$T185/pypi/"
+cp "$CLOSED_CYCLE_GATE" "$T185/scripts/"
+
+# ⚠️ `choices` entra na sabotagem junto com o `default`: o argparse valida o
+# default de string contra `choices` mesmo quando a flag não é passada, então
+# trocar só o default faria o comando abortar por erro de argumento — o gate
+# reprovaria pelo motivo errado, e não pelo vocabulário de status.
+corrupt_literal \
+  "$ROOT_DIR/pypi/trackfw/commands/adr.py" "$T185/pypi/trackfw/commands/adr.py" \
+  '        default="Proposed",
+        choices=["Draft", "Proposed", "Accepted", "Deprecated", "Superseded"],' \
+  '        default="Rascunho",  # [falsified]
+        choices=["Draft", "Proposed", "Accepted", "Deprecated", "Superseded", "Rascunho"],' \
+  's185-python-adr-status-vocabulary'
+
+assert_fails_with 'closed-cycle/vocabulario-de-status-do-adr-em-portugues-reprova' \
+  'closed cycle broken: adr/python/flat/status-literal-read-back' \
+  env GO_BIN="$ROOT_DIR/bin/trackfw" bash "$T185/scripts/check-artifact-closed-cycle.sh"

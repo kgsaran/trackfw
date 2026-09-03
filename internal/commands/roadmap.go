@@ -10,6 +10,7 @@ import (
 	cbterm "github.com/charmbracelet/x/term"
 	"github.com/kgsaran/trackfw/internal/config"
 	"github.com/kgsaran/trackfw/internal/generators"
+	"github.com/kgsaran/trackfw/internal/validator"
 	"github.com/spf13/cobra"
 )
 
@@ -50,7 +51,9 @@ func newRoadmapNewCmd() *cobra.Command {
 				})
 			}
 
-			reqFiles, _ := filepath.Glob(config.Load().REQDir + "/*.md")
+			// Lista pelo ponto único de leitura de REQ (ADR-2026-09-03, D3/D4): em by_agent o glob
+			// flat não enxergava nenhuma REQ e o wizard oferecia uma lista vazia.
+			reqFiles := validator.ResolveREQFiles(config.Load())
 			var selectedREQ string
 
 			isTTY := cbterm.IsTerminal(uintptr(os.Stdin.Fd()))

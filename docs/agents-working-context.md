@@ -29007,3 +29007,459 @@ PRs mergeados não reescritos; issues não reabertas; nada em `internal/`/`npm/s
 
 **Roadmap não movido e ML não marcado `✅`** — cabe ao `trackfw_architect` após a auditoria.
 Nenhuma operação de git executada.
+
+## 2026-09-03 — apolo-tf (Backend) — INÍCIO
+**ML-1A** do `ROADMAP-2026-09-03-resolvedor-de-req-cobre-o-layout-canonico-e-ciclo-fechado-por-artefato`
+(`wip/`), REQ
+`REQ-2026-08-30-req-new-grava-flat-mas-resolvereqfiles-procura-namespaced-por-estado-e-as-regras-de-referencia-ficam-vacuas-em-by-agent.md`,
+ADR `ADR-2026-09-03-layout-canonico-de-req-em-by-agent-...`. Branch já ativa:
+`fix/resolvedor-de-req-cobre-o-layout-canonico-e-ciclo-fechado-por-artefato`.
+Defeito reproduzido na árvore atual, antes de qualquer edição, com a fixture do relato (REQ com
+`adr:`/`roadmap:` apontando para alvos inexistentes), medindo `validate` nos 3 CLIs por layout:
+`flat/req_dir/*.md` → 2 · `flat/<estado>/` → 0 · `by_agent/req_dir/*.md` → 0 ·
+`by_agent/<estado>/` → 0 · `by_agent/<agente>/` → 0 · `by_agent/<agente>/<estado>/` → 2.
+**Quatro dos seis layouts eram vácuos, nos 3 runtimes** — mais amplo do que "falta um caso".
+Escopo: união dos 4 layouts na leitura, `req new` no canônico, ponto único de decisão de caminho
+consumido pelos dois lados, nos 3 CLIs. Ciclo fechado por artefato é ML-2A (outro agente).
+
+## 2026-09-03 — apolo-tf (Backend) — FIM
+**Entregue (não commitado, para auditoria do `trackfw_architect`).** Ponto único por runtime —
+leitura `ResolveREQFiles`/`resolveReqFiles`/`resolve_req_files` e escrita
+`REQWriteDir`/`reqWriteDir`/`req_write_dir` — em `internal/validator/validator.go`,
+`npm/src/validator/index.js` e `pypi/trackfw/validator.py`. Todos os demais leitores passaram a
+delegar: `internal/generators/req.go` (`listREQFiles`), `internal/generators/roadmap.go`
+(`scanREQFiles`), `internal/generators/context.go`, `internal/commands/roadmap.go` (wizard),
+`internal/validator/validator_traceid.go`, `npm/src/generators/req.js`, `npm/src/commands/context.js`,
+`pypi/trackfw/generators/req.py`, `pypi/trackfw/commands/context.py`, `pypi/trackfw/traceid.py`,
+`pypi/trackfw/commands/req.py`. Contrato em `docs/cli-parity.md` (seção nova *REQ layout — union on
+read, single path on write*).
+
+**Correção de custo, com número.** A ADR dizia "falta um caso" em `listREQFiles`. Medido: eram
+**9 implementações de leitura** (3 runtimes × validator + generators/req + generators/roadmap/context)
+e **3 pontos de escrita**; o resolvedor que as regras realmente usam não era união nenhuma — era
+`if/else`, e por isso **4 dos 6 layouts** ficavam vácuos, não 1. E `traceid` recebia um **diretório**,
+não a lista resolvida: corrigir só o resolvedor não a alcançaria (Go e Python; o Node já varria
+recursivamente).
+
+**Achado que a ADR não previa — deduplicação obrigatória.** `resolveAgentNamespaces` devolve
+`agents:` ∪ disco, então um `req_dir/backlog/` real também é reportado como agente e o caso 3
+(`<agente>/*.md`) emite exatamente os mesmos paths do caso 2 (`<estado>/*.md`). Sem dedup por caminho
+normalizado, toda REQ em layout por-estado seria contada **duas vezes** e cada violação sairia em
+dobro. Coberto por teste nos 3 runtimes.
+
+**Números (mesma fixture, 3 CLIs).** Depois: os 6 layouts dão **2 violações** em Go, Node e Python —
+paridade exata. Regras que enxergam **zero REQs** num projeto `by_agent`: **0 de 6**
+(`ref_targets_exist`, `req_has_adr`, `req_has_roadmap`, `blocked_by_draft_adr`,
+`adr_accepted_when_req_done`, `traceid`), em todos os layouts e nos 3 CLIs.
+**Falsificação na direção oposta:** removendo só o 4º caso (`req_dir/<agente>/*.md`) dos 3
+resolvedores, a fixture canônica volta a **0** violações e **4 das 6** regras voltam a enxergar zero
+REQs — as 2 restantes só disparam por artefato de roadmap. Sabotagem revertida e medida de novo.
+**Compatibilidade:** REQ em `req_dir/*.md` num projeto `by_agent` continua encontrada (2 violações);
+nenhum arquivo movido.
+
+**Teste vácuo encontrado e fechado.** `npm/tests/context_req_by_agent.test.js` duplicava a lógica de
+coleta do `context.js` e testava a **cópia** — continuaria verde com a produção divergindo. Passou a
+chamar a função de produção (`collectReqEntries`, exposta no módulo) e ganhou o caso do layout
+canônico.
+
+**Métrica corrigida durante a execução.** "A regra apareceu na saída" é **fraca**: na árvore
+sabotada o Go continua dando 6/6 porque `ref_targets_exist` e `traceid` disparam pelo lado do
+**roadmap**, com zero REQs lidas. A métrica usada é **por artefato** — a violação tem de nomear um
+basename `REQ-*.md` no campo `file` **ou** na `message` (em Go, `blocked_by_draft_adr` sai com
+`file: ""`). Com ela: árvore boa **6/6** regras nos 3 CLIs e nos 6 layouts; árvore sabotada **1/6**
+(Go, Python) e **2/6** (Node).
+
+**Resíduo declarado, com número.** `npm/src/validator/traceid.js` continua fora do ponto único:
+indexa REQ com varredura **recursiva**, superconjunto dos 4 layouts — nunca vácuo, mas é a segunda
+noção de layout naquele runtime, e é exatamente por isso que o Node cai para 2/6 na sabotagem
+enquanto Go e Python caem para 1/6. Convergir **estreita** o Node ao contrato e obriga os testes de
+traceid a declarar `roadmap_namespacing`; registrado em `docs/cli-parity.md` e no vault, não feito de
+carona. Também declarados: `trackfw sync` hardcoda `docs/req` nos 3 CLIs (ignora `req_dir`), e
+`req move` continua movendo REQ para `<agente>/<estado>/`, contra o invariante D1.
+
+**Consequência que não é só de `by_agent`:** o caso por-estado passou a ser lido incondicionalmente,
+então um projeto **flat** com árvore legada `req_dir/<estado>/` também passa a ter suas REQs olhadas
+(antes: 0 violações; agora: 2 na mesma fixture). Nada é movido.
+
+**Nenhum teste existente codificava o comportamento antigo** — nada afirmava "REQ flat NÃO é
+encontrada em by_agent". As 3 suítes passaram sem edição (Go, 859 testes Node, 1608 Python), o que é
+evidência de que o defeito nunca foi testado em nenhuma das duas direções — e reforça o ML-2A.
+`npm/tests/context_req_by_agent.test.js` foi reescrito para chamar a produção.
+
+**Evidência final:** `make quality` **EXIT=0** (execução única, ~13 min, exit capturado sem pipe);
+`bin/trackfw validate` **EXIT=0** (22 warnings, os mesmos de antes); `git status --porcelain` sem
+nenhuma linha `R` (zero renomeações — 18 arquivos `M`, 4 `??` novos: 3 testes + 1 nota de vault).
+
+**Roadmap não movido e ML não marcado `✅`** — cabe ao `trackfw_architect` após a auditoria.
+Nenhuma operação de git executada.
+
+## 2026-09-03 — artemis-tf (Quality Assurance) — INÍCIO
+**ML-2A** de `ROADMAP-2026-09-03-resolvedor-de-req-cobre-o-layout-canonico-e-ciclo-fechado-por-artefato.md`
+(wip): teste de ciclo fechado por artefato — `req new`, `adr new`, `note new` criados pelo **gerador**
+e provados pelo **verificador**, nos 3 CLIs, em `flat` e `by_agent`. Rede que impede a quarta
+ocorrência do padrão *gerador e verificador discordando do contrato*.
+
+Lido antes de agir: o ML-1A no roadmap, `vault/notes/resolvedor-de-req-era-if-else-...-2026-09-03.md`,
+`vault/notes/armadilhas-ao-escrever-cenario-em-check-gates-falsify-2026-08-12.md`,
+`scripts/check-artifact-parity.sh` e `scripts/check-gates-falsify.sh`.
+
+## 2026-09-03 — artemis-tf (Quality Assurance) — FIM
+**Entregue (não commitado, para auditoria do `trackfw_architect`).**
+`scripts/check-artifact-closed-cycle.sh` (novo), 3 cenários P4 em `scripts/check-gates-falsify.sh`
+(183/184/185), a linha do gate no alvo `parity` do `Makefile`, contrato em `docs/cli-parity.md`
+(seção nova *Ciclo fechado gerador → verificador* + o `trackfw-contract` da nota, que declarava
+`note_orphan` sem comparação cross-CLI), e nota de vault indexada.
+
+**Cobertura real: 18 de 18 combinações** (3 artefatos × 3 CLIs × 2 layouts), 6 asserções por
+combinação — **36/36 verdes**. Ressalva honesta, não inflada: `vault/notes` é constante do gerador
+(`internal/generators/note.go:12` e equivalentes), então o eixo de layout do braço de **nota** é
+**degenerado por construção** — as 2 execuções exercem o mesmo caminho de código. Declarado no
+cabeçalho do gate.
+
+**O gate executa o CLI, nunca importa o módulo** — `bin/trackfw`, `node npm/bin/trackfw` e
+`python3 -m trackfw`. É a lição do `context` do Node: o defeito morava na fronteira comando↔validator
+e o teste com mock não o via.
+
+**Métrica, e por que discrimina.** Não é "a regra apareceu na saída" — essa forma dava **6/6 verde na
+árvore sabotada** no ML-1A, porque `ref_targets_exist` e `traceid` disparam pelo lado do *roadmap*. A
+métrica é *"a entrada do `validate --json` cita, em `file` ou `message`, o **basename exato** do
+arquivo que o gerador acabou de escrever"*: o basename carrega data + slug, nenhum outro artefato o
+contém por acidente, e só há um caminho para ele aparecer — o verificador ter resolvido o arquivo no
+caminho onde o gerador o gravou. `file` **ou** `message` porque em Go `blocked_by_draft_adr` sai com
+`file: ""`.
+
+**🔴 Falsificação nas duas direções, com saída real — e UMA sabotagem não bastou.**
+
+```
+árvore íntegra                                            EXIT=0   36/36 OK
+A · caso <agente>/*.md fora dos 3 resolvedores (verificador)
+                                                          EXIT=1   9 reprovadas, 27 OK
+    req/{go,node,python}/by_agent/req_has_adr-names-generated
+    adr/{go,node,python}/by_agent/status-literal-read-back
+    adr/{go,node,python}/by_agent/adr_orphan-clears-after-link
+B · note new escreve `(notes/<arquivo>.md)` no index (gerador, 3 CLIs)
+                                                          EXIT=1   6 reprovadas, 30 OK
+    note/{go,node,python}/{flat,by_agent}/note_orphan-silent-for-indexed
+C · adr new emite `Rascunho` no lugar de `Proposed` (gerador, 3 CLIs)
+                                                          EXIT=1   6 reprovadas, 30 OK
+    adr/{go,node,python}/{flat,by_agent}/status-literal-read-back
+árvore restaurada                                         EXIT=0   36/36 OK
+```
+
+**A sabotagem do resolvedor de REQ falsifica só um terço do gate**, e isso foi medido, não suposto:
+`adr_orphan` fica **mais forte** sob ela (sem REQs, o ADR fica mais órfão) e `note_orphan` é
+insensível (nunca toca `req_dir`). Um gate de 3 artefatos com 1 sabotagem tem 2 braços que passam nas
+duas árvores. Daí três seams, um por fronteira. `bin/trackfw` reconstruído em cada sabotagem
+(`go build -o bin/trackfw ./cmd/trackfw` — `go build ./...` não o regenera).
+
+**🔴 Achado: o status do ADR NÃO é falsificável pela chave do frontmatter.** Trocar `status:` por
+`state:` nos 3 geradores dá **EXIT=0, 36/36** — o verificador cai de volta na linha
+`> Date: … | Status: …`, que o mesmo template escreve. Ou seja, uma regressão que derrube só o campo
+machine-readable do ADR passa silenciosa pelo `validate`. O discriminante é o **vocabulário**, não a
+chave. Registrado no vault; não corrigido (é REQ própria, fora do escopo deste ML).
+
+**Cenários P4 (`scripts/check-gates-falsify.sh`), um por fronteira:** 183 (REQ, verificador, Go
+sabotado + binário isolado), 184 (NOTE, gerador, Node), 185 (ADR, gerador, Python). Baseline
+compartilhada provando que a árvore íntegra passa. **Todos verdes** — `check-gates-falsify.sh`
+EXIT=0 com `OK [falsify/closed-cycle/*]` nas 4 linhas.
+⚠️ No 185, `default` e `choices` do argparse são sabotados **juntos**: o argparse valida o default de
+string contra `choices` mesmo sem a flag, e sabotar só o default faria o gate reprovar pelo motivo
+errado. E o ponto de decisão do status no Python é o default do **argparse**, não o de
+`generate_adr()` — o comando sempre passa `status=args.status`.
+⚠️ A asserção é sobre o diagnóstico do **próprio gate**, não sobre o exit code do `validate`:
+`adr_orphan` e `note_orphan` são `warning` e não movem o exit code (armadilha nº2 do vault).
+
+**Já coberto, não duplicado.** `check-artifact-parity.sh` já roda os 3 CLIs gerando req/adr/note e
+compara byte a byte, e já tem ciclo E2E `backlog → analyzing` em `flat`/`by_agent`. O que ele nunca
+fez é **alimentar o verificador com a saída do gerador** — é essa a delta, e por isso o roadmap não
+entra no gate novo (o ciclo de `roadmap move` já está lá).
+
+**Observações reportadas, não corrigidas** (fora do escopo negativo do ML): (1) `trackfw init` do
+Python semeia `docs/adr/ADR-001-inicio-do-projeto.md` que Go e Node não semeiam — divergência
+pré-existente que **proíbe qualquer métrica de ciclo fechado por contagem**; (2) `validate --json` do
+Go imprime `N violation(s) found` **depois** do JSON, então `json.load` puro quebra com "Extra data"
+em qualquer fixture com violação (o gate usa `raw_decode`); (3) o `echo` de resumo de
+`check-gates-falsify.sh` está na linha 9360 e já havia conteúdo depois dele (Cenário 182) — o resumo
+sai antes dos últimos cenários e o texto "all 181 scenarios" está defasado; não reestruturado aqui;
+(4) `docs/req/REQ-2026-09-03-setenta-e-tres-das-duzentas-e-quarenta-e-seis-falhas-de-windows-...md`
+apareceu como `??` não rastreado na árvore e **não é deste ML**.
+
+**Escopo negativo respeitado:** resolvedor do ML-1A não tocado; resíduos declarados (`traceid.js`,
+`sync`, `req move`) não atacados; `validator_credential_guard.go` e `validator_git_branch_guard.go`
+não tocados.
+
+**Roadmap não movido e ML-2A não marcado `✅`** — cabe ao `trackfw_architect` após a auditoria.
+Nenhuma operação de git executada.
+
+---
+
+## 2026-09-03 — hades-tf (Security) — INÍCIO
+
+Barreira final de segurança do roadmap
+`ROADMAP-2026-09-03-resolvedor-de-req-cobre-o-layout-canonico-e-ciclo-fechado-por-artefato.md`
+(branch `fix/resolvedor-de-req-cobre-o-layout-canonico-e-ciclo-fechado-por-artefato`, commits
+`f7963c7` ML-1A e `31bcdef` ML-2A). Superfície a atacar: nome de `<agente>` vindo do disco e de
+`agents:` no resolvedor de leitura, travessia por symlink sob `req_dir`, o novo caminho de ESCRITA
+`req new` → `req_dir/<agente>/`, e a dedup por caminho normalizado. Medição nos 3 runtimes.
+Parecer sairá em `docs/seguranca/2026-09-03-parecer-resolvedor-de-req.md`. Sem git, sem código.
+
+---
+
+## 2026-09-03 — hefesto-tf (Code Quality) — INÍCIO
+
+Barreira final de qualidade do roadmap
+`ROADMAP-2026-09-03-resolvedor-de-req-cobre-o-layout-canonico-e-ciclo-fechado-por-artefato.md`
+(branch `fix/resolvedor-de-req-cobre-o-layout-canonico-e-ciclo-fechado-por-artefato`), escopo
+`git diff origin/main...HEAD` — ML-1A (ponto único de leitura/escrita de REQ nos 3 CLIs) e ML-2A
+(`scripts/check-artifact-closed-cycle.sh` + Cenários 183/184/185 de `check-gates-falsify.sh`).
+Perguntas dirigidas: (1) o "ponto único" é mesmo único, incluindo o resíduo declarado
+`npm/src/validator/traceid.js`; (2) manutenibilidade dos 3 seams do gate; (3) robustez da métrica
+por basename; (4) degenerações de cobertura não declaradas; (5) código morto/duplicação/nome
+enganoso. Parecer sairá em `docs/qualidade/2026-09-03-parecer-resolvedor-de-req.md`.
+Sem git, sem alteração de código de produto.
+
+## 2026-09-03 — hades-tf (Security) — FIM
+
+**Veredito: APROVA COM RESSALVAS.** Parecer completo em
+`docs/seguranca/2026-09-03-parecer-resolvedor-de-req.md`. **Nada bloqueia o merge.**
+
+**Achado principal (S2, NOVO neste diff):** `req new` em `by_agent` escreve através de um **symlink
+de diretório plantado em `req_dir/default`** (ou `req_dir/<primeiro agente>`) — os 3 CLIs criam **e
+sobrescrevem** arquivo fora do projeto. Medido nas duas direções: em `origin/main` a mesma fixture
+grava dentro de `docs/req/`, na branch grava fora. Não bloqueia porque o **mesmo furo já existe em
+`origin/main` no `roadmap new`** (`roadmap_dir/default` → escrita fora, medido): ML-1A estende uma
+classe existente, não cria uma. Remédio é REQ própria com guarda compartilhada nos 3 escritores +
+validação de `agents:` na fronteira de config; as primitivas de detecção **divergem por runtime**
+(usar a tabela já medida em `lstat-nao-ve-junction-…-2026-08-31`, não remedir).
+
+**Ressalva de correção (NOVA):** em FS case-insensitive (APFS/NTFS) `req_dir/Backlog` colide com o
+`backlog` hardcoded, a dedup lexical não vê, e cada REQ conta **em dobro** — 4 violações onde a AC
+do roadmap prevê 2, nos 3 CLIs. Verde no CI Linux, vermelho na máquina do dev. Remédio: chavear o
+`seen` por identidade de filesystem — medi em APFS que ela discrimina nos 3 runtimes
+(`ino/dev` iguais, `os.SameFile: true`), **mas `st_ino`/`ino` em NTFS precisa ser medido antes de
+virar contrato** (a lei da nota `lstat-nao-ve-junction-…`: no Python a primitiva se troca, não se
+complementa). A medição de Windows é pré-requisito do ML, não um "verificar depois".
+
+**Paridade quebrada em código novo:** `agents: ["", "zeus"]` → Go grava em `req_dir/default/`,
+Node/Python em `req_dir/zeus/` (`validator.go:1391` testa só o índice 0; os outros dois filtram
+vazios). Correção de uma linha, recomendada dentro deste PR.
+
+**Fechados (com mecanismo, não com "não achei"):** travessia via nome de agente vindo do disco
+(inalcançável — `readdir` devolve basename), travessia pelo **título** do `req new`
+(`"../../../../pwn"` e `"a/b/c"` colapsam no slug nos 3 runtimes — medido, porque o vault registrava
+`NewREQ` interpolando título sem guarda), metacaracteres de glob (`*`, `[a-z]`, espaço → 3/3),
+symlink como namespace (`## REQs (0)`), dedup suprimindo arquivo legítimo (normalização é lexical;
+agente chamado `done` continua visível), e injeção em `check-artifact-closed-cycle.sh` (sem `eval`,
+`mktemp -d`, `HOME` isolado, expansões citadas).
+
+**Gate do ML-2A: NÃO é vácuo — falsificado por mim, não aceito pelo `OK`.** Rodei
+`check-artifact-closed-cycle.sh` íntegro (EXIT=0, 18 combinações) e reproduzi as 3 sabotagens dos
+cenários 183/184/185 em cópias fora do repo: as três reprovam com o label exato do
+`assert_fails_with` (`req/go/by_agent/req_has_adr-names-generated`,
+`note/node/flat/note_orphan-silent-for-indexed`, `adr/python/flat/status-literal-read-back`), e o
+braço `go/flat` continua verde sob a sabotagem do 183 — o que separa "detectou" de "quebrou o
+binário". Confirmado também que uma sabotagem só falsifica um terço do gate: os 3 braços são
+necessários.
+
+**Observação pré-existente, fora do escopo:** `pypi/trackfw/commands/context.py:160` aborta
+(`string indices must be integers`) quando `validate()` devolve violação em forma de string —
+reproduzido **idêntico em `origin/main`**, REQ própria.
+
+Nenhuma operação de git. Nenhum arquivo de produto modificado.
+
+## 2026-09-03 — apolo-tf (Backend) — INÍCIO
+**ML-2B** (microlote corretivo da barreira final) do
+`ROADMAP-2026-09-03-resolvedor-de-req-cobre-o-layout-canonico-e-ciclo-fechado-por-artefato` (`wip/`).
+Quatro itens, todos no código e no documento que eu escrevi no ML-1A: **B1** (bloqueante, doc-only —
+`docs/cli-parity.md:385` afirma cobertura universal que o `serve` desmente), **B1-bis** (segundo
+resíduo vácuo, `pypi/trackfw/commands/status.py:50`), **S5** (paridade quebrada em código novo:
+`agents: ["", "zeus"]`) e **§4** (dedup lexical não vê `Backlog` ≡ `backlog` em FS
+case-insensitive). Um despacho anterior deste ML caiu por expiração de sessão antes de tocar a
+árvore. Escopo negativo: não corrigir `serve/api_chain`, `status.py`, o symlink de `req_dir/default`
+(S2), `traceid.py:262` (A3) nem a degeneração do braço de ADR (A2) — só **declarar**.
+
+## 2026-09-03 — apolo-tf (Backend) — FIM
+**Entregue (não commitado, para auditoria do `trackfw_architect`).** Nenhuma operação de git.
+
+**§4 — o mecanismo escolhido NÃO é o sugerido pelo parecer, e a razão é a direção da falha.**
+Trocar a chave do `seen` por identidade de inode (`os.SameFile` / `ino` / `st_ino`) foi **rejeitado**:
+Go não tem chave hasheável portátil de `(dev,ino)` (`syscall.Stat_t` não existe no Windows e
+`os.SameFile` é par-a-par, O(n²)), e um `ino` que repete ou lê `0` em FS de rede/Windows **colapsa
+arquivos distintos** — supressão, exatamente a direção proibida; a primitiva do Python segue sem
+contrato medido em NTFS. Lowercase também rejeitado: em FS case-**sensitive** colapsaria dois
+diretórios reais. O mecanismo é **filtro de existência VERBATIM**: um candidato de subdiretório só é
+enumerado se o nome aparecer literalmente na listagem do pai. **Mede o disco em vez de presumir a
+propriedade do filesystem**, é idêntico nos 3 runtimes, cobre também o eixo NFC/NFD (que
+case-folding não cobre), e o **fallback é join cego, nunca lista vazia** — pai ilegível volta ao
+comportamento anterior (dupla contagem, benigna). Tipo de entrada **não** é filtrado, então um
+`<estado>` que seja symlink segue enumerado como antes (§3 é outro escopo).
+
+**§4 falsificado nas duas direções, e o controle rodou em FS case-sensitive REAL deste host** —
+criei um volume `Case-sensitive APFS` com `hdiutil`, não argumentei por analogia:
+
+```
+APFS (case-INsensitive), 1 arquivo real em docs/req/Backlog/
+  antes  go=4  node=4  py=4   violações (context: REQs (2), o mesmo basename 2×)
+  depois go=2  node=2  py=2   violações (context: REQs (1))
+  filtro desligado (sabotagem) go=4 node=4 py=4      <- discrimina nos 3
+VOLUME case-SENSITIVE, docs/req/Backlog/…-A.md + docs/req/backlog/…-B.md
+  depois go/node: REQs (2) com basenames DISTINTOS (A e B), 2 violações cada, 3/3 CLIs
+  filtro desligado: idêntico                          <- prova que NÃO houve supressão
+```
+
+**S5 — alinhei o Go ao Node/Python (filtrar vazios), e o discriminante foi o lado LEITOR, não o
+parecer.** O comentário do Go dizia "mesma convenção de `roadmap new`" — e é verdade: os **três**
+`roadmap new` testam o índice 0 sem filtrar (`generators/roadmap.go:108`,
+`generators/roadmap.js:72`, `generators/roadmap.py:170`). O que desempata é que
+`resolveAgentNamespaces` (leitura) **já descarta** `a == ""` nos 3 runtimes: filtrar devolve **uma**
+noção de agente ao par escritor/leitor (D4). String vazia não é nome de agente, é ausência de
+entrada. Medido nos 3 CLIs, 1 caso + 2 controles:
+
+```
+agents: ["", "zeus"]  ->  go=docs/req/zeus/  node=docs/req/zeus/  py=docs/req/zeus/   (antes: go=default)
+agents: ["zeus"]      ->  zeus/    zeus/    zeus/        (controle: nada mudou)
+agents: [""]          ->  default/ default/ default/     (controle: cai em default, 3/3)
+```
+
+O índice 0 do `roadmap new` é **pré-existente na `main`, idêntico nos 3** — declarado como resíduo,
+não corrigido aqui (guarda compartilhada nos 3 escritores é REQ própria, junto com S2).
+
+**B1 — troquei a afirmação universal por enumeração POR RUNTIME, porque o conjunto não é uniforme.**
+Não colei a lista do parecer: greppei os call sites. `validate`, `context`, gerador de REQ e picker
+de REQ do `roadmap new` delegam nos 3; o inventário do `status` delega em Go e Node e **só em parte**
+no Python; o indexador de `traceid` delega em Go e Python e **não** no Node. Uma frase dizendo "as
+regras, os geradores e os comandos" seria falsa para 3 células dessa tabela.
+
+**B1 e B1-bis medidos por mim, não aceitos por leitura do parecer:**
+
+```
+serve GET /api/chain, nós type:"req", fixture by_agent canônico:
+  go(:4801)=1 nó   node(:4802)=0   py(:4803)=0     <- VÁCUO em 2 de 3
+trackfw status, mesma fixture:
+  go=REQs 1   node=REQs 1   py=REQs 0              <- VÁCUO só no Python (status.py:50)
+```
+
+Os dois entraram em `Declared residuals` **nomeando a espécie** — a lista agora separa
+`superset` (benigno, nunca vácuo: `traceid.js` do Node, `WalkDir` do `serve` do Go) de **vácuo**
+(`serve` em Node/Python, `status` do Python). A espécie invertida era o cerne do B1.
+
+**Desvio de escopo declarado:** o `Files affected` do ML-2B lista `docs/cli-parity.md` e
+`internal/validator/validator.go`. O §4 mediu 4/4/4 — o defeito é dos **3** runtimes, então a
+correção tocou também `npm/src/validator/index.js` e `pypi/trackfw/validator.py`. Regra dura de
+paridade prevalece sobre a linha do roadmap.
+
+**Controles verdes:** `check-artifact-closed-cycle.sh` rc=0 (18 combinações, 36 asserções); testes
+de contenção "write dir está contido na união" nos 3 runtimes (Go 3 testes, Node 5, Python 5).
+
+**Observação pré-existente, reconfirmada:** `trackfw context` do Python aborta na fixture do §4
+(`string indices must be integers`) — o mesmo defeito que `hades-tf` mediu **idêntico em
+`origin/main`**. Não é regressão deste microlote; a medição do Python no §4 foi feita por
+`validate`. O arquivo não-rastreado `docs/req/REQ-2026-09-03-setenta-e-tres-...md` **já estava na
+árvore** quando comecei e não é meu.
+
+**Adendo ao FIM (ML-2B) — arquivo fora do `Files affected`, por consequência mecânica:**
+`scripts/check-gates-falsify.sh` (Cenário 183). O `corrupt_literal` casava a string exata
+`add(ListMDFiles(filepath.Join(reqDir, agent)))`; o filtro do §4 trocou a chamada por
+`addChild(reqDir, agent)` e o cenário reprovou com `expected exactly 1 occurrence of pattern, got 0`
+(`make: *** [parity] Error 1`) — **fail-closed, não vácuo**, mas só aparece no fim do `make quality`.
+Retargetei o literal com comentário `RETARGETED 2026-09-03 (ML-2B)`: o **seam é o mesmo** (o caso (3)
+sai do resolvedor), só a grafia da chamada mudou. Reverificado: `make parity` exit 0, com
+`falsify/closed-cycle` baseline + as **3** sabotagens (`req-resolver-sem-caso-canonico-reprova`,
+`note-link-do-gerador-nao-reconhecido-reprova`,
+`vocabulario-de-status-do-adr-em-portugues-reprova`) todas `OK`. 🔴 **Toque CROSS-ROLE, sem handoff do papel dono:** `scripts/check-gates-falsify.sh` é artefato do
+ML-2A, do `artemis-tf`, e eu o editei sem handoff dele — por necessidade mecânica (o gate reprovava
+por causa da minha renomeação), não por escopo. O `trackfw_architect` deve **rotear a auditoria
+dessa linha para o `artemis-tf`**, não presumir que estava no meu escopo.
+
+**Evidência final:** `make quality` **QUALITY_EXIT=0**, zero linhas `FAIL`, zero `make: ***`, com as
+4 linhas `falsify/closed-cycle` (baseline + 3 sabotagens) `OK` **dentro do próprio log do quality** —
+não emprestadas do `make parity`. `bin/trackfw validate` exit 0 (22 warnings pré-existentes).
+
+---
+
+## 2026-09-03 — `artemis-tf` (QA) — INÍCIO — auditoria CROSS-ROLE do retarget do Cenário 183 (ML-2B)
+
+Roteada pelo `trackfw_architect` a pedido do `apolo-tf`: o Cenário 183 de
+`scripts/check-gates-falsify.sh` é artefato meu (ML-2A) e foi retargetado por ele no ML-2B. Escopo
+estreito, **somente auditoria**, sem git:
+
+1. o seam é o mesmo? (prova por **execução**, não por leitura)
+2. a âncora `addChild(reqDir, agent)` é única e estável?
+3. os Cenários 184/185 seguem válidos após o ML-2B tocar os 3 resolvedores?
+
+## 2026-09-03 — `artemis-tf` (QA) — FIM — auditoria CROSS-ROLE do retarget do Cenário 183 (ML-2B)
+
+**Veredito: o retarget do `apolo-tf` está CORRETO.** O seam é o mesmo, provado por execução.
+
+**(1) Seam — prova de execução, 4 braços.** `npm/`+`pypi/` fixos na árvore de trabalho (o ML-2B
+mexeu nos 3 resolvedores; deixá-los variar misturaria o seam Go com os fixes Node/Python), só o
+`GO_BIN` variando entre 4 binários compilados de 4 versões de `internal/validator/validator.go`:
+
+```
+A0 atual íntegro   rc=0        B0 HEAD íntegro   rc=0
+A1 atual + `addChild(reqDir, agent)` comentado          rc=1
+B1 HEAD  + `add(ListMDFiles(filepath.Join(reqDir, agent)))` comentado   rc=1
+diff out-A1 out-B1 → saídas IDÊNTICAS      diff out-A0 out-B0 → IDÊNTICAS
+```
+
+As mesmas 3 asserções reprovam nos dois: `req/go/by_agent/req_has_adr-names-generated`,
+`adr/go/by_agent/status-literal-read-back`, `adr/go/by_agent/adr_orphan-clears-after-link`. Nenhum
+braço `flat`/`node`/`python` reprova. **O retarget não mudou o que está sendo falsificado.**
+
+**(2) Âncora — única, e já é a forma MÍNIMA.** `grep -c 'addChild(reqDir, agent)'` = 1. O remédio do
+Cenário 179 (encurtar para o substring interno) **não se aplica**: `(reqDir, agent)` aparece 2× (caso
+(3) e o `filepath.Join` do caso (4)) e `corrupt_literal` exige exatamente 1. Quando o que muda é o
+NOME do helper criado pelo próprio refactor, não há substring mais curto que seja único E mais
+estável. **Recomendação implementada — referência forward na fonte, não âncora nova:** pin em
+`internal/validator/validator.go` acima do caso (3), seguindo convenção já existente
+(`internal/integrations/doctor.go:142` cita Cenário 71/72). 🔴 O pin **descreve** a chamada e não a
+reproduz: a primeira versão citava a âncora verbatim e levou `grep -c` de 1 para **2** —
+`corrupt_literal` conta o arquivo inteiro e não exclui comentário; o pin teria quebrado o cenário
+que ele existe para proteger. Medido e corrigido antes de fechar.
+
+**(3) 184/185 seguem válidos — verificado pela pergunta que discrimina.** 184 ancora
+`npm/src/generators/note.js` e 185 `pypi/trackfw/commands/adr.py`; o ML-2B não tocou nenhum dos dois.
+Sweep mais forte: cruzei TODAS as linhas de código removidas pelo ML-2B nos 3 arquivos que ele
+alterou contra `scripts/check-gates-falsify.sh` e contra `scripts/` inteiro —
+`ListMDFiles(filepath.Join(reqDir`, `listReqMdFiles(path.join(reqDir`,
+`_list_md_files(os.path.join(req_dir`, `cfg.Agents[0]`, `REQ_LAYOUT_STATES`/`reqLayoutStates`.
+**Única ocorrência é a do Cenário 183, já retargetada** (e a que sobra está dentro do comentário
+explicativo, sem efeito sobre contagem). Nenhum outro gate ancora nesses literais.
+
+**Defeito encontrado (meu, do ML-2A — não do ML-2B):** o cabeçalho do Cenário 183 afirmava que
+sabotar o resolvedor de REQ deixa `adr_orphan` INTACTO. Falso, e sempre foi (idêntico no braço B1
+sobre o HEAD): reprovam 3 asserções, não 1. Prosa corrigida em `check-gates-falsify.sh`, declarando
+as 2 asserções colaterais como efeito esperado. A tese do cenário se sustenta com `note_orphan`.
+
+**Arquivos alterados por mim (comentário/doc apenas, zero mudança de comportamento):**
+`internal/validator/validator.go` (pin), `scripts/check-gates-falsify.sh` (correção de prosa),
+`vault/notes/falsify-cenario-pina-linha-de-fonte-por-sed-guard-de-plataforma-quebra-2026-08-31.md`
+(3ª ocorrência) + `vault/notes/index.md`, este arquivo. **Sem paridade devida:** o pin descreve uma
+âncora que só existe no Go — replicá-lo em Node/Python afirmaria um pin inexistente.
+
+**Evidência pós-alteração:** `go build ./...` OK · `go vet ./internal/validator/` OK ·
+`go test ./internal/validator/` **ok 4.106s** · `bash -n scripts/check-gates-falsify.sh` OK ·
+falsificação re-verificada NAS DUAS DIREÇÕES com o pin no lugar: árvore íntegra
+`check-artifact-closed-cycle.sh` **rc=0**, árvore sabotada **rc=1**, saídas byte-a-byte idênticas às
+de antes do pin.
+
+🔴 **Não commitei e não executei nenhuma operação de git.** `make quality` (13 min) NÃO foi rodado —
+as alterações são comentário/doc; a decisão de rodá-lo é do `trackfw_architect`.
+
+**ADENDO — prova exaustiva de que o pin não quebrou nenhuma OUTRA âncora.** O risco que eu mesma
+documentei (menção morta em comentário leva a contagem do `corrupt_literal` de 1 para 2) vale para
+**todo** cenário que ancora em `internal/validator/validator.go`, não só o 183 — e há vários
+(cenários nas linhas 1850, 2050, 2301, 3447 do falsify, mais **5** em
+`scripts/check-agent-namespace-union.sh`, que duplica o `corrupt_literal`). Verificação exaustiva,
+por execução e não por parsing:
+
+```
+bash scripts/check-agent-namespace-union.sh   RC=0   66 cenários, 0 FAIL   (21s)
+bash scripts/check-gates-falsify.sh           RC=0   359 OK, 0 FAIL       (13m33s)
+```
+
+Também confirmado que **nenhum** cenário edita `validator.go` por número de linha (`sed -n`/`sed
+'Nd'`/`head -N`) — o pin inseriu 14 linhas em ~1516 e um anchor posicional teria deslocado; e que
+nenhum gate consome `check-gates-falsify.sh` como **dado** (as 15 menções em `scripts/*.sh` são
+prosa/referência), então as linhas que acrescentei ao cabeçalho do Cenário 183 não movem contagem de
+gate nenhum. `bin/trackfw validate` exit 0.
