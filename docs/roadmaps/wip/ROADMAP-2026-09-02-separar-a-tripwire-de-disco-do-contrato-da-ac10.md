@@ -23,7 +23,7 @@ decisão de *entrar no scan* estava sujeita ao disco. Nenhum dado pinado é rege
 
 ## ML-1B — Falsificação nas duas direções
 
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 
 **Direção do defeito — antes.** Apagando **um** roadmap de `docs/roadmaps/done/` numa árvore limpa
 do `main`:
@@ -58,11 +58,28 @@ OK   [corpus/non-reclassification]
 o que ela deve fazer; o que parou foi ela arrastar a AC10 junto.
 
 **Controle da AC10** — ela precisa continuar acendendo pelo motivo certo, ou a correção teria
-desligado o contrato em vez de consertá-lo. *(preenchido pela medição)*
+desligado o contrato em vez de consertá-lo. Plantei uma reclassificação **real** no snapshot: um ML
+de `✅ Concluído` para `⬜ Pendente`, num único arquivo. Com o roadmap de volta no disco:
+
+```
+OK   [corpus/basename-missing-from-disk]        <- nenhum ausente, a tripwire cala
+corpus: files=144 waves=432 exit2=14 lines=1500  <- estrutura intacta
+OK   [corpus/files-count]
+OK   [corpus/waves-count]
+OK   [corpus/exit2-count]
+FAIL [corpus/mls-complete-verdict-counts]: evidence=638 failure=114, pinado 639/113
+OK   [corpus/acceptance-evidence-verdict-counts]
+FAIL [corpus/non-reclassification]: hash da tabela de vereditos mudou
+```
+
+A AC10 acende, e acende **com precisão**: exatamente **um** ML migra de `evidence` para `failure`
+(639/113 → 638/114), que é a única coisa que mudei. As contagens estruturais seguem intactas,
+porque nenhum arquivo saiu do corpus. É a diferença entre reclassificar e truncar — e agora o gate
+distingue as duas.
 
 ## ML-1C — O que esta correção NÃO resolve, dito na frente
 
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 
 A tripwire compara um **fixture de teste** com o conteúdo **vivo** de `docs/roadmaps/**`. Por isso
 ela não pode passar em nenhum fork ou downstream cuja árvore de governança seja legitimamente outra
