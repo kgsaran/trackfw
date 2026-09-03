@@ -3,6 +3,7 @@ package generators
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -107,11 +108,25 @@ func TestGenerateGitAttributes_ComentarioNaoContaComoRegra(t *testing.T) {
 func TestGitAttributesBlock_IgualAoArquivoVersionadoNaRaiz(t *testing.T) {
 	// Mesmo precedente do teste do slash command roadmap.md: o arquivo deste
 	// repositório e o que o `init` gera não podem divergir.
+	//
+	// CONTENCAO, nao igualdade: o `init` ANEXA o bloco a um `.gitattributes` que
+	// ja exista, entao exigir o arquivo inteiro proibiria este repositorio de ter
+	// qualquer regra propria — inclusive `*.go text eol=lf`, sem a qual um checkout
+	// com core.autocrlf=true traz CRLF em todo .go e `gofmt -l` passa a acusar
+	// arquivo sem desvio nenhum. Medido em clone limpo: 0 de 213 com a regra, 213
+	// de 213 sem ela. A contencao continua pegando deriva do bloco, que e o que
+	// este teste existe para pegar.
 	versioned, err := os.ReadFile(filepath.Join("..", "..", ".gitattributes"))
 	if err != nil {
 		t.Fatalf("ler .gitattributes versionado: %v", err)
 	}
-	if string(versioned) != gitAttributesBlock {
-		t.Fatalf(".gitattributes da raiz diverge do bloco gerado pelo init:\ngot:  %q\nwant: %q", string(versioned), gitAttributesBlock)
+	// Normaliza o fim de linha dos DOIS lados: com core.autocrlf=true o arquivo
+	// da raiz vem em CRLF no checkout, enquanto o bloco e uma constante em LF.
+	// Sem isto o teste nao pode passar no Windows — e o Python passa porque o
+	// open() dele traduz newline sozinho, entao os 3 runtimes divergiam.
+	got := strings.ReplaceAll(string(versioned), "\r\n", "\n")
+	want := strings.ReplaceAll(gitAttributesBlock, "\r\n", "\n")
+	if !strings.Contains(got, want) {
+		t.Fatalf(".gitattributes da raiz nao contem o bloco gerado pelo init:\ngot:  %q\nwant substring: %q", got, want)
 	}
 }
