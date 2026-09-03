@@ -29602,3 +29602,56 @@ operação de git; `make quality` não rodado (por instrução).**
 da própria imagem, desconhecido para o que o `git` spawnar. **O mesmo risco de cópia vale para o
 `placeExecutableInPath` do Go (ML-1A), que não tenta symlink no Windows** — não toquei; fica como
 candidato caso o Go volte vermelho.
+
+---
+
+## 2026-09-03 — `hefesto-tf` (Code Quality) — ML-1A (`eol=lf` na raiz, enumerado por medição)
+
+`.gitattributes` da raiz, e **só ele**. O bloco de 6 linhas preexistente (`# trackfw: .trackfw-log
+is append-only…` + `.trackfw-log merge=union`) ficou **byte-idêntico e contíguo** — ele É a constante
+`gitAttributesBlock` / `GITATTRIBUTES_BLOCK` dos 3 geradores, e os 3 testes do PR #254 leem o arquivo
+da **raiz do repo** (`../../.gitattributes`) exigindo contenção dessa corrida de linhas. As regras
+novas entram **depois** dela.
+
+**Medição (clone `--local -c core.autocrlf=true`, re-materializado com `checkout-index -f -a`):**
+1559 de 1591 arquivos versionados chegavam em CRLF. Com a regra: **972**; delta **587 curados**.
+`.go` **217 → 0**, `.js` **156 → 0**, `.py` **153 → 0**, `.sh` **55 → 0**, `.mts` **1 → 0**,
+`Makefile`/`npm/bin/trackfw`/`.husky/pre-commit` **→ 0**. Falsificação nas duas direções: zerando
+`.git/info/attributes` e re-materializando, **volta exatamente a 217/156/153/55/1**.
+
+🔴 **O critério atendido é "0 arquivos de FONTE em CRLF", não "0 arquivos".** Os 972 residuais são
+**exatamente** o conjunto de exclusão enumerado, e ficam em CRLF **de propósito**: 919 `.md`
+(incluindo `docs/roadmaps/**` e `docs/req/**`, que o próprio `validate`/`status` parseia), os 90 de
+`*/integrations/assets/**`, os 4 `*.golden.*`, os 144 do corpus da barreira, e os `.json`/`.yml`/
+`.toml`/`.html`/`.css`/`.ps1`/`.rb`. **Não existe regra `*.md` nesta raiz** — o parser de frontmatter
+é cego a CRLF e o checker de markers roda sobre um `.md` real em `npm/tests/thirdparty.test.js`;
+declarar `eol` sobre o que o produto **parseia** esconderia o defeito, que a Wave 2 do
+desmascaramento precisa medir. Mesmo critério do ML-1C, quando removi o pin que eu próprio fizera.
+
+**Classe do defeito, e por isso o escopo é fonte e não asset:** `arquivo de checkout` × `constante
+compilada` — raw string em backtick (Go), template literal (JS), aspas triplas (Python) carregam o
+`\r` para dentro do valor. Comparação 3-a-3 entre arquivos de checkout é **simétrica em CRLF e não
+quebra**, o que descarta `*.html`/`*.css`/`*.json` do escopo por medição, não por gosto.
+
+🔴 **Efeito colateral não previsto, com número:** `npm/src/integrations/doctor.js` (2 bytes NUL) e
+`npm/src/validator/index.js` (1) contêm **NUL literal como separador de chave** (`join('\0')`,
+`` `${m.raw}\0${…}` ``) — o git os classifica como binários (`i/-text`). Por isso `text=auto`, e não
+`text`: `text` atropelaria a detecção e passaria a converter dois arquivos binários. Conferido:
+seguem `i/-text w/-text`. Contabilidade fechada: 156 CRLF + 2 binários + 8 já fixados por
+`npm/.gitattributes` = 166 `.js`.
+
+**Sem ruído de renormalização, e provado antes:** nenhum blob tem CRLF (1583 `i/lf`, 0 `i/crlf`, 0
+`i/mixed`; único CR-em-blob é `docs/demo.gif`, já binário e não casado por padrão nenhum). `eol` só
+afeta o **checkout**. **Não rodei `git add --renormalize`** — seria no-op. `git ls-files --eol`
+inalterado; `git status` com 1 arquivo modificado. `git check-attr merge eol -- .trackfw-log` →
+`union` / `unspecified`, nos dois caminhos (`.trackfw-log` e `docs/roadmaps/.trackfw-log`).
+
+Controles: `go test ./internal/generators/ -run GitAttributes` ok · `node --test
+npm/tests/gitattributes.test.js` 5/5 · `pytest pypi/tests/test_gitattributes.py` 5 passed — os **3**,
+porque o Python passa por universal newlines e medir num só engana. **Não commitei; nenhuma operação
+de git neste repositório.**
+
+🔴 Só o CI de Windows fecha: a contagem real no runner (aqui o clone com `autocrlf=true` é proxy
+fiel do checkout, mas não roda a suíte sob Windows). Residual não medido: se algum teste futuro
+passar a comparar um `.json`/`.html` de checkout contra constante compilada, ele nasce vermelho no
+Windows — a exclusão é deliberada e está enumerada no próprio `.gitattributes`.

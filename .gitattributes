@@ -4,3 +4,50 @@
 # slash, so it matches the file in any directory — roadmap_dir and req_dir both
 # carry one, and both are configurable per project.
 .trackfw-log merge=union
+
+# ─── eol=lf para os FONTES dos 3 CLIs (REQ-2026-09-03 / ML-1A) ───────────────
+# Medido em clone com `core.autocrlf=true` (default do runner Windows): 1559 dos
+# 1591 arquivos versionados chegavam com CRLF — entre eles 217/217 `.go`,
+# 156/166 `.js` e 153/153 `.py`. Nenhum blob tem CRLF (1583 `i/lf`, 0 `i/crlf`,
+# 0 `i/mixed`), então `eol` só afeta o CHECKOUT: não renormaliza nada.
+#
+# A classe do defeito é `arquivo de checkout` × `constante compilada no binário`:
+# uma raw string em backtick (Go), um template literal (JS) ou um bloco de aspas
+# triplas (Python) carrega o `\r` do checkout para dentro do valor e diverge da
+# constante que sempre está em LF. Comparação 3-a-3 entre arquivos de checkout é
+# simétrica em CRLF e NÃO quebra — por isso o escopo aqui é fonte, não asset.
+#
+# `text=auto` (e não `text`) é deliberado: `npm/src/integrations/doctor.js` e
+# `npm/src/validator/index.js` contêm bytes NUL literais como separador de chave
+# (`join('\0')`), então o git os classifica como binários. `text=auto` preserva
+# essa detecção; `text` a atropelaria.
+*.go              text=auto eol=lf
+go.mod            text=auto eol=lf
+go.sum            text=auto eol=lf
+*.js              text=auto eol=lf
+*.mjs             text=auto eol=lf
+*.mts             text=auto eol=lf
+*.py              text=auto eol=lf
+*.sh              text=auto eol=lf
+Makefile          text=auto eol=lf
+npm/bin/trackfw   text=auto eol=lf
+.husky/pre-commit text=auto eol=lf
+
+# ─── DELIBERADAMENTE FORA — entradas que o PRODUTO processa ──────────────────
+# Não existe regra `*.md` nesta raiz, e isso é intencional. O parser de
+# frontmatter é CEGO A CRLF (emitiu frontmatter duplicado em
+# TestRenderOpenCodeAgent) e o checker de markers de terceiro roda sobre um `.md`
+# real em npm/tests/thirdparty.test.js. Declarar `eol` sobre o que o produto
+# PARSEIA esconderia o defeito em vez de curá-lo — inclusive sobre os próprios
+# artefatos de governança deste repo (`docs/roadmaps/**`, `docs/req/**`), que o
+# `validate`/`status`/`context` leem. Ficam de fora, e cada um por medição:
+#   - `*/integrations/assets/**` (90: 87 `.md` + 3 `catalog.json`) — entrada do parser
+#   - `internal/integrations/testdata/*.golden.*` (3 `.md` + 1 `.toml`) — golden
+#   - `scripts/testdata/roadmap-barrier-corpus-snapshot/**` (144 `.md`) — corpus da barreira
+#   - `*.md` em geral (919) — governança + docs que o produto e os testes parseiam
+#   - `*.json`/`*.yml`/`*.yaml`/`*.toml` — parsers indiferentes a espaço em branco;
+#     nenhum defeito medido, e `*.json` colidiria com `catalog.json` dos assets
+#   - `*.html`/`*.css` — comparados 3-a-3 entre checkouts: simétricos em CRLF
+#   - `*.ps1` (`scripts/windows-repro/run.ps1`) — CRLF é o nativo correto no Windows
+#   - `Formula/trackfw.rb` — consumido pelo Homebrew no macOS/Linux, nunca sob autocrlf
+#   - `.trackfw-log` — dado escrito pelo produto; mantém `merge=union` e nenhum `eol`
