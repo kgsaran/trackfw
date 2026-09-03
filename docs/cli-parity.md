@@ -6845,3 +6845,51 @@ Ligado a `parity:` no `Makefile` — e, por isso, ao `make quality` e ao job `pa
 `.github/workflows/quality.yml`, que roda `make parity`. **Não** foi acrescentado ao subconjunto
 reduzido de `release.yml` (3 gates), por decisão já registrada na
 `REQ-2026-08-04-job-parity-do-ci-so-roda-4-de-14-scripts-do-make-parity...`.
+
+## Palavra-chave de fechamento de issue no corpo do PR — fora do contrato dos 3 CLIs, registrada mesmo assim
+
+<!-- trackfw-contract: gate=scripts/check-pr-closing-keyword.sh partial=o gate casa a forma LITERAL e ADJACENTE (palavra-chave portuguesa colada ao `#N`, com no máximo artigo definido e/ou a palavra "issue" no meio). Paráfrase com palavras intervenientes — "este PR fecha, por fim, a #246" — NÃO é coberta, e isso é deliberado: adjacência é exatamente o que mantém o falso positivo em zero sobre os 240 corpos reais medidos. Trechos em cerca de código e code span são removidos antes de casar, então a forma errada CITADA como exemplo não reprova (e, pelo mesmo motivo, um autor que envolvesse a própria linha de fechamento em crase escaparia — linha em crase também não fecha issue nenhuma, então o gate não perde nada que importe). Não é defesa contra evasão adversária: o autor do corpo não é um adversário, é alguém que quer fechar a issue e erra o idioma. Ver vault/notes/gate-literal-regex-syntax-equivalent-bypass-2026-09-01.md -->
+
+**Não é feature de produto.** Nada em `internal/`, `npm/src/` ou `pypi/trackfw/` muda, e o
+`trackfw init` **não** passa a gerar template de PR em projeto adotante. É infraestrutura deste
+repositório, registrada aqui pelo mesmo precedente da seção *Site documentation drift* acima.
+
+**O defeito.** O GitHub fecha uma issue no merge apenas com `close|closes|closed`,
+`fix|fixes|fixed` ou `resolve|resolves|resolved`. Como os corpos de PR deste repositório são
+escritos em português, `Fecha #246.` (PR #247) não fechou nada: o merge teve sucesso, o texto
+**afirmava** que fechou, e a issue ficou aberta até alguém reparar. Mesmo padrão da auditoria de
+2026-09-02 — artefato que se reporta saudável estando inerte.
+
+**Medição sobre os corpos reais (2026-09-02).** Dos 241 PRs mergeados, apenas **4** fecharam issue
+automaticamente (confirmado por `closingIssuesReferences` da API, não por leitura do texto), e os 4
+usaram `Fixes #N`. Rodando o gate real contra os 241 corpos: **239 passam, 1 reprova (o PR #247, o
+defeito confirmado), 1 sai `not_evaluated` (PR #49, corpo vazio) — zero falsos positivos.** Um
+casamento ingênuo (palavra-chave em qualquer posição da linha) reprovaria **43** linhas no mesmo
+corpus.
+
+**A isenção é POR NÚMERO DE ISSUE.** `Fecha #246` + `Fixes #999` **reprova**; `Fecha #246` +
+`Fixes #246` **passa**. Essa cláusula é load-bearing, não decoração: é ela que impede os PRs #238 e
+#240 — que escrevem `Corrige o #237.` na primeira linha **e** `Fixes #237` no rodapé, e de fato
+fecharam — de virarem falso positivo. Falsificada por sabotagem no Cenário 182 de
+`scripts/check-gates-falsify.sh`: trocando a comparação por número por uma comparação global, o
+gate sabotado fica **verde** sobre o corpo do defeito.
+
+**`Resolve #N` passa, de propósito.** A grafia é idêntica em inglês e português, e o **inglês é
+válido** no GitHub. Recusá-la seria reprovar um corpo que funciona — o pior falso positivo
+possível. `Resolvido`/`Resolvida`/`Resolvem`/`Resolver` continuam recusados: são inequivocamente
+portugueses e não fecham nada.
+
+**Guarda de vacuidade, falsificada por execução.** Corpo vazio, payload sem
+`.pull_request.body`, evento diferente de `pull_request`, `gh` ausente ou arquivo ilegível →
+**exit 2 (`not_evaluated`)**. Nunca exit 0 em silêncio. Extração do corpo via `json.load` sobre
+`$GITHUB_EVENT_PATH` — nunca `grep`/`sed` sobre o JSON, que produziria leitura parcial silenciosa
+num corpo com `\n` escapado.
+
+**Um único matcher.** `--self-test` (usado por `make parity`, onde não há contexto de PR) e o
+caminho de CI chamam a **mesma** função `evaluate_body_file`; não existe segunda cópia da regex. Um
+autoteste que gerasse o próprio matcher seria exatamente o gate vácuo que a auditoria mediu.
+
+Ligado a `parity:` no `Makefile` (modo `--self-test`) e ao job `pr-closing-keyword` de
+`.github/workflows/quality.yml`, com `if: github.event_name == 'pull_request'` — o único evento em
+que o corpo existe no payload. **Não** foi acrescentado a `required_status_checks`: é decisão do
+arquiteto, e um gate novo em obrigatório bloqueia todo PR se nascer com defeito.

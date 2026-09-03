@@ -28957,3 +28957,53 @@ criado às 20:55, fora do meu escopo — não escrevi em `docs/req/`). O delta d
 anterior, feita antes do arquivo aparecer, tinha `diff` vazio nos 4 pares. Nenhuma outra diferença.
 (e) **Observação de paridade fora de escopo:** Go e Node listam ADRs/REQs na mesma ordem (md
 byte-idêntico), mas o **Python usa outra ordenação** — divergência preexistente, não tocada aqui.
+
+## 2026-09-02 — ares-tf (Infrastructure) — INÍCIO
+**ML-1A** do `ROADMAP-2026-09-02-gate-e-template-de-pr-exigem-palavra-chave-de-fechamento-em-ingles`
+(`wip/`), REQ
+`REQ-2026-09-02-prs-usam-palavra-chave-de-fechamento-em-portugues-e-nenhuma-issue-fecha-automaticamente.md`.
+Branch já ativa: `chore/gate-e-template-de-pr-exigem-palavra-chave-de-fechamento-em-ingles`.
+Escopo: template de PR + gate de palavra-chave de fechamento, ligados ao `Makefile` e ao
+`quality.yml`. **Escopo negativo duro:** nada em `internal/`, `npm/src/` ou `pypi/trackfw/` — não é
+feature de produto, o `trackfw init` **não** passa a gerar template de PR. Nenhuma operação de git.
+
+## 2026-09-02 — ares-tf (Infrastructure) — FIM
+**Entregue (não commitado, para auditoria do `trackfw_architect`):**
+`.github/PULL_REQUEST_TEMPLATE.md` (novo), `scripts/check-pr-closing-keyword.sh` (novo),
+`scripts/check-gates-falsify.sh` (Cenário 182), `Makefile` (alvo `parity`),
+`.github/workflows/quality.yml` (job `pr-closing-keyword`), `docs/cli-parity.md` (seção nova com
+`partial=`), `vault/notes/palavra-chave-de-fechamento-do-github-e-so-em-ingles-e-resolve-e-falso-cognato-2026-09-02.md`
+(+ `index.md`).
+
+**A medição que decide o gate.** `gh pr list --state merged --limit 300 --json
+number,body,closingIssuesReferences` → **241 corpos**. Rodando o script real, um corpo por vez:
+**239 passam · 1 reprova (PR #247, o defeito confirmado) · 1 `not_evaluated` (PR #49, corpo
+vazio) — ZERO falsos positivos.** Um casamento ingênuo (palavra-chave em qualquer posição da
+linha) reprovaria **43** linhas no mesmo corpus; a exigência de **adjacência** é o que faz a
+diferença.
+
+**Achado que corrige o enunciado da REQ.** `closingIssuesReferences` (o que o GitHub realmente
+vinculou, não o que o texto parece dizer) mostra que apenas **4 dos 241** PRs fecharam issue
+automaticamente, todos com `Fixes #N`. Os PRs #238 e #240 abrem com `Corrige o #237.`/`Corrige o
+#239.` e **fecharam mesmo assim** — têm `Fixes #N` no rodapé. Por isso a isenção do gate é **por
+número de issue**, não global. E `Resolve #N` foi **removido** da lista de formas proibidas que a
+REQ pedia: a grafia é idêntica nos dois idiomas e o **inglês é válido** no GitHub — recusá-la
+reprovaria um corpo que funciona.
+
+**Falsificado por execução, não presumido:** 25 cenários de `--self-test` (detecção com linha
+nomeada · prosa real de PRs mergeados · isenção por número nas duas direções · code span/cerca ·
+vacuidade); Cenário 182 do `check-gates-falsify.sh` sabota a comparação por número numa cópia do
+gate e prova que a cópia sabotada fica **verde** sobre o corpo do defeito; a linha de comando exata
+do workflow foi rodada contra payloads `GITHUB_EVENT_PATH` sintéticos (defeito → 1, correto → 0,
+sem `body` → 2, evento `push` → 2).
+
+**Vacuidade:** exit 0 só com corpo lido **e** avaliado; exit 2 (`not_evaluated`) para corpo vazio,
+payload sem `.pull_request.body`, evento ≠ `pull_request`, `gh` ausente, arquivo ilegível. Nunca
+exit 0 em silêncio. `--self-test` e o caminho de CI chamam a **mesma** função `evaluate_body_file` —
+não há segunda cópia da regex.
+
+**Não feito, de propósito:** gate **não** entra em `required_status_checks` (decisão do arquiteto);
+PRs mergeados não reescritos; issues não reabertas; nada em `internal/`/`npm/src/`/`pypi/trackfw/`.
+
+**Roadmap não movido e ML não marcado `✅`** — cabe ao `trackfw_architect` após a auditoria.
+Nenhuma operação de git executada.

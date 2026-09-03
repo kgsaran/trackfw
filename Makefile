@@ -60,6 +60,11 @@ parity: build
 	scripts/check-atomic-write-anti-divergence.sh
 	scripts/check-shell-posix-portability.sh
 	scripts/check-output-encoding-declared.sh
+	# --self-test: `make parity` roda fora de um pull request, entao nao ha corpo de
+	# PR para medir. O autoteste exercita o MESMO matcher que o CI usa (nao ha
+	# segunda copia da regex) nas duas direcoes + a guarda de vacuidade. A medicao
+	# do corpo real acontece no job `pr-closing-keyword` de .github/workflows/quality.yml.
+	scripts/check-pr-closing-keyword.sh --self-test
 
 sync-integration-assets:
 	scripts/sync-integration-assets.sh
