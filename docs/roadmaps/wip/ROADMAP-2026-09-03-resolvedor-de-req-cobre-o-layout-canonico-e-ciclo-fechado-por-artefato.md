@@ -198,7 +198,7 @@ e o resumo do `check-gates-falsify.sh` já estava defasado antes deste ML.
 
 
 ### ML-2B — Microlote corretivo da barreira final
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** `apolo-tf`
 **Files affected:** `docs/cli-parity.md`, `internal/validator/validator.go`
 **Origem:** `docs/qualidade/2026-09-03-parecer-resolvedor-de-req.md` (B1) e
@@ -243,15 +243,73 @@ usa em outro ponto — a divergência é interna ao mesmo arquivo. **Mesma espé
 vácuo, não superconjunto.** Entra na lista de resíduos declarados junto com ele.
 
 **Critérios de aceite:**
-- [ ] B1: a afirmação universal do `cli-parity.md` virou enumeração, e `serve/api_chain` está na
+- [x] B1: a afirmação universal do `cli-parity.md` virou enumeração, e `serve/api_chain` está na
       lista de resíduos **com a medição** (1 nó no Go, 0 no Node/Python)
-- [ ] B1-bis: `pypi/.../status.py:50` também está na lista, com a medição do `by_agent`
-- [ ] S5: `agents: ["", "zeus"]` faz os **3** CLIs gravarem em `req_dir/zeus/`. Falsificado nas duas
+- [x] B1-bis: `pypi/.../status.py:50` também está na lista, com a medição do `by_agent`
+- [x] S5: `agents: ["", "zeus"]` faz os **3** CLIs gravarem em `req_dir/zeus/`. Falsificado nas duas
       direções
-- [ ] §4: em FS case-insensitive, `req_dir/Backlog` ≡ `backlog` deixa de contar em dobro —
+- [x] §4: em FS case-insensitive, `req_dir/Backlog` ≡ `backlog` deixa de contar em dobro —
       **verificado por execução no macOS**, não por leitura
-- [ ] 🔴 **Controle:** o gate de ciclo fechado continua `rc=0` e as 3 sabotagens continuam reprovando
-- [ ] `make quality` verde e `trackfw validate` exit 0
+- [x] 🔴 **Controle:** o gate de ciclo fechado continua `rc=0` e as 3 sabotagens continuam reprovando
+- [x] `make quality` verde e `trackfw validate` exit 0
+
+
+**Evidência de aceite — auditoria do arquiteto (2026-09-03):**
+
+```
+check-artifact-closed-cycle.sh                       rc=0
+dedup em APFS: 1 arquivo -> cada violacao UMA vez    (antes: duplicada)
+grep -c 'addChild(reqDir, agent)' no validator.go    1   <- pin nao reproduz a ancora
+```
+
+🔴 **O agente rejeitou o mecanismo que EU sugeri para o §4, e a medição lhe dá razão.** Propus
+identidade de inode. Ele mediu: o Go não tem chave hasheável portátil de `(dev,ino)`
+(`syscall.Stat_t` não existe no Windows; `os.SameFile` é par-a-par, O(n²)), e um `ino` que repete ou
+lê `0` em FS de rede **colapsa arquivos distintos** — exatamente a direção proibida. Escolheu
+**filtro de existência verbatim**: o candidato só é enumerado se o nome aparecer literalmente no
+`readdir` do pai. **Mede o disco em vez de presumir a propriedade do FS**, é idêntico nos 3 runtimes,
+cobre de graça o eixo NFC/NFD, e o fallback é dupla contagem benigna — **nunca lista vazia**.
+
+E não aceitou controle por argumento: **criou um volume APFS case-sensitive real com `hdiutil`**.
+
+```
+APFS case-INsensitive   antes 4/4/4   depois 2/2/2   filtro desligado 4/4/4  <- discrimina
+volume case-SENSITIVE   Backlog/A.md + backlog/B.md -> 2 REQs, basenames distintos, 3/3 CLIs
+                        filtro desligado: identico   <- prova que NAO houve supressao
+```
+
+**S5:** o discriminante veio do lado leitor — `resolveAgentNamespaces` já descarta `""` nos 3, então
+filtrar devolve **uma** noção de agente ao par (D4). `["", "zeus"]` → `zeus/` nos 3.
+
+**B1 + B1-bis:** enumeração **por runtime**, porque o conjunto não é uniforme e a lista do parecer
+seria falsa em 3 células. Medido: `serve /api/chain` → `go=1 nó, node=0, py=0`; `status` → `go=1,
+node=1, py=0` (**B1-bis é Python-only** — os 3 foram verificados antes de declarar).
+
+### Auditoria cross-role do Cenário 183 — roteada ao `artemis-tf`, papel dono
+
+O `apolo-tf` foi obrigado a retargetar o Cenário 183 (a renomeação do §4 quebrou a âncora literal, e
+o gate reprovou **fail-closed**) e **pediu** que a auditoria fosse roteada. Foi.
+
+**Seam provado idêntico, com desenho de 4 braços**: `npm/` e `pypi/` **fixos** na árvore de trabalho
+— deixá-los variar misturaria o seam do Go com os fixes dos outros dois — e só o `GO_BIN` variando.
+O braço `B0` (HEAD íntegro) foi necessário para provar que o `validator.go` pré-§4 não reprovava por
+dupla contagem em APFS, sem o que `B1` seria ininterpretável. **Saídas idênticas**, as mesmas 3
+asserções.
+
+🔴 **Ela achou um defeito no próprio ML-2A dela:** o cabeçalho do Cenário 183 afirmava que sabotar o
+resolvedor deixa `adr_orphan` **INTACTO**. Falso, e sempre foi — reprovam 3 asserções, não 1. Prosa
+corrigida.
+
+🔴 **E mediu uma armadilha ao consertar:** a primeira versão do pin **citava a âncora verbatim**, e o
+`grep -c` foi de 1 para **2** — `corrupt_literal` conta o arquivo inteiro e não exclui comentário.
+**O pin teria quebrado o cenário que existe para proteger.** Regra registrada no vault: *um pin de
+âncora descreve a chamada, nunca a reproduz.* Verificado por mim: contagem em 1.
+
+**Terceira ocorrência** de âncora literal deste harness quebrando por renomeação (Cenários 81 e 179
+antes). O harness completo foi re-rodado: **359 OK, 0 FAIL, 13m33**.
+
+**Sem paridade devida no pin:** ele descreve uma âncora que só existe no Go — replicá-lo em
+Node/Python afirmaria um pin inexistente.
 
 🔴 **Não corrigir aqui:** o symlink em `req_dir/default` que faz o `req new` escrever fora da árvore
 (S2) — o furo **idêntico já existe na `main`** no `roadmap new`, medido, então é extensão de classe e

@@ -1387,9 +1387,18 @@ func REQWriteDir(cfg config.ProjectConfig) string {
 		return ""
 	}
 	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
+		// S5 (hades-tf 2026-09-03): FILTRAR os vazios, não testar só o índice 0. Com
+		// agents: ["", "zeus"] o teste em cfg.Agents[0] caía em "default" enquanto Node e Python
+		// escolhiam "zeus" — mesmo trackfw.yaml, dois destinos de escrita, regra dura de paridade
+		// violada dentro da função criada por este PR. Filtrar é também o que o LADO LEITOR já faz
+		// (resolveAgentNamespaces descarta a == ""), então o par escritor/leitor volta a ter UMA
+		// noção de agente (D4). String vazia não é nome de agente: é ausência de entrada.
 		agent := "default"
-		if len(cfg.Agents) > 0 && cfg.Agents[0] != "" {
-			agent = cfg.Agents[0]
+		for _, a := range cfg.Agents {
+			if a != "" {
+				agent = a
+				break
+			}
 		}
 		return filepath.Join(reqDir, agent)
 	}
@@ -1434,12 +1443,67 @@ func ResolveREQFiles(cfg config.ProjectConfig) []string {
 		}
 	}
 
+	// 🔴 §4 (hades-tf 2026-09-03): a dedup por STRING não vê req_dir/Backlog ≡ req_dir/backlog em
+	// filesystem case-INSENSITIVE (APFS, NTFS). O nome "Backlog" entra na lista de agentes pelo
+	// disco e emite req_dir/Backlog/*.md; o laço de estados emite req_dir/backlog/*.md, hardcoded
+	// em minúscula. Mesmo diretório, strings diferentes, `seen` cego: toda REQ contada em DOBRO e
+	// cada violação emitida duas vezes (medido em APFS: 2 REQs e 4 violações para 1 arquivo real).
+	// Verde no CI Linux, vermelho na máquina do dev.
+	//
+	// MECANISMO: só enumeramos um candidato de subdiretório se o nome existir VERBATIM na listagem
+	// do pai. A grafia do disco é a autoridade — medimos o disco em vez de presumir a propriedade do
+	// filesystem. Consequências que decidiram a escolha:
+	//   - NÃO troca dupla contagem por SUPRESSÃO: em FS case-SENSITIVE, "Backlog" e "backlog" são
+	//     dois diretórios reais e DISTINTOS, e o readdir lista os DOIS — ambos continuam
+	//     enumerados. Normalizar por lowercase colapsaria os dois e suprimiria um arquivo real.
+	//   - NÃO usa identidade de inode: Go não tem chave hasheável portátil de (dev,ino)
+	//     (syscall.Stat_t não existe no Windows, e os.SameFile é par-a-par → O(n²)); e ino == 0 em
+	//     alguns FS de rede/Windows colapsaria arquivos distintos — supressão, a direção proibida.
+	//   - Cobre também o eixo NFC/NFD, que o case-folding não cobre: a grafia do disco é a
+	//     autoridade, então um agents: em outra forma Unicode é filtrado, não duplicado.
+	//   - FALLBACK É JOIN CEGO, NUNCA LISTA VAZIA: se o pai não pode ser lido, não filtramos nada e
+	//     voltamos ao comportamento anterior (dupla contagem, benigna). Devolver vazio aqui seria
+	//     supressão.
+	//   - Não filtra por TIPO de entrada: um <estado> que seja symlink continua sendo enumerado
+	//     exatamente como antes (fechar essa porta é decisão do §3, fora deste microlote).
+	childCache := make(map[string][]string)
+	hasChildVerbatim := func(parent, name string) bool {
+		children, cached := childCache[parent]
+		if !cached {
+			entries, err := os.ReadDir(parent)
+			if err != nil {
+				childCache[parent] = nil // marca "ilegível" → join cego
+				return true
+			}
+			children = make([]string, 0, len(entries))
+			for _, e := range entries {
+				children = append(children, e.Name())
+			}
+			childCache[parent] = children
+		}
+		if children == nil {
+			return true
+		}
+		for _, n := range children {
+			if n == name {
+				return true
+			}
+		}
+		return false
+	}
+	addChild := func(parent, name string) {
+		if !hasChildVerbatim(parent, name) {
+			return
+		}
+		add(ListMDFiles(filepath.Join(parent, name)))
+	}
+
 	// (1) flat legado — req_dir/*.md
 	add(ListMDFiles(reqDir))
 
 	// (2) por-estado legado — req_dir/<estado>/*.md
 	for _, state := range reqLayoutStates {
-		add(ListMDFiles(filepath.Join(reqDir, state)))
+		addChild(reqDir, state)
 	}
 
 	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
@@ -1449,10 +1513,23 @@ func ResolveREQFiles(cfg config.ProjectConfig) []string {
 			// ListMDFiles em vez de filepath.Glob, para que metacaracteres ("*", "[") no nome não
 			// sejam interpretados como padrão e corrompam a contagem em silêncio.
 			// (3) canônico — req_dir/<agente>/*.md
-			add(ListMDFiles(filepath.Join(reqDir, agent)))
+			//
+			// ⚠️ ÂNCORA DE FALSIFICAÇÃO — a chamada logo abaixo é pinada VERBATIM pelo Cenário
+			// 183 de scripts/check-gates-falsify.sh, que prova que
+			// check-artifact-closed-cycle.sh REPROVA quando este caso canônico sai do resolvedor.
+			// O `corrupt_literal` do cenário exige EXATAMENTE 1 ocorrência da chamada e reprova
+			// fail-closed ("expected exactly 1 occurrence, got 0") se a grafia mudar. É a 3ª vez
+			// que uma âncora literal deste harness quebra por renomeação (Cenários 81 e 179 antes
+			// desta): ao renomear o helper, trocar a ordem dos argumentos ou duplicar a chamada,
+			// RETARGETAR o cenário junto — senão só o `make quality` de 13 min avisa.
+			//
+			// 🔴 NÃO reproduzir a grafia exata da chamada em NENHUM comentário deste arquivo: a
+			// contagem do `corrupt_literal` é sobre o arquivo inteiro e uma menção morta a levaria
+			// a 2, reprovando o cenário do mesmo jeito (medido ao escrever este aviso).
+			addChild(reqDir, agent)
 			// (4) legado — req_dir/<agente>/<estado>/*.md
 			for _, state := range reqLayoutStates {
-				add(ListMDFiles(filepath.Join(reqDir, agent, state)))
+				addChild(filepath.Join(reqDir, agent), state)
 			}
 		}
 	}

@@ -29266,3 +29266,200 @@ necessários.
 reproduzido **idêntico em `origin/main`**, REQ própria.
 
 Nenhuma operação de git. Nenhum arquivo de produto modificado.
+
+## 2026-09-03 — apolo-tf (Backend) — INÍCIO
+**ML-2B** (microlote corretivo da barreira final) do
+`ROADMAP-2026-09-03-resolvedor-de-req-cobre-o-layout-canonico-e-ciclo-fechado-por-artefato` (`wip/`).
+Quatro itens, todos no código e no documento que eu escrevi no ML-1A: **B1** (bloqueante, doc-only —
+`docs/cli-parity.md:385` afirma cobertura universal que o `serve` desmente), **B1-bis** (segundo
+resíduo vácuo, `pypi/trackfw/commands/status.py:50`), **S5** (paridade quebrada em código novo:
+`agents: ["", "zeus"]`) e **§4** (dedup lexical não vê `Backlog` ≡ `backlog` em FS
+case-insensitive). Um despacho anterior deste ML caiu por expiração de sessão antes de tocar a
+árvore. Escopo negativo: não corrigir `serve/api_chain`, `status.py`, o symlink de `req_dir/default`
+(S2), `traceid.py:262` (A3) nem a degeneração do braço de ADR (A2) — só **declarar**.
+
+## 2026-09-03 — apolo-tf (Backend) — FIM
+**Entregue (não commitado, para auditoria do `trackfw_architect`).** Nenhuma operação de git.
+
+**§4 — o mecanismo escolhido NÃO é o sugerido pelo parecer, e a razão é a direção da falha.**
+Trocar a chave do `seen` por identidade de inode (`os.SameFile` / `ino` / `st_ino`) foi **rejeitado**:
+Go não tem chave hasheável portátil de `(dev,ino)` (`syscall.Stat_t` não existe no Windows e
+`os.SameFile` é par-a-par, O(n²)), e um `ino` que repete ou lê `0` em FS de rede/Windows **colapsa
+arquivos distintos** — supressão, exatamente a direção proibida; a primitiva do Python segue sem
+contrato medido em NTFS. Lowercase também rejeitado: em FS case-**sensitive** colapsaria dois
+diretórios reais. O mecanismo é **filtro de existência VERBATIM**: um candidato de subdiretório só é
+enumerado se o nome aparecer literalmente na listagem do pai. **Mede o disco em vez de presumir a
+propriedade do filesystem**, é idêntico nos 3 runtimes, cobre também o eixo NFC/NFD (que
+case-folding não cobre), e o **fallback é join cego, nunca lista vazia** — pai ilegível volta ao
+comportamento anterior (dupla contagem, benigna). Tipo de entrada **não** é filtrado, então um
+`<estado>` que seja symlink segue enumerado como antes (§3 é outro escopo).
+
+**§4 falsificado nas duas direções, e o controle rodou em FS case-sensitive REAL deste host** —
+criei um volume `Case-sensitive APFS` com `hdiutil`, não argumentei por analogia:
+
+```
+APFS (case-INsensitive), 1 arquivo real em docs/req/Backlog/
+  antes  go=4  node=4  py=4   violações (context: REQs (2), o mesmo basename 2×)
+  depois go=2  node=2  py=2   violações (context: REQs (1))
+  filtro desligado (sabotagem) go=4 node=4 py=4      <- discrimina nos 3
+VOLUME case-SENSITIVE, docs/req/Backlog/…-A.md + docs/req/backlog/…-B.md
+  depois go/node: REQs (2) com basenames DISTINTOS (A e B), 2 violações cada, 3/3 CLIs
+  filtro desligado: idêntico                          <- prova que NÃO houve supressão
+```
+
+**S5 — alinhei o Go ao Node/Python (filtrar vazios), e o discriminante foi o lado LEITOR, não o
+parecer.** O comentário do Go dizia "mesma convenção de `roadmap new`" — e é verdade: os **três**
+`roadmap new` testam o índice 0 sem filtrar (`generators/roadmap.go:108`,
+`generators/roadmap.js:72`, `generators/roadmap.py:170`). O que desempata é que
+`resolveAgentNamespaces` (leitura) **já descarta** `a == ""` nos 3 runtimes: filtrar devolve **uma**
+noção de agente ao par escritor/leitor (D4). String vazia não é nome de agente, é ausência de
+entrada. Medido nos 3 CLIs, 1 caso + 2 controles:
+
+```
+agents: ["", "zeus"]  ->  go=docs/req/zeus/  node=docs/req/zeus/  py=docs/req/zeus/   (antes: go=default)
+agents: ["zeus"]      ->  zeus/    zeus/    zeus/        (controle: nada mudou)
+agents: [""]          ->  default/ default/ default/     (controle: cai em default, 3/3)
+```
+
+O índice 0 do `roadmap new` é **pré-existente na `main`, idêntico nos 3** — declarado como resíduo,
+não corrigido aqui (guarda compartilhada nos 3 escritores é REQ própria, junto com S2).
+
+**B1 — troquei a afirmação universal por enumeração POR RUNTIME, porque o conjunto não é uniforme.**
+Não colei a lista do parecer: greppei os call sites. `validate`, `context`, gerador de REQ e picker
+de REQ do `roadmap new` delegam nos 3; o inventário do `status` delega em Go e Node e **só em parte**
+no Python; o indexador de `traceid` delega em Go e Python e **não** no Node. Uma frase dizendo "as
+regras, os geradores e os comandos" seria falsa para 3 células dessa tabela.
+
+**B1 e B1-bis medidos por mim, não aceitos por leitura do parecer:**
+
+```
+serve GET /api/chain, nós type:"req", fixture by_agent canônico:
+  go(:4801)=1 nó   node(:4802)=0   py(:4803)=0     <- VÁCUO em 2 de 3
+trackfw status, mesma fixture:
+  go=REQs 1   node=REQs 1   py=REQs 0              <- VÁCUO só no Python (status.py:50)
+```
+
+Os dois entraram em `Declared residuals` **nomeando a espécie** — a lista agora separa
+`superset` (benigno, nunca vácuo: `traceid.js` do Node, `WalkDir` do `serve` do Go) de **vácuo**
+(`serve` em Node/Python, `status` do Python). A espécie invertida era o cerne do B1.
+
+**Desvio de escopo declarado:** o `Files affected` do ML-2B lista `docs/cli-parity.md` e
+`internal/validator/validator.go`. O §4 mediu 4/4/4 — o defeito é dos **3** runtimes, então a
+correção tocou também `npm/src/validator/index.js` e `pypi/trackfw/validator.py`. Regra dura de
+paridade prevalece sobre a linha do roadmap.
+
+**Controles verdes:** `check-artifact-closed-cycle.sh` rc=0 (18 combinações, 36 asserções); testes
+de contenção "write dir está contido na união" nos 3 runtimes (Go 3 testes, Node 5, Python 5).
+
+**Observação pré-existente, reconfirmada:** `trackfw context` do Python aborta na fixture do §4
+(`string indices must be integers`) — o mesmo defeito que `hades-tf` mediu **idêntico em
+`origin/main`**. Não é regressão deste microlote; a medição do Python no §4 foi feita por
+`validate`. O arquivo não-rastreado `docs/req/REQ-2026-09-03-setenta-e-tres-...md` **já estava na
+árvore** quando comecei e não é meu.
+
+**Adendo ao FIM (ML-2B) — arquivo fora do `Files affected`, por consequência mecânica:**
+`scripts/check-gates-falsify.sh` (Cenário 183). O `corrupt_literal` casava a string exata
+`add(ListMDFiles(filepath.Join(reqDir, agent)))`; o filtro do §4 trocou a chamada por
+`addChild(reqDir, agent)` e o cenário reprovou com `expected exactly 1 occurrence of pattern, got 0`
+(`make: *** [parity] Error 1`) — **fail-closed, não vácuo**, mas só aparece no fim do `make quality`.
+Retargetei o literal com comentário `RETARGETED 2026-09-03 (ML-2B)`: o **seam é o mesmo** (o caso (3)
+sai do resolvedor), só a grafia da chamada mudou. Reverificado: `make parity` exit 0, com
+`falsify/closed-cycle` baseline + as **3** sabotagens (`req-resolver-sem-caso-canonico-reprova`,
+`note-link-do-gerador-nao-reconhecido-reprova`,
+`vocabulario-de-status-do-adr-em-portugues-reprova`) todas `OK`. 🔴 **Toque CROSS-ROLE, sem handoff do papel dono:** `scripts/check-gates-falsify.sh` é artefato do
+ML-2A, do `artemis-tf`, e eu o editei sem handoff dele — por necessidade mecânica (o gate reprovava
+por causa da minha renomeação), não por escopo. O `trackfw_architect` deve **rotear a auditoria
+dessa linha para o `artemis-tf`**, não presumir que estava no meu escopo.
+
+**Evidência final:** `make quality` **QUALITY_EXIT=0**, zero linhas `FAIL`, zero `make: ***`, com as
+4 linhas `falsify/closed-cycle` (baseline + 3 sabotagens) `OK` **dentro do próprio log do quality** —
+não emprestadas do `make parity`. `bin/trackfw validate` exit 0 (22 warnings pré-existentes).
+
+---
+
+## 2026-09-03 — `artemis-tf` (QA) — INÍCIO — auditoria CROSS-ROLE do retarget do Cenário 183 (ML-2B)
+
+Roteada pelo `trackfw_architect` a pedido do `apolo-tf`: o Cenário 183 de
+`scripts/check-gates-falsify.sh` é artefato meu (ML-2A) e foi retargetado por ele no ML-2B. Escopo
+estreito, **somente auditoria**, sem git:
+
+1. o seam é o mesmo? (prova por **execução**, não por leitura)
+2. a âncora `addChild(reqDir, agent)` é única e estável?
+3. os Cenários 184/185 seguem válidos após o ML-2B tocar os 3 resolvedores?
+
+## 2026-09-03 — `artemis-tf` (QA) — FIM — auditoria CROSS-ROLE do retarget do Cenário 183 (ML-2B)
+
+**Veredito: o retarget do `apolo-tf` está CORRETO.** O seam é o mesmo, provado por execução.
+
+**(1) Seam — prova de execução, 4 braços.** `npm/`+`pypi/` fixos na árvore de trabalho (o ML-2B
+mexeu nos 3 resolvedores; deixá-los variar misturaria o seam Go com os fixes Node/Python), só o
+`GO_BIN` variando entre 4 binários compilados de 4 versões de `internal/validator/validator.go`:
+
+```
+A0 atual íntegro   rc=0        B0 HEAD íntegro   rc=0
+A1 atual + `addChild(reqDir, agent)` comentado          rc=1
+B1 HEAD  + `add(ListMDFiles(filepath.Join(reqDir, agent)))` comentado   rc=1
+diff out-A1 out-B1 → saídas IDÊNTICAS      diff out-A0 out-B0 → IDÊNTICAS
+```
+
+As mesmas 3 asserções reprovam nos dois: `req/go/by_agent/req_has_adr-names-generated`,
+`adr/go/by_agent/status-literal-read-back`, `adr/go/by_agent/adr_orphan-clears-after-link`. Nenhum
+braço `flat`/`node`/`python` reprova. **O retarget não mudou o que está sendo falsificado.**
+
+**(2) Âncora — única, e já é a forma MÍNIMA.** `grep -c 'addChild(reqDir, agent)'` = 1. O remédio do
+Cenário 179 (encurtar para o substring interno) **não se aplica**: `(reqDir, agent)` aparece 2× (caso
+(3) e o `filepath.Join` do caso (4)) e `corrupt_literal` exige exatamente 1. Quando o que muda é o
+NOME do helper criado pelo próprio refactor, não há substring mais curto que seja único E mais
+estável. **Recomendação implementada — referência forward na fonte, não âncora nova:** pin em
+`internal/validator/validator.go` acima do caso (3), seguindo convenção já existente
+(`internal/integrations/doctor.go:142` cita Cenário 71/72). 🔴 O pin **descreve** a chamada e não a
+reproduz: a primeira versão citava a âncora verbatim e levou `grep -c` de 1 para **2** —
+`corrupt_literal` conta o arquivo inteiro e não exclui comentário; o pin teria quebrado o cenário
+que ele existe para proteger. Medido e corrigido antes de fechar.
+
+**(3) 184/185 seguem válidos — verificado pela pergunta que discrimina.** 184 ancora
+`npm/src/generators/note.js` e 185 `pypi/trackfw/commands/adr.py`; o ML-2B não tocou nenhum dos dois.
+Sweep mais forte: cruzei TODAS as linhas de código removidas pelo ML-2B nos 3 arquivos que ele
+alterou contra `scripts/check-gates-falsify.sh` e contra `scripts/` inteiro —
+`ListMDFiles(filepath.Join(reqDir`, `listReqMdFiles(path.join(reqDir`,
+`_list_md_files(os.path.join(req_dir`, `cfg.Agents[0]`, `REQ_LAYOUT_STATES`/`reqLayoutStates`.
+**Única ocorrência é a do Cenário 183, já retargetada** (e a que sobra está dentro do comentário
+explicativo, sem efeito sobre contagem). Nenhum outro gate ancora nesses literais.
+
+**Defeito encontrado (meu, do ML-2A — não do ML-2B):** o cabeçalho do Cenário 183 afirmava que
+sabotar o resolvedor de REQ deixa `adr_orphan` INTACTO. Falso, e sempre foi (idêntico no braço B1
+sobre o HEAD): reprovam 3 asserções, não 1. Prosa corrigida em `check-gates-falsify.sh`, declarando
+as 2 asserções colaterais como efeito esperado. A tese do cenário se sustenta com `note_orphan`.
+
+**Arquivos alterados por mim (comentário/doc apenas, zero mudança de comportamento):**
+`internal/validator/validator.go` (pin), `scripts/check-gates-falsify.sh` (correção de prosa),
+`vault/notes/falsify-cenario-pina-linha-de-fonte-por-sed-guard-de-plataforma-quebra-2026-08-31.md`
+(3ª ocorrência) + `vault/notes/index.md`, este arquivo. **Sem paridade devida:** o pin descreve uma
+âncora que só existe no Go — replicá-lo em Node/Python afirmaria um pin inexistente.
+
+**Evidência pós-alteração:** `go build ./...` OK · `go vet ./internal/validator/` OK ·
+`go test ./internal/validator/` **ok 4.106s** · `bash -n scripts/check-gates-falsify.sh` OK ·
+falsificação re-verificada NAS DUAS DIREÇÕES com o pin no lugar: árvore íntegra
+`check-artifact-closed-cycle.sh` **rc=0**, árvore sabotada **rc=1**, saídas byte-a-byte idênticas às
+de antes do pin.
+
+🔴 **Não commitei e não executei nenhuma operação de git.** `make quality` (13 min) NÃO foi rodado —
+as alterações são comentário/doc; a decisão de rodá-lo é do `trackfw_architect`.
+
+**ADENDO — prova exaustiva de que o pin não quebrou nenhuma OUTRA âncora.** O risco que eu mesma
+documentei (menção morta em comentário leva a contagem do `corrupt_literal` de 1 para 2) vale para
+**todo** cenário que ancora em `internal/validator/validator.go`, não só o 183 — e há vários
+(cenários nas linhas 1850, 2050, 2301, 3447 do falsify, mais **5** em
+`scripts/check-agent-namespace-union.sh`, que duplica o `corrupt_literal`). Verificação exaustiva,
+por execução e não por parsing:
+
+```
+bash scripts/check-agent-namespace-union.sh   RC=0   66 cenários, 0 FAIL   (21s)
+bash scripts/check-gates-falsify.sh           RC=0   359 OK, 0 FAIL       (13m33s)
+```
+
+Também confirmado que **nenhum** cenário edita `validator.go` por número de linha (`sed -n`/`sed
+'Nd'`/`head -N`) — o pin inseriu 14 linhas em ~1516 e um anchor posicional teria deslocado; e que
+nenhum gate consome `check-gates-falsify.sh` como **dado** (as 15 menções em `scripts/*.sh` são
+prosa/referência), então as linhas que acrescentei ao cabeçalho do Cenário 183 não movem contagem de
+gate nenhum. `bin/trackfw validate` exit 0.

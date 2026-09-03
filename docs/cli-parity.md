@@ -383,13 +383,30 @@ Governs ADR-2026-09-03. **A REQ has no state dimension** (invariant D1): `backlo
 per-state folders below are tolerated **legacy** trees, never a target for new REQs.
 
 **One single point decides the path, and both sides consume it** (D4). Per runtime there is exactly one
-read function and one write function; every rule, generator and command calls them instead of rebuilding
-the tree:
+read function and one write function:
 
 | | Go (`internal/validator`) | Node.js (`npm/src/validator`) | Python (`trackfw/validator.py`) |
 |---|---|---|---|
 | read | `ResolveREQFiles(cfg)` | `resolveReqFiles(cfg)` | `resolve_req_files(cfg)` |
 | write | `REQWriteDir(cfg)` | `reqWriteDir(cfg)` | `req_write_dir(cfg)` |
+
+**Who delegates, enumerated — not "everything".** The set is not uniform across runtimes, so it is
+stated per runtime; a universal claim here would be false, and asserting coverage a document does not
+have is the exact defect this section was written to close.
+
+| Consumer | Go | Node.js | Python |
+|---|---|---|---|
+| `validate` rules | ✓ | ✓ | ✓ |
+| `trackfw context` | ✓ | ✓ | ✓ |
+| REQ generator (`req new` / `req list`) | ✓ | ✓ | ✓ |
+| `roadmap new` REQ picker | ✓ | ✓ | ✓ |
+| `trackfw status` inventory | ✓ | ✓ | **partial** — the REQ-by-status count does not (residual below) |
+| `traceid` indexer | ✓ | **no** (residual below) | ✓ |
+| `trackfw serve` (`/api/chain`) | **no** (residual below) | **no** | **no** |
+| `trackfw sync` | **no** (residual below) | **no** | **no** |
+
+Everything marked **no** or **partial** is enumerated under *Declared residuals*, with the measurement
+that shows whether it is a benign superset or a vacuous read.
 
 **Read is a union of the four layouts** (D3) — never an exclusive choice between them:
 
@@ -402,8 +419,13 @@ Cases 3 and 4 apply **only** when `roadmap_namespacing: by_agent`; outside it th
 namespace and an arbitrary subdirectory must not be read as one. Agents come from the canonical
 namespace resolver (`agents:` ∪ first-level subdirectories of `req_dir`).
 
-**Write is single** (D2): `by_agent` → `req_dir/<agent>/` where `<agent>` is the first entry of `agents:`
-or `default` when the list is empty (same convention as `roadmap new`); flat → `req_dir/`. The write
+**Write is single** (D2): `by_agent` → `req_dir/<agent>/` where `<agent>` is the **first non-empty** entry
+of `agents:`, or `default` when the list is empty or holds only empty strings; flat → `req_dir/`. *First
+non-empty*, not *index 0*: an empty string is not an agent name, it is an absent entry — which is already
+how the **read** side treats it (the namespace resolver discards `""`), so the writer/reader pair keeps a
+single notion of agent (D4). Measured in the three runtimes, `agents: ["", "zeus"]` → `req_dir/zeus/`;
+`agents: [""]` → `req_dir/default/`; `agents: ["zeus"]` → `req_dir/zeus/`. `roadmap new` still tests index
+0 in all three runtimes and is listed as a residual above. The write
 directory is contained in the read union **by construction** — that containment is the contract, and the
 unit test that asserts it (`REQ created at the write dir is found by the resolver`) exists in all three
 runtimes.
@@ -419,12 +441,68 @@ a per-state tree would be counted twice and each violation would be emitted twic
 by filtering state names out of the agent list: an agent legitimately named `done` exists and would
 disappear.
 
+🔴 **String deduplication is not enough on a case-insensitive filesystem, and the obvious fix is worse
+than the bug.** On APFS/NTFS, `req_dir/Backlog` and `req_dir/backlog` are the *same* directory but
+*different* strings: `Backlog` enters the agent list from disk and emits `req_dir/Backlog/*.md`, while the
+state loop emits the hardcoded-lowercase `req_dir/backlog/*.md`. Measured on APFS with **one** real file:
+`REQs (2)` and 4 violations in all three CLIs — green on Linux CI, red on the developer's machine.
+**The mechanism is a verbatim-existence filter, not case folding and not inode identity:** a subdirectory
+candidate is only enumerated if its name appears **verbatim** in the parent's directory listing. The disk
+spelling is the authority — the disk is *measured* instead of the filesystem's case behaviour being
+*assumed*. Why the alternatives were rejected:
+
+- **Lowercase folding would trade double counting for suppression.** On a case-*sensitive* filesystem
+  `Backlog` and `backlog` are two real, distinct directories; folding collapses them and a real file
+  disappears. Suppression is strictly worse than double counting. Verified by execution on a
+  case-sensitive APFS volume: two distinguishable files under the two spellings, both still enumerated,
+  each violation once, in all three CLIs.
+- **Inode identity was rejected on portability, not taste.** Go has no portable hashable `(dev,ino)` key
+  (`syscall.Stat_t` is absent on Windows; `os.SameFile` is pairwise → O(n²)), and an inode that repeats or
+  reads as `0` on some Windows/network filesystems collapses distinct files — suppression again. The
+  Python primitive in particular has no measured NTFS contract.
+- **Verbatim matching also covers the NFC/NFD axis**, which case folding does not: an `agents:` entry in a
+  different Unicode form is filtered rather than duplicated.
+- **The fallback is a blind join, never an empty list.** If the parent cannot be read, nothing is filtered
+  and the previous behaviour (benign double counting) returns. Returning `[]` there would be suppression.
+- **Entry *type* is not filtered.** A `<state>` that is a symlink is still enumerated exactly as before;
+  closing that door is a separate decision.
+
 **Order is pinned:** the resolved list is sorted by full path. Scan order is agent-major and would not be
 stable across runtimes (`fs.readdirSync` guarantees no order).
 
-**Declared residuals.**
+**Declared residuals.** They are of **two different species, and the distinction is the point**: a
+*superset* reads more than the four layouts (never vacuous, benign) while a *vacuous* read returns **zero
+REQs in the canonical layout** — it silently sees nothing. Both are listed; the species is named for each.
 
-- **`traceid` in the Node.js CLI does not go through the resolver.** `npm/src/validator/traceid.js`
+- 🔴 **`serve` (`/api/chain`) does not go through the resolver in any runtime — and is VACUOUS in the
+  canonical layout in two of them.** Node (`npm/src/serve/api_chain.js:104-115`) and Python
+  (`pypi/trackfw/serve/api_chain.py:144-156`) still branch `flat` vs `req_dir/<agent>/<state>/`, which is
+  literally the `if/else` the single point exists to remove, and neither branch matches
+  `req_dir/<agent>/*.md`. Go (`internal/serve/api_chain.go:81`, `filepath.WalkDir`) is a recursive
+  **superset**. Measured on the same canonical `by_agent` fixture
+  (`docs/req/apolo/REQ-2026-09-03-fixture.md`), `GET /api/chain`, nodes of `type: "req"`:
+
+  ```
+  go -> 1 node    node -> 0 nodes    py -> 0 nodes
+  ```
+
+  So in a `by_agent` project the board's `ADR → REQ → ROADMAP` chain view shows **zero** REQs in 2 of the
+  3 runtimes. Pre-existing, not a regression of the layout union (`serve` was untouched, and the branch
+  it does take never matched the old write layout either). Tracked as its own REQ — it is 3-CLI parity
+  work, so all three are named.
+- 🔴 **The Python `status` inventory counts REQs outside the single point — VACUOUS in `by_agent`.**
+  `pypi/trackfw/commands/status.py:50` (`_count_reqs_by_status`) calls `_list_files(req_dir)` (`:26`), a
+  **single-level** `os.listdir`, while the same file already imports and uses `resolve_req_files` at
+  `:133` — the divergence is internal to one file. Measured on the canonical fixture above,
+  `trackfw status`:
+
+  ```
+  go -> REQs 1    node -> REQs 1    py -> REQs 0
+  ```
+
+  Python-only: Go (`internal/validator/validator.go:877`, `inventoryBlock`) and Node
+  (`npm/src/validator/index.js:3315`, `getStatus`) both delegate. Tracked as its own REQ.
+- **`traceid` in the Node.js CLI does not go through the resolver — SUPERSET, never vacuous.** `npm/src/validator/traceid.js`
   indexes REQs with a **recursive** walk of `req_dir`, so it is a strict *superset* of the four
   layouts and is never vacuous — but it is a second layout notion inside that runtime, and it indexes
   REQs nested deeper than the four patterns (`req_dir/a/b/c/REQ.md`), which Go and Python do not.
@@ -434,6 +512,11 @@ stable across runtimes (`fs.readdirSync` guarantees no order).
   `roadmap_namespacing`, which is why it is declared here instead of done in passing.
 - **`trackfw sync` hardcodes `docs/req`** in all three CLIs and ignores `req_dir` entirely — a defect
   of its own, unrelated to the layout union.
+- **`roadmap new` picks the first `agents:` entry without filtering empty strings** in all three CLIs
+  (`internal/generators/roadmap.go:108`, `npm/src/generators/roadmap.js:72`,
+  `pypi/trackfw/generators/roadmap.py:170`), so `agents: ["", "zeus"]` sends a **roadmap** to a degenerate
+  path while `req new` now correctly resolves `zeus` (see *Write is single* below). Pre-existing on `main`,
+  identical in the three runtimes, and a shared-guard change across the three writers — its own REQ.
 - **`req move` still relocates REQs into `req_dir/<agent>/<state>/`**, which contradicts invariant D1.
   Read tolerates it; changing the move is explicitly out of this decision's scope.
 

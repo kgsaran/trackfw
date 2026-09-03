@@ -660,10 +660,50 @@ def resolve_req_files(cfg: dict) -> list:
             seen.add(clean)
             files.append(clean)
 
+    # §4 (hades-tf 2026-09-03): a dedup por STRING não vê req_dir/Backlog == req_dir/backlog em
+    # filesystem case-INSENSITIVE (APFS, NTFS) — "Backlog" entra na lista de agentes pelo disco e
+    # emite req_dir/Backlog/*.md, enquanto o laço de estados emite req_dir/backlog/*.md hardcoded em
+    # minúscula. Mesmo diretório, strings diferentes: toda REQ contada em DOBRO (medido em APFS:
+    # 2 REQs e 4 violações para 1 arquivo real). Verde no CI Linux, vermelho na máquina do dev.
+    #
+    # MECANISMO: só enumeramos um candidato de subdiretório se o nome existir VERBATIM na listagem
+    # do pai — a grafia do disco é a autoridade, medimos o disco em vez de presumir a propriedade do
+    # filesystem.
+    #   - NÃO troca dupla contagem por SUPRESSÃO: em FS case-SENSITIVE o listdir devolve "Backlog" E
+    #     "backlog" (dois diretórios reais distintos) e ambos seguem enumerados. Normalizar por
+    #     lowercase colapsaria os dois e suprimiria um arquivo real.
+    #   - NÃO usa st_ino/st_dev: a primitiva não tem contrato medido em NTFS (a lei da nota
+    #     lstat-nao-ve-junction-...-2026-08-31: no Python a primitiva tem de ser TROCADA, não
+    #     complementada), e ino colidente colapsaria arquivos distintos — supressão, a direção
+    #     proibida.
+    #   - Cobre também o eixo NFC/NFD, que case-folding não cobre.
+    #   - FALLBACK É JOIN CEGO, NUNCA LISTA VAZIA: pai ilegível → não filtra nada e volta ao
+    #     comportamento anterior (dupla contagem, benigna). Devolver vazio aqui seria supressão.
+    #   - Não filtra por TIPO de entrada: um <estado> que seja symlink segue enumerado exatamente
+    #     como antes (§3 é outro escopo).
+    # Paridade: mesma lógica em internal/validator/validator.go e npm/src/validator/index.js.
+    _child_cache = {}
+
+    def _has_child_verbatim(parent: str, name: str) -> bool:
+        if parent not in _child_cache:
+            try:
+                _child_cache[parent] = set(os.listdir(parent))
+            except OSError:
+                _child_cache[parent] = None
+        children = _child_cache[parent]
+        if children is None:
+            return True
+        return name in children
+
+    def _add_child(parent: str, name: str):
+        if not _has_child_verbatim(parent, name):
+            return
+        _add(_list_md_files(os.path.join(parent, name)))
+
     # (1) flat legado e (2) por-estado legado.
     _add(_list_md_files(req_dir))
     for state in _REQ_LAYOUT_STATES:
-        _add(_list_md_files(os.path.join(req_dir, state)))
+        _add_child(req_dir, state)
 
     if cfg.get("roadmap_namespacing", "") == "by_agent":
         # ML-4A (achado 2, hades-tf 2026-08-30): agent vem do disco (nome de diretório sem validação
@@ -671,9 +711,9 @@ def resolve_req_files(cfg: dict) -> list:
         # interpretados como padrão e corrompam a contagem em silêncio.
         for agent in resolve_agent_namespaces(cfg, req_dir):
             # (3) canônico e (4) legado.
-            _add(_list_md_files(os.path.join(req_dir, agent)))
+            _add_child(req_dir, agent)
             for state in _REQ_LAYOUT_STATES:
-                _add(_list_md_files(os.path.join(req_dir, agent, state)))
+                _add_child(os.path.join(req_dir, agent), state)
 
     files.sort()
     return files

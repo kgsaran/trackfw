@@ -9477,9 +9477,20 @@ fi
 #                status em português. É a classe nº2, exata.
 #
 # 🔴 Uma sabotagem única NÃO serviria para os três. Sabotar o resolvedor de REQ
-# deixa `adr_orphan` e `note_orphan` INTACTOS (o primeiro fica até mais orfão, e
-# o segundo nunca toca `req_dir`) — dois terços do gate ficariam sem falsificação.
-# Cada braço precisa da sabotagem que atinge a SUA fronteira.
+# deixa `note_orphan` INTACTO (nunca toca `req_dir`) — o braço de NOTE ficaria sem
+# falsificação nenhuma. Cada braço precisa da sabotagem que atinge a SUA fronteira.
+#
+# CORREÇÃO DE PROSA (artemis-tf, 2026-09-03, auditoria do retarget do ML-2B): a
+# versão original desta nota dizia que `adr_orphan` também ficava INTACTO. Medido:
+# é falso, e sempre foi (idêntico com a sabotagem antiga sobre o validator.go do
+# HEAD). A sabotagem do resolvedor de REQ reprova TRÊS asserções, não uma —
+# `req/go/by_agent/req_has_adr-names-generated`, `adr/go/by_agent/status-literal-
+# read-back` e `adr/go/by_agent/adr_orphan-clears-after-link` — porque o ADR
+# linkado pela REQ deixa de ser enxergado junto com ela. O `assert_fails_with`
+# abaixo casa só a primeira; as outras duas são efeito colateral esperado e NÃO
+# invalidam a prova (nenhum braço `flat`, `node` ou `python` reprova, o que mantém
+# a especificidade a `by_agent`/Go). O que se sustenta é a tese: `note_orphan` fica
+# intacto, então uma sabotagem só não cobre os três artefatos.
 #
 # Por que a asserção é sobre o diagnóstico do PRÓPRIO gate, e não sobre o exit
 # code de `validate`: `adr_orphan` e `note_orphan` são severidade `warning`
@@ -9514,10 +9525,16 @@ setup_npm_tree "$T183"
 cp -r "$ROOT_DIR/pypi/." "$T183/pypi/"
 cp "$CLOSED_CYCLE_GATE" "$T183/scripts/"
 
+# RETARGETED 2026-09-03 (ML-2B): o literal era
+# `add(ListMDFiles(filepath.Join(reqDir, agent)))`. A correção do §4 (dedup lexical não vê
+# `req_dir/Backlog` ≡ `backlog` em FS case-insensitive) passou os candidatos de subdiretório pelo
+# filtro de existência verbatim `addChild`, e o join literal deixou de existir — `corrupt_literal`
+# reprovou com "expected exactly 1 occurrence, got 0". O SEAM é o mesmo (o caso (3) de
+# ResolveREQFiles sai do resolvedor); só a grafia da chamada mudou.
 corrupt_literal \
   "$ROOT_DIR/internal/validator/validator.go" "$T183/internal/validator/validator.go" \
-  'add(ListMDFiles(filepath.Join(reqDir, agent)))' \
-  '// [falsified] add(ListMDFiles(filepath.Join(reqDir, agent)))' \
+  'addChild(reqDir, agent)' \
+  '// [falsified] addChild(reqDir, agent)' \
   's183-req-canonical-case'
 
 # ⚠️ `go build ./...` NÃO regenera bin/trackfw — sabotar sem reconstruir testaria

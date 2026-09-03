@@ -406,13 +406,44 @@ function resolveReqFiles(cfg) {
     }
   }
 
+  // 🔴 §4 (hades-tf 2026-09-03): a dedup por STRING não vê req_dir/Backlog ≡ req_dir/backlog em
+  // filesystem case-INSENSITIVE (APFS, NTFS) — "Backlog" entra na lista de agentes pelo disco e
+  // emite req_dir/Backlog/*.md, enquanto o laço de estados emite req_dir/backlog/*.md hardcoded em
+  // minúscula. Mesmo diretório, strings diferentes: toda REQ contada em DOBRO (medido em APFS:
+  // 2 REQs e 4 violações para 1 arquivo real). Verde no CI Linux, vermelho na máquina do dev.
+  //
+  // MECANISMO: só enumeramos um candidato de subdiretório se o nome existir VERBATIM na listagem do
+  // pai — a grafia do disco é a autoridade, medimos o disco em vez de presumir a propriedade do FS.
+  //   - NÃO troca dupla contagem por SUPRESSÃO: em FS case-SENSITIVE o readdir lista "Backlog" E
+  //     "backlog" (dois diretórios reais distintos) e ambos seguem enumerados. Lowercase colapsaria.
+  //   - NÃO usa ino/dev: fs.statSync().ino não tem contrato medido em NTFS, e ino colidente
+  //     colapsaria arquivos distintos — supressão, a direção proibida.
+  //   - Cobre também NFC/NFD, que case-folding não cobre.
+  //   - FALLBACK É JOIN CEGO, NUNCA LISTA VAZIA: pai ilegível → não filtra nada (dupla contagem
+  //     benigna). Devolver vazio seria supressão.
+  //   - Não filtra por TIPO: um <estado> que seja symlink segue enumerado como antes (§3 é outro
+  //     escopo).
+  // Paridade: mesma lógica em internal/validator/validator.go e pypi/trackfw/validator.py.
+  const childCache = new Map()
+  const hasChildVerbatim = (parent, name) => {
+    if (!childCache.has(parent)) {
+      try { childCache.set(parent, new Set(fs.readdirSync(parent))) } catch (_) { childCache.set(parent, null) }
+    }
+    const children = childCache.get(parent)
+    return children === null ? true : children.has(name)
+  }
+  const addChild = (parent, name) => {
+    if (!hasChildVerbatim(parent, name)) return
+    add(listReqMdFiles(path.join(parent, name)))
+  }
+
   add(listReqMdFiles(reqDir))
-  for (const state of REQ_LAYOUT_STATES) add(listReqMdFiles(path.join(reqDir, state)))
+  for (const state of REQ_LAYOUT_STATES) addChild(reqDir, state)
 
   if (namespacing === 'by_agent') {
     for (const agent of resolveAgentNamespaces(cfg, reqDir)) {
-      add(listReqMdFiles(path.join(reqDir, agent)))
-      for (const state of REQ_LAYOUT_STATES) add(listReqMdFiles(path.join(reqDir, agent, state)))
+      addChild(reqDir, agent)
+      for (const state of REQ_LAYOUT_STATES) addChild(path.join(reqDir, agent), state)
     }
   }
 
