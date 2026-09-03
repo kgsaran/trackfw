@@ -29190,3 +29190,79 @@ não tocados.
 
 **Roadmap não movido e ML-2A não marcado `✅`** — cabe ao `trackfw_architect` após a auditoria.
 Nenhuma operação de git executada.
+
+---
+
+## 2026-09-03 — hades-tf (Security) — INÍCIO
+
+Barreira final de segurança do roadmap
+`ROADMAP-2026-09-03-resolvedor-de-req-cobre-o-layout-canonico-e-ciclo-fechado-por-artefato.md`
+(branch `fix/resolvedor-de-req-cobre-o-layout-canonico-e-ciclo-fechado-por-artefato`, commits
+`f7963c7` ML-1A e `31bcdef` ML-2A). Superfície a atacar: nome de `<agente>` vindo do disco e de
+`agents:` no resolvedor de leitura, travessia por symlink sob `req_dir`, o novo caminho de ESCRITA
+`req new` → `req_dir/<agente>/`, e a dedup por caminho normalizado. Medição nos 3 runtimes.
+Parecer sairá em `docs/seguranca/2026-09-03-parecer-resolvedor-de-req.md`. Sem git, sem código.
+
+---
+
+## 2026-09-03 — hefesto-tf (Code Quality) — INÍCIO
+
+Barreira final de qualidade do roadmap
+`ROADMAP-2026-09-03-resolvedor-de-req-cobre-o-layout-canonico-e-ciclo-fechado-por-artefato.md`
+(branch `fix/resolvedor-de-req-cobre-o-layout-canonico-e-ciclo-fechado-por-artefato`), escopo
+`git diff origin/main...HEAD` — ML-1A (ponto único de leitura/escrita de REQ nos 3 CLIs) e ML-2A
+(`scripts/check-artifact-closed-cycle.sh` + Cenários 183/184/185 de `check-gates-falsify.sh`).
+Perguntas dirigidas: (1) o "ponto único" é mesmo único, incluindo o resíduo declarado
+`npm/src/validator/traceid.js`; (2) manutenibilidade dos 3 seams do gate; (3) robustez da métrica
+por basename; (4) degenerações de cobertura não declaradas; (5) código morto/duplicação/nome
+enganoso. Parecer sairá em `docs/qualidade/2026-09-03-parecer-resolvedor-de-req.md`.
+Sem git, sem alteração de código de produto.
+
+## 2026-09-03 — hades-tf (Security) — FIM
+
+**Veredito: APROVA COM RESSALVAS.** Parecer completo em
+`docs/seguranca/2026-09-03-parecer-resolvedor-de-req.md`. **Nada bloqueia o merge.**
+
+**Achado principal (S2, NOVO neste diff):** `req new` em `by_agent` escreve através de um **symlink
+de diretório plantado em `req_dir/default`** (ou `req_dir/<primeiro agente>`) — os 3 CLIs criam **e
+sobrescrevem** arquivo fora do projeto. Medido nas duas direções: em `origin/main` a mesma fixture
+grava dentro de `docs/req/`, na branch grava fora. Não bloqueia porque o **mesmo furo já existe em
+`origin/main` no `roadmap new`** (`roadmap_dir/default` → escrita fora, medido): ML-1A estende uma
+classe existente, não cria uma. Remédio é REQ própria com guarda compartilhada nos 3 escritores +
+validação de `agents:` na fronteira de config; as primitivas de detecção **divergem por runtime**
+(usar a tabela já medida em `lstat-nao-ve-junction-…-2026-08-31`, não remedir).
+
+**Ressalva de correção (NOVA):** em FS case-insensitive (APFS/NTFS) `req_dir/Backlog` colide com o
+`backlog` hardcoded, a dedup lexical não vê, e cada REQ conta **em dobro** — 4 violações onde a AC
+do roadmap prevê 2, nos 3 CLIs. Verde no CI Linux, vermelho na máquina do dev. Remédio: chavear o
+`seen` por identidade de filesystem — medi em APFS que ela discrimina nos 3 runtimes
+(`ino/dev` iguais, `os.SameFile: true`), **mas `st_ino`/`ino` em NTFS precisa ser medido antes de
+virar contrato** (a lei da nota `lstat-nao-ve-junction-…`: no Python a primitiva se troca, não se
+complementa). A medição de Windows é pré-requisito do ML, não um "verificar depois".
+
+**Paridade quebrada em código novo:** `agents: ["", "zeus"]` → Go grava em `req_dir/default/`,
+Node/Python em `req_dir/zeus/` (`validator.go:1391` testa só o índice 0; os outros dois filtram
+vazios). Correção de uma linha, recomendada dentro deste PR.
+
+**Fechados (com mecanismo, não com "não achei"):** travessia via nome de agente vindo do disco
+(inalcançável — `readdir` devolve basename), travessia pelo **título** do `req new`
+(`"../../../../pwn"` e `"a/b/c"` colapsam no slug nos 3 runtimes — medido, porque o vault registrava
+`NewREQ` interpolando título sem guarda), metacaracteres de glob (`*`, `[a-z]`, espaço → 3/3),
+symlink como namespace (`## REQs (0)`), dedup suprimindo arquivo legítimo (normalização é lexical;
+agente chamado `done` continua visível), e injeção em `check-artifact-closed-cycle.sh` (sem `eval`,
+`mktemp -d`, `HOME` isolado, expansões citadas).
+
+**Gate do ML-2A: NÃO é vácuo — falsificado por mim, não aceito pelo `OK`.** Rodei
+`check-artifact-closed-cycle.sh` íntegro (EXIT=0, 18 combinações) e reproduzi as 3 sabotagens dos
+cenários 183/184/185 em cópias fora do repo: as três reprovam com o label exato do
+`assert_fails_with` (`req/go/by_agent/req_has_adr-names-generated`,
+`note/node/flat/note_orphan-silent-for-indexed`, `adr/python/flat/status-literal-read-back`), e o
+braço `go/flat` continua verde sob a sabotagem do 183 — o que separa "detectou" de "quebrou o
+binário". Confirmado também que uma sabotagem só falsifica um terço do gate: os 3 braços são
+necessários.
+
+**Observação pré-existente, fora do escopo:** `pypi/trackfw/commands/context.py:160` aborta
+(`string indices must be integers`) quando `validate()` devolve violação em forma de string —
+reproduzido **idêntico em `origin/main`**, REQ própria.
+
+Nenhuma operação de git. Nenhum arquivo de produto modificado.

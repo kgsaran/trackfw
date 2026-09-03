@@ -196,6 +196,60 @@ semeiam — o que **proíbe métrica por contagem** e é a razão de a métrica 
 `validate --json` do Go imprime `N violation(s) found` **depois** do JSON, quebrando `json.load` puro;
 e o resumo do `check-gates-falsify.sh` já estava defasado antes deste ML.
 
+
+### ML-2B — Microlote corretivo da barreira final
+**Status:** ⬜ Pendente
+**Agente:** `apolo-tf`
+**Files affected:** `docs/cli-parity.md`, `internal/validator/validator.go`
+**Origem:** `docs/qualidade/2026-09-03-parecer-resolvedor-de-req.md` (B1) e
+`docs/seguranca/2026-09-03-parecer-resolvedor-de-req.md` (S5, §4).
+
+**B1 — BLOQUEIA. `docs/cli-parity.md:385` declara cobertura que não existe.** O texto diz que
+*"every rule, generator and command calls them instead of rebuilding the tree"*. O `serve` é um
+comando e reconstrói a árvore nos **3** runtimes. Medido pelo `hefesto-tf`, mesmo fixture `by_agent`
+canônico, `GET /api/chain`, nós `type:"req"`:
+
+```
+go   -> 1 no      node -> 0 nos      py -> 0 nos
+```
+
+🔴 **A espécie do resíduo está invertida no documento.** O declarado (`npm/src/validator/traceid.js`)
+é **superconjunto** — nunca vácuo, benigno. O **não** declarado (`serve/api_chain` em Node e Python)
+é **vácuo no layout canônico**. Deixar o vácuo fora da lista transforma resíduo conhecido-por-ninguém
+em "coberto" aos olhos do próximo auditor. **É a mesma falha que corrigimos hoje neste mesmo
+documento** — contrato afirmando cobertura maior que a real.
+**Remédio:** trocar a afirmação universal por enumeração honesta, e acrescentar `serve/api_chain` à
+lista de resíduos declarados. **Doc-only, ~4 linhas.**
+
+**S5 — paridade quebrada em código NOVO desta branch.** `internal/validator/validator.go:1391` testa
+**só o índice 0**; Node e Python **filtram todos os vazios**:
+
+```
+agents: ["", "zeus"]   ->  Go: req_dir/default/   Node/Python: req_dir/zeus/
+```
+
+Uma linha. Deixar divergência conhecida em código novo é o oposto do que a barreira existe para
+fazer.
+
+**§4 — dedup lexical não vê `Backlog` ≡ `backlog`** em sistema de arquivos case-insensitive
+(APFS, NTFS). Consequência que decide: **verde no CI Linux, vermelho na máquina do dev** — a AC
+numérica prevê 2 violações e dá 4, nos 3 CLIs.
+
+**Critérios de aceite:**
+- [ ] B1: a afirmação universal do `cli-parity.md` virou enumeração, e `serve/api_chain` está na
+      lista de resíduos **com a medição** (1 nó no Go, 0 no Node/Python)
+- [ ] S5: `agents: ["", "zeus"]` faz os **3** CLIs gravarem em `req_dir/zeus/`. Falsificado nas duas
+      direções
+- [ ] §4: em FS case-insensitive, `req_dir/Backlog` ≡ `backlog` deixa de contar em dobro —
+      **verificado por execução no macOS**, não por leitura
+- [ ] 🔴 **Controle:** o gate de ciclo fechado continua `rc=0` e as 3 sabotagens continuam reprovando
+- [ ] `make quality` verde e `trackfw validate` exit 0
+
+🔴 **Não corrigir aqui:** o symlink em `req_dir/default` que faz o `req new` escrever fora da árvore
+(S2) — o furo **idêntico já existe na `main`** no `roadmap new`, medido, então é extensão de classe e
+vira REQ com guarda compartilhada nos 3 escritores. Nem o `serve/api_chain` em si (A1), nem
+`traceid.py:262` (A3), nem a degeneração do braço de ADR (A2).
+
 ## Verificação que só o CI fecha
 
 CI verde nos 3 runtimes. E a prova de campo é o repositório consumidor do relato voltar a reportar as
