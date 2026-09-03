@@ -28879,3 +28879,81 @@ criteria block" — o roadmap tem `**Critérios de aceite:**` por ML, mas não o
 (ADR-2026-07-31). Os dois são correção de uma linha, e cabem ao orquestrador. **Nenhuma operação de git neste repositório**; os `git init/commit/merge`
 da falsificação rodaram em repositórios de rascunho sob `mktemp -d`. Roadmap **não** alterado — o
 status do ML e a Wave 2 são do `trackfw_architect`.
+
+## 2026-09-02 — apolo-tf (Backend) — INÍCIO
+**ML-1A** do `ROADMAP-2026-09-02-context-do-cli-node-aguarda-validate-e-ganha-teste-que-executa-o-binario`
+(`wip/`), REQ `REQ-2026-08-30-trackfw-context-do-cli-node-falha-sempre-porque-validate-assincrono-e-chamado-sem-await.md`.
+Branch já ativa: `fix/context-do-cli-node-aguarda-validate-e-ganha-teste-que-executa-o-binario`.
+Defeito reproduzido: `node npm/bin/trackfw context` → exit 1,
+`Error: Cannot read properties of undefined (reading 'length')` — `validate()` é `async` e é
+desestruturado sem `await` em `npm/src/commands/context.js:136`.
+Escopo: `await` + propagação da Promise no `context` do CLI Node, teste que **executa o binário**
+(sem mock), varredura de `async` sem `await` no pacote npm (enumeração reportada, não corrigida) e
+controle de que a saída do `context` em Go e Python não muda. `internal/` e `pypi/` intocados.
+
+## 2026-09-02 — apolo-tf (Backend) — FIM
+**Entregue (não commitado, para auditoria do `trackfw_architect`):** `npm/src/commands/context.js`
+(3 linhas: `async function getContext`, `await validate()`, `.action((opts) => getContext(...))`
+retornando a Promise) e `npm/tests/context_cli.test.js` (novo, 3 casos que executam o **binário**
+via `spawnSync` em projeto de governança mínimo sob `mktemp` — sem mock de `validate`).
+
+**Falsificação nas duas direções.** Árvore boa: `node --test npm/tests/context_cli.test.js` → exit 0,
+`3 passed, 0 failed`. Árvore sabotada (removido só o `await`, mantendo `async`): exit 1,
+`0 passed, 3 failed`, com os 3 casos acusando `Cannot read properties of undefined` — e
+`npm test --prefix npm` também sai **1**, ou seja a falsificação vale no exit code da suíte inteira,
+não só nas linhas ✓/✗ impressas (a suíte é hand-rolled com `if (failed > 0) process.exit(1)`).
+
+**Residual medido e declarado:** a 3ª linha (retornar a Promise da `.action`) **não** é falsificável
+pelo binário. Sabotando só ela (mantendo o `await`), o teste passa — no caminho feliz o event loop
+drena a Promise flutuante, e no caminho de erro (`trackfw.yaml` malformado) o
+`installGlobalHandlers()` do `npm/bin/trackfw` captura a unhandled rejection e sai **1** igual. As
+duas árvores foram medidas e são observacionalmente idênticas na fronteira do CLI. Mantida como
+correção de robustez (não depender do handler global nem da ordem de `process.exitCode` vs. saída do
+processo), com o motivo no comentário do código.
+
+**Controle dos outros 2 runtimes:** `./bin/trackfw context` e `PYTHONPATH=pypi python3 -m trackfw
+context`, nos formatos md **e** json, capturados antes e depois de todas as escritas — `diff` vazio
+nos 4 pares. `internal/` e `pypi/` intocados. Efeito colateral verificado: a saída md do Node passou
+a ser **byte-idêntica** à do Go (`diff` vazio, 425 linhas), score 100, 17 warnings nos 3.
+
+**Varredura da classe (resultado: zero achados).** 33 `async function` nomeadas em `npm/src`+`npm/bin`
+(nenhum `const x = async` e nenhum método `async nome(` no pacote — grep dedicado devolveu vazio).
+Excluída explicitamente `npm/src/serve/static/app.js` (`loadBoard`, `loadChain`, `loadListView`,
+`loadMetrics`, `openDrawer`, `pollAttention`) por ser código de browser, inalcançável a partir de
+`npm/bin`. Nas 27 restantes, todos os call sites estão `await`ados ou têm a Promise propagada por
+`return`. `getStatus` — irmã de `validate` e a candidata mais provável ao mesmo defeito — tem um
+único call site, `npm/src/commands/status.js:9`, e está `await`ado.
+
+**Evidência:** `make quality` → **exit 0** (rodado uma única vez, no fim, capturado sem pipe:
+`make quality > /tmp/quality.log 2>&1; echo $?`; 181 cenários de falsificação OK).
+`npm test --prefix npm` → exit 0, `858 pass / 0 fail`. `./bin/trackfw validate` → exit 0
+(17 warnings, todos preexistentes e de severidade warning).
+
+**Observação fora de escopo (declarada, não corrigida):** no `--format json`, o Go emite
+`"violations": null` (slice nil) onde Node e Python emitem `[]`. Divergência preexistente de
+serialização, sem efeito no md nem no score — candidata a REQ própria.
+
+**Nenhuma operação de git.** Roadmap: ML-1A marcado `🔄 Em andamento`; o `✅` cabe ao
+`trackfw_architect` após a auditoria.
+
+**Adendo (medições finais, após as escritas de markdown):** (a) o teste passou a isolar
+`HOME`/`USERPROFILE` no `spawnSync` — o `validate` lê regras de credential-guard em escopo global e
+sem isolar o veredito depende da máquina (classe de flake já registrada no vault); com o isolamento,
+as duas direções da falsificação continuam válidas (árvore boa exit 0 / sem `await` exit 1).
+(b) Varredura ampliada e ainda **zero achados**: nenhuma atribuição `prop = async`, nenhum
+`forEach|map|filter|some|every(async …)`; todos os `async (…) =>` inline são handlers `.action()`,
+aguardados pelo commander sob `parseAsync`. **Atenção para quem auditar:** `identityStore.validate`
+(`identity-wizard.js:42,235`, `init.js:29`) é um `validate` **síncrono e homônimo**
+(`npm/src/identity/config.js:102`) — não é chamada async sem `await`.
+(c) Nota de vault criada e linkada no `index.md` no mesmo passo:
+`vault/notes/promise-flutuante-em-action-do-cli-node-e-invisivel-na-fronteira-2026-09-02.md`.
+Gates que leem docs re-executados **depois** dessas escritas:
+`scripts/check-referential-integrity.sh` → exit 0, `scripts/check-parity-contract-coverage.sh` →
+exit 0, `./bin/trackfw validate` → exit 0 (17 warnings).
+(d) **Control revisitado:** entre a captura inicial e a final, apareceu na árvore de trabalho um
+arquivo **não meu** e não versionado (`docs/req/REQ-2026-09-02-prs-usam-palavra-chave-de-fechamento-…md`,
+criado às 20:55, fora do meu escopo — não escrevi em `docs/req/`). O delta de Go e de Python é
+**exatamente** esse (`REQs (180)`→`(181)` + a linha da REQ), idêntico nos dois runtimes; a captura
+anterior, feita antes do arquivo aparecer, tinha `diff` vazio nos 4 pares. Nenhuma outra diferença.
+(e) **Observação de paridade fora de escopo:** Go e Node listam ADRs/REQs na mesma ordem (md
+byte-idêntico), mas o **Python usa outra ordenação** — divergência preexistente, não tocada aqui.

@@ -57,7 +57,7 @@ dois. É o mesmo cego já registrado em
 > Dependências: nenhuma.
 
 ### ML-1A — `await` no `context` e teste pelo binário
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** `apolo-tf`
 **Files affected:** `npm/src/commands/context.js`, teste novo em `npm/tests/`
 
@@ -71,12 +71,51 @@ dois. É o mesmo cego já registrado em
    pacote e verificar cada chamador. **Zero achados é resultado válido** e encerra o item.
 
 **Critérios de aceite:**
-- [ ] `node npm/bin/trackfw context` sai 0 e imprime o contexto, verificado por execução
-- [ ] 🔴 **Falsificação:** removendo o `await`, o teste novo **reprova**. Um teste que passa nas duas
+- [x] `node npm/bin/trackfw context` sai 0 e imprime o contexto, verificado por execução
+- [x] 🔴 **Falsificação:** removendo o `await`, o teste novo **reprova**. Um teste que passa nas duas
       árvores não mede nada
-- [ ] 🔴 **Controle:** a saída do `context` no Go e no Python **não muda** — comparar antes/depois
-- [ ] A varredura da classe está feita e o resultado registrado (inclusive se for zero)
-- [ ] `make quality` verde
+- [x] 🔴 **Controle:** a saída do `context` no Go e no Python **não muda** — comparar antes/depois
+- [x] A varredura da classe está feita e o resultado registrado (inclusive se for zero)
+- [x] `make quality` verde
+
+
+**Evidência de aceite — auditoria do arquiteto (2026-09-02), reproduzida de forma independente:**
+
+```
+arvore corrigida  node npm/bin/trackfw context          -> rc=0, contexto impresso
+teste novo        node --test npm/tests/context_cli...  -> rc=0
+SABOTADO (só o await removido)                          -> rc=1  <- discrimina
+restaurado                                              -> rc=0
+```
+
+`make quality` → `QUALITY_EXIT=0`, zero `FAIL`. Controle: **nenhum arquivo em `internal/` ou
+`pypi/` alterado** — Go e Python não foram tocados, verificado por `git diff --name-only`.
+
+🔴 **A correção é de 3 linhas, não de uma palavra — e a terceira não estava no meu handoff.** Sem
+`return` da Promise no `.action()`, a `getContext` vira `async` e a Promise fica **fora** do
+`parseAsync().catch(reportFatalError)` do `npm/bin/trackfw`: uma rejeição deixaria de virar exit 1.
+
+🔴 **Residual declarado pela agente, e a honestidade aqui vale o registro:** essa terceira linha
+**não é falsificável pelo binário**. Sabotando só ela, o teste passa — no caminho feliz o event loop
+drena a Promise flutuante, e no caminho de erro o `installGlobalHandlers()` captura a unhandled
+rejection e sai 1 igual. As duas árvores foram medidas e a saída é idêntica. Mantida por robustez,
+com o motivo escrito no código, e registrada em
+`vault/notes/promise-flutuante-em-action-do-cli-node-e-invisivel-na-fronteira-2026-09-02.md` porque
+**generaliza**: em qualquer comando do CLI Node, esquecer de propagar a Promise do `.action()` é
+invisível na fronteira do processo.
+
+**Varredura da classe — enumeração, não conclusão.** 33 `async function` em `npm/src`+`npm/bin`;
+6 excluídas com justificativa (código de browser em `serve/static/app.js`, inalcançável pelo bin);
+27 classificadas uma a uma — 19 com call site `await`ado, 6 com Promise propagada por `return`, 6 sem
+chamador (entrypoints de retrocompatibilidade). **Zero achados**, com a lista disponível para
+auditar a varredura em vez de acreditar nela.
+
+**Efeito colateral medido:** a saída md do Node ficou **byte-idêntica à do Go** — `diff` vazio,
+425 linhas.
+
+**Fora de escopo, declarado e não corrigido:** no `--format json` o Go emite `"violations": null`
+(slice nil) onde Node e Python emitem `[]`; e o Python ordena as listas de ADR/REQ de forma diferente
+de Go e Node. Ambos pré-existentes, sem efeito no score — candidatos a REQ própria.
 
 **Comandos de validação:** `node npm/bin/trackfw context`, `npm test --prefix npm`, `make quality`
 

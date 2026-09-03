@@ -88,8 +88,9 @@ function collectEntries(dir, type, state) {
 /**
  * getContext — coleta governança e imprime em md ou json.
  * @param {string} format - 'md' | 'json'
+ * @returns {Promise<void>}
  */
-function getContext(format) {
+async function getContext(format) {
   const cfg = config.load()
 
   // ADRs
@@ -133,7 +134,7 @@ function getContext(format) {
   }
 
   // Validate
-  const { violations, warnings } = validate()
+  const { violations, warnings } = await validate()
 
   // Score
   let score = 0
@@ -188,8 +189,9 @@ module.exports = (function () {
   cmd
     .description('Print governance context for LLM consumption')
     .option('--format <fmt>', 'Output format: md or json', 'md')
-    .action((opts) => {
-      getContext(opts.format)
-    })
+    // Retorna a Promise: o bin roda parseAsync() e só assim uma rejeição chega
+    // ao .catch(reportFatalError) com exit code 1 em vez de virar unhandled
+    // rejection (ML-1A, ROADMAP-2026-09-02-context-do-cli-node-aguarda-validate).
+    .action((opts) => getContext(opts.format))
   return cmd
 })()
