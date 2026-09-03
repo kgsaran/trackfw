@@ -131,7 +131,7 @@ olhadas agora.
 > Dependências: Wave 1.
 
 ### ML-2A — Teste de ciclo fechado por artefato
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** `artemis-tf`
 
 **Por que é microlote próprio, com barreira própria:** é a AC que impede a **quarta** ocorrência do
@@ -144,12 +144,57 @@ que o **verificador enxerga**. Nos **3 CLIs**, em `flat` **e** `by_agent`. Míni
 artefato.
 
 **Critérios de aceite:**
-- [ ] Ciclo fechado verde para os 3 artefatos × 3 CLIs × 2 layouts
-- [ ] 🔴 **Falsificação:** sabotando o resolvedor, o ciclo fechado **reprova**. Prove as duas direções
-- [ ] 🔴 O teste roda o **CLI**, não o módulo com mock — o defeito do `context` do Node sobreviveu
+- [x] Ciclo fechado verde para os 3 artefatos × 3 CLIs × 2 layouts
+- [x] 🔴 **Falsificação:** sabotando o resolvedor, o ciclo fechado **reprova**. Prove as duas direções
+- [x] 🔴 O teste roda o **CLI**, não o módulo com mock — o defeito do `context` do Node sobreviveu
       desde a origem exatamente por o teste não executar o binário
-- [ ] Cenário em `scripts/check-gates-falsify.sh` se virar gate
-- [ ] `make quality` verde
+- [x] Cenário em `scripts/check-gates-falsify.sh` se virar gate
+- [x] `make quality` verde
+
+
+**Evidência de aceite — auditoria do arquiteto (2026-09-03), reproduzida de forma independente:**
+
+```
+scripts/check-artifact-closed-cycle.sh   -> rc=0, 18 combinacoes, 36 assercoes
+SABOTADO (caso <agente>/*.md fora do Go) -> rc=1   <- discrimina
+restaurado                               -> rc=0
+```
+
+🔴 **O achado que vale mais que o gate: uma sabotagem não falsifica três fronteiras.** Medido, não
+suposto — sabotar o resolvedor de REQ reprova só **9 das 36** asserções. O `adr_orphan` fica
+*mais forte* (sem REQs, o ADR fica mais órfão) e o `note_orphan` é **insensível** (nunca toca
+`req_dir`). Daí **três seams**, um por fronteira, cada um com sua sabotagem e seu cenário permanente
+em `check-gates-falsify.sh` (183 REQ/verificador · 184 NOTE/gerador · 185 ADR/gerador):
+
+```
+A · resolvedor de REQ (verificador)   -> 9 reprovadas / 27 OK
+B · note new escreve (notes/<arq>.md) -> 6 reprovadas / 30 OK
+C · adr new emite Rascunho            -> 6 reprovadas / 30 OK
+```
+
+**Um único seam teria dado a impressão de cobrir os três artefatos cobrindo um.**
+
+**A métrica, e por que discrimina:** *"a entrada do `validate --json` cita, em `file` ou `message`, o
+basename exato do arquivo que o gerador acabou de escrever"*. O basename carrega data+slug — nenhum
+outro artefato o satisfaz por acidente, e só há um caminho para ele chegar à saída: o verificador ter
+resolvido o arquivo onde o gerador gravou. Deliberadamente **não** é "a regra apareceu na saída", que
+deu 6/6 verde na árvore sabotada do ML-1A.
+
+**Cobertura real declarada com a ressalva:** 18/18 combinações, mas o eixo de layout do braço de
+**nota é degenerado por construção** — `vault/notes` é constante do gerador
+(`internal/generators/note.go:12`), então as 2 execuções percorrem o mesmo caminho. Declarado em vez
+de contado como cobertura que não existe.
+
+🔴 **Achado novo, registrado e NÃO corrigido (escopo negativo):** uma regressão que derrube o campo
+`status:` do frontmatter gerado por `adr new` é **invisível ao `validate`**. Trocando `status:` por
+`state:` nos 3 geradores, o gate dá **EXIT=0, 36/36** — o verificador cai de volta na linha em prosa
+`> Date: … | Status: …`, escrita pelo mesmo template. **O discriminante real é o vocabulário, não a
+chave.** Vira REQ própria.
+
+**Três observações reportadas, não corrigidas:** o `init` do Python semeia um ADR que Go e Node não
+semeiam — o que **proíbe métrica por contagem** e é a razão de a métrica ser por basename; o
+`validate --json` do Go imprime `N violation(s) found` **depois** do JSON, quebrando `json.load` puro;
+e o resumo do `check-gates-falsify.sh` já estava defasado antes deste ML.
 
 ## Verificação que só o CI fecha
 

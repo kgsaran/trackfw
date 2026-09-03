@@ -27,6 +27,7 @@ parity: build
 	scripts/check-tty-detection.sh
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-identity-parity.sh
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-artifact-parity.sh
+	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-artifact-closed-cycle.sh
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-barrier.sh
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-slash-parity.sh
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-rules-parity.sh

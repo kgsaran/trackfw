@@ -29092,3 +29092,101 @@ nenhuma linha `R` (zero renomeações — 18 arquivos `M`, 4 `??` novos: 3 teste
 
 **Roadmap não movido e ML não marcado `✅`** — cabe ao `trackfw_architect` após a auditoria.
 Nenhuma operação de git executada.
+
+## 2026-09-03 — artemis-tf (Quality Assurance) — INÍCIO
+**ML-2A** de `ROADMAP-2026-09-03-resolvedor-de-req-cobre-o-layout-canonico-e-ciclo-fechado-por-artefato.md`
+(wip): teste de ciclo fechado por artefato — `req new`, `adr new`, `note new` criados pelo **gerador**
+e provados pelo **verificador**, nos 3 CLIs, em `flat` e `by_agent`. Rede que impede a quarta
+ocorrência do padrão *gerador e verificador discordando do contrato*.
+
+Lido antes de agir: o ML-1A no roadmap, `vault/notes/resolvedor-de-req-era-if-else-...-2026-09-03.md`,
+`vault/notes/armadilhas-ao-escrever-cenario-em-check-gates-falsify-2026-08-12.md`,
+`scripts/check-artifact-parity.sh` e `scripts/check-gates-falsify.sh`.
+
+## 2026-09-03 — artemis-tf (Quality Assurance) — FIM
+**Entregue (não commitado, para auditoria do `trackfw_architect`).**
+`scripts/check-artifact-closed-cycle.sh` (novo), 3 cenários P4 em `scripts/check-gates-falsify.sh`
+(183/184/185), a linha do gate no alvo `parity` do `Makefile`, contrato em `docs/cli-parity.md`
+(seção nova *Ciclo fechado gerador → verificador* + o `trackfw-contract` da nota, que declarava
+`note_orphan` sem comparação cross-CLI), e nota de vault indexada.
+
+**Cobertura real: 18 de 18 combinações** (3 artefatos × 3 CLIs × 2 layouts), 6 asserções por
+combinação — **36/36 verdes**. Ressalva honesta, não inflada: `vault/notes` é constante do gerador
+(`internal/generators/note.go:12` e equivalentes), então o eixo de layout do braço de **nota** é
+**degenerado por construção** — as 2 execuções exercem o mesmo caminho de código. Declarado no
+cabeçalho do gate.
+
+**O gate executa o CLI, nunca importa o módulo** — `bin/trackfw`, `node npm/bin/trackfw` e
+`python3 -m trackfw`. É a lição do `context` do Node: o defeito morava na fronteira comando↔validator
+e o teste com mock não o via.
+
+**Métrica, e por que discrimina.** Não é "a regra apareceu na saída" — essa forma dava **6/6 verde na
+árvore sabotada** no ML-1A, porque `ref_targets_exist` e `traceid` disparam pelo lado do *roadmap*. A
+métrica é *"a entrada do `validate --json` cita, em `file` ou `message`, o **basename exato** do
+arquivo que o gerador acabou de escrever"*: o basename carrega data + slug, nenhum outro artefato o
+contém por acidente, e só há um caminho para ele aparecer — o verificador ter resolvido o arquivo no
+caminho onde o gerador o gravou. `file` **ou** `message` porque em Go `blocked_by_draft_adr` sai com
+`file: ""`.
+
+**🔴 Falsificação nas duas direções, com saída real — e UMA sabotagem não bastou.**
+
+```
+árvore íntegra                                            EXIT=0   36/36 OK
+A · caso <agente>/*.md fora dos 3 resolvedores (verificador)
+                                                          EXIT=1   9 reprovadas, 27 OK
+    req/{go,node,python}/by_agent/req_has_adr-names-generated
+    adr/{go,node,python}/by_agent/status-literal-read-back
+    adr/{go,node,python}/by_agent/adr_orphan-clears-after-link
+B · note new escreve `(notes/<arquivo>.md)` no index (gerador, 3 CLIs)
+                                                          EXIT=1   6 reprovadas, 30 OK
+    note/{go,node,python}/{flat,by_agent}/note_orphan-silent-for-indexed
+C · adr new emite `Rascunho` no lugar de `Proposed` (gerador, 3 CLIs)
+                                                          EXIT=1   6 reprovadas, 30 OK
+    adr/{go,node,python}/{flat,by_agent}/status-literal-read-back
+árvore restaurada                                         EXIT=0   36/36 OK
+```
+
+**A sabotagem do resolvedor de REQ falsifica só um terço do gate**, e isso foi medido, não suposto:
+`adr_orphan` fica **mais forte** sob ela (sem REQs, o ADR fica mais órfão) e `note_orphan` é
+insensível (nunca toca `req_dir`). Um gate de 3 artefatos com 1 sabotagem tem 2 braços que passam nas
+duas árvores. Daí três seams, um por fronteira. `bin/trackfw` reconstruído em cada sabotagem
+(`go build -o bin/trackfw ./cmd/trackfw` — `go build ./...` não o regenera).
+
+**🔴 Achado: o status do ADR NÃO é falsificável pela chave do frontmatter.** Trocar `status:` por
+`state:` nos 3 geradores dá **EXIT=0, 36/36** — o verificador cai de volta na linha
+`> Date: … | Status: …`, que o mesmo template escreve. Ou seja, uma regressão que derrube só o campo
+machine-readable do ADR passa silenciosa pelo `validate`. O discriminante é o **vocabulário**, não a
+chave. Registrado no vault; não corrigido (é REQ própria, fora do escopo deste ML).
+
+**Cenários P4 (`scripts/check-gates-falsify.sh`), um por fronteira:** 183 (REQ, verificador, Go
+sabotado + binário isolado), 184 (NOTE, gerador, Node), 185 (ADR, gerador, Python). Baseline
+compartilhada provando que a árvore íntegra passa. **Todos verdes** — `check-gates-falsify.sh`
+EXIT=0 com `OK [falsify/closed-cycle/*]` nas 4 linhas.
+⚠️ No 185, `default` e `choices` do argparse são sabotados **juntos**: o argparse valida o default de
+string contra `choices` mesmo sem a flag, e sabotar só o default faria o gate reprovar pelo motivo
+errado. E o ponto de decisão do status no Python é o default do **argparse**, não o de
+`generate_adr()` — o comando sempre passa `status=args.status`.
+⚠️ A asserção é sobre o diagnóstico do **próprio gate**, não sobre o exit code do `validate`:
+`adr_orphan` e `note_orphan` são `warning` e não movem o exit code (armadilha nº2 do vault).
+
+**Já coberto, não duplicado.** `check-artifact-parity.sh` já roda os 3 CLIs gerando req/adr/note e
+compara byte a byte, e já tem ciclo E2E `backlog → analyzing` em `flat`/`by_agent`. O que ele nunca
+fez é **alimentar o verificador com a saída do gerador** — é essa a delta, e por isso o roadmap não
+entra no gate novo (o ciclo de `roadmap move` já está lá).
+
+**Observações reportadas, não corrigidas** (fora do escopo negativo do ML): (1) `trackfw init` do
+Python semeia `docs/adr/ADR-001-inicio-do-projeto.md` que Go e Node não semeiam — divergência
+pré-existente que **proíbe qualquer métrica de ciclo fechado por contagem**; (2) `validate --json` do
+Go imprime `N violation(s) found` **depois** do JSON, então `json.load` puro quebra com "Extra data"
+em qualquer fixture com violação (o gate usa `raw_decode`); (3) o `echo` de resumo de
+`check-gates-falsify.sh` está na linha 9360 e já havia conteúdo depois dele (Cenário 182) — o resumo
+sai antes dos últimos cenários e o texto "all 181 scenarios" está defasado; não reestruturado aqui;
+(4) `docs/req/REQ-2026-09-03-setenta-e-tres-das-duzentas-e-quarenta-e-seis-falhas-de-windows-...md`
+apareceu como `??` não rastreado na árvore e **não é deste ML**.
+
+**Escopo negativo respeitado:** resolvedor do ML-1A não tocado; resíduos declarados (`traceid.js`,
+`sync`, `req move`) não atacados; `validator_credential_guard.go` e `validator_git_branch_guard.go`
+não tocados.
+
+**Roadmap não movido e ML-2A não marcado `✅`** — cabe ao `trackfw_architect` após a auditoria.
+Nenhuma operação de git executada.

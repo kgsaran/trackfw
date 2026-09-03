@@ -145,7 +145,7 @@ fail, and most likely reach for a hack in one framework's error path.
 
 ## Vault de conhecimento
 
-<!-- trackfw-contract: gate=scripts/check-artifact-parity.sh partial=regra note_orphan não comparada entre os 3 CLIs -->
+<!-- trackfw-contract: gate=scripts/check-artifact-closed-cycle.sh partial=check-artifact-parity.sh compara byte a byte a NOTA gerada entre os 3 CLIs mas nunca alimentou o verificador com ela; check-artifact-closed-cycle.sh fecha o ciclo `note new` → `note_orphan` nos 3 CLIs (nota indexada não é acusada + nota não indexada é acusada), e a severidade/`rules: note_orphan: error`/projeto sem vault continuam sem comparação cross-CLI -->
 
 `trackfw init` cria `vault/notes/` e gera `vault/notes/index.md` nos três CLIs.
 
@@ -3949,6 +3949,50 @@ Dois cenários negativos (P4) estão em `scripts/check-gates-falsify.sh`:
 - **Cenário 9** — drift de **slash-command roadmap**: corrompe o gerador de init
   do Node.js para emitir `status: backlogged` no `/trackfw:roadmap`; asserta
   exit != 0 com `artifact parity drift: slash_roadmap (go vs node)`.
+
+### Ciclo fechado gerador → verificador (ML-2A, ROADMAP-2026-09-03-resolvedor-de-req-cobre-o-layout-canonico-e-ciclo-fechado-por-artefato)
+
+<!-- trackfw-contract: gate=scripts/check-artifact-closed-cycle.sh partial=cobre req/adr/note nos 3 CLIs em flat e by_agent pelas regras req_has_adr, adr_orphan, adr_accepted_when_req_done e note_orphan; roadmap não entra (o ciclo E2E backlog→analyzing de check-artifact-parity.sh já o cobre) e o eixo de layout do braço de nota é degenerado porque vault/notes é constante do gerador -->
+
+`check-artifact-parity.sh` prova que os 3 CLIs **geram a mesma coisa**. Ele nunca provou que o
+**verificador enxerga o que o gerador escreveu** — e essa lacuna já produziu três defeitos nesta
+base: cabeçalho de aceite (gerador em português, `barrier` casando só inglês), vocabulário de
+status (gerador emitindo emoji, verificador esperando `pending`) e layout de REQ (`req new`
+gravando flat, o validator procurando `<agente>/<estado>/`). Nenhum dos três foi pego por teste.
+
+`scripts/check-artifact-closed-cycle.sh` fecha esse ciclo **executando o CLI**, nunca importando o
+módulo — a fronteira comando↔validator é exatamente onde os defeitos moram. Para cada uma das 18
+combinações (3 artefatos × 3 CLIs × `flat`/`by_agent`) ele gera com `req new`/`adr new`/`note new` e
+depois pergunta ao `validate --json`:
+
+| Artefato | Asserção | O que prova |
+|---|---|---|
+| REQ | `req_has_adr` cita o basename gerado | o resolvedor achou a REQ no caminho onde o gerador a gravou |
+| REQ | o caminho de escrita é `req_dir/<agente>/` em `by_agent` | o canônico D2 da ADR-2026-09-03, que a união de leitura poderia mascarar |
+| ADR | `adr_orphan` cita o basename gerado | o ADR é enumerado pelo verificador |
+| ADR | `adr_accepted_when_req_done` cita o basename **e** `status: Proposed` | o literal de status que `adr new` gravou é o que o verificador lê |
+| ADR | `adr_orphan` some depois de a REQ referenciar o ADR | a referência gravada é reconhecida |
+| NOTE | `note_orphan` **não** cita a nota gerada | o link que `note new` escreve no `index.md` é o que `note_orphan` reconhece |
+| NOTE | `note_orphan` cita uma nota **não** indexada | a regra acima está viva e olha esse diretório (antídoto de vacuidade) |
+
+**Métrica, e por que ela discrimina:** a asserção é *"a entrada do `validate --json` cita, em `file`
+ou `message`, o basename exato do arquivo que o gerador acabou de escrever"* — não *"a regra apareceu
+na saída"*. A forma fraca mente: medida no ML-1A, ela dava **6/6 verde sobre a árvore sabotada**,
+porque `ref_targets_exist` e `traceid` disparam pelo lado do *roadmap* sem ler REQ nenhuma. O
+basename carrega data e slug do título, então nenhum outro artefato pode satisfazê-lo por acidente,
+e só há um caminho para ele chegar à saída: o verificador ter resolvido o arquivo onde o gerador o
+gravou. `file` **ou** `message` porque no Go `blocked_by_draft_adr` sai com `file: ""`.
+
+Três cenários P4 em `scripts/check-gates-falsify.sh`, **um por artefato, cada um na sua fronteira**
+— sabotagem única não serviria, porque quebrar o resolvedor de REQ deixa `adr_orphan` e `note_orphan`
+intactos:
+
+- **Cenário 183** — verificador: o caso `req_dir/<agente>/*.md` sai de `ResolveREQFiles` (Go);
+  reprova em `req/go/by_agent/req_has_adr-names-generated`, e `go/flat` continua passando.
+- **Cenário 184** — gerador: `note new` do Node passa a escrever `(notes/<arquivo>.md)` no index;
+  reprova em `note/node/flat/note_orphan-silent-for-indexed`.
+- **Cenário 185** — gerador: o default de `--status` do `adr new` do Python vira `Rascunho`;
+  reprova em `adr/python/flat/status-literal-read-back`.
 
 ## CLAUDE.md — seção `## Architect responses` byte-idêntica nos 3 runtimes (ML-1A, ROADMAP-2026-08-21-regra-de-verbosidade-no-asset-do-arquiteto-e-nas-regras-semeadas)
 
