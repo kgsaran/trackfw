@@ -4,6 +4,7 @@ const path = require('path')
 const config = require('../config')
 const { localDateISO } = require('./date')
 const { resolveReqFiles, resolveAgentNamespaces } = require('../validator/index.js')
+const { normalizeRefSeparator: pathfmtNormalizeRefSeparator } = require('../lib/pathfmt')
 
 // STATUS_LEGEND teaches the vocabulary the `barrier` parser accepts for "**Status:**"
 // (AC11, ADR decision 5): the canonical form the template now writes (⬜ Pendente) plus the
@@ -310,7 +311,12 @@ function moveRoadmap(name, state) {
  * @returns {string}
  */
 function normalizeRefSeparator(p) {
-  return p.replace(/\\/g, '/')
+  // Delegação ao ponto único do runtime (ADR-2026-09-04, D3). A função continua
+  // exportada daqui porque consumidores e testes já a importam por este caminho;
+  // a IMPLEMENTAÇÃO agora é uma só, em npm/src/lib/pathfmt.js, para que o CLI Node
+  // não tenha duas noções de formato — a origem documentada das ocorrências de
+  // gerador e verificador discordando.
+  return pathfmtNormalizeRefSeparator(p)
 }
 
 /**

@@ -93,13 +93,26 @@ func readStateDir(dir, state, agent, rootDir string) []boardItem {
 		}
 		fullPath := filepath.Join(dir, e.Name())
 		title := extractTitle(fullPath, e.Name())
-		// path relative to working dir — keep the original cfg.RoadmapDir prefix
+		// path relative to working dir — keep the original cfg.RoadmapDir prefix.
+		//
+		// normalizeRefSeparator (mesma função usada pelo node ID de /api/chain, neste
+		// pacote): este valor é IDENTIFICADOR emitido em JSON, não caminho de travessia
+		// — ADR-2026-09-04 D1, categoria 2. O frontend o devolve verbatim em
+		// GET /api/file?path=..., onde o servidor refaz filepath.Clean+filepath.Join;
+		// no Windows o Clean reconverte "/" para o separador nativo, então o
+		// round-trip é fechado. Evidência de que isso já funciona: o node ID de
+		// /api/chain (api_chain.go:111) e o "path" do board Python
+		// (serve/api_board.py) já emitem "/" hoje e alimentam o mesmo handler.
+		//
+		// 🔴 fullPath acima permanece nativo e é o que vai a os.ReadFile — a
+		// normalização é de saída, não de travessia (ADR D2).
 		relPath := filepath.Join(rootDir, agent)
 		if agent != "" {
 			relPath = filepath.Join(rootDir, agent, state, e.Name())
 		} else {
 			relPath = filepath.Join(rootDir, state, e.Name())
 		}
+		relPath = normalizeRefSeparator(relPath)
 		total, done, activeML, nextML := parseMLProgress(fullPath)
 		items = append(items, boardItem{
 			File:     e.Name(),

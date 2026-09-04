@@ -1023,7 +1023,11 @@ test('credential_guard_hook_resolvable: sh -c "$PWD/…" usa mensagem do $PWD (M
   // from one another — mirrors production, where one is written by the
   // external approver and the other by the install command.
   function writeProvenance(root, destination, checksum, installedSHA256) {
-    const relDest = path.relative(root, destination)
+    // ML-2A (ADR-2026-09-04, D1 categoria 2): normalizada porque e o que a PRODUCAO
+    // grava — resolveThirdPartySkillDestination monta o destino por concatenacao
+    // explicita com '/'. Sem isto a fixture usava separador nativo e, no Windows,
+    // deixava de casar com a chave normalizada que o produto procura.
+    const relDest = path.relative(root, destination).replace(/\\/g, '/')
     writeJSON(path.join(root, '.trackfw', 'thirdparty-provenance.json'), {
       schema_version: 2,
       entries: {
@@ -1185,7 +1189,8 @@ test('credential_guard_hook_resolvable: sh -c "$PWD/…" usa mensagem do $PWD (M
       writeManifest(root, destination, 'thirdparty')
       // Hand-authored: sem a chave installed_sha256, exatamente como um aprovador (nunca tendo
       // rodado `install`) escreveria.
-      const relDest = path.relative(root, destination)
+      // ML-2A: ver comentario em writeProvenance acima.
+      const relDest = path.relative(root, destination).replace(/\\/g, '/')
       writeJSON(path.join(root, '.trackfw', 'thirdparty-provenance.json'), {
         schema_version: 2,
         entries: {

@@ -9,6 +9,7 @@ const config = require('../config')
 const { checkTraceIds } = require('./traceid')
 const { loadProvenance } = require('../thirdparty/provenance')
 const { homedir } = require('../homedir')
+const { normalizeRefSeparator } = require('../lib/pathfmt')
 
 // _platform is seeded from process.platform at module load time. Tests override
 // it via _setPlatformForTest to exercise the Windows guard on any host.
@@ -3181,7 +3182,18 @@ function validateThirdPartyArtifactHasProvenance(cwd) {
     // instead, which this rule intentionally never reads). path.relative
     // inverts resolve()'s path.resolve(root, relative) exactly. Mirrors
     // internal/validator/validator_thirdparty_provenance.go.
-    const provenanceKey = path.relative(root, destination)
+    //
+    // ML-2A (ADR-2026-09-04, D1 categoria 2 — "chave de dicionario ou identificador"):
+    // path.relative devolve separador NATIVO, e a chave gravada em
+    // thirdparty-provenance.json e sempre "/" (resolveThirdPartySkillDestination monta
+    // o destino por concatenacao explicita com "/", nos 3 runtimes). Sem normalizar, no
+    // Windows a chave nunca casa e TODO artefato de terceiro e reportado como sem
+    // entrada — falso positivo em massa. Go (validator_thirdparty_provenance.go:160) e
+    // Python (validator.py:3530) ja normalizavam; o Node era a divergencia (D4).
+    //
+    // 🔴 So a CHAVE DERIVADA e normalizada. `destination` continua cru e e o que aparece
+    // nas mensagens e no manifest; nada aqui altera caminho passado a syscall (ADR D2).
+    const provenanceKey = normalizeRefSeparator(path.relative(root, destination))
     const entry = (prov.entries || {})[provenanceKey]
     if (!entry) {
       msgs.push(

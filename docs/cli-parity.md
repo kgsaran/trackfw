@@ -6919,6 +6919,22 @@ por basename, senão uma REQ suja por um `roadmap move` anterior no Windows nunc
 > cuja premissa também está errada — a regra **existe** no Node desde o PR #175 (7 ocorrências,
 > ligada em `applyRule`); o que falta é a normalização, não a regra.
 
+> ✅ **FECHADO 2026-09-04 pelo ML-2A (ADR-2026-09-04).** O parágrafo de correção acima
+> descrevia o estado até 2026-09-02. As três lacunas do Node foram fechadas e a regra ganhou um
+> critério explícito — **o consumidor, não o sistema operacional**:
+>
+> ```
+> npm/src/lib/pathfmt.js                        <- ponto unico do runtime Node (D3)
+> npm/src/validator/index.js:3196               normalizeRefSeparator(path.relative(root, destination))
+> npm/src/serve/api_chain.js                    node ID normalizado (e edge.to por construcao)
+> ```
+>
+> O `edge.to` do Node **não** precisou de normalização própria: `resolveRef()` só devolve valores
+> vindos de `fileIndex`/`titleIndex`, isto é, sempre um node id — nunca o valor cru do frontmatter.
+> Normalizar o id normaliza a aresta por construção. **A indexação por basename
+> (`api_chain.js:145`) continua sendo um defeito separado, NÃO corrigido aqui** — é o que explica o
+> resto da diferença de contagem de arestas contra o Go, e tem REQ própria.
+
 **Fora de escopo, nomeado explicitamente** (não tocado por esta REQ):
 `content_base64` da quarentena de terceiros (âncora de checksum/TOCTOU); corpo de prosa/código de
 ADR/REQ/roadmap (normalização é por campo extraído, nunca por arquivo inteiro); a chave absoluta de
@@ -6929,8 +6945,9 @@ página).
 `filepath.Join`/`path.join`/`os.path.join` sempre produzem `/`, então rodar o comando de verdade
 neste SO nunca reproduz o defeito (só aparece com separador nativo do Windows) — falsificar em
 runtime exigiria runner Windows no CI. O gate mira **substrings de chamada de função específicas em
-arquivos específicos** (18 checagens de escrita/leitura, cobrindo cada site conhecido nos 3
-runtimes — uma delas, `assert_count`, exige exatamente 2 ocorrências porque `referenceExists` e
+arquivos específicos** (18 checagens de escrita/leitura desta REQ, das **40** que o script tem hoje
+— as outras 22 são do ML-2A/ADR-2026-09-04, documentadas na seção seguinte —, cobrindo cada site
+conhecido nos 3 runtimes; uma delas, `assert_count`, exige exatamente 2 ocorrências porque `referenceExists` e
 `validateREQRoadmapLifecycle` produzem coincidentemente a mesma linha de normalização em
 `validator.go`, e um `grep -qF` simples passaria com apenas um dos dois normalizando) — nunca grepa
 `\` solto em `docs/**`, que reprovaria sobre a própria documentação deste defeito. As assinaturas
@@ -6946,9 +6963,69 @@ cópias de `/tmp` (nunca na árvore real) em quatro cenários: revertendo o `por
 exatamente o motivo do `assert_count`); revertendo a normalização de
 `validate_req_roadmap_lifecycle` no Python; e removendo uma chamada `assert_has` do próprio script
 (vacuidade de contagem). Em todos os quatro, o gate reprova nomeando a assinatura ou contagem exata
-que sumiu; sobre a árvore correta, passa com `checked=18`.
+que sumiu; sobre a árvore correta, passa com `checked=40` (eram 18 quando esta REQ fechou; o
+ML-2A somou 22 e atualizou a guarda de contagem junto — ver a seção seguinte).
 
 Origem: `lourivalgarciajunior`, issue #216, item 10.
+
+## Separador POSIX na fronteira de emissão (ADR-2026-09-04, ML-2A)
+
+<!-- trackfw-contract: gate=scripts/check-ref-separator-portability.sh partial=cobertura estrutural (22 assinaturas novas, uma por sitio de emissao); a composicao com o separador nativo do Windows so o runner de Windows exercita — em macOS/Linux filepath.Join/path.join/os.path.join nunca produzem "\", entao a metade "emite /" e falsificavel localmente injetando a forma do Windows na ENTRADA da funcao de emissao (feito: probe base-vs-novo nos 3 runtimes), nunca gerando-a pelo SO -->
+
+O critério é o **consumidor**, não o SO: o trackfw emite `/` nos artefatos que ele mesmo autora e
+cujo consumidor **não é o sistema de arquivos**. Onde o consumidor **é** o SO, o separador
+**nativo** é o correto — `filepath.Join`/`path.join`/`os.path.join` seguem intocados.
+
+**Ponto único por runtime (D3).** Go: `normalizeRefSeparator` (por pacote — `validator`,
+`generators`, `serve`, `integrations`; a duplicação é herdada e **deliberadamente não consolidada**,
+porque consolidar exigiria tocar ~15 callsites em `internal/validator/`, que a Wave 3 da mesma REQ
+edita). Node: `npm/src/lib/pathfmt.js` — `generators/roadmap.js` **delega** a ele em vez de
+reimplementar. Python: `pypi/trackfw/pathfmt.py` — `validator.py` e `generators/roadmap.py` delegam,
+e os dois `.replace()` **inline** de `serve/api_board.py` e `serve/api_chain.py` passaram a chamá-lo.
+
+**Categoria 1 — texto de relatório.** `tildeAbbrev`/`tildeify`/`_tildeify`. Antes deste ML os três
+CLIs **discordavam entre si** no Windows, o que a D4 proíbe:
+
+| | antes (Windows) | depois |
+|---|---|---|
+| Go `tildeAbbrev` | `~\.claude\settings.json` | `~/.claude/settings.json` |
+| Node `tildeify` | `~\.claude\settings.json` | `~/.claude/settings.json` |
+| Python `_tildeify` | `~/.claude\settings.json` | `~/.claude/settings.json` |
+
+O Python já era **meio-corrigido** (prefixo `~/` fixo, cauda nativa) — divergência de paridade que
+nenhum dos dois lados da tabela anterior registrava. `internal/generators/update.go` **não** entrou
+no lote: seus display paths já são literais `"~/..."` compilados, nunca montados por junção.
+
+**Categoria 2 — chave e identificador.** `provenanceKey` (Node, era a única divergência), node ID de
+`/api/chain` (Node), `path` do `/api/board` (Go e Node; o Python já emitia `/`). O `path` do board é
+devolvido verbatim pelo frontend em `GET /api/file?path=…`, onde o servidor refaz
+`filepath.Clean`+`Join` — no Windows isso reconverte `/` para o separador nativo, então o round-trip
+fecha; evidência: o node ID do `/api/chain` do Go e o `path` do board do Python **já** emitiam `/` e
+alimentam o mesmo handler.
+
+🔴 **A fixture de proveniência era o defeito, nos 3 CLIs.** Ela montava a chave com
+`filepath.Rel`/`path.relative`/`os.path.relpath` — separador **nativo** —, enquanto a produção grava
+por concatenação explícita com `/` (`ResolveThirdPartySkillDestination`). Em Windows: Go e Python
+**reprovavam o produto certo** (produto normaliza, fixture não), e o Node **passava por acidente**
+(fixture e produto ambos nativos). Corrigir só o produto do Node teria virado o Node de verde para
+vermelho. As 3 fixtures passaram a normalizar a chave.
+
+**Categoria 3 — string de comando de shell: zero pontos de emissão.** Medido, não presumido: os
+`command` de hook são literais `"$CLAUDE_PROJECT_DIR/scripts/…"` nos 3 runtimes
+(`internal/generators/agentfiles.go`, `pypi/trackfw/generators/hooks.py`, par Node) e o gate de wave
+é **lido do markdown** do roadmap pelo `barrier`, nunca montado a partir de um caminho. Nada a
+corrigir — e registrar isso é o que impede alguém de "aplicar a ADR" ali depois.
+
+🔴 **Escopo negativo (D2).** Esta seção **não** autoriza normalizar caminho antes de `os.Open`,
+`fs.readFileSync` ou `open()`. Normalizar cegamente quebra UNC (`\\server\share`) e o prefixo de
+caminho longo (`\\?\`), que exige backslash **exclusivamente** — nem o Windows converte —, e o modo
+de falha seria intermitente. Em todos os sítios acima o valor normalizado é **derivado** (fatia de
+string, chave, id de nó) e o operando que vai à syscall é uma **expressão separada**, não tocada:
+em `api_chain.js` a leitura (`fs.readFileSync(path.join(dir, file))`) e o id
+(`path.join(dir, file)`) são expressões independentes sobre os mesmos operandos. Um `HomeDir` de
+perfil roaming em UNC chega de verdade ao `tildeAbbrev` e **é** normalizado — seguro exatamente
+porque o consumidor é texto, e por nenhuma outra razão.
+
 
 ## Escrita atômica — chmod no descritor vs. chmod no caminho (REQ-2026-09-01-os-fchmod, ML-1A/ML-1B)
 
