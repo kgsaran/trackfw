@@ -1,5 +1,5 @@
 ---
-status: Open
+status: Done
 date: 2026-09-02
 author: "kgsaran"
 adr: ""
@@ -8,7 +8,7 @@ roadmap: ""
 
 # REQ: O job `parity` é o caminho crítico do CI com 13m23s, e a premissa que justifica mantê-lo sequencial está desatualizada em 3x
 
-> Date: 2026-09-02 | Status: Open
+> Date: 2026-09-02 | Status: Done
 | Linear Issue:
 | Jira Issue:
 
@@ -140,3 +140,60 @@ ADR:
      arquivo em conflito nos PRs #238/#240 do reporter externo. Criar antes de o #240 mergear
      geraria um terceiro conflito no PR dele. Criar após o merge. -->
 Roadmap:
+
+
+---
+
+## Encerramento pelo AC6 — 2026-09-03
+
+O AC6 desta REQ diz, textualmente: ***"Não deu ganho suficiente para justificar a complexidade" é
+resultado válido** e encerra a REQ com a medição registrada.* **É o caso.**
+
+Medição completa em `docs/qualidade/2026-09-03-medicao-do-alvo-parity.md` (Wave 0, `ares-tf`).
+
+### O dado que encerra
+
+```
+job parity                780 s
+  check-gates-falsify.sh  610 s   <- 78,4% dos gates
+  os outros 43 gates      170 s
+setup 20 s · build 1,5 s · post 0 s   <- nao ha overhead de setup para otimizar
+```
+
+**Um gate é 78% do problema.** Os outros 43 somados são 170 s.
+
+### As duas soluções propostas foram descartadas por medição
+
+**`make -j` não se aplica** — e o motivo é estrutural, não de desempenho: as 46 invocações são
+linhas de **uma única receita**, e `make -j` paraleliza *targets*, não linhas. `make -j parity` daria
+**zero** ganho hoje. E a medição o descarta de qualquer forma: 5 rodadas concorrentes deram
+**2,2 a 3,4x mais lento** em 10 vCPU — o runner tem 4.
+
+**Matriz de shards ganha ~19%** (13m23 → ~10m50), porque **o piso é o `falsify` sozinho**. Nenhuma
+distribuição o divide. Sensibilidade medida: ele teria de cair para ~40% do job para o sharding
+render ~7 min; está em 75,9%.
+
+### AC7 cumprido, AC1–AC5 cumpridos, AC6 encerra
+
+O comentário desatualizado do `quality.yml` é corrigido no mesmo commit deste encerramento — a
+premissa de 2026-08-05 (`~4m15s`, *"não é o gargalo"*) fica registrada como **vencida**, com data.
+
+### Três achados que a medição trouxe e que valem mais que o ganho descartado
+
+1. 🔴 **A armadilha do AC4 está confirmada AO VIVO:** a proteção da `main` lista `parity` por nome
+   exato entre 9 contexts com `enforce_admins: true` — e a presença de `python (3.10)`/`python (3.12)`
+   na **mesma lista** é **prova viva** de que uma matriz renomeia o check. Registrado também que
+   `check-ci-workflow-job-id-collision.sh` **não** protege o `quality.yml`: ele governa os workflows
+   que o **produto gera**.
+2. 🔴 **Auto-concorrência pega o que a concorrência cruzada não pega.** Dois gates reprovaram
+   **5/5, deterministicamente**, e **ambos passaram** no teste cruzado:
+   `check-serve-address-parity.sh` (porta TCP fixa `PORT=46199`) e `check-ci-workflow-pin-parity.sh`
+   (escreve `zz_dump_ci_workflow_pin_parity_test.go` **dentro da árvore rastreada**).
+3. 🔴 **Quinto gate vácuo, e está dentro do `parity`:** `check-referential-integrity.sh` (0,04 s) não
+   tem contador nem guarda de vacuidade. **Verificado pelo arquiteto:** sobre uma árvore com `docs/`
+   vazio ele imprime `Referential integrity OK` e sai **0**, sem checar nada. Vira REQ.
+
+### Sucessora
+
+`REQ-2026-09-03-check-gates-falsify-e-610-dos-780-segundos-do-parity...` — é lá que estão os
+segundos. **Nenhum gate sai do `parity`**; reduzir cobertura não é otimizar.
