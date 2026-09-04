@@ -18,6 +18,10 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+# ML-0C: bash por caminho absoluto PROVADO (`GNU bash` no --version). Nome nu resolve para
+# System32\bash.exe (stub do WSL) no Windows -- ver pypi/tests/bash_path.py.
+from .bash_path import bash_cmd
+
 from trackfw.generators.init_gen import (
     _generate_git_branch_guard_script,
     generate_global_git_branch_guard_script,
@@ -124,7 +128,7 @@ class TestGitBranchGuardScriptWindsurfStdin(unittest.TestCase):
 
     def _run(self, payload: dict):
         return subprocess.run(
-            ['bash', self.script_path],
+            bash_cmd(self.script_path),
             input=json.dumps(payload),
             capture_output=True,
             text=True,
@@ -163,7 +167,7 @@ class TestGitBranchGuardManualE2ERegressions(unittest.TestCase):
 
     def _run(self, command: str):
         return subprocess.run(
-            ['bash', self.script_path],
+            bash_cmd(self.script_path),
             input=json.dumps({'tool_input': {'command': command}}),
             capture_output=True,
             text=True,
@@ -216,7 +220,7 @@ class TestGitBranchGuardML1AFalsePositiveAndSwitchC(unittest.TestCase):
 
     def _run(self, command: str):
         return subprocess.run(
-            ['bash', self.script_path],
+            bash_cmd(self.script_path),
             input=json.dumps({'tool_input': {'command': command}}),
             capture_output=True,
             text=True,
@@ -287,7 +291,7 @@ class TestGitBranchGuardNoOpOutsideProject(unittest.TestCase):
 
     def _run(self, command: str, cwd: str):
         return subprocess.run(
-            ['bash', self.script_path],
+            bash_cmd(self.script_path),
             input=json.dumps({'tool_input': {'command': command}}),
             capture_output=True,
             text=True,

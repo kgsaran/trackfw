@@ -163,7 +163,7 @@ os 50 testes já medem** — a sonda repetiria o erro que existe para diagnostic
 porque o item 1 mataria a sonda no primeiro `print`.
 
 ### ML-0C — `bash` por caminho absoluto nos sítios de teste do Python
-**Status:** ⬜ Pendente · **Agente:** `artemis-tf`
+**Status:** ✅ Concluído · **Agente:** `artemis-tf`
 **Files affected:** os 6 sítios Python que lançam `bash`, em `pypi/tests/`
 
 🔴 **CAUSA RAIZ MEDIDA** (ITEM 12, run `33875124523`) — e não é "não existe bash":
@@ -196,13 +196,44 @@ absoluto** ao `subprocess`.
 exatamente o defeito.
 
 **Critérios de aceite:**
-- [ ] Os sítios Python lançam `bash` por **caminho absoluto provado** (`GNU bash` no `--version`)
-- [ ] 🔴 **Falsificação:** revertendo, o stub do WSL volta a vencer — provável só no CI; localmente,
+- [x] Os sítios Python lançam `bash` por **caminho absoluto provado** (`GNU bash` no `--version`)
+- [x] 🔴 **Falsificação:** revertendo, o stub do WSL volta a vencer — provável só no CI; localmente,
       provar que o caminho passado **deixa de ser nome nu**
-- [ ] 🔴 **Controle POSIX:** `python3 -m pytest pypi/tests/` com o **mesmo total** de antes
-- [ ] 🔴 **Nenhum teste marcado `skip`**
-- [ ] Se nenhum candidato for GNU bash, o teste **falha nomeando isso** — não pula em silêncio
-- [ ] Nada fora de `pypi/tests/`; nenhum módulo de `pypi/trackfw/` tocado (medido: nenhum lança bash)
+- [x] 🔴 **Controle POSIX:** `python3 -m pytest pypi/tests/` com o **mesmo total** de antes
+- [x] 🔴 **Nenhum teste marcado `skip`**
+- [x] Se nenhum candidato for GNU bash, o teste **falha nomeando isso** — não pula em silêncio
+- [x] Nada fora de `pypi/tests/`; nenhum módulo de `pypi/trackfw/` tocado (medido: nenhum lança bash)
+
+
+**Evidência de aceite — auditoria do arquiteto, 2026-09-04:**
+
+```
+grep 'subprocess.run(["bash"' em pypi/tests/  ->  nenhum lancamento por nome nu restante
+argv real                                    ->  ['/opt/homebrew/bin/bash']
+controle POSIX  antes 1604 passed  depois 1604 passed  (--ignore do arquivo de teste novo)
+                suite completa 1609 = 1604 + os 5 testes de guarda novos
+```
+
+🔴 **Eram 10 sítios, não 6 — eu passei o número errado no handoff.** Ela verificou e corrigiu, e usou
+a **uniformidade da forma** (`subprocess.run(["bash", <script>, *args])` nos dez) para justificar
+**helper único** em vez de resolução repetida.
+
+🔴 **O portão de identidade roda em BYTES, de propósito.** A saída UTF-16 do stub do WSL não casa com
+`b"GNU bash"`, então o candidato é recusado **sem depender de decodificação** — que é exatamente onde
+o cp1252 e o UTF-16 mordem. E a exclusão explícita do `System32` é **cinto-e-suspensório**: o stub
+seria recusado por identidade mesmo sem ela.
+
+**Falsificação nas duas direções:** um candidato que **existe e sai 0** mas não é bash (`/bin/echo`)
+é recusado, e `BashNotFound` nomeia cada tentativa; com o impostor **à frente** na lista, o bash real
+ainda vence pelo portão.
+
+**Sem candidato válido → `BashNotFound`, não `skip`.** Resolução **preguiçosa**, para a falha aparecer
+como erro dos testes que lançam bash e não como erro de coleta da suíte.
+
+🔴 **Ela marcou a própria evidência como fraca onde é fraca:** o ramo `os.name == "nt"` é **código não
+executado** pela medição dela, e `test_nunca_resolve_para_o_stub_do_wsl` é *"quase vacuoso em
+POSIX"* — pediu para **não contar como evidência local**. É a diferença entre um teste que protege e
+um que decora.
 
 **Verificação que só o CI fecha:** a contagem Python cair de 101 para ~51.
 

@@ -16,6 +16,10 @@ import subprocess
 import tempfile
 import unittest
 
+# ML-0C: bash por caminho absoluto PROVADO (`GNU bash` no --version). Nome nu resolve para
+# System32\bash.exe (stub do WSL) no Windows -- ver pypi/tests/bash_path.py.
+from .bash_path import bash_cmd
+
 from trackfw.generators.hooks import (
     inject_claude_hooks,
     inject_codex_hooks,
@@ -314,7 +318,7 @@ def _run_entries(project_dir, script_paths):
     blocked = 0
     for script in script_paths:
         proc = subprocess.run(
-            ['bash', script, 'git', 'push'],
+            bash_cmd(script, 'git', 'push'),
             cwd=project_dir,
             capture_output=True,
             text=True,
