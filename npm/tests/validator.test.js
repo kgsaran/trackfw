@@ -642,6 +642,9 @@ test('classifyHookAnchorage: classe 1 — formas ancoradas', () => {
     // ~/… sem aspas: tilde expande para $HOME em qualquer shell POSIX — ancorado.
     { raw: '~/scripts/trackfw-credential-guard.sh', wasQuoted: false },
     { raw: '~/.trackfw/scripts/trackfw-credential-guard.sh', wasQuoted: false },
+    // ADR-2026-09-04: letra de unidade e UNC são ancoradas por UNIÃO, independente do host.
+    { raw: 'C:\\Users\\kg\\scripts\\guard.sh', wasQuoted: false },
+    { raw: '\\\\servidor\\share\\guard.sh', wasQuoted: false },
   ]
   for (const { raw, wasQuoted } of cases) {
     assert.strictEqual(validator.classifyHookAnchorage(raw, wasQuoted), validator.HOOK_ANCHORAGE_CLASS_ANCHORED,
@@ -889,10 +892,88 @@ test('cwdDependentReason: $PWD em qualquer posição usa mensagem do $PWD', () =
     const reason = validator.cwdDependentReason(raw)
     assert(reason.includes('$PWD path'), `esperava '$PWD path' para: ${raw}, obteve: ${reason}`)
   }
-  const bareCases = ['./scripts/guard.sh', '../scripts/guard.sh', 'scripts/guard.sh', '~/scripts/guard.sh']
+  const bareCases = ['./scripts/guard.sh', '../scripts/guard.sh', 'scripts/guard.sh']
   for (const raw of bareCases) {
     const reason = validator.cwdDependentReason(raw)
     assert(reason.includes('bare relative path'), `esperava 'bare relative path' para: ${raw}, obteve: ${reason}`)
+  }
+})
+
+// D4 da ADR-2026-09-04: "~/…" (aspeado) e "~usuario/…" NÃO recebem mais "bare relative path" —
+// achado do ML-2B, a frase antiga não nomeava a causa real de nenhuma das duas formas.
+test('cwdDependentReason: til recebe mensagem própria, não bare relative path (D4)', () => {
+  const quotedTildeCases = ['~/scripts/guard.sh']
+  for (const raw of quotedTildeCases) {
+    const reason = validator.cwdDependentReason(raw)
+    assert(reason.includes('quoted tilde path'), `esperava 'quoted tilde path' para: ${raw}, obteve: ${reason}`)
+    assert(!reason.includes('bare relative path'), `NÃO esperava 'bare relative path' para: ${raw}, obteve: ${reason}`)
+  }
+  const namedUserTildeCases = ['~alice/scripts/guard.sh', '~bob/scripts/guard.sh']
+  for (const raw of namedUserTildeCases) {
+    const reason = validator.cwdDependentReason(raw)
+    assert(reason.includes('named-user tilde path'), `esperava 'named-user tilde path' para: ${raw}, obteve: ${reason}`)
+    assert(!reason.includes('bare relative path'), `NÃO esperava 'bare relative path' para: ${raw}, obteve: ${reason}`)
+  }
+})
+
+// ADR-2026-09-04 — falsificação nas duas direções + controle de não-afrouxamento + controle
+// POSIX para pathIsAnchoredForHookConfig.
+test('pathIsAnchoredForHookConfig: formas POSIX e Windows ancoradas', () => {
+  const cases = [
+    '/opt/foo/guard.sh',
+    '/absolute/path/to/guard.sh',
+    '/',
+    'C:\\Users\\kg\\scripts\\guard.sh',
+    'C:/Users/kg/scripts/guard.sh',
+    'z:\\scripts\\guard.sh',
+    '\\\\servidor\\share\\guard.sh',
+    '//servidor/share/guard.sh',
+  ]
+  for (const raw of cases) {
+    assert.strictEqual(validator.pathIsAnchoredForHookConfig(raw), true,
+      `esperava true (ancorado) para: ${raw}`)
+  }
+})
+
+test('pathIsAnchoredForHookConfig: controle de não-afrouxamento — nenhuma forma relativa entra', () => {
+  const cases = [
+    'scripts/guard.sh',
+    './scripts/guard.sh',
+    '../scripts/guard.sh',
+    'guard.sh',
+    '',
+    '~/scripts/guard.sh',
+    '$PWD/scripts/guard.sh',
+    'C',
+    'C:',
+    'C:foo',
+    '\\scripts\\guard.sh',
+    '1:\\scripts\\guard.sh',
+    '\\\\',
+    '\\\\x',
+    '\\\\..\\evil',
+    '\\\\..\\\\evil',
+  ]
+  for (const raw of cases) {
+    assert.strictEqual(validator.pathIsAnchoredForHookConfig(raw), false,
+      `esperava false (não ancorado) para: ${raw} — não deve afrouxar`)
+  }
+})
+
+test('pathIsAnchoredForHookConfig: controle POSIX — idêntico a path.isAbsolute para o conjunto existente', () => {
+  const posixAbsoluteCases = ['/opt/foo/guard.sh', '/absolute/path/to/guard.sh', '/', '/a']
+  for (const raw of posixAbsoluteCases) {
+    const before = path.isAbsolute(raw)
+    const after = validator.pathIsAnchoredForHookConfig(raw)
+    assert.strictEqual(before, after, `controle POSIX quebrado para: ${raw}`)
+    assert.strictEqual(after, true, `esperava true para: ${raw}`)
+  }
+  const posixRelativeCases = ['scripts/guard.sh', './scripts/guard.sh', '../scripts/guard.sh', 'guard.sh']
+  for (const raw of posixRelativeCases) {
+    const before = path.isAbsolute(raw)
+    const after = validator.pathIsAnchoredForHookConfig(raw)
+    assert.strictEqual(before, after, `controle POSIX quebrado para: ${raw}`)
+    assert.strictEqual(after, false, `esperava false para: ${raw}`)
   }
 })
 
@@ -929,8 +1010,8 @@ test('credential_guard_hook_resolvable: "~/…" aspeado é acusado (ML-4A — cl
   config.reset()
   try {
     const msgs = validator.validateCredentialGuardHookResolvable()
-    assert(msgs.some(m => m.includes('bare relative path')),
-      'ML-4A: "~/…" aspeado (classe 2) deve ser acusado com bare relative path: ' + JSON.stringify(msgs))
+    assert(msgs.some(m => m.includes('quoted tilde path')),
+      'ML-4A/D4: "~/…" aspeado (classe 2) deve ser acusado com quoted tilde path: ' + JSON.stringify(msgs))
   } finally {
     process.chdir(origDir)
     config.reset()

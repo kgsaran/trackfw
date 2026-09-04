@@ -8513,8 +8513,8 @@ assert_fails_with "validate-parity/credential-guard-pwd-not-detected" \
 # ---------------------------------------------------------------------------
 # Cenário 165 — check-validate-parity.sh: `credential_guard_hook_resolvable`
 #               passa a acusar caminho absoluto (falso-positivo introduzido pela
-#               substituição de `filepath.IsAbs(rawStripped)` → `false` no
-#               classificador) → o caso cg-claude-absoluto reprova.
+#               substituição de `pathIsAnchoredForHookConfig(rawStripped)` →
+#               `false` no classificador) → o caso cg-claude-absoluto reprova.
 #
 # Objetivo (ROADMAP-2026-08-22-validate-detecta-hook-com-pwd-que-falha-fora-
 # da-raiz, ML-2A — P4 direção-B): prova a SEGUNDA direção de falha — o caso
@@ -8522,16 +8522,24 @@ assert_fails_with "validate-parity/credential-guard-pwd-not-detected" \
 # A direção B é a que protege o defeito caro desta entrega: acusar caminho
 # absoluto é o falso-positivo que reprova a entrega.
 #
+# RETARGETED 2026-09-04 (ADR-2026-09-04-caminho-posix-ancorado-num-config-lido-
+# por-cli-de-agente-e-absoluto-independente-do-so-host, ML-3A): `filepath.IsAbs`
+# foi substituído por `pathIsAnchoredForHookConfig` — o seam original
+# (`filepath\.IsAbs(rawStripped)`) não existe mais no arquivo; o sed passava a
+# ser um no-op silencioso (o guard `cmp -s` abaixo captura exatamente isso, e
+# foi o que aconteceu ao rodar `make quality` após a substituição).
+#
 # Seam: internal/validator/validator_credential_guard.go
-# `filepath.IsAbs(rawStripped)` — aparece em DOIS lugares (classe 1 e classe 2).
-# Delta: ambas as ocorrências substituídas por `false` com /g.
-# Efeito: linha 105 (classe 1) não captura mais absolutos → linha 112
-# (`!false` = true) → absoluto cai na cláusula bare-relative → classe 2 →
-# acusado. Go reporta violação em cg-claude-absoluto (expect=False) →
-# Python reprova com "nenhuma violacao da regra esperada".
-# Nota: linha 175 usa `raw` (não `rawStripped`) → resolveCredentialGuardHookPath
-# não é afetada. Compila porque `false` é expressão bool válida e as variáveis
-# declaradas continuam referenciadas.
+# `pathIsAnchoredForHookConfig(rawStripped)` — aparece em DOIS lugares (classe
+# 1 e classe 2). Delta: ambas as ocorrências substituídas por `false` com /g.
+# Efeito: classe 1 não captura mais absolutos (POSIX nem Windows-form) → a
+# cláusula bare-relative da classe 2 (`!pathIsAnchoredForHookConfig(...)` vira
+# `!false` = true) → absoluto cai nela → classe 2 → acusado. Go reporta
+# violação em cg-claude-absoluto (expect=False) → Python reprova com
+# "nenhuma violacao da regra esperada".
+# Nota: `resolveCredentialGuardHookPath` usa `raw` (não `rawStripped`), num
+# sítio próprio, e não é afetada por este sed. Compila porque `false` é
+# expressão bool válida e as variáveis declaradas continuam referenciadas.
 #
 # GO_BIN override aponta check-validate-parity.sh para o binário sabotado.
 # ---------------------------------------------------------------------------
@@ -8542,7 +8550,7 @@ cp -r "$ROOT_DIR/internal/." "$T95/internal/"
 cp "$ROOT_DIR/go.mod" "$T95/go.mod"
 cp "$ROOT_DIR/go.sum" "$T95/go.sum"
 
-sed 's/filepath\.IsAbs(rawStripped)/false/g' \
+sed 's/pathIsAnchoredForHookConfig(rawStripped)/false/g' \
   "$ROOT_DIR/internal/validator/validator_credential_guard.go" > "$T95/internal/validator/validator_credential_guard.go"
 
 if cmp -s "$ROOT_DIR/internal/validator/validator_credential_guard.go" "$T95/internal/validator/validator_credential_guard.go"; then

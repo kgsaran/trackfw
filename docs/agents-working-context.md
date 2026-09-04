@@ -29971,3 +29971,276 @@ apesar de eu ter alterado linhas que cenários pinam por substring e de ter **re
 `trackfw/pathfmt.py` fica no mesmo nível de `homedir.py`/`traceid.py`, já publicados.
 
 Handoff para `trackfw_architect` (auditoria e commit). Nenhuma operação de git executada.
+
+---
+
+## 2026-09-04 — `trackfw_architect` (Zeus) — INÍCIO: Wave 3 (`IsAbs`) e Wave 5 (CRLF)
+
+Branch `fix/grupos-de-falha-de-windows-por-causa-raiz`. Roadmap
+`ROADMAP-2026-09-03-fechar-os-grupos-de-falha-de-windows-por-causa-raiz.md` (wip).
+
+Estado da campanha de Windows após o merge do PR #270 (run `33913343975`):
+`246 → 217 → 162 → 134 → 69` — **72% fechado**, cada passo com causa raiz medida.
+Resíduo: Go 14 · Node 34 · Python 21.
+
+Wave 1 (as 3 ADRs) marcada ✅ — as três estão `Accepted`. Wave 2 ✅ auditada e mergeada.
+A branch que bloqueava a Wave 3 (`fix/validate-detecta-hook-de-guard-na-forma-relativa-antiga`)
+fechou: `git branch -r --no-merged origin/main` volta vazio.
+
+**Enumeração do arquiteto para a Wave 3 — 12 sítios em escopo, 16 fora**, cada um rotulado pelo
+lado da fronteira D2 da ADR (classificação de config **sim**; travessia de filesystem **não**).
+
+🔴 **Achado da enumeração:** o fix mergeado ontem (`577e54a`, forma relativa antiga) **nasceu com o
+mesmo defeito de Windows nos 3 CLIs** — `validator_credential_guard.go:193`, `index.js:1467`,
+`validator.py:1873`. E `validator_git_branch_guard.go:167` é pior que classificar errado: o
+`continue` faz o laço **pular a entrada inteira**, então no Windows uma entrada de config global com
+comando absoluto POSIX **nunca é verificada**.
+
+🔴 **Registrado no ML o que NÃO conta como evidência:** estamos em macOS, onde
+`filepath.IsAbs("/opt/…")` é **true** — o defeito é invisível localmente e `GOOS=windows` só compila
+cruzado. Suíte verde em macOS não é aceite; a queda de contagem só fecha no CI.
+
+Wave 5 (CRLF) aberta como **sequencial** após a Wave 3: toca os mesmos arquivos de validator.
+
+---
+
+## 2026-09-04 — `apolo-tf` — ML-3A: `pathIsAnchoredForHookConfig`, os 12 sítios enumerados
+
+Branch `fix/grupos-de-falha-de-windows-por-causa-raiz`. Governado por
+`ADR-2026-09-04-caminho-posix-ancorado-num-config-lido-por-cli-de-agente-e-absoluto-independente-
+do-so-host.md`. Árvore deixada suja para auditoria — nenhuma operação de git executada.
+
+**Predicado único por runtime**, invariante por construção (verificado por grep):
+`pathIsAnchoredForHookConfig` (Go, `internal/validator/validator_credential_guard.go`),
+`pathIsAnchoredForHookConfig` (Node, `npm/src/validator/index.js`),
+`_path_is_anchored_for_hook_config` (Python, `pypi/trackfw/validator.py`). Zero chamada
+dependente de SO no corpo — `grep -n "IsAbs\|isAbsolute\|isabs\|Separator" ` dentro da função dá
+zero ocorrência nos 3; confirmado por leitura. União de duas formas: prefixo `/` (POSIX) e letra de
+unidade (`C:\`/`C:/`) ou UNC (`\\...`) — a segunda é ancorada **em qualquer host**, D1 da ADR, não
+só quando rodando em Windows.
+
+**Os 12 sítios da tabela do roadmap, todos migrados** de `filepath.IsAbs`/`path.isAbsolute`/
+`os.path.isabs` para o predicado novo: classe 1 e classe 2 de `classifyHookAnchorage` (3
+runtimes), `resolveCredentialGuardHookPath`/forma relativa antiga (3 runtimes — o fix mergeado
+ontem, `577e54a`, nascia com o mesmo defeito), e o `continue` de
+`validateGuardGlobalHookResolvable`/`git_branch_guard.go:167` + equivalentes Node/Python (era pior
+que classificar errado: pulava a entrada inteira). Os 16 sítios fora de escopo (travessia real de
+filesystem, D2 da ADR) **não foram tocados** — confirmado por grep, nenhum deles usa o predicado
+novo.
+
+**D4 da ADR — mensagem por causa real.** `cwdDependentReason`/`_cwd_dependent_reason` ganhou dois
+ramos de til: `"~/…"` aspeado → `"with a quoted tilde path"` (causa: aspas impedem expansão);
+`"~usuario/…"` → `"with a named-user tilde path"` (causa: expande em POSIX, mas para outro
+usuário — indecidível sem shell, não relativo). Nenhum dos dois recebe mais `"bare relative
+path"`, que era o catch-all errado. O ramo dispara **só** para essas duas formas — confirmado pelo
+invariante: `classifyHookAnchorage` já classifica `~/…` sem aspas como classe 1, então todo
+`"~/…"` que chega em `cwdDependentReason` (classe 2) só pode ter vindo de um valor originalmente
+citado, sem precisar receber `wasQuoted` como parâmetro extra. A frase `"bare relative path"`
+continua intocada para `scripts/…`, `./…`, `../…` — testado explicitamente.
+
+**Falsificação nas duas direções, medida:** `/opt/foo/guard.sh` → `pathIsAnchoredForHookConfig` =
+`true` nos 3 runtimes; `scripts/guard.sh` → `false` nos 3. Tabela de 21 entradas (POSIX absoluto,
+Windows drive-letter maiúscula/minúscula, UNC, formas relativas, til, `$PWD`, casos-limite como
+`"C:"`/`"C:foo"`/`"1:\..."`) rodada **separadamente** em Go (`go test -run`), Node (`node -e`
+chamando `validator.pathIsAnchoredForHookConfig` exportado) e Python (import direto) — **os 3
+runtimes dão veredito idêntico para as 21 entradas**.
+
+🔴 **Controle de não-afrouxamento** (critério principal do ML): nenhuma das 21 entradas relativas
+(`scripts/guard.sh`, `./…`, `../…`, `guard.sh`, `""`, `~/…`, `$PWD/…`, `C`, `C:`, `C:foo`,
+`\scripts\guard.sh`, `1:\scripts\guard.sh`) entrou no conjunto ancorado, nos 3 runtimes — testado
+via `pathIsAnchoredForHookConfig_NaoAfrouxamento`/equivalentes.
+
+🔴 **Controle POSIX**, medido antes/depois — com um limite que precisa ficar explícito: para o
+**corpus POSIX pré-existente** (`/opt/foo/…`, `/absolute/…`, `scripts/…`, `./…`, `../…`), o
+predicado novo dá **exatamente o mesmo veredito** que `filepath.IsAbs`/`path.isAbsolute`/
+`os.path.isabs` davam em POSIX — testado lado a lado nos 3 runtimes. **Isso não cobre as entradas
+em forma de Windows**: para elas o veredito em macOS/Linux **muda por construção**, e é
+**esperado** mudar (D1 da ADR é explícito: a união é independente do host). Dois exemplos medidos
+onde o comportamento ANTES vs. DEPOIS diverge mesmo rodando em macOS: `classifyHookAnchorage("C:\
+…")` era classe 2 (`IsAbs` falso em qualquer host para essa forma → caía na cláusula
+bare-relative) e passa a ser classe 1; `validateGuardGlobalHookResolvable` pulava `C:\…` pelo
+`continue` antigo e agora chega ao `os.Stat`. O fixture `cg-claude-windows-drive` do parity gate
+fixa esse novo comportamento como o correto. Resumo correto: **corpus pré-existente idêntico
+(medido); formas de Windows deliberadamente reclassificadas em qualquer host, por design (D1)** —
+não "todos os casos existentes idênticos", que seria mais amplo do que o medido.
+
+**Falha no `make quality`, corrigida (2 rodadas):**
+1. `scripts/check-validate-parity.sh` — o fixture `cg-claude-tilde-quoted` pinava
+   `CG_MARKER_BARE` ("bare relative path") para o caso que o D4 deveria mudar. As 3 suítes
+   unitárias tinham a mesma asserção desatualizada e por isso concordavam consigo mesmas sem
+   detectar nada — só o gate de paridade cross-CLI (mensagem byte-a-byte entre os 3 binários
+   reais) capturou. Corrigido: novo `CG_MARKER_TILDE_QUOTED`. Acrescentei também o fixture
+   `cg-claude-windows-drive` (`C:\Users\kg\scripts\...` → classe 1, silencioso) para o gate cobrir
+   o caso de integração, não só o predicado isolado. Nota:
+   `vault/notes/check-validate-parity-pina-bare-relative-path-para-tilde-aspeado-2026-09-04.md`.
+2. `scripts/check-gates-falsify.sh`, Cenário 165 (P4 direção-B do ML-2A anterior) — o `sed` sabotava
+   `filepath\.IsAbs(rawStripped)`, string que não existe mais no arquivo após a migração; o guard
+   `cmp -s` do próprio cenário pegou isso (`FAIL [falsify/setup-s165]: sed nao alterou ... padrao
+   nao encontrado`), não um teste que passou por acidente. Retargetado para
+   `pathIsAnchoredForHookConfig(rawStripped)`.
+
+**Gates rodados com resultado:**
+```
+go build ./... && go vet ./...                         → limpo
+go test ./...                                            → todos os pacotes OK
+node --test npm/tests/                                    → 859 passed, 0 failed, 0 skipped
+python3 -m pytest pypi/tests/                              → 1617 passed, 28 subtests
+bash scripts/check-validate-parity.sh (isolado, pós-fix)   → todos os blocos "passed"
+make quality (2ª rodada, após os 2 fixes acima)             → 181 cenários de falsificação OK,
+                                                               zero FAIL, exit 0
+trackfw validate                                            → exit 0 (só warnings pré-existentes,
+                                                               não relacionados a este ML)
+```
+
+🔴 **Premissas do handoff que a medição NÃO derrubou desta vez** — todas as 4 confirmadas como
+descritas: os 12 sítios batiam exatamente com a tabela; `~/` sem aspas continuava classe 1 e
+`"~/"` com aspas classe 2 (comportamento preservado, só a mensagem mudou); `npm/src/validator/
+index.js` de fato precisa de `grep -a` (usado em toda a investigação); e o ramo de til realmente
+só dispara para as duas formas descritas, sem vazar para o resto.
+
+🔴 **Uma premissa MINHA derrubada na auto-revisão, antes do handoff** — o roadmap fala em "16
+sítios fora de escopo"; a enumeração real (`grep -rn "IsAbs\|isAbsolute\|isabs\|is_absolute"` nos
+3 diretórios de produto, excluindo comentários) dá **14 call-sites reais**, não 16: Go 3
+(`validator.go:2112`, `manager.go:703,726`), Node 5 (`index.js:95`, `manager.js:55,62,107,430`),
+Python 6 (`generators/req.py:53,263,269` — três, não um; `generators/adr.py:67`;
+`commands/status.py:117`; `integrations/manager.py:71`, que usa `Path.is_absolute()` do pathlib,
+não `os.path.isabs` — grep por `isabs` sozinho não pega essa forma, por isso o predicado usado
+para reconciliar precisa incluir `is_absolute`). 12 em escopo (migrados) + 14 fora de escopo
+(intocados, confirmado por grep — nenhum usa `pathIsAnchoredForHookConfig`/equivalente) = **26
+call-sites reconciliados**, não 28. Nenhum sítio fora da enumeração do arquiteto apareceu.
+
+**Três lacunas de verificação fechadas após revisão do advisor, antes do handoff:**
+1. **Faltava fixture de paridade cross-CLI para a mensagem "named-user tilde path".** Só existia
+   asserção unitária nos 3 runtimes separadamente — o mesmo padrão que já tinha mascarado o "bare
+   relative path" pinado (achado 1 desta seção). Adicionado `cg-claude-tilde-user`
+   (`~alice/scripts/…`) espelhando o bloco `cg-claude-tilde-quoted`, com `CG_MARKER_TILDE_USER` em
+   `scripts/check-validate-parity.sh`; roda e passa isolado em segundos.
+2. **`docs/cli-parity.md` não tinha sido lido** (item 3 da leitura obrigatória do handoff). A
+   anotação `trackfw-contract` da seção do credential-guard listava 18 casos CG e não mencionava
+   D4 nem a letra de unidade — atualizada para 20 casos (+ `claude-tilde-user`,
+   `claude-windows-drive`) e para registrar a mudança de mensagem e o retarget do Cenário 165.
+   `check-parity-contract-coverage.sh` confirmado verde depois.
+3. **Zero-chamada-dependente-de-SO só tinha sido confirmado por grep amplo, não por extração
+   isolada do corpo, em Node e Python** (só o Go tinha sido extraído linha a linha). Extraí os
+   corpos de `pathIsAnchoredForHookConfig`/`isASCIIDriveLetter` (Node) e
+   `_path_is_anchored_for_hook_config`/`_is_ascii_drive_letter` (Python) com `awk` e confirmei
+   visualmente: zero `path.isAbsolute`/`os.path.isabs`/`path.sep`/`os.sep` nos 4 corpos.
+
+**O que NÃO foi provado localmente, por construção do defeito** (macOS não reproduz): a queda real
+da contagem de falhas de Windows. `GOOS=windows go test` compila cruzado mas não executa; a prova
+local disponível é o par (predicado sem chamada dependente de SO, verificável por grep) + (tabela
+de 21 casos, 3 runtimes, veredito idêntico). Fecha só no CI, run pós-merge — confirmação é do
+arquiteto.
+
+Handoff para `trackfw_architect` (auditoria e commit). Nenhuma operação de git executada.
+
+## 2026-09-04 — `hades-tf` — INÍCIO: barreira de segurança ML-3A (`pathIsAnchoredForHookConfig`)
+
+Branch `fix/grupos-de-falha-de-windows-por-causa-raiz` (não criada por mim, árvore suja deixada por
+`apolo-tf` para auditoria). Escopo: barreira obrigatória exigida por
+`ADR-2026-09-04-caminho-posix-ancorado-num-config-lido-por-cli-de-agente-e-absoluto-independente-
+do-so-host.md` — falsificação do não-afrouxamento do predicado de ancoragem nos 3 runtimes, dos 3
+sítios de `continue` e da fronteira D2. Não modifico código de produto nem git.
+
+## 2026-09-04 — `hades-tf` — FIM: barreira de segurança ML-3A — APROVA COM RESSALVAS
+
+Parecer completo em `~/.trackfw/rascunhos/2026-09-04-parecer-hades-ml3a-ancoragem.md`.
+
+**Veredito: APROVA COM RESSALVAS.** Reimplementei os 3 predicados de forma independente (não
+copiei do diff) e ataquei com corpus adversarial próprio (homoglifo, zero-width space, `C:foo` sem
+separador, dígito antes de `:`, espaço à esquerda, `$HOME/x`, 2 barras POSIX, newline embutido) —
+nenhum entrou como falso "ancorado". Confirmei por leitura os 14 sítios fora de escopo (D2)
+intocados, inclusive `pypi/trackfw/integrations/manager.py:71` (`Path.is_absolute()`, forma que
+`grep isabs` não pega), e reconciliei os 12 sítios em escopo por busca cega própria (não pela
+contagem do agente) contra a tabela autoritativa do roadmap (`## Wave 3`,
+`ROADMAP-2026-09-03-fechar-os-grupos-de-falha-de-windows-por-causa-raiz.md`) — nenhum sítio de
+classificação sobrou no predicado antigo.
+
+**Ressalva 1 (única, acionável, não bloqueante):** o predicado aceita como UNC-ancorado qualquer
+string que comece com duas barras invertidas, mesmo sem segmento de compartilhamento real —
+`"\\"`, `"\\x"`, `"\\..\\evil"` são classificados ancorados nos 3 runtimes, mas são caminhos
+dependentes de cwd em POSIX (nem `os.Stat`, nem a maioria dos shells, os tratam como absolutos).
+Severidade baixa: puramente diagnóstico (não altera o que é executado), nenhum gerador do trackfw
+emite essa forma (confirmado em `internal/generators/agentfiles.go:1576`,
+`globalCredentialGuardScriptPath`, que usa `filepath.Join` — nunca produz `\\`), e não diverge
+entre os 3 runtimes. Correção sugerida para follow-up: exigir
+`strings.Count(raw[2:], "\\") >= 1` antes de aceitar como UNC (mantém os 2 casos legítimos já
+testados pelo agente, rejeita os 3 degenerados); acrescentar esses 3 casos aos testes de
+não-afrouxamento dos 3 runtimes.
+
+Demais pontos do escopo (assimetria `C:\` fora do Windows, os 3 sítios de `continue`, D4/mensagem
+de til) avaliados e sem achado — detalhados no parecer. Handoff para `trackfw_architect`. Nenhuma
+operação de git executada.
+
+## 2026-09-04 — `apolo-tf` — ML-3B: fecha a ressalva do parecer hades sobre `pathIsAnchoredForHookConfig` (UNC degenerado)
+
+Branch `fix/grupos-de-falha-de-windows-por-causa-raiz` (árvore suja, seguindo em cima do ML-3A).
+Escopo fechado: a ressalva do parecer `~/.trackfw/rascunhos/2026-09-04-parecer-hades-ml3a-ancoragem.md`
+— o braço UNC do predicado aceitava qualquer string começando com `\\`, sem exigir um segmento de
+share real (`"\\"`, `"\\x"`, `"\\..\\evil"` eram classificados ancorados; deveriam ser
+cwd-dependent).
+
+**Correção aplicada (byte-idêntica nos 3 runtimes) — a fórmula literal do parecer não fecha o
+caso 3, sob NENHUMA leitura da notação.** O terceiro exemplo do parecer (`"\\..\\evil"`) é
+ambíguo — pode ser lido com 3 barras invertidas totais (`\\` + `..` + `\` + `evil`, servidor `..`,
+1 separador) ou com 4 (`\\` + `..` + `\\` + `evil`, servidor `..`, share vazio por barra dupla no
+meio). Testei as duas leituras com TDD (escrevi o teste antes de implementar) contra a fórmula
+sugerida no parecer (`strings.Count(raw[2:], "\\") >= 1`): ela **aceita ambas** como UNC válido
+(Count=1 na leitura de 3 barras, Count=2 na de 4) — a fórmula do parecer está incorreta para as
+duas decodificações possíveis do próprio exemplo que ela deveria fechar. Implementei em vez disso:
+corte em dois segmentos (servidor / share) pelo primeiro `\` remanescente, exigindo servidor não
+vazio **e diferente de `"."` e `".."`** (não são hostname válido) e share não vazio que não comece
+com outro `\` (evita componente vazio quando há barra dupla). Essa checagem fecha as duas leituras
+simultaneamente sem precisar decidir qual é a "correta" — `server != ".."` rejeita a leitura de 3
+barras, `share[0] != '\\'` rejeita a de 4. Go usa `strings.Cut`; Node usa `indexOf` + `slice`;
+Python usa `str.find` + slice — mesma lógica, zero chamada dependente de SO nos 3 corpos
+(confirmado por grep: nenhum `filepath.Separator`/`path.sep`/`os.sep`/`IsAbs`/`isAbsolute`/`isabs`
+dentro do predicado).
+
+**Arquivos alterados:**
+- `internal/validator/validator_credential_guard.go` (predicado) e
+  `internal/validator/validator_credential_guard_test.go` (4 casos novos em
+  `TestPathIsAnchoredForHookConfig_NaoAfrouxamento` — `\\`, `\\x`, `\\..\evil` [3 barras],
+  `\\..\\evil` [4 barras] — + `//servidor/share/guard.sh` em `_Ancorado`).
+- `npm/src/validator/index.js` (predicado, arquivo classificado binário pelo `file` — editado via
+  Read/Edit normalmente, sem problema) e `npm/tests/validator.test.js` (mesmos 4 casos).
+- `pypi/trackfw/validator.py` (predicado) e `pypi/tests/test_validator.py` (mesmos 4 casos).
+
+**Falsificação nas duas direções, medida, para as DUAS leituras do caso 3:**
+- Antes da correção (código antigo, prefixo `\\` sozinho): os 4 casos degenerados classificavam
+  `true` nos 3 runtimes — confirma o afrouxamento da ressalva.
+- Com a fórmula literal do parecer (`Count(raw[2:], "\\") >= 1`, testada e descartada): ambas as
+  leituras de `\\..\evil`/`\\..\\evil` continuavam `true` — a fórmula sugerida não fecha o caso 3
+  em nenhuma decodificação; documentado como premissa do handoff que a medição derrubou.
+- Depois da correção final (server ∉ {`.`, `..`} + share não vazio sem `\` inicial): os 4 casos
+  (`\\`, `\\x`, `\\..\evil`, `\\..\\evil`) → `false` nos 3 runtimes; `\\servidor\share\guard.sh` e
+  `\\srv\y.sh` → seguem `true`; `//servidor/share/guard.sh` (UNC em forma POSIX) → `true`,
+  inalterado, coberto pelo braço `raw[0]=='/'`, não pelo braço UNC.
+- Go: `go test ./internal/validator/... -run PathIsAnchoredForHookConfig -v` → 3/3 PASS; suíte
+  completa `go test ./...` → todos os pacotes ok.
+- Node: `node --test tests/validator.test.js` → 103 passed, 0 failed.
+- Python: `pytest tests/test_validator.py -k path_is_anchored` → 3 passed; suíte completa
+  `pytest tests/` → 1617 passed.
+
+**Gates rodados (execução final, pós-correção do server ∉ {".", ".."}):** `go build ./...` limpo ·
+`go vet ./...` limpo · `go test ./...` verde (todos os pacotes) ·
+`scripts/check-validate-parity.sh` verde, rodado 2x (nenhum fixture cross-CLI pinava a forma
+antiga desta vez — só ML-3A tinha esse problema) · `scripts/check-gates-falsify.sh` verde, rodado
+2x em background (primeira: 58 OK/0 FAIL; segunda, pós-correção: 359 OK/0 FAIL) ·
+`make quality > quality2.txt 2>&1; echo "QUALITY_EXIT=$?"` → **`QUALITY_EXIT=0`**, sem ocorrência
+de `FAIL`/erro de lint nos ~3700 linhas de saída (rodado em background, ~13min, seguindo a nota de
+memória de não pipear a captura do exit code) · `./bin/trackfw validate` → exit 0 (só os 22
+warnings pré-existentes de ADR/REQ órfão, nenhum novo).
+
+**Duas premissas do handoff que a medição derrubou** (a segunda só apareceu na auditoria do
+advisor, não na minha primeira passada — registrado para o próximo leitor não reabrir): (1) a
+fórmula de correção sugerida literalmente no parecer (`strings.Count(raw[2:], "\\") >= 1`) não
+fecha o caso `\\..\evil`/`\\..\\evil` em nenhuma das duas leituras possíveis da notação ambígua do
+exemplo; (2) minha primeira implementação (exigir só servidor não vazio + share não vazio sem `\`
+inicial) fechava uma leitura do caso 3 mas não a outra — só ao testar as duas decodificações
+explicitamente lado a lado (servidor `∉ {".", ".."}` + share não vazio sem `\` inicial) o
+predicado ficou robusto à ambiguidade da notação em si, não a uma escolha específica dela.
+
+Escopo negativo respeitado: não toquei nos 14 sítios fora de escopo, nem nos ramos POSIX/letra de
+unidade/til/`$PWD`, nem nas mensagens D4. Devolvo a árvore suja para auditoria do
+`trackfw_architect`. Nenhuma operação de git executada.

@@ -442,6 +442,96 @@ func guardEntryGeminiSettings(scriptCmd string) string {
 `
 }
 
+// TestPathIsAnchoredForHookConfig_Ancorado — falsificação direção 1 (ADR-2026-09-04, "Verificação
+// exigida"): formas POSIX e Windows que o predicado deve classificar como ANCORADO, sem depender
+// de GOOS. É o caso que ERA classificado errado no Windows via filepath.IsAbs (ML-3A).
+func TestPathIsAnchoredForHookConfig_Ancorado(t *testing.T) {
+	cases := []string{
+		"/opt/foo/guard.sh",                  // POSIX absoluto — o caso do ADR
+		"/absolute/path/to/guard.sh",
+		"/",
+		`C:\Users\kg\scripts\guard.sh`,       // letra de unidade, barra invertida
+		`C:/Users/kg/scripts/guard.sh`,       // letra de unidade, barra normal
+		`z:\scripts\guard.sh`,                // minúscula
+		`\\servidor\share\guard.sh`,          // UNC
+		`\\srv\y.sh`,
+		`//servidor/share/guard.sh`,          // UNC em forma POSIX (2 barras normais) — coberto pelo braço raw[0]=='/', não pelo braço UNC de barra invertida; veredito não pode mudar com a correção da ressalva
+	}
+	for _, raw := range cases {
+		if !pathIsAnchoredForHookConfig(raw) {
+			t.Errorf("pathIsAnchoredForHookConfig(%q) = false, quero true (ancorado)", raw)
+		}
+	}
+}
+
+// TestPathIsAnchoredForHookConfig_NaoAfrouxamento — falsificação direção 2 e controle de
+// não-afrouxamento (ADR-2026-09-04): NENHUMA forma relativa deve entrar no conjunto "ancorado".
+// É o critério principal do ML-3A — afrouxar aqui enfraqueceria a detecção de guard ausente.
+func TestPathIsAnchoredForHookConfig_NaoAfrouxamento(t *testing.T) {
+	cases := []string{
+		"scripts/guard.sh",       // relativo puro — o caso do ADR que DEVE continuar classe 2
+		"./scripts/guard.sh",
+		"../scripts/guard.sh",
+		"guard.sh",
+		"",
+		"~/scripts/guard.sh",     // til não é reconhecido por este predicado — tratado à parte
+		"$PWD/scripts/guard.sh",
+		"C",                      // letra sozinha, sem ":" — não é forma de unidade
+		"C:",                     // sem separador após ":" — não é forma de unidade completa
+		"C:foo",                  // sem separador — caminho relativo à unidade corrente no Windows, não ancorado por este predicado
+		`\scripts\guard.sh`,      // uma única barra invertida — não é UNC (precisa de duas)
+		"1:\\scripts\\guard.sh",  // dígito antes de ":" não é letra de unidade válida
+		`\\`,                     // UNC degenerado: só o prefixo, sem servidor nem share (ressalva hades ML-3A)
+		`\\x`,                    // UNC degenerado: servidor sem separador de share
+		`\\..\evil`,              // UNC degenerado (leitura 3-barras): servidor "..", não é hostname válido
+		`\\..\\evil`,             // UNC degenerado (leitura 4-barras): servidor "..", e share vazio (barra dupla no meio) — notação do parecer é ambígua entre as duas, ambas cobertas
+	}
+	for _, raw := range cases {
+		if pathIsAnchoredForHookConfig(raw) {
+			t.Errorf("pathIsAnchoredForHookConfig(%q) = true, quero false — não deve afrouxar para forma relativa", raw)
+		}
+	}
+}
+
+// TestPathIsAnchoredForHookConfig_ControlePOSIX — controle POSIX exigido pela ADR: em
+// Linux/macOS, a classificação de TODOS os casos que o predicado antigo (filepath.IsAbs) já
+// classificava como ancorado permanece idêntica. Mede antes (comportamento documentado de
+// filepath.IsAbs em POSIX) e depois (pathIsAnchoredForHookConfig) para o mesmo conjunto.
+func TestPathIsAnchoredForHookConfig_ControlePOSIX(t *testing.T) {
+	posixAbsoluteCases := []string{
+		"/opt/foo/guard.sh",
+		"/absolute/path/to/guard.sh",
+		"/",
+		"/a",
+	}
+	for _, raw := range posixAbsoluteCases {
+		before := filepath.IsAbs(raw) // comportamento de referência em POSIX (roda em macOS/Linux)
+		after := pathIsAnchoredForHookConfig(raw)
+		if before != after {
+			t.Errorf("controle POSIX quebrado para %q: filepath.IsAbs=%v, pathIsAnchoredForHookConfig=%v", raw, before, after)
+		}
+		if !after {
+			t.Errorf("pathIsAnchoredForHookConfig(%q) = false em caso POSIX absoluto, quero true", raw)
+		}
+	}
+	posixRelativeCases := []string{
+		"scripts/guard.sh",
+		"./scripts/guard.sh",
+		"../scripts/guard.sh",
+		"guard.sh",
+	}
+	for _, raw := range posixRelativeCases {
+		before := filepath.IsAbs(raw)
+		after := pathIsAnchoredForHookConfig(raw)
+		if before != after {
+			t.Errorf("controle POSIX quebrado para %q: filepath.IsAbs=%v, pathIsAnchoredForHookConfig=%v", raw, before, after)
+		}
+		if after {
+			t.Errorf("pathIsAnchoredForHookConfig(%q) = true em caso POSIX relativo, quero false", raw)
+		}
+	}
+}
+
 // TestClassifyHookAnchorage_Classe1_Ancorado — classifyHookAnchorage retorna classe 1 para todas
 // as formas ancoradas (variáveis de projeto, forma do Codex, caminho absoluto, ~/… sem aspas).
 func TestClassifyHookAnchorage_Classe1_Ancorado(t *testing.T) {
@@ -457,6 +547,11 @@ func TestClassifyHookAnchorage_Classe1_Ancorado(t *testing.T) {
 		// ~/… sem aspas: tilde expande para $HOME em qualquer shell POSIX — ancorado.
 		{"~/scripts/trackfw-credential-guard.sh", false},
 		{"~/.trackfw/scripts/trackfw-credential-guard.sh", false},
+		// ADR-2026-09-04: letra de unidade e UNC são ancoradas por UNIÃO, independente do GOOS
+		// de quem roda o validator — o caminho vive num config lido pelo bash, e para o bash
+		// tanto "/opt/..." quanto "C:\..." (via Git Bash) são caminhos que não dependem do cwd.
+		{`C:\Users\kg\scripts\guard.sh`, false},
+		{`\\servidor\share\guard.sh`, false},
 	}
 	for _, tc := range cases {
 		got := classifyHookAnchorage(tc.raw, tc.wasQuoted)
@@ -762,12 +857,44 @@ func TestCwdDependentReason_PwdEmQualquerPosicao(t *testing.T) {
 		"./scripts/guard.sh",
 		"../scripts/guard.sh",
 		"scripts/guard.sh",
-		"~/scripts/guard.sh", // ~/… aspeado cai aqui (sem $PWD)
 	}
 	for _, raw := range bareCases {
 		reason := cwdDependentReason(raw)
 		if !strings.Contains(reason, "bare relative path") {
 			t.Errorf("cwdDependentReason(%q) deve conter 'bare relative path', obteve: %q", raw, reason)
+		}
+	}
+}
+
+// TestCwdDependentReason_Til — D4 da ADR-2026-09-04: "~/…" (chega aqui já sem aspas, cuja
+// presença original é o invariante que distingue esta forma da classe 1 — ver comentário de
+// cwdDependentReason) recebe a mensagem de "quoted tilde path"; "~usuario/…" recebe a mensagem
+// de "named-user tilde path". Nenhuma das duas recebe mais "bare relative path" — achado do
+// ML-2B: a frase antiga não nomeava a causa real de nenhuma das duas formas.
+func TestCwdDependentReason_Til(t *testing.T) {
+	quotedTildeCases := []string{
+		"~/scripts/guard.sh", // forma que chega aqui só pode ter vindo de "~/…" aspeado
+	}
+	for _, raw := range quotedTildeCases {
+		reason := cwdDependentReason(raw)
+		if !strings.Contains(reason, "quoted tilde path") {
+			t.Errorf("cwdDependentReason(%q) deve conter 'quoted tilde path', obteve: %q", raw, reason)
+		}
+		if strings.Contains(reason, "bare relative path") {
+			t.Errorf("cwdDependentReason(%q) NÃO deve conter 'bare relative path', obteve: %q", raw, reason)
+		}
+	}
+	namedUserTildeCases := []string{
+		"~alice/scripts/guard.sh",
+		`~bob/scripts/guard.sh`,
+	}
+	for _, raw := range namedUserTildeCases {
+		reason := cwdDependentReason(raw)
+		if !strings.Contains(reason, "named-user tilde path") {
+			t.Errorf("cwdDependentReason(%q) deve conter 'named-user tilde path', obteve: %q", raw, reason)
+		}
+		if strings.Contains(reason, "bare relative path") {
+			t.Errorf("cwdDependentReason(%q) NÃO deve conter 'bare relative path', obteve: %q", raw, reason)
 		}
 	}
 }
@@ -791,7 +918,8 @@ func TestCredentialGuardHookResolvable_TildeSemAspas_Silencioso(t *testing.T) {
 }
 
 // TestCredentialGuardHookResolvable_TildeComAspas_Acusado — ML-4A: "~/…" aspeado é classe 2
-// (tilde NÃO expande dentro de aspas duplas). Deve gerar violação com mensagem "bare relative path".
+// (tilde NÃO expande dentro de aspas duplas). Deve gerar violação com mensagem "quoted tilde
+// path" (D4 da ADR-2026-09-04, achado do ML-2B — "bare relative path" não nomeava a causa real).
 func TestCredentialGuardHookResolvable_TildeComAspas_Acusado(t *testing.T) {
 	dir := t.TempDir()
 	chdir(t, dir)
@@ -813,8 +941,8 @@ func TestCredentialGuardHookResolvable_TildeComAspas_Acusado(t *testing.T) {
 	if err != nil {
 		t.Fatalf("validateCredentialGuardHookResolvable() erro: %v", err)
 	}
-	if !hasViolation(msgs, "bare relative path") {
-		t.Errorf("ML-4A: \"~/…\" aspeado (classe 2) deve ser acusado com 'bare relative path', obteve: %v", msgs)
+	if !hasViolation(msgs, "quoted tilde path") {
+		t.Errorf("ML-4A: \"~/…\" aspeado (classe 2) deve ser acusado com 'quoted tilde path', obteve: %v", msgs)
 	}
 }
 

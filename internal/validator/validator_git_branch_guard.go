@@ -164,7 +164,13 @@ func validateGuardGlobalHookResolvable(ruleName, scriptMarker string) ([]string,
 			}
 			seen[seenKey] = true
 
-			if !filepath.IsAbs(m.raw) {
+			// ADR-2026-09-04-caminho-posix-ancorado-...: o consumidor deste comando é o CLI do
+			// agente (que o repassa a bash), não o filesystem do processo Go — pathIsAnchoredForHookConfig
+			// classifica por ancoragem (POSIX "/", letra de unidade, UNC), NÃO por filepath.IsAbs, que
+			// no Windows devolve false para "/opt/foo/guard.sh" e faria este `continue` pular a entrada
+			// inteira — no Windows, uma entrada de config global com comando absoluto POSIX nunca
+			// seria verificada.
+			if !pathIsAnchoredForHookConfig(m.raw) {
 				continue
 			}
 

@@ -829,7 +829,13 @@ with open('$CG_TMP_CLEAN/cg-cursor-pwd/.cursor/hooks.json', 'w') as f:
 #                         portanto não inspeciona o filesystem; silêncio é real.
 #
 # cg-claude-tilde-quoted — "~/scripts/…" com aspas → classe 2 (tilde NÃO expande
-#                           dentro de aspas duplas) → acusar com "bare relative path".
+#                           dentro de aspas duplas) → acusar com "quoted tilde path"
+#                           (D4 da ADR-2026-09-04, achado do ML-2B).
+#
+# cg-claude-tilde-user   — ~alice/scripts/… (nomeado) → classe 2 (expande em POSIX
+#                           mas para outro usuário, não o $HOME do agente — indecidível
+#                           sem executar shell) → acusar com "named-user tilde path"
+#                           (D4 da ADR-2026-09-04, achado do ML-2B).
 #
 # cg-claude-pwd-braced   — ${PWD}/scripts/… → classe 2 (mesma semântica de $PWD/…;
 #                           PWD é mandado pelo POSIX, sempre o cwd) → acusar com
@@ -837,6 +843,10 @@ with open('$CG_TMP_CLEAN/cg-cursor-pwd/.cursor/hooks.json', 'w') as f:
 #
 # cg-claude-sh-c-pwd     — sh -c "$PWD/scripts/…" → classe 2 (cwd-dependent) e
 #                           mensagem do $PWD (Contains, não HasPrefix) → acusar.
+#
+# cg-claude-windows-drive — C:\Users\kg\scripts\… → classe 1 (letra de unidade é
+#                           ANCORADA por união, independente do GOOS de quem roda
+#                           o validator — ADR-2026-09-04, D1) → silencioso.
 # ---------------------------------------------------------------------------
 
 # cg-claude-tilde: ~/scripts/… (sem aspas) → classe 1 → silencioso.
@@ -853,7 +863,8 @@ _validate_fixture_json "$CG_TMP_CLEAN/cg-claude-tilde/.claude/settings.json" \
   '~/scripts/trackfw-credential-guard.sh'
 
 # cg-claude-tilde-quoted: "~/scripts/…" (com aspas externas no valor JSON) → classe 2
-# (tilde não expande dentro de aspas duplas) → acusar com "bare relative path".
+# (tilde não expande dentro de aspas duplas) → acusar com "quoted tilde path"
+# (D4 da ADR-2026-09-04, achado do ML-2B).
 mkdir -p "$CG_TMP_CLEAN/cg-claude-tilde-quoted/.claude"
 python3 -c "
 import json
@@ -863,6 +874,19 @@ with open('$CG_TMP_CLEAN/cg-claude-tilde-quoted/.claude/settings.json', 'w') as 
 "
 _validate_fixture_json "$CG_TMP_CLEAN/cg-claude-tilde-quoted/.claude/settings.json" \
   '"~/scripts/trackfw-credential-guard.sh"'
+
+# cg-claude-tilde-user: ~alice/scripts/… (nomeado, sem aspas) → classe 2 (~user/ expande em POSIX
+# mas para OUTRO usuário, não $HOME do agente — indecidível sem executar shell, não relativo) →
+# acusar com "named-user tilde path" (D4 da ADR-2026-09-04, achado do ML-2B).
+mkdir -p "$CG_TMP_CLEAN/cg-claude-tilde-user/.claude"
+python3 -c "
+import json
+d = {'hooks': {'PreToolUse': [{'matcher': 'Bash', 'hooks': [{'type': 'command', 'command': '~alice/scripts/trackfw-credential-guard.sh'}]}]}}
+with open('$CG_TMP_CLEAN/cg-claude-tilde-user/.claude/settings.json', 'w') as f:
+    json.dump(d, f)
+"
+_validate_fixture_json "$CG_TMP_CLEAN/cg-claude-tilde-user/.claude/settings.json" \
+  '~alice/scripts/trackfw-credential-guard.sh'
 
 # cg-claude-pwd-braced: \${PWD}/scripts/… → classe 2 → acusar com mensagem do $PWD.
 mkdir -p "$CG_TMP_CLEAN/cg-claude-pwd-braced/.claude"
@@ -887,6 +911,23 @@ with open('$CG_TMP_CLEAN/cg-claude-sh-c-pwd/.claude/settings.json', 'w') as f:
 _validate_fixture_json "$CG_TMP_CLEAN/cg-claude-sh-c-pwd/.claude/settings.json" \
   'sh -c "$PWD/scripts/trackfw-credential-guard.sh"'
 
+# cg-claude-windows-drive: C:\Users\kg\scripts\… → classe 1 (letra de unidade é ANCORADA por
+# união, independente do GOOS de quem roda o validator — ADR-2026-09-04-caminho-posix-ancorado-
+# num-config-lido-por-cli-de-agente-e-absoluto-independente-do-so-host, D1) → silencioso.
+# É o teste de integração que falsifica o defeito do ML-3A: antes desta ADR, filepath.IsAbs /
+# path.isAbsolute / os.path.isabs classificavam esta forma como relativa NO WINDOWS, e o
+# validator emitia violation de guard onde não deveria — o controle POSIX exige que aqui,
+# em macOS/Linux, a forma continue silenciosa (mesmo veredito que teria em POSIX de qualquer jeito).
+mkdir -p "$CG_TMP_CLEAN/cg-claude-windows-drive/.claude"
+python3 -c "
+import json
+d = {'hooks': {'PreToolUse': [{'matcher': 'Bash', 'hooks': [{'type': 'command', 'command': r'C:\Users\kg\scripts\trackfw-credential-guard.sh'}]}]}}
+with open('$CG_TMP_CLEAN/cg-claude-windows-drive/.claude/settings.json', 'w') as f:
+    json.dump(d, f)
+"
+_validate_fixture_json "$CG_TMP_CLEAN/cg-claude-windows-drive/.claude/settings.json" \
+  'C:\Users\kg\scripts\trackfw-credential-guard.sh'
+
 run_cg() {
   local output=$1 dir=$2
   shift 2
@@ -896,7 +937,7 @@ run_cg() {
   set -e
 }
 
-for cg_fixture in cg-claude-absent cg-claude-present cg-cursor-absent cg-cursor-present cg-claude-noexec cg-claude-notype cg-claude-relativo cg-copilot-relativo-present cg-claude-pwd cg-claude-pwd-quoted cg-claude-absoluto cg-claude-outra-var cg-claude-git-toplevel cg-cursor-pwd cg-claude-tilde cg-claude-tilde-quoted cg-claude-pwd-braced cg-claude-sh-c-pwd; do
+for cg_fixture in cg-claude-absent cg-claude-present cg-cursor-absent cg-cursor-present cg-claude-noexec cg-claude-notype cg-claude-relativo cg-copilot-relativo-present cg-claude-pwd cg-claude-pwd-quoted cg-claude-absoluto cg-claude-outra-var cg-claude-git-toplevel cg-cursor-pwd cg-claude-tilde cg-claude-tilde-quoted cg-claude-tilde-user cg-claude-pwd-braced cg-claude-sh-c-pwd cg-claude-windows-drive; do
   run_cg "$CG_TMP_CLEAN/$cg_fixture-go.json"   "$CG_TMP_CLEAN/$cg_fixture" "$GO_BIN" validate --json
   run_cg "$CG_TMP_CLEAN/$cg_fixture-node.json" "$CG_TMP_CLEAN/$cg_fixture" node "$ROOT_DIR/npm/bin/trackfw" validate --json
   run_cg "$CG_TMP_CLEAN/$cg_fixture-py.json"   "$CG_TMP_CLEAN/$cg_fixture" env PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw validate --json
@@ -923,6 +964,12 @@ CG_MARKER_NOEXEC = "not executable"
 CG_MARKER_NOTYPE = 'missing "type":"command"'
 CG_MARKER_BARE   = "with a bare relative path"
 CG_MARKER_PWD    = "with a $PWD path"
+# D4 da ADR-2026-09-04-caminho-posix-ancorado-...: "~/…" aspeado deixou de dizer
+# "bare relative path" (achado do ML-2B: a frase não nomeava a causa real —
+# aspas impedindo a expansão do til, não relatividade) e passou a dizer
+# "quoted tilde path".
+CG_MARKER_TILDE_QUOTED = "with a quoted tilde path"
+CG_MARKER_TILDE_USER   = "with a named-user tilde path"
 
 
 def load(name):
@@ -967,12 +1014,17 @@ cases = {
     # ROADMAP-2026-08-22 ML-4A: achados da barreira ML-3A (Hades).
     # ~/… sem aspas → classe 1 (tilde expande para $HOME) → silencioso:
     "claude-tilde":        ("cg-claude-tilde-{}.json",        False, None),
-    # "~/…" com aspas → classe 2 (tilde não expande em aspas duplas) → bare relative:
-    "claude-tilde-quoted": ("cg-claude-tilde-quoted-{}.json", True,  CG_MARKER_BARE),
+    # "~/…" com aspas → classe 2 (tilde não expande em aspas duplas) → D4 da
+    # ADR-2026-09-04: "quoted tilde path" (não mais "bare relative path"):
+    "claude-tilde-quoted": ("cg-claude-tilde-quoted-{}.json", True,  CG_MARKER_TILDE_QUOTED),
+    "claude-tilde-user":   ("cg-claude-tilde-user-{}.json",   True,  CG_MARKER_TILDE_USER),
     # ${PWD}/… → classe 2 → mensagem do $PWD:
     "claude-pwd-braced":   ("cg-claude-pwd-braced-{}.json",   True,  CG_MARKER_PWD),
     # sh -c "$PWD/…" → classe 2 → mensagem do $PWD (contains, não startsWith):
     "claude-sh-c-pwd":     ("cg-claude-sh-c-pwd-{}.json",     True,  CG_MARKER_PWD),
+    # ADR-2026-09-04 (ML-3A): letra de unidade do Windows → classe 1 (ancorado por união,
+    # independente do GOOS) → silencioso. Falsifica o defeito do ML-3A nos 3 CLIs.
+    "claude-windows-drive": ("cg-claude-windows-drive-{}.json", False, None),
 }
 
 for label, (pattern, expect_violation, msg_marker) in cases.items():
@@ -1019,12 +1071,12 @@ print(
     "claude-noexec/claude-notype/claude-relativo/copilot-relativo-present/"
     "claude-pwd/claude-pwd-quoted/claude-absoluto/claude-git-toplevel/"
     "claude-outra-var/cursor-pwd/"
-    "claude-tilde/claude-tilde-quoted/claude-pwd-braced/claude-sh-c-pwd, "
+    "claude-tilde/claude-tilde-quoted/claude-tilde-user/claude-pwd-braced/claude-sh-c-pwd/claude-windows-drive, "
     "byte-identical across 3 CLIs)"
 )
 PY
 
-echo "Validate JSON parity checks passed (credential_guard_hook_resolvable cross-CLI: claude-absent detection / claude-present baseline / cursor-absent relative-branch live / cursor-present false-positive guard / claude-noexec not-executable detection / claude-notype missing-type-command detection / claude-relativo bare-relative-path detection / copilot-relativo-present false-positive guard / claude-pwd \$PWD-class2-detected / claude-pwd-quoted quoted-\$PWD-class2-detected / claude-absoluto absolute-class1-silent / claude-git-toplevel git-toplevel-class1-silent / claude-outra-var other-var-class3-silent / cursor-pwd cursor-\$PWD-silent / claude-tilde tilde-class1-silent / claude-tilde-quoted quoted-tilde-class2-bare-relative / claude-pwd-braced \${PWD}-class2-pwd-msg / claude-sh-c-pwd sh-c-\$PWD-class2-pwd-msg)"
+echo "Validate JSON parity checks passed (credential_guard_hook_resolvable cross-CLI: claude-absent detection / claude-present baseline / cursor-absent relative-branch live / cursor-present false-positive guard / claude-noexec not-executable detection / claude-notype missing-type-command detection / claude-relativo bare-relative-path detection / copilot-relativo-present false-positive guard / claude-pwd \$PWD-class2-detected / claude-pwd-quoted quoted-\$PWD-class2-detected / claude-absoluto absolute-class1-silent / claude-git-toplevel git-toplevel-class1-silent / claude-outra-var other-var-class3-silent / cursor-pwd cursor-\$PWD-silent / claude-tilde tilde-class1-silent / claude-tilde-quoted quoted-tilde-class2-quoted-tilde-msg / claude-tilde-user named-user-tilde-class2-named-user-msg / claude-pwd-braced \${PWD}-class2-pwd-msg / claude-sh-c-pwd sh-c-\$PWD-class2-pwd-msg / claude-windows-drive windows-drive-class1-silent)"
 
 # ---------------------------------------------------------------------------
 # ROADMAP-2026-08-21-validate-detecta-hook-de-guard-na-forma-relativa-antiga,
