@@ -347,6 +347,312 @@ Add-Result -Item "11" -Title "12 testes de symlink sem privilegio (5 Python, 5 N
     -Detail "Ja exposto por go test ./..., npm test e pytest pypi/tests (camada 1, job windows-full-suites) — sao os proprios arquivos de teste da suite. O skip explicito com mensagem nomeando a garantia nao exercitada e a Wave 2 (ML-2A), fora do escopo desta ML."
 
 # ---------------------------------------------------------------------
+# item 12 — SONDA OBSERVACIONAL (ML-0B, NAO e da issue #216)
+#
+# Separa as duas ramificacoes que sobraram da investigacao do grupo B
+# (50 testes Python que lancam `bash` e falham com exit 1 e stderr vazio;
+# ver docs/qualidade/2026-09-04-grupo-b-bash-do-python-em-windows.md):
+#
+#   (A) o `bash` que o Python lanca NUNCA executa o script  -> harness
+#   (B) o script morre entre `set -euo pipefail` e a guarda -> SEGURANCA
+#
+# Por que a sonda IMPRIME stdout: das assinaturas testadas, a unica que
+# reproduz `rc=1` com `stderr` vazio e "algo saiu 1 falando por stdout" —
+# e stdout e exatamente o canal que os 50 testes descartam (`_out`).
+# Repetir o que os testes fazem mediria o mesmo nada.
+#
+# NAO CORRIGE nada. Nenhum teste e tocado.
+# ---------------------------------------------------------------------
+
+# 12a — qual `bash` o Windows resolve, e em que ordem (where.exe lista TODAS
+# as ocorrencias). Fora do processo Python de proposito: e a ordem do PATH do
+# runner, o contraponto ao que o CreateProcess do CPython faz.
+$r12where = Run-Capture -Exe "where.exe" -ArgList @("bash")
+$r12whereExe = Run-Capture -Exe "where.exe" -ArgList @("bash.exe")
+
+# 12b/12c/12d — corpo Python em ARQUIVO (here-string), nunca em `python -c`
+# multilinha. Here-string SINGLE-quoted (@'...'@): o corpo contem `$0`,
+# `$BASH_VERSION` e `>&2`, que uma here-string dupla interpolaria como
+# variavel de PowerShell (vault: powershell-modo-argumento-nao-interpola-
+# nem-divide-2026-08-31).
+$item12Probe = Join-Path $env:RUNNER_TEMP "item12-probe.py"
+@'
+# Sonda ML-0B — ITEM 12. Observacional: mede, nao corrige.
+# Todo texto medido sai por ascii(): repr() de str preserva nao-ASCII e
+# morreria no stdout cp1252 do runner (item 1 desta mesma suite).
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+
+# 2000, nao 400: sob (A) o texto que sai por stdout e a UNICA coisa que NOMEIA
+# quem atendeu por 'bash' (ex.: a mensagem do stub do WSL). A mensagem do proprio
+# guard ja mede ~380 chars — cortar em 400 arriscaria decapitar a evidencia.
+MAX = 2000
+
+
+def emit(key, value):
+    print("ITEM12 " + key + "=" + str(value))
+
+
+def cut(text):
+    return ascii((text or "")[:MAX])
+
+
+def run(argv, **kwargs):
+    try:
+        p = subprocess.run(argv, capture_output=True, text=True, **kwargs)
+        return {"rc": p.returncode, "out": p.stdout or "", "err": p.stderr or "", "exc": None}
+    except Exception as exc:
+        return {"rc": None, "out": "", "err": "", "exc": repr(exc)}
+
+
+# ---- 12a (lado Python) — o que o proprio CPython enxerga -------------
+emit("py_executable", ascii(sys.executable))
+emit("py_version", ascii(sys.version.replace("\n", " ")))
+path_entries = [e for e in os.environ.get("PATH", "").split(os.pathsep) if e]
+emit("path_head", ascii(path_entries[:10]))
+emit("shutil_which_bash", ascii(shutil.which("bash")))
+
+# shutil.which varre o %PATH% na ordem do PATH — que e PRECISAMENTE a ordem
+# que a hipotese (A) diz nao ser a usada pelo CreateProcess com
+# lpApplicationName=NULL. Por isso um unico which() NAO serve de braco
+# "caminho absoluto": se ele devolver o mesmo binario que o nome nu resolve,
+# a comparacao volta "identica" sem provar nada. Enumeramos TODOS os
+# candidatos do PATH e exercitamos cada um.
+candidates = []
+for entry in path_entries:
+    for name in ("bash.exe", "bash"):
+        cand = os.path.join(entry, name)
+        if os.path.isfile(cand) and cand not in candidates:
+            candidates.append(cand)
+# Locais canonicos fora do %PATH%: no Git for Windows o bash de `usr\bin` NAO
+# esta no PATH do runner, e o stub do WSL em System32 esta. Sem semear estes,
+# um INCONCLUSIVE diria "nenhum bash do %PATH% funciona" quando a resposta era
+# alcancavel — e a ML pede que a sonda nao devolva dado ambiguo.
+for extra in (r"C:\Program Files\Git\bin\bash.exe",
+              r"C:\Program Files\Git\usr\bin\bash.exe",
+              r"C:\Program Files\Git\usr\bin\bash",
+              r"C:\Windows\System32\bash.exe"):
+    if os.path.isfile(extra) and extra not in candidates:
+        candidates.append(extra)
+emit("bash_candidates", ascii(candidates))
+
+# ---- 12b — controle minimo: o Python consegue rodar QUALQUER coisa por
+# `bash`, pelo NOME NU, do jeito que os 50 testes lancam? stdout IMPRESSO.
+PROBE_CMD = "echo PROBE_OUT; echo PROBE_ERR >&2"
+bare = run(["bash", "-c", PROBE_CMD])
+emit("bare_rc", bare["rc"])
+emit("bare_out", cut(bare["out"]))
+emit("bare_err", cut(bare["err"]))
+emit("bare_exc", bare["exc"])
+
+# 12b-bis — o mesmo, com os dois canais fundidos no MESMO pipe. Se aparecer
+# texto aqui que nao apareceu acima, o canal e stdout (assinatura de (A)).
+merged = {"rc": None, "out": "", "exc": None}
+try:
+    p = subprocess.run(["bash", "-c", PROBE_CMD], stdout=subprocess.PIPE,
+                       stderr=subprocess.STDOUT, text=True)
+    merged["rc"] = p.returncode
+    merged["out"] = p.stdout or ""
+except Exception as exc:
+    merged["exc"] = repr(exc)
+emit("bare_merged_rc", merged["rc"])
+emit("bare_merged_out", cut(merged["out"]))
+emit("bare_merged_exc", merged["exc"])
+
+# 12b-ter — mesma medicao com redirecionamento para ARQUIVO em vez de pipe.
+# Alguns lancadores do Windows (o stub do WSL em System32 e o caso conhecido)
+# escrevem no console em vez dos handles redirecionados; se o arquivo tiver
+# conteudo que o pipe nao teve, o "nada" medido pelos testes e artefato do
+# pipe, e a resposta esta aqui.
+filearm = {"rc": None, "data": "", "exc": None}
+try:
+    tmp_out = os.path.join(tempfile.mkdtemp(), "item12-filearm.txt")
+    with open(tmp_out, "w", encoding="utf-8", errors="replace") as fh:
+        filearm["rc"] = subprocess.call(["bash", "-c", PROBE_CMD],
+                                        stdout=fh, stderr=subprocess.STDOUT)
+    with open(tmp_out, "r", encoding="utf-8", errors="replace") as fh:
+        filearm["data"] = fh.read()
+except Exception as exc:
+    filearm["exc"] = repr(exc)
+emit("bare_file_rc", filearm["rc"])
+emit("bare_file_data", cut(filearm["data"]))
+emit("bare_file_exc", filearm["exc"])
+
+# ---- identidade de cada candidato: e um GNU bash de verdade? ---------
+# Gate obrigatorio para poder falar em (B): so um bash PROVADO executando o
+# script e devolvendo 1 em silencio autoriza dizer "o script morre". Dois
+# nao-bash devolvendo 1 sao (A), nao (B) — e confundir os dois transformaria
+# um defeito de harness em alarme de seguranca.
+bare_ident = run(["bash", "--version"])
+emit("bare_version_rc", bare_ident["rc"])
+emit("bare_version_out", cut(bare_ident["out"]))
+emit("bare_version_err", cut(bare_ident["err"]))
+bare_is_bash = bare_ident["rc"] == 0 and "GNU bash" in (bare_ident["out"] or "")
+emit("bare_is_gnu_bash", bare_is_bash)
+
+# ---- 12c/12d — o script REAL, invocado como os 50 testes invocam -----
+# Fonte: pypi/tests/test_git_branch_guard.py::_run —
+#   subprocess.run(['bash', script], input=json.dumps(payload),
+#                  capture_output=True, text=True, cwd=tmpdir)
+# Unica diferenca: aqui stdout e IMPRESSO.
+sys.path.insert(0, os.environ.get("TRACKFW_PYPI_SRC", "pypi"))
+script = None
+workdir = None
+try:
+    from trackfw.generators.init_gen import _generate_git_branch_guard_script
+    workdir = tempfile.mkdtemp()
+    _generate_git_branch_guard_script(workdir)
+    script = os.path.join(workdir, "scripts", "trackfw-git-branch-guard.sh")
+    with open(os.path.join(workdir, "trackfw.yaml"), "w", encoding="utf-8") as fh:
+        fh.write("project_name: fixture\n")
+    emit("script_path", ascii(script))
+    emit("script_exists", os.path.isfile(script))
+    with open(script, "rb") as fh:
+        head = fh.read(120)
+    emit("script_head_bytes", ascii(head))
+    emit("script_has_crlf", b"\r\n" in head)
+except Exception as exc:
+    emit("script_setup_exc", repr(exc))
+
+PAYLOAD_BLOCK = json.dumps({"tool_input": {"command": "git push origin HEAD"}})
+PAYLOAD_NOOP = json.dumps({"tool_input": {"command": "git status"}})
+
+arms = []
+if script:
+    launchers = [("bare-name", "bash", bare_is_bash)]
+    for i, cand in enumerate(candidates):
+        ident = run([cand, "--version"])
+        is_bash = ident["rc"] == 0 and "GNU bash" in (ident["out"] or "")
+        emit("cand%d_path" % i, ascii(cand))
+        emit("cand%d_version_rc" % i, ident["rc"])
+        emit("cand%d_version_out" % i, cut(ident["out"]))
+        emit("cand%d_is_gnu_bash" % i, is_bash)
+        launchers.append(("cand%d" % i, cand, is_bash))
+
+    for label, exe, is_bash in launchers:
+        blk = run([exe, script], input=PAYLOAD_BLOCK, cwd=workdir)
+        nop = run([exe, script], input=PAYLOAD_NOOP, cwd=workdir)
+        emit("%s_block_rc" % label, blk["rc"])
+        emit("%s_block_out" % label, cut(blk["out"]))
+        emit("%s_block_err" % label, cut(blk["err"]))
+        emit("%s_block_exc" % label, blk["exc"])
+        emit("%s_noop_rc" % label, nop["rc"])
+        emit("%s_noop_out" % label, cut(nop["out"]))
+        emit("%s_noop_err" % label, cut(nop["err"]))
+        arms.append({
+            "label": label, "exe": exe, "is_bash": is_bash,
+            "block_rc": blk["rc"], "block_err": blk["err"], "block_out": blk["out"],
+            "noop_rc": nop["rc"],
+        })
+
+# Esperado (contrato do proprio script, medido no macOS e no Linux do CI):
+#   'git push origin HEAD' dentro de projeto -> rc 2 + mensagem em stderr
+#   'git status'                             -> rc 0 silencioso
+def is_expected(arm):
+    return arm["block_rc"] == 2 and arm["noop_rc"] == 0
+
+
+def is_silent_one(arm):
+    return arm["block_rc"] == 1 and not (arm["block_err"] or "").strip()
+
+
+bare_arm = None
+for arm in arms:
+    if arm["label"] == "bare-name":
+        bare_arm = arm
+cand_arms = [a for a in arms if a["label"] != "bare-name"]
+good = [a for a in cand_arms if a["is_bash"] and is_expected(a)]
+proven_silent = [a for a in cand_arms if a["is_bash"] and is_silent_one(a)]
+
+bare_control_ok = (bare["rc"] == 0 and "PROBE_OUT" in (bare["out"] or "")
+                   and "PROBE_ERR" in (bare["err"] or ""))
+emit("bare_control_ok", bare_control_ok)
+
+# ---- 12e — sob (B), qual LINHA mata o script? -----------------------
+# So faz sentido num bash PROVADO. Sob (A), um -x de nao-bash e ruido.
+trace_src = (proven_silent or good)
+if script and trace_src:
+    xarm = run([trace_src[0]["exe"], "-x", script], input=PAYLOAD_BLOCK, cwd=workdir)
+    emit("xtrace_exe", ascii(trace_src[0]["exe"]))
+    emit("xtrace_rc", xarm["rc"])
+    emit("xtrace_err_tail", ascii("\n".join((xarm["err"] or "").splitlines()[-25:])))
+else:
+    emit("xtrace_skipped", "nenhum GNU bash provado para tracar")
+
+# ---- Veredito -------------------------------------------------------
+if bare_arm is None:
+    verdict = "INCONCLUSIVE"
+    why = "o script nao pode ser gerado — nada foi invocado"
+elif is_expected(bare_arm):
+    verdict = "NOT-REPRODUCED"
+    why = "o nome nu 'bash' executou o script e devolveu o contrato (2/0): a falha dos 50 nao reproduz nesta sonda"
+elif not bare_control_ok:
+    verdict = "BRANCH-A"
+    why = "o nome nu 'bash' nem roda 'echo' pelo CPython: o processo que atende por 'bash' nao e um bash"
+elif good:
+    verdict = "BRANCH-A"
+    why = ("um bash PROVADO (%s) executa o script e devolve 2/0, enquanto o nome nu devolve rc=%s: "
+           "a divergencia esta na RESOLUCAO do executavel, nao no script"
+           % (ascii(good[0]["exe"]), bare_arm["block_rc"]))
+elif proven_silent:
+    verdict = "BRANCH-B"
+    why = ("um bash PROVADO (%s) executa o script e ele morre com rc=1 e stderr vazio: "
+           "o script morre sob invocacao legitima — vira SEGURANCA (fail-open silencioso)"
+           % ascii(proven_silent[0]["exe"]))
+else:
+    verdict = "INCONCLUSIVE"
+    why = ("nenhum candidato do PATH se provou GNU bash, entao rc=1 nao pode ser atribuido nem a "
+           "resolucao nem ao script sem ambiguidade")
+
+emit("VERDICT", verdict)
+emit("WHY", why)
+'@ | Set-Content -Path $item12Probe -Encoding utf8
+
+# PYTHONIOENCODING=utf-8: o item 1 (cp1252) esta VIVO nesta arvore e mataria a
+# sonda no primeiro print — mesma neutralizacao pontual dos itens 5 e 6, e pelo
+# mesmo motivo (nao mascarar a medicao atras do crash de outro defeito).
+# TRACKFW_PYPI_SRC entra em sys.path[0]: os 50 testes importam a arvore do repo,
+# nao a copia instalada por `pip install pypi/` — medir a copia errada mediria
+# outro codigo.
+$r12 = Run-Capture -Exe "python" -ArgList @($item12Probe) -WorkDir $repoRoot.Path `
+    -EnvVars @{ PYTHONIOENCODING = "utf-8"; TRACKFW_PYPI_SRC = $env:TRACKFW_PYPI_SRC }
+
+$item12Branch = if ($r12.Stdout -match "ITEM12 VERDICT=([A-Z0-9\-]+)") { $matches[1] } else { "SEM-VEREDITO" }
+
+$item12Detail = @"
+12a — where.exe bash (ordem de resolucao do Windows, TODAS as ocorrencias):
+exit=$($r12where.ExitCode)
+$($r12where.Stdout)$($r12where.Stderr)
+12a — where.exe bash.exe:
+exit=$($r12whereExe.ExitCode)
+$($r12whereExe.Stdout)$($r12whereExe.Stderr)
+
+12b/12c/12d/12e — medicoes do lado do CPython (stdout IMPRESSO):
+exit=$($r12.ExitCode)
+$($r12.Stdout)
+--- stderr da sonda ---
+$($r12.Stderr)
+Ramificacao medida: $item12Branch
+"@
+
+# Veredito mapeado para o vocabulario da suite: as duas ramificacoes sao
+# defeito confirmado (REPRODUCED) — a distincao (A)/(B) vive no Detail e no
+# titulo, porque o gate de saida da suite compara por igualdade com
+# "REPRODUCED" e um rotulo composto passaria despercebido.
+$item12Verdict = switch ($item12Branch) {
+    "BRANCH-A"       { "REPRODUCED" }
+    "BRANCH-B"       { "REPRODUCED" }
+    "NOT-REPRODUCED" { "ABSENT" }
+    default          { "INCONCLUSIVE" }
+}
+Add-Result -Item "12" -Title "SONDA ML-0B (fora da issue #216): exit 1 uniforme do bash lancado pelo Python — (A) resolucao do executavel vs (B) o script morre no cabecalho [medido: $item12Branch]" `
+    -Verdict $item12Verdict -Detail $item12Detail
+
+# ---------------------------------------------------------------------
 # Sumario
 # ---------------------------------------------------------------------
 Write-Host ""

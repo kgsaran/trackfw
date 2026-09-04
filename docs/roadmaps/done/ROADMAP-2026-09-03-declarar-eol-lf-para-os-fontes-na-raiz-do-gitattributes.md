@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-03
 squad: hefesto-tf
 req: "docs/req/REQ-2026-09-03-a-raiz-do-gitattributes-nao-declara-eol-para-os-fontes-e-217-arquivos-go-chegam-em-crlf-no-windows.md"
@@ -7,7 +7,7 @@ req: "docs/req/REQ-2026-09-03-a-raiz-do-gitattributes-nao-declara-eol-para-os-fo
 
 # Roadmap: Declarar `eol=lf` para os fontes na raiz do `.gitattributes`
 
-> Criado em: 2026-09-03 | Status: wip
+> Criado em: 2026-09-03 | Status: done
 
 ## Context
 

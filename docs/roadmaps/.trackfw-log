@@ -244,3 +244,14 @@
 2026-09-03 15:51  ROADMAP-2026-09-03-desmascarar-as-falhas-de-windows-que-nao-medem-nada-e-recontar.md  backlog → wip
 2026-09-03 17:35  ROADMAP-2026-09-03-declarar-eol-lf-para-os-fontes-na-raiz-do-gitattributes.md  backlog → wip
 2026-09-03 19:50  ROADMAP-2026-09-03-fechar-os-grupos-de-falha-de-windows-por-causa-raiz.md  backlog → wip
+2026-09-04 07:29  ROADMAP-2026-09-02-alinhar-a-versao-do-package-lock.md  wip → done
+2026-09-04 07:29  ROADMAP-2026-09-02-cobrir-a-sincronia-de-status-do-move-com-falsificacao.md  wip → done
+2026-09-04 07:29  ROADMAP-2026-09-02-context-do-cli-node-aguarda-validate-e-ganha-teste-que-executa-o-binario.md  wip → done
+2026-09-04 07:29  ROADMAP-2026-09-02-gate-do-doctor-remoto-usa-wrapper-em-vez-de-symlink.md  wip → done
+2026-09-04 07:29  ROADMAP-2026-09-02-gate-e-template-de-pr-exigem-palavra-chave-de-fechamento-em-ingles.md  wip → done
+2026-09-04 07:29  ROADMAP-2026-09-02-o-teste-do-gitattributes-verifica-conteudo-em-vez-de-fixar-o-arquivo.md  wip → done
+2026-09-04 07:29  ROADMAP-2026-09-02-separar-a-tripwire-de-disco-do-contrato-da-ac10.md  wip → done
+2026-09-04 07:29  ROADMAP-2026-09-02-slug-de-artefato-colapsa-nos-tres-runtimes-e-o-gate-discrimina.md  wip → done
+2026-09-04 07:29  ROADMAP-2026-09-03-bucket-other-no-status-de-go-e-node.md  wip → done
+2026-09-04 07:29  ROADMAP-2026-09-03-declarar-eol-lf-para-os-fontes-na-raiz-do-gitattributes.md  wip → done
+2026-09-04 07:29  ROADMAP-2026-09-03-resolvedor-de-req-cobre-o-layout-canonico-e-ciclo-fechado-por-artefato.md  wip → done

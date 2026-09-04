@@ -1,5 +1,5 @@
 ---
-status: Open
+status: Done
 date: 2026-09-02
 author: "kgsaran"
 adr: ""
@@ -8,7 +8,7 @@ roadmap: ""
 
 # REQ: PRs usam palavra-chave de fechamento em português, e nenhuma issue fecha automaticamente
 
-> Date: 2026-09-02 | Status: Open
+> Date: 2026-09-02 | Status: Done
 | Linear Issue:
 | Jira Issue:
 

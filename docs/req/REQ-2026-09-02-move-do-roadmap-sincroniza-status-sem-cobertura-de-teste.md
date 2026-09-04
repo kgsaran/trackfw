@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-09-02
 author: "lourivalgarciajunior"
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-02-cobrir-a-sincronia-de-status-do-move-com-falsificacao.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-02-cobrir-a-sincronia-de-status-do-move-com-falsificacao.md"
 ---
 
 # REQ: `roadmap move` sincroniza `status:` e a linha humana, e nada testa isso
 
-> Date: 2026-09-02 | Status: Open
+> Date: 2026-09-02 | Status: Done
 
 ## Motivation
 
@@ -51,4 +51,4 @@ ADR:
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-09-02-cobrir-a-sincronia-de-status-do-move-com-falsificacao.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-09-02-cobrir-a-sincronia-de-status-do-move-com-falsificacao.md

@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-02
 req: "docs/req/REQ-2026-09-02-check-doctor-remote-parity-depende-de-ln-s-e-reprova-onde-deveria-dizer-que-nao-pode-medir.md"
 squad: "lourivalgarciajunior"
@@ -7,7 +7,7 @@ squad: "lourivalgarciajunior"
 
 # Roadmap: Gate do doctor remoto usa wrapper em vez de symlink
 
-> Created: 2026-09-02 | Status: wip
+> Created: 2026-09-02 | Status: done
 
 ## Context
 

@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-09-03
 author: "lourivalgarciajunior"
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-03-bucket-other-no-status-de-go-e-node.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-03-bucket-other-no-status-de-go-e-node.md"
 ---
 
 # REQ: o `status` do Go e do Node perde em silêncio o que não reconhece
 
-> Date: 2026-09-03 | Status: Open
+> Date: 2026-09-03 | Status: Done
 
 ## Motivation
 
@@ -75,4 +75,4 @@ ADR:
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-09-03-bucket-other-no-status-de-go-e-node.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-09-03-bucket-other-no-status-de-go-e-node.md

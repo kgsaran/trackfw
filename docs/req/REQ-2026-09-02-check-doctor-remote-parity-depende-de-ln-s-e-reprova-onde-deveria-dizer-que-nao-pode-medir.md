@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-09-02
 author: "lourivalgarciajunior"
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-02-gate-do-doctor-remoto-usa-wrapper-em-vez-de-symlink.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-02-gate-do-doctor-remoto-usa-wrapper-em-vez-de-symlink.md"
 ---
 
 # REQ: `check-doctor-remote-parity` depende de `ln -s` e reprova onde deveria dizer que não pode medir
 
-> Date: 2026-09-02 | Status: Open
+> Date: 2026-09-02 | Status: Done
 
 ## Motivation
 
@@ -122,4 +122,4 @@ ADR:
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-09-02-gate-do-doctor-remoto-usa-wrapper-em-vez-de-symlink.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-09-02-gate-do-doctor-remoto-usa-wrapper-em-vez-de-symlink.md

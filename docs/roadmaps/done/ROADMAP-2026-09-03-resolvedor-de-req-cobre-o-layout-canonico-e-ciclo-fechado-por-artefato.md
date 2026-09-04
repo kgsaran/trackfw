@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-03
 squad: apolo-tf
 req: "docs/req/REQ-2026-08-30-req-new-grava-flat-mas-resolvereqfiles-procura-namespaced-por-estado-e-as-regras-de-referencia-ficam-vacuas-em-by-agent.md"
@@ -8,7 +8,7 @@ adr: "docs/adr/ADR-2026-09-03-layout-canonico-de-req-em-by-agent-e-o-invariante-
 
 # Roadmap: Resolvedor de REQ cobre o layout canônico, e ciclo fechado por artefato
 
-> Criado em: 2026-09-03 | Status: wip
+> Criado em: 2026-09-03 | Status: done
 
 ## Context
 

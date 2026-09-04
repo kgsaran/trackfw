@@ -1,12 +1,12 @@
 ---
-status: wip
+status: done
 date: 2026-09-02
 req: "docs/req/REQ-2026-09-02-tripwire-de-disco-trunca-o-corpus-congelado-e-a-ac10-acusa-reclassificacao-que-nao-houve.md"
 ---
 
 # ROADMAP: separar a tripwire de disco do contrato da AC10
 
-> Date: 2026-09-02 | Status: wip
+> Date: 2026-09-02 | Status: done
 
 REQ: docs/req/REQ-2026-09-02-tripwire-de-disco-trunca-o-corpus-congelado-e-a-ac10-acusa-reclassificacao-que-nao-houve.md
 ADR:
