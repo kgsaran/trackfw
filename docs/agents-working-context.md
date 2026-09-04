@@ -29783,3 +29783,89 @@ testes novos, zero regressão). **Falsificação local:** o argv agora é
 
 **Só o CI de Windows fecha:** que o stub do WSL perde a resolução e que os ~50 testes voltam a
 invocar o guard de fato. Handoff para `trackfw_architect` (auditoria e commit).
+
+---
+
+## 2026-09-04 — `apolo-tf` — ML-4B: `WinError 32`, `.sh` sem `bash`, `stale_wip` off-by-one
+
+Roadmap `ROADMAP-2026-09-03-fechar-os-grupos-de-falha-de-windows-por-causa-raiz` (wip), branch
+`fix/fechar-os-grupos-de-falha-de-windows-por-causa-raiz`. **11 dos 12 vermelhos do resíduo são de
+TESTE** (medidos nos logs de Windows dos runs `33885303160` e `33810452454`, não herdados da
+triagem); **1 é de PRODUTO e foi reportado, não corrigido**.
+
+1. **`WinError 32`** — 4 testes de `test_generators_adr.py::TestAdrCommandScope`. Quem segura o
+   handle é o **cwd do próprio processo**; a falha é na **limpeza** do `TemporaryDirectory`, e
+   `tearDown` roda tarde demais. Remédio: `_chdir(...)` **por último** na cadeia `with`.
+2. **`WinError 193`** — 6 testes de `test_generators_init.py::TestAttentionScriptsExecutionAndHardening`,
+   7 sítios `subprocess.run([self.signal_script|cleanup_script])`. Passaram a usar o `bash_cmd` do
+   ML-0C; **nenhuma segunda resolução de bash** foi escrita.
+3. **`stale_wip` "9 days"** — 1 teste (`test_validator.py`), **intermitente**. Margem entre os dois
+   relógios **medida em 9–21 µs**; `int()` é floor. Não é fuso horário, não é produto. Remédio:
+   `now=` injetado, com folga de 1 h.
+
+**Achado de PRODUTO, fora do ML-4B:** `TestStaleWIPReportsWIPWalkError` — no Windows a regra
+`stale_wip` fica **muda** quando `wip/` não é diretório (`warnings=[]`). É `internal/validator/`, dono
+da Wave 3.
+
+**Controle POSIX, atribuído.** A árvore contém ML-4A em voo, então o número da suíte inteira **não
+atribui**: contagem por arquivo tocado. Os 3 arquivos do ML-4B: `HEAD 196 → 200` funções `test_`
+(+4 de falsificação, exatamente as que escrevi), **200 passed, zero `skip`**. Suíte inteira
+`1609 → 1613` no momento da primeira medição; depois `6 failed` — os 6 são de **bit de execução**
+(`test_gera_script_executavel` e afins), arquivos do ML-4A em voo, **nenhum meu**. Meu escopo isolado:
+`155 passed`. `go test ./...` todos `ok` antes e depois; `go build ./...` OK; `trackfw validate` exit 0.
+
+**Test-only:** nenhum módulo de `pypi/trackfw/` tocado — a regra dura de paridade dos 3 CLIs **não se
+aplica** a este ML.
+
+⚠ **`pypi/tests/test_generators_init.py` é tocado por ML-4A e ML-4B ao mesmo tempo** — os lotes não
+são disjuntos como o handoff supôs. Sem conflito, mas o auditor precisa saber.
+
+⚠ **5 dos 6 do `WinError 193` fecham incondicionalmente.** `test_fallback_without_jq` pode expor uma
+**segunda** falha de Windows, distinta: ele semeia o `fake_bin` (inclusive o `python3` de que o
+fallback sem `jq` precisa) com `os.symlink` dentro de `except OSError: pass`, e no Windows criar
+symlink normalmente levanta sem Developer Mode. **Não mascarado, não `skip`** — só o CI revela.
+
+Nota de vault: `cwd-preso-e-margem-de-microssegundo-duas-causas-de-windows-invisiveis-em-posix-2026-09-04`.
+Handoff para `trackfw_architect` (auditoria e commit). Nenhuma operação de git executada.
+
+---
+
+## 2026-09-04 — `artemis-tf` (QA) — ML-4A: bit de execução em NTFS
+
+`ROADMAP-2026-09-03-fechar-os-grupos-de-falha-de-windows-por-causa-raiz`, Wave 4.
+Guarda de plataforma **medida** (sonda `chmod 0o755` → `stat` no diretório do próprio artefato) no
+**assert**, nos 3 stacks: `internal/{generators,commands,discover}/execbit_probe_test.go`,
+`npm/tests/exec-bit.js`, `pypi/tests/exec_bit.py`. **Nenhum `skip`**; toda supressão emite
+`EXEC-BIT-NAO-EXERCITADO: <artefato>` nomeando a garantia não verificada.
+
+**22 sítios desguarnecidos** medidos (bate com o "~22 testes" da triagem): Go 12, Node 7, Python 3.
+Além deles, **9 supressões silenciosas pré-existentes** (`process.platform !== 'win32'` em
+`npm/tests/generators.test.js`; `os.name == 'posix'` em `pypi/tests/test_generators_init.py` e
+`test_discover.py`) foram convertidas para a sonda medida — antes suprimiam sem nomear nada.
+Residual da varredura: `internal/discover/discover_test.go` usa `Perm() != 0755`, forma que o grep
+por `&` do briefing não pega.
+
+**Falsificação contada** (mutando `0755→0644` no gerador, não numa fixture): Go **11/11** funções
+previstas reprovaram, nenhuma a mais; Node os 8 sítios guardados reprovaram (+4 colaterais que
+*executam* o script); Python **6/6**, zero colateral. Produto restaurado byte-a-byte (`cmp`).
+
+**Controle POSIX:** Go `346/425/39` PASS antes e depois; Node `859 tests / 859 pass / 0 skipped`
+antes e depois; Python `1609→1613` — o delta **não é meu** (a árvore é compartilhada com o ML-4B,
+que editou `test_validator.py`, `test_generators_adr.py` e outros no mesmo período); meus 4 arquivos
+Python declaram **120** testes e coletam **120**, antes e depois. `trackfw validate` exit 0.
+
+🔴 **O canal da mensagem foi medido, não presumido**, rodando os comandos exatos do job de Windows.
+`pytest -q` (sem `-s`) e `go test` (sem `-v`) **descartam** a saída de teste que PASSA — e estes
+testes passam no Windows justamente por causa da supressão. Python migrou de `print` para
+`warnings.warn` e agora aparece (`1613 passed, 8 warnings`); Node já sobrevivia. **Go continua
+invisível**: sem `-v`, o `go test` bufferiza e descarta o pacote inteiro que passa — `t.Logf` e
+`os.Stderr` dão 0 igualmente. O fechamento é `-v` na linha 384 de `.github/workflows/quality.yml`,
+**fora de arquivo de teste** — fica como lacuna reportada, não como remendo silencioso.
+
+Grupo adjacente **não corrigido** (assinatura diferente, fora do grupo nomeado no roadmap):
+igualdade de modo restritivo — `internal/identity/identity_test.go:126,134` (`Perm() != 0o600/0o700`),
+`npm/tests/identity.test.js:50`, `npm/tests/agents-skills.test.js:276,277`. Falham no Windows também
+(NTFS reporta 0o666/0o444), mas não são bit de execução.
+
+Nota de vault: `fat32-no-macos-finge-0755-e-nao-serve-de-proxy-para-ntfs-2026-09-04`.
+Handoff para `trackfw_architect` (auditoria e commit). Nenhuma operação de git executada.

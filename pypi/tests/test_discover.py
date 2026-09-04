@@ -15,6 +15,10 @@ import pytest
 
 from trackfw.commands import discover as discover_cmd
 
+# Guarda MEDIDA para o bit de execucao: em NTFS st_mode & 0o111 e sempre 0.
+# Ver pypi/tests/exec_bit.py.
+from .exec_bit import exec_bit_nao_exercitado, exec_bit_representavel_para
+
 
 # ---------------------------------------------------------------------------
 # test_discover_report
@@ -125,8 +129,10 @@ def test_discover_init_generates_credential_guard_script(tmp_path, monkeypatch):
     assert signal_path.is_file(), "trackfw-attention-signal.sh deveria ser criado por discover --init"
     assert guard_path.is_file(), "trackfw-credential-guard.sh não foi criado por discover --init"
 
-    if os.name == "posix":
+    if exec_bit_representavel_para(str(guard_path)):
         assert os.stat(guard_path).st_mode & 0o111 != 0, "credential guard script não é executável"
+    else:
+        exec_bit_nao_exercitado(str(guard_path))
 
 
 # ---------------------------------------------------------------------------

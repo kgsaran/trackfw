@@ -4,6 +4,7 @@ const fs = require('fs')
 const os = require('os')
 const path = require('path')
 const { spawnSync } = require('child_process')
+const { execBitRepresentavelPara, execBitNaoExercitado } = require('./exec-bit')
 const config = require('../src/config/index.js')
 const { generateCredentialGuardScript, generateGlobalCredentialGuardScript, generateAttentionScripts } = require('../src/generators/hooks.js')
 
@@ -33,7 +34,11 @@ test('generateCredentialGuardScript cria scripts/trackfw-credential-guard.sh exe
     generateCredentialGuardScript(tmp)
     const scriptPath = path.join(tmp, 'scripts', 'trackfw-credential-guard.sh')
     const stat = fs.statSync(scriptPath)
-    assert.ok(stat.mode & 0o100, 'script deveria ser executável')
+    if (execBitRepresentavelPara(scriptPath)) {
+      assert.ok(stat.mode & 0o100, 'script deveria ser executável')
+    } else {
+      execBitNaoExercitado(scriptPath)
+    }
     const content = fs.readFileSync(scriptPath, 'utf8')
     assert.ok(content.startsWith('#!/usr/bin/env bash'))
   })
@@ -177,7 +182,11 @@ test('generateGlobalCredentialGuardScript cria ~/.trackfw/scripts/trackfw-creden
     generateGlobalCredentialGuardScript(fakeHome)
     const scriptPath = path.join(fakeHome, '.trackfw', 'scripts', 'trackfw-credential-guard.sh')
     const stat = fs.statSync(scriptPath)
-    assert.ok(stat.mode & 0o100, 'script global deveria ser executável')
+    if (execBitRepresentavelPara(scriptPath)) {
+      assert.ok(stat.mode & 0o100, 'script global deveria ser executável')
+    } else {
+      execBitNaoExercitado(scriptPath)
+    }
     const content = fs.readFileSync(scriptPath, 'utf8')
     assert.ok(content.startsWith('#!/usr/bin/env bash'))
     assert.ok(!content.includes('[ -f "trackfw.yaml" ] || exit 0'), 'script global não deve conter a guarda de projeto')

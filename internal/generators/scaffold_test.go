@@ -186,9 +186,15 @@ func TestGenerateAttentionScripts(t *testing.T) {
 		if info.Size() == 0 {
 			t.Errorf("arquivo de atenção está vazio: %s", p)
 		}
-		// Verifica permissões de execução (no Unix 0755)
-		if mode := info.Mode().Perm(); mode&0111 == 0 {
-			t.Errorf("arquivo %s não tem permissão de execução (perm: %o)", p, mode)
+		// Verifica permissões de execução (no Unix 0755). Guarda MEDIDA: ver
+		// execBitRepresentavelPara em execbit_probe_test.go — o bit não é representável
+		// em NTFS e o assert mediria uma propriedade que o filesystem não tem.
+		if execBitRepresentavelPara(t, p) {
+			if mode := info.Mode().Perm(); mode&0111 == 0 {
+				t.Errorf("arquivo %s não tem permissão de execução (perm: %o)", p, mode)
+			}
+		} else {
+			execBitNaoExercitado(t, p)
 		}
 	}
 

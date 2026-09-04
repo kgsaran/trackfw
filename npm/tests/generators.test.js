@@ -5,6 +5,7 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
+const { execBitRepresentavelPara, execBitNaoExercitado } = require('./exec-bit')
 const {
   trackfwRulesBlock,
   generateClaudeMD,
@@ -300,10 +301,18 @@ test('scaffold generates attention scripts with execution permissions and expect
     const cleanupStat = fs.statSync(cleanupPath)
     const guardStat = fs.statSync(guardPath)
 
-    if (process.platform !== 'win32') {
-      assert.ok((signalStat.mode & 0o111) !== 0, 'signal script should be executable')
-      assert.ok((cleanupStat.mode & 0o111) !== 0, 'cleanup script should be executable')
-      assert.ok((guardStat.mode & 0o111) !== 0, 'credential guard script should be executable')
+    // Guarda MEDIDA (npm/tests/exec-bit.js). Substitui `process.platform !== 'win32'`,
+    // que suprimia em SILENCIO: agora a supressao NOMEIA o artefato nao verificado.
+    for (const [artefato, st, rotulo] of [
+      [signalPath, signalStat, 'signal script'],
+      [cleanupPath, cleanupStat, 'cleanup script'],
+      [guardPath, guardStat, 'credential guard script'],
+    ]) {
+      if (execBitRepresentavelPara(artefato)) {
+        assert.ok((st.mode & 0o111) !== 0, `${rotulo} should be executable`)
+      } else {
+        execBitNaoExercitado(artefato)
+      }
     }
 
     const signalContent = fs.readFileSync(signalPath, 'utf8')
@@ -988,8 +997,10 @@ test('trackfw update backfills the credential guard script for a pre-existing pr
     await updateCmd.parseAsync(['node', 'update'])
 
     assert.ok(fs.existsSync(guardPath), 'update should have generated the missing credential guard script')
-    if (process.platform !== 'win32') {
+    if (execBitRepresentavelPara(guardPath)) {
       assert.ok((fs.statSync(guardPath).mode & 0o111) !== 0, 'credential guard script should be executable')
+    } else {
+      execBitNaoExercitado(guardPath)
     }
     assert.ok(fs.existsSync(signalPath), 'pre-existing attention signal script should not be removed')
   } finally {

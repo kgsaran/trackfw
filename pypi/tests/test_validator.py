@@ -276,20 +276,72 @@ class TestValidateStaleWip(unittest.TestCase):
         self.assertEqual(result, [])
 
     def test_stale_wip_warning_arquivo_antigo(self):
+        """ML-4B — a idade e medida contra um `now` INJETADO, nao contra o relogio.
+
+        A forma anterior fazia `old_time = time.time() - 10 dias`, gravava o mtime e deixava a
+        producao ler `datetime.now().timestamp()` sozinha. A margem entre os dois relogios,
+        MEDIDA nesta arvore (200 amostras), fica entre 9 e 21 MICROSSEGUNDOS -- e `age_days` e
+        um `int()` (floor). Qualquer desvio nao-positivo entre as duas leituras derruba
+        10.0000001 dias para 9, e foi o que aconteceu no CI de Windows do run 33810452454:
+
+            '10 days' not found in 'roadmap/wip/roadmap-antigo.md has been in WIP for 9 days
+            (last modified 2026-08-24)'
+
+        e o mesmo teste PASSOU no run 33885303160 do dia seguinte -- intermitente, como uma
+        corrida de relogio, nao como um erro de calendario. NAO e fuso horario (2026-08-24 ->
+        2026-09-03 nao cruza transicao) e NAO e defeito de produto: o floor e a semantica certa
+        de "esta em WIP ha N dias", e em producao a idade e de dias, nao de microssegundos. O
+        defeito era o teste afirmar um limite de floor com margem de microssegundo lida de dois
+        relogios independentes.
+
+        `validate_stale_wip` ja aceita `now=`; usa-lo torna a medicao deterministica, e a folga
+        de 1 hora poe a asercao longe dos dois limites. O limite exato continua coberto pelo
+        teste dedicado de boundary (test_stale_wip_boundary_e_falsificacao_do_floor).
+        """
         cfg = self._cfg()
         wip_dir = os.path.join(self.tmp, "docs/roadmaps/wip")
         file_path = os.path.join(wip_dir, "roadmap-antigo.md")
         _write(file_path, "# Roadmap antigo")
 
-        # Retrocede o mtime em 10 dias
-        old_time = time.time() - (10 * 24 * 60 * 60)
+        ref = time.time()
+        old_time = ref - (10 * 24 * 60 * 60) - 3600  # 10 dias e 1 hora: floor = 10, com folga
         os.utime(file_path, (old_time, old_time))
 
-        result = v.validate_stale_wip(cfg, days=7)
+        result = v.validate_stale_wip(cfg, days=7, now=ref)
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0]["type"], "warning")
         self.assertIn("roadmap-antigo.md", result[0]["message"])
         self.assertIn("10 days", result[0]["message"])
+
+    def test_stale_wip_boundary_e_falsificacao_do_floor(self):
+        """ML-4B — falsificacao NAS DUAS DIRECOES do floor que produziu o off-by-one.
+
+        Com o mtime a exatamente 10 dias de `now`, um microssegundo A MENOS de `now` ja
+        devolve "9 days". E a reproducao local, deterministica, do que o CI de Windows viu --
+        e a prova de que a fragilidade morava na margem do teste, nao no calculo do produto.
+        """
+        cfg = self._cfg()
+        wip_dir = os.path.join(self.tmp, "docs/roadmaps/wip")
+        file_path = os.path.join(wip_dir, "roadmap-limite.md")
+        _write(file_path, "# Roadmap no limite")
+
+        ref = time.time()
+        old_time = ref - (10 * 24 * 60 * 60)
+        os.utime(file_path, (old_time, old_time))
+        mtime = os.stat(file_path).st_mtime
+
+        exatamente_10 = v.validate_stale_wip(cfg, days=7, now=mtime + 10 * 24 * 60 * 60)
+        self.assertIn("10 days", exatamente_10[0]["message"])
+
+        # A sonda negativa e de 10 ms, nao de 1 us: `mtime` e um float lido do disco e
+        # `mtime + 864000` perto de 1.76e9 tem ~2.4e-7 s de erro de representacao em float64 --
+        # 1 us seria so ~4x o epsilon, e a propria asercao viraria a fragilidade que este ML
+        # existe para remover. 10 ms esta 8 ordens de grandeza abaixo de um dia: ainda prova
+        # floor, sem cavalgar o epsilon. Medido: 400 amostras, 0 falhas nas duas direcoes.
+        um_instante_antes = v.validate_stale_wip(
+            cfg, days=7, now=mtime + 10 * 24 * 60 * 60 - 0.01
+        )
+        self.assertIn("9 days", um_instante_antes[0]["message"])
 
     def test_arquivo_recente_nao_gera_warning(self):
         cfg = self._cfg()
