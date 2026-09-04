@@ -241,20 +241,23 @@ um que decora.
 > Dependências: nenhuma. Não esperam a Wave 0.
 
 ### ML-1A — ADR: o trackfw escreve separador POSIX nos artefatos que autora?
-**Status:** ⬜ Pendente · **Agente:** `trackfw_architect`
+**Status:** ✅ Concluído · **Agente:** `trackfw_architect`
+**Entregue:** `docs/adr/ADR-2026-09-04-separador-posix-nos-artefatos-autorados-cujo-consumidor-nao-e-o-sistema-de-arquivos.md` — `Accepted`. Corrigida após o ML-2A: a premissa "só o Node não normaliza" foi medida e é o inverso.
 **Resolve TRÊS grupos de uma vez** (~45 testes): `tildeify` devolvendo `~\...`, `provenanceKey`
 nativo no Node, e caminho em JSON lido por CLI de agente.
 Evidência que tende a **sim**: a chave de proveniência **já é** `/` por decisão documentada; `~` é
 POSIX-ismo que nenhum shell do Windows expande; um `command` bash com `\` é mastigado pelo shell.
 
 ### ML-1B — ADR: o parser de frontmatter deve tolerar CRLF?
-**Status:** ⬜ Pendente · **Agente:** `trackfw_architect`
+**Status:** ✅ Concluído · **Agente:** `trackfw_architect`
+**Entregue:** `docs/adr/ADR-2026-09-04-parser-de-frontmatter-tolera-crlf-na-fronteira-de-entrada.md` — `Accepted`. Implementação na **Wave 5**.
 O parser é **cego a CRLF** e emitiu frontmatter **duplicado** em `TestRenderOpenCodeAgent`. ~14
 testes. 🔴 A alternativa — declarar `eol` sobre os assets — **foi medida e recusada** no ML-1C:
 esconde o defeito em vez de curá-lo.
 
 ### ML-1C — ADR: caminho POSIX ancorado num config lido por CLI de agente é "absoluto"?
-**Status:** ⬜ Pendente · **Agente:** `trackfw_architect`
+**Status:** ✅ Concluído · **Agente:** `trackfw_architect`
+**Entregue:** `docs/adr/ADR-2026-09-04-caminho-posix-ancorado-num-config-lido-por-cli-de-agente-e-absoluto-independente-do-so-host.md` — `Accepted`. Implementação na **Wave 3**.
 `filepath.IsAbs("/opt/…")` é **falso** no Windows → `classifyHookAnchorage` classifica ancorado como
 relativo → **o validator deixa de emitir violation de guard ausente**. ~14 testes, **e é de
 segurança**: a detecção de hook de guard **enfraquece no Windows**.
@@ -263,7 +266,8 @@ segurança**: a detecção de hook de guard **enfraquece no Windows**.
 > Dependências: ML-1A `Accepted`.
 
 ### ML-2A — Separador POSIX em artefato autorado
-**Status:** ✅ Concluído (implementado; aguardando auditoria do arquiteto) · **Agente:** `apolo-tf`
+**Status:** ✅ Concluído · auditado pelo arquiteto e **mergeado no PR #270** · **Agente:** `apolo-tf`
+**Recontagem no CI (run `33913343975`), o delta deste grupo:** `134 → 69` (Go 53→14, Node 48→34, Python 33→21). Maior queda da campanha; a triagem previa ~45.
 **Files affected — os 3 stacks:** `npm/src/lib/update-engine.js:172-181`,
 `pypi/trackfw/commands/update_harness.py::_tildeify`, `internal/integrations/manager.go`,
 `npm/src/validator/index.js:3153` (`provenanceKey` sem normalização), `npm/src/serve/api_chain.js`
@@ -319,10 +323,71 @@ defeito do `/api/chain`, e a ADR cobre só o separador. REQ própria.
 > Dependências: ML-1C `Accepted` **e** a branch `fix/validate-detecta-hook-de-guard-...` fechada.
 
 ### ML-3A — Caminho POSIX ancorado deixa de ser classificado como relativo
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` + barreira `hades-tf`
-🔴 **É segurança e COLIDE com outra branch.** Não paralelizar com nada.
-`internal/validator/validator_credential_guard.go`, `validator_git_branch_guard.go`, e pares nos
-outros 2 CLIs.
+**Status:** 🔄 Em andamento · **Agente:** `apolo-tf` + barreira obrigatória `hades-tf`
+🔴 **É segurança.** Não paralelizar com nada. A branch que colidia
+(`fix/validate-detecta-hook-de-guard-na-forma-relativa-antiga`) **fechou** — dependência satisfeita.
+
+**Sítios enumerados pelo arquiteto (2026-09-04), com o lado da fronteira D2 de cada um.**
+
+**EM ESCOPO — classificação de caminho lido de config de CLI de agente (4 por runtime, 12 no total):**
+
+| | Go | Node | Python |
+|---|---|---|---|
+| classe 1 (ancorado) | `validator_credential_guard.go:114` | `npm/src/validator/index.js:1510` | `pypi/trackfw/validator.py:1918` |
+| classe 2 (cwd) | `validator_credential_guard.go:128` | `index.js:1526` | `validator.py:1932` |
+| forma relativa antiga | `validator_credential_guard.go:193` | `index.js:1467` | `validator.py:1873` |
+| guard de branch | `validator_git_branch_guard.go:167` | `index.js:2767` | `validator.py:3266` |
+
+🔴 **A linha "forma relativa antiga" é o fix mergeado ontem (577e54a) — ele nasceu com o mesmo
+defeito de Windows nos 3 CLIs.** E `git_branch_guard:167` é pior que classificar errado: o
+`continue` faz o laço **pular a entrada inteira**, então no Windows uma entrada de config global com
+comando absoluto POSIX **nunca é verificada**.
+
+**FORA DE ESCOPO — travessia de sistema de arquivos, `IsAbs` fica (D2).** Mexer aqui quebra
+resolução real de caminho no Windows, com falha intermitente:
+`internal/validator/validator.go:2112`, `internal/integrations/manager.go:703,726`,
+`npm/src/validator/index.js:95`, `npm/src/integrations/manager.js:55,62,107,430`,
+`pypi/trackfw/generators/{req.py,adr.py}`, `pypi/trackfw/commands/status.py:117`,
+`pypi/trackfw/integrations/manager.py:71`.
+
+**Ações**
+1. Predicado de **ancoragem** por runtime, ponto único, com **zero chamada dependente de SO** no
+   caminho de classificação: `/`, `~`, `$CLAUDE_PROJECT_DIR`/`$GEMINI_PROJECT_DIR`,
+   `$(git rev-parse --show-toplevel)`, **união** com letra de unidade (`C:\...`) e UNC (`\\...`).
+2. Aplicar nos 12 sítios da tabela. Nos 3 sítios de guard de branch, o `continue` passa a usar o
+   predicado novo.
+3. **D4 da ADR:** `cwdDependentReason` ganha ramo de til. 🔴 O ramo dispara **só** para `~usuario/`
+   e para `"~/"` com aspas — a frase `bare relative path` é preservada para todo o resto, por
+   contrato de paridade e pela UX da ROADMAP-2026-08-21 ML-1B.
+4. `npm/src/validator/index.js` é classificado **binário** pelo `file`: usar `grep -a`.
+
+**Critérios de aceite**
+- [ ] Falsificação nas duas direções: `/opt/foo/guard.sh` → **ancorado**; `scripts/guard.sh` →
+      **continua** classe 2.
+- [ ] 🔴 **Controle de não-afrouxamento:** enumerar o que passou a contar como ancorado e mostrar
+      que **nenhuma forma relativa entrou no conjunto**. É o risco desta mudança.
+- [ ] 🔴 **Controle POSIX:** em macOS/Linux a classificação de **todos** os casos existentes é
+      idêntica à de hoje, medida antes e depois.
+- [ ] Os 3 runtimes dão o **mesmo** veredito, medidos separadamente.
+- [ ] `make quality` verde · `trackfw validate` exit 0 · gates obrigatórios verdes.
+
+🔴 **O que NÃO conta como evidência.** O arquiteto e o agente estão em macOS, onde
+`filepath.IsAbs("/opt/…")` é **true** — o defeito é **invisível localmente**, e `GOOS=windows` só
+compila cruzado, não executa. A prova local é: **o predicado não chama nada dependente de SO**
+(verificável por grep) mais tabela de casos com entradas em forma de Windows. **A queda da contagem
+só fecha no CI.** Suíte verde em macOS **não** é evidência de aceite deste ML.
+
+## Wave 5 — CRLF no parser de frontmatter
+> Dependências: Wave 3 fechada. **Sequencial**: toca os mesmos arquivos de validator dos 3 CLIs.
+
+### ML-5A — Parser tolera CRLF na fronteira de entrada
+**Status:** ⬜ Pendente · **Agente:** `apolo-tf`
+Governado por `ADR-2026-09-04-parser-de-frontmatter-tolera-crlf-na-fronteira-de-entrada.md`
+(`Accepted`). ~14 testes. Sintoma medido: frontmatter **duplicado** em `TestRenderOpenCodeAgent`.
+**D1** normaliza `\r\n` → `\n` **ao ler**, antes de casar delimitador · **D2** a escrita continua
+LF (`check-python-writes-lf.sh` é contrato) · **D3** **ponto único por runtime**, sem espalhar
+`ReplaceAll` pelos chamadores · **D4** 🔴 `.gitattributes` **não** ganha `eol` sobre assets, goldens
+e corpus — mascarar a entrada nos tira a capacidade de detectar a regressão.
 
 ## Wave 4 — Resíduo (paralelo, arquivos disjuntos)
 > Dependências: Wave 2.

@@ -29971,3 +29971,33 @@ apesar de eu ter alterado linhas que cenários pinam por substring e de ter **re
 `trackfw/pathfmt.py` fica no mesmo nível de `homedir.py`/`traceid.py`, já publicados.
 
 Handoff para `trackfw_architect` (auditoria e commit). Nenhuma operação de git executada.
+
+---
+
+## 2026-09-04 — `trackfw_architect` (Zeus) — INÍCIO: Wave 3 (`IsAbs`) e Wave 5 (CRLF)
+
+Branch `fix/grupos-de-falha-de-windows-por-causa-raiz`. Roadmap
+`ROADMAP-2026-09-03-fechar-os-grupos-de-falha-de-windows-por-causa-raiz.md` (wip).
+
+Estado da campanha de Windows após o merge do PR #270 (run `33913343975`):
+`246 → 217 → 162 → 134 → 69` — **72% fechado**, cada passo com causa raiz medida.
+Resíduo: Go 14 · Node 34 · Python 21.
+
+Wave 1 (as 3 ADRs) marcada ✅ — as três estão `Accepted`. Wave 2 ✅ auditada e mergeada.
+A branch que bloqueava a Wave 3 (`fix/validate-detecta-hook-de-guard-na-forma-relativa-antiga`)
+fechou: `git branch -r --no-merged origin/main` volta vazio.
+
+**Enumeração do arquiteto para a Wave 3 — 12 sítios em escopo, 16 fora**, cada um rotulado pelo
+lado da fronteira D2 da ADR (classificação de config **sim**; travessia de filesystem **não**).
+
+🔴 **Achado da enumeração:** o fix mergeado ontem (`577e54a`, forma relativa antiga) **nasceu com o
+mesmo defeito de Windows nos 3 CLIs** — `validator_credential_guard.go:193`, `index.js:1467`,
+`validator.py:1873`. E `validator_git_branch_guard.go:167` é pior que classificar errado: o
+`continue` faz o laço **pular a entrada inteira**, então no Windows uma entrada de config global com
+comando absoluto POSIX **nunca é verificada**.
+
+🔴 **Registrado no ML o que NÃO conta como evidência:** estamos em macOS, onde
+`filepath.IsAbs("/opt/…")` é **true** — o defeito é invisível localmente e `GOOS=windows` só compila
+cruzado. Suíte verde em macOS não é aceite; a queda de contagem só fecha no CI.
+
+Wave 5 (CRLF) aberta como **sequencial** após a Wave 3: toca os mesmos arquivos de validator.
