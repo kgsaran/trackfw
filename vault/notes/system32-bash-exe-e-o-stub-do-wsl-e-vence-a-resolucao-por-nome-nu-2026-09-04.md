@@ -1,5 +1,5 @@
 ---
-title: "`System32\\bash.exe` é o stub do WSL, vence a resolução por nome nu, e fala UTF-16 pelo stdout"
+title: "`bash` por nome nu no Windows é ambíguo — a CAUSA é o `lpApplicationName = NULL`; o stub do WSL é só um dos três desfechos"
 tags: [windows, wsl, pathext, subprocess, python, ci, diagnostico, causa-raiz]
 date: 2026-09-04
 related: [[exit-1-com-stderr-vazio-e-assinatura-de-processo-que-nao-e-o-script-2026-09-04]]
@@ -47,6 +47,63 @@ dois braços concordarem e concluiríamos *"não é resolução"*. A ordem do `%
 **2. Medir só o `stderr` mede o mesmo nada que os testes medem.** A única assinatura compatível com o
 observado era *"algo saiu 1 falando por `stdout`"*. Uma sonda que replicasse a captura dos testes
 não veria nada — e concluiríamos que o processo é mudo.
+
+## 🔴 CORREÇÃO (2026-09-04) — a assinatura não é a causa, e a primeira redação confundiu as duas
+
+**Falsificado por `@lourivalgarciajunior` num Windows 11 real, fora do runner** (comentário no
+PR #267). Naquela máquina:
+
+```
+System32\bash.exe      NAO EXISTE     <- sem WSL instalado
+shutil.which("bash")   None           <- nao ha bash no %PATH% nativo
+Git for Windows        C:\Program Files\Git\{bin,usr\bin}\bash.exe  (GNU bash 5.2.26)
+```
+
+**O sintoma lá NÃO é `exit 1` com `stderr` vazio — é `FileNotFoundError [WinError 2]`.**
+
+A **causa** é a mesma: **nome nu entregue ao `CreateProcess` com `lpApplicationName = NULL`.** O stub
+do WSL é **um dos desfechos**, não a causa. São três:
+
+| ambiente | o que o nome nu produz |
+|---|---|
+| WSL instalado **sem distribuição** | `rc=1`, UTF-16 no `stdout` — o runner do CI |
+| **sem** WSL, **sem** bash no `%PATH%` | `FileNotFoundError [WinError 2]` |
+| **sem** WSL, **com** Git no `%PATH%` | funciona **por acaso**, e some quando o `%PATH%` muda |
+
+🔴 **Por que a correção importa mais que o detalhe:** o título original vendia *"exit 1 com stderr
+vazio é assinatura de processo que não é o script"*. Quem estiver na **segunda linha** da tabela lê
+isso, vê uma exceção em vez de `exit 1`, e conclui *"não é o meu caso"* — **quando é o mesmo defeito
+e o mesmo remédio**. **A causa é o discriminante; as assinaturas são sintomas dela.**
+
+## Dois achados que o teste real trouxe
+
+**1. A lista chumbada do Git for Windows não é "conveniência" — naquele ambiente é a ÚNICA fonte de
+candidato.** O `shutil.which` devolve `None`, e a varredura do `%PATH%` não acharia nada. A docstring
+do helper a descreve como *"conveniência, não garantia"*; onde não há bash no `%PATH%`, ela é a
+garantia.
+
+**2. 🔴 `env=` NÃO muda a resolução do nome nu no Windows** — e isto pode tornar um teste futuro
+vácuo:
+
+```
+e = dict(os.environ); e["PATH"] = stub + PATH
+subprocess.run(["bash","--version"], env=e)   ->  FileNotFoundError   <- o stub foi IGNORADO
+os.environ["PATH"] = stub + PATH
+subprocess.run(["bash","--version"])          ->  rc=1, UTF-16        <- agora vence
+```
+
+O `CreateProcess` procura no `%PATH%` do processo **pai**, não no ambiente passado ao filho. **Um
+teste que tentasse forçar a ordem de resolução via `env=` estaria medindo nada e passaria verde por
+vacuidade.**
+
+**O portão de identidade foi provado independente da ordem:** com um stub sintético em **primeiro**
+lugar na lista, o helper ainda resolveu para o Git for Windows. No arranjo real o portão nem é
+exercitado — a lista chumbada vem antes —, então ele **forçou a ordem para medir o portão, e não o
+acaso**.
+
+**Ressalva do próprio autor:** o stub é **sintético** — reproduz a *assinatura*, não o binário da
+Microsoft. Fecha o comportamento do portão diante daquela assinatura; **não** substitui o run de
+Windows para provar que o `System32\bash.exe` real perde.
 
 ## Regra prática
 
