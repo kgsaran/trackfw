@@ -29655,3 +29655,55 @@ de git neste repositório.**
 fiel do checkout, mas não roda a suíte sob Windows). Residual não medido: se algum teste futuro
 passar a comparar um `.json`/`.html` de checkout contra constante compilada, ele nasce vermelho no
 Windows — a exclusão é deliberada e está enumerada no próprio `.gitattributes`.
+
+## 2026-09-04 — `artemis-tf` (QA) — INÍCIO — ML-0A (grupo B: `bash` do Python em Windows)
+
+Roadmap `docs/roadmaps/wip/ROADMAP-2026-09-03-fechar-os-grupos-de-falha-de-windows-por-causa-raiz.md`,
+Wave 0. **Investigação, não correção** — nenhuma alteração de produto, teste ou CI nesta ML, e
+nenhuma operação de git. Entregável: `docs/qualidade/2026-09-04-grupo-b-bash-do-python-em-windows.md`
+com o mecanismo **ou** a lista do que foi eliminado e como.
+
+Fontes: log do run `33810452454` (jobs `windows-full-suites` e `windows-defect-reproduction`),
+`pypi/tests/test_credential_guard{,_sabotage}.py`, `test_git_branch_guard{,_dedup}.py`, os pares
+Node/Go equivalentes, `pypi/trackfw/generators/init_gen.py` e `.github/workflows/quality.yml`.
+
+## 2026-09-04 — `artemis-tf` (QA) — FIM — ML-0A (grupo B: `bash` do Python em Windows)
+
+Entregue: `docs/qualidade/2026-09-04-grupo-b-bash-do-python-em-windows.md` + nota de vault
+`exit-1-com-stderr-vazio-e-assinatura-de-processo-que-nao-e-o-script-2026-09-04.md` (linkada no
+`index.md`). **Nada aplicado** — nenhum arquivo de produto, teste ou CI tocado; nenhuma operação de
+git; `make quality` não executado (fora do escopo desta ML, por instrução).
+
+**Veredito: mecanismo NÃO identificado — e isso é resultado, não desistência.** O espaço caiu de
+"desconhecido" para duas ramificações com uma medição de uma linha que as separa: (A) o `bash` que o
+Python lança não é o `bash` que Node e Go encontram; (B) o script morre entre `set -euo pipefail` e a
+guarda de projeto (único candidato: `INPUT=$(cat)`). (B) não é falsificável no macOS — por isso
+continua aberta.
+
+Duas premissas do briefing corrigidas por medição: o `exit 0` **não** é a segunda linha (é a 8ª;
+`set -euo pipefail` e `INPUT=$(cat)` rodam antes), e a população é **50** métodos, não ~56 — 3 das 52
+falhas dos quatro arquivos são de outros grupos (2 bit de execução, 1 separador) e 2 métodos só
+aparecem como `SUBFAILED`. Critério que fecha o grupo: **nenhum** teste Python que lança `bash`
+passou; **todos** os que não lançam passaram.
+
+Terceira testemunha, com fiação de stdin diferente: `test_git_branch_guard_dedup.py:327` embute o
+`rc` na mensagem (`rc=1 stderr=`) e é a única do grupo que **não** passa `input=` — logo "o pipe do
+`input=` do Python" não explica sozinho, e (B) fica mais estreita.
+
+Terceiro braço que não estava no briefing: **o Go também lança `bash` sobre os mesmos scripts e
+executa** (`TestAttentionScripts_FallbackWithoutJQ` falha exibindo o fallback interno do script).
+Somado ao Node, dois runtimes executam e só o Python não — a diferença remanescente é a resolução do
+executável (`LookPath`/libuv × `CreateProcess` com `lpApplicationName=NULL`).
+
+Eliminados com a assinatura de cada um: CRLF (rc 2 — e o ITEM 5 da suíte de reprodução mediu
+`crlf=False` **no Windows**), script ausente (rc 127), bit de execução (rc 0), `text=True` no stdin
+(payload tem 0 `\n`), `HOME` herdado (rc 0), stdin vazio/CRLF (rc 0), "bash quebrado no runner"
+(ITEM 7: `sh` presente e executando).
+
+Próximo passo proposto (**não** executado): ITEM 12 em `scripts/windows-repro/run.ps1` com 3 linhas —
+`where.exe bash`, `bash -c 'echo …'` pelo Python, e o script real com **`stdout` impresso** (o canal
+que os 50 testes descartam). Se der (A), o remédio é de harness (`shutil.which` + caminho absoluto
+nos 6 sítios de spawn) e fecha ~50 vermelhos **sem esconder defeito de produto** — medido: nenhum
+módulo de `pypi/trackfw/` lança `bash`/`sh`. Se der (B) com o script morrendo sob invocação legítima,
+deixa de ser harness e vira segurança. Handoff para `trackfw_architect`: auditoria e decisão sobre
+abrir REQ própria para o remédio.

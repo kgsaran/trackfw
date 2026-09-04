@@ -45,7 +45,7 @@ tinha avisado.
 > Dependências: nenhuma. **Bloqueia a estimativa**, não as outras waves.
 
 ### ML-0A — Grupo B: por que o `bash` do Python devolve exit 1 uniforme
-**Status:** ⬜ Pendente · **Agente:** `artemis-tf`
+**Status:** ✅ Concluído (investigação — mecanismo NÃO identificado, espaço reduzido a 2) · **Agente:** `artemis-tf`
 **~56 testes, 26% do total, mecanismo DESCONHECIDO.** É o maior risco isolado do lote.
 
 `pypi/tests/test_credential_guard.py`, `test_git_branch_guard.py`,
@@ -69,6 +69,69 @@ Suspeitos **não verificados**: `HOME` de sessão herdado pelo filho; tradução
 - [ ] Comparação **lado a lado** com o braço Node, que passa: mesma chamada, mesmo script, resultado
       diferente. **A diferença é o achado**
 - [ ] Nenhuma correção aplicada nesta wave — é **investigação**
+
+
+**Resultado da investigação — auditoria do arquiteto, 2026-09-04.**
+Documento: `docs/qualidade/2026-09-04-grupo-b-bash-do-python-em-windows.md`.
+
+🔴 **Mecanismo NÃO identificado, e isso é o resultado certo.** O espaço foi reduzido a **duas
+ramificações**, e nada foi apresentado como causa:
+
+```
+(A) o bash que o Python lanca NUNCA executa o script
+(B) o script morre entre `set -euo pipefail` e a guarda de projeto
+    unico candidato: INPUT=$(cat)      <- nao falsificavel no macOS
+```
+
+🔴 **Mais DUAS premissas do meu briefing derrubadas — sexta e sétima da sprint.** Verificadas por
+mim:
+- **O `exit 0` não é a segunda linha do script — é a oitava.** O `set -euo pipefail` está na
+  **linha 18** e o `INPUT=$(cat)` vem antes da guarda: é exatamente onde (B) pode viver. Eu escrevi
+  "segunda linha" no handoff e isso teria mandado a investigação para o lugar errado.
+- **A população é 50, não ~56.** Das 52 falhas dos 4 arquivos, 3 são de outros grupos (2 de bit de
+  execução, 1 de separador) e 2 aparecem só como `SUBFAILED`. O critério que fecha o grupo
+  **discrimina**: **nenhum** teste Python que lança `bash` passou (50/50); dos que **não** lançam, só
+  3 falharam.
+
+**O caso `exit 0`, isolado — e o gêmeo do outro extremo:** `test_sem_match_e_no_op_silencioso`
+espera 0 e recebe 1; `test_git_push_with_trackfw_yaml_still_blocks` espera **2** e recebe **1**.
+**Os dois extremos devolvem o mesmo 1 — o script não chega a decidir nada.**
+
+🔴 **A diferença é de TRÊS braços, não dois — e isso derruba a minha formulação.** Eu disse "o Node
+passa, logo o defeito é do Python". **O Go também lança `bash` sobre os mesmos scripts, no mesmo
+job, e executa de verdade.** Verificado por mim: `npm/tests/credential_guard.test.js:80` faz
+`spawnSync('bash', [scriptPath])`. Sobra **o ato de lançar**: Go usa `LookPath` e Node usa libuv —
+**ambos entregam caminho absoluto ao `CreateProcess`** —, enquanto o CPython chama `CreateProcess`
+com `lpApplicationName = NULL` e cai na **ordem implícita do Windows**. Assimetria real, **não
+medida no runner**: por isso é hipótese, não causa.
+
+**Eliminados, cada um com a assinatura que o descarta:** CRLF (rc **2**, e o ITEM 5 mediu
+`crlf=False` no Windows) · script ausente (rc **127**) · bit de execução (rc 0) · `text=True` no
+stdin (payload sem `\n`) · `HOME` herdado (rc 0) · stdin vazio (rc 0) · "bash quebrado no runner"
+(ITEM 7 mediu `sh` presente e executando). **Só uma assinatura reproduz o observado: algo saiu 1
+falando por `stdout`** — o canal que os 50 testes descartam.
+
+**O que falta, e é uma linha:** ITEM 12 na sonda (`scripts/windows-repro/run.ps1`), pwsh-safe:
+`where.exe bash`, `bash -c 'echo …'` pelo Python, e o script real **com `stdout` impresso**. Separa
+(A) de (B).
+
+**Severidade condicional, medida:** nenhum módulo de `pypi/trackfw/` lança `bash`/`sh`. Se for
+**(A)**, o remédio é de **harness** (`shutil.which` + caminho absoluto em 6 sítios) e fecha ~50
+vermelhos **sem esconder defeito de produto**. Se for **(B)** com o script morrendo sob invocação
+legítima, **vira segurança**.
+
+### ML-0B — ITEM 12 da sonda: separar (A) de (B)
+**Status:** ⬜ Pendente · **Agente:** `dedalo-tf`
+**Files affected:** `scripts/windows-repro/run.ps1`
+Sonda observacional, uma linha de decisão. 🔴 **Não corrigir nada** — só medir.
+**Critérios de aceite:**
+- [ ] `where.exe bash` registrado
+- [ ] `bash -c 'echo ...'` lançado **pelo Python**, com `stdout` **impresso**
+- [ ] o script real invocado como os testes invocam, **com `stdout` impresso** — é o canal que os 50
+      testes descartam e onde a única assinatura compatível vive
+- [ ] 🔴 pwsh-safe: variável em string entre aspas antes de virar argumento
+      (`vault/notes/powershell-modo-argumento-nao-interpola-nem-divide-2026-08-31.md`)
+- [ ] Nada além do `run.ps1`; nenhum teste tocado
 
 ## Wave 1 — As três decisões (arquiteto, sequenciais, NÃO paralelizam)
 > Dependências: nenhuma. Não esperam a Wave 0.
