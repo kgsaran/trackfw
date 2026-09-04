@@ -381,7 +381,13 @@ jobs:
           HOME: ${{ steps.home.outputs.home }}
           USERPROFILE: ${{ steps.home.outputs.home }}
           TRACKFW_DISABLE_EXTERNAL_COMMANDS: "1"
-        run: go test -p 1 -parallel 1 -timeout 20m ./...
+        # -v (ML-4A, 2026-09-04): sem ele o `go test` bufferiza e DESCARTA a saída de
+        # pacote que passa — e os testes com supressão de bit de execução passam
+        # justamente POR CAUSA da supressão. Medido: 0 ocorrências da mensagem sem
+        # -v, 13 com. O critério "toda supressão nomeia a garantia não exercitada"
+        # era vácuo no Go sem esta flag: a mensagem existia e ninguém a lia.
+        # `t.Logf` e `os.Stderr` dão 0 igualmente — as duas foram medidas.
+        run: go test -v -p 1 -parallel 1 -timeout 20m ./...
 
       - name: Node — suíte completa (camada 1, AC1)
         # always() && <condição>: ver comentário no step "Go — suíte

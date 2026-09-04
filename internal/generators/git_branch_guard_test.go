@@ -27,8 +27,12 @@ func TestGenerateGitBranchGuardScript_CreatesExecutableFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("script não foi criado: %v", err)
 	}
-	if info.Mode().Perm()&0100 == 0 {
-		t.Errorf("script não é executável: mode=%v", info.Mode())
+	if execBitRepresentavelPara(t, path) {
+		if info.Mode().Perm()&0100 == 0 {
+			t.Errorf("script não é executável: mode=%v", info.Mode())
+		}
+	} else {
+		execBitNaoExercitado(t, path)
 	}
 
 	content, err := os.ReadFile(path)
@@ -52,8 +56,17 @@ func TestGenerateGlobalGitBranchGuardScript_WritesUnderTrackfwHomeScripts(t *tes
 	if err != nil {
 		t.Fatalf("script global não foi criado em %s: %v", path, err)
 	}
-	if info.Mode().Perm()&0100 == 0 {
-		t.Errorf("script global não é executável: mode=%v", info.Mode())
+	if execBitRepresentavelPara(t, path) {
+		if info.Mode().Perm()&0100 == 0 {
+			t.Errorf("script global não é executável: mode=%v", info.Mode())
+		}
+	} else {
+		execBitNaoExercitado(t, path)
+		// Único assert deste teste sobre o artefato: no ramo suprimido, medir o que É
+		// representável em NTFS, em vez de não medir nada.
+		if info.Size() == 0 {
+			t.Errorf("script global está vazio: %s", path)
+		}
 	}
 }
 

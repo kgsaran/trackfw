@@ -332,16 +332,24 @@ func TestInstallGates_GeraAttentionScripts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("attention signal script not found: %v", err)
 	}
-	if signalInfo.Mode().Perm() != 0755 {
-		t.Errorf("attention signal script mode = %v, want 0755", signalInfo.Mode().Perm())
+	if execBitRepresentavelPara(t, signalPath) {
+		if signalInfo.Mode().Perm() != 0755 {
+			t.Errorf("attention signal script mode = %v, want 0755", signalInfo.Mode().Perm())
+		}
+	} else {
+		execBitNaoExercitado(t, signalPath)
 	}
 
 	cleanupInfo, err := os.Stat(cleanupPath)
 	if err != nil {
 		t.Fatalf("attention cleanup script not found: %v", err)
 	}
-	if cleanupInfo.Mode().Perm() != 0755 {
-		t.Errorf("attention cleanup script mode = %v, want 0755", cleanupInfo.Mode().Perm())
+	if execBitRepresentavelPara(t, cleanupPath) {
+		if cleanupInfo.Mode().Perm() != 0755 {
+			t.Errorf("attention cleanup script mode = %v, want 0755", cleanupInfo.Mode().Perm())
+		}
+	} else {
+		execBitNaoExercitado(t, cleanupPath)
 	}
 
 	signalGot, err := os.ReadFile(signalPath)
@@ -414,8 +422,12 @@ func TestInstallGates_GeraCredentialGuardScript(t *testing.T) {
 	if err != nil {
 		t.Fatalf("credential guard script not found: %v", err)
 	}
-	if guardInfo.Mode().Perm() != 0755 {
-		t.Errorf("credential guard script mode = %v, want 0755", guardInfo.Mode().Perm())
+	if execBitRepresentavelPara(t, guardPath) {
+		if guardInfo.Mode().Perm() != 0755 {
+			t.Errorf("credential guard script mode = %v, want 0755", guardInfo.Mode().Perm())
+		}
+	} else {
+		execBitNaoExercitado(t, guardPath)
 	}
 
 	guardGot, err := os.ReadFile(guardPath)

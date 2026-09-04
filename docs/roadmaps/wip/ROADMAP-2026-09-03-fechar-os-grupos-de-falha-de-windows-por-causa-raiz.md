@@ -285,13 +285,76 @@ outros 2 CLIs.
 > Dependências: Wave 2.
 
 ### ML-4A — Bit de execução em NTFS
-**Status:** ⬜ Pendente · **Agente:** `artemis-tf` · ~22 testes, **decisão já tomada** no vault:
+**Status:** ✅ Concluído · **Agente:** `artemis-tf` · ~22 testes, **decisão já tomada** no vault:
 `goos-guard-e-do-binario-nao-do-host-wsl-continua-protegido-2026-09-01`. **Não relitigar** — guard de
 plataforma no assert.
 
 ### ML-4B — `WinError 32`, `.sh` sem `bash`, `stale_wip` off-by-one
-**Status:** ⬜ Pendente · **Agente:** `artemis-tf` · ~15 testes, todos de teste, todos disjuntos.
+**Status:** ✅ Concluído · **Agente:** `artemis-tf` · ~15 testes, todos de teste, todos disjuntos.
 O `stale_wip` é **truncamento**, não fuso horário — a hipótese de TZ foi **falsificada** na triagem.
+
+
+## Auditoria da Wave 4 — arquiteto, 2026-09-04
+
+```
+make quality QUALITY_EXIT=0, zero FAIL · validate exit 0
+controle POSIX: Python 1613 passed · Go 346/425/39 antes e depois · Node 859/859/0 skipped
+ML-4B intacto apos a colisao: 10 usos de bash_cmd e 10 de _chdir presentes
+```
+
+🔴 **Colisão de arquivo criada por MIM.** Afirmei no handoff que os dois MLs eram disjuntos; ambos
+editam `pypi/tests/test_generators_init.py`. **O ML-4B detectou e avisou**; preservei cópia durável
+dos 3 arquivos e verifiquei que nada se perdeu. Não houve dano — mas a garantia veio do agente, não
+do meu planejamento.
+
+### ML-4A — três achados além da correção
+
+**A lista do meu briefing estava incompleta.** Eram **22 sítios**, e ele achou dois grupos que eu
+não teria: `discover_test.go` usa `Perm() != 0755` — **um grep pelo `&` não pega** — e havia **9
+supressões silenciosas pré-existentes** (`process.platform !== 'win32'`, `os.name == 'posix'`) que
+passavam no Windows **sem nomear nada**, violando o critério que eu mesmo escrevi.
+
+🔴 **O canal da mensagem estava furado, e isso tornava o MEU critério vácuo.** Verificado por mim:
+
+```
+go test  (sem -v)  ->   0 ocorrencias da mensagem
+go test  (com -v)  ->  13
+```
+
+O `go test` bufferiza e **descarta a saída de pacote que passa** — e esses testes passam
+**justamente por causa da supressão**. `t.Logf` e `os.Stderr` dão zero igualmente, as duas medidas.
+**Acrescentei `-v` ao `quality.yml:384`** com o motivo medido no comentário: sem isso, "toda
+supressão nomeia a garantia" era uma exigência que ninguém podia ler.
+
+🔴 **Ele recusou um proxy falso.** Tentou FAT32 via `hdiutil` para exercitar o ramo de supressão, e o
+VFS `msdos` do macOS **sintetiza `0755`** — devolveria `True` na sonda e daria a impressão de ter
+testado NTFS. Registrado em `vault/notes/fat32-no-macos-finge-0755-...`: *"o que provei localmente é
+o caminho de código, não a plataforma."*
+
+**Falsificação contada, mutando o gerador e não uma fixture:** previa 11 funções no Go, observou
+**11, exatamente as mesmas, zero a mais**. Produto restaurado byte-a-byte (`cmp` OK nos 9).
+
+### ML-4B — os três classificados por medição, e um defeito de produto recusado
+
+**Discriminante do `WinError 32`:** dos 5 testes da classe, os **4 que fazem `os.chdir` falharam** e
+o **único que não faz passou**. Quem segura o handle é o cwd do próprio processo; `tearDown` não
+resolveria porque roda **depois** do `__exit__`.
+
+**O `stale_wip` é INTERMITENTE** — falhou num run e **passou** no outro sem mudança na regra. 200
+amostras: **9 a 21 µs** entre a gravação do mtime e a leitura da produção; `int()` é floor, então
+qualquer desvio derruba 10,0000001 para 9. **Não é fuso, e o produto está certo.** E ele escolheu
+sonda negativa de **10 ms em vez de 1 µs** porque `mtime + 864000` perto de 1,76e9 tem ~2,4e-7 s de
+erro em float64 — 1 µs seria 4× o epsilon e **recriaria a fragilidade**.
+
+🔴 **Defeito de PRODUTO reportado e não mascarado:** `TestStaleWIPReportsWIPWalkError` falha nos
+**dois** runs, sem intermitência. Em POSIX o `ReadDir` devolve `ENOTDIR` e o diagnóstico sai; no
+Windows **a regra vai a silêncio** (`validator.go:1698-1702`). Vai para a **Wave 3**, e com uma
+instrução dele a mim: **não aceitar "guarda de plataforma no assert" na auditoria** — o precedente do
+ML-4A vale para uma propriedade que NTFS **não tem**, não para um diagnóstico que **some de verdade**.
+
+**Grupo adjacente enumerado, não corrigido:** igualdade de modo restritivo em
+`internal/identity/identity_test.go:126,134` e pares no Node — falham no Windows (NTFS reporta
+`0o666`/`0o444`), mas **não são bit de execução**. Vira REQ.
 
 ## Verificação que só o CI fecha
 

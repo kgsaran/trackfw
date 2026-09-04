@@ -9,10 +9,11 @@ import argparse
 import io
 import os
 import re
+import shutil
 import sys
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import contextmanager, redirect_stdout
 from datetime import date
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -23,6 +24,32 @@ if _PYPI not in sys.path:
 from trackfw.generators.adr import slugify, generate_adr, global_adr_dir, list_adrs
 from trackfw import config as trackfw_config
 from trackfw.commands import adr as adr_cmd
+
+
+
+@contextmanager
+def _chdir(path):
+    """`os.chdir(path)` que SEMPRE volta ao cwd anterior ao sair do bloco.
+
+    ML-4B. No Windows o cwd do processo mantem um HANDLE aberto sobre o diretorio, e
+    `os.rmdir` sobre ele falha com `PermissionError: [WinError 32] The process cannot access
+    the file because it is being used by another process` -- foi assim que 4 testes desta
+    classe morreram no CI de Windows, na LIMPEZA do `TemporaryDirectory`, nao no corpo. Em
+    POSIX o diretorio e removivel enquanto e cwd, entao o defeito e invisivel localmente.
+
+    O `tearDown` nao resolve: ele roda DEPOIS que o `with tempfile.TemporaryDirectory()` ja
+    tentou apagar o diretorio.
+
+    ORDEM E CARGA UTIL: este gerenciador tem de ser o ULTIMO da cadeia `with`, porque os
+    gerenciadores saem em ordem inversa -- assim o cwd e restaurado ANTES da limpeza do
+    tmpdir. Colocado primeiro, o bug volta e continua passando em POSIX.
+    """
+    previous = os.getcwd()
+    os.chdir(path)
+    try:
+        yield path
+    finally:
+        os.chdir(previous)
 
 
 class TestSlugify(unittest.TestCase):
@@ -208,9 +235,10 @@ class TestAdrCommandScope(unittest.TestCase):
 
     def test_scope_global_cria_arquivo_em_home_trackfw_adr(self):
         """--scope global deve criar o ADR em $HOME/.trackfw/adr/, sem exigir trackfw.yaml no cwd."""
-        with tempfile.TemporaryDirectory() as fake_home, tempfile.TemporaryDirectory() as no_project_cwd:
+        with tempfile.TemporaryDirectory() as fake_home, \
+                tempfile.TemporaryDirectory() as no_project_cwd, \
+                _chdir(no_project_cwd):  # cwd SEM trackfw.yaml
             os.environ['HOME'] = fake_home
-            os.chdir(no_project_cwd)  # cwd SEM trackfw.yaml
 
             args = argparse.Namespace(
                 title='Decisao Global de Teste',
@@ -231,9 +259,7 @@ class TestAdrCommandScope(unittest.TestCase):
     def test_scope_project_default_comportamento_atual_preservado(self):
         """--scope project (default) deve continuar idêntico: usa adr_dirs do trackfw.yaml
         (ou docs/adr por padrão), comportamento inalterado por esta feature."""
-        with tempfile.TemporaryDirectory() as project_dir:
-            os.chdir(project_dir)
-
+        with tempfile.TemporaryDirectory() as project_dir, _chdir(project_dir):
             args = argparse.Namespace(
                 title='Decisao De Projeto',
                 status='Proposed',
@@ -263,9 +289,10 @@ class TestAdrCommandScope(unittest.TestCase):
 
     def test_adr_list_scope_global(self):
         """`adr list --scope global` lista os ADRs criados em $HOME/.trackfw/adr/."""
-        with tempfile.TemporaryDirectory() as fake_home, tempfile.TemporaryDirectory() as no_project_cwd:
+        with tempfile.TemporaryDirectory() as fake_home, \
+                tempfile.TemporaryDirectory() as no_project_cwd, \
+                _chdir(no_project_cwd):
             os.environ['HOME'] = fake_home
-            os.chdir(no_project_cwd)
 
             new_args = argparse.Namespace(
                 title='ADR Listado Global', status='Proposed', dir=None, scope='global',
@@ -282,9 +309,7 @@ class TestAdrCommandScope(unittest.TestCase):
 
     def test_adr_list_scope_project(self):
         """`adr list --scope project` (default) lista os ADRs de docs/adr no cwd atual."""
-        with tempfile.TemporaryDirectory() as project_dir:
-            os.chdir(project_dir)
-
+        with tempfile.TemporaryDirectory() as project_dir, _chdir(project_dir):
             new_args = argparse.Namespace(
                 title='ADR Listado Projeto', status='Proposed', dir=None, scope='project',
             )
@@ -297,6 +322,48 @@ class TestAdrCommandScope(unittest.TestCase):
 
             self.assertIn('adr-listado-projeto', buf.getvalue())
             self.assertIn('Proposed', buf.getvalue())
+
+
+
+class TestChdirRestauraAntesDaLimpezaDoTmpdir(unittest.TestCase):
+    """ML-4B — falsificacao NAS DUAS DIRECOES da ordem do `with` em `_chdir`.
+
+    O WinError 32 em si so reproduz no Windows (em POSIX um diretorio e removivel
+    enquanto e o cwd). O que E falsificavel aqui, em qualquer SO, e a PROPRIEDADE que
+    remove a causa: quando a limpeza do tmpdir roda, o cwd do processo ja esta fora dele.
+    """
+
+    @contextmanager
+    def _tmpdir_que_observa_o_cwd_na_limpeza(self, observed):
+        d = tempfile.mkdtemp()
+        try:
+            yield d
+        finally:
+            observed.append(os.getcwd())
+            shutil.rmtree(d, ignore_errors=True)
+
+    def test_ordem_correta_cwd_ja_esta_fora_quando_a_limpeza_roda(self):
+        """`_chdir` por ULTIMO na cadeia: sai primeiro, cwd restaurado antes da limpeza."""
+        observed = []
+        with self._tmpdir_que_observa_o_cwd_na_limpeza(observed) as d, _chdir(d):
+            self.assertEqual(os.path.realpath(os.getcwd()), os.path.realpath(d))
+        self.assertEqual(len(observed), 1)
+        self.assertNotEqual(
+            os.path.realpath(observed[0]), os.path.realpath(d),
+            "o cwd ainda estava dentro do tmpdir na limpeza — e o estado que da WinError 32",
+        )
+
+    def test_ordem_invertida_deixa_o_cwd_preso_dentro_do_tmpdir(self):
+        """Direcao oposta: com a limpeza acontecendo DENTRO do `_chdir` (o que a ordem
+        invertida produz), o cwd ainda e o tmpdir — a condicao exata do WinError 32."""
+        d = tempfile.mkdtemp()
+        observed = []
+        try:
+            with _chdir(d):
+                observed.append(os.getcwd())
+            self.assertEqual(os.path.realpath(observed[0]), os.path.realpath(d))
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
 
 
 if __name__ == '__main__':

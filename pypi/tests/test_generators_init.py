@@ -13,6 +13,17 @@ from pathlib import Path
 
 from trackfw.generators.init_gen import scaffold
 
+# ML-4B: os scripts de atencao sao `.sh`. Lancar `[script]` direto no Windows da
+# `OSError: [WinError 193] %1 is not a valid Win32 application` -- o Windows nao honra
+# shebang, so executa PE. E lancar por nome nu `"bash"` cai no stub do WSL em
+# System32 (vault: system32-bash-exe-e-o-stub-do-wsl-...). `bash_cmd` do ML-0C resolve
+# um bash por CAMINHO ABSOLUTO PROVADO (`GNU bash` no `--version`) e e a UNICA
+# resolucao de bash do repositorio -- nao escrever outra.
+from .bash_path import bash_cmd
+# Guarda MEDIDA para o bit de execucao: em NTFS st_mode & 0o111 e sempre 0.
+# Ver pypi/tests/exec_bit.py.
+from .exec_bit import exec_bit_nao_exercitado, exec_bit_representavel_para
+
 
 class TestScaffoldFlat(unittest.TestCase):
     """Verifica criação de estrutura flat."""
@@ -420,11 +431,14 @@ class TestAttentionScripts(unittest.TestCase):
         # gerador existia mas nunca era chamado por nenhum fluxo real.
         self.assertTrue(os.path.isfile(guard_path), 'trackfw-credential-guard.sh não foi criado por scaffold()')
 
-        # Permissão de execução no Unix
-        if os.name == 'posix':
-            self.assertTrue(os.stat(signal_path).st_mode & 0o111 != 0, 'signal script não é executável')
-            self.assertTrue(os.stat(cleanup_path).st_mode & 0o111 != 0, 'cleanup script não é executável')
-            self.assertTrue(os.stat(guard_path).st_mode & 0o111 != 0, 'credential guard script não é executável')
+        # Permissão de execução. Guarda MEDIDA (pypi/tests/exec_bit.py) no lugar de
+        # `os.name == 'posix'`, que suprimia em SILÊNCIO: agora a supressão NOMEIA o
+        # artefato cuja garantia deixou de ser verificada.
+        for _p, _rot in ((signal_path, 'signal'), (cleanup_path, 'cleanup'), (guard_path, 'credential guard')):
+            if exec_bit_representavel_para(_p):
+                self.assertTrue(os.stat(_p).st_mode & 0o111 != 0, '%s script não é executável' % _rot)
+            else:
+                exec_bit_nao_exercitado(_p)
 
         with open(signal_path, encoding='utf-8') as f:
             signal_content = f.read()
@@ -1186,8 +1200,10 @@ class TestAttentionHooksInjectors(unittest.TestCase):
             os.chdir(old_cwd)
 
         self.assertTrue(os.path.isfile(guard_path), 'update não gerou o script de credential guard faltante')
-        if os.name == 'posix':
+        if exec_bit_representavel_para(guard_path):
             self.assertTrue(os.stat(guard_path).st_mode & 0o111 != 0, 'credential guard script não é executável')
+        else:
+            exec_bit_nao_exercitado(guard_path)
         # attention-signal.sh preexistente continua presente e não foi removido
         self.assertTrue(os.path.isfile(signal_path))
 
@@ -1311,6 +1327,25 @@ class TestAttentionScriptsExecutionAndHardening(unittest.TestCase):
         self.signal_script = os.path.join(self.tmp, 'scripts', 'trackfw-attention-signal.sh')
         self.cleanup_script = os.path.join(self.tmp, 'scripts', 'trackfw-attention-cleanup.sh')
 
+    def test_scripts_de_atencao_sao_lancados_por_bash_absoluto_provado(self):
+        """ML-4B — falsificacao local do WinError 193, NAS DUAS DIRECOES.
+
+        O `WinError 193` (%1 is not a valid Win32 application) so ocorre no Windows -- em POSIX
+        o shebang do `.sh` e honrado e `[script]` executa. O que E falsificavel em qualquer SO e
+        a propriedade que remove a causa: o argv entregue ao `subprocess` deixou de ser o `.sh`
+        sozinho e passou a ter um interpretador ABSOLUTO na cabeca.
+
+        Direcao oposta: o argv NAO e mais `[script]`, e a cabeca NAO e a string nua "bash" --
+        que no Windows resolveria para o stub do WSL em System32.
+        """
+        argv = bash_cmd(self.signal_script)
+        self.assertTrue(self.signal_script.endswith('.sh'))
+        self.assertEqual(len(argv), 2)
+        self.assertEqual(argv[1], self.signal_script)
+        self.assertTrue(os.path.isabs(argv[0]), argv)
+        self.assertNotEqual(argv[0], 'bash')
+        self.assertNotEqual(argv, [self.signal_script])
+
     def test_script_execution_without_roadmap_dir_in_yaml(self):
         """(C1) Script executa com sucesso quando trackfw.yaml não possui roadmap_dir:."""
         yaml_path = os.path.join(self.tmp, 'trackfw.yaml')
@@ -1323,7 +1358,7 @@ class TestAttentionScriptsExecutionAndHardening(unittest.TestCase):
         })
 
         res = subprocess.run(
-            [self.signal_script],
+            bash_cmd(self.signal_script),
             input=payload,
             capture_output=True,
             text=True,
@@ -1336,7 +1371,7 @@ class TestAttentionScriptsExecutionAndHardening(unittest.TestCase):
         self.assertTrue(os.path.isfile(attention_file), "Attention file não foi criado no fallback docs/roadmaps")
 
         res_clean = subprocess.run(
-            [self.cleanup_script],
+            bash_cmd(self.cleanup_script),
             capture_output=True,
             text=True,
             cwd=self.tmp,
@@ -1357,7 +1392,7 @@ class TestAttentionScriptsExecutionAndHardening(unittest.TestCase):
         })
 
         res = subprocess.run(
-            [self.signal_script],
+            bash_cmd(self.signal_script),
             input=payload,
             capture_output=True,
             text=True,
@@ -1380,7 +1415,7 @@ class TestAttentionScriptsExecutionAndHardening(unittest.TestCase):
         })
 
         res = subprocess.run(
-            [self.signal_script],
+            bash_cmd(self.signal_script),
             input=payload,
             capture_output=True,
             text=True,
@@ -1407,7 +1442,7 @@ class TestAttentionScriptsExecutionAndHardening(unittest.TestCase):
         })
 
         res = subprocess.run(
-            [self.signal_script],
+            bash_cmd(self.signal_script),
             input=payload,
             capture_output=True,
             text=True,
@@ -1437,7 +1472,7 @@ class TestAttentionScriptsExecutionAndHardening(unittest.TestCase):
         })
 
         res = subprocess.run(
-            [self.signal_script],
+            bash_cmd(self.signal_script),
             input=payload,
             capture_output=True,
             text=True,
@@ -1492,7 +1527,7 @@ class TestAttentionScriptsExecutionAndHardening(unittest.TestCase):
         })
 
         res = subprocess.run(
-            [self.signal_script],
+            bash_cmd(self.signal_script),
             input=payload,
             capture_output=True,
             text=True,

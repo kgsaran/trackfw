@@ -18,6 +18,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 # ML-0C: bash por caminho absoluto PROVADO (`GNU bash` no --version). Nome nu resolve para
 # System32\bash.exe (stub do WSL) no Windows -- ver pypi/tests/bash_path.py.
 from .bash_path import bash_cmd
+# Guarda MEDIDA para o bit de execucao: em NTFS st_mode & 0o111 e sempre 0.
+# Ver pypi/tests/exec_bit.py.
+from .exec_bit import exec_bit_nao_exercitado, exec_bit_representavel_para
 
 from trackfw import config
 from trackfw.generators.init_gen import (
@@ -42,7 +45,10 @@ class TestCredentialGuardGenerator(unittest.TestCase):
         script_path = os.path.join(self.tmpdir, "scripts", "trackfw-credential-guard.sh")
         self.assertTrue(os.path.exists(script_path))
         mode = os.stat(script_path).st_mode
-        self.assertTrue(mode & stat.S_IXUSR, "script deveria ser executável")
+        if exec_bit_representavel_para(script_path):
+            self.assertTrue(mode & stat.S_IXUSR, "script deveria ser executável")
+        else:
+            exec_bit_nao_exercitado(script_path)
         with open(script_path, "r", encoding="utf-8") as f:
             content = f.read()
         self.assertTrue(content.startswith("#!/usr/bin/env bash"))
@@ -302,7 +308,10 @@ class TestGlobalCredentialGuardGenerator(unittest.TestCase):
         script_path = os.path.join(self.fake_home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
         self.assertTrue(os.path.exists(script_path))
         mode = os.stat(script_path).st_mode
-        self.assertTrue(mode & stat.S_IXUSR, "script global deveria ser executável")
+        if exec_bit_representavel_para(script_path):
+            self.assertTrue(mode & stat.S_IXUSR, "script global deveria ser executável")
+        else:
+            exec_bit_nao_exercitado(script_path)
         with open(script_path, "r", encoding="utf-8") as f:
             content = f.read()
         self.assertTrue(content.startswith("#!/usr/bin/env bash"))

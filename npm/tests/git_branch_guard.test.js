@@ -4,6 +4,7 @@ const fs = require('fs')
 const os = require('os')
 const path = require('path')
 const { spawnSync } = require('child_process')
+const { execBitRepresentavelPara, execBitNaoExercitado } = require('./exec-bit')
 const {
   generateGitBranchGuardScript,
   generateGlobalGitBranchGuardScript,
@@ -43,7 +44,11 @@ test('generateGitBranchGuardScript cria scripts/trackfw-git-branch-guard.sh exec
     generateGitBranchGuardScript(tmp)
     const scriptPath = path.join(tmp, 'scripts', 'trackfw-git-branch-guard.sh')
     const stat = fs.statSync(scriptPath)
-    assert.ok(stat.mode & 0o100, 'script deveria ser executável')
+    if (execBitRepresentavelPara(scriptPath)) {
+      assert.ok(stat.mode & 0o100, 'script deveria ser executável')
+    } else {
+      execBitNaoExercitado(scriptPath)
+    }
     const content = fs.readFileSync(scriptPath, 'utf8')
     assert.ok(content.startsWith('#!/usr/bin/env bash'))
   })
@@ -54,7 +59,14 @@ test('generateGlobalGitBranchGuardScript escreve em <home>/.trackfw/scripts/', (
     generateGlobalGitBranchGuardScript(fakeHome)
     const scriptPath = path.join(fakeHome, '.trackfw', 'scripts', 'trackfw-git-branch-guard.sh')
     const stat = fs.statSync(scriptPath)
-    assert.ok(stat.mode & 0o100, 'script global deveria ser executável')
+    if (execBitRepresentavelPara(scriptPath)) {
+      assert.ok(stat.mode & 0o100, 'script global deveria ser executável')
+    } else {
+      execBitNaoExercitado(scriptPath)
+      // Unico assert deste teste sobre o artefato: no ramo suprimido, medir o que E
+      // representavel em NTFS em vez de nao medir nada.
+      assert.ok(stat.size > 0, 'script global está vazio')
+    }
   })
 })
 

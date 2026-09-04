@@ -291,8 +291,12 @@ func TestInitGeneratesCredentialGuardScript(t *testing.T) {
 	if err != nil {
 		t.Fatalf("scripts/trackfw-credential-guard.sh not created by trackfw init: %v", err)
 	}
-	if info.Mode()&0o111 == 0 {
-		t.Errorf("scripts/trackfw-credential-guard.sh should be executable, mode=%v", info.Mode())
+	if execBitRepresentavelPara(t, guardPath) {
+		if info.Mode()&0o111 == 0 {
+			t.Errorf("scripts/trackfw-credential-guard.sh should be executable, mode=%v", info.Mode())
+		}
+	} else {
+		execBitNaoExercitado(t, guardPath)
 	}
 
 	signalPath := filepath.Join(project, "scripts", "trackfw-attention-signal.sh")

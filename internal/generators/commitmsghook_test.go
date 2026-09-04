@@ -28,9 +28,13 @@ func TestGenerateCommitMsgHook_Husky(t *testing.T) {
 		t.Fatalf("hook não encontrado em %s: %v", hookPath, err)
 	}
 
-	// Verificar permissão executável
-	if info.Mode()&0111 == 0 {
-		t.Errorf("hook não tem permissão executável: mode=%v", info.Mode())
+	// Verificar permissão executável (guarda MEDIDA — execbit_probe_test.go)
+	if execBitRepresentavelPara(t, hookPath) {
+		if info.Mode()&0111 == 0 {
+			t.Errorf("hook não tem permissão executável: mode=%v", info.Mode())
+		}
+	} else {
+		execBitNaoExercitado(t, hookPath)
 	}
 
 	content, err := os.ReadFile(hookPath)
@@ -104,8 +108,12 @@ func TestGenerateCommitMsgHook_Lefthook(t *testing.T) {
 	if err != nil {
 		t.Fatalf("script não encontrado em %s: %v", scriptPath, err)
 	}
-	if info.Mode()&0111 == 0 {
-		t.Errorf("script não tem permissão executável: mode=%v", info.Mode())
+	if execBitRepresentavelPara(t, scriptPath) {
+		if info.Mode()&0111 == 0 {
+			t.Errorf("script não tem permissão executável: mode=%v", info.Mode())
+		}
+	} else {
+		execBitNaoExercitado(t, scriptPath)
 	}
 
 	scriptContent, err := os.ReadFile(scriptPath)

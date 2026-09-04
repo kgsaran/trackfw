@@ -1841,8 +1841,12 @@ func TestUpdateBackfillsCredentialGuardScriptForPreExistingProject(t *testing.T)
 	if err != nil {
 		t.Fatalf("update did not backfill the missing credential guard script: %v", err)
 	}
-	if guardInfo.Mode().Perm()&0o111 == 0 {
-		t.Errorf("credential guard script should be executable, mode=%v", guardInfo.Mode())
+	if execBitRepresentavelPara(t, guardPath) {
+		if guardInfo.Mode().Perm()&0o111 == 0 {
+			t.Errorf("credential guard script should be executable, mode=%v", guardInfo.Mode())
+		}
+	} else {
+		execBitNaoExercitado(t, guardPath)
 	}
 
 	if _, err := os.Stat(signalPath); err != nil {

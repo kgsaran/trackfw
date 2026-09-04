@@ -14,6 +14,7 @@ const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 const { spawnSync } = require('node:child_process')
+const { execBitRepresentavelPara, execBitNaoExercitado } = require('./exec-bit')
 
 const bin = path.resolve(__dirname, '../bin/trackfw')
 
@@ -81,7 +82,11 @@ test('discover --init generates trackfw-credential-guard.sh (same lifecycle as t
   assert.equal(guardContent, GUARD_SCRIPT)
 
   const guardMode = fs.statSync(guardPath(projectRoot)).mode & 0o777
-  assert.equal(guardMode & 0o100, 0o100, 'credential guard script should be executable (owner +x)')
+  if (execBitRepresentavelPara(guardPath(projectRoot))) {
+    assert.equal(guardMode & 0o100, 0o100, 'credential guard script should be executable (owner +x)')
+  } else {
+    execBitNaoExercitado(guardPath(projectRoot))
+  }
 })
 
 test('discover --init attention scripts are executable and byte-identical to trackfw init output', () => {
@@ -96,8 +101,16 @@ test('discover --init attention scripts are executable and byte-identical to tra
 
   const signalMode = fs.statSync(signalPath(projectRoot)).mode & 0o777
   const cleanupMode = fs.statSync(cleanupPath(projectRoot)).mode & 0o777
-  assert.equal(signalMode & 0o100, 0o100, 'signal script should be executable (owner +x)')
-  assert.equal(cleanupMode & 0o100, 0o100, 'cleanup script should be executable (owner +x)')
+  if (execBitRepresentavelPara(signalPath(projectRoot))) {
+    assert.equal(signalMode & 0o100, 0o100, 'signal script should be executable (owner +x)')
+  } else {
+    execBitNaoExercitado(signalPath(projectRoot))
+  }
+  if (execBitRepresentavelPara(cleanupPath(projectRoot))) {
+    assert.equal(cleanupMode & 0o100, 0o100, 'cleanup script should be executable (owner +x)')
+  } else {
+    execBitNaoExercitado(cleanupPath(projectRoot))
+  }
 })
 
 test('discover --init is idempotent — running twice does not fail or corrupt the scripts', () => {

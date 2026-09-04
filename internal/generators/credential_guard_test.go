@@ -30,8 +30,12 @@ func TestGenerateCredentialGuardScript_CreatesExecutableFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("script não foi criado: %v", err)
 	}
-	if info.Mode().Perm()&0100 == 0 {
-		t.Errorf("script não é executável: mode=%v", info.Mode())
+	if execBitRepresentavelPara(t, path) {
+		if info.Mode().Perm()&0100 == 0 {
+			t.Errorf("script não é executável: mode=%v", info.Mode())
+		}
+	} else {
+		execBitNaoExercitado(t, path)
 	}
 
 	content, err := os.ReadFile(path)
@@ -156,8 +160,12 @@ func TestGenerateGlobalCredentialGuardScript_WritesUnderTrackfwHomeScripts(t *te
 	if err != nil {
 		t.Fatalf("script global não foi criado em %s: %v", path, err)
 	}
-	if info.Mode().Perm()&0100 == 0 {
-		t.Errorf("script global não é executável: mode=%v", info.Mode())
+	if execBitRepresentavelPara(t, path) {
+		if info.Mode().Perm()&0100 == 0 {
+			t.Errorf("script global não é executável: mode=%v", info.Mode())
+		}
+	} else {
+		execBitNaoExercitado(t, path)
 	}
 
 	content, err := os.ReadFile(path)
