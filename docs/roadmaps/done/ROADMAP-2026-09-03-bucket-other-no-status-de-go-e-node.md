@@ -1,12 +1,12 @@
 ---
-status: wip
+status: done
 date: 2026-09-03
 req: "docs/req/REQ-2026-09-03-status-do-go-e-do-node-perde-em-silencio-o-que-nao-reconhece.md"
 ---
 
 # ROADMAP: bucket Other no status de Go e Node
 
-> Date: 2026-09-03 | Status: wip
+> Date: 2026-09-03 | Status: done
 
 REQ: docs/req/REQ-2026-09-03-status-do-go-e-do-node-perde-em-silencio-o-que-nao-reconhece.md
 ADR:

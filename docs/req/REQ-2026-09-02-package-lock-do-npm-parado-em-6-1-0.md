@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-09-02
 author: "lourivalgarciajunior"
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-02-alinhar-a-versao-do-package-lock.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-02-alinhar-a-versao-do-package-lock.md"
 ---
 
 # REQ: `npm/package-lock.json` declara 6.1.0 — cinco majors atrás do `package.json`
 
-> Date: 2026-09-02 | Status: Open
+> Date: 2026-09-02 | Status: Done
 
 ## Motivation
 
@@ -66,4 +66,4 @@ ADR:
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-09-02-alinhar-a-versao-do-package-lock.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-09-02-alinhar-a-versao-do-package-lock.md

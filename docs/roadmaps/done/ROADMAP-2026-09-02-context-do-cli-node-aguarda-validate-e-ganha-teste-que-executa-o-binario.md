@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-02
 squad: apolo-tf
 req: "docs/req/REQ-2026-08-30-trackfw-context-do-cli-node-falha-sempre-porque-validate-assincrono-e-chamado-sem-await.md"
@@ -7,7 +7,7 @@ req: "docs/req/REQ-2026-08-30-trackfw-context-do-cli-node-falha-sempre-porque-va
 
 # Roadmap: `context` do CLI Node aguarda `validate` e ganha teste que executa o binário
 
-> Criado em: 2026-09-02 | Status: wip
+> Criado em: 2026-09-02 | Status: done
 
 ## Context
 

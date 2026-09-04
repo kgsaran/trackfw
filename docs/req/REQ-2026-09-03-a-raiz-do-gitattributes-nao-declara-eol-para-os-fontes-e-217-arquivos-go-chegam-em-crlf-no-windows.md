@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-09-03
 author: "trackfw_architect (Zeus)"
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-03-declarar-eol-lf-para-os-fontes-na-raiz-do-gitattributes.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-03-declarar-eol-lf-para-os-fontes-na-raiz-do-gitattributes.md"
 ---
 
 # REQ: A raiz do `.gitattributes` não declara `eol` para os fontes, e 217 arquivos Go chegam em CRLF no Windows
 
-> Date: 2026-09-03 | Status: Open
+> Date: 2026-09-03 | Status: Done
 | Linear Issue:
 | Jira Issue:
 
@@ -85,4 +85,4 @@ ADR:
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-09-03-declarar-eol-lf-para-os-fontes-na-raiz-do-gitattributes.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-09-03-declarar-eol-lf-para-os-fontes-na-raiz-do-gitattributes.md

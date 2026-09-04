@@ -1,12 +1,12 @@
 ---
-status: wip
+status: done
 date: 2026-09-02
 req: "docs/req/REQ-2026-09-02-package-lock-do-npm-parado-em-6-1-0.md"
 ---
 
 # ROADMAP: alinhar a versão do package-lock
 
-> Date: 2026-09-02 | Status: wip
+> Date: 2026-09-02 | Status: done
 
 REQ: docs/req/REQ-2026-09-02-package-lock-do-npm-parado-em-6-1-0.md
 ADR:

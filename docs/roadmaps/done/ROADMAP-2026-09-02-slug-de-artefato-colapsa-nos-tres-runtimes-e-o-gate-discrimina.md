@@ -1,12 +1,12 @@
 ---
-status: wip
+status: done
 date: 2026-09-02
 req: "docs/req/REQ-2026-09-02-slugify-do-python-deleta-nao-alfanumericos-em-vez-de-colapsar-e-viola-o-contrato-de-slug.md"
 ---
 
 # ROADMAP: slug de artefato colapsa nos três runtimes, e o gate discrimina
 
-> Date: 2026-09-02 | Status: wip
+> Date: 2026-09-02 | Status: done
 
 REQ: docs/req/REQ-2026-09-02-slugify-do-python-deleta-nao-alfanumericos-em-vez-de-colapsar-e-viola-o-contrato-de-slug.md
 ADR:

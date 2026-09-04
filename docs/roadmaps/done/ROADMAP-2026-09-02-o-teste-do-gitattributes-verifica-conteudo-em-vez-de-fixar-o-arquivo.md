@@ -1,12 +1,12 @@
 ---
-status: wip
+status: done
 date: 2026-09-02
 req: "docs/req/REQ-2026-09-02-teste-do-gitattributes-fixa-o-arquivo-inteiro-e-o-repo-nao-pode-ter-regra-propria.md"
 ---
 
 # ROADMAP: o teste do `.gitattributes` verifica conteúdo em vez de fixar o arquivo
 
-> Date: 2026-09-02 | Status: wip
+> Date: 2026-09-02 | Status: done
 
 REQ: docs/req/REQ-2026-09-02-teste-do-gitattributes-fixa-o-arquivo-inteiro-e-o-repo-nao-pode-ter-regra-propria.md
 ADR:

@@ -1,5 +1,5 @@
 ---
-status: Open
+status: Done
 date: 2026-08-30
 author: "trackfw_architect (Zeus)"
 adr: ""
@@ -8,7 +8,7 @@ roadmap: ""
 
 # REQ: `trackfw context` do CLI Node falha sempre porque `validate()` assíncrono é chamado sem `await`
 
-> Date: 2026-08-30 | Status: Open
+> Date: 2026-08-30 | Status: Done
 
 ## Motivation
 

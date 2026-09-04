@@ -1,5 +1,5 @@
 ---
-status: Open
+status: Done
 date: 2026-08-30
 author: "trackfw_architect (Zeus)"
 adr: ""
@@ -8,7 +8,7 @@ roadmap: ""
 
 # REQ: `req new` grava flat, `resolveREQFiles` procura namespaced por estado — e as regras de referência ficam vácuas em `by_agent`
 
-> Date: 2026-08-30 | Status: Open
+> Date: 2026-08-30 | Status: Done
 
 ## Motivation
 

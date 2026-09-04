@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-09-02
 author: "lourivalgarciajunior"
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-02-o-teste-do-gitattributes-verifica-conteudo-em-vez-de-fixar-o-arquivo.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-02-o-teste-do-gitattributes-verifica-conteudo-em-vez-de-fixar-o-arquivo.md"
 ---
 
 # REQ: o teste do `.gitattributes` fixa o arquivo inteiro, e aí o repositório não pode ter regra própria
 
-> Date: 2026-09-02 | Status: Open
+> Date: 2026-09-02 | Status: Done
 
 ## Motivation
 
@@ -84,4 +84,4 @@ ADR:
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-09-02-o-teste-do-gitattributes-verifica-conteudo-em-vez-de-fixar-o-arquivo.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-09-02-o-teste-do-gitattributes-verifica-conteudo-em-vez-de-fixar-o-arquivo.md

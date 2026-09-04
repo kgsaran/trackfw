@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-09-02
 author: "lourivalgarciajunior"
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-02-slug-de-artefato-colapsa-nos-tres-runtimes-e-o-gate-discrimina.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-02-slug-de-artefato-colapsa-nos-tres-runtimes-e-o-gate-discrimina.md"
 ---
 
 # REQ: uma das 4 cópias de `slugify` do Python derivou — `adr new` e `req new` dão nomes diferentes para o mesmo título
 
-> Date: 2026-09-02 | Status: Open
+> Date: 2026-09-02 | Status: Done
 
 ## O achado, na forma mais curta
 
@@ -116,4 +116,4 @@ ADR:
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-09-02-slug-de-artefato-colapsa-nos-tres-runtimes-e-o-gate-discrimina.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-09-02-slug-de-artefato-colapsa-nos-tres-runtimes-e-o-gate-discrimina.md

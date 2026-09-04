@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-02
 squad: ares-tf
 req: "docs/req/REQ-2026-09-02-prs-usam-palavra-chave-de-fechamento-em-portugues-e-nenhuma-issue-fecha-automaticamente.md"
@@ -7,7 +7,7 @@ req: "docs/req/REQ-2026-09-02-prs-usam-palavra-chave-de-fechamento-em-portugues-
 
 # Roadmap: Gate e template de PR exigem palavra-chave de fechamento em inglês
 
-> Criado em: 2026-09-02 | Status: wip
+> Criado em: 2026-09-02 | Status: done
 
 ## Context
 

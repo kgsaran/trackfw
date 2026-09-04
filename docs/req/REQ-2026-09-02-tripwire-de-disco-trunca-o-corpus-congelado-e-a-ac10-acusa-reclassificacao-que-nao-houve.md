@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-09-02
 author: "lourivalgarciajunior"
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-02-separar-a-tripwire-de-disco-do-contrato-da-ac10.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-02-separar-a-tripwire-de-disco-do-contrato-da-ac10.md"
 ---
 
 # REQ: a tripwire de disco trunca o corpus congelado, e a AC10 acusa reclassificação que não houve
 
-> Date: 2026-09-02 | Status: Open
+> Date: 2026-09-02 | Status: Done
 
 ## Motivation
 
@@ -88,4 +88,4 @@ ADR:
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-09-02-separar-a-tripwire-de-disco-do-contrato-da-ac10.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-09-02-separar-a-tripwire-de-disco-do-contrato-da-ac10.md
