@@ -162,6 +162,50 @@ os 50 testes já medem** — a sonda repetiria o erro que existe para diagnostic
 **Cp1252 vivo nesta árvore:** o corpo usa `PYTHONIOENCODING=utf-8` + `ascii()` em toda saída medida,
 porque o item 1 mataria a sonda no primeiro `print`.
 
+### ML-0C — `bash` por caminho absoluto nos sítios de teste do Python
+**Status:** ⬜ Pendente · **Agente:** `artemis-tf`
+**Files affected:** os 6 sítios Python que lançam `bash`, em `pypi/tests/`
+
+🔴 **CAUSA RAIZ MEDIDA** (ITEM 12, run `33875124523`) — e não é "não existe bash":
+
+```
+shutil_which_bash = 'C:\Program Files\Git\bin\bash.EXE'   <- GNU bash, --version rc=0
+bare_rc           = 1
+bare_is_gnu_bash  = False
+bare_out          = UTF-16: "Windows Subsystem for Linux has no installed distributions."
+```
+
+**`C:\Windows\System32\bash.exe` é o stub do WSL e VENCE a resolução por nome nu.** Sem
+distribuição instalada, sai **1** e escreve em **UTF-16 pelo `stdout`**.
+
+Explica os três sintomas de uma vez: o `exit 1` uniforme é o **stub**, não o script (por isso os dois
+extremos dão o mesmo 1); o `stderr` vazio é porque o stub fala por **`stdout`**, canal que os 50
+testes descartam; e Go e Node passam porque entregam **caminho absoluto** ao `CreateProcess`,
+enquanto o CPython passa `lpApplicationName = NULL` e cai na ordem implícita, onde `System32` vem
+antes de `Git\bin`.
+
+**É defeito de HARNESS, não de segurança.** O guard não morre — **nunca é invocado**.
+
+🔴 **`shutil.which` sozinho NÃO é o remédio, e a sonda provou por quê:** ele varre o `%PATH%` **na
+ordem do PATH** e devolve o binário **certo** — mas essa **não é** a ordem do `CreateProcess` com
+`lpApplicationName=NULL`. Ele serve para **achar** o candidato; o que corrige é **passar o caminho
+absoluto** ao `subprocess`.
+
+🔴 **Prove a identidade, não a existência.** O discriminante entre "não achou" e "achou o errado"
+**não é o exit code** — é `--version` contendo `GNU bash`. Um `bash.exe` que existe e não é bash é
+exatamente o defeito.
+
+**Critérios de aceite:**
+- [ ] Os sítios Python lançam `bash` por **caminho absoluto provado** (`GNU bash` no `--version`)
+- [ ] 🔴 **Falsificação:** revertendo, o stub do WSL volta a vencer — provável só no CI; localmente,
+      provar que o caminho passado **deixa de ser nome nu**
+- [ ] 🔴 **Controle POSIX:** `python3 -m pytest pypi/tests/` com o **mesmo total** de antes
+- [ ] 🔴 **Nenhum teste marcado `skip`**
+- [ ] Se nenhum candidato for GNU bash, o teste **falha nomeando isso** — não pula em silêncio
+- [ ] Nada fora de `pypi/tests/`; nenhum módulo de `pypi/trackfw/` tocado (medido: nenhum lança bash)
+
+**Verificação que só o CI fecha:** a contagem Python cair de 101 para ~51.
+
 ## Wave 1 — As três decisões (arquiteto, sequenciais, NÃO paralelizam)
 > Dependências: nenhuma. Não esperam a Wave 0.
 
