@@ -15,6 +15,10 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+# ML-0C: bash por caminho absoluto PROVADO (`GNU bash` no --version). Nome nu resolve para
+# System32\bash.exe (stub do WSL) no Windows -- ver pypi/tests/bash_path.py.
+from .bash_path import bash_cmd
+
 from trackfw import config
 from trackfw.generators.init_gen import (
     _generate_credential_guard_script,
@@ -104,7 +108,7 @@ class TestCredentialGuardScriptBehavior(unittest.TestCase):
 
     def _run(self, payload):
         proc = subprocess.run(
-            ["bash", self.script_path],
+            bash_cmd(self.script_path),
             cwd=self.tmpdir,
             input=json.dumps(payload),
             capture_output=True,
@@ -272,7 +276,7 @@ class TestCredentialGuardScriptBehavior(unittest.TestCase):
         self.assertTrue(self._attention_exists())
 
         cleanup_path = os.path.join(self.tmpdir, "scripts", "trackfw-attention-cleanup.sh")
-        proc = subprocess.run(["bash", cleanup_path], cwd=self.tmpdir, capture_output=True, text=True)
+        proc = subprocess.run(bash_cmd(cleanup_path), cwd=self.tmpdir, capture_output=True, text=True)
         self.assertEqual(proc.returncode, 0, proc.stderr)
 
         self.assertTrue(
@@ -328,7 +332,7 @@ class TestGlobalCredentialGuardScriptBehavior(unittest.TestCase):
 
     def _run(self, payload):
         proc = subprocess.run(
-            ["bash", self.script_path],
+            bash_cmd(self.script_path),
             cwd=self.cwd,
             input=json.dumps(payload),
             capture_output=True,
@@ -402,7 +406,7 @@ class TestGlobalCredentialGuardScriptBehavior(unittest.TestCase):
             with open(os.path.join(project_dir, "trackfw.yaml"), "w", encoding="utf-8") as f:
                 f.write("roadmap_dir: docs/roadmaps\n")
             project_proc = subprocess.run(
-                ["bash", os.path.join(project_dir, "scripts", "trackfw-credential-guard.sh")],
+                bash_cmd(os.path.join(project_dir, "scripts", "trackfw-credential-guard.sh")),
                 cwd=project_dir,
                 input=json.dumps({"tool_name": "Bash", "tool_input": {"command": "echo AKIAABCDEFGHIJKLMNOP"}}),
                 capture_output=True,

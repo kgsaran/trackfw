@@ -35,6 +35,10 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+# ML-0C: bash por caminho absoluto PROVADO (`GNU bash` no --version). Nome nu resolve para
+# System32\bash.exe (stub do WSL) no Windows -- ver pypi/tests/bash_path.py.
+from .bash_path import bash_cmd
+
 from trackfw.generators.init_gen import _generate_credential_guard_script
 from trackfw.generators.hooks import inject_claude_hooks, inject_cursor_hooks, inject_kiro_hooks
 
@@ -65,7 +69,7 @@ class SabotageFixtureMixin:
 
     def _run(self, script_path, payload):
         proc = subprocess.run(
-            ["bash", script_path],
+            bash_cmd(script_path),
             cwd=self.tmpdir,
             input=json.dumps(payload),
             capture_output=True,

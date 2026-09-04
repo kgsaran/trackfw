@@ -29752,3 +29752,34 @@ que `"REPRODUCED" -eq` fecha o gate de saída da suíte.
 
 **Só o run de Windows fecha:** qual binário atende por `bash` para o CPython, se o pipe captura o que
 ele fala, e o `rc` do script em cada braço. Handoff para `trackfw_architect` (auditoria e commit).
+
+## 2026-09-04 — Ártemis (QA) · ML-0C: `bash` por caminho absoluto provado nos testes Python
+
+**Início e fim no mesmo ciclo.** Escopo: só `pypi/tests/`. Nenhum módulo de `pypi/trackfw/` tocado —
+medido no ML-0A que nenhum lança `bash`/`sh`. Nenhuma operação de git.
+
+**Sítios corrigidos: 10, não 6** (o briefing pediu para confirmar a lista): `test_credential_guard.py`
+(4: 107, 275, 331, 405), `test_git_branch_guard.py` (4: 127, 166, 219, 290),
+`test_credential_guard_sabotage.py` (1: 68), `test_git_branch_guard_dedup.py` (1: 317). Os 10 têm a
+**mesma forma** — `subprocess.run(["bash", <script>, *args])` — o que justifica um **helper único**
+(`pypi/tests/bash_path.py`, `bash_cmd(*args)`) em vez de resolução repetida.
+
+O portão que carrega o peso é o de **identidade**: `--version` contendo `GNU bash`, medido em BYTES
+(a saída UTF-16 do stub do WSL não casa e o candidato é recusado sem depender de decodificação).
+`shutil.which` só **acha** candidatos — o que corrige é passar o **caminho absoluto** ao `subprocess`.
+A exclusão de `System32\bash.exe` por caminho é cinto-e-suspensório; o stub seria recusado por
+identidade mesmo sem ela. Sem candidato GNU bash, `BashNotFound` **falha nomeando cada candidato e a
+resposta dele** — nenhum `skip`. Resolução preguiçosa (não no import) para a falha aparecer como erro
+dos testes que lançam bash, não como erro de coleta da suíte.
+
+**Caminho de código único nas duas plataformas** de propósito: é o que torna a correção falsificável
+fora do Windows. Em POSIX a resolução por nome nu já era inequívoca, então o binário e a saída não
+mudam — só a string entregue ao `subprocess`.
+
+**Controle POSIX (macOS):** `1604 passed, 28 subtests` antes → `1604 passed, 28 subtests` depois
+(`--ignore=pypi/tests/test_bash_path.py`) → `1609 passed` com o novo arquivo de guarda (delta = 5
+testes novos, zero regressão). **Falsificação local:** o argv agora é
+`['/opt/homebrew/bin/bash', 'scripts/trackfw-credential-guard.sh']` — deixou de ser o nome nu.
+
+**Só o CI de Windows fecha:** que o stub do WSL perde a resolução e que os ~50 testes voltam a
+invocar o guard de fato. Handoff para `trackfw_architect` (auditoria e commit).
