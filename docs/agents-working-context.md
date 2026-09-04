@@ -29707,3 +29707,48 @@ nos 6 sítios de spawn) e fecha ~50 vermelhos **sem esconder defeito de produto*
 módulo de `pypi/trackfw/` lança `bash`/`sh`. Se der (B) com o script morrendo sob invocação legítima,
 deixa de ser harness e vira segurança. Handoff para `trackfw_architect`: auditoria e decisão sobre
 abrir REQ própria para o remédio.
+
+## 2026-09-04 — `dedalo-tf` (IaC) — ML-0B (ITEM 12: sonda que separa (A) de (B) no grupo B)
+
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-09-03-fechar-os-grupos-de-falha-de-windows-por-causa-raiz.md`,
+Wave 0, ML-0B. Arquivo tocado: **só** `scripts/windows-repro/run.ps1` (ITEM 12 acrescentado antes do
+sumário; itens 1–11 intocados por construção — a edição foi inserção pura). Nenhum teste tocado,
+nenhuma correção aplicada, nenhuma operação de git.
+
+Sonda **observacional**, com `stdout` **impresso** — é o canal que os 50 testes descartam (`_out`) e o
+único compatível com a assinatura `rc=1` + `stderr` vazio. Mede, na ordem: `where.exe bash` (ordem de
+resolução do Windows) · `bash -c 'echo …'` lançado **pelo CPython** pelo nome nu, em três fiações
+(pipe, canais fundidos, redirecionamento para **arquivo** — o stub do WSL é conhecido por escrever no
+console em vez dos handles redirecionados, e sem esse braço um "vazio" seria ambíguo) · identidade de
+**cada** candidato a `bash` no `%PATH%` via `--version` · o script real
+(`_generate_git_branch_guard_script` + `subprocess.run(['bash', script], input=…, cwd=…)`, idêntico a
+`test_git_branch_guard.py::_run`) executado pelo **nome nu e por cada candidato absoluto** · `bash -x`
+no primeiro candidato **provado** GNU bash.
+
+Duas decisões de método que mudam o que a sonda consegue afirmar. **Não** basta `shutil.which("bash")`
+como braço "caminho absoluto": `which` varre o `%PATH%` na mesma ordem que a hipótese (A) diz não ser a
+do `CreateProcess` com `lpApplicationName=NULL` — se devolvesse o mesmo binário do nome nu, a
+comparação voltaria "idêntica" sem provar nada, queimando justamente a medição discriminante. Por isso
+enumera **todos** os candidatos e exercita cada um. E `BRANCH-B` só é emitido se o candidato que
+devolveu `rc=1` silencioso tiver se **provado** GNU bash (`--version` com `GNU bash`) — dois não-bash
+devolvendo 1 são (A), e rotulá-los (B) transformaria defeito de harness em alarme de segurança.
+
+Veredito da sonda: `BRANCH-A`/`BRANCH-B` → `REPRODUCED` (o gate de saída da suíte compara por
+igualdade com `"REPRODUCED"`; rótulo composto passaria despercebido) · `NOT-REPRODUCED` → `ABSENT` ·
+resto → `INCONCLUSIVE`. A ramificação medida aparece no título e no Detail.
+
+Verificado **localmente**: `run.ps1` parseia (`Parser::ParseFile` → PARSE OK), o corpo Python embutido
+compila, e a execução do corpo no macOS devolve `VERDICT=NOT-REPRODUCED` com `rc=2`/`rc=0` — a sonda é
+falsificável nas duas direções e não acusa defeito onde não há. O bloco pwsh foi executado isolado com
+shims: escreve o arquivo, roda, extrai o `VERDICT` e mapeia o veredito. Here-string **single-quoted**
+(`@'…'@`) é load-bearing: o corpo contém `$0`, `$BASH_VERSION` e `>&2`.
+
+Duas ampliações de alcance da medição (não são correção): os candidatos a `bash` são semeados com os
+locais canônicos fora do `%PATH%` (`Git\bin`, `Git\usr\bin`, `System32\bash.exe` — no Git for Windows
+o `usr\bin` **não** está no PATH do runner), e o truncamento das saídas medidas subiu de 400 para 2000
+chars: sob (A) o texto de `stdout` é a única coisa que **nomeia** quem atendeu por `bash`, e a mensagem
+do próprio guard já mede ~380. Medido também que o `switch` do veredito devolve `String` (não array) e
+que `"REPRODUCED" -eq` fecha o gate de saída da suíte.
+
+**Só o run de Windows fecha:** qual binário atende por `bash` para o CPython, se o pipe captura o que
+ele fala, e o `rc` do script em cada braço. Handoff para `trackfw_architect` (auditoria e commit).

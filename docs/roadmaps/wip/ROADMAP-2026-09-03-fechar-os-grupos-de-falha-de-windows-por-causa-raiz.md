@@ -121,17 +121,46 @@ vermelhos **sem esconder defeito de produto**. Se for **(B)** com o script morre
 legítima, **vira segurança**.
 
 ### ML-0B — ITEM 12 da sonda: separar (A) de (B)
-**Status:** ⬜ Pendente · **Agente:** `dedalo-tf`
+**Status:** ✅ Concluído · **Agente:** `dedalo-tf`
 **Files affected:** `scripts/windows-repro/run.ps1`
 Sonda observacional, uma linha de decisão. 🔴 **Não corrigir nada** — só medir.
 **Critérios de aceite:**
-- [ ] `where.exe bash` registrado
-- [ ] `bash -c 'echo ...'` lançado **pelo Python**, com `stdout` **impresso**
-- [ ] o script real invocado como os testes invocam, **com `stdout` impresso** — é o canal que os 50
+- [x] `where.exe bash` registrado
+- [x] `bash -c 'echo ...'` lançado **pelo Python**, com `stdout` **impresso**
+- [x] o script real invocado como os testes invocam, **com `stdout` impresso** — é o canal que os 50
       testes descartam e onde a única assinatura compatível vive
-- [ ] 🔴 pwsh-safe: variável em string entre aspas antes de virar argumento
+- [x] 🔴 pwsh-safe: variável em string entre aspas antes de virar argumento
       (`vault/notes/powershell-modo-argumento-nao-interpola-nem-divide-2026-08-31.md`)
-- [ ] Nada além do `run.ps1`; nenhum teste tocado
+- [x] Nada além do `run.ps1`; nenhum teste tocado
+
+
+**Evidência de aceite — auditoria do arquiteto, 2026-09-04:**
+
+```
+git diff --stat scripts/windows-repro/run.ps1  ->  306 insercoes, 0 remocoes
+                                                   <- ITENS 1-11 intocados por construcao
+corpo Python falsificado no macOS  ->  VERDICT=NOT-REPRODUCED
+                                       <- a sonda nao acusa defeito onde nao ha
+```
+
+🔴 **Duas decisões dele que evitam medição enganosa, e nenhuma estava no meu handoff:**
+
+**Recusou o `shutil.which("bash")` como braço de "caminho absoluto".** O `which` varre o `%PATH%`
+**na mesma ordem** que a hipótese (A) diz **não** ser a do `CreateProcess` com
+`lpApplicationName=NULL`. Usá-lo poderia devolver "idêntico" **sem provar nada** — mediria a mesma
+coisa duas vezes achando que mediu duas.
+
+**Travou o rótulo `BRANCH-B` atrás de prova de identidade** (`GNU bash` no `--version`). Dois
+não-bash devolvendo 1 são **(A)**; rotulá-los **(B)** converteria **defeito de harness em alarme de
+segurança**. É a diferença entre "remédio de fixture" e "incidente", e ele não deixou o rótulo
+escorregar.
+
+**Terceiro cuidado, não previsto:** braço de **redirecionamento para arquivo**, porque o stub do WSL
+escreve no console em vez dos handles redirecionados. Sem ele, um "vazio" seria **o mesmo nada que
+os 50 testes já medem** — a sonda repetiria o erro que existe para diagnosticar.
+
+**Cp1252 vivo nesta árvore:** o corpo usa `PYTHONIOENCODING=utf-8` + `ascii()` em toda saída medida,
+porque o item 1 mataria a sonda no primeiro `print`.
 
 ## Wave 1 — As três decisões (arquiteto, sequenciais, NÃO paralelizam)
 > Dependências: nenhuma. Não esperam a Wave 0.
