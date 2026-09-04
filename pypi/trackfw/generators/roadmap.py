@@ -11,6 +11,7 @@ import unicodedata
 
 from trackfw import config as cfg_module
 from trackfw.validator import resolve_agent_namespaces
+from trackfw.pathfmt import normalize_ref_separator
 
 VALID_STATES = ["backlog", "analyzing", "wip", "blocked", "done", "abandoned"]
 STATE_ORDER = ["analyzing", "wip", "backlog", "blocked", "done", "abandoned"]
@@ -516,8 +517,11 @@ def _normalize_ref_separator(p: str) -> str:
     commit feito no Windows — exatamente o defeito que esta função existe para curar. NÃO
     aplicar ao buffer inteiro de um arquivo, só ao valor pontual já extraído
     (docs/seguranca/2026-09-01-modelo-de-ameaca-do-separador-em-artefato.md, limite duro).
+
+    ML-2A (ADR-2026-09-04, D3): implementação delegada a trackfw/pathfmt.py, ponto único
+    do runtime. O nome segue exportado daqui para os chamadores e testes existentes.
     """
-    return p.replace("\\", "/")
+    return normalize_ref_separator(p)
 
 
 def sync_paired_req_references(

@@ -66,7 +66,11 @@ def _write_provenance(root: Path, destination: str, checksum: str, installed_sha
     # against the installed file's own hash — independent parameters, never
     # derived from one another, mirroring production where one is written
     # by the external approver and the other by the install command.
-    rel_dest = os.path.relpath(destination, root)
+    # ML-2A (ADR-2026-09-04, D1 categoria 2): normalizada porque e o que a PRODUCAO
+    # grava — resolve_third_party_skill_destination monta o destino por concatenacao
+    # explicita com "/". Sem isto a fixture usava separador nativo e, no Windows,
+    # deixava de casar com a chave normalizada que o produto procura (validator.py).
+    rel_dest = os.path.relpath(destination, root).replace("\\", "/")
     _write_json(
         root / ".trackfw" / "thirdparty-provenance.json",
         {
@@ -234,7 +238,11 @@ def test_branch_ii_missing_installed_sha256_is_caught(tmp_path, monkeypatch):
 
     # Hand-authored: no "installed_sha256" key at all, exactly what an
     # approver (never having run `install`) would write.
-    rel_dest = os.path.relpath(destination, root)
+    # ML-2A (ADR-2026-09-04, D1 categoria 2): normalizada porque e o que a PRODUCAO
+    # grava — resolve_third_party_skill_destination monta o destino por concatenacao
+    # explicita com "/". Sem isto a fixture usava separador nativo e, no Windows,
+    # deixava de casar com a chave normalizada que o produto procura (validator.py).
+    rel_dest = os.path.relpath(destination, root).replace("\\", "/")
     _write_json(
         root / ".trackfw" / "thirdparty-provenance.json",
         {

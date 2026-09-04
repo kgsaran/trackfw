@@ -44,10 +44,24 @@ nunca é o sistema de arquivos**.
   (`npm/src/commands/update-harness.js:79,116,175`) — é **texto de relatório**. E ele emite `~`, que
   é POSIX-ismo puro: **nenhum shell do Windows expande `~`**. Emitir `~\...` é **incoerente com a
   decisão já tomada** ao escolher o til.
-- **`provenanceKey`** é chave de dicionário JSON. Nunca toca o SO. Go
-  (`validator_thirdparty_provenance.go:160`) e Python (`validator.py`) **já normalizam** por decisão
-  documentada; só o Node não — e por isso ele **passa por acidente**, com fixture nativa e produto
-  sem normalização casando entre si.
+- **`provenanceKey`** é chave de dicionário JSON. Nunca toca o SO.
+
+  🔴 **CORREÇÃO (ML-2A, 2026-09-04) — esta análise estava INVERTIDA, e corrigir pelo texto dela
+  teria piorado o Node.** Eu escrevi que "só o Node não normaliza, e por isso passa por acidente",
+  o que sugere que o Node é quem **falha**. Medido, é o contrário:
+
+  ```
+  producao  ->  internal/integrations/render.go:821  grava a chave com "/" EXPLICITO
+  as TRES fixtures ->  montavam a chave com separador NATIVO
+  ```
+
+  **Em Windows, Go e Python reprovam contra o produto CERTO.** O Node passa porque fixture **e**
+  produto estão **ambos** errados, e casam entre si. **Corrigir só o produto do Node o viraria de
+  verde para vermelho** — o oposto do objetivo. O remédio foi normalizar as **3 fixtures** junto com
+  o produto do Node.
+
+  **Lição de método:** "um dos três divergentes está errado" e "os três discordam por razões
+  diferentes" pedem remédios diferentes. Presumi o primeiro; era o segundo.
 - **`command` de hook** é **string de comando bash**. Verificado no `settings.json` deste
   repositório: `$CLAUDE_PROJECT_DIR/scripts/trackfw-git-branch-guard.sh`. Em bash, `\` é **escape**,
   não separador: `C:\Users\foo` vira `C:Usersfoo`. Aqui `/` não é preferência — **é correção**.
@@ -66,6 +80,11 @@ Três categorias emitem `/`:
 2. chave de dicionario ou identificador       (provenanceKey, node ID, edge.To)
 3. string de comando interpretada por shell   (command de hook, gate de wave)
 ```
+
+🔴 **A categoria 3 tem ZERO pontos de emissão — medido no ML-2A.** Os `command` de hook são
+**literais** (`"$CLAUDE_PROJECT_DIR/scripts/…"`) nos 3 runtimes, e o gate de wave é **lido do
+markdown** pelo `barrier`. Nada a corrigir ali. Registrado para impedir que alguém "aplique a ADR"
+numa categoria que já está correta por construção.
 
 ### D2 — `filepath.Join` continua para caminho que o SO abre
 

@@ -6,6 +6,7 @@ Espelho Python de internal/serve/api_board.go e npm/src/serve/api_board.js.
 import os
 
 from trackfw import config as _config
+from trackfw.pathfmt import normalize_ref_separator
 
 STATES = ["wip", "backlog", "blocked", "done", "abandoned"]
 
@@ -43,8 +44,12 @@ def _scan_state_dir(dir_path, state, agent=None):
             pass
 
         title = _extract_title(content, filename)
-        # path relativo para uso pelo frontend
-        rel_path = os.path.relpath(full_path, os.getcwd()).replace("\\", "/")
+        # path relativo para uso pelo frontend — IDENTIFICADOR emitido em JSON
+        # (ADR-2026-09-04, D1 categoria 2). Antes do ML-2A era um .replace() inline;
+        # passou ao ponto único do runtime (D3). Comportamento idêntico.
+        #
+        # 🔴 full_path permanece nativo e é o que vai a open() (ADR D2).
+        rel_path = normalize_ref_separator(os.path.relpath(full_path, os.getcwd()))
 
         card = {
             "file": filename,

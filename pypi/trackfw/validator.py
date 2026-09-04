@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from . import config as _config
 from .traceid import check_traceid
 from trackfw.homedir import home_dir, expand_path
+from trackfw.pathfmt import normalize_ref_separator
 
 # _current_platform is seeded from sys.platform at import time. Tests override it
 # via _set_platform_for_test to exercise the Windows guard on any host.
@@ -1429,8 +1430,12 @@ def _normalize_ref_separator(ref: str) -> str:
     os.path.exists falhar numa referência que na verdade existe
     (docs/seguranca/2026-09-01-modelo-de-ameaca-do-separador-em-artefato.md). NÃO aplicar ao
     buffer inteiro do arquivo — só ao valor já extraído do campo.
+
+    ML-2A (ADR-2026-09-04, D3): a IMPLEMENTAÇÃO passou a viver em trackfw/pathfmt.py,
+    ponto único do runtime. O nome continua exportado daqui porque testes e chamadores já
+    o importam por este caminho; o que deixou de existir é a segunda cópia da regra.
     """
-    return ref.replace("\\", "/")
+    return normalize_ref_separator(ref)
 
 
 def _reference_exists(ref: str) -> bool:

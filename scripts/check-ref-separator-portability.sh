@@ -158,6 +158,108 @@ assert_has "Python: current_ref normalizado antes da comparacao de basename (cur
   "pypi/trackfw/generators/roadmap.py" \
   'os.path.basename(_normalize_ref_separator(current_ref))'
 
+# --- ML-2A (ADR-2026-09-04) — separador POSIX na fronteira de EMISSAO ---------
+# Categoria 1 (texto de relatorio), categoria 2 (chave/identificador). A categoria 3
+# (string de comando de shell) NAO tem checagem aqui de proposito: medido, os comandos de
+# hook sao literais "$CLAUDE_PROJECT_DIR/scripts/..." nos 3 runtimes e o gate de wave e
+# lido do markdown do roadmap — nenhum e montado por filepath.Join, entao nao ha ponto de
+# emissao a proteger. Registrar a ausencia e o que impede alguem de "aplicar a ADR" ali
+# depois e quebrar o que ja esta certo.
+#
+# 🔴 ESCOPO NEGATIVO (ADR D2): nenhuma destas assinaturas normaliza caminho antes de
+# syscall. Cada uma envolve um valor JA DERIVADO (fatia de string, chave, id de no) — o
+# operando que vai a os.Open/fs.readFileSync/open() e sempre uma expressao SEPARADA, nao
+# tocada. Normalizar antes de syscall quebraria UNC e o prefixo "\\?\", que exige
+# backslash exclusivamente.
+
+# Ponto unico por runtime (D3)
+assert_has "Node: ponto unico de normalizacao existe em lib/pathfmt.js" \
+  "npm/src/lib/pathfmt.js" \
+  'function normalizeRefSeparator(p) {'
+assert_has "Python: ponto unico de normalizacao existe em pathfmt.py" \
+  "pypi/trackfw/pathfmt.py" \
+  'def normalize_ref_separator(p: str) -> str:'
+assert_has "Node: generators/roadmap.js delega ao ponto unico (nao reimplementa)" \
+  "npm/src/generators/roadmap.js" \
+  'return pathfmtNormalizeRefSeparator(p)'
+assert_has "Python: validator.py delega ao ponto unico (nao reimplementa)" \
+  "pypi/trackfw/validator.py" \
+  'return normalize_ref_separator(ref)'
+assert_has "Python: generators/roadmap.py delega ao ponto unico (nao reimplementa)" \
+  "pypi/trackfw/generators/roadmap.py" \
+  'return normalize_ref_separator(p)'
+
+# Categoria 1 — display path do relatorio (tildeify/tildeAbbrev), os 3 runtimes.
+# Duas assinaturas por runtime: o ramo "sob o home" e o ramo de fallback. Um assert_has
+# unico passaria com so um dos dois normalizando, e o fallback e justamente o que emite
+# caminho absoluto do Windows.
+assert_has "Go: tildeAbbrev normaliza o ramo home (display)" \
+  "internal/integrations/manager.go" \
+  'normalizeRefSeparator("~" + cleanDest[len(cleanHome):])'
+assert_has "Go: tildeAbbrev normaliza o ramo de projeto (display)" \
+  "internal/integrations/manager.go" \
+  'normalizeRefSeparator(cleanDest[len(cleanRoot)+1:])'
+assert_has "Go: tildeAbbrev normaliza o fallback (display)" \
+  "internal/integrations/manager.go" \
+  'return normalizeRefSeparator(destination)'
+assert_has "Node: tildeify normaliza o ramo home (display)" \
+  "npm/src/lib/update-engine.js" \
+  "normalizeRefSeparator('~' + normalizedPath.slice(normalizedHome.length))"
+assert_has "Node: tildeify normaliza o fallback (display)" \
+  "npm/src/lib/update-engine.js" \
+  'return normalizeRefSeparator(normalizedPath)'
+assert_has "Node: tildeAbbrev normaliza o ramo de projeto (display)" \
+  "npm/src/integrations/manager.js" \
+  'normalizeRefSeparator(path.relative(this.roots.project, file))'
+assert_has "Python: _tildeify normaliza a cauda do ramo home (display)" \
+  "pypi/trackfw/commands/update_harness.py" \
+  'return "~/" + normalize_ref_separator(normalized[len(prefix):])'
+assert_has "Python: _tildeify normaliza o fallback (display)" \
+  "pypi/trackfw/commands/update_harness.py" \
+  'return normalize_ref_separator(normalized)'
+
+# Categoria 2 — chave de proveniencia no Node (Go e Python ja cobertos acima, na secao AC3)
+assert_has "Node validate: provenanceKey normalizado antes do lookup" \
+  "npm/src/validator/index.js" \
+  'const provenanceKey = normalizeRefSeparator(path.relative(root, destination))'
+
+# Categoria 2 — node ID do grafo e path do board, nos 3 runtimes.
+# O Go de /api/chain ja e coberto na secao AC3; aqui entram os que faltavam.
+assert_has "Node serve: node ID de /api/chain normalizado" \
+  "npm/src/serve/api_chain.js" \
+  'const id = normalizeRefSeparator(path.join(dir, file))'
+assert_has "Go serve: path do /api/board normalizado" \
+  "internal/serve/api_board.go" \
+  'relPath = normalizeRefSeparator(relPath)'
+assert_has "Node serve: path do /api/board normalizado" \
+  "npm/src/serve/api_board.js" \
+  'const relPath = normalizeRefSeparator(agent'
+assert_has "Python serve: node ID de /api/chain pelo ponto unico (nao replace inline)" \
+  "pypi/trackfw/serve/api_chain.py" \
+  'rel_path = normalize_ref_separator(os.path.relpath(full_path, os.getcwd()))'
+assert_has "Python serve: path do /api/board pelo ponto unico (nao replace inline)" \
+  "pypi/trackfw/serve/api_board.py" \
+  'rel_path = normalize_ref_separator(os.path.relpath(full_path, os.getcwd()))'
+
+# Fixture de proveniencia — o unico ponto do lote em que a FIXTURE era o defeito.
+# Ela montava a chave com filepath.Rel/path.relative/os.path.relpath (separador NATIVO),
+# enquanto a producao grava por concatenacao explicita com "/"
+# (ResolveThirdPartySkillDestination). Em Windows, fixture e produto deixavam de casar e a
+# fixture reprovava o produto CERTO em Go e Python — e no Node fixture e produto casavam
+# por acidente, os dois errados. Sem estas 3 checagens, uma reversao so aparece no runner
+# de Windows.
+assert_has "Go fixture: chave de proveniencia normalizada (fidelidade a producao)" \
+  "internal/validator/validator_thirdparty_provenance_test.go" \
+  'relDest = normalizeRefSeparator(relDest)'
+assert_count "Node fixture: chave de proveniencia normalizada nas 2 fabricas" \
+  "npm/tests/validator.test.js" \
+  "path.relative(root, destination).replace(/\\\\/g, '/')" \
+  2
+assert_count "Python fixture: chave de proveniencia normalizada nas 2 fabricas" \
+  "pypi/tests/test_validator_thirdparty_provenance.py" \
+  'os.path.relpath(destination, root).replace("\\", "/")' \
+  2
+
 # --- Guardas de vacuidade -----------------------------------------------------
 # Duas guardas distintas, cada uma cobrindo uma forma diferente de "passar sem
 # checar nada" (docs/cli-parity.md, "Quatro propriedades exigidas de todo gate
@@ -176,10 +278,10 @@ assert_has "Python: current_ref normalizado antes da comparacao de basename (cur
 #    linha — nunca um "0 encontrados, gate passa" silencioso. Falsificado em
 #    scratchpad/refsep/{empty-root,nonexistent-dir-xyz} (ver relatorio do ML).
 #
-# 18 e o numero de chamadas assert_has/assert_count acima (a assert_count do Go
-# conta como 1 chamada mas verifica 2 ocorrencias na mesma linha) — nomeado, nao
-# magico.
-expected=18
+# 40 e o numero de chamadas assert_has/assert_count acima (18 da REQ-2026-08-30 mais 22
+# do ML-2A/ADR-2026-09-04; cada assert_count conta como 1 chamada mas verifica N
+# ocorrencias) — nomeado, nao magico.
+expected=40
 if [[ "$checked" -ne "$expected" ]]; then
   echo "check-ref-separator-portability: vacuidade — esperava checar $expected assinaturas, checou $checked" >&2
   fail=1

@@ -63,6 +63,13 @@ func writeThirdPartyProvenance(t *testing.T, root, destination, checksum, instal
 	if err != nil {
 		t.Fatalf("filepath.Rel: %v", err)
 	}
+	// ML-2A (ADR-2026-09-04, D1 categoria 2): a chave e normalizada porque e o que a
+	// PRODUCAO grava — ResolveThirdPartySkillDestination monta o destino por
+	// concatenacao explicita com "/" (integrations/render.go:821), em qualquer SO.
+	// Sem isto a fixture montava a chave com filepath.Rel (separador NATIVO) e, no
+	// Windows, deixava de casar com a chave normalizada que o produto procura
+	// (validator_thirdparty_provenance.go:160) — a fixture reprovava o produto CERTO.
+	relDest = normalizeRefSeparator(relDest)
 	prov := map[string]interface{}{
 		"schema_version": 2,
 		"entries": map[string]interface{}{
@@ -356,6 +363,13 @@ func TestThirdPartyArtifactHasProvenance_BranchII_MissingInstalledSHA256IsCaught
 	if err != nil {
 		t.Fatalf("filepath.Rel: %v", err)
 	}
+	// ML-2A (ADR-2026-09-04, D1 categoria 2): a chave e normalizada porque e o que a
+	// PRODUCAO grava — ResolveThirdPartySkillDestination monta o destino por
+	// concatenacao explicita com "/" (integrations/render.go:821), em qualquer SO.
+	// Sem isto a fixture montava a chave com filepath.Rel (separador NATIVO) e, no
+	// Windows, deixava de casar com a chave normalizada que o produto procura
+	// (validator_thirdparty_provenance.go:160) — a fixture reprovava o produto CERTO.
+	relDest = normalizeRefSeparator(relDest)
 	prov := map[string]interface{}{
 		"schema_version": 2,
 		"entries": map[string]interface{}{

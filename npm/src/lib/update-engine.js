@@ -1,5 +1,7 @@
 'use strict'
 
+const { normalizeRefSeparator } = require('./pathfmt')
+
 // update-engine.js — shared state machine for `trackfw update` and
 // `trackfw update harness` (ML-6C of ROADMAP-2026-07-29-barrier-governanca-
 // e-autoridade-do-orquestrador). Both commands report one of exactly four
@@ -169,6 +171,17 @@ function summarize(targets) {
 // fell through to the absolute-path branch even though homeRoot had
 // already been normalized. Stripping a trailing separator from
 // normalizedHome (root "/" excepted) before the prefix check closes this.
+// ML-2A (ADR-2026-09-04, D1 categoria 1 — "texto de relatorio / saida para humano"):
+// os TRES retornos de caminho passam por normalizeRefSeparator. A variavel que recebe
+// esta funcao chama-se literalmente displayPath (npm/src/commands/update-harness.js) e
+// vai para o campo `path` do documento JSON do relatorio — o consumidor nunca e o
+// sistema de arquivos. E o "~" que ela emite ja e POSIX-ismo puro (nenhum shell do
+// Windows expande til), entao devolver "~\\.claude\\settings.json" era incoerente com a
+// decisao ja tomada ao escolher o til.
+//
+// 🔴 A normalizacao e do VALOR DE SAIDA. path.normalize acima continua operando no
+// separador nativo, e `absPath` (o caminho que o chamador realmente abre) nao e
+// alterado por esta funcao — ela nao muda como o produto abre arquivo (ADR D2).
 function tildeify(homeRoot, absPath) {
   let normalizedHome = path.normalize(homeRoot)
   if (normalizedHome.length > path.sep.length && normalizedHome.endsWith(path.sep)) {
@@ -176,8 +189,8 @@ function tildeify(homeRoot, absPath) {
   }
   const normalizedPath = path.normalize(absPath)
   if (normalizedPath === normalizedHome) return '~'
-  if (normalizedPath.startsWith(normalizedHome + path.sep)) return '~' + normalizedPath.slice(normalizedHome.length)
-  return normalizedPath
+  if (normalizedPath.startsWith(normalizedHome + path.sep)) return normalizeRefSeparator('~' + normalizedPath.slice(normalizedHome.length))
+  return normalizeRefSeparator(normalizedPath)
 }
 
 // validateTargets — throws (usage error) when the caller asked for an id

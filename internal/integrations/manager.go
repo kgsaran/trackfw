@@ -75,6 +75,19 @@ type Manager struct {
 // filepath.Clean never adds a trailing separator to a non-root path, so the
 // "startsWith(normalizedHome + sep)" check is safe without a separate
 // trailing-sep strip.
+// A saída é EMISSÃO — texto de relatório consumido por OnSkip, que só o escreve em
+// stderr (o contrato do campo proíbe compor/derivar qualquer coisa dele). Por isso ela
+// passa por normalizeRefSeparator: ADR-2026-09-04 D1, categoria 1 ("texto de relatório /
+// saída para humano"). O til já é POSIX-ismo puro — nenhum shell do Windows expande "~" —
+// então emitir "~\.claude\settings.json" é incoerente com a decisão já tomada ao escolher
+// o til. O par Python (integrations/manager.py) já emitia "/" via .as_posix(); o Node
+// (integrations/manager.js:tildeAbbrev) e este Go eram a divergência.
+//
+// 🔴 A normalização é do VALOR DE SAÍDA, nunca do caminho de travessia: filepath.Clean
+// continua operando sobre o separador nativo, e m.destination original é o que vai a
+// syscall em qualquer outro ponto. Um HomeDir de perfil roaming em UNC
+// ("\\server\share\user") chega aqui de verdade e é normalizado — seguro EXATAMENTE
+// porque o consumidor é texto, e por nenhuma outra razão (ADR D2).
 func (m Manager) tildeAbbrev(destination string) string {
 	cleanDest := filepath.Clean(destination)
 	if m.HomeDir != "" {
@@ -83,16 +96,33 @@ func (m Manager) tildeAbbrev(destination string) string {
 			return "~"
 		}
 		if strings.HasPrefix(cleanDest, cleanHome+string(filepath.Separator)) {
-			return "~" + cleanDest[len(cleanHome):]
+			return normalizeRefSeparator("~" + cleanDest[len(cleanHome):])
 		}
 	}
 	if m.ProjectRoot != "" {
 		cleanRoot := filepath.Clean(m.ProjectRoot)
 		if strings.HasPrefix(cleanDest, cleanRoot+string(filepath.Separator)) {
-			return cleanDest[len(cleanRoot)+1:]
+			return normalizeRefSeparator(cleanDest[len(cleanRoot)+1:])
 		}
 	}
-	return destination
+	return normalizeRefSeparator(destination)
+}
+
+// normalizeRefSeparator normaliza um valor JÁ DERIVADO para o separador portável "/"
+// antes de ele ser emitido como texto de relatório ou chave (ADR-2026-09-04, D3: ponto
+// único por runtime, aplicado na fronteira de EMISSÃO).
+//
+// Substituição incondicional, não filepath.ToSlash: este último é no-op em Linux/macOS, o
+// que não normalizaria um valor sujo herdado de outro runtime — exatamente o defeito a
+// curar. Mesma semântica de internal/validator/validator.go:normalizeRefSeparator e
+// internal/serve/api_chain.go:normalizeRefSeparator; a duplicação por pacote é herdada e
+// deliberadamente NÃO consolidada aqui (consolidar exigiria tocar ~15 callsites em
+// internal/validator/, que a Wave 3 desta mesma REQ vai editar — colisão evitável).
+//
+// 🔴 NUNCA aplicar a um caminho antes de os.Open/os.Stat: quebra UNC e o prefixo de
+// caminho longo "\\?\", que exige backslash exclusivamente (ADR-2026-09-04, D2).
+func normalizeRefSeparator(p string) string {
+	return strings.ReplaceAll(p, "\\", "/")
 }
 
 func (m Manager) Inspect(plan PlannedArtifact) (Inspection, error) {

@@ -45,6 +45,7 @@ from typing import Any
 
 from trackfw.identity import IdentityError, load as load_identity
 from trackfw import config as trackfw_config
+from trackfw.pathfmt import normalize_ref_separator
 from trackfw.integrations.catalog import global_group_path, load_catalog, plan_deployments
 from trackfw.integrations.manager import IntegrationError, IntegrationManager
 from trackfw.generators.hooks import _merge_claude_hook_array, _merge_simple_command_array, _merge_copilot_hook_array
@@ -94,15 +95,27 @@ def _tildeify(home: str, absolute: str) -> str:
     abbreviated as `~/...` (docs/cli-parity.md, "Declared harness targets —
     pinned list": "path is rendered tilde-abbreviated ... never as an
     absolute path"). Mirrors npm/src/lib/update-engine.js:tildeify and
-    internal/generators/update.go's harness display paths."""
+    internal/generators/update.go's harness display paths.
+
+    ML-2A (ADR-2026-09-04, D1 categoria 1 — "texto de relatório / saída para humano"):
+    o valor vai para ``display_path`` e daí para o campo ``path`` do documento JSON do
+    relatório; o consumidor nunca é o sistema de arquivos. Antes deste ML o Python já
+    emitia o prefixo ``~/`` fixo mas mantinha a CAUDA nativa
+    (``~/.claude\\settings.json``) — divergente de Go e Node, que emitiam
+    ``~\\.claude\\settings.json``: os três discordavam entre si no Windows, o que a D4
+    proíbe. Alvo comum: ``~/.claude/settings.json``.
+
+    🔴 A normalização é do valor de SAÍDA. ``absolute`` (o caminho que o chamador abre)
+    não é alterado aqui — esta função não muda como o produto abre arquivo (ADR D2).
+    """
     normalized_home = os.path.normpath(home)
     normalized = os.path.normpath(absolute)
     if normalized == normalized_home:
         return "~"
     prefix = normalized_home + os.sep
     if normalized.startswith(prefix):
-        return "~/" + normalized[len(prefix):]
-    return normalized
+        return "~/" + normalize_ref_separator(normalized[len(prefix):])
+    return normalize_ref_separator(normalized)
 
 
 def declared_target_ids() -> list[str]:

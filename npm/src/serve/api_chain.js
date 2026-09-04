@@ -3,6 +3,7 @@
 const fs = require('fs')
 const path = require('path')
 const { resolveAgentNamespaces } = require('../validator')
+const { normalizeRefSeparator } = require('../lib/pathfmt')
 
 const ROADMAP_STATES = ['wip', 'backlog', 'blocked', 'done', 'abandoned']
 
@@ -71,7 +72,15 @@ function collectNodes(dir, type, state) {
     try { content = fs.readFileSync(path.join(dir, file), 'utf8') } catch (_) {}
     const fm = parseFrontmatter(content)
     const title = extractTitle(content, file)
-    const id = path.join(dir, file)
+    // node ID do grafo — IDENTIFICADOR emitido em JSON (ADR-2026-09-04, D1 categoria 2),
+    // e tambem o alvo de toda aresta: resolveRef() abaixo so devolve valores vindos de
+    // fileIndex/titleIndex, isto e, sempre um node id — nunca o valor cru do frontmatter.
+    // Normalizar o id aqui, portanto, normaliza `edge.to` por construcao.
+    //
+    // 🔴 O path.join da linha 71 (fs.readFileSync) e uma EXPRESSAO INDEPENDENTE sobre os
+    // mesmos operandos: normalizar esta nao pode afeta-la. O caminho de travessia
+    // permanece nativo (ADR D2). Espelha internal/serve/api_chain.go:111.
+    const id = normalizeRefSeparator(path.join(dir, file))
     nodes.push({ id, type, title, state, fm })
   }
   return nodes

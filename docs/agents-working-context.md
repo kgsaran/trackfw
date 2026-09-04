@@ -29869,3 +29869,105 @@ igualdade de modo restritivo — `internal/identity/identity_test.go:126,134` (`
 
 Nota de vault: `fat32-no-macos-finge-0755-e-nao-serve-de-proxy-para-ntfs-2026-09-04`.
 Handoff para `trackfw_architect` (auditoria e commit). Nenhuma operação de git executada.
+
+## 2026-09-04 — `apolo-tf` (Backend) — ML-2A: separador POSIX em artefato autorado (INÍCIO)
+
+`ROADMAP-2026-09-03-fechar-os-grupos-de-falha-de-windows-por-causa-raiz`, Wave 2.
+ADR governante: `ADR-2026-09-04-separador-posix-nos-artefatos-autorados-cujo-consumidor-nao-e-o-sistema-de-arquivos`.
+Escopo: fronteira de **emissão** apenas (relatório, chave de dicionário, comando de shell). Nenhum
+caminho passado a syscall é alterado — D2 da ADR. Nenhuma operação de git.
+
+## 2026-09-04 — `apolo-tf` (Backend) — ML-2A: separador POSIX em artefato autorado (FIM)
+
+**Ponto único por runtime (D3).** Node: `npm/src/lib/pathfmt.js` (novo, folha) —
+`generators/roadmap.js` **delega** em vez de reimplementar. Python: `pypi/trackfw/pathfmt.py`
+(novo, folha, zero imports de `trackfw` — é o que evita o ciclo que impediu `integrations/manager.py`
+de importar `_tildeify`) — `validator.py` e `generators/roadmap.py` delegam, e os dois `.replace()`
+**inline** de `serve/api_board.py` e `serve/api_chain.py` passaram a chamá-lo. Go: reusei o
+`normalizeRefSeparator` do próprio pacote em `internal/serve` e adicionei um em
+`internal/integrations`. 🔴 **Desvio consciente da leitura literal da D3:** não consolidei as cópias
+por pacote do Go — consolidar exigiria tocar ~15 callsites em `internal/validator/`, que a **Wave 3
+desta mesma REQ vai editar**. Registrado no código e em `docs/cli-parity.md`.
+
+**Enumeração — 19 sítios de emissão + 3 de fixture; TODOS de emissão, nenhum de travessia:**
+categoria 1 (display) `internal/integrations/manager.go:tildeAbbrev` (3 ramos),
+`npm/src/lib/update-engine.js:tildeify` (2), `npm/src/integrations/manager.js:tildeAbbrev` (1),
+`pypi/.../update_harness.py:_tildeify` (2); categoria 2 (chave/id)
+`npm/src/validator/index.js:3196` (provenanceKey), `npm/src/serve/api_chain.js` (node id),
+`internal/serve/api_board.go` + `npm/src/serve/api_board.js` + os 2 do Python em `serve/`.
+Prova de que nenhum é travessia: em todos, o valor normalizado é **derivado** (fatia de string,
+chave, id) e o operando da syscall é **expressão separada** — em `api_chain.js` a leitura
+(`fs.readFileSync(path.join(dir,file))`, linha 71) e o id (`path.join(dir,file)`, linha 74) são
+expressões independentes sobre os mesmos operandos. UNC e `\\?\` seguem intocados: um `HomeDir`
+roaming em UNC chega ao `tildeAbbrev` e **é** normalizado — seguro só porque o consumidor é texto.
+
+**Falsificação nas duas direções** (probe idêntico contra a árvore pré-ML-2A e a atual):
+`~/.claude\settings.json` → `~/.claude/settings.json` nos 3 runtimes; `/other\dir\x.md` →
+`/other/dir/x.md`. Removendo a normalização, o nativo volta em todos. Ressalva de rótulo: no probe
+do Node o braço rotulado "global" do `tildeAbbrev` caiu no **fallback** do `tildeify` (o construtor
+não recebeu `roots.global` como eu supus, e o valor voltou sem abreviar) — a direção continua
+provada, porque o fallback é ponto de emissão real e ele virou, mas o ramo de abreviação global quem
+prova são os probes de Go e Python. Estruturalmente:
+`scripts/check-ref-separator-portability.sh` passou de 18 para **40** assinaturas; rodado contra a
+árvore pré-ML-2A, **as 22 novas reprovam nomeando arquivo e assinatura, e as 18 antigas passam**.
+
+**Controle POSIX — byte-idêntico, medido com dois binários/árvores:**
+`/api/board` Go 61636 B · Node 49393 B · Python 51644 B; `/api/chain` Go 171976 B · Node 97345 B ·
+Python 146434 B; `update harness --dry-run --json` Node e Python **3810 B cada** (idênticos entre si
+também); `validate` Go 23 / Node 24 / Python 25 linhas. **Todos `cmp` OK.** Suítes: Go 1212 PASS /
+0 FAIL / **1 SKIP pré-existente e alheio** (`TestPush_ForceWithLease_NoPROpen_Blocks`,
+`push_test.go:255`); Node **859/859, 0 skipped**; Python **1613 passed**. Nenhum `skip` novo.
+
+🔴 **O que cada controle cobre — e o que ele NÃO cobre.** O diff de binário cobre os sítios de
+**categoria 2** (`api_board` e `api_chain` nos 3 runtimes) e o `_tildeify` do Python (via
+`update harness`). Ele **não** alcança `tildeAbbrev` de Go nem de Node: esse valor só sai pelo
+`OnSkip`, que dispara em `integrations install/update` com artefato outdated+owned e sem `--force`
+— nenhum dos 4 comandos diffados passa por lá. E o `update harness` do Go não exercita `tildeify`
+nenhum: os display paths dele são literais `"~/..."` **compilados** (`update.go:626,677,…`). Para
+esses dois sítios o controle é o **probe** (linha de entrada POSIX idêntica em base e novo) mais os
+testes de pacote `internal/integrations` e `npm/tests/`. Ler "byte-idêntico" como cobertura geral
+seria falso.
+
+🔴 **Premissa do ADR invertida (nona da sprint) — medida.** O ADR diz que o Node "passa por acidente"
+e implica que ele é quem falha. É o contrário: as **3** fixtures montam a chave com separador
+**nativo**, enquanto a produção grava com `/` (`render.go:821`, concatenação explícita). Em Windows
+**Go e Python reprovam o produto CERTO**; o Node passa porque fixture e produto estão **ambos**
+errados. Corrigir só o produto do Node teria virado o Node de verde para vermelho. Normalizei as 3
+fixtures junto. Nota: `vault/notes/fixture-de-proveniencia-monta-a-chave-nativa-...-2026-09-04.md`.
+
+🔴 **Segunda correção: `_tildeify` do Python já era meio-corrigido** (`~/` fixo + cauda nativa), então
+em Windows os **três CLIs discordavam entre si** — `~\.claude\settings.json` (Go, Node) vs
+`~/.claude\settings.json` (Python). Não era "Node divergente", era divergência de três vias.
+
+**Categoria 3 (comando de shell): ZERO pontos de emissão, medido.** Os `command` de hook são
+literais `"$CLAUDE_PROJECT_DIR/scripts/…"` nos 3 runtimes e o gate de wave é **lido do markdown**
+pelo `barrier` — nenhum é montado por `filepath.Join`. Nada a corrigir; registrado no contrato para
+impedir que alguém "aplique a ADR" ali depois. `internal/generators/update.go` também ficou fora: os
+display paths dele já são literais `"~/..."` compilados.
+
+**Reportado e NÃO corrigido** (instrução do handoff): a indexação por **basename** de
+`npm/src/serve/api_chain.js:145`, que explica o resto da diferença de arestas contra o Go. É REQ
+própria.
+
+**Verificação que só o CI fecha:** a contagem de Windows cair de 134, com o delta atribuído a este
+grupo. Toda a metade "emite `/`" é falsificável localmente apenas injetando a forma do Windows na
+**entrada** da função de emissão — em macOS nenhum `Join`/`join` produz `\`.
+
+Gates verdes: `check-gates-falsify` (**exit 0, 181 cenários / 359 OK** — nenhum cenário quebrou
+apesar de eu ter alterado linhas que cenários pinam por substring e de ter **removido** os dois
+`.replace()` inline do `serve/` do Python; risco registrado no vault
+`falsify-cenario-pina-linha-de-fonte-por-sed-guard-de-plataforma-quebra-2026-08-31`),
+`check-ref-separator-portability` (40), `check-parity-contract-coverage`,
+`check-referential-integrity`, `check-thirdparty-parity`, `check-update-parity`,
+`check-artifact-parity`, `check-validate-parity`, `check-cli-parity`, `check-rules-parity`,
+`check-serve-address-parity`, `check-shell-posix-portability`, `check-output-encoding-declared`,
+`check-atomic-write-anti-divergence`. `go build`/`go vet` OK. `trackfw validate` exit 0.
+`make quality` **não** rodado (instrução do arquiteto).
+
+**Distribuição dos 2 módulos novos verificada** (invisível para as ~2472 asserções locais):
+`npm/package.json` usa `files: ["bin/","src/"]` — `npm pack --dry-run` lista
+`2.4kB src/lib/pathfmt.js`; `pypi/pyproject.toml` usa
+`[tool.setuptools.packages.find] include = ["trackfw*"]`, descoberta por **pacote**, e
+`trackfw/pathfmt.py` fica no mesmo nível de `homedir.py`/`traceid.py`, já publicados.
+
+Handoff para `trackfw_architect` (auditoria e commit). Nenhuma operação de git executada.

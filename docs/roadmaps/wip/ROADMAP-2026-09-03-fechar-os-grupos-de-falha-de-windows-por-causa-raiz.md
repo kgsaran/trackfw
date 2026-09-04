@@ -263,7 +263,7 @@ segurança**: a detecção de hook de guard **enfraquece no Windows**.
 > Dependências: ML-1A `Accepted`.
 
 ### ML-2A — Separador POSIX em artefato autorado
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf`
+**Status:** ✅ Concluído (implementado; aguardando auditoria do arquiteto) · **Agente:** `apolo-tf`
 **Files affected — os 3 stacks:** `npm/src/lib/update-engine.js:172-181`,
 `pypi/trackfw/commands/update_harness.py::_tildeify`, `internal/integrations/manager.go`,
 `npm/src/validator/index.js:3153` (`provenanceKey` sem normalização), `npm/src/serve/api_chain.js`
@@ -271,6 +271,49 @@ segurança**: a detecção de hook de guard **enfraquece no Windows**.
 **em silêncio**; 2 REQs deste repo têm premissa falsa por isso.
 **Critérios:** falsificação nas duas direções · controle POSIX com números · os 3 CLIs dão o **mesmo**
 resultado · recontagem no CI com o delta atribuído a este grupo.
+
+
+**Evidência de aceite — auditoria do arquiteto, 2026-09-04:**
+
+```
+make quality QUALITY_EXIT=0, zero FAIL · validate exit 0
+gate de separador: 18 -> 40 assinaturas; as 22 novas REPROVAM contra a arvore pre-ML-2A
+controle POSIX byte-identico: /api/board e /api/chain nos 3 · update harness 3810 B em Node e Py
+suites: Go 1212 PASS · Node 859/859/0 skipped · Python 1613 passed
+```
+
+**19 sítios de emissão + 3 de fixture, enumerados** — a verificação que a ADR exige. Em todos, o
+valor normalizado é **derivado** (fatia, chave, id) e o operando da syscall é **expressão separada**.
+UNC e `\\?\` intocados.
+
+🔴 **NONA premissa minha derrubada — e esta estava na ADR, não num handoff.** Eu escrevi que "só o
+Node não normaliza, e por isso passa por acidente", o que induz a corrigir o Node. **Medido, é o
+contrário:**
+
+```
+producao          internal/integrations/render.go:821  grava a chave com "/" EXPLICITO
+as TRES fixtures  montavam a chave com separador NATIVO
+```
+
+**Em Windows, Go e Python reprovam contra o produto CERTO.** O Node passa porque fixture **e** produto
+estão **ambos** errados. **Corrigir só o produto do Node o viraria de verde para vermelho.** O
+remédio foi normalizar as 3 fixtures junto. ADR corrigida.
+
+**Décima:** o `_tildeify` do Python já era **meio-corrigido** (`~/` fixo + cauda nativa), então os 3
+CLIs **discordavam entre si** — não era "Node divergente", era divergência de **três vias**.
+
+**E a categoria 3 tem ZERO pontos de emissão, medido:** os `command` de hook são **literais** nos 3
+runtimes e o gate de wave é **lido do markdown**. Registrado na ADR para impedir que alguém "aplique
+a decisão" numa categoria já correta por construção.
+
+**Dois desvios declarados e aceitos:** não consolidou as cópias por pacote do Go, porque exigiria
+tocar ~15 callsites em `internal/validator/` que a **Wave 3 desta mesma REQ** vai editar — a colisão
+que o roadmap existe para evitar, e que eu mesmo criei na Wave 4. E o `pathfmt.py` é **folha, com
+zero imports de `trackfw`**, que é o que evita o ciclo que impedia o `manager.py` de importar o
+`_tildeify`.
+
+**Reportado, não corrigido:** a indexação por **basename** de `api_chain.js:145` — é o **segundo**
+defeito do `/api/chain`, e a ADR cobre só o separador. REQ própria.
 
 ## Wave 3 — `IsAbs`, sozinho e sequencial
 > Dependências: ML-1C `Accepted` **e** a branch `fix/validate-detecta-hook-de-guard-...` fechada.

@@ -7,6 +7,7 @@ const path = require('node:path')
 
 const { frontmatterName } = require('./render')
 const { tildeify } = require('../lib/update-engine')
+const { normalizeRefSeparator } = require('../lib/pathfmt')
 const { homedir } = require('../homedir')
 
 const SCHEMA_VERSION = 1
@@ -412,9 +413,15 @@ class IntegrationManager {
   // - scope global: substitui homeRoot por '~' (via tildeify, com salvaguarda
   //   de barra dupla corrigida no ML-6H).
   // - scope de projeto: caminho relativo ao projectRoot, sem './' prefixo.
+  // ML-2A: o ramo global ja sai normalizado (tildeify normaliza os 3 retornos);
+  // o ramo de projeto precisa da normalizacao aqui, porque path.relative devolve
+  // separador nativo. Os dois sao EMISSAO — o valor vai so para a mensagem de
+  // warning entregue a onSkip, que o escreve verbatim em stderr (ADR-2026-09-04,
+  // D1 categoria 1). O par Python (integrations/manager.py) ja emitia "/" via
+  // .as_posix(); Node e Go eram a divergencia (D4).
   tildeAbbrev(file, scope) {
     if (scope === 'global') return tildeify(this.roots.global, file)
-    return path.relative(this.roots.project, file)
+    return normalizeRefSeparator(path.relative(this.roots.project, file))
   }
 
   cleanEmpty(directory, root) {

@@ -3,6 +3,7 @@
 const fs = require('fs')
 const path = require('path')
 const { resolveAgentNamespaces } = require('../validator')
+const { normalizeRefSeparator } = require('../lib/pathfmt')
 
 const STATES = ['wip', 'backlog', 'blocked', 'done', 'abandoned']
 
@@ -46,9 +47,15 @@ function scanState(dir, state, agent, roadmapDir) {
     let content = ''
     try { content = fs.readFileSync(path.join(dir, file), 'utf8') } catch (_) {}
     const title = extractTitle(content, file)
-    const relPath = agent
+    // IDENTIFICADOR emitido em JSON, nao caminho de travessia (ADR-2026-09-04, D1
+    // categoria 2): o frontend devolve este valor verbatim em GET /api/file?path=...,
+    // onde o servidor refaz path.join — no Windows o join reconverte "/" para o
+    // separador nativo, entao o round-trip fecha. O path.join da linha 47 acima, que
+    // e o caminho realmente lido por fs.readFileSync, permanece intocado: as duas
+    // expressoes sao independentes sobre os mesmos operandos (ADR D2).
+    const relPath = normalizeRefSeparator(agent
       ? path.join(roadmapDir, agent, state, file)
-      : path.join(roadmapDir, state, file)
+      : path.join(roadmapDir, state, file))
 
     items.push({ file, title, state, agent: agent || '', path: relPath })
   }

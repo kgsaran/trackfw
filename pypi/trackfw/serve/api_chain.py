@@ -7,6 +7,7 @@ import os
 import re
 
 from trackfw import config as _config
+from trackfw.pathfmt import normalize_ref_separator
 
 STATES = ["wip", "backlog", "blocked", "done", "abandoned"]
 
@@ -95,7 +96,14 @@ def _scan_dir(dir_path, node_type, state):
 
         fm = _extract_frontmatter(content)
         title = _extract_title(content, filename)
-        rel_path = os.path.relpath(full_path, os.getcwd()).replace("\\", "/")
+        # node ID do grafo — IDENTIFICADOR emitido em JSON (ADR-2026-09-04, D1
+        # categoria 2). Antes do ML-2A a normalização era um .replace() inline aqui;
+        # passou a chamar o ponto único do runtime (D3: "não espalhar ReplaceAll pelos
+        # chamadores"). Comportamento idêntico, uma noção de formato a menos.
+        #
+        # 🔴 full_path (acima) permanece nativo e é o que vai a open() — a normalização
+        # é de saída, não de travessia (ADR D2).
+        rel_path = normalize_ref_separator(os.path.relpath(full_path, os.getcwd()))
 
         node = {
             "id": rel_path,
