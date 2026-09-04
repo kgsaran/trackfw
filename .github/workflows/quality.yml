@@ -544,12 +544,35 @@ jobs:
       # check-output-encoding-declared.sh) em vez de uma lista manual
       # parcial, deliberadamente — ver
       # docs/req/REQ-2026-08-04-job-parity-do-ci-so-roda-4-de-14-scripts-do-make-parity-falsificacao-e-identity-parity-nunca-rodam-em-ci.md.
-      # Tempo local medido em 2026-08-05 (Apple Silicon): ~4m15s total, dos
-      # quais check-gates-falsify.sh sozinho responde por ~3m05s. Mantido
-      # sequencial (sem job paralelo) porque o total fica abaixo de dois
-      # dígitos de minutos e o job `parity` já roda depois de
-      # go/node/python/package-smoke/windows-integrations-resolve (needs:
-      # acima), então não é o gargalo do pipeline de PR.
+      # MEDIDO NO RUNNER em 2026-09-03 (run 33679814232, decomposto por step):
+      #   job parity                780 s   <- ~90% do tempo de parede de um PR
+      #     check-gates-falsify.sh  610 s   <- 78,4% dos gates
+      #     os outros 43 gates      170 s
+      #   setup 20 s · build 1,5 s · post 0 s  (nenhum overhead a otimizar)
+      #
+      # ATENÇÃO — a nota anterior deste bloco está VENCIDA e fica registrada como
+      # errada em vez de apagada: ela dizia, medida em 2026-08-05 na máquina local,
+      # "~4m15s total" e "não é o gargalo do pipeline de PR". As duas metades
+      # caducaram — são 13m23 no CI, e o parity É o gargalo. A decisão estava certa
+      # quando foi tomada: o alvo tinha ~14 gates e hoje tem 46. O defeito foi nada
+      # revalidar a premissa enquanto a população triplicava.
+      #
+      # Mantido sequencial por MEDIÇÃO, não por inércia
+      # (docs/qualidade/2026-09-03-medicao-do-alvo-parity.md):
+      #   - `make -j` NÃO SE APLICA: as 46 invocações são linhas de UMA receita, e
+      #     make -j paraleliza targets, não linhas. E 5 rodadas concorrentes deram
+      #     2,2-3,4x MAIS LENTO em 10 vCPU; o runner tem 4.
+      #   - matriz de shards ganha só ~19% (13m23 -> ~10m50), porque o piso é o
+      #     check-gates-falsify sozinho. Ele teria de cair a ~40% do job para o
+      #     sharding render ~7 min; está em 75,9%.
+      #   - e `parity` é required_status_check POR NOME com enforce_admins: matriz
+      #     renomeia o check e bloquearia TODO PR. Prova viva na mesma lista:
+      #     `python (3.10)` / `python (3.12)`.
+      #
+      # Os segundos estão no check-gates-falsify (610 de 780) e têm REQ própria:
+      # REQ-2026-09-03-check-gates-falsify-e-610-dos-780-segundos-do-parity-...
+      # Nenhum gate sai do parity: reduzir cobertura não é otimizar.
+      # Próxima revisão desta premissa: revalidar quando o alvo passar de ~60 gates.
       - run: make parity
         env:
           TRACKFW_DISABLE_EXTERNAL_COMMANDS: "1"
