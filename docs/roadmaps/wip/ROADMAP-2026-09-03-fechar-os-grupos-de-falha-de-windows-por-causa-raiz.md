@@ -323,7 +323,7 @@ defeito do `/api/chain`, e a ADR cobre só o separador. REQ própria.
 > Dependências: ML-1C `Accepted` **e** a branch `fix/validate-detecta-hook-de-guard-...` fechada.
 
 ### ML-3A — Caminho POSIX ancorado deixa de ser classificado como relativo
-**Status:** 🔄 Em andamento · **Agente:** `apolo-tf` + barreira obrigatória `hades-tf`
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` + barreira `hades-tf` (**APROVA COM RESSALVAS**, fechadas no ML-3B)
 🔴 **É segurança.** Não paralelizar com nada. A branch que colidia
 (`fix/validate-detecta-hook-de-guard-na-forma-relativa-antiga`) **fechou** — dependência satisfeita.
 
@@ -376,6 +376,50 @@ resolução real de caminho no Windows, com falha intermitente:
 compila cruzado, não executa. A prova local é: **o predicado não chama nada dependente de SO**
 (verificável por grep) mais tabela de casos com entradas em forma de Windows. **A queda da contagem
 só fecha no CI.** Suíte verde em macOS **não** é evidência de aceite deste ML.
+
+### ML-3B — Fecha a ressalva da barreira: braço UNC exigia só o prefixo
+**Status:** ✅ Concluído · **Agente:** `apolo-tf`
+O braço UNC aceitava **qualquer** string com prefixo de duas barras invertidas — `\\`, `\\x`,
+`\\..\\evil` entravam como ancorados sem ter segmento de share. Em POSIX são cwd-dependentes:
+é o afrouxamento inverso que o predicado existe para evitar, e a tabela de 21 casos do ML-3A não
+cobria. Passa a exigir **servidor não vazio e diferente de `.`/`..`** mais **share não vazio sem
+barra inicial**, nos 3 runtimes.
+
+🔴 **A fórmula sugerida no parecer (`strings.Count(raw[2:], "\\") >= 1`) foi testada e NÃO fecha o
+buraco** — a notação do exemplo é ambígua entre 3 e 4 barras invertidas e a contagem deixa passar as
+duas leituras. A correção implementada fecha ambas sem escolher qual era a pretendida. O
+implementador recusou a receita do revisor **com medição**, que é o comportamento certo.
+
+
+## Auditoria da Wave 3 — arquiteto, 2026-09-04
+
+```
+make quality QUALITY_EXIT=0, zero FAIL · 365 cenarios de falsificacao OK
+trackfw validate exit 0 (so warnings pre-existentes)
+12 sitios em escopo migrados · 14 fora de escopo intocados, conferidos por leitura
+predicado invariante por construcao nos 3 runtimes: zero chamada dependente de SO no corpo
+ramo de til restrito as duas formas; "bare relative path" preservado no resto
+```
+
+**Barreira `hades-tf` cumpriu o papel:** reimplementou os 3 predicados de forma independente, sem
+copiar do diff, e atacou com corpus próprio (homoglifo `ｃ:\`, zero-width space, `C:foo`, dígito
+antes de `:`, espaço à esquerda, `$HOME/x`, `//servidor/share`, newline embutido). Achou a única
+ressalva — que a tabela do implementador não cobria.
+
+🔴 **O achado de método desta wave veio de uma falha do `make quality`:** o fixture de paridade
+pinava `bare relative path` para o til aspeado, e **as três suítes unitárias tinham a mesma asserção
+desatualizada** — concordavam entre si, verdes, sem detectar nada. Quem pegou foi o gate cross-CLI,
+que compara a mensagem byte a byte entre os três binários reais. **Três suítes concordando não é
+evidência quando as três herdaram a mesma premissa.** Nota no vault.
+
+🔴 **Premissa do arquiteto derrubada:** eu escrevi "16 sítios fora de escopo"; são **14**. Meu grep
+por `isabs` não pegava `Path.is_absolute()` do pathlib em `integrations/manager.py:71`, e contei
+`req.py` como um sítio quando são três.
+
+🔴 **O que NÃO foi provado e não será localmente:** a queda da contagem de falhas de Windows. Em
+macOS o defeito é invisível (`IsAbs("/opt/…")` é `true`) e `GOOS=windows` só compila cruzado.
+**Fecha só no CI, no run pós-merge.**
+
 
 ## Wave 5 — CRLF no parser de frontmatter
 > Dependências: Wave 3 fechada. **Sequencial**: toca os mesmos arquivos de validator dos 3 CLIs.

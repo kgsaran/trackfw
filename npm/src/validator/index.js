@@ -1449,6 +1449,61 @@ const CREDENTIAL_GUARD_HOOK_FILES = [
 // Qualquer valor que não bata em nenhuma das 3 formas retorna null — o chamador NÃO deve tratar
 // isso como violação. Não é função desta regra adivinhar wiring próprio do usuário fora dos
 // formatos que o trackfw gera.
+// pathIsAnchoredForHookConfig reporta se raw é um caminho ANCORADO para os fins de um comando de
+// hook lido de config de CLI de agente e executado por bash — não se é absoluto para o SO host.
+// Decisão: ADR-2026-09-04-caminho-posix-ancorado-num-config-lido-por-cli-de-agente-e-absoluto-
+// independente-do-so-host. Quem interpreta esse caminho é o bash (ou o próprio CLI de agente),
+// nunca o process.platform do runtime Node — por isso este predicado é a UNIÃO de duas formas,
+// nunca a definição de "absoluto" de um único SO:
+//   - POSIX: prefixo "/" — ancorado em qualquer host, inclusive rodando em Windows via Git Bash.
+//   - Windows: letra de unidade ("C:\..." / "C:/...") ou UNC ("\\servidor\share") — ancorado em
+//     qualquer host, inclusive medido a partir de macOS/Linux (D1 da ADR: uma letra de unidade
+//     também é ancorada, independente de onde o validator roda).
+//
+// 🔴 Requisito duro da ADR: ZERO chamada dependente de SO aqui — nada de path.isAbsolute,
+// path.sep, ou qualquer predicado do módulo "path" que responda com base no process.platform.
+// `path.isAbsolute("/opt/foo")` é `false` no Windows — essa é exatamente a lacuna que motivou
+// esta função. Invariante por construção, verificável por grep.
+//
+// D2 da ADR: este predicado NÃO substitui path.isAbsolute nos sítios de travessia real de
+// sistema de arquivos (ex.: linha 95 e npm/src/integrations/manager.js) — ali o SO É a
+// autoridade certa. Uso restrito aos sítios de classificação de config de hook.
+function pathIsAnchoredForHookConfig(raw) {
+  if (!raw) return false
+  if (raw[0] === '/') return true
+  // UNC: \\servidor\share\... — exige um segmento de SERVIDOR não vazio e diferente de "." ou
+  // ".." (não são hostname válido), seguido de um separador, seguido de um segmento de SHARE não
+  // vazio que não comece com outra barra invertida (evita componente vazio quando há barra dupla
+  // no meio). "\\" e "\\x" sozinhos (sem separador de share), "\\.\x" / "\\..\evil" (server "."
+  // ou ".."), e "\\..\\evil" (barra dupla no meio produz share vazio) NÃO são UNC válido — são
+  // POSIX cwd-dependent (barra invertida não é separador em POSIX), e aceitá-los como ancorado
+  // seria o afrouxamento inverso que este predicado existe para evitar (ressalva do parecer
+  // hades-tf de 2026-09-04 sobre o ML-3A; a notação exata do exemplo "\\..\\evil" no parecer é
+  // ambígua entre 1 e 2 barras antes de "evil" — a checagem de server !== "."/".." fecha as duas
+  // leituras, não só uma). A forma POSIX equivalente, "//servidor/share", já é coberta pelo braço
+  // raw[0]==='/' acima — este braço cobre só a forma com barra invertida.
+  if (raw.length >= 2 && raw[0] === '\\' && raw[1] === '\\') {
+    const rest = raw.slice(2)
+    const sepIdx = rest.indexOf('\\')
+    if (sepIdx > 0) {
+      const server = rest.slice(0, sepIdx)
+      const share = rest.slice(sepIdx + 1)
+      if (server !== '.' && server !== '..' && share.length > 0 && share[0] !== '\\') return true
+    }
+  }
+  // Letra de unidade: C:\... ou C:/...
+  if (raw.length >= 3 && isASCIIDriveLetter(raw[0]) && raw[1] === ':' && (raw[2] === '\\' || raw[2] === '/')) {
+    return true
+  }
+  return false
+}
+
+// isASCIIDriveLetter reporta se ch é uma letra ASCII (a-z, A-Z) — reconhecimento de letra de
+// unidade do Windows em pathIsAnchoredForHookConfig.
+function isASCIIDriveLetter(ch) {
+  return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')
+}
+
 function resolveCredentialGuardHookPath(raw, root) {
   const claudePrefix = '$CLAUDE_PROJECT_DIR/'
   const geminiPrefix = '$GEMINI_PROJECT_DIR/'
@@ -1464,7 +1519,7 @@ function resolveCredentialGuardHookPath(raw, root) {
     const inner = raw.slice(codexPrefix.length, raw.length - 1)
     return path.join(root, inner)
   }
-  if (!raw.startsWith('$') && !raw.startsWith('"') && !path.isAbsolute(raw) && !raw.startsWith('~/')) {
+  if (!raw.startsWith('$') && !raw.startsWith('"') && !pathIsAnchoredForHookConfig(raw) && !raw.startsWith('~/')) {
     // Caminho relativo puro — Cursor (beforeShellExecution/preToolUse), GitHub Copilot CLI
     // (campo "bash"), Kiro (action.command).
     // ~/… é excluído: é classe 1 (tilde expande para $HOME — ancorado) mas o validator não expande
@@ -1507,7 +1562,7 @@ function classifyHookAnchorage(rawStripped, wasQuoted) {
     rawStripped.startsWith('$CLAUDE_PROJECT_DIR/') ||
     rawStripped.startsWith('$GEMINI_PROJECT_DIR/') ||
     rawStripped.startsWith('$(git rev-parse --show-toplevel)/') ||
-    path.isAbsolute(rawStripped)
+    pathIsAnchoredForHookConfig(rawStripped)
   ) {
     return HOOK_ANCHORAGE_CLASS_ANCHORED
   }
@@ -1523,7 +1578,7 @@ function classifyHookAnchorage(rawStripped, wasQuoted) {
     rawStripped.startsWith('${PWD}/') ||
     rawStripped.startsWith('./') ||
     rawStripped.startsWith('../') ||
-    (!rawStripped.startsWith('$') && !path.isAbsolute(rawStripped))
+    (!rawStripped.startsWith('$') && !pathIsAnchoredForHookConfig(rawStripped))
   ) {
     return HOOK_ANCHORAGE_CLASS_CWD_DEPENDENT
   }
@@ -1532,12 +1587,27 @@ function classifyHookAnchorage(rawStripped, wasQuoted) {
 }
 
 // cwdDependentReason retorna o sufixo de mensagem específico por forma para violações de
-// classe 2, iniciando em "with a …". Dois formatos: formas contendo $PWD ou ${PWD} (em qualquer
-// posição, inclusive em wrappers sh -c / env) recebem a mensagem do $PWD; demais recebem
-// "bare relative path". Usa includes (não startsWith) para cobrir sh -c "$PWD/…" e env FOO=x $PWD/….
+// classe 2, iniciando em "with a …". Formatos: formas contendo $PWD ou ${PWD} (em qualquer
+// posição, inclusive em wrappers sh -c / env) recebem a mensagem do $PWD; "~/…" (D4 da
+// ADR-2026-09-04) recebe "quoted tilde path"; "~usuario/…" recebe "named-user tilde path";
+// demais recebem "bare relative path". Usa includes (não startsWith) para cobrir
+// sh -c "$PWD/…" e env FOO=x $PWD/….
+//
+// 🔴 D4 da ADR-2026-09-04: achado do ML-2B — "~usuario/" e "\"~/\"" caíam no catch-all e
+// recebiam "bare relative path", que não é o motivo real: ~user/ EXPANDE em POSIX (indecidível
+// sem executar shell, não relativo), e "~/" só falha por causa das ASPAS. O invariante que
+// permite reconhecer "~/" aqui sem receber wasQuoted como parâmetro: classifyHookAnchorage já
+// classifica "~/…" SEM aspas como classe 1 (ancorado) — logo todo "~/…" que chega aqui (classe
+// 2) só pode ter vindo de um valor originalmente citado; ver stripOuterQuotesForClassify.
 function cwdDependentReason(rawStripped) {
   if (rawStripped.includes('$PWD') || rawStripped.includes('${PWD}')) {
     return 'with a $PWD path — $PWD expands to the current working directory, not the project root; run `trackfw update` to fix it'
+  }
+  if (rawStripped.startsWith('~/')) {
+    return 'with a quoted tilde path — double quotes prevent shell tilde expansion, so this never resolves to $HOME; run `trackfw update` to fix it'
+  }
+  if (rawStripped.startsWith('~')) {
+    return "with a named-user tilde path — ~user/ expands to that user's home directory, not the project root, and this validator cannot resolve it without running a shell; run `trackfw update` to fix it"
   }
   return "with a bare relative path — this command only resolves from the project root and will silently fail when the agent's cwd is a subdirectory; run `trackfw update` to fix it"
 }
@@ -2764,7 +2834,10 @@ function validateGuardGlobalHookResolvable(scriptMarker) {
       if (seen.has(seenKey)) continue
       seen.add(seenKey)
 
-      if (!path.isAbsolute(m.raw)) continue
+      // ADR-2026-09-04-caminho-posix-ancorado-...: pathIsAnchoredForHookConfig classifica por
+      // ancoragem (POSIX "/", letra de unidade, UNC), NÃO por path.isAbsolute — que no Windows
+      // devolve false para "/opt/foo/guard.sh" e faria este `continue` pular a entrada inteira.
+      if (!pathIsAnchoredForHookConfig(m.raw)) continue
 
       // ROADMAP-2026-08-17 ML-4B: reproduced by hades-tf (ML-4A barrier) — a global config entry
       // with the correct absolute command but missing/wrong "type" (hand-edited, an older trackfw
@@ -3544,6 +3617,8 @@ module.exports = {
   resolveAdrStatus,
   // ROADMAP-2026-08-12-mitigacao-do-fail-open-do-credential-guard, ML-1A
   resolveCredentialGuardHookPath,
+  // ADR-2026-09-04 (ML-3A): predicado de ancoragem invariante por GOOS
+  pathIsAnchoredForHookConfig,
   // ADR-2026-08-22 (ML-1A): classificação por ancoragem
   HOOK_ANCHORAGE_CLASS_ANCHORED,
   HOOK_ANCHORAGE_CLASS_CWD_DEPENDENT,

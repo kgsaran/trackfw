@@ -96,6 +96,66 @@ func hookValueWasQuoted(raw string) bool {
 	return len(raw) >= 2 && raw[0] == '"' && raw[len(raw)-1] == '"'
 }
 
+// pathIsAnchoredForHookConfig reporta se raw é um caminho ANCORADO para os fins de um comando de
+// hook lido de config de CLI de agente e executado por bash — não se é absoluto para o SO host.
+// Decisão: ADR-2026-09-04-caminho-posix-ancorado-num-config-lido-por-cli-de-agente-e-absoluto-
+// independente-do-so-host. Quem interpreta esse caminho é o bash (ou o próprio CLI de agente),
+// nunca o filesystem do processo Go — por isso este predicado é a UNIÃO de duas formas, nunca a
+// definição de "absoluto" de um único SO:
+//   - POSIX: prefixo "/" — ancorado em qualquer host, inclusive rodando em Windows via Git Bash.
+//   - Windows: letra de unidade ("C:\..." / "C:/...") ou UNC ("\\servidor\share") — ancorado em
+//     qualquer host, inclusive medido a partir de macOS/Linux (D1 da ADR é explícito: uma letra de
+//     unidade também é ancorada, independente de onde o validator roda).
+//
+// 🔴 Requisito duro da ADR: ZERO chamada dependente de SO aqui — nada de filepath.IsAbs,
+// filepath.Separator, ou qualquer predicado do pacote "path/filepath" que responda com base no
+// GOOS de compilação/execução. `filepath.IsAbs("/opt/foo")` é `false` no Windows — essa é
+// exatamente a lacuna que motivou esta função: perguntar ao SO host é perguntar à autoridade
+// errada (D1). Este predicado é invariante por construção e verificável por grep.
+//
+// D2 da ADR: este predicado NÃO substitui filepath.IsAbs nos sítios de travessia real de
+// sistema de arquivos (ex.: internal/validator/validator.go, internal/integrations/manager.go) —
+// ali o SO É a autoridade certa, e trocar o predicado quebraria resolução de caminho no Windows
+// com falha intermitente. Uso restrito aos sítios de classificação de config de hook.
+func pathIsAnchoredForHookConfig(raw string) bool {
+	if raw == "" {
+		return false
+	}
+	if raw[0] == '/' {
+		return true
+	}
+	// UNC: \\servidor\share\... — exige um segmento de SERVIDOR não vazio e diferente de "." ou
+	// ".." (não são hostname válido), seguido de um separador, seguido de um segmento de SHARE não
+	// vazio que não comece com outra barra invertida (evita componente vazio quando há barra dupla
+	// no meio). "\\" e "\\x" sozinhos (sem separador de share), "\\.\x" / "\\..\evil" (server "."
+	// ou ".."), e "\\..\\evil" (barra dupla no meio produz share vazio) NÃO são UNC válido — são
+	// POSIX cwd-dependent (barra invertida não é separador em POSIX), e aceitá-los como ancorado
+	// seria o afrouxamento inverso que este predicado existe para evitar (ressalva do parecer
+	// hades-tf de 2026-09-04 sobre o ML-3A; a notação exata do exemplo "\\..\\evil" no parecer é
+	// ambígua entre 1 e 2 barras antes de "evil" — a checagem de server != "."/".." fecha as duas
+	// leituras, não só uma). A forma POSIX equivalente, "//servidor/share", já é coberta pelo braço
+	// raw[0]=='/' acima — este braço cobre só a forma com barra invertida.
+	if len(raw) >= 2 && raw[0] == '\\' && raw[1] == '\\' {
+		server, share, found := strings.Cut(raw[2:], `\`)
+		if found && server != "" && server != "." && server != ".." && share != "" && share[0] != '\\' {
+			return true
+		}
+	}
+	// Letra de unidade: C:\... ou C:/...
+	if len(raw) >= 3 && isASCIIDriveLetter(raw[0]) && raw[1] == ':' && (raw[2] == '\\' || raw[2] == '/') {
+		return true
+	}
+	return false
+}
+
+// isASCIIDriveLetter reporta se b é uma letra ASCII (a-z, A-Z) — dígito 0 do reconhecimento de
+// letra de unidade do Windows em pathIsAnchoredForHookConfig. Não usa unicode.IsLetter de
+// propósito: uma letra de unidade do Windows é sempre ASCII, e a checagem de byte único evita
+// qualquer dependência de locale.
+func isASCIIDriveLetter(b byte) bool {
+	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z')
+}
+
 // classifyHookAnchorage retorna a classe de ancoragem de rawStripped (valor de comando de hook
 // com aspas externas já removidas). wasQuoted indica se o valor original tinha aspas externas
 // (obtido com hookValueWasQuoted antes de chamar stripOuterQuotesForClassify).
@@ -111,7 +171,7 @@ func classifyHookAnchorage(rawStripped string, wasQuoted bool) int {
 	if strings.HasPrefix(rawStripped, "$CLAUDE_PROJECT_DIR/") ||
 		strings.HasPrefix(rawStripped, "$GEMINI_PROJECT_DIR/") ||
 		strings.HasPrefix(rawStripped, "$(git rev-parse --show-toplevel)/") ||
-		filepath.IsAbs(rawStripped) {
+		pathIsAnchoredForHookConfig(rawStripped) {
 		return hookAnchorageClassAnchored
 	}
 	// ~/… sem aspas: tilde expande para $HOME em qualquer shell POSIX — semânticamente ancorado.
@@ -125,7 +185,7 @@ func classifyHookAnchorage(rawStripped string, wasQuoted bool) int {
 		strings.HasPrefix(rawStripped, "${PWD}/") ||
 		strings.HasPrefix(rawStripped, "./") ||
 		strings.HasPrefix(rawStripped, "../") ||
-		(!strings.HasPrefix(rawStripped, "$") && !filepath.IsAbs(rawStripped)) {
+		(!strings.HasPrefix(rawStripped, "$") && !pathIsAnchoredForHookConfig(rawStripped)) {
 		return hookAnchorageClassCwdDependent
 	}
 	// Classe 3 — indecidível; silêncio declarado.
@@ -137,16 +197,39 @@ func classifyHookAnchorage(rawStripped string, wasQuoted bool) int {
 // "references <scriptMarker> " pelo chamador. Dois formatos:
 //
 //   - $PWD/… ou qualquer forma contendo $PWD ou ${PWD} → "with a $PWD path — …"
+//   - "~/…" com aspas (D4 da ADR-2026-09-04) → "with a quoted tilde path — …"
+//   - "~usuario/…" (D4 da ADR-2026-09-04) → "with a named-user tilde path — …"
 //   - demais (./…, ../…, relativo puro) → "with a bare relative path — this command only…"
 //
 // A detecção usa Contains em vez de HasPrefix para cobrir wrappers como
 // `sh -c "$PWD/…"` e `env FOO=x $PWD/…` que contêm $PWD mas não o têm no prefixo.
 // A frase "bare relative path" é preservada para não regredir os testes existentes e a UX
-// introduzida pela ROADMAP-2026-08-21 ML-1B.
+// introduzida pela ROADMAP-2026-08-21 ML-1B — os dois ramos de til abaixo NUNCA capturam nada
+// fora das duas formas de til: qualquer outro caminho cai no fallback e mantém a frase intocada.
+//
+// 🔴 D4 da ADR-2026-09-04: os dois ramos de til abaixo distinguem a causa REAL de cada forma —
+// achado do ML-2B. Antes desta função, "~usuario/" e "\"~/\"" caíam no catch-all e recebiam
+// "bare relative path", que não é o motivo real: ~user/ EXPANDE em POSIX (o validator só não
+// consegue resolver sem executar um shell — é indecidível, não relativo), e "~/" só falha por
+// causa das ASPAS (til não expande dentro de aspas duplas). O invariante que permite reconhecer
+// "~/" aqui SEM receber wasQuoted como parâmetro: classifyHookAnchorage já classifica "~/…"
+// SEM aspas como classe 1 (ancorado) — logo todo "~/…" que chega até aqui (classe 2) já passou
+// por aspas removidas de um valor originalmente citado; ver stripOuterQuotesForClassify.
 func cwdDependentReason(rawStripped string) string {
 	if strings.Contains(rawStripped, "$PWD") || strings.Contains(rawStripped, "${PWD}") {
 		return "with a $PWD path — " +
 			"$PWD expands to the current working directory, not the project root; " +
+			"run `trackfw update` to fix it"
+	}
+	if strings.HasPrefix(rawStripped, "~/") {
+		return "with a quoted tilde path — " +
+			"double quotes prevent shell tilde expansion, so this never resolves to $HOME; " +
+			"run `trackfw update` to fix it"
+	}
+	if strings.HasPrefix(rawStripped, "~") {
+		return "with a named-user tilde path — " +
+			"~user/ expands to that user's home directory, not the project root, and this " +
+			"validator cannot resolve it without running a shell; " +
 			"run `trackfw update` to fix it"
 	}
 	return "with a bare relative path — " +
@@ -190,7 +273,7 @@ func resolveCredentialGuardHookPath(raw, root string) (resolved string, ok bool)
 	case strings.HasPrefix(raw, codexPrefix) && strings.HasSuffix(raw, `"`):
 		inner := strings.TrimSuffix(strings.TrimPrefix(raw, codexPrefix), `"`)
 		return filepath.Join(root, inner), true
-	case !strings.HasPrefix(raw, "$") && !strings.HasPrefix(raw, `"`) && !filepath.IsAbs(raw) && !strings.HasPrefix(raw, "~/"):
+	case !strings.HasPrefix(raw, "$") && !strings.HasPrefix(raw, `"`) && !pathIsAnchoredForHookConfig(raw) && !strings.HasPrefix(raw, "~/"):
 		// Caminho relativo puro — Cursor (beforeShellExecution/preToolUse), GitHub Copilot CLI
 		// (campo "bash"), Kiro (action.command).
 		// ~/… é excluído: é classe 1 (tilde expande para $HOME — ancorado) mas não é uma forma

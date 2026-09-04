@@ -1843,6 +1843,65 @@ _CREDENTIAL_GUARD_HOOK_FILES = [
 ]
 
 
+def _path_is_anchored_for_hook_config(raw: str) -> bool:
+    """Reporta se raw é um caminho ANCORADO para os fins de um comando de hook lido de config de
+    CLI de agente e executado por bash — não se é absoluto para o SO host.
+
+    Decisão: ADR-2026-09-04-caminho-posix-ancorado-num-config-lido-por-cli-de-agente-e-absoluto-
+    independente-do-so-host. Quem interpreta esse caminho é o bash (ou o próprio CLI de agente),
+    nunca o os.name do runtime Python -- por isso este predicado é a UNIÃO de duas formas, nunca
+    a definição de "absoluto" de um único SO:
+
+    - POSIX: prefixo "/" -- ancorado em qualquer host, inclusive rodando em Windows via Git Bash.
+    - Windows: letra de unidade ("C:\\..." / "C:/...") ou UNC ("\\\\servidor\\share") -- ancorado
+      em qualquer host, inclusive medido a partir de macOS/Linux (D1 da ADR: uma letra de unidade
+      também é ancorada, independente de onde o validator roda).
+
+    Requisito duro da ADR: ZERO chamada dependente de SO aqui -- nada de os.path.isabs, os.sep,
+    ntpath, posixpath, ou qualquer predicado que responda com base no os.name de execução.
+    `os.path.isabs("/opt/foo")` é `False` no Windows -- essa é exatamente a lacuna que motivou
+    esta função. Invariante por construção, verificável por grep.
+
+    D2 da ADR: este predicado NÃO substitui os.path.isabs nos sítios de travessia real de sistema
+    de arquivos (ex.: pypi/trackfw/generators/req.py, adr.py, commands/status.py,
+    integrations/manager.py) -- ali o SO É a autoridade certa. Uso restrito aos sítios de
+    classificação de config de hook.
+    """
+    if not raw:
+        return False
+    if raw[0] == "/":
+        return True
+    # UNC: \\servidor\share\... -- exige um segmento de SERVIDOR não vazio e diferente de "." ou
+    # ".." (não são hostname válido), seguido de um separador, seguido de um segmento de SHARE
+    # não vazio que não comece com outra barra invertida (evita componente vazio quando há barra
+    # dupla no meio). "\\" e "\\x" sozinhos (sem separador de share), "\\.\x" / "\\..\evil"
+    # (server "." ou ".."), e "\\..\\evil" (barra dupla no meio produz share vazio) NÃO são UNC
+    # válido -- são POSIX cwd-dependent (barra invertida não é separador em POSIX), e aceitá-los
+    # como ancorado seria o afrouxamento inverso que este predicado existe para evitar (ressalva
+    # do parecer hades-tf de 2026-09-04 sobre o ML-3A; a notação exata do exemplo "\\..\\evil" no
+    # parecer é ambígua entre 1 e 2 barras antes de "evil" -- a checagem de server != "."/".."
+    # fecha as duas leituras, não só uma). A forma POSIX equivalente, "//servidor/share", já é
+    # coberta pelo braço raw[0] == "/" acima -- este braço cobre só a forma com barra invertida.
+    if len(raw) >= 2 and raw[0] == "\\" and raw[1] == "\\":
+        rest = raw[2:]
+        sep_idx = rest.find("\\")
+        if sep_idx > 0:
+            server = rest[:sep_idx]
+            share = rest[sep_idx + 1:]
+            if server not in (".", "..") and share and share[0] != "\\":
+                return True
+    # Letra de unidade: C:\... ou C:/...
+    if len(raw) >= 3 and _is_ascii_drive_letter(raw[0]) and raw[1] == ":" and raw[2] in ("\\", "/"):
+        return True
+    return False
+
+
+def _is_ascii_drive_letter(ch: str) -> bool:
+    """Reporta se ch é uma letra ASCII (a-z, A-Z) -- reconhecimento de letra de unidade do
+    Windows em _path_is_anchored_for_hook_config."""
+    return ("a" <= ch <= "z") or ("A" <= ch <= "Z")
+
+
 def _resolve_credential_guard_hook_path(raw: str, root: str):
     """Resolve o valor bruto de um comando de hook (string extraída do JSON) para um caminho de
     arquivo absoluto, usando exatamente as 3 formas de prefixo que o trackfw emite hoje
@@ -1870,7 +1929,7 @@ def _resolve_credential_guard_hook_path(raw: str, root: str):
     if raw.startswith(codex_prefix) and raw.endswith('"'):
         inner = raw[len(codex_prefix):-1]
         return os.path.join(root, inner)
-    if not raw.startswith("$") and not raw.startswith('"') and not os.path.isabs(raw) and not raw.startswith("~/"):
+    if not raw.startswith("$") and not raw.startswith('"') and not _path_is_anchored_for_hook_config(raw) and not raw.startswith("~/"):
         # Caminho relativo puro — Cursor (beforeShellExecution/preToolUse), GitHub Copilot CLI
         # (campo "bash"), Kiro (action.command).
         # ~/… é excluído: é classe 1 (tilde expande para $HOME — ancorado) mas o validator não
@@ -1915,7 +1974,7 @@ def _classify_hook_anchorage(raw_stripped: str, was_quoted: bool) -> int:
         raw_stripped.startswith("$CLAUDE_PROJECT_DIR/")
         or raw_stripped.startswith("$GEMINI_PROJECT_DIR/")
         or raw_stripped.startswith("$(git rev-parse --show-toplevel)/")
-        or os.path.isabs(raw_stripped)
+        or _path_is_anchored_for_hook_config(raw_stripped)
     ):
         return _HOOK_ANCHORAGE_CLASS_ANCHORED
     # ~/… sem aspas: tilde expande para $HOME em qualquer shell POSIX -- semanticamente ancorado.
@@ -1929,7 +1988,7 @@ def _classify_hook_anchorage(raw_stripped: str, was_quoted: bool) -> int:
         or raw_stripped.startswith("${PWD}/")
         or raw_stripped.startswith("./")
         or raw_stripped.startswith("../")
-        or (not raw_stripped.startswith("$") and not os.path.isabs(raw_stripped))
+        or (not raw_stripped.startswith("$") and not _path_is_anchored_for_hook_config(raw_stripped))
     ):
         return _HOOK_ANCHORAGE_CLASS_CWD_DEPENDENT
     # Classe 3 -- indecidível; silêncio declarado.
@@ -1939,14 +1998,35 @@ def _classify_hook_anchorage(raw_stripped: str, was_quoted: bool) -> int:
 def _cwd_dependent_reason(raw_stripped: str) -> str:
     """Retorna o sufixo de mensagem específico por forma para violações de classe 2, iniciando em
     'with a …'. Formas contendo $PWD ou ${PWD} (em qualquer posição, inclusive em wrappers sh -c /
-    env) recebem a mensagem do $PWD; demais recebem 'bare relative path'. Usa 'in' (não startsWith)
-    para cobrir sh -c "$PWD/…" e env FOO=x $PWD/….
+    env) recebem a mensagem do $PWD; '~/…' (D4 da ADR-2026-09-04) recebe 'quoted tilde path';
+    '~usuario/…' recebe 'named-user tilde path'; demais recebem 'bare relative path'. Usa 'in'
+    (não startswith) para cobrir sh -c "$PWD/…" e env FOO=x $PWD/….
     A frase 'bare relative path' é preservada para não regredir os testes existentes e a UX da
-    ROADMAP-2026-08-21 ML-1B."""
+    ROADMAP-2026-08-21 ML-1B -- os dois ramos de til abaixo NUNCA capturam nada fora das duas
+    formas de til.
+
+    D4 da ADR-2026-09-04: achado do ML-2B -- '~usuario/' e '"~/"' caíam no catch-all e recebiam
+    'bare relative path', que não é o motivo real: ~user/ EXPANDE em POSIX (indecidível sem
+    executar shell, não relativo), e '~/' só falha por causa das ASPAS. O invariante que permite
+    reconhecer '~/' aqui sem receber was_quoted como parâmetro: _classify_hook_anchorage já
+    classifica '~/…' SEM aspas como classe 1 (ancorado) -- logo todo '~/…' que chega aqui (classe
+    2) só pode ter vindo de um valor originalmente citado; ver _strip_outer_quotes_for_classify.
+    """
     if "$PWD" in raw_stripped or "${PWD}" in raw_stripped:
         return (
             "with a $PWD path — $PWD expands to the current working directory, not the project "
             "root; run `trackfw update` to fix it"
+        )
+    if raw_stripped.startswith("~/"):
+        return (
+            "with a quoted tilde path — double quotes prevent shell tilde expansion, so this "
+            "never resolves to $HOME; run `trackfw update` to fix it"
+        )
+    if raw_stripped.startswith("~"):
+        return (
+            "with a named-user tilde path — ~user/ expands to that user's home directory, not "
+            "the project root, and this validator cannot resolve it without running a shell; "
+            "run `trackfw update` to fix it"
         )
     return (
         "with a bare relative path — this command only resolves from the project root and will "
@@ -3263,7 +3343,11 @@ def validate_guard_global_hook_resolvable(script_marker: str, cwd: str = None) -
                 continue
             seen.add(seen_key)
 
-            if not os.path.isabs(m["raw"]):
+            # ADR-2026-09-04-caminho-posix-ancorado-...: _path_is_anchored_for_hook_config
+            # classifica por ancoragem (POSIX "/", letra de unidade, UNC), NÃO por
+            # os.path.isabs -- que no Windows devolve False para "/opt/foo/guard.sh" e faria este
+            # "continue" pular a entrada inteira.
+            if not _path_is_anchored_for_hook_config(m["raw"]):
                 continue
 
             # ROADMAP-2026-08-17 ML-4B: reproduced by hades-tf (ML-4A barrier) -- a global config

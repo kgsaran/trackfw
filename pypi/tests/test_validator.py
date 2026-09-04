@@ -1443,6 +1443,9 @@ class TestCredentialGuardHookResolvable(unittest.TestCase):
             # ~/… sem aspas: tilde expande para $HOME em qualquer shell POSIX — ancorado.
             ("~/scripts/trackfw-credential-guard.sh", False),
             ("~/.trackfw/scripts/trackfw-credential-guard.sh", False),
+            # ADR-2026-09-04: letra de unidade e UNC são ancoradas por UNIÃO, independente do host.
+            ("C:\\Users\\kg\\scripts\\guard.sh", False),
+            ("\\\\servidor\\share\\guard.sh", False),
         ]
         for raw, was_quoted in cases:
             self.assertEqual(
@@ -1507,11 +1510,87 @@ class TestCredentialGuardHookResolvable(unittest.TestCase):
             "./scripts/guard.sh",
             "../scripts/guard.sh",
             "scripts/guard.sh",
-            "~/scripts/guard.sh",
         ]
         for raw in bare_cases:
             reason = v._cwd_dependent_reason(raw)
             self.assertIn("bare relative path", reason, f"esperava 'bare relative path' para: {raw!r}")
+
+    def test_cwd_dependent_reason_til(self):
+        """D4 da ADR-2026-09-04: '~/…' recebe 'quoted tilde path' e '~usuario/…' recebe
+        'named-user tilde path' — nenhuma das duas recebe mais 'bare relative path' (achado do
+        ML-2B: a frase antiga não nomeava a causa real de nenhuma das duas formas)."""
+        quoted_tilde_cases = ["~/scripts/guard.sh"]
+        for raw in quoted_tilde_cases:
+            reason = v._cwd_dependent_reason(raw)
+            self.assertIn("quoted tilde path", reason, f"esperava 'quoted tilde path' para: {raw!r}")
+            self.assertNotIn("bare relative path", reason, f"NÃO esperava 'bare relative path' para: {raw!r}")
+        named_user_tilde_cases = ["~alice/scripts/guard.sh", "~bob/scripts/guard.sh"]
+        for raw in named_user_tilde_cases:
+            reason = v._cwd_dependent_reason(raw)
+            self.assertIn("named-user tilde path", reason, f"esperava 'named-user tilde path' para: {raw!r}")
+            self.assertNotIn("bare relative path", reason, f"NÃO esperava 'bare relative path' para: {raw!r}")
+
+    def test_path_is_anchored_for_hook_config_ancorado(self):
+        """ADR-2026-09-04 — falsificação direção 1: formas POSIX e Windows devem ser ANCORADAS,
+        sem depender de os.name. É o caso que ERA classificado errado no Windows via os.path.isabs."""
+        cases = [
+            "/opt/foo/guard.sh",
+            "/absolute/path/to/guard.sh",
+            "/",
+            "C:\\Users\\kg\\scripts\\guard.sh",
+            "C:/Users/kg/scripts/guard.sh",
+            "z:\\scripts\\guard.sh",
+            "\\\\servidor\\share\\guard.sh",
+            "//servidor/share/guard.sh",
+        ]
+        for raw in cases:
+            self.assertTrue(
+                v._path_is_anchored_for_hook_config(raw),
+                f"_path_is_anchored_for_hook_config({raw!r}) deveria ser True (ancorado)",
+            )
+
+    def test_path_is_anchored_for_hook_config_nao_afrouxamento(self):
+        """ADR-2026-09-04 — falsificação direção 2 e controle de não-afrouxamento: NENHUMA forma
+        relativa deve entrar no conjunto 'ancorado'. Critério principal do ML-3A."""
+        cases = [
+            "scripts/guard.sh",
+            "./scripts/guard.sh",
+            "../scripts/guard.sh",
+            "guard.sh",
+            "",
+            "~/scripts/guard.sh",
+            "$PWD/scripts/guard.sh",
+            "C",
+            "C:",
+            "C:foo",
+            "\\scripts\\guard.sh",
+            "1:\\scripts\\guard.sh",
+            "\\\\",
+            "\\\\x",
+            "\\\\..\\evil",
+            "\\\\..\\\\evil",
+        ]
+        for raw in cases:
+            self.assertFalse(
+                v._path_is_anchored_for_hook_config(raw),
+                f"_path_is_anchored_for_hook_config({raw!r}) deveria ser False — não afrouxar",
+            )
+
+    def test_path_is_anchored_for_hook_config_controle_posix(self):
+        """Controle POSIX exigido pela ADR: em Linux/macOS, a classificação de TODOS os casos
+        que o predicado antigo (os.path.isabs) já classificava permanece idêntica."""
+        posix_absolute_cases = ["/opt/foo/guard.sh", "/absolute/path/to/guard.sh", "/", "/a"]
+        for raw in posix_absolute_cases:
+            before = os.path.isabs(raw)
+            after = v._path_is_anchored_for_hook_config(raw)
+            self.assertEqual(before, after, f"controle POSIX quebrado para: {raw!r}")
+            self.assertTrue(after, f"esperava True para: {raw!r}")
+        posix_relative_cases = ["scripts/guard.sh", "./scripts/guard.sh", "../scripts/guard.sh", "guard.sh"]
+        for raw in posix_relative_cases:
+            before = os.path.isabs(raw)
+            after = v._path_is_anchored_for_hook_config(raw)
+            self.assertEqual(before, after, f"controle POSIX quebrado para: {raw!r}")
+            self.assertFalse(after, f"esperava False para: {raw!r}")
 
     def test_strip_outer_quotes_for_classify(self):
         """_strip_outer_quotes_for_classify remove aspas duplas envolventes."""
@@ -1550,8 +1629,9 @@ class TestCredentialGuardHookResolvable(unittest.TestCase):
         )
 
     def test_tilde_com_aspas_acusado(self):
-        """ML-4A: \"~/…\" aspeado é classe 2 (tilde NÃO expande dentro de aspas duplas).
-        Deve gerar violação com mensagem 'bare relative path'."""
+        """ML-4A/D4 (ADR-2026-09-04): \"~/…\" aspeado é classe 2 (tilde NÃO expande dentro de
+        aspas duplas). Deve gerar violação com mensagem 'quoted tilde path' — achado do ML-2B:
+        'bare relative path' não nomeava a causa real (aspas, não relatividade)."""
         cmd_value = '"~/scripts/trackfw-credential-guard.sh"'
         content = _guard_entry_claude_settings(cmd_value)
         parsed = json.loads(content)
@@ -1564,8 +1644,8 @@ class TestCredentialGuardHookResolvable(unittest.TestCase):
         cfg = _config.defaults()
         msgs = v.validate_credential_guard_hook_resolvable(cfg, cwd=self.tmp)
         self.assertTrue(
-            any("bare relative path" in m["message"] for m in msgs),
-            f"ML-4A: \"~/…\" aspeado deve ser acusado com 'bare relative path', obteve: {msgs}",
+            any("quoted tilde path" in m["message"] for m in msgs),
+            f"ML-4A/D4: \"~/…\" aspeado deve ser acusado com 'quoted tilde path', obteve: {msgs}",
         )
 
     def test_pwd_chaveado_acusado(self):
