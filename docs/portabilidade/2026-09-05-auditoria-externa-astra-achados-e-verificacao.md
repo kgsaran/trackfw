@@ -115,12 +115,12 @@ um parecer perdido — e o auditor já tinha perdido o arquivo dele para a janel
 | 4 | `continue-on-error` deixa regressão passar (`#275`) | ✅ ADR do ratchet |
 | 5 | "ML concluído não pode afirmar o que o teste contradiz" | ✅ REQ da auditoria, AC6 / ML-3A |
 | 6 | REQs com `adr:` vazio apontando para ADRs aceitos | ✅ REQ da auditoria, AC7 / ML-3B |
-| 7 | **`#261` não tem REQ nem ADR — nenhum** | 🔴 **LACUNA — nada existia, e eu não criei** |
+| 7 | `#261` não tinha REQ nem ADR | ✅ `REQ-2026-09-05-validate-unfiltered-do-python-devolve-lista-de-tipo-misto...` |
 | 8 | **`#268`: AC1 revisado mas SEM implementação no contador Python; `sync` mantém `docs/req` fixo** | 🔴 **LACUNA — REQ existe, a implementação não** |
-| 9 | **`#258`: evento `edited` + contrato próprio para exemplo citado** | 🔴 **LACUNA** |
+| 9 | `#258`: evento `edited` + contrato para exemplo citado | ✅ `REQ-2026-09-05-gate-de-palavra-chave-de-fechamento-nao-reavalia-em-edited...` |
 | 10 | **`#273`: recomendação de vínculo explícito branch↔roadmap como opção principal** | 🟡 REQ existe, aberta; a **recomendação** não está registrada nela |
-| 11 | **REQ de home divergente: AC1 (medir consumidor) e AC4 (avisar por divergência de variáveis) são condições DIFERENTES e se contradizem** | 🔴 **LACUNA — inconsistência interna de REQ nossa** |
-| 12 | **REQ de ancestrais: resolver só o pai imediato não cobre múltiplos ancestrais inexistentes, nem junctions** | 🔴 **LACUNA — insuficiência de solução já aceita** |
+| 11 | REQ de home divergente: AC1 e AC4 se contradizem | ✅ anotado na própria REQ; **declarada não-implementável até reconciliar** |
+| 12 | REQ de ancestrais: pai imediato não basta; junctions | ✅ anotado na própria REQ; ACs precisam de revisão antes do roadmap |
 | 13 | CRLF alcança **renderizadores**, não só o parser; ML-5A subespecificado | 🟡 Declarado fora de escopo na REQ da auditoria; **sem REQ própria ainda** |
 | 14 | Jornada de instalação: README não qualifica dependência de shell; `install.sh` só Linux/macOS; Windows ARM64 fora da distribuição; jornada init→PATH→hooks→barrier não verificada | 🟡 Declarado fora de escopo; **sem REQ própria ainda** |
 | 15 | Release publicada é a **v7.3.0 de 28/08** — anterior a tudo; correção na `main` não atende quem instala | 🟡 Decisão do usuário; registrado, sem artefato |
@@ -137,3 +137,25 @@ que esquecido daqui a duas semanas. Precisam de REQ própria ou de registro expl
 
 🔴 **O item 15 é o que decide a utilidade de todo o resto:** a última release é anterior à campanha
 inteira. Nada disso chegou a quem instala o trackfw.
+
+
+## Atualização — 2026-09-05, mesma sessão
+
+Os itens **7, 9, 11 e 12** saíram de lacuna. Duas REQs novas (`#261`, `#258`) e duas anotações
+dentro das REQs que se contradiziam.
+
+🔴 **O item 8 (`#268`) segue em aberto de propósito**: a REQ existe e o AC foi revisado, mas a
+implementação não. Isso não é lacuna de artefato — é **trabalho pendente**, e criar uma REQ nova
+sobre uma REQ existente só duplicaria governança.
+
+🔴 **O item 10 (`#273`) idem**: a REQ existe; falta registrar nela a recomendação da auditoria
+(vínculo explícito branch↔roadmap como opção principal, em vez de heurística de nome).
+
+Os itens **13, 14 e 15** continuam sem artefato **por decisão declarada** — e a decisão é do usuário,
+não minha: CRLF em renderizadores tem superfície própria, a jornada de instalação em Windows é
+trabalho de produto, e a release é chamada dele.
+
+**Duas anotações valem mais que as duas REQs novas.** Os itens 11 e 12 não são defeitos de código:
+são REQs **aceitas** cujos critérios, se implementados como estão, produziriam um ML marcado
+concluído sem fechar o defeito do próprio título. É o mesmo formato do achado A1 — só que capturado
+**antes** de virar código.

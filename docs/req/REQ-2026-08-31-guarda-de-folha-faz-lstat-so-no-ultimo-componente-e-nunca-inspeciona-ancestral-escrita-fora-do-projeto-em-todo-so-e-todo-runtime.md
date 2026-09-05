@@ -148,3 +148,32 @@ o Node de volta à simetria. -->
 ## Linked Roadmap
 
 Roadmap: `docs/roadmaps/analyzing/ROADMAP-2026-08-31-guarda-de-folha-resolve-o-caminho-e-afirma-contencao-antes-de-escrever.md`
+
+
+---
+
+## 🔴 Achado da auditoria externa (2026-09-05) — a solução aceita é insuficiente
+
+Registro: `docs/portabilidade/2026-09-05-auditoria-externa-astra-achados-e-verificacao.md`, item 12.
+
+A escolha de **resolver caminhos e verificar contenção** está certa. O problema é o alcance:
+
+**Resolver somente o pai imediato não cobre criação com vários ancestrais ainda inexistentes.** Num
+`mkdir -p` de três níveis, o pai imediato não existe — e a verificação passa a inspecionar um caminho
+que ainda não está lá, enquanto o **ancestral existente mais próximo** (que é quem de fato determina
+onde a escrita vai cair) nunca é olhado.
+
+**Duas superfícies que a REQ não menciona:**
+
+1. 🔴 **O ancestral existente mais próximo** é o alvo correto da verificação de contenção, não o pai
+   imediato.
+2. 🔴 **Junctions do Windows** — o NTFS tem redirecionamento que não é symlink, e um `lstat` que só
+   entende symlink passa por cima dele. Uma junction num ancestral leva a escrita para fora do
+   projeto **sem** que nenhum componente seja um symlink.
+
+E falta declarar o **controle de operação legítima**: a guarda precisa provar que **não** bloqueia
+criação normal de diretório dentro do projeto. Guarda de escrita que aperta demais vira guarda
+desligada na semana seguinte.
+
+**Consequência:** os ACs atuais podem ser satisfeitos por uma implementação que **não** fecha o
+defeito descrito no título desta própria REQ. Precisam de revisão antes do roadmap.

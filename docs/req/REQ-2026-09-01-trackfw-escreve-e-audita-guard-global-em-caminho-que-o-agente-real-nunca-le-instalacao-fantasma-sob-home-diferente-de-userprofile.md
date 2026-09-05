@@ -59,3 +59,30 @@ nativo do consumidor em vez do próprio, isso é decisão arquitetural e precisa
 ## Linked Roadmap
 
 Roadmap:
+
+
+---
+
+## 🔴 Achado da auditoria externa (2026-09-05) — esta REQ se contradiz
+
+Registro: `docs/portabilidade/2026-09-05-auditoria-externa-astra-achados-e-verificacao.md`, item 11.
+
+**A `AC1` e a `AC4` exigem coisas diferentes, e a REQ trata as duas como se fossem a mesma:**
+
+| | condição |
+|---|---|
+| AC1 | **medir o consumidor real** — o agente lê aquele caminho? |
+| AC4 | **avisar pela simples divergência** entre `$HOME` e `%USERPROFILE%` |
+
+Divergência de variáveis **não implica** que o agente não leia o arquivo, e ausência de divergência
+**não garante** que leia. São predicados distintos, e um aviso emitido pelo segundo critério vai
+disparar em ambiente correto e calar em ambiente quebrado.
+
+🔴 **E há um limite que a REQ não declara:** avisar que os caminhos divergem **não faz o hook
+funcionar**. A mitigação por aviso é aceitável como primeiro passo, mas precisa estar escrito que ela
+é **mitigação, não correção** — senão o ML que a implementar será marcado como concluído tendo
+entregue um aviso onde o objetivo era um guard que executa.
+
+**Reconciliação exigida antes de qualquer implementação:** decidir qual dos dois predicados governa a
+regra, e o que o outro vira — evidência auxiliar, diagnóstico, ou nada. Enquanto isso não estiver
+escrito, **esta REQ não é implementável**: um agente honesto entregaria AC1 e AC4 em conflito.
