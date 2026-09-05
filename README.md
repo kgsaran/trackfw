@@ -18,6 +18,13 @@ ADR → REQ → ROADMAP → backlog / wip / blocked / done / abandoned
 
 Every piece of work traces back to a decision. Every decision links to a requirement. Every requirement lands in a roadmap. No orphan work, no undocumented choices.
 
+> 🚧 **Platform support: Linux and macOS are supported. Windows support is partial.**
+> The CLIs install on Windows and core governance commands run — but the generated
+> guard hooks are POSIX shell scripts, and **we have not yet verified that they fire
+> on Windows**. If they do not, they are written to disk and reported as installed
+> while never executing.
+> **Read [Windows support (partial)](#windows-support-partial) before adopting on Windows.**
+
 ---
 
 ## The problem
