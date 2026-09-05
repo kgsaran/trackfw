@@ -1,5 +1,5 @@
 ---
-status: Open
+status: Done
 date: 2026-09-05
 author: ""
 adr: ""
@@ -8,7 +8,7 @@ roadmap: ""
 
 # REQ: tres defeitos mecanicos medidos por consumidor externo: skips residuais, gate req_has_adr vacuo e ENOTDIR classificado como ausente
 
-> Date: 2026-09-05 | Status: Open
+> Date: 2026-09-05 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -88,3 +88,10 @@ ADR: <!-- nenhum: os três têm mecanismo provado e nenhuma decisão de arquitet
 
 ## Linked Roadmap
 Roadmap: docs/roadmaps/wip/ROADMAP-2026-09-05-fechar-os-tres-defeitos-mecanicos-dos-issues-do-consumidor-externo.md
+
+
+---
+
+## Encerramento — 2026-09-05
+
+Entregue no PR #281 (mergeado). Fecha os issues #278 e #279 automaticamente. O #276 NAO e fechado por decisao: a premissa foi refutada por medicao e a troca entrou como modernizacao — creditar como fix registraria causa que a medicao nao sustenta.
