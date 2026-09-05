@@ -85,6 +85,29 @@ checks diretos sobre o retorno de `os.ReadFile`/`os.Open`/`os.Stat`/
   que não é diretório), não trocar o predicado de classificação do erro —
   decisão de produto fora do escopo deste ML.
 
+## Addendum (2026-09-05, ML-1A) — a medição de Windows agora é um dado real, não só leitura de GOROOT
+
+A leitura de GOROOT acima (`ENOTDIR Errno = ERROR_PATH_NOT_FOUND` em `zerrors_windows.go`) previa o
+comportamento, mas o ML-1C não tinha uma execução real em Windows para confirmá-la — o teste que
+essa mesma sessão escreveu (`manager_collision_enotdir_test.go`) afirmava o oposto e só foi
+falsificado depois, pelo CI de Windows (run `33991655271`):
+
+```
+manager_collision_enotdir_test.go:58: detectNameCollision(ENOTDIR) = nil,
+    want a reported error (ENOTDIR must not be classified as absence)
+```
+
+`err == nil` nessa mensagem é o dado empírico: em `windows-latest`, `detectNameCollision` suprime a
+condição ENOTDIR construída pelo teste (arquivo real onde um componente de diretório era esperado),
+exatamente como suprimiria um diretório genuinamente ausente. Isso confirma, por execução real, a
+previsão feita só por leitura de GOROOT.
+
+Reconciliado no ML-1A (`ROADMAP-2026-09-05-reconciliar-o-que-declaramos-com-o-que-medimos-apos-a-auditoria-externa.md`):
+o teste passou a afirmar comportamento por plataforma (`runtime.GOOS`) em vez de uma expectativa
+única — em POSIX, `err != nil`; no Windows, `err == nil`, mas só depois de confirmar via
+`os.ReadDir` bruto que `errors.Is(rawErr, fs.ErrNotExist)` é verdadeiro no runner real (afirma o
+mecanismo, não só o resultado). Nenhum `t.Skip` foi usado.
+
 ## Ligado a
 
 - [[dedup-guard-path-cego-a-backslash-no-windows-2026-09-05]] — outro caso

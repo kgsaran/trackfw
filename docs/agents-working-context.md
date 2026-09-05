@@ -31716,6 +31716,24 @@ por decisão do próprio SO, não por defeito do predicado escolhido (`os.IsNotE
 `errors.Is(fs.ErrNotExist)`, que são idênticos aqui); em POSIX, onde `ENOTDIR` é um errno distinto,
 a mesma função reporta erro normalmente.
 
+Auditoria própria (via `advisor`) apontou que o ramo Windows como escrito inicialmente era
+vacuamente satisfazível — `err == nil` também seria verdadeiro se `os.ReadDir` tivesse simplesmente
+tido sucesso num handle de arquivo, o que não afirmaria o mecanismo medido (`errors.Is(rawErr,
+fs.ErrNotExist) == true`). Corrigido: o ramo Windows agora chama `os.ReadDir(blocker)` diretamente e
+falha alto se o erro bruto não existir ou não casar `fs.ErrNotExist` **antes** de checar o retorno
+de `detectNameCollision` — a asserção afirma o mecanismo, não só o resultado. O comentário da função
+também foi ajustado para não apresentar a cadeia de errno do GOROOT (`ENOTDIR = ERROR_PATH_NOT_FOUND`)
+como medida por este teste: só o `err == nil`/`errors.Is` empírico do CI é dado medido; a cadeia de
+errno continua sendo leitura de GOROOT, citada como tal.
+
+`TestDetectNameCollision_TrulyAbsentDirectoryIsSuppressed` (o outro teste do mesmo arquivo, tocado
+pela reescrita) ganhou sua própria frase de reconciliação: afirma que a supressão via
+`errors.Is(err, fs.ErrNotExist)` para diretório genuinamente ausente é decisão deliberada do ML-1C
+(caso do `~/.claude/agents/` não criado ainda), não algo que este ML-1A deveria alterar — e o
+comentário registra explicitamente que, no Windows, os dois testes convergem para o mesmo `nil` e
+o par **deixa de discriminar** "bloqueado por arquivo" de "não existe ainda" ali — é a limitação de
+plataforma documentada, não uma lacuna que este teste feche sozinho.
+
 ### Verificação
 
 - `go build ./...`: sem erros.
@@ -31723,8 +31741,9 @@ a mesma função reporta erro normalmente.
 - `go test ./internal/integrations/...`: `ok`, 0 falhas (suíte completa do pacote, não só o teste
   tocado). Em macOS (ambiente local), o teste executa e passa pelo ramo POSIX
   (`ENOTDIR reported as expected on darwin: scan ".../blocker.txt" for name collisions: ...`); o
-  ramo Windows só é exercitado no CI (`windows-full-suites`), como o próprio comentário do teste
-  declara — não fingi cobertura de Windows a partir de execução local.
+  ramo Windows (incluindo a checagem de mecanismo via `os.ReadDir`/`errors.Is`) só é exercitado no
+  CI (`windows-full-suites`), como o próprio comentário do teste declara — não fingi cobertura de
+  Windows a partir de execução local.
 - `make quality` **não foi executado** (reservado ao arquiteto, conforme handoff).
 
 ### Escopo respeitado
@@ -31732,4 +31751,37 @@ a mesma função reporta erro normalmente.
 Único arquivo tocado: `internal/integrations/manager_collision_enotdir_test.go`. `manager.go:477`
 não foi alterado — a troca `os.IsNotExist` → `errors.Is` já ali é modernização válida, fora de
 escopo desta ML. Nenhum dos ~40 outros sítios de `os.IsNotExist` foi tocado. Issue #276 não foi
-reaberta. Nenhuma operação de git executada — árvore deixada suja para auditoria do arquiteto.
+reaberta. Vault atualizado com o dado real de CI (addendum na mesma nota do ML-1C). ML-1A deixado
+como `🔄 Em andamento` no roadmap — o protocolo do meu papel reserva a marcação `✅ Concluído` para
+depois da auditoria do arquiteto, não para o agente que entrega. Nenhuma operação de git executada
+— árvore deixada suja para auditoria do arquiteto.
+
+
+---
+
+## 2026-09-05 — `trackfw_architect` (Zeus) — ERRO DE PROCESSO MEU, registrado
+
+🔴 **Commitei com subagente vivo na árvore.** O `git add -A` do commit `228fea5`
+("chore(governance): REQ da instalacao em Windows") varreu junto
+`internal/integrations/manager_collision_enotdir_test.go`, que o ML-1A estava escrevendo naquele
+momento.
+
+Resultado: um commit rotulado `chore(governance)` contendo **código de teste de produto**, com
+mensagem que não descreve metade do que ele carrega.
+
+**Eu tenho regra explícita contra isso** — nunca commitar nem trocar de branch com subagente
+editando — e violei mesmo assim, porque estava respondendo a uma pergunta do usuário e commitei "o
+que estava pronto" sem checar se havia agente ativo.
+
+**Quem detectou foi o agente, não eu.** Ele rodou `git status`/`git log` ao terminar, viu o próprio
+trabalho já commitado, e **conferiu por `git hash-object` contra `git rev-parse HEAD:<path>`** que o
+conteúdo em disco era idêntico ao commitado — provando que nada se perdeu. Isso é a segunda vez nesta
+campanha que a garantia veio do agente e não do meu planejamento (a primeira foi a colisão
+ML-4A/4B).
+
+**Não reescrevi o histórico.** O commit não tinha sido pushado, então `--amend` seria possível — mas
+apagar o rastro de um erro de processo é pior que carregá-lo. Este registro e o commit de acerto
+ficam como o rastro.
+
+**A regra operacional que fica:** antes de qualquer `git add -A`, verificar se há agente ativo. Se
+houver, ou esperar, ou commitar por caminho explícito — nunca `-A`.
