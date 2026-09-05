@@ -54,7 +54,7 @@ fechada com honestidade por causa disto.** Evidência:
 > Dependências: nenhuma.
 
 ### ML-1A — Enumerar e classificar TODOS os checks do harness
-**Status:** ⬜ Pendente · **Agente:** `ares-tf`
+**Status:** ✅ Concluído · **Agente:** `ares-tf`
 **Arquivos:** leitura de `scripts/windows-repro/**` (`run.ps1`, `go/checks.go`, `js/checks.js`,
 `py/checks.py`). **Investigação — não corrigir nada aqui.**
 
@@ -69,17 +69,35 @@ deixa o padrão vivo.
 **Critérios:** tabela completa, nenhum check sem veredito · para os que invocam o produto,
 **demonstrar** que invocam (linha do código), não presumir pelo nome.
 
-## Wave 2 — Retarget (paralelo por item, arquivos verificados na Wave 1)
-> Dependências: ML-1A. A disjunção de arquivos só é conhecida **depois** da enumeração —
-> paralelizar antes disso seria a colisão que este roadmap existe para evitar.
+**Resultado (2026-09-05):** `docs/portabilidade/2026-09-05-enumeracao-dos-checks-do-harness-de-windows.md`.
+12 posições de veredito no `run.ps1` + 18 subcomandos de sonda, cada classificação provada por linha
+de código. **Defeituosos: 4 — os quatro já conhecidos. NÃO existe quinta instância.** Isso fecha a
+AC7 e, ao contrário do que eu temia, torna a Wave 2 suficiente.
+
+🔴 **Achado que a REQ não tinha:** o item 3 está declarado confirmatório **só em comentário**
+(`run.ps1:169`); o veredito continua entrando em `$reproduced.Count` (`run.ps1:664`) e na condição de
+saída (`run.ps1:683`). **Comentar não tira da conta** — o ML-2B tem de excluir do contador.
+
+🔴 **Achado fora da taxonomia:** o item 12 é sonda declaradamente **fora** da issue #216 ("NÃO
+CORRIGE nada") e mesmo assim o veredito dela contamina o mesmo gate. Tratamento explícito no ML-3A.
+
+🔴 **Premissa minha derrubada:** os caminhos que passei no handoff (`js/checks.js`, `py/checks.py`)
+não existem — são `node/checks.js` e `python/checks.py`. Escrevi de memória.
+
+## Wave 2 — Retarget (SEQUENCIAL, um único agente)
+> Dependências: ML-1A.
+> 🔴 **Correção do plano original, feita com a enumeração na mão:** eu tinha escrito "paralelo por
+> item". **Está errado** — os quatro itens vivem nos MESMOS arquivos (`run.ps1`, `go/checks.go`,
+> `node/checks.js`, `python/checks.py`). Paralelizar seria a colisão que este roadmap existe para
+> evitar, e que eu já criei uma vez nesta campanha. Um agente, os quatro em sequência.
 
 ### ML-2A — Item 2: medir o trackfw resolvendo home
-**Status:** ⬜ Pendente · **Agente:** `ares-tf`
+**Status:** ✅ Concluído · **Agente:** `ares-tf`
 Rodar o **binário** com `HOME` ≠ `USERPROFILE` e afirmar o caminho que o `trackfw` escolhe.
 **Falsificação:** revertendo `homedir.Dir()`, volta a `REPRODUCED`.
 
 ### ML-2B — Item 3: medir o validator, ou declarar confirmatório
-**Status:** ⬜ Pendente · **Agente:** `ares-tf`
+**Status:** ✅ Concluído · **Agente:** `ares-tf`
 Medir o **validator deixando de alarmar** em Windows. 🔴 Se a conclusão for que o item 3 **deve**
 permanecer confirmatório, **declarar explicitamente** e tirá-lo da contagem de `REPRODUCED`
 corrigíveis — a REQ autoriza essa saída, desde que escrita.
@@ -87,22 +105,80 @@ corrigíveis — a REQ autoriza essa saída, desde que escrita.
 🔴 **Não relitigar** a decisão do bit NTFS: `vault/notes/goos-guard-e-do-binario-nao-do-host-wsl-continua-protegido-2026-09-01`.
 
 ### ML-2C — Item 4: invocar o `.sh` real
-**Status:** ⬜ Pendente · **Agente:** `ares-tf`
+**Status:** ✅ Concluído · **Agente:** `ares-tf`
 O check invoca hoje o mecanismo replicado. Passa a invocar `scripts/check-parity-contract-coverage.sh`.
 **Falsificação:** revertendo o fix de 2026-09-02, volta a `REPRODUCED`.
 
 ### ML-2D — Item 7: invocar o `barrier`, não a réplica
-**Status:** ⬜ Pendente · **Agente:** `ares-tf`
+**Status:** ✅ Concluído · **Agente:** `ares-tf`
 `scripts/windows-repro/go/checks.go:135` roda `exec.Command("sh","-c",...)` — réplica. A correção
 mudou `barrier.js`/`barrier.py`.
 **Falsificação:** revertendo a correção do barrier, volta a `REPRODUCED`.
 
-## Wave 3 — Recontagem
-> Dependências: Wave 2 completa.
+## Wave 3 — Vazamentos de sinal e recontagem (SEQUENCIAL, um agente)
+> Dependências: Wave 2 completa (auditada e commitada em 28842b3).
+> 🔴 Os dois MLs tocam `run.ps1`. **ML-3B antes de ML-3A**: recontar antes de a semântica do gate
+> estar final produziria um número que muda logo depois — e este roadmap existe porque um número
+> previsto virou critério sem verificação.
+
+### ML-3B — Dois vazamentos de sinal achados na auditoria da Wave 2
+**Status:** ✅ Concluído · **Agente:** `ares-tf`
+
+🔴 **1 — `CONFIRMATORY-EXECUTION-FAILED` não chega a lugar nenhum.** O ML-2B tirou o item 3 do
+contador de forma estrutural, e isso está certo. Mas o veredito de **falha de execução** que ele
+criou (`run.ps1:281`) não entra em `$reproduced`, nem em `$inconclusive`, nem em `$blocked`, nem na
+condição de saída — só na tabela impressa. **Se a sonda do item 3 parar de executar, o gate fica
+verde e ninguém percebe.** É exatamente a forma de defeito que esta campanha vem caçando: o controle
+reporta saúde sobre o que não conseguiu medir. Confirmatório **não** quer dizer invisível.
+
+🔴 **2 — o item 12 contamina o gate** (achado do ML-1A): é sonda declaradamente **fora** da issue
+#216 — o próprio código diz "NÃO CORRIGE nada" — e o veredito dela entra no mesmo `$results`.
 
 ### ML-3A — Recalcular a contagem esperada, item a item
-**Status:** ⬜ Pendente · **Agente:** `ares-tf`
+**Status:** ✅ Concluído · **Agente:** `ares-tf`
 🔴 **Justificar item a item, nunca herdar de previsão.** O erro que originou esta REQ foi
 transformar um número previsto em critério sem verificar o que os checks mediam.
 🔴 A `AC3` da `REQ-2026-08-31` **continua marcada como FALSIFICADA**. Este roadmap corrige o
 instrumento, **não o histórico**.
+
+
+## Auditoria da Wave 3 — arquiteto, 2026-09-05
+
+```
+make quality QUALITY_EXIT=0, zero FAIL · trackfw validate exit 0
+run.ps1 executado de verdade via pwsh, nao so lido
+```
+
+**Vazamento 1 fechado de forma estrutural** — conferido por mim em `run.ps1:889,919`:
+`$executionFailed` entra na condição de saída. Um item 3 que **não consegue medir** agora reprova o
+gate. Ela falsificou nos **dois** modos de falha (`go run` não-zero e `$psi.Start()` lançando), não
+só no óbvio.
+
+**Vazamento 2 fechado:** item 12 com `-OutOfGate` — sai do contador, **fica na tabela**. Falsificado
+6→7 sem a flag, 6 com ela.
+
+🔴 **O advisor dela pegou o que eu não teria visto:** mesmo com o contador corrigido, o
+`GITHUB_STEP_SUMMARY` — o que um humano lê no CI — continuava mostrando o item 12 como `REPRODUCED`
+sem anotação. Corrigir o contador e deixar o resumo mentindo seria trocar um vazamento por outro,
+mais discreto.
+
+**Ela retirou uma especulação própria antes de entregar:** tinha escrito que o item 10 seria uma
+quinta instância do padrão; ao conferir contra o ML-1A, ele **invoca o produto** — a limitação é que
+o defeito só é observável em Windows.
+
+## 🔴 Achado da auditoria: o item 10 provavelmente JÁ está corrigido
+
+O item 10 mede *"separador de SO vazando para o frontmatter da REQ no `roadmap move`"* — que é
+**exatamente** a categoria da `ADR-2026-09-04-separador-posix-...`: artefato autorado cujo consumidor
+não é o filesystem. A Wave 2 do roadmap de Windows (ML-2A) atacou essa emissão.
+
+Conferido nos 3 runtimes: `internal/generators/roadmap.go:456` (`portableDst`),
+`npm/src/generators/roadmap.js:297` (`normalizeRefSeparator`),
+`pypi/trackfw/generators/roadmap.py:14,524` (`normalize_ref_separator`). **Os três normalizam.**
+
+🔴 **Minhas duas primeiras buscas deram FALSO NEGATIVO** — procurei por `portableDst`/`toPosix` e
+concluí que Node e Python não tinham. Só apareceu quando li o código em volta da chamada de sync.
+**É a mesma classe de erro da contagem que reportei errada:** um comando que sai 0 sem casar nada
+parece resposta. Não é.
+
+**Consequência:** se o CI confirmar, o item 10 vai a `ABSENT` e a suíte inteira do #216 fecha em 0.

@@ -4,44 +4,22 @@
 // para ROADMAP-2026-08-30-job-de-windows-largo-que-nasce-vermelho-e-sonda-
 // sob-demanda, ML-1C.
 //
-// Unico subcomando por enquanto: gatequote (item 7 reclassificado). Replica
-// o MESMO primitivo que npm/src/commands/barrier.js:561 usa em producao:
-// spawnSync(command, { shell: true, ... }) — no Windows, isso resolve para
-// cmd.exe. run.ps1 chama este script com o MESMO literal de comando usado
-// pelo checks.go (Go, via `sh -c`) e pelo checks.py (Python, via
-// subprocess.run(shell=True)) e compara os 3 stdouts brutos.
+// ROADMAP-2026-09-05-retarget-dos-checks-de-camada-2 (ML-2D): o unico
+// subcomando deste arquivo ("gatequote") foi REMOVIDO. Ele replicava
+// npm/src/commands/barrier.js fora do `barrier` real — exatamente o padrao
+// que este roadmap corrige. O item 7 do run.ps1 agora invoca `trackfw
+// barrier` de verdade (via npm/bin/trackfw), nao mais este arquivo.
 //
-// Executado via `node scripts/windows-repro/node/checks.js gatequote`.
-
-const { spawnSync } = require('child_process')
-
-// Precisa ser EXATAMENTE o mesmo literal usado em go/checks.go
-// (gateQuoteCommand) e python/checks.py (GATE_QUOTE_COMMAND).
-const GATE_QUOTE_COMMAND =
-  "echo start > /dev/null 2>&1 && echo 'trackfw-gate-verdict-A' || echo 'trackfw-gate-verdict-B'"
-
-function cmdGateQuote() {
-  const result = spawnSync(GATE_QUOTE_COMMAND, {
-    shell: true,
-    encoding: 'utf8',
-    stdio: 'pipe',
-  })
-  const stdout = result.stdout || ''
-  const stderr = result.stderr || ''
-  process.stdout.write(`STDOUT_BEGIN\n${stdout}\nSTDOUT_END\n`)
-  process.stdout.write(`exit=${result.status}\n`)
-  if (stderr) process.stdout.write(`stderr_tail=${JSON.stringify(stderr.slice(-400))}\n`)
-}
-
-const COMMANDS = { gatequote: cmdGateQuote }
+// Mantido presente (em vez de apagado) para nao quebrar nenhuma referencia
+// externa que ainda exista a `scripts/windows-repro/node/checks.js` e para
+// simetria com go/checks.go e python/checks.py, que continuam com
+// subcomandos ativos. Sem consumidor conhecido hoje — confirmado por grep
+// em .ps1/.yml/.md antes desta ML.
 
 function main() {
   const sub = process.argv[2]
-  if (!sub || !COMMANDS[sub]) {
-    process.stderr.write(`uso: checks.js <${Object.keys(COMMANDS).join('|')}>\n`)
-    process.exit(2)
-  }
-  COMMANDS[sub]()
+  process.stderr.write(`checks.js: nenhum subcomando ativo (era so "gatequote", removido pelo ML-2D)${sub ? `; recebido "${sub}"` : ''}\n`)
+  process.exit(2)
 }
 
 main()

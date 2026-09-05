@@ -1291,9 +1291,121 @@ function readGlobalHookJSON(...relParts) {
  * (normalizeGuardPath) and pypi/trackfw/generators/hooks.py
  * (_normalize_guard_path). Never call with anything other than a script
  * path -- it is not a general string normalizer.
+ *
+ * ROADMAP-2026-09-03 ML-7B -- Windows separator canonicalization, gated on
+ * anchoring, NOT a blanket "\\" -> "/" translate. On POSIX "\\" is a legal
+ * filename byte, so translating it unconditionally would make two
+ * genuinely different paths (one with a literal backslash in a segment
+ * name, one with an extra path separator there) compare equal -- the exact
+ * dangerous loosening this function's own doc comment warns against, and
+ * the risk this ML was told to treat explicitly. The decision, per input
+ * shape (mirrors the UNC/drive-letter arms of
+ * internal/validator/pathIsAnchoredForHookConfig (Go) / index.js's
+ * pathIsAnchoredForHookConfig, reimplemented locally -- not imported,
+ * different question, and this module must not import the validator):
+ *
+ *   - "C:\Users\x\guard.sh" / "C:/Users/x/guard.sh" (ASCII drive letter,
+ *     ":", then "\" or "/") -- CANONICALIZED: every "\" is translated to
+ *     "/" before the collapse below runs, so both forms land on the same
+ *     "C:/Users/x/guard.sh". This is the case ML-7A measured as the actual
+ *     trigger (a path.join-computed Windows path vs. a hand-concatenated
+ *     one).
+ *   - "\\servidor\share\guard.sh" (valid UNC: non-empty SERVER not "." or
+ *     "..", followed by a non-empty SHARE not itself starting with "\") --
+ *     UNCHANGED, byte-for-byte, including its backslashes. Translating it
+ *     would collapse "\\server\share" into "//server/share" and then this
+ *     function's own "//" -> "/" collapse would eat the second slash,
+ *     producing "/server/share/..." -- indistinguishable from a
+ *     single-leading-backslash, drive-root-relative path
+ *     ("\server\share\..." means something else on Windows) or from a
+ *     same-named POSIX path. That collision is precisely a false "already
+ *     installed": a network-share guard would dedup-match a local one.
+ *     Left untouched, a UNC command never cross-matches a non-UNC one -- no
+ *     new equality is introduced.
+ *   - "//servidor/share/guard.sh" (the POSIX-typed equivalent of UNC) --
+ *     UNCHANGED behavior from before this ML: it does not start with "\",
+ *     so it never enters the new branch above; it still collapses via the
+ *     existing "//" -> "/" rule below, same as any other POSIX path. Not
+ *     unified with the "\\servidor\share\..." form above (pre-existing
+ *     asymmetry, out of scope for this ML).
+ *   - "\\" and "\\x" alone (no SHARE segment) -- NOT valid UNC by the
+ *     predicate above, so they fall through unchanged: no drive letter, no
+ *     valid UNC, no translation.
+ *   - "C:foo" (drive-relative, no separator after ":") and homoglyph/
+ *     zero-width-prefixed strings (e.g. "\uFF43:\...", "\u200bC:\...") --
+ *     do NOT match the ASCII-only, position-0 drive-letter check, so no
+ *     translation happens. Same anti-spoofing posture as the validator's
+ *     drive-letter check.
+ *
+ * Known residual, documented not fixed (hades-tf ML-7B barrier review,
+ * 2026-09-05 parecer): three real Windows-with-"\" shapes have no drive
+ * letter at position 0, so hasWindowsDriveLetterPrefix's gate leaves them
+ * uncanonicalized -- the same pre-ML-7A defect survives for them. Direction
+ * is always TIGHTENS (possible duplicate hook entry), never loosens (the
+ * guard is never silently skipped) -- same safe direction as every other
+ * case above:
+ *
+ *   - "\\?\C:\Users\x\guard.sh" (the Win32 long-path prefix; a real form
+ *     Windows/long-path APIs produce automatically, not a hypothetical).
+ *   - A relative path containing "\" (e.g. "guard\scripts\hook.sh"). Low
+ *     practical risk: today both sides of the real comparison always come
+ *     from path.join with an absolute home, so a relative command should
+ *     not reach this function -- but nothing in the comparator itself
+ *     prevents it.
+ *   - A home resolved via a network-profile UNC path (e.g.
+ *     "\\fileserver\homes\kg\.trackfw\scripts\..."). It never enters the
+ *     drive-letter branch and is intentionally left untouched (see the UNC
+ *     bullet above), so the original defect persists for both UNC
+ *     spellings, not just between UNC and drive-letter forms.
+ *
+ * Not fixed here on purpose: closing any of the three would touch the
+ * drive-letter gate this barrier just approved as conservative, trading a
+ * duplicate-entry nuisance for the more expensive failure mode (collapsing
+ * genuinely different paths into a false "already installed"). Do not treat
+ * rediscovering these three as a new finding.
  */
+/**
+ * Reports whether p begins with a Windows UNC prefix ("\\server\share...")
+ * with a non-empty SERVER segment (not "." or "..") followed by a non-empty
+ * SHARE segment that does not itself start with another backslash. Mirrors
+ * the UNC arm of index.js's pathIsAnchoredForHookConfig -- reimplemented
+ * here (not imported: different question, and this module must not import
+ * the validator). "\\", "\\x" (no share segment) and "\\.\x" / "\\..\evil"
+ * (server "." or "..") are NOT valid UNC. Currently unused by
+ * normalizeGuardPath itself (a valid-UNC string never has a drive-letter
+ * prefix, so the two checks are already mutually exclusive by construction)
+ * -- kept as a named, tested predicate so the "UNC stays untouched"
+ * decision above is verifiable by name, not just by absence of a call, same
+ * as Go's hasValidUNCPrefix (internal/generators/agentfiles.go) and
+ * Python's _has_valid_unc_prefix (pypi/trackfw/generators/hooks.py).
+ * EXPORTED (unlike Go's package-private equivalent) only because
+ * npm/tests/guard_path_normalize.test.js reaches it via
+ * require('../src/generators/hooks') destructuring -- there is no
+ * production caller. Do not build new logic against this export assuming
+ * UNC gets active handling; it does not (see the doc comment above).
+ */
+function hasValidUNCPrefix(p) {
+  if (p.length < 2 || p[0] !== '\\' || p[1] !== '\\') return false
+  const rest = p.slice(2)
+  const cut = rest.indexOf('\\')
+  if (cut === -1) return false
+  const server = rest.slice(0, cut)
+  const share = rest.slice(cut + 1)
+  return server !== '' && server !== '.' && server !== '..' && share !== '' && share[0] !== '\\'
+}
+
+function hasWindowsDriveLetterPrefix(p) {
+  if (p.length < 3) return false
+  const c = p.charCodeAt(0)
+  const isASCIILetter = (c >= 97 && c <= 122) || (c >= 65 && c <= 90)
+  return isASCIILetter && p[1] === ':' && (p[2] === '\\' || p[2] === '/')
+}
+
 function normalizeGuardPath(p) {
   if (!p) return p
+  if (hasWindowsDriveLetterPrefix(p)) {
+    p = p.split('\\').join('/')
+  }
   let out = ''
   let prevSlash = false
   for (const ch of p) {
@@ -2265,6 +2377,8 @@ module.exports = {
   mergeCopilotHookArray,
   normalizeGuardPath,
   samePathCommand,
+  hasValidUNCPrefix,
+  hasWindowsDriveLetterPrefix,
   // Template constants — exported for scaffold doctor (ADR-2026-08-27).
   // These are the single source of truth for each script's content; the
   // scaffold doctor compares on-disk files against these exact bytes, using

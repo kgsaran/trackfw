@@ -12,21 +12,30 @@
 // `go run arquivo-com-ignore.go` executa; `go build ./...` no mesmo diretório
 // não encontra pacote nenhum).
 //
-// Cada subcomando chama o MESMO primitivo de stdlib que o produto usa em
-// produção (grep confirmado antes de escrever este arquivo:
-// internal/validator/validator_git_branch_guard.go:133,231 chama
-// os.UserHomeDir() diretamente) — não há mock aqui.
+// ROADMAP-2026-09-05-retarget-dos-checks-de-camada-2 (ML-2A/ML-2D): os
+// subcomandos "shc" e "gatequote" foram REMOVIDOS daqui. O item 2 do run.ps1
+// agora invoca o binário real do trackfw (`trackfw agents models`), não
+// `checks.go home` — mas `cmdHome` abaixo PERMANECE: `.github/workflows/
+// quality.yml:280` reusa `go run scripts/windows-repro/go/checks.go home`
+// como precondição AC12 (confirma que a isolação de HOME/USERPROFINE do job
+// colou), um consumidor externo a este roadmap que não pode ser quebrado por
+// esta ML — ver docs/portabilidade/2026-09-05-enumeracao-dos-checks-do-
+// harness-de-windows.md, seção "Consumidor externo ao harness". O item 7
+// agora invoca `trackfw barrier` de verdade (ver run.ps1); `cmdShC` e
+// `cmdGateQuote`, que replicavam `exec.Command("sh","-c",...)` fora do
+// `barrier`, não têm mais consumidor e foram removidos — mantê-los mortos
+// convidaria a reintrodução do mesmo defeito (substituto medindo a si
+// mesmo) que este roadmap corrigiu.
 package main
 
 import (
 	"fmt"
 	"os"
-	"os/exec"
 )
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "uso: checks.go <home|execbit|shc|gatequote>")
+		fmt.Fprintln(os.Stderr, "uso: checks.go <home|execbit>")
 		os.Exit(2)
 	}
 	switch os.Args[1] {
@@ -34,21 +43,17 @@ func main() {
 		cmdHome()
 	case "execbit":
 		cmdExecBit()
-	case "shc":
-		cmdShC()
-	case "gatequote":
-		cmdGateQuote()
 	default:
 		fmt.Fprintf(os.Stderr, "subcomando desconhecido: %s\n", os.Args[1])
 		os.Exit(2)
 	}
 }
 
-// item 2 — $HOME ignorado no Windows. Chama exatamente o que a produção
-// chama (os.UserHomeDir()) sob o ambiente que o chamador (run.ps1) já
-// preparou (HOME=fakeA, USERPROFILE=fakeB, deliberadamente diferentes).
-// Imprime só o valor resolvido, sem julgamento — o chamador decide
-// REPRODUCED/ABSENT comparando contra HOME e USERPROFILE.
+// cmdHome — NÃO é mais usado pelo item 2 do run.ps1 (ver ML-2A: o item 2
+// agora invoca `trackfw agents models`, o binário real, via
+// internal/homedir/homedir.go). Mantido apenas porque
+// `.github/workflows/quality.yml:280` o reusa como precondição AC12 — ver
+// comentário do pacote acima. Não remover sem atualizar quality.yml.
 func cmdHome() {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -60,10 +65,14 @@ func cmdHome() {
 
 // item 3 — bit de execução sempre "presente" no Windows
 // (internal/validator/validator_credential_guard.go:377,
-// validator_git_branch_guard.go:193: info.Mode()&0111==0). Confirmatório —
-// a evidência primária é a camada 1 (go test ./... já roda os testes reais
-// do validator que fazem esta mesma asserção). Replicado aqui em isolamento
-// para ficar citável sem depender do resultado bruto de `go test`.
+// validator_git_branch_guard.go:193: info.Mode()&0111==0). CONFIRMATÓRIO
+// (ML-2B, decisão registrada em run.ps1): a evidência primária é a camada 1
+// (go test ./... já roda TestCredentialGuardHookResolvable_
+// WindowsNaoDisparaBitDeExecucao / TestGitBranchGuardHookResolvable_
+// WindowsNaoDisparaBitDeExecucao, que exercitam o guard real via
+// validator.CurrentGOOS). Replicado aqui em isolamento só para ficar citável
+// sem depender do resultado bruto de `go test` — o veredito NUNCA entra no
+// contador de REPRODUCED/INCONCLUSIVE do run.ps1 (ver Add-Result do item 3).
 func cmdExecBit() {
 	f, err := os.CreateTemp("", "trackfw-execbit-*.sh")
 	if err != nil {
@@ -85,60 +94,4 @@ func cmdExecBit() {
 	}
 	mode := info.Mode()
 	fmt.Printf("mode=%v bit0111=%d\n", mode, mode&0o111)
-}
-
-// item 7 — `sh -c` hardcodado em internal/commands/barrier.go:729
-// (`exec.Command("sh", "-c", command)`). Replica o MESMO primitivo, fora do
-// `barrier` (que exigiria fixture de wave completa, fora do escopo desta
-// ML) — mede diretamente se `sh` resolve no PATH do runner e o que ele
-// devolve, sem mascarar stdout/stderr (ao contrário do caminho de erro real
-// do barrier.go, que hoje descarta os dois — achado à parte, não corrigido
-// aqui).
-func cmdShC() {
-	c := exec.Command("sh", "-c", "echo trackfw-sh-check-ok")
-	out, err := c.CombinedOutput()
-	if err != nil {
-		if _, ok := err.(*exec.Error); ok {
-			fmt.Printf("sh-not-found err=%v\n", err)
-			return
-		}
-		fmt.Printf("sh-ran-nonzero err=%v output=%q\n", err, string(out))
-		return
-	}
-	fmt.Printf("sh-ran-ok output=%q\n", string(out))
-}
-
-// gateQuoteCommand é o MESMO literal usado pelos 3 runtimes (run.ps1 chama
-// o node/checks.js e o python/checks.py equivalentes com este texto). Não é
-// um teste de "sh existe" (isso o item 7 antigo já respondeu — ver cmdShC
-// acima, mantido como evidência auxiliar) — é um teste de "o mesmo texto de
-// gate produz o MESMO veredito visível nos 3 runtimes". Combina os dois
-// vetores que a Wave 0/ML-1C sugeriram: aspas simples (sh remove, cmd.exe
-// NÃO remove — cmd.exe não trata ' como caractere de quoting) e um
-// redirecionamento POSIX (`/dev/null`, que não existe como device no
-// Windows — cmd.exe tenta resolver como caminho de arquivo e falha). Em vez
-// de comparar código de saída (frágil — algumas falhas de redirecionamento
-// no cmd.exe ainda retornam 0 dependendo da build), compara o TOKEN visível
-// que sobrevive no stdout, que é o que um `**Gates da wave:**` real usaria
-// para decidir passou/não passou caso o comando fizesse `grep` no próprio
-// output.
-const gateQuoteCommand = "echo start > /dev/null 2>&1 && echo 'trackfw-gate-verdict-A' || echo 'trackfw-gate-verdict-B'"
-
-// item 7 (reclassificado, ML-1C) — replica o MESMO primitivo que
-// internal/commands/barrier.go:729 usa em produção: exec.Command("sh", "-c",
-// command). npm/src/commands/barrier.js:561 usa spawnSync(command, {shell:
-// true}) e pypi/trackfw/commands/barrier.py:582 usa subprocess.run(cmd,
-// shell=True) — no Windows, ambos resolvem para cmd.exe. run.ps1 roda os
-// equivalentes Node/Python com o MESMO gateQuoteCommand e compara os 3
-// stdouts brutos.
-func cmdGateQuote() {
-	c := exec.Command("sh", "-c", gateQuoteCommand)
-	out, err := c.CombinedOutput()
-	if err != nil {
-		if _, ok := err.(*exec.Error); ok {
-			fmt.Printf("sh-not-found err=%v\n", err)
-			return
-		}
-	}
-	fmt.Printf("STDOUT_BEGIN\n%s\nSTDOUT_END\n", string(out))
 }
