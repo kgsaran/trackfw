@@ -31221,3 +31221,33 @@ reverter o status ao auditar.
 
 **Escopo negativo respeitado:** nenhuma correção de produto tocada; item 10 intocado; nenhuma operação
 de git executada; árvore deixada suja para auditoria do arquiteto.
+
+---
+
+## 2026-09-05 — Ártemis (QA) — Triagem das 7 issues de `lourivalgarciajunior` (#273–#279)
+
+**Início:** investigação pura, sem correção, na branch `fix/retarget-dos-checks-de-camada-2` (PR #280
+aberto, não tocado). Sete issues abertas hoje pelo contribuidor externo, medidas em Windows 11 real.
+
+**Fim:** entregue `docs/portabilidade/2026-09-05-triagem-dos-sete-issues-do-lourival.md`. Veredito por
+issue (todas confirmadas no mecanismo/código, com ressalvas sobre o que só Windows real fecha):
+
+| # | Veredito | Ação |
+|---|---|---|
+| 273 | CONFIRMADO (mecanismo) | insumo de medição para REQ-2026-08-20 já aberta, fora do #216 |
+| 274 | CONFIRMADO (reproduzido de verdade) | passo de CI Node (`pass==0 && fail>=1`) |
+| 275 | CONFIRMADO, reforçado pelo nosso próprio histórico (#271→#272, G0 já documentado) | proposta de ratchet por nome tem armadilhas reais (cemitério, testes parametrizados, rename) — decisão de arquitetura, não fix mecânico |
+| 276 | CONFIRMADO (código); comportamento Windows não verificável aqui | fix mecânico `os.IsNotExist`→`errors.Is(err, fs.ErrNotExist)` em 6 sítios |
+| 277 | CONFIRMADO estruturalmente (144 arquivos no snapshot bate exato) | dívida de portabilidade para consumidores, fora do caminho crítico do #216 |
+| 278 | CONFIRMADO, contagem própria reproduzida (63 vacuous vs. 58 dele — mesma ordem de grandeza) | fix `contentHasMarker` por regex ancorado |
+| 279 | CONFIRMADO integralmente — 4 arquivos citados NÃO tocados pela #269 (só `update_test.go` teve 1 símbolo convertido) | correção mecânica, mesmo padrão já provado pelo ML-4A |
+
+**Cruzamento:** nenhuma das 7 é resolvida pelo PR #280 (arquivos não sobrepõem). Nenhuma contradiz
+conclusão registrada — a #275 reforça o G0 da retriagem 2026-09-04; a #279 opera dentro da (não
+contra a) decisão do vault `goos-guard-e-do-binario-nao-do-host-wsl-continua-protegido-2026-09-01`
+(mecanismos distintos: guard de produto em segurança vs. `t.Skip` cru em teste).
+
+**Ordenação por retorno** (objetivo: fechar #216, release segura): 279 > 278 > 276 > 274 > 275 > 273 > 277.
+
+**Escopo negativo respeitado:** nenhuma issue comentada, nenhum código alterado, nenhuma operação de
+git, PR #280 não tocado, status de nenhum roadmap alterado.
