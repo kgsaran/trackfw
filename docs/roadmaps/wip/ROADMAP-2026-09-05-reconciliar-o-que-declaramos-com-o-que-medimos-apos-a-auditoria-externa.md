@@ -27,7 +27,7 @@ não a cruzamos com a nossa própria declaração.**
 > Dependências: nenhuma. Vem antes de tudo porque é vermelho **na `main`**.
 
 ### ML-1A — O teste do `ENOTDIR` afirma o que foi medido, ou sai
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf`
+**Status:** 🔄 Em andamento · **Agente:** `apolo-tf`
 **Arquivos:** `internal/integrations/manager_collision_enotdir_test.go` (+ `manager.go` se a
 reconciliação exigir).
 
@@ -41,7 +41,7 @@ contrário. Reprova no CI.
 defeito.
 
 ### ML-1B — Corrigir publicamente o comentário do `#274`
-**Status:** ⬜ Pendente · **Agente:** `trackfw_architect`
+**Status:** 🔄 Em andamento · **Agente:** `trackfw_architect`
 **Novo** comentário na issue, com a medição que derruba o anterior. Não editar o original em
 silêncio: quem leu a afirmação errada precisa encontrar a correção.
 
