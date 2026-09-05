@@ -1,5 +1,5 @@
 ---
-status: backlog
+status: wip
 date: 2026-09-05
 squad: artemis-tf
 req: "docs/req/REQ-2026-09-05-tres-defeitos-mecanicos-medidos-por-consumidor-externo-skips-residuais-gate-req-has-adr-vacuo-e-enotdir-classificado-como-ausente.md"
@@ -7,7 +7,7 @@ req: "docs/req/REQ-2026-09-05-tres-defeitos-mecanicos-medidos-por-consumidor-ext
 
 # Roadmap: Fechar os três defeitos mecânicos dos issues do consumidor externo
 
-> Criado em: 2026-09-05 | Status: backlog
+> Criado em: 2026-09-05 | Status: wip
 
 ## Context
 
@@ -23,11 +23,19 @@ provado e **nenhuma decisão de arquitetura pendente**.
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
 
 ## Wave 1 — Os três, em paralelo (arquivos disjuntos)
-> Dependências: PR #280 mergeado. 🔴 **Disjunção a CONFERIR arquivo a arquivo antes do despacho** —
-> já criei uma colisão nesta campanha afirmando disjunção sem abrir os arquivos (ML-4A/4B).
+> Dependências: PR #280 mergeado (313fe9a) ✅.
+> **Disjunção conferida arquivo a arquivo pelo arquiteto, 2026-09-05:**
+> ML-1A escreve em 5 arquivos `*_test.go` (`internal/generators/scaffold_doctor_test.go`,
+> `internal/generators/update_test.go`, `internal/integrations/manager_test.go`,
+> `internal/integrations/manager_persistence_order_test.go`, `internal/thirdparty/provenance_test.go`).
+> ML-1C escreve em `internal/integrations/manager.go` + pares Node/Python — **arquivo diferente** do
+> `manager_test.go` do ML-1A, mesmo pacote. ML-1B vive em `internal/validator/` + `npm/src/validator/`
+> + `pypi/trackfw/`. **Nenhum arquivo aparece em dois MLs.**
+> 🔴 **A varredura do acervo do ML-1A é RELATÓRIO, não licença de escrita** — se ela achar `skip` em
+> arquivo de outro ML, reporta; não edita.
 
 ### ML-1A — `#279`: os 9 `skip` residuais, e a varredura do ACERVO
-**Status:** ⬜ Pendente · **Agente:** `artemis-tf`
+**Status:** 🔄 Em andamento · **Agente:** `artemis-tf`
 Tratar os 9 pelo **mesmo padrão do ML-4A**, sem inventar padrão novo.
 
 🔴 **O entregável principal NÃO são os 9 — é a varredura do acervo inteiro** (AC2), com cada
@@ -36,7 +44,7 @@ Tratar os 9 pelo **mesmo padrão do ML-4A**, sem inventar padrão novo.
 assim que estes 9 chegaram até aqui — o arquiteto auditou **o diff de cada wave**, nunca o acervo.
 
 ### ML-1B — `#278`: `req_has_adr` deixa de detectar vazio por literal
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (3 CLIs — regra dura de paridade)
+**Status:** 🔄 Em andamento · **Agente:** `apolo-tf` (3 CLIs — regra dura de paridade)
 5 de 7 grafias de vazio escapam. Falsificação nas duas direções: REQ com ADR real **não** acusada;
 cada uma das 7 grafias **é**.
 
@@ -46,7 +54,7 @@ e depois. Um gate que passa a acusar mais depois de deixar de ser vácuo está f
 torna impossível atribuir qual mudança produziu qual número.
 
 ### ML-1C — `#276`: `ENOTDIR` deixa de ser classificado como ausência
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf`
+**Status:** 🔄 Em andamento · **Agente:** `apolo-tf`
 `internal/integrations/manager.go:477` — sexto sítio de predicado de plataforma, **fora do
 validator**, que é por isso que escapou das varreduras anteriores. Trocar `os.IsNotExist` por
 `errors.Is(err, fs.ErrNotExist)`. Verificar os pares Node/Python.
