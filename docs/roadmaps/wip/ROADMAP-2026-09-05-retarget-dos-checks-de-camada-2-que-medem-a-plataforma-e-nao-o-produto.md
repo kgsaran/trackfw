@@ -115,11 +115,14 @@ O check invoca hoje o mecanismo replicado. Passa a invocar `scripts/check-parity
 mudou `barrier.js`/`barrier.py`.
 **Falsificação:** revertendo a correção do barrier, volta a `REPRODUCED`.
 
-## Wave 3 — Recontagem
-> Dependências: Wave 2 completa.
+## Wave 3 — Vazamentos de sinal e recontagem (SEQUENCIAL, um agente)
+> Dependências: Wave 2 completa (auditada e commitada em 28842b3).
+> 🔴 Os dois MLs tocam `run.ps1`. **ML-3B antes de ML-3A**: recontar antes de a semântica do gate
+> estar final produziria um número que muda logo depois — e este roadmap existe porque um número
+> previsto virou critério sem verificação.
 
 ### ML-3B — Dois vazamentos de sinal achados na auditoria da Wave 2
-**Status:** ⬜ Pendente · **Agente:** `ares-tf`
+**Status:** 🔄 Em andamento · **Agente:** `ares-tf`
 
 🔴 **1 — `CONFIRMATORY-EXECUTION-FAILED` não chega a lugar nenhum.** O ML-2B tirou o item 3 do
 contador de forma estrutural, e isso está certo. Mas o veredito de **falha de execução** que ele
@@ -132,7 +135,7 @@ reporta saúde sobre o que não conseguiu medir. Confirmatório **não** quer di
 #216 — o próprio código diz "NÃO CORRIGE nada" — e o veredito dela entra no mesmo `$results`.
 
 ### ML-3A — Recalcular a contagem esperada, item a item
-**Status:** ⬜ Pendente · **Agente:** `ares-tf`
+**Status:** 🔄 Em andamento · **Agente:** `ares-tf`
 🔴 **Justificar item a item, nunca herdar de previsão.** O erro que originou esta REQ foi
 transformar um número previsto em critério sem verificar o que os checks mediam.
 🔴 A `AC3` da `REQ-2026-08-31` **continua marcada como FALSIFICADA**. Este roadmap corrige o
