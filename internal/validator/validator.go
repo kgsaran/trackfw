@@ -84,12 +84,47 @@ func readFileForRule(rule, path string, msgs *[]string) ([]byte, bool) {
 // contentHasMarker retorna true se content contém algum dos marcadores com valor não-vazio.
 // P3: verifica tanto "\n" quanto "\r\n" para detectar campos vazios em arquivos CRLF.
 // Um marcador seguido de " \n" ou " \r\n" é tratado como "sem valor" (campo vazio).
+//
+// Usada apenas para markers de "existência de bloco" (ex: AcceptanceMarkers, um heading de
+// seção) — não para markers de link (REQ:/ADR:/Roadmap:), que usam contentHasMarkerValue.
 func contentHasMarker(content string, markers []string) bool {
 	for _, marker := range markers {
 		if strings.Contains(content, marker) &&
 			!strings.Contains(content, marker+" \n") &&
 			!strings.Contains(content, marker+" \r\n") {
 			return true
+		}
+	}
+	return false
+}
+
+// contentHasMarkerValue retorna true se algum dos marcadores aparece em content seguido de
+// conteúdo não-branco na mesma linha — isto é, o campo tem um valor real, não apenas o marcador.
+//
+// issue #278: contentHasMarker (acima) detectava "vazio" só pela grafia literal
+// "MARKER + um espaço + \n"/"\r\n" — 5 de 7 grafias naturais de campo vazio escapavam
+// ("MARKER:\n" sem espaço, dois espaços, tab, CRLF sem espaço, três espaços). Esta função
+// decide por VALOR: pega o resto da linha após o marcador, descarta \r/\t/espaços das duas
+// pontas, e só considera "tem valor" se sobrar algo. Indiferente a CRLF, tabs e contagem de
+// espaços — cobre as 7 grafias medidas na triagem, não apenas a literal do template.
+func contentHasMarkerValue(content string, markers []string) bool {
+	for _, marker := range markers {
+		start := 0
+		for {
+			idx := strings.Index(content[start:], marker)
+			if idx == -1 {
+				break
+			}
+			pos := start + idx + len(marker)
+			rest := content[pos:]
+			if nl := strings.IndexByte(rest, '\n'); nl != -1 {
+				rest = rest[:nl]
+			}
+			rest = strings.TrimRight(rest, "\r")
+			if strings.TrimSpace(rest) != "" {
+				return true
+			}
+			start = pos
 		}
 	}
 	return false
@@ -1569,7 +1604,7 @@ func validateWIPHasREQ() ([]string, error) {
 			if !ok {
 				continue
 			}
-			if !contentHasMarker(string(content), cfg.LinkFieldsReq) {
+			if !contentHasMarkerValue(string(content), cfg.LinkFieldsReq) {
 				violations = append(violations, fmt.Sprintf("roadmap %q is in wip but has no linked REQ", name))
 			}
 		}
@@ -1587,7 +1622,7 @@ func validateREQsHaveADR() ([]string, error) {
 		if err != nil {
 			continue
 		}
-		if !contentHasMarker(string(content), cfg.LinkFieldsADR) {
+		if !contentHasMarkerValue(string(content), cfg.LinkFieldsADR) {
 			violations = append(violations, fmt.Sprintf("req %q has no linked ADR", filepath.Base(path)))
 		}
 	}
@@ -1605,7 +1640,7 @@ func validateBlockedHasREQ() ([]string, error) {
 			if !ok {
 				continue
 			}
-			if !contentHasMarker(string(content), cfg.LinkFieldsReq) {
+			if !contentHasMarkerValue(string(content), cfg.LinkFieldsReq) {
 				violations = append(violations, fmt.Sprintf("roadmap %q is in blocked but has no linked REQ", name))
 			}
 		}
@@ -1623,7 +1658,7 @@ func validateREQsHaveRoadmap() ([]string, error) {
 		if err != nil {
 			continue
 		}
-		if !contentHasMarker(string(content), cfg.LinkFieldsRoadmap) {
+		if !contentHasMarkerValue(string(content), cfg.LinkFieldsRoadmap) {
 			violations = append(violations, fmt.Sprintf("req %q has no linked Roadmap", filepath.Base(path)))
 		}
 	}

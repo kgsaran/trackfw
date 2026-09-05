@@ -1743,8 +1743,27 @@ EOF
 
 # REQ Done referenciando o ADR via frontmatter \`adr:\` e via a seção
 # "## Linked ADR" — mesmo padrão de reqDoneFixtureContent (validator_test.go).
+#
+# $3 (roadmap_rel, opcional, default "none") — ML-1D (issue #278, rescaldo):
+# antes do ML-1B, `Roadmap:` sem valor era um "vazio" que `contentHasMarker`
+# (por literal) não detectava, então este fixture passava despercebido pela
+# regra `req_has_roadmap` mesmo sem vínculo real. Pós-ML-1B
+# (`contentHasMarkerValue`, por VALOR) o vazio passou a ser corretamente
+# acusado — o que quebra QUALQUER cenário que precise do ciclo TOTALMENTE
+# limpo, não só `assert_succeeds`: `assert_lacks_pattern` (usada nos braços
+# "-detects-regression" dos Cenários 27/28) também exige exit 0 do processo
+# inteiro, não apenas a ausência do padrão sob prova — uma suposição inicial
+# deste ML de que ela "tolera violações extras" estava errada (achado ao
+# rodar este script isolado, não coberto por make quality até então rodar
+# até essa asserção). Por isso o default de $roadmap_rel deixou de ser vazio
+# e passou a ser o literal "none" — mesmo placeholder inofensivo já usado em
+# write_roadmap_acceptance_req_fixture (não termina em ".md", então
+# ref_targets_exist não tenta resolvê-lo no disco, e tem valor não-branco,
+# então req_has_roadmap não o acusa). Cenários que precisam de um alvo REAL
+# (ex.: adr-not-accepted/*/superseded-not-a-violation-baseline) continuam
+# passando $3 explicitamente.
 write_req_done_fixture() {
-  local dest=$1 adr_rel=$2
+  local dest=$1 adr_rel=$2 roadmap_rel=${3:-none}
   mkdir -p "$(dirname "$dest")"
   cat > "$dest" <<EOF
 ---
@@ -1752,7 +1771,7 @@ status: Done
 date: 2026-08-01
 author: ""
 adr: "$adr_rel"
-roadmap: ""
+roadmap: "$roadmap_rel"
 ---
 
 # REQ: fixture
@@ -1769,12 +1788,52 @@ motivo
 ADR: $adr_rel
 
 ## Linked Roadmap
-Roadmap:
+Roadmap: $roadmap_rel
+EOF
+}
+
+# Roadmap mínimo, usado apenas como ALVO real de `write_req_done_fixture $3`
+# nos cenários que precisam de ZERO violações (`assert_succeeds`) — sem isto
+# o REQ apontaria para um Roadmap que não existe no disco.
+#
+# $2 (req_rel) — ML-1D (rescaldo, achado ao rodar este script isolado): este
+# fixture fica em docs/roadmaps/wip/, então ELE MESMO é varrido por
+# wip_has_req e wip_acceptance (mesmo diretório que dispara essas duas
+# regras nos Cenários 1-N deste script). Sem req_rel real e sem heading
+# "## Acceptance Criteria", os cenários adr-not-accepted/*/superseded-
+# not-a-violation-baseline (assert_succeeds) reprovavam com DUAS violações
+# NOVAS ("is in wip but has no linked REQ" + "has no acceptance criteria
+# block") — o mesmo defeito de "vazio disfarçado" do req_rel original,
+# só que no lado Roadmap→REQ em vez de REQ→Roadmap. Verificado rodando o
+# fixture isolado contra o binário Go antes desta correção.
+write_roadmap_link_target_fixture() {
+  local dest=$1 req_rel=$2
+  mkdir -p "$(dirname "$dest")"
+  cat > "$dest" <<EOF
+---
+status: wip
+date: 2026-08-01
+req: "$req_rel"
+---
+
+# Roadmap: fixture
+
+> Created: 2026-08-01 | Status: wip
+
+## Context
+REQ: $req_rel
+
+## Acceptance Criteria
+- [x] feito
 EOF
 }
 
 # REQ Open bloqueada pelo ADR via a seção "## Blocked by ADRs" — mesmo padrão
 # do fixture de TestBlockedByDraftADR_REQOpen_ProposedADR_Violates.
+# ML-1D (issue #278, rescaldo): "ADR: none" / "Roadmap: none" — mesmo placeholder de
+# write_roadmap_acceptance_req_fixture — evitam disparar req_has_adr/req_has_roadmap sem
+# apontar para um arquivo real; a seção "## Blocked by ADRs" (não "Linked ADR") é a fonte
+# real de $adr_basename para blocked_by_draft_adr, então nenhuma das duas fica sem cobertura.
 write_req_open_blocked_fixture() {
   local dest=$1 adr_basename=$2
   mkdir -p "$(dirname "$dest")"
@@ -1798,13 +1857,13 @@ motivo
 - [ ] pendente
 
 ## Linked ADR
-ADR:
+ADR: none
 
 ## Blocked by ADRs
 - $adr_basename (Proposed)
 
 ## Linked Roadmap
-Roadmap:
+Roadmap: none
 EOF
 }
 
@@ -1834,8 +1893,11 @@ assert_fails_with "adr-not-accepted/go/blocked_by_draft_adr-baseline" \
 T27_GO_CLEAN="$WORK/s27-go-clean"
 scaffold_adr_req_project "$T27_GO_CLEAN"
 write_adr_status_fixture "$T27_GO_CLEAN/docs/adr/ADR-2026-08-01-superseded-fixture.md" "Superseded"
+write_roadmap_link_target_fixture "$T27_GO_CLEAN/docs/roadmaps/wip/ROADMAP-2026-08-01-superseded-fixture.md" \
+  "docs/req/REQ-2026-08-01-done-superseded-fixture.md"
 write_req_done_fixture "$T27_GO_CLEAN/docs/req/REQ-2026-08-01-done-superseded-fixture.md" \
-  "docs/adr/ADR-2026-08-01-superseded-fixture.md"
+  "docs/adr/ADR-2026-08-01-superseded-fixture.md" \
+  "docs/roadmaps/wip/ROADMAP-2026-08-01-superseded-fixture.md"
 
 assert_succeeds "adr-not-accepted/go/superseded-not-a-violation-baseline" \
   bash -c "cd '$T27_GO_CLEAN' && exec '$T27_GO_BIN' validate"
@@ -1892,8 +1954,11 @@ T27_N_CLEAN="$WORK/s27-node-clean"
 setup_npm_tree "$T27_N_CLEAN"
 scaffold_adr_req_project "$T27_N_CLEAN"
 write_adr_status_fixture "$T27_N_CLEAN/docs/adr/ADR-2026-08-01-superseded-fixture.md" "Superseded"
+write_roadmap_link_target_fixture "$T27_N_CLEAN/docs/roadmaps/wip/ROADMAP-2026-08-01-superseded-fixture.md" \
+  "docs/req/REQ-2026-08-01-done-superseded-fixture.md"
 write_req_done_fixture "$T27_N_CLEAN/docs/req/REQ-2026-08-01-done-superseded-fixture.md" \
-  "docs/adr/ADR-2026-08-01-superseded-fixture.md"
+  "docs/adr/ADR-2026-08-01-superseded-fixture.md" \
+  "docs/roadmaps/wip/ROADMAP-2026-08-01-superseded-fixture.md"
 
 assert_succeeds "adr-not-accepted/node/superseded-not-a-violation-baseline" \
   bash -c "cd '$T27_N_CLEAN' && exec node npm/bin/trackfw validate"
@@ -1939,8 +2004,11 @@ mkdir -p "$T27_P_CLEAN"
 cp -r "$ROOT_DIR/pypi" "$T27_P_CLEAN/pypi"
 scaffold_adr_req_project "$T27_P_CLEAN"
 write_adr_status_fixture "$T27_P_CLEAN/docs/adr/ADR-2026-08-01-superseded-fixture.md" "Superseded"
+write_roadmap_link_target_fixture "$T27_P_CLEAN/docs/roadmaps/wip/ROADMAP-2026-08-01-superseded-fixture.md" \
+  "docs/req/REQ-2026-08-01-done-superseded-fixture.md"
 write_req_done_fixture "$T27_P_CLEAN/docs/req/REQ-2026-08-01-done-superseded-fixture.md" \
-  "docs/adr/ADR-2026-08-01-superseded-fixture.md"
+  "docs/adr/ADR-2026-08-01-superseded-fixture.md" \
+  "docs/roadmaps/wip/ROADMAP-2026-08-01-superseded-fixture.md"
 
 assert_succeeds "adr-not-accepted/python/superseded-not-a-violation-baseline" \
   bash -c "cd '$T27_P_CLEAN' && exec env PYTHONPATH='$T27_P_CLEAN/pypi' python3 -m trackfw validate"
@@ -1994,6 +2062,13 @@ assert_lacks_pattern "adr-not-accepted/python/blocked_by_draft_adr-detects-regre
 
 # REQ Done SEM `adr:` no frontmatter, referenciando o ADR só via backtick na
 # seção "## Linked ADR" — a forma real usada em REQs do repositório.
+#
+# "Roadmap: none" (ML-1D, mesmo placeholder de write_roadmap_acceptance_req_fixture):
+# contentHasMarkerValue (req_has_roadmap) é independente de extractRefPath — não é afetado
+# pela corrupção deste Cenário — então um "Roadmap:" verdadeiramente vazio dispararia
+# req_has_roadmap nos dois braços (baseline E detects-regression) e quebraria
+# assert_lacks_pattern, que exige exit 0 do processo inteiro, não só a ausência do padrão
+# sob prova.
 write_req_done_fixture_backtick_body_only() {
   local dest=$1 adr_rel=$2
   mkdir -p "$(dirname "$dest")"
@@ -2020,7 +2095,7 @@ motivo
 ADR: \`$adr_rel\` (prosa)
 
 ## Linked Roadmap
-Roadmap:
+Roadmap: none
 EOF
 }
 
@@ -2425,6 +2500,10 @@ fi
 # (binário Go limpo) e S27_MSG_ACCEPTED.
 # ---------------------------------------------------------------------------
 
+# "Roadmap: none" (ML-1D, mesmo placeholder das demais fixtures deste script): evita
+# req_has_roadmap num "Roadmap:" que, de outra forma, ficaria vazio nos dois braços
+# (assert_fails_with/assert_lacks_pattern) — assert_lacks_pattern exige exit 0 do
+# processo inteiro, não só a ausência do padrão sob prova.
 write_req_done_fixture_unpaired_delimiter_body_only() {
   local dest=$1 adr_rel=$2
   mkdir -p "$(dirname "$dest")"
@@ -2451,7 +2530,7 @@ motivo
 ADR: "$adr_rel'
 
 ## Linked Roadmap
-Roadmap:
+Roadmap: none
 EOF
 }
 

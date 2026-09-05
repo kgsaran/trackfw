@@ -3,7 +3,6 @@ package generators
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 
 	"github.com/kgsaran/trackfw/internal/integrations"
@@ -98,9 +97,6 @@ func TestValidateScriptMembership_Missing(t *testing.T) {
 // TestWrongModeDetection_ValidateScript verifies AC2/AC3: content correct but execute
 // bit missing → scaffold-wrong-mode (not scaffold-divergent).
 func TestWrongModeDetection_ValidateScript(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("execute bit not applicable on Windows (AC5)")
-	}
 	cfg := Config{}
 	goNodeForm := buildValidateScript(cfg)
 
@@ -119,20 +115,20 @@ func TestWrongModeDetection_ValidateScript(t *testing.T) {
 	}
 
 	finding := checkValidateScriptArtifact(p, "scripts/trackfw-validate.sh", cfg)
-	if finding == nil {
-		t.Fatal("expected scaffold-wrong-mode finding for 0644 script, got nil")
-	}
-	if finding.FindingKind != integrations.DoctorScaffoldWrongMode {
-		t.Errorf("expected scaffold-wrong-mode, got %q", finding.FindingKind)
+	if execBitRepresentavelPara(t, p) {
+		if finding == nil {
+			t.Fatal("expected scaffold-wrong-mode finding for 0644 script, got nil")
+		}
+		if finding.FindingKind != integrations.DoctorScaffoldWrongMode {
+			t.Errorf("expected scaffold-wrong-mode, got %q", finding.FindingKind)
+		}
+	} else {
+		execBitNaoExercitado(t, p)
 	}
 }
 
 // TestWrongModeDetection_StaticScript verifies AC2/AC3 for a static script.
 func TestWrongModeDetection_StaticScript(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("execute bit not applicable on Windows (AC5)")
-	}
-
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, "scripts"), 0o755); err != nil {
 		t.Fatal(err)
@@ -148,11 +144,15 @@ func TestWrongModeDetection_StaticScript(t *testing.T) {
 	}
 
 	finding := checkScaffoldArtifact(p, relPath, []byte(attentionSignalScript), true, true)
-	if finding == nil {
-		t.Fatal("expected scaffold-wrong-mode finding, got nil")
-	}
-	if finding.FindingKind != integrations.DoctorScaffoldWrongMode {
-		t.Errorf("expected scaffold-wrong-mode, got %q", finding.FindingKind)
+	if execBitRepresentavelPara(t, p) {
+		if finding == nil {
+			t.Fatal("expected scaffold-wrong-mode finding, got nil")
+		}
+		if finding.FindingKind != integrations.DoctorScaffoldWrongMode {
+			t.Errorf("expected scaffold-wrong-mode, got %q", finding.FindingKind)
+		}
+	} else {
+		execBitNaoExercitado(t, p)
 	}
 }
 
@@ -160,10 +160,13 @@ func TestWrongModeDetection_StaticScript(t *testing.T) {
 // with both wrong content and wrong mode produces scaffold-divergent, not
 // scaffold-wrong-mode (content divergence takes precedence — AC3).
 func TestWrongModeDetection_ContentDivergence_TakesPrecedence(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("execute bit not applicable on Windows (AC5)")
-	}
-
+	// No platform guard here, on purpose: checkScaffoldArtifact checks
+	// content BEFORE the execute bit (bytes.Equal at scaffold_doctor.go
+	// precedes the CurrentGOOS/execBitPresent branch), so this assertion
+	// never touches the execute bit and holds unconditionally on every
+	// platform. A t.Skip("execute bit not applicable...") here was
+	// leftover copy-paste from the neighboring mode tests, not a real
+	// platform dependency — see the ML-1A scan report.
 	dir := t.TempDir()
 	relPath := "scripts/trackfw-attention-signal.sh"
 	p := filepath.Join(dir, relPath)
@@ -211,10 +214,6 @@ func TestExecBitFalse_NotAccusedForMissingBit(t *testing.T) {
 // TestExecBitPresent_UmaskNarrowedMode_Accepted verifies AC10: a file with mode 0700
 // (umask 077 on 0755) has the owner-execute bit set and must NOT be accused.
 func TestExecBitPresent_UmaskNarrowedMode_Accepted(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("execute bit not applicable on Windows (AC5)")
-	}
-
 	dir := t.TempDir()
 	relPath := "scripts/trackfw-credential-guard.sh"
 	p := filepath.Join(dir, relPath)
@@ -230,8 +229,12 @@ func TestExecBitPresent_UmaskNarrowedMode_Accepted(t *testing.T) {
 	}
 
 	finding := checkScaffoldArtifact(p, relPath, []byte(credentialGuardScript), true, true)
-	if finding != nil {
-		t.Errorf("expected no finding for 0700 (execute bit present), got: %+v", finding)
+	if execBitRepresentavelPara(t, p) {
+		if finding != nil {
+			t.Errorf("expected no finding for 0700 (execute bit present), got: %+v", finding)
+		}
+	} else {
+		execBitNaoExercitado(t, p)
 	}
 }
 

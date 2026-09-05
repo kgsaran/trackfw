@@ -506,10 +506,40 @@ function parseBlockedADRs(filePath) {
 
 // contentHasMarker retorna true se o conteúdo contém algum dos markers sem espaço em branco após.
 // P3: verifica tanto "\n" quanto "\r\n" para detectar campos vazios em arquivos CRLF.
+//
+// Usada apenas para markers de "existência de bloco" (ex: acceptanceMarkers, um heading de
+// seção) — não para markers de link (REQ:/ADR:/Roadmap:), que usam contentHasMarkerValue.
 function contentHasMarker(content, markers) {
   for (const marker of markers) {
     if (content.includes(marker) && !content.includes(marker + ' \n') && !content.includes(marker + ' \r\n')) {
       return true
+    }
+  }
+  return false
+}
+
+// contentHasMarkerValue retorna true se algum dos markers aparece em content seguido de
+// conteúdo não-branco na mesma linha — isto é, o campo tem um valor real, não apenas o marker.
+//
+// issue #278: contentHasMarker (acima) detectava "vazio" só pela grafia literal
+// "MARKER + um espaço + \n"/"\r\n" — 5 de 7 grafias naturais de campo vazio escapavam
+// ("MARKER:\n" sem espaço, dois espaços, tab, CRLF sem espaço, três espaços). Esta função
+// decide por VALOR: pega o resto da linha após o marker, descarta \r/\t/espaços das duas
+// pontas, e só considera "tem valor" se sobrar algo. Indiferente a CRLF, tabs e contagem de
+// espaços — cobre as 7 grafias medidas na triagem, não apenas a literal do template.
+function contentHasMarkerValue(content, markers) {
+  for (const marker of markers) {
+    let start = 0
+    while (true) {
+      const idx = content.indexOf(marker, start)
+      if (idx === -1) break
+      const pos = idx + marker.length
+      let rest = content.slice(pos)
+      const nl = rest.indexOf('\n')
+      if (nl !== -1) rest = rest.slice(0, nl)
+      if (rest.endsWith('\r')) rest = rest.slice(0, -1)
+      if (rest.trim() !== '') return true
+      start = pos
     }
   }
   return false
@@ -617,7 +647,7 @@ function validateWIPHasREQ() {
     for (const name of entries) {
       const content = readFileForRule('wip_has_req', path.join(wipDir, name), violations)
       if (content === null) continue
-      if (!contentHasMarker(content, cfg.linkFields.req)) {
+      if (!contentHasMarkerValue(content, cfg.linkFields.req)) {
         violations.push(`roadmap "${name}" is in wip but has no linked REQ`)
       }
     }
@@ -633,7 +663,7 @@ function validateREQsHaveADR() {
   for (const filePath of files) {
     try {
       const content = fs.readFileSync(filePath, 'utf8')
-      if (!contentHasMarker(content, cfg.linkFields.adr)) {
+      if (!contentHasMarkerValue(content, cfg.linkFields.adr)) {
         violations.push(`req "${path.basename(filePath)}" has no linked ADR`)
       }
     } catch (_) {
@@ -652,7 +682,7 @@ function validateBlockedHasREQ() {
     for (const name of entries) {
       const content = readFileForRule('blocked_has_req', path.join(blockedDir, name), violations)
       if (content === null) continue
-      if (!contentHasMarker(content, cfg.linkFields.req)) {
+      if (!contentHasMarkerValue(content, cfg.linkFields.req)) {
         violations.push(`roadmap "${name}" is in blocked but has no linked REQ`)
       }
     }
@@ -668,7 +698,7 @@ function validateREQsHaveRoadmap() {
   for (const filePath of files) {
     try {
       const content = fs.readFileSync(filePath, 'utf8')
-      if (!contentHasMarker(content, cfg.linkFields.roadmap)) {
+      if (!contentHasMarkerValue(content, cfg.linkFields.roadmap)) {
         violations.push(`req "${path.basename(filePath)}" has no linked Roadmap`)
       }
     } catch (_) {

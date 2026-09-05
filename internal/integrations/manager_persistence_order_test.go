@@ -1,10 +1,10 @@
 package integrations
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"testing"
 )
 
@@ -117,11 +117,12 @@ func runInterruptedInstallHelper() {
 // failure the inversion newly makes possible: an error *after* the manifest
 // write has already happened.
 func TestUpdateMidWriteFailureRollsBackManifestAndBytes(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("permission bits behave differently on windows")
-	}
 	if os.Geteuid() == 0 {
 		t.Skip("running as root: permission enforcement is not applicable")
+	}
+	if !permissionEnforcementRepresentavel(t, t.TempDir()) {
+		permissionEnforcementNaoExercitado(t, "agents/backend.md (chmod 0500 no diretorio pai)")
+		return
 	}
 
 	manager, project, _ := testManager(t)
@@ -197,11 +198,12 @@ func TestUpdateMidWriteFailureRollsBackManifestAndBytes(t *testing.T) {
 // then genuinely revert the first artifact's bytes back to v1 — proving the
 // restore actually restores, not just that a write never happened.
 func TestUpdateBatchRollbackRestoresAlreadyWrittenArtifactBytes(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("permission bits behave differently on windows")
-	}
 	if os.Geteuid() == 0 {
 		t.Skip("running as root: permission enforcement is not applicable")
+	}
+	if !permissionEnforcementRepresentavel(t, t.TempDir()) {
+		permissionEnforcementNaoExercitado(t, ".gemini/agents/b.md (chmod 0500 no diretorio pai)")
+		return
 	}
 
 	manager, project, _ := testManager(t)
@@ -262,4 +264,68 @@ func TestUpdateBatchRollbackRestoresAlreadyWrittenArtifactBytes(t *testing.T) {
 	}
 	assertState(t, manager, planA, StateCurrent)
 	assertState(t, manager, planB, StateCurrent)
+}
+
+// ML-1A de ROADMAP-2026-09-05-fechar-os-tres-defeitos-mecanicos-dos-issues-do-consumidor-externo:
+// guarda de plataforma MEDIDA para os testes acima que forcam falha de escrita via
+// chmod(dir, 0500), mesmo idioma de execBitRepresentavelPara em
+// internal/generators/execbit_probe_test.go (ML-4A) -- ver issue #279 e
+// vault/notes/goos-guard-e-do-binario-nao-do-host-wsl-continua-protegido-2026-09-01.md.
+//
+// Por que existe: em NTFS os bits de permissao POSIX nao restringem escrita
+// do dono da forma que estes testes presumem, mas o discriminante real e o
+// SISTEMA DE ARQUIVOS que recebe a escrita, nao runtime.GOOS -- um host que
+// reporte GOOS != "windows" mas grave sobre um volume que nao aplica os
+// bits (ex.: um bind-mount NTFS dentro de WSL) nao deve presumir
+// enforcement so por nao ser "windows".
+
+// permissionEnforcementRepresentavel responde: neste sistema de arquivos, um
+// diretorio levado a 0500 realmente impede a criacao de um novo arquivo
+// dentro dele pelo processo atual?
+//
+// Falha o teste (t.Fatalf) se a propria sonda nao puder ser montada -- "nao
+// consegui medir" nao pode virar supressao silenciosa do assert.
+func permissionEnforcementRepresentavel(t *testing.T, baseDir string) bool {
+	t.Helper()
+
+	probe := filepath.Join(baseDir, "trackfw-permission-probe")
+	if err := os.MkdirAll(probe, 0o700); err != nil {
+		t.Fatalf("sonda de enforcement de permissao: mkdir %s: %v", probe, err)
+	}
+	defer func() {
+		_ = os.Chmod(probe, 0o700)
+		_ = os.RemoveAll(probe)
+	}()
+
+	if err := os.Chmod(probe, 0o500); err != nil {
+		t.Fatalf("sonda de enforcement de permissao: chmod 0500 em %s: %v", probe, err)
+	}
+
+	f, err := os.CreateTemp(probe, "write-test-*")
+	if err == nil {
+		_ = f.Close()
+		_ = os.Remove(f.Name())
+		return false // criacao teve sucesso apesar do 0500 -- nao aplicado aqui
+	}
+	return os.IsPermission(err)
+}
+
+// permissionEnforcementNaoExercitado registra, com tag grepavel, QUAL
+// garantia deixou de ser verificada e por que. O teste inteiro depende da
+// recusa de escrita para se construir -- sem ela nao ha "resto do teste"
+// independente a rodar (mesma classe do symlink em
+// internal/generators/update_test.go:symlinkOrSkip).
+//
+// Usa os.Stderr, nao t.Logf, pela mesma convencao de execbit_probe_test.go:
+// `go test`/`t.Logf` bufferizam e descartam a saida de um pacote que passa
+// sem `-v` (medido no ML-4A). `.github/workflows/quality.yml:390` ja roda o
+// job de Windows com `-v` (mesma alteracao do ML-4A, mesmo commit e6f0d83) --
+// o gap ficou fechado ali; manter os.Stderr aqui e so consistencia de
+// idioma, nao compensacao de uma lacuna ainda aberta.
+func permissionEnforcementNaoExercitado(t *testing.T, artefato string) {
+	t.Helper()
+	fmt.Fprintf(os.Stderr,
+		"PERMISSION-ENFORCEMENT-NAO-EXERCITADO: %s [%s] -- garantia NAO verificada: \"a escrita falha quando o diretorio esta em modo 0500\". "+
+			"Este sistema de arquivos nao aplica bits de permissao POSIX da forma que o teste presume. O restante do teste nao pode ser construido sem essa recusa.\n",
+		artefato, t.Name())
 }
