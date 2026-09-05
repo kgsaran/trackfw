@@ -21,6 +21,26 @@ function scratchHome() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-harness-test-'))
 }
 
+// countJSONLeafMatches parses raw as JSON and counts how many leaf string
+// values, anywhere in the tree, are exactly equal to want. This is
+// deliberately a value comparison on the DECODED document, not a substring
+// search on the raw serialized text: JSON.stringify escapes every "\" as
+// "\\" when it writes a native Windows path into a string field, so a raw
+// path.join("\"-separated) needle never matches the escaped haystack — see
+// G4 in docs/portabilidade/2026-09-04-retriagem-do-residuo-de-windows-por-mecanismo.md.
+// Parsing first makes the comparison agnostic to how the serializer chose to
+// escape the value.
+function countJSONLeafMatches(raw, want) {
+  const doc = JSON.parse(raw)
+  const count = (v) => {
+    if (typeof v === 'string') return v === want ? 1 : 0
+    if (Array.isArray(v)) return v.reduce((sum, e) => sum + count(e), 0)
+    if (v && typeof v === 'object') return Object.values(v).reduce((sum, e) => sum + count(e), 0)
+    return 0
+  }
+  return count(doc)
+}
+
 function run(args, homeRoot, cwd) {
   return spawnSync(process.execPath, [bin, ...args], {
     cwd: cwd || homeRoot,
@@ -796,12 +816,16 @@ for (const { tool, relPath, displayPath } of GIT_BRANCH_GUARD_CASES) {
 
     const written = fs.readFileSync(path.join(homeRoot, ...relPath), 'utf8')
     const wantScript = path.join(homeRoot, '.trackfw', 'scripts', 'trackfw-git-branch-guard.sh')
-    assert.ok(written.includes(wantScript), `${relPath.join('/')} does not reference ${wantScript}:\n${written}`)
+    assert.ok(
+      countJSONLeafMatches(written, wantScript) > 0,
+      `${relPath.join('/')} does not reference ${wantScript} (decoded JSON has no leaf equal to it):\n${written}`
+    )
 
     const credScript = path.join(homeRoot, '.trackfw', 'scripts', 'trackfw-credential-guard.sh')
     if (tool !== 'kiro') {
-      assert.ok(
-        !written.includes(credScript),
+      assert.equal(
+        countJSONLeafMatches(written, credScript),
+        0,
         `${relPath.join('/')} unexpectedly references trackfw-credential-guard.sh`
       )
     }
@@ -843,8 +867,8 @@ test('claude-credential-guard and claude-git-branch-guard coexist in the same fi
   const first = fs.readFileSync(settingsPath, 'utf8')
   const credScript = path.join(homeRoot, '.trackfw', 'scripts', 'trackfw-credential-guard.sh')
   const branchScript = path.join(homeRoot, '.trackfw', 'scripts', 'trackfw-git-branch-guard.sh')
-  assert.equal(first.split(credScript).length - 1, 2, 'expected exactly 2 references to trackfw-credential-guard.sh (Pre+Post)')
-  assert.equal(first.split(branchScript).length - 1, 2, 'expected exactly 2 references to trackfw-git-branch-guard.sh (Pre+Post)')
+  assert.equal(countJSONLeafMatches(first, credScript), 2, 'expected exactly 2 references to trackfw-credential-guard.sh (Pre+Post)')
+  assert.equal(countJSONLeafMatches(first, branchScript), 2, 'expected exactly 2 references to trackfw-git-branch-guard.sh (Pre+Post)')
 
   const doc = JSON.parse(
     run(['update', 'harness', '--json', '--install-missing', '--targets', targets], homeRoot).stdout

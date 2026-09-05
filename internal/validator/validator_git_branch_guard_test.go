@@ -1,6 +1,7 @@
 package validator
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -8,6 +9,22 @@ import (
 
 	"github.com/kgsaran/trackfw/internal/config"
 )
+
+// jsonStringLiteral serializa s como um literal de string JSON (com as aspas), via encoding/json —
+// usado pelos helpers de fixture abaixo para embutir caminhos absolutos dentro de um template JSON
+// sem concatenação crua. ROADMAP-2026-09-04-fixture-de-guard-produz-json-invalido-com-caminho-
+// nativo-do-windows, ML-6C: caminhos nativos do Windows carregam "\", que a concatenação anterior
+// (` + "`\"" + `..." + s + "\"`" + `) nunca escapava — json.Marshal escapa cada "\" como "\\" por
+// especificação, exatamente como o produto já faz em encoding/json (agentfiles.go); o teste volta a
+// ler um arquivo válido em qualquer separador.
+func jsonStringLiteral(s string) string {
+	b, err := json.Marshal(s)
+	if err != nil {
+		// s é sempre uma string Go válida (caminho de arquivo); Marshal de string nunca falha.
+		panic(err)
+	}
+	return string(b)
+}
 
 // ROADMAP-2026-08-15-trackfw-validate-deve-detectar-scripts-de-hook-ausentes-ou-desatualizados,
 // ML-1A.
@@ -248,7 +265,7 @@ func globalClaudeSettingsWithCommand(scriptAbsPath string) string {
       {
         "matcher": "Bash",
         "hooks": [
-          {"command": "` + scriptAbsPath + `", "type": "command"}
+          {"command": ` + jsonStringLiteral(scriptAbsPath) + `, "type": "command"}
         ]
       }
     ]
@@ -268,7 +285,7 @@ func globalClaudeSettingsWithCommandNoType(scriptAbsPath string) string {
       {
         "matcher": "Bash",
         "hooks": [
-          {"command": "` + scriptAbsPath + `"}
+          {"command": ` + jsonStringLiteral(scriptAbsPath) + `}
         ]
       }
     ]
@@ -287,7 +304,7 @@ func globalCursorHooksWithCommand(scriptAbsPath string) string {
   "version": 1,
   "hooks": {
     "beforeShellExecution": [
-      {"command": "` + scriptAbsPath + `"}
+      {"command": ` + jsonStringLiteral(scriptAbsPath) + `}
     ]
   }
 }
@@ -688,14 +705,14 @@ func kiroGlobalGuardFixture(hookNamePrefix, scriptAbsPath string) string {
       "description": "global pre hook",
       "trigger": "PreToolUse",
       "matcher": "shell",
-      "action": {"type": "command", "command": "` + scriptAbsPath + `"}
+      "action": {"type": "command", "command": ` + jsonStringLiteral(scriptAbsPath) + `}
     },
     {
       "name": "` + hookNamePrefix + `-global-post",
       "description": "global post hook",
       "trigger": "PostToolUse",
       "matcher": "shell",
-      "action": {"type": "command", "command": "` + scriptAbsPath + `"}
+      "action": {"type": "command", "command": ` + jsonStringLiteral(scriptAbsPath) + `}
     }
   ]
 }

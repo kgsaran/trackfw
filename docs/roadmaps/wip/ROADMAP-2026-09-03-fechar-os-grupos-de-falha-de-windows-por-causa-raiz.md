@@ -267,7 +267,12 @@ segurança**: a detecção de hook de guard **enfraquece no Windows**.
 
 ### ML-2A — Separador POSIX em artefato autorado
 **Status:** ✅ Concluído · auditado pelo arquiteto e **mergeado no PR #270** · **Agente:** `apolo-tf`
-**Recontagem no CI (run `33913343975`), o delta deste grupo:** `134 → 69` (Go 53→14, Node 48→34, Python 33→21). Maior queda da campanha; a triagem previa ~45.
+**Recontagem no CI (run `33913343975`), o delta deste grupo:** `134 → 101` (Go 53→46, Node 48→34, Python 33→21). A triagem previa ~45; foram 33.
+
+🔴 **Correção de 2026-09-04:** este número foi reportado como `134 → 69` (Go 53→14) por **erro de
+medição meu** — o padrão de `grep` não casava o prefixo por linha do `gh run view --log`. Re-medido
+com padrão idêntico nas duas pontas. Nota:
+`vault/notes/contagem-de-falhas-de-windows-do-go-medida-por-padrao-frouxo-2026-09-04.md`.
 **Files affected — os 3 stacks:** `npm/src/lib/update-engine.js:172-181`,
 `pypi/trackfw/commands/update_harness.py::_tildeify`, `internal/integrations/manager.go`,
 `npm/src/validator/index.js:3153` (`provenanceKey` sem normalização), `npm/src/serve/api_chain.js`
@@ -416,9 +421,121 @@ evidência quando as três herdaram a mesma premissa.** Nota no vault.
 por `isabs` não pegava `Path.is_absolute()` do pathlib em `integrations/manager.py:71`, e contei
 `req.py` como um sítio quando são três.
 
-🔴 **O que NÃO foi provado e não será localmente:** a queda da contagem de falhas de Windows. Em
-macOS o defeito é invisível (`IsAbs("/opt/…")` é `true`) e `GOOS=windows` só compila cruzado.
-**Fecha só no CI, no run pós-merge.**
+🔴 **Recontagem no CI (run `33931363032`), medida: `101 → 100`.** A estimativa era ~14; entregou
+**2**. Fechados: `TestClassifyHookAnchorage_Classe1_Ancorado` e
+`TestCredentialGuardHookResolvable_CaminhoAbsolutoSilencioso`. **Um teste novo passou a falhar:**
+`TestPathIsAnchoredForHookConfig_ControlePOSIX`.
+
+🔴 **O teste novo falha porque a correção FUNCIONOU.** Ele afirma
+`pathIsAnchoredForHookConfig(x) == filepath.IsAbs(x)` para o corpus POSIX — que é **exatamente o
+que a ADR determina que divirja no Windows**. O teste pinou o defeito como expectativa: passa em
+macOS e reprova em Windows justamente onde o predicado novo acerta. É defeito de teste, não de
+produto. **Tratar como ML corretivo — e não com guard de plataforma no assert, que apagaria a única
+asserção que exercita a divergência.**
+
+🔴 **Os demais testes de guard continuam falhando no Windows por OUTRA causa.** Exemplo medido:
+`TestCredentialGuardHookResolvable_CaminhoResolvidoEhFisicoNaoSimlink` espera o caminho físico na
+mensagem, **recebe esse mesmo caminho**, e ainda assim reprova — divergência de escape/aspas, não
+de ancoragem. A estimativa de ~14 misturou grupos de causa diferente.
+
+
+## Wave 6 — Os grupos de DEFEITO DE TESTE (4 MLs em paralelo, arquivos disjuntos)
+> Dependências: re-triagem por mecanismo concluída
+> (`docs/portabilidade/2026-09-04-retriagem-do-residuo-de-windows-por-mecanismo.md`).
+> **Antecede a Wave 5 por retorno**: 38 falhas, risco zero, nenhuma decisão de arquitetura.
+
+🔴 **Disjunção verificada arquivo a arquivo pelo arquiteto** — não por "parecem independentes". Já
+criei uma colisão nesta campanha afirmando disjunção sem conferir (ML-4A/4B). Nenhum arquivo aparece
+em dois MLs.
+
+### ML-6A — G4: asserção crua contra bytes já serializados em JSON (22 falhas)
+**Status:** ✅ Concluído · **Agente:** `artemis-tf`
+**Arquivos:** `internal/commands/update_harness_test.go` · `npm/tests/update-harness.test.js` ·
+`pypi/tests/test_update_harness.py`
+O teste monta o caminho com `filepath.Join`/`path.join`/`pathlib` e procura essa **string crua**
+dentro de bytes que já passaram por serialização JSON — que **dobra toda barra invertida**. Produção
+certa, teste errado. **Confirmado nos 3 runtimes por leitura**, não inferido por nome.
+**Maior grupo do resíduo depois do CRLF, e o de menor risco.**
+
+### ML-6B — G2 + G0: `%q` do Go e o controle POSIX que virou defeito de teste (5 falhas)
+**Status:** ✅ Concluído · **Agente:** `artemis-tf`
+**Arquivos:** `internal/validator/validator_credential_guard_test.go` ·
+`internal/validator/validator_test.go` · `internal/validator/validator_thirdparty_provenance_test.go`
+**G2 (4):** `%q` produz string Go-escapada (cada `\` vira `\\`) — comportamento correto e
+documentado. O teste constrói o esperado com `filepath.Join` (barra simples) e compara por
+`Contains`. Discriminante que separa do G10: a violação **correta já está** na lista de mensagens;
+só a busca textual falha.
+**G0 (1):** `TestPathIsAnchoredForHookConfig_ControlePOSIX` deriva a expectativa de `filepath.IsAbs`
+e portanto **afirma o defeito** que a Wave 3 corrigiu. 🔴 **Corrigir fixando os valores esperados
+literalmente — NÃO com guard de plataforma no assert**, que apagaria a única asserção que exercita a
+divergência. É Go-only: `path.win32.isAbsolute` e `ntpath.isabs` já tratam a barra POSIX como
+absoluta, medido.
+
+### ML-6C — G3: fixture gera JSON inválido e o validator falha-aberto em silêncio (9 falhas)
+**Status:** ✅ Concluído · **Agente:** `artemis-tf`
+**Arquivos:** `internal/validator/validator_git_branch_guard_test.go` · `npm/tests/validator.test.js`
+A fixture concatena um caminho nativo do Windows (com `\`) dentro de um template JSON **sem
+escapar** → JSON inválido → o validator **pula o arquivo em silêncio** por desenho fail-open → o
+teste espera violação e recebe lista vazia.
+🔴 **Go confirmado por leitura (5); Node é HIPÓTESE por padrão de nome (4, `not ok 463/464/473/475`)
+— o código Node não foi lido.** Confirme antes de corrigir. **Se a hipótese cair, reporte e pare** —
+não force o Node no grupo.
+🔴 **Observação que vale mais que as 9 falhas:** um fail-open que engole JSON inválido em **arquivo
+de config de guard** é comportamento de produto que merece pergunta própria. **Não decidir aqui** —
+reportar.
+
+### ML-6D — G8: `findRoadmap` devolve separador nativo, teste compara com literal POSIX (2 falhas)
+**Status:** ✅ Concluído · **Agente:** `artemis-tf`
+**Arquivos:** `internal/generators/roadmap_test.go`
+
+### ML-6E — G3 nos dois arquivos que o ML-6C reportou em vez de invadir
+**Status:** ✅ Concluído · **Agente:** `artemis-tf`
+**Arquivos:** `npm/tests/git_branch_guard_hook_integrity.test.js` ·
+`internal/integrations/manifest_origin_test.go`
+A hipótese do Node do ML-6C **caiu por localização, não por mecanismo**: `validator.test.js` já usava
+`JSON.stringify` e era seguro; o padrão real vivia noutro arquivo, com os mesmos 4 helpers.
+
+🔴 **Nuance que ninguém tinha visto:** `loadManifest` (`internal/integrations/manifest.go:59`) é
+**fail-CLOSED**, ao contrário do validator. A mesma fixture inválida ali **não some em silêncio** —
+estoura com `invalid character 'U' in string escape code`. Mesma causa, mesma correção, **modo de
+falha oposto**. O produto tem duas políticas para JSON inválido, e uma delas é a que virou candidata
+a REQ.
+
+## Auditoria da Wave 6 — arquiteto, 2026-09-05
+
+```
+make quality QUALITY_EXIT=0, zero FAIL · 365 cenarios de falsificacao OK
+trackfw validate exit 0 · go build ./... e go vet ./... limpos
+12 arquivos alterados, TODOS de teste ou doc — zero linha de producao
+grep no diff por t.Skip/pytest.mark.skip/GOOS/process.platform/os.name: vazio
+```
+
+**Falsificação por MUTAÇÃO DE PRODUÇÃO em todos os MLs** — não por asserção ajustada até passar. Em
+cada um, o agente mutou o código de produto, viu os testes reprovarem, restaurou e confirmou com
+`git diff --stat` vazio.
+
+🔴 **Duas premissas da triagem derrubadas pela leitura:**
+1. **ML-6A:** no Node e no Python a maioria dos testes **já desserializava certo** — só 2 sítios por
+   runtime tinham o defeito. No Go, por não ter teste parametrizado, o mesmo defeito estava espalhado
+   por **8 funções**. As contagens reconciliam nos 22, mas a forma era outra.
+2. **ML-6C/6E:** a hipótese do Node apontava o **arquivo errado**. O mecanismo existia, noutro lugar.
+
+**Reportado e NÃO corrigido, por instrução:** o fail-open de
+`internal/validator/validator_git_branch_guard.go:151-154` engole **JSON inválido em arquivo de
+config de guard**, em silêncio, com comentário de desenho confirmando que é intencional
+(linhas 130-132). A função irmã do credential-guard compartilha o padrão. **REQ própria** — é o mesmo
+formato de defeito que a campanha vem caçando: o controle reporta saúde sobre o que não conseguiu
+ler.
+
+
+**Critérios de aceite da wave**
+- [ ] Falsificação nas duas direções em cada ML, com números.
+- [ ] 🔴 **Nenhuma correção esconde defeito de produto.** Se o teste estava certo e o produto errado,
+      **pare e reporte** — o rótulo "defeito de teste" veio de uma triagem, não de dogma.
+- [ ] Nenhum teste marcado `skip`, e nenhum guard de plataforma que apague asserção.
+- [ ] `make quality` verde · `trackfw validate` exit 0 (rodados **pelo arquiteto**, uma vez, após os 4).
+- [ ] Recontagem no CI com o delta atribuído a cada grupo, medida com o padrão do vault
+      (`contagem-de-falhas-de-windows-do-go-medida-por-padrao-frouxo-2026-09-04`).
 
 
 ## Wave 5 — CRLF no parser de frontmatter

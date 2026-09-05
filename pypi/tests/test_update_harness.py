@@ -33,6 +33,34 @@ def cli(*arguments: str, cwd: Path, home: Path):
     )
 
 
+def count_json_leaf_matches(raw: str, want: str) -> int:
+    """Parse ``raw`` as JSON and count how many leaf string values, anywhere
+    in the tree, are exactly equal to ``want``.
+
+    This is deliberately a value comparison on the DECODED document, not a
+    substring search on the raw serialized text: ``json.dump``/``json.dumps``
+    escape every ``\\`` as ``\\\\`` when writing a native Windows path into a
+    string field, so a raw ``pathlib``-built (``\\``-separated) needle never
+    matches the escaped haystack — see G4 in
+    docs/portabilidade/2026-09-04-retriagem-do-residuo-de-windows-por-mecanismo.md.
+    Parsing first makes the comparison agnostic to how the serializer chose
+    to escape the value.
+    """
+
+    doc = json.loads(raw)
+
+    def count(value: object) -> int:
+        if isinstance(value, str):
+            return 1 if value == want else 0
+        if isinstance(value, list):
+            return sum(count(item) for item in value)
+        if isinstance(value, dict):
+            return sum(count(item) for item in value.values())
+        return 0
+
+    return count(doc)
+
+
 # ---------------------------------------------------------------------------
 # `trackfw update harness` — missing state, exit 0 on an empty harness
 # ---------------------------------------------------------------------------
@@ -1222,11 +1250,15 @@ def test_git_branch_guard_installs_absolute_path_with_install_missing(tmp_path, 
 
     written = home.joinpath(*rel_parts).read_text(encoding="utf-8")
     want_script = str(home / ".trackfw" / "scripts" / "trackfw-git-branch-guard.sh")
-    assert want_script in written
+    assert count_json_leaf_matches(written, want_script) > 0, (
+        f"{rel_parts} does not reference {want_script} (decoded JSON has no leaf equal to it):\n{written}"
+    )
 
     if tool != "kiro":
         cred_script = str(home / ".trackfw" / "scripts" / "trackfw-credential-guard.sh")
-        assert cred_script not in written
+        assert count_json_leaf_matches(written, cred_script) == 0, (
+            f"{rel_parts} unexpectedly references trackfw-credential-guard.sh"
+        )
 
 
 @pytest.mark.parametrize("tool,rel_parts,display_path", _GIT_BRANCH_GUARD_CASES)
@@ -1288,8 +1320,8 @@ def test_claude_credential_guard_and_git_branch_guard_coexist_idempotently(tmp_p
     first_text = settings_path.read_text(encoding="utf-8")
     cred_script = str(home / ".trackfw" / "scripts" / "trackfw-credential-guard.sh")
     branch_script = str(home / ".trackfw" / "scripts" / "trackfw-git-branch-guard.sh")
-    assert first_text.count(cred_script) == 2
-    assert first_text.count(branch_script) == 2
+    assert count_json_leaf_matches(first_text, cred_script) == 2
+    assert count_json_leaf_matches(first_text, branch_script) == 2
 
     second = cli("update", "harness", "--targets", targets, "--install-missing", "--json", cwd=project, home=home)
     assert second.returncode == 0, second.stderr

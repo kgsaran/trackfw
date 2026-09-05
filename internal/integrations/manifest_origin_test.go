@@ -1,6 +1,7 @@
 package integrations
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -88,8 +89,17 @@ func TestClaimOrigin_LegacyManifestReadsAsCatalog(t *testing.T) {
 }
 
 func jsonQuoteForTest(s string) string {
-	// Minimal JSON string escaping sufficient for the tmp-dir paths this
-	// test constructs (no embedded quotes/control chars in practice) —
-	// avoids importing encoding/json into this file for one literal.
-	return `"` + s + `"`
+	// destination is built with filepath.Join, so on Windows it carries
+	// native '\' separators; a raw `"` + s + `"` concatenation (the
+	// previous body of this helper) produced invalid JSON escapes like
+	// `\U`, `\A`, `\T` there — manifestPath's json.Unmarshal would then
+	// fail, and the legacy-manifest read path (D11) treats an unreadable
+	// manifest as fail-open/absent, silently defeating this
+	// retrocompatibility test on Windows. json.Marshal escapes '\' per
+	// spec, matching how the product actually serializes claims.
+	b, err := json.Marshal(s)
+	if err != nil {
+		panic(err)
+	}
+	return string(b)
 }

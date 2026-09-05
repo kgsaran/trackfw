@@ -2,6 +2,7 @@ package validator
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -365,7 +366,11 @@ func TestCredentialGuardHookResolvable_CaminhoResolvidoEhFisicoNaoSimlink(t *tes
 		t.Fatalf("validateCredentialGuardHookResolvable() erro: %v", err)
 	}
 	expected := filepath.Join(physicalDir, "scripts", "trackfw-credential-guard.sh")
-	if !hasViolation(msgs, expected) {
+	// A mensagem de produção embute o caminho resolvido via "%q" (validator_credential_guard.go),
+	// que escapa cada "\" nativo do Windows como "\\" — comparar contra o literal cru nunca bate
+	// nesse SO. Comparamos contra a mesma forma escapada que a produção realmente emite.
+	expectedQuoted := fmt.Sprintf("%q", expected)
+	if !hasViolation(msgs, expectedQuoted) {
 		t.Errorf("esperado o caminho físico %q na mensagem, obteve: %v", expected, msgs)
 	}
 }
@@ -493,41 +498,38 @@ func TestPathIsAnchoredForHookConfig_NaoAfrouxamento(t *testing.T) {
 	}
 }
 
-// TestPathIsAnchoredForHookConfig_ControlePOSIX — controle POSIX exigido pela ADR: em
-// Linux/macOS, a classificação de TODOS os casos que o predicado antigo (filepath.IsAbs) já
-// classificava como ancorado permanece idêntica. Mede antes (comportamento documentado de
-// filepath.IsAbs em POSIX) e depois (pathIsAnchoredForHookConfig) para o mesmo conjunto.
+// TestPathIsAnchoredForHookConfig_ControlePOSIX — controle POSIX exigido pela ADR-2026-09-04: os
+// casos abaixo devem continuar classificados como ancorado/não-ancorado em QUALQUER host,
+// inclusive Windows. Os valores esperados são pinados LITERALMENTE, e não mais derivados de
+// filepath.IsAbs — a própria ADR determina que pathIsAnchoredForHookConfig("/foo") seja true em
+// Windows mesmo que filepath.IsAbs("/foo") seja false lá (a divergência é a correção da Wave 3,
+// não um defeito). Derivar "before" de filepath.IsAbs aqui afirmaria de volta o comportamento
+// antigo que a Wave 3 corrigiu — ver docs/portabilidade/2026-09-04-retriagem... G0.
+//
+// A asserção de que filepath.IsAbs continua governando os sítios de TRAVESSIA (D2 da ADR, fora
+// deste predicado) é preservada em TestManagerRejectsTraversalAbsoluteMismatchAndNUL
+// (internal/integrations/manager_test.go) — não duplicada aqui.
 func TestPathIsAnchoredForHookConfig_ControlePOSIX(t *testing.T) {
-	posixAbsoluteCases := []string{
+	anchoredCases := []string{
 		"/opt/foo/guard.sh",
 		"/absolute/path/to/guard.sh",
 		"/",
 		"/a",
 	}
-	for _, raw := range posixAbsoluteCases {
-		before := filepath.IsAbs(raw) // comportamento de referência em POSIX (roda em macOS/Linux)
-		after := pathIsAnchoredForHookConfig(raw)
-		if before != after {
-			t.Errorf("controle POSIX quebrado para %q: filepath.IsAbs=%v, pathIsAnchoredForHookConfig=%v", raw, before, after)
-		}
-		if !after {
-			t.Errorf("pathIsAnchoredForHookConfig(%q) = false em caso POSIX absoluto, quero true", raw)
+	for _, raw := range anchoredCases {
+		if !pathIsAnchoredForHookConfig(raw) {
+			t.Errorf("pathIsAnchoredForHookConfig(%q) = false, quero true — ancorado em qualquer host (ADR-2026-09-04)", raw)
 		}
 	}
-	posixRelativeCases := []string{
+	relativeCases := []string{
 		"scripts/guard.sh",
 		"./scripts/guard.sh",
 		"../scripts/guard.sh",
 		"guard.sh",
 	}
-	for _, raw := range posixRelativeCases {
-		before := filepath.IsAbs(raw)
-		after := pathIsAnchoredForHookConfig(raw)
-		if before != after {
-			t.Errorf("controle POSIX quebrado para %q: filepath.IsAbs=%v, pathIsAnchoredForHookConfig=%v", raw, before, after)
-		}
-		if after {
-			t.Errorf("pathIsAnchoredForHookConfig(%q) = true em caso POSIX relativo, quero false", raw)
+	for _, raw := range relativeCases {
+		if pathIsAnchoredForHookConfig(raw) {
+			t.Errorf("pathIsAnchoredForHookConfig(%q) = true, quero false — não deve afrouxar para forma relativa", raw)
 		}
 	}
 }

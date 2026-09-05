@@ -14,6 +14,48 @@ import (
 	"github.com/kgsaran/trackfw/internal/generators"
 )
 
+// countJSONLeafMatches decodes data as JSON and counts how many leaf string
+// values, anywhere in the tree, are exactly equal to want. This is
+// deliberately a value comparison on the DECODED document, not a substring
+// search on the raw serialized bytes: encoding/json escapes every "\" as
+// "\\" when it writes a native Windows path into a string field, so a raw
+// filepath.Join("\"-separated) needle never matches the escaped haystack —
+// see G4 in docs/portabilidade/2026-09-04-retriagem-do-residuo-de-windows-por-mecanismo.md.
+// Decoding first makes the comparison agnostic to how the serializer chose
+// to escape the value.
+func countJSONLeafMatches(t *testing.T, data []byte, want string) int {
+	t.Helper()
+	var v interface{}
+	if err := json.Unmarshal(data, &v); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, data)
+	}
+	return countLeafMatches(v, want)
+}
+
+func countLeafMatches(v interface{}, want string) int {
+	switch vv := v.(type) {
+	case string:
+		if vv == want {
+			return 1
+		}
+		return 0
+	case []interface{}:
+		n := 0
+		for _, e := range vv {
+			n += countLeafMatches(e, want)
+		}
+		return n
+	case map[string]interface{}:
+		n := 0
+		for _, e := range vv {
+			n += countLeafMatches(e, want)
+		}
+		return n
+	default:
+		return 0
+	}
+}
+
 func TestUpdateHarnessCmd_RunsOutsideProjectWithoutTrackfwYAML(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -198,8 +240,8 @@ func TestUpdateHarnessCmd_CredentialGuardClaudeInstallsViaCLI(t *testing.T) {
 		t.Fatalf("~/.claude/settings.json was not written: %v", err)
 	}
 	wantScript := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
-	if !strings.Contains(string(data), wantScript) {
-		t.Fatalf("settings.json does not reference the absolute global script path %s:\n%s", wantScript, data)
+	if countJSONLeafMatches(t, data, wantScript) == 0 {
+		t.Fatalf("settings.json does not reference the absolute global script path %s (decoded JSON has no leaf equal to it):\n%s", wantScript, data)
 	}
 }
 
@@ -245,8 +287,8 @@ func TestUpdateHarnessCmd_CredentialGuardCodexInstallsViaCLI(t *testing.T) {
 		t.Fatalf("~/.codex/hooks.json was not written: %v", err)
 	}
 	wantScript := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
-	if !strings.Contains(string(data), wantScript) {
-		t.Fatalf("hooks.json does not reference the absolute global script path %s:\n%s", wantScript, data)
+	if countJSONLeafMatches(t, data, wantScript) == 0 {
+		t.Fatalf("hooks.json does not reference the absolute global script path %s (decoded JSON has no leaf equal to it):\n%s", wantScript, data)
 	}
 }
 
@@ -292,8 +334,8 @@ func TestUpdateHarnessCmd_CredentialGuardGeminiInstallsViaCLI(t *testing.T) {
 		t.Fatalf("~/.gemini/settings.json was not written: %v", err)
 	}
 	wantScript := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
-	if !strings.Contains(string(data), wantScript) {
-		t.Fatalf("settings.json does not reference the absolute global script path %s:\n%s", wantScript, data)
+	if countJSONLeafMatches(t, data, wantScript) == 0 {
+		t.Fatalf("settings.json does not reference the absolute global script path %s (decoded JSON has no leaf equal to it):\n%s", wantScript, data)
 	}
 }
 
@@ -339,8 +381,8 @@ func TestUpdateHarnessCmd_CredentialGuardCursorInstallsViaCLI(t *testing.T) {
 		t.Fatalf("~/.cursor/hooks.json was not written: %v", err)
 	}
 	wantScript := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
-	if !strings.Contains(string(data), wantScript) {
-		t.Fatalf("hooks.json does not reference the absolute global script path %s:\n%s", wantScript, data)
+	if countJSONLeafMatches(t, data, wantScript) == 0 {
+		t.Fatalf("hooks.json does not reference the absolute global script path %s (decoded JSON has no leaf equal to it):\n%s", wantScript, data)
 	}
 }
 
@@ -386,8 +428,8 @@ func TestUpdateHarnessCmd_CredentialGuardCopilotInstallsViaCLI(t *testing.T) {
 		t.Fatalf("~/.copilot/settings.json was not written: %v", err)
 	}
 	wantScript := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
-	if !strings.Contains(string(data), wantScript) {
-		t.Fatalf("settings.json does not reference the absolute global script path %s:\n%s", wantScript, data)
+	if countJSONLeafMatches(t, data, wantScript) == 0 {
+		t.Fatalf("settings.json does not reference the absolute global script path %s (decoded JSON has no leaf equal to it):\n%s", wantScript, data)
 	}
 }
 
@@ -435,8 +477,8 @@ func TestUpdateHarnessCmd_CredentialGuardKiroInstallsViaCLI(t *testing.T) {
 		t.Fatalf("~/.kiro/hooks/trackfw-credential-guard.json was not written: %v", err)
 	}
 	wantScript := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
-	if !strings.Contains(string(data), wantScript) {
-		t.Fatalf("trackfw-credential-guard.json does not reference the absolute global script path %s:\n%s", wantScript, data)
+	if countJSONLeafMatches(t, data, wantScript) == 0 {
+		t.Fatalf("trackfw-credential-guard.json does not reference the absolute global script path %s (decoded JSON has no leaf equal to it):\n%s", wantScript, data)
 	}
 }
 
@@ -504,8 +546,8 @@ func TestUpdateHarnessCmd_GitBranchGuardInstallsViaCLI(t *testing.T) {
 				t.Fatalf("%s was not written: %v", tc.relPath, err)
 			}
 			wantScript := filepath.Join(home, ".trackfw", "scripts", "trackfw-git-branch-guard.sh")
-			if !strings.Contains(string(data), wantScript) {
-				t.Fatalf("%s does not reference the absolute global script path %s:\n%s", tc.relPath, wantScript, data)
+			if countJSONLeafMatches(t, data, wantScript) == 0 {
+				t.Fatalf("%s does not reference the absolute global script path %s (decoded JSON has no leaf equal to it):\n%s", tc.relPath, wantScript, data)
 			}
 
 			// Non-regression: credential-guard's own file (shared for the
@@ -514,7 +556,7 @@ func TestUpdateHarnessCmd_GitBranchGuardInstallsViaCLI(t *testing.T) {
 			// own script reference injected by the git-branch-guard target.
 			if tc.tool != "kiro" {
 				credScript := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
-				if strings.Contains(string(data), credScript) {
+				if countJSONLeafMatches(t, data, credScript) != 0 {
 					t.Fatalf("%s unexpectedly references trackfw-credential-guard.sh — git-branch-guard target should not install credential-guard wiring", tc.relPath)
 				}
 			}
@@ -572,14 +614,16 @@ func TestUpdateHarnessCmd_GitBranchGuardAndCredentialGuardCoexistIdempotently(t 
 	}
 	credScript := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
 	branchScript := filepath.Join(home, ".trackfw", "scripts", "trackfw-git-branch-guard.sh")
-	if !strings.Contains(string(claudeData), credScript) || !strings.Contains(string(claudeData), branchScript) {
-		t.Fatalf("~/.claude/settings.json missing one of the two guard script references:\n%s", claudeData)
+	credCount := countJSONLeafMatches(t, claudeData, credScript)
+	branchCount := countJSONLeafMatches(t, claudeData, branchScript)
+	if credCount == 0 || branchCount == 0 {
+		t.Fatalf("~/.claude/settings.json missing one of the two guard script references (decoded JSON leaf count credential=%d, git-branch=%d):\n%s", credCount, branchCount, claudeData)
 	}
-	if strings.Count(string(claudeData), credScript) != 2 { // PreToolUse + PostToolUse
-		t.Fatalf("~/.claude/settings.json expected exactly 2 references to %s (Pre+Post), got %d:\n%s", credScript, strings.Count(string(claudeData), credScript), claudeData)
+	if credCount != 2 { // PreToolUse + PostToolUse
+		t.Fatalf("~/.claude/settings.json expected exactly 2 references to %s (Pre+Post), got %d:\n%s", credScript, credCount, claudeData)
 	}
-	if strings.Count(string(claudeData), branchScript) != 2 {
-		t.Fatalf("~/.claude/settings.json expected exactly 2 references to %s (Pre+Post), got %d:\n%s", branchScript, strings.Count(string(claudeData), branchScript), claudeData)
+	if branchCount != 2 {
+		t.Fatalf("~/.claude/settings.json expected exactly 2 references to %s (Pre+Post), got %d:\n%s", branchScript, branchCount, claudeData)
 	}
 
 	kiroCredFile := filepath.Join(home, ".kiro", "hooks", "trackfw-credential-guard.json")

@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -240,7 +241,11 @@ func TestThirdPartyArtifactHasProvenance_BranchI_MissingProvenanceEntry(t *testi
 	if !strings.Contains(msgs[0], "D2 branch i") {
 		t.Fatalf("expected message to reference D2 branch i, got: %s", msgs[0])
 	}
-	if !strings.Contains(msgs[0], destination) {
+	// A mensagem de produção (validateThirdPartyArtifactHasProvenance,
+	// validator_thirdparty_provenance.go) embute "destination" via "%q", que escapa cada "\"
+	// nativo do Windows como "\\" — comparar contra o literal cru nunca bate nesse SO.
+	destinationQuoted := fmt.Sprintf("%q", destination)
+	if !strings.Contains(msgs[0], destinationQuoted) {
 		t.Fatalf("expected message to name the destination, got: %s", msgs[0])
 	}
 }
