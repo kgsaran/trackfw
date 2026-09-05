@@ -1,14 +1,14 @@
 ---
-status: Open
+status: In Progress
 date: 2026-09-01
 author: "zeus-tf"
 adr: ""
-roadmap: ""
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-05-retarget-dos-checks-de-camada-2-que-medem-a-plataforma-e-nao-o-produto.md"
 ---
 
-# REQ: Camada 2 mede a plataforma e não o produto nos itens 2, 3 e 7 — retarget dos checks
+# REQ: Camada 2 mede a plataforma e não o produto nos itens 2, 3, 4 e 7 — retarget dos checks
 
-> Date: 2026-09-01 | Status: Open
+> Date: 2026-09-01 | Status: In Progress
 
 ## Motivation
 
@@ -64,6 +64,32 @@ porque a correção já está aplicada.
 **Por que não abri REQ nova:** é a mesma causa raiz. Fragmentar em três REQs esconderia que o
 instrumento tem um **padrão**, e cada uma pareceria um acidente isolado.
 
+## Quarta instância — o item 4 (acrescentado em 2026-09-05)
+
+O parecer de fechamento do issue #216
+(`docs/portabilidade/2026-09-05-parecer-fechamento-issue-216.md`) mediu uma **quarta** instância do
+mesmo padrão, por caminho independente:
+
+> item 4 — CORRIGIDO em 2026-09-02, **mas a sonda de Windows real nunca foi atualizada e continua
+> testando o mecanismo pré-fix**.
+
+O check invoca o **mecanismo cru** (o helper Python lendo o markdown) em vez do `.sh` real que a
+correção mudou. É a mesma forma dos itens 2, 3 e 7: **o instrumento mede um substituto.**
+
+🔴 **Isto contradiz o Negative Scope original desta REQ**, que dizia "não toca os itens 4, 7 e 10" —
+escrito antes de o item 7 virar a terceira instância (no próprio corpo desta REQ, em 2026-09-01) e
+antes de o item 4 ser medido como a quarta. **O escopo negativo abaixo está corrigido:** só o item
+10 fica de fora, por seguir genuinamente sem correção.
+
+**Com quatro instâncias, a conclusão endurece:** não é um check mal escrito, é uma **propriedade do
+instrumento**. Um harness de reprodução que replica o mecanismo em vez de invocar o produto mede a
+si mesmo — e envelhece em silêncio a cada correção que o produto recebe.
+
+**Consequência prática, e é a que justifica prioridade:** hoje o dashboard de Windows mostra
+defeitos **corrigidos** como `REPRODUCED`. Quem abrir o painel — inclusive o contribuidor externo
+que abriu o #216 — chega à conclusão errada. **Não é possível fechar o #216 com honestidade
+enquanto isto não for corrigido**, mesmo com 6 dos 7 itens resolvidos no produto.
+
 ## Acceptance Criteria
 
 - [ ] **AC1** — O check do item 2 mede o **`trackfw`** resolvendo home com `HOME` ≠ `USERPROFILE`,
@@ -79,6 +105,13 @@ instrumento tem um **padrão**, e cada uma pareceria um acidente isolado.
 - [ ] **AC4** — A contagem esperada da camada 2 é **recalculada e justificada item a item**, não
       herdada de previsão. O erro original foi transformar um número previsto em critério sem
       verificar o que os checks mediam.
+- [ ] **AC6** — 🔴 **O check do item 4 invoca o `.sh` real**, não o mecanismo replicado. Falsificação:
+      revertendo o fix de 2026-09-02, ele volta a `REPRODUCED`.
+- [ ] **AC7** — 🔴 **Guarda contra a próxima instância.** Enumerar **todos** os checks das camadas do
+      harness (`scripts/windows-repro/`) e classificar cada um: **invoca o produto** ou **replica o
+      mecanismo / mede a plataforma**. Quatro instâncias apareceram uma a uma, por acidente; a quinta
+      não deve depender de sorte. Um check que replica o mecanismo e não está declarado como
+      confirmatório é defeito.
 - [ ] **AC5** — A `AC3` da `REQ-2026-08-31` continua marcada como **FALSIFICADA**. Esta REQ **não**
       a reescreve — corrige o instrumento, não o histórico.
 
@@ -87,7 +120,10 @@ instrumento tem um **padrão**, e cada uma pareceria um acidente isolado.
 - **Não** altera nenhuma correção de produto. As cinco portadas ficam como estão.
 - **Não** re-baselina a camada 2 junto com outra mudança: retarget de medição e correção de defeito
   no mesmo diff tornam impossível atribuir causa a uma mudança de contagem.
-- **Não** toca os itens 4, 7 e 10, que seguem genuinamente sem correção.
+- **Não** toca o item **10**, que segue genuinamente sem correção.
+- 🔴 **Corrigido em 2026-09-05:** a linha original excluía os itens **4 e 7**. Ambos foram depois
+  medidos como instâncias do mesmo padrão (o 7 nesta própria REQ, o 4 no parecer do #216) e **entram
+  no escopo**. Manter a exclusão faria a REQ corrigir três quartos de uma causa raiz.
 
 ## Linked ADR
 
@@ -95,4 +131,4 @@ ADR: <!-- nenhum. Correção de instrumento de medição; nenhuma decisão arqui
 
 ## Linked Roadmap
 
-Roadmap:
+Roadmap: docs/roadmaps/wip/ROADMAP-2026-09-05-retarget-dos-checks-de-camada-2-que-medem-a-plataforma-e-nao-o-produto.md
