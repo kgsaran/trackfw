@@ -623,13 +623,47 @@ ML-3B.
 Nota: `vault/notes/dedup-guard-path-cego-a-backslash-no-windows-2026-09-05.md`.
 
 ### ML-7B — `normalizeGuardPath` passa a canonicalizar a barra invertida (3 CLIs)
-**Status:** 🔄 Em andamento · **Agente:** `apolo-tf` + barreira `hades-tf`
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` + barreira `hades-tf`
 **Arquivos:** `internal/generators/agentfiles.go` · `npm/src/generators/hooks.js` ·
 `pypi/trackfw/generators/hooks.py` (+ testes dos 3)
 Correção do defeito de produto que o ML-7A mediu. 🔴 **Risco herdado do ML-7A:** tradução ingênua
 `\`→`/` **quebra prefixo UNC** — mesmo tema que a barreira pegou no ML-3B. **Barreira `hades-tf`
 obrigatória**, pelo mesmo motivo daquela: é mudança num predicado de comparação usado por controle de
 segurança, e o risco inverso (passar a casar o que não deveria) precisa de falsificação explícita.
+
+### ML-7C — Fecha as duas ressalvas acionáveis da barreira
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` · **só comentários, zero lógica**
+🔴 **O agente recusou minha instrução principal, com motivo medido.** Eu mandei tirar
+`hasValidUNCPrefix` da superfície pública do Node; ele mediu que **remover quebraria o teste** que a
+acessa por `require` destructuring, e que usá-la como guarda ativa mudaria o fluxo recém-aprovado
+pela barreira. Manteve e **documentou por que existe sem chamador de produção**. Era a saída que o
+handoff autorizava — ele leu a condição em vez de obedecer a instrução.
+
+As três formas residuais de Windows (`\\?\C:\...`, relativo com `\`, home UNC de perfil de rede)
+ficaram **documentadas no comentário da função nos 3 runtimes**, com a direção do erro: **aperta —
+duplica, nunca omite**. Limitação escrita é decisão; a mesma limitação calada é defeito latente.
+
+## Auditoria da Wave 7 — arquiteto, 2026-09-05
+
+```
+make quality QUALITY_EXIT=0, zero FAIL · 365 cenarios de falsificacao OK
+trackfw validate exit 0 · go build/vet limpos · gofmt limpo
+Node 20/20 · Python 21 passed + 52 subtests · Go ok
+```
+
+**Barreira `hades-tf`: APROVA COM RESSALVAS**, nenhuma bloqueante. Ela reimplementou os 3 predicados
+fora do produto e atacou com corpus próprio de 19 vetores — case do drive, `..` não resolvido, nomes
+8.3, `%USERPROFILE%` não expandido, `\\?\`, home UNC.
+
+🔴 **O resultado que importa:** nenhum vetor produziu "iguais" para caminhos genuinamente diferentes.
+Toda divergência é **na direção segura** — aperta (duplica), nunca afrouxa (guard ausente). Era esse
+o modo de falha caro que a barreira existia para procurar.
+
+🔴 **Ela respondeu o que o relatório do implementador tinha deixado de fora**, e eu só percebi porque
+o critério estava escrito no roadmap: **o ML fecha o teste que o motivou?** Verificado por simulação
+byte a byte — `TestGBGDedup_..._ToleratesDoubleSlash` e os pares fecham no Windows. Um ML que cria
+testes que passam e não fecha o que o motivou seria o pior desfecho, e um relatório detalhado é
+justamente onde isso se esconde.
 
 ## Wave 5 — CRLF no parser de frontmatter
 > Dependências: Wave 3 fechada. **Sequencial**: toca os mesmos arquivos de validator dos 3 CLIs.

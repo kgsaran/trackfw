@@ -30830,3 +30830,259 @@ fechamento do ML é decisão do arquiteto após auditoria.
 **O que falta, fora do escopo desta investigação:** confirmar em Windows real (CI) os valores
 normalizados exatos via instrumentação temporária (`t.Logf`/equivalente) — não pude medir por falta
 de runner Windows nesta sessão.
+
+---
+
+## Sessão 2026-09-05 — apolo-tf (ML-7B — `normalizeGuardPath` canonicaliza `\`↔`/`, 3 CLIs)
+
+Branch `fix/retarget-dos-checks-de-camada-2`, sem operação de git (deixando árvore suja para
+auditoria). `scripts/windows-repro/**` não tocado (agente paralelo).
+
+**Início:** implementar a correção de produto que o ML-7A (artemis-tf) mediu — `normalizeGuardPath`
+(Go/Node/Python, byte-idênticas) só colapsa `/`, nunca canoniza `\`. Risco herdado e obrigatório de
+tratar: tradução ingênua `\`→`/` quebra prefixo UNC. Barreira `hades-tf` obrigatória no fechamento.
+
+---
+
+## Sessão 2026-09-05 — ares-tf (Wave 2 — ML-2A/2B/2C/2D, retarget dos itens 2/3/4/7)
+
+Branch `fix/retarget-dos-checks-de-camada-2`, sem operação de git (árvore deixada suja para
+auditoria). Arquivos: `scripts/windows-repro/{run.ps1,go/checks.go,node/checks.js,python/checks.py}`.
+`internal/generators/agentfiles.go`, `npm/src/generators/hooks.js`, `pypi/trackfw/generators/hooks.py`
+não foram tocados (agente paralelo). Os 4 MLs são sequenciais (mesmos arquivos) — executados um de
+cada vez, nesta ordem: 2A, 2B, 2C, 2D.
+
+**Item 2 (ML-2A) — retarget para o binário real.** Antes: `os.homedir()`/`expanduser('~')`/
+`os.UserHomeDir()` crus do runtime (mede a plataforma, nunca o trackfw). Agora: `run.ps1` roda o
+binário/CLI real via `trackfw agents models` (`internal/commands/agents_models.go` →
+`internal/homedir/homedir.go`, equivalentes `npm/src/homedir.js`/`pypi/trackfw/homedir.py`), com
+`HOME`≠`USERPROFILE` e um marcador (`agent_models:` em `.trackfw/trackfw.yaml`) presente SOMENTE em
+`$HOME`. Se o trackfw resolver `$HOME` corretamente, a saída mostra
+`source: ~/.trackfw/trackfw.yaml`; se cair para `%USERPROFILE%` (o defeito), a saída muda para
+`source: não configurado` — o produto denuncia a escolha errada sem instrumentação adicional.
+
+**AC3 do item 2 — falsificação, com achado que restringe o que ela prova.** Revertidos
+`internal/homedir/homedir.go`, `npm/src/homedir.js` e `pypi/trackfw/homedir.py` (removida a
+preferência por `$HOME`) e comparado contra o binário/CLI fixo, ambos com `HOME=/tmp/fake-home-*`:
+saída **idêntica** (`source: ~/.trackfw/trackfw.yaml`) nos dois estados, nos 3 runtimes. Medido
+também na stdlib crua (`os.UserHomeDir()`/`os.homedir()`/`os.path.expanduser('~')`, sem nenhum código
+do trackfw): as três já retornam `$HOME` em macOS/POSIX, independente da correção do trackfw — Go e
+Node porque a implementação POSIX de `os.UserHomeDir()`/`os.homedir()` já lê `$HOME` nativamente;
+Python porque `os.path.expanduser` no POSIX também lê `$HOME` (o guard do `home_dir()` do Python é
+literalmente `if sys.platform == "win32"` — no-op fora do Windows por desenho, documentado no próprio
+docstring de `homedir.py`). **Conclusão: a AC3 do item 2 só fecha em CI Windows real — em macOS,
+reverter a correção não produz diferença observável porque o primitivo do SO já faz o trabalho que a
+correção faz, e é exatamente essa a razão pela qual a correção só importa no Windows.** Isto não é um
+substituto inventado: é a mesma propriedade que os comentários de `homedir.go`/`.js`/`.py` já
+declaravam ("on Linux and macOS os.path.expanduser already reads $HOME") — apenas medida em vez de
+presumida, restaurados os 3 arquivos depois (`git diff --stat` vazio confirmado).
+
+**Item 3 (ML-2B) — decisão: CONFIRMATÓRIO, estruturalmente fora do contador (não a outra opção
+autorizada pela REQ).** Considerei as duas saídas que a REQ autoriza: (a) medir o validator real
+deixando de alarmar no Windows via `trackfw validate` contra uma fixture NTFS-like; (b) declarar
+confirmatório e excluir do contador. Escolhi (b), por três motivos: (1) a mesma limitação de fundo do
+item 2 se aplica — no host de teste, `validator.CurrentGOOS` só reflete o `runtime.GOOS` real do
+binário, e provar a opção (a) fora do Windows exigiria a mesma inferência não-medida que a REQ pede
+para evitar; (2) a evidência primária **já existe, e é mais precisa**: `internal/validator` tem
+`TestCredentialGuardHookResolvable_WindowsNaoDisparaBitDeExecucao` e
+`TestGitBranchGuardHookResolvable_WindowsNaoDisparaBitDeExecucao`, que exercitam o MESMO guard
+(`validator.CurrentGOOS != "windows" && info.Mode()&0111==0`) via um seam desenhado para isso
+(`validator.CurrentGOOS` é sobrescrevível em processo) — determinístico em qualquer SO, sem precisar
+de NTFS real; (3) reconstruir a medição em camada 2 duplicaria essa cobertura sem ganhar precisão. A
+correção estrutural que o ML-1A pediu (o item 3 já se dizia "confirmatório" só em comentário, mas o
+veredito continuava em `$reproduced`/`$inconclusive`/`exit 1`): o veredito do item 3 agora é sempre
+`CONFIRMATORY`/`CONFIRMATORY-EXECUTION-FAILED` — literais que os filtros do sumário
+(`-eq "REPRODUCED"`/`"INCONCLUSIVE"`/`"BLOCKED-BY-ITEM-1"`) nunca casam — pela MESMA mecânica que já
+protegia os itens 8/9/11, não por uma exceção nova.
+
+**AC3 do item 3 — falsificação real, sobre a evidência primária (camada 1), não sobre o item 3
+propriamente dito** (a decisão (b) tira o item 3 do vocabulário REPRODUCED/ABSENT por desenho, então
+"revertendo o guard, o item 3 volta a REPRODUCED" não se aplica à opção escolhida — essa frase do
+roadmap presumia a opção (a)). Provei em vez disso que a exclusão do item 3 não perde cobertura de
+segurança: revertido `internal/validator/validator_credential_guard.go`
+(`case CurrentGOOS != "windows" && info.Mode()&0111 == 0:` → `case info.Mode()&0111 == 0:`),
+`TestCredentialGuardHookResolvable_WindowsNaoDisparaBitDeExecucao` **falhou** de verdade (`no Windows
+o bit de execução não é representável — a regra não deve disparar. Obteve: [...script is not
+executable...]`); restaurado, o teste volta a `PASS`. `git diff --stat` vazio confirmado.
+
+**Item 4 (ML-2C) — retarget para o `.sh` real.** Antes: `python/checks.py:cmd_cp1252_print` rodava um
+`print('→')` isolado (mecanismo replicado, nunca o wrapper `.sh`). Agora: `run.ps1` roda
+`scripts/check-parity-contract-coverage.sh` de verdade via `bash` (o script usa
+`${BASH_SOURCE[0]}`, exige bash, não um `sh` genérico), sem fixar `PYTHONUTF8`/`PYTHONIOENCODING` por
+fora (é o console cp1252 nativo do Windows que cria a condição pré-fix; fixar por fora mascararia
+exatamente o que se mede). `cmd_cp1252_print` removido de `python/checks.py` (dead code, sem
+consumidor externo confirmado por grep antes de remover).
+
+**AC3 do item 4 — falsificada com o mecanismo real, técnica emprestada do próprio repositório.** Em
+macOS o console nunca é cp1252, então forcei a condição via `PYTHONIOENCODING=cp1252` externo — a
+mesma técnica que a anotação de cobertura do próprio `docs/cli-parity.md` já documenta ter usado para
+provar este mecanismo ("provado por execução UMA vez, com stub de python3 e
+PYTHONIOENCODING=cp1252"). Com a correção intacta: `bash scripts/check-parity-contract-coverage.sh`
+sob `PYTHONIOENCODING=cp1252` externo → passa, exit 0 (o `export PYTHONIOENCODING=utf-8` interno do
+script sobrepõe o externo). Removida a linha `export PYTHONIOENCODING=utf-8` do script (revertendo o
+fix de 2026-09-02) e repetido: **crash real**, `UnicodeEncodeError: 'charmap' codec can't encode
+character '→' in position 227`. Restaurado o script a partir de cópia, `git diff --stat` vazio
+confirmado, `bash scripts/check-parity-contract-coverage.sh` voltando a passar.
+
+**Item 7 (ML-2D) — retarget para o `barrier` real.** Antes: `go/checks.go:cmdGateQuote`,
+`node/checks.js:cmdGateQuote`, `python/checks.py:cmd_gatequote` replicavam
+`exec.Command("sh","-c",...)`/`spawnSync(...,{shell:true})`/`subprocess.run(...,shell=True)` em
+isolamento — nunca o `barrier.go`/`.js`/`.py` real. A correção #235 (2026-09-01) mudou exatamente esse
+mecanismo dentro dos 3 `barrier.*` (resolução explícita de `sh` via `$PATH`, não mais presos a um
+`/bin/sh` fixo, com mensagem byte-idêntica quando `sh` está ausente) — a réplica isolada ficou cega
+para essa correção. Agora `run.ps1` constrói uma fixture de roadmap descartável (`**Gates da wave:**`
+com o mesmo literal de antes) e roda `trackfw barrier <fixture> --wave 1 --json --trust-local-gates`
+nos 3 runtimes, duas vezes: (a) `PATH` normal — os 3 devem concordar no status do check `gates`; (b)
+`PATH` **curado sem `sh`** (diretório vazio, escopado ao processo filho via `-EnvVars`) — os 3 devem
+concordar em `not_evaluated` com a mesma mensagem. `cmdGateQuote`/`gateQuoteCommand` (Go),
+`cmdGateQuote`/`GATE_QUOTE_COMMAND` (Node) e `cmd_gatequote`/`GATE_QUOTE_COMMAND` (Python) removidos
+— sem consumidor externo confirmado por grep antes de remover. `cmdShC` (evidência auxiliar do item
+7 antigo) também removido — a nova comparação (a)+(b) já prova presença/ausência de `sh` com mais
+rigor. `node/checks.js` ficou sem subcomandos ativos (era o único); mantido presente (não apagado)
+por não ter achado consumidor externo além de `run.ps1`, com header explicando o esvaziamento.
+
+🔴 **`cmdHome` do `go/checks.go` NÃO foi removido, apesar de o item 2 não usá-lo mais** —
+`.github/workflows/quality.yml:280` reusa `go run scripts/windows-repro/go/checks.go home` como
+precondição AC12 (confirma que a isolação HOME/USERPROFILE do job colou, comparando contra o MESMO
+valor sintético nos dois, não testando a preferência por `$HOME` — já determinado pelo ML-1A como não
+sendo uma 5ª instância). Removê-lo teria quebrado esse workflow, fora do escopo deste roadmap.
+
+**AC3 do item 7 — falsificada de verdade, localmente, sem depender de Windows.** A divergência
+original (Node/Python usando o shell nativo do SO — cmd.exe no Windows) não é reproduzível em macOS
+porque o shell nativo aqui também é `/bin/sh` (`shell:true`/`shell=True` já resolvem para POSIX). Em
+vez disso usei a MESMA técnica que a própria correção documenta ter usado para se provar (mensagem do
+commit `fce709f`: "rodei os 3 binários com PATH curado sem sh") — que expõe uma divergência real e
+da MESMA classe (mesmo repo, veredito diferente por CLI): com PATH curado sem `sh`, a correção
+resolve `sh` explicitamente via `$PATH` (LookPath), então falha a resolver nos 3, uniformemente
+(`not_evaluated`, mensagem idêntica). Revertidos `npm/src/commands/barrier.js` e
+`pypi/trackfw/commands/barrier.py` para `spawnSync(command,{shell:true})`/
+`subprocess.run(cmd,shell=True)` (o mecanismo pré-#235) — `shell:true`/`shell=True` estão PRESOS a
+`/bin/sh` (caminho fixo, não busca em `$PATH`), então com PATH curado o Go continua `not_evaluated`
+(usa `sh` via LookPath desde sempre) enquanto Node e Python voltam a **encontrar `/bin/sh` e executar
+o gate normalmente** (`status: passed`) — reproduzindo exatamente "a mesma wave aprovada por um CLI e
+não avaliada por outro". Restaurados os 2 arquivos a partir de cópia, `git diff --stat` vazio
+confirmado.
+
+**Bug pego pela própria validação end-to-end, corrigido antes do handoff:** a primeira versão do
+item 7 esqueceu o subcomando `barrier` no array de argumentos Go/Node (`$item7BarrierArgs` começava
+direto em `"ROADMAP-item7-fixture"`) — o binário/CLI real recusava com `unknown command
+"ROADMAP-item7-fixture"`. Achado rodando o `run.ps1` inteiro via `pwsh` (disponível nesta máquina
+macOS) fim-a-fim, não só lendo o código — corrigido, revalidado.
+
+**Validação end-to-end real, não só leitura:** `pwsh -File scripts/windows-repro/run.ps1` rodado
+várias vezes nesta máquina (Go/Node reais, `python3` symlinkado para `python` só para o teste — o
+ambiente não tem `python` cru). Resultado final: 12/12 itens sem exceção do PowerShell,
+`Reproduzidos: 0 | Inconclusivos: 0`, item 3 aparecendo como `CONFIRMATORY` (fora da contagem), itens
+1/2/4/5/6/7/10 `ABSENT`, 8/9 declarados fora de escopo, 11 coberto por camada 1, 12 (fora do escopo
+deste roadmap, ML-3A trata) `ABSENT`. `go build ./...`, `go vet ./...`,
+`go test ./internal/validator/...` verdes; `pwsh`-parser sem erro de sintaxe; `node -c
+scripts/windows-repro/node/checks.js` ok; `gofmt -l scripts/windows-repro/go/checks.go` sem saída.
+`git diff --stat` restrito aos 4 arquivos do handoff (`run.ps1`, `go/checks.go`, `node/checks.js`,
+`python/checks.py`) — nenhum outro arquivo tocado.
+
+**Escopo negativo respeitado:** item 10 (build, fixture, invocação) **intocado** — a variável
+compartilhada de binário dos itens 2/7 foi renomeada para `$trackfwBinPathShared` especificamente
+para não colidir com o `$trackfwBinPath` próprio do item 10, e o item 10 manteve seu próprio build
+independente. Item 12 não tratado (Wave 3). Contagem esperada da camada 2 não recalculada (ML-3A).
+Nenhuma correção de produto permanece alterada — todas as 6 reversões usadas para as provas de AC3
+(`internal/homedir/homedir.go`, `npm/src/homedir.js`, `pypi/trackfw/homedir.py`,
+`internal/validator/validator_credential_guard.go`,
+`scripts/check-parity-contract-coverage.sh`, `npm/src/commands/barrier.js`,
+`pypi/trackfw/commands/barrier.py`) foram restauradas e confirmadas por `git diff --stat` vazio antes
+de qualquer edição definitiva.
+
+**Premissa do handoff derrubada:** o handoff presumia que a AC3 do item 2 (e, por construção, do
+item 3 na opção (a) que não escolhi) seria falsificável em qualquer SO, bastando reverter o código do
+trackfw. Não é — nos 3 runtimes, os primitivos de resolução de home do próprio SO em POSIX **já**
+preferem `$HOME` independentemente da correção do trackfw (é exatamente por isso que a correção só
+importa no Windows). Medido, não presumido — e documentado nos próprios comentários dos arquivos de
+produção antes desta sessão, apenas não citado no handoff.
+
+---
+
+## Sessão 2026-09-05 — hades-tf (INÍCIO: barreira de segurança ML-7B — `normalizeGuardPath` canonicaliza `\`)
+
+Barreira obrigatória do ML-7B (`internal/generators/agentfiles.go:1618-1737`,
+`npm/src/generators/hooks.js:1291-1367`, `pypi/trackfw/generators/hooks.py:113-216`). Escopo: parecer
+escrito apenas, nenhuma edição de produto/teste, nenhuma operação git, `scripts/windows-repro/**`
+intocado (em edição por `ares-tf`), `make quality` não executado (árvore em trânsito).
+
+## Sessão 2026-09-05 — hades-tf (FIM: barreira de segurança ML-7B — APROVA COM RESSALVAS)
+
+**Parecer completo:** `~/.trackfw/rascunhos/2026-09-05-parecer-hades-ml7b-dedup-separador.md`.
+
+Reimplementei os 3 predicados fora do produto e ataquei com corpus próprio de 19 vetores (case do
+drive, `..`, nomes 8.3, `%USERPROFILE%`/`$HOME` não expandidos, `\\?\C:\...`, caminho relativo com
+`\`, home UNC de perfil de rede) nos 3 runtimes, com entradas idênticas — **nenhum afrouxamento
+encontrado**. Verifiquei por grep que todos os ~10 pontos de dedup (Claude/Codex/Gemini/Cursor/Copilot
+× git-branch-guard + credential-guard) passam por `samePathCommand`/`_same_path_command`, sem `==` cru
+em nenhum ponto de leitura. Confirmei por simulação byte-a-byte (não por leitura) que a correção FECHA
+o `TestGBGDedup_Claude_SkipsProjectEntry_ToleratesDoubleSlashInStoredCommand` (Go) e os pares
+Node/Python no Windows, condicionado a `%TEMP%` ser ancorado em drive-letter (é a norma). Testes
+escopados rodados nos 3 runtimes, todos verdes, sem regressão POSIX.
+
+**Veredito: APROVA COM RESSALVAS** (nenhuma bloqueante):
+1. `hasValidUNCPrefix` está em `module.exports` do Node (`npm/src/generators/hooks.js:2332`) mas
+   nunca é chamada — superfície pública morta que sugere tratamento ativo de UNC onde não há; em Go é
+   privada e defensável. Remover do export ou chamar como guarda explícita.
+2. 3 variantes reais continuam com o defeito original do ML-7A (`\\?\C:\...`, caminho relativo com
+   `\`, home UNC de perfil de rede) — direção sempre **aperta** (duplicata), nunca afrouxa. Nomear como
+   debt conhecido para não virar "achado novo" em auditoria futura.
+3. Não consegui confirmar em Windows real a grafia efetiva de `$HOME` herdada por um binário Go nativo
+   lançado do Git Bash (MSYS pode entregar `/c/Users/...` cru em vez de convertido) — único item com
+   potencial, não confirmado, de reabrir o defeito original num cenário plausível de shells mistos no
+   mesmo host.
+
+---
+
+## Sessão 2026-09-05 — apolo-tf (ML-7C: fecha as 2 ressalvas acionáveis do parecer hades-tf sobre o ML-7B)
+
+Branch `fix/retarget-dos-checks-de-camada-2` (árvore ainda suja — ML-7B e a Wave 2 do retarget
+continuam não commitados). Fechei as duas ressalvas acionáveis do parecer
+(`~/.trackfw/rascunhos/2026-09-05-parecer-hades-ml7b-dedup-separador.md`); a 3ª (grafia de `$HOME` via
+Git Bash em Windows real) fica fora de escopo — requer runner Windows, não é acionável aqui.
+`scripts/windows-repro/**` intocado. Nenhuma edição de lógica: só comentários/docstrings/JSDoc nos 3
+runtimes.
+
+**Ressalva 1 — `hasValidUNCPrefix` exportada sem chamador em Node:** mantive o export (removê-lo
+quebraria `npm/tests/guard_path_normalize.test.js:15`, que a alcança via
+`require('../src/generators/hooks')` destructuring — não há outro jeito de o teste acessá-la sem tocar
+no teste, fora do escopo pedido). Em vez de remover ou de chamá-la como guarda em
+`normalizeGuardPath` (a 2ª opção do parecer, descartada porque mudaria o fluxo de execução aprovado
+pela barreira), documentei em `npm/src/generators/hooks.js` — comentário próprio acima de
+`hasValidUNCPrefix`, separado do JSDoc grande de `normalizeGuardPath` — por que ela é exportada sem
+chamador de produção (só o teste), espelhando a explicação já existente em Go (privada, mesmo
+pacote/mesmo teste) e adicionando a mesma nota em Python (`_has_valid_unc_prefix`, privada por
+convenção `_`, não listada em nenhum `__init__.py`). Os 3 runtimes ficam alinhados na *razão* da
+visibilidade, não na visibilidade em si — Node continua sendo a única exceção, agora justificada no
+comentário, não mais silenciosa.
+
+**Ressalva 2 — 3 formas Windows residuais:** documentadas no comentário de `normalizeGuardPath` (Go
+`internal/generators/agentfiles.go:1667-1693`), JSDoc (Node `npm/src/generators/hooks.js`, bloco
+"Known residual") e docstring (Python `pypi/trackfw/generators/hooks.py`, mesmo bloco) — as três
+formas nomeadas (`\\?\C:\...` long-path, caminho relativo com `\`, home UNC de perfil de rede) e a
+direção do erro declarada explicitamente: **aperta** (duplicata de entrada), nunca omite (guard nunca
+deixa de ser instalado). Texto idêntico em espírito nos 3 runtimes, adaptado à sintaxe de comentário de
+cada linguagem.
+
+**Nenhuma mudança de comportamento:** rodei as suítes antes (via `git status`/leitura, comportamento
+inalterado pré-edição) e depois das edições — só comentários/docstrings tocados, nenhuma linha de
+lógica. Evidência pós-edição:
+- `go build ./...` — sem saída, sem erro.
+- `go vet ./internal/generators/...` — sem saída.
+- `go test ./internal/generators/...` — `ok  github.com/kgsaran/trackfw/internal/generators  6.863s`.
+- `gofmt -l internal/generators/agentfiles.go` — sem saída (já formatado).
+- `node --check npm/src/generators/hooks.js` — sintaxe OK.
+- `node --test npm/tests/guard_path_normalize.test.js npm/tests/git_branch_guard_dedup.test.js` —
+  `tests 20, pass 20, fail 0` (mesma contagem de antes do ML-7C).
+- `python3 -m pytest pypi/tests/test_guard_path_normalize.py pypi/tests/test_git_branch_guard_dedup.py -q`
+  — `21 passed, 52 subtests passed` (mesma contagem de antes do ML-7C).
+
+Nenhum veredito de teste mudou nos 3 runtimes. `make quality` não executado (instrução explícita do
+handoff — arquiteto roda uma vez ao fim).
+
+**Escopo negativo respeitado:** lógica de canonicalização e gate de drive-letter intocados; as 3 formas
+Windows residuais **não corrigidas**, apenas documentadas, como pedido; `scripts/windows-repro/**` não
+tocado; nenhuma operação de git executada.
+
+---

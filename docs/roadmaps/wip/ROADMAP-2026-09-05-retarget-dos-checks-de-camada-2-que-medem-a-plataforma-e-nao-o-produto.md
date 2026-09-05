@@ -92,12 +92,12 @@ não existem — são `node/checks.js` e `python/checks.py`. Escrevi de memória
 > evitar, e que eu já criei uma vez nesta campanha. Um agente, os quatro em sequência.
 
 ### ML-2A — Item 2: medir o trackfw resolvendo home
-**Status:** 🔄 Em andamento · **Agente:** `ares-tf`
+**Status:** ✅ Concluído · **Agente:** `ares-tf`
 Rodar o **binário** com `HOME` ≠ `USERPROFILE` e afirmar o caminho que o `trackfw` escolhe.
 **Falsificação:** revertendo `homedir.Dir()`, volta a `REPRODUCED`.
 
 ### ML-2B — Item 3: medir o validator, ou declarar confirmatório
-**Status:** 🔄 Em andamento · **Agente:** `ares-tf`
+**Status:** ✅ Concluído · **Agente:** `ares-tf`
 Medir o **validator deixando de alarmar** em Windows. 🔴 Se a conclusão for que o item 3 **deve**
 permanecer confirmatório, **declarar explicitamente** e tirá-lo da contagem de `REPRODUCED`
 corrigíveis — a REQ autoriza essa saída, desde que escrita.
@@ -105,18 +105,31 @@ corrigíveis — a REQ autoriza essa saída, desde que escrita.
 🔴 **Não relitigar** a decisão do bit NTFS: `vault/notes/goos-guard-e-do-binario-nao-do-host-wsl-continua-protegido-2026-09-01`.
 
 ### ML-2C — Item 4: invocar o `.sh` real
-**Status:** 🔄 Em andamento · **Agente:** `ares-tf`
+**Status:** ✅ Concluído · **Agente:** `ares-tf`
 O check invoca hoje o mecanismo replicado. Passa a invocar `scripts/check-parity-contract-coverage.sh`.
 **Falsificação:** revertendo o fix de 2026-09-02, volta a `REPRODUCED`.
 
 ### ML-2D — Item 7: invocar o `barrier`, não a réplica
-**Status:** 🔄 Em andamento · **Agente:** `ares-tf`
+**Status:** ✅ Concluído · **Agente:** `ares-tf`
 `scripts/windows-repro/go/checks.go:135` roda `exec.Command("sh","-c",...)` — réplica. A correção
 mudou `barrier.js`/`barrier.py`.
 **Falsificação:** revertendo a correção do barrier, volta a `REPRODUCED`.
 
 ## Wave 3 — Recontagem
 > Dependências: Wave 2 completa.
+
+### ML-3B — Dois vazamentos de sinal achados na auditoria da Wave 2
+**Status:** ⬜ Pendente · **Agente:** `ares-tf`
+
+🔴 **1 — `CONFIRMATORY-EXECUTION-FAILED` não chega a lugar nenhum.** O ML-2B tirou o item 3 do
+contador de forma estrutural, e isso está certo. Mas o veredito de **falha de execução** que ele
+criou (`run.ps1:281`) não entra em `$reproduced`, nem em `$inconclusive`, nem em `$blocked`, nem na
+condição de saída — só na tabela impressa. **Se a sonda do item 3 parar de executar, o gate fica
+verde e ninguém percebe.** É exatamente a forma de defeito que esta campanha vem caçando: o controle
+reporta saúde sobre o que não conseguiu medir. Confirmatório **não** quer dizer invisível.
+
+🔴 **2 — o item 12 contamina o gate** (achado do ML-1A): é sonda declaradamente **fora** da issue
+#216 — o próprio código diz "NÃO CORRIGE nada" — e o veredito dela entra no mesmo `$results`.
 
 ### ML-3A — Recalcular a contagem esperada, item a item
 **Status:** ⬜ Pendente · **Agente:** `ares-tf`

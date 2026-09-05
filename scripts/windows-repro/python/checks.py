@@ -63,49 +63,6 @@ def cmd_help():
         print("VERDICT=ABSENT")
 
 
-def cmd_cp1252_print():
-    """item 4 (mecanismo compartilhado com item 1) — o gate de cobertura
-    (scripts/check-parity-contract-coverage.sh) crasha com o MESMO
-    UnicodeEncodeError, lendo docs/cli-parity.md (65 ocorrencias de seta) e
-    imprimindo no console cp1252. Como o script e .sh (dependeria de
-    sh/bash no PATH — item 7, que este instrumento trata como incerto),
-    reproduzimos aqui o mecanismo em isolamento: um `print()` real do
-    interpretador Python do caractere que aparece em docs/cli-parity.md,
-    sob as mesmas condicoes de console/encoding, SEM invocar o wrapper
-    .sh (evita confundir o item 4 com o item 7 no mapeamento).
-    """
-    env = dict(os.environ)
-    env.pop("PYTHONUTF8", None)
-    env.pop("PYTHONIOENCODING", None)
-    encoding_probe = subprocess.run(
-        [sys.executable, "-c", "import sys; print(sys.stdout.encoding, sys.stderr.encoding)"],
-        env=env,
-        capture_output=True,
-        text=True,
-    )
-    print(f"child_stdout_stderr_encoding={encoding_probe.stdout.strip()!r}")
-    proc = subprocess.run(
-        [sys.executable, "-c", "print('\\u2192')"],
-        env=env,
-        capture_output=True,
-        text=False,
-    )
-    stderr = proc.stderr.decode("utf-8", errors="replace")
-    print(f"exit={proc.returncode}")
-    print(f"stderr_tail={stderr[-400:]!r}")
-    if "UnicodeEncodeError" in stderr:
-        print("VERDICT=REPRODUCED")
-    elif proc.returncode != 0 and _is_startup_failure(stderr):
-        # Mesmo raciocinio do item 1 (cmd_help): este subprocesso e um
-        # print() isolado que nao depende do import de trackfw.cli, mas o
-        # guard fica aqui tambem por simetria e porque um interpretador
-        # Python que falhe ao subir (ex.: ambiente quebrado) e igualmente
-        # "nao chegou a executar o codigo medido".
-        print("VERDICT=INCONCLUSIVE (processo morreu antes de alcancar o codigo medido — ver stderr_tail)")
-    else:
-        print("VERDICT=ABSENT")
-
-
 def _is_startup_failure(stderr: str) -> bool:
     """True se o stderr indica que o processo morreu ANTES de alcancar o
     codigo medido (falha de import/startup), nao por causa do defeito sob
@@ -263,40 +220,17 @@ def cmd_isatty():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
-# Precisa ser EXATAMENTE o mesmo literal usado em go/checks.go
-# (gateQuoteCommand) e node/checks.js (GATE_QUOTE_COMMAND).
-GATE_QUOTE_COMMAND = (
-    "echo start > /dev/null 2>&1 && echo 'trackfw-gate-verdict-A' "
-    "|| echo 'trackfw-gate-verdict-B'"
-)
-
-
-def cmd_gatequote():
-    """item 7 (reclassificado, ML-1C) — replica o MESMO primitivo que
-    pypi/trackfw/commands/barrier.py usa em producao:
-    subprocess.run(cmd, shell=True) — no Windows, isso resolve para
-    cmd.exe. run.ps1 roda os equivalentes Go (via `sh -c`, checks.go) e
-    Node (via spawnSync shell:true, checks.js) com o MESMO
-    GATE_QUOTE_COMMAND e compara os 3 stdouts brutos.
-    """
-    proc = subprocess.run(
-        GATE_QUOTE_COMMAND,
-        shell=True,
-        capture_output=True,
-        text=True,
-    )
-    print(f"STDOUT_BEGIN\n{proc.stdout}\nSTDOUT_END")
-    print(f"exit={proc.returncode}")
-    if proc.stderr:
-        print(f"stderr_tail={proc.stderr[-400:]!r}")
-
-
+# ROADMAP-2026-09-05-retarget-dos-checks-de-camada-2 (ML-2C, ML-2D):
+# "cp1252-print" e "gatequote" foram REMOVIDOS. Ambos replicavam mecanismos
+# de producao (o gate .sh real / pypi/trackfw/commands/barrier.py) fora do
+# artefato real — exatamente o padrao que este roadmap corrige. O item 4 do
+# run.ps1 agora invoca scripts/check-parity-contract-coverage.sh (o .sh
+# real) via `bash`; o item 7 agora invoca `trackfw barrier` de verdade (via
+# `python -m trackfw`), nao mais este arquivo.
 COMMANDS = {
     "help": cmd_help,
-    "cp1252-print": cmd_cp1252_print,
     "crlf": cmd_crlf,
     "isatty": cmd_isatty,
-    "gatequote": cmd_gatequote,
 }
 
 

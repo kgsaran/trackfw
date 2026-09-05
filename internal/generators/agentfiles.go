@@ -1618,9 +1618,85 @@ func readGlobalHookJSON(relParts ...string) (root map[string]interface{}, ok boo
 // hooks.js and pypi/trackfw/generators/hooks.py to keep the three CLIs
 // deciding identically. Never call this with anything other than a script
 // path — it is not a general string normalizer.
+//
+// ROADMAP-2026-09-03 ML-7B — Windows separator canonicalization, gated on
+// anchoring, NOT a blanket "\\" -> "/" translate. On POSIX "\\" is a legal
+// filename byte, so translating it unconditionally would make two
+// genuinely different paths (one with a literal backslash in a segment
+// name, one with an extra path separator there) compare equal — the exact
+// dangerous loosening this function's own doc comment warns against, and
+// the risk this ML was told to treat explicitly. The decision, per input
+// shape (mirrors the UNC/drive-letter arms of
+// internal/validator/pathIsAnchoredForHookConfig, reimplemented locally —
+// not imported, different question, and this package must not import
+// internal/validator):
+//
+//   - "C:\Users\x\guard.sh" / "C:/Users/x/guard.sh" (ASCII drive letter,
+//     ":", then "\" or "/") — CANONICALIZED: every "\" is translated to "/"
+//     before the collapse below runs, so both forms land on the same
+//     "C:/Users/x/guard.sh". This is the case ML-7A measured as the actual
+//     trigger (a Join()-computed Windows path vs. a hand-concatenated one).
+//   - "\\servidor\share\guard.sh" (valid UNC: non-empty SERVER not "." or
+//     "..", followed by a non-empty SHARE not itself starting with "\") —
+//     UNCHANGED, byte-for-byte, including its backslashes. Translating it
+//     would collapse "\\server\share" into "//server/share" and then this
+//     function's own "//" -> "/" collapse would eat the second slash,
+//     producing "/server/share/..." — indistinguishable from a
+//     single-leading-backslash, drive-root-relative path ("\server\share\..."
+//     means something else on Windows) or from a same-named POSIX path.
+//     That collision is precisely a false "already installed": a
+//     network-share guard would dedup-match a local one. Left untouched, a
+//     UNC command never cross-matches a non-UNC one — no new equality is
+//     introduced, so there is nothing to falsify beyond what already held
+//     before this ML.
+//   - "//servidor/share/guard.sh" (the POSIX-typed equivalent of UNC) —
+//     UNCHANGED behavior from before this ML: it does not start with "\",
+//     so it never enters the new branch above; it still collapses via the
+//     existing "//" -> "/" rule below, same as any other POSIX path. It is
+//     intentionally NOT unified with the "\\servidor\share\..." form above
+//     (that asymmetry pre-dates this ML and is out of its scope).
+//   - "\\" and "\\x" alone (no SHARE segment) — NOT valid UNC by the
+//     predicate above, so they fall through unchanged: no drive letter, no
+//     valid UNC, no translation. Same behavior as before this ML (they
+//     contain no "/", so the collapse below is a no-op on them too).
+//   - "C:foo" (drive-relative, no separator after ":") and homoglyph/
+//     zero-width-prefixed strings (e.g. "ｃ:\...", "\u200bC:\...") — do NOT
+//     match the ASCII-only, position-0 drive-letter check, so no
+//     translation happens. Same anti-spoofing posture as the validator's
+//     isASCIIDriveLetter.
+//
+// Known residual, documented not fixed (hades-tf ML-7B barrier review,
+// 2026-09-05 parecer): three real Windows-with-"\" shapes have no drive
+// letter at position 0, so hasWindowsDriveLetterPrefix's gate leaves them
+// uncanonicalized -- the same pre-ML-7A defect survives for them. Direction
+// is always TIGHTENS (possible duplicate hook entry), never loosens (the
+// guard is never silently skipped) -- same safe direction as every other
+// case in this comment:
+//
+//   - "\\?\C:\Users\x\guard.sh" (the Win32 long-path prefix; a real form
+//     Windows/long-path APIs produce automatically, not a hypothetical).
+//   - A relative path containing "\" (e.g. "guard\scripts\hook.sh"). Low
+//     practical risk: today both sides of the real comparison always come
+//     from filepath.Join with an absolute home, so a relative command
+//     should not reach this function -- but nothing in the comparator
+//     itself prevents it.
+//   - A home resolved via a network-profile UNC path (e.g.
+//     "\\fileserver\homes\kg\.trackfw\scripts\..."). It never enters
+//     the drive-letter branch and is intentionally left untouched (see the
+//     UNC bullet above), so the original defect persists for both UNC
+//     spellings, not just between UNC and drive-letter forms.
+//
+// Not fixed here on purpose: closing any of the three would touch the
+// drive-letter gate this barrier just approved as conservative, trading a
+// duplicate-entry nuisance for the more expensive failure mode (collapsing
+// genuinely different paths into a false "already installed"). Do not treat
+// rediscovering these three as a new finding.
 func normalizeGuardPath(p string) string {
 	if p == "" {
 		return p
+	}
+	if hasWindowsDriveLetterPrefix(p) {
+		p = strings.ReplaceAll(p, `\`, "/")
 	}
 	var b strings.Builder
 	prevSlash := false
@@ -1643,6 +1719,46 @@ func normalizeGuardPath(p string) string {
 		}
 	}
 	return out
+}
+
+// hasValidUNCPrefix reports whether p begins with a Windows UNC prefix
+// ("\\server\share...") with a non-empty SERVER segment (not "." or "..")
+// followed by a non-empty SHARE segment that does not itself start with
+// another backslash. Mirrors the UNC arm of
+// internal/validator/pathIsAnchoredForHookConfig — reimplemented here (not
+// imported: that predicate answers "is this anchored for a hook config
+// value", a different question, and this package must not import
+// internal/validator). "\\", "\\x" (no share segment) and "\\.\x" /
+// "\\..\evil" (server "." or "..") are NOT valid UNC — same call the
+// validator made in ROADMAP-2026-08-21 ML-3B. Currently unused by
+// normalizeGuardPath itself (a valid-UNC string never has a drive-letter
+// prefix, so the two checks are already mutually exclusive by construction)
+// — kept as a named, tested predicate so the "UNC stays untouched" decision
+// in the doc comment above is verifiable by name, not just by absence of a
+// call.
+func hasValidUNCPrefix(p string) bool {
+	if len(p) < 2 || p[0] != '\\' || p[1] != '\\' {
+		return false
+	}
+	server, share, found := strings.Cut(p[2:], `\`)
+	return found && server != "" && server != "." && server != ".." && share != "" && share[0] != '\\'
+}
+
+// hasWindowsDriveLetterPrefix reports whether p begins with an ASCII drive
+// letter followed by ":" and a path separator ("C:\..." or "C:/..."). Byte
+// check only (mirrors internal/validator's isASCIIDriveLetter) — a Windows
+// drive letter is always ASCII; this deliberately does NOT match a
+// homoglyph ("ｃ:\..."), a leading zero-width space, a digit before ":", or
+// a bare "C:" with no following separator ("C:foo" is drive-relative, not
+// anchored — it must NOT be canonicalized here, same call the validator
+// makes for hook-config anchoring).
+func hasWindowsDriveLetterPrefix(p string) bool {
+	if len(p) < 3 {
+		return false
+	}
+	c := p[0]
+	isASCIILetter := (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+	return isASCIILetter && p[1] == ':' && (p[2] == '\\' || p[2] == '/')
 }
 
 // samePathCommand reports whether a and b denote the same script command
