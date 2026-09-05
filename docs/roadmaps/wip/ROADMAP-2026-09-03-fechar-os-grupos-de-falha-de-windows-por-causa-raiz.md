@@ -439,6 +439,65 @@ mensagem, **recebe esse mesmo caminho**, e ainda assim reprova — divergência 
 de ancoragem. A estimativa de ~14 misturou grupos de causa diferente.
 
 
+## Wave 6 — Os grupos de DEFEITO DE TESTE (4 MLs em paralelo, arquivos disjuntos)
+> Dependências: re-triagem por mecanismo concluída
+> (`docs/portabilidade/2026-09-04-retriagem-do-residuo-de-windows-por-mecanismo.md`).
+> **Antecede a Wave 5 por retorno**: 38 falhas, risco zero, nenhuma decisão de arquitetura.
+
+🔴 **Disjunção verificada arquivo a arquivo pelo arquiteto** — não por "parecem independentes". Já
+criei uma colisão nesta campanha afirmando disjunção sem conferir (ML-4A/4B). Nenhum arquivo aparece
+em dois MLs.
+
+### ML-6A — G4: asserção crua contra bytes já serializados em JSON (22 falhas)
+**Status:** ⬜ Pendente · **Agente:** `artemis-tf`
+**Arquivos:** `internal/commands/update_harness_test.go` · `npm/tests/update-harness.test.js` ·
+`pypi/tests/test_update_harness.py`
+O teste monta o caminho com `filepath.Join`/`path.join`/`pathlib` e procura essa **string crua**
+dentro de bytes que já passaram por serialização JSON — que **dobra toda barra invertida**. Produção
+certa, teste errado. **Confirmado nos 3 runtimes por leitura**, não inferido por nome.
+**Maior grupo do resíduo depois do CRLF, e o de menor risco.**
+
+### ML-6B — G2 + G0: `%q` do Go e o controle POSIX que virou defeito de teste (5 falhas)
+**Status:** ⬜ Pendente · **Agente:** `artemis-tf`
+**Arquivos:** `internal/validator/validator_credential_guard_test.go` ·
+`internal/validator/validator_test.go` · `internal/validator/validator_thirdparty_provenance_test.go`
+**G2 (4):** `%q` produz string Go-escapada (cada `\` vira `\\`) — comportamento correto e
+documentado. O teste constrói o esperado com `filepath.Join` (barra simples) e compara por
+`Contains`. Discriminante que separa do G10: a violação **correta já está** na lista de mensagens;
+só a busca textual falha.
+**G0 (1):** `TestPathIsAnchoredForHookConfig_ControlePOSIX` deriva a expectativa de `filepath.IsAbs`
+e portanto **afirma o defeito** que a Wave 3 corrigiu. 🔴 **Corrigir fixando os valores esperados
+literalmente — NÃO com guard de plataforma no assert**, que apagaria a única asserção que exercita a
+divergência. É Go-only: `path.win32.isAbsolute` e `ntpath.isabs` já tratam a barra POSIX como
+absoluta, medido.
+
+### ML-6C — G3: fixture gera JSON inválido e o validator falha-aberto em silêncio (9 falhas)
+**Status:** ⬜ Pendente · **Agente:** `artemis-tf`
+**Arquivos:** `internal/validator/validator_git_branch_guard_test.go` · `npm/tests/validator.test.js`
+A fixture concatena um caminho nativo do Windows (com `\`) dentro de um template JSON **sem
+escapar** → JSON inválido → o validator **pula o arquivo em silêncio** por desenho fail-open → o
+teste espera violação e recebe lista vazia.
+🔴 **Go confirmado por leitura (5); Node é HIPÓTESE por padrão de nome (4, `not ok 463/464/473/475`)
+— o código Node não foi lido.** Confirme antes de corrigir. **Se a hipótese cair, reporte e pare** —
+não force o Node no grupo.
+🔴 **Observação que vale mais que as 9 falhas:** um fail-open que engole JSON inválido em **arquivo
+de config de guard** é comportamento de produto que merece pergunta própria. **Não decidir aqui** —
+reportar.
+
+### ML-6D — G8: `findRoadmap` devolve separador nativo, teste compara com literal POSIX (2 falhas)
+**Status:** ⬜ Pendente · **Agente:** `artemis-tf`
+**Arquivos:** `internal/generators/roadmap_test.go`
+
+**Critérios de aceite da wave**
+- [ ] Falsificação nas duas direções em cada ML, com números.
+- [ ] 🔴 **Nenhuma correção esconde defeito de produto.** Se o teste estava certo e o produto errado,
+      **pare e reporte** — o rótulo "defeito de teste" veio de uma triagem, não de dogma.
+- [ ] Nenhum teste marcado `skip`, e nenhum guard de plataforma que apague asserção.
+- [ ] `make quality` verde · `trackfw validate` exit 0 (rodados **pelo arquiteto**, uma vez, após os 4).
+- [ ] Recontagem no CI com o delta atribuído a cada grupo, medida com o padrão do vault
+      (`contagem-de-falhas-de-windows-do-go-medida-por-padrao-frouxo-2026-09-04`).
+
+
 ## Wave 5 — CRLF no parser de frontmatter
 > Dependências: Wave 3 fechada. **Sequencial**: toca os mesmos arquivos de validator dos 3 CLIs.
 
