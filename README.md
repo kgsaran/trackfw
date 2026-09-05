@@ -20,9 +20,9 @@ Every piece of work traces back to a decision. Every decision links to a require
 
 > 🚧 **Platform support: Linux and macOS are supported. Windows support is partial.**
 > The CLIs install on Windows and core governance commands run — but the generated
-> guard hooks are POSIX shell scripts, and **we have not yet verified that they fire
-> on Windows**. If they do not, they are written to disk and reported as installed
-> while never executing.
+> guard hooks are POSIX shell scripts, and **on several agent CLIs they do not execute
+> on Windows.** They are written to disk and reported as installed while never running.
+> Native Windows hooks are in progress.
 > **Read [Windows support (partial)](#windows-support-partial) before adopting on Windows.**
 
 ---
@@ -131,18 +131,32 @@ are than let you find them after adoption.
   not unknown — but they are not zero.
 - **Windows ARM64 is not built.** Only `windows_amd64` is published.
 
-**What we have not verified — and will not claim either way**
+**Guard hooks on Windows — measured, per agent CLI**
 
-- 🔴 **Whether the generated guard hooks actually fire on Windows.** They are `.sh`
-  scripts, executed by your AI agent CLI (Claude Code, Cursor, Copilot, and others).
-  **We have not measured which shell each of those CLIs uses on Windows.** If your CLI
-  does not invoke a POSIX shell, the hooks are written to disk, `validate` reports them
-  as installed — **and they never run**.
+The guard hooks are `.sh` scripts, executed by *your* AI agent CLI. Which shell that CLI
+uses on Windows decides whether they run at all. We measured it:
 
-  This is the failure mode we care most about, because it is silent: a guard that never
-  executes reports health over something it never inspected. Until we measure it,
-  **do not rely on `credential_guard` or `git_branch_guard` as an enforced control on
-  Windows.** Install Git Bash and make sure it is what runs your hooks.
+| Agent CLI | Shell on Windows | Do the hooks run? | Basis |
+|---|---|---|---|
+| Gemini CLI | PowerShell, always | ❌ **No** | measured in vendor source |
+| Codex CLI | PowerShell on the normal path | ❌ **No** | measured in vendor source |
+| GitHub Copilot CLI | — | ❌ **No** — we populate the wrong config field | vendor docs + our code |
+| Claude Code | Git Bash if installed, else PowerShell | ⚠️ **Only with Git Bash** | vendor documentation |
+| Cursor · Kiro | unknown | ❓ **Unknown** | closed, undocumented |
+
+🔴 **This is the failure mode we care most about, because it is silent.** A guard that
+never executes still reports health over something it never inspected. On the CLIs marked
+❌, `trackfw validate` will tell you the hook is installed — and it will never fire.
+
+**Until native Windows hooks ship, do not rely on `credential_guard` or
+`git_branch_guard` as an enforced control on Windows.** Treat them as documentation of
+intent, not as enforcement.
+
+We are **not** going to answer this by requiring Git Bash: it would fix one CLI out of
+six and push the cost onto you. Windows hooks should run on Windows. Native hook
+generation is the direction — see
+[`docs/portabilidade/2026-09-05-contrato-de-execucao-de-hook-por-cli-de-agente-no-windows.md`](docs/portabilidade/2026-09-05-contrato-de-execucao-de-hook-por-cli-de-agente-no-windows.md)
+for the full measurement, per CLI, with the level of certainty of each row.
 
 **If you are on Windows**, we want your report. The Windows defects fixed so far came
 from a user running the tool on real Windows 11 and measuring before reporting — open

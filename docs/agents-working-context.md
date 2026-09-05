@@ -31785,3 +31785,41 @@ ficam como o rastro.
 
 **A regra operacional que fica:** antes de qualquer `git add -A`, verificar se há agente ativo. Se
 houver, ou esperar, ou commitar por caminho explícito — nunca `-A`.
+
+---
+
+## 2026-09-05 — `prometeu-tf` — Investigação: qual shell interpreta o `command` de hook no Windows,
+por CLI de agente (sem correção, sem git)
+
+Entregue: `docs/portabilidade/2026-09-05-contrato-de-execucao-de-hook-por-cli-de-agente-no-windows.md`.
+
+Resposta por CLI (Windows, sem config extra do usuário), com grau de certeza:
+
+| CLI | Shell | Certeza | `.sh` do trackfw roda? |
+|---|---|---|---|
+| Claude Code | Git Bash se instalado, senão PowerShell | Documentado pelo fornecedor | Sim, condicionado a Git Bash |
+| Codex CLI | PowerShell no caminho comum (`PreToolUse`/`PostToolUse`, sessão em curso); `cmd.exe` só num fallback de borda sem `TurnEnvironment` | **Medido no código-fonte**, 3 arquivos (`session/mod.rs`, `shell.rs`, `shell_detect.rs`) | **Não** — mesma classe de falha do Gemini (shebang não interpretado) |
+| Gemini CLI | PowerShell sempre (`pwsh.exe`/`powershell.exe`) | **Medido no código-fonte** (`shell-utils.ts`, main) | **Não** — PowerShell não interpreta shebang |
+| GitHub Copilot CLI | Campo errado populado (`bash`, não `powershell`/`command`) | Doc do fornecedor + leitura de `agentfiles.go` | **Não, por vácuo de config** — nem chega a "qual shell" |
+| Cursor | — | Indeterminado (fornecedor fechado, sem doc, sem código) | Indeterminado |
+| Kiro | — | Indeterminado (fornecedor fechado, sem doc, sem código) | Indeterminado |
+
+🔴 Achado que muda o resultado do handoff: a bifurcação binária "bash vs cmd/PowerShell" não se
+sustentou — **PowerShell é o padrão de fato em 3 dos 6 CLIs** (Claude Code sem Git Bash, Codex no
+caminho comum, Gemini sempre); `cmd.exe` só aparece como fallback de borda do Codex, nunca como
+caminho padrão de CLI nenhum. Copilot nem chega à pergunta de shell: hook não é lido, é vácuo de
+campo JSON (`InjectCopilotHooks` só popula `"bash"`, nunca `"command"`).
+
+🔴 Autocorreção registrada: a primeira leitura do Codex generalizou o fallback `cmd.exe` de
+`command_runner.rs` como caminho padrão, sem verificar de onde vem `CommandShell` antes de chegar
+nele. O advisor pediu essa verificação; `session/mod.rs::build_hooks_config` mostrou que o shell vem
+do `TurnEnvironment` da sessão primeiro (= `default_user_shell()` = PowerShell no Windows), e
+`cmd.exe` só é alcançado sem `TurnEnvironment` resolvido — caso de borda (ex. `SessionStart`), não
+o caminho de `PreToolUse`/`PostToolUse` onde os guards disparam. Documento e esta entrada já
+corrigidos antes do fecho.
+
+Conclusão do fecho: `.ps1`/script nativo **é necessário** para Codex e Gemini (medido em
+código-fonte, não inferência). Para Claude Code é condicional a Git Bash. Cursor, Kiro e a interação
+`command_windows`+`trust_level` do Codex seguem indeterminados até medição em Windows real —
+experimento mínimo por CLI especificado no documento (nenhum dos 6 CLIs é instalável no CI atual,
+macOS sem contas dos fornecedores). Nenhuma correção de código foi aplicada nesta investigação.
