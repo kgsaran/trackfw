@@ -622,6 +622,15 @@ ML-3B.
 
 Nota: `vault/notes/dedup-guard-path-cego-a-backslash-no-windows-2026-09-05.md`.
 
+### ML-7B — `normalizeGuardPath` passa a canonicalizar a barra invertida (3 CLIs)
+**Status:** 🔄 Em andamento · **Agente:** `apolo-tf` + barreira `hades-tf`
+**Arquivos:** `internal/generators/agentfiles.go` · `npm/src/generators/hooks.js` ·
+`pypi/trackfw/generators/hooks.py` (+ testes dos 3)
+Correção do defeito de produto que o ML-7A mediu. 🔴 **Risco herdado do ML-7A:** tradução ingênua
+`\`→`/` **quebra prefixo UNC** — mesmo tema que a barreira pegou no ML-3B. **Barreira `hades-tf`
+obrigatória**, pelo mesmo motivo daquela: é mudança num predicado de comparação usado por controle de
+segurança, e o risco inverso (passar a casar o que não deveria) precisa de falsificação explícita.
+
 ## Wave 5 — CRLF no parser de frontmatter
 > Dependências: Wave 3 fechada. **Sequencial**: toca os mesmos arquivos de validator dos 3 CLIs.
 

@@ -92,12 +92,12 @@ não existem — são `node/checks.js` e `python/checks.py`. Escrevi de memória
 > evitar, e que eu já criei uma vez nesta campanha. Um agente, os quatro em sequência.
 
 ### ML-2A — Item 2: medir o trackfw resolvendo home
-**Status:** ⬜ Pendente · **Agente:** `ares-tf`
+**Status:** 🔄 Em andamento · **Agente:** `ares-tf`
 Rodar o **binário** com `HOME` ≠ `USERPROFILE` e afirmar o caminho que o `trackfw` escolhe.
 **Falsificação:** revertendo `homedir.Dir()`, volta a `REPRODUCED`.
 
 ### ML-2B — Item 3: medir o validator, ou declarar confirmatório
-**Status:** ⬜ Pendente · **Agente:** `ares-tf`
+**Status:** 🔄 Em andamento · **Agente:** `ares-tf`
 Medir o **validator deixando de alarmar** em Windows. 🔴 Se a conclusão for que o item 3 **deve**
 permanecer confirmatório, **declarar explicitamente** e tirá-lo da contagem de `REPRODUCED`
 corrigíveis — a REQ autoriza essa saída, desde que escrita.
@@ -105,12 +105,12 @@ corrigíveis — a REQ autoriza essa saída, desde que escrita.
 🔴 **Não relitigar** a decisão do bit NTFS: `vault/notes/goos-guard-e-do-binario-nao-do-host-wsl-continua-protegido-2026-09-01`.
 
 ### ML-2C — Item 4: invocar o `.sh` real
-**Status:** ⬜ Pendente · **Agente:** `ares-tf`
+**Status:** 🔄 Em andamento · **Agente:** `ares-tf`
 O check invoca hoje o mecanismo replicado. Passa a invocar `scripts/check-parity-contract-coverage.sh`.
 **Falsificação:** revertendo o fix de 2026-09-02, volta a `REPRODUCED`.
 
 ### ML-2D — Item 7: invocar o `barrier`, não a réplica
-**Status:** ⬜ Pendente · **Agente:** `ares-tf`
+**Status:** 🔄 Em andamento · **Agente:** `ares-tf`
 `scripts/windows-repro/go/checks.go:135` roda `exec.Command("sh","-c",...)` — réplica. A correção
 mudou `barrier.js`/`barrier.py`.
 **Falsificação:** revertendo a correção do barrier, volta a `REPRODUCED`.
