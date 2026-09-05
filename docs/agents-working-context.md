@@ -31823,3 +31823,49 @@ código-fonte, não inferência). Para Claude Code é condicional a Git Bash. Cu
 `command_windows`+`trust_level` do Codex seguem indeterminados até medição em Windows real —
 experimento mínimo por CLI especificado no documento (nenhum dos 6 CLIs é instalável no CI atual,
 macOS sem contas dos fornecedores). Nenhuma correção de código foi aplicada nesta investigação.
+
+## 2026-09-05 — Ártemis (QA) — INÍCIO: triagem das REQs abertas
+
+Tarefa: triar as 36 REQs `status: Open` (confirmado por `grep -l "^status: Open" docs/req/*.md`,
+não pelas contagens do handoff) e produzir veredito por REQ (JÁ RESOLVIDA / AINDA VÁLIDA /
+SUPERADA / DUPLICADA / A ABANDONAR / INDETERMINADA) em
+`docs/portabilidade/2026-09-05-triagem-das-reqs-abertas.md`. Sem git, sem código de produto/teste
+alterado, investigação pura.
+
+Pré-checagens já feitas (corrigem premissas do handoff):
+- Contagem de status: 147 `Done` + 15 `done` (minúsculo) + 2 `Closed` + 36 `Open` = 200. Fecha —
+  mas há inconsistência de grafia de status não sinalizada no handoff (17 arquivos usam grafia
+  não-canônica `done`/`Closed`).
+- "34 das 36 sem roadmap": medido via `req:` do frontmatter de TODOS os roadmaps (qualquer estado)
+  cruzado com os 36 slugs — achei **32 das 36 sem roadmap nenhum** (não 34). As 4 com roadmap:
+  guarda-de-folha (roadmap em `analyzing/`), reconciliação PRs 238/240 (roadmap em `done/` — REQ
+  ficou Open mesmo com roadmap concluído, possível esquecimento de fechamento), auditoria externa
+  Astra (roadmap em `wip/`), 217 falhas de Windows (roadmap em `wip/`).
+- Início da leitura cluster-a-cluster; tabela sendo escrita incrementalmente no documento acima.
+
+Em andamento — ver o documento de triagem para status linha a linha.
+
+## 2026-09-05 — Ártemis (QA) — FIM: triagem das 36 REQs abertas
+
+Entregue: `docs/portabilidade/2026-09-05-triagem-das-reqs-abertas.md` — tabela completa das 36 REQs
+`status: Open`, veredito por REQ com evidência de código medida (não presumida), contagem por
+veredito, ordenação por retorno das "AINDA VÁLIDA" (top-8, para as 2 vagas de WIP) e candidatas a
+abandono (nenhuma — as 36 descrevem defeito real).
+
+Resultado: 1 JÁ RESOLVIDA (#21, `thirdparty_artifact_has_provenance` no Node — só invisível por
+`npm/src/validator/index.js` ser classificado binário e o `grep` sem `-a` pulá-lo em silêncio), 1
+SUPERADA (#5, pela `REQ-2026-08-23-agents-update-...`, já `done`), 34 AINDA VÁLIDA (a maioria
+verificada por leitura/execução direta do código atual, 2 herdadas do handoff com bloqueio já
+declarado, 1 presumida por custo de medição — CI). Zero A ABANDONAR.
+
+Premissas do handoff corrigidas pela medição: "34 das 36 sem roadmap" → são **32**, não 34; a
+contagem de "147 Done" ignorava 17 arquivos com grafia de status não-canônica (`done`/`Closed`);
+um roadmap em `done/` não implicou REQ resolvida — o caso da REQ #26 (PRs 238/240) tinha roadmap
+concluído cobrindo só 2 dos 7 ACs, os outros 4 intocados no código.
+
+Top-3 por retorno para as próximas 2 frentes (WIP-2): #28 (fechar o resíduo de Windows, só falta 1
+ML de 23), #4+#36 juntas (mesma correção Python fecha as duas REQs), #8 (`roadmapTrustForGates`
+fail-open — segurança real, não cosmética). Detalhe completo e critério de não-sobreposição de
+arquivo no documento.
+
+Sem git, sem código de produto/teste alterado — investigação pura, conforme escopo.
