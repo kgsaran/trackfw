@@ -542,8 +542,38 @@ ler.
 > Dependências: nenhuma. Paraleliza com a Wave 1 do roadmap do retarget (arquivos disjuntos).
 
 ### ML-7A — Por que o dedup do git-branch-guard falha com `//` na home isolada
-**Status:** 🔄 Em andamento · **Agente:** `artemis-tf` · **investigação, sem correção**
+**Status:** ✅ Concluído (mecanismo IDENTIFICADO) (investigação concluída pela QA — mecanismo IDENTIFICADO E MEDIDO;
+aguardando auditoria do arquiteto para fechar o ML) · **Agente:** `artemis-tf` · **investigação, sem correção**
 **Alvo de leitura:** `internal/generators/agentfiles.go` e pares em Node/Python.
+**Entregue:** `docs/portabilidade/2026-09-05-mecanismo-do-dedup-barra-dupla.md`.
+
+🔴 **Mecanismo identificado, e a barra dupla NÃO é a causa.** `normalizeGuardPath` (e os espelhos
+Node/Python, byte-a-byte) só colapsa runs de `/`; nunca canoniza `\`↔`/`. No Windows,
+`filepath.Join`/`path.win32.join`/`ntpath.join` sempre emitem separador nativo (`\`) em cada fronteira
+de segmento — confirmado por leitura do fonte Go instalado e por **execução real** de `path.win32.join`
+(Node) e `ntpath.join` (Python) nesta máquina (módulos lexicais puros, sem chamada de SO, rodam em
+qualquer plataforma; em runner Windows real `path===path.win32` e `os.path===ntpath`, não é proxy). O
+`rawStoredCommand` do fixture, depois do colapso `//`→`/`, ainda tem `/` onde o comparando computado
+tem `\` — as duas strings normalizadas nunca ficam iguais no Windows. Passa em POSIX (medido: `go
+test` PASS nesta máquina) porque lá `Join` já usa `/` nativamente. **Discriminante de contagem:** só a
+variante `//` (concatenação crua) falha; as variantes-irmãs de dedup (mesma home isolada, mesmo
+`Join` dos dois lados) passam nos 3 runtimes — se fosse resolução de `$HOME` quebrada, todas
+falhariam (~15, não 3). **$HOME verificado nos 3 runtimes, não só Go** — `npm/src/homedir.js` e
+`pypi/trackfw/homedir.py` preferem `$HOME` no Windows, igual ao Go.
+
+**PRODUTO — contrato documentado não cumprido no Windows, gatilho demonstrado, não só especulado.**
+`normalizeGuardPath` promete tolerar "`$HOME` resolving with a trailing slash" — no Windows isso
+produz `\\` duplicado, e a função **não colapsa** (só testa `r=='/'`, nunca `r=='\\'`; medido). Esse
+gatilho é plausível em qualquer instalação Windows onde o perfil resolva com separador final, **não
+depende de edição manual**. O segundo cenário citado pela doc-comment (hand-edited com `/`) segue
+plausível mas não observado. Sem gatilho hoje em `trackfw update harness` (nenhum sítio escreve o
+comando global por concat crua — todos usam `Join`); se ocorrer, dedup reinjeta a entrada de projeto,
+guard dispara duplicado (não é falha de segurança — o guard ainda dispara). Falsificação nas duas
+direções feita com cópia literal do algoritmo (sem tocar produto): mutação que reproduz (`EQUAL?
+false`) e candidato de remédio que fecha sem afrouxar o controle POSIX (`EQUAL? true`) — ressalva de
+UNC registrada como risco de implementação, não medida como parte do mecanismo. Falta confirmar em
+Windows real (CI) os valores normalizados exatos via instrumentação temporária — não pude medir por
+falta de runner Windows.
 
 **É o único defeito genuíno que o reporter do issue #216 nomeou e que continua aberto**, e o G12 da
 re-triagem por mecanismo chegou nele por caminho independente — dois trabalhos convergindo aumenta a
@@ -561,6 +591,36 @@ grupo que tornou aquele diagnóstico confiável.
 **Critérios:** mecanismo escrito com a medição que o sustenta, **ou** o espaço de hipóteses reduzido
 com o que foi eliminado e como · discriminante escrito · nenhuma correção aplicada.
 
+
+**Mecanismo, medido:** `normalizeGuardPath` / `_normalize_guard_path` — byte-idêntico em
+`internal/generators/agentfiles.go:1621`, `npm/src/generators/hooks.js:1295`,
+`pypi/trackfw/generators/hooks.py:113` — **só colapsa sequências de `/`, e nunca canonicaliza `\`
+contra `/`**. Conferido por mim: o laço testa `r == '/'` e nada mais.
+
+No Windows, `filepath.Join`/`path.win32.join`/`ntpath.join` emitem `\` em **toda** junção. O comando
+guardado pela fixture `//`, depois do colapso, mantém `/` depois do segmento de home; o comparando
+calculado é todo `\`. **Nunca casam no Windows; casam em POSIX** — por isso o teste passa aqui.
+
+**Como ela mediu sem máquina Windows, e por que vale:** executou `path.win32.join` e `ntpath.join`
+**localmente**. Os dois são módulos puramente lexicais e multiplataforma — `path === path.win32` e
+`os.path === ntpath` num runner Windows real. **Não é proxy, é o mesmo código.**
+
+**Discriminante que ela achou sem eu pedir:** só o teste da fixture `//` falha; os irmãos
+(Codex/Gemini/Cursor/Copilot), com o **mesmo** `$HOME` isolado mas os dois lados construídos por
+`Join`, passam nos 3 runtimes. **Isso elimina resolução de `$HOME`/`%USERPROFILE%` como causa.**
+
+**Veredito: defeito de PRODUTO**, com gatilho demonstrado. O comentário da própria função promete
+tolerar `"$HOME` resolvendo com barra final" — no Windows isso produz `\\` na emenda, e a função
+**não colapsa**. Não exige edição manual para disparar.
+**Atenuante medido:** nenhum sítio de produção escreve o comando do hook global por concatenação
+crua hoje — todos usam `Join`. Então o defeito não é auto-infligido no fluxo atual, mas **viola o
+contrato escrito da função para um cenário que ela declara cobrir.**
+
+🔴 **Risco sinalizado, não corrigido:** a tradução ingênua `\`→`/` quebraria prefixo **UNC**. Quem
+implementar a correção precisa tratar isso — é o mesmo tema que a barreira do `hades-tf` pegou no
+ML-3B.
+
+Nota: `vault/notes/dedup-guard-path-cego-a-backslash-no-windows-2026-09-05.md`.
 
 ## Wave 5 — CRLF no parser de frontmatter
 > Dependências: Wave 3 fechada. **Sequencial**: toca os mesmos arquivos de validator dos 3 CLIs.

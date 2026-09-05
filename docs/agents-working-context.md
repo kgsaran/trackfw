@@ -30722,3 +30722,111 @@ os arquivos do ML-6E nem nenhum arquivo em `internal/validator/*_test.go` (só l
 retarget de 2026-09-01 antes de qualquer tentativa de fechar a issue citando o CI como prova — sem
 isso, o dashboard de Windows real vai continuar mostrando itens 2 e 3 como `REPRODUCED` para sempre,
 mesmo corrigidos.
+
+---
+
+## Sessão 2026-09-05 — ares-tf (ML-1A — enumeração e classificação de TODOS os checks do harness de Windows, AC7)
+
+Branch `fix/retarget-dos-checks-de-camada-2`. Investigação pura — nenhum check corrigido, nenhuma
+correção de produto tocada, nenhuma operação de git. `internal/generators/agentfiles.go` e pares
+Node/Python não foram tocados (agente paralelo).
+
+**Entrega:** `docs/portabilidade/2026-09-05-enumeracao-dos-checks-do-harness-de-windows.md`.
+
+**Resultado:** `scripts/windows-repro/` tem **dois instrumentos distintos** — a suíte de reprodução
+de defeito verdict-bearing (`run.ps1` + `go/checks.go` + `node/checks.js` + `python/checks.py`, roda
+em todo push/PR e decide pass/fail) e a sonda sob demanda (`probe.go/js/py`, `workflow_dispatch`
+apenas, sem veredito, explicitamente fora do gate). Só a primeira é alvo do critério de defeito do
+AC7.
+
+Das 12 posições numeradas em `run.ps1` (itens 1-12; 8/9/11 são sentinelas sem execução), **as quatro
+instâncias já conhecidas (itens 2, 3, 4, 7) são as únicas que se encaixam nas três categorias do
+AC7** — todas confirmadas por linha de código, inclusive contra a produção
+(`internal/homedir/homedir.go:31-36` prova que `homedir.Dir()` prefere `$HOME` e que o check do item
+2 chama `os.UserHomeDir()` cru, contradizendo o próprio comentário do check que alega "chama
+exatamente o que a produção chama"). Itens 1, 5, 6, 10 invocam o produto de verdade (linha citada).
+**Nenhuma quinta instância dentro da taxonomia foi encontrada.**
+
+**Achado novo, fora da taxonomia de três categorias:** o **item 12** (`run.ps1:349-653`) é uma sonda
+observacional do grupo B (ambiguidade de resolução de `bash` no Windows,
+`docs/qualidade/2026-09-04-grupo-b-bash-do-python-em-windows.md`) que o próprio comentário declara
+"NÃO é da issue #216... NÃO CORRIGE nada" — mas cujo veredito é mapeado para
+`REPRODUCED`/`ABSENT`/`INCONCLUSIVE` e **entra no mesmo `$results`/`$reproduced.Count`/exit code**
+que decide pass/fail do job `windows-defect-reproduction` junto com os 11 itens da issue. Não é
+"mede plataforma" nem "replica mecanismo" no sentido do AC7 (não afirma nada sobre um dos 11 itens),
+é uma questão de **fronteira do instrumento**: um item declaradamente fora de escopo contamina o
+contador do gate. Recomendo à Wave 3 (ML-3A) decidir explicitamente se ele deve sair de `$results`
+para um sumário paralelo.
+
+**Vácuo por outro motivo (pergunta do handoff):** nenhum item verdict-bearing é sempre `ABSENT`
+independentemente do produto. O único vácuo histórico achado (`RUNNER_TEMP` nulo produzindo
+`REPRODUCED` incondicional no item 2, `run.ps1:48-60`) já tem guarda de vacuidade (`$item2Medido`,
+linha 162) — não é uma instância aberta.
+
+**Consumidor externo checado:** `quality.yml:280` reusa o mesmo primitivo cru (`checks.go home`) numa
+precondição de isolação (`windows-full-suites`, AC12) — determinei que **não** é uma quinta
+instância: ali `HOME`/`USERPROFILE` são setados para o **mesmo** valor sintético, então o resultado
+independe de qual variável o primitivo prefere; a precondição confirma que a substituição de
+ambiente do job funcionou, não que o `trackfw` respeita `$HOME`.
+
+**Não fiz:** nenhuma correção de check, produto, teste ou gate. Nenhuma operação de git.
+
+**Próximo passo (Wave 2 deste roadmap, não executado por mim):** ML-2A/2B/2C/2D fazem o retarget dos
+itens 2, 3, 4, 7. ML-3A recalcula a contagem item a item e decide o tratamento do item 12.
+
+---
+
+## Sessão 2026-09-05 — artemis-tf (ML-7A — mecanismo do dedup `//` do git-branch-guard, G12)
+
+Branch `fix/retarget-dos-checks-de-camada-2`. Investigação pura — nenhuma correção de produto, teste
+ou fixture aplicada; nenhuma operação de git. `scripts/windows-repro/**` não foi tocado (agente
+paralelo).
+
+**Entrega:** `docs/portabilidade/2026-09-05-mecanismo-do-dedup-barra-dupla.md` ·
+`vault/notes/dedup-guard-path-cego-a-backslash-no-windows-2026-09-05.md`.
+
+**Mecanismo identificado, e a barra dupla NÃO é a causa.** `normalizeGuardPath`/`_normalize_guard_path`
+(`internal/generators/agentfiles.go:1621`, `npm/src/generators/hooks.js:1295`,
+`pypi/trackfw/generators/hooks.py:113`, byte-a-byte idênticos nos 3) só colapsa runs de `/`; nunca
+canoniza `\`↔`/`. No Windows, `filepath.Join`/`path.win32.join`/`ntpath.join` sempre emitem separador
+**nativo** (`\`) em cada fronteira de segmento — confirmado por leitura do fonte Go instalado
+(`internal/filepathlite/path.go:65-138`) e por **execução real** de `path.win32.join` (Node) e
+`ntpath.join` (Python) nesta máquina macOS (módulos lexicais puros, cross-platform por desenho, não
+precisam de Windows real). O comando armazenado com `/` continua com `/` depois do colapso `//`→`/`;
+o comparando computado via `Join` fica todo `\`. Nunca batem no Windows. Passa em POSIX (medido,
+`go test` PASS nesta máquina) porque lá `Join` já usa `/`.
+
+**PRODUTO — contrato documentado não cumprido no Windows, gatilho demonstrado, não só especulado.**
+`normalizeGuardPath` promete tolerar dois cenários: "`$HOME` com barra final" e "hand-edited config".
+Medido: nenhum dos dois é coberto no Windows. O primeiro produz `\\` duplicado na costura e a função
+**não colapsa** (só testa `r=='/'`, nunca `r=='\\'`) — esse gatilho não depende de edição manual,
+qualquer perfil Windows que resolva com separador final dispara. O segundo (hand-edited com `/`)
+segue plausível, não observado. Verificado: nenhum sítio de produção hoje escreve o comando global
+por concatenação crua (todos usam `Join`) — o defeito só se manifesta com gatilho externo, mas o
+primeiro gatilho citado pela própria doc-comment não exige intervenção humana.
+
+**Discriminante de contagem, gratuito:** só a variante `//` do teste de dedup falha; as
+variantes-irmãs (mesma home isolada, mas os dois lados vêm de `Join`) passam nos 3 runtimes — se
+fosse `$HOME`/`%USERPROFILE%` quebrado, todas falhariam (~15, não 3). **$HOME verificado nos 3
+runtimes**, não só Go — `npm/src/homedir.js` e `pypi/trackfw/homedir.py` preferem `$HOME` no Windows,
+igual ao Go (o handoff pediu exatamente essa conferência, que a re-triagem G12 tinha deixado em
+aberto).
+
+**Falsificação nas duas direções**, com cópia literal do algoritmo (sem tocar produto): mutação
+reproduz (`EQUAL? false`, valores Windows reais) e candidato de remédio fecha sem afrouxar POSIX
+(`EQUAL? true`, controle POSIX intocado). Ressalva achada e registrada, não corrigida: tradução
+ingênua `\`→`/` destrói prefixo UNC (`\\server\share` vira `/server/share` depois do colapso de barra
+dupla) — sem sítio real hoje que grave UNC nesse fluxo, mas remédio real precisa tratar isso à parte.
+
+**3 runtimes, mesmo mecanismo** — as 3 fixtures usam a mesma linha byte a byte
+(`home + '//' + '.trackfw/scripts/trackfw-git-branch-guard.sh'`), confirmado por leitura, não por
+nome; `path.win32.join`/`ntpath.join` **executados de verdade** nesta máquina (cross-platform,
+`path===path.win32` e `os.path===ntpath` em Windows real — não são proxy).
+
+**Não fiz:** nenhuma correção de código, teste, fixture ou gate. Nenhuma operação de git. **Não
+alterei o status do ML no roadmap** além de registrar que a investigação da QA está concluída —
+fechamento do ML é decisão do arquiteto após auditoria.
+
+**O que falta, fora do escopo desta investigação:** confirmar em Windows real (CI) os valores
+normalizados exatos via instrumentação temporária (`t.Logf`/equivalente) — não pude medir por falta
+de runner Windows nesta sessão.

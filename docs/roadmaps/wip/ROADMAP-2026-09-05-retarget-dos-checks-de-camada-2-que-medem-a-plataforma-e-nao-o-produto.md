@@ -54,7 +54,7 @@ fechada com honestidade por causa disto.** Evidência:
 > Dependências: nenhuma.
 
 ### ML-1A — Enumerar e classificar TODOS os checks do harness
-**Status:** 🔄 Em andamento · **Agente:** `ares-tf`
+**Status:** ✅ Concluído · **Agente:** `ares-tf`
 **Arquivos:** leitura de `scripts/windows-repro/**` (`run.ps1`, `go/checks.go`, `js/checks.js`,
 `py/checks.py`). **Investigação — não corrigir nada aqui.**
 
@@ -69,9 +69,27 @@ deixa o padrão vivo.
 **Critérios:** tabela completa, nenhum check sem veredito · para os que invocam o produto,
 **demonstrar** que invocam (linha do código), não presumir pelo nome.
 
-## Wave 2 — Retarget (paralelo por item, arquivos verificados na Wave 1)
-> Dependências: ML-1A. A disjunção de arquivos só é conhecida **depois** da enumeração —
-> paralelizar antes disso seria a colisão que este roadmap existe para evitar.
+**Resultado (2026-09-05):** `docs/portabilidade/2026-09-05-enumeracao-dos-checks-do-harness-de-windows.md`.
+12 posições de veredito no `run.ps1` + 18 subcomandos de sonda, cada classificação provada por linha
+de código. **Defeituosos: 4 — os quatro já conhecidos. NÃO existe quinta instância.** Isso fecha a
+AC7 e, ao contrário do que eu temia, torna a Wave 2 suficiente.
+
+🔴 **Achado que a REQ não tinha:** o item 3 está declarado confirmatório **só em comentário**
+(`run.ps1:169`); o veredito continua entrando em `$reproduced.Count` (`run.ps1:664`) e na condição de
+saída (`run.ps1:683`). **Comentar não tira da conta** — o ML-2B tem de excluir do contador.
+
+🔴 **Achado fora da taxonomia:** o item 12 é sonda declaradamente **fora** da issue #216 ("NÃO
+CORRIGE nada") e mesmo assim o veredito dela contamina o mesmo gate. Tratamento explícito no ML-3A.
+
+🔴 **Premissa minha derrubada:** os caminhos que passei no handoff (`js/checks.js`, `py/checks.py`)
+não existem — são `node/checks.js` e `python/checks.py`. Escrevi de memória.
+
+## Wave 2 — Retarget (SEQUENCIAL, um único agente)
+> Dependências: ML-1A.
+> 🔴 **Correção do plano original, feita com a enumeração na mão:** eu tinha escrito "paralelo por
+> item". **Está errado** — os quatro itens vivem nos MESMOS arquivos (`run.ps1`, `go/checks.go`,
+> `node/checks.js`, `python/checks.py`). Paralelizar seria a colisão que este roadmap existe para
+> evitar, e que eu já criei uma vez nesta campanha. Um agente, os quatro em sequência.
 
 ### ML-2A — Item 2: medir o trackfw resolvendo home
 **Status:** ⬜ Pendente · **Agente:** `ares-tf`
