@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-05
 squad: artemis-tf
 req: "docs/req/REQ-2026-09-05-tres-defeitos-mecanicos-medidos-por-consumidor-externo-skips-residuais-gate-req-has-adr-vacuo-e-enotdir-classificado-como-ausente.md"
@@ -7,7 +7,7 @@ req: "docs/req/REQ-2026-09-05-tres-defeitos-mecanicos-medidos-por-consumidor-ext
 
 # Roadmap: Fechar os três defeitos mecânicos dos issues do consumidor externo
 
-> Criado em: 2026-09-05 | Status: wip
+> Criado em: 2026-09-05 | Status: done
 
 ## Context
 

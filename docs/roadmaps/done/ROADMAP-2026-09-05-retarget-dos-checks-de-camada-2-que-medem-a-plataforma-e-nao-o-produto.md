@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-05
 squad: ares-tf
 req: "docs/req/REQ-2026-09-01-camada-2-mede-a-plataforma-e-nao-o-produto-nos-itens-2-e-3-retarget-dos-checks-de-home-e-bit-de-execucao.md"
@@ -7,7 +7,7 @@ req: "docs/req/REQ-2026-09-01-camada-2-mede-a-plataforma-e-nao-o-produto-nos-ite
 
 # Roadmap: Retarget dos checks de camada 2 que medem a plataforma e não o produto
 
-> Criado em: 2026-09-05 | Status: wip
+> Criado em: 2026-09-05 | Status: done
 
 ## Context
 

@@ -1,14 +1,14 @@
 ---
-status: In Progress
+status: Done
 date: 2026-09-01
 author: "zeus-tf"
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-05-retarget-dos-checks-de-camada-2-que-medem-a-plataforma-e-nao-o-produto.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-05-retarget-dos-checks-de-camada-2-que-medem-a-plataforma-e-nao-o-produto.md"
 ---
 
 # REQ: Camada 2 mede a plataforma e não o produto nos itens 2, 3, 4 e 7 — retarget dos checks
 
-> Date: 2026-09-01 | Status: In Progress
+> Date: 2026-09-01 | Status: Done
 
 ## Motivation
 
@@ -131,4 +131,11 @@ ADR: <!-- nenhum. Correção de instrumento de medição; nenhuma decisão arqui
 
 ## Linked Roadmap
 
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-09-05-retarget-dos-checks-de-camada-2-que-medem-a-plataforma-e-nao-o-produto.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-09-05-retarget-dos-checks-de-camada-2-que-medem-a-plataforma-e-nao-o-produto.md
+
+
+---
+
+## Encerramento — 2026-09-05
+
+Entregue nos PRs #280 e #281. Os 4 checks passam a invocar o produto; o item 3 saiu do contador de forma estrutural; os dois vazamentos de sinal fechados. Resultado no CI: Reproduzidos 0, Inconclusivos 0.
