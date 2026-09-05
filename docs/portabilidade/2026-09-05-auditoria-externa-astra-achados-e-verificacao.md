@@ -98,3 +98,42 @@ Nos três, **produzimos evidência e não a cruzamos com a nossa própria conclu
 | A3 | — | afirmamos publicamente um discriminante que não testamos |
 
 Não é falta de medição. É **falta de reconciliação entre o que medimos e o que declaramos**.
+
+---
+
+## Inventário COMPLETO dos achados, e onde cada um foi parar
+
+🔴 **Esta seção existe porque a minha primeira leitura do parecer contemplou 6 dos 15 achados.** O
+usuário perguntou "você contemplou todos?" e a resposta era **não**. Um parecer lido por alto vira
+um parecer perdido — e o auditor já tinha perdido o arquivo dele para a janela de contexto.
+
+| # | Achado | Onde está tratado |
+|---|---|---|
+| 1 | Teste do `ENOTDIR` reprova no Windows (`#276`) | ✅ REQ da auditoria, ML-1A |
+| 2 | `#278` fechado cobrindo menos que o título | ✅ REQ da auditoria, ML-2A |
+| 3 | Comentário do `#274` propõe discriminante que não discrimina | ✅ REQ da auditoria, ML-1B + ADR D3 |
+| 4 | `continue-on-error` deixa regressão passar (`#275`) | ✅ ADR do ratchet |
+| 5 | "ML concluído não pode afirmar o que o teste contradiz" | ✅ REQ da auditoria, AC6 / ML-3A |
+| 6 | REQs com `adr:` vazio apontando para ADRs aceitos | ✅ REQ da auditoria, AC7 / ML-3B |
+| 7 | **`#261` não tem REQ nem ADR — nenhum** | 🔴 **LACUNA — nada existia, e eu não criei** |
+| 8 | **`#268`: AC1 revisado mas SEM implementação no contador Python; `sync` mantém `docs/req` fixo** | 🔴 **LACUNA — REQ existe, a implementação não** |
+| 9 | **`#258`: evento `edited` + contrato próprio para exemplo citado** | 🔴 **LACUNA** |
+| 10 | **`#273`: recomendação de vínculo explícito branch↔roadmap como opção principal** | 🟡 REQ existe, aberta; a **recomendação** não está registrada nela |
+| 11 | **REQ de home divergente: AC1 (medir consumidor) e AC4 (avisar por divergência de variáveis) são condições DIFERENTES e se contradizem** | 🔴 **LACUNA — inconsistência interna de REQ nossa** |
+| 12 | **REQ de ancestrais: resolver só o pai imediato não cobre múltiplos ancestrais inexistentes, nem junctions** | 🔴 **LACUNA — insuficiência de solução já aceita** |
+| 13 | CRLF alcança **renderizadores**, não só o parser; ML-5A subespecificado | 🟡 Declarado fora de escopo na REQ da auditoria; **sem REQ própria ainda** |
+| 14 | Jornada de instalação: README não qualifica dependência de shell; `install.sh` só Linux/macOS; Windows ARM64 fora da distribuição; jornada init→PATH→hooks→barrier não verificada | 🟡 Declarado fora de escopo; **sem REQ própria ainda** |
+| 15 | Release publicada é a **v7.3.0 de 28/08** — anterior a tudo; correção na `main` não atende quem instala | 🟡 Decisão do usuário; registrado, sem artefato |
+
+### O que muda por causa deste inventário
+
+**Os itens 7, 8, 9, 11 e 12 são lacunas de verdade** — não "fora de escopo por decisão", e sim
+**esquecidos**. Dois deles (11 e 12) são piores que os outros: apontam **defeito dentro de REQs
+nossas já aceitas** — uma com ACs que se contradizem, outra com solução insuficiente para o caso que
+ela mesma descreve.
+
+**Os itens 13, 14 e 15 são fora-de-escopo legítimos**, mas fora-de-escopo **sem artefato** é o mesmo
+que esquecido daqui a duas semanas. Precisam de REQ própria ou de registro explícito de adiamento.
+
+🔴 **O item 15 é o que decide a utilidade de todo o resto:** a última release é anterior à campanha
+inteira. Nada disso chegou a quem instala o trackfw.
