@@ -93,8 +93,53 @@ npm install -g trackfw
 ```
 
 The npm package is pure Node.js — no compiled binary or postinstall download.
-It works wherever Node.js ≥ 18 is installed. Shared behavior, including the AI
+It installs wherever Node.js ≥ 18 is installed. Shared behavior, including the AI
 integration lifecycle, follows the [CLI parity contract](docs/cli-parity.md).
+
+> **The CLI installs on Node ≥ 18 alone — the generated guard hooks do not run on
+> Node alone.** They are POSIX shell scripts and need a POSIX shell to execute. On
+> Windows, see [Windows support](#windows-support-partial) before relying on them.
+
+### Windows support (partial)
+
+🚧 **Windows support is partial and in progress. Read this before adopting `trackfw`
+on Windows.**
+
+We publish a Windows binary and the npm/pip packages install on Windows. That is not
+the same as the tool working end to end, and we would rather tell you where the edges
+are than let you find them after adoption.
+
+**What we know works**
+
+- The three CLIs install (`npm install -g trackfw`, `pip install trackfw`, and the
+  published `trackfw_<version>_windows_amd64.tar.gz`).
+- Core governance commands — `req new`, `roadmap new`, `roadmap move`, `status`,
+  `validate` — run, and artifacts are written with LF endings.
+
+**What we know does not work yet**
+
+- `scripts/install.sh` **refuses Windows**, even though we publish a Windows binary.
+  Install manually from the release archive for now.
+- Our Windows CI still reports **known test failures**. They are mapped by root cause,
+  not unknown — but they are not zero.
+- **Windows ARM64 is not built.** Only `windows_amd64` is published.
+
+**What we have not verified — and will not claim either way**
+
+- 🔴 **Whether the generated guard hooks actually fire on Windows.** They are `.sh`
+  scripts, executed by your AI agent CLI (Claude Code, Cursor, Copilot, and others).
+  **We have not measured which shell each of those CLIs uses on Windows.** If your CLI
+  does not invoke a POSIX shell, the hooks are written to disk, `validate` reports them
+  as installed — **and they never run**.
+
+  This is the failure mode we care most about, because it is silent: a guard that never
+  executes reports health over something it never inspected. Until we measure it,
+  **do not rely on `credential_guard` or `git_branch_guard` as an enforced control on
+  Windows.** Install Git Bash and make sure it is what runs your hooks.
+
+**If you are on Windows**, we want your report. The Windows defects fixed so far came
+from a user running the tool on real Windows 11 and measuring before reporting — open
+an issue with what you measured.
 
 ### pip
 
