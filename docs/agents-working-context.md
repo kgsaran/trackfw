@@ -30244,3 +30244,94 @@ predicado ficou robusto à ambiguidade da notação em si, não a uma escolha es
 Escopo negativo respeitado: não toquei nos 14 sítios fora de escopo, nem nos ramos POSIX/letra de
 unidade/til/`$PWD`, nem nas mensagens D4. Devolvo a árvore suja para auditoria do
 `trackfw_architect`. Nenhuma operação de git executada.
+
+## 2026-09-04 — `artemis-tf` — INÍCIO: re-triagem do resíduo de Windows por MECANISMO
+
+Handoff: re-triar as 100 falhas remanescentes do run `33931363032` (`windows-full-suites`) por
+mecanismo, não por sintoma — investigação pura, nenhuma correção. Vou ler produção e teste linha a
+linha para cada grupo, em vez de agrupar pelo texto da mensagem.
+
+## 2026-09-04 — `artemis-tf` — FIM: re-triagem do resíduo de Windows por MECANISMO
+
+**Entregável:** `docs/portabilidade/2026-09-04-retriagem-do-residuo-de-windows-por-mecanismo.md`.
+Nenhum arquivo de produto/teste alterado; nenhuma operação de git.
+
+**Contagem reconfirmada, medida por mim de forma independente:** Go 45, Node 34, Python 21 —
+**100**, batendo com o handoff (não precisou corrigir desta vez).
+
+**14 grupos por mecanismo, não por sintoma**, ordenados por retorno:
+
+- **G4 (CONFIRMADO, 8 Go + 14 hipótese Node/Py) — `strings.Contains` cru contra JSON corretamente
+  escapado.** `encoding/json` dobra `\` ao serializar caminho nativo do Windows; teste compara com
+  `filepath.Join` (barra simples) contra os bytes já serializados. Nunca bate. Correção é só teste,
+  risco zero. Maior retorno do lote se a hipótese em Node/Python se confirmar por leitura de código
+  (não feita nesta sessão — orçamento).
+- **G1 (CONFIRMADO, 29 — quase o DOBRO da estimativa herdada de ~14).** CRLF cega o parser de
+  frontmatter (ADR já `Accepted`, Wave 5 pendente). Confirmado por evidência byte a byte (`\r\n`
+  literal no valor capturado, Node `not ok 26`). **Achado novo: G1-bis** — CRLF cega um SEGUNDO
+  parser (bloco de gates do `barrier`, Python), fora do escopo da ADR como escrita.
+- **G3 (CONFIRMADO Go=5, hipótese Node=4) — fixture concatena caminho nativo cru dentro de um
+  template JSON sem escapar** → `\U`/`\A`/`\1` são escapes JSON inválidos → `json.Unmarshal` falha
+  → regra falha-aberta pula o arquivo em silêncio → teste espera violação, recebe `[]`.
+- **G9 (CONFIRMADO, 3) — ENOTDIR silencioso no Windows**, já diagnosticado por ML-4B anterior;
+  reconfirmado com +2 membros novos (`TestFolderStatus_DiretorioNaoLegivel_P2`,
+  `TestFilenameUniqueness_DiretorioNaoLegivel_P2`). Único grupo com peso de segurança/observabilidade
+  (diagnóstico que desaparece).
+- **G2 (CONFIRMADO, 4) — `%q` do Go dobra a barra invertida na mensagem**; teste compara com string
+  crua. Expande o "escape/aspas" do handoff de 1 exemplo para família de 4, com 3 sítios de produção
+  citados (`validator.go:2083`, `validator_credential_guard.go:457`,
+  `validator_thirdparty_provenance.go:164`).
+- **G10 (HIPÓTESE, 2) — chave de proveniência não bate num fluxo real de install+validate.**
+  DIFERENTE de G2 apesar de estar no mesmo arquivo de regra — aqui o branch dispara de verdade, não
+  é só escaping de mensagem. Medi as duas formas de nome curto/longo do Windows (`RUNNER~1` vs
+  `runneradmin`) coexistindo no mesmo job/log como candidato a discriminante, não como prova.
+- **G5 (CONFIRMADO Go, hipótese Py, 2) — NTFS não honra bits de modo restritivo**, já enumerado como
+  "vira REQ" pelo ML-4B; recontado, não relitigado.
+- **G8 (CONFIRMADO, 2) — `findRoadmap` retorna separador nativo (`filepath.Join`), teste compara com
+  literal POSIX hardcoded.** Só teste.
+- **G6 (CONFIRMADO, 1) — reafirma a decisão D2 já tomada pela Wave 3**: guard de travessia
+  (`manager.go`) usa `filepath.IsAbs` de propósito; fora de escopo, não corrigir.
+- **G12, G13, G7, G11 (DESCONHECIDO/HIPÓTESE fraca, 11 no total)** — dedup com `//` + home nativo;
+  scripts de attention com fallback python3; `shasum` escapando linha inteira com `\` no nome;
+  `git.exe` resolvido como stub de "fork bomb". Nenhuma hipótese apresentada como causa.
+- **Mecanismo desconhecido residual: 10 falhas**, listadas cruas no documento (Go 1, Node 2, Python
+  7), sem hipótese sustentável no orçamento desta sessão.
+
+**Premissas do handoff confirmadas ou derrubadas:**
+- Contagem 45/34/21/100 — **confirmada**.
+- "Escape/aspas" — **confirmada e expandida**: não é 1 mecanismo, são 3 (G2 `%q`, G4
+  `encoding/json`, G3 JSON inválido por concatenação), cada um com patch próprio.
+- CRLF ~14 — **DERROTADA: o número real é 29**, quase o dobro, mais 1 parser adicional (G1-bis) que
+  a ADR como escrita não cobre.
+- `TestPathIsAnchoredForHookConfig_ControlePOSIX` é defeito de teste (expectativa derivada de
+  `filepath.IsAbs`), não regressão — **confirmado** por leitura do corpo do teste.
+- `api_chain.js:145` (indexação por basename) — não investigado nesta sessão; nem a favor nem contra.
+- Simetria Node/Python do padrão "controle POSIX deriva expectativa de `IsAbs`" — **não verificada**,
+  registrada como lacuna explícita (grep por nome de teste equivalente não achou nada, varredura por
+  assinatura de asserção não foi feita por orçamento).
+
+**Revisão pós-auditoria (mesma sessão) fechou 2 lacunas que eu tinha deixado em aberto:**
+- **Simetria Node/Python do controle POSIX — RESPONDIDA, não é lacuna.** Medi ao vivo:
+  `node -e "path.win32.isAbsolute('/opt/foo/guard.sh')"` → `true`; `python3.12 -c "ntpath.isabs(...)"`
+  → `true` (a versão real da matriz de CI); `python3.14` (meu padrão local) → `false`, sensível à
+  versão. Conclusão: a assimetria de `IsAbs` para barra POSIX isolada é **exclusiva do Go** —
+  Node e Python já tratam como absoluto nas versões que a CI usa, por isso não têm um
+  `TestPathIsAnchoredForHookConfig_ControlePOSIX` equivalente falhando (confirmado pela própria
+  linha `✓` no log do Node, poucas linhas antes do `not ok 78`).
+- **G4 (JSON escapado vs `Contains` cru) — CONFIRMADO nos 3 runtimes, não mais hipótese.** Li
+  `npm/tests/update-harness.test.js:797-799` e `pypi/tests/test_update_harness.py:1223-1225`: o
+  mesmo padrão exato do Go (`path.join`/`pathlib`, nativo, comparado por substring cru contra JSON
+  já serializado). Grupo fecha em 22/22 confirmado, não 8 confirmado + 14 estimado por nome —
+  exatamente o cuidado que o precedente do `IsAbs` (~14 estimado, 2 entregue) exigia.
+- **Tabela de retorno tinha erro de soma (~96, não 100)** — faltavam a linha do G0 (controle POSIX
+  vira defeito de teste, 1 Go) e do G1-bis (CRLF no parser de gates do `barrier`, 1 Python), e o
+  residual desconhecido do Python estava contado como 7 em vez de 10. Reconciliado; as 3 colunas
+  agora somam 45/34/21/100 exatamente.
+- **`api_chain.js:145` (indexação por basename) — reframed de "não investigado" para medido:**
+  nenhuma das 34 falhas de Node toca `serve`/`chain`/`board` (varredura por título, 1 falso-positivo
+  de substring descartado). O defeito não está coberto por teste nenhum hoje — não "já fechado", só
+  invisível a qualquer wave de correção deste resíduo até que uma REQ própria crie o teste.
+
+Devolvo a árvore intacta (nenhum arquivo de produto/teste alterado) para o `trackfw_architect`
+sequenciar as próximas waves a partir da tabela de retorno do documento. Nenhuma operação de git
+executada.
