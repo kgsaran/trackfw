@@ -1,6 +1,7 @@
 package validator
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1193,11 +1194,16 @@ func TestValidate_NonExistentADRDirs_WarningByDefault(t *testing.T) {
 		t.Fatalf("ValidateUnfiltered erro inesperado: %v", err)
 	}
 
-	if hasViolation(violations, nonExistent) {
+	// A mensagem de produção (validateADRDirsExist, validator.go) embute o path via "%q", que
+	// escapa cada "\" nativo do Windows como "\\" — comparar contra o literal cru nunca bate
+	// nesse SO. Comparamos contra a mesma forma escapada que a produção realmente emite.
+	nonExistentQuoted := fmt.Sprintf("%q", nonExistent)
+
+	if hasViolation(violations, nonExistentQuoted) {
 		t.Errorf("adr_dir inexistente não deveria emitir violation quando strict_ci_paths é false. Violations: %v", violations)
 	}
 
-	if !hasWarning(warnings, nonExistent) {
+	if !hasWarning(warnings, nonExistentQuoted) {
 		t.Errorf("adr_dir inexistente deveria emitir warning quando strict_ci_paths é false. Warnings: %v", warnings)
 	}
 }
@@ -1224,11 +1230,15 @@ func TestValidate_NonExistentADRDirs_StrictCIPathsError(t *testing.T) {
 		t.Fatalf("ValidateUnfiltered erro inesperado: %v", err)
 	}
 
-	if !hasViolation(violations, nonExistent) {
+	// Ver comentário equivalente em TestValidate_NonExistentADRDirs_WarningByDefault: a mensagem
+	// usa "%q", que dobra cada "\" nativo do Windows.
+	nonExistentQuoted := fmt.Sprintf("%q", nonExistent)
+
+	if !hasViolation(violations, nonExistentQuoted) {
 		t.Errorf("adr_dir inexistente deveria emitir violation quando strict_ci_paths é true. Violations: %v", violations)
 	}
 
-	if hasWarning(warnings, nonExistent) {
+	if hasWarning(warnings, nonExistentQuoted) {
 		t.Errorf("adr_dir inexistente não deveria emitir warning quando strict_ci_paths é true. Warnings: %v", warnings)
 	}
 }

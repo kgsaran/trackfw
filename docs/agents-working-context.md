@@ -30335,3 +30335,390 @@ Nenhum arquivo de produto/teste alterado; nenhuma operação de git.
 Devolvo a árvore intacta (nenhum arquivo de produto/teste alterado) para o `trackfw_architect`
 sequenciar as próximas waves a partir da tabela de retorno do documento. Nenhuma operação de git
 executada.
+
+---
+
+## 2026-09-05 — artemis-tf (QA) — ML-6B: G2 (`%q`) + G0 (controle POSIX), 5 testes
+
+**Contexto:** branch `fix/falha-de-windows-por-causa-raiz`, Wave 6 do
+`ROADMAP-2026-09-03-fechar-os-grupos-de-falha-de-windows-por-causa-raiz.md`. 3 outros agentes em
+paralelo, arquivos disjuntos (ML-6A `update_harness_test.go`, ML-6C `validator_git_branch_guard_test.go`
++ `npm/tests/validator.test.js`, ML-6D `roadmap_test.go`) — nenhum tocado por mim.
+
+**Arquivos alterados (só os 3 do handoff):**
+- `internal/validator/validator_credential_guard_test.go`
+- `internal/validator/validator_test.go`
+- `internal/validator/validator_thirdparty_provenance_test.go`
+
+**G2 (4 testes) — causa confirmada por leitura, sem surpresa em relação ao handoff/triagem:** os 3
+sítios de produção (`validator.go:2083`, `validator_credential_guard.go:457`,
+`validator_thirdparty_provenance.go:164`) emitem o caminho via `fmt.Sprintf("%q", ...)`, que dobra
+cada `\`. Correção: cada teste agora compara contra `fmt.Sprintf("%q", esperado)` em vez do literal
+cru, preservando `%q` na produção (não toquei UX de mensagem, como instruído).
+- `TestCredentialGuardHookResolvable_CaminhoResolvidoEhFisicoNaoSimlink`
+- `TestValidate_NonExistentADRDirs_WarningByDefault`
+- `TestValidate_NonExistentADRDirs_StrictCIPathsError`
+- `TestThirdPartyArtifactHasProvenance_BranchI_MissingProvenanceEntry`
+
+**G0 (1 teste) — `TestPathIsAnchoredForHookConfig_ControlePOSIX`:** reescrito para pinar os valores
+esperados literalmente (`true` para `/opt/foo/guard.sh`, `/`, `/a`, etc.; `false` para os relativos),
+em vez de derivar `before` de `filepath.IsAbs` — a derivação antiga reafirmava exatamente o defeito
+que a Wave 3 corrigiu. Nenhum guard de plataforma introduzido. A asserção de que `filepath.IsAbs`
+continua valendo nos sítios de travessia (D2) já existe em `TestManagerRejectsTraversalAbsoluteMismatchAndNUL`
+(`internal/integrations/manager_test.go`, fora do meu escopo) — não duplicada aqui, só referenciada
+em comentário.
+
+**Falsificação nas duas direções, com números:**
+- *G2, direção "reprova se a produção regredir":* troquei temporariamente os 3 sítios de produção de
+  `%q` para `%s` (mantendo backup, revertido depois) e rodei os 4 testes corrigidos → **4/4 FAIL**,
+  com mensagem de diff real mostrando a string sem aspas/duplicação batendo contra a asserção que
+  agora exige a forma escapada. Restaurei os 3 arquivos de produção do backup; `git diff --stat`
+  confirmou zero divergência residual.
+- *G0, direção "reprova se o predicado regredir":* mutei `pathIsAnchoredForHookConfig` para não
+  reconhecer mais `raw[0] == '/'` como ancorado (`&& false` temporário) → **4/4 FAIL** nos 4 casos
+  POSIX-absolutos do corpus. Revertido do backup; `git diff --stat` confirmou restauração exata.
+- *Árvore íntegra, ambas as direções:* com produção original, `go build ./...` e `go vet ./...`
+  silenciosos; `go test ./internal/validator/...` → `ok`, 5/5 PASS (rodado tanto isolado por
+  `-run` quanto no pacote inteiro, junto com as mudanças concorrentes dos outros 3 agentes).
+
+**Premissa do handoff que a leitura não derrubou:** nenhuma — os 3 sítios de `%q`, o mecanismo do
+G0 e a recomendação "pinar literal, não guard de plataforma" bateram exatamente com o código lido.
+
+**Não fiz:** não rodei `make quality` (reservado ao arquiteto, após os 4 MLs). Nenhuma operação de
+git — árvore fica suja para auditoria do `trackfw_architect`. Não toquei
+`internal/validator/validator_git_branch_guard_test.go` nem `npm/tests/validator.test.js`.
+
+## 2026-09-05 — artemis-tf (QA) — ML-6D: G8 `findRoadmap` separador nativo vs literal POSIX
+
+**Escopo:** só `internal/generators/roadmap_test.go`, sítios `:352` e `:404` (a numeração exata da
+triagem, `:330`/`:352`, refere-se ao commit anterior; após a triagem o segundo sítio já estava em
+`:404` — mesmo mecanismo, mesma seção G8). Nenhuma operação de git executada; árvore de produto
+devolvida byte-a-byte idêntica ao original (`diff` vazio conferido após o teste de falsificação).
+
+**Pergunta do consumidor — respondida antes de editar:** li `findRoadmap`
+(`internal/generators/roadmap.go:498-532`, `return filepath.Join(dir, e.Name()), nil`) e seu único
+chamador de produto, `MoveRoadmap` (`roadmap.go:421-451`): `src, err := findRoadmap(name)` alimenta
+diretamente `os.Rename(src, dst)` (syscall) e `filepath.Dir(src)`/`filepath.Base(src)` (manipulação
+de path para derivar `fromState`/`agentDir`). **Não é artefato autorado cujo consumidor não é o
+filesystem — é caminho que vai a uma syscall.** O próprio arquivo já documenta essa fronteira duas
+linhas abaixo, para `portableDst` (`"a caminho dentro de artefato versionado é dado portável, nunca
+separador nativo... dst continua nativo para todas as operações de filesystem"`) — o código de
+produto já aplica exatamente a distinção da ADR-2026-09-04 no ponto vizinho. Logo: **produto certo,
+teste errado** — confirma a classificação original de G8, não é decisão de arquitetura.
+
+**O que mudou:** nos dois sítios (`assertMoveRoadmapAnalyzingContract`, ramos `byAgent` e flat), a
+comparação passou de `found != <literal POSIX>` para `filepath.ToSlash(found) != <literal POSIX>` —
+normaliza o lado que vem do filesystem (nativo), nunca o literal (que já é o formato canônico
+esperado). `filepath` já estava importado no arquivo.
+
+**Falsificação nas duas direções, com saída real:**
+1. Árvore íntegra → `go test ./internal/generators/... -run 'TestMoveRoadmap_Analyzing' -v`:
+   `--- PASS: TestMoveRoadmap_AnalyzingFlat (0.00s)` e `--- PASS: TestMoveRoadmap_AnalyzingByAgent
+   (0.00s)`.
+2. Mutação cirúrgica em `findRoadmap` (isolada ao ramo em que `state == "analyzing"`, preservando
+   intacto o `os.Rename` interno de `MoveRoadmap` — que usa o match do estado de origem, não
+   `analyzing`): `return filepath.Join(dir, e.Name()) + "-MUTATED-QA-ML6D", nil`. Resultado:
+   `--- FAIL: TestMoveRoadmap_AnalyzingFlat` e `--- FAIL: TestMoveRoadmap_AnalyzingByAgent`, ambos
+   com `findRoadmap ... não encontrou o arquivo em analyzing` — a comparação corrigida reprova
+   exatamente quando `findRoadmap` devolve o roadmap errado, não é vácua.
+3. Produto restaurado a partir de cópia feita antes da mutação; `diff` contra o backup veio vazio
+   (**idêntico ao original**); suíte completa `go test ./internal/generators/...` voltou a `PASS`
+   (todos os testes do pacote, não só os 2 do ML).
+
+**Build/vet:** `go build ./internal/generators/...` rc=0. `go vet ./internal/generators/...` rc=0.
+(Não rodei `go build ./...`/`go vet ./...` no repo inteiro — `internal/validator` tem um import não
+usado de outro ML em paralelo, arquivo que não é meu; isolei a validação ao meu pacote conforme
+escopo do ML.)
+
+`make quality` não executado — fica para o arquiteto, após os 4 MLs, por instrução explícita do
+handoff.
+
+## 2026-09-05 — artemis-tf (QA) — ML-6C: G3 — fixture de guard grava JSON inválido com caminho nativo do Windows
+
+**Escopo:** só `internal/validator/validator_git_branch_guard_test.go` (Go) e, por leitura,
+`npm/tests/validator.test.js` (Node — sem edição, ver veredito abaixo). Nenhuma operação de git.
+Árvore de produto (`internal/validator/*.go`) devolvida byte-a-byte idêntica ao original.
+
+**O que mudou (Go):** os 4 helpers de fixture que concatenavam `scriptAbsPath`/`hookNamePrefix`
+cru dentro de um template JSON — `globalClaudeSettingsWithCommand`, `globalClaudeSettingsWithCommandNoType`,
+`globalCursorHooksWithCommand`, `kiroGlobalGuardFixture` — passaram a serializar o caminho via um
+novo helper `jsonStringLiteral(s string) string { b, _ := json.Marshal(s); return string(b) }`, em
+vez de `"` + s + `"`. Em Windows, `scriptAbsPath` carrega `\`; a concatenação crua produzia JSON
+inválido (`\U`, `\A`, `\T` não são escapes válidos), `json.Unmarshal` retornava erro, e a regra
+tratava isso como "arquivo ilegível, pular" — fail-open por desenho. `json.Marshal` escapa `\` como
+`\\` por especificação, exatamente como o produto já faz (`encoding/json` em `agentfiles.go`), então
+a fixture volta a ser lida em qualquer separador.
+
+**Falsificação nas duas direções, com saída real:**
+1. *Mutação → reprova.* Reverti temporariamente só `globalClaudeSettingsWithCommand` para a
+   concatenação crua (comentário `FALSIFICACAO-TEMP-QA`, nunca commitado) e adicionei um teste
+   temporário forçando um caminho Windows literal (`C:\Users\runneradmin\.trackfw\scripts\...`),
+   independente do SO do runner atual — bug fica reproduzível em macOS. Resultado:
+   `--- FAIL: TestQAFalsificacaoTemp_ML6C`, log `FALSIFICACAO: msgs=[] (esperado: violation 'does
+   not exist' ...)` — a mesma assinatura "obteve: []" que a triagem original documentou. Prova
+   direta e local do mecanismo, sem precisar do CI Windows.
+2. *Árvore íntegra → passa.* Restaurada a cópia boa (`git diff --stat` confirmou restauração
+   exata, teste temporário removido), `go build ./...`/`go vet ./...` silenciosos, e
+   `go test ./internal/validator/... -run 'TestGuardGlobalHookResolvable|TestGitBranchGuardGlobalHookResolvable|TestGuardGlobalScriptIntegrity|TestGitBranchGuardScriptIntegrity|TestGitBranchGuardHookResolvable'`
+   → **26/26 PASS**, incluindo os 4 confirmados como este grupo em Go
+   (`TestGuardGlobalHookResolvable_GlobalInstaladoMasScriptAusente_Dispara`,
+   `TestGuardGlobalHookResolvable_MalformedTypeMissing_Dispara`,
+   `TestGitBranchGuardGlobalHookResolvable_KiroDedicatedFile_DisparaScriptAusente`,
+   `TestGuardGlobalHookResolvable_KiroDoisArquivosDedicados_NaoRegrideNaoDuplica`).
+   `go test ./internal/validator/... -count=1` (pacote inteiro) → `ok`.
+3. Prova adicional fora do pacote de teste (script Go isolado, não commitado): a fixture antiga
+   com um caminho Windows produz `json.Valid() == false`; a fixture nova produz `json.Valid() ==
+   true` tanto para o caminho Windows quanto para o caminho POSIX, e o campo decodificado
+   round-trips exatamente ao caminho nativo original.
+
+**5º Go do grupo — fora do meu escopo, não corrigido.** `TestClaimOrigin_LegacyManifestReadsAsCatalog`
+vive em `internal/integrations/manifest_origin_test.go`, **não** em `validator_git_branch_guard_test.go`
+— o handoff citou o segundo como "o sítio", mas o 5º teste do grupo está em arquivo diferente e fora
+do escopo explícito deste ML ("seus arquivos, e só eles"). Fica para outro ML/agente; mesmo mecanismo
+(JSON inválido por concatenação crua de caminho nativo), não verificado por leitura nesta sessão.
+
+**Veredito Node: hipótese CAIU, na localização — mecanismo provavelmente existe, mas não no arquivo
+citado.** Procurei em `npm/tests/validator.test.js` por qualquer template de fixture que interpole
+caminho cru dentro de JSON (padrão `${...[Pp]ath...}` fora de `JSON.stringify`) — **zero
+ocorrências**. Toda fixture de hook resolvable nesse arquivo usa `JSON.stringify({...})` (ex.:
+`guardEntryClaudeSettings`, linha 345-353) — já é o padrão seguro, não sofre do G3. As tests
+"escopo global" (equivalentes exatos aos que citei acima em Go) **não existem em
+`validator.test.js`** — vivem em `npm/tests/git_branch_guard_hook_integrity.test.js`, arquivo
+diferente, fora do escopo autorizado deste ML. Confirmei por leitura que esse arquivo tem os MESMOS
+4 helpers com a MESMA concatenação crua
+(`globalClaudeSettingsWithCommand`/`globalClaudeSettingsWithCommandNoType`/`globalCursorHooksWithCommand`/
+`kiroGlobalGuardFixture`, linhas 61-109 e 480-497, `{"command": "${scriptAbsPath}", ...}` sem
+`JSON.stringify`) — o mecanismo G3 muito provavelmente é real no Node, só que a numeração `not ok
+463, 464, 473, 475` do handoff (inferida por padrão de nome no tap agregado, não por leitura de
+código) aponta para o arquivo errado. **Não editei `git_branch_guard_hook_integrity.test.js`** —
+não estava nos 2 arquivos autorizados para este ML, e forçar a correção lá seria expandir escopo
+sem handoff. Reportando para o arquiteto abrir ML próprio apontando o arquivo certo.
+
+**Achado que vale mais que as 9 falhas — fail-open engole JSON inválido em silêncio, sítio exato:**
+`internal/validator/validator_git_branch_guard.go:151-154`:
+```go
+var parsed interface{}
+if jsonErr := json.Unmarshal(content, &parsed); jsonErr != nil {
+    continue
+}
+```
+com o comentário de desenho logo acima (linhas 130-132): `"Fail-open: unresolvable $HOME, unreadable
+file, or invalid JSON all skip that file in silence — same contract validateGuardHookResolvable
+already has for project-scope files."` — ou seja, **é comportamento documentado e intencional**, não
+um bug pontual: um arquivo de config de guard (`~/.claude/settings.json`, `~/.codex/hooks.json`,
+`~/.kiro/hooks/*.json` etc.) que existe mas contém JSON malformado — por qualquer causa, não só o
+bug do Windows agora corrigido nos fixtures de teste — faz a regra de resolvibilidade do hook global
+ir a silêncio total, como se o arquivo nunca tivesse sido escrito. `validateCredentialGuardGlobalHookResolvable`
+(`validator_credential_guard.go`, mesmo padrão, função irmã) compartilha o mesmo desenho. Não decidi
+nem corrigi isso aqui — é pergunta de produto (silêncio vs. warning "não consegui ler o config do
+guard") que o arquiteto deve abrir como REQ própria, incluindo se `validateGuardHookResolvable`
+(escopo de projeto) tem o mesmo padrão.
+
+**Build/vet:** `go build ./...` rc=0, `go vet ./...` rc=0, `gofmt -l
+internal/validator/validator_git_branch_guard_test.go` sem saída (limpo).
+
+**Não fiz:** não rodei `make quality`. Nenhuma operação de git. Não toquei
+`validator_credential_guard_test.go` nem `validator_test.go` (colegas em paralelo — confirmado por
+`git status` que ambos estavam sendo modificados durante esta sessão). Não toquei
+`npm/tests/git_branch_guard_hook_integrity.test.js` apesar de ter identificado o mecanismo lá —
+fora do escopo autorizado deste ML.
+
+## 2026-09-05 — artemis-tf (QA) — ML-6A: G4 asserção crua contra bytes já serializados em JSON (22 falhas)
+
+**Escopo:** `internal/commands/update_harness_test.go`, `npm/tests/update-harness.test.js`,
+`pypi/tests/test_update_harness.py`. Nenhuma operação de git executada; árvore de produto devolvida
+byte-a-byte idêntica ao original em cada um dos 3 runtimes (`diff`/`git diff --stat` vazio conferido
+após cada teste de falsificação).
+
+**O que mudou, por runtime:**
+- **Go** — adicionei `countJSONLeafMatches`/`countLeafMatches` (topo de
+  `update_harness_test.go`, decodifica o arquivo com `json.Unmarshal` em `interface{}` e conta
+  ocorrências EXATAS de um valor-folha string em qualquer profundidade da árvore) e troquei os 10
+  sítios de `strings.Contains(string(data), wantScript)`/`strings.Count(...)` pelos 6 testes
+  `TestUpdateHarnessCmd_CredentialGuard<Tool>InstallsViaCLI`, o teste tabular
+  `TestUpdateHarnessCmd_GitBranchGuardInstallsViaCLI` (positivo + a checagem negativa de não-regressão
+  do `credScript`) e `TestUpdateHarnessCmd_GitBranchGuardAndCredentialGuardCoexistIdempotently` (2
+  contagens "exatamente 2, Pre+Post").
+- **Node** — mesma função `countJSONLeafMatches` (recursão sobre o resultado de `JSON.parse`), em
+  `npm/tests/update-harness.test.js`. Só 2 sítios precisavam de correção de fato: o teste tabular de
+  `<tool>-git-branch-guard installs...` (linhas ~797-807, positivo `written.includes(wantScript)` e a
+  checagem negativa `!written.includes(credScript)`) e o teste de coexistência (linhas ~844-847,
+  `.split(script).length - 1`). Os outros ~20 testes de credential-guard já decodificavam
+  (`JSON.parse` + `commands.includes`/`.filter(...)`) — não pertenciam ao grupo G4, confirmando por
+  leitura o que a triagem já hipotetizara sobre o Node ter menos sítios crus que o Go.
+- **Python** — `count_json_leaf_matches` (mesmo desenho, recursão sobre `json.loads`) em
+  `pypi/tests/test_update_harness.py`. Só 2 sítios: `test_git_branch_guard_installs_absolute_path_with_install_missing`
+  (positivo `want_script in written` + negativo `cred_script not in written`) e
+  `test_claude_credential_guard_and_git_branch_guard_coexist_idempotently` (`.count(...) == 2` × 2).
+  Os ~10 sítios de `want_script`/credential-guard restantes já usavam `doc = json.loads(...)` +
+  `want_script in commands` — já corretos, mesma leitura do Node.
+
+**Onde optei por comparação de VALOR desserializado, não por escapar a expectativa:** em todos os
+sítios, nos 3 runtimes — não houve nenhum onde a comparação por valor fosse inviável. A árvore JSON
+de cada formato (Claude/Codex/Gemini: `hooks.PreToolUse[].hooks[].command`; Cursor:
+`hooks.beforeShellExecution[].command`; Copilot: `hooks.preToolUse[].bash`; Kiro: `hooks[].action.command`)
+é heterogênea entre os 6 alvos, então em vez de modelar 6 esquemas de struct/interface diferentes por
+runtime, escrevi um walker JSON genérico (`countJSONLeafMatches`/`count_json_leaf_matches`) que conta
+ocorrências de um valor-folha string exato em qualquer posição da árvore decodificada — agnóstico ao
+esquema, sem depender de conhecer a chave exata em cada um dos 6 formatos, e sem escapar manualmente
+o "\\" da expectativa (que seria a alternativa mais frágil, teria de ser refeita se `encoding/json`
+mudasse a forma de escapar, e não bate com "comparar valores desserializados" pedido pelo handoff).
+
+**Falsificação nas duas direções, com saída real (uma por runtime, representativa da família):**
+1. **Go** — árvore íntegra: `go test ./internal/commands/... -run TestUpdateHarnessCmd -v` → 13/13
+   PASS (0 FAIL). Mutação em `internal/generators/update.go:680`
+   (`harnessCredentialGuardTargetClaude`, `scriptPath` ganhou sufixo `-BROKEN.sh`):
+   `--- FAIL: TestUpdateHarnessCmd_CredentialGuardClaudeInstallsViaCLI`. Produto restaurado do
+   backup; `git diff --stat internal/generators/update.go` veio vazio; suíte voltou a 13/13 PASS.
+2. **Node** — árvore íntegra: `node --test tests/update-harness.test.js` → 66/66 pass. Mutação em
+   `npm/src/commands/update-harness.js:490` (`gitBranchGuardTargetClaude`, mesmo sufixo `-BROKEN.sh`):
+   2 falhas reais — `✖ claude-git-branch-guard installs the absolute global git-branch-guard script
+   path...` e `✖ claude-credential-guard and claude-git-branch-guard coexist...` (`AssertionError:
+   expected 0 to strictly equal 2`). Produto restaurado do backup; suíte voltou a 66/66 pass.
+3. **Python** — árvore íntegra: `pytest tests/test_update_harness.py -q` → 72 passed. Mutação em
+   `pypi/trackfw/commands/update_harness.py:664` (target Claude do git-branch-guard, mesmo sufixo):
+   2 falhas reais — `test_git_branch_guard_installs_absolute_path_with_install_missing[claude-...]`
+   (`assert 0 > 0`) e `test_claude_credential_guard_and_git_branch_guard_coexist_idempotently`
+   (`assert 0 == 2`). Produto restaurado do backup; suíte voltou a 72 passed.
+
+**Build/vet:** `go build ./...` rc=0 (repo inteiro, silencioso). `go vet ./internal/commands/...`
+rc=0. `go vet ./...` no repo inteiro reporta 1 erro pré-existente em
+`internal/validator/validator_test.go:4` (`"fmt" imported and not used`) — arquivo tocado por outro
+agente em paralelo (ML-6B), não meu; confirmado por `git status --porcelain` (não está entre os
+arquivos que editei) e fora do meu escopo de ML.
+
+**Premissa da triagem que a leitura confirmou:** a contagem 8 Go + 7 Node + 7 Python = 22 batia
+exatamente com os sítios crus encontrados por leitura — nenhum sítio a mais, nenhum a menos.
+**Premissa que a leitura refinou (não derrubou):** a maioria dos testes de credential-guard em Node e
+Python (que a lista original do handoff citava como "mesmo mecanismo, `not ok`") já decodificava
+corretamente; só os testes de git-branch-guard (tabular + coexistência) tinham o defeito cru nesses
+dois runtimes — o número final de sítios corrigidos por runtime é bem menor que "todo teste que
+compara path" sugeria, mas o TOTAL de 22 falhas de CI batia porque o teste tabular roda 1x por
+ferramenta (6 falhas) + 1 da coexistência = 7, e o mesmo padrão de contagem se repete no Go (6 testes
+individuais + 1 tabular×6 + 1 coexistência conta como 8 porque o Go não usa parametrização — cada
+`Test...InstallsViaCLI` é uma função de teste top-level própria).
+
+**Não fiz:** não rodei `make quality` (reservado ao arquiteto, após os 4 MLs). Nenhuma operação de
+git — árvore fica suja para auditoria do `trackfw_architect`. Não toquei nenhum outro arquivo de
+teste fora dos 3 listados no handoff.
+
+## 2026-09-05 — artemis-tf (QA) — ML-6E: G3 — fecha os 2 sítios que o ML-6C deixou fora do escopo
+
+Branch `fix/falha-de-windows-por-causa-raiz` (não criada por mim). Escopo: `npm/tests/
+git_branch_guard_hook_integrity.test.js` (sítios 61-109 e 480-497) e `internal/integrations/
+manifest_origin_test.go` (`TestClaimOrigin_LegacyManifestReadsAsCatalog`). Nenhuma operação de git.
+
+**Veredito do mecanismo — confirmado nos 2 arquivos.**
+
+1. **Node (`git_branch_guard_hook_integrity.test.js`) — CONFIRMADO, mesmo mecanismo do Go.** Os 4
+   helpers `globalClaudeSettingsWithCommand`, `globalClaudeSettingsWithCommandNoType`,
+   `globalCursorHooksWithCommand`, `kiroGlobalGuardFixture` interpolavam `scriptAbsPath` cru dentro
+   de template JSON (`"${scriptAbsPath}"`). Corrigido para `${JSON.stringify(scriptAbsPath)}` nos
+   6 sítios (linhas 68, 87, 104, e os 2 usos dentro de `kiroGlobalGuardFixture`, 483/490). O 5º
+   helper do arquivo, `gitBranchGuardEntryClaudeSettings`, **não** sofre do bug — seu argumento é
+   sempre um literal fixo (`$CLAUDE_PROJECT_DIR/scripts/...`), nunca um caminho nativo do SO; não
+   tocado.
+2. **Go (`manifest_origin_test.go`) — CONFIRMADO, mesmo mecanismo, achado por leitura (não estava
+   confirmado no handoff do ML-6C).** O helper `jsonQuoteForTest` fazia `` `"` + s + `"` `` com
+   comentário afirmando "no embedded quotes/control chars in practice" — falso: `destination` vem
+   de `filepath.Join`, que em Windows carrega `\`. Corrigido para usar `encoding/json.Marshal`
+   (mesmo padrão `jsonStringLiteral` do ML-6C). Diferença notável de comportamento em relação ao
+   G3 do `validator`: `loadManifest` (`internal/integrations/manifest.go:59`) é **fail-closed**
+   (retorna `error` explícito em JSON inválido, não pula em silêncio) — então o efeito do bug aqui
+   não seria "regra não dispara" (`msgs=[]`), e sim `t.Fatal(err)` no `manager.Inspect(plan)` da
+   linha 65 do teste original, quebrando a suíte inteira em Windows com um erro de decode, não um
+   falso-negativo silencioso.
+
+**Falsificação nas duas direções, com saída real:**
+
+*Go:*
+1. Mutação → reprova. Teste temporário `TestQAFalsificacaoTemp_ML6E` (nunca commitado), com
+   `jsonQuoteForTestBrokenTemp` (concatenação crua) e um caminho Windows literal
+   (`C:\Users\runneradmin\.trackfw\.claude\agents\trackfw-backend.md`, independente do SO do
+   runner). Resultado: `--- FAIL: TestQAFalsificacaoTemp_ML6E`, log `manager.Inspect falhou ...:
+   decode integration manifest: invalid character 'U' in string escape code` — prova direta e
+   local do mecanismo em macOS.
+2. Árvore íntegra → passa. Teste temporário e `jsonQuoteForTestBrokenTemp` removidos (`git diff
+   internal/integrations/manifest_origin_test.go` mostra só o `import "encoding/json"` + corpo do
+   `jsonQuoteForTest`, 14 inserções/4 deleções, sem resíduo — `grep FALSIFICACAO` vazio).
+   `go build ./...` rc=0, `go vet ./...` rc=0 (repo inteiro, sem conflito com trabalho concorrente),
+   `gofmt -l internal/integrations/manifest_origin_test.go` sem saída.
+   `go test ./internal/integrations/... -run TestClaimOrigin_LegacyManifestReadsAsCatalog -v` →
+   PASS. `go test ./internal/integrations/... -count=1` (pacote inteiro) → `ok` (nenhuma outra
+   falha vinda de trabalho concorrente nesse pacote).
+
+*Node:*
+1. Mutação → reprova. `globalClaudeSettingsWithCommand` revertido temporariamente para a
+   concatenação crua (comentário `FALSIFICACAO-TEMP-QA`, nunca commitado) + teste temporário com
+   `windowsScriptPath = 'C:\\Users\\runneradmin\\.trackfw\\scripts\\trackfw-git-branch-guard.sh'`.
+   Resultado: `✖ FALSIFICACAO-TEMP-QA ...`, `AssertionError: FALSIFICACAO: esperado violation
+   'does not exist' (script ausente), obteve msgs=[]` — mesma assinatura "obteve: []" que o ML-6C
+   documentou para o Go.
+2. Árvore íntegra → passa. Arquivo restaurado a partir de cópia salva antes da mutação; `diff`
+   contra a cópia confirmou restauração byte-a-byte. `node --test
+   tests/git_branch_guard_hook_integrity.test.js` → `pass 26`, `fail 0` (26/26).
+3. Prova adicional fora da suíte (script Node isolado, não commitado): `JSON.parse` da fixture
+   antiga com caminho Windows falha (`Bad escaped character in JSON at position 16`); a fixture
+   antiga com caminho POSIX passa despercebida (por isso o bug só aparece em Windows); a fixture
+   nova (`JSON.stringify`) é válida para os dois separadores e o campo `command` decodificado
+   faz round-trip exato ao caminho original em ambos os casos.
+
+**Build/vet:** `go build ./...` e `go vet ./...` (repo inteiro) rc=0, sem interferência de ML-6A em
+paralelo (não toquei `internal/commands/update_harness_test.go`, `npm/tests/update-harness.test.js`,
+`pypi/tests/test_update_harness.py`). `go test ./internal/integrations/... -count=1` → `ok`.
+
+**Não fiz:** não corrigi o comportamento fail-open do validator (ML-6C já isolou o sítio,
+`validator_git_branch_guard.go:151-154`, fica REQ do arquiteto). Não rodei `make quality`. Nenhuma
+operação de git. Não toquei `npm/tests/validator.test.js` nem os arquivos reservados ao ML-6A.
+
+**Premissa do handoff que caiu:** nenhuma — os dois sítios se confirmaram exatamente como descrito
+(mesmo mecanismo G3, mesmos helpers/linhas no Node; mecanismo confirmado por leitura, não presumido,
+no Go). A única nuance nova é o comportamento fail-closed do `loadManifest`, que muda a assinatura
+observável do bug (erro fatal, não silêncio) sem mudar a causa raiz nem a correção.
+
+## Sessão 2026-09-05 — artemis-tf (INÍCIO: parecer de fechamento da issue #216, investigação pura)
+
+Branch `fix/validate-detecta-hook-de-guard-na-forma-relativa-antiga` (não criada por mim; colega
+ML-6E trabalhando em paralelo em `npm/tests/git_branch_guard_hook_integrity.test.js` e
+`internal/integrations/manifest_origin_test.go` — não tocados). Escopo: responder item a item se os
+7 defeitos da issue #216 (mais os 2 testes "que passavam pelo motivo errado") podem ser fechados,
+com evidência de código lido/comando rodado/CI, não amostragem.
+
+## Sessão 2026-09-05 — artemis-tf (FIM: parecer entregue, nenhuma correção aplicada)
+
+**Entregável:** `docs/portabilidade/2026-09-05-parecer-fechamento-issue-216.md`.
+
+**Veredito resumido:** 6 dos 7 itens da issue estão corrigidos no produto (1, 2/6, 3, 4, 5, 7),
+verificados por leitura de código + execução local + CI real de Windows (run `33931363032`, `main`
+HEAD atual). Só o teste de dedup `//` (`TestGBGDedup_Claude_SkipsProjectEntry_
+ToleratesDoubleSlashInStoredCommand`, grupo G12 da re-triagem) continua genuinamente aberto,
+mecanismo desconhecido. O outro teste "motivo errado" (fixture `Café` do `check-artifact-parity.sh`)
+está corrigido — `slugify`/`toSlug` colapsa em vez de deletar nos **3** runtimes, confirmado por
+execução dos 3, não só do Python que tinha o bug.
+
+**Correção que a revisão do advisor forçou antes de eu fechar o item 5:** minha primeira leitura só
+tinha checado os 5 `.sh` de `init` (via a sonda de Windows real) — o reporter contou 38/68 sítios em
+todo `pypi/trackfw/`, incluindo os `.md`/YAML dos comandos `new`. Varri **todo** `open()`/`.write_text(`
+texto do pacote: zero exceção sem `newline="\n"`, e `check-python-writes-lf.sh` varre o corpus
+inteiro (não só os 5 scripts), confirmado por execução (`rc=0`). O veredito CORRIGIDO ficou mais forte,
+não mudou — mas a evidência inicial cobria só uma fração do que o item realmente afirma.
+
+**Achado que mais importa (item c do handoff):** nenhum item foi corrigido escondendo o defeito —
+mas o **instrumento de CI** (`windows-defect-reproduction`) tem uma lacuna estrutural real:
+- Itens 2 e 3 são estruturalmente incapazes de ir a `ABSENT` na sonda, porque ela mede a plataforma
+  (`os.homedir()` cru etc.), não o produto — documentado e aceito pelo próprio time em
+  `REQ-2026-09-01-camada-2-mede-a-plataforma-e-nao-o-produto-nos-itens-2-e-3-retarget-dos-checks-de-
+  home-e-bit-de-execucao.md`, que **continua `status: Open`, sem roadmap**, 5 dias depois.
+- Item 4 tem uma variante mais sutil: a sonda testa o mecanismo cru "sem o wrapper .sh", nunca invoca
+  o `check-parity-contract-coverage.sh` real — que foi corrigido em 2026-09-02 (depois do roadmap que
+  o declarou fora de escopo). Medido agora: o gate real passa (`rc=0`) sob `PYTHONIOENCODING=cp1252`.
+  A sonda nunca foi atualizada depois do fix e continua rotulando `REPRODUCED` uma pergunta que o
+  artefato corrigido já não deixa em aberto.
+
+**Não fiz:** nenhuma correção de código, teste, fixture ou gate. Nenhuma operação de git. Não toquei
+os arquivos do ML-6E nem nenhum arquivo em `internal/validator/*_test.go` (só li).
+
+**Próximo passo recomendado (não executado por mim, fora do escopo de QA):** implementar a REQ de
+retarget de 2026-09-01 antes de qualquer tentativa de fechar a issue citando o CI como prova — sem
+isso, o dashboard de Windows real vai continuar mostrando itens 2 e 3 como `REPRODUCED` para sempre,
+mesmo corrigidos.

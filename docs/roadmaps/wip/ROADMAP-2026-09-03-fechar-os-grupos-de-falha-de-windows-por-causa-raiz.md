@@ -449,7 +449,7 @@ criei uma colisão nesta campanha afirmando disjunção sem conferir (ML-4A/4B).
 em dois MLs.
 
 ### ML-6A — G4: asserção crua contra bytes já serializados em JSON (22 falhas)
-**Status:** ⬜ Pendente · **Agente:** `artemis-tf`
+**Status:** ✅ Concluído · **Agente:** `artemis-tf`
 **Arquivos:** `internal/commands/update_harness_test.go` · `npm/tests/update-harness.test.js` ·
 `pypi/tests/test_update_harness.py`
 O teste monta o caminho com `filepath.Join`/`path.join`/`pathlib` e procura essa **string crua**
@@ -458,7 +458,7 @@ certa, teste errado. **Confirmado nos 3 runtimes por leitura**, não inferido po
 **Maior grupo do resíduo depois do CRLF, e o de menor risco.**
 
 ### ML-6B — G2 + G0: `%q` do Go e o controle POSIX que virou defeito de teste (5 falhas)
-**Status:** ⬜ Pendente · **Agente:** `artemis-tf`
+**Status:** ✅ Concluído · **Agente:** `artemis-tf`
 **Arquivos:** `internal/validator/validator_credential_guard_test.go` ·
 `internal/validator/validator_test.go` · `internal/validator/validator_thirdparty_provenance_test.go`
 **G2 (4):** `%q` produz string Go-escapada (cada `\` vira `\\`) — comportamento correto e
@@ -472,7 +472,7 @@ divergência. É Go-only: `path.win32.isAbsolute` e `ntpath.isabs` já tratam a 
 absoluta, medido.
 
 ### ML-6C — G3: fixture gera JSON inválido e o validator falha-aberto em silêncio (9 falhas)
-**Status:** ⬜ Pendente · **Agente:** `artemis-tf`
+**Status:** ✅ Concluído · **Agente:** `artemis-tf`
 **Arquivos:** `internal/validator/validator_git_branch_guard_test.go` · `npm/tests/validator.test.js`
 A fixture concatena um caminho nativo do Windows (com `\`) dentro de um template JSON **sem
 escapar** → JSON inválido → o validator **pula o arquivo em silêncio** por desenho fail-open → o
@@ -485,8 +485,48 @@ de config de guard** é comportamento de produto que merece pergunta própria. *
 reportar.
 
 ### ML-6D — G8: `findRoadmap` devolve separador nativo, teste compara com literal POSIX (2 falhas)
-**Status:** ⬜ Pendente · **Agente:** `artemis-tf`
+**Status:** ✅ Concluído · **Agente:** `artemis-tf`
 **Arquivos:** `internal/generators/roadmap_test.go`
+
+### ML-6E — G3 nos dois arquivos que o ML-6C reportou em vez de invadir
+**Status:** ✅ Concluído · **Agente:** `artemis-tf`
+**Arquivos:** `npm/tests/git_branch_guard_hook_integrity.test.js` ·
+`internal/integrations/manifest_origin_test.go`
+A hipótese do Node do ML-6C **caiu por localização, não por mecanismo**: `validator.test.js` já usava
+`JSON.stringify` e era seguro; o padrão real vivia noutro arquivo, com os mesmos 4 helpers.
+
+🔴 **Nuance que ninguém tinha visto:** `loadManifest` (`internal/integrations/manifest.go:59`) é
+**fail-CLOSED**, ao contrário do validator. A mesma fixture inválida ali **não some em silêncio** —
+estoura com `invalid character 'U' in string escape code`. Mesma causa, mesma correção, **modo de
+falha oposto**. O produto tem duas políticas para JSON inválido, e uma delas é a que virou candidata
+a REQ.
+
+## Auditoria da Wave 6 — arquiteto, 2026-09-05
+
+```
+make quality QUALITY_EXIT=0, zero FAIL · 365 cenarios de falsificacao OK
+trackfw validate exit 0 · go build ./... e go vet ./... limpos
+12 arquivos alterados, TODOS de teste ou doc — zero linha de producao
+grep no diff por t.Skip/pytest.mark.skip/GOOS/process.platform/os.name: vazio
+```
+
+**Falsificação por MUTAÇÃO DE PRODUÇÃO em todos os MLs** — não por asserção ajustada até passar. Em
+cada um, o agente mutou o código de produto, viu os testes reprovarem, restaurou e confirmou com
+`git diff --stat` vazio.
+
+🔴 **Duas premissas da triagem derrubadas pela leitura:**
+1. **ML-6A:** no Node e no Python a maioria dos testes **já desserializava certo** — só 2 sítios por
+   runtime tinham o defeito. No Go, por não ter teste parametrizado, o mesmo defeito estava espalhado
+   por **8 funções**. As contagens reconciliam nos 22, mas a forma era outra.
+2. **ML-6C/6E:** a hipótese do Node apontava o **arquivo errado**. O mecanismo existia, noutro lugar.
+
+**Reportado e NÃO corrigido, por instrução:** o fail-open de
+`internal/validator/validator_git_branch_guard.go:151-154` engole **JSON inválido em arquivo de
+config de guard**, em silêncio, com comentário de desenho confirmando que é intencional
+(linhas 130-132). A função irmã do credential-guard compartilha o padrão. **REQ própria** — é o mesmo
+formato de defeito que a campanha vem caçando: o controle reporta saúde sobre o que não conseguiu
+ler.
+
 
 **Critérios de aceite da wave**
 - [ ] Falsificação nas duas direções em cada ML, com números.

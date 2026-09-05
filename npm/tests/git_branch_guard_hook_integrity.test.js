@@ -65,7 +65,7 @@ function globalClaudeSettingsWithCommand(scriptAbsPath) {
       {
         "matcher": "Bash",
         "hooks": [
-          {"command": "${scriptAbsPath}", "type": "command"}
+          {"command": ${JSON.stringify(scriptAbsPath)}, "type": "command"}
         ]
       }
     ]
@@ -84,7 +84,7 @@ function globalClaudeSettingsWithCommandNoType(scriptAbsPath) {
       {
         "matcher": "Bash",
         "hooks": [
-          {"command": "${scriptAbsPath}"}
+          {"command": ${JSON.stringify(scriptAbsPath)}}
         ]
       }
     ]
@@ -101,7 +101,7 @@ function globalCursorHooksWithCommand(scriptAbsPath) {
   "version": 1,
   "hooks": {
     "beforeShellExecution": [
-      {"command": "${scriptAbsPath}"}
+      {"command": ${JSON.stringify(scriptAbsPath)}}
     ]
   }
 }
@@ -486,14 +486,14 @@ function kiroGlobalGuardFixture(hookNamePrefix, scriptAbsPath) {
       "description": "global pre hook",
       "trigger": "PreToolUse",
       "matcher": "shell",
-      "action": {"type": "command", "command": "${scriptAbsPath}"}
+      "action": {"type": "command", "command": ${JSON.stringify(scriptAbsPath)}}
     },
     {
       "name": "${hookNamePrefix}-global-post",
       "description": "global post hook",
       "trigger": "PostToolUse",
       "matcher": "shell",
-      "action": {"type": "command", "command": "${scriptAbsPath}"}
+      "action": {"type": "command", "command": ${JSON.stringify(scriptAbsPath)}}
     }
   ]
 }

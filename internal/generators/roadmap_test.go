@@ -349,7 +349,10 @@ func assertMoveRoadmapAnalyzingContract(t *testing.T, byAgent bool) error {
 		if err != nil {
 			return err
 		}
-		if found != dst {
+		// findRoadmap devolve separador nativo (o valor alimenta os.Rename/os.ReadDir, uso de
+		// filesystem, não artefato autorado — ver ADR-2026-09-04); dst é um literal POSIX de
+		// teste. Normalizar found para comparar, não dst: normalizar dst apagaria a asserção.
+		if filepath.ToSlash(found) != dst {
 			return &testExpectationError{message: "findRoadmap by_agent não encontrou o arquivo em analyzing"}
 		}
 		if err := ShowRoadmap("analyze-by-agent"); err != nil {
@@ -401,7 +404,9 @@ func assertMoveRoadmapAnalyzingContract(t *testing.T, byAgent bool) error {
 	if err != nil {
 		return err
 	}
-	if found != "docs/roadmaps/analyzing/ROADMAP-analyze-flat.md" {
+	// Mesmo raciocínio do branch by_agent acima: found é caminho nativo (uso de filesystem),
+	// o literal é POSIX; normaliza-se found, não o literal.
+	if filepath.ToSlash(found) != "docs/roadmaps/analyzing/ROADMAP-analyze-flat.md" {
 		return &testExpectationError{message: "findRoadmap flat não encontrou o arquivo em analyzing"}
 	}
 	if err := ShowRoadmap("analyze-flat"); err != nil {
