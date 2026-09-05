@@ -31676,3 +31676,150 @@ nenhum precisava de correção.
 Único arquivo tocado: `scripts/check-gates-falsify.sh`. Nenhum arquivo de `internal/validator/`,
 `npm/`, `pypi/` ou `internal/integrations/` alterado (prontos por outro agente, conforme handoff).
 Nenhuma operação de git executada — árvore deixada suja para auditoria do arquiteto.
+
+## 2026-09-05 — Apolo (Backend) — ML-1A: teste do `ENOTDIR` reconciliado com a própria medição do ML-1C
+
+### Contexto
+
+Roadmap: `ROADMAP-2026-09-05-reconciliar-o-que-declaramos-com-o-que-medimos-apos-a-auditoria-externa.md`.
+No ML-1C (issue #276) eu medi, com leitura do GOROOT e falsificação por revert, que no Windows
+`ENOTDIR = ERROR_PATH_NOT_FOUND` — o mesmo código de "caminho ausente" — e que
+`os.IsNotExist`/`errors.Is(err, fs.ErrNotExist)` são o mesmo predicado para `*PathError` de um
+nível (nota do vault:
+`vault/notes/go-isnotexist-e-errors-is-fs-errnotexist-sao-o-mesmo-predicado-para-pathError-de-um-nivel-2026-09-05.md`).
+Na mesma entrega criei `manager_collision_enotdir_test.go` afirmando o **oposto**: que
+`detectNameCollision` sempre reporta erro em ENOTDIR, sem distinguir plataforma. O CI de Windows
+(run `33991655271`) reprovou por isso — a contradição era real, não um falso positivo do CI.
+
+### Escolha: (a), não (b)
+
+Reconciliei o teste em vez de removê-lo, porque a medição já mostrava exatamente qual assert cada
+plataforma sustenta: em `manager.go:477`, `errors.Is(err, fs.ErrNotExist)` sobre o retorno de
+`os.ReadDir` — em POSIX, ENOTDIR é distinguível de ENOENT e cai no branch de erro; no Windows, os
+dois colidem no mesmo `ERROR_PATH_NOT_FOUND`, então `detectNameCollision` retorna `nil` (suprime a
+verificação) do mesmo jeito que faria para um diretório genuinamente ausente. Não é um bug do
+`detectNameCollision`: é o próprio Windows conflacionando as duas condições na camada
+`syscall.Errno`. `TestDetectNameCollision_ENOTDIRIsReportedNotSwallowed` foi renomeado para
+`TestDetectNameCollision_ENOTDIRIsPlatformDependent` e agora ramifica em `runtime.GOOS == "windows"`
+dentro da MESMA função — sem `t.Skip`, sem guard que apague asserção: cada ramo tem sua própria
+asserção de mensagem de erro (`err == nil` no Windows com a razão no `t.Fatalf`; `err != nil` +
+checagem do wrapper `"scan"`/`"name collisions"` nos demais SOs). O comentário da função documenta
+que a prova do ramo Windows só é real no CI (`windows-full-suites`, `.github/workflows/quality.yml`)
+— rodar localmente em macOS/Linux só exercita o ramo POSIX.
+
+### Frase de reconciliação teste↔conclusão (requisito da Wave 3)
+
+`TestDetectNameCollision_ENOTDIRIsPlatformDependent` afirma a conclusão do ML-1C de que, no Windows,
+`ENOTDIR` e "diretório ausente" são indistinguíveis no nível de `syscall.Errno` porque ambos mapeiam
+para `ERROR_PATH_NOT_FOUND` — logo `detectNameCollision` suprime a verificação de colisão nesse caso
+por decisão do próprio SO, não por defeito do predicado escolhido (`os.IsNotExist` vs
+`errors.Is(fs.ErrNotExist)`, que são idênticos aqui); em POSIX, onde `ENOTDIR` é um errno distinto,
+a mesma função reporta erro normalmente.
+
+Auditoria própria (via `advisor`) apontou que o ramo Windows como escrito inicialmente era
+vacuamente satisfazível — `err == nil` também seria verdadeiro se `os.ReadDir` tivesse simplesmente
+tido sucesso num handle de arquivo, o que não afirmaria o mecanismo medido (`errors.Is(rawErr,
+fs.ErrNotExist) == true`). Corrigido: o ramo Windows agora chama `os.ReadDir(blocker)` diretamente e
+falha alto se o erro bruto não existir ou não casar `fs.ErrNotExist` **antes** de checar o retorno
+de `detectNameCollision` — a asserção afirma o mecanismo, não só o resultado. O comentário da função
+também foi ajustado para não apresentar a cadeia de errno do GOROOT (`ENOTDIR = ERROR_PATH_NOT_FOUND`)
+como medida por este teste: só o `err == nil`/`errors.Is` empírico do CI é dado medido; a cadeia de
+errno continua sendo leitura de GOROOT, citada como tal.
+
+`TestDetectNameCollision_TrulyAbsentDirectoryIsSuppressed` (o outro teste do mesmo arquivo, tocado
+pela reescrita) ganhou sua própria frase de reconciliação: afirma que a supressão via
+`errors.Is(err, fs.ErrNotExist)` para diretório genuinamente ausente é decisão deliberada do ML-1C
+(caso do `~/.claude/agents/` não criado ainda), não algo que este ML-1A deveria alterar — e o
+comentário registra explicitamente que, no Windows, os dois testes convergem para o mesmo `nil` e
+o par **deixa de discriminar** "bloqueado por arquivo" de "não existe ainda" ali — é a limitação de
+plataforma documentada, não uma lacuna que este teste feche sozinho.
+
+### Verificação
+
+- `go build ./...`: sem erros.
+- `go vet ./...`: sem erros.
+- `go test ./internal/integrations/...`: `ok`, 0 falhas (suíte completa do pacote, não só o teste
+  tocado). Em macOS (ambiente local), o teste executa e passa pelo ramo POSIX
+  (`ENOTDIR reported as expected on darwin: scan ".../blocker.txt" for name collisions: ...`); o
+  ramo Windows (incluindo a checagem de mecanismo via `os.ReadDir`/`errors.Is`) só é exercitado no
+  CI (`windows-full-suites`), como o próprio comentário do teste declara — não fingi cobertura de
+  Windows a partir de execução local.
+- `make quality` **não foi executado** (reservado ao arquiteto, conforme handoff).
+
+### Escopo respeitado
+
+Único arquivo tocado: `internal/integrations/manager_collision_enotdir_test.go`. `manager.go:477`
+não foi alterado — a troca `os.IsNotExist` → `errors.Is` já ali é modernização válida, fora de
+escopo desta ML. Nenhum dos ~40 outros sítios de `os.IsNotExist` foi tocado. Issue #276 não foi
+reaberta. Vault atualizado com o dado real de CI (addendum na mesma nota do ML-1C). ML-1A deixado
+como `🔄 Em andamento` no roadmap — o protocolo do meu papel reserva a marcação `✅ Concluído` para
+depois da auditoria do arquiteto, não para o agente que entrega. Nenhuma operação de git executada
+— árvore deixada suja para auditoria do arquiteto.
+
+
+---
+
+## 2026-09-05 — `trackfw_architect` (Zeus) — ERRO DE PROCESSO MEU, registrado
+
+🔴 **Commitei com subagente vivo na árvore.** O `git add -A` do commit `228fea5`
+("chore(governance): REQ da instalacao em Windows") varreu junto
+`internal/integrations/manager_collision_enotdir_test.go`, que o ML-1A estava escrevendo naquele
+momento.
+
+Resultado: um commit rotulado `chore(governance)` contendo **código de teste de produto**, com
+mensagem que não descreve metade do que ele carrega.
+
+**Eu tenho regra explícita contra isso** — nunca commitar nem trocar de branch com subagente
+editando — e violei mesmo assim, porque estava respondendo a uma pergunta do usuário e commitei "o
+que estava pronto" sem checar se havia agente ativo.
+
+**Quem detectou foi o agente, não eu.** Ele rodou `git status`/`git log` ao terminar, viu o próprio
+trabalho já commitado, e **conferiu por `git hash-object` contra `git rev-parse HEAD:<path>`** que o
+conteúdo em disco era idêntico ao commitado — provando que nada se perdeu. Isso é a segunda vez nesta
+campanha que a garantia veio do agente e não do meu planejamento (a primeira foi a colisão
+ML-4A/4B).
+
+**Não reescrevi o histórico.** O commit não tinha sido pushado, então `--amend` seria possível — mas
+apagar o rastro de um erro de processo é pior que carregá-lo. Este registro e o commit de acerto
+ficam como o rastro.
+
+**A regra operacional que fica:** antes de qualquer `git add -A`, verificar se há agente ativo. Se
+houver, ou esperar, ou commitar por caminho explícito — nunca `-A`.
+
+---
+
+## 2026-09-05 — `prometeu-tf` — Investigação: qual shell interpreta o `command` de hook no Windows,
+por CLI de agente (sem correção, sem git)
+
+Entregue: `docs/portabilidade/2026-09-05-contrato-de-execucao-de-hook-por-cli-de-agente-no-windows.md`.
+
+Resposta por CLI (Windows, sem config extra do usuário), com grau de certeza:
+
+| CLI | Shell | Certeza | `.sh` do trackfw roda? |
+|---|---|---|---|
+| Claude Code | Git Bash se instalado, senão PowerShell | Documentado pelo fornecedor | Sim, condicionado a Git Bash |
+| Codex CLI | PowerShell no caminho comum (`PreToolUse`/`PostToolUse`, sessão em curso); `cmd.exe` só num fallback de borda sem `TurnEnvironment` | **Medido no código-fonte**, 3 arquivos (`session/mod.rs`, `shell.rs`, `shell_detect.rs`) | **Não** — mesma classe de falha do Gemini (shebang não interpretado) |
+| Gemini CLI | PowerShell sempre (`pwsh.exe`/`powershell.exe`) | **Medido no código-fonte** (`shell-utils.ts`, main) | **Não** — PowerShell não interpreta shebang |
+| GitHub Copilot CLI | Campo errado populado (`bash`, não `powershell`/`command`) | Doc do fornecedor + leitura de `agentfiles.go` | **Não, por vácuo de config** — nem chega a "qual shell" |
+| Cursor | — | Indeterminado (fornecedor fechado, sem doc, sem código) | Indeterminado |
+| Kiro | — | Indeterminado (fornecedor fechado, sem doc, sem código) | Indeterminado |
+
+🔴 Achado que muda o resultado do handoff: a bifurcação binária "bash vs cmd/PowerShell" não se
+sustentou — **PowerShell é o padrão de fato em 3 dos 6 CLIs** (Claude Code sem Git Bash, Codex no
+caminho comum, Gemini sempre); `cmd.exe` só aparece como fallback de borda do Codex, nunca como
+caminho padrão de CLI nenhum. Copilot nem chega à pergunta de shell: hook não é lido, é vácuo de
+campo JSON (`InjectCopilotHooks` só popula `"bash"`, nunca `"command"`).
+
+🔴 Autocorreção registrada: a primeira leitura do Codex generalizou o fallback `cmd.exe` de
+`command_runner.rs` como caminho padrão, sem verificar de onde vem `CommandShell` antes de chegar
+nele. O advisor pediu essa verificação; `session/mod.rs::build_hooks_config` mostrou que o shell vem
+do `TurnEnvironment` da sessão primeiro (= `default_user_shell()` = PowerShell no Windows), e
+`cmd.exe` só é alcançado sem `TurnEnvironment` resolvido — caso de borda (ex. `SessionStart`), não
+o caminho de `PreToolUse`/`PostToolUse` onde os guards disparam. Documento e esta entrada já
+corrigidos antes do fecho.
+
+Conclusão do fecho: `.ps1`/script nativo **é necessário** para Codex e Gemini (medido em
+código-fonte, não inferência). Para Claude Code é condicional a Git Bash. Cursor, Kiro e a interação
+`command_windows`+`trust_level` do Codex seguem indeterminados até medição em Windows real —
+experimento mínimo por CLI especificado no documento (nenhum dos 6 CLIs é instalável no CI atual,
+macOS sem contas dos fornecedores). Nenhuma correção de código foi aplicada nesta investigação.

@@ -18,6 +18,13 @@ ADR → REQ → ROADMAP → backlog / wip / blocked / done / abandoned
 
 Every piece of work traces back to a decision. Every decision links to a requirement. Every requirement lands in a roadmap. No orphan work, no undocumented choices.
 
+> 🚧 **Platform support: Linux and macOS are supported. Windows support is partial.**
+> The CLIs install on Windows and core governance commands run — but the generated
+> guard hooks are POSIX shell scripts, and **on several agent CLIs they do not execute
+> on Windows.** They are written to disk and reported as installed while never running.
+> Native Windows hooks are in progress.
+> **Read [Windows support (partial)](#windows-support-partial) before adopting on Windows.**
+
 ---
 
 ## The problem
@@ -93,8 +100,67 @@ npm install -g trackfw
 ```
 
 The npm package is pure Node.js — no compiled binary or postinstall download.
-It works wherever Node.js ≥ 18 is installed. Shared behavior, including the AI
+It installs wherever Node.js ≥ 18 is installed. Shared behavior, including the AI
 integration lifecycle, follows the [CLI parity contract](docs/cli-parity.md).
+
+> **The CLI installs on Node ≥ 18 alone — the generated guard hooks do not run on
+> Node alone.** They are POSIX shell scripts and need a POSIX shell to execute. On
+> Windows, see [Windows support](#windows-support-partial) before relying on them.
+
+### Windows support (partial)
+
+🚧 **Windows support is partial and in progress. Read this before adopting `trackfw`
+on Windows.**
+
+We publish a Windows binary and the npm/pip packages install on Windows. That is not
+the same as the tool working end to end, and we would rather tell you where the edges
+are than let you find them after adoption.
+
+**What we know works**
+
+- The three CLIs install (`npm install -g trackfw`, `pip install trackfw`, and the
+  published `trackfw_<version>_windows_amd64.tar.gz`).
+- Core governance commands — `req new`, `roadmap new`, `roadmap move`, `status`,
+  `validate` — run, and artifacts are written with LF endings.
+
+**What we know does not work yet**
+
+- `scripts/install.sh` **refuses Windows**, even though we publish a Windows binary.
+  Install manually from the release archive for now.
+- Our Windows CI still reports **known test failures**. They are mapped by root cause,
+  not unknown — but they are not zero.
+- **Windows ARM64 is not built.** Only `windows_amd64` is published.
+
+**Guard hooks on Windows — measured, per agent CLI**
+
+The guard hooks are `.sh` scripts, executed by *your* AI agent CLI. Which shell that CLI
+uses on Windows decides whether they run at all. We measured it:
+
+| Agent CLI | Shell on Windows | Do the hooks run? | Basis |
+|---|---|---|---|
+| Gemini CLI | PowerShell, always | ❌ **No** | measured in vendor source |
+| Codex CLI | PowerShell on the normal path | ❌ **No** | measured in vendor source |
+| GitHub Copilot CLI | — | ❌ **No** — we populate the wrong config field | vendor docs + our code |
+| Claude Code | Git Bash if installed, else PowerShell | ⚠️ **Only with Git Bash** | vendor documentation |
+| Cursor · Kiro | unknown | ❓ **Unknown** | closed, undocumented |
+
+🔴 **This is the failure mode we care most about, because it is silent.** A guard that
+never executes still reports health over something it never inspected. On the CLIs marked
+❌, `trackfw validate` will tell you the hook is installed — and it will never fire.
+
+**Until native Windows hooks ship, do not rely on `credential_guard` or
+`git_branch_guard` as an enforced control on Windows.** Treat them as documentation of
+intent, not as enforcement.
+
+We are **not** going to answer this by requiring Git Bash: it would fix one CLI out of
+six and push the cost onto you. Windows hooks should run on Windows. Native hook
+generation is the direction — see
+[`docs/portabilidade/2026-09-05-contrato-de-execucao-de-hook-por-cli-de-agente-no-windows.md`](docs/portabilidade/2026-09-05-contrato-de-execucao-de-hook-por-cli-de-agente-no-windows.md)
+for the full measurement, per CLI, with the level of certainty of each row.
+
+**If you are on Windows**, we want your report. The Windows defects fixed so far came
+from a user running the tool on real Windows 11 and measuring before reporting — open
+an issue with what you measured.
 
 ### pip
 
