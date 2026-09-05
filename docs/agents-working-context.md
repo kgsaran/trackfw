@@ -31676,3 +31676,60 @@ nenhum precisava de correção.
 Único arquivo tocado: `scripts/check-gates-falsify.sh`. Nenhum arquivo de `internal/validator/`,
 `npm/`, `pypi/` ou `internal/integrations/` alterado (prontos por outro agente, conforme handoff).
 Nenhuma operação de git executada — árvore deixada suja para auditoria do arquiteto.
+
+## 2026-09-05 — Apolo (Backend) — ML-1A: teste do `ENOTDIR` reconciliado com a própria medição do ML-1C
+
+### Contexto
+
+Roadmap: `ROADMAP-2026-09-05-reconciliar-o-que-declaramos-com-o-que-medimos-apos-a-auditoria-externa.md`.
+No ML-1C (issue #276) eu medi, com leitura do GOROOT e falsificação por revert, que no Windows
+`ENOTDIR = ERROR_PATH_NOT_FOUND` — o mesmo código de "caminho ausente" — e que
+`os.IsNotExist`/`errors.Is(err, fs.ErrNotExist)` são o mesmo predicado para `*PathError` de um
+nível (nota do vault:
+`vault/notes/go-isnotexist-e-errors-is-fs-errnotexist-sao-o-mesmo-predicado-para-pathError-de-um-nivel-2026-09-05.md`).
+Na mesma entrega criei `manager_collision_enotdir_test.go` afirmando o **oposto**: que
+`detectNameCollision` sempre reporta erro em ENOTDIR, sem distinguir plataforma. O CI de Windows
+(run `33991655271`) reprovou por isso — a contradição era real, não um falso positivo do CI.
+
+### Escolha: (a), não (b)
+
+Reconciliei o teste em vez de removê-lo, porque a medição já mostrava exatamente qual assert cada
+plataforma sustenta: em `manager.go:477`, `errors.Is(err, fs.ErrNotExist)` sobre o retorno de
+`os.ReadDir` — em POSIX, ENOTDIR é distinguível de ENOENT e cai no branch de erro; no Windows, os
+dois colidem no mesmo `ERROR_PATH_NOT_FOUND`, então `detectNameCollision` retorna `nil` (suprime a
+verificação) do mesmo jeito que faria para um diretório genuinamente ausente. Não é um bug do
+`detectNameCollision`: é o próprio Windows conflacionando as duas condições na camada
+`syscall.Errno`. `TestDetectNameCollision_ENOTDIRIsReportedNotSwallowed` foi renomeado para
+`TestDetectNameCollision_ENOTDIRIsPlatformDependent` e agora ramifica em `runtime.GOOS == "windows"`
+dentro da MESMA função — sem `t.Skip`, sem guard que apague asserção: cada ramo tem sua própria
+asserção de mensagem de erro (`err == nil` no Windows com a razão no `t.Fatalf`; `err != nil` +
+checagem do wrapper `"scan"`/`"name collisions"` nos demais SOs). O comentário da função documenta
+que a prova do ramo Windows só é real no CI (`windows-full-suites`, `.github/workflows/quality.yml`)
+— rodar localmente em macOS/Linux só exercita o ramo POSIX.
+
+### Frase de reconciliação teste↔conclusão (requisito da Wave 3)
+
+`TestDetectNameCollision_ENOTDIRIsPlatformDependent` afirma a conclusão do ML-1C de que, no Windows,
+`ENOTDIR` e "diretório ausente" são indistinguíveis no nível de `syscall.Errno` porque ambos mapeiam
+para `ERROR_PATH_NOT_FOUND` — logo `detectNameCollision` suprime a verificação de colisão nesse caso
+por decisão do próprio SO, não por defeito do predicado escolhido (`os.IsNotExist` vs
+`errors.Is(fs.ErrNotExist)`, que são idênticos aqui); em POSIX, onde `ENOTDIR` é um errno distinto,
+a mesma função reporta erro normalmente.
+
+### Verificação
+
+- `go build ./...`: sem erros.
+- `go vet ./...`: sem erros.
+- `go test ./internal/integrations/...`: `ok`, 0 falhas (suíte completa do pacote, não só o teste
+  tocado). Em macOS (ambiente local), o teste executa e passa pelo ramo POSIX
+  (`ENOTDIR reported as expected on darwin: scan ".../blocker.txt" for name collisions: ...`); o
+  ramo Windows só é exercitado no CI (`windows-full-suites`), como o próprio comentário do teste
+  declara — não fingi cobertura de Windows a partir de execução local.
+- `make quality` **não foi executado** (reservado ao arquiteto, conforme handoff).
+
+### Escopo respeitado
+
+Único arquivo tocado: `internal/integrations/manager_collision_enotdir_test.go`. `manager.go:477`
+não foi alterado — a troca `os.IsNotExist` → `errors.Is` já ali é modernização válida, fora de
+escopo desta ML. Nenhum dos ~40 outros sítios de `os.IsNotExist` foi tocado. Issue #276 não foi
+reaberta. Nenhuma operação de git executada — árvore deixada suja para auditoria do arquiteto.
