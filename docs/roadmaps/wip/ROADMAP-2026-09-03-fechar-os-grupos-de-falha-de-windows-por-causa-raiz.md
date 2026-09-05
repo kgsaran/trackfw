@@ -668,8 +668,29 @@ justamente onde isso se esconde.
 ## Wave 5 — CRLF no parser de frontmatter
 > Dependências: Wave 3 fechada. **Sequencial**: toca os mesmos arquivos de validator dos 3 CLIs.
 
-### ML-5A — Parser tolera CRLF na fronteira de entrada
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf`
+### ML-5A — CRLF tolerado na fronteira de entrada — **parser E renderizadores**
+**Status:** 🔄 Em andamento · **Agente:** `apolo-tf`
+
+🔴 **Escopo corrigido em 2026-09-05, depois da auditoria externa.** O ML dizia "parser de
+frontmatter". A auditoria mediu que **não basta**:
+
+```
+Node, mesmo conteúdo:
+  LF   → name=teste, model=sonnet
+  CRLF → name=trackfw-agent, model vazio; o frontmatter fica no CORPO
+```
+
+Go e Python têm verificações **literais de `---\n`** nos renderizadores. E a re-triagem por mecanismo
+já tinha achado um **segundo parser** — o do bloco de gates do `barrier` no Python (o "G1-bis"), que
+a ADR, escrita antes, não menciona.
+
+**Superfícies em escopo, e a enumeração é entregável do ML:** parser de frontmatter de validação ·
+**renderizadores de artefato de agente** · **reescrita de identidade/modelo** · **parser de gates do
+`barrier`** · demais consumidores que casem delimitador por literal.
+
+🔴 **Entregar só o parser de validação repetiria o defeito que esta wave existe para corrigir** —
+metade do caminho, com aparência de completo.
+
 Governado por `ADR-2026-09-04-parser-de-frontmatter-tolera-crlf-na-fronteira-de-entrada.md`
 (`Accepted`). ~14 testes. Sintoma medido: frontmatter **duplicado** em `TestRenderOpenCodeAgent`.
 **D1** normaliza `\r\n` → `\n` **ao ler**, antes de casar delimitador · **D2** a escrita continua
