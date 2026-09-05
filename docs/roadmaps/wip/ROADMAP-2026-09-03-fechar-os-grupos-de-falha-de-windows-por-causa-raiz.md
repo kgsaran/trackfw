@@ -538,6 +538,30 @@ ler.
       (`contagem-de-falhas-de-windows-do-go-medida-por-padrao-frouxo-2026-09-04`).
 
 
+## Wave 7 — O dedup `//`, sozinho (mecanismo DESCONHECIDO)
+> Dependências: nenhuma. Paraleliza com a Wave 1 do roadmap do retarget (arquivos disjuntos).
+
+### ML-7A — Por que o dedup do git-branch-guard falha com `//` na home isolada
+**Status:** 🔄 Em andamento · **Agente:** `artemis-tf` · **investigação, sem correção**
+**Alvo de leitura:** `internal/generators/agentfiles.go` e pares em Node/Python.
+
+**É o único defeito genuíno que o reporter do issue #216 nomeou e que continua aberto**, e o G12 da
+re-triagem por mecanismo chegou nele por caminho independente — dois trabalhos convergindo aumenta a
+chance de ser real, não artefato de teste.
+
+**O que o reporter mediu:** `TestGBGDedup_Claude_SkipsProjectEntry_ToleratesDoubleSlashInStoredCommand`
+(Go) e o par em Python **passavam pelo motivo errado** — a produção lia a **home real** do
+desenvolvedor, que já tinha o hook instalado, então o dedup encontrava a entrada e pulava a injeção.
+Com a home de fato isolada, **falham**. O defeito de `//` que o nome descreve é real.
+
+🔴 **Mecanismo NÃO identificado. Não inventar.** "Não sei ainda" é resultado válido; hipótese
+apresentada como causa, não. Foi a recusa da triagem anterior em inventar mecanismo para o maior
+grupo que tornou aquele diagnóstico confiável.
+
+**Critérios:** mecanismo escrito com a medição que o sustenta, **ou** o espaço de hipóteses reduzido
+com o que foi eliminado e como · discriminante escrito · nenhuma correção aplicada.
+
+
 ## Wave 5 — CRLF no parser de frontmatter
 > Dependências: Wave 3 fechada. **Sequencial**: toca os mesmos arquivos de validator dos 3 CLIs.
 

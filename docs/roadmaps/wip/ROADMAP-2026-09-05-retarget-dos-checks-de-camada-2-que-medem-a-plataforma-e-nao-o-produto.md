@@ -54,7 +54,7 @@ fechada com honestidade por causa disto.** Evidência:
 > Dependências: nenhuma.
 
 ### ML-1A — Enumerar e classificar TODOS os checks do harness
-**Status:** ⬜ Pendente · **Agente:** `ares-tf`
+**Status:** 🔄 Em andamento · **Agente:** `ares-tf`
 **Arquivos:** leitura de `scripts/windows-repro/**` (`run.ps1`, `go/checks.go`, `js/checks.js`,
 `py/checks.py`). **Investigação — não corrigir nada aqui.**
 
