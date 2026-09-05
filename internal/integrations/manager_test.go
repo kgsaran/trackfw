@@ -1,10 +1,11 @@
 package integrations
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -213,13 +214,10 @@ func TestManagerRejectsTraversalAbsoluteMismatchAndNUL(t *testing.T) {
 }
 
 func TestManagerRejectsSymlinkFileAndParent(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("symlink creation is privilege-dependent on Windows")
-	}
 	manager, project, _ := testManager(t)
 	outside := t.TempDir()
-	if err := os.Symlink(outside, filepath.Join(project, "linked")); err != nil {
-		t.Fatal(err)
+	if !symlinkOrSkip(t, outside, filepath.Join(project, "linked")) {
+		return
 	}
 	parentPlan := testPlan("project", "linked/backend.md", "v1", "x")
 	if err := manager.Install([]PlannedArtifact{parentPlan}, false); err == nil || !strings.Contains(err.Error(), "symlink") {
@@ -230,8 +228,8 @@ func TestManagerRejectsSymlinkFileAndParent(t *testing.T) {
 	if err := os.WriteFile(target, []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(target, filepath.Join(project, "link.md")); err != nil {
-		t.Fatal(err)
+	if !symlinkOrSkip(t, target, filepath.Join(project, "link.md")) {
+		return
 	}
 	filePlan := testPlan("project", "link.md", "v1", "x")
 	if _, err := manager.Inspect(filePlan); err == nil || !strings.Contains(err.Error(), "symlink") {
@@ -678,4 +676,51 @@ func TestManagerInstallOwnedModifiedRemainsError(t *testing.T) {
 	if err := manager.Install([]PlannedArtifact{plan}, true); err != nil {
 		t.Fatalf("Install(force) on owned+modified failed: %v", err)
 	}
+}
+
+// ML-1A de ROADMAP-2026-09-05-fechar-os-tres-defeitos-mecanicos-dos-issues-do-consumidor-externo:
+// porta para este pacote o MESMO idioma ja estabelecido em
+// internal/generators/update_test.go:symlinkOrSkip (introduzido no #221,
+// anterior ao ML-4A) -- detecao pela CONDICAO (WinError 1314,
+// ERROR_PRIVILEGE_NOT_HELD), nao por runtime.GOOS: num Windows com
+// Developer Mode habilitado, ou em Linux/macOS, os.Symlink tem sucesso e o
+// chamador roda normalmente.
+//
+// Ao contrario da sonda de bit de execucao (execBitRepresentavelPara), aqui
+// nao ha "resto do teste" independente do symlink -- o proprio symlink e a
+// condicao sob teste, entao a supressao continua sendo t.Skip (nao um
+// Stderr + return silencioso disfarcado de PASS): SKIP e mais honesto que
+// um PASS que nao verificou nada.
+
+// symlinkOrSkip cria um symlink em link apontando para target. Se a criacao
+// falhar por falta do privilegio que o Windows exige (Developer Mode ou
+// processo elevado), pula o teste chamador nomeando a garantia nao
+// exercitada e devolve false. Qualquer outro erro e um t.Fatalf.
+func symlinkOrSkip(t *testing.T, target, link string) bool {
+	t.Helper()
+	err := os.Symlink(target, link)
+	if err == nil {
+		return true
+	}
+	if isSymlinkPrivilegeError(err) {
+		t.Skipf("guarda de symlink nao exercitada: criacao de symlink exige Developer Mode (ou processo elevado) neste Windows: %v", err)
+		return false
+	}
+	t.Fatalf("os.Symlink(%q, %q): %v", target, link, err)
+	return false
+}
+
+// isSymlinkPrivilegeError reporta se err e a falha "processo sem privilegio
+// para criar symlink" -- WinError 1314 no Windows sem Developer
+// Mode/elevacao, ou permission-denied generico em qualquer plataforma. Nao
+// casa por GOOS/plataforma, so pelo erro subjacente.
+func isSymlinkPrivilegeError(err error) bool {
+	if os.IsPermission(err) {
+		return true
+	}
+	var errno syscall.Errno
+	if errors.As(err, &errno) && errno == 1314 {
+		return true
+	}
+	return false
 }

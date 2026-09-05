@@ -31251,3 +31251,428 @@ contra a) decisão do vault `goos-guard-e-do-binario-nao-do-host-wsl-continua-pr
 
 **Escopo negativo respeitado:** nenhuma issue comentada, nenhum código alterado, nenhuma operação de
 git, PR #280 não tocado, status de nenhum roadmap alterado.
+
+---
+
+## 2026-09-05 — Apolo (Backend) — ML-1B: `req_has_adr` deixa de detectar vazio por literal (issue #278)
+
+**Branch:** `fix/fechar-os-tres-defeitos-mecanicos` (nenhuma operação de git executada, árvore deixada
+suja para auditoria do arquiteto).
+
+### O que mudou nos 3 runtimes
+
+`contentHasMarker`/`_content_has_marker` continua existindo, **intocada**, e agora só serve para os
+markers de "existência de bloco" (`AcceptanceMarkers`, um heading de seção) — semântica diferente,
+não podia ser fundida com a detecção por valor sem quebrar `wip_acceptance`.
+
+Nova função `contentHasMarkerValue`/`_content_has_marker_value`, ponto único por runtime, usada nos
+**4 sítios** que fazem detecção de link (REQ:/ADR:/Roadmap:): `validateWIPHasREQ`, `validateREQsHaveADR`,
+`validateBlockedHasREQ`, `validateREQsHaveRoadmap` — Go (`internal/validator/validator.go`), Node
+(`npm/src/validator/index.js`, editado com atenção ao aviso do handoff sobre `grep` pular o arquivo em
+silêncio — usei `grep -a` para toda inspeção), Python (`pypi/trackfw/validator.py`).
+
+Algoritmo idêntico nos 3: para cada ocorrência do marker em `content`, pega o resto da linha até o
+próximo `\n`, descarta um `\r` final, `trim` de espaços/tabs nas duas pontas — se sobrar algo
+não-branco, `true` (tem valor real). Indiferente a CRLF/LF, tabs, contagem de espaços e a quantas
+ocorrências do marker existem no arquivo (basta uma com valor real).
+
+### As 7 grafias — falsificação de cada uma (mesmo script `ADR:` + variante, rodado nos 3 runtimes)
+
+| # | Grafia | Antes (`contentHasMarker`) | Depois (`contentHasMarkerValue`) |
+|---|---|---|---|
+| 1 | `ADR:\n` (sem espaço) | PASSA (vazio não detectado) | **detectado como vazio** → violation |
+| 2 | `ADR: \n` (um espaço) | reprova (já correto) | **detectado como vazio** → violation |
+| 3 | `ADR:  \n` (dois espaços) | PASSA | **detectado como vazio** → violation |
+| 4 | `ADR:\t\n` (tab) | PASSA | **detectado como vazio** → violation |
+| 5 | `ADR:\r\n` (CRLF sem espaço) | PASSA | **detectado como vazio** → violation |
+| 6 | `ADR: \r\n` (CRLF um espaço) | reprova (já correto) | **detectado como vazio** → violation |
+| 7 | `ADR:   \n` (três espaços) | PASSA | **detectado como vazio** → violation |
+
+Falsificação da outra direção: `ADR: docs/adr/foo.md\n` (valor real) → `hasValue=true` nos 3 runtimes,
+**não** acusado. Veredito idêntico Go/Node/Python nos 8 casos (7 vazios + 1 real), rodado com scripts
+standalone reproduzindo exatamente o código das 3 funções.
+
+### Contagem do acervo — ANTES e DEPOIS (issue #278, medida contra o repositório real hoje)
+
+Binário "antes" buildado a partir de um `git worktree` detached em `HEAD` (commit `d98d47b`, sem
+minhas edições); binário "depois" buildado da árvore de trabalho com o fix. `194` REQs em `docs/req/`
+hoje (a triagem media `193` ontem).
+
+```
+ANTES  (contentHasMarker por literal)     11 REQs "has no linked ADR"
+DEPOIS (contentHasMarkerValue por valor)  67 REQs "has no linked ADR"
+```
+
+🔴 **O salto de 11 para 67 é o gate deixando de ser vácuo, não regressão.** Bate em ordem de grandeza
+com a medição da triagem (11→63, sobre 193 REQs; hoje 194 REQs, uma REQ nova entrou desde ontem) — a
+diferença residual de método de classificação já é esperada e está documentada na própria triagem
+("58 vs. 63 — diferença de método, mesma ordem de grandeza, mesma conclusão").
+
+🔴 **Não corrigi nenhuma das ~67 REQs do acervo** — só o gate. Consertar os dois no mesmo diff
+impediria atribuir qual mudança produziu qual número, exatamente o que o handoff pediu para evitar.
+
+### Runtimes medidos separadamente
+- **Go:** `go build ./...` limpo, `go vet ./...` limpo, `go test ./internal/validator/...` → `ok`.
+- **Node:** `node --check npm/src/validator/index.js` OK; `node --test` nos 5 arquivos de teste
+  (`validator.test.js`, `rules_req_configuraveis.test.js`, `config.test.js`,
+  `config_inline_list.test.js`, `config_yaml_fidelity.test.js`) → todos verdes, `validator.test.js`
+  reporta `103 passed, 0 failed, 0 xfail` nas asserções internas.
+- **Python:** `python3 -c "import ast; ast.parse(...)"` OK; `pytest tests/test_rules_req_configuraveis.py
+  tests/test_validator.py -q` → `141 passed, 8 subtests passed`.
+
+Nenhuma suíte quebrou com a mudança — os testes existentes de `contentHasMarker` (que testam a função
+de bloco, não a de link) continuam intactos e passando; nenhum teste do acervo real ficou vermelho
+nesta sessão porque não rodei `trackfw validate` do próprio repositório como gate (isso é `make
+quality`, reservado ao arquiteto por instrução do handoff).
+
+### O que quebrou (efeito colateral previsto pelo handoff)
+
+Não rodei `trackfw validate`/`make quality` deste repositório (proibido pelo handoff — fica para o
+arquiteto). **Aviso antecipado, não medido por mim nesta sessão:** como o próprio trackfw é
+autogovernado por `trackfw validate`, se esse comando for parte do gate do CI/`make quality`, ele vai
+passar a acusar ~56 REQs a mais que antes — se algum gate downstream tratar "zero violations de
+`req_has_adr`" como pré-condição de sucesso (ao invés de aceitar `warning`/severidade configurada),
+isso pode quebrar. Decisão de baseline/`rules:` em `trackfw.yaml`/correção do acervo é do arquiteto,
+conforme o handoff pediu explicitamente para não decidir sozinho.
+
+### Escopo negativo respeitado
+Não toquei `internal/integrations/manager.go` nem os 5 `*_test.go` do colega (confirmado por
+`git status --short` ao final — essas mudanças já apareciam na árvore, feitas por outro processo em
+paralelo, e não foram tocadas por mim). Nenhuma operação de git. Nenhuma correção do acervo de REQs.
+Nenhuma grafia das 7 me pareceu, ao investigar, "legitimamente vazio válido" — todas as 7 são vazio
+real por qualquer critério razoável (nenhuma tem conteúdo não-branco após o marcador na mesma linha),
+então não há premissa do handoff a reportar como derrubada aqui.
+
+## 2026-09-05 — Apolo (Backend) — ML-1C: `ENOTDIR` em `manager.go:477` (issue #276) — troca aplicada, mas o mecanismo do #276 está refutado
+
+**Arquivo tocado:** `internal/integrations/manager.go` (linha 477, `detectNameCollision`) — adicionado
+`"io/fs"` ao import block. Arquivo novo: `internal/integrations/manager_collision_enotdir_test.go`
+(não é `manager_test.go` nem `manager_persistence_order_test.go` — arquivo próprio, não do colega).
+Nenhum par em Node/Python alterado (decisão com medição, ver abaixo). Nenhuma operação de git.
+
+### A troca
+`os.IsNotExist(err)` → `errors.Is(err, fs.ErrNotExist)` no `os.ReadDir(directory)` de
+`detectNameCollision`. `go build ./...` limpo, `go vet ./...` limpo, `go test ./internal/integrations/...`
+→ `ok` (pacote inteiro, incluindo os 5 arquivos do colega, que não toquei).
+
+### 🔴 O mecanismo alegado pelo #276 está refutado para este sítio — lido no GOROOT, não suposto
+
+A issue afirma que `os.IsNotExist` classifica `ENOTDIR` como ausência enquanto `errors.Is(err,
+fs.ErrNotExist)` distinguiria. Medido e lido:
+
+```
+os.IsNotExist(err)              = underlyingErrorIs(err, ErrNotExist)
+                                 = desembrulha 1 nível (*PathError→.Err) → syscall.Errno.Is(ErrNotExist)
+errors.Is(err, fs.ErrNotExist)  = desembrulha via Unwrap() recursivo    → o MESMO syscall.Errno.Is(ErrNotExist)
+```
+
+Para um erro de **um nível só** — exatamente o que `os.ReadDir` devolve sem wrapping adicional, que é
+o caso em `manager.go:477` — os dois predicados chamam o mesmo método com o mesmo argumento. **Não
+podem divergir, em nenhuma plataforma, para essa forma de erro.** Confirmado com `go run` contra um
+ENOTDIR real construído de verdade (`foo.txt/bar`, arquivo comum no meio do caminho) em macOS:
+`os.IsNotExist == errors.Is(fs.ErrNotExist) == false` para ambos — nenhum dos dois swallowa.
+
+E em `src/syscall/zerrors_windows.go` do GOROOT instalado (`/usr/local/go`, Go 1.2x):
+```go
+ENOENT  Errno = ERROR_FILE_NOT_FOUND
+ENOTDIR Errno = ERROR_PATH_NOT_FOUND
+```
+`Errno.Is(oserror.ErrNotExist)` no Windows (`syscall_windows.go:190-215`) inclui `ERROR_PATH_NOT_FOUND`
+explicitamente — o Windows não distingue "componente do caminho não é diretório" de "caminho não
+encontrado" no nível de código de erro; ambos colidem em `ERROR_PATH_NOT_FOUND`. Isso vale para
+`os.IsNotExist` **e** para `errors.Is(err, fs.ErrNotExist)` igualmente — nenhum dos dois separa os
+casos no Windows, para este sítio.
+
+A alternativa que a própria issue propõe (`errors.Is(err, syscall.ENOENT)`) também não serve: no
+Windows `ENOENT = ERROR_FILE_NOT_FOUND` é um código diferente de `ENOTDIR = ERROR_PATH_NOT_FOUND`, e um
+diretório-pai genuinamente ausente (o caso legítimo que a supressão precisa preservar, ex.:
+`~/.claude/agents/` ainda não criado num install limpo) tipicamente também produz
+`ERROR_PATH_NOT_FOUND` no Windows — trocar para `errors.Is(err, syscall.ENOENT)` pararia de suprimir
+o caso legítimo lá, uma regressão disfarçada de fix, não medida em CI real.
+
+### Falsificação nas duas direções — não reproduz a divergência esperada, e isso é o achado
+
+Revertendo a troca (`errors.Is(err, fs.ErrNotExist)` → `os.IsNotExist(err)`, real via `sed` + rebuild,
+não simulado) e rodando os dois testes novos contra ENOTDIR real:
+
+```
+COM o fix (errors.Is):    ENOTDIR → erro reportado (PASS)
+SEM o fix (os.IsNotExist): ENOTDIR → erro reportado (PASS, idêntico)
+```
+
+O critério de aceite do handoff ("com o remendo revertido, o diagnóstico volta a sumir") **não é
+alcançável com saída real neste sítio** — não porque a medição falhou, mas porque a premissa do
+handoff (herdada da issue) está errada para este call site: os dois predicados são o mesmo código sob
+o capô. Isso não é regressão da minha correção; é a própria correção não ter efeito aqui, comprovado.
+
+### Onde a troca `os.IsNotExist` → `errors.Is(err, fs.ErrNotExist)` faria diferença de verdade
+
+Só quando o erro está embrulhado em mais de um nível antes do check (`fmt.Errorf("...: %w", err)`
+seguido de outro `%w`) — `underlyingError` desembrulha exatamente 1 nível, `errors.Is` desembrulha
+recursivo. Varredura (`grep -B8 os.IsNotExist` cruzado com `fmt.Errorf.*%w` nas 8 linhas anteriores, em
+todo `internal/`) não achou **nenhum** sítio de produção com esse padrão — todos são checks diretos
+sobre retorno de `os.ReadFile`/`os.Open`/`os.Stat`/`os.ReadDir`/`os.Lstat`.
+
+### Enumeração dos demais sítios de `os.IsNotExist` (reportados, não corrigidos)
+
+~40 sítios fora de teste, em: `internal/metrics/metrics.go:43`,
+`internal/validator/validator_credential_guard.go:388`, `internal/validator/validator.go` (10 sítios:
+29, 67, 1700, 1738, 2082, 2125, 2451, 2504, 2522, 2670 — território do ML-1B/colega, não tocado),
+`internal/validator/validator_git_branch_guard.go:32,145`,
+`internal/validator/validator_credential_guard_integrity.go:46,159`, `internal/changelog/changelog.go:99`,
+`internal/identity/identity.go:45`, `internal/integrations/manifest.go:52`,
+`internal/integrations/render.go:653`, `internal/commands/log.go:29`, `internal/generators/update.go`
+(13 sítios: 633,684,790,882,985,1121,1253,1317,1381,1445,1509,1573,2318),
+`internal/generators/scaffold.go:2149`, `internal/generators/scaffold_doctor.go:301,353`,
+`internal/serve/api_file.go:64`, `internal/generators/agentfiles.go` (7 sítios: 115,205,415,560,1031,
+1258,1273,1381), `internal/generators/note.go:71`, `internal/thirdparty/provenance.go:91`.
+
+**Veredito único, com o mesmo discriminante para todos:** li o contexto de cada um (2-6 linhas em
+volta) — todos são checks diretos sobre o retorno imediato de uma chamada `os.*` (`ReadFile`, `Open`,
+`Stat`, `ReadDir`, `Lstat`, `Remove`), sem wrapping prévio. Pelo mesmo argumento estrutural acima
+(`*PathError`/`*SyscallError` de 1 nível → `os.IsNotExist` e `errors.Is(err, fs.ErrNotExist)` chamam o
+mesmo `Errno.Is`), **nenhum destes ~40 sítios tem o defeito alegado pelo #276** — trocar o predicado
+neles seria cosmético, não corretivo. Isso inclui, pelo mesmo raciocínio, os 5 sítios de
+`internal/validator/validator.go` que a issue #276 já contava como "corrigidos" nesta campanha
+(2451, 2504, 2522, 67, 1700) — **não verifiquei se já foram trocados** (é território do ML-1B, não
+toquei), só constato que, se o foram pelo mesmo raciocínio do #276, a troca lá também é cosmética, não
+fecha o mecanismo.
+
+### Paridade Node/Python — decisão com medição, sem mudança
+
+`npm/src/integrations/manager.js:275` usa `err.code === 'ENOENT'`; `pypi/trackfw/integrations/manager.py:467`
+usa `except FileNotFoundError`. Medido de verdade (Node `fs.readdirSync` e Python `Path.iterdir()`
+contra o mesmo `t/foo.txt/bar` real, ENOTDIR):
+
+```
+Node:   err.code = 'ENOTDIR'   → 'ENOENT' === 'ENOTDIR' é false → NÃO suprime, propaga (correto)
+Python: NotADirectoryError [Errno 20]  → não é subclasse de FileNotFoundError → NÃO suprime, propaga (correto)
+```
+
+Node e Python já usam predicados que **não** capturam ENOTDIR — cada runtime tem sua própria
+representação nativa do erro (não passam pelo `Errno.Is` do Go), e ali `ENOENT`/`FileNotFoundError` são
+precisos por construção. **Nenhuma mudança nos pares Node/Python** — forçar simetria com o Go
+introduziria o mesmo não-efeito lá, sem necessidade.
+
+### Premissa do handoff que a medição derrubou
+
+O handoff (herdando da issue #276 e do roadmap) presumia que `errors.Is(err, fs.ErrNotExist)`
+distingue `ENOTDIR` de "ausência real" onde `os.IsNotExist` não distingue. **Falso para este call
+site** — leitura do GOROOT mostra que os dois predicados são o mesmo código para erros de um nível, em
+qualquer SO, e no Windows `ENOTDIR` é literalmente `ERROR_PATH_NOT_FOUND`, o mesmo valor usado para
+"caminho ausente" — a plataforma conflaciona os dois conceitos na origem, não é um predicado Go largo
+demais. **Recomendação: não fechar a issue #276 com este diff.** A troca foi mantida (idioma
+recomendado pela doc do Go, zero risco de regressão, `go vet`/testes verdes), mas rotulada como
+modernização, não como fix. Nota do vault:
+`vault/notes/go-isnotexist-e-errors-is-fs-errnotexist-sao-o-mesmo-predicado-para-pathError-de-um-nivel-2026-09-05.md`,
+linkada no índice.
+
+**Comandos rodados:** `go build ./...` (limpo), `go vet ./...` (limpo),
+`go test ./internal/integrations/...` (ok, pacote inteiro), `go test ./internal/integrations/... -run
+TestDetectNameCollision -v` (2 testes novos, PASS nas duas direções do revert). `make quality` não
+rodado (reservado ao arquiteto, ao fim dos 3 MLs, por instrução do handoff).
+
+## 2026-09-05 — Ártemis (QA) — ML-1A: os 9 `skip` residuais + varredura do acervo (issue #279)
+
+### Os 9, tratados
+
+Confirmado por `git log -1 <arquivo>`: só `internal/generators/update_test.go` foi tocado pela
+#269/ML-4A, e mesmo ali a mudança converteu um símbolo diferente do apontado — os outros 3/4
+arquivos (`scaffold_doctor_test.go`, `manager_persistence_order_test.go`, `manager_test.go`,
+`provenance_test.go`) têm último commit anterior à #269, exatamente como a issue descreve.
+
+- **6 convertidos ao padrão do ML-4A** (`execBitRepresentavelPara`/`execBitNaoExercitado` para bit
+  de execução; `permissionEnforcementRepresentavel`/`NaoExercitado`, novo helper no mesmo idioma,
+  para as duas checagens de escrita bloqueada via `chmod 0500`; `symlinkOrSkip`, idioma já existente
+  em `generators` desde o #221, portado para `integrations`).
+- **1 removido, sem substituto**: `scaffold_doctor_test.go:164`
+  (`TestWrongModeDetection_ContentDivergence_TakesPrecedence`) — a checagem de conteúdo precede
+  qualquer checagem de bit em produção (`scaffold_doctor.go:373` antes de `:385`), o assert nunca
+  toca o bit de execução, o skip era cópia-colada morta das 3 vizinhas. Falsificado por mutação
+  (comentar o `bytes.Equal` cedo faz o teste reprovar; revertido, passa).
+- **1 mantido sem alteração de mecanismo**: `update_test.go:35` — já usa detecção por CONDIÇÃO
+  (`isSymlinkPrivilegeError`), não por `runtime.GOOS`, e já nomeia a garantia na mensagem. Trocar o
+  `t.Skip` por `os.Stderr`+`return` trocaria um SKIP explícito por um PASS que não verificou nada —
+  regressão de transparência, não correção.
+
+Falsificação nas duas direções, com mutação de produção real e restauração conferida (3 mutações:
+`scaffold_doctor.go` duas vezes — supressão do wrong-mode e do content-precedence — e `manager.go`
+uma vez — defer de rollback desativado). As três reprovam mutado, passam restaurado.
+
+**`go build ./...` e `go vet ./...`**: limpos, repositório inteiro. **Testes dos 3 pacotes
+tocados**: `go test ./internal/generators/... ./internal/integrations/... ./internal/thirdparty/...
+-count=1` → `ok` nos três. Nenhum `t.Skip` novo introduzido.
+
+### Varredura do acervo (entregável principal)
+
+3 runtimes, `grep -a` (não pulando `npm/src/validator/index.js`, hoje texto UTF-8 — o achado antigo
+do vault de que `file` o classifica como binário não reproduz mais). Contagem atual (árvore local,
+macOS, POSIX): **Go 25** chamadas reais de `t.Skip*`, **Node 1**, **Python 9**. Nenhum early-return
+por `runtime.GOOS`/`process.platform`/`sys.platform`/`os.name` sem marcador de skip associado, nos
+3 runtimes.
+
+- **APAGA ASSERÇÃO**: zero ocorrências remanescentes fora dos 3 já corrigidos por este ML.
+- **AMBÍGUO, fora de escopo, reportado**: 11 sítios de "dependência ausente" (`git`/`node`/`python3`
+  no PATH) em `branch_prune_test.go`, `ship_test.go`, `copilot_hooks_parity_test.go`,
+  `test_ship.py`, `test_branch_prune.py` — o vault já argumenta que esta classe merece tratamento
+  mais forte que `skip` (falhar nomeando o candidato tentado, como `bash_path.py`/#267), mas é maior
+  que os 9 desta ML e merece REQ própria. Mais: `push_test.go:255` (skip incondicional documentando
+  lacuna de cobertura já registrada em `cli-parity.md`) e um comentário desatualizado em
+  `barrier_contract_test.go:8-10` (descreve um mecanismo de skip que não existe mais no arquivo).
+- Todo o resto (bit de execução adaptado por probe, IPv6 loopback, fusos IANA, `os.fchmod` ausente,
+  root, `-short`, adaptação de mecanismo por plataforma em `root_test.go`/`ship_test.go`) é
+  LEGÍTIMO — condição medida, não presumida por nome de SO, e nenhum deles esconde uma verificação
+  que deveria existir.
+
+Relatório completo: `docs/portabilidade/2026-09-05-varredura-de-skips-e-guards-de-plataforma-no-acervo.md`.
+Nota do vault (a distinção entre "produto suprime por AC5" e "propriedade não representável no FS",
+e por que 3 dos 9 não usam a mesma forma):
+`vault/notes/nem-todo-skip-de-execbit-precisa-do-mesmo-probe-um-era-copia-colada-2026-09-05.md`,
+linkada no índice.
+
+### Escopo respeitado
+
+Nenhum arquivo fora dos 5 designados foi editado. `internal/integrations/manager.go`,
+`internal/validator/validator.go`, `npm/src/validator/index.js`, `pypi/trackfw/validator.py`
+(WIP dos colegas ML-1B/ML-1C) não foram tocados — verificado por `git diff --stat` antes e depois de
+cada mutação de falsificação, e a mutação em `manager.go` foi restaurada por `cp` do backup tirado
+antes da mutação (preservando a edição concorrente do ML-1C que já estava presente).
+Nenhuma operação de git executada. `make quality` não rodado (reservado ao arquiteto, ao fim dos 3 MLs).
+
+### Correção pós-autorrevisão: nenhum arquivo novo
+
+Uma primeira versão desta entrega criou 3 arquivos `_probe_test.go` novos para os helpers de sonda
+(`permissionEnforcementRepresentavel`/`NaoExercitado`, `symlinkOrSkip`). Isso violava "exatamente 5
+arquivos, e só eles" do handoff. Corrigido antes de reportar como concluído: os helpers foram
+dobrados para dentro dos próprios arquivos designados (`manager_persistence_order_test.go`,
+`manager_test.go`, `provenance_test.go`) — `git status --short` confirma que só os 5 arquivos
+designados (+ `manager.go`/`manager_collision_enotdir_test.go`, WIP do colega ML-1C, não tocados por
+mim) aparecem como modificados em `internal/`.
+
+### Falsificação do próprio guard (não só do produto)
+
+Revisão apontou uma lacuna: eu tinha falsificado que o PRODUTO reprova sob mutação, mas não que a
+sonda nova (`permissionEnforcementRepresentavel`/`execBitRepresentavelPara`) se comporta
+corretamente quando devolve `false`. Forcei cada sonda a devolver `false` sempre (`return false &&
+...`) e confirmei, com `-v`: as 4 chamadas (`TestUpdateMidWriteFailureRollsBackManifestAndBytes`,
+`TestUpdateBatchRollbackRestoresAlreadyWrittenArtifactBytes`, `TestWriteProvenanceFailureAbortsAndReturnsError`,
+e as 3 de `scaffold_doctor_test.go` via `execBitRepresentavelPara`) continuam `PASS` e emitem a tag
+grepável (`PERMISSION-ENFORCEMENT-NAO-EXERCITADO`/`EXEC-BIT-NAO-EXERCITADO`) em vez de reprovar por
+vácuo. Restaurado em seguida (`cp` do backup + `git diff --stat` zero nos 2 arquivos-fonte dos
+probes originais fora do meu escopo).
+
+## 2026-09-05 — Ares (Infra) — Correção do item 4 pós-merge: `bash` por nome cru caía no stub do WSL
+
+### Contexto
+
+O PR #280 (ML-2C, `ROADMAP-2026-09-05-retarget-dos-checks-de-camada-2-que-medem-a-plataforma-e-nao-o-produto.md`)
+retargetou o item 4 do harness (`scripts/windows-repro/run.ps1`) para invocar
+`scripts/check-parity-contract-coverage.sh` REAL, via `bash`, em vez de um `print()` replicado. O
+primeiro run em Windows real após o merge (`windows-defect-reproduction`, run `33986718256`) mediu
+**INCONCLUSIVE**: `Run-Capture -Exe "bash" ...` resolveu por nome cru e caiu no **stub do WSL**
+(`C:\Windows\System32\bash.exe`), que atende pelo nome mas — sem distro instalada — só imprime
+`"Windows Subsystem for Linux has no installed distributions."` (UTF-16, assinatura de espaçamento
+caractere-a-caractere na saída) e sai com código 1, sem executar o script.
+
+**Isto não é regressão do retarget — é o retarget funcionando.** O mecanismo replicado nunca chamava
+`bash`, então nunca poderia expor esta ambiguidade de resolução; a invocação real, na primeira
+execução, já mediu algo verdadeiro sobre o ambiente do runner. Mesma causa raiz já fechada no grupo B
+para os 50 testes Python (`pypi/tests/bash_path.py`), agora do lado do PowerShell.
+
+### Correção
+
+Novo arquivo `scripts/windows-repro/resolve-bash.ps1` — `Resolve-ProvenBash`: enumera candidatos por
+caminho absoluto (cada entrada do `%PATH%` + locais canônicos do Git for Windows + o próprio stub do
+WSL, incluído de propósito para ser testado e reprovado) e só aceita um candidato cujo `--version`
+saia com `exit=0` e contenha `"GNU bash"`. `shutil.which`/`where.exe` sozinhos foram recusados como
+fonte única — é exatamente a resolução por nome que o stub vence. `env=` também não serve: medido
+(nota do vault) que o `CreateProcess` do Windows resolve nomes sem diretório pelo `%PATH%` do
+processo pai, nunca por variável passada ao filho.
+
+`run.ps1` agora dot-source o novo arquivo e, no bloco do item 4: se `Resolve-ProvenBash` não achar
+candidato provado, reporta `INCONCLUSIVE` **nomeando cada candidato testado e por que foi
+reprovado** — nunca cai no stub em silêncio; se achar, invoca o script real pelo caminho absoluto
+provado.
+
+### Falsificação (nas duas direções, local, sem Windows real)
+
+- **Positiva**: `Resolve-ProvenBash` sem manipular `%PATH%` resolveu `/opt/homebrew/bin/bash` (bash
+  real desta máquina) e o item 4 executou o script real com veredito `ABSENT` (correção de cp1252 de
+  02/09 confirmada presente).
+- **Negativa**: `%PATH%` apontado só para um impostor (script que imprime literalmente a mensagem do
+  stub do WSL e sai com 1) — `Resolve-ProvenBash` devolveu `Path=$null` com o candidato listado como
+  `proven=False` e a saída do impostor anexada; o item 4, no mesmo cenário, produz a mensagem
+  nomeada em vez de um `INCONCLUSIVE` genérico.
+
+`pwsh -File scripts/windows-repro/run.ps1` rodado de verdade nesta máquina (PowerShell 7.6.5) —
+parser sem erro, os 12 itens produzem veredito (item 12 fica `SEM-VEREDITO` por depender de
+`where.exe`/caminhos `C:\...` que não existem fora do Windows — comportamento preexistente, não
+tocado por este ML).
+
+### Escopo respeitado
+
+Únicos arquivos tocados: `scripts/windows-repro/run.ps1` (edição) e
+`scripts/windows-repro/resolve-bash.ps1` (novo). Nenhum outro item do harness alterado.
+`scripts/check-gates-falsify.sh` não tocado (reservado a colega em paralelo). `make quality` não
+rodado (reservado ao arquiteto). Nenhuma operação de git executada.
+
+Nota do vault:
+`vault/notes/item-4-do-harness-precisa-provar-identidade-do-bash-antes-de-invocar-2026-09-05.md`.
+
+## 2026-09-05 — Apolo (Backend) — ML-1D retomado: fixtures reais do Cenário 27/28/32, não só o `Roadmap:` do S27-CLEAN
+
+### Contexto
+
+Retomada de ML-1D (issue #278) após um corte de sessão em background. O handoff original creditava
+o único cenário reprovado por `make quality` à grafia `Roadmap:` vazia no fixture
+`write_req_done_fixture` usado por `adr-not-accepted/*/superseded-not-a-violation-baseline`
+(`assert_succeeds`, exige 0 violações). Corrigi isso primeiro (parâmetro `$3 roadmap_rel` real +
+`write_roadmap_link_target_fixture` como alvo em disco) — mas ao rodar `check-gates-falsify.sh`
+isolado (nunca rodado até o fim nesta sessão) achei DOIS problemas adicionais que a leitura original
+não previa:
+
+1. `write_roadmap_link_target_fixture` (o alvo criado para o Roadmap real) ficava em
+   `docs/roadmaps/wip/` — MESMO diretório escaneado por `wip_has_req`/`wip_acceptance` — e não tinha
+   `REQ:` nem `## Acceptance Criteria`, então o cenário CLEAN reprovava por DUAS violações novas,
+   diferentes da que eu tinha corrigido. Fix: parametrizar `req_rel`, escrever `REQ:` real + heading
+   de Acceptance Criteria no alvo.
+2. A premissa "chamadores de `assert_fails_with`/`assert_lacks_pattern` toleram violações extras,
+   podem seguir com `Roadmap:` vazio" estava ERRADA para `assert_lacks_pattern`: essa função (usada
+   nos braços `-detects-regression` dos Cenários 27/28/32) exige **exit 0 do processo inteiro**, não
+   só a ausência do padrão sob prova. `write_req_done_fixture` (chamada 2-arg, VIOLATING),
+   `write_req_open_blocked_fixture`, `write_req_done_fixture_backtick_body_only` e
+   `write_req_done_fixture_unpaired_delimiter_body_only` tinham `ADR:`/`Roadmap:` vazios que agora
+   (pós-ML-1B, `contentHasMarkerValue` por VALOR) disparam `req_has_adr`/`req_has_roadmap` mesmo
+   nesses fixtures — quebrando o braço `-detects-regression` desses 3 cenários nos 3 CLIs.
+
+Corrigido com o mesmo placeholder já usado em `write_roadmap_acceptance_req_fixture` deste script:
+`ADR: none` / `Roadmap: none` (valor não-branco → não dispara `req_has_adr`/`req_has_roadmap`; sem
+sufixo `.md` → `ref_targets_exist` não tenta resolver no disco). Default de `write_req_done_fixture`
+mudou de `roadmap_rel=${3:-}` para `roadmap_rel=${3:-none}`.
+
+### Enumeração completa (obrigação do handoff)
+
+Todo grep de `ADR:`/`Roadmap:`/`adr:`/`roadmap:` em `scripts/check-*.sh` foi classificado
+individualmente: os únicos que exercitam de fato `req_has_adr`/`req_has_roadmap`/`wip_has_req` via
+`trackfw validate` COM uma asserção que exige limpeza total (`assert_succeeds` ou
+`assert_lacks_pattern`) são os 4 listados acima, em `check-gates-falsify.sh`. Todos os demais
+achados (`check-agent-namespace-union.sh`, `check-artifact-parity.sh`, `check-validate-parity.sh`,
+`check-roadmap-move-parity.sh`, `check-barrier.sh`) ou (a) não chamam `validate` nesse fixture, (b)
+usam `assert_fails_with`/comparação cross-CLI tolerante a violações extras, ou (c) testam
+deliberadamente a ausência do marcador (ex.: `wip_has_req` em `check-agent-namespace-union.sh`) —
+nenhum precisava de correção.
+
+### Verificação
+
+- Mutação: com `resolveAdrStatus` corrompido para nunca resolver "Superseded", o fixture do Cenário
+  27-CLEAN (agora com `Roadmap:`/`REQ:` reais) continua reprovando — prova que ganhar link real não
+  vacuizou o teste original.
+- `bash scripts/check-gates-falsify.sh`: **GATE_EXIT=0**, 359 linhas `OK`/`PROOF`, 0 `FAIL` —
+  "Falsification checks passed (all 181 scenarios...)".
+- `go build ./...` e `go vet ./...`: sem erros.
+
+### Escopo respeitado
+
+Único arquivo tocado: `scripts/check-gates-falsify.sh`. Nenhum arquivo de `internal/validator/`,
+`npm/`, `pypi/` ou `internal/integrations/` alterado (prontos por outro agente, conforme handoff).
+Nenhuma operação de git executada — árvore deixada suja para auditoria do arquiteto.

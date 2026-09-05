@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -474,7 +475,7 @@ func detectNameCollision(item resolvedPlan, force bool) error {
 	directory := filepath.Dir(item.destination)
 	entries, err := os.ReadDir(directory)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return nil
 		}
 		return fmt.Errorf("scan %q for name collisions: %w", directory, err)

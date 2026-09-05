@@ -126,10 +126,45 @@ def _content_has_marker(content: str, markers: list) -> bool:
     Um marcador é considerado "sem valor" se a linha for exatamente
     "MARKER \n" ou "MARKER \r\n" (espaço + newline/CRLF) — P3: detecta
     campos vazios em arquivos CRLF além de arquivos LF.
+
+    Usada apenas para markers de "existência de bloco" (ex: acceptance_markers, um heading
+    de seção) — não para markers de link (REQ:/ADR:/Roadmap:), que usam
+    _content_has_marker_value.
     """
     for marker in markers:
         if marker in content and (marker + " \n") not in content and (marker + " \r\n") not in content:
             return True
+    return False
+
+
+def _content_has_marker_value(content: str, markers: list) -> bool:
+    """
+    Retorna True se algum dos marcadores aparece em content seguido de conteúdo não-branco
+    na mesma linha — isto é, o campo tem um valor real, não apenas o marcador.
+
+    issue #278: _content_has_marker (acima) detectava "vazio" só pela grafia literal
+    "MARKER + um espaço + \\n"/"\\r\\n" — 5 de 7 grafias naturais de campo vazio escapavam
+    ("MARKER:\\n" sem espaço, dois espaços, tab, CRLF sem espaço, três espaços). Esta função
+    decide por VALOR: pega o resto da linha após o marcador, descarta \\r/\\t/espaços das
+    duas pontas, e só considera "tem valor" se sobrar algo. Indiferente a CRLF, tabs e
+    contagem de espaços — cobre as 7 grafias medidas na triagem, não apenas a literal do
+    template.
+    """
+    for marker in markers:
+        start = 0
+        while True:
+            idx = content.find(marker, start)
+            if idx == -1:
+                break
+            pos = idx + len(marker)
+            rest = content[pos:]
+            nl = rest.find("\n")
+            if nl != -1:
+                rest = rest[:nl]
+            rest = rest.rstrip("\r")
+            if rest.strip() != "":
+                return True
+            start = pos
     return False
 
 
@@ -1019,7 +1054,7 @@ def validate_wip_has_req(cfg: dict) -> list:
             content = _read_file_for_rule("wip_has_req", os.path.join(wip_dir, name), violations)
             if content is None:
                 continue
-            if not _content_has_marker(content, req_markers):
+            if not _content_has_marker_value(content, req_markers):
                 violations.append(
                     {"type": "violation", "message": f'roadmap "{name}" is in wip but has no linked REQ'}
                 )
@@ -1035,7 +1070,7 @@ def validate_reqs_have_adr(cfg: dict) -> list:
         try:
             with open(file_path, "r", encoding="utf-8") as f:
                 content = f.read()
-            if not _content_has_marker(content, adr_markers):
+            if not _content_has_marker_value(content, adr_markers):
                 name = os.path.basename(file_path)
                 violations.append(
                     {"type": "violation", "message": f'req "{name}" has no linked ADR'}
@@ -1054,7 +1089,7 @@ def validate_blocked_has_req(cfg: dict) -> list:
             content = _read_file_for_rule("blocked_has_req", os.path.join(blocked_dir, name), violations)
             if content is None:
                 continue
-            if not _content_has_marker(content, req_markers):
+            if not _content_has_marker_value(content, req_markers):
                 violations.append(
                     {"type": "violation", "message": f'roadmap "{name}" is in blocked but has no linked REQ'}
                 )
@@ -1070,7 +1105,7 @@ def validate_reqs_have_roadmap(cfg: dict) -> list:
         try:
             with open(file_path, "r", encoding="utf-8") as f:
                 content = f.read()
-            if not _content_has_marker(content, roadmap_markers):
+            if not _content_has_marker_value(content, roadmap_markers):
                 name = os.path.basename(file_path)
                 violations.append(
                     {"type": "violation", "message": f'req "{name}" has no linked Roadmap'}

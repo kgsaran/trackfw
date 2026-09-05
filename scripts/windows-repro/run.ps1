@@ -74,6 +74,10 @@ $ErrorActionPreference = "Continue"
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
 Set-Location $repoRoot
 
+# Resolve-ProvenBash — usado pelo item 4 (ver bloco abaixo). Ficou num arquivo
+# proprio para poder ser testado isoladamente sem rodar a suite inteira.
+. (Join-Path $PSScriptRoot "resolve-bash.ps1")
+
 $env:TRACKFW_PYPI_SRC = (Join-Path $repoRoot "pypi")
 
 $results = @()
@@ -184,15 +188,35 @@ Add-Result -Item "1" -Title "cp1252 no cli.py --help de topo" `
 # CONSOLE cp1252 nativo do Windows quem cria a condicao pre-fix, e e o
 # proprio script real quem declara a correcao — se a fixarmos aqui por
 # fora, mascaramos exatamente o que estamos medindo.
+#
+# 🔴 Correcao pos-merge (PR #280, run 33986718256): a invocacao por NOME
+# CRU "bash" caiu no stub do WSL (C:\Windows\System32\bash.exe), que
+# responde ao nome mas nao executa nada — devolveu INCONCLUSIVE com saida
+# UTF-16 "Windows Subsystem for Linux has no installed distributions.".
+# Resolve-ProvenBash (resolve-bash.ps1) prova a identidade (GNU bash real)
+# de cada candidato ANTES de invocar. Se nenhum provar, o item reporta um
+# veredito proprio, nomeando os candidatos reprovados — nunca cai no stub
+# em silencio.
 # ---------------------------------------------------------------------
-$r4 = Run-Capture -Exe "bash" -ArgList @("scripts/check-parity-contract-coverage.sh", "docs/cli-parity.md") -WorkDir $repoRoot.Path
-$item4CombinedOutput = $r4.Stdout + "`n" + $r4.Stderr
-$item4Verdict = if ($item4CombinedOutput -match "UnicodeEncodeError") { "REPRODUCED" }
-                elseif ($r4.ExitCode -eq 0) { "ABSENT" }
-                else { "INCONCLUSIVE" }
-$item4Tail = if ($item4CombinedOutput.Length -gt 1500) { $item4CombinedOutput.Substring($item4CombinedOutput.Length - 1500) } else { $item4CombinedOutput }
-Add-Result -Item "4" -Title "gate de cobertura crasha em cp1252 (retargetado ML-2C: invoca scripts/check-parity-contract-coverage.sh REAL via bash, nao mais um print() replicado)" `
-    -Verdict $item4Verdict -Detail "exit=$($r4.ExitCode)`n--- saida (tail) ---`n$item4Tail"
+$bashResolution = Resolve-ProvenBash
+if (-not $bashResolution.Path) {
+    $triedDetail = ($bashResolution.Tried | ForEach-Object {
+        $outSnippet = if ($_.Output) { $_.Output.Substring(0, [Math]::Min(200, $_.Output.Length)) } else { "" }
+        "  $($_.Path) -> exit=$($_.ExitCode) proven=$($_.IsProven) out=$outSnippet"
+    }) -join "`n"
+    Add-Result -Item "4" -Title "gate de cobertura crasha em cp1252 (retargetado ML-2C: invoca scripts/check-parity-contract-coverage.sh REAL via bash provado por identidade)" `
+        -Verdict "INCONCLUSIVE" `
+        -Detail "NENHUM Git Bash provado foi encontrado — o item 4 nao pode medir o defeito sem um bash real (o script usa `${BASH_SOURCE[0]}`). Candidatos testados e reprovados na prova de identidade (--version precisa conter 'GNU bash'):`n$triedDetail`nInstale o Git for Windows, ou garanta que ele precede o stub do WSL (C:\Windows\System32\bash.exe) no PATH do runner."
+} else {
+    $r4 = Run-Capture -Exe $bashResolution.Path -ArgList @("scripts/check-parity-contract-coverage.sh", "docs/cli-parity.md") -WorkDir $repoRoot.Path
+    $item4CombinedOutput = $r4.Stdout + "`n" + $r4.Stderr
+    $item4Verdict = if ($item4CombinedOutput -match "UnicodeEncodeError") { "REPRODUCED" }
+                    elseif ($r4.ExitCode -eq 0) { "ABSENT" }
+                    else { "INCONCLUSIVE" }
+    $item4Tail = if ($item4CombinedOutput.Length -gt 1500) { $item4CombinedOutput.Substring($item4CombinedOutput.Length - 1500) } else { $item4CombinedOutput }
+    Add-Result -Item "4" -Title "gate de cobertura crasha em cp1252 (retargetado ML-2C: invoca scripts/check-parity-contract-coverage.sh REAL via bash provado por identidade, nao mais o primeiro nome cru)" `
+        -Verdict $item4Verdict -Detail "bash provado: $($bashResolution.Path)`nexit=$($r4.ExitCode)`n--- saida (tail) ---`n$item4Tail"
+}
 
 # ---------------------------------------------------------------------
 # item 2 — retargetado (ROADMAP-2026-09-05, ML-2A). Ate aqui este item

@@ -1,9 +1,9 @@
 package thirdparty
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 )
@@ -150,17 +150,18 @@ func TestLoadProvenanceUnsupportedSchemaVersionIsError(t *testing.T) {
 }
 
 func TestWriteProvenanceFailureAbortsAndReturnsError(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("permission bits behave differently on windows")
-	}
 	if os.Geteuid() == 0 {
 		t.Skip("running as root: permission enforcement is not applicable")
 	}
 
 	root := t.TempDir()
+	if !permissionEnforcementRepresentavel(t, root) {
+		permissionEnforcementNaoExercitado(t, ".trackfw (chmod 0500 no diretorio)")
+		return
+	}
 	// Pre-create .trackfw as read-only so atomicWrite's os.CreateTemp
-	// inside it fails — MkdirAll on an existing directory does not change
-	// its mode, so this reliably forces the write to fail.
+	// inside it fails — MkdirAll on an already-existing directory does not
+	// change its mode, so this reliably forces the write to fail.
 	trackfwDir := filepath.Join(root, ".trackfw")
 	if err := os.MkdirAll(trackfwDir, 0o500); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
@@ -216,4 +217,50 @@ func TestVerifyApprovalRejectsEmptyApprovedBy(t *testing.T) {
 	if err := VerifyApproval(root, "abc123", "dest/x.md"); err == nil {
 		t.Fatal("expected error for empty approved_by, got nil")
 	}
+}
+
+// ML-1A de ROADMAP-2026-09-05-fechar-os-tres-defeitos-mecanicos-dos-issues-do-consumidor-externo:
+// mesma sonda de internal/integrations/manager_persistence_order_test.go, duplicada
+// aqui porque nao ha pacote de testutil compartilhado entre thirdparty e
+// integrations no repositorio (convencao ja em uso: execbit_probe_test.go
+// tambem e local ao pacote generators). Mesmo idioma de
+// execBitRepresentavelPara (ML-4A): mede o sistema de arquivos em vez de
+// presumir por runtime.GOOS.
+
+// permissionEnforcementRepresentavel responde: neste sistema de arquivos, um
+// diretorio levado a 0500 realmente impede a criacao de um novo arquivo
+// dentro dele pelo processo atual?
+func permissionEnforcementRepresentavel(t *testing.T, baseDir string) bool {
+	t.Helper()
+
+	probe := filepath.Join(baseDir, "trackfw-permission-probe")
+	if err := os.MkdirAll(probe, 0o700); err != nil {
+		t.Fatalf("sonda de enforcement de permissao: mkdir %s: %v", probe, err)
+	}
+	defer func() {
+		_ = os.Chmod(probe, 0o700)
+		_ = os.RemoveAll(probe)
+	}()
+
+	if err := os.Chmod(probe, 0o500); err != nil {
+		t.Fatalf("sonda de enforcement de permissao: chmod 0500 em %s: %v", probe, err)
+	}
+
+	f, err := os.CreateTemp(probe, "write-test-*")
+	if err == nil {
+		_ = f.Close()
+		_ = os.Remove(f.Name())
+		return false // criacao teve sucesso apesar do 0500 -- nao aplicado aqui
+	}
+	return os.IsPermission(err)
+}
+
+// permissionEnforcementNaoExercitado registra, com tag grepavel, QUAL
+// garantia deixou de ser verificada e por que.
+func permissionEnforcementNaoExercitado(t *testing.T, artefato string) {
+	t.Helper()
+	fmt.Fprintf(os.Stderr,
+		"PERMISSION-ENFORCEMENT-NAO-EXERCITADO: %s [%s] -- garantia NAO verificada: \"a escrita falha quando o diretorio esta em modo 0500\". "+
+			"Este sistema de arquivos nao aplica bits de permissao POSIX da forma que o teste presume. O restante do teste nao pode ser construido sem essa recusa.\n",
+		artefato, t.Name())
 }
