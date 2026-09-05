@@ -79,12 +79,23 @@ $env:TRACKFW_PYPI_SRC = (Join-Path $repoRoot "pypi")
 $results = @()
 
 function Add-Result {
-    param([string]$Item, [string]$Title, [string]$Verdict, [string]$Detail)
+    # -OutOfGate (ROADMAP-2026-09-05, ML-3B — vazamento 2): o item 12 e sonda
+    # observacional declaradamente FORA da issue #216 ("NAO CORRIGE nada",
+    # ver comentario acima do bloco do item 12). Sem este parametro o
+    # veredito dela entrava no MESMO $results que alimenta $reproduced/
+    # $inconclusive/$blocked e o exit code — um item que ninguem se
+    # comprometeu a corrigir reprovava o gate de uma issue que fala de outra
+    # coisa. InGate=$false tira a linha da CONTAGEM do gate sem tirar da
+    # tabela impressa (SUMARIO e GITHUB_STEP_SUMMARY continuam mostrando
+    # todas as linhas — visibilidade preservada, so a contaminacao do gate
+    # que sai).
+    param([string]$Item, [string]$Title, [string]$Verdict, [string]$Detail, [switch]$OutOfGate)
     $script:results += [pscustomobject]@{
         Item     = $Item
         Title    = $Title
         Verdict  = $Verdict
         Detail   = $Detail
+        InGate   = -not $OutOfGate.IsPresent
     }
     Write-Host ""
     Write-Host "## ITEM $Item — $Title"
@@ -836,8 +847,13 @@ $item12Verdict = switch ($item12Branch) {
     "NOT-REPRODUCED" { "ABSENT" }
     default          { "INCONCLUSIVE" }
 }
+# -OutOfGate (ROADMAP-2026-09-05, ML-3B): sonda declaradamente FORA da
+# issue #216 (ver bloco "item 12" acima — "NAO CORRIGE nada. Nenhum teste e
+# tocado."). O veredito continua na tabela impressa, mas sai da contagem
+# que decide o exit code — o gate desta suite fala da issue #216, nao de
+# uma investigacao observacional a parte.
 Add-Result -Item "12" -Title "SONDA ML-0B (fora da issue #216): exit 1 uniforme do bash lancado pelo Python — (A) resolucao do executavel vs (B) o script morre no cabecalho [medido: $item12Branch]" `
-    -Verdict $item12Verdict -Detail $item12Detail
+    -Verdict $item12Verdict -Detail $item12Detail -OutOfGate
 
 # ---------------------------------------------------------------------
 # Sumario
@@ -848,26 +864,59 @@ Write-Host "SUMARIO — suite de reproducao de defeito (11 itens da issue #216)"
 Write-Host "===================================================================="
 $results | Format-Table -AutoSize | Out-String | Write-Host
 
-$reproduced = @($results | Where-Object { $_.Verdict -eq "REPRODUCED" })
-$inconclusive = @($results | Where-Object { $_.Verdict -eq "INCONCLUSIVE" })
-$blocked = @($results | Where-Object { $_.Verdict -eq "BLOCKED-BY-ITEM-1" })
+# $gateResults (ROADMAP-2026-09-05, ML-3B — vazamento 2): so as linhas
+# InGate=$true contam para o gate. Hoje isso exclui SOMENTE o item 12
+# (sonda observacional fora da issue #216) — os itens 8/9/11
+# (DECLARED-OUT-OF-SCOPE/OUT-OF-SCOPE/COVERED-BY-CAMADA-1) ja saiam do
+# contador antes disto por nunca emitirem um Verdict que os filtros abaixo
+# reconhecem; a exclusao explicita do item 12 e a UNICA que precisava de um
+# campo novo, porque o veredito dele PODE ser REPRODUCED/INCONCLUSIVE.
+$gateResults = @($results | Where-Object { $_.InGate })
+$reproduced = @($gateResults | Where-Object { $_.Verdict -eq "REPRODUCED" })
+$inconclusive = @($gateResults | Where-Object { $_.Verdict -eq "INCONCLUSIVE" })
+$blocked = @($gateResults | Where-Object { $_.Verdict -eq "BLOCKED-BY-ITEM-1" })
+# $executionFailed (ROADMAP-2026-09-05, ML-3B — vazamento 1): o item 3 saiu
+# do contador de REPRODUCED/INCONCLUSIVE de proposito (CONFIRMATORIO, ML-2B)
+# — mas "confirmatorio" nao e "invisivel". Se a SONDA que sustenta o item 3
+# deixar de EXECUTAR (go run falha antes de medir qualquer coisa), isso e
+# ausencia de medicao, nao um resultado confirmatorio, e precisa do proprio
+# sinal no gate — sem este contador o gate ficava verde com a sonda quebrada
+# e ninguem percebia (achado da auditoria da Wave 2).
+# NOTA para o futuro: este filtro passa por $gateResults (respeita InGate).
+# Se um item futuro marcado -OutOfGate tiver uma sonda que tambem possa
+# falhar ao EXECUTAR, essa falha herda o MESMO vazamento que este ML acabou
+# de fechar para o item 3 — precisaria do proprio contador, fora do InGate.
+$executionFailed = @($gateResults | Where-Object { $_.Verdict -eq "CONFIRMATORY-EXECUTION-FAILED" })
 
-Write-Host "Reproduzidos: $($reproduced.Count) | Inconclusivos: $($inconclusive.Count) | Bloqueados por dependencia (item 1): $($blocked.Count) | Total de linhas: $($results.Count)"
+Write-Host "Reproduzidos: $($reproduced.Count) | Inconclusivos: $($inconclusive.Count) | Bloqueados por dependencia (item 1): $($blocked.Count) | Falhas de execucao confirmatoria (item 3 sem medir): $($executionFailed.Count) | Total de linhas: $($results.Count) | Fora do gate (observacional, item 12): $(@($results | Where-Object { -not $_.InGate }).Count)"
 
 if ($env:GITHUB_STEP_SUMMARY) {
+    # ROADMAP-2026-09-05, ML-3B — o filtro do gate (InGate) NAO pode ficar
+    # invisivel aqui. Sem esta anotacao, o item 12 (fora do gate) rende
+    # "REPRODUCED" na tabela do GITHUB_STEP_SUMMARY exatamente como um item
+    # da issue #216 — o job sai 0 mas o artefato que um humano abre continua
+    # dizendo REPRODUCED sem explicacao, a MESMA classe de leitura errada que
+    # motivou este roadmap inteiro (linhas 36-40 do diagnostico), so que
+    # invertida: antes o numero e a tabela concordavam (os dois errados);
+    # agora podiam discordar em silencio (numero certo, tabela muda).
     $md = "## Suite de reproducao de defeito — AC2/AC2b/AC3`n`n"
     $md += "| Item | Titulo | Veredito |`n|---|---|---|`n"
-    foreach ($r in $results) { $md += "| $($r.Item) | $($r.Title) | $($r.Verdict) |`n" }
+    foreach ($r in $results) {
+        $verdictCell = if ($r.InGate) { $r.Verdict } else { "$($r.Verdict) (fora do gate — nao e da issue #216)" }
+        $md += "| $($r.Item) | $($r.Title) | $verdictCell |`n"
+    }
     Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $md
 }
 
 # A suite PRECISA nascer vermelha (AC2): sai 1 se algum item reproduziu o
 # defeito conhecido (esperado, pre-correcao), se algo ficou inconclusivo
-# sem justificativa esperada, ou se um item ficou BLOQUEADO por dependencia
-# de outro defeito ainda nao corrigido (ML-1C: informacao perdida != item
+# sem justificativa esperada, se um item ficou BLOQUEADO por dependencia de
+# outro defeito ainda nao corrigido (ML-1C: informacao perdida != item
 # resolvido — precisa continuar sinalizando vermelho ate a dependencia
-# (item 1) ser corrigida).
-if ($reproduced.Count -gt 0 -or $inconclusive.Count -gt 0 -or $blocked.Count -gt 0) {
+# (item 1) ser corrigida), ou se a sonda CONFIRMATORIA do item 3 falhou ao
+# EXECUTAR (ML-3B, vazamento 1: ausencia de medicao nao e um resultado
+# confirmatorio — nao pode passar despercebida).
+if ($reproduced.Count -gt 0 -or $inconclusive.Count -gt 0 -or $blocked.Count -gt 0 -or $executionFailed.Count -gt 0) {
     exit 1
 }
 exit 0

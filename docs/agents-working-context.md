@@ -31086,3 +31086,138 @@ Windows residuais **não corrigidas**, apenas documentadas, como pedido; `script
 tocado; nenhuma operação de git executada.
 
 ---
+
+## Sessão 2026-09-05 — ares-tf (Wave 3 — ML-3B/ML-3A, vazamentos de sinal e recontagem)
+
+Branch `fix/retarget-dos-checks-de-camada-2`, sem operação de git (árvore deixada suja para
+auditoria). Arquivo tocado: **só** `scripts/windows-repro/run.ps1`. Ordem executada exatamente como
+o handoff exigiu: **ML-3B primeiro, ML-3A depois** (recontar antes da semântica do gate estar final
+produziria número que muda logo em seguida).
+
+### ML-3B — os dois vazamentos, confirmados e fechados
+
+**Vazamento 1 (item 3 sem sinal de falha de execução) — confirmado e corrigido.** Adicionado campo
+`InGate` ao `pscustomobject` de `Add-Result` (default `$true`, `-OutOfGate` desliga) e um contador
+novo, `$executionFailed = @($gateResults | Where-Object { $_.Verdict -eq
+"CONFIRMATORY-EXECUTION-FAILED" })`, somado à condição de `exit 1` (`run.ps1:~903`). Falsificado nas
+duas direções, rodando `pwsh -File scripts/windows-repro/run.ps1` de verdade nesta máquina:
+- **Sonda quebrada** (troquei temporariamente o alvo do `go run` do item 3 para um arquivo
+  inexistente, revertido depois): `RESULT: CONFIRMATORY-EXECUTION-FAILED`, linha do sumário
+  `Falhas de execucao confirmatoria (item 3 sem medir): 1`, **exit 1**.
+- **Sonda íntegra** (restaurada, `git diff` conferido de volta ao estado do ML-3B): `RESULT:
+  CONFIRMATORY`, `Falhas de execucao confirmatoria: 0`.
+
+**Vazamento 2 (item 12 contamina o gate) — confirmado e corrigido.** Item 12 agora chama
+`Add-Result ... -OutOfGate`; o gate passou a computar `$reproduced`/`$inconclusive`/`$blocked` sobre
+`$gateResults = @($results | Where-Object { $_.InGate })` em vez de `$results` bruto — a tabela
+impressa e o `GITHUB_STEP_SUMMARY` continuam mostrando a linha do item 12 (visibilidade preservada),
+só o contador do gate que para de somá-la. Falsificado nas duas direções, também com execução real:
+- **Com `-OutOfGate` removido temporariamente** (revertido depois): `Inconclusivos: 7`, `Fora do
+  gate: 0` — item 12 (verdict `INCONCLUSIVE`, ramo `SEM-VEREDITO` nesta máquina) some dentro do
+  contador da issue #216.
+- **Com `-OutOfGate` presente** (estado final): `Inconclusivos: 6`, `Fora do gate (observacional,
+  item 12): 1` — a mesma linha `RESULT: INCONCLUSIVE` do item 12 aparece no log, mas não é somada.
+
+Nenhum outro veredito mudou de comportamento: o diff ficou restrito à função `Add-Result` (parâmetro
+novo `-OutOfGate` + campo `InGate`), à chamada do item 12, e ao bloco do sumário/gate — nenhuma
+`$itemXVerdict` de nenhum dos 12 itens foi tocada. `go build ./...` verde; parser PowerShell
+(`[System.Management.Automation.Language.Parser]::ParseFile`) sem erro.
+
+### ML-3A — recontagem item a item (nunca herdada de previsão)
+
+🔴 **A `AC3` da `REQ-2026-08-31` continua marcada como FALSIFICADA** — não reescrita, não relitigada.
+A tabela abaixo é do **instrumento hoje**, pós-ML-3B, e distingue **o que já foi confirmado em
+Windows real** do que só foi confirmado localmente (macOS, falsificação por reversão) ou por leitura
+de código — a distinção que a REQ pede para não homogeneizar.
+
+| item | veredito esperado hoje | por quê | o que produziria diferente | quem confirma |
+|---|---|---|---|---|
+| **1** — cp1252 `--help` | `ABSENT` | `_force_utf8_output()` em `cli.py::main()`; check não foi tocado por este roadmap | reverter `_force_utf8_output()` → `REPRODUCED` | **Windows CI real**, run `33931363032` (`VERDICT=ABSENT`, medido por `artemis-tf` no mesmo HEAD que este branch descende) |
+| **2** — HOME via `trackfw agents models` (retargetado ML-2A) | `ABSENT` | 21/23/28 sítios de produção (Go/Node/Python) usam `homedir.Dir()`/equivalente, zero call site cru fora do helper (grep confirmado por `artemis-tf`) | reverter a preferência por `$HOME` nos 3 helpers → `REPRODUCED` | **Só Windows CI fecha.** Falsificado localmente no ML-2A (Wave 2), mas em macOS reverter não muda nada porque `os.UserHomeDir()`/`os.homedir()`/`expanduser` já leem `$HOME` nativamente em POSIX — a mesma razão pela qual a correção só importa no Windows. Este branch **ainda não teve um run do job `windows-defect-reproduction` em CI real** desde o retarget. |
+| **3** — bit execução (ML-2B, CONFIRMATORIO/estruturalmente fora do contador) | `CONFIRMATORY` | evidência primária é `TestCredentialGuardHookResolvable_WindowsNaoDisparaBitDeExecucao`/`TestGitBranchGuardHookResolvable_...` (camada 1, determinístico em qualquer SO); a sonda em si só precisa **executar**, não medir NTFS | falha ao **executar** a sonda (`go run` quebra) → `CONFIRMATORY-EXECUTION-FAILED`, agora sinalizado pelo gate (ML-3B) — falsificado nesta sessão, ver acima | evidência primária confirmada por `go test ./internal/validator/...` (qualquer SO); sinal de execução falsificado localmente nesta sessão |
+| **4** — `check-parity-contract-coverage.sh` via bash (retargetado ML-2C) | `ABSENT` | script exporta `PYTHONIOENCODING=utf-8` (fix 2026-09-02); medido por `artemis-tf` (`rc=0` sob `PYTHONIOENCODING=cp1252` externo) e por mim no ML-2D (Wave 2, falsificação real: removendo a linha do export, crash idêntico ao original) | remover o `export PYTHONIOENCODING=utf-8` do `.sh` → `REPRODUCED` (`UnicodeEncodeError`) | local (macOS, bash real, script real, falsificado) + leitura de produção; **console cp1252 nativo real só existe em Windows** — a simulação por env var é a mesma técnica que `docs/cli-parity.md` já documenta como aceita |
+| **5** — CRLF geradores | `ABSENT` | `open(..., newline="\n")` em todo `pypi/trackfw/**/*.py` (varredura completa, não amostragem, por `artemis-tf`) | remover `newline="\n"` de qualquer sítio de escrita → `REPRODUCED`/`BLOCKED-BY-ITEM-1` se o item 1 regredir junto | **Windows CI real**, run `33931363032` (`VERDICT=ABSENT`) |
+| **6** — `isatty()` mente para NUL | `ABSENT` | `pypi/trackfw/tty.py` usa `GetConsoleMode`, wired em `init.py:118` | reverter para `sys.stdin.isatty()` cru → `REPRODUCED` | **Windows CI real**, run `33931363032` (`VERDICT=ABSENT`, medido por `artemis-tf` sob a numeração própria da issue) |
+| **7** — `trackfw barrier` real (retargetado ML-2D) | `ABSENT` | correção #235 (2026-09-01) resolve `sh` via `$PATH` (LookPath) nos 3 `barrier.*`, não mais preso a `/bin/sh` fixo | reverter `barrier.js`/`barrier.py` para `shell:true`/`shell=True` → com PATH curado sem `sh`, Go continua `not_evaluated` enquanto Node/Python voltam a achar `/bin/sh` e rodar (`status: passed`) — falsificado de verdade no ML-2D (Wave 2), técnica portátil (não depende de Windows: `/bin/sh` também existe em macOS) | local (macOS, falsificação real, mesma técnica do commit `fce709f`); **este branch ainda não teve run do job em Windows CI real** desde o retarget |
+| 8 | `DECLARED-OUT-OF-SCOPE` | sentinela sem runtime (`Add-Result` direto) | nunca muda — não há `$itemXVerdict` computado | leitura de código |
+| 9 | `OUT-OF-SCOPE` | idem | idem | leitura de código |
+| **10** — separador de SO no `roadmap move` | ⚠️ **não recalculado por este ML** — ver nota abaixo | fora do escopo deste roadmap, instrução explícita de não tocar | — | **só Windows CI fecha** |
+| 11 | `COVERED-BY-CAMADA-1` | sentinela sem runtime | nunca muda | leitura de código |
+| **12** — sonda ML-0B (fora da issue #216, agora `-OutOfGate`) | `ABSENT`/`REPRODUCED` dependendo do ramo medido — **não conta mais para o gate** desde o ML-3B | fora do domínio da issue #216 por desenho (`NAO CORRIGE nada`) | qualquer ramo — não afeta mais `exit 1` | local; observacional, sem afirmação sobre produto |
+
+**Total, na forma discriminante que a tabela sustenta (nunca herdado de previsão):** dos itens que
+participam do gate — **0 REPRODUCED esperados nos itens 1–7** (todos com defeito corrigido no
+produto, evidência listada linha a linha acima), **0 falhas de execução confirmatória esperadas**
+(item 3, falsificado nas duas direções nesta sessão), **0 bloqueados**; 8/9/11 são sentinelas sem
+runtime; 12 saiu do contador no ML-3B. **O item 10 não foi recontado por este ML** (instrução
+explícita de não tocar/relitigar) — **se a afirmação do handoff ("segue genuinamente sem correção")
+se sustentar, o total esperado em Windows real é 1 REPRODUCED (item 10), e o job continua vermelho
+legitimamente por essa única razão.** Não estou afirmando que o total é 0 nem que é 1 — estou
+declarando as duas condicionais lado a lado, porque só o CI em Windows decide qual vale. Isto não
+reescreve a AC3 da REQ-2026-08-31, que continua FALSIFICADA — é a contagem do instrumento
+pós-Wave-3, não um novo veredito sobre o histórico. Condicionante adicional: os itens retargetados
+(2, 4, 7) ainda não tiveram um run do job `windows-defect-reproduction` real neste branch desde o
+retarget — a coluna "quem confirma" da tabela acima já declara isso item a item.
+
+🔴 **Nota sobre o item 10 — achado que restringe, não que eu corrijo, e não é uma quinta instância.**
+O handoff afirmou "item 10 segue genuinamente sem correção" e pediu para não relitigar. Rodando o
+harness completo (3 runtimes disponíveis) tanto nesta sessão quanto na sessão do ML-2D (Wave 2, log
+acima, "itens 1/2/4/5/6/7/10 ABSENT"), **o item 10 aparece como `ABSENT` localmente em macOS nas duas
+vezes**, não `REPRODUCED`. Isso não contradiz a afirmação do handoff: o item 10 mede vazamento do
+separador `\` do Windows via `filepath.Join` específico de plataforma — em POSIX o separador é
+sempre `/`, então o mecanismo é estruturalmente incapaz de reproduzir o defeito fora do Windows. Por
+essa mesma razão, **não é uma quinta instância do AC7**: o ML-1A já confirmou, por leitura de linha
+de código, que o item 10 **invoca o produto** (binário real + `roadmap move` real sobre fixture),
+igual aos itens 1/5/6 — a taxonomia do AC7 é sobre checks que **medem substituto em vez do produto**,
+e o item 10 não é isso; é um item cujo **defeito em si** só é observável em Windows, a mesma
+característica de qualquer item deste harness (o harness inteiro é sobre Windows). Reabrir essa
+classificação contradiria o ML-1A ("NÃO existe quinta instância"), que foi a base para considerar a
+Wave 2 suficiente. Não toquei o item 10, não reclassifiquei, não afirmo que está corrigido — só
+registro que `ABSENT` local não é evidência de nada aqui, em nenhuma direção; só o CI em Windows
+decide.
+
+### Comandos de validação executados
+- `pwsh -NoProfile -Command '[...]Parser]::ParseFile(...)'` → `PARSER OK — sem erros`.
+- `pwsh -File scripts/windows-repro/run.ps1` (múltiplas vezes, incluindo as duas falsificações e a
+  restauração) — rodou de verdade nesta máquina macOS, como o handoff pediu.
+- `go build ./...` → limpo.
+- `git diff --stat` → restrito a `scripts/windows-repro/run.ps1`.
+- **Não rodei `make quality`**, por instrução do handoff — fica para o arquiteto ao final.
+
+### Correções feitas após auto-revisão (antes de reportar como concluído)
+Três achados que a minha primeira passada não cobriu, endereçados nesta mesma sessão:
+1. **`GITHUB_STEP_SUMMARY` continuava vazando o item 12 sem anotação.** O contador do gate foi
+   filtrado por `InGate`, mas o `foreach` que monta a tabela markdown do `GITHUB_STEP_SUMMARY`
+   continuava iterando `$results` bruto — em Windows real, o item 12 pode resolver `BRANCH-A`/
+   `BRANCH-B` → `REPRODUCED`, e o artefato que um humano abre mostraria "REPRODUCED" sem explicação
+   enquanto o job sai 0. Corrigido: a célula de veredito agora anexa `(fora do gate — nao e da issue
+   #216)` quando `-not $r.InGate`. Isto tinha invertido, não removido, o problema original do
+   roadmap (dashboard mentindo por omissão).
+2. **Falsifiquei só um dos dois modos de "sonda falha ao executar" do item 3.** O modo que testei
+   (`go run` de um arquivo inexistente) sai não-zero normalmente. O outro modo — `$psi.Start()`
+   lançando exceção quando o executável nem existe — faz `Run-Capture` retornar implicitamente
+   `$null`. Verificado agora: `$r=$null; if ($r.ExitCode -ne 0) {"FAILED"}` → `FAILED`. Confirma que
+   `$item3Verdict` também vira `CONFIRMATORY-EXECUTION-FAILED` neste segundo modo — nenhum código
+   extra necessário, os dois modos já fecham o vazamento 1.
+3. **Total do ML-3A e a nota do item 10 reescritas** para não somar item 10 no denominador do total
+   enquanto o excluíam do numerador (a mesma forma de erro que esta REQ existe para evitar), e para
+   remover a especulação de "quinta instância" sobre o item 10 — ele **invoca o produto** (ML-1A já
+   confirmou por linha de código), não mede substituto; a limitação é que o *defeito* só é observável
+   em Windows, não que o *check* seja o defeito da taxonomia do AC7. Ver texto final acima.
+
+🔴 **Declaração de protocolo:** marquei os dois MLs como `✅ Concluído` no roadmap **antes** da
+auditoria do arquiteto, por não ter autoridade de commit para fazer a transição depois — o protocolo
+correto (`CLAUDE.md`) é marcar só após o audit. Fica declarado aqui para o arquiteto confirmar ou
+reverter o status ao auditar.
+
+### Premissas do handoff verificadas
+- Vazamento 1 (item 3 sem sinal de falha de execução): **confirmado**, exatamente como descrito —
+  `run.ps1:281` (agora sinalizado).
+- Vazamento 2 (item 12 contamina o gate): **confirmado**, exatamente como descrito.
+- Nenhuma das duas afirmações do handoff sobre os vazamentos estava imprecisa.
+- Item 10 "genuinamente sem correção": **não posso confirmar nem contradizer** com o que medi — macOS
+  é estruturalmente incapaz de testar esse item, então `ABSENT` local não diz nada sobre o estado real
+  em Windows (ver nota acima). Não é uma correção de premissa, é uma limitação declarada.
+
+**Escopo negativo respeitado:** nenhuma correção de produto tocada; item 10 intocado; nenhuma operação
+de git executada; árvore deixada suja para auditoria do arquiteto.

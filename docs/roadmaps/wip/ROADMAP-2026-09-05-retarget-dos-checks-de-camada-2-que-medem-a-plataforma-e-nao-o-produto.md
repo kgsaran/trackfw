@@ -122,7 +122,7 @@ mudou `barrier.js`/`barrier.py`.
 > previsto virou critério sem verificação.
 
 ### ML-3B — Dois vazamentos de sinal achados na auditoria da Wave 2
-**Status:** 🔄 Em andamento · **Agente:** `ares-tf`
+**Status:** ✅ Concluído · **Agente:** `ares-tf`
 
 🔴 **1 — `CONFIRMATORY-EXECUTION-FAILED` não chega a lugar nenhum.** O ML-2B tirou o item 3 do
 contador de forma estrutural, e isso está certo. Mas o veredito de **falha de execução** que ele
@@ -135,8 +135,50 @@ reporta saúde sobre o que não conseguiu medir. Confirmatório **não** quer di
 #216 — o próprio código diz "NÃO CORRIGE nada" — e o veredito dela entra no mesmo `$results`.
 
 ### ML-3A — Recalcular a contagem esperada, item a item
-**Status:** 🔄 Em andamento · **Agente:** `ares-tf`
+**Status:** ✅ Concluído · **Agente:** `ares-tf`
 🔴 **Justificar item a item, nunca herdar de previsão.** O erro que originou esta REQ foi
 transformar um número previsto em critério sem verificar o que os checks mediam.
 🔴 A `AC3` da `REQ-2026-08-31` **continua marcada como FALSIFICADA**. Este roadmap corrige o
 instrumento, **não o histórico**.
+
+
+## Auditoria da Wave 3 — arquiteto, 2026-09-05
+
+```
+make quality QUALITY_EXIT=0, zero FAIL · trackfw validate exit 0
+run.ps1 executado de verdade via pwsh, nao so lido
+```
+
+**Vazamento 1 fechado de forma estrutural** — conferido por mim em `run.ps1:889,919`:
+`$executionFailed` entra na condição de saída. Um item 3 que **não consegue medir** agora reprova o
+gate. Ela falsificou nos **dois** modos de falha (`go run` não-zero e `$psi.Start()` lançando), não
+só no óbvio.
+
+**Vazamento 2 fechado:** item 12 com `-OutOfGate` — sai do contador, **fica na tabela**. Falsificado
+6→7 sem a flag, 6 com ela.
+
+🔴 **O advisor dela pegou o que eu não teria visto:** mesmo com o contador corrigido, o
+`GITHUB_STEP_SUMMARY` — o que um humano lê no CI — continuava mostrando o item 12 como `REPRODUCED`
+sem anotação. Corrigir o contador e deixar o resumo mentindo seria trocar um vazamento por outro,
+mais discreto.
+
+**Ela retirou uma especulação própria antes de entregar:** tinha escrito que o item 10 seria uma
+quinta instância do padrão; ao conferir contra o ML-1A, ele **invoca o produto** — a limitação é que
+o defeito só é observável em Windows.
+
+## 🔴 Achado da auditoria: o item 10 provavelmente JÁ está corrigido
+
+O item 10 mede *"separador de SO vazando para o frontmatter da REQ no `roadmap move`"* — que é
+**exatamente** a categoria da `ADR-2026-09-04-separador-posix-...`: artefato autorado cujo consumidor
+não é o filesystem. A Wave 2 do roadmap de Windows (ML-2A) atacou essa emissão.
+
+Conferido nos 3 runtimes: `internal/generators/roadmap.go:456` (`portableDst`),
+`npm/src/generators/roadmap.js:297` (`normalizeRefSeparator`),
+`pypi/trackfw/generators/roadmap.py:14,524` (`normalize_ref_separator`). **Os três normalizam.**
+
+🔴 **Minhas duas primeiras buscas deram FALSO NEGATIVO** — procurei por `portableDst`/`toPosix` e
+concluí que Node e Python não tinham. Só apareceu quando li o código em volta da chamada de sync.
+**É a mesma classe de erro da contagem que reportei errada:** um comando que sai 0 sem casar nada
+parece resposta. Não é.
+
+**Consequência:** se o CI confirmar, o item 10 vai a `ABSENT` e a suíte inteira do #216 fecha em 0.
