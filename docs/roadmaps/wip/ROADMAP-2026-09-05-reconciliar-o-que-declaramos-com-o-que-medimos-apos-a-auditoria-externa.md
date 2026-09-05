@@ -27,7 +27,7 @@ não a cruzamos com a nossa própria declaração.**
 > Dependências: nenhuma. Vem antes de tudo porque é vermelho **na `main`**.
 
 ### ML-1A — O teste do `ENOTDIR` afirma o que foi medido, ou sai
-**Status:** 🔄 Em andamento · **Agente:** `apolo-tf`
+**Status:** ✅ Concluído · **Agente:** `apolo-tf`
 **Arquivos:** `internal/integrations/manager_collision_enotdir_test.go` (+ `manager.go` se a
 reconciliação exigir).
 
@@ -41,7 +41,7 @@ contrário. Reprova no CI.
 defeito.
 
 ### ML-1B — Corrigir publicamente o comentário do `#274`
-**Status:** 🔄 Em andamento · **Agente:** `trackfw_architect`
+**Status:** ✅ Concluído · **Agente:** `trackfw_architect`
 **Novo** comentário na issue, com a medição que derruba o anterior. Não editar o original em
 silêncio: quem leu a afirmação errada precisa encontrar a correção.
 
@@ -76,3 +76,35 @@ Achado de governança da mesma auditoria. Depende do ML-2A para não misturar co
   existe para corrigir.
 - **Release**: a publicada é a v7.3.0, de 28/08 — anterior a tudo. Decisão do usuário, e é a que
   determina se qualquer uma dessas correções chega a quem instala.
+
+
+## Auditoria da Wave 1 — arquiteto, 2026-09-05
+
+```
+make quality QUALITY_EXIT=0, zero FAIL · trackfw validate exit 0
+go build/vet limpos · go test ./internal/integrations/... ok
+```
+
+**ML-1A — reconciliado, não apagado.** `TestDetectNameCollision_ENOTDIRIsPlatformDependent` ramifica
+por `GOOS` **sem `skip`**, e **cada ramo afirma algo**: em POSIX, `err != nil`; no Windows,
+`err == nil` — mas **só depois de confirmar, via `os.ReadDir` bruto, que
+`errors.Is(rawErr, fs.ErrNotExist)` é verdadeiro no runner real**.
+
+🔴 Esse último passo veio de uma correção do advisor do próprio agente: a primeira versão do ramo
+Windows era **vacuamente satisfazível** — um `ReadDir` bem-sucedido por acidente também daria
+`err == nil`. O teste passaria sem medir nada. **Guarda de vacuidade dentro de um teste que existe
+para corrigir uma contradição** — exatamente o rigor que faltou na entrega original.
+
+**A frase de reconciliação teste↔conclusão** (requisito novo desta wave) foi escrita para **os dois**
+testes do arquivo, incluindo o que eu não pedi. **A guarda funcionou na primeira aplicação.**
+
+**ML-1B** — correção publicada no `#274` como comentário novo, não edição do original.
+
+## 🔴 Erro de processo do arquiteto nesta wave
+
+Rodei `git add -A` **com o subagente editando a árvore**: o commit `228fea5`, rotulado
+`chore(governance)`, carregou o teste do ML-1A. Regra existia em prosa e não impediu nada; **quem
+detectou foi o agente**, por `git hash-object`.
+
+Não reescrevi o histórico. Virou `ADR-2026-09-05-staging-com-escopo-implicito-...` + REQ: o controle
+passa para o **harness e para o produto**, em vez de depender de memória.
