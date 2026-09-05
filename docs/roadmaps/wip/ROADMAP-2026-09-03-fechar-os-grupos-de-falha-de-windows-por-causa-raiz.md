@@ -267,7 +267,12 @@ segurança**: a detecção de hook de guard **enfraquece no Windows**.
 
 ### ML-2A — Separador POSIX em artefato autorado
 **Status:** ✅ Concluído · auditado pelo arquiteto e **mergeado no PR #270** · **Agente:** `apolo-tf`
-**Recontagem no CI (run `33913343975`), o delta deste grupo:** `134 → 69` (Go 53→14, Node 48→34, Python 33→21). Maior queda da campanha; a triagem previa ~45.
+**Recontagem no CI (run `33913343975`), o delta deste grupo:** `134 → 101` (Go 53→46, Node 48→34, Python 33→21). A triagem previa ~45; foram 33.
+
+🔴 **Correção de 2026-09-04:** este número foi reportado como `134 → 69` (Go 53→14) por **erro de
+medição meu** — o padrão de `grep` não casava o prefixo por linha do `gh run view --log`. Re-medido
+com padrão idêntico nas duas pontas. Nota:
+`vault/notes/contagem-de-falhas-de-windows-do-go-medida-por-padrao-frouxo-2026-09-04.md`.
 **Files affected — os 3 stacks:** `npm/src/lib/update-engine.js:172-181`,
 `pypi/trackfw/commands/update_harness.py::_tildeify`, `internal/integrations/manager.go`,
 `npm/src/validator/index.js:3153` (`provenanceKey` sem normalização), `npm/src/serve/api_chain.js`
@@ -416,9 +421,22 @@ evidência quando as três herdaram a mesma premissa.** Nota no vault.
 por `isabs` não pegava `Path.is_absolute()` do pathlib em `integrations/manager.py:71`, e contei
 `req.py` como um sítio quando são três.
 
-🔴 **O que NÃO foi provado e não será localmente:** a queda da contagem de falhas de Windows. Em
-macOS o defeito é invisível (`IsAbs("/opt/…")` é `true`) e `GOOS=windows` só compila cruzado.
-**Fecha só no CI, no run pós-merge.**
+🔴 **Recontagem no CI (run `33931363032`), medida: `101 → 100`.** A estimativa era ~14; entregou
+**2**. Fechados: `TestClassifyHookAnchorage_Classe1_Ancorado` e
+`TestCredentialGuardHookResolvable_CaminhoAbsolutoSilencioso`. **Um teste novo passou a falhar:**
+`TestPathIsAnchoredForHookConfig_ControlePOSIX`.
+
+🔴 **O teste novo falha porque a correção FUNCIONOU.** Ele afirma
+`pathIsAnchoredForHookConfig(x) == filepath.IsAbs(x)` para o corpus POSIX — que é **exatamente o
+que a ADR determina que divirja no Windows**. O teste pinou o defeito como expectativa: passa em
+macOS e reprova em Windows justamente onde o predicado novo acerta. É defeito de teste, não de
+produto. **Tratar como ML corretivo — e não com guard de plataforma no assert, que apagaria a única
+asserção que exercita a divergência.**
+
+🔴 **Os demais testes de guard continuam falhando no Windows por OUTRA causa.** Exemplo medido:
+`TestCredentialGuardHookResolvable_CaminhoResolvidoEhFisicoNaoSimlink` espera o caminho físico na
+mensagem, **recebe esse mesmo caminho**, e ainda assim reprova — divergência de escape/aspas, não
+de ancoragem. A estimativa de ~14 misturou grupos de causa diferente.
 
 
 ## Wave 5 — CRLF no parser de frontmatter
