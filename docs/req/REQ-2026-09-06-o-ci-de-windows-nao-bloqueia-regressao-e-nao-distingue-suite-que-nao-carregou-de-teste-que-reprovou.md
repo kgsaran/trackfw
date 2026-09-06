@@ -102,3 +102,21 @@ ADR: docs/adr/ADR-2026-09-05-o-ci-de-windows-bloqueia-por-conjunto-de-nomes-e-po
 
 ## Linked Roadmap
 Roadmap: docs/roadmaps/backlog/ROADMAP-2026-09-06-ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega.md
+
+
+---
+
+## Medição do discriminante — feita pelo consumidor externo (2026-09-06)
+
+O **AC5** exigia medir o discriminante nos dois cenários **antes** de escrevê-lo. **A medição existe**,
+e veio de fora: issue `#274`, Node 22 / Windows 11, reporter `tap`, cinco modos.
+
+🔴 **`failureType` é `testCodeFailure` nos CINCO.** O nome natural do conceito ("tipo do evento")
+aponta para o campo errado — ver o adendo **D3-bis** da ADR.
+
+**O robusto é `exitCode` PRESENTE**, não a ausência de `ERR_ASSERTION`: um `throw` genérico dentro do
+teste não tem nenhum dos dois, e seria classificado como "não carregou".
+
+**AC5 parcialmente atendido:** o **Node** está medido e a tabela é reaproveitável. Faltam **`pytest`**
+e **`go test`** com o mesmo rigor, e 🔴 **`tests == 0`**, que nenhum dos dois sinais cobre — continua
+sendo o pior modo de falha.

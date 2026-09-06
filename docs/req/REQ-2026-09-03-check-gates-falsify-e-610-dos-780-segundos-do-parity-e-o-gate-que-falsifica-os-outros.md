@@ -86,3 +86,59 @@ ADR:
 
 ## Linked Roadmap
 Roadmap:
+
+
+---
+
+## Medições do consumidor externo (issue #277, 2026-09-06)
+
+### O corpus é impedimento — mas é 1 de 919
+
+No fork dele (`ubuntu-latest`, run `33991235361`), com as regressões locais corrigidas:
+
+```
+parity            failure   18m12s
+cenarios OK           918
+FAIL                    1     <- corpus/basename-missing-from-disk (108 nomes)
+```
+
+Ele declara que **é impedimento** no sentido estrito — não há contorno sem importar 108 roadmaps
+nossos — **e não pede repriorização**, pelo número.
+
+🔴 **Proposta dele, aceita:** um flag (`TRACKFW_SELF_GOVERNED=1` ou equivalente) deixando a tripwire
+de disco atrás dele. **Sem a medição dele, teríamos proposto sintetizar os 144 arquivos** — trabalho
+grande para o problema errado.
+
+### 🔴 ACHADO NOVO, e é PIOR que o corpus: a suíte de testes lê o nosso acervo
+
+```
+internal/validator/validator_test.go:2122   TestExtractRefPath_TresREQsReaisDoRepositorio
+npm/tests/validator.test.js:2197
+pypi/tests/test_validator.py:599
+```
+
+Os três leem, **por caminho literal**, três REQs reais deste repositório — escolhidas por uma
+**propriedade acidental do acervo** (`adr:` vazio, ADR só no corpo entre backticks), não por fixture
+construída.
+
+| | corpus | os 3 arquivos de teste |
+|---|---|---|
+| onde | gate de `scripts/` | **`go test` · `node --test` · `pytest`** |
+| efeito no consumidor | 1 falha no `make quality` | **3 jobs vermelhos** |
+| contornável | gates seletivos | 🔴 **não** — é a suíte |
+
+O `req_dir` dele **nem é `docs/req/`** — é `docs/requisições/`. Os três arquivos existem no fork como
+resíduo de merge, e a suíte **exige que ele os mantenha**. Ele removeu, os 3 runtimes reprovaram,
+restaurou, e falsificou os três estados.
+
+🔴 **E o defeito NOSSO que isso expõe:** o `trackfw validate` ficou **verde nos dois estados** — com
+`docs/req/` removido e restaurado. **Um consumidor apagou um diretório de REQs inteiro e a nossa
+ferramenta de governança não notou.** Não estava em nenhum issue nem REQ.
+
+**Entra nesta REQ** — mesma causa (*fixture acoplada a propriedade acidental da árvore*). Ele ofereceu
+abrir issue separada; recusamos, com o critério explicado.
+
+### Tempo — segundo ponto de dado
+
+**18m12s** no fork dele contra **1204s (20 min)** medidos por nós no CI. Runners diferentes, números
+próximos: o custo é do gate, não da máquina.
