@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-03
 squad: apolo-tf
 req: "docs/req/REQ-2026-09-03-as-217-falhas-reais-de-windows-colapsam-em-poucas-causas-e-tres-delas-exigem-decisao-antes-de-codigo.md"
@@ -7,7 +7,7 @@ req: "docs/req/REQ-2026-09-03-as-217-falhas-reais-de-windows-colapsam-em-poucas-
 
 # Roadmap: Fechar os grupos de falha de Windows por causa raiz
 
-> Criado em: 2026-09-03 | Status: wip
+> Criado em: 2026-09-03 | Status: done
 
 ## Context
 
@@ -819,7 +819,7 @@ efeito). Isso justifica **ML separado**, não **REQ separada**. Confundi as duas
 pegou.
 
 ### ML-5B — `rewriteRoadmapStatus`/`rewriteREQStatus`: os 6 sítios restantes da D3
-**Status:** 🔄 Em andamento (implementação e evidência entregues; aguardando auditoria do arquiteto) · **Agente:** `apolo-tf`
+**Status:** ✅ Concluído · auditado e mergeado no PR #284 · **Agente:** `apolo-tf`
 Mesma ADR, mesma decisão, mesmo mecanismo — só o sítio muda. Afetam `trackfw roadmap move` e a
 escrita de status de REQ, que é caminho de escrita **do produto**, não de leitura de artefato de
 agente.

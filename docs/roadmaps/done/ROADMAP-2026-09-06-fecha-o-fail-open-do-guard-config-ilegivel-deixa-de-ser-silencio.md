@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-06
 squad: apolo-tf
 req: "docs/req/REQ-2026-08-12-mitigacao-do-fail-open-do-credential-guard-integridade-do-script-e-da-config-controle-positivo-e-fail-closed-nativo.md"
@@ -7,7 +7,7 @@ req: "docs/req/REQ-2026-08-12-mitigacao-do-fail-open-do-credential-guard-integri
 
 # Roadmap: Fecha o fail-open do guard — config ilegível deixa de ser silêncio
 
-> Criado em: 2026-09-06 | Status: wip
+> Criado em: 2026-09-06 | Status: done
 
 ## Context
 

@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-03
 squad: ares-tf
 req: "docs/req/REQ-2026-09-03-setenta-e-tres-das-duzentas-e-quarenta-e-seis-falhas-de-windows-nao-medem-nada-e-contaminam-qualquer-estimativa.md"
@@ -7,7 +7,7 @@ req: "docs/req/REQ-2026-09-03-setenta-e-tres-das-duzentas-e-quarenta-e-seis-falh
 
 # Roadmap: Desmascarar as falhas de Windows que não medem nada, e recontar
 
-> Criado em: 2026-09-03 | Status: wip
+> Criado em: 2026-09-03 | Status: done
 
 ## Context
 
@@ -160,7 +160,7 @@ propósito.
 > Dependências: Wave 1 mergeada **e CI executado**.
 
 ### ML-2A — Re-rodar, recontar e registrar a base nova
-**Status:** ⬜ Pendente · **Agente:** `trackfw_architect`
+**Status:** ✅ Concluído · **Agente:** `trackfw_architect`
 **É o entregável da REQ.** A contagem nova por runtime, com o delta explicado: quantas sumiram por
 desmascaramento e quantas restam como defeito real.
 **Critérios de aceite:**
@@ -176,3 +176,25 @@ O run de Windows na `main` depois do merge. **Nenhuma métrica local substitui.*
 
 Arquiteto. **Sem `hades-tf`** — não há superfície de ataque: são arquivos de teste, `.gitattributes`
 e workflow. `hefesto-tf` se algum ML crescer além dos arquivos listados.
+
+
+## Encerramento — arquiteto, 2026-09-06
+
+**O entregável desta REQ era uma contagem confiável, e ela existe** — medida de forma consistente,
+com o mesmo comando nas duas pontas de cada delta:
+
+```
+246 → 217 → 217 → 162 → 134 → 101 → 100 → 62 → 60 → 39
+```
+
+🔴 **O instrumento foi corrigido no meio do caminho, e isso é parte do entregável.** Reportei
+**69 onde havia 101** porque o padrão de `grep` não casava o prefixo por linha do
+`gh run view --log` — sem erro, exit 0, número plausível. Nota:
+`vault/notes/contagem-de-falhas-de-windows-do-go-medida-por-padrao-frouxo-2026-09-04.md`.
+
+**A regra que ficou:** delta entre dois runs só é comparável se as duas pontas forem medidas pelo
+**mesmo comando, na mesma sessão**. Nunca contra número recordado.
+
+**AC7 cumprido:** nenhum teste foi marcado `skip` para desmascarar. Ao contrário — a issue #279 do
+consumidor externo mostrou que **9 `skip` residuais tinham sobrado** de um ML anterior, e eles foram
+tratados no PR #281, com varredura do acervo inteiro em vez de só dos 9.
