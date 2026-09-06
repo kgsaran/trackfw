@@ -65,9 +65,82 @@ do próprio ML aquele teste afirma**, e o arquiteto verifica **esse cruzamento**
 
 Foi o passo que faltou nos três achados. Sem ele, as Waves 1 e 2 corrigem sintomas.
 
-### ML-3B — REQs com `adr:` vazio apontando para ADRs aceitos
+### ML-3B — O vínculo guarda o caminho com a pasta de estado, e `roadmap move` quebra o vínculo
 **Status:** ⬜ Pendente · **Agente:** `apolo-tf`
-Achado de governança da mesma auditoria. Depende do ML-2A para não misturar com a mudança de gate.
+
+**Medição que originou o ML** (arquiteto, 2026-09-06, `./bin/trackfw validate`):
+
+```
+req X links to Roadmap "docs/roadmaps/wip/<nome>.md" which does not exist   (2 ocorrências)
+    → os dois roadmaps existem, em docs/roadmaps/done/
+```
+
+**Causa**, lida no código e idêntica nos 3 CLIs: `referenceExists(ref)` faz `os.Stat` **literal** no
+caminho armazenado, e o caminho armazenado **inclui a pasta de estado**. Mas, pelo `CLAUDE.md`, a
+pasta *é* o estado. Logo **todo `trackfw roadmap move` quebra, por construção, todo vínculo que
+guarda caminho completo**. Não são 2 vínculos quebrados: são 2 que já dispararam.
+
+🔴 Segundo efeito, pior porque é silencioso: `validateREQRoadmapLifecycle` (`req_roadmap_lifecycle`)
+faz `os.Stat` no mesmo caminho e, **em erro, faz `continue`** — a regra que existe para achar REQ
+aberta com roadmap em `done/` **desliga exatamente no caso em que o roadmap foi para `done/`**. É
+fail-open na regra, não só ruído no relatório.
+
+**Arquivos afetados (os 3 CLIs — regra dura de paridade):**
+- `internal/validator/validator.go` — `referenceExists`, `validateRefTargetsExist`, `validateREQRoadmapLifecycle`
+- `npm/src/validator/index.js` — `referenceExists`, `extractRefPath` e chamadores
+- `pypi/trackfw/validator.py` — `_reference_exists`, `validate_ref_targets_exist`, ciclo de vida
+
+**Ações:**
+1. Resolver o vínculo **pelo basename**, procurando o arquivo nos diretórios de estado configurados
+   (`backlog/analyzing/wip/blocked/done/abandoned`, honrando `roadmap_namespacing`), com o caminho
+   literal ainda aceito quando existir. Existe em qualquer estado ⇒ o vínculo **não** está quebrado.
+2. `req_roadmap_lifecycle` passa a derivar o estado **de onde o arquivo foi encontrado**, não do
+   caminho gravado — fim do `continue` que desliga a regra.
+3. Ambiguidade (mesmo basename em dois estados) **não** é resolvida em silêncio: emitir aviso próprio.
+
+**Falsificação nas duas direções** (`scripts/check-gates-falsify.sh`), por CLI:
+- roadmap movido de `wip/` para `done/` com a REQ intacta ⇒ **sem** aviso de vínculo quebrado (hoje avisa);
+- REQ apontando para basename que não existe em estado algum ⇒ **avisa** (guarda de vacuidade);
+- REQ `Open` com roadmap em `done/` ⇒ **avisa**, mesmo com o caminho gravado desatualizado.
+
+**Reconciliação obrigatória:** para **cada** teste novo, uma frase dizendo qual conclusão deste ML
+aquele teste afirma (regra dura do `CLAUDE.md`).
+
+**Critérios de aceite:**
+- [ ] `go build ./...` e `go vet ./...` limpos
+- [ ] `make quality QUALITY_EXIT=0` sem `FAIL`
+- [ ] `./bin/trackfw validate` deixa de emitir os 2 avisos `links to Roadmap ... does not exist`
+- [ ] comportamento idêntico nos 3 CLIs (`scripts/check-cli-parity.sh`)
+- [ ] uma frase de reconciliação por teste novo, no relatório
+
+### ML-3C — O acervo: medido, declarado e sob ratchet, não corrigido à mão
+**Status:** ⬜ Pendente · **Agente:** `trackfw_architect`
+
+O ML-3B original dizia "REQs com `adr:` vazio apontando para ADRs aceitos", o que soa delimitado. A
+medição diz outra coisa:
+
+| medido em 2026-09-06 | valor |
+|---|---|
+| REQs com `adr: ""` | **128** de 201 |
+| avisos `req_has_adr` | **103** |
+| avisos `req_has_roadmap` | **54** |
+| roadmaps de `done/` que falhariam se voltassem a `wip/` | **~43** (o ML-2A relatou 13 — **sub-medido**) |
+
+Decidir caso a caso qual das 103 tem ADR real é arqueologia por arquivo, sem critério de parada, e
+produz um diff que **não** é auditável contra critério de aceite. O acervo entra no **ratchet**
+(teto declinante, 103 grandfathered), que é a ADR já escrita — não em correção manual nesta sessão.
+
+**Critérios de aceite:**
+- [ ] os números acima registrados no roadmap e no `docs/agents-working-context.md`
+- [ ] o bloco `## Critérios de Aceite` presente neste roadmap (hoje `validate` acusa a ausência)
+- [ ] a sub-medição do ML-2A (13 vs ~43) corrigida por escrito, na auditoria
+
+## Critérios de Aceite
+
+- [ ] ML-3B: os 2 avisos de vínculo quebrado somem **sem** editar as REQs, nos 3 CLIs
+- [ ] ML-3B: `req_roadmap_lifecycle` deixa de ser fail-open quando o caminho gravado está velho
+- [ ] ML-3C: acervo medido e declarado; correção manual explicitamente fora de escopo, com motivo
+- [ ] `make quality QUALITY_EXIT=0` sem `FAIL` e `./bin/trackfw validate` sem aviso novo
 
 ## Fora deste roadmap
 - **Ratchet de CI** → ADR própria, já escrita.
