@@ -1,5 +1,5 @@
 ---
-status: Open
+status: Done
 date: 2026-09-03
 author: "trackfw_architect (Zeus)"
 adr: ""
@@ -8,7 +8,7 @@ roadmap: ""
 
 # REQ: As 217 falhas reais de Windows colapsam em poucas causas, e três delas exigem decisão antes de código
 
-> Date: 2026-09-03 | Status: Open
+> Date: 2026-09-03 | Status: Done
 | Linear Issue:
 | Jira Issue:
 
@@ -119,3 +119,10 @@ ADR:
 
 ## Linked Roadmap
 Roadmap: docs/roadmaps/wip/ROADMAP-2026-09-03-fechar-os-grupos-de-falha-de-windows-por-causa-raiz.md
+
+
+---
+
+## Encerramento — 2026-09-06
+
+Entregue nos PRs #266 a #285. As tres decisoes viraram ADR Accepted; os grupos fecharam por causa raiz medida. Arco: 246 -> 39 falhas.

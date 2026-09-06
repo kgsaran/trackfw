@@ -155,3 +155,10 @@ config, caminho que não resolve — e agora **config ilegível**.
 > mar de REQs que temos."*
 
 Resíduo de REQ fechada **reabre a REQ**. Nunca cria a próxima.
+
+
+---
+
+## Encerramento — 2026-09-06
+
+AC5-AC7 entregues no PR #285, em sete microlotes. Os AC2 e AC3 (failClosed do Cursor e wrapper) seguem NAO entregues e estao declarados na propria REQ — ela permanece aberta por isso.

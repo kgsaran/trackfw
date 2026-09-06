@@ -104,3 +104,10 @@ ADR:
 
 ## Linked Roadmap
 Roadmap:
+
+
+---
+
+## Encerramento — 2026-09-06
+
+Entregue. O entregavel era uma contagem confiavel e ela existe — inclusive com a correcao do proprio instrumento no meio do caminho.
