@@ -99,36 +99,69 @@ func contentHasMarker(content string, markers []string) bool {
 	return false
 }
 
-// contentHasMarkerValue retorna true se algum dos marcadores aparece em content seguido de
-// conteúdo não-branco na mesma linha — isto é, o campo tem um valor real, não apenas o marcador.
+// contentHasMarkerValue retorna true se, em alguma LINHA de content, um dos marcadores aparece
+// logo após espaços/tabs de indentação (nunca no meio de uma frase) e é seguido de um valor
+// substantivo na mesma linha — não vazio e não um comentário HTML disfarçado de valor.
 //
-// issue #278: contentHasMarker (acima) detectava "vazio" só pela grafia literal
-// "MARKER + um espaço + \n"/"\r\n" — 5 de 7 grafias naturais de campo vazio escapavam
-// ("MARKER:\n" sem espaço, dois espaços, tab, CRLF sem espaço, três espaços). Esta função
-// decide por VALOR: pega o resto da linha após o marcador, descarta \r/\t/espaços das duas
-// pontas, e só considera "tem valor" se sobrar algo. Indiferente a CRLF, tabs e contagem de
-// espaços — cobre as 7 grafias medidas na triagem, não apenas a literal do template.
+// issue #278 (achado A2 da auditoria externa, 2026-09-05): a versão anterior buscava o marcador
+// como SUBSTRING em qualquer lugar do conteúdo. Isso produzia dois defeitos medidos no acervo
+// mergeado:
+//  1. prosa que menciona o marcador no meio de uma frase contava como vínculo real
+//     ("veja a secao ADR: mais abaixo" → true, sem nenhum vínculo).
+//  2. um comentário HTML usado como placeholder contava como valor
+//     ("ADR: <!-- preencher depois -->" → true, campo de fato vazio).
+//
+// Ambos se resolvem tratando a detecção por LINHA em vez de por substring do documento inteiro:
+// o marcador só conta quando é a primeira coisa não-branca da linha (tolera espaços/tabs à
+// esquerda, não tolera qualquer outra decoração — "> ", "- ", "# ", "**" não contam como início).
+// Medido antes de decidir (não assumido): nas quatro pastas realmente varridas por estas 4
+// regras (REQ files para ADR:/Roadmap:; roadmaps de wip/blocked para REQ:), a contagem de linhas
+// com decoração diferente de espaço em branco antes do marcador é ZERO — os três geradores
+// canônicos sempre emitem o marcador no início da linha. Restringir a espaço/tab não introduz
+// falso-positivo novo neste acervo.
+//
+// NÃO resolve (fora de escopo desta ML): "REQ (**reaberta**):" — decoração ENTRE o nome do
+// campo e ":", não ANTES do marcador. A literal "REQ:" não aparece nessa linha nem por
+// substring nem por prefixo; ancorar por linha não causa nem cura esse caso. A forma que
+// funciona hoje é "REQ: docs/req/x.md (reaberta)" — o marcador intacto, a anotação depois.
+//
+// "none", "TBD", "N/A", "-" continuam sendo tratados como VALOR (não como placeholder). Nenhum
+// dos quatro casos exigidos por esta ML os menciona, e "none" é usado deliberadamente em
+// scripts/check-gates-falsify.sh como placeholder inofensivo — para dizer "sem vínculo real,
+// de propósito" nos fixtures que testam OUTRA regra — sem ficar vazio nem virar comentário
+// HTML. Bloqueá-los moveria a contagem do acervo por um motivo alheio ao achado A2 e quebraria
+// cenários de falsificação que dependem desse contrato.
+//
+// issue #278 (ML-1B): 5 de 7 grafias naturais de campo vazio escapavam da checagem anterior
+// por literal — esta função decide por VALOR (TrimSpace do resto da linha), o que já cobre as 7
+// grafias medidas na triagem original.
 func contentHasMarkerValue(content string, markers []string) bool {
-	for _, marker := range markers {
-		start := 0
-		for {
-			idx := strings.Index(content[start:], marker)
-			if idx == -1 {
-				break
+	for _, rawLine := range strings.Split(content, "\n") {
+		line := strings.TrimRight(rawLine, "\r")
+		leading := strings.TrimLeft(line, " \t")
+		for _, marker := range markers {
+			if !strings.HasPrefix(leading, marker) {
+				continue
 			}
-			pos := start + idx + len(marker)
-			rest := content[pos:]
-			if nl := strings.IndexByte(rest, '\n'); nl != -1 {
-				rest = rest[:nl]
+			rest := strings.TrimSpace(leading[len(marker):])
+			if rest == "" {
+				continue
 			}
-			rest = strings.TrimRight(rest, "\r")
-			if strings.TrimSpace(rest) != "" {
-				return true
+			if isHTMLCommentOnlyValue(rest) {
+				continue
 			}
-			start = pos
+			return true
 		}
 	}
 	return false
+}
+
+// isHTMLCommentOnlyValue retorna true se value (já sem espaços nas duas pontas) é inteiramente
+// um comentário HTML — "<!-- ... -->" do início ao fim, sem nada fora dele. É a forma medida no
+// achado A2: "ADR: <!-- preencher depois -->" é sintaticamente um valor, mas semanticamente um
+// placeholder de "ainda não preenchido" — mesma intenção de um campo vazio, só que disfarçado.
+func isHTMLCommentOnlyValue(value string) bool {
+	return strings.HasPrefix(value, "<!--") && strings.HasSuffix(value, "-->")
 }
 
 // ruleDefaults mapeia regras cujo default NÃO é "error".
@@ -1606,7 +1639,7 @@ func validateWIPHasREQ() ([]string, error) {
 				continue
 			}
 			if !contentHasMarkerValue(string(content), cfg.LinkFieldsReq) {
-				violations = append(violations, fmt.Sprintf("roadmap %q is in wip but has no linked REQ", name))
+				violations = append(violations, fmt.Sprintf("roadmap %q is in wip but has no linked REQ (marker must start the line with a real, non-placeholder value)", name))
 			}
 		}
 	}
@@ -1624,7 +1657,7 @@ func validateREQsHaveADR() ([]string, error) {
 			continue
 		}
 		if !contentHasMarkerValue(string(content), cfg.LinkFieldsADR) {
-			violations = append(violations, fmt.Sprintf("req %q has no linked ADR", filepath.Base(path)))
+			violations = append(violations, fmt.Sprintf("req %q has no linked ADR (marker must start the line with a real, non-placeholder value)", filepath.Base(path)))
 		}
 	}
 	return violations, nil
@@ -1642,7 +1675,7 @@ func validateBlockedHasREQ() ([]string, error) {
 				continue
 			}
 			if !contentHasMarkerValue(string(content), cfg.LinkFieldsReq) {
-				violations = append(violations, fmt.Sprintf("roadmap %q is in blocked but has no linked REQ", name))
+				violations = append(violations, fmt.Sprintf("roadmap %q is in blocked but has no linked REQ (marker must start the line with a real, non-placeholder value)", name))
 			}
 		}
 	}
@@ -1660,7 +1693,7 @@ func validateREQsHaveRoadmap() ([]string, error) {
 			continue
 		}
 		if !contentHasMarkerValue(string(content), cfg.LinkFieldsRoadmap) {
-			violations = append(violations, fmt.Sprintf("req %q has no linked Roadmap", filepath.Base(path)))
+			violations = append(violations, fmt.Sprintf("req %q has no linked Roadmap (marker must start the line with a real, non-placeholder value)", filepath.Base(path)))
 		}
 	}
 	return violations, nil

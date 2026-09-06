@@ -577,31 +577,63 @@ function contentHasMarker(content, markers) {
   return false
 }
 
-// contentHasMarkerValue retorna true se algum dos markers aparece em content seguido de
-// conteúdo não-branco na mesma linha — isto é, o campo tem um valor real, não apenas o marker.
+// contentHasMarkerValue retorna true se, em alguma LINHA de content, um dos markers aparece
+// logo após espaços/tabs de indentação (nunca no meio de uma frase) e é seguido de um valor
+// substantivo na mesma linha — não vazio e não um comentário HTML disfarçado de valor.
 //
-// issue #278: contentHasMarker (acima) detectava "vazio" só pela grafia literal
-// "MARKER + um espaço + \n"/"\r\n" — 5 de 7 grafias naturais de campo vazio escapavam
-// ("MARKER:\n" sem espaço, dois espaços, tab, CRLF sem espaço, três espaços). Esta função
-// decide por VALOR: pega o resto da linha após o marker, descarta \r/\t/espaços das duas
-// pontas, e só considera "tem valor" se sobrar algo. Indiferente a CRLF, tabs e contagem de
-// espaços — cobre as 7 grafias medidas na triagem, não apenas a literal do template.
+// issue #278 (achado A2 da auditoria externa, 2026-09-05): a versão anterior buscava o marker
+// como SUBSTRING em qualquer lugar do conteúdo. Isso produzia dois defeitos medidos no acervo
+// mergeado:
+//  1. prosa que menciona o marker no meio de uma frase contava como vínculo real
+//     ("veja a secao ADR: mais abaixo" → true, sem nenhum vínculo).
+//  2. um comentário HTML usado como placeholder contava como valor
+//     ("ADR: <!-- preencher depois -->" → true, campo de fato vazio).
+//
+// Ambos se resolvem tratando a detecção por LINHA em vez de por substring do documento inteiro:
+// o marker só conta quando é a primeira coisa não-branca da linha (tolera espaços/tabs à
+// esquerda, não tolera qualquer outra decoração — "> ", "- ", "# ", "**" não contam como início).
+// Medido antes de decidir (não assumido): nas quatro pastas realmente varridas por estas 4
+// regras (REQ files para ADR:/Roadmap:; roadmaps de wip/blocked para REQ:), a contagem de linhas
+// com decoração diferente de espaço em branco antes do marker é ZERO — os três geradores
+// canônicos sempre emitem o marker no início da linha. Restringir a espaço/tab não introduz
+// falso-positivo novo neste acervo.
+//
+// NÃO resolve (fora de escopo desta ML): "REQ (**reaberta**):" — decoração ENTRE o nome do
+// campo e ":", não ANTES do marker. A literal "REQ:" não aparece nessa linha nem por
+// substring nem por prefixo; ancorar por linha não causa nem cura esse caso. A forma que
+// funciona hoje é "REQ: docs/req/x.md (reaberta)" — o marker intacto, a anotação depois.
+//
+// "none", "TBD", "N/A", "-" continuam sendo tratados como VALOR (não como placeholder). Nenhum
+// dos quatro casos exigidos por esta ML os menciona, e "none" é usado deliberadamente em
+// scripts/check-gates-falsify.sh como placeholder inofensivo — para dizer "sem vínculo real,
+// de propósito" nos fixtures que testam OUTRA regra — sem ficar vazio nem virar comentário
+// HTML. Bloqueá-los moveria a contagem do acervo por um motivo alheio ao achado A2 e quebraria
+// cenários de falsificação que dependem desse contrato.
+//
+// issue #278 (ML-1B): 5 de 7 grafias naturais de campo vazio escapavam da checagem anterior
+// por literal — esta função decide por VALOR (trim do resto da linha), o que já cobre as 7
+// grafias medidas na triagem original.
 function contentHasMarkerValue(content, markers) {
-  for (const marker of markers) {
-    let start = 0
-    while (true) {
-      const idx = content.indexOf(marker, start)
-      if (idx === -1) break
-      const pos = idx + marker.length
-      let rest = content.slice(pos)
-      const nl = rest.indexOf('\n')
-      if (nl !== -1) rest = rest.slice(0, nl)
-      if (rest.endsWith('\r')) rest = rest.slice(0, -1)
-      if (rest.trim() !== '') return true
-      start = pos
+  for (const rawLine of content.split('\n')) {
+    const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine
+    const leading = line.replace(/^[ \t]+/, '')
+    for (const marker of markers) {
+      if (!leading.startsWith(marker)) continue
+      const rest = leading.slice(marker.length).trim()
+      if (rest === '') continue
+      if (isHTMLCommentOnlyValue(rest)) continue
+      return true
     }
   }
   return false
+}
+
+// isHTMLCommentOnlyValue retorna true se value (já sem espaços nas duas pontas) é inteiramente
+// um comentário HTML — "<!-- ... -->" do início ao fim, sem nada fora dele. É a forma medida no
+// achado A2: "ADR: <!-- preencher depois -->" é sintaticamente um valor, mas semanticamente um
+// placeholder de "ainda não preenchido" — mesma intenção de um campo vazio, só que disfarçado.
+function isHTMLCommentOnlyValue(value) {
+  return value.startsWith('<!--') && value.endsWith('-->')
 }
 
 // extractAdrHeaderStatus extrai o valor declarado na linha de cabeçalho
@@ -707,7 +739,7 @@ function validateWIPHasREQ() {
       const content = readFileForRule('wip_has_req', path.join(wipDir, name), violations)
       if (content === null) continue
       if (!contentHasMarkerValue(content, cfg.linkFields.req)) {
-        violations.push(`roadmap "${name}" is in wip but has no linked REQ`)
+        violations.push(`roadmap "${name}" is in wip but has no linked REQ (marker must start the line with a real, non-placeholder value)`)
       }
     }
   }
@@ -723,7 +755,7 @@ function validateREQsHaveADR() {
     const content = readFileForRule('req_has_adr', filePath, violations)
     if (content === null) continue
     if (!contentHasMarkerValue(content, cfg.linkFields.adr)) {
-      violations.push(`req "${path.basename(filePath)}" has no linked ADR`)
+      violations.push(`req "${path.basename(filePath)}" has no linked ADR (marker must start the line with a real, non-placeholder value)`)
     }
   }
   return violations
@@ -739,7 +771,7 @@ function validateBlockedHasREQ() {
       const content = readFileForRule('blocked_has_req', path.join(blockedDir, name), violations)
       if (content === null) continue
       if (!contentHasMarkerValue(content, cfg.linkFields.req)) {
-        violations.push(`roadmap "${name}" is in blocked but has no linked REQ`)
+        violations.push(`roadmap "${name}" is in blocked but has no linked REQ (marker must start the line with a real, non-placeholder value)`)
       }
     }
   }
@@ -755,7 +787,7 @@ function validateREQsHaveRoadmap() {
     const content = readFileForRule('req_has_roadmap', filePath, violations)
     if (content === null) continue
     if (!contentHasMarkerValue(content, cfg.linkFields.roadmap)) {
-      violations.push(`req "${path.basename(filePath)}" has no linked Roadmap`)
+      violations.push(`req "${path.basename(filePath)}" has no linked Roadmap (marker must start the line with a real, non-placeholder value)`)
     }
   }
   return violations
@@ -3850,6 +3882,7 @@ module.exports = {
   normalizeBranchSlug,
   // novas funções ML-2B
   contentHasMarker,
+  contentHasMarkerValue,
   ruleSeverity,
   applyRule,
   // novas funções ML-1B (v2.5.1)

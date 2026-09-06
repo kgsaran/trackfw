@@ -33384,6 +33384,136 @@ por este agente — arquiteto roda ao fim.
 
 **Fim.**
 
+## ML-2A — `apolo-tf`, 2026-09-06 — `contentHasMarkerValue` vira vínculo estrutural (achado A2)
+
+**Escopo:** `ROADMAP-2026-09-05-reconciliar-o-que-declaramos-com-o-que-medimos-apos-a-auditoria-externa.md`,
+ML-2A. Só os 3 validators e testes — arquiteto trabalhando em paralelo em `CLAUDE.md`/templates
+de handoff (ML-3A). Nenhuma operação de git.
+
+**Defeito (achado A2):** `contentHasMarkerValue` (compartilhada por `req_has_adr`, `req_has_roadmap`,
+`wip_has_req`, `blocked_has_req`) casava o marcador (`ADR:`/`REQ:`/`Roadmap:`) como SUBSTRING em
+qualquer lugar do documento. Dois defeitos: (1) `ADR: <!-- preencher depois -->` contava como
+vínculo real (comentário HTML como placeholder); (2) `veja a secao ADR: mais abaixo` (prosa com o
+marcador no meio da frase) também contava.
+
+**Critério de "vínculo estrutural" (com a razão):**
+- O marcador vale quando é a primeira coisa não-branca da LINHA (tolera espaços/tabs à esquerda).
+  **Medido, não assumido:** censo nas 4 pastas realmente varridas por estas 4 regras (REQ files
+  para `ADR:`/`Roadmap:`; roadmaps de `wip/`/`blocked/` para `REQ:`) — decoração diferente de
+  espaço em branco antes do marcador (`>`, `-`, `#`, `**`) é **ZERO** ocorrências no acervo. Os 3
+  geradores canônicos sempre emitem o marcador no início da linha; restringir a espaço/tab não
+  introduz falso-positivo novo.
+- O valor não pode ser um comentário HTML sozinho (`<!-- ... -->` do início ao fim) — é a forma
+  medida no achado A2, sintaticamente um valor, semanticamente um "ainda não preenchido".
+- `"none"`, `"TBD"`, `"N/A"`, `"-"` **continuam sendo tratados como valor real**, não como
+  placeholder. Razão: nenhum dos 4 casos exigidos por esta ML os menciona; `"none"` é usado
+  deliberadamente em `scripts/check-gates-falsify.sh` (`write_req_done_fixture`,
+  `write_req_open_blocked_fixture`, etc.) para dizer "sem vínculo real, de propósito" em fixtures
+  que testam OUTRA regra — bloqueá-lo moveria a contagem do acervo por um motivo alheio ao achado
+  A2 e quebraria cenários de falsificação existentes (`assert_lacks_pattern` exige exit 0 do
+  processo inteiro). Medido antes de decidir: não corrompi nenhum cenário existente ao rodar as 3
+  suítes completas + a nova prova cross-CLI isolada.
+
+**Decoração antes do marcador — decisão e razão escrita na mensagem:** mantive a recusa para
+qualquer coisa que não seja espaço/tab. As 4 mensagens de violação (`req_has_adr`, `req_has_roadmap`,
+`wip_has_req`, `blocked_has_req`) ganharam o sufixo `(marker must start the line)`, byte-idêntico
+nos 3 CLIs — verificado rodando os 3 binários contra o mesmo fixture.
+
+**O caso "REQ (\*\*reaberta\*\*):" que pegou KG — premissa do handoff derrubada pela medição:**
+não é decoração ANTES do marcador, é decoração ENTRE o nome do campo e `:`. A literal `"REQ:"`
+não existe nessa linha nem por substring nem por prefixo — nem a versão antiga (substring livre)
+nem a nova (ancorada por linha) casam com ela. A ancoragem por linha desta ML **não causa nem
+resolve** esse caso; ele já era recusado antes. Fora de escopo (exigiria marcador com anotação
+opcional entre o nome do campo e `:`). Forma que funciona hoje: `REQ: docs/req/x.md (reaberta)`.
+Registrado como teste explícito (`decoracao_entre_campo_e_dois_pontos_recusa_nas_duas_versoes`) nos
+3 CLIs, para que a distinção não se perca de novo.
+
+**Falsificação dos 4 casos nomeados** (unit tests Go/JS/Python, um por conclusão):
+1. `ADR: docs/adr/x.md` (valor real) → **aceita**.
+2. as 7 grafias de campo vazio (issue #278, ML-1B) → **recusa** (regressão descartada).
+3. `ADR: <!-- preencher depois -->` → **recusa** (achado A2, placeholder).
+4. `veja a secao ADR: mais abaixo` (prosa no meio) → **recusa** (achado A2, ancoragem).
++ indentação pura antes do marcador → **aceita** (não é decoração).
++ `REQ (**reaberta**):` → **recusa nas duas versões** (fora de escopo, ver acima).
+
+**Gate cross-CLI (Cenário 192, `scripts/check-gates-falsify.sh`):** duas direções, cada uma com
+fixture isolado (nunca as duas falsas-positivas no mesmo REQ, para não confundir com
+`ref_targets_exist`) — direção A corrompe o guard do comentário HTML (`if isHTMLCommentOnlyValue`
+→ `if false`), direção B corrompe a ancoragem (`HasPrefix(leading, marker)` →
+`Contains(line, marker)`), replicado em Node (`startsWith`→`includes`) e Python
+(`leading.startswith`→`marker in line`). 12 asserções (baseline limpo + detecção de regressão × 2
+direções × 3 CLIs), todas verdes numa extração isolada do script (headers/helpers +
+Cenário 192 apenas, `ROOT_DIR` fixado no repo real) — **não rodei o script inteiro** (~15 min,
+191 cenários anteriores), a extração isolada prova a lógica sem pagar o custo total; o arquiteto
+roda `make quality`/o script completo ao fim.
+
+**Contagem do acervo, antes/depois, por regra** (`trackfw validate`, `governance_mode: lenient` →
+tudo em warnings, exit 0 nos dois lados):
+
+| Regra | Antes | Depois | Δ | decomposição |
+|---|---|---|---|---|
+| `req_has_adr` | 70 | 103 | +33 | 24 placeholder-caught + 9 prose-caught |
+| `req_has_roadmap` | 36 | 54 | +18 | 14 placeholder-caught + 4 prose-caught |
+| `wip_has_req` | 0 | 0 | 0 | nada no acervo real (só 1 roadmap em `wip/`, o próprio) |
+| `blocked_has_req` | 0 | 0 | 0 | `blocked/` vazio |
+
+`req_has_adr` sobe de 70 para 103 — **acima de 67** (o handoff citava 67 como piso do ML-1B de
+ontem; o acervo já estava em 70 antes desta ML por crescimento normal, subida aqui é acerto, não
+regressão). Nenhuma linha antes flagueada deixou de ser flagueada (diff só tem adições, zero
+remoções) — a mudança é estritamente mais estrita, nunca mais permissiva. **Não corrigi o acervo**
+— é o ML-3B, fora de escopo aqui.
+
+**Mensagem revisada (achado do advisor):** o sufixo inicial `(marker must start the line)` descrevia
+só a causa de prosa-no-meio (13 dos 51 casos novos: 9 ADR + 4 Roadmap) e enganava nos outros 38
+(24+14 placeholder-caught — a linha JÁ começa com o marcador nesses casos, o defeito é o
+comentário HTML, não a ancoragem). Corrigido para
+`(marker must start the line with a real, non-placeholder value)` nos 3 CLIs — cobre as 3 causas
+reais (vazio, placeholder, prosa) sem apontar a errada. Re-verificado: byte-idêntico nos 3 CLIs,
+`scripts/check-agent-namespace-union.sh` (66 cenários, pina a mesma substring SEM o sufixo via
+`grep -qF`) e a extração isolada do Cenário 192 (12 asserções) continuam verdes após a mudança.
+
+**Duplicação de mensagem checada (achado do advisor) — não há.** `grep -rn "has no linked"` nos 3
+CLIs (`internal/`, `npm/src/`, `pypi/trackfw/`, excluindo `pypi/build/` — artefato de build
+gitignorado, não fonte real) só encontra as 4 mensagens em `validator.go`/`index.js`/`validator.py`;
+nenhum comando (`ship` incluso) reimplementa a checagem por conta própria. `scripts/` e
+`docs/cli-parity.md` checados por `grep -rln`: só `check-gates-falsify.sh` (meu, Cenário 192) e
+`check-agent-namespace-union.sh` (pina a substring sem sufixo, sobrevive à mudança de mensagem,
+confirmado rodando as 66 cenários).
+
+**Nota para o ML-3B:** o censo (antes de decidir a ancoragem) achou 13 linhas `> REQ:`/`**REQ:**`
+(decoração ANTES do marcador) em `docs/roadmaps/done/` — hoje fora do escopo de `wip_has_req`/
+`blocked_has_req` (só varrem `wip/`/`blocked/`), zero impacto nesta ML. Se algum roadmap dessa
+forma antiga voltar a `wip/` (reabertura, ML-3B ou qualquer outro), a linha decorada vai passar a
+falhar onde antes não falhava — decoração diferente de espaço/tab nunca foi tolerada por esta
+reescrita, só nunca tinha sido *medida* como presente no acervo scaneado.
+
+**Nenhum cenário de falsificação existente quebrou.** Suítes completas rodadas: Go
+`go test ./internal/validator/...` = 231 `--- PASS` (`go test -v`, inclui subtestes; +7 desta ML —
+1 teste pai + 6 `t.Run`), `go test ./...` inteiro limpo, `go build`/`go vet` limpos; Node — a suíte
+externa (`npm test`, `node --test`) continua em 884 (não muda: `validator.test.js` conta como 1
+unidade nela); a suíte interna homegrown dentro de `validator.test.js` foi de 104 para 110 (+6,
+confirmado rodando `node tests/validator.test.js` isolado antes/depois); Python 1662 + 66 subtests
+(`pytest tests/`, +6 — baseline 1656 antes desta ML). Cada teste novo tem uma frase de "qual
+conclusão do ML ele afirma" no comentário/docstring, nos 3 CLIs.
+
+**Arquivos alterados:**
+`internal/validator/validator.go` (`contentHasMarkerValue` reescrita + `isHTMLCommentOnlyValue` +
+4 mensagens de violação), `internal/validator/validator_test.go` (+7 subtestes,
+`TestContentHasMarkerValue_VinculoEstrutural`),
+`npm/src/validator/index.js` (mesma reescrita + `isHTMLCommentOnlyValue` + export para teste
+direto + 4 mensagens — **1 byte NUL preservado**, offset mudou de 83123 para 86466 por causa das
+linhas inseridas antes dele; verificado via leitura binária, não `grep`/`file`),
+`npm/tests/validator.test.js` (+6 testes),
+`pypi/trackfw/validator.py` (mesma reescrita + `_is_html_comment_only_value` + 4 mensagens),
+`pypi/tests/test_validator.py` (+6 testes, `TestContentHasMarkerValueVinculoEstrutural`),
+`scripts/check-gates-falsify.sh` (Cenário 192, ~250 linhas: 2 fixture writers +
+12 asserções cross-CLI),
+`docs/roadmaps/wip/ROADMAP-2026-09-05-reconciliar-o-que-declaramos-com-o-que-medimos-apos-a-auditoria-externa.md`
+(ML-2A → ✅ Concluído). Nenhuma operação de git — entrega para `trackfw_architect` auditar e
+commitar.
+
+**Fim.**
+
 **Pós-checagem (advisor), 3 pontos adicionados ao ML-1H no roadmap:**
 1. Warning "no acceptance criteria block" do `trackfw validate` sobre este roadmap é
    pré-existente (já valia antes desta ML), não introduzido por ela — geração do heading

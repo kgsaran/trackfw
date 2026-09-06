@@ -9985,3 +9985,284 @@ build_go_or_fail "setup-s191-build" "$T191" "$T191_BIN"
 assert_fails_with 'validate-parity/gbg-claude-relativo-bare-relative-path-not-detected' \
   'git_branch_guard_hook_resolvable parity (claude-relativo/go): expected violation from rule' \
   env GO_BIN="$T191_BIN" bash "$ROOT_DIR/scripts/check-validate-parity.sh"
+
+# ---------------------------------------------------------------------------
+# Cenário 192 — contentHasMarkerValue passa a exigir vínculo ESTRUTURAL
+# (ROADMAP-2026-09-05-reconciliar-o-que-declaramos-com-o-que-medimos-apos-a-
+# auditoria-externa, ML-2A — achado A2 da auditoria externa).
+#
+# Antes: o marcador (ADR:/REQ:/Roadmap:) era casado como SUBSTRING em
+# qualquer lugar do conteúdo. Dois defeitos mergeados:
+#   1. comentário HTML usado como placeholder ("ADR: <!-- preencher depois
+#      -->") contava como valor real.
+#   2. prosa que menciona o marcador no meio de uma frase ("veja a secao
+#      ADR: mais abaixo") contava como vínculo real.
+#
+# Este cenário prova as DUAS direções cross-CLI, cada uma com seu próprio
+# seam, contra o MESMO fixture (REQ com "ADR: <!-- preencher depois -->" e
+# "Roadmap:" só mencionado em prosa) — sem o fixture nunca deveria emitir
+# nenhuma das duas violações, com QUALQUER dos dois guards desativado ele
+# deveria voltar a emitir a violação correspondente. Vacuidade descartada:
+# a baseline (código real, sem corrupção) é limpa (assert_succeeds); só a
+# corrupção reintroduz a violação (assert_fails_with).
+#
+# Direção A — guard do comentário HTML neutralizado (Go: `if
+# isHTMLCommentOnlyValue(rest)` → `if false`; Node/Python equivalentes):
+# reintroduz o defeito 1 — placeholder volta a contar como vínculo real, a
+# violação "has no linked ADR" desaparece.
+#
+# Direção B — ancoragem por linha neutralizada (Go: `if
+# !strings.HasPrefix(leading, marker)` → `if !strings.Contains(line,
+# marker)`; Node/Python equivalentes): reintroduz o defeito 2 — prosa com o
+# marcador no meio volta a contar como vínculo real, a violação "has no
+# linked Roadmap" desaparece.
+# ---------------------------------------------------------------------------
+
+# $2 (roadmap_rel) precisa ser um alvo REAL (existente no disco): ref_targets_exist tem
+# severidade default "error" (não está em ruleDefaults) — um Roadmap: apontando para um
+# arquivo inexistente reprovaria o ciclo por um motivo alheio ao seam sob prova aqui, e
+# quebraria assert_lacks_pattern (exige exit 0 do processo inteiro). ADR: fica com o
+# placeholder de comentário HTML — a única falsa-positiva sob prova nesta fixture.
+write_req_adr_placeholder_fixture() {
+  local dest=$1 roadmap_rel=$2
+  mkdir -p "$(dirname "$dest")"
+  cat > "$dest" <<EOF
+---
+status: Open
+date: 2026-09-06
+author: ""
+adr: ""
+roadmap: "$roadmap_rel"
+---
+
+# REQ: fixture de placeholder de ADR
+
+> Date: 2026-09-06 | Status: Open
+
+## Motivation
+motivo
+
+## Acceptance Criteria
+- [ ] pendente
+
+## Linked ADR
+ADR: <!-- preencher depois -->
+
+## Linked Roadmap
+Roadmap: $roadmap_rel
+EOF
+}
+
+# $2 (adr_rel) precisa ser um alvo REAL, mesmo motivo de write_req_adr_placeholder_fixture
+# acima — aqui é o Roadmap: que fica com a prosa no meio da frase, a única falsa-positiva
+# sob prova nesta fixture.
+write_req_roadmap_prose_fixture() {
+  local dest=$1 adr_rel=$2
+  mkdir -p "$(dirname "$dest")"
+  cat > "$dest" <<EOF
+---
+status: Open
+date: 2026-09-06
+author: ""
+adr: "$adr_rel"
+roadmap: ""
+---
+
+# REQ: fixture de prosa no meio da linha
+
+> Date: 2026-09-06 | Status: Open
+
+## Motivation
+motivo
+
+## Acceptance Criteria
+- [ ] pendente
+
+## Linked ADR
+ADR: $adr_rel
+
+## Linked Roadmap
+veja a secao Roadmap: mais abaixo para detalhes
+EOF
+}
+
+S192_MSG_ADR='has no linked ADR'
+S192_MSG_ROADMAP='has no linked Roadmap'
+
+# --- Go: baseline limpo (nenhuma das duas falsas-positivas) ---------------
+T192_GO_BIN="$WORK/s192-go-bin/trackfw"
+mkdir -p "$(dirname "$T192_GO_BIN")"
+build_go_or_fail "setup-s192-go-baseline-build" "$ROOT_DIR" "$T192_GO_BIN"
+
+# Fixture A: só a falsa-positiva do ADR (Roadmap: aponta para um alvo real).
+T192_GO_PROJECT_A="$WORK/s192-go-project-a"
+scaffold_adr_req_project "$T192_GO_PROJECT_A"
+write_roadmap_link_target_fixture \
+  "$T192_GO_PROJECT_A/docs/roadmaps/wip/ROADMAP-2026-09-06-s192-target.md" \
+  "docs/req/REQ-2026-09-06-adr-placeholder-fixture.md"
+write_req_adr_placeholder_fixture \
+  "$T192_GO_PROJECT_A/docs/req/REQ-2026-09-06-adr-placeholder-fixture.md" \
+  "docs/roadmaps/wip/ROADMAP-2026-09-06-s192-target.md"
+
+# Fixture B: só a falsa-positiva do Roadmap (ADR: aponta para um alvo real).
+T192_GO_PROJECT_B="$WORK/s192-go-project-b"
+scaffold_adr_req_project "$T192_GO_PROJECT_B"
+write_adr_status_fixture "$T192_GO_PROJECT_B/docs/adr/ADR-2026-09-06-s192-target.md" "Accepted"
+write_req_roadmap_prose_fixture \
+  "$T192_GO_PROJECT_B/docs/req/REQ-2026-09-06-roadmap-prose-fixture.md" \
+  "docs/adr/ADR-2026-09-06-s192-target.md"
+
+assert_fails_with "structural-marker-value/go/adr-placeholder-baseline" \
+  "$S192_MSG_ADR" \
+  bash -c "cd '$T192_GO_PROJECT_A' && exec '$T192_GO_BIN' validate"
+assert_fails_with "structural-marker-value/go/roadmap-prose-baseline" \
+  "$S192_MSG_ROADMAP" \
+  bash -c "cd '$T192_GO_PROJECT_B' && exec '$T192_GO_BIN' validate"
+
+# --- Go: direção A — guard do comentário HTML neutralizado ----------------
+T192C_GO_A="$WORK/s192-corrupt-go-a"
+mkdir -p "$T192C_GO_A/cmd" "$T192C_GO_A/internal"
+cp -r "$ROOT_DIR/cmd/." "$T192C_GO_A/cmd/"
+cp -r "$ROOT_DIR/internal/." "$T192C_GO_A/internal/"
+cp "$ROOT_DIR/go.mod" "$T192C_GO_A/go.mod"
+cp "$ROOT_DIR/go.sum" "$T192C_GO_A/go.sum"
+corrupt_literal \
+  "$ROOT_DIR/internal/validator/validator.go" "$T192C_GO_A/internal/validator/validator.go" \
+  'if isHTMLCommentOnlyValue(rest) {' \
+  'if false { // [falsified] was: isHTMLCommentOnlyValue(rest)' \
+  "s192-go-direction-a"
+T192C_GO_A_BIN="$WORK/s192-corrupt-go-a-bin/trackfw"
+mkdir -p "$(dirname "$T192C_GO_A_BIN")"
+build_go_or_fail "setup-s192-go-a-build" "$T192C_GO_A" "$T192C_GO_A_BIN"
+
+assert_lacks_pattern "structural-marker-value/go/adr-placeholder-detects-regression" \
+  "$S192_MSG_ADR" \
+  bash -c "cd '$T192_GO_PROJECT_A' && exec '$T192C_GO_A_BIN' validate"
+
+# --- Go: direção B — ancoragem por linha neutralizada ----------------------
+T192C_GO_B="$WORK/s192-corrupt-go-b"
+mkdir -p "$T192C_GO_B/cmd" "$T192C_GO_B/internal"
+cp -r "$ROOT_DIR/cmd/." "$T192C_GO_B/cmd/"
+cp -r "$ROOT_DIR/internal/." "$T192C_GO_B/internal/"
+cp "$ROOT_DIR/go.mod" "$T192C_GO_B/go.mod"
+cp "$ROOT_DIR/go.sum" "$T192C_GO_B/go.sum"
+corrupt_literal \
+  "$ROOT_DIR/internal/validator/validator.go" "$T192C_GO_B/internal/validator/validator.go" \
+  'if !strings.HasPrefix(leading, marker) {' \
+  'if !strings.Contains(line, marker) { // [falsified] was: !strings.HasPrefix(leading, marker)' \
+  "s192-go-direction-b"
+T192C_GO_B_BIN="$WORK/s192-corrupt-go-b-bin/trackfw"
+mkdir -p "$(dirname "$T192C_GO_B_BIN")"
+build_go_or_fail "setup-s192-go-b-build" "$T192C_GO_B" "$T192C_GO_B_BIN"
+
+assert_lacks_pattern "structural-marker-value/go/roadmap-prose-detects-regression" \
+  "$S192_MSG_ROADMAP" \
+  bash -c "cd '$T192_GO_PROJECT_B' && exec '$T192C_GO_B_BIN' validate"
+
+# --- Node: baseline limpo ---------------------------------------------------
+T192_N_PROJECT_A="$WORK/s192-node-project-a"
+setup_npm_tree "$T192_N_PROJECT_A"
+scaffold_adr_req_project "$T192_N_PROJECT_A"
+write_roadmap_link_target_fixture \
+  "$T192_N_PROJECT_A/docs/roadmaps/wip/ROADMAP-2026-09-06-s192-target.md" \
+  "docs/req/REQ-2026-09-06-adr-placeholder-fixture.md"
+write_req_adr_placeholder_fixture \
+  "$T192_N_PROJECT_A/docs/req/REQ-2026-09-06-adr-placeholder-fixture.md" \
+  "docs/roadmaps/wip/ROADMAP-2026-09-06-s192-target.md"
+
+T192_N_PROJECT_B="$WORK/s192-node-project-b"
+setup_npm_tree "$T192_N_PROJECT_B"
+scaffold_adr_req_project "$T192_N_PROJECT_B"
+write_adr_status_fixture "$T192_N_PROJECT_B/docs/adr/ADR-2026-09-06-s192-target.md" "Accepted"
+write_req_roadmap_prose_fixture \
+  "$T192_N_PROJECT_B/docs/req/REQ-2026-09-06-roadmap-prose-fixture.md" \
+  "docs/adr/ADR-2026-09-06-s192-target.md"
+
+assert_fails_with "structural-marker-value/node/adr-placeholder-baseline" \
+  "$S192_MSG_ADR" \
+  bash -c "cd '$T192_N_PROJECT_A' && exec node npm/bin/trackfw validate"
+assert_fails_with "structural-marker-value/node/roadmap-prose-baseline" \
+  "$S192_MSG_ROADMAP" \
+  bash -c "cd '$T192_N_PROJECT_B' && exec node npm/bin/trackfw validate"
+
+# --- Node: direção A ---------------------------------------------------------
+T192C_N_A="$WORK/s192-corrupt-node-a"
+setup_npm_tree "$T192C_N_A"
+corrupt_literal \
+  "$ROOT_DIR/npm/src/validator/index.js" "$T192C_N_A/npm/src/validator/index.js" \
+  "if (isHTMLCommentOnlyValue(rest)) continue" \
+  "if (false) continue // [falsified] was: isHTMLCommentOnlyValue(rest)" \
+  "s192-node-direction-a"
+
+assert_lacks_pattern "structural-marker-value/node/adr-placeholder-detects-regression" \
+  "$S192_MSG_ADR" \
+  bash -c "cd '$T192_N_PROJECT_A' && exec node '$T192C_N_A/npm/bin/trackfw' validate"
+
+# --- Node: direção B ---------------------------------------------------------
+T192C_N_B="$WORK/s192-corrupt-node-b"
+setup_npm_tree "$T192C_N_B"
+corrupt_literal \
+  "$ROOT_DIR/npm/src/validator/index.js" "$T192C_N_B/npm/src/validator/index.js" \
+  "if (!leading.startsWith(marker)) continue" \
+  "if (!line.includes(marker)) continue // [falsified] was: !leading.startsWith(marker)" \
+  "s192-node-direction-b"
+
+assert_lacks_pattern "structural-marker-value/node/roadmap-prose-detects-regression" \
+  "$S192_MSG_ROADMAP" \
+  bash -c "cd '$T192_N_PROJECT_B' && exec node '$T192C_N_B/npm/bin/trackfw' validate"
+
+# --- Python: baseline limpo --------------------------------------------------
+T192_P_PROJECT_A="$WORK/s192-python-project-a"
+mkdir -p "$T192_P_PROJECT_A"
+cp -r "$ROOT_DIR/pypi" "$T192_P_PROJECT_A/pypi"
+scaffold_adr_req_project "$T192_P_PROJECT_A"
+write_roadmap_link_target_fixture \
+  "$T192_P_PROJECT_A/docs/roadmaps/wip/ROADMAP-2026-09-06-s192-target.md" \
+  "docs/req/REQ-2026-09-06-adr-placeholder-fixture.md"
+write_req_adr_placeholder_fixture \
+  "$T192_P_PROJECT_A/docs/req/REQ-2026-09-06-adr-placeholder-fixture.md" \
+  "docs/roadmaps/wip/ROADMAP-2026-09-06-s192-target.md"
+
+T192_P_PROJECT_B="$WORK/s192-python-project-b"
+mkdir -p "$T192_P_PROJECT_B"
+cp -r "$ROOT_DIR/pypi" "$T192_P_PROJECT_B/pypi"
+scaffold_adr_req_project "$T192_P_PROJECT_B"
+write_adr_status_fixture "$T192_P_PROJECT_B/docs/adr/ADR-2026-09-06-s192-target.md" "Accepted"
+write_req_roadmap_prose_fixture \
+  "$T192_P_PROJECT_B/docs/req/REQ-2026-09-06-roadmap-prose-fixture.md" \
+  "docs/adr/ADR-2026-09-06-s192-target.md"
+
+assert_fails_with "structural-marker-value/python/adr-placeholder-baseline" \
+  "$S192_MSG_ADR" \
+  bash -c "cd '$T192_P_PROJECT_A' && exec env PYTHONPATH='$T192_P_PROJECT_A/pypi' python3 -m trackfw validate"
+assert_fails_with "structural-marker-value/python/roadmap-prose-baseline" \
+  "$S192_MSG_ROADMAP" \
+  bash -c "cd '$T192_P_PROJECT_B' && exec env PYTHONPATH='$T192_P_PROJECT_B/pypi' python3 -m trackfw validate"
+
+# --- Python: direção A -------------------------------------------------------
+T192C_P_A="$WORK/s192-corrupt-python-a"
+mkdir -p "$T192C_P_A"
+cp -r "$ROOT_DIR/pypi" "$T192C_P_A/pypi"
+corrupt_literal \
+  "$ROOT_DIR/pypi/trackfw/validator.py" "$T192C_P_A/pypi/trackfw/validator.py" \
+  "if _is_html_comment_only_value(rest):" \
+  "if False:  # [falsified] was: _is_html_comment_only_value(rest)" \
+  "s192-python-direction-a"
+
+assert_lacks_pattern "structural-marker-value/python/adr-placeholder-detects-regression" \
+  "$S192_MSG_ADR" \
+  bash -c "cd '$T192_P_PROJECT_A' && exec env PYTHONPATH='$T192C_P_A/pypi' python3 -m trackfw validate"
+
+# --- Python: direção B -------------------------------------------------------
+T192C_P_B="$WORK/s192-corrupt-python-b"
+mkdir -p "$T192C_P_B"
+cp -r "$ROOT_DIR/pypi" "$T192C_P_B/pypi"
+corrupt_literal \
+  "$ROOT_DIR/pypi/trackfw/validator.py" "$T192C_P_B/pypi/trackfw/validator.py" \
+  "if not leading.startswith(marker):" \
+  "if marker not in line:  # [falsified] was: not leading.startswith(marker)" \
+  "s192-python-direction-b"
+
+assert_lacks_pattern "structural-marker-value/python/roadmap-prose-detects-regression" \
+  "$S192_MSG_ROADMAP" \
+  bash -c "cd '$T192_P_PROJECT_B' && exec env PYTHONPATH='$T192C_P_B/pypi' python3 -m trackfw validate"

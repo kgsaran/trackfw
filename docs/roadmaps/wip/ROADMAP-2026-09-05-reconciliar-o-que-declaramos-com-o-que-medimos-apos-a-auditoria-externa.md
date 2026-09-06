@@ -49,7 +49,7 @@ silêncio: quem leu a afirmação errada precisa encontrar a correção.
 > Dependências: Wave 1.
 
 ### ML-2A — `req_has_adr` deixa de aceitar placeholder e prosa
-**Status:** 🔄 Em andamento · **Agente:** `apolo-tf` (3 CLIs)
+**Status:** ✅ Concluído · **Agente:** `apolo-tf` (3 CLIs)
 `ADR: <!-- preencher depois -->` e `veja a secao ADR: mais abaixo` contam como vínculo hoje.
 Falsificação nas duas direções, com esses dois casos nomeados.
 🔴 **A contagem do acervo vai subir acima de 67 — e continua sendo acerto.** Declarar antes e depois.
@@ -59,7 +59,7 @@ Falsificação nas duas direções, com esses dois casos nomeados.
 > Dependências: Waves 1 e 2. **É o entregável que importa** — as outras corrigem instâncias.
 
 ### ML-3A — Todo ML com teste novo declara qual conclusão aquele teste afirma
-**Status:** 🔄 Em andamento · **Agente:** `trackfw_architect`
+**Status:** ✅ Concluído · **Agente:** `trackfw_architect`
 Instrumentar o contrato de handoff e o de auditoria: quem entrega teste novo declara **qual conclusão
 do próprio ML aquele teste afirma**, e o arquiteto verifica **esse cruzamento** na auditoria.
 
@@ -108,3 +108,32 @@ detectou foi o agente**, por `git hash-object`.
 
 Não reescrevi o histórico. Virou `ADR-2026-09-05-staging-com-escopo-implicito-...` + REQ: o controle
 passa para o **harness e para o produto**, em vez de depender de memória.
+
+
+## Auditoria dos ML-2A e ML-3A — arquiteto, 2026-09-06
+
+```
+make quality QUALITY_EXIT=0, zero FAIL · trackfw validate exit 0
+acervo: req_has_adr 70 -> 103 (+33)  ·  req_has_roadmap 36 -> 54 (+18)
+```
+
+**ML-3A** — a `Regra Dura de Reconciliação` está no `CLAUDE.md`, com o **limite declarado**: ela pega
+contradição interna (artefato contra conclusão do mesmo relatório), e **não pega premissa errada
+compartilhada** pelos dois. Para isso serve a barreira independente.
+
+**ML-2A** — o agente **corrigiu a mensagem no meio do trabalho, por medição**: a primeira versão dizia
+"o marcador tem de iniciar a linha", mas **38 das 51 novas acusações são de placeholder**, não de
+ancoragem — a mensagem mandaria a maioria a investigar a coisa errada.
+
+🔴 **E ele esclareceu o caso que eu tinha entendido errado.** O meu `REQ (**reaberta**):` tem
+decoração **entre o nome do campo e os dois-pontos** — **nem a implementação antiga nem a nova** casam
+com isso. Não era o mesmo defeito que a prosa. Forma que funciona: `REQ: docs/req/x.md (reaberta)`.
+
+**`none`/`TBD`/`N/A`/`-` seguem sendo valores reais, de propósito** — protegem as fixtures dos gates, e
+nenhum dos 4 casos exigidos precisava bloqueá-los.
+
+### Para o ML-3B, achado do ML-2A
+
+**13 linhas `> REQ:` decoradas em `docs/roadmaps/done/`.** Hoje fora de alcance (as regras só varrem
+`wip/` e `blocked/`) — 🔴 **mas falhariam se algum desses roadmaps voltasse para `wip/`**, que é
+exatamente o que fizemos **duas vezes hoje** (CRLF e fail-open). Bomba-relógio de formato no acervo.
