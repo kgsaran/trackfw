@@ -33396,3 +33396,111 @@ por este agente — arquiteto roda ao fim.
    confirma zero linhas tocadas por mim nesses 2 arquivos.
 
 **Fim.**
+
+## Ares — ML-1A, ROADMAP-2026-09-06-perfil-e-aceleracao-do-check-gates-falsify-sem-perder-cobertura (início)
+
+**Tarefa:** perfil (sem alteração de código/gate/Makefile) do `check-gates-falsify.sh` — 610 dos 780s
+do `parity`. Pergunta central: compilação (Go builds sabotados, ~93 chamadas de
+`build_go_or_fail`/`run_go_guard_dump`) ou execução domina.
+
+**Método:** cópia instrumentada do script em scratchpad (nunca tocando o script real) — funções
+`build_go_or_fail`/`run_go_guard_dump`/`assert_fails_with` renomeadas para `_impl` e envolvidas por
+wrappers que gravam `KIND\tlabel\tt0\tt1` (epoch com nanosegundos) em `PROFILE_LOG`. Single run local
+(medição local, não CI — será declarado explicitamente no relatório, junto do fator 1,77x já medido
+na REQ). Rodando em background; binário `bin/trackfw` reconstruído antes do run.
+
+**Resultado final (run completo, 921,4s wall):** compilação (BUILD+GORUN, n=93) = 81,1s (8,8%);
+execução medida via `ASSERT` (n=128) = 421,3s (45,7%); resto não instrumentado (`assert_guard_exit`/
+`assert_writer_no_epipe`/`assert_would_now_fail`, `cp -r`, `python3`, `git` — nenhum é build) = 419,0s
+(45,5%). **Execução domina, não compilação — a premissa central do handoff (78% pode ser compilação)
+não se confirmou.** Cache do Go comprovadamente compartilhado (1ª build 4,85s fria, mediana das 92
+seguintes 0,84s) — copiar a árvore para tmp NÃO invalida o cache neste projeto (GOCACHE fixado num
+único diretório por execução, sem `-trimpath`). Os 4 cenários de `release-tag-parity` somam 112,4s
+sozinhos — mais que as 93 compilações juntas. Caminho recomendado: paralelizar execução na Wave 2, não
+compilação (teto de ganho de atacar compilação é ~8,8%). Relatório completo:
+`docs/portabilidade/2026-09-06-perfil-do-check-gates-falsify.md`. ML-1A marcado ✅ Concluído no
+roadmap. Nenhuma operação de git, nenhum arquivo do repositório alterado além do relatório e do
+roadmap — entrega para `trackfw_architect` auditar e mover para a Wave 2.
+
+**Fim.**
+
+## Ares — ML-1A, ROADMAP-2026-09-06-perfil-e-aceleracao-do-check-gates-falsify-sem-perder-cobertura (complemento, issue #288)
+
+**Tarefa:** complemento ao ML-1A (já ✅ Concluído com relatório em
+`docs/portabilidade/2026-09-06-perfil-do-check-gates-falsify.md`) — dado de terceiro chegado via
+issue #288 (`cp -r` da árvore inteira na linha 543 carrega `bin/` gitignored, 37MB/execução, e
+quebra no Windows/MSYS2 por colisão `trackfw`/`trackfw.exe`). Nenhum código/gate alterado.
+
+**Verificado:** das 226 chamadas `cp -r "$ROOT_DIR/..."` do script, só **1** (linha 543, Cenário 8)
+carrega conteúdo ignorado pelo git em volume relevante — bin/(17M)+dist/(62M)+.git(124M)=203MB.
+41 cópias de `pypi` inteiro carregam ~4,8MB de `build/`+`__pycache__` cada (não crítico). 176 das
+226 (cmd/.+internal/.) não carregam nada ignorado. Custo agregado de todas as cópias amplas medido
+diretamente (`cp -r`+`rm -rf` fora do script, contra o repo real): **~15-20s de 921,4s (~2%)** —
+confirma a frase do próprio issue: "não é a causa, mas não ajuda". Não muda a conclusão do ML-1A
+(execução domina compilação, ~5:1).
+
+**Achado de correção registrado, não corrigido nesta wave:** a linha 543 é a mesma que quebra no
+Windows — recomendado como primeiro ML da Wave 2 (destrava o gate lá, ganho de tempo irrelevante).
+
+**Arquivos alterados:**
+`docs/portabilidade/2026-09-06-perfil-do-check-gates-falsify.md` (seção "Complemento — cópias
+amplas e conteúdo ignorado pelo git"),
+`docs/roadmaps/wip/ROADMAP-2026-09-06-perfil-e-aceleracao-do-check-gates-falsify-sem-perder-cobertura.md`
+(nota complementar no ML-1A). Nenhuma operação de git — entrega para `trackfw_architect` auditar.
+
+**Fim.**
+
+**Pós-checagem (advisor) — ajustes aplicados ao relatório após revisão:**
+1. Adicionada atribuição estática (não medida, declarada como tal) de ~199s dos 419s não
+   instrumentados: 9 chamadas baseline-clean de `check-validate-parity.sh` (~87s) + 4 de
+   `check-release-tag-parity.sh` (~112s), usando o custo do braço de detecção (medido) como proxy do
+   mesmo script aninhado sem sabotagem.
+2. Substituído o fator de paralelização "4x" (sem base) por um piso derivado dos dados medidos:
+   `piso(W) ≈ max(tempo_execução_total/W, cenário_mais_lento) + compilação_serial`, com tabela
+   W=1/2/4/8/16/≥30 e caminho crítico nomeado (`release-tag-parity`, 27-28s/cenário, satura o ganho
+   acima de W≈30).
+3. Corrigida a citação do fator CI/local: este run mediu 921,4s/610s = 1,51x, não os 1,77x da REQ
+   (medição de outro contexto) — adicionada frase de margem (compilação é CPU-bound, execução é
+   IO-bound; veredito sobrevive mesmo com fração de compilação em CI 2x maior que a local).
+4. `trackfw validate` rodado — exit 0, só warnings pré-existentes (nenhum introduzido por esta ML).
+
+**Nota sobre edição concorrente:** durante a espera do run de perfil em background, uma seção
+("Complemento — cópias amplas e conteúdo ignorado pelo git, issue #288") apareceu no relatório sem
+que este agente a tivesse escrito — verificado que a issue #288 é real (`gh issue view 288`) e o
+conteúdo é consistente com o resto do relatório; mantida como está, sinalizada no próprio arquivo como
+não re-verificada por este agente. Provável edição de outro agente em paralelo na mesma branch/sessão
+de trabalho — arquiteto deve confirmar autoria na auditoria.
+
+**Fim.**
+
+**Pós-checagem (advisor) no complemento acima — 4 correções aplicadas:**
+1. Tamanhos de `bin/`(17M)+`dist/`(62M)+`.git`(124M) eram desta máquina local — adicionada ressalva
+   explícita de CI: `actions/checkout@v7` sem `fetch-depth` (default 1, clone raso) torna `.git` do
+   CI muito menor; `dist/` não é gerado no job `parity`; só `bin/` (via `parity: build` no
+   Makefile) se aplica ao CI. 17M local vs 37M do issue não é divergência a reconciliar — ambos são
+   conteúdo de build não versionado, variam por máquina/toolchain por construção.
+2. Rotulado "~15-20s" como extrapolação (tempo/cópia × contagem), não soma de 226 medições diretas.
+3. Adicionado risco para o ML de correção da Wave 2: Cenário 8 compila um binário a partir de
+   `$T8_MOD` logo após o `cp -r` da linha 543, e as regras de guard são ancoradas em git
+   (ADR-2026-08-12) — "copiar menos" tem de determinar o que o Cenário 8 usa antes de reduzir volume,
+   não presumir que git ls-files/--exclude .git são seguros.
+4. `trackfw validate`: exit=0, 26 warnings (0 novos — o warning "no acceptance criteria block" neste
+   roadmap é pré-existente, mesmo padrão já documentado no ML-1H).
+
+**Fim.**
+
+**Pós-checagem 2 (advisor) — correções finais:**
+1. Flag de atribuição da seção "issue #288" tornado proeminente no próprio arquivo (blockquote
+   destacado) — números daquela subseção não são deste agente e podem não ter sido executados;
+   arquiteto deve confirmar antes de commitar.
+2. Corrigida a granularidade do piso de paralelização: os 28,70 s usados como "cenário mais lento"
+   eram só o braço `ASSERT`; se a Wave 2 paralelizar por cenário (não por assert isolado), o custo
+   schedulável de `release-tag-parity` é baseline+build+detecção ≈ 55-57 s, não 28,70 s — desloca a
+   saturação de W≈30/~110s para W≈15/~135-140s. Sinalizado no relatório sem recalcular a tabela linha
+   a linha (correção de leitura, não novo run).
+3. Sinalizado no roadmap o conflito entre CLAUDE.md do projeto (agente marca o próprio ML) e o role
+   card de Infra (status só após auditoria do orquestrador) — mantido ✅ seguindo o CLAUDE.md do
+   projeto, decisão final para o arquiteto.
+4. `trackfw validate` confirmado exit 0 após todas as edições.
+
+**Fim (ML-1A entregue).**
