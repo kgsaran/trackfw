@@ -432,7 +432,17 @@ def _get_frontmatter_roadmap_value(content: str) -> str:
     Remove aspas externas (não backticks) — mesma semântica de normalize_yaml_flat_value
     do validator (trim apenas ' e ", não `).
     Retorna '' se ausente ou se o valor não terminar em '.md'.
+
+    D1/D3 (ADR-2026-09-04-parser-de-frontmatter-tolera-crlf-na-fronteira-de-entrada, ML-5C):
+    normaliza CRLF -> LF via _normalize_crlf na própria entrada, antes de qualquer casamento
+    de "---\n" — reaproveita a única implementação Python, sem criar uma segunda cópia.
+
+    🔴 Nuance idêntica ao ML-5B: o único chamador de produção (sync_paired_req_references) lê
+    o arquivo com `open(path, "r", encoding="utf-8")` — universal newlines já traduz CRLF -> LF
+    nessa leitura, então em produção este site nunca via CRLF antes desta ML. A chamada aqui é
+    defesa em profundidade, não a correção de um bug observável hoje neste caminho.
     """
+    content = _normalize_crlf(content)
     if not content.startswith("---\n"):
         return ""
     end = content.find("\n---", 4)
@@ -461,7 +471,16 @@ def _rewrite_req_roadmap_ref(content: str, new_path: str) -> tuple[str, bool]:
 
     Espelha a semântica de _rewrite_roadmap_status: escopo estrito ao frontmatter,
     sem inventar chave ausente, sem alterar outras linhas.
+
+    D1/D3 (ADR-2026-09-04-parser-de-frontmatter-tolera-crlf-na-fronteira-de-entrada, ML-5C):
+    normaliza CRLF -> LF via _normalize_crlf na própria entrada, antes de qualquer casamento
+    de "---\n" — mesma implementação, mesma nuance de defesa em profundidade do
+    _get_frontmatter_roadmap_value acima (o único chamador de produção já lê em modo texto
+    com universal newlines). A escrita (D2) permanece LF: o conteúdo normalizado alimenta o
+    split/join por "\n" usado abaixo, então o retorno já sai sem CRLF, e o único caller grava
+    com `open(..., "w", encoding="utf-8", newline="\n")`.
     """
+    content = _normalize_crlf(content)
     if not content.startswith("---\n"):
         return content, False
     end = content.find("\n---", 4)

@@ -32113,3 +32113,222 @@ fechamento da wave são do arquiteto, pós-auditoria).
 🔴 **Resumo do que fica para o arquiteto decidir:** (1) auditar e fechar o ML-5B; (2) decidir o
 destino do residual Python-only (`_get_frontmatter_roadmap_value`/`_rewrite_req_roadmap_ref`) — ML
 próprio ou REQ, dado que é um perfil novo (Python divergindo sozinho, não os 3 discordando).
+
+## ML-5C — apolo-tf, 2026-09-06 (início)
+
+Iniciando ML-5C: resíduo Python-only da D3 (`_get_frontmatter_roadmap_value` /
+`_rewrite_req_roadmap_ref`, `pypi/trackfw/generators/roadmap.py:429,454`), com ML-5A e ML-5B já
+commitados. Nenhuma operação de git nesta sessão. Mesma REQ, mesmo PR #284 — Regra Dura de Causa
+Raiz, arquiteto já decidiu não fragmentar.
+
+## ML-5C — apolo-tf, 2026-09-06 (fim)
+
+**Sítios corrigidos (Python, os 2 nomeados no handoff):**
+`_get_frontmatter_roadmap_value` e `_rewrite_req_roadmap_ref`
+(`pypi/trackfw/generators/roadmap.py:429,464`) passam a chamar `_normalize_crlf` (mesma
+implementação única já usada por `_rewrite_roadmap_status`/`rewrite_req_status`/`renderers.py`/
+`manager.py` — D3, nenhuma segunda cópia) antes de casar `"---\n"`.
+
+**Gêmeos Go/Node verificados por leitura — veredito: já toleravam, sem correção necessária.**
+`extractFrontmatterRoadmap`/`rewriteREQRoadmapRef` (`internal/generators/roadmap.go:672,705`) e
+`extractFrontmatterRoadmap`/`rewriteReqRoadmapRef` (`npm/src/generators/roadmap.js:354,378`) casam
+o delimitador por `strings.Split(text, "\n")` + `TrimSpace(line) == "---"` (Go) e
+`content.split('\n')` + `line.trim() === '---'` (Node) — CRLF sobrevive ao split como `"---\r"`,
+que o `trim()`/`TrimSpace` reduz a `"---"` antes da comparação. Não é o mesmo padrão do defeito
+(prefixo de blob `"---\n"` literal); é tolerante **por construção**, confirmado lendo o corpo
+inteiro das duas funções em cada runtime, não inferido por nome.
+
+**🔴 A enumeração converge.** Varredura final nos 3 runtimes por todo literal de casamento de
+delimitador de frontmatter (`"---\n"`/`'---\n'` em `startswith`/`HasPrefix`/`startsWith`, fora de
+docstrings, docs de gate e literais de escrita):
+
+- Go: `internal/integrations/render.go` (7 sítios) e `internal/generators/roadmap.go:349` /
+  `req.go:194` — todos já chamam `NormalizeCRLF`/`integrations.NormalizeCRLF` antes do match
+  (ML-5A/5B).
+- Node: `npm/src/integrations/render.js` (7 sítios) e `npm/src/generators/roadmap.js:183` /
+  `req.js:76-77` — todos já chamam `normalizeCRLF` antes do match (ML-5A/5B).
+- Python: `pypi/trackfw/integrations/renderers.py` (6 sítios), `pypi/trackfw/integrations/
+  manager.py:439`, `pypi/trackfw/generators/roadmap.py:115` (`_rewrite_roadmap_status`),
+  `pypi/trackfw/generators/req.py:118` (`rewrite_req_status`) — já normalizados (ML-5A/5B); e os
+  dois sítios deste ML, agora normalizados.
+- `startswith("---")`/`content.startswith("---")` sem `\n` (`pypi/trackfw/traceid.py:34`,
+  `pypi/trackfw/validator.py:827,1394,1407`) — **fora da família do defeito por construção**: sem
+  exigir o `\n` logo após os três traços, `"---\r"` já casa antes mesmo de normalizar (o `\r`
+  sobra depois do prefixo, não impede o match). Não corrigido porque não está quebrado.
+
+**Nenhum sítio remanescente casa delimitador de frontmatter por literal de blob sem normalizar
+primeiro, nos 3 runtimes.** Três rodadas (ML-5A: 20 sítios; ML-5B: 6 + 2 resíduos; ML-5C: os 2
+resíduos) fecham a D3. A convergência não veio de "a busca não achou mais nada" isolado — veio de
+**cada sítio restante ter uma explicação verificável de por que já é seguro** (ou já normaliza, ou
+o padrão de match não exige o `\n` que tornava o `"---\n"` original cego a CRLF).
+
+**Falsificação nas duas direções, por sítio, com números:**
+```
+_get_frontmatter_roadmap_value:
+  CRLF antes da correção (simulado sem _normalize_crlf) -> '' (bug reproduzido: startswith falha)
+  CRLF depois da correção                                -> 'old-roadmap.md' (== valor LF)
+_rewrite_req_roadmap_ref:
+  CRLF depois da correção -> changed=True, conteúdo byte-idêntico ao resultado partindo de LF,
+  zero byte \r na saída
+Controle POSIX (entrada só-LF): resultado idêntico ao pré-existente nas duas funções (medido)
+```
+
+**Controle de escrita em bytes reais (D2):** teste novo grava um REQ com bytes CRLF crus no disco
+(`open(path, "wb")`, bypassando universal newlines na escrita), roda `sync_paired_req_references`
+via os binários/módulos de produção, e lê o resultado com `open(path, "rb")`: zero byte `\r`,
+conteúdo idêntico ao caminho LF. `.gitattributes` intocado (`git diff --stat` vazio).
+
+**Nuance idêntica ao ML-5B, medida de novo, não presumida:** `sync_paired_req_references` lê com
+`open(req_path, "r", encoding="utf-8")` — universal newlines já traduzia CRLF→LF antes desta ML,
+então em produção este caminho nunca via `\r`. A correção é defesa em profundidade na função em
+si (fecha o defeito latente para um chamador futuro que leia bytes crus), não a correção de um bug
+observável hoje neste caminho — mesmo padrão do `move_roadmap`/`move_req` no ML-5B.
+
+**Reconciliação — o que cada teste novo afirma:**
+- `test_crlf_source_extrai_o_mesmo_valor_que_lf`: afirma que `_get_frontmatter_roadmap_value`
+  deixa de ser cega a CRLF — mesmo valor extraído partindo de LF ou CRLF.
+- `test_controle_posix_lf_produz_exatamente_o_resultado_de_hoje` (get value): afirma que a entrada
+  só-LF não muda de comportamento com a normalização adicionada.
+- `test_crlf_source_produz_resultado_byte_identico_ao_lf` (rewrite ref): afirma que
+  `_rewrite_req_roadmap_ref` deixa de ser cega a CRLF **e** que a escrita permanece LF (D2) mesmo
+  partindo de CRLF.
+- `test_controle_posix_lf_produz_exatamente_o_resultado_de_hoje` (rewrite ref): mesmo controle
+  POSIX, para a função de reescrita.
+- `test_req_crlf_no_disco_ja_e_tolerado_hoje_por_universal_newlines`: afirma a nuance declarada —
+  o end-to-end via arquivo em disco já não reproduzia o defeito antes desta ML (universal
+  newlines), e é o controle de bytes reais (D2) para este ML.
+
+**Premissa do handoff que a medição confirmou, não derrubou:** os gêmeos Go/Node eram mesmo
+tolerantes por construção — confirmado por leitura completa das 4 funções, não presumido.
+
+**Evidência de comandos:**
+```
+python3 -m pytest pypi/tests/test_generators_roadmap.py -q  -> 61 passed (56 antes + 5 novos)
+python3 -m pytest pypi/tests/ -q                              -> 1635 passed, 66 subtests passed
+scripts/check-python-writes-lf.sh                              -> exit 0
+git diff --stat -- .gitattributes                              -> vazio
+go build ./...                                                 -> limpo
+go vet ./...                                                   -> limpo
+git diff --stat -- pypi/trackfw/generators/roadmap.py           -> 2 funções, +19/-0 linhas de docstring/normalização, 0 linha de lógica fora da normalização
+```
+
+Arquivos tocados: `pypi/trackfw/generators/roadmap.py`, `pypi/tests/test_generators_roadmap.py`.
+Nenhum arquivo Go/Node tocado — confirmado desnecessário por leitura, não por suposição.
+
+**Não rodei `make quality`** — instrução explícita do handoff; o arquiteto roda ao fim, cobrindo
+os três MLs (5A/5B/5C). Nenhuma operação de git.
+
+## ML-5C — apolo-tf, 2026-09-06 (correção pós-revisão, antes do handoff ao arquiteto)
+
+A auditoria do advisor pegou 4 lacunas na evidência acima antes que eu declarasse o ML pronto.
+Refeitas todas; uma delas **abriu um achado novo, não corrigido**.
+
+**1) Sweep refeito com `grep -a`** (o handoff avisava: `npm/src/validator/index.js` já foi
+classificado binário pelo `file` antes — hoje `file` o classifica como texto, mas o sweep original
+não usava `-a`, então a garantia não tinha essa proteção). Resultado: sem `-a` e com `-a` dão o
+mesmo conjunto — nenhuma diferença. Mantida a lista de sítios `"---\n"` já reportada.
+
+**2) Sítios sem `\n` (`traceid.py:34`, `validator.py:827,1394,1407`, `traceid.js:14`,
+`index.js:572,1085,1096,1243`, `validator.go:2036,2075,2088`, `app.js:1068`) — lidos por inteiro,
+não só a linha de entrada.** Todos usam um de dois padrões seguros: (a) checagem de presença pura
+(`startsWith('---')`/`HasPrefix(..., "---")` sem depender do que vem depois — CRLF não muda se os 3
+traços iniciais existem) ou (b) `indexOf('\n---'/find("\n---")` para o fechamento + `line.trim()`/
+`TrimSpace(line)` por linha — o `\r` de uma linha CRLF sobra ANTES do `\n` que o `indexOf` procura,
+então o casamento do delimitador de fechamento não quebra, e o trim por linha limpa o resto.
+Confirmado por leitura do corpo completo das 12 funções, nos 3 runtimes — não é inferência do nome
+nem da linha de entrada isolada.
+
+**3) Falsificação por MUTAÇÃO DE PRODUÇÃO, não réplica isolada.** Removida a linha
+`content = _normalize_crlf(content)` de cada uma das 2 funções, rodados só os testes CRLF do ML:
+`test_crlf_source_extrai_o_mesmo_valor_que_lf` e
+`test_crlf_source_produz_resultado_byte_identico_ao_lf` **reprovam** (os outros 3 testes novos —
+os dois controles POSIX e o de disco — continuam verdes, como o mecanismo prevê: o controle POSIX
+não exercita CRLF, e o de disco não reproduzia o defeito nem antes desta ML, por universal
+newlines). Produto restaurado linha a linha (as mesmas 2 linhas reintroduzidas); suíte completa
+volta a 61/61 verde; `git diff` contra o índice mostra exatamente as 19 linhas de docstring/
+normalização por função, nada a mais.
+
+**4) Controle de bytes com os 3 binários REAIS, não a função isolada.** Fixture REQ+Roadmap com
+CRLF cru gravado em disco (`\r\n` literal, bypassando qualquer tradução), 3 diretórios de projeto
+isolados, rodei:
+```
+bin/trackfw roadmap move ROADMAP-....md wip                              (Go, binário compilado)
+node npm/bin/trackfw roadmap move ROADMAP-....md wip                     (Node, entrypoint real)
+PYTHONPATH=pypi python3 -m trackfw roadmap move ROADMAP-....md wip       (Python, módulo real)
+```
+Todos os 3 terminam com exit 0 e `✓ synced REQ-....md`.
+
+🔴 **Achado NOVO, fora do escopo deste ML — não corrigido, reportado.** O REQ reescrito por Go e
+por Node **ainda contém bytes `\r`** depois do `roadmap move` (Go: 8 bytes `\r` remanescentes;
+Node: 10). Só a saída Python está limpa (0 bytes `\r`) — porque minha correção normaliza o
+`content` INTEIRO na entrada da função antes do split/join, então toda linha reconstruída sai LF.
+`rewriteREQRoadmapRef` (Go, `internal/generators/roadmap.go:705`) e `rewriteReqRoadmapRef` (Node,
+`npm/src/generators/roadmap.js:378`) fazem `strings.Split(text, "\n")`/`content.split('\n')` sobre
+o texto CRU (sem normalizar antes) e **só reconstroem a(s) linha(s) que casam o campo** — as
+demais linhas (inclusive, no Node, a própria linha `roadmap:` reescrita, porque o Node faz
+`line.replace(oldRef, newRef)` preservando o `\r` residual da linha original) são gravadas de
+volta com o `\r` que vieram da fonte. Verificado byte a byte:
+```
+Go   (após move):  linha 0-2,4-8 mantêm \r; só as 2 linhas modificadas (roadmap:/Roadmap:) saem limpas
+Node (após move):  TODAS as 9 linhas não-vazias mantêm \r, inclusive as 2 linhas modificadas
+Python (após move): 0 bytes \r em qualquer linha
+```
+**Isto não é o defeito D1 que a ADR desta wave cobre** (matching do delimitador de abertura/
+fechamento — os dois já são tolerantes por construção, confirmado no item 2 desta correção e no
+corpo do ML original). **É um defeito D2 independente**: a função lê CRLF corretamente mas
+**vaza CRLF de volta na escrita**, em uma função que nunca esteve no escopo do ML-5A (`~14
+testes`, parser/renderizadores) nem do ML-5B (`6 sítios`, `rewriteRoadmapStatus`/
+`rewriteREQStatus` — campo `status:`, não campo `roadmap:`). `_rewrite_req_roadmap_ref`/
+`rewriteREQRoadmapRef`/`rewriteReqRoadmapRef` é uma família de função à parte (sync de referência
+REQ↔roadmap), citada pela primeira vez no handoff deste ML só para o lado Python.
+
+🔴 **Elo medido, não inferido: o achado é alcançável em produção a partir de um REQ autorado no
+Windows, não só de um fixture escrito à mão.** Verifiquei o caminho de leitura dos dois chamadores
+de produção: `os.ReadFile(reqPath)` (Go, `roadmap.go:820`) devolve bytes crus — Go não tem conceito
+de universal newlines na leitura de arquivo, `\r\n` no disco chega `\r\n` no `[]byte`. `fs.
+readFileSync(filePath, 'utf8')` (Node, `roadmap.js:436`) decodifica bytes para string UTF-8 mas
+**não traduz separador de linha** — `\r\n` no disco vira a string `"\r\n"`, intacta. Nenhum dos
+dois chamadores normaliza antes de passar para `rewriteREQRoadmapRef`/`rewriteReqRoadmapRef`. Isso
+é o oposto do Python (`open(path, "r", encoding="utf-8")`, universal newlines, traduz CRLF→LF na
+leitura — é a mesma nuance que o ML-5B já tinha medido para `sync_paired_req_references`). Logo:
+um REQ salvo com CRLF no disco (ex.: `git clone` num checkout Windows sem normalização de
+`.gitattributes`, ou editado por uma ferramenta que grava CRLF) alcança este defeito em Go e Node
+**hoje, em produção**, sem qualquer bypass artificial — não é artefato do meu fixture.
+
+**Não corrigi Go/Node** — a instrução do handoff foi explícita: "se a enumeração revelar sítios
+novos, diga isso claramente, e não os corrija sem avisar". Fica para o arquiteto decidir se entra
+como ML/REQ nova (mecanismo diferente de D1, mesma ADR de CRLF) ou se é o próprio ML-5C que deveria
+crescer — não decidi por conta própria porque não é "mesmo mecanismo, sítio a mais": é mecanismo
+distinto (D2, não D1) numa função que as waves anteriores nunca tocaram.
+
+**Sem gatilho de segurança conhecido; raio de alcance NÃO medido.** É sincronização de referência
+REQ↔roadmap, não campo de guard, e o campo `roadmap:` em si aponta certo (testado). Mas os bytes
+`\r` residuais ficam num artefato de governança **committável** (`.gitattributes` intocado por D4
+— nada normaliza isso na borda do git), e eu não medi o que um consumidor downstream (validator,
+outro parser, um editor) faz com uma linha `\r`-suffixed depois — é exatamente a classe de
+blindness que o ML-5A encontrou em outro sítio. Não chamar de "cosmético": é "aparência de
+correto, byte errado", que é a premissa desta campanha inteira, e o raio de alcance real fica
+para medição, não para suposição minha.
+
+**5) Suítes completas com números, as duas que faltavam:**
+```
+go test -count=1 ./...              -> 15 pacotes com testes, todos ok (execução real, não cache);
+                                        3 pacotes sem arquivo de teste (auditsurface, homedir, version)
+node --test npm/tests/*.test.js     -> 866 passed, 0 failed, 0 skipped (idêntico ao antes — nenhum arquivo Node tocado)
+```
+
+**Correção da frase enganosa no relatório anterior:** eu havia escrito que o controle de disco
+rodava "via os binários/módulos de produção" — a versão anterior desse teste chamava
+`sync_paired_req_references` em processo, não os binários. O teste unitário continua válido (é o
+controle de bytes em disco no nível de função), mas o rótulo "binários de verdade" só se aplica ao
+item 4 desta correção (execução real fora de processo), que é o que ficou registrado aqui.
+
+Diretórios de fixture E2E temporários apagados após a medição (scratchpad, fora do repo).
+
+**Resposta reconciliada sobre convergência (uma frase, para o arquiteto não precisar juntar as
+duas partes do relatório):** a enumeração **converge para D1** (casamento cego de delimitador —
+zero sítios remanescentes, nos 3 runtimes, confirmados por leitura do corpo inteiro); **D2 (a
+escrita permanece LF) nunca foi enumerada nas waves anteriores para a família `rewriteREQRoadmapRef`
+/`rewriteReqRoadmapRef`/`_rewrite_req_roadmap_ref`**, e a medição com os 3 binários reais achou que
+Go e Node vazam CRLF residual na escrita dessa família — achado novo, não corrigido, à espera de
+decisão do arquiteto sobre ML novo vs. este ML crescer.

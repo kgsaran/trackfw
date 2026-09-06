@@ -829,7 +829,7 @@ nenhum sítio remanescente casa delimitador por literal.
 
 
 ### ML-5C — O resíduo que a enumeração da D3 encontrou (Python)
-**Status:** 🔄 Em andamento · **Agente:** `apolo-tf`
+**Status:** ✅ Concluído (implementação e evidência entregues; aguardando auditoria do arquiteto) · **Agente:** `apolo-tf`
 `_get_frontmatter_roadmap_value` e `_rewrite_req_roadmap_ref`
 (`pypi/trackfw/generators/roadmap.py:429,454`) ainda usam `startswith("---\n")` literal e são
 **cegos a CRLF** — medido ao vivo pelo ML-5B. Os gêmeos em Go e Node já são tolerantes **por
@@ -856,3 +856,32 @@ automática.**
 
 **Controle de escrita (D2) medido em bytes reais**, com os 3 binários de CLI contra a mesma fixture
 CRLF: **zero bytes `\r` escritos**, saída byte-idêntica entre runtimes. `.gitattributes` intocado (D4).
+
+
+**Resultado do ML-5C — a D1 CONVERGE.** Varredura do repositório inteiro (com `grep -a`, evitando a
+armadilha do arquivo binário) e leitura dos corpos completos das funções, não só das linhas de
+entrada: **zero sítios remanescentes nos 3 runtimes** casando delimitador por literal. A enumeração
+parou de crescer — **não precisamos da solução arquitetural** que eu tinha levantado como plano B.
+
+### ML-5D — 🔴 Vazamento de CRLF na ESCRITA (D2), medido com os 3 binários reais
+**Status:** 🔄 Em andamento · **Agente:** `apolo-tf`
+
+Achado do ML-5C, rodando `roadmap move` de verdade contra fixture CRLF:
+
+```
+Go      rewriteREQRoadmapRef     8 bytes \r vazados na REQ reescrita
+Node    rewriteReqRoadmapRef    10 bytes \r
+Python                           0 (open(path,"r") já traduz)
+```
+
+**É outra natureza de defeito:** não é casar delimitador (D1) — é **vazar CRLF da origem para o
+arquivo escrito** (D2). E a família de funções de sincronização da referência `roadmap:` **nunca foi
+coberta** pelo ML-5A nem pelo 5B.
+
+🔴 **O `trackfw roadmap move` está gravando CRLF dentro do arquivo de REQ do usuário.** Não é
+artefato de fixture: `os.ReadFile` (Go) e `fs.readFileSync(path,'utf8')` (Node) entregam bytes crus a
+essas funções, ao contrário do Python.
+
+🔴 **Entra aqui, mesma REQ e mesmo PR, pela Regra Dura de Causa Raiz:** a **D2 da mesma ADR** diz que
+*a escrita continua LF*. Enquanto vaza, **a ADR não está satisfeita** — e fechar assim seria repetir
+o achado A1 da auditoria pela terceira vez em dois dias.

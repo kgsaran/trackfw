@@ -643,6 +643,31 @@ class TestGetFrontmatterRoadmapValue(unittest.TestCase):
         content = '---\nroadmap: ""\n---\n'
         self.assertEqual(_get_frontmatter_roadmap_value(content), "")
 
+    def test_crlf_source_extrai_o_mesmo_valor_que_lf(self):
+        """ML-5C, falsificação nas duas direções (ADR-2026-09-04-parser-de-frontmatter-
+        tolera-crlf-na-fronteira-de-entrada, D1/D3): mesmo defeito do ML-5A/5B, agora no
+        residuo de _get_frontmatter_roadmap_value. Esta função só LÊ (não escreve), então o
+        teste afirma que a leitura deixa de ser cega a CRLF — não há D2 a controlar aqui.
+        Chamado com CRLF DIRETO, que é o que expõe o defeito na função em si."""
+        lf_content = '---\nstatus: Open\nroadmap: "docs/roadmaps/wip/X.md"\n---\n'
+        crlf_content = lf_content.replace("\n", "\r\n")
+
+        lf_val = _get_frontmatter_roadmap_value(lf_content)
+        crlf_val = _get_frontmatter_roadmap_value(crlf_content)
+
+        self.assertEqual(lf_val, "docs/roadmaps/wip/X.md")
+        self.assertEqual(lf_val, crlf_val, "CRLF deveria ser reconhecida como frontmatter (D3 não deveria ficar cega)")
+
+    def test_controle_posix_lf_produz_exatamente_o_resultado_de_hoje(self):
+        """Controle POSIX: entrada só-LF não muda de comportamento com a normalização
+        adicionada — a mesma asserção de test_extrai_valor_com_aspas, repetida aqui para
+        deixar explícito que esta ML não altera o caminho POSIX."""
+        content = '---\nstatus: Open\nroadmap: "docs/roadmaps/wip/X.md"\n---\n'
+        self.assertEqual(
+            _get_frontmatter_roadmap_value(content),
+            "docs/roadmaps/wip/X.md",
+        )
+
 
 class TestRewriteReqRoadmapRef(unittest.TestCase):
     """Testes unitários de _rewrite_req_roadmap_ref."""
@@ -706,6 +731,38 @@ class TestRewriteReqRoadmapRef(unittest.TestCase):
         result, changed = _rewrite_req_roadmap_ref(content, "docs/roadmaps/done/X.md")
         self.assertFalse(changed)
         self.assertEqual(result, content)
+
+    def test_crlf_source_produz_resultado_byte_identico_ao_lf(self):
+        """ML-5C, falsificação nas duas direções (ADR-2026-09-04-parser-de-frontmatter-
+        tolera-crlf-na-fronteira-de-entrada, D1/D3): mesmo defeito do ML-5A/5B, agora no
+        último site de escrita de produto que a D3 exigia fechar
+        (_rewrite_req_roadmap_ref). Chamado com CRLF DIRETO (bypassando o universal-newlines
+        de open()), que é o que expõe o defeito na função em si."""
+        old_path = "docs/roadmaps/wip/ROADMAP-x.md"
+        new_path = "docs/roadmaps/done/ROADMAP-x.md"
+        lf_src = self._make_req(old_path, "backtick")
+        crlf_src = lf_src.replace("\n", "\r\n")
+
+        lf_result, lf_changed = _rewrite_req_roadmap_ref(lf_src, new_path)
+        crlf_result, crlf_changed = _rewrite_req_roadmap_ref(crlf_src, new_path)
+
+        self.assertTrue(lf_changed)
+        self.assertTrue(crlf_changed, "CRLF deveria ser reconhecida como frontmatter (D3 não deveria ficar cega)")
+        self.assertEqual(lf_result, crlf_result)
+        # D2: entrada CRLF não autoriza saída CRLF.
+        self.assertNotIn("\r", crlf_result)
+
+    def test_controle_posix_lf_produz_exatamente_o_resultado_de_hoje(self):
+        """Controle POSIX: entrada só-LF não muda de comportamento com a normalização
+        adicionada — repete test_reescreve_frontmatter_e_corpo_backtick para deixar
+        explícito que esta ML não altera o caminho POSIX."""
+        old_path = "docs/roadmaps/wip/ROADMAP-x.md"
+        new_path = "docs/roadmaps/done/ROADMAP-x.md"
+        content = self._make_req(old_path, "backtick")
+        result, changed = _rewrite_req_roadmap_ref(content, new_path)
+        self.assertTrue(changed)
+        self.assertIn(f'roadmap: "{new_path}"', result)
+        self.assertIn(f"Roadmap: `{new_path}`", result)
 
 
 def _make_full_cfg(tmpdir: str, namespacing: str = "flat", agents=None) -> dict:
@@ -781,6 +838,45 @@ class TestSyncPairedReqReferences(unittest.TestCase):
         self.assertIn(f'roadmap: "{new_path}"', content)
         self.assertIn(f"Roadmap: `{new_path}`", content)
         self.assertNotIn(old_path, content)
+
+    # ------------------------------------------------------------------
+    # ML-5C — controle de escrita em bytes reais (D2), fonte CRLF no disco
+    # ------------------------------------------------------------------
+    def test_req_crlf_no_disco_ja_e_tolerado_hoje_por_universal_newlines(self):
+        """ML-5C, nuance idêntica ao ML-5B: sync_paired_req_references lê com
+        open(req_path, "r", encoding="utf-8") (universal newlines) — uma REQ salva com CRLF
+        no disco JÁ chegava LF em _get_frontmatter_roadmap_value/_rewrite_req_roadmap_ref
+        antes desta ML, então este end-to-end nunca reproduziu o defeito (quase vacuoso em
+        POSIX, mesma ressalva do ML-3B/barrier). O que a ML fecha é a função em si (ver
+        TestGetFrontmatterRoadmapValue/TestRewriteReqRoadmapRef acima, chamadas com CRLF
+        direto). Mantido como controle: prova que a integração continua correta e que a
+        escrita de volta é LF puro (D2), mesmo com fonte CRLF no disco."""
+        cfg = _make_full_cfg(self.tmpdir)
+        req_dir = cfg["req_dir"]
+        os.makedirs(req_dir, exist_ok=True)
+
+        old_path = "docs/roadmaps/backlog/ROADMAP-2026-07-30-crlf.md"
+        new_path = "docs/roadmaps/wip/ROADMAP-2026-07-30-crlf.md"
+        req_file = os.path.join(req_dir, "REQ-2026-07-30-crlf.md")
+
+        lf_content = (
+            f'---\nstatus: Open\ndate: 2026-07-30\nroadmap: "{old_path}"\n---\n\n'
+            f"# REQ: Teste\n\n## Linked Roadmap\nRoadmap: `{old_path}`\n"
+        )
+        crlf_bytes = lf_content.replace("\n", "\r\n").encode("utf-8")
+        with open(req_file, "wb") as f:
+            f.write(crlf_bytes)
+
+        synced, failures = sync_paired_req_references(new_path, cfg)
+
+        self.assertEqual(failures, [])
+        self.assertEqual(synced, ["REQ-2026-07-30-crlf.md"])
+
+        with open(req_file, "rb") as f:
+            written = f.read()
+        self.assertNotIn(b"\r", written, "escrita deveria ser LF puro (D2), mesmo com fonte CRLF no disco")
+        self.assertIn(f'roadmap: "{new_path}"'.encode("utf-8"), written)
+        self.assertIn(f"Roadmap: `{new_path}`".encode("utf-8"), written)
 
     # ------------------------------------------------------------------
     # Cardinalidade 3: Várias REQs → todas reescritas
