@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-03
 squad: apolo-tf
 req: "docs/req/REQ-2026-09-03-as-217-falhas-reais-de-windows-colapsam-em-poucas-causas-e-tres-delas-exigem-decisao-antes-de-codigo.md"
@@ -7,7 +7,7 @@ req: "docs/req/REQ-2026-09-03-as-217-falhas-reais-de-windows-colapsam-em-poucas-
 
 # Roadmap: Fechar os grupos de falha de Windows por causa raiz
 
-> Criado em: 2026-09-03 | Status: wip
+> Criado em: 2026-09-03 | Status: done
 
 ## Context
 
@@ -669,7 +669,7 @@ justamente onde isso se esconde.
 > Dependências: Wave 3 fechada. **Sequencial**: toca os mesmos arquivos de validator dos 3 CLIs.
 
 ### ML-5A — CRLF tolerado na fronteira de entrada — **parser E renderizadores**
-**Status:** 🔄 Em andamento · **Agente:** `apolo-tf`
+**Status:** ✅ Concluído · **Agente:** `apolo-tf`
 
 🔴 **Escopo corrigido em 2026-09-05, depois da auditoria externa.** O ML dizia "parser de
 frontmatter". A auditoria mediu que **não basta**:
@@ -782,3 +782,27 @@ atribuição não se sabe qual correção funcionou — e nesta REQ eu já errei
 
 `hefesto-tf` e `hades-tf`. O Hades é **obrigatório** na Wave 3 (segurança) e na Wave 2 (caminho em
 config lido por CLI que executa bash).
+
+
+## Auditoria do ML-5A — arquiteto, 2026-09-05
+
+```
+make quality QUALITY_EXIT=0, zero FAIL · trackfw validate exit 0
+Go todos os pacotes ok · Node 866/866 · Python 1625 passed + 66 subtests
+check-python-writes-lf exit 0 · git diff -- .gitattributes VAZIO (D4 respeitada)
+```
+
+🔴 **A reescrita do escopo antes do despacho foi o que salvou este ML.** A ADR dizia "parser de
+frontmatter"; o defeito real eram **7 funções de fronteira por runtime**, cada uma checando
+`HasPrefix(trimmed, "---\n")` isoladamente — exatamente a violação de D3 que a própria ADR proíbe.
+Com o escopo original teríamos corrigido **1 sítio de 20** e fechado a wave achando o CRLF resolvido.
+
+**O agente verificou o que já estava correto e NÃO mexeu:** o parser de gates do `barrier` (G1-bis) e
+o parser de validação já eram tolerantes, por commits de outra REQ. Falsificou antes de concluir.
+
+🔴 **Discrepância declarada, não escondida:** o único dado real de Windows CI diz que o teste do
+`barrier` **falha**, enquanto a leitura local diz que o código tolera. Ele não escolheu uma das duas
+versões para fechar a história. **Verificar na recontagem do CI.**
+
+**Achado fora de escopo, reportado e não corrigido:** `rewriteRoadmapStatus`/`rewriteREQStatus` — 6
+sítios nos 3 CLIs, mesmo defeito, e afetam `trackfw roadmap move`. **REQ própria.**

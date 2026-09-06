@@ -34,8 +34,36 @@ function normalize(content) {
   return `${content.trim()}\n`
 }
 
+// normalizeCRLF converte "\r\n" em "\n" na fronteira em que o conteúdo cru de
+// um agent-md entra num parser ou reescritor de frontmatter (ADR
+// ADR-2026-09-04-parser-de-frontmatter-tolera-crlf-na-fronteira-de-entrada,
+// D1/D3). Um source CRLF é entrada válida, não erro: `String.prototype.trim`
+// só remove whitespace das pontas, então um "---\r\n" interno sobrevive ao
+// `.trim()` e falsifica todo `startsWith('---\n')` deste arquivo — é
+// exatamente o defeito medido (frontmatter inteiro cai no corpo).
+//
+// Única implementação desta normalização neste runtime (D3): cada função de
+// fronteira de frontmatter deste arquivo (markdownParts,
+// rewriteFrontmatterModelLine, removeFrontmatterModelLine, insertBodyPrefix,
+// rewriteSignatureLine, rewriteFrontmatterFields, frontmatterName) chama esta
+// função na própria entrada, porque este módulo não tem uma única leitura de
+// I/O compartilhada por todas elas — render(), manager.js e o consumidor de
+// AgentTier entram por pontos distintos. Espelha
+// internal/integrations/render.go:normalizeCRLF.
+//
+// D2: só a leitura é afetada. Toda reescrita deste arquivo reconstrói a
+// saída com `.join('\n')`, então normalizar a entrada para LF aqui não
+// autoriza emitir CRLF — a saída permanece LF independente do terminador de
+// linha da entrada.
+//
+// D4/escopo: só "\r\n" vira "\n". Um "\r" solto (Mac clássico, sem "\n") é
+// deixado intocado de propósito, conforme o não-objetivo declarado na ADR.
+function normalizeCRLF(content) {
+  return String(content).replace(/\r\n/g, '\n')
+}
+
 function markdownParts(content) {
-  const text = content.trim()
+  const text = normalizeCRLF(content).trim()
   let name = 'trackfw-agent'
   let description = 'trackfw specialist'
   let model = ''
@@ -126,7 +154,7 @@ function rewriteFrontmatterModelLine(source, value) {
   if (containsControlChar(value)) {
     throw new Error(`model value contains control character and was rejected: model IDs never require newlines or other control characters (got ${JSON.stringify(value)})`)
   }
-  const trimmed = String(source).trim()
+  const trimmed = normalizeCRLF(source).trim()
   if (!trimmed.startsWith('---\n')) return trimmed
   const end = trimmed.indexOf('\n---', 4)
   if (end < 0) return trimmed
@@ -156,7 +184,7 @@ function rewriteFrontmatterModelLine(source, value) {
 // reconhecível, source é retornado sem alteração (trimado). Espelha
 // internal/integrations/render.go:removeFrontmatterModelLine.
 function removeFrontmatterModelLine(source) {
-  const trimmed = String(source).trim()
+  const trimmed = normalizeCRLF(source).trim()
   if (!trimmed.startsWith('---\n')) return trimmed
   const end = trimmed.indexOf('\n---', 4)
   if (end < 0) return trimmed
@@ -197,7 +225,7 @@ function greetingLine(displayName, nickname) {
 // markdownParts, para que Rota A e Rota B concordem sobre onde o corpo
 // começa. Espelha internal/integrations/render.go:insertBodyPrefix.
 function insertBodyPrefix(source, prefix) {
-  const trimmed = String(source).trim()
+  const trimmed = normalizeCRLF(source).trim()
   if (!prefix) return trimmed
   if (!trimmed.startsWith('---\n')) return `${prefix}\n\n${trimmed}`
   const end = trimmed.indexOf('\n---', 4)
@@ -226,7 +254,7 @@ function insertBodyPrefix(source, prefix) {
 // Espelha internal/integrations/render.go:rewriteSignatureLine.
 function rewriteSignatureLine(source, displayName) {
   if (!displayName) return source
-  const trimmed = String(source).trim()
+  const trimmed = normalizeCRLF(source).trim()
 
   // Localiza o início do corpo — espelha a detecção de fronteira de
   // rewriteFrontmatterFields para que o escopo de ambas as funções coincida.
@@ -269,7 +297,7 @@ function rewriteSignatureLine(source, displayName) {
 // frontmatter reconhecível, source é retornado sem alteração (trimado).
 // Espelha internal/integrations/render.go:rewriteFrontmatterFields.
 function rewriteFrontmatterFields(source, name, description) {
-  const trimmed = String(source).trim()
+  const trimmed = normalizeCRLF(source).trim()
   if (!trimmed.startsWith('---\n')) return trimmed
   const end = trimmed.indexOf('\n---', 4)
   if (end < 0) return trimmed
@@ -298,7 +326,7 @@ function rewriteFrontmatterFields(source, name, description) {
 // declara "name". Usado pela detecção de colisão em manager.js. Espelha
 // internal/integrations/render.go:frontmatterName.
 function frontmatterName(content) {
-  const text = String(content).trim()
+  const text = normalizeCRLF(content).trim()
   if (!text.startsWith('---\n')) return undefined
   const end = text.indexOf('\n---', 4)
   if (end < 0) return undefined
@@ -529,4 +557,4 @@ function looksLikeSuspectModelValue(v) {
   return containsControlChar(v) || (!isVersionString(v) && !v.startsWith('claude-'))
 }
 
-module.exports = { render, markdownParts, frontmatterName, greetingLine, insertBodyPrefix, rewriteFrontmatterFields, rewriteFrontmatterModelLine, rewriteSignatureLine, isVersionString, composeClaudeModelID, resolveAgentModel, looksLikeSuspectModelValue }
+module.exports = { render, markdownParts, frontmatterName, greetingLine, insertBodyPrefix, rewriteFrontmatterFields, rewriteFrontmatterModelLine, rewriteSignatureLine, isVersionString, composeClaudeModelID, resolveAgentModel, looksLikeSuspectModelValue, normalizeCRLF }

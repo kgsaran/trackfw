@@ -7,7 +7,7 @@ const os = require('node:os')
 const path = require('node:path')
 
 const { buildPlans, IntegrationManager } = require('../src/integrations')
-const { rewriteSignatureLine } = require('../src/integrations/render')
+const { rewriteSignatureLine, render } = require('../src/integrations/render')
 
 function roots() {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-identity-render-'))
@@ -41,6 +41,37 @@ test('Rota B (subagent/claude) com identidade — name, description e saudação
   assert.match(plan.content, /model: opus/)
   assert.match(plan.content, /You are Zeus\.\n\n/)
   assert.doesNotMatch(plan.content, /trackfw-architect/)
+})
+
+// Falsificação da ADR (ADR-2026-09-04-parser-de-frontmatter-tolera-crlf-na-
+// fronteira-de-entrada) no caminho que mais importa: Rota B com identidade
+// encadeia markdownParts, insertBodyPrefix, rewriteFrontmatterFields e
+// rewriteSignatureLine — as quatro funções de fronteira de frontmatter deste
+// arquivo, não só a que markdownParts sozinho exerceria (esse era o gap real
+// encontrado durante o desenvolvimento desta ML: normalizar só markdownParts
+// deixava este cenário reproduzindo o sintoma exato do handoff — name vazio/
+// "trackfw-agent", frontmatter inteiro no corpo).
+test('Rota B (subagent/claude) com identidade — source CRLF renderiza igual ao source LF (ADR CRLF)', () => {
+  const lfSource = [
+    '---',
+    'name: trackfw-architect',
+    'description: Principal software architect for system design.',
+    'model: opus',
+    '---',
+    '# Architect',
+    '',
+    'Body text.',
+    '',
+  ].join('\n')
+  const crlfSource = lfSource.replace(/\n/g, '\r\n')
+  const item = { id: 'architect', description: 'Principal software architect for system design.' }
+  const capability = { representation: 'subagent' }
+
+  const lfOut = render({ kind: 'agents', content: lfSource, capability, item, identity: zeusConfig })
+  const crlfOut = render({ kind: 'agents', content: crlfSource, capability, item, identity: zeusConfig })
+
+  assert.equal(crlfOut, lfOut)
+  assert.ok(!crlfOut.includes('\r'))
 })
 
 test('Rota B com apelido — saudação menciona o apelido configurado', () => {

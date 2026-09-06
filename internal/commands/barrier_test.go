@@ -1146,3 +1146,61 @@ func TestSplitRoadmapLines_StripsTrailingCROnlyAtBoundary(t *testing.T) {
 		t.Fatalf("splitRoadmapLines = %#v, want %#v", got, want)
 	}
 }
+
+// TestBarrierCLI_CRLFGatesBlockFenceIsRecognized closes the Go side of
+// "G1-bis" from the retriage
+// (docs/portabilidade/2026-09-04-retriagem-do-residuo-de-windows-por-mecanismo.md):
+// a "**Gates da wave:**" header immediately followed by a fenced ```bash
+// block, in a roadmap saved with CRLF, must be recognized exactly like the
+// LF form — the fence must not be mistaken for "no fenced code block
+// follows the header" (the Python-side symptom measured on Windows CI was
+// "malformed gates block ... must be immediately followed by a fenced code
+// block").
+//
+// This test measures, end-to-end through the real binary, that parseGates'
+// fence-line check (`lines[i].trim() !== '```bash'` in Node terms;
+// strings.TrimSpace here) already tolerates the trailing "\r" a CRLF file
+// leaves on every line — same conclusion the Python e2e test at
+// pypi/tests/test_barrier.py::test_barrier_cli_crlf_roadmap_gates_da_wave_e_reconhecido_e_comando_roda_e2e
+// already locks for that runtime; Go and Node had no equivalent before this
+// ML. It asserts CONCLUSION 2 of ML-5A: the gates parser was ALREADY
+// CRLF-tolerant in this runtime (via strings.TrimSpace, independent of
+// splitRoadmapLines), and this test exists only to make that tolerance
+// falsifiable going forward, not because a fix was applied here.
+func TestBarrierCLI_CRLFGatesBlockFenceIsRecognized(t *testing.T) {
+	dir, roadmapPath := setupBarrierFixture(t, barrierFixtureConfig{
+		linkedREQ:     true,
+		mlStatus:      "✅",
+		criteriaLines: []string{"- [x] build passes"},
+		gateCommands:  []string{"true"},
+	})
+	lfContent, err := os.ReadFile(roadmapPath)
+	if err != nil {
+		t.Fatalf("read fixture roadmap: %v", err)
+	}
+	crlfContent := strings.ReplaceAll(string(lfContent), "\n", "\r\n")
+	if err := os.WriteFile(roadmapPath, []byte(crlfContent), 0644); err != nil {
+		t.Fatalf("rewrite fixture roadmap as CRLF: %v", err)
+	}
+
+	stdout, stderr, code := runBarrierCLI(t, dir, "ROADMAP-barrier-fixture", "--wave", "1", "--trust-local-gates", "--json")
+	if code != 0 {
+		t.Fatalf("expected exit 0 (gates recognized and passing) for a CRLF roadmap, got %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	var doc barrierResultDoc
+	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &doc); err != nil {
+		t.Fatalf("stdout is not valid JSON: %v\nstdout: %s", err, stdout)
+	}
+	for _, c := range doc.Checks {
+		if c.Name == "gates" {
+			if c.Status != "passed" {
+				t.Fatalf("expected gates=passed on a CRLF roadmap, got %q (evidence=%v failures=%v)", c.Status, c.Evidence, c.Failures)
+			}
+			if len(c.Commands) != 1 || c.Commands[0] != "true" {
+				t.Fatalf("expected gates.commands=[\"true\"] parsed from the CRLF fence, got %v", c.Commands)
+			}
+			return
+		}
+	}
+	t.Fatal("gates check not found in result document")
+}

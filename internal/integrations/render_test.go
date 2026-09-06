@@ -562,6 +562,65 @@ func TestRenderOpenCodeAgent(t *testing.T) {
 	}
 }
 
+// TestRenderOpenCodeAgent_CRLFSourceMatchesLF is the falsification the ADR
+// requires (ADR-2026-09-04-parser-de-frontmatter-tolera-crlf-na-fronteira-de-
+// entrada, "Verificação exigida"): the same asset, with every "\n" in the
+// raw source replaced by "\r\n" before Render ever sees it, must render
+// byte-identically to the LF asset. This asserts CONCLUSION 1 of ML-5A: the
+// frontmatter parser (markdownParts, reached here through Render's default
+// branch and its "opencode-agent" branch) no longer treats a CRLF source as
+// "no frontmatter found".
+//
+// The go:embed asset on disk is LF (mutating it would not exercise anything
+// — the checked-out repo is never CRLF locally); CRLF is injected into the
+// in-memory source bytes instead, which is the actual boundary this ADR's
+// D1 normalizes.
+func TestRenderOpenCodeAgent_CRLFSourceMatchesLF(t *testing.T) {
+	catalog, err := LoadCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	item, ok := catalog.Item(KindAgents, "backend")
+	if !ok {
+		t.Fatal("agente 'backend' não encontrado no catalog")
+	}
+	lfSource, err := catalog.ReadAsset(item)
+	if err != nil {
+		t.Fatal(err)
+	}
+	crlfSource := []byte(strings.ReplaceAll(string(lfSource), "\n", "\r\n"))
+
+	lfOut, err := Render(item, KindAgents, Capability{Representation: "opencode-agent"}, lfSource, identity.Config{}, "opencode", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	crlfOut, err := Render(item, KindAgents, Capability{Representation: "opencode-agent"}, crlfSource, identity.Config{}, "opencode", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(lfOut) != string(crlfOut) {
+		t.Fatalf("CRLF source produced a different render than LF source.\nLF:\n%s\nCRLF:\n%s", lfOut, crlfOut)
+	}
+	// D2 control: the CRLF *input* must still yield an LF-only *output* — the
+	// tolerance added on read never authorizes emitting "\r" in what trackfw
+	// writes.
+	if strings.Contains(string(crlfOut), "\r") {
+		t.Fatalf("CRLF input leaked into the rendered output (D2 violation):\n%s", crlfOut)
+	}
+}
+
+// TestNormalizeCRLF_StripsCRLFOnly is the unit-level falsification of
+// normalizeCRLF itself: it must fold every "\r\n" to "\n" and leave a bare
+// "\r" (no following "\n") untouched — the ADR's declared non-goal (D4:
+// classic-Mac CR-only line endings are not this ADR's problem).
+func TestNormalizeCRLF_StripsCRLFOnly(t *testing.T) {
+	got := string(normalizeCRLF([]byte("a\r\nb\r\nc\rd")))
+	want := "a\nb\nc\rd"
+	if got != want {
+		t.Fatalf("normalizeCRLF(%q) = %q, want %q", "a\r\nb\r\nc\rd", got, want)
+	}
+}
+
 func TestBuildPlansDefaultsToFirstNonLegacySurface(t *testing.T) {
 	catalog, err := LoadCatalog()
 	if err != nil {
@@ -728,6 +787,52 @@ func TestRenderSubagentRouteInjectsIdentity(t *testing.T) {
 	}
 	if strings.Contains(output, "{{") {
 		t.Fatalf("placeholder não substituído vazou na saída:\n%s", output)
+	}
+}
+
+// TestRenderSubagentRouteInjectsIdentity_CRLFSourceMatchesLF is the Rota B
+// falsification the ADR requires (ADR-2026-09-04-parser-de-frontmatter-tolera-
+// crlf-na-fronteira-de-entrada). Unlike
+// TestRenderOpenCodeAgent_CRLFSourceMatchesLF (which only exercises
+// markdownParts, Rota A), the "subagent" representation with an identity
+// configured is the ONE path that chains through every frontmatter-boundary
+// function in this file: markdownParts, insertBodyPrefix,
+// rewriteFrontmatterFields and rewriteSignatureLine. A CRLF source that made
+// it past markdownParts but not past one of the other three would still
+// silently mis-render — this test is what would have caught that (and did,
+// during development of this ML: injecting normalizeCRLF into markdownParts
+// alone left this test's CRLF branch identical to the pre-fix LF-only
+// output, while insertBodyPrefix/rewriteFrontmatterFields/rewriteSignatureLine
+// each independently reproduced the ADR's "no frontmatter recognized"
+// symptom on a CRLF source).
+func TestRenderSubagentRouteInjectsIdentity_CRLFSourceMatchesLF(t *testing.T) {
+	catalog, err := LoadCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	item, ok := catalog.Item(KindAgents, "architect")
+	if !ok {
+		t.Fatal("agente 'architect' não encontrado no catalog")
+	}
+	lfSource, err := catalog.ReadAsset(item)
+	if err != nil {
+		t.Fatal(err)
+	}
+	crlfSource := []byte(strings.ReplaceAll(string(lfSource), "\n", "\r\n"))
+
+	lfOut, err := Render(item, KindAgents, Capability{Representation: "subagent"}, lfSource, zeusIdentity(), "claude", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	crlfOut, err := Render(item, KindAgents, Capability{Representation: "subagent"}, crlfSource, zeusIdentity(), "claude", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(lfOut) != string(crlfOut) {
+		t.Fatalf("CRLF source produced a different Rota B render than LF source.\nLF:\n%s\nCRLF:\n%s", lfOut, crlfOut)
+	}
+	if strings.Contains(string(crlfOut), "\r") {
+		t.Fatalf("CRLF input leaked into the Rota B rendered output (D2 violation):\n%s", crlfOut)
 	}
 }
 

@@ -31869,3 +31869,80 @@ fail-open — segurança real, não cosmética). Detalhe completo e critério de
 arquivo no documento.
 
 Sem git, sem código de produto/teste alterado — investigação pura, conforme escopo.
+
+## 2026-09-05 — `apolo-tf` (Backend) — ML-5A: CRLF na fronteira de entrada, escopo real (parser + renderizadores + barrier) — FIM
+
+`ROADMAP-2026-09-03-fechar-os-grupos-de-falha-de-windows-por-causa-raiz`, Wave 5, último ML da
+campanha. Governado por `ADR-2026-09-04-parser-de-frontmatter-tolera-crlf-na-fronteira-de-entrada`
+(D1-D4). Sem git, árvore deixada suja para o arquiteto auditar e commitar. `make quality` NÃO
+rodado (cabe ao arquiteto).
+
+### Enumeração das superfícies, com sítio e veredito
+
+| Superfície | Sítios | Veredito |
+|---|---|---|
+| **Renderizador de agente (frontmatter + identidade/modelo)** | Go `internal/integrations/render.go`: `markdownParts`, `insertBodyPrefix`, `rewriteSignatureLine`, `rewriteFrontmatterFields`, `frontmatterName`, `rewriteFrontmatterModelLine`, `removeFrontmatterModelLine` (7 funções) · Node `npm/src/integrations/render.js` (mesmas 7, espelhadas) · Python `pypi/trackfw/integrations/renderers.py` (`_parts`, `_insert_body_prefix`, `_rewrite_signature_line`, `_rewrite_frontmatter_fields`, `_rewrite_frontmatter_model_line`, `_remove_frontmatter_model_line` — 6, sem `frontmatterName` própria) | **CORRIGIDA nos 3 CLIs.** Cada função fazia `strings.HasPrefix(trimmed, "---\n")`/`.startsWith('---\n')` sobre um source que podia ter `\r\n` — CRLF nunca casava, e a função tratava "sem frontmatter" (mesmo sintoma da ADR: frontmatter inteiro cai no corpo, model vazio). Adicionada UMA função por runtime (`normalizeCRLF`/`_normalize_crlf`), chamada na entrada de cada uma dessas funções — D3 interpretado como "uma implementação", não "um call site", porque este pacote não tem uma única leitura de I/O compartilhada por todas elas (`Render`, `AgentTier` e `manager.go`/`.py` entram por pontos distintos). |
+| **`IntegrationManager._frontmatter_name`/`frontmatterName` sobre bytes crus de disco (detecção de colisão de name, ADR-2026-07-25 D4)** | Go `manager.go` (já usa a `frontmatterName` corrigida acima) · Node `manager.js` (idem) · Python `manager.py::_frontmatter_name` | **CORRIGIDA — era o único sítio genuinamente load-bearing em Python.** `candidate.read_bytes()` + `.decode()` NÃO faz universal-newlines translation (diferente de `Path.read_text()`/`open(..., "r")`), então este era o único lugar em Python onde CRLF chegava de fato sem tradução prévia. Falsificado: sem a chamada a `_normalize_crlf`, `_frontmatter_name(crlf_bytes)` retornava `None` em vez do `name` esperado. |
+| **Parser de gates do `barrier` ("G1-bis" da re-triagem)** | Go `parseGates` (`internal/commands/barrier.go`) · Node `parseGates` (`npm/src/commands/barrier.js`) · Python `_find_gates` (`pypi/trackfw/commands/barrier.py`) | **JÁ CORRIGIDA — achado, não fix.** Toda comparação de linha dentro de `parseGates`/`_find_gates` passa por `strings.TrimSpace`/`.trim()`/`.strip()`, que absorvem um `\r` sobrando independente de `splitRoadmapLines`/`_split_roadmap_lines` (que também já existem nos 3 runtimes desde os commits `d4e286e`/`fce709f`, Aug29/Sep1 — antes desta ML). Reproduzi o teste Python citado pela re-triagem (`test_barrier_cli_crlf_roadmap_gates_da_wave_e_reconhecido_e_comando_roda_e2e`): **passa hoje**, local. Adicionei os testes de regressão que faltavam em Go e Node (a Python já tinha o dela desde 29/08) — ver seção de falsificação. 🔴 **Discrepância não resolvida, declarada em vez de escondida**: o único dado de Windows real (re-triagem `docs/portabilidade/2026-09-04-...md`, run `33931363032`, POSTERIOR a `fce709f`) registra esse mesmo teste Python **falhando** com a mensagem exata de "malformed gates block". Não encontrei causa mundana em duas checagens rápidas (`pypi/build/lib/.../barrier.py` não tem `_split_roadmap_lines` — é cópia obsoleta, mas o job `windows-full-suites` do `quality.yml` faz `pip install pypi/` antes de rodar `pytest`, o que deveria reinstalar do fonte atual, não da cópia obsoleta). Reportado como **"já tolerante no fonte atual, medido nos 3 runtimes — divergência do CI de Windows não explicada"**, não como fechado. |
+| **Parser de frontmatter de validação** (`extractFrontmatterField`/`validateFrontmatterPresence` em Go, `traceid.js::extractFrontmatterField` em Node, `parse_frontmatter`/`_parse_frontmatter`/`validateFrontmatterPresence`-equivalent em Python) | `internal/validator/validator.go:2036,2075,2088` · `npm/src/validator/traceid.js` · `pypi/trackfw/traceid.py`, `pypi/trackfw/validator.py:827,1394,1407` | **JÁ CORRETA nos 3 runtimes — verificado por falsificação, não por leitura.** Os três usam `startsWith`/`HasPrefix` só com `"---"` (sem exigir `\n` logo em seguida) e todo valor de linha passa por `TrimSpace`/`.trim()`/`.strip()` antes de comparar — CRLF nunca chega a divergir. Probes ad-hoc (removidos após a medição) confirmaram `extractFrontmatterField(lf) == extractFrontmatterField(crlf) == "Accepted"` nos 3. Nenhuma mudança de código aqui. |
+| **`rewriteRoadmapStatus`/`rewriteREQStatus`** (`internal/generators/roadmap.go:342`, `req.go:188` · `npm/src/generators/roadmap.js:177`, `req.js:72` · `pypi/trackfw/generators/roadmap.py:101,422,451`, `req.py:108`) — usadas por `trackfw roadmap move`/mudança de status de REQ | 6+ sítios, mesma classe exata (`HasPrefix(s, "---\n")`) | **ENCONTRADA, NÃO CORRIGIDA — fora de escopo desta ML, recomendo REQ própria.** Esta é a leitura literal de "demais consumidores que casem delimitador por literal" do handoff, mas é uma classe de artefato diferente (REQ/Roadmap, não agent-md) e um comando de governança de uso frequente (`trackfw roadmap move`); um roadmap-sibling autorado com CRLF no Windows faria `rewriteRoadmapStatus` retornar `(source, false)` **silenciosamente sem reescrever o status** — o comando "funcionaria" sem erro e o `frontmatter.status` ficaria dessincronizado da pasta. Não tem teste hoje, nenhuma das 100 falhas de Windows do resíduo aponta para cá, e mexer em código usado por `trackfw roadmap move`/`trackfw req` sem REQ e sem cobertura de teste dedicada violava a disciplina de não expandir escopo sob pressão de tempo. Reportado para não virar "achado enterrado".
+
+### Falsificação nas duas direções, com números
+
+Todas as falsificações abaixo comparam o MESMO source com `\n`→`\r\n` injetado em memória (o asset
+`go:embed`/`read_text` em disco é LF; alterar o arquivo não exercitaria nada — CLAUDE.md §"cuidados
+medidos").
+
+- **Go, Rota A** (`TestRenderOpenCodeAgent_CRLFSourceMatchesLF`): antes da correção, `markdownParts(crlf)` devolvia `name="trackfw-agent" description="trackfw specialist" model=""` contra `name="teste" description="d" model="sonnet"` do LF — reproduzido e revertido (`sed` temporário, restaurado, `go build` confirmado limpo depois).
+- **Go, Rota B completa** (`TestRenderSubagentRouteInjectsIdentity_CRLFSourceMatchesLF`) — a que importa de verdade: encadeia `markdownParts` + `insertBodyPrefix` + `rewriteFrontmatterFields` + `rewriteSignatureLine`. Revertendo SÓ `insertBodyPrefix` (uma das 6 que eu quase deixei sem a chamada — ver "erro corrigido durante a própria ML" abaixo), o teste falsifica: `FAIL`, saída divergente (`name: trackfw-architect` vazando em vez de `zeus-tf`). Restaurado, `go build ./...` limpo.
+- **Node** (`identity-render.test.js`, Rota B): reproduzido byte a byte o quote exato do handoff — `LF: name=teste,model=sonnet` vs `CRLF (sem fix): name=trackfw-agent, model="", frontmatter inteiro em `developer_instructions`/body`. Revertendo só `insertBodyPrefix` (linha 228): teste falsifica com o diff exato mostrando `name: trackfw-architect` vazando.
+- **Python**: `_parts` isolado (fora de qualquer leitura de arquivo) **também diverge sem o fix** — `{} , '---\r\nname: teste...'` — contrariando a expectativa inicial de "Python não diverge nunca" (ver seção de premissas derrubadas). Com o fix, `_parts(lf) == _parts(crlf)`. O caminho ponta-a-ponta real (via `Path.read_text()`) não diverge nem antes nem depois — é `open()`/`read_text()` fazendo universal-newlines antes do parser existir, não o parser. `IntegrationManager._frontmatter_name` (bytes crus) falsifica nas duas direções: `None` sem o fix, `"teste"` com.
+- **`barrier`/gates**: Go `TestBarrierCLI_CRLFGatesBlockFenceIsRecognized` e Node `'barrier regression: CRLF roadmap — "Gates da wave:" fence is recognized...(G1-bis)'` — novos, verificam que o fence é reconhecido E que o comando roda de fato (gate `false` reprova com exit 1, `commands: ["false"]`), não só que o parser não lança erro.
+
+### Controle de escrita (D2) e controle POSIX
+
+- `scripts/check-python-writes-lf.sh`: `Escrita em LF: nenhuma chamada sem newline explicito.` exit 0 — antes e depois (nenhum `open`/`write_text` novo).
+- Todo rewrite em `render.go`/`.js`/`renderers.py` reconstrói a saída com `"\n".join`/`strings.Join(...,"\n")` — normalizar a entrada nunca introduz `\r` na saída. Testado explicitamente: `TestRenderOpenCodeAgent_CRLFSourceMatchesLF`, `TestRenderSubagentRouteInjectsIdentity_CRLFSourceMatchesLF`, o teste Node de Rota B e os dois testes Python de `_parts` afirmam `"\r" not in output`.
+- 🔴 **Mudança de comportamento real, não coberta pela ADR como escrita**: um agent-md autorado com CRLF no Windows agora produz um artefato renderizado **LF puro** (antes, o CRLF vazava inteiro para dentro do corpo/JSON/TOML porque o parser não reconhecia frontmatter nenhum). Consistente com D2, mas é uma mudança de output visível para quem edita agent-md no Windows — vale citar na ADR se ela for revisada.
+- Controle POSIX (entrada LF continua idêntica): `TestRenderWithoutIdentityMatchesFrozenGoldens` (Go, goldens congelados) passou sem tocar nenhum golden — `git diff --stat -- internal/integrations/testdata` vazio. Suítes completas antes/depois: Go idêntico (todos os pacotes `ok`), Node 862→866 (+4 testes novos, 0 fail), Python 1621→1625 (+4 testes novos + 66 subtests, 0 fail).
+
+### `.gitattributes`
+
+`git diff -- .gitattributes` vazio — intocado (D4).
+
+### Reconciliação — o que cada teste novo afirma
+
+- `TestRenderOpenCodeAgent_CRLFSourceMatchesLF` (Go) / `'opencode-agent renderer: source CRLF...'` (Node) / `test_render_opencode_agent_crlf_source_matches_lf_source` (Python): afirmam que **a Rota A (markdownParts sozinho) não diverge mais entre LF e CRLF**, e que a saída continua LF.
+- `TestRenderSubagentRouteInjectsIdentity_CRLFSourceMatchesLF` (Go) / `'Rota B ... source CRLF renderiza igual...'` (Node) / `test_subagent_representation_crlf_source_matches_lf_source` (Python): afirmam que **a Rota B completa (as 4 funções encadeadas: parts + insertBodyPrefix + rewriteFrontmatterFields + rewriteSignatureLine) não diverge** — o teste que efetivamente pegou meu próprio erro de cobertura parcial durante esta ML (ver abaixo).
+- `TestNormalizeCRLF_StripsCRLFOnly` (Go) / `'normalizeCRLF dobra somente CRLF...'` (Node) / `test_normalize_crlf_folds_crlf_only` (Python): afirmam que a normalização **não é ampla demais** — um `\r` solto (Mac clássico) não é tocado, conforme o não-objetivo explícito da ADR (D4).
+- `test_frontmatter_name_from_raw_bytes_tolerates_crlf` (Python): afirma que o sítio genuinamente load-bearing (`manager.py`, bytes crus decodificados sem universal-newlines) está fechado — o único dos 3 runtimes onde a normalização não é apenas defensiva.
+- `TestBarrierCLI_CRLFGatesBlockFenceIsRecognized` (Go) / `'... Gates da wave: fence is recognized ... (G1-bis)'` (Node): afirmam que **o parser de gates do barrier já tolerava CRLF antes desta ML** (nenhuma linha de produção foi tocada para fazer esses dois passarem) — existem para tornar essa tolerância falsificável daqui pra frente, não porque um fix foi aplicado aqui.
+
+### Erro corrigido durante a própria ML (achado process, não só resultado)
+
+Na primeira passada eu adicionei `normalizeCRLF`/`_normalize_crlf` e chamei apenas em `markdownParts`/`_parts` — as outras 6 funções de Go e as 5 de Python ficaram sem a chamada. `TestRenderOpenCodeAgent_CRLFSourceMatchesLF` **passou** mesmo assim, porque a representação `opencode-agent` só passa por `markdownParts` (Rota A). Só o teste de Rota B completa (`TestRenderSubagentRouteInjectsIdentity_CRLFSourceMatchesLF`, escrito depois) expôs a lacuna — que eu falsifiquei revertendo cada função isoladamente antes de fechar. Registrado aqui porque é exatamente o padrão que o requisito de reconciliação deste handoff existe para pegar: entregar metade do caminho com aparência de completo.
+
+### Premissas derrubadas
+
+1. **A ADR e o handoff dizem "Python: 0 nesta forma" / "Python provavelmente não diverge"** — verdadeiro só para o caminho ponta-a-ponta via arquivo (porque `open()`/`read_text()` já traduz `\r\n`→`\n` antes do parser existir). **Falso no nível de função**: `_parts` isolado, e `_frontmatter_name` sobre bytes crus, divergem exatamente como Go/Node sem a correção — medido, não presumido.
+2. **"G1-bis precisa de patch adicional no barrier"** (retriage, ML-5A original) — o fonte atual já tolera CRLF no parser de gates, e nenhuma linha de produção do `barrier` precisou mudar. A única coisa que ficou pendente é entender por que a única evidência real de Windows contradiz essa medição local — declarado, não escondido.
+3. **O ML dizia "parser de frontmatter"** — a auditoria de 2026-09-05 já tinha corrigido isso para "parser + renderizadores + identidade/modelo + barrier"; a medição desta ML acrescenta um QUINTO grupo real e não fechado (`rewriteRoadmapStatus`/`rewriteREQStatus`, roadmap/REQ, não agent-md) que nem essa correção de escopo tinha nomeado.
+
+### Evidência de comandos
+
+```
+go build ./...          → limpo
+go vet ./...             → limpo
+go test ./...            → todos os pacotes ok (internal/integrations, internal/commands, internal/validator inclusos)
+npm test                 → 103 passed / 0 failed (validator.test.js) + 866 tests, 866 pass, 0 fail (suite completa)
+python3 -m pytest tests -q → 1625 passed, 66 subtests passed
+scripts/check-python-writes-lf.sh → exit 0
+git diff -- .gitattributes → vazio
+```
+
+Arquivos tocados: `internal/integrations/render.go`, `internal/integrations/render_test.go`,
+`internal/commands/barrier_test.go`, `npm/src/integrations/render.js`, `npm/tests/render_opencode.test.js`,
+`npm/tests/identity-render.test.js`, `npm/tests/barrier.test.js`, `pypi/trackfw/integrations/renderers.py`,
+`pypi/trackfw/integrations/manager.py`, `pypi/tests/test_agents_models.py`, `pypi/tests/test_integrations_identity.py`.
+Nenhuma operação de git. Roadmap deixado em `**Status:** 🔄 Em andamento` — a transição para
+`✅ Concluído` é do arquiteto, pós-auditoria.
