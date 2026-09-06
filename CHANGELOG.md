@@ -5,6 +5,84 @@ Todas as mudanças notáveis deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 e este projeto adere a [Semantic Versioning](https://semver.org/).
 
+## [7.4.0] - 2026-09-06
+
+### ⚠️ Leia antes de atualizar
+
+Esta versão **muda o veredito do `trackfw validate`** para projetos existentes. Nenhuma API mudou —
+mas gates que antes passavam podem passar a acusar, **porque deixaram de ser cegos**:
+
+- **`req_has_adr` e `req_has_roadmap` detectavam campo vazio por literal**, e 5 de 7 grafias
+  escapavam (sem espaço, dois espaços, tab, CRLF, três espaços). Neste repositório, a contagem de
+  REQs sem ADR saltou de **11 para 67** ao corrigir. **O salto é acerto, não regressão** — mas o seu
+  pipeline pode acusar mais depois de atualizar.
+- **Config de guard ilegível deixou de ser silêncio.** Um `.claude/settings.json` corrompido,
+  ilegível ou em UTF-16 antes era ignorado sem aviso; agora vira violation nomeada.
+
+Se o seu CI depende de `trackfw validate` sair zero, **rode uma vez antes de fixar a nova versão.**
+
+### Added
+
+- `trackfw doctor` ganha **modalidade remota**, com estado próprio para "não avaliado" — ausência de
+  credencial nunca vira aprovação. Nos 3 CLIs.
+- Sonda de reprodução de defeitos de Windows, com separação explícita entre ramificações de causa.
+
+### Fixed
+
+**Windows — a campanha por causa raiz**
+
+- **CRLF é entrada válida** em parser **e renderizadores**, nos 3 CLIs. O defeito eram 7 funções de
+  fronteira por runtime casando `---\n` literal — não um parser. A escrita continua LF, e isso é
+  contrato verificado por gate.
+- **Separador POSIX** em artefato autorado cujo consumidor não é o sistema de arquivos.
+- **Caminho POSIX ancorado deixa de ser classificado como relativo no Windows** — `filepath.IsAbs`
+  respondia à autoridade errada, e a detecção de hook de guard enfraquecia na plataforma.
+- **`roadmap move` deixa de gravar CRLF** dentro do arquivo de REQ do usuário.
+- Dedup do guard **canonicaliza o separador**, e passa a reconhecer a entrada existente no Windows.
+- Bit de execução em NTFS, `cwd` preso, shebang, `bash` resolvido por caminho absoluto provado,
+  e saída não-ASCII declarando codificação.
+
+**Governança que não media**
+
+- **`req_has_adr` deixa de ser vácuo** (ver aviso acima).
+- **Config de guard ilegível deixa de ser silêncio**: falha de leitura, de decodificação e de parse
+  viram violations distintas — e um FIFO no lugar do arquivo deixa de **travar** o `validate`.
+- `check-referential-integrity`, tripwire de disco e o corpus da barreira deixam de aprovar sobre
+  árvore vazia ou truncada.
+- Resolvedor de REQ cobre o layout canônico, com ciclo fechado por artefato.
+- `status` de Go e Node ganham o bucket `Other` que só o Python tinha.
+
+### Changed
+
+- Os checks do harness de Windows passam a **invocar o produto** em vez de medir a plataforma ou uma
+  réplica interna.
+- `.gitattributes` declara `eol=lf` para os fontes e `merge=union` para o `.trackfw-log`.
+
+### Windows — a campanha por causa raiz, em números
+
+Falhas na suíte completa de Windows no CI, medidas de forma consistente (mesmo comando nas duas
+pontas de cada delta):
+
+```
+246 → 217 → 162 → 134 → 101 → 100 → 62 → 60 → 39
+```
+
+**84% fechado.** Cada passo com causa raiz medida, não por tentativa. As 39 restantes estão mapeadas
+por mecanismo em `docs/portabilidade/2026-09-04-retriagem-do-residuo-de-windows-por-mecanismo.md`.
+
+A suíte de reprodução dos sete defeitos estruturais reportados na issue #216 está **zerada**:
+`Reproduzidos: 0 · Inconclusivos: 0`.
+
+### Suporte a Windows — parcial, e declarado
+
+O suporte a Windows **melhorou muito nesta versão e não está completo**. Os hooks de guard são
+scripts POSIX, e **em vários CLIs de agente eles não executam no Windows** — medido no código dos
+fornecedores: Gemini e Codex usam PowerShell; no Copilot escrevemos o campo errado. Eles são escritos
+e reportados como instalados, **e nunca disparam**.
+
+Ver a seção **Windows support (partial)** do README antes de adotar. Hooks nativos estão em curso.
+
+
 > Entradas anteriores a esta versão foram reconstruídas a partir do
 > histórico de commits (convenção `feat`/`fix`/`refactor`) para fins de
 > backfill. A partir de `2.16.0`, este arquivo é atualizado como parte
