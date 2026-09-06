@@ -955,6 +955,114 @@ func TestSyncREQ_OneREQ(t *testing.T) {
 	}
 }
 
+// TestSyncREQ_CRLFSourceWritesZeroCarriageReturns — ML-5D, controle de escrita (D2) em bytes
+// reais. Afirma: quando uma REQ gravada com CRLF é reescrita por `roadmap move`, o arquivo
+// resultante tem ZERO bytes '\r' — não basta casar o delimitador (D1, já resolvido no ML-5A/5C);
+// a escrita em si não pode vazar o terminador de origem. Achado do ML-5C, medido com o binário
+// real: 8 bytes '\r' vazavam aqui antes desta correção.
+func TestSyncREQ_CRLFSourceWritesZeroCarriageReturns(t *testing.T) {
+	dir := t.TempDir()
+	chdirRoadmap(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	reqDir := mkReqDir(t)
+	reqPath := filepath.Join(reqDir, "REQ-crlf.md")
+	oldPath := "docs/roadmaps/backlog/ROADMAP-crlf.md"
+	newPath := "docs/roadmaps/wip/ROADMAP-crlf.md"
+
+	crlfContent := "---\r\nstatus: Open\r\ndate: 2026-07-30\r\nauthor: \"\"\r\nadr: \"\"\r\nroadmap: \"" + oldPath + "\"\r\n---\r\n\r\n# REQ: CRLF Sync Test\r\n\r\n> Date: 2026-07-30 | Status: Open\r\n\r\n## Linked Roadmap\r\nRoadmap: `" + oldPath + "`\r\n"
+	if err := os.WriteFile(reqPath, []byte(crlfContent), 0644); err != nil {
+		t.Fatalf("WriteFile REQ CRLF: %v", err)
+	}
+
+	if err := syncREQReferences("ROADMAP-crlf.md", newPath); err != nil {
+		t.Fatalf("esperado nil, obteve: %v", err)
+	}
+
+	written, err := os.ReadFile(reqPath)
+	if err != nil {
+		t.Fatalf("ReadFile após sync: %v", err)
+	}
+
+	crCount := bytes.Count(written, []byte("\r"))
+	if crCount != 0 {
+		t.Errorf("escrita vazou CRLF: %d bytes '\\r' no arquivo gravado; conteúdo:\n%q", crCount, written)
+	}
+	if !strings.Contains(string(written), "roadmap: \""+newPath+"\"") {
+		t.Errorf("frontmatter não atualizado;\nconteúdo:\n%s", written)
+	}
+	if !strings.Contains(string(written), "Roadmap: `"+newPath+"`") {
+		t.Errorf("corpo não atualizado com backticks;\nconteúdo:\n%s", written)
+	}
+}
+
+// TestSyncREQ_LFSourcePOSIXControl — controle POSIX (ML-5D): entrada LF já se comportava
+// corretamente antes desta correção; afirma que nada mudou no caminho que já funcionava —
+// a normalização de entrada introduzida para fechar o vazamento de CRLF é um no-op byte a
+// byte quando a origem já é LF.
+func TestSyncREQ_LFSourcePOSIXControl(t *testing.T) {
+	dir := t.TempDir()
+	chdirRoadmap(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	reqDir := mkReqDir(t)
+	reqPath := filepath.Join(reqDir, "REQ-lf.md")
+	oldPath := "docs/roadmaps/backlog/ROADMAP-lf.md"
+	newPath := "docs/roadmaps/wip/ROADMAP-lf.md"
+	writeREQ(t, reqPath, oldPath)
+
+	if err := syncREQReferences("ROADMAP-lf.md", newPath); err != nil {
+		t.Fatalf("esperado nil, obteve: %v", err)
+	}
+
+	written, err := os.ReadFile(reqPath)
+	if err != nil {
+		t.Fatalf("ReadFile após sync: %v", err)
+	}
+	want := "---\nstatus: Open\ndate: 2026-07-30\nauthor: \"\"\nadr: \"\"\nroadmap: \"" + newPath + "\"\n---\n\n# REQ: Sync Test\n\n> Date: 2026-07-30 | Status: Open\n\n## Linked Roadmap\nRoadmap: `" + newPath + "`\n"
+	if string(written) != want {
+		t.Errorf("saída LF divergiu do comportamento pré-existente\nqueria:\n%q\nobteve:\n%q", want, written)
+	}
+}
+
+// TestSyncREQ_AlreadyCorrectWithCRLF — controle de não-regressão do ML-5D: se o campo roadmap:
+// já aponta para o alvo E o resto do arquivo tem CRLF, o arquivo NÃO é tocado — a normalização
+// de escrita introduzida aqui não deve virar "gravar toda REQ que passar pelo `roadmap move`",
+// só corrigir a escrita quando uma reescrita real do campo já ia ocorrer. Cardinalidade "já
+// correta → nenhuma escrita" (docs/cli-parity.md) preservada mesmo com CRLF fora do campo.
+func TestSyncREQ_AlreadyCorrectWithCRLF(t *testing.T) {
+	dir := t.TempDir()
+	chdirRoadmap(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	reqDir := mkReqDir(t)
+	reqPath := filepath.Join(reqDir, "REQ-correct-crlf.md")
+	newPath := "docs/roadmaps/wip/ROADMAP-correct-crlf.md"
+	crlfContent := "---\r\nstatus: Open\r\ndate: 2026-07-30\r\nauthor: \"\"\r\nadr: \"\"\r\nroadmap: \"" + newPath + "\"\r\n---\r\n\r\n# REQ: Already Correct CRLF\r\n\r\n> Date: 2026-07-30 | Status: Open\r\n\r\n## Linked Roadmap\r\nRoadmap: `" + newPath + "`\r\n"
+	if err := os.WriteFile(reqPath, []byte(crlfContent), 0644); err != nil {
+		t.Fatalf("WriteFile REQ CRLF: %v", err)
+	}
+
+	origContent, _ := os.ReadFile(reqPath)
+	origMtime, _ := os.Stat(reqPath)
+
+	if err := syncREQReferences("ROADMAP-correct-crlf.md", newPath); err != nil {
+		t.Fatalf("esperado nil, obteve: %v", err)
+	}
+
+	newContent, _ := os.ReadFile(reqPath)
+	if !bytes.Equal(origContent, newContent) {
+		t.Errorf("bytes da REQ alterados mesmo com referência já correta (CRLF preservado, não é o alvo desta correção)")
+	}
+	newInfo, _ := os.Stat(reqPath)
+	if newInfo.ModTime() != origMtime.ModTime() {
+		t.Errorf("mtime alterado mesmo sem escrita — arquivo já-correto com CRLF foi regravado")
+	}
+}
+
 // TestSyncREQ_SeveralREQs: várias REQs apontando → todas reescritas, uma linha cada.
 func TestSyncREQ_SeveralREQs(t *testing.T) {
 	dir := t.TempDir()

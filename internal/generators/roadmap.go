@@ -702,7 +702,16 @@ func extractFrontmatterRoadmap(content string) string {
 //
 // Nota: um REQ sem bloco frontmatter (sem par "---") não tem fmClosed=true,
 // portanto o corpo não é varrido — situação não esperada pelos templates do projeto.
+//
+// D2/D3 (ADR-2026-09-04-parser-de-frontmatter-tolera-crlf-na-fronteira-de-entrada, ML-5D):
+// normaliza CRLF -> LF via integrations.NormalizeCRLF na própria entrada, antes de qualquer
+// split por "\n" — mesmo ponto único reaproveitado por rewriteRoadmapStatus/rewriteREQStatus.
+// Sem isto, um REQ gravado com CRLF (Windows) tinha as linhas RESCRITAS saindo em LF (recém-
+// montadas via fmt.Sprintf) e as linhas NÃO tocadas saindo com o "\r" original ainda embutido
+// no valor de `line` que o split preservava — Join produzia um arquivo com terminador MISTO.
+// Medido com o binário real (ML-5C): 8 bytes "\r" vazados na REQ reescrita por `roadmap move`.
 func rewriteREQRoadmapRef(content []byte, roadmapBasename, newRoadmapPath string) ([]byte, bool) {
+	content = integrations.NormalizeCRLF(content)
 	text := string(content)
 	lines := strings.Split(text, "\n")
 

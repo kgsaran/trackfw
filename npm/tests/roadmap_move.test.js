@@ -477,6 +477,84 @@ test('syncReqReferences — uma REQ: reescreve frontmatter roadmap: e corpo Road
   })
 })
 
+// ─── ML-5D: vazamento de CRLF na ESCRITA (D2) — rewriteReqRoadmapRef ─────────
+
+/**
+ * Cria uma REQ canônica com CRLF, espelhando makeReqContent mas com terminador Windows.
+ */
+function makeReqContentCRLF(roadmapPath) {
+  return makeReqContent(roadmapPath).replace(/\n/g, '\r\n')
+}
+
+// Afirma o achado do ML-5C, medido com o binário Node real: uma REQ gravada com CRLF, ao ser
+// sincronizada por `roadmap move`, tinha o arquivo reescrito com terminador MISTO (10 bytes '\r'
+// vazados). Controle de escrita (D2) em bytes reais: zero '\r' no arquivo gravado.
+test('syncReqReferences — REQ com CRLF: escrita não vaza "\\r" (ML-5D, controle D2)', () => {
+  withReqAndRoadmapDir((tmp, roadmapDir, reqDir) => {
+    mkAllStateDirs(roadmapDir)
+    const roadmapFile = 'ROADMAP-2026-09-06-crlf.md'
+    const oldPath = `docs/roadmaps/backlog/${roadmapFile}`
+    const newPath = `docs/roadmaps/wip/${roadmapFile}`
+    const reqPath = path.join(reqDir, 'REQ-crlf.md')
+
+    fs.writeFileSync(path.join(roadmapDir, 'backlog', roadmapFile), canonicalRoadmap('CRLF Test'), 'utf8')
+    fs.writeFileSync(reqPath, makeReqContentCRLF(oldPath), 'utf8')
+
+    const { stdout } = captureOutput(() => moveRoadmap('crlf', 'wip'))
+    assert.ok(stdout.includes(`✓ synced REQ-crlf.md → ${newPath}`), `deve sincronizar; stdout: ${stdout}`)
+
+    const written = fs.readFileSync(reqPath, 'utf8')
+    const crCount = (written.match(/\r/g) || []).length
+    assert.strictEqual(crCount, 0, `escrita vazou CRLF: ${crCount} bytes '\\r' no arquivo gravado; conteúdo:\n${JSON.stringify(written)}`)
+    assert.ok(written.includes(`roadmap: "${newPath}"`), `frontmatter deve ter novo caminho; got:\n${written}`)
+    assert.ok(written.includes(`Roadmap: \`${newPath}\``), `corpo deve ter novo caminho com backticks; got:\n${written}`)
+  })
+})
+
+// Controle POSIX (ML-5D): entrada LF não muda de comportamento — mesma saída de antes desta
+// correção, byte a byte.
+test('syncReqReferences — REQ com LF: saída byte-idêntica ao comportamento pré-existente (controle POSIX)', () => {
+  withReqAndRoadmapDir((tmp, roadmapDir, reqDir) => {
+    mkAllStateDirs(roadmapDir)
+    const roadmapFile = 'ROADMAP-2026-09-06-lf-control.md'
+    const oldPath = `docs/roadmaps/backlog/${roadmapFile}`
+    const newPath = `docs/roadmaps/wip/${roadmapFile}`
+    const reqPath = path.join(reqDir, 'REQ-lf-control.md')
+
+    fs.writeFileSync(path.join(roadmapDir, 'backlog', roadmapFile), canonicalRoadmap('LF Control Test'), 'utf8')
+    fs.writeFileSync(reqPath, makeReqContent(oldPath), 'utf8')
+
+    captureOutput(() => moveRoadmap('lf-control', 'wip'))
+
+    const written = fs.readFileSync(reqPath, 'utf8')
+    const want = makeReqContent(oldPath).replace(new RegExp(oldPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), newPath)
+    assert.strictEqual(written, want, `saída LF divergiu do comportamento pré-existente\nqueria:\n${JSON.stringify(want)}\nobteve:\n${JSON.stringify(written)}`)
+  })
+})
+
+// Controle de não-regressão (ML-5D): referência já correta + CRLF no resto do arquivo → NÃO
+// escreve. A normalização introduzida para fechar o vazamento não deve virar "gravar toda REQ
+// tocada por `roadmap move`" — só corrigir a escrita quando uma reescrita real já ia ocorrer.
+test('syncReqReferences — referência já correta com CRLF: nenhuma escrita (controle de não-regressão ML-5D)', () => {
+  withReqAndRoadmapDir((tmp, roadmapDir, reqDir) => {
+    mkAllStateDirs(roadmapDir)
+    const roadmapFile = 'ROADMAP-2026-09-06-already-crlf.md'
+    const newPath = `docs/roadmaps/wip/${roadmapFile}`
+    const reqPath = path.join(reqDir, 'REQ-already-crlf.md')
+
+    fs.writeFileSync(path.join(roadmapDir, 'wip', roadmapFile), canonicalRoadmap('Already Correct CRLF', 'wip'), 'utf8')
+    fs.writeFileSync(reqPath, makeReqContentCRLF(newPath), 'utf8')
+    const before = fs.readFileSync(reqPath)
+
+    const cfg = config.load()
+    const { stdout } = captureOutput(() => syncReqReferences(roadmapFile, newPath, cfg))
+    const after = fs.readFileSync(reqPath)
+
+    assert.ok(before.equals(after), 'bytes da REQ não devem mudar quando referência já está correta, mesmo com CRLF')
+    assert.ok(!stdout.includes('synced'), `não deve imprimir synced quando já correto; stdout: ${stdout}`)
+  })
+})
+
 // ─── Cardinalidade: várias REQs → todas reescritas ───────────────────────────
 
 test('syncReqReferences — várias REQs: todas reescritas, uma linha cada, sequência lexicográfica por basename', () => {

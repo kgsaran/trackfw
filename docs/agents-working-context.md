@@ -32332,3 +32332,97 @@ escrita permanece LF) nunca foi enumerada nas waves anteriores para a família `
 /`rewriteReqRoadmapRef`/`_rewrite_req_roadmap_ref`**, e a medição com os 3 binários reais achou que
 Go e Node vazam CRLF residual na escrita dessa família — achado novo, não corrigido, à espera de
 decisão do arquiteto sobre ML novo vs. este ML crescer.
+
+## ML-5D — apolo-tf, 2026-09-06 (início)
+
+Handoff do arquiteto: fechar o vazamento de CRLF na ESCRITA (D2) achado ao rodar `roadmap move`
+com os 3 binários reais contra fixture CRLF no fim do ML-5C — `rewriteREQRoadmapRef` (Go, 8 bytes
+`\r` vazados) e `rewriteReqRoadmapRef` (Node, 10 bytes). Python já estava limpo (`open(path,"r")`
+já traduz). Mesma REQ/ADR/PR pela Regra Dura de Causa Raiz — não fragmentar em REQ nova.
+
+## ML-5D — apolo-tf, 2026-09-06 (fim)
+
+**Status:** ✅ implementação e evidência entregues; aguardando auditoria do arquiteto.
+
+### Enumeração da família de funções de reescrita — 6 por runtime, 18 no total
+
+`rewriteSignatureLine`, `rewriteFrontmatterFields`, `rewriteFrontmatterModelLine` (render de
+agente, ML-5A), `rewriteRoadmapStatus`, `rewriteREQStatus` (ML-5B) — todas já normalizavam CRLF na
+entrada. Só `rewriteREQRoadmapRef` (Go) e `rewriteReqRoadmapRef` (Node) não normalizavam; o gêmeo
+Python (`_rewrite_req_roadmap_ref`) já normaliza desde o ML-5C. Leitores puros
+(`extractFrontmatterRoadmap` e equivalentes) ficam fora do escopo D2 — nunca escrevem, e já
+toleram CRLF na comparação via `TrimSpace`/`.trim()`.
+
+Verificado, não presumido, que `req new`, `roadmap new` e `status` não chamam nenhuma função desta
+família e não leem-e-regravam artefato existente — escrevem template fresco.
+
+### Correção — normalizar na ENTRADA, mesmo ponto único (D3), não um quarto normalizador
+
+`content = integrations.NormalizeCRLF(content)` (Go, `internal/generators/roadmap.go:714`) e
+`normalizeCRLF(String(content)).split('\n')` (Node, `npm/src/generators/roadmap.js:394`) — mesma
+decisão já tomada pelas 5 funções irmãs e pelo Python no ML-5C, reaplicada ao sítio que ficou para
+trás. Não é decisão nova.
+
+### 🔴 Achado não previsto: Node quebraria "já correta → nenhuma escrita" sem correção adicional
+
+`syncReqReferences` (Node) chama `rewriteReqRoadmapRef` também na guarda de idempotência com
+`oldRef === newRef`, diferente de Go/Python que curto-circuitam ANTES de chamar a função quando a
+referência já está correta. Normalizar incondicionalmente faria essa guarda comparar "normalizado"
+contra "original com CRLF" e achar diferença onde não há mudança semântica, regravando REQs
+já-corretas só por terem CRLF em outro trecho — quebrando o contrato de `docs/cli-parity.md` e
+divergindo de Go/Python no mesmo cenário. Corrigido: `changed` só liga quando a linha PRODUZIDA
+difere da ORIGINAL (não quando há match de `oldRef`); sem mudança real, devolve `content` original
+verbatim.
+
+### Controle de escrita (D2), bytes reais, 3 runtimes
+
+```
+Go     0 bytes '\r' gravados (era 8 no ML-5C)
+Node   0 bytes '\r' gravados (era 10 no ML-5C; fixture desta rodada media 11 pré-correção — mesma causa)
+Python 0 (sem regressão)
+```
+
+Falsificação: comentando a normalização em cada sítio, os `\r` voltam na contagem exata medida
+pelos testes novos (12 Go / 11 Node) — confirmado rodando com a linha comentada (FAIL nomeando a
+contagem) e restaurada (PASS) na mesma sessão.
+
+Controle POSIX: entrada LF produz saída byte-idêntica à de antes, nos 3 runtimes (comparação de
+string completa, não só `.includes`).
+
+### Resposta à pergunta de convergência da D2
+
+**Não existe caminho de escrita do trackfw que possa gravar CRLF num artefato de governança do
+usuário.** As 18 funções de reescrita normalizam na entrada; os únicos consumidores de produto são
+o render de agente e `roadmap move`; `req new`/`roadmap new`/`status` nunca reescrevem artefato
+existente. Não é necessária a solução arquitetural de escritor único.
+
+### Reconciliação — o que cada teste novo afirma
+
+- `TestSyncREQ_CRLFSourceWritesZeroCarriageReturns` (Go) / `REQ com CRLF: escrita não vaza "\r"`
+  (Node): a escrita (D2) não vaza CRLF mesmo quando a origem tinha.
+- `TestSyncREQ_LFSourcePOSIXControl` (Go) / `saída byte-idêntica ao comportamento pré-existente`
+  (Node): controle POSIX — nada mudou no caminho LF que já funcionava.
+- `TestSyncREQ_AlreadyCorrectWithCRLF` (Go) / `referência já correta com CRLF: nenhuma escrita`
+  (Node): o achado não previsto — cardinalidade "já correta → nenhuma escrita" sobrevive com CRLF
+  fora do campo reescrito.
+
+### Evidência de comandos
+
+```
+go build ./...                                     -> sem erro
+go vet ./...                                        -> limpo
+go test ./... (todos os pacotes)                    -> ok, 15 pacotes com teste, 0 falhas
+npm test (npm/)                                     -> 866 passed, 0 failed
+python3 -m pytest pypi/tests/ -q                    -> 1635 passed, 66 subtests passed
+git diff -- .gitattributes                          -> vazio (D4)
+bash scripts/check-python-writes-lf.sh              -> exit 0
+go run ./cmd/trackfw validate                        -> exit 0 (só warnings pré-existentes, sem relação)
+```
+
+**Arquivos afetados:** `internal/generators/roadmap.go` (fix + doc),
+`internal/generators/roadmap_test.go` (3 testes novos), `npm/src/generators/roadmap.js` (fix +
+doc + correção de cardinalidade), `npm/tests/roadmap_move.test.js` (3 testes novos). `pypi/` não
+tocado (já corrigido no ML-5C).
+
+**Não rodei `make quality`** — instrução explícita do handoff; o arquiteto roda ao fim, cobrindo
+os quatro MLs da Wave 5.
