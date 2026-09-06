@@ -166,7 +166,7 @@ Antes → depois, no acervo real:
 "o comportamento foi entregue"; fica escrito em vez de presumido.
 
 ### ML-3D — `serve` casa a aresta pelo caminho literal: mesma causa, aresta órfã no dashboard
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf`
+**Status:** 🔄 Em andamento · **Agente:** `apolo-tf`
 
 Achado **do próprio agente** durante o ML-3B, e foi ele que decidiu a questão contra o silêncio.
 `internal/serve/api_chain.go:127-130` monta `edges` com `To: normalizeRefSeparator(val)` — valor

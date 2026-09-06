@@ -2268,6 +2268,18 @@ func gitLastModifiedTime(path string) (time.Time, bool) {
 
 // extractRefPath extrai o valor do campo field: na linha de frontmatter/cabeçalho.
 // Retorna string vazia se o campo estiver ausente, vazio ou com valor traço.
+// ExtractRefPath é o wrapper exportado de extractRefPath, usado por consumidores fora do pacote
+// validator (internal/serve/api_chain.go, ML-3D). Achado durante o ML-3D: o gerador de REQ
+// (internal/generators/req.go) grava `adr: ""` e `roadmap: ""` SEMPRE vazios no frontmatter —
+// o valor canônico vive no corpo, em "## Linked ADR / ADR: <path>" e "## Linked Roadmap /
+// Roadmap: <path>". Um extrator que só lê o bloco YAML de frontmatter (como o antigo
+// parseFrontmatter do `serve`) nunca encontra o vínculo real de nenhuma REQ gerada pelo `trackfw
+// req new` — não é caso de borda, é o formato canônico. Ponto único: os dois consumidores usam
+// esta função em vez de reimplementar a varredura linha a linha.
+func ExtractRefPath(content, field string) string {
+	return extractRefPath(content, field)
+}
+
 func extractRefPath(content, field string) string {
 	for _, line := range strings.Split(content, "\n") {
 		trimmed := strings.TrimSpace(line)
@@ -2439,6 +2451,17 @@ func isStaleRoadmapStateRef(ref string) bool {
 func resolveRoadmapRef(cfg config.ProjectConfig, ref string) []string {
 	resolved, _ := resolveRoadmapRefStatus(cfg, ref)
 	return resolved
+}
+
+// ResolveRoadmapRef é o wrapper exportado de resolveRoadmapRef, usado por consumidores fora do
+// pacote validator (internal/serve/api_chain.go, ML-3D) para casar edge.To de um campo
+// `roadmap:` contra o node.ID real quando o caminho literal gravado no frontmatter aponta para
+// uma pasta de estado que já ficou velha (mesma causa raiz do ML-3B: `trackfw roadmap move`
+// grava a pasta de estado no caminho, e a pasta É o estado). Ponto único de resolução — o
+// `serve` NÃO reimplementa a busca por basename, para não recriar em dois lugares o defeito de
+// "ponto único por runtime" que este roadmap existe para fechar.
+func ResolveRoadmapRef(cfg config.ProjectConfig, ref string) []string {
+	return resolveRoadmapRef(cfg, ref)
 }
 
 // resolveRoadmapRefStatus é resolveRoadmapRef com um segundo retorno: stale=true quando a

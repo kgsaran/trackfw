@@ -10690,3 +10690,184 @@ assert_output_lacks "roadmap-ref-stale-state/python/vacuity-detects-regression" 
   bash -c "cd '$T193_P_VACUITY' && exec env PYTHONPATH='$T193C_P_B/pypi' python3 -m trackfw validate"
 
 echo "OK   [falsify/roadmap-ref-stale-state/python]: as 3 direções (A/B/C) provadas"
+
+# ---------------------------------------------------------------------------
+# Cenário 194 — ROADMAP-2026-09-05-reconciliar-o-que-declaramos-com-o-que-
+# medimos-apos-a-auditoria-externa, ML-3D: `/api/chain` do `serve` casava
+# edge.To pelo valor CRU do campo `roadmap:`, e esse valor só existia no
+# FRONTMATTER na leitura original — mas `trackfw req new` (Go/Node/Python)
+# grava `adr: ""` e `roadmap: ""` SEMPRE vazios ali; o valor real vive no
+# CORPO ("## Linked Roadmap / Roadmap: <path>"). Medido pelo arquiteto em
+# 2026-09-06 contra os 2 vínculos reais da árvore (REQ-2026-09-03-as-217...,
+# REQ-2026-09-05-tres-defeitos...): 0 arestas antes da correção, nos 3 CLIs —
+# não era o caso de borda do ML-3B (caminho de estado desatualizado), era o
+# formato canônico inteiro nunca resolvendo.
+#
+# Node (npm/src/serve/api_chain.js) e Python (pypi/trackfw/serve/api_chain.py)
+# já indexavam nodes por BASENAME através de todos os estados — não precisam
+# do fallback de estado do ML-3B (ver docs/cli-parity.md, seção "serve:
+# /api/chain"), mas tinham DOIS defeitos ortogonais, corrigidos juntos por
+# serem a mesma causa (extração que nunca alcança o formato canônico):
+#   1. leitura só de frontmatter (nunca o corpo) — comum aos 3 CLIs;
+#   2. resolveRef/_find_node_by_ref comparavam o valor CRU (caminho completo)
+#      contra o índice de basename, que nunca bate — só Node e Python, porque
+#      só eles têm esse índice; Go casa por igualdade de caminho completo, e
+#      esse defeito não existe lá.
+# Python tinha ainda um terceiro: a aresta REQ→ROADMAP não existia em código
+# NENHUM (só REQ→ADR, ROADMAP→REQ, ROADMAP→ADR) — nem por frontmatter, nem
+# por corpo, para vínculo nenhum.
+#
+# Duas direções de falsificação, em Node e Python (Go tem cobertura
+# equivalente em internal/serve/api_chain_test.go —
+# TestChainHandler_EdgeResolvesStaleStateRoadmapPath e
+# TestChainHandler_NoEdgeInventedForUnresolvableRoadmapRef — com
+# falsificação manual registrada no relatório do ML-3D; chainHandler não é
+# exportado do pacote `serve` e não é invocável de shell sem introduzir um
+# subcomando novo só para teste, o que este roadmap decide explicitamente
+# NÃO fazer — mudaria contrato público por motivo de testabilidade. Mesmo
+# padrão de limite declarado do Cenário 193/ML-3B: "provada apenas pela
+# direção C da falsificação"):
+#   A) REQ com vínculo `Roadmap:` no CORPO apontando para um roadmap que
+#      fisicamente já foi movido para done/ (caminho gravado ainda diz
+#      wip/) ⇒ a aresta REQ→Roadmap aparece no grafo, ligando ao node real
+#      em done/.
+#   B) REQ com vínculo `Roadmap:` para um basename que NÃO existe em estado
+#      algum ⇒ nenhuma aresta aponta para um id que não é node real (guarda
+#      de vacuidade — o fix não pode virar um "sempre encontra").
+#
+# Invoca `handleChain`/`get_chain` DIRETAMENTE (node -e / python3 -c), sem
+# HTTP: os dois já são funções exportadas que aceitam cfg + mock res —
+# mesmo padrão de invocação usado na medição do relatório do ML. Corrompe a
+# IMPLEMENTAÇÃO (nunca a asserção), mesmo padrão dos Cenários
+# 14/16/17/20/21/24/26/192/193.
+# ---------------------------------------------------------------------------
+
+T194_FIX="$WORK/s194-fixtures"
+mkdir -p "$T194_FIX/req" "$T194_FIX/roadmaps/wip" "$T194_FIX/roadmaps/done"
+
+# Fixture A: roadmap já em done/, REQ com vínculo (no CORPO) ainda apontando
+# para o caminho antigo em wip/ — reproduz o defeito medido do ML-3B/3D.
+cat > "$T194_FIX/roadmaps/done/ROADMAP-s194-moved.md" <<'EOF'
+# Roadmap s194 moved
+EOF
+cat > "$T194_FIX/req/REQ-s194-stale.md" <<EOF
+---
+status: Open
+adr: ""
+roadmap: ""
+---
+# REQ s194 stale
+
+## Linked Roadmap
+Roadmap: $T194_FIX/roadmaps/wip/ROADMAP-s194-moved.md
+EOF
+
+# Fixture B: vínculo (no CORPO) para um basename que não existe em estado
+# algum — vínculo genuinamente ausente.
+cat > "$T194_FIX/req/REQ-s194-orfa.md" <<EOF
+---
+status: Open
+adr: ""
+roadmap: ""
+---
+# REQ s194 orfa
+
+## Linked Roadmap
+Roadmap: $T194_FIX/roadmaps/wip/ROADMAP-s194-nunca-existiu.md
+EOF
+
+run_node_chain_probe() {
+  # $1 = diretório src do npm a exercitar; $2 = raiz das fixtures. Ambos
+  # recebidos como ARGUMENTO, não capturados de variável de ambiente do
+  # script pai: esta função é reconstruída via `declare -f` e chamada dentro
+  # de `bash -c` num subshell novo — uma variável do script pai não-exportada
+  # (T194_FIX) não existiria ali, e o valor interpolado silenciosamente
+  # viraria string vazia, quebrando o cenário sem diagnóstico (medido: sem
+  # este parâmetro explícito, EDGE_A dava false mesmo no baseline correto).
+  local npm_src_dir=$1
+  local fixdir=$2
+  node -e "
+const { handleChain } = require('$npm_src_dir/serve/api_chain.js');
+const cfg = { adrDirs: ['$fixdir/adr'], reqDir: '$fixdir/req', roadmapDir: '$fixdir/roadmaps', roadmapNamespacing: 'flat' };
+const res = { writeHead(){}, end(body){
+  const d = JSON.parse(body);
+  const roadmapNode = d.nodes.find(n => n.type === 'roadmap');
+  const edgeFound = roadmapNode ? d.edges.some(e => e.to === roadmapNode.id) : false;
+  console.log('EDGE_A=' + edgeFound);
+  const orfaTarget = '$fixdir/roadmaps/wip/ROADMAP-s194-nunca-existiu.md';
+  const inventedNode = d.nodes.some(n => n.id === orfaTarget);
+  console.log('INVENTED_B=' + inventedNode);
+}};
+handleChain(cfg, {}, res);
+"
+}
+
+run_python_chain_probe() {
+  # Mesmo motivo do parâmetro explícito de run_node_chain_probe acima.
+  local pypi_dir=$1
+  local fixdir=$2
+  python3 - "$pypi_dir" "$fixdir" <<'PY'
+import sys
+pypi_dir, fixdir = sys.argv[1:3]
+sys.path.insert(0, pypi_dir)
+from trackfw.serve.api_chain import get_chain
+cfg = {"adr_dirs": [f"{fixdir}/adr"], "req_dir": f"{fixdir}/req", "roadmap_dir": f"{fixdir}/roadmaps", "roadmap_namespacing": "flat"}
+d = get_chain(cfg)
+roadmap_node = next((n for n in d["nodes"] if n["type"] == "roadmap"), None)
+edge_found = any(e["to"] == roadmap_node["id"] for e in d["edges"]) if roadmap_node else False
+print(f"EDGE_A={edge_found}")
+orfa_target = f"{fixdir}/roadmaps/wip/ROADMAP-s194-nunca-existiu.md"
+node_ids = {n["id"] for n in d["nodes"]}
+invented_node = orfa_target in node_ids
+print(f"INVENTED_B={invented_node}")
+PY
+}
+
+# --- Baseline (Node): código real do ROOT_DIR ---
+assert_output_contains "serve-chain-canonical-link/node/edge-baseline" \
+  "EDGE_A=true" \
+  bash -c "$(declare -f run_node_chain_probe); run_node_chain_probe '$ROOT_DIR/npm/src' '$T194_FIX'"
+assert_output_contains "serve-chain-canonical-link/node/no-invented-node-baseline" \
+  "INVENTED_B=false" \
+  bash -c "$(declare -f run_node_chain_probe); run_node_chain_probe '$ROOT_DIR/npm/src' '$T194_FIX'"
+
+# --- Corrupção (Node): resolveRef volta a comparar o valor CRU (sem
+# basename()), reproduzindo o defeito 2 (extração alcança o corpo, mas o
+# valor de caminho completo nunca bate contra o índice de basename).
+T194C_NODE="$WORK/s194-corrupt-node"
+mkdir -p "$T194C_NODE/npm"
+cp -r "$ROOT_DIR/npm/src" "$T194C_NODE/npm/src"
+corrupt_literal \
+  "$ROOT_DIR/npm/src/serve/api_chain.js" "$T194C_NODE/npm/src/serve/api_chain.js" \
+  $'    const base = path.basename(val).replace(/\\.md$/, \'\').toLowerCase().trim()' \
+  $'    const base = val.replace(/\\.md$/, \'\').toLowerCase().trim() // [falsified] sem basename()' \
+  "s194-node-defect2"
+
+assert_output_lacks "serve-chain-canonical-link/node/edge-detects-regression" \
+  "EDGE_A=true" \
+  bash -c "$(declare -f run_node_chain_probe); run_node_chain_probe '$T194C_NODE/npm/src' '$T194_FIX'"
+
+# --- Baseline (Python): código real do ROOT_DIR ---
+assert_output_contains "serve-chain-canonical-link/python/edge-baseline" \
+  "EDGE_A=True" \
+  bash -c "$(declare -f run_python_chain_probe); run_python_chain_probe '$ROOT_DIR/pypi' '$T194_FIX'"
+assert_output_contains "serve-chain-canonical-link/python/no-invented-node-baseline" \
+  "INVENTED_B=False" \
+  bash -c "$(declare -f run_python_chain_probe); run_python_chain_probe '$ROOT_DIR/pypi' '$T194_FIX'"
+
+# --- Corrupção (Python): _find_node_by_ref volta a comparar o valor CRU
+# (sem os.path.basename()), mesmo defeito 2 do lado Python.
+T194C_PY="$WORK/s194-corrupt-python"
+mkdir -p "$T194C_PY"
+cp -r "$ROOT_DIR/pypi" "$T194C_PY/pypi"
+corrupt_literal \
+  "$ROOT_DIR/pypi/trackfw/serve/api_chain.py" "$T194C_PY/pypi/trackfw/serve/api_chain.py" \
+  $'        base = os.path.basename(ref)\n        candidates = by_basename.get(base, []) or by_basename.get(base + ".md", [])' \
+  $'        candidates = by_basename.get(ref, []) or by_basename.get(ref + ".md", []) # [falsified] sem basename()' \
+  "s194-python-defect2"
+
+assert_output_lacks "serve-chain-canonical-link/python/edge-detects-regression" \
+  "EDGE_A=True" \
+  bash -c "$(declare -f run_python_chain_probe); run_python_chain_probe '$T194C_PY/pypi' '$T194_FIX'"
+
+echo "OK   [falsify/serve-chain-canonical-link]: Node + Python, direções A/B provadas (Go: TestChainHandler_EdgeResolvesStaleStateRoadmapPath + TestChainHandler_NoEdgeInventedForUnresolvableRoadmapRef, limite declarado)"

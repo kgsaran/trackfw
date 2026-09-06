@@ -637,6 +637,13 @@ def _extract_ref_path(content: str, field: str) -> str:
     return ""
 
 
+# extract_ref_path é o alias público de _extract_ref_path, usado por consumidores fora deste
+# módulo (trackfw.serve.api_chain, ML-3D). Ponto único de extração: o formato canônico gravado
+# por trackfw.generators.req (adr: "" e roadmap: "" SEMPRE vazios no frontmatter, valor real em
+# "## Linked ADR / ADR: <path>" e "## Linked Roadmap / Roadmap: <path>" no corpo) só é
+# encontrado varrendo o conteúdo inteiro linha a linha, não só o bloco de frontmatter.
+extract_ref_path = _extract_ref_path
+
 # resolve_agent_namespaces é re-exportado de trackfw.config (não definido aqui): trackfw.traceid é
 # importado por este módulo (linha ~15) e também precisa do resolvedor canônico, então a
 # implementação vive em config.py — o único módulo que nem validator nem traceid dependem de volta
