@@ -1,5 +1,5 @@
 ---
-status: done
+status: wip
 date: 2026-09-03
 squad: apolo-tf
 req: "docs/req/REQ-2026-09-03-as-217-falhas-reais-de-windows-colapsam-em-poucas-causas-e-tres-delas-exigem-decisao-antes-de-codigo.md"
@@ -7,7 +7,7 @@ req: "docs/req/REQ-2026-09-03-as-217-falhas-reais-de-windows-colapsam-em-poucas-
 
 # Roadmap: Fechar os grupos de falha de Windows por causa raiz
 
-> Criado em: 2026-09-03 | Status: done
+> Criado em: 2026-09-03 | Status: wip
 
 ## Context
 
@@ -804,5 +804,25 @@ o parser de validação já eram tolerantes, por commits de outra REQ. Falsifico
 `barrier` **falha**, enquanto a leitura local diz que o código tolera. Ele não escolheu uma das duas
 versões para fechar a história. **Verificar na recontagem do CI.**
 
-**Achado fora de escopo, reportado e não corrigido:** `rewriteRoadmapStatus`/`rewriteREQStatus` — 6
-sítios nos 3 CLIs, mesmo defeito, e afetam `trackfw roadmap move`. **REQ própria.**
+🔴 **CORREÇÃO DO ARQUITETO, 2026-09-06 — eu errei ao chamar isto de REQ própria.**
+`rewriteRoadmapStatus`/`rewriteREQStatus` — 6 sítios nos 3 CLIs — têm **o mesmo defeito**, governado
+pela **mesma ADR**.
+
+**Fragmentar uma causa raiz em duas REQs esconde que existe um padrão** — é o escopo negativo que eu
+mesmo escrevi na REQ do retarget e violei aqui. E pior: a **D3 da ADR exige ponto único por
+runtime**; com 6 sítios ainda cegos, **a D3 não está satisfeita** e o roadmap não podia ser fechado.
+Fechá-lo seria marcar como concluído algo cujo critério não foi atendido — exatamente o achado A1 da
+auditoria externa de ontem.
+
+Minha justificativa era **atribuição de causa** (não misturar mudanças para saber qual produziu qual
+efeito). Isso justifica **ML separado**, não **REQ separada**. Confundi as duas coisas. O usuário
+pegou.
+
+### ML-5B — `rewriteRoadmapStatus`/`rewriteREQStatus`: os 6 sítios restantes da D3
+**Status:** ⬜ Pendente · **Agente:** `apolo-tf`
+Mesma ADR, mesma decisão, mesmo mecanismo — só o sítio muda. Afetam `trackfw roadmap move` e a
+escrita de status de REQ, que é caminho de escrita **do produto**, não de leitura de artefato de
+agente.
+**Critérios:** os mesmos do ML-5A · falsificação nas duas direções por sítio · escrita continua LF
+(D2) · `.gitattributes` intocado (D4) · e a **enumeração final provando que a D3 ficou satisfeita**:
+nenhum sítio remanescente casa delimitador por literal.
