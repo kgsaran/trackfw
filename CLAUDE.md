@@ -127,6 +127,26 @@ Duas consequências, e a segunda é pior:
 - **"É superfície diferente"** — parser vs. renderizador vs. escrita são superfícies diferentes do
   **mesmo** defeito. Mesma causa, mesma REQ.
 
+### Mesmo SINTOMA também fica no mesmo roadmap — até a medição dizer o contrário
+
+Acrescentado por decisão do usuário em 2026-09-06:
+
+> *"Descobertas novas, se forem do mesmo sintoma ou mesma causa, devem ser fechadas dentro do mesmo
+> roadmap."*
+
+**Mesma causa → obrigatoriamente o mesmo roadmap.** Sem exceção.
+
+**Mesmo sintoma → investiga no mesmo roadmap.** Se a medição mostrar que a causa é outra, pode
+separar — 🔴 **mas só com a medição escrita**, nunca por presunção.
+
+**Por que a distinção importa:** agrupar por sintoma foi o que produziu o erro mais caro desta
+campanha. O grupo do `IsAbs` foi estimado em **14 falhas** e entregou **2**, porque falhas cuja causa
+real era escape de aspas foram atribuídas a ele pelo sintoma parecido ("teste de guard falha com
+caminho").
+
+Então: o sintoma **inicia** a investigação junto; a **causa medida** é o que autoriza separar. O ônus
+é de quem quer dividir, não de quem quer manter junto.
+
 ### Quando é legítimo abrir REQ nova
 
 Somente quando a **causa é outra**. O teste é o mesmo da triagem por mecanismo:
