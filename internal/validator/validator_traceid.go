@@ -19,7 +19,7 @@ type traceIdEntry struct {
 // collectTraceIdEntries varre um diretório raiz e retorna entradas indexadas pelo campo traceField.
 // Se o diretório tiver subpastas de estado (wip/, done/, etc.), usa a pasta como estado.
 // Se não tiver subpastas, trata como flat com estado vazio.
-func collectTraceIdEntries(rootDir, traceField string) ([]traceIdEntry, error) {
+func collectTraceIdEntries(rootDir, traceField string, msgs *[]string) ([]traceIdEntry, error) {
 	stateDirs := []string{"wip", "done", "backlog", "analyzing", "blocked", "abandoned"}
 
 	var entries []traceIdEntry
@@ -43,8 +43,8 @@ func collectTraceIdEntries(rootDir, traceField string) ([]traceIdEntry, error) {
 				continue
 			}
 			for _, f := range files {
-				content, err := os.ReadFile(f)
-				if err != nil {
+				content, ok := readFileForRule("traceid_read", f, msgs)
+				if !ok {
 					continue
 				}
 				val := extractFrontmatterField(string(content), traceField)
@@ -64,8 +64,8 @@ func collectTraceIdEntries(rootDir, traceField string) ([]traceIdEntry, error) {
 	files, err := filepath.Glob(filepath.Join(rootDir, "*.md"))
 	if err == nil {
 		for _, f := range files {
-			content, err := os.ReadFile(f)
-			if err != nil {
+			content, ok := readFileForRule("traceid_read", f, msgs)
+			if !ok {
 				continue
 			}
 			val := extractFrontmatterField(string(content), traceField)
@@ -86,7 +86,7 @@ func collectTraceIdEntries(rootDir, traceField string) ([]traceIdEntry, error) {
 // collectTraceIdEntriesByAgent varre um diretório de roadmaps organizado por agente (by_agent)
 // e retorna entradas indexadas pelo campo traceField.
 // Estrutura esperada: rootDir/<agente>/<estado>/*.md
-func collectTraceIdEntriesByAgent(roadmapDir, traceField string, cfg config.ProjectConfig) ([]traceIdEntry, error) {
+func collectTraceIdEntriesByAgent(roadmapDir, traceField string, cfg config.ProjectConfig, msgs *[]string) ([]traceIdEntry, error) {
 	stateDirs := []string{"wip", "done", "backlog", "analyzing", "blocked", "abandoned"}
 	agents := resolveAgentNamespaces(cfg, roadmapDir)
 	var all []traceIdEntry
@@ -99,8 +99,8 @@ func collectTraceIdEntriesByAgent(roadmapDir, traceField string, cfg config.Proj
 				continue
 			}
 			for _, f := range files {
-				content, err := os.ReadFile(f)
-				if err != nil {
+				content, ok := readFileForRule("traceid_read", f, msgs)
+				if !ok {
 					continue
 				}
 				val := extractFrontmatterField(string(content), traceField)
@@ -119,12 +119,12 @@ func collectTraceIdEntriesByAgent(roadmapDir, traceField string, cfg config.Proj
 // contrário — o que preserva o comportamento histórico (arquivo na raiz de req_dir tem estado "")
 // e é coerente com o invariante D1 (REQ em req_dir/<agente>/*.md não tem estado). Estado vazio
 // nunca participa de traceid_state_mismatch, que só compara quando os dois lados têm estado.
-func collectTraceIdEntriesFromFiles(files []string, traceField string) []traceIdEntry {
+func collectTraceIdEntriesFromFiles(files []string, traceField string, msgs *[]string) []traceIdEntry {
 	stateSet := map[string]bool{"wip": true, "done": true, "backlog": true, "analyzing": true, "blocked": true, "abandoned": true}
 	var entries []traceIdEntry
 	for _, f := range files {
-		content, err := os.ReadFile(f)
-		if err != nil {
+		content, ok := readFileForRule("traceid_read", f, msgs)
+		if !ok {
 			continue
 		}
 		val := extractFrontmatterField(string(content), traceField)
@@ -153,13 +153,13 @@ func validateTraceId(cfg config.ProjectConfig) (violations []string, warnings []
 	// e ficava vácua exatamente nos layouts que o resolvedor passou a cobrir — traceid é uma das
 	// regras que a ADR exige que deixem de enxergar zero REQs em by_agent. Corrigir só
 	// resolveREQFiles não a alcançaria, porque ela recebia um DIRETÓRIO, não a lista resolvida.
-	reqEntries := collectTraceIdEntriesFromFiles(ResolveREQFiles(cfg), traceField)
+	reqEntries := collectTraceIdEntriesFromFiles(ResolveREQFiles(cfg), traceField, &warnings)
 	// Indexar Roadmaps — usa by_agent quando configurado
 	var roadmapEntries []traceIdEntry
 	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
-		roadmapEntries, _ = collectTraceIdEntriesByAgent(cfg.RoadmapDir, traceField, cfg)
+		roadmapEntries, _ = collectTraceIdEntriesByAgent(cfg.RoadmapDir, traceField, cfg, &warnings)
 	} else {
-		roadmapEntries, _ = collectTraceIdEntries(cfg.RoadmapDir, traceField)
+		roadmapEntries, _ = collectTraceIdEntries(cfg.RoadmapDir, traceField, &warnings)
 	}
 
 	// Montar índices: req_id → []traceIdEntry

@@ -101,3 +101,62 @@ indeterminados, o próximo passo é **experimento**, não código.
   regredir o caminho que hoje funciona.
 - Paridade `.sh` ↔ nativo exercitada por gate, com os mesmos cenários de bloqueio dos dois lados.
 - Para Cursor e Kiro: **nenhuma emissão nova antes da medição**.
+
+
+---
+
+## Adendo — 2026-09-06: a tabela fechou, e o desenho mudou
+
+Cursor e Kiro deixaram de ser indeterminados. **Medido no bundle instalado**, numa VM Windows ARM64:
+
+| CLI | shell no Windows | `.sh` dispara? |
+|---|---|---|
+| Gemini · Codex · **Cursor** | PowerShell | não |
+| **Kiro** | **`cmd.exe`** (default do Node, `spawn(cmd,{shell:true})` via `%ComSpec%`) | não |
+| Copilot | — (populamos o campo errado) | não |
+| Claude Code | Git Bash se instalado | condicional |
+
+**Nenhum dos seis executa o `.sh`**, exceto Claude Code com Git Bash. O Cursor **nunca** cai para
+`cmd.exe` ou bash: tenta `pwsh`, depois `powershell.exe`, depois o caminho fixo, e lança exceção se
+nenhum existir.
+
+### 🔴 D6 — Emitir caminho de `.ps1` NÃO funciona. A `ExecutionPolicy` bloqueia
+
+Medido na VM:
+
+```
+Get-ExecutionPolicy → Restricted        (padrão de Windows client)
+powershell -File g.ps1  →  "não pode ser carregado porque a execução de scripts foi desabilitada"
+```
+
+Um `command` que aponte para um `.ps1` **falha em todos os CLIs de PowerShell**, não só no Kiro. Este
+é o achado que teria produzido uma entrega quebrada se a implementação começasse pelo caminho óbvio.
+
+### D7 — O `command` é uma **linha de invocação**, não um caminho — e ela é UNIFORME
+
+```
+powershell -NoProfile -ExecutionPolicy Bypass -File "<caminho>.ps1"
+```
+
+Medido nos dois mundos, com o **exit code preservado**, que é como o guard sinaliza bloqueio:
+
+```
+cmd /c powershell -NoProfile -ExecutionPolicy Bypass -File g.ps1   →  rodou, exit 2   (Kiro)
+       powershell -NoProfile -ExecutionPolicy Bypass -File g.ps1   →  rodou, exit 2   (Cursor/Gemini/Codex)
+```
+
+**Consequência: o Kiro não precisa de tratamento especial nem de `.bat`.** Uma implementação `.ps1`,
+uma linha de invocação, cinco CLIs. O que a D2 previa como "correção por CLI" se reduz a **um script
+e um formato de comando** — mais Copilot, que continua sendo troca de campo, e Claude Code, que já
+funciona.
+
+🔴 **`-ExecutionPolicy Bypass` é decisão de segurança, não conveniência.** Ela existe porque a
+alternativa — pedir ao usuário que afrouxe a política da máquina inteira — é pior: trocaria um hook
+que não roda por uma máquina permanentemente mais permissiva. O `Bypass` vale **só para o processo
+que invocamos**, e o script é gerado por nós, com integridade já verificada por
+`credential_guard_script_integrity`.
+
+### O que ainda NÃO foi medido
+- Se o Kiro e os demais **propagam** o exit code do hook até a decisão de bloquear a ferramenta.
+  Medimos que o exit code sobrevive à **cadeia de shell**; não que o CLI o **honra**.
+- O comportamento com caminho contendo **espaço** (`C:\Program Files\...`) e **acento**.

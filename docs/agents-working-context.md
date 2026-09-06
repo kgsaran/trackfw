@@ -4,6 +4,250 @@
 
 ---
 
+## Sessão 2026-09-06 — artemis-tf (QA) — ML-1E (falsificação dos 3 blocos do ML-1C, CONCLUÍDO)
+
+Branch `fix/fecha-o-fail-open-do-guard`, ML-1A a 1D já na árvore, não commitados. Nenhuma operação
+de git. Handoff: o ML-1C acrescentou 3 blocos a `scripts/check-validate-parity.sh` (script ilegível
+project-scope, script ilegível GLOBAL-scope, FIFO com timeout artesanal) sem NENHUM cenário em
+`scripts/check-gates-falsify.sh` provando que cada um reprovaria se a produção regredisse — achado
+do ML-1D ao investigar outra coisa (o FAIL isolado do Cenário 80, causado por uma const
+compartilhada por 3 consumidores, não uma prova intencional). Estudei o retarget do Cenário 80 e a
+nota do vault antes de escrever, conforme pedido.
+
+**Os 3 cenários (186, 187, 188), com a demonstração das duas direções:**
+
+| Cenário | Bloco alvo | Seam sabotado | Diagnóstico esperado (sabotado) |
+|---|---|---|---|
+| 186 | script ilegível, PROJETO | `internal/validator/validator_credential_guard_integrity.go`, `validateCredentialGuardScriptIntegrity`: `if os.IsNotExist(err) {` → `if true {` | `produced ZERO credential_guard_script_integrity warnings` |
+| 187 | script ilegível, GLOBAL | `internal/validator/validator_git_branch_guard.go`, `validateGuardGlobalScriptIntegrity` (função COMPARTILHADA pelos 2 wrappers global): `if os.IsNotExist(readErr) {` → `if true {` | `produced ZERO credential_guard_script_integrity warnings — fixture is vacuous, or this CLI regressed to silencing on an unreadable GLOBAL script` |
+| 188 | FIFO | `internal/validator/regularfile_unix.go`, `openRegularFileNonblock`: remove `syscall.O_NONBLOCK` do `syscall.Open` | `runtime HUNG on a FIFO in place of the guard config/script` |
+
+Para cada um: braço de detecção — árvore com o seam sabotado (cópia isolada `cmd/`+`internal/`,
+`go build`), `GO_BIN` apontando para o binário sabotado, `check-validate-parity.sh` reproduz o
+diagnóstico exato acima, `assert_fails_with`. Braço de árvore íntegra — UM baseline compartilhado
+pelos 3 (`GO_BIN=bin/trackfw`, binário real), `check-validate-parity.sh` roda de ponta a ponta,
+`exit 0`, antes de qualquer sabotagem — medido isoladamente para cada um dos 3 binários sabotados,
+confirmando que cada braço de detecção só desvia depois do baseline já ter passado com o binário
+real.
+
+**Guarda de padrão:** usei o helper `corrupt_literal` (já existente em `check-gates-falsify.sh`,
+usado pelos Cenários 183-185) em vez de reescrever o `cmp -s` do Cenário 80 à mão — ele já levanta
+`SystemExit` se o padrão não ocorrer exatamente 1 vez no arquivo-fonte, mesma garantia. Testado: os
+3 `corrupt_literal` confirmaram `count: 1` antes do build, nas execuções isoladas de prototipagem.
+
+**Prova de que cada sabotagem é cirúrgica (medido, não só argumentado):**
+- Cenário 186 (project scope, `credential_guard_script_integrity`): rodando `check-validate-
+  parity.sh` com o binário do 186, o bloco anterior (GVP, `git_branch_guard_script_integrity`
+  GLOBAL-scope) passa `OK` antes de reprovar no bloco-alvo — a sabotagem não toca
+  `validateGitBranchGuardScriptIntegrity` (função irmã, outro arquivo).
+- Cenário 187 (global scope, função compartilhada `validateGuardGlobalScriptIntegrity`): rodando
+  com o binário do 187, os blocos GVP e SIU-project (186) passam `OK` antes de reprovar no bloco
+  GLOBAL — GVP usa um script que EXISTE e é lido com sucesso (nunca entra no braço de erro
+  sabotado); SIU-project usa outra função. A sabotagem afeta AMBOS os wrappers globais
+  (`credential_guard_script_integrity` e `git_branch_guard_script_integrity`) porque a função é
+  genuinamente compartilhada — mesma classe de risco que quebrou o Cenário 80 — mas isso fica
+  CONTIDO dentro do bloco SIU-global (que já testa as duas regras juntas por desenho), sem vazar
+  para nenhum bloco fora dele.
+- Cenário 188 (FIFO): rodando com o binário do 188, os blocos GVP, SIU-project (186) e SIU-global
+  (187) passam `OK` antes do bloco FIFO travar — a ausência de `O_NONBLOCK` só importa para
+  `mkfifo`; os blocos "diretório no lugar do arquivo" nunca bloqueiam em `open()`, com ou sem a
+  flag, porque abrir um diretório retorna `EISDIR` na hora.
+
+**Mecanismo do limite de tempo do FIFO (cenário 188), com o porquê:** não adicionei timeout algum
+em `check-gates-falsify.sh` — o watchdog já existe DENTRO de `check-validate-parity.sh`
+(`run_with_hard_timeout`, 8s, background+`sleep`+`kill -9`, criado pelo próprio ML-1C porque este
+ambiente não tem `timeout`/`gtimeout`) especificamente para este bloco. Um `timeout` externo no
+gate teria sido redundante e — pior — teria testado o WATCHDOG DO GATE, não a detecção do produto.
+Medido ao vivo, isoladamente, antes de wire no gate: `GO_BIN=<binário-sem-O_NONBLOCK>
+bash check-validate-parity.sh` retornou em segundos (não pendurou minha sessão), `exit 1`, com a
+mensagem exata prevista — o watchdog interno matou o processo sabotado a tempo.
+
+**Enumeração dos blocos de `check-validate-parity.sh` (pergunta do handoff) — 9 blocos cross-CLI,
+não corrigido além do escopo dos 3 do ML-1C:**
+
+| # | Bloco | Linhas | Cenário de falsificação em `check-gates-falsify.sh`? |
+|---|---|---|---|
+| 1 | Contrato bare ADR/REQ (`adr_accepted_when_req_done`/`blocked_by_draft_adr` presentes + "differs between runtimes") | 42-217 | Cenário 4 (parcial — via `wip_has_req` removido do npm; não exercita diretamente a ausência das 2 regras citadas) |
+| 2 | GVP — `git_branch_guard_script_integrity` GLOBAL, mensagem byte-idêntica (ML-3A) | 219-303 | **NENHUM** — Cenário 68 testa a regra via `trackfw validate` direto, não via este bloco do parity gate |
+| 3 | SIU project — script ilegível projeto (ML-1C) | 305-391 | Cenário 186 (novo, este ML) |
+| 4 | SIU global — script ilegível global (ML-1C) | 393-463 | Cenário 187 (novo, este ML) |
+| 5 | FIFO (ML-1C) | 465-546 | Cenário 188 (novo, este ML) |
+| 6 | GVMT — `git_branch_guard_hook_resolvable` GLOBAL "missing type", mensagem byte-idêntica (ML-4B) | 548-640 | **NENHUM** |
+| 7 | `branch_has_wip_roadmap` aceita `done/` | 642-821 | Cenário 79 |
+| 8 | `credential_guard_hook_resolvable` cross-CLI (22 fixtures) | 823-1381 | Bem coberto — Cenários 80 (absent), 81 (noexec), 82 (notype), 89/159 (relativo), 90/160, 94/95/165 e outros; **claude-invalid-json/claude-unreadable/claude-utf16 (ML-1A/1B) sem cenário dedicado** — busquei os 3 nomes literalmente em `check-gates-falsify.sh`, zero ocorrências |
+| 9 | `git_branch_guard_hook_resolvable` cross-CLI (2 fixtures próprios + 3 compartilhados) | 1383-1514 | **NENHUM** para `gbg-claude-relativo`/`gbg-cursor-relativo-present` (busca literal, zero ocorrências); os 3 compartilhados (`claude-invalid-json`/`unreadable`/`utf16`) herdam a mesma ausência do bloco 8, já que reusam o mesmo JSON mas nenhum cenário sabota o caminho até ali |
+
+**Premissa do handoff que a medição não derrubou, mas ampliou:** a suspeita "os outros blocos podem
+ter a mesma lacuna" (ML-1D achou 1 caso, `gitBranchGuardScriptMarker`, sem sabotagem de const) se
+confirma numa escala maior — 4 dos 9 blocos (GVP, GVMT, os 2 fixtures próprios do bloco 9, e os 3
+fixtures JSON-inválido/ilegível/UTF-16 dos blocos 8 e 9) não têm NENHUM cenário provando que o
+próprio `check-validate-parity.sh` os pegaria se regredissem — não é o mesmo problema do Cenário 80
+(ordem/const compartilhada quebrando um cenário existente), é a AUSÊNCIA total de cenário. **Não
+corrigido** — decisão do `trackfw_architect` se vira ML nesta frente ou fica declarado, conforme
+pedido no handoff.
+
+**Evidência:**
+```
+bash -n scripts/check-gates-falsify.sh                    -> SYNTAX_OK
+go build ./... && go vet ./...                             -> limpos (nenhum código de produto tocado)
+bash scripts/check-validate-parity.sh (baseline, isolado)  -> exit 0, ~9s
+GO_BIN=<sabotado-186> bash check-validate-parity.sh         -> exit 1, diagnóstico exato do bloco 186
+GO_BIN=<sabotado-187> bash check-validate-parity.sh         -> exit 1, diagnóstico exato do bloco 187
+GO_BIN=<sabotado-188> bash check-validate-parity.sh         -> exit 1, diagnóstico exato do bloco 188 (watchdog interno, sem travar a sessão)
+GO_BIN=bin/trackfw bash scripts/check-gates-falsify.sh      -> exit 0, 365 linhas OK/PROOF, 0 FAIL,
+                                                                 inclui as 4 novas (baseline
+                                                                 compartilhado + 3 detecções)
+```
+`make quality` **não rodado** — instrução explícita do handoff, arquiteto roda ao fim.
+
+**Arquivos tocados:** `scripts/check-gates-falsify.sh` (3 cenários novos, 186-188, ~130 linhas),
+`docs/roadmaps/wip/ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-
+silencio.md` (seção ML-1E adicionada, marcada ✅). `scripts/check-validate-parity.sh` e todo código
+de produto (`internal/`, `npm/src/`, `pypi/trackfw/`) **não tocados** — só lidos, para achar os
+seams e confirmar as prototipagens fora do gate antes de escrever.
+
+**Fronteira respeitada:** nenhuma operação de git; nada commitado; roadmap não movido de estado;
+`make quality` não rodado — entrega para auditoria do `trackfw_architect`.
+
+---
+
+## Sessão 2026-09-06 — apolo-tf (ML-1C — FIFO + fail-open da família `*_script_integrity`, CONCLUÍDO)
+
+Branch `fix/fecha-o-fail-open-do-guard` (não criada por mim, ML-1A/ML-1B já na árvore, não
+commitados). Handoff: as 2 ressalvas do parecer `hades-tf` sobre o ML-1B
+(`~/.trackfw/rascunhos/2026-09-06-parecer-hades-ml1b-silencio-deslocado.md`) — FIFO trava a leitura
+indefinidamente, e a família `*_script_integrity` (não tocada pelo ML-1B) tem a mesma classe de
+defeito que esta REQ existe para fechar (Go project-scope abortava `trackfw validate` inteiro; Go
+global-scope e Python silenciavam qualquer erro não-ENOENT; só Node project-scope já estava certo).
+
+**Mecanismo do FIFO, com a razão:** abrir com `O_NONBLOCK` (evita bloqueio de `open()` num FIFO sem
+escritor) e então `fstat` no FILE DESCRIPTOR já aberto (não no caminho) para confirmar "é arquivo
+regular" antes de ler — `readRegularFile` (Go, `internal/validator/regularfile.go` +
+`regularfile_unix.go`/`regularfile_windows.go`, build-tag-separado porque Windows não tem
+`syscall.O_NONBLOCK` portátil), `readRegularFileSync` (Node), `_read_regular_file` (Python).
+**Veredito TOCTOU: imune em POSIX** — fstat opera sobre o fd, vinculado ao objeto que o kernel já
+resolveu no `open()`, não ao caminho; nada que aconteça com o CAMINHO depois muda o que o fd
+referencia. **Windows é redução, não eliminação** (stat-depois-open, janela residual) — e é
+**raciocinado a partir da API do Windows, não medido ao vivo**; toda medição desta sessão foi em
+darwin. A checagem é um **allowlist positivo** ("deve ser regular"), não um denylist por tipo —
+medido ao vivo (não só argumentado) que cobre FIFO, socket Unix e char device (symlink para
+`/dev/null`) sem hang e sem branch dedicado por tipo.
+
+**Tratamento de `*_script_integrity` por runtime/escopo:** Go project-scope parou de abortar
+(`fmt.Errorf` → violation "could not be read"); Go global-scope parou de silenciar qualquer erro
+(distingue `os.IsNotExist` de resto); Node project-scope só precisava do fix de FIFO (já emitia
+violation) — mas o TEXTO da mensagem foi unificado com Go/Python, porque antes desta ML não havia
+nada para divergir (Go abortava sem mensagem, Python silenciava sem mensagem) e a divergência de
+texto só se tornaria observável quando os 3 passassem a acusar no mesmo cenário — achado da minha
+própria autorevisão, corrigido antes de fechar; Node global-scope mesmo fix que Go; Python (3
+sítios) split `except FileNotFoundError` (silêncio) vs. `except OSError` (violation), e leitura em
+bytes elimina de brinde um `UnicodeDecodeError` não capturado que existia neste arquivo desde
+sempre (nunca tocado pelo ML-1B).
+
+**Prova de que `--json` sobrevive:** `scripts/check-validate-parity.sh` ganhou 3 blocos novos —
+script ilegível project-scope, script ilegível global-scope, e FIFO com timeout duro
+(background+sleep+kill, já que este ambiente não tem `timeout`/`gtimeout` — confirmado que o
+watchdog mata e retorna 137 num binário fake que dorme 30s). Cada bloco faz `json.load()` do stdout
+antes de qualquer outra asserção — um abort estilo Go antigo (stdout vazio) falha o parse na hora.
+Gate inteiro rodado ao vivo, `exit 0`, ~90s.
+
+**Resposta sobre convergência — NÃO converge fora da família guard.** Contado, não corrigido: Go 20
+sítios de `os.ReadFile(` fora da família (+ 55 pontos `return nil, nil, e` em `ValidateUnfiltered`
+que abortam o comando inteiro em qualquer erro de qualquer regra), Node 19 sítios de
+`fs.readFileSync(`, Python ~19 sítios de `open(` — todos em roadmaps/REQs/ADRs/`trackfw.yaml`/
+`.trackfw-baseline.json`/manifesto de terceiros/trace-ids/índice de notas. Um FIFO ou EACCES em
+qualquer um desses reproduz hoje o mesmo hang/abort/silêncio que esta REQ fecha só para os guards.
+Escala (~20/runtime, 3 categorias, dezenas de regras não relacionadas) é o sinal de que a resposta é
+**arquitetural** (leitor único de config com um contrato de erro), não mais patch sítio-a-sítio —
+decisão do `trackfw_architect`.
+
+**Achado de processo, não de produto:** as suítes de teste Go originais (com `syscall.Mkfifo` e
+`net.Listen("unix", ...)` direto nos arquivos `_test.go` sem build tag) quebravam a **compilação**
+windows mesmo com `t.Skip`/`runtime.GOOS` em runtime — `go vet`/`go build` processam todo `_test.go`
+independente de qual teste vai rodar. Corrigido movendo os testes dependentes de `syscall.Mkfifo`
+para arquivos irmãos `_unix_test.go` com `//go:build !windows`. Confirmado com
+`GOOS=windows go vet ./...` e `GOOS=windows go build ./...` — a produção (`regularfile_windows.go`)
+nunca tinha sido compilada até este check.
+
+**Reconciliação de testes novos (1 frase por teste):** ver a seção ML-1C do roadmap
+(`docs/roadmaps/wip/ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-
+silencio.md`) — 9 testes Go novos, 6 Node, 7 Python, cada um mapeado 1:1 para a conclusão que
+afirma.
+
+**Evidência:** `go build ./...` + `go vet ./...` limpos em darwin/linux/windows; Go 227 testes
+(`internal/validator`, +9) e `go test ./...` (repo inteiro) verdes; Node 881 testes (+6) verdes;
+Python 1651 + 66 subtests (+7) verdes; `scripts/check-validate-parity.sh` verde ao vivo (~90s,
+inclui os 3 blocos novos). `make quality` **não rodado** por este agente — arquiteto roda ao fim.
+
+**Pendente:** barreira `hades-tf` sobre este ML-1C antes de fechar a REQ. O achado de convergência
+acima (contagem de sítios fora da família guard) é uma decisão para o `trackfw_architect`, não algo
+que eu deveria ter corrigido sem autorização.
+
+---
+
+## Sessão 2026-09-06 — apolo-tf (ML-1D — FAIL isolado do Cenário 80 pós-ML-1C, CONCLUÍDO)
+
+Branch `fix/fecha-o-fail-open-do-guard`, mesma REQ/roadmap. Handoff: `make quality` sobre
+ML-1A/1B/1C dava 1 FAIL — `check-gates-falsify.sh` já reprovava (exit 1, correto) mas
+`check-validate-parity.sh` não emitia o diagnóstico que o Cenário 80 exige
+(`credential_guard_hook_resolvable parity (claude-absent/go): expected violation`).
+
+**Causa medida, não inferida.** `credentialGuardScriptMarker` (const em
+`validator_credential_guard.go:15`) alimenta **3 call sites**, não 1: hook_resolvable
+escopo PROJETO (`validator_credential_guard.go:554`), hook_resolvable escopo GLOBAL
+(`validator_git_branch_guard.go:353`) e `credential_guard_script_integrity` escopo GLOBAL
+(`validator_git_branch_guard.go:357`, `validateGuardGlobalScriptIntegrity`). O Cenário 80
+sabotava a **declaração da const** — correto quando só o 1º consumidor existia no
+`check-validate-parity.sh`. O bloco GLOBAL do `credential_guard_script_integrity`
+(acrescentado pelo ML-1C, POSICIONADO ANTES do bloco `credential_guard_hook_resolvable` no
+script) também depende dessa const: com ela sabotada,
+`validateGuardGlobalScriptIntegrity` procura
+`$HOME/.trackfw/scripts/trackfw-credential-guard-DISABLED.sh`, não encontra
+(`os.IsNotExist`), devolve `nil, nil` (sem violação) só para Go, e o bloco do ML-1C morre
+com `"produced ZERO credential_guard_script_integrity warnings"` sob `set -euo pipefail` —
+o script inteiro aborta ali, e o bloco do Cenário 80 (mais adiante) nunca roda. Reproduzido
+isoladamente (binário sabotado fora do gate completo) antes de tocar em qualquer arquivo —
+a mensagem de erro batia exatamente com a hipótese.
+
+**Decisão, com a razão (das 3 opções do handoff):** sabotagem cirúrgica do Cenário 80 —
+retargeted para corromper só o **call site 1** (`validateGuardHookResolvable("credential_guard_hook_resolvable",
+credentialGuardScriptMarker)` na linha 554), trocando o 2º argumento por um literal
+NAQUELE call site, sem tocar na const nem nos outros 2 consumidores. Rejeitado "gate reporta
+todos os blocos" (mudaria o comportamento de `check-validate-parity.sh` para todo mundo, não
+só este cenário — nenhum outro consumidor pede isso). Rejeitado "aceitar o diagnóstico de
+quem falhar primeiro" (esvaziaria o assert — passaria a aceitar qualquer mensagem, não mais
+a prova específica de que o escopo PROJETO do `credential_guard_hook_resolvable`
+regrediu). A opção escolhida preserva o assert original pinado E não depende de ordem entre
+blocos do script.
+
+**Duas direções demonstradas:** árvore sabotada (call site) → `check-validate-parity.sh`
+reproduz **exatamente** `credential_guard_hook_resolvable parity (claude-absent/go):
+expected violation from rule 'credential_guard_hook_resolvable', none reported (exit=0)`,
+com todos os blocos anteriores (incluindo os 3 do ML-1B/1C) passando limpos antes dele.
+Árvore íntegra (`bin/trackfw` real) → `check-validate-parity.sh` passa `exit 0` de ponta a
+ponta, inclusive o bloco `credential_guard_hook_resolvable cross-CLI` com as 22 fixtures.
+
+**Verificação de fragilidade equivalente:** `gitBranchGuardScriptMarker` tem o MESMO padrão
+de 3 consumidores (`validator_credential_guard.go:21` declaração, usada em
+`validator_git_branch_guard.go:361`/`:365` e `validator_credential_guard.go:560`) — buscado
+em `check-gates-falsify.sh` por sabotagem da declaração dessa const: nenhuma. Só o Cenário
+80 tinha esse padrão.
+
+**Premissa do handoff que se confirmou:** a hipótese de ordem/short-circuit estava certa —
+não foi preciso revisá-la. `check-validate-parity.sh` não foi tocado (a correção ficou
+inteira em `check-gates-falsify.sh`).
+
+**Evidência:** `go build ./...` e `go vet ./...` limpos. `bash
+scripts/check-gates-falsify.sh` isolado, `exit 0`, 181 cenários, 0 `FAIL` (inclui `OK
+[falsify/validate-parity/credential-guard-hook-resolvable-not-detected]`). `make quality`
+**não rodado** por este agente — arquiteto roda ao fim.
+
+**Arquivos tocados:** `scripts/check-gates-falsify.sh` (Cenário 80 retargeted, comentário +
+sed), `vault/notes/credential-guard-marker-const-compartilhada-entre-3-consumidores-quebra-
+cenario-80-2026-09-06.md` (nota nova), `vault/notes/index.md` (link).
+
+---
+
 ## Sessão 2026-09-02 — apolo-tf (INÍCIO: ML-3A — modalidade remota no `doctor`, com "não avaliado" próprio)
 
 Branch `fix/o-repositorio-do-trackfw-sob-os-cuidados-do-trackfw` (não criada por mim).
@@ -32426,3 +32670,729 @@ tocado (já corrigido no ML-5C).
 
 **Não rodei `make quality`** — instrução explícita do handoff; o arquiteto roda ao fim, cobrindo
 os quatro MLs da Wave 5.
+
+## 2026-09-06 — apolo-tf — ML-1A: fecha o fail-open do guard, config ilegível deixa de ser silêncio
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio.md`
+**REQ (reaberta):** `docs/req/REQ-2026-08-12-mitigacao-do-fail-open-do-credential-guard-...md` (AC5)
+**Branch:** `fix/fecha-o-fail-open-do-guard`
+
+### Enumeração completa das leituras de config de guard (3 runtimes)
+
+Busquei `json.Unmarshal`/`JSON.parse`/`json.loads` em todo `internal/`, `npm/src/`, `pypi/trackfw/`
+(incluindo `npm/src/validator/index.js`, que o `file` classifica como binário — confirmei via
+`grep -a` que **não é** binário desta vez; nada escapou por esse motivo). Resultado, por sítio:
+
+| # | Sítio (Go) | Escopo | `continue` mudo antes desta ML? |
+|---|---|---|---|
+| 1 | `validateGuardHookResolvable` (`validator_credential_guard.go`) — compartilhada por `credential_guard_hook_resolvable` **e** `git_branch_guard_hook_resolvable` | PROJETO (6 arquivos: `.claude/settings.json`, `.codex/hooks.json`, `.gemini/settings.json`, `.cursor/hooks.json`, `.github/hooks/trackfw-attention.json`, `.kiro/hooks/trackfw-attention.json`) | **Sim — CORRIGIDO** |
+| 2 | `validateGuardGlobalHookResolvable` (`validator_git_branch_guard.go`) — mesma dupla de regras | GLOBAL, `$HOME`-rooted (mesmos 6 CLIs, Kiro com arquivo dedicado por guard) | **Sim — CORRIGIDO** |
+| 3 | `validator.go:36`, `LoadBaseline` (`.trackfw-baseline.json`) | N/A — não é config de guard | Não; já falha alto (`return nil, fmt.Errorf(...)`) — fora de escopo, confirmado correto |
+| 4–10 | `internal/generators/agentfiles.go` (7 sítios) + `update.go` (10 sítios) | Caminho de **escrita** (`trackfw update`/`update harness`, dedup pré-merge) | Não é o mesmo defeito — já falha alto (`InjectClaudeHooks` etc. retornam `fmt.Errorf("parsing %s: %w", ...)` em vez de silenciar). Fora de escopo: a REQ/roadmap fala do controle que "reporta saúde" (`validate`, caminho de leitura); o gerador não reporta saúde, ele grava e já aborta com erro visível se o JSON estiver corrompido |
+
+Node e Python replicam exatamente os mesmos 2 sítios lógicos (`validateGuardHookResolvable` /
+`validateGuardGlobalHookResolvable` em `npm/src/validator/index.js`; `validate_guard_hook_resolvable`
+/ `validate_guard_global_hook_resolvable` em `pypi/trackfw/validator.py`) — **6 sítios de código
+(2 funções × 3 runtimes), todos corrigidos.** Nenhum sítio novo apareceu além dos 2 já apontados
+pelo handoff (achado do ML-6C) — a enumeração aqui foi um controle de não-regressão, não uma
+descoberta de sítios adicionais.
+
+### Decisão: acusar como violation (não diagnóstico à parte) — medição que sustenta
+
+**Medição:** as duas listas fechadas percorridas (`credentialGuardHookFiles`, 6 entradas de projeto;
+`globalGuardConfigFiles`, 6 entradas globais) somam **12 arquivos possíveis por projeto**, todos
+arquivos que o próprio trackfw escreve/faz merge, ou que são o arquivo de config nativo do CLI do
+agente (ex.: `.claude/settings.json` é o settings do Claude Code, não um arquivo inventado pelo
+trackfw). Não existe estado legítimo em que um desses 12 arquivos seja JSON sintaticamente inválido:
+o **próprio CLI consumidor** (`hf.cli`/`gf.cli`) exige JSON estrito para carregar SEUS PRÓPRIOS
+hooks daquele arquivo — se está corrompido, o problema não é só do trackfw, é de qualquer hook ali
+registrado. Confirmei que `internal/generators/agentfiles.go`'s `InjectClaudeHooks` já trata o mesmo
+`json.Unmarshal` inválido como erro rígido no caminho de escrita (`return fmt.Errorf("parsing %s: %w",
+...)`) — a inconsistência era só no caminho de leitura (`validate`), não uma ausência geral de
+tratamento no produto. Por isso: **acusar como violation na MESMA regra** (`credential_guard_hook_
+resolvable` / `git_branch_guard_hook_resolvable`, ambas com default `error` em `ruleSeverity`), sem
+inventar mecanismo de config novo (proibido pelo roadmap). Diagnóstico-à-parte foi rejeitado: deixaria
+o controle silencioso por padrão (`validate` sai 0), que é exatamente o defeito que este ML fecha.
+
+### Falsificação nas duas direções — evidência
+
+- **Config corrompido → sinaliza:** `TestGuardHookResolvable_ProjectMalformedJSON_DisparaAmbasAsRegras`
+  (Go), `'JSON inválido (projeto): dispara em credential_guard_hook_resolvable e
+  git_branch_guard_hook_resolvable'` (Node), `test_projeto_json_invalido_dispara_ambas_as_regras`
+  (Python) — e os equivalentes de escopo global (`_MalformedJSON_DisparaAmbasAsRegras` /
+  `test_global_json_invalido_...`). Fixture: `.claude/settings.json` com `{"hooks": {,}}`.
+- **Config válido → não sinaliza:** `TestGuardHookResolvable_ProjectValidJSON_NaoDisparaMensagemDeJSON`
+  (Go) e equivalentes Node/Python — JSON válido, mesmo sem entrada de guard, nunca produz "is not
+  valid JSON". Sem este par ao lado do anterior, um `continue` reintroduzido por engano em outro
+  ponto do laço não seria pego pelo teste positivo sozinho, nem um `if True: emitir sempre` seria
+  pego pelo negativo sozinho.
+- Também provado que **o mesmo arquivo corrompido cega as DUAS regras** (`credential_guard_hook_
+  resolvable` e `git_branch_guard_hook_resolvable`) simultaneamente — reproduzido no gate cross-CLI
+  reusando a MESMA saída de `validate` para as duas asserções (`gbg_cases["claude-invalid-json"]`
+  aponta para o arquivo `cg-claude-invalid-json-{}.json`, sem rodar `validate` de novo).
+
+### Controle de não-afrouxamento pelo lado do falso positivo
+
+O conjunto do que passou a ser sinalizado é **exatamente e só** os 12 arquivos das duas listas
+fechadas (`credentialGuardHookFiles`, `globalGuardConfigFiles`), no estado "existe no disco E não
+parseia como JSON". Nenhum arquivo fora dessas listas é sequer lido por estas duas regras — o laço
+nunca visita nada além do que já visitava. Dentro do conjunto, todo arquivo cujo `os.ReadFile`
+retorna com sucesso e cujo conteúdo é JSON sintaticamente inválido é, por definição, um arquivo que
+o próprio CLI dono (`hf.cli`) também falharia em carregar — não existe versão "legítima" desse
+estado (JSON sem sintaxe válida não é um formato alternativo, é um erro de sintaxe). Portanto: o
+conjunto de arquivos recém-sinalizados não pode conter um arquivo legítimo, porque a única condição
+de entrada nesse conjunto (parse falhar) já é, para os 12 arquivos possíveis, uma condição que quebra
+o próprio consumidor nativo do arquivo, não uma peculiaridade de formato que o trackfw estaria
+inventando. Testes `..._NaoDisparaMensagemDeJSON`/`_NaoDisparaSemEntrada` (pré-existentes, não
+tocados) continuam verdes — nenhum caso anteriormente silencioso (arquivo ausente; JSON válido sem
+`scriptMarker`; formato de prefixo desconhecido) passou a acusar.
+
+### Reconciliação — o que cada teste novo afirma
+
+- `..._ProjectMalformedJSON_DisparaAmbasAsRegras` (Go/Node/Python): um `.claude/settings.json`
+  sintaticamente inválido dispara AS DUAS regras de escopo de projeto — não mais um `continue` mudo
+  compartilhado.
+- `..._ProjectValidJSON_NaoDisparaMensagemDeJSON`: JSON válido sem entrada de guard nunca produz a
+  mensagem nova — falsificação na direção oposta, controle contra o `if True` degenerado.
+- `..._GuardGlobalHookResolvable_MalformedJSON_DisparaAmbasAsRegras`: mesma afirmação do primeiro,
+  em escopo GLOBAL (`~/.claude/settings.json`), com o remédio distinto (`trackfw update harness`).
+- `..._ValidJSONSemEntrada_NaoDisparaMensagemDeJSON`: mesma afirmação do segundo, em escopo global.
+- Fixture `cg-claude-invalid-json` no gate cross-CLI (`scripts/check-validate-parity.sh`): as 3
+  implementações concordam byte-a-byte na mensagem nova, para AMBAS as regras que a compartilham —
+  este gate pegou uma divergência real (ver abaixo) antes de eu declarar o ML pronto.
+
+### O gate cross-CLI pegou uma divergência real (não hipotética)
+
+Ao rodar `bash scripts/check-validate-parity.sh` pela primeira vez com a fixture nova, ele **reprovou**:
+a mensagem Python usava `--` (hífen duplo ASCII) onde Go e Node usam `—` (em-dash unicode) —
+`credential_guard_hook_resolvable parity (claude-invalid-json): mensagens divergem entre runtimes`.
+Corrigido nos dois sítios Python (`pypi/trackfw/validator.py`); reexecutado, exit 0. Registro
+explícito porque é exatamente o padrão que este roadmap pede provar: "as três suítes internas
+concordariam (cada CLI comparando só consigo mesmo) — só o gate cross-CLI pega".
+
+### Comandos executados (evidência)
+
+```
+go build ./...                          -> sem erro
+go vet ./...                            -> limpo
+go test ./internal/...                  -> ok, todos os pacotes, 0 falhas
+node --test npm/tests/*.test.js         -> 870 passed, 0 failed
+PYTHONPATH=pypi python3 -m pytest pypi/tests/ -q
+                                         -> 1639 passed, 66 subtests passed
+bash scripts/check-validate-parity.sh   -> exit 0 (após corrigir a divergência de traço acima)
+./bin/trackfw validate                  -> exit 0 (só warnings pré-existentes, sem relação com este ML)
+```
+
+**Não rodei `make quality`** — instrução explícita do handoff; o arquiteto roda ao fim.
+
+### Arquivos afetados
+
+`internal/validator/validator_credential_guard.go`, `internal/validator/validator_git_branch_guard.go`,
+`internal/validator/validator_git_branch_guard_test.go` (4 testes novos) — Go.
+`npm/src/validator/index.js`, `npm/tests/git_branch_guard_hook_integrity.test.js` (4 testes novos) — Node.
+`pypi/trackfw/validator.py`, `pypi/tests/test_git_branch_guard_validator.py` (4 testes novos) — Python.
+`scripts/check-validate-parity.sh` — fixture `cg-claude-invalid-json` cross-CLI (reusada para
+`credential_guard_hook_resolvable` E `git_branch_guard_hook_resolvable`).
+`docs/roadmaps/wip/ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio.md`
+(ML-1A marcado ✅, barreira `hades-tf` ainda pendente).
+
+### Premissas do handoff que a medição confirmou (nenhuma derrubada)
+
+- "O ML-6C achou dois sítios por acaso" — confirmado: são exatamente 2 funções lógicas (× 3
+  runtimes), nenhum sítio adicional apareceu na enumeração exaustiva.
+- "O comentário de desenho diz que o fail-open é intencional" — confirmado que o fail-open sobre
+  AUSÊNCIA de arquivo/entrada continua intencional e não foi tocado; só o fail-open sobre JSON
+  ILEGÍVEL (um sub-caso que o comentário original não distinguia do resto) foi fechado. Os dois não
+  eram inseparáveis — não houve necessidade de reportar bloqueio.
+- Aviso sobre `npm/src/validator/index.js` ser classificado binário pelo `file`: confirmei via
+  `grep -a` que desta vez **não é** — `file` reportou "Unicode text, UTF-8 text" nesta árvore.
+
+**Pendente:** barreira `hades-tf` (falsificação do risco inverso — acusar demais) antes de fechar o ML.
+
+---
+
+## 2026-09-06 — hades-tf (Security) — Barreira ML-1A, `fix/fecha-o-fail-open-do-guard`
+
+**Início.** Barreira obrigatória do ML-1A: falsificar o risco inverso (acusar demais → usuário
+desliga a regra). Sem operação de git; parecer escrito, não código.
+
+**Fim.** Veredito: **APROVA COM RESSALVAS**. Parecer completo em
+`~/.trackfw/rascunhos/2026-09-06-parecer-hades-fail-open-config-ilegivel.md`.
+
+Resumo do que foi testado ao vivo (não só lido):
+- Corpus sintético (BOM, JSONC, trailing comma, vazio, whitespace, UTF-16, aspas simples) rodado
+  com bytes idênticos contra `encoding/json`/`JSON.parse`/`json.loads` nos 3 runtimes: paridade
+  total, sem divergência.
+- `scripts/check-validate-parity.sh` executado (não só lido) — passou.
+- **Achado principal (não bloqueia, mas é ressalva séria)**: o `continue` mudo original cobria DOIS
+  motivos de falha no mesmo laço — JSON inválido (fechado por este ML) e falha de LEITURA por I/O
+  (permissão negada, diretório no lugar de arquivo — não fechado). Testado ao vivo com `chmod 000`
+  e com diretório-no-lugar-do-arquivo em `.claude/settings.json`: Go crasha o `validate` inteiro
+  (exit 1, stdout vazio — pré-existente a este ML); Node e Python **ainda reportam exit 0
+  silencioso** — o mesmo defeito que a REQ existe para fechar sobrevive, ao vivo, em 2 dos 3 CLIs,
+  para essa classe de erro. Pré-existente ao diff (linhas de leitura não foram tocadas), mas dentro
+  do escopo que o handoff pediu para verificar («o `continue` pode ter irmãos»).
+- Risco residual registrado, não bloqueante: Kiro (`.kiro/hooks/...`) é fork de VS Code/Code OSS,
+  sem doc pública sobre tolerância JSONC do loader de hooks; `InjectKiroHooks`/`InjectCopilotHooks`
+  sobrescrevem incondicionalmente (nunca fazem `json.Unmarshal` do conteúdo existente), então a
+  corroboração "nosso próprio write-path já trava nisso" que vale para os outros 5 CLIs não vale
+  para esses 2 — mitigado por remédio barato (`trackfw update` sempre resolve).
+- **Segundo achado, encontrado só na revisão via `advisor`**: minha primeira medição de paridade
+  para BOM/JSONC/UTF-16/etc. testou os bytes direto contra os 3 parsers isolados
+  (`encoding/json`/`JSON.parse`/`json.loads`), sem passar pelo código real de leitura+decodificação
+  do validador — o advisor apontou que isso ocultava uma divergência real na etapa de decode
+  (Python decodifica `utf-8` estrito e lança `UnicodeDecodeError`, não capturado por
+  `except OSError: continue`; Node decodifica lossy; Go opera sobre bytes). Refeito contra os 3
+  binários reais: um arquivo salvo como UTF-16 (ou com 1 byte UTF-8 inválido dentro de um JSON por
+  lo mais válido) faz Python **crashar com erro cru não estruturado**, enquanto Go/Node tratam o
+  caso de forma limpa e consistente entre si. Corrigido no parecer antes de entregar.
+
+Nota de vault ainda não escrita — achados são específicos deste ML/branch, não um padrão recorrente
+que outro agente reencontraria fora deste contexto; se o gap de leitura-por-I/O ou o de decodificação
+virar seu próprio ML/REQ, então sim vale nota permanente ligando os dois. Memórias de agente salvas em
+`.claude/agent-memory/hades-tf/` (`project_guard_hook_read_ioerror_fail_open_node_python.md`,
+`feedback_measure_the_real_code_path_not_an_isolated_proxy.md`).
+
+---
+
+## 2026-09-06 — apolo-tf (Backend) — ML-1B, `fix/fecha-o-fail-open-do-guard`
+
+**Início.** Handoff do arquiteto sobre o parecer `hades-tf` do ML-1A: dois achados a fechar — (1)
+falha de LEITURA (não só de parse) sobrevivia como `continue` mudo em Node/Python e como
+`fmt.Errorf` que abortava `trackfw validate` inteiro em Go; (2) `except OSError` estrito do Python
+não capturava `UnicodeDecodeError`, crashando com traceback cru em 2 fixtures que Go/Node tratavam
+sem crash. Nenhuma operação de git — frente única na árvore.
+
+**Fim.**
+
+**Contagem de caminhos de erro no laço (`validateGuardHookResolvable` / `...GlobalHookResolvable`,
+Go, e equivalentes Node/Python):** 3, não 2.
+1. `os.ReadFile`/`fs.readFileSync`/`open(...).read()` — leitura do arquivo (ENOENT legítimo vs.
+   qualquer outro erro — permissão, diretório, ELOOP).
+2. Decodificação implícita do conteúdo lido como texto (bytes → string) — divergia de comportamento
+   entre os 3 runtimes ANTES de qualquer chamada de parse (Go: opera sobre bytes, nunca lança; Node:
+   decodifica com perda, nunca lança; Python: decodificava estrito, lançava `UnicodeDecodeError`).
+3. `json.Unmarshal`/`JSON.parse`/`json.loads` — parse propriamente dito (já fechado pelo ML-1A).
+
+Um QUARTO caminho de erro existe no MESMO laço, mais adiante (`os.Stat`/`os.access` sobre o SCRIPT
+referenciado, não sobre o arquivo de config): um erro de permissão/ENOTDIR/ELOOP ali é classificado
+como "the script does not exist" (Go) ou silenciado dentro de `os.path.exists`/`os.access` (Python,
+que engolem QUALQUER OSError e retornam `False`). Isso já ACUSA hoje (não é um `continue` mudo),
+mas a classificação e o remédio (`trackfw update`) estão errados para essa causa — `trackfw update`
+não conserta um bit de permissão em `scripts/`. **Declarado, não corrigido** — é uma classe
+diferente ("silêncio" vs. "acusação com causa errada") e o artefato verificado é outro (o script
+gerado, não o config de hook que é o escopo desta REQ/ML). Recomendo ML/REQ de continuidade se o
+usuário quiser fechar também essa classe.
+
+**Tratamento por caso e por runtime (após esta ML):**
+| Caso | Go | Node | Python |
+|---|---|---|---|
+| JSON inválido | violation "is not valid JSON" (ML-1A) | idem | idem |
+| Permissão negada / diretório no lugar do arquivo | violation "could not be read" (antes: `fmt.Errorf`, abortava `validate` inteiro) | violation "could not be read" (antes: `continue` mudo) | violation "could not be read" (antes: `continue` mudo, `except OSError` colapsava com ausência) |
+| UTF-16 (arquivo inteiro mal codificado) | violation "is not valid UTF-8" (já não crashava; mensagem agora distinta de "invalid JSON") | idem | violation "is not valid UTF-8" (antes: crash cru, `UnicodeDecodeError` não capturada) |
+| 1 byte UTF-8 inválido dentro de JSON por lo mais válido | silêncio (coerção, já era assim) | silêncio (coerção lossy, já era assim) | silêncio (agora — antes: crash cru; decisão: paridade com a coerção de Go/Node, não "apertar") |
+
+**Falsificação com números:** Go — 218 testes no pacote `internal/validator` (`go test
+./internal/validator/... -v`, todos PASS), incluindo 5 testes novos de ML-1B (diretório-no-lugar,
+chmod 000 com skip-se-root/Windows, UTF-16, 1-byte-inválido, escopo global). Node — 875 testes no
+repo inteiro (`node --test`), 6 novos neste arquivo. Python — 1644 testes + 66 subtests no repo
+inteiro (`pytest -q`), 5 novos (2 classes: `TestGuardHookResolvableUnreadable`,
+`TestGuardHookResolvableUTF8Decoding`). Gate `scripts/check-validate-parity.sh` rodado ao vivo
+(binário Go real, `npm/bin/trackfw`, `python3 -m trackfw`) com 2 fixtures novas
+(`cg-claude-unreadable`, `cg-claude-utf16`, reusadas por `gbg_cases` para a regra irmã) — **exit 0,
+mensagens byte-idênticas nos 3 CLIs** para os 2 casos novos, sem regressão nos ~22 casos
+pré-existentes. `go build ./...` e `go vet ./...` limpos. `trackfw validate` (binário local)
+continua exit 0, 0 violations, mesmos 117 warnings pré-existentes (nenhum novo).
+
+**Veredito sobre a ressalva Kiro/Copilot do parecer:** não enfraquece esta ML. A violation de JSON
+inválido do ML-1A dependia de uma suposição sobre o parser do CLI dono (`hf.cli` exige JSON
+estrito) — suposição que não vale para Kiro/Copilot (sobrescrita incondicional, sem
+`json.Unmarshal` prévio). A violation nova de LEITURA não depende de nada sobre o parser do CLI
+dono: "trackfw não conseguiu LER este arquivo" é uma afirmação sobre a própria capacidade de
+inspeção do trackfw, não sobre o comportamento do CLI. Nenhuma diferenciação por CLI foi necessária
+para os 2 sítios corrigidos. O risco residual JSONC/BOM continua registrado contra o veredito do
+ML-1A, não deste ML-1B.
+
+**Frase de reconciliação por teste novo** (cada teste afirma exatamente uma conclusão do ML):
+- `TestGuardHookResolvable_Project{Unreadable,PermissionDenied}Directory_...` (Go) / equivalentes
+  Node/Python: "uma falha de leitura não-ENOENT vira violation, não silêncio nem crash."
+- `TestGuardHookResolvable_ProjectUTF16_DisparaViolationNaoValidoUTF8` (Go) / equivalentes: "um
+  arquivo mal codificado recebe uma mensagem DISTINTA de 'invalid JSON', e nenhum runtime crasha."
+- `TestGuardHookResolvable_ProjectSingleInvalidUTF8Byte_NaoDisparaNenhumaViolation` (Go) /
+  equivalentes: "1 byte inválido dentro de JSON por lo mais válido continua silencioso nos 3
+  runtimes — decisão de paridade, não de acusar mais."
+- Contrapartes `TestGuardGlobalHookResolvable_UnreadableDirectory_...`: "o mesmo tratamento de
+  leitura se aplica ao escopo GLOBAL, com o remédio `trackfw update harness`."
+
+**Premissas do handoff que a medição derrubou:** nenhuma. A hipótese de "eliminar a classe UTF-8
+inválido fazendo Python ler lossy" (considerada antes de consultar o `advisor`) foi descartada por
+apagar uma mensagem que o handoff pedia explicitamente para distinguir — implementado como
+classificação em 2 passos (decode estrito só para classificar a mensagem; decode com perda como
+entrada real do parse) em vez de colapsar as 2 classes.
+
+Arquivos modificados: `internal/validator/validator_credential_guard.go`,
+`internal/validator/validator_git_branch_guard.go`,
+`internal/validator/validator_git_branch_guard_test.go`, `npm/src/validator/index.js`,
+`npm/tests/git_branch_guard_hook_integrity.test.js`, `pypi/trackfw/validator.py`,
+`pypi/tests/test_git_branch_guard_validator.py`, `scripts/check-validate-parity.sh`,
+`docs/roadmaps/wip/ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio.md`
+(ML-1B marcado ✅, barreira `hades-tf` pendente).
+
+**Pendente:** barreira `hades-tf` sobre este ML-1B antes de fechar a wave.
+
+---
+
+## 2026-09-06 — hades-tf — Barreira ML-1B (config ilegível deixa de ser silêncio)
+
+**Veredito: APROVA COM RESSALVAS.** Parecer completo em
+`~/.trackfw/rascunhos/2026-09-06-parecer-hades-ml1b-silencio-deslocado.md`. Medição ao vivo contra
+os 3 binários reais (`bin/trackfw`, `node npm/bin/trackfw`, `python3 -m trackfw.cli`), nunca contra
+parser isolado — inclui `scripts/check-validate-parity.sh` rodado ao vivo (OK) e um corpus
+adversarial próprio (500 hooks, arquivo 5MB, symlink válido externo, symlink pendurado, symlink
+loop, `chmod 600` "caso normal", BOM UTF-8, JSONC com comentário/vírgula sobrando, byte inválido
+dentro vs. fora do valor do comando).
+
+**Confirmado, sem ressalva:** os 3 motivos declarados (leitura / decodificação / parse) estão
+fechados nos 2 sítios que o ML tocou (`validateGuardHookResolvable`/
+`validateGuardGlobalHookResolvable` e pares Node/Python), sem crash, paridade byte-idêntica.
+Symlink loop (ELOOP, não testado pelo ML) também cai corretamente no braço "could not be read" nos
+3 runtimes. A decisão de manter silêncio para 1 byte UTF-8 inválido se sustenta: só silencia quando
+o byte contamina um campo IRRELEVANTE ao comando — testei o byte inválido DENTRO do valor do
+comando e os 3 runtimes acusam (`resolveCredentialGuardHookPath` + `os.Stat` pegam downstream).
+Nenhum falso positivo genuíno encontrado — BOM e JSONC parecem candidatos, mas confirmei contra a
+realidade do Claude Code real (issues #9906 e comportamento documentado) que ele TAMBÉM rejeita os
+dois; a acusação de trackfw está correta quanto ao fato.
+
+**Vetor nomeado da minha própria barreira anterior (ML-1A), reexecutado explicitamente aqui:**
+`chmod 000` no ARQUIVO `.claude/settings.json` em si (EACCES real, não substituição por diretório)
+— o vetor que meu parecer de ML-1A registrou como "silent in Node+Python". Reexecutado ao vivo:
+os 3 runtimes acusam byte-identicamente ("could not be read", 2 violations, `exit_code: 1`).
+Fechado.
+
+**2 ressalvas acionáveis, achadas ao vivo, nenhuma delas uma regressão desta ML (ambas
+pré-existentes, confirmado por diff/git log) — não bloqueiam por isso:**
+
+1. **FIFO no lugar do config → hang indefinido**, medido em escopo de PROJETO nos 3 runtimes
+   (`mkfifo .claude/settings.json` + `trackfw validate --json` nunca retorna, timeout 5s
+   confirmado, dentro das MESMAS 2 funções que este ML tocou). Escopo GLOBAL não medido (exigiria
+   FIFO no `$HOME` real) — mesma primitiva de leitura, hang esperado por construção, não
+   confirmado. Pré-existente: Go inalterado; Node/Python trocaram de modo de leitura mas o ponto de
+   bloqueio (`open()`/primeira leitura) é o mesmo de antes desta ML. Mitigação sugerida: checar "é
+   arquivo regular" (Lstat/S_ISREG) antes de abrir, tratando o resto como mais um caso de "could
+   not be read".
+2. **Família `*_script_integrity` (credential_guard + git_branch_guard, escopo projeto e global,
+   arquivo `internal/validator/validator_credential_guard_integrity.go` +
+   `validator_git_branch_guard.go:319+`, NÃO tocado nesta branch) tem a MESMA classe de defeito que
+   esta REQ existe para fechar.** Reproduzido ao vivo (script dir com `chmod 000`, EACCES real): Go
+   aborta TODO `trackfw validate` no escopo de projeto (`fmt.Errorf` propagado via
+   `return nil, nil, e` em `validator.go:490-497`, saída não-JSON — quebra o contrato documentado
+   de `--json`, este é o ponto sério); Go silencia (fail-open) no escopo global; Python silencia
+   sempre (`except OSError: return []` em `validate_guard_script_integrity`,
+   `pypi/trackfw/validator.py:3324`), mas no cenário medido fica COMPENSADO pela regra irmã que
+   este ML corrigiu (`credential_guard_hook_resolvable` ainda acusa, mensagem errada mas
+   `exit_code: 1` real); só Node está correto nos 2 escopos. Recomendo ML nova dentro da MESMA REQ
+   reaberta (mesma causa raiz — regra do projeto "mesma causa, mesma REQ").
+
+**Escopo confirmado como fronteira legítima:** o 4º caminho já declarado pelo ML (`os.Stat` sobre o
+SCRIPT referenciado classificando EACCES como "does not exist") — testei ao vivo (script sob
+`chmod 000` no diretório pai), confirma que SEMPRE acusa, só com diagnóstico errado, nunca silencia
+— diferente em espécie do defeito real (que é sempre silêncio/crash total). Concordo com a decisão
+de declarar e não corrigir agora nesta ML.
+
+---
+
+## 2026-09-06 — artemis-tf (QA) — ML-1F: falsificação dos 6 blocos restantes de `check-validate-parity.sh`
+
+**Escopo:** `docs/roadmaps/wip/ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-
+de-ser-silencio.md`, branch `fix/fecha-o-fail-open-do-guard`. Só `scripts/check-gates-falsify.sh`
+editado — nenhum código de produto, nenhuma operação de git. O usuário pediu fechar os 6 nomes
+restantes que o ML-1E enumerou (não só os 3 do ML-1C), com a disciplina de guarda de padrão +
+cirurgia demonstrada + limite de tempo do gate.
+
+**3 cenários novos, as duas direções medidas com saída real (não presumida):**
+
+- **Cenário 189 (GVP — bloco 2):** seam em `internal/validator/validator_git_branch_guard.go`,
+  `validateGuardGlobalScriptIntegrity`, mensagem "content diverges from the template" (escopo
+  GLOBAL, `git_branch_guard_script_integrity`) — só o texto corrompido em Go, não o branch
+  condicional. Sabotado: `check-validate-parity.sh` reprova com
+  `git_branch_guard_script_integrity GLOBAL-scope warning message text differs between runtimes
+  (byte-for-byte comparison, not just rule+file)`. Íntegro: `exit 0`. Cirurgia: 1 linha
+  "... passed ..." antes da falha (só o bloco 1/ADR-REQ) — GVP é o SEGUNDO bloco do arquivo.
+
+- **Cenário 190 (GVMT — bloco 6):** mesmo arquivo, `validateGuardGlobalHookResolvable`, mensagem
+  "hook entry is missing \"type\":\"command\"" (escopo GLOBAL,
+  `git_branch_guard_hook_resolvable`) — texto corrompido. Sabotado: reprova com
+  `git_branch_guard_hook_resolvable GLOBAL-scope missing-"type" warning message text differs
+  between runtimes`. Cirurgia: 5 linhas "passed" antes da falha (bloco 1, GVP, 186, 187, 188 —
+  todos limpos).
+
+- **Cenário 191 (bloco 9 — `gbg-claude-relativo`):** `internal/validator/validator_credential_
+  guard.go`, `validateGitBranchGuardHookResolvable()` — troquei `gitBranchGuardScriptMarker` por
+  `credentialGuardScriptMarker` no `return`. `collectCommandsWithMarker` passa a procurar o
+  marcador ERRADO; nenhum comando de `gbg-claude-relativo` casa, a regra fica muda SÓ para este
+  wrapper. Sabotado: reprova com `git_branch_guard_hook_resolvable parity (claude-relativo/go):
+  expected violation from rule 'git_branch_guard_hook_resolvable', none reported... fixture vacua
+  ou regra regrediu`. Cirurgia: 10 linhas "passed" antes da falha (blocos 1 a 8 completos,
+  incluindo os 22 fixtures do bloco 8/`credential_guard_hook_resolvable` intactos).
+
+**Árvore íntegra, medida separadamente:** binário limpo (`go build` sem sabotagem) +
+`check-validate-parity.sh` real → `exit=0`, os 9 blocos imprimem "passed", incluindo a linha final
+do bloco 9 confirmando os 5 fixtures (`gbg-claude-relativo`/`gbg-cursor-relativo-present`/
+`claude-invalid-json`/`claude-unreadable`/`claude-utf16`) hoje passam limpos.
+
+**Os 3 fixtures reaproveitados (`cg-claude-invalid-json`/`unreadable`/`utf16`) fecham
+TRANSITIVAMENTE, sem cenário próprio necessário:** disparam em `validateGuardHookResolvable` ANTES
+da filtragem por marcador (erro de leitura/parse independe de qual regra chamou a função), então
+qualquer regressão realista nesses braços já é pega pelos Cenários 186-188 (que sabotam esses
+braços diretamente) e reprova AMBOS os wrappers (credential_guard e git_branch_guard) ao mesmo
+tempo — escrever um cenário "próprio" para o bloco 9 nesses 3 casos seria redundante por
+construção, não uma lacuna.
+
+**`gbg-cursor-relativo-present` — SEM cenário, reportado com medição, não corrigido.** A detecção
+do falso-positivo do Cursor depende de um booleano ÚNICO e compartilhado
+(`credentialGuardHookFile.requiresVarOrShellPrefix`, tabela `credentialGuardHookFiles`), usado
+IDENTICAMENTE pelos 2 wrappers — nenhum branch condicionado por `scriptMarker` os trata diferente.
+Medi ao vivo: sabotei `{".cursor/hooks.json", "Cursor", false, false}` → `..., true}` e rodei
+`check-validate-parity.sh` inteiro sob esse binário — reprova no **bloco 8**
+(`cg-cursor-absent`, "mensagem inesperada — esperava 'but the script does not exist'..."
+[bare relative path]), ANTES de alcançar o bloco 9; os 7 blocos anteriores passam limpos, bloco 9
+nunca é atingido. Não existe hoje, em produção, um lever que quebre SÓ o bloco 9 sem quebrar o 8
+primeiro — construir um exigiria alterar `check-validate-parity.sh` (proibido pelo handoff) ou
+inserir lógica condicionada por marcador que não existe (prova fabricada, não falsificação de
+regressão real). "O que este cenário detectaria que hoje passaria despercebido?" — resposta:
+nada que o Cenário do bloco 8 (sabotagem do mesmo booleano) já não detecte primeiro, só que
+atribuído ao diagnóstico errado (bloco 8, não bloco 9). Nota completa no vault.
+
+**Enumeração final dos 9 blocos de `check-validate-parity.sh`:**
+
+| # | Bloco | Cenário |
+|---|---|---|
+| 1 | Contrato bare ADR/REQ | Cenário 4 (parcial, pré-existente) |
+| 2 | GVP — `git_branch_guard_script_integrity` GLOBAL | **189 (novo)** |
+| 3 | SIU project (script ilegível) | 186 |
+| 4 | SIU global (script ilegível) | 187 |
+| 5 | FIFO | 188 |
+| 6 | GVMT — `git_branch_guard_hook_resolvable` GLOBAL "missing type" | **190 (novo)** |
+| 7 | `branch_has_wip_roadmap` done/ | Cenário 79 |
+| 8 | `credential_guard_hook_resolvable` (22 fixtures) | Coberto (inclui os 3 reaproveitados transitivamente) |
+| 9 | `git_branch_guard_hook_resolvable` (5 fixtures) | `gbg-claude-relativo`: **191 (novo)**; `gbg-cursor-relativo-present`: **sem cenário — não falsificável independentemente**; 3 reaproveitados: cobertos transitivamente |
+
+8 de 9 blocos com cenário próprio; o 9º com cobertura parcial + transitiva. Nenhuma premissa do
+handoff foi derrubada pela medição — o agrupamento "7 nomes para 6 blocos" se confirmou: GVP,
+GVMT, `gbg-claude-relativo`, `gbg-cursor-relativo-present` são 4 nomes de 1-fixture cada, e
+`cg-claude-invalid-json`/`cg-claude-unreadable`/`cg-claude-utf16` são 3 nomes que, juntos, formam
+o "sexto" item da lista original (fecham transitivamente, sem exigir 3 cenários próprios).
+
+**Validação (harness isolado, sem `make quality`):** extraí um script mínimo com só os helpers
+necessários (`assert_fails_with`, `build_go_or_fail`, `corrupt_literal`) + os 3 blocos novos —
+rodar o arquivo `check-gates-falsify.sh` inteiro (todos os ~191 cenários) está fora do orçamento
+deste ML. Saída real:
+```
+OK   [falsify/validate-parity/gvp-global-script-integrity-message-text-diverges]
+OK   [falsify/validate-parity/gvmt-global-missing-type-message-text-diverges]
+OK   [falsify/validate-parity/gbg-claude-relativo-bare-relative-path-not-detected]
+```
+`exit=0`, ~28s.
+
+**Arquivos:**
+- `scripts/check-gates-falsify.sh` — Cenários 189, 190, 191 (append, sem tocar nos existentes)
+- `vault/notes/check-validate-parity-6-blocos-fechados-5-com-cenario-1-sem-lever-independente-2026-09-06.md` (novo, linkado no index)
+- `docs/roadmaps/wip/ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio.md` — ML-1F marcado ✅ Concluído
+
+**Não alterados (conforme handoff):** `scripts/check-validate-parity.sh`, qualquer código de
+produto (`internal/`, `npm/`, `pypi/`). Nenhuma operação de git — entrega não-commitada para
+auditoria do `trackfw_architect`.
+
+## 2026-09-06 — apolo-tf (Backend) — ML-1G: fecha a classe inteira, ~20/19/19 sítios de leitura crua fora da família guard
+
+**Início.** Handoff: fechar a classe inteira nesta sessão (decisão do usuário: sem nova REQ). Mode
+lock Backend, sem operações de git. Árvore: ML-1A a 1F presentes (não commitados), frente única.
+
+**Medição prévia de Node/Python (pedida antes de qualquer mudança):** ambos JÁ TINHAM o helper
+fail-safe criado pelo ML-1C (`readRegularFileSync` em Node, `_read_regular_file` em Python) — 6
+sítios já roteados em cada, 19 (Node) e 16 (Python, não ~19 como o handoff estimava — divergência
+sem impacto) sítios crus restantes. Veredito: trabalho era ROTEAR, não criar arquitetura nova, nos
+3 runtimes.
+
+**Enumeração dos 20 sítios Go (`internal/validator/*.go`, não-teste):**
+- Roteados pelo helper (`readFileForRule`, agora usando `readRegularFile`), regra REAL com silêncio
+  antes: `req_has_adr`, `req_has_roadmap`, `frontmatter_presence` (ADR e REQ), `req_roadmap_lifecycle`,
+  `folder_status`, `note_orphan` (ausência do índice continua legítima; qualquer OUTRO erro agora
+  diagnostica em vez de tratar como índice vazio — evita flood de falsos "not referenced").
+- Roteados via novo parâmetro `msgs *[]string`: os 4 sítios de `validator_traceid.go`
+  (`collectTraceIdEntries`, `collectTraceIdEntriesByAgent`, `collectTraceIdEntriesFromFiles`),
+  despejados em `warnings` por `validateTraceId`.
+- Swap-only (helper aplicado, comportamento preservado): `readFileForRule` em si, `LoadBaseline`,
+  `parseSquadFromFrontmatter`, `inventoryBlock`, `blockedREQs`, `parseBlockedADRs`,
+  `resolveAdrStatusForRule`, `latestWIPTransitionTime`, leitura do artefato instalado em
+  `thirdparty_artifact_has_provenance`.
+
+**Achado por medição, fora da contagem por pacote do ML-1C (ver nota do vault, link abaixo):**
+1. `validateCredentialGuardModeDowngrade` (Go) — dentro de arquivo da família guard mas fora das
+   FUNÇÕES corrigidas por 1A-1C — abortava `trackfw validate` inteiro em erro não-ENOENT. Python
+   tinha variante pior: qualquer `OSError` virava downgrade CONFIRMADO (falso positivo). Node já
+   diagnosticava certo. Os 3 convergem: ENOENT = downgrade confirmado; outro erro = diagnóstico.
+2. `integrations.LoadManifest` (Go, `internal/integrations/manifest.go` — fora de
+   `internal/validator`, nunca contado pela varredura por pacote) — alcançado por
+   `thirdparty_artifact_has_provenance`, abortava nos 3 runtimes (`fmt.Errorf`/`throw`/`raise`).
+   Corrigido no call site de validate; `LoadManifest` em si continua fail-closed para
+   `trackfw thirdparty install` (consumidor de escrita), intocado.
+
+**Declarado, não corrigido:** `internal/integrations/manifest.go:51` continua com `os.ReadFile`
+cru — abort fechado, hang (FIFO) não; portar o primitivo exigiria extraí-lo para um pacote
+compartilhado (decisão arquitetural, fora do orçamento). Os "55 pontos de `return nil, nil, e`"
+em `ValidateUnfiltered` (propagação de erro genérica) são classe diferente, fora do escopo da REQ.
+
+**Gate de anti-reintrodução:** `scripts/check-raw-read-ban.sh` (novo) — bane leitura crua fora de
+allowlist inline (`raw-read-allowed: <razão>`) nos 3 arquivos-entrada dos validators. Guarda de
+vacuidade AGREGADA por runtime (200 linhas mínimas somadas, não por arquivo, para não falsear FAIL
+em utilitários pequenos tipo `regularfile_windows.go`). Pattern Python evita lookbehind PCRE —
+medido ao vivo que `grep -P` não existe no BSD grep do macOS e o erro era engolido por `|| true`
+(gate vácuo, "0 raw sites" mentiroso); trocado para `(^|[^A-Za-z0-9_.])open\(`, portátil.
+
+**Falsificação nas duas direções, nos 3 runtimes + guarda de vacuidade, medida ao vivo**
+(backup/sabotage/restore manual — `check-raw-read-ban.sh` é um gate de superfície de código-fonte,
+não de paridade de `trackfw validate`, então não foi integrado a `check-gates-falsify.sh`, escopo
+do ML-1E/1F):
+```
+clean tree                         → exit 0
+os.ReadFile cru sem marcador (Go)  → FAIL internal/validator/validator.go:28
+fs.readFileSync cru (Node)         → FAIL npm/src/validator/index.js:3391
+open( cru (Python)                 → FAIL pypi/trackfw/validator.py:1053
+index.js esvaziado                 → FAIL vacuidade (arquivo + total de linhas)
+árvore restaurada (diff limpo)     → exit 0
+```
+
+**Delta de `trackfw validate --json` neste repositório:** antes 0 violations / 117 warnings;
+depois 0 violations / 117 warnings — delta zero, esperado: todo artefato deste repo já era legível,
+rotear muda ALCANÇABILIDADE, não o resultado atual. Nenhum cenário de falsificação pré-existente
+quebrou (não rodei `check-gates-falsify.sh` inteiro nem `make quality`, conforme handoff — arquiteto
+roda ao fim).
+
+**Requisito de reconciliação:** nenhum teste automatizado novo foi adicionado — a mudança é
+roteamento por um helper já testado pelo ML-1C (FIFO/TOCTOU/decodificação cobertos lá) mais 3
+correções pontuais de abort/falso-positivo. A prova é o gate `check-raw-read-ban.sh` (falsificado
+ao vivo acima) e as 3 suítes completas permanecendo verdes com a MESMA contagem do ML-1C — a
+afirmação de cada suíte é "nenhuma regra de governança mudou de comportamento observável para
+arquivos que já eram legíveis", confirmada pelo delta zero acima.
+
+**Suítes:**
+- `go build ./...` / `go vet ./...` — limpos.
+- Go: 227 testes (`internal/validator`), `go test ./...` inteiro verde — mesma contagem do ML-1C.
+- Node: 881 testes — mesma contagem do ML-1C.
+- Python: 1651 testes + 66 subtests — mesma contagem do ML-1C.
+
+**Arquivos:**
+- `internal/validator/validator.go`, `validator_traceid.go`, `validator_thirdparty_provenance.go`,
+  `validator_credential_guard_integrity.go` — roteamento + 2 fixes de abort.
+- `npm/src/validator/index.js` — roteamento + fix de abort (manifest) + marcador inline.
+- `pypi/trackfw/validator.py` — roteamento + fix de abort (manifest) + fix de falso-positivo
+  (mode_downgrade) + reescrita de prosa em docstring/comentários (`open(` → `open (`) para não
+  colidir com o padrão do gate + marcador inline.
+- `scripts/check-raw-read-ban.sh` (novo).
+- `vault/notes/leitor-unico-fecha-a-classe-mas-2-abort-vivos-fora-da-familia-guard-2026-09-06.md`
+  (novo, linkado no index).
+- `docs/roadmaps/wip/ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio.md`
+  — ML-1G adicionado (a roadmap ia de 1A a 1F sem 1G) e marcado ✅ Concluído.
+
+**Não alterados:** `scripts/check-validate-parity.sh`. Nenhuma operação de git — entrega
+não-commitada para auditoria do `trackfw_architect`.
+
+**Correção pós-autorevisão (mesmo padrão que o ML-1C flagrou em si mesmo — uma ML depois):**
+as duas correções de abort (`credential_guard_mode_downgrade`, `thirdparty_artifact_has_provenance`)
+tornaram uma divergência de 3-CLI LATENTE em OBSERVÁVEL — antes só 1 runtime emitia mensagem em
+cada cenário, nada para divergir; a versão inicial usou `inspectionDiagnostic`/`_inspection_item`
+(interpola erro de SO cru) nos dois sítios. Medido ao vivo que a string diverge por runtime
+(`open trackfw.yaml: permission denied` / `EACCES: permission denied, open 'trackfw.yaml'` /
+`[Errno 13] Permission denied: 'trackfw.yaml'`). `credential_guard_mode_downgrade` está em
+`CREDENTIAL_GUARD_ANCHORED_RULES` e suas funções-irmãs usam texto FIXO desde ML-1B/1C —
+corrigido para `credentialGuardModeDowngradeReadFailureMessage()`/equivalente, texto idêntico nos
+3 runtimes, com teste dedicado nos 3 runtimes provando não-abort + texto fixo + não-reuso da
+mensagem de downgrade confirmado (`TestCredentialGuardModeDowngrade_LeituraFalhaNaoENOENT_
+ViolationSemAbortarEComTextoFixo` e espelhos). `thirdparty_artifact_has_provenance` manteve
+`inspectionDiagnostic` — seu branch PRÉ-EXISTENTE já interpolava erro cru para esta mesma classe
+de falha, convenção diferente já aceita para esta regra especificamente, não uma divergência nova.
+
+Suítes após a correção: Go 228 (+1), Node 882 (+1), Python 1652+66 (+1) — todas verdes, +1 exato
+em cada runtime.
+
+**Verificado (não corrigido, porque não havia nada a corrigir):** o fallback "join cego" de
+`ResolveREQFiles`/`walkADRFiles` nunca fabrica caminho de arquivo fantasma — só decide qual
+diretório descer; a lista final sempre vem de `ListMDFiles`/`filepath.WalkDir`, listagem real do
+disco. Um erro num sítio roteado só pode ser TOCTOU genuíno ou I/O real, nunca um artefato do
+resolvedor.
+
+**Gate corrigido:** o padrão Python de `check-raw-read-ban.sh` casava PROSA de comentário/docstring
+(qualquer `open(` isolado); a correção inicial reescreveu 7 comentários arqueológicos do ML-1B/1C
+para escapar do regex — backwards. Revertido; padrão trocado para posição de statement
+(`(with|=|return)[[:space:]]+open\(`), que não casa prosa por construção. Refalsificado.
+
+**`bash scripts/check-gates-falsify.sh` completo (não só grep pelo nome das regras alteradas):**
+rodado do início ao fim, em background. Resultado: 443 linhas, 366 `OK`, **0 `FAIL`**, fecha com
+`Falsification checks passed (all 181 scenarios, ...)` — a etiqueta "181" é STALE (não atualizada
+quando os Cenários 186-191 entraram pelo ML-1C/1E/1F), mas os cenários novos RODARAM: última linha
+é `OK   [falsify/validate-parity/gbg-claude-relativo-bare-relative-path-not-detected]` (Cenário
+191, ML-1F). Nenhum cenário pré-existente quebrou — confirmado por execução completa, não por grep.
+
+**Fim.**
+
+---
+
+## 2026-09-06 — Prometeu (Tooling) — Cursor e Kiro: fecha o último bloqueio de medição do contrato de shell no Windows
+
+**Tarefa:** investigação pura, sem operação de git, sem edição de código de produto. Fechar as duas
+linhas indeterminadas (Cursor, Kiro) de
+`docs/portabilidade/2026-09-05-contrato-de-execucao-de-hook-por-cli-de-agente-no-windows.md`, que
+bloqueava a REQ `REQ-2026-09-05-os-hooks-de-guard-nao-executam-no-windows-...` (AC6 proíbe emitir
+mecanismo Windows-nativo para CLIs não medidos).
+
+**Como:** VM Windows ARM64 (`10.0.26200`, acesso `ssh powershell-vm`, sem autenticar contas de
+terceiro). `winget install --silent` de `Anysphere.Cursor` (3.19.7 arm64) e `Amazon.Kiro` (1.0.437).
+Os dois são forks Electron/VS Code — a resposta veio de **leitura estática do bundle JS instalado**,
+sem rodar hook de verdade e sem Procmon (bundle não estava minificado a ponto de perder strings
+literais/nomes de função internos das classes-chave).
+
+**Achados (medidos, não inferidos — trechos de código completos no documento):**
+- **Cursor**: sempre PowerShell (`pwsh.exe` se no PATH, senão `powershell.exe`), nunca `cmd`/bash.
+  `resources\app\out\vs\workbench\workbench.desktop.main.js` (classe `CBo`, serviço de hooks) delega
+  a `resources\app\out\vs\workbench\api\node\extensionHostProcess.js`
+  (`$executeHookDirect`/`sL()`/`pbt`), que monta `pwsh -NoProfile -NonInteractive -ExecutionPolicy
+  Bypass` e injeta o `command` bruto depois do operador `&` de um mini-script PowerShell.
+- **Kiro**: `cmd.exe` via default do Node.js (`child_process.spawn(command,{shell:true})` sem
+  override de shell — `ComSpec` do Windows), não PowerShell. Único dos 6 CLIs medidos/documentados
+  que usa `cmd.exe` como caminho comum. `resources\app\extensions\kiro.kiro-agent\dist\extension.js`
+  (extensão `kiroAgent` v1.0.794), cadeia `$Io` (parse) → `CommandAction.execute` (classe `kor`) →
+  `NodeProcessRunner.spawn` (classe `Vor`).
+- Em ambos, o `.sh` do trackfw (`scripts/trackfw-credential-guard.sh`, caminho relativo bare, sem
+  prefixo `bash`) **não dispara** — mesma classe de falha final de Codex/Gemini (shell sem suporte a
+  shebang), por caminhos técnicos diferentes (PowerShell no Cursor, `cmd.exe` no Kiro).
+
+**Resultado agregado, os 6 CLIs:** nenhum permanece indeterminado nesta pergunta. `.ps1` (ou
+equivalente nativo) é necessário para Codex, Gemini e Cursor (todos PowerShell); um mecanismo
+Windows-nativo (`.bat`/`.cmd` ou o mesmo `.ps1`) é necessário para Kiro (`cmd.exe`); Claude Code é
+condicional a Git Bash; Copilot CLI tem um bug de campo de config (`bash` sem `command`/`powershell`)
+independente de shell. Único item remanescente na tabela de experimentos: confirmar em Windows real
+a interação `command_windows`+`trust_level` do Codex.
+
+**Arquivo atualizado:**
+`docs/portabilidade/2026-09-05-contrato-de-execucao-de-hook-por-cli-de-agente-no-windows.md`
+(seções 5/6 reescritas com evidência completa, tabela por CLI, "O que este handoff presumia" e
+"Fecho" atualizados). Nenhum outro arquivo do repositório foi tocado. **Nenhuma operação de git** —
+entrega para o `trackfw_architect` avaliar se este documento entra num commit próprio ou acompanha o
+próximo ML da REQ dos hooks nativos.
+
+**Fim.**
+
+**Correção pós-autorevisão (advisor):** a primeira versão desta entrega rotulava dois pontos como
+"medido" sem tê-los lido até o fim — mesmo padrão de erro que a seção do Codex já havia corrigido
+antes neste mesmo documento. (1) Cursor: a leitura de `sL()` tinha cortado no meio (trecho terminava
+em `&`), então a afirmação "nunca cai para cmd.exe" não estava lida, só suposta por analogia com
+Gemini/Cursor. Reli `sL()` até o `throw` final: confirmado, não há branch de `cmd.exe`/bash — só
+`pwsh` → `powershell` no PATH → caminho fixo `%SYSTEMROOT%\...\powershell.exe` → exceção. (2) Kiro:
+a frase "`spawn(t){` aparece uma única vez" tinha sido escrita a partir de um único `IndexOf` (que
+sempre acha só a primeira ocorrência), não de um loop completo; e a suposição de que
+`NodeProcessRunner` é o `processRunner` realmente injetado em produção nunca tinha sido verificada
+(havia `execute_pwsh` como tool distinta em outro subsistema, o que poderia ter indicado um executor
+alternativo). Reli com loop completo: `spawn(t){` = 1 ocorrência; `new Vor` = 1 ocorrência, ligada
+exatamente à inicialização do `HooksModuleCache` (`v2Hooks`) que resolve `PreToolUse`/`PostToolUse`.
+Doc corrigido nos dois pontos antes da entrega final; nenhuma conclusão do "Fecho" mudou (ambas as
+leituras completas confirmaram, não contradisseram, os resultados iniciais), mas o grau de certeza
+agora é rastreável linha a linha, não por inferência de analogia.
+
+**Fim.**
+
+## 2026-09-06 — apolo-tf (Backend) — ML-1H: CRLF no Windows, duas causas atrás das 6 falhas do ML-1G
+
+**Tarefa:** fechar 6 falhas novas em Windows (medidas pelo arquiteto na VM real) que o ML-1G
+introduziu ao rotear os sítios de leitura de `pypi/trackfw/validator.py` pelo leitor único
+(`_read_regular_file`), removendo a tradução universal-newlines implícita que só o Python tinha na
+leitura. Branch `fix/fecha-o-fail-open-do-guard`, roadmap
+`ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio.md`, ML-1H.
+
+**Achado central — a premissa do handoff era só metade do mecanismo.** As 6 falhas se dividem em
+duas causas independentes, cada uma exigindo o remédio oposto — tratá-las como uma causa única
+teria produzido o remédio errado para metade delas:
+
+- **Classe 1 (4 falhas, normalizar no leitor):** `_parse_blocked_adrs` compara
+  `line == "## Blocked by ADRs"` por igualdade exata, sem `.strip()` — uma REQ com CRLF real
+  (Windows, ou git checkout com `core.autocrlf=true`) deixa um `\r` residual que quebra o match em
+  silêncio. Cenário genuíno de ADR-2026-09-04 D1. Remédio: `_read_text_normalized(path)` nova
+  (`_normalize_crlf(_read_regular_file(path).decode(...))`, reaproveitando o `_normalize_crlf`
+  já existente — nenhum segundo normalizador), roteando `_read_file_for_rule`,
+  `_parse_blocked_adrs`, `_adr_draft_status_for_rule`, `_parse_squad_from_frontmatter`,
+  `_latest_wip_transition_time`, `validate_note_orphan`, `validate_credential_guard_mode_downgrade`.
+- **Classe 2 (2 falhas, NÃO normalizar — corrigir a fixture):** os helpers `_write()` de
+  `test_credential_guard_integrity.py`/`test_git_branch_guard_validator.py` escrevem sem
+  `newline="\n"` — no Windows, o modo texto padrão do Python TAMBÉM traduz na escrita, então a
+  fixture "idêntica ao template" na verdade gravava um script CRLF-corrompido. A regra
+  `*_script_integrity` compara byte-a-byte corretamente (CRLF num `.sh` gerado quebra o shebang em
+  POSIX — "bad interpreter", motivo já documentado em `check-python-writes-lf.sh`). Normalizar essa
+  comparação teria reaberto, dentro da própria REQ, a classe de fail-open que ela existe para
+  fechar. Remédio: `newline="\n"` nos 3 helpers de fixture, comparação do produto intocada. Guarda:
+  4 testes novos que escrevem CRLF via bytes crus e afirmam que a regra continua acusando.
+
+**`thirdparty_artifact_has_provenance` (linha ~3975) ficou raw, sem normalização** — critério
+principal do handoff: compara checksum de conteúdo de terceiro arbitrário contra
+`installed_sha256` gravado na aprovação; normalizar mascararia adulteração disfarçada de troca de
+EOL (falso negativo de segurança) e acusaria falsamente CRLF legítimo (falso positivo).
+
+**Go e Node: verificados por leitura de código, não assumidos.** Nenhum dos dois tinha tradução
+implícita a perder (Buffer.toString/leitura de bytes crus nunca fizeram universal-newlines, nem na
+leitura nem na escrita). `resolveAdrStatus`/`extractAdrHeaderStatus`/`parseSquadFromFrontmatter`/
+`extractCredentialGuardMode` já toleram CRLF via `TrimSpace`/`.trim()`. **Uma exceção real:**
+`parseBlockedADRs` em Go e Node tem o MESMO defeito de igualdade exata da Classe 1 — nunca
+exercitado porque nenhum `os.WriteFile`/`fs.writeFileSync` de teste introduz CRLF sozinho. Fechado
+nos 2 runtimes (reaproveitando `integrations.NormalizeCRLF` em Go — sem novo import cycle, já
+importado por `validator_thirdparty_provenance.go` — e `normalizeCRLF` em Node), para não deixar
+esta ML criar uma divergência de 3-CLI nova contra a Regra Dura de Paridade (Python passaria a
+detectar REQ com CRLF, Go/Node continuariam cegos ao mesmo cenário real).
+
+**Falsificação nas duas direções, na VM Windows ARM64 real (Python 3.12.10), não em macOS:**
+- 6 testes-alvo verdes na VM (`6 passed in 0.08s`).
+- Remover só a normalização do leitor → as 3 falhas de Classe 1 voltam; as 2 de Classe 2 continuam
+  passando.
+- Restaurar o leitor, reverter só `newline="\n"` das fixtures → as 3 falhas de Classe 2 voltam; as
+  3 de Classe 1 continuam passando. Dois remédios comprovadamente independentes.
+- Suíte completa antes/depois na VM: mesmas 29 falhas pré-existentes não relacionadas (barrier,
+  gitattributes, identity wizard tty, ship, thirdparty — gaps Windows já existentes, fora de
+  escopo), 1612 passed (+4 exato) na rodada final.
+
+**Gate quebrado por prosa, corrigido:** o docstring de `_read_text_normalized` continha
+`open(path, "w", encoding="utf-8")` literal explicando o bug da Classe 2 — `check-python-writes-lf.sh`
+faz scan textual (não AST), sem distinguir comentário/docstring de código real, e acusou a própria
+frase. Reescrito sem o padrão de chamada literal; mesma classe de falso-positivo que o ML-1G já
+tinha documentado para `check-raw-read-ban.sh`.
+
+**Suítes finais:** Go 230 testes (+2, `internal/validator`), `go build ./...`/`go vet ./...`
+limpos; Node 884 testes (+3, `npm test` completo); Python 1656 + 66 subtests (+4, `pytest tests/`
+completo). `check-raw-read-ban.sh` e `check-python-writes-lf.sh` verdes. `make quality` não rodado
+por este agente — arquiteto roda ao fim.
+
+**Arquivos alterados:**
+`pypi/trackfw/validator.py` (import + `_read_text_normalized` + 7 sítios roteados),
+`pypi/tests/test_validator.py` (+1 teste CRLF),
+`pypi/tests/test_credential_guard_integrity.py` (`newline="\n"` no helper + 1 teste CRLF),
+`pypi/tests/test_git_branch_guard_validator.py` (`newline="\n"` no helper + 2 testes CRLF),
+`internal/validator/validator.go` (import `internal/integrations` + `NormalizeCRLF` em
+`parseBlockedADRs`), `internal/validator/validator_test.go` (+1 teste CRLF),
+`internal/validator/validator_credential_guard_integrity_test.go` (+1 teste CRLF),
+`npm/src/validator/index.js` (import `normalizeCRLF` + aplicado em `parseBlockedADRs`),
+`npm/tests/validator.test.js`, `npm/tests/credential_guard_integrity.test.js`,
+`npm/tests/git_branch_guard_hook_integrity.test.js` (+1 teste CRLF cada),
+`docs/roadmaps/wip/ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio.md`
+(seção ML-1H). Nenhuma operação de git — entrega para `trackfw_architect` auditar e commitar.
+
+**Fim.**
+
+**Pós-checagem (advisor), 3 pontos adicionados ao ML-1H no roadmap:**
+1. Warning "no acceptance criteria block" do `trackfw validate` sobre este roadmap é
+   pré-existente (já valia antes desta ML), não introduzido por ela — geração do heading
+   consolidado (ADR-2026-07-31) é artefato do `trackfw_architect`.
+2. Contagem Node reconciliada: exatamente 3 `test(` novos neste diff (confirmado via
+   `git diff | grep "^+.*test("`, não contado de cabeça) — baseline imediatamente anterior era
+   881, não 882 (ML-1G); a diferença veio do merge `f5850b7` já presente na branch.
+3. `gofmt -l` acusa 2 arquivos (`validator_credential_guard.go`,
+   `validator_credential_guard_test.go`) por drift de alinhamento pré-existente — `git diff --stat`
+   confirma zero linhas tocadas por mim nesses 2 arquivos.
+
+**Fim.**

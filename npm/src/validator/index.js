@@ -10,6 +10,7 @@ const { checkTraceIds } = require('./traceid')
 const { loadProvenance } = require('../thirdparty/provenance')
 const { homedir } = require('../homedir')
 const { normalizeRefSeparator } = require('../lib/pathfmt')
+const { normalizeCRLF } = require('../integrations/render')
 
 // _platform is seeded from process.platform at module load time. Tests override
 // it via _setPlatformForTest to exercise the Windows guard on any host.
@@ -81,10 +82,59 @@ function listDirForRule(rule, dir, messages) {
 
 function readFileForRule(rule, filePath, messages) {
   try {
-    return fs.readFileSync(filePath, 'utf8')
+    return readRegularFileSync(filePath).toString('utf8')
   } catch (err) {
     messages.push(inspectionDiagnostic(rule, filePath, err))
     return null
+  }
+}
+
+// readRegularFileSync is the fail-safe replacement for fs.readFileSync used by every guard
+// config/script read in this file: validateGuardHookResolvable / validateGuardGlobalHookResolvable,
+// and the *_script_integrity family (validateCredentialGuardScriptIntegrity,
+// validateGitBranchGuardScriptIntegrity, validateGuardGlobalScriptIntegrity).
+// ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio, ML-1C. Port
+// of Go's readRegularFile (internal/validator/regularfile.go) -- see that file's doc comment for
+// the full design rationale.
+//
+// Why: hades-tf's ML-1B barrier found that a FIFO in place of any of these files makes
+// fs.readFileSync block INDEFINITELY (`mkfifo .claude/settings.json` -- `trackfw validate --json`
+// never returns), reproduced live in all 3 runtimes, pre-existing (not introduced by ML-1B).
+//
+// Opens with O_NONBLOCK (where the platform defines the flag -- POSIX only; fs.constants.O_NONBLOCK
+// is undefined on win32, where this degrades to a plain open, matching Go's windows fallback and
+// its documented "reduction, not elimination" caveat for that platform) so a FIFO with no writer on
+// the other end never blocks the open() call itself, then fstats the resulting FILE DESCRIPTOR --
+// not the path -- to confirm what was actually opened is a regular file.
+//
+// Fstat-on-fd is what makes the type check immune to TOCTOU on POSIX: a file descriptor is bound to
+// the inode (or pipe, or device) it was opened against, not to the path string -- whatever happens
+// to the PATH after fs.openSync returns cannot change what fd refers to.
+//
+// Checked via st.isFile(), a POSITIVE allowlist -- every special type (FIFO, socket, char/block
+// device) is excluded by construction, not enumerated one by one.
+//
+// Throws the raw error from fs.openSync unchanged for ordinary open failures (e.g. ENOENT, EACCES)
+// -- callers' existing `e.code === 'ENOENT'` branches keep working exactly as before. Throws a
+// synthetic Error with code 'ENOTFILE' (never 'ENOENT') when the opened fd is not a regular file --
+// this flows into the SAME "not ENOENT" accusing branch every caller already has, no new branch
+// needed anywhere.
+function readRegularFileSync(filePath) {
+  const nonblock = typeof fs.constants.O_NONBLOCK === 'number' ? fs.constants.O_NONBLOCK : 0
+  const fd = fs.openSync(filePath, fs.constants.O_RDONLY | nonblock)
+  try {
+    const st = fs.fstatSync(fd)
+    if (!st.isFile()) {
+      const err = new Error(`${filePath} is not a regular file`)
+      err.code = 'ENOTFILE'
+      throw err
+    }
+    // raw-read-allowed: this IS the fail-safe primitive (readRegularFileSync) — reads from the
+    // already-fstat-confirmed-regular file descriptor `fd`, not from a path.
+    // raw-read-allowed: fd-based, not path-based — the FIFO-hang/TOCTOU class this file exists to close does not apply here.
+    return fs.readFileSync(fd)
+  } finally {
+    fs.closeSync(fd)
   }
 }
 
@@ -475,10 +525,19 @@ function resolveDoneDirs(cfg) {
 }
 
 // parseBlockedADRs extrai basenames de ADRs da seção "## Blocked by ADRs" de um arquivo REQ.
+//
+// ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio, ML-1H:
+// content is folded through normalizeCRLF (npm/src/integrations/render.js) before the exact
+// `line === '## Blocked by ADRs'` comparison below -- same fix, same reason, as Go's
+// parseBlockedADRs (internal/validator/validator.go) and Python's _parse_blocked_adrs
+// (pypi/trackfw/validator.py): a REQ with CRLF (Windows author, or git checkout with
+// core.autocrlf=true -- ADR-2026-09-04 D1's exact scenario) leaves a trailing "\r" on this line
+// after content.split('\n'), and the exact-equality match silently never fires without this.
+// Measured first in the Python port on Windows ARM64; closed identically in all 3 runtimes here.
 function parseBlockedADRs(filePath) {
   let content
   try {
-    content = fs.readFileSync(filePath, 'utf8')
+    content = normalizeCRLF(readRegularFileSync(filePath).toString('utf8'))
   } catch (_) {
     return []
   }
@@ -614,7 +673,7 @@ function adrNotAcceptedStatusForRule(rule, basename, messages) {
   const p = findAdrFile(basename)
   if (!p) return { notAccepted: false, status: '', inspected: true }
   try {
-    const content = fs.readFileSync(p, 'utf8')
+    const content = readRegularFileSync(p).toString('utf8')
     const status = resolveAdrStatus(content)
     const notAccepted = status.toLowerCase() === 'draft' || status.toLowerCase() === 'proposed'
     return { notAccepted, status, inspected: true }
@@ -661,13 +720,10 @@ function validateREQsHaveADR() {
   const files = resolveReqFiles(cfg)
   const violations = []
   for (const filePath of files) {
-    try {
-      const content = fs.readFileSync(filePath, 'utf8')
-      if (!contentHasMarkerValue(content, cfg.linkFields.adr)) {
-        violations.push(`req "${path.basename(filePath)}" has no linked ADR`)
-      }
-    } catch (_) {
-      // ignorar
+    const content = readFileForRule('req_has_adr', filePath, violations)
+    if (content === null) continue
+    if (!contentHasMarkerValue(content, cfg.linkFields.adr)) {
+      violations.push(`req "${path.basename(filePath)}" has no linked ADR`)
     }
   }
   return violations
@@ -696,13 +752,10 @@ function validateREQsHaveRoadmap() {
   const files = resolveReqFiles(cfg)
   const violations = []
   for (const filePath of files) {
-    try {
-      const content = fs.readFileSync(filePath, 'utf8')
-      if (!contentHasMarkerValue(content, cfg.linkFields.roadmap)) {
-        violations.push(`req "${path.basename(filePath)}" has no linked Roadmap`)
-      }
-    } catch (_) {
-      // ignorar
+    const content = readFileForRule('req_has_roadmap', filePath, violations)
+    if (content === null) continue
+    if (!contentHasMarkerValue(content, cfg.linkFields.roadmap)) {
+      violations.push(`req "${path.basename(filePath)}" has no linked Roadmap`)
     }
   }
   return violations
@@ -796,7 +849,7 @@ function wipConfigFrom(cfg) {
 function parseSquadFromFrontmatter(filePath) {
   let content
   try {
-    content = fs.readFileSync(filePath, 'utf8')
+    content = readRegularFileSync(filePath).toString('utf8')
   } catch (_) {
     return ''
   }
@@ -890,7 +943,7 @@ function latestWipTransitionTime(cfg, filePath) {
   let content
   const logPath = path.join(cfg.roadmapDir, '.trackfw-log')
   try {
-    content = fs.readFileSync(logPath, 'utf8')
+    content = readRegularFileSync(logPath).toString('utf8')
   } catch (err) {
     return { time: null, diagnostics: err && err.code === 'ENOENT' ? [] : [inspectionDiagnostic('stale_wip', logPath, err)] }
   }
@@ -1027,7 +1080,7 @@ function blockedREQs() {
   for (const filePath of files) {
     let content
     try {
-      content = fs.readFileSync(filePath, 'utf8')
+      content = readRegularFileSync(filePath).toString('utf8')
     } catch (_) {
       continue
     }
@@ -1080,23 +1133,21 @@ function validateFrontmatterPresence() {
     for (const f of walkDirMd(adrDir)) {
       const fullPath = findAdrFile(f)
       if (!fullPath) continue
-      try {
-        const content = fs.readFileSync(fullPath, 'utf8')
-        if (!content.startsWith('---')) {
-          violations.push(`adr "${f}" has no frontmatter block`)
-        }
-      } catch (_) {}
+      const content = readFileForRule('frontmatter_presence', fullPath, violations)
+      if (content === null) continue
+      if (!content.startsWith('---')) {
+        violations.push(`adr "${f}" has no frontmatter block`)
+      }
     }
   }
 
   const reqFilePaths = resolveReqFiles(cfg)
   for (const filePath of reqFilePaths) {
-    try {
-      const content = fs.readFileSync(filePath, 'utf8')
-      if (!content.startsWith('---')) {
-        violations.push(`req "${path.basename(filePath)}" has no frontmatter block`)
-      }
-    } catch (_) {}
+    const content = readFileForRule('frontmatter_presence', filePath, violations)
+    if (content === null) continue
+    if (!content.startsWith('---')) {
+      violations.push(`req "${path.basename(filePath)}" has no frontmatter block`)
+    }
   }
 
   return violations
@@ -1164,17 +1215,16 @@ function validateREQRoadmapLifecycle() {
   const cfg = config.load()
   const warnings = []
   for (const filePath of resolveReqFiles(cfg)) {
-    try {
-      const content = fs.readFileSync(filePath, 'utf8')
-      if (!reqStatusIsOpen(content)) continue
-      const ref = extractRefPath(content, 'Roadmap')
-      if (!ref) continue
-      const expandedRef = config.expandPath ? config.expandPath(ref) : ref
-      if (!fs.existsSync(expandedRef)) continue
-      if (path.basename(path.dirname(expandedRef)) === 'done') {
-        warnings.push(`req "${path.basename(filePath)}" is Open but linked Roadmap "${ref}" is in done/`)
-      }
-    } catch (_) {}
+    const content = readFileForRule('req_roadmap_lifecycle', filePath, warnings)
+    if (content === null) continue
+    if (!reqStatusIsOpen(content)) continue
+    const ref = extractRefPath(content, 'Roadmap')
+    if (!ref) continue
+    const expandedRef = config.expandPath ? config.expandPath(ref) : ref
+    if (!fs.existsSync(expandedRef)) continue
+    if (path.basename(path.dirname(expandedRef)) === 'done') {
+      warnings.push(`req "${path.basename(filePath)}" is Open but linked Roadmap "${ref}" is in done/`)
+    }
   }
   return warnings
 }
@@ -1236,28 +1286,27 @@ function validateFolderStatusCoherence() {
       continue
     }
     for (const name of entries.filter(f => f.endsWith('.md'))) {
-      try {
-        const content = fs.readFileSync(path.join(dir, name), 'utf8')
-        // Extrair status do frontmatter
-        let declared = ''
-        if (content.startsWith('---')) {
-          const end = content.indexOf('\n---', 3)
-          if (end > 0) {
-            for (const line of content.slice(3, end).split('\n')) {
-              const t = line.trim()
-              if (t.startsWith('status:')) {
-                declared = t.slice('status:'.length).trim().replace(/['"]/g, '')
-                break
-              }
+      const content = readFileForRule('folder_status', path.join(dir, name), warnings)
+      if (content === null) continue
+      // Extrair status do frontmatter
+      let declared = ''
+      if (content.startsWith('---')) {
+        const end = content.indexOf('\n---', 3)
+        if (end > 0) {
+          for (const line of content.slice(3, end).split('\n')) {
+            const t = line.trim()
+            if (t.startsWith('status:')) {
+              declared = t.slice('status:'.length).trim().replace(/['"]/g, '')
+              break
             }
           }
         }
-        if (!declared) continue
-        const expected = FOLDER_TO_STATUS[state] || []
-        if (!expected.some(e => e.toLowerCase() === declared.toLowerCase())) {
-          warnings.push(`roadmap "${name}": folder is "${state}" but status declares "${declared}"`)
-        }
-      } catch (_) {}
+      }
+      if (!declared) continue
+      const expected = FOLDER_TO_STATUS[state] || []
+      if (!expected.some(e => e.toLowerCase() === declared.toLowerCase())) {
+        warnings.push(`roadmap "${name}": folder is "${state}" but status declares "${declared}"`)
+      }
     }
   }
   return warnings
@@ -1406,8 +1455,15 @@ function validateNoteOrphan(cwd) {
 
   const indexPath = path.join(vaultDir, 'index.md')
   let indexContent = ''
-  if (fs.existsSync(indexPath)) {
-    indexContent = fs.readFileSync(indexPath, 'utf8')
+  try {
+    indexContent = readRegularFileSync(indexPath).toString('utf8')
+  } catch (err) {
+    if (err.code !== 'ENOENT') {
+      // index.md existe mas nao pode ser lido (permissao, FIFO...) -- diagnostica em vez de
+      // tratar como indice vazio, que produziria um "not referenced" falso para toda nota
+      // (ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio, ML-1G).
+      return [inspectionDiagnostic('note_orphan', indexPath, err)]
+    }
   }
 
   const notes = fs.readdirSync(vaultDir).filter((f) => f.endsWith('.md') && f !== 'index.md')
@@ -1708,31 +1764,96 @@ function collectCredentialGuardCommands(value, out) {
 //   - A regra só avalia entradas que EXISTEM. Ausência de entrada de guard é estado legítimo
 //     (guard global instalado via `trackfw update harness`) — nunca é violação por si só.
 //   - Arquivo de hook ausente é pulado em silêncio.
-//   - Arquivo de hook presente mas com JSON inválido é pulado em silêncio — validar a forma do
-//     JSON não é escopo desta regra.
+//   - ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio, ML-1A:
+//     arquivo de hook presente mas com JSON inválido deixou de ser pulado em silêncio — ver o
+//     bloco catch do JSON.parse abaixo para a decisão e a medição que a sustentam.
 //
 // process.cwd() no Node já retorna o caminho FÍSICO (resolve symlinks via getcwd(3) diretamente),
 // diferente de os.Getwd() do Go — ver o comentário sobre EvalSymlinks em
 // internal/validator/validator_git_branch_guard.go's validateGuardHookResolvable equivalente
 // (validator_credential_guard.go). Nenhuma resolução extra de symlink é necessária aqui.
+// isValidUtf8Buffer reports whether buf decodes losslessly as UTF-8, using a fatal TextDecoder
+// (throws instead of substituting U+FFFD). Used purely to CLASSIFY which message to emit when
+// JSON.parse goes on to fail below — never to gate whether parsing is attempted. buf.toString(
+// 'utf8') (the actual parse input) stays lossy on purpose, mirroring the coercion Go's
+// json.Unmarshal already does on raw bytes — ROADMAP-2026-09-06-...-config-ilegivel-deixa-de-ser-
+// silencio, ML-1B; see validateGuardHookResolvable's JSON.parse catch block for why.
+function isValidUtf8Buffer(buf) {
+  try {
+    new TextDecoder('utf-8', { fatal: true }).decode(buf)
+    return true
+  } catch (_) {
+    return false
+  }
+}
+
 function validateGuardHookResolvable(scriptMarker, cwd) {
   const root = cwd || process.cwd()
   const msgs = []
 
   for (const hf of CREDENTIAL_GUARD_HOOK_FILES) {
     const fullPath = path.join(root, hf.relPath)
-    let content
+    let raw
     try {
-      content = fs.readFileSync(fullPath, 'utf8')
+      raw = readRegularFileSync(fullPath)
     } catch (e) {
       if (e.code === 'ENOENT') continue
+      // ROADMAP-2026-09-06-...-config-ilegivel-deixa-de-ser-silencio, ML-1C: readRegularFileSync
+      // replaces the bare fs.readFileSync — a FIFO at fullPath made fs.readFileSync block
+      // INDEFINITELY (hades-tf's ML-1B barrier, `mkfifo .claude/settings.json`), which this branch
+      // could never reach because the call never returned. readRegularFileSync's synthetic
+      // 'ENOTFILE' error (never 'ENOENT') falls into this SAME accusing branch below.
+      //
+      // ROADMAP-2026-09-06-...-config-ilegivel-deixa-de-ser-silencio, ML-1B: was an unconditional
+      // `continue` regardless of e.code — a dead `if (e.code === 'ENOENT') continue` above it,
+      // then `continue` again for EVERY other error (EACCES, EISDIR, ELOOP...). hades-tf's ML-1A
+      // barrier reproduced this live (chmod 000, and a directory in place of the file): `trackfw
+      // validate --json` exited 0, no violation, no mention of the file — success reported about
+      // wiring the rule never actually inspected, the exact defect this ML exists to close, for a
+      // different `continue` than the JSON-parse one ML-1A already fixed. Same remedy as the
+      // invalid-JSON branch below.
+      msgs.push(
+        `${hf.relPath} (${hf.cli}) could not be read — trackfw cannot tell whether ${scriptMarker} is ` +
+        `wired here, and ${hf.cli} cannot load any hook from a file it cannot read; fix the file, or run ` +
+        '`trackfw update` to regenerate it'
+      )
       continue
     }
+
+    // ML-1B: content is the SAME lossy decode this function has always used (invalid bytes become
+    // U+FFFD, never throws) — wasValidUtf8 only classifies which message to emit if JSON.parse
+    // fails below; it never changes whether parsing is attempted.
+    const wasValidUtf8 = isValidUtf8Buffer(raw)
+    const content = raw.toString('utf8')
 
     let parsed
     try {
       parsed = JSON.parse(content)
     } catch (_) {
+      // ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio,
+      // ML-1A: was a silent `continue` (fail-open) — port of Go's validateGuardHookResolvable
+      // (internal/validator/validator_credential_guard.go) — see that function's json.Unmarshal
+      // error branch for the full decision and measurement. CREDENTIAL_GUARD_HOOK_FILES is a
+      // closed, enumerable list (6 entries) trackfw itself owns/merges into; invalid JSON in any
+      // of them is never a legitimate state, since hf.cli itself requires strict JSON to load its
+      // own hooks from that file.
+      //
+      // ML-1B: not-valid-UTF-8 gets its own message (D4 of ADR-2026-09-04 — classify right,
+      // explain right, or the reader investigates the wrong thing; e.g. a file saved as UTF-16
+      // looks fine in the user's editor).
+      if (!wasValidUtf8) {
+        msgs.push(
+          `${hf.relPath} (${hf.cli}) is not valid UTF-8 — trackfw cannot tell whether ${scriptMarker} is ` +
+          `wired here, and ${hf.cli} cannot load any hook from a file it cannot decode; fix the file's ` +
+          'encoding, or run `trackfw update` to regenerate it'
+        )
+        continue
+      }
+      msgs.push(
+        `${hf.relPath} (${hf.cli}) is not valid JSON — trackfw cannot tell whether ${scriptMarker} is ` +
+        `wired here, and ${hf.cli} cannot load any hook from a file it cannot parse; fix the file, or run ` +
+        '`trackfw update` to regenerate it'
+      )
       continue
     }
 
@@ -1988,10 +2109,29 @@ function validateCredentialGuardScriptIntegrity(cwd) {
   const relPath = 'scripts/trackfw-credential-guard.sh'
   let content
   try {
-    content = fs.readFileSync(path.join(root, relPath), 'utf8')
+    // ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio, ML-1C:
+    // readRegularFileSync (defined above) replaces the bare fs.readFileSync — a FIFO at this path
+    // made fs.readFileSync block INDEFINITELY (hades-tf's ML-1B barrier), a hang this catch block
+    // could never reach because the read never returned. The non-ENOENT accusing branch below
+    // (already correct pre-ML-1C, unlike its Go/Python siblings) needed no change for this fix.
+    content = readRegularFileSync(path.join(root, relPath)).toString('utf8')
   } catch (e) {
     if (e.code === 'ENOENT') return []
-    return [inspectionDiagnostic('credential_guard_script_integrity', relPath, e)]
+    // ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio, ML-1C:
+    // was `[inspectionDiagnostic(...)]` — correct in SUBSTANCE before this ML (already a
+    // violation, not a silence, unlike Go which aborted and Python which silenced), but its
+    // 'rule: could not inspect "target": cause' shape put this runtime's message text out of
+    // parity with Go/Python's "could not be read" phrasing FOR THIS SPECIFIC RULE FAMILY once all
+    // 3 runtimes actually produce a message here — a divergence that had no observable effect
+    // before ML-1C (Go/Python never reached this branch at all), but would become a real 3-CLI
+    // text mismatch the moment all 3 runtimes accuse on the same fixture. Unified to the same
+    // fixed text validateGuardHookResolvable / validateGuardGlobalScriptIntegrity already use,
+    // matching Go's identical fix in validateCredentialGuardScriptIntegrity
+    // (validator_credential_guard_integrity.go).
+    return [
+      `${relPath} could not be read — trackfw cannot tell whether this script matches the ` +
+      'template it should; fix the file, or run `trackfw update` to regenerate it',
+    ]
   }
 
   if (content === CREDENTIAL_GUARD_SCRIPT_REFERENCE) return []
@@ -2609,10 +2749,19 @@ function validateGitBranchGuardScriptIntegrity(cwd) {
   const relPath = 'scripts/trackfw-git-branch-guard.sh'
   let content
   try {
-    content = fs.readFileSync(path.join(root, relPath), 'utf8')
+    // ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio, ML-1C:
+    // same readRegularFileSync substitution as validateCredentialGuardScriptIntegrity's identical
+    // comment above — closes the FIFO hang; the accusing branch below needed no change.
+    content = readRegularFileSync(path.join(root, relPath)).toString('utf8')
   } catch (e) {
     if (e.code === 'ENOENT') return []
-    return [inspectionDiagnostic('git_branch_guard_script_integrity', relPath, e)]
+    // ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio, ML-1C:
+    // same message unification as validateCredentialGuardScriptIntegrity's identical comment
+    // above — text parity with Go/Python for this rule family.
+    return [
+      `${relPath} could not be read — trackfw cannot tell whether this script matches the ` +
+      'template it should; fix the file, or run `trackfw update` to regenerate it',
+    ]
   }
 
   if (content === GIT_BRANCH_GUARD_SCRIPT_REFERENCE) return []
@@ -2830,8 +2979,9 @@ function globalGuardConfigPath(gf, scriptMarker) {
 // prefix-stripping is needed here: any matched command that is NOT already an absolute path is
 // skipped (never treated as a violation).
 //
-// Fail-open: unresolvable $HOME, unreadable file, or invalid JSON all skip that file in silence —
-// same contract validateGuardHookResolvable already has for project-scope files.
+// Fail-open: unresolvable $HOME and unreadable file skip that file in silence — legitimate states.
+// Invalid JSON no longer does — see ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-
+// deixa-de-ser-silencio, ML-1A, and the JSON.parse catch block below for the decision and measurement.
 function validateGuardGlobalHookResolvable(scriptMarker) {
   const home = homedir()
   if (!home) return []
@@ -2840,18 +2990,57 @@ function validateGuardGlobalHookResolvable(scriptMarker) {
   for (const gf of GLOBAL_GUARD_CONFIG_FILES) {
     const relPath = globalGuardConfigPath(gf, scriptMarker)
     const fullPath = path.join(home, relPath)
-    let content
+    let raw
     try {
-      content = fs.readFileSync(fullPath, 'utf8')
+      raw = readRegularFileSync(fullPath)
     } catch (e) {
       if (e.code === 'ENOENT') continue
+      // ROADMAP-2026-09-06-...-config-ilegivel-deixa-de-ser-silencio, ML-1C: same
+      // readRegularFileSync substitution as the project-scope sibling — see that function's
+      // identical comment for the FIFO hang this closes.
+      //
+      // ROADMAP-2026-09-06-...-config-ilegivel-deixa-de-ser-silencio, ML-1B: same decision as the
+      // project-scope sibling (validateGuardHookResolvable, above) — was an unconditional
+      // `continue` for every non-ENOENT read error. See that function's read-error catch branch
+      // for the full measurement (hades-tf ML-1A barrier, reproduced live).
+      msgs.push(
+        `~/${relPath} (${gf.cli}, global scope) could not be read — trackfw cannot tell whether ${scriptMarker} is ` +
+        `wired here, and ${gf.cli} cannot load any hook from a file it cannot read; fix the file, or run ` +
+        '`trackfw update harness` to regenerate it'
+      )
       continue
     }
+
+    // ML-1B: see validateGuardHookResolvable's identical comment above for why decoding, not just
+    // parsing, must be classified separately here.
+    const wasValidUtf8 = isValidUtf8Buffer(raw)
+    const content = raw.toString('utf8')
 
     let parsed
     try {
       parsed = JSON.parse(content)
     } catch (_) {
+      // ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio,
+      // ML-1A: same decision as the project-scope sibling (validateGuardHookResolvable, above) —
+      // see that function's json.parse error branch for the full measurement. Applies identically
+      // here: GLOBAL_GUARD_CONFIG_FILES is the same kind of closed, enumerable list (6 entries),
+      // each owned/consumed by gf.cli itself, so invalid JSON is never a legitimate state.
+      //
+      // ML-1B: not-valid-UTF-8 gets its own message — see validateGuardHookResolvable's identical
+      // branch above for the reasoning.
+      if (!wasValidUtf8) {
+        msgs.push(
+          `~/${relPath} (${gf.cli}, global scope) is not valid UTF-8 — trackfw cannot tell whether ${scriptMarker} is ` +
+          `wired here, and ${gf.cli} cannot load any hook from a file it cannot decode; fix the file's ` +
+          'encoding, or run `trackfw update harness` to regenerate it'
+        )
+        continue
+      }
+      msgs.push(
+        `~/${relPath} (${gf.cli}, global scope) is not valid JSON — trackfw cannot tell whether ${scriptMarker} is ` +
+        `wired here, and ${gf.cli} cannot load any hook from a file it cannot parse; fix the file, or run ` +
+        '`trackfw update harness` to regenerate it'
+      )
       continue
     }
 
@@ -2927,11 +3116,27 @@ function validateGuardGlobalScriptIntegrity(scriptFileName, referenceContent) {
   const scriptPath = path.join(home, '.trackfw', 'scripts', scriptFileName)
   let content
   try {
-    content = fs.readFileSync(scriptPath, 'utf8')
-  } catch (_) {
-    // Not installed is not a violation — same contract as every other *_script_integrity check
-    // (project-scope and global) in this file.
-    return []
+    // ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio, ML-1C:
+    // readRegularFileSync also closes the FIFO hang for this path (see its doc comment above).
+    content = readRegularFileSync(scriptPath).toString('utf8')
+  } catch (e) {
+    if (e.code === 'ENOENT') {
+      // Not installed is not a violation — same contract as every other *_script_integrity check
+      // (project-scope and global) in this file.
+      return []
+    }
+    // ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio, ML-1C:
+    // was an UNCONDITIONAL `return []` on ANY read error (bare `catch (_)`) — hades-tf's ML-1B
+    // barrier found this silenced EACCES/EISDIR/ELOOP exactly like the pre-ML-1B config-file
+    // `continue` did (fail-open: validate reports health about an artifact it never actually
+    // inspected). Distinguished from absence by e.code, mirroring every other read-error branch in
+    // this file. Message shape mirrors Go's validateGuardGlobalScriptIntegrity — not
+    // inspectionDiagnostic's shape, since this function serves both credential-guard and
+    // git-branch-guard callers and has no rule name of its own to embed.
+    return [
+      `${scriptPath} (global scope) could not be read — trackfw cannot tell whether this script ` +
+      'matches the template it should; fix the file, or run `trackfw update harness` to regenerate it',
+    ]
   }
 
   if (content === referenceContent) return []
@@ -3033,10 +3238,15 @@ function validateCredentialGuardModeDowngrade(cwd) {
 
   let diskContent
   try {
-    diskContent = fs.readFileSync(path.join(root, 'trackfw.yaml'), 'utf8')
+    diskContent = readRegularFileSync(path.join(root, 'trackfw.yaml')).toString('utf8')
   } catch (e) {
     if (e.code === 'ENOENT') return [credentialGuardModeDowngradeMessage()]
-    return [inspectionDiagnostic('credential_guard_mode_downgrade', 'trackfw.yaml', e)]
+    // Fixed-text message, NOT inspectionDiagnostic — e.message (e.g. "EACCES: permission denied,
+    // open 'trackfw.yaml'") diverges from Go's %v and Python's str(e) for the exact same failure;
+    // every sibling "could not be read" message in this guard family avoids raw OS error text for
+    // the same reason (ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-
+    // silencio, ML-1G).
+    return [credentialGuardModeDowngradeReadFailureMessage()]
   }
 
   const diskMode = extractCredentialGuardMode(diskContent)
@@ -3049,6 +3259,13 @@ function credentialGuardModeDowngradeMessage() {
   return 'trackfw.yaml sets credential_guard.mode: block at the git HEAD commit, but the ' +
     'current file does not resolve to block — if this was intentional, commit the change; ' +
     'otherwise investigate before treating the credential guard as active'
+}
+
+// Fixed-text remedy for a non-ENOENT read failure on trackfw.yaml when HEAD had mode: block — see
+// its call site for why this avoids inspectionDiagnostic's raw OS error text.
+function credentialGuardModeDowngradeReadFailureMessage() {
+  return 'trackfw.yaml could not be read — trackfw cannot tell whether credential_guard.mode ' +
+    'is still block; fix the file, or run `trackfw update` to regenerate it'
 }
 
 // _itemMeta: mapa de message → { rule, file } para enriquecer saída JSON.
@@ -3193,7 +3410,7 @@ const BASELINE_FILE = '.trackfw-baseline.json'
 // Retorna null se o arquivo não existir.
 function loadBaseline() {
   try {
-    const data = fs.readFileSync(BASELINE_FILE, 'utf8')
+    const data = readRegularFileSync(BASELINE_FILE).toString('utf8')
     return JSON.parse(data)
   } catch (e) {
     if (e.code === 'ENOENT') return null
@@ -3250,11 +3467,16 @@ function validateThirdPartyArtifactHasProvenance(cwd) {
   const manifestPath = path.join(root, '.trackfw', 'integrations-manifest.json')
   let manifest
   try {
-    const raw = fs.readFileSync(manifestPath, 'utf8')
+    const raw = readRegularFileSync(manifestPath).toString('utf8')
     manifest = JSON.parse(raw)
   } catch (err) {
     if (err.code === 'ENOENT') return []
-    throw new Error(`thirdparty_artifact_has_provenance: read ${manifestPath}: ${err.message}`)
+    // Used to `throw` here — an unreadable/corrupt manifest crashed the whole `trackfw validate`
+    // process instead of reporting a diagnostic for this one rule and letting every other rule
+    // still run. Same defect class ML-1C fixed for *_script_integrity, found here by measurement
+    // outside the guard family, in parity with the Go fix at the same call site (ROADMAP-2026-09-
+    // 06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio, ML-1G).
+    return [inspectionDiagnostic('thirdparty_artifact_has_provenance', manifestPath, err)]
   }
 
   const destinations = []
@@ -3309,7 +3531,7 @@ function validateThirdPartyArtifactHasProvenance(cwd) {
 
     let installed
     try {
-      installed = fs.readFileSync(destination)
+      installed = readRegularFileSync(destination)
     } catch (err) {
       msgs.push(
         `thirdparty_artifact_has_provenance: "${destination}" is claimed as a third-party artifact with an ` +
@@ -3466,7 +3688,7 @@ function buildInventorySection(cfg) {
   for (const filePath of reqFiles) {
     let content
     try {
-      content = fs.readFileSync(filePath, 'utf8')
+      content = readRegularFileSync(filePath).toString('utf8')
     } catch (_) {
       continue
     }

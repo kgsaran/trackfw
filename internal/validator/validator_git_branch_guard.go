@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"unicode/utf8"
 )
 
 // ROADMAP-2026-08-15-trackfw-validate-deve-detectar-scripts-de-hook-ausentes-ou-desatualizados,
@@ -27,12 +28,28 @@ import (
 func validateGitBranchGuardScriptIntegrity() ([]string, error) {
 	const relPath = "scripts/trackfw-git-branch-guard.sh"
 
-	content, err := os.ReadFile(relPath)
+	content, err := readRegularFile(relPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("git_branch_guard_script_integrity: reading %s: %w", relPath, err)
+		// ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio,
+		// ML-1C: was `return nil, fmt.Errorf(...)` — hades-tf's ML-1B barrier found this ABORTED
+		// the entire `trackfw validate` run (exit 1, non-JSON stdout, no other rule reported) on
+		// the first unreadable script, in Go project-scope only — the exact defect this whole REQ
+		// exists to close ("Go como fmt.Errorf que abortava trackfw validate inteiro"), alive in a
+		// sibling this ML's predecessor never touched. Reported as a violation of THIS rule
+		// instead, same remedy and message shape as the config-file read-error branches
+		// (validateGuardHookResolvable, validator_credential_guard.go) — `trackfw update`
+		// regenerates the file regardless of why it couldn't be read. readRegularFile
+		// (regularfile.go) also closes the FIFO hang hades-tf found in the sibling functions: a
+		// FIFO at relPath would otherwise block this read indefinitely too, since scripts are read
+		// the same way configs are.
+		return []string{fmt.Sprintf(
+			"%s could not be read — trackfw cannot tell whether this script matches the template "+
+				"it should; fix the file, or run `trackfw update` to regenerate it",
+			relPath,
+		)}, nil
 	}
 
 	if string(content) == gitBranchGuardScriptReference {
@@ -128,8 +145,10 @@ func globalGuardConfigPath(gf globalGuardConfigFile, scriptMarker string) string
 // skipped (never treated as a violation — same "not our wiring, not our job" contract
 // resolveCredentialGuardHookPath's ok=false branch already documents).
 //
-// Fail-open: unresolvable $HOME, unreadable file, or invalid JSON all skip that file in silence —
-// same contract validateGuardHookResolvable already has for project-scope files.
+// Fail-open: unresolvable $HOME and unreadable file skip that file in silence — legitimate states
+// (guard never installed for this CLI, or filesystem race). Invalid JSON no longer does — see
+// ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio, ML-1A, and
+// the json.Unmarshal error branch below for the decision and its measurement.
 func validateGuardGlobalHookResolvable(ruleName, scriptMarker string) ([]string, error) {
 	home, err := homedir.Dir()
 	if err != nil || home == "" {
@@ -140,16 +159,62 @@ func validateGuardGlobalHookResolvable(ruleName, scriptMarker string) ([]string,
 	for _, gf := range globalGuardConfigFiles {
 		relPath := globalGuardConfigPath(gf, scriptMarker)
 		fullPath := filepath.Join(home, relPath)
-		content, readErr := os.ReadFile(fullPath)
+		content, readErr := readRegularFile(fullPath)
 		if readErr != nil {
 			if os.IsNotExist(readErr) {
 				continue
 			}
-			return nil, fmt.Errorf("%s: lendo %s: %w", ruleName, filepath.Join("~", relPath), readErr)
+			// ROADMAP-2026-09-06-...-config-ilegivel-deixa-de-ser-silencio, ML-1C: same
+			// readRegularFile substitution (regularfile.go) as the project-scope sibling
+			// (validateGuardHookResolvable, validator_credential_guard.go) — see that function's
+			// identical comment for the FIFO hang this closes and why errNotRegularFile needs no
+			// new branch here.
+			//
+			// ROADMAP-2026-09-06-...-config-ilegivel-deixa-de-ser-silencio, ML-1B: same decision
+			// as the project-scope sibling (validateGuardHookResolvable, validator_credential_
+			// guard.go) — was `return nil, fmt.Errorf(...)`, which aborted the entire `trackfw
+			// validate` run on the first unreadable global config file. See that function's read-
+			// error branch for the full measurement (hades-tf ML-1A barrier, chmod 000 and a
+			// directory in place of the file, reproduced live).
+			msgs = append(msgs, fmt.Sprintf(
+				"~/%s (%s, global scope) could not be read — trackfw cannot tell whether %s is "+
+					"wired here, and %s cannot load any hook from a file it cannot read; fix the "+
+					"file, or run `trackfw update harness` to regenerate it",
+				relPath, gf.cli, scriptMarker, gf.cli,
+			))
+			continue
 		}
+
+		// ML-1B: see validateGuardHookResolvable's identical comment (validator_credential_
+		// guard.go) for why decoding, not just parsing, must be classified per-runtime here.
+		wasValidUTF8 := utf8.Valid(content)
 
 		var parsed interface{}
 		if jsonErr := json.Unmarshal(content, &parsed); jsonErr != nil {
+			// ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio,
+			// ML-1A: same decision as the project-scope sibling (validateGuardHookResolvable,
+			// validator_credential_guard.go) — see that function's json.Unmarshal error branch for
+			// the full measurement. Applies identically here: globalGuardConfigFiles is the same
+			// kind of closed, enumerable list (6 entries), each owned/consumed by gf.cli itself, so
+			// invalid JSON is never a legitimate state for any of them.
+			//
+			// ML-1B: not-valid-UTF-8 gets its own message — see the identical branch in
+			// validateGuardHookResolvable for the reasoning (D4 of ADR-2026-09-04).
+			if !wasValidUTF8 {
+				msgs = append(msgs, fmt.Sprintf(
+					"~/%s (%s, global scope) is not valid UTF-8 — trackfw cannot tell whether %s "+
+						"is wired here, and %s cannot load any hook from a file it cannot decode; "+
+						"fix the file's encoding, or run `trackfw update harness` to regenerate it",
+					relPath, gf.cli, scriptMarker, gf.cli,
+				))
+				continue
+			}
+			msgs = append(msgs, fmt.Sprintf(
+				"~/%s (%s, global scope) is not valid JSON — trackfw cannot tell whether %s is "+
+					"wired here, and %s cannot load any hook from a file it cannot parse; fix the "+
+					"file, or run `trackfw update harness` to regenerate it",
+				relPath, gf.cli, scriptMarker, gf.cli,
+			))
 			continue
 		}
 
@@ -241,13 +306,28 @@ func validateGuardGlobalScriptIntegrity(scriptFileName, referenceContent string)
 	}
 
 	path := filepath.Join(home, ".trackfw", "scripts", scriptFileName)
-	content, readErr := os.ReadFile(path)
+	content, readErr := readRegularFile(path)
 	if readErr != nil {
-		// Not installed is not a violation — same contract as every other *_script_integrity check
-		// (project-scope and global) in this package: existence is validateGuardGlobalHookResolvable's
-		// job when wiring exists at all, but here there may be no wiring, so absence is simply the
-		// legitimate "trackfw update harness was never run" state.
-		return nil, nil
+		if os.IsNotExist(readErr) {
+			// Not installed is not a violation — same contract as every other *_script_integrity
+			// check (project-scope and global) in this package: existence is
+			// validateGuardGlobalHookResolvable's job when wiring exists at all, but here there
+			// may be no wiring, so absence is simply the legitimate "trackfw update harness was
+			// never run" state.
+			return nil, nil
+		}
+		// ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio,
+		// ML-1C: was an UNCONDITIONAL `return nil, nil` on ANY readErr — hades-tf's ML-1B barrier
+		// found this silenced EACCES/EISDIR/ELOOP exactly like the pre-ML-1B config-file `continue`
+		// did (fail-open: validate reports health about an artifact it never actually inspected).
+		// Distinguished from absence by os.IsNotExist, mirroring every other read-error branch in
+		// this package. readRegularFile (regularfile.go) also closes the FIFO hang for this path.
+		return []string{fmt.Sprintf(
+			"%s (global scope) could not be read — trackfw cannot tell whether this script "+
+				"matches the template it should; fix the file, or run `trackfw update harness` to "+
+				"regenerate it",
+			path,
+		)}, nil
 	}
 
 	if string(content) == referenceContent {

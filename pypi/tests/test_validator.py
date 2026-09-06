@@ -2758,6 +2758,45 @@ class TestBlockedByDraftAdrDeixaDeSerCegaAProposed(unittest.TestCase):
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 
+    def test_req_open_bloqueada_por_adr_proposed_dispara_com_crlf(self):
+        """ML-1H (ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-
+        silencio): afirma que uma REQ com CRLF (produtor em outro SO, ADR-2026-09-04 D1) segue
+        detectando o bloqueio -- '## Blocked by ADRs' é comparado por igualdade exata de linha em
+        _parse_blocked_adrs, e sem a normalização na fronteira de _read_text_normalized o '\\r'
+        residual quebra esse match em silêncio (medido ao vivo em Windows ARM64 antes deste ML)."""
+        from trackfw.validator import validate_reqs_not_blocked_by_draft_adrs
+
+        tmp = tempfile.mkdtemp()
+        try:
+            req_dir = os.path.join(tmp, "docs", "req")
+            adr_dir = os.path.join(tmp, "docs", "adr")
+            os.makedirs(req_dir)
+            os.makedirs(adr_dir)
+
+            _write_adr(adr_dir, "ADR-proposed.md", "Proposed")
+            crlf_content = (
+                "# REQ: Fixture\r\n"
+                "\r\n"
+                "> Date: 2026-08-01 | Status: Open\r\n"
+                "\r\n"
+                "## Blocked by ADRs\r\n"
+                "- ADR-proposed.md (Proposed)\r\n"
+            )
+            with open(os.path.join(req_dir, "REQ-blocked.md"), "wb") as f:
+                f.write(crlf_content.encode("utf-8"))
+
+            cfg = {"req_dir": req_dir, "adr_dirs": [adr_dir]}
+            violations = validate_reqs_not_blocked_by_draft_adrs(cfg)
+
+            self.assertEqual(
+                len(violations), 1,
+                f"regressao: REQ com CRLF deixou de ser detectada como bloqueada; violations={violations}",
+            )
+            self.assertIn("REQ-blocked.md", violations[0]["message"])
+            self.assertIn("ADR-proposed.md", violations[0]["message"])
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
 
 if __name__ == "__main__":
     unittest.main()

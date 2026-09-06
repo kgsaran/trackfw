@@ -7765,13 +7765,30 @@ assert_fails_with "validate-parity/branch-has-wip-roadmap-done-acceptance-not-de
 # — ele poderia estar verde por acidente sem jamais provar que reprovaria se a
 # detecção do script ausente quebrasse.
 #
-# Seam: internal/validator/validator_credential_guard.go's
-# credentialGuardScriptMarker é o único parâmetro que distingue "estou
-# buscando uma entrada de credential-guard" de "não estou buscando nada". Delta
-# de literal único: o valor "trackfw-credential-guard.sh" vira
-# "trackfw-credential-guard-DISABLED.sh", fazendo collectCommandsWithMarker não
-# casar nenhum comando nos fixtures de hook — a regra fica muda para Go enquanto
-# Node.js/Python ainda a disparam, expondo a divergência no bloco do ML-3A.
+# Seam: internal/validator/validator_credential_guard.go, o CALL SITE de
+# validateCredentialGuardHookResolvable (linha ~554:
+# `validateGuardHookResolvable("credential_guard_hook_resolvable", credentialGuardScriptMarker)`)
+# — não mais a declaração da const `credentialGuardScriptMarker` em si. Delta
+# de literal único: o argumento do marker vira o literal
+# "trackfw-credential-guard-DISABLED.sh" NESTE call site, fazendo
+# collectCommandsWithMarker não casar nenhum comando nos fixtures de hook — a
+# regra credential_guard_hook_resolvable (escopo de PROJETO) fica muda para Go
+# enquanto Node.js/Python ainda a disparam, expondo a divergência no bloco do
+# ML-3A.
+#
+# RETARGETED 2026-09-06 (ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-
+# config-ilegivel-deixa-de-ser-silencio): sabotar a CONST compartilhada
+# quebrava também o consumidor de escopo GLOBAL de
+# `credential_guard_script_integrity` (validateGuardGlobalScriptIntegrity em
+# validator_git_branch_guard.go:357, mesma const) — bloco acrescentado por
+# ML-1C e posicionado ANTES deste no script, então o parity script morria
+# (`set -euo pipefail`) com "produced ZERO credential_guard_script_integrity
+# warnings" antes de alcançar o assert do ML-3A abaixo, e este nunca via a
+# mensagem que afirma provar. Medido ao vivo (reprodução isolada com GO_BIN
+# apontando pro binário sabotado, fora deste script). Mirar o call site (não a
+# const) preserva o poder de detecção deste cenário sem acoplar a outro
+# consumidor — ver vault/notes/credential-guard-marker-const-compartilhada-
+# entre-3-consumidores-quebra-cenario-80-2026-09-06.md.
 #
 # GO_BIN override aponta check-validate-parity.sh para o binário sabotado —
 # só Go é isolado; Node.js e Python seguem os reais do repositório, exatamente
@@ -7785,7 +7802,7 @@ cp -r "$ROOT_DIR/internal/." "$T80/internal/"
 cp "$ROOT_DIR/go.mod" "$T80/go.mod"
 cp "$ROOT_DIR/go.sum" "$T80/go.sum"
 
-sed 's/const credentialGuardScriptMarker = "trackfw-credential-guard.sh"/const credentialGuardScriptMarker = "trackfw-credential-guard-DISABLED.sh" \/\/ [falsified]/' \
+sed 's/return validateGuardHookResolvable("credential_guard_hook_resolvable", credentialGuardScriptMarker)/return validateGuardHookResolvable("credential_guard_hook_resolvable", "trackfw-credential-guard-DISABLED.sh") \/\/ [falsified]/' \
   "$ROOT_DIR/internal/validator/validator_credential_guard.go" > "$T80/internal/validator/validator_credential_guard.go"
 
 # Guarda de padrão: garantir que o sed encontrou e alterou o alvo.
@@ -9689,3 +9706,282 @@ corrupt_literal \
 assert_fails_with 'closed-cycle/vocabulario-de-status-do-adr-em-portugues-reprova' \
   'closed cycle broken: adr/python/flat/status-literal-read-back' \
   env GO_BIN="$ROOT_DIR/bin/trackfw" bash "$T185/scripts/check-artifact-closed-cycle.sh"
+
+# ---------------------------------------------------------------------------
+# Cenários 186–188 — check-validate-parity.sh: os 3 blocos que o ML-1C
+# (ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-
+# silencio) acrescentou (script ilegível project-scope, script ilegível
+# GLOBAL-scope, FIFO com timeout artesanal) não tinham NENHUM cenário de
+# falsificação provando que reprovariam se a produção regredisse — achado do
+# ML-1E desta mesma REQ, medido, não hipotético (os 3 blocos passavam mesmo
+# sem nenhum cenário aqui os exercitando).
+#
+# Baseline COMPARTILHADO pelos 3 (mesmo comando, binário real, mesma árvore
+# íntegra) — evita rodar check-validate-parity.sh 3 vezes só para provar a
+# mesma coisa 3 vezes; cada detecção abaixo ainda roda seu PRÓPRIO braço
+# sabotado.
+if ! GO_BIN="$ROOT_DIR/bin/trackfw" bash "$ROOT_DIR/scripts/check-validate-parity.sh" >/dev/null 2>&1; then
+  echo "FAIL [falsify/setup-s186-s188-baseline]: check-validate-parity.sh já reprova com o binário real — prova P4 inválida" >&2
+  exit 1
+fi
+echo "OK   [falsify/validate-parity/script-integrity-unreadable-and-fifo-baseline]"
+
+# ── Cenário 186 — script_integrity ilegível, escopo de PROJETO ─────────────
+# Seam: internal/validator/validator_credential_guard_integrity.go,
+# validateCredentialGuardScriptIntegrity — o braço `if os.IsNotExist(err) {
+# return nil, nil }` vira `if true { ... }`, restaurando exatamente o
+# fail-open que o ML-1C fechou: QUALQUER erro de leitura (não só ausência)
+# volta a ser silencioso para credential_guard_script_integrity em escopo de
+# PROJETO. validateGitBranchGuardScriptIntegrity (função irmã, outro
+# arquivo) e os dois consumidores de escopo GLOBAL (validateGuardGlobal-
+# ScriptIntegrity, outra função, outro arquivo) não são tocados — só este
+# call site.
+T186="$WORK/s186"
+mkdir -p "$T186/cmd" "$T186/internal"
+cp -r "$ROOT_DIR/cmd/." "$T186/cmd/"
+cp -r "$ROOT_DIR/internal/." "$T186/internal/"
+cp "$ROOT_DIR/go.mod" "$T186/go.mod"
+cp "$ROOT_DIR/go.sum" "$T186/go.sum"
+
+corrupt_literal \
+  "$ROOT_DIR/internal/validator/validator_credential_guard_integrity.go" \
+  "$T186/internal/validator/validator_credential_guard_integrity.go" \
+  'if os.IsNotExist(err) {' \
+  'if true { // [falsified] was: os.IsNotExist(err)' \
+  's186-project-script-integrity-unreadable'
+
+T186_BIN="$WORK/s186-bin/trackfw"
+mkdir -p "$(dirname "$T186_BIN")"
+build_go_or_fail "setup-s186-build" "$T186" "$T186_BIN"
+
+assert_fails_with 'validate-parity/script-integrity-unreadable-project-not-detected' \
+  'produced ZERO credential_guard_script_integrity warnings' \
+  env GO_BIN="$T186_BIN" bash "$ROOT_DIR/scripts/check-validate-parity.sh"
+
+# ── Cenário 187 — script_integrity ilegível, escopo GLOBAL ─────────────────
+# Seam: internal/validator/validator_git_branch_guard.go,
+# validateGuardGlobalScriptIntegrity (função COMPARTILHADA pelos 2 wrappers
+# credential_guard_script_integrity/git_branch_guard_script_integrity em
+# escopo global — mesma classe de const compartilhada que quebrou o Cenário
+# 80, mas aqui é a FUNÇÃO que é comum aos 2 consumidores, não uma const; ver
+# vault/notes/credential-guard-marker-const-compartilhada-entre-3-
+# consumidores-quebra-cenario-80-2026-09-06.md). O braço `if
+# os.IsNotExist(readErr) { // Not installed ... }` vira `if true { ... }`,
+# restaurando o fail-open que o ML-1C fechou nos 2 escopos GLOBAL ao mesmo
+# tempo — MAS ainda cirúrgico frente aos OUTROS blocos do parity script: o
+# bloco GVP (linha ~219) usa um script GLOBAL que EXISTE e é lido com
+# sucesso (só compara conteúdo, nunca entra no braço de erro sabotado), e o
+# bloco de projeto (Cenário 186, function diferente, arquivo diferente) e o
+# de FIFO (Cenário 188, seam diferente) não passam por esta função. Medido
+# ao vivo: com esta árvore, os blocos "project scope"/GVP passam limpos
+# ANTES do bloco GLOBAL falhar.
+T187="$WORK/s187"
+mkdir -p "$T187/cmd" "$T187/internal"
+cp -r "$ROOT_DIR/cmd/." "$T187/cmd/"
+cp -r "$ROOT_DIR/internal/." "$T187/internal/"
+cp "$ROOT_DIR/go.mod" "$T187/go.mod"
+cp "$ROOT_DIR/go.sum" "$T187/go.sum"
+
+corrupt_literal \
+  "$ROOT_DIR/internal/validator/validator_git_branch_guard.go" \
+  "$T187/internal/validator/validator_git_branch_guard.go" \
+  $'if os.IsNotExist(readErr) {\n\t\t\t// Not installed is not a violation' \
+  $'if true { // [falsified] was: os.IsNotExist(readErr)\n\t\t\t// Not installed is not a violation' \
+  's187-global-script-integrity-unreadable'
+
+T187_BIN="$WORK/s187-bin/trackfw"
+mkdir -p "$(dirname "$T187_BIN")"
+build_go_or_fail "setup-s187-build" "$T187" "$T187_BIN"
+
+assert_fails_with 'validate-parity/script-integrity-unreadable-global-not-detected' \
+  'produced ZERO credential_guard_script_integrity warnings — fixture is vacuous, or this CLI regressed to silencing on an unreadable GLOBAL script' \
+  env GO_BIN="$T187_BIN" bash "$ROOT_DIR/scripts/check-validate-parity.sh"
+
+# ── Cenário 188 — FIFO no lugar do config/script trava a leitura ───────────
+# Seam: internal/validator/regularfile_unix.go, openRegularFileNonblock — o
+# flag O_NONBLOCK é removido de `syscall.Open`, restaurando exatamente o
+# hang que a barreira hades-tf/ML-1B mediu ao vivo (mkfifo no lugar do
+# config/script trava `open()` indefinidamente porque não há escritor do
+# outro lado). Único seam desta família que sabota TODO leitor de guard
+# (readRegularFile é compartilhado), mas o único FIXTURE que usa `mkfifo` em
+# check-validate-parity.sh é o bloco FIFO (SIU_FIFO_PROJECT) — os blocos
+# "diretório no lugar do arquivo" (186/187/GVP) não travam nem com
+# O_NONBLOCK ausente, porque open() numa DIRECTORY nunca bloqueia,
+# independente da flag. Medido ao vivo: os blocos anteriores (project/global
+# unreadable) passam limpos antes deste travar.
+#
+# 🔴 Limite de tempo por FORA da sabotagem: check-validate-parity.sh já tem
+# seu PRÓPRIO watchdog duro (run_with_hard_timeout, 8s, background+kill —
+# necessário porque este ambiente não tem `timeout`/`gtimeout`) especificamente
+# para este bloco. A sabotagem não precisa (nem pode, sem tocar o gate) de um
+# timeout adicional aqui — o watchdog do PRÓPRIO gate é o que prova a
+# detecção: se ele não existisse, esta chamada penduraria a sessão inteira.
+# Medido: a chamada abaixo retorna em segundos, nunca pendura.
+T188="$WORK/s188"
+mkdir -p "$T188/cmd" "$T188/internal"
+cp -r "$ROOT_DIR/cmd/." "$T188/cmd/"
+cp -r "$ROOT_DIR/internal/." "$T188/internal/"
+cp "$ROOT_DIR/go.mod" "$T188/go.mod"
+cp "$ROOT_DIR/go.sum" "$T188/go.sum"
+
+corrupt_literal \
+  "$ROOT_DIR/internal/validator/regularfile_unix.go" \
+  "$T188/internal/validator/regularfile_unix.go" \
+  'syscall.O_RDONLY|syscall.O_NONBLOCK|syscall.O_NOCTTY' \
+  'syscall.O_RDONLY|syscall.O_NOCTTY /* [falsified] O_NONBLOCK removed */' \
+  's188-fifo-o-nonblock-removed'
+
+T188_BIN="$WORK/s188-bin/trackfw"
+mkdir -p "$(dirname "$T188_BIN")"
+build_go_or_fail "setup-s188-build" "$T188" "$T188_BIN"
+
+assert_fails_with 'validate-parity/script-integrity-fifo-hang-not-detected' \
+  'runtime HUNG on a FIFO in place of the guard config/script' \
+  env GO_BIN="$T188_BIN" bash "$ROOT_DIR/scripts/check-validate-parity.sh"
+
+# ── Cenário 189 — GVP: git_branch_guard_script_integrity GLOBAL, texto de
+#    mensagem "content diverges from the template" corrompido só em Go ─────
+# ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-
+# silencio, ML-1F: check-validate-parity.sh's GVP block (linha ~219) compara
+# a mensagem de git_branch_guard_script_integrity GLOBAL byte-a-byte entre
+# Go/Node/Python — mas nenhum cenário provava que uma divergência de texto
+# NESSA mensagem específica reprovaria. Antes desta REQ, o (rule, file) tuple
+# check do bloco 1 teria passado verde mesmo com o texto divergindo (mesmo
+# achado do Cenário 4/wip_has_req, generalizado por ML-3A).
+#
+# Seam: internal/validator/validator_git_branch_guard.go,
+# validateGuardGlobalScriptIntegrity — só a mensagem do braço "content
+# diverges from the template" (linha ~338, escopo GLOBAL) é reescrita; o
+# branch condicional (string(content) == referenceContent) não é tocado, só
+# o texto emitido quando ele diverge. A função é compartilhada pelos 2
+# wrappers (credential_guard_script_integrity/git_branch_guard_script_
+# integrity GLOBAL), mas nenhum OUTRO bloco de check-validate-parity.sh
+# compara a mensagem de credential_guard_script_integrity GLOBAL — só a GVP
+# (git-branch) o faz — então esta sabotagem não tem onde mais dar falso
+# positivo/negativo dentro do gate. Cirurgia frente aos vizinhos: 186/187/188
+# tocam o BRAÇO de erro de leitura (os.IsNotExist), não esta mensagem; a
+# fixture GVP instala um script que EXISTE e é lido com sucesso (só o
+# conteúdo "exit 0" diverge do template real), então 186/187/188 nunca
+# entram nesta linha. Medido ao vivo: o bloco 1 (ADR/REQ) passa limpo antes
+# da GVP falhar; nenhum bloco posterior (186→191) é alcançado.
+T189="$WORK/s189"
+mkdir -p "$T189/cmd" "$T189/internal"
+cp -r "$ROOT_DIR/cmd/." "$T189/cmd/"
+cp -r "$ROOT_DIR/internal/." "$T189/internal/"
+cp "$ROOT_DIR/go.mod" "$T189/go.mod"
+cp "$ROOT_DIR/go.sum" "$T189/go.sum"
+
+corrupt_literal \
+  "$ROOT_DIR/internal/validator/validator_git_branch_guard.go" \
+  "$T189/internal/validator/validator_git_branch_guard.go" \
+  '"%s (global scope) content diverges from the template this version of trackfw generates — "' \
+  '"%s (global scope) content diverges from the template this version of trackfw generates [falsified-go-only] — "' \
+  's189-gvp-message-text-diverges-go-only'
+
+T189_BIN="$WORK/s189-bin/trackfw"
+mkdir -p "$(dirname "$T189_BIN")"
+build_go_or_fail "setup-s189-build" "$T189" "$T189_BIN"
+
+assert_fails_with 'validate-parity/gvp-global-script-integrity-message-text-diverges' \
+  'git_branch_guard_script_integrity GLOBAL-scope warning message text differs between runtimes' \
+  env GO_BIN="$T189_BIN" bash "$ROOT_DIR/scripts/check-validate-parity.sh"
+
+# ── Cenário 190 — GVMT: git_branch_guard_hook_resolvable GLOBAL "missing
+#    type", texto de mensagem corrompido só em Go ──────────────────────────
+# Mesma classe do Cenário 189, para o bloco GVMT (linha ~548): mensagem
+# "hook entry is missing \"type\":\"command\"" (escopo GLOBAL) escrita à mão
+# em Go/Node/Python (ML-4B) — nenhum cenário provava que uma divergência de
+# texto AQUI (distinto da existência do braço, que os testes unitários já
+# cobrem) reprovaria o gate de paridade.
+#
+# Seam: internal/validator/validator_git_branch_guard.go,
+# validateGuardGlobalHookResolvable — só a mensagem do braço "missing type"
+# (linha ~252, escopo GLOBAL, prefixo "~/%s (%s, global scope)") é
+# reescrita; a condição `gf.requiresCommandType && !m.typeIsCommand` que
+# decide SE a regra dispara não é tocada. Mesma função é compartilhada com
+# credential_guard_hook_resolvable GLOBAL, mas nenhum outro bloco de
+# check-validate-parity.sh compara a mensagem "missing type" de
+# credential_guard_hook_resolvable GLOBAL — só a GVMT o faz. Cirurgia frente
+# aos vizinhos: a fixture GVMT usa uma entrada COM comando correto mas SEM
+# "type":"command" — nenhum outro bloco (186-189) monta essa forma
+# específica. Medido ao vivo: blocos 1/GVP/186/187/188 passam limpos antes
+# da GVMT falhar; nenhum bloco posterior é alcançado.
+T190="$WORK/s190"
+mkdir -p "$T190/cmd" "$T190/internal"
+cp -r "$ROOT_DIR/cmd/." "$T190/cmd/"
+cp -r "$ROOT_DIR/internal/." "$T190/internal/"
+cp "$ROOT_DIR/go.mod" "$T190/go.mod"
+cp "$ROOT_DIR/go.sum" "$T190/go.sum"
+
+corrupt_literal \
+  "$ROOT_DIR/internal/validator/validator_git_branch_guard.go" \
+  "$T190/internal/validator/validator_git_branch_guard.go" \
+  '`~/%s (%s, global scope) references %s resolved to %q, but the hook entry is missing "type":"command" (or has an invalid type) — %s will silently never execute it; run `+"`trackfw update harness`"+` to regenerate it`,' \
+  '`~/%s (%s, global scope) references %s resolved to %q, but the hook entry is missing "type":"command" [falsified-go-only] (or has an invalid type) — %s will silently never execute it; run `+"`trackfw update harness`"+` to regenerate it`,' \
+  's190-gvmt-message-text-diverges-go-only'
+
+T190_BIN="$WORK/s190-bin/trackfw"
+mkdir -p "$(dirname "$T190_BIN")"
+build_go_or_fail "setup-s190-build" "$T190" "$T190_BIN"
+
+assert_fails_with 'validate-parity/gvmt-global-missing-type-message-text-diverges' \
+  'git_branch_guard_hook_resolvable GLOBAL-scope missing-"type" warning message text differs between runtimes' \
+  env GO_BIN="$T190_BIN" bash "$ROOT_DIR/scripts/check-validate-parity.sh"
+
+# ── Cenário 191 — bloco 9 (git_branch_guard_hook_resolvable PROJETO):
+#    gbg-claude-relativo deixa de disparar "bare relative path" ───────────
+# check-validate-parity.sh (linha ~1383) exercita git_branch_guard_hook_
+# resolvable cross-CLI para a forma relativa antiga (gbg-claude-relativo,
+# script PRESENTE → deve acusar) e o falso-positivo do Cursor
+# (gbg-cursor-relativo-present → deve silenciar) — nenhum cenário provava
+# que gbg-claude-relativo reprovaria se a detecção regredisse
+# especificamente para git_branch_guard_hook_resolvable (função COMPARTILHADA
+# com credential_guard_hook_resolvable via validateGuardHookResolvable, mas
+# o RULENAME e o SCRIPTMARKER passados diferem por wrapper).
+#
+# Seam: internal/validator/validator_credential_guard.go,
+# validateGitBranchGuardHookResolvable — o wrapper passa
+# credentialGuardScriptMarker ("trackfw-credential-guard.sh") em vez de
+# gitBranchGuardScriptMarker ("trackfw-git-branch-guard.sh"). Isso faz
+# collectCommandsWithMarker procurar o marcador ERRADO: nenhum comando do
+# fixture gbg-claude-relativo (que referencia
+# "scripts/trackfw-git-branch-guard.sh") contém o marcador de credential-
+# guard, então zero comandos casam e a regra fica muda para ESTE fixture —
+# sem tocar validateCredentialGuardHookResolvable (wrapper irmão, chamada
+# separada) nem os braços de leitura/parse (could-not-be-read/invalid-JSON/
+# invalid-UTF-8 dos fixtures reaproveitados cg-claude-invalid-json/
+# unreadable/utf16, que disparam ANTES da filtragem por marcador e
+# continuam intocados por este seam).
+#
+# Cirurgia frente aos vizinhos: gbg-cursor-relativo-present referencia o
+# MESMO script (também via marcador git-branch-guard, também não contém
+# "trackfw-credential-guard.sh"), então com o marcador errado ele TAMBÉM
+# fica sem comandos casados — mas o resultado esperado ali já é "nenhuma
+# violação" (Cursor é falso-positivo legítimo), então o seam não muda o
+# veredito desse fixture (não discrimina, mas também não quebra
+# espuriamente). Os blocos 1/GVP/186/187/188/GVMT/branch_has_wip_roadmap
+# (7) e o bloco 8 (credential_guard_hook_resolvable, 22 fixtures) usam o
+# OUTRO wrapper (validateCredentialGuardHookResolvable), intocado — medido
+# ao vivo: todos os 8 blocos anteriores passam limpos antes do bloco 9
+# falhar em gbg-claude-relativo.
+T191="$WORK/s191"
+mkdir -p "$T191/cmd" "$T191/internal"
+cp -r "$ROOT_DIR/cmd/." "$T191/cmd/"
+cp -r "$ROOT_DIR/internal/." "$T191/internal/"
+cp "$ROOT_DIR/go.mod" "$T191/go.mod"
+cp "$ROOT_DIR/go.sum" "$T191/go.sum"
+
+corrupt_literal \
+  "$ROOT_DIR/internal/validator/validator_credential_guard.go" \
+  "$T191/internal/validator/validator_credential_guard.go" \
+  'return validateGuardHookResolvable("git_branch_guard_hook_resolvable", gitBranchGuardScriptMarker)' \
+  'return validateGuardHookResolvable("git_branch_guard_hook_resolvable", credentialGuardScriptMarker) // [falsified] was: gitBranchGuardScriptMarker' \
+  's191-gbg-wrong-marker-project-scope'
+
+T191_BIN="$WORK/s191-bin/trackfw"
+mkdir -p "$(dirname "$T191_BIN")"
+build_go_or_fail "setup-s191-build" "$T191" "$T191_BIN"
+
+assert_fails_with 'validate-parity/gbg-claude-relativo-bare-relative-path-not-detected' \
+  'git_branch_guard_hook_resolvable parity (claude-relativo/go): expected violation from rule' \
+  env GO_BIN="$T191_BIN" bash "$ROOT_DIR/scripts/check-validate-parity.sh"

@@ -32,7 +32,19 @@ def _init_git_repo(cwd):
 def _write(base, rel, content):
     full = os.path.join(base, rel)
     os.makedirs(os.path.dirname(full), exist_ok=True)
-    with open(full, "w", encoding="utf-8") as f:
+    # newline="\n" mirrors production writers (generators/*.py all pass it explicitly,
+    # enforced by scripts/check-python-writes-lf.sh) -- without it, Python's text-mode
+    # open() on Windows translates every embedded "\n" in `content` to os.linesep
+    # ("\r\n"), so a fixture written from an LF-only string constant (e.g.
+    # validator._CREDENTIAL_GUARD_SCRIPT_REFERENCE) lands on disk with CRLF. ML-1H
+    # (ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-
+    # silencio) measured this live on Windows ARM64: it made
+    # test_script_identico_ao_template_silencio fail, because the guard-script
+    # *_script_integrity family compares raw bytes against the reference (correctly, by
+    # design -- CRLF in a generated .sh corrupts its shebang) and a CRLF-corrupted
+    # fixture is genuinely not identical to the LF template. Fixed here at the fixture,
+    # not by loosening the byte-exact comparison in production code.
+    with open(full, "w", encoding="utf-8", newline="\n") as f:
         f.write(content)
 
 
@@ -64,6 +76,22 @@ class TestCredentialGuardScriptIntegrity(unittest.TestCase):
         msgs = validator.validate_credential_guard_script_integrity(self.tmpdir)
         self.assertEqual(msgs, [])
 
+    def test_script_crlf_dispara_divergencia(self):
+        """ML-1H: afirma que _read_regular_file (guard-script family) NUNCA folds CRLF->LF --
+        um script CRLF-corrompido continua reportado como divergente do template, mesmo sendo
+        byte-a-byte igual ao template modulo terminador de linha. Guarda contra a tentação de
+        "resolver" test_script_identico_ao_template_silencio normalizando a comparação em vez
+        de corrigir a fixture: CRLF num .sh gerado quebra o shebang em POSIX ("bad
+        interpreter") -- é conteúdo divergente de fato, não estilo de EOL tolerável."""
+        crlf_script = validator._CREDENTIAL_GUARD_SCRIPT_REFERENCE.replace("\n", "\r\n")
+        full = os.path.join(self.tmpdir, "scripts/trackfw-credential-guard.sh")
+        os.makedirs(os.path.dirname(full), exist_ok=True)
+        with open(full, "wb") as f:
+            f.write(crlf_script.encode("utf-8"))
+        msgs = validator.validate_credential_guard_script_integrity(self.tmpdir)
+        self.assertEqual(len(msgs), 1, f"esperava divergencia para script CRLF-corrompido, obteve: {msgs}")
+        self.assertIn("diverges from the template", msgs[0]["message"])
+
     def test_script_divergente_dispara_mensagem_neutra(self):
         _write(self.tmpdir, "scripts/trackfw-credential-guard.sh", "#!/usr/bin/env bash\nexit 0\n")
         msgs = validator.validate_credential_guard_script_integrity(self.tmpdir)
@@ -80,6 +108,70 @@ class TestCredentialGuardScriptIntegrity(unittest.TestCase):
         with open(os.path.join(self.tmpdir, "scripts", "trackfw-credential-guard.sh"), "r", encoding="utf-8") as f:
             emitted = f.read()
         self.assertEqual(emitted, validator._CREDENTIAL_GUARD_SCRIPT_REFERENCE)
+
+
+# ---------------------------------------------------------------------------
+# ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio, ML-1C.
+# Mirrors internal/validator/validator_credential_guard_integrity_test.go's
+# TestCredentialGuardScriptIntegrity_ScriptIlegivel_ViolationSemAbortar and
+# TestCredentialGuardScriptIntegrity_FIFO_NaoTrava. Python's script_integrity has always
+# `except OSError: return []` on ANY read error, not just absence -- hades-tf's ML-1B barrier
+# found this silenced EACCES exactly like the pre-ML-1A config-file `continue` did. Distinct from
+# Go (which ABORTED instead of silencing) -- Python's failure mode here was always fail-open, not
+# a crash, so there is no "was it a crash" assertion to make, only "was it silenced".
+# ---------------------------------------------------------------------------
+
+class TestCredentialGuardScriptIntegrityUnreadable(unittest.TestCase):
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        config.reset()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+        config.reset()
+
+    @unittest.skipIf(sys.platform == "win32", "bits de permissão POSIX não se aplicam no Windows")
+    @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0, "chmod 000 não bloqueia leitura para root")
+    def test_script_ilegivel_vira_violation_nao_silencio(self):
+        _write(self.tmpdir, "scripts/trackfw-credential-guard.sh", "#!/usr/bin/env bash\nexit 0\n")
+        script_path = os.path.join(self.tmpdir, "scripts", "trackfw-credential-guard.sh")
+        os.chmod(script_path, 0o000)
+        try:
+            msgs = _messages(validator.validate_credential_guard_script_integrity(self.tmpdir))
+            self.assertTrue(any("could not be read" in m for m in msgs), msgs)
+        finally:
+            os.chmod(script_path, 0o644)
+
+    @unittest.skipIf(sys.platform == "win32", "mkfifo não existe no Windows")
+    def test_fifo_no_lugar_do_script_nao_trava(self):
+        import threading
+
+        os.makedirs(os.path.join(self.tmpdir, "scripts"), exist_ok=True)
+        fifo_path = os.path.join(self.tmpdir, "scripts", "trackfw-credential-guard.sh")
+        os.mkfifo(fifo_path)
+
+        watchdog = threading.Timer(5.0, lambda: os._exit(1))
+        watchdog.daemon = True
+        watchdog.start()
+        try:
+            msgs = _messages(validator.validate_credential_guard_script_integrity(self.tmpdir))
+            self.assertTrue(any("could not be read" in m for m in msgs), msgs)
+        finally:
+            watchdog.cancel()
+
+    def test_byte_invalido_utf8_no_script_nao_crasha_e_classifica_como_divergencia(self):
+        """Regressão específica do Python: ler o script em modo texto estrito (encoding="utf-8")
+        podia levantar UnicodeDecodeError não capturado num script sobrescrito com bytes inválidos
+        -- esta função nunca foi tocada pelo ML-1B (que corrigiu só os arquivos de CONFIG JSON), e
+        continuava com o mesmo bug de classe. Ler como bytes (ML-1C) elimina o crash inteiramente."""
+        script_path = os.path.join(self.tmpdir, "scripts", "trackfw-credential-guard.sh")
+        os.makedirs(os.path.dirname(script_path), exist_ok=True)
+        with open(script_path, "wb") as f:
+            f.write(b"#!/bin/bash\n\xff\xfe invalid utf8 \xff")
+
+        msgs = _messages(validator.validate_credential_guard_script_integrity(self.tmpdir))
+        self.assertEqual(len(msgs), 1)
+        self.assertIn("diverges from the template", msgs[0])
 
 
 class TestCredentialGuardModeDowngrade(unittest.TestCase):
@@ -149,6 +241,26 @@ class TestCredentialGuardModeDowngrade(unittest.TestCase):
         os.remove(os.path.join(self.tmpdir, "trackfw.yaml"))
         msgs = validator.validate_credential_guard_mode_downgrade(self.tmpdir)
         self.assertEqual(len(msgs), 1)
+
+    def test_leitura_falha_nao_enoent_usa_texto_fixo_nao_str_erro_cru(self):
+        """ML-1G (ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-
+        silencio): erro de leitura não-ENOENT (diretório no lugar do arquivo) usa mensagem de
+        texto FIXO, não str(OSError) cru (que diverge de Go %v e Node err.message para a mesma
+        falha), e não reusa o texto de downgrade CONFIRMADO. Mirrors
+        TestCredentialGuardModeDowngrade_LeituraFalhaNaoENOENT_ViolationSemAbortarEComTextoFixo (Go)
+        e o teste homônimo em npm/tests/credential_guard_integrity.test.js (Node)."""
+        _init_git_repo(self.tmpdir)
+        _commit_trackfw_yaml(self.tmpdir, "credential_guard:\n  mode: block\n")
+        os.remove(os.path.join(self.tmpdir, "trackfw.yaml"))
+        os.mkdir(os.path.join(self.tmpdir, "trackfw.yaml"))
+        msgs = validator.validate_credential_guard_mode_downgrade(self.tmpdir)
+        self.assertEqual(len(msgs), 1)
+        self.assertEqual(
+            msgs[0]["message"],
+            "trackfw.yaml could not be read — trackfw cannot tell whether credential_guard.mode "
+            "is still block; fix the file, or run `trackfw update` to regenerate it",
+        )
+        self.assertNotIn("credential_guard.mode: block", msgs[0]["message"])
 
 
 class TestCredentialGuardIntegrityConfiguravel(unittest.TestCase):

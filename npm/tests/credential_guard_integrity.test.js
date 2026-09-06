@@ -13,9 +13,29 @@ const config = require('../src/config')
 const validator = require('../src/validator')
 const {
   validateCredentialGuardScriptIntegrity,
+  validateGitBranchGuardScriptIntegrity,
+  validateCredentialGuardGlobalScriptIntegrity,
+  validateGitBranchGuardGlobalScriptIntegrity,
   validateCredentialGuardModeDowngrade,
   CREDENTIAL_GUARD_SCRIPT_REFERENCE,
 } = validator
+
+function withEnv(overrides, fn) {
+  const saved = {}
+  for (const key of Object.keys(overrides)) {
+    saved[key] = process.env[key]
+    if (overrides[key] === undefined) delete process.env[key]
+    else process.env[key] = overrides[key]
+  }
+  try {
+    return fn()
+  } finally {
+    for (const key of Object.keys(saved)) {
+      if (saved[key] === undefined) delete process.env[key]
+      else process.env[key] = saved[key]
+    }
+  }
+}
 
 function tmpDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-cg-integrity-'))
@@ -59,6 +79,20 @@ test('credential_guard_script_integrity: silêncio quando o script é idêntico 
   assert.deepEqual(msgs, [])
 })
 
+// ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio, ML-1H:
+// afirma que a comparação byte-a-byte desta regra NUNCA folds CRLF->LF -- um script
+// CRLF-corrompido continua reportado como divergente do template, mesmo sendo igual ao
+// template módulo terminador de linha. CRLF num .sh gerado quebra o shebang em POSIX ("bad
+// interpreter" -- ver check-python-writes-lf.sh); é conteúdo divergente de fato, não estilo de
+// EOL tolerável. Espelha o teste equivalente em Go/Python desta mesma ML.
+test('credential_guard_script_integrity: script CRLF-corrompido dispara divergência', () => {
+  const dir = tmpDir()
+  writeFile(dir, 'scripts/trackfw-credential-guard.sh', CREDENTIAL_GUARD_SCRIPT_REFERENCE.replace(/\n/g, '\r\n'))
+  const msgs = validateCredentialGuardScriptIntegrity(dir)
+  assert.equal(msgs.length, 1, `esperava divergência para script CRLF-corrompido, obteve: ${JSON.stringify(msgs)}`)
+  assert.match(msgs[0], /diverges from the template/)
+})
+
 test('credential_guard_script_integrity: dispara em sobrescrita (mensagem causalmente neutra)', () => {
   const dir = tmpDir()
   writeFile(dir, 'scripts/trackfw-credential-guard.sh', '#!/usr/bin/env bash\nexit 0\n')
@@ -70,6 +104,98 @@ test('credential_guard_script_integrity: dispara em sobrescrita (mensagem causal
   for (const forbidden of ['adulterad', 'modified by', 'tampered']) {
     assert.equal(lower.includes(forbidden), false, `mensagem não deve conter "${forbidden}"`)
   }
+})
+
+// ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio, ML-1C.
+// Mirrors internal/validator/validator_credential_guard_integrity_test.go's
+// TestCredentialGuardScriptIntegrity_ScriptIlegivel_ViolationSemAbortar (Node's project-scope
+// script_integrity was already correct pre-ML-1C on EACCES — this is the FIFO-hang closure,
+// exercised at the rule level, not just via readRegularFileSync directly).
+test('credential_guard_script_integrity: FIFO não trava — acusa "could not be read"', { timeout: 5000 }, () => {
+  if (process.platform === 'win32') return // mkfifo não existe no Windows
+  const dir = tmpDir()
+  fs.mkdirSync(path.join(dir, 'scripts'), { recursive: true })
+  const { execFileSync: run } = require('node:child_process')
+  run('mkfifo', [path.join(dir, 'scripts', 'trackfw-credential-guard.sh')])
+
+  // Message text unified with Go/Python for this rule family (ML-1C) — previously Node used
+  // inspectionDiagnostic's distinct 'rule: could not inspect "target": cause' shape here, which
+  // would have diverged from Go/Python's "could not be read" phrasing the moment all 3 runtimes
+  // accuse on the same fixture (they didn't, pre-ML-1C: Go aborted, Python silenced).
+  const msgs = validateCredentialGuardScriptIntegrity(dir)
+  assert.equal(msgs.length, 1)
+  assert.match(msgs[0], /could not be read/)
+})
+
+// TestGitBranchGuardScriptIntegrity_ScriptIlegivel_ViolationSemAbortar's Node mirror — Node's
+// project-scope git-branch-guard integrity was already correct on EACCES (unlike Go, which
+// aborted); this asserts the FIFO-hang closure at the rule level.
+test('git_branch_guard_script_integrity: FIFO não trava — acusa "could not be read"', { timeout: 5000 }, () => {
+  if (process.platform === 'win32') return
+  const dir = tmpDir()
+  fs.mkdirSync(path.join(dir, 'scripts'), { recursive: true })
+  const { execFileSync: run } = require('node:child_process')
+  run('mkfifo', [path.join(dir, 'scripts', 'trackfw-git-branch-guard.sh')])
+
+  const msgs = validateGitBranchGuardScriptIntegrity(dir)
+  assert.equal(msgs.length, 1)
+  assert.match(msgs[0], /could not be read/)
+})
+
+// TestGuardGlobalScriptIntegrity_ScriptIlegivel_ViolationSemSilencio's Node mirror — before
+// ML-1C, Node's validateGuardGlobalScriptIntegrity had a bare `catch (_) { return [] }` that
+// silenced EACCES exactly like credential_guard_hook_resolvable's pre-ML-1B `continue` did.
+test('credential_guard_script_integrity (global scope): script ilegível vira violation, não silêncio', () => {
+  if (process.platform === 'win32') return // bits POSIX não se aplicam
+  if (process.getuid && process.getuid() === 0) return // chmod 000 não bloqueia root
+
+  const home = tmpDir()
+  withEnv({ HOME: home }, () => {
+    const scriptDir = path.join(home, '.trackfw', 'scripts')
+    fs.mkdirSync(scriptDir, { recursive: true })
+    const scriptPath = path.join(scriptDir, 'trackfw-credential-guard.sh')
+    fs.writeFileSync(scriptPath, '#!/usr/bin/env bash\nexit 0\n', 'utf8')
+    fs.chmodSync(scriptPath, 0o000)
+    try {
+      const msgs = validateCredentialGuardGlobalScriptIntegrity()
+      assert.equal(msgs.length, 1)
+      assert.match(msgs[0], /could not be read/)
+    } finally {
+      fs.chmodSync(scriptPath, 0o644)
+    }
+  })
+})
+
+// Same fix, git-branch-guard sibling.
+test('git_branch_guard_script_integrity (global scope): script ilegível vira violation, não silêncio', () => {
+  if (process.platform === 'win32') return
+  if (process.getuid && process.getuid() === 0) return
+
+  const home = tmpDir()
+  withEnv({ HOME: home }, () => {
+    const scriptDir = path.join(home, '.trackfw', 'scripts')
+    fs.mkdirSync(scriptDir, { recursive: true })
+    const scriptPath = path.join(scriptDir, 'trackfw-git-branch-guard.sh')
+    fs.writeFileSync(scriptPath, '#!/usr/bin/env bash\nexit 0\n', 'utf8')
+    fs.chmodSync(scriptPath, 0o000)
+    try {
+      const msgs = validateGitBranchGuardGlobalScriptIntegrity()
+      assert.equal(msgs.length, 1)
+      assert.match(msgs[0], /could not be read/)
+    } finally {
+      fs.chmodSync(scriptPath, 0o644)
+    }
+  })
+})
+
+// Control: absence (never installed) must stay silent for the global scope, even after the fix
+// above stops silencing REAL read errors — the two states must not collapse into each other.
+test('credential_guard_script_integrity (global scope): ausência continua silenciosa', () => {
+  const home = tmpDir()
+  withEnv({ HOME: home }, () => {
+    const msgs = validateCredentialGuardGlobalScriptIntegrity()
+    assert.deepEqual(msgs, [])
+  })
 })
 
 // ---- credential_guard_mode_downgrade ----
@@ -149,6 +275,25 @@ test('credential_guard_mode_downgrade: dispara quando trackfw.yaml é deletado d
   fs.rmSync(path.join(dir, 'trackfw.yaml'))
   const msgs = validateCredentialGuardModeDowngrade(dir)
   assert.equal(msgs.length, 1)
+})
+
+// ML-1G (ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio):
+// erro de leitura não-ENOENT (aqui, diretório no lugar do arquivo) — mensagem de texto FIXO, não
+// interpolando err.message (que diverge de Go %v e Python str(e) para a mesma falha), e não
+// reusando o texto de downgrade CONFIRMADO. Mirrors
+// TestCredentialGuardModeDowngrade_LeituraFalhaNaoENOENT_ViolationSemAbortarEComTextoFixo (Go).
+test('credential_guard_mode_downgrade: falha de leitura não-ENOENT usa texto fixo, não err.message cru', () => {
+  const dir = tmpDir()
+  initGitRepo(dir)
+  commitTrackfwYAML(dir, 'credential_guard:\n  mode: block\n')
+  fs.rmSync(path.join(dir, 'trackfw.yaml'))
+  fs.mkdirSync(path.join(dir, 'trackfw.yaml'))
+  const msgs = validateCredentialGuardModeDowngrade(dir)
+  assert.deepEqual(msgs, [
+    'trackfw.yaml could not be read — trackfw cannot tell whether credential_guard.mode ' +
+      'is still block; fix the file, or run `trackfw update` to regenerate it',
+  ])
+  assert.ok(!/credential_guard\.mode: block/.test(msgs[0]), 'não deveria reusar o texto de downgrade confirmado')
 })
 
 // ---- Configurável via rules: (pipeline completo, chdir) ----
