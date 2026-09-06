@@ -11,7 +11,8 @@ req: "docs/req/REQ-2026-08-12-mitigacao-do-fail-open-do-credential-guard-integri
 
 ## Context
 
-REQ (**reaberta**): `docs/req/REQ-2026-08-12-mitigacao-do-fail-open-do-credential-guard-integridade-do-script-e-da-config-controle-positivo-e-fail-closed-nativo.md`
+REQ: `docs/req/REQ-2026-08-12-mitigacao-do-fail-open-do-credential-guard-integridade-do-script-e-da-config-controle-positivo-e-fail-closed-nativo.md`
+(**reaberta** em 2026-09-06 — estava `Done` com os 4 critérios de aceite em branco.)
 
 ## Diagnóstico
 
