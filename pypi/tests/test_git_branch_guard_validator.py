@@ -34,7 +34,13 @@ def _exec_bit_representavel():
 
 def _write(path: str, content: str = ""):
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
+    # newline="\n": see test_credential_guard_integrity.py's identical helper for the
+    # full rationale (ML-1H, ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-
+    # ilegivel-deixa-de-ser-silencio) -- without it, Windows text-mode open() silently
+    # turns an LF-only reference-constant fixture into a CRLF one, making
+    # test_script_identico_ao_template_silencio / test_global_instalado_e_integro_silencio
+    # fail against the (correctly) byte-exact *_script_integrity comparison.
+    with open(path, "w", encoding="utf-8", newline="\n") as f:
         f.write(content)
 
 
@@ -234,6 +240,22 @@ class TestGitBranchGuardScriptIntegrity(unittest.TestCase):
         msgs = v.validate_git_branch_guard_script_integrity(self.tmp)
         self.assertEqual(msgs, [])
 
+    def test_script_crlf_dispara_divergencia(self):
+        """ML-1H (ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-
+        silencio): afirma que a comparação byte-a-byte do script_integrity NUNCA folds
+        CRLF->LF -- um script CRLF-corrompido segue reportado como divergente, mesmo sendo
+        igual ao template modulo terminador de linha. Espelha o teste Go/Node equivalente e
+        guarda contra normalizar a comparação para "resolver" test_script_identico_ao_template_
+        silencio em vez de corrigir a fixture que injetava CRLF."""
+        crlf_script = v._GIT_BRANCH_GUARD_SCRIPT_REFERENCE.replace("\n", "\r\n")
+        full = os.path.join(self.tmp, "scripts/trackfw-git-branch-guard.sh")
+        os.makedirs(os.path.dirname(full), exist_ok=True)
+        with open(full, "wb") as f:
+            f.write(crlf_script.encode("utf-8"))
+        msgs = v.validate_git_branch_guard_script_integrity(self.tmp)
+        self.assertEqual(len(msgs), 1, f"esperava divergencia para script CRLF-corrompido, obteve: {msgs}")
+        self.assertIn("diverges from the template", msgs[0]["message"])
+
     def test_um_byte_alterado_dispara(self):
         tampered = v._GIT_BRANCH_GUARD_SCRIPT_REFERENCE[:-1] + "X"
         _write(os.path.join(self.tmp, "scripts/trackfw-git-branch-guard.sh"), tampered)
@@ -395,6 +417,23 @@ class TestGuardGlobalHookResolvable(unittest.TestCase):
             integrity_msgs, [],
             f"esperado zero violations com script global íntegro, obteve: {integrity_msgs}",
         )
+
+    def test_global_script_crlf_dispara_divergencia(self):
+        """ML-1H: espelha test_script_crlf_dispara_divergencia no escopo GLOBAL --
+        validate_guard_global_script_integrity também nunca folds CRLF->LF na comparação."""
+        home = _global_guard_home(self)
+        global_script_path = os.path.join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+        crlf_script = v._CREDENTIAL_GUARD_GLOBAL_SCRIPT_REFERENCE.replace("\n", "\r\n")
+        os.makedirs(os.path.dirname(global_script_path), exist_ok=True)
+        with open(global_script_path, "wb") as f:
+            f.write(crlf_script.encode("utf-8"))
+
+        integrity_msgs = v.validate_credential_guard_global_script_integrity(self.tmp)
+        self.assertEqual(
+            len(integrity_msgs), 1,
+            f"esperava divergencia para script global CRLF-corrompido, obteve: {integrity_msgs}",
+        )
+        self.assertIn("content diverges from the template", integrity_msgs[0]["message"])
 
     def test_global_instalado_mas_script_ausente_dispara(self):
         # Hook de PROJETO ausente + global REGISTRADO em ~/.claude/settings.json mas o script

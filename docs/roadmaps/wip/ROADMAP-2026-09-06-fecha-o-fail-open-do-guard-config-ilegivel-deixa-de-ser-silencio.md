@@ -479,6 +479,169 @@ completa, não por grep nos nomes das regras alteradas.
 - [x] `bash scripts/check-gates-falsify.sh` completo — ver evidência ao final deste ML.
 - [x] `make quality` não rodado por este agente — arquiteto roda ao fim.
 
+### ML-1H — CRLF em Windows: 6 falhas novas do ML-1G, medidas na VM real, uma causa em 2 direções
+**Status:** ✅ Concluído · **Agente:** `apolo-tf`
+
+O ML-1G roteou os sítios de leitura pelo leitor único (`_read_regular_file`), o que removeu uma
+tradução implícita que só o Python tinha: `open(path, encoding="utf-8")` faz universal-newlines
+(`\r\n` → `\n`) na leitura; `_read_regular_file` lê bytes crus, sem essa tradução. Medido ao vivo
+na VM Windows ARM64 (Python 3.12.10) pelo arquiteto: 6 falhas novas, todas Python, nas duas
+direções (uma regra para de detectar; um teste de silêncio passa a acusar).
+
+**A medição revelou que a premissa do handoff era só metade do mecanismo.** As 6 falhas se
+dividem em **duas causas distintas**, cada uma exigindo o remédio oposto:
+
+**Classe 1 — normalizar no leitor (4 falhas): `test_adr_draft_validador_detecta_formato_canonico`,
+`test_req_open_validador_detecta_formato_canonico`, `TestBlockedByDraftAdr...test_req_open_bloqueada_...`.**
+Causa raiz real, isolada por leitura de código (não suposição): `_parse_blocked_adrs` compara
+`line == "## Blocked by ADRs"` por **igualdade exata de linha**, sem `.strip()`. Uma REQ com CRLF
+deixa um `"\r"` colado ao fim dessa linha depois de `content.split("\n")`, e o match nunca
+dispara — a seção inteira é pulada em silêncio. Isso é exatamente o cenário que
+ADR-2026-09-04 (D1) já decidiu que este runtime tolera ("o produtor do arquivo é frequentemente
+outra pessoa, em outro SO"). Remédio: nova função `_read_text_normalized(path)` —
+`_normalize_crlf(_read_regular_file(path).decode("utf-8", errors="replace"))`, reaproveitando o
+`_normalize_crlf` já existente em `trackfw.integrations.renderers` (nenhum segundo normalizador,
+D3). Roteados: `_read_file_for_rule`, `_parse_blocked_adrs`, `_adr_draft_status_for_rule`,
+`_parse_squad_from_frontmatter`, `_latest_wip_transition_time` (log), `validate_note_orphan`
+(índice do vault), `validate_credential_guard_mode_downgrade` (trackfw.yaml em disco).
+
+**Classe 2 — NÃO normalizar; corrigir a fixture (2 falhas):
+`test_script_identico_ao_template_silencio` (credential_guard + git_branch_guard),
+`test_global_instalado_e_integro_silencio`.** Investigação inicial suspeitou que fosse a mesma
+causa — errado. Causa raiz real: os helpers `_write()` dos 3 arquivos de teste
+(`test_credential_guard_integrity.py`, `test_git_branch_guard_validator.py`) escrevem com
+`open(path, "w", encoding="utf-8")` **sem `newline="\n"`** — geradores de produção já usam
+`newline="\n"` explícito (`check-python-writes-lf.sh` garante isso), mas os HELPERS DE TESTE não.
+No Windows, o modo texto padrão do Python também **traduz na ESCRITA**: cada `"\n"` embutido na
+constante de referência (`_CREDENTIAL_GUARD_SCRIPT_REFERENCE`, só-LF) virou `"\r\n"` em disco —
+a fixture escreveu um script CRLF-corrompido e alegou "idêntico ao template". A regra
+`*_script_integrity` compara **byte-a-byte** contra o template — corretamente, por design: CRLF
+num `.sh` gerado quebra o shebang em POSIX ("bad interpreter", motivo documentado no próprio
+cabeçalho de `check-python-writes-lf.sh`). Normalizar essa comparação teria reintroduzido, dentro
+desta mesma REQ, a classe de fail-open que ela existe para fechar — reportar saúde sobre um
+script que na verdade não executa. Remédio: `newline="\n"` nos 3 helpers `_write()`, igualando ao
+padrão de produção; a comparação byte-a-byte do produto **não foi tocada**. Guarda contra
+regressão futura (alguém "resolver" isso de novo normalizando a regra): `test_script_crlf_dispara_divergencia`
+(credential_guard e git_branch_guard) e `test_global_script_crlf_dispara_divergencia`, que escrevem
+um script CRLF via `open(..., "wb")` (bytes crus, contorna o próprio bug do helper) e afirmam que a
+regra continua acusando.
+
+**`_write()` de `test_validator.py` (as 4 fixtures markdown da Classe 1) foi deixado intocado** —
+no Windows ele agora exercita CRLF de verdade nessas fixtures, o que é um teste de regressão
+gratuito para a tolerância adicionada; não havia fixture com CRLF intencional nesse arquivo para
+quebrar.
+
+**3928 (`thirdparty_artifact_has_provenance`, leitura do artefato instalado) não foi tocado —
+critério principal do handoff.** Esse sítio compara `_thirdparty.checksum(installed)` contra
+`installed_sha256` gravado em `.trackfw/thirdparty-provenance.json` no momento da aprovação —
+integridade byte-a-byte de conteúdo de terceiro arbitrário, não comparação contra um template
+canônico. Normalizar ali seria incorreto nas duas direções: (a) um artefato aprovado que tenha
+CRLF legítimo passaria a divergir do checksum gravado (falso positivo de adulteração), e mais
+grave, (b) um artefato de fato adulterado com uma mudança disfarçada de troca de EOL passaria a
+bater com o checksum aprovado (falso negativo de segurança) — a garantia que esta regra existe
+para dar. Ficou raw, sem decode nem normalização — consumidor byte-exato desta ML.
+
+**Go e Node: verificados, não "assumidos como ok".** `Buffer.toString('utf8')` (Node) e leitura de
+bytes crus (Go) nunca fizeram universal-newlines nem na leitura nem na escrita — nenhum dos dois
+tinha tradução para perder com o roteamento do ML-1G. Confirmado por leitura de código, não só
+inferência: `resolveAdrStatus`/`extractAdrHeaderStatus` (Go/Node) já usam `TrimSpace`/`.trim()` em
+todo ponto de comparação, tolerantes a CRLF por construção; idem `parseSquadFromFrontmatter` e
+`extractCredentialGuardMode`. **Uma exceção real, medida, não suposta:** `parseBlockedADRs` em Go
+(`internal/validator/validator.go`) e Node (`npm/src/validator/index.js`) fazem o **mesmo**
+`line == "## Blocked by ADRs"` por igualdade exata, sem trim — o mesmo defeito da Classe 1, nunca
+antes exercitado nesses 2 runtimes só porque nenhum `os.WriteFile`/`fs.writeFileSync` de teste
+jamais introduziu CRLF sozinho (ao contrário do `open()` texto do Python). Se eu tivesse corrigido
+só o Python, uma REQ real com CRLF passaria a ser detectada em Python e continuaria escapando em
+Go/Node — uma divergência de 3-CLI nova, criada por esta própria ML, contra a Regra Dura de
+Paridade. Fechado nos 3: `integrations.NormalizeCRLF` (Go, já existe, sem novo import cycle —
+`internal/validator` já importa `internal/integrations` via `validator_thirdparty_provenance.go`)
+e `normalizeCRLF` (Node, `npm/src/integrations/render.js`, sem cycle — `render.js` só importa
+`../identity`).
+
+**Escopo do "não precisou de mudança" para Go/Node — restrito ao que foi de fato lido, não uma
+varredura completa dos ~19 sítios crus de cada runtime.** Confirmado por leitura de código (não
+inferência) apenas para: `resolveAdrStatus`/`extractAdrHeaderStatus` (status de ADR, ambos os
+runtimes), `parseSquadFromFrontmatter` (ambos), `extractCredentialGuardMode` (ambos) e
+`frontmatter_presence` (Go, `strings.HasPrefix(content, "---")` — não se importa com `\r` porque
+só olha os 3 primeiros bytes). Os equivalentes Go/Node de `_latest_wip_transition_time`
+(`.trackfw-log`, `validator.go:1771`) e `validate_note_orphan` (índice do vault,
+`validator.go:2721`) — que EU roteei em Python nesta ML — não foram lidos/auditados em Go/Node;
+não fazem parte da alegação de paridade fechada acima.
+
+**Falsificação nas duas direções, na VM Windows ARM64 real (Python 3.12.10), não em raciocínio:**
+- Estado final: os 6 testes-alvo passam (`6 passed in 0.08s`).
+- Remover só a normalização do leitor (`_read_text_normalized` volta a decodificar sem
+  `_normalize_crlf`): as 3 falhas de Classe 1 voltam (`0 != 1` nos 3 casos); as 2 de Classe 2
+  continuam passando — prova que os dois remédios são independentes, não um disfarçado de outro.
+- Restaurar o leitor e em vez disso reverter só o `newline="\n"` dos helpers de fixture: as 3
+  falhas de Classe 2 voltam (`content diverges from the template` onde se esperava silêncio); as
+  3 de Classe 1 continuam passando.
+- Suíte completa (`pytest tests/ -q`) na VM antes e depois: mesmos **29 falhas pré-existentes,
+  não relacionadas** (barrier, gitattributes, identity wizard tty, ship, thirdparty — gaps
+  Windows já existentes, fora do escopo desta ML) nas duas rodadas; 1612 passed (+4 exato, os 4
+  testes novos desta ML) na rodada final.
+
+**Requisito de reconciliação (1 frase por teste novo):**
+- Python `test_script_crlf_dispara_divergencia` (credential_guard, git_branch_guard) /
+  `test_global_script_crlf_dispara_divergencia` — afirmam que a comparação byte-a-byte de
+  `*_script_integrity` nunca faz fold de CRLF→LF: um script CRLF-corrompido continua reportado
+  como divergente do template.
+- Python `test_req_open_bloqueada_por_adr_proposed_dispara_com_crlf` — afirma que uma REQ com
+  CRLF continua sendo detectada como bloqueada por ADR Proposed (a tolerância de leitura
+  funciona ponta a ponta, não só na unidade).
+- Go `TestBlockedByDraftADR_REQOpen_ProposedADR_CRLF_Violates` / `TestCredentialGuardScriptIntegrity_ScriptCRLF_Dispara`
+  — espelham as duas afirmações acima em Go, provando a paridade fechada nesta ML.
+- Node (`blocked_by_draft_adr: REQ com CRLF continua detectando bloqueio`,
+  `credential_guard_script_integrity: script CRLF-corrompido dispara divergência`,
+  `git_branch_guard_script_integrity: script CRLF-corrompido dispara divergência`) — mesmas duas
+  afirmações, terceiro runtime.
+
+**Premissa do handoff que a medição corrigiu:** "Python leu por engano graças ao universal
+newlines" é só metade do mecanismo — a outra metade, achada por leitura de código, não suposição,
+é que o **próprio helper de teste** também escrevia CRLF por engano no Windows (mesma tradução
+implícita do Python, do lado da escrita). Tratar as 6 falhas como uma causa única teria produzido
+o remédio errado para 2 delas: normalizar a comparação byte-a-byte do script_integrity, reabrindo
+dentro desta REQ a classe de fail-open que ela existe para fechar.
+
+**Critérios de aceite:**
+- [x] As 6 falhas deixam de ocorrer — provado em Windows real (VM ARM64), não em macOS.
+- [x] Nenhum consumidor que precise de bytes exatos foi afetado — `thirdparty_artifact_has_provenance`
+      (linha ~3975 de `validator.py`) permanece raw; enumeração completa acima.
+- [x] Falsificação nas duas direções, na VM real — ver evidência acima (2 remédios, 2 falsificações
+      independentes).
+- [x] Escrita continua LF (D2) — `check-python-writes-lf.sh` verde (após reescrever uma frase do
+      docstring de `_read_text_normalized` que continha `open(path, "w", encoding="utf-8")` literal
+      e disparava o gate por prosa, mesma classe de falso-positivo que o ML-1G já documentou para
+      `check-raw-read-ban.sh`).
+- [x] Suítes dos 3 runtimes verdes, com números: Go 230 testes (+2, `internal/validator`; `go build
+      ./...`/`go vet ./...` limpos); Node 884 testes (+3, `npm test` completo); Python 1656 + 66
+      subtests (+4, `pytest tests/` completo).
+- [x] `check-raw-read-ban.sh` verde (nenhum novo sítio cru introduzido — `_read_text_normalized`
+      chama `_read_regular_file`, já allowlisted).
+- [x] `make quality` não rodado por este agente — arquiteto roda ao fim.
+
+**Reconciliação da contagem Node (882 do ML-1G vs. 884 desta ML):** o diff desta ML introduz
+exatamente 3 `test(` novos (`git diff npm/tests/*.test.js | grep "^+.*test("` — confirmado, não
+contado de cabeça), então a baseline imediatamente anterior a este ML era 881, não 882. A
+diferença veio do commit de merge já presente na branch antes deste ML
+(`f5850b7 chore(merge): integra a main no fail-open, resolvendo 3 conflitos de append`, git log),
+que trouxe trabalho independente da `main` — não investigado a fundo por estar fora do escopo
+deste ML e por 881+3=884 já fechar a conta sem resto.
+
+**`gofmt -l` pré-existente, não introduzido por este ML:** `internal/validator/validator_credential_guard.go`
+e `internal/validator/validator_credential_guard_test.go` aparecem em `gofmt -l` (drift de
+alinhamento de coluna em `credentialGuardHookFile` e nos comentários de um slice de casos de
+teste). `git diff --stat` desses 2 arquivos contra este ML retorna vazio — nenhuma linha tocada
+por mim. Sinalizado aqui para o `trackfw_architect` não atribuir a `make quality` a este ML.
+
+**Warning "no acceptance criteria block" — pré-existente, não fechado por este ML.** `trackfw
+validate` continua acusando este roadmap por não ter o heading consolidado que
+ADR-2026-07-31-gerador-de-roadmap-emite-heading-consolidado-de-criterios-de-aceite exige (um único
+bloco `## Acceptance Criteria` agregando todos os MLs, não os `**Critérios de aceite:**` por ML já
+presentes em cada seção, inclusive na que acrescentei). Já valia antes desta ML (mesmo warning
+aparecia em `trackfw validate` no início da sessão); geração desse heading é artefato do
+`trackfw_architect`, fora do escopo de implementação deste ML.
+
 ## Fora desta wave, e declarado
 Os **ACs 2 e 3** da REQ (o `failClosed` do Cursor e o wrapper) continuam não entregues. **Não entram
 aqui** — o AC3 tem bloqueador declarado e não resolvido (o script é gerado, não vem no binário; um

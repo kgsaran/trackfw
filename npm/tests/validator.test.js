@@ -2125,6 +2125,32 @@ test('credential_guard_hook_resolvable: sh -c "$PWD/…" usa mensagem do $PWD (M
     })
   })
 
+  test('blocked_by_draft_adr: REQ com CRLF continua detectando bloqueio (ML-1H, paridade com Go/Python)', () => {
+    // ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio,
+    // ML-1H: parseBlockedADRs compara "## Blocked by ADRs" por igualdade exata de linha; sem
+    // normalizeCRLF na entrada, o "\r" residual que content.split('\n') deixa colado ao fim
+    // dessa linha quebra o match em silencio -- medido primeiro na porta Python deste mesmo
+    // algoritmo em Windows ARM64, fechado identicamente nos 3 runtimes nesta ML.
+    withTmpProject((tmp) => {
+      writeAdr(tmp, 'ADR-2026-08-01-fixture-crlf.md', 'Proposed')
+      const reqContent = [
+        '---', 'status: Open', 'date: 2026-08-01', 'author: ""', 'adr: ""', '---', '',
+        '# REQ: fixture crlf', '',
+        '> Date: 2026-08-01 | Status: Open', '',
+        '## Motivation', '',
+        '## Acceptance Criteria', '- [ ]', '',
+        '## Linked ADR', 'ADR:', '',
+        '## Blocked by ADRs', '- ADR-2026-08-01-fixture-crlf.md (Proposed)', '',
+        '## Linked Roadmap', 'Roadmap:', '',
+      ].join('\r\n')
+      fs.writeFileSync(path.join(tmp, 'docs', 'req', 'REQ-2026-08-01-fixture-crlf.md'), reqContent)
+      const violations = validator.validateREQsNotBlockedByDraftADRs()
+      assert.strictEqual(violations.length, 1,
+        `regressao: blocked_by_draft_adr nao detectou bloqueio numa REQ com CRLF; got ${JSON.stringify(violations)}`)
+      assert(violations[0].includes('ADR-2026-08-01-fixture-crlf.md'))
+    })
+  })
+
   test('adr_accepted_when_req_done: ADR Accepted cuja PROSA cita "Status: Draft"/"Proposed" -> sem violation (anchoring, nao substring livre)', () => {
     withTmpProject((tmp) => {
       // Cabeçalho real é "Accepted"; o corpo do documento (prosa) menciona literalmente as strings

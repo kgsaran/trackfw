@@ -86,6 +86,33 @@ func TestCredentialGuardScriptIntegrity_ScriptIdenticoAoTemplate_Silencio(t *tes
 	}
 }
 
+// TestCredentialGuardScriptIntegrity_ScriptCRLF_Dispara — ROADMAP-2026-09-06-fecha-o-fail-open-
+// do-guard-config-ilegivel-deixa-de-ser-silencio, ML-1H: afirma que a comparação byte-a-byte
+// desta regra NUNCA folds CRLF->LF -- um script CRLF-corrompido continua reportado como
+// divergente do template, mesmo sendo igual ao template módulo terminador de linha. CRLF num
+// .sh gerado quebra o shebang em POSIX ("bad interpreter" -- ver check-python-writes-lf.sh); é
+// conteúdo divergente de fato, não estilo de EOL tolerável. Espelha o teste equivalente em
+// Python/Node desta mesma ML.
+func TestCredentialGuardScriptIntegrity_ScriptCRLF_Dispara(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	crlfScript := strings.ReplaceAll(credentialGuardScriptReference, "\n", "\r\n")
+	writeFile(t, dir, "scripts/trackfw-credential-guard.sh", crlfScript)
+
+	msgs, err := validateCredentialGuardScriptIntegrity()
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("esperava 1 divergência para script CRLF-corrompido, obteve: %v", msgs)
+	}
+	if !strings.Contains(msgs[0], "diverges from the template") {
+		t.Errorf("mensagem inesperada: %v", msgs[0])
+	}
+}
+
 // TestCredentialGuardScriptIntegrity_ScriptDivergente_Dispara cobre a via de SOBRESCRITA: script
 // trocado por um "exit 0" no-op — passa em os.Stat e no bit 0111, então
 // credential_guard_hook_resolvable não pega. A mensagem deve ser causalmente neutra

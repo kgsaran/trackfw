@@ -32,7 +32,19 @@ def _init_git_repo(cwd):
 def _write(base, rel, content):
     full = os.path.join(base, rel)
     os.makedirs(os.path.dirname(full), exist_ok=True)
-    with open(full, "w", encoding="utf-8") as f:
+    # newline="\n" mirrors production writers (generators/*.py all pass it explicitly,
+    # enforced by scripts/check-python-writes-lf.sh) -- without it, Python's text-mode
+    # open() on Windows translates every embedded "\n" in `content` to os.linesep
+    # ("\r\n"), so a fixture written from an LF-only string constant (e.g.
+    # validator._CREDENTIAL_GUARD_SCRIPT_REFERENCE) lands on disk with CRLF. ML-1H
+    # (ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-
+    # silencio) measured this live on Windows ARM64: it made
+    # test_script_identico_ao_template_silencio fail, because the guard-script
+    # *_script_integrity family compares raw bytes against the reference (correctly, by
+    # design -- CRLF in a generated .sh corrupts its shebang) and a CRLF-corrupted
+    # fixture is genuinely not identical to the LF template. Fixed here at the fixture,
+    # not by loosening the byte-exact comparison in production code.
+    with open(full, "w", encoding="utf-8", newline="\n") as f:
         f.write(content)
 
 
@@ -63,6 +75,22 @@ class TestCredentialGuardScriptIntegrity(unittest.TestCase):
         _write(self.tmpdir, "scripts/trackfw-credential-guard.sh", validator._CREDENTIAL_GUARD_SCRIPT_REFERENCE)
         msgs = validator.validate_credential_guard_script_integrity(self.tmpdir)
         self.assertEqual(msgs, [])
+
+    def test_script_crlf_dispara_divergencia(self):
+        """ML-1H: afirma que _read_regular_file (guard-script family) NUNCA folds CRLF->LF --
+        um script CRLF-corrompido continua reportado como divergente do template, mesmo sendo
+        byte-a-byte igual ao template modulo terminador de linha. Guarda contra a tentação de
+        "resolver" test_script_identico_ao_template_silencio normalizando a comparação em vez
+        de corrigir a fixture: CRLF num .sh gerado quebra o shebang em POSIX ("bad
+        interpreter") -- é conteúdo divergente de fato, não estilo de EOL tolerável."""
+        crlf_script = validator._CREDENTIAL_GUARD_SCRIPT_REFERENCE.replace("\n", "\r\n")
+        full = os.path.join(self.tmpdir, "scripts/trackfw-credential-guard.sh")
+        os.makedirs(os.path.dirname(full), exist_ok=True)
+        with open(full, "wb") as f:
+            f.write(crlf_script.encode("utf-8"))
+        msgs = validator.validate_credential_guard_script_integrity(self.tmpdir)
+        self.assertEqual(len(msgs), 1, f"esperava divergencia para script CRLF-corrompido, obteve: {msgs}")
+        self.assertIn("diverges from the template", msgs[0]["message"])
 
     def test_script_divergente_dispara_mensagem_neutra(self):
         _write(self.tmpdir, "scripts/trackfw-credential-guard.sh", "#!/usr/bin/env bash\nexit 0\n")

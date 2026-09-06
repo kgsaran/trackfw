@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/kgsaran/trackfw/internal/config"
+	"github.com/kgsaran/trackfw/internal/integrations"
 )
 
 // BaselineFile representa o conteúdo de .trackfw-baseline.json
@@ -1906,12 +1907,26 @@ func validateREQsNotBlockedByDraftADRs() ([]string, error) {
 }
 
 // parseBlockedADRs extrai os basenames de ADRs listados na seção "## Blocked by ADRs" de um arquivo REQ.
+//
+// ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio, ML-1H:
+// content is folded through integrations.NormalizeCRLF before the exact `line == "## Blocked by
+// ADRs"` comparison below. A REQ authored on Windows (or checked out with core.autocrlf=true --
+// exactly the scenario ADR-2026-09-04 D1 already decided this project tolerates) leaves a
+// trailing "\r" on that line after strings.Split(content, "\n"); nothing downstream trims it, so
+// the exact-equality match silently never fires and the whole section is skipped. This was
+// measured live in the Python port of this same function (validator.py's _parse_blocked_adrs) on
+// Windows ARM64 -- Python's pre-ML-1G read path masked it via an implicit universal-newlines
+// translation only Python's own open() does; Go's readRegularFile never had that translation to
+// lose, so this exact bug was ALSO present here already, just never exercised by any fixture (Go's
+// os.WriteFile never introduces stray CRLF the way Python's text-mode open() can on Windows).
+// Closing it here, not just in Python, keeps the 3 CLIs at parity for a real (not test-artifact)
+// scenario -- see TestParseBlockedADRsCRLF for the falsification.
 func parseBlockedADRs(path string) ([]string, error) {
 	content, err := readRegularFile(path)
 	if err != nil {
 		return nil, err
 	}
-	lines := strings.Split(string(content), "\n")
+	lines := strings.Split(string(integrations.NormalizeCRLF(content)), "\n")
 
 	var adrs []string
 	inSection := false

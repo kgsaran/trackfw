@@ -17,6 +17,7 @@ from . import config as _config
 from .traceid import check_traceid
 from trackfw.homedir import home_dir, expand_path
 from trackfw.pathfmt import normalize_ref_separator
+from trackfw.integrations.renderers import _normalize_crlf
 
 # _current_platform is seeded from sys.platform at import time. Tests override it
 # via _set_platform_for_test to exercise the Windows guard on any host.
@@ -97,6 +98,53 @@ def _read_regular_file(path: str) -> bytes:
     finally:
         if fd >= 0:
             os.close(fd)
+
+
+def _read_text_normalized(path: str) -> str:
+    """Text-mode counterpart of _read_regular_file for the governance-artifact/config
+    CONSUMERS that parse decoded text for line/frontmatter matching (ADR/REQ status,
+    "## Blocked by ADRs" section header, squad frontmatter field, .trackfw-log lines,
+    vault index.md, trackfw.yaml on-disk mode). Decodes with errors="replace" (same
+    lossless-decode contract as every other _read_regular_file(...).decode(...) call in
+    this module) and folds "\\r\\n" -> "\\n" via _normalize_crlf before returning.
+
+    ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio,
+    ML-1H. Why this exists: ML-1G routed these reads through _read_regular_file (raw
+    bytes), removing a translation that Python's own open(path, encoding="utf-8") used
+    to do implicitly (universal newlines) and that ONLY Python ever had -- Go's
+    os.ReadFile and Node's fs.readFileSync never translated line endings, so neither
+    runtime lost anything when ML-1G switched Python to a byte-exact primitive. Measured
+    live on Windows ARM64: a REQ file with CRLF made `line == "## Blocked by ADRs"`
+    (exact string equality, no per-line strip) fail on the trailing "\r" the split("\n")
+    left attached, silently emptying "## Blocked by ADRs" parsing -- exactly the class of
+    entry ADR-2026-09-04 (D1) already decided this runtime tolerates: "o produtor do
+    arquivo é frequentemente outra pessoa, em outro SO". Reusing _normalize_crlf here
+    (not a second normalizer) keeps D3 (ponto único por runtime) -- one function per
+    runtime, applied at every boundary where raw content enters a parser, frontmatter or
+    otherwise.
+
+    NOT used by the guard-script *_script_integrity byte-comparisons or by
+    thirdparty_artifact_has_provenance's checksum read: those compare against a
+    byte-exact reference/checksum, where folding CRLF would hide a real content
+    difference (a CRLF-corrupted generated .sh script IS a divergence -- see
+    check-python-writes-lf.sh's own rationale: CRLF in a shebang line breaks exec on
+    POSIX with "bad interpreter"). Measured: this Windows run's 2 "identical to
+    template" false accusals in that family traced to the TEST HELPER writing the LF-only
+    reference constant in Python text mode, "w" encoding="utf-8", without an explicit
+    newline="\n" (Windows-only: default text-mode write also translates \\n -> os.linesep,
+    independent of and prior to any read-side fix) -- fixed at the fixture, not by
+    normalizing the integrity check, so a genuinely CRLF-corrupted script keeps being
+    reported.
+
+    Cross-CLI parity note: parseBlockedADRs (Go, internal/validator/validator.go) and its
+    Node mirror (npm/src/validator/index.js) do the exact same unstripped
+    `line == "## Blocked by ADRs"` comparison -- a real (not Python-only) CRLF REQ file
+    would defeat detection in all 3 runtimes today. Go's internal/integrations.NormalizeCRLF
+    and Node's npm/src/integrations/render.js normalizeCRLF are applied at the equivalent
+    boundary in those 2 runtimes in this same ML, closing the gap in parity rather than
+    opening a new one.
+    """
+    return _normalize_crlf(_read_regular_file(path).decode("utf-8", errors="replace"))
 
 
 # ---------------------------------------------------------------------------
@@ -442,15 +490,15 @@ def _list_dir_for_rule(rule: str, dir_path: str, messages: list) -> list:
 
 def _read_file_for_rule(rule: str, file_path: str, messages: list):
     try:
-        raw = _read_regular_file(file_path)
+        # ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio,
+        # ML-1H: _read_text_normalized replaces the former raw-bytes-then-decode call here --
+        # this is a TEXT consumer (governance-artifact frontmatter/body parsing), see that
+        # function's doc comment for the CRLF-tolerance decision and why it does not apply to
+        # the guard-script/checksum byte-exact consumers elsewhere in this module.
+        return _read_text_normalized(file_path)
     except OSError as e:
         messages.append(_inspection_item(rule, file_path, e))
         return None
-    # errors="replace" instead of strict utf-8 decode -- avoids an uncaught UnicodeDecodeError on a
-    # non-UTF-8 governance artifact, mirroring the ML-1B fix already applied to the guard config
-    # family (ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio,
-    # ML-1G).
-    return raw.decode("utf-8", errors="replace")
 
 
 def _walk_dir_md(dir_path: str) -> list:
@@ -905,7 +953,9 @@ def _parse_blocked_adrs(file_path: str) -> list:
     Espelha parseBlockedADRs do JS.
     """
     try:
-        content = _read_regular_file(file_path).decode("utf-8", errors="replace")
+        # ML-1H: text consumer (line-based section parsing, exact "## Blocked by ADRs"
+        # match) -- see _read_text_normalized's doc comment.
+        content = _read_text_normalized(file_path)
     except OSError:
         return []
 
@@ -977,7 +1027,9 @@ def _adr_draft_status_for_rule(basename: str, cfg: dict, messages: list | None):
     if not p:
         return False, True
     try:
-        return _adr_not_accepted(_read_regular_file(p).decode("utf-8", errors="replace")), True
+        # ML-1H: text consumer (frontmatter/header status extraction) -- see
+        # _read_text_normalized's doc comment.
+        return _adr_not_accepted(_read_text_normalized(p)), True
     except OSError as e:
         if messages is not None:
             messages.append(_inspection_item("blocked_by_draft_adr", p, e))
@@ -1001,7 +1053,9 @@ def _parse_squad_from_frontmatter(file_path: str) -> str:
     Retorna string vazia se ausente.
     """
     try:
-        content = _read_regular_file(file_path).decode("utf-8", errors="replace")
+        # ML-1H: text consumer (line-based frontmatter field parsing) -- see
+        # _read_text_normalized's doc comment.
+        content = _read_text_normalized(file_path)
     except OSError:
         return ""
 
@@ -1324,7 +1378,9 @@ def _latest_wip_transition_time(cfg: dict, file_path: str):
     diagnostics = []
 
     try:
-        log_lines = _read_regular_file(log_path).decode("utf-8", errors="replace").split("\n")
+        # ML-1H: text consumer (line-based log parsing) -- see _read_text_normalized's
+        # doc comment.
+        log_lines = _read_text_normalized(log_path).split("\n")
         for line in log_lines:
             stripped = line.strip()
             if not stripped:
@@ -1848,7 +1904,9 @@ def validate_note_orphan(cfg: dict, cwd: str = None) -> list:
     index_path = os.path.join(vault_dir, "index.md")
     index_content = ""
     try:
-        index_content = _read_regular_file(index_path).decode("utf-8", errors="replace")
+        # ML-1H: text consumer (markdown link/wikilink matching) -- see
+        # _read_text_normalized's doc comment.
+        index_content = _read_text_normalized(index_path)
     except FileNotFoundError:
         pass
     except OSError as err:
@@ -3769,7 +3827,9 @@ def validate_credential_guard_mode_downgrade(cwd: str = None) -> list:
 
     disk_path = os.path.join(root, "trackfw.yaml")
     try:
-        disk_content = _read_regular_file(disk_path).decode("utf-8", errors="replace")
+        # ML-1H: text consumer (YAML key/value line extraction via
+        # _extract_credential_guard_mode below) -- see _read_text_normalized's doc comment.
+        disk_content = _read_text_normalized(disk_path)
     except FileNotFoundError:
         # trackfw.yaml deletado inteiramente enquanto HEAD tinha mode: block -- é o downgrade.
         return [{"type": "violation", "message": _credential_guard_mode_downgrade_message()}]

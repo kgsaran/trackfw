@@ -258,6 +258,18 @@ test('git_branch_guard_script_integrity: silêncio quando o script é idêntico 
   assert.deepEqual(msgs, [])
 })
 
+// ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio, ML-1H:
+// espelha o teste equivalente de credential_guard_script_integrity (mesma ML) -- a comparação
+// byte-a-byte nunca folds CRLF->LF, então um script CRLF-corrompido continua reportado como
+// divergente.
+test('git_branch_guard_script_integrity: script CRLF-corrompido dispara divergência', () => {
+  const dir = tmpDir()
+  writeFile(dir, 'scripts/trackfw-git-branch-guard.sh', GIT_BRANCH_GUARD_SCRIPT_REFERENCE.replace(/\n/g, '\r\n'))
+  const msgs = validateGitBranchGuardScriptIntegrity(dir)
+  assert.equal(msgs.length, 1, `esperava divergência para script CRLF-corrompido, obteve: ${JSON.stringify(msgs)}`)
+  assert.match(msgs[0], /diverges from the template/)
+})
+
 test('git_branch_guard_script_integrity: 1 byte alterado dispara violação', () => {
   const dir = tmpDir()
   const tampered = GIT_BRANCH_GUARD_SCRIPT_REFERENCE.slice(0, -1) + 'X'

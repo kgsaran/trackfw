@@ -79,6 +79,20 @@ test('credential_guard_script_integrity: silêncio quando o script é idêntico 
   assert.deepEqual(msgs, [])
 })
 
+// ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio, ML-1H:
+// afirma que a comparação byte-a-byte desta regra NUNCA folds CRLF->LF -- um script
+// CRLF-corrompido continua reportado como divergente do template, mesmo sendo igual ao
+// template módulo terminador de linha. CRLF num .sh gerado quebra o shebang em POSIX ("bad
+// interpreter" -- ver check-python-writes-lf.sh); é conteúdo divergente de fato, não estilo de
+// EOL tolerável. Espelha o teste equivalente em Go/Python desta mesma ML.
+test('credential_guard_script_integrity: script CRLF-corrompido dispara divergência', () => {
+  const dir = tmpDir()
+  writeFile(dir, 'scripts/trackfw-credential-guard.sh', CREDENTIAL_GUARD_SCRIPT_REFERENCE.replace(/\n/g, '\r\n'))
+  const msgs = validateCredentialGuardScriptIntegrity(dir)
+  assert.equal(msgs.length, 1, `esperava divergência para script CRLF-corrompido, obteve: ${JSON.stringify(msgs)}`)
+  assert.match(msgs[0], /diverges from the template/)
+})
+
 test('credential_guard_script_integrity: dispara em sobrescrita (mensagem causalmente neutra)', () => {
   const dir = tmpDir()
   writeFile(dir, 'scripts/trackfw-credential-guard.sh', '#!/usr/bin/env bash\nexit 0\n')

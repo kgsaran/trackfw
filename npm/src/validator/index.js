@@ -10,6 +10,7 @@ const { checkTraceIds } = require('./traceid')
 const { loadProvenance } = require('../thirdparty/provenance')
 const { homedir } = require('../homedir')
 const { normalizeRefSeparator } = require('../lib/pathfmt')
+const { normalizeCRLF } = require('../integrations/render')
 
 // _platform is seeded from process.platform at module load time. Tests override
 // it via _setPlatformForTest to exercise the Windows guard on any host.
@@ -524,10 +525,19 @@ function resolveDoneDirs(cfg) {
 }
 
 // parseBlockedADRs extrai basenames de ADRs da seção "## Blocked by ADRs" de um arquivo REQ.
+//
+// ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio, ML-1H:
+// content is folded through normalizeCRLF (npm/src/integrations/render.js) before the exact
+// `line === '## Blocked by ADRs'` comparison below -- same fix, same reason, as Go's
+// parseBlockedADRs (internal/validator/validator.go) and Python's _parse_blocked_adrs
+// (pypi/trackfw/validator.py): a REQ with CRLF (Windows author, or git checkout with
+// core.autocrlf=true -- ADR-2026-09-04 D1's exact scenario) leaves a trailing "\r" on this line
+// after content.split('\n'), and the exact-equality match silently never fires without this.
+// Measured first in the Python port on Windows ARM64; closed identically in all 3 runtimes here.
 function parseBlockedADRs(filePath) {
   let content
   try {
-    content = readRegularFileSync(filePath).toString('utf8')
+    content = normalizeCRLF(readRegularFileSync(filePath).toString('utf8'))
   } catch (_) {
     return []
   }

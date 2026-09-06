@@ -1966,6 +1966,49 @@ func TestBlockedByDraftADR_REQOpen_ProposedADR_Violates(t *testing.T) {
 	}
 }
 
+// TestBlockedByDraftADR_REQOpen_ProposedADR_CRLF_Violates — ROADMAP-2026-09-06-fecha-o-
+// fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio, ML-1H: afirma que uma REQ com CRLF
+// (produtor em outro SO, mesmo cenário de ADR-2026-09-04 D1) segue detectando o bloqueio.
+// parseBlockedADRs compara "## Blocked by ADRs" por igualdade EXATA de linha; sem
+// integrations.NormalizeCRLF na entrada, o "\r" residual que strings.Split(content, "\n") deixa
+// colado ao fim dessa linha quebra o match em silêncio -- medido primeiro na porta Python deste
+// mesmo algoritmo (Windows ARM64), replicado aqui como o mesmo defeito, nunca antes exercitado em
+// Go porque nenhum writeFile deste pacote jamais introduziu CRLF sozinho.
+func TestBlockedByDraftADR_REQOpen_ProposedADR_CRLF_Violates(t *testing.T) {
+	dir := t.TempDir()
+	mkdirs(t, dir, "docs/req", "docs/adr")
+
+	adrRel := "docs/adr/ADR-2026-08-01-proposed-blocker-crlf.md"
+	writeFile(t, dir, adrRel, adrFixtureContent("Proposed"))
+
+	reqOpenContent := "# REQ: bloqueada por Proposed (CRLF)\r\n\r\n" +
+		"> Date: 2026-08-01 | Status: Open\r\n\r\n" +
+		"## Motivation\r\nmotivo\r\n\r\n" +
+		"## Acceptance Criteria\r\n- [ ] pendente\r\n\r\n" +
+		"## Linked ADR\r\nADR:\r\n\r\n" +
+		"## Blocked by ADRs\r\n- ADR-2026-08-01-proposed-blocker-crlf.md (Proposed)\r\n\r\n" +
+		"## Linked Roadmap\r\nRoadmap:\r\n"
+	writeFile(t, dir, "docs/req/REQ-2026-08-01-blocked-fixture-crlf.md", reqOpenContent)
+	writeFile(t, dir, "trackfw.yaml", "req_dir: docs/req\nadr_dirs:\n  - docs/adr\n")
+	config.Reset()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	violations, err := validateREQsNotBlockedByDraftADRs()
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if len(violations) == 0 {
+		t.Fatal("regressão: blocked_by_draft_adr não detectou bloqueio numa REQ com CRLF")
+	}
+	if !hasViolation(violations, "REQ-2026-08-01-blocked-fixture-crlf.md") {
+		t.Errorf("mensagem deve citar a REQ, obteve: %v", violations)
+	}
+	if !hasViolation(violations, "ADR-2026-08-01-proposed-blocker-crlf.md") {
+		t.Errorf("mensagem deve citar o ADR, obteve: %v", violations)
+	}
+}
+
 // TestADRAcceptedWhenREQDone_FrontmatterStatusVazio_CaiParaCabecalho — REQ com
 // `status: ""` no frontmatter (campo presente mas vazio, formato real usado pelos
 // geradores para campos não preenchidos) deve cair para o cabeçalho "| Status: Done"

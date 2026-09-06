@@ -33300,3 +33300,99 @@ leituras completas confirmaram, não contradisseram, os resultados iniciais), ma
 agora é rastreável linha a linha, não por inferência de analogia.
 
 **Fim.**
+
+## 2026-09-06 — apolo-tf (Backend) — ML-1H: CRLF no Windows, duas causas atrás das 6 falhas do ML-1G
+
+**Tarefa:** fechar 6 falhas novas em Windows (medidas pelo arquiteto na VM real) que o ML-1G
+introduziu ao rotear os sítios de leitura de `pypi/trackfw/validator.py` pelo leitor único
+(`_read_regular_file`), removendo a tradução universal-newlines implícita que só o Python tinha na
+leitura. Branch `fix/fecha-o-fail-open-do-guard`, roadmap
+`ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio.md`, ML-1H.
+
+**Achado central — a premissa do handoff era só metade do mecanismo.** As 6 falhas se dividem em
+duas causas independentes, cada uma exigindo o remédio oposto — tratá-las como uma causa única
+teria produzido o remédio errado para metade delas:
+
+- **Classe 1 (4 falhas, normalizar no leitor):** `_parse_blocked_adrs` compara
+  `line == "## Blocked by ADRs"` por igualdade exata, sem `.strip()` — uma REQ com CRLF real
+  (Windows, ou git checkout com `core.autocrlf=true`) deixa um `\r` residual que quebra o match em
+  silêncio. Cenário genuíno de ADR-2026-09-04 D1. Remédio: `_read_text_normalized(path)` nova
+  (`_normalize_crlf(_read_regular_file(path).decode(...))`, reaproveitando o `_normalize_crlf`
+  já existente — nenhum segundo normalizador), roteando `_read_file_for_rule`,
+  `_parse_blocked_adrs`, `_adr_draft_status_for_rule`, `_parse_squad_from_frontmatter`,
+  `_latest_wip_transition_time`, `validate_note_orphan`, `validate_credential_guard_mode_downgrade`.
+- **Classe 2 (2 falhas, NÃO normalizar — corrigir a fixture):** os helpers `_write()` de
+  `test_credential_guard_integrity.py`/`test_git_branch_guard_validator.py` escrevem sem
+  `newline="\n"` — no Windows, o modo texto padrão do Python TAMBÉM traduz na escrita, então a
+  fixture "idêntica ao template" na verdade gravava um script CRLF-corrompido. A regra
+  `*_script_integrity` compara byte-a-byte corretamente (CRLF num `.sh` gerado quebra o shebang em
+  POSIX — "bad interpreter", motivo já documentado em `check-python-writes-lf.sh`). Normalizar essa
+  comparação teria reaberto, dentro da própria REQ, a classe de fail-open que ela existe para
+  fechar. Remédio: `newline="\n"` nos 3 helpers de fixture, comparação do produto intocada. Guarda:
+  4 testes novos que escrevem CRLF via bytes crus e afirmam que a regra continua acusando.
+
+**`thirdparty_artifact_has_provenance` (linha ~3975) ficou raw, sem normalização** — critério
+principal do handoff: compara checksum de conteúdo de terceiro arbitrário contra
+`installed_sha256` gravado na aprovação; normalizar mascararia adulteração disfarçada de troca de
+EOL (falso negativo de segurança) e acusaria falsamente CRLF legítimo (falso positivo).
+
+**Go e Node: verificados por leitura de código, não assumidos.** Nenhum dos dois tinha tradução
+implícita a perder (Buffer.toString/leitura de bytes crus nunca fizeram universal-newlines, nem na
+leitura nem na escrita). `resolveAdrStatus`/`extractAdrHeaderStatus`/`parseSquadFromFrontmatter`/
+`extractCredentialGuardMode` já toleram CRLF via `TrimSpace`/`.trim()`. **Uma exceção real:**
+`parseBlockedADRs` em Go e Node tem o MESMO defeito de igualdade exata da Classe 1 — nunca
+exercitado porque nenhum `os.WriteFile`/`fs.writeFileSync` de teste introduz CRLF sozinho. Fechado
+nos 2 runtimes (reaproveitando `integrations.NormalizeCRLF` em Go — sem novo import cycle, já
+importado por `validator_thirdparty_provenance.go` — e `normalizeCRLF` em Node), para não deixar
+esta ML criar uma divergência de 3-CLI nova contra a Regra Dura de Paridade (Python passaria a
+detectar REQ com CRLF, Go/Node continuariam cegos ao mesmo cenário real).
+
+**Falsificação nas duas direções, na VM Windows ARM64 real (Python 3.12.10), não em macOS:**
+- 6 testes-alvo verdes na VM (`6 passed in 0.08s`).
+- Remover só a normalização do leitor → as 3 falhas de Classe 1 voltam; as 2 de Classe 2 continuam
+  passando.
+- Restaurar o leitor, reverter só `newline="\n"` das fixtures → as 3 falhas de Classe 2 voltam; as
+  3 de Classe 1 continuam passando. Dois remédios comprovadamente independentes.
+- Suíte completa antes/depois na VM: mesmas 29 falhas pré-existentes não relacionadas (barrier,
+  gitattributes, identity wizard tty, ship, thirdparty — gaps Windows já existentes, fora de
+  escopo), 1612 passed (+4 exato) na rodada final.
+
+**Gate quebrado por prosa, corrigido:** o docstring de `_read_text_normalized` continha
+`open(path, "w", encoding="utf-8")` literal explicando o bug da Classe 2 — `check-python-writes-lf.sh`
+faz scan textual (não AST), sem distinguir comentário/docstring de código real, e acusou a própria
+frase. Reescrito sem o padrão de chamada literal; mesma classe de falso-positivo que o ML-1G já
+tinha documentado para `check-raw-read-ban.sh`.
+
+**Suítes finais:** Go 230 testes (+2, `internal/validator`), `go build ./...`/`go vet ./...`
+limpos; Node 884 testes (+3, `npm test` completo); Python 1656 + 66 subtests (+4, `pytest tests/`
+completo). `check-raw-read-ban.sh` e `check-python-writes-lf.sh` verdes. `make quality` não rodado
+por este agente — arquiteto roda ao fim.
+
+**Arquivos alterados:**
+`pypi/trackfw/validator.py` (import + `_read_text_normalized` + 7 sítios roteados),
+`pypi/tests/test_validator.py` (+1 teste CRLF),
+`pypi/tests/test_credential_guard_integrity.py` (`newline="\n"` no helper + 1 teste CRLF),
+`pypi/tests/test_git_branch_guard_validator.py` (`newline="\n"` no helper + 2 testes CRLF),
+`internal/validator/validator.go` (import `internal/integrations` + `NormalizeCRLF` em
+`parseBlockedADRs`), `internal/validator/validator_test.go` (+1 teste CRLF),
+`internal/validator/validator_credential_guard_integrity_test.go` (+1 teste CRLF),
+`npm/src/validator/index.js` (import `normalizeCRLF` + aplicado em `parseBlockedADRs`),
+`npm/tests/validator.test.js`, `npm/tests/credential_guard_integrity.test.js`,
+`npm/tests/git_branch_guard_hook_integrity.test.js` (+1 teste CRLF cada),
+`docs/roadmaps/wip/ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio.md`
+(seção ML-1H). Nenhuma operação de git — entrega para `trackfw_architect` auditar e commitar.
+
+**Fim.**
+
+**Pós-checagem (advisor), 3 pontos adicionados ao ML-1H no roadmap:**
+1. Warning "no acceptance criteria block" do `trackfw validate` sobre este roadmap é
+   pré-existente (já valia antes desta ML), não introduzido por ela — geração do heading
+   consolidado (ADR-2026-07-31) é artefato do `trackfw_architect`.
+2. Contagem Node reconciliada: exatamente 3 `test(` novos neste diff (confirmado via
+   `git diff | grep "^+.*test("`, não contado de cabeça) — baseline imediatamente anterior era
+   881, não 882 (ML-1G); a diferença veio do merge `f5850b7` já presente na branch.
+3. `gofmt -l` acusa 2 arquivos (`validator_credential_guard.go`,
+   `validator_credential_guard_test.go`) por drift de alinhamento pré-existente — `git diff --stat`
+   confirma zero linhas tocadas por mim nesses 2 arquivos.
+
+**Fim.**
