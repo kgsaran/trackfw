@@ -1099,3 +1099,53 @@ test('barrier regression: CRLF roadmap — fence masking and indented-marker str
     fs.rmSync(dir, { recursive: true, force: true })
   }
 })
+
+// Closes the Node side of "G1-bis" from the retriage
+// (docs/portabilidade/2026-09-04-retriagem-do-residuo-de-windows-por-mecanismo.md):
+// a "**Gates da wave:**" header immediately followed by a fenced ```bash
+// block, in a CRLF roadmap, must be recognized exactly like the LF form. The
+// Python-side symptom measured on real Windows CI was "malformed gates
+// block ... must be immediately followed by a fenced code block" — this is
+// the same shape of fixture as
+// pypi/tests/test_barrier.py::test_barrier_cli_crlf_roadmap_gates_da_wave_e_reconhecido_e_comando_roda_e2e,
+// ported to Node.
+//
+// This test asserts CONCLUSION 2 of ML-5A: parseGates was ALREADY
+// CRLF-tolerant in this runtime — every line comparison inside it goes
+// through `.trim()`, which (unlike a JS regex "." literal) strips a
+// trailing "\r" regardless of splitRoadmapLines. It exists to make that
+// tolerance falsifiable going forward, not because a fix was applied here.
+test('barrier regression: CRLF roadmap — "Gates da wave:" fence is recognized and the gate actually runs (G1-bis)', () => {
+  const content = [
+    '# Roadmap: CRLF Fixture',
+    '',
+    'REQ: REQ-2026-08-29-barrier-fixture',
+    '',
+    '## Acceptance Criteria',
+    '- [x] fixture roadmap-level criterion',
+    '',
+    '## Wave 1 — Fixture Wave',
+    '',
+    '**Gates da wave:**',
+    '```bash',
+    'false',
+    '```',
+    '',
+    '### ML-1A — Real ML',
+    '**Status:** done',
+    '**Critérios de aceite:**',
+    '- [x] build passes',
+    '',
+  ].join('\r\n')
+  const dir = setupRegressionFixture(content)
+  try {
+    const { stdout, stderr, status } = runBarrierCLI(dir, 'ROADMAP-regression', '--wave', '1', '--json')
+    assert.equal(status, 1, `expected exit 1 (blocked by the gate), got ${status}\nstdout: ${stdout}\nstderr: ${stderr}`)
+    const doc = JSON.parse(stdout)
+    const gatesCheck = doc.checks.find((c) => c.name === 'gates')
+    assert.equal(gatesCheck.status, 'blocked')
+    assert.deepEqual(gatesCheck.commands, ['false'])
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})

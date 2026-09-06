@@ -116,6 +116,23 @@ class TestRotaBWithIdentity:
         assert "name: zeus-tf" in got
         assert "You are Zeus." in got
 
+    def test_subagent_representation_crlf_source_matches_lf_source(self):
+        """Falsificação da ADR-2026-09-04, no caminho que mais importa: Rota B
+        com identidade encadeia _parts, _insert_body_prefix,
+        _rewrite_frontmatter_fields e _rewrite_signature_line — as quatro
+        funções de fronteira de frontmatter deste arquivo que tocam o corpo,
+        não só a que markdownParts/​_parts sozinho exerceria. Um source CRLF
+        que passasse por uma delas sem normalizar teria o mesmo sintoma
+        medido no handoff (frontmatter inteiro caindo no corpo)."""
+        capability = {"representation": "subagent", "support_level": "native"}
+        crlf_source = CLAUDE_SOURCE.replace("\n", "\r\n")
+
+        lf_out = render("agents", "claude", "cli", ITEM, CLAUDE_SOURCE, capability, GREEK_CFG)
+        crlf_out = render("agents", "claude", "cli", ITEM, crlf_source, capability, GREEK_CFG)
+
+        assert crlf_out == lf_out
+        assert "\r" not in crlf_out
+
 
 class TestRotaAWithIdentity:
     def test_toml_name_uses_underscore(self):

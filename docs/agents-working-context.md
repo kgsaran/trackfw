@@ -31869,3 +31869,560 @@ fail-open — segurança real, não cosmética). Detalhe completo e critério de
 arquivo no documento.
 
 Sem git, sem código de produto/teste alterado — investigação pura, conforme escopo.
+
+## 2026-09-05 — `apolo-tf` (Backend) — ML-5A: CRLF na fronteira de entrada, escopo real (parser + renderizadores + barrier) — FIM
+
+`ROADMAP-2026-09-03-fechar-os-grupos-de-falha-de-windows-por-causa-raiz`, Wave 5, último ML da
+campanha. Governado por `ADR-2026-09-04-parser-de-frontmatter-tolera-crlf-na-fronteira-de-entrada`
+(D1-D4). Sem git, árvore deixada suja para o arquiteto auditar e commitar. `make quality` NÃO
+rodado (cabe ao arquiteto).
+
+### Enumeração das superfícies, com sítio e veredito
+
+| Superfície | Sítios | Veredito |
+|---|---|---|
+| **Renderizador de agente (frontmatter + identidade/modelo)** | Go `internal/integrations/render.go`: `markdownParts`, `insertBodyPrefix`, `rewriteSignatureLine`, `rewriteFrontmatterFields`, `frontmatterName`, `rewriteFrontmatterModelLine`, `removeFrontmatterModelLine` (7 funções) · Node `npm/src/integrations/render.js` (mesmas 7, espelhadas) · Python `pypi/trackfw/integrations/renderers.py` (`_parts`, `_insert_body_prefix`, `_rewrite_signature_line`, `_rewrite_frontmatter_fields`, `_rewrite_frontmatter_model_line`, `_remove_frontmatter_model_line` — 6, sem `frontmatterName` própria) | **CORRIGIDA nos 3 CLIs.** Cada função fazia `strings.HasPrefix(trimmed, "---\n")`/`.startsWith('---\n')` sobre um source que podia ter `\r\n` — CRLF nunca casava, e a função tratava "sem frontmatter" (mesmo sintoma da ADR: frontmatter inteiro cai no corpo, model vazio). Adicionada UMA função por runtime (`normalizeCRLF`/`_normalize_crlf`), chamada na entrada de cada uma dessas funções — D3 interpretado como "uma implementação", não "um call site", porque este pacote não tem uma única leitura de I/O compartilhada por todas elas (`Render`, `AgentTier` e `manager.go`/`.py` entram por pontos distintos). |
+| **`IntegrationManager._frontmatter_name`/`frontmatterName` sobre bytes crus de disco (detecção de colisão de name, ADR-2026-07-25 D4)** | Go `manager.go` (já usa a `frontmatterName` corrigida acima) · Node `manager.js` (idem) · Python `manager.py::_frontmatter_name` | **CORRIGIDA — era o único sítio genuinamente load-bearing em Python.** `candidate.read_bytes()` + `.decode()` NÃO faz universal-newlines translation (diferente de `Path.read_text()`/`open(..., "r")`), então este era o único lugar em Python onde CRLF chegava de fato sem tradução prévia. Falsificado: sem a chamada a `_normalize_crlf`, `_frontmatter_name(crlf_bytes)` retornava `None` em vez do `name` esperado. |
+| **Parser de gates do `barrier` ("G1-bis" da re-triagem)** | Go `parseGates` (`internal/commands/barrier.go`) · Node `parseGates` (`npm/src/commands/barrier.js`) · Python `_find_gates` (`pypi/trackfw/commands/barrier.py`) | **JÁ CORRIGIDA — achado, não fix.** Toda comparação de linha dentro de `parseGates`/`_find_gates` passa por `strings.TrimSpace`/`.trim()`/`.strip()`, que absorvem um `\r` sobrando independente de `splitRoadmapLines`/`_split_roadmap_lines` (que também já existem nos 3 runtimes desde os commits `d4e286e`/`fce709f`, Aug29/Sep1 — antes desta ML). Reproduzi o teste Python citado pela re-triagem (`test_barrier_cli_crlf_roadmap_gates_da_wave_e_reconhecido_e_comando_roda_e2e`): **passa hoje**, local. Adicionei os testes de regressão que faltavam em Go e Node (a Python já tinha o dela desde 29/08) — ver seção de falsificação. 🔴 **Discrepância não resolvida, declarada em vez de escondida**: o único dado de Windows real (re-triagem `docs/portabilidade/2026-09-04-...md`, run `33931363032`, POSTERIOR a `fce709f`) registra esse mesmo teste Python **falhando** com a mensagem exata de "malformed gates block". Não encontrei causa mundana em duas checagens rápidas (`pypi/build/lib/.../barrier.py` não tem `_split_roadmap_lines` — é cópia obsoleta, mas o job `windows-full-suites` do `quality.yml` faz `pip install pypi/` antes de rodar `pytest`, o que deveria reinstalar do fonte atual, não da cópia obsoleta). Reportado como **"já tolerante no fonte atual, medido nos 3 runtimes — divergência do CI de Windows não explicada"**, não como fechado. |
+| **Parser de frontmatter de validação** (`extractFrontmatterField`/`validateFrontmatterPresence` em Go, `traceid.js::extractFrontmatterField` em Node, `parse_frontmatter`/`_parse_frontmatter`/`validateFrontmatterPresence`-equivalent em Python) | `internal/validator/validator.go:2036,2075,2088` · `npm/src/validator/traceid.js` · `pypi/trackfw/traceid.py`, `pypi/trackfw/validator.py:827,1394,1407` | **JÁ CORRETA nos 3 runtimes — verificado por falsificação, não por leitura.** Os três usam `startsWith`/`HasPrefix` só com `"---"` (sem exigir `\n` logo em seguida) e todo valor de linha passa por `TrimSpace`/`.trim()`/`.strip()` antes de comparar — CRLF nunca chega a divergir. Probes ad-hoc (removidos após a medição) confirmaram `extractFrontmatterField(lf) == extractFrontmatterField(crlf) == "Accepted"` nos 3. Nenhuma mudança de código aqui. |
+| **`rewriteRoadmapStatus`/`rewriteREQStatus`** (`internal/generators/roadmap.go:342`, `req.go:188` · `npm/src/generators/roadmap.js:177`, `req.js:72` · `pypi/trackfw/generators/roadmap.py:101,422,451`, `req.py:108`) — usadas por `trackfw roadmap move`/mudança de status de REQ | 6+ sítios, mesma classe exata (`HasPrefix(s, "---\n")`) | **ENCONTRADA, NÃO CORRIGIDA — fora de escopo desta ML, recomendo REQ própria.** Esta é a leitura literal de "demais consumidores que casem delimitador por literal" do handoff, mas é uma classe de artefato diferente (REQ/Roadmap, não agent-md) e um comando de governança de uso frequente (`trackfw roadmap move`); um roadmap-sibling autorado com CRLF no Windows faria `rewriteRoadmapStatus` retornar `(source, false)` **silenciosamente sem reescrever o status** — o comando "funcionaria" sem erro e o `frontmatter.status` ficaria dessincronizado da pasta. Não tem teste hoje, nenhuma das 100 falhas de Windows do resíduo aponta para cá, e mexer em código usado por `trackfw roadmap move`/`trackfw req` sem REQ e sem cobertura de teste dedicada violava a disciplina de não expandir escopo sob pressão de tempo. Reportado para não virar "achado enterrado".
+
+### Falsificação nas duas direções, com números
+
+Todas as falsificações abaixo comparam o MESMO source com `\n`→`\r\n` injetado em memória (o asset
+`go:embed`/`read_text` em disco é LF; alterar o arquivo não exercitaria nada — CLAUDE.md §"cuidados
+medidos").
+
+- **Go, Rota A** (`TestRenderOpenCodeAgent_CRLFSourceMatchesLF`): antes da correção, `markdownParts(crlf)` devolvia `name="trackfw-agent" description="trackfw specialist" model=""` contra `name="teste" description="d" model="sonnet"` do LF — reproduzido e revertido (`sed` temporário, restaurado, `go build` confirmado limpo depois).
+- **Go, Rota B completa** (`TestRenderSubagentRouteInjectsIdentity_CRLFSourceMatchesLF`) — a que importa de verdade: encadeia `markdownParts` + `insertBodyPrefix` + `rewriteFrontmatterFields` + `rewriteSignatureLine`. Revertendo SÓ `insertBodyPrefix` (uma das 6 que eu quase deixei sem a chamada — ver "erro corrigido durante a própria ML" abaixo), o teste falsifica: `FAIL`, saída divergente (`name: trackfw-architect` vazando em vez de `zeus-tf`). Restaurado, `go build ./...` limpo.
+- **Node** (`identity-render.test.js`, Rota B): reproduzido byte a byte o quote exato do handoff — `LF: name=teste,model=sonnet` vs `CRLF (sem fix): name=trackfw-agent, model="", frontmatter inteiro em `developer_instructions`/body`. Revertendo só `insertBodyPrefix` (linha 228): teste falsifica com o diff exato mostrando `name: trackfw-architect` vazando.
+- **Python**: `_parts` isolado (fora de qualquer leitura de arquivo) **também diverge sem o fix** — `{} , '---\r\nname: teste...'` — contrariando a expectativa inicial de "Python não diverge nunca" (ver seção de premissas derrubadas). Com o fix, `_parts(lf) == _parts(crlf)`. O caminho ponta-a-ponta real (via `Path.read_text()`) não diverge nem antes nem depois — é `open()`/`read_text()` fazendo universal-newlines antes do parser existir, não o parser. `IntegrationManager._frontmatter_name` (bytes crus) falsifica nas duas direções: `None` sem o fix, `"teste"` com.
+- **`barrier`/gates**: Go `TestBarrierCLI_CRLFGatesBlockFenceIsRecognized` e Node `'barrier regression: CRLF roadmap — "Gates da wave:" fence is recognized...(G1-bis)'` — novos, verificam que o fence é reconhecido E que o comando roda de fato (gate `false` reprova com exit 1, `commands: ["false"]`), não só que o parser não lança erro.
+
+### Controle de escrita (D2) e controle POSIX
+
+- `scripts/check-python-writes-lf.sh`: `Escrita em LF: nenhuma chamada sem newline explicito.` exit 0 — antes e depois (nenhum `open`/`write_text` novo).
+- Todo rewrite em `render.go`/`.js`/`renderers.py` reconstrói a saída com `"\n".join`/`strings.Join(...,"\n")` — normalizar a entrada nunca introduz `\r` na saída. Testado explicitamente: `TestRenderOpenCodeAgent_CRLFSourceMatchesLF`, `TestRenderSubagentRouteInjectsIdentity_CRLFSourceMatchesLF`, o teste Node de Rota B e os dois testes Python de `_parts` afirmam `"\r" not in output`.
+- 🔴 **Mudança de comportamento real, não coberta pela ADR como escrita**: um agent-md autorado com CRLF no Windows agora produz um artefato renderizado **LF puro** (antes, o CRLF vazava inteiro para dentro do corpo/JSON/TOML porque o parser não reconhecia frontmatter nenhum). Consistente com D2, mas é uma mudança de output visível para quem edita agent-md no Windows — vale citar na ADR se ela for revisada.
+- Controle POSIX (entrada LF continua idêntica): `TestRenderWithoutIdentityMatchesFrozenGoldens` (Go, goldens congelados) passou sem tocar nenhum golden — `git diff --stat -- internal/integrations/testdata` vazio. Suítes completas antes/depois: Go idêntico (todos os pacotes `ok`), Node 862→866 (+4 testes novos, 0 fail), Python 1621→1625 (+4 testes novos + 66 subtests, 0 fail).
+
+### `.gitattributes`
+
+`git diff -- .gitattributes` vazio — intocado (D4).
+
+### Reconciliação — o que cada teste novo afirma
+
+- `TestRenderOpenCodeAgent_CRLFSourceMatchesLF` (Go) / `'opencode-agent renderer: source CRLF...'` (Node) / `test_render_opencode_agent_crlf_source_matches_lf_source` (Python): afirmam que **a Rota A (markdownParts sozinho) não diverge mais entre LF e CRLF**, e que a saída continua LF.
+- `TestRenderSubagentRouteInjectsIdentity_CRLFSourceMatchesLF` (Go) / `'Rota B ... source CRLF renderiza igual...'` (Node) / `test_subagent_representation_crlf_source_matches_lf_source` (Python): afirmam que **a Rota B completa (as 4 funções encadeadas: parts + insertBodyPrefix + rewriteFrontmatterFields + rewriteSignatureLine) não diverge** — o teste que efetivamente pegou meu próprio erro de cobertura parcial durante esta ML (ver abaixo).
+- `TestNormalizeCRLF_StripsCRLFOnly` (Go) / `'normalizeCRLF dobra somente CRLF...'` (Node) / `test_normalize_crlf_folds_crlf_only` (Python): afirmam que a normalização **não é ampla demais** — um `\r` solto (Mac clássico) não é tocado, conforme o não-objetivo explícito da ADR (D4).
+- `test_frontmatter_name_from_raw_bytes_tolerates_crlf` (Python): afirma que o sítio genuinamente load-bearing (`manager.py`, bytes crus decodificados sem universal-newlines) está fechado — o único dos 3 runtimes onde a normalização não é apenas defensiva.
+- `TestBarrierCLI_CRLFGatesBlockFenceIsRecognized` (Go) / `'... Gates da wave: fence is recognized ... (G1-bis)'` (Node): afirmam que **o parser de gates do barrier já tolerava CRLF antes desta ML** (nenhuma linha de produção foi tocada para fazer esses dois passarem) — existem para tornar essa tolerância falsificável daqui pra frente, não porque um fix foi aplicado aqui.
+
+### Erro corrigido durante a própria ML (achado process, não só resultado)
+
+Na primeira passada eu adicionei `normalizeCRLF`/`_normalize_crlf` e chamei apenas em `markdownParts`/`_parts` — as outras 6 funções de Go e as 5 de Python ficaram sem a chamada. `TestRenderOpenCodeAgent_CRLFSourceMatchesLF` **passou** mesmo assim, porque a representação `opencode-agent` só passa por `markdownParts` (Rota A). Só o teste de Rota B completa (`TestRenderSubagentRouteInjectsIdentity_CRLFSourceMatchesLF`, escrito depois) expôs a lacuna — que eu falsifiquei revertendo cada função isoladamente antes de fechar. Registrado aqui porque é exatamente o padrão que o requisito de reconciliação deste handoff existe para pegar: entregar metade do caminho com aparência de completo.
+
+### Premissas derrubadas
+
+1. **A ADR e o handoff dizem "Python: 0 nesta forma" / "Python provavelmente não diverge"** — verdadeiro só para o caminho ponta-a-ponta via arquivo (porque `open()`/`read_text()` já traduz `\r\n`→`\n` antes do parser existir). **Falso no nível de função**: `_parts` isolado, e `_frontmatter_name` sobre bytes crus, divergem exatamente como Go/Node sem a correção — medido, não presumido.
+2. **"G1-bis precisa de patch adicional no barrier"** (retriage, ML-5A original) — o fonte atual já tolera CRLF no parser de gates, e nenhuma linha de produção do `barrier` precisou mudar. A única coisa que ficou pendente é entender por que a única evidência real de Windows contradiz essa medição local — declarado, não escondido.
+3. **O ML dizia "parser de frontmatter"** — a auditoria de 2026-09-05 já tinha corrigido isso para "parser + renderizadores + identidade/modelo + barrier"; a medição desta ML acrescenta um QUINTO grupo real e não fechado (`rewriteRoadmapStatus`/`rewriteREQStatus`, roadmap/REQ, não agent-md) que nem essa correção de escopo tinha nomeado.
+
+### Evidência de comandos
+
+```
+go build ./...          → limpo
+go vet ./...             → limpo
+go test ./...            → todos os pacotes ok (internal/integrations, internal/commands, internal/validator inclusos)
+npm test                 → 103 passed / 0 failed (validator.test.js) + 866 tests, 866 pass, 0 fail (suite completa)
+python3 -m pytest tests -q → 1625 passed, 66 subtests passed
+scripts/check-python-writes-lf.sh → exit 0
+git diff -- .gitattributes → vazio
+```
+
+Arquivos tocados: `internal/integrations/render.go`, `internal/integrations/render_test.go`,
+`internal/commands/barrier_test.go`, `npm/src/integrations/render.js`, `npm/tests/render_opencode.test.js`,
+`npm/tests/identity-render.test.js`, `npm/tests/barrier.test.js`, `pypi/trackfw/integrations/renderers.py`,
+`pypi/trackfw/integrations/manager.py`, `pypi/tests/test_agents_models.py`, `pypi/tests/test_integrations_identity.py`.
+Nenhuma operação de git. Roadmap deixado em `**Status:** 🔄 Em andamento` — a transição para
+`✅ Concluído` é do arquiteto, pós-auditoria.
+
+---
+
+## ML-5B — apolo-tf, 2026-09-06 — os 6 sítios restantes da D3 (`rewriteRoadmapStatus`/`rewriteREQStatus`)
+
+**Início.** Handoff: fechar a D3 (`ADR-2026-09-04-parser-de-frontmatter-tolera-crlf-na-fronteira-de-
+entrada`) para `rewriteRoadmapStatus`/`rewriteREQStatus` — 6 sítios nos 3 CLIs — que o ML-5A relatou
+corretamente e o arquiteto errou ao mandar virar REQ própria em vez de ML. Nenhuma operação de git;
+zero mudança nos MLs anteriores.
+
+### Os 6 sítios, reconfirmados por leitura (não presumidos do handoff)
+
+| Runtime | `rewriteRoadmapStatus`/equiv. | `rewriteREQStatus`/equiv. |
+|---|---|---|
+| Go | `internal/generators/roadmap.go:340` | `internal/generators/req.go:186` |
+| Node | `npm/src/generators/roadmap.js:175` | `npm/src/generators/req.js:71` |
+| Python | `pypi/trackfw/generators/roadmap.py:84` (`_rewrite_roadmap_status`) | `pypi/trackfw/generators/req.py:106` (`rewrite_req_status`) |
+
+Confirmado: **exatamente 1 call site de produção por função** (`MoveRoadmap`/`moveRoadmap`/`move_roadmap`
+e `MoveREQ`/`moveREQ`/`move_req`), sem outros chamadores — o número 6 do handoff bateu.
+
+### Correção aplicada — reaproveitando o ponto único do ML-5A, não uma segunda cópia (D3)
+
+- **Go:** `normalizeCRLF` em `internal/integrations/render.go` foi **exportada** (`NormalizeCRLF`) —
+  era a única barreira para reaproveito cross-package; `internal/generators` já importava
+  `internal/integrations` noutro arquivo (sem ciclo). `roadmap.go`/`req.go` chamam
+  `integrations.NormalizeCRLF(source)` na entrada de cada função.
+- **Node:** `normalizeCRLF` de `npm/src/integrations/render.js` já era exportada — `roadmap.js`/`req.js`
+  passam a `require` e chamar direto.
+- **Python:** `_normalize_crlf` de `pypi/trackfw/integrations/renderers.py` **já era importada
+  cross-módulo pela própria produção** (`trackfw.integrations.manager` já fazia
+  `from trackfw.integrations.renderers import _normalize_crlf`) — mesmo padrão replicado em
+  `roadmap.py`/`req.py`, sem renomear (manter o precedente já aceito no código, não inventar um novo).
+
+Nos 3 runtimes: **uma função de normalização por CLI** (D3), chamada na entrada de cada uma das 6
+funções — nenhuma segunda cópia foi criada.
+
+### 🔴 Nuance Python, medida e não escondida
+
+`move_roadmap`/`move_req` já leem com `open(path, "r", encoding="utf-8")` — **universal newlines do
+Python já traduz `\r\n`→`\n` nessa leitura**, então em produção esses 2 sítios **nunca viam CRLF antes
+desta ML** (diferente de Go/Node, que leem bytes crus e reproduziam o defeito de verdade). Medido:
+
+```
+python3 -c "open(CRLF-file,'r',encoding='utf-8').read()"  →  '\r' ausente do resultado
+```
+
+A chamada a `_normalize_crlf` nos 2 sítios Python é **defesa em profundidade** (fecha a função em si
+contra um chamador futuro que leia bytes crus) — não a correção de um bug observável hoje nesse
+caminho específico. Isso é exatamente o que a própria ADR já havia previsto e advertido: *"medir num
+runtime só engana"*.
+
+### 🔴 D3 — enumeração final, e um residual encontrado FORA do escopo dos 6 sítios
+
+Grep exaustivo por `HasPrefix(x,"---\n")`/`startsWith('---\n')`/`startswith("---\n")` nos 3 runtimes,
+fora dos sítios já protegidos pelo ML-5A (`render.go`/`render.js`/`renderers.py`, todos atrás de
+`normalizeCRLF`/`_normalize_crlf`) e pelos 6 sítios desta ML:
+
+**Fechado, sem sítio remanescente casando delimitador por literal nos alvos do handoff (6/6).**
+
+**Mas o grep achou um par de funções fora do escopo nomeado — reportado, não corrigido:**
+`extractFrontmatterRoadmap`/`rewriteREQRoadmapRef` (Go, `roadmap.go:672,705`) e
+`extractFrontmatterRoadmap`/`rewriteReqRoadmapRef` (Node, `roadmap.js:354,378`) — usadas por
+`syncReqReferences`, o sincronizador de referência REQ↔roadmap — **já são tolerantes a CRLF por
+construção**: percorrem linha a linha (`split('\n')`) e comparam contra `TrimSpace(line)=="---"` /
+`line.trim()==='---'`, não contra o blob inteiro com prefixo literal. `TrimSpace`/`.trim()` engolem o
+`\r` de sobra. Medido com `go run`, não presumido.
+
+🔴 **Python diverge das outras duas — não por decisão, por acidente.**
+`_get_frontmatter_roadmap_value`/`_rewrite_req_roadmap_ref` (`pypi/trackfw/generators/roadmap.py:429,454`)
+usam o padrão **literal** `content.startswith("---\n")` — igual ao que os 6 sítios desta ML tinham
+antes da correção — e **são genuinamente cegos a CRLF**, medido:
+
+```python
+_get_frontmatter_roadmap_value(lf)    -> 'docs/x.md'
+_get_frontmatter_roadmap_value(crlf)  -> ''                 # ausência silenciosa, não erro
+_rewrite_req_roadmap_ref(crlf, ...)   -> (unchanged, False) # nunca reescreve
+```
+
+Isso significa que a D3 do handoff — os 6 sítios nomeados — **está satisfeita**, mas a categoria mais
+ampla "nenhum sítio de fronteira de frontmatter casa delimitador por literal em qualquer runtime" **não
+está**: sobra **um par Python-only** (2 sítios, não 6 — Go/Node já corretos por construção diferente,
+não pareados 1:1), no caminho de `sync_paired_req_references`/`syncReqReferences`. **Fora do escopo
+nomeado neste handoff** (que era nominalmente `rewriteRoadmapStatus`/`rewriteREQStatus`) — não
+corrigido aqui, por disciplina de escopo (§11 das regras globais: bug concreto vira observação, não
+expansão). Candidato a ML/REQ própria, e com um perfil diferente dos anteriores: não é "3 CLIs
+discordando", é "Python sozinho com o padrão antigo que os outros dois nunca tiveram".
+
+### Falsificação nas duas direções, por sítio — com números
+
+Testes novos, 2 por runtime (unit-level em `rewriteRoadmapStatus`/`rewriteREQStatus` + end-to-end via
+`MoveRoadmap`/`MoveREQ`):
+
+- `TestMoveRoadmap_CRLFSourceMatchesLF` / `TestMoveREQ_CRLFSourceMatchesLF` (Go)
+- `'rewriteRoadmapStatus — CRLF source renderiza byte-idêntico ao source LF (ADR CRLF)'` /
+  `'rewriteREQStatus — CRLF source renderiza byte-idêntico ao source LF (ADR CRLF)'` (Node)
+- `test_crlf_source_produz_resultado_byte_identico_ao_lf` (roadmap) /
+  `test_rewrite_req_status_crlf_source_produz_resultado_byte_identico_ao_lf` (req) (Python)
+
+mais os controles POSIX (`TestMoveRoadmap_LFControlUnchangedByCRLFFix`,
+`TestMoveREQ_LFControlUnchangedByCRLFFix`, equivalentes Node/Python) e, no Python, um teste de
+integração extra provando a nuance do universal-newlines
+(`test_move_arquivo_crlf_no_disco_ja_e_tolerado_hoje_por_universal_newlines`,
+`test_move_req_arquivo_crlf_no_disco_ja_e_tolerado_hoje_por_universal_newlines`).
+
+**Falsificação por mutação, feita e revertida nos 3 runtimes** (não commitada, evidência abaixo):
+removida a chamada de normalização em cada um dos 6 sítios → os testes CRLF/end-to-end **reprovam**
+(mensagem real Go: `"REQ ... has no frontmatter status/header Status to update"` para o REQ CRLF, e
+diff `status: done` vs `status: wip` para o roadmap CRLF) → controles POSIX **continuam verdes**
+(prova que a mutação ataca só o caminho CRLF) → arquivos restaurados byte a byte
+(`diff backup arquivo` vazio nos 6) → suíte volta a 100% verde.
+
+### 🔴 Controle de escrita (D2) — medido em bytes, com os 3 binários REAIS, não só a suíte
+
+```
+Go:     printf CRLF-fixture → trackfw-go roadmap move → done/*.md
+        xxd: "2d2d2d0a 7374 6174 7573 3a20 646f 6e65" (---.status: done)  grep -c $'\r' → 0
+Node:   mesmo fixture → npm/bin/trackfw roadmap move → bytes idênticos, grep -c $'\r' → 0
+Python: mesmo fixture → python3 -m trackfw.cli roadmap move → bytes idênticos, grep -c $'\r' → 0
+```
+
+Os 3 CLIs, com o binário/entrypoint real (não a função isolada), produzem o **mesmo resultado byte a
+byte** a partir do mesmo fixture CRLF — e zero byte `\r` na saída.
+
+`scripts/check-python-writes-lf.sh` → exit 0. `git diff -- .gitattributes` → vazio (D4 intocado).
+
+### Reconciliação — o que cada teste novo afirma
+
+- `TestMoveRoadmap_CRLFSourceMatchesLF` (Go) / equivalentes Node/Python: afirmam que **o sítio #1
+  (`rewriteRoadmapStatus`) não fica mais cego a CRLF** — a mesma entrada reescrita via `MoveRoadmap`
+  produz o mesmo resultado partindo de LF ou de CRLF.
+- `TestMoveREQ_CRLFSourceMatchesLF` (Go) / equivalentes: afirmam o mesmo para o **sítio #2**
+  (`rewriteREQStatus`/`MoveREQ`).
+- `TestMoveRoadmap_LFControlUnchangedByCRLFFix` / `TestMoveREQ_LFControlUnchangedByCRLFFix` (e
+  equivalentes): afirmam que a correção é **não-regressiva** — todo roadmap/REQ hoje em LF (100% do
+  repo) produz exatamente a mesma sequência de bytes de antes desta ML.
+- `test_move_arquivo_crlf_no_disco_ja_e_tolerado_hoje_por_universal_newlines` (Python, roadmap e req):
+  afirma a **nuance declarada** — o end-to-end via arquivo já não reproduzia o defeito antes desta ML
+  (universal newlines), então esse teste é controle de integração/D2, não falsificação do defeito.
+
+### Evidência de comandos
+
+```
+go build ./...                    → limpo
+go vet ./...                       → limpo
+go test ./...                      → todos os pacotes ok
+node --test tests/*.test.js        → 866 passed, 0 failed (era 866 antes; +6 testes novos absorvidos)
+python3 -m pytest tests/ -q        → 1630 passed, 66 subtests passed (era 1625+66; +5 testes novos)
+scripts/check-python-writes-lf.sh  → exit 0
+git diff -- .gitattributes         → vazio
+```
+
+Arquivos tocados: `internal/generators/roadmap.go`, `internal/generators/req.go`,
+`internal/generators/roadmap_move_test.go`, `internal/generators/req_test.go`,
+`internal/integrations/render.go` (export de `NormalizeCRLF`), `internal/integrations/render_test.go`,
+`npm/src/generators/roadmap.js`, `npm/src/generators/req.js`, `npm/src/integrations/render.js`
+(comentário), `npm/tests/roadmap_move.test.js`, `npm/tests/req_move.test.js`,
+`pypi/trackfw/generators/roadmap.py`, `pypi/trackfw/generators/req.py`,
+`pypi/tests/test_generators_roadmap.py`, `pypi/tests/test_generators_req.py`.
+
+**Não rodei `make quality`** — instrução explícita do handoff; o arquiteto roda ao fim. Nenhuma
+operação de git. Roadmap deixado como está (ML-5B ainda `⬜ Pendente` no arquivo — a transição e o
+fechamento da wave são do arquiteto, pós-auditoria).
+
+🔴 **Resumo do que fica para o arquiteto decidir:** (1) auditar e fechar o ML-5B; (2) decidir o
+destino do residual Python-only (`_get_frontmatter_roadmap_value`/`_rewrite_req_roadmap_ref`) — ML
+próprio ou REQ, dado que é um perfil novo (Python divergindo sozinho, não os 3 discordando).
+
+## ML-5C — apolo-tf, 2026-09-06 (início)
+
+Iniciando ML-5C: resíduo Python-only da D3 (`_get_frontmatter_roadmap_value` /
+`_rewrite_req_roadmap_ref`, `pypi/trackfw/generators/roadmap.py:429,454`), com ML-5A e ML-5B já
+commitados. Nenhuma operação de git nesta sessão. Mesma REQ, mesmo PR #284 — Regra Dura de Causa
+Raiz, arquiteto já decidiu não fragmentar.
+
+## ML-5C — apolo-tf, 2026-09-06 (fim)
+
+**Sítios corrigidos (Python, os 2 nomeados no handoff):**
+`_get_frontmatter_roadmap_value` e `_rewrite_req_roadmap_ref`
+(`pypi/trackfw/generators/roadmap.py:429,464`) passam a chamar `_normalize_crlf` (mesma
+implementação única já usada por `_rewrite_roadmap_status`/`rewrite_req_status`/`renderers.py`/
+`manager.py` — D3, nenhuma segunda cópia) antes de casar `"---\n"`.
+
+**Gêmeos Go/Node verificados por leitura — veredito: já toleravam, sem correção necessária.**
+`extractFrontmatterRoadmap`/`rewriteREQRoadmapRef` (`internal/generators/roadmap.go:672,705`) e
+`extractFrontmatterRoadmap`/`rewriteReqRoadmapRef` (`npm/src/generators/roadmap.js:354,378`) casam
+o delimitador por `strings.Split(text, "\n")` + `TrimSpace(line) == "---"` (Go) e
+`content.split('\n')` + `line.trim() === '---'` (Node) — CRLF sobrevive ao split como `"---\r"`,
+que o `trim()`/`TrimSpace` reduz a `"---"` antes da comparação. Não é o mesmo padrão do defeito
+(prefixo de blob `"---\n"` literal); é tolerante **por construção**, confirmado lendo o corpo
+inteiro das duas funções em cada runtime, não inferido por nome.
+
+**🔴 A enumeração converge.** Varredura final nos 3 runtimes por todo literal de casamento de
+delimitador de frontmatter (`"---\n"`/`'---\n'` em `startswith`/`HasPrefix`/`startsWith`, fora de
+docstrings, docs de gate e literais de escrita):
+
+- Go: `internal/integrations/render.go` (7 sítios) e `internal/generators/roadmap.go:349` /
+  `req.go:194` — todos já chamam `NormalizeCRLF`/`integrations.NormalizeCRLF` antes do match
+  (ML-5A/5B).
+- Node: `npm/src/integrations/render.js` (7 sítios) e `npm/src/generators/roadmap.js:183` /
+  `req.js:76-77` — todos já chamam `normalizeCRLF` antes do match (ML-5A/5B).
+- Python: `pypi/trackfw/integrations/renderers.py` (6 sítios), `pypi/trackfw/integrations/
+  manager.py:439`, `pypi/trackfw/generators/roadmap.py:115` (`_rewrite_roadmap_status`),
+  `pypi/trackfw/generators/req.py:118` (`rewrite_req_status`) — já normalizados (ML-5A/5B); e os
+  dois sítios deste ML, agora normalizados.
+- `startswith("---")`/`content.startswith("---")` sem `\n` (`pypi/trackfw/traceid.py:34`,
+  `pypi/trackfw/validator.py:827,1394,1407`) — **fora da família do defeito por construção**: sem
+  exigir o `\n` logo após os três traços, `"---\r"` já casa antes mesmo de normalizar (o `\r`
+  sobra depois do prefixo, não impede o match). Não corrigido porque não está quebrado.
+
+**Nenhum sítio remanescente casa delimitador de frontmatter por literal de blob sem normalizar
+primeiro, nos 3 runtimes.** Três rodadas (ML-5A: 20 sítios; ML-5B: 6 + 2 resíduos; ML-5C: os 2
+resíduos) fecham a D3. A convergência não veio de "a busca não achou mais nada" isolado — veio de
+**cada sítio restante ter uma explicação verificável de por que já é seguro** (ou já normaliza, ou
+o padrão de match não exige o `\n` que tornava o `"---\n"` original cego a CRLF).
+
+**Falsificação nas duas direções, por sítio, com números:**
+```
+_get_frontmatter_roadmap_value:
+  CRLF antes da correção (simulado sem _normalize_crlf) -> '' (bug reproduzido: startswith falha)
+  CRLF depois da correção                                -> 'old-roadmap.md' (== valor LF)
+_rewrite_req_roadmap_ref:
+  CRLF depois da correção -> changed=True, conteúdo byte-idêntico ao resultado partindo de LF,
+  zero byte \r na saída
+Controle POSIX (entrada só-LF): resultado idêntico ao pré-existente nas duas funções (medido)
+```
+
+**Controle de escrita em bytes reais (D2):** teste novo grava um REQ com bytes CRLF crus no disco
+(`open(path, "wb")`, bypassando universal newlines na escrita), roda `sync_paired_req_references`
+via os binários/módulos de produção, e lê o resultado com `open(path, "rb")`: zero byte `\r`,
+conteúdo idêntico ao caminho LF. `.gitattributes` intocado (`git diff --stat` vazio).
+
+**Nuance idêntica ao ML-5B, medida de novo, não presumida:** `sync_paired_req_references` lê com
+`open(req_path, "r", encoding="utf-8")` — universal newlines já traduzia CRLF→LF antes desta ML,
+então em produção este caminho nunca via `\r`. A correção é defesa em profundidade na função em
+si (fecha o defeito latente para um chamador futuro que leia bytes crus), não a correção de um bug
+observável hoje neste caminho — mesmo padrão do `move_roadmap`/`move_req` no ML-5B.
+
+**Reconciliação — o que cada teste novo afirma:**
+- `test_crlf_source_extrai_o_mesmo_valor_que_lf`: afirma que `_get_frontmatter_roadmap_value`
+  deixa de ser cega a CRLF — mesmo valor extraído partindo de LF ou CRLF.
+- `test_controle_posix_lf_produz_exatamente_o_resultado_de_hoje` (get value): afirma que a entrada
+  só-LF não muda de comportamento com a normalização adicionada.
+- `test_crlf_source_produz_resultado_byte_identico_ao_lf` (rewrite ref): afirma que
+  `_rewrite_req_roadmap_ref` deixa de ser cega a CRLF **e** que a escrita permanece LF (D2) mesmo
+  partindo de CRLF.
+- `test_controle_posix_lf_produz_exatamente_o_resultado_de_hoje` (rewrite ref): mesmo controle
+  POSIX, para a função de reescrita.
+- `test_req_crlf_no_disco_ja_e_tolerado_hoje_por_universal_newlines`: afirma a nuance declarada —
+  o end-to-end via arquivo em disco já não reproduzia o defeito antes desta ML (universal
+  newlines), e é o controle de bytes reais (D2) para este ML.
+
+**Premissa do handoff que a medição confirmou, não derrubou:** os gêmeos Go/Node eram mesmo
+tolerantes por construção — confirmado por leitura completa das 4 funções, não presumido.
+
+**Evidência de comandos:**
+```
+python3 -m pytest pypi/tests/test_generators_roadmap.py -q  -> 61 passed (56 antes + 5 novos)
+python3 -m pytest pypi/tests/ -q                              -> 1635 passed, 66 subtests passed
+scripts/check-python-writes-lf.sh                              -> exit 0
+git diff --stat -- .gitattributes                              -> vazio
+go build ./...                                                 -> limpo
+go vet ./...                                                   -> limpo
+git diff --stat -- pypi/trackfw/generators/roadmap.py           -> 2 funções, +19/-0 linhas de docstring/normalização, 0 linha de lógica fora da normalização
+```
+
+Arquivos tocados: `pypi/trackfw/generators/roadmap.py`, `pypi/tests/test_generators_roadmap.py`.
+Nenhum arquivo Go/Node tocado — confirmado desnecessário por leitura, não por suposição.
+
+**Não rodei `make quality`** — instrução explícita do handoff; o arquiteto roda ao fim, cobrindo
+os três MLs (5A/5B/5C). Nenhuma operação de git.
+
+## ML-5C — apolo-tf, 2026-09-06 (correção pós-revisão, antes do handoff ao arquiteto)
+
+A auditoria do advisor pegou 4 lacunas na evidência acima antes que eu declarasse o ML pronto.
+Refeitas todas; uma delas **abriu um achado novo, não corrigido**.
+
+**1) Sweep refeito com `grep -a`** (o handoff avisava: `npm/src/validator/index.js` já foi
+classificado binário pelo `file` antes — hoje `file` o classifica como texto, mas o sweep original
+não usava `-a`, então a garantia não tinha essa proteção). Resultado: sem `-a` e com `-a` dão o
+mesmo conjunto — nenhuma diferença. Mantida a lista de sítios `"---\n"` já reportada.
+
+**2) Sítios sem `\n` (`traceid.py:34`, `validator.py:827,1394,1407`, `traceid.js:14`,
+`index.js:572,1085,1096,1243`, `validator.go:2036,2075,2088`, `app.js:1068`) — lidos por inteiro,
+não só a linha de entrada.** Todos usam um de dois padrões seguros: (a) checagem de presença pura
+(`startsWith('---')`/`HasPrefix(..., "---")` sem depender do que vem depois — CRLF não muda se os 3
+traços iniciais existem) ou (b) `indexOf('\n---'/find("\n---")` para o fechamento + `line.trim()`/
+`TrimSpace(line)` por linha — o `\r` de uma linha CRLF sobra ANTES do `\n` que o `indexOf` procura,
+então o casamento do delimitador de fechamento não quebra, e o trim por linha limpa o resto.
+Confirmado por leitura do corpo completo das 12 funções, nos 3 runtimes — não é inferência do nome
+nem da linha de entrada isolada.
+
+**3) Falsificação por MUTAÇÃO DE PRODUÇÃO, não réplica isolada.** Removida a linha
+`content = _normalize_crlf(content)` de cada uma das 2 funções, rodados só os testes CRLF do ML:
+`test_crlf_source_extrai_o_mesmo_valor_que_lf` e
+`test_crlf_source_produz_resultado_byte_identico_ao_lf` **reprovam** (os outros 3 testes novos —
+os dois controles POSIX e o de disco — continuam verdes, como o mecanismo prevê: o controle POSIX
+não exercita CRLF, e o de disco não reproduzia o defeito nem antes desta ML, por universal
+newlines). Produto restaurado linha a linha (as mesmas 2 linhas reintroduzidas); suíte completa
+volta a 61/61 verde; `git diff` contra o índice mostra exatamente as 19 linhas de docstring/
+normalização por função, nada a mais.
+
+**4) Controle de bytes com os 3 binários REAIS, não a função isolada.** Fixture REQ+Roadmap com
+CRLF cru gravado em disco (`\r\n` literal, bypassando qualquer tradução), 3 diretórios de projeto
+isolados, rodei:
+```
+bin/trackfw roadmap move ROADMAP-....md wip                              (Go, binário compilado)
+node npm/bin/trackfw roadmap move ROADMAP-....md wip                     (Node, entrypoint real)
+PYTHONPATH=pypi python3 -m trackfw roadmap move ROADMAP-....md wip       (Python, módulo real)
+```
+Todos os 3 terminam com exit 0 e `✓ synced REQ-....md`.
+
+🔴 **Achado NOVO, fora do escopo deste ML — não corrigido, reportado.** O REQ reescrito por Go e
+por Node **ainda contém bytes `\r`** depois do `roadmap move` (Go: 8 bytes `\r` remanescentes;
+Node: 10). Só a saída Python está limpa (0 bytes `\r`) — porque minha correção normaliza o
+`content` INTEIRO na entrada da função antes do split/join, então toda linha reconstruída sai LF.
+`rewriteREQRoadmapRef` (Go, `internal/generators/roadmap.go:705`) e `rewriteReqRoadmapRef` (Node,
+`npm/src/generators/roadmap.js:378`) fazem `strings.Split(text, "\n")`/`content.split('\n')` sobre
+o texto CRU (sem normalizar antes) e **só reconstroem a(s) linha(s) que casam o campo** — as
+demais linhas (inclusive, no Node, a própria linha `roadmap:` reescrita, porque o Node faz
+`line.replace(oldRef, newRef)` preservando o `\r` residual da linha original) são gravadas de
+volta com o `\r` que vieram da fonte. Verificado byte a byte:
+```
+Go   (após move):  linha 0-2,4-8 mantêm \r; só as 2 linhas modificadas (roadmap:/Roadmap:) saem limpas
+Node (após move):  TODAS as 9 linhas não-vazias mantêm \r, inclusive as 2 linhas modificadas
+Python (após move): 0 bytes \r em qualquer linha
+```
+**Isto não é o defeito D1 que a ADR desta wave cobre** (matching do delimitador de abertura/
+fechamento — os dois já são tolerantes por construção, confirmado no item 2 desta correção e no
+corpo do ML original). **É um defeito D2 independente**: a função lê CRLF corretamente mas
+**vaza CRLF de volta na escrita**, em uma função que nunca esteve no escopo do ML-5A (`~14
+testes`, parser/renderizadores) nem do ML-5B (`6 sítios`, `rewriteRoadmapStatus`/
+`rewriteREQStatus` — campo `status:`, não campo `roadmap:`). `_rewrite_req_roadmap_ref`/
+`rewriteREQRoadmapRef`/`rewriteReqRoadmapRef` é uma família de função à parte (sync de referência
+REQ↔roadmap), citada pela primeira vez no handoff deste ML só para o lado Python.
+
+🔴 **Elo medido, não inferido: o achado é alcançável em produção a partir de um REQ autorado no
+Windows, não só de um fixture escrito à mão.** Verifiquei o caminho de leitura dos dois chamadores
+de produção: `os.ReadFile(reqPath)` (Go, `roadmap.go:820`) devolve bytes crus — Go não tem conceito
+de universal newlines na leitura de arquivo, `\r\n` no disco chega `\r\n` no `[]byte`. `fs.
+readFileSync(filePath, 'utf8')` (Node, `roadmap.js:436`) decodifica bytes para string UTF-8 mas
+**não traduz separador de linha** — `\r\n` no disco vira a string `"\r\n"`, intacta. Nenhum dos
+dois chamadores normaliza antes de passar para `rewriteREQRoadmapRef`/`rewriteReqRoadmapRef`. Isso
+é o oposto do Python (`open(path, "r", encoding="utf-8")`, universal newlines, traduz CRLF→LF na
+leitura — é a mesma nuance que o ML-5B já tinha medido para `sync_paired_req_references`). Logo:
+um REQ salvo com CRLF no disco (ex.: `git clone` num checkout Windows sem normalização de
+`.gitattributes`, ou editado por uma ferramenta que grava CRLF) alcança este defeito em Go e Node
+**hoje, em produção**, sem qualquer bypass artificial — não é artefato do meu fixture.
+
+**Não corrigi Go/Node** — a instrução do handoff foi explícita: "se a enumeração revelar sítios
+novos, diga isso claramente, e não os corrija sem avisar". Fica para o arquiteto decidir se entra
+como ML/REQ nova (mecanismo diferente de D1, mesma ADR de CRLF) ou se é o próprio ML-5C que deveria
+crescer — não decidi por conta própria porque não é "mesmo mecanismo, sítio a mais": é mecanismo
+distinto (D2, não D1) numa função que as waves anteriores nunca tocaram.
+
+**Sem gatilho de segurança conhecido; raio de alcance NÃO medido.** É sincronização de referência
+REQ↔roadmap, não campo de guard, e o campo `roadmap:` em si aponta certo (testado). Mas os bytes
+`\r` residuais ficam num artefato de governança **committável** (`.gitattributes` intocado por D4
+— nada normaliza isso na borda do git), e eu não medi o que um consumidor downstream (validator,
+outro parser, um editor) faz com uma linha `\r`-suffixed depois — é exatamente a classe de
+blindness que o ML-5A encontrou em outro sítio. Não chamar de "cosmético": é "aparência de
+correto, byte errado", que é a premissa desta campanha inteira, e o raio de alcance real fica
+para medição, não para suposição minha.
+
+**5) Suítes completas com números, as duas que faltavam:**
+```
+go test -count=1 ./...              -> 15 pacotes com testes, todos ok (execução real, não cache);
+                                        3 pacotes sem arquivo de teste (auditsurface, homedir, version)
+node --test npm/tests/*.test.js     -> 866 passed, 0 failed, 0 skipped (idêntico ao antes — nenhum arquivo Node tocado)
+```
+
+**Correção da frase enganosa no relatório anterior:** eu havia escrito que o controle de disco
+rodava "via os binários/módulos de produção" — a versão anterior desse teste chamava
+`sync_paired_req_references` em processo, não os binários. O teste unitário continua válido (é o
+controle de bytes em disco no nível de função), mas o rótulo "binários de verdade" só se aplica ao
+item 4 desta correção (execução real fora de processo), que é o que ficou registrado aqui.
+
+Diretórios de fixture E2E temporários apagados após a medição (scratchpad, fora do repo).
+
+**Resposta reconciliada sobre convergência (uma frase, para o arquiteto não precisar juntar as
+duas partes do relatório):** a enumeração **converge para D1** (casamento cego de delimitador —
+zero sítios remanescentes, nos 3 runtimes, confirmados por leitura do corpo inteiro); **D2 (a
+escrita permanece LF) nunca foi enumerada nas waves anteriores para a família `rewriteREQRoadmapRef`
+/`rewriteReqRoadmapRef`/`_rewrite_req_roadmap_ref`**, e a medição com os 3 binários reais achou que
+Go e Node vazam CRLF residual na escrita dessa família — achado novo, não corrigido, à espera de
+decisão do arquiteto sobre ML novo vs. este ML crescer.
+
+## ML-5D — apolo-tf, 2026-09-06 (início)
+
+Handoff do arquiteto: fechar o vazamento de CRLF na ESCRITA (D2) achado ao rodar `roadmap move`
+com os 3 binários reais contra fixture CRLF no fim do ML-5C — `rewriteREQRoadmapRef` (Go, 8 bytes
+`\r` vazados) e `rewriteReqRoadmapRef` (Node, 10 bytes). Python já estava limpo (`open(path,"r")`
+já traduz). Mesma REQ/ADR/PR pela Regra Dura de Causa Raiz — não fragmentar em REQ nova.
+
+## ML-5D — apolo-tf, 2026-09-06 (fim)
+
+**Status:** ✅ implementação e evidência entregues; aguardando auditoria do arquiteto.
+
+### Enumeração da família de funções de reescrita — 6 por runtime, 18 no total
+
+`rewriteSignatureLine`, `rewriteFrontmatterFields`, `rewriteFrontmatterModelLine` (render de
+agente, ML-5A), `rewriteRoadmapStatus`, `rewriteREQStatus` (ML-5B) — todas já normalizavam CRLF na
+entrada. Só `rewriteREQRoadmapRef` (Go) e `rewriteReqRoadmapRef` (Node) não normalizavam; o gêmeo
+Python (`_rewrite_req_roadmap_ref`) já normaliza desde o ML-5C. Leitores puros
+(`extractFrontmatterRoadmap` e equivalentes) ficam fora do escopo D2 — nunca escrevem, e já
+toleram CRLF na comparação via `TrimSpace`/`.trim()`.
+
+Verificado, não presumido, que `req new`, `roadmap new` e `status` não chamam nenhuma função desta
+família e não leem-e-regravam artefato existente — escrevem template fresco.
+
+### Correção — normalizar na ENTRADA, mesmo ponto único (D3), não um quarto normalizador
+
+`content = integrations.NormalizeCRLF(content)` (Go, `internal/generators/roadmap.go:714`) e
+`normalizeCRLF(String(content)).split('\n')` (Node, `npm/src/generators/roadmap.js:394`) — mesma
+decisão já tomada pelas 5 funções irmãs e pelo Python no ML-5C, reaplicada ao sítio que ficou para
+trás. Não é decisão nova.
+
+### 🔴 Achado não previsto: Node quebraria "já correta → nenhuma escrita" sem correção adicional
+
+`syncReqReferences` (Node) chama `rewriteReqRoadmapRef` também na guarda de idempotência com
+`oldRef === newRef`, diferente de Go/Python que curto-circuitam ANTES de chamar a função quando a
+referência já está correta. Normalizar incondicionalmente faria essa guarda comparar "normalizado"
+contra "original com CRLF" e achar diferença onde não há mudança semântica, regravando REQs
+já-corretas só por terem CRLF em outro trecho — quebrando o contrato de `docs/cli-parity.md` e
+divergindo de Go/Python no mesmo cenário. Corrigido: `changed` só liga quando a linha PRODUZIDA
+difere da ORIGINAL (não quando há match de `oldRef`); sem mudança real, devolve `content` original
+verbatim.
+
+### Controle de escrita (D2), bytes reais, 3 runtimes
+
+```
+Go     0 bytes '\r' gravados (era 8 no ML-5C)
+Node   0 bytes '\r' gravados (era 10 no ML-5C; fixture desta rodada media 11 pré-correção — mesma causa)
+Python 0 (sem regressão)
+```
+
+Falsificação: comentando a normalização em cada sítio, os `\r` voltam na contagem exata medida
+pelos testes novos (12 Go / 11 Node) — confirmado rodando com a linha comentada (FAIL nomeando a
+contagem) e restaurada (PASS) na mesma sessão.
+
+Controle POSIX: entrada LF produz saída byte-idêntica à de antes, nos 3 runtimes (comparação de
+string completa, não só `.includes`).
+
+### Resposta à pergunta de convergência da D2
+
+**Não existe caminho de escrita do trackfw que possa gravar CRLF num artefato de governança do
+usuário.** As 18 funções de reescrita normalizam na entrada; os únicos consumidores de produto são
+o render de agente e `roadmap move`; `req new`/`roadmap new`/`status` nunca reescrevem artefato
+existente. Não é necessária a solução arquitetural de escritor único.
+
+### Reconciliação — o que cada teste novo afirma
+
+- `TestSyncREQ_CRLFSourceWritesZeroCarriageReturns` (Go) / `REQ com CRLF: escrita não vaza "\r"`
+  (Node): a escrita (D2) não vaza CRLF mesmo quando a origem tinha.
+- `TestSyncREQ_LFSourcePOSIXControl` (Go) / `saída byte-idêntica ao comportamento pré-existente`
+  (Node): controle POSIX — nada mudou no caminho LF que já funcionava.
+- `TestSyncREQ_AlreadyCorrectWithCRLF` (Go) / `referência já correta com CRLF: nenhuma escrita`
+  (Node): o achado não previsto — cardinalidade "já correta → nenhuma escrita" sobrevive com CRLF
+  fora do campo reescrito.
+
+### Evidência de comandos
+
+```
+go build ./...                                     -> sem erro
+go vet ./...                                        -> limpo
+go test ./... (todos os pacotes)                    -> ok, 15 pacotes com teste, 0 falhas
+npm test (npm/)                                     -> 866 passed, 0 failed
+python3 -m pytest pypi/tests/ -q                    -> 1635 passed, 66 subtests passed
+git diff -- .gitattributes                          -> vazio (D4)
+bash scripts/check-python-writes-lf.sh              -> exit 0
+go run ./cmd/trackfw validate                        -> exit 0 (só warnings pré-existentes, sem relação)
+```
+
+**Arquivos afetados:** `internal/generators/roadmap.go` (fix + doc),
+`internal/generators/roadmap_test.go` (3 testes novos), `npm/src/generators/roadmap.js` (fix +
+doc + correção de cardinalidade), `npm/tests/roadmap_move.test.js` (3 testes novos). `pypi/` não
+tocado (já corrigido no ML-5C).
+
+**Não rodei `make quality`** — instrução explícita do handoff; o arquiteto roda ao fim, cobrindo
+os quatro MLs da Wave 5.

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/kgsaran/trackfw/internal/config"
+	"github.com/kgsaran/trackfw/internal/integrations"
 	"github.com/kgsaran/trackfw/internal/validator"
 )
 
@@ -183,7 +184,12 @@ func parseREQMeta(path string) (title, status string) {
 // rewriteREQStatus rewrites only the "status:" field in the frontmatter block
 // and the first "| Status: <value>" marker before the first section heading.
 // Other bytes, keys and body occurrences are preserved.
+//
+// D1/D3 (ADR-2026-09-04-parser-de-frontmatter-tolera-crlf-na-fronteira-de-entrada, ML-5B):
+// normalizes CRLF → LF via integrations.NormalizeCRLF at this function's own entry, before any
+// "---\n" delimiter match — reuses the single Go implementation, does not add a second copy.
 func rewriteREQStatus(source []byte, status string) ([]byte, bool) {
+	source = integrations.NormalizeCRLF(source)
 	s := string(source)
 	if !strings.HasPrefix(s, "---\n") {
 		return source, false

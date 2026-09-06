@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 # alias: o parametro `home_dir` sombreia o nome importado
 from trackfw.homedir import home_dir as _user_home_dir
+from trackfw.integrations.renderers import _normalize_crlf
 
 
 class IntegrationError(RuntimeError):
@@ -425,8 +426,16 @@ class IntegrationManager:
         """Extracts only the "name" field of a "---"-delimited YAML
         frontmatter, without markdownParts' default values. Returns None
         when the file has no recognizable frontmatter or no "name". Mirrors
-        Go's internal/integrations/render.go frontmatterName."""
-        text = content.decode("utf-8", errors="replace").strip()
+        Go's internal/integrations/render.go frontmatterName.
+
+        content chega de candidate.read_bytes() (ML-5A) — bytes crus, sem a
+        universal-newlines translation que Path.read_text()/open(..., "r")
+        aplicam de graça. Por isso _normalize_crlf aqui É load-bearing (ao
+        contrário do caminho de asset em renderers.py), e um roadmap-sibling
+        autorado com CRLF no Windows teria seu "---\n" de abertura invisível
+        para .startswith sem esta chamada.
+        """
+        text = _normalize_crlf(content.decode("utf-8", errors="replace")).strip()
         if not text.startswith("---\n"):
             return None
         end = text.find("\n---", 4)

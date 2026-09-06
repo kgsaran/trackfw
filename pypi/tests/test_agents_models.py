@@ -141,6 +141,79 @@ def test_resolve_agent_model_matches_render():
                 )
 
 
+# ---------------------------------------------------------------------------
+# CRLF falsification (ADR-2026-09-04-parser-de-frontmatter-tolera-crlf-na-
+# fronteira-de-entrada) — ML-5A
+# ---------------------------------------------------------------------------
+
+
+def test_render_opencode_agent_crlf_source_matches_lf_source():
+    """Falsificação exigida pela ADR: o mesmo asset, com todo "\\n" trocado
+    por "\\r\\n" ANTES de render() vê-lo, deve renderizar igual ao asset LF.
+    O asset em disco é lido por Path.read_text() (LF, universal-newlines já
+    aplicado); o CRLF é injetado no source em memória — a fronteira que o
+    D1 da ADR normaliza — não no arquivo, que este teste não toca.
+
+    Ao contrário de Go e Node (onde a divergência aparece na re-triagem, 13 e
+    16 falhas), a evidência de Windows real não relata NENHUMA falha desta
+    forma em Python ("Python: 0 nesta forma"): o caminho de produção sempre
+    lê o asset via read_text()/open(..., "r"), que já traduz "\\r\\n" para
+    "\\n" antes de qualquer parser existir. Este teste não afirma "havia uma
+    divergência de produção e foi corrigida" — afirma que _parts continua
+    dando o mesmo resultado com um source CRLF construído diretamente (sem
+    passar por leitura de arquivo), o que hoje só é verdade por causa do
+    _normalize_crlf adicionado nesta ML: sem ele, uma string Python com
+    "\\r\\n" literal embutido (por exemplo vinda de
+    IntegrationManager._frontmatter_name, que decodifica bytes crus sem
+    universal-newlines) reproduz a mesma classe de defeito medida em Go/Node
+    — verificado por medição direta, não por leitura de código."""
+    from importlib.resources import files
+
+    from trackfw.integrations.catalog import load_catalog
+    from trackfw.integrations.renderers import render
+
+    catalog = load_catalog()
+    agent = next(a for a in catalog["agents"] if a["id"] == "backend")
+    asset_path = agent["asset"].removeprefix("assets/")
+    lf_source = files("trackfw.integrations").joinpath("assets").joinpath(asset_path).read_text(encoding="utf-8")
+    crlf_source = lf_source.replace("\n", "\r\n")
+
+    capability = {"representation": "opencode-agent"}
+    lf_output = render("agents", "opencode", "opencode", agent, lf_source, capability, None, None)
+    crlf_output = render("agents", "opencode", "opencode", agent, crlf_source, capability, None, None)
+
+    assert crlf_output == lf_output
+    # Controle D2: entrada CRLF nao pode virar saida com "\r".
+    assert "\r" not in crlf_output
+
+
+def test_normalize_crlf_folds_crlf_only():
+    """Falsificação unitária de _normalize_crlf: dobra "\\r\\n" em "\\n" e
+    preserva um "\\r" solto (sem "\\n" em seguida) intocado — não-objetivo
+    declarado da ADR (D4: Mac clássico fica fora de escopo)."""
+    from trackfw.integrations.renderers import _normalize_crlf
+
+    assert _normalize_crlf("a\r\nb\r\nc\rd") == "a\nb\nc\rd"
+
+
+def test_frontmatter_name_from_raw_bytes_tolerates_crlf():
+    """Reproduz o caminho genuinamente load-bearing (ao contrário do caminho
+    de asset acima): IntegrationManager._frontmatter_name recebe bytes CRUS
+    de candidate.read_bytes() e decodifica com .decode(), que NÃO faz
+    universal-newlines translation — diferente de Path.read_text(). Antes
+    desta ML, um roadmap-sibling ".md" autorado com CRLF no Windows tinha seu
+    "---\\n" de abertura invisível para .startswith aqui, e a detecção de
+    colisão de nome (ADR-2026-07-25 D4) silenciosamente deixava de enxergar
+    esse arquivo."""
+    from trackfw.integrations.manager import IntegrationManager
+
+    lf = b"---\nname: teste\ndescription: d\n---\nbody\n"
+    crlf = lf.replace(b"\n", b"\r\n")
+
+    assert IntegrationManager._frontmatter_name(lf) == "teste"
+    assert IntegrationManager._frontmatter_name(crlf) == "teste"
+
+
 def _extract_model_from_rendered(content: str, representation: str) -> tuple[str | None, bool]:
     """Parse the rendered artifact and return (model_value, present).
     present=False when the artifact format omits the model field.

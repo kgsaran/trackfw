@@ -255,7 +255,7 @@ func greetingLine(id identity.AgentIdentity, nickname string) string {
 // top. This reuses the same frontmatter-boundary detection as markdownParts
 // so Rota A and Rota B agree on where the body starts.
 func insertBodyPrefix(source []byte, prefix string) []byte {
-	trimmed := strings.TrimSpace(string(source))
+	trimmed := strings.TrimSpace(string(NormalizeCRLF(source)))
 	if prefix == "" {
 		return []byte(trimmed)
 	}
@@ -297,7 +297,7 @@ func rewriteSignatureLine(source []byte, displayName string) []byte {
 	if displayName == "" {
 		return source
 	}
-	trimmed := strings.TrimSpace(string(source))
+	trimmed := strings.TrimSpace(string(NormalizeCRLF(source)))
 	// Locate the start of the body — mirror rewriteFrontmatterFields boundary
 	// detection so scoping agrees between the two functions.
 	bodyStart := 0
@@ -352,7 +352,7 @@ func rewriteSignatureLine(source []byte, displayName string) []byte {
 // frontmatter, source is returned unchanged (trimmed), matching the
 // behavior Render already has for identity-less rendering.
 func rewriteFrontmatterFields(source []byte, name, description string) []byte {
-	trimmed := strings.TrimSpace(string(source))
+	trimmed := strings.TrimSpace(string(NormalizeCRLF(source)))
 	if !strings.HasPrefix(trimmed, "---\n") {
 		return []byte(trimmed)
 	}
@@ -390,13 +390,53 @@ func rewriteFrontmatterFields(source []byte, name, description string) []byte {
 	return []byte("---\n" + strings.Join(lines, "\n") + rest)
 }
 
+// NormalizeCRLF converts "\r\n" to "\n" at the boundary where raw agent-md
+// content enters a frontmatter parser or rewriter (ADR
+// ADR-2026-09-04-parser-de-frontmatter-tolera-crlf-na-fronteira-de-entrada,
+// D1/D3). A CRLF source is valid input, not an error: whoever produced the
+// file — often another person, on another OS, with an editor that chose the
+// line ending for them — should not have to fix it by hand for the
+// delimiter-matching below (every "---\n" prefix check in this file) to
+// recognize the frontmatter block.
+//
+// This is the single implementation of the normalization for this runtime
+// (D3): every frontmatter-boundary function in this file (markdownParts,
+// frontmatterName, rewriteFrontmatterFields, rewriteFrontmatterModelLine,
+// removeFrontmatterModelLine, insertBodyPrefix, rewriteSignatureLine) calls
+// it at its own entry, because this package has no single shared I/O read
+// that all of them funnel through — Render, AgentTier (models.go) and
+// manager.go's detectNameCollision each call into this parsing layer
+// independently, straight from disk bytes or from a chained rewrite. Calling
+// one named function from each of those boundaries — instead of inlining
+// strings.ReplaceAll differently at each site — is what keeps this a single
+// point of truth per D3, even though it is not a single call site.
+//
+// Exported (ML-5B) so internal/generators — a different package, with its
+// own frontmatter-boundary functions (rewriteRoadmapStatus, rewriteREQStatus)
+// — funnels through the same one implementation instead of growing a second
+// Go copy. "Uma função de normalização por CLI" (D3) means per runtime, not
+// per package.
+//
+// D2: this function is read-side only. Every rewrite function in this file
+// reconstructs its output with "\n" joins, so normalizing the input to LF
+// here does not, by itself, authorize emitting CRLF anywhere — output stays
+// LF regardless of the line ending the input arrived with.
+//
+// D4/scope: only "\r\n" is folded to "\n". A bare "\r" (classic Mac, no
+// "\n") is intentionally left untouched, per the ADR's own declared
+// non-goal — turning that into silent behavior here would contradict the
+// ADR without a REQ of its own.
+func NormalizeCRLF(source []byte) []byte {
+	return bytes.ReplaceAll(source, []byte("\r\n"), []byte("\n"))
+}
+
 func normalizeMarkdown(source []byte) []byte {
 	return []byte(strings.TrimSpace(string(source)) + "\n")
 }
 
 // markdownParts extrai name, description, model e body do frontmatter YAML delimitado por ---.
 func markdownParts(source []byte) (name, description, model, body string) {
-	text := strings.TrimSpace(string(source))
+	text := strings.TrimSpace(string(NormalizeCRLF(source)))
 	name = "trackfw-agent"
 	description = "trackfw specialist"
 	body = text
@@ -432,7 +472,7 @@ func markdownParts(source []byte) (name, description, model, body string) {
 // Retorna ok=false quando o arquivo não tem frontmatter reconhecível ou não
 // declara "name". Usado pela detecção de colisão em manager.go.
 func frontmatterName(source []byte) (name string, ok bool) {
-	text := strings.TrimSpace(string(source))
+	text := strings.TrimSpace(string(NormalizeCRLF(source)))
 	if !strings.HasPrefix(text, "---\n") {
 		return "", false
 	}
@@ -542,7 +582,7 @@ func rewriteFrontmatterModelLine(source []byte, value string) ([]byte, error) {
 	if containsControlChar(value) {
 		return nil, fmt.Errorf("model value contains control character and was rejected: model IDs never require newlines or other control characters (got %q)", value)
 	}
-	trimmed := strings.TrimSpace(string(source))
+	trimmed := strings.TrimSpace(string(NormalizeCRLF(source)))
 	if !strings.HasPrefix(trimmed, "---\n") {
 		return []byte(trimmed), nil
 	}
@@ -582,7 +622,7 @@ func rewriteFrontmatterModelLine(source []byte, value string) ([]byte, error) {
 // and the body byte-for-byte. If source has no "model:" line or no
 // recognizable frontmatter, source is returned unchanged (trimmed).
 func removeFrontmatterModelLine(source []byte) []byte {
-	trimmed := strings.TrimSpace(string(source))
+	trimmed := strings.TrimSpace(string(NormalizeCRLF(source)))
 	if !strings.HasPrefix(trimmed, "---\n") {
 		return []byte(trimmed)
 	}

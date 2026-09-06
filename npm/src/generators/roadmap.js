@@ -5,6 +5,7 @@ const config = require('../config')
 const { localDateISO } = require('./date')
 const { resolveReqFiles, resolveAgentNamespaces } = require('../validator/index.js')
 const { normalizeRefSeparator: pathfmtNormalizeRefSeparator } = require('../lib/pathfmt')
+const { normalizeCRLF } = require('../integrations/render')
 
 // STATUS_LEGEND teaches the vocabulary the `barrier` parser accepts for "**Status:**"
 // (AC11, ADR decision 5): the canonical form the template now writes (⬜ Pendente) plus the
@@ -171,9 +172,14 @@ function showRoadmap(name) {
  * antes do primeiro "## " heading é atualizada.
  *
  * Retorna { content: string, changed: boolean }.
+ *
+ * D1/D3 (ADR-2026-09-04-parser-de-frontmatter-tolera-crlf-na-fronteira-de-entrada, ML-5B):
+ * normaliza CRLF -> LF via normalizeCRLF (npm/src/integrations/render.js) na própria entrada,
+ * antes de qualquer casamento de "---\n" — reaproveita a única implementação Node, sem criar
+ * uma segunda cópia.
  */
 function rewriteRoadmapStatus(source, state) {
-  const s = String(source)
+  const s = normalizeCRLF(String(source))
   if (!s.startsWith('---\n')) return { content: s, changed: false }
   const end = s.indexOf('\n---', 4)
   if (end < 0) return { content: s, changed: false }
@@ -368,11 +374,30 @@ function extractFrontmatterRoadmap(content) {
  * rewriteReqRoadmapRef — reescreve o campo `roadmap:` no frontmatter e a linha `Roadmap:` no
  * corpo de uma REQ, substituindo oldRef por newRef.
  * Preserva toda formatação existente (aspas, backticks) via substituição literal de string.
+ *
+ * D2/D3 (ADR-2026-09-04-parser-de-frontmatter-tolera-crlf-na-fronteira-de-entrada, ML-5D):
+ * normaliza CRLF -> LF via normalizeCRLF na própria entrada, antes de qualquer split por "\n"
+ * — mesmo ponto único Node reaproveitado por rewriteRoadmapStatus/rewriteREQStatus. Sem isto,
+ * um REQ gravado com CRLF (Windows) tinha as linhas RESCRITAS saindo em LF (via .replace) e as
+ * linhas NÃO tocadas saindo com o "\r" original ainda embutido no elemento que o split
+ * preservava — join produzia um arquivo com terminador MISTO. Medido com o binário real
+ * (ML-5C): 10 bytes "\r" vazados na REQ reescrita por `roadmap move`.
+ *
+ * 🔴 Se nenhuma linha REALMENTE muda (comparando o texto produzido com a linha original, não
+ * apenas "houve match de oldRef"), devolve o `content` ORIGINAL (não normalizado), não o
+ * resultado da normalização. Isto importa porque o chamador da guarda de idempotência
+ * (syncReqReferences) invoca esta função com oldRef === newRef — um "replace" sem-efeito, que
+ * bate no ramo de match mas não deve contar como mudança. O único chamador detecta "nada a
+ * escrever" comparando `updated === content` por igualdade de string, não por um bool de
+ * "changed" explícito — normalizar incondicionalmente quebraria a cardinalidade "já correta →
+ * nenhuma escrita" (contrato pinado em docs/cli-parity.md) para qualquer REQ com CRLF em outro
+ * trecho do arquivo, mesmo quando o campo roadmap: já está correto.
  */
 function rewriteReqRoadmapRef(content, oldRef, newRef) {
-  const lines = content.split('\n')
+  const lines = normalizeCRLF(String(content)).split('\n')
   let inFm = false
   let fmDone = false
+  let changed = false
   const result = []
 
   for (let i = 0; i < lines.length; i++) {
@@ -382,7 +407,9 @@ function rewriteReqRoadmapRef(content, oldRef, newRef) {
     if (inFm) {
       const idx = line.indexOf(':')
       if (idx !== -1 && line.slice(0, idx).trim() === 'roadmap' && line.includes(oldRef)) {
-        result.push(line.replace(oldRef, newRef))
+        const newLine = line.replace(oldRef, newRef)
+        if (newLine !== line) changed = true
+        result.push(newLine)
         continue
       }
       result.push(line)
@@ -391,13 +418,16 @@ function rewriteReqRoadmapRef(content, oldRef, newRef) {
     if (fmDone) {
       // No corpo: reescreve linhas `Roadmap:` que contenham oldRef
       if (line.trim().toLowerCase().startsWith('roadmap:') && line.includes(oldRef)) {
-        result.push(line.replace(oldRef, newRef))
+        const newLine = line.replace(oldRef, newRef)
+        if (newLine !== line) changed = true
+        result.push(newLine)
         continue
       }
     }
     result.push(line)
   }
 
+  if (!changed) return String(content)
   return result.join('\n')
 }
 

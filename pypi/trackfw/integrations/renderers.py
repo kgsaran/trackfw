@@ -108,7 +108,41 @@ def _agent_tools(item_id: str) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
+def _normalize_crlf(source: str) -> str:
+    """Converte "\\r\\n" em "\\n" na fronteira em que o conteúdo cru de um
+    agent-md entra num parser ou reescritor de frontmatter (ADR
+    ADR-2026-09-04-parser-de-frontmatter-tolera-crlf-na-fronteira-de-entrada,
+    D1/D3). Um source CRLF é entrada válida, não erro.
+
+    Única implementação desta normalização neste runtime (D3): cada função de
+    fronteira de frontmatter deste arquivo (_parts, _insert_body_prefix,
+    _rewrite_signature_line, _rewrite_frontmatter_fields,
+    _rewrite_frontmatter_model_line, _remove_frontmatter_model_line) chama
+    esta função na própria entrada. Espelha
+    internal/integrations/render.go:normalizeCRLF e
+    npm/src/integrations/render.js:normalizeCRLF.
+
+    Defensivo, não load-bearing para o caminho de asset (catalog.py/command.py
+    leem os fontes com Path.read_text()/open(..., "r"), que já fazem
+    universal-newlines translation por padrão — "\\r\\n" nunca chega aqui
+    vindo desse caminho). É load-bearing para
+    manager.py:_frontmatter_name, que decodifica bytes lidos com
+    read_bytes() e por isso NÃO recebe universal-newlines de graça — ver o
+    "gap conhecido" documentado lá.
+
+    D2: só a leitura é afetada. Toda reescrita deste arquivo reconstrói a
+    saída com "\\n".join, então normalizar a entrada para LF aqui não
+    autoriza emitir CRLF.
+
+    D4/escopo: só "\\r\\n" vira "\\n". Um "\\r" solto (Mac clássico, sem
+    "\\n") é deixado intocado de propósito, conforme o não-objetivo
+    declarado na ADR.
+    """
+    return source.replace("\r\n", "\n")
+
+
 def _parts(source: str) -> tuple[dict[str, str], str]:
+    source = _normalize_crlf(source)
     metadata: dict[str, str] = {}
     if not source.startswith("---\n"):
         return metadata, source
@@ -140,7 +174,7 @@ def _insert_body_prefix(source: str, prefix: str) -> str:
     """Insere prefix como nova primeira linha do corpo de um markdown cru
     (frontmatter + body), seguido de linha em branco. Se source não tem
     frontmatter reconhecível, prefix é inserido no topo."""
-    trimmed = source.strip()
+    trimmed = _normalize_crlf(source).strip()
     if not prefix:
         return trimmed
     if not trimmed.startswith("---\n"):
@@ -175,7 +209,7 @@ def _rewrite_signature_line(source: str, display_name: str) -> str:
     """
     if not display_name:
         return source
-    trimmed = source.strip()
+    trimmed = _normalize_crlf(source).strip()
 
     # Localiza o início do corpo — espelha _rewrite_frontmatter_fields para que
     # o escopo de ambas as funções coincida.
@@ -221,7 +255,7 @@ def _rewrite_frontmatter_fields(source: str, name: str, description: str) -> str
     não existia. Se source não tem frontmatter reconhecível, é retornado
     sem alteração (trimmed).
     """
-    trimmed = source.strip()
+    trimmed = _normalize_crlf(source).strip()
     if not trimmed.startswith("---\n"):
         return trimmed
     end = trimmed.find("\n---", 4)
@@ -281,7 +315,7 @@ def _rewrite_frontmatter_model_line(source: str, value: str) -> str:
             f"model IDs never require newlines or other control characters "
             f"(got {value!r})"
         )
-    trimmed = source.strip()
+    trimmed = _normalize_crlf(source).strip()
     if not trimmed.startswith("---\n"):
         return trimmed
     end = trimmed.find("\n---", 4)
@@ -320,7 +354,7 @@ def _remove_frontmatter_model_line(source: str) -> str:
 
     Espelha internal/integrations/render.go:removeFrontmatterModelLine.
     """
-    trimmed = source.strip()
+    trimmed = _normalize_crlf(source).strip()
     if not trimmed.startswith("---\n"):
         return trimmed
     end = trimmed.find("\n---", 4)

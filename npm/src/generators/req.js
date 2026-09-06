@@ -5,6 +5,7 @@ const { localDateISO } = require('./date')
 const roadmapGen = require('./roadmap')
 const config = require('../config')
 const { resolveAgentNamespaces, resolveReqFiles, reqWriteDir } = require('../validator')
+const { normalizeCRLF } = require('../integrations/render')
 
 const VALID_STATES = roadmapGen.VALID_STATES
 const STATE_ORDER = roadmapGen.STATE_ORDER
@@ -68,7 +69,11 @@ function parseREQStatus(filepath) {
   return 'unknown'
 }
 
+// D1/D3 (ADR-2026-09-04-parser-de-frontmatter-tolera-crlf-na-fronteira-de-entrada, ML-5B):
+// normaliza CRLF -> LF via normalizeCRLF na própria entrada, antes de qualquer casamento de
+// "---\n" — reaproveita a única implementação Node, sem criar uma segunda cópia.
 function rewriteREQStatus(source, status) {
+  source = normalizeCRLF(String(source))
   if (!source.startsWith('---\n')) return { content: source, changed: false }
   const end = source.slice(4).indexOf('\n---')
   if (end < 0) return { content: source, changed: false }

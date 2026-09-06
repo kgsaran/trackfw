@@ -305,6 +305,81 @@ func TestMoveREQ_RewritesStatusInPlace(t *testing.T) {
 	}
 }
 
+// TestMoveREQ_CRLFSourceMatchesLF is the ML-5B falsification for
+// rewriteREQStatus (D3 site #2 of ML-5B): a REQ saved with CRLF line
+// endings must have "status:" and "| Status: " rewritten exactly like the
+// LF twin, mirroring TestMoveRoadmap_CRLFSourceMatchesLF.
+func TestMoveREQ_CRLFSourceMatchesLF(t *testing.T) {
+	lfBody := "---\nstatus: Open\ndate: 2026-07-27\n---\n\n# REQ: X\n\n> Date: 2026-07-27 | Status: Open\n\ncorpo\n"
+	crlfBody := strings.ReplaceAll(lfBody, "\n", "\r\n")
+
+	runOne := func(t *testing.T, filename, body string) string {
+		t.Helper()
+		dir := t.TempDir()
+		chdirREQ(t, dir)
+		reqPath := filepath.Join("docs", "req", filename)
+		if err := os.MkdirAll(filepath.Dir(reqPath), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(reqPath, []byte(body), 0644); err != nil {
+			t.Fatal(err)
+		}
+		name := strings.TrimSuffix(filename, ".md")
+		name = strings.TrimPrefix(name, "REQ-2026-07-27-")
+		if err := MoveREQ(name, "done"); err != nil {
+			t.Fatalf("MoveREQ (%s): %v", filename, err)
+		}
+		updated, err := os.ReadFile(reqPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(updated)
+	}
+
+	lfOut := runOne(t, "REQ-2026-07-27-lf.md", lfBody)
+	crlfOut := runOne(t, "REQ-2026-07-27-crlf.md", crlfBody)
+
+	if lfOut != crlfOut {
+		t.Fatalf("CRLF source produced a different rewrite than LF source.\nLF:\n%q\nCRLF:\n%q", lfOut, crlfOut)
+	}
+	// D2 control: CRLF input must still yield an LF-only output.
+	if strings.Contains(crlfOut, "\r") {
+		t.Fatalf("CRLF input leaked into the written file (D2 violation): %q", crlfOut)
+	}
+	if !strings.Contains(crlfOut, "status: done\n") || !strings.Contains(crlfOut, "| Status: done") {
+		t.Fatalf("CRLF source was not rewritten at all (D3 site regressed to blind): %q", crlfOut)
+	}
+}
+
+// TestMoveREQ_LFControlUnchangedByCRLFFix is the POSIX control measured per
+// site: an all-LF REQ moves through exactly the pre-ML-5B byte sequence.
+func TestMoveREQ_LFControlUnchangedByCRLFFix(t *testing.T) {
+	dir := t.TempDir()
+	chdirREQ(t, dir)
+
+	reqPath := filepath.Join("docs", "req", "REQ-2026-07-27-controle.md")
+	if err := os.MkdirAll(filepath.Dir(reqPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	original := "---\nstatus: Open\n---\n\n# REQ: Controle\n\n> Date: 2026-07-27 | Status: Open\n\ncorpo\n"
+	if err := os.WriteFile(reqPath, []byte(original), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := MoveREQ("controle", "done"); err != nil {
+		t.Fatalf("MoveREQ: %v", err)
+	}
+
+	got, err := os.ReadFile(reqPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "---\nstatus: done\n---\n\n# REQ: Controle\n\n> Date: 2026-07-27 | Status: done\n\ncorpo\n"
+	if string(got) != want {
+		t.Fatalf("controle POSIX divergiu:\n got: %q\nwant: %q", string(got), want)
+	}
+}
+
 // TestListREQs_ByState — REQ em docs/req/backlog/ deve aparecer em ListREQs (layout por-estado).
 func TestListREQs_ByState(t *testing.T) {
 	dir := t.TempDir()

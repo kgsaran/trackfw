@@ -52,6 +52,76 @@ Toda feature nova, correção de comportamento ou ajuste de lógica **DEVE ser i
 intencionais estão documentados em `docs/cli-parity.md`. Mudanças doc-only,
 infra e templates de artefato são exceções explícitas.
 
+## Regra Dura de Causa Raiz — mesma causa, mesma REQ (INVIOLÁVEL)
+
+**Achado de mesma causa de erro é tratado na MESMA REQ. Nunca vira REQ nova.**
+
+Quando um microlote descobre que o defeito que ele corrige existe também em outros sítios — mesma
+causa, mesmo mecanismo, mesma ADR governando —, esses sítios entram como **novo ML na REQ vigente**,
+não como REQ nova.
+
+### Por que esta regra existe
+
+Medido em 2026-09-06: **59 ocorrências de "REQ própria" espalhadas por 30 roadmaps.** Cada uma é um
+defeito **medido, localizado e não corrigido**, empurrado para uma REQ que entra numa fila de 36
+abertas — onde espera priorização e **se perde**.
+
+O efeito composto é o que o usuário nomeou:
+
+> *"por isso temos essa enxurrada de REQs abertas, e pior: o erro permanece até priorizarmos a nova
+> REQ gerada, e se perde na vastidão de REQs abertas."*
+
+Duas consequências, e a segunda é pior:
+
+1. **O backlog cresce por construção** — cada correção gera de uma a três REQs novas.
+2. 🔴 **O defeito continua vivo em produção**, agora com a aparência tranquilizadora de estar
+   "registrado". Registro não é correção.
+
+### O que NÃO justifica abrir REQ nova
+
+- **"Atribuição de causa"** — não misturar mudanças para saber qual produziu qual efeito. Isso
+  justifica **ML separado** (ou commit separado), **não REQ separada**. Confundir os dois foi o erro
+  que originou esta regra.
+- **"Está fora do escopo declarado"** — se a causa é a mesma, o escopo estava **estreito demais**.
+  Corrija o escopo da REQ vigente; não abra outra.
+- **"É superfície diferente"** — parser vs. renderizador vs. escrita são superfícies diferentes do
+  **mesmo** defeito. Mesma causa, mesma REQ.
+
+### Quando é legítimo abrir REQ nova
+
+Somente quando a **causa é outra**. O teste é o mesmo da triagem por mecanismo:
+
+> *"Se eu corrigir esta causa, exatamente estas falhas fecham — e nenhuma outra."*
+
+Se o sítio novo **não fecha** com a correção da REQ vigente, é outra causa. Aí sim, REQ própria — e a
+diferença de mecanismo fica **escrita**.
+
+### Interação com as ADRs
+
+🔴 **Uma ADR com decisão de "ponto único por runtime" não está satisfeita enquanto sobrar sítio.**
+Fechar o roadmap com sítios conhecidos e não corrigidos marca como concluído algo cujo critério não
+foi atendido — e é o achado A1 da auditoria externa de 2026-09-05, que este projeto já pagou uma vez.
+
+### E o mesmo PR
+
+**Mesma causa → mesma REQ → mesmo PR.**
+
+A correção dos sítios descobertos entra **no PR que já está aberto** para aquela causa. Não se abre
+PR novo, e não se mergeia o PR "parcial" prometendo o resto depois.
+
+Motivo: um PR mergeado com a correção pela metade **fecha a janela de atenção**. O revisor viu, o
+gate passou, a issue foi marcada — e os sítios restantes herdam a mesma fila onde as REQs órfãs se
+perdem. O PR aberto é o que mantém a causa raiz visível até estar inteira.
+
+Consequência prática: **um PR pode ficar aberto mais tempo, e isso é aceitável.** O custo de esperar
+é menor que o de um defeito que sobrevive porque o PR que o fechava já foi mergeado.
+
+### Como aplicar
+
+Ao encontrar sítio de mesma causa: **acrescente um ML à REQ vigente**, mova o roadmap de volta para
+`wip` se já tiver sido fechado, **mantenha o PR aberto** até todos os sítios entrarem, e registre no
+roadmap **por que** o escopo original não os previa.
+
 ## Regras específicas
 
 - **Nunca commitar na `main` sem PR** (mesmo sendo projeto novo)
