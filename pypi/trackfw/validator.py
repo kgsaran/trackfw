@@ -1584,11 +1584,32 @@ def validate_ref_targets_exist(cfg: dict) -> list:
                 "message": f'req "{name}" links to ADR "{adr_ref}" which does not exist'
             })
         roadmap_ref = _extract_ref_path(content, "Roadmap")
-        if roadmap_ref and not _reference_exists(roadmap_ref):
-            warnings.append({
-                "type": "warning",
-                "message": f'req "{name}" links to Roadmap "{roadmap_ref}" which does not exist'
-            })
+        if roadmap_ref:
+            resolved, stale = _resolve_roadmap_ref_status(cfg, roadmap_ref)
+            if len(resolved) == 0:
+                warnings.append({
+                    "type": "warning",
+                    "message": f'req "{name}" links to Roadmap "{roadmap_ref}" which does not exist'
+                })
+            elif len(resolved) == 1:
+                if stale:
+                    # literal falhou, resolvido só pelo fallback de basename num outro
+                    # estado: o vínculo aponta para um caminho de estado velho — o serve
+                    # casa edge.To pelo literal e desenharia aresta órfã para o mesmo
+                    # vínculo se calássemos aqui.
+                    actual_state = os.path.basename(os.path.dirname(resolved[0]))
+                    warnings.append({
+                        "type": "warning",
+                        "message": f'req "{name}" links to Roadmap "{roadmap_ref}" but the file '
+                                    f'is now in {actual_state}/ (stale state path)'
+                    })
+                # senão: resolvido pelo caminho literal — nenhum aviso.
+            else:
+                warnings.append({
+                    "type": "warning",
+                    "message": f'req "{name}" links to Roadmap "{roadmap_ref}" is ambiguous: '
+                                f'found in multiple states: {", ".join(resolved)}'
+                })
 
     return warnings
 
@@ -1614,6 +1635,80 @@ def _reference_exists(ref: str) -> bool:
     return os.path.exists(expand_path(_normalize_ref_separator(ref)))
 
 
+def _is_stale_roadmap_state_ref(ref: str) -> bool:
+    """
+    Reporta se `ref` (um valor de campo `Roadmap:` já extraído) parece ter sido gravado com uma
+    pasta de estado que pode ter ficado velha — condição de entrada do fallback por basename
+    (`_resolve_roadmap_ref_by_basename`): o segmento imediatamente antes do nome do arquivo é um
+    dos 6 nomes de estado reservados. Ver o comentário completo em internal/validator/validator.go,
+    `isStaleRoadmapStateRef` (fonte canônica da regra, ROADMAP-2026-09-05, ML-3B).
+    """
+    parent = os.path.basename(os.path.dirname(ref.replace("\\", "/")))
+    return parent in _AGENT_NAMESPACE_STATE_NAMES
+
+
+def _resolve_roadmap_ref_by_basename(cfg: dict, ref: str) -> list:
+    """
+    Procura, nos diretórios de ESTADO do roadmap_dir (backlog/analyzing/wip/blocked/done/
+    abandoned, honrando roadmap_namespacing), um arquivo cujo basename case com
+    os.path.basename(ref). Escopo restrito ao campo Roadmap: — ver a justificativa completa (REQ
+    sem dimensão de estado / ADR de REQ, árvore de ADR flat) no comentário gêmeo em
+    internal/validator/validator.go, `resolveRoadmapRefByBasename`.
+
+    Retorna a lista de caminhos absolutos encontrados: 0 (sem match), 1 (resolvido) ou mais de 1
+    (ambíguo — decisão do chamador).
+    """
+    base = os.path.basename(ref)
+    if base in ("", ".", os.sep):
+        return []
+    found = []
+    seen = set()
+    for state in sorted(_AGENT_NAMESPACE_STATE_NAMES):
+        for state_dir in _resolve_state_dirs(cfg, state):
+            try:
+                entries = os.listdir(state_dir)
+            except OSError:
+                continue
+            for entry in entries:
+                full = os.path.join(state_dir, entry)
+                if entry != base or os.path.isdir(full):
+                    continue
+                clean = os.path.normpath(full)
+                if clean not in seen:
+                    seen.add(clean)
+                    found.append(clean)
+    found.sort()
+    return found
+
+
+def _resolve_roadmap_ref(cfg: dict, ref: str) -> list:
+    """
+    Resolve um valor de campo `Roadmap:` já extraído: caminho literal primeiro (idêntico a
+    `_reference_exists` — preserva o branch de diretório existente hoje), e só cai para o
+    fallback por basename quando o literal falha e `_is_stale_roadmap_state_ref(ref)` indica que
+    vale a pena tentar. Retorna 0 (quebrado), 1 (resolvido) ou >1 (ambíguo) caminhos.
+    """
+    resolved, _stale = _resolve_roadmap_ref_status(cfg, ref)
+    return resolved
+
+
+def _resolve_roadmap_ref_status(cfg: dict, ref: str) -> tuple:
+    """
+    `_resolve_roadmap_ref` com um segundo retorno: stale=True quando a resolução só teve
+    sucesso via `_resolve_roadmap_ref_by_basename` (o caminho literal falhou e o arquivo foi
+    encontrado em outra pasta de estado). Espelha
+    internal/validator/validator.go:resolveRoadmapRefStatus (fonte canônica, ROADMAP-2026-09-05,
+    ML-3B).
+    """
+    expanded_ref = expand_path(_normalize_ref_separator(ref))
+    if os.path.exists(expanded_ref):
+        return [expanded_ref], False
+    if not _is_stale_roadmap_state_ref(ref):
+        return [], False
+    found = _resolve_roadmap_ref_by_basename(cfg, ref)
+    return found, len(found) > 0
+
+
 def validate_req_roadmap_lifecycle(cfg: dict) -> list:
     """Sinaliza REQ Open cujo roadmap canônico referenciado já está em done/."""
     warnings = []
@@ -1626,7 +1721,13 @@ def validate_req_roadmap_lifecycle(cfg: dict) -> list:
         ref = _extract_ref_path(content, "Roadmap")
         if not ref:
             continue
-        expanded_ref = expand_path(_normalize_ref_separator(ref))
+        resolved = _resolve_roadmap_ref(cfg, ref)
+        if len(resolved) != 1:
+            # 0 = vínculo quebrado, >1 = ambíguo — ambos já reportados por
+            # validate_ref_targets_exist. Esta regra só decide estado quando há UM arquivo real
+            # de onde derivá-lo.
+            continue
+        expanded_ref = resolved[0]
         if not os.path.isfile(expanded_ref):
             continue
         if os.path.basename(os.path.dirname(expanded_ref)) == "done":

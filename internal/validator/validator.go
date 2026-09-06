@@ -2325,8 +2325,22 @@ func validateRefTargetsExist() ([]string, error) {
 			}
 		}
 		if ref := extractRefPath(s, "Roadmap"); ref != "" {
-			if !referenceExists(ref) {
+			resolved, stale := resolveRoadmapRefStatus(cfg, ref)
+			switch len(resolved) {
+			case 0:
 				warnings = append(warnings, fmt.Sprintf("req %q links to Roadmap %q which does not exist", name, ref))
+			case 1:
+				if stale {
+					// literal falhou, resolvido só pelo fallback de basename num outro
+					// estado: o vínculo aponta para um caminho de estado velho — o
+					// serve (internal/serve/api_chain.go) casa edge.To pelo literal e
+					// desenharia aresta órfã para o mesmo vínculo se calássemos aqui.
+					actualState := filepath.Base(filepath.Dir(resolved[0]))
+					warnings = append(warnings, fmt.Sprintf("req %q links to Roadmap %q but the file is now in %s/ (stale state path)", name, ref, actualState))
+				}
+				// senão: resolvido pelo caminho literal — nenhum aviso.
+			default:
+				warnings = append(warnings, fmt.Sprintf("req %q links to Roadmap %q is ambiguous: found in multiple states: %s", name, ref, strings.Join(resolved, ", ")))
 			}
 		}
 	}
@@ -2352,6 +2366,100 @@ func referenceExists(ref string) bool {
 	return false
 }
 
+// resolveRoadmapRefByBasename procura, nos diretórios de ESTADO do roadmap_dir (backlog/analyzing/
+// wip/blocked/done/abandoned, honrando roadmap_namespacing), um arquivo cujo nome (basename) case com
+// filepath.Base(ref) — ROADMAP-2026-09-05, ML-3B: um vínculo `Roadmap:` grava o caminho completo
+// INCLUINDO a pasta de estado (ex.: "docs/roadmaps/wip/x.md"), e pelo CLAUDE.md a pasta É o estado —
+// então todo `trackfw roadmap move` quebra, por construção, o caminho literal gravado antes do move.
+//
+// Escopo DELIBERADAMENTE restrito ao campo Roadmap: (não REQ:, não ADR:):
+//   - REQ não tem dimensão de estado (ADR-2026-09-03, invariante D1, ver reqLayoutStates acima) — um
+//     caminho de REQ não fica velho por causa de um `move`, então não há mecanismo a corrigir aqui.
+//     Aplicar fallback por basename ao campo REQ: destruiria a garantia estrita da
+//     ADR-2026-08-01-caminho-completo-no-campo-req-do-frontmatter-e-remocao-do-parametro-roots-morto:
+//     o Cenário 25 de scripts/check-gates-falsify.sh corrompe deliberadamente um gerador para gravar
+//     `filepath.Base(reqPath)` em vez do caminho completo, e esse teste SÓ funciona porque hoje
+//     "REQ-flag-source.md" (sem diretório) não resolve por basename em lugar nenhum. Resolver por
+//     basename ali tornaria esse teste vácuo — silenciaria exatamente a regressão que ele existe para
+//     capturar.
+//   - a árvore de ADR é FLAT (sem pastas de estado — confirmado em `ls docs/adr/`), então não há
+//     hierarquia de estado equivalente a resolver; inventar uma aqui não tem medição que a sustente.
+//
+// Chamado só quando o caminho LITERAL já falhou E o segmento imediatamente anterior ao arquivo no
+// valor gravado é um nome de estado reconhecido (agentNamespaceStateNames) — isso é o que torna o
+// fallback seguro por construção contra o Cenário 25: "REQ-flag-source.md" tem
+// filepath.Dir(ref) == "." (não um nome de estado), então nunca entra neste caminho, mesmo que esta
+// função fosse chamada para ele.
+//
+// Retorna a lista de caminhos absolutos encontrados: 0 (sem match em estado algum), 1 (resolvido) ou
+// mais de 1 (mesmo basename presente em mais de um estado — ambíguo, decisão do chamador).
+func resolveRoadmapRefByBasename(cfg config.ProjectConfig, ref string) []string {
+	base := filepath.Base(ref)
+	if base == "." || base == string(filepath.Separator) || base == "" {
+		return nil
+	}
+	var found []string
+	seen := make(map[string]bool)
+	for state := range agentNamespaceStateNames {
+		for _, dir := range resolveStateDirs(cfg, state) {
+			entries, err := os.ReadDir(dir)
+			if err != nil {
+				continue
+			}
+			for _, e := range entries {
+				if e.IsDir() || e.Name() != base {
+					continue
+				}
+				full := filepath.Clean(filepath.Join(dir, e.Name()))
+				if !seen[full] {
+					seen[full] = true
+					found = append(found, full)
+				}
+			}
+		}
+	}
+	sort.Strings(found)
+	return found
+}
+
+// isStaleRoadmapStateRef reporta se ref parece ser um caminho de roadmap gravado com uma pasta de
+// estado que pode ter ficado velha — condição de entrada do fallback por basename
+// (resolveRoadmapRefByBasename): o segmento imediatamente antes do nome do arquivo é um dos 6 nomes
+// de estado reservados. "REQ-flag-source.md" (Cenário 25) tem dir "." e falha aqui por construção.
+func isStaleRoadmapStateRef(ref string) bool {
+	dir := filepath.Base(filepath.Dir(filepath.ToSlash(ref)))
+	return agentNamespaceStateNames[dir]
+}
+
+// resolveRoadmapRef resolve um valor de campo `Roadmap:` já extraído (extractRefPath): caminho
+// literal primeiro (idêntico ao referenceExists — preserva o branch de diretório existente hoje,
+// ADR-2026-08-02), e só cai para o fallback por basename (resolveRoadmapRefByBasename) quando o
+// literal falha e isStaleRoadmapStateRef(ref) indica que vale a pena tentar. Retorna o(s) caminho(s)
+// resolvido(s): 0 = vínculo quebrado, 1 = resolvido, >1 = ambíguo.
+func resolveRoadmapRef(cfg config.ProjectConfig, ref string) []string {
+	resolved, _ := resolveRoadmapRefStatus(cfg, ref)
+	return resolved
+}
+
+// resolveRoadmapRefStatus é resolveRoadmapRef com um segundo retorno: stale=true quando a
+// resolução só teve sucesso via resolveRoadmapRefByBasename (o caminho literal gravado no
+// vínculo falhou e o arquivo foi encontrado em outra pasta de estado). O chamador em
+// validateRefTargetsExist usa esse flag para decidir entre silêncio (literal bateu) e aviso
+// de "stale state path" (fallback bateu) — ver ML-3B: um vínculo resolvido só por fallback
+// ainda é uma inconsistência real (o serve, que casa edge.To pelo literal, desenha aresta
+// órfã para o mesmo vínculo), então calar aqui faria validate e serve discordarem do mesmo fato.
+func resolveRoadmapRefStatus(cfg config.ProjectConfig, ref string) (resolved []string, stale bool) {
+	expandedRef := config.ExpandPath(normalizeRefSeparator(ref))
+	if _, err := os.Stat(expandedRef); err == nil {
+		return []string{expandedRef}, false
+	}
+	if !isStaleRoadmapStateRef(ref) {
+		return nil, false
+	}
+	found := resolveRoadmapRefByBasename(cfg, ref)
+	return found, len(found) > 0
+}
+
 func validateREQRoadmapLifecycle() ([]string, error) {
 	cfg := config.Load()
 	var warnings []string
@@ -2368,12 +2476,19 @@ func validateREQRoadmapLifecycle() ([]string, error) {
 		if ref == "" {
 			continue
 		}
-		expandedRef := config.ExpandPath(normalizeRefSeparator(ref))
-		info, err := os.Stat(expandedRef)
+		resolved := resolveRoadmapRef(cfg, ref)
+		if len(resolved) != 1 {
+			// 0 = vínculo quebrado, já reportado por ref_targets_exist; >1 = ambíguo, já
+			// reportado por ref_targets_exist. Esta regra só decide estado quando há UM
+			// arquivo real de onde derivá-lo — sem isso o "continue" original (fail-open na
+			// entrada errada) reaparece disfarçado de ambiguidade.
+			continue
+		}
+		info, err := os.Stat(resolved[0])
 		if err != nil || info.IsDir() {
 			continue
 		}
-		if filepath.Base(filepath.Dir(expandedRef)) == "done" {
+		if filepath.Base(filepath.Dir(resolved[0])) == "done" {
 			warnings = append(warnings, fmt.Sprintf("req %q is Open but linked Roadmap %q is in done/", filepath.Base(reqPath), ref))
 		}
 	}

@@ -1229,8 +1229,22 @@ function validateRefTargetsExist() {
       warnings.push(`req "${name}" links to ADR "${adrRef}" which does not exist`)
     }
     const roadmapRef = extractRefPath(content, 'Roadmap')
-    if (roadmapRef && !referenceExists(roadmapRef)) {
-      warnings.push(`req "${name}" links to Roadmap "${roadmapRef}" which does not exist`)
+    if (roadmapRef) {
+      const { resolved, stale } = resolveRoadmapRefStatus(cfg, roadmapRef)
+      if (resolved.length === 0) {
+        warnings.push(`req "${name}" links to Roadmap "${roadmapRef}" which does not exist`)
+      } else if (resolved.length === 1) {
+        if (stale) {
+          // literal falhou, resolvido só pelo fallback de basename num outro estado: o
+          // vínculo aponta para um caminho de estado velho — o serve casa edge.To pelo
+          // literal e desenharia aresta órfã para o mesmo vínculo se calássemos aqui.
+          const actualState = path.basename(path.dirname(resolved[0]))
+          warnings.push(`req "${name}" links to Roadmap "${roadmapRef}" but the file is now in ${actualState}/ (stale state path)`)
+        }
+        // senão: resolvido pelo caminho literal — nenhum aviso.
+      } else {
+        warnings.push(`req "${name}" links to Roadmap "${roadmapRef}" is ambiguous: found in multiple states: ${resolved.join(', ')}`)
+      }
     }
   }
 
@@ -1243,6 +1257,70 @@ function referenceExists(ref) {
   return false
 }
 
+// isStaleRoadmapStateRef reporta se `ref` (um valor de campo Roadmap: já extraído) parece ter sido
+// gravado com uma pasta de estado que pode ter ficado velha — condição de entrada do fallback por
+// basename (resolveRoadmapRefByBasename). Ver o comentário completo em
+// internal/validator/validator.go, isStaleRoadmapStateRef (fonte canônica, ROADMAP-2026-09-05, ML-3B).
+function isStaleRoadmapStateRef(ref) {
+  const parent = path.basename(path.dirname(ref.replace(/\\/g, '/')))
+  return AGENT_NAMESPACE_STATE_NAMES.has(parent)
+}
+
+// resolveRoadmapRefByBasename procura, nos diretórios de ESTADO do roadmap_dir (backlog/analyzing/
+// wip/blocked/done/abandoned, honrando roadmap_namespacing), um arquivo cujo basename case com
+// path.basename(ref). Escopo restrito ao campo Roadmap: — ver a justificativa completa (REQ sem
+// dimensão de estado / ADR de REQ, árvore de ADR flat) no comentário gêmeo em
+// internal/validator/validator.go, resolveRoadmapRefByBasename.
+//
+// Retorna a lista de caminhos absolutos encontrados: 0 (sem match), 1 (resolvido) ou mais de 1
+// (ambíguo — decisão do chamador).
+function resolveRoadmapRefByBasename(cfg, ref) {
+  const base = path.basename(ref)
+  if (base === '' || base === '.' || base === path.sep) return []
+  const found = []
+  const seen = new Set()
+  for (const state of Array.from(AGENT_NAMESPACE_STATE_NAMES).sort()) {
+    for (const stateDir of resolveStateDirs(cfg, state)) {
+      let entries
+      try {
+        entries = fs.readdirSync(stateDir, { withFileTypes: true })
+      } catch {
+        continue
+      }
+      for (const entry of entries) {
+        if (entry.name !== base || entry.isDirectory()) continue
+        const full = path.normalize(path.join(stateDir, entry.name))
+        if (!seen.has(full)) {
+          seen.add(full)
+          found.push(full)
+        }
+      }
+    }
+  }
+  found.sort()
+  return found
+}
+
+// resolveRoadmapRef resolve um valor de campo Roadmap: já extraído: caminho literal primeiro
+// (idêntico a referenceExists — preserva o branch de diretório existente hoje), e só cai para o
+// fallback por basename quando o literal falha e isStaleRoadmapStateRef(ref) indica que vale a
+// pena tentar. Retorna 0 (quebrado), 1 (resolvido) ou >1 (ambíguo) caminhos.
+function resolveRoadmapRef(cfg, ref) {
+  return resolveRoadmapRefStatus(cfg, ref).resolved
+}
+
+// resolveRoadmapRefStatus é resolveRoadmapRef com um flag adicional: stale=true quando a
+// resolução só teve sucesso via resolveRoadmapRefByBasename (o caminho literal falhou e o
+// arquivo foi encontrado em outra pasta de estado). Espelha
+// internal/validator/validator.go:resolveRoadmapRefStatus (fonte canônica, ROADMAP-2026-09-05, ML-3B).
+function resolveRoadmapRefStatus(cfg, ref) {
+  const expandedRef = config.expandPath ? config.expandPath(ref) : ref
+  if (fs.existsSync(expandedRef)) return { resolved: [expandedRef], stale: false }
+  if (!isStaleRoadmapStateRef(ref)) return { resolved: [], stale: false }
+  const found = resolveRoadmapRefByBasename(cfg, ref)
+  return { resolved: found, stale: found.length > 0 }
+}
+
 function validateREQRoadmapLifecycle() {
   const cfg = config.load()
   const warnings = []
@@ -1252,7 +1330,13 @@ function validateREQRoadmapLifecycle() {
     if (!reqStatusIsOpen(content)) continue
     const ref = extractRefPath(content, 'Roadmap')
     if (!ref) continue
-    const expandedRef = config.expandPath ? config.expandPath(ref) : ref
+    const resolved = resolveRoadmapRef(cfg, ref)
+    if (resolved.length !== 1) {
+      // 0 = vínculo quebrado, >1 = ambíguo — ambos já reportados por validateRefTargetsExist.
+      // Esta regra só decide estado quando há UM arquivo real de onde derivá-lo.
+      continue
+    }
+    const expandedRef = resolved[0]
     if (!fs.existsSync(expandedRef)) continue
     if (path.basename(path.dirname(expandedRef)) === 'done') {
       warnings.push(`req "${path.basename(filePath)}" is Open but linked Roadmap "${ref}" is in done/`)

@@ -66,7 +66,7 @@ do próprio ML aquele teste afirma**, e o arquiteto verifica **esse cruzamento**
 Foi o passo que faltou nos três achados. Sem ele, as Waves 1 e 2 corrigem sintomas.
 
 ### ML-3B — O vínculo guarda o caminho com a pasta de estado, e `roadmap move` quebra o vínculo
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf`
+**Status:** ✅ Concluído · **Agente:** `apolo-tf`
 
 **Medição que originou o ML** (arquiteto, 2026-09-06, `./bin/trackfw validate`):
 
@@ -114,7 +114,7 @@ aquele teste afirma (regra dura do `CLAUDE.md`).
 - [ ] uma frase de reconciliação por teste novo, no relatório
 
 ### ML-3C — O acervo: medido, declarado e sob ratchet, não corrigido à mão
-**Status:** ⬜ Pendente · **Agente:** `trackfw_architect`
+**Status:** ✅ Concluído · **Agente:** `trackfw_architect`
 
 O ML-3B original dizia "REQs com `adr:` vazio apontando para ADRs aceitos", o que soa delimitado. A
 medição diz outra coisa:
@@ -134,6 +134,50 @@ produz um diff que **não** é auditável contra critério de aceite. O acervo e
 - [ ] os números acima registrados no roadmap e no `docs/agents-working-context.md`
 - [ ] o bloco `## Critérios de Aceite` presente neste roadmap (hoje `validate` acusa a ausência)
 - [ ] a sub-medição do ML-2A (13 vs ~43) corrigida por escrito, na auditoria
+
+## Auditoria do ML-3B — arquiteto, 2026-09-06
+
+```
+make quality QUALITY_EXIT=0  →  0 FAIL em 3816 linhas · 1008 OK · 181 cenários de falsificação
+check-cli-parity             →  exit 0
+docs/req/                    →  intocado
+validator_integrity_xfail    →  intocado (0 linhas de diff)
+```
+
+**O conflito era do handoff, não do código nem do teste.** A direção A que eu escrevi
+(*"roadmap movido para `done/` ⇒ sem aviso"*) estava errada. O arquivo mudou de estado: isso **é**
+registro velho e merece aviso. O que estava errado era a **mensagem**, que afirmava inexistência de
+um arquivo que existe. O agente parou e pediu decisão em vez de apagar o teste — 🔴 e foi essa
+parada que evitou aposentar um teste que outra REQ tinha reativado de propósito.
+
+`hasWarning` é `strings.Contains` no **basename** (`validator_test.go:69`), então o aviso novo e
+verdadeiro satisfaz as duas REQs. **Nenhum teste aposentado** — e esse é o critério que prova.
+
+Antes → depois, no acervo real:
+
+```
+- links to Roadmap "docs/roadmaps/wip/X.md" which does not exist          (falso: o arquivo existe)
++ links to Roadmap "docs/roadmaps/wip/X.md" but the file is now in done/ (stale state path)
+```
+
+🔴 **Limite declarado da entrega:** as 2 REQs reais afetadas estão com `status: Done`, e
+`req_roadmap_lifecycle` só examina REQ aberta. Logo **a correção do fail-open não está provada pela
+árvore real** — está provada apenas pela direção C da falsificação. Diferença entre "o gate passou" e
+"o comportamento foi entregue"; fica escrito em vez de presumido.
+
+### ML-3D — `serve` casa a aresta pelo caminho literal: mesma causa, aresta órfã no dashboard
+**Status:** ⬜ Pendente · **Agente:** `apolo-tf`
+
+Achado **do próprio agente** durante o ML-3B, e foi ele que decidiu a questão contra o silêncio.
+`internal/serve/api_chain.go:127-130` monta `edges` com `To: normalizeRefSeparator(val)` — valor
+literal do frontmatter — e casa contra `node.ID`, que vem do caminho do `WalkDir`. **Mesmo mecanismo
+do ML-3B**: caminho de estado gravado, resolvido literalmente.
+
+Consequência hoje: para os 2 vínculos medidos, o `validate` reporta estado velho e o `serve`
+**desenha aresta órfã** — dois componentes discordando do mesmo vínculo.
+
+Pela regra dura de causa raiz do `CLAUDE.md`: **mesma causa ⇒ mesma REQ ⇒ mesmo PR.** Entra como ML
+deste roadmap, não como REQ nova.
 
 ## Critérios de Aceite
 
