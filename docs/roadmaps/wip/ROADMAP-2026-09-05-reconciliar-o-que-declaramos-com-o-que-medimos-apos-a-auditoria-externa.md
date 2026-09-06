@@ -49,7 +49,7 @@ silêncio: quem leu a afirmação errada precisa encontrar a correção.
 > Dependências: Wave 1.
 
 ### ML-2A — `req_has_adr` deixa de aceitar placeholder e prosa
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` (3 CLIs)
+**Status:** 🔄 Em andamento · **Agente:** `apolo-tf` (3 CLIs)
 `ADR: <!-- preencher depois -->` e `veja a secao ADR: mais abaixo` contam como vínculo hoje.
 Falsificação nas duas direções, com esses dois casos nomeados.
 🔴 **A contagem do acervo vai subir acima de 67 — e continua sendo acerto.** Declarar antes e depois.
@@ -59,7 +59,7 @@ Falsificação nas duas direções, com esses dois casos nomeados.
 > Dependências: Waves 1 e 2. **É o entregável que importa** — as outras corrigem instâncias.
 
 ### ML-3A — Todo ML com teste novo declara qual conclusão aquele teste afirma
-**Status:** ⬜ Pendente · **Agente:** `trackfw_architect`
+**Status:** 🔄 Em andamento · **Agente:** `trackfw_architect`
 Instrumentar o contrato de handoff e o de auditoria: quem entrega teste novo declara **qual conclusão
 do próprio ML aquele teste afirma**, e o arquiteto verifica **esse cruzamento** na auditoria.
 
