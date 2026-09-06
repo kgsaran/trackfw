@@ -1,5 +1,5 @@
 ---
-status: Done
+status: In Progress
 date: 2026-08-12
 author: "Zeus (Arquiteto)"
 adr: "docs/adr/ADR-2026-08-12-defesa-do-credential-guard-vive-no-escopo-global-controle-que-mora-onde-o-agente-escreve-nao-e-controle.md"
@@ -8,7 +8,7 @@ roadmap: "docs/roadmaps/done/ROADMAP-2026-08-12-mitigacao-do-fail-open-do-creden
 
 # REQ: Mitigacao do fail-open do credential-guard — integridade do script e da config, controle positivo e fail-closed nativo
 
-> Date: 2026-08-12 | Status: Done
+> Date: 2026-08-12 | Status: In Progress
 | Linear Issue: 
 | Jira Issue: 
 
@@ -103,3 +103,55 @@ ADR: docs/adr/ADR-2026-08-12-defesa-do-credential-guard-vive-no-escopo-global-co
 
 ## Linked Roadmap
 Roadmap: docs/roadmaps/done/ROADMAP-2026-08-12-mitigacao-do-fail-open-do-credential-guard-wave-1-controle-positivo-e-failclosed.md
+
+
+---
+
+## 🔴 Reaberta em 2026-09-06 — fechada com 2 de 4 critérios, e um caminho novo medido
+
+**Esta REQ estava `Done` com os quatro critérios de aceite em branco.** Medido agora:
+
+| AC | estado real |
+|---|---|
+| 1 — controle positivo em `validate`/`doctor` | ✅ **entregue** (`internal/validator/validator_credential_guard_integrity.go`) |
+| 2 — `failClosed: true` no Cursor | ❌ **não entregue** — zero ocorrências de `failClosed` nos geradores |
+| 3 — wrapper que converte "não consegui rodar" em bloqueio | ❌ **não entregue** — o bloqueador declarado (script é gerado, não vem no binário) nunca foi resolvido |
+| 4 — integridade de conteúdo do script e da config | ✅ **entregue** (regra `credential_guard_script_integrity`) |
+
+**Não é reabertura por preciosismo:** os ACs 2 e 3 são justamente os que cobrem **deleção** e
+**"não consegui rodar"** no momento da invocação. Fechar a REQ sem eles deixou de pé a classe de
+falha que ela existe para mitigar.
+
+### AC5 — 🔴 JSON inválido em config de guard é engolido em silêncio
+
+Medido no ML-6C (2026-09-05):
+
+```go
+// internal/validator/validator_git_branch_guard.go:151-154
+json.Unmarshal falha → continue, em silêncio
+// comentário de desenho, linhas 130-132, confirma que é intencional
+```
+
+A função irmã do credential-guard compartilha o padrão. **Um arquivo de config de guard corrompido
+faz o validator reportar saúde** — o controle não olha, e diz que está tudo bem.
+
+**É a quinta via da mesma classe** que as ACs 1–4 mapeiam: sobrescrita, deleção, downgrade por
+config, caminho que não resolve — e agora **config ilegível**.
+
+- [ ] **AC5** — JSON inválido em arquivo de config de guard **deixa de ser silencioso**. Decidir
+      entre acusar como violação ou emitir diagnóstico próprio, e **escrever a razão** — mas
+      `continue` mudo deixa de ser aceitável.
+- [ ] **AC6** — 🔴 **Falsificação:** com um config deliberadamente corrompido, o `validate` **acusa**;
+      com config válido, **não acusa**. Hoje as duas situações produzem a mesma saída, e é isso que
+      torna o defeito invisível.
+- [ ] **AC7** — 🔴 **Enumerar as demais leituras de config de guard** e dizer, por sítio, se
+      compartilham o `continue` mudo. O ML-6C achou duas por acaso, olhando outra coisa.
+
+### Por que reabrir em vez de abrir REQ nova
+
+`CLAUDE.md`, Regra Dura de Causa Raiz: **mesma causa → mesma REQ**. O usuário foi explícito:
+
+> *"Não temos como resolvê-lo aqui sem a REQ, vai ser mais uma REQ que será aberta e se perderá no
+> mar de REQs que temos."*
+
+Resíduo de REQ fechada **reabre a REQ**. Nunca cria a próxima.
