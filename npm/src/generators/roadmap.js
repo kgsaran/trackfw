@@ -5,6 +5,7 @@ const config = require('../config')
 const { localDateISO } = require('./date')
 const { resolveReqFiles, resolveAgentNamespaces } = require('../validator/index.js')
 const { normalizeRefSeparator: pathfmtNormalizeRefSeparator } = require('../lib/pathfmt')
+const { normalizeCRLF } = require('../integrations/render')
 
 // STATUS_LEGEND teaches the vocabulary the `barrier` parser accepts for "**Status:**"
 // (AC11, ADR decision 5): the canonical form the template now writes (⬜ Pendente) plus the
@@ -171,9 +172,14 @@ function showRoadmap(name) {
  * antes do primeiro "## " heading é atualizada.
  *
  * Retorna { content: string, changed: boolean }.
+ *
+ * D1/D3 (ADR-2026-09-04-parser-de-frontmatter-tolera-crlf-na-fronteira-de-entrada, ML-5B):
+ * normaliza CRLF -> LF via normalizeCRLF (npm/src/integrations/render.js) na própria entrada,
+ * antes de qualquer casamento de "---\n" — reaproveita a única implementação Node, sem criar
+ * uma segunda cópia.
  */
 function rewriteRoadmapStatus(source, state) {
-  const s = String(source)
+  const s = normalizeCRLF(String(source))
   if (!s.startsWith('---\n')) return { content: s, changed: false }
   const end = s.indexOf('\n---', 4)
   if (end < 0) return { content: s, changed: false }

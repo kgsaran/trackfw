@@ -3,6 +3,7 @@ package generators
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/kgsaran/trackfw/internal/config"
@@ -157,5 +158,62 @@ func TestMoveRoadmap_SemLinhaHumanaNaoCria(t *testing.T) {
 	want := "---\nstatus: done\n---\n\n# Roadmap: s\n\nsem linha de status aqui\n"
 	if got != want {
 		t.Errorf("linha foi criada indevidamente:\n got: %q\nwant: %q", got, want)
+	}
+}
+
+// TestMoveRoadmap_CRLFSourceMatchesLF is the ML-5B falsification for
+// rewriteRoadmapStatus, mirroring TestRenderOpenCodeAgent_CRLFSourceMatchesLF
+// (ML-5A, internal/integrations/render_test.go): a roadmap saved with CRLF
+// line endings — as `trackfw roadmap move` would receive it if written by a
+// Windows editor — must have "status:" and "| Status: " rewritten exactly
+// like the LF twin. This asserts CONCLUSION: MoveRoadmap's own frontmatter
+// rewrite (D3 site #1 of ML-5B) no longer silently skips a CRLF file because
+// "---\n" never matched.
+func TestMoveRoadmap_CRLFSourceMatchesLF(t *testing.T) {
+	lfName, crlfName := "lf.md", "crlf.md"
+	lfSrc := "---\nname: x\nstatus: wip\ndate: 2026-08-16\n---\n\n# Roadmap: x\n\n> Criado em: 2026-08-16 | Status: wip\n\ncorpo\n"
+	crlfSrc := strings.ReplaceAll(lfSrc, "\n", "\r\n")
+
+	lfDir := setupMove(t, lfName, lfSrc)
+	if err := MoveRoadmap(lfName, "done"); err != nil {
+		t.Fatalf("MoveRoadmap (LF): %v", err)
+	}
+	lfOut := readMoved(t, lfDir, "done", lfName)
+
+	crlfDir := setupMove(t, crlfName, crlfSrc)
+	if err := MoveRoadmap(crlfName, "done"); err != nil {
+		t.Fatalf("MoveRoadmap (CRLF): %v", err)
+	}
+	crlfOut := readMoved(t, crlfDir, "done", crlfName)
+
+	if lfOut != crlfOut {
+		t.Fatalf("CRLF source produced a different rewrite than LF source.\nLF:\n%q\nCRLF:\n%q", lfOut, crlfOut)
+	}
+	// D2 control: CRLF input must still yield an LF-only output.
+	if strings.Contains(crlfOut, "\r") {
+		t.Fatalf("CRLF input leaked into the written file (D2 violation): %q", crlfOut)
+	}
+	if !strings.Contains(crlfOut, "status: done") || !strings.Contains(crlfOut, "| Status: done") {
+		t.Fatalf("CRLF source was not rewritten at all (D3 site regressed to blind): %q", crlfOut)
+	}
+}
+
+// TestMoveRoadmap_LFControlUnchangedByCRLFFix is the POSIX control the ADR
+// requires measured per site: an all-LF roadmap must move through exactly
+// the pre-ML-5B byte sequence — NormalizeCRLF is a no-op on LF input, so
+// today's behavior for every existing roadmap in this repo does not change.
+func TestMoveRoadmap_LFControlUnchangedByCRLFFix(t *testing.T) {
+	const name = "control.md"
+	src := "---\nname: x\nstatus: wip\n---\n\n# Roadmap: x\n\n> Criado em: 2026-08-16 | Status: wip\n\ncorpo\n"
+	dir := setupMove(t, name, src)
+
+	if err := MoveRoadmap(name, "done"); err != nil {
+		t.Fatalf("MoveRoadmap: %v", err)
+	}
+
+	got := readMoved(t, dir, "done", name)
+	want := "---\nname: x\nstatus: done\n---\n\n# Roadmap: x\n\n> Criado em: 2026-08-16 | Status: done\n\ncorpo\n"
+	if got != want {
+		t.Fatalf("controle POSIX divergiu:\n got: %q\nwant: %q", got, want)
 	}
 }

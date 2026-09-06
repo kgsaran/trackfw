@@ -819,10 +819,40 @@ efeito). Isso justifica **ML separado**, não **REQ separada**. Confundi as duas
 pegou.
 
 ### ML-5B — `rewriteRoadmapStatus`/`rewriteREQStatus`: os 6 sítios restantes da D3
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf`
+**Status:** 🔄 Em andamento (implementação e evidência entregues; aguardando auditoria do arquiteto) · **Agente:** `apolo-tf`
 Mesma ADR, mesma decisão, mesmo mecanismo — só o sítio muda. Afetam `trackfw roadmap move` e a
 escrita de status de REQ, que é caminho de escrita **do produto**, não de leitura de artefato de
 agente.
 **Critérios:** os mesmos do ML-5A · falsificação nas duas direções por sítio · escrita continua LF
 (D2) · `.gitattributes` intocado (D4) · e a **enumeração final provando que a D3 ficou satisfeita**:
 nenhum sítio remanescente casa delimitador por literal.
+
+
+### ML-5C — O resíduo que a enumeração da D3 encontrou (Python)
+**Status:** 🔄 Em andamento · **Agente:** `apolo-tf`
+`_get_frontmatter_roadmap_value` e `_rewrite_req_roadmap_ref`
+(`pypi/trackfw/generators/roadmap.py:429,454`) ainda usam `startswith("---\n")` literal e são
+**cegos a CRLF** — medido ao vivo pelo ML-5B. Os gêmeos em Go e Node já são tolerantes **por
+construção** (split por linha + trim, não prefixo de blob).
+
+É o **caminho de sincronização da referência REQ↔roadmap** — escrita de artefato de governança do
+usuário.
+
+🔴 **Entra aqui, e não em REQ nova, pela Regra Dura de Causa Raiz** (`CLAUDE.md`), escrita hoje
+justamente por causa deste padrão: mesma causa, mesma ADR, mesmo mecanismo → **mesmo ML na REQ
+vigente, e no mesmo PR**. O agente reportou como "candidato a REQ própria" seguindo a disciplina de
+escopo do handoff dele — a decisão de não fragmentar é do arquiteto, e é esta.
+
+## Auditoria do ML-5B — arquiteto, 2026-09-06
+
+**Os 6 sítios confirmados por leitura, não herdados do handoff** — e o número 6 se sustentou.
+Reaproveitou o normalizador único do ML-5A nos 3 runtimes (D3), sem criar segunda cópia.
+
+🔴 **Nuance medida, não presumida:** os dois sítios Python leem com
+`open(path, "r", encoding="utf-8")`, que já aplica tradução universal-newlines — **na produção eles
+nunca viram CRLF**, ao contrário de Go e Node, que leem bytes crus e estavam genuinamente quebrados.
+A correção ali é defesa em profundidade. **Ele mediu a diferença em vez de aplicar simetria
+automática.**
+
+**Controle de escrita (D2) medido em bytes reais**, com os 3 binários de CLI contra a mesma fixture
+CRLF: **zero bytes `\r` escritos**, saída byte-idêntica entre runtimes. `.gitattributes` intocado (D4).

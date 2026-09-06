@@ -13,6 +13,7 @@ from datetime import date
 
 from trackfw import config as cfg_module
 from trackfw.generators.roadmap import STATE_ORDER, VALID_STATES
+from trackfw.integrations.renderers import _normalize_crlf
 
 
 def slugify(title: str) -> str:
@@ -104,7 +105,16 @@ Roadmap: {linked_roadmap_section}
 
 
 def rewrite_req_status(source: str, status: str) -> tuple[str, bool]:
-    """Reescreve status no frontmatter e no header, preservando o restante."""
+    """Reescreve status no frontmatter e no header, preservando o restante.
+
+    D1/D3 (ADR-2026-09-04-parser-de-frontmatter-tolera-crlf-na-fronteira-de-entrada, ML-5B):
+    normaliza CRLF -> LF via _normalize_crlf na própria entrada, antes de qualquer casamento
+    de "---\n" — reaproveita a única implementação Python, sem criar uma segunda cópia.
+    Mesma nuance de move_roadmap: move_req já lê com `open(..., "r", encoding="utf-8")`
+    (universal newlines mascara CRLF em produção); a chamada aqui é defesa em profundidade
+    para a função em si, não uma correção de um bug observável hoje neste site.
+    """
+    source = _normalize_crlf(source)
     if not source.startswith("---\n"):
         return source, False
     end = source[4:].find("\n---")

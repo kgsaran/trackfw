@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/kgsaran/trackfw/internal/config"
+	"github.com/kgsaran/trackfw/internal/integrations"
 	"github.com/kgsaran/trackfw/internal/validator"
 )
 
@@ -337,7 +338,13 @@ func parseREQForRoadmap(content string) (title string, criteria []string, linked
 // first "## " heading is updated; any occurrence inside sections or code blocks is left intact.
 //
 // Returns the (possibly modified) content and a bool indicating whether anything changed.
+//
+// D1/D3 (ADR-2026-09-04-parser-de-frontmatter-tolera-crlf-na-fronteira-de-entrada, ML-5B):
+// normalizes CRLF → LF via integrations.NormalizeCRLF at this function's own entry, before any
+// "---\n" delimiter match — the same single Go implementation the ML-5A boundaries in
+// internal/integrations/render.go already funnel through, not a second copy.
 func rewriteRoadmapStatus(source []byte, state string) ([]byte, bool) {
+	source = integrations.NormalizeCRLF(source)
 	s := string(source)
 	if !strings.HasPrefix(s, "---\n") {
 		return source, false

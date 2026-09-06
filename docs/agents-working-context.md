@@ -31946,3 +31946,170 @@ Arquivos tocados: `internal/integrations/render.go`, `internal/integrations/rend
 `pypi/trackfw/integrations/manager.py`, `pypi/tests/test_agents_models.py`, `pypi/tests/test_integrations_identity.py`.
 Nenhuma operação de git. Roadmap deixado em `**Status:** 🔄 Em andamento` — a transição para
 `✅ Concluído` é do arquiteto, pós-auditoria.
+
+---
+
+## ML-5B — apolo-tf, 2026-09-06 — os 6 sítios restantes da D3 (`rewriteRoadmapStatus`/`rewriteREQStatus`)
+
+**Início.** Handoff: fechar a D3 (`ADR-2026-09-04-parser-de-frontmatter-tolera-crlf-na-fronteira-de-
+entrada`) para `rewriteRoadmapStatus`/`rewriteREQStatus` — 6 sítios nos 3 CLIs — que o ML-5A relatou
+corretamente e o arquiteto errou ao mandar virar REQ própria em vez de ML. Nenhuma operação de git;
+zero mudança nos MLs anteriores.
+
+### Os 6 sítios, reconfirmados por leitura (não presumidos do handoff)
+
+| Runtime | `rewriteRoadmapStatus`/equiv. | `rewriteREQStatus`/equiv. |
+|---|---|---|
+| Go | `internal/generators/roadmap.go:340` | `internal/generators/req.go:186` |
+| Node | `npm/src/generators/roadmap.js:175` | `npm/src/generators/req.js:71` |
+| Python | `pypi/trackfw/generators/roadmap.py:84` (`_rewrite_roadmap_status`) | `pypi/trackfw/generators/req.py:106` (`rewrite_req_status`) |
+
+Confirmado: **exatamente 1 call site de produção por função** (`MoveRoadmap`/`moveRoadmap`/`move_roadmap`
+e `MoveREQ`/`moveREQ`/`move_req`), sem outros chamadores — o número 6 do handoff bateu.
+
+### Correção aplicada — reaproveitando o ponto único do ML-5A, não uma segunda cópia (D3)
+
+- **Go:** `normalizeCRLF` em `internal/integrations/render.go` foi **exportada** (`NormalizeCRLF`) —
+  era a única barreira para reaproveito cross-package; `internal/generators` já importava
+  `internal/integrations` noutro arquivo (sem ciclo). `roadmap.go`/`req.go` chamam
+  `integrations.NormalizeCRLF(source)` na entrada de cada função.
+- **Node:** `normalizeCRLF` de `npm/src/integrations/render.js` já era exportada — `roadmap.js`/`req.js`
+  passam a `require` e chamar direto.
+- **Python:** `_normalize_crlf` de `pypi/trackfw/integrations/renderers.py` **já era importada
+  cross-módulo pela própria produção** (`trackfw.integrations.manager` já fazia
+  `from trackfw.integrations.renderers import _normalize_crlf`) — mesmo padrão replicado em
+  `roadmap.py`/`req.py`, sem renomear (manter o precedente já aceito no código, não inventar um novo).
+
+Nos 3 runtimes: **uma função de normalização por CLI** (D3), chamada na entrada de cada uma das 6
+funções — nenhuma segunda cópia foi criada.
+
+### 🔴 Nuance Python, medida e não escondida
+
+`move_roadmap`/`move_req` já leem com `open(path, "r", encoding="utf-8")` — **universal newlines do
+Python já traduz `\r\n`→`\n` nessa leitura**, então em produção esses 2 sítios **nunca viam CRLF antes
+desta ML** (diferente de Go/Node, que leem bytes crus e reproduziam o defeito de verdade). Medido:
+
+```
+python3 -c "open(CRLF-file,'r',encoding='utf-8').read()"  →  '\r' ausente do resultado
+```
+
+A chamada a `_normalize_crlf` nos 2 sítios Python é **defesa em profundidade** (fecha a função em si
+contra um chamador futuro que leia bytes crus) — não a correção de um bug observável hoje nesse
+caminho específico. Isso é exatamente o que a própria ADR já havia previsto e advertido: *"medir num
+runtime só engana"*.
+
+### 🔴 D3 — enumeração final, e um residual encontrado FORA do escopo dos 6 sítios
+
+Grep exaustivo por `HasPrefix(x,"---\n")`/`startsWith('---\n')`/`startswith("---\n")` nos 3 runtimes,
+fora dos sítios já protegidos pelo ML-5A (`render.go`/`render.js`/`renderers.py`, todos atrás de
+`normalizeCRLF`/`_normalize_crlf`) e pelos 6 sítios desta ML:
+
+**Fechado, sem sítio remanescente casando delimitador por literal nos alvos do handoff (6/6).**
+
+**Mas o grep achou um par de funções fora do escopo nomeado — reportado, não corrigido:**
+`extractFrontmatterRoadmap`/`rewriteREQRoadmapRef` (Go, `roadmap.go:672,705`) e
+`extractFrontmatterRoadmap`/`rewriteReqRoadmapRef` (Node, `roadmap.js:354,378`) — usadas por
+`syncReqReferences`, o sincronizador de referência REQ↔roadmap — **já são tolerantes a CRLF por
+construção**: percorrem linha a linha (`split('\n')`) e comparam contra `TrimSpace(line)=="---"` /
+`line.trim()==='---'`, não contra o blob inteiro com prefixo literal. `TrimSpace`/`.trim()` engolem o
+`\r` de sobra. Medido com `go run`, não presumido.
+
+🔴 **Python diverge das outras duas — não por decisão, por acidente.**
+`_get_frontmatter_roadmap_value`/`_rewrite_req_roadmap_ref` (`pypi/trackfw/generators/roadmap.py:429,454`)
+usam o padrão **literal** `content.startswith("---\n")` — igual ao que os 6 sítios desta ML tinham
+antes da correção — e **são genuinamente cegos a CRLF**, medido:
+
+```python
+_get_frontmatter_roadmap_value(lf)    -> 'docs/x.md'
+_get_frontmatter_roadmap_value(crlf)  -> ''                 # ausência silenciosa, não erro
+_rewrite_req_roadmap_ref(crlf, ...)   -> (unchanged, False) # nunca reescreve
+```
+
+Isso significa que a D3 do handoff — os 6 sítios nomeados — **está satisfeita**, mas a categoria mais
+ampla "nenhum sítio de fronteira de frontmatter casa delimitador por literal em qualquer runtime" **não
+está**: sobra **um par Python-only** (2 sítios, não 6 — Go/Node já corretos por construção diferente,
+não pareados 1:1), no caminho de `sync_paired_req_references`/`syncReqReferences`. **Fora do escopo
+nomeado neste handoff** (que era nominalmente `rewriteRoadmapStatus`/`rewriteREQStatus`) — não
+corrigido aqui, por disciplina de escopo (§11 das regras globais: bug concreto vira observação, não
+expansão). Candidato a ML/REQ própria, e com um perfil diferente dos anteriores: não é "3 CLIs
+discordando", é "Python sozinho com o padrão antigo que os outros dois nunca tiveram".
+
+### Falsificação nas duas direções, por sítio — com números
+
+Testes novos, 2 por runtime (unit-level em `rewriteRoadmapStatus`/`rewriteREQStatus` + end-to-end via
+`MoveRoadmap`/`MoveREQ`):
+
+- `TestMoveRoadmap_CRLFSourceMatchesLF` / `TestMoveREQ_CRLFSourceMatchesLF` (Go)
+- `'rewriteRoadmapStatus — CRLF source renderiza byte-idêntico ao source LF (ADR CRLF)'` /
+  `'rewriteREQStatus — CRLF source renderiza byte-idêntico ao source LF (ADR CRLF)'` (Node)
+- `test_crlf_source_produz_resultado_byte_identico_ao_lf` (roadmap) /
+  `test_rewrite_req_status_crlf_source_produz_resultado_byte_identico_ao_lf` (req) (Python)
+
+mais os controles POSIX (`TestMoveRoadmap_LFControlUnchangedByCRLFFix`,
+`TestMoveREQ_LFControlUnchangedByCRLFFix`, equivalentes Node/Python) e, no Python, um teste de
+integração extra provando a nuance do universal-newlines
+(`test_move_arquivo_crlf_no_disco_ja_e_tolerado_hoje_por_universal_newlines`,
+`test_move_req_arquivo_crlf_no_disco_ja_e_tolerado_hoje_por_universal_newlines`).
+
+**Falsificação por mutação, feita e revertida nos 3 runtimes** (não commitada, evidência abaixo):
+removida a chamada de normalização em cada um dos 6 sítios → os testes CRLF/end-to-end **reprovam**
+(mensagem real Go: `"REQ ... has no frontmatter status/header Status to update"` para o REQ CRLF, e
+diff `status: done` vs `status: wip` para o roadmap CRLF) → controles POSIX **continuam verdes**
+(prova que a mutação ataca só o caminho CRLF) → arquivos restaurados byte a byte
+(`diff backup arquivo` vazio nos 6) → suíte volta a 100% verde.
+
+### 🔴 Controle de escrita (D2) — medido em bytes, com os 3 binários REAIS, não só a suíte
+
+```
+Go:     printf CRLF-fixture → trackfw-go roadmap move → done/*.md
+        xxd: "2d2d2d0a 7374 6174 7573 3a20 646f 6e65" (---.status: done)  grep -c $'\r' → 0
+Node:   mesmo fixture → npm/bin/trackfw roadmap move → bytes idênticos, grep -c $'\r' → 0
+Python: mesmo fixture → python3 -m trackfw.cli roadmap move → bytes idênticos, grep -c $'\r' → 0
+```
+
+Os 3 CLIs, com o binário/entrypoint real (não a função isolada), produzem o **mesmo resultado byte a
+byte** a partir do mesmo fixture CRLF — e zero byte `\r` na saída.
+
+`scripts/check-python-writes-lf.sh` → exit 0. `git diff -- .gitattributes` → vazio (D4 intocado).
+
+### Reconciliação — o que cada teste novo afirma
+
+- `TestMoveRoadmap_CRLFSourceMatchesLF` (Go) / equivalentes Node/Python: afirmam que **o sítio #1
+  (`rewriteRoadmapStatus`) não fica mais cego a CRLF** — a mesma entrada reescrita via `MoveRoadmap`
+  produz o mesmo resultado partindo de LF ou de CRLF.
+- `TestMoveREQ_CRLFSourceMatchesLF` (Go) / equivalentes: afirmam o mesmo para o **sítio #2**
+  (`rewriteREQStatus`/`MoveREQ`).
+- `TestMoveRoadmap_LFControlUnchangedByCRLFFix` / `TestMoveREQ_LFControlUnchangedByCRLFFix` (e
+  equivalentes): afirmam que a correção é **não-regressiva** — todo roadmap/REQ hoje em LF (100% do
+  repo) produz exatamente a mesma sequência de bytes de antes desta ML.
+- `test_move_arquivo_crlf_no_disco_ja_e_tolerado_hoje_por_universal_newlines` (Python, roadmap e req):
+  afirma a **nuance declarada** — o end-to-end via arquivo já não reproduzia o defeito antes desta ML
+  (universal newlines), então esse teste é controle de integração/D2, não falsificação do defeito.
+
+### Evidência de comandos
+
+```
+go build ./...                    → limpo
+go vet ./...                       → limpo
+go test ./...                      → todos os pacotes ok
+node --test tests/*.test.js        → 866 passed, 0 failed (era 866 antes; +6 testes novos absorvidos)
+python3 -m pytest tests/ -q        → 1630 passed, 66 subtests passed (era 1625+66; +5 testes novos)
+scripts/check-python-writes-lf.sh  → exit 0
+git diff -- .gitattributes         → vazio
+```
+
+Arquivos tocados: `internal/generators/roadmap.go`, `internal/generators/req.go`,
+`internal/generators/roadmap_move_test.go`, `internal/generators/req_test.go`,
+`internal/integrations/render.go` (export de `NormalizeCRLF`), `internal/integrations/render_test.go`,
+`npm/src/generators/roadmap.js`, `npm/src/generators/req.js`, `npm/src/integrations/render.js`
+(comentário), `npm/tests/roadmap_move.test.js`, `npm/tests/req_move.test.js`,
+`pypi/trackfw/generators/roadmap.py`, `pypi/trackfw/generators/req.py`,
+`pypi/tests/test_generators_roadmap.py`, `pypi/tests/test_generators_req.py`.
+
+**Não rodei `make quality`** — instrução explícita do handoff; o arquiteto roda ao fim. Nenhuma
+operação de git. Roadmap deixado como está (ML-5B ainda `⬜ Pendente` no arquivo — a transição e o
+fechamento da wave são do arquiteto, pós-auditoria).
+
+🔴 **Resumo do que fica para o arquiteto decidir:** (1) auditar e fechar o ML-5B; (2) decidir o
+destino do residual Python-only (`_get_frontmatter_roadmap_value`/`_rewrite_req_roadmap_ref`) — ML
+próprio ou REQ, dado que é um perfil novo (Python divergindo sozinho, não os 3 discordando).

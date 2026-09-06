@@ -610,14 +610,14 @@ func TestRenderOpenCodeAgent_CRLFSourceMatchesLF(t *testing.T) {
 }
 
 // TestNormalizeCRLF_StripsCRLFOnly is the unit-level falsification of
-// normalizeCRLF itself: it must fold every "\r\n" to "\n" and leave a bare
+// NormalizeCRLF itself: it must fold every "\r\n" to "\n" and leave a bare
 // "\r" (no following "\n") untouched — the ADR's declared non-goal (D4:
 // classic-Mac CR-only line endings are not this ADR's problem).
 func TestNormalizeCRLF_StripsCRLFOnly(t *testing.T) {
-	got := string(normalizeCRLF([]byte("a\r\nb\r\nc\rd")))
+	got := string(NormalizeCRLF([]byte("a\r\nb\r\nc\rd")))
 	want := "a\nb\nc\rd"
 	if got != want {
-		t.Fatalf("normalizeCRLF(%q) = %q, want %q", "a\r\nb\r\nc\rd", got, want)
+		t.Fatalf("NormalizeCRLF(%q) = %q, want %q", "a\r\nb\r\nc\rd", got, want)
 	}
 }
 
@@ -800,7 +800,7 @@ func TestRenderSubagentRouteInjectsIdentity(t *testing.T) {
 // rewriteFrontmatterFields and rewriteSignatureLine. A CRLF source that made
 // it past markdownParts but not past one of the other three would still
 // silently mis-render — this test is what would have caught that (and did,
-// during development of this ML: injecting normalizeCRLF into markdownParts
+// during development of this ML: injecting NormalizeCRLF into markdownParts
 // alone left this test's CRLF branch identical to the pre-fix LF-only
 // output, while insertBodyPrefix/rewriteFrontmatterFields/rewriteSignatureLine
 // each independently reproduced the ADR's "no frontmatter recognized"

@@ -339,6 +339,29 @@ test('rewriteRoadmapStatus — preserva aspas ao redor do valor', () => {
   assert.ok(content.includes('status: "wip"'), `deve preservar aspas; obteve:\n${content}`)
 })
 
+// ML-5B: falsificação nas duas direções (ADR-2026-09-04-parser-de-frontmatter-tolera-crlf-na-
+// fronteira-de-entrada, D1/D3) — o mesmo defeito do ML-5A (renderers), agora nos 2 sítios de
+// escrita de produto deste arquivo/CLI: rewriteRoadmapStatus.
+test('rewriteRoadmapStatus — CRLF source renderiza byte-idêntico ao source LF (ADR CRLF)', () => {
+  const lfSrc = '---\nstatus: backlog\ndate: 2026-01-01\n---\n# Roadmap\n\n> Created: 2026-01-01 | Status: backlog\n'
+  const crlfSrc = lfSrc.replace(/\n/g, '\r\n')
+
+  const lfResult = rewriteRoadmapStatus(lfSrc, 'wip')
+  const crlfResult = rewriteRoadmapStatus(crlfSrc, 'wip')
+
+  assert.strictEqual(crlfResult.changed, true, 'CRLF source deveria ser reconhecida como frontmatter (D3 site não deveria ficar cego)')
+  assert.strictEqual(lfResult.content, crlfResult.content, `CRLF e LF deveriam produzir o mesmo resultado.\nLF:   ${JSON.stringify(lfResult.content)}\nCRLF: ${JSON.stringify(crlfResult.content)}`)
+  // D2: entrada CRLF não autoriza saída CRLF.
+  assert.ok(!crlfResult.content.includes('\r'), `saída não deveria conter CR (D2); obteve:\n${JSON.stringify(crlfResult.content)}`)
+})
+
+test('rewriteRoadmapStatus — controle POSIX: source LF produz exatamente o resultado de hoje', () => {
+  const src = '---\nstatus: backlog\ndate: 2026-01-01\n---\n# Roadmap\n\n> Created: 2026-01-01 | Status: backlog\n'
+  const { content, changed } = rewriteRoadmapStatus(src, 'wip')
+  assert.strictEqual(changed, true)
+  assert.strictEqual(content, '---\nstatus: wip\ndate: 2026-01-01\n---\n# Roadmap\n\n> Created: 2026-01-01 | Status: wip\n')
+})
+
 // ─── ML-2B: syncReqReferences — cinco cardinalidades + idempotência + by_agent ───────────────
 
 const { extractFrontmatterRoadmap, rewriteReqRoadmapRef, syncReqReferences, normalizeRefSeparator } = require('../src/generators/roadmap')

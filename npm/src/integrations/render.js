@@ -58,6 +58,9 @@ function normalize(content) {
 //
 // D4/escopo: só "\r\n" vira "\n". Um "\r" solto (Mac clássico, sem "\n") é
 // deixado intocado de propósito, conforme o não-objetivo declarado na ADR.
+//
+// Reaproveitada por npm/src/generators/roadmap.js e npm/src/generators/req.js (ML-5B,
+// rewriteRoadmapStatus/rewriteREQStatus) — mesma implementação Node, não uma segunda cópia.
 function normalizeCRLF(content) {
   return String(content).replace(/\r\n/g, '\n')
 }

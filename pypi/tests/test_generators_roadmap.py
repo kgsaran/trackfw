@@ -447,6 +447,34 @@ class TestRewriteRoadmapStatus(unittest.TestCase):
         # Bloco de código (após ##) intocado
         self.assertIn("```\n> Created: 2026-01-01 | Status: backlog\n```", result)
 
+    def test_crlf_source_produz_resultado_byte_identico_ao_lf(self):
+        """ML-5B, falsificação nas duas direções (ADR-2026-09-04-parser-de-frontmatter-
+        tolera-crlf-na-fronteira-de-entrada, D1/D3): mesmo defeito do ML-5A, agora no site
+        de escrita de produto _rewrite_roadmap_status. Chamado com CRLF DIRETO (bypassando
+        o universal-newlines de open()), que é o que expõe o defeito na função em si."""
+        lf_src = (
+            "---\nstatus: backlog\ndate: 2026-01-01\n---\n# Roadmap\n\n"
+            "> Created: 2026-01-01 | Status: backlog\n"
+        )
+        crlf_src = lf_src.replace("\n", "\r\n")
+
+        lf_result, lf_changed = _rewrite_roadmap_status(lf_src, "wip")
+        crlf_result, crlf_changed = _rewrite_roadmap_status(crlf_src, "wip")
+
+        self.assertTrue(crlf_changed, "CRLF deveria ser reconhecida como frontmatter (D3 não deveria ficar cega)")
+        self.assertEqual(lf_result, crlf_result)
+        # D2: entrada CRLF não autoriza saída CRLF.
+        self.assertNotIn("\r", crlf_result)
+
+    def test_controle_posix_lf_produz_exatamente_o_resultado_de_hoje(self):
+        src = "---\nstatus: backlog\ndate: 2026-01-01\n---\n# Roadmap\n\n> Created: 2026-01-01 | Status: backlog\n"
+        result, changed = _rewrite_roadmap_status(src, "wip")
+        self.assertTrue(changed)
+        self.assertEqual(
+            result,
+            "---\nstatus: wip\ndate: 2026-01-01\n---\n# Roadmap\n\n> Created: 2026-01-01 | Status: wip\n",
+        )
+
 
 class TestMoveRoadmapFrontmatterSync(unittest.TestCase):
     """Testes que verificam que move_roadmap sincroniza o frontmatter corretamente."""
@@ -502,6 +530,31 @@ class TestMoveRoadmapFrontmatterSync(unittest.TestCase):
         control_warnings = [m for m in warning_msgs if "ROADMAP-control.md" in m and "folder" in m]
         self.assertGreater(len(control_warnings), 0,
             f"controle positivo não gerou warning — validador pode não estar inspecionando; warnings: {warning_msgs}")
+
+    def test_move_arquivo_crlf_no_disco_ja_e_tolerado_hoje_por_universal_newlines(self):
+        """ML-5B, nuance declarada: move_roadmap lê com open(path, "r", encoding="utf-8")
+        (universal newlines) — um arquivo salvo com CRLF no disco JÁ chegava LF em
+        _rewrite_roadmap_status antes desta ML, então este end-to-end nunca reproduziu o
+        defeito. O que a ML fecha é a função em si (ver TestRewriteRoadmapStatus acima,
+        chamada com CRLF direto), não este caminho. Mantido como controle: prova que a
+        integração continua correta e que o disco em CRLF grava LF de volta (D2)."""
+        cfg = _make_cfg(self.tmpdir)
+        backlog_dir = os.path.join(cfg["roadmap_dir"], "backlog")
+        os.makedirs(backlog_dir, exist_ok=True)
+
+        lf_content = "---\nstatus: backlog\ndate: 2026-01-01\n---\n# Roadmap: CRLF Disk\n\n> Created: 2026-01-01 | Status: backlog\n"
+        crlf_bytes = lf_content.replace("\n", "\r\n").encode("utf-8")
+        road_path = os.path.join(backlog_dir, "ROADMAP-crlf-disk.md")
+        with open(road_path, "wb") as f:
+            f.write(crlf_bytes)
+
+        dst_path = move_roadmap("ROADMAP-crlf-disk.md", "wip", cfg)
+
+        with open(dst_path, "rb") as f:
+            written = f.read()
+        self.assertNotIn(b"\r", written, "escrita deveria ser LF puro (D2), mesmo com fonte CRLF no disco")
+        self.assertIn(b"status: wip", written)
+        self.assertIn(b"| Status: wip", written)
 
     def test_move_arquivo_sem_frontmatter_conteudo_intacto(self):
         """Arquivo sem frontmatter: move funciona, nenhuma chave inventada, conteúdo inalterado."""

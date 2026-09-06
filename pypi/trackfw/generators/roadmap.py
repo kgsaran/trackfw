@@ -12,6 +12,7 @@ import unicodedata
 from trackfw import config as cfg_module
 from trackfw.validator import resolve_agent_namespaces
 from trackfw.pathfmt import normalize_ref_separator
+from trackfw.integrations.renderers import _normalize_crlf
 
 VALID_STATES = ["backlog", "analyzing", "wip", "blocked", "done", "abandoned"]
 STATE_ORDER = ["analyzing", "wip", "backlog", "blocked", "done", "abandoned"]
@@ -97,7 +98,20 @@ def _rewrite_roadmap_status(source: str, state: str) -> tuple[str, bool]:
     ocorrência antes do primeiro "## " heading é atualizada.
 
     Retorna (conteúdo_possivelmente_modificado, changed: bool).
+
+    D1/D3 (ADR-2026-09-04-parser-de-frontmatter-tolera-crlf-na-fronteira-de-entrada, ML-5B):
+    normaliza CRLF -> LF via _normalize_crlf (trackfw.integrations.renderers) na própria
+    entrada, antes de qualquer casamento de "---\n" — reaproveita a única implementação
+    Python (já usada por trackfw.integrations.manager), sem criar uma segunda cópia.
+
+    🔴 Nuance: o único chamador de produção (move_roadmap) lê o arquivo com
+    `open(path, "r", encoding="utf-8")` — universal newlines do Python já traduz CRLF -> LF
+    nessa leitura, então em produção este site nunca via CRLF antes desta ML. A chamada aqui
+    é defesa em profundidade: fecha o defeito latente na função em si (o que um chamador
+    futuro que leia bytes crus, sem universal newlines, herdaria) e traz o site para o mesmo
+    ponto único que Go e Node passam a exigir de verdade.
     """
+    source = _normalize_crlf(source)
     if not source.startswith("---\n"):
         return source, False
     end = source.find("\n---", 4)
