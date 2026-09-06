@@ -223,6 +223,40 @@ func TestGitBranchGuardScriptIntegrity_UmByteAlterado_Dispara(t *testing.T) {
 	}
 }
 
+// TestGitBranchGuardScriptIntegrity_ScriptIlegivel_ViolationSemAbortar afirma, para o irmão
+// git-branch-guard, a mesma conclusão que TestCredentialGuardScriptIntegrity_ScriptIlegivel_
+// ViolationSemAbortar afirma para credential-guard (validator_credential_guard_integrity_test.go)
+// — ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio, ML-1C:
+// antes deste ML, `return nil, fmt.Errorf(...)` abortava TODO `trackfw validate` na primeira
+// falha de leitura não-ENOENT. Agora deve virar violation, sem abortar.
+func TestGitBranchGuardScriptIntegrity_ScriptIlegivel_ViolationSemAbortar(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("bits de permissão POSIX não se aplicam no Windows")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("chmod 000 não bloqueia leitura para root")
+	}
+
+	dir := t.TempDir()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	writeFile(t, dir, "scripts/trackfw-git-branch-guard.sh", "#!/usr/bin/env bash\nexit 0\n")
+	scriptPath := filepath.Join(dir, "scripts", "trackfw-git-branch-guard.sh")
+	if err := os.Chmod(scriptPath, 0000); err != nil {
+		t.Fatalf("chmod 000: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(scriptPath, 0644) })
+
+	msgs, err := validateGitBranchGuardScriptIntegrity()
+	if err != nil {
+		t.Fatalf("validateGitBranchGuardScriptIntegrity() não deveria mais abortar (retornar error) — obteve: %v", err)
+	}
+	if !hasViolation(msgs, "could not be read") || !hasViolation(msgs, "scripts/trackfw-git-branch-guard.sh") {
+		t.Errorf("esperado violation de leitura, obteve: %v", msgs)
+	}
+}
+
 // TestGitBranchGuardScriptIntegrity_SeverityDefaultWarning — a regra tem severidade default
 // "warning" (mesmo raciocínio de credential_guard_script_integrity: o script não carrega
 // marcador de versão, não dá para distinguir drift legítimo de adulteração).
@@ -645,6 +679,46 @@ func TestGuardGlobalScriptIntegrity_AusenciaDoArtefato_Silencio(t *testing.T) {
 	}
 }
 
+// TestGuardGlobalScriptIntegrity_ScriptIlegivel_ViolationSemSilencio afirma a conclusão do achado
+// 2 da barreira hades-tf sobre o ML-1B para o escopo GLOBAL: antes deste ML (ROADMAP-2026-09-06-
+// fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio, ML-1C), QUALQUER erro de
+// leitura (não só ENOENT) caía no mesmo `return nil, nil` — silenciando EACCES/EISDIR
+// exatamente como o `continue` mudo pré-ML-1A dos arquivos de config. Agora deve distinguir:
+// ausência continua silenciosa (coberta pelo teste acima), mas um script PRESENTE e ilegível
+// deve virar violation.
+func TestGuardGlobalScriptIntegrity_ScriptIlegivel_ViolationSemSilencio(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("bits de permissão POSIX não se aplicam no Windows")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("chmod 000 não bloqueia leitura para root")
+	}
+
+	dir := t.TempDir()
+	chdir(t, dir)
+	home := globalGuardHome(t)
+	t.Cleanup(config.Reset)
+
+	scriptDir := filepath.Join(home, ".trackfw", "scripts")
+	if err := os.MkdirAll(scriptDir, 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	scriptPath := filepath.Join(scriptDir, "trackfw-git-branch-guard.sh")
+	writeFile(t, scriptDir, "trackfw-git-branch-guard.sh", "#!/usr/bin/env bash\nexit 0\n")
+	if err := os.Chmod(scriptPath, 0000); err != nil {
+		t.Fatalf("chmod 000: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(scriptPath, 0644) })
+
+	msgs, err := validateGitBranchGuardGlobalScriptIntegrity()
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if !hasViolation(msgs, "could not be read") {
+		t.Errorf("esperado violation de leitura (não silêncio), obteve: %v", msgs)
+	}
+}
+
 // TestGuardGlobalScriptIntegrity_NaoDuplicaComDoisConfigsReferenciandoOMesmoScript — prova de
 // "sem dupla emissão": o MESMO script corrompido é referenciado por 2 arquivos de config
 // diferentes (Claude E Codex) — antes deste ML, o laço antigo iterava por config e emitiria 2
@@ -886,5 +960,327 @@ func TestGitBranchGuardHookResolvable_WindowsNaoDisparaBitDeExecucao(t *testing.
 	}
 	if hasViolation(msgs, "does not exist") {
 		t.Errorf("script existe; violation de ausência não deveria aparecer: %v", msgs)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio, ML-1A: JSON
+// inválido em um arquivo de guard deixa de ser um `continue` mudo (fail-open) e passa a ser
+// violation em AMBAS as regras que compartilham a leitura desse arquivo (credential_guard_hook_
+// resolvable e git_branch_guard_hook_resolvable) — o arquivo corrompido cega os dois controles ao
+// mesmo tempo, não só um.
+// ---------------------------------------------------------------------------
+
+// TestGuardHookResolvable_ProjectMalformedJSON_DisparaAmbasAsRegras afirma: um .claude/settings.json
+// com JSON sintaticamente inválido faz as DUAS regras de escopo de projeto (credential_guard_hook_
+// resolvable e git_branch_guard_hook_resolvable) reportarem violação — antes desta ML, as duas
+// silenciavam (o `continue` era compartilhado pela mesma função genérica validateGuardHookResolvable).
+func TestGuardHookResolvable_ProjectMalformedJSON_DisparaAmbasAsRegras(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	// JSON deliberadamente corrompido — vírgula sobrando fecha o objeto antes da hora.
+	writeFile(t, dir, ".claude/settings.json", `{"hooks": {,}}`)
+
+	cgMsgs, err := validateCredentialGuardHookResolvable()
+	if err != nil {
+		t.Fatalf("validateCredentialGuardHookResolvable() erro: %v", err)
+	}
+	if !hasViolation(cgMsgs, "is not valid JSON") || !hasViolation(cgMsgs, ".claude/settings.json") {
+		t.Errorf("esperado violation de JSON inválido em credential_guard_hook_resolvable, obteve: %v", cgMsgs)
+	}
+
+	gbgMsgs, err := validateGitBranchGuardHookResolvable()
+	if err != nil {
+		t.Fatalf("validateGitBranchGuardHookResolvable() erro: %v", err)
+	}
+	if !hasViolation(gbgMsgs, "is not valid JSON") || !hasViolation(gbgMsgs, ".claude/settings.json") {
+		t.Errorf("esperado violation de JSON inválido em git_branch_guard_hook_resolvable, obteve: %v", gbgMsgs)
+	}
+}
+
+// TestGuardHookResolvable_ProjectValidJSON_NaoDisparaMensagemDeJSON afirma a direção oposta da
+// falsificação: um .claude/settings.json com JSON sintaticamente VÁLIDO (mesmo sem entrada de
+// guard) nunca produz a mensagem "is not valid JSON" — a regra nova não confunde "sem entrada" com
+// "ilegível". Sem este teste ao lado do anterior, um `continue` reintroduzido por engano em outro
+// ponto do laço não seria pego, e nem um `if true { emitir sempre }` por engano seria pego pelo
+// teste anterior sozinho.
+func TestGuardHookResolvable_ProjectValidJSON_NaoDisparaMensagemDeJSON(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	writeFile(t, dir, ".claude/settings.json", `{
+  "hooks": {
+    "PostToolUse": [
+      {"matcher": "AskUserQuestion", "hooks": [{"command": "scripts/trackfw-attention-cleanup.sh", "type": "command"}]}
+    ]
+  }
+}
+`)
+
+	cgMsgs, err := validateCredentialGuardHookResolvable()
+	if err != nil {
+		t.Fatalf("validateCredentialGuardHookResolvable() erro: %v", err)
+	}
+	if hasViolation(cgMsgs, "is not valid JSON") {
+		t.Errorf("JSON válido não deveria disparar a mensagem de JSON inválido: %v", cgMsgs)
+	}
+
+	gbgMsgs, err := validateGitBranchGuardHookResolvable()
+	if err != nil {
+		t.Fatalf("validateGitBranchGuardHookResolvable() erro: %v", err)
+	}
+	if hasViolation(gbgMsgs, "is not valid JSON") {
+		t.Errorf("JSON válido não deveria disparar a mensagem de JSON inválido: %v", gbgMsgs)
+	}
+}
+
+// TestGuardGlobalHookResolvable_MalformedJSON_DisparaAmbasAsRegras é a contraparte de escopo
+// GLOBAL do teste acima: ~/.claude/settings.json com JSON inválido faz as duas regras (escopo
+// global) reportarem violação, com "global scope" e o remédio `trackfw update harness` na mensagem
+// — distinto do remédio de escopo de projeto (`trackfw update`).
+func TestGuardGlobalHookResolvable_MalformedJSON_DisparaAmbasAsRegras(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	home := globalGuardHome(t)
+	t.Cleanup(config.Reset)
+
+	if err := os.MkdirAll(filepath.Join(home, ".claude"), 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".claude", "settings.json"), []byte(`{"hooks": {,}}`), 0644); err != nil {
+		t.Fatalf("write global settings: %v", err)
+	}
+
+	cgMsgs, err := validateCredentialGuardGlobalHookResolvable()
+	if err != nil {
+		t.Fatalf("validateCredentialGuardGlobalHookResolvable() erro: %v", err)
+	}
+	if !hasViolation(cgMsgs, "is not valid JSON") || !hasViolation(cgMsgs, "global scope") || !hasViolation(cgMsgs, "trackfw update harness") {
+		t.Errorf("esperado violation de JSON inválido (global) em credential_guard_hook_resolvable, obteve: %v", cgMsgs)
+	}
+
+	gbgMsgs, err := validateGitBranchGuardGlobalHookResolvable()
+	if err != nil {
+		t.Fatalf("validateGitBranchGuardGlobalHookResolvable() erro: %v", err)
+	}
+	if !hasViolation(gbgMsgs, "is not valid JSON") || !hasViolation(gbgMsgs, "global scope") || !hasViolation(gbgMsgs, "trackfw update harness") {
+		t.Errorf("esperado violation de JSON inválido (global) em git_branch_guard_hook_resolvable, obteve: %v", gbgMsgs)
+	}
+}
+
+// TestGuardGlobalHookResolvable_ValidJSONSemEntrada_NaoDisparaMensagemDeJSON afirma a direção
+// oposta em escopo global: ~/.claude/settings.json válido, sem nenhuma entrada de guard, não
+// produz a mensagem "is not valid JSON" — mesmo par de garantias do teste de projeto, agora
+// verificando que a resolução do $HOME e o "continue" de ausência de entrada não foram trocados
+// pelo novo branch de erro.
+func TestGuardGlobalHookResolvable_ValidJSONSemEntrada_NaoDisparaMensagemDeJSON(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	home := globalGuardHome(t)
+	t.Cleanup(config.Reset)
+
+	if err := os.MkdirAll(filepath.Join(home, ".claude"), 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".claude", "settings.json"), []byte(`{"hooks": {}}`), 0644); err != nil {
+		t.Fatalf("write global settings: %v", err)
+	}
+
+	cgMsgs, err := validateCredentialGuardGlobalHookResolvable()
+	if err != nil {
+		t.Fatalf("validateCredentialGuardGlobalHookResolvable() erro: %v", err)
+	}
+	if hasViolation(cgMsgs, "is not valid JSON") {
+		t.Errorf("JSON global válido não deveria disparar a mensagem de JSON inválido: %v", cgMsgs)
+	}
+
+	gbgMsgs, err := validateGitBranchGuardGlobalHookResolvable()
+	if err != nil {
+		t.Fatalf("validateGitBranchGuardGlobalHookResolvable() erro: %v", err)
+	}
+	if hasViolation(gbgMsgs, "is not valid JSON") {
+		t.Errorf("JSON global válido não deveria disparar a mensagem de JSON inválido: %v", gbgMsgs)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio, ML-1B:
+// hades-tf's ML-1A barrier reproduced a second silent `continue` in the SAME loop — a failure to
+// READ the guard file (permission denied, a directory in place of the file) is a different `err`
+// than "invalid JSON", and before this ML it was either swallowed in silence (Node/Python) or
+// crashed the entire `trackfw validate` run with empty stdout (Go's old `return nil, fmt.Errorf`).
+// The tests below assert Go no longer crashes and instead reports a violation, mirroring the
+// invalid-JSON contract added by ML-1A — plus the decoding class (not valid UTF-8) the barrier
+// found diverging in Python's strict `encoding="utf-8"` read.
+// ---------------------------------------------------------------------------
+
+// TestGuardHookResolvable_ProjectUnreadableDirectory_DisparaViolationSemCrash afirma: um
+// .claude/settings.json que é na verdade um DIRETÓRIO (não um arquivo) faz as duas regras de
+// escopo de projeto reportarem uma violação "could not be read" — em vez de propagar um erro Go
+// que abortaria `trackfw validate` inteiro (o comportamento antigo, `return nil, fmt.Errorf`, que
+// hades-tf reproduziu ao vivo como "exit 1, stdout vazio, nenhuma outra regra reportada").
+// Escolhido como fixture determinística (em vez de chmod 000) porque não depende de uid/root —
+// hades-tf sinalizou que chmod 000 é um no-op quando o gate roda como root.
+func TestGuardHookResolvable_ProjectUnreadableDirectory_DisparaViolationSemCrash(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	settingsPath := filepath.Join(dir, ".claude", "settings.json")
+	if err := os.MkdirAll(settingsPath, 0755); err != nil {
+		t.Fatalf("mkdir (settings.json como diretório): %v", err)
+	}
+
+	cgMsgs, err := validateCredentialGuardHookResolvable()
+	if err != nil {
+		t.Fatalf("validateCredentialGuardHookResolvable() não deveria mais retornar erro (crash) — obteve: %v", err)
+	}
+	if !hasViolation(cgMsgs, "could not be read") || !hasViolation(cgMsgs, ".claude/settings.json") {
+		t.Errorf("esperado violation de leitura em credential_guard_hook_resolvable, obteve: %v", cgMsgs)
+	}
+
+	gbgMsgs, err := validateGitBranchGuardHookResolvable()
+	if err != nil {
+		t.Fatalf("validateGitBranchGuardHookResolvable() não deveria mais retornar erro (crash) — obteve: %v", err)
+	}
+	if !hasViolation(gbgMsgs, "could not be read") || !hasViolation(gbgMsgs, ".claude/settings.json") {
+		t.Errorf("esperado violation de leitura em git_branch_guard_hook_resolvable, obteve: %v", gbgMsgs)
+	}
+}
+
+// TestGuardHookResolvable_ProjectPermissionDenied_DisparaViolationSemCrash é a variante chmod 000
+// do teste acima — pulada quando o processo roda como root (chmod 000 não bloqueia leitura para
+// root) ou no Windows (bits de permissão POSIX não se aplicam).
+func TestGuardHookResolvable_ProjectPermissionDenied_DisparaViolationSemCrash(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("bits de permissão POSIX não se aplicam no Windows")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("chmod 000 não bloqueia leitura para root")
+	}
+
+	dir := t.TempDir()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	writeFile(t, dir, ".claude/settings.json", `{"hooks": {}}`)
+	settingsPath := filepath.Join(dir, ".claude", "settings.json")
+	if err := os.Chmod(settingsPath, 0000); err != nil {
+		t.Fatalf("chmod 000: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(settingsPath, 0644) }) // permite o cleanup do t.TempDir()
+
+	cgMsgs, err := validateCredentialGuardHookResolvable()
+	if err != nil {
+		t.Fatalf("validateCredentialGuardHookResolvable() não deveria mais retornar erro (crash) — obteve: %v", err)
+	}
+	if !hasViolation(cgMsgs, "could not be read") {
+		t.Errorf("esperado violation de leitura em credential_guard_hook_resolvable, obteve: %v", cgMsgs)
+	}
+}
+
+// TestGuardGlobalHookResolvable_UnreadableDirectory_DisparaViolationSemCrash é a contraparte de
+// escopo GLOBAL do teste de diretório acima.
+func TestGuardGlobalHookResolvable_UnreadableDirectory_DisparaViolationSemCrash(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	home := globalGuardHome(t)
+	t.Cleanup(config.Reset)
+
+	settingsPath := filepath.Join(home, ".claude", "settings.json")
+	if err := os.MkdirAll(settingsPath, 0755); err != nil {
+		t.Fatalf("mkdir (settings.json global como diretório): %v", err)
+	}
+
+	cgMsgs, err := validateCredentialGuardGlobalHookResolvable()
+	if err != nil {
+		t.Fatalf("validateCredentialGuardGlobalHookResolvable() não deveria mais retornar erro (crash) — obteve: %v", err)
+	}
+	if !hasViolation(cgMsgs, "could not be read") || !hasViolation(cgMsgs, "global scope") || !hasViolation(cgMsgs, "trackfw update harness") {
+		t.Errorf("esperado violation de leitura (global) em credential_guard_hook_resolvable, obteve: %v", cgMsgs)
+	}
+
+	gbgMsgs, err := validateGitBranchGuardGlobalHookResolvable()
+	if err != nil {
+		t.Fatalf("validateGitBranchGuardGlobalHookResolvable() não deveria mais retornar erro (crash) — obteve: %v", err)
+	}
+	if !hasViolation(gbgMsgs, "could not be read") || !hasViolation(gbgMsgs, "global scope") || !hasViolation(gbgMsgs, "trackfw update harness") {
+		t.Errorf("esperado violation de leitura (global) em git_branch_guard_hook_resolvable, obteve: %v", gbgMsgs)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// ROADMAP-2026-09-06-...-config-ilegivel-deixa-de-ser-silencio, ML-1B: classe de decodificação,
+// distinta de "invalid JSON" e de "could not be read" — hades-tf's ML-1A barrier found Python's
+// strict `encoding="utf-8"` read crashing with an unstructured traceback on both fixtures below,
+// while Go never crashed (json.Unmarshal operates on raw bytes). These tests pin Go's behavior so
+// the byte-identical parity contract (scripts/check-validate-parity.sh) has a Go anchor to compare
+// Node/Python against.
+// ---------------------------------------------------------------------------
+
+// TestGuardHookResolvable_ProjectUTF16_DisparaViolationNaoValidoUTF8 afirma: um .claude/
+// settings.json salvo inteiro como UTF-16 (o erro clássico de "Salvar como Unicode" do Notepad no
+// Windows) dispara a mensagem "is not valid UTF-8" — DISTINTA de "is not valid JSON" — porque o
+// motivo real não é sintaxe JSON, é a codificação do arquivo (D4 da ADR-2026-09-04: classificar
+// certo, explicar certo, ou o leitor investiga a coisa errada).
+func TestGuardHookResolvable_ProjectUTF16_DisparaViolationNaoValidoUTF8(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	// UTF-16LE com BOM, conteúdo `{"hooks":{}}` — arquivo JSON "válido" na codificação errada.
+	utf16Content := []byte{0xff, 0xfe, '{', 0, '"', 0, 'h', 0, 'o', 0, 'o', 0, 'k', 0, 's', 0, '"', 0, ':', 0, '{', 0, '}', 0, '}', 0}
+	settingsPath := filepath.Join(dir, ".claude", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(settingsPath, utf16Content, 0644); err != nil {
+		t.Fatalf("write settings.json (UTF-16): %v", err)
+	}
+
+	cgMsgs, err := validateCredentialGuardHookResolvable()
+	if err != nil {
+		t.Fatalf("validateCredentialGuardHookResolvable() erro: %v", err)
+	}
+	if !hasViolation(cgMsgs, "is not valid UTF-8") {
+		t.Errorf("esperado violation de UTF-8 inválido, obteve: %v", cgMsgs)
+	}
+	if hasViolation(cgMsgs, "is not valid JSON") {
+		t.Errorf("UTF-16 não deveria produzir a mensagem de JSON inválido — motivo real é a codificação: %v", cgMsgs)
+	}
+}
+
+// TestGuardHookResolvable_ProjectSingleInvalidUTF8Byte_NaoDisparaNenhumaViolation afirma o caso
+// "ambíguo" que a barreira mediu: UM byte UTF-8 inválido dentro de um JSON por lo mais válido é
+// silenciosamente coagido pelo parser (igual Node's lossy decode) e NÃO produz nenhuma violation —
+// nem "invalid JSON" nem "invalid UTF-8". Decisão declarada (não um esquecimento): o CLI dono
+// desses 6 arquivos é sempre um runtime JS que faz a mesma coerção, então o arquivo continua
+// carregando de verdade — acusar aqui seria "apertar" o risco que este ML existe para evitar.
+func TestGuardHookResolvable_ProjectSingleInvalidUTF8Byte_NaoDisparaNenhumaViolation(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	// {"hooks":{"x":"<byte inválido>"}} — 0xff sozinho nunca é um byte de início válido em UTF-8.
+	content := []byte(`{"hooks":{"x":"`)
+	content = append(content, 0xff)
+	content = append(content, []byte(`"}}`)...)
+	settingsPath := filepath.Join(dir, ".claude", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(settingsPath, content, 0644); err != nil {
+		t.Fatalf("write settings.json (1 byte inválido): %v", err)
+	}
+
+	cgMsgs, err := validateCredentialGuardHookResolvable()
+	if err != nil {
+		t.Fatalf("validateCredentialGuardHookResolvable() erro: %v", err)
+	}
+	if hasViolation(cgMsgs, "is not valid UTF-8") || hasViolation(cgMsgs, "is not valid JSON") {
+		t.Errorf("1 byte inválido dentro de JSON por lo mais válido não deveria acusar (paridade com a coerção de Go/Node): %v", cgMsgs)
 	}
 }

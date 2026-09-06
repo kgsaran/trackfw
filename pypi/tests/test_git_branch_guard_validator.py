@@ -260,6 +260,39 @@ class TestGitBranchGuardScriptIntegrity(unittest.TestCase):
             emitted = f.read()
         self.assertEqual(emitted, v._GIT_BRANCH_GUARD_SCRIPT_REFERENCE)
 
+    # ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio, ML-1C.
+    # Mirrors pypi/tests/test_credential_guard_integrity.py's
+    # TestCredentialGuardScriptIntegrityUnreadable — same fix, git-branch-guard sibling (both
+    # funnel through the shared validate_guard_script_integrity).
+    @unittest.skipIf(sys.platform == "win32", "bits de permissão POSIX não se aplicam no Windows")
+    @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0, "chmod 000 não bloqueia leitura para root")
+    def test_script_ilegivel_vira_violation_nao_silencio(self):
+        script_path = os.path.join(self.tmp, "scripts", "trackfw-git-branch-guard.sh")
+        _write(script_path, "#!/usr/bin/env bash\nexit 0\n")
+        os.chmod(script_path, 0o000)
+        try:
+            msgs = _messages(v.validate_git_branch_guard_script_integrity(self.tmp))
+            self.assertTrue(any("could not be read" in m for m in msgs), msgs)
+        finally:
+            os.chmod(script_path, 0o644)
+
+    @unittest.skipIf(sys.platform == "win32", "mkfifo não existe no Windows")
+    def test_fifo_no_lugar_do_script_nao_trava(self):
+        import threading
+
+        os.makedirs(os.path.join(self.tmp, "scripts"), exist_ok=True)
+        fifo_path = os.path.join(self.tmp, "scripts", "trackfw-git-branch-guard.sh")
+        os.mkfifo(fifo_path)
+
+        watchdog = threading.Timer(5.0, lambda: os._exit(1))
+        watchdog.daemon = True
+        watchdog.start()
+        try:
+            msgs = _messages(v.validate_git_branch_guard_script_integrity(self.tmp))
+            self.assertTrue(any("could not be read" in m for m in msgs), msgs)
+        finally:
+            watchdog.cancel()
+
 
 # ---- Escopo global (credential-guard e git-branch-guard) ----
 
@@ -517,6 +550,26 @@ class TestGuardGlobalScriptIntegrityByExistence(unittest.TestCase):
             cmsgs, [], f"esperado silêncio (credential-guard) com script global ausente, obteve: {cmsgs}"
         )
 
+    # ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio, ML-1C.
+    # Mirrors internal/validator/validator_git_branch_guard_test.go's
+    # TestGuardGlobalScriptIntegrity_ScriptIlegivel_ViolationSemSilencio: before this ML,
+    # validate_guard_global_script_integrity had an UNCONDITIONAL `except OSError: return []` that
+    # silenced EACCES exactly like absence — the two states must not collapse into each other. The
+    # control (absence stays silent) is test_ausencia_do_artefato_silencio above, unchanged by this
+    # fix.
+    @unittest.skipIf(sys.platform == "win32", "bits de permissão POSIX não se aplicam no Windows")
+    @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0, "chmod 000 não bloqueia leitura para root")
+    def test_script_ilegivel_vira_violation_nao_silencio(self):
+        home = _global_guard_home(self)
+        script_path = os.path.join(home, ".trackfw", "scripts", "trackfw-git-branch-guard.sh")
+        _write(script_path, "#!/usr/bin/env bash\nexit 0\n")
+        os.chmod(script_path, 0o000)
+        try:
+            msgs = _messages(v.validate_git_branch_guard_global_script_integrity(self.tmp))
+            self.assertTrue(any("could not be read" in m for m in msgs), msgs)
+        finally:
+            os.chmod(script_path, 0o644)
+
     def test_nao_duplica_com_dois_configs_referenciando_o_mesmo_script(self):
         home = _global_guard_home(self)
 
@@ -654,6 +707,256 @@ class TestGuardGlobalHookResolvableKiroDedicatedFile(unittest.TestCase):
 
         msgs = v.validate_git_branch_guard_global_hook_resolvable(self.tmp)
         self.assertEqual(msgs, [], f"esperado silêncio sem arquivo dedicado do Kiro, obteve: {msgs}")
+
+
+# ---------------------------------------------------------------------------
+# ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio, ML-1A: JSON
+# inválido em um arquivo de guard deixa de ser um `continue` mudo (fail-open) e passa a ser
+# violation em AMBAS as regras que compartilham a leitura desse arquivo (credential_guard_hook_
+# resolvable e git_branch_guard_hook_resolvable) -- o arquivo corrompido cega os dois controles ao
+# mesmo tempo, não só um. Port de validator_git_branch_guard_test.go (Go) e do bloco equivalente
+# em npm/tests/git_branch_guard_hook_integrity.test.js (Node).
+# ---------------------------------------------------------------------------
+
+class TestGuardHookResolvableMalformedJSON(unittest.TestCase):
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        _config.reset()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+        _config.reset()
+
+    def test_projeto_json_invalido_dispara_ambas_as_regras(self):
+        """Afirma: .claude/settings.json com JSON sintaticamente inválido faz as DUAS regras de
+        escopo de projeto reportarem violação -- antes desta ML, as duas silenciavam (mesma
+        implementação genérica validate_guard_hook_resolvable, mesmo `continue`)."""
+        _write(os.path.join(self.tmp, ".claude/settings.json"), "{\"hooks\": {,}}")
+
+        cfg = _config.defaults()
+        cg_msgs = _messages(v.validate_credential_guard_hook_resolvable(cfg, cwd=self.tmp))
+        self.assertTrue(
+            any("is not valid JSON" in m and ".claude/settings.json" in m for m in cg_msgs),
+            f"esperado violation de JSON inválido em credential_guard_hook_resolvable, obteve: {cg_msgs}",
+        )
+
+        gbg_msgs = _messages(v.validate_git_branch_guard_hook_resolvable(cfg, cwd=self.tmp))
+        self.assertTrue(
+            any("is not valid JSON" in m and ".claude/settings.json" in m for m in gbg_msgs),
+            f"esperado violation de JSON inválido em git_branch_guard_hook_resolvable, obteve: {gbg_msgs}",
+        )
+
+    def test_projeto_json_valido_nao_dispara_mensagem_de_json(self):
+        """Direção oposta da falsificação: JSON sintaticamente VÁLIDO, mesmo sem entrada de
+        guard, nunca produz a mensagem "is not valid JSON"."""
+        _write(
+            os.path.join(self.tmp, ".claude/settings.json"),
+            json.dumps({
+                "hooks": {
+                    "PostToolUse": [{"matcher": "AskUserQuestion", "hooks": [
+                        {"command": "scripts/trackfw-attention-cleanup.sh", "type": "command"}]}],
+                }
+            }),
+        )
+        cfg = _config.defaults()
+        cg_msgs = _messages(v.validate_credential_guard_hook_resolvable(cfg, cwd=self.tmp))
+        self.assertFalse(any("is not valid JSON" in m for m in cg_msgs), cg_msgs)
+
+        gbg_msgs = _messages(v.validate_git_branch_guard_hook_resolvable(cfg, cwd=self.tmp))
+        self.assertFalse(any("is not valid JSON" in m for m in gbg_msgs), gbg_msgs)
+
+    def test_global_json_invalido_dispara_ambas_as_regras(self):
+        """Contraparte de escopo GLOBAL: ~/.claude/settings.json com JSON inválido dispara as
+        duas regras (escopo global), com "global scope" e o remédio `trackfw update harness`
+        (distinto do remédio de projeto, `trackfw update`)."""
+        home = _global_guard_home(self)
+        _write(os.path.join(home, ".claude", "settings.json"), "{\"hooks\": {,}}")
+
+        cg_msgs = _messages(v.validate_credential_guard_global_hook_resolvable(self.tmp))
+        self.assertTrue(any("is not valid JSON" in m for m in cg_msgs), cg_msgs)
+        self.assertTrue(any("global scope" in m for m in cg_msgs), cg_msgs)
+        self.assertTrue(any("trackfw update harness" in m for m in cg_msgs), cg_msgs)
+
+        gbg_msgs = _messages(v.validate_git_branch_guard_global_hook_resolvable(self.tmp))
+        self.assertTrue(any("is not valid JSON" in m for m in gbg_msgs), gbg_msgs)
+        self.assertTrue(any("global scope" in m for m in gbg_msgs), gbg_msgs)
+        self.assertTrue(any("trackfw update harness" in m for m in gbg_msgs), gbg_msgs)
+
+    def test_global_json_valido_sem_entrada_nao_dispara_mensagem_de_json(self):
+        """Direção oposta em escopo global: ~/.claude/settings.json válido, sem entrada de
+        guard, não produz a mensagem "is not valid JSON"."""
+        home = _global_guard_home(self)
+        _write(os.path.join(home, ".claude", "settings.json"), json.dumps({"hooks": {}}))
+
+        cg_msgs = _messages(v.validate_credential_guard_global_hook_resolvable(self.tmp))
+        self.assertFalse(any("is not valid JSON" in m for m in cg_msgs), cg_msgs)
+
+        gbg_msgs = _messages(v.validate_git_branch_guard_global_hook_resolvable(self.tmp))
+        self.assertFalse(any("is not valid JSON" in m for m in gbg_msgs), gbg_msgs)
+
+
+# ---------------------------------------------------------------------------
+# ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio, ML-1B:
+# hades-tf's ML-1A barrier reproduced a SECOND silent skip in the same loop -- a failure to READ
+# the guard file (permission denied, a directory in place of the file), collapsed by a bare
+# `except OSError: continue` that treats "does not exist" (legitimate) the same as "exists but
+# unreadable" (should be reported). Port de validator_git_branch_guard_test.go (Go) e do bloco
+# equivalente em npm/tests/git_branch_guard_hook_integrity.test.js (Node), mesmos nomes de
+# mensagem.
+# ---------------------------------------------------------------------------
+
+class TestGuardHookResolvableUnreadable(unittest.TestCase):
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        _config.reset()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+        _config.reset()
+
+    def test_projeto_diretorio_no_lugar_do_arquivo_dispara_could_not_be_read(self):
+        """.claude/settings.json que é na verdade um DIRETÓRIO (não arquivo) dispara "could not
+        be read" nas duas regras de escopo de projeto -- em vez de propagar UnicodeDecodeError/
+        traceback cru, como a barreira mediu ao vivo para o `except OSError` estrito antigo em
+        outro cenário (leitura). Fixture determinística (independe de uid/root) -- chmod 000 é
+        no-op quando o processo roda como root."""
+        os.makedirs(os.path.join(self.tmp, ".claude", "settings.json"))
+
+        cfg = _config.defaults()
+        cg_msgs = _messages(v.validate_credential_guard_hook_resolvable(cfg, cwd=self.tmp))
+        self.assertTrue(
+            any("could not be read" in m and ".claude/settings.json" in m for m in cg_msgs),
+            f"esperado violation de leitura em credential_guard_hook_resolvable, obteve: {cg_msgs}",
+        )
+
+        gbg_msgs = _messages(v.validate_git_branch_guard_hook_resolvable(cfg, cwd=self.tmp))
+        self.assertTrue(
+            any("could not be read" in m and ".claude/settings.json" in m for m in gbg_msgs),
+            f"esperado violation de leitura em git_branch_guard_hook_resolvable, obteve: {gbg_msgs}",
+        )
+
+    @unittest.skipIf(sys.platform == "win32", "bits de permissão POSIX não se aplicam no Windows")
+    @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0, "chmod 000 não bloqueia leitura para root")
+    def test_projeto_permissao_negada_dispara_could_not_be_read(self):
+        settings_path = os.path.join(self.tmp, ".claude", "settings.json")
+        _write(settings_path, json.dumps({"hooks": {}}))
+        os.chmod(settings_path, 0o000)
+        try:
+            cfg = _config.defaults()
+            cg_msgs = _messages(v.validate_credential_guard_hook_resolvable(cfg, cwd=self.tmp))
+            self.assertTrue(any("could not be read" in m for m in cg_msgs), cg_msgs)
+        finally:
+            os.chmod(settings_path, 0o644)
+
+    def test_global_diretorio_no_lugar_do_arquivo_dispara_could_not_be_read(self):
+        home = _global_guard_home(self)
+        os.makedirs(os.path.join(home, ".claude", "settings.json"))
+
+        cg_msgs = _messages(v.validate_credential_guard_global_hook_resolvable(self.tmp))
+        self.assertTrue(any("could not be read" in m for m in cg_msgs), cg_msgs)
+        self.assertTrue(any("global scope" in m for m in cg_msgs), cg_msgs)
+        self.assertTrue(any("trackfw update harness" in m for m in cg_msgs), cg_msgs)
+
+        gbg_msgs = _messages(v.validate_git_branch_guard_global_hook_resolvable(self.tmp))
+        self.assertTrue(any("could not be read" in m for m in gbg_msgs), gbg_msgs)
+        self.assertTrue(any("global scope" in m for m in gbg_msgs), gbg_msgs)
+        self.assertTrue(any("trackfw update harness" in m for m in gbg_msgs), gbg_msgs)
+
+    # ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio, ML-1C.
+    # Mirrors internal/validator/regularfile_test.go's
+    # TestReadRegularFile_FIFO_NaoTravaEAcusaTipoErrado and npm/tests/git_branch_guard_hook_
+    # integrity.test.js's FIFO test, at the rule level: hades-tf's ML-1B barrier found
+    # `mkfifo .claude/settings.json` made open(path).read() block INDEFINITELY, in this exact
+    # rule pair. threading.Timer aborts the test process with a clear diagnostic instead of
+    # letting `python3 -m pytest` hang forever if the fix regresses.
+    @unittest.skipIf(sys.platform == "win32", "mkfifo não existe no Windows")
+    def test_projeto_fifo_no_lugar_do_arquivo_dispara_could_not_be_read_sem_travar(self):
+        import threading
+
+        settings_path = os.path.join(self.tmp, ".claude")
+        os.makedirs(settings_path, exist_ok=True)
+        fifo_path = os.path.join(settings_path, "settings.json")
+        os.mkfifo(fifo_path)
+
+        watchdog = threading.Timer(5.0, lambda: os._exit(1))
+        watchdog.daemon = True
+        watchdog.start()
+        try:
+            cfg = _config.defaults()
+            cg_msgs = _messages(v.validate_credential_guard_hook_resolvable(cfg, cwd=self.tmp))
+            self.assertTrue(
+                any("could not be read" in m and ".claude/settings.json" in m for m in cg_msgs),
+                f"esperado violation de leitura em credential_guard_hook_resolvable, obteve: {cg_msgs}",
+            )
+
+            gbg_msgs = _messages(v.validate_git_branch_guard_hook_resolvable(cfg, cwd=self.tmp))
+            self.assertTrue(
+                any("could not be read" in m and ".claude/settings.json" in m for m in gbg_msgs),
+                f"esperado violation de leitura em git_branch_guard_hook_resolvable, obteve: {gbg_msgs}",
+            )
+        finally:
+            watchdog.cancel()
+
+
+# ---------------------------------------------------------------------------
+# ROADMAP-2026-09-06-...-config-ilegivel-deixa-de-ser-silencio, ML-1B: classe de decodificação,
+# distinta de "invalid JSON" e de "could not be read" -- este é justamente o cenário que a
+# barreira mediu crashando: open(path, "r", encoding="utf-8") era ESTRITO e levantava
+# UnicodeDecodeError antes mesmo de json.loads rodar, e o único `except OSError` do laço não
+# capturava (UnicodeDecodeError é ValueError/UnicodeError, não OSError) -- a exceção subia crua
+# até o nível de CLI. Port de validator_git_branch_guard_test.go (Go) e do bloco equivalente em
+# npm/tests/git_branch_guard_hook_integrity.test.js (Node), mesmos nomes de mensagem -- estes 3
+# arquivos de teste são o anchor do gate de paridade cross-CLI (scripts/check-validate-parity.sh)
+# para esta classe.
+# ---------------------------------------------------------------------------
+
+class TestGuardHookResolvableUTF8Decoding(unittest.TestCase):
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        _config.reset()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+        _config.reset()
+
+    def test_projeto_utf16_dispara_not_valid_utf8_nao_crasha(self):
+        """.claude/settings.json salvo inteiro como UTF-16 (BOM `\\xff\\xfe` + conteúdo
+        `{"hooks":{}}` em UTF-16LE) dispara "is not valid UTF-8" -- DISTINTA de "is not valid
+        JSON" -- sem levantar UnicodeDecodeError. Antes desta ML: crash com traceback cru, exit 1,
+        sem JSON estruturado na saída (medido ao vivo pela barreira)."""
+        settings_path = os.path.join(self.tmp, ".claude", "settings.json")
+        os.makedirs(os.path.dirname(settings_path))
+        with open(settings_path, "wb") as f:
+            f.write('{"hooks":{}}'.encode("utf-16"))
+
+        cfg = _config.defaults()
+        cg_msgs = _messages(v.validate_credential_guard_hook_resolvable(cfg, cwd=self.tmp))
+        self.assertTrue(any("is not valid UTF-8" in m for m in cg_msgs), cg_msgs)
+        self.assertFalse(
+            any("is not valid JSON" in m for m in cg_msgs),
+            f"UTF-16 não deveria produzir a mensagem de JSON inválido: {cg_msgs}",
+        )
+
+    def test_projeto_1_byte_utf8_invalido_nao_dispara_nenhuma_violation(self):
+        """UM byte UTF-8 inválido dentro de um JSON por lo mais válido é silenciosamente coagido
+        (mesmo `errors="replace"` que reproduz a coerção lossy de Node) e não produz nenhuma
+        violation -- caso "ambíguo" que a barreira mediu, resolvido para paridade com Go/Node em
+        vez de acusar (acusar aqui seria "apertar" o risco que este ML existe para evitar). Antes
+        desta ML: mesmo crash do teste anterior, UnicodeDecodeError não capturada."""
+        settings_path = os.path.join(self.tmp, ".claude", "settings.json")
+        os.makedirs(os.path.dirname(settings_path))
+        with open(settings_path, "wb") as f:
+            f.write(b'{"hooks":{"x":"' + b"\xff" + b'"}}')
+
+        cfg = _config.defaults()
+        cg_msgs = _messages(v.validate_credential_guard_hook_resolvable(cfg, cwd=self.tmp))
+        self.assertFalse(
+            any("is not valid UTF-8" in m or "is not valid JSON" in m for m in cg_msgs),
+            f"1 byte inválido dentro de JSON por lo mais válido não deveria acusar (paridade com Go/Node): {cg_msgs}",
+        )
 
 
 if __name__ == "__main__":

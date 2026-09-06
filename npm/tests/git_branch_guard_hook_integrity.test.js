@@ -17,6 +17,7 @@ const path = require('node:path')
 const config = require('../src/config')
 const validator = require('../src/validator')
 const {
+  validateCredentialGuardHookResolvable,
   validateGitBranchGuardHookResolvable,
   validateGitBranchGuardScriptIntegrity,
   validateCredentialGuardGlobalHookResolvable,
@@ -557,4 +558,255 @@ test('escopo global git-branch-guard (Kiro): sem arquivo dedicado → silêncio'
     const msgs = validateGitBranchGuardGlobalHookResolvable()
     assert.deepEqual(msgs, [])
   })
+})
+
+// ---------------------------------------------------------------------------
+// ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio, ML-1A:
+// JSON inválido em um arquivo de guard deixa de ser um `continue` mudo (fail-open) e passa a ser
+// violation em AMBAS as regras que compartilham a leitura desse arquivo (credential_guard_hook_
+// resolvable e git_branch_guard_hook_resolvable) — o arquivo corrompido cega os dois controles ao
+// mesmo tempo, não só um. Port de validator_git_branch_guard_test.go (Go).
+// ---------------------------------------------------------------------------
+
+// Afirma: .claude/settings.json com JSON inválido faz as DUAS regras de escopo de projeto
+// reportarem violação — antes desta ML, as duas silenciavam (mesma função genérica
+// validateGuardHookResolvable, mesmo `continue`).
+test('JSON inválido (projeto): dispara em credential_guard_hook_resolvable e git_branch_guard_hook_resolvable', () => {
+  const tmp = tmpDir()
+  const origDir = process.cwd()
+  writeFile(tmp, '.claude/settings.json', '{"hooks": {,}}')
+  process.chdir(tmp)
+  config.reset()
+  try {
+    const cgMsgs = validateCredentialGuardHookResolvable()
+    assert.equal(cgMsgs.some(m => m.includes('is not valid JSON') && m.includes('.claude/settings.json')), true,
+      'esperava violation de JSON inválido em credential_guard_hook_resolvable: ' + JSON.stringify(cgMsgs))
+
+    const gbgMsgs = validateGitBranchGuardHookResolvable()
+    assert.equal(gbgMsgs.some(m => m.includes('is not valid JSON') && m.includes('.claude/settings.json')), true,
+      'esperava violation de JSON inválido em git_branch_guard_hook_resolvable: ' + JSON.stringify(gbgMsgs))
+  } finally {
+    process.chdir(origDir)
+    config.reset()
+    fs.rmSync(tmp, { recursive: true, force: true })
+  }
+})
+
+// Direção oposta da falsificação: JSON sintaticamente VÁLIDO, mesmo sem entrada de guard, nunca
+// produz a mensagem "is not valid JSON".
+test('JSON válido (projeto): não dispara a mensagem de JSON inválido', () => {
+  const tmp = tmpDir()
+  const origDir = process.cwd()
+  writeFile(tmp, '.claude/settings.json', JSON.stringify({
+    hooks: {
+      PostToolUse: [{ matcher: 'AskUserQuestion', hooks: [{ command: 'scripts/trackfw-attention-cleanup.sh', type: 'command' }] }],
+    },
+  }))
+  process.chdir(tmp)
+  config.reset()
+  try {
+    const cgMsgs = validateCredentialGuardHookResolvable()
+    assert.equal(cgMsgs.some(m => m.includes('is not valid JSON')), false, JSON.stringify(cgMsgs))
+
+    const gbgMsgs = validateGitBranchGuardHookResolvable()
+    assert.equal(gbgMsgs.some(m => m.includes('is not valid JSON')), false, JSON.stringify(gbgMsgs))
+  } finally {
+    process.chdir(origDir)
+    config.reset()
+    fs.rmSync(tmp, { recursive: true, force: true })
+  }
+})
+
+// Contraparte de escopo GLOBAL: ~/.claude/settings.json com JSON inválido dispara as duas regras
+// (escopo global), com "global scope" e o remédio `trackfw update harness` (distinto do remédio de
+// projeto, `trackfw update`).
+test('JSON inválido (global): dispara em credential_guard_hook_resolvable e git_branch_guard_hook_resolvable', () => {
+  const home = tmpDir()
+  withEnv({ HOME: home }, () => {
+    fs.mkdirSync(path.join(home, '.claude'), { recursive: true })
+    fs.writeFileSync(path.join(home, '.claude', 'settings.json'), '{"hooks": {,}}', 'utf8')
+
+    const cgMsgs = validateCredentialGuardGlobalHookResolvable()
+    assert.equal(cgMsgs.some(m => m.includes('is not valid JSON')), true, JSON.stringify(cgMsgs))
+    assert.equal(cgMsgs.some(m => m.includes('global scope')), true, JSON.stringify(cgMsgs))
+    assert.equal(cgMsgs.some(m => m.includes('trackfw update harness')), true, JSON.stringify(cgMsgs))
+
+    const gbgMsgs = validateGitBranchGuardGlobalHookResolvable()
+    assert.equal(gbgMsgs.some(m => m.includes('is not valid JSON')), true, JSON.stringify(gbgMsgs))
+    assert.equal(gbgMsgs.some(m => m.includes('global scope')), true, JSON.stringify(gbgMsgs))
+    assert.equal(gbgMsgs.some(m => m.includes('trackfw update harness')), true, JSON.stringify(gbgMsgs))
+  })
+})
+
+// Direção oposta em escopo global: ~/.claude/settings.json válido, sem entrada de guard, não
+// produz a mensagem "is not valid JSON".
+test('JSON válido (global), sem entrada: não dispara a mensagem de JSON inválido', () => {
+  const home = tmpDir()
+  withEnv({ HOME: home }, () => {
+    fs.mkdirSync(path.join(home, '.claude'), { recursive: true })
+    fs.writeFileSync(path.join(home, '.claude', 'settings.json'), '{"hooks": {}}', 'utf8')
+
+    const cgMsgs = validateCredentialGuardGlobalHookResolvable()
+    assert.equal(cgMsgs.some(m => m.includes('is not valid JSON')), false, JSON.stringify(cgMsgs))
+
+    const gbgMsgs = validateGitBranchGuardGlobalHookResolvable()
+    assert.equal(gbgMsgs.some(m => m.includes('is not valid JSON')), false, JSON.stringify(gbgMsgs))
+  })
+})
+
+// ---------------------------------------------------------------------------
+// ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio, ML-1B:
+// hades-tf's ML-1A barrier reproduced a SECOND silent `continue` in the same loop — a failure to
+// READ the guard file (not just parse it: permission denied, a directory in place of the file).
+// Before this ML, `if (e.code === 'ENOENT') continue \n continue` collapsed every non-ENOENT
+// error into the same silent skip — `trackfw validate --json` exited 0 with no violation and no
+// mention of the file. Port de validator_git_branch_guard_test.go (Go), mesmos nomes de mensagem.
+// ---------------------------------------------------------------------------
+
+// Afirma: .claude/settings.json que é na verdade um DIRETÓRIO (não arquivo) dispara "could not be
+// read" nas duas regras de escopo de projeto. Fixture determinística (independe de uid/root) —
+// hades-tf sinalizou que chmod 000 é um no-op quando o gate roda como root.
+test('leitura falha (projeto, diretório no lugar do arquivo): dispara "could not be read" sem crash', () => {
+  const tmp = tmpDir()
+  const origDir = process.cwd()
+  fs.mkdirSync(path.join(tmp, '.claude', 'settings.json'), { recursive: true })
+  process.chdir(tmp)
+  config.reset()
+  try {
+    const cgMsgs = validateCredentialGuardHookResolvable()
+    assert.equal(cgMsgs.some(m => m.includes('could not be read') && m.includes('.claude/settings.json')), true,
+      'esperava violation de leitura em credential_guard_hook_resolvable: ' + JSON.stringify(cgMsgs))
+
+    const gbgMsgs = validateGitBranchGuardHookResolvable()
+    assert.equal(gbgMsgs.some(m => m.includes('could not be read') && m.includes('.claude/settings.json')), true,
+      'esperava violation de leitura em git_branch_guard_hook_resolvable: ' + JSON.stringify(gbgMsgs))
+  } finally {
+    process.chdir(origDir)
+    config.reset()
+    fs.rmSync(tmp, { recursive: true, force: true })
+  }
+})
+
+// Variante chmod 000 — pulada no Windows (bits POSIX não se aplicam) e quando o processo roda
+// como root (chmod 000 não bloqueia leitura para root, geteuid() === 0).
+test('leitura falha (projeto, permissão negada): dispara "could not be read" sem crash', { skip: process.platform === 'win32' || (typeof process.geteuid === 'function' && process.geteuid() === 0) }, () => {
+  const tmp = tmpDir()
+  const origDir = process.cwd()
+  writeFile(tmp, '.claude/settings.json', '{"hooks": {}}')
+  const settingsPath = path.join(tmp, '.claude', 'settings.json')
+  fs.chmodSync(settingsPath, 0o000)
+  process.chdir(tmp)
+  config.reset()
+  try {
+    const cgMsgs = validateCredentialGuardHookResolvable()
+    assert.equal(cgMsgs.some(m => m.includes('could not be read')), true, JSON.stringify(cgMsgs))
+  } finally {
+    fs.chmodSync(settingsPath, 0o644)
+    process.chdir(origDir)
+    config.reset()
+    fs.rmSync(tmp, { recursive: true, force: true })
+  }
+})
+
+// ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio, ML-1C.
+// Mirrors internal/validator/regularfile_test.go's TestReadRegularFile_FIFO_NaoTravaEAcusaTipoErrado
+// at the rule level: hades-tf's ML-1B barrier found `mkfifo .claude/settings.json` made
+// fs.readFileSync block INDEFINITELY, in this exact rule pair. Node's own `timeout` test option
+// turns a real hang into a fast, attributed test failure instead of the whole suite stalling.
+test('leitura falha (projeto, FIFO no lugar do arquivo): dispara "could not be read" sem travar', { skip: process.platform === 'win32', timeout: 5000 }, () => {
+  const tmp = tmpDir()
+  const origDir = process.cwd()
+  fs.mkdirSync(path.join(tmp, '.claude'), { recursive: true })
+  const { execFileSync: run } = require('node:child_process')
+  run('mkfifo', [path.join(tmp, '.claude', 'settings.json')])
+  process.chdir(tmp)
+  config.reset()
+  try {
+    const cgMsgs = validateCredentialGuardHookResolvable()
+    assert.equal(cgMsgs.some(m => m.includes('could not be read') && m.includes('.claude/settings.json')), true,
+      'esperava violation de leitura em credential_guard_hook_resolvable: ' + JSON.stringify(cgMsgs))
+
+    const gbgMsgs = validateGitBranchGuardHookResolvable()
+    assert.equal(gbgMsgs.some(m => m.includes('could not be read') && m.includes('.claude/settings.json')), true,
+      'esperava violation de leitura em git_branch_guard_hook_resolvable: ' + JSON.stringify(gbgMsgs))
+  } finally {
+    process.chdir(origDir)
+    config.reset()
+    fs.rmSync(tmp, { recursive: true, force: true })
+  }
+})
+
+// Contraparte de escopo GLOBAL do teste de diretório acima.
+test('leitura falha (global, diretório no lugar do arquivo): dispara "could not be read" sem crash', () => {
+  const home = tmpDir()
+  withEnv({ HOME: home }, () => {
+    fs.mkdirSync(path.join(home, '.claude', 'settings.json'), { recursive: true })
+
+    const cgMsgs = validateCredentialGuardGlobalHookResolvable()
+    assert.equal(cgMsgs.some(m => m.includes('could not be read')), true, JSON.stringify(cgMsgs))
+    assert.equal(cgMsgs.some(m => m.includes('global scope')), true, JSON.stringify(cgMsgs))
+    assert.equal(cgMsgs.some(m => m.includes('trackfw update harness')), true, JSON.stringify(cgMsgs))
+
+    const gbgMsgs = validateGitBranchGuardGlobalHookResolvable()
+    assert.equal(gbgMsgs.some(m => m.includes('could not be read')), true, JSON.stringify(gbgMsgs))
+    assert.equal(gbgMsgs.some(m => m.includes('global scope')), true, JSON.stringify(gbgMsgs))
+    assert.equal(gbgMsgs.some(m => m.includes('trackfw update harness')), true, JSON.stringify(gbgMsgs))
+  })
+})
+
+// ---------------------------------------------------------------------------
+// ROADMAP-2026-09-06-...-config-ilegivel-deixa-de-ser-silencio, ML-1B: classe de decodificação,
+// distinta de "invalid JSON" e de "could not be read" — hades-tf's ML-1A barrier found Python's
+// strict `encoding="utf-8"` read crashing with an unstructured traceback on both fixtures below,
+// while Node never crashed (fs.readFileSync(path, 'utf8') is a lossy decode). Port de
+// validator_git_branch_guard_test.go (Go), mesmos nomes de mensagem — usados como o anchor para o
+// gate de paridade cross-CLI verificar Python contra.
+// ---------------------------------------------------------------------------
+
+// Afirma: .claude/settings.json salvo inteiro como UTF-16 dispara "is not valid UTF-8" — DISTINTA
+// de "is not valid JSON" — porque o motivo real é a codificação do arquivo, não a sintaxe JSON.
+test('UTF-16 (projeto): dispara "is not valid UTF-8", não "is not valid JSON"', () => {
+  const tmp = tmpDir()
+  const origDir = process.cwd()
+  const settingsPath = path.join(tmp, '.claude', 'settings.json')
+  fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+  // UTF-16LE com BOM, conteúdo `{"hooks":{}}`.
+  fs.writeFileSync(settingsPath, Buffer.from('﻿{"hooks":{}}', 'utf16le'))
+  process.chdir(tmp)
+  config.reset()
+  try {
+    const cgMsgs = validateCredentialGuardHookResolvable()
+    assert.equal(cgMsgs.some(m => m.includes('is not valid UTF-8')), true, JSON.stringify(cgMsgs))
+    assert.equal(cgMsgs.some(m => m.includes('is not valid JSON')), false,
+      'UTF-16 não deveria produzir a mensagem de JSON inválido: ' + JSON.stringify(cgMsgs))
+  } finally {
+    process.chdir(origDir)
+    config.reset()
+    fs.rmSync(tmp, { recursive: true, force: true })
+  }
+})
+
+// Afirma o caso "ambíguo" que a barreira mediu: UM byte UTF-8 inválido dentro de um JSON por lo
+// mais válido é silenciosamente coagido (Node's lossy decode) e não produz nenhuma violation.
+test('1 byte UTF-8 inválido dentro de JSON válido (projeto): não dispara nenhuma violation', () => {
+  const tmp = tmpDir()
+  const origDir = process.cwd()
+  const settingsPath = path.join(tmp, '.claude', 'settings.json')
+  fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
+  fs.writeFileSync(settingsPath, Buffer.concat([
+    Buffer.from('{"hooks":{"x":"', 'utf8'),
+    Buffer.from([0xff]),
+    Buffer.from('"}}', 'utf8'),
+  ]))
+  process.chdir(tmp)
+  config.reset()
+  try {
+    const cgMsgs = validateCredentialGuardHookResolvable()
+    assert.equal(cgMsgs.some(m => m.includes('is not valid UTF-8') || m.includes('is not valid JSON')), false,
+      JSON.stringify(cgMsgs))
+  } finally {
+    process.chdir(origDir)
+    config.reset()
+    fs.rmSync(tmp, { recursive: true, force: true })
+  }
 })

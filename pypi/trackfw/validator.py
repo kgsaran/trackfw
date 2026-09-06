@@ -8,6 +8,7 @@ import glob as _glob
 import json
 import os
 import re
+import stat
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -46,6 +47,56 @@ def _set_platform_for_test(platform: str):
 
 
 STALE_WIP_DAYS = 7
+
+
+def _read_regular_file(path: str) -> bytes:
+    """Fail-safe replacement for open(path, "rb").read() used by every guard config/script read in
+    this module: validate_guard_hook_resolvable, validate_guard_global_hook_resolvable, and the
+    *_script_integrity family (validate_credential_guard_script_integrity,
+    validate_guard_script_integrity, validate_guard_global_script_integrity).
+    ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio, ML-1C. Port
+    of Go's readRegularFile (internal/validator/regularfile.go) -- see that file's doc comment for
+    the full design rationale.
+
+    Why: hades-tf's ML-1B barrier found that a FIFO in place of any of these files makes
+    open(path).read() block INDEFINITELY (`mkfifo .claude/settings.json` -- `trackfw validate
+    --json` never returns), reproduced live in all 3 runtimes, pre-existing (not introduced by
+    ML-1B).
+
+    Opens with O_NONBLOCK (only defined on POSIX -- getattr default 0 makes this a plain open on a
+    platform where the attribute is absent, matching Go's windows fallback and its documented
+    "reduction, not elimination" caveat for that platform) so a FIFO with no writer on the other end
+    never blocks the open() syscall itself, then fstats the resulting FILE DESCRIPTOR -- not the
+    path -- to confirm what was actually opened is a regular file.
+
+    Fstat-on-fd is what makes the type check immune to TOCTOU on POSIX: a file descriptor is bound
+    to the inode (or pipe, or device) it was opened against, not to the path string -- whatever
+    happens to the PATH after os.open() returns cannot change what fd refers to.
+
+    Checked via stat.S_ISREG(st.st_mode), a POSITIVE allowlist -- every special type (FIFO, socket,
+    char/block device) is excluded by construction, not enumerated one by one.
+
+    Raises FileNotFoundError unchanged for absence (os.open's own ENOENT) -- callers' existing
+    `except FileNotFoundError` branches keep working exactly as before. Raises a plain OSError
+    (never FileNotFoundError) when the opened fd is not a regular file -- this flows into the SAME
+    "not FileNotFoundError, so accuse" branch every caller already has, no new except clause needed
+    anywhere. This function also eliminates a separate pre-existing crash: reading these files in
+    strict text mode (encoding="utf-8") could raise an uncaught UnicodeDecodeError on a
+    non-UTF-8-corrupted script; reading as bytes here removes that decode step entirely for the
+    byte-for-byte template comparisons these callers perform.
+    """
+    flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0)
+    fd = os.open(path, flags)
+    try:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode):
+            raise OSError(f"{path} is not a regular file (mode {oct(st.st_mode)})")
+        with os.fdopen(fd, "rb") as f:
+            fd = -1  # ownership transferred to the file object; avoid the double-close below
+            return f.read()
+    finally:
+        if fd >= 0:
+            os.close(fd)
 
 
 # ---------------------------------------------------------------------------
@@ -391,11 +442,15 @@ def _list_dir_for_rule(rule: str, dir_path: str, messages: list) -> list:
 
 def _read_file_for_rule(rule: str, file_path: str, messages: list):
     try:
-        with open(file_path, "r", encoding="utf-8") as f:
-            return f.read()
+        raw = _read_regular_file(file_path)
     except OSError as e:
         messages.append(_inspection_item(rule, file_path, e))
         return None
+    # errors="replace" instead of strict utf-8 decode -- avoids an uncaught UnicodeDecodeError on a
+    # non-UTF-8 governance artifact, mirroring the ML-1B fix already applied to the guard config
+    # family (ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio,
+    # ML-1G).
+    return raw.decode("utf-8", errors="replace")
 
 
 def _walk_dir_md(dir_path: str) -> list:
@@ -850,8 +905,7 @@ def _parse_blocked_adrs(file_path: str) -> list:
     Espelha parseBlockedADRs do JS.
     """
     try:
-        with open(file_path, "r", encoding="utf-8") as f:
-            content = f.read()
+        content = _read_regular_file(file_path).decode("utf-8", errors="replace")
     except OSError:
         return []
 
@@ -923,8 +977,7 @@ def _adr_draft_status_for_rule(basename: str, cfg: dict, messages: list | None):
     if not p:
         return False, True
     try:
-        with open(p, "r", encoding="utf-8") as f:
-            return _adr_not_accepted(f.read()), True
+        return _adr_not_accepted(_read_regular_file(p).decode("utf-8", errors="replace")), True
     except OSError as e:
         if messages is not None:
             messages.append(_inspection_item("blocked_by_draft_adr", p, e))
@@ -948,8 +1001,7 @@ def _parse_squad_from_frontmatter(file_path: str) -> str:
     Retorna string vazia se ausente.
     """
     try:
-        with open(file_path, "r", encoding="utf-8") as f:
-            content = f.read()
+        content = _read_regular_file(file_path).decode("utf-8", errors="replace")
     except OSError:
         return ""
 
@@ -998,8 +1050,7 @@ def _extract_messages(items: list) -> list:
 def load_baseline() -> dict | None:
     """Lê .trackfw-baseline.json do CWD. Retorna None se não existir."""
     try:
-        with open(_BASELINE_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+        return json.loads(_read_regular_file(_BASELINE_FILE).decode("utf-8", errors="replace"))
     except FileNotFoundError:
         return None
     except (json.JSONDecodeError, OSError) as e:
@@ -1015,6 +1066,7 @@ def save_baseline(violations: list, warnings: list) -> None:
         "violations": _extract_messages(violations),
         "warnings": _extract_messages(warnings),
     }
+    # raw-read-allowed: WRITE, not a read -- FIFO-hang/TOCTOU on read is not this call's concern.
     with open(_BASELINE_FILE, "w", encoding="utf-8", newline="\n") as f:
         json.dump(bf, f, indent=2, ensure_ascii=False)
 
@@ -1067,16 +1119,14 @@ def validate_reqs_have_adr(cfg: dict) -> list:
     adr_markers = cfg.get("link_fields", {}).get("adr", ["ADR:"])
     violations = []
     for file_path in files:
-        try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                content = f.read()
-            if not _content_has_marker_value(content, adr_markers):
-                name = os.path.basename(file_path)
-                violations.append(
-                    {"type": "violation", "message": f'req "{name}" has no linked ADR'}
-                )
-        except OSError:
-            pass
+        content = _read_file_for_rule("req_has_adr", file_path, violations)
+        if content is None:
+            continue
+        if not _content_has_marker_value(content, adr_markers):
+            name = os.path.basename(file_path)
+            violations.append(
+                {"type": "violation", "message": f'req "{name}" has no linked ADR'}
+            )
     return violations
 
 
@@ -1102,16 +1152,14 @@ def validate_reqs_have_roadmap(cfg: dict) -> list:
     roadmap_markers = cfg.get("link_fields", {}).get("roadmap", ["Roadmap:"])
     violations = []
     for file_path in files:
-        try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                content = f.read()
-            if not _content_has_marker_value(content, roadmap_markers):
-                name = os.path.basename(file_path)
-                violations.append(
-                    {"type": "violation", "message": f'req "{name}" has no linked Roadmap'}
-                )
-        except OSError:
-            pass
+        content = _read_file_for_rule("req_has_roadmap", file_path, violations)
+        if content is None:
+            continue
+        if not _content_has_marker_value(content, roadmap_markers):
+            name = os.path.basename(file_path)
+            violations.append(
+                {"type": "violation", "message": f'req "{name}" has no linked Roadmap'}
+            )
     return violations
 
 
@@ -1276,22 +1324,22 @@ def _latest_wip_transition_time(cfg: dict, file_path: str):
     diagnostics = []
 
     try:
-        with open(log_path, "r", encoding="utf-8") as f:
-            for line in f:
-                stripped = line.strip()
-                if not stripped:
-                    continue
-                parsed = _parse_transition_log_line(stripped)
-                if not parsed:
-                    diagnostics.append({
-                        "type": "warning",
-                        "message": f'stale_wip: invalid support line in "{log_path}": "{stripped}"'
-                    })
-                    continue
-                if parsed["name"] != expected_name or parsed["to_state"] != "wip":
-                    continue
-                if latest is None or parsed["timestamp"] > latest:
-                    latest = parsed["timestamp"]
+        log_lines = _read_regular_file(log_path).decode("utf-8", errors="replace").split("\n")
+        for line in log_lines:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            parsed = _parse_transition_log_line(stripped)
+            if not parsed:
+                diagnostics.append({
+                    "type": "warning",
+                    "message": f'stale_wip: invalid support line in "{log_path}": "{stripped}"'
+                })
+                continue
+            if parsed["name"] != expected_name or parsed["to_state"] != "wip":
+                continue
+            if latest is None or parsed["timestamp"] > latest:
+                latest = parsed["timestamp"]
     except FileNotFoundError:
         return None, []
     except OSError as e:
@@ -1388,30 +1436,26 @@ def validate_frontmatter_presence(cfg: dict) -> list:
             full_path = _find_adr_file(f, adr_dirs)
             if not full_path:
                 continue
-            try:
-                with open(full_path, "r", encoding="utf-8") as fh:
-                    content = fh.read()
-                if not content.startswith("---"):
-                    violations.append({
-                        "type": "violation",
-                        "message": f'adr "{f}" has no frontmatter block'
-                    })
-            except OSError:
-                pass
+            content = _read_file_for_rule("frontmatter_presence", full_path, violations)
+            if content is None:
+                continue
+            if not content.startswith("---"):
+                violations.append({
+                    "type": "violation",
+                    "message": f'adr "{f}" has no frontmatter block'
+                })
 
     req_files = [p for p in resolve_req_files(cfg) if p.endswith(".md")]
     for file_path in req_files:
-        try:
-            with open(file_path, "r", encoding="utf-8") as fh:
-                content = fh.read()
-            if not content.startswith("---"):
-                f = os.path.basename(file_path)
-                violations.append({
-                    "type": "violation",
-                    "message": f'req "{f}" has no frontmatter block'
-                })
-        except OSError:
-            pass
+        content = _read_file_for_rule("frontmatter_presence", file_path, violations)
+        if content is None:
+            continue
+        if not content.startswith("---"):
+            f = os.path.basename(file_path)
+            violations.append({
+                "type": "violation",
+                "message": f'req "{f}" has no frontmatter block'
+            })
 
     return violations
 
@@ -1481,24 +1525,22 @@ def validate_req_roadmap_lifecycle(cfg: dict) -> list:
     """Sinaliza REQ Open cujo roadmap canônico referenciado já está em done/."""
     warnings = []
     for file_path in resolve_req_files(cfg):
-        try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                content = f.read()
-            if not _req_status_is_open(content):
-                continue
-            ref = _extract_ref_path(content, "Roadmap")
-            if not ref:
-                continue
-            expanded_ref = expand_path(_normalize_ref_separator(ref))
-            if not os.path.isfile(expanded_ref):
-                continue
-            if os.path.basename(os.path.dirname(expanded_ref)) == "done":
-                warnings.append({
-                    "type": "warning",
-                    "message": f'req "{os.path.basename(file_path)}" is Open but linked Roadmap "{ref}" is in done/'
-                })
-        except OSError:
-            pass
+        content = _read_file_for_rule("req_roadmap_lifecycle", file_path, warnings)
+        if content is None:
+            continue
+        if not _req_status_is_open(content):
+            continue
+        ref = _extract_ref_path(content, "Roadmap")
+        if not ref:
+            continue
+        expanded_ref = expand_path(_normalize_ref_separator(ref))
+        if not os.path.isfile(expanded_ref):
+            continue
+        if os.path.basename(os.path.dirname(expanded_ref)) == "done":
+            warnings.append({
+                "type": "warning",
+                "message": f'req "{os.path.basename(file_path)}" is Open but linked Roadmap "{ref}" is in done/'
+            })
     return warnings
 
 
@@ -1617,21 +1659,19 @@ def validate_folder_status_coherence(cfg: dict) -> list:
         for name in entries:
             if not name.endswith(".md"):
                 continue
-            try:
-                with open(os.path.join(dir_path, name), "r", encoding="utf-8") as f:
-                    content = f.read()
-                fm = parse_frontmatter(content)
-                declared = fm.get("status", "")
-                if not declared:
-                    continue
-                expected = _FOLDER_TO_STATUS.get(state, [])
-                if not any(e.lower() == declared.lower() for e in expected):
-                    warnings.append({
-                        "type": "warning",
-                        "message": f'roadmap "{name}": folder is "{state}" but status declares "{declared}"'
-                    })
-            except OSError:
-                pass
+            content = _read_file_for_rule("folder_status", os.path.join(dir_path, name), warnings)
+            if content is None:
+                continue
+            fm = parse_frontmatter(content)
+            declared = fm.get("status", "")
+            if not declared:
+                continue
+            expected = _FOLDER_TO_STATUS.get(state, [])
+            if not any(e.lower() == declared.lower() for e in expected):
+                warnings.append({
+                    "type": "warning",
+                    "message": f'roadmap "{name}": folder is "{state}" but status declares "{declared}"'
+                })
 
     return warnings
 
@@ -1807,9 +1847,15 @@ def validate_note_orphan(cfg: dict, cwd: str = None) -> list:
 
     index_path = os.path.join(vault_dir, "index.md")
     index_content = ""
-    if os.path.exists(index_path):
-        with open(index_path, "r", encoding="utf-8") as f:
-            index_content = f.read()
+    try:
+        index_content = _read_regular_file(index_path).decode("utf-8", errors="replace")
+    except FileNotFoundError:
+        pass
+    except OSError as err:
+        # index.md existe mas nao pode ser lido (permissao, FIFO...) -- diagnostica em vez de
+        # tratar como indice vazio, que produziria um "not referenced" falso para toda nota
+        # (ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio, ML-1G).
+        return [_inspection_item("note_orphan", index_path, err)]
 
     msgs = []
     try:
@@ -2125,8 +2171,9 @@ def validate_guard_hook_resolvable(script_marker: str, cwd: str = None) -> list:
     - A regra só avalia entradas que EXISTEM. Ausência de entrada de guard é estado legítimo
       (guard global instalado via `trackfw update harness`) — nunca é violação por si só.
     - Arquivo de hook ausente é pulado em silêncio.
-    - Arquivo de hook presente mas com JSON inválido é pulado em silêncio — validar a forma do
-      JSON não é escopo desta regra.
+    - ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio, ML-1A:
+      arquivo de hook presente mas com JSON inválido deixou de ser pulado em silêncio -- ver o
+      bloco except do json.loads abaixo para a decisão e a medição que a sustentam.
     """
     root = cwd or os.getcwd()
     msgs = []
@@ -2134,14 +2181,89 @@ def validate_guard_hook_resolvable(script_marker: str, cwd: str = None) -> list:
     for rel_path, cli, requires_command_type, requires_var_or_shell_prefix in _CREDENTIAL_GUARD_HOOK_FILES:
         full_path = os.path.join(root, rel_path)
         try:
-            with open(full_path, "r", encoding="utf-8") as f:
-                content = f.read()
-        except OSError:
+            # ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio,
+            # ML-1C: _read_regular_file replaces open(full_path, "rb").read() -- a FIFO at
+            # full_path made that block INDEFINITELY (hades-tf's ML-1B barrier, `mkfifo
+            # .claude/settings.json`), a hang the except clauses below could never reach because
+            # the read never returned. _read_regular_file's "not a regular file" OSError (never
+            # FileNotFoundError) falls into the SAME accusing except OSError branch below.
+            raw = _read_regular_file(full_path)
+        except FileNotFoundError:
             continue
+        except OSError:
+            # ROADMAP-2026-09-06-...-config-ilegivel-deixa-de-ser-silencio, ML-1B: was a bare
+            # `except OSError: continue` -- OSError is the base class of BOTH FileNotFoundError
+            # (legitimate: no guard entry there) AND PermissionError/IsADirectoryError (the file
+            # exists but trackfw could not read it), so the two were being collapsed into the same
+            # silent skip. hades-tf's ML-1A barrier reproduced this live (chmod 000, and a
+            # directory in place of the file): `trackfw validate --json` exited 0, no violation --
+            # success reported about wiring the rule never actually inspected, for a different
+            # `continue` than the JSON-parse one ML-1A already fixed. Same remedy as the
+            # invalid-JSON branch below.
+            msgs.append({
+                "type": "violation",
+                "message": (
+                    f"{rel_path} ({cli}) could not be read — trackfw cannot tell whether "
+                    f"{script_marker} is wired here, and {cli} cannot load any hook from a file "
+                    "it cannot read; fix the file, or run `trackfw update` to regenerate it"
+                ),
+            })
+            continue
+
+        # ML-1B: this function used to open() in text mode with encoding="utf-8" (STRICT --
+        # raises UnicodeDecodeError before json.loads ever runs), while Go's json.Unmarshal
+        # operates on raw bytes (never panics on invalid UTF-8) and Node's fs.readFileSync(path,
+        # 'utf8') is a LOSSY decode (invalid bytes become U+FFFD, never throws). hades-tf's ML-1A
+        # barrier reproduced this live (whole file saved as UTF-16; one invalid UTF-8 byte inside
+        # an otherwise-valid JSON string) and found this exact strict-decode crashing with an
+        # unstructured traceback in both fixtures, exit 1, no JSON output -- while Go/Node stayed
+        # silent or accused cleanly. Reading as bytes and decoding losslessly here (errors=
+        # "replace") makes the actual parse input match Go/Node's coercion instead of raising.
+        # was_valid_utf8 records whether THIS content would decode losslessly, purely to pick
+        # which message to emit below if parsing goes on to fail -- it never gates whether parsing
+        # is attempted, so the "1 invalid byte, otherwise-valid JSON" fixture keeps parsing (and
+        # staying silent) exactly like Go/Node; only the message classification for an outright
+        # parse failure changes.
+        try:
+            raw.decode("utf-8")
+            was_valid_utf8 = True
+        except UnicodeDecodeError:
+            was_valid_utf8 = False
+        content = raw.decode("utf-8", errors="replace")
 
         try:
             parsed = json.loads(content)
         except (json.JSONDecodeError, ValueError):
+            # ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio,
+            # ML-1A: was a silent `continue` (fail-open) -- port of Go's validateGuardHookResolvable
+            # (internal/validator/validator_credential_guard.go) -- see that function's
+            # json.Unmarshal error branch for the full decision and measurement.
+            # _CREDENTIAL_GUARD_HOOK_FILES is a closed, enumerable list (6 entries) trackfw itself
+            # owns/merges into; invalid JSON in any of them is never a legitimate state, since cli
+            # itself requires strict JSON to load its own hooks from that file.
+            #
+            # ML-1B: not-valid-UTF-8 gets its own message (D4 of ADR-2026-09-04 -- classify right,
+            # explain right, or the reader investigates the wrong thing; e.g. a file saved as
+            # UTF-16 looks fine in the user's editor).
+            if not was_valid_utf8:
+                msgs.append({
+                    "type": "violation",
+                    "message": (
+                        f"{rel_path} ({cli}) is not valid UTF-8 — trackfw cannot tell whether "
+                        f"{script_marker} is wired here, and {cli} cannot load any hook from a "
+                        "file it cannot decode; fix the file's encoding, or run `trackfw update` "
+                        "to regenerate it"
+                    ),
+                })
+                continue
+            msgs.append({
+                "type": "violation",
+                "message": (
+                    f"{rel_path} ({cli}) is not valid JSON — trackfw cannot tell whether "
+                    f"{script_marker} is wired here, and {cli} cannot load any hook from a file "
+                    "it cannot parse; fix the file, or run `trackfw update` to regenerate it"
+                ),
+            })
             continue
 
         commands = []
@@ -2468,6 +2590,15 @@ def _credential_guard_mode_downgrade_message() -> str:
     )
 
 
+def _credential_guard_mode_downgrade_read_failure_message() -> str:
+    """Fixed-text remedy for a non-ENOENT read failure on trackfw.yaml when HEAD had mode: block --
+    see the call site for why this avoids _inspection_item's raw OS error text."""
+    return (
+        "trackfw.yaml could not be read — trackfw cannot tell whether credential_guard.mode "
+        "is still block; fix the file, or run `trackfw update` to regenerate it"
+    )
+
+
 def validate_credential_guard_script_integrity(cwd: str = None) -> list:
     """Regra "credential_guard_script_integrity": compara scripts/trackfw-credential-guard.sh em
     disco contra o template que esta versão do trackfw geraria (âncora: o binário/pacote, não o
@@ -2481,14 +2612,33 @@ def validate_credential_guard_script_integrity(cwd: str = None) -> list:
     rel_path = "scripts/trackfw-credential-guard.sh"
     full_path = os.path.join(root, rel_path)
     try:
-        with open(full_path, "r", encoding="utf-8") as f:
-            content = f.read()
+        # ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio,
+        # ML-1C: _read_regular_file replaces open(full_path, "r", encoding="utf-8").read() -- a
+        # FIFO at full_path made that block INDEFINITELY (hades-tf's ML-1B barrier), a hang the
+        # except clause below could never reach. Reading as bytes (compared against
+        # _CREDENTIAL_GUARD_SCRIPT_REFERENCE.encode("utf-8") below) also eliminates a SEPARATE
+        # pre-existing crash: strict encoding="utf-8" text mode raised an uncaught
+        # UnicodeDecodeError on a script overwritten with non-UTF-8 bytes -- the same class of
+        # decode-mode divergence ML-1B closed for the config-file JSON reads, alive here too since
+        # this function was never touched by ML-1B (script content, not config JSON).
+        content = _read_regular_file(full_path)
     except FileNotFoundError:
         return []
     except OSError:
-        return []
+        # ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio,
+        # ML-1C: was `except OSError: return []` -- hades-tf's ML-1B barrier found this silenced
+        # EACCES/EISDIR/ELOOP exactly like the pre-ML-1B config-file `continue` did (fail-open:
+        # validate reports health about a script it never actually inspected). Same remedy as
+        # validate_guard_hook_resolvable's read-error branch above.
+        return [{
+            "type": "warning",
+            "message": (
+                f"{rel_path} could not be read — trackfw cannot tell whether this script matches "
+                "the template it should; fix the file, or run `trackfw update` to regenerate it"
+            ),
+        }]
 
-    if content == _CREDENTIAL_GUARD_SCRIPT_REFERENCE:
+    if content == _CREDENTIAL_GUARD_SCRIPT_REFERENCE.encode("utf-8"):
         return []
 
     return [{
@@ -3265,12 +3415,29 @@ def validate_guard_script_integrity(rel_path: str, reference_content: str, cwd: 
     root = cwd or os.getcwd()
     full_path = os.path.join(root, rel_path)
     try:
-        with open(full_path, "r", encoding="utf-8") as f:
-            content = f.read()
-    except OSError:
+        # ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio,
+        # ML-1C: _read_regular_file replaces open(full_path, "r", encoding="utf-8").read() -- same
+        # FIFO-hang fix and same strict-decode-crash elimination as
+        # validate_credential_guard_script_integrity's identical comment above (reading as bytes,
+        # compared against reference_content.encode("utf-8") below).
+        content = _read_regular_file(full_path)
+    except FileNotFoundError:
         return []
+    except OSError:
+        # ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio,
+        # ML-1C: was `except OSError: return []` -- collapsed FileNotFoundError (legitimate
+        # absence) with PermissionError/IsADirectoryError/etc. (should be reported), the same
+        # fail-open class hades-tf's ML-1B barrier found here. Split into its own except clause,
+        # mirroring validate_credential_guard_script_integrity above.
+        return [{
+            "type": "warning",
+            "message": (
+                f"{rel_path} could not be read — trackfw cannot tell whether this script matches "
+                "the template it should; fix the file, or run `trackfw update` to regenerate it"
+            ),
+        }]
 
-    if content == reference_content:
+    if content == reference_content.encode("utf-8"):
         return []
 
     return [{
@@ -3346,8 +3513,10 @@ def validate_guard_global_hook_resolvable(script_marker: str, cwd: str = None) -
     emite e é pulado (nunca tratado como violação -- mesmo contrato "não é nosso wiring, não é
     nosso problema" do ramo ok=False de _resolve_credential_guard_hook_path).
 
-    Fail-open: $HOME não resolvível, arquivo ilegível ou JSON inválido pulam esse arquivo em
-    silêncio -- mesmo contrato que validate_guard_hook_resolvable já tem para arquivos de projeto.
+    Fail-open: $HOME não resolvível ou arquivo ilegível pulam esse arquivo em silêncio -- estados
+    legítimos. JSON inválido deixou de fazer o mesmo -- ver ROADMAP-2026-09-06-fecha-o-fail-open-
+    do-guard-config-ilegivel-deixa-de-ser-silencio, ML-1A, e o bloco except do json.loads abaixo
+    para a decisão e a medição.
     """
     home = home_dir()
     if not home or home == "~":
@@ -3358,14 +3527,72 @@ def validate_guard_global_hook_resolvable(script_marker: str, cwd: str = None) -
         rel_path = _global_guard_config_path(base_rel_path, cli, script_marker)
         full_path = os.path.join(home, rel_path)
         try:
-            with open(full_path, "r", encoding="utf-8") as f:
-                content = f.read()
-        except OSError:
+            # ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio,
+            # ML-1C: same _read_regular_file substitution as the project-scope sibling
+            # (validate_guard_hook_resolvable, above) -- closes the same FIFO hang here.
+            raw = _read_regular_file(full_path)
+        except FileNotFoundError:
             continue
+        except OSError:
+            # ROADMAP-2026-09-06-...-config-ilegivel-deixa-de-ser-silencio, ML-1B: same decision
+            # as the project-scope sibling (validate_guard_hook_resolvable, above) -- was a bare
+            # `except OSError: continue`, collapsing FileNotFoundError (legitimate) with
+            # PermissionError/IsADirectoryError (should be reported). See that function's read-
+            # error except branch for the full measurement (hades-tf ML-1A barrier, reproduced
+            # live).
+            msgs.append({
+                "type": "violation",
+                "message": (
+                    f"~/{rel_path} ({cli}, global scope) could not be read — trackfw cannot "
+                    f"tell whether {script_marker} is wired here, and {cli} cannot load any "
+                    "hook from a file it cannot read; fix the file, or run `trackfw update "
+                    "harness` to regenerate it"
+                ),
+            })
+            continue
+
+        # ML-1B: see validate_guard_hook_resolvable's identical comment above for why decoding,
+        # not just parsing, must be classified separately here (lossy decode as the parse input,
+        # matching Go/Node's coercion; strict decode used only to pick the message on failure).
+        try:
+            raw.decode("utf-8")
+            was_valid_utf8 = True
+        except UnicodeDecodeError:
+            was_valid_utf8 = False
+        content = raw.decode("utf-8", errors="replace")
 
         try:
             parsed = json.loads(content)
         except (json.JSONDecodeError, ValueError):
+            # ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio,
+            # ML-1A: same decision as the project-scope sibling (validate_guard_hook_resolvable,
+            # above) -- see that function's json.loads except branch for the full measurement.
+            # Applies identically here: _GLOBAL_GUARD_CONFIG_FILES is the same kind of closed,
+            # enumerable list (6 entries), each owned/consumed by cli itself, so invalid JSON is
+            # never a legitimate state.
+            #
+            # ML-1B: not-valid-UTF-8 gets its own message -- see validate_guard_hook_resolvable's
+            # identical branch above for the reasoning.
+            if not was_valid_utf8:
+                msgs.append({
+                    "type": "violation",
+                    "message": (
+                        f"~/{rel_path} ({cli}, global scope) is not valid UTF-8 — trackfw cannot "
+                        f"tell whether {script_marker} is wired here, and {cli} cannot load any "
+                        "hook from a file it cannot decode; fix the file's encoding, or run "
+                        "`trackfw update harness` to regenerate it"
+                    ),
+                })
+                continue
+            msgs.append({
+                "type": "violation",
+                "message": (
+                    f"~/{rel_path} ({cli}, global scope) is not valid JSON — trackfw cannot "
+                    f"tell whether {script_marker} is wired here, and {cli} cannot load any "
+                    "hook from a file it cannot parse; fix the file, or run `trackfw update "
+                    "harness` to regenerate it"
+                ),
+            })
             continue
 
         commands = []
@@ -3457,14 +3684,30 @@ def validate_guard_global_script_integrity(script_file_name: str, reference_cont
 
     script_path = os.path.join(home, ".trackfw", "scripts", script_file_name)
     try:
-        with open(script_path, "r", encoding="utf-8") as f:
-            content = f.read()
-    except OSError:
+        # ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio,
+        # ML-1C: _read_regular_file closes the FIFO hang here too, and reading as bytes (compared
+        # against reference_content.encode("utf-8") below) removes the strict-decode crash risk.
+        content = _read_regular_file(script_path)
+    except FileNotFoundError:
         # Não instalado não é violação -- mesmo contrato de todo outro check
         # *_script_integrity (projeto e global) neste arquivo.
         return []
+    except OSError:
+        # ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio,
+        # ML-1C: was an UNCONDITIONAL `except OSError: return []` -- hades-tf's ML-1B barrier found
+        # this collapsed absence (legitimate) with EACCES/EISDIR/ELOOP (should be reported) into
+        # the same silent skip, the same fail-open class as every other sibling in this module.
+        # Split absence out via FileNotFoundError above, mirroring every other read-error branch.
+        return [{
+            "type": "warning",
+            "message": (
+                f"{script_path} (global scope) could not be read — trackfw cannot tell whether "
+                "this script matches the template it should; fix the file, or run `trackfw "
+                "update harness` to regenerate it"
+            ),
+        }]
 
-    if content == reference_content:
+    if content == reference_content.encode("utf-8"):
         return []
 
     return [{
@@ -3526,13 +3769,24 @@ def validate_credential_guard_mode_downgrade(cwd: str = None) -> list:
 
     disk_path = os.path.join(root, "trackfw.yaml")
     try:
-        with open(disk_path, "r", encoding="utf-8") as f:
-            disk_content = f.read()
+        disk_content = _read_regular_file(disk_path).decode("utf-8", errors="replace")
     except FileNotFoundError:
         # trackfw.yaml deletado inteiramente enquanto HEAD tinha mode: block -- é o downgrade.
         return [{"type": "violation", "message": _credential_guard_mode_downgrade_message()}]
     except OSError:
-        return [{"type": "violation", "message": _credential_guard_mode_downgrade_message()}]
+        # Antes tratava QUALQUER OSError (permissao negada, FIFO/socket no lugar do arquivo) como
+        # se fosse o mesmo caso de "arquivo deletado" acima -- acusando um downgrade CONFIRMADO
+        # quando na verdade so se sabe que a leitura falhou. Divergia de Go e Node, que ja
+        # diagnosticavam "could not be read" para esse mesmo cenario. Corrigido para diagnostico,
+        # nao downgrade confirmado (ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-
+        # deixa-de-ser-silencio, ML-1G).
+        #
+        # Mensagem de texto FIXO, nao _inspection_item (que interpola str(e), cru) -- str(OSError)
+        # diverge de Go %v e Node e.message para a MESMA falha (medido: "[Errno 13] Permission
+        # denied: 'trackfw.yaml'" vs "open trackfw.yaml: permission denied" vs "EACCES: permission
+        # denied, open 'trackfw.yaml'"). Toda mensagem irma "could not be read" desta familia de
+        # guard evita texto de erro de SO cru pelo mesmo motivo.
+        return [{"type": "violation", "message": _credential_guard_mode_downgrade_read_failure_message()}]
 
     disk_mode, _ = _extract_credential_guard_mode(disk_content)
     if disk_mode == "block":
@@ -3608,12 +3862,16 @@ def validate_thirdparty_artifact_has_provenance(cwd: str = None) -> list:
     root = cwd or os.getcwd()
     manifest_path = os.path.join(root, ".trackfw", "integrations-manifest.json")
     try:
-        with open(manifest_path, "r", encoding="utf-8") as fh:
-            manifest = json.load(fh)
+        manifest = json.loads(_read_regular_file(manifest_path).decode("utf-8", errors="replace"))
     except FileNotFoundError:
         return []
     except OSError as error:
-        raise RuntimeError(f"thirdparty_artifact_has_provenance: read {manifest_path}: {error}") from error
+        # Costumava `raise RuntimeError(...)` aqui -- um manifesto ilegivel ou corrompido abortava
+        # `trackfw validate` inteiro em vez de reportar um diagnostico so desta regra e deixar as
+        # demais rodarem. Mesma classe de defeito que o ML-1C fechou para *_script_integrity,
+        # encontrada aqui por medicao, em paridade com o fix equivalente em Go/Node (ROADMAP-2026-
+        # 09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio, ML-1G).
+        return [_inspection_item("thirdparty_artifact_has_provenance", manifest_path, error)]
 
     destinations = []
     for destination, artifact in (manifest.get("artifacts") or {}).items():
@@ -3667,8 +3925,7 @@ def validate_thirdparty_artifact_has_provenance(cwd: str = None) -> list:
 
         installed_sha256 = entry.get("installed_sha256", "")
         try:
-            with open(destination, "rb") as fh:
-                installed = fh.read()
+            installed = _read_regular_file(destination)
         except OSError as error:
             msgs.append({
                 "type": "violation",

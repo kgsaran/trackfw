@@ -303,6 +303,249 @@ PY
 echo "Validate JSON parity checks passed (global-scope guard integrity message, byte-identical across 3 CLIs)"
 
 # ---------------------------------------------------------------------------
+# ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio, ML-1C:
+# the *_script_integrity family had the SAME class of defect the guard config reads (above) had
+# before ML-1A/ML-1B, and hades-tf's ML-1B barrier found it was WORSE here, not milder: Go
+# project-scope ABORTED the entire `trackfw validate` (fmt.Errorf propagated raw, non-JSON
+# stdout) on the first unreadable script — the exact contract break this whole REQ exists to
+# close, since a CI consumer of `--json` loses visibility of every other rule, not just this one.
+# Go/Node global-scope and Python (both scopes) silenced instead (fail-open). Only Node
+# project-scope was already correct. A directory in place of the script (not chmod 000) is this
+# block's fixture — deterministic on every platform and uid, same choice as cg-claude-unreadable
+# above.
+#
+# Isolated project + $HOME for this block (never $TMP_DIR/project's shared fixture, which
+# run_validator's exit-code==1 assertion elsewhere already owns) — same "own dedicated $HOME"
+# precedent as GVP_HOME above.
+SIU_TMP_CLEAN=$(printf '%s' "$TMP_DIR" | sed 's#//*#/#g')
+SIU_PROJECT="$SIU_TMP_CLEAN/script-integrity-unreadable-project"
+mkdir -p \
+  "$SIU_PROJECT/docs/adr" \
+  "$SIU_PROJECT/docs/req" \
+  "$SIU_PROJECT/docs/roadmaps"/{backlog,wip,blocked,done,abandoned} \
+  "$SIU_PROJECT/scripts/trackfw-credential-guard.sh" \
+  "$SIU_PROJECT/scripts/trackfw-git-branch-guard.sh"
+cat >"$SIU_PROJECT/trackfw.yaml" <<'EOF'
+governance_mode: strict
+adr_dirs:
+  - docs/adr
+req_dir: docs/req
+roadmap_dir: docs/roadmaps
+EOF
+
+run_siu() {
+  local output=$1
+  shift
+  set +e
+  (cd "$SIU_PROJECT" && "$@") >"$output" 2>"$output.stderr"
+  local status=$?
+  set -e
+  # Prova que `--json` sobrevive: mesmo com exit != 0 (não esperamos nenhum aqui, severidade
+  # default é "warning"), stdout tem que ser JSON válido — o abort antigo do Go produzia stdout
+  # VAZIO, o que falha este parse imediatamente e reprova o gate com uma mensagem clara.
+  python3 -c "import json,sys; json.load(open(sys.argv[1], encoding='utf-8'))" "$output" || {
+    echo "validate parity (script_integrity unreadable, project): $output is not valid JSON (status=$status) — Go-style abort regressed?" >&2
+    return 1
+  }
+}
+
+run_siu "$TMP_DIR/siu-go.json" "$GO_BIN" validate --json
+run_siu "$TMP_DIR/siu-node.json" node "$ROOT_DIR/npm/bin/trackfw" validate --json
+run_siu "$TMP_DIR/siu-python.json" env PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw validate --json
+
+python3 - "$TMP_DIR/siu-go.json" "$TMP_DIR/siu-node.json" "$TMP_DIR/siu-python.json" <<'PY'
+import json
+import sys
+
+def warning_messages(path, rule):
+    with open(path, encoding="utf-8") as stream:
+        payload = json.load(stream)
+    return sorted(
+        item["message"] for item in payload["warnings"] if item.get("rule") == rule
+    )
+
+for rule in ("credential_guard_script_integrity", "git_branch_guard_script_integrity"):
+    msgs = [warning_messages(path, rule) for path in sys.argv[1:]]
+    for path, value in zip(sys.argv[1:], msgs):
+        if not value:
+            raise SystemExit(
+                f"validate parity (script_integrity unreadable, project): {path} produced ZERO "
+                f"{rule} warnings — fixture is vacuous, or this CLI regressed to silencing/"
+                "aborting on an unreadable script (ROADMAP-2026-09-06 ML-1C)"
+            )
+        for m in value:
+            if "could not be read" not in m:
+                raise SystemExit(
+                    f"validate parity (script_integrity unreadable, project): {path} {rule} "
+                    f"message does not say 'could not be read': {m!r}"
+                )
+    if msgs[1:] != msgs[:-1]:
+        for path, value in zip(sys.argv[1:], msgs):
+            print(path, rule, json.dumps(value, indent=2), file=sys.stderr)
+        raise SystemExit(
+            f"validate parity: {rule} unreadable-script warning message text differs between "
+            "runtimes (byte-for-byte comparison, not just rule+file)"
+        )
+PY
+
+echo "Validate JSON parity checks passed (*_script_integrity unreadable script, project scope, byte-identical across 3 CLIs, --json stays valid — Go no longer aborts)"
+
+# Contraparte de escopo GLOBAL — mesmo achado da barreira: Go silenciava (return nil, nil
+# incondicional em qualquer erro de leitura), Node tinha `catch (_) { return [] }` idêntico,
+# Python tinha `except OSError: return []` idêntico. $HOME isolado, dedicado a este bloco — e um
+# PROJETO próprio, limpo (scripts/*.sh ausentes, não "diretório no lugar do arquivo" como
+# SIU_PROJECT acima) para que a violação de escopo de PROJETO não contamine esta contagem: sem
+# isso, os dois escopos disparariam juntos e "global scope" deixaria de estar presente em toda
+# mensagem coletada.
+SIU_HOME="$SIU_TMP_CLEAN/script-integrity-unreadable-home"
+mkdir -p \
+  "$SIU_HOME/.trackfw/scripts/trackfw-credential-guard.sh" \
+  "$SIU_HOME/.trackfw/scripts/trackfw-git-branch-guard.sh"
+
+SIU_GLOBAL_PROJECT="$SIU_TMP_CLEAN/script-integrity-unreadable-global-project"
+mkdir -p \
+  "$SIU_GLOBAL_PROJECT/docs/adr" \
+  "$SIU_GLOBAL_PROJECT/docs/req" \
+  "$SIU_GLOBAL_PROJECT/docs/roadmaps"/{backlog,wip,blocked,done,abandoned}
+cat >"$SIU_GLOBAL_PROJECT/trackfw.yaml" <<'EOF'
+governance_mode: strict
+adr_dirs:
+  - docs/adr
+req_dir: docs/req
+roadmap_dir: docs/roadmaps
+EOF
+
+run_siu_global() {
+  local output=$1
+  shift
+  (cd "$SIU_GLOBAL_PROJECT" && HOME="$SIU_HOME" "$@") >"$output" 2>"$output.stderr"
+}
+
+run_siu_global "$TMP_DIR/siu-global-go.json" "$GO_BIN" validate --json
+run_siu_global "$TMP_DIR/siu-global-node.json" node "$ROOT_DIR/npm/bin/trackfw" validate --json
+run_siu_global "$TMP_DIR/siu-global-python.json" env PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw validate --json
+
+python3 - "$TMP_DIR/siu-global-go.json" "$TMP_DIR/siu-global-node.json" "$TMP_DIR/siu-global-python.json" <<'PY'
+import json
+import sys
+
+def warning_messages(path, rule):
+    with open(path, encoding="utf-8") as stream:
+        payload = json.load(stream)
+    return sorted(
+        item["message"] for item in payload["warnings"] if item.get("rule") == rule
+    )
+
+for rule in ("credential_guard_script_integrity", "git_branch_guard_script_integrity"):
+    msgs = [warning_messages(path, rule) for path in sys.argv[1:]]
+    for path, value in zip(sys.argv[1:], msgs):
+        if not value:
+            raise SystemExit(
+                f"validate parity (script_integrity unreadable, GLOBAL): {path} produced ZERO "
+                f"{rule} warnings — fixture is vacuous, or this CLI regressed to silencing on an "
+                "unreadable GLOBAL script (ROADMAP-2026-09-06 ML-1C)"
+            )
+        for m in value:
+            if "could not be read" not in m or "global scope" not in m:
+                raise SystemExit(
+                    f"validate parity (script_integrity unreadable, GLOBAL): {path} {rule} "
+                    f"message missing 'could not be read'/'global scope': {m!r}"
+                )
+    if msgs[1:] != msgs[:-1]:
+        for path, value in zip(sys.argv[1:], msgs):
+            print(path, rule, json.dumps(value, indent=2), file=sys.stderr)
+        raise SystemExit(
+            f"validate parity: {rule} GLOBAL-scope unreadable-script warning message text "
+            "differs between runtimes"
+        )
+PY
+
+echo "Validate JSON parity checks passed (*_script_integrity unreadable script, GLOBAL scope, byte-identical across 3 CLIs — no longer silenced)"
+
+# ---------------------------------------------------------------------------
+# FIFO in place of the guard config/script: hades-tf's ML-1B barrier found this made
+# os.ReadFile/fs.readFileSync/open().read() block INDEFINITELY in all 3 runtimes (mkfifo
+# .claude/settings.json — trackfw validate --json never returns). Wrapped in a hard timeout via
+# background process + sleep + kill (this repo has no portable `timeout` binary — absent by
+# default on macOS) so a REGRESSED fix hangs this ONE check for a bounded few seconds and fails
+# loudly, instead of hanging `make quality` (and CI) forever.
+# ---------------------------------------------------------------------------
+SIU_FIFO_PROJECT="$SIU_TMP_CLEAN/script-integrity-fifo-project"
+mkdir -p \
+  "$SIU_FIFO_PROJECT/docs/adr" \
+  "$SIU_FIFO_PROJECT/docs/req" \
+  "$SIU_FIFO_PROJECT/docs/roadmaps"/{backlog,wip,blocked,done,abandoned} \
+  "$SIU_FIFO_PROJECT/.claude" \
+  "$SIU_FIFO_PROJECT/scripts"
+cat >"$SIU_FIFO_PROJECT/trackfw.yaml" <<'EOF'
+governance_mode: strict
+adr_dirs:
+  - docs/adr
+req_dir: docs/req
+roadmap_dir: docs/roadmaps
+EOF
+mkfifo "$SIU_FIFO_PROJECT/scripts/trackfw-credential-guard.sh"
+mkfifo "$SIU_FIFO_PROJECT/.claude/settings.json"
+
+run_with_hard_timeout() {
+  # $1=seconds, $2=output file, rest=command. Returns 124 on timeout (mirrors coreutils `timeout`'s
+  # exit code convention), the command's own exit code otherwise.
+  local secs=$1 output=$2
+  shift 2
+  ( "$@" >"$output" 2>"$output.stderr" ) &
+  local pid=$!
+  ( sleep "$secs" && kill -9 "$pid" 2>/dev/null ) &
+  local watchdog=$!
+  local status=0
+  wait "$pid" 2>/dev/null || status=$?
+  kill "$watchdog" 2>/dev/null || true
+  wait "$watchdog" 2>/dev/null || true
+  return "$status"
+}
+
+for label_bin in "go:$GO_BIN" "node:node $ROOT_DIR/npm/bin/trackfw" "python:env PYTHONPATH=$ROOT_DIR/pypi python3 -m trackfw"; do
+  label="${label_bin%%:*}"
+  cmd="${label_bin#*:}"
+  out="$TMP_DIR/siu-fifo-$label.json"
+  set +e
+  ( cd "$SIU_FIFO_PROJECT" && run_with_hard_timeout 8 "$out" $cmd validate --json )
+  status=$?
+  set -e
+  if [[ $status -eq 124 || $status -eq 137 ]]; then
+    echo "validate parity (script_integrity FIFO): $label runtime HUNG on a FIFO in place of the guard config/script — the exact hang hades-tf's ML-1B barrier reported; the fix regressed" >&2
+    exit 1
+  fi
+  python3 -c "import json,sys; json.load(open(sys.argv[1], encoding='utf-8'))" "$out" || {
+    echo "validate parity (script_integrity FIFO): $label output is not valid JSON (status=$status)" >&2
+    exit 1
+  }
+done
+
+python3 - "$TMP_DIR/siu-fifo-go.json" "$TMP_DIR/siu-fifo-node.json" "$TMP_DIR/siu-fifo-python.json" <<'PY'
+import json
+import sys
+
+def messages(path):
+    with open(path, encoding="utf-8") as stream:
+        payload = json.load(stream)
+    out = []
+    for item in payload["violations"] + payload["warnings"]:
+        if item.get("rule") in ("credential_guard_hook_resolvable", "credential_guard_script_integrity"):
+            out.append(item["message"])
+    return sorted(out)
+
+msgs = [messages(path) for path in sys.argv[1:]]
+for path, value in zip(sys.argv[1:], msgs):
+    if not any("could not be read" in m for m in value):
+        raise SystemExit(
+            f"validate parity (script_integrity FIFO): {path} did not accuse 'could not be "
+            f"read' for the FIFO fixture — obtained: {value}"
+        )
+PY
+
+echo "Validate JSON parity checks passed (FIFO in place of guard config AND script, all 3 runtimes return within the hard timeout, accuse 'could not be read', --json stays valid)"
+
+# ---------------------------------------------------------------------------
 # ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-e-integridade-independente-de-
 # fiacao, ML-4B: same gap as the block above, this time for the NEW "hook entry is missing
 # \"type\":\"command\"" message "git_branch_guard_hook_resolvable" (GLOBAL scope) emits since
@@ -606,7 +849,7 @@ echo "Validate JSON parity checks passed (branch_has_wip_roadmap accepting done/
 # ---------------------------------------------------------------------------
 CG_TMP_CLEAN=$(printf '%s' "$TMP_DIR" | sed 's#//*#/#g')
 
-for cg_fixture in cg-claude-absent cg-claude-present cg-cursor-absent cg-cursor-present cg-claude-noexec cg-claude-notype cg-claude-relativo cg-copilot-relativo-present cg-claude-pwd cg-claude-pwd-quoted cg-claude-absoluto cg-claude-outra-var cg-claude-git-toplevel cg-cursor-pwd; do
+for cg_fixture in cg-claude-absent cg-claude-present cg-cursor-absent cg-cursor-present cg-claude-noexec cg-claude-notype cg-claude-relativo cg-copilot-relativo-present cg-claude-pwd cg-claude-pwd-quoted cg-claude-absoluto cg-claude-outra-var cg-claude-git-toplevel cg-cursor-pwd cg-claude-invalid-json cg-claude-unreadable cg-claude-utf16; do
   mkdir -p "$CG_TMP_CLEAN/$cg_fixture/docs/roadmaps"/{wip,done}
   cat >"$CG_TMP_CLEAN/$cg_fixture/trackfw.yaml" <<'EOF'
 roadmap_dir: docs/roadmaps
@@ -681,6 +924,41 @@ EOF
 mkdir -p "$CG_TMP_CLEAN/cg-copilot-relativo-present/scripts"
 printf '#!/usr/bin/env bash\nexit 0\n' > "$CG_TMP_CLEAN/cg-copilot-relativo-present/scripts/trackfw-credential-guard.sh"
 chmod +x "$CG_TMP_CLEAN/cg-copilot-relativo-present/scripts/trackfw-credential-guard.sh"
+
+# cg-claude-invalid-json: .claude/settings.json com JSON sintaticamente inválido (vírgula sobrando
+# fecha o objeto antes da hora) — ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-
+# deixa-de-ser-silencio, ML-1A. Nenhum script criado: a regra deve acusar "is not valid JSON" ANTES
+# de tentar extrair/resolver qualquer comando — antes desta ML, as 3 implementações silenciavam
+# (`continue` mudo) e este arquivo corrompido nunca aparecia em lugar nenhum da saída de
+# `validate`. Este MESMO arquivo corrompido é lido por AMBAS as regras (credential_guard_hook_
+# resolvable e git_branch_guard_hook_resolvable — ver o bloco gbg_cases mais abaixo, que reusa a
+# saída desta mesma fixture em vez de rodar `validate` de novo), provando que a corrupção cega os
+# dois controles ao mesmo tempo, não só um.
+mkdir -p "$CG_TMP_CLEAN/cg-claude-invalid-json/.claude"
+printf '{"hooks": {,}}' > "$CG_TMP_CLEAN/cg-claude-invalid-json/.claude/settings.json"
+
+# cg-claude-unreadable: .claude/settings.json é um DIRETÓRIO, não um arquivo — hades-tf's ML-1A
+# barrier reproduced this live (chmod 000, and a directory in place of the file) and found the
+# READ failure (distinct from the JSON-parse failure above) taking a different path in each
+# runtime: Go aborted the ENTIRE `trackfw validate` (exit 1, empty stdout, no other rule
+# reported), while Node/Python silently reported success — ROADMAP-2026-09-06-...-config-
+# ilegivel-deixa-de-ser-silencio, ML-1B. A directory (not chmod 000) is the gate's fixture:
+# deterministic on every platform and uid — chmod 000 is a no-op when the gate runs as root.
+mkdir -p "$CG_TMP_CLEAN/cg-claude-unreadable/.claude/settings.json"
+
+# cg-claude-utf16: .claude/settings.json salvo inteiro como UTF-16 (o erro clássico de "Salvar
+# como Unicode" do Notepad no Windows) — hades-tf's ML-1A barrier reproduced this live and found
+# Python's strict `encoding="utf-8"` read crashing with an unstructured traceback (exit 1, no
+# JSON output), while Go/Node stayed silent-safe (json.Unmarshal on raw bytes / lossy decode).
+# Distinct message from invalid-json: the real cause is the file's ENCODING, not JSON syntax
+# (D4 of ADR-2026-09-04 — classify right, explain right, or the reader investigates the wrong
+# thing) — ROADMAP-2026-09-06-...-config-ilegivel-deixa-de-ser-silencio, ML-1B.
+mkdir -p "$CG_TMP_CLEAN/cg-claude-utf16/.claude"
+python3 -c '
+import sys
+with open(sys.argv[1], "wb") as f:
+    f.write("{\"hooks\":{}}".encode("utf-16"))
+' "$CG_TMP_CLEAN/cg-claude-utf16/.claude/settings.json"
 
 # ---------------------------------------------------------------------------
 # ROADMAP-2026-08-22 ML-2A: fixtures para os novos casos de classe de ancoragem.
@@ -937,7 +1215,7 @@ run_cg() {
   set -e
 }
 
-for cg_fixture in cg-claude-absent cg-claude-present cg-cursor-absent cg-cursor-present cg-claude-noexec cg-claude-notype cg-claude-relativo cg-copilot-relativo-present cg-claude-pwd cg-claude-pwd-quoted cg-claude-absoluto cg-claude-outra-var cg-claude-git-toplevel cg-cursor-pwd cg-claude-tilde cg-claude-tilde-quoted cg-claude-tilde-user cg-claude-pwd-braced cg-claude-sh-c-pwd cg-claude-windows-drive; do
+for cg_fixture in cg-claude-absent cg-claude-present cg-cursor-absent cg-cursor-present cg-claude-noexec cg-claude-notype cg-claude-relativo cg-copilot-relativo-present cg-claude-pwd cg-claude-pwd-quoted cg-claude-absoluto cg-claude-outra-var cg-claude-git-toplevel cg-cursor-pwd cg-claude-tilde cg-claude-tilde-quoted cg-claude-tilde-user cg-claude-pwd-braced cg-claude-sh-c-pwd cg-claude-windows-drive cg-claude-invalid-json cg-claude-unreadable cg-claude-utf16; do
   run_cg "$CG_TMP_CLEAN/$cg_fixture-go.json"   "$CG_TMP_CLEAN/$cg_fixture" "$GO_BIN" validate --json
   run_cg "$CG_TMP_CLEAN/$cg_fixture-node.json" "$CG_TMP_CLEAN/$cg_fixture" node "$ROOT_DIR/npm/bin/trackfw" validate --json
   run_cg "$CG_TMP_CLEAN/$cg_fixture-py.json"   "$CG_TMP_CLEAN/$cg_fixture" env PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw validate --json
@@ -970,6 +1248,18 @@ CG_MARKER_PWD    = "with a $PWD path"
 # "quoted tilde path".
 CG_MARKER_TILDE_QUOTED = "with a quoted tilde path"
 CG_MARKER_TILDE_USER   = "with a named-user tilde path"
+# ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio, ML-1A: o
+# arquivo é sintaticamente inválido, então nenhum comando é extraível — a regra acusa a
+# ILEGIBILIDADE do arquivo, não uma forma de comando específica.
+CG_MARKER_INVALID_JSON = "is not valid JSON"
+# ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio, ML-1B: uma
+# falha de LEITURA (não de parse) é uma causa diferente — a mensagem distingue as duas para que o
+# usuário não investigue sintaxe JSON quando o problema é um bit de permissão ou um diretório no
+# lugar do arquivo.
+CG_MARKER_COULD_NOT_BE_READ = "could not be read"
+# Idem para uma falha de DECODIFICAÇÃO (arquivo não é UTF-8 — ex.: salvo como UTF-16) — terceira
+# causa distinta de "invalid JSON" e "could not be read" (D4 da ADR-2026-09-04).
+CG_MARKER_NOT_UTF8 = "is not valid UTF-8"
 
 
 def load(name):
@@ -1025,6 +1315,17 @@ cases = {
     # ADR-2026-09-04 (ML-3A): letra de unidade do Windows → classe 1 (ancorado por união,
     # independente do GOOS) → silencioso. Falsifica o defeito do ML-3A nos 3 CLIs.
     "claude-windows-drive": ("cg-claude-windows-drive-{}.json", False, None),
+    # ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio, ML-1A:
+    # JSON sintaticamente inválido — antes desta ML, as 3 implementações silenciavam (`continue`
+    # mudo compartilhado por credential_guard_hook_resolvable e git_branch_guard_hook_resolvable).
+    "claude-invalid-json": ("cg-claude-invalid-json-{}.json", True, CG_MARKER_INVALID_JSON),
+    # ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio, ML-1B:
+    # falha de LEITURA (diretório no lugar do arquivo) — antes desta ML, Go abortava `trackfw
+    # validate` inteiro (exit 1, stdout vazio) e Node/Python silenciavam (exit 0, sem violation).
+    "claude-unreadable": ("cg-claude-unreadable-{}.json", True, CG_MARKER_COULD_NOT_BE_READ),
+    # ML-1B: falha de DECODIFICAÇÃO (arquivo inteiro salvo como UTF-16) — antes desta ML, Python
+    # crashava com UnicodeDecodeError não capturada (traceback cru, exit 1, sem JSON estruturado).
+    "claude-utf16": ("cg-claude-utf16-{}.json", True, CG_MARKER_NOT_UTF8),
 }
 
 for label, (pattern, expect_violation, msg_marker) in cases.items():
@@ -1071,12 +1372,13 @@ print(
     "claude-noexec/claude-notype/claude-relativo/copilot-relativo-present/"
     "claude-pwd/claude-pwd-quoted/claude-absoluto/claude-git-toplevel/"
     "claude-outra-var/cursor-pwd/"
-    "claude-tilde/claude-tilde-quoted/claude-tilde-user/claude-pwd-braced/claude-sh-c-pwd/claude-windows-drive, "
+    "claude-tilde/claude-tilde-quoted/claude-tilde-user/claude-pwd-braced/claude-sh-c-pwd/claude-windows-drive/"
+    "claude-invalid-json/claude-unreadable/claude-utf16, "
     "byte-identical across 3 CLIs)"
 )
 PY
 
-echo "Validate JSON parity checks passed (credential_guard_hook_resolvable cross-CLI: claude-absent detection / claude-present baseline / cursor-absent relative-branch live / cursor-present false-positive guard / claude-noexec not-executable detection / claude-notype missing-type-command detection / claude-relativo bare-relative-path detection / copilot-relativo-present false-positive guard / claude-pwd \$PWD-class2-detected / claude-pwd-quoted quoted-\$PWD-class2-detected / claude-absoluto absolute-class1-silent / claude-git-toplevel git-toplevel-class1-silent / claude-outra-var other-var-class3-silent / cursor-pwd cursor-\$PWD-silent / claude-tilde tilde-class1-silent / claude-tilde-quoted quoted-tilde-class2-quoted-tilde-msg / claude-tilde-user named-user-tilde-class2-named-user-msg / claude-pwd-braced \${PWD}-class2-pwd-msg / claude-sh-c-pwd sh-c-\$PWD-class2-pwd-msg / claude-windows-drive windows-drive-class1-silent)"
+echo "Validate JSON parity checks passed (credential_guard_hook_resolvable cross-CLI: claude-absent detection / claude-present baseline / cursor-absent relative-branch live / cursor-present false-positive guard / claude-noexec not-executable detection / claude-notype missing-type-command detection / claude-relativo bare-relative-path detection / copilot-relativo-present false-positive guard / claude-pwd \$PWD-class2-detected / claude-pwd-quoted quoted-\$PWD-class2-detected / claude-absoluto absolute-class1-silent / claude-git-toplevel git-toplevel-class1-silent / claude-outra-var other-var-class3-silent / cursor-pwd cursor-\$PWD-silent / claude-tilde tilde-class1-silent / claude-tilde-quoted quoted-tilde-class2-quoted-tilde-msg / claude-tilde-user named-user-tilde-class2-named-user-msg / claude-pwd-braced \${PWD}-class2-pwd-msg / claude-sh-c-pwd sh-c-\$PWD-class2-pwd-msg / claude-windows-drive windows-drive-class1-silent / claude-invalid-json malformed-json-detection / claude-unreadable read-failure-detection-no-crash / claude-utf16 not-valid-utf8-detection-distinct-from-invalid-json)"
 
 # ---------------------------------------------------------------------------
 # ROADMAP-2026-08-21-validate-detecta-hook-de-guard-na-forma-relativa-antiga,
@@ -1133,6 +1435,11 @@ tmp = sys.argv[1]
 
 GBG_RULE = "git_branch_guard_hook_resolvable"
 GBG_MARKER_BARE = "with a bare relative path"
+# ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio, ML-1A.
+GBG_MARKER_INVALID_JSON = "is not valid JSON"
+# ML-1B: mesmas 2 classes novas do bloco credential_guard_hook_resolvable acima.
+GBG_MARKER_COULD_NOT_BE_READ = "could not be read"
+GBG_MARKER_NOT_UTF8 = "is not valid UTF-8"
 
 
 def load_gbg(name):
@@ -1151,6 +1458,15 @@ def load_gbg(name):
 gbg_cases = {
     "claude-relativo":          ("gbg-claude-relativo-{}.json",          True,  GBG_MARKER_BARE),
     "cursor-relativo-present":  ("gbg-cursor-relativo-present-{}.json",  False, None),
+    # ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio, ML-1A:
+    # reusa a MESMA saída da fixture cg-claude-invalid-json (bloco credential_guard_hook_resolvable
+    # acima, mesmo arquivo .claude/settings.json corrompido) em vez de rodar `validate` de novo —
+    # prova que o mesmo arquivo corrompido cega as DUAS regras simultaneamente, não só uma.
+    "claude-invalid-json":      ("cg-claude-invalid-json-{}.json",       True,  GBG_MARKER_INVALID_JSON),
+    # ML-1B: mesmo reuso de saída — o arquivo corrompido/ilegível/mal-codificado cega as DUAS
+    # regras ao mesmo tempo, não só credential_guard_hook_resolvable.
+    "claude-unreadable":        ("cg-claude-unreadable-{}.json",         True,  GBG_MARKER_COULD_NOT_BE_READ),
+    "claude-utf16":             ("cg-claude-utf16-{}.json",              True,  GBG_MARKER_NOT_UTF8),
 }
 
 for label, (pattern, expect_violation, msg_marker) in gbg_cases.items():
@@ -1188,9 +1504,11 @@ for label, (pattern, expect_violation, msg_marker) in gbg_cases.items():
 
 print(
     "git_branch_guard_hook_resolvable parity checks passed "
-    "(gbg-claude-relativo bare-relative-path / gbg-cursor-relativo-present false-positive guard, "
+    "(gbg-claude-relativo bare-relative-path / gbg-cursor-relativo-present false-positive guard / "
+    "claude-invalid-json malformed-json-detection / claude-unreadable read-failure-detection / "
+    "claude-utf16 not-valid-utf8-detection, "
     "byte-identical across 3 CLIs)"
 )
 PY
 
-echo "Validate JSON parity checks passed (git_branch_guard_hook_resolvable cross-CLI: gbg-claude-relativo bare-relative-path detection / gbg-cursor-relativo-present false-positive guard)"
+echo "Validate JSON parity checks passed (git_branch_guard_hook_resolvable cross-CLI: gbg-claude-relativo bare-relative-path detection / gbg-cursor-relativo-present false-positive guard / claude-invalid-json malformed-json-detection / claude-unreadable read-failure-detection-no-crash / claude-utf16 not-valid-utf8-detection, same fixture files as credential_guard_hook_resolvable's cg-claude-invalid-json/cg-claude-unreadable/cg-claude-utf16)"

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 // credentialGuardScriptMarker é o nome do script que a regra credential_guard_hook_resolvable
@@ -362,8 +363,10 @@ func collectCommandsWithMarker(v interface{}, marker string, out *[]guardCommand
 //     nunca é violação por si só.
 //   - Arquivo de hook ausente é pulado em silêncio (não é responsabilidade desta regra garantir
 //     que o arquivo exista).
-//   - Arquivo de hook presente mas com JSON inválido é pulado em silêncio — validar a forma do
-//     JSON não é escopo desta regra.
+//   - ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio, ML-1A:
+//     arquivo de hook presente mas com JSON inválido deixou de ser pulado em silêncio — ver o
+//     comentário no branch de erro do json.Unmarshal, abaixo, para a decisão e a medição que a
+//     sustentam.
 func validateGuardHookResolvable(ruleName, scriptMarker string) ([]string, error) {
 	root, err := os.Getwd()
 	if err != nil {
@@ -383,16 +386,92 @@ func validateGuardHookResolvable(ruleName, scriptMarker string) ([]string, error
 	var msgs []string
 	for _, hf := range credentialGuardHookFiles {
 		fullPath := filepath.Join(root, hf.path)
-		content, readErr := os.ReadFile(fullPath)
+		content, readErr := readRegularFile(fullPath)
 		if readErr != nil {
 			if os.IsNotExist(readErr) {
 				continue
 			}
-			return nil, fmt.Errorf("%s: lendo %s: %w", ruleName, hf.path, readErr)
+			// ROADMAP-2026-09-06-...-config-ilegivel-deixa-de-ser-silencio, ML-1C: readRegularFile
+			// (regularfile.go) replaces the bare os.ReadFile this ML started with — a FIFO placed
+			// at fullPath made os.ReadFile block INDEFINITELY (hades-tf's ML-1B barrier,
+			// `mkfifo .claude/settings.json`), which this branch could never reach because the
+			// call never returned. readRegularFile's errNotRegularFile sentinel (never
+			// os.IsNotExist) falls into this SAME accusing branch — no new branch needed here.
+			//
+			// ROADMAP-2026-09-06-...-config-ilegivel-deixa-de-ser-silencio, ML-1B: was
+			// `return nil, fmt.Errorf(...)` — a hard error that aborted the ENTIRE `trackfw
+			// validate` run (exit 1, empty stdout, no other rule reported) on the very first
+			// unreadable guard file, for a reason as mundane as a permission bit or a directory
+			// sitting where the file should be. hades-tf's ML-1A barrier reproduced this live
+			// (chmod 000, and a directory in place of the file): Go crashed the whole command
+			// while Node/Python silently reported success — two different failures of the same
+			// AC ("config ilegível deixa de ser silêncio"), not just the JSON-parse one ML-1A
+			// closed. Aborting is not accusing: the user sees no diagnostic at all. Reported as a
+			// violation of THIS rule instead, same remedy as the invalid-JSON branch below —
+			// `trackfw update` regenerates the file regardless of why it couldn't be read.
+			msgs = append(msgs, fmt.Sprintf(
+				"%s (%s) could not be read — trackfw cannot tell whether %s is wired here, and "+
+					"%s cannot load any hook from a file it cannot read; fix the file, or run "+
+					"`trackfw update` to regenerate it",
+				hf.path, hf.cli, scriptMarker, hf.cli,
+			))
+			continue
 		}
+
+		// ML-1B: decoding, not just parsing, diverges across the 3 runtimes on this exact byte
+		// stream — Go's json.Unmarshal operates on raw bytes and never panics on invalid UTF-8
+		// (either the parse already fails for an unrelated structural reason, or the bad byte is
+		// silently accepted inside a string), but Node's fs.readFileSync(path,'utf8') is a LOSSY
+		// decode (invalid bytes become U+FFFD, never throws) while Python's
+		// open(path,encoding="utf-8") is STRICT (raises UnicodeDecodeError before json.loads even
+		// runs) — hades-tf's ML-1A barrier reproduced this live (whole file saved as UTF-16; one
+		// invalid UTF-8 byte inside an otherwise-valid JSON string) and found Python crashing with
+		// an unstructured traceback in both fixtures, exit 1, no JSON output. utf8.Valid records
+		// whether THIS content would decode losslessly, purely to pick which message to emit
+		// below if parsing goes on to fail — it never gates whether parsing is attempted, so the
+		// "1 invalid byte, otherwise-valid JSON" fixture keeps parsing (and staying silent) exactly
+		// as before; only the message classification for an outright parse failure changes.
+		wasValidUTF8 := utf8.Valid(content)
 
 		var parsed interface{}
 		if jsonErr := json.Unmarshal(content, &parsed); jsonErr != nil {
+			// ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio,
+			// ML-1A: was a silent `continue` (fail-open) — a corrupted hook file made this rule
+			// report health about wiring it never actually inspected. Decision (measured, not
+			// assumed): accuse as a violation of THIS rule, not a separate diagnostic. Measurement:
+			// credentialGuardHookFiles is a closed, enumerable list (6 entries) of files trackfw
+			// itself either writes or merges into — none of them is third-party or free-form
+			// config trackfw doesn't own the schema of. Invalid JSON in any of them is never a
+			// legitimate state: the owning CLI (hf.cli) requires strict JSON to load ITS OWN hooks
+			// from that file, so a parse failure already means every hook wired there — ours
+			// included, whether or not scriptMarker happens to be present — is dead, independent
+			// of trackfw. This mirrors internal/generators/agentfiles.go's InjectClaudeHooks, which
+			// already treats the same condition as a hard error on the WRITE path
+			// ("parsing %s: %w") — the read path (this function) was the only place still fail-open
+			// on it. A "diagnostic, not violation" response was rejected: it would still leave the
+			// control silent by default (validate exits 0), which is the exact defect this ML
+			// closes.
+			//
+			// ML-1B: a parse failure caused by content that isn't valid UTF-8 to begin with (e.g.
+			// a file saved as UTF-16) gets its own message — "not valid JSON" would send a user
+			// staring at JSON that looks fine in their editor investigating the wrong thing (D4 of
+			// ADR-2026-09-04, same principle: classify right, explain right, or the reader
+			// investigates the wrong thing).
+			if !wasValidUTF8 {
+				msgs = append(msgs, fmt.Sprintf(
+					"%s (%s) is not valid UTF-8 — trackfw cannot tell whether %s is wired here, "+
+						"and %s cannot load any hook from a file it cannot decode; fix the file's "+
+						"encoding, or run `trackfw update` to regenerate it",
+					hf.path, hf.cli, scriptMarker, hf.cli,
+				))
+				continue
+			}
+			msgs = append(msgs, fmt.Sprintf(
+				"%s (%s) is not valid JSON — trackfw cannot tell whether %s is wired here, and "+
+					"%s cannot load any hook from a file it cannot parse; fix the file, or run "+
+					"`trackfw update` to regenerate it",
+				hf.path, hf.cli, scriptMarker, hf.cli,
+			))
 			continue
 		}
 

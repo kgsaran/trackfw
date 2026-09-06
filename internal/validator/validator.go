@@ -25,7 +25,7 @@ const baselineFileName = ".trackfw-baseline.json"
 
 // LoadBaseline lê .trackfw-baseline.json do CWD. Retorna nil se não existir.
 func LoadBaseline() (*BaselineFile, error) {
-	data, err := os.ReadFile(baselineFileName)
+	data, err := readRegularFile(baselineFileName)
 	if os.IsNotExist(err) {
 		return nil, nil
 	}
@@ -73,7 +73,7 @@ func listDirForRule(rule, dir string, msgs *[]string) []string {
 }
 
 func readFileForRule(rule, path string, msgs *[]string) ([]byte, bool) {
-	content, err := os.ReadFile(path)
+	content, err := readRegularFile(path)
 	if err != nil {
 		*msgs = append(*msgs, inspectionDiagnostic(rule, path, err))
 		return nil, false
@@ -239,7 +239,7 @@ func wipConfigFrom(cfg config.ProjectConfig) WIPConfig {
 // parseSquadFromFrontmatter lê um arquivo markdown e extrai o valor da linha "squad: <valor>".
 // Retorna string vazia se o campo está ausente ou vazio.
 func parseSquadFromFrontmatter(path string) string {
-	content, err := os.ReadFile(path)
+	content, err := readRegularFile(path)
 	if err != nil {
 		return ""
 	}
@@ -912,7 +912,7 @@ func inventoryBlock(cfg config.ProjectConfig) string {
 	reqFiles := resolveREQFiles(cfg)
 	var reqOpen, reqDone, reqClosed, reqOther int
 	for _, p := range reqFiles {
-		content, err := os.ReadFile(p)
+		content, err := readRegularFile(p)
 		if err != nil {
 			continue
 		}
@@ -1618,8 +1618,8 @@ func validateREQsHaveADR() ([]string, error) {
 
 	var violations []string
 	for _, path := range files {
-		content, err := os.ReadFile(path)
-		if err != nil {
+		content, ok := readFileForRule("req_has_adr", path, &violations)
+		if !ok {
 			continue
 		}
 		if !contentHasMarkerValue(string(content), cfg.LinkFieldsADR) {
@@ -1654,8 +1654,8 @@ func validateREQsHaveRoadmap() ([]string, error) {
 
 	var violations []string
 	for _, path := range files {
-		content, err := os.ReadFile(path)
-		if err != nil {
+		content, ok := readFileForRule("req_has_roadmap", path, &violations)
+		if !ok {
 			continue
 		}
 		if !contentHasMarkerValue(string(content), cfg.LinkFieldsRoadmap) {
@@ -1768,7 +1768,7 @@ func validateStaleWIP() ([]string, error) {
 
 func latestWIPTransitionTime(cfg config.ProjectConfig, roadmapPath string) (time.Time, bool, []string) {
 	logPath := filepath.Join(cfg.RoadmapDir, ".trackfw-log")
-	data, err := os.ReadFile(logPath)
+	data, err := readRegularFile(logPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return time.Time{}, false, nil
@@ -1845,7 +1845,7 @@ func blockedREQs() (map[string][]string, error) {
 
 	result := make(map[string][]string)
 	for _, reqPath := range files {
-		content, err := os.ReadFile(reqPath)
+		content, err := readRegularFile(reqPath)
 		if err != nil {
 			continue
 		}
@@ -1907,7 +1907,7 @@ func validateREQsNotBlockedByDraftADRs() ([]string, error) {
 
 // parseBlockedADRs extrai os basenames de ADRs listados na seção "## Blocked by ADRs" de um arquivo REQ.
 func parseBlockedADRs(path string) ([]string, error) {
-	content, err := os.ReadFile(path)
+	content, err := readRegularFile(path)
 	if err != nil {
 		return nil, err
 	}
@@ -2009,7 +2009,7 @@ func adrStatusForRule(rule, adrBasename string, msgs *[]string) (string, bool) {
 	if p == "" {
 		return "", true
 	}
-	content, err := os.ReadFile(p)
+	content, err := readRegularFile(p)
 	if err != nil {
 		if msgs != nil {
 			*msgs = append(*msgs, inspectionDiagnostic(rule, p, err))
@@ -2068,8 +2068,8 @@ func validateFrontmatterPresence() []string {
 			if fullPath == "" {
 				continue
 			}
-			content, err := os.ReadFile(fullPath)
-			if err != nil {
+			content, ok := readFileForRule("frontmatter_presence", fullPath, &violations)
+			if !ok {
 				continue
 			}
 			if !strings.HasPrefix(string(content), "---") {
@@ -2081,8 +2081,8 @@ func validateFrontmatterPresence() []string {
 	// REQs — usa resolveREQFiles para suportar namespacing by_agent
 	reqFiles := resolveREQFiles(cfg)
 	for _, f := range reqFiles {
-		content, err := os.ReadFile(f)
-		if err != nil {
+		content, ok := readFileForRule("frontmatter_presence", f, &violations)
+		if !ok {
 			continue
 		}
 		if !strings.HasPrefix(string(content), "---") {
@@ -2308,8 +2308,8 @@ func validateREQRoadmapLifecycle() ([]string, error) {
 	cfg := config.Load()
 	var warnings []string
 	for _, reqPath := range resolveREQFiles(cfg) {
-		content, err := os.ReadFile(reqPath)
-		if err != nil {
+		content, ok := readFileForRule("req_roadmap_lifecycle", reqPath, &warnings)
+		if !ok {
 			continue
 		}
 		s := string(content)
@@ -2494,8 +2494,8 @@ func validateFolderStatusCoherence() ([]string, error) {
 			if !strings.HasSuffix(name, ".md") {
 				continue
 			}
-			content, err := os.ReadFile(filepath.Join(dir.path, name))
-			if err != nil {
+			content, ok := readFileForRule("folder_status", filepath.Join(dir.path, name), &warnings)
+			if !ok {
 				continue
 			}
 			declared := extractFrontmatterField(string(content), "status")
@@ -2711,14 +2711,22 @@ func validateNoteOrphan() ([]string, error) {
 		return nil, fmt.Errorf("listando vault/notes: %w", err)
 	}
 
-	// Lê conteúdo do index.md (pode não existir ainda)
-	var indexContent string
-	data, err := os.ReadFile(indexPath)
-	if err == nil {
-		indexContent = string(data)
-	}
-
+	// Lê conteúdo do index.md (pode não existir ainda — estado legítimo, sem diagnóstico). Erro
+	// que não seja "ausente" (permissão negada, FIFO, etc.) é diagnosticado e a regra para aqui —
+	// tratar como índice vazio produziria um "not referenced" falso para toda nota existente,
+	// escondendo a causa real (ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-
+	// deixa-de-ser-silencio, ML-1G).
 	var msgs []string
+	var indexContent string
+	data, err := readRegularFile(indexPath)
+	switch {
+	case err == nil:
+		indexContent = string(data)
+	case os.IsNotExist(err):
+		// ausência legítima — sem diagnóstico, index.md ainda não foi criado.
+	default:
+		return []string{inspectionDiagnostic("note_orphan", indexPath, err)}, nil
+	}
 	for _, match := range matches {
 		basename := filepath.Base(match)
 		if basename == "index.md" {

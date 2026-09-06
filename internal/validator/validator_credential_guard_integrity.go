@@ -41,12 +41,27 @@ import (
 func validateCredentialGuardScriptIntegrity() ([]string, error) {
 	const relPath = "scripts/trackfw-credential-guard.sh"
 
-	content, err := os.ReadFile(relPath)
+	content, err := readRegularFile(relPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("credential_guard_script_integrity: reading %s: %w", relPath, err)
+		// ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio,
+		// ML-1C: was `return nil, fmt.Errorf(...)` — hades-tf's ML-1B barrier found this was the
+		// SERIOUS case among the *_script_integrity family: it ABORTED the entire `trackfw
+		// validate` run (exit 1, non-JSON stdout, every other rule's result lost with it) on the
+		// first unreadable script, in Go project-scope only. A consumer of `trackfw validate --json`
+		// in CI that parses stdout as JSON gets neither JSON nor a diagnosable message — the exact
+		// contract break this whole REQ exists to close. Reported as a violation of THIS rule
+		// instead, matching validateGitBranchGuardScriptIntegrity's sibling fix
+		// (validator_git_branch_guard.go) and the config-file read-error branches
+		// (validateGuardHookResolvable). readRegularFile (regularfile.go) also closes the FIFO
+		// hang hades-tf found for config files — this script read shares the same primitive.
+		return []string{fmt.Sprintf(
+			"%s could not be read — trackfw cannot tell whether this script matches the template "+
+				"it should; fix the file, or run `trackfw update` to regenerate it",
+			relPath,
+		)}, nil
 	}
 
 	if string(content) == credentialGuardScriptReference {
@@ -154,10 +169,27 @@ func validateCredentialGuardModeDowngrade() ([]string, error) {
 		return nil, nil
 	}
 
-	diskContent, err := os.ReadFile("trackfw.yaml")
+	diskContent, err := readRegularFile("trackfw.yaml")
 	if err != nil {
 		if !os.IsNotExist(err) {
-			return nil, fmt.Errorf("credential_guard_mode_downgrade: reading trackfw.yaml: %w", err)
+			// Non-ENOENT read failure (permission denied, FIFO/socket swapped in, ...) used to
+			// abort `trackfw validate` entirely via fmt.Errorf — the same defect ML-1C found and
+			// fixed for the *_script_integrity family, missed here because 1A-1C fixed specific
+			// FUNCTIONS, not every raw read in the guard family's files (ROADMAP-2026-09-06-fecha-
+			// o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio, ML-1G).
+			//
+			// Fixed-text message, NOT inspectionDiagnostic (which interpolates the raw OS error
+			// string) — this rule is in Node's CREDENTIAL_GUARD_ANCHORED_RULES and its sibling
+			// functions in this file/validator_git_branch_guard.go (validateGuardHookResolvable,
+			// *_script_integrity) all use a fixed remedy message specifically so the 3 runtimes
+			// stay byte-identical: `%v`/`err.message`/`str(e)` differ per OS AND per runtime for
+			// the exact same failure (verified live: "open trackfw.yaml: permission denied" vs
+			// "EACCES: permission denied, open 'trackfw.yaml'" vs "[Errno 13] Permission denied:
+			// 'trackfw.yaml'"). An earlier version of this fix used inspectionDiagnostic, which
+			// would have made a LATENT 3-CLI divergence observable for the first time — the same
+			// class of self-review catch ML-1C made about its own Node message before declaring
+			// done. Caught before commit by a second review pass, not by the parity gate.
+			return []string{credentialGuardModeDowngradeReadFailureMessage()}, nil
 		}
 		// trackfw.yaml deleted entirely while HEAD had mode: block — this IS the downgrade.
 		return []string{credentialGuardModeDowngradeMessage()}, nil
@@ -175,6 +207,16 @@ func credentialGuardModeDowngradeMessage() string {
 	return "trackfw.yaml sets credential_guard.mode: block at the git HEAD commit, but the " +
 		"current file does not resolve to block — if this was intentional, commit the change; " +
 		"otherwise investigate before treating the credential guard as active"
+}
+
+// credentialGuardModeDowngradeReadFailureMessage is the fixed-text remedy for a non-ENOENT read
+// failure (permission denied, FIFO/socket, ...) on trackfw.yaml when HEAD had mode: block —
+// deliberately NOT using inspectionDiagnostic (raw OS error text), for the same byte-identity
+// reason as every other guard-family "could not be read" message. ROADMAP-2026-09-06-fecha-o-fail-
+// open-do-guard-config-ilegivel-deixa-de-ser-silencio, ML-1G.
+func credentialGuardModeDowngradeReadFailureMessage() string {
+	return "trackfw.yaml could not be read — trackfw cannot tell whether credential_guard.mode " +
+		"is still block; fix the file, or run `trackfw update` to regenerate it"
 }
 
 // ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard, ML-1A.

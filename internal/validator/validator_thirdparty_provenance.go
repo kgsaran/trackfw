@@ -98,7 +98,19 @@ func validateThirdPartyArtifactHasProvenance() ([]string, error) {
 
 	manifest, err := integrations.LoadManifest(root)
 	if err != nil {
-		return nil, fmt.Errorf("thirdparty_artifact_has_provenance: %w", err)
+		// Used to be `return nil, fmt.Errorf(...)`, which both callers (validator.go:533/837)
+		// propagate as `return nil, nil, e` — aborting `trackfw validate` ENTIRELY (stdout empty,
+		// no other rule reported) on a manifest that is unreadable (permission denied, FIFO) or
+		// corrupt (invalid JSON, unsupported schema_version). Same defect class as the
+		// *_script_integrity abort ML-1C fixed, found here by measurement outside
+		// internal/validator's own package boundary — LoadManifest lives in internal/integrations,
+		// so ML-1C's package-scoped enumeration of internal/validator/*.go never counted this call
+		// site (ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-
+		// silencio, ML-1G). LoadManifest's fail-closed contract for its WRITE-path callers
+		// (internal/integrations, `trackfw thirdparty install`) is intentionally left unchanged —
+		// only this read-only validate call site is softened, from abort to a named diagnostic
+		// that still lets every other rule run.
+		return []string{inspectionDiagnostic("thirdparty_artifact_has_provenance", integrations.ManifestPath(root), err)}, nil
 	}
 
 	var thirdPartyDestinations []string
@@ -169,7 +181,7 @@ func validateThirdPartyArtifactHasProvenance() ([]string, error) {
 			continue
 		}
 
-		installed, readErr := os.ReadFile(destination)
+		installed, readErr := readRegularFile(destination)
 		if readErr != nil {
 			msgs = append(msgs, fmt.Sprintf(
 				"thirdparty_artifact_has_provenance: %q is claimed as a third-party artifact with an approved "+

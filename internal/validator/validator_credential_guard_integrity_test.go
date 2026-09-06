@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -11,6 +12,45 @@ import (
 )
 
 // ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate, ML-1A.
+
+// TestCredentialGuardScriptIntegrity_ScriptIlegivel_ViolationSemAbortar afirma a conclusão
+// principal do achado 2 da barreira hades-tf sobre o ML-1B: antes deste ML (ROADMAP-2026-09-06-
+// fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio, ML-1C), um script ilegível
+// (chmod 000) fazia esta função retornar um `error` não-nil, que validator.go propaga como
+// `return nil, nil, e` — abortando TODO o `trackfw validate` (stdout não-JSON), o exato defeito
+// que esta REQ existe para fechar. Agora deve virar uma violation desta regra, sem abortar.
+func TestCredentialGuardScriptIntegrity_ScriptIlegivel_ViolationSemAbortar(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("bits de permissão POSIX não se aplicam no Windows")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("chmod 000 não bloqueia leitura para root")
+	}
+
+	dir := t.TempDir()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	writeFile(t, dir, "scripts/trackfw-credential-guard.sh", "#!/usr/bin/env bash\nexit 0\n")
+	scriptPath := filepath.Join(dir, "scripts", "trackfw-credential-guard.sh")
+	if err := os.Chmod(scriptPath, 0000); err != nil {
+		t.Fatalf("chmod 000: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(scriptPath, 0644) })
+
+	msgs, err := validateCredentialGuardScriptIntegrity()
+	if err != nil {
+		t.Fatalf("validateCredentialGuardScriptIntegrity() não deveria mais abortar (retornar error) — obteve: %v", err)
+	}
+	if !hasViolation(msgs, "could not be read") || !hasViolation(msgs, "scripts/trackfw-credential-guard.sh") {
+		t.Errorf("esperado violation de leitura, obteve: %v", msgs)
+	}
+}
+
+// TestCredentialGuardScriptIntegrity_FIFO_NaoTrava lives in
+// validator_credential_guard_integrity_fifo_unix_test.go (`//go:build !windows`) — it imports
+// "syscall" and calls syscall.Mkfifo, which does not exist in the windows syscall package, so a
+// runtime.GOOS skip inside this file would not stop it from failing to COMPILE on windows.
 
 // ---- credential_guard_script_integrity ----
 
@@ -241,6 +281,58 @@ func TestCredentialGuardModeDowngrade_ChaveRemovidaNoDisco_Dispara(t *testing.T)
 	}
 	if !hasViolation(msgs, "credential_guard.mode: block") {
 		t.Fatalf("esperado violation quando a chave credential_guard.mode some do disco, obteve: %v", msgs)
+	}
+}
+
+// TestCredentialGuardModeDowngrade_LeituraFalhaNaoENOENT_ViolationSemAbortarEComTextoFixo cobre o
+// achado do ML-1G: um erro de leitura não-ENOENT em trackfw.yaml (aqui, um diretório no lugar do
+// arquivo — mesmo vetor usado pelas outras regras da família guard) costumava abortar
+// `trackfw validate` inteiro via `fmt.Errorf` — mesma classe de defeito que o ML-1C fechou para
+// *_script_integrity, sobrevivendo aqui porque 1A-1C corrigiram funções específicas, não todo raw
+// read dos arquivos da família guard. Esta afirma DUAS coisas: (1) não aborta mais — reporta uma
+// violation e devolve err==nil; (2) usa o texto FIXO da família ("could not be read", sem
+// interpolar a string de erro do SO), não `inspectionDiagnostic` — necessário porque
+// %v/e.message/str(e) divergem por runtime/SO para a mesma falha, e este é exatamente o tipo de
+// mensagem que os 3 CLIs precisam manter byte-idêntica (ROADMAP-2026-09-06-fecha-o-fail-open-do-
+// guard-config-ilegivel-deixa-de-ser-silencio, ML-1G).
+func TestCredentialGuardModeDowngrade_LeituraFalhaNaoENOENT_ViolationSemAbortarEComTextoFixo(t *testing.T) {
+	dir := t.TempDir()
+	initGitRepo(t, dir, "main")
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	commitTrackfwYAML(t, dir, "credential_guard:\n  mode: block\n")
+	// trackfw.yaml vira um DIRETÓRIO em disco — open() retorna EISDIR (não ENOENT), o mesmo vetor
+	// já usado pelos testes de *_script_integrity/*_hook_resolvable nesta campanha.
+	if err := os.Remove(filepath.Join(dir, "trackfw.yaml")); err != nil {
+		t.Fatalf("remover trackfw.yaml: %v", err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, "trackfw.yaml"), 0755); err != nil {
+		t.Fatalf("mkdir trackfw.yaml: %v", err)
+	}
+
+	msgs, err := validateCredentialGuardModeDowngrade()
+	if err != nil {
+		t.Fatalf("não deveria abortar (err deveria ser nil), obteve: %v", err)
+	}
+	want := credentialGuardModeDowngradeReadFailureMessage()
+	if len(msgs) != 1 || msgs[0] != want {
+		t.Fatalf("esperado exatamente [%q], obteve: %v", want, msgs)
+	}
+	// Confirma que também não é o texto de downgrade CONFIRMADO (que seria um falso positivo de
+	// alta confiança — "sei que era block e agora não é", quando na verdade só se sabe que a
+	// leitura falhou).
+	if msgs[0] == credentialGuardModeDowngradeMessage() {
+		t.Fatalf("não deveria reusar a mensagem de downgrade confirmado para uma falha de leitura")
+	}
+
+	// E, no nível do comando inteiro, `trackfw validate` não aborta por causa disso.
+	violations, warnings, vErr := ValidateUnfiltered()
+	if vErr != nil {
+		t.Fatalf("ValidateUnfiltered não deveria abortar: %v", vErr)
+	}
+	if !hasViolation(violations, "could not be read") && !hasViolation(warnings, "could not be read") {
+		t.Fatalf("esperava a violation/warning 'could not be read' em algum lugar da saída, violations=%v warnings=%v", violations, warnings)
 	}
 }
 
