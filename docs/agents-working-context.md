@@ -33235,3 +33235,68 @@ quando os Cenários 186-191 entraram pelo ML-1C/1E/1F), mas os cenários novos R
 191, ML-1F). Nenhum cenário pré-existente quebrou — confirmado por execução completa, não por grep.
 
 **Fim.**
+
+---
+
+## 2026-09-06 — Prometeu (Tooling) — Cursor e Kiro: fecha o último bloqueio de medição do contrato de shell no Windows
+
+**Tarefa:** investigação pura, sem operação de git, sem edição de código de produto. Fechar as duas
+linhas indeterminadas (Cursor, Kiro) de
+`docs/portabilidade/2026-09-05-contrato-de-execucao-de-hook-por-cli-de-agente-no-windows.md`, que
+bloqueava a REQ `REQ-2026-09-05-os-hooks-de-guard-nao-executam-no-windows-...` (AC6 proíbe emitir
+mecanismo Windows-nativo para CLIs não medidos).
+
+**Como:** VM Windows ARM64 (`10.0.26200`, acesso `ssh powershell-vm`, sem autenticar contas de
+terceiro). `winget install --silent` de `Anysphere.Cursor` (3.19.7 arm64) e `Amazon.Kiro` (1.0.437).
+Os dois são forks Electron/VS Code — a resposta veio de **leitura estática do bundle JS instalado**,
+sem rodar hook de verdade e sem Procmon (bundle não estava minificado a ponto de perder strings
+literais/nomes de função internos das classes-chave).
+
+**Achados (medidos, não inferidos — trechos de código completos no documento):**
+- **Cursor**: sempre PowerShell (`pwsh.exe` se no PATH, senão `powershell.exe`), nunca `cmd`/bash.
+  `resources\app\out\vs\workbench\workbench.desktop.main.js` (classe `CBo`, serviço de hooks) delega
+  a `resources\app\out\vs\workbench\api\node\extensionHostProcess.js`
+  (`$executeHookDirect`/`sL()`/`pbt`), que monta `pwsh -NoProfile -NonInteractive -ExecutionPolicy
+  Bypass` e injeta o `command` bruto depois do operador `&` de um mini-script PowerShell.
+- **Kiro**: `cmd.exe` via default do Node.js (`child_process.spawn(command,{shell:true})` sem
+  override de shell — `ComSpec` do Windows), não PowerShell. Único dos 6 CLIs medidos/documentados
+  que usa `cmd.exe` como caminho comum. `resources\app\extensions\kiro.kiro-agent\dist\extension.js`
+  (extensão `kiroAgent` v1.0.794), cadeia `$Io` (parse) → `CommandAction.execute` (classe `kor`) →
+  `NodeProcessRunner.spawn` (classe `Vor`).
+- Em ambos, o `.sh` do trackfw (`scripts/trackfw-credential-guard.sh`, caminho relativo bare, sem
+  prefixo `bash`) **não dispara** — mesma classe de falha final de Codex/Gemini (shell sem suporte a
+  shebang), por caminhos técnicos diferentes (PowerShell no Cursor, `cmd.exe` no Kiro).
+
+**Resultado agregado, os 6 CLIs:** nenhum permanece indeterminado nesta pergunta. `.ps1` (ou
+equivalente nativo) é necessário para Codex, Gemini e Cursor (todos PowerShell); um mecanismo
+Windows-nativo (`.bat`/`.cmd` ou o mesmo `.ps1`) é necessário para Kiro (`cmd.exe`); Claude Code é
+condicional a Git Bash; Copilot CLI tem um bug de campo de config (`bash` sem `command`/`powershell`)
+independente de shell. Único item remanescente na tabela de experimentos: confirmar em Windows real
+a interação `command_windows`+`trust_level` do Codex.
+
+**Arquivo atualizado:**
+`docs/portabilidade/2026-09-05-contrato-de-execucao-de-hook-por-cli-de-agente-no-windows.md`
+(seções 5/6 reescritas com evidência completa, tabela por CLI, "O que este handoff presumia" e
+"Fecho" atualizados). Nenhum outro arquivo do repositório foi tocado. **Nenhuma operação de git** —
+entrega para o `trackfw_architect` avaliar se este documento entra num commit próprio ou acompanha o
+próximo ML da REQ dos hooks nativos.
+
+**Fim.**
+
+**Correção pós-autorevisão (advisor):** a primeira versão desta entrega rotulava dois pontos como
+"medido" sem tê-los lido até o fim — mesmo padrão de erro que a seção do Codex já havia corrigido
+antes neste mesmo documento. (1) Cursor: a leitura de `sL()` tinha cortado no meio (trecho terminava
+em `&`), então a afirmação "nunca cai para cmd.exe" não estava lida, só suposta por analogia com
+Gemini/Cursor. Reli `sL()` até o `throw` final: confirmado, não há branch de `cmd.exe`/bash — só
+`pwsh` → `powershell` no PATH → caminho fixo `%SYSTEMROOT%\...\powershell.exe` → exceção. (2) Kiro:
+a frase "`spawn(t){` aparece uma única vez" tinha sido escrita a partir de um único `IndexOf` (que
+sempre acha só a primeira ocorrência), não de um loop completo; e a suposição de que
+`NodeProcessRunner` é o `processRunner` realmente injetado em produção nunca tinha sido verificada
+(havia `execute_pwsh` como tool distinta em outro subsistema, o que poderia ter indicado um executor
+alternativo). Reli com loop completo: `spawn(t){` = 1 ocorrência; `new Vor` = 1 ocorrência, ligada
+exatamente à inicialização do `HooksModuleCache` (`v2Hooks`) que resolve `PreToolUse`/`PostToolUse`.
+Doc corrigido nos dois pontos antes da entrega final; nenhuma conclusão do "Fecho" mudou (ambas as
+leituras completas confirmaram, não contradisseram, os resultados iniciais), mas o grau de certeza
+agora é rastreável linha a linha, não por inferência de analogia.
+
+**Fim.**
