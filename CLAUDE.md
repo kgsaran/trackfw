@@ -52,6 +52,46 @@ Toda feature nova, correção de comportamento ou ajuste de lógica **DEVE ser i
 intencionais estão documentados em `docs/cli-parity.md`. Mudanças doc-only,
 infra e templates de artefato são exceções explícitas.
 
+## Regra Dura de Reconciliação — todo teste novo declara o que afirma (INVIOLÁVEL)
+
+**Todo ML que entregue teste novo declara, no relatório, qual conclusão do próprio ML aquele teste
+afirma — em uma frase.** E a auditoria do arquiteto **verifica esse cruzamento**, não só se o teste
+passa.
+
+### Por que esta regra existe
+
+Em 2026-09-05 um ML mediu, escreveu no relatório e registrou no vault que **`ENOTDIR` é
+indistinguível de "ausente" no Windows** (`ENOTDIR = ERROR_PATH_NOT_FOUND`). **Na mesma entrega**, ele
+criou um teste afirmando o contrário. O teste reprovou no CI de Windows, o ML foi marcado ✅, e o
+arquiteto mergeou.
+
+**Quem pegou foi uma auditoria externa**, um dia depois.
+
+Não faltou medição — a medição estava certa e escrita. **Faltou reconciliar o artefato entregue com a
+conclusão do próprio relatório.** O mesmo padrão apareceu em outros dois achados da mesma auditoria:
+
+| | medimos | e mesmo assim declaramos |
+|---|---|---|
+| A1 | `ENOTDIR` indistinguível no Windows | teste afirmando que é distinguível |
+| A2 | 7 grafias de vazio | "o vínculo está resolvido" |
+| A3 | — | um discriminante que nunca testamos |
+
+### Como aplicar
+
+**No handoff**, o arquiteto inclui a exigência. **No relatório**, o agente escreve a frase, por teste
+novo. **Na auditoria**, o arquiteto confronta cada frase com a seção de medição do mesmo relatório.
+
+🔴 **Se não for possível escrever a frase para um teste, o teste não deveria existir.** Um teste que
+não sustenta nenhuma conclusão do ML ou é decorativo, ou está afirmando outra coisa — e as duas
+possibilidades são problema.
+
+### O que esta regra NÃO cobre
+
+Ela pega **contradição interna** — artefato contra conclusão do mesmo relatório. **Não pega premissa
+errada compartilhada** pelos dois: se a medição estiver errada, o teste que a afirma passa na
+reconciliação. Para isso serve a barreira independente (`hades-tf`), que reimplementa a partir da
+leitura em vez de conferir o diff.
+
 ## Regra Dura de Causa Raiz — mesma causa, mesma REQ (INVIOLÁVEL)
 
 **Achado de mesma causa de erro é tratado na MESMA REQ. Nunca vira REQ nova.**
