@@ -102,10 +102,25 @@ diferença de mecanismo fica **escrita**.
 Fechar o roadmap com sítios conhecidos e não corrigidos marca como concluído algo cujo critério não
 foi atendido — e é o achado A1 da auditoria externa de 2026-09-05, que este projeto já pagou uma vez.
 
+### E o mesmo PR
+
+**Mesma causa → mesma REQ → mesmo PR.**
+
+A correção dos sítios descobertos entra **no PR que já está aberto** para aquela causa. Não se abre
+PR novo, e não se mergeia o PR "parcial" prometendo o resto depois.
+
+Motivo: um PR mergeado com a correção pela metade **fecha a janela de atenção**. O revisor viu, o
+gate passou, a issue foi marcada — e os sítios restantes herdam a mesma fila onde as REQs órfãs se
+perdem. O PR aberto é o que mantém a causa raiz visível até estar inteira.
+
+Consequência prática: **um PR pode ficar aberto mais tempo, e isso é aceitável.** O custo de esperar
+é menor que o de um defeito que sobrevive porque o PR que o fechava já foi mergeado.
+
 ### Como aplicar
 
 Ao encontrar sítio de mesma causa: **acrescente um ML à REQ vigente**, mova o roadmap de volta para
-`wip` se já tiver sido fechado, e registre no roadmap **por que** o escopo original não os previa.
+`wip` se já tiver sido fechado, **mantenha o PR aberto** até todos os sítios entrarem, e registre no
+roadmap **por que** o escopo original não os previa.
 
 ## Regras específicas
 
