@@ -33526,3 +33526,28 @@ commitar.
    confirma zero linhas tocadas por mim nesses 2 arquivos.
 
 **Fim.**
+
+## 2026-09-07 — Zeus (arquiteto) — frente de reconciliação FECHADA
+
+Roadmap `ROADMAP-2026-09-05-reconciliar-o-que-declaramos...` movido para `done/`.
+
+**ML-3B** — `referenceExists` fazia `os.Stat` literal num caminho que inclui a pasta de estado; como
+a pasta *é* o estado, todo `roadmap move` quebrava o vínculo por construção, e o `validate` afirmava
+"which does not exist" sobre arquivos existentes. Efeito silencioso e pior: `req_roadmap_lifecycle`
+fazia `continue` no erro do `Stat` — a regra desligava exatamente no caso que existe para achar.
+Agora resolve por basename nos 6 estados e emite aviso **verdadeiro** de `stale state path`.
+
+**ML-3D** — mesma causa no `internal/serve/api_chain.go`: `edge.To` literal vs `node.ID` do `WalkDir`
+⇒ aresta órfã. Fechado nos 3 CLIs, consumindo o **mesmo** ponto de resolução (`ExtractRefPath` e
+`ResolveRoadmapRef` exportados) em vez de duplicar.
+
+**Duas correções de medição registradas, ambas minhas:**
+1. "13 roadmaps decorados em `done/`" era **~43** — medido copiando o corpus para onde a regra varre.
+2. "128 REQs com `adr:` vazio" **não mede defeito**: `generators/req.go:89` grava vazio sempre; o
+   vínculo canônico vive no corpo. Achado por um agente, num comentário de código.
+
+**Um débito de processo declarado:** o commit `feb4402` foi pushado sem o gate completo (janela em
+96%), com o critério pendente escrito nele. Gate rodou hoje e fechou verde — 0 FAIL em 3830 linhas.
+
+**Próximo:** `docs/fila-de-execucao.md`, item 1 — o guard emite schema de hook que o Claude Code
+rejeita (`hookSpecificOutput`/`permissionDecision`).

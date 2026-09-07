@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-05
 squad: apolo-tf
 req: "docs/req/REQ-2026-09-05-auditoria-externa-aponta-que-declaramos-correcao-onde-a-nossa-propria-medicao-dizia-o-contrario.md"
@@ -7,7 +7,7 @@ req: "docs/req/REQ-2026-09-05-auditoria-externa-aponta-que-declaramos-correcao-o
 
 # Roadmap: Reconciliar o que declaramos com o que medimos, após a auditoria externa
 
-> Criado em: 2026-09-05 | Status: wip
+> Criado em: 2026-09-05 | Status: done
 
 ## Context
 
@@ -119,12 +119,25 @@ aquele teste afirma (regra dura do `CLAUDE.md`).
 O ML-3B original dizia "REQs com `adr:` vazio apontando para ADRs aceitos", o que soa delimitado. A
 medição diz outra coisa:
 
-| medido em 2026-09-06 | valor |
-|---|---|
-| REQs com `adr: ""` | **128** de 201 |
-| avisos `req_has_adr` | **103** |
-| avisos `req_has_roadmap` | **54** |
-| roadmaps de `done/` que falhariam se voltassem a `wip/` | **~43** (o ML-2A relatou 13 — **sub-medido**) |
+| medido em 2026-09-06 | valor | vale como medida de defeito? |
+|---|---|---|
+| avisos `req_has_adr` (a regra) | **103** | ✅ sim |
+| avisos `req_has_roadmap` (a regra) | **54** | ✅ sim |
+| roadmaps de `done/` que falhariam ao reentrar em `wip/` | **~43** | ✅ sim — o ML-2A relatou 13, **sub-medido** |
+| ~~REQs com `adr: ""` no frontmatter~~ | ~~128 de 201~~ | 🔴 **não** — ver correção abaixo |
+
+🔴 **Correção de medição, arquiteto, 2026-09-07.** A linha das "128 REQs com `adr:` vazio" **não mede
+defeito nenhum** e foi retirada. `internal/generators/req.go:89-90` grava `adr: ""` e `roadmap: ""`
+**sempre**, em toda REQ criada por `trackfw req new` — o vínculo canônico vive no **corpo**
+(`## Linked ADR` / `ADR: <path>`), não no frontmatter. As 128 são o **template**, não um passivo.
+
+Eu medi com `grep` e apresentei o número ao lado dos 103 da regra como se as duas linhas medissem a
+mesma coisa. É exatamente o modo de falha que este roadmap existe para fechar, cometido dentro dele.
+Quem achou foi o agente do ML-3D, e não como achado principal: estava num comentário de código.
+
+**Consequência que sobrevive à correção:** o `parseFrontmatter` antigo do `serve` lia só o bloco YAML,
+então **nunca encontrava o vínculo de nenhuma REQ gerada pelo CLI**. Não é caso de borda — é o
+formato canônico. Corrigido no ML-3D, que passou a usar o `ExtractRefPath` do validator.
 
 Decidir caso a caso qual das 103 tem ADR real é arqueologia por arquivo, sem critério de parada, e
 produz um diff que **não** é auditável contra critério de aceite. O acervo entra no **ratchet**
@@ -254,3 +267,24 @@ nenhum dos 4 casos exigidos precisava bloqueá-los.
 **13 linhas `> REQ:` decoradas em `docs/roadmaps/done/`.** Hoje fora de alcance (as regras só varrem
 `wip/` e `blocked/`) — 🔴 **mas falhariam se algum desses roadmaps voltasse para `wip/`**, que é
 exatamente o que fizemos **duas vezes hoje** (CRLF e fail-open). Bomba-relógio de formato no acervo.
+
+
+## Auditoria do ML-3D — arquiteto, 2026-09-07
+
+```
+make quality QUALITY_EXIT=0 > arquivo   →  0 FAIL em 3830 linhas · 1015 OK (eram 1008)
+grep -c '^FAIL' sobre a saida INTEIRA   →  0     (nao por tail — ver commit feb4402)
+```
+
+**Ponto único, não duplicação.** O agente exportou `ExtractRefPath` e `ResolveRoadmapRef` no
+`internal/validator` e fez o `serve` consumir os mesmos. Era a instrução central do handoff:
+duplicar a resolução recriaria em dois lugares o defeito de "ponto único por runtime não satisfeito"
+que esta campanha existe para fechar.
+
+**Achado colateral que corrigiu uma medição minha:** o gerador de REQ grava os vínculos sempre vazios
+no frontmatter — ver a correção na tabela do ML-3C.
+
+🔴 **Processo:** commitei o ML-3D **sem** o gate completo (`feb4402`), porque a janela da sessão
+estava em 96% e o agente ainda rodava. Escolha declarada no próprio commit, com o critério pendente
+escrito nele. O gate rodou nesta sessão e fechou verde — mas entre `feb4402` e agora existiu um
+commit pushado cujo gate não havia sido verificado, e isso fica registrado em vez de apagado.
