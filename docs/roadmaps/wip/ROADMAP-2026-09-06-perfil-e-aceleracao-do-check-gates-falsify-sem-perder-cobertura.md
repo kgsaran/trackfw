@@ -91,6 +91,34 @@ reduzir o volume copiado. Detalhes: `docs/portabilidade/2026-09-06-perfil-do-che
 **Critérios:** perfil com números reais · a resposta explícita "o gargalo é compilação ou execução?"
 · 🔴 **"não vale a pena" é resultado válido** (AC5 da REQ) — se o ganho possível for pequeno, dizer.
 
+## Re-medição no CI — arquiteto, 2026-09-07
+
+O perfil do ML-1A foi feito **localmente** (921s). O job do CI é outro número, e a diferença
+**cresceu** depois do perfil. Re-medido no run `34055694451` (`main`, 06/09), atribuindo o tempo por
+segmento entre invocações de script:
+
+```
+check-gates-falsify.sh          876.5s   72.6%
+check-parity-contract-coverage    94.3s    7.8%
+check-agent-namespace-union       33.4s    2.8%
+check-doctor-parity               27.0s    2.2%
+os outros 43 gates                ~177s   ~14.6%
+                                 ------
+soma dos segmentos                1208s   (job inteiro: 1237s)
+```
+
+**O que muda:** o absoluto do `check-gates-falsify` era **610s** na REQ e agora é **876s** — +44% em
+quatro dias, pelo acréscimo de cenários (só o PR #289 pôs 181 linhas novas). A tendência do job na
+`main`: ~18m no início de setembro, **20-21m** em 06/09.
+
+**O que não muda:** a premissa da Wave 2 continua válida. Um gate é ~3/4 do tempo, e o segundo
+colocado é 9x menor. Atacar o `check-gates-falsify` continua sendo o alvo certo.
+
+🔴 **Armadilha de atribuição, registrada porque quase me pegou:** a primeira passada mediu intervalo
+**entre marcos** e apontou "507s depois do `check-serve-address-parity`" — número real, atribuição
+errada, porque entre dois marcos filtrados cabem centenas de linhas de outro script. A atribuição
+correta segmenta por **invocação de script**. Mesmo modo de falha do 69-vs-101.
+
 ## Wave 2 — A aceleração que o perfil indicar
 > Dependências: ML-1A. **O caminho é escolhido pela medição, não por hipótese.**
 
