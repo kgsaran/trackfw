@@ -56,6 +56,82 @@ export HOME="$WORK/home"
 mkdir -p "$HOME"
 
 # ---------------------------------------------------------------------------
+# ML-1A (ROADMAP-2026-09-07-gates-rodam-no-windows-resolucao-de-interpretador-
+# e-binario): resolução de PY_BIN — ponto único de escolha do interpretador
+# Python usado por TODO python3 executado por este script (nunca dentro de
+# heredoc/corpus comparado, só o que é de fato invocado).
+#
+# Medido na VM Windows 10 Pro ARM64, 2026-09-07: `python3` no PATH resolve
+# para o stub da Microsoft Store (Microsoft/WindowsApps/python3), que
+# imprime "Python was not found..." e sai com rc=49 mesmo com um Python
+# real instalado e funcional em outro ponto do PATH (`python`/`py`). Trocar
+# `python3` por `python` por `sed` não é seguro em geral (em algumas
+# instalações Linux `python` não existe, ou é Python 2) — a escolha exige
+# DETECÇÃO, não substituição literal.
+#
+# Critério de rejeição do stub: candidato só é aceito se
+# `"$cand" -c 'import sys; print(sys.version_info[0])'` sair com 0 E
+# imprimir "3". O stub reprova nos dois pontos (rc=49, sem stdout "3");
+# python/py reais passam (rc=0, stdout "3"). Provado na VM:
+#   python3 -c '...'  -> rc=49, stderr "Python was not found..."
+#   python  -c '...'  -> rc=0,  stdout "3"
+#   py      -c '...'  -> rc=0,  stdout "3"
+#
+# Ordem de candidatos: python3, python, py -3 — python3 primeiro porque é o
+# nome universal em Linux/macOS (onde não há stub); python/py entram como
+# fallback só quando python3 reprova o critério, cobrindo o caso Windows
+# medido sem mudar nada no comportamento de hoje em Linux/macOS (lá python3
+# já passa no critério e é escolhido na primeira tentativa).
+resolve_py_bin() {
+  local cand
+  for cand in python3 python "py -3"; do
+    # shellcheck disable=SC2086 -- "py -3" é dois tokens deliberadamente
+    if $cand -c 'import sys; print(sys.version_info[0])' 2>/dev/null | grep -qx 3; then
+      echo "$cand"
+      return 0
+    fi
+  done
+  return 1
+}
+if ! PY_BIN=$(resolve_py_bin); then
+  echo "FAIL [falsify/setup]: nenhum interpretador Python funcional encontrado (tentados: python3, python, py -3) -- candidatos no PATH podem ser o stub da Microsoft Store (Windows) ou estar ausentes" >&2
+  exit 1
+fi
+export PY_BIN
+
+# ---------------------------------------------------------------------------
+# ML-1B (mesma ROADMAP): resolução do binário Go do CLI (FALSIFY_GO_BIN) —
+# ponto único usado por todo `GO_BIN="$FALSIFY_GO_BIN"` deste script.
+# Variáveis Txx_BIN/T*_GO_BIN (binários isolados construídos pelo próprio
+# script via build_go_or_fail, ex. Cenário 8) NÃO passam por aqui -- eles já
+# existem no ponto de uso, construídos explicitamente contra sua própria
+# cópia de módulo (com go.mod).
+#
+# Causa raiz medida (VM Windows, 2026-09-07): quando GO_BIN não existe, os
+# scripts check-*-parity.sh copiados para dentro de uma fixture ($Tn/scripts/)
+# caem num fallback que builda com `cd "$ROOT_DIR"` -- mas o ROOT_DIR ali é
+# LOCAL à cópia (resolvido via ${BASH_SOURCE[0]}), uma fixture sem go.mod.
+# Reproduzido: `go: go.mod file not found in current directory or any parent
+# directory`. Sintoma sem relação com a causa real (binário ausente) --
+# reproduzido nas duas hipóteses anteriores do arquiteto, ambas falsificadas.
+#
+# Honra o sufixo de plataforma (`go env GOEXE` -- ".exe" no Windows, vazio
+# em Linux/macOS) e, se o binário não existir em NENHUMA forma, falha alto
+# aqui -- antes de qualquer cenário tentar usá-lo -- nomeando a causa real,
+# em vez de deixar o fallback quebrado de cada sub-script produzir o erro de
+# go.mod enganoso.
+GO_EXE_SUFFIX=$(go env GOEXE 2>/dev/null || true)
+if [[ -n "$GO_EXE_SUFFIX" && -x "$ROOT_DIR/bin/trackfw$GO_EXE_SUFFIX" ]]; then
+  FALSIFY_GO_BIN="$ROOT_DIR/bin/trackfw$GO_EXE_SUFFIX"
+elif [[ -x "$ROOT_DIR/bin/trackfw" ]]; then
+  FALSIFY_GO_BIN="$ROOT_DIR/bin/trackfw"
+else
+  echo "FAIL [falsify/setup]: binário ausente -- procurado em '$ROOT_DIR/bin/trackfw$GO_EXE_SUFFIX' e '$ROOT_DIR/bin/trackfw', nenhum existe/é executável. Rode 'go build -o bin/trackfw ./cmd/trackfw' (ou 'make build') antes de check-gates-falsify.sh." >&2
+  exit 1
+fi
+export FALSIFY_GO_BIN
+
+# ---------------------------------------------------------------------------
 # Helper: assert que o comando retorna exit != 0 E a saída contém o diagnóstico.
 # Uso: assert_fails_with LABEL DIAGNOSTIC_PATTERN CMD [ARGS...]
 # ---------------------------------------------------------------------------
@@ -298,7 +374,7 @@ assert_writer_no_epipe() {
   # stdout, que É o pipe real para o guard -- preserva o mecanismo que este
   # helper existe para provar (escritor externo, pipe de verdade, EPIPE
   # observável via BrokenPipeError no stderr do escritor).
-  python3 -c "
+  "$PY_BIN" -c "
 import sys
 data = sys.stdin.read()
 sys.stdout.write(data)
@@ -365,7 +441,7 @@ remove_roadmap_acceptance_heading() {
   local dest_file=$2
   local occurrence=$3   # 0 = template simples, 1 = --from-req
   local label=$4
-  python3 - "$src_file" "$dest_file" "$occurrence" <<'PY'
+  "$PY_BIN" - "$src_file" "$dest_file" "$occurrence" <<'PY'
 import pathlib
 import sys
 
@@ -393,7 +469,7 @@ PY
 
 corrupt_literal() {
   local src=$1 dest=$2 old=$3 new=$4 label=$5
-  python3 - "$src" "$dest" "$old" "$new" "$label" <<'PY'
+  "$PY_BIN" - "$src" "$dest" "$old" "$new" "$label" <<'PY'
 import pathlib
 import sys
 
@@ -415,7 +491,7 @@ PY
 
 corrupt_python_func_literal() {
   local src=$1 dest=$2 func_name=$3 old=$4 new=$5
-  python3 - "$src" "$dest" "$func_name" "$old" "$new" <<'PY'
+  "$PY_BIN" - "$src" "$dest" "$func_name" "$old" "$new" <<'PY'
 import pathlib
 import re
 import sys
@@ -1140,7 +1216,7 @@ run_python_chain_probe() {
   # Mesmo motivo do parâmetro explícito de run_node_chain_probe acima.
   local pypi_dir=$1
   local fixdir=$2
-  python3 - "$pypi_dir" "$fixdir" <<'PY'
+  "$PY_BIN" - "$pypi_dir" "$fixdir" <<'PY'
 import sys
 pypi_dir, fixdir = sys.argv[1:3]
 sys.path.insert(0, pypi_dir)
@@ -1217,7 +1293,7 @@ printf 'X' >> "$T3/npm/tests/fixtures/slug_vectors.json"
 
 assert_fails_with "identity-parity/slug-drift" \
   "slug vectors drift" \
-  env GO_BIN="$ROOT_DIR/bin/trackfw" bash "$T3/scripts/check-identity-parity.sh"
+  env GO_BIN="$FALSIFY_GO_BIN" bash "$T3/scripts/check-identity-parity.sh"
 
 # ---------------------------------------------------------------------------
 # Cenário 3b — check-identity-parity.sh: catálogo ganha superfície nova de
@@ -1241,7 +1317,7 @@ cp "$ROOT_DIR/npm/tests/fixtures/slug_vectors.json" \
 cp "$ROOT_DIR/pypi/tests/fixtures/slug_vectors.json" \
    "$T3B/pypi/tests/fixtures/slug_vectors.json"
 
-python3 - "$T3B/internal/integrations/assets/catalog.json" <<'PY'
+"$PY_BIN" - "$T3B/internal/integrations/assets/catalog.json" <<'PY'
 import json
 import pathlib
 import sys
@@ -1283,7 +1359,7 @@ PY
 
 assert_fails_with "identity-parity/catalog-target-missing" \
   "catalog-derived target/surface is not accepted by the Go CLI" \
-  env GO_BIN="$ROOT_DIR/bin/trackfw" bash "$T3B/scripts/check-identity-parity.sh"
+  env GO_BIN="$FALSIFY_GO_BIN" bash "$T3B/scripts/check-identity-parity.sh"
 
 # ---------------------------------------------------------------------------
 # Cenário 4 — check-validate-parity.sh: npm sem regra wip_has_req → contrato diverge
@@ -1311,7 +1387,7 @@ sed "s/applyRule('wip_has_req'.*$/\/\/ [falsified] wip_has_req removed/" \
 
 assert_fails_with "validate-parity/rule-removed" \
   "validate JSON contract differs between runtimes" \
-  env GO_BIN="$ROOT_DIR/bin/trackfw" \
+  env GO_BIN="$FALSIFY_GO_BIN" \
   bash "$T4/scripts/check-validate-parity.sh"
 
 # ---------------------------------------------------------------------------
@@ -1357,7 +1433,7 @@ grep -v "require('./agents')" "$ROOT_DIR/npm/src/commands/index.js" \
 
 assert_fails_with "integration-cli-parity/missing-agents" \
   "node: root help missing agents" \
-  env GO_BIN="$ROOT_DIR/bin/trackfw" bash "$T6/scripts/check-integration-cli-parity.sh"
+  env GO_BIN="$FALSIFY_GO_BIN" bash "$T6/scripts/check-integration-cli-parity.sh"
 
 # ---------------------------------------------------------------------------
 # Cenário 7 — check-artifact-parity.sh: drift de conteúdo em req do npm →
@@ -1394,7 +1470,7 @@ fi
 
 assert_fails_with "artifact-parity/req-content-drift" \
   "artifact parity drift: req (go vs node)" \
-  env GO_BIN="$ROOT_DIR/bin/trackfw" bash "$T7/scripts/check-artifact-parity.sh"
+  env GO_BIN="$FALSIFY_GO_BIN" bash "$T7/scripts/check-artifact-parity.sh"
 
 # ---------------------------------------------------------------------------
 # Cenário 8 — check-artifact-parity.sh: drift de NOME de arquivo em req do Go →
@@ -1485,7 +1561,7 @@ fi
 
 assert_fails_with "artifact-parity/slash-roadmap-content-drift" \
   "artifact parity drift: slash_roadmap (go vs node)" \
-  env GO_BIN="$ROOT_DIR/bin/trackfw" bash "$T9/scripts/check-artifact-parity.sh"
+  env GO_BIN="$FALSIFY_GO_BIN" bash "$T9/scripts/check-artifact-parity.sh"
 
 # ---------------------------------------------------------------------------
 # Cenário 10 — check-cli-parity.sh: Python sem --from-req em roadmap new →
@@ -1504,7 +1580,7 @@ cp "$ROOT_DIR/scripts/check-cli-parity.sh" "$T10/scripts/"
 ln -s "$ROOT_DIR/scripts/check-integration-cli-parity.sh" "$T10/scripts/check-integration-cli-parity.sh"
 
 # Corromper: remover apenas o registro de --from-req do argparse Python.
-python3 - "$ROOT_DIR/pypi/trackfw/commands/roadmap.py" "$T10/pypi/trackfw/commands/roadmap.py" <<'PY'
+"$PY_BIN" - "$ROOT_DIR/pypi/trackfw/commands/roadmap.py" "$T10/pypi/trackfw/commands/roadmap.py" <<'PY'
 import pathlib
 import sys
 
@@ -1538,7 +1614,7 @@ ln -s "$ROOT_DIR/pypi" "$T11/pypi"
 cp "$ROOT_DIR/scripts/check-artifact-parity.sh" "$T11/scripts/"
 
 # Corromper: remover prefixo agent/ do log by_agent no runtime Node.
-python3 - "$ROOT_DIR/npm/src/generators/roadmap.js" "$T11/npm/src/generators/roadmap.js" <<'PY'
+"$PY_BIN" - "$ROOT_DIR/npm/src/generators/roadmap.js" "$T11/npm/src/generators/roadmap.js" <<'PY'
 import pathlib
 import sys
 
@@ -1552,7 +1628,7 @@ PY
 
 assert_fails_with "artifact-parity/by-agent-log-drift" \
   ".trackfw-log não registrou backlog → analyzing" \
-  env GO_BIN="$ROOT_DIR/bin/trackfw" bash "$T11/scripts/check-artifact-parity.sh"
+  env GO_BIN="$FALSIFY_GO_BIN" bash "$T11/scripts/check-artifact-parity.sh"
 
 # ---------------------------------------------------------------------------
 # Cenário 12 — check-referential-integrity.sh: REQ com roadmap quebrado →
@@ -1598,7 +1674,7 @@ assert_fails_with "referential-integrity/missing-roadmap" \
 # ---------------------------------------------------------------------------
 assert_fails_with "barrier/blocked-not-detected" \
   "FAIL [barrier/two-wave-flow/wave2-blocked]: expected exit 1 for Wave 2, got 0" \
-  env BARRIER_SELFTEST_BREAK=1 GO_BIN="$ROOT_DIR/bin/trackfw" bash "$ROOT_DIR/scripts/check-barrier.sh"
+  env BARRIER_SELFTEST_BREAK=1 GO_BIN="$FALSIFY_GO_BIN" bash "$ROOT_DIR/scripts/check-barrier.sh"
 
 # ---------------------------------------------------------------------------
 # Cenário 14 — check-slash-parity.sh: drift de conteúdo em status.md do npm →
@@ -1636,7 +1712,7 @@ fi
 
 assert_fails_with "slash-parity/status-content-drift" \
   "slash parity drift: status.md (go vs node)" \
-  env GO_BIN="$ROOT_DIR/bin/trackfw" bash "$T14/scripts/check-slash-parity.sh"
+  env GO_BIN="$FALSIFY_GO_BIN" bash "$T14/scripts/check-slash-parity.sh"
 
 # ---------------------------------------------------------------------------
 # Cenário 15 — check-slash-parity.sh: comando removido/renomeado do npm →
@@ -1668,7 +1744,7 @@ fi
 
 assert_fails_with "slash-parity/status-name-drift" \
   "slash parity drift: status.md missing (node) — vacuity guard failed" \
-  env GO_BIN="$ROOT_DIR/bin/trackfw" bash "$T15/scripts/check-slash-parity.sh"
+  env GO_BIN="$FALSIFY_GO_BIN" bash "$T15/scripts/check-slash-parity.sh"
 
 # ---------------------------------------------------------------------------
 # Cenário 16 — check-rules-parity.sh: drift de conteúdo no bloco de regras do
@@ -1701,7 +1777,7 @@ fi
 
 assert_fails_with "rules-parity/content-drift" \
   "rules parity drift: GEMINI.md differs between go and node" \
-  env GO_BIN="$ROOT_DIR/bin/trackfw" bash "$T16/scripts/check-rules-parity.sh"
+  env GO_BIN="$FALSIFY_GO_BIN" bash "$T16/scripts/check-rules-parity.sh"
 
 # ---------------------------------------------------------------------------
 # Cenário 17 — check-update-parity.sh: `update harness --dry-run` do Node.js
@@ -1737,7 +1813,7 @@ fi
 
 assert_fails_with "update-parity/dry-run-write-leak" \
   "filesystem tree under HOME changed during --dry-run" \
-  env GO_BIN="$ROOT_DIR/bin/trackfw" bash "$T17/scripts/check-update-parity.sh"
+  env GO_BIN="$FALSIFY_GO_BIN" bash "$T17/scripts/check-update-parity.sh"
 
 # ---------------------------------------------------------------------------
 # Cenário 18 — não-mutação: os gates que invocam CLIs reais (agents install,
@@ -1766,7 +1842,7 @@ GATES_MUTATION_CHECK=(
 
 before_status=$(cd "$ROOT_DIR" && git status --porcelain)
 for gate in "${GATES_MUTATION_CHECK[@]}"; do
-  if ! (cd "$ROOT_DIR" && GO_BIN="$ROOT_DIR/bin/trackfw" bash "$gate") >"$WORK/mutation-check.$(basename "$gate").log" 2>&1; then
+  if ! (cd "$ROOT_DIR" && GO_BIN="$FALSIFY_GO_BIN" bash "$gate") >"$WORK/mutation-check.$(basename "$gate").log" 2>&1; then
     echo "FAIL [falsify/no-repo-mutation]: $gate saiu != 0 rodando limpo (não corrompido) — não é possível provar não-mutação" >&2
     sed 's/^/    /' "$WORK/mutation-check.$(basename "$gate").log" >&2
     exit 1
@@ -1803,7 +1879,7 @@ echo "OK   [falsify/no-repo-mutation]"
 # ---------------------------------------------------------------------------
 assert_fails_with "barrier/early-break-after-target-not-detected" \
   'FAIL [barrier/wave-label/malformed-after-target/go]: expected exit 2 for after-position malformed heading, got 0' \
-  env BARRIER_BIS_SELFTEST_BREAK=1 GO_BIN="$ROOT_DIR/bin/trackfw" bash "$ROOT_DIR/scripts/check-barrier.sh"
+  env BARRIER_BIS_SELFTEST_BREAK=1 GO_BIN="$FALSIFY_GO_BIN" bash "$ROOT_DIR/scripts/check-barrier.sh"
 
 # ---------------------------------------------------------------------------
 # Cenário 20 — check-roadmap-move-parity.sh: ordenação por caminho completo no
@@ -1843,7 +1919,7 @@ fi
 
 assert_fails_with "roadmap-move-parity/discriminant-wrong-order-not-detected" \
   "roadmap-move-parity/by_agent-discriminant/node" \
-  env GO_BIN="$ROOT_DIR/bin/trackfw" bash "$T20/scripts/check-roadmap-move-parity.sh"
+  env GO_BIN="$FALSIFY_GO_BIN" bash "$T20/scripts/check-roadmap-move-parity.sh"
 
 # ---------------------------------------------------------------------------
 # Cenário 21 — check-cli-parity.sh: Node.js version subcommand reintroduz o
@@ -2142,7 +2218,7 @@ for occ_label in "0:simple" "1:from-req"; do
 
   assert_fails_with "roadmap-acceptance-heading/python/$path_name" \
     "is in wip but has no acceptance criteria block" \
-    bash -c "${!script_var}" _ "$T24P" env "PYTHONPATH=$T24P/pypi" python3 -m trackfw
+    bash -c "${!script_var}" _ "$T24P" env "PYTHONPATH=$T24P/pypi" "$PY_BIN" -m trackfw
 done
 
 # ---------------------------------------------------------------------------
@@ -2265,7 +2341,7 @@ write_roadmap_acceptance_req_fixture "$T25P_BASE/docs/req/REQ-flag-source.md"
 
 assert_lacks_pattern "roadmap-req-frontmatter-path/python/from-req-baseline" \
   "$S25_PATTERN" \
-  bash -c "$ROADMAP_CYCLE_SCRIPT_FROM_REQ" _ "$T25P_BASE" env "PYTHONPATH=$T25P_BASE/pypi" python3 -m trackfw
+  bash -c "$ROADMAP_CYCLE_SCRIPT_FROM_REQ" _ "$T25P_BASE" env "PYTHONPATH=$T25P_BASE/pypi" "$PY_BIN" -m trackfw
 
 # Braço de detecção.
 T25P="$WORK/s25-python"
@@ -2281,7 +2357,7 @@ write_roadmap_acceptance_req_fixture "$T25P/docs/req/REQ-flag-source.md"
 
 assert_fails_with "roadmap-req-frontmatter-path/python/from-req" \
   "$S25_PATTERN" \
-  bash -c "$ROADMAP_CYCLE_SCRIPT_FROM_REQ" _ "$T25P" env "PYTHONPATH=$T25P/pypi" python3 -m trackfw
+  bash -c "$ROADMAP_CYCLE_SCRIPT_FROM_REQ" _ "$T25P" env "PYTHONPATH=$T25P/pypi" "$PY_BIN" -m trackfw
 
 # ---------------------------------------------------------------------------
 # Cenário 26 — AC2b: o caminho SIMPLES (`roadmap new --title <t> --req
@@ -2399,7 +2475,7 @@ mkdir -p "$T26_BASE_P"
 cp -r "$ROOT_DIR/pypi" "$T26_BASE_P/pypi"
 write_roadmap_acceptance_req_fixture "$T26_BASE_P/docs/req/REQ-flag-source.md"
 assert_succeeds "roadmap-req-frontmatter-path/python/simple-baseline" \
-  bash -c "$SIMPLE_REQ_FIELD_SCRIPT" _ "$T26_BASE_P" env "PYTHONPATH=$T26_BASE_P/pypi" python3 -m trackfw
+  bash -c "$SIMPLE_REQ_FIELD_SCRIPT" _ "$T26_BASE_P" env "PYTHONPATH=$T26_BASE_P/pypi" "$PY_BIN" -m trackfw
 
 # --- Python: prova de detecção ----------------------------------------------
 T26C_P="$WORK/s26-corrupt-python"
@@ -2415,7 +2491,7 @@ write_roadmap_acceptance_req_fixture "$T26C_P/docs/req/REQ-flag-source.md"
 
 assert_fails_with "roadmap-req-frontmatter-path/python/simple-detects-regression" \
   "AC2b regression" \
-  bash -c "$SIMPLE_REQ_FIELD_SCRIPT" _ "$T26C_P" env "PYTHONPATH=$T26C_P/pypi" python3 -m trackfw
+  bash -c "$SIMPLE_REQ_FIELD_SCRIPT" _ "$T26C_P" env "PYTHONPATH=$T26C_P/pypi" "$PY_BIN" -m trackfw
 
 # ---------------------------------------------------------------------------
 # Cenário 27 — validate: adr_accepted_when_req_done + blocked_by_draft_adr
@@ -2572,10 +2648,10 @@ write_req_open_blocked_fixture "$T27_P_VIOLATING/docs/req/REQ-2026-08-01-blocked
 
 assert_fails_with "adr-not-accepted/python/adr_accepted_when_req_done-baseline" \
   "$S27_MSG_ACCEPTED" \
-  bash -c "cd '$T27_P_VIOLATING' && exec env PYTHONPATH='$T27_P_VIOLATING/pypi' python3 -m trackfw validate"
+  bash -c "cd '$T27_P_VIOLATING' && exec env PYTHONPATH='$T27_P_VIOLATING/pypi' $PY_BIN -m trackfw validate"
 assert_fails_with "adr-not-accepted/python/blocked_by_draft_adr-baseline" \
   "$S27_MSG_BLOCKED" \
-  bash -c "cd '$T27_P_VIOLATING' && exec env PYTHONPATH='$T27_P_VIOLATING/pypi' python3 -m trackfw validate"
+  bash -c "cd '$T27_P_VIOLATING' && exec env PYTHONPATH='$T27_P_VIOLATING/pypi' $PY_BIN -m trackfw validate"
 
 T27_P_CLEAN="$WORK/s27-python-clean"
 mkdir -p "$T27_P_CLEAN"
@@ -2589,7 +2665,7 @@ write_req_done_fixture "$T27_P_CLEAN/docs/req/REQ-2026-08-01-done-superseded-fix
   "docs/roadmaps/wip/ROADMAP-2026-08-01-superseded-fixture.md"
 
 assert_succeeds "adr-not-accepted/python/superseded-not-a-violation-baseline" \
-  bash -c "cd '$T27_P_CLEAN' && exec env PYTHONPATH='$T27_P_CLEAN/pypi' python3 -m trackfw validate"
+  bash -c "cd '$T27_P_CLEAN' && exec env PYTHONPATH='$T27_P_CLEAN/pypi' $PY_BIN -m trackfw validate"
 
 # --- Python: prova de detecção (_adr_not_accepted neutralizado) ------------
 T27C_P="$WORK/s27-corrupt-python"
@@ -2605,10 +2681,10 @@ corrupt_literal \
 
 assert_lacks_pattern "adr-not-accepted/python/adr_accepted_when_req_done-detects-regression" \
   "$S27_MSG_ACCEPTED" \
-  bash -c "cd '$T27_P_VIOLATING' && exec env PYTHONPATH='$T27C_P/pypi' python3 -m trackfw validate"
+  bash -c "cd '$T27_P_VIOLATING' && exec env PYTHONPATH='$T27C_P/pypi' $PY_BIN -m trackfw validate"
 assert_lacks_pattern "adr-not-accepted/python/blocked_by_draft_adr-detects-regression" \
   "$S27_MSG_BLOCKED" \
-  bash -c "cd '$T27_P_VIOLATING' && exec env PYTHONPATH='$T27C_P/pypi' python3 -m trackfw validate"
+  bash -c "cd '$T27_P_VIOLATING' && exec env PYTHONPATH='$T27C_P/pypi' $PY_BIN -m trackfw validate"
 
 # ---------------------------------------------------------------------------
 # Cenário 28 — extractRefPath (e equivalentes) removem backtick da referência
@@ -2713,7 +2789,7 @@ write_req_done_fixture_backtick_body_only "$T28_P_VIOLATING/docs/req/REQ-2026-08
 
 assert_fails_with "backtick-ref/python/adr_accepted_when_req_done-baseline" \
   "$S28_MSG_ACCEPTED" \
-  bash -c "cd '$T28_P_VIOLATING' && exec env PYTHONPATH='$T28_P_VIOLATING/pypi' python3 -m trackfw validate"
+  bash -c "cd '$T28_P_VIOLATING' && exec env PYTHONPATH='$T28_P_VIOLATING/pypi' $PY_BIN -m trackfw validate"
 
 # --- Python: prova de detecção (backtick reintroduzido em _extract_ref_path)
 #
@@ -2737,7 +2813,7 @@ corrupt_literal \
 
 assert_lacks_pattern "backtick-ref/python/adr_accepted_when_req_done-detects-regression" \
   "$S28_MSG_ACCEPTED" \
-  bash -c "cd '$T28_P_VIOLATING' && exec env PYTHONPATH='$T28C_P/pypi' python3 -m trackfw validate"
+  bash -c "cd '$T28_P_VIOLATING' && exec env PYTHONPATH='$T28C_P/pypi' $PY_BIN -m trackfw validate"
 
 # ---------------------------------------------------------------------------
 # Cenário 29 — os 3 CLIs imprimem a MESMA mensagem de sucesso do `validate`
@@ -2777,7 +2853,7 @@ scaffold_adr_req_project "$T29_PROJECT"
 
 s29_go_out=$(cd "$T29_PROJECT" && env LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 "$T27_GO_BIN" validate)$'\n'
 s29_node_out=$(cd "$T29_PROJECT" && env LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 node "$ROOT_DIR/npm/bin/trackfw" validate)$'\n'
-s29_python_out=$(cd "$T29_PROJECT" && env LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw validate)$'\n'
+s29_python_out=$(cd "$T29_PROJECT" && env LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 PYTHONPATH="$ROOT_DIR/pypi" "$PY_BIN" -m trackfw validate)$'\n'
 
 if [[ "$s29_go_out" == "$S29_EXPECTED" && "$s29_node_out" == "$S29_EXPECTED" && "$s29_python_out" == "$S29_EXPECTED" ]]; then
   echo "OK   [falsify/validate-ok-message/baseline-byte-identical-and-pinned]"
@@ -2799,7 +2875,7 @@ corrupt_literal \
   'print(_green("✓ Governance OK"))' \
   "s29-python"
 
-s29c_python_out=$(cd "$T29_PROJECT" && env LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 PYTHONPATH="$T29C_P/pypi" python3 -m trackfw validate)$'\n'
+s29c_python_out=$(cd "$T29_PROJECT" && env LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 PYTHONPATH="$T29C_P/pypi" "$PY_BIN" -m trackfw validate)$'\n'
 if [[ "$s29c_python_out" != "$S29_EXPECTED" ]]; then
   echo "OK   [falsify/validate-ok-message/python-detects-regression]"
 else
@@ -2841,7 +2917,7 @@ S30_EXPECTED=$'── trackfw status ──────────────�
 # --- prova positiva: os 3 CLIs, contra o literal pinado ---------------------
 s30_go_out=$(cd "$S30_PROJECT" && "$T27_GO_BIN" status)$'\n'
 s30_node_out=$(cd "$S30_PROJECT" && node "$ROOT_DIR/npm/bin/trackfw" status)$'\n'
-s30_python_out=$(cd "$S30_PROJECT" && env PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw status)$'\n'
+s30_python_out=$(cd "$S30_PROJECT" && env PYTHONPATH="$ROOT_DIR/pypi" "$PY_BIN" -m trackfw status)$'\n'
 
 if [[ "$s30_go_out" == "$S30_EXPECTED" && "$s30_node_out" == "$S30_EXPECTED" && "$s30_python_out" == "$S30_EXPECTED" ]]; then
   echo "OK   [falsify/status-inventory/baseline-byte-identical-and-pinned]"
@@ -2923,7 +2999,7 @@ S31_EXPECTED=$'── trackfw status ──────────────�
 
 s31_go_out=$(cd "$S31_PROJECT" && "$T27_GO_BIN" status)$'\n'
 s31_node_out=$(cd "$S31_PROJECT" && node "$ROOT_DIR/npm/bin/trackfw" status)$'\n'
-s31_python_out=$(cd "$S31_PROJECT" && env PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw status)$'\n'
+s31_python_out=$(cd "$S31_PROJECT" && env PYTHONPATH="$ROOT_DIR/pypi" "$PY_BIN" -m trackfw status)$'\n'
 
 if [[ "$s31_go_out" == "$S31_EXPECTED" && "$s31_node_out" == "$S31_EXPECTED" && "$s31_python_out" == "$S31_EXPECTED" ]]; then
   echo "OK   [falsify/status-inventory-by-agent/baseline-byte-identical-and-pinned]"
@@ -2954,7 +3030,7 @@ corrupt_literal \
   '            agent_wip = _list_files(os.path.join(roadmap_dir, agent, "backlog"))' \
   "s31-python"
 
-s31c_python_out=$(cd "$S31_PROJECT" && env PYTHONPATH="$T31C_PY/pypi" python3 -m trackfw status)$'\n'
+s31c_python_out=$(cd "$S31_PROJECT" && env PYTHONPATH="$T31C_PY/pypi" "$PY_BIN" -m trackfw status)$'\n'
 if [[ "$s31c_python_out" != "$S31_EXPECTED" ]]; then
   echo "OK   [falsify/status-inventory-by-agent/python-detects-wip-by-agent-body-drift]"
 else
@@ -3004,7 +3080,7 @@ assert_fails_with "unpaired-delimiter/node/adr_accepted_when_req_done-baseline" 
   bash -c "cd '$T32_PROJECT' && exec node '$ROOT_DIR/npm/bin/trackfw' validate"
 assert_fails_with "unpaired-delimiter/python/adr_accepted_when_req_done-baseline" \
   "$S27_MSG_ACCEPTED" \
-  bash -c "cd '$T32_PROJECT' && exec env PYTHONPATH='$ROOT_DIR/pypi' python3 -m trackfw validate"
+  bash -c "cd '$T32_PROJECT' && exec env PYTHONPATH='$ROOT_DIR/pypi' $PY_BIN -m trackfw validate"
 
 # --- Python: prova de detecção (delimitador não pareado deixa de ser -------
 # removido — reverte exatamente o call site alterado por 588b9b8)
@@ -3021,7 +3097,7 @@ corrupt_literal \
 
 assert_lacks_pattern "unpaired-delimiter/python/adr_accepted_when_req_done-detects-regression" \
   "$S27_MSG_ACCEPTED" \
-  bash -c "cd '$T32_PROJECT' && exec env PYTHONPATH='$T32C_P/pypi' python3 -m trackfw validate"
+  bash -c "cd '$T32_PROJECT' && exec env PYTHONPATH='$T32C_P/pypi' $PY_BIN -m trackfw validate"
 
 # ---------------------------------------------------------------------------
 # Cenário 33 — item 2 do ROADMAP-2026-08-02-fechar-as-duas-divergencias-de-
@@ -3089,7 +3165,7 @@ S33_EXPECTED=$'── trackfw status ──────────────�
 
 s33_go_out=$(cd "$S33_PROJECT" && "$T27_GO_BIN" status)$'\n'
 s33_node_out=$(cd "$S33_PROJECT" && node "$ROOT_DIR/npm/bin/trackfw" status)$'\n'
-s33_python_out=$(cd "$S33_PROJECT" && env PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw status)$'\n'
+s33_python_out=$(cd "$S33_PROJECT" && env PYTHONPATH="$ROOT_DIR/pypi" "$PY_BIN" -m trackfw status)$'\n'
 
 if [[ "$s33_go_out" == "$S33_EXPECTED" && "$s33_node_out" == "$S33_EXPECTED" && "$s33_python_out" == "$S33_EXPECTED" ]]; then
   echo "OK   [falsify/status-by-agent-fallback-order/baseline-byte-identical-and-pinned]"
@@ -3132,7 +3208,7 @@ corrupt_literal \
 ' \
   "s33-python"
 
-s33c_python_out=$(cd "$S33_PROJECT" && env PYTHONPATH="$T33C_PY/pypi" python3 -m trackfw status)$'\n'
+s33c_python_out=$(cd "$S33_PROJECT" && env PYTHONPATH="$T33C_PY/pypi" "$PY_BIN" -m trackfw status)$'\n'
 if [[ "$s33c_python_out" == "$S33_EXPECTED" ]]; then
   echo "FAIL [falsify/status-by-agent-fallback-order/python-detects-order-regression]: resolve_agent_namespaces revertido para ordem invertida mas a comparação continuou passando (checagem vácua)" >&2
   exit 1
@@ -3250,7 +3326,7 @@ S34_EXPECTED=$'── trackfw status ──────────────�
 
 s34_go_out=$(cd "$S34_PROJECT" && "$T27_GO_BIN" status)$'\n'
 s34_node_out=$(cd "$S34_PROJECT" && node "$ROOT_DIR/npm/bin/trackfw" status)$'\n'
-s34_python_out=$(cd "$S34_PROJECT" && env PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw status)$'\n'
+s34_python_out=$(cd "$S34_PROJECT" && env PYTHONPATH="$ROOT_DIR/pypi" "$PY_BIN" -m trackfw status)$'\n'
 
 if [[ "$s34_go_out" == "$S34_EXPECTED" && "$s34_node_out" == "$S34_EXPECTED" && "$s34_python_out" == "$S34_EXPECTED" ]]; then
   echo "OK   [falsify/config-unindented-agents/baseline-byte-identical-and-pinned]"
@@ -3479,7 +3555,7 @@ S35_EXPECTED=$'── trackfw status ──────────────�
 
 s35_go_out=$(cd "$S35_PROJECT" && "$T27_GO_BIN" status)$'\n'
 s35_node_out=$(cd "$S35_PROJECT" && node "$ROOT_DIR/npm/bin/trackfw" status)$'\n'
-s35_python_out=$(cd "$S35_PROJECT" && env PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw status)$'\n'
+s35_python_out=$(cd "$S35_PROJECT" && env PYTHONPATH="$ROOT_DIR/pypi" "$PY_BIN" -m trackfw status)$'\n'
 
 if [[ "$s35_go_out" == "$S35_EXPECTED" && "$s35_node_out" == "$S35_EXPECTED" && "$s35_python_out" == "$S35_EXPECTED" ]]; then
   echo "OK   [falsify/config-inline-comma-in-quotes/baseline-byte-identical-and-pinned]"
@@ -3507,7 +3583,7 @@ S35_ZETA_UNDECLARED='agent namespace "zeta" exists in roadmap_dir but is not dec
 # validate rodou, varreu o disco e a regra disparou de verdade.
 s35_validate_go_out=$(cd "$S35_PROJECT" && "$T27_GO_BIN" validate 2>&1; true)
 s35_validate_node_out=$(cd "$S35_PROJECT" && node "$ROOT_DIR/npm/bin/trackfw" validate 2>&1; true)
-s35_validate_python_out=$(cd "$S35_PROJECT" && env PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw validate 2>&1; true)
+s35_validate_python_out=$(cd "$S35_PROJECT" && env PYTHONPATH="$ROOT_DIR/pypi" "$PY_BIN" -m trackfw validate 2>&1; true)
 for pair in "go:$s35_validate_go_out" "node:$s35_validate_node_out" "python:$s35_validate_python_out"; do
   runtime="${pair%%:*}"
   out="${pair#*:}"
@@ -3582,7 +3658,7 @@ corrupt_literal \
   $'    if "agents" in m:\n        items = _string_list(m["agents"])\n' \
   "s35-python"
 
-s35c_validate_python_out=$(cd "$S35_PROJECT" && env PYTHONPATH="$T35C_P/pypi" python3 -m trackfw validate 2>&1; true)
+s35c_validate_python_out=$(cd "$S35_PROJECT" && env PYTHONPATH="$T35C_P/pypi" "$PY_BIN" -m trackfw validate 2>&1; true)
 if grep -qF "$S35_KATSU_UNDECLARED" <<<"$s35c_validate_python_out" && grep -qF "$S35_OBI_UNDECLARED" <<<"$s35c_validate_python_out"; then
   echo "OK   [falsify/config-inline-comma-in-quotes/python-detects-agents-discarded]"
 else
@@ -3705,7 +3781,7 @@ S36_EXPECTED=$'── trackfw status ──────────────�
 
 s36_go_out=$(cd "$S36_PROJECT" && "$T27_GO_BIN" status)$'\n'
 s36_node_out=$(cd "$S36_PROJECT" && node "$ROOT_DIR/npm/bin/trackfw" status)$'\n'
-s36_python_out=$(cd "$S36_PROJECT" && env PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw status)$'\n'
+s36_python_out=$(cd "$S36_PROJECT" && env PYTHONPATH="$ROOT_DIR/pypi" "$PY_BIN" -m trackfw status)$'\n'
 
 if [[ "$s36_go_out" == "$S36_EXPECTED" && "$s36_node_out" == "$S36_EXPECTED" && "$s36_python_out" == "$S36_EXPECTED" ]]; then
   echo "OK   [falsify/config-schema-discriminant/baseline-byte-identical-and-pinned]"
@@ -3787,7 +3863,7 @@ corrupt_literal \
   $'    if isinstance(node, yaml.ScalarNode):\n        return yaml.constructor.SafeConstructor().construct_object(node, deep=True)\n' \
   "s36-python"
 
-s36c_python_out=$(cd "$S36_PROJECT" && env PYTHONPATH="$T36C_P/pypi" python3 -m trackfw status)$'\n'
+s36c_python_out=$(cd "$S36_PROJECT" && env PYTHONPATH="$T36C_P/pypi" "$PY_BIN" -m trackfw status)$'\n'
 if [[ "$s36c_python_out" == "$S36_EXPECTED" ]]; then
   echo "FAIL [falsify/config-schema-discriminant/python-detects-typed-scalar-regression]: _normalize_node revertido mas a comparação continuou passando (checagem vácua)" >&2
   exit 1
@@ -3839,7 +3915,7 @@ s37_go_out=$(cd "$S37_PROJECT" && "$T27_GO_BIN" status 2>&1)
 s37_go_status=$?
 s37_node_out=$(cd "$S37_PROJECT" && node "$ROOT_DIR/npm/bin/trackfw" status 2>&1)
 s37_node_status=$?
-s37_python_out=$(cd "$S37_PROJECT" && env PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw status 2>&1)
+s37_python_out=$(cd "$S37_PROJECT" && env PYTHONPATH="$ROOT_DIR/pypi" "$PY_BIN" -m trackfw status 2>&1)
 s37_python_status=$?
 set -e
 
@@ -3940,7 +4016,7 @@ S38_REGRESSED_WARNING='4 roadmaps in wip/ (limit: 1) — consider focusing'
 set +e
 s38_go_out=$(cd "$S38_PROJECT" && "$T27_GO_BIN" validate 2>&1)
 s38_node_out=$(cd "$S38_PROJECT" && node "$ROOT_DIR/npm/bin/trackfw" validate 2>&1)
-s38_python_out=$(cd "$S38_PROJECT" && env PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw validate 2>&1)
+s38_python_out=$(cd "$S38_PROJECT" && env PYTHONPATH="$ROOT_DIR/pypi" "$PY_BIN" -m trackfw validate 2>&1)
 set -e
 
 if grep -qF "$S38_EXPECTED_WARNING" <<<"$s38_go_out" \
@@ -4017,7 +4093,7 @@ corrupt_literal \
   "$PY_S38_OLD" "$PY_S38_NEW" "s38-python"
 
 set +e
-s38c_python_out=$(cd "$S38_PROJECT" && env PYTHONPATH="$T38C_PYTHON/pypi" python3 -m trackfw validate 2>&1)
+s38c_python_out=$(cd "$S38_PROJECT" && env PYTHONPATH="$T38C_PYTHON/pypi" "$PY_BIN" -m trackfw validate 2>&1)
 set -e
 if grep -qF "$S38_REGRESSED_WARNING" <<<"$s38c_python_out" && ! grep -qF "$S38_EXPECTED_WARNING" <<<"$s38c_python_out"; then
   echo "OK   [falsify/wip-limit-quoted/python-detects-artisanal-reader-reintroduced]"
@@ -4200,7 +4276,7 @@ S41_BASE="$WORK/s41-python-baseline"
 mkdir -p "$S41_BASE"
 write_update_hooks_discriminant_fixture "$S41_BASE/trackfw.yaml"
 set +e
-s41_base_out=$(cd "$S41_BASE" && env PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw update 2>&1)
+s41_base_out=$(cd "$S41_BASE" && env PYTHONPATH="$ROOT_DIR/pypi" "$PY_BIN" -m trackfw update 2>&1)
 s41_base_status=$?
 set -e
 if [[ $s41_base_status -eq 0 ]] \
@@ -4228,7 +4304,7 @@ S41C="$WORK/s41-python-corrupt"
 mkdir -p "$S41C"
 write_update_hooks_discriminant_fixture "$S41C/trackfw.yaml"
 set +e
-s41c_out=$(cd "$S41C" && env PYTHONPATH="$T41C_PYTHON/pypi" python3 -m trackfw update 2>&1)
+s41c_out=$(cd "$S41C" && env PYTHONPATH="$T41C_PYTHON/pypi" "$PY_BIN" -m trackfw update 2>&1)
 set -e
 if grep -qF "$S39_REGRESSED_MSG" <<<"$s41c_out" && ! grep -qF "$S39_EXPECTED_MSG" <<<"$s41c_out"; then
   echo "OK   [falsify/update-config-loader/python-detects-artisanal-scanner-reintroduced]"
@@ -4244,7 +4320,7 @@ fi
 # realmente depende da invocação bare (_run) e não passaria por acidente com
 # qualquer flag.
 set +e
-s41c_dryrun_out=$(cd "$S41C" && env PYTHONPATH="$T41C_PYTHON/pypi" python3 -m trackfw update --dry-run 2>&1)
+s41c_dryrun_out=$(cd "$S41C" && env PYTHONPATH="$T41C_PYTHON/pypi" "$PY_BIN" -m trackfw update --dry-run 2>&1)
 set -e
 if ! grep -qF "$S39_REGRESSED_MSG" <<<"$s41c_dryrun_out" && ! grep -qF "$S39_EXPECTED_MSG" <<<"$s41c_dryrun_out"; then
   echo "OK   [falsify/update-config-loader/python-dry-run-path-confirmed-blind]"
@@ -4288,7 +4364,7 @@ fi
 
 assert_fails_with "branch-new-parity/no-match/go-vs-node/err-message-reformatted-not-detected" \
   "branch-new-parity/no-match/go-vs-node/err" \
-  env GO_BIN="$ROOT_DIR/bin/trackfw" bash "$T42/scripts/check-branch-new-parity.sh"
+  env GO_BIN="$FALSIFY_GO_BIN" bash "$T42/scripts/check-branch-new-parity.sh"
 
 # ---------------------------------------------------------------------------
 # Cenário 43 — check-attention-scripts-parity.sh: Python literal do texto
@@ -4329,7 +4405,7 @@ corrupt_literal \
 
 assert_fails_with "attention-scripts-parity/trackfw-attention-cleanup.sh/go-vs-py-comment-drift-not-detected" \
   "attention-scripts-parity/trackfw-attention-cleanup.sh/go-vs-py" \
-  env GO_BIN="$ROOT_DIR/bin/trackfw" bash "$T43/scripts/check-attention-scripts-parity.sh"
+  env GO_BIN="$FALSIFY_GO_BIN" bash "$T43/scripts/check-attention-scripts-parity.sh"
 
 # ---------------------------------------------------------------------------
 # Cenário 44 — check-agent-hooks-parity.sh: Node.js muda o `matcher` de
@@ -4375,7 +4451,7 @@ corrupt_literal \
 
 assert_fails_with "agent-hooks-parity/kiro/go-vs-node-matcher-drift-not-detected" \
   "agent-hooks-parity/kiro/go-vs-node" \
-  env GO_BIN="$ROOT_DIR/bin/trackfw" PY_ROOT="$ROOT_DIR/pypi" bash "$T44/scripts/check-agent-hooks-parity.sh"
+  env GO_BIN="$FALSIFY_GO_BIN" PY_ROOT="$ROOT_DIR/pypi" bash "$T44/scripts/check-agent-hooks-parity.sh"
 
 # ---------------------------------------------------------------------------
 # Cenário 45 — check-harness-hooks-parity.sh: Python muda o `matcher` de
@@ -4424,7 +4500,7 @@ corrupt_literal \
 
 assert_fails_with "harness-hooks-parity/kiro/go-vs-py-matcher-drift-not-detected" \
   "harness-hooks-parity/kiro/go-vs-py" \
-  env GO_BIN="$ROOT_DIR/bin/trackfw" PY_ROOT="$T45/pypi" bash "$T45/scripts/check-harness-hooks-parity.sh"
+  env GO_BIN="$FALSIFY_GO_BIN" PY_ROOT="$T45/pypi" bash "$T45/scripts/check-harness-hooks-parity.sh"
 
 # ---------------------------------------------------------------------------
 # Cenário 46 — check-agent-hooks-parity.sh: os 3 stacks param de emitir a
@@ -4526,7 +4602,7 @@ setup_npm_tree "$T46B"
 cp "$ROOT_DIR/scripts/check-agent-hooks-parity.sh" "$T46B/scripts/"
 
 set +e
-s46b_out=$(env GO_BIN="$ROOT_DIR/bin/trackfw" PY_ROOT="$ROOT_DIR/pypi" bash "$T46B/scripts/check-agent-hooks-parity.sh" 2>&1)
+s46b_out=$(env GO_BIN="$FALSIFY_GO_BIN" PY_ROOT="$ROOT_DIR/pypi" bash "$T46B/scripts/check-agent-hooks-parity.sh" 2>&1)
 s46b_status=$?
 set -e
 if [[ $s46b_status -ne 0 ]]; then
@@ -4837,7 +4913,7 @@ corrupt_literal \
 
 assert_fails_with "attention-scripts-parity/trackfw-credential-guard.sh/go-vs-node-composition-reordered-not-detected" \
   "attention-scripts-parity/trackfw-credential-guard.sh/go-vs-node" \
-  env GO_BIN="$ROOT_DIR/bin/trackfw" bash "$T48/scripts/check-attention-scripts-parity.sh"
+  env GO_BIN="$FALSIFY_GO_BIN" bash "$T48/scripts/check-attention-scripts-parity.sh"
 
 # ---------------------------------------------------------------------------
 # Cenário 49 — internal/validator: prova de não-vacuidade da regra
@@ -5591,7 +5667,7 @@ cp -r "$ROOT_DIR/pypi" "$T55_BASE/pypi"
 cp "$ROOT_DIR/scripts/check-unknown-command-parity.sh" "$T55_BASE/scripts/"
 
 assert_succeeds "unknown-command-parity/text-drift/python-baseline" \
-  env GO_BIN="$ROOT_DIR/bin/trackfw" bash "$T55_BASE/scripts/check-unknown-command-parity.sh"
+  env GO_BIN="$FALSIFY_GO_BIN" bash "$T55_BASE/scripts/check-unknown-command-parity.sh"
 
 T55="$WORK/s55"
 mkdir -p "$T55/scripts"
@@ -5607,7 +5683,7 @@ corrupt_literal \
 
 assert_fails_with "unknown-command-parity/text-drift/python-detects-regression" \
   "canonical message missing" \
-  env GO_BIN="$ROOT_DIR/bin/trackfw" bash "$T55/scripts/check-unknown-command-parity.sh"
+  env GO_BIN="$FALSIFY_GO_BIN" bash "$T55/scripts/check-unknown-command-parity.sh"
 
 # ---------------------------------------------------------------------------
 # Cenário 56 — divergência de EXIT CODE: Node.js troca `process.exit(1)` por
@@ -5626,7 +5702,7 @@ cp -r "$ROOT_DIR/pypi" "$T56_BASE/pypi"
 cp "$ROOT_DIR/scripts/check-unknown-command-parity.sh" "$T56_BASE/scripts/"
 
 assert_succeeds "unknown-command-parity/exit-code-drift/node-baseline" \
-  env GO_BIN="$ROOT_DIR/bin/trackfw" bash "$T56_BASE/scripts/check-unknown-command-parity.sh"
+  env GO_BIN="$FALSIFY_GO_BIN" bash "$T56_BASE/scripts/check-unknown-command-parity.sh"
 
 T56="$WORK/s56"
 mkdir -p "$T56/scripts"
@@ -5642,7 +5718,7 @@ corrupt_literal \
 
 assert_fails_with "unknown-command-parity/exit-code-drift/node-detects-regression" \
   "exit codes diverge" \
-  env GO_BIN="$ROOT_DIR/bin/trackfw" bash "$T56/scripts/check-unknown-command-parity.sh"
+  env GO_BIN="$FALSIFY_GO_BIN" bash "$T56/scripts/check-unknown-command-parity.sh"
 
 # ---------------------------------------------------------------------------
 # Cenário 57 — SUGESTÃO ausente: Go deixa de emitir a linha `Did you mean
@@ -5742,7 +5818,7 @@ S58N_BASE_HOME="$S58N_BASE_ROOT/home"
 mkdir -p "$S58N_BASE_PROJECT" "$S58N_BASE_HOME"
 (cd "$S58N_BASE_PROJECT" && HOME="$S58N_BASE_HOME" node "$ROOT_DIR/npm/bin/trackfw" \
   agents install --scope project --targets codex --items iac >/dev/null 2>&1)
-python3 - "$S58N_BASE_PROJECT" <<'PY'
+"$PY_BIN" - "$S58N_BASE_PROJECT" <<'PY'
 import json, sys, pathlib
 project = pathlib.Path(sys.argv[1])
 manifest_path = project / ".trackfw/integrations-manifest.json"
@@ -5790,7 +5866,7 @@ S58N_MOD_HOME="$WORK/s58-node-mod-home"
 mkdir -p "$S58N_MOD_PROJECT" "$S58N_MOD_HOME"
 (cd "$S58N_MOD_PROJECT" && HOME="$S58N_MOD_HOME" node "$S58N_MOD_ROOT/npm/bin/trackfw" \
   agents install --scope project --targets codex --items iac >/dev/null 2>&1)
-python3 - "$S58N_MOD_PROJECT" <<'PY'
+"$PY_BIN" - "$S58N_MOD_PROJECT" <<'PY'
 import json, sys, pathlib
 project = pathlib.Path(sys.argv[1])
 manifest_path = project / ".trackfw/integrations-manifest.json"
@@ -5827,7 +5903,7 @@ S58G_HOME="$WORK/s58-go-home"
 mkdir -p "$S58G_PROJECT" "$S58G_HOME"
 (cd "$S58G_PROJECT" && HOME="$S58G_HOME" "$T27_GO_BIN" \
   agents install --scope project --targets codex --items iac >/dev/null 2>&1)
-python3 - "$S58G_PROJECT" <<'PY'
+"$PY_BIN" - "$S58G_PROJECT" <<'PY'
 import json, sys, pathlib
 project = pathlib.Path(sys.argv[1])
 manifest_path = project / ".trackfw/integrations-manifest.json"
@@ -5872,7 +5948,7 @@ corrupt_literal \
   "$S58P_ROADMAP_OLD" "$S58P_ROADMAP_NEW" "s58-py-base-roadmap-list-raise"
 
 set +e
-s58p_base_out=$(env PYTHONPATH="$S58P_BASE_PYPI" python3 -m trackfw roadmap list 2>&1)
+s58p_base_out=$(env PYTHONPATH="$S58P_BASE_PYPI" "$PY_BIN" -m trackfw roadmap list 2>&1)
 s58p_base_status=$?
 set -e
 
@@ -5902,7 +5978,7 @@ corrupt_literal \
   "s58-py-revert-fatal-handler"
 
 set +e
-s58p_mod_out=$(env PYTHONPATH="$S58P_MOD_PYPI" python3 -m trackfw roadmap list 2>&1)
+s58p_mod_out=$(env PYTHONPATH="$S58P_MOD_PYPI" "$PY_BIN" -m trackfw roadmap list 2>&1)
 s58p_mod_status=$?
 set -e
 
@@ -5938,7 +6014,7 @@ cp -r "$ROOT_DIR/pypi" "$T59_BASE/pypi"
 cp "$ROOT_DIR/scripts/check-serve-address-parity.sh" "$T59_BASE/scripts/"
 
 assert_succeeds "serve-address-parity/wildcard-bind-regression/python-baseline" \
-  env GO_BIN="$ROOT_DIR/bin/trackfw" bash "$T59_BASE/scripts/check-serve-address-parity.sh"
+  env GO_BIN="$FALSIFY_GO_BIN" bash "$T59_BASE/scripts/check-serve-address-parity.sh"
 
 T59="$WORK/s59"
 mkdir -p "$T59/scripts"
@@ -5954,7 +6030,7 @@ corrupt_literal \
 
 assert_fails_with "serve-address-parity/wildcard-bind-regression/python-detects-regression" \
   "expected lsof to show 127.0.0.1:" \
-  env GO_BIN="$ROOT_DIR/bin/trackfw" bash "$T59/scripts/check-serve-address-parity.sh"
+  env GO_BIN="$FALSIFY_GO_BIN" bash "$T59/scripts/check-serve-address-parity.sh"
 
 # Cenários 60/61 — scripts/trackfw-git-branch-guard.sh (ML-1A,
 # ROADMAP-2026-08-16-higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-
@@ -6057,7 +6133,7 @@ assert_guard_exit "git-branch-guard/switch-c/detection-catches-bypass" \
 # token. Um `-m "..."` sem heredoc, sem quebra de linha antes de "git", não
 # reproduz o bug (a linha inteira permanece grudada no segmento que começa
 # com "bin/trackfw").
-PROSE_PAYLOAD=$(python3 -c '
+PROSE_PAYLOAD=$("$PY_BIN" -c '
 import json
 cmd = ("bin/trackfw commit -m \"$(cat <<'"'"'EOF'"'"'\n"
        "  git checkout -b            -> bloqueado pelo guard\n"
@@ -6575,7 +6651,7 @@ mkdir -p "$T65_NO_YAML_DIR"
     0 1
 )
 
-T65_BIG_PAYLOAD=$(python3 -c "import json; print(json.dumps({'tool_input':{'command':'git push','pad':'x'*200000}}))")
+T65_BIG_PAYLOAD=$("$PY_BIN" -c "import json; print(json.dumps({'tool_input':{'command':'git push','pad':'x'*200000}}))")
 (
   cd "$T65_NO_YAML_DIR" && assert_writer_no_epipe \
     "git-branch-guard/stdin-drain-before-noop/baseline-writer-clean-large-payload" \
@@ -6657,7 +6733,7 @@ corrupt_literal \
 
 assert_fails_with "harness-hooks-parity/kiro/git-branch-guard/go-vs-py-matcher-drift-not-detected" \
   "harness-hooks-parity/kiro/git-branch-guard/go-vs-py" \
-  env GO_BIN="$ROOT_DIR/bin/trackfw" PY_ROOT="$T66/pypi" bash "$T66/scripts/check-harness-hooks-parity.sh"
+  env GO_BIN="$FALSIFY_GO_BIN" PY_ROOT="$T66/pypi" bash "$T66/scripts/check-harness-hooks-parity.sh"
 
 # Non-regression: the ORIGINAL credential-guard label (Cenário 45) must
 # still pass against this same corrupted tree — proving the two Kiro files
@@ -6666,7 +6742,7 @@ assert_fails_with "harness-hooks-parity/kiro/git-branch-guard/go-vs-py-matcher-d
 # git-branch-guard comparison fails), so this checks the specific OK line
 # for the credential-guard label is still present in that same run's output.
 set +e
-T66_GATE_OUT=$(env GO_BIN="$ROOT_DIR/bin/trackfw" PY_ROOT="$T66/pypi" bash "$T66/scripts/check-harness-hooks-parity.sh" 2>&1)
+T66_GATE_OUT=$(env GO_BIN="$FALSIFY_GO_BIN" PY_ROOT="$T66/pypi" bash "$T66/scripts/check-harness-hooks-parity.sh" 2>&1)
 set -e
 if ! grep -qF "OK   [harness-hooks-parity/kiro/go-vs-py]" <<<"$T66_GATE_OUT"; then
   echo "FAIL [falsify/harness-hooks-parity/kiro/go-vs-py-credential-guard-unaffected-by-git-branch-guard-corruption]: expected the credential-guard label to still pass while only git-branch-guard is corrupted" >&2
@@ -7195,7 +7271,7 @@ fi
 
 assert_fails_with "ship-parity/squash-merge-warning-false-positive" \
   "stale-but-integrated feat/a must never appear in a warning" \
-  env GO_BIN="$ROOT_DIR/bin/trackfw" bash "$T70/scripts/check-ship-parity.sh"
+  env GO_BIN="$FALSIFY_GO_BIN" bash "$T70/scripts/check-ship-parity.sh"
 
 # ---------------------------------------------------------------------------
 # Cenário 71 — check-doctor-parity.sh (ML-2B, ROADMAP-2026-08-18-doctor-detecta-artefato-fora-
@@ -7213,7 +7289,7 @@ assert_fails_with "ship-parity/squash-merge-warning-false-positive" \
 # makes it fail — single-delta design (only the one case-clause identifier changes, nothing in
 # the gate's own assertions).
 # ---------------------------------------------------------------------------
-if ! GO_BIN="$ROOT_DIR/bin/trackfw" bash "$ROOT_DIR/scripts/check-doctor-parity.sh" >/dev/null 2>&1; then
+if ! GO_BIN="$FALSIFY_GO_BIN" bash "$ROOT_DIR/scripts/check-doctor-parity.sh" >/dev/null 2>&1; then
   echo "FAIL [falsify/setup-s71]: check-doctor-parity.sh failed against the UNMODIFIED Go binary — baseline must be green before the detection arm means anything" >&2
   exit 1
 fi
@@ -7255,7 +7331,7 @@ assert_fails_with "doctor-parity/registered-under-different-claim-false-positive
 # paired detection arm proves the single-literal corruption makes it fail — single-delta design,
 # same shape as Cenário 71.
 # ---------------------------------------------------------------------------
-if ! GO_BIN="$ROOT_DIR/bin/trackfw" bash "$ROOT_DIR/scripts/check-doctor-parity.sh" >/dev/null 2>&1; then
+if ! GO_BIN="$FALSIFY_GO_BIN" bash "$ROOT_DIR/scripts/check-doctor-parity.sh" >/dev/null 2>&1; then
   echo "FAIL [falsify/setup-s72]: check-doctor-parity.sh failed against the UNMODIFIED Go binary — baseline must be green before the detection arm means anything" >&2
   exit 1
 fi
@@ -7299,7 +7375,7 @@ assert_fails_with "doctor-parity/registered-under-different-claim-content-drifte
 # paired detection arm proves the single-literal corruption makes it fail — same single-delta
 # design as Cenários 71/72.
 # ---------------------------------------------------------------------------
-if ! GO_BIN="$ROOT_DIR/bin/trackfw" bash "$ROOT_DIR/scripts/check-ship-force-parity.sh" >/dev/null 2>&1; then
+if ! GO_BIN="$FALSIFY_GO_BIN" bash "$ROOT_DIR/scripts/check-ship-force-parity.sh" >/dev/null 2>&1; then
   echo "FAIL [falsify/setup-s73]: check-ship-force-parity.sh failed against the UNMODIFIED Go binary — baseline must be green before the detection arm means anything" >&2
   exit 1
 fi
@@ -7639,7 +7715,7 @@ assert_guard_exit "git-branch-guard/checkout-path/detection-catches-overblock-br
 # unmodified Go binary before the paired detection arm proves the single-literal corruption makes
 # it fail — same single-delta design as Cenário 73.
 # ---------------------------------------------------------------------------
-if ! GO_BIN="$ROOT_DIR/bin/trackfw" bash "$ROOT_DIR/scripts/check-release-tag-parity.sh" >/dev/null 2>&1; then
+if ! GO_BIN="$FALSIFY_GO_BIN" bash "$ROOT_DIR/scripts/check-release-tag-parity.sh" >/dev/null 2>&1; then
   echo "FAIL [falsify/setup-s75]: check-release-tag-parity.sh failed against the UNMODIFIED Go binary — baseline must be green before the detection arm means anything" >&2
   exit 1
 fi
@@ -7682,7 +7758,7 @@ assert_fails_with "release-tag-parity/success-lightweight-tag-false-negative" \
 # unmodified Go binary before the paired detection arm proves the single-literal corruption
 # makes it fail. Same single-delta design as Cenários 73/75.
 # ---------------------------------------------------------------------------
-if ! GO_BIN="$ROOT_DIR/bin/trackfw" bash "$ROOT_DIR/scripts/check-release-tag-parity.sh" >/dev/null 2>&1; then
+if ! GO_BIN="$FALSIFY_GO_BIN" bash "$ROOT_DIR/scripts/check-release-tag-parity.sh" >/dev/null 2>&1; then
   echo "FAIL [falsify/setup-s76]: check-release-tag-parity.sh failed against the UNMODIFIED Go binary — baseline must be green before the detection arm means anything" >&2
   exit 1
 fi
@@ -8020,7 +8096,7 @@ corrupt_literal \
 
 assert_fails_with "agent-hooks-parity/amazonq/go-vs-node-tools-drift-not-detected" \
   "agent-hooks-parity/amazonq/go-vs-node" \
-  env GO_BIN="$ROOT_DIR/bin/trackfw" PY_ROOT="$ROOT_DIR/pypi" bash "$T78/scripts/check-agent-hooks-parity.sh"
+  env GO_BIN="$FALSIFY_GO_BIN" PY_ROOT="$ROOT_DIR/pypi" bash "$T78/scripts/check-agent-hooks-parity.sh"
 
 # ---------------------------------------------------------------------------
 # Cenário 79 — check-validate-parity.sh: `branch_has_wip_roadmap` deixa de
@@ -8079,7 +8155,7 @@ build_go_or_fail "setup-s79-liveness-build" "$T79" "$T79_BIN"
 # passaria no braço de detecção abaixo pelo motivo errado. GO_BIN absoluto
 # explícito, mesma razão do fix do Cenário 4 (make parity exporta
 # GO_BIN=bin/trackfw relativo só para a linha deste script no Makefile).
-if ! GO_BIN="$ROOT_DIR/bin/trackfw" bash "$ROOT_DIR/scripts/check-validate-parity.sh" >/dev/null 2>&1; then
+if ! GO_BIN="$FALSIFY_GO_BIN" bash "$ROOT_DIR/scripts/check-validate-parity.sh" >/dev/null 2>&1; then
   echo "FAIL [falsify/setup-s79-baseline]: check-validate-parity.sh já reprova com o binário real — prova P4 inválida" >&2
   exit 1
 fi
@@ -8155,7 +8231,7 @@ build_go_or_fail "setup-s80-liveness-build" "$T80" "$T80_BIN"
 # ficasse permanentemente vermelho por um bug de fixture passaria no braço de
 # detecção abaixo pelo motivo errado. GO_BIN absoluto explícito, mesma razão
 # do Cenário 79.
-if ! GO_BIN="$ROOT_DIR/bin/trackfw" bash "$ROOT_DIR/scripts/check-validate-parity.sh" >/dev/null 2>&1; then
+if ! GO_BIN="$FALSIFY_GO_BIN" bash "$ROOT_DIR/scripts/check-validate-parity.sh" >/dev/null 2>&1; then
   echo "FAIL [falsify/setup-s80-baseline]: check-validate-parity.sh já reprova com o binário real — prova P4 inválida" >&2
   exit 1
 fi
@@ -8210,7 +8286,7 @@ T81_BIN="$WORK/s81-bin/trackfw"
 mkdir -p "$(dirname "$T81_BIN")"
 build_go_or_fail "setup-s81-liveness-build" "$T81" "$T81_BIN"
 
-if ! GO_BIN="$ROOT_DIR/bin/trackfw" bash "$ROOT_DIR/scripts/check-validate-parity.sh" >/dev/null 2>&1; then
+if ! GO_BIN="$FALSIFY_GO_BIN" bash "$ROOT_DIR/scripts/check-validate-parity.sh" >/dev/null 2>&1; then
   echo "FAIL [falsify/setup-s81-baseline]: check-validate-parity.sh já reprova com o binário real — prova P4 inválida" >&2
   exit 1
 fi
@@ -8257,7 +8333,7 @@ T82_BIN="$WORK/s82-bin/trackfw"
 mkdir -p "$(dirname "$T82_BIN")"
 build_go_or_fail "setup-s82-liveness-build" "$T82" "$T82_BIN"
 
-if ! GO_BIN="$ROOT_DIR/bin/trackfw" bash "$ROOT_DIR/scripts/check-validate-parity.sh" >/dev/null 2>&1; then
+if ! GO_BIN="$FALSIFY_GO_BIN" bash "$ROOT_DIR/scripts/check-validate-parity.sh" >/dev/null 2>&1; then
   echo "FAIL [falsify/setup-s82-baseline]: check-validate-parity.sh já reprova com o binário real — prova P4 inválida" >&2
   exit 1
 fi
@@ -8319,7 +8395,7 @@ corrupt_literal \
 
 cp "$ROOT_DIR/scripts/check-agent-hooks-parity.sh" "$T83/scripts/"
 
-if ! GO_BIN="$ROOT_DIR/bin/trackfw" PY_ROOT="$ROOT_DIR/pypi" bash "$ROOT_DIR/scripts/check-agent-hooks-parity.sh" >/dev/null 2>&1; then
+if ! GO_BIN="$FALSIFY_GO_BIN" PY_ROOT="$ROOT_DIR/pypi" bash "$ROOT_DIR/scripts/check-agent-hooks-parity.sh" >/dev/null 2>&1; then
   echo "FAIL [falsify/setup-s83-baseline]: check-agent-hooks-parity.sh já reprova com os runtimes reais — prova P4 inválida" >&2
   exit 1
 fi
@@ -8356,7 +8432,7 @@ cp -r "$ROOT_DIR/pypi/." "$T84/pypi/"
 
 cp "$ROOT_DIR/scripts/check-artifact-parity.sh" "$T84/scripts/"
 
-if ! GO_BIN="$ROOT_DIR/bin/trackfw" bash "$ROOT_DIR/scripts/check-artifact-parity.sh" >/dev/null 2>&1; then
+if ! GO_BIN="$FALSIFY_GO_BIN" bash "$ROOT_DIR/scripts/check-artifact-parity.sh" >/dev/null 2>&1; then
   echo 'FAIL [falsify/setup-s84-baseline]: check-artifact-parity.sh já reprova com os runtimes reais — prova P4 inválida' >&2
   exit 1
 fi
@@ -8364,7 +8440,7 @@ echo 'OK   [falsify/artifact-parity/claude-md-architect-responses-vacuity-baseli
 
 assert_fails_with 'artifact-parity/claude-md-architect-responses-section-node' \
   'CLAUDE.md ## Architect responses missing or empty (node)' \
-  env GO_BIN="$ROOT_DIR/bin/trackfw" bash "$T84/scripts/check-artifact-parity.sh"
+  env GO_BIN="$FALSIFY_GO_BIN" bash "$T84/scripts/check-artifact-parity.sh"
 
 # Cenário 85 — nil map em ProjectConfig.AgentModels: parse() sem initConfigMaps()
 #              causa panic com "assignment to entry in nil map" quando
@@ -8487,7 +8563,7 @@ fi
 echo 'OK   [falsify/agent-models-parity/namespace-guard-sabotaged-build]'
 
 # Braco de baseline: gate deve PASSAR com o binário real
-if ! GO_BIN="$ROOT_DIR/bin/trackfw" bash "$ROOT_DIR/scripts/check-agent-models-parity.sh" >/dev/null 2>&1; then
+if ! GO_BIN="$FALSIFY_GO_BIN" bash "$ROOT_DIR/scripts/check-agent-models-parity.sh" >/dev/null 2>&1; then
   echo 'FAIL [falsify/setup-s86-baseline]: check-agent-models-parity.sh ja reprova com binario real — prova P4 invalida' >&2
   exit 1
 fi
@@ -8554,7 +8630,7 @@ cp "$ROOT_DIR/go.mod" "$T87C_GO_MOD/go.mod"
 cp "$ROOT_DIR/go.sum" "$T87C_GO_MOD/go.sum"
 
 # Baseline: gate deve PASSAR com o binário real
-if ! GO_BIN="$ROOT_DIR/bin/trackfw" bash "$ROOT_DIR/scripts/check-release-tag-parity.sh" >/dev/null 2>&1; then
+if ! GO_BIN="$FALSIFY_GO_BIN" bash "$ROOT_DIR/scripts/check-release-tag-parity.sh" >/dev/null 2>&1; then
   echo 'FAIL [falsify/setup-s87-baseline]: check-release-tag-parity.sh ja reprova com binario real — prova P4 invalida' >&2
   exit 1
 fi
@@ -8611,7 +8687,7 @@ cp "$ROOT_DIR/go.mod" "$T88C_GO_MOD/go.mod"
 cp "$ROOT_DIR/go.sum" "$T88C_GO_MOD/go.sum"
 
 # Baseline: gate deve PASSAR com o binário real (independente do braço S87)
-if ! GO_BIN="$ROOT_DIR/bin/trackfw" bash "$ROOT_DIR/scripts/check-release-tag-parity.sh" >/dev/null 2>&1; then
+if ! GO_BIN="$FALSIFY_GO_BIN" bash "$ROOT_DIR/scripts/check-release-tag-parity.sh" >/dev/null 2>&1; then
   echo 'FAIL [falsify/setup-s158-baseline]: check-release-tag-parity.sh ja reprova com binario real — prova P4 invalida' >&2
   exit 1
 fi
@@ -8681,7 +8757,7 @@ T89_BIN="$WORK/s159-bin/trackfw"
 mkdir -p "$(dirname "$T89_BIN")"
 build_go_or_fail "setup-s159-liveness-build" "$T89" "$T89_BIN"
 
-if ! GO_BIN="$ROOT_DIR/bin/trackfw" bash "$ROOT_DIR/scripts/check-validate-parity.sh" >/dev/null 2>&1; then
+if ! GO_BIN="$FALSIFY_GO_BIN" bash "$ROOT_DIR/scripts/check-validate-parity.sh" >/dev/null 2>&1; then
   echo "FAIL [falsify/setup-s159-baseline]: check-validate-parity.sh ja reprova com o binario real — prova P4 invalida" >&2
   exit 1
 fi
@@ -8732,7 +8808,7 @@ T90_BIN="$WORK/s160-bin/trackfw"
 mkdir -p "$(dirname "$T90_BIN")"
 build_go_or_fail "setup-s160-liveness-build" "$T90" "$T90_BIN"
 
-if ! GO_BIN="$ROOT_DIR/bin/trackfw" bash "$ROOT_DIR/scripts/check-validate-parity.sh" >/dev/null 2>&1; then
+if ! GO_BIN="$FALSIFY_GO_BIN" bash "$ROOT_DIR/scripts/check-validate-parity.sh" >/dev/null 2>&1; then
   echo "FAIL [falsify/setup-s160-baseline]: check-validate-parity.sh ja reprova com o binario real — prova P4 invalida" >&2
   exit 1
 fi
@@ -8780,7 +8856,7 @@ T91_BIN="$WORK/s161-bin/trackfw"
 mkdir -p "$(dirname "$T91_BIN")"
 build_go_or_fail "setup-s161-liveness-build" "$T91" "$T91_BIN"
 
-if ! GO_BIN="$ROOT_DIR/bin/trackfw" bash "$ROOT_DIR/scripts/check-push-parity.sh" >/dev/null 2>&1; then
+if ! GO_BIN="$FALSIFY_GO_BIN" bash "$ROOT_DIR/scripts/check-push-parity.sh" >/dev/null 2>&1; then
   echo "FAIL [falsify/setup-s161-baseline]: check-push-parity.sh ja reprova com o binario real — prova P4 invalida" >&2
   exit 1
 fi
@@ -8837,7 +8913,7 @@ T92_BIN="$WORK/s162-bin/trackfw"
 mkdir -p "$(dirname "$T92_BIN")"
 build_go_or_fail "setup-s162-liveness-build" "$T92" "$T92_BIN"
 
-if ! GO_BIN="$ROOT_DIR/bin/trackfw" bash "$ROOT_DIR/scripts/check-push-parity.sh" >/dev/null 2>&1; then
+if ! GO_BIN="$FALSIFY_GO_BIN" bash "$ROOT_DIR/scripts/check-push-parity.sh" >/dev/null 2>&1; then
   echo "FAIL [falsify/setup-s162-baseline]: check-push-parity.sh ja reprova com o binario real — prova P4 invalida" >&2
   exit 1
 fi
@@ -8879,7 +8955,7 @@ mkdir -p "$(dirname "$T93_BIN")"
 build_go_or_fail "setup-s163-liveness-build" "$T93" "$T93_BIN"
 
 # Baseline arm: check-push-force-parity.sh deve passar com o binario real.
-if ! GO_BIN="$ROOT_DIR/bin/trackfw" bash "$ROOT_DIR/scripts/check-push-force-parity.sh" >/dev/null 2>&1; then
+if ! GO_BIN="$FALSIFY_GO_BIN" bash "$ROOT_DIR/scripts/check-push-force-parity.sh" >/dev/null 2>&1; then
   echo "FAIL [falsify/setup-s163-baseline]: check-push-force-parity.sh ja reprova com o binario real — prova P4-push invalida" >&2
   exit 1
 fi
@@ -8931,7 +9007,7 @@ T94_BIN="$WORK/s164-bin/trackfw"
 mkdir -p "$(dirname "$T94_BIN")"
 build_go_or_fail "setup-s164-liveness-build" "$T94" "$T94_BIN"
 
-if ! GO_BIN="$ROOT_DIR/bin/trackfw" bash "$ROOT_DIR/scripts/check-validate-parity.sh" >/dev/null 2>&1; then
+if ! GO_BIN="$FALSIFY_GO_BIN" bash "$ROOT_DIR/scripts/check-validate-parity.sh" >/dev/null 2>&1; then
   echo "FAIL [falsify/setup-s164-baseline]: check-validate-parity.sh ja reprova com o binario real — prova P4 invalida" >&2
   exit 1
 fi
@@ -8993,7 +9069,7 @@ T95_BIN="$WORK/s165-bin/trackfw"
 mkdir -p "$(dirname "$T95_BIN")"
 build_go_or_fail "setup-s165-liveness-build" "$T95" "$T95_BIN"
 
-if ! GO_BIN="$ROOT_DIR/bin/trackfw" bash "$ROOT_DIR/scripts/check-validate-parity.sh" >/dev/null 2>&1; then
+if ! GO_BIN="$FALSIFY_GO_BIN" bash "$ROOT_DIR/scripts/check-validate-parity.sh" >/dev/null 2>&1; then
   echo "FAIL [falsify/setup-s165-baseline]: check-validate-parity.sh ja reprova com o binario real — prova P4 invalida" >&2
   exit 1
 fi
@@ -9086,7 +9162,7 @@ build_go_or_fail "setup-s167-build" "$T97" "$T97_BIN"
 
 # Baseline -- binario REAL contra o fixture real de check-barrier.sh (BIS_SELFTEST_BREAK
 # desligado): a suite inteira precisa passar antes de provar a deteccao.
-if ! GO_BIN="$ROOT_DIR/bin/trackfw" bash "$ROOT_DIR/scripts/check-barrier.sh" >/dev/null 2>&1; then
+if ! GO_BIN="$FALSIFY_GO_BIN" bash "$ROOT_DIR/scripts/check-barrier.sh" >/dev/null 2>&1; then
   echo "FAIL [falsify/setup-s167-baseline]: check-barrier.sh ja reprova com o binario real -- prova P4 invalida" >&2
   exit 1
 fi
@@ -9174,7 +9250,7 @@ mkdir -p "$(dirname "$T169_BIN")"
 build_go_or_fail "setup-s169-build" "$T169" "$T169_BIN"
 
 # Baseline -- binario REAL: check-agent-models-parity.sh deve passar antes da deteccao
-if ! GO_BIN="$ROOT_DIR/bin/trackfw" bash "$ROOT_DIR/scripts/check-agent-models-parity.sh" >/dev/null 2>&1; then
+if ! GO_BIN="$FALSIFY_GO_BIN" bash "$ROOT_DIR/scripts/check-agent-models-parity.sh" >/dev/null 2>&1; then
   echo "FAIL [falsify/setup-s169-baseline]: check-agent-models-parity.sh ja reprova com o binario real -- prova P4 invalida" >&2
   exit 1
 fi
@@ -9253,7 +9329,7 @@ mkdir -p "$(dirname "$T171_BIN")"
 build_go_or_fail "setup-s171-build" "$T171" "$T171_BIN"
 
 # Baseline -- binario REAL: check-barrier.sh deve passar antes da deteccao
-if ! GO_BIN="$ROOT_DIR/bin/trackfw" bash "$ROOT_DIR/scripts/check-barrier.sh" >/dev/null 2>&1; then
+if ! GO_BIN="$FALSIFY_GO_BIN" bash "$ROOT_DIR/scripts/check-barrier.sh" >/dev/null 2>&1; then
   echo "FAIL [falsify/setup-s171-baseline]: check-barrier.sh ja reprova com o binario real -- prova P4 invalida" >&2
   exit 1
 fi
@@ -9312,7 +9388,7 @@ assert_fails_with "trust-check/direction-b-detected" \
 #                "audit-surface/fn-2/digest-changes-when-script-changes".
 # ---------------------------------------------------------------------------
 # Baseline -- gate passa com o binario real antes da deteccao
-if ! GO_BIN="$ROOT_DIR/bin/trackfw" bash "$ROOT_DIR/scripts/check-audit-surface.sh" >/dev/null 2>&1; then
+if ! GO_BIN="$FALSIFY_GO_BIN" bash "$ROOT_DIR/scripts/check-audit-surface.sh" >/dev/null 2>&1; then
   echo "FAIL [falsify/setup-s173-baseline]: check-audit-surface.sh ja reprova com o binario real -- prova invalida" >&2
   exit 1
 fi
@@ -9369,7 +9445,7 @@ mkdir -p "$(dirname "$T175_BIN")"
 build_go_or_fail "setup-s175-build" "$T175" "$T175_BIN"
 
 # Baseline -- binario REAL: check-update-parity.sh deve passar antes da deteccao
-if ! GO_BIN="$ROOT_DIR/bin/trackfw" bash "$ROOT_DIR/scripts/check-update-parity.sh" >/dev/null 2>&1; then
+if ! GO_BIN="$FALSIFY_GO_BIN" bash "$ROOT_DIR/scripts/check-update-parity.sh" >/dev/null 2>&1; then
   echo "FAIL [falsify/setup-s175-baseline]: check-update-parity.sh ja reprova com o binario real -- prova P4 invalida" >&2
   exit 1
 fi
@@ -9395,7 +9471,7 @@ cp -r "$ROOT_DIR/internal/." "$T176/internal/"
 cp "$ROOT_DIR/go.mod" "$T176/go.mod"
 cp "$ROOT_DIR/go.sum" "$T176/go.sum"
 
-python3 - "$ROOT_DIR/internal/generators/update.go" "$T176/internal/generators/update.go" <<'PY'
+"$PY_BIN" - "$ROOT_DIR/internal/generators/update.go" "$T176/internal/generators/update.go" <<'PY'
 import pathlib, sys
 
 src_path, dest_path = sys.argv[1], sys.argv[2]
@@ -9483,7 +9559,7 @@ mkdir -p "$(dirname "$T177_BIN")"
 build_go_or_fail "setup-s177-build" "$T177" "$T177_BIN"
 
 # Baseline -- binario REAL: check-doctor-parity.sh deve passar antes da deteccao
-if ! GO_BIN="$ROOT_DIR/bin/trackfw" bash "$ROOT_DIR/scripts/check-doctor-parity.sh" >/dev/null 2>&1; then
+if ! GO_BIN="$FALSIFY_GO_BIN" bash "$ROOT_DIR/scripts/check-doctor-parity.sh" >/dev/null 2>&1; then
   echo "FAIL [falsify/setup-s177-baseline]: check-doctor-parity.sh ja reprova com o binario real -- prova P4 invalida" >&2
   exit 1
 fi
@@ -9572,7 +9648,7 @@ mkdir -p "$(dirname "$T179_BIN")"
 build_go_or_fail "setup-s179-build" "$T179" "$T179_BIN"
 
 # Baseline -- binario REAL: check-doctor-parity.sh deve passar antes da deteccao
-if ! GO_BIN="$ROOT_DIR/bin/trackfw" bash "$ROOT_DIR/scripts/check-doctor-parity.sh" >/dev/null 2>&1; then
+if ! GO_BIN="$FALSIFY_GO_BIN" bash "$ROOT_DIR/scripts/check-doctor-parity.sh" >/dev/null 2>&1; then
   echo "FAIL [falsify/setup-s179-baseline]: check-doctor-parity.sh ja reprova com o binario real -- prova P4 invalida" >&2
   exit 1
 fi
@@ -9673,7 +9749,7 @@ cp -r "$ROOT_DIR/internal/." "$T181/internal/"
 cp "$ROOT_DIR/go.mod" "$T181/go.mod"
 cp "$ROOT_DIR/go.sum" "$T181/go.sum"
 
-python3 - "$ROOT_DIR/internal/generators/scaffold.go" \
+"$PY_BIN" - "$ROOT_DIR/internal/generators/scaffold.go" \
           "$T181/internal/generators/scaffold.go" <<'PY'
 import pathlib, sys
 
@@ -9907,7 +9983,7 @@ CLOSED_CYCLE_GATE="$ROOT_DIR/scripts/check-artifact-closed-cycle.sh"
 # Baseline compartilhado dos três: a árvore ÍNTEGRA passa. Sem este braço, um
 # gate que reprova por qualquer motivo (ambiente, binário quebrado) daria os três
 # cenários como "detecção" — prova P4 inválida.
-if ! GO_BIN="$ROOT_DIR/bin/trackfw" bash "$CLOSED_CYCLE_GATE" >/dev/null 2>&1; then
+if ! GO_BIN="$FALSIFY_GO_BIN" bash "$CLOSED_CYCLE_GATE" >/dev/null 2>&1; then
   echo 'FAIL [falsify/setup-s183-baseline]: check-artifact-closed-cycle.sh já reprova com os 3 runtimes íntegros — prova P4 inválida' >&2
   exit 1
 fi
@@ -9971,7 +10047,7 @@ corrupt_literal \
 
 assert_fails_with 'closed-cycle/note-link-do-gerador-nao-reconhecido-reprova' \
   'closed cycle broken: note/node/flat/note_orphan-silent-for-indexed' \
-  env GO_BIN="$ROOT_DIR/bin/trackfw" bash "$T184/scripts/check-artifact-closed-cycle.sh"
+  env GO_BIN="$FALSIFY_GO_BIN" bash "$T184/scripts/check-artifact-closed-cycle.sh"
 
 # ── Cenário 185 — ADR, sabotagem do gerador (Python) ───────────────────────
 # Seam: pypi/trackfw/commands/adr.py — o default de `--status` vira "Rascunho".
@@ -10004,7 +10080,7 @@ corrupt_literal \
 
 assert_fails_with 'closed-cycle/vocabulario-de-status-do-adr-em-portugues-reprova' \
   'closed cycle broken: adr/python/flat/status-literal-read-back' \
-  env GO_BIN="$ROOT_DIR/bin/trackfw" bash "$T185/scripts/check-artifact-closed-cycle.sh"
+  env GO_BIN="$FALSIFY_GO_BIN" bash "$T185/scripts/check-artifact-closed-cycle.sh"
 
 # ---------------------------------------------------------------------------
 # Cenários 186–188 — check-validate-parity.sh: os 3 blocos que o ML-1C
@@ -10019,7 +10095,7 @@ assert_fails_with 'closed-cycle/vocabulario-de-status-do-adr-em-portugues-reprov
 # íntegra) — evita rodar check-validate-parity.sh 3 vezes só para provar a
 # mesma coisa 3 vezes; cada detecção abaixo ainda roda seu PRÓPRIO braço
 # sabotado.
-if ! GO_BIN="$ROOT_DIR/bin/trackfw" bash "$ROOT_DIR/scripts/check-validate-parity.sh" >/dev/null 2>&1; then
+if ! GO_BIN="$FALSIFY_GO_BIN" bash "$ROOT_DIR/scripts/check-validate-parity.sh" >/dev/null 2>&1; then
   echo "FAIL [falsify/setup-s186-s188-baseline]: check-validate-parity.sh já reprova com o binário real — prova P4 inválida" >&2
   exit 1
 fi
@@ -10465,10 +10541,10 @@ write_req_roadmap_prose_fixture \
 
 assert_fails_with "structural-marker-value/python/adr-placeholder-baseline" \
   "$S192_MSG_ADR" \
-  bash -c "cd '$T192_P_PROJECT_A' && exec env PYTHONPATH='$T192_P_PROJECT_A/pypi' python3 -m trackfw validate"
+  bash -c "cd '$T192_P_PROJECT_A' && exec env PYTHONPATH='$T192_P_PROJECT_A/pypi' $PY_BIN -m trackfw validate"
 assert_fails_with "structural-marker-value/python/roadmap-prose-baseline" \
   "$S192_MSG_ROADMAP" \
-  bash -c "cd '$T192_P_PROJECT_B' && exec env PYTHONPATH='$T192_P_PROJECT_B/pypi' python3 -m trackfw validate"
+  bash -c "cd '$T192_P_PROJECT_B' && exec env PYTHONPATH='$T192_P_PROJECT_B/pypi' $PY_BIN -m trackfw validate"
 
 # --- Python: direção A -------------------------------------------------------
 T192C_P_A="$WORK/s192-corrupt-python-a"
@@ -10482,7 +10558,7 @@ corrupt_literal \
 
 assert_lacks_pattern "structural-marker-value/python/adr-placeholder-detects-regression" \
   "$S192_MSG_ADR" \
-  bash -c "cd '$T192_P_PROJECT_A' && exec env PYTHONPATH='$T192C_P_A/pypi' python3 -m trackfw validate"
+  bash -c "cd '$T192_P_PROJECT_A' && exec env PYTHONPATH='$T192C_P_A/pypi' $PY_BIN -m trackfw validate"
 
 # --- Python: direção B -------------------------------------------------------
 T192C_P_B="$WORK/s192-corrupt-python-b"
@@ -10496,7 +10572,7 @@ corrupt_literal \
 
 assert_lacks_pattern "structural-marker-value/python/roadmap-prose-detects-regression" \
   "$S192_MSG_ROADMAP" \
-  bash -c "cd '$T192_P_PROJECT_B' && exec env PYTHONPATH='$T192C_P_B/pypi' python3 -m trackfw validate"
+  bash -c "cd '$T192_P_PROJECT_B' && exec env PYTHONPATH='$T192C_P_B/pypi' $PY_BIN -m trackfw validate"
 
 # ---------------------------------------------------------------------------
 # Cenário 193 — ROADMAP-2026-09-05-reconciliar-o-que-declaramos-com-o-que-
@@ -10745,16 +10821,16 @@ cp -r "$ROOT_DIR/pypi" "$T193_P_BASE/pypi"
 
 assert_output_lacks "roadmap-ref-stale-state/python/broken-link-baseline" \
   "$S193_MSG_BROKEN" \
-  bash -c "cd '$T193_P_LIFECYCLE' && exec env PYTHONPATH='$T193_P_BASE/pypi' python3 -m trackfw validate"
+  bash -c "cd '$T193_P_LIFECYCLE' && exec env PYTHONPATH='$T193_P_BASE/pypi' $PY_BIN -m trackfw validate"
 assert_output_contains "roadmap-ref-stale-state/python/stale-warning-baseline" \
   "$S193_MSG_STALE" \
-  bash -c "cd '$T193_P_LIFECYCLE' && exec env PYTHONPATH='$T193_P_BASE/pypi' python3 -m trackfw validate"
+  bash -c "cd '$T193_P_LIFECYCLE' && exec env PYTHONPATH='$T193_P_BASE/pypi' $PY_BIN -m trackfw validate"
 assert_output_contains "roadmap-ref-stale-state/python/lifecycle-baseline" \
   "$S193_MSG_LIFECYCLE" \
-  bash -c "cd '$T193_P_LIFECYCLE' && exec env PYTHONPATH='$T193_P_BASE/pypi' python3 -m trackfw validate"
+  bash -c "cd '$T193_P_LIFECYCLE' && exec env PYTHONPATH='$T193_P_BASE/pypi' $PY_BIN -m trackfw validate"
 assert_fails_with "roadmap-ref-stale-state/python/vacuity-baseline" \
   "$S193_MSG_VACUITY" \
-  bash -c "cd '$T193_P_VACUITY' && exec env PYTHONPATH='$T193_P_BASE/pypi' python3 -m trackfw validate"
+  bash -c "cd '$T193_P_VACUITY' && exec env PYTHONPATH='$T193_P_BASE/pypi' $PY_BIN -m trackfw validate"
 
 # Direções A+C — corrupção: _is_stale_roadmap_state_ref sempre False.
 T193C_P_AC="$WORK/s193-corrupt-python-ac"
@@ -10768,13 +10844,13 @@ corrupt_literal \
 
 assert_output_contains "roadmap-ref-stale-state/python/broken-link-detects-regression" \
   "$S193_MSG_BROKEN" \
-  bash -c "cd '$T193_P_LIFECYCLE' && exec env PYTHONPATH='$T193C_P_AC/pypi' python3 -m trackfw validate"
+  bash -c "cd '$T193_P_LIFECYCLE' && exec env PYTHONPATH='$T193C_P_AC/pypi' $PY_BIN -m trackfw validate"
 assert_output_lacks "roadmap-ref-stale-state/python/lifecycle-detects-regression" \
   "$S193_MSG_LIFECYCLE" \
-  bash -c "cd '$T193_P_LIFECYCLE' && exec env PYTHONPATH='$T193C_P_AC/pypi' python3 -m trackfw validate"
+  bash -c "cd '$T193_P_LIFECYCLE' && exec env PYTHONPATH='$T193C_P_AC/pypi' $PY_BIN -m trackfw validate"
 assert_output_lacks "roadmap-ref-stale-state/python/stale-warning-detects-regression" \
   "$S193_MSG_STALE" \
-  bash -c "cd '$T193_P_LIFECYCLE' && exec env PYTHONPATH='$T193C_P_AC/pypi' python3 -m trackfw validate"
+  bash -c "cd '$T193_P_LIFECYCLE' && exec env PYTHONPATH='$T193C_P_AC/pypi' $PY_BIN -m trackfw validate"
 
 # Direção B — corrupção: _resolve_roadmap_ref_by_basename sempre "encontra" algo.
 T193C_P_B="$WORK/s193-corrupt-python-b"
@@ -10788,7 +10864,7 @@ corrupt_literal \
 
 assert_output_lacks "roadmap-ref-stale-state/python/vacuity-detects-regression" \
   "$S193_MSG_VACUITY" \
-  bash -c "cd '$T193_P_VACUITY' && exec env PYTHONPATH='$T193C_P_B/pypi' python3 -m trackfw validate"
+  bash -c "cd '$T193_P_VACUITY' && exec env PYTHONPATH='$T193C_P_B/pypi' $PY_BIN -m trackfw validate"
 
 echo "OK   [falsify/roadmap-ref-stale-state/python]: as 3 direções (A/B/C) provadas"
 

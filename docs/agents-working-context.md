@@ -4,6 +4,69 @@
 
 ---
 
+## Sessão 2026-09-07 — ares-tf (Infra) — ML-1A/ML-1B (resolução de interpretador Python e binário do CLI, CONCLUÍDO)
+
+Branch `fix/gates-rodam-no-windows-resolucao-de-interpretador-e-binario`, nenhuma operação de git
+(commit/push são do `trackfw_architect`). Roadmap:
+`docs/roadmaps/wip/ROADMAP-2026-09-07-gates-rodam-no-windows-resolucao-de-interpretador-e-binario.md`.
+
+**Escopo entregue:** só `scripts/check-gates-falsify.sh` (ML-1A e ML-1B tocam o mesmo arquivo,
+conforme handoff — decisão validada por advisor: fixar no PONTO ÚNICO de chamada, não nos ~40
+`check-*.sh` copiados para fixture por este script).
+
+- **ML-1A** — `resolve_py_bin()` no preâmbulo (antes de `prelude_end_line`, copiado byte-a-byte para
+  todo chunk por `gen-falsify-chunks.py`): candidatos `python3`, `python`, `py -3`, critério de
+  aceite `"$cand" -c 'import sys; print(sys.version_info[0])'` sair 0 E imprimir "3" — rejeita o stub
+  da Microsoft Store (medido na VM Windows: `python3` -> rc=49, "Python was not found..."; `python`/
+  `py` -> rc=0, "3"). Falha alto (`exit 1`, nomeando os 3 candidatos tentados) se nenhum passar.
+  Exportado como `PY_BIN`, substituído nos ~62 pontos onde o PRÓPRIO script executa python3 (nunca
+  dentro de heredoc/corpus comparado — bucket separado, verificado hit a hit).
+- **ML-1B** — `FALSIFY_GO_BIN` no mesmo preâmbulo: honra `go env GOEXE`, procura
+  `bin/trackfw$GOEXE` depois `bin/trackfw`, falha alto nomeando o caminho procurado se nenhum existir
+  (em vez do fallback de cada sub-script copiado para fixture, que builda com `cd` no `ROOT_DIR` LOCAL
+  da fixture — sem go.mod. Esse fallback é LATENTE, não ativo, sob `make quality`/`make parity`
+  completo — o alvo `build` roda antes e o binário já existe quando `check-gates-falsify.sh` chega;
+  ele dispara quando o gate é invocado standalone, o caso realista no Windows porque `make` não está
+  instalado na VM medida — produzindo o sintoma enganoso `go: go.mod file not found`, medido e
+  reproduzido isolado na VM). Substituído nos 65 pontos `GO_BIN="$ROOT_DIR/bin/trackfw"`; os binários
+  isolados que o próprio script constrói (`Txx_BIN` via `build_go_or_fail`) não passam por aqui.
+
+**Medido na VM Windows 10 Pro ARM64** (sem `make` instalado — `where make` não encontra nada; `go
+build -o bin/trackfw` produz binário SEM `.exe`, executável via git-bash): antes das correções, o
+gate morria no setup do Cenário 3 com `go: go.mod file not found`. Depois, avança até
+`identity-parity/catalog-target-missing`, que falha com rc=49 e a mensagem do stub — porque
+`scripts/check-identity-parity.sh` (arquivo FORA do escopo desta REQ) chama `python3` bare em duas
+linhas próprias (linhas 40 e 164). Reportado como próximo obstáculo, não corrigido (Wave 2/mesma
+causa, arquivo diferente).
+
+**As 3 direções de `FALSIFY_GO_BIN` medidas na VM, não só a que o gate completo exercitou:**
+- só `bin/trackfw.exe` presente (`rm bin/trackfw`, build só com `-o bin/trackfw.exe`): resolvido pelo
+  branch `GOEXE`, gate avança até o mesmo obstáculo de sempre (`identity-parity/catalog-target-
+  missing`) — prova que o branch do sufixo funciona, não só o extensionless.
+- nenhum dos dois presente: `FAIL [falsify/setup]: binário ausente -- procurado em
+  '.../bin/trackfw.exe' e '.../bin/trackfw', nenhum existe/é executável. Rode 'go build -o bin/trackfw
+  ./cmd/trackfw' (ou 'make build') antes de check-gates-falsify.sh.` — mensagem do NOVO resolvedor,
+  não mais o `go.mod not found` antigo.
+- só `bin/trackfw` (extensionless) presente: é o caminho que o run completo já exercitou (412 OK/0
+  FAIL nos dois lados do diff de conjunto).
+
+**Reconciliação (CLAUDE.md):** nenhum teste novo neste ML — a entrega são dois resolvedores + uma
+substituição de chamada. As provas são medição direta na VM (as 3 direções acima) e o diff de conjunto
+de rótulos Linux/macOS antes/depois (vazio, 399 rótulos), não um teste automatizado novo.
+
+**Diff de conjunto Linux/macOS**: `run-gates-falsify-parallel.sh` rodado com o script original e com o
+modificado, labels extraídos e ordenados — 399 rótulos únicos, `diff` vazio, 412 OK / 0 FAIL nos dois
+lados, guarda de conjunto do driver OK nos dois. `make quality QUALITY_EXIT=0` completo (4107 linhas
+de log): `grep -c '^FAIL'` = 0. `scripts/check-cli-parity.sh` standalone: rc=0.
+
+Nota de vault:
+`vault/notes/falsify-gate-windows-python-stub-e-go-bin-de-fixture-sem-go-mod-2026-09-07.md` (causa
+raiz medida + armadilhas do próprio script de substituição — sed ingênuo quebrando aspas de
+`bash -c "..."`, heredoc-tracker confundido por comentário citando `<<'EOF'` como prosa).
+
+Roadmap atualizado: ML-1A e ML-1B marcados ✅ Concluído. Wave 2 (ML-2A, rodar até o fim e listar
+reprovações) e Wave 3 (ML-3A, decisão de cobertura de CI) permanecem pendentes, fora deste escopo.
+
 ## Sessão 2026-09-06 — artemis-tf (QA) — ML-1E (falsificação dos 3 blocos do ML-1C, CONCLUÍDO)
 
 Branch `fix/fecha-o-fail-open-do-guard`, ML-1A a 1D já na árvore, não commitados. Nenhuma operação

@@ -40,7 +40,7 @@ job do CI executa estes scripts no Windows. Não é regressão; é **superfície
 ## Wave 1 — Fazer o gate chegar ao fim no Windows
 
 ### ML-1A — Resolução do interpretador Python
-**Status:** ⬜ Pendente · **Agente:** `ares-tf`
+**Status:** ✅ Concluído · **Agente:** `ares-tf`
 
 Ponto único que escolhe um interpretador **funcional**, rejeitando o stub da Store.
 
@@ -53,7 +53,7 @@ Python 2. Tem de ser **detecção**, não substituição literal.
 - [ ] `make quality` para arquivo, `grep -c '^FAIL'` sobre a saída inteira = 0
 
 ### ML-1B — Resolução do binário do CLI
-**Status:** ⬜ Pendente · **Agente:** `ares-tf`
+**Status:** ✅ Concluído · **Agente:** `ares-tf`
 
 Honrar o sufixo da plataforma **e falhar alto se o binário não existir**, em vez de cair em
 `go build` a partir de fixture sem `go.mod`.
