@@ -33527,6 +33527,113 @@ commitar.
 
 **Fim.**
 
+## Ares — ML-1A, ROADMAP-2026-09-06-perfil-e-aceleracao-do-check-gates-falsify-sem-perder-cobertura (início)
+
+**Tarefa:** perfil (sem alteração de código/gate/Makefile) do `check-gates-falsify.sh` — 610 dos 780s
+do `parity`. Pergunta central: compilação (Go builds sabotados, ~93 chamadas de
+`build_go_or_fail`/`run_go_guard_dump`) ou execução domina.
+
+**Método:** cópia instrumentada do script em scratchpad (nunca tocando o script real) — funções
+`build_go_or_fail`/`run_go_guard_dump`/`assert_fails_with` renomeadas para `_impl` e envolvidas por
+wrappers que gravam `KIND\tlabel\tt0\tt1` (epoch com nanosegundos) em `PROFILE_LOG`. Single run local
+(medição local, não CI — será declarado explicitamente no relatório, junto do fator 1,77x já medido
+na REQ). Rodando em background; binário `bin/trackfw` reconstruído antes do run.
+
+**Resultado final (run completo, 921,4s wall):** compilação (BUILD+GORUN, n=93) = 81,1s (8,8%);
+execução medida via `ASSERT` (n=128) = 421,3s (45,7%); resto não instrumentado (`assert_guard_exit`/
+`assert_writer_no_epipe`/`assert_would_now_fail`, `cp -r`, `python3`, `git` — nenhum é build) = 419,0s
+(45,5%). **Execução domina, não compilação — a premissa central do handoff (78% pode ser compilação)
+não se confirmou.** Cache do Go comprovadamente compartilhado (1ª build 4,85s fria, mediana das 92
+seguintes 0,84s) — copiar a árvore para tmp NÃO invalida o cache neste projeto (GOCACHE fixado num
+único diretório por execução, sem `-trimpath`). Os 4 cenários de `release-tag-parity` somam 112,4s
+sozinhos — mais que as 93 compilações juntas. Caminho recomendado: paralelizar execução na Wave 2, não
+compilação (teto de ganho de atacar compilação é ~8,8%). Relatório completo:
+`docs/portabilidade/2026-09-06-perfil-do-check-gates-falsify.md`. ML-1A marcado ✅ Concluído no
+roadmap. Nenhuma operação de git, nenhum arquivo do repositório alterado além do relatório e do
+roadmap — entrega para `trackfw_architect` auditar e mover para a Wave 2.
+
+**Fim.**
+
+## Ares — ML-1A, ROADMAP-2026-09-06-perfil-e-aceleracao-do-check-gates-falsify-sem-perder-cobertura (complemento, issue #288)
+
+**Tarefa:** complemento ao ML-1A (já ✅ Concluído com relatório em
+`docs/portabilidade/2026-09-06-perfil-do-check-gates-falsify.md`) — dado de terceiro chegado via
+issue #288 (`cp -r` da árvore inteira na linha 543 carrega `bin/` gitignored, 37MB/execução, e
+quebra no Windows/MSYS2 por colisão `trackfw`/`trackfw.exe`). Nenhum código/gate alterado.
+
+**Verificado:** das 226 chamadas `cp -r "$ROOT_DIR/..."` do script, só **1** (linha 543, Cenário 8)
+carrega conteúdo ignorado pelo git em volume relevante — bin/(17M)+dist/(62M)+.git(124M)=203MB.
+41 cópias de `pypi` inteiro carregam ~4,8MB de `build/`+`__pycache__` cada (não crítico). 176 das
+226 (cmd/.+internal/.) não carregam nada ignorado. Custo agregado de todas as cópias amplas medido
+diretamente (`cp -r`+`rm -rf` fora do script, contra o repo real): **~15-20s de 921,4s (~2%)** —
+confirma a frase do próprio issue: "não é a causa, mas não ajuda". Não muda a conclusão do ML-1A
+(execução domina compilação, ~5:1).
+
+**Achado de correção registrado, não corrigido nesta wave:** a linha 543 é a mesma que quebra no
+Windows — recomendado como primeiro ML da Wave 2 (destrava o gate lá, ganho de tempo irrelevante).
+
+**Arquivos alterados:**
+`docs/portabilidade/2026-09-06-perfil-do-check-gates-falsify.md` (seção "Complemento — cópias
+amplas e conteúdo ignorado pelo git"),
+`docs/roadmaps/wip/ROADMAP-2026-09-06-perfil-e-aceleracao-do-check-gates-falsify-sem-perder-cobertura.md`
+(nota complementar no ML-1A). Nenhuma operação de git — entrega para `trackfw_architect` auditar.
+
+**Fim.**
+
+**Pós-checagem (advisor) — ajustes aplicados ao relatório após revisão:**
+1. Adicionada atribuição estática (não medida, declarada como tal) de ~199s dos 419s não
+   instrumentados: 9 chamadas baseline-clean de `check-validate-parity.sh` (~87s) + 4 de
+   `check-release-tag-parity.sh` (~112s), usando o custo do braço de detecção (medido) como proxy do
+   mesmo script aninhado sem sabotagem.
+2. Substituído o fator de paralelização "4x" (sem base) por um piso derivado dos dados medidos:
+   `piso(W) ≈ max(tempo_execução_total/W, cenário_mais_lento) + compilação_serial`, com tabela
+   W=1/2/4/8/16/≥30 e caminho crítico nomeado (`release-tag-parity`, 27-28s/cenário, satura o ganho
+   acima de W≈30).
+3. Corrigida a citação do fator CI/local: este run mediu 921,4s/610s = 1,51x, não os 1,77x da REQ
+   (medição de outro contexto) — adicionada frase de margem (compilação é CPU-bound, execução é
+   IO-bound; veredito sobrevive mesmo com fração de compilação em CI 2x maior que a local).
+4. `trackfw validate` rodado — exit 0, só warnings pré-existentes (nenhum introduzido por esta ML).
+
+**Nota sobre edição concorrente:** durante a espera do run de perfil em background, uma seção
+("Complemento — cópias amplas e conteúdo ignorado pelo git, issue #288") apareceu no relatório sem
+que este agente a tivesse escrito — verificado que a issue #288 é real (`gh issue view 288`) e o
+conteúdo é consistente com o resto do relatório; mantida como está, sinalizada no próprio arquivo como
+não re-verificada por este agente. Provável edição de outro agente em paralelo na mesma branch/sessão
+de trabalho — arquiteto deve confirmar autoria na auditoria.
+
+**Fim.**
+
+**Pós-checagem (advisor) no complemento acima — 4 correções aplicadas:**
+1. Tamanhos de `bin/`(17M)+`dist/`(62M)+`.git`(124M) eram desta máquina local — adicionada ressalva
+   explícita de CI: `actions/checkout@v7` sem `fetch-depth` (default 1, clone raso) torna `.git` do
+   CI muito menor; `dist/` não é gerado no job `parity`; só `bin/` (via `parity: build` no
+   Makefile) se aplica ao CI. 17M local vs 37M do issue não é divergência a reconciliar — ambos são
+   conteúdo de build não versionado, variam por máquina/toolchain por construção.
+2. Rotulado "~15-20s" como extrapolação (tempo/cópia × contagem), não soma de 226 medições diretas.
+3. Adicionado risco para o ML de correção da Wave 2: Cenário 8 compila um binário a partir de
+   `$T8_MOD` logo após o `cp -r` da linha 543, e as regras de guard são ancoradas em git
+   (ADR-2026-08-12) — "copiar menos" tem de determinar o que o Cenário 8 usa antes de reduzir volume,
+   não presumir que git ls-files/--exclude .git são seguros.
+4. `trackfw validate`: exit=0, 26 warnings (0 novos — o warning "no acceptance criteria block" neste
+   roadmap é pré-existente, mesmo padrão já documentado no ML-1H).
+
+**Fim.**
+
+**Pós-checagem 2 (advisor) — correções finais:**
+1. Flag de atribuição da seção "issue #288" tornado proeminente no próprio arquivo (blockquote
+   destacado) — números daquela subseção não são deste agente e podem não ter sido executados;
+   arquiteto deve confirmar antes de commitar.
+2. Corrigida a granularidade do piso de paralelização: os 28,70 s usados como "cenário mais lento"
+   eram só o braço `ASSERT`; se a Wave 2 paralelizar por cenário (não por assert isolado), o custo
+   schedulável de `release-tag-parity` é baseline+build+detecção ≈ 55-57 s, não 28,70 s — desloca a
+   saturação de W≈30/~110s para W≈15/~135-140s. Sinalizado no relatório sem recalcular a tabela linha
+   a linha (correção de leitura, não novo run).
+3. Sinalizado no roadmap o conflito entre CLAUDE.md do projeto (agente marca o próprio ML) e o role
+   card de Infra (status só após auditoria do orquestrador) — mantido ✅ seguindo o CLAUDE.md do
+   projeto, decisão final para o arquiteto.
+4. `trackfw validate` confirmado exit 0 após todas as edições.
+
+**Fim (ML-1A entregue).**
 ## 2026-09-07 — Zeus (arquiteto) — frente de reconciliação FECHADA
 
 Roadmap `ROADMAP-2026-09-05-reconciliar-o-que-declaramos...` movido para `done/`.
@@ -33551,3 +33658,229 @@ Agora resolve por basename nos 6 estados e emite aviso **verdadeiro** de `stale 
 
 **Próximo:** `docs/fila-de-execucao.md`, item 1 — o guard emite schema de hook que o Claude Code
 rejeita (`hookSpecificOutput`/`permissionDecision`).
+
+## 2026-09-07 — Ares (Infra) — ML-2A do `check-gates-falsify` (acelerar): fix real + split 2-way validado (~1,8x), N-way maior NÃO entregue
+
+**Início.** Handoff: `ROADMAP-2026-09-06-perfil-e-aceleracao-do-check-gates-falsify-sem-perder-cobertura.md`,
+Wave 2/ML-2A. Árvore devolvida suja para o arquiteto auditar/commitar — este agente não commita.
+
+**Passo 0 (feito, no arquivo real `scripts/check-gates-falsify.sh`):** Cenário 8 trocou
+`cp -r "$ROOT_DIR/." "$T8_MOD"` (issue #288, quebra no Windows/MSYS2 por colisão `trackfw`/
+`trackfw.exe` em `bin/`) pelo mesmo padrão já usado pelos Cenários 80+: copiar só `cmd/`, `internal/`,
+`go.mod`, `go.sum`. Confirmado por leitura que `$T8_MOD` não referencia `bin/` nem `.git` depois desse
+bloco. Rodada completa do gate (`bash scripts/check-gates-falsify.sh`, 894,66s, exit 0, 386 labels
+OK/PROOF, 0 FAIL) confirma que a mudança não regride nenhum cenário. Este é o único diff no arquivo real.
+
+**ML-2A (aceleração): mecanismo validado em scratchpad, harness de produção NÃO entregue.**
+
+Todo o trabalho abaixo foi feito em cópias em `/private/tmp/.../scratchpad/pilot/` — o script real só
+tem o Passo 0.
+
+**Correção de uma correção — registro para não repetir o erro:** minha primeira varredura de
+dependências cross-cenário (regex simples em `NOME=`) apontou `T86`/`T87`/`T88` como compartilhados
+entre Cenário 86 e Cenário 165. Uma segunda varredura, tentando ser mais cuidadosa com heredocs e
+corpos de função, "provou" **zero dependências cross-cenário no arquivo inteiro** — e essa conclusão
+estava **errada**: um bug no meu próprio script de skip (heredoc detectado erroneamente dentro de uma
+linha de comentário, `<<<` de "here-string" mencionado em prosa) fez a segunda varredura excluir do
+escopo quase tudo. **A prova real veio de rodar de verdade**: montei um split 4-way por bin-packing
+(carga medida por cenário, não contagem de linha) que **reordenava** blocos entre os 4 processos —
+e todos os 4 chunks quebraram com `variable: unbound variable` (`T86`, `SIMPLE_REQ_FIELD_SCRIPT`,
+`T27_GO_BIN`, `ROADMAP_CYCLE_SCRIPT_FROM_REQ`) sob `set -u`. **A dependência real existe** — a minha
+primeira varredura estava mais perto da verdade que a "corrigida".
+
+**O que a execução real revelou:** existe um cluster **indivisível** de Cenário 86 a Cenário 165
+(linhas 8145–10046, ~1900 linhas) que custa **467,0s dos 893,3s medidos por cenário (52,3% do
+tempo total)** — maior que qualquer estimativa anterior. Esse cluster tem que rodar inteiro num único
+processo; não sei ainda (não investiguei dentro do orçamento desta sessão) qual variável específica
+liga o quê a o quê lá dentro, só que quebra se você separar Cenário 86 de Cenário 165.
+
+**Split validado (2-way, respeitando o cluster):** chunk A = só o cluster (linhas 8145–10046, 467s
+isolado); chunk B = o resto do arquivo, duas faixas contíguas coladas (322–8144 + 10047–10889, 427s
+isolado) — nenhuma reordenação, só concatenação na ordem original. Preâmbulo + **as 40 funções
+helper do arquivo inteiro** (hoisted para cada chunk — `corrupt_literal` e ~30 outras estão definidas
+NO MEIO do arquivo, entre cenários, não só nas linhas 1–321) prefixados em cada chunk.
+
+**Isolamento:** cada chunk roda como processo bash separado, `mktemp -d` próprio (`$WORK`) e
+`$HOME="$WORK/home"` — mesmo padrão do script original, replicado por chunk. `GOCACHE`/`GOMODCACHE`/
+`GOPATH` **compartilhados** (valores reais do ambiente) — preserva o cache quente que o ML-1A mediu
+(mediana 0,84s/build). Nenhum cenário escreve em `$ROOT_DIR` (só leitura); o único cenário que mede
+`git status --porcelain` sobre `$ROOT_DIR` (Cenário 18, `no-repo-mutation`) passou nas 3 rodadas
+mesmo concorrente com o outro chunk.
+
+**Resultado medido, 3 rodadas consecutivas, mesma máquina/sessão que o serial (894,66s):**
+493,2s / 511,2s / 507,8s de parede — **~1,75–1,81x**, conjunto de labels **idêntico** ao serial nas 3
+(`diff` vazio, 386 labels), 0 FAIL, exit 0, `no-repo-mutation` verde nas 3. Sabotagem de controle
+(padrão de asserção trocado por string que nunca casa, em chunk B) fez o chunk reprovar (exit 1) —
+**a alegação que este teste sustenta**: dividir o script em processos-chunk não suprime a propagação
+de falha — um chunk cuja asserção quebra ainda sai não-zero. Não é uma alegação sobre a lógica de
+detecção de nenhum gate.
+
+**Teto teórico e por que não fui além nesta sessão:** com o cluster de 467s fixo, o piso de QUALQUER
+paralelização (não importa quantos workers) é ~467s — ~1,91x. Cheguei a 1,8x com só 2 processos; fechar
+a distância até 1,91x exigiria decompor internamente o cluster (que variável liga o quê, dentro das
+~1900 linhas) — não fiz essa investigação. Um split N-way maior (mirando os 4 vCPU do runner do CI)
+não é alcançável sem isso, porque o cluster sozinho já é maior que 894/4.
+
+**Decisão (parcial, não AC5 "não vale nada" — houve ganho real e mensurado):** não commitei harness de
+produção nem toquei `Makefile`/CI — os 3 bugs que cometi na minha própria análise estática (caminho
+relativo errado, heredoc mal detectado, contagem de linha desatualizada após o Passo 0) mostram que
+esse arquivo é hostil a automação por número de linha; um gerador que descobre fronteiras em runtime
+(não hardcoded) é o formato certo para produção, e não construí esse gerador. Fica como próximo ML
+**desta mesma REQ** (`REQ-2026-09-03-check-gates-falsify-...`) — mesma causa, mesmo REQ: (1) decompor
+o cluster de 467s, (2) escrever o gerador de chunks em runtime, (3) revalidar 3x, (4) medir no CI.
+
+**Entregue ao arquiteto:** diff único em `scripts/check-gates-falsify.sh` (Cenário 8), `go build ./...`
+limpo, `trackfw validate` sem erros novos (só os 116 warnings pré-existentes), `bash -n` ok. Números
+acima (piso teórico 467s/894s, split validado 1,8x) para dimensionar o próximo ML.
+
+**Fim.**
+
+## 2026-09-07 — Ares (Infra) — ML-2C do `check-gates-falsify`: içar as 31 funções espalhadas para o prelúdio
+
+**Corrige o diagnóstico do ML-2A** (acima): não existe cluster indivisível de 467s por acoplamento de
+dados. A causa real, medida pelo arquiteto e confirmada aqui, é que 31 das 40 funções auxiliares do
+script estão definidas NO MEIO do arquivo, entre cenários — um trecho que começa depois delas não as
+enxerga (bash resolve por execução, não por escopo léxico prévio ao ponto de definição).
+
+**Método de fronteira, hostil-a-parsing-consciente:** scanner com brace-depth heredoc-aware em Python,
+excluindo explicitamente `<<<` (here-string) via lookaround negativo — sem isso, `<<<"$out"` é
+confundido com heredoc `<<"..."` e quebra a contagem (foi exatamente onde o extrator do arquiteto
+tropeçou). Validado por 4 vias independentes: (1) `bash -n` isolado em cada uma das 40 funções
+extraídas, 40/40 limpo; (2) toda linha de fechamento identificada é um `}` solitário; (3) nenhuma
+sobreposição de faixas entre funções; (4) reconstrução determinística — arquivo velho menos as 31
+funções == arquivo novo menos o bloco inserido, byte a byte (10244 linhas de cada lado, igualdade
+exata) — e as 31 funções comparadas individualmente contra a posição nova (0 mismatches).
+
+**Prova do objetivo:** o mesmo trecho que morria com `corrupt_literal: command not found` no arquivo
+velho (Cenário 177, linhas antigas 9210–9296) roda limpo com 4x `OK` como
+`preâmbulo (linhas novas 1–996) + trecho (linhas novas 9423–9509)`.
+
+**Critérios de aceite — todos atendidos:**
+- diff de conjunto de labels antes/depois: vazio (388 = 388)
+- tempo serial: OLD 889s vs NEW 893s (+0,45% — NEW mais lento, não mais rápido, o que descarta
+  aquecimento de cache de build Go como confundidor da comparação)
+- `make quality QUALITY_EXIT=0`: log de 3830 linhas, `grep -c '^FAIL'` = 0
+- corpo de cada função movida: idêntico (prova acima)
+- nenhuma função definida depois do primeiro uso (todas as 40 ficam entre as linhas 54–976, primeiro
+  `# Cenário` só na linha 998)
+
+**Não é puro `git mv`, declarado:** 31 linhas em branco separadoras adicionadas (uma por função
+movida); pontos de remoção mantêm as linhas em branco originais ao redor (algumas agora adjacentes).
+Comentários de documentação que precediam funções específicas ficaram nos sítios originais — decisão
+deliberada para não misturar "mover" com "reorganizar comentário", mas alguns agora descrevem uma
+função definida ~8000 linhas antes; sinalizado, não corrigido.
+
+**Site de mesma causa para o ML-2D (reportado, não corrigido — fora do escopo deste ML):** `ROOT_DIR`
+(linha 22) deriva de `${BASH_SOURCE[0]}`, então um chunk gerado fora de `$ROOT_DIR/scripts/` quebra
+(`cp: .../cmd/.: No such file or directory`, reproduzido). Sugestão para o ML-2D:
+`ROOT_DIR=${TRACKFW_ROOT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}`.
+
+**Entregue:** só `scripts/check-gates-falsify.sh` modificado (mais o roadmap, status ML-2C → ✅). Sem
+commit — árvore devolvida suja para `trackfw_architect` auditar e commitar, por instrução do handoff.
+
+**Fim.**
+
+## 2026-09-07 — Ares — ML-2D retomado (medição em execução)
+
+**Início.** Retomando ML-2D (ROADMAP-2026-09-06-perfil-e-aceleracao-do-check-gates-falsify), branch
+`fix/validate-detecta-hook-de-guard-na-forma-relativa-antiga`. Harness já escrito em disco
+(`scripts/gen-falsify-chunks.py`, `scripts/run-gates-falsify-parallel.sh`, diff em
+`scripts/check-gates-falsify.sh` para `ROOT_DIR=${TRACKFW_ROOT_DIR:-...}`) por execução anterior desta
+mesma sessão lógica — não commitado (sem autoridade git). Verificado antes de medir: isolamento de
+`$HOME` no preâmbulo confirmado real (linha 55, não é comentário falso); os 5 gates que Cenário 18
+audita via `git status --porcelain` sobre `$ROOT_DIR` usam `ROOT_DIR`/`WORK` próprios via
+`BASH_SOURCE`+`mktemp` — não escrevem na árvore real, mitigando o risco de corrida entre chunks
+apontado na revisão. Executando agora: baseline serial re-medido nesta sessão + `TRACKFW_FALSIFY_JOBS=4`
+(1x) + `TRACKFW_FALSIFY_JOBS=8` (3x) + diff de rótulos + sabotagem + `make quality`. Sem push/commit
+(fora da minha autoridade) — entregável fica em árvore suja para `trackfw_architect` auditar.
+
+## 2026-09-07 — Ares (Infra) — ML-2D reentrega (CONCLUÍDO)
+
+**Início.** Branch `chore/perfil-e-aceleracao-do-check-gates-falsify`, ROADMAP-2026-09-06 em wip,
+ML-2D reprovado na auditoria anterior (77 rótulos perdidos + 1 FAIL, atribuídos a grafia de cabeçalho
+divergente). Li o roadmap, a REQ vinculada e a medição de reprovação antes de tocar código.
+
+**Diagnóstico corrigido, não confirmado o da entrega anterior.** A hipótese de grafia não se sustenta
+(`HDR_PAT` já era ampla o bastante). Causa real, medida e reproduzida: a linha 913
+(`# Cenario 166 -- ...`) vira fronteira legítima mas introduz um bloco SÓ de definições de função
+(5 funções), sem asserção própria, usadas por cenários ~8000 linhas depois — sem içar esse bloco para
+o preâmbulo, ele cai num chunk diferente do dos seus chamadores e `command not found` mata o resto da
+chunk em silêncio. Mesma causa dos 77 rótulos perdidos E do 1 FAIL (`run_node_chain_probe`, exit=2
+reproduzido isolado, bate exato com o relatório original). Nota do vault:
+`vault/notes/comentario-de-cenario-sobre-bloco-so-de-funcoes-vira-fronteira-de-corte-falsa-2026-09-07.md`.
+
+**Entregue:** `scripts/gen-falsify-chunks.py` classifica segmentos SUPORTE (zero asserção + só função,
+heredoc-aware) vs ASSERÇÃO, içando suporte para preâmbulo estendido; guarda de completude estrutural
+(linha-a-linha) no gerador; guarda de conjunto no driver (`run-gates-falsify-parallel.sh`) — sentinela
+por chunk (`CHUNK_COMPLETE N`) + rótulos esperados derivados do próprio texto de cada chunk
+(literal/glob), nunca lista congelada; escopo declarado (só `assert_*`, ~65% dos rótulos únicos, não
+cobre `echo` manual assimétrico). 4 sabotagens provadas (rótulo removido, chunk que crasha,
+completude do gerador, e alvo real — `check-cli-parity.sh` neutralizado e revertido). `Makefile`
+trocado para `scripts/run-gates-falsify-parallel.sh`; confirmado que `.github/workflows/quality.yml`
+chega ao gate via `make parity` (não script antigo direto).
+
+**Medido, foreground, mesma sessão/máquina:** serial 903s (412 OK/0 FAIL) vs 3× `JOBS=8` (478/478/482s,
+412 OK/0 FAIL cada) — 1,88x real (não os 3,03x da entrega reprovada, que era inflado por trabalho
+omitido). `diff` de conjunto de rótulos vazio nas 3 rodadas (386 únicos cada lado). `make parity`
+completo via `make`: rc=0, 712s (era ~1204s), 0 `^FAIL` em 1761 linhas de log.
+
+**Decisão para o arquiteto, não fechada por mim:** `TRACKFW_FALSIFY_SCRIPT`/`TRACKFW_FALSIFY_GEN`
+(env vars de teste no driver, default = produção, usadas só para as sabotagens) desviam o gate mais
+caro do CI se setadas — pedido de revisão explícita no roadmap, dado o precedente dos ADRs de
+credential-guard deste repo sobre controle-onde-o-agente-escreve.
+
+**Sem commit/push** — fora da minha autoridade (Infraestrutura nunca opera git). Árvore com 4 arquivos
+modificados (`Makefile`, `scripts/gen-falsify-chunks.py`, `scripts/run-gates-falsify-parallel.sh`,
+o roadmap) + 1 nota de vault nova + este arquivo, prontos para auditoria do `trackfw_architect`.
+
+**Fim.**
+
+**Adendo pós-revisão (mesma sessão):** corrigidos 4 pontos numa segunda passada — cobertura ~65%
+reproduzida por comando exato (não estimada), declarado que o extrator de rótulos é heredoc-blind
+(mesma família de `vault/notes/comentario-inline-com-heredoc-derruba-arquivo-da-populacao-do-gate-2026-09-02.md`,
+direção oposta), confirmado por grep que nenhum outro workflow/gate invoca o script antigo direto, e
+corrigido o trailer `"Falsification checks passed (all 181 scenarios...)"` que sob chunking passou a
+descrever só um chunk — driver agora emite resumo agregado próprio após a guarda de conjunto passar
+(`rc=0`, `412 OK`, `0 FAIL`, resumo presente, confirmado em produção real). Também declarado o teto
+previsto para o ML-3A (bloco fundido de 30 cenários/3487 linhas domina sobre nº de workers — `JOBS=4`
+no CI deve dar ~o mesmo que `JOBS=8` local, não é regressão se o ML-3A medir isso).
+
+## 2026-09-07 — Ares (Infra) — ML-2E: rastro do override + `HASH_CMD_BIN` pinado (CONCLUÍDO)
+
+**Ação 1 (rastro):** `scripts/run-gates-falsify-parallel.sh` agora emite em `stderr` uma linha por
+override setado (`TRACKFW_FALSIFY_SCRIPT`/`_GEN`/`_JOBS`), com valor efetivo e default, mesmo que o
+valor coincida com o default. Provado rodando: as 3 linhas aparecem com as 3 env vars setadas; nenhuma
+aparece sem override (confirmado no log completo do `make quality` reproduzido nesta sessão).
+
+**Ação 2 (`HASH_CMD_BIN`, sítio de mesma causa do parecer `hades-tf`):** pinado no `Makefile`
+(`HASH_CMD := $(shell command -v sha256sum ... || echo "shasum -a 256")`, passado na linha de recipe
+de `check-roadmap-barrier-contract.sh`, mesmo desenho de `GO_BIN`). Script ajustado para fazer split
+intencional da string vinda do env (array bash não atravessa env var) em vez de tratar como nome de
+comando único. **Sabotagem provada nas duas pontas:** com o corpus do snapshot mutado (1 status
+`✅ Concluído` → `🔄 Em andamento` em `agent-rules-inject-2026-06-18.md`, revertido depois via
+`git show HEAD:... >`), o script ANTES da correção com `HASH_CMD_BIN` forjado (script que sempre
+emite o hash pinado) reportava `OK [corpus/non-reclassification]` apesar da reclassificação real
+(mascarado); com o hash real (sem override) o mesmo corpus mutado reprovava corretamente
+(`FAIL ... hash da tabela de vereditos mudou`). Depois da correção, invocando como o Makefile invoca
+(`HASH_CMD_BIN="sha256sum"` pinado na linha de recipe) COM `HASH_CMD_BIN` forjado exportado no
+ambiente pai (simulando `.envrc`/env esquecida), o gate voltou a reprovar corretamente — o pin no
+call site derrota o override ambiente, mesma garantia de `GO_BIN`.
+
+**Ação 3 (`PYTHON_BIN`):** pinado por consistência (`PYTHON_BIN=python3` na recipe de
+`package-smoke`, Makefile) — tratado por ser barato; sem guarda anexa satisfazível vaziamente, então
+severidade era menor mesmo sem correção (não estava em `make quality`, só em `make package-smoke`,
+que não é dependência de `quality`).
+
+**Validação completa:** `make quality` reproduzido em batches foreground (limite de 10 min por
+chamada do Bash tool) — `test`, `test-node`, `test-python`, `lint` isolados + `parity` dividido em
+3 blocos na ordem exata do `make -n parity` (build+43 gates rápidos ~3min; `run-gates-falsify-parallel.sh`
+sozinho, 412 OK/0 FAIL/guarda de conjunto OK, ~7m57s; os 10 gates finais incl.
+`check-roadmap-barrier-contract.sh` já com `HASH_CMD_BIN` pinado, ~52s). Log combinado de todos os
+blocos: `grep -c '^FAIL'` = 0 em 4060 linhas. `scripts/check-cli-parity.sh` isolado: rc=0.
+
+**Arquivos alterados:** `Makefile`, `scripts/run-gates-falsify-parallel.sh`,
+`scripts/check-roadmap-barrier-contract.sh`. Nenhum sítio de mesma causa novo encontrado além dos já
+nomeados pelo roadmap (`PYTHON_BIN`, tratado acima).
+
+**Sem commit/push** — fora da minha autoridade (Infraestrutura nunca opera git). Pronto para auditoria
+do `trackfw_architect`.
