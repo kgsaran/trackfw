@@ -33779,3 +33779,17 @@ função definida ~8000 linhas antes; sinalizado, não corrigido.
 commit — árvore devolvida suja para `trackfw_architect` auditar e commitar, por instrução do handoff.
 
 **Fim.**
+
+## 2026-09-07 — Ares — ML-2D retomado (medição em execução)
+
+**Início.** Retomando ML-2D (ROADMAP-2026-09-06-perfil-e-aceleracao-do-check-gates-falsify), branch
+`fix/validate-detecta-hook-de-guard-na-forma-relativa-antiga`. Harness já escrito em disco
+(`scripts/gen-falsify-chunks.py`, `scripts/run-gates-falsify-parallel.sh`, diff em
+`scripts/check-gates-falsify.sh` para `ROOT_DIR=${TRACKFW_ROOT_DIR:-...}`) por execução anterior desta
+mesma sessão lógica — não commitado (sem autoridade git). Verificado antes de medir: isolamento de
+`$HOME` no preâmbulo confirmado real (linha 55, não é comentário falso); os 5 gates que Cenário 18
+audita via `git status --porcelain` sobre `$ROOT_DIR` usam `ROOT_DIR`/`WORK` próprios via
+`BASH_SOURCE`+`mktemp` — não escrevem na árvore real, mitigando o risco de corrida entre chunks
+apontado na revisão. Executando agora: baseline serial re-medido nesta sessão + `TRACKFW_FALSIFY_JOBS=4`
+(1x) + `TRACKFW_FALSIFY_JOBS=8` (3x) + diff de rótulos + sabotagem + `make quality`. Sem push/commit
+(fora da minha autoridade) — entregável fica em árvore suja para `trackfw_architect` auditar.

@@ -19,7 +19,15 @@ set -euo pipefail
 # uma reprovacao falsa.
 export PYTHONIOENCODING=utf-8
 
-ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+# ML-2D (ROADMAP-2026-09-06-perfil-e-aceleracao-do-check-gates-falsify): o
+# gerador de chunks (scripts/gen-falsify-chunks.py) materializa este preâmbulo
+# (byte a byte, sem edição) fora de $ROOT_DIR/scripts/ — sem o override,
+# ${BASH_SOURCE[0]} aponta para o chunk em tmp e ROOT_DIR resolve errado
+# (reproduzido: `cp: .../cmd/.: No such file or directory`). O driver
+# (scripts/run-gates-falsify-parallel.sh) exporta TRACKFW_ROOT_DIR antes de
+# invocar cada chunk; a invocação direta do script original (sem a env var)
+# continua resolvendo pelo próprio caminho, sem mudança de comportamento.
+ROOT_DIR=${TRACKFW_ROOT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/trackfw-falsify.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
 
@@ -318,6 +326,10 @@ sys.stdout.flush()
   echo "OK   [falsify/$label]: guard exit $guard_status, writer_status=$writer_status, escritor_erro=$writer_had_error"
 }
 
+# Fixture de REQ válida (ADR/Roadmap preenchidos) reaproveitada nos sandboxes
+# — evita disparar wip_has_req/req_has_adr/req_has_roadmap, que reprovariam
+# por motivo diferente do heading e confundiriam o diagnóstico.
+
 write_roadmap_acceptance_req_fixture() {
   local dest=$1
   mkdir -p "$(dirname "$dest")"
@@ -341,6 +353,12 @@ ADR: none
 Roadmap: none
 REQEOF
 }
+
+# Remove a n-ésima ocorrência (0-based) do bloco de heading consolidado.
+# O bloco é byte-idêntico nas 2 ocorrências (template simples e --from-req)
+# em Go/Node/Python — só o texto QUE SEGUE difere — então localizamos por
+# índice de ocorrência em vez de âncora de sufixo (frágil e específica por
+# linguagem).
 
 remove_roadmap_acceptance_heading() {
   local src_file=$1
@@ -369,6 +387,10 @@ PY
   fi
 }
 
+# Substitui a única ocorrência de `old` por `new` em todo o arquivo. Falha se
+# a contagem de ocorrências não for exatamente 1 — evita corromper o alvo
+# errado silenciosamente e evita "passar" sem corromper nada.
+
 corrupt_literal() {
   local src=$1 dest=$2 old=$3 new=$4 label=$5
   python3 - "$src" "$dest" "$old" "$new" "$label" <<'PY'
@@ -383,6 +405,13 @@ if count != 1:
 pathlib.Path(dest).write_text(source.replace(old, new, 1), encoding="utf-8")
 PY
 }
+
+# Substitui a primeira ocorrência de `old` por `new`, restrita ao corpo de
+# `func_name` (de `def func_name(` até o próximo `\ndef ` ou fim de arquivo).
+# Necessário no Python: o literal `req: "{req_path}"` ocorre IDÊNTICO em duas
+# funções distintas (_roadmap_template para --req simples,
+# generate_roadmap_from_req para --from-req) — sem escopo de função, corromper
+# uma corromperia as duas ao mesmo tempo.
 
 corrupt_python_func_literal() {
   local src=$1 dest=$2 func_name=$3 old=$4 new=$5
@@ -406,6 +435,13 @@ pathlib.Path(dest).write_text(source[:start] + new_segment + source[end:], encod
 PY
 }
 
+# Helper: assert que o comando retorna exit 0 E a saída NÃO contém `pattern`.
+# Usado para provar que o ciclo LIMPO (código correto, sem corrupção) não
+# emite o diagnóstico da corrupção — sem esta prova, o braço de detecção
+# (assert_fails_with) sozinho não descarta a hipótese de que o ciclo já
+# reprovaria por qualquer outro motivo (seam inativo mascarado por ruído
+# alheio à corrupção).
+
 assert_lacks_pattern() {
   local label=$1
   local pattern=$2
@@ -428,6 +464,11 @@ assert_lacks_pattern() {
   echo "OK   [falsify/$label]"
 }
 
+# Helper: assert que o comando retorna exit 0 (prova positiva). Espelha
+# assert_fails_with, mas na direção inversa — necessário porque o
+# Cenário 26 primeiro precisa provar "código correto não regride" antes de
+# provar "código corrompido é detectado".
+
 assert_succeeds() {
   local label=$1
   shift
@@ -444,6 +485,9 @@ assert_succeeds() {
   echo "OK   [falsify/$label]: $out"
 }
 
+# Scaffold mínimo de projeto trackfw (docs/adr, docs/req, docs/roadmaps/*,
+# trackfw.yaml) — mesma estrutura de check-validate-parity.sh.
+
 scaffold_adr_req_project() {
   local dest=$1
   mkdir -p "$dest/docs/adr" "$dest/docs/req" \
@@ -456,6 +500,9 @@ req_dir: docs/req
 roadmap_dir: docs/roadmaps
 EOF
 }
+
+# ADR fixture com status alinhado entre frontmatter e cabeçalho (caso
+# canônico bem formado) — mesmo padrão de adrFixtureContent (validator_test.go).
 
 write_adr_status_fixture() {
   local dest=$1 status=$2
@@ -478,6 +525,28 @@ ctx
 decision
 EOF
 }
+
+# REQ Done referenciando o ADR via frontmatter \`adr:\` e via a seção
+# "## Linked ADR" — mesmo padrão de reqDoneFixtureContent (validator_test.go).
+#
+# $3 (roadmap_rel, opcional, default "none") — ML-1D (issue #278, rescaldo):
+# antes do ML-1B, `Roadmap:` sem valor era um "vazio" que `contentHasMarker`
+# (por literal) não detectava, então este fixture passava despercebido pela
+# regra `req_has_roadmap` mesmo sem vínculo real. Pós-ML-1B
+# (`contentHasMarkerValue`, por VALOR) o vazio passou a ser corretamente
+# acusado — o que quebra QUALQUER cenário que precise do ciclo TOTALMENTE
+# limpo, não só `assert_succeeds`: `assert_lacks_pattern` (usada nos braços
+# "-detects-regression" dos Cenários 27/28) também exige exit 0 do processo
+# inteiro, não apenas a ausência do padrão sob prova — uma suposição inicial
+# deste ML de que ela "tolera violações extras" estava errada (achado ao
+# rodar este script isolado, não coberto por make quality até então rodar
+# até essa asserção). Por isso o default de $roadmap_rel deixou de ser vazio
+# e passou a ser o literal "none" — mesmo placeholder inofensivo já usado em
+# write_roadmap_acceptance_req_fixture (não termina em ".md", então
+# ref_targets_exist não tenta resolvê-lo no disco, e tem valor não-branco,
+# então req_has_roadmap não o acusa). Cenários que precisam de um alvo REAL
+# (ex.: adr-not-accepted/*/superseded-not-a-violation-baseline) continuam
+# passando $3 explicitamente.
 
 write_req_done_fixture() {
   local dest=$1 adr_rel=$2 roadmap_rel=${3:-none}
@@ -509,6 +578,21 @@ Roadmap: $roadmap_rel
 EOF
 }
 
+# Roadmap mínimo, usado apenas como ALVO real de `write_req_done_fixture $3`
+# nos cenários que precisam de ZERO violações (`assert_succeeds`) — sem isto
+# o REQ apontaria para um Roadmap que não existe no disco.
+#
+# $2 (req_rel) — ML-1D (rescaldo, achado ao rodar este script isolado): este
+# fixture fica em docs/roadmaps/wip/, então ELE MESMO é varrido por
+# wip_has_req e wip_acceptance (mesmo diretório que dispara essas duas
+# regras nos Cenários 1-N deste script). Sem req_rel real e sem heading
+# "## Acceptance Criteria", os cenários adr-not-accepted/*/superseded-
+# not-a-violation-baseline (assert_succeeds) reprovavam com DUAS violações
+# NOVAS ("is in wip but has no linked REQ" + "has no acceptance criteria
+# block") — o mesmo defeito de "vazio disfarçado" do req_rel original,
+# só que no lado Roadmap→REQ em vez de REQ→Roadmap. Verificado rodando o
+# fixture isolado contra o binário Go antes desta correção.
+
 write_roadmap_link_target_fixture() {
   local dest=$1 req_rel=$2
   mkdir -p "$(dirname "$dest")"
@@ -530,6 +614,13 @@ REQ: $req_rel
 - [x] feito
 EOF
 }
+
+# REQ Open bloqueada pelo ADR via a seção "## Blocked by ADRs" — mesmo padrão
+# do fixture de TestBlockedByDraftADR_REQOpen_ProposedADR_Violates.
+# ML-1D (issue #278, rescaldo): "ADR: none" / "Roadmap: none" — mesmo placeholder de
+# write_roadmap_acceptance_req_fixture — evitam disparar req_has_adr/req_has_roadmap sem
+# apontar para um arquivo real; a seção "## Blocked by ADRs" (não "Linked ADR") é a fonte
+# real de $adr_basename para blocked_by_draft_adr, então nenhuma das duas fica sem cobertura.
 
 write_req_open_blocked_fixture() {
   local dest=$1 adr_basename=$2
@@ -564,6 +655,16 @@ Roadmap: none
 EOF
 }
 
+# REQ Done SEM `adr:` no frontmatter, referenciando o ADR só via backtick na
+# seção "## Linked ADR" — a forma real usada em REQs do repositório.
+#
+# "Roadmap: none" (ML-1D, mesmo placeholder de write_roadmap_acceptance_req_fixture):
+# contentHasMarkerValue (req_has_roadmap) é independente de extractRefPath — não é afetado
+# pela corrupção deste Cenário — então um "Roadmap:" verdadeiramente vazio dispararia
+# req_has_roadmap nos dois braços (baseline E detects-regression) e quebraria
+# assert_lacks_pattern, que exige exit 0 do processo inteiro, não só a ausência do padrão
+# sob prova.
+
 write_req_done_fixture_backtick_body_only() {
   local dest=$1 adr_rel=$2
   mkdir -p "$(dirname "$dest")"
@@ -593,6 +694,10 @@ ADR: \`$adr_rel\` (prosa)
 Roadmap: none
 EOF
 }
+
+# REQ mínima com status controlado — só o frontmatter importa para o bloco
+# Inventory (contagem por status), mas o corpo segue o mesmo esqueleto das
+# demais fixtures de REQ do harness (write_req_done_fixture etc.).
 
 write_req_status_fixture() {
   local dest=$1 status=$2 title=$3
@@ -624,6 +729,9 @@ Roadmap:
 EOF
 }
 
+# Roadmap mínimo com status controlado, para popular um estado específico
+# (ex: analyzing/) na contagem do bloco Inventory.
+
 write_roadmap_state_fixture() {
   local dest=$1 status=$2 title=$3
   mkdir -p "$(dirname "$dest")"
@@ -638,6 +746,11 @@ date: 2026-08-02
 > Status: $status
 EOF
 }
+
+# "Roadmap: none" (ML-1D, mesmo placeholder das demais fixtures deste script): evita
+# req_has_roadmap num "Roadmap:" que, de outra forma, ficaria vazio nos dois braços
+# (assert_fails_with/assert_lacks_pattern) — assert_lacks_pattern exige exit 0 do
+# processo inteiro, não só a ausência do padrão sob prova.
 
 write_req_done_fixture_unpaired_delimiter_body_only() {
   local dest=$1 adr_rel=$2
@@ -712,6 +825,9 @@ EOF
   chmod +x "$dest/scripts/trackfw-credential-guard.sh"
 }
 
+# rules_severity vazio (padrão) omite o bloco `rules:` inteiro — usado pelos
+# braços que não commitam/escrevem nenhum override de severidade.
+
 s50_yaml_content() {
   local mode=$1 rules_severity=${2:-}
   cat <<EOF
@@ -727,6 +843,11 @@ EOF
     printf 'rules:\n  credential_guard_mode_downgrade: %s\n' "$rules_severity"
   fi
 }
+
+# Generalizado (ML-2A) para aceitar o conteúdo do trackfw.yaml commitado —
+# antes só commitava s50_yaml_content block; os Cenários 51/52/53 precisam
+# commitar HEADs diferentes (com/sem rules: off junto, com/sem
+# credential_guard nenhum).
 
 s50_commit_fixture() {
   local dest=$1 yaml_content=$2 commit_msg=$3
@@ -789,6 +910,28 @@ Prosa qualquer da seção que não é contrato.
 EOF
 }
 
+# Cenario 166 -- Direcao A (AC9/AC14, ROADMAP-2026-08-22-wave-0-de-modelo-de-
+#                ameaca-no-harness-e-o-asset-do-arquiteto-ensina-trackfw-push,
+#                ML-2A): gerador de roadmap deixa de emitir "## Wave 0 --
+#                Threat Model" nos 3 stacks SINCRONIZADAMENTE (mesmo texto
+#                trocado, mesma hora, nos 3 geradores) -- prova que a
+#                assercao de conteudo esperado acrescentada a
+#                check-artifact-parity.sh (AC14) e load-bearing. Sem ela,
+#                as 3 saidas identicas-mas-erradas passariam limpas no diff
+#                cross-stack existente (achado do modelo de ameaca, docs/
+#                seguranca/2026-08-22-modelo-de-ameaca-da-wave-0-no-harness.md,
+#                Sec3 F1/F4: "uma regressao sincronizada que remove Wave 0
+#                dos 3 stacks passa em silencio").
+#
+# GO_BIN sozinho nao basta: check-artifact-parity.sh hardcoda
+# node "$ROOT_DIR/npm/bin/trackfw" e PYTHONPATH="$ROOT_DIR/pypi" -- ROOT_DIR
+# deriva do proprio BASH_SOURCE do script. A unica forma de sincronizar a
+# sabotagem nos 3 stacks e copiar a arvore inteira (cmd/, internal/, npm/,
+# pypi/, go.mod, go.sum) e invocar a COPIA do gate, nao o do ROOT_DIR real
+# -- mesmo com GO_BIN apontando para o real, o node/python continuariam
+# limpos e a asimetria denunciaria a prova (2 stacks limpos, 1 sabotado
+# passaria pelo diff cross-stack antigo mesmo sem a assercao nova).
+
 setup_s166_tree() {
   local dest=$1
   mkdir -p "$dest/cmd" "$dest/internal" "$dest/scripts" \
@@ -804,6 +947,12 @@ setup_s166_tree() {
   cp "$ROOT_DIR/npm/package.json" "$dest/npm/package.json"
   cp -r "$ROOT_DIR/pypi/trackfw" "$dest/pypi/trackfw"
 }
+
+# $2 (roadmap_rel) precisa ser um alvo REAL (existente no disco): ref_targets_exist tem
+# severidade default "error" (não está em ruleDefaults) — um Roadmap: apontando para um
+# arquivo inexistente reprovaria o ciclo por um motivo alheio ao seam sob prova aqui, e
+# quebraria assert_lacks_pattern (exige exit 0 do processo inteiro). ADR: fica com o
+# placeholder de comentário HTML — a única falsa-positiva sob prova nesta fixture.
 
 write_req_adr_placeholder_fixture() {
   local dest=$1 roadmap_rel=$2
@@ -835,6 +984,10 @@ Roadmap: $roadmap_rel
 EOF
 }
 
+# $2 (adr_rel) precisa ser um alvo REAL, mesmo motivo de write_req_adr_placeholder_fixture
+# acima — aqui é o Roadmap: que fica com a prosa no meio da frase, a única falsa-positiva
+# sob prova nesta fixture.
+
 write_req_roadmap_prose_fixture() {
   local dest=$1 adr_rel=$2
   mkdir -p "$(dirname "$dest")"
@@ -864,6 +1017,12 @@ ADR: $adr_rel
 veja a secao Roadmap: mais abaixo para detalhes
 EOF
 }
+
+# Fixture A/C: REQ Open (com ADR Accepted válido) apontando, via
+# `roadmap:`/`Roadmap:`, para o caminho ANTIGO ".../wip/<nome>.md" do
+# roadmap fixture, que fisicamente já foi movido para docs/roadmaps/done/ —
+# reproduz exatamente o defeito medido (o campo grava a pasta de estado, e
+# ela ficou velha depois de um `roadmap move`).
 
 write_s193_lifecycle_req_fixture() {
   local dest=$1 adr_rel=$2
@@ -916,6 +1075,10 @@ REQ: $req_rel
 - [x] feito
 EOF
 }
+
+# Fixture B: REQ Done (evita interferência com req_roadmap_lifecycle, que só
+# olha REQ Open) referenciando um basename que NÃO existe em nenhum dos 6
+# diretórios de estado — vínculo genuinamente quebrado.
 
 write_s193_vacuity_req_fixture() {
   local dest=$1 adr_rel=$2
@@ -1876,16 +2039,6 @@ assert_fails_with "cli-parity/v-flag-accepted" \
 # gerador disjunto e portanto sua própria prova de vivacidade.
 # ---------------------------------------------------------------------------
 
-# Fixture de REQ válida (ADR/Roadmap preenchidos) reaproveitada nos sandboxes
-# — evita disparar wip_has_req/req_has_adr/req_has_roadmap, que reprovariam
-# por motivo diferente do heading e confundiriam o diagnóstico.
-
-# Remove a n-ésima ocorrência (0-based) do bloco de heading consolidado.
-# O bloco é byte-idêntico nas 2 ocorrências (template simples e --from-req)
-# em Go/Node/Python — só o texto QUE SEGUE difere — então localizamos por
-# índice de ocorrência em vez de âncora de sufixo (frágil e específica por
-# linguagem).
-
 # Executa o ciclo completo init → roadmap new (simples ou --from-req) →
 # roadmap move wip → validate contra um binário/runtime já preparado no
 # sandbox $1, e imprime a saída de `validate` (stdout+stderr) preservando o
@@ -1995,24 +2148,6 @@ done
 # ---------------------------------------------------------------------------
 # Helpers reused pelos Cenários 25 e 26 abaixo.
 # ---------------------------------------------------------------------------
-
-# Substitui a única ocorrência de `old` por `new` em todo o arquivo. Falha se
-# a contagem de ocorrências não for exatamente 1 — evita corromper o alvo
-# errado silenciosamente e evita "passar" sem corromper nada.
-
-# Substitui a primeira ocorrência de `old` por `new`, restrita ao corpo de
-# `func_name` (de `def func_name(` até o próximo `\ndef ` ou fim de arquivo).
-# Necessário no Python: o literal `req: "{req_path}"` ocorre IDÊNTICO em duas
-# funções distintas (_roadmap_template para --req simples,
-# generate_roadmap_from_req para --from-req) — sem escopo de função, corromper
-# uma corromperia as duas ao mesmo tempo.
-
-# Helper: assert que o comando retorna exit 0 E a saída NÃO contém `pattern`.
-# Usado para provar que o ciclo LIMPO (código correto, sem corrupção) não
-# emite o diagnóstico da corrupção — sem esta prova, o braço de detecção
-# (assert_fails_with) sozinho não descarta a hipótese de que o ciclo já
-# reprovaria por qualquer outro motivo (seam inativo mascarado por ruído
-# alheio à corrupção).
 
 # ---------------------------------------------------------------------------
 # Cenário 25 — ciclo `roadmap new --from-req` → `roadmap move ... wip` →
@@ -2195,11 +2330,6 @@ SIMPLE_REQ_FIELD_SCRIPT='
   echo "req: field = $value (matches --req path, AC2b holds)"
 '
 
-# Helper: assert que o comando retorna exit 0 (prova positiva). Espelha
-# assert_fails_with, mas na direção inversa — necessário porque o
-# Cenário 26 primeiro precisa provar "código correto não regride" antes de
-# provar "código corrompido é detectado".
-
 # --- Go: prova positiva --------------------------------------------------
 # Binário isolado (não $ROOT_DIR/bin/trackfw): a prova não pode depender de
 # `make build` já ter rodado antes deste script — mesmo padrão de
@@ -2314,56 +2444,6 @@ assert_fails_with "roadmap-req-frontmatter-path/python/simple-detects-regression
 # Corrompe a IMPLEMENTAÇÃO (validador), nunca a asserção — mesmo padrão dos
 # Cenários 14/16/17/20/21/24/26.
 # ---------------------------------------------------------------------------
-
-# Scaffold mínimo de projeto trackfw (docs/adr, docs/req, docs/roadmaps/*,
-# trackfw.yaml) — mesma estrutura de check-validate-parity.sh.
-
-# ADR fixture com status alinhado entre frontmatter e cabeçalho (caso
-# canônico bem formado) — mesmo padrão de adrFixtureContent (validator_test.go).
-
-# REQ Done referenciando o ADR via frontmatter \`adr:\` e via a seção
-# "## Linked ADR" — mesmo padrão de reqDoneFixtureContent (validator_test.go).
-#
-# $3 (roadmap_rel, opcional, default "none") — ML-1D (issue #278, rescaldo):
-# antes do ML-1B, `Roadmap:` sem valor era um "vazio" que `contentHasMarker`
-# (por literal) não detectava, então este fixture passava despercebido pela
-# regra `req_has_roadmap` mesmo sem vínculo real. Pós-ML-1B
-# (`contentHasMarkerValue`, por VALOR) o vazio passou a ser corretamente
-# acusado — o que quebra QUALQUER cenário que precise do ciclo TOTALMENTE
-# limpo, não só `assert_succeeds`: `assert_lacks_pattern` (usada nos braços
-# "-detects-regression" dos Cenários 27/28) também exige exit 0 do processo
-# inteiro, não apenas a ausência do padrão sob prova — uma suposição inicial
-# deste ML de que ela "tolera violações extras" estava errada (achado ao
-# rodar este script isolado, não coberto por make quality até então rodar
-# até essa asserção). Por isso o default de $roadmap_rel deixou de ser vazio
-# e passou a ser o literal "none" — mesmo placeholder inofensivo já usado em
-# write_roadmap_acceptance_req_fixture (não termina em ".md", então
-# ref_targets_exist não tenta resolvê-lo no disco, e tem valor não-branco,
-# então req_has_roadmap não o acusa). Cenários que precisam de um alvo REAL
-# (ex.: adr-not-accepted/*/superseded-not-a-violation-baseline) continuam
-# passando $3 explicitamente.
-
-# Roadmap mínimo, usado apenas como ALVO real de `write_req_done_fixture $3`
-# nos cenários que precisam de ZERO violações (`assert_succeeds`) — sem isto
-# o REQ apontaria para um Roadmap que não existe no disco.
-#
-# $2 (req_rel) — ML-1D (rescaldo, achado ao rodar este script isolado): este
-# fixture fica em docs/roadmaps/wip/, então ELE MESMO é varrido por
-# wip_has_req e wip_acceptance (mesmo diretório que dispara essas duas
-# regras nos Cenários 1-N deste script). Sem req_rel real e sem heading
-# "## Acceptance Criteria", os cenários adr-not-accepted/*/superseded-
-# not-a-violation-baseline (assert_succeeds) reprovavam com DUAS violações
-# NOVAS ("is in wip but has no linked REQ" + "has no acceptance criteria
-# block") — o mesmo defeito de "vazio disfarçado" do req_rel original,
-# só que no lado Roadmap→REQ em vez de REQ→Roadmap. Verificado rodando o
-# fixture isolado contra o binário Go antes desta correção.
-
-# REQ Open bloqueada pelo ADR via a seção "## Blocked by ADRs" — mesmo padrão
-# do fixture de TestBlockedByDraftADR_REQOpen_ProposedADR_Violates.
-# ML-1D (issue #278, rescaldo): "ADR: none" / "Roadmap: none" — mesmo placeholder de
-# write_roadmap_acceptance_req_fixture — evitam disparar req_has_adr/req_has_roadmap sem
-# apontar para um arquivo real; a seção "## Blocked by ADRs" (não "Linked ADR") é a fonte
-# real de $adr_basename para blocked_by_draft_adr, então nenhuma das duas fica sem cobertura.
 
 S27_MSG_ACCEPTED='is not accepted (status: Proposed)'
 S27_MSG_BLOCKED='is blocked by not-accepted ADR: ADR-2026-08-01-proposed-fixture.md'
@@ -2558,16 +2638,6 @@ assert_lacks_pattern "adr-not-accepted/python/blocked_by_draft_adr-detects-regre
 # Cenário 27.
 # ---------------------------------------------------------------------------
 
-# REQ Done SEM `adr:` no frontmatter, referenciando o ADR só via backtick na
-# seção "## Linked ADR" — a forma real usada em REQs do repositório.
-#
-# "Roadmap: none" (ML-1D, mesmo placeholder de write_roadmap_acceptance_req_fixture):
-# contentHasMarkerValue (req_has_roadmap) é independente de extractRefPath — não é afetado
-# pela corrupção deste Cenário — então um "Roadmap:" verdadeiramente vazio dispararia
-# req_has_roadmap nos dois braços (baseline E detects-regression) e quebraria
-# assert_lacks_pattern, que exige exit 0 do processo inteiro, não só a ausência do padrão
-# sob prova.
-
 S28_MSG_ACCEPTED='is not accepted (status: Proposed)'
 
 # --- Go: prova positiva -----------------------------------------------------
@@ -2759,13 +2829,6 @@ fi
 # 14/16/17/20/21/24/25/26/27/28/29.
 # ---------------------------------------------------------------------------
 
-# REQ mínima com status controlado — só o frontmatter importa para o bloco
-# Inventory (contagem por status), mas o corpo segue o mesmo esqueleto das
-# demais fixtures de REQ do harness (write_req_done_fixture etc.).
-
-# Roadmap mínimo com status controlado, para popular um estado específico
-# (ex: analyzing/) na contagem do bloco Inventory.
-
 S30_PROJECT="$WORK/s30-status-project"
 scaffold_adr_req_project "$S30_PROJECT"
 write_req_status_fixture "$S30_PROJECT/docs/req/REQ-open.md" "Open" "open fixture"
@@ -2925,11 +2988,6 @@ fi
 # asserção — mesmo padrão dos Cenários 27/28/29/30/31. Reusa T27_GO_BIN
 # (binário Go limpo) e S27_MSG_ACCEPTED.
 # ---------------------------------------------------------------------------
-
-# "Roadmap: none" (ML-1D, mesmo placeholder das demais fixtures deste script): evita
-# req_has_roadmap num "Roadmap:" que, de outra forma, ficaria vazio nos dois braços
-# (assert_fails_with/assert_lacks_pattern) — assert_lacks_pattern exige exit 0 do
-# processo inteiro, não só a ausência do padrão sob prova.
 
 T32_PROJECT="$WORK/s32-unpaired-delimiter-project"
 scaffold_adr_req_project "$T32_PROJECT"
@@ -4993,14 +5051,6 @@ assert_would_now_fail "credential-guard-script-integrity" \
 # ---------------------------------------------------------------------------
 S50_MSG='current file does not resolve to block'
 S50_FULL_MSG='trackfw.yaml sets credential_guard.mode: block at the git HEAD commit, but the current file does not resolve to block — if this was intentional, commit the change; otherwise investigate before treating the credential guard as active'
-
-# rules_severity vazio (padrão) omite o bloco `rules:` inteiro — usado pelos
-# braços que não commitam/escrevem nenhum override de severidade.
-
-# Generalizado (ML-2A) para aceitar o conteúdo do trackfw.yaml commitado —
-# antes só commitava s50_yaml_content block; os Cenários 51/52/53 precisam
-# commitar HEADs diferentes (com/sem rules: off junto, com/sem
-# credential_guard nenhum).
 
 # --- braço baseline: disco concorda com HEAD (mode: block) -> validate passa
 T50_OK="$WORK/s50-mode-matches-head"
@@ -8955,27 +9005,6 @@ assert_fails_with "validate-parity/credential-guard-absolute-path-accused" \
 
 
 # ---------------------------------------------------------------------------
-# Cenario 166 -- Direcao A (AC9/AC14, ROADMAP-2026-08-22-wave-0-de-modelo-de-
-#                ameaca-no-harness-e-o-asset-do-arquiteto-ensina-trackfw-push,
-#                ML-2A): gerador de roadmap deixa de emitir "## Wave 0 --
-#                Threat Model" nos 3 stacks SINCRONIZADAMENTE (mesmo texto
-#                trocado, mesma hora, nos 3 geradores) -- prova que a
-#                assercao de conteudo esperado acrescentada a
-#                check-artifact-parity.sh (AC14) e load-bearing. Sem ela,
-#                as 3 saidas identicas-mas-erradas passariam limpas no diff
-#                cross-stack existente (achado do modelo de ameaca, docs/
-#                seguranca/2026-08-22-modelo-de-ameaca-da-wave-0-no-harness.md,
-#                Sec3 F1/F4: "uma regressao sincronizada que remove Wave 0
-#                dos 3 stacks passa em silencio").
-#
-# GO_BIN sozinho nao basta: check-artifact-parity.sh hardcoda
-# node "$ROOT_DIR/npm/bin/trackfw" e PYTHONPATH="$ROOT_DIR/pypi" -- ROOT_DIR
-# deriva do proprio BASH_SOURCE do script. A unica forma de sincronizar a
-# sabotagem nos 3 stacks e copiar a arvore inteira (cmd/, internal/, npm/,
-# pypi/, go.mod, go.sum) e invocar a COPIA do gate, nao o do ROOT_DIR real
-# -- mesmo com GO_BIN apontando para o real, o node/python continuariam
-# limpos e a asimetria denunciaria a prova (2 stacks limpos, 1 sabotado
-# passaria pelo diff cross-stack antigo mesmo sem a assercao nova).
 # ---------------------------------------------------------------------------
 
 # Baseline -- copia LIMPA (sem sabotagem): o gate contra a copia tem que
@@ -10288,16 +10317,6 @@ assert_fails_with 'validate-parity/gbg-claude-relativo-bare-relative-path-not-de
 # linked Roadmap" desaparece.
 # ---------------------------------------------------------------------------
 
-# $2 (roadmap_rel) precisa ser um alvo REAL (existente no disco): ref_targets_exist tem
-# severidade default "error" (não está em ruleDefaults) — um Roadmap: apontando para um
-# arquivo inexistente reprovaria o ciclo por um motivo alheio ao seam sob prova aqui, e
-# quebraria assert_lacks_pattern (exige exit 0 do processo inteiro). ADR: fica com o
-# placeholder de comentário HTML — a única falsa-positiva sob prova nesta fixture.
-
-# $2 (adr_rel) precisa ser um alvo REAL, mesmo motivo de write_req_adr_placeholder_fixture
-# acima — aqui é o Roadmap: que fica com a prosa no meio da frase, a única falsa-positiva
-# sob prova nesta fixture.
-
 S192_MSG_ADR='has no linked ADR'
 S192_MSG_ROADMAP='has no linked Roadmap'
 
@@ -10536,16 +10555,6 @@ S193_MSG_STALE='req "REQ-2026-09-06-s193-fixture.md" links to Roadmap "docs/road
 S193_MSG_LIFECYCLE='req "REQ-2026-09-06-s193-fixture.md" is Open but linked Roadmap "docs/roadmaps/wip/ROADMAP-2026-09-06-s193-fixture.md" is in done/'
 S193_MSG_VACUITY='links to Roadmap "docs/roadmaps/wip/ROADMAP-2026-09-06-s193-vacuity-absent.md" which does not exist'
 
-# Fixture A/C: REQ Open (com ADR Accepted válido) apontando, via
-# `roadmap:`/`Roadmap:`, para o caminho ANTIGO ".../wip/<nome>.md" do
-# roadmap fixture, que fisicamente já foi movido para docs/roadmaps/done/ —
-# reproduz exatamente o defeito medido (o campo grava a pasta de estado, e
-# ela ficou velha depois de um `roadmap move`).
-
-
-# Fixture B: REQ Done (evita interferência com req_roadmap_lifecycle, que só
-# olha REQ Open) referenciando um basename que NÃO existe em nenhum dos 6
-# diretórios de estado — vínculo genuinamente quebrado.
 
 # --- Go: fixtures compartilhadas (baseline usa o binário real; corrupção usa cópia isolada) ---
 T193_G_LIFECYCLE="$WORK/s193-go-lifecycle"

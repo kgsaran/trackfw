@@ -215,7 +215,61 @@ conteúdo").
 geração de chunk a partir de qualquer tmpdir.
 
 ### ML-2D — Gerador de fronteiras e paralelismo em produção
-**Status:** ⬜ Pendente · **Agente:** `ares-tf` · **Dependências: ML-2C**
+**Status:** ❌ Bloqueado — reprovado na auditoria · **Agente:** `ares-tf` · **Dependências: ML-2C**
+
+## Medição do ML-2D — arquiteto, 2026-09-07, na mesma sessão e na mesma máquina
+
+```
+serial (re-medido)   952s   rc=0    412 OK   0 FAIL
+JOBS=4  r1           412s   rc=1                        2.31x
+JOBS=8  r1           314s   rc=1    334 OK   1 FAIL     3.03x
+JOBS=8  r2           318s   rc=1    334 OK   1 FAIL
+JOBS=8  r3           319s   rc=1    334 OK   1 FAIL
+```
+
+**O ganho é real e a estimativa de ~3,5x quase se confirma: 3,03x a J=8.** E não há flakiness — as
+3 rodadas dão o mesmo tempo (±1,6%) e o mesmo conjunto. Determinístico.
+
+🔴 **Mas a entrega REPROVA, por perda silenciosa de cobertura:**
+
+```
+rótulos únicos no serial     398
+rótulos únicos no paralelo   321
+PERDIDOS                      77    (19% da suíte nunca executa)
+ganhos                         0
+```
+
+**Causa localizada.** `scripts/gen-falsify-chunks.py` casa fronteira com o padrão estrito
+`# Cenário N — ...` (acento em "Cenário", travessão `—`). No arquivo real:
+
+```
+cabeçalhos que casam o padrão estrito    95
+cabeçalhos de cenário existentes        137     ← 42 usam "Cenario" sem acento ou `--`
+```
+
+Os perdidos concentram-se no **fim do arquivo** (linhas 9023–10929, de 10930) — a cauda depois da
+última fronteira reconhecida não entra em chunk nenhum.
+
+🔴 **Por que isto é o achado e não um detalhe:** a suíte paralela sai com **1 FAIL**, o que *parece*
+"quase passando". Ninguém olha para `334 OK` e pensa "faltam 78". Um gate 3x mais rápido que roda 81%
+da suíte e se apresenta como quase verde é **pior que o gate lento** — foi exatamente o cenário que a
+REQ (AC2) e este roadmap anteciparam por escrito.
+
+**O FAIL restante** (`serve-chain-canonical-link/node/edge-baseline`, do ML-3D) é determinístico nas
+3 rodadas e precisa de diagnóstico próprio: é isolamento entre chunks ou defeito real que o serial
+mascara?
+
+**Não embarcado no `Makefile`** — confirmado, `git diff --name-only` não lista `Makefile`. Nada em
+produção depende disto hoje.
+
+### Correção exigida antes de reconsiderar
+
+1. Fronteira reconhecida por **todas** as grafias presentes, e o gerador **falha alto** se
+   `len(boundaries)` divergir da contagem de cabeçalhos — nunca degrada em silêncio.
+2. 🔴 **Guarda de conjunto DENTRO do driver**: ao fim, comparar o conjunto de rótulos emitidos com o
+   esperado e **sair != 0 se faltar qualquer um**. Sem isso, esta classe de defeito embarca de novo —
+   e desta vez sem alguém medindo à mão.
+3. A cauda depois da última fronteira tem de entrar em algum chunk, com teste que prove.
 
 Com o ML-2C feito, **qualquer fronteira `# Cenário` vira ponto de corte válido** — o problema difícil
 (descobrir onde é seguro cortar) deixa de existir. Este ML entrega o que o ML-2A mediu mas não
