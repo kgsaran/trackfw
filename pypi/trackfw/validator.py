@@ -236,34 +236,71 @@ def _content_has_marker(content: str, markers: list) -> bool:
     return False
 
 
+def _is_html_comment_only_value(value: str) -> bool:
+    """
+    Retorna True se value (já sem espaços nas duas pontas) é inteiramente um comentário
+    HTML — "<!-- ... -->" do início ao fim, sem nada fora dele. É a forma medida no achado
+    A2: "ADR: <!-- preencher depois -->" é sintaticamente um valor, mas semanticamente um
+    placeholder de "ainda não preenchido" — mesma intenção de um campo vazio, só que
+    disfarçado.
+    """
+    return value.startswith("<!--") and value.endswith("-->")
+
+
 def _content_has_marker_value(content: str, markers: list) -> bool:
     """
-    Retorna True se algum dos marcadores aparece em content seguido de conteúdo não-branco
-    na mesma linha — isto é, o campo tem um valor real, não apenas o marcador.
+    Retorna True se, em alguma LINHA de content, um dos marcadores aparece logo após
+    espaços/tabs de indentação (nunca no meio de uma frase) e é seguido de um valor
+    substantivo na mesma linha — não vazio e não um comentário HTML disfarçado de valor.
 
-    issue #278: _content_has_marker (acima) detectava "vazio" só pela grafia literal
-    "MARKER + um espaço + \\n"/"\\r\\n" — 5 de 7 grafias naturais de campo vazio escapavam
-    ("MARKER:\\n" sem espaço, dois espaços, tab, CRLF sem espaço, três espaços). Esta função
-    decide por VALOR: pega o resto da linha após o marcador, descarta \\r/\\t/espaços das
-    duas pontas, e só considera "tem valor" se sobrar algo. Indiferente a CRLF, tabs e
-    contagem de espaços — cobre as 7 grafias medidas na triagem, não apenas a literal do
-    template.
+    issue #278 (achado A2 da auditoria externa, 2026-09-05): a versão anterior buscava o
+    marcador como SUBSTRING em qualquer lugar do conteúdo. Isso produzia dois defeitos
+    medidos no acervo mergeado:
+      1. prosa que menciona o marcador no meio de uma frase contava como vínculo real
+         ("veja a secao ADR: mais abaixo" -> True, sem nenhum vínculo).
+      2. um comentário HTML usado como placeholder contava como valor
+         ("ADR: <!-- preencher depois -->" -> True, campo de fato vazio).
+
+    Ambos se resolvem tratando a detecção por LINHA em vez de por substring do documento
+    inteiro: o marcador só conta quando é a primeira coisa não-branca da linha (tolera
+    espaços/tabs à esquerda, não tolera qualquer outra decoração -- "> ", "- ", "# ", "**"
+    não contam como início). Medido antes de decidir (não assumido): nas quatro pastas
+    realmente varridas por estas 4 regras (REQ files para ADR:/Roadmap:; roadmaps de
+    wip/blocked para REQ:), a contagem de linhas com decoração diferente de espaço em
+    branco antes do marcador é ZERO -- os três geradores canônicos sempre emitem o
+    marcador no início da linha. Restringir a espaço/tab não introduz falso-positivo novo
+    neste acervo.
+
+    NÃO resolve (fora de escopo desta ML): "REQ (**reaberta**):" -- decoração ENTRE o nome
+    do campo e ":", não ANTES do marcador. A literal "REQ:" não aparece nessa linha nem
+    por substring nem por prefixo; ancorar por linha não causa nem cura esse caso. A forma
+    que funciona hoje é "REQ: docs/req/x.md (reaberta)" -- o marcador intacto, a anotação
+    depois.
+
+    "none", "TBD", "N/A", "-" continuam sendo tratados como VALOR (não como placeholder).
+    Nenhum dos quatro casos exigidos por esta ML os menciona, e "none" é usado
+    deliberadamente em scripts/check-gates-falsify.sh como placeholder inofensivo -- para
+    dizer "sem vínculo real, de propósito" nos fixtures que testam OUTRA regra -- sem
+    ficar vazio nem virar comentário HTML. Bloqueá-los moveria a contagem do acervo por um
+    motivo alheio ao achado A2 e quebraria cenários de falsificação que dependem desse
+    contrato.
+
+    issue #278 (ML-1B): 5 de 7 grafias naturais de campo vazio escapavam da checagem
+    anterior por literal -- esta função decide por VALOR (strip do resto da linha), o que
+    já cobre as 7 grafias medidas na triagem original.
     """
-    for marker in markers:
-        start = 0
-        while True:
-            idx = content.find(marker, start)
-            if idx == -1:
-                break
-            pos = idx + len(marker)
-            rest = content[pos:]
-            nl = rest.find("\n")
-            if nl != -1:
-                rest = rest[:nl]
-            rest = rest.rstrip("\r")
-            if rest.strip() != "":
-                return True
-            start = pos
+    for raw_line in content.split("\n"):
+        line = raw_line[:-1] if raw_line.endswith("\r") else raw_line
+        leading = line.lstrip(" \t")
+        for marker in markers:
+            if not leading.startswith(marker):
+                continue
+            rest = leading[len(marker):].strip()
+            if rest == "":
+                continue
+            if _is_html_comment_only_value(rest):
+                continue
+            return True
     return False
 
 
@@ -599,6 +636,13 @@ def _extract_ref_path(content: str, field: str) -> str:
                 return val
     return ""
 
+
+# extract_ref_path é o alias público de _extract_ref_path, usado por consumidores fora deste
+# módulo (trackfw.serve.api_chain, ML-3D). Ponto único de extração: o formato canônico gravado
+# por trackfw.generators.req (adr: "" e roadmap: "" SEMPRE vazios no frontmatter, valor real em
+# "## Linked ADR / ADR: <path>" e "## Linked Roadmap / Roadmap: <path>" no corpo) só é
+# encontrado varrendo o conteúdo inteiro linha a linha, não só o bloco de frontmatter.
+extract_ref_path = _extract_ref_path
 
 # resolve_agent_namespaces é re-exportado de trackfw.config (não definido aqui): trackfw.traceid é
 # importado por este módulo (linha ~15) e também precisa do resolvedor canônico, então a
@@ -1162,7 +1206,7 @@ def validate_wip_has_req(cfg: dict) -> list:
                 continue
             if not _content_has_marker_value(content, req_markers):
                 violations.append(
-                    {"type": "violation", "message": f'roadmap "{name}" is in wip but has no linked REQ'}
+                    {"type": "violation", "message": f'roadmap "{name}" is in wip but has no linked REQ (marker must start the line with a real, non-placeholder value)'}
                 )
     return violations
 
@@ -1179,7 +1223,7 @@ def validate_reqs_have_adr(cfg: dict) -> list:
         if not _content_has_marker_value(content, adr_markers):
             name = os.path.basename(file_path)
             violations.append(
-                {"type": "violation", "message": f'req "{name}" has no linked ADR'}
+                {"type": "violation", "message": f'req "{name}" has no linked ADR (marker must start the line with a real, non-placeholder value)'}
             )
     return violations
 
@@ -1195,7 +1239,7 @@ def validate_blocked_has_req(cfg: dict) -> list:
                 continue
             if not _content_has_marker_value(content, req_markers):
                 violations.append(
-                    {"type": "violation", "message": f'roadmap "{name}" is in blocked but has no linked REQ'}
+                    {"type": "violation", "message": f'roadmap "{name}" is in blocked but has no linked REQ (marker must start the line with a real, non-placeholder value)'}
                 )
     return violations
 
@@ -1212,7 +1256,7 @@ def validate_reqs_have_roadmap(cfg: dict) -> list:
         if not _content_has_marker_value(content, roadmap_markers):
             name = os.path.basename(file_path)
             violations.append(
-                {"type": "violation", "message": f'req "{name}" has no linked Roadmap'}
+                {"type": "violation", "message": f'req "{name}" has no linked Roadmap (marker must start the line with a real, non-placeholder value)'}
             )
     return violations
 
@@ -1547,11 +1591,32 @@ def validate_ref_targets_exist(cfg: dict) -> list:
                 "message": f'req "{name}" links to ADR "{adr_ref}" which does not exist'
             })
         roadmap_ref = _extract_ref_path(content, "Roadmap")
-        if roadmap_ref and not _reference_exists(roadmap_ref):
-            warnings.append({
-                "type": "warning",
-                "message": f'req "{name}" links to Roadmap "{roadmap_ref}" which does not exist'
-            })
+        if roadmap_ref:
+            resolved, stale = _resolve_roadmap_ref_status(cfg, roadmap_ref)
+            if len(resolved) == 0:
+                warnings.append({
+                    "type": "warning",
+                    "message": f'req "{name}" links to Roadmap "{roadmap_ref}" which does not exist'
+                })
+            elif len(resolved) == 1:
+                if stale:
+                    # literal falhou, resolvido só pelo fallback de basename num outro
+                    # estado: o vínculo aponta para um caminho de estado velho — o serve
+                    # casa edge.To pelo literal e desenharia aresta órfã para o mesmo
+                    # vínculo se calássemos aqui.
+                    actual_state = os.path.basename(os.path.dirname(resolved[0]))
+                    warnings.append({
+                        "type": "warning",
+                        "message": f'req "{name}" links to Roadmap "{roadmap_ref}" but the file '
+                                    f'is now in {actual_state}/ (stale state path)'
+                    })
+                # senão: resolvido pelo caminho literal — nenhum aviso.
+            else:
+                warnings.append({
+                    "type": "warning",
+                    "message": f'req "{name}" links to Roadmap "{roadmap_ref}" is ambiguous: '
+                                f'found in multiple states: {", ".join(resolved)}'
+                })
 
     return warnings
 
@@ -1577,6 +1642,80 @@ def _reference_exists(ref: str) -> bool:
     return os.path.exists(expand_path(_normalize_ref_separator(ref)))
 
 
+def _is_stale_roadmap_state_ref(ref: str) -> bool:
+    """
+    Reporta se `ref` (um valor de campo `Roadmap:` já extraído) parece ter sido gravado com uma
+    pasta de estado que pode ter ficado velha — condição de entrada do fallback por basename
+    (`_resolve_roadmap_ref_by_basename`): o segmento imediatamente antes do nome do arquivo é um
+    dos 6 nomes de estado reservados. Ver o comentário completo em internal/validator/validator.go,
+    `isStaleRoadmapStateRef` (fonte canônica da regra, ROADMAP-2026-09-05, ML-3B).
+    """
+    parent = os.path.basename(os.path.dirname(ref.replace("\\", "/")))
+    return parent in _AGENT_NAMESPACE_STATE_NAMES
+
+
+def _resolve_roadmap_ref_by_basename(cfg: dict, ref: str) -> list:
+    """
+    Procura, nos diretórios de ESTADO do roadmap_dir (backlog/analyzing/wip/blocked/done/
+    abandoned, honrando roadmap_namespacing), um arquivo cujo basename case com
+    os.path.basename(ref). Escopo restrito ao campo Roadmap: — ver a justificativa completa (REQ
+    sem dimensão de estado / ADR de REQ, árvore de ADR flat) no comentário gêmeo em
+    internal/validator/validator.go, `resolveRoadmapRefByBasename`.
+
+    Retorna a lista de caminhos absolutos encontrados: 0 (sem match), 1 (resolvido) ou mais de 1
+    (ambíguo — decisão do chamador).
+    """
+    base = os.path.basename(ref)
+    if base in ("", ".", os.sep):
+        return []
+    found = []
+    seen = set()
+    for state in sorted(_AGENT_NAMESPACE_STATE_NAMES):
+        for state_dir in _resolve_state_dirs(cfg, state):
+            try:
+                entries = os.listdir(state_dir)
+            except OSError:
+                continue
+            for entry in entries:
+                full = os.path.join(state_dir, entry)
+                if entry != base or os.path.isdir(full):
+                    continue
+                clean = os.path.normpath(full)
+                if clean not in seen:
+                    seen.add(clean)
+                    found.append(clean)
+    found.sort()
+    return found
+
+
+def _resolve_roadmap_ref(cfg: dict, ref: str) -> list:
+    """
+    Resolve um valor de campo `Roadmap:` já extraído: caminho literal primeiro (idêntico a
+    `_reference_exists` — preserva o branch de diretório existente hoje), e só cai para o
+    fallback por basename quando o literal falha e `_is_stale_roadmap_state_ref(ref)` indica que
+    vale a pena tentar. Retorna 0 (quebrado), 1 (resolvido) ou >1 (ambíguo) caminhos.
+    """
+    resolved, _stale = _resolve_roadmap_ref_status(cfg, ref)
+    return resolved
+
+
+def _resolve_roadmap_ref_status(cfg: dict, ref: str) -> tuple:
+    """
+    `_resolve_roadmap_ref` com um segundo retorno: stale=True quando a resolução só teve
+    sucesso via `_resolve_roadmap_ref_by_basename` (o caminho literal falhou e o arquivo foi
+    encontrado em outra pasta de estado). Espelha
+    internal/validator/validator.go:resolveRoadmapRefStatus (fonte canônica, ROADMAP-2026-09-05,
+    ML-3B).
+    """
+    expanded_ref = expand_path(_normalize_ref_separator(ref))
+    if os.path.exists(expanded_ref):
+        return [expanded_ref], False
+    if not _is_stale_roadmap_state_ref(ref):
+        return [], False
+    found = _resolve_roadmap_ref_by_basename(cfg, ref)
+    return found, len(found) > 0
+
+
 def validate_req_roadmap_lifecycle(cfg: dict) -> list:
     """Sinaliza REQ Open cujo roadmap canônico referenciado já está em done/."""
     warnings = []
@@ -1589,7 +1728,13 @@ def validate_req_roadmap_lifecycle(cfg: dict) -> list:
         ref = _extract_ref_path(content, "Roadmap")
         if not ref:
             continue
-        expanded_ref = expand_path(_normalize_ref_separator(ref))
+        resolved = _resolve_roadmap_ref(cfg, ref)
+        if len(resolved) != 1:
+            # 0 = vínculo quebrado, >1 = ambíguo — ambos já reportados por
+            # validate_ref_targets_exist. Esta regra só decide estado quando há UM arquivo real
+            # de onde derivá-lo.
+            continue
+        expanded_ref = resolved[0]
         if not os.path.isfile(expanded_ref):
             continue
         if os.path.basename(os.path.dirname(expanded_ref)) == "done":

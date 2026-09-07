@@ -1489,6 +1489,83 @@ func TestContentHasMarker_CRLF_P3(t *testing.T) {
 	})
 }
 
+// TestContentHasMarkerValue_VinculoEstrutural — ML-2A (REQ-2026-09-05, achado A2 da auditoria
+// externa): contentHasMarkerValue deixa de casar o marcador como substring livre do documento
+// inteiro e passa a exigir que ele seja a primeira coisa não-branca da LINHA, com um valor que
+// não seja vazio nem um comentário HTML sozinho. Cada subteste afirma uma conclusão específica
+// deste ML — declarada no comentário logo acima de cada um.
+func TestContentHasMarkerValue_VinculoEstrutural(t *testing.T) {
+	// Conclusão: um valor real, na forma canônica dos 3 geradores, continua sendo aceito —
+	// a reescrita não regride o caso feliz que já funcionava.
+	t.Run("valor_real_aceita", func(t *testing.T) {
+		content := "## Linked ADR\nADR: docs/adr/ADR-2026-09-05-exemplo.md\n"
+		if !contentHasMarkerValue(content, []string{"ADR:"}) {
+			t.Error("ADR com valor real (caminho .md) deve ser aceito como vínculo")
+		}
+	})
+
+	// Conclusão: as 7 grafias de campo vazio medidas no ML-1B (issue #278) continuam recusadas
+	// depois da reescrita estrutural — a mudança de substring para linha não reabriu o defeito
+	// que o ML-1B fechou.
+	t.Run("sete_grafias_de_campo_vazio_recusa", func(t *testing.T) {
+		grafias := []string{
+			"ADR: \n",   // literal original (1 espaço + LF)
+			"ADR:\n",    // sem espaço
+			"ADR:  \n",  // dois espaços
+			"ADR:   \n", // três espaços
+			"ADR:\t\n",  // tab
+			"ADR: \r\n", // CRLF com espaço
+			"ADR:\r\n",  // CRLF sem espaço
+		}
+		for _, g := range grafias {
+			content := "## Linked ADR\n" + g
+			if contentHasMarkerValue(content, []string{"ADR:"}) {
+				t.Errorf("grafia vazia %q não deve ser tratada como vínculo", g)
+			}
+		}
+	})
+
+	// Conclusão: achado A2 — um comentário HTML usado como placeholder de "ainda não
+	// preenchido" (`ADR: <!-- preencher depois -->`) deixa de contar como vínculo.
+	t.Run("comentario_html_placeholder_recusa", func(t *testing.T) {
+		content := "## Linked ADR\nADR: <!-- preencher depois -->\n"
+		if contentHasMarkerValue(content, []string{"ADR:"}) {
+			t.Error("placeholder de comentário HTML não deve ser tratado como vínculo real")
+		}
+	})
+
+	// Conclusão: achado A2 — prosa que menciona o marcador no meio de uma frase
+	// ("veja a secao ADR: mais abaixo") deixa de contar como vínculo, porque o marcador não
+	// é a primeira coisa não-branca da linha.
+	t.Run("prosa_com_marcador_no_meio_recusa", func(t *testing.T) {
+		content := "## Contexto\nveja a secao ADR: mais abaixo para detalhes\n"
+		if contentHasMarkerValue(content, []string{"ADR:"}) {
+			t.Error("prosa com o marcador no meio da frase não deve ser tratada como vínculo")
+		}
+	})
+
+	// Conclusão: indentação pura (espaços/tabs) antes do marcador continua sendo tolerada —
+	// não é decoração, é a mesma linha estruturalmente.
+	t.Run("indentacao_antes_do_marcador_aceita", func(t *testing.T) {
+		content := "## Linked ADR\n  \tADR: docs/adr/ADR-2026-09-05-exemplo.md\n"
+		if !contentHasMarkerValue(content, []string{"ADR:"}) {
+			t.Error("ADR indentado com espaços/tabs (sem outra decoração) deve ser aceito")
+		}
+	})
+
+	// Conclusão: decoração ENTRE o nome do campo e ":" ("REQ (**reaberta**):") não é a mesma
+	// coisa que decoração ANTES do marcador — a literal "REQ:" nem aparece nessa linha, nem por
+	// substring nem por prefixo. A ancoragem por linha desta ML não causa nem resolve esse caso;
+	// ele é recusado nas duas versões (antes e depois) porque o marcador, tal como configurado,
+	// não está presente. É o caso que pegou KG no roadmap do dia anterior a este ML.
+	t.Run("decoracao_entre_campo_e_dois_pontos_recusa_nas_duas_versoes", func(t *testing.T) {
+		content := "## Context\nREQ (**reaberta**): docs/req/REQ-exemplo.md\n"
+		if contentHasMarkerValue(content, []string{"REQ:"}) {
+			t.Error("REQ (**reaberta**): não deve casar — a literal REQ: não existe nessa linha")
+		}
+	})
+}
+
 // TestFolderStatus_DiretorioNaoLegivel_P2 — P2: pasta de estado que EXISTE mas não pode ser
 // lida (ENOTDIR — criada como arquivo regular) deve gerar warning, não silenciar.
 // Vetor: "docs/roadmaps/analyzing" é um arquivo regular, não um diretório.

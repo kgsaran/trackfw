@@ -3,7 +3,7 @@ status: Open
 date: 2026-09-05
 author: ""
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-05-reconciliar-o-que-declaramos-com-o-que-medimos-apos-a-auditoria-externa.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-05-reconciliar-o-que-declaramos-com-o-que-medimos-apos-a-auditoria-externa.md"
 ---
 
 # REQ: auditoria externa aponta que declaramos correcao onde a nossa propria medicao dizia o contrario
@@ -99,4 +99,4 @@ ADR: <!-- nenhum: correção de contradição interna e de método de auditoria.
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-09-05-reconciliar-o-que-declaramos-com-o-que-medimos-apos-a-auditoria-externa.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-09-05-reconciliar-o-que-declaramos-com-o-que-medimos-apos-a-auditoria-externa.md

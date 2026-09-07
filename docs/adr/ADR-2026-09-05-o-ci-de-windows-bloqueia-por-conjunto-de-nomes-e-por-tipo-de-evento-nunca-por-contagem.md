@@ -101,3 +101,52 @@ relato externo segue sendo necessário.
 - D3 medido nos dois cenários **antes** de escrever o discriminante, com a saída real de cada um.
 - O caso do **rename** exercitado explicitamente: renomear um teste da lista sem corrigi-lo **não**
   pode virar verde silencioso.
+
+
+---
+
+## Adendo — 2026-09-06: qual campo é o "tipo do evento" (D3), medido
+
+🔴 **A D3 dizia "tipo do evento" — e o nome natural do conceito aponta para o campo ERRADO.**
+
+Medido pelo consumidor externo (issue #274), Node 22 / Windows 11, reporter `tap`, cinco modos:
+
+```
+caso                      exitCode  ERR_ASSERTION  failureType       subject do "not ok"
+A  assert falso              0           1         testCodeFailure   nome do teste
+B  modulo ausente            1           0         testCodeFailure   CAMINHO DO ARQUIVO
+C  erro de sintaxe           1           0         testCodeFailure   CAMINHO DO ARQUIVO
+D  throw generico            0           0         testCodeFailure   nome do teste
+E  dois testes, 1 reprova    0           1         testCodeFailure   nome do teste
+```
+
+**`failureType` é `testCodeFailure` nos cinco.** Quem implementasse "discriminar por tipo de evento"
+pegando esse campo entregaria um discriminante que não discrimina — pela terceira vez nesta issue.
+
+### D3-bis — o discriminante é `exitCode` PRESENTE, não a ausência de `ERR_ASSERTION`
+
+Dois sinais funcionam e concordam entre si:
+
+1. **`exitCode:` presente** no bloco do `not ok` → o processo do arquivo morreu (B, C).
+2. **O subject do `not ok` é o caminho do arquivo**, não o nome do teste.
+
+🔴 **`ERR_ASSERTION` sozinho NÃO serve:** o caso **D** (`throw` genérico dentro do teste) não tem
+`ERR_ASSERTION` **nem** `exitCode` — classificá-lo pela ausência de `ERR_ASSERTION` o mandaria para o
+balde de "não carregou". **O robusto é a presença de `exitCode`, não a ausência do outro.**
+
+### Limites declarados pelo autor da medição
+
+- **Node 22, Windows 11.** Estabilidade do formato TAP entre versões do Node **não verificada** — e o
+  remédio passa a depender de um campo do reporter, não de um número no sumário.
+- **`pytest` e `go test` não medidos com o mesmo rigor.** O Go discrimina por `[build failed]`
+  (confirmado); o `pytest` separa `errors` de `failures` no sumário, mas o caso de **arquivo com um
+  único teste reprovando** não foi testado.
+- 🔴 **`tests == 0` continua descoberto** — nenhum dos dois sinais o cobre, porque não há `not ok`
+  para inspecionar. **Continua sendo o pior modo de falha**, e a AC5 da REQ segue exigindo medição
+  própria para ele.
+
+### O que isto muda no ML-1A da REQ
+
+O ML **não** parte de "escolher um campo". Parte de **reproduzir esta tabela nos 3 runtimes** — e a
+medição do Node já está feita e é reaproveitável. O que falta medir é `pytest`, `go test` e o caso
+`tests == 0`.

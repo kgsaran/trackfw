@@ -12,3 +12,4 @@
 - [Não narrar despacho antes de fazer](feedback_nao_narrar_despacho_antes_de_fazer.md) — "despachado" só depois da chamada do Agent no mesmo turno; aconteceu 2x
 - [Não trocar de branch com agente vivo](feedback_nao_trocar_de_branch_com_agente_vivo.md) — nada de checkout/commit de outra branch com subagente editando; cópia durável agora, commit depois
 - [Explicar sigla na primeira vez](feedback_explicar_sigla_na_primeira_vez.md) — TOCTOU, ML, AC, BOM: expandir na estreia; sigla não explicada não comunica
+- [Medir com a regra, não com grep](feedback_medir_com_a_regra_nao_com_grep.md) — 4 contagens erradas medidas; nunca `| tail` num gate, `grep -a` no index.js

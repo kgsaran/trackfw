@@ -52,6 +52,46 @@ Toda feature nova, correção de comportamento ou ajuste de lógica **DEVE ser i
 intencionais estão documentados em `docs/cli-parity.md`. Mudanças doc-only,
 infra e templates de artefato são exceções explícitas.
 
+## Regra Dura de Reconciliação — todo teste novo declara o que afirma (INVIOLÁVEL)
+
+**Todo ML que entregue teste novo declara, no relatório, qual conclusão do próprio ML aquele teste
+afirma — em uma frase.** E a auditoria do arquiteto **verifica esse cruzamento**, não só se o teste
+passa.
+
+### Por que esta regra existe
+
+Em 2026-09-05 um ML mediu, escreveu no relatório e registrou no vault que **`ENOTDIR` é
+indistinguível de "ausente" no Windows** (`ENOTDIR = ERROR_PATH_NOT_FOUND`). **Na mesma entrega**, ele
+criou um teste afirmando o contrário. O teste reprovou no CI de Windows, o ML foi marcado ✅, e o
+arquiteto mergeou.
+
+**Quem pegou foi uma auditoria externa**, um dia depois.
+
+Não faltou medição — a medição estava certa e escrita. **Faltou reconciliar o artefato entregue com a
+conclusão do próprio relatório.** O mesmo padrão apareceu em outros dois achados da mesma auditoria:
+
+| | medimos | e mesmo assim declaramos |
+|---|---|---|
+| A1 | `ENOTDIR` indistinguível no Windows | teste afirmando que é distinguível |
+| A2 | 7 grafias de vazio | "o vínculo está resolvido" |
+| A3 | — | um discriminante que nunca testamos |
+
+### Como aplicar
+
+**No handoff**, o arquiteto inclui a exigência. **No relatório**, o agente escreve a frase, por teste
+novo. **Na auditoria**, o arquiteto confronta cada frase com a seção de medição do mesmo relatório.
+
+🔴 **Se não for possível escrever a frase para um teste, o teste não deveria existir.** Um teste que
+não sustenta nenhuma conclusão do ML ou é decorativo, ou está afirmando outra coisa — e as duas
+possibilidades são problema.
+
+### O que esta regra NÃO cobre
+
+Ela pega **contradição interna** — artefato contra conclusão do mesmo relatório. **Não pega premissa
+errada compartilhada** pelos dois: se a medição estiver errada, o teste que a afirma passa na
+reconciliação. Para isso serve a barreira independente (`hades-tf`), que reimplementa a partir da
+leitura em vez de conferir o diff.
+
 ## Regra Dura de Causa Raiz — mesma causa, mesma REQ (INVIOLÁVEL)
 
 **Achado de mesma causa de erro é tratado na MESMA REQ. Nunca vira REQ nova.**
@@ -86,6 +126,26 @@ Duas consequências, e a segunda é pior:
   Corrija o escopo da REQ vigente; não abra outra.
 - **"É superfície diferente"** — parser vs. renderizador vs. escrita são superfícies diferentes do
   **mesmo** defeito. Mesma causa, mesma REQ.
+
+### Mesmo SINTOMA também fica no mesmo roadmap — até a medição dizer o contrário
+
+Acrescentado por decisão do usuário em 2026-09-06:
+
+> *"Descobertas novas, se forem do mesmo sintoma ou mesma causa, devem ser fechadas dentro do mesmo
+> roadmap."*
+
+**Mesma causa → obrigatoriamente o mesmo roadmap.** Sem exceção.
+
+**Mesmo sintoma → investiga no mesmo roadmap.** Se a medição mostrar que a causa é outra, pode
+separar — 🔴 **mas só com a medição escrita**, nunca por presunção.
+
+**Por que a distinção importa:** agrupar por sintoma foi o que produziu o erro mais caro desta
+campanha. O grupo do `IsAbs` foi estimado em **14 falhas** e entregou **2**, porque falhas cuja causa
+real era escape de aspas foram atribuídas a ele pelo sintoma parecido ("teste de guard falha com
+caminho").
+
+Então: o sintoma **inicia** a investigação junto; a **causa medida** é o que autoriza separar. O ônus
+é de quem quer dividir, não de quem quer manter junto.
 
 ### Quando é legítimo abrir REQ nova
 

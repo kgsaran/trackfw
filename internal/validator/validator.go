@@ -99,36 +99,69 @@ func contentHasMarker(content string, markers []string) bool {
 	return false
 }
 
-// contentHasMarkerValue retorna true se algum dos marcadores aparece em content seguido de
-// conteúdo não-branco na mesma linha — isto é, o campo tem um valor real, não apenas o marcador.
+// contentHasMarkerValue retorna true se, em alguma LINHA de content, um dos marcadores aparece
+// logo após espaços/tabs de indentação (nunca no meio de uma frase) e é seguido de um valor
+// substantivo na mesma linha — não vazio e não um comentário HTML disfarçado de valor.
 //
-// issue #278: contentHasMarker (acima) detectava "vazio" só pela grafia literal
-// "MARKER + um espaço + \n"/"\r\n" — 5 de 7 grafias naturais de campo vazio escapavam
-// ("MARKER:\n" sem espaço, dois espaços, tab, CRLF sem espaço, três espaços). Esta função
-// decide por VALOR: pega o resto da linha após o marcador, descarta \r/\t/espaços das duas
-// pontas, e só considera "tem valor" se sobrar algo. Indiferente a CRLF, tabs e contagem de
-// espaços — cobre as 7 grafias medidas na triagem, não apenas a literal do template.
+// issue #278 (achado A2 da auditoria externa, 2026-09-05): a versão anterior buscava o marcador
+// como SUBSTRING em qualquer lugar do conteúdo. Isso produzia dois defeitos medidos no acervo
+// mergeado:
+//  1. prosa que menciona o marcador no meio de uma frase contava como vínculo real
+//     ("veja a secao ADR: mais abaixo" → true, sem nenhum vínculo).
+//  2. um comentário HTML usado como placeholder contava como valor
+//     ("ADR: <!-- preencher depois -->" → true, campo de fato vazio).
+//
+// Ambos se resolvem tratando a detecção por LINHA em vez de por substring do documento inteiro:
+// o marcador só conta quando é a primeira coisa não-branca da linha (tolera espaços/tabs à
+// esquerda, não tolera qualquer outra decoração — "> ", "- ", "# ", "**" não contam como início).
+// Medido antes de decidir (não assumido): nas quatro pastas realmente varridas por estas 4
+// regras (REQ files para ADR:/Roadmap:; roadmaps de wip/blocked para REQ:), a contagem de linhas
+// com decoração diferente de espaço em branco antes do marcador é ZERO — os três geradores
+// canônicos sempre emitem o marcador no início da linha. Restringir a espaço/tab não introduz
+// falso-positivo novo neste acervo.
+//
+// NÃO resolve (fora de escopo desta ML): "REQ (**reaberta**):" — decoração ENTRE o nome do
+// campo e ":", não ANTES do marcador. A literal "REQ:" não aparece nessa linha nem por
+// substring nem por prefixo; ancorar por linha não causa nem cura esse caso. A forma que
+// funciona hoje é "REQ: docs/req/x.md (reaberta)" — o marcador intacto, a anotação depois.
+//
+// "none", "TBD", "N/A", "-" continuam sendo tratados como VALOR (não como placeholder). Nenhum
+// dos quatro casos exigidos por esta ML os menciona, e "none" é usado deliberadamente em
+// scripts/check-gates-falsify.sh como placeholder inofensivo — para dizer "sem vínculo real,
+// de propósito" nos fixtures que testam OUTRA regra — sem ficar vazio nem virar comentário
+// HTML. Bloqueá-los moveria a contagem do acervo por um motivo alheio ao achado A2 e quebraria
+// cenários de falsificação que dependem desse contrato.
+//
+// issue #278 (ML-1B): 5 de 7 grafias naturais de campo vazio escapavam da checagem anterior
+// por literal — esta função decide por VALOR (TrimSpace do resto da linha), o que já cobre as 7
+// grafias medidas na triagem original.
 func contentHasMarkerValue(content string, markers []string) bool {
-	for _, marker := range markers {
-		start := 0
-		for {
-			idx := strings.Index(content[start:], marker)
-			if idx == -1 {
-				break
+	for _, rawLine := range strings.Split(content, "\n") {
+		line := strings.TrimRight(rawLine, "\r")
+		leading := strings.TrimLeft(line, " \t")
+		for _, marker := range markers {
+			if !strings.HasPrefix(leading, marker) {
+				continue
 			}
-			pos := start + idx + len(marker)
-			rest := content[pos:]
-			if nl := strings.IndexByte(rest, '\n'); nl != -1 {
-				rest = rest[:nl]
+			rest := strings.TrimSpace(leading[len(marker):])
+			if rest == "" {
+				continue
 			}
-			rest = strings.TrimRight(rest, "\r")
-			if strings.TrimSpace(rest) != "" {
-				return true
+			if isHTMLCommentOnlyValue(rest) {
+				continue
 			}
-			start = pos
+			return true
 		}
 	}
 	return false
+}
+
+// isHTMLCommentOnlyValue retorna true se value (já sem espaços nas duas pontas) é inteiramente
+// um comentário HTML — "<!-- ... -->" do início ao fim, sem nada fora dele. É a forma medida no
+// achado A2: "ADR: <!-- preencher depois -->" é sintaticamente um valor, mas semanticamente um
+// placeholder de "ainda não preenchido" — mesma intenção de um campo vazio, só que disfarçado.
+func isHTMLCommentOnlyValue(value string) bool {
+	return strings.HasPrefix(value, "<!--") && strings.HasSuffix(value, "-->")
 }
 
 // ruleDefaults mapeia regras cujo default NÃO é "error".
@@ -1606,7 +1639,7 @@ func validateWIPHasREQ() ([]string, error) {
 				continue
 			}
 			if !contentHasMarkerValue(string(content), cfg.LinkFieldsReq) {
-				violations = append(violations, fmt.Sprintf("roadmap %q is in wip but has no linked REQ", name))
+				violations = append(violations, fmt.Sprintf("roadmap %q is in wip but has no linked REQ (marker must start the line with a real, non-placeholder value)", name))
 			}
 		}
 	}
@@ -1624,7 +1657,7 @@ func validateREQsHaveADR() ([]string, error) {
 			continue
 		}
 		if !contentHasMarkerValue(string(content), cfg.LinkFieldsADR) {
-			violations = append(violations, fmt.Sprintf("req %q has no linked ADR", filepath.Base(path)))
+			violations = append(violations, fmt.Sprintf("req %q has no linked ADR (marker must start the line with a real, non-placeholder value)", filepath.Base(path)))
 		}
 	}
 	return violations, nil
@@ -1642,7 +1675,7 @@ func validateBlockedHasREQ() ([]string, error) {
 				continue
 			}
 			if !contentHasMarkerValue(string(content), cfg.LinkFieldsReq) {
-				violations = append(violations, fmt.Sprintf("roadmap %q is in blocked but has no linked REQ", name))
+				violations = append(violations, fmt.Sprintf("roadmap %q is in blocked but has no linked REQ (marker must start the line with a real, non-placeholder value)", name))
 			}
 		}
 	}
@@ -1660,7 +1693,7 @@ func validateREQsHaveRoadmap() ([]string, error) {
 			continue
 		}
 		if !contentHasMarkerValue(string(content), cfg.LinkFieldsRoadmap) {
-			violations = append(violations, fmt.Sprintf("req %q has no linked Roadmap", filepath.Base(path)))
+			violations = append(violations, fmt.Sprintf("req %q has no linked Roadmap (marker must start the line with a real, non-placeholder value)", filepath.Base(path)))
 		}
 	}
 	return violations, nil
@@ -2235,6 +2268,18 @@ func gitLastModifiedTime(path string) (time.Time, bool) {
 
 // extractRefPath extrai o valor do campo field: na linha de frontmatter/cabeçalho.
 // Retorna string vazia se o campo estiver ausente, vazio ou com valor traço.
+// ExtractRefPath é o wrapper exportado de extractRefPath, usado por consumidores fora do pacote
+// validator (internal/serve/api_chain.go, ML-3D). Achado durante o ML-3D: o gerador de REQ
+// (internal/generators/req.go) grava `adr: ""` e `roadmap: ""` SEMPRE vazios no frontmatter —
+// o valor canônico vive no corpo, em "## Linked ADR / ADR: <path>" e "## Linked Roadmap /
+// Roadmap: <path>". Um extrator que só lê o bloco YAML de frontmatter (como o antigo
+// parseFrontmatter do `serve`) nunca encontra o vínculo real de nenhuma REQ gerada pelo `trackfw
+// req new` — não é caso de borda, é o formato canônico. Ponto único: os dois consumidores usam
+// esta função em vez de reimplementar a varredura linha a linha.
+func ExtractRefPath(content, field string) string {
+	return extractRefPath(content, field)
+}
+
 func extractRefPath(content, field string) string {
 	for _, line := range strings.Split(content, "\n") {
 		trimmed := strings.TrimSpace(line)
@@ -2292,8 +2337,22 @@ func validateRefTargetsExist() ([]string, error) {
 			}
 		}
 		if ref := extractRefPath(s, "Roadmap"); ref != "" {
-			if !referenceExists(ref) {
+			resolved, stale := resolveRoadmapRefStatus(cfg, ref)
+			switch len(resolved) {
+			case 0:
 				warnings = append(warnings, fmt.Sprintf("req %q links to Roadmap %q which does not exist", name, ref))
+			case 1:
+				if stale {
+					// literal falhou, resolvido só pelo fallback de basename num outro
+					// estado: o vínculo aponta para um caminho de estado velho — o
+					// serve (internal/serve/api_chain.go) casa edge.To pelo literal e
+					// desenharia aresta órfã para o mesmo vínculo se calássemos aqui.
+					actualState := filepath.Base(filepath.Dir(resolved[0]))
+					warnings = append(warnings, fmt.Sprintf("req %q links to Roadmap %q but the file is now in %s/ (stale state path)", name, ref, actualState))
+				}
+				// senão: resolvido pelo caminho literal — nenhum aviso.
+			default:
+				warnings = append(warnings, fmt.Sprintf("req %q links to Roadmap %q is ambiguous: found in multiple states: %s", name, ref, strings.Join(resolved, ", ")))
 			}
 		}
 	}
@@ -2319,6 +2378,111 @@ func referenceExists(ref string) bool {
 	return false
 }
 
+// resolveRoadmapRefByBasename procura, nos diretórios de ESTADO do roadmap_dir (backlog/analyzing/
+// wip/blocked/done/abandoned, honrando roadmap_namespacing), um arquivo cujo nome (basename) case com
+// filepath.Base(ref) — ROADMAP-2026-09-05, ML-3B: um vínculo `Roadmap:` grava o caminho completo
+// INCLUINDO a pasta de estado (ex.: "docs/roadmaps/wip/x.md"), e pelo CLAUDE.md a pasta É o estado —
+// então todo `trackfw roadmap move` quebra, por construção, o caminho literal gravado antes do move.
+//
+// Escopo DELIBERADAMENTE restrito ao campo Roadmap: (não REQ:, não ADR:):
+//   - REQ não tem dimensão de estado (ADR-2026-09-03, invariante D1, ver reqLayoutStates acima) — um
+//     caminho de REQ não fica velho por causa de um `move`, então não há mecanismo a corrigir aqui.
+//     Aplicar fallback por basename ao campo REQ: destruiria a garantia estrita da
+//     ADR-2026-08-01-caminho-completo-no-campo-req-do-frontmatter-e-remocao-do-parametro-roots-morto:
+//     o Cenário 25 de scripts/check-gates-falsify.sh corrompe deliberadamente um gerador para gravar
+//     `filepath.Base(reqPath)` em vez do caminho completo, e esse teste SÓ funciona porque hoje
+//     "REQ-flag-source.md" (sem diretório) não resolve por basename em lugar nenhum. Resolver por
+//     basename ali tornaria esse teste vácuo — silenciaria exatamente a regressão que ele existe para
+//     capturar.
+//   - a árvore de ADR é FLAT (sem pastas de estado — confirmado em `ls docs/adr/`), então não há
+//     hierarquia de estado equivalente a resolver; inventar uma aqui não tem medição que a sustente.
+//
+// Chamado só quando o caminho LITERAL já falhou E o segmento imediatamente anterior ao arquivo no
+// valor gravado é um nome de estado reconhecido (agentNamespaceStateNames) — isso é o que torna o
+// fallback seguro por construção contra o Cenário 25: "REQ-flag-source.md" tem
+// filepath.Dir(ref) == "." (não um nome de estado), então nunca entra neste caminho, mesmo que esta
+// função fosse chamada para ele.
+//
+// Retorna a lista de caminhos absolutos encontrados: 0 (sem match em estado algum), 1 (resolvido) ou
+// mais de 1 (mesmo basename presente em mais de um estado — ambíguo, decisão do chamador).
+func resolveRoadmapRefByBasename(cfg config.ProjectConfig, ref string) []string {
+	base := filepath.Base(ref)
+	if base == "." || base == string(filepath.Separator) || base == "" {
+		return nil
+	}
+	var found []string
+	seen := make(map[string]bool)
+	for state := range agentNamespaceStateNames {
+		for _, dir := range resolveStateDirs(cfg, state) {
+			entries, err := os.ReadDir(dir)
+			if err != nil {
+				continue
+			}
+			for _, e := range entries {
+				if e.IsDir() || e.Name() != base {
+					continue
+				}
+				full := filepath.Clean(filepath.Join(dir, e.Name()))
+				if !seen[full] {
+					seen[full] = true
+					found = append(found, full)
+				}
+			}
+		}
+	}
+	sort.Strings(found)
+	return found
+}
+
+// isStaleRoadmapStateRef reporta se ref parece ser um caminho de roadmap gravado com uma pasta de
+// estado que pode ter ficado velha — condição de entrada do fallback por basename
+// (resolveRoadmapRefByBasename): o segmento imediatamente antes do nome do arquivo é um dos 6 nomes
+// de estado reservados. "REQ-flag-source.md" (Cenário 25) tem dir "." e falha aqui por construção.
+func isStaleRoadmapStateRef(ref string) bool {
+	dir := filepath.Base(filepath.Dir(filepath.ToSlash(ref)))
+	return agentNamespaceStateNames[dir]
+}
+
+// resolveRoadmapRef resolve um valor de campo `Roadmap:` já extraído (extractRefPath): caminho
+// literal primeiro (idêntico ao referenceExists — preserva o branch de diretório existente hoje,
+// ADR-2026-08-02), e só cai para o fallback por basename (resolveRoadmapRefByBasename) quando o
+// literal falha e isStaleRoadmapStateRef(ref) indica que vale a pena tentar. Retorna o(s) caminho(s)
+// resolvido(s): 0 = vínculo quebrado, 1 = resolvido, >1 = ambíguo.
+func resolveRoadmapRef(cfg config.ProjectConfig, ref string) []string {
+	resolved, _ := resolveRoadmapRefStatus(cfg, ref)
+	return resolved
+}
+
+// ResolveRoadmapRef é o wrapper exportado de resolveRoadmapRef, usado por consumidores fora do
+// pacote validator (internal/serve/api_chain.go, ML-3D) para casar edge.To de um campo
+// `roadmap:` contra o node.ID real quando o caminho literal gravado no frontmatter aponta para
+// uma pasta de estado que já ficou velha (mesma causa raiz do ML-3B: `trackfw roadmap move`
+// grava a pasta de estado no caminho, e a pasta É o estado). Ponto único de resolução — o
+// `serve` NÃO reimplementa a busca por basename, para não recriar em dois lugares o defeito de
+// "ponto único por runtime" que este roadmap existe para fechar.
+func ResolveRoadmapRef(cfg config.ProjectConfig, ref string) []string {
+	return resolveRoadmapRef(cfg, ref)
+}
+
+// resolveRoadmapRefStatus é resolveRoadmapRef com um segundo retorno: stale=true quando a
+// resolução só teve sucesso via resolveRoadmapRefByBasename (o caminho literal gravado no
+// vínculo falhou e o arquivo foi encontrado em outra pasta de estado). O chamador em
+// validateRefTargetsExist usa esse flag para decidir entre silêncio (literal bateu) e aviso
+// de "stale state path" (fallback bateu) — ver ML-3B: um vínculo resolvido só por fallback
+// ainda é uma inconsistência real (o serve, que casa edge.To pelo literal, desenha aresta
+// órfã para o mesmo vínculo), então calar aqui faria validate e serve discordarem do mesmo fato.
+func resolveRoadmapRefStatus(cfg config.ProjectConfig, ref string) (resolved []string, stale bool) {
+	expandedRef := config.ExpandPath(normalizeRefSeparator(ref))
+	if _, err := os.Stat(expandedRef); err == nil {
+		return []string{expandedRef}, false
+	}
+	if !isStaleRoadmapStateRef(ref) {
+		return nil, false
+	}
+	found := resolveRoadmapRefByBasename(cfg, ref)
+	return found, len(found) > 0
+}
+
 func validateREQRoadmapLifecycle() ([]string, error) {
 	cfg := config.Load()
 	var warnings []string
@@ -2335,12 +2499,19 @@ func validateREQRoadmapLifecycle() ([]string, error) {
 		if ref == "" {
 			continue
 		}
-		expandedRef := config.ExpandPath(normalizeRefSeparator(ref))
-		info, err := os.Stat(expandedRef)
+		resolved := resolveRoadmapRef(cfg, ref)
+		if len(resolved) != 1 {
+			// 0 = vínculo quebrado, já reportado por ref_targets_exist; >1 = ambíguo, já
+			// reportado por ref_targets_exist. Esta regra só decide estado quando há UM
+			// arquivo real de onde derivá-lo — sem isso o "continue" original (fail-open na
+			// entrada errada) reaparece disfarçado de ambiguidade.
+			continue
+		}
+		info, err := os.Stat(resolved[0])
 		if err != nil || info.IsDir() {
 			continue
 		}
-		if filepath.Base(filepath.Dir(expandedRef)) == "done" {
+		if filepath.Base(filepath.Dir(resolved[0])) == "done" {
 			warnings = append(warnings, fmt.Sprintf("req %q is Open but linked Roadmap %q is in done/", filepath.Base(reqPath), ref))
 		}
 	}

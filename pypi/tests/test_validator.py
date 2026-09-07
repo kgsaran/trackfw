@@ -2004,6 +2004,64 @@ class TestContentHasMarkerCRLF(unittest.TestCase):
                          "campo vazio com LF não deve ser tratado como presente")
 
 
+class TestContentHasMarkerValueVinculoEstrutural(unittest.TestCase):
+    """ML-2A (REQ-2026-09-05, achado A2 da auditoria externa): _content_has_marker_value
+    deixa de casar o marcador como substring livre do documento e passa a exigir que ele
+    seja a primeira coisa não-branca da LINHA, com valor que não é vazio nem um comentário
+    HTML sozinho. Cada teste afirma uma conclusão específica deste ML."""
+
+    def test_valor_real_aceita(self):
+        # Conclusão: um valor real, na forma canônica dos 3 geradores, continua aceito.
+        from trackfw.validator import _content_has_marker_value
+        content = "## Linked ADR\nADR: docs/adr/ADR-2026-09-05-exemplo.md\n"
+        self.assertTrue(_content_has_marker_value(content, ["ADR:"]),
+                        "ADR com valor real deve ser aceito como vínculo")
+
+    def test_sete_grafias_de_campo_vazio_recusa(self):
+        # Conclusão: as 7 grafias de campo vazio medidas no ML-1B (issue #278) continuam
+        # recusadas depois da reescrita estrutural.
+        from trackfw.validator import _content_has_marker_value
+        grafias = ["ADR: \n", "ADR:\n", "ADR:  \n", "ADR:   \n", "ADR:\t\n", "ADR: \r\n", "ADR:\r\n"]
+        for g in grafias:
+            content = "## Linked ADR\n" + g
+            self.assertFalse(_content_has_marker_value(content, ["ADR:"]),
+                             f"grafia vazia {g!r} não deve ser tratada como vínculo")
+
+    def test_comentario_html_placeholder_recusa(self):
+        # Conclusão: achado A2 — comentário HTML usado como placeholder deixa de contar
+        # como vínculo.
+        from trackfw.validator import _content_has_marker_value
+        content = "## Linked ADR\nADR: <!-- preencher depois -->\n"
+        self.assertFalse(_content_has_marker_value(content, ["ADR:"]),
+                         "placeholder de comentário HTML não deve ser tratado como vínculo real")
+
+    def test_prosa_com_marcador_no_meio_recusa(self):
+        # Conclusão: achado A2 — prosa que menciona o marcador no meio de uma frase deixa
+        # de contar como vínculo, porque o marcador não é a primeira coisa não-branca da
+        # linha.
+        from trackfw.validator import _content_has_marker_value
+        content = "## Contexto\nveja a secao ADR: mais abaixo para detalhes\n"
+        self.assertFalse(_content_has_marker_value(content, ["ADR:"]),
+                         "prosa com o marcador no meio da frase não deve ser tratada como vínculo")
+
+    def test_indentacao_antes_do_marcador_aceita(self):
+        # Conclusão: indentação pura (espaços/tabs) antes do marcador continua tolerada.
+        from trackfw.validator import _content_has_marker_value
+        content = "## Linked ADR\n  \tADR: docs/adr/ADR-2026-09-05-exemplo.md\n"
+        self.assertTrue(_content_has_marker_value(content, ["ADR:"]),
+                        "ADR indentado (sem outra decoração) deve ser aceito")
+
+    def test_decoracao_entre_campo_e_dois_pontos_recusa_nas_duas_versoes(self):
+        # Conclusão: decoração ENTRE o nome do campo e ":" ("REQ (**reaberta**):") não é a
+        # mesma coisa que decoração ANTES do marcador — a literal "REQ:" não existe nessa
+        # linha. A ancoragem por linha desta ML não causa nem resolve esse caso; é o caso
+        # que pegou KG.
+        from trackfw.validator import _content_has_marker_value
+        content = "## Context\nREQ (**reaberta**): docs/req/REQ-exemplo.md\n"
+        self.assertFalse(_content_has_marker_value(content, ["REQ:"]),
+                         "REQ (**reaberta**): não deve casar — a literal REQ: não existe nessa linha")
+
+
 class TestFolderStatusDirNaoLegivel(unittest.TestCase):
     """P2: pasta de estado que EXISTE mas não pode ser lida deve gerar warning."""
 

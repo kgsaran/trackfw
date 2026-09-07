@@ -104,6 +104,47 @@ assert_would_now_fail() {
 }
 
 # ---------------------------------------------------------------------------
+# Helpers: mesma checagem de assert_fails_with/assert_lacks_pattern, mas
+# INDIFERENTES ao exit code — usados pelo Cenário 193 (ML-3B): a asserção
+# não é "o fixture é totalmente limpo" (aviso de ciclo de vida é warning
+# esperado, não violação), é "o padrão X está/não está presente", com o
+# exit code verificado à parte quando faz sentido.
+# ---------------------------------------------------------------------------
+assert_output_contains() {
+  local label=$1
+  local pattern=$2
+  shift 2
+  local out
+  set +e
+  out=$("$@" 2>&1)
+  local status=$?
+  set -e
+  if ! grep -qF "$pattern" <<<"$out"; then
+    echo "FAIL [falsify/$label]: esperava conter '$pattern' (exit=$status)" >&2
+    echo "  output: $out" >&2
+    exit 1
+  fi
+  echo "OK   [falsify/$label]"
+}
+
+assert_output_lacks() {
+  local label=$1
+  local pattern=$2
+  shift 2
+  local out
+  set +e
+  out=$("$@" 2>&1)
+  local status=$?
+  set -e
+  if grep -qF "$pattern" <<<"$out"; then
+    echo "FAIL [falsify/$label]: NÃO esperava conter '$pattern' (exit=$status)" >&2
+    echo "  output: $out" >&2
+    exit 1
+  fi
+  echo "OK   [falsify/$label]"
+}
+
+# ---------------------------------------------------------------------------
 # Helper: cria a estrutura mínima do npm em $1 para os gates que o usam.
 # Copia bin/ e src/ do ROOT_DIR; node_modules é symlink (apenas leitura).
 # Passa $2 como lista de arquivos extras de src/ a copiar (opcional).
@@ -9985,3 +10026,848 @@ build_go_or_fail "setup-s191-build" "$T191" "$T191_BIN"
 assert_fails_with 'validate-parity/gbg-claude-relativo-bare-relative-path-not-detected' \
   'git_branch_guard_hook_resolvable parity (claude-relativo/go): expected violation from rule' \
   env GO_BIN="$T191_BIN" bash "$ROOT_DIR/scripts/check-validate-parity.sh"
+
+# ---------------------------------------------------------------------------
+# Cenário 192 — contentHasMarkerValue passa a exigir vínculo ESTRUTURAL
+# (ROADMAP-2026-09-05-reconciliar-o-que-declaramos-com-o-que-medimos-apos-a-
+# auditoria-externa, ML-2A — achado A2 da auditoria externa).
+#
+# Antes: o marcador (ADR:/REQ:/Roadmap:) era casado como SUBSTRING em
+# qualquer lugar do conteúdo. Dois defeitos mergeados:
+#   1. comentário HTML usado como placeholder ("ADR: <!-- preencher depois
+#      -->") contava como valor real.
+#   2. prosa que menciona o marcador no meio de uma frase ("veja a secao
+#      ADR: mais abaixo") contava como vínculo real.
+#
+# Este cenário prova as DUAS direções cross-CLI, cada uma com seu próprio
+# seam, contra o MESMO fixture (REQ com "ADR: <!-- preencher depois -->" e
+# "Roadmap:" só mencionado em prosa) — sem o fixture nunca deveria emitir
+# nenhuma das duas violações, com QUALQUER dos dois guards desativado ele
+# deveria voltar a emitir a violação correspondente. Vacuidade descartada:
+# a baseline (código real, sem corrupção) é limpa (assert_succeeds); só a
+# corrupção reintroduz a violação (assert_fails_with).
+#
+# Direção A — guard do comentário HTML neutralizado (Go: `if
+# isHTMLCommentOnlyValue(rest)` → `if false`; Node/Python equivalentes):
+# reintroduz o defeito 1 — placeholder volta a contar como vínculo real, a
+# violação "has no linked ADR" desaparece.
+#
+# Direção B — ancoragem por linha neutralizada (Go: `if
+# !strings.HasPrefix(leading, marker)` → `if !strings.Contains(line,
+# marker)`; Node/Python equivalentes): reintroduz o defeito 2 — prosa com o
+# marcador no meio volta a contar como vínculo real, a violação "has no
+# linked Roadmap" desaparece.
+# ---------------------------------------------------------------------------
+
+# $2 (roadmap_rel) precisa ser um alvo REAL (existente no disco): ref_targets_exist tem
+# severidade default "error" (não está em ruleDefaults) — um Roadmap: apontando para um
+# arquivo inexistente reprovaria o ciclo por um motivo alheio ao seam sob prova aqui, e
+# quebraria assert_lacks_pattern (exige exit 0 do processo inteiro). ADR: fica com o
+# placeholder de comentário HTML — a única falsa-positiva sob prova nesta fixture.
+write_req_adr_placeholder_fixture() {
+  local dest=$1 roadmap_rel=$2
+  mkdir -p "$(dirname "$dest")"
+  cat > "$dest" <<EOF
+---
+status: Open
+date: 2026-09-06
+author: ""
+adr: ""
+roadmap: "$roadmap_rel"
+---
+
+# REQ: fixture de placeholder de ADR
+
+> Date: 2026-09-06 | Status: Open
+
+## Motivation
+motivo
+
+## Acceptance Criteria
+- [ ] pendente
+
+## Linked ADR
+ADR: <!-- preencher depois -->
+
+## Linked Roadmap
+Roadmap: $roadmap_rel
+EOF
+}
+
+# $2 (adr_rel) precisa ser um alvo REAL, mesmo motivo de write_req_adr_placeholder_fixture
+# acima — aqui é o Roadmap: que fica com a prosa no meio da frase, a única falsa-positiva
+# sob prova nesta fixture.
+write_req_roadmap_prose_fixture() {
+  local dest=$1 adr_rel=$2
+  mkdir -p "$(dirname "$dest")"
+  cat > "$dest" <<EOF
+---
+status: Open
+date: 2026-09-06
+author: ""
+adr: "$adr_rel"
+roadmap: ""
+---
+
+# REQ: fixture de prosa no meio da linha
+
+> Date: 2026-09-06 | Status: Open
+
+## Motivation
+motivo
+
+## Acceptance Criteria
+- [ ] pendente
+
+## Linked ADR
+ADR: $adr_rel
+
+## Linked Roadmap
+veja a secao Roadmap: mais abaixo para detalhes
+EOF
+}
+
+S192_MSG_ADR='has no linked ADR'
+S192_MSG_ROADMAP='has no linked Roadmap'
+
+# --- Go: baseline limpo (nenhuma das duas falsas-positivas) ---------------
+T192_GO_BIN="$WORK/s192-go-bin/trackfw"
+mkdir -p "$(dirname "$T192_GO_BIN")"
+build_go_or_fail "setup-s192-go-baseline-build" "$ROOT_DIR" "$T192_GO_BIN"
+
+# Fixture A: só a falsa-positiva do ADR (Roadmap: aponta para um alvo real).
+T192_GO_PROJECT_A="$WORK/s192-go-project-a"
+scaffold_adr_req_project "$T192_GO_PROJECT_A"
+write_roadmap_link_target_fixture \
+  "$T192_GO_PROJECT_A/docs/roadmaps/wip/ROADMAP-2026-09-06-s192-target.md" \
+  "docs/req/REQ-2026-09-06-adr-placeholder-fixture.md"
+write_req_adr_placeholder_fixture \
+  "$T192_GO_PROJECT_A/docs/req/REQ-2026-09-06-adr-placeholder-fixture.md" \
+  "docs/roadmaps/wip/ROADMAP-2026-09-06-s192-target.md"
+
+# Fixture B: só a falsa-positiva do Roadmap (ADR: aponta para um alvo real).
+T192_GO_PROJECT_B="$WORK/s192-go-project-b"
+scaffold_adr_req_project "$T192_GO_PROJECT_B"
+write_adr_status_fixture "$T192_GO_PROJECT_B/docs/adr/ADR-2026-09-06-s192-target.md" "Accepted"
+write_req_roadmap_prose_fixture \
+  "$T192_GO_PROJECT_B/docs/req/REQ-2026-09-06-roadmap-prose-fixture.md" \
+  "docs/adr/ADR-2026-09-06-s192-target.md"
+
+assert_fails_with "structural-marker-value/go/adr-placeholder-baseline" \
+  "$S192_MSG_ADR" \
+  bash -c "cd '$T192_GO_PROJECT_A' && exec '$T192_GO_BIN' validate"
+assert_fails_with "structural-marker-value/go/roadmap-prose-baseline" \
+  "$S192_MSG_ROADMAP" \
+  bash -c "cd '$T192_GO_PROJECT_B' && exec '$T192_GO_BIN' validate"
+
+# --- Go: direção A — guard do comentário HTML neutralizado ----------------
+T192C_GO_A="$WORK/s192-corrupt-go-a"
+mkdir -p "$T192C_GO_A/cmd" "$T192C_GO_A/internal"
+cp -r "$ROOT_DIR/cmd/." "$T192C_GO_A/cmd/"
+cp -r "$ROOT_DIR/internal/." "$T192C_GO_A/internal/"
+cp "$ROOT_DIR/go.mod" "$T192C_GO_A/go.mod"
+cp "$ROOT_DIR/go.sum" "$T192C_GO_A/go.sum"
+corrupt_literal \
+  "$ROOT_DIR/internal/validator/validator.go" "$T192C_GO_A/internal/validator/validator.go" \
+  'if isHTMLCommentOnlyValue(rest) {' \
+  'if false { // [falsified] was: isHTMLCommentOnlyValue(rest)' \
+  "s192-go-direction-a"
+T192C_GO_A_BIN="$WORK/s192-corrupt-go-a-bin/trackfw"
+mkdir -p "$(dirname "$T192C_GO_A_BIN")"
+build_go_or_fail "setup-s192-go-a-build" "$T192C_GO_A" "$T192C_GO_A_BIN"
+
+assert_lacks_pattern "structural-marker-value/go/adr-placeholder-detects-regression" \
+  "$S192_MSG_ADR" \
+  bash -c "cd '$T192_GO_PROJECT_A' && exec '$T192C_GO_A_BIN' validate"
+
+# --- Go: direção B — ancoragem por linha neutralizada ----------------------
+T192C_GO_B="$WORK/s192-corrupt-go-b"
+mkdir -p "$T192C_GO_B/cmd" "$T192C_GO_B/internal"
+cp -r "$ROOT_DIR/cmd/." "$T192C_GO_B/cmd/"
+cp -r "$ROOT_DIR/internal/." "$T192C_GO_B/internal/"
+cp "$ROOT_DIR/go.mod" "$T192C_GO_B/go.mod"
+cp "$ROOT_DIR/go.sum" "$T192C_GO_B/go.sum"
+corrupt_literal \
+  "$ROOT_DIR/internal/validator/validator.go" "$T192C_GO_B/internal/validator/validator.go" \
+  'if !strings.HasPrefix(leading, marker) {' \
+  'if !strings.Contains(line, marker) { // [falsified] was: !strings.HasPrefix(leading, marker)' \
+  "s192-go-direction-b"
+T192C_GO_B_BIN="$WORK/s192-corrupt-go-b-bin/trackfw"
+mkdir -p "$(dirname "$T192C_GO_B_BIN")"
+build_go_or_fail "setup-s192-go-b-build" "$T192C_GO_B" "$T192C_GO_B_BIN"
+
+assert_lacks_pattern "structural-marker-value/go/roadmap-prose-detects-regression" \
+  "$S192_MSG_ROADMAP" \
+  bash -c "cd '$T192_GO_PROJECT_B' && exec '$T192C_GO_B_BIN' validate"
+
+# --- Node: baseline limpo ---------------------------------------------------
+T192_N_PROJECT_A="$WORK/s192-node-project-a"
+setup_npm_tree "$T192_N_PROJECT_A"
+scaffold_adr_req_project "$T192_N_PROJECT_A"
+write_roadmap_link_target_fixture \
+  "$T192_N_PROJECT_A/docs/roadmaps/wip/ROADMAP-2026-09-06-s192-target.md" \
+  "docs/req/REQ-2026-09-06-adr-placeholder-fixture.md"
+write_req_adr_placeholder_fixture \
+  "$T192_N_PROJECT_A/docs/req/REQ-2026-09-06-adr-placeholder-fixture.md" \
+  "docs/roadmaps/wip/ROADMAP-2026-09-06-s192-target.md"
+
+T192_N_PROJECT_B="$WORK/s192-node-project-b"
+setup_npm_tree "$T192_N_PROJECT_B"
+scaffold_adr_req_project "$T192_N_PROJECT_B"
+write_adr_status_fixture "$T192_N_PROJECT_B/docs/adr/ADR-2026-09-06-s192-target.md" "Accepted"
+write_req_roadmap_prose_fixture \
+  "$T192_N_PROJECT_B/docs/req/REQ-2026-09-06-roadmap-prose-fixture.md" \
+  "docs/adr/ADR-2026-09-06-s192-target.md"
+
+assert_fails_with "structural-marker-value/node/adr-placeholder-baseline" \
+  "$S192_MSG_ADR" \
+  bash -c "cd '$T192_N_PROJECT_A' && exec node npm/bin/trackfw validate"
+assert_fails_with "structural-marker-value/node/roadmap-prose-baseline" \
+  "$S192_MSG_ROADMAP" \
+  bash -c "cd '$T192_N_PROJECT_B' && exec node npm/bin/trackfw validate"
+
+# --- Node: direção A ---------------------------------------------------------
+T192C_N_A="$WORK/s192-corrupt-node-a"
+setup_npm_tree "$T192C_N_A"
+corrupt_literal \
+  "$ROOT_DIR/npm/src/validator/index.js" "$T192C_N_A/npm/src/validator/index.js" \
+  "if (isHTMLCommentOnlyValue(rest)) continue" \
+  "if (false) continue // [falsified] was: isHTMLCommentOnlyValue(rest)" \
+  "s192-node-direction-a"
+
+assert_lacks_pattern "structural-marker-value/node/adr-placeholder-detects-regression" \
+  "$S192_MSG_ADR" \
+  bash -c "cd '$T192_N_PROJECT_A' && exec node '$T192C_N_A/npm/bin/trackfw' validate"
+
+# --- Node: direção B ---------------------------------------------------------
+T192C_N_B="$WORK/s192-corrupt-node-b"
+setup_npm_tree "$T192C_N_B"
+corrupt_literal \
+  "$ROOT_DIR/npm/src/validator/index.js" "$T192C_N_B/npm/src/validator/index.js" \
+  "if (!leading.startsWith(marker)) continue" \
+  "if (!line.includes(marker)) continue // [falsified] was: !leading.startsWith(marker)" \
+  "s192-node-direction-b"
+
+assert_lacks_pattern "structural-marker-value/node/roadmap-prose-detects-regression" \
+  "$S192_MSG_ROADMAP" \
+  bash -c "cd '$T192_N_PROJECT_B' && exec node '$T192C_N_B/npm/bin/trackfw' validate"
+
+# --- Python: baseline limpo --------------------------------------------------
+T192_P_PROJECT_A="$WORK/s192-python-project-a"
+mkdir -p "$T192_P_PROJECT_A"
+cp -r "$ROOT_DIR/pypi" "$T192_P_PROJECT_A/pypi"
+scaffold_adr_req_project "$T192_P_PROJECT_A"
+write_roadmap_link_target_fixture \
+  "$T192_P_PROJECT_A/docs/roadmaps/wip/ROADMAP-2026-09-06-s192-target.md" \
+  "docs/req/REQ-2026-09-06-adr-placeholder-fixture.md"
+write_req_adr_placeholder_fixture \
+  "$T192_P_PROJECT_A/docs/req/REQ-2026-09-06-adr-placeholder-fixture.md" \
+  "docs/roadmaps/wip/ROADMAP-2026-09-06-s192-target.md"
+
+T192_P_PROJECT_B="$WORK/s192-python-project-b"
+mkdir -p "$T192_P_PROJECT_B"
+cp -r "$ROOT_DIR/pypi" "$T192_P_PROJECT_B/pypi"
+scaffold_adr_req_project "$T192_P_PROJECT_B"
+write_adr_status_fixture "$T192_P_PROJECT_B/docs/adr/ADR-2026-09-06-s192-target.md" "Accepted"
+write_req_roadmap_prose_fixture \
+  "$T192_P_PROJECT_B/docs/req/REQ-2026-09-06-roadmap-prose-fixture.md" \
+  "docs/adr/ADR-2026-09-06-s192-target.md"
+
+assert_fails_with "structural-marker-value/python/adr-placeholder-baseline" \
+  "$S192_MSG_ADR" \
+  bash -c "cd '$T192_P_PROJECT_A' && exec env PYTHONPATH='$T192_P_PROJECT_A/pypi' python3 -m trackfw validate"
+assert_fails_with "structural-marker-value/python/roadmap-prose-baseline" \
+  "$S192_MSG_ROADMAP" \
+  bash -c "cd '$T192_P_PROJECT_B' && exec env PYTHONPATH='$T192_P_PROJECT_B/pypi' python3 -m trackfw validate"
+
+# --- Python: direção A -------------------------------------------------------
+T192C_P_A="$WORK/s192-corrupt-python-a"
+mkdir -p "$T192C_P_A"
+cp -r "$ROOT_DIR/pypi" "$T192C_P_A/pypi"
+corrupt_literal \
+  "$ROOT_DIR/pypi/trackfw/validator.py" "$T192C_P_A/pypi/trackfw/validator.py" \
+  "if _is_html_comment_only_value(rest):" \
+  "if False:  # [falsified] was: _is_html_comment_only_value(rest)" \
+  "s192-python-direction-a"
+
+assert_lacks_pattern "structural-marker-value/python/adr-placeholder-detects-regression" \
+  "$S192_MSG_ADR" \
+  bash -c "cd '$T192_P_PROJECT_A' && exec env PYTHONPATH='$T192C_P_A/pypi' python3 -m trackfw validate"
+
+# --- Python: direção B -------------------------------------------------------
+T192C_P_B="$WORK/s192-corrupt-python-b"
+mkdir -p "$T192C_P_B"
+cp -r "$ROOT_DIR/pypi" "$T192C_P_B/pypi"
+corrupt_literal \
+  "$ROOT_DIR/pypi/trackfw/validator.py" "$T192C_P_B/pypi/trackfw/validator.py" \
+  "if not leading.startswith(marker):" \
+  "if marker not in line:  # [falsified] was: not leading.startswith(marker)" \
+  "s192-python-direction-b"
+
+assert_lacks_pattern "structural-marker-value/python/roadmap-prose-detects-regression" \
+  "$S192_MSG_ROADMAP" \
+  bash -c "cd '$T192_P_PROJECT_B' && exec env PYTHONPATH='$T192C_P_B/pypi' python3 -m trackfw validate"
+
+# ---------------------------------------------------------------------------
+# Cenário 193 — ROADMAP-2026-09-05-reconciliar-o-que-declaramos-com-o-que-
+# medimos-apos-a-auditoria-externa, ML-3B: vínculo Roadmap: guarda o caminho
+# COM a pasta de estado, e `trackfw roadmap move` quebra o vínculo por
+# construção (medido pelo arquiteto em 2026-09-06 via `./bin/trackfw
+# validate`: 2 REQs apontavam para roadmaps que existiam em docs/roadmaps/
+# done/ com "which does not exist", porque o campo gravado ainda dizia
+# .../wip/...).
+#
+# A correção resolve o campo `Roadmap:` pelo BASENAME nos diretórios de
+# ESTADO (backlog/analyzing/wip/blocked/done/abandoned) quando o caminho
+# literal falha E o segmento imediatamente anterior ao arquivo é um nome de
+# estado reconhecido — internal/validator/validator.go:
+# resolveRoadmapRef/resolveRoadmapRefByBasename/isStaleRoadmapStateRef (e
+# equivalentes em npm/src/validator/index.js e pypi/trackfw/validator.py).
+#
+# Escopo DELIBERADAMENTE restrito ao campo Roadmap: — não REQ:, não ADR:.
+# REQ não tem dimensão de estado (ADR-2026-09-03, invariante D1) e um
+# fallback por basename ali tornaria vácuo o Cenário 25 acima (que depende
+# de "REQ-flag-source.md", sem diretório, NUNCA resolver por basename — é
+# exatamente a regressão coberta por
+# ADR-2026-08-01-caminho-completo-no-campo-req-do-frontmatter-e-remocao-do-
+# parametro-roots-morto). A árvore de ADR é flat (sem pastas de estado —
+# ver `docs/adr/`), então não há hierarquia equivalente a resolver ali.
+#
+# Três direções de falsificação, nos 3 CLIs:
+#   A) roadmap movido de wip/ para done/, REQ intacta ⇒ SEM aviso de
+#      vínculo quebrado (antes do fix: "which does not exist"), MAS COM um
+#      aviso verdadeiro de "stale state path" — resolver em silêncio total
+#      faria validate discordar do serve (internal/serve/api_chain.go casa
+#      edge.To pelo caminho LITERAL e desenharia aresta órfã para o mesmo
+#      vínculo). Corrigido em 2026-09-06 após auditoria apontar que a forma
+#      original ("sem aviso nenhum") contradizia esse achado.
+#   B) REQ apontando para um basename que não existe em estado algum ⇒
+#      AVISA "which does not exist" (guarda de vacuidade: prova que o
+#      fallback por basename não virou um "sempre encontra").
+#   C) REQ com status Open e Roadmap (caminho gravado desatualizado) em
+#      done/ ⇒ AVISA "is Open but linked Roadmap ... is in done/", mesmo
+#      com o caminho gravado velho (prova que req_roadmap_lifecycle deixou
+#      de ser fail-open — antes, o Stat no caminho velho falhava e a regra
+#      dava `continue`, desligando-se exatamente no caso que existe para
+#      pegar).
+#
+# Corrompe a IMPLEMENTAÇÃO (validador), nunca a asserção — mesmo padrão dos
+# Cenários 14/16/17/20/21/24/26/192. Direções A+C são cobertas pela MESMA
+# corrupção (isStaleRoadmapStateRef sempre false neutraliza o fallback por
+# completo, reproduzindo o comportamento pré-fix nos dois pontos que o
+# consomem); direção B usa uma corrupção distinta (o fallback por basename
+# passa a "encontrar" qualquer coisa, mascarando um vínculo genuinamente
+# ausente).
+# ---------------------------------------------------------------------------
+
+S193_MSG_BROKEN='links to Roadmap "docs/roadmaps/wip/ROADMAP-2026-09-06-s193-fixture.md" which does not exist'
+S193_MSG_STALE='req "REQ-2026-09-06-s193-fixture.md" links to Roadmap "docs/roadmaps/wip/ROADMAP-2026-09-06-s193-fixture.md" but the file is now in done/ (stale state path)'
+S193_MSG_LIFECYCLE='req "REQ-2026-09-06-s193-fixture.md" is Open but linked Roadmap "docs/roadmaps/wip/ROADMAP-2026-09-06-s193-fixture.md" is in done/'
+S193_MSG_VACUITY='links to Roadmap "docs/roadmaps/wip/ROADMAP-2026-09-06-s193-vacuity-absent.md" which does not exist'
+
+# Fixture A/C: REQ Open (com ADR Accepted válido) apontando, via
+# `roadmap:`/`Roadmap:`, para o caminho ANTIGO ".../wip/<nome>.md" do
+# roadmap fixture, que fisicamente já foi movido para docs/roadmaps/done/ —
+# reproduz exatamente o defeito medido (o campo grava a pasta de estado, e
+# ela ficou velha depois de um `roadmap move`).
+write_s193_lifecycle_req_fixture() {
+  local dest=$1 adr_rel=$2
+  mkdir -p "$(dirname "$dest")"
+  cat > "$dest" <<EOF
+---
+status: Open
+date: 2026-08-01
+author: ""
+adr: "$adr_rel"
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-06-s193-fixture.md"
+---
+
+# REQ: s193 fixture
+
+> Date: 2026-08-01 | Status: Open
+
+## Motivation
+motivo
+
+## Acceptance Criteria
+- [ ] pendente
+
+## Linked ADR
+ADR: $adr_rel
+
+## Linked Roadmap
+Roadmap: docs/roadmaps/wip/ROADMAP-2026-09-06-s193-fixture.md
+EOF
+}
+
+write_s193_done_roadmap_fixture() {
+  local dest=$1 req_rel=$2
+  mkdir -p "$(dirname "$dest")"
+  cat > "$dest" <<EOF
+---
+status: done
+date: 2026-08-01
+req: "$req_rel"
+---
+
+# Roadmap: s193 fixture
+
+> Created: 2026-08-01 | Status: done
+
+## Context
+REQ: $req_rel
+
+## Acceptance Criteria
+- [x] feito
+EOF
+}
+
+# Fixture B: REQ Done (evita interferência com req_roadmap_lifecycle, que só
+# olha REQ Open) referenciando um basename que NÃO existe em nenhum dos 6
+# diretórios de estado — vínculo genuinamente quebrado.
+write_s193_vacuity_req_fixture() {
+  local dest=$1 adr_rel=$2
+  mkdir -p "$(dirname "$dest")"
+  cat > "$dest" <<EOF
+---
+status: Done
+date: 2026-08-01
+author: ""
+adr: "$adr_rel"
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-06-s193-vacuity-absent.md"
+---
+
+# REQ: s193 vacuity fixture
+
+> Date: 2026-08-01 | Status: Done
+
+## Motivation
+motivo
+
+## Acceptance Criteria
+- [x] feito
+
+## Linked ADR
+ADR: $adr_rel
+
+## Linked Roadmap
+Roadmap: docs/roadmaps/wip/ROADMAP-2026-09-06-s193-vacuity-absent.md
+EOF
+}
+
+# --- Go: fixtures compartilhadas (baseline usa o binário real; corrupção usa cópia isolada) ---
+T193_G_LIFECYCLE="$WORK/s193-go-lifecycle"
+mkdir -p "$T193_G_LIFECYCLE"
+scaffold_adr_req_project "$T193_G_LIFECYCLE"
+write_adr_status_fixture "$T193_G_LIFECYCLE/docs/adr/ADR-2026-09-06-s193-fixture.md" "Accepted"
+write_s193_lifecycle_req_fixture \
+  "$T193_G_LIFECYCLE/docs/req/REQ-2026-09-06-s193-fixture.md" \
+  "docs/adr/ADR-2026-09-06-s193-fixture.md"
+write_s193_done_roadmap_fixture \
+  "$T193_G_LIFECYCLE/docs/roadmaps/done/ROADMAP-2026-09-06-s193-fixture.md" \
+  "docs/req/REQ-2026-09-06-s193-fixture.md"
+
+T193_G_VACUITY="$WORK/s193-go-vacuity"
+mkdir -p "$T193_G_VACUITY"
+scaffold_adr_req_project "$T193_G_VACUITY"
+write_adr_status_fixture "$T193_G_VACUITY/docs/adr/ADR-2026-09-06-s193-fixture.md" "Accepted"
+write_s193_vacuity_req_fixture \
+  "$T193_G_VACUITY/docs/req/REQ-2026-09-06-s193-vacuity-fixture.md" \
+  "docs/adr/ADR-2026-09-06-s193-fixture.md"
+
+T193_GO_BASE_BIN="$WORK/s193-go-base-bin/trackfw"
+mkdir -p "$(dirname "$T193_GO_BASE_BIN")"
+build_go_or_fail "setup-s193-go-baseline-build" "$ROOT_DIR" "$T193_GO_BASE_BIN"
+
+# Direção A (baseline): sem aviso de vínculo quebrado, mas COM o aviso
+# verdadeiro de stale state path (silêncio total já foi provado errado pela
+# auditoria — ver comentário do cenário).
+assert_output_lacks "roadmap-ref-stale-state/go/broken-link-baseline" \
+  "$S193_MSG_BROKEN" \
+  bash -c "cd '$T193_G_LIFECYCLE' && exec '$T193_GO_BASE_BIN' validate"
+assert_output_contains "roadmap-ref-stale-state/go/stale-warning-baseline" \
+  "$S193_MSG_STALE" \
+  bash -c "cd '$T193_G_LIFECYCLE' && exec '$T193_GO_BASE_BIN' validate"
+# Direção C (baseline): aviso de ciclo de vida presente, exit 0 (é warning).
+assert_output_contains "roadmap-ref-stale-state/go/lifecycle-baseline" \
+  "$S193_MSG_LIFECYCLE" \
+  bash -c "cd '$T193_G_LIFECYCLE' && exec '$T193_GO_BASE_BIN' validate"
+# Direção B (baseline): vínculo genuinamente ausente ainda reprova.
+assert_fails_with "roadmap-ref-stale-state/go/vacuity-baseline" \
+  "$S193_MSG_VACUITY" \
+  bash -c "cd '$T193_G_VACUITY' && exec '$T193_GO_BASE_BIN' validate"
+
+# Direções A+C — corrupção: isStaleRoadmapStateRef sempre false (neutraliza
+# o fallback por completo).
+T193C_GO_AC="$WORK/s193-corrupt-go-ac"
+mkdir -p "$T193C_GO_AC/cmd" "$T193C_GO_AC/internal"
+cp -r "$ROOT_DIR/cmd/." "$T193C_GO_AC/cmd/"
+cp -r "$ROOT_DIR/internal/." "$T193C_GO_AC/internal/"
+cp "$ROOT_DIR/go.mod" "$T193C_GO_AC/go.mod"
+cp "$ROOT_DIR/go.sum" "$T193C_GO_AC/go.sum"
+corrupt_literal \
+  "$ROOT_DIR/internal/validator/validator.go" "$T193C_GO_AC/internal/validator/validator.go" \
+  $'\tdir := filepath.Base(filepath.Dir(filepath.ToSlash(ref)))\n\treturn agentNamespaceStateNames[dir]\n}' \
+  $'\tdir := filepath.Base(filepath.Dir(filepath.ToSlash(ref)))\n\t_ = dir\n\treturn false // [falsified] fallback por basename desligado\n}' \
+  "s193-go-direction-ac"
+
+T193C_GO_AC_BIN="$WORK/s193-corrupt-go-ac-bin/trackfw"
+mkdir -p "$(dirname "$T193C_GO_AC_BIN")"
+build_go_or_fail "setup-s193-go-ac-build" "$T193C_GO_AC" "$T193C_GO_AC_BIN"
+
+assert_output_contains "roadmap-ref-stale-state/go/broken-link-detects-regression" \
+  "$S193_MSG_BROKEN" \
+  bash -c "cd '$T193_G_LIFECYCLE' && exec '$T193C_GO_AC_BIN' validate"
+assert_output_lacks "roadmap-ref-stale-state/go/lifecycle-detects-regression" \
+  "$S193_MSG_LIFECYCLE" \
+  bash -c "cd '$T193_G_LIFECYCLE' && exec '$T193C_GO_AC_BIN' validate"
+assert_output_lacks "roadmap-ref-stale-state/go/stale-warning-detects-regression" \
+  "$S193_MSG_STALE" \
+  bash -c "cd '$T193_G_LIFECYCLE' && exec '$T193C_GO_AC_BIN' validate"
+
+# Direção B — corrupção: resolveRoadmapRefByBasename sempre "encontra" algo.
+T193C_GO_B="$WORK/s193-corrupt-go-b"
+mkdir -p "$T193C_GO_B/cmd" "$T193C_GO_B/internal"
+cp -r "$ROOT_DIR/cmd/." "$T193C_GO_B/cmd/"
+cp -r "$ROOT_DIR/internal/." "$T193C_GO_B/internal/"
+cp "$ROOT_DIR/go.mod" "$T193C_GO_B/go.mod"
+cp "$ROOT_DIR/go.sum" "$T193C_GO_B/go.sum"
+corrupt_literal \
+  "$ROOT_DIR/internal/validator/validator.go" "$T193C_GO_B/internal/validator/validator.go" \
+  $'\tsort.Strings(found)\n\treturn found\n}\n\n// isStaleRoadmapStateRef' \
+  $'\tfound = append(found, "/dev/null/s193-falsified-always-found")\n\tsort.Strings(found)\n\treturn found\n}\n\n// isStaleRoadmapStateRef' \
+  "s193-go-direction-b"
+
+T193C_GO_B_BIN="$WORK/s193-corrupt-go-b-bin/trackfw"
+mkdir -p "$(dirname "$T193C_GO_B_BIN")"
+build_go_or_fail "setup-s193-go-b-build" "$T193C_GO_B" "$T193C_GO_B_BIN"
+
+assert_output_lacks "roadmap-ref-stale-state/go/vacuity-detects-regression" \
+  "$S193_MSG_VACUITY" \
+  bash -c "cd '$T193_G_VACUITY' && exec '$T193C_GO_B_BIN' validate"
+
+echo "OK   [falsify/roadmap-ref-stale-state/go]: as 3 direções (A/B/C) provadas"
+
+# --- Node: fixtures ---------------------------------------------------------
+T193_N_LIFECYCLE="$WORK/s193-node-lifecycle"
+mkdir -p "$T193_N_LIFECYCLE"
+scaffold_adr_req_project "$T193_N_LIFECYCLE"
+write_adr_status_fixture "$T193_N_LIFECYCLE/docs/adr/ADR-2026-09-06-s193-fixture.md" "Accepted"
+write_s193_lifecycle_req_fixture \
+  "$T193_N_LIFECYCLE/docs/req/REQ-2026-09-06-s193-fixture.md" \
+  "docs/adr/ADR-2026-09-06-s193-fixture.md"
+write_s193_done_roadmap_fixture \
+  "$T193_N_LIFECYCLE/docs/roadmaps/done/ROADMAP-2026-09-06-s193-fixture.md" \
+  "docs/req/REQ-2026-09-06-s193-fixture.md"
+
+T193_N_VACUITY="$WORK/s193-node-vacuity"
+mkdir -p "$T193_N_VACUITY"
+scaffold_adr_req_project "$T193_N_VACUITY"
+write_adr_status_fixture "$T193_N_VACUITY/docs/adr/ADR-2026-09-06-s193-fixture.md" "Accepted"
+write_s193_vacuity_req_fixture \
+  "$T193_N_VACUITY/docs/req/REQ-2026-09-06-s193-vacuity-fixture.md" \
+  "docs/adr/ADR-2026-09-06-s193-fixture.md"
+
+T193_N_BASE="$WORK/s193-node-base"
+setup_npm_tree "$T193_N_BASE"
+
+assert_output_lacks "roadmap-ref-stale-state/node/broken-link-baseline" \
+  "$S193_MSG_BROKEN" \
+  bash -c "cd '$T193_N_LIFECYCLE' && exec node '$T193_N_BASE/npm/bin/trackfw' validate"
+assert_output_contains "roadmap-ref-stale-state/node/stale-warning-baseline" \
+  "$S193_MSG_STALE" \
+  bash -c "cd '$T193_N_LIFECYCLE' && exec node '$T193_N_BASE/npm/bin/trackfw' validate"
+assert_output_contains "roadmap-ref-stale-state/node/lifecycle-baseline" \
+  "$S193_MSG_LIFECYCLE" \
+  bash -c "cd '$T193_N_LIFECYCLE' && exec node '$T193_N_BASE/npm/bin/trackfw' validate"
+assert_fails_with "roadmap-ref-stale-state/node/vacuity-baseline" \
+  "$S193_MSG_VACUITY" \
+  bash -c "cd '$T193_N_VACUITY' && exec node '$T193_N_BASE/npm/bin/trackfw' validate"
+
+# Direções A+C — corrupção: isStaleRoadmapStateRef sempre false.
+T193C_N_AC="$WORK/s193-corrupt-node-ac"
+setup_npm_tree "$T193C_N_AC"
+corrupt_literal \
+  "$ROOT_DIR/npm/src/validator/index.js" "$T193C_N_AC/npm/src/validator/index.js" \
+  $'function isStaleRoadmapStateRef(ref) {\n  const parent = path.basename(path.dirname(ref.replace(/\\\\/g, \'/\')))\n  return AGENT_NAMESPACE_STATE_NAMES.has(parent)\n}' \
+  $'function isStaleRoadmapStateRef(ref) {\n  const parent = path.basename(path.dirname(ref.replace(/\\\\/g, \'/\')))\n  void parent\n  return false // [falsified] fallback por basename desligado\n}' \
+  "s193-node-direction-ac"
+
+assert_output_contains "roadmap-ref-stale-state/node/broken-link-detects-regression" \
+  "$S193_MSG_BROKEN" \
+  bash -c "cd '$T193_N_LIFECYCLE' && exec node '$T193C_N_AC/npm/bin/trackfw' validate"
+assert_output_lacks "roadmap-ref-stale-state/node/lifecycle-detects-regression" \
+  "$S193_MSG_LIFECYCLE" \
+  bash -c "cd '$T193_N_LIFECYCLE' && exec node '$T193C_N_AC/npm/bin/trackfw' validate"
+assert_output_lacks "roadmap-ref-stale-state/node/stale-warning-detects-regression" \
+  "$S193_MSG_STALE" \
+  bash -c "cd '$T193_N_LIFECYCLE' && exec node '$T193C_N_AC/npm/bin/trackfw' validate"
+
+# Direção B — corrupção: resolveRoadmapRefByBasename sempre "encontra" algo.
+T193C_N_B="$WORK/s193-corrupt-node-b"
+setup_npm_tree "$T193C_N_B"
+corrupt_literal \
+  "$ROOT_DIR/npm/src/validator/index.js" "$T193C_N_B/npm/src/validator/index.js" \
+  $'  found.sort()\n  return found\n}\n\n// resolveRoadmapRef resolve' \
+  $'  found.push(\'/dev/null/s193-falsified-always-found\')\n  found.sort()\n  return found\n}\n\n// resolveRoadmapRef resolve' \
+  "s193-node-direction-b"
+
+assert_output_lacks "roadmap-ref-stale-state/node/vacuity-detects-regression" \
+  "$S193_MSG_VACUITY" \
+  bash -c "cd '$T193_N_VACUITY' && exec node '$T193C_N_B/npm/bin/trackfw' validate"
+
+echo "OK   [falsify/roadmap-ref-stale-state/node]: as 3 direções (A/B/C) provadas"
+
+# --- Python: fixtures --------------------------------------------------------
+T193_P_LIFECYCLE="$WORK/s193-python-lifecycle"
+mkdir -p "$T193_P_LIFECYCLE"
+scaffold_adr_req_project "$T193_P_LIFECYCLE"
+write_adr_status_fixture "$T193_P_LIFECYCLE/docs/adr/ADR-2026-09-06-s193-fixture.md" "Accepted"
+write_s193_lifecycle_req_fixture \
+  "$T193_P_LIFECYCLE/docs/req/REQ-2026-09-06-s193-fixture.md" \
+  "docs/adr/ADR-2026-09-06-s193-fixture.md"
+write_s193_done_roadmap_fixture \
+  "$T193_P_LIFECYCLE/docs/roadmaps/done/ROADMAP-2026-09-06-s193-fixture.md" \
+  "docs/req/REQ-2026-09-06-s193-fixture.md"
+
+T193_P_VACUITY="$WORK/s193-python-vacuity"
+mkdir -p "$T193_P_VACUITY"
+scaffold_adr_req_project "$T193_P_VACUITY"
+write_adr_status_fixture "$T193_P_VACUITY/docs/adr/ADR-2026-09-06-s193-fixture.md" "Accepted"
+write_s193_vacuity_req_fixture \
+  "$T193_P_VACUITY/docs/req/REQ-2026-09-06-s193-vacuity-fixture.md" \
+  "docs/adr/ADR-2026-09-06-s193-fixture.md"
+
+T193_P_BASE="$WORK/s193-python-base"
+mkdir -p "$T193_P_BASE"
+cp -r "$ROOT_DIR/pypi" "$T193_P_BASE/pypi"
+
+assert_output_lacks "roadmap-ref-stale-state/python/broken-link-baseline" \
+  "$S193_MSG_BROKEN" \
+  bash -c "cd '$T193_P_LIFECYCLE' && exec env PYTHONPATH='$T193_P_BASE/pypi' python3 -m trackfw validate"
+assert_output_contains "roadmap-ref-stale-state/python/stale-warning-baseline" \
+  "$S193_MSG_STALE" \
+  bash -c "cd '$T193_P_LIFECYCLE' && exec env PYTHONPATH='$T193_P_BASE/pypi' python3 -m trackfw validate"
+assert_output_contains "roadmap-ref-stale-state/python/lifecycle-baseline" \
+  "$S193_MSG_LIFECYCLE" \
+  bash -c "cd '$T193_P_LIFECYCLE' && exec env PYTHONPATH='$T193_P_BASE/pypi' python3 -m trackfw validate"
+assert_fails_with "roadmap-ref-stale-state/python/vacuity-baseline" \
+  "$S193_MSG_VACUITY" \
+  bash -c "cd '$T193_P_VACUITY' && exec env PYTHONPATH='$T193_P_BASE/pypi' python3 -m trackfw validate"
+
+# Direções A+C — corrupção: _is_stale_roadmap_state_ref sempre False.
+T193C_P_AC="$WORK/s193-corrupt-python-ac"
+mkdir -p "$T193C_P_AC"
+cp -r "$ROOT_DIR/pypi" "$T193C_P_AC/pypi"
+corrupt_literal \
+  "$ROOT_DIR/pypi/trackfw/validator.py" "$T193C_P_AC/pypi/trackfw/validator.py" \
+  'return parent in _AGENT_NAMESPACE_STATE_NAMES' \
+  'return False  # [falsified] was: parent in _AGENT_NAMESPACE_STATE_NAMES' \
+  "s193-python-direction-ac"
+
+assert_output_contains "roadmap-ref-stale-state/python/broken-link-detects-regression" \
+  "$S193_MSG_BROKEN" \
+  bash -c "cd '$T193_P_LIFECYCLE' && exec env PYTHONPATH='$T193C_P_AC/pypi' python3 -m trackfw validate"
+assert_output_lacks "roadmap-ref-stale-state/python/lifecycle-detects-regression" \
+  "$S193_MSG_LIFECYCLE" \
+  bash -c "cd '$T193_P_LIFECYCLE' && exec env PYTHONPATH='$T193C_P_AC/pypi' python3 -m trackfw validate"
+assert_output_lacks "roadmap-ref-stale-state/python/stale-warning-detects-regression" \
+  "$S193_MSG_STALE" \
+  bash -c "cd '$T193_P_LIFECYCLE' && exec env PYTHONPATH='$T193C_P_AC/pypi' python3 -m trackfw validate"
+
+# Direção B — corrupção: _resolve_roadmap_ref_by_basename sempre "encontra" algo.
+T193C_P_B="$WORK/s193-corrupt-python-b"
+mkdir -p "$T193C_P_B"
+cp -r "$ROOT_DIR/pypi" "$T193C_P_B/pypi"
+corrupt_literal \
+  "$ROOT_DIR/pypi/trackfw/validator.py" "$T193C_P_B/pypi/trackfw/validator.py" \
+  $'    found.sort()\n    return found' \
+  $'    found.append("/dev/null/s193-falsified-always-found")\n    found.sort()\n    return found' \
+  "s193-python-direction-b"
+
+assert_output_lacks "roadmap-ref-stale-state/python/vacuity-detects-regression" \
+  "$S193_MSG_VACUITY" \
+  bash -c "cd '$T193_P_VACUITY' && exec env PYTHONPATH='$T193C_P_B/pypi' python3 -m trackfw validate"
+
+echo "OK   [falsify/roadmap-ref-stale-state/python]: as 3 direções (A/B/C) provadas"
+
+# ---------------------------------------------------------------------------
+# Cenário 194 — ROADMAP-2026-09-05-reconciliar-o-que-declaramos-com-o-que-
+# medimos-apos-a-auditoria-externa, ML-3D: `/api/chain` do `serve` casava
+# edge.To pelo valor CRU do campo `roadmap:`, e esse valor só existia no
+# FRONTMATTER na leitura original — mas `trackfw req new` (Go/Node/Python)
+# grava `adr: ""` e `roadmap: ""` SEMPRE vazios ali; o valor real vive no
+# CORPO ("## Linked Roadmap / Roadmap: <path>"). Medido pelo arquiteto em
+# 2026-09-06 contra os 2 vínculos reais da árvore (REQ-2026-09-03-as-217...,
+# REQ-2026-09-05-tres-defeitos...): 0 arestas antes da correção, nos 3 CLIs —
+# não era o caso de borda do ML-3B (caminho de estado desatualizado), era o
+# formato canônico inteiro nunca resolvendo.
+#
+# Node (npm/src/serve/api_chain.js) e Python (pypi/trackfw/serve/api_chain.py)
+# já indexavam nodes por BASENAME através de todos os estados — não precisam
+# do fallback de estado do ML-3B (ver docs/cli-parity.md, seção "serve:
+# /api/chain"), mas tinham DOIS defeitos ortogonais, corrigidos juntos por
+# serem a mesma causa (extração que nunca alcança o formato canônico):
+#   1. leitura só de frontmatter (nunca o corpo) — comum aos 3 CLIs;
+#   2. resolveRef/_find_node_by_ref comparavam o valor CRU (caminho completo)
+#      contra o índice de basename, que nunca bate — só Node e Python, porque
+#      só eles têm esse índice; Go casa por igualdade de caminho completo, e
+#      esse defeito não existe lá.
+# Python tinha ainda um terceiro: a aresta REQ→ROADMAP não existia em código
+# NENHUM (só REQ→ADR, ROADMAP→REQ, ROADMAP→ADR) — nem por frontmatter, nem
+# por corpo, para vínculo nenhum.
+#
+# Duas direções de falsificação, em Node e Python (Go tem cobertura
+# equivalente em internal/serve/api_chain_test.go —
+# TestChainHandler_EdgeResolvesStaleStateRoadmapPath e
+# TestChainHandler_NoEdgeInventedForUnresolvableRoadmapRef — com
+# falsificação manual registrada no relatório do ML-3D; chainHandler não é
+# exportado do pacote `serve` e não é invocável de shell sem introduzir um
+# subcomando novo só para teste, o que este roadmap decide explicitamente
+# NÃO fazer — mudaria contrato público por motivo de testabilidade. Mesmo
+# padrão de limite declarado do Cenário 193/ML-3B: "provada apenas pela
+# direção C da falsificação"):
+#   A) REQ com vínculo `Roadmap:` no CORPO apontando para um roadmap que
+#      fisicamente já foi movido para done/ (caminho gravado ainda diz
+#      wip/) ⇒ a aresta REQ→Roadmap aparece no grafo, ligando ao node real
+#      em done/.
+#   B) REQ com vínculo `Roadmap:` para um basename que NÃO existe em estado
+#      algum ⇒ nenhuma aresta aponta para um id que não é node real (guarda
+#      de vacuidade — o fix não pode virar um "sempre encontra").
+#
+# Invoca `handleChain`/`get_chain` DIRETAMENTE (node -e / python3 -c), sem
+# HTTP: os dois já são funções exportadas que aceitam cfg + mock res —
+# mesmo padrão de invocação usado na medição do relatório do ML. Corrompe a
+# IMPLEMENTAÇÃO (nunca a asserção), mesmo padrão dos Cenários
+# 14/16/17/20/21/24/26/192/193.
+# ---------------------------------------------------------------------------
+
+T194_FIX="$WORK/s194-fixtures"
+mkdir -p "$T194_FIX/req" "$T194_FIX/roadmaps/wip" "$T194_FIX/roadmaps/done"
+
+# Fixture A: roadmap já em done/, REQ com vínculo (no CORPO) ainda apontando
+# para o caminho antigo em wip/ — reproduz o defeito medido do ML-3B/3D.
+cat > "$T194_FIX/roadmaps/done/ROADMAP-s194-moved.md" <<'EOF'
+# Roadmap s194 moved
+EOF
+cat > "$T194_FIX/req/REQ-s194-stale.md" <<EOF
+---
+status: Open
+adr: ""
+roadmap: ""
+---
+# REQ s194 stale
+
+## Linked Roadmap
+Roadmap: $T194_FIX/roadmaps/wip/ROADMAP-s194-moved.md
+EOF
+
+# Fixture B: vínculo (no CORPO) para um basename que não existe em estado
+# algum — vínculo genuinamente ausente.
+cat > "$T194_FIX/req/REQ-s194-orfa.md" <<EOF
+---
+status: Open
+adr: ""
+roadmap: ""
+---
+# REQ s194 orfa
+
+## Linked Roadmap
+Roadmap: $T194_FIX/roadmaps/wip/ROADMAP-s194-nunca-existiu.md
+EOF
+
+run_node_chain_probe() {
+  # $1 = diretório src do npm a exercitar; $2 = raiz das fixtures. Ambos
+  # recebidos como ARGUMENTO, não capturados de variável de ambiente do
+  # script pai: esta função é reconstruída via `declare -f` e chamada dentro
+  # de `bash -c` num subshell novo — uma variável do script pai não-exportada
+  # (T194_FIX) não existiria ali, e o valor interpolado silenciosamente
+  # viraria string vazia, quebrando o cenário sem diagnóstico (medido: sem
+  # este parâmetro explícito, EDGE_A dava false mesmo no baseline correto).
+  local npm_src_dir=$1
+  local fixdir=$2
+  node -e "
+const { handleChain } = require('$npm_src_dir/serve/api_chain.js');
+const cfg = { adrDirs: ['$fixdir/adr'], reqDir: '$fixdir/req', roadmapDir: '$fixdir/roadmaps', roadmapNamespacing: 'flat' };
+const res = { writeHead(){}, end(body){
+  const d = JSON.parse(body);
+  const roadmapNode = d.nodes.find(n => n.type === 'roadmap');
+  const edgeFound = roadmapNode ? d.edges.some(e => e.to === roadmapNode.id) : false;
+  console.log('EDGE_A=' + edgeFound);
+  const orfaTarget = '$fixdir/roadmaps/wip/ROADMAP-s194-nunca-existiu.md';
+  const inventedNode = d.nodes.some(n => n.id === orfaTarget);
+  console.log('INVENTED_B=' + inventedNode);
+}};
+handleChain(cfg, {}, res);
+"
+}
+
+run_python_chain_probe() {
+  # Mesmo motivo do parâmetro explícito de run_node_chain_probe acima.
+  local pypi_dir=$1
+  local fixdir=$2
+  python3 - "$pypi_dir" "$fixdir" <<'PY'
+import sys
+pypi_dir, fixdir = sys.argv[1:3]
+sys.path.insert(0, pypi_dir)
+from trackfw.serve.api_chain import get_chain
+cfg = {"adr_dirs": [f"{fixdir}/adr"], "req_dir": f"{fixdir}/req", "roadmap_dir": f"{fixdir}/roadmaps", "roadmap_namespacing": "flat"}
+d = get_chain(cfg)
+roadmap_node = next((n for n in d["nodes"] if n["type"] == "roadmap"), None)
+edge_found = any(e["to"] == roadmap_node["id"] for e in d["edges"]) if roadmap_node else False
+print(f"EDGE_A={edge_found}")
+orfa_target = f"{fixdir}/roadmaps/wip/ROADMAP-s194-nunca-existiu.md"
+node_ids = {n["id"] for n in d["nodes"]}
+invented_node = orfa_target in node_ids
+print(f"INVENTED_B={invented_node}")
+PY
+}
+
+# --- Baseline (Node): código real do ROOT_DIR ---
+assert_output_contains "serve-chain-canonical-link/node/edge-baseline" \
+  "EDGE_A=true" \
+  bash -c "$(declare -f run_node_chain_probe); run_node_chain_probe '$ROOT_DIR/npm/src' '$T194_FIX'"
+assert_output_contains "serve-chain-canonical-link/node/no-invented-node-baseline" \
+  "INVENTED_B=false" \
+  bash -c "$(declare -f run_node_chain_probe); run_node_chain_probe '$ROOT_DIR/npm/src' '$T194_FIX'"
+
+# --- Corrupção (Node): resolveRef volta a comparar o valor CRU (sem
+# basename()), reproduzindo o defeito 2 (extração alcança o corpo, mas o
+# valor de caminho completo nunca bate contra o índice de basename).
+T194C_NODE="$WORK/s194-corrupt-node"
+mkdir -p "$T194C_NODE/npm"
+cp -r "$ROOT_DIR/npm/src" "$T194C_NODE/npm/src"
+corrupt_literal \
+  "$ROOT_DIR/npm/src/serve/api_chain.js" "$T194C_NODE/npm/src/serve/api_chain.js" \
+  $'    const base = path.basename(val).replace(/\\.md$/, \'\').toLowerCase().trim()' \
+  $'    const base = val.replace(/\\.md$/, \'\').toLowerCase().trim() // [falsified] sem basename()' \
+  "s194-node-defect2"
+
+assert_output_lacks "serve-chain-canonical-link/node/edge-detects-regression" \
+  "EDGE_A=true" \
+  bash -c "$(declare -f run_node_chain_probe); run_node_chain_probe '$T194C_NODE/npm/src' '$T194_FIX'"
+
+# --- Baseline (Python): código real do ROOT_DIR ---
+assert_output_contains "serve-chain-canonical-link/python/edge-baseline" \
+  "EDGE_A=True" \
+  bash -c "$(declare -f run_python_chain_probe); run_python_chain_probe '$ROOT_DIR/pypi' '$T194_FIX'"
+assert_output_contains "serve-chain-canonical-link/python/no-invented-node-baseline" \
+  "INVENTED_B=False" \
+  bash -c "$(declare -f run_python_chain_probe); run_python_chain_probe '$ROOT_DIR/pypi' '$T194_FIX'"
+
+# --- Corrupção (Python): _find_node_by_ref volta a comparar o valor CRU
+# (sem os.path.basename()), mesmo defeito 2 do lado Python.
+T194C_PY="$WORK/s194-corrupt-python"
+mkdir -p "$T194C_PY"
+cp -r "$ROOT_DIR/pypi" "$T194C_PY/pypi"
+corrupt_literal \
+  "$ROOT_DIR/pypi/trackfw/serve/api_chain.py" "$T194C_PY/pypi/trackfw/serve/api_chain.py" \
+  $'        base = os.path.basename(ref)\n        candidates = by_basename.get(base, []) or by_basename.get(base + ".md", [])' \
+  $'        candidates = by_basename.get(ref, []) or by_basename.get(ref + ".md", []) # [falsified] sem basename()' \
+  "s194-python-defect2"
+
+assert_output_lacks "serve-chain-canonical-link/python/edge-detects-regression" \
+  "EDGE_A=True" \
+  bash -c "$(declare -f run_python_chain_probe); run_python_chain_probe '$T194C_PY/pypi' '$T194_FIX'"
+
+echo "OK   [falsify/serve-chain-canonical-link]: Node + Python, direções A/B provadas (Go: TestChainHandler_EdgeResolvesStaleStateRoadmapPath + TestChainHandler_NoEdgeInventedForUnresolvableRoadmapRef, limite declarado)"

@@ -7171,3 +7171,66 @@ Ligado a `parity:` no `Makefile` (modo `--self-test`) e ao job `pr-closing-keywo
 `.github/workflows/quality.yml`, com `if: github.event_name == 'pull_request'` — o único evento em
 que o corpo existe no payload. **Não** foi acrescentado a `required_status_checks`: é decisão do
 arquiteto, e um gate novo em obrigatório bloqueia todo PR se nascer com defeito.
+
+## `serve`: `/api/chain` — vínculo `roadmap:`/`adr:` nunca resolvia por frontmatter só (ML-3D, ROADMAP-2026-09-05)
+
+<!-- trackfw-contract: gate=scripts/check-gates-falsify.sh,internal/serve/api_chain_test.go,npm/tests/serve_chain.test.js,pypi/tests/test_serve_chain.py partial=Cenário 194 de check-gates-falsify.sh cobre só Node+Python; a direção Go é provada por TestChainHandler_EdgeResolvesStaleStateRoadmapPath/TestChainHandler_NoEdgeInventedForUnresolvableRoadmapRef (falsificação manual registrada no relatório do ML, não automatizada no gate) porque chainHandler não é exportado do pacote serve e não é invocável de shell -->
+
+**O defeito, medido nos 3 CLIs em 2026-09-06.** `trackfw req new` (Go/Node/Python) grava
+`adr: ""` e `roadmap: ""` **sempre vazios** no frontmatter da REQ gerada — o valor real vive no
+CORPO, em `## Linked ADR / ADR: <path>` e `## Linked Roadmap / Roadmap: <path>`. Os três
+scanners de `/api/chain` liam **só** o bloco YAML de frontmatter. Resultado: nenhuma REQ gerada
+pelo próprio CLI jamais produziu aresta REQ→ADR ou REQ→Roadmap no grafo do dashboard — não era
+o caso de borda que o achado original do ML-3B media (caminho de estado desatualizado), era o
+formato canônico inteiro nunca resolvendo, nos 3 CLIs. Medido contra os 2 vínculos reais da
+árvore (REQ-2026-09-03-as-217..., REQ-2026-09-05-tres-defeitos...): 0 arestas antes, 1 cada
+depois, nos 3 CLIs.
+
+**A correção.** Os três passam a extrair o campo com uma varredura do CONTEÚDO inteiro
+(`ExtractRefPath`/`extractRefPath`/`extract_ref_path`, exportada de `internal/validator`,
+`npm/src/validator`, `pypi/trackfw/validator` respectivamente) em vez de só o frontmatter —
+mesma função usada por `validateRefTargetsExist`/`validateREQRoadmapLifecycle`, para não
+duplicar a variação linha-a-linha em dois lugares por runtime.
+
+**A divergência de MECANISMO entre os 3 CLIs para o mesmo resultado — declarada de propósito.**
+O achado do ML-3B (`trackfw roadmap move` deixa o campo `roadmap:` gravado com a pasta de
+ESTADO antiga, ex. `wip/` quando o arquivo já foi para `done/`) afeta os três scanners de forma
+**desigual**, por causa de como cada um já casava o valor extraído contra o node real:
+
+- **Go** (`internal/serve/api_chain.go`) casava `edge.To` pelo **caminho literal completo**
+  contra `node.ID` — um vínculo com pasta de estado velha nunca casava, e a aresta ficava
+  órfã. Precisou do MESMO fallback por basename do ML-3B
+  (`validator.ResolveRoadmapRef`, restrito ao campo `roadmap:` — não `req:`/`adr:`, pela mesma
+  razão de `ADR-2026-08-01-caminho-completo-no-campo-req-do-frontmatter-e-remocao-do-parametro-roots-morto`
+  documentada em `resolveRoadmapRefByBasename`).
+- **Node** (`npm/src/serve/api_chain.js`) e **Python** (`pypi/trackfw/serve/api_chain.py`) já
+  indexavam todos os nodes por **basename**, através de todos os estados, desde antes desta
+  correção — um vínculo com pasta de estado velha **já resolvia**, sem fallback adicional.
+  (Precisaram, isso sim, de um fix ortogonal: `resolveRef`/`_find_node_by_ref` comparavam o
+  valor extraído CRU contra a chave — que é sempre um basename — em vez de aplicar
+  `path.basename()`/`os.path.basename()` primeiro; um vínculo em formato de caminho completo,
+  que é o formato canônico gravado pelo gerador, nunca batia.)
+
+Logo: **Go precisa do fallback de estado do ML-3B; Node e Python não precisam, porque o
+mecanismo de resolução deles nunca dependeu de igualdade de caminho completo.** Os três chegam
+ao mesmo resultado observável nos 2 vínculos medidos, por mecanismos genuinamente diferentes —
+declarado aqui para que uma auditoria futura não confunda a ausência do fallback em Node/Python
+com uma lacuna de paridade.
+
+**Python tinha, além disso, uma lacuna de tipo de aresta**: a construção de arestas cobria só
+REQ→ADR, ROADMAP→REQ e ROADMAP→ADR — **REQ→ROADMAP não existia em código nenhum**, independente
+de frontmatter ou corpo. Corrigido junto (mesma causa: nenhum dos três scanners nunca tinha
+produzido esta aresta a partir do formato canônico do gerador).
+
+**Falsificação.** `scripts/check-gates-falsify.sh`, Cenário 194, cobre Node e Python nas duas
+direções (aresta presente para vínculo com pasta de estado velha; nenhum nó inventado para
+basename ausente em todos os estados) invocando `handleChain`/`get_chain` diretamente via
+`node -e`/`python3 -c`, com o mesmo padrão de corromper a IMPLEMENTAÇÃO (não a asserção) dos
+Cenários 14/16/17/20/21/24/26/192/193. **Limite declarado**: `chainHandler` em Go é não-exportado
+no pacote `serve` e não é invocável de shell sem introduzir um subcomando novo só para teste —
+decisão explicitamente evitada (mudaria contrato público por motivo de testabilidade). A direção
+Go é provada por `TestChainHandler_EdgeResolvesStaleStateRoadmapPath` e
+`TestChainHandler_NoEdgeInventedForUnresolvableRoadmapRef`
+(`internal/serve/api_chain_test.go`), com falsificação manual registrada no relatório do ML
+(revert do fallback → teste reprova; restauração → teste passa) — mesmo padrão de limite
+declarado do ML-3B ("provada apenas pela direção C da falsificação").
