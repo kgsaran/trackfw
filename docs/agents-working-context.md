@@ -33793,3 +33793,54 @@ audita via `git status --porcelain` sobre `$ROOT_DIR` usam `ROOT_DIR`/`WORK` pr�
 apontado na revisão. Executando agora: baseline serial re-medido nesta sessão + `TRACKFW_FALSIFY_JOBS=4`
 (1x) + `TRACKFW_FALSIFY_JOBS=8` (3x) + diff de rótulos + sabotagem + `make quality`. Sem push/commit
 (fora da minha autoridade) — entregável fica em árvore suja para `trackfw_architect` auditar.
+
+## 2026-09-07 — Ares (Infra) — ML-2D reentrega (CONCLUÍDO)
+
+**Início.** Branch `chore/perfil-e-aceleracao-do-check-gates-falsify`, ROADMAP-2026-09-06 em wip,
+ML-2D reprovado na auditoria anterior (77 rótulos perdidos + 1 FAIL, atribuídos a grafia de cabeçalho
+divergente). Li o roadmap, a REQ vinculada e a medição de reprovação antes de tocar código.
+
+**Diagnóstico corrigido, não confirmado o da entrega anterior.** A hipótese de grafia não se sustenta
+(`HDR_PAT` já era ampla o bastante). Causa real, medida e reproduzida: a linha 913
+(`# Cenario 166 -- ...`) vira fronteira legítima mas introduz um bloco SÓ de definições de função
+(5 funções), sem asserção própria, usadas por cenários ~8000 linhas depois — sem içar esse bloco para
+o preâmbulo, ele cai num chunk diferente do dos seus chamadores e `command not found` mata o resto da
+chunk em silêncio. Mesma causa dos 77 rótulos perdidos E do 1 FAIL (`run_node_chain_probe`, exit=2
+reproduzido isolado, bate exato com o relatório original). Nota do vault:
+`vault/notes/comentario-de-cenario-sobre-bloco-so-de-funcoes-vira-fronteira-de-corte-falsa-2026-09-07.md`.
+
+**Entregue:** `scripts/gen-falsify-chunks.py` classifica segmentos SUPORTE (zero asserção + só função,
+heredoc-aware) vs ASSERÇÃO, içando suporte para preâmbulo estendido; guarda de completude estrutural
+(linha-a-linha) no gerador; guarda de conjunto no driver (`run-gates-falsify-parallel.sh`) — sentinela
+por chunk (`CHUNK_COMPLETE N`) + rótulos esperados derivados do próprio texto de cada chunk
+(literal/glob), nunca lista congelada; escopo declarado (só `assert_*`, ~65% dos rótulos únicos, não
+cobre `echo` manual assimétrico). 4 sabotagens provadas (rótulo removido, chunk que crasha,
+completude do gerador, e alvo real — `check-cli-parity.sh` neutralizado e revertido). `Makefile`
+trocado para `scripts/run-gates-falsify-parallel.sh`; confirmado que `.github/workflows/quality.yml`
+chega ao gate via `make parity` (não script antigo direto).
+
+**Medido, foreground, mesma sessão/máquina:** serial 903s (412 OK/0 FAIL) vs 3× `JOBS=8` (478/478/482s,
+412 OK/0 FAIL cada) — 1,88x real (não os 3,03x da entrega reprovada, que era inflado por trabalho
+omitido). `diff` de conjunto de rótulos vazio nas 3 rodadas (386 únicos cada lado). `make parity`
+completo via `make`: rc=0, 712s (era ~1204s), 0 `^FAIL` em 1761 linhas de log.
+
+**Decisão para o arquiteto, não fechada por mim:** `TRACKFW_FALSIFY_SCRIPT`/`TRACKFW_FALSIFY_GEN`
+(env vars de teste no driver, default = produção, usadas só para as sabotagens) desviam o gate mais
+caro do CI se setadas — pedido de revisão explícita no roadmap, dado o precedente dos ADRs de
+credential-guard deste repo sobre controle-onde-o-agente-escreve.
+
+**Sem commit/push** — fora da minha autoridade (Infraestrutura nunca opera git). Árvore com 4 arquivos
+modificados (`Makefile`, `scripts/gen-falsify-chunks.py`, `scripts/run-gates-falsify-parallel.sh`,
+o roadmap) + 1 nota de vault nova + este arquivo, prontos para auditoria do `trackfw_architect`.
+
+**Fim.**
+
+**Adendo pós-revisão (mesma sessão):** corrigidos 4 pontos numa segunda passada — cobertura ~65%
+reproduzida por comando exato (não estimada), declarado que o extrator de rótulos é heredoc-blind
+(mesma família de `vault/notes/comentario-inline-com-heredoc-derruba-arquivo-da-populacao-do-gate-2026-09-02.md`,
+direção oposta), confirmado por grep que nenhum outro workflow/gate invoca o script antigo direto, e
+corrigido o trailer `"Falsification checks passed (all 181 scenarios...)"` que sob chunking passou a
+descrever só um chunk — driver agora emite resumo agregado próprio após a guarda de conjunto passar
+(`rc=0`, `412 OK`, `0 FAIL`, resumo presente, confirmado em produção real). Também declarado o teto
+previsto para o ML-3A (bloco fundido de 30 cenários/3487 linhas domina sobre nº de workers — `JOBS=4`
+no CI deve dar ~o mesmo que `JOBS=8` local, não é regressão se o ML-3A medir isso).

@@ -215,7 +215,192 @@ conteúdo").
 geração de chunk a partir de qualquer tmpdir.
 
 ### ML-2D — Gerador de fronteiras e paralelismo em produção
-**Status:** ❌ Bloqueado — reprovado na auditoria · **Agente:** `ares-tf` · **Dependências: ML-2C**
+**Status:** ✅ Concluído (reentrega pós-reprovação) · **Agente:** `ares-tf` · **Dependências: ML-2C**
+
+## Reentrega do ML-2D — `ares-tf`, 2026-09-07
+
+🔴 **Causa raiz corrigida — a hipótese anterior ("42 grafias de cabeçalho divergentes") não se
+confirmou.** `HDR_PAT` já aceitava acento opcional, plural e os dois travessões; o gap entre "137
+cabeçalhos" e "95 que casam o padrão estrito" era, na maior parte, **prosa** (comentários que
+*mencionam* um cenário sem *ser* seu cabeçalho — ex. `# Cenários 14/16/17/20/21...`). Reproduzido:
+`python3 scripts/gen-falsify-chunks.py scripts/check-gates-falsify.sh /tmp/probe 8` dá
+`prelude_end_line=912`, não ~1160 — a linha 913 (`# Cenario 166 -- Direcao A...`) casa o padrão e
+vira fronteira, mas o trecho que ela introduz (913-1160) **não contém nenhuma asserção própria**: só
+define 5 funções (`setup_s166_tree`, `write_req_adr_placeholder_fixture`,
+`write_req_roadmap_prose_fixture`, `run_node_chain_probe`, `run_python_chain_probe`) consumidas por
+cenários **quase 8000 linhas depois** (9015-10927). Confirmado por grep: `chunk_0.sh` definia,
+`chunk_6.sh` chamava — `command not found` sob `set -euo pipefail`, matando tudo depois na chunk. Isso
+explica **as duas pontas do relatório reprovado ao mesmo tempo**: os 77 rótulos perdidos (cauda da
+chunk que abortou) e o único FAIL (`serve-chain-canonical-link/node/edge-baseline`) — reproduzido
+isoladamente (`bash -c "$(declare -f run_node_chain_probe); run_node_chain_probe ...\`" com a função
+indefinida sai com **exit 2**, exatamente o valor do relatório original, não hipótese).
+
+**Correção:** `gen-falsify-chunks.py` agora classifica cada segmento fronteira em SUPORTE (zero
+asserção própria E só definição de função, heredoc-aware, mesmo critério de fronteira `}` solitário
+que o ML-2C validou) ou ASSERÇÃO. Segmentos de suporte são içados para um **preâmbulo estendido**
+(idêntico em todo chunk — definição de função não tem ordem de execução, içar é sempre seguro);
+segmentos de asserção seguem o pipeline de fusão por variável + LPT inalterado. Medido no arquivo
+real: 2 segmentos de suporte (`166`: 248 linhas; `55/56/57`: 10 linhas, separador só-comentário,
+inerte) — os outros 20 "zero-assert" que uma varredura ingênua acusaria são cenários reais com
+`echo "OK/FAIL [falsify/...]"` manual em vez de `assert_*` (ex. Cenário 18), corretamente
+NÃO-classificados como suporte por procurar o sinal por substring (não âncora em coluna 0 — muitas
+chamadas vêm depois de `cd ... &&`). Um terceiro candidato (`60/61`, efeito colateral de `cd` até o
+Cenário 64 restaurar) tem código de topo além de função — corretamente mantido como asserção; já era
+coberto pela fusão por variável existente (`GBG_ORIGINAL_PWD` referenciado no Cenário 64), verificado
+sem alteração de código.
+
+**Guarda de completude no gerador** (substitui a checagem de contagem de cabeçalhos, que se mostrou a
+diagnose errada): `accounted = prelude + Σ(suporte) + Σ(asserção)` tem de bater com `len(lines)` — sai
+com `SystemExit` se não bater. Sabotagem: subtrair 3 do `accounted` manualmente → gerador recusa gerar
+chunks (`guarda de completude falhou -- contabilizado=10927, arquivo tem 10930`).
+
+**Guarda de conjunto no driver** (`run-gates-falsify-parallel.sh`), derivada do próprio texto de cada
+chunk (nunca lista congelada, ver decisão abaixo): duas checagens independentes, rodam **sempre**,
+mesmo se algum chunk já reprovou.
+1. **Sentinela por chunk**: todo chunk materializado termina com `echo "CHUNK_COMPLETE $i"`; se o log
+   não termina nela, o chunk morreu no meio.
+2. **Rótulos esperados**: `gen-falsify-chunks.py` extrai, do texto do PRÓPRIO chunk, os rótulos que
+   seus `assert_*` podem emitir (literal exato; ou prefixo glob quando o rótulo tem `$var` resolvido só
+   em runtime — ex. o loop `roadmap-acceptance-heading/go/$path_name`). O driver confere cada um contra
+   `OK|FAIL|PROOF [falsify/rótulo]` do log do MESMO chunk e **nomeia** o que faltar.
+
+Decisão declarada (a escolha pedida no roadmap entre "derivar do fonte" vs "serial de referência"):
+**derivar do próprio fonte de cada chunk**, não um serial de referência — rodar o serial toda vez para
+validar o paralelo anularia o ganho. 🔴 **Escopo medido e limitado, não coberto pela guarda**: o
+manifesto real emite **249 rótulos literais únicos + 3 templates glob** (`assert_*` apenas —
+`sed -n 's/^chunk=[0-9]* label=//p' | sort -u | wc -l` sobre a saída do gerador, contra `sort -u` do
+run serial: 249/386, sem duplicata entre eles), ou seja, **~65%** da suíte por rótulo único — número
+reproduzível pelo comando acima, não estimado. Cenários com `echo "OK/FAIL [falsify/...]"` manual
+(ex. `no-repo-mutation`, `validate-ok-message/*`, `status-inventory/*`) não entram no conjunto
+esperado — muitos desses écos são **assimétricos por design** (ex. `setup-sN` só imprime em erro,
+nunca em sucesso), então incluí-los ingenuamente geraria falso-positivo garantido em toda run limpa.
+Fechar esse gap com segurança exige distinguir eco "sempre dispara" de "só no caminho de erro", o que
+esta entrega não fez — reportado, não é achado de mesma causa (mecanismo de guarda, não de perda de
+cobertura), fica para quem priorizar.
+
+🔴 **Segunda limitação declarada do extrator de rótulos**: `extract_expected_labels` pula linha de
+comentário (`#`), mas **não** rastreia heredoc — um `assert_fails_with "foo" ...` dentro do BODY de um
+heredoc (texto de fixture, não código real) seria capturado como rótulo esperado sem nunca ser
+emitido. Mesma família de fragilidade de parser já registrada em
+`vault/notes/comentario-inline-com-heredoc-derruba-arquivo-da-populacao-do-gate-2026-09-02.md`, na
+direção oposta (aquele falhava aberto — gate passava sobre regressão; este falharia fechado — GUARDA
+dispararia sobre um chunk correto). Não medido nenhum caso real no arquivo atual (as 3 rodadas
+passaram limpas); declarado como risco de regressão futura, não corrigido nesta entrega.
+
+🔴 **Trailer do arquivo original agora enganoso sob paralelismo — corrigido no driver, não no
+arquivo fonte**: `check-gates-falsify.sh:9763` ecoa `"Falsification checks passed (all 181
+scenarios...)"` como última linha do último segmento de asserção. Sob chunking essa linha imprime
+UMA vez, pelo chunk que ficou com esse segmento (tipicamente 20-30 dos 118 segmentos) — no
+`make parity` real ela apareceu depois de só 6 `CHUNK_COMPLETE`, não 8, e passou a descrever só
+aquela chunk. Não editado o arquivo fonte (risco desnecessário num arquivo de 10930 linhas já frágil
+a parsing, e a frase é conteúdo estático, não lógica de teste) — em vez disso o driver agora emite seu
+próprio resumo agregado depois da guarda de conjunto passar: `"suite completa -- N chunks, X OK, Y
+FAIL, guarda de conjunto OK"`. Confirmado: `rc=0`, `412 OK`, `0 FAIL`, resumo do driver presente.
+
+**Confirmado que nenhum outro workflow/gate invoca `check-gates-falsify.sh` diretamente** —
+`grep -rn 'check-gates-falsify\.sh' .github/workflows/ scripts/ Makefile` só retorna comentários que
+MENCIONAM o script (precedente de cenário, contexto de UTF-8), nunca uma invocação executável fora do
+`Makefile` já trocado.
+
+**Também gerado e testado a `JOBS=4`** (default de `detect_cpus()` no runner de 4 vCPUs do CI, nunca
+antes testado neste roadmap — só 8 tinha sido gerado até aqui): `bash -n` limpo nos 4 chunks, mesma
+guarda de completude passa.
+
+🔴 **Teto previsto para o ML-3A, declarado agora para não parecer regressão depois**: o maior bloco
+fundido tem `largest_fused_unit_lines=3487` (30 cenários indivisíveis, ver `cross_segment_edges=25`)
+contra chunk mediano de ~830 linhas — 4,2x o mediano. A `JOBS=4` esse bloco é `chunk_3` sozinho; a
+`JOBS=8` é `chunk_7` sozinho. Ou seja, o piso de tempo é plausivelmente ditado por ESTE bloco, não pelo
+número de workers — o que prevê **`JOBS=4` no CI (4 vCPUs) ≈ `JOBS=8` local**, e falsifica a premissa
+anterior do roadmap ("com fronteiras livres, o teto passa a ser o número de workers"). Não
+re-medido por chunk (tempo por chunk não foi registrado nas 3 rodadas) — declarado como previsão, não
+medição; se o ML-3A medir ~1,8x em 4 vCPUs, é o resultado esperado, não uma regressão, e os 25 edges
+cross-segmento são a próxima alavanca se alguém quiser mais.
+
+**Falso positivo pego e corrigido durante a própria medição**: a primeira rodada com a guarda nova
+acusou `git-branch-guard-global-script-integrity` e `credential-guard-script-integrity` como
+"ausentes" com rc=1, mesmo com 412 OK / 0 FAIL idêntico ao serial — não era perda de cobertura, era bug
+de extração: `assert_would_now_fail` nunca ecoa o rótulo cru, sempre `$label/non-vacuity` (`PROOF` ou
+`FAIL`). Corrigido em `extract_expected_labels` (sufixo aplicado só para essa função). Re-medido limpo
+depois — ver abaixo.
+
+**Duas sabotagens provadas** (scripts sintéticos em scratchpad, produção real via
+`TRACKFW_FALSIFY_SCRIPT`/`TRACKFW_FALSIFY_GEN`, override só para teste, sem efeito em produção sem a
+env var):
+1. Rótulo removido de propósito de um chunk (gerador sabotado para pular `chunk_lines.extend` de um
+   segmento, mantendo o rótulo na lista esperada) → driver: `GUARDA -- chunk_1: rotulo esperado
+   AUSENTE: fake/two`, exit 1.
+2. Cenário que crasha no meio da chunk (`comando_que_nao_existe_de_proposito`) → driver: sentinela
+   ausente **e** rótulo ausente nomeados, exit 1 (a mesma classe do incidente real: rc já era != 0
+   antes, a guarda nova é o que nomeia).
+3. Completude do gerador sabotada (`accounted -= 3`) → `SystemExit` antes de gerar qualquer chunk.
+
+**Sabotagem de ALVO, distinta das três acima** (as três testam o harness — gerador/driver; esta
+testa se o cenário, dentro de uma chunk gerada normalmente do arquivo real, ainda **reprova quando o
+gate que ele falsifica deixa de detectar** — o AC herdado do ML-2A, "sabotar o alvo e confirmar que
+ainda reprova"). No gate real `scripts/check-cli-parity.sh`, o trecho que emite
+`"${runtime}: missing command '${command}'"` (a mensagem que `assert_fails_with
+"cli-parity/missing-command"` do Cenário 5 exige) foi trocado por um no-op (`:`), simulando o gate
+deixando de detectar comando ausente. Chunk 0 (JOBS=8, gerado do arquivo real, sem edição) regenerado
+para copiar o `check-cli-parity.sh` sabotado (a cópia acontece em runtime, via `$ROOT_DIR`) e rodado
+isolado:
+```
+TRACKFW_ROOT_DIR="$(pwd)" bash /tmp/x_sab/chunk_0.sh
+rc=1
+FAIL [falsify/cli-parity/missing-command]: saiu com 0, esperava != 0
+```
+Gate revertido (`diff` vazio contra a cópia pré-sabotagem), `git status --porcelain
+scripts/check-cli-parity.sh` limpo depois. Prova que a asserção dentro de uma chunk real não é
+vácua: se o alvo parasse de detectar, o cenário pegaria — mesmo particionado.
+
+**Re-medição, mesma máquina, mesma sessão, foreground (nenhum comando em background sem poll ativo em
+primeiro plano):**
+
+```
+serial                          903s   rc=0   412 OK   0 FAIL
+JOBS=8 r1                       478s   rc=0   412 OK   0 FAIL
+JOBS=8 r2                       478s   rc=0   412 OK   0 FAIL
+JOBS=8 r3                       482s   rc=0   412 OK   0 FAIL
+razão                           903/480 ≈ 1.88x (10 vCPUs locais, JOBS travado em 8 por desenho)
+```
+
+🔴 **1.88x, não os 3.03x do relatório reprovado** — aquele número era inflado por trabalho
+**omitido** (78 cenários faltando, alguns com `go build` caro). Este é o número real, com cobertura
+integral provada.
+
+`diff` de conjunto de rótulos, serial × cada rodada paralela — **vazio nas 3**:
+```
+serial.labels (386 únicos) vs parallel_r1.labels (386) → diff vazio
+serial.labels (386 únicos) vs parallel_r2.labels (386) → diff vazio
+serial.labels (386 únicos) vs parallel_r3.labels (386) → diff vazio
+```
+
+**O 1 FAIL do relatório reprovado — mesma causa, não hipótese**: `serve-chain-canonical-link/node/
+edge-baseline` chama `run_node_chain_probe`, uma das 5 funções da "Cenário 166" — a mesma raiz dos 77
+rótulos perdidos. Confirmado OK nas 3 rodadas (`OK   [falsify/serve-chain-canonical-link/node/
+edge-baseline]`).
+
+**Embarcado em produção**: `Makefile` linha do alvo `parity` trocada de `scripts/check-gates-falsify.sh`
+para `scripts/run-gates-falsify-parallel.sh` (mesmo `GO_BIN=...` prefixo, herdado pelos processos
+filho). `make parity` completo (todos os ~45 gates, não só falsify) rodado do zero via `make`:
+`rc=0`, `712s` (era ~1204s), `0` ocorrências de `^FAIL` no log inteiro (1761 linhas, 1015 `^OK`), 8/8
+`CHUNK_COMPLETE`, guarda sem disparo. **Confirmado que o CI passa por aqui, não invoca o script
+antigo direto**: `.github/workflows/quality.yml:582` chama `make parity` (não
+`scripts/check-gates-falsify.sh`) — o job real do CI vai exercitar a troca, não só o Makefile local.
+
+🔴 **Decisão para o arquiteto, não tomada unilateralmente**: adicionei `TRACKFW_FALSIFY_SCRIPT` e
+`TRACKFW_FALSIFY_GEN` (env vars, default = caminho real, sem efeito se não setadas) em
+`run-gates-falsify-parallel.sh` para poder provar as sabotagens de harness (acima) contra o driver de
+produção real, sem duplicar o script. Efeito colateral: **qualquer processo com essas env vars
+setadas redireciona o gate de falsificação para um script arbitrário durante `make parity`/CI** — dado
+os ADRs deste repo sobre "controle é onde o agente escreve" (ADR-2026-08-12), um env var que desvia o
+que o gate mais caro do CI executa merece revisão explícita, não ficar como efeito colateral de
+conveniência de teste. Se reprovado, a alternativa é um script de teste separado
+(`scripts/gen-falsify-chunks-test.sh`) sem env var em produção.
+
+**Sítios de mesma causa — reportados, nenhum artefato aberto**:
+- O gap "assert_* apenas" da guarda de rótulos (acima) — mesmo mecanismo de guarda, não de perda de
+  cobertura; próximo a fechar se alguém priorizar.
+- ML-2B (os outros 45 gates) já era item separado deste roadmap, não tocado aqui.
 
 ## Medição do ML-2D — arquiteto, 2026-09-07, na mesma sessão e na mesma máquina
 
@@ -293,9 +478,11 @@ Com fronteiras livres, o teto passa a ser o número de workers (4 vCPUs no runne
 - 🔴 **Não** gerar o split por número de linha — usar as fronteiras, descobertas em runtime.
 
 **Critérios de aceite:**
-- [ ] paralelismo **embarcado** no `Makefile`/CI, não só medido em scratchpad
-- [ ] ganho medido **no CI**, com as duas pontas pelo mesmo método e o método declarado
-- [ ] os 5 pontos vermelhos acima, cada um com evidência no relatório
+- [x] paralelismo **embarcado** no `Makefile`/CI, não só medido em scratchpad — `make parity` real,
+      do zero, `rc=0`, `712s` (era ~1204s), `0` `^FAIL` no log inteiro
+- [ ] ganho medido **no CI** — medido **localmente** (mesma máquina, mesmo método nas duas pontas,
+      903s×480s≈1.88x), CI é Wave 3/ML-3A, dependência declarada, não medido aqui de propósito
+- [x] os 5 pontos vermelhos acima, cada um com evidência no relatório (ver "Reentrega do ML-2D" acima)
 
 ### ML-2B — Os outros 45 gates do alvo `parity`
 **Status:** ⬜ Pendente · **Agente:** `ares-tf`
@@ -311,3 +498,73 @@ a árvore. Paralelizar gates que compartilham estado corrompe silenciosamente.
 **Status:** ⬜ Pendente · **Agente:** `ares-tf`
 🔴 **Medido no CI** (AC4), não somado do local. E com as duas pontas medidas pelo mesmo método —
 `vault/notes/contagem-de-falhas-de-windows-do-go-medida-por-padrao-frouxo-2026-09-04.md`.
+
+
+## Auditoria do ML-2D (reentrega) — arquiteto, 2026-09-07
+
+**Re-medido pelo arquiteto, do zero, sem usar os números do relatório:**
+
+```
+serial     901s  rc=0
+paralelo   477s  rc=0                    1.89x   (JOBS=8)
+rótulos    398 = 398 · perdidos 0 · inventados 0
+make quality (driver paralelo cabeado)   777s · 0 FAIL em 4107 linhas · 1015 OK
+```
+
+O agente reportou 903s/478s — diferença é ruído de máquina. **A igualdade de conjunto é real.**
+
+### O número pior é o resultado melhor
+
+```
+entrega reprovada    3.03x  sobre 321 rótulos (81% da suíte)   ← rápido e errado
+reentrega            1.89x  sobre 398 rótulos (100%)           ← mais lento e certo
+```
+
+Aceitar os 3,03x teria embarcado um gate que roda 4/5 da suíte e se apresenta como quase verde. O
+`parity` cairia de 20 para 7 minutos **com todo mundo achando que ganhou**.
+
+### 🔴 Meu diagnóstico da reprovação estava errado
+
+Eu afirmei que a causa era **grafia de cabeçalho** (95 de 137 casando o padrão estrito). O agente
+mediu e achou outra: um comentário `# Cenario 166 -- ...` é fronteira **legítima**, mas abre um bloco
+**só de funções** usadas por cenários ~8000 linhas depois. Sem içar esse bloco, ele cai num chunk
+diferente do dos chamadores e `command not found` mata o resto do chunk em silêncio.
+
+Isso explica **os 77 rótulos perdidos e o FAIL isolado de uma vez** — a minha hipótese explicava só a
+primeira metade. E é a mesma família do ML-2C: o problema nunca foi acoplamento de dados, é **onde as
+funções estão definidas**. Vault: `comentario-de-cenario-sobre-bloco-so-de-funcoes-vira-fronteira-de-corte-falsa-2026-09-07.md`.
+
+### Parecer de segurança (`hades-tf`) sobre os overrides de env
+
+**Inalcançáveis em CI, medido:** nenhum workflow seta `TRACKFW_FALSIFY_*`; o trigger é
+`pull_request` (não `pull_request_target`), então PR de fork roda o workflow congelado da base. Quem
+pudesse setar a env já poderia trocar a linha `run: make parity` inteira.
+
+🔴 **Mas ele achou o que ninguém tinha visto: a guarda de conjunto criada por este ML é
+auto-referencial.** Ela deriva os rótulos esperados do **mesmo `$SCRIPT`** que foi substituído.
+Reproduzido: um stub com 1 cenário sai `"suite completa -- 1 chunks, 1 OK, 0 FAIL, guarda de conjunto
+OK"`, exit 0. E o manifesto nunca imprime o caminho de `$SCRIPT` — **o redirecionamento não deixa
+rastro**.
+
+O risco real não é sabotagem (quem roda `make` na própria máquina já pode tudo): é **auditabilidade
+zero**, inclusive sem má intenção — uma env do ML-2D esquecida num `.envrc` silencia o gate.
+
+Ele **rejeitou** o controle "recusar quando `CI=true`" com o argumento certo: quem seta
+`TRACKFW_FALSIFY_SCRIPT` no workflow seta `CI: ""` no mesmo edit. Defenderia o vetor já fechado e
+nenhum dos reais.
+
+**Critério destilado, que vale além deste caso:** o problema não é a env existir, é o **call site não
+pinar o valor**. `GO_BIN` é seguro porque o `Makefile` o seta em toda invocação.
+
+### ML-2E — Rastro do override e o `HASH_CMD_BIN`
+**Status:** ⬜ Pendente · **Agente:** `ares-tf`
+
+1. O driver avisa em `stderr` sempre que `$SCRIPT`/`$GEN`/`$JOBS` divergirem do default, dizendo o
+   valor efetivo e qual seria o default. Uma linha; o redirecionamento deixa de ser invisível.
+2. **Sítio de mesma causa**, achado pelo `hades-tf`:
+   `scripts/check-roadmap-barrier-contract.sh:444-448` — `HASH_CMD_BIN` não é pinado pelo `Makefile`,
+   e `CORPUS_HASH` é comparado contra `PINNED_CORPUS_HASH` para detectar reclassificação do corpus.
+   🔴 Um `HASH_CMD_BIN` forjado que sempre emite o hash pinado **derrota exatamente esse check**.
+   Mesma causa ⇒ mesma REQ ⇒ mesmo PR.
+3. `smoke-integration-packages.sh:34` (`PYTHON_BIN`) — mesma família pelo critério estrito, sem guarda
+   anexa que possa satisfazer vaziamente. Severidade menor; tratar se for barato.

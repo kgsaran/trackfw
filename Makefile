@@ -51,7 +51,7 @@ parity: build
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-agent-models-parity.sh
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-audit-surface.sh
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-agent-namespace-union.sh
-	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-gates-falsify.sh
+	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/run-gates-falsify-parallel.sh
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-thirdparty-parity.sh
 	scripts/check-install-version-pin.sh
 	scripts/check-ci-workflow-pin-parity.sh
