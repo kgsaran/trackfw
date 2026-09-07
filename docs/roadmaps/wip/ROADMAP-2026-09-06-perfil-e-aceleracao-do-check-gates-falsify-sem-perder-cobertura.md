@@ -148,7 +148,7 @@ disfarçada — e este projeto já foi mordido por isso.
 aparecer flakiness, **parar e reportar**, não "re-rodar para confirmar".
 
 ### ML-2C — Içar as 31 funções espalhadas para o prelúdio
-**Status:** ⬜ Pendente · **Agente:** `ares-tf` · **pré-requisito do ML-2D**
+**Status:** ✅ Concluído · **Agente:** `ares-tf` · **pré-requisito do ML-2D**
 
 🔴 **Corrige um diagnóstico do ML-2A.** O ML-2A concluiu que os Cenários 86–165 formam um bloco
 **indivisível** de 467s (52,3%) por acoplamento de dados entre cenários, e derivou daí um teto de
@@ -182,13 +182,37 @@ relatou os mesmos três tropeços (caminho relativo velho, heredoc mal detectado
 defasada). **Não confie em número de linha nem em fim-de-função por `}` na coluna zero.**
 
 **Critérios de aceite:**
-- [ ] `diff` do conjunto de rótulos de cenário antes/depois: **vazio**
-- [ ] tempo serial antes/depois **equivalente** (é refactor, não otimização — regressão de tempo aqui
-      é sinal de que algo mudou de comportamento)
-- [ ] `make quality QUALITY_EXIT=0` para **arquivo**, `grep -c '^FAIL'` sobre a saída inteira = 0
-- [ ] o corpo de cada função movida é **idêntico** — provar com `git diff` mostrando só remoção num
-      ponto e inserção idêntica no outro
-- [ ] nenhuma função passa a ser definida **depois** do primeiro uso
+- [x] `diff` do conjunto de rótulos de cenário antes/depois: **vazio** (388 labels de cada lado,
+      `diff <(sort -u before) <(sort -u after)` vazio)
+- [x] tempo serial antes/depois **equivalente** — OLD 889s vs NEW 893s (+0,45%; NEW ligeiramente mais
+      lento, o que descarta aquecimento de cache de build como explicação de qualquer diferença)
+- [x] `make quality QUALITY_EXIT=0` para **arquivo**, `grep -c '^FAIL'` sobre a saída inteira = 0
+      (log com 3830 linhas, 0 ocorrências de `^FAIL`)
+- [x] o corpo de cada função movida é **idêntico** — provado por comparação byte a byte de old
+      (`git show HEAD:...`) menos as 31 funções == new menos o bloco inserido (10244 == 10244 linhas,
+      igualdade exata) e por comparação individual das 31 funções (0 mismatches)
+- [x] nenhuma função passa a ser definida **depois** do primeiro uso — as 40 definições agora ficam
+      todas entre as linhas 54–976, antes do primeiro `# Cenário` (linha 998)
+
+**Entregue (relatório completo do agente no handoff):** heredoc-aware scanner (exclui `<<<` via
+lookaround, evita a armadilha que quebrou o extrator do arquiteto) + `bash -n` isolado por função
+(40/40 limpo) + toda linha de fechamento é `}` solitário + sem sobreposição de faixas — quatro
+confirmações independentes da fronteira de cada função. Prova do objetivo: o mesmo trecho que morria
+com `corrupt_literal: command not found` (Cenário 177, linhas antigas 9210–9296) roda limpo (4x `OK`)
+como `preâmbulo (novas linhas 1–996) + trecho (novas linhas 9423–9509)`.
+
+**Não é puro `git mv`:** 31 linhas em branco separadoras foram adicionadas (uma após cada função
+realocada); os pontos de remoção mantêm as linhas em branco originais ao redor, então algumas ficam
+adjacentes agora. Comentários de documentação que precediam funções específicas foram deixados nos
+sítios originais (não são corpo de função) — parte deles agora descreve uma função definida ~8000
+linhas antes; sinalizado para o arquiteto, não corrigido (fora do escopo "mudança de posição, não de
+conteúdo").
+
+**Site de mesma causa (ML-2D, não corrigido aqui):** `ROOT_DIR` (linha 22) deriva de
+`${BASH_SOURCE[0]}` e quebra se um chunk for materializado fora de `$ROOT_DIR/scripts/` (reproduzido:
+`cp: .../cmd/.: No such file or directory` ao rodar um chunk de scratch). Sugestão para o ML-2D:
+`ROOT_DIR=${TRACKFW_ROOT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}` — uma linha, destrava
+geração de chunk a partir de qualquer tmpdir.
 
 ### ML-2D — Gerador de fronteiras e paralelismo em produção
 **Status:** ⬜ Pendente · **Agente:** `ares-tf` · **Dependências: ML-2C**

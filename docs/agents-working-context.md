@@ -33734,3 +33734,48 @@ limpo, `trackfw validate` sem erros novos (só os 116 warnings pré-existentes),
 acima (piso teórico 467s/894s, split validado 1,8x) para dimensionar o próximo ML.
 
 **Fim.**
+
+## 2026-09-07 — Ares (Infra) — ML-2C do `check-gates-falsify`: içar as 31 funções espalhadas para o prelúdio
+
+**Corrige o diagnóstico do ML-2A** (acima): não existe cluster indivisível de 467s por acoplamento de
+dados. A causa real, medida pelo arquiteto e confirmada aqui, é que 31 das 40 funções auxiliares do
+script estão definidas NO MEIO do arquivo, entre cenários — um trecho que começa depois delas não as
+enxerga (bash resolve por execução, não por escopo léxico prévio ao ponto de definição).
+
+**Método de fronteira, hostil-a-parsing-consciente:** scanner com brace-depth heredoc-aware em Python,
+excluindo explicitamente `<<<` (here-string) via lookaround negativo — sem isso, `<<<"$out"` é
+confundido com heredoc `<<"..."` e quebra a contagem (foi exatamente onde o extrator do arquiteto
+tropeçou). Validado por 4 vias independentes: (1) `bash -n` isolado em cada uma das 40 funções
+extraídas, 40/40 limpo; (2) toda linha de fechamento identificada é um `}` solitário; (3) nenhuma
+sobreposição de faixas entre funções; (4) reconstrução determinística — arquivo velho menos as 31
+funções == arquivo novo menos o bloco inserido, byte a byte (10244 linhas de cada lado, igualdade
+exata) — e as 31 funções comparadas individualmente contra a posição nova (0 mismatches).
+
+**Prova do objetivo:** o mesmo trecho que morria com `corrupt_literal: command not found` no arquivo
+velho (Cenário 177, linhas antigas 9210–9296) roda limpo com 4x `OK` como
+`preâmbulo (linhas novas 1–996) + trecho (linhas novas 9423–9509)`.
+
+**Critérios de aceite — todos atendidos:**
+- diff de conjunto de labels antes/depois: vazio (388 = 388)
+- tempo serial: OLD 889s vs NEW 893s (+0,45% — NEW mais lento, não mais rápido, o que descarta
+  aquecimento de cache de build Go como confundidor da comparação)
+- `make quality QUALITY_EXIT=0`: log de 3830 linhas, `grep -c '^FAIL'` = 0
+- corpo de cada função movida: idêntico (prova acima)
+- nenhuma função definida depois do primeiro uso (todas as 40 ficam entre as linhas 54–976, primeiro
+  `# Cenário` só na linha 998)
+
+**Não é puro `git mv`, declarado:** 31 linhas em branco separadoras adicionadas (uma por função
+movida); pontos de remoção mantêm as linhas em branco originais ao redor (algumas agora adjacentes).
+Comentários de documentação que precediam funções específicas ficaram nos sítios originais — decisão
+deliberada para não misturar "mover" com "reorganizar comentário", mas alguns agora descrevem uma
+função definida ~8000 linhas antes; sinalizado, não corrigido.
+
+**Site de mesma causa para o ML-2D (reportado, não corrigido — fora do escopo deste ML):** `ROOT_DIR`
+(linha 22) deriva de `${BASH_SOURCE[0]}`, então um chunk gerado fora de `$ROOT_DIR/scripts/` quebra
+(`cp: .../cmd/.: No such file or directory`, reproduzido). Sugestão para o ML-2D:
+`ROOT_DIR=${TRACKFW_ROOT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}`.
+
+**Entregue:** só `scripts/check-gates-falsify.sh` modificado (mais o roadmap, status ML-2C → ✅). Sem
+commit — árvore devolvida suja para `trackfw_architect` auditar e commitar, por instrução do handoff.
+
+**Fim.**
