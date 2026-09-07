@@ -2,7 +2,7 @@
 
 const fs = require('fs')
 const path = require('path')
-const { resolveAgentNamespaces } = require('../validator')
+const { resolveAgentNamespaces, extractRefPath } = require('../validator')
 const { normalizeRefSeparator } = require('../lib/pathfmt')
 
 const ROADMAP_STATES = ['wip', 'backlog', 'blocked', 'done', 'abandoned']
@@ -81,7 +81,7 @@ function collectNodes(dir, type, state) {
     // mesmos operandos: normalizar esta nao pode afeta-la. O caminho de travessia
     // permanece nativo (ADR D2). Espelha internal/serve/api_chain.go:111.
     const id = normalizeRefSeparator(path.join(dir, file))
-    nodes.push({ id, type, title, state, fm })
+    nodes.push({ id, type, title, state, fm, content })
   }
   return nodes
 }
@@ -169,8 +169,21 @@ function handleChain(cfg, req, res) {
 
   function resolveRef(val) {
     if (!val) return null
-    // Tenta pelo nome de arquivo
-    const base = val.replace(/\.md$/, '').toLowerCase().trim()
+    // Tenta pelo nome de arquivo — path.basename(val), não val cru: o formato canônico
+    // gravado por `trackfw req new`/`roadmap new` é o CAMINHO COMPLETO (ADR-2026-08-01), não o
+    // basename isolado. Sem o basename() aqui, um vínculo real como
+    // "docs/roadmaps/wip/ROADMAP-x.md" nunca batia contra a chave "roadmap-x" do fileIndex —
+    // achado do ML-3D: nenhuma aresta REQ/ADR/Roadmap gerada pelo CLI jamais resolvia por este
+    // caminho, mascarado porque os testes existentes só cobrem valor já-basename.
+    //
+    // Por que este arquivo NÃO importa validator.resolveRoadmapRef (ao contrário de
+    // internal/serve/api_chain.go, ML-3D): fileIndex é indexado por basename ACROSS todos os
+    // estados (wip/backlog/blocked/done/abandoned) desde antes desta correção — um vínculo
+    // `roadmap:` "wip/X.md" já resolve contra o node real em "done/X.md" sem fallback extra.
+    // O mecanismo do ML-3B/3D (caminho literal gravado com pasta de estado velha) não afeta
+    // este CLI porque ele nunca comparou por igualdade de caminho completo — só por basename/
+    // título. Ver docs/cli-parity.md, seção "serve: /api/chain".
+    const base = path.basename(val).replace(/\.md$/, '').toLowerCase().trim()
     if (fileIndex.has(base)) return fileIndex.get(base)
     // Tenta pelo título
     const norm = val.toLowerCase().trim()
@@ -201,6 +214,20 @@ function handleChain(cfg, req, res) {
         const target = resolveRef(fmVal)
         if (target && target !== id) addEdge(id, target)
       }
+    }
+
+    // ML-3D: `trackfw req new` (npm/src/generators/req.js) grava `adr: ""` e `roadmap: ""`
+    // SEMPRE vazios no frontmatter — o valor real vive no corpo, em "## Linked ADR / ADR:
+    // <path>" e "## Linked Roadmap / Roadmap: <path>". O laço de frontmatter acima nunca
+    // encontra esse vínculo para uma REQ gerada pelo próprio CLI (não é caso de borda: é o
+    // formato canônico inteiro). validator.extractRefPath varre o CONTEÚDO inteiro
+    // linha-a-linha (mesma função usada por validateRefTargetsExist) — ponto único de
+    // extração, não duplicado aqui.
+    for (const field of ['req', 'adr', 'roadmap']) {
+      const val = extractRefPath(node.content || '', field)
+      if (!val) continue
+      const target = resolveRef(val)
+      if (target && target !== id) addEdge(id, target)
     }
   }
 

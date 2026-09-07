@@ -8,6 +8,7 @@ import re
 
 from trackfw import config as _config
 from trackfw.pathfmt import normalize_ref_separator
+from trackfw.validator import extract_ref_path
 
 STATES = ["wip", "backlog", "blocked", "done", "abandoned"]
 
@@ -111,6 +112,7 @@ def _scan_dir(dir_path, node_type, state):
             "title": title,
             "state": state,
             "frontmatter": fm,
+            "content": content,
         }
         nodes.append(node)
 
@@ -183,15 +185,60 @@ def get_chain(cfg):
         by_basename.setdefault(basename, []).append(n)
 
     def _find_node_by_ref(ref):
-        """Tenta encontrar node pelo id exato ou pelo basename."""
+        """Tenta encontrar node pelo id exato ou pelo basename.
+
+        ML-3D: basename(ref), não ref cru — o formato canônico gravado por
+        `trackfw req new`/`roadmap new` (ADR-2026-08-01) é o CAMINHO COMPLETO
+        (ex.: "docs/roadmaps/wip/ROADMAP-x.md"), não um basename isolado. Sem
+        aplicar basename() aqui, um vínculo real nunca batia contra as chaves
+        de by_basename (que são sempre basenames) — a mesma classe de defeito
+        corrigida em npm/src/serve/api_chain.js:resolveRef.
+        """
         ref = ref.strip()
         if ref in by_id:
             return by_id[ref]
-        # tenta basename
-        candidates = by_basename.get(ref, []) or by_basename.get(ref + ".md", [])
+        base = os.path.basename(ref)
+        candidates = by_basename.get(base, []) or by_basename.get(base + ".md", [])
         if candidates:
             return candidates[0]
         return None
+
+    edge_seen = set()
+
+    def _add_edge(from_id, to_id):
+        if from_id == to_id:
+            return
+        key = (from_id, to_id)
+        if key in edge_seen:
+            return
+        edge_seen.add(key)
+        edges.append({"from": from_id, "to": to_id})
+
+    def _resolve_field_edges(node, field, fm_ref):
+        """Resolve um campo de vínculo (req/adr/roadmap) para o node, tentando o
+        frontmatter primeiro (fm_ref) e, se vazio, o valor extraído do CORPO do
+        arquivo via extract_ref_path.
+
+        ML-3D — achado: `trackfw req new` (trackfw/generators/req.py) grava
+        `adr: ""` e `roadmap: ""` SEMPRE vazios no frontmatter; o valor real
+        vive em "## Linked ADR / ADR: <path>" e "## Linked Roadmap /
+        Roadmap: <path>", no corpo. fm_ref sozinho NUNCA resolvia o vínculo
+        de uma REQ gerada pelo próprio CLI — não era caso de borda, era o
+        formato canônico inteiro nunca resolvendo.
+        """
+        refs = []
+        if isinstance(fm_ref, str) and fm_ref:
+            refs.append(fm_ref)
+        elif isinstance(fm_ref, list):
+            refs.extend(r for r in fm_ref if r)
+        if not refs:
+            body_ref = extract_ref_path(node.get("content", ""), field)
+            if body_ref:
+                refs.append(body_ref)
+        for ref in refs:
+            target = _find_node_by_ref(ref)
+            if target:
+                _add_edge(node["id"], target["id"])
 
     # --- Construir arestas ---
     for node in nodes:
@@ -199,45 +246,19 @@ def get_chain(cfg):
 
         # REQ → ADR
         if node["type"] == "req":
-            adr_ref = fm.get("adr", "")
-            if isinstance(adr_ref, str) and adr_ref:
-                target = _find_node_by_ref(adr_ref)
-                if target:
-                    edges.append({"from": node["id"], "to": target["id"]})
-            elif isinstance(adr_ref, list):
-                for ref in adr_ref:
-                    target = _find_node_by_ref(ref)
-                    if target:
-                        edges.append({"from": node["id"], "to": target["id"]})
+            _resolve_field_edges(node, "ADR", fm.get("adr", ""))
+            # REQ → ROADMAP (achado do ML-3D: faltava por completo — nem o campo de
+            # frontmatter nem o do corpo eram lidos para REQ→Roadmap antes desta correção)
+            _resolve_field_edges(node, "Roadmap", fm.get("roadmap", ""))
 
-        # ROADMAP → REQ
+        # ROADMAP → REQ / ROADMAP → ADR
         if node["type"] == "roadmap":
-            req_ref = fm.get("req", "")
-            if isinstance(req_ref, str) and req_ref:
-                target = _find_node_by_ref(req_ref)
-                if target:
-                    edges.append({"from": node["id"], "to": target["id"]})
-            elif isinstance(req_ref, list):
-                for ref in req_ref:
-                    target = _find_node_by_ref(ref)
-                    if target:
-                        edges.append({"from": node["id"], "to": target["id"]})
+            _resolve_field_edges(node, "REQ", fm.get("req", ""))
+            _resolve_field_edges(node, "ADR", fm.get("adr", ""))
 
-            # ROADMAP → ADR (link direto)
-            adr_ref = fm.get("adr", "")
-            if isinstance(adr_ref, str) and adr_ref:
-                target = _find_node_by_ref(adr_ref)
-                if target:
-                    edges.append({"from": node["id"], "to": target["id"]})
-            elif isinstance(adr_ref, list):
-                for ref in adr_ref:
-                    target = _find_node_by_ref(ref)
-                    if target:
-                        edges.append({"from": node["id"], "to": target["id"]})
-
-    # Remover frontmatter do output (não deve ir para o cliente)
+    # Remover frontmatter e conteúdo do output (não deve ir para o cliente)
     output_nodes = [
-        {k: v for k, v in n.items() if k != "frontmatter"}
+        {k: v for k, v in n.items() if k not in ("frontmatter", "content")}
         for n in nodes
     ]
 

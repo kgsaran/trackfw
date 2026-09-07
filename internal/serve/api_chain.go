@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/kgsaran/trackfw/internal/config"
+	"github.com/kgsaran/trackfw/internal/validator"
 )
 
 // chainNode represents an ADR, REQ, or Roadmap node in the governance chain graph.
@@ -40,21 +41,21 @@ func chainHandler(w http.ResponseWriter, _ *http.Request, cfg config.ProjectConf
 
 	// Scan ADRs
 	for _, adrDir := range cfg.ADRDirs {
-		ns, es := scanChainDir(adrDir, "adr")
+		ns, es := scanChainDir(cfg, adrDir, "adr")
 		nodes = append(nodes, ns...)
 		edges = append(edges, es...)
 	}
 
 	// Scan REQs
 	{
-		ns, es := scanChainDir(cfg.REQDir, "req")
+		ns, es := scanChainDir(cfg, cfg.REQDir, "req")
 		nodes = append(nodes, ns...)
 		edges = append(edges, es...)
 	}
 
 	// Scan Roadmaps
 	{
-		ns, es := scanChainDir(cfg.RoadmapDir, "roadmap")
+		ns, es := scanChainDir(cfg, cfg.RoadmapDir, "roadmap")
 		nodes = append(nodes, ns...)
 		edges = append(edges, es...)
 	}
@@ -79,7 +80,7 @@ func normalizeRefSeparator(p string) string {
 
 // scanChainDir walks a directory tree, reading each .md file and extracting
 // frontmatter link fields to build nodes and edges.
-func scanChainDir(root, nodeType string) ([]chainNode, []chainEdge) {
+func scanChainDir(cfg config.ProjectConfig, root, nodeType string) ([]chainNode, []chainEdge) {
 	var nodes []chainNode
 	var edges []chainEdge
 
@@ -124,10 +125,49 @@ func scanChainDir(root, nodeType string) ([]chainNode, []chainEdge) {
 
 		// Build edges from link fields: req:, adr:, roadmap:
 		// Only add edges for values that look like real file paths (skip placeholders like "—")
+		//
+		// ML-3D: o campo é lido com validator.ExtractRefPath (varredura do CONTEÚDO inteiro,
+		// linha a linha), não com fm[field] (só o bloco YAML de frontmatter). Achado: o gerador
+		// de REQ (internal/generators/req.go) grava `adr: ""` e `roadmap: ""` SEMPRE vazios no
+		// frontmatter — o valor real vive no corpo, em "## Linked ADR / ADR: <path>" e
+		// "## Linked Roadmap / Roadmap: <path>". Com fm[field], NENHUMA REQ gerada pelo
+		// `trackfw req new` jamais produzia aresta — não era caso de borda do vínculo específico
+		// que o handoff mediu, era o formato canônico inteiro nunca resolvendo. Ponto único de
+		// extração: validator.ExtractRefPath é a mesma função usada por
+		// validateRefTargetsExist/validateREQRoadmapLifecycle, para não duplicar a variação
+		// linha-a-linha (mesmo princípio do ML-3D para a resolução por basename).
 		for _, field := range []string{"req", "adr", "roadmap"} {
-			if val, ok := fm[field]; ok && strings.HasSuffix(normalizeRefSeparator(val), ".md") {
-				edges = append(edges, chainEdge{From: nodeID, To: normalizeRefSeparator(val)})
+			val := validator.ExtractRefPath(content, field)
+			if val == "" {
+				continue
 			}
+
+			// ML-3D: mesma causa do ML-3B (internal/validator/validator.go,
+			// resolveRoadmapRefStatus) — um vínculo `roadmap:` grava o caminho COM a pasta de
+			// estado, e a pasta É o estado, então todo `trackfw roadmap move` deixa o caminho
+			// literal velho. Sem este fallback, o `serve` desenha aresta órfã para o mesmo
+			// vínculo que o `validate` já sabe estar resolvido (com aviso de stale state path).
+			// Escopo restrito ao campo "roadmap:" — mesma restrição documentada em
+			// resolveRoadmapRefByBasename (REQ/ADR não têm dimensão de estado, não precisam e
+			// não devem passar por este fallback). Ambíguo (>1) ou não encontrado (0): cai para
+			// o append literal abaixo — não inventa nó.
+			//
+			// A ramificação abaixo é deliberadamente uma sub-cláusula com `continue` própria,
+			// preservando o append literal `chainEdge{From: nodeID, To:
+			// normalizeRefSeparator(val)}` intocado no caminho comum: é essa substring exata
+			// que scripts/check-ref-separator-portability.sh procura como assinatura
+			// estrutural de "edge.To sempre passa pelo normalizador" — uma variável
+			// intermediária no lugar do literal (`edgeTo := ...; To: edgeTo`) quebraria esse
+			// grep estrutural sem quebrar o comportamento (achado do próprio `make quality`
+			// rodando este ML).
+			if field == "roadmap" {
+				if resolved := validator.ResolveRoadmapRef(cfg, normalizeRefSeparator(val)); len(resolved) == 1 {
+					edges = append(edges, chainEdge{From: nodeID, To: normalizeRefSeparator(resolved[0])})
+					continue
+				}
+			}
+
+			edges = append(edges, chainEdge{From: nodeID, To: normalizeRefSeparator(val)})
 		}
 
 		return nil

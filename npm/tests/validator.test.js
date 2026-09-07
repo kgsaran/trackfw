@@ -1572,6 +1572,57 @@ test('credential_guard_hook_resolvable: sh -c "$PWD/…" usa mensagem do $PWD (M
     assert(validator.contentHasMarker(content, ['REQ:']), 'campo preenchido com CRLF deve ser tratado como presente')
   })
 
+  // -------------------------------------------------------------------------
+  // ML-2A — REQ-2026-09-05 (achado A2 da auditoria externa): contentHasMarkerValue
+  // deixa de casar o marker como substring livre do documento e passa a exigir que ele
+  // seja a primeira coisa não-branca da LINHA, com valor que não é vazio nem um
+  // comentário HTML sozinho. Cada teste afirma uma conclusão específica deste ML.
+  // -------------------------------------------------------------------------
+
+  // Conclusão: um valor real, na forma canônica dos 3 geradores, continua sendo aceito.
+  test('contentHasMarkerValue: valor real aceita', () => {
+    const content = '## Linked ADR\nADR: docs/adr/ADR-2026-09-05-exemplo.md\n'
+    assert(validator.contentHasMarkerValue(content, ['ADR:']), 'ADR com valor real deve ser aceito como vínculo')
+  })
+
+  // Conclusão: as 7 grafias de campo vazio medidas no ML-1B (issue #278) continuam
+  // recusadas depois da reescrita estrutural.
+  test('contentHasMarkerValue: sete grafias de campo vazio recusa', () => {
+    const grafias = ['ADR: \n', 'ADR:\n', 'ADR:  \n', 'ADR:   \n', 'ADR:\t\n', 'ADR: \r\n', 'ADR:\r\n']
+    for (const g of grafias) {
+      const content = '## Linked ADR\n' + g
+      assert(!validator.contentHasMarkerValue(content, ['ADR:']), `grafia vazia ${JSON.stringify(g)} não deve ser tratada como vínculo`)
+    }
+  })
+
+  // Conclusão: achado A2 — um comentário HTML usado como placeholder de "ainda não
+  // preenchido" deixa de contar como vínculo.
+  test('contentHasMarkerValue: comentário HTML placeholder recusa', () => {
+    const content = '## Linked ADR\nADR: <!-- preencher depois -->\n'
+    assert(!validator.contentHasMarkerValue(content, ['ADR:']), 'placeholder de comentário HTML não deve ser tratado como vínculo real')
+  })
+
+  // Conclusão: achado A2 — prosa que menciona o marker no meio de uma frase deixa de
+  // contar como vínculo, porque o marker não é a primeira coisa não-branca da linha.
+  test('contentHasMarkerValue: prosa com marker no meio recusa', () => {
+    const content = '## Contexto\nveja a secao ADR: mais abaixo para detalhes\n'
+    assert(!validator.contentHasMarkerValue(content, ['ADR:']), 'prosa com o marker no meio da frase não deve ser tratada como vínculo')
+  })
+
+  // Conclusão: indentação pura (espaços/tabs) antes do marker continua sendo tolerada.
+  test('contentHasMarkerValue: indentação antes do marker aceita', () => {
+    const content = '## Linked ADR\n  \tADR: docs/adr/ADR-2026-09-05-exemplo.md\n'
+    assert(validator.contentHasMarkerValue(content, ['ADR:']), 'ADR indentado (sem outra decoração) deve ser aceito')
+  })
+
+  // Conclusão: decoração ENTRE o nome do campo e ":" ("REQ (**reaberta**):") não é a mesma
+  // coisa que decoração ANTES do marker — a literal "REQ:" não existe nessa linha. A
+  // ancoragem por linha desta ML não causa nem resolve esse caso; é o caso que pegou KG.
+  test('contentHasMarkerValue: decoração entre campo e dois-pontos recusa nas duas versões', () => {
+    const content = '## Context\nREQ (**reaberta**): docs/req/REQ-exemplo.md\n'
+    assert(!validator.contentHasMarkerValue(content, ['REQ:']), 'REQ (**reaberta**): não deve casar — a literal REQ: não existe nessa linha')
+  })
+
   test('validateFolderStatusCoherence: diretório não legível (ENOTDIR) gera warning (P2)', () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-fsc-'))
     try {
