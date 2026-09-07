@@ -441,12 +441,19 @@ PINNED_MLS_COMPLETE_FAILURE=113
 PINNED_ACCEPTANCE_EVIDENCE_EVIDENCE=314
 PINNED_ACCEPTANCE_EVIDENCE_FAILURE=434
 
-if [[ -z "${HASH_CMD_BIN:-}" ]]; then
-  if command -v sha256sum >/dev/null 2>&1; then
-    HASH_CMD_BIN=(sha256sum)
-  else
-    HASH_CMD_BIN=(shasum -a 256)
-  fi
+# HASH_CMD_BIN (ML-2E, sítio de mesma causa do parecer hades-tf sobre
+# TRACKFW_FALSIFY_SCRIPT/GEN): env vars não carregam array bash, então o
+# valor chega como string ("shasum -a 256") -- split intencional em
+# palavras, nunca como nome de comando único. Pinado pelo Makefile em toda
+# invocação real (variável HASH_CMD, ver Makefile); a auto-detecção abaixo
+# só se aplica a quem roda este script fora do `make` (dev manual).
+if [[ -n "${HASH_CMD_BIN:-}" ]]; then
+  # shellcheck disable=SC2206 -- split intencional, ver comentário acima.
+  HASH_CMD_BIN=($HASH_CMD_BIN)
+elif command -v sha256sum >/dev/null 2>&1; then
+  HASH_CMD_BIN=(sha256sum)
+else
+  HASH_CMD_BIN=(shasum -a 256)
 fi
 
 CORPUS_SANDBOX="$WORK/corpus-sandbox"

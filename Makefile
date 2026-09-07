@@ -1,5 +1,10 @@
 BINARY=trackfw
 BUILD_DIR=bin
+# Pinado em toda invocação (ML-2E): mesmo desenho de GO_BIN abaixo -- o
+# recipe do make sobrescreve qualquer HASH_CMD_BIN herdado do ambiente do
+# processo pai, então um valor forjado exportado pelo usuário não sobrevive
+# à chamada de check-roadmap-barrier-contract.sh via `make quality`.
+HASH_CMD := $(shell command -v sha256sum >/dev/null 2>&1 && echo sha256sum || echo "shasum -a 256")
 
 .PHONY: build test test-node test-python parity lint quality install clean sync-integration-assets check-integration-assets package-smoke
 
@@ -56,7 +61,7 @@ parity: build
 	scripts/check-install-version-pin.sh
 	scripts/check-ci-workflow-pin-parity.sh
 	scripts/check-ci-workflow-job-id-collision.sh
-	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-roadmap-barrier-contract.sh
+	GO_BIN=$(BUILD_DIR)/$(BINARY) HASH_CMD_BIN="$(HASH_CMD)" scripts/check-roadmap-barrier-contract.sh
 	scripts/check-ref-separator-portability.sh
 	scripts/check-atomic-write-anti-divergence.sh
 	scripts/check-shell-posix-portability.sh
@@ -74,7 +79,10 @@ check-integration-assets:
 	scripts/check-integration-assets.sh
 
 package-smoke: check-integration-assets
-	scripts/smoke-integration-packages.sh
+	# PYTHON_BIN pinado (ML-2E, mesma família de HASH_CMD_BIN acima -- severidade menor
+	# porque não há guarda que um binário forjado possa satisfazer vaziamente aqui, só
+	# quebra o próprio build/smoke se for forjado).
+	PYTHON_BIN=python3 scripts/smoke-integration-packages.sh
 
 lint:
 	go vet ./...

@@ -44,10 +44,25 @@ ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 # -- aponta o gerador+guarda para um fonte sintético minúsculo em vez do
 # check-gates-falsify.sh real, sem precisar de uma cópia paralela deste
 # script. Sem override, comportamento em produção é idêntico ao anterior.
-SCRIPT="${TRACKFW_FALSIFY_SCRIPT:-$ROOT_DIR/scripts/check-gates-falsify.sh}"
+#
+# ML-2E (parecer hades-tf): a guarda de conjunto deriva os rótulos esperados
+# do MESMO $SCRIPT que pode ter sido trocado -- um override esquecido (ex.
+# num .envrc) silencia o gate mais caro do CI sem deixar rastro, porque o
+# manifesto nunca imprimia o caminho efetivo. As duas linhas de aviso abaixo
+# existem só para isso: sempre que a env estiver setada -- mesmo que o valor
+# coincida com o default -- o driver denuncia em stderr.
+DEFAULT_SCRIPT="$ROOT_DIR/scripts/check-gates-falsify.sh"
+SCRIPT="${TRACKFW_FALSIFY_SCRIPT:-$DEFAULT_SCRIPT}"
+if [[ -n "${TRACKFW_FALSIFY_SCRIPT:-}" ]]; then
+  echo "run-gates-falsify-parallel: TRACKFW_FALSIFY_SCRIPT setada -- valor efetivo='$SCRIPT' default='$DEFAULT_SCRIPT'" >&2
+fi
 # TRACKFW_FALSIFY_GEN: mesmo motivo do override acima -- só para sabotagem
 # do próprio gerador em prova de falsificação (ver vault/notes do ML-2D).
-GEN="${TRACKFW_FALSIFY_GEN:-$ROOT_DIR/scripts/gen-falsify-chunks.py}"
+DEFAULT_GEN="$ROOT_DIR/scripts/gen-falsify-chunks.py"
+GEN="${TRACKFW_FALSIFY_GEN:-$DEFAULT_GEN}"
+if [[ -n "${TRACKFW_FALSIFY_GEN:-}" ]]; then
+  echo "run-gates-falsify-parallel: TRACKFW_FALSIFY_GEN setada -- valor efetivo='$GEN' default='$DEFAULT_GEN'" >&2
+fi
 
 # Grau de paralelismo: parametrizável via TRACKFW_FALSIFY_JOBS. Sem override,
 # descobre o nº de CPUs em runtime (nunca hardcoded) com piso 1 e teto 8 —
@@ -68,6 +83,10 @@ detect_cpus() {
 
 if [[ -n "${TRACKFW_FALSIFY_JOBS:-}" ]]; then
   JOBS="$TRACKFW_FALSIFY_JOBS"
+  DEFAULT_JOBS=$(detect_cpus)
+  [[ "$DEFAULT_JOBS" -lt 1 ]] && DEFAULT_JOBS=1
+  [[ "$DEFAULT_JOBS" -gt 8 ]] && DEFAULT_JOBS=8
+  echo "run-gates-falsify-parallel: TRACKFW_FALSIFY_JOBS setada -- valor efetivo='$JOBS' default='$DEFAULT_JOBS'" >&2
 else
   JOBS=$(detect_cpus)
   [[ "$JOBS" -lt 1 ]] && JOBS=1

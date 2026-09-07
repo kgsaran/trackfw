@@ -557,14 +557,70 @@ nenhum dos reais.
 pinar o valor**. `GO_BIN` é seguro porque o `Makefile` o seta em toda invocação.
 
 ### ML-2E — Rastro do override e o `HASH_CMD_BIN`
+**Status:** ✅ Concluído · **Agente:** `ares-tf`
+
+1. **Feito.** `scripts/run-gates-falsify-parallel.sh` avisa em `stderr` sempre que
+   `TRACKFW_FALSIFY_SCRIPT`/`_GEN`/`_JOBS` estiverem setadas (mesmo que o valor coincida com o
+   default), com valor efetivo e default. Provado rodando: as 3 linhas aparecem com as 3 env vars
+   setadas; nenhuma linha aparece sem override.
+2. **Sítio de mesma causa, feito.** `scripts/check-roadmap-barrier-contract.sh:444-448` —
+   `HASH_CMD_BIN` agora é pinado pelo `Makefile` (`HASH_CMD := $(shell command -v sha256sum ... ||
+   echo "shasum -a 256")`, passado na linha de recipe, mesmo desenho de `GO_BIN`); o script faz split
+   intencional da string do env em vez de tratá-la como nome de comando único. **Sabotagem provada
+   nas duas pontas** (corpus do snapshot mutado — 1 status alterado, revertido depois): antes da
+   correção, `HASH_CMD_BIN` forjado (script que sempre emite o hash pinado) mascarava a reclassificação
+   real (`OK [corpus/non-reclassification]` indevido); com hash real, o mesmo corpus mutado reprovava
+   corretamente. Depois da correção, invocando como o Makefile invoca (`HASH_CMD_BIN="sha256sum"`
+   pinado na recipe) COM `HASH_CMD_BIN` forjado exportado no ambiente pai, o gate voltou a reprovar
+   corretamente — o pin no call site derrota o override ambiente.
+3. **Feito por ser barato.** `smoke-integration-packages.sh:34` (`PYTHON_BIN`) pinado
+   (`PYTHON_BIN=python3` na recipe `package-smoke` do Makefile) por consistência — severidade já era
+   menor (sem guarda anexa satisfazível vaziamente; não está em `make quality`).
+
+**Validação:** `make quality` reproduzido em batches foreground (limite de 10 min por chamada de
+ferramenta) — `test`/`test-node`/`test-python`/`lint` isolados + `parity` em 3 blocos na ordem exata
+de `make -n parity`. Log combinado: `grep -c '^FAIL'` = 0 em 4060 linhas.
+`run-gates-falsify-parallel.sh` sozinho: 412 OK, 0 FAIL, guarda de conjunto OK.
+`scripts/check-cli-parity.sh` isolado: rc=0.
+
+
+## Auditoria do ML-2E — arquiteto, 2026-09-07
+
+**Verificado por mim, não pelo relatório.** Com `HASH_CMD_BIN=/tmp/fake-hash.sh` **exportado no meu
+ambiente**:
+
+```
+make -n parity → GO_BIN=bin/trackfw HASH_CMD_BIN="sha256sum" scripts/check-roadmap-barrier-contract.sh
+```
+
+**O pin vence o ambiente.** É o critério do `hades-tf`: o problema não é a env existir, é o call site
+não pinar. E o desenho escolhido é o certo — pinar no `Makefile`, como `GO_BIN`, em vez de validar
+dentro do script (validação dentro do script seria mais uma regra sem gate).
+
+```
+make quality (invocação única)  771s · 0 FAIL em 4107 linhas · 1015 OK
+rastro sem override             0 linhas — comportamento default idêntico
+```
+
+**Sutileza que o agente resolveu:** env var não carrega array bash. O guard `-z` antigo deixava
+comando forjado de uma palavra passar como nome de comando único; agora há split intencional, que o
+fallback `shasum -a 256` exige.
+
+### 🔴 Débitos declarados desta entrega
+
+1. **Nenhum teste automatizado novo.** As sabotagens foram medições manuais em foreground —
+   reproduzíveis, mas **não versionadas**. Consequência concreta: **se alguém remover o pin do
+   `Makefile` amanhã, nada acusa.** O controle existe; o gate do controle, não. É a forma exata do
+   problema que esta campanha inteira combate — vira ML-2F.
+2. O agente rodou `make quality` em **5 chamadas** (limite de tempo da ferramenta dele), não numa.
+   Contorno legítimo, mas gate em pedaços ≠ gate inteiro. Rodei numa invocação só: verde.
+
+### ML-2F — Gate para os pins de call site
 **Status:** ⬜ Pendente · **Agente:** `ares-tf`
 
-1. O driver avisa em `stderr` sempre que `$SCRIPT`/`$GEN`/`$JOBS` divergirem do default, dizendo o
-   valor efetivo e qual seria o default. Uma linha; o redirecionamento deixa de ser invisível.
-2. **Sítio de mesma causa**, achado pelo `hades-tf`:
-   `scripts/check-roadmap-barrier-contract.sh:444-448` — `HASH_CMD_BIN` não é pinado pelo `Makefile`,
-   e `CORPUS_HASH` é comparado contra `PINNED_CORPUS_HASH` para detectar reclassificação do corpus.
-   🔴 Um `HASH_CMD_BIN` forjado que sempre emite o hash pinado **derrota exatamente esse check**.
-   Mesma causa ⇒ mesma REQ ⇒ mesmo PR.
-3. `smoke-integration-packages.sh:34` (`PYTHON_BIN`) — mesma família pelo critério estrito, sem guarda
-   anexa que possa satisfazer vaziamente. Severidade menor; tratar se for barato.
+Gate que reprova se `HASH_CMD_BIN`, `PYTHON_BIN` ou o par `TRACKFW_FALSIFY_*` deixarem de ser pinados
+nas recipes que os consomem. Falsificação nas duas direções: remover o pin ⇒ reprova; pin presente ⇒
+aprova. Guarda de vacuidade contra `Makefile` vazio ou alvo ausente.
+
+**Por que é ML e não "fica para depois":** sem ele, os pins do ML-2E são convenção, não contrato — e
+o parecer do `hades-tf` só vale enquanto ninguém editar o `Makefile` sem saber por que aquilo está lá.

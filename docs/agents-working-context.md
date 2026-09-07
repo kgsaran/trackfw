@@ -33844,3 +33844,43 @@ descrever só um chunk — driver agora emite resumo agregado próprio após a g
 (`rc=0`, `412 OK`, `0 FAIL`, resumo presente, confirmado em produção real). Também declarado o teto
 previsto para o ML-3A (bloco fundido de 30 cenários/3487 linhas domina sobre nº de workers — `JOBS=4`
 no CI deve dar ~o mesmo que `JOBS=8` local, não é regressão se o ML-3A medir isso).
+
+## 2026-09-07 — Ares (Infra) — ML-2E: rastro do override + `HASH_CMD_BIN` pinado (CONCLUÍDO)
+
+**Ação 1 (rastro):** `scripts/run-gates-falsify-parallel.sh` agora emite em `stderr` uma linha por
+override setado (`TRACKFW_FALSIFY_SCRIPT`/`_GEN`/`_JOBS`), com valor efetivo e default, mesmo que o
+valor coincida com o default. Provado rodando: as 3 linhas aparecem com as 3 env vars setadas; nenhuma
+aparece sem override (confirmado no log completo do `make quality` reproduzido nesta sessão).
+
+**Ação 2 (`HASH_CMD_BIN`, sítio de mesma causa do parecer `hades-tf`):** pinado no `Makefile`
+(`HASH_CMD := $(shell command -v sha256sum ... || echo "shasum -a 256")`, passado na linha de recipe
+de `check-roadmap-barrier-contract.sh`, mesmo desenho de `GO_BIN`). Script ajustado para fazer split
+intencional da string vinda do env (array bash não atravessa env var) em vez de tratar como nome de
+comando único. **Sabotagem provada nas duas pontas:** com o corpus do snapshot mutado (1 status
+`✅ Concluído` → `🔄 Em andamento` em `agent-rules-inject-2026-06-18.md`, revertido depois via
+`git show HEAD:... >`), o script ANTES da correção com `HASH_CMD_BIN` forjado (script que sempre
+emite o hash pinado) reportava `OK [corpus/non-reclassification]` apesar da reclassificação real
+(mascarado); com o hash real (sem override) o mesmo corpus mutado reprovava corretamente
+(`FAIL ... hash da tabela de vereditos mudou`). Depois da correção, invocando como o Makefile invoca
+(`HASH_CMD_BIN="sha256sum"` pinado na linha de recipe) COM `HASH_CMD_BIN` forjado exportado no
+ambiente pai (simulando `.envrc`/env esquecida), o gate voltou a reprovar corretamente — o pin no
+call site derrota o override ambiente, mesma garantia de `GO_BIN`.
+
+**Ação 3 (`PYTHON_BIN`):** pinado por consistência (`PYTHON_BIN=python3` na recipe de
+`package-smoke`, Makefile) — tratado por ser barato; sem guarda anexa satisfazível vaziamente, então
+severidade era menor mesmo sem correção (não estava em `make quality`, só em `make package-smoke`,
+que não é dependência de `quality`).
+
+**Validação completa:** `make quality` reproduzido em batches foreground (limite de 10 min por
+chamada do Bash tool) — `test`, `test-node`, `test-python`, `lint` isolados + `parity` dividido em
+3 blocos na ordem exata do `make -n parity` (build+43 gates rápidos ~3min; `run-gates-falsify-parallel.sh`
+sozinho, 412 OK/0 FAIL/guarda de conjunto OK, ~7m57s; os 10 gates finais incl.
+`check-roadmap-barrier-contract.sh` já com `HASH_CMD_BIN` pinado, ~52s). Log combinado de todos os
+blocos: `grep -c '^FAIL'` = 0 em 4060 linhas. `scripts/check-cli-parity.sh` isolado: rc=0.
+
+**Arquivos alterados:** `Makefile`, `scripts/run-gates-falsify-parallel.sh`,
+`scripts/check-roadmap-barrier-contract.sh`. Nenhum sítio de mesma causa novo encontrado além dos já
+nomeados pelo roadmap (`PYTHON_BIN`, tratado acima).
+
+**Sem commit/push** — fora da minha autoridade (Infraestrutura nunca opera git). Pronto para auditoria
+do `trackfw_architect`.
