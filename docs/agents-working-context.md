@@ -33658,3 +33658,79 @@ Agora resolve por basename nos 6 estados e emite aviso **verdadeiro** de `stale 
 
 **Próximo:** `docs/fila-de-execucao.md`, item 1 — o guard emite schema de hook que o Claude Code
 rejeita (`hookSpecificOutput`/`permissionDecision`).
+
+## 2026-09-07 — Ares (Infra) — ML-2A do `check-gates-falsify` (acelerar): fix real + split 2-way validado (~1,8x), N-way maior NÃO entregue
+
+**Início.** Handoff: `ROADMAP-2026-09-06-perfil-e-aceleracao-do-check-gates-falsify-sem-perder-cobertura.md`,
+Wave 2/ML-2A. Árvore devolvida suja para o arquiteto auditar/commitar — este agente não commita.
+
+**Passo 0 (feito, no arquivo real `scripts/check-gates-falsify.sh`):** Cenário 8 trocou
+`cp -r "$ROOT_DIR/." "$T8_MOD"` (issue #288, quebra no Windows/MSYS2 por colisão `trackfw`/
+`trackfw.exe` em `bin/`) pelo mesmo padrão já usado pelos Cenários 80+: copiar só `cmd/`, `internal/`,
+`go.mod`, `go.sum`. Confirmado por leitura que `$T8_MOD` não referencia `bin/` nem `.git` depois desse
+bloco. Rodada completa do gate (`bash scripts/check-gates-falsify.sh`, 894,66s, exit 0, 386 labels
+OK/PROOF, 0 FAIL) confirma que a mudança não regride nenhum cenário. Este é o único diff no arquivo real.
+
+**ML-2A (aceleração): mecanismo validado em scratchpad, harness de produção NÃO entregue.**
+
+Todo o trabalho abaixo foi feito em cópias em `/private/tmp/.../scratchpad/pilot/` — o script real só
+tem o Passo 0.
+
+**Correção de uma correção — registro para não repetir o erro:** minha primeira varredura de
+dependências cross-cenário (regex simples em `NOME=`) apontou `T86`/`T87`/`T88` como compartilhados
+entre Cenário 86 e Cenário 165. Uma segunda varredura, tentando ser mais cuidadosa com heredocs e
+corpos de função, "provou" **zero dependências cross-cenário no arquivo inteiro** — e essa conclusão
+estava **errada**: um bug no meu próprio script de skip (heredoc detectado erroneamente dentro de uma
+linha de comentário, `<<<` de "here-string" mencionado em prosa) fez a segunda varredura excluir do
+escopo quase tudo. **A prova real veio de rodar de verdade**: montei um split 4-way por bin-packing
+(carga medida por cenário, não contagem de linha) que **reordenava** blocos entre os 4 processos —
+e todos os 4 chunks quebraram com `variable: unbound variable` (`T86`, `SIMPLE_REQ_FIELD_SCRIPT`,
+`T27_GO_BIN`, `ROADMAP_CYCLE_SCRIPT_FROM_REQ`) sob `set -u`. **A dependência real existe** — a minha
+primeira varredura estava mais perto da verdade que a "corrigida".
+
+**O que a execução real revelou:** existe um cluster **indivisível** de Cenário 86 a Cenário 165
+(linhas 8145–10046, ~1900 linhas) que custa **467,0s dos 893,3s medidos por cenário (52,3% do
+tempo total)** — maior que qualquer estimativa anterior. Esse cluster tem que rodar inteiro num único
+processo; não sei ainda (não investiguei dentro do orçamento desta sessão) qual variável específica
+liga o quê a o quê lá dentro, só que quebra se você separar Cenário 86 de Cenário 165.
+
+**Split validado (2-way, respeitando o cluster):** chunk A = só o cluster (linhas 8145–10046, 467s
+isolado); chunk B = o resto do arquivo, duas faixas contíguas coladas (322–8144 + 10047–10889, 427s
+isolado) — nenhuma reordenação, só concatenação na ordem original. Preâmbulo + **as 40 funções
+helper do arquivo inteiro** (hoisted para cada chunk — `corrupt_literal` e ~30 outras estão definidas
+NO MEIO do arquivo, entre cenários, não só nas linhas 1–321) prefixados em cada chunk.
+
+**Isolamento:** cada chunk roda como processo bash separado, `mktemp -d` próprio (`$WORK`) e
+`$HOME="$WORK/home"` — mesmo padrão do script original, replicado por chunk. `GOCACHE`/`GOMODCACHE`/
+`GOPATH` **compartilhados** (valores reais do ambiente) — preserva o cache quente que o ML-1A mediu
+(mediana 0,84s/build). Nenhum cenário escreve em `$ROOT_DIR` (só leitura); o único cenário que mede
+`git status --porcelain` sobre `$ROOT_DIR` (Cenário 18, `no-repo-mutation`) passou nas 3 rodadas
+mesmo concorrente com o outro chunk.
+
+**Resultado medido, 3 rodadas consecutivas, mesma máquina/sessão que o serial (894,66s):**
+493,2s / 511,2s / 507,8s de parede — **~1,75–1,81x**, conjunto de labels **idêntico** ao serial nas 3
+(`diff` vazio, 386 labels), 0 FAIL, exit 0, `no-repo-mutation` verde nas 3. Sabotagem de controle
+(padrão de asserção trocado por string que nunca casa, em chunk B) fez o chunk reprovar (exit 1) —
+**a alegação que este teste sustenta**: dividir o script em processos-chunk não suprime a propagação
+de falha — um chunk cuja asserção quebra ainda sai não-zero. Não é uma alegação sobre a lógica de
+detecção de nenhum gate.
+
+**Teto teórico e por que não fui além nesta sessão:** com o cluster de 467s fixo, o piso de QUALQUER
+paralelização (não importa quantos workers) é ~467s — ~1,91x. Cheguei a 1,8x com só 2 processos; fechar
+a distância até 1,91x exigiria decompor internamente o cluster (que variável liga o quê, dentro das
+~1900 linhas) — não fiz essa investigação. Um split N-way maior (mirando os 4 vCPU do runner do CI)
+não é alcançável sem isso, porque o cluster sozinho já é maior que 894/4.
+
+**Decisão (parcial, não AC5 "não vale nada" — houve ganho real e mensurado):** não commitei harness de
+produção nem toquei `Makefile`/CI — os 3 bugs que cometi na minha própria análise estática (caminho
+relativo errado, heredoc mal detectado, contagem de linha desatualizada após o Passo 0) mostram que
+esse arquivo é hostil a automação por número de linha; um gerador que descobre fronteiras em runtime
+(não hardcoded) é o formato certo para produção, e não construí esse gerador. Fica como próximo ML
+**desta mesma REQ** (`REQ-2026-09-03-check-gates-falsify-...`) — mesma causa, mesmo REQ: (1) decompor
+o cluster de 467s, (2) escrever o gerador de chunks em runtime, (3) revalidar 3x, (4) medir no CI.
+
+**Entregue ao arquiteto:** diff único em `scripts/check-gates-falsify.sh` (Cenário 8), `go build ./...`
+limpo, `trackfw validate` sem erros novos (só os 116 warnings pré-existentes), `bash -n` ok. Números
+acima (piso teórico 467s/894s, split validado 1,8x) para dimensionar o próximo ML.
+
+**Fim.**

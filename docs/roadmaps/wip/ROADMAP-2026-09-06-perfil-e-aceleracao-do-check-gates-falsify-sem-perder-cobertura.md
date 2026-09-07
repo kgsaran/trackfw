@@ -123,7 +123,22 @@ correta segmenta por **invocação de script**. Mesmo modo de falha do 69-vs-101
 > Dependências: ML-1A. **O caminho é escolhido pela medição, não por hipótese.**
 
 ### ML-2A — Acelerar, mantendo cobertura idêntica
-**Status:** ⬜ Pendente · **Agente:** `ares-tf`
+**Status:** ✅ Concluído (parcial, declarado) · **Agente:** `ares-tf`
+
+**Entregue:** o Passo 0 — a cópia ampla do Cenário 8 (`cp -r "$ROOT_DIR/."`, issue #288) trocada pelo
+padrão mínimo já usado pelos Cenários 80+. Destrava o Windows, onde o `cp -r` abortava por colisão
+`trackfw`/`trackfw.exe`. Auditado: todas as referências a `$T8_MOD` usam só `cmd/`, `internal/`,
+`go.mod`, `go.sum`, e a determinação veio **antes** da redução, como exigido.
+
+**Medido e não embarcado:** o split de 2 vias, ~1.8x. Vai para o ML-2D.
+
+**Diagnóstico corrigido:** a conclusão de "cluster indivisível de 467s" **não se sustenta** — ver
+ML-2C. O agente acertou que o arquivo é hostil a parsing por número de linha (tropeçou três vezes
+nisso, e o arquiteto tropeçou na mesma pedra ao verificar); errou a causa da indivisibilidade.
+
+🔴 **Crédito onde é devido:** ele reverteu uma afirmação estática própria — *"zero dependência entre
+cenários"* — porque a **execução real** sob `set -u` a desmentiu, e recusou-se a embarcar automação
+em que não confiava. Foi a recusa que preservou a medição.
 🔴 **Cobertura verificada por CONJUNTO, não por contagem** (AC2 da REQ): o conjunto de cenários
 executados antes e depois tem de ser **o mesmo**. Contagem igual com conjunto diferente é regressão
 disfarçada — e este projeto já foi mordido por isso.
@@ -131,6 +146,78 @@ disfarçada — e este projeto já foi mordido por isso.
 **ainda reprova** depois da otimização.
 🔴 **Gate paralelo instável é PIOR que gate lento** — ensina a re-rodar em vez de investigar. Se
 aparecer flakiness, **parar e reportar**, não "re-rodar para confirmar".
+
+### ML-2C — Içar as 31 funções espalhadas para o prelúdio
+**Status:** ⬜ Pendente · **Agente:** `ares-tf` · **pré-requisito do ML-2D**
+
+🔴 **Corrige um diagnóstico do ML-2A.** O ML-2A concluiu que os Cenários 86–165 formam um bloco
+**indivisível** de 467s (52,3%) por acoplamento de dados entre cenários, e derivou daí um teto de
+1,91x. **Medido pelo arquiteto em 2026-09-07, o acoplamento não existe:**
+
+```
+blocos de cenário no cluster        29
+arestas reais entre cenários         0    ← as 3 detectadas eram falso positivo:
+                                            "$T86" dentro da string do echo final
+variáveis herdadas do preâmbulo      2    ← $ROOT_DIR (261x) e $WORK (74x)
+```
+
+A causa real é outra:
+
+```
+funções auxiliares no arquivo       40
+   definidas no preâmbulo            9
+   espalhadas entre os cenários     31    ← a causa
+```
+
+Um trecho que começa no meio do arquivo não enxerga funções definidas antes dele. **Reproduzido:** um
+chunk com preâmbulo + trecho do meio do cluster morre com `corrupt_literal: command not found` —
+função definida na linha 1375, entre cenários.
+
+**Ação:** mover as 31 definições espalhadas para junto das 9 do prelúdio. **Mudança de posição, não de
+conteúdo** — o corpo de cada função é movido byte a byte.
+
+⚠️ **O arquivo é hostil a parsing ingênuo, e isto não é teoria.** Ao extrair as 40 funções por
+`^nome() {` até a primeira linha `}`, o arquiteto quebrou num heredoc que contém `}` — e o ML-2A
+relatou os mesmos três tropeços (caminho relativo velho, heredoc mal detectado, contagem de linha
+defasada). **Não confie em número de linha nem em fim-de-função por `}` na coluna zero.**
+
+**Critérios de aceite:**
+- [ ] `diff` do conjunto de rótulos de cenário antes/depois: **vazio**
+- [ ] tempo serial antes/depois **equivalente** (é refactor, não otimização — regressão de tempo aqui
+      é sinal de que algo mudou de comportamento)
+- [ ] `make quality QUALITY_EXIT=0` para **arquivo**, `grep -c '^FAIL'` sobre a saída inteira = 0
+- [ ] o corpo de cada função movida é **idêntico** — provar com `git diff` mostrando só remoção num
+      ponto e inserção idêntica no outro
+- [ ] nenhuma função passa a ser definida **depois** do primeiro uso
+
+### ML-2D — Gerador de fronteiras e paralelismo em produção
+**Status:** ⬜ Pendente · **Agente:** `ares-tf` · **Dependências: ML-2C**
+
+Com o ML-2C feito, **qualquer fronteira `# Cenário` vira ponto de corte válido** — o problema difícil
+(descobrir onde é seguro cortar) deixa de existir. Este ML entrega o que o ML-2A mediu mas não
+embarcou: o harness de paralelização no `Makefile`/CI.
+
+**Medido no ML-2A**, com 2 vias e o cluster ainda monolítico:
+
+```
+serial            894.66s
+split 2 vias      493.2s · 511.2s · 507.8s   (3 rodadas, diff de conjunto vazio)   ≈ 1.8x
+```
+
+Com fronteiras livres, o teto passa a ser o número de workers (4 vCPUs no runner do CI), **não** os
+467s. Estimativa de ~3,5x — 🔴 **estimativa, não medição**: falsificar é justamente a entrega.
+
+**Restrições herdadas do ML-2A, todas mantidas:**
+- 🔴 Cobertura por **conjunto**, não por contagem. `diff` vazio, anexado.
+- 🔴 **3 rodadas** com o mesmo conjunto aprovando. Flakiness ⇒ **parar e reportar**, nunca re-rodar.
+- 🔴 **Nomear o mecanismo de isolamento**; listar todo estado compartilhado encontrado.
+- 🔴 Falsificação do harness: numa amostra, sabotar o alvo e confirmar que **ainda reprova**.
+- 🔴 **Não** gerar o split por número de linha — usar as fronteiras, descobertas em runtime.
+
+**Critérios de aceite:**
+- [ ] paralelismo **embarcado** no `Makefile`/CI, não só medido em scratchpad
+- [ ] ganho medido **no CI**, com as duas pontas pelo mesmo método e o método declarado
+- [ ] os 5 pontos vermelhos acima, cada um com evidência no relatório
 
 ### ML-2B — Os outros 45 gates do alvo `parity`
 **Status:** ⬜ Pendente · **Agente:** `ares-tf`

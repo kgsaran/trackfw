@@ -572,6 +572,18 @@ assert_fails_with "artifact-parity/req-content-drift" \
 #
 # O binário isolado é compilado num GOPATH temporário para não contaminar
 # o working tree do projeto.
+#
+# issue #288 (2026-09-07): a cópia de módulo isolado costumava ser
+# `cp -r "$ROOT_DIR/." "$T8_MOD"` — a árvore INTEIRA, inclusive `bin/`
+# (ignorado pelo git, 17-37M) e `.git`. No Windows/MSYS2 isso abortava o
+# gate com `cp: cannot create regular file '.../bin/trackfw': File exists`
+# (colisão de nome-base entre `trackfw`/`trackfw.exe`, falsificada nas duas
+# direções pelo autor do issue). O build deste cenário só usa `cmd/`,
+# `internal/`, `go.mod` e `go.sum` (confirmado: nenhuma referência a
+# `$T8_MOD/bin` ou `$T8_MOD/.git` depois deste bloco) — mesmo padrão já
+# usado pelos Cenários 80+ (ver `T80="$WORK/s80"` abaixo) para módulo Go
+# isolado. Trocar para esse padrão remove `bin/`/`.git` da cópia sem tocar
+# no que o cenário de fato exercita.
 # ---------------------------------------------------------------------------
 T8="$WORK/s8"
 mkdir -p "$T8/scripts"
@@ -581,7 +593,11 @@ cp "$ROOT_DIR/scripts/check-artifact-parity.sh" "$T8/scripts/"
 
 # Criar cópia isolada do módulo Go com o gerador de req corrompido
 T8_MOD="$WORK/s8-mod"
-cp -r "$ROOT_DIR/." "$T8_MOD"
+mkdir -p "$T8_MOD/cmd" "$T8_MOD/internal"
+cp -r "$ROOT_DIR/cmd/." "$T8_MOD/cmd/"
+cp -r "$ROOT_DIR/internal/." "$T8_MOD/internal/"
+cp "$ROOT_DIR/go.mod" "$T8_MOD/go.mod"
+cp "$ROOT_DIR/go.sum" "$T8_MOD/go.sum"
 
 # Corromper: trocar "REQ-" por "RREQ-" no nome do arquivo gerado (req.go).
 # O padrão que ocorre no arquivo é: /REQ-%s-%s.md
