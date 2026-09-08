@@ -34229,3 +34229,40 @@ literal inline, sem `os.sep`-equivalente para vazar — espelho seria decorativo
 
 **Sem commit/push** — fora da minha autoridade. Roadmap ML-R1 marcado ✅ Concluído com relatório
 completo, evidência VM reforçada pós-advisor. Pronto para auditoria do `trackfw_architect`.
+
+## 2026-09-08 — ares-tf — ML-2G (shard do gate de falsify em jobs de matriz)
+
+Implementado e provado localmente (não commitado/pushado — fora do meu escopo de Git). Novos:
+`scripts/run-gates-falsify-shard.sh`, `scripts/check-falsify-shard-coverage.sh`. Alterados:
+`Makefile` (split `parity` em `parity-rest`+`parity-falsify`), `.github/workflows/quality.yml`
+(jobs `parity-falsify-shard` matriz + `parity-other-gates` + `parity` agregação, nome preservado).
+
+Achado load-bearing: `parity` é `required_status_check` por NOME (`gh api
+.../branches/main/protection`) — virar matriz faz o check nunca reportar (pendente para sempre,
+não vermelho). Nota em `vault/notes/matriz-em-job-required-por-nome-fica-pendente-para-sempre-2026-09-08.md`.
+
+Status do ML: 🔄, não ✅ — o AC "tempo medido no CI" é estruturalmente inalcançável por mim (sem
+push). Receita exata para o arquiteto medir está na seção 7 da entrega no roadmap. Detalhes completos,
+sabotagens e saída real em `docs/roadmaps/wip/ROADMAP-2026-09-06-perfil-e-aceleracao-do-check-gates-falsify-sem-perder-cobertura.md`,
+seção "Entrega do ML-2G".
+
+## 2026-09-08 — ares-tf — correção pontual: `make quality` abortava em `check-output-encoding-declared`
+
+Auditoria do arquiteto (invocação única de `make quality`) achou `check-output-encoding-declared:
+FAIL` — `scripts/check-falsify-shard-coverage.sh` invoca `python3` sem declarar `export
+PYTHONIOENCODING=utf-8` antes da 1ª invocação (ALVO 1, ML-1B). `rc=2`, 577 `^OK` (esperado ≥1020).
+Causa: os 2 scripts novos do ML-2G (`check-falsify-shard-coverage.sh`,
+`run-gates-falsify-shard.sh`) foram provados isolados, nunca contra `make quality` completo, antes
+desta auditoria.
+
+Corrigido nos dois arquivos: `export PYTHONIOENCODING=utf-8` logo após `set -euo pipefail`, antes de
+`resolve_py_bin`. `run-gates-falsify-shard.sh` corrigido preventivamente (mesmo padrão, mesmo
+`resolve_py_bin`, ainda não nomeado pelo gate porque a enumeração parou no primeiro infrator). Sem
+allowlist — nenhuma condição equivalente à exceção existente (`check-roadmap-barrier-contract.sh`,
+protegendo PR #238 aberto).
+
+`make quality QUALITY_EXIT=0` completo, foreground, redirecionado a arquivo: `MAKE_RC=0`,
+`grep -c '^FAIL'=0`, `grep -c 'Error 1'=0`, `^OK`=1022 (≥1020), 4117 linhas, cauda com o resumo real
+do `parity-falsify` (não abort). `check-output-encoding-declared.sh` isolado: `rc=0`. `actionlint`
+limpo. `go build`/`go vet`: OK. Sem commit/push — fora da minha autoridade. Roadmap atualizado com a
+seção "Correção pós-auditoria — `ares-tf`, 2026-09-08".

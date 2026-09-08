@@ -834,7 +834,8 @@ esperado, porque o runner tem **4 vCPUs** contra os 10 cores da máquina onde me
 mesmos criamos e sobrou pouco. Enquanto cada campanha somar cenários, o número volta a subir.
 
 ### ML-2G — Shardar o gate em jobs de matriz (custo zero)
-**Status:** ⬜ Pendente · **Agente:** `ares-tf` · **PR próprio** (o #291 já foi mergeado)
+**Status:** 🔄 Em andamento — implementado e provado localmente; falta a medição no CI (ver "O que este
+ML NÃO conseguiu fechar" abaixo) · **Agente:** `ares-tf` · **PR próprio** (o #291 já foi mergeado)
 
 **Runner maior não é opção:** larger runners **nunca** entram no free tier, nem em repositório
 público — e o `trackfw` é público. Verificado na política de preços de 2026.
@@ -869,3 +870,242 @@ distribui entre jobs.
 processo), e o que a regra protege (a janela de atenção sobre a causa) segue aberto **pelo roadmap**,
 que continua em `wip` com ML-2F e ML-3A pendentes. 🔴 O que **seria** violação é fechar este roadmap
 antes de o ML-2G entrar.
+
+## Entrega do ML-2G — `ares-tf`, 2026-09-08
+
+### 0. O que este ML NÃO conseguiu fechar — declarado antes do resto
+
+🔴 **O AC "tempo medido no CI, não projetado" não é alcançável por mim nesta entrega.** O handoff desta
+sessão proíbe explicitamente qualquer operação de Git (branch/commit/push) — regra do meu role card,
+não deste roadmap. Não há caminho para um número de CI sem um push. Em vez de queimar a sessão tentando
+contornar isso, entrego o mecanismo inteiro provado **localmente** (build, sabotagem, falsificação nas
+duas direções) e deixo, na seção 6, a receita exata para o arquiteto rodar no CI e colar os números.
+Por isso o status é 🔄, não ✅ — o precedente do ML-2F ("marca ✅, reverte se a auditoria achar algo")
+não se aplica quando o próprio agente já sabe, ao entregar, que um AC obrigatório ficou de fora.
+
+### 1. A descoberta que reabre a nota histórica do arquiteto (2026-09-03)
+
+O comentário em `.github/workflows/quality.yml` (então na linha ~574) já dizia "matriz renomeia o
+check e bloquearia TODO PR" como razão para não shardar. Medido, não presumido:
+
+```
+gh api repos/kgsaran/trackfw/branches/main/protection --jq '.required_status_checks'
+{"checks":[...,{"context":"parity"},...],"contexts":[...,"parity",...],"strict":false}
+```
+
+`parity` é `required_status_check` **por nome exato**. O efeito de virar matriz não é "bloqueia" —
+é **pior de diagnosticar**: o GitHub reportaria `parity (0)`/`parity (1)`/... e nenhum check chamado
+`parity` apareceria nunca — todo PR fica **pendente para sempre**, não vermelho. Nota completa em
+`vault/notes/matriz-em-job-required-por-nome-fica-pendente-para-sempre-2026-09-08.md`.
+
+**Desenho consequente:** o job `parity` não vira matriz. Os workers viram matriz sob IDs novos
+(`parity-falsify-shard`, `parity-other-gates`); `parity` vira um job fino de **agregação**,
+`needs: [parity-falsify-shard, parity-other-gates]`, que preserva o nome. O comentário histórico foi
+**mantido no arquivo** (não apagado), marcado como vencido nas contas mas correto na decisão que
+motivou — mesmo precedente já em uso no comentário do ML-2D em `run-gates-falsify-parallel.sh`.
+
+### 2. Duas armadilhas do job de agregação, das quais uma eu só vi depois de pedir revisão
+
+- `if: always()` faz o job de agregação RODAR mesmo com `needs` falho — necessário, senão o check
+  obrigatório também não reporta. Mas sozinho ele faz o job **passar** por padrão nesse caso. Primeiro
+  step de `parity` reprova explicitamente se `contains(needs.*.result, 'failure') ||
+  contains(needs.*.result, 'cancelled')`, antes de qualquer outra coisa rodar.
+- Os rótulos **esperados** da guarda de conjunto são recalculados no PRÓPRIO job de agregação, a partir
+  do checkout fresco dele (nunca de algo que um shard upload) — só os rótulos **emitidos** (fato
+  observado no stdout real do chunk) vêm dos artefatos de shard. Sem isso seria o mesmo defeito
+  auto-referencial que o `hades-tf` achou no ML-2D, em escala de job.
+
+### 3. Arquivos novos e alterados
+
+- **Novo** `scripts/run-gates-falsify-shard.sh` — roda UM chunk (`SHARD_INDEX`/`SHARD_COUNT` via env),
+  reutilizando `gen-falsify-chunks.py` (mesmo gerador do ML-2D). Guarda LOCAL (sentinela + rótulos deste
+  chunk) como defesa em profundidade; grava `shard_N.actual`/`shard_N.log`/`shard_N.rc` em `OUTPUT_DIR`.
+- **Novo** `scripts/check-falsify-shard-coverage.sh` — guarda de CONJUNTO entre shards, rodada pelo job
+  de agregação. Recalcula o esperado a partir de checkout fresco (seção 2); nomeia shard ausente, shard
+  com rc != 0, e rótulo esperado ausente do conjunto emitido por aquele shard especificamente.
+- **`Makefile`** — `parity` dividido em `parity-rest` (os ~45 gates que não são falsify) e
+  `parity-falsify` (só `run-gates-falsify-parallel.sh`); `parity: build parity-rest parity-falsify`
+  preserva `make parity`/`make quality` locais bit-a-bit equivalentes ao comportamento anterior (mesmas
+  46 linhas de recipe, mesmo pin `GO_BIN=`; a ÚNICA diferença observável é a ORDEM — falsify passa a
+  rodar por último em vez de ~posição 30 — sem efeito de cobertura, `make -n parity` confirma as 52
+  linhas, incluindo comentários, idênticas ao `git diff` só reordenando).
+- **`.github/workflows/quality.yml`** — `env.FALSIFY_SHARD_COUNT: "4"` no topo; jobs
+  `parity-falsify-shard` (matriz `shard: [0,1,2,3]`, `needs` idêntico ao `parity` original:
+  `[go, node, python, package-smoke, windows-integrations-resolve]`), `parity-other-gates` (mesmo
+  `needs`, roda `make parity-rest`), e `parity` (agregação, seções 1-2). Grau da matriz cabeado
+  (GitHub Actions não permite matriz dinâmica sem job prévio com `fromJSON`) com guarda de drift: um
+  step compara `strategy.job-total` contra `env.FALSIFY_SHARD_COUNT` e reprova cedo se alguém mudar um
+  sem o outro.
+
+### 4. Mecanismo de isolamento entre shards + estado compartilhado (AC herdado do ML-2D)
+
+**Isolamento:** cada shard é uma VM efêmera própria do GitHub Actions — isolamento de processo,
+filesystem e ambiente **mais forte** que o dos processos-irmãos do ML-2D (que compartilhavam
+`GOPATH`/`GOCACHE`/`GOMODCACHE` do runner). **Estado compartilhado encontrado:** nenhum deliberado —
+nem cache do `actions/setup-go` (nem o job `parity` original nem os novos setam `cache: true`, herdado
+sem alteração) nem artefato de build entre shards; cada um baixa suas próprias deps e builda seu
+próprio `bin/trackfw` do zero. O único artefato que atravessa job é o de saída
+(`falsify-shard-N` → baixado pelo job de agregação), com nome único por valor de matriz — confirmado
+que `upload-artifact@v4` não colide (`name: falsify-shard-${{ matrix.shard }}`, um valor por shard).
+
+### 5. Falsificação — provas, com saída real
+
+**Sintaxe/estrutura do workflow:**
+```
+python3 -c "import yaml; yaml.safe_load(open('.github/workflows/quality.yml'))"  → sem erro, 11 jobs
+actionlint .github/workflows/quality.yml                                         → rc=0, sem achado
+```
+
+**Gates de governança do próprio repositório, re-rodados após CADA edição de Makefile/workflow (não só
+no final — pedido explícito da revisão desta entrega):**
+```
+scripts/check-parity-call-site-pins.sh        → rc=0, 7 verificações (achou run-gates-falsify-shard.sh
+                                                  como novo consumidor de TRACKFW_FALSIFY_SCRIPT/_GEN
+                                                  automaticamente, por reusar o mesmo idioma de guarda)
+scripts/check-ci-workflow-job-id-collision.sh → rc=0 (audita templates gerados p/ OUTROS projetos, não
+                                                  quality.yml -- confirmado sem interferência)
+go build ./... && go vet ./...                → OK
+```
+
+**Predição escrita ANTES de qualquer execução real (o AC da regra dura de reconciliação, para a
+medição de `gen-falsify-chunks.py`):** o ML-2D já mediu `largest_fused_unit_lines=3487` (30 cenários
+indivisíveis). Gerado (sem executar) o manifesto real a `N=4`:
+```
+python3 scripts/gen-falsify-chunks.py scripts/check-gates-falsify.sh <dir> 4
+chunk=0  3536 linhas
+chunk=1  3525 linhas
+chunk=2  3527 linhas
+chunk=3  4916 linhas   ← carrega o bloco fundido de 3487 linhas sozinho (fused_blocks=1)
+```
+**Confirma a predição do advisor por escrito antes de medir tempo:** a `N=4` o bloco indivisível é
+`chunk_3` sozinho — ~1,4x o tamanho dos outros 3. Isso prevê que `N=8` **não** vai chegar perto de
+2x mais rápido que `N=4`: o piso continua sendo esse mesmo bloco, que não se divide mais (é `chunk_7`
+sozinho a N=8, mesmo tamanho absoluto). Se a medição do arquiteto no CI (seção 6) confirmar isso, é o
+resultado esperado, não uma regressão — e os 25 `cross_segment_edges` já nomeados pelo ML-2D continuam
+sendo a próxima alavanca, não este ML.
+
+**Integração real, ponta a ponta, contra o script de produção (não fixture sintética):**
+```
+make build
+SHARD_INDEX=1 SHARD_COUNT=4 OUTPUT_DIR=<dir> bash scripts/run-gates-falsify-shard.sh
+→ 92 OK/rótulos emitidos, sentinela "CHUNK_COMPLETE 1" presente, guarda local sem disparo,
+  rc=0, ~2min55s de parede (1 de 4 shards -- não é o número final de CI, é a prova de que
+  o mecanismo roda contra o arquivo real e produz os 3 artefatos esperados:
+  shard_1.actual (92 linhas), shard_1.log, shard_1.rc="0")
+```
+
+**Sabotagens do job de agregação (`check-falsify-shard-coverage.sh`), com o manifesto REAL a `N=4` e
+os rótulos REAIS extraídos dele (shard_1 é o run real acima; shards 0/2/3 são os rótulos literais que
+o próprio manifesto declara esperar deles, o que é dado observável do gerador, não hipótese) —
+`ARTIFACTS_DIR` montado, script rodado sem alterar nenhuma outra variável entre as 4 rodadas:**
+
+```
+Caminho feliz (0,1,2,3 todos presentes, rc=0, todos os rótulos esperados presentes):
+  rc=0, 8 verificações OK, 0 FAIL
+
+Sabotagem A -- artefato do shard 2 removido (upload falhou / job não rodou):
+  FAIL [shard-coverage/shard_2/present]: artefato ausente ... job da matriz nao rodou ou upload falhou
+  rc=1
+
+Sabotagem B -- shard_0.rc forjado para 1 (chunk falhou OU guarda local reprovou):
+  FAIL [shard-coverage/shard_0/rc]: shard_0 reportou rc=1 (chunk falhou, ou a guarda local do
+  shard reprovou -- ver log shard_0.log)
+  rc=1
+
+Sabotagem C -- 1 linha removida de shard_3.actual (rótulo real, silenciosamente "esquecido" no upload):
+  FAIL [shard-coverage/shard_3/label/adr-not-accepted/go/adr_accepted_when_req_done-baseline]:
+  rotulo esperado AUSENTE do conjunto emitido pelo shard 3: adr-not-accepted/go/...-baseline
+  rc=1
+```
+
+Nenhuma das 3 sabotagens produz `rc=0` por não achar nada — todas nomeiam exatamente o que sumiu, a
+mesma exigência que a guarda do ML-2D já satisfazia em escala de processo, agora replicada em escala
+de job.
+
+### 6. Regra dura de reconciliação — uma frase por artefato novo
+
+- `scripts/run-gates-falsify-shard.sh` afirma "roda um único chunk e reprova (guarda local) se o
+  sentinela ou algum rótulo esperado por ESTE chunk faltar" — confirmado pelo run real contra shard 1
+  (rc=0, sentinela presente, guarda local sem disparo) e pela Sabotagem B acima (rc forjado propaga).
+- `scripts/check-falsify-shard-coverage.sh` afirma "recalcula o esperado de um checkout fresco e
+  reprova nomeando shard ausente, shard com rc!=0, ou rótulo ausente do CONJUNTO emitido por aquele
+  shard" — confirmado pelas Sabotagens A, B e C, cada uma reprovando por um mecanismo diferente e
+  nomeando exatamente a causa.
+- O step "Grau da matriz bate com FALSIFY_SHARD_COUNT" afirma "reprova cedo se a lista `matrix.shard`
+  e o env `FALSIFY_SHARD_COUNT` divergirem" — não falsificado nesta entrega (exigiria rodar o workflow
+  no CI com um dos dois valores propositalmente errado); declarado como risco residual não coberto
+  localmente, não hipótese apresentada como prova.
+
+### 7. Receita exata para o arquiteto medir no CI (o que este ML não pôde fazer)
+
+1. Fazer merge/push desta branch e observar o run do workflow `Quality` no PR.
+2. Anotar, do run: tempo de parede de `parity-falsify-shard (0)`, `(1)`, `(2)`, `(3)` individualmente
+   (confirma ou refuta a predição da seção 5 sobre `chunk_3`/`shard 3` ser o mais lento), tempo de
+   `parity-other-gates`, e tempo do job `parity` (agregação — deve ser segundos, não minutos).
+3. Tempo de PAREDE do pipeline inteiro (do primeiro job ao `parity` fechar) — comparável ao "15m00s"
+   já registrado pelo arquiteto em 2026-09-07 para o PR #291. 🔴 Não reusar o `954s`/`980s` local desta
+   entrega como baseline — o handoff já apontou que esses números não reconciliam aritmeticamente com
+   os 15m00s do pipeline real; a comparação correta é CI-contra-CI, run comparável.
+4. Confirmar `parity` aparece como check obrigatório reportando normalmente (a preocupação da seção 1).
+5. Se quiser falsificar a guarda de conjunto ao vivo: forçar um chunk a falhar (ex. sabotar
+   temporariamente um `assert_*` do arquivo real numa branch de teste) e confirmar que `parity`
+   reprova — mesmo AC que o ML-2A já exigia para o harness original.
+
+### 8. Regra dura de paridade — 3 CLIs: exceção explícita
+
+`scripts/run-gates-falsify-shard.sh` e `scripts/check-falsify-shard-coverage.sh` existem só em
+`scripts/`, sem contraparte em `npm/src/`/`pypi/trackfw/` — mesmo precedente já registrado pelo ML-2F:
+são tooling interno de CI deste repositório, não superfície de `trackfw <comando>`.
+
+### Sítios de mesma causa — reportados, nenhum artefato aberto
+
+- Os jobs `windows-full-suites`/`windows-defect-reproduction` não passam por `check-gates-falsify.sh` e
+  não foram tocados — fora do escopo deste ML (mecanismo diferente, Windows roda camada 1 completa via
+  outro caminho, já documentado nas linhas desses jobs).
+- Nenhum sítio novo de mesma causa encontrado durante a implementação.
+
+## Correção pós-auditoria — `ares-tf`, 2026-09-08
+
+O `make quality` completo (rodado numa invocação só pelo arquiteto) abortou antes de fechar:
+`check-output-encoding-declared: FAIL` porque `scripts/check-falsify-shard-coverage.sh` invoca
+`python3` (linha 44, dentro de `resolve_py_bin`) sem declarar `export PYTHONIOENCODING=utf-8` antes
+da primeira invocação — o mesmo ALVO 1 que os outros 40 `scripts/check-*.sh` já cumprem (ML-1B do
+ROADMAP-2026-09-02). `rc=2`, 577 `^OK` contra os ≥1020 esperados — o gate morreu no meio, não
+reprovou de forma nomeada.
+
+**Causa:** os dois scripts novos deste ML (`check-falsify-shard-coverage.sh` e
+`run-gates-falsify-shard.sh`, ambos com `resolve_py_bin()` copiado do driver de processo) foram
+escritos e provados isoladamente, fora de `make quality`, então o gate anti-reintrodução do ML-1B
+nunca correu contra eles antes desta auditoria.
+
+**Correção — mesma causa, mesmo ML:** adicionado
+`export PYTHONIOENCODING=utf-8` logo após `set -euo pipefail`, em ambos os arquivos, antes de
+`resolve_py_bin`:
+- `scripts/check-falsify-shard-coverage.sh`
+- `scripts/run-gates-falsify-shard.sh`
+
+`run-gates-falsify-shard.sh` não aparecia ainda no `FAIL` do arquiteto (a enumeração do gate parou no
+primeiro infrator), mas tem o mesmo padrão (`resolve_py_bin` idêntico, comentário próprio dizendo
+"Mesma resolução de Python do driver de processo") — corrigido preventivamente na mesma passada, sem
+esperar o gate nomear o segundo.
+
+**Não recomendo allowlist:** a única entrada existente em `ALLOWLIST` (`check-roadmap-barrier-
+contract.sh`) protege um sítio com PR externo aberto (#238) onde forçar UTF-8 mascararia o defeito de
+fundo sob investigação. Nenhuma condição equivalente existe aqui — os dois scripts novos não têm
+motivo para divergir do padrão dos outros 39 gates.
+
+**As três medidas, sobre o `make quality QUALITY_EXIT=0` completo redirecionado para arquivo:**
+```
+rc (MAKE_RC)          = 0
+grep -c '^FAIL'        = 0
+grep -c 'Error 1'       = 0
+grep -c '^OK'          = 1022   (era 577 no run abortado; ≥ 1020 exigido)
+wc -l                  = 4117
+cauda do log           = "...suite completa -- 8 chunks, 412 OK, 0 FAIL, guarda de conjunto OK..."
+```
+`scripts/check-output-encoding-declared.sh` isolado: `rc=0`. `actionlint
+.github/workflows/quality.yml`: limpo. `go build ./...` e `go vet ./...`: OK.
+
+**Reconciliação:** nenhum teste novo foi adicionado por esta correção — é uma declaração ausente em
+duas linhas de shell, coberta pela asserção estática já existente em `check-output-encoding-
+declared.sh` (ALVO 1), que passou a aprovar os dois arquivos após a mudança.

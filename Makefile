@@ -6,7 +6,7 @@ BUILD_DIR=bin
 # à chamada de check-roadmap-barrier-contract.sh via `make quality`.
 HASH_CMD := $(shell command -v sha256sum >/dev/null 2>&1 && echo sha256sum || echo "shasum -a 256")
 
-.PHONY: build test test-node test-python parity lint quality install clean sync-integration-assets check-integration-assets package-smoke
+.PHONY: build test test-node test-python parity parity-rest parity-falsify lint quality install clean sync-integration-assets check-integration-assets package-smoke
 
 build:
 	go build -o $(BUILD_DIR)/$(BINARY) ./cmd/trackfw
@@ -20,7 +20,20 @@ test-node:
 test-python:
 	python3 -m pytest pypi/tests -q
 
-parity: build
+# ML-2G (ROADMAP-2026-09-06-perfil-e-aceleracao-do-check-gates-falsify): o alvo
+# `parity` foi dividido em dois -- `parity-rest` (os ~45 gates curtos) e
+# `parity-falsify` (só o gate que domina o tempo de parede, ~78% do job) --
+# para que o job `parity` do CI possa shardar o segundo em jobs de matriz
+# enquanto o primeiro roda uma vez só, em paralelo. `parity` continua
+# executando os dois, na mesma ordem de antes (build -> resto -> falsify),
+# então `make parity`/`make quality` local ficam bit-a-bit equivalentes ao
+# comportamento anterior a esta divisão -- só a topologia de invocação em CI
+# mudou. `scripts/check-parity-call-site-pins.sh` não distingue por alvo (lê
+# toda linha de recipe do Makefile), então os pins de HASH_CMD_BIN/PYTHON_BIN
+# continuam cobertos onde já estavam.
+parity: build parity-rest parity-falsify
+
+parity-rest: build
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-cli-parity.sh
 	scripts/check-validate-parity.sh
 	scripts/check-referential-integrity.sh
@@ -56,7 +69,6 @@ parity: build
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-agent-models-parity.sh
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-audit-surface.sh
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-agent-namespace-union.sh
-	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/run-gates-falsify-parallel.sh
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-thirdparty-parity.sh
 	scripts/check-install-version-pin.sh
 	scripts/check-ci-workflow-pin-parity.sh
@@ -72,6 +84,9 @@ parity: build
 	# segunda copia da regex) nas duas direcoes + a guarda de vacuidade. A medicao
 	# do corpo real acontece no job `pr-closing-keyword` de .github/workflows/quality.yml.
 	scripts/check-pr-closing-keyword.sh --self-test
+
+parity-falsify: build
+	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/run-gates-falsify-parallel.sh
 
 sync-integration-assets:
 	scripts/sync-integration-assets.sh
