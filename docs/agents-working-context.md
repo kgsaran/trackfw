@@ -4,6 +4,40 @@
 
 ---
 
+## Sessão 2026-09-08 — ares-tf (Infra) — ML-2F (gate para os pins de call site do ML-2E, CONCLUÍDO)
+
+Branch `chore/fecha-o-roadmap-do-parity-gate-dos-pins`, nenhuma operação de git (commit/push são do
+`trackfw_architect`). Roadmap:
+`docs/roadmaps/wip/ROADMAP-2026-09-06-perfil-e-aceleracao-do-check-gates-falsify-sem-perder-cobertura.md`,
+seção "Entrega do ML-2F".
+
+**Escopo entregue:** `scripts/check-parity-call-site-pins.sh` (novo) + `Makefile` (uma linha nova no
+alvo `parity`). Fecha o débito que o próprio ML-2E declarou: os pins de `HASH_CMD_BIN`/`PYTHON_BIN` e
+o rastro de `TRACKFW_FALSIFY_*` eram convenção provada por medição manual não versionada — agora têm
+gate próprio, falsificado nas duas direções (remover o pin ⇒ reprova nomeando a variável; pin
+presente ⇒ aprova), mais guarda de vacuidade em 3 variantes (Makefile vazio, sem linha de recipe,
+consumidor removido de `scripts/`) e uma 4ª sabotagem não pedida (comentário que menciona a variável
+não é confundido com o pin real — mesma armadilha de "prosa vira fronteira falsa" que já custou uma
+reentrega ao ML-2D).
+
+Desenho: lista de NOMES de variável congelada por escrito (evita o falso-positivo de dia zero contra
+`check-validate-parity.sh:139`, que lê `${GO_BIN:-}` sem pin por desenho legítimo, fora desta
+família); script consumidor e linha de recipe são DERIVADOS em runtime via grep, nunca hardcoded.
+Sem env var de redirecionamento no próprio gate (evitaria a mesma falha auto-referencial que o
+`hades-tf` achou no ML-2D) — raiz da árvore passada como `$1` posicional, sabotagens rodadas contra
+cópia em scratchpad.
+
+`make quality` inteiro (7 blocos foreground, log combinado, `grep -c '^FAIL'` sobre 4115 linhas
+inteiras = 0, 1020 OK) e `scripts/check-cli-parity.sh` isolado (`rc=0`) — evidência completa no
+roadmap. `run-gates-falsify-parallel.sh` isolado: `412 OK, 0 FAIL, guarda de conjunto OK`, e
+`git diff --name-only` confirma que nenhum arquivo do harness de falsify foi tocado (conjunto de
+rótulos inalterado por não-modificação, não por segunda rodada).
+
+**Pendente no roadmap:** ML-2G (shardar o gate em jobs de matriz do CI, PR próprio já que o #291 foi
+mergeado) — não tocado nesta sessão.
+
+---
+
 ## Sessão 2026-09-07 — ares-tf (Infra) — ML-1A/ML-1B (resolução de interpretador Python e binário do CLI, CONCLUÍDO)
 
 Branch `fix/gates-rodam-no-windows-resolucao-de-interpretador-e-binario`, nenhuma operação de git
@@ -34195,3 +34229,40 @@ literal inline, sem `os.sep`-equivalente para vazar — espelho seria decorativo
 
 **Sem commit/push** — fora da minha autoridade. Roadmap ML-R1 marcado ✅ Concluído com relatório
 completo, evidência VM reforçada pós-advisor. Pronto para auditoria do `trackfw_architect`.
+
+## 2026-09-08 — ares-tf — ML-2G (shard do gate de falsify em jobs de matriz)
+
+Implementado e provado localmente (não commitado/pushado — fora do meu escopo de Git). Novos:
+`scripts/run-gates-falsify-shard.sh`, `scripts/check-falsify-shard-coverage.sh`. Alterados:
+`Makefile` (split `parity` em `parity-rest`+`parity-falsify`), `.github/workflows/quality.yml`
+(jobs `parity-falsify-shard` matriz + `parity-other-gates` + `parity` agregação, nome preservado).
+
+Achado load-bearing: `parity` é `required_status_check` por NOME (`gh api
+.../branches/main/protection`) — virar matriz faz o check nunca reportar (pendente para sempre,
+não vermelho). Nota em `vault/notes/matriz-em-job-required-por-nome-fica-pendente-para-sempre-2026-09-08.md`.
+
+Status do ML: 🔄, não ✅ — o AC "tempo medido no CI" é estruturalmente inalcançável por mim (sem
+push). Receita exata para o arquiteto medir está na seção 7 da entrega no roadmap. Detalhes completos,
+sabotagens e saída real em `docs/roadmaps/wip/ROADMAP-2026-09-06-perfil-e-aceleracao-do-check-gates-falsify-sem-perder-cobertura.md`,
+seção "Entrega do ML-2G".
+
+## 2026-09-08 — ares-tf — correção pontual: `make quality` abortava em `check-output-encoding-declared`
+
+Auditoria do arquiteto (invocação única de `make quality`) achou `check-output-encoding-declared:
+FAIL` — `scripts/check-falsify-shard-coverage.sh` invoca `python3` sem declarar `export
+PYTHONIOENCODING=utf-8` antes da 1ª invocação (ALVO 1, ML-1B). `rc=2`, 577 `^OK` (esperado ≥1020).
+Causa: os 2 scripts novos do ML-2G (`check-falsify-shard-coverage.sh`,
+`run-gates-falsify-shard.sh`) foram provados isolados, nunca contra `make quality` completo, antes
+desta auditoria.
+
+Corrigido nos dois arquivos: `export PYTHONIOENCODING=utf-8` logo após `set -euo pipefail`, antes de
+`resolve_py_bin`. `run-gates-falsify-shard.sh` corrigido preventivamente (mesmo padrão, mesmo
+`resolve_py_bin`, ainda não nomeado pelo gate porque a enumeração parou no primeiro infrator). Sem
+allowlist — nenhuma condição equivalente à exceção existente (`check-roadmap-barrier-contract.sh`,
+protegendo PR #238 aberto).
+
+`make quality QUALITY_EXIT=0` completo, foreground, redirecionado a arquivo: `MAKE_RC=0`,
+`grep -c '^FAIL'=0`, `grep -c 'Error 1'=0`, `^OK`=1022 (≥1020), 4117 linhas, cauda com o resumo real
+do `parity-falsify` (não abort). `check-output-encoding-declared.sh` isolado: `rc=0`. `actionlint`
+limpo. `go build`/`go vet`: OK. Sem commit/push — fora da minha autoridade. Roadmap atualizado com a
+seção "Correção pós-auditoria — `ares-tf`, 2026-09-08".

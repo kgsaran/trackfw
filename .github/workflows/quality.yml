@@ -8,6 +8,17 @@ on:
 permissions:
   contents: read
 
+env:
+  # ML-2G (ROADMAP-2026-09-06-perfil-e-aceleracao-do-check-gates-falsify-
+  # sem-perder-cobertura.md): grau da matriz de sharding do gate de
+  # falsificação, num único lugar. A matriz do job `parity-falsify-shard`
+  # abaixo (`strategy.matrix.shard: [0, 1, 2, 3]`) é CABEADA (GitHub Actions
+  # não permite matriz dinâmica sem um job prévio que a compute via
+  # `fromJSON`) — os dois têm de ter o MESMO tamanho. Um step de guarda no
+  # próprio job de matriz reprova cedo se alguém mudar um sem o outro
+  # (compara `strategy.job-total` contra este valor).
+  FALSIFY_SHARD_COUNT: "4"
+
 jobs:
   go:
     runs-on: ubuntu-latest
@@ -519,7 +530,73 @@ jobs:
           Write-Host $msg
           if ($env:GITHUB_STEP_SUMMARY) { Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## AC10 — tempo do job`n`n$msg" }
 
-  parity:
+  # ML-2G (ROADMAP-2026-09-06-perfil-e-aceleracao-do-check-gates-falsify-sem-
+  # perder-cobertura.md): shards de check-gates-falsify.sh como JOBS de
+  # matriz, um por VM própria (4 vCPUs cada), em vez de processos em
+  # background dentro de UM job (isso já existia -- ML-2D,
+  # scripts/run-gates-falsify-parallel.sh, ainda usado por `make parity`
+  # local via `make parity-falsify`). Mesmo gerador dos dois mecanismos:
+  # scripts/gen-falsify-chunks.py <fonte> <dir> <n> -- "o mesmo mecanismo que
+  # distribui entre processos distribui entre jobs" (decisão do roadmap).
+  #
+  # Isolamento entre shards: cada um é uma VM efêmera própria do GitHub
+  # Actions -- isolamento de processo/filesystem/ambiente mais forte que o
+  # dos processos-irmãos do ML-2D (que compartilhavam GOPATH/GOCACHE/
+  # GOMODCACHE do runner). Estado potencialmente compartilhado entre shards
+  # AQUI: nenhum -- nem cache do actions/setup-go (este job, como o job
+  # `parity` original, nunca setou cache:true) nem artefato de build; cada
+  # shard baixa suas próprias deps e builda seu próprio bin/trackfw do zero.
+  parity-falsify-shard:
+    runs-on: ubuntu-latest
+    needs: [go, node, python, package-smoke, windows-integrations-resolve]
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: npm ci --ignore-scripts
+        working-directory: npm
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install pypi/
+      - name: Grau da matriz bate com FALSIFY_SHARD_COUNT (guarda contra drift)
+        run: |
+          if [ "${{ strategy.job-total }}" != "${{ env.FALSIFY_SHARD_COUNT }}" ]; then
+            echo "::error::strategy.job-total=${{ strategy.job-total }} != FALSIFY_SHARD_COUNT=${{ env.FALSIFY_SHARD_COUNT }} -- atualize a lista 'matrix.shard' acima e o env FALSIFY_SHARD_COUNT juntos"
+            exit 1
+          fi
+      - run: go build -o bin/trackfw ./cmd/trackfw
+      - name: Shard ${{ matrix.shard }} de check-gates-falsify.sh
+        run: scripts/run-gates-falsify-shard.sh
+        env:
+          TRACKFW_DISABLE_EXTERNAL_COMMANDS: "1"
+          SHARD_INDEX: ${{ matrix.shard }}
+          SHARD_COUNT: ${{ env.FALSIFY_SHARD_COUNT }}
+          OUTPUT_DIR: falsify-shard-out
+      # if: always() -- sobe o log/rótulos mesmo se o shard reprovou: é
+      # exatamente o que o job de agregação `parity` precisa para NOMEAR
+      # qual shard falhou (em vez de só herdar um "algo falhou" genérico).
+      - name: Upload dos rótulos emitidos por este shard
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: falsify-shard-${{ matrix.shard }}
+          path: falsify-shard-out/
+          retention-days: 7
+
+  # ML-2G: os ~45 gates de `parity` que NÃO são check-gates-falsify.sh --
+  # rodam uma vez só, aqui, em paralelo com os 4 shards acima. Ver Makefile
+  # (alvo `parity-rest`) para a lista completa e a justificativa da divisão.
+  parity-other-gates:
     runs-on: ubuntu-latest
     needs: [go, node, python, package-smoke, windows-integrations-resolve]
     steps:
@@ -544,41 +621,64 @@ jobs:
       # de dependência não são hardcodados aqui).
       - run: python -m pip install --upgrade pip
       - run: python -m pip install pypi/
-      # `make parity` roda a lista completa de gates do alvo `parity` do
-      # Makefile (inclui os 101 cenários de falsificação de
-      # check-gates-falsify.sh, o check-identity-parity.sh e o
-      # check-output-encoding-declared.sh) em vez de uma lista manual
-      # parcial, deliberadamente — ver
-      # docs/req/REQ-2026-08-04-job-parity-do-ci-so-roda-4-de-14-scripts-do-make-parity-falsificacao-e-identity-parity-nunca-rodam-em-ci.md.
-      # MEDIDO NO RUNNER em 2026-09-03 (run 33679814232, decomposto por step):
-      #   job parity                780 s   <- ~90% do tempo de parede de um PR
-      #     check-gates-falsify.sh  610 s   <- 78,4% dos gates
-      #     os outros 43 gates      170 s
-      #   setup 20 s · build 1,5 s · post 0 s  (nenhum overhead a otimizar)
-      #
-      # ATENÇÃO — a nota anterior deste bloco está VENCIDA e fica registrada como
-      # errada em vez de apagada: ela dizia, medida em 2026-08-05 na máquina local,
-      # "~4m15s total" e "não é o gargalo do pipeline de PR". As duas metades
-      # caducaram — são 13m23 no CI, e o parity É o gargalo. A decisão estava certa
-      # quando foi tomada: o alvo tinha ~14 gates e hoje tem 46. O defeito foi nada
-      # revalidar a premissa enquanto a população triplicava.
-      #
-      # Mantido sequencial por MEDIÇÃO, não por inércia
-      # (docs/qualidade/2026-09-03-medicao-do-alvo-parity.md):
-      #   - `make -j` NÃO SE APLICA: as 46 invocações são linhas de UMA receita, e
-      #     make -j paraleliza targets, não linhas. E 5 rodadas concorrentes deram
-      #     2,2-3,4x MAIS LENTO em 10 vCPU; o runner tem 4.
-      #   - matriz de shards ganha só ~19% (13m23 -> ~10m50), porque o piso é o
-      #     check-gates-falsify sozinho. Ele teria de cair a ~40% do job para o
-      #     sharding render ~7 min; está em 75,9%.
-      #   - e `parity` é required_status_check POR NOME com enforce_admins: matriz
-      #     renomeia o check e bloquearia TODO PR. Prova viva na mesma lista:
-      #     `python (3.10)` / `python (3.12)`.
-      #
-      # Os segundos estão no check-gates-falsify (610 de 780) e têm REQ própria:
-      # REQ-2026-09-03-check-gates-falsify-e-610-dos-780-segundos-do-parity-...
-      # Nenhum gate sai do parity: reduzir cobertura não é otimizar.
-      # Próxima revisão desta premissa: revalidar quando o alvo passar de ~60 gates.
-      - run: make parity
+      - run: make parity-rest
         env:
           TRACKFW_DISABLE_EXTERNAL_COMMANDS: "1"
+
+  # ML-2G -- job de AGREGAÇÃO. Mantém o id `parity` DELIBERADAMENTE — nunca
+  # renomear nem transformar em matriz.
+  #
+  # POR QUÊ (medido, não suposto): `gh api repos/kgsaran/trackfw/branches/
+  # main/protection` mostra required_status_checks.contexts incluindo
+  # "parity" (strict:false), por NOME. Se este job virasse matriz, o GitHub
+  # reportaria checks "parity (0)"/"parity (1)"/... e NENHUM check chamado
+  # exatamente "parity" jamais reportaria — todo PR ficaria PENDENTE para
+  # sempre no check obrigatório (não vermelho: simplesmente nunca chega).
+  # É a mesma preocupação que o comentário histórico abaixo (2026-09-03)
+  # já tinha registrado como razão para não shardar — permanece válida para
+  # um job que vira matriz; deixa de valer para um job de AGREGAÇÃO que
+  # preserva o nome e depende (`needs:`) dos jobs que viraram matriz.
+  #
+  # Nota histórica (VENCIDA nas contas, mantida por registrar a decisão
+  # certa no momento em que foi tomada -- mesmo precedente do comentário do
+  # ML-2D em run-gates-falsify-parallel.sh): medido em 2026-09-03, "matriz de
+  # shards ganha só ~19%, porque o piso é check-gates-falsify sozinho" — essa
+  # conta assumia UM job de matriz substituindo `parity` inteiro, sem separar
+  # os outros gates para um job concorrente próprio (o desenho `parity-other-
+  # gates` acima). Também antecedia o ML-2D (paralelismo em processo já
+  # embutido em `make parity`/`parity-falsify`, que muda o piso de 610s).
+  #
+  # if: always() é necessário para o job RODAR mesmo quando um `needs`
+  # falhou (senão o GitHub pula `parity` inteiro e o check obrigatório nunca
+  # reporta -- o mesmo problema do parágrafo acima, por outro caminho). Mas
+  # `if: always()` sozinho faz o job PASSAR por padrão quando pulado ou
+  # quando um needs falhou -- por isso o primeiro step abaixo falha
+  # explicitamente nesse caso, antes de qualquer outra coisa rodar.
+  parity:
+    runs-on: ubuntu-latest
+    needs: [parity-falsify-shard, parity-other-gates]
+    if: always()
+    steps:
+      - name: Nenhum job de needs pode ter falhado ou sido cancelado
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: |
+          echo "::error::pelo menos um job de needs (parity-falsify-shard ou parity-other-gates) falhou ou foi cancelado -- ver os jobs acima. if:always() aqui existe para RODAR e REPROVAR, nunca para mascarar."
+          exit 1
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Baixa os rótulos emitidos por cada shard de falsify
+        uses: actions/download-artifact@v4
+        with:
+          pattern: falsify-shard-*
+          path: falsify-shard-artifacts
+          merge-multiple: true
+      # Guarda de CONJUNTO entre shards -- generalização do ML-2D para job.
+      # Os rótulos ESPERADOS são recalculados AQUI, a partir do checkout
+      # FRESCO deste job (nunca de algo que um shard alega ter esperado) --
+      # só os rótulos EMITIDOS (fato observado, baixado dos artefatos) vêm
+      # dos shards. Evita, em escala de job, o defeito auto-referencial que
+      # o hades-tf achou no ML-2D em escala de processo.
+      - name: Guarda de conjunto entre os shards de falsify
+        run: scripts/check-falsify-shard-coverage.sh scripts/check-gates-falsify.sh "${{ env.FALSIFY_SHARD_COUNT }}" falsify-shard-artifacts

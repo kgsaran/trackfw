@@ -485,7 +485,7 @@ Com fronteiras livres, o teto passa a ser o número de workers (4 vCPUs no runne
 - [x] os 5 pontos vermelhos acima, cada um com evidência no relatório (ver "Reentrega do ML-2D" acima)
 
 ### ML-2B — Os outros 45 gates do alvo `parity`
-**Status:** ⬜ Pendente · **Agente:** `ares-tf`
+**Status:** 🚫 **Abandonado** — decisão do arquiteto, 2026-09-08, com motivo medido
 Eles são ~22% do tempo e rodam **em sequência dentro de uma receita só** do `make` — paralelismo
 nunca foi possível ali, não foi desabilitado.
 **Antes de paralelizar, medir o compartilhamento:** quais escrevem em caminho fixo de `/tmp` ou tocam
@@ -495,7 +495,21 @@ a árvore. Paralelizar gates que compartilham estado corrompe silenciosamente.
 > Dependências: Wave 2.
 
 ### ML-3A — Ganho medido em run comparável
-**Status:** ⬜ Pendente · **Agente:** `ares-tf`
+**Status:** ✅ Concluído · **Agente:** `trackfw_architect` · medido em 2026-09-07
+
+```
+06/09   20m41s   ← antes
+07/09   15m00s   ← PR #291, com o paralelismo        −27%
+```
+
+🔴 **Marcador estava obsoleto:** a medição já estava escrita neste roadmap (seção *"Medição no CI"*)
+e o `Status` continuava `⬜`. Estado do artefato divergindo do estado real — segundo caso hoje, e o
+mesmo defeito que a regra dura de reconciliação existe para pegar. Corrigido na auditoria final.
+
+**Ressalva que a medição obriga:** o ganho é **menor** que o 1,89x local porque o runner tem 4 vCPUs
+contra 10 cores da máquina de medição. E o arco completo desmonta a comemoração — `13m23s` quando a
+REQ abriu, `20m41s` depois de quatro dias somando cenários, `15m00s` agora. **A paralelização pagou a
+dívida que nós criamos e sobrou pouco.**
 🔴 **Medido no CI** (AC4), não somado do local. E com as duas pontas medidas pelo mesmo método —
 `vault/notes/contagem-de-falhas-de-windows-do-go-medida-por-padrao-frouxo-2026-09-04.md`.
 
@@ -616,7 +630,7 @@ fallback `shasum -a 256` exige.
    Contorno legítimo, mas gate em pedaços ≠ gate inteiro. Rodei numa invocação só: verde.
 
 ### ML-2F — Gate para os pins de call site
-**Status:** ⬜ Pendente · **Agente:** `ares-tf`
+**Status:** ✅ Concluído · **Agente:** `ares-tf`
 
 Gate que reprova se `HASH_CMD_BIN`, `PYTHON_BIN` ou o par `TRACKFW_FALSIFY_*` deixarem de ser pinados
 nas recipes que os consomem. Falsificação nas duas direções: remover o pin ⇒ reprova; pin presente ⇒
@@ -624,6 +638,178 @@ aprova. Guarda de vacuidade contra `Makefile` vazio ou alvo ausente.
 
 **Por que é ML e não "fica para depois":** sem ele, os pins do ML-2E são convenção, não contrato — e
 o parecer do `hades-tf` só vale enquanto ninguém editar o `Makefile` sem saber por que aquilo está lá.
+
+## Entrega do ML-2F — `ares-tf`, 2026-09-08
+
+**Arquivo novo:** `scripts/check-parity-call-site-pins.sh`. **Cabeado em:** `Makefile`, alvo `parity`,
+logo após `check-output-encoding-declared.sh` (linha nova, sem alterar nenhuma linha existente).
+
+### 1. O que o gate verifica, por variável, e por que o critério difere
+
+**Duas listas fechadas** (`VARS_PIN`, `VARS_TRACE`) — o CRITÉRIO de projeto está escrito no cabeçalho
+do script: uma derivação ingênua ("toda env var lida via `${VAR:-...}` em algum script chamado pelo
+Makefile") produziria FAIL de dia zero, porque `scripts/check-validate-parity.sh:139` lê
+`${GO_BIN:-}` e cai para um binário próprio em `tmp` quando ausente — um site legítimo, já auditado,
+fora do escopo deste ML (não é a família de controle do ML-2E). Por isso o CONJUNTO DE NOMES é
+congelado — exatamente os que o ML-2E criou — e a manutenção é: todo novo controle desta família
+repete o comentário `"ML-2E, mesma família de HASH_CMD_BIN"` (convenção já em uso em `Makefile:82-84`
+e `check-roadmap-barrier-contract.sh:444`) e seu nome entra em `VARS_PIN`/`VARS_TRACE` no mesmo PR
+que o introduz.
+
+O que **é** derivado em runtime, sem caminho nem número de linha hardcoded: (a) qual script em
+`scripts/*.sh` consome cada variável (via grep no corpo do script, não no Makefile); (b) qual linha
+de recipe do Makefile invoca esse script (via grep no nome-base do script, não uma linha fixa). Só o
+NOME da variável é fixo — o restante é descoberto a cada execução.
+
+- **`HASH_CMD_BIN`, `PYTHON_BIN` → exigem PIN** no Makefile: a linha de recipe que invoca o script
+  consumidor precisa conter `VAR=` (regex de borda de palavra, não substring — evita casar
+  `HASH_CMD_BIN` contra o `HASH_CMD` do topo do arquivo). Critério: são pinados por desenho (ML-2E),
+  então a ausência do pin É a regressão.
+- **`TRACKFW_FALSIFY_SCRIPT`/`_GEN`/`_JOBS` → exigem RASTRO**, não pin: o ML-2E decidiu, com aval do
+  `hades-tf`, que pinar essas três destruiria a via de sabotagem controlada do harness (é para isso
+  que existem). O gate confere que `run-gates-falsify-parallel.sh` ainda tem a guarda
+  `if [[ -n "${VAR:-}" ]]` seguida (até 6 linhas depois — medido no arquivo real, o `echo` de
+  `TRACKFW_FALSIFY_JOBS` fica na linha +5 da guarda, não +3 como as outras duas) por um `echo ...
+  >&2` que menciona a variável.
+
+### 2. As três sabotagens (+ uma quarta, achada durante a implementação), com saída real
+
+Todas rodadas contra uma CÓPIA da árvore em `/private/tmp/.../scratchpad` — nunca o repositório real
+foi mutado durante a falsificação; sem `TRACKFW_*` de redirecionamento (ponto do advisor: um env var
+de desvio no próprio gate que audita desvios seria a mesma falha que o `hades-tf` achou no ML-2D). A
+raiz é passada como `$1` posicional (`ROOT="${1:-.}"`, mesmo idioma de
+`check-ci-workflow-job-id-collision.sh:27`); a linha do Makefile não passa argumento, então o
+ambiente não redireciona a invocação real.
+
+**Sabotagem 1 — remover o pin de `HASH_CMD_BIN` da linha de recipe:**
+```
+FAIL [call-site-pin/HASH_CMD_BIN/check-roadmap-barrier-contract.sh]: linha de recipe invoca
+check-roadmap-barrier-contract.sh sem pinar HASH_CMD_BIN= -- pin removido: 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-roadmap-barrier-contract.sh
+rc=1
+```
+
+**Sabotagem 2 — pin presente (baseline real, sem alteração):**
+```
+OK   [call-site-pin/HASH_CMD_BIN/check-roadmap-barrier-contract.sh]
+OK   [call-site-pin/PYTHON_BIN/smoke-integration-packages.sh]
+OK   [call-site-trace/TRACKFW_FALSIFY_SCRIPT/run-gates-falsify-parallel.sh]
+OK   [call-site-trace/TRACKFW_FALSIFY_GEN/run-gates-falsify-parallel.sh]
+OK   [call-site-trace/TRACKFW_FALSIFY_JOBS/run-gates-falsify-parallel.sh]
+rc=0
+```
+
+**Sabotagem 3 — guarda de vacuidade, três variantes:**
+```
+3a) Makefile vazio:
+    check-parity-call-site-pins: Makefile ausente ou vazio em .../Makefile
+    rc=1
+3b) Makefile só com comentários (zero linhas de recipe após o filtro):
+    check-parity-call-site-pins: Makefile não tem nenhuma linha de recipe (alvo ausente ou vazio)
+    rc=1
+3c) script consumidor de PYTHON_BIN removido de scripts/ (renomeado sem atualizar nada):
+    FAIL [call-site-pin/PYTHON_BIN/consumer-found]: nenhum script em scripts/*.sh lê ${PYTHON_BIN:-...}
+    ou ${PYTHON_BIN} -- o consumidor desapareceu, ou foi renomeado sem atualizar o gate
+    rc=1
+```
+Nenhuma variante aprova por não achar nada — todas nomeiam o que sumiu.
+
+**Sabotagem 4 — achada implementando a Sabotagem 1, não pedida no roadmap, mas é a mesma armadilha
+que custou uma reentrega ao ML-2D (comentário vira fronteira falsa):** remover o pin de `PYTHON_BIN`
+da linha de recipe real **mantendo** o comentário `Makefile:82-84` que literalmente contém a frase
+"PYTHON_BIN pinado":
+```
+FAIL [call-site-pin/PYTHON_BIN/smoke-integration-packages.sh]: linha de recipe invoca
+smoke-integration-packages.sh sem pinar PYTHON_BIN= -- pin removido: 	scripts/smoke-integration-packages.sh
+rc=1
+```
+Confirma que `recipe_lines()` filtra linha de comentário tab-indentada (`grep -vE "^${TAB}[[:space:]]*#"`)
+antes de procurar o pin — sem o filtro, o comentário sozinho teria convencido o gate de que o pin
+ainda existia.
+
+### 3. Como derivou a lista (frozen, com justificativa)
+
+Ver seção 1 — congelada por desenho, não por atalho: a alternativa (derivar de todo uso de
+`${VAR:-...}`) foi tentada mentalmente e descartada por produzir falso-positivo de dia zero contra
+`check-validate-parity.sh` (site legítimo e não-relacionado à família ML-2E). O que se derivou de
+fato foi o *script consumidor* e a *linha de recipe*, nunca hardcoded.
+
+### 4. Como verificou que não há recursão
+
+`grep -n "TRACKFW\|make \|\.sh\"\|check-.*\.sh\b" scripts/check-parity-call-site-pins.sh` só retorna a
+própria linha `VARS_TRACE=(TRACKFW_FALSIFY_SCRIPT ...)` — o gate nunca invoca `make`, nenhum
+`check-*.sh` nem `go build`; ele só lê texto (`grep`/`sed`) do `Makefile` e de `scripts/*.sh`. Rodado
+isolado: `0.12s` (não os ~478-712s do gate que ele protege) — confirma que não reexecuta o harness de
+falsificação. `make -n parity` mostra a linha nova na posição 47/52, sem repetição.
+
+### 5. `make quality` — invocado em blocos, foreground, log combinado
+
+Limite de 10 min por chamada de ferramenta obriga split (o `run-gates-falsify-parallel.sh` sozinho
+levou `8:11.53` nesta máquina/sessão — mais lento que os 478-712s de rodadas anteriores, atribuído a
+carga concorrente da máquina, não a este ML: nenhum arquivo do harness de falsify foi tocado). 7
+blocos em sequência, foreground, cada saída redirecionada para arquivo em
+`scratchpad/quality-batchN.log`, concatenados em `quality-combined.log`:
+
+```
+grep -c '^FAIL' quality-combined.log   → 0     (sobre as 4115 linhas INTEIRAS, nunca | tail)
+grep -c '^OK'   quality-combined.log   → 1020
+```
+
+Blocos: (1) build + 19 `check-*-parity.sh` iniciais; (2) 16 `check-*-parity.sh` seguintes; (3)
+`run-gates-falsify-parallel.sh` isolado — `rc=0`, `8 chunks, 412 OK, 0 FAIL, guarda de conjunto OK`;
+(4) os 11 gates finais do alvo `parity`, **incluindo o gate novo rodando no próprio `parity` real**
+(`scripts/check-parity-call-site-pins.sh` aparece como linha própria no bloco, `rc=0` agregado) e
+`check-pr-closing-keyword.sh --self-test`; (5) `go test` + `go vet` — `ok` em todos os pacotes; (6)
+`npm test` — `885 tests, 0 fail`; (7) `pytest` — `1667 passed, 66 subtests passed`.
+
+`scripts/check-cli-parity.sh` isolado (AC explícito do roadmap): `rc=0`.
+
+### Conjunto de rótulos de falsificação inalterado — método declarado
+
+`git diff --name-only -- scripts/check-gates-falsify.sh scripts/gen-falsify-chunks.py
+scripts/run-gates-falsify-parallel.sh` → vazio: nenhum dos três arquivos do harness foi tocado nesta
+entrega. Combinado com a guarda interna do próprio driver (construída no ML-2D, auditada no ML-2E)
+reportando `412 OK, 0 FAIL, guarda de conjunto OK (nenhum rotulo esperado ausente)` — o mesmo número
+que a auditoria do ML-2D já havia confirmado (`412 OK`) — o `diff` vazio + o número idêntico são a
+prova de que nada mudou no conjunto; não rodei uma segunda vez o gate de 8 minutos só para comparar
+rótulo a rótulo, porque a fonte que gera o rótulo está comprovadamente intocada.
+
+### Regra dura de reconciliação — uma frase por teste novo
+
+Este ML não adiciona teste dentro da suíte `check-gates-falsify.sh` — adiciona um GATE NOVO
+independente. A frase por sabotagem (o equivalente do "teste" aqui): Sabotagem 1 afirma "o gate
+reprova, nomeando a variável, quando o pin de call site é removido da linha de recipe real do
+Makefile" — confirmado pela saída `FAIL [call-site-pin/HASH_CMD_BIN/...]` acima. Sabotagem 3 afirma
+"o gate nunca aprova por não achar nada" — confirmado pelas 3 variantes reprovando com `rc=1`,
+cada uma nomeando o que sumiu. Sabotagem 4 afirma "um comentário que menciona a variável não é
+confundido com o pin real" — confirmado pelo `FAIL` mesmo com o comentário presente.
+
+### Regra dura de paridade — 3 CLIs: exceção explícita, escrita aqui
+
+`scripts/check-parity-call-site-pins.sh` existe **só** em `scripts/`, sem contraparte em
+`npm/src/`/`pypi/trackfw/` — não é violação. `docs/cli-parity.md:1-4` define o contrato como
+"public commands" dos 3 CLIs (`init`, `req`, `roadmap`, `validate`, ...); um gate interno de CI que
+audita o próprio `Makefile` do repositório não expõe superfície de CLI nenhuma. Precedente: os outros
+~45 `check-*.sh` do alvo `parity` (`check-cli-parity.sh`, `check-ci-workflow-job-id-collision.sh`,
+etc.) também vivem só em `scripts/`, nunca replicados por CLI — é a mesma categoria de
+"infra"/tooling de CI que `CLAUDE.md` já lista como exceção explícita à regra de paridade. Nenhum
+comportamento visível de `trackfw <comando>` mudou nesta entrega.
+
+### Status ✅ — pendente da auditoria do arquiteto
+
+Marcado ✅ seguindo o mesmo precedente já registrado pelo próprio ML-1A deste roadmap: o CLAUDE.md do
+projeto instrui marcar o ML concluído ao entregar; o role card de Infra instrui atualizar só depois
+da auditoria do orquestrador. Sigo o CLAUDE.md (autoridade mais específica deste repositório), mas o
+✅ é condicional — reverte para 🔄 se a auditoria do `trackfw_architect` encontrar algo que a exija.
+
+### Sítios de mesma causa — reportados, nenhum artefato aberto
+
+- `check-validate-parity.sh:139` também lê um override (`${GO_BIN:-}`) sem pin no Makefile — mas é um
+  site já auditado e intencional (fallback para binário próprio em tmp), não a mesma causa do ML-2E
+  (não existe guarda que um `GO_BIN` forjado ali possa satisfazer vaziamente da mesma forma que
+  `HASH_CMD_BIN` fazia contra `check-roadmap-barrier-contract.sh`). Não incluído na lista congelada;
+  se algum dia alguém decidir que merece a mesma proteção, é uma linha nova em `VARS_PIN`, não uma
+  REQ nova.
+- ML-2G (shardar em jobs de matriz) segue como próximo item do roadmap, não tocado aqui.
 
 
 ## Medição no CI — arquiteto, 2026-09-07 (a que o ML-3A pedia)
@@ -648,7 +834,8 @@ esperado, porque o runner tem **4 vCPUs** contra os 10 cores da máquina onde me
 mesmos criamos e sobrou pouco. Enquanto cada campanha somar cenários, o número volta a subir.
 
 ### ML-2G — Shardar o gate em jobs de matriz (custo zero)
-**Status:** ⬜ Pendente · **Agente:** `ares-tf` · **PR próprio** (o #291 já foi mergeado)
+**Status:** 🔄 Em andamento — implementado e provado localmente; falta a medição no CI (ver "O que este
+ML NÃO conseguiu fechar" abaixo) · **Agente:** `ares-tf` · **PR próprio** (o #291 já foi mergeado)
 
 **Runner maior não é opção:** larger runners **nunca** entram no free tier, nem em repositório
 público — e o `trackfw` é público. Verificado na política de preços de 2026.
@@ -683,3 +870,275 @@ distribui entre jobs.
 processo), e o que a regra protege (a janela de atenção sobre a causa) segue aberto **pelo roadmap**,
 que continua em `wip` com ML-2F e ML-3A pendentes. 🔴 O que **seria** violação é fechar este roadmap
 antes de o ML-2G entrar.
+
+## Entrega do ML-2G — `ares-tf`, 2026-09-08
+
+### 0. O que este ML NÃO conseguiu fechar — declarado antes do resto
+
+🔴 **O AC "tempo medido no CI, não projetado" não é alcançável por mim nesta entrega.** O handoff desta
+sessão proíbe explicitamente qualquer operação de Git (branch/commit/push) — regra do meu role card,
+não deste roadmap. Não há caminho para um número de CI sem um push. Em vez de queimar a sessão tentando
+contornar isso, entrego o mecanismo inteiro provado **localmente** (build, sabotagem, falsificação nas
+duas direções) e deixo, na seção 6, a receita exata para o arquiteto rodar no CI e colar os números.
+Por isso o status é 🔄, não ✅ — o precedente do ML-2F ("marca ✅, reverte se a auditoria achar algo")
+não se aplica quando o próprio agente já sabe, ao entregar, que um AC obrigatório ficou de fora.
+
+### 1. A descoberta que reabre a nota histórica do arquiteto (2026-09-03)
+
+O comentário em `.github/workflows/quality.yml` (então na linha ~574) já dizia "matriz renomeia o
+check e bloquearia TODO PR" como razão para não shardar. Medido, não presumido:
+
+```
+gh api repos/kgsaran/trackfw/branches/main/protection --jq '.required_status_checks'
+{"checks":[...,{"context":"parity"},...],"contexts":[...,"parity",...],"strict":false}
+```
+
+`parity` é `required_status_check` **por nome exato**. O efeito de virar matriz não é "bloqueia" —
+é **pior de diagnosticar**: o GitHub reportaria `parity (0)`/`parity (1)`/... e nenhum check chamado
+`parity` apareceria nunca — todo PR fica **pendente para sempre**, não vermelho. Nota completa em
+`vault/notes/matriz-em-job-required-por-nome-fica-pendente-para-sempre-2026-09-08.md`.
+
+**Desenho consequente:** o job `parity` não vira matriz. Os workers viram matriz sob IDs novos
+(`parity-falsify-shard`, `parity-other-gates`); `parity` vira um job fino de **agregação**,
+`needs: [parity-falsify-shard, parity-other-gates]`, que preserva o nome. O comentário histórico foi
+**mantido no arquivo** (não apagado), marcado como vencido nas contas mas correto na decisão que
+motivou — mesmo precedente já em uso no comentário do ML-2D em `run-gates-falsify-parallel.sh`.
+
+### 2. Duas armadilhas do job de agregação, das quais uma eu só vi depois de pedir revisão
+
+- `if: always()` faz o job de agregação RODAR mesmo com `needs` falho — necessário, senão o check
+  obrigatório também não reporta. Mas sozinho ele faz o job **passar** por padrão nesse caso. Primeiro
+  step de `parity` reprova explicitamente se `contains(needs.*.result, 'failure') ||
+  contains(needs.*.result, 'cancelled')`, antes de qualquer outra coisa rodar.
+- Os rótulos **esperados** da guarda de conjunto são recalculados no PRÓPRIO job de agregação, a partir
+  do checkout fresco dele (nunca de algo que um shard upload) — só os rótulos **emitidos** (fato
+  observado no stdout real do chunk) vêm dos artefatos de shard. Sem isso seria o mesmo defeito
+  auto-referencial que o `hades-tf` achou no ML-2D, em escala de job.
+
+### 3. Arquivos novos e alterados
+
+- **Novo** `scripts/run-gates-falsify-shard.sh` — roda UM chunk (`SHARD_INDEX`/`SHARD_COUNT` via env),
+  reutilizando `gen-falsify-chunks.py` (mesmo gerador do ML-2D). Guarda LOCAL (sentinela + rótulos deste
+  chunk) como defesa em profundidade; grava `shard_N.actual`/`shard_N.log`/`shard_N.rc` em `OUTPUT_DIR`.
+- **Novo** `scripts/check-falsify-shard-coverage.sh` — guarda de CONJUNTO entre shards, rodada pelo job
+  de agregação. Recalcula o esperado a partir de checkout fresco (seção 2); nomeia shard ausente, shard
+  com rc != 0, e rótulo esperado ausente do conjunto emitido por aquele shard especificamente.
+- **`Makefile`** — `parity` dividido em `parity-rest` (os ~45 gates que não são falsify) e
+  `parity-falsify` (só `run-gates-falsify-parallel.sh`); `parity: build parity-rest parity-falsify`
+  preserva `make parity`/`make quality` locais bit-a-bit equivalentes ao comportamento anterior (mesmas
+  46 linhas de recipe, mesmo pin `GO_BIN=`; a ÚNICA diferença observável é a ORDEM — falsify passa a
+  rodar por último em vez de ~posição 30 — sem efeito de cobertura, `make -n parity` confirma as 52
+  linhas, incluindo comentários, idênticas ao `git diff` só reordenando).
+- **`.github/workflows/quality.yml`** — `env.FALSIFY_SHARD_COUNT: "4"` no topo; jobs
+  `parity-falsify-shard` (matriz `shard: [0,1,2,3]`, `needs` idêntico ao `parity` original:
+  `[go, node, python, package-smoke, windows-integrations-resolve]`), `parity-other-gates` (mesmo
+  `needs`, roda `make parity-rest`), e `parity` (agregação, seções 1-2). Grau da matriz cabeado
+  (GitHub Actions não permite matriz dinâmica sem job prévio com `fromJSON`) com guarda de drift: um
+  step compara `strategy.job-total` contra `env.FALSIFY_SHARD_COUNT` e reprova cedo se alguém mudar um
+  sem o outro.
+
+### 4. Mecanismo de isolamento entre shards + estado compartilhado (AC herdado do ML-2D)
+
+**Isolamento:** cada shard é uma VM efêmera própria do GitHub Actions — isolamento de processo,
+filesystem e ambiente **mais forte** que o dos processos-irmãos do ML-2D (que compartilhavam
+`GOPATH`/`GOCACHE`/`GOMODCACHE` do runner). **Estado compartilhado encontrado:** nenhum deliberado —
+nem cache do `actions/setup-go` (nem o job `parity` original nem os novos setam `cache: true`, herdado
+sem alteração) nem artefato de build entre shards; cada um baixa suas próprias deps e builda seu
+próprio `bin/trackfw` do zero. O único artefato que atravessa job é o de saída
+(`falsify-shard-N` → baixado pelo job de agregação), com nome único por valor de matriz — confirmado
+que `upload-artifact@v4` não colide (`name: falsify-shard-${{ matrix.shard }}`, um valor por shard).
+
+### 5. Falsificação — provas, com saída real
+
+**Sintaxe/estrutura do workflow:**
+```
+python3 -c "import yaml; yaml.safe_load(open('.github/workflows/quality.yml'))"  → sem erro, 11 jobs
+actionlint .github/workflows/quality.yml                                         → rc=0, sem achado
+```
+
+**Gates de governança do próprio repositório, re-rodados após CADA edição de Makefile/workflow (não só
+no final — pedido explícito da revisão desta entrega):**
+```
+scripts/check-parity-call-site-pins.sh        → rc=0, 7 verificações (achou run-gates-falsify-shard.sh
+                                                  como novo consumidor de TRACKFW_FALSIFY_SCRIPT/_GEN
+                                                  automaticamente, por reusar o mesmo idioma de guarda)
+scripts/check-ci-workflow-job-id-collision.sh → rc=0 (audita templates gerados p/ OUTROS projetos, não
+                                                  quality.yml -- confirmado sem interferência)
+go build ./... && go vet ./...                → OK
+```
+
+**Predição escrita ANTES de qualquer execução real (o AC da regra dura de reconciliação, para a
+medição de `gen-falsify-chunks.py`):** o ML-2D já mediu `largest_fused_unit_lines=3487` (30 cenários
+indivisíveis). Gerado (sem executar) o manifesto real a `N=4`:
+```
+python3 scripts/gen-falsify-chunks.py scripts/check-gates-falsify.sh <dir> 4
+chunk=0  3536 linhas
+chunk=1  3525 linhas
+chunk=2  3527 linhas
+chunk=3  4916 linhas   ← carrega o bloco fundido de 3487 linhas sozinho (fused_blocks=1)
+```
+**Confirma a predição do advisor por escrito antes de medir tempo:** a `N=4` o bloco indivisível é
+`chunk_3` sozinho — ~1,4x o tamanho dos outros 3. Isso prevê que `N=8` **não** vai chegar perto de
+2x mais rápido que `N=4`: o piso continua sendo esse mesmo bloco, que não se divide mais (é `chunk_7`
+sozinho a N=8, mesmo tamanho absoluto). Se a medição do arquiteto no CI (seção 6) confirmar isso, é o
+resultado esperado, não uma regressão — e os 25 `cross_segment_edges` já nomeados pelo ML-2D continuam
+sendo a próxima alavanca, não este ML.
+
+**Integração real, ponta a ponta, contra o script de produção (não fixture sintética):**
+```
+make build
+SHARD_INDEX=1 SHARD_COUNT=4 OUTPUT_DIR=<dir> bash scripts/run-gates-falsify-shard.sh
+→ 92 OK/rótulos emitidos, sentinela "CHUNK_COMPLETE 1" presente, guarda local sem disparo,
+  rc=0, ~2min55s de parede (1 de 4 shards -- não é o número final de CI, é a prova de que
+  o mecanismo roda contra o arquivo real e produz os 3 artefatos esperados:
+  shard_1.actual (92 linhas), shard_1.log, shard_1.rc="0")
+```
+
+**Sabotagens do job de agregação (`check-falsify-shard-coverage.sh`), com o manifesto REAL a `N=4` e
+os rótulos REAIS extraídos dele (shard_1 é o run real acima; shards 0/2/3 são os rótulos literais que
+o próprio manifesto declara esperar deles, o que é dado observável do gerador, não hipótese) —
+`ARTIFACTS_DIR` montado, script rodado sem alterar nenhuma outra variável entre as 4 rodadas:**
+
+```
+Caminho feliz (0,1,2,3 todos presentes, rc=0, todos os rótulos esperados presentes):
+  rc=0, 8 verificações OK, 0 FAIL
+
+Sabotagem A -- artefato do shard 2 removido (upload falhou / job não rodou):
+  FAIL [shard-coverage/shard_2/present]: artefato ausente ... job da matriz nao rodou ou upload falhou
+  rc=1
+
+Sabotagem B -- shard_0.rc forjado para 1 (chunk falhou OU guarda local reprovou):
+  FAIL [shard-coverage/shard_0/rc]: shard_0 reportou rc=1 (chunk falhou, ou a guarda local do
+  shard reprovou -- ver log shard_0.log)
+  rc=1
+
+Sabotagem C -- 1 linha removida de shard_3.actual (rótulo real, silenciosamente "esquecido" no upload):
+  FAIL [shard-coverage/shard_3/label/adr-not-accepted/go/adr_accepted_when_req_done-baseline]:
+  rotulo esperado AUSENTE do conjunto emitido pelo shard 3: adr-not-accepted/go/...-baseline
+  rc=1
+```
+
+Nenhuma das 3 sabotagens produz `rc=0` por não achar nada — todas nomeiam exatamente o que sumiu, a
+mesma exigência que a guarda do ML-2D já satisfazia em escala de processo, agora replicada em escala
+de job.
+
+### 6. Regra dura de reconciliação — uma frase por artefato novo
+
+- `scripts/run-gates-falsify-shard.sh` afirma "roda um único chunk e reprova (guarda local) se o
+  sentinela ou algum rótulo esperado por ESTE chunk faltar" — confirmado pelo run real contra shard 1
+  (rc=0, sentinela presente, guarda local sem disparo) e pela Sabotagem B acima (rc forjado propaga).
+- `scripts/check-falsify-shard-coverage.sh` afirma "recalcula o esperado de um checkout fresco e
+  reprova nomeando shard ausente, shard com rc!=0, ou rótulo ausente do CONJUNTO emitido por aquele
+  shard" — confirmado pelas Sabotagens A, B e C, cada uma reprovando por um mecanismo diferente e
+  nomeando exatamente a causa.
+- O step "Grau da matriz bate com FALSIFY_SHARD_COUNT" afirma "reprova cedo se a lista `matrix.shard`
+  e o env `FALSIFY_SHARD_COUNT` divergirem" — não falsificado nesta entrega (exigiria rodar o workflow
+  no CI com um dos dois valores propositalmente errado); declarado como risco residual não coberto
+  localmente, não hipótese apresentada como prova.
+
+### 7. Receita exata para o arquiteto medir no CI (o que este ML não pôde fazer)
+
+1. Fazer merge/push desta branch e observar o run do workflow `Quality` no PR.
+2. Anotar, do run: tempo de parede de `parity-falsify-shard (0)`, `(1)`, `(2)`, `(3)` individualmente
+   (confirma ou refuta a predição da seção 5 sobre `chunk_3`/`shard 3` ser o mais lento), tempo de
+   `parity-other-gates`, e tempo do job `parity` (agregação — deve ser segundos, não minutos).
+3. Tempo de PAREDE do pipeline inteiro (do primeiro job ao `parity` fechar) — comparável ao "15m00s"
+   já registrado pelo arquiteto em 2026-09-07 para o PR #291. 🔴 Não reusar o `954s`/`980s` local desta
+   entrega como baseline — o handoff já apontou que esses números não reconciliam aritmeticamente com
+   os 15m00s do pipeline real; a comparação correta é CI-contra-CI, run comparável.
+4. Confirmar `parity` aparece como check obrigatório reportando normalmente (a preocupação da seção 1).
+5. Se quiser falsificar a guarda de conjunto ao vivo: forçar um chunk a falhar (ex. sabotar
+   temporariamente um `assert_*` do arquivo real numa branch de teste) e confirmar que `parity`
+   reprova — mesmo AC que o ML-2A já exigia para o harness original.
+
+### 8. Regra dura de paridade — 3 CLIs: exceção explícita
+
+`scripts/run-gates-falsify-shard.sh` e `scripts/check-falsify-shard-coverage.sh` existem só em
+`scripts/`, sem contraparte em `npm/src/`/`pypi/trackfw/` — mesmo precedente já registrado pelo ML-2F:
+são tooling interno de CI deste repositório, não superfície de `trackfw <comando>`.
+
+### Sítios de mesma causa — reportados, nenhum artefato aberto
+
+- Os jobs `windows-full-suites`/`windows-defect-reproduction` não passam por `check-gates-falsify.sh` e
+  não foram tocados — fora do escopo deste ML (mecanismo diferente, Windows roda camada 1 completa via
+  outro caminho, já documentado nas linhas desses jobs).
+- Nenhum sítio novo de mesma causa encontrado durante a implementação.
+
+## Correção pós-auditoria — `ares-tf`, 2026-09-08
+
+O `make quality` completo (rodado numa invocação só pelo arquiteto) abortou antes de fechar:
+`check-output-encoding-declared: FAIL` porque `scripts/check-falsify-shard-coverage.sh` invoca
+`python3` (linha 44, dentro de `resolve_py_bin`) sem declarar `export PYTHONIOENCODING=utf-8` antes
+da primeira invocação — o mesmo ALVO 1 que os outros 40 `scripts/check-*.sh` já cumprem (ML-1B do
+ROADMAP-2026-09-02). `rc=2`, 577 `^OK` contra os ≥1020 esperados — o gate morreu no meio, não
+reprovou de forma nomeada.
+
+**Causa:** os dois scripts novos deste ML (`check-falsify-shard-coverage.sh` e
+`run-gates-falsify-shard.sh`, ambos com `resolve_py_bin()` copiado do driver de processo) foram
+escritos e provados isoladamente, fora de `make quality`, então o gate anti-reintrodução do ML-1B
+nunca correu contra eles antes desta auditoria.
+
+**Correção — mesma causa, mesmo ML:** adicionado
+`export PYTHONIOENCODING=utf-8` logo após `set -euo pipefail`, em ambos os arquivos, antes de
+`resolve_py_bin`:
+- `scripts/check-falsify-shard-coverage.sh`
+- `scripts/run-gates-falsify-shard.sh`
+
+`run-gates-falsify-shard.sh` não aparecia ainda no `FAIL` do arquiteto (a enumeração do gate parou no
+primeiro infrator), mas tem o mesmo padrão (`resolve_py_bin` idêntico, comentário próprio dizendo
+"Mesma resolução de Python do driver de processo") — corrigido preventivamente na mesma passada, sem
+esperar o gate nomear o segundo.
+
+**Não recomendo allowlist:** a única entrada existente em `ALLOWLIST` (`check-roadmap-barrier-
+contract.sh`) protege um sítio com PR externo aberto (#238) onde forçar UTF-8 mascararia o defeito de
+fundo sob investigação. Nenhuma condição equivalente existe aqui — os dois scripts novos não têm
+motivo para divergir do padrão dos outros 39 gates.
+
+**As três medidas, sobre o `make quality QUALITY_EXIT=0` completo redirecionado para arquivo:**
+```
+rc (MAKE_RC)          = 0
+grep -c '^FAIL'        = 0
+grep -c 'Error 1'       = 0
+grep -c '^OK'          = 1022   (era 577 no run abortado; ≥ 1020 exigido)
+wc -l                  = 4117
+cauda do log           = "...suite completa -- 8 chunks, 412 OK, 0 FAIL, guarda de conjunto OK..."
+```
+`scripts/check-output-encoding-declared.sh` isolado: `rc=0`. `actionlint
+.github/workflows/quality.yml`: limpo. `go build ./...` e `go vet ./...`: OK.
+
+**Reconciliação:** nenhum teste novo foi adicionado por esta correção — é uma declaração ausente em
+duas linhas de shell, coberta pela asserção estática já existente em `check-output-encoding-
+declared.sh` (ALVO 1), que passou a aprovar os dois arquivos após a mudança.
+
+
+## ML-2B abandonado — arquiteto, 2026-09-08
+
+**Motivo medido, não preferência.** Atribuição por segmento no CI (run `34055694451`):
+
+```
+check-gates-falsify.sh          876.5s   72.6%   ← atacado (ML-2D, ML-2G)
+check-parity-contract-coverage    94.3s    7.8%
+os outros 45 gates               ~237s   ~19.6%  ← escopo do ML-2B
+```
+
+O ML-2B mira **~20%** de um job que já caiu **27%** (20m41s → 15m00s) e que a matriz do ML-2G deve
+levar a poucos minutos. Depois disso, os ~237s **passam a ser a maior fatia** — mas de um job pequeno,
+onde economizar 2 minutos não muda o ciclo de ninguém.
+
+🔴 **E o roadmap do ML-2B já registrava o risco que o torna caro:** *"eles rodam em sequência dentro
+de uma receita só do `make` — paralelismo nunca foi possível ali, não foi desabilitado. Antes de
+paralelizar, medir o compartilhamento: quais escrevem em caminho fixo de `/tmp` ou tocam a árvore.
+Paralelizar gates que compartilham estado corrompe silenciosamente."*
+
+Ou seja: **o trabalho barato já foi feito, e o que sobra é o caro** — 45 gates para auditar por estado
+compartilhado, com risco de corrupção silenciosa, para ganhar minutos num job que já não é o gargalo.
+
+### Por que abandonar em vez de deixar pendente
+
+ML que ninguém vai fazer é o mesmo passivo das REQs órfãs — **só mais bem escondido**, porque um
+roadmap com pendência parece trabalho planejado em vez de dívida. Este projeto tem regra dura contra
+exatamente isso: *"registro não é correção"*.
+
+Se o `parity` voltar a incomodar depois da matriz, este ML **reabre com número novo** — a medição por
+segmento é reproduzível pelo mesmo método (atribuição por invocação de script no log do CI). O que
+não vale é ele ficar `⬜` por anos como promessa.
