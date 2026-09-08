@@ -1455,3 +1455,52 @@ mesmo da campanha: *"se eu corrigir esta causa, exatamente estas falhas fecham �
 
 **Desbloqueia:** a decisão de ligar o `parity` em Windows no CI (ML-3A da
 `ROADMAP-2026-09-07-gates-rodam-no-windows-...`, hoje decidida como "não ligar até haver triagem").
+
+### ML-R3 — O guard de travessia do ramo `default:` fala uma gramática só
+**Status:** ⬜ Pendente · **Agente:** `apolo-tf` · 🔴 **segurança (contido)**
+
+Achado do `hades-tf` na revisão do ML-R1, **medido, não inferido**.
+
+`internal/integrations/manager.go:725-729`, ramo `default:`:
+
+```go
+if path.Clean(destination) != destination || destination == "." || strings.HasPrefix(destination, "../") {
+```
+
+Usa o pacote **`path`** (POSIX), não `filepath` — **não enxerga `\`**. Medido:
+
+```
+path.Clean("..\\outside.md") == "..\\outside.md"     → true   (passa no check)
+strings.HasPrefix("..\\outside.md", "../")           → false  (passa no check)
+```
+
+Ou seja, `..\outside.md` **passa incólume pelo guard early em qualquer host** e só é barrado depois
+pelo `beneath()`. **Contido, não explorável** — mas é o mesmo padrão do ML-R1: guard cedo cego a uma
+gramática, salvo apenas pela rede de baixo nível.
+
+🔴 **Por que não pode ficar como está:** `beneath()` é a última linha de defesa. Um guard early que
+não faz seu trabalho torna o sistema dependente de **uma** camada, e a decisão arquitetural do
+projeto é ponto único **correto**, não redundância acidental.
+
+**Paridade medida pelo `hades-tf`:** Node é imune (rejeita `\` de saída em `manager.js:50`); Python é
+imune (`".." in Path(raw).parts` enxerga `..` mesmo em `WindowsPath`). **O Go é o único dos três** cujo
+guard early fala uma gramática só.
+
+**Cobertura de teste que falta:** `manager_test.go:204` só tem `"../outside.md"` — a forma POSIX.
+Nunca `"..\\outside.md"`.
+
+**Falsificação nas duas direções:**
+- `..\outside.md` ⇒ **rejeitado pelo guard early**, não pelo `beneath()` — prove qual camada barrou;
+- destino relativo legítimo ⇒ **aceito** (guarda de vacuidade);
+- 🔴 o teste tem de reprovar se a correção for revertida, **sem depender de rodar no Windows** —
+  mesma armadilha do ML-R1: a plataforma onde testamos é a que não tem o defeito.
+
+**Critérios de aceite:**
+- [ ] `..\outside.md` barrado pelo guard early, com prova de qual camada rejeitou
+- [ ] conjunto de vetores relativos legítimos inalterado (zero flips)
+- [ ] teste revert-proof sem Windows
+- [ ] `make quality QUALITY_EXIT=0`, `grep -c '^FAIL'` sobre a saída inteira = 0
+- [ ] revisão do `hades-tf` — é guarda de segurança
+
+**Por que é ML e não REQ nova:** mesma causa da reabertura desta REQ — predicado de segurança cego a
+uma gramática de caminho. Mesma causa ⇒ mesma REQ ⇒ mesmo PR.
