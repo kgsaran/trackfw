@@ -1168,3 +1168,60 @@ zero chamadas dependentes de SO, revisado pelo `hades-tf`.
 ### Os outros 5 grupos da triagem
 **Status:** ⬜ Pendente — **não** entram neste ML. Cada um com causa própria; misturar aqui repetiria
 o erro que estimou o grupo `IsAbs` em 14 falhas e entregou 2.
+
+## 🔴 ML-R1 BLOQUEADO na auditoria — regressão de segurança medida, 2026-09-08
+
+**Status:** ❌ **Bloqueado** — não commitado como entrega.
+
+O relatório do `apolo-tf` justifica a mudança como **estritamente restritiva**:
+*"`filepath.IsAbs(x)==true` implica `pathanchor.IsAnchored(x)==true`, logo nenhum caminho antes
+aceito muda de comportamento; só os antes mal-aceitos passam a ser rejeitados"*.
+
+**A afirmação é FALSA no Windows.** Sonda do arquiteto, 26 vetores, rodada nos dois hosts:
+
+```
+POSIX     contraexemplos = 0
+Windows   contraexemplos = 6
+```
+
+Os seis: `\\` · `\\x` · `\\.\x` · `\\srv` · `\\srv\` · `\\\a\b` — UNC malformado, em que
+`filepath.IsAbs` diz `true` e `IsAnchored` diz `false` **de propósito**: as ressalvas do parecer
+`hades-tf` de 2026-09-04 os recusam como UNC inválido.
+
+### Efeito real, medido no `manager.Install` na VM Windows ARM64
+
+| destino | ANTES (`origin/main`) | DEPOIS (ML-R1) |
+|---|---|---|
+| `\\` | REJEITADO — outside project root | REJEITADO |
+| `\\x` | REJEITADO — outside project root | 🔴 **ACEITO** |
+| `\\.\x` | REJEITADO — outside project root | 🔴 **ACEITO** |
+| `\\srv` | REJEITADO — outside project root | 🔴 **ACEITO** |
+| `\\srv\` | REJEITADO — outside project root | 🔴 **ACEITO** |
+| `\\\a\b` | REJEITADO — outside project root | 🔴 **ACEITO** |
+
+**Mecanismo:** o `case` do `switch` trocou de `filepath.IsAbs(destination)` para
+`pathanchor.IsAnchored(destination)`. Esses vetores têm `IsAbs=true` e `IsAnchored=false`, então
+**deixaram de entrar no ramo estrito** e caem no `default` — o ramo relativo, que **força junção sob a
+raiz** e passa no `beneath`.
+
+🔴 **A correção fecha uma fuga de Windows e abre cinco.** É o mesmo tipo de defeito que ela existe
+para corrigir, na direção oposta.
+
+### Por que a auditoria pegou e o relatório não
+
+O agente **raciocinou** a implicação em vez de medi-la — e, se mediu, mediu só em POSIX, onde ela é
+verdadeira. A armadilha estava escrita no handoff:
+
+> *"em POSIX o `IsAbs` já devolve `true`, e um teste rodado só em Linux é vacuamente satisfeito"*
+
+Ela valia também para a **premissa**, não só para o teste. Não escrevi isso; assumi que valia só para
+a verificação.
+
+### Correção exigida
+
+1. O `case` captura **os dois** critérios — `pathanchor.IsAnchored(destination) ||
+   filepath.IsAbs(destination)` — para UNC malformado continuar no ramo estrito. A verificação interna
+   (`!filepath.IsAbs` ⇒ rejeita) resolve o caso do `/tmp/x`; o `||` impede a fuga nova.
+2. **AC novo, e é o que faltou:** tabela de vetores `filepath.IsAbs` × `IsAnchored` × **veredito do
+   `Install`**, medida **nos dois hosts**, exigindo zero contraexemplos nas **duas** direções —
+   "antes aceito ⇒ continua aceito" e "antes rejeitado ⇒ continua rejeitado".
