@@ -447,92 +447,12 @@ func guardEntryGeminiSettings(scriptCmd string) string {
 `
 }
 
-// TestPathIsAnchoredForHookConfig_Ancorado — falsificação direção 1 (ADR-2026-09-04, "Verificação
-// exigida"): formas POSIX e Windows que o predicado deve classificar como ANCORADO, sem depender
-// de GOOS. É o caso que ERA classificado errado no Windows via filepath.IsAbs (ML-3A).
-func TestPathIsAnchoredForHookConfig_Ancorado(t *testing.T) {
-	cases := []string{
-		"/opt/foo/guard.sh",                  // POSIX absoluto — o caso do ADR
-		"/absolute/path/to/guard.sh",
-		"/",
-		`C:\Users\kg\scripts\guard.sh`,       // letra de unidade, barra invertida
-		`C:/Users/kg/scripts/guard.sh`,       // letra de unidade, barra normal
-		`z:\scripts\guard.sh`,                // minúscula
-		`\\servidor\share\guard.sh`,          // UNC
-		`\\srv\y.sh`,
-		`//servidor/share/guard.sh`,          // UNC em forma POSIX (2 barras normais) — coberto pelo braço raw[0]=='/', não pelo braço UNC de barra invertida; veredito não pode mudar com a correção da ressalva
-	}
-	for _, raw := range cases {
-		if !pathIsAnchoredForHookConfig(raw) {
-			t.Errorf("pathIsAnchoredForHookConfig(%q) = false, quero true (ancorado)", raw)
-		}
-	}
-}
-
-// TestPathIsAnchoredForHookConfig_NaoAfrouxamento — falsificação direção 2 e controle de
-// não-afrouxamento (ADR-2026-09-04): NENHUMA forma relativa deve entrar no conjunto "ancorado".
-// É o critério principal do ML-3A — afrouxar aqui enfraqueceria a detecção de guard ausente.
-func TestPathIsAnchoredForHookConfig_NaoAfrouxamento(t *testing.T) {
-	cases := []string{
-		"scripts/guard.sh",       // relativo puro — o caso do ADR que DEVE continuar classe 2
-		"./scripts/guard.sh",
-		"../scripts/guard.sh",
-		"guard.sh",
-		"",
-		"~/scripts/guard.sh",     // til não é reconhecido por este predicado — tratado à parte
-		"$PWD/scripts/guard.sh",
-		"C",                      // letra sozinha, sem ":" — não é forma de unidade
-		"C:",                     // sem separador após ":" — não é forma de unidade completa
-		"C:foo",                  // sem separador — caminho relativo à unidade corrente no Windows, não ancorado por este predicado
-		`\scripts\guard.sh`,      // uma única barra invertida — não é UNC (precisa de duas)
-		"1:\\scripts\\guard.sh",  // dígito antes de ":" não é letra de unidade válida
-		`\\`,                     // UNC degenerado: só o prefixo, sem servidor nem share (ressalva hades ML-3A)
-		`\\x`,                    // UNC degenerado: servidor sem separador de share
-		`\\..\evil`,              // UNC degenerado (leitura 3-barras): servidor "..", não é hostname válido
-		`\\..\\evil`,             // UNC degenerado (leitura 4-barras): servidor "..", e share vazio (barra dupla no meio) — notação do parecer é ambígua entre as duas, ambas cobertas
-	}
-	for _, raw := range cases {
-		if pathIsAnchoredForHookConfig(raw) {
-			t.Errorf("pathIsAnchoredForHookConfig(%q) = true, quero false — não deve afrouxar para forma relativa", raw)
-		}
-	}
-}
-
-// TestPathIsAnchoredForHookConfig_ControlePOSIX — controle POSIX exigido pela ADR-2026-09-04: os
-// casos abaixo devem continuar classificados como ancorado/não-ancorado em QUALQUER host,
-// inclusive Windows. Os valores esperados são pinados LITERALMENTE, e não mais derivados de
-// filepath.IsAbs — a própria ADR determina que pathIsAnchoredForHookConfig("/foo") seja true em
-// Windows mesmo que filepath.IsAbs("/foo") seja false lá (a divergência é a correção da Wave 3,
-// não um defeito). Derivar "before" de filepath.IsAbs aqui afirmaria de volta o comportamento
-// antigo que a Wave 3 corrigiu — ver docs/portabilidade/2026-09-04-retriagem... G0.
-//
-// A asserção de que filepath.IsAbs continua governando os sítios de TRAVESSIA (D2 da ADR, fora
-// deste predicado) é preservada em TestManagerRejectsTraversalAbsoluteMismatchAndNUL
-// (internal/integrations/manager_test.go) — não duplicada aqui.
-func TestPathIsAnchoredForHookConfig_ControlePOSIX(t *testing.T) {
-	anchoredCases := []string{
-		"/opt/foo/guard.sh",
-		"/absolute/path/to/guard.sh",
-		"/",
-		"/a",
-	}
-	for _, raw := range anchoredCases {
-		if !pathIsAnchoredForHookConfig(raw) {
-			t.Errorf("pathIsAnchoredForHookConfig(%q) = false, quero true — ancorado em qualquer host (ADR-2026-09-04)", raw)
-		}
-	}
-	relativeCases := []string{
-		"scripts/guard.sh",
-		"./scripts/guard.sh",
-		"../scripts/guard.sh",
-		"guard.sh",
-	}
-	for _, raw := range relativeCases {
-		if pathIsAnchoredForHookConfig(raw) {
-			t.Errorf("pathIsAnchoredForHookConfig(%q) = true, quero false — não deve afrouxar para forma relativa", raw)
-		}
-	}
-}
+// TestIsAnchored_Ancorado, TestIsAnchored_NaoAfrouxamento e TestIsAnchored_ControlePOSIX — as
+// falsificações do predicado de ancoragem em si (ADR-2026-09-04) moraram aqui até a extração de
+// ROADMAP-2026-09-03 Wave reaberta ML-R1 (2026-09-08). O predicado (pathIsAnchoredForHookConfig)
+// virou pathanchor.IsAnchored e as três tabelas de vetores moveram byte-a-byte para
+// internal/pathanchor/pathanchor_test.go — o segundo consumidor extraído é
+// internal/integrations.Manager.resolve, que tinha o MESMO defeito medido na VM Windows ARM64.
 
 // TestClassifyHookAnchorage_Classe1_Ancorado — classifyHookAnchorage retorna classe 1 para todas
 // as formas ancoradas (variáveis de projeto, forma do Codex, caminho absoluto, ~/… sem aspas).
@@ -617,9 +537,9 @@ func TestStripOuterQuotesForClassify(t *testing.T) {
 		{`"$(git rev-parse --show-toplevel)/scripts/guard.sh"`, `$(git rev-parse --show-toplevel)/scripts/guard.sh`},
 		{`$CLAUDE_PROJECT_DIR/scripts/guard.sh`, `$CLAUDE_PROJECT_DIR/scripts/guard.sh`},
 		{`scripts/guard.sh`, `scripts/guard.sh`},
-		{`"`, `"`},           // string de 1 char
-		{`""`, ``},           // string vazia entre aspas
-		{`"abc`, `"abc`},     // aspas de abertura sem fechamento
+		{`"`, `"`},       // string de 1 char
+		{`""`, ``},       // string vazia entre aspas
+		{`"abc`, `"abc`}, // aspas de abertura sem fechamento
 	}
 	for _, c := range cases {
 		got := stripOuterQuotesForClassify(c.raw)
@@ -828,8 +748,8 @@ func TestHookValueWasQuoted(t *testing.T) {
 		{`"~/scripts/guard.sh"`, true},
 		{`~/scripts/guard.sh`, false},
 		{`$PWD/scripts/guard.sh`, false},
-		{`"`, false},  // 1 char
-		{`""`, true},  // string vazia aspeada
+		{`"`, false}, // 1 char
+		{`""`, true}, // string vazia aspeada
 		{`"abc`, false},
 	}
 	for _, c := range cases {

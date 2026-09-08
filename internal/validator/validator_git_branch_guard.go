@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/kgsaran/trackfw/internal/homedir"
+	"github.com/kgsaran/trackfw/internal/pathanchor"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -230,12 +231,12 @@ func validateGuardGlobalHookResolvable(ruleName, scriptMarker string) ([]string,
 			seen[seenKey] = true
 
 			// ADR-2026-09-04-caminho-posix-ancorado-...: o consumidor deste comando é o CLI do
-			// agente (que o repassa a bash), não o filesystem do processo Go — pathIsAnchoredForHookConfig
-			// classifica por ancoragem (POSIX "/", letra de unidade, UNC), NÃO por filepath.IsAbs, que
-			// no Windows devolve false para "/opt/foo/guard.sh" e faria este `continue` pular a entrada
-			// inteira — no Windows, uma entrada de config global com comando absoluto POSIX nunca
-			// seria verificada.
-			if !pathIsAnchoredForHookConfig(m.raw) {
+			// agente (que o repassa a bash), não o filesystem do processo Go — pathanchor.IsAnchored
+			// (internal/pathanchor) classifica por ancoragem (POSIX "/", letra de unidade, UNC), NÃO
+			// por filepath.IsAbs, que no Windows devolve false para "/opt/foo/guard.sh" e faria este
+			// `continue` pular a entrada inteira — no Windows, uma entrada de config global com
+			// comando absoluto POSIX nunca seria verificada.
+			if !pathanchor.IsAnchored(m.raw) {
 				continue
 			}
 

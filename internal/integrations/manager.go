@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/kgsaran/trackfw/internal/pathanchor"
 )
 
 type LifecycleState string
@@ -696,14 +698,41 @@ func (m Manager) resolve(plan PlannedArtifact) (string, string, error) {
 		return "", "", err
 	}
 	destination := plan.Destination
-	if strings.HasPrefix(destination, "~/") {
+	switch {
+	case strings.HasPrefix(destination, "~/"):
 		if plan.Claim.Scope != "global" {
 			return "", "", errors.New("home destination requires global scope")
 		}
 		destination = filepath.Join(root, strings.TrimPrefix(destination, "~/"))
-	} else if filepath.IsAbs(destination) {
+	case pathanchor.IsAnchored(destination) || filepath.IsAbs(destination):
+		// ANCHORED per the host-independent predicate (POSIX "/", Windows drive letter, or
+		// Windows UNC — internal/pathanchor) OR filepath.IsAbs on THIS host. The `||` matters:
+		// pathanchor.IsAnchored alone is not a superset of filepath.IsAbs on Windows — malformed
+		// UNC / device-path forms ("\\", "\\x", "\\.\x", "\\srv", "\\srv\", "\\\a\b") have
+		// filepath.IsAbs == true but IsAnchored == false BY DESIGN (hades-tf 2026-09-04 refuses
+		// them as invalid UNC). Using IsAnchored as the sole gate sent those six vectors into the
+		// `default` relative branch below, which force-joins UNDER root instead of rejecting them
+		// the way origin/main did — a rejected→accepted flip measured on Windows ARM64
+		// (ROADMAP-2026-09-03, ML-R1 audit, 2026-09-08). The `||` restores the origin/main
+		// coverage for those six while keeping the ORIGINAL fix intact.
+		//
+		// Accepting it verbatim below (Clean + beneath-root check) instead of falling through to
+		// the force-under-root relative branch is itself the security decision this switch
+		// makes — so it must ALSO be filepath.IsAbs on THIS host before we make it. If it is
+		// anchored-by-form but NOT filepath.IsAbs on this host (e.g. "/tmp/x" is anchored-POSIX
+		// but filepath.IsAbs("/tmp/x") is false on Windows), the string is claiming a root on a
+		// DIFFERENT platform than the one running right now — treating it as safe-relative-to-join
+		// is exactly the Windows escape measured on Windows ARM64 (ROADMAP-2026-09-03 Wave
+		// reaberta 2026-09-08, ML-R1): TestManagerRejectsTraversalAbsoluteMismatchAndNUL,
+		// "/tmp/outside-trackfw.md" with scope=global, used to be silently accepted because
+		// filepath.IsAbs("/tmp/...") == false on Windows sent it into the relative branch below,
+		// which force-joined it INSIDE root instead of rejecting it the way POSIX already did.
+		// Reject outright instead.
+		if !filepath.IsAbs(destination) {
+			return "", "", fmt.Errorf("unsafe destination %q", plan.Destination)
+		}
 		destination = filepath.Clean(destination)
-	} else {
+	default:
 		if path.Clean(destination) != destination || destination == "." || strings.HasPrefix(destination, "../") {
 			return "", "", fmt.Errorf("unsafe destination %q", plan.Destination)
 		}

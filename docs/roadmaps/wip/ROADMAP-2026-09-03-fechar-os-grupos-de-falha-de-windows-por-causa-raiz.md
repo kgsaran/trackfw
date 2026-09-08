@@ -1063,9 +1063,24 @@ só a revisão `hades-tf` antes do commit) · **Agente:** `apolo-tf` · 🔴 **s
      `root` (`C:\Users\Lab\trackfw` / `/tmp/x` → `C:\tmp\x`), e o `relative_to(root)` seguinte
      detecta que o resultado não está sob `root` e levanta `ValueError` → rejeitado. Medido com
      `PureWindowsPath`/`ntpath.normpath` sem precisar da VM (path puro, independente de SO real).
-   - **Conclusão:** nenhum dos dois CLIs tem o defeito medido em Go — mesma causa aparente
-     (`isAbsolute` estreito no Windows), mecanismos de containment downstream diferentes, e nos
-     dois casos o resultado final já era seguro. Nenhum ML de paridade necessário.
+   - 🔴 **Correção de 2026-09-08 (auditoria `hades-tf`, ML-R1):** a frase acima — "Python não tem o
+     defeito" — é **imprecisa e envelhece mal**. `PureWindowsPath("/tmp/x").is_absolute()` **é
+     `False`**: o Python tem o **mesmo ponto cego** estreito que `filepath.IsAbs` no Go
+     (`ntpath.isabs`/`is_absolute` decidem por letra-de-unidade/UNC, não por `/` isolado). A
+     garantia final não vem de `is_absolute()` enxergar `/tmp/x` como absoluto — vem de **dois
+     passos COMPOSTOS** a jusante: `root / candidate` faz `pathlib` reancorar um candidato
+     drive-relativo para a raiz do drive de `root` (não concatena ingenuamente), e o
+     `relative_to(root)` seguinte levanta `ValueError` quando o resultado reancorado escapa de
+     `root`. É uma **garantia emergente por composição de dois passos**, não uma ausência
+     desenhada do defeito — e composição quebra silenciosamente se qualquer um dos dois passos for
+     refatorado (ex.: trocar `relative_to` por comparação de string, ou `/` por `os.path.join`).
+   - **Conclusão (revisada):** nenhum dos dois CLIs produz o escape medido em Go — Node porque
+     `path.win32.isAbsolute` já reconhece `/tmp/x` como absoluto (sem o ponto cego), Python porque
+     a composição `root / candidate` + `relative_to(root)` contém o resultado mesmo com o mesmo
+     ponto cego de `is_absolute()` que o Go tem. Mecanismos diferentes, resultado final seguro nos
+     dois — mas a garantia do Python é mais frágil (emergente) que a do Node (desenhada). Nenhum ML
+     de paridade necessário; risco residual do Python registrado para referência futura, não para
+     ação imediata.
 5. **Testes:**
    - `internal/pathanchor/pathanchor_test.go` — 3 tabelas movidas byte-a-byte de
      `validator_credential_guard_test.go` (comportamento-preservante; `go test` roda igual antes/
@@ -1280,3 +1295,141 @@ corrigido", o padrão que esta reabertura existe para punir.
    garantia vem de dois passos combinados: o `root / candidate` faz re-rooting, e o
    `relative_to(root)` seguinte levanta `ValueError`. Funciona, mas por composição — vale documentar
    com essa precisão em vez de dizer "Python não tem o defeito".
+
+## 2026-09-08 — `apolo-tf` — ML-R1 correção pós-auditoria: `||` restaura cobertura do `origin/main`, CONCLUÍDO sem commit
+
+**Status:** ✅ Implementação, testes locais e VM Windows ARM64 concluídos e verdes. Sem commit/push
+(fora da minha autoridade) — pronto para revisão `hades-tf` (obrigatória, guarda de segurança) e
+depois auditoria do `trackfw_architect`.
+
+### 1. Correção em `manager.go`
+
+```go
+case pathanchor.IsAnchored(destination) || filepath.IsAbs(destination):
+```
+
+**Prova de correção por construção, não só por medição:** para qualquer `destination` onde
+`filepath.IsAbs(destination) == true`, o corpo do `case` executa exatamente
+`destination = filepath.Clean(destination)` (o `if !filepath.IsAbs` interno nunca dispara, porque
+IsAbs já é `true`) — **byte-idêntico** ao corpo que `origin/main`'s `case filepath.IsAbs(destination):`
+sempre executou (`git show origin/main:internal/integrations/manager.go` linhas 704-705, conferido
+nesta sessão). Ou seja: para os 6 vetores UNC malformado/device-path onde o Windows tem
+`IsAbs=true`/`IsAnchored=false`, o código NOVO não apenas produz o mesmo veredito do `origin/main` —
+ele executa o **mesmo código**, com a **mesma entrada**, e portanto produz a **mesma saída**. Isso não
+depende de eu acertar a semântica de `filepath.Clean`/`beneath()` no Windows por raciocínio — está
+provado por identidade de execução. A medição na VM (abaixo) confirma isso, não é a única evidência.
+
+Para os vetores anchored-by-form-mas-não-IsAbs (`/tmp/x` no Windows; `C:\Windows\evil.md` e UNC
+válido no POSIX) o `if !filepath.IsAbs(destination)` interno continua ativo e rejeita — comportamento
+do ML-R1 original, inalterado por este ML.
+
+### 2. Tabela de vetores — `filepath.IsAbs` × `pathanchor.IsAnchored` × veredito do `Install` × onde aterrissa
+
+Medida nos dois hosts (macOS ARM64 darwin/arm64 local; `ssh powershell-vm`, `go1.27.1 windows/arm64`,
+`C:\Users\Lab\trackfw` sincronizado com este diff via `scp`, SHA idêntico confirmado por rebuild):
+
+| destino | IsAbs (POSIX) | IsAnchored | veredito POSIX | IsAbs (Win) | IsAnchored | veredito Win ANTES (origin/main) | veredito Win ML-R1 (bug) | veredito Win ESTE ML | flip vs origin/main? |
+|---|---|---|---|---|---|---|---|---|---|
+| `\\` | false | false | ACEITO (default, dentro raiz) | true | false | REJEITADO (outside root) | 🔴 ACEITO (regressão) | REJEITADO | **zero** |
+| `\\x` | false | false | ACEITO (default, dentro raiz) | true | false | REJEITADO | 🔴 ACEITO | REJEITADO | **zero** |
+| `\\.\x` | false | false | ACEITO (default, dentro raiz) | true | false | REJEITADO | 🔴 ACEITO | REJEITADO | **zero** |
+| `\\srv` | false | false | ACEITO (default, dentro raiz) | true | false | REJEITADO | 🔴 ACEITO | REJEITADO | **zero** |
+| `\\srv\` | false | false | ACEITO (default, dentro raiz) | true | false | REJEITADO | 🔴 ACEITO | REJEITADO | **zero** |
+| `\\\a\b` | false | false | ACEITO (default, dentro raiz) | true | false | REJEITADO | 🔴 ACEITO | REJEITADO | **zero** |
+| `/tmp/outside-trackfw.md` | true | true | REJEITADO (fora raiz) | false | true | ACEITO silencioso (defeito original) | REJEITADO (fix pretendido) | REJEITADO | intencional — é o alvo do ML-R1 |
+| `C:\Windows\evil.md` | false | true | REJEITADO (anchored-not-IsAbs) | true | true | REJEITADO (fora raiz) | REJEITADO | REJEITADO | intencional em POSIX (era ACEITO silencioso no `default` do `origin/main`), zero flip em Windows |
+| `\\server\share\evil.md` | false | true | REJEITADO (anchored-not-IsAbs) | true | true | REJEITADO (fora raiz) | REJEITADO | REJEITADO | idem acima |
+| `.claude/agents/trackfw-architect.md` | false | false | ACEITO (dentro raiz) | false | false | ACEITO | ACEITO | ACEITO | **zero** |
+| `agents/valid.md` | false | false | ACEITO (dentro raiz) | false | false | ACEITO | ACEITO | ACEITO | **zero** |
+| `../outside.md` | false | false | REJEITADO (`../` guard) | false | false | REJEITADO | REJEITADO | REJEITADO | **zero** |
+
+**Zero flips nas duas direções**, medido nos dois hosts: nenhum "antes aceito" virou rejeitado por
+acidente, nenhum "antes rejeitado" (pelo `origin/main`) virou aceito. A única classe que flipa
+(`/tmp/x` no Windows; `C:\Windows...`/UNC válido no POSIX) é o flip **intencional** que o ML-R1
+original existe para fazer — coberto por testes já existentes
+(`TestManagerRejectsTraversalAbsoluteMismatchAndNUL`, `TestManagerRejectsAnchoredDestinationHostMismatch`).
+
+### 3. Teste versionado e prova de reversão
+
+`internal/integrations/manager_test.go`, `TestManagerAnchorPredicateVectorTableNoFlip`:
+
+- **Frase de reconciliação (o que este teste afirma):** para cada destino em
+  `vectorsNoFlipVsOldMain`, o código atual produz o MESMO veredito accept/reject que uma cópia
+  congelada da lógica do `resolve()` do `origin/main` (`oldResolveVerdict`, definida no próprio
+  arquivo de teste) produziria — comparação feita dinamicamente em cima do host que roda o teste, sem
+  literal por SO. Para `vectorsIntentionalRejectRegardlessOfOldMain`, afirma que esses destinos são
+  rejeitados independentemente do host, mesmo sabendo que `origin/main` os aceitava — é o flip
+  intencional, não comparado contra o baseline antigo.
+- **Prova de reversão, medida na VM (não em POSIX, onde seria vácua por construção — documentado no
+  comentário do teste):** revertido manualmente `case pathanchor.IsAnchored(destination) ||
+  filepath.IsAbs(destination):` para `case pathanchor.IsAnchored(destination):` na VM e rodado
+  `go test ./internal/integrations/... -run TestManagerAnchorPredicateVectorTableNoFlip -v`:
+
+  ```
+  manager_test.go:332: destination "\\\\x": origin/main verdict accept=false, current code accept=true (err=<nil>) — filepath.IsAbs=true pathanchor.IsAnchored=false
+  manager_test.go:332: destination "\\\\.\\x": ... accept=false, current code accept=true ...
+  manager_test.go:332: destination "\\\\srv": ... accept=false, current code accept=true ...
+  manager_test.go:332: destination "\\\\srv\\": ... accept=false, current code accept=true ...
+  manager_test.go:332: destination "\\\\\\a\\b": ... accept=false, current code accept=true ...
+  --- FAIL: TestManagerAnchorPredicateVectorTableNoFlip (0.04s)
+  ```
+
+  — reproduz ao vivo, no host onde o defeito existe, exatamente a regressão que a auditoria mediu.
+  Restaurado o `||`, reconfirmado verde na mesma VM.
+- **Em POSIX, o teste é vacuamente satisfeito para os 6 vetores malformados** (documentado no próprio
+  comentário do teste: `filepath.IsAbs`/`pathanchor.IsAnchored` sempre concordam em POSIX, a
+  combinação que produz o bug é matematicamente impossível lá) — só é falsificável na VM Windows,
+  onde foi medido.
+
+### 4. Correção da paridade do Python
+
+`docs/roadmaps/wip/ROADMAP-2026-09-03-...md`, seção do relatório original do ML-R1 (item 4): a frase
+"Python não tem o defeito" foi substituída por uma descrição precisa — Python **tem** o mesmo ponto
+cego de `is_absolute()`/`ntpath.isabs` que o Go tem em `filepath.IsAbs`; a contenção vem de uma
+**garantia emergente por composição** de dois passos (`root / candidate` reancora, `relative_to(root)`
+levanta `ValueError`), não de o `is_absolute()` enxergar `/tmp/x` como absoluto. Registrado como risco
+residual (mais frágil que a garantia desenhada do Node), não como ação pendente.
+
+### 5. Sítios de mesma causa — reportados, não corrigidos aqui
+
+Os dois achados do `hades-tf` (seção "Correção do meu próprio bloqueio" acima) continuam **fora deste
+ML**, por causa distinta da corrigida aqui:
+
+1. **`manager.go:725-729` (ramo `default:`) usa gramática só-POSIX** (`path.Clean` do pacote `path`,
+   `strings.HasPrefix(destination, "../")`) — `..\outside.md` passa incólume por esse guard em
+   qualquer host, contido só pelo `beneath()` a jusante. Não tocado neste ML — é causa distinta
+   (guard cedo cego a gramática, não escolha de `case`); merece ML próprio.
+2. **Garantia do Python é emergente, não desenhada** — já documentado no item 4 acima; nenhuma ação
+   de código pendente, só precisão de documentação (feita).
+
+### 6. Evidência de gates
+
+- `go build ./...` — limpo, sem erros, local e na VM.
+- `go vet ./...` — limpo, local; `go vet ./internal/integrations/... ./internal/pathanchor/... ./internal/validator/...` limpo na VM.
+- `go test ./...` local — **todos os pacotes `ok`**.
+- VM Windows ARM64, escopo do ML: `TestManagerRejectsTraversalAbsoluteMismatchAndNUL`,
+  `TestManagerRejectsAnchoredDestinationHostMismatch`, `TestManagerAnchorPredicateVectorTableNoFlip`,
+  `TestResolveWindowsCrossplatform` — todos `--- PASS`. `internal/pathanchor` `ok` (exceto a sonda
+  `tighten_probe_test.go` do próprio arquiteto, artefato de diagnóstico não versionado, que
+  reafirma a premissa falsa original de propósito). `internal/validator`
+  `-run TestCredentialGuardHookResolvable` — 24/24 `--- PASS`.
+- VM Windows ARM64, **falhas pré-existentes, não causadas por este diff** (confirmadas por causa
+  raiz, não só por "já falhava antes"): `TestResolveAgentModelMatchesRender` (grupo `models`, já
+  reportado no ML-R1 original); `TestRenderOpenCodeAgent_CRLFSourceMatchesLF` e
+  `TestRenderWithoutIdentityMatchesFrozenGoldens` — causa raiz é `core.autocrlf=true` nesta VM
+  corrompendo o asset lido por `catalog.ReadAsset` ANTES do teste injetar CRLF sintético (dobra
+  `\r\n` em `\r\r\n`), documentado em
+  `vault/notes/eol-nos-goldens-nao-cura-o-teste-de-golden-porque-o-asset-carrega-o-crlf-2026-09-03.md`
+  — mesma classe já fechada parcialmente por `ROADMAP-2026-09-03-declarar-eol-lf-para-os-fontes-na-raiz-do-gitattributes.md`
+  (`done/`), que deixou `internal/integrations/testdata/` deliberadamente sem pin porque a cura real
+  é o parser normalizar CRLF na fronteira (ADR-2026-09-04-parser-de-frontmatter-tolera-crlf-na-fronteira-de-entrada)
+  — nenhum destes três testes toca `manager.go`/`pathanchor`/`validator_credential_guard*`/
+  `validator_git_branch_guard.go`, e nenhum dos arquivos deste ML mexe em `models.go`/`render.go`/
+  `agentfiles.go`. Fora de escopo, causa distinta, não corrigido aqui.
+- `make quality QUALITY_EXIT=0` local, completo (4108 linhas): `grep -c '^FAIL'` sobre a saída
+  **inteira** = **0**.
+- `scripts/check-cli-parity.sh` local: `rc=0` ("Integration CLI parity lifecycle checks passed",
+  "CLI parity smoke checks passed").
+
+**Sem commit/push** — fora da minha autoridade. ML-R1 pronto para revisão `hades-tf` e depois
+auditoria do `trackfw_architect`; nenhuma pendência técnica aberta desta correção.

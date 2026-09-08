@@ -9210,11 +9210,20 @@ assert_fails_with "validate-parity/credential-guard-pwd-not-detected" \
 # ser um no-op silencioso (o guard `cmp -s` abaixo captura exatamente isso, e
 # foi o que aconteceu ao rodar `make quality` após a substituição).
 #
+# RETARGETED 2026-09-08 (ROADMAP-2026-09-03 Wave reaberta ML-R1): o predicado
+# saiu de internal/validator para o pacote-folha internal/pathanchor (também
+# consumido por internal/integrations.Manager.resolve, que tinha o MESMO
+# defeito de filepath.IsAbs medido na VM Windows ARM64) — o seam mudou de
+# `pathIsAnchoredForHookConfig(rawStripped)` para `pathanchor.IsAnchored(rawStripped)`
+# no MESMO arquivo, na MESMA função (classifyHookAnchorage). Mesma lição do
+# retarget de 2026-09-04 se aplica: o sed anterior teria virado no-op
+# silencioso — o guard `cmp -s` abaixo é o que teria pego.
+#
 # Seam: internal/validator/validator_credential_guard.go
-# `pathIsAnchoredForHookConfig(rawStripped)` — aparece em DOIS lugares (classe
+# `pathanchor.IsAnchored(rawStripped)` — aparece em DOIS lugares (classe
 # 1 e classe 2). Delta: ambas as ocorrências substituídas por `false` com /g.
 # Efeito: classe 1 não captura mais absolutos (POSIX nem Windows-form) → a
-# cláusula bare-relative da classe 2 (`!pathIsAnchoredForHookConfig(...)` vira
+# cláusula bare-relative da classe 2 (`!pathanchor.IsAnchored(...)` vira
 # `!false` = true) → absoluto cai nela → classe 2 → acusado. Go reporta
 # violação em cg-claude-absoluto (expect=False) → Python reprova com
 # "nenhuma violacao da regra esperada".
@@ -9231,7 +9240,7 @@ cp -r "$ROOT_DIR/internal/." "$T95/internal/"
 cp "$ROOT_DIR/go.mod" "$T95/go.mod"
 cp "$ROOT_DIR/go.sum" "$T95/go.sum"
 
-sed 's/pathIsAnchoredForHookConfig(rawStripped)/false/g' \
+sed 's/pathanchor\.IsAnchored(rawStripped)/false/g' \
   "$ROOT_DIR/internal/validator/validator_credential_guard.go" > "$T95/internal/validator/validator_credential_guard.go"
 
 if cmp -s "$ROOT_DIR/internal/validator/validator_credential_guard.go" "$T95/internal/validator/validator_credential_guard.go"; then

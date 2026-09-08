@@ -53,6 +53,22 @@ errado quebraria a resolução real de caminho no Windows** — e o modo de falh
 Vale a mesma fronteira da ADR do separador: **emissão e classificação de config, sim; travessia de
 sistema de arquivos, não.**
 
+> **Emenda 2026-09-08 (ROADMAP-2026-09-03 Wave reaberta, ML-R1):** o exemplo de sítio de travessia
+> citado acima incluía `internal/integrations/manager.go`. Medido na VM Windows ARM64
+> (`TestManagerRejectsTraversalAbsoluteMismatchAndNUL`, sobre `origin/main`): esse exemplo estava
+> **errado**. `manager.go:704` não decide como abrir um caminho já confiável — decide se
+> `plan.Destination` (uma string de entrada, potencialmente influenciável) é anchored e por isso
+> deve pular o join forçado sob a raiz do escopo. É exatamente a pergunta de D1, não a de D2:
+> `filepath.IsAbs("/tmp/x") == false` no Windows fazia esse sítio tratar um destino POSIX-absoluto
+> como relativo e reancorá-lo silenciosamente dentro da raiz — o mesmo defeito de classificação que
+> esta ADR já havia corrigido para hook config, com uma segunda instância viva. Correção: o
+> predicado (renomeado `pathanchor.IsAnchored`, movido para o pacote-folha `internal/pathanchor`
+> para ser consumido também por `internal/integrations`) agora decide a classificação em
+> `manager.go` também; a resolução real via `filepath.Clean`/`filepath.Join`/`filepath.Rel`
+> continua exatamente como D2 descreve, inalterada. A fronteira certa de D2 não é "este arquivo
+> sim, aquele não" — é "classificação de uma string de entrada" (D1) vs. "resolução real de
+> caminho via `path/filepath`/`os`" (D2), e essa distinção vale dentro do MESMO arquivo.
+
 ### D3 — O predicado é dos 3 CLIs, byte-idêntico
 
 Regra dura de paridade. Node e Python têm o mesmo defeito por caminhos diferentes

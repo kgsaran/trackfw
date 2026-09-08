@@ -34048,3 +34048,87 @@ defeitos do modo de enumeração são específicos a este ML, ambos corrigidos n
 
 **Sem commit/push** — fora da minha autoridade. ML-2B pronto para auditoria do `trackfw_architect`
 (implementação + falsificação + VM + `make quality` completos; nenhuma pendência aberta desta sessão).
+
+## 2026-09-08 — apolo-tf — ML-R1 (Wave reaberta): `manager.go` usa o predicado de ancoragem — INÍCIO
+
+Reabertura de segurança: `filepath.IsAbs("/tmp/...")` == `false` no Windows fazia
+`internal/integrations/manager.go:704` classificar um destino POSIX-absoluto como relativo e
+aceitá-lo sob a raiz do escopo — medido pelo arquiteto na VM Windows ARM64, sobre `origin/main`
+(`TestManagerRejectsTraversalAbsoluteMismatchAndNUL`). Iniciando: extrair
+`pathIsAnchoredForHookConfig` para um pacote-folha consumido por `internal/validator` e
+`internal/integrations`, corrigir `manager.go`, varrer `filepath.IsAbs`, medir paridade 3 CLIs.
+
+## 2026-09-08 — apolo-tf — ML-R1 (Wave reaberta): CONCLUÍDO, sem commit — pronto para `hades-tf`
+
+**Entregue:**
+1. `internal/pathanchor/pathanchor.go` (pacote-folha novo, zero import de `path/filepath`):
+   `IsAnchored(raw string) bool`, extraído de `internal/validator`'s `pathIsAnchoredForHookConfig`
+   (mesma lógica, byte-idêntica). Grafo de import checado antes de extrair:
+   `internal/generators` → `internal/validator` → `internal/integrations`; um pacote-folha evita o
+   ciclo que impediria `internal/integrations` de importar `internal/validator` diretamente.
+2. `internal/validator/validator_credential_guard.go` e `validator_git_branch_guard.go`: os 3
+   sítios que chamavam o predicado antigo agora chamam `pathanchor.IsAnchored` diretamente (sem
+   wrapper — zero indireção extra).
+3. `internal/integrations/manager.go:707` (era `:704`): `resolve()` ganhou um 3º ramo —
+   `pathanchor.IsAnchored(destination) && !filepath.IsAbs(destination)` → rejeita explicitamente
+   (`unsafe destination`) em vez de cair no ramo relativo que fazia `filepath.Join` reancorar o
+   destino SILENCIOSAMENTE dentro da raiz do escopo. Decisão registrada no code comment: por que a
+   fronteira D2 da ADR-2026-09-04 ("SO é autoridade em travessia real") não se aplica a esta linha
+   — é classificação de uma string de entrada, não resolução de syscall.
+4. Sweep de `filepath.IsAbs` em todo `.go` não-teste: 4 sítios reais, 1 convertido (o de cima), 3
+   mantidos com motivo escrito (`beneath()` e `isOutsideCWD` operam sobre saída já resolvida de
+   `filepath.Rel`/`filepath.Abs`, não sobre string externa; `update_test.go` são asserções de teste
+   sobre tempdir real).
+5. Paridade 3 CLIs medida, não presumida: Node (`path.win32.isAbsolute("/tmp/x")` == `true`,
+   medido) não tem o defeito. Python (`ntpath.isabs` concorda com o Go, mas `pathlib`'s join
+   drive-relativo + `relative_to` detecta e rejeita o escape por um mecanismo diferente, medido com
+   `PureWindowsPath`/`ntpath.normpath` sem precisar da VM) também não tem o defeito. Nenhum ML de
+   paridade necessário — declarado por escrito no roadmap com a medição de cada CLI.
+6. Testes: 3 tabelas movidas byte-a-byte para `internal/pathanchor/pathanchor_test.go`; novo
+   `TestManagerRejectsAnchoredDestinationHostMismatch` em `manager_test.go` com vetores
+   (`C:\Windows\evil.md`, `\\server\share\evil.md`) que divergem entre o predicado portável e
+   `filepath.IsAbs` em QUALQUER host POSIX — falsificação de reversão comprovada nesta sessão
+   (revertido manualmente para `filepath.IsAbs` sozinho → teste `FAIL`; restaurado → verde).
+7. VM Windows ARM64 (`go1.27.1 windows/arm64`): sincronizada com a HEAD da branch via
+   `git fetch`+`checkout` (o handoff pedia sync mas não commit; usei os 6 arquivos tocados via
+   `scp` sobre a base sincronizada). Testes-alvo `--- PASS` com `=== RUN` confirmado. 3 FAILs
+   pré-existentes em `internal/validator`/`internal/integrations` medidos idênticos com e sem o
+   diff (via `git stash` na própria VM) — outros grupos da triagem, não regressão deste ML.
+8. Achado de infraestrutura de gate: `scripts/check-gates-falsify.sh` Cenário 165 tinha um `sed`
+   que casava o nome antigo do predicado — virou no-op silencioso após a extração, `make quality`
+   pegou (`chunk_6 nao chegou ao sentinela CHUNK_COMPLETE`). Retargeted para
+   `pathanchor.IsAnchored(rawStripped)`. `grep -c '^FAIL'` = 0 na saída completa de
+   `make quality QUALITY_EXIT=0` depois da correção (4108 linhas, sem `| tail`).
+9. Comentários stale em `internal/generators/agentfiles.go` (2 sítios que citavam o caminho antigo
+   do predicado) atualizados — doc-only, dispensa roadmap (CLAUDE.md §7).
+
+**Sítios de mesma causa:** nenhum além dos já cobertos (validator + manager.go); Node/Python não
+têm o defeito (medido, não ML). O achado do `sed` do falsify é infraestrutura de gate, mesma
+sessão/PR, já corrigido.
+
+**Sem commit/push** — fora da minha autoridade. ML-R1 pronto para revisão `hades-tf` (obrigatória,
+é guarda de segurança) e depois auditoria do `trackfw_architect`; nenhuma pendência técnica aberta.
+
+## 2026-09-08 — apolo-tf — ML-R1 correção pós-auditoria (`||`): CONCLUÍDO, sem commit — pronto para `hades-tf`
+
+Retomando entrega já quase certa (auditoria anterior aprovou a extração/pacote/varredura; achou
+regressão real no `case`). Corrigido `manager.go:707`:
+`case pathanchor.IsAnchored(destination) || filepath.IsAbs(destination):`. Prova por construção
+(não só medição): para qualquer destino com `filepath.IsAbs==true`, o corpo do `case` executa o
+MESMO código que `origin/main` sempre executou (`filepath.Clean`, byte-idêntico), então os 6 vetores
+UNC malformado/device-path (`\\`, `\\x`, `\\.\x`, `\\srv`, `\\srv\`, `\\\a\b`) voltam ao veredito de
+`origin/main` no Windows — zero flip, medido na VM (`TestManagerAnchorPredicateVectorTableNoFlip`,
+novo, com prova de reversão ao vivo na VM: revertido o `||` → 5 vetores viram `FAIL` reproduzindo a
+regressão exata da auditoria; restaurado → verde). Tabela de vetores completa (`IsAbs`×`IsAnchored`×
+veredito×flip) nas duas plataformas no roadmap. Corrigida a frase de paridade do Python no relatório
+do ML-R1 original — não é "sem o defeito", é garantia emergente por composição
+(`root / candidate` + `relative_to`), documentado com precisão. Sítios de mesma causa (ramo `default`
+gramática só-POSIX; paridade Python) reportados, não corrigidos — causa distinta. `go build`/`go
+vet`/`go test ./...` limpos local; VM Windows ARM64 com o escopo do ML 100% `--- PASS` (3 falhas
+pré-existentes não relacionadas — `TestResolveAgentModelMatchesRender`/models, e 2 testes de golden
+CRLF cuja causa é `core.autocrlf=true` da VM corrompendo o asset ANTES do teste injetar CRLF
+sintético — documentado em vault, não causado por este diff). `make quality QUALITY_EXIT=0`
+(4108 linhas) `grep -c '^FAIL'`=0. `scripts/check-cli-parity.sh` rc=0.
+
+**Sem commit/push** — fora da minha autoridade. Pronto para revisão `hades-tf` (guarda de
+segurança) e depois auditoria do `trackfw_architect`.
