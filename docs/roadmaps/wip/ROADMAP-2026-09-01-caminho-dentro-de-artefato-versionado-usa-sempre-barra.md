@@ -1,5 +1,5 @@
 ---
-status: done
+status: wip
 date: 2026-09-01
 req: "docs/req/REQ-2026-08-30-caminho-portavel-montado-com-separador-do-sistema-vaza-para-dentro-de-artefato-versionado.md"
 squad: "hades-tf, apolo-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, apolo-tf"
 
 # Roadmap: Caminho dentro de artefato versionado usa sempre barra
 
-> Created: 2026-09-01 | Status: done
+> Created: 2026-09-01 | Status: wip
 
 ## Context
 
@@ -357,3 +357,31 @@ go · node · python (3.10/3.12) · package-smoke · governance = SUCCESS
    O Node tem **bug estrutural mais amplo e anterior** a esta REQ — o grafo do board não liga nada.
    Vira REQ de acompanhamento, **nomeado e não escondido**, mesmo tratamento dado ao gap do
    `thirdparty_artifact_has_provenance`.
+
+
+## Wave reaberta — 2026-09-08
+
+### ML-R1 — `update --json` do Python emite separador nativo no campo `path`
+**Status:** ⬜ Pendente · **Agente:** `apolo-tf`
+
+**Arquivo:** `pypi/trackfw/commands/update.py:78-86` (e qualquer outro `os.path.join` cujo resultado
+alimente saída de contrato — **varra**, não corrija só as linhas citadas).
+
+**Ação:** identificadores canônicos de artefato passam a usar `/` literal, como Go e Node. 🔴 **Não**
+troque `os.path.join` em massa: onde o valor é caminho de sistema **de verdade** (abrir, escrever), o
+`os.path.join` está correto. O critério é **o destino do valor**, não a chamada.
+
+**Falsificação nas duas direções:**
+- Windows, `update --json` ⇒ **zero** `\` no campo `path`, e saída **idêntica** à do Go e do Node;
+- Linux/macOS ⇒ saída inalterada (guarda de vacuidade: o teste não pode passar só porque `os.sep`
+  já é `/`). 🔴 **Este é o ponto crítico** — um teste rodado só em Linux é vacuamente satisfeito.
+
+**Critérios de aceite:**
+- [ ] `update --json` byte-idêntico entre os 3 runtimes no Windows, medido na VM
+- [ ] saída em Linux/macOS inalterada
+- [ ] teste que **falharia** em Linux se a correção fosse revertida — ou, se impossível sem Windows,
+      **declarar** que a cobertura depende do CI/VM em vez de fingir que o teste cobre
+- [ ] `make quality QUALITY_EXIT=0`, `grep -c '^FAIL'` sobre a saída inteira = 0
+- [ ] `scripts/check-cli-parity.sh` rc=0
+
+**Fora do ML:** `validate --json` e `doctor --json` — medidos pelo autor do issue como **concordantes**.
