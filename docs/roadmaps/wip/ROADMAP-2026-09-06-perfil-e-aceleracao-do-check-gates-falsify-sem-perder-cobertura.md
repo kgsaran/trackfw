@@ -1142,3 +1142,78 @@ exatamente isso: *"registro não é correção"*.
 Se o `parity` voltar a incomodar depois da matriz, este ML **reabre com número novo** — a medição por
 segmento é reproduzível pelo mesmo método (atribuição por invocação de script no log do CI). O que
 não vale é ele ficar `⬜` por anos como promessa.
+
+## Medição no CI do ML-2G — arquiteto, 2026-09-08 (o AC que faltava)
+
+Run `34277875332`, PR #294. **Esta era a medição que nenhum agente podia produzir**: o `Quality` só
+roda em `pull_request` ou push na `main`, então o número só existe a partir do PR — não é limitação de
+autoridade de push, é do gatilho do workflow. Meu diagnóstico anterior estava impreciso.
+
+```
+parity-falsify-shard (2)    10m08s   ← gargalo REAL
+parity-other-gates           4m20s
+parity-falsify-shard (0)     3m50s
+parity-falsify-shard (1)     3m47s
+parity-falsify-shard (3)     1m51s   ← o PREVISTO como gargalo
+parity (agregação)           0m11s   success
+
+wall-clock do grupo         ~10m20s
+soma de CPU                  24m07s
+```
+
+### 1. O desenho funciona — e era o risco estrutural
+
+O check obrigatório `parity` **reportou** (`success`, 11s). Se a agregação estivesse errada, ele
+ficaria **pendente para sempre** e o PR travaria sem falhar. Não travou.
+
+### 2. Ganho real, metade do projetado
+
+```
+15m00s  →  ~10m20s     −31%
+projeção era ~4m23s    errei por fator 2,3
+```
+
+A causa do erro está no item 3, e não no custo fixo — que eu medi certo (~25s).
+
+### 3. 🔴 A predição do agente foi FALSIFICADA, e é o achado mais útil
+
+Ele escreveu, **antes de qualquer cronometragem**, que `chunk_3` seria o gargalo por carregar o bloco
+fundido de 3487 linhas. **`shard 3` levou 1m51s — o mais rápido de todos.** O gargalo é o `shard 2`,
+**5,5x mais lento**.
+
+**Conclusão: o empacotador distribui por peso de LINHA, e linha não prevê TEMPO.**
+
+Consistente com o que o ML-1A já havia medido — *execução* domina, não compilação, e alguns cenários
+compilam binários Go inteiros. Um bloco grande de asserções baratas pesa muito e roda rápido; um bloco
+pequeno que compila Go pesa pouco e roda devagar.
+
+🔴 **Valor metodológico:** a predição estava escrita antes, então o run **falsificou um modelo** em vez
+de ser explicado por ele. É o oposto de como nasceu o "cluster indivisível de 467s" — explicação
+construída depois de ver o número, e que a medição derrubou depois.
+
+### ML-2H — Rebalancear os shards por tempo medido
+**Status:** ⬜ Pendente · **Agente:** `ares-tf`
+
+**O dado necessário já existe:** cada shard reporta seu próprio tempo no log do CI, e o
+`gen-falsify-chunks.py` já é parametrizável.
+
+```
+hoje (peso por linha)     10m08s / 1m51s   →  desequilíbrio de 5,5x
+teto se equilibrado       24m07s / 4       ≈  6m + setup
+```
+
+**Ações:**
+1. Peso por **tempo medido por cenário**, não por contagem de linha.
+2. 🔴 **O tempo por cenário tem de vir de medição, não de estimativa** — e precisa de fonte
+   versionada que envelheça de forma visível. Um arquivo de pesos que envelhece em silêncio é o
+   próximo defeito silencioso: cenário novo entra sem peso e a distribuição degrada sem aviso.
+   **Decida e declare** como a fonte é mantida e o que acontece com cenário sem peso.
+3. Rebalancear e **medir no CI** (só existe em PR).
+
+**Critérios de aceite:**
+- [ ] desequilíbrio entre o shard mais lento e o mais rápido **abaixo de 2x**, medido no CI
+- [ ] `diff` de conjunto de rótulos **vazio**, método declarado
+- [ ] cenário sem peso registrado **não** degrada em silêncio — comportamento declarado e provado
+- [ ] as **três medidas** do gate local: `rc`, `grep -c '^FAIL'`, e `^OK` ≥ 1022
+- [ ] 🔴 "não vale a pena" segue sendo resultado válido: se o rebalanceamento render pouco diante do
+      custo de manter a fonte de pesos, **diga**
