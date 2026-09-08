@@ -1225,3 +1225,58 @@ a verificação.
 2. **AC novo, e é o que faltou:** tabela de vetores `filepath.IsAbs` × `IsAnchored` × **veredito do
    `Install`**, medida **nos dois hosts**, exigindo zero contraexemplos nas **duas** direções —
    "antes aceito ⇒ continua aceito" e "antes rejeitado ⇒ continua rejeitado".
+
+## 🔴 Correção do meu próprio bloqueio — 2026-09-08, depois do parecer do `hades-tf`
+
+**Eu superestimei a severidade, e o parecer estava certo.** Registro aqui em vez de reescrever o
+bloqueio acima.
+
+O que eu escrevi: *"a correção fecha uma fuga de Windows e abre cinco"*. Medi que 5 vetores passam de
+`REJEITADO` para `ACEITO` — **e não medi onde o arquivo aterrissa**. O `hades-tf` mediu, e disse que
+fica contido pelo `beneath()`.
+
+Refiz a medição na VM, com conteúdo único por vetor:
+
+```
+\\x        ACEITO, DENTRO da raiz: [x]
+\\.\x      ACEITO, DENTRO da raiz: [x]
+\\srv      ACEITO, DENTRO da raiz: [srv]
+\\srv\     ACEITO, DENTRO da raiz: [srv]
+\\\a\b     ACEITO, DENTRO da raiz: [a\b]
+```
+
+**Nenhum escapa da raiz.** A caracterização correta é: regressão de **higiene/robustez** — o destino
+malformado passa a ser aceito com nome mangled dentro da raiz, em vez de rejeitado — **não** fuga de
+segurança.
+
+🔴 **E a minha primeira sonda de aterrissagem estava errada por construção:** cada iteração cria uma
+raiz temporária nova (`001`, `003`, `005`…) e eu varria o **diretório pai**, então encontrava arquivos
+das iterações anteriores e os contava como escape. Falso positivo meu, corrigido com marca única por
+vetor. **Quinta vez nesta campanha que uma medição minha produz número plausível e errado** — e a
+segunda em que quase publiquei a conclusão oposta à verdade.
+
+### Veredito revisado: ML-R1 **desbloqueado**, com correção exigida
+
+A correção do escape medido (`/tmp/x` reancorado sob a raiz no Windows) é **real e correta**. O flip
+`rejeitado → aceito` continua sendo defeito e não pode ficar aberto — seria "sítio conhecido não
+corrigido", o padrão que esta reabertura existe para punir.
+
+**Exigido no mesmo ML:**
+1. `case pathanchor.IsAnchored(destination) || filepath.IsAbs(destination):` — UNC malformado e
+   device-path voltam ao ramo estrito.
+2. Tabela de vetores `IsAbs` × `IsAnchored` × **veredito do `Install`** × **onde aterrissa**, medida
+   **nos dois hosts**, exigindo zero flips nas **duas** direções.
+
+### Dois sítios de mesma causa achados pelo `hades-tf`, que eu não vi
+
+1. 🔴 **O ramo `default:` usa gramática só-POSIX** (`manager.go:725-729`): `path.Clean` (pacote `path`,
+   não `filepath` — não enxerga `\`) e `strings.HasPrefix(destination, "../")`. Medido:
+   `..\outside.md` **passa incólume** por esse guard em qualquer host, e só é barrado depois pelo
+   `beneath()`. Contido, não explorável — mas é o mesmo padrão: guard cedo cego a uma gramática,
+   salvo pela rede de baixo nível. `manager_test.go:204` só testa a forma POSIX `../outside.md`.
+   **Node e Python são imunes; o Go é o único dos três cujo guard early fala uma gramática só.**
+2. **A paridade do Python é garantia emergente, não desenhada.**
+   `PureWindowsPath("/tmp/x").is_absolute()` é `False` — **mesmo ponto cego** do `filepath.IsAbs`. A
+   garantia vem de dois passos combinados: o `root / candidate` faz re-rooting, e o
+   `relative_to(root)` seguinte levanta `ValueError`. Funciona, mas por composição — vale documentar
+   com essa precisão em vez de dizer "Python não tem o defeito".
