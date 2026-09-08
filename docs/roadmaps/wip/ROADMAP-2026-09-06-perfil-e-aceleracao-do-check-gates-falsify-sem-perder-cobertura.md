@@ -485,7 +485,7 @@ Com fronteiras livres, o teto passa a ser o número de workers (4 vCPUs no runne
 - [x] os 5 pontos vermelhos acima, cada um com evidência no relatório (ver "Reentrega do ML-2D" acima)
 
 ### ML-2B — Os outros 45 gates do alvo `parity`
-**Status:** ⬜ Pendente · **Agente:** `ares-tf`
+**Status:** 🚫 **Abandonado** — decisão do arquiteto, 2026-09-08, com motivo medido
 Eles são ~22% do tempo e rodam **em sequência dentro de uma receita só** do `make` — paralelismo
 nunca foi possível ali, não foi desabilitado.
 **Antes de paralelizar, medir o compartilhamento:** quais escrevem em caminho fixo de `/tmp` ou tocam
@@ -1109,3 +1109,36 @@ cauda do log           = "...suite completa -- 8 chunks, 412 OK, 0 FAIL, guarda 
 **Reconciliação:** nenhum teste novo foi adicionado por esta correção — é uma declaração ausente em
 duas linhas de shell, coberta pela asserção estática já existente em `check-output-encoding-
 declared.sh` (ALVO 1), que passou a aprovar os dois arquivos após a mudança.
+
+
+## ML-2B abandonado — arquiteto, 2026-09-08
+
+**Motivo medido, não preferência.** Atribuição por segmento no CI (run `34055694451`):
+
+```
+check-gates-falsify.sh          876.5s   72.6%   ← atacado (ML-2D, ML-2G)
+check-parity-contract-coverage    94.3s    7.8%
+os outros 45 gates               ~237s   ~19.6%  ← escopo do ML-2B
+```
+
+O ML-2B mira **~20%** de um job que já caiu **27%** (20m41s → 15m00s) e que a matriz do ML-2G deve
+levar a poucos minutos. Depois disso, os ~237s **passam a ser a maior fatia** — mas de um job pequeno,
+onde economizar 2 minutos não muda o ciclo de ninguém.
+
+🔴 **E o roadmap do ML-2B já registrava o risco que o torna caro:** *"eles rodam em sequência dentro
+de uma receita só do `make` — paralelismo nunca foi possível ali, não foi desabilitado. Antes de
+paralelizar, medir o compartilhamento: quais escrevem em caminho fixo de `/tmp` ou tocam a árvore.
+Paralelizar gates que compartilham estado corrompe silenciosamente."*
+
+Ou seja: **o trabalho barato já foi feito, e o que sobra é o caro** — 45 gates para auditar por estado
+compartilhado, com risco de corrupção silenciosa, para ganhar minutos num job que já não é o gargalo.
+
+### Por que abandonar em vez de deixar pendente
+
+ML que ninguém vai fazer é o mesmo passivo das REQs órfãs — **só mais bem escondido**, porque um
+roadmap com pendência parece trabalho planejado em vez de dívida. Este projeto tem regra dura contra
+exatamente isso: *"registro não é correção"*.
+
+Se o `parity` voltar a incomodar depois da matriz, este ML **reabre com número novo** — a medição por
+segmento é reproduzível pelo mesmo método (atribuição por invocação de script no log do CI). O que
+não vale é ele ficar `⬜` por anos como promessa.
