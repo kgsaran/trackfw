@@ -4,6 +4,40 @@
 
 ---
 
+## Sessão 2026-09-08 — ares-tf (Infra) — ML-2F (gate para os pins de call site do ML-2E, CONCLUÍDO)
+
+Branch `chore/fecha-o-roadmap-do-parity-gate-dos-pins`, nenhuma operação de git (commit/push são do
+`trackfw_architect`). Roadmap:
+`docs/roadmaps/wip/ROADMAP-2026-09-06-perfil-e-aceleracao-do-check-gates-falsify-sem-perder-cobertura.md`,
+seção "Entrega do ML-2F".
+
+**Escopo entregue:** `scripts/check-parity-call-site-pins.sh` (novo) + `Makefile` (uma linha nova no
+alvo `parity`). Fecha o débito que o próprio ML-2E declarou: os pins de `HASH_CMD_BIN`/`PYTHON_BIN` e
+o rastro de `TRACKFW_FALSIFY_*` eram convenção provada por medição manual não versionada — agora têm
+gate próprio, falsificado nas duas direções (remover o pin ⇒ reprova nomeando a variável; pin
+presente ⇒ aprova), mais guarda de vacuidade em 3 variantes (Makefile vazio, sem linha de recipe,
+consumidor removido de `scripts/`) e uma 4ª sabotagem não pedida (comentário que menciona a variável
+não é confundido com o pin real — mesma armadilha de "prosa vira fronteira falsa" que já custou uma
+reentrega ao ML-2D).
+
+Desenho: lista de NOMES de variável congelada por escrito (evita o falso-positivo de dia zero contra
+`check-validate-parity.sh:139`, que lê `${GO_BIN:-}` sem pin por desenho legítimo, fora desta
+família); script consumidor e linha de recipe são DERIVADOS em runtime via grep, nunca hardcoded.
+Sem env var de redirecionamento no próprio gate (evitaria a mesma falha auto-referencial que o
+`hades-tf` achou no ML-2D) — raiz da árvore passada como `$1` posicional, sabotagens rodadas contra
+cópia em scratchpad.
+
+`make quality` inteiro (7 blocos foreground, log combinado, `grep -c '^FAIL'` sobre 4115 linhas
+inteiras = 0, 1020 OK) e `scripts/check-cli-parity.sh` isolado (`rc=0`) — evidência completa no
+roadmap. `run-gates-falsify-parallel.sh` isolado: `412 OK, 0 FAIL, guarda de conjunto OK`, e
+`git diff --name-only` confirma que nenhum arquivo do harness de falsify foi tocado (conjunto de
+rótulos inalterado por não-modificação, não por segunda rodada).
+
+**Pendente no roadmap:** ML-2G (shardar o gate em jobs de matriz do CI, PR próprio já que o #291 foi
+mergeado) — não tocado nesta sessão.
+
+---
+
 ## Sessão 2026-09-07 — ares-tf (Infra) — ML-1A/ML-1B (resolução de interpretador Python e binário do CLI, CONCLUÍDO)
 
 Branch `fix/gates-rodam-no-windows-resolucao-de-interpretador-e-binario`, nenhuma operação de git

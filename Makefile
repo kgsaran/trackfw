@@ -66,6 +66,7 @@ parity: build
 	scripts/check-atomic-write-anti-divergence.sh
 	scripts/check-shell-posix-portability.sh
 	scripts/check-output-encoding-declared.sh
+	scripts/check-parity-call-site-pins.sh
 	# --self-test: `make parity` roda fora de um pull request, entao nao ha corpo de
 	# PR para medir. O autoteste exercita o MESMO matcher que o CI usa (nao ha
 	# segunda copia da regex) nas duas direcoes + a guarda de vacuidade. A medicao

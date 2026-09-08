@@ -630,7 +630,7 @@ fallback `shasum -a 256` exige.
    Contorno legítimo, mas gate em pedaços ≠ gate inteiro. Rodei numa invocação só: verde.
 
 ### ML-2F — Gate para os pins de call site
-**Status:** ⬜ Pendente · **Agente:** `ares-tf`
+**Status:** ✅ Concluído · **Agente:** `ares-tf`
 
 Gate que reprova se `HASH_CMD_BIN`, `PYTHON_BIN` ou o par `TRACKFW_FALSIFY_*` deixarem de ser pinados
 nas recipes que os consomem. Falsificação nas duas direções: remover o pin ⇒ reprova; pin presente ⇒
@@ -638,6 +638,178 @@ aprova. Guarda de vacuidade contra `Makefile` vazio ou alvo ausente.
 
 **Por que é ML e não "fica para depois":** sem ele, os pins do ML-2E são convenção, não contrato — e
 o parecer do `hades-tf` só vale enquanto ninguém editar o `Makefile` sem saber por que aquilo está lá.
+
+## Entrega do ML-2F — `ares-tf`, 2026-09-08
+
+**Arquivo novo:** `scripts/check-parity-call-site-pins.sh`. **Cabeado em:** `Makefile`, alvo `parity`,
+logo após `check-output-encoding-declared.sh` (linha nova, sem alterar nenhuma linha existente).
+
+### 1. O que o gate verifica, por variável, e por que o critério difere
+
+**Duas listas fechadas** (`VARS_PIN`, `VARS_TRACE`) — o CRITÉRIO de projeto está escrito no cabeçalho
+do script: uma derivação ingênua ("toda env var lida via `${VAR:-...}` em algum script chamado pelo
+Makefile") produziria FAIL de dia zero, porque `scripts/check-validate-parity.sh:139` lê
+`${GO_BIN:-}` e cai para um binário próprio em `tmp` quando ausente — um site legítimo, já auditado,
+fora do escopo deste ML (não é a família de controle do ML-2E). Por isso o CONJUNTO DE NOMES é
+congelado — exatamente os que o ML-2E criou — e a manutenção é: todo novo controle desta família
+repete o comentário `"ML-2E, mesma família de HASH_CMD_BIN"` (convenção já em uso em `Makefile:82-84`
+e `check-roadmap-barrier-contract.sh:444`) e seu nome entra em `VARS_PIN`/`VARS_TRACE` no mesmo PR
+que o introduz.
+
+O que **é** derivado em runtime, sem caminho nem número de linha hardcoded: (a) qual script em
+`scripts/*.sh` consome cada variável (via grep no corpo do script, não no Makefile); (b) qual linha
+de recipe do Makefile invoca esse script (via grep no nome-base do script, não uma linha fixa). Só o
+NOME da variável é fixo — o restante é descoberto a cada execução.
+
+- **`HASH_CMD_BIN`, `PYTHON_BIN` → exigem PIN** no Makefile: a linha de recipe que invoca o script
+  consumidor precisa conter `VAR=` (regex de borda de palavra, não substring — evita casar
+  `HASH_CMD_BIN` contra o `HASH_CMD` do topo do arquivo). Critério: são pinados por desenho (ML-2E),
+  então a ausência do pin É a regressão.
+- **`TRACKFW_FALSIFY_SCRIPT`/`_GEN`/`_JOBS` → exigem RASTRO**, não pin: o ML-2E decidiu, com aval do
+  `hades-tf`, que pinar essas três destruiria a via de sabotagem controlada do harness (é para isso
+  que existem). O gate confere que `run-gates-falsify-parallel.sh` ainda tem a guarda
+  `if [[ -n "${VAR:-}" ]]` seguida (até 6 linhas depois — medido no arquivo real, o `echo` de
+  `TRACKFW_FALSIFY_JOBS` fica na linha +5 da guarda, não +3 como as outras duas) por um `echo ...
+  >&2` que menciona a variável.
+
+### 2. As três sabotagens (+ uma quarta, achada durante a implementação), com saída real
+
+Todas rodadas contra uma CÓPIA da árvore em `/private/tmp/.../scratchpad` — nunca o repositório real
+foi mutado durante a falsificação; sem `TRACKFW_*` de redirecionamento (ponto do advisor: um env var
+de desvio no próprio gate que audita desvios seria a mesma falha que o `hades-tf` achou no ML-2D). A
+raiz é passada como `$1` posicional (`ROOT="${1:-.}"`, mesmo idioma de
+`check-ci-workflow-job-id-collision.sh:27`); a linha do Makefile não passa argumento, então o
+ambiente não redireciona a invocação real.
+
+**Sabotagem 1 — remover o pin de `HASH_CMD_BIN` da linha de recipe:**
+```
+FAIL [call-site-pin/HASH_CMD_BIN/check-roadmap-barrier-contract.sh]: linha de recipe invoca
+check-roadmap-barrier-contract.sh sem pinar HASH_CMD_BIN= -- pin removido: 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-roadmap-barrier-contract.sh
+rc=1
+```
+
+**Sabotagem 2 — pin presente (baseline real, sem alteração):**
+```
+OK   [call-site-pin/HASH_CMD_BIN/check-roadmap-barrier-contract.sh]
+OK   [call-site-pin/PYTHON_BIN/smoke-integration-packages.sh]
+OK   [call-site-trace/TRACKFW_FALSIFY_SCRIPT/run-gates-falsify-parallel.sh]
+OK   [call-site-trace/TRACKFW_FALSIFY_GEN/run-gates-falsify-parallel.sh]
+OK   [call-site-trace/TRACKFW_FALSIFY_JOBS/run-gates-falsify-parallel.sh]
+rc=0
+```
+
+**Sabotagem 3 — guarda de vacuidade, três variantes:**
+```
+3a) Makefile vazio:
+    check-parity-call-site-pins: Makefile ausente ou vazio em .../Makefile
+    rc=1
+3b) Makefile só com comentários (zero linhas de recipe após o filtro):
+    check-parity-call-site-pins: Makefile não tem nenhuma linha de recipe (alvo ausente ou vazio)
+    rc=1
+3c) script consumidor de PYTHON_BIN removido de scripts/ (renomeado sem atualizar nada):
+    FAIL [call-site-pin/PYTHON_BIN/consumer-found]: nenhum script em scripts/*.sh lê ${PYTHON_BIN:-...}
+    ou ${PYTHON_BIN} -- o consumidor desapareceu, ou foi renomeado sem atualizar o gate
+    rc=1
+```
+Nenhuma variante aprova por não achar nada — todas nomeiam o que sumiu.
+
+**Sabotagem 4 — achada implementando a Sabotagem 1, não pedida no roadmap, mas é a mesma armadilha
+que custou uma reentrega ao ML-2D (comentário vira fronteira falsa):** remover o pin de `PYTHON_BIN`
+da linha de recipe real **mantendo** o comentário `Makefile:82-84` que literalmente contém a frase
+"PYTHON_BIN pinado":
+```
+FAIL [call-site-pin/PYTHON_BIN/smoke-integration-packages.sh]: linha de recipe invoca
+smoke-integration-packages.sh sem pinar PYTHON_BIN= -- pin removido: 	scripts/smoke-integration-packages.sh
+rc=1
+```
+Confirma que `recipe_lines()` filtra linha de comentário tab-indentada (`grep -vE "^${TAB}[[:space:]]*#"`)
+antes de procurar o pin — sem o filtro, o comentário sozinho teria convencido o gate de que o pin
+ainda existia.
+
+### 3. Como derivou a lista (frozen, com justificativa)
+
+Ver seção 1 — congelada por desenho, não por atalho: a alternativa (derivar de todo uso de
+`${VAR:-...}`) foi tentada mentalmente e descartada por produzir falso-positivo de dia zero contra
+`check-validate-parity.sh` (site legítimo e não-relacionado à família ML-2E). O que se derivou de
+fato foi o *script consumidor* e a *linha de recipe*, nunca hardcoded.
+
+### 4. Como verificou que não há recursão
+
+`grep -n "TRACKFW\|make \|\.sh\"\|check-.*\.sh\b" scripts/check-parity-call-site-pins.sh` só retorna a
+própria linha `VARS_TRACE=(TRACKFW_FALSIFY_SCRIPT ...)` — o gate nunca invoca `make`, nenhum
+`check-*.sh` nem `go build`; ele só lê texto (`grep`/`sed`) do `Makefile` e de `scripts/*.sh`. Rodado
+isolado: `0.12s` (não os ~478-712s do gate que ele protege) — confirma que não reexecuta o harness de
+falsificação. `make -n parity` mostra a linha nova na posição 47/52, sem repetição.
+
+### 5. `make quality` — invocado em blocos, foreground, log combinado
+
+Limite de 10 min por chamada de ferramenta obriga split (o `run-gates-falsify-parallel.sh` sozinho
+levou `8:11.53` nesta máquina/sessão — mais lento que os 478-712s de rodadas anteriores, atribuído a
+carga concorrente da máquina, não a este ML: nenhum arquivo do harness de falsify foi tocado). 7
+blocos em sequência, foreground, cada saída redirecionada para arquivo em
+`scratchpad/quality-batchN.log`, concatenados em `quality-combined.log`:
+
+```
+grep -c '^FAIL' quality-combined.log   → 0     (sobre as 4115 linhas INTEIRAS, nunca | tail)
+grep -c '^OK'   quality-combined.log   → 1020
+```
+
+Blocos: (1) build + 19 `check-*-parity.sh` iniciais; (2) 16 `check-*-parity.sh` seguintes; (3)
+`run-gates-falsify-parallel.sh` isolado — `rc=0`, `8 chunks, 412 OK, 0 FAIL, guarda de conjunto OK`;
+(4) os 11 gates finais do alvo `parity`, **incluindo o gate novo rodando no próprio `parity` real**
+(`scripts/check-parity-call-site-pins.sh` aparece como linha própria no bloco, `rc=0` agregado) e
+`check-pr-closing-keyword.sh --self-test`; (5) `go test` + `go vet` — `ok` em todos os pacotes; (6)
+`npm test` — `885 tests, 0 fail`; (7) `pytest` — `1667 passed, 66 subtests passed`.
+
+`scripts/check-cli-parity.sh` isolado (AC explícito do roadmap): `rc=0`.
+
+### Conjunto de rótulos de falsificação inalterado — método declarado
+
+`git diff --name-only -- scripts/check-gates-falsify.sh scripts/gen-falsify-chunks.py
+scripts/run-gates-falsify-parallel.sh` → vazio: nenhum dos três arquivos do harness foi tocado nesta
+entrega. Combinado com a guarda interna do próprio driver (construída no ML-2D, auditada no ML-2E)
+reportando `412 OK, 0 FAIL, guarda de conjunto OK (nenhum rotulo esperado ausente)` — o mesmo número
+que a auditoria do ML-2D já havia confirmado (`412 OK`) — o `diff` vazio + o número idêntico são a
+prova de que nada mudou no conjunto; não rodei uma segunda vez o gate de 8 minutos só para comparar
+rótulo a rótulo, porque a fonte que gera o rótulo está comprovadamente intocada.
+
+### Regra dura de reconciliação — uma frase por teste novo
+
+Este ML não adiciona teste dentro da suíte `check-gates-falsify.sh` — adiciona um GATE NOVO
+independente. A frase por sabotagem (o equivalente do "teste" aqui): Sabotagem 1 afirma "o gate
+reprova, nomeando a variável, quando o pin de call site é removido da linha de recipe real do
+Makefile" — confirmado pela saída `FAIL [call-site-pin/HASH_CMD_BIN/...]` acima. Sabotagem 3 afirma
+"o gate nunca aprova por não achar nada" — confirmado pelas 3 variantes reprovando com `rc=1`,
+cada uma nomeando o que sumiu. Sabotagem 4 afirma "um comentário que menciona a variável não é
+confundido com o pin real" — confirmado pelo `FAIL` mesmo com o comentário presente.
+
+### Regra dura de paridade — 3 CLIs: exceção explícita, escrita aqui
+
+`scripts/check-parity-call-site-pins.sh` existe **só** em `scripts/`, sem contraparte em
+`npm/src/`/`pypi/trackfw/` — não é violação. `docs/cli-parity.md:1-4` define o contrato como
+"public commands" dos 3 CLIs (`init`, `req`, `roadmap`, `validate`, ...); um gate interno de CI que
+audita o próprio `Makefile` do repositório não expõe superfície de CLI nenhuma. Precedente: os outros
+~45 `check-*.sh` do alvo `parity` (`check-cli-parity.sh`, `check-ci-workflow-job-id-collision.sh`,
+etc.) também vivem só em `scripts/`, nunca replicados por CLI — é a mesma categoria de
+"infra"/tooling de CI que `CLAUDE.md` já lista como exceção explícita à regra de paridade. Nenhum
+comportamento visível de `trackfw <comando>` mudou nesta entrega.
+
+### Status ✅ — pendente da auditoria do arquiteto
+
+Marcado ✅ seguindo o mesmo precedente já registrado pelo próprio ML-1A deste roadmap: o CLAUDE.md do
+projeto instrui marcar o ML concluído ao entregar; o role card de Infra instrui atualizar só depois
+da auditoria do orquestrador. Sigo o CLAUDE.md (autoridade mais específica deste repositório), mas o
+✅ é condicional — reverte para 🔄 se a auditoria do `trackfw_architect` encontrar algo que a exija.
+
+### Sítios de mesma causa — reportados, nenhum artefato aberto
+
+- `check-validate-parity.sh:139` também lê um override (`${GO_BIN:-}`) sem pin no Makefile — mas é um
+  site já auditado e intencional (fallback para binário próprio em tmp), não a mesma causa do ML-2E
+  (não existe guarda que um `GO_BIN` forjado ali possa satisfazer vaziamente da mesma forma que
+  `HASH_CMD_BIN` fazia contra `check-roadmap-barrier-contract.sh`). Não incluído na lista congelada;
+  se algum dia alguém decidir que merece a mesma proteção, é uma linha nova em `VARS_PIN`, não uma
+  REQ nova.
+- ML-2G (shardar em jobs de matriz) segue como próximo item do roadmap, não tocado aqui.
 
 
 ## Medição no CI — arquiteto, 2026-09-07 (a que o ML-3A pedia)
