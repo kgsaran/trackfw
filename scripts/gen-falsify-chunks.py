@@ -76,6 +76,7 @@ rótulos.
 import re
 import sys
 import os
+import json
 
 HDR_PAT = re.compile(r'^# Cen[aá]rio[s]?\s+([0-9][0-9a-zA-Z/–\-]*)\s+(--|—)')
 ASSIGN_PAT = re.compile(r'^\s*(?:local\s+|export\s+|declare\s+)?([A-Za-z_][A-Za-z0-9_]*)\+?=')
@@ -272,26 +273,41 @@ def fuse_dependent_segments(lines, prelude_assigns, segments):
         ranges = [(segments[m]["start"], segments[m]["end"]) for m in members]
         labels = [segments[m]["label"] for m in members]
         n_lines = sum(e - s for s, e in ranges)
+        # ML-2H: chave de PESO = rótulo de asserção real (contrato já usado
+        # pela guarda de conjunto), não o número de cenário acima (`labels`,
+        # que renumera com inserção -- já provado hostil a memória
+        # posicional 3x neste arquivo). Literais e prefixos glob entram na
+        # mesma chave-espaço: um cenário `for x in ...; assert_* "pfx/$x"`
+        # calibra pelo prefixo, do mesmo jeito que a guarda de conjunto já
+        # casa por glob.
+        weight_keys = set()
+        for s, e in ranges:
+            lit, glb = extract_expected_labels(lines, s, e)
+            weight_keys.update(lit)
+            weight_keys.update(glb)
         fused.append({
             "start": ranges[0][0],
             "end": ranges[-1][1],
             "ranges": ranges,
             "labels": labels,
             "n_lines": n_lines,
+            "weight_keys": sorted(weight_keys),
         })
 
     return fused, edges
 
 
 def pack_lpt(fused, n_chunks):
-    """Longest-processing-time-first: maior bloco primeiro, sempre no chunk
-    mais vazio no momento. Garante que o maior bloco fundido nunca fica
-    sozinho num chunk artificialmente pequeno."""
-    buckets = [{"items": [], "weight": 0} for _ in range(n_chunks)]
-    for f in sorted(fused, key=lambda x: -x["n_lines"]):
+    """Longest-processing-time-first: maior bloco primeiro (por PESO, ver
+    `f["weight"]" -- ML-2H trocou a fonte de linha para tempo medido, sem
+    mudar o algoritmo LPT em si), sempre no chunk mais vazio no momento.
+    Garante que o maior bloco fundido nunca fica sozinho num chunk
+    artificialmente pequeno."""
+    buckets = [{"items": [], "weight": 0.0} for _ in range(n_chunks)]
+    for f in sorted(fused, key=lambda x: -x["weight"]):
         buckets.sort(key=lambda b: b["weight"])
         buckets[0]["items"].append(f)
-        buckets[0]["weight"] += f["n_lines"]
+        buckets[0]["weight"] += f["weight"]
     return buckets
 
 
@@ -325,6 +341,107 @@ def extract_expected_labels(lines, start, end):
     return literals, globs
 
 
+# ML-2H (ROADMAP-2026-09-06-perfil-e-aceleracao-do-check-gates-falsify...):
+# empacotar por número de LINHA não prevê TEMPO -- medido no CI (run
+# 34277875332): desequilíbrio de 5,5x entre o shard mais lento e o previsto
+# como mais lento, que foi na verdade o mais rápido. A variância mora em
+# EXECUÇÃO (cenários que sobem múltiplos runtimes / processos), não em
+# COMPILAÇÃO -- ML-1A já mediu compilação = 8,8% do tempo total (81,1s de
+# 921,4s, 93 builds) espalhado por 26 sítios de `build_go_or_fail`, sinal
+# fraco demais para produzir 5,5x. Por isso o peso vem de CALIBRAÇÃO (tempo
+# medido, ver gen-falsify-scenario-weights.py), não de heurística estática
+# do fonte.
+DEFAULT_WEIGHTS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                     "falsify-scenario-weights.json")
+
+
+def load_weights():
+    """Lê o arquivo de pesos versionado (path fixo por padrão, sobrescrevível
+    por TRACKFW_FALSIFY_WEIGHTS -- mesma convenção de pin dos outros
+    consumidores de scripts/, ver check-parity-call-site-pins.sh). Retorna
+    (dict rótulo->segundos, path, existe_bool). Arquivo ausente NÃO é erro:
+    é o modo legado (peso por linha), mas é sinalizado em stderr para nunca
+    degradar em silêncio -- ver assign_weights()."""
+    path = os.environ.get("TRACKFW_FALSIFY_WEIGHTS", DEFAULT_WEIGHTS_PATH)
+    if not os.path.isfile(path):
+        return {}, None, path, False
+    with open(path, encoding="utf-8") as fh:
+        payload = json.load(fh)
+    weights = payload.get("weights", {})
+    fallback_unlabeled = payload.get("_fallback_weight_for_unlabeled")
+    if fallback_unlabeled is not None:
+        fallback_unlabeled = float(fallback_unlabeled)
+    return {k: float(v) for k, v in weights.items()}, fallback_unlabeled, path, True
+
+
+def assign_weights(fused, weights, fallback_unlabeled, weights_exist):
+    """Atribui `f['weight']`/`f['weight_source']` a cada bloco fundido.
+
+    - Sem arquivo de pesos: peso = n_lines (modo legado, idêntico ao
+      comportamento pré-ML-2H). Uma nota em stderr, uma vez, não por bloco.
+    - Com arquivo: peso = soma dos pesos calibrados de cada `weight_keys`
+      (rótulo de asserção ou prefixo glob) do bloco. Rótulo NOVO (sem
+      entrada no arquivo) usa o peso PESSIMISTA (máximo já calibrado) --
+      nunca 0, nunca silencioso: uma linha nomeada em stderr por rótulo
+      ausente. Bloco sem NENHUM `weight_keys` (não deveria ocorrer -- todo
+      segmento de asserção sobrevive a split_support_segments por ter sinal
+      de teste -- mas se ocorrer, cai para n_lines desse bloco específico e
+      avisa, em vez de presumir peso 0 e sub-alocar silenciosamente)."""
+    if not weights_exist:
+        sys.stderr.write(
+            f"gen-falsify-chunks: nenhum arquivo de pesos em '{DEFAULT_WEIGHTS_PATH}' "
+            "(ou TRACKFW_FALSIFY_WEIGHTS) -- empacotando por numero de linha (modo "
+            "legado, pre-ML-2H). Rode gen-falsify-scenario-weights.py para calibrar.\n"
+        )
+        for f in fused:
+            f["weight"] = float(f["n_lines"])
+            f["weight_source"] = "lines"
+        return
+
+    pessimistic = max(weights.values()) if weights else 0.0
+    for f in fused:
+        if not f["weight_keys"]:
+            # ML-2H, correção pós-auditoria: peso SEGUNDOS aqui, nunca linha
+            # -- um bloco sem rótulo extraível ainda tem duração medida (ver
+            # `unlabeled_durations` em gen-falsify-scenario-weights.py); usar
+            # n_lines misturava unidade linha dentro de um pacote calibrado
+            # em segundos (achado: 46% da massa de empacotamento era linha
+            # disfarçada de segundo). Sem `_fallback_weight_for_unlabeled`
+            # no arquivo (calibração antiga, ou nenhum bloco sem rótulo
+            # ocorreu na calibração) cai para o pessimista GERAL -- ainda em
+            # segundos, nunca linha.
+            unlabeled_weight = fallback_unlabeled if fallback_unlabeled is not None else pessimistic
+            sys.stderr.write(
+                f"gen-falsify-chunks: AVISO bloco iniciando na linha {f['start']} "
+                f"nao produziu nenhum rotulo de asserção extraivel -- usando peso "
+                f"pessimista para bloco sem rotulo ({unlabeled_weight:.4f}s), nao "
+                "linha e nao silenciando.\n"
+            )
+            f["weight"] = unlabeled_weight
+            f["weight_source"] = "time_fallback_no_keys"
+            continue
+        total = 0.0
+        missing = []
+        for k in f["weight_keys"]:
+            if k in weights:
+                total += weights[k]
+            else:
+                total += pessimistic
+                missing.append(k)
+        if missing:
+            for k in missing:
+                sys.stderr.write(
+                    f"gen-falsify-chunks: AVISO rotulo '{k}' (bloco linha {f['start']}) "
+                    f"sem peso calibrado -- usando peso pessimista {pessimistic:.4f}s "
+                    "(maximo ja calibrado no arquivo). Cenario novo/renomeado: rode "
+                    "gen-falsify-scenario-weights.py para recalibrar.\n"
+                )
+            f["weight_source"] = "time_pessimistic_fallback"
+        else:
+            f["weight_source"] = "time"
+        f["weight"] = total
+
+
 def main():
     if len(sys.argv) != 4:
         raise SystemExit(f"uso: {sys.argv[0]} <script-fonte> <dir-de-saida> <n-chunks>")
@@ -344,6 +461,9 @@ def main():
         prelude_assigns |= a
 
     fused, edges = fuse_dependent_segments(lines, prelude_assigns, assertion_segments)
+
+    weights, fallback_unlabeled, weights_path, weights_exist = load_weights()
+    assign_weights(fused, weights, fallback_unlabeled, weights_exist)
 
     n_chunks = min(n_chunks, len(fused))
     buckets = pack_lpt(fused, n_chunks)
@@ -367,17 +487,41 @@ def main():
     for s in sorted(support_segments, key=lambda x: x["start"]):
         prelude_lines.extend(lines[s["start"]:s["end"]])
 
+    # ML-2H: marca de tempo por BLOCO FUNDIDO, opt-in via FALSIFY_TIMING_FILE
+    # (best-effort -- nunca aborta o chunk se a variável não estiver setada
+    # ou o diretório não existir; calibração é sempre opcional). Emitida
+    # ANTES do sentinela CHUNK_COMPLETE (que continua sendo a ÚLTIMA linha,
+    # ver comentário abaixo) e nunca começando com OK/FAIL/PROOF -- não
+    # interfere no colhedor de rótulos (`grep -oE '^(OK|FAIL|PROOF)...'` em
+    # run-gates-falsify-shard.sh) nem no sentinela. $EPOCHREALTIME é
+    # variável nativa do bash (>=5.0, disponível em ubuntu-latest e no bash
+    # via homebrew usado localmente) -- delta calculado depois, fora do
+    # bash, por gen-falsify-scenario-weights.py (bash não faz ponto
+    # flutuante nativo).
+    TIMING_HELPER = (
+        "__falsify_timing_mark() {\n"
+        '  [[ -n "${FALSIFY_TIMING_FILE:-}" ]] || return 0\n'
+        '  printf \'FALSIFY_TIMING phase=%s block=%s labels=%s ts=%s\\n\' '
+        '"$1" "$2" "$3" "$EPOCHREALTIME" >> "$FALSIFY_TIMING_FILE" 2>/dev/null || true\n'
+        "}\n"
+    )
+
     manifest = []
     label_lines = []
     for i, b in enumerate(buckets):
         chunk_lines = list(prelude_lines)
+        chunk_lines.append(TIMING_HELPER.rstrip("\n"))
         # preserva a ordem original dentro do chunk (não é requisito de
         # corretude — os blocos já não têm dependência entre si por
         # construção — mas facilita leitura de log/diagnóstico).
         ordered_items = sorted(b["items"], key=lambda x: x["start"])
         for f in ordered_items:
+            block_id = f"{i}-{f['start']}"
+            label_csv = ",".join(k.replace('"', '\\"') for k in f["weight_keys"]) or "none"
+            chunk_lines.append(f'__falsify_timing_mark start "{block_id}" "{label_csv}"')
             for s, e in f["ranges"]:
                 chunk_lines.extend(lines[s:e])
+            chunk_lines.append(f'__falsify_timing_mark end "{block_id}" "{label_csv}"')
         chunk_path = os.path.join(out_dir, f"chunk_{i}.sh")
         with open(chunk_path, 'w', encoding='utf-8') as fh:
             fh.write('\n'.join(chunk_lines))
@@ -437,11 +581,13 @@ def main():
         for glb in sorted(set(chunk_globs)):
             label_lines.append(f"chunk={i} label_glob={glb}")
 
+        chunk_n_lines = sum(f["n_lines"] for f in b["items"])
         manifest.append({
             "chunk": i,
             "path": chunk_path,
             "n_fused_blocks": len(b["items"]),
-            "n_lines": b["weight"],
+            "n_lines": chunk_n_lines,
+            "weight": b["weight"],
             "labels": all_labels,
         })
 
@@ -452,10 +598,14 @@ def main():
     print(f"assertion_segments={len(assertion_segments)}")
     print(f"fused_units={len(fused)}")
     print(f"cross_segment_edges={len(edges)}")
-    largest = max(fused, key=lambda f: f["n_lines"])
-    print(f"largest_fused_unit_lines={largest['n_lines']} labels={largest['labels'][0]}..{largest['labels'][-1]} count={len(largest['labels'])}")
+    weight_sources = sorted({f["weight_source"] for f in fused})
+    print(f"weight_source={','.join(weight_sources)} weights_path={weights_path} weights_file_found={weights_exist}")
+    largest_lines = max(fused, key=lambda f: f["n_lines"])
+    print(f"largest_fused_unit_lines={largest_lines['n_lines']} labels={largest_lines['labels'][0]}..{largest_lines['labels'][-1]} count={len(largest_lines['labels'])}")
+    largest_weight = max(fused, key=lambda f: f["weight"])
+    print(f"largest_fused_unit_weight={largest_weight['weight']:.4f} labels={largest_weight['labels'][0]}..{largest_weight['labels'][-1]} count={len(largest_weight['labels'])}")
     for m in manifest:
-        print(f"chunk={m['chunk']} path={m['path']} fused_blocks={m['n_fused_blocks']} lines={m['n_lines']} n_labels={len(m['labels'])}")
+        print(f"chunk={m['chunk']} path={m['path']} fused_blocks={m['n_fused_blocks']} lines={m['n_lines']} weight={m['weight']:.4f} n_labels={len(m['labels'])}")
     for l in label_lines:
         print(l)
 
