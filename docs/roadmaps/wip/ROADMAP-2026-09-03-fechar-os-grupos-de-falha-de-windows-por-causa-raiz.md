@@ -1024,7 +1024,106 @@ completa dela.
 ## Wave reaberta — 2026-09-08: o grupo `IsAbs` não havia fechado
 
 ### ML-R1 — `manager.go` usa o helper de ancoragem que já existe
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` · 🔴 **segurança**
+**Status:** 🔄 Em andamento (implementação, testes locais e VM Windows concluídos e verdes; falta
+só a revisão `hades-tf` antes do commit) · **Agente:** `apolo-tf` · 🔴 **segurança**
+
+**Medições registradas conforme feitas (2026-09-08):**
+
+1. **Extração:** predicado movido de `internal/validator/validator_credential_guard.go`
+   (`pathIsAnchoredForHookConfig`) para `internal/pathanchor/pathanchor.go`, exportado como
+   `pathanchor.IsAnchored`. Pacote-folha sem import de `path/filepath` (grep confirma). Zero
+   duplicação: `internal/validator` (2 sítios: `validator_credential_guard.go`,
+   `validator_git_branch_guard.go`) e `internal/integrations/manager.go` chamam o mesmo símbolo.
+   Direção do grafo de import confirmada antes de extrair: `internal/generators` →
+   `internal/validator` → `internal/integrations`; um novo pacote-folha evita o ciclo que
+   impediria `internal/integrations` de importar `internal/validator` diretamente.
+2. **`manager.go:704` (agora ~707), 3 ramos:** `~/...` inalterado; `pathanchor.IsAnchored(destination)
+   && !filepath.IsAbs(destination)` → **rejeita explicitamente** (`unsafe destination`) em vez de
+   cair no ramo relativo; `pathanchor.IsAnchored(destination) && filepath.IsAbs(destination)` →
+   comportamento antigo preservado (`Clean` + `beneath`). Decisão registrada no code comment: por
+   que a fronteira D2 da ADR-2026-09-04 ("SO é autoridade em travessia real") não se aplica a esta
+   linha — a decisão aqui é CLASSIFICAÇÃO de uma string de entrada (`plan.Destination`), não
+   resolução de syscall.
+3. **Sweep de `filepath.IsAbs`** (todo o repo, `.go` não-teste): 4 sítios reais.
+   - `internal/integrations/manager.go:721` (novo) — CONVERTIDO (par com `pathanchor.IsAnchored`).
+   - `internal/integrations/manager.go:746` (`beneath()`) — **mantido**: opera sobre a SAÍDA de
+     `filepath.Rel(root, filename)`, já resolvida pelo SO; decide containment real, não classifica
+     string externa.
+   - `internal/validator/validator.go:2195` (`isOutsideCWD`) — **mantido**: mesma forma, opera
+     sobre `filepath.Rel(absCwd, absPath)` já resolvido via `filepath.Abs` real.
+   - `internal/generators/update_test.go` (6 ocorrências) — **mantido**: são asserções de teste
+     sobre caminho de tempdir real computado, não classificação de entrada.
+4. **Paridade 3 CLIs — medida, não presumida:**
+   - **Node:** `path.win32.isAbsolute("/tmp/x")` → `true` (medido: `node -e ...`). Node já trata
+     `/tmp/x` como absoluto no Windows — **não tem o defeito**: `npm/src/integrations/manager.js`
+     segue o ramo `path.isAbsolute` corretamente e rejeita via o check de `rel` na sequência.
+   - **Python:** `ntpath.isabs("/tmp/x")` → `False` (mesma leitura estreita do Go) — MAS
+     `pypi/trackfw/integrations/manager.py` usa `pathlib.Path.__truediv__` (não concatenação
+     ingênua): `root / candidate` com `candidate` drive-relativo REANCORA para a raiz do drive de
+     `root` (`C:\Users\Lab\trackfw` / `/tmp/x` → `C:\tmp\x`), e o `relative_to(root)` seguinte
+     detecta que o resultado não está sob `root` e levanta `ValueError` → rejeitado. Medido com
+     `PureWindowsPath`/`ntpath.normpath` sem precisar da VM (path puro, independente de SO real).
+   - **Conclusão:** nenhum dos dois CLIs tem o defeito medido em Go — mesma causa aparente
+     (`isAbsolute` estreito no Windows), mecanismos de containment downstream diferentes, e nos
+     dois casos o resultado final já era seguro. Nenhum ML de paridade necessário.
+5. **Testes:**
+   - `internal/pathanchor/pathanchor_test.go` — 3 tabelas movidas byte-a-byte de
+     `validator_credential_guard_test.go` (comportamento-preservante; `go test` roda igual antes/
+     depois da extração).
+   - `internal/integrations/manager_test.go`,
+     `TestManagerRejectsAnchoredDestinationHostMismatch` — vetores `C:\Windows\evil.md` e
+     `\\server\share\evil.md`, que em QUALQUER host POSIX (não só Windows) já divergem entre
+     `pathanchor.IsAnchored` (true) e `filepath.IsAbs` (false) — falsificação sem depender da VM.
+     Frase de reconciliação: **este teste afirma que `manager.resolve` rejeita uma
+     `PlannedArtifact.Destination` que é ancorada pela forma (letra de unidade/UNC) mas não é
+     `filepath.IsAbs` no host corrente, em vez de tratá-la como fragmento relativo seguro para
+     juntar sob a raiz** — é exatamente a lacuna medida na VM Windows para `/tmp/...`, replicada
+     com vetores que divergem em QUALQUER host.
+   - **Falsificação de reversão comprovada nesta sessão:** reverti manualmente o `case
+     pathanchor.IsAnchored(destination)` para `case filepath.IsAbs(destination)` (sem tocar mais
+     nada) e rodei `go test -run TestManagerRejectsAnchoredDestinationHostMismatch -v`: **FAIL**
+     ("accepted a destination anchored-by-form but not filepath.IsAbs on this host"). Restaurado
+     e reconfirmado verde. Prova de que o teste não é vácuo.
+6. **VM Windows ARM64 (`go1.27.1 windows/arm64`, `C:\Users\Lab\trackfw` sincronizado com a HEAD
+   desta branch, `c52d566` + diff local) — medido e verde:**
+   - `TestManagerRejectsTraversalAbsoluteMismatchAndNUL`, `TestManagerRejectsAnchoredDestinationHostMismatch`,
+     `TestResolveWindowsCrossplatform` — `--- PASS` (com `=== RUN` confirmado, não silêncio de teste
+     inexistente).
+   - `internal/pathanchor` completo — `ok`.
+   - `internal/integrations` completo — `ok`.
+   - `internal/validator` completo com `-run TestCredentialGuardHookResolvable` — todas as 24
+     subvariantes `--- PASS`.
+   - `internal/validator` **sem** filtro tem 3 FAILs pré-existentes
+     (`TestStaleWIPReportsWIPWalkError`, `TestFolderStatus_DiretorioNaoLegivel_P2`,
+     `TestFilenameUniqueness_DiretorioNaoLegivel_P2`) — medido **idêntico** rodando `git stash` (só
+     a base `c52d566`, sem este diff) na mesma VM: são os outros grupos da triagem (ENOTDIR/
+     permissão), não regressão deste ML. `internal/integrations` idem — `TestResolveAgentModelMatchesRender`
+     falha igual com e sem o diff (grupo `models`, fora de escopo).
+7. **Falsificação de infraestrutura de gate encontrada e corrigida:** `scripts/check-gates-falsify.sh`
+   Cenário 165 tinha um `sed 's/pathIsAnchoredForHookConfig(rawStripped)/false/g'` que virou no-op
+   silencioso após a extração — o mesmo padrão de falha que o retarget de 2026-09-04 já registrou
+   no cabeçalho do cenário (histórico de reincidência do próprio arquivo). `make quality
+   QUALITY_EXIT=0` pegou via `run-gates-falsify-parallel: GUARDA — chunk_6 nao chegou ao sentinela
+   CHUNK_COMPLETE`. Retargeted para `pathanchor.IsAnchored(rawStripped)`; `grep -c '^FAIL'` = 0 na
+   saída completa de `make quality QUALITY_EXIT=0` depois da correção (rodado localmente, 4108
+   linhas, verificado sem `| tail`).
+8. **`hades-tf`:** pendente — é mudança em guarda de segurança, revisão obrigatória antes do
+   commit (nenhum commit foi feito por este agente). Duas afirmações para a revisão confirmar
+   diretamente, em vez de derivar do diff:
+   - **A extração NÃO alterou a lógica do predicado.** `pathanchor.IsAnchored` é byte-idêntico a
+     `pathIsAnchoredForHookConfig` — os 3 braços (POSIX `/`, UNC com validação de servidor/share,
+     letra de unidade) e todas as ressalvas de segurança do parecer `hades-tf` de 2026-09-04
+     (formas UNC degeneradas `\\`, `\\x`, `\\.\x`, `\\..\evil`, `\\..\\evil`; `isASCIIDriveLetter`
+     byte-only anti-homoglyph) sobreviveram intactas à extração — só o pacote e o nome exportado
+     mudaram. O que mudou é o CONJUNTO DE CONSUMIDORES (de 1 pacote para 2), não a classificação.
+   - **A mudança em `manager.go` é estritamente mais restritiva, nunca mais permissiva.**
+     `filepath.IsAbs(x) == true` implica `pathanchor.IsAnchored(x) == true` em qualquer host (o
+     predicado portável é uma UNIÃO estritamente maior que qualquer `filepath.IsAbs` de um único
+     SO). Logo nenhum destino que antes tomava o ramo `Clean`+`beneath` passa a tomar outro ramo —
+     o único efeito observável é que destinos que antes caíam silenciosamente no ramo relativo
+     (porque `filepath.IsAbs` discordava do predicado portável) agora são rejeitados explicitamente
+     em vez de reancorados. Não há caminho novo sendo ACEITO por esta mudança, só caminhos que
+     eram aceitos por engano passando a ser rejeitados.
 
 **Medido na VM Windows ARM64, sobre `origin/main`:**
 
