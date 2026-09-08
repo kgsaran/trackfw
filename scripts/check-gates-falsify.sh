@@ -99,6 +99,54 @@ if ! PY_BIN=$(resolve_py_bin); then
 fi
 export PY_BIN
 
+# ML-2A (mesma ROADMAP, Wave 2): PATH shim para `python3` bare -- os ~40
+# scripts/check-*.sh copiados para dentro de fixtures (ex.
+# check-identity-parity.sh:40,164) chamam `python3` literal e não passam por
+# PY_BIN. Medido na VM Windows: com PY_BIN já resolvido, o gate ainda
+# reprovava no primeiro desses sub-scripts com a mensagem do stub da Store
+# (rc=49), porque o sub-script nunca viu PY_BIN.
+#
+# Em vez de editar os ~40 arquivos (risco medido no ML-1A: um `sed` ingênuo
+# quebra sintaxe dentro de `bash -c "...python3..."` já entre aspas, e um
+# heredoc-tracker ingênuo pode descartar substituições reais em silêncio),
+# um diretório na FRENTE do PATH intercepta toda chamada por nome nu -- sem
+# tocar nenhum sub-script, inclusive os que chamam python3 dentro de heredoc
+# ou string já citada. Todo `bash sub-script.sh` invocado por este script
+# (serial ou, via gen-falsify-chunks.py, cada chunk paralelo -- o preâmbulo é
+# copiado byte a byte) herda este PATH.
+#
+# No-op em Linux/macOS: lá python3 já É o PY_BIN escolhido (primeira
+# tentativa de resolve_py_bin), então o shim reexecuta o mesmo binário.
+#
+# 🔴 Armadilha medida ao vivo (auto-recursão): PY_BIN pode ser literalmente
+# "python3" (nome nu -- resolve_py_bin() só devolve o CANDIDATO que passou,
+# não o caminho resolvido). Escrever um shim chamado "python3" que faz
+# `exec python3 "$@"` e SÓ DEPOIS prefixar o PATH com o diretório do shim faz
+# a resolução de `python3` dentro do próprio shim CAIR NELE MESMO -- todo
+# processo filho herda o PATH já modificado. Reproduzido: o gate trava sem
+# nunca terminar (nenhuma chunk chega ao sentinela). A correção resolve o
+# PRIMEIRO token de PY_BIN para um caminho ABSOLUTO via `command -v` -- feito
+# ANTES de tocar o PATH -- para que o shim nunca aponte para si mesmo.
+# 🔴 2ª armadilha medida ao vivo: alguns sub-scripts (check-release-tag-parity.sh,
+# check-push-force-parity.sh, check-doctor-remote-parity.sh) fazem
+# `REAL_PYTHON3=$(command -v python3)` e depois symlinkam para dentro de um
+# PATH PRÓPRIO e ESTREITO que NUNCA herda o PATH do chamador (isolamento
+# deliberado deles, contra vazamento de `gh`/`git` do host). Nesse PATH
+# estreito não sobra `/usr/bin`/`/bin` -- então um shim com shebang
+# `#!/usr/bin/env bash` falha ali com "env: bash: No such file or
+# directory", porque `env` não acha `bash` nesse PATH restrito. `#!/bin/sh`
+# não tem esse problema: o kernel carrega o interpretador pelo caminho
+# ABSOLUTO da shebang, sem nenhuma busca em PATH -- funciona em qualquer
+# PATH que o processo filho receber, restrito ou não.
+FALSIFY_PY_SHIM_DIR="$WORK/py-shim"
+mkdir -p "$FALSIFY_PY_SHIM_DIR"
+FALSIFY_PY_FIRST_TOKEN="${PY_BIN%% *}"
+FALSIFY_PY_REST="${PY_BIN#"$FALSIFY_PY_FIRST_TOKEN"}"
+FALSIFY_PY_FIRST_ABS=$(command -v "$FALSIFY_PY_FIRST_TOKEN")
+printf '#!/bin/sh\nexec %s%s "$@"\n' "$FALSIFY_PY_FIRST_ABS" "$FALSIFY_PY_REST" > "$FALSIFY_PY_SHIM_DIR/python3"
+chmod +x "$FALSIFY_PY_SHIM_DIR/python3"
+export PATH="$FALSIFY_PY_SHIM_DIR:$PATH"
+
 # ---------------------------------------------------------------------------
 # ML-1B (mesma ROADMAP): resolução do binário Go do CLI (FALSIFY_GO_BIN) —
 # ponto único usado por todo `GO_BIN="$FALSIFY_GO_BIN"` deste script.
