@@ -495,7 +495,21 @@ a árvore. Paralelizar gates que compartilham estado corrompe silenciosamente.
 > Dependências: Wave 2.
 
 ### ML-3A — Ganho medido em run comparável
-**Status:** ⬜ Pendente · **Agente:** `ares-tf`
+**Status:** ✅ Concluído · **Agente:** `trackfw_architect` · medido em 2026-09-07
+
+```
+06/09   20m41s   ← antes
+07/09   15m00s   ← PR #291, com o paralelismo        −27%
+```
+
+🔴 **Marcador estava obsoleto:** a medição já estava escrita neste roadmap (seção *"Medição no CI"*)
+e o `Status` continuava `⬜`. Estado do artefato divergindo do estado real — segundo caso hoje, e o
+mesmo defeito que a regra dura de reconciliação existe para pegar. Corrigido na auditoria final.
+
+**Ressalva que a medição obriga:** o ganho é **menor** que o 1,89x local porque o runner tem 4 vCPUs
+contra 10 cores da máquina de medição. E o arco completo desmonta a comemoração — `13m23s` quando a
+REQ abriu, `20m41s` depois de quatro dias somando cenários, `15m00s` agora. **A paralelização pagou a
+dívida que nós criamos e sobrou pouco.**
 🔴 **Medido no CI** (AC4), não somado do local. E com as duas pontas medidas pelo mesmo método —
 `vault/notes/contagem-de-falhas-de-windows-do-go-medida-por-padrao-frouxo-2026-09-04.md`.
 
