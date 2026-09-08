@@ -3,10 +3,13 @@ package integrations
 import (
 	"errors"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"syscall"
 	"testing"
+
+	"github.com/kgsaran/trackfw/internal/pathanchor"
 )
 
 func TestManagerLifecycleStates(t *testing.T) {
@@ -209,6 +212,148 @@ func TestManagerRejectsTraversalAbsoluteMismatchAndNUL(t *testing.T) {
 	for _, plan := range cases {
 		if err := manager.Install([]PlannedArtifact{plan}, false); err == nil {
 			t.Errorf("Install(%q, %s) accepted unsafe destination", plan.Destination, plan.Claim.Scope)
+		}
+	}
+}
+
+// TestManagerRejectsAnchoredDestinationHostMismatch — falsificação sem depender de Windows
+// (ROADMAP-2026-09-03 Wave reaberta 2026-09-08, ML-R1): TestManagerRejectsTraversalAbsoluteMismatchAndNUL
+// usa "/tmp/outside-trackfw.md", que em POSIX já é filepath.IsAbs == true — um teste rodado só em
+// Linux/macOS com esse vetor passaria mesmo se a correção do ML-R1 fosse revertida (é
+// vacuamente satisfeito, o próprio risco que o handoff aponta). Este teste usa o vetor oposto:
+// uma forma ANCORADA pelo predicado portável (internal/pathanchor.IsAnchored — letra de unidade
+// Windows / UNC) que NÃO é filepath.IsAbs no host que roda este teste (Linux/macOS). Antes do
+// ML-R1, manager.go decidia por filepath.IsAbs sozinho: nesse host essas duas formas caem no
+// ramo "relativo" (não são POSIX-absolutas), passam pelo `path.Clean(destination) != destination`
+// (que não enxerga "\" como separador) sem erro, e são aceitas — Install() retornava nil. Depois
+// do ML-R1, a forma é reconhecida como ancorada por internal/pathanchor mas o host discorda
+// (filepath.IsAbs == false aqui), e manager.go rejeita explicitamente. Reverter manager.go para
+// `filepath.IsAbs(destination)` sozinho faz este teste falhar (Install passa a aceitar), sem
+// precisar rodar em Windows para provar.
+func TestManagerRejectsAnchoredDestinationHostMismatch(t *testing.T) {
+	cases := []string{
+		`C:\Windows\evil.md`,     // letra de unidade Windows — ancorada, mas não filepath.IsAbs aqui
+		`\\server\share\evil.md`, // UNC Windows — idem
+	}
+	for _, dest := range cases {
+		manager, _, _ := testManager(t)
+		plan := testPlan("global", dest, "v1", "x")
+		if err := manager.Install([]PlannedArtifact{plan}, false); err == nil {
+			t.Errorf("Install(%q, global) accepted a destination anchored-by-form but not filepath.IsAbs on this host — the ML-R1 regression", dest)
+		}
+	}
+}
+
+// oldResolveVerdict is a FROZEN COPY of the destination-classification logic that resolve() had
+// on origin/main (commit c52d566, before ROADMAP-2026-09-03 ML-R1 touched the switch) — see
+// `git show c52d566:internal/integrations/manager.go` lines ~698-711 for the source this was
+// copied from. It exists ONLY so TestManagerAnchorPredicateVectorTableNoFlip can compare "what
+// origin/main accepted/rejected for this destination, on THIS host" against "what the current
+// code accepts/rejects", without needing git history or a checkout at test time. It must NOT be
+// updated to track future changes to resolve() — that would defeat its purpose as a fixed
+// baseline.
+func oldResolveVerdict(root, destination string) (accepted bool) {
+	if strings.HasPrefix(destination, "~/") {
+		return false // not exercised by the vector table; ~/ is a different branch, untouched by ML-R1.
+	}
+	var out string
+	if filepath.IsAbs(destination) {
+		out = filepath.Clean(destination)
+	} else {
+		if path.Clean(destination) != destination || destination == "." || strings.HasPrefix(destination, "../") {
+			return false
+		}
+		out = filepath.Join(root, destination)
+	}
+	return beneath(root, out)
+}
+
+// TestManagerAnchorPredicateVectorTableNoFlip — ROADMAP-2026-09-03 ML-R1 audit (2026-09-08): the
+// `hades-tf`/arquiteto review found that ML-R1's original justification ("the new case condition
+// is strictly more restrictive than filepath.IsAbs alone, so nothing that used to be accepted
+// changes") was FALSE on Windows for malformed UNC / device-path forms, where
+// `filepath.IsAbs(x)==true` but `pathanchor.IsAnchored(x)==false` BY DESIGN. This test AFFIRMS:
+// for every destination in `vectorsNoFlipVsOldMain`, the CURRENT code
+// (`case pathanchor.IsAnchored(destination) || filepath.IsAbs(destination):`) produces the
+// IDENTICAL accept/reject verdict that origin/main's `case filepath.IsAbs(destination):` alone
+// produced — zero flips in either direction ("was accepted" stays accepted, "was rejected" stays
+// rejected) — measured on WHICHEVER host runs this test, via oldResolveVerdict above, so no
+// per-OS literal needs to be hardcoded or kept in sync by hand.
+//
+// 🔴 `vectorsNoFlipVsOldMain` deliberately EXCLUDES the anchored-by-form-but-not-IsAbs vectors
+// (`/tmp/outside-trackfw.md` on Windows; `C:\Windows\evil.md` and `\\server\share\evil.md` on
+// POSIX) — for THOSE, origin/main's verdict was ACCEPT (silently force-joined under root via the
+// `default:` relative branch) and the CURRENT code's verdict is REJECT. That flip is not a
+// regression: it is the very fix ML-R1 exists to make (see
+// TestManagerRejectsAnchoredDestinationHostMismatch and
+// TestManagerRejectsTraversalAbsoluteMismatchAndNUL above, which assert exactly that flip is
+// present). Folding those vectors into a "no flip vs. origin/main" comparison here would assert
+// the opposite of what ML-R1 is for — this test's scope is narrower: it only guards against the
+// SEPARATE flip class the audit found (malformed UNC / device-path, reject → accept).
+//
+// 🔴 On a POSIX host, filepath.IsAbs("/...") and pathanchor.IsAnchored("/...") always AGREE (both
+// key off the same leading "/"), so the exact combination that produced the ML-R1 regression
+// (IsAbs==true, IsAnchored==false) cannot occur here — for the six malformed-UNC vectors below,
+// this test is VACUOUSLY satisfied on POSIX (old and new code take the identical `default:`
+// branch, unaffected by this ML's case-condition change). It only becomes a meaningful check for
+// those vectors on a Windows host. This was measured directly (not just reasoned about) on
+// `ssh powershell-vm` per the ML-R1 report — see docs/roadmaps/wip/ROADMAP-2026-09-03-fechar-os-
+// grupos-de-falha-de-windows-por-causa-raiz.md.
+func TestManagerAnchorPredicateVectorTableNoFlip(t *testing.T) {
+	vectorsNoFlipVsOldMain := []string{
+		// Malformed UNC / device-path — filepath.IsAbs==true, pathanchor.IsAnchored==false on
+		// Windows (the ML-R1 audit regression surface); both false on POSIX (default branch,
+		// unaffected by this ML's case-condition change either way).
+		`\\`,
+		`\\x`,
+		`\\.\x`,
+		`\\srv`,
+		`\\srv\`,
+		`\\\a\b`,
+		// Legitimate relative destinations — must stay accepted (direction 2: "was accepted stays
+		// accepted" — a guard that only ever rejects would also pass direction 1 vacuously).
+		".claude/agents/trackfw-architect.md",
+		"agents/valid.md",
+		// Genuinely unsafe relative forms, untouched by this ML's case condition (default branch
+		// on every host) — must stay rejected on both sides of the comparison.
+		"../outside.md",
+	}
+	for _, destination := range vectorsNoFlipVsOldMain {
+		manager, _, home := testManager(t)
+		root, err := filepath.Abs(home)
+		if err != nil {
+			t.Fatal(err)
+		}
+		wantAccept := oldResolveVerdict(root, destination)
+		plan := testPlan("global", destination, "v1", "content")
+		gotErr := manager.Install([]PlannedArtifact{plan}, false)
+		gotAccept := gotErr == nil
+		if gotAccept != wantAccept {
+			t.Errorf("destination %q: origin/main verdict accept=%v, current code accept=%v (err=%v) — filepath.IsAbs=%v pathanchor.IsAnchored=%v",
+				destination, wantAccept, gotAccept, gotErr,
+				filepath.IsAbs(destination), pathanchor.IsAnchored(destination))
+		}
+	}
+
+	// vectorsIntentionalRejectRegardlessOfOldMain — the ORIGINAL ML-R1 fix target: anchored by
+	// the portable predicate but NOT filepath.IsAbs on this host. origin/main silently accepted
+	// these (see comment above); ML-R1 intentionally flips them to rejected, on every host — this
+	// is NOT compared against oldResolveVerdict, because agreeing with origin/main here would be
+	// the bug this whole roadmap exists to close. Already covered by
+	// TestManagerRejectsAnchoredDestinationHostMismatch and
+	// TestManagerRejectsTraversalAbsoluteMismatchAndNUL; repeated here only so the vector table in
+	// the ML report is complete and self-contained in one place.
+	vectorsIntentionalRejectRegardlessOfOldMain := []string{
+		"/tmp/outside-trackfw.md",
+		`C:\Windows\evil.md`,
+		`\\server\share\evil.md`,
+	}
+	for _, destination := range vectorsIntentionalRejectRegardlessOfOldMain {
+		manager, _, _ := testManager(t)
+		plan := testPlan("global", destination, "v1", "content")
+		if err := manager.Install([]PlannedArtifact{plan}, false); err == nil {
+			t.Errorf("destination %q: must be rejected on every host (anchored-by-form, ML-R1 fix target) — filepath.IsAbs=%v pathanchor.IsAnchored=%v",
+				destination, filepath.IsAbs(destination), pathanchor.IsAnchored(destination))
 		}
 	}
 }

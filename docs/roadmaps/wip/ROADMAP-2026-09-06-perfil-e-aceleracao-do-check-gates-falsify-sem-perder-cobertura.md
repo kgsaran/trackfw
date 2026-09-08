@@ -624,3 +624,62 @@ aprova. Guarda de vacuidade contra `Makefile` vazio ou alvo ausente.
 
 **Por que é ML e não "fica para depois":** sem ele, os pins do ML-2E são convenção, não contrato — e
 o parecer do `hades-tf` só vale enquanto ninguém editar o `Makefile` sem saber por que aquilo está lá.
+
+
+## Medição no CI — arquiteto, 2026-09-07 (a que o ML-3A pedia)
+
+```
+06/09   20m41s   ← antes
+07/09   15m00s   ← PR #291, com o paralelismo
+```
+
+**−5m41s por PR (−27%)**, dentro da faixa projetada (13–16 min) e perto do extremo pessimista — como
+esperado, porque o runner tem **4 vCPUs** contra os 10 cores da máquina onde medi 1,89x.
+
+🔴 **Mas o arco completo desmonta a comemoração:**
+
+```
+13m23s   quando a REQ foi aberta
+20m41s   depois de quatro dias acrescentando cenários
+15m00s   agora, com o paralelismo
+```
+
+**A paralelização não nos deixou mais rápidos que o ponto de partida** — pagou a dívida que nós
+mesmos criamos e sobrou pouco. Enquanto cada campanha somar cenários, o número volta a subir.
+
+### ML-2G — Shardar o gate em jobs de matriz (custo zero)
+**Status:** ⬜ Pendente · **Agente:** `ares-tf` · **PR próprio** (o #291 já foi mergeado)
+
+**Runner maior não é opção:** larger runners **nunca** entram no free tier, nem em repositório
+público — e o `trackfw` é público. Verificado na política de preços de 2026.
+
+**Mas não precisamos de máquina maior — precisamos de mais máquinas, e essas são grátis.** Repositório
+público tem jobs concorrentes em runner padrão sem custo. Hoje paralelizamos **dentro** de 1 job × 4
+vCPUs; a matriz distribui entre N jobs × 4 vCPUs.
+
+```
+hoje     1 job  × 4 vCPUs        →  15min
+matriz   4 jobs × 4 vCPUs cada   →  ~4-5min estimado, custo zero
+```
+
+🔴 **Estimativa, não medição.** A peça difícil **já existe**: o gerador do ML-2D é parametrizável —
+`gen-falsify-chunks.py <fonte> <saída> <n-chunks>`. O mesmo mecanismo que distribui entre processos
+distribui entre jobs.
+
+**Três coisas a medir antes de prometer os 4-5 min:**
+
+1. **Custo fixo por job** — cada um paga checkout, setup de Go/Node/Python e build. Se for ~90s, 4
+   jobs somam 6 min de overhead e o ganho real encolhe. **Medível no log atual.**
+2. 🔴 **A guarda de conjunto atravessando jobs.** Hoje vive dentro do driver. Precisa virar **job de
+   agregação** que reprova se faltar rótulo — senão perdemos a proteção construída no ML-2D, que é o
+   que impediu o gate de 3,03x rodando 81% da suíte. **Efeito colateral bom:** com a agregação num job
+   separado, ela deixa de ser **auto-referencial**, que foi o achado do `hades-tf`.
+3. **Self-hosted está fora** — não por custo, mas porque o GitHub desaconselha em repositório público:
+   PR de fork executaria código arbitrário na máquina do mantenedor. Não vale para economizar minutos
+   que já são grátis.
+
+**Sobre o PR:** o #291 já foi mergeado, então este ML precisa de PR próprio. Não é violação da regra
+*"mesma causa ⇒ mesmo PR"* — o mecanismo é outro (topologia de jobs do CI vs. paralelismo em
+processo), e o que a regra protege (a janela de atenção sobre a causa) segue aberto **pelo roadmap**,
+que continua em `wip` com ML-2F e ML-3A pendentes. 🔴 O que **seria** violação é fechar este roadmap
+antes de o ML-2G entrar.

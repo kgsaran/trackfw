@@ -101,7 +101,32 @@ fi
 WORKDIR=$(mktemp -d "${TMPDIR:-/tmp}/trackfw-falsify-parallel.XXXXXX")
 trap 'rm -rf "$WORKDIR"' EXIT
 
-python3 "$GEN" "$SCRIPT" "$WORKDIR" "$JOBS" > "$WORKDIR/manifest.txt"
+# ML-2A (ROADMAP-2026-09-07-gates-rodam-no-windows-...): este driver chamava
+# `python3` bare para rodar o gerador de chunks -- mesma causa do ML-1A
+# (check-gates-falsify.sh): no Windows `python3` resolve para o stub da
+# Microsoft Store (rc=49, "Python was not found") mesmo com um Python real
+# instalado. Este é um call site do PRÓPRIO driver (não copiado para
+# fixture), então resolve-se aqui, sem shim de PATH -- mesmo critério de
+# rejeição do ML-1A: só aceito se `-c 'import sys; print(sys.version_info[0])'`
+# sair com 0 E imprimir "3".
+resolve_py_bin() {
+  local cand
+  for cand in python3 python "py -3"; do
+    # shellcheck disable=SC2086 -- "py -3" é dois tokens deliberadamente
+    if $cand -c 'import sys; print(sys.version_info[0])' 2>/dev/null | grep -qx 3; then
+      echo "$cand"
+      return 0
+    fi
+  done
+  return 1
+}
+if ! PY_BIN=$(resolve_py_bin); then
+  echo "run-gates-falsify-parallel: nenhum interpretador Python funcional encontrado (tentados: python3, python, py -3) -- candidatos no PATH podem ser o stub da Microsoft Store (Windows) ou estar ausentes" >&2
+  exit 1
+fi
+
+# shellcheck disable=SC2086 -- PY_BIN pode ser "py -3" (dois tokens)
+$PY_BIN "$GEN" "$SCRIPT" "$WORKDIR" "$JOBS" > "$WORKDIR/manifest.txt"
 cat "$WORKDIR/manifest.txt" >&2
 
 mapfile -t CHUNKS < <(find "$WORKDIR" -maxdepth 1 -name 'chunk_*.sh' | sort)

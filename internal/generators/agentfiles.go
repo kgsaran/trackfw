@@ -1627,9 +1627,12 @@ func readGlobalHookJSON(relParts ...string) (root map[string]interface{}, ok boo
 // dangerous loosening this function's own doc comment warns against, and
 // the risk this ML was told to treat explicitly. The decision, per input
 // shape (mirrors the UNC/drive-letter arms of
-// internal/validator/pathIsAnchoredForHookConfig, reimplemented locally —
-// not imported, different question, and this package must not import
-// internal/validator):
+// internal/pathanchor.IsAnchored (ROADMAP-2026-09-03 Wave reaberta ML-R1, 2026-09-08: the
+// predicate that used to live in internal/validator as pathIsAnchoredForHookConfig moved to the
+// leaf package internal/pathanchor, now also consumed by internal/integrations), reimplemented
+// locally here — not imported, different question: that predicate classifies whether a STRING is
+// anchored; this one decides whether to TRANSLATE separators in a string already known to be a
+// drive-letter form):
 //
 //   - "C:\Users\x\guard.sh" / "C:/Users/x/guard.sh" (ASCII drive letter,
 //     ":", then "\" or "/") — CANONICALIZED: every "\" is translated to "/"
@@ -1725,10 +1728,11 @@ func normalizeGuardPath(p string) string {
 // ("\\server\share...") with a non-empty SERVER segment (not "." or "..")
 // followed by a non-empty SHARE segment that does not itself start with
 // another backslash. Mirrors the UNC arm of
-// internal/validator/pathIsAnchoredForHookConfig — reimplemented here (not
-// imported: that predicate answers "is this anchored for a hook config
-// value", a different question, and this package must not import
-// internal/validator). "\\", "\\x" (no share segment) and "\\.\x" /
+// internal/pathanchor.IsAnchored (moved from internal/validator's
+// pathIsAnchoredForHookConfig, ROADMAP-2026-09-03 Wave reaberta ML-R1, 2026-09-08) — reimplemented
+// here (not imported: that predicate answers "is this anchored for a destination/hook-config
+// string", a different question from "should this drive-letter form be separator-canonicalized").
+// "\\", "\\x" (no share segment) and "\\.\x" /
 // "\\..\evil" (server "." or "..") are NOT valid UNC — same call the
 // validator made in ROADMAP-2026-08-21 ML-3B. Currently unused by
 // normalizeGuardPath itself (a valid-UNC string never has a drive-letter

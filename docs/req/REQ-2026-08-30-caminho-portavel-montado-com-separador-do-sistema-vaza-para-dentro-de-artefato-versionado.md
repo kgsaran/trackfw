@@ -98,3 +98,58 @@ ADR:
 
 ## Linked Roadmap
 Roadmap:
+
+
+## 🔴 REABERTA — 2026-09-08: sítio de mesma causa, issue #292
+
+`trackfw update --json` no Windows emite `\` no campo `path` **só no Python**. Go e Node emitem `/`.
+
+**Reproduzido pelo arquiteto na VM Windows ARM64:** Go **0** barras invertidas, Python **3** (o autor
+do issue mediu 16 com o conjunto completo de `--ai-tools`).
+
+**Causa, localizada** — `pypi/trackfw/commands/update.py:78-86`:
+
+```python
+os.path.join(".github", "copilot-instructions.md"),
+os.path.join(".amazonq", "developer", "guidelines.md"),
+os.path.join(".cursor", "rules", "trackfw.mdc"),
+```
+
+Esses valores são **identificadores canônicos de artefato**, não caminhos de sistema para montar. Go e
+Node os escrevem com `/` literal; o Python os monta com `os.path.join`.
+
+### Por que reabrir em vez de abrir REQ nova
+
+**É a mesma causa** — separador nativo do sistema montado dentro de um valor que deveria ser canônico.
+Pela regra dura do `CLAUDE.md`:
+
+> *"É superfície diferente" não justifica REQ nova* — e *"uma ADR com decisão de ponto único por
+> runtime não está satisfeita enquanto sobrar sítio. Fechar o roadmap com sítios conhecidos e não
+> corrigidos marca como concluído algo cujo critério não foi atendido."*
+
+**Por que o escopo original não previu este sítio:** a REQ foi escrita para o separador vazando **para
+dentro de artefato versionado** (frontmatter, `.trackfw-log`). O `--json` é superfície de **consumo por
+máquina**, não artefato em disco — e não estava na varredura. O escopo estava **estreito demais**; a
+causa é a mesma.
+
+**Delimitação que veio do issue e limita o ML:** o autor varreu os outros comandos com `--json` —
+`validate` e `doctor` **concordam** entre runtimes. **É um sítio, não uma classe espalhada.**
+
+**Por que nunca apareceu:** o job `parity` roda em `ubuntu-latest`, onde `os.sep` é `/` e a
+divergência desaparece por construção. Só apareceu porque o gate passou a rodar no Windows —
+trabalho da `REQ-2026-09-07-os-gates-chamam-python3-...`.
+
+
+## Encerramento — 2026-09-08
+
+Sítio do `update --json` do Python corrigido e medido: **8 → 0** barras invertidas na VM Windows, e
+os 3 runtimes byte-idênticos. Teste `test_update_json_path_forward_slash.py` com não-vacuidade
+provada (trocando `os.path` por `ntpath`), verificada pelo arquiteto revertendo um sítio em macOS.
+
+🔴 **Sítios conhecidos e NÃO corrigidos: nenhum.** `validate --json` e `doctor --json` foram medidos
+pelo autor do issue #292 como **concordantes** entre runtimes. `AGENT_HOOKS_RELATIVE_PATHS` e
+`CI_WORKFLOW_RELATIVE_PATHS` foram mantidas com `os.path.join` **de propósito** — as strings de
+exibição delas já são literais com `/`.
+
+Esta REQ foi fechada uma vez com escopo estreito demais e reaberta em 08/09. **Fecha de novo com a
+varredura registrada**, não com a varredura presumida.

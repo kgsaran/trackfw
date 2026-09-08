@@ -4,6 +4,69 @@
 
 ---
 
+## Sessão 2026-09-07 — ares-tf (Infra) — ML-1A/ML-1B (resolução de interpretador Python e binário do CLI, CONCLUÍDO)
+
+Branch `fix/gates-rodam-no-windows-resolucao-de-interpretador-e-binario`, nenhuma operação de git
+(commit/push são do `trackfw_architect`). Roadmap:
+`docs/roadmaps/wip/ROADMAP-2026-09-07-gates-rodam-no-windows-resolucao-de-interpretador-e-binario.md`.
+
+**Escopo entregue:** só `scripts/check-gates-falsify.sh` (ML-1A e ML-1B tocam o mesmo arquivo,
+conforme handoff — decisão validada por advisor: fixar no PONTO ÚNICO de chamada, não nos ~40
+`check-*.sh` copiados para fixture por este script).
+
+- **ML-1A** — `resolve_py_bin()` no preâmbulo (antes de `prelude_end_line`, copiado byte-a-byte para
+  todo chunk por `gen-falsify-chunks.py`): candidatos `python3`, `python`, `py -3`, critério de
+  aceite `"$cand" -c 'import sys; print(sys.version_info[0])'` sair 0 E imprimir "3" — rejeita o stub
+  da Microsoft Store (medido na VM Windows: `python3` -> rc=49, "Python was not found..."; `python`/
+  `py` -> rc=0, "3"). Falha alto (`exit 1`, nomeando os 3 candidatos tentados) se nenhum passar.
+  Exportado como `PY_BIN`, substituído nos ~62 pontos onde o PRÓPRIO script executa python3 (nunca
+  dentro de heredoc/corpus comparado — bucket separado, verificado hit a hit).
+- **ML-1B** — `FALSIFY_GO_BIN` no mesmo preâmbulo: honra `go env GOEXE`, procura
+  `bin/trackfw$GOEXE` depois `bin/trackfw`, falha alto nomeando o caminho procurado se nenhum existir
+  (em vez do fallback de cada sub-script copiado para fixture, que builda com `cd` no `ROOT_DIR` LOCAL
+  da fixture — sem go.mod. Esse fallback é LATENTE, não ativo, sob `make quality`/`make parity`
+  completo — o alvo `build` roda antes e o binário já existe quando `check-gates-falsify.sh` chega;
+  ele dispara quando o gate é invocado standalone, o caso realista no Windows porque `make` não está
+  instalado na VM medida — produzindo o sintoma enganoso `go: go.mod file not found`, medido e
+  reproduzido isolado na VM). Substituído nos 65 pontos `GO_BIN="$ROOT_DIR/bin/trackfw"`; os binários
+  isolados que o próprio script constrói (`Txx_BIN` via `build_go_or_fail`) não passam por aqui.
+
+**Medido na VM Windows 10 Pro ARM64** (sem `make` instalado — `where make` não encontra nada; `go
+build -o bin/trackfw` produz binário SEM `.exe`, executável via git-bash): antes das correções, o
+gate morria no setup do Cenário 3 com `go: go.mod file not found`. Depois, avança até
+`identity-parity/catalog-target-missing`, que falha com rc=49 e a mensagem do stub — porque
+`scripts/check-identity-parity.sh` (arquivo FORA do escopo desta REQ) chama `python3` bare em duas
+linhas próprias (linhas 40 e 164). Reportado como próximo obstáculo, não corrigido (Wave 2/mesma
+causa, arquivo diferente).
+
+**As 3 direções de `FALSIFY_GO_BIN` medidas na VM, não só a que o gate completo exercitou:**
+- só `bin/trackfw.exe` presente (`rm bin/trackfw`, build só com `-o bin/trackfw.exe`): resolvido pelo
+  branch `GOEXE`, gate avança até o mesmo obstáculo de sempre (`identity-parity/catalog-target-
+  missing`) — prova que o branch do sufixo funciona, não só o extensionless.
+- nenhum dos dois presente: `FAIL [falsify/setup]: binário ausente -- procurado em
+  '.../bin/trackfw.exe' e '.../bin/trackfw', nenhum existe/é executável. Rode 'go build -o bin/trackfw
+  ./cmd/trackfw' (ou 'make build') antes de check-gates-falsify.sh.` — mensagem do NOVO resolvedor,
+  não mais o `go.mod not found` antigo.
+- só `bin/trackfw` (extensionless) presente: é o caminho que o run completo já exercitou (412 OK/0
+  FAIL nos dois lados do diff de conjunto).
+
+**Reconciliação (CLAUDE.md):** nenhum teste novo neste ML — a entrega são dois resolvedores + uma
+substituição de chamada. As provas são medição direta na VM (as 3 direções acima) e o diff de conjunto
+de rótulos Linux/macOS antes/depois (vazio, 399 rótulos), não um teste automatizado novo.
+
+**Diff de conjunto Linux/macOS**: `run-gates-falsify-parallel.sh` rodado com o script original e com o
+modificado, labels extraídos e ordenados — 399 rótulos únicos, `diff` vazio, 412 OK / 0 FAIL nos dois
+lados, guarda de conjunto do driver OK nos dois. `make quality QUALITY_EXIT=0` completo (4107 linhas
+de log): `grep -c '^FAIL'` = 0. `scripts/check-cli-parity.sh` standalone: rc=0.
+
+Nota de vault:
+`vault/notes/falsify-gate-windows-python-stub-e-go-bin-de-fixture-sem-go-mod-2026-09-07.md` (causa
+raiz medida + armadilhas do próprio script de substituição — sed ingênuo quebrando aspas de
+`bash -c "..."`, heredoc-tracker confundido por comentário citando `<<'EOF'` como prosa).
+
+Roadmap atualizado: ML-1A e ML-1B marcados ✅ Concluído. Wave 2 (ML-2A, rodar até o fim e listar
+reprovações) e Wave 3 (ML-3A, decisão de cobertura de CI) permanecem pendentes, fora deste escopo.
+
 ## Sessão 2026-09-06 — artemis-tf (QA) — ML-1E (falsificação dos 3 blocos do ML-1C, CONCLUÍDO)
 
 Branch `fix/fecha-o-fail-open-do-guard`, ML-1A a 1D já na árvore, não commitados. Nenhuma operação
@@ -33884,3 +33947,251 @@ nomeados pelo roadmap (`PYTHON_BIN`, tratado acima).
 
 **Sem commit/push** — fora da minha autoridade (Infraestrutura nunca opera git). Pronto para auditoria
 do `trackfw_architect`.
+
+## 2026-09-07 — Ares (Infra) — ML-2A: gate rodado na VM Windows até o primeiro obstáculo real, causa raiz medida e classificada (PARCIAL)
+
+Início: sincronizei a VM na HEAD de `fix/gates-rodam-no-windows-resolucao-de-interpretador-e-binario`
+(`4456c95`), corrigi um pré-requisito de ambiente (`npm install` nunca tinha rodado lá — não é bug do
+gate), e rodei `scripts/check-gates-falsify.sh` serial.
+
+**Achado principal:** o gate committado (sem nenhuma alteração de código) aborta hoje no **Cenário
+17** por causa medida e classificada como "separador de caminho" — MSYS/Git-Bash só converte caminho
+POSIX→Windows quando é o TOKEN INTEIRO de argv/env, não quando embutido dentro de uma string maior
+(`python3 -c "...open('$path')..."`). Provado sem nenhum código do trackfw envolvido. Nota de vault:
+`msys-nao-converte-caminho-embutido-em-string-maior-2026-09-07.md`. **Fora do escopo deste ML
+(interpretador/binário) — não corrigido, documentado.**
+
+Sondagem adicional (probe instrumentado, só na VM, nunca commitado — resultado não-oficial, não
+exaustivo) encontrou mais 3 categorias de obstáculo Windows além do 17: divergência real de estado
+entre runtimes (não é causa Windows), locale/i18n do SO ignorando `LANG`/`LC_ALL`, e mojibake de
+encoding em captura de stdout. Uma reprovação (`credential-guard-present-vacuity/baseline`) ficou
+sem diagnóstico por tempo.
+
+**Reconciliação com as 39 residuais:** superfícies disjuntas, medido — vêm de jobs diferentes
+(`windows-full-suites`/`windows-defect-reproduction`, testes unitários) vs. este gate (`parity`, que
+**nunca rodou no Windows antes desta sessão**, confirmado — roda só em `ubuntu-latest`). **Não medi
+se as CAUSAS se sobrepõem** — o achado de mojibake (`agent-hooks-parity/amazonq`) é candidato a
+mesma família já rastreada (`REQ-2026-09-03-...-73-das-246-falhas...`, notas cp1252 do vault), não
+confirmado. Detalhe completo no roadmap.
+
+**Conflito de critério sinalizado, não resolvido silenciosamente:** o gate é fail-fast
+(`assert_fails_with` + 7 helpers irmãos fazem `exit 1` sob `set -euo pipefail`) em **qualquer**
+plataforma — em Linux/macOS só "chega ao fim" porque nada falha lá. Isso torna o AC3 ("roda até o
+fim, abortar no meio não é aceitável") **insatisfazível como escrito** sem corrigir toda categoria de
+obstáculo Windows encontrada — inclusive as que este ML explicitamente não deve tocar. Registrado no
+roadmap para decisão do arquiteto.
+
+**Validação:** `git status --porcelain` mostra só governança (este roadmap + 1 nota de vault nova +
+`agents-working-context.md`) — nenhum arquivo de `scripts/` ou código de produção alterado. `go build
+./...` limpo, `./bin/trackfw validate` exit 0 (só os 172 warnings pré-existentes, não relacionados),
+`scripts/check-cli-parity.sh` isolado rc=0. `make quality` completo NÃO rodado nesta sessão —
+justificativa escrita no roadmap (zero código tocado; baseline 0 FAIL/4060 linhas do ML-2E vale para
+esta HEAD). Conjunto de rótulos Linux/macOS trivialmente inalterado (nenhum script tocado).
+
+**Arquivos:** `docs/roadmaps/wip/ROADMAP-2026-09-07-gates-rodam-no-windows-resolucao-de-interpretador-e-binario.md`
+(ML-2A atualizado com achados completos, tabela de obstáculos e pendências explícitas),
+`vault/notes/msys-nao-converte-caminho-embutido-em-string-maior-2026-09-07.md` (nova),
+`vault/notes/index.md` (linkada).
+
+**Pendências para a próxima sessão/arquiteto** (escritas em detalhe no roadmap): (1) diagnosticar a
+reprovação de vacuity-guard não investigada; (2) decidir se vale continuar a sondagem além do
+cenário ~46/194; (3) decidir sobre o conflito do AC3 (relaxar o critério ou abrir REQs para as
+categorias achadas antes de fechar esta).
+
+**Sem commit/push** — fora da minha autoridade (Infraestrutura nunca opera git). ML-2A permanece
+🔄 (não posso marcar ✅ com o AC3 conflitante e pendências abertas). Pronto para auditoria do
+`trackfw_architect`.
+
+---
+
+## 2026-09-08 — ares-tf — ML-2B (modo de enumeração reproduzível) + lista real do Windows
+
+**Início:** ROADMAP mesma REQ, seção "Decisão do arquiteto sobre o AC3" (AC3 revisado: enumeração
+reproduzível em vez de "rodar até o fim") → ML-2B, `scripts/check-gates-falsify.sh`.
+
+**Entregue:**
+1. `TRACKFW_FALSIFY_ENUMERATE=1` em `check-gates-falsify.sh`: ~199 pontos de `exit 1` de resultado de
+   cenário passam a contar-e-continuar em vez de abortar; desligado (default) é byte-idêntico ao
+   comportamento de sempre. **Duas rodadas de falsificação reprovaram a 1ª versão** — `return 1` num
+   helper chamado nu sob `set -e` abortava o call site (igual a `exit 1`); contador em VARIÁVEL não
+   sobrevivia subshell (`FAIL` no log, `exit 0` no processo — "transforma vermelho em verde"). Corrigido:
+   `return 0` nos helpers + contagem em ARQUIVO (`$WORK/enum-failures`, atravessa subshell). Nota de
+   vault: `enum-mode-return-1-e-variavel-de-shell-reintroduzem-o-exit-1-2026-09-08.md`.
+2. `scripts/gen-falsify-chunks.py` ganhou a mesma checagem de fechamento injetada em TODO chunk (não só
+   no que herda a cauda do arquivo-fonte) — sem isso só 1 dos 8 chunks converteria falha em exit != 0.
+3. Prova por sabotagem (as 3 guardas): caminho FLAT (Cenário 1) e caminho SUBSHELL (Cenário 64, dentro
+   de `(cd ... && assert_guard_exit ...)`) — ambos: desligado aborta igual a sempre, ligado enumera até
+   o fim do chunk e sai != 0; guarda 2 (rastro em stderr) presente 1x/chunk; guarda 3 confirmada por
+   grep (`TRACKFW_FALSIFY_ENUMERATE` não aparece no Makefile nem em `.github/workflows/`).
+4. Conjunto Linux/macOS: driver paralelo, 8 chunks, desligado — 412 OK / 0 FAIL / exit 0, igual ao
+   baseline do ML-2E; diff de rótulos `falsify/` entre HEAD e a versão pré-ML-2B: 384/384, vazio.
+5. **VM Windows — lista enumerada REAL (não mais sonda)**: sincronizada em `27b09cc`, `scp` dos 2
+   arquivos tocados (SHA256 conferido), `bin/trackfw.exe` recompilado e confirmado antes de cada rodada.
+   8/8 chunks rodados sequenciais (1 processo `ssh` por chunk, evita o falso-positivo de interleaving
+   do driver paralelo medido nesta mesma sessão): **440 OK / 512 FAIL**. Achado dominante NOVO (49% das
+   reprovações 0-5, cascata de 1 causa): `git` não resolvível por processo filho nativo (Go
+   `exec.Command`/Node `spawnSync`/Python `subprocess`) porque `check-release-tag-parity.sh`/
+   `check-ship-force-parity.sh` constroem `PATH="$RUNTIME_BIN:/usr/bin:/bin"` (hardcoded), e nesta VM
+   `git` só existe em `/clangarm64/bin` (MSYS2 clangarm64, não o layout padrão de Git for Windows) —
+   ressalva declarada: pode ser específico desta VM, não medido em runner CI padrão. Duas pendências do
+   ML-2A viraram achado medido: locale/i18n (Node ignora `LANG`/`LC_ALL`, resolve pela UI do SO) e
+   `credential-guard-present-vacuity/baseline` (reproduzido, causa exata ainda não isolada). Detalhe
+   completo, tabela por chunk e categorização na seção "Lista enumerada do Windows (VM, 2026-09-08)" do
+   roadmap.
+6. `make quality` completo (decomposto por teto de 10min/chamada): `go test`/`npm test`/`pytest`/
+   `go vet` — 0 falhas cada; `make parity` (44 scripts) em 5 lotes + `run-gates-falsify-parallel.sh` já
+   validado — `grep -c '^FAIL'` sobre o log concatenado inteiro = **0**. `check-cli-parity.sh` isolado
+   rc=0. `./bin/trackfw validate` rc=0 (172 warnings pré-existentes, inalterados).
+
+**Sítios de mesma causa:** nenhum fora de `check-gates-falsify.sh`/`gen-falsify-chunks.py` — os 2
+defeitos do modo de enumeração são específicos a este ML, ambos corrigidos na mesma sessão/PR.
+
+**Sem commit/push** — fora da minha autoridade. ML-2B pronto para auditoria do `trackfw_architect`
+(implementação + falsificação + VM + `make quality` completos; nenhuma pendência aberta desta sessão).
+
+## 2026-09-08 — apolo-tf — ML-R1 (Wave reaberta): `manager.go` usa o predicado de ancoragem — INÍCIO
+
+Reabertura de segurança: `filepath.IsAbs("/tmp/...")` == `false` no Windows fazia
+`internal/integrations/manager.go:704` classificar um destino POSIX-absoluto como relativo e
+aceitá-lo sob a raiz do escopo — medido pelo arquiteto na VM Windows ARM64, sobre `origin/main`
+(`TestManagerRejectsTraversalAbsoluteMismatchAndNUL`). Iniciando: extrair
+`pathIsAnchoredForHookConfig` para um pacote-folha consumido por `internal/validator` e
+`internal/integrations`, corrigir `manager.go`, varrer `filepath.IsAbs`, medir paridade 3 CLIs.
+
+## 2026-09-08 — apolo-tf — ML-R1 (Wave reaberta): CONCLUÍDO, sem commit — pronto para `hades-tf`
+
+**Entregue:**
+1. `internal/pathanchor/pathanchor.go` (pacote-folha novo, zero import de `path/filepath`):
+   `IsAnchored(raw string) bool`, extraído de `internal/validator`'s `pathIsAnchoredForHookConfig`
+   (mesma lógica, byte-idêntica). Grafo de import checado antes de extrair:
+   `internal/generators` → `internal/validator` → `internal/integrations`; um pacote-folha evita o
+   ciclo que impediria `internal/integrations` de importar `internal/validator` diretamente.
+2. `internal/validator/validator_credential_guard.go` e `validator_git_branch_guard.go`: os 3
+   sítios que chamavam o predicado antigo agora chamam `pathanchor.IsAnchored` diretamente (sem
+   wrapper — zero indireção extra).
+3. `internal/integrations/manager.go:707` (era `:704`): `resolve()` ganhou um 3º ramo —
+   `pathanchor.IsAnchored(destination) && !filepath.IsAbs(destination)` → rejeita explicitamente
+   (`unsafe destination`) em vez de cair no ramo relativo que fazia `filepath.Join` reancorar o
+   destino SILENCIOSAMENTE dentro da raiz do escopo. Decisão registrada no code comment: por que a
+   fronteira D2 da ADR-2026-09-04 ("SO é autoridade em travessia real") não se aplica a esta linha
+   — é classificação de uma string de entrada, não resolução de syscall.
+4. Sweep de `filepath.IsAbs` em todo `.go` não-teste: 4 sítios reais, 1 convertido (o de cima), 3
+   mantidos com motivo escrito (`beneath()` e `isOutsideCWD` operam sobre saída já resolvida de
+   `filepath.Rel`/`filepath.Abs`, não sobre string externa; `update_test.go` são asserções de teste
+   sobre tempdir real).
+5. Paridade 3 CLIs medida, não presumida: Node (`path.win32.isAbsolute("/tmp/x")` == `true`,
+   medido) não tem o defeito. Python (`ntpath.isabs` concorda com o Go, mas `pathlib`'s join
+   drive-relativo + `relative_to` detecta e rejeita o escape por um mecanismo diferente, medido com
+   `PureWindowsPath`/`ntpath.normpath` sem precisar da VM) também não tem o defeito. Nenhum ML de
+   paridade necessário — declarado por escrito no roadmap com a medição de cada CLI.
+6. Testes: 3 tabelas movidas byte-a-byte para `internal/pathanchor/pathanchor_test.go`; novo
+   `TestManagerRejectsAnchoredDestinationHostMismatch` em `manager_test.go` com vetores
+   (`C:\Windows\evil.md`, `\\server\share\evil.md`) que divergem entre o predicado portável e
+   `filepath.IsAbs` em QUALQUER host POSIX — falsificação de reversão comprovada nesta sessão
+   (revertido manualmente para `filepath.IsAbs` sozinho → teste `FAIL`; restaurado → verde).
+7. VM Windows ARM64 (`go1.27.1 windows/arm64`): sincronizada com a HEAD da branch via
+   `git fetch`+`checkout` (o handoff pedia sync mas não commit; usei os 6 arquivos tocados via
+   `scp` sobre a base sincronizada). Testes-alvo `--- PASS` com `=== RUN` confirmado. 3 FAILs
+   pré-existentes em `internal/validator`/`internal/integrations` medidos idênticos com e sem o
+   diff (via `git stash` na própria VM) — outros grupos da triagem, não regressão deste ML.
+8. Achado de infraestrutura de gate: `scripts/check-gates-falsify.sh` Cenário 165 tinha um `sed`
+   que casava o nome antigo do predicado — virou no-op silencioso após a extração, `make quality`
+   pegou (`chunk_6 nao chegou ao sentinela CHUNK_COMPLETE`). Retargeted para
+   `pathanchor.IsAnchored(rawStripped)`. `grep -c '^FAIL'` = 0 na saída completa de
+   `make quality QUALITY_EXIT=0` depois da correção (4108 linhas, sem `| tail`).
+9. Comentários stale em `internal/generators/agentfiles.go` (2 sítios que citavam o caminho antigo
+   do predicado) atualizados — doc-only, dispensa roadmap (CLAUDE.md §7).
+
+**Sítios de mesma causa:** nenhum além dos já cobertos (validator + manager.go); Node/Python não
+têm o defeito (medido, não ML). O achado do `sed` do falsify é infraestrutura de gate, mesma
+sessão/PR, já corrigido.
+
+**Sem commit/push** — fora da minha autoridade. ML-R1 pronto para revisão `hades-tf` (obrigatória,
+é guarda de segurança) e depois auditoria do `trackfw_architect`; nenhuma pendência técnica aberta.
+
+## 2026-09-08 — apolo-tf — ML-R1 correção pós-auditoria (`||`): CONCLUÍDO, sem commit — pronto para `hades-tf`
+
+Retomando entrega já quase certa (auditoria anterior aprovou a extração/pacote/varredura; achou
+regressão real no `case`). Corrigido `manager.go:707`:
+`case pathanchor.IsAnchored(destination) || filepath.IsAbs(destination):`. Prova por construção
+(não só medição): para qualquer destino com `filepath.IsAbs==true`, o corpo do `case` executa o
+MESMO código que `origin/main` sempre executou (`filepath.Clean`, byte-idêntico), então os 6 vetores
+UNC malformado/device-path (`\\`, `\\x`, `\\.\x`, `\\srv`, `\\srv\`, `\\\a\b`) voltam ao veredito de
+`origin/main` no Windows — zero flip, medido na VM (`TestManagerAnchorPredicateVectorTableNoFlip`,
+novo, com prova de reversão ao vivo na VM: revertido o `||` → 5 vetores viram `FAIL` reproduzindo a
+regressão exata da auditoria; restaurado → verde). Tabela de vetores completa (`IsAbs`×`IsAnchored`×
+veredito×flip) nas duas plataformas no roadmap. Corrigida a frase de paridade do Python no relatório
+do ML-R1 original — não é "sem o defeito", é garantia emergente por composição
+(`root / candidate` + `relative_to`), documentado com precisão. Sítios de mesma causa (ramo `default`
+gramática só-POSIX; paridade Python) reportados, não corrigidos — causa distinta. `go build`/`go
+vet`/`go test ./...` limpos local; VM Windows ARM64 com o escopo do ML 100% `--- PASS` (3 falhas
+pré-existentes não relacionadas — `TestResolveAgentModelMatchesRender`/models, e 2 testes de golden
+CRLF cuja causa é `core.autocrlf=true` da VM corrompendo o asset ANTES do teste injetar CRLF
+sintético — documentado em vault, não causado por este diff). `make quality QUALITY_EXIT=0`
+(4108 linhas) `grep -c '^FAIL'`=0. `scripts/check-cli-parity.sh` rc=0.
+
+**Sem commit/push** — fora da minha autoridade. Pronto para revisão `hades-tf` (guarda de
+segurança) e depois auditoria do `trackfw_architect`.
+
+## 2026-09-08 — apolo-tf — ML-R1 `update --json` separador nativo (issue #292): INICIADO
+
+Retomando `ROADMAP-2026-09-01-caminho-dentro-de-artefato-versionado-usa-sempre-barra.md`, seção
+"Wave reaberta — 2026-09-08", ML-R1 (`docs/req/REQ-2026-08-30-caminho-portavel-...md`, seção
+🔴 REABERTA). Causa: `pypi/trackfw/commands/update.py` monta identificadores canônicos de artefato
+com `os.path.join`, vazando `os.sep` para o campo `path` do `--json` no Windows — só no Python.
+
+## 2026-09-08 — apolo-tf — ML-R1 `update --json` separador nativo (issue #292): CONCLUÍDO, sem commit — pronto para revisão
+
+`pypi/trackfw/commands/update.py`: `AGENT_RULES_RELATIVE_PATHS` (3 entradas), `VALIDATE_SCRIPT_
+RELATIVE_PATH`, `CLAUDE_COMMANDS_RELATIVE_PATH` passam a usar `/` literal em vez de `os.path.join`
+— são as constantes que alimentam `display_path`, ou seja, **são** o campo `path` do `--json`.
+Varredura completa das ~38 ocorrências de `os.path.join` do arquivo: 5 mudadas (motivo acima), as
+demais mantidas por alimentarem só I/O real de sistema de arquivos (nunca o contrato JSON) — lista
+completa no roadmap. `AGENT_HOOKS_RELATIVE_PATHS`/`CI_WORKFLOW_RELATIVE_PATHS` não mudaram: seus
+`display_path` já eram strings hardcoded com `/`. `update_harness.py` tem o mesmo padrão mas já foi
+corrigido em ML-2A anterior (commits dc89d91/a4adf4e) — sítio distinto, não reaberto aqui.
+
+Teste novo `pypi/tests/test_update_json_path_forward_slash.py`: recarrega o módulo com `os.path`
+substituído por `ntpath` (`unittest.mock.patch`) para forçar semântica Windows independentemente do
+SO do executor — evita a vacuidade que um teste "sem `\`" teria em Linux (onde `os.path.join` já
+produz `/`). Comprovado empiricamente revertendo a correção neste host Linux: os 3 testes falham
+(`AssertionError: '\\' unexpectedly found in ...`); com a correção, passam.
+
+Medido na VM Windows ARM64 (`go1.27.1 windows/arm64`), 3 projetos `init` separados (um por runtime,
+`--ai-tools claude,copilot,cursor,amazonq`): antes **8** `\` no `update --json` do Python; depois
+**0** nos 3 runtimes, e os 5 targets comuns (`agent-hooks`, `agent-rules`, `claude-commands`,
+`codex-project-agents`, `validate-script`) têm `path` **byte-idêntico** entre Go/Node/Python.
+`go build ./...`, `go test ./...`, 1667 testes Python, 885 testes Node — todos verdes.
+`scripts/check-cli-parity.sh` rc=0. `trackfw validate` rc=0 (só warnings pré-existentes,
+nenhum relacionado). `make quality QUALITY_EXIT=0` (4108 linhas) `grep -c '^FAIL'`=0 sobre a
+saída inteira.
+
+**Sítios de mesma causa:** nenhum novo. `validate --json`/`doctor --json` ficam fora (medidos pelo
+autor do issue como concordantes); `barrier.py`/`context.py`/`serve.py`/`sync.py` inspecionados —
+`os.path.join` só para I/O real, sem sítio.
+
+**Correção pós-advisor (2 rodadas, mesma sessão, antes do handoff):**
+1. A primeira medição na VM só comparou o campo `path`; os 3 valores mudados também alimentam
+   `rel_paths` (hash/sandbox), cujo observável é `state`, não `path` — mesmo padrão A1/A2/A3 do
+   CLAUDE.md (medir uma coisa, declarar outra). Refeita cobrindo `update --json` **e**
+   `update --dry-run --json`, com diff campo-a-campo (`path`+`state`) pré-fix vs pós-fix. As 2
+   falhas Windows-only pré-existentes (CRLF `test_update_alias_converts_only_present_codex_
+   artifacts`; JSON-escaping `test_json_escaping_with_quotes_slashes_and_newlines`) confirmadas
+   por comparação direta na VM (fix vs `update.py` revertido ao HEAD da REABERTURA) — saída de
+   pytest byte-idêntica nos dois casos, não presumida por "não toquei nesse arquivo".
+2. Na leitura do resultado da rodada 1, escrevi que `agent-hooks` `skipped`→`updated` "acontece
+   nos dois lados igualmente" — falso: o próprio printout mostrava `pre=skipped post=updated`
+   (as chamadas rodaram em sequência sobre o mesmo diretório: pós-fix escreveu os hooks primeiro,
+   pré-fix os viu já atualizados depois — efeito de ordem de execução, não da correção).
+   `agent-hooks` não é um dos 3 alvos que este ML mudou, então isso não contamina a conclusão, mas
+   a frase precisava ser corrigida para não afirmar uma igualdade que a própria medição contradizia.
+   Corrigido: a comparação order-independent é a de `--dry-run` (sandbox reconstruído do zero por
+   chamada) — `state` idêntico nela para os 5 alvos; nos 3 alvos efetivamente corrigidos, `state`
+   fica `skipped` em toda combinação medida, com o limite declarado de que só a resolução de
+   arquivo já-existente foi exercitada (não o caminho de escrita-a-partir-de-ausente).
+
+Declarado explicitamente no relatório: guarda de não-vacuidade é Python-only (Go/Node usam string
+literal inline, sem `os.sep`-equivalente para vazar — espelho seria decorativo).
+
+**Sem commit/push** — fora da minha autoridade. Roadmap ML-R1 marcado ✅ Concluído com relatório
+completo, evidência VM reforçada pós-advisor. Pronto para auditoria do `trackfw_architect`.

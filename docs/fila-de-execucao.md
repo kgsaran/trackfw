@@ -19,7 +19,7 @@
 
 | # | O quê | Tipo | Artefato | Fecha | Estado |
 |---|---|---|---|---|---|
-| **0** | Reconciliação pós-auditoria (3 MLs) | em andamento | `ROADMAP-2026-09-05-reconciliar-...` | — | 🔄 **wip** |
+| **0** | Reconciliação pós-auditoria (3 MLs) | concluído | `ROADMAP-2026-09-05-reconciliar-...` | — | ✅ **PR #289 mergeado** |
 | **1** | 🔴 **Guard emite schema antigo — Claude Code rejeita, a razão do bloqueio se perde** | **degrada o uso AGORA** | `REQ-2026-09-02-guard-instalado-emite-schema-de-hook-...` | — | ⬜ |
 | **2** | `barrier`: `roadmapTrustForGates` fail-open em todo caminho de erro | 🔴 segurança | `REQ-2026-08-30-barrier-executa-gate-...` | — | ⬜ |
 | **3** | `serve` interpola host em string de shell → injeção de comando | 🔴 segurança | `REQ-2026-09-01-serve-interpola-host-...` | — | ⬜ |
@@ -70,3 +70,29 @@ gh issue list       # issues abertos
 **Atualizar esta tabela** ao mover um item: marcar 🔄 ao iniciar, ✅ ao fechar, e registrar o PR.
 Se um item crescer durante a execução — descoberta de mesma causa —, **ele NÃO vira linha nova**:
 entra como ML no roadmap daquele item, pela regra 4.
+
+
+## Atualização — 2026-09-08
+
+**Fechado desde a última revisão da fila:**
+
+| frente | resultado |
+|---|---|
+| Reconciliação pós-auditoria | ✅ PR **#289** mergeado |
+| Aceleração do `parity` | ✅ PR **#291** mergeado — job de **20m41s → 15m00s** (−27%) |
+| Gates rodam no Windows | ✅ REQ encerrada — censo **440 OK / 512 FAIL**, antes invisível |
+| Separador no `update --json` (#292) | ✅ REQ reaberta e encerrada |
+| Guarda `IsAbs` (segurança) | ✅ REQ reaberta, ML entregue |
+
+🔴 **O item 1 continua `⬜` — e é o que degrada o uso todo dia.** Passamos a sessão em frentes
+legítimas, quase todas vindas de issues externos, mas nenhuma delas era esta. **Próxima branch.**
+
+**Entrou na fila, com artefato e endereço:**
+
+| # | o quê | artefato |
+|---|---|---|
+| — | Triagem dos **512** por causa (pré-requisito do ratchet de CI em Windows) | `ML-R2`, REQ das 217 falhas |
+| — | Guard `default:` com gramática só-POSIX (segurança, contido) | `ML-R3`, REQ das 217 falhas |
+| — | Os 5 grupos restantes da triagem dos 12 do CI | REQ das 217 falhas |
+| — | `validate` imprime usage / suja o `--json` (#290) | roadmap próprio, em `backlog` |
+| — | Gate dos pins de call site · matriz de jobs · outros 45 gates | roadmap do `parity`, em `wip` |

@@ -381,7 +381,48 @@ def main():
         chunk_path = os.path.join(out_dir, f"chunk_{i}.sh")
         with open(chunk_path, 'w', encoding='utf-8') as fh:
             fh.write('\n'.join(chunk_lines))
-            fh.write(f'\necho "CHUNK_COMPLETE {i}"\n')
+            # ML-2B (ROADMAP-2026-09-07-gates-rodam-no-windows...): fecha
+            # cada chunk com a MESMA checagem de $FALSIFY_ENUM_TALLY que
+            # o preâmbulo estendido já traz do check-gates-falsify.sh -- sem
+            # isto, só o chunk que por acaso herda o TRECHO FINAL do arquivo
+            # de origem (a última fatia de linhas, que carrega o fechamento
+            # do script real) chegaria a essa checagem; os outros N-1 chunks
+            # nunca converteriam tally>0 em exit != 0 -- a guarda 1 (nunca
+            # torna o gate verde) do modo de enumeração ficaria furada em
+            # todo chunk que não fosse esse. Medido por falsificação: sem
+            # este bloco, um chunk sabotado (não o que carrega a cauda do
+            # arquivo) reportava FAIL no stderr e ainda assim saía com
+            # exit 0.
+            #
+            # Lê $FALSIFY_ENUM_TALLY (arquivo em $WORK, não variável) pelo
+            # mesmo motivo do preâmbulo: o incremento pode ter acontecido
+            # dentro de subshell/pipeline de algum cenário deste chunk, e só
+            # escrita em arquivo atravessa essa fronteira -- ver nota na
+            # definição de falsify_fail_point/falsify_count_failure.
+            #
+            # Silencioso (sem nenhuma linha nova em stdout/stderr) quando
+            # desligado OU quando ligado sem nenhuma reprovação -- para não
+            # perturbar o sentinela CHUNK_COMPLETE (run-gates-falsify-
+            # parallel.sh exige que ele seja a ÚLTIMA linha do log). Só emite
+            # e sai != 0 ANTES do sentinela quando há reprovação real -- o
+            # driver então relata "chunk não chegou ao sentinela" (mensagem
+            # pré-existente, pensada para crash) mas o exit code agregado já
+            # é != 0 de qualquer forma, então a guarda 1 se sustenta pelo
+            # aggregate check do driver mesmo quando este texto de
+            # diagnóstico é impreciso para este caso novo.
+            fh.write(
+                '\nif [[ "${TRACKFW_FALSIFY_ENUMERATE:-0}" == "1" ]]; then\n'
+                '  falsify_enum_n=$(wc -l < "$FALSIFY_ENUM_TALLY" 2>/dev/null || echo 0)\n'
+                '  falsify_enum_n=${falsify_enum_n//[[:space:]]/}\n'
+                '  if [[ "${falsify_enum_n:-0}" -gt 0 ]]; then\n'
+                '    echo "[falsify/enumerate] '
+                f'$falsify_enum_n cenário(s) reprovaram no chunk {i} '
+                '(enumerados acima, cada um prefixado FAIL) -- exit 1" >&2\n'
+                '    exit 1\n'
+                '  fi\n'
+                'fi\n'
+            )
+            fh.write(f'echo "CHUNK_COMPLETE {i}"\n')
         os.chmod(chunk_path, 0o755)
         all_labels = [lbl for f in b["items"] for lbl in f["labels"]]
 

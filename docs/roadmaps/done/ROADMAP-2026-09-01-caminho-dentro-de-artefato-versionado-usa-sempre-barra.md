@@ -357,3 +357,149 @@ go · node · python (3.10/3.12) · package-smoke · governance = SUCCESS
    O Node tem **bug estrutural mais amplo e anterior** a esta REQ — o grafo do board não liga nada.
    Vira REQ de acompanhamento, **nomeado e não escondido**, mesmo tratamento dado ao gap do
    `thirdparty_artifact_has_provenance`.
+
+
+## Wave reaberta — 2026-09-08
+
+### ML-R1 — `update --json` do Python emite separador nativo no campo `path`
+**Status:** ✅ Concluído · **Agente:** `apolo-tf`
+
+**Arquivo:** `pypi/trackfw/commands/update.py:78-86` (e qualquer outro `os.path.join` cujo resultado
+alimente saída de contrato — **varra**, não corrija só as linhas citadas).
+
+**Ação:** identificadores canônicos de artefato passam a usar `/` literal, como Go e Node. 🔴 **Não**
+troque `os.path.join` em massa: onde o valor é caminho de sistema **de verdade** (abrir, escrever), o
+`os.path.join` está correto. O critério é **o destino do valor**, não a chamada.
+
+**Falsificação nas duas direções:**
+- Windows, `update --json` ⇒ **zero** `\` no campo `path`, e saída **idêntica** à do Go e do Node;
+- Linux/macOS ⇒ saída inalterada (guarda de vacuidade: o teste não pode passar só porque `os.sep`
+  já é `/`). 🔴 **Este é o ponto crítico** — um teste rodado só em Linux é vacuamente satisfeito.
+
+**Critérios de aceite:**
+- [x] `update --json` byte-idêntico entre os 3 runtimes no Windows, medido na VM — Go/Node/Python
+      concordam em `agent-hooks`, `agent-rules`, `claude-commands`, `codex-project-agents`,
+      `validate-script`; **0** `\` nos 3 outputs (`grep -o '\\' out.json | wc -l` = 0 nos 3)
+- [x] saída em Linux/macOS inalterada — 1667 testes Python + 885 Node passam sem alteração
+- [x] teste que **falharia** em Linux se a correção fosse revertida —
+      `pypi/tests/test_update_json_path_forward_slash.py`, ver "Como garantiu não-vacuidade" abaixo
+- [x] `make quality QUALITY_EXIT=0`, `grep -c '^FAIL'` sobre a saída inteira = **0** (log com 4108
+      linhas, 181 cenários de falsificação, todos OK)
+- [x] `scripts/check-cli-parity.sh` rc=0 — "Integration CLI parity lifecycle checks passed" +
+      "CLI parity smoke checks passed"
+
+**Fora do ML:** `validate --json` e `doctor --json` — medidos pelo autor do issue como **concordantes**.
+
+**Relatório:**
+
+1. **Medição antes/depois na VM Windows ARM64** (`go1.27.1 windows/arm64`), 3 projetos `init`
+   separados (um por runtime) com `--ai-tools claude,copilot,cursor,amazonq --forge github`.
+   Medido em **duas superfícies** (`update --json` e `update --dry-run --json`, os dois pontos de
+   consumo reais de `AGENT_RULES_RELATIVE_PATHS`/`VALIDATE_SCRIPT_RELATIVE_PATH`/
+   `CLAUDE_COMMANDS_RELATIVE_PATH`) e **dois campos por alvo** (`path` E `state` — não só a
+   contagem de barras):
+   - **Antes** (`git show HEAD:pypi/trackfw/commands/update.py`, o estado herdado desta
+     REABERTURA): Python `update --json` ⇒ **8** `\` no output.
+   - **Depois, `update --json`**: Go **0**, Node **0**, Python **0** `\`. Os 5 target ids comuns
+     aos 3 runtimes (`agent-hooks`, `agent-rules`, `claude-commands`, `codex-project-agents`,
+     `validate-script`) têm `path` **e** `state` byte-idênticos entre os 3
+     (`agent-hooks=updated`, os outros 4 `skipped`/`missing` conforme o caso, iguais nos 3).
+   - **Depois, `update --dry-run --json`**: mesmo resultado — `path` e `state` idênticos entre
+     Go/Node/Python nos 5 alvos comuns (todos `skipped`/`missing`, sandbox não altera estado).
+   - **Diff Python pré-fix vs pós-fix, campo a campo, nas duas superfícies**: na comparação
+     `--dry-run` (ordem-independente: o sandbox é reconstruído do zero a cada invocação), o campo
+     `state` dos 5 alvos é **idêntico** entre pré-fix e pós-fix — todos `skipped`/`missing` nos dois
+     lados. Na comparação sem `--dry-run`, `agent-hooks` aparece `pre=skipped post=updated` — essa
+     diferença **não** é efeito da correção: as chamadas rodaram em sequência sobre o mesmo
+     diretório (pós-fix primeiro, que escreveu os hooks reais; pré-fix depois, que os encontrou já
+     atualizados), então a ordem de execução — não o valor de `AGENT_RULES_RELATIVE_PATHS` etc. —
+     explica o flip. `agent-hooks` não é um dos 3 alvos que este ML mudou, então essa diferença de
+     ordem não contamina a conclusão. Os 3 alvos efetivamente corrigidos (`agent-rules`,
+     `validate-script`, `claude-commands`) ficam **`skipped` em toda combinação** (pré/pós-fix ×
+     com/sem `--dry-run`) — `skipped` significa `before == after` no hash (`_run_file_target`), ou
+     seja, o `rel_paths` com `/` literal resolveu para o **mesmo arquivo** que resolvia com
+     `os.path.join` nativo, nos dois momentos em que foi medido. Isso é o que estava em aberto após
+     a primeira rodada (que só olhou `path`): agora está medido, não só argumentado, que a troca não
+     quebra a resolução de hash/sandbox. Limite explícito: como os arquivos já existiam nas 3
+     inicializações usadas para medir, o caminho `install_missing`/escrita-a-partir-de-ausente
+     desses 3 alvos não foi exercitado no Windows por esta medição.
+
+2. **Classificação das ocorrências de `os.path.join` em `pypi/trackfw/commands/update.py`:**
+   - **Mudadas (3 declarações, 5 valores):**
+     - `AGENT_RULES_RELATIVE_PATHS` (3 entradas: `.github/copilot-instructions.md`,
+       `.amazonq/developer/guidelines.md`, `.cursor/rules/trackfw.mdc`) — motivo: alimentam
+       `display_path` de `_run_project` via `", ".join(...)`, ou seja, **são** o campo `path` do
+       contrato `--json` do alvo `agent-rules`.
+     - `VALIDATE_SCRIPT_RELATIVE_PATH` — motivo: passado diretamente como `display_path` do alvo
+       `validate-script`.
+     - `CLAUDE_COMMANDS_RELATIVE_PATH` — motivo: passado diretamente como `display_path` do alvo
+       `claude-commands`.
+     Nas 3 mudanças, o mesmo valor também é usado como `rel_paths` para hashing/sandbox
+     (`os.path.join(root, rel)`) e, na varredura de `--dry-run`, para a cópia seletiva
+     (`_build_sandbox_inclusion`/`_copy_path`, que faz `os.path.dirname`/`os.makedirs` sobre eles).
+     O item 1 acima mede — não apenas argumenta — que o `state` dos 3 alvos corrigidos fica
+     `skipped` (hash antes == hash depois) em toda combinação pré/pós-fix × com/sem `--dry-run`: a
+     barra `/` literal resolve para o mesmo arquivo que `os.path.join` nativo resolvia, nas
+     superfícies de hash/sandbox exercitadas por este comando (limite: só a resolução de arquivo
+     já-existente foi medida — ver o limite explícito no item 1).
+   - **Mantidas (não mudadas), com motivo:**
+     - `AGENT_HOOKS_RELATIVE_PATHS` (12 entradas) — só alimenta hashing/sandbox; o `display_path`
+       do alvo `agent-hooks` é `AGENT_HOOKS_DISPLAY_PATH`, uma string já hardcoded com `/`.
+     - `CI_WORKFLOW_RELATIVE_PATHS` (2 entradas) — mesma razão: `CI_WORKFLOW_DISPLAY_PATH` já é
+       string hardcoded com `/`.
+     - Todas as demais ~30 ocorrências de `os.path.join` no arquivo (linhas ~209–771) — caminhos
+       de sistema de verdade: abrir (`open`), escrever, `os.makedirs`, `glob.glob`, cópia de sandbox
+       (`_copy_path`) — nunca alimentam o campo `path` do JSON.
+   - `inject_rules_detected`, `generate_validate_script` e `generate_claude_commands` (os
+     geradores reais que escrevem os arquivos) usam suas próprias tabelas internas
+     (`AGENT_FILES`, etc.), independentes destas constantes — a troca não afeta onde os arquivos
+     são de fato escritos.
+
+3. **Como garanti que o teste não é vacuamente satisfeito em Linux** —
+   `pypi/tests/test_update_json_path_forward_slash.py`: como `posixpath.join` (o `os.path` real em
+   Linux/macOS) já produz `/`, um teste que rodasse `os.path.join` no host e checasse ausência de
+   `\` passaria mesmo com o código revertido — vácuo. Em vez disso, o teste recarrega
+   `trackfw.commands.update` com `os.path` **substituído por `ntpath`** (semântica de caminho do
+   Windows) via `unittest.mock.patch`, forçando qualquer `os.path.join` do módulo a passar por
+   `ntpath.join` independentemente do SO real do executor. **Comprovado empiricamente**: revertendo
+   temporariamente as 3 constantes para `os.path.join(...)` e rodando a suíte neste host Linux, os
+   3 testes falham (`AssertionError: '\\' unexpectedly found in '.github\\copilot-instructions.md'`
+   etc.); com a correção, os 3 passam. Frase de reconciliação: **este teste afirma que
+   `AGENT_RULES_RELATIVE_PATHS`, `VALIDATE_SCRIPT_RELATIVE_PATH` e `CLAUDE_COMMANDS_RELATIVE_PATH`
+   usam separador `/` literal e não `os.path.join`/`os.sep`, independentemente do SO hospedeiro do
+   executor de testes** — exatamente a conclusão medida no item 2 acima.
+
+4. **Sítios de mesma causa** — nenhum novo encontrado além dos 3 já corrigidos neste ML. A varredura
+   cobriu 100% dos `os.path.join` de `pypi/trackfw/commands/update.py` (35 ocorrências restantes,
+   todas classificadas no item 2). `pypi/trackfw/commands/update_harness.py` tem o mesmo padrão
+   (`display_path`/`_tildeify`), mas **já foi corrigido** em ML-2A (REQ/ADR-2026-09-04, commits
+   dc89d91/a4adf4e) — sítio distinto, resolvido antes desta reabertura, não reaberto aqui.
+   `barrier.py`, `context.py`, `serve.py`, `sync.py` usam `os.path.join` só para I/O real
+   (abrir/gravar/varrer disco), não para campos de contrato `--json` — inspecionados, sem sítio.
+
+5. **Guarda só no Python, declarado — sem espelho em Go/Node.** `AGENT_RULES_RELATIVE_PATHS`,
+   `VALIDATE_SCRIPT_RELATIVE_PATH` e `CLAUDE_COMMANDS_RELATIVE_PATH` são a única representação onde
+   este runtime constrói esses valores por concatenação de segmentos — Go
+   (`internal/generators/update.go:runProjectTarget`) e Node (equivalente) já usam **strings
+   literais inline** com `/` (`".github/copilot-instructions.md"` etc.), nunca `filepath.Join`/
+   `path.join`, então não há `os.sep`-equivalente para vazar e um teste espelho nesses runtimes
+   seria decorativo (CLAUDE.md proíbe teste que não sustenta conclusão do próprio ML). A assimetria
+   é intencional, não um gap: `scripts/check-cli-parity.sh` cobre a paridade de **campo emitido**
+   (rc=0 acima), que é o contrato observável pelos 3 CLIs — a *forma de construção* interna de cada
+   runtime não é parte do contrato.
+
+6. **Duas falhas Windows-only pré-existentes, confirmadas por comparação com/sem este diff** (mesmo
+   protocolo do ML-R1 anterior desta sessão — `git stash`/troca de arquivo na própria VM, não
+   presunção por "não toquei nesse arquivo"):
+   `test_agents_skills.py::test_update_alias_converts_only_present_codex_artifacts` e
+   `test_generators_init.py::TestAttentionScriptsExecutionAndHardening::test_json_escaping_with_
+   quotes_slashes_and_newlines`. Rodadas as 2 na VM **com** o fix e **com o arquivo `update.py`
+   trocado de volta para o HEAD desta REABERTURA** (idêntico ao "antes" do item 1): a saída de
+   `pytest` é **byte-idêntica** nas duas rodadas — mesma asserção (`b'\r' != b'\n'` em CRLF, e
+   `'Line1Line2' not found in 'Agentneedsattention'`), mesmo traceback, `2 failed` nos dois casos.
+   `test_update_alias_converts_only_present_codex_artifacts` chama `cli("update", ...)` mas a
+   asserção que falha é sobre o conteúdo de `.codex/agents/trackfw-backend.toml` (CRLF vs LF —
+   classe conhecida `core.autocrlf` da VM, documentada em vault de sessão anterior), não sobre o
+   campo `path`/`state` que este ML mudou. `test_json_escaping_with_quotes_slashes_and_newlines`
+   exercita `scripts/trackfw-attention-signal.sh` via `subprocess.run(bash_cmd(...))`, sem relação
+   com `update.py`. Confirmado: pré-existentes, não regressão deste ML.

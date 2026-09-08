@@ -109,3 +109,30 @@ sintoma de que a mudança de wave anterior era estrutural (trocar o mecanismo
 inteiro), não um refactor local.
 
 Relacionado: `vault/notes/deteccao-de-status-de-adr-divergencias-entre-clis-2026-08-01.md`.
+
+## Quarta ocorrência — o MESMO cenário retargeted DUAS vezes, porque o alvo é um predicado de segurança que continua sendo renomeado
+
+`scripts/check-gates-falsify.sh` Cenário 165 (`validate-parity/credential-guard-absolute-path-accused`)
+usa `sed 's/<nome-da-função>(rawStripped)/false/g'` para sabotar o classificador de ancoragem em
+`internal/validator/validator_credential_guard.go`. Esse predicado já foi renomeado duas vezes por
+razões de segurança legítimas — não refactor cosmético:
+
+1. **2026-09-04** (ADR-2026-09-04, ML-3A): `filepath\.IsAbs(rawStripped)` → `pathIsAnchoredForHookConfig(rawStripped)`,
+   porque `filepath.IsAbs` decidia errado no Windows.
+2. **2026-09-08** (ROADMAP-2026-09-03 Wave reaberta, ML-R1): `pathIsAnchoredForHookConfig(rawStripped)` →
+   `pathanchor.IsAnchored(rawStripped)`, porque o MESMO predicado precisou virar pacote-folha para
+   ser consumido também por `internal/integrations` (o defeito do item 1 também vivia em
+   `manager.go`, medido na mesma VM).
+
+Nas duas vezes, o `cmp -s` guard do próprio cenário (que compara o arquivo sabotado contra o
+original e falha com `sed nao alterou ... padrao nao encontrado` se o `sed` virou no-op) pegou a
+quebra — não silenciosamente, mas só depois de `make quality` já ter reprovado o chunk inteiro
+(`chunk_N nao chegou ao sentinela CHUNK_COMPLETE`), levando ~13 min para reproduzir.
+
+**Padrão a reconhecer:** se um cenário de falsificação usa `sed` sobre o NOME de um símbolo (função,
+método) em vez de sobre uma expressão estrutural mais estável, e esse símbolo é um predicado de
+segurança sob revisão ativa (ADRs recentes, `hades-tf` envolvido), é PROVÁVEL que ele seja renomeado
+de novo — não é acidente, é o próprio processo de correção incremental de segurança batendo no
+mesmo lugar. `grep -rn "<nome-do-predicado>" scripts/check-gates-falsify.sh` ANTES de renomear um
+símbolo tocado por um cenário de falsificação evita descobrir a quebra só depois do `make quality`
+completo.

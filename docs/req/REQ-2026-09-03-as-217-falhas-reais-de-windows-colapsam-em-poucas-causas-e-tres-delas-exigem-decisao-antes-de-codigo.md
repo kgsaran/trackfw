@@ -1,5 +1,5 @@
 ---
-status: Done
+status: Open
 date: 2026-09-03
 author: "trackfw_architect (Zeus)"
 adr: ""
@@ -126,3 +126,56 @@ Roadmap: docs/roadmaps/wip/ROADMAP-2026-09-03-fechar-os-grupos-de-falha-de-windo
 ## Encerramento — 2026-09-06
 
 Entregue nos PRs #266 a #285. As tres decisoes viraram ADR Accepted; os grupos fecharam por causa raiz medida. Arco: 246 -> 39 falhas.
+
+
+## 🔴 REABERTA — 2026-09-08: o grupo `IsAbs` tem sítio de SEGURANÇA vivo
+
+O encerramento de 06/09 declarou *"os grupos fecharam por causa raiz medida"*. **O grupo `IsAbs`
+não fechou.** Medido pelo arquiteto na VM Windows ARM64, sobre `origin/main` (`fac76a0`):
+
+```
+manager_test.go:211   Install("/tmp/outside-trackfw.md", global) accepted unsafe destination
+manager.go:704        } else if filepath.IsAbs(destination) {
+```
+
+`filepath.IsAbs("/tmp/...")` é **falso** no Windows (sem letra de unidade). A guarda não trata o
+caminho como absoluto e **aceita o destino inseguro** — exatamente o mecanismo que esta REQ nomeou:
+
+> *"`IsAbs` POSIX — `filepath.IsAbs("/opt/…")` é falso no Windows → guard classifica ancorado como
+> relativo — ~14 — **produto, e é de segurança**"*
+
+### 🔴 E o helper correto já existe neste repositório
+
+`internal/validator/validator_credential_guard.go:121`, `pathIsAnchoredForHookConfig` — barra POSIX,
+letra de unidade e UNC com validação de servidor/share, **zero chamadas dependentes de SO**, escrito
+nesta campanha e revisado pelo `hades-tf`.
+
+**O sítio do `manager.go` simplesmente não o usa.** Isto é, literalmente, o **achado A1** da auditoria
+externa de 05/09:
+
+> *"Uma ADR com decisão de 'ponto único por runtime' não está satisfeita enquanto sobrar sítio.
+> Fechar o roadmap com sítios conhecidos e não corrigidos marca como concluído algo cujo critério não
+> foi atendido."*
+
+Marcamos como concluído. O sítio estava vivo. **É a segunda vez que este projeto paga por isso**, e
+desta vez em superfície de segurança.
+
+### Por que só apareceu agora
+
+O job `windows-full-suites` reporta as falhas há dias — o defeito **estava visível e não foi lido por
+causa**. O que mudou foi a VM: **12 dos 15 testes que reprovam no CI reproduzem localmente**, então a
+triagem por mecanismo passou de ciclo-de-PR para segundos.
+
+### Triagem dos 12 reprodutíveis — 6 causas, não 12 defeitos
+
+| causa | testes | natureza |
+|---|---|---|
+| 🔴 **guarda de caminho aceita destino inseguro** (`IsAbs`) | 1 | **produto, segurança** |
+| diretório ilegível não detectável no Windows | 3 | teste |
+| bit de permissão NTFS (`666` vs `0600`) | 1 | teste, decidido no vault |
+| ferramenta ausente (`exit 127`) | 1 | mesma causa do ML-1A da REQ dos gates |
+| modelo de agente não renderizado (`windsurf`/`kiro`) | 1 | produto |
+| golden/CRLF e `ship` sem `gh` | 5 | carecem de medição própria |
+
+**3 dos 15 não reproduzem na VM** (`TestChecksum`, os dois de `ThirdPartyInstall`) — diferença
+Windows 10 ARM64 vs Windows Server x64. Continuam dependendo do CI, e isso fica escrito.

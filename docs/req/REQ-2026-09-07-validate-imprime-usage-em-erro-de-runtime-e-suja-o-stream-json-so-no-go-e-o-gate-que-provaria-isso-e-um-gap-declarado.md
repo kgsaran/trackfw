@@ -3,7 +3,7 @@ status: Open
 date: 2026-09-07
 author: ""
 adr: ""
-roadmap: ""
+roadmap: "docs/roadmaps/backlog/ROADMAP-2026-09-08-validate-suprime-usage-em-erro-de-runtime-e-o-gate-que-provaria-isso.md"
 ---
 
 # REQ: validate imprime usage em erro de runtime e suja o stream json so no Go, e o gate que provaria isso e um gap declarado
@@ -108,3 +108,7 @@ escopo real é menor que 12 e **só sai por medição comportamental, um comando
 - **Não** altera usage em erro de **argumento**, que é comportamento correto e deve permanecer.
 - **Não** varre os 33 comandos por `grep` para "corrigir preventivamente" — só entra o que a medição
   comportamental do AC5 apontar.
+
+
+## Linked Roadmap
+Roadmap: `docs/roadmaps/backlog/ROADMAP-2026-09-08-validate-suprime-usage-em-erro-de-runtime-e-o-gate-que-provaria-isso.md`
