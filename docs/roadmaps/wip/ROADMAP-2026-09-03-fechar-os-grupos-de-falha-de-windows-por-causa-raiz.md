@@ -1184,9 +1184,13 @@ zero chamadas dependentes de SO, revisado pelo `hades-tf`.
 **Status:** ⬜ Pendente — **não** entram neste ML. Cada um com causa própria; misturar aqui repetiria
 o erro que estimou o grupo `IsAbs` em 14 falhas e entregou 2.
 
-## 🔴 ML-R1 BLOQUEADO na auditoria — regressão de segurança medida, 2026-09-08
+## 🔴 ML-R1 — bloqueado na auditoria, DESBLOQUEADO e entregue, 2026-09-08
 
-**Status:** ❌ **Bloqueado** — não commitado como entrega.
+**Status:** ✅ **Concluído** — a volta 1 foi bloqueada; a volta 2 foi auditada e commitada.
+🔴 O marcador abaixo dizia `❌ Bloqueado` e ficou obsoleto por descuido meu depois que eu mesmo
+desbloqueei o ML na seção seguinte. Corrigido aqui: **estado do artefato divergindo do estado real é
+exatamente o defeito que a regra dura de reconciliação existe para pegar.** Registro do histórico
+preservado abaixo, porque o caminho importa.
 
 O relatório do `apolo-tf` justifica a mudança como **estritamente restritiva**:
 *"`filepath.IsAbs(x)==true` implica `pathanchor.IsAnchored(x)==true`, logo nenhum caminho antes
@@ -1433,3 +1437,21 @@ ML**, por causa distinta da corrigida aqui:
 
 **Sem commit/push** — fora da minha autoridade. ML-R1 pronto para revisão `hades-tf` e depois
 auditoria do `trackfw_architect`; nenhuma pendência técnica aberta desta correção.
+
+### ML-R2 — Triagem dos 512 do censo de Windows por causa
+**Status:** ⬜ Pendente · **Agente:** `ares-tf` · **pré-requisito do ratchet de CI**
+
+O ML-2B da REQ dos gates produziu o primeiro censo real: **440 OK · 512 FAIL** no Windows, com modo de
+enumeração **reproduzível** (`TRACKFW_FALSIFY_ENUMERATE=1`).
+
+🔴 **512 é número, não escopo.** A campanha anterior colapsou **246 sintomas em 6 causas** — sem a
+mesma triagem, qualquer estimativa aqui é chute, e um ratchet por nome com 512 entradas não é ratchet,
+é `continue-on-error` com passos extras.
+
+**Entregável:** tabela causa → nº de cenários → produto ou teste → sítio. O teste de agrupamento é o
+mesmo da campanha: *"se eu corrigir esta causa, exatamente estas falhas fecham — e nenhuma outra."*
+
+**Fora deste ML:** corrigir qualquer uma delas. É triagem, não correção.
+
+**Desbloqueia:** a decisão de ligar o `parity` em Windows no CI (ML-3A da
+`ROADMAP-2026-09-07-gates-rodam-no-windows-...`, hoje decidida como "não ligar até haver triagem").

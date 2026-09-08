@@ -1,5 +1,5 @@
 ---
-status: Open
+status: Done
 date: 2026-09-07
 author: ""
 adr: ""
@@ -103,3 +103,27 @@ A VM reduziu o custo deste diagnóstico de **um ciclo de PR + leitura de log de 
 O Go não estava instalado nela por omissão do arquiteto ao montá-la — a lista de pré-requisitos foi
 herdada de um objetivo anterior (medir CLIs de agente, que não compilam Go) e não revista quando o
 alvo mudou.
+
+
+## Encerramento — 2026-09-08
+
+O `check-gates-falsify.sh` — o gate que falsifica todos os outros — **nunca havia rodado no Windows**.
+Agora roda, e o censo é **440 OK · 512 FAIL**, reproduzível por `TRACKFW_FALSIFY_ENUMERATE=1`.
+
+Entregue: resolução de interpretador (`resolve_py_bin`, que rejeita o stub da Store **validando por
+execução**), resolução de binário (`FALSIFY_GO_BIN`, que falha alto nomeando a causa real), shim de
+`PATH` para os ~40 sub-scripts, e o modo de enumeração com guarda provada por sabotagem — enumera
+**e** sai != 0.
+
+**AC5 respondido por escrito:** o `parity` **não** passa a rodar em Windows no CI agora. A cobertura
+fica declaradamente sob demanda, com o pré-requisito nomeado.
+
+🔴 **Sítios conhecidos e não corrigidos, transferidos com endereço — não abandonados:**
+- **triagem dos 512 por causa** → `ML-R2` da `REQ-2026-09-03-as-217-falhas-reais-de-windows-...`
+  (mesma causa: falhas de Windows agrupadas por mecanismo). É o pré-requisito do ratchet de CI.
+- obstáculos medidos e **fora do escopo desta REQ** por serem de outra causa: separador embutido em
+  string (`MSYS` não converte caminho não-token — vault), locale (Node ignora `LANG`/`LC_ALL`),
+  mojibake **não verificado**, e divergência Go-vs-Python não relacionada a Windows.
+
+Fecha porque **as causas desta REQ — interpretador e binário — não têm sítio remanescente**. As
+outras têm dono escrito.

@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-01
 req: "docs/req/REQ-2026-08-30-caminho-portavel-montado-com-separador-do-sistema-vaza-para-dentro-de-artefato-versionado.md"
 squad: "hades-tf, apolo-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, apolo-tf"
 
 # Roadmap: Caminho dentro de artefato versionado usa sempre barra
 
-> Created: 2026-09-01 | Status: wip
+> Created: 2026-09-01 | Status: done
 
 ## Context
 

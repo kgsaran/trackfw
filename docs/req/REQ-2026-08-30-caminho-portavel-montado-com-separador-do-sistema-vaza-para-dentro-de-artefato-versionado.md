@@ -1,9 +1,9 @@
 ---
-status: Open
+status: Done
 date: 2026-08-30
 author: "trackfw_architect (Zeus)"
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-01-caminho-dentro-de-artefato-versionado-usa-sempre-barra.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-01-caminho-dentro-de-artefato-versionado-usa-sempre-barra.md"
 ---
 
 # REQ: Caminho portável montado com separador do sistema vaza para dentro de artefato versionado
@@ -138,3 +138,18 @@ causa é a mesma.
 **Por que nunca apareceu:** o job `parity` roda em `ubuntu-latest`, onde `os.sep` é `/` e a
 divergência desaparece por construção. Só apareceu porque o gate passou a rodar no Windows —
 trabalho da `REQ-2026-09-07-os-gates-chamam-python3-...`.
+
+
+## Encerramento — 2026-09-08
+
+Sítio do `update --json` do Python corrigido e medido: **8 → 0** barras invertidas na VM Windows, e
+os 3 runtimes byte-idênticos. Teste `test_update_json_path_forward_slash.py` com não-vacuidade
+provada (trocando `os.path` por `ntpath`), verificada pelo arquiteto revertendo um sítio em macOS.
+
+🔴 **Sítios conhecidos e NÃO corrigidos: nenhum.** `validate --json` e `doctor --json` foram medidos
+pelo autor do issue #292 como **concordantes** entre runtimes. `AGENT_HOOKS_RELATIVE_PATHS` e
+`CI_WORKFLOW_RELATIVE_PATHS` foram mantidas com `os.path.join` **de propósito** — as strings de
+exibição delas já são literais com `/`.
+
+Esta REQ foi fechada uma vez com escopo estreito demais e reaberta em 08/09. **Fecha de novo com a
+varredura registrada**, não com a varredura presumida.

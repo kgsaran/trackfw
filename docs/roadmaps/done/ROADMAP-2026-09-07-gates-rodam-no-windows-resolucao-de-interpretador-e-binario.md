@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-07
 squad: ares-tf
 req: "docs/req/REQ-2026-09-07-os-gates-chamam-python3-e-binario-hardcoded-e-nenhum-job-do-ci-os-exercita-no-windows.md"
@@ -7,7 +7,7 @@ req: "docs/req/REQ-2026-09-07-os-gates-chamam-python3-e-binario-hardcoded-e-nenh
 
 # Roadmap: Os gates rodam no Windows — resolução de interpretador e de binário
 
-> Criado em: 2026-09-07 | Status: wip
+> Criado em: 2026-09-07 | Status: done
 
 ## Context
 
@@ -237,7 +237,53 @@ jamais rodasse no Windows.
 > Dependências: Wave 2.
 
 ### ML-3A — Rodar o `parity` (ou subconjunto) em Windows no CI?
-**Status:** ⬜ Pendente · **Agente:** `trackfw_architect`
+**Status:** ✅ Concluído — decisão tomada e escrita · **Agente:** `trackfw_architect`
+
+## Decisão — arquiteto, 2026-09-08
+
+**NÃO ligar o `parity` em Windows no CI agora.** A cobertura fica **declaradamente** sob demanda —
+VM + `TRACKFW_FALSIFY_ENUMERATE=1` — e **não** silenciosamente ausente, que era a situação até hoje.
+
+O AC5 desta REQ admitia essa resposta por escrito: *"'Não vamos rodar' é decisão válida — mas então
+fica escrito que a superfície é declaradamente não coberta, em vez de silenciosamente."* É o que esta
+seção faz.
+
+### O que decide, e é medição, não preferência
+
+```
+censo do gate no Windows (ML-2B, 8 chunks na VM):   440 OK  ·  512 FAIL
+```
+
+Ligar o job inteiro o faria **nascer vermelho com 512 falhas**. Este projeto já tem ADR sobre a única
+forma que funciona aqui — `ADR-2026-08-30-...-job-largo-que-nasce-vermelho-e-sonda-sob-demanda` e
+`ADR-2026-09-05-...-bloqueia-por-conjunto-de-nomes-e-por-tipo-de-evento-nunca-por-contagem`: **ratchet
+por NOME, com teto declinante.**
+
+🔴 **E é justamente por isso que não dá para ligar agora:** um ratchet por nome com **512 nomes** não
+é ratchet, é um `continue-on-error` com passos extras. A lista precisa ser de falhas **triadas por
+causa** — senão o teto nunca desce e o job vira ruído que todos aprendem a ignorar. Foi exatamente o
+que o issue #275 do consumidor externo apontou sobre a contagem.
+
+### Pré-requisito explícito, não promessa vaga
+
+**Triagem dos 512 por causa** — ML próprio, na REQ das 217 falhas (mesma causa: falhas de Windows
+agrupadas por mecanismo). A campanha anterior colapsou **246 sintomas em 6 causas**; sem isso, 512 é
+número, não escopo.
+
+**Quando ligar:** depois da triagem, com ratchet por nome sobre a lista **triada**, entrando pelo
+mesmo desenho de job largo já decidido em ADR.
+
+### O que muda hoje, mesmo sem ligar o CI
+
+Antes desta REQ, a superfície era **invisível**: o `parity` roda em `ubuntu-latest` e ninguém sabia
+que havia 512 falhas ali. Agora:
+
+1. o gate **roda** no Windows;
+2. o censo é **reproduzível por comando**, não por sonda descartável;
+3. e a ausência de cobertura em CI está **escrita aqui**, com o pré-requisito nomeado.
+
+🔴 A diferença entre "não coberto" e "não coberto e ninguém sabe" é a que esta campanha inteira existe
+para eliminar.
 
 🔴 **"Não vamos rodar" é decisão válida** — mas então fica **escrito** que a superfície é
 declaradamente não coberta, em vez de silenciosamente.
