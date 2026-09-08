@@ -34001,3 +34001,50 @@ categorias achadas antes de fechar esta).
 **Sem commit/push** — fora da minha autoridade (Infraestrutura nunca opera git). ML-2A permanece
 🔄 (não posso marcar ✅ com o AC3 conflitante e pendências abertas). Pronto para auditoria do
 `trackfw_architect`.
+
+---
+
+## 2026-09-08 — ares-tf — ML-2B (modo de enumeração reproduzível) + lista real do Windows
+
+**Início:** ROADMAP mesma REQ, seção "Decisão do arquiteto sobre o AC3" (AC3 revisado: enumeração
+reproduzível em vez de "rodar até o fim") → ML-2B, `scripts/check-gates-falsify.sh`.
+
+**Entregue:**
+1. `TRACKFW_FALSIFY_ENUMERATE=1` em `check-gates-falsify.sh`: ~199 pontos de `exit 1` de resultado de
+   cenário passam a contar-e-continuar em vez de abortar; desligado (default) é byte-idêntico ao
+   comportamento de sempre. **Duas rodadas de falsificação reprovaram a 1ª versão** — `return 1` num
+   helper chamado nu sob `set -e` abortava o call site (igual a `exit 1`); contador em VARIÁVEL não
+   sobrevivia subshell (`FAIL` no log, `exit 0` no processo — "transforma vermelho em verde"). Corrigido:
+   `return 0` nos helpers + contagem em ARQUIVO (`$WORK/enum-failures`, atravessa subshell). Nota de
+   vault: `enum-mode-return-1-e-variavel-de-shell-reintroduzem-o-exit-1-2026-09-08.md`.
+2. `scripts/gen-falsify-chunks.py` ganhou a mesma checagem de fechamento injetada em TODO chunk (não só
+   no que herda a cauda do arquivo-fonte) — sem isso só 1 dos 8 chunks converteria falha em exit != 0.
+3. Prova por sabotagem (as 3 guardas): caminho FLAT (Cenário 1) e caminho SUBSHELL (Cenário 64, dentro
+   de `(cd ... && assert_guard_exit ...)`) — ambos: desligado aborta igual a sempre, ligado enumera até
+   o fim do chunk e sai != 0; guarda 2 (rastro em stderr) presente 1x/chunk; guarda 3 confirmada por
+   grep (`TRACKFW_FALSIFY_ENUMERATE` não aparece no Makefile nem em `.github/workflows/`).
+4. Conjunto Linux/macOS: driver paralelo, 8 chunks, desligado — 412 OK / 0 FAIL / exit 0, igual ao
+   baseline do ML-2E; diff de rótulos `falsify/` entre HEAD e a versão pré-ML-2B: 384/384, vazio.
+5. **VM Windows — lista enumerada REAL (não mais sonda)**: sincronizada em `27b09cc`, `scp` dos 2
+   arquivos tocados (SHA256 conferido), `bin/trackfw.exe` recompilado e confirmado antes de cada rodada.
+   8/8 chunks rodados sequenciais (1 processo `ssh` por chunk, evita o falso-positivo de interleaving
+   do driver paralelo medido nesta mesma sessão): **440 OK / 512 FAIL**. Achado dominante NOVO (49% das
+   reprovações 0-5, cascata de 1 causa): `git` não resolvível por processo filho nativo (Go
+   `exec.Command`/Node `spawnSync`/Python `subprocess`) porque `check-release-tag-parity.sh`/
+   `check-ship-force-parity.sh` constroem `PATH="$RUNTIME_BIN:/usr/bin:/bin"` (hardcoded), e nesta VM
+   `git` só existe em `/clangarm64/bin` (MSYS2 clangarm64, não o layout padrão de Git for Windows) —
+   ressalva declarada: pode ser específico desta VM, não medido em runner CI padrão. Duas pendências do
+   ML-2A viraram achado medido: locale/i18n (Node ignora `LANG`/`LC_ALL`, resolve pela UI do SO) e
+   `credential-guard-present-vacuity/baseline` (reproduzido, causa exata ainda não isolada). Detalhe
+   completo, tabela por chunk e categorização na seção "Lista enumerada do Windows (VM, 2026-09-08)" do
+   roadmap.
+6. `make quality` completo (decomposto por teto de 10min/chamada): `go test`/`npm test`/`pytest`/
+   `go vet` — 0 falhas cada; `make parity` (44 scripts) em 5 lotes + `run-gates-falsify-parallel.sh` já
+   validado — `grep -c '^FAIL'` sobre o log concatenado inteiro = **0**. `check-cli-parity.sh` isolado
+   rc=0. `./bin/trackfw validate` rc=0 (172 warnings pré-existentes, inalterados).
+
+**Sítios de mesma causa:** nenhum fora de `check-gates-falsify.sh`/`gen-falsify-chunks.py` — os 2
+defeitos do modo de enumeração são específicos a este ML, ambos corrigidos na mesma sessão/PR.
+
+**Sem commit/push** — fora da minha autoridade. ML-2B pronto para auditoria do `trackfw_architect`
+(implementação + falsificação + VM + `make quality` completos; nenhuma pendência aberta desta sessão).

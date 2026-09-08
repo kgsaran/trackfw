@@ -70,7 +70,10 @@ Honrar o sufixo da plataforma **e falhar alto se o binário não existir**, em v
 > Dependências: Wave 1.
 
 ### ML-2A — Rodar até o fim no Windows e escrever a lista
-**Status:** 🔄 Em andamento (achados escritos; decisão de escopo pendente do arquiteto) · **Agente:** `ares-tf`
+**Status:** 🔄 Em andamento (achados escritos; decisão de escopo já resolvida pelo arquiteto — ver seção
+"Decisão do arquiteto sobre o AC3"; lista enumerada REPRODUZÍVEL agora entregue pelo ML-2B, seção
+"Lista enumerada do Windows (VM, 2026-09-08)" abaixo — 8/8 chunks, sem depender mais da sonda
+descartável) · **Agente:** `ares-tf`
 
 **Método:** VM sincronizada na HEAD desta branch (`4456c95`), `bin/trackfw.exe` recompilado.
 `scripts/check-gates-falsify.sh` rodado **serial**, sem chunking, com `FALSIFY_GO_BIN` apontando pro
@@ -274,7 +277,196 @@ O conhecimento existe só no relatório. Amanhã, para saber o que mudou, algué
 ou, pior, confia numa lista que envelheceu.
 
 ### ML-2B — Modo de enumeração reproduzível
-**Status:** ⬜ Pendente · **Agente:** `ares-tf`
+**Status:** 🔄 Em andamento (implementado, falsificado nas duas direções, VM Windows completa com lista
+enumerada real — 8/8 chunks; `make quality` completo ainda pendente, decomposição necessária por tempo
+de execução) · **Agente:** `ares-tf`
+
+#### Relatório (2026-09-08)
+
+**O que foi feito.** `TRACKFW_FALSIFY_ENUMERATE=1` em `scripts/check-gates-falsify.sh`: os ~199 pontos
+de `exit 1` de resultado de cenário (excluídos os 2 pré-flight de interpretador/binário, linhas 98/178
+— resolução de ambiente, não resultado de cenário) passam por `falsify_fail_point` (184 sites, código
+FLAT fora de função) ou pelo padrão `falsify_count_failure; [[ enum==1 ]] && return 0 || exit 1` (15
+sites, dentro dos helpers `assert_fails_with` e as 9 funções irmãs). Desligado (default): nenhuma linha
+nova, nenhum branch novo — idêntico ao script de ontem. `scripts/gen-falsify-chunks.py` ganhou a mesma
+checagem de fechamento injetada em TODO chunk gerado (não só no que herda a cauda do arquivo-fonte).
+
+**Duas rodadas de falsificação reprovaram a primeira versão** — ver nota de vault
+[enum-mode-return-1-e-variavel-de-shell-reintroduzem-o-exit-1-2026-09-08](../../../vault/notes/enum-mode-return-1-e-variavel-de-shell-reintroduzem-o-exit-1-2026-09-08.md):
+
+1. **`return 1` num helper chamado nu sob `set -euo pipefail` aborta o call site** — byte a byte o
+   mesmo efeito do `exit 1` que o ML existe para evitar, reintroduzido pela porta dos fundos.
+   Sabotagem: Cenário 1 (`static-assets/byte-drift`) forçado a reprovar dentro de `assert_fails_with`;
+   com `return 1`, o chunk morria ali (0 cenários depois). Corrigido para `return 0` (a contagem já
+   aconteceu antes do `return`; o valor de retorno do helper só precisa ser 0 para não disparar
+   `set -e`).
+2. **Contador em variável de shell (`FALSIFY_ENUM_FAILURES=$((...))`) não sobrevive subshell** — boa
+   parte dos ~199 pontos roda dentro de `( ... )`/`$( ... )`; a atribuição muta a cópia da subshell e
+   some quando ela termina, então o fechamento do script encontra 0 e sai `exit 0` com `FAIL` no log —
+   "transformar vermelho em verde" pela guarda 1. Corrigido: contagem em ARQUIVO (`$FALSIFY_ENUM_TALLY`
+   sob `$WORK`, que já existe por processo/chunk) — escrita em arquivo atravessa fronteira de subshell,
+   então a correção é estrutural (vale para os ~199 sites sem precisar auditar cada um por
+   inspeção manual — só confirmado por amostra dirigida, ver prova 2 abaixo).
+
+**Prova por sabotagem (as 3 guardas inegociáveis), com a versão final do código:**
+
+| Prova | Cenário sabotado | Modo | Resultado |
+|---|---|---|---|
+| Guarda 1 (nunca torna o gate verde) — caminho FLAT | `static-assets/byte-drift` (Cenário 1, `assert_fails_with`) | desligado | 3 linhas, `exit 1` imediato — idêntico ao comportamento de sempre |
+| Guarda 1, mesmo cenário | idem | ligado | enumera até o fim do chunk (46 OK depois do FAIL), `exit 1` no fechamento |
+| Guarda 1 — caminho SUBSHELL (a amostra dirigida do Defeito 2) | Cenário 64, `git-branch-guard/no-op-outside-project/baseline-noop-without-trackfw-yaml`, dentro de `( cd ... && assert_guard_exit ... )` | desligado | 5 linhas, `exit 1` imediato |
+| idem | idem | ligado | 46 OK depois do FAIL no mesmo chunk, `[falsify/enumerate] 1 cenário(s) reprovaram ... -- exit 1`, processo sai 1 |
+| Guarda 1 — driver completo, 8 chunks | idem (Cenário 1) via `TRACKFW_FALSIFY_SCRIPT` | ligado | 411 OK / 1 FAIL / exit 1 no processo do driver — todos os OUTROS 7 chunks completos, só o sabotado reprova |
+| Guarda 1 — driver completo | idem | desligado | fail-fast igual a antes: guarda de conjunto do driver denuncia 8 rótulos ausentes no chunk sabotado, exit 1 |
+| Guarda 2 (rastro em stderr) | — | ligado | `[falsify/enumerate] modo de enumeração ATIVO (TRACKFW_FALSIFY_ENUMERATE=1, default=0) ...` emitido 1x por processo/chunk (8x no driver completo) |
+| Guarda 3 (não é caminho de produção) | — | — | `grep -rn TRACKFW_FALSIFY_ENUMERATE Makefile .github/workflows/ scripts/` só acha ocorrências dentro de `check-gates-falsify.sh` e `gen-falsify-chunks.py` — nenhuma no Makefile nem nos workflows |
+
+**Reconciliação (regra dura do CLAUDE.md — uma frase por teste novo):** este ML não adicionou teste
+automatizado novo (nenhum arquivo em `internal/`, `npm/`, `pypi/` sob teste de CI) — as provas acima
+são falsificações manuais, cada linha da tabela afirma exatamente a conclusão da coluna "Resultado", e
+nenhuma delas se sustenta em execução de CI regular (o modo nunca roda em `make quality`/`make parity`,
+guarda 3).
+
+**Conjunto Linux/macOS — método declarado.** Driver paralelo (`scripts/run-gates-falsify-parallel.sh`,
+8 chunks, JOBS auto-detectado=10→capado a 8), desligado (default), rodado duas vezes: versão
+`origin/HEAD` do arquivo (via `TRACKFW_FALSIFY_SCRIPT`) e a versão final deste ML. Rótulos extraídos de
+ambos os logs com `grep -oE '(OK|FAIL|PROOF)   \[falsify/[^]]*\]' | sort`: **384/384, `diff` vazio**.
+Reconfirmado depois da correção dos 2 defeitos: novo run completo, desligado, 412 OK / 0 FAIL / exit 0
+— mesma contagem do baseline anterior a este ML (ML-2E: 412 OK/0 FAIL — mais os OK "wrapped" de
+sub-scripts, além dos rotulados `falsify/`).
+
+**Sítios de mesma causa — reportado, sem abrir artefato novo (regra dura de causa raiz):** nenhum
+sítio de mesma causa fora deste arquivo e de `gen-falsify-chunks.py` — os dois defeitos são
+específicos à implementação do ML-2B (não existiam antes dele), então não há "sítio adicional" a
+enumerar; ambos os pontos de correção (helper + gerador de chunks) já foram fechados nesta mesma
+sessão/PR.
+
+**Pendências explícitas (todas fechadas nesta mesma sessão, depois de escritas):**
+1. ~~`make quality` completo~~ — feito, decomposto em lotes (Bash tem teto de 10min/chamada, `make
+   quality` inteiro excede isso numa chamada só): `go test` (17 pacotes, cached/8.2s, 0 falhas),
+   `npm test` (885 testes, 0 falhas), `python3 -m pytest pypi/tests -q` (1664 + 66 subtests, 0
+   falhas), `go vet ./...` (limpo) — cada um seu próprio log em `/tmp/quality-logs/`. `make parity`
+   (44 scripts) em 5 lotes sequenciais de ~9 scripts cada, mais `run-gates-falsify-parallel.sh` já
+   validado antes (desligado, 412 OK/0 FAIL, ver prova por sabotagem do ML-2B) — logs concatenados em
+   `/tmp/quality-logs/parity-full.log`: **`grep -c '^FAIL'` sobre o arquivo INTEIRO = 0** (nunca
+   `| tail`). `GO_BIN=bin/trackfw scripts/check-cli-parity.sh` isolado — rc=0. `./bin/trackfw validate`
+   — rc=0, 172 warnings pré-existentes (mesma contagem do ML-2A, não relacionados a esta sessão).
+2. ~~VM Windows: rodar `bin/trackfw.exe` + `gen-falsify-chunks.py` + chunks sequenciais~~ — feito, ver
+   seção "Lista enumerada do Windows (VM, 2026-09-08)" abaixo.
+3. `scripts/` (infraestrutura de gate) é exceção explícita à regra de paridade 3-CLI de
+   `docs/cli-parity.md` — não é um "sítio não coberto" da regra de paridade, é escopo fora dela por
+   definição do projeto.
+
+**Reconciliação — teste novo:** nenhum teste automatizado de CI foi adicionado por este ML (mudança é
+em `scripts/`, exercitada por execução manual/falsificação, não por `go test`/`npm test`/`pytest`) —
+consistente com a declaração já feita acima ("este ML não adicionou teste automatizado novo").
+
+## Lista enumerada do Windows (VM, 2026-09-08)
+
+**Método.** VM sincronizada em `27b09cc` (`git fetch` + `checkout -f origin/<branch>`); os 2 arquivos
+tocados pelo ML-2B (`scripts/check-gates-falsify.sh`, `scripts/gen-falsify-chunks.py`) copiados por
+`scp` — SHA256 conferido idêntico dos dois lados antes de rodar. `bin/trackfw.exe` recompilado e
+confirmado existente antes de cada rodada. `gen-falsify-chunks.py` gerou 8 chunks (mesmo método do
+driver paralelo); cada chunk rodado **sequencial, um processo `ssh` por chunk** com
+`TRACKFW_FALSIFY_ENUMERATE=1`, log próprio por chunk — a tentativa anterior desta sessão de atribuir
+log a um chunk específico do driver PARALELO por posição no stdout combinado deu falso positivo por
+interleaving (ver relatório do ML-2B); log por-chunk sequencial elimina essa ambiguidade.
+
+**Contagem por chunk (os 8 completos):**
+
+| Chunk | OK | FAIL |
+|---|---|---|
+| 0 | 32 | 110 |
+| 1 | 45 | 25 |
+| 2 | 45 | 5 |
+| 3 | 38 | 113 |
+| 4 | 38 | 5 |
+| 5 | 43 | 17 |
+| 6 | 71 | 234 |
+| 7 | 128 | 3 |
+| **Total** | **440** | **512** |
+
+🔴 **Este número não é "512 obstáculos distintos"** — a maior causa isolada (git não resolvível, ver
+abaixo) sozinha produz ~250 dessas linhas por cascata (3-5 `FAIL` por cenário afetado). Contagem de
+CAUSAS distintas, não de linhas: ver categorização abaixo.
+
+**Achado dominante — NOVO, não visto pela sonda do ML-2A:** 135 das 275 reprovações de FAIL únicas nos
+chunks 0-5 (49%) são a MESMA causa raiz — `git` não resolvível pelo processo filho nativo (Go
+`exec.Command`, Node `spawnSync`, Python `subprocess`) invocado por `check-release-tag-parity.sh` /
+`check-ship-force-parity.sh`. Causa medida, não suposta:
+- Esses dois scripts constroem um `PATH` MÍNIMO e explícito para o CLI-sob-teste:
+  `BASE_PATH="$RUNTIME_BIN:/usr/bin:/bin"` (`check-release-tag-parity.sh:112`,
+  `check-ship-force-parity.sh:115`) — assume que `git` está em `/usr/bin` ou `/bin`, verdade na grande
+  maioria de Linux/macOS/Git-for-Windows padrão.
+- Nesta VM, `git` está instalado via MSYS2 `clangarm64` (`which git` → `/clangarm64/bin/git`,
+  `/usr/bin/git` e `/bin/git` **não existem** — confirmado por `ls`). O Windows nativo TEM
+  `C:\Program Files\Git\cmd\git.exe` no `PATH` do sistema (`Test-Path` confirma), mas essa entrada não
+  aparece em `BASE_PATH` porque `BASE_PATH` é construído com convenção POSIX/MSYS, não com o `PATH`
+  nativo do Windows.
+- 🔴 **Ressalva declarada:** medido nesta VM específica, cujo layout de Git (MSYS2 `clangarm64`, sem
+  `/usr/bin/git`) pode não ser representativo de um runner de CI Windows padrão (GitHub Actions
+  `windows-latest` usa Git for Windows convencional, com `/usr/bin/git` presente). Não generalizar sem
+  medir também num runner convencional — mas o padrão de código (`PATH` hardcoded assumindo
+  `/usr/bin:/bin`) é, em si, uma dependência de layout não abstraída, então vale reportar
+  independentemente da VM.
+- Cascata: cada cenário afetado gera de 3 a 5 `FAIL` (um por runtime que chama `git`, mais os
+  `go-vs-node/err`/`go-vs-py/err` de divergência de stderr) — por isso 1 causa produz ~130 linhas.
+
+**Categorias já conhecidas, reconfirmadas nesta rodada real (não mais só pela sonda descartável):**
+- **Separador de caminho / MSYS path-embedding (Cenário 17, `update-parity/dry-run-write-leak`)** —
+  o obstáculo original do gate committed, presente também no modo de enumeração (linha 1 do chunk 0).
+- **Dedup de guard cego a `\`** (`git-branch-guard-dedup/baseline-skips-project-entry`,
+  `double-slash-tolerance`) — já documentado em
+  [dedup-guard-path-cego-a-backslash-no-windows-2026-09-05](../../../vault/notes/dedup-guard-path-cego-a-backslash-no-windows-2026-09-05.md).
+- **Mojibake/encoding** (`harness-hooks-parity/*/go-vs-node`, `go-vs-py`, `agent-hooks-parity/amazonq/
+  go-vs-py`: "structural drift") — **14 ocorrências nos 8 chunks completos**, mesma família de
+  [gate-em-cp1252-tem-duas-falhas-distintas...](../../../vault/notes/gate-em-cp1252-tem-duas-falhas-distintas-crash-de-print-e-mismatch-por-transcodificacao-2026-09-02.md).
+
+**Cluster não triado nesta sessão — "baseline já reprova com o binário real, prova P4 inválida"**
+(`setup-sXX-baseline`, **24 ocorrências distintas nos 8 chunks completos**: doctor-parity,
+ship-force-parity, release-tag-parity, validate-parity, agent-hooks-parity, agent-models-parity,
+push-force-parity, audit-surface, update-parity): o CICLO LIMPO (binário não-corrompido) já
+reprova esses `check-*-parity.sh` no Windows — são bugs de produto/gate reais neste SO, não efeito do
+modo de enumeração. Cada um pede triagem própria (causa provavelmente distinta por script) — fora do
+escopo deste ML (que entrega o instrumento, não os diagnósticos individuais).
+
+**Duas categorias que eram "não diagnosticado" nas pendências do ML-2A e agora têm causa medida
+(chunk 7, dados reais — não mais sonda):**
+
+- **Locale/i18n: Node ignora `LANG`/`LC_ALL`** (`validate-ok-message/baseline-byte-identical-and-
+  pinned`) — Go e Python emitem `✓ No violations found.` (inglês, respeitando
+  `LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8` fixado pelo cenário); Node emite
+  `✓ Nenhuma violação encontrada.` (português) — a mesma observação do probe descartável do ML-2A,
+  agora reproduzida pelo mecanismo real: Node resolve locale pela UI do SO (pt-BR nesta VM), não pelas
+  env vars POSIX.
+- **`agent-hooks-parity/credential-guard-present-vacuity/baseline`** (o item 1 das pendências do
+  ML-2A, "não investigado") — reproduzido: a MESMA checagem roda 2x no cenário (linha ~72 e ~92 do log
+  do chunk 7); a primeira falha (`saiu com 1`) apesar da saída capturada mostrar só `OK` nos
+  comparadores estruturais subjacentes (`agent-hooks-parity/claude/go-vs-node`, etc.) — sinal de que o
+  `exit 1` não vem do MESMO comando cujo `output:` foi capturado, e sim de um passo anterior dentro do
+  mesmo bloco de setup. Causa exata ainda não isolada — precisa de reprodução isolada fora do cenário
+  completo (fora do escopo deste ML, que entrega enumeração, não diagnóstico linha-a-linha).
+
+**Residuais não explicados nesta sessão** (não caem em nenhuma categoria acima, 1 ocorrência cada):
+`serve-chain-canonical-link/node/edge-baseline` + `no-invented-node-baseline` (Node crash visível no
+primeiro log do chunk 0: `MODULE_NOT_FOUND`, padrão `bash -c "$(declare -f fn); fn ..."` chamando
+`require()` num contexto Windows — merece investigação própria);
+`serve-address-parity/wildcard-bind-regression/python-detects-regression` (bind de rede, possível
+diferença de semântica IPv4/IPv6 wildcard no Windows); `git-branch-guard/prose-in-message` e
+`stdin-drain-before-noop/detection-catches-epipe-regression` (EPIPE não ocorre — pipe do Windows pode
+não sinalizar do mesmo jeito que POSIX); `sandbox-gap-e/direction-a-detected`,
+`sandbox-walkdir-reintroduced/direction-b-detected`, `scaffold-mode-check-silenced/direction-a-
+detected`, `scaffold-execbit-discriminant-silenced/direction-b-detected`,
+`scaffold-update-chmod-removed/direction-c-detected` (chunk 6 — braços de detecção de sabotagem que
+não acusam no Windows, possivelmente relacionados a semântica de bit de execução/symlink já conhecida
+como divergente no SO, ver
+[nem-todo-skip-de-execbit-precisa-do-mesmo-probe-um-era-copia-colada-2026-09-05](../../../vault/notes/nem-todo-skip-de-execbit-precisa-do-mesmo-probe-um-era-copia-colada-2026-09-05.md)
+— não confirmado, só levantada a hipótese); `update-harness/populated-harness/go-vs-python` (JSON
+diverge — já sinalizado no ML-2A como "divergência real entre runtimes, não vista em Linux/macOS").
+
+**Cobertura desta lista:** 8/8 chunks completos, 440 OK / 512 FAIL, todos os logs por-chunk preservados
+em `C:\Users\Lab\falsify-chunks\chunk_N.enum.log` na VM (não copiados para o repo — reproduzíveis a
+qualquer momento com o método acima, que é o ponto do ML-2B).
 
 Modo explícito que continua após reprovação e **enumera** em vez de abortar no primeiro FAIL.
 
