@@ -34132,3 +34132,66 @@ sintético — documentado em vault, não causado por este diff). `make quality 
 
 **Sem commit/push** — fora da minha autoridade. Pronto para revisão `hades-tf` (guarda de
 segurança) e depois auditoria do `trackfw_architect`.
+
+## 2026-09-08 — apolo-tf — ML-R1 `update --json` separador nativo (issue #292): INICIADO
+
+Retomando `ROADMAP-2026-09-01-caminho-dentro-de-artefato-versionado-usa-sempre-barra.md`, seção
+"Wave reaberta — 2026-09-08", ML-R1 (`docs/req/REQ-2026-08-30-caminho-portavel-...md`, seção
+🔴 REABERTA). Causa: `pypi/trackfw/commands/update.py` monta identificadores canônicos de artefato
+com `os.path.join`, vazando `os.sep` para o campo `path` do `--json` no Windows — só no Python.
+
+## 2026-09-08 — apolo-tf — ML-R1 `update --json` separador nativo (issue #292): CONCLUÍDO, sem commit — pronto para revisão
+
+`pypi/trackfw/commands/update.py`: `AGENT_RULES_RELATIVE_PATHS` (3 entradas), `VALIDATE_SCRIPT_
+RELATIVE_PATH`, `CLAUDE_COMMANDS_RELATIVE_PATH` passam a usar `/` literal em vez de `os.path.join`
+— são as constantes que alimentam `display_path`, ou seja, **são** o campo `path` do `--json`.
+Varredura completa das ~38 ocorrências de `os.path.join` do arquivo: 5 mudadas (motivo acima), as
+demais mantidas por alimentarem só I/O real de sistema de arquivos (nunca o contrato JSON) — lista
+completa no roadmap. `AGENT_HOOKS_RELATIVE_PATHS`/`CI_WORKFLOW_RELATIVE_PATHS` não mudaram: seus
+`display_path` já eram strings hardcoded com `/`. `update_harness.py` tem o mesmo padrão mas já foi
+corrigido em ML-2A anterior (commits dc89d91/a4adf4e) — sítio distinto, não reaberto aqui.
+
+Teste novo `pypi/tests/test_update_json_path_forward_slash.py`: recarrega o módulo com `os.path`
+substituído por `ntpath` (`unittest.mock.patch`) para forçar semântica Windows independentemente do
+SO do executor — evita a vacuidade que um teste "sem `\`" teria em Linux (onde `os.path.join` já
+produz `/`). Comprovado empiricamente revertendo a correção neste host Linux: os 3 testes falham
+(`AssertionError: '\\' unexpectedly found in ...`); com a correção, passam.
+
+Medido na VM Windows ARM64 (`go1.27.1 windows/arm64`), 3 projetos `init` separados (um por runtime,
+`--ai-tools claude,copilot,cursor,amazonq`): antes **8** `\` no `update --json` do Python; depois
+**0** nos 3 runtimes, e os 5 targets comuns (`agent-hooks`, `agent-rules`, `claude-commands`,
+`codex-project-agents`, `validate-script`) têm `path` **byte-idêntico** entre Go/Node/Python.
+`go build ./...`, `go test ./...`, 1667 testes Python, 885 testes Node — todos verdes.
+`scripts/check-cli-parity.sh` rc=0. `trackfw validate` rc=0 (só warnings pré-existentes,
+nenhum relacionado). `make quality QUALITY_EXIT=0` (4108 linhas) `grep -c '^FAIL'`=0 sobre a
+saída inteira.
+
+**Sítios de mesma causa:** nenhum novo. `validate --json`/`doctor --json` ficam fora (medidos pelo
+autor do issue como concordantes); `barrier.py`/`context.py`/`serve.py`/`sync.py` inspecionados —
+`os.path.join` só para I/O real, sem sítio.
+
+**Correção pós-advisor (2 rodadas, mesma sessão, antes do handoff):**
+1. A primeira medição na VM só comparou o campo `path`; os 3 valores mudados também alimentam
+   `rel_paths` (hash/sandbox), cujo observável é `state`, não `path` — mesmo padrão A1/A2/A3 do
+   CLAUDE.md (medir uma coisa, declarar outra). Refeita cobrindo `update --json` **e**
+   `update --dry-run --json`, com diff campo-a-campo (`path`+`state`) pré-fix vs pós-fix. As 2
+   falhas Windows-only pré-existentes (CRLF `test_update_alias_converts_only_present_codex_
+   artifacts`; JSON-escaping `test_json_escaping_with_quotes_slashes_and_newlines`) confirmadas
+   por comparação direta na VM (fix vs `update.py` revertido ao HEAD da REABERTURA) — saída de
+   pytest byte-idêntica nos dois casos, não presumida por "não toquei nesse arquivo".
+2. Na leitura do resultado da rodada 1, escrevi que `agent-hooks` `skipped`→`updated` "acontece
+   nos dois lados igualmente" — falso: o próprio printout mostrava `pre=skipped post=updated`
+   (as chamadas rodaram em sequência sobre o mesmo diretório: pós-fix escreveu os hooks primeiro,
+   pré-fix os viu já atualizados depois — efeito de ordem de execução, não da correção).
+   `agent-hooks` não é um dos 3 alvos que este ML mudou, então isso não contamina a conclusão, mas
+   a frase precisava ser corrigida para não afirmar uma igualdade que a própria medição contradizia.
+   Corrigido: a comparação order-independent é a de `--dry-run` (sandbox reconstruído do zero por
+   chamada) — `state` idêntico nela para os 5 alvos; nos 3 alvos efetivamente corrigidos, `state`
+   fica `skipped` em toda combinação medida, com o limite declarado de que só a resolução de
+   arquivo já-existente foi exercitada (não o caminho de escrita-a-partir-de-ausente).
+
+Declarado explicitamente no relatório: guarda de não-vacuidade é Python-only (Go/Node usam string
+literal inline, sem `os.sep`-equivalente para vazar — espelho seria decorativo).
+
+**Sem commit/push** — fora da minha autoridade. Roadmap ML-R1 marcado ✅ Concluído com relatório
+completo, evidência VM reforçada pós-advisor. Pronto para auditoria do `trackfw_architect`.

@@ -71,14 +71,24 @@ from trackfw.commands.update_harness import (
 from trackfw.generators.adr import global_adr_dir
 from trackfw.homedir import home_dir
 
+# AGENT_RULES_RELATIVE_PATHS — canonical artifact identifiers, not system
+# paths to assemble: they feed BOTH the hash-diffing in _run_file_target
+# (via os.path.join(root, rel), where "/" works as a separator on every
+# platform Python targets, Windows included) AND the "path" field of the
+# --json contract (via ", ".join(...) below), which Go and Node render with
+# a literal "/" (internal/generators/update.go's runProjectTarget,
+# ".github/copilot-instructions.md" etc.). Using os.path.join here leaked
+# os.sep into that json field on Windows (issue #292) — REQ-2026-08-30
+# REABERTA, ML-R1. The actual writers (inject_rules_detected's own
+# AGENT_FILES table) are independent of this list and unaffected.
 AGENT_RULES_RELATIVE_PATHS = [
     "CLAUDE.md",
     "AGENTS.md",
     "GEMINI.md",
-    os.path.join(".github", "copilot-instructions.md"),
+    ".github/copilot-instructions.md",
     ".windsurfrules",
-    os.path.join(".amazonq", "developer", "guidelines.md"),
-    os.path.join(".cursor", "rules", "trackfw.mdc"),
+    ".amazonq/developer/guidelines.md",
+    ".cursor/rules/trackfw.mdc",
 ]
 
 AGENT_HOOKS_RELATIVE_PATHS = [
@@ -112,8 +122,13 @@ AGENT_HOOKS_DISPLAY_PATH = (
 
 CODEX_PROJECT_AGENTS_DISPLAY_PATH = ".codex/agents, .agents/skills"
 
-VALIDATE_SCRIPT_RELATIVE_PATH = os.path.join("scripts", "trackfw-validate.sh")
-CLAUDE_COMMANDS_RELATIVE_PATH = os.path.join(".claude", "commands", "trackfw")
+# Same reasoning as AGENT_RULES_RELATIVE_PATHS above: both constants are
+# passed directly as display_path into _run_file_target (they ARE the
+# "path" field of the --json contract for their targets), so they use a
+# literal "/" rather than os.path.join — matching Go's/Node's hardcoded
+# "scripts/trackfw-validate.sh" and ".claude/commands/trackfw" strings.
+VALIDATE_SCRIPT_RELATIVE_PATH = "scripts/trackfw-validate.sh"
+CLAUDE_COMMANDS_RELATIVE_PATH = ".claude/commands/trackfw"
 
 # ci-workflow (ML-2C) — both possible destinations are declared as relPaths;
 # generate_ci_workflow only ever writes the one matching cfg["ci"], so the
