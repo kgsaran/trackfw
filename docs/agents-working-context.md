@@ -33947,3 +33947,57 @@ nomeados pelo roadmap (`PYTHON_BIN`, tratado acima).
 
 **Sem commit/push** — fora da minha autoridade (Infraestrutura nunca opera git). Pronto para auditoria
 do `trackfw_architect`.
+
+## 2026-09-07 — Ares (Infra) — ML-2A: gate rodado na VM Windows até o primeiro obstáculo real, causa raiz medida e classificada (PARCIAL)
+
+Início: sincronizei a VM na HEAD de `fix/gates-rodam-no-windows-resolucao-de-interpretador-e-binario`
+(`4456c95`), corrigi um pré-requisito de ambiente (`npm install` nunca tinha rodado lá — não é bug do
+gate), e rodei `scripts/check-gates-falsify.sh` serial.
+
+**Achado principal:** o gate committado (sem nenhuma alteração de código) aborta hoje no **Cenário
+17** por causa medida e classificada como "separador de caminho" — MSYS/Git-Bash só converte caminho
+POSIX→Windows quando é o TOKEN INTEIRO de argv/env, não quando embutido dentro de uma string maior
+(`python3 -c "...open('$path')..."`). Provado sem nenhum código do trackfw envolvido. Nota de vault:
+`msys-nao-converte-caminho-embutido-em-string-maior-2026-09-07.md`. **Fora do escopo deste ML
+(interpretador/binário) — não corrigido, documentado.**
+
+Sondagem adicional (probe instrumentado, só na VM, nunca commitado — resultado não-oficial, não
+exaustivo) encontrou mais 3 categorias de obstáculo Windows além do 17: divergência real de estado
+entre runtimes (não é causa Windows), locale/i18n do SO ignorando `LANG`/`LC_ALL`, e mojibake de
+encoding em captura de stdout. Uma reprovação (`credential-guard-present-vacuity/baseline`) ficou
+sem diagnóstico por tempo.
+
+**Reconciliação com as 39 residuais:** superfícies disjuntas, medido — vêm de jobs diferentes
+(`windows-full-suites`/`windows-defect-reproduction`, testes unitários) vs. este gate (`parity`, que
+**nunca rodou no Windows antes desta sessão**, confirmado — roda só em `ubuntu-latest`). **Não medi
+se as CAUSAS se sobrepõem** — o achado de mojibake (`agent-hooks-parity/amazonq`) é candidato a
+mesma família já rastreada (`REQ-2026-09-03-...-73-das-246-falhas...`, notas cp1252 do vault), não
+confirmado. Detalhe completo no roadmap.
+
+**Conflito de critério sinalizado, não resolvido silenciosamente:** o gate é fail-fast
+(`assert_fails_with` + 7 helpers irmãos fazem `exit 1` sob `set -euo pipefail`) em **qualquer**
+plataforma — em Linux/macOS só "chega ao fim" porque nada falha lá. Isso torna o AC3 ("roda até o
+fim, abortar no meio não é aceitável") **insatisfazível como escrito** sem corrigir toda categoria de
+obstáculo Windows encontrada — inclusive as que este ML explicitamente não deve tocar. Registrado no
+roadmap para decisão do arquiteto.
+
+**Validação:** `git status --porcelain` mostra só governança (este roadmap + 1 nota de vault nova +
+`agents-working-context.md`) — nenhum arquivo de `scripts/` ou código de produção alterado. `go build
+./...` limpo, `./bin/trackfw validate` exit 0 (só os 172 warnings pré-existentes, não relacionados),
+`scripts/check-cli-parity.sh` isolado rc=0. `make quality` completo NÃO rodado nesta sessão —
+justificativa escrita no roadmap (zero código tocado; baseline 0 FAIL/4060 linhas do ML-2E vale para
+esta HEAD). Conjunto de rótulos Linux/macOS trivialmente inalterado (nenhum script tocado).
+
+**Arquivos:** `docs/roadmaps/wip/ROADMAP-2026-09-07-gates-rodam-no-windows-resolucao-de-interpretador-e-binario.md`
+(ML-2A atualizado com achados completos, tabela de obstáculos e pendências explícitas),
+`vault/notes/msys-nao-converte-caminho-embutido-em-string-maior-2026-09-07.md` (nova),
+`vault/notes/index.md` (linkada).
+
+**Pendências para a próxima sessão/arquiteto** (escritas em detalhe no roadmap): (1) diagnosticar a
+reprovação de vacuity-guard não investigada; (2) decidir se vale continuar a sondagem além do
+cenário ~46/194; (3) decidir sobre o conflito do AC3 (relaxar o critério ou abrir REQs para as
+categorias achadas antes de fechar esta).
+
+**Sem commit/push** — fora da minha autoridade (Infraestrutura nunca opera git). ML-2A permanece
+🔄 (não posso marcar ✅ com o AC3 conflitante e pendências abertas). Pronto para auditoria do
+`trackfw_architect`.
