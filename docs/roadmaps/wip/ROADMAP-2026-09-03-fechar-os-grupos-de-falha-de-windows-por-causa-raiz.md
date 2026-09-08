@@ -1,5 +1,5 @@
 ---
-status: done
+status: wip
 date: 2026-09-03
 squad: apolo-tf
 req: "docs/req/REQ-2026-09-03-as-217-falhas-reais-de-windows-colapsam-em-poucas-causas-e-tres-delas-exigem-decisao-antes-de-codigo.md"
@@ -7,7 +7,7 @@ req: "docs/req/REQ-2026-09-03-as-217-falhas-reais-de-windows-colapsam-em-poucas-
 
 # Roadmap: Fechar os grupos de falha de Windows por causa raiz
 
-> Criado em: 2026-09-03 | Status: done
+> Criado em: 2026-09-03 | Status: wip
 
 ## Context
 
@@ -1019,3 +1019,53 @@ o de escrita, que corrompe artefato de governança do usuário.
 
 A `Regra Dura de Causa Raiz` (`CLAUDE.md`) nasceu desse erro, e este roadmap é a primeira aplicação
 completa dela.
+
+
+## Wave reaberta — 2026-09-08: o grupo `IsAbs` não havia fechado
+
+### ML-R1 — `manager.go` usa o helper de ancoragem que já existe
+**Status:** ⬜ Pendente · **Agente:** `apolo-tf` · 🔴 **segurança**
+
+**Medido na VM Windows ARM64, sobre `origin/main`:**
+
+```
+manager_test.go:211   Install("/tmp/outside-trackfw.md", global) accepted unsafe destination
+manager.go:704        } else if filepath.IsAbs(destination) {
+```
+
+`filepath.IsAbs("/tmp/...")` é **falso** no Windows. A guarda classifica o caminho como relativo e
+**aceita o destino inseguro**.
+
+**O helper correto já existe:** `internal/validator/validator_credential_guard.go:121`,
+`pathIsAnchoredForHookConfig` — barra POSIX, letra de unidade, UNC com validação de servidor/share,
+zero chamadas dependentes de SO, revisado pelo `hades-tf`.
+
+**Ações:**
+1. Extrair o predicado para um pacote consumível pelos dois (`internal/validator` e
+   `internal/integrations`). 🔴 **Não duplicar** — duplicar recria em dois lugares o defeito de
+   "ponto único por runtime" que é a causa desta reabertura.
+2. `manager.go:704` (e **todo** sítio que decide segurança por `filepath.IsAbs` — **varra**) passa a
+   usar o predicado.
+3. **Paridade nos 3 CLIs:** medir se Node e Python têm o mesmo defeito no equivalente. Se tiverem, é
+   mesmo ML. Se não, declarar por escrito por quê.
+
+**Falsificação nas duas direções, e é aqui que este ML pode dar errado em silêncio:**
+- `/tmp/fora.md` como destino `global` ⇒ **rejeitado** em Windows **e** em POSIX;
+- destino legítimo dentro do escopo ⇒ **aceito** nos dois (guarda de vacuidade: rejeitar tudo também
+  faria o teste passar);
+- 🔴 o teste tem de **falhar se a correção for revertida** — e em POSIX `filepath.IsAbs("/tmp/x")` já
+  é `true`, então **um teste rodado só em Linux é vacuamente satisfeito**. Cobrir com a tabela de
+  vetores independente de SO, como `pathIsAnchoredForHookConfig` faz.
+
+**Critérios de aceite:**
+- [ ] `TestManagerRejectsTraversalAbsoluteMismatchAndNUL` passa na VM Windows — medido, não inferido
+- [ ] zero duplicação do predicado; um ponto único, consumido pelos dois pacotes
+- [ ] lista dos sítios varridos que decidem segurança por `filepath.IsAbs`, com veredito de cada um
+- [ ] paridade dos 3 CLIs medida e declarada
+- [ ] teste que reprova se a correção for revertida, **sem** depender de rodar no Windows
+- [ ] `make quality QUALITY_EXIT=0`, `grep -c '^FAIL'` sobre a saída inteira = 0
+- [ ] revisão do `hades-tf` antes do commit — é mudança em guarda de segurança
+
+### Os outros 5 grupos da triagem
+**Status:** ⬜ Pendente — **não** entram neste ML. Cada um com causa própria; misturar aqui repetiria
+o erro que estimou o grupo `IsAbs` em 14 falhas e entregou 2.
