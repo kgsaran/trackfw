@@ -428,9 +428,12 @@ const GLOBAL_CREDENTIAL_GUARD_SCRIPT = CG_HEADER + CG_DETECTION_CORE + CG_GLOBAL
 // Byte-identical port of internal/generators/scaffold.go:gitBranchGuardScript
 // (Go's canonical reference). Blocks raw `git commit`/`git push`/
 // `git checkout -b` by a subagent, regardless of runtime contract: emits BOTH
-// `{"decision":"block","reason":"..."}` on stdout (Claude/Gemini JSON-stdout
-// style) AND `exit 2` (Codex/Windsurf/Cursor exit-code style) simultaneously,
-// same simplification decision as the Go const's doc comment. Unlike
+// `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":
+// "deny","permissionDecisionReason":"..."}}` on stdout (Claude/Gemini
+// JSON-stdout style — UPDATED 2026-09-09, see the Go const's doc comment for
+// why the previous `{"decision":"block",...}` shape stopped validating) AND
+// `exit 2` (Codex/Windsurf/Cursor exit-code style) simultaneously, same
+// simplification decision as the Go const's doc comment. Unlike
 // CREDENTIAL_GUARD_SCRIPT, this script is IDENTICAL between project and
 // global scope (no trackfw.yaml dependency, no mode/roadmap_dir resolution)
 // — a single constant is written by both generateGitBranchGuardScript and
@@ -1030,7 +1033,7 @@ case "$SUBCOMMAND" in
     ;;
 esac
 
-printf '{"decision":"block","reason":"%s"}\\n' "$REASON"
+printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"%s"}}\\n' "$REASON"
 echo "$REASON" >&2
 exit 2
 `

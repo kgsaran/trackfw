@@ -34312,3 +34312,52 @@ protegendo PR #238 aberto).
 do `parity-falsify` (não abort). `check-output-encoding-declared.sh` isolado: `rc=0`. `actionlint`
 limpo. `go build`/`go vet`: OK. Sem commit/push — fora da minha autoridade. Roadmap atualizado com a
 seção "Correção pós-auditoria — `ares-tf`, 2026-09-08".
+
+## 2026-09-09 — prometeu-tf — ML-1A + ML-1B (guard emite `hookSpecificOutput`, nos 3 CLIs)
+
+Roadmap: `ROADMAP-2026-09-09-guard-emite-hookspecificoutput-e-a-razao-chega-ao-modelo-nos-3-clis.md`
+(REQ-2026-09-02). ML-1A e ML-1B marcados ✅ Concluído com relatório completo; ML-2A (gate de forma
+do JSON) fora do escopo desta entrega, propositalmente não tocado.
+
+**7 sítios corrigidos (o roadmap listava 6):** `scripts/trackfw-git-branch-guard.sh`,
+`internal/generators/scaffold.go`, `npm/src/generators/hooks.js`,
+`pypi/trackfw/generators/init_gen.py`, `internal/validator/validator_git_branch_guard_reference.go`,
+`pypi/trackfw/validator.py` **e** `npm/src/validator/index.js` (referência do `validate` do CLI
+Node, sétimo sítio — escapou do `grep -rln` inicial por não ter "generator"/"hooks" no caminho; pego
+por `make quality`, não pela busca). `{"decision":"block","reason":"..."}` (rejeitado pelo Claude
+Code, `(root): Invalid input`) → `{"hookSpecificOutput":{"hookEventName":"PreToolUse",
+"permissionDecision":"deny","permissionDecisionReason":"..."}}`. `exit 2` e a dupla-emissão
+JSON+exit-code preservados — só a forma do JSON mudou.
+
+Achado que corrige a premissa da própria REQ (não contradição deste ML): a REQ afirmava que o
+`REASON` "não chega ao stderr"; medido que `echo "$REASON" >&2` já existe, incondicional, desde o
+commit `9411210` (bem anterior à REQ) — AC2 verificado por execução como já satisfeito, não
+implementado por este ML.
+
+Medição exigida pelo escopo negativo da REQ: `trackfw-credential-guard.sh` **não** tem o mesmo
+defeito — seu caminho de bloqueio nunca emite JSON de decisão no stdout (só `exit 2` + stderr), o
+único `printf` de JSON dele vai para um arquivo de attention signal, só em modo `warn`. Nada a
+corrigir ali.
+
+3 testes novos adicionados (Go/Node/Python), cada um com a frase de reconciliação exigida pelo
+`CLAUDE.md`, e corrigidos para não afirmar aceitação real do Claude Code (só schema documentado) —
+achado do advisor: o nome original do teste Python (`..._claude_code_accepts`) e o comentário do Go
+afirmavam mais do que o teste provava.
+
+Falsificações AC2/AC3/AC4 em cópias de scratch (nunca no script versionado). Gate completo: `make
+quality` sequencial excede o teto de 10 min por chamada de shell; rodado em partes (test/test-
+node/test-python/lint em um bloco, `parity-rest` em outro, `parity-falsify` via
+`scripts/run-gates-falsify-parallel.sh` — mesmo conteúdo do `check-gates-falsify.sh`, com guarda de
+conjunto própria). `MAKE_RC=0` em todos os blocos, `grep -c '^FAIL'=0`, `grep -c '^OK'`=610+412=
+**1022** (bate com o piso do handoff). `./bin/trackfw validate` rc=0, sem acusação de adulteração no
+escopo de projeto (só aviso pré-existente sobre o escopo global do usuário, fora do repo).
+
+AC1 por schema estruturado (`jq`/`json.Unmarshal`/`json.loads`) nos 3 runtimes — prova principal. A
+observação em sessão real (`git commit` bloqueado sem "Hook JSON output validation failed") é
+consistente mas **confundida**: `~/.claude/settings.json` também dispara o hook global
+(`~/.trackfw/scripts/...`, fora do repo, ainda no formato antigo) em paralelo — não isola a
+variável. KG pode continuar vendo o sintoma na sessão até rodar `trackfw update harness` (fora do
+escopo desta REQ).
+
+Vault: `git-branch-guard-schema-decision-block-rejeitado-pelo-claude-code-2026-09-09.md`. Sem
+commit/push — fora da minha autoridade (trackfw_architect audita e commita).

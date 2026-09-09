@@ -582,7 +582,7 @@ case "$SUBCOMMAND" in
     ;;
 esac
 
-printf '{"decision":"block","reason":"%s"}\n' "$REASON"
+printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"%s"}}\n' "$REASON"
 echo "$REASON" >&2
 exit 2
 `

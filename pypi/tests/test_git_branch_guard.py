@@ -146,6 +146,23 @@ class TestGitBranchGuardScriptWindsurfStdin(unittest.TestCase):
         self.assertEqual(proc.returncode, 2)
         self.assertIn('git commit bruto bloqueado', proc.stderr)
 
+    def test_blocked_stdout_emits_documented_hookspecificoutput_schema(self):
+        # Afirma o AC1 do ROADMAP-2026-09-09-guard-emite-hookspecificoutput-e-a-razao-chega-ao-
+        # modelo-nos-3-clis.md por EXECUÇÃO real do script gerado: decodifica o stdout como JSON
+        # estruturado (não substring) e confere os três campos que o schema documentado do Claude
+        # Code exige em hookSpecificOutput para PreToolUse. NÃO afirma que o Claude Code de fato
+        # aceitou este JSON em runtime — isso é observado separadamente (fora deste teste, ver
+        # relatório do ML-1A) por não ser reproduzível em CI. O formato anterior
+        # (`{"decision":"block","reason":"..."}`) falhava a validação do Claude Code na raiz do
+        # objeto ("Hook JSON output validation failed — (root): Invalid input").
+        proc = self._run({'tool_input': {'command': 'git commit -m "x"'}})
+        self.assertEqual(proc.returncode, 2, proc.stderr)
+        parsed = json.loads(proc.stdout.strip())
+        hso = parsed['hookSpecificOutput']
+        self.assertEqual(hso['hookEventName'], 'PreToolUse')
+        self.assertEqual(hso['permissionDecision'], 'deny')
+        self.assertTrue(len(hso['permissionDecisionReason']) > 0)
+
     def test_windsurf_command_line_allows_status(self):
         proc = self._run({'agent_action_name': 'run_command', 'tool_info': {'command_line': 'git status'}})
         self.assertEqual(proc.returncode, 0)

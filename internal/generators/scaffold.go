@@ -1270,13 +1270,25 @@ func GenerateGlobalGitBranchGuardScript(home string) error {
 //     conseguem repassar uma variável de ambiente.
 //
 // Decisão de saída (simplificação deliberada do ML-1A, ver divergência reportada no roadmap): o
-// script emite SEMPRE os dois formatos de decisão simultaneamente — `{"decision":"block",...}` no
+// script emite SEMPRE os dois formatos de decisão simultaneamente — `{"hookSpecificOutput":
+// {"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"..."}}` no
 // stdout (formato Claude/Gemini) e `exit 2` (formato Codex/Windsurf/Cursor por exit-code) — em vez
 // de um formato por runtime dentro do script. Um script único que responde nos dois formatos ao
 // mesmo tempo é mais simples de manter do que N variantes; a Wave 3 decide, por runtime, qual
 // metade da resposta esse runtime efetivamente consome (o formato `permission: "deny"` específico
 // do Cursor, se necessário, é responsabilidade do wiring da Wave 3 em cima deste mesmo script, não
 // deste script em si).
+//
+// ATUALIZADO em 2026-09-09 (ROADMAP-2026-09-09-guard-emite-hookspecificoutput-e-a-razao-chega-ao-
+// modelo-nos-3-clis.md, ML-1A): o formato Claude anterior — `{"decision":"block","reason":"..."}`
+// — deixou de ser aceito pelo Claude Code (`Hook JSON output validation failed — (root): Invalid
+// input`, verificado por execução em sessão real). O schema atual do Claude Code para PreToolUse
+// exige o objeto acima, aninhado em `hookSpecificOutput`. A ESTRATÉGIA dos dois formatos continua
+// certa; o que envelheceu foi qual JSON representa o formato Claude — a mesma classe de premissa
+// não revalidada da REQ do job `parity`. Duas fontes de terceiros (um gist e um blog) afirmam que o
+// formato legado "permanece funcional" — a documentação oficial não sustenta isso, e a evidência
+// primária (o hook real sendo rejeitado) o contradiz. Não presumir que esta premissa nova envelhece
+// bem sem revalidar: a próxima revisão deve conferir a data acima contra a doc oficial vigente.
 //
 // Sem match: allow silencioso (`exit 0`, sem output) — mesmo padrão de "silent pass" do
 // credential-guard quando não há correspondência.
@@ -1852,7 +1864,7 @@ case "$SUBCOMMAND" in
     ;;
 esac
 
-printf '{"decision":"block","reason":"%s"}\n' "$REASON"
+printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"%s"}}\n' "$REASON"
 echo "$REASON" >&2
 exit 2
 `
