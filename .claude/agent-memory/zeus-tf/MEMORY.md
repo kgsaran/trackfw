@@ -15,3 +15,4 @@
 - [Medir com a regra, não com grep](feedback_medir_com_a_regra_nao_com_grep.md) — 4 contagens erradas medidas; nunca `| tail` num gate, `grep -a` no index.js
 - [Agente nunca roda em background](feedback_agente_nao_roda_em_background.md) — background + fim de turno = órfão; e retomar é SendMessage, não Agent novo
 - [Branch por objetivo, não por REQ](feedback_branch_por_objetivo_nao_por_req.md) — várias REQs na mesma branch se o objetivo final é um; organizar o PR por REQ
+- [Sem PR aberto, a implementação é nossa](feedback_sem_pr_aberto_implementacao_e_nossa.md) — oferta ≠ PR; dizer no ticket que abrimos a REQ e vamos implementar
