@@ -1142,3 +1142,315 @@ exatamente isso: *"registro não é correção"*.
 Se o `parity` voltar a incomodar depois da matriz, este ML **reabre com número novo** — a medição por
 segmento é reproduzível pelo mesmo método (atribuição por invocação de script no log do CI). O que
 não vale é ele ficar `⬜` por anos como promessa.
+
+## Medição no CI do ML-2G — arquiteto, 2026-09-08 (o AC que faltava)
+
+Run `34277875332`, PR #294. **Esta era a medição que nenhum agente podia produzir**: o `Quality` só
+roda em `pull_request` ou push na `main`, então o número só existe a partir do PR — não é limitação de
+autoridade de push, é do gatilho do workflow. Meu diagnóstico anterior estava impreciso.
+
+```
+parity-falsify-shard (2)    10m08s   ← gargalo REAL
+parity-other-gates           4m20s
+parity-falsify-shard (0)     3m50s
+parity-falsify-shard (1)     3m47s
+parity-falsify-shard (3)     1m51s   ← o PREVISTO como gargalo
+parity (agregação)           0m11s   success
+
+wall-clock do grupo         ~10m20s
+soma de CPU                  24m07s
+```
+
+### 1. O desenho funciona — e era o risco estrutural
+
+O check obrigatório `parity` **reportou** (`success`, 11s). Se a agregação estivesse errada, ele
+ficaria **pendente para sempre** e o PR travaria sem falhar. Não travou.
+
+### 2. Ganho real, metade do projetado
+
+```
+15m00s  →  ~10m20s     −31%
+projeção era ~4m23s    errei por fator 2,3
+```
+
+A causa do erro está no item 3, e não no custo fixo — que eu medi certo (~25s).
+
+### 3. 🔴 A predição do agente foi FALSIFICADA, e é o achado mais útil
+
+Ele escreveu, **antes de qualquer cronometragem**, que `chunk_3` seria o gargalo por carregar o bloco
+fundido de 3487 linhas. **`shard 3` levou 1m51s — o mais rápido de todos.** O gargalo é o `shard 2`,
+**5,5x mais lento**.
+
+**Conclusão: o empacotador distribui por peso de LINHA, e linha não prevê TEMPO.**
+
+Consistente com o que o ML-1A já havia medido — *execução* domina, não compilação, e alguns cenários
+compilam binários Go inteiros. Um bloco grande de asserções baratas pesa muito e roda rápido; um bloco
+pequeno que compila Go pesa pouco e roda devagar.
+
+🔴 **Valor metodológico:** a predição estava escrita antes, então o run **falsificou um modelo** em vez
+de ser explicado por ele. É o oposto de como nasceu o "cluster indivisível de 467s" — explicação
+construída depois de ver o número, e que a medição derrubou depois.
+
+### ML-2H — Rebalancear os shards por tempo medido
+**Status:** 🔄 Em andamento — mecanismo entregue e provado localmente, `make quality` completo verde;
+**<2x a N=4 provado ARITMETICAMENTE INALCANÇÁVEL** com o bloco indivisível medido (piso 2,26x,
+seção 5) — caminho para o AC é `FALSIFY_SHARD_COUNT=3` (decisão do arquiteto, não aplicada aqui) ·
+**Agente:** `ares-tf`
+
+**O dado necessário já existe:** cada shard reporta seu próprio tempo no log do CI, e o
+`gen-falsify-chunks.py` já é parametrizável.
+
+```
+hoje (peso por linha)     10m08s / 1m51s   →  desequilíbrio de 5,5x
+teto se equilibrado       24m07s / 4       ≈  6m + setup
+```
+
+**Ações:**
+1. Peso por **tempo medido por cenário**, não por contagem de linha.
+2. 🔴 **O tempo por cenário tem de vir de medição, não de estimativa** — e precisa de fonte
+   versionada que envelheça de forma visível. Um arquivo de pesos que envelhece em silêncio é o
+   próximo defeito silencioso: cenário novo entra sem peso e a distribuição degrada sem aviso.
+   **Decida e declare** como a fonte é mantida e o que acontece com cenário sem peso.
+3. Rebalancear e **medir no CI** (só existe em PR).
+
+**Critérios de aceite:**
+- [ ] desequilíbrio entre o shard mais lento e o mais rápido **abaixo de 2x**, medido no CI
+- [ ] `diff` de conjunto de rótulos **vazio**, método declarado
+- [ ] cenário sem peso registrado **não** degrada em silêncio — comportamento declarado e provado
+- [ ] as **três medidas** do gate local: `rc`, `grep -c '^FAIL'`, e `^OK` ≥ 1022
+- [ ] 🔴 "não vale a pena" segue sendo resultado válido: se o rebalanceamento render pouco diante do
+      custo de manter a fonte de pesos, **diga**
+
+## Entrega do ML-2H — `ares-tf`, 2026-09-08
+
+### 1. Heurística derivada do fonte — avaliada e DESCARTADA por medição, não hipótese
+
+O handoff sugeria considerar "o cenário compila Go" (`build_go_or_fail`) como peso derivado do
+próprio fonte, sem arquivo a manter. **Descartada antes de escrever código**, com o dado que já
+existia neste roadmap (ML-1A): compilação = 8,8% do tempo total (81,1s de 921,4s, 93 builds, mediana
+0,84s morna) espalhado por 26 sítios de `build_go_or_fail`. Um sinal de 8,8% distribuído por 26 sítios
+não pode produzir o desequilíbrio de 5,5x medido no CI — a variância mora em EXECUÇÃO (ex.:
+`release-tag-parity`, 4 cenários = 112,4s, mais que as 93 compilações somadas), que não tem "tell"
+sintático confiável. Fonte descartada; peso vem de **calibração** (tempo medido), não de heurística.
+
+### 2. Fonte dos pesos — mecanismo entregue
+
+`gen-falsify-chunks.py` instrumenta cada BLOCO FUNDIDO (a unidade que já era a granularidade de
+empacotamento) com marcas `FALSIFY_TIMING phase=start|end block=<id> labels=<csv> ts=$EPOCHREALTIME`,
+opt-in via `FALSIFY_TIMING_FILE` (custo zero quando a variável não está setada — `[[ -n
+"${FALSIFY_TIMING_FILE:-}" ]] || return 0`, sempre presente no chunk gerado, não precisa
+reinstrumentar nada quando a suíte crescer). Emitida ANTES do sentinela `CHUNK_COMPLETE` (que
+continua sendo a ÚLTIMA linha do log, `run-gates-falsify-shard.sh` depende disso) e nunca começando
+com `OK`/`FAIL`/`PROOF` (não interfere no colhedor de rótulos nem em `grep -c '^OK'`).
+
+**Chave de peso: rótulo de asserção (`extract_expected_labels`), não número de cenário.** O handoff
+já apontava isso: número de cenário renumera com inserção — hostil a memória posicional, provado 3x
+neste arquivo (ML-2A/ML-2C/ML-2D). O rótulo de asserção é o mesmo contrato que a guarda de conjunto
+(`check-falsify-shard-coverage.sh`) já usa — estável e já testado.
+
+`scripts/gen-falsify-scenario-weights.py` (novo) lê o arquivo de marcas e escreve
+`scripts/falsify-scenario-weights.json`: `peso(rótulo) = média, entre ocorrências, de
+(duração_do_bloco / n_rótulos_do_bloco)` — **atribuição declarada e aproximada** (um bloco pode emitir
+vários rótulos; o tempo de parede do bloco não se divide exatamente por rótulo). Calibração local
+2026-09-08: 252 rótulos + `_fallback_weight_for_unlabeled`, 57 blocos pareados (52 com rótulo, 5 sem),
+0 marcas sem par.
+
+### 3. Cenário sem peso — provado, não apenas declarado
+
+`assign_weights()` em `gen-falsify-chunks.py`:
+- **Sem arquivo de pesos**: peso = linha (modo legado, idêntico ao comportamento pré-ML-2H). Uma
+  nota em stderr, uma vez.
+- **Com arquivo, rótulo ausente**: peso PESSIMISTA (máximo já calibrado no arquivo) — nunca 0, nunca
+  silencioso. Uma linha em stderr por rótulo, nomeando o rótulo e o valor pessimista aplicado.
+- **Bloco sem nenhum rótulo extraível** (ocorre — 5 dos 57 blocos fundidos do arquivo real são
+  suporte residual com sinal de teste via `echo OK/FAIL` fora do padrão `assert_*`, não capturado por
+  `extract_expected_labels`): usa `_fallback_weight_for_unlabeled` do arquivo de pesos — o MÁXIMO
+  medido, em SEGUNDOS, entre os blocos sem rótulo na própria calibração (não o pessimista geral dos
+  rótulos, que mede outra população). 🔴 **Correção pós-auditoria interna:** a primeira versão deste
+  ramo caía para `n_lines` (linha) quando o bloco não tinha rótulo — misturando unidade LINHA dentro
+  de um pacote calibrado em SEGUNDOS. Medido: **46% da massa total de empacotamento (699 de 1521
+  unidades) era contagem de linha disfarçada de segundo** (ex.: um bloco de 279 linhas empacotado como
+  se custasse 279 segundos). Corrigido antes de reportar como concluído: `parse_marks()` agora mede a
+  duração REAL desses 5 blocos (não os descarta) e `gen-falsify-scenario-weights.py` emite
+  `_fallback_weight_for_unlabeled` em segundos; `assign_weights()` usa esse valor, nunca `n_lines`.
+  🔴 **Limite declarado deste valor, não corrigido nesta entrega:** `_fallback_weight_for_unlabeled`
+  é um ÚNICO número CALIBRAÇÃO-INTEIRA, não por bloco — ao contrário dos rótulos individuais (seção
+  3, ramo anterior), um bloco sem rótulo NOVO (6º, 7º...) que aparecer no futuro herda o máximo
+  medido para um conteúdo DIFERENTE do dele, sem nomear QUAL bloco mudou. `_calibrated_at` é o único
+  sinal de que esse valor pode estar desatualizado — não há aviso de "N blocos sem rótulo encontrados
+  difere de N calibrado", ao contrário do que a guarda de conjunto faz para rótulos. Correção possível
+  (não feita): emitir `_n_blocos_sem_rotulo` do lado de `assign_weights` e comparar contra o valor
+  gravado no arquivo, avisando se divergir.
+
+**Falsificado com fonte sintética** (3 cenários, `synthetic.sh`, nunca o arquivo real): pesos
+registrados para 2 rótulos (5,0s e 50,0s); o 3º (`synthetic/label-c-novo`) SEM entrada:
+```
+gen-falsify-chunks: AVISO rotulo 'synthetic/label-c-novo' (bloco linha 11) sem peso calibrado --
+usando peso pessimista 50.0000s (maximo ja calibrado no arquivo). Cenario novo/renomeado: rode
+gen-falsify-scenario-weights.py para recalibrar.
+```
+Empacotado com peso 50,0000 (o pessimista, igual ao rótulo mais caro conhecido) — nunca subalocado
+como se fosse barato. **Frase de reconciliação**: este teste sintético afirma "rótulo sem peso
+calibrado usa o pessimista e avisa nomeando" — confirmado pelo rc=0 + a linha de stderr acima, exata.
+
+### 4. Manutenção da fonte quando a suíte cresce
+
+A emissão de tempo é **permanente** no gerador (não instrumentação descartável) — qualquer execução
+futura dos shards com `FALSIFY_TIMING_FILE` setada produz uma amostra nova, inclusive um run de CI se
+algum dia setar a variável. Recalibrar é sempre: rodar os N shards com a variável setada (uma
+`FALSIFY_TIMING_FILE` por shard, concatenados depois — receita no docstring de
+`gen-falsify-scenario-weights.py`) e reinvocar o script sobre o arquivo concatenado. Cenário
+novo/renomeado nunca degrada em silêncio (seção 3) — o pior caso é o pessimista, que empurra o
+cenário novo para o chunk mais vazio, nunca some.
+
+### 5. 🔴 O que este ML NÃO fechou — desequilíbrio <2x a N=4 não é alcançável, e o número que prova isso
+
+**Diff de conjunto de rótulos, método declarado: união dos rótulos (literais + glob) emitidos por
+TODOS os chunks a N=4, gerador ANTIGO (linha) vs NOVO (peso), sobre o arquivo real
+`check-gates-falsify.sh`.** 252 rótulos de cada lado, `diff` vazio. Atribuição POR CHUNK muda
+(intencional — é o que se está rebalanceando); a união não. Reconfirmado depois da correção da seção
+3 (unidade do fallback) — `diff` continua vazio.
+
+🔴 **Erro de unidade encontrado e corrigido ANTES deste número, não depois — registrado para que quem
+ler não repita a checagem:** a primeira versão de `assign_weights()` caía para peso por LINHA nos 5
+blocos sem rótulo extraível, dentro de um pacote calibrado em SEGUNDOS. Isso fazia **46% da massa
+total de empacotamento (699 de 1521 unidades) ser contagem de linha disfarçada de segundo** — a
+matemática de calibração inicial ("1,08x") era um artefato dessa mistura de unidade, não uma
+predição. Corrigido (seção 3) antes de reportar como concluído.
+
+**Com a unidade corrigida, calibração (LPT sobre os 252 pesos + `_fallback_weight_for_unlabeled`)
+prediz 1,855x**: chunks de 217,45/217,46/217,50/403,43s (bloco isolado = mesmo conteúdo que compunha
+o antigo `chunk_2` linha-a-linha — confirmado: os 25 rótulos do novo chunk isolado são subconjunto
+dos 44 rótulos do antigo `chunk_2`, que sozinho não terminou dentro de 480s numa reexecução local em
+modo legado — consistente com o achado do CI de que aquele era o gargalo real de 10m08s).
+
+**Reexecução local real dos 4 shards com o empacotamento corrigido mediu 2,37x**: 186s/183s/172s/407s.
+Melhora grande sobre a primeira tentativa (2,97x, com o bug de unidade) e sobre o legado (>480s/~90s
+no mesmo teste local, ≥5,3x — consistente com os 5,5x do CI). A divergência residual entre 1,855x
+previsto e 2,37x medido (os 3 chunks pequenos vieram ~15-20% mais rápido que a calibração previa) NÃO
+foi isolada nesta entrega — hipótese não testada, declarada como hipótese: overhead fixo por shard
+(regeneração do manifesto completo de N chunks a cada invocação, `mktemp`, resolução de Python) que
+as marcas de bloco não capturam, e que pesa proporcionalmente mais nos chunks pequenos. **Não afirmo
+essa causa como provada** — o método correto para provar seria medir esse overhead isoladamente, não
+feito aqui por orçamento de sessão.
+
+**Consequência aritmética, agora usando o número REAL medido, não a calibração (o ponto que o handoff
+pediu para checar antes de prometer):** bloco indivisível = 407s (medido). Resto = 186+183+172 = 541s
+sobre 3 baldes, média 180,3s. `max_shard >= bloco_indivisível` (propriedade do LPT) — mesmo
+distribuindo o resto PERFEITAMENTE, o piso é `407 / 180,3` = **2,26x. Abaixo de 2x NÃO é
+aritmeticamente alcançável a N=4** com este bloco indivisível, medido, não estimado. Este achado é
+independente de qual das duas medições da seção acima (previsão vs. real) está mais certa — as duas
+concordam que 2x não fecha a N=4.
+
+**Caminho primário para o AC, não um escape hatch secundário: `FALSIFY_SHARD_COUNT=3`.** 🔴 A conta
+com divisão idealizada (`407/(541/2)=1,505x`) foi SUBSTITUÍDA pela saída real do empacotador — a
+divisão idealizada presume que os 56 blocos restantes se dividem livremente em 2 baldes iguais, o que
+não é garantido (LPT sobre pesos específicos pode não fechar perto do ideal). Rodado
+`gen-falsify-chunks.py ... 3` de verdade (computação pura sobre o arquivo de pesos já em disco, sem
+executar nenhum shard): **326,18/326,23/403,43s — razão real 403,43/326,18 = 1,237x**, melhor que a
+estimativa idealizada. `diff` de união de rótulos a N=3, mesmo método da seção anterior: 252=252,
+vazio. Sintaxe dos 3 chunks (`bash -n`): OK. 🔴 Isto é o OPOSTO do raciocínio "N=8 não ajuda" do
+ML-2G (que valia para OUTRO bloco/OUTRA causa — o bloco de 3487 linhas, hoje comprovadamente NÃO o
+gargalo — não herdado aqui sem checar): reduzir N concentra MAIS conteúdo por balde não-gigante,
+aproximando-o do gigante. Não apliquei essa mudança nesta entrega — mudar `FALSIFY_SHARD_COUNT` é
+decisão de topologia do CI (nome dos jobs, `strategy.matrix`, guarda de drift do ML-2G), fora do
+escopo de "rebalancear por peso", e cabe ao arquiteto decidir após ver o número real de CI. 🔴 A
+margem de erro previsão-vs-medição observada a N=4 (1,855x previsto, 2,37x medido, ~28%) não foi
+refeita a N=3 (exigiria reexecutar os 3 shards, não feito por orçamento de sessão) — se o mesmo erro
+relativo se aplicar, 1,237x × 1,28 ≈ 1,58x, ainda abaixo de 2x; declarado como extrapolação, não
+medição.
+
+**Escape hatch secundário, se N=3 não for aceitável:** decompor o bloco indivisível — exigiria atacar
+os `cross_segment_edges` que o unem, próxima alavanca já nomeada pelo ML-2D/ML-2G, fora de escopo
+deste ML.
+
+**Não é "não vale a pena":** o mecanismo isola corretamente o conteúdo pesado real (subconjunto
+verificado do antigo gargalo) em vez de distribuir por linha às cegas, e troca 5,5x (linha, medido no
+CI) por 2,37x medido localmente (piso aritmético 2,26x a N=4, medido) — melhora substancial mesmo sem
+fechar o AC de <2x a N=4. Com `FALSIFY_SHARD_COUNT=3`, o mesmo mecanismo fecha o AC (1,505x previsto)
+sem nenhuma mudança de código adicional — só a decisão de topologia do arquiteto.
+
+### 6. `make quality` completo — as três medidas + gates de governança
+
+```
+MAKE_RC              = 0
+grep -c '^FAIL'       = 0
+grep -c '^OK'         = 1022   (>= 1022 exigido)
+wc -l                 = 4125
+```
+`scripts/check-parity-call-site-pins.sh`: rc=0 (7 verificações, achou `run-gates-falsify-shard.sh`
+como consumidor de `TRACKFW_FALSIFY_SCRIPT`/`_GEN` automaticamente). `scripts/check-output-encoding-
+declared.sh`: rc=0. `actionlint .github/workflows/quality.yml`: limpo (workflow não foi tocado neste
+ML). `go build ./...` e `go vet ./...`: OK. **Todas as medidas acima são da configuração FINAL** (após
+a correção de unidade da seção 3) — o `make quality` e os 3 gates avulsos foram rerodados depois do
+fix, não reaproveitados da tentativa com o bug de unidade.
+
+### 7. Regra dura de paridade — 3 CLIs: exceção explícita
+
+`scripts/gen-falsify-scenario-weights.py` e `scripts/falsify-scenario-weights.json` existem só em
+`scripts/`, sem contraparte em `npm/src/`/`pypi/trackfw/` — mesmo precedente já registrado pelo
+ML-2F/ML-2G: tooling interno de CI deste repositório, não superfície de `trackfw <comando>`.
+
+### 8. Sítios de mesma causa — reportados, nenhum artefato aberto
+
+Nenhum sítio novo de mesma causa encontrado. O bloco indivisível que permanece como piso não é um
+sítio de "mesma causa" deste ML — é o objeto que o ML-2D/ML-2G já nomearam (`cross_segment_edges`)
+como próxima alavanca, fora do escopo de rebalancear por peso.
+
+### 9. Arquivos afetados
+
+- `scripts/gen-falsify-chunks.py` — peso por rótulo calibrado (fallback: linha, se sem arquivo de
+  pesos); marca de tempo por bloco fundido, opt-in; manifesto de saída reporta `weight`/
+  `weight_source` além de `n_lines` (preservado).
+- `scripts/gen-falsify-scenario-weights.py` (novo) — calibração/atualização do arquivo de pesos a
+  partir de marcas de tempo.
+- `scripts/falsify-scenario-weights.json` (novo) — pesos calibrados localmente em 2026-09-08
+  (252 rótulos, 52 blocos, `_calibrated_from` aponta para o arquivo de marcas usado nesta calibração
+  — local, não CI; recalibrar quando o CI confirmar a medição real).
+
+## Decisão do arquiteto sobre o ML-2H — 2026-09-08
+
+**Manter `FALSIFY_SHARD_COUNT=4`. Não migrar para 3. O AC de `<2x` estava mal formulado — erro meu.**
+
+```
+N=4   186 / 183 / 172 / 407s     razão 2,37x    wall-clock 407s
+N=3   326 / 326 / 403s           razão 1,237x   wall-clock 403s
+```
+
+🔴 **Ir para N=3 fecharia o meu AC e não economizaria nada.** O wall-clock é praticamente idêntico
+(407s vs 403s), porque o bloco indivisível é o **piso** nos dois casos. A razão melhora apenas porque
+os shards pequenos recebem mais trabalho — o que não reduz o tempo de ninguém.
+
+**A razão de desequilíbrio é um PROXY; o objetivo é o wall-clock.** Otimizar o proxy empurra para
+menos shards, que é neutro no que importa e desperdiça um runner a menos — irrelevante, já que são
+gratuitos.
+
+**AC revisado:** *o wall-clock do grupo `parity` cai, e o piso é o bloco indivisível.* Fechado:
+
+```
+CI hoje (peso por linha)        shard mais lento  10m08s = 608s
+local com peso por tempo        shard mais lento         407s  ≈ 6m47s
+```
+
+⚠️ **Projeção a confirmar no CI** — as duas pontas ainda não vieram do mesmo método (608s é CI, 407s é
+local). O número real sai do PR.
+
+### 🔴 Terceira vez hoje que escrevo um AC sobre o proxy em vez do objetivo
+
+| AC que escrevi | o que ele media | o objetivo real |
+|---|---|---|
+| *"o gate roda até o fim no Windows"* | ausência de abort | **enumerar** o que falha |
+| *"falsificação nas duas direções"* (ML-R1 volta 1) | o teste | o **efeito** sobre o veredito |
+| *"desequilíbrio abaixo de 2x"* | razão entre shards | **wall-clock** do grupo |
+
+Nos três casos o agente **cumpriu o que estava escrito** e a medição expôs a formulação. Não é falha
+de execução — é minha, na hora de escrever o critério. **Regra para os próximos handoffs: o AC declara
+o objetivo, e o proxy só entra como instrumento, nomeado como tal.**
+
+### O que fica em aberto, declarado
+
+- **O piso é o bloco indivisível de 407s.** Baixar dele exige decompô-lo — o mesmo bloco de ~1900
+  linhas que o ML-2C tornou cortável em teoria. Não abro ML agora: o ganho seria sobre um job que já
+  vai a ~7min, e o custo é alto. **Reabre com número novo se voltar a incomodar.**
+- **A divergência 1,855x previsto vs 2,37x medido não foi isolada.** O agente declarou hipótese
+  (overhead fixo por shard) e **não a afirmou como provada** — método correto.

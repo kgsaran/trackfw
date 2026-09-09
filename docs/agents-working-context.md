@@ -4,6 +4,52 @@
 
 ---
 
+## Sessão 2026-09-08 — ares-tf (Infra) — ML-2H (rebalancear shards por tempo medido, mecanismo entregue)
+
+Branch `refactor/perfil-e-aceleracao-do-check-gates-falsify-sem-perder-cobertura`, a partir da `main`
+com o ML-2G já mergeado (PR #294). Nenhuma operação de git (commit/push são do `trackfw_architect`).
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-09-06-perfil-e-aceleracao-do-check-gates-falsify-sem-perder-cobertura.md`,
+seção "Entrega do ML-2H" (status ficou 🔄, não ✅ — AC de <2x no CI não fechado, ver abaixo).
+
+**Entregue:** `scripts/gen-falsify-chunks.py` (peso por RÓTULO DE ASSERÇÃO calibrado, fallback peso-
+por-linha se não houver arquivo de pesos, marca de tempo por bloco fundido via `$EPOCHREALTIME` opt-in
+em `FALSIFY_TIMING_FILE`), `scripts/gen-falsify-scenario-weights.py` (novo, calibra o arquivo de pesos
+a partir das marcas), `scripts/falsify-scenario-weights.json` (novo, 252 rótulos calibrados
+localmente em 2026-09-08). Heurística derivada de `build_go_or_fail` (sugerida no handoff) foi
+DESCARTADA por medição antes de codar: ML-1A já mostrava 8,8% do tempo em compilação espalhado por 26
+sítios — sinal fraco demais para explicar 5,5x.
+
+**Rótulo sem peso NUNCA degrada em silêncio** — provado com fonte sintética (3 cenários, 2 pesos
+registrados): o 3º usa o peso PESSIMISTA (máximo calibrado) + aviso nomeado em stderr. `diff` de
+união de rótulos (não por-chunk) entre gerador antigo (linha) e novo (peso), ambos a N=4 sobre o
+arquivo real: vazio, 252=252.
+
+🔴 **Achado interno, corrigido antes de reportar como concluído:** a primeira versão de
+`assign_weights()` caía para peso por LINHA no bloco sem rótulo extraível, dentro de um pacote
+calibrado em SEGUNDOS — 46% da massa de empacotamento era linha disfarçada de segundo, e a matemática
+inicial ("1,08x") era artefato dessa mistura de unidade, não predição real. Corrigido: `parse_marks()`
+agora mede a duração real desses blocos; `_fallback_weight_for_unlabeled` (segundos) substitui
+`n_lines`.
+
+🔴 **O que NÃO fechei, com o número CORRIGIDO:** o AC "<2x". Com a unidade corrigida, calibração
+prediz 1,855x; reexecução local real mediu **2,37x** (186s/183s/172s/407s). Usando o número REAL
+medido (não a calibração), a conta do LPT prova que **<2x NÃO é aritmeticamente alcançável a N=4**:
+piso = 407 / (541/3) = 2,26x, porque o bloco indivisível isolado (subconjunto confirmado do antigo
+gargalo do CI) domina. **Caminho primário para o AC: `FALSIFY_SHARD_COUNT=3`** — não a divisão
+idealizada (1,505x), mas a saída REAL do `gen-falsify-chunks.py ... 3` (computação pura, sem
+executar shard nenhum): **326,18/326,23/403,43s, razão 1,237x**, `diff` de união de rótulos 252=252,
+sintaxe OK — decisão de topologia do CI, não aplicada nesta entrega, cabe ao arquiteto.
+
+`make quality` completo: `MAKE_RC=0`, `grep -c '^FAIL'=0`, `grep -c '^OK'=1022` (≥1022 exigido).
+`check-parity-call-site-pins.sh`, `check-output-encoding-declared.sh`, `actionlint`, `go build`/`go
+vet`: todos limpos. Paridade 3 CLIs: exceção explícita (tooling interno de CI, mesmo precedente do
+ML-2F/ML-2G).
+
+**Pendente:** medição real no CI (arquiteto); se >2x, decidir entre reduzir `FALSIFY_SHARD_COUNT` ou
+aceitar o piso medido como resultado, ambos declarados como opção nesta entrega.
+
+---
+
 ## Sessão 2026-09-08 — ares-tf (Infra) — ML-2F (gate para os pins de call site do ML-2E, CONCLUÍDO)
 
 Branch `chore/fecha-o-roadmap-do-parity-gate-dos-pins`, nenhuma operação de git (commit/push são do
