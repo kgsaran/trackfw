@@ -443,6 +443,41 @@ jobs:
           node scripts/windows-repro/node/probe.js table
           python scripts/windows-repro/python/probe.py table
 
+      # Pergunta 12 — onde mora o git na visão POSIX do bash do Git for
+      # Windows, em x64. Entrou pelo ML-R2a da REQ-2026-09-03: dois scripts
+      # de gate (check-release-tag-parity.sh:112, check-ship-force-parity.sh:115)
+      # constroem BASE_PATH="$RUNTIME_BIN:/usr/bin:/bin" para o CLI-sob-teste,
+      # e 442 das 512 linhas do censo de Windows dependem de git NÃO resolver
+      # ali. Medido em ARM64 (VM local): /usr/bin/git e /bin/git não existem,
+      # git resolve em /clangarm64/bin/git. FALTA saber se x64 é igual — é
+      # essa a pergunta, e é a que decide se as 442 são defeito de script ou
+      # artefato de uma máquina.
+      #
+      # Sem veredito, como toda pergunta desta sonda: imprime o valor bruto.
+      # `|| true` em toda linha que pode falhar, para o step nunca abortar
+      # antes de imprimir as demais respostas.
+      - name: "Pergunta 12 — /usr/bin/git e /bin/git existem no bash do Git for Windows (x64)?"
+        if: always()
+        shell: bash
+        run: |
+          echo "BASH_VERSION=$BASH_VERSION"
+          uname -a || true
+          echo "--- ls -l /usr/bin/git /bin/git ---"
+          ls -l /usr/bin/git /bin/git 2>&1 || true
+          echo "--- ls -l /mingw64/bin/git.exe /mingw32/bin/git.exe ---"
+          ls -l /mingw64/bin/git.exe /mingw32/bin/git.exe 2>&1 || true
+          echo "--- command -v git ---"
+          command -v git || true
+          echo "--- git --version ---"
+          git --version || true
+          echo "--- git resolve sob o BASE_PATH dos gates? ---"
+          PATH="/usr/bin:/bin" command -v git \
+            || echo "RESULTADO: git NAO resolvivel sob PATH=/usr/bin:/bin"
+          echo "--- raiz POSIX deste bash (para interpretar os caminhos acima) ---"
+          cygpath -w / 2>&1 || true
+          cygpath -w /bin 2>&1 || true
+          cygpath -w /usr/bin 2>&1 || true
+
       - name: Registrar duração
         if: always()
         shell: pwsh

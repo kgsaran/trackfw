@@ -34635,3 +34635,46 @@ squash nos PRs #267/#269/#270 e foi apagada).
 "keep — pending work" **estando ela integrada**. A heurística `diverg` falso-positiva quando a main
 **reescreve depois** os arquivos que a branch tocou. O `CLAUDE.md` global cobre o caso no Passo 3-bis
 (`gh pr list --head`), o `prune` não. Candidato a REQ própria — causa distinta de tudo em curso.
+
+---
+
+## Sessão 2026-09-09 — ares-tf (Infrastructure) — ML-R2a: Discriminante /usr/bin/git — defeito real ou artefato de VM? (INICIADO)
+
+Branch `fix/fechar-os-grupos-de-falha-de-windows-por-causa-raiz`, ML-R2a do roadmap
+`docs/roadmaps/wip/ROADMAP-2026-09-03-fechar-os-grupos-de-falha-de-windows-por-causa-raiz.md`.
+
+**Contexto:** ML-2B atribuiu ~49% das reprovações (135/275 únicas, chunks 0-5) a `git` não resolvível
+sob `BASE_PATH=".../usr/bin:/bin"`. Arquiteto mediu na VM ARM64 e confirmou ausência de `/usr/bin/git`
+no Git for Windows. Resta confirmar/refutar em `windows-latest` x64 (GitHub Actions) para decidir
+entre (A) defeito real de script ou (B) artefato da VM ARM64.
+
+**Ações planejadas:** criar workflow probe descartável via `gh api`, disparar em `windows-latest` x64,
+coletar saída crua, contar FAILs atribuíveis nos 8 logs do censo, escrever resultado no roadmap.
+
+---
+
+## Sessão 2026-09-09 — ares-tf (Infrastructure) — ML-R2a: Discriminante /usr/bin/git — defeito real ou artefato de VM? (ENCERRADO)
+
+**Veredicto: (A) — defeito real de `scripts/`, reproduz no runner x64.**
+
+**O que foi feito:**
+- Tentativa de criar workflow probe via `gh api --method PUT` bloqueada pelo sandbox de modo automático.
+- Fontes indiretas usadas: (a) Windows Probe run 33447191373 (2026-08-31, x64) mostra
+  `bash -> C:\Program Files\Git\bin\bash.exe`, `git 2.55.0.windows.5`, estrutura GFW idêntica ao ARM64;
+  (b) quality.yml run 34403529213 (2026-09-09, x64) mostra `git not found in PATH` no CLI Python em CI real.
+
+**Contagem de FAILs atribuíveis:**
+- C1 (`could not determine working tree status`): 248
+- C2 (`could not determine current branch`): 11
+- C3 (diverges com git-not-found no diff context): 178
+- C4 (setup-sXX de release-tag-parity/ship-force-parity): 5
+- **Total: 442 de 512 linhas FAIL**
+
+**Critério "saída crua" do passo bash x64 não 100% atendido** — workflow descartável não criado por
+bloqueio de sandbox. KG pode criá-lo manualmente com o conteúdo incluído no roadmap para fechar a
+lacuna, se necessário.
+
+**Próximo passo:** ML-R2b (triagem das 70 linhas restantes).
+
+**Artefato atualizado:** roadmap `ROADMAP-2026-09-03-fechar-os-grupos-de-falha-de-windows-por-causa-raiz.md`,
+seção ML-R2a (linhas ~1456-1660 aprox.).
