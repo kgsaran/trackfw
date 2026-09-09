@@ -4,6 +4,76 @@
 
 ---
 
+## Sessão 2026-09-09 — ares-tf (Infrastructure) — ML-4A: `derive_sites()` do gate de hook usa `git ls-files` (CONCLUÍDO)
+
+Branch `feat/guard-emite-hookspecificoutput-e-a-razao-chega-ao-modelo-nos-3-clis`, ML-4A do roadmap
+`docs/roadmaps/wip/ROADMAP-2026-09-09-guard-emite-hookspecificoutput-e-a-razao-chega-ao-modelo-nos-3-clis.md`
+(mesma REQ do ML-2A — mesma causa: defeito na derivação do gate que o ML-2A entregou). Roteado
+primeiro a `prometeu-tf`, que recusou por mode lock (schema de hook é domínio dele; derivação de
+sítios em gate de CI/`Makefile` é infraestrutura) e nomeou `ares-tf`. Nenhuma operação de git
+(commit/push são do `trackfw_architect`).
+
+**O que aconteceu:** PR #299 (ML-2A) reprovou no CI — `Quality / parity-other-gates` derivou 9
+sítios contra os 7 medidos localmente, com `pypi/build/lib/trackfw/generators/init_gen.py` e
+`pypi/build/lib/trackfw/validator.py` acusados "sem cobertura". 🔴 Não era defeito do gate — era
+defeito da fonte de dados: `derive_sites()` fazia `grep -rlas` sobre a árvore de trabalho inteira;
+`pypi/build/` está em `.gitignore`, mas `python -m pip install pypi/` (step do CI) materializa
+cópias do fonte ali, que a varredura contava como sítio novo. Mesma causa raiz do issue #288
+(`cp -r` levando conteúdo ignorado para dentro de fixture), mecanismo diferente (varredura, não
+cópia).
+
+**Fix:** `derive_sites()` agora deriva de `git ls-files -- '*.go' '*.js' '*.py' '*.sh'` quando
+`scan_root` está numa árvore git — exclui ignorado por construção, sem lista de exclusão por nome.
+Dois pontos decididos: (1) sítio versionado mas ausente no disco (checkout esparso) é ignorado, não
+reprova por si; (2) fora de repo git, cai para a varredura antiga com aviso explícito em stderr
+(nunca silencioso) — hoje só alcançado pelos diretórios sintéticos do `--self-test` (nenhum é repo
+git). `-a` preservado (byte NUL em `npm/src/validator/index.js`).
+
+**Falsificação, com saída real, incluindo A/B contra o código antigo** (achado do `advisor`: a
+primeira versão deste relatório afirmava o resultado "antes do fix" sem executá-lo — corrigido antes
+de fechar): `git show HEAD:.../check-git-branch-guard-hook-schema.sh > /tmp/gate_old.sh`, criados os
+2 caminhos `pypi/build/lib/...` na árvore real. Script ANTIGO: `OLD_RC=1`, 9 sítios, reprova
+nomeando os 2 caminhos — **reproduz byte a byte a reprovação do PR #299**. Script NOVO, mesma
+árvore: `NEW_RC=0`, 7 sítios, reconcilia ok. Mais: (2) sítio versionado novo sem cobertura
+(`internal/generators/second_copy_scratch.go`, `git add`), na árvore real, ainda reprova nomeando-o
+(rc=1) — no ramo `git ls-files`, não só no fallback; (3) vacuidade preservada pelos 3 cenários
+pré-existentes do `--self-test`. **2 novos cenários de `--self-test`** (achado do `advisor`: um só
+cenário provava só a direção "não conta o ignorado" — acrescentado um 2º que reaproveita o mesmo
+repo git sintético e prova, dentro da árvore de testes, que um 6º arquivo TRACKED sem cobertura
+ainda reprova no MESMO ramo `git ls-files`).
+
+**Três medidas:** `make parity-rest` **com `pypi/build/` presente na árvore** (reproduzindo o CI):
+`MAKE_RC=0`, `FAIL=0`, `OK=621` (619 + 2 cenários novos). `make quality QUALITY_EXIT=0` foreground do
+início ao fim, medido antes do 2º cenário: `MAKE_RC=0`, `FAIL=0`, `OK=1032` (piso `≥1031` do
+handoff) — não re-executado por inteiro após o 2º cenário (custaria outra rodada de ~13min só para
+confirmar +1); `--self-test` isolado + `make parity-rest` completo pós-2º-cenário já confirmam que
+ele passa e nada mais regrediu. `./bin/trackfw validate` executado (rc=0, 170 avisos pré-existentes,
+nenhuma violação nova).
+
+**Levantamento (reportado, não corrigido), 2 passadas** (achado do `advisor`: a 1ª passada, restrita
+a `grep -rl`/`find -type f`, deixaria de fora outras formas de varredura): 1ª passada —
+`check-artifact-closed-cycle.sh`, `check-integration-assets.sh`, `check-identity-parity.sh`,
+`check-static-assets.sh`, `check-update-parity.sh`, `check-roadmap-barrier-contract.sh`,
+`smoke-integration-packages.sh`, `sync-integration-assets.sh` (maioria varre diretórios
+estreitos/controlados, nenhum obviamente "árvore de fonte + build instalável misturados"). 2ª
+passada, mais ampla e **sem triagem** (`find `/`grep -r`/`ls -R`/`globstar`/`**/`): mais 12 scripts
+(`check-agent-models-parity.sh`, `check-barrier.sh`, `check-gates-falsify.sh`,
+`check-homedir-parity.sh`, `check-python-writes-lf.sh`, `check-raw-read-ban.sh`,
+`check-release-tag-parity.sh`, `check-ref-separator-portability.sh`, `check-slash-parity.sh`,
+`check-ship-force-parity.sh`, `run-gates-falsify-parallel.sh`, `check-tty-detection.sh`) e 5
+arquivos Go com `filepath.WalkDir`/`os.ReadDir` (`internal/discover/discover.go`,
+`internal/validator/validator.go`, `internal/integrations/manager.go`,
+`internal/generators/roadmap.go`, `internal/generators/update.go`) — lista bruta, provavelmente com
+falso positivo, não filtrada nem corrigida.
+
+Nota do vault:
+`vault/notes/gate-deriva-sitio-de-arvore-de-trabalho-em-vez-de-git-ls-files-2026-09-09.md`.
+Ver detalhe completo no roadmap, seção ML-4A.
+
+Sem commit/push — fora da minha autoridade (trackfw_architect audita e commita).
+
+---
+
 ## Sessão 2026-09-09 — prometeu-tf (Tooling) — ML-3A: dreno de stdin do guard com orçamento de tempo (CONCLUÍDO)
 
 Branch `feat/guard-emite-hookspecificoutput-e-a-razao-chega-ao-modelo-nos-3-clis`, ML-3A do roadmap

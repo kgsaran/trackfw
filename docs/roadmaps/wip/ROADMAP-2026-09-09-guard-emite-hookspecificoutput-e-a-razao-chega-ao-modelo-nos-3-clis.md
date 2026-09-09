@@ -487,3 +487,146 @@ agendamento (`date` + `alarm` embrulhando o `make`), então a medição não fic
 
 **Registro porque a autodeclaração é o comportamento que quero reforçar** — nono agente a usar
 background nesta sessão, e o primeiro a admitir sem ser confrontado.
+
+## Wave 4 — CI reprovou o ML-2A: a derivação, não o schema, estava errada
+
+> Dependências: Wave 2 (ML-2A) concluída. Roteado primeiro a `prometeu-tf`, que recusou por mode
+> lock (domínio do schema de hook é dele; derivação de sítios em gate de CI é infraestrutura) e
+> nomeou `ares-tf`.
+
+### ML-4A — `derive_sites()` passa a usar `git ls-files`, não varredura da árvore de trabalho
+**Status:** ✅ Concluído · **Agente:** `ares-tf`
+
+**O que o CI mostrou** (`Quality / parity-other-gates`, PR #299): `CI: 9 sítio(s) derivado(s) (local:
+7)`, com os 2 sítios extras sob `pypi/build/lib/trackfw/...` marcados "SEM cobertura" —
+`make parity-rest` reprovando com `Error 1`. 🔴 **Não é defeito da guarda do ML-2A — é defeito da
+derivação, e a guarda o expôs**, exatamente como projetada: ela existe para acusar sítio sem
+cobertura, e acusou uma falha da própria derivação antes da `main`.
+
+**Causa:** `pypi/build/` está em `.gitignore` (linha 11). No CI, o step `python -m pip install
+pypi/` materializa `pypi/build/lib/...` — cópias do fonte que contêm `permissionDecisionReason` — na
+árvore de trabalho do runner. `derive_sites()` fazia `grep -rlas` sobre a árvore de trabalho inteira,
+sem olhar para o git, então contava essas cópias como "sítios" novos. Localmente esse diretório nunca
+existiu (7 sítios). **Mesma causa raiz do issue #288** (consumidor externo): o resultado dependia do
+que cada máquina tinha no disco, não do que o git versiona — lá era `cp -r` levando conteúdo
+ignorado para dentro de uma fixture; aqui era varredura contando conteúdo ignorado como sítio.
+
+**Correção:** `derive_sites()` (`scripts/check-git-branch-guard-hook-schema.sh`) agora deriva de
+`git ls-files -- '*.go' '*.js' '*.py' '*.sh'` quando `scan_root` está dentro de uma árvore git —
+exclui todo ignorado por construção, sem lista de exclusão por nome para manter (excluir
+`pypi/build` por nome seria remendo: `dist/`, `.venv/`, `node_modules/`, `bin/` quebrariam igual).
+`-a` preservado no `grep` de conteúdo (o sítio `npm/src/validator/index.js` tem byte NUL; sem `-a`
+o grep o pula em silêncio — a mesma armadilha que já custou um sítio ao ML-1A).
+
+**Os 2 pontos resolvidos, por decisão:**
+1. **Sítio versionado mas ausente no disco** (checkout esparso): ignorado — não conta como sítio.
+   Se isso reduzir a contagem abaixo do piso por stack, a guarda de vacuidade existente reprova (o
+   gate não pode confirmar a forma de um arquivo que não está no disco para ler).
+2. **`scan_root` fora de um repositório git**: `git ls-files` não responde. Cai para a varredura
+   completa antiga (`grep -rlas`), **declarada em stderr, nunca em silêncio**. Hoje só alcançado
+   pelos diretórios sintéticos do `--self-test` (nenhum é repo git) — a execução de produção sempre
+   roda dentro do repo trackfw real.
+
+**Falsificação — nas duas direções, com saída real, incluindo A/B contra o código antigo:**
+- **A/B direto contra o código pré-fix, mesma condição do CI, sem depender do CI para confirmar**
+  (achado do `advisor` nesta sessão — a primeira versão deste relatório afirmava o resultado "antes"
+  sem executá-lo; corrigido antes de fechar): `git show HEAD:scripts/check-git-branch-guard-hook-schema.sh
+  > /tmp/gate_old.sh`, criados `pypi/build/lib/trackfw/generators/init_gen.py` e
+  `pypi/build/lib/trackfw/validator.py` na árvore real (mesmo conteúdo dos sítios reais). Rodando o
+  script ANTIGO (`TRACKFW_ROOT_DIR="$PWD" bash /tmp/gate_old.sh`): `OLD_RC=1`, `9 sítio(s)
+  derivado(s)`, reprova nomeando exatamente `pypi/build/lib/trackfw/generators/init_gen.py` e
+  `pypi/build/lib/trackfw/validator.py` — **reproduz byte a byte a reprovação do CI no PR #299**.
+  Rodando o script NOVO na mesma árvore (`bash scripts/check-git-branch-guard-hook-schema.sh`):
+  `NEW_RC=0`, `7 sítio(s) derivado(s)`, `reconciliação ok`, sem os 2 caminhos sob `pypi/build/`. A/B
+  completo, mesma árvore, mesmo conteúdo, única variável é a versão do script.
+- **Sítio versionado novo sem cobertura ⇒ reprova, ainda no ramo `git ls-files`** (não só no
+  fallback): criado `internal/generators/second_copy_scratch.go` com o marcador, `git add`, rodado o
+  gate na árvore real — `rc=1`, `check-git-branch-guard-hook-schema: sítio(s) derivado(s) SEM
+  cobertura ... internal/generators/second_copy_scratch.go` (nomeado). Confirma que a correção não
+  desligou a guarda — só corrigiu o que ela deriva.
+- **Vacuidade**: já coberta pelos cenários C1/C2/C3 pré-existentes do `--self-test`, inalterados —
+  continuam OK porque usam diretórios sintéticos fora de um repo git (fallback antigo, comportamento
+  preservado byte a byte).
+
+**Dois novos cenários de `--self-test`** (achado do `advisor`: um cenário sozinho só provava a
+direção "não conta o ignorado"; a direção "ainda reprova o tracked sem cobertura" só estava coberta
+pelo cenário C3, que roda no ramo de FALLBACK — nunca exercitava o ramo novo `git ls-files` dentro do
+próprio self-test):
+- `ignora-artefato-de-build`: monta um repo git sintético com os 4 sítios reais TRACKED (script real
+  + 3 stubs de gerador) e um 5º arquivo com o mesmo marcador `permissionDecisionReason`, presente no
+  disco mas **nunca adicionado ao git** — a mesma relação de `pypi/build/lib/...` com `.gitignore`
+  no CI real. Saída: `OK   [self-test/ignora-artefato-de-build]: gate deriva 4 sítios (só os
+  tracked) e reconcilia — o 5º arquivo ... não vira sítio nem reprova`.
+- `ignora-artefato-de-build-sitio-tracked-sem-cobertura`: reaproveita o MESMO repo git do cenário
+  anterior e acrescenta um 6º arquivo TRACKED (`git add` + commit) com o marcador, fora de
+  `EXECUTED_HERE`/`COVERED_BY_BYTE_IDENTITY_TEST`. Saída: `OK   [self-test/ignora-artefato-de-build-
+  sitio-tracked-sem-cobertura]: no ramo git ls-files, sítio TRACKED sem cobertura ainda reprova
+  nomeando-o — e o artefato ignorado continua fora da lista` — prova, **dentro da árvore de testes**,
+  as duas direções do ramo `git ls-files`, não só por execução manual fora do self-test.
+
+Frases de reconciliação (uma por teste, não uma para o par):
+- `ignora-artefato-de-build` afirma que `derive_sites()` exclui arquivo não versionado do disco
+  mesmo quando ele carrega o marcador procurado — é essa e só essa a conclusão medida.
+- `ignora-artefato-de-build-sitio-tracked-sem-cobertura` afirma que, no MESMO ramo `git ls-files`, um
+  sítio versionado sem cobertura ainda reprova nomeando-o — é essa e só essa a conclusão medida; não
+  reafirma nem contradiz a exclusão do artefato ignorado, que continua sendo o achado do cenário
+  anterior (checado aqui só como regressão negativa: `pypi/build` não pode reaparecer).
+
+**As três medidas do gate, executadas nesta sessão (após os dois cenários novos):**
+- `make parity-rest` **com `pypi/build/` presente na árvore** (reproduzindo a condição do CI):
+  `MAKE_RC=0`, `grep -c '^FAIL'`=0, `grep -c '^OK'`=621 (619 do piso do ML-2A + 2 dos cenários novos
+  `ignora-artefato-de-build` / `-sitio-tracked-sem-cobertura`).
+- `make quality QUALITY_EXIT=0`, foreground do início ao fim (sem `pypi/build/` residual — removido
+  antes desta chamada), medido **antes** de acrescentar o 2º cenário de self-test (a versão com 1
+  cenário novo): `MAKE_RC=0`, `grep -c '^FAIL'`=0, `grep -c '^OK'`=1032 — acima do piso `≥ 1031`.
+  Não re-executado por inteiro após o 2º cenário (custaria outra rodada de ~13min só para confirmar
+  +1 no total); o `--self-test` isolado (segundos) e o `make parity-rest` completo acima já
+  confirmam que o 2º cenário passa e que nada mais no `parity-rest` regrediu.
+- `./bin/trackfw validate`: **executado** (não apenas coberto por `make quality`) — `rc=0`, 170
+  avisos pré-existentes (REQ sem roadmap linkado, um roadmap done/ com caminho stale — nenhum
+  relacionado a este ML), nenhuma violação nova.
+
+**Levantamento de outros gates que derivam por varredura de árvore em vez de `git ls-files`** (achado
+reportado, não corrigido — fora do escopo deste ML). Duas passadas, a segunda mais ampla que a
+primeira (achado do `advisor`: a primeira passada, restrita a `grep -rl\|grep -Rl\|find .*-type f`,
+deixaria de fora outras formas de varredura):
+- 1ª passada (`grep -rl`/`grep -Rl`/`find ... -type f`): `scripts/check-artifact-closed-cycle.sh`,
+  `scripts/check-integration-assets.sh`, `scripts/check-identity-parity.sh`,
+  `scripts/check-static-assets.sh`, `scripts/check-update-parity.sh`,
+  `scripts/check-roadmap-barrier-contract.sh`, `scripts/smoke-integration-packages.sh`,
+  `scripts/sync-integration-assets.sh`. Medido: a maioria varre diretórios **estreitos e
+  controlados** (`internal/integrations/assets` canônico, projetos sintéticos recém-criados por
+  `discover --init` sob `TMP_ROOT`, tarballs empacotados, `docs/req`/`vault/notes` com padrão de
+  nome fixo) — não a árvore de fonte inteira misturada com artefato de build instalável, que foi a
+  condição específica deste defeito.
+- 2ª passada, mais ampla (`find `/`grep -r`/`ls -R`/`shopt -s globstar`/`**/`), sem filtrar falso
+  positivo: acrescenta `scripts/check-agent-models-parity.sh`, `scripts/check-barrier.sh`,
+  `scripts/check-gates-falsify.sh`, `scripts/check-homedir-parity.sh`,
+  `scripts/check-python-writes-lf.sh`, `scripts/check-raw-read-ban.sh`,
+  `scripts/check-release-tag-parity.sh`, `scripts/check-ref-separator-portability.sh`,
+  `scripts/check-slash-parity.sh`, `scripts/check-ship-force-parity.sh`,
+  `scripts/run-gates-falsify-parallel.sh`, `scripts/check-tty-detection.sh` — **lista bruta, não
+  triada uma a uma**; provavelmente inclui falso positivo (match em comentário/prosa, não em código
+  de varredura real). Em Go: `internal/discover/discover.go`, `internal/validator/validator.go`,
+  `internal/integrations/manager.go`, `internal/generators/roadmap.go`,
+  `internal/generators/update.go` usam `filepath.WalkDir`/`os.ReadDir` — não auditados aqui se algum
+  varre diretório que pode conter artefato de build ignorado; a suspeita mais provável seria
+  qualquer gate que passe pela raiz de um workspace de usuário (não deste repo). **Nada disso foi
+  filtrado nem corrigido** — fica para quem tratar cada script/arquivo individualmente, com a mesma
+  pergunta que orientou este ML: "esse diretório pode conter algo que o `.gitignore` já exclui, e a
+  varredura o pega mesmo assim?"
+
+**Critérios de aceite:**
+- [x] derivação por `git ls-files`, sem exclusão por nome
+- [x] as 3 falsificações com saída real (A/B direto contra o código antigo reproduzindo o CI, sítio
+      versionado novo reprova no ramo `git ls-files`, vacuidade preservada pelos cenários C1–C3)
+- [x] comportamento fora de repo git declarado (fallback com aviso em stderr, não silencioso)
+- [x] `grep -a` preservado
+- [x] `make parity-rest` rc=0 com `pypi/build/` presente na árvore
+- [x] `make quality QUALITY_EXIT=0` foreground: `MAKE_RC=0`, `FAIL=0`, `OK=1032` (≥ 1031; medido
+      antes do 2º cenário de self-test, cuja passagem está confirmada por `--self-test` isolado +
+      `make parity-rest` completo, ambos pós-2º-cenário)
+
+**Arquivos afetados:** `scripts/check-git-branch-guard-hook-schema.sh` (Go/Node/Python: nenhum
+código dos 3 CLIs foi tocado — mudança isolada ao script de gate, sem contrato de CLI envolvido;
+exceção documentada em `docs/cli-parity.md` para infra/scripts de gate).

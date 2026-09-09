@@ -191,22 +191,61 @@ check_site() {
 }
 
 # ---------------------------------------------------------------------------
-# derive_sites SCAN_ROOT — grep -rlas (com -a: um dos sítios,
-# npm/src/validator/index.js, contém byte NUL; sem -a o grep pula o arquivo
-# em SILÊNCIO, exatamente o jeito como o ML-1A perdeu esse sítio na primeira
-# medição) por "permissionDecisionReason" em .go/.js/.py/.sh, excluindo
-# scripts/testdata/ (corpus congelado) e arquivos de TESTE (que afirmam
-# sobre a forma, não a emitem).
+# derive_sites SCAN_ROOT — deriva a partir de `git ls-files`, não de
+# varredura da árvore de trabalho (achado do CI no PR #299, ver
+# vault/notes/gate-deriva-sitio-de-arvore-de-trabalho-em-vez-de-git-ls-files-
+# 2026-09-09.md): `grep -rlas` sobre a árvore inteira contava
+# `pypi/build/lib/...` — cópia do fonte criada por `pip install pypi/`,
+# IGNORADA por `.gitignore` (`pypi/build/`) mas presente no disco do runner —
+# como "sítio" fantasma, e o CI derivava 9 sítios contra os 7 medidos
+# localmente (onde `pypi/build/` nunca existiu). `git ls-files` exclui todo
+# ignorado por construção, sem lista de exclusão para manter (a lição do
+# remendo: excluir `pypi/build` por nome só adiaria o mesmo defeito para
+# `dist/`, `.venv/`, `node_modules/`, `bin/`, ...).
+#
+# Dois pontos resolvidos, por decisão:
+#  1. Sítio VERSIONADO mas AUSENTE no disco (checkout esparso): ignorado, não
+#     conta como sítio e não reprova por si — se isso reduzir a contagem
+#     abaixo do piso por stack, a guarda de vacuidade de fato reprova (o gate
+#     não pode confirmar a forma de um arquivo que não está no disco para
+#     ler).
+#  2. Fora de um repositório git: `git ls-files` não tem o que responder.
+#     Cai para a varredura completa da árvore (comportamento antigo),
+#     DECLARADA em stderr — nunca em silêncio. Este caminho só é alcançado
+#     hoje pelos diretórios sintéticos do `--self-test` abaixo (nenhum deles
+#     é um repo git); a execução de produção sempre roda dentro do repo
+#     trackfw real.
+#
+# `-a` preservado no fallback: um dos sítios, npm/src/validator/index.js,
+# contém byte NUL; sem -a o grep pula o arquivo em SILÊNCIO, exatamente o
+# jeito como o ML-1A perdeu esse sítio na primeira medição.
 # ---------------------------------------------------------------------------
 derive_sites() {
   local scan_root=$1
-  grep -rlas "permissionDecisionReason" \
-    --include='*.go' --include='*.js' --include='*.py' --include='*.sh' \
-    "$scan_root" 2>/dev/null \
-    | grep -v '/scripts/testdata/' \
-    | grep -v '/scripts/check-' \
-    | grep -Ev '(_test\.go|test_[^/]+\.py|\.test\.js)$' \
-    | sort
+
+  if git -C "$scan_root" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    local rel existing=()
+    while IFS= read -r rel; do
+      [[ -n "$rel" ]] || continue
+      [[ -f "$scan_root/$rel" ]] || continue
+      existing+=("$scan_root/$rel")
+    done < <(git -C "$scan_root" ls-files -- '*.go' '*.js' '*.py' '*.sh')
+    [[ ${#existing[@]} -eq 0 ]] && return 0
+    grep -las "permissionDecisionReason" "${existing[@]}" 2>/dev/null \
+      | grep -v '/scripts/testdata/' \
+      | grep -v '/scripts/check-' \
+      | grep -Ev '(_test\.go|test_[^/]+\.py|\.test\.js)$' \
+      | sort
+  else
+    echo "check-git-branch-guard-hook-schema: $scan_root não é uma árvore git — sem 'git ls-files' para excluir artefatos ignorados, caindo para varredura completa da árvore de trabalho (grep -rlas). Este caminho não é o de produção (o gate real sempre roda dentro do repo trackfw)." >&2
+    grep -rlas "permissionDecisionReason" \
+      --include='*.go' --include='*.js' --include='*.py' --include='*.sh' \
+      "$scan_root" 2>/dev/null \
+      | grep -v '/scripts/testdata/' \
+      | grep -v '/scripts/check-' \
+      | grep -Ev '(_test\.go|test_[^/]+\.py|\.test\.js)$' \
+      | sort
+  fi
 }
 
 # ---------------------------------------------------------------------------
@@ -297,6 +336,80 @@ self_test() {
     fi
   fi
 
+  # --- Cenário D: artefato IGNORADO pelo git não vira sítio -----------------
+  # Reproduz a condição real que reprovou o CI (`Quality / parity-other-gates`
+  # no PR #299: "CI: 9 sítio(s) derivado(s) (local: 7)"). No CI, o passo
+  # `python -m pip install pypi/` cria `pypi/build/lib/trackfw/...` — cópia
+  # do fonte, IGNORADA por `.gitignore` (`pypi/build/`), mas presente na
+  # árvore de trabalho do runner. A derivação antiga (`grep -rlas` sobre a
+  # árvore) contava esse arquivo como sítio SEM cobertura e reprovava o
+  # gate — sem nenhuma regressão real de schema. Este cenário monta um repo
+  # git sintético com os 4 sítios reais TRACKED (script real +
+  # 3 stubs de gerador, um por stack) e um 5º arquivo com o mesmo marcador,
+  # criado mas NUNCA adicionado ao git (`git add`) — a mesma relação entre
+  # `pypi/build/lib/...` e `.gitignore` no CI: presente no disco, ausente da
+  # árvore versionada.
+  local build_root="$WORK/self-test/ignored-build-artifact"
+  mkdir -p "$build_root/scripts" "$build_root/internal/generators" \
+    "$build_root/npm/src/generators" "$build_root/pypi/trackfw/generators" \
+    "$build_root/pypi/build/lib/trackfw/generators"
+  (cd "$build_root" && git init -q && git config user.email t@t && git config user.name t)
+  printf 'pypi/build/\n' >"$build_root/.gitignore"
+  cp "$ROOT_DIR/scripts/trackfw-git-branch-guard.sh" "$build_root/scripts/trackfw-git-branch-guard.sh"
+  printf 'permissionDecisionReason\n' >"$build_root/internal/generators/scaffold.go"
+  printf 'permissionDecisionReason\n' >"$build_root/npm/src/generators/hooks.js"
+  printf 'permissionDecisionReason\n' >"$build_root/pypi/trackfw/generators/init_gen.py"
+  # Artefato de build: mesmo marcador, mesma extensão contabilizada — mas
+  # NUNCA passa por `git add`. É o que `git ls-files` exclui por construção.
+  printf 'permissionDecisionReason\n' >"$build_root/pypi/build/lib/trackfw/generators/init_gen.py"
+  (cd "$build_root" && git add scripts internal npm pypi/trackfw .gitignore && git commit -q -m "self-test: sitios reais")
+  set +e
+  out=$(TRACKFW_ROOT_DIR="$build_root" bash "$ROOT_DIR/scripts/check-git-branch-guard-hook-schema.sh" 2>&1)
+  set -e
+  if grep -qF 'pypi/build' <<<"$out"; then
+    echo "FAIL [self-test/ignora-artefato-de-build]: artefato ignorado pelo git (pypi/build/lib/...) apareceu na saída do gate — a derivação voltou a contar arquivo não versionado como sítio" >&2
+    failures=$((failures + 1))
+  elif ! grep -qF '4 sítio(s) derivado(s)' <<<"$out"; then
+    echo "FAIL [self-test/ignora-artefato-de-build]: esperava exatamente 4 sítio(s) derivado(s) (os tracked), saída não confirma" >&2
+    printf '%s\n' "$out" | sed 's/^/    /' >&2
+    failures=$((failures + 1))
+  elif ! grep -qF 'reconciliação ok' <<<"$out"; then
+    echo "FAIL [self-test/ignora-artefato-de-build]: reconciliação não passou com os 4 sítios tracked — a derivação por git ls-files não bateu com EXECUTED_HERE" >&2
+    printf '%s\n' "$out" | sed 's/^/    /' >&2
+    failures=$((failures + 1))
+  else
+    echo "OK   [self-test/ignora-artefato-de-build]: gate deriva 4 sítios (só os tracked) e reconcilia — o 5º arquivo, presente no disco mas fora de 'git ls-files' (mesma relação de pypi/build/ com .gitignore no CI real), não vira sítio nem reprova"
+  fi
+
+  # --- Cenário D2: sítio TRACKED sem cobertura ainda reprova no ramo git ----
+  # O cenário D acima prova só a direção "não conta o que não está no git".
+  # Sem este segundo cenário, a direção contrária do ramo `git ls-files`
+  # (sítio versionado sem cobertura) só seria exercitada pelo cenário C3, que
+  # roda no ramo de FALLBACK (diretório sem `git init`) — nunca no ramo novo.
+  # Reaproveita o MESMO repo git de D (mais barato que montar outro do zero)
+  # e acrescenta um 6º arquivo TRACKED com o marcador, fora de EXECUTED_HERE
+  # e de COVERED_BY_BYTE_IDENTITY_TEST — precisa reprovar nomeando-o, exatamente
+  # como o cenário C3 prova no ramo de fallback.
+  printf 'permissionDecisionReason\n' >"$build_root/internal/generators/second_copy_tracked.go"
+  (cd "$build_root" && git add internal/generators/second_copy_tracked.go && git commit -q -m "self-test: sitio tracked sem cobertura")
+  set +e
+  out2=$(TRACKFW_ROOT_DIR="$build_root" bash "$ROOT_DIR/scripts/check-git-branch-guard-hook-schema.sh" 2>&1)
+  status2=$?
+  set -e
+  if [[ "$status2" -eq 0 ]]; then
+    echo "FAIL [self-test/ignora-artefato-de-build-sitio-tracked-sem-cobertura]: sítio TRACKED novo sem cobertura deveria reprovar no ramo git ls-files, gate saiu 0" >&2
+    failures=$((failures + 1))
+  elif ! grep -qF 'second_copy_tracked.go' <<<"$out2"; then
+    echo "FAIL [self-test/ignora-artefato-de-build-sitio-tracked-sem-cobertura]: reprovou (rc=$status2), mas sem nomear o sítio tracked novo" >&2
+    printf '%s\n' "$out2" | sed 's/^/    /' >&2
+    failures=$((failures + 1))
+  elif grep -qF 'pypi/build' <<<"$out2"; then
+    echo "FAIL [self-test/ignora-artefato-de-build-sitio-tracked-sem-cobertura]: artefato ignorado (pypi/build/lib/...) voltou a aparecer — regressão do cenário D" >&2
+    failures=$((failures + 1))
+  else
+    echo "OK   [self-test/ignora-artefato-de-build-sitio-tracked-sem-cobertura]: no ramo git ls-files, sítio TRACKED sem cobertura ainda reprova nomeando-o — e o artefato ignorado continua fora da lista"
+  fi
+
   # --- Cenário C1: guarda de vacuidade — NENHUM SÍTIO ENCONTRADO ------------
   # Aponta o gate inteiro (via TRACKFW_ROOT_DIR, mesmo mecanismo de
   # check-gates-falsify.sh) para uma árvore com o script real PRESENTE (para
@@ -384,7 +497,7 @@ self_test() {
     exit 1
   fi
   echo
-  echo "check-git-branch-guard-hook-schema.sh --self-test: os 3 cenários de falsificação passaram (schema errado reprova nomeando o sítio, schema certo aprova, guarda de vacuidade reprova nas 3 formas: nenhum sítio, script ausente, sítio novo não contabilizado)."
+  echo "check-git-branch-guard-hook-schema.sh --self-test: os cenários de falsificação passaram (schema errado reprova nomeando o sítio, schema certo aprova, artefato ignorado pelo git não vira sítio, guarda de vacuidade reprova nas 3 formas: nenhum sítio, script ausente, sítio novo não contabilizado)."
   exit 0
 }
 
