@@ -102,6 +102,21 @@ if [[ -z "$REAL_PYTHON3" ]]; then
   exit 1
 fi
 
+# git must be detected before RUNTIME_BIN so GIT_BIN_DIR is available for BASE_PATH. An unset
+# GIT_BIN_DIR would produce an empty PATH component ("::"), making CWD searchable for git — a
+# silent false-pass vector that the vacuity guard exists to prevent.
+REAL_GIT=$(command -v git || true)
+if [[ -z "$REAL_GIT" ]]; then
+  echo "check-push-force-parity: git not found in PATH" >&2
+  exit 1
+fi
+# Named GIT_BIN_DIR, not GIT_DIR: git treats GIT_DIR as a reserved environment variable —
+# when exported it overrides the repository path for every subsequent git call, silently
+# redirecting them to an arbitrary directory. This variable is never exported and must NOT be
+# renamed back to GIT_DIR (see check-gates-falsify.sh credential-guard-git-env-bypass scenario,
+# where GIT_DIR+GIT_WORK_TREE diverts a git -C call to a decoy repository).
+GIT_BIN_DIR="$(dirname "$REAL_GIT")"
+
 # runtimebin/ carries ONLY the interpreters the three CLIs need, symlinked from their real
 # location — the scenario-controlled PATH built below never inherits the caller's PATH, so a
 # real gh/az/glab installed on the host can never leak into a scenario that must see none.
@@ -112,7 +127,14 @@ ln -s "$REAL_PYTHON3" "$RUNTIME_BIN/python3"
 
 # BASE_PATH: git + coreutils only, plus the two interpreters above. No gh/glab/az anywhere
 # unless a scenario explicitly prepends its own stub directory.
-BASE_PATH="$RUNTIME_BIN:/usr/bin:/bin"
+# GIT_BIN_DIR is prepended so native child processes (Go exec.Command, Python subprocess.run) find
+# git.exe via PATHEXT — on Git for Windows, git.exe lives in /clangarm64/bin (ARM64) or
+# /mingw64/bin (x64), neither of which is /usr/bin or /bin (measured: ML-R2a run 34406101512).
+# Mechanism: directory prepended (not single placed file) because /usr/bin is already in
+# BASE_PATH; /clangarm64/bin and /mingw64/bin do not contain forge CLIs, sh, or bash (measured:
+# ML-R2a). The alias /bin == /usr/bin (cygpath proves these map to the same Windows path) means
+# the original two entries were one entry anyway.
+BASE_PATH="$RUNTIME_BIN:$GIT_BIN_DIR:/usr/bin:/bin"
 
 # Never let an inherited TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make the forge adapter report
 # "unavailable" regardless of PATH — CI's `make parity` step sets this env var for every gate in
@@ -132,15 +154,31 @@ unset TRACKFW_DISABLE_EXTERNAL_COMMANDS || true
 # a symlink to the real `git` this host resolves — no coreutils, no /usr/bin, no /bin — because
 # nothing this scenario exercises (git plumbing over the local bare-repo file transport, plus the
 # node/python3 interpreters already isolated in RUNTIME_BIN) needs anything else on PATH.
-REAL_GIT=$(command -v git || true)
-if [[ -z "$REAL_GIT" ]]; then
-  echo "check-push-force-parity: git not found in PATH" >&2
-  exit 1
+# REAL_GIT and GIT_BIN_DIR are computed above (before BASE_PATH) — do not re-detect here.
+#
+# Forma 2 fix — NO_FORGE_PATH: two mechanisms, one per platform, declared here:
+#
+#   Windows (GfW, detected by ${REAL_GIT}.exe sibling): git.exe is a DLL-dependent wrapper.
+#   Placing a single git.exe copy or hardlink in a new directory fails with STATUS_DLL_NOT_FOUND
+#   (0xC0000135) because the DLLs live alongside git.exe in its installation directory and
+#   Windows DLL search starts in the executable's own directory. The only correct fix is to add
+#   GIT_BIN_DIR itself to NO_FORGE_PATH. /clangarm64/bin (ARM64) and /mingw64/bin (x64) contain no
+#   forge CLIs (gh/glab/az), sh, or bash — measured in ML-R2a and confirmed by the vacuity
+#   guard below — so the no-forge discriminant is fully preserved.
+#
+#   POSIX (no .exe sibling): git is typically a standalone binary; a single symlink in an
+#   isolated GIT_ONLY_BIN is sufficient and keeps /usr/bin out of NO_FORGE_PATH — critical
+#   because ubuntu-latest runners carry a real gh at /usr/bin/gh (the CI failure that
+#   motivated GIT_ONLY_BIN in the first place, ML-6B). On POSIX the symlink is seen by native
+#   child processes (exec(2) follows it transparently), so this form has no broken-symlink risk.
+if [[ -f "${REAL_GIT}.exe" ]]; then
+  NO_FORGE_PATH="$RUNTIME_BIN:$GIT_BIN_DIR"
+else
+  GIT_ONLY_BIN="$WORK/gitonlybin"
+  mkdir -p "$GIT_ONLY_BIN"
+  ln -s "$REAL_GIT" "$GIT_ONLY_BIN/git"
+  NO_FORGE_PATH="$RUNTIME_BIN:$GIT_ONLY_BIN"
 fi
-GIT_ONLY_BIN="$WORK/gitonlybin"
-mkdir -p "$GIT_ONLY_BIN"
-ln -s "$REAL_GIT" "$GIT_ONLY_BIN/git"
-NO_FORGE_PATH="$RUNTIME_BIN:$GIT_ONLY_BIN"
 
 # Non-vacuity guard — fails BEFORE any scenario runs if gh/glab/az somehow resolve on
 # NO_FORGE_PATH, or if git does NOT resolve on it.
@@ -150,8 +188,15 @@ for cli in gh glab az; do
     exit 1
   fi
 done
-if ! PATH="$NO_FORGE_PATH" command -v git >/dev/null 2>&1; then
-  echo "check-push-force-parity: vacuity guard failed — git does not resolve on NO_FORGE_PATH ($NO_FORGE_PATH)" >&2
+# git resolution: use native child process (python3, already in RUNTIME_BIN ⊂ NO_FORGE_PATH)
+# instead of bash's command -v — the bug class this ML corrects is a git that bash resolves via
+# MSYS symlink but CreateProcess cannot (ML-R2c Forma 2). python3's subprocess.run uses the
+# same CreateProcess + PATHEXT lookup the product uses. Reconciliation: this guard asserts that
+# a native child, not bash, resolves git on the path the no-forge scenario uses.
+if ! PATH="$NO_FORGE_PATH" python3 -c \
+    'import subprocess,sys; sys.exit(subprocess.run(["git","--version"],capture_output=True).returncode)' \
+    2>/dev/null; then
+  echo "check-push-force-parity: vacuity guard failed — git does not resolve on NO_FORGE_PATH ($NO_FORGE_PATH) for a native child process" >&2
   exit 1
 fi
 

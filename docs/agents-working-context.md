@@ -4,6 +4,66 @@
 
 ---
 
+## Sessão 2026-09-09 — ares-tf (Infrastructure) — ML-R2c: correção de auditoria GIT_DIR → GIT_BIN_DIR (CONCLUÍDO)
+
+Branch `fix/fechar-os-grupos-de-falha-de-windows-por-causa-raiz`.
+
+**Executado:**
+- Renomeada variável `GIT_DIR` → `GIT_BIN_DIR` nos 3 scripts (`check-release-tag-parity.sh`,
+  `check-ship-force-parity.sh`, `check-push-force-parity.sh`) — todos os usos operacionais e
+  comentários que a citavam. `GIT_DIR` é reservada do git; sem `export` hoje, mas mina.
+- Adicionado comentário preventivo na linha de atribuição em cada arquivo explicando por que o
+  nome não é `GIT_DIR` (referencia o cenário `credential-guard-git-env-bypass` do falsify).
+- Verificação: `grep -w GIT_DIR` retorna apenas as ocorrências no comentário explicativo; zero
+  usos operacionais de `GIT_DIR` restantes.
+- Gates verdes: release-tag `OK=21`, ship-force `OK=5`, push-force `OK=5`, todos `FAIL=0`.
+- Nota de correção de auditoria adicionada à seção ML-R2c do roadmap.
+
+**Pendente (inalterado — VM offline):**
+- Falsificação: revert + probe reprova
+- Recenso: `TRACKFW_FALSIFY_ENUMERATE=1`, 8 chunks, verificar queda de ~442
+
+**Próximo agente:** retomar quando VM estiver acessível; executar falsificação e recenso; marcar ML-R2c como ✅; iniciar ML-R2b.
+
+---
+
+## Sessão 2026-09-09 — ares-tf (Infrastructure) — ML-R2c: Gates param de presumir layout de PATH (PARCIALMENTE CONCLUÍDO — VM OFFLINE)
+
+Branch `fix/fechar-os-grupos-de-falha-de-windows-por-causa-raiz`.
+
+**Concluído:**
+- Todos 3 scripts corrigidos (Forma 1: `GIT_DIR` prepend em `BASE_PATH`; Forma 2: `NO_FORGE_PATH="$RUNTIME_BIN:$GIT_DIR"` no Windows)
+- Probe VM positivo: Python `subprocess.run` e Go `exec.Command` resolvem `git version 2.55.0.windows.3` sob `NEW_BASE_PATH` e `NEW_NO_FORGE_PATH`
+- Vacuity guard atualizado: `command -v git` substituído por `python3 -c subprocess.run(["git","--version"])`
+- `make quality` verde no Linux (todos falsify `OK`, `CHUNK_COMPLETE 5` e `6`)
+- Resultados escritos na seção ML-R2c do roadmap
+
+**Pendente (VM offline — `192.168.64.3` connection reset):**
+- Falsificação: revert + probe reprova
+- Recenso: `TRACKFW_FALSIFY_ENUMERATE=1`, 8 chunks, verificar queda de ~442
+
+**Próximo agente:** retomar quando VM estiver acessível; executar falsificação e recenso; marcar ML-R2c como ✅; iniciar ML-R2b.
+
+---
+
+## Sessão 2026-09-09 — ares-tf (Infrastructure) — ML-R2c: Gates param de presumir layout de PATH (INICIADO)
+
+Branch `fix/fechar-os-grupos-de-falha-de-windows-por-causa-raiz`, ML-R2c do roadmap
+`docs/roadmaps/wip/ROADMAP-2026-09-03-fechar-os-grupos-de-falha-de-windows-por-causa-raiz.md`.
+
+**Contexto:** `check-release-tag-parity.sh`, `check-ship-force-parity.sh` e
+`check-push-force-parity.sh` têm dois defeitos de PATH:
+- Forma 1: `BASE_PATH="$RUNTIME_BIN:/usr/bin:/bin"` — git.exe mora em `/mingw64/bin` ou
+  `/clangarm64/bin`, não em `/usr/bin` ou `/bin` (medido no ML-R2a, ARM64 e x64).
+- Forma 2: `ln -s "$REAL_GIT" "$GIT_ONLY_BIN/git"` — cria MSYS symlink sem `.exe` que bash resolve
+  mas processos nativos (Go exec.Command, Python subprocess.run) não encontram via CreateProcess+PATHEXT.
+
+**Fix planejado:** mover detecção de `REAL_GIT` para antes de `BASE_PATH`, derivar `GIT_DIR`, prepender
+a `BASE_PATH`; criar `git.exe` (hardlink→cópia) em `GIT_ONLY_BIN` para Forma 2; atualizar guard de
+vacuidade para usar processo filho nativo (python3 subprocess) em vez de `command -v`.
+
+---
+
 ## Sessão 2026-09-09 — apolo-tf (Backend) — ML-1A: O script vira alvo de primeira classe (CONCLUÍDO)
 
 **ENCERRAMENTO:** Gate verde. MAKE_RC=0, 0 FAIL, 1033 OK. `trackfw validate`: 0 erros, 174 warnings

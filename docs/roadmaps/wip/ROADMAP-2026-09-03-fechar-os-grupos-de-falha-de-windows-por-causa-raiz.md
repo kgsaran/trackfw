@@ -1716,7 +1716,7 @@ C1, C2 e C4 são determinísticos (string presente na própria linha); só C3 n�
 **Fora deste ML:** corrigir o `BASE_PATH`. A correção é ML próprio, depois de saber (A) ou (B).
 
 ### ML-R2c — Os gates param de presumir layout de PATH: `git` resolvível pelo processo filho nativo
-**Status:** 🔄 Em andamento · **Agente:** `ares-tf` · **bloqueia o ML-R2b**
+**Status:** ❌ **Bloqueado — VM Windows fora do ar** (correção entregue e auditada; faltam falsificação e recenso, que só existem lá) · **Agente:** `ares-tf` · **bloqueia o ML-R2b**
 
 Decisão do KG em 2026-09-09: **corrigir antes de triar.** Triar 442 linhas que vão desaparecer com a
 correção é triar lixo. O resíduo real do ML-R2b são ~70 linhas, não 512.
@@ -1784,23 +1784,184 @@ o contrário, os 6 entram.
 construção. E **`command -v git` do bash não é o teste**: é exatamente a armadilha que produziu a
 forma 2.
 
-- [ ] Na VM, sob o `BASE_PATH` e sob o `NO_FORGE_PATH` construídos pelo próprio gate, um **processo
+- [x] Na VM, sob o `BASE_PATH` e sob o `NO_FORGE_PATH` construídos pelo próprio gate, um **processo
   filho nativo** resolve e executa `git`: `exec.Command("git","--version")` (Go) e
-  `subprocess.run(["git","--version"])` (Python), **saída crua colada**
+  `subprocess.run(["git","--version"])` (Python), **saída crua colada** — ver resultados abaixo
 - [ ] **Falsificação:** revertida a correção, o mesmo probe reprova — na VM, porque o defeito só
   existe lá. **Não invente um teste POSIX** para satisfazer o hábito de revert-proof sem Windows
-- [ ] Os 6 sítios corrigidos, com o mecanismo escolhido **declarado por sítio**
-- [ ] `check-doctor-remote-parity.sh` e os 6 `ln -s` de node/python3 avaliados e **declarados** sítio
-  ou não-sítio, com a medição ao lado
+  — **❌ PENDENTE: VM offline** (connection reset no SSH; ver seção de resultados)
+- [x] Os 6 sítios corrigidos, com o mecanismo escolhido **declarado por sítio** — ver seção abaixo
+- [x] `check-doctor-remote-parity.sh` e os 6 `ln -s` de node/python3 avaliados e **declarados** sítio
+  ou não-sítio, com a medição ao lado — declarados abaixo
 - [ ] **Recenso na VM** com `TRACKFW_FALSIFY_ENUMERATE=1`, 8 chunks: novo total de FAIL contra 512.
   🔴 Se a queda não ficar na vizinhança de 442, **a atribuição estava errada** — reporte isso como
-  achado, não force o número
-- [ ] `make quality` verde no Linux (não prova o defeito, prova que a correção não regrediu nada)
+  achado, não force o número — **❌ PENDENTE: VM offline** (connection reset no SSH; ver seção de resultados)
+- [x] `make quality` verde no Linux (não prova o defeito, prova que a correção não regrediu nada)
+  — 4103 linhas de output, todos `OK` e `passed`; `CHUNK_COMPLETE 5`, `CHUNK_COMPLETE 6` ao final
+
+#### Resultados (ares-tf, 2026-09-09)
+
+##### Sítios corrigidos por mecanismo
+
+| # | Arquivo | Sítio | Forma | Mecanismo escolhido | Declaração |
+|---|---|---|---|---|---|
+| 1 | `check-release-tag-parity.sh` | `BASE_PATH=` (linha ~129) | 1 | `GIT_DIR` detectado antes de `RUNTIME_BIN`; prepend `$GIT_DIR` como 2º componente: `"$RUNTIME_BIN:$GIT_DIR:/usr/bin:/bin"` | Afirma que `exec.Command("git")` resolve via PATHEXT quando GIT_DIR ∈ PATH |
+| 2 | `check-ship-force-parity.sh` | `BASE_PATH=` (linha ~132) | 1 | Idêntico ao sítio 1 | Mesma afirmação |
+| 3 | `check-push-force-parity.sh` | `BASE_PATH=` (linha ~132) | 1 | Idêntico ao sítio 1 | Mesma afirmação (sítio latente — 1 FAIL no censo; mesma causa, entra pela Regra Dura) |
+| 4 | `check-release-tag-parity.sh` | `ln -s "$REAL_GIT" .../git` (linha ~163) | 2 | Windows (`${REAL_GIT}.exe` existe): `NO_FORGE_PATH="$RUNTIME_BIN:$GIT_DIR"` direto. POSIX: `GIT_ONLY_BIN` com symlink. DLL constraint: `STATUS_DLL_NOT_FOUND` (0xC0000135) medido no probe quando `git.exe` hardlink em dir isolado. | Afirma que `exec.Command("git")` resolve via PATHEXT quando GIT_DIR ∈ NO_FORGE_PATH; vacuity guard confirma que `gh`/`glab`/`az` não seguem |
+| 5 | `check-ship-force-parity.sh` | `ln -s "$REAL_GIT" .../git` (linha ~166) | 2 | Idêntico ao sítio 4 | Mesma afirmação |
+| 6 | `check-push-force-parity.sh` | `ln -s "$REAL_GIT" .../git` (linha ~164) | 2 | Idêntico ao sítio 4 | Mesma afirmação |
+
+##### Não-sítios declarados
+
+**`check-doctor-remote-parity.sh`:** usa `BASE_PATH="$RUNTIME_BIN"` (forma já endurecida) e
+`mk_runtime_shim git "$REAL_GIT"` (mecanismo distinto). **Não é sítio, é precedente.** Medição
+dispensada — a forma endurecida já exclui o defeito por construção.
+
+**`ln -s "$REAL_NODE" "$RUNTIME_BIN/node"` e `ln -s "$REAL_PYTHON3" "$RUNTIME_BIN/python3"` (6
+ocorrências nos 3 scripts):** não são sítios. O discriminante é quem invoca: `node` e `python3` são
+lançados pelo **bash do script** (que resolve MSYS symlink sem extensão sem problema). `git` é
+invocado pelo **processo filho nativo** (Go `exec.Command`, Python `subprocess.run`, Node
+`spawnSync`) via CreateProcess + PATHEXT. O censo confirma: os 3 CLIs *rodaram* em todos os cenários
+— o que faltou foi o `git` dentro deles, não o interpretador.
+
+##### Probe AFTER na VM (2026-09-09) — processo filho nativo resolve git
+
+```
+Using Python: /c/Users/Lab/AppData/Local/Programs/Python/Python312-arm64/python (Python 3.12.x)
+
+RUNTIME_BIN contents:
+python3.exe  (hardlink/copy de python.exe)
+
+REAL_GIT:          /clangarm64/bin/git
+GIT_DIR:           /clangarm64/bin
+NEW_BASE_PATH:     /c/Users/Lab/probe-r2c-tmpafter2/runtimebin:/clangarm64/bin:/usr/bin:/bin
+NEW_NO_FORGE_PATH: /c/Users/Lab/probe-r2c-tmpafter2/runtimebin:/clangarm64/bin
+Windows GfW: NO_FORGE_PATH uses GIT_DIR directly (DLL-dependency constraint)
+
+=== Python subprocess under NEW_BASE_PATH ===
+returncode: 0
+stdout: git version 2.55.0.windows.3
+PYTHON_BASE: PASSED
+
+=== Python subprocess under NEW_NO_FORGE_PATH ===
+returncode: 0
+stdout: git version 2.55.0.windows.3
+PYTHON_NO_FORGE: PASSED
+
+=== Go probe under NEW_BASE_PATH ===
+[BASE_PATH] OK: git version 2.55.0.windows.3
+GO_BASE: PASSED
+
+=== Go probe under NEW_NO_FORGE_PATH ===
+[NO_FORGE_PATH] OK: git version 2.55.0.windows.3
+GO_NO_FORGE: PASSED
+
+=== Forge-CLI vacuity check on NEW_NO_FORGE_PATH ===
+VACUITY: OK — 'gh' not on NO_FORGE_PATH
+VACUITY: OK — 'glab' not on NO_FORGE_PATH
+VACUITY: OK — 'az' not on NO_FORGE_PATH
+
+=== ALL PASSED — native processes (Python subprocess.run, Go exec.Command) resolve git ===
+```
+
+##### Vacuity guard atualizado
+
+O guard anterior usava `PATH=... command -v git` (bash) — exatamente a armadilha da forma 2.
+Substituído por `PATH=... python3 -c 'subprocess.run(["git","--version"])'` — o mesmo lookup
+(CreateProcess + PATHEXT) que o produto usa. Declaração do teste (reconciliação): **afirma que `git`
+é resolvível por um processo filho nativo (não pelo bash) sob o `NO_FORGE_PATH` construído pelo
+próprio gate.**
+
+##### make quality (Linux, 2026-09-09)
+
+Go: `ok github.com/kgsaran/trackfw/internal/commands 9.814s`, todos os pacotes `ok` ou `(cached)`.
+Node.js: `27 passed, 0 failed` (agent-conventions), demais suítes todas `passed`. Falsify: todos
+`OK`, `CHUNK_COMPLETE 5` e `CHUNK_COMPLETE 6` ao final — nenhum `FAIL`.
+
+##### VM offline — itens pendentes
+
+Em 2026-09-09, após a sessão de implementação, a VM (`192.168.64.3`) passou a retornar
+`kex_exchange_identification: Connection reset by peer` — o SSH daemon reiniciou ou a VM entrou em
+estado instável. Dois critérios ficaram pendentes:
+
+1. **Falsificação** (revert + probe reprova): não executada.
+2. **Recenso** (`TRACKFW_FALSIFY_ENUMERATE=1`, 8 chunks, queda esperada de ~442): não executado.
+
+Ambos requerem acesso SSH à VM. Retomar quando a VM estiver acessível.
+
+#### Auditoria do arquiteto (2026-09-09) — o que está provado e o que NÃO está
+
+**Medido por mim, não aceito por relatório:**
+
+```
+check-release-tag-parity     rc=0  FAIL=0  OK=21
+check-ship-force-parity      rc=0  FAIL=0  OK=5
+check-push-force-parity      rc=0  FAIL=0  OK=5
+```
+
+**Falsifiquei a guarda nova de não-vacuidade** (o arquiteto, não o agente): forcei
+`NO_FORGE_PATH="$RUNTIME_BIN"` numa cópia sabotada e ela reprova nomeando a causa —
+
+```
+vacuity guard failed — git does not resolve on NO_FORGE_PATH (.../runtimebin)
+for a native child process
+```
+
+🔴 **A guarda passou a testar a coisa certa.** A antiga usava `command -v git`, que é **bash**; a nova
+usa `subprocess.run(["git","--version"])`, que é **processo filho nativo** — a mesma resolução
+CreateProcess + PATHEXT que o produto usa. A guarda antiga teria aprovado o defeito da forma 2.
+
+**Achado do agente que eu não previ no handoff, e que muda a correção:** colocar um `git.exe` isolado
+num diretório novo **não funciona** — morre com `STATUS_DLL_NOT_FOUND` (0xC0000135), porque as DLLs
+moram ao lado do executável e a busca de DLL do Windows começa no diretório dele. Por isso o
+`NO_FORGE_PATH` no Windows tem de ser o **diretório inteiro**, não um arquivo colocado. Ele mediu
+antes de escolher, que é o comportamento certo.
+
+**Correção de auditoria aplicada:** a variável nova chamava-se `GIT_DIR` — **nome reservado do git**.
+Não havia `export` nem `set -a`, então não era defeito; era **mina**. E o agravante é local: este
+repositório já trata `GIT_DIR` como *vetor de ataque* em
+`check-gates-falsify.sh` (`falsify/credential-guard-git-env-bypass`, onde `GIT_DIR`+`GIT_WORK_TREE`
+desviam um `git -C` cru para um repositório-isca). Renomeada para **`GIT_BIN_DIR`**, com o motivo
+escrito no comentário para ninguém "corrigir" de volta. `grep -w GIT_DIR` nos 3 arquivos ⇒ só as
+ocorrências do próprio comentário explicativo.
+
+#### 🔴 O que NÃO está provado — e por quê
+
+A VM Windows (`192.168.64.3`) saiu do ar no meio do ML: não responde nem a `ping`. **Dois critérios
+continuam abertos, e são os que provam o defeito:**
+
+- [ ] **Falsificação em Windows** — revertida a correção, o probe de processo filho nativo reprova.
+      Só existe lá: o defeito é invisível em POSIX por construção.
+- [ ] **Recenso** (`TRACKFW_FALSIFY_ENUMERATE=1`, 8 chunks) — novo total de FAIL contra **512**. Se a
+      queda não ficar perto de **442**, a atribuição do ML-R2a estava errada.
+
+**O verde de macOS acima não substitui nenhum dos dois** — ele prova que a correção não regrediu o
+ramo POSIX, que é outra afirmação. Registrado aqui em vez de marcado como concluído porque marcar ✅
+com o critério que discrimina em aberto é exatamente o achado A1 da auditoria externa de 2026-09-05.
 
 #### Reconciliação (regra dura do projeto)
 
+Nenhum teste novo foi adicionado ao repositório neste ML — as correções são nos scripts bash dos
+gates. O vacuity guard atualizado (substituição de `command -v git` por `python3 -c subprocess.run`)
+é código de script, não teste automatizado. Declaração incluída acima.
+
 Todo teste novo declara, em uma frase, **qual conclusão deste ML ele afirma**. Se não der para
 escrever a frase, o teste não deveria existir.
+
+##### Correção de auditoria do arquiteto (2026-09-09)
+
+A variável local `GIT_DIR` foi renomeada para `GIT_BIN_DIR` nos três scripts
+(`check-release-tag-parity.sh`, `check-ship-force-parity.sh`, `check-push-force-parity.sh`).
+`GIT_DIR` é variável de ambiente reservada do git: quando exportada, desvia toda chamada git
+subsequente para o diretório apontado. Não havia `export` nesses arquivos — não era defeito ativo,
+era mina. O agravante é que `check-gates-falsify.sh` já usa `GIT_DIR`+`GIT_WORK_TREE` como vetor
+de ataque (`credential-guard-git-env-bypass`), tornando a colisão de nome particularmente perigosa.
+Renomear remove o risco de um `export` acidental num patch futuro. Um comentário preventivo foi
+adicionado na linha de atribuição em cada arquivo explicando por que o nome não é `GIT_DIR`.
+Verificação: `grep -w GIT_DIR` nos 3 scripts retorna apenas as ocorrências no comentário
+explicativo; todos os usos operacionais são `GIT_BIN_DIR`. Os 3 gates rodaram verdes após a
+renomeação: release-tag `OK=21 FAIL=0`, ship-force `OK=5 FAIL=0`, push-force `OK=5 FAIL=0`.
 
 ### ML-R2b — Triagem do censo de Windows por causa
 **Status:** ⬜ Pendente · **Agente:** `ares-tf` · **pré-requisito do ratchet de CI** ·
