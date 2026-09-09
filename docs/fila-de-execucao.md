@@ -96,3 +96,20 @@ legítimas, quase todas vindas de issues externos, mas nenhuma delas era esta. *
 | — | Os 5 grupos restantes da triagem dos 12 do CI | REQ das 217 falhas |
 | — | `validate` imprime usage / suja o `--json` (#290) | roadmap próprio, em `backlog` |
 | — | Gate dos pins de call site · matriz de jobs · outros 45 gates | roadmap do `parity`, em `wip` |
+
+
+## Item 1 — artefatos criados, 2026-09-09
+
+A REQ existia desde 02/09 com `roadmap: ""` — **órfã**, o mesmo estado em que eu deixei a REQ do
+issue #290. Roadmap criado e vinculado:
+
+`ROADMAP-2026-09-09-guard-emite-hookspecificoutput-e-a-razao-chega-ao-modelo-nos-3-clis.md` (backlog)
+
+**Sítios medidos antes de escrever o roadmap** (não presumidos): o script real, os **3 geradores**
+(Go/Node/Python), as **2 referências do `validate`**, e um teste. `hookSpecificOutput` tem **zero**
+ocorrências no repositório. O corpus congelado de testdata está marcado como **não tocar**.
+
+🔴 **Por que este item perdeu seis vezes seguidas, e o que fazer com isso:** *issue externo tem alguém
+do outro lado esperando; atrito próprio não tem ninguém cobrando.* Não é falha de priorização
+pontual — é viés estrutural da fila. A contramedida não é subir o item de posição, é **decidir
+explicitamente** começar por ele quando a frente anterior fecha.

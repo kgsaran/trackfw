@@ -3,7 +3,7 @@ status: Open
 date: 2026-09-02
 author: "kgsaran"
 adr: ""
-roadmap: ""
+roadmap: "docs/roadmaps/backlog/ROADMAP-2026-09-09-guard-emite-hookspecificoutput-e-a-razao-chega-ao-modelo-nos-3-clis.md"
 ---
 
 # REQ: O guard instalado emite schema de hook que o Claude Code rejeita, e a razão do bloqueio se perde — nos 3 CLIs
