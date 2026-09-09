@@ -1,6 +1,7 @@
 package generators
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -166,14 +167,54 @@ func TestGitBranchGuard_Commit_StdinJSON_ToolInputCommand_Blocks(t *testing.T) {
 	if code != 2 {
 		t.Fatalf("exit code: want 2, got %d (stderr: %s)", code, stderr)
 	}
-	if !strings.Contains(stdout, `"decision":"block"`) {
-		t.Errorf("stdout deveria conter decision block, got: %s", stdout)
+	if !strings.Contains(stdout, `"hookSpecificOutput"`) || !strings.Contains(stdout, `"permissionDecision":"deny"`) {
+		t.Errorf("stdout deveria conter hookSpecificOutput/permissionDecision:deny (schema aceito pelo Claude Code — o formato antigo {\"decision\":\"block\"} é rejeitado com 'Hook JSON output validation failed'), got: %s", stdout)
 	}
 	if !strings.Contains(stdout, "trackfw commit") {
 		t.Errorf("mensagem deveria orientar para 'trackfw commit', got: %s", stdout)
 	}
 	if !strings.Contains(stderr, "CLAUDE.md") {
 		t.Errorf("mensagem deveria referenciar CLAUDE.md, got: %s", stderr)
+	}
+}
+
+// TestGitBranchGuard_Blocks_EmitsValidHookSpecificOutputSchema afirma o AC1 do ROADMAP-2026-09-09-
+// guard-emite-hookspecificoutput-e-a-razao-chega-ao-modelo-nos-3-clis.md por EXECUÇÃO real do
+// script gerado, decodificando o stdout como JSON estruturado (não substring) e conferindo os três
+// campos que o schema DOCUMENTADO do Claude Code exige em `hookSpecificOutput` para PreToolUse —
+// hookEventName, permissionDecision e permissionDecisionReason não-vazio. O formato anterior
+// (`{"decision":"block","reason":"..."}`) falhava a validação do Claude Code na raiz do objeto
+// ("(root): Invalid input"); este teste garante que a forma emitida hoje tem exatamente a forma
+// aninhada que a documentação do Claude Code descreve. NÃO afirma que o Claude Code em runtime
+// real aceitou este JSON — essa observação é separada (sessão manual, ver relatório do ML-1A) e
+// não é reproduzível em CI.
+func TestGitBranchGuard_Blocks_EmitsValidHookSpecificOutputSchema(t *testing.T) {
+	dir, script := setupGitBranchGuardFixture(t)
+	payload := `{"tool_input":{"command":"git commit -m \"x\""}}`
+
+	code, stdout, stderr := runGitBranchGuard(t, dir, script, nil, payload)
+	if code != 2 {
+		t.Fatalf("exit code: want 2, got %d (stderr: %s)", code, stderr)
+	}
+
+	var parsed struct {
+		HookSpecificOutput struct {
+			HookEventName            string `json:"hookEventName"`
+			PermissionDecision       string `json:"permissionDecision"`
+			PermissionDecisionReason string `json:"permissionDecisionReason"`
+		} `json:"hookSpecificOutput"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &parsed); err != nil {
+		t.Fatalf("stdout não é o JSON esperado: %v (stdout: %s)", err, stdout)
+	}
+	if parsed.HookSpecificOutput.HookEventName != "PreToolUse" {
+		t.Errorf("hookEventName: want PreToolUse, got %q", parsed.HookSpecificOutput.HookEventName)
+	}
+	if parsed.HookSpecificOutput.PermissionDecision != "deny" {
+		t.Errorf("permissionDecision: want deny, got %q", parsed.HookSpecificOutput.PermissionDecision)
+	}
+	if parsed.HookSpecificOutput.PermissionDecisionReason == "" {
+		t.Errorf("permissionDecisionReason: want non-empty, got empty")
 	}
 }
 
@@ -184,8 +225,8 @@ func TestGitBranchGuard_Commit_Argv_Blocks(t *testing.T) {
 	if code != 2 {
 		t.Fatalf("exit code: want 2, got %d (stderr: %s)", code, stderr)
 	}
-	if !strings.Contains(stdout, `"decision":"block"`) {
-		t.Errorf("stdout deveria conter decision block, got: %s", stdout)
+	if !strings.Contains(stdout, `"hookSpecificOutput"`) || !strings.Contains(stdout, `"permissionDecision":"deny"`) {
+		t.Errorf("stdout deveria conter hookSpecificOutput/permissionDecision:deny, got: %s", stdout)
 	}
 }
 

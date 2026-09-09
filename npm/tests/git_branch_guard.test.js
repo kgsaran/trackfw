@@ -128,7 +128,11 @@ test('git commit via stdin JSON tool_input.command bloqueia', () => {
     const payload = JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'git commit -m "x"' } })
     const { code, stdout, stderr } = runGuard(dir, scriptPath, null, payload)
     assert.strictEqual(code, 2)
-    assert.ok(stdout.includes('"decision":"block"'))
+    // Schema aceito pelo Claude Code (ROADMAP-2026-09-09-guard-emite-hookspecificoutput-e-a-razao-
+    // chega-ao-modelo-nos-3-clis.md, ML-1A): o formato antigo `{"decision":"block",...}` é
+    // rejeitado com "Hook JSON output validation failed — (root): Invalid input".
+    assert.ok(stdout.includes('"hookSpecificOutput"'))
+    assert.ok(stdout.includes('"permissionDecision":"deny"'))
     assert.ok(stdout.includes('trackfw commit'))
     assert.ok(stderr.includes('CLAUDE.md'))
   } finally {
@@ -141,7 +145,28 @@ test('git commit via argv bloqueia', () => {
   try {
     const { code, stdout, stderr } = runGuard(dir, scriptPath, ['git', 'commit', '-m', 'x'], '')
     assert.strictEqual(code, 2, `stderr: ${stderr}`)
-    assert.ok(stdout.includes('"decision":"block"'))
+    assert.ok(stdout.includes('"hookSpecificOutput"'))
+    assert.ok(stdout.includes('"permissionDecision":"deny"'))
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+// Afirma o AC1 do roadmap por execução: decodifica o stdout do script gerado como JSON
+// estruturado (não substring) e confere os três campos que o schema DOCUMENTADO do Claude Code
+// exige em hookSpecificOutput para PreToolUse. NÃO afirma que o Claude Code em runtime real
+// aceitou este JSON — essa observação é separada (sessão manual, ver relatório do ML-1A) e não é
+// reproduzível em CI.
+test('git commit bloqueado emite hookSpecificOutput com os 3 campos exigidos pelo schema documentado do Claude Code', () => {
+  const { dir, scriptPath } = setupFixture()
+  try {
+    const payload = JSON.stringify({ tool_input: { command: 'git commit -m "x"' } })
+    const { code, stdout, stderr } = runGuard(dir, scriptPath, null, payload)
+    assert.strictEqual(code, 2, `stderr: ${stderr}`)
+    const parsed = JSON.parse(stdout.trim())
+    assert.strictEqual(parsed.hookSpecificOutput.hookEventName, 'PreToolUse')
+    assert.strictEqual(parsed.hookSpecificOutput.permissionDecision, 'deny')
+    assert.ok(parsed.hookSpecificOutput.permissionDecisionReason.length > 0)
   } finally {
     fs.rmSync(dir, { recursive: true, force: true })
   }

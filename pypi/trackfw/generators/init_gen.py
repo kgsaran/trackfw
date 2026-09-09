@@ -1262,6 +1262,14 @@ _GLOBAL_CREDENTIAL_GUARD_SH = _CG_HEADER + _CG_DETECTION_CORE + _CG_GLOBAL_TAIL
 # Raw string (r"""...""") é obrigatório aqui: o corpo contém `\`` (backtick escapado dentro
 # de string bash entre aspas duplas, usado nas três mensagens REASON) que uma string Python
 # não-raw interpretaria como sequência de escape inválida.
+#
+# ATUALIZADO em 2026-09-09 (ROADMAP-2026-09-09-guard-emite-hookspecificoutput-e-a-razao-chega-ao-
+# modelo-nos-3-clis.md, ML-1A): o JSON de stdout passou de `{"decision":"block","reason":"..."}`
+# para `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny",
+# "permissionDecisionReason":"..."}}` — o formato antigo deixou de validar no Claude Code
+# (`Hook JSON output validation failed — (root): Invalid input`, verificado por execução). Ver
+# doc comment equivalente em internal/generators/scaffold.go para o detalhe completo (inclusive
+# a nota sobre fontes de terceiros que afirmam, incorretamente, que o formato antigo funciona).
 _GIT_BRANCH_GUARD_SH = r"""#!/usr/bin/env bash
 # trackfw git branch guard — bloqueia git commit/push/checkout -b/branch/worktree add -b
 # brutos por subagente
@@ -1820,7 +1828,7 @@ case "$SUBCOMMAND" in
     ;;
 esac
 
-printf '{"decision":"block","reason":"%s"}\n' "$REASON"
+printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"%s"}}\n' "$REASON"
 echo "$REASON" >&2
 exit 2
 """
