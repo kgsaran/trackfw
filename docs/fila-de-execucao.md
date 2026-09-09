@@ -25,13 +25,13 @@
 | **3** | `serve` interpola host em string de shell → injeção de comando | 🔴 segurança | `REQ-2026-09-01-serve-interpola-host-...` | — | ⬜ |
 | **4** | Node usa `chmodSync` no caminho em vez de `fchmodSync` no descritor (TOCTOU) | 🔴 segurança | `REQ-2026-09-01-cli-node-usa-chmodsync-...` | — | ⬜ |
 | **5** | `validate_unfiltered` + `validate --json` do Python (mesma função) | issue | `REQ-2026-09-05-validate-unfiltered-...` + `REQ-2026-08-20-validate-json-...` | **#261** | ⬜ |
-| **6** | CI distingue "suíte não carregou" de "teste reprovou" + ratchet por nome | issue | ADR 🔴 **Proposed** (não aceita) + `REQ-2026-09-06-o-ci-de-windows-nao-bloqueia-...` 🔴 **órfã** · **bloqueado por `ML-R2`** | **#274 · #275** | ⬜ |
+| **6** | CI distingue "suíte não carregou" de "teste reprovou" + ratchet por nome | issue | ADR 🔴 **Proposed** (não aceita) + `REQ-2026-09-06-o-ci-de-windows-nao-bloqueia-...` 🔴 **órfã** · **bloqueado por `ML-R2a`+`ML-R2b`** | **#274 · #275** | ⬜ |
 | **7** | `status` do Python conta REQ por listagem flat | issue | `REQ-2026-08-30-consumidores-que-nao-conhecem-by-agent-...` | **#268** | ⬜ |
 | **8** | Gate de palavra-chave: evento `edited` + contrato para exemplo citado | issue | `REQ-2026-09-05-gate-de-palavra-chave-...` | **#258** | ⬜ |
 | **9** | `branch_has_wip_roadmap` erra nas duas direções | issue · **decisão** | `REQ-2026-08-20-branch-has-wip-roadmap-...` | **#273** | ⬜ |
 | **10** | Corpus do barrier-contract acoplado à governança do repo | issue · dívida | `REQ-2026-09-03-check-gates-falsify-...` | **#277** | ⬜ |
 | **11** | Windows: hooks nativos (`.ps1`) — desenho já medido | interno | `ADR-2026-09-05-hook-de-windows-roda-no-windows-...` + REQ | — | ⬜ |
-| **12** | Windows: falhas restantes — **número desatualizado**, ver correção abaixo | interno | `ML-R2` da `REQ-2026-09-03-as-217-falhas-reais-...` | — | ⬜ |
+| **12** | Windows: falhas restantes — **número desatualizado**, ver correção abaixo | interno | `ML-R2b` da `REQ-2026-09-03-as-217-falhas-reais-...` | — | ⬜ |
 | **13** | Windows: jornada de instalação (README, `install.sh`, ARM64) | interno | `REQ-2026-09-05-a-instalacao-em-windows-...` | — | ⬜ |
 | **14** | Guard de `git add -A` (staging com escopo implícito) | interno | `ADR-2026-09-05-staging-com-escopo-implicito-...` + REQ | — | ⬜ |
 
@@ -91,7 +91,7 @@ legítimas, quase todas vindas de issues externos, mas nenhuma delas era esta. *
 
 | # | o quê | artefato |
 |---|---|---|
-| — | Triagem dos **512** por causa (pré-requisito do ratchet de CI em Windows) | `ML-R2`, REQ das 217 falhas |
+| — | Triagem dos **512** por causa (pré-requisito do ratchet de CI em Windows) | `ML-R2b`, REQ das 217 falhas |
 | — | Guard `default:` com gramática só-POSIX (segurança, contido) | `ML-R3`, REQ das 217 falhas |
 | — | Os 5 grupos restantes da triagem dos 12 do CI | REQ das 217 falhas |
 | — | `validate` imprime usage / suja o `--json` (#290) | roadmap próprio, em `backlog` |
@@ -131,11 +131,11 @@ mesma família em dois dias (as outras: issue #290 e o item 1). O padrão é con
 artefato dá a sensação de ter encerrado o assunto.**
 
 🔴 **E ele está bloqueado por dependência real, não por prioridade:** o item 6 entrega *ratchet por
-nome*, e um ratchet precisa da **lista de nomes triada por causa**. Essa lista é o `ML-R2` (triagem
+nome*, e um ratchet precisa da **lista de nomes triada por causa**. Essa lista é o `ML-R2b` (triagem
 dos 512). Sem ele, o ratchet nasce com 512 entradas — que é `continue-on-error` com passos extras, e
 foi exatamente a crítica do autor do issue #275.
 
-**Ordem correta:** `ML-R2` → item 6. Despachar o item 6 antes seria entregar o mecanismo sem o dado
+**Ordem correta:** `ML-R2b` → item 6. Despachar o item 6 antes seria entregar o mecanismo sem o dado
 que o torna útil.
 
 ### Item 12 — "39 falhas restantes" está desatualizado
@@ -149,7 +149,7 @@ hoje, medido                 ~26 no CI (15 Go + 11 Node, run da main)
 O número **subiu** porque passamos a medir uma superfície que nunca havia sido exercitada — **subir
 é acerto, não regressão**. Mas a linha da fila dizia 39 e induzia a estimativa errada.
 
-**Substituído pelo `ML-R2`**, que é o pré-requisito real: triagem por causa. A campanha anterior
+**Substituído pelo `ML-R2b`**, que é o pré-requisito real: triagem por causa. A campanha anterior
 colapsou **246 sintomas em 6 causas**; sem a mesma triagem, 512 é número e não escopo.
 
 ### Próximo depois do item 1

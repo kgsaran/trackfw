@@ -1438,8 +1438,66 @@ ML**, por causa distinta da corrigida aqui:
 **Sem commit/push** — fora da minha autoridade. ML-R1 pronto para revisão `hades-tf` e depois
 auditoria do `trackfw_architect`; nenhuma pendência técnica aberta desta correção.
 
-### ML-R2 — Triagem dos 512 do censo de Windows por causa
-**Status:** ⬜ Pendente · **Agente:** `ares-tf` · **pré-requisito do ratchet de CI**
+### ML-R2a — O discriminante do `/usr/bin/git`: a maior causa é defeito ou é artefato desta VM?
+**Status:** 🔄 Em andamento · **Agente:** `ares-tf` · 🔴 **bloqueia o ML-R2b**
+
+O ML-2B atribuiu **135 das 275 reprovações únicas dos chunks 0-5 (49%)** a UMA causa: `git` não
+resolvível sob o `BASE_PATH="$RUNTIME_BIN:/usr/bin:/bin"` que `check-release-tag-parity.sh:112` e
+`check-ship-force-parity.sh:115` constroem. E o próprio ML-2B declarou a ressalva que invalida o uso
+desse número:
+
+> *"medido nesta VM específica, cujo layout de Git (MSYS2 `clangarm64`, sem `/usr/bin/git`) pode não
+> ser representativo de um runner de CI Windows padrão"*
+
+🔴 **A ressalva bloqueia o ML-R2b inteiro.** Se metade da lista existe só por causa do layout desta
+VM, o ratchet por nome nasce calibrado contra ficção e o teto nunca desce — que é exatamente o
+defeito que o issue #275 apontou.
+
+#### Medição já feita pelo arquiteto (2026-09-09) — a ressalva parece FALSA
+
+`ssh powershell-vm`, dentro de `C:\Program Files\Git\bin\bash.exe` (o bash que o `shell: bash` do
+GitHub Actions usa em `windows-latest`, **não** um MSYS2 avulso):
+
+```
+BASH_VERSION=5.3.15(1)-release
+uname=MINGW64_NT-10.0-26200-ARM64 ... Msys
+ls -l /usr/bin/git /bin/git   → No such file or directory  (os dois)
+command -v git                → /clangarm64/bin/git
+git --version                 → git version 2.55.0.windows.3
+PATH="/usr/bin:/bin" command -v git → git NAO resolvivel
+```
+
+**`git version 2.55.0.windows.3` é Git for Windows**, não MSYS2 avulso; `/clangarm64/bin` é o prefixo
+mingw do Git for Windows **em ARM64** (o análogo de `/mingw64/bin` no x64). Em nenhum dos dois
+`git.exe` mora em `/usr/bin`. Ou seja: a hipótese que emerge é que `BASE_PATH=".../usr/bin:/bin"` é
+**defeito de script de gate em qualquer Git for Windows**, e não peculiaridade desta VM.
+
+🔴 **Isto ainda NÃO está provado para x64.** Esta VM é ARM64; o runner é x64. É a única coisa que
+falta, e é barata.
+
+**Ações:**
+1. Medir em `windows-latest` (x64) do GitHub Actions, num workflow descartável ou num step
+   temporário, sob `shell: bash`: `ls -l /usr/bin/git /bin/git; command -v git;
+   PATH=/usr/bin:/bin command -v git`. **Colar a saída crua no roadmap.**
+2. Conforme o resultado, escrever qual das duas frases é verdadeira, com a medição ao lado:
+   - **(A)** a causa é defeito real de `scripts/`, reproduz no runner ⇒ sai da lista do ratchet e
+     vira correção de 2 linhas em 2 scripts (ML próprio, **não** REQ nova — mesma causa);
+   - **(B)** a causa é artefato de ambiente ⇒ **~250 linhas saem do censo** e o ML-R2b começa com
+     ~260, não 512.
+3. Recontar quantas linhas de FAIL do censo pendem dessa causa — nos 8 logs, **por rótulo**, não por
+   estimativa. Os logs já estão fora da VM (ver "Insumo" no ML-R2b).
+
+**Critérios de aceite:**
+- [ ] saída crua de `windows-latest` x64 colada no roadmap (não parafraseada)
+- [ ] (A) ou (B) declarada por escrito, com a medição ao lado
+- [ ] nº exato de linhas de FAIL atribuíveis à causa, contado nos logs, com o comando usado escrito
+- [ ] 🔴 nenhuma correção neste ML — é medição
+
+**Fora deste ML:** corrigir o `BASE_PATH`. A correção é ML próprio, depois de saber (A) ou (B).
+
+### ML-R2b — Triagem do censo de Windows por causa
+**Status:** ⬜ Pendente · **Agente:** `ares-tf` · **pré-requisito do ratchet de CI** ·
+**depende do ML-R2a**
 
 O ML-2B da REQ dos gates produziu o primeiro censo real: **440 OK · 512 FAIL** no Windows, com modo de
 enumeração **reproduzível** (`TRACKFW_FALSIFY_ENUMERATE=1`).
@@ -1448,13 +1506,35 @@ enumeração **reproduzível** (`TRACKFW_FALSIFY_ENUMERATE=1`).
 mesma triagem, qualquer estimativa aqui é chute, e um ratchet por nome com 512 entradas não é ratchet,
 é `continue-on-error` com passos extras.
 
+**Insumo (a VM não é mais cópia única).** Os 8 logs por-chunk foram puxados da VM pelo arquiteto em
+2026-09-09 e conferidos contra a tabela publicada — `grep -c '^FAIL'` dá
+`110/25/5/113/5/17/234/3 = 512`, idêntico à contagem do ML-2B. Cópia em
+`/tmp/trackfw-win-census/chunk_N.enum.log` + `manifest.txt`; original em
+`C:\Users\Lab\falsify-chunks\` na VM.
+
 **Entregável:** tabela causa → nº de cenários → produto ou teste → sítio. O teste de agrupamento é o
 mesmo da campanha: *"se eu corrigir esta causa, exatamente estas falhas fecham — e nenhuma outra."*
+
+🔴 **Cada linha das 512 tem de cair em exatamente um grupo, e a soma dos grupos tem de dar 512.**
+Grupo "residual/não diagnosticado" é legítimo e esperado — grupo *implícito* não é. Se sobrar linha
+sem grupo, ela é o grupo residual e entra na tabela com esse nome.
+
+**Ponto de partida já escrito** (não refazer, só confirmar ou refutar contra os logs): a seção
+"Lista enumerada do Windows (VM, 2026-09-08)" de
+`docs/roadmaps/done/ROADMAP-2026-09-07-gates-rodam-no-windows-resolucao-de-interpretador-e-binario.md`
+já nomeia 7 categorias — `git` não resolvível, separador de caminho/MSYS, dedup cego a `\`,
+mojibake/encoding (14), cluster `setup-sXX-baseline` (24), locale/i18n do Node, e os residuais.
 
 **Fora deste ML:** corrigir qualquer uma delas. É triagem, não correção.
 
 **Desbloqueia:** a decisão de ligar o `parity` em Windows no CI (ML-3A da
 `ROADMAP-2026-09-07-gates-rodam-no-windows-...`, hoje decidida como "não ligar até haver triagem").
+
+**Critérios de aceite:**
+- [ ] tabela causa → nº → produto/gate → sítio, com a soma batendo em 512 (ou no nº pós-R2a)
+- [ ] o teste de agrupamento aplicado e escrito por grupo
+- [ ] comando de contagem escrito para cada grupo (nada de "aproximadamente")
+- [ ] as 7 categorias herdadas confirmadas ou refutadas, uma a uma
 
 ### ML-R3 — O guard de travessia do ramo `default:` fala uma gramática só
 **Status:** ⬜ Pendente · **Agente:** `apolo-tf` · 🔴 **segurança (contido)**

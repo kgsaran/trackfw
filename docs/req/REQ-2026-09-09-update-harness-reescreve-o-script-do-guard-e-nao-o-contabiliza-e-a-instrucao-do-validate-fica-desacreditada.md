@@ -3,7 +3,7 @@ status: Open
 date: 2026-09-09
 author: ""
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-09-o-alvo-do-manifesto-e-dono-do-caminho-do-script-do-guard.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-09-o-alvo-do-manifesto-e-dono-do-caminho-do-script-do-guard.md"
 ---
 
 # REQ: update harness reescreve o script do guard e nao o contabiliza, e a instrucao do validate fica desacreditada

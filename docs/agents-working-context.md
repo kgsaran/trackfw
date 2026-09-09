@@ -34587,3 +34587,51 @@ foi tocado) = **1031** OK, acima do piso `≥1022` do handoff. `go build`/`go ve
 Ver detalhe completo no roadmap, seção ML-2A.
 
 Sem commit/push — fora da minha autoridade (trackfw_architect audita e commita).
+
+## 2026-09-09 — Zeus (Arquiteto) — abertura do ML-R2: a ressalva do ML-2B medida antes de despachar
+
+Início da frente de triagem do censo de Windows (512 FAIL). **Antes de despachar, medi a ressalva que
+o próprio ML-2B tinha declarado** — e ela parece falsa, o que muda a forma do ML.
+
+**O que estava escrito.** O ML-2B atribuiu 135 das 275 reprovações únicas dos chunks 0-5 (49%) a uma
+única causa: `git` não resolvível sob `BASE_PATH="$RUNTIME_BIN:/usr/bin:/bin"`
+(`check-release-tag-parity.sh:112`, `check-ship-force-parity.sh:115`). E ressalvou: *"medido nesta VM
+específica, cujo layout de Git (MSYS2 `clangarm64`, sem `/usr/bin/git`) pode não ser representativo de
+um runner de CI Windows padrão"*.
+
+🔴 **Essa ressalva bloqueia a triagem inteira.** Se metade da lista existe só pelo layout desta VM, o
+ratchet por nome nasce calibrado contra ficção — o defeito do issue #275.
+
+**Medido por mim, na VM, dentro do bash do Git for Windows** (`C:\Program Files\Git\bin\bash.exe`, o
+mesmo que `shell: bash` usa em `windows-latest`):
+
+```
+BASH_VERSION=5.3.15(1)-release      uname=MINGW64_NT-...-ARM64 ... Msys
+ls -l /usr/bin/git /bin/git   → No such file or directory  (os dois)
+command -v git                → /clangarm64/bin/git
+git --version                 → git version 2.55.0.windows.3
+PATH="/usr/bin:/bin" command -v git → NAO resolvivel
+```
+
+`git version 2.55.0.**windows**.3` é Git for Windows, não MSYS2 avulso; `/clangarm64/bin` é o prefixo
+mingw do GfW **em ARM64**, análogo de `/mingw64/bin` no x64. Em nenhum dos dois `git.exe` mora em
+`/usr/bin`. Hipótese que emerge: `BASE_PATH` com `/usr/bin:/bin` é **defeito de script de gate em
+qualquer Git for Windows**, não peculiaridade da VM. **Falta provar em x64** — é a única lacuna, e é
+barata (um step em `windows-latest`).
+
+**Consequência no plano:** `ML-R2` virou **`ML-R2a`** (o discriminante, bloqueante) + **`ML-R2b`** (a
+triagem). Referências em `docs/fila-de-execucao.md` atualizadas.
+
+**Insumo tirado da cópia única:** os 8 logs por-chunk estavam só na VM. Puxados para
+`/tmp/trackfw-win-census/` e conferidos contra a tabela publicada — `grep -c '^FAIL'` dá
+`110/25/5/113/5/17/234/3 = 512`, idêntico ao ML-2B (contagem independente, não a mesma medição
+repetida).
+
+**Higiene antes de abrir a frente:** os 2 roadmaps da 7.5.x movidos `wip → done`; branch
+`fix/fechar-os-grupos-de-falha-de-windows-por-causa-raiz` recriada (a antiga estava integrada via
+squash nos PRs #267/#269/#270 e foi apagada).
+
+🔴 **Achado lateral, não perseguido agora:** `trackfw branch prune` classificou essa branch como
+"keep — pending work" **estando ela integrada**. A heurística `diverg` falso-positiva quando a main
+**reescreve depois** os arquivos que a branch tocou. O `CLAUDE.md` global cobre o caso no Passo 3-bis
+(`gh pr list --head`), o `prune` não. Candidato a REQ própria — causa distinta de tudo em curso.
