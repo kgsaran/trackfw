@@ -4,7 +4,20 @@
 
 ---
 
-## Sessão 2026-09-09 — apolo-tf (Backend) — ML-1A: O script vira alvo de primeira classe (EM ANDAMENTO)
+## Sessão 2026-09-09 — apolo-tf (Backend) — ML-1A: O script vira alvo de primeira classe (CONCLUÍDO)
+
+**ENCERRAMENTO:** Gate verde. MAKE_RC=0, 0 FAIL, 1033 OK. `trackfw validate`: 0 erros, 174 warnings
+pré-existentes. Roadmap ML-1A marcado ✅ Concluído. Aguarda auditoria e commit do `trackfw_architect`.
+
+**Descoberta pós-implementação:** 3 fixtures em `check-gates-falsify.sh` (cenários 68 dup-gbg, 68
+dup-cg, 69) dependiam do side-effect pre-loop para criar `.trackfw/scripts/`. Após remover o
+pre-loop, essas fixtures falhavam porque os scripts não existiam mais. Corrigido adicionando os
+alvos `git-branch-guard-script` / `credential-guard-script` nas chamadas de `update harness` dentro
+dessas fixtures (análogo: fixture deve declarar os mesmos alvos que usa).
+
+---
+
+## Sessão 2026-09-09 — apolo-tf (Backend) — ML-1A: O script vira alvo de primeira classe (INICIADO)
 
 Branch `fix/o-alvo-do-manifesto-e-dono-do-caminho-do-script-do-guard`, ML-1A do roadmap
 `docs/roadmaps/wip/ROADMAP-2026-09-09-o-alvo-do-manifesto-e-dono-do-caminho-do-script-do-guard.md`.

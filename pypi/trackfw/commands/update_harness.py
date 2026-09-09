@@ -50,8 +50,8 @@ from trackfw.integrations.catalog import global_group_path, load_catalog, plan_d
 from trackfw.integrations.manager import IntegrationError, IntegrationManager
 from trackfw.generators.hooks import _merge_claude_hook_array, _merge_simple_command_array, _merge_copilot_hook_array
 from trackfw.generators.init_gen import (
-    generate_global_credential_guard_script,
-    generate_global_git_branch_guard_script,
+    _GIT_BRANCH_GUARD_SH,
+    _GLOBAL_CREDENTIAL_GUARD_SH,
 )
 from trackfw.homedir import home_dir
 
@@ -131,7 +131,11 @@ def declared_target_ids() -> list[str]:
     # internal/generators/update.go:buildHarnessTargetIDs for the full
     # rationale (ROADMAP-2026-08-06 Wave 2/ML-2B, ML-2C, ML-2D, ML-2E,
     # ML-2F; ROADMAP-2026-08-17 Wave 2/ML-2A for the git-branch-guard ids).
-    ids = ["claude-skill", "claude-credential-guard", "claude-git-branch-guard"]
+    # Script targets precede every wiring target that references them so that
+    # even a --targets-filtered run that only requests a wiring target still
+    # finds the script already in place from a prior full run.
+    ids = ["claude-skill", "git-branch-guard-script", "credential-guard-script",
+           "claude-credential-guard", "claude-git-branch-guard"]
     for tool in _CATALOG_TARGET_ORDER:
         if tool == "codex":
             ids.append("codex-credential-guard")
@@ -184,6 +188,84 @@ def _resolve_targets(raw: str | None) -> list[str]:
     # consistent with "targets follows the declared target order" (contract).
     selected = set(requested)
     return [target_id for target_id in declared if target_id in selected]
+
+
+def _git_branch_guard_script_result(home: str, dry_run: bool) -> dict[str, Any]:
+    """Evaluates (and, unless dry_run, applies) the global git-branch-guard
+    shell script at ~/.trackfw/scripts/trackfw-git-branch-guard.sh.
+
+    This result function OWNS the script file. It compares content before
+    writing so that an already up-to-date script reports "skipped" and its
+    mtime is left unchanged (REQ-2026-09-09 AC3). Creation does not require
+    install_missing because ~/.trackfw/scripts/ is 100% trackfw-owned.
+    """
+    script_path = os.path.join(home, ".trackfw", "scripts", "trackfw-git-branch-guard.sh")
+    display_path = _tildeify(home, script_path)
+    desired = _GIT_BRANCH_GUARD_SH.lstrip("\n")
+    try:
+        existing = Path(script_path).read_text(encoding="utf-8")
+    except FileNotFoundError:
+        existing = None
+    except OSError as error:
+        return {"id": "git-branch-guard-script", "state": STATE_FAILED, "path": display_path, "message": str(error)}
+
+    if existing is not None and existing == desired:
+        # Content identical — skip write, repair execute bit without touching mtime.
+        try:
+            os.chmod(script_path, 0o755)
+        except OSError:
+            pass
+        return {"id": "git-branch-guard-script", "state": STATE_SKIPPED, "path": display_path}
+
+    # Missing or outdated — write.
+    if dry_run:
+        return {"id": "git-branch-guard-script", "state": STATE_UPDATED, "path": display_path}
+    try:
+        Path(script_path).parent.mkdir(parents=True, exist_ok=True)
+        with open(script_path, "w", encoding="utf-8", newline="\n") as f:
+            f.write(desired)
+        os.chmod(script_path, 0o755)
+    except OSError as error:
+        return {"id": "git-branch-guard-script", "state": STATE_FAILED, "path": display_path, "message": str(error)}
+    return {"id": "git-branch-guard-script", "state": STATE_UPDATED, "path": display_path}
+
+
+def _credential_guard_script_result(home: str, dry_run: bool) -> dict[str, Any]:
+    """Evaluates (and, unless dry_run, applies) the global credential-guard
+    shell script at ~/.trackfw/scripts/trackfw-credential-guard.sh.
+
+    Mirrors _git_branch_guard_script_result — same ownership model, same
+    idempotency contract, same absence of install_missing gate.
+    """
+    script_path = os.path.join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+    display_path = _tildeify(home, script_path)
+    desired = _GLOBAL_CREDENTIAL_GUARD_SH.lstrip("\n")
+    try:
+        existing = Path(script_path).read_text(encoding="utf-8")
+    except FileNotFoundError:
+        existing = None
+    except OSError as error:
+        return {"id": "credential-guard-script", "state": STATE_FAILED, "path": display_path, "message": str(error)}
+
+    if existing is not None and existing == desired:
+        # Content identical — skip write, repair execute bit without touching mtime.
+        try:
+            os.chmod(script_path, 0o755)
+        except OSError:
+            pass
+        return {"id": "credential-guard-script", "state": STATE_SKIPPED, "path": display_path}
+
+    # Missing or outdated — write.
+    if dry_run:
+        return {"id": "credential-guard-script", "state": STATE_UPDATED, "path": display_path}
+    try:
+        Path(script_path).parent.mkdir(parents=True, exist_ok=True)
+        with open(script_path, "w", encoding="utf-8", newline="\n") as f:
+            f.write(desired)
+        os.chmod(script_path, 0o755)
+    except OSError as error:
+        return {"id": "credential-guard-script", "state": STATE_FAILED, "path": display_path, "message": str(error)}
+    return {"id": "credential-guard-script", "state": STATE_UPDATED, "path": display_path}
 
 
 def _legacy_skill_result(home: str, dry_run: bool, install_missing: bool) -> dict[str, Any]:
@@ -1076,20 +1158,11 @@ def _run(args: argparse.Namespace) -> None:
         print(f"update harness: identidade invalida: {error}")
         raise SystemExit(2) from error
 
-    # The per-CLI *-credential-guard targets below only wire hook entries
-    # that point at ~/.trackfw/scripts/trackfw-credential-guard.sh — none of
-    # them write the script itself (ADR-2026-08-06, decision #2/#3). Without
-    # this call the wiring is installed but every hook invocation fails with
-    # "No such file or directory" because the script never exists.
-    if not args.dry_run:
-        generate_global_credential_guard_script(home)
-        # ML-3C (ROADMAP-2026-08-14): mirrors Go's UpdateHarness
-        # (internal/generators/update.go, GenerateGlobalGitBranchGuardScript call next to
-        # GenerateGlobalCredentialGuardScript). Only writes the script itself -- no
-        # per-CLI *-git-branch-guard target/hook wiring exists yet in any of the 3 stacks
-        # (tracked separately; project-scope wiring is done in generators/hooks.py via
-        # inject_hooks_detected).
-        generate_global_git_branch_guard_script(home)
+    # NOTE: the script files are now first-class targets ("git-branch-guard-script",
+    # "credential-guard-script") positioned before the wiring targets in
+    # declared_target_ids(). The pre-loop unconditional writes that used to live here
+    # have been removed — the result functions handle creation and idempotency.
+    # (REQ-2026-09-09, ML-1A)
 
     target_ids = _resolve_targets(args.targets)
     manager = IntegrationManager(project_root=os.getcwd(), home_dir=home)
@@ -1098,6 +1171,12 @@ def _run(args: argparse.Namespace) -> None:
     for target_id in target_ids:
         if target_id == "claude-skill":
             targets.append(_legacy_skill_result(home, args.dry_run, args.install_missing))
+            continue
+        if target_id == "git-branch-guard-script":
+            targets.append(_git_branch_guard_script_result(home, args.dry_run))
+            continue
+        if target_id == "credential-guard-script":
+            targets.append(_credential_guard_script_result(home, args.dry_run))
             continue
         if target_id == "claude-credential-guard":
             targets.append(_credential_guard_claude_result(home, args.dry_run, args.install_missing))

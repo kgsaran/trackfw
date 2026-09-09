@@ -10,6 +10,7 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/kgsaran/trackfw/internal/config"
 	"github.com/kgsaran/trackfw/internal/integrations"
@@ -168,6 +169,11 @@ func TestUpdateHarnessRunsWithoutProjectOrTrackfwYAML(t *testing.T) {
 }
 
 func TestUpdateHarnessEmptyHomeReportsAllMissingAndDoesNotFail(t *testing.T) {
+	// ML-1A (REQ-2026-09-09): the two script targets ("git-branch-guard-script",
+	// "credential-guard-script") do NOT require --install-missing — they always
+	// write on first run because ~/.trackfw/scripts/ is 100% trackfw-owned.
+	// On an empty home they report "updated", not "missing".
+	const scriptTargets = 2 // git-branch-guard-script + credential-guard-script
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -176,11 +182,12 @@ func TestUpdateHarnessEmptyHomeReportsAllMissingAndDoesNotFail(t *testing.T) {
 		t.Fatalf("UpdateHarness() erro inesperado: %v", err)
 	}
 	summary := report.Summary()
-	if summary.Missing != len(HarnessTargetIDs) {
-		t.Fatalf("summary.Missing = %d, want %d (every target missing on an empty harness): %+v", summary.Missing, len(HarnessTargetIDs), report.Targets)
+	wantMissing := len(HarnessTargetIDs) - scriptTargets
+	if summary.Missing != wantMissing {
+		t.Fatalf("summary.Missing = %d, want %d (wiring targets missing; script targets write unconditionally): %+v", summary.Missing, wantMissing, report.Targets)
 	}
-	if summary.Updated != 0 || summary.Skipped != 0 || summary.Failed != 0 {
-		t.Fatalf("expected only missing targets on an empty harness, got %+v", summary)
+	if summary.Updated != scriptTargets || summary.Skipped != 0 || summary.Failed != 0 {
+		t.Fatalf("expected only wiring targets missing + %d script targets updated on an empty harness, got %+v", scriptTargets, summary)
 	}
 }
 
@@ -475,6 +482,252 @@ func TestUpdateHarnessClaudeSkillUpdatesStaleContentAndSkipsCurrent(t *testing.T
 	}
 	if report.Targets[0].State != TargetSkipped {
 		t.Fatalf("state = %q, want skipped (already current)", report.Targets[0].State)
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// git-branch-guard-script target (REQ-2026-09-09 ML-1A)
+// ────────────────────────────────────────────────────────────────────────────
+
+// TestUpdateHarnessGitBranchGuardScriptMissingWritesAndReportsUpdated asserts
+// ML-1A conclusion: a missing script is written and reported as "updated"
+// without requiring --install-missing (scripts are 100% trackfw-owned).
+func TestUpdateHarnessGitBranchGuardScriptMissingWritesAndReportsUpdated(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	report, err := UpdateHarness(UpdateOptions{Targets: []string{"git-branch-guard-script"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Targets) != 1 || report.Targets[0].ID != "git-branch-guard-script" {
+		t.Fatalf("unexpected targets: %+v", report.Targets)
+	}
+	if report.Targets[0].State != TargetUpdated {
+		t.Fatalf("state = %q, want updated (script was absent)", report.Targets[0].State)
+	}
+	scriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-git-branch-guard.sh")
+	data, err := os.ReadFile(scriptPath)
+	if err != nil {
+		t.Fatalf("script was not written: %v", err)
+	}
+	if string(data) != gitBranchGuardScript {
+		t.Fatal("written content does not match gitBranchGuardScript")
+	}
+}
+
+// TestUpdateHarnessGitBranchGuardScriptOutdatedWritesAndReportsUpdated asserts
+// ML-1A conclusion: outdated content (different from gitBranchGuardScript)
+// triggers a write and the target reports "updated".
+func TestUpdateHarnessGitBranchGuardScriptOutdatedWritesAndReportsUpdated(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	scriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-git-branch-guard.sh")
+	if err := os.MkdirAll(filepath.Dir(scriptPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(scriptPath, []byte("# stale version\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := UpdateHarness(UpdateOptions{Targets: []string{"git-branch-guard-script"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Targets[0].State != TargetUpdated {
+		t.Fatalf("state = %q, want updated (stale content)", report.Targets[0].State)
+	}
+	data, _ := os.ReadFile(scriptPath)
+	if string(data) != gitBranchGuardScript {
+		t.Fatal("outdated git-branch-guard-script content was not rewritten to the current version")
+	}
+}
+
+// TestUpdateHarnessGitBranchGuardScriptIdenticalReportsSkippedAndMtimeUnchanged
+// asserts ML-1A conclusion: when the script content is already identical,
+// the target reports "skipped" AND the file's mtime is left unchanged.
+func TestUpdateHarnessGitBranchGuardScriptIdenticalReportsSkippedAndMtimeUnchanged(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	scriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-git-branch-guard.sh")
+	if err := os.MkdirAll(filepath.Dir(scriptPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(scriptPath, []byte(gitBranchGuardScript), 0755); err != nil {
+		t.Fatal(err)
+	}
+	// Pin mtime to a known-old value so a rewrite is detectable regardless of clock granularity.
+	ancientTime := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+	if err := os.Chtimes(scriptPath, ancientTime, ancientTime); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := UpdateHarness(UpdateOptions{Targets: []string{"git-branch-guard-script"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Targets[0].State != TargetSkipped {
+		t.Fatalf("state = %q, want skipped (content already current)", report.Targets[0].State)
+	}
+	info, err := os.Stat(scriptPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !info.ModTime().Equal(ancientTime) {
+		t.Fatalf("mtime changed on skipped target: got %v, want %v (file was rewritten unnecessarily)", info.ModTime(), ancientTime)
+	}
+}
+
+// TestUpdateHarnessGitBranchGuardScriptDryRunDoesNotWrite asserts ML-1A
+// conclusion: dry-run reports "updated" but writes nothing to disk.
+func TestUpdateHarnessGitBranchGuardScriptDryRunDoesNotWrite(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	report, err := UpdateHarness(UpdateOptions{DryRun: true, Targets: []string{"git-branch-guard-script"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Targets[0].State != TargetUpdated {
+		t.Fatalf("state = %q, want updated in dry-run mode", report.Targets[0].State)
+	}
+	if !report.DryRun {
+		t.Fatal("report.DryRun must be true")
+	}
+	scriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-git-branch-guard.sh")
+	if _, err := os.Stat(scriptPath); !os.IsNotExist(err) {
+		t.Fatal("dry-run must not write the script to disk")
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// credential-guard-script target (REQ-2026-09-09 ML-1A)
+// ────────────────────────────────────────────────────────────────────────────
+
+// TestUpdateHarnessCredentialGuardScriptMissingWritesAndReportsUpdated asserts
+// ML-1A conclusion: a missing credential-guard script is written and reported
+// as "updated" without requiring --install-missing.
+func TestUpdateHarnessCredentialGuardScriptMissingWritesAndReportsUpdated(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	report, err := UpdateHarness(UpdateOptions{Targets: []string{"credential-guard-script"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Targets) != 1 || report.Targets[0].ID != "credential-guard-script" {
+		t.Fatalf("unexpected targets: %+v", report.Targets)
+	}
+	if report.Targets[0].State != TargetUpdated {
+		t.Fatalf("state = %q, want updated (script was absent)", report.Targets[0].State)
+	}
+	scriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+	data, err := os.ReadFile(scriptPath)
+	if err != nil {
+		t.Fatalf("script was not written: %v", err)
+	}
+	if string(data) != globalCredentialGuardScript {
+		t.Fatal("written content does not match globalCredentialGuardScript")
+	}
+}
+
+// TestUpdateHarnessCredentialGuardScriptOutdatedWritesAndReportsUpdated asserts
+// ML-1A conclusion: outdated credential-guard content triggers a write and
+// the target reports "updated".
+func TestUpdateHarnessCredentialGuardScriptOutdatedWritesAndReportsUpdated(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	scriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+	if err := os.MkdirAll(filepath.Dir(scriptPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(scriptPath, []byte("# stale credential guard\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := UpdateHarness(UpdateOptions{Targets: []string{"credential-guard-script"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Targets[0].State != TargetUpdated {
+		t.Fatalf("state = %q, want updated (stale content)", report.Targets[0].State)
+	}
+	data, _ := os.ReadFile(scriptPath)
+	if string(data) != globalCredentialGuardScript {
+		t.Fatal("outdated credential-guard-script content was not rewritten to the current version")
+	}
+}
+
+// TestUpdateHarnessCredentialGuardScriptIdenticalReportsSkippedAndMtimeUnchanged
+// asserts ML-1A conclusion: when the credential-guard script content is already
+// identical, the target reports "skipped" AND the file's mtime is left unchanged.
+func TestUpdateHarnessCredentialGuardScriptIdenticalReportsSkippedAndMtimeUnchanged(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	scriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+	if err := os.MkdirAll(filepath.Dir(scriptPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(scriptPath, []byte(globalCredentialGuardScript), 0755); err != nil {
+		t.Fatal(err)
+	}
+	ancientTime := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+	if err := os.Chtimes(scriptPath, ancientTime, ancientTime); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := UpdateHarness(UpdateOptions{Targets: []string{"credential-guard-script"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Targets[0].State != TargetSkipped {
+		t.Fatalf("state = %q, want skipped (content already current)", report.Targets[0].State)
+	}
+	info, err := os.Stat(scriptPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !info.ModTime().Equal(ancientTime) {
+		t.Fatalf("mtime changed on skipped target: got %v, want %v (file was rewritten unnecessarily)", info.ModTime(), ancientTime)
+	}
+}
+
+// TestUpdateHarnessCredentialGuardScriptDryRunDoesNotWrite asserts ML-1A
+// conclusion: dry-run reports "updated" but writes nothing for credential-guard-script.
+func TestUpdateHarnessCredentialGuardScriptDryRunDoesNotWrite(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	report, err := UpdateHarness(UpdateOptions{DryRun: true, Targets: []string{"credential-guard-script"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Targets[0].State != TargetUpdated {
+		t.Fatalf("state = %q, want updated in dry-run mode", report.Targets[0].State)
+	}
+	scriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+	if _, err := os.Stat(scriptPath); !os.IsNotExist(err) {
+		t.Fatal("dry-run must not write the script to disk")
+	}
+}
+
+// TestUpdateHarnessTargetCountMatchesHarnessTargetIDs asserts ML-1A
+// conclusion: a no-filter run produces exactly len(HarnessTargetIDs) target
+// entries, so no declared target can silently drop from the report.
+func TestUpdateHarnessTargetCountMatchesHarnessTargetIDs(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	report, err := UpdateHarness(UpdateOptions{DryRun: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Targets) != len(HarnessTargetIDs) {
+		t.Fatalf("len(report.Targets) = %d, want %d = len(HarnessTargetIDs): %v", len(report.Targets), len(HarnessTargetIDs), report.Targets)
 	}
 }
 
