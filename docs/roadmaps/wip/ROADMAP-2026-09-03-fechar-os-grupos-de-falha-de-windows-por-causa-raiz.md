@@ -1715,9 +1715,96 @@ C1, C2 e C4 são determinísticos (string presente na própria linha); só C3 n�
 
 **Fora deste ML:** corrigir o `BASE_PATH`. A correção é ML próprio, depois de saber (A) ou (B).
 
+### ML-R2c — Os gates param de presumir layout de PATH: `git` resolvível pelo processo filho nativo
+**Status:** 🔄 Em andamento · **Agente:** `ares-tf` · **bloqueia o ML-R2b**
+
+Decisão do KG em 2026-09-09: **corrigir antes de triar.** Triar 442 linhas que vão desaparecer com a
+correção é triar lixo. O resíduo real do ML-R2b são ~70 linhas, não 512.
+
+#### O defeito tem DUAS formas, e a segunda é a perigosa
+
+**Forma 1 — `BASE_PATH` presume layout.** `BASE_PATH="$RUNTIME_BIN:/usr/bin:/bin"`, e em nenhum Git
+for Windows `git` mora em `/usr/bin` ou `/bin` (provado no ML-R2a, ARM64 e x64). Pior: `cygpath` prova
+que **`/bin` é alias de `/usr/bin`** — os dois caminhos são o mesmo diretório, a redundância é uma
+entrada só.
+
+**Forma 2 — `ln -s "$REAL_GIT" "$GIT_ONLY_BIN/git"` cria um link que o bash resolve e o processo
+filho nativo não.** `command -v git` no bash acha; `exec.Command("git")` do Go, `spawnSync` do Node e
+`subprocess.run` do Python **não**, porque no Windows a resolução é CreateProcess + PATHEXT, que exige
+`.exe`. Um arquivo chamado só `git` nunca é resolvido.
+
+🔴 **A forma 2 falha na direção de passar.** `NO_FORGE_PATH` existe para provar *ausência genuína* de
+forge CLI por um `LookPath` real. Se `git` também não resolve ali, o cenário reprova pelo motivo
+errado — ou alguma variante **passa** pelo motivo errado. A guarda de não-vacuidade do próprio script
+diz isso em voz alta: *"fails BEFORE any scenario runs if ... git does NOT resolve on it."*
+
+#### Sítios DERIVADOS (não presumidos) — `git grep` em `scripts/`
+
+| # | sítio | forma | no censo |
+|---|---|---|---|
+| 1 | `check-release-tag-parity.sh:112` `BASE_PATH=` | 1 | 424 linhas FAIL |
+| 2 | `check-ship-force-parity.sh:115` `BASE_PATH=` | 1 | 23 linhas FAIL |
+| 3 | `check-push-force-parity.sh:115` `BASE_PATH=` | 1 | 1 linha (sítio latente) |
+| 4 | `check-release-tag-parity.sh:135` `ln -s "$REAL_GIT" .../git` | 2 | — |
+| 5 | `check-ship-force-parity.sh:144` `ln -s "$REAL_GIT" .../git` | 2 | — |
+| 6 | `check-push-force-parity.sh:142` `ln -s "$REAL_GIT" .../git` | 2 | — |
+
+**`check-push-force-parity.sh` aparece 1 vez no censo e entra assim mesmo** — mesma causa, mesmo
+mecanismo, Regra Dura de Causa Raiz. Sítio conhecido e não corrigido é o achado A1 da auditoria
+externa, que este projeto já pagou uma vez.
+
+**`check-doctor-remote-parity.sh:133` usa `BASE_PATH="$RUNTIME_BIN"`** — já é a forma endurecida, e o
+comentário dele explica por quê (não deixar `/usr/bin/gh` do runner ubuntu vazar). **Não é sítio, é
+precedente.** Se o produto sob aquele gate precisar de `git`, aí vira sítio — medir, não presumir.
+
+**Os `ln -s` de `node`/`python3` (6 ocorrências) NÃO são sítios**, e a razão é o discriminante deste
+ML: quem lança `node`/`python3` é o **bash** do script, que resolve link MSYS sem extensão sem
+problema — e o censo prova, porque os 3 CLIs *rodaram* (foi o `git` deles que faltou). Quem procura
+`git` é o **processo filho nativo**. 🔴 Confirme isso por medição antes de aceitar; se o probe mostrar
+o contrário, os 6 entram.
+
+#### Restrições já medidas (não são sugestões)
+
+- `/clangarm64/bin` (ARM64) e `/mingw64/bin` (x64) **não contêm** `gh`, `glab`, `az`, `sh` nem `bash`
+  — medido na VM. Prepender o diretório do `git` **não** quebra o discriminante de ausência de forge.
+- `/usr/bin` já traz `sh.exe` e `bash.exe`, e o `BASE_PATH` já inclui `/usr/bin`. Então a ressalva de
+  vazamento de `sh` do `test_barrier.py` vale para o **`NO_FORGE_PATH`** (que carrega nada mais), não
+  para o `BASE_PATH`. **Os dois sítios podem pedir mecanismos diferentes** — declare qual escolheu em
+  cada um e por quê.
+- **Arte prévia, não reinvente:** `pypi/tests/test_barrier.py::_place_executable_in_path` já resolve
+  colocação de executável no Windows — preserva o basename (o `.exe` que o PATHEXT exige), cai de
+  symlink para hardlink para cópia, e tem sonda de execução que faz a **fixture** falhar por nome em
+  vez do produto. Leia antes de escrever.
+- `command -v git` devolve `/clangarm64/bin/git` (basename sem `.exe`), **mas `git.exe` existe como
+  irmão no mesmo diretório**.
+
+#### Critério de aceite que discrimina
+
+🔴 **`make quality` verde no Linux não prova nada aqui** — o defeito é invisível no Linux por
+construção. E **`command -v git` do bash não é o teste**: é exatamente a armadilha que produziu a
+forma 2.
+
+- [ ] Na VM, sob o `BASE_PATH` e sob o `NO_FORGE_PATH` construídos pelo próprio gate, um **processo
+  filho nativo** resolve e executa `git`: `exec.Command("git","--version")` (Go) e
+  `subprocess.run(["git","--version"])` (Python), **saída crua colada**
+- [ ] **Falsificação:** revertida a correção, o mesmo probe reprova — na VM, porque o defeito só
+  existe lá. **Não invente um teste POSIX** para satisfazer o hábito de revert-proof sem Windows
+- [ ] Os 6 sítios corrigidos, com o mecanismo escolhido **declarado por sítio**
+- [ ] `check-doctor-remote-parity.sh` e os 6 `ln -s` de node/python3 avaliados e **declarados** sítio
+  ou não-sítio, com a medição ao lado
+- [ ] **Recenso na VM** com `TRACKFW_FALSIFY_ENUMERATE=1`, 8 chunks: novo total de FAIL contra 512.
+  🔴 Se a queda não ficar na vizinhança de 442, **a atribuição estava errada** — reporte isso como
+  achado, não force o número
+- [ ] `make quality` verde no Linux (não prova o defeito, prova que a correção não regrediu nada)
+
+#### Reconciliação (regra dura do projeto)
+
+Todo teste novo declara, em uma frase, **qual conclusão deste ML ele afirma**. Se não der para
+escrever a frase, o teste não deveria existir.
+
 ### ML-R2b — Triagem do censo de Windows por causa
 **Status:** ⬜ Pendente · **Agente:** `ares-tf` · **pré-requisito do ratchet de CI** ·
-**depende do ML-R2a**
+**depende do ML-R2a (feito) e do ML-R2c** — o escopo real são ~70 linhas, não 512
 
 O ML-2B da REQ dos gates produziu o primeiro censo real: **440 OK · 512 FAIL** no Windows, com modo de
 enumeração **reproduzível** (`TRACKFW_FALSIFY_ENUMERATE=1`).
