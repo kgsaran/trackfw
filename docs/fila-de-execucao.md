@@ -25,13 +25,13 @@
 | **3** | `serve` interpola host em string de shell → injeção de comando | 🔴 segurança | `REQ-2026-09-01-serve-interpola-host-...` | — | ⬜ |
 | **4** | Node usa `chmodSync` no caminho em vez de `fchmodSync` no descritor (TOCTOU) | 🔴 segurança | `REQ-2026-09-01-cli-node-usa-chmodsync-...` | — | ⬜ |
 | **5** | `validate_unfiltered` + `validate --json` do Python (mesma função) | issue | `REQ-2026-09-05-validate-unfiltered-...` + `REQ-2026-08-20-validate-json-...` | **#261** | ⬜ |
-| **6** | CI distingue "suíte não carregou" de "teste reprovou" + ratchet por nome | issue | `ADR-2026-09-05-o-ci-de-windows-bloqueia-por-conjunto-de-nomes-...` (**aceita, sem roadmap**) | **#274 · #275** | ⬜ |
+| **6** | CI distingue "suíte não carregou" de "teste reprovou" + ratchet por nome | issue | ADR 🔴 **Proposed** (não aceita) + `REQ-2026-09-06-o-ci-de-windows-nao-bloqueia-...` 🔴 **órfã** · **bloqueado por `ML-R2`** | **#274 · #275** | ⬜ |
 | **7** | `status` do Python conta REQ por listagem flat | issue | `REQ-2026-08-30-consumidores-que-nao-conhecem-by-agent-...` | **#268** | ⬜ |
 | **8** | Gate de palavra-chave: evento `edited` + contrato para exemplo citado | issue | `REQ-2026-09-05-gate-de-palavra-chave-...` | **#258** | ⬜ |
 | **9** | `branch_has_wip_roadmap` erra nas duas direções | issue · **decisão** | `REQ-2026-08-20-branch-has-wip-roadmap-...` | **#273** | ⬜ |
 | **10** | Corpus do barrier-contract acoplado à governança do repo | issue · dívida | `REQ-2026-09-03-check-gates-falsify-...` | **#277** | ⬜ |
 | **11** | Windows: hooks nativos (`.ps1`) — desenho já medido | interno | `ADR-2026-09-05-hook-de-windows-roda-no-windows-...` + REQ | — | ⬜ |
-| **12** | Windows: 39 falhas restantes, mapeadas por mecanismo | interno | `docs/portabilidade/2026-09-04-retriagem-...` | — | ⬜ |
+| **12** | Windows: falhas restantes — **número desatualizado**, ver correção abaixo | interno | `ML-R2` da `REQ-2026-09-03-as-217-falhas-reais-...` | — | ⬜ |
 | **13** | Windows: jornada de instalação (README, `install.sh`, ARM64) | interno | `REQ-2026-09-05-a-instalacao-em-windows-...` | — | ⬜ |
 | **14** | Guard de `git add -A` (staging com escopo implícito) | interno | `ADR-2026-09-05-staging-com-escopo-implicito-...` + REQ | — | ⬜ |
 
@@ -113,3 +113,51 @@ ocorrências no repositório. O corpus congelado de testdata está marcado como 
 do outro lado esperando; atrito próprio não tem ninguém cobrando.* Não é falha de priorização
 pontual — é viés estrutural da fila. A contramedida não é subir o item de posição, é **decidir
 explicitamente** começar por ele quando a frente anterior fecha.
+
+
+## Correção de dois itens da fila — arquiteto, 2026-09-09
+
+Medidos, não presumidos. **Os dois estavam errados na própria fila, e um dos erros era meu de ontem.**
+
+### Item 6 — a fila afirmava "ADR aceita"; ela está `Proposed`
+
+```
+ADR-2026-09-05-o-ci-de-windows-bloqueia-por-conjunto-de-nomes-...   status: Proposed
+REQ-2026-09-06-o-ci-de-windows-nao-bloqueia-regressao-...           status: Open · roadmap: ""
+```
+
+🔴 **Duas coisas erradas de uma vez:** a ADR não está aceita, e a REQ é **órfã** — terceira órfã da
+mesma família em dois dias (as outras: issue #290 e o item 1). O padrão é consistente: **abrir o
+artefato dá a sensação de ter encerrado o assunto.**
+
+🔴 **E ele está bloqueado por dependência real, não por prioridade:** o item 6 entrega *ratchet por
+nome*, e um ratchet precisa da **lista de nomes triada por causa**. Essa lista é o `ML-R2` (triagem
+dos 512). Sem ele, o ratchet nasce com 512 entradas — que é `continue-on-error` com passos extras, e
+foi exatamente a crítica do autor do issue #275.
+
+**Ordem correta:** `ML-R2` → item 6. Despachar o item 6 antes seria entregar o mecanismo sem o dado
+que o torna útil.
+
+### Item 12 — "39 falhas restantes" está desatualizado
+
+```
+antes (retriagem de 04/09)   39 falhas
+hoje, medido                 ~26 no CI (15 Go + 11 Node, run da main)
+                             + 512 no censo do gate que nunca rodava no Windows
+```
+
+O número **subiu** porque passamos a medir uma superfície que nunca havia sido exercitada — **subir
+é acerto, não regressão**. Mas a linha da fila dizia 39 e induzia a estimativa errada.
+
+**Substituído pelo `ML-R2`**, que é o pré-requisito real: triagem por causa. A campanha anterior
+colapsou **246 sintomas em 6 causas**; sem a mesma triagem, 512 é número e não escopo.
+
+### Próximo depois do item 1
+
+**Item 2** — `barrier`: `roadmapTrustForGates` **fail-open** em todo caminho de erro.
+
+🔴 Escolhido por **natureza**, não por ordem numérica. Um `barrier` que falha aberto significa que a
+barreira que autoriza as waves pode aprovar **por falha, não por verificação** — a mesma forma do
+defeito que custou duas REQs reabertas nesta campanha, mas no componente que decide se o resto pode
+prosseguir. Os itens 3 e 4 são reais e têm pré-condição (host malicioso, janela de corrida); este
+não precisa de adversário.
