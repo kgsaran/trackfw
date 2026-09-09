@@ -34678,3 +34678,41 @@ lacuna, se necessário.
 
 **Artefato atualizado:** roadmap `ROADMAP-2026-09-03-fechar-os-grupos-de-falha-de-windows-por-causa-raiz.md`,
 seção ML-R2a (linhas ~1456-1660 aprox.).
+
+## 2026-09-09 — Zeus (Arquiteto) — auditoria do ML-R2a: lacuna fechada em x64, veredito (A) provado
+
+**O agente entregou o veredito certo com evidência que não o sustentava, e disse isso.** O sandbox
+bloqueou a criação do workflow probe, então ele declarou a lacuna em vez de mascará-la — comportamento
+correto, e é a razão de eu ter sabido exatamente o que ir medir.
+
+**Fechei a lacuna.** Em vez de workflow descartável, a pergunta entrou como **Pergunta 12** da sonda
+`windows-probe.yml`, que existe para exatamente isso ("o dia em que a pergunta ainda não virou
+asserção nenhuma", diz o cabeçalho dela) — e fica, porque documenta um layout que dois scripts de gate
+presumem. Run **34406101512**, `windows-latest` x64, `shell: bash`:
+
+```
+ls /usr/bin/git /bin/git   → No such file or directory (os dois)
+command -v git             → /mingw64/bin/git         git version 2.55.0.windows.5
+PATH="/usr/bin:/bin" command -v git → NAO resolvivel
+cygpath -w /bin            → C:\Program Files\Git\usr\bin
+cygpath -w /usr/bin        → C:\Program Files\Git\usr\bin
+```
+
+**Veredito (A) provado:** `BASE_PATH="$RUNTIME_BIN:/usr/bin:/bin"` (`check-release-tag-parity.sh:112`,
+`check-ship-force-parity.sh:115`) não resolve `git` em **nenhum** Git for Windows — ARM64 ou x64. A
+ressalva do ML-2B ("pode ser artefato desta VM") está **falsificada**. As 442 linhas são defeito real.
+
+🔴 **Achado que só a medição crua dava:** `cygpath -w /bin` e `cygpath -w /usr/bin` devolvem **o mesmo
+diretório**. `/bin` é alias de `/usr/bin` no bash do GfW — o `BASE_PATH` lista o mesmo diretório duas
+vezes. A redundância que parecia rede de segurança é uma entrada só. Isso muda a correção: não é
+acrescentar mais um caminho fixo, é parar de presumir layout.
+
+**Recontagem independente** (reimplementei do critério escrito, sem olhar o script do agente): C1=248
+e C2=11 **batem exatamente**; C3 dá 179 contra 178. A diferença é a **janela de proximidade** do
+critério C3 (`≤15 linhas`) — número que muda com a implementação da régua não é medição, é estimativa
+com cara de medição. Sem consequência prática (442 vs 443 não move decisão), mas **C3 entra no ML-R2b
+marcado como atribuição heurística**: C1/C2/C4 são determinísticos, C3 não.
+
+**Sequenciamento que isto força:** a correção do `BASE_PATH` é ML próprio **nesta mesma REQ** (mesma
+causa), e o ML-R2b deve vir **depois** de decidir se ela entra antes — senão tria ~442 linhas que vão
+desaparecer. Resíduo real do ML-R2b: **~70 linhas**, não 512.

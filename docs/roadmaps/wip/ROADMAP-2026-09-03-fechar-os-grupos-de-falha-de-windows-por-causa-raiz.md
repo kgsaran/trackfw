@@ -1439,7 +1439,7 @@ ML**, por causa distinta da corrigida aqui:
 auditoria do `trackfw_architect`; nenhuma pendência técnica aberta desta correção.
 
 ### ML-R2a — O discriminante do `/usr/bin/git`: a maior causa é defeito ou é artefato desta VM?
-**Status:** 🔄 Em andamento · **Agente:** `ares-tf` · 🔴 **bloqueia o ML-R2b**
+**Status:** ✅ Concluído — veredito **(A)**, defeito real, provado em `windows-latest` x64 · **Agente:** `ares-tf` + auditoria/medição x64 do arquiteto
 
 O ML-2B atribuiu **135 das 275 reprovações únicas dos chunks 0-5 (49%)** a UMA causa: `git` não
 resolvível sob o `BASE_PATH="$RUNTIME_BIN:/usr/bin:/bin"` que `check-release-tag-parity.sh:112` e
@@ -1516,9 +1516,47 @@ windows-full-suites | Python suíte completa:
 O CLI Python invocado no runner x64 (via pytest) reproduz o mesmo erro `git not found in PATH` —
 a mesma string que aparece nos FAILs de categoria C2/C1 do censo.
 
-**Lacuna não preenchida:** a saída crua de `ls -l /usr/bin/git /bin/git` e
-`PATH="/usr/bin:/bin" command -v git` de dentro de `shell: bash` no runner x64 NÃO foi coletada.
-O que existe é: (a) estrutura GFW confirmada igual ao ARM64, (b) erro `git not found` em x64 CI real.
+##### Lacuna FECHADA pelo arquiteto — medição direta em `windows-latest` x64
+
+A sonda `windows-probe.yml` já existia para exatamente este tipo de pergunta ("o dia em que a
+pergunta ainda não virou asserção nenhuma", diz o cabeçalho dela). Em vez de um workflow descartável,
+a pergunta entrou como **Pergunta 12** da sonda — permanente, porque documenta o layout que dois
+scripts de gate presumem.
+
+Run **34406101512**, `windows-latest`, `shell: bash`. **Saída crua**, não parafraseada:
+
+```
+shell: C:\Program Files\Git\bin\bash.EXE --noprofile --norc -e -o pipefail {0}
+BASH_VERSION=5.3.15(2)-release
+MINGW64_NT-10.0-26100 runnervmeef0v 3.6.10-710e5275.x86_64 ... x86_64 Msys
+--- ls -l /usr/bin/git /bin/git ---
+ls: cannot access '/usr/bin/git': No such file or directory
+ls: cannot access '/bin/git': No such file or directory
+--- ls -l /mingw64/bin/git.exe /mingw32/bin/git.exe ---
+ls: cannot access '/mingw32/bin/git.exe': No such file or directory
+-rwxr-xr-x 4 runneradmin 197121 4378456 Aug 20 15:47 /mingw64/bin/git.exe
+--- command -v git ---
+/mingw64/bin/git
+--- git --version ---
+git version 2.55.0.windows.5
+--- git resolve sob o BASE_PATH dos gates? ---
+RESULTADO: git NAO resolvivel sob PATH=/usr/bin:/bin
+--- raiz POSIX deste bash ---
+cygpath -w /        -> C:\Program Files\Git\
+cygpath -w /bin     -> C:\Program Files\Git\usr\bin
+cygpath -w /usr/bin -> C:\Program Files\Git\usr\bin
+```
+
+🔴 **Achado que ninguém tinha visto, e que só a medição crua dava:** `cygpath -w /bin` e
+`cygpath -w /usr/bin` devolvem **o mesmo diretório**. No bash do Git for Windows, `/bin` é alias de
+`/usr/bin` — então `BASE_PATH="$RUNTIME_BIN:/usr/bin:/bin"` lista **o mesmo diretório duas vezes**. A
+redundância que parecia rede de segurança ("se não estiver num, está no outro") é uma entrada só. Em
+Linux/macOS os dois são diretórios distintos, e é de lá que o hábito veio.
+
+Note também que a **Fonte A do agente estava mal lida**: ela mostrava
+`C:\Program Files\Git\bin\git.exe` (o wrapper) e o agente inferiu daí `/mingw64/bin`. A inferência
+acertou o destino por outro caminho — `C:\Program Files\Git\bin` **não é** `/bin` na visão POSIX deste
+bash, como o `cygpath` acima prova. Conclusão certa, evidência que não a sustentava.
 
 ##### Ação 2 — Veredicto
 
@@ -1532,31 +1570,7 @@ não peculiaridade da VM.
 **O `BASE_PATH=".../usr/bin:/bin"` dos scripts é defeito de script em qualquer Git for Windows**, ARM64
 ou x64. Os FAILs do censo NÃO são artefato da VM. O ratchet pode ser calibrado sobre eles.
 
-**Ressalva residual:** a saída crua do passo bash específico (`ls -l /usr/bin/git`) para o x64 está
-ausente. O veredicto (A) está sustentado pela Fonte B (erro vivo em CI) + estrutura GFW, não por essa
-medição direta. Se quiser o dado exato, basta KG executar o workflow descartável manualmente (ver
-conteúdo abaixo).
-
-```yaml
-# .github/workflows/probe-git-path.yml (descartável — executar e depois apagar)
-name: probe-git-path
-on:
-  workflow_dispatch:
-jobs:
-  probe:
-    runs-on: windows-latest
-    steps:
-      - name: Probe git path layout
-        shell: bash
-        run: |
-          echo "BASH_VERSION=$BASH_VERSION"
-          uname -a
-          ls -l /usr/bin/git /bin/git 2>&1 || true
-          command -v git
-          git --version
-          PATH="/usr/bin:/bin" command -v git || echo "RESULTADO: git NAO resolvivel sob PATH=/usr/bin:/bin"
-          ls -l /mingw64/bin/git.exe 2>&1 || true
-```
+**Ressalva residual: ELIMINADA.** A medição direta em `windows-latest` x64 está acima (run **34406101512**): `/usr/bin/git` e `/bin/git` não existem, `git` mora em `/mingw64/bin`, e `PATH="/usr/bin:/bin" command -v git` não resolve. O veredito (A) deixou de depender de inferência estrutural. O workflow descartável não foi criado — a pergunta virou a **Pergunta 12** da sonda `windows-probe.yml`, que fica.
 
 ##### Ação 3 — Contagem exata de linhas de FAIL atribuíveis à causa
 
@@ -1649,13 +1663,55 @@ da mesma causa-raiz. O total expandido para chunks 0-5 com C3+C4 = 232 de 275 (8
 `check-release-tag-parity.sh` em dois cenários distintos (`content-from-commit-false-negative` e
 `refs-replace-bypass-false-negative`); cada invocação emite o conjunto completo de FAILs internos.
 
+##### Auditoria do arquiteto (2026-09-09) — recontagem independente
+
+Reimplementei a contagem do zero, a partir do critério escrito, sem olhar o script do agente:
+
+```
+chunk            FAIL    C1    C2    C3
+chunk_0           110    62     0    42
+chunk_1            25     0    11    10
+chunk_2             5     0     0     0
+chunk_3           113    62     0    43     <- agente: 42
+chunk_4             5     0     0     0
+chunk_5            17     0     0     0
+chunk_6           234   124     0    84
+chunk_7             3     0     0     0
+TOTAL             512   248    11   179     <- agente: 178
+```
+
+**C1 e C2 batem exatamente.** C3 difere em **1 linha**, no chunk_3.
+
+🔴 **A divergência não é erro de ninguém — é o critério.** C3 é atribuído por *proximidade*
+("as próximas ≤15 linhas contêm C1 ou C2"), e uma janela arbitrária dá resultado diferente conforme
+a implementação conte `≤15` ou `<15` e conforme pule ou não linhas `FAIL` intermediárias. Um número que
+muda com a implementação da régua não é uma medição, é uma estimativa com aparência de medição.
+
+**Consequência prática: nenhuma.** 442 vs 443 não move nenhuma decisão — o veredito (A) não depende
+disso, e o resíduo para o ML-R2b é ~70 linhas em qualquer das duas contagens. **Mas o C3 entra no
+ML-R2b marcado como grupo de atribuição heurística**, não determinística, e a tabela final tem de
+dizer isso: se o ratchet por nome for construído a partir de C3, ele herda a fragilidade da janela.
+C1, C2 e C4 são determinísticos (string presente na própria linha); só C3 não é.
+
 **Critérios de aceite:**
-- [x] saída crua de `windows-latest` x64 colada no roadmap — **PARCIALMENTE ATENDIDO**: a saída do
-  passo bash específico não foi coletada (sandbox bloqueou criação do workflow); evidência substituta
-  é CI real x64 com `git not found in PATH` (run 34403529213) + estrutura GFW documentada na Fonte A
+- [x] saída crua de `windows-latest` x64 colada no roadmap — **ATENDIDO pelo arquiteto** (run
+  34406101512, Pergunta 12 da sonda); o agente não conseguiu pelo sandbox e declarou a lacuna em vez
+  de mascará-la, que é o comportamento certo
 - [x] (A) declarado por escrito, com a medição ao lado
-- [x] nº exato de linhas de FAIL atribuíveis à causa, com o comando e critério escritos (442 linhas)
+- [x] nº exato de linhas de FAIL atribuíveis à causa, com comando e critério escritos — **442**
+  (recontagem do arquiteto: 443; a diferença é a janela do C3, ver auditoria acima)
+- [x] workflow descartável removido do repo — não chegou a ser criado; a pergunta virou permanente na
+  sonda `windows-probe.yml`
 - [x] 🔴 nenhuma correção neste ML — apenas medição
+
+##### Desdobramentos que este ML abre (não os executa)
+
+1. **Correção do `BASE_PATH`** em `check-release-tag-parity.sh:112` e `check-ship-force-parity.sh:115`
+   — ML próprio nesta MESMA REQ (mesma causa, Regra Dura de Causa Raiz), **não REQ nova**. Com o
+   achado do alias `/bin`↔`/usr/bin`, a correção não é "acrescentar mais um caminho fixo": é parar de
+   presumir layout.
+2. **~442 linhas saem do escopo do ratchet** se a correção entrar antes — o ML-R2b deve ser
+   sequenciado depois de decidir isso, senão tria linhas que vão desaparecer.
 
 **Fora deste ML:** corrigir o `BASE_PATH`. A correção é ML próprio, depois de saber (A) ou (B).
 
