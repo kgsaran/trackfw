@@ -40,7 +40,7 @@ em nenhum**.
 ## Wave 1
 
 ### ML-1A — O script vira alvo de primeira classe
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf`
+**Status:** 🔄 Em andamento · **Agente:** `apolo-tf`
 
 O manifesto ganha alvo cujo `path` é o script do guard. A contagem passa a refletir o que aconteceu
 com **ele**, não com a fiação.

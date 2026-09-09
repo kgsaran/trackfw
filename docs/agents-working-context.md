@@ -4,6 +4,24 @@
 
 ---
 
+## Sessão 2026-09-09 — apolo-tf (Backend) — ML-1A: O script vira alvo de primeira classe (EM ANDAMENTO)
+
+Branch `fix/o-alvo-do-manifesto-e-dono-do-caminho-do-script-do-guard`, ML-1A do roadmap
+`docs/roadmaps/wip/ROADMAP-2026-09-09-o-alvo-do-manifesto-e-dono-do-caminho-do-script-do-guard.md`.
+
+**Contexto:** `trackfw update harness` reescrevia `trackfw-git-branch-guard.sh` e
+`trackfw-credential-guard.sh` como efeito colateral (pre-loop, sem contagem). Três estados
+distinguíveis (desatualizado/idêntico/dry-run) produziam relatórios indistinguíveis. Confirmado
+nos 3 runtimes.
+
+**Fix planejado:** os dois scripts viram alvos de primeira classe (`git-branch-guard-script`,
+`credential-guard-script`), posicionados após `claude-skill` e antes dos alvos de fiação. Compara
+conteúdo antes de escrever; sem gate de `--install-missing` (scripts são 100% trackfw-owned).
+Repara bit de execução mesmo no path `skipped` (chmod toca ctime, não mtime). Sem operação git
+(commit/push são do `trackfw_architect`).
+
+---
+
 ## Sessão 2026-09-09 — ares-tf (Infrastructure) — ML-4A: `derive_sites()` do gate de hook usa `git ls-files` (CONCLUÍDO)
 
 Branch `feat/guard-emite-hookspecificoutput-e-a-razao-chega-ao-modelo-nos-3-clis`, ML-4A do roadmap
