@@ -4,6 +4,47 @@
 
 ---
 
+## Sessão 2026-09-09 — prometeu-tf (Tooling) — ML-3A: dreno de stdin do guard com orçamento de tempo (CONCLUÍDO)
+
+Branch `feat/guard-emite-hookspecificoutput-e-a-razao-chega-ao-modelo-nos-3-clis`, ML-3A do roadmap
+`docs/roadmaps/wip/ROADMAP-2026-09-09-guard-emite-hookspecificoutput-e-a-razao-chega-ao-modelo-nos-3-clis.md`.
+Nenhuma operação de git (commit/push são do `trackfw_architect`).
+
+**O que era:** `[ -t 0 ] || _TRACKFW_STDIN=$(cat 2>/dev/null || true)` — achado da sessão anterior
+(entrada abaixo), reportado e deliberadamente não corrigido ali.
+
+**Fix:** `_TRACKFW_STDIN=""` seguido de `IFS= read -r -t 2 -d '' _TRACKFW_STDIN || true`, byte-
+idêntico nos 7 sítios (script real + 3 geradores + 3 referências do `validate`). `read -t/-d` é
+builtin do bash desde a 3.0 (não do coreutils) — evita depender de `timeout(1)`, ausente no macOS
+base e no MSYS2 mínimo. Medido em bash 3.2 e 5.3 contra FIFO nunca fechado: preserva prefixo já
+lido antes do timeout, sem perda do que chegou. Orçamento de 2s, fail-closed preservado (`exit 2`
+segue existindo se o timeout estourar, decidindo por `$*`).
+
+**Falsificado nas duas direções + payload grande + newline final** (a única diferença semântica
+real entre `$(cat)` e `read -d ''`, achado do `advisor` — as 3 falsificações originais não
+cobriam essa dimensão): ver detalhe completo no roadmap, ML-3A. 200KB drena em 0.154s (>10x de
+margem sob o orçamento de 2s).
+
+**Sítio de mesma causa corrigido junto:** `scripts/check-gates-falsify.sh` Cenário 65
+(`corrupt_literal` da regressão de EPIPE, ML-1B) apontava para o literal antigo — atualizado para o
+literal novo, mesma prova preservada.
+
+**Gate local, três medidas, duas chamadas separadas (teto de 10min/chamada):** `make parity-rest`
+`rc=0` 4m05s (FAIL=0, OK=619); `run-gates-falsify-parallel.sh` `rc=0` 8m08s (FAIL=0, OK=412).
+**Total 1031 OK, 0 FAIL** — bate com o piso do handoff. `go test`/`npm test`/`pytest` verdes antes.
+`./bin/trackfw validate` rc=0, sem violação nova.
+
+**Nota de conduta autodeclarada:** primeira tentativa de `make quality` numa chamada só estourou o
+teto de 10min da ferramenta e foi auto-movida para background (não por escolha própria); o `kill`
+subsequente chegou perto do fim e corrompeu aquele log (`Terminated: 15`, sem `MAKE_RC`) —
+descartado por inteiro, sem aproveitar nenhum número dele, e refeito em duas chamadas limpas em
+primeiro plano. `no-repo-mutation` (dentro de `parity-falsify`, rodado depois do `kill`) confirma
+que o processo morto não deixou resíduo na árvore.
+
+**Vault:** `vault/notes/git-branch-guard-stdin-drain-timeout-em-vez-de-discriminante-tty-2026-09-09.md`.
+
+---
+
 ## Sessão 2026-09-09 — prometeu-tf (Tooling) — hotfix pós-ML-2A: guard de `make quality` que travava (correção pontual, CONCLUÍDO)
 
 Branch `feat/guard-emite-hookspecificoutput-e-a-razao-chega-ao-modelo-nos-3-clis`, sobre a entrega do

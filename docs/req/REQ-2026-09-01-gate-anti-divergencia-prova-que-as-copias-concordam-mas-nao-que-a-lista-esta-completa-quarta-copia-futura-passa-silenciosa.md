@@ -3,7 +3,7 @@ status: Open
 date: 2026-09-01
 author: "zeus-tf"
 adr: ""
-roadmap: ""
+roadmap: "docs/roadmaps/backlog/ROADMAP-2026-09-09-gates-de-paridade-provam-concordancia-mas-nao-completude.md"
 ---
 
 # REQ: Gate anti-divergência prova que as cópias concordam, mas não que a lista está completa
@@ -71,3 +71,22 @@ descoberta-vs-lista vira postura de projeto e merece ADR. -->
 ## Linked Roadmap
 
 Roadmap:
+
+
+## 🔴 Sítio de mesma causa — issue #298, 2026-09-09
+
+`scripts/check-cli-parity.sh` **compara só comandos de primeiro nível**. Subcomando divergente passa
+em silêncio: **9** (`adr` 2, `req` 3, `roadmap` 4) sem gate entre os 3 runtimes.
+
+**É a mesma causa desta REQ, com outro sujeito:** aqui é `_atomic_write` com lista fixa de arquivos;
+lá é `check-cli-parity` com escopo fixo no primeiro nível. Nos dois, o gate **prova concordância do
+que conhece e nada sobre completude**.
+
+Por isso entra como ML nesta REQ — **não como REQ nova**. Regra dura do `CLAUDE.md`.
+
+🔴 **E já nos mordeu:** `req move` faltou nos três e `req list` faltou no Python, sem nenhum gate
+avisar. Não é hipótese.
+
+**Nota de medição:** o autor do issue reportou 12 subcomandos; medi **9**. A diferença provável é o
+`help` que o cobra injeta em cada grupo — e excluí-lo é requisito do ML, não detalhe: contar o `help`
+faria o gate exigir paridade de algo que o framework gera.

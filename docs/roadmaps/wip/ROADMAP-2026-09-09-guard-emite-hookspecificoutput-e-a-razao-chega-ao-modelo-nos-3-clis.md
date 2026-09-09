@@ -317,7 +317,7 @@ herdada tinha EOF. Só o contexto do `make` expõe. **É a mesma família de "ga
 inteiro": o ambiente de execução faz parte do teste.**
 
 ### ML-3A — O dreno de stdin do guard precisa de limite
-**Status:** ⬜ Pendente · **Agente:** `prometeu-tf`
+**Status:** ✅ Concluído · **Agente:** `prometeu-tf`
 
 Achado do agente, **reportado e não corrigido** — decisão correta: é causa própria, e o guard acabou
 de ser mexido na Wave 1.
@@ -336,6 +336,148 @@ segue**, sem travar. Paridade nos 3 geradores.
 
 🔴 **Mesma causa ⇒ mesma REQ.** Não abrir REQ nova: é o mesmo mecanismo (dreno sem limite sob stdin
 sem EOF) que acabou de travar o gate.
+
+**Entregue.** `[ -t 0 ] || _TRACKFW_STDIN=$(cat 2>/dev/null || true)` substituído, byte-idêntico nos
+7 sítios (script real + 3 geradores + 3 referências do `validate`, os mesmos do ML-1B), por:
+
+```sh
+_TRACKFW_STDIN=""
+IFS= read -r -t 2 -d '' _TRACKFW_STDIN || true
+```
+
+**Mecanismo escolhido e por quê (restrição de portabilidade):** `read -t <segundos> -d ''` é
+**builtin do próprio bash desde a versão 3.0** — não do coreutils. Medido idêntico em bash 3.2
+(`/bin/bash`, padrão do macOS) e bash 5.3 (Homebrew/Linux): contra um FIFO aberto que nunca fecha,
+`read -t 1 -d ''` interrompe em ~1s preservando na variável qualquer prefixo já lido antes do
+timeout (sem perda do que chegou, só do que nunca chegou), com `IFS=""` pré-declarada para evitar
+`unbound variable` sob `set -u` quando nada foi lido. O bash do MSYS2/Git-Bash do Windows é bash de
+verdade (não um shell POSIX minimalista) e traz o mesmo builtin — não medido nesta sessão (sem
+runner Windows disponível), mas o mecanismo não depende de nenhum binário externo, que é a fonte do
+risco de portabilidade real: `timeout(1)` (coreutils) **não existe** no macOS base nem no MSYS2
+mínimo, então foi descartado por desenho, não testado e rejeitado. `-d ''` faz o `read` tentar ler
+até o EOF real (delimitador NUL, que nunca aparece em payload de hook JSON). `|| true` é obrigatório
+sob `set -e`: o `read` retorna não-zero tanto por timeout quanto por EOF-sem-NUL.
+
+**Orçamento: 2 segundos.** Payload de hook é pequeno; a folga cobre variação de scheduler sob carga
+(CI, `make quality` paralelo) sem tornar o caso patológico silenciosamente longo — o travamento
+continua perceptível (2s, não 1h05) em vez de indefinido.
+
+**Fail-closed preservado:** estourar o orçamento não libera nada — o passo 1 do guard já prefere
+`$*` quando há argumento posicional (caminho que o gate do ML-2A usa via `</dev/null`), e cai para o
+que foi lido até o limite quando não há argumento. `exit 2` não muda em nenhum dos dois casos.
+
+**As três falsificações, com saída real e tempo (script real, sem mutação):**
+- stdin com payload e EOF ⇒ decide pelo payload:
+  `printf '{"tool_input":{"command":"git push origin main"}}' | bash trackfw-git-branch-guard.sh`
+  → `hookSpecificOutput.permissionDecision=deny`, stderr com a razão completa, `rc=2`, **0.027s**
+  (nunca chega perto do orçamento — prova que o dreno não foi quebrado).
+- stdin aberta sem EOF (FIFO leitura+escrita, nunca fechado) ⇒ desiste no limite e decide por `$*`,
+  sem travar: `bash trackfw-git-branch-guard.sh "git status" <FIFO-sem-EOF` → `rc=0`, **2.043s**
+  (orçamento de 2s + overhead de processo). Reforçado com um comando **bloqueado** por `$*` sob o
+  mesmo FIFO (`"git push origin main"`) → `hookSpecificOutput.permissionDecision=deny`, `rc=2`,
+  **2.043s** — prova que o fail-closed sobrevive ao timeout, não só o "segue sem travar".
+- comando permitido (controle de não-regressão, script real):
+  `printf '{"tool_input":{"command":"git status"}}' | bash trackfw-git-branch-guard.sh` → `rc=0`,
+  stdout e stderr vazios, **0.031s**.
+
+**Falsificações adicionais pós-`advisor` — a única diferença semântica entre `$(cat)` e
+`read -d ''` é o tratamento de newline final** (substituição de comando descarta todos os `\n`
+finais; `read -d ''` com `IFS=` vazio preserva), e nenhuma das três falsificações originais
+exercitava payload COM `\n` final — a forma que um hook real de fato emite. Cobrindo a dimensão que
+o mecanismo realmente mudou, script real, sem mutação:
+```
+JSON com \n final, bloqueado    rc=2  (idêntico ao sem \n)
+JSON com \n final, permitido    rc=0, stdout/stderr vazios
+string nua com \n final, bloqueado  rc=2  (ramo *) CMD_RAW="$INPUT", não o ramo JSON)
+string nua com \n final, permitido  rc=0
+```
+Confirma que o `\n` residual (que antes era descartado pelo `$(...)`, agora preservado) não
+introduz segmento vazio espúrio em `quote_aware_split` nem quebra o `jq`/regex de extração — `jq`
+tolera whitespace final, e o segmentador descarta o segmento vazio ao final da lista.
+
+**Payload grande (200KB, o mesmo tamanho do Cenário 65 de `check-gates-falsify.sh`) contra o
+orçamento de 2s — medido, não só "passou no CI":**
+```
+200.000 bytes, bash "read" builtin (um byte por vez, não pode over-consumir de fd compartilhado)
+tempo de dreno completo: 0.154s
+```
+Mais de 10x de margem para o orçamento de 2s nesta máquina — o dreno termina bem antes do limite
+mesmo no maior payload que o corpus de falsificação já testa (o mesmo Cenário 65,
+`baseline-writer-clean-large-payload`, passou dentro de `parity-falsify` acima). Se este número
+algum dia se aproximar de ~1s sob uma máquina mais lenta, a resposta correta é ler em blocos
+(`read -N <bytes>`) e não simplesmente subir o orçamento — não medido aqui por não ter sido
+necessário.
+
+**NUL, declarado e não medido:** `read -d ''` para no primeiro byte NUL; `$(cat)` drenava
+indiferente ao conteúdo. O comentário do script já assume que NUL nunca aparece em payload de hook
+JSON — é uma suposição **declarada**, não uma propriedade comprovada por execução aqui.
+
+**Cobertura automatizada do orçamento — não existe, e é uma lacuna aceita, não um artefato deste
+ML:** nenhum gate do corpus falsifica "o dreno tem limite" isoladamente (ex.: reverter para `cat`
+sem limite, ou subir o orçamento para 600s) — só a regressão de EPIPE (Cenário 65) e a própria
+execução manual acima. O piso de `≥ 1031` do handoff é **idêntico** ao total do ML-2A, confirmando
+que nenhuma assertiva nova de gate era esperada aqui.
+
+**Windows — declarado, não medido, por desenho e não por omissão:** sem runner Windows disponível
+nesta sessão. A garantia não depende de observação em CI: o mecanismo é um builtin do bash (`read
+-t`/`-d`), não um binário externo, então o "fallback que não drena sem limite" exigido pelo handoff
+é desnecessário **por construção** — não há caminho onde o bash do MSYS2/Git-Bash careça do builtin
+e precise cair para outro mecanismo.
+
+**Reconciliação (`CLAUDE.md`) — uma frase por afirmação:**
+- As duas falsificações do FIFO afirmam que o orçamento de 2s é um **teto de espera**, não um
+  "desiste e libera": tanto o comando permitido quanto o comando bloqueado, sob a mesma stdin
+  aberta sem EOF, terminam em ~2.04s com a decisão que `$*` determina — é essa a conclusão medida
+  acima, e as duas rodadas (`rc=0` e `rc=2`) sustentam a mesma frase sem contradição.
+- A falsificação do payload+EOF afirma que o mecanismo novo **não introduziu latência** no caminho
+  feliz (0.027s, muito abaixo do orçamento de 2s) — é a conclusão que justifica escolher 2s em vez
+  de um valor menor "para não atrasar hooks reais": o caminho feliz nunca visita o timeout.
+
+**Referências do `validate` acompanharam (mesmos 3 sítios do ML-1B):**
+`internal/validator/validator_git_branch_guard_reference.go`, `pypi/trackfw/validator.py` e
+`npm/src/validator/index.js` (7º sítio, com o byte NUL preservado — confirmado por
+`python3 -c "print(open('npm/src/validator/index.js','rb').read().count(b'\x00'))"` → `1`, igual
+antes e depois da edição). Os 7 sítios ficam byte-idênticos entre si no bloco do dreno, verificado
+por `grep -a` sobre a linha nova nos 7 arquivos.
+
+**Sítio de mesma causa, corrigido junto (não um artefato novo):** `scripts/check-gates-falsify.sh`,
+Cenário 65 (`corrupt_literal` que valida a regressão de EPIPE do ML-1B), corrompia o literal antigo
+`[ -t 0 ] || _TRACKFW_STDIN=$(cat 2>/dev/null || true)` — que deixou de existir no código-fonte após
+este ML. Atualizado para corromper o literal novo (`IFS= read -r -t 2 -d '' _TRACKFW_STDIN || true`
+→ `true`, mantendo `_TRACKFW_STDIN=""` intacto), preservando a mesma prova de regressão de EPIPE que
+o cenário já fazia — sem isso, o Cenário 65 reprovaria por não achar o literal antigo (`expected
+exactly 1 occurrence of pattern, got 0`), motivo alheio à sua finalidade.
+
+**As três medidas, executadas em 3 chamadas separadas (teto de 10min por chamada de shell) mais
+`go test`/`npm test`/`pytest` isolados antes:**
+- `go build ./...`, `go vet ./...` (lint), `go test ./...` (17 pacotes, todos `ok`), `npm test`
+  (885/885 passed), `python3 -m pytest pypi/tests -q` (1668 passed, 66 subtests) — todos verdes,
+  em separado, antes das duas chamadas abaixo.
+- `make parity-rest` (build + ~46 gates, inclui `check-git-branch-guard-hook-schema.sh` modo padrão
+  e `--self-test`, `check-attention-scripts-parity.sh`, `check-parity-contract-coverage.sh`):
+  `PARITY_REST_RC=0`, **4m05s**, `grep -c '^FAIL'`=0, `grep -c '^OK'`=**619** (idêntico ao piso do
+  ML-2A).
+- `GO_BIN=./bin/trackfw scripts/run-gates-falsify-parallel.sh` (equivalente a `parity-falsify`):
+  `PARITY_FALSIFY_RC=0`, **8m08s**, `grep -c '^FAIL'`=0, `grep -c '^OK'`=**412** (idêntico ao piso
+  do ML-2A).
+- **Total: FAIL=0, OK=619+412=1031** — bate exatamente com o piso `≥ 1031` do handoff.
+- `./bin/trackfw validate`: `rc=0`, sem violação nova de `git_branch_guard_script_integrity`
+  (só os avisos pré-existentes de REQ sem roadmap linkado, nada relacionado a este ML).
+
+🔴 **Nota de conduta, autodeclarada:** a primeira tentativa foi `make quality QUALITY_EXIT=0` numa
+única chamada de shell. A ferramenta moveu o comando para segundo plano automaticamente ao estourar
+o teto de 10min da chamada — **não foi uma escolha minha de rodar em background**, mas violou a
+instrução do handoff mesmo assim, então tentei `kill` no processo para trazer de volta ao primeiro
+plano. O `kill` chegou perto do fim da execução (o log já tinha 977 `OK`/0 `FAIL` registrados) e
+**corrompeu aquela chamada** (`make: *** [parity-falsify] Terminated: 15`, sem `MAKE_RC` impresso) —
+descartei esse log inteiro, sem usar nenhum número dele como evidência, e refiz do zero em duas
+chamadas separadas (`make parity-rest` e o driver do `parity-falsify`), cada uma dentro do teto de
+10min, ambas em primeiro plano do início ao fim. Os números finais (1031 `OK`, 0 `FAIL`, dois `rc=0`)
+vêm exclusivamente dessas duas chamadas limpas. **A dúvida óbvia que uma auditoria levantaria — "o
+`kill` deixou resíduo na árvore?"** — está fechada pela própria segunda chamada:
+`run-gates-falsify-parallel.sh` contém o cenário `no-repo-mutation`, que audita
+`git status --porcelain` sobre `$ROOT_DIR`, e essa chamada rodou **depois** do `kill` e passou
+(`PARITY_FALSIFY_RC=0`, 412 `OK`, 0 `FAIL`) — o processo morto não deixou sujeira no repositório.
 
 ### Nota de conduta do agente, registrada porque ele mesmo a declarou
 

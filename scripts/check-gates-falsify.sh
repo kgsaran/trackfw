@@ -6809,10 +6809,13 @@ run_go_guard_dump "setup-s64-go-corrupted-build" "$T64_MOD" "$T64_OUT"
 # corrigido pelo ML-1B) prova que o escritor termina limpo; baseline com
 # payload GRANDE (>64KB, estoura o buffer do pipe) prova que o dreno
 # funciona mesmo sob pressão de buffer; detecção corrompe o literal isolado
-# do dreno de stdin (`[ -t 0 ] || _TRACKFW_STDIN=$(cat 2>/dev/null || true)`
-# -> `_TRACKFW_STDIN=""`, mantendo a checagem `-t 0` mas neutralizando a
-# leitura real) e prova que, sem o dreno, o EPIPE volta -- isolando a
-# regressão ao dreno em si, não a uma mudança geral no probe do no-op.
+# do dreno de stdin (`IFS= read -r -t 2 -d '' _TRACKFW_STDIN || true` ->
+# `true`, deixando a inicialização `_TRACKFW_STDIN=""` intacta mas
+# neutralizando a leitura real -- literal atualizado no ML-3A da ROADMAP-
+# 2026-09-09-guard-emite-hookspecificoutput-e-a-razao-chega-ao-modelo-nos-3-
+# clis.md, que trocou o discriminante `-t 0` por dreno com orçamento de
+# tempo) e prova que, sem o dreno, o EPIPE volta -- isolando a regressão ao
+# dreno em si, não a uma mudança geral no probe do no-op.
 # ---------------------------------------------------------------------------
 T65_NO_YAML_DIR="$WORK/s65-no-trackfw-yaml"
 mkdir -p "$T65_NO_YAML_DIR"
@@ -6843,8 +6846,8 @@ cp "$ROOT_DIR/go.sum" "$T65_MOD/go.sum"
 
 corrupt_literal \
   "$ROOT_DIR/internal/generators/scaffold.go" "$T65_MOD/internal/generators/scaffold.go" \
-  '[ -t 0 ] || _TRACKFW_STDIN=$(cat 2>/dev/null || true)' \
-  '_TRACKFW_STDIN=""' \
+  "IFS= read -r -t 2 -d '' _TRACKFW_STDIN || true" \
+  "true" \
   "s65-go-stdin-drain-removed"
 
 T65_OUT="$WORK/s65-out"
