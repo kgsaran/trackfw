@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-06
 squad: ares-tf
 req: "docs/req/REQ-2026-09-03-check-gates-falsify-e-610-dos-780-segundos-do-parity-e-o-gate-que-falsifica-os-outros.md"
@@ -7,7 +7,7 @@ req: "docs/req/REQ-2026-09-03-check-gates-falsify-e-610-dos-780-segundos-do-pari
 
 # Roadmap: Perfil e aceleração do `check-gates-falsify`, sem perder cobertura
 
-> Criado em: 2026-09-06 | Status: wip
+> Criado em: 2026-09-06 | Status: done
 
 ## Context
 
@@ -1454,3 +1454,50 @@ o objetivo, e o proxy só entra como instrumento, nomeado como tal.**
   vai a ~7min, e o custo é alto. **Reabre com número novo se voltar a incomodar.**
 - **A divergência 1,855x previsto vs 2,37x medido não foi isolada.** O agente declarou hipótese
   (overhead fixo por shard) e **não a afirmou como provada** — método correto.
+
+## Medição final no CI — arquiteto, 2026-09-08 (run `34295882402`, PR #295)
+
+```
+parity-falsify-shard (3)   7m45s   ← bloco indivisível, agora neste índice
+parity-other-gates         3m47s
+parity-falsify-shard (0)   3m43s
+parity-falsify-shard (1)   3m27s
+parity-falsify-shard (2)   3m02s
+parity (agregação)         0m09s   success
+
+wall-clock 7m45s   ·   soma de CPU 21m53s   ·   desequilíbrio 2,55x
+```
+
+**Arco completo do job `parity`:**
+
+```
+13m23s   quando a REQ abriu
+20m41s   depois de quatro dias somando cenários     ← a dívida que criamos
+15m00s   ML-2D — paralelismo em processo
+10m20s   ML-2G — matriz de jobs
+ 7m45s   ML-2H — peso por tempo medido
+```
+
+**Pela primeira vez o job está abaixo do ponto de partida** — 42% abaixo dele, 62% abaixo do pico.
+
+**Reconciliação previsão × medição, mesmo método (CI):** local previa 2,37x; o CI mediu **2,55x**
+(465s / 182s). Diferença pequena e **na direção** que o agente havia declarado como hipótese não
+provada (overhead fixo por shard). 🔴 Continua **não provada** — registrar a coincidência de direção
+não é prová-la.
+
+**O índice do gargalo mudou** (era shard 2, agora é shard 3): esperado, porque reempacotar reatribui
+blocos. O que **não** mudou é que o piso continua sendo o mesmo bloco indivisível.
+
+## Encerramento do roadmap — 2026-09-08
+
+Sem pendência. `ML-2B` **abandonado com motivo medido**; `ML-2H` entregue; **piso declarado**.
+
+🔴 **Sítio conhecido e não corrigido, com decisão escrita:** o bloco indivisível de ~465s é o piso.
+Decompô-lo exige atacar o mesmo bloco de ~1900 linhas que o ML-2C tornou cortável em teoria. **Não
+abro ML:** o ganho seria sobre um job que já vai a 7m45s, e o custo é alto. **Reabre com número novo
+se voltar a incomodar** — a medição por segmento é reproduzível pelo mesmo método.
+
+**A lição que sobrevive a este roadmap, e que já está pagando em outras frentes:** a paralelização
+comprou fôlego, **não resolveu o crescimento**. O gate saiu de 610s para 876s em quatro dias porque
+cada campanha acrescenta cenários. Se o ritmo continuar, o número volta a subir — e a próxima
+resposta não pode ser paralelizar de novo.

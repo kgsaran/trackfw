@@ -1,5 +1,5 @@
 ---
-status: Open
+status: Done
 date: 2026-09-03
 author: "trackfw_architect (Zeus)"
 adr: ""
@@ -142,3 +142,31 @@ abrir issue separada; recusamos, com o critério explicado.
 
 **18m12s** no fork dele contra **1204s (20 min)** medidos por nós no CI. Runners diferentes, números
 próximos: o custo é do gate, não da máquina.
+
+
+## Encerramento — 2026-09-08
+
+```
+13m23s   quando esta REQ abriu
+20m41s   depois de quatro dias somando cenários     ← dívida que nós criamos
+15m00s   ML-2D — paralelismo em processo
+10m20s   ML-2G — matriz de jobs
+ 7m45s   ML-2H — peso por tempo medido
+```
+
+**42% abaixo do ponto de partida, 62% abaixo do pico.** Todas as pontas medidas **no CI**, mesmo
+método (atribuição por job/segmento no log).
+
+**Cobertura preservada em todas as etapas:** conjunto de rótulos idêntico, verificado a cada ML. A
+tentativa que dava **3,03x rodando 81% da suíte foi REPROVADA** — o número pior sobre o conjunto
+inteiro vale mais que o melhor sobre um pedaço.
+
+🔴 **Sítios conhecidos e não corrigidos, com decisão escrita:**
+- **bloco indivisível de ~465s** — é o piso. Decompô-lo tem custo alto sobre um job que já vai a
+  7m45s. **Não vira ML**; reabre com número novo se voltar a incomodar.
+- **os outros 45 gates** (`ML-2B`) — ~19,6% do job. **Abandonado com motivo medido**, não deixado
+  pendente: ML que ninguém vai fazer é o passivo das REQs órfãs, só mais bem escondido.
+
+**A lição que sobrevive:** a paralelização comprou fôlego, **não resolveu o crescimento**. O gate foi
+de 610s para 876s em quatro dias porque cada campanha acrescenta cenários. Se o ritmo continuar, o
+número volta a subir — e a próxima resposta não pode ser paralelizar de novo.
