@@ -5,6 +5,66 @@ Todas as mudanças notáveis deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 e este projeto adere a [Semantic Versioning](https://semver.org/).
 
+## [7.5.0] - 2026-09-09
+
+### ⚠️ Leia antes de atualizar
+
+🔴 **Quem já usa o trackfw precisa rodar `trackfw update harness` depois de atualizar.**
+
+O guard de git instalado na sua máquina emitia um JSON que o Claude Code **recusa na raiz do objeto**
+— todo comando bloqueado produzia `Hook JSON output validation failed — (root): Invalid input`, e a
+explicação do bloqueio se perdia. A correção está nesta versão, **mas o script instalado só é
+regravado pelo `update harness`**. Sem esse comando, o erro continua e parece que a correção não
+funcionou.
+
+**Suporte a Windows continua parcial e declarado.** O job `windows-full-suites` do nosso CI segue
+vermelho por ~26 falhas conhecidas e triadas por mecanismo. Isso é estado registrado, não regressão —
+o detalhe está no README.
+
+### Fixed
+
+- **Guard de git emitia schema de hook rejeitado pelo Claude Code** (#297). Passou a emitir
+  `hookSpecificOutput` com `permissionDecision`/`permissionDecisionReason`, nos 7 sítios (script,
+  3 geradores, 3 referências do `validate`). A estratégia de dois formatos foi preservada: `exit 2`
+  continua sendo o que faz o guard funcionar em Codex/Windsurf/Cursor.
+- 🔴 **O guard podia congelar a sessão do agente** (#299). O dreno de stdin usava `[ -t 0 ]` como
+  discriminante — que separa *terminal* de *pipe*, não *"vai receber EOF"* de *"não vai"*. Qualquer
+  runtime que segurasse stdin aberta travava o guard **para sempre**, com o sintoma "o agente
+  congelou" e nenhuma pista apontando para o guard. Agora o dreno tem limite, e **o fail-closed foi
+  preservado**: ao desistir, o guard ainda decide e ainda bloqueia.
+- 🔴 **Segurança — a guarda de destino aceitava caminho inseguro no Windows** (#293).
+  `filepath.IsAbs("/tmp/x")` é falso no Windows (sem letra de unidade), então a guarda classificava o
+  caminho como relativo e o **forçava sob a raiz de escopo** em vez de rejeitar. Predicado de
+  ancoragem independente de SO extraído para `internal/pathanchor` e consumido por
+  `validator` e `integrations`.
+- **O vínculo de rastreabilidade não sobrevivia ao `roadmap move`** (#289). O `validate` afirmava
+  `which does not exist` sobre arquivos que existiam — o caminho gravado inclui a pasta de estado, e
+  a pasta *é* o estado. Agora resolve por basename e emite aviso **verdadeiro** de `stale state path`.
+  Efeito colateral corrigido: `req_roadmap_lifecycle` era **fail-open** exatamente no caso que existe
+  para detectar.
+- **`update --json` do Python emitia separador nativo no campo `path`** (#293, issue #292). Go e Node
+  emitiam `/`; o Python montava identificadores canônicos com `os.path.join`. Corrigido — os 3
+  runtimes agora produzem saída idêntica.
+
+### Added
+
+- **Gate de forma do JSON do hook** (#299). O defeito acima nasceu porque **nada verificava a forma
+  emitida** — e era invisível, porque o guard continua *funcionando* com JSON errado: o bloqueio
+  acontece, só a explicação se perde. O gate verifica por execução real e decode estruturado, e
+  **reprova se um sítio derivado não estiver contabilizado** — um emissor novo não passa em silêncio.
+
+### Changed
+
+- **CI: o job `parity` caiu de 20m41s para ~7m50s** (#291, #294, #295). Paralelismo em processo,
+  matriz de jobs a custo zero, e empacotamento por **tempo medido** em vez de contagem de linha.
+  🔴 Cobertura preservada em todas as etapas — uma versão intermediária que dava 3,03x rodando **81%
+  da suíte** foi reprovada. O número pior sobre o conjunto inteiro vale mais que o melhor sobre um
+  pedaço.
+
+### Internal
+
+- Governança: REQ do `parity` encerrada com o piso declarado (#296).
+
 ## [7.4.0] - 2026-09-06
 
 ### ⚠️ Leia antes de atualizar
