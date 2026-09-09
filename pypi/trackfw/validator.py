@@ -2904,12 +2904,31 @@ set -f
 # --- 0. Drena o stdin ANTES de qualquer saída antecipada (ML-1B, ROADMAP-2026-08-17-guard-
 # global-cabeado-com-no-op-fora-de-projeto-e-integridade-independente-de-fiacao.md): sem isso,
 # quem escreve o payload JSON no pipe recebe EPIPE quando o no-op abaixo sai com 0 antes de ler
-# — reprodutível em 100% das chamadas fora de projeto trackfw, não é corrida de timing. Só drena
-# se stdin não for um terminal interativo (-t 0): em invocação manual sem pipe, "cat" bloquearia
-# esperando EOF (Ctrl-D). O valor lido é reaproveitado no passo 1 abaixo — nunca há uma segunda
-# leitura.
+# — reprodutível em 100% das chamadas fora de projeto trackfw, não é corrida de timing. O dreno
+# roda incondicionalmente, com orçamento de tempo (ML-3A, ver abaixo). O valor lido é reaproveitado no passo 1 abaixo — nunca há uma segunda leitura.
+#
+# ML-3A (ROADMAP-2026-09-09-guard-emite-hookspecificoutput-e-a-razao-chega-ao-modelo-nos-3-
+# clis.md): o discriminante que existia aqui era "-t 0" -- separa "terminal interativo" de
+# "pipe", não "vai receber EOF" de "não vai". Qualquer chamador não-tty que segure stdin aberta
+# (ex.: um runtime de hook que nunca fecha o descritor) travava o antigo "cat" para sempre, sem
+# limite -- foi o que pendurou "make quality" por 1h05 quando o gate de schema (ML-2A) chamou o
+# guard sem "</dev/null" em 3 sítios. Substituído por dreno com ORÇAMENTO DE TEMPO via
+# "read -t <segundos> -d ''": builtin do próprio bash desde a 3.0 (não do coreutils) -- medido
+# idêntico no bash 3.2 (padrão do macOS) e no bash 5.3 (Linux/Homebrew); o bash do MSYS2/Git-Bash
+# do Windows é bash de verdade e traz o mesmo builtin. Evita depender de "timeout(1)", que NÃO
+# existe no macOS base nem no MSYS2 mínimo. "-d ''" faz o read tentar ler até o EOF real (NUL
+# nunca aparece em payload de hook); "-t" interrompe a espera no orçamento e, medido contra um
+# FIFO nunca fechado (bash 3.2 e 5.3), preserva na variável qualquer prefixo já lido antes do
+# timeout -- sem perda do que chegou, só do que nunca chegou. 2s de orçamento: folga generosa
+# para o payload pequeno de um hook sob scheduler sob carga (CI, "make quality" paralelo), e
+# ainda curto o bastante para o travamento continuar perceptível em vez de indefinido. Estourar
+# o orçamento NÃO libera o bloqueio: o passo 1 abaixo já prefere "$*" quando há argumento
+# posicional, e cai para o que foi lido até o limite quando não há -- "exit 2" e o fail-closed
+# continuam idênticos nos dois casos. O antigo desvio para invocação manual em terminal (skip
+# total quando "-t 0") foi removido de propósito: era o próprio discriminante errado que este ML
+# elimina, não um caso a preservar -- agora toda invocação drena com o mesmo orçamento de 2s.
 _TRACKFW_STDIN=""
-[ -t 0 ] || _TRACKFW_STDIN=$(cat 2>/dev/null || true)
+IFS= read -r -t 2 -d '' _TRACKFW_STDIN || true
 
 # --- 0b. No-op fora de projeto trackfw (ADR-2026-08-17-guard-global-cabeado-com-no-op-fora-de-
 # projeto-trackfw.md): sobe diretórios a partir do cwd FÍSICO (pwd -P, resolve symlink) até

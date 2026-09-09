@@ -4,6 +4,161 @@
 
 ---
 
+## Sessão 2026-09-09 — ares-tf (Infrastructure) — ML-4A: `derive_sites()` do gate de hook usa `git ls-files` (CONCLUÍDO)
+
+Branch `feat/guard-emite-hookspecificoutput-e-a-razao-chega-ao-modelo-nos-3-clis`, ML-4A do roadmap
+`docs/roadmaps/wip/ROADMAP-2026-09-09-guard-emite-hookspecificoutput-e-a-razao-chega-ao-modelo-nos-3-clis.md`
+(mesma REQ do ML-2A — mesma causa: defeito na derivação do gate que o ML-2A entregou). Roteado
+primeiro a `prometeu-tf`, que recusou por mode lock (schema de hook é domínio dele; derivação de
+sítios em gate de CI/`Makefile` é infraestrutura) e nomeou `ares-tf`. Nenhuma operação de git
+(commit/push são do `trackfw_architect`).
+
+**O que aconteceu:** PR #299 (ML-2A) reprovou no CI — `Quality / parity-other-gates` derivou 9
+sítios contra os 7 medidos localmente, com `pypi/build/lib/trackfw/generators/init_gen.py` e
+`pypi/build/lib/trackfw/validator.py` acusados "sem cobertura". 🔴 Não era defeito do gate — era
+defeito da fonte de dados: `derive_sites()` fazia `grep -rlas` sobre a árvore de trabalho inteira;
+`pypi/build/` está em `.gitignore`, mas `python -m pip install pypi/` (step do CI) materializa
+cópias do fonte ali, que a varredura contava como sítio novo. Mesma causa raiz do issue #288
+(`cp -r` levando conteúdo ignorado para dentro de fixture), mecanismo diferente (varredura, não
+cópia).
+
+**Fix:** `derive_sites()` agora deriva de `git ls-files -- '*.go' '*.js' '*.py' '*.sh'` quando
+`scan_root` está numa árvore git — exclui ignorado por construção, sem lista de exclusão por nome.
+Dois pontos decididos: (1) sítio versionado mas ausente no disco (checkout esparso) é ignorado, não
+reprova por si; (2) fora de repo git, cai para a varredura antiga com aviso explícito em stderr
+(nunca silencioso) — hoje só alcançado pelos diretórios sintéticos do `--self-test` (nenhum é repo
+git). `-a` preservado (byte NUL em `npm/src/validator/index.js`).
+
+**Falsificação, com saída real, incluindo A/B contra o código antigo** (achado do `advisor`: a
+primeira versão deste relatório afirmava o resultado "antes do fix" sem executá-lo — corrigido antes
+de fechar): `git show HEAD:.../check-git-branch-guard-hook-schema.sh > /tmp/gate_old.sh`, criados os
+2 caminhos `pypi/build/lib/...` na árvore real. Script ANTIGO: `OLD_RC=1`, 9 sítios, reprova
+nomeando os 2 caminhos — **reproduz byte a byte a reprovação do PR #299**. Script NOVO, mesma
+árvore: `NEW_RC=0`, 7 sítios, reconcilia ok. Mais: (2) sítio versionado novo sem cobertura
+(`internal/generators/second_copy_scratch.go`, `git add`), na árvore real, ainda reprova nomeando-o
+(rc=1) — no ramo `git ls-files`, não só no fallback; (3) vacuidade preservada pelos 3 cenários
+pré-existentes do `--self-test`. **2 novos cenários de `--self-test`** (achado do `advisor`: um só
+cenário provava só a direção "não conta o ignorado" — acrescentado um 2º que reaproveita o mesmo
+repo git sintético e prova, dentro da árvore de testes, que um 6º arquivo TRACKED sem cobertura
+ainda reprova no MESMO ramo `git ls-files`).
+
+**Três medidas:** `make parity-rest` **com `pypi/build/` presente na árvore** (reproduzindo o CI):
+`MAKE_RC=0`, `FAIL=0`, `OK=621` (619 + 2 cenários novos). `make quality QUALITY_EXIT=0` foreground do
+início ao fim, medido antes do 2º cenário: `MAKE_RC=0`, `FAIL=0`, `OK=1032` (piso `≥1031` do
+handoff) — não re-executado por inteiro após o 2º cenário (custaria outra rodada de ~13min só para
+confirmar +1); `--self-test` isolado + `make parity-rest` completo pós-2º-cenário já confirmam que
+ele passa e nada mais regrediu. `./bin/trackfw validate` executado (rc=0, 170 avisos pré-existentes,
+nenhuma violação nova).
+
+**Levantamento (reportado, não corrigido), 2 passadas** (achado do `advisor`: a 1ª passada, restrita
+a `grep -rl`/`find -type f`, deixaria de fora outras formas de varredura): 1ª passada —
+`check-artifact-closed-cycle.sh`, `check-integration-assets.sh`, `check-identity-parity.sh`,
+`check-static-assets.sh`, `check-update-parity.sh`, `check-roadmap-barrier-contract.sh`,
+`smoke-integration-packages.sh`, `sync-integration-assets.sh` (maioria varre diretórios
+estreitos/controlados, nenhum obviamente "árvore de fonte + build instalável misturados"). 2ª
+passada, mais ampla e **sem triagem** (`find `/`grep -r`/`ls -R`/`globstar`/`**/`): mais 12 scripts
+(`check-agent-models-parity.sh`, `check-barrier.sh`, `check-gates-falsify.sh`,
+`check-homedir-parity.sh`, `check-python-writes-lf.sh`, `check-raw-read-ban.sh`,
+`check-release-tag-parity.sh`, `check-ref-separator-portability.sh`, `check-slash-parity.sh`,
+`check-ship-force-parity.sh`, `run-gates-falsify-parallel.sh`, `check-tty-detection.sh`) e 5
+arquivos Go com `filepath.WalkDir`/`os.ReadDir` (`internal/discover/discover.go`,
+`internal/validator/validator.go`, `internal/integrations/manager.go`,
+`internal/generators/roadmap.go`, `internal/generators/update.go`) — lista bruta, provavelmente com
+falso positivo, não filtrada nem corrigida.
+
+Nota do vault:
+`vault/notes/gate-deriva-sitio-de-arvore-de-trabalho-em-vez-de-git-ls-files-2026-09-09.md`.
+Ver detalhe completo no roadmap, seção ML-4A.
+
+Sem commit/push — fora da minha autoridade (trackfw_architect audita e commita).
+
+---
+
+## Sessão 2026-09-09 — prometeu-tf (Tooling) — ML-3A: dreno de stdin do guard com orçamento de tempo (CONCLUÍDO)
+
+Branch `feat/guard-emite-hookspecificoutput-e-a-razao-chega-ao-modelo-nos-3-clis`, ML-3A do roadmap
+`docs/roadmaps/wip/ROADMAP-2026-09-09-guard-emite-hookspecificoutput-e-a-razao-chega-ao-modelo-nos-3-clis.md`.
+Nenhuma operação de git (commit/push são do `trackfw_architect`).
+
+**O que era:** `[ -t 0 ] || _TRACKFW_STDIN=$(cat 2>/dev/null || true)` — achado da sessão anterior
+(entrada abaixo), reportado e deliberadamente não corrigido ali.
+
+**Fix:** `_TRACKFW_STDIN=""` seguido de `IFS= read -r -t 2 -d '' _TRACKFW_STDIN || true`, byte-
+idêntico nos 7 sítios (script real + 3 geradores + 3 referências do `validate`). `read -t/-d` é
+builtin do bash desde a 3.0 (não do coreutils) — evita depender de `timeout(1)`, ausente no macOS
+base e no MSYS2 mínimo. Medido em bash 3.2 e 5.3 contra FIFO nunca fechado: preserva prefixo já
+lido antes do timeout, sem perda do que chegou. Orçamento de 2s, fail-closed preservado (`exit 2`
+segue existindo se o timeout estourar, decidindo por `$*`).
+
+**Falsificado nas duas direções + payload grande + newline final** (a única diferença semântica
+real entre `$(cat)` e `read -d ''`, achado do `advisor` — as 3 falsificações originais não
+cobriam essa dimensão): ver detalhe completo no roadmap, ML-3A. 200KB drena em 0.154s (>10x de
+margem sob o orçamento de 2s).
+
+**Sítio de mesma causa corrigido junto:** `scripts/check-gates-falsify.sh` Cenário 65
+(`corrupt_literal` da regressão de EPIPE, ML-1B) apontava para o literal antigo — atualizado para o
+literal novo, mesma prova preservada.
+
+**Gate local, três medidas, duas chamadas separadas (teto de 10min/chamada):** `make parity-rest`
+`rc=0` 4m05s (FAIL=0, OK=619); `run-gates-falsify-parallel.sh` `rc=0` 8m08s (FAIL=0, OK=412).
+**Total 1031 OK, 0 FAIL** — bate com o piso do handoff. `go test`/`npm test`/`pytest` verdes antes.
+`./bin/trackfw validate` rc=0, sem violação nova.
+
+**Nota de conduta autodeclarada:** primeira tentativa de `make quality` numa chamada só estourou o
+teto de 10min da ferramenta e foi auto-movida para background (não por escolha própria); o `kill`
+subsequente chegou perto do fim e corrompeu aquele log (`Terminated: 15`, sem `MAKE_RC`) —
+descartado por inteiro, sem aproveitar nenhum número dele, e refeito em duas chamadas limpas em
+primeiro plano. `no-repo-mutation` (dentro de `parity-falsify`, rodado depois do `kill`) confirma
+que o processo morto não deixou resíduo na árvore.
+
+**Vault:** `vault/notes/git-branch-guard-stdin-drain-timeout-em-vez-de-discriminante-tty-2026-09-09.md`.
+
+---
+
+## Sessão 2026-09-09 — prometeu-tf (Tooling) — hotfix pós-ML-2A: guard de `make quality` que travava (correção pontual, CONCLUÍDO)
+
+Branch `feat/guard-emite-hookspecificoutput-e-a-razao-chega-ao-modelo-nos-3-clis`, sobre a entrega do
+ML-2A já na árvore. Nenhuma operação de git (commit/push são do `trackfw_architect`).
+
+**Causa medida:** `scripts/check-git-branch-guard-hook-schema.sh` invoca o guard real
+(`scripts/trackfw-git-branch-guard.sh`) em 3 sítios (`check_site`/linha ~171, e os 2 cenários
+right/wrong-schema do `--self-test`) **sem redirecionar stdin**. O guard drena stdin
+incondicionalmente (`[ -t 0 ] || cat`) ANTES de olhar `$#` — mesmo quando o comando chega por
+argumento posicional. Sob `make`, stdin não é terminal e não fecha, então o `cat` bloqueia para
+sempre; à mão (stdin herdada de um terminal interativo, ou já com EOF) o mesmo cenário nunca
+aparece — por isso passou na medição isolada do ML-2A e na conferência do arquiteto.
+
+**Fix:** `</dev/null` nos 3 sítios — o comando testado chega via `$1`, nunca via stdin, então o
+conteúdo do payload é irrelevante ao que o gate mede (a forma do JSON de saída); `/dev/null` só
+fornece EOF imediato.
+
+**Prova de não-regressão (controle negativo, falsificado nas duas direções):** mesma invocação via
+FIFO aberto leitura+escrita (nunca recebe EOF de um escritor, reproduz a condição do `make` sem
+depender do `make` em si) — **sem** o redirect: `A_RC=142` (morto por alarm de 15s, nunca retorna);
+**com** `</dev/null`: `B_RC=2` em 0s. `--self-test` (5 cenários) e o gate completo, rodados sob o
+mesmo FIFO hostil (nunca fecha, não-terminal): ambos `rc=0` em segundos, não travam.
+
+**`make quality QUALITY_EXIT=0` completo, sob a mesma stdin hostil (FIFO nunca fecha):**
+`MAKE_RC=0`, tempo de parede **775s (12m55s)**, `FAIL=0`, `OK=1031` (≥1022). `./bin/trackfw
+validate` rc=0 (170 warnings pré-existentes, nenhum novo, nenhum erro).
+
+**Sweep dos demais sítios que executam o guard real** (não stub) — `assert_guard_exit` e
+`assert_writer_no_epipe` em `check-gates-falsify.sh` sempre fornecem stdin com EOF garantido
+(here-string `<<<` ou escritor real que fecha); `check-attention-scripts-parity.sh` só faz diff de
+bytes do script gerado, nunca o executa. Nenhum outro sítio de risco encontrado.
+
+**Não corrigido, reportado como observação (mesma causa candidata — sinalizar ao arquiteto para
+ML novo na REQ vigente, não REQ nova):** `[ -t 0 ]` no guard não distingue "vai receber EOF" de
+"não é terminal" — qualquer chamador não-tty que segure stdin aberta trava o guard
+indefinidamente, sem limite de tempo. Recomendação: drenar com timeout limitado. Não implementado
+aqui — o guard acabou de ser corrigido na Wave 1 do roadmap vigente, e esta seria outra causa a
+tratar deliberadamente, não de passagem.
+
+**Sem obrigação de paridade nos 3 CLIs:** `scripts/check-*.sh` é infra de gate, exceção explícita
+em `docs/cli-parity.md`.
+
+---
+
 ## Sessão 2026-09-08 — ares-tf (Infra) — ML-2H (rebalancear shards por tempo medido, mecanismo entregue)
 
 Branch `refactor/perfil-e-aceleracao-do-check-gates-falsify-sem-perder-cobertura`, a partir da `main`
@@ -34361,3 +34516,43 @@ escopo desta REQ).
 
 Vault: `git-branch-guard-schema-decision-block-rejeitado-pelo-claude-code-2026-09-09.md`. Sem
 commit/push — fora da minha autoridade (trackfw_architect audita e commita).
+
+## 2026-09-09 — prometeu-tf — ML-2A (gate de forma do JSON do hook, `hookSpecificOutput`)
+
+Roadmap: `ROADMAP-2026-09-09-guard-emite-hookspecificoutput-e-a-razao-chega-ao-modelo-nos-3-clis.md`
+(REQ-2026-09-02), Wave 2. ML-1A/1B (Wave 1) já mergeados (PR #297). ML-2A marcado ✅ Concluído.
+
+**Entregue:** `scripts/check-git-branch-guard-hook-schema.sh`, novo, cabeado em
+`Makefile`/`parity-rest` (chamada padrão + `--self-test`). Verifica por **execução real** (script
+real + os 3 geradores via `discover --init`) e **decode JSON estruturado** (`json.loads`, nunca
+substring) que `hookSpecificOutput.hookEventName=="PreToolUse"`,
+`.permissionDecision=="deny"`, `.permissionDecisionReason` não-vazia, com `rc==2` preservado.
+
+Lista de sítios **derivada** (`grep -rlas` com `-a` — `npm/src/validator/index.js` tem byte NUL),
+não congelada; reproduz os 7 sítios do ML-1A. Nível único de execução (script real + 3 geradores);
+os 3 sítios de referência do `validate` ficam cobertos transitivamente pelos testes de
+byte-identidade do ML-1B — decisão registrada no cabeçalho do script.
+
+**Achado do `advisor` nesta sessão, corrigido antes de fechar:** a guarda de vacuidade inicial
+(contagem > 0 + 3 stacks) só CRESCE — um 8º sítio real ficaria listado pela derivação e nunca
+verificado, porque a execução continuava fixa nos 4 alvos de hoje. Acrescentada guarda 3
+(reconciliação): todo sítio derivado precisa estar em `EXECUTED_HERE` ou em
+`COVERED_BY_BYTE_IDENTITY_TEST` (as 3 referências, cobertas pelos testes do ML-1B) — sobra não
+contabilizada reprova, nomeando o caminho. `docs/cli-parity.md` (~linha 5196, "Contrato de payload
+do script") também foi corrigida nesta entrega (doc-only, dispensa REQ/roadmap por §7) — descrevia o
+schema legado como atual; passou a descrever `hookSpecificOutput` e ganhou uma nota de correção com
+o antes/depois, mais o novo gate na anotação `trackfw-contract`.
+
+5 falsificações com saída real via `--self-test` (2 direções + 3 formas de vacuidade): schema errado
+reprova nomeando o sítio, schema certo aprova, e as 3 guardas de vacuidade (nenhum sítio / script
+ausente / sítio novo não contabilizado) reprovam nomeando a causa — nunca passam por não achar nada.
+
+`make parity-rest` (MAKE_RC=0, FAIL=0, OK=619) + `scripts/run-gates-falsify-parallel.sh` (MAKE_RC=0,
+FAIL=0, OK=412, medido antes da correção da guarda 3 e ainda válido — nenhum cenário daquele arquivo
+foi tocado) = **1031** OK, acima do piso `≥1022` do handoff. `go build`/`go vet`/`go test`/`npm test`
+(885/885)/`pytest` (1668 passed) verdes. `./bin/trackfw validate` rc=0, sem violação nova.
+`scripts/check-parity-contract-coverage.sh` rc=0 após a edição do `cli-parity.md`.
+
+Ver detalhe completo no roadmap, seção ML-2A.
+
+Sem commit/push — fora da minha autoridade (trackfw_architect audita e commita).
