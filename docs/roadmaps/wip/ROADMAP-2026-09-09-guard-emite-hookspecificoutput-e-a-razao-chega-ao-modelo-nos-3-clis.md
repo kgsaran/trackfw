@@ -136,12 +136,99 @@ tocado.**
 > Dependências: Wave 1.
 
 ### ML-2A — Gate de forma do JSON do hook
-**Status:** ⬜ Pendente · **Agente:** `prometeu-tf`
+**Status:** ✅ Concluído · **Agente:** `prometeu-tf`
 
 O defeito nasceu porque **nada verificava a forma do JSON emitido**. Sem gate, ele volta na próxima
 mudança de schema — e ninguém vai notar, porque `exit 2` mantém o bloqueio funcionando.
 
 Falsificação nas duas direções + guarda de vacuidade.
+
+**Entregue:** `scripts/check-git-branch-guard-hook-schema.sh`, cabeado em `Makefile`/`parity-rest`
+(chamada padrão + `--self-test`). Verifica por **execução real** (o script de verdade + os 3
+geradores via `discover --init`, nunca uma API interna) e **decode JSON estruturado**
+(`json.loads`, nunca substring/regex no texto) que `.hookSpecificOutput.hookEventName ==
+"PreToolUse"`, `.hookSpecificOutput.permissionDecision == "deny"` e
+`.hookSpecificOutput.permissionDecisionReason` é string não-vazia, com `rc == 2` preservado
+(fail-closed não deveria depender do JSON).
+
+**Lista de sítios: derivada, não congelada.** `grep -rlas "permissionDecisionReason"` (com `-a`
+por causa do byte NUL em `npm/src/validator/index.js` — a mesma armadilha que fez o ML-1A perder
+esse sítio na primeira medição) sobre `.go`/`.js`/`.py`/`.sh`, excluindo `scripts/testdata/`,
+arquivos de teste e os próprios `scripts/check-*.sh` (que citam o campo em prosa, sem emiti-lo).
+Reproduz os 7 sítios medidos no ML-1A. Guarda de vacuidade: reprova se o script real não existir em
+disco, se a lista vier vazia, ou se algum dos 3 stacks não aparecer nela.
+
+**Nível único de execução, com justificativa:** só o script real + os 3 geradores são executados
+aqui — os 3 sítios de *referência* do `validate` (`internal/validator/
+validator_git_branch_guard_reference.go`, `pypi/trackfw/validator.py`,
+`npm/src/validator/index.js`) não têm caminho de execução próprio (nunca rodam como hook) e já têm
+testes de byte-identidade contra o gerador do próprio stack (ML-1B: `TestGitBranchGuardScriptReference_
+MatchesGenerator` etc., rodados em `make test`/`test-node`/`test-python`) — cobrir os 2 níveis aqui
+seria redundante. Decisão registrada no cabeçalho do script.
+
+**Guarda de vacuidade 3 — reconciliação, não só contagem (achado do `advisor` nesta sessão):** a
+guarda inicial (contagem > 0 + 3 stacks presentes) só cresce — um 8º sítio real (4º gerador, novo
+runtime, segunda cópia do script) apareceria **listado e nunca verificado**, porque a EXECUÇÃO
+continuaria fixa nos 4 alvos de hoje. Corrigido: todo sítio derivado precisa estar em
+`EXECUTED_HERE` (verificado por execução, acima) ou `COVERED_BY_BYTE_IDENTITY_TEST` (as 3
+referências do `validate`, cobertas pelos testes unitários do ML-1B) — sobra não contabilizada
+reprova, nomeando o caminho.
+
+**As três falsificações, com saída real (`--self-test`, 5 cenários):**
+- schema errado (cópia de scratch com a linha do `printf` revertida para
+  `{"decision":"block","reason":"%s"}`): `OK [self-test/wrong-schema]: gate reprova o schema legado,
+  nomeando o sítio (.../scripts/trackfw-git-branch-guard.sh) — motivo: MISSING_hookSpecificOutput:
+  chaves da raiz sao ['decision', 'reason']`.
+- schema certo (script real, sem mutação): `OK [self-test/right-schema]: gate aprova a forma
+  correta — VALID: hookSpecificOutput.permissionDecision=deny, permissionDecisionReason com 175
+  caracteres`.
+- guarda de vacuidade, nas 3 formas exigidas: `OK [self-test/vacuidade-nenhum-sitio]` (árvore sem
+  nenhum sítio, via `TRACKFW_ROOT_DIR` sintético), `OK [self-test/vacuidade-script-ausente]`
+  (sítios plausíveis nos 3 stacks, script real ausente) e
+  `OK [self-test/vacuidade-sitio-nao-contabilizado]` (script real + 3 geradores presentes, MAIS um
+  4º arquivo com o marcador fora das duas listas — prova a guarda 3 acima) — as três reprovam
+  nomeando a causa, não passam por não achar nada.
+
+**Reconciliação (`CLAUDE.md`) — uma frase por afirmação, não uma só para o ML inteiro:**
+- Modo padrão (`check_site`/`decode_shape`): afirma que o script real e os 3 geradores emitem
+  `hookSpecificOutput`/`permissionDecision:"deny"`/`permissionDecisionReason` não-vazio **por decode
+  JSON estruturado em runtime**, não por presença de substring — é essa a conclusão medida e
+  reportada acima; nenhuma contradição interna.
+- `--self-test`: afirma que o gate é **falsificável nas duas direções e não vazio** — reprova o
+  schema legado nomeando o sítio, aprova o schema correto, e reprova (sem passar em silêncio) uma
+  árvore sem sítios, sem o script real, ou com um sítio novo fora das duas listas de cobertura — é
+  essa a conclusão que os 5 cenários acima medem, não uma extensão da afirmação do modo padrão.
+
+**As três medidas, executadas nesta sessão (após o achado do `advisor` e a correção da guarda 3):**
+- `MAKE_RC=0` em `make parity-rest` (build + ~46 gates, inclui as 2 chamadas novas) e em
+  `scripts/run-gates-falsify-parallel.sh` (equivalente a `parity-falsify`, não re-executado após a
+  correção porque nenhum cenário daquele arquivo foi tocado — mesmo raciocínio já usado no ML-1B).
+- `grep -c '^FAIL'` = **0** nos dois logs.
+- `grep -c '^OK'` = 619 (`parity-rest`, +9 sobre o piso de 610 do ML-1B: 4 do modo padrão + 5 do
+  `--self-test`, incluindo o cenário novo da guarda 3) + 412 (`parity-falsify`, medido antes da
+  correção da guarda 3 e válido ainda, por não tocar aquele arquivo) = **1031**, acima do piso
+  `≥ 1022` declarado no handoff.
+
+`go build ./...`, `go vet ./...`, `go test ./...`, `npm test` (885/885) e
+`python3 -m pytest pypi/tests -q` (1668 passed) verdes, sem tocar arquivos de teste existentes.
+`./bin/trackfw validate` rc=0, sem violação nova (só avisos pré-existentes, inclusive o aviso
+esperado sobre `~/.trackfw/scripts/trackfw-git-branch-guard.sh` global desatualizado, fora do
+escopo — ver ML-1A). `scripts/check-parity-call-site-pins.sh` rc=0, GO_BIN pinado no novo call
+site do Makefile como nos demais. `scripts/check-parity-contract-coverage.sh` rc=0 após a edição de
+`docs/cli-parity.md` abaixo.
+
+**Sítio de mesma causa — corrigido nesta entrega, não só reportado (correção pós-`advisor`):**
+`docs/cli-parity.md`, seção "Contrato de payload do script (`gitBranchGuardScript`)" (~linha 5196),
+ainda documentava o schema LEGADO (`{"decision":"block","reason":"..."}`) como a forma atual emitida
+pelo script — não foi atualizada pelo ML-1A/1B (confirmado: `git show <merge de #297> --stat` não
+toca `docs/cli-parity.md`), e o `CLAUDE.md` deste projeto pré-rejeita "é superfície diferente" como
+motivo para não corrigir mesma causa no mesmo lugar. Como é alteração **doc-only**, a exceção de
+trivialidade do `~/.claude/CLAUDE.md` §7 dispensa REQ+roadmap próprios — corrigida no corpo deste
+ML: o parágrafo passou a descrever `hookSpecificOutput`/`permissionDecision:"deny"`/
+`permissionDecisionReason`, com uma nota "Correção de schema (2026-09-09, ...)" explicando o antes/
+depois e linkando o vault note do ML-1A. A anotação `<!-- trackfw-contract: gate=... -->` da seção
+passou a incluir `scripts/check-git-branch-guard-hook-schema.sh`. Revalidado com
+`scripts/check-parity-contract-coverage.sh` (rc=0, anotação aceita).
 
 ## Critérios de Aceite (os 4 da REQ, verificados por execução)
 
@@ -197,3 +284,64 @@ corrige. Nada a fazer; confirmado, não presumido.
 - **Não** remove o `exit 2` nem a estratégia de dois formatos.
 - **Não** altera o corpus congelado de testdata.
 - **Não** amplia o conjunto de comandos bloqueados — é mudança de **forma de saída**, não de política.
+
+## Correção pós-auditoria do ML-2A — o gate travava no `make quality`
+
+**Medido pelo arquiteto:** o gate passava isolado (`rc=0`) e **pendurava 1h05** dentro do
+`make quality`, até ser morto.
+
+**Causa:** o guard drena a stdin na etapa 0, **incondicionalmente**, antes de olhar `$#`. A única
+proteção é `[ -t 0 ]`. Sob `make`, a stdin **não é terminal e nunca fecha** ⇒ `cat` bloqueia para
+sempre. O gate invocava o guard **sem redirecionar stdin**, em 3 sítios.
+
+🔴 **Gate que trava é pior que gate que falha:** no CI o job estoura o limite **sem diagnóstico** e
+queima minutos de todos os PRs. O sintoma seria "o CI ficou lento", e ninguém olharia o gate novo.
+
+**Corrigido** com `</dev/null` nos 3 sítios. Justificativa medida: nesse modo o comando chega por
+argumento posicional e o guard prefere `$*` sobre stdin — o **conteúdo** do payload nunca é lido ali,
+então `/dev/null` entrega EOF sem alterar o que o gate mede.
+
+**Controle negativo, falsificado nas duas direções** (FIFO aberto leitura+escrita — stdin
+não-terminal que nunca recebe EOF, sem depender do `make`):
+
+```
+sem o fix    rc=142   morto por alarme, nunca retorna
+com o fix    rc=2     em 0s
+gate completo sob o mesmo FIFO      rc=0 em 7s   (reproduzido pelo arquiteto: 7s)
+--self-test sob o mesmo FIFO        5 OK
+make quality completo               MAKE_RC=0 · 775s (12m55s) · OK=1031
+```
+
+🔴 **Por que passou na medição do agente E na minha:** nós dois rodamos o gate **isolado**, e a stdin
+herdada tinha EOF. Só o contexto do `make` expõe. **É a mesma família de "gate em pedaços não é gate
+inteiro": o ambiente de execução faz parte do teste.**
+
+### ML-3A — O dreno de stdin do guard precisa de limite
+**Status:** ⬜ Pendente · **Agente:** `prometeu-tf`
+
+Achado do agente, **reportado e não corrigido** — decisão correta: é causa própria, e o guard acabou
+de ser mexido na Wave 1.
+
+> `[ -t 0 ]` é o discriminante **errado**: separa *"terminal interativo"* de *"pipe"*, não *"vai
+> receber EOF"* de *"não vai"*. **Qualquer** chamador não-tty que segure stdin aberta trava o guard
+> para sempre, sem limite.
+
+**O nosso gate foi apenas o primeiro chamador a expor isso.** Um hook de agente é invocado por
+runtimes que não controlamos — se algum deles mantiver stdin aberta, o guard pendura a sessão do
+usuário, e o sintoma será "o agente congelou".
+
+**Ações:** dreno com **limite de tempo**, em vez de discriminante por tipo de stdin. Falsificação nas
+duas direções: stdin com payload e EOF ⇒ lê o payload; stdin aberta sem EOF ⇒ **desiste no limite e
+segue**, sem travar. Paridade nos 3 geradores.
+
+🔴 **Mesma causa ⇒ mesma REQ.** Não abrir REQ nova: é o mesmo mecanismo (dreno sem limite sob stdin
+sem EOF) que acabou de travar o gate.
+
+### Nota de conduta do agente, registrada porque ele mesmo a declarou
+
+Ele rodou o `make quality` em **background**, contra a instrução explícita do handoff, e **assumiu a
+violação no relatório** sem que eu perguntasse. O tempo de parede foi medido de forma independente do
+agendamento (`date` + `alarm` embrulhando o `make`), então a medição não ficou comprometida.
+
+**Registro porque a autodeclaração é o comportamento que quero reforçar** — nono agente a usar
+background nesta sessão, e o primeiro a admitir sem ser confrontado.

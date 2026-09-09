@@ -4,6 +4,50 @@
 
 ---
 
+## Sessão 2026-09-09 — prometeu-tf (Tooling) — hotfix pós-ML-2A: guard de `make quality` que travava (correção pontual, CONCLUÍDO)
+
+Branch `feat/guard-emite-hookspecificoutput-e-a-razao-chega-ao-modelo-nos-3-clis`, sobre a entrega do
+ML-2A já na árvore. Nenhuma operação de git (commit/push são do `trackfw_architect`).
+
+**Causa medida:** `scripts/check-git-branch-guard-hook-schema.sh` invoca o guard real
+(`scripts/trackfw-git-branch-guard.sh`) em 3 sítios (`check_site`/linha ~171, e os 2 cenários
+right/wrong-schema do `--self-test`) **sem redirecionar stdin**. O guard drena stdin
+incondicionalmente (`[ -t 0 ] || cat`) ANTES de olhar `$#` — mesmo quando o comando chega por
+argumento posicional. Sob `make`, stdin não é terminal e não fecha, então o `cat` bloqueia para
+sempre; à mão (stdin herdada de um terminal interativo, ou já com EOF) o mesmo cenário nunca
+aparece — por isso passou na medição isolada do ML-2A e na conferência do arquiteto.
+
+**Fix:** `</dev/null` nos 3 sítios — o comando testado chega via `$1`, nunca via stdin, então o
+conteúdo do payload é irrelevante ao que o gate mede (a forma do JSON de saída); `/dev/null` só
+fornece EOF imediato.
+
+**Prova de não-regressão (controle negativo, falsificado nas duas direções):** mesma invocação via
+FIFO aberto leitura+escrita (nunca recebe EOF de um escritor, reproduz a condição do `make` sem
+depender do `make` em si) — **sem** o redirect: `A_RC=142` (morto por alarm de 15s, nunca retorna);
+**com** `</dev/null`: `B_RC=2` em 0s. `--self-test` (5 cenários) e o gate completo, rodados sob o
+mesmo FIFO hostil (nunca fecha, não-terminal): ambos `rc=0` em segundos, não travam.
+
+**`make quality QUALITY_EXIT=0` completo, sob a mesma stdin hostil (FIFO nunca fecha):**
+`MAKE_RC=0`, tempo de parede **775s (12m55s)**, `FAIL=0`, `OK=1031` (≥1022). `./bin/trackfw
+validate` rc=0 (170 warnings pré-existentes, nenhum novo, nenhum erro).
+
+**Sweep dos demais sítios que executam o guard real** (não stub) — `assert_guard_exit` e
+`assert_writer_no_epipe` em `check-gates-falsify.sh` sempre fornecem stdin com EOF garantido
+(here-string `<<<` ou escritor real que fecha); `check-attention-scripts-parity.sh` só faz diff de
+bytes do script gerado, nunca o executa. Nenhum outro sítio de risco encontrado.
+
+**Não corrigido, reportado como observação (mesma causa candidata — sinalizar ao arquiteto para
+ML novo na REQ vigente, não REQ nova):** `[ -t 0 ]` no guard não distingue "vai receber EOF" de
+"não é terminal" — qualquer chamador não-tty que segure stdin aberta trava o guard
+indefinidamente, sem limite de tempo. Recomendação: drenar com timeout limitado. Não implementado
+aqui — o guard acabou de ser corrigido na Wave 1 do roadmap vigente, e esta seria outra causa a
+tratar deliberadamente, não de passagem.
+
+**Sem obrigação de paridade nos 3 CLIs:** `scripts/check-*.sh` é infra de gate, exceção explícita
+em `docs/cli-parity.md`.
+
+---
+
 ## Sessão 2026-09-08 — ares-tf (Infra) — ML-2H (rebalancear shards por tempo medido, mecanismo entregue)
 
 Branch `refactor/perfil-e-aceleracao-do-check-gates-falsify-sem-perder-cobertura`, a partir da `main`
@@ -34361,3 +34405,43 @@ escopo desta REQ).
 
 Vault: `git-branch-guard-schema-decision-block-rejeitado-pelo-claude-code-2026-09-09.md`. Sem
 commit/push — fora da minha autoridade (trackfw_architect audita e commita).
+
+## 2026-09-09 — prometeu-tf — ML-2A (gate de forma do JSON do hook, `hookSpecificOutput`)
+
+Roadmap: `ROADMAP-2026-09-09-guard-emite-hookspecificoutput-e-a-razao-chega-ao-modelo-nos-3-clis.md`
+(REQ-2026-09-02), Wave 2. ML-1A/1B (Wave 1) já mergeados (PR #297). ML-2A marcado ✅ Concluído.
+
+**Entregue:** `scripts/check-git-branch-guard-hook-schema.sh`, novo, cabeado em
+`Makefile`/`parity-rest` (chamada padrão + `--self-test`). Verifica por **execução real** (script
+real + os 3 geradores via `discover --init`) e **decode JSON estruturado** (`json.loads`, nunca
+substring) que `hookSpecificOutput.hookEventName=="PreToolUse"`,
+`.permissionDecision=="deny"`, `.permissionDecisionReason` não-vazia, com `rc==2` preservado.
+
+Lista de sítios **derivada** (`grep -rlas` com `-a` — `npm/src/validator/index.js` tem byte NUL),
+não congelada; reproduz os 7 sítios do ML-1A. Nível único de execução (script real + 3 geradores);
+os 3 sítios de referência do `validate` ficam cobertos transitivamente pelos testes de
+byte-identidade do ML-1B — decisão registrada no cabeçalho do script.
+
+**Achado do `advisor` nesta sessão, corrigido antes de fechar:** a guarda de vacuidade inicial
+(contagem > 0 + 3 stacks) só CRESCE — um 8º sítio real ficaria listado pela derivação e nunca
+verificado, porque a execução continuava fixa nos 4 alvos de hoje. Acrescentada guarda 3
+(reconciliação): todo sítio derivado precisa estar em `EXECUTED_HERE` ou em
+`COVERED_BY_BYTE_IDENTITY_TEST` (as 3 referências, cobertas pelos testes do ML-1B) — sobra não
+contabilizada reprova, nomeando o caminho. `docs/cli-parity.md` (~linha 5196, "Contrato de payload
+do script") também foi corrigida nesta entrega (doc-only, dispensa REQ/roadmap por §7) — descrevia o
+schema legado como atual; passou a descrever `hookSpecificOutput` e ganhou uma nota de correção com
+o antes/depois, mais o novo gate na anotação `trackfw-contract`.
+
+5 falsificações com saída real via `--self-test` (2 direções + 3 formas de vacuidade): schema errado
+reprova nomeando o sítio, schema certo aprova, e as 3 guardas de vacuidade (nenhum sítio / script
+ausente / sítio novo não contabilizado) reprovam nomeando a causa — nunca passam por não achar nada.
+
+`make parity-rest` (MAKE_RC=0, FAIL=0, OK=619) + `scripts/run-gates-falsify-parallel.sh` (MAKE_RC=0,
+FAIL=0, OK=412, medido antes da correção da guarda 3 e ainda válido — nenhum cenário daquele arquivo
+foi tocado) = **1031** OK, acima do piso `≥1022` do handoff. `go build`/`go vet`/`go test`/`npm test`
+(885/885)/`pytest` (1668 passed) verdes. `./bin/trackfw validate` rc=0, sem violação nova.
+`scripts/check-parity-contract-coverage.sh` rc=0 após a edição do `cli-parity.md`.
+
+Ver detalhe completo no roadmap, seção ML-2A.
+
+Sem commit/push — fora da minha autoridade (trackfw_architect audita e commita).

@@ -5195,7 +5195,7 @@ uma REQ nova.
 
 ### Contrato de payload do script (`gitBranchGuardScript`)
 
-<!-- trackfw-contract: gate=scripts/check-attention-scripts-parity.sh,scripts/check-gates-falsify.sh partial=check-attention-scripts-parity.sh prova a byte-identidade do script entre os 3 CLIs; os Cenários 60-69/74 de check-gates-falsify.sh exercitam os 3 formatos de entrada e o padrão casado contra esse script canônico único, mas nenhum cenário testa especificamente o campo `tool_info.command_line` (formato Windsurf) nem `$TRACKFW_GIT_COMMAND` como fallback -->
+<!-- trackfw-contract: gate=scripts/check-attention-scripts-parity.sh,scripts/check-gates-falsify.sh,scripts/check-git-branch-guard-hook-schema.sh partial=check-attention-scripts-parity.sh prova a byte-identidade do script entre os 3 CLIs; os Cenários 60-69/74 de check-gates-falsify.sh exercitam os 3 formatos de entrada e o padrão casado contra esse script canônico único, mas nenhum cenário testa especificamente o campo `tool_info.command_line` (formato Windsurf) nem `$TRACKFW_GIT_COMMAND` como fallback; check-git-branch-guard-hook-schema.sh (ML-2A, ROADMAP-2026-09-09-guard-emite-hookspecificoutput-e-a-razao-chega-ao-modelo-nos-3-clis.md) prova por execução real + decode JSON estruturado que a FORMA do JSON emitido no caminho de bloqueio é a que o Claude Code aceita hoje -->
 
 O script suporta 3 formatos de entrada, nesta ordem de precedência — cobre os contratos divergentes
 dos 7 runtimes sem precisar de uma variante de script por runtime:
@@ -5213,11 +5213,23 @@ ROADMAP-2026-08-16-higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-da-re
 ML-1A) é reconhecida varrendo **todos** os tokens após o subcomando `switch`, não só o primeiro,
 cobrindo `git switch --track -c feat/x`. Sem match: allow silencioso (`exit 0`, sem output).
 
-Com match, o script emite **os dois formatos de decisão simultaneamente** — `{"decision":"block",
-"reason":"..."}` no stdout (consumido por Claude/Gemini) **e** `exit 2` (consumido por
+Com match, o script emite **os dois formatos de decisão simultaneamente** — `{"hookSpecificOutput":
+{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"..."}}` no
+stdout (consumido por Claude/Gemini) **e** `exit 2` + a mesma razão em `stderr` (consumido por
 Codex/Windsurf/Cursor por exit-code) — em vez de uma variante por runtime dentro do script. Essa é
 uma simplificação deliberada do ML-1A: o formato `permission: "deny"` específico do Cursor, se
 necessário, fica a cargo do wiring da Wave 3 em cima da mesma saída, não deste script.
+
+**Correção de schema (2026-09-09, ROADMAP-2026-09-09-guard-emite-hookspecificoutput-e-a-razao-chega-
+ao-modelo-nos-3-clis.md, ML-1A/1B):** até esta data o stdout acima era
+`{"decision":"block","reason":"..."}` — schema que o Claude Code rejeita **na raiz**
+(`Hook JSON output validation failed — (root): Invalid input`), nunca validado contra o schema que
+`PreToolUse` de fato exige. `exit 2` sempre garantiu o bloqueio (fail-closed independe do JSON — ver
+`docs/seguranca/`), então o defeito nunca foi um furo de segurança, só ruído: o usuário via
+"hook error" sem a razão do bloqueio. Corrigido nos 7 sítios (script real + 3 geradores + 3
+referências do `validate`, incluindo `npm/src/validator/index.js`); gate de regressão em
+`scripts/check-git-branch-guard-hook-schema.sh` (ML-2A). Ver
+`vault/notes/git-branch-guard-schema-decision-block-rejeitado-pelo-claude-code-2026-09-09.md`.
 
 Mensagem de bloqueio por subcomando (todas referenciam CLAUDE.md §1):
 
