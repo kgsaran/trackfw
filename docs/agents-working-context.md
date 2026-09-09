@@ -4,6 +4,50 @@
 
 ---
 
+## Sessão 2026-09-09b — ares-tf (Infrastructure) — ML-R2d corretivo: YAML fix + ressalva apuracao (CONCLUÍDO)
+
+Branch `fix/fechar-os-grupos-de-falha-de-windows-por-causa-raiz`.
+
+**Escopo corretivo (auditoria do arquiteto):**
+1. Corrigido erro de YAML em `.github/workflows/windows-census.yml` linha 76: `run: echo "Motivo da execução: ..."` continha `: ` que o parser interpretava como mapeamento. Convertido para bloco escalar (`run: |`).
+2. Acrescentada ressalva nas Notas da `apuracao`: `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1` está presente no censo x64 mas ausente na base ARM64. Scripts corrigidos do ML fazem `unset` da variável; para demais cenários a diferença não foi medida.
+
+**Parser output:** `YAML OK jobs= ['falsificacao', 'censo', 'apuracao']`
+
+---
+
+## Sessão 2026-09-09 — ares-tf (Infrastructure) — ML-R2d: windows-census.yml (CONCLUÍDO)
+
+Branch `fix/fechar-os-grupos-de-falha-de-windows-por-causa-raiz`.
+
+**Escopo:** Criar `.github/workflows/windows-census.yml` com `workflow_dispatch` apenas. Três jobs:
+- `falsificacao`: prova correção do ML-R2c nas duas direções em windows-latest x64.
+- `censo`: matriz de 8 shards com `run-gates-falsify-shard.sh` + `TRACKFW_FALSIFY_ENUMERATE=1`.
+- `apuracao`: agrega resultados e compara com o censo da VM (440 OK · 512 FAIL).
+
+**Referências lidas:** `windows-probe.yml` (precedente de desenho), `run-gates-falsify-shard.sh`
+(contrato: SHARD_INDEX, SHARD_COUNT, OUTPUT_DIR, guarda CHUNK_COMPLETE permanece em enumerate mode),
+`check-release-tag-parity.sh` (mecanismos GIT_BIN_DIR/NO_FORGE_PATH).
+
+**Resultado:** Arquivo criado em `.github/workflows/windows-census.yml` (591 linhas).
+
+**BLOQUEANTE para dispatch:** `workflow_dispatch` exige que o arquivo exista na branch padrão
+(`main`) para ser acionável. O arquivo está apenas na branch `fix/...` — não pode ser disparado
+até que `trackfw_architect` commite e faça push. Não há workaround; dispatchar agora resultaria em
+404. Critério "censo disparado, número do run registrado" fica pendente até o push.
+
+**Decisões de design:**
+- 4 células × 2 probes (Python + Go) = 8 linhas rotuladas na falsificação.
+- Probes invocados por caminho absoluto; PATH de teste governa só a resolução de `git`.
+- B2 discrimina mecanismo: PATHEXT miss vs. DLL ausente.
+- `needs: falsificacao` + `if: always()` no censo: preserva a 8 VMs mesmo se uma célula B disparar vacuidade.
+- `grep -ac '^FAIL'` com `-a` na apuração (NUL byte em npm/src/validator/index.js).
+- Contagem cruzada awk para detectar discrepância.
+- Shards ausentes declarados explicitamente; total parcial nunca apresentado como completo.
+- CHUNK_COMPLETE em enumerate mode: exit 1 antes do sentinela quando há falhas (comportamento documentado em gen-falsify-chunks.py ~L560); sem conflito com o censo.
+
+---
+
 ## Sessão 2026-09-09 — ares-tf (Infrastructure) — ML-R2c: correção de auditoria GIT_DIR → GIT_BIN_DIR (CONCLUÍDO)
 
 Branch `fix/fechar-os-grupos-de-falha-de-windows-por-causa-raiz`.

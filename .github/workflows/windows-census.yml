@@ -1,0 +1,593 @@
+# .github/workflows/windows-census.yml
+#
+# SONDA DE MEDIÇÃO — NÃO É UM GATE
+# ─────────────────────────────────────────────────────────────────────────────
+# Este workflow é uma sonda de observação ativada EXCLUSIVAMENTE por
+# workflow_dispatch. Ele imprime valores brutos e para — nunca bloqueia merges,
+# nunca acionado por push ou pull_request.
+#
+# Adicionar trigger push/pull_request a este arquivo viola:
+#   docs/adr/ADR-2026-08-30-ci-de-windows-como-instrumento-de-medicao-job-largo-que-nasce-vermelho-mais-sonda-sob-demanda.md
+#   docs/adr/ADR-2026-09-05-o-ci-de-windows-bloqueia-por-conjunto-de-nomes-e-por-tipo-de-evento-nunca-por-contagem.md
+#
+# O `continue-on-error: true` no job `censo` é CORRETO aqui porque este
+# workflow é uma sonda — seria um defeito num gate real onde a aprovação de
+# PR dependesse do resultado.
+#
+# ML-R2d — ROADMAP-2026-09-03-fechar-os-grupos-de-falha-de-windows-por-causa-raiz.md
+# Linha de base ARM64 (VM privada, 2026-09-08): 440 OK · 512 FAIL
+# Referência por shard: 0=110 1=25 2=5 3=113 4=5 5=17 6=234 7=3  total=512
+# ─────────────────────────────────────────────────────────────────────────────
+
+on:
+  workflow_dispatch:
+    inputs:
+      motivo:
+        description: "Motivo da execução (opcional, registrado no log)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────────────
+  # Job 1 — falsificacao
+  #
+  # Prova que a correção do ML-R2c funciona num processo filho nativo.
+  # Quatro células × dois probes (Python + Go) = 8 linhas rotuladas.
+  #
+  # A1: BASE_PATH (inclui /usr/bin:/bin)        → resolver [EXPECT PASS]
+  # A2: NO_FORGE_PATH (só GIT_BIN_DIR)          → resolver [EXPECT PASS]
+  # B1: Forma 1 revertida (sem GIT_BIN_DIR)     → não resolver [EXPECT FAIL]
+  # B2: Forma 2 revertida (git sem .exe)        → não resolver [EXPECT FAIL]
+  #
+  # A1 e A2 afirmam: "A correção do ML-R2c é efetiva para processos nativos
+  # em windows-latest x64 — não só na VM ARM64."
+  # B1 afirma: "GIT_BIN_DIR no PATH é a forma 1 que barra o git para
+  # processos nativos quando removida."
+  # B2 afirma: "Um arquivo chamado 'git' (sem .exe) não é resolvido via
+  # PATHEXT pelo CreateProcess mesmo quando está no PATH."
+  # Guarda de vacuidade: afirma "este teste discrimina" — se B1 ou B2
+  # passarem (git resolver mesmo sem a correção), o teste não prova nada.
+  #
+  # Nenhum arquivo do repositório é modificado. git status --porcelain deve
+  # ser limpo ao final.
+  # ──────────────────────────────────────────────────────────────────────────
+  falsificacao:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: "Registrar motivo (se informado)"
+        if: inputs.motivo != ''
+        run: |
+          echo "Motivo da execução: ${{ inputs.motivo }}"
+
+      - name: "Preparar: resolver caminhos, construir probe Go, montar diretórios de teste"
+        id: prep
+        run: |
+          set -euo pipefail
+
+          # ------------------------------------------------------------------
+          # Diretório de trabalho fora do repositório — nenhuma alteração toca
+          # o working tree do checkout.
+          # ------------------------------------------------------------------
+          WORK="$(cygpath -u "${RUNNER_TEMP}")/falsify-probe"
+          mkdir -p "$WORK"
+          echo "WORK=$WORK" >> "$GITHUB_ENV"
+
+          # ------------------------------------------------------------------
+          # Resolver caminhos absolutos ANTES de qualquer manipulação de PATH.
+          # Invocar os probes por caminho absoluto evita que o PATH de teste
+          # impeça de encontrar o próprio interpretador/compilador.
+          # ------------------------------------------------------------------
+          REAL_GIT="$(command -v git)"
+          REAL_PYTHON3="$(command -v python3)"
+          GIT_BIN_DIR="$(dirname "$REAL_GIT")"
+          echo "REAL_GIT=$REAL_GIT" >> "$GITHUB_ENV"
+          echo "REAL_PYTHON3=$REAL_PYTHON3" >> "$GITHUB_ENV"
+          echo "GIT_BIN_DIR=$GIT_BIN_DIR" >> "$GITHUB_ENV"
+          echo ""
+          echo "=== Caminhos resolvidos ==="
+          echo "  git       : $REAL_GIT"
+          echo "  python3   : $REAL_PYTHON3"
+          echo "  GIT_BIN_DIR: $GIT_BIN_DIR"
+
+          # Confirma que git.exe existe (Windows), o que ativa o caminho
+          # GIT_BIN_DIR da correção (não o ramo ln -s).
+          if [[ -f "${REAL_GIT}.exe" ]]; then
+            echo "  Forma detectada: Windows (.exe ao lado do binário git)"
+            echo "GIT_IS_WINDOWS_EXE=1" >> "$GITHUB_ENV"
+          else
+            echo "  Forma detectada: POSIX (sem .exe — verifique runner)"
+            echo "GIT_IS_WINDOWS_EXE=0" >> "$GITHUB_ENV"
+          fi
+
+          # ------------------------------------------------------------------
+          # RUNTIME_BIN: replica a estrutura que os gates constroem.
+          # python3 entra via symlink (preserva .exe no basename do alvo).
+          # ------------------------------------------------------------------
+          RUNTIME_BIN="$WORK/runtimebin"
+          mkdir -p "$RUNTIME_BIN"
+          ln -s "$REAL_PYTHON3" "$RUNTIME_BIN/$(basename "$REAL_PYTHON3")" || \
+            cp "$REAL_PYTHON3" "$RUNTIME_BIN/$(basename "$REAL_PYTHON3")"
+          # Alias sem .exe para que bash encontre 'python3' no PATH de teste.
+          ln -s "$REAL_PYTHON3" "$RUNTIME_BIN/python3" 2>/dev/null || true
+          echo "RUNTIME_BIN=$RUNTIME_BIN" >> "$GITHUB_ENV"
+          echo "  RUNTIME_BIN: $RUNTIME_BIN ($(ls "$RUNTIME_BIN"))"
+
+          # ------------------------------------------------------------------
+          # Probe Go: compilado em $WORK/gitprobe/, invocado por caminho
+          # absoluto para que o PATH de teste governe apenas a resolução de
+          # 'git' pelo CreateProcess interno ao probe.
+          # ------------------------------------------------------------------
+          PROBE_DIR="$WORK/gitprobe"
+          mkdir -p "$PROBE_DIR"
+
+          cat > "$PROBE_DIR/main.go" << 'GOEOF'
+          package main
+
+          import (
+          	"fmt"
+          	"os"
+          	"os/exec"
+          )
+
+          func main() {
+          	cmd := exec.Command("git", "--version")
+          	out, err := cmd.CombinedOutput()
+          	raw := string(out)
+          	if raw != "" {
+          		fmt.Printf("go-git output: %s\n", raw)
+          	}
+          	if err != nil {
+          		fmt.Fprintf(os.Stderr, "go-git error: %v (exit: %d)\n", err, cmd.ProcessState.ExitCode())
+          		os.Exit(1)
+          	}
+          }
+          GOEOF
+
+          cat > "$PROBE_DIR/go.mod" << 'MODEOF'
+          module gitprobe
+
+          go 1.21
+          MODEOF
+
+          (cd "$PROBE_DIR" && GOCACHE="$WORK/go-cache" go build -o "$PROBE_DIR/probe.exe" .)
+          PROBE_EXE="$PROBE_DIR/probe.exe"
+          echo "PROBE_EXE=$PROBE_EXE" >> "$GITHUB_ENV"
+          echo "  probe.exe: $PROBE_EXE ($(ls -la "$PROBE_EXE"))"
+
+          # ------------------------------------------------------------------
+          # GIT_ONLY_BIN: usado pela Forma 2 (B2). Contém 'git' SEM .exe —
+          # que o CreateProcess não resolve via PATHEXT.
+          # Tenta symlink primeiro (Developer Mode no runner, deve funcionar).
+          # Se falhar, usa hardlink ou cópia — o nome 'git' (sem .exe)
+          # é o que importa, não o mecanismo de criação.
+          # ------------------------------------------------------------------
+          GIT_ONLY_BIN="$WORK/gitonlybin"
+          mkdir -p "$GIT_ONLY_BIN"
+          GIT_ONLY_SYMLINK_RC=0
+          ln -s "$REAL_GIT" "$GIT_ONLY_BIN/git" || GIT_ONLY_SYMLINK_RC=$?
+          if [[ $GIT_ONLY_SYMLINK_RC -ne 0 ]]; then
+            echo "  ln -s falhou (rc=$GIT_ONLY_SYMLINK_RC) — tentando hardlink"
+            ln "$REAL_GIT" "$GIT_ONLY_BIN/git" 2>/dev/null || \
+              cp "$REAL_GIT" "$GIT_ONLY_BIN/git"
+          fi
+          ls -la "$GIT_ONLY_BIN/"
+          echo "GIT_ONLY_BIN=$GIT_ONLY_BIN" >> "$GITHUB_ENV"
+          echo "  GIT_ONLY_BIN: $GIT_ONLY_BIN ($(ls "$GIT_ONLY_BIN"))"
+
+      - name: "Célula A1 — BASE_PATH (RUNTIME_BIN:GIT_BIN_DIR:/usr/bin:/bin) [EXPECT PASS]"
+        run: |
+          set -euo pipefail
+          TEST_PATH="$RUNTIME_BIN:$GIT_BIN_DIR:/usr/bin:/bin"
+          echo "=== A1 BASE_PATH ==="
+          echo "  PATH=$TEST_PATH"
+
+          PY_RC=0
+          PY_OUT=$(PATH="$TEST_PATH" "$REAL_PYTHON3" -c \
+            "import subprocess,sys; r=subprocess.run(['git','--version'],capture_output=True,text=True); print(r.stdout.strip() or r.stderr.strip()); sys.exit(r.returncode)" \
+            2>&1) || PY_RC=$?
+          echo "  A1-Python rc=$PY_RC output: $PY_OUT"
+
+          GO_RC=0
+          GO_OUT=$(PATH="$TEST_PATH" "$PROBE_EXE" 2>&1) || GO_RC=$?
+          echo "  A1-Go rc=$GO_RC output: $GO_OUT"
+
+          if [[ $PY_RC -ne 0 || $GO_RC -ne 0 ]]; then
+            echo "::error::A1 — esperado PASS (git deve resolver com BASE_PATH) mas rc: py=$PY_RC go=$GO_RC"
+            exit 1
+          fi
+          echo "  A1 PASS — git resolve em BASE_PATH para processo filho nativo (py e go)"
+
+      - name: "Célula A2 — NO_FORGE_PATH (RUNTIME_BIN:GIT_BIN_DIR) [EXPECT PASS]"
+        run: |
+          set -euo pipefail
+          TEST_PATH="$RUNTIME_BIN:$GIT_BIN_DIR"
+          echo "=== A2 NO_FORGE_PATH ==="
+          echo "  PATH=$TEST_PATH"
+
+          PY_RC=0
+          PY_OUT=$(PATH="$TEST_PATH" "$REAL_PYTHON3" -c \
+            "import subprocess,sys; r=subprocess.run(['git','--version'],capture_output=True,text=True); print(r.stdout.strip() or r.stderr.strip()); sys.exit(r.returncode)" \
+            2>&1) || PY_RC=$?
+          echo "  A2-Python rc=$PY_RC output: $PY_OUT"
+
+          GO_RC=0
+          GO_OUT=$(PATH="$TEST_PATH" "$PROBE_EXE" 2>&1) || GO_RC=$?
+          echo "  A2-Go rc=$GO_RC output: $GO_OUT"
+
+          if [[ $PY_RC -ne 0 || $GO_RC -ne 0 ]]; then
+            echo "::error::A2 — esperado PASS (git deve resolver com NO_FORGE_PATH) mas rc: py=$PY_RC go=$GO_RC"
+            exit 1
+          fi
+          echo "  A2 PASS — git resolve em NO_FORGE_PATH para processo filho nativo (py e go)"
+
+      - name: "Célula B1 — Forma 1 revertida (sem GIT_BIN_DIR: RUNTIME_BIN:/usr/bin:/bin) [EXPECT FAIL — vacuidade se PASS]"
+        run: |
+          set -euo pipefail
+          # B1 "passa" quando os probes NÃO resolvem git.
+          # Se qualquer probe resolver, a falsificação não discrimina — erro fatal.
+          TEST_PATH="$RUNTIME_BIN:/usr/bin:/bin"
+          echo "=== B1 Forma 1 revertida (sem GIT_BIN_DIR) ==="
+          echo "  PATH=$TEST_PATH"
+
+          PY_RC=0
+          PY_OUT=$(PATH="$TEST_PATH" "$REAL_PYTHON3" -c \
+            "import subprocess,sys; r=subprocess.run(['git','--version'],capture_output=True,text=True); print(r.stdout.strip() or r.stderr.strip()); sys.exit(r.returncode)" \
+            2>&1) || PY_RC=$?
+          echo "  B1-Python rc=$PY_RC (esperado != 0) output: $PY_OUT"
+
+          GO_RC=0
+          GO_OUT=$(PATH="$TEST_PATH" "$PROBE_EXE" 2>&1) || GO_RC=$?
+          echo "  B1-Go rc=$GO_RC (esperado != 0) output: $GO_OUT"
+
+          # Guarda de vacuidade: se algum probe passou, o teste não discrimina.
+          if [[ $PY_RC -eq 0 || $GO_RC -eq 0 ]]; then
+            echo "::error::B1 GUARDA DE VACUIDADE — git resolveu mesmo sem GIT_BIN_DIR (rc: py=$PY_RC go=$GO_RC). A falsificação não discrimina — a Forma 1 não é load-bearing ou /usr/bin:/bin contém git neste runner."
+            exit 1
+          fi
+          echo "  B1 PASS (probe falhou como esperado) — Forma 1 (GIT_BIN_DIR) é load-bearing"
+
+      - name: "Célula B2 — Forma 2 revertida (git sem .exe em GIT_ONLY_BIN) [EXPECT FAIL — vacuidade se PASS]"
+        run: |
+          set -euo pipefail
+          # B2: git (sem .exe) em GIT_ONLY_BIN. O CreateProcess não resolve
+          # via PATHEXT. Discriminar entre dois mecanismos possíveis de falha:
+          #   (a) PATHEXT miss: processo nunca é lançado
+          #       Python: FileNotFoundError / [WinError 2]
+          #       Go: exec: "git": executable file not found in %PATH%
+          #   (b) DLL ausente: processo é lançado mas morre com 0xC0000135
+          #       exit code: -1073741515
+          # A forma corrigida (PATHEXT) é (a). (b) indicaria que o processo
+          # foi encontrado mas não tem suas DLLs — mecanismo diferente.
+          TEST_PATH="$RUNTIME_BIN:$GIT_ONLY_BIN"
+          echo "=== B2 Forma 2 revertida (git sem .exe) ==="
+          echo "  PATH=$TEST_PATH"
+          echo "  GIT_ONLY_BIN contents: $(ls -la "$GIT_ONLY_BIN/")"
+
+          # Verificar que o arquivo de teste existe e tem o nome correto (sem .exe)
+          if [[ ! -f "$GIT_ONLY_BIN/git" ]]; then
+            echo "::error::B2 setup falhou — $GIT_ONLY_BIN/git não existe; o teste não pode discriminar"
+            exit 1
+          fi
+          if [[ -f "$GIT_ONLY_BIN/git.exe" ]]; then
+            echo "::error::B2 setup incorreto — $GIT_ONLY_BIN/git.exe existe; o teste precisaria de 'git' sem .exe para discriminar PATHEXT"
+            exit 1
+          fi
+
+          PY_RC=0
+          PY_OUT=$(PATH="$TEST_PATH" "$REAL_PYTHON3" -c \
+            "import subprocess,sys
+          try:
+              r=subprocess.run(['git','--version'],capture_output=True,text=True)
+              print(r.stdout.strip() or r.stderr.strip())
+              sys.exit(r.returncode)
+          except Exception as e:
+              print('exception:', type(e).__name__, str(e))
+              sys.exit(1)" \
+            2>&1) || PY_RC=$?
+          echo "  B2-Python rc=$PY_RC (esperado != 0) output: $PY_OUT"
+
+          GO_RC=0
+          GO_OUT=$(PATH="$TEST_PATH" "$PROBE_EXE" 2>&1) || GO_RC=$?
+          echo "  B2-Go rc=$GO_RC (esperado != 0) output: $GO_OUT"
+
+          # Guarda de vacuidade
+          if [[ $PY_RC -eq 0 || $GO_RC -eq 0 ]]; then
+            echo "::error::B2 GUARDA DE VACUIDADE — git resolveu mesmo com nome sem .exe (rc: py=$PY_RC go=$GO_RC). A Forma 2 não é load-bearing ou PATHEXT foi bypassado neste runner."
+            exit 1
+          fi
+
+          # Discriminar mecanismo de falha
+          DLL_EXIT_CODE=-1073741515
+          if echo "$GO_OUT" | grep -q "executable file not found" || echo "$PY_OUT" | grep -qi "WinError 2\|FileNotFoundError\|No such file"; then
+            echo "  B2 mecanismo: PATHEXT miss — processo nunca foi lançado (esperado)"
+          elif [[ $GO_RC -eq $DLL_EXIT_CODE || $PY_RC -eq $DLL_EXIT_CODE ]]; then
+            echo "  B2 mecanismo: DLL ausente (0xC0000135) — processo foi lançado mas morreu sem DLLs"
+            echo "  ATENÇÃO: mecanismo é DLL, não PATHEXT. A Forma 2 pode estar copiando o binário sem as DLLs ao lado."
+          else
+            echo "  B2 mecanismo: indeterminado — rc_py=$PY_RC rc_go=$GO_RC output_py='$PY_OUT' output_go='$GO_OUT'"
+          fi
+          echo "  B2 PASS (probe falhou como esperado) — arquivo 'git' sem .exe não é resolvido via PATHEXT"
+
+      - name: "Verificar working tree limpo (falha se git status reportar mudanças)"
+        if: always()
+        run: |
+          STATUS=$(git status --porcelain)
+          echo "=== git status --porcelain ==="
+          if [[ -n "$STATUS" ]]; then
+            echo "$STATUS"
+            echo "::error::Working tree sujo — o job falsificacao modificou arquivos do repositório"
+            exit 1
+          fi
+          echo "(limpo)"
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Job 2 — censo
+  #
+  # Executa run-gates-falsify-shard.sh em 8 shards no windows-latest x64
+  # com TRACKFW_FALSIFY_ENUMERATE=1 (conta e enumera, não aborta na primeira
+  # falha). O resultado é o log — gate não, dado bruto sim.
+  #
+  # continue-on-error: true é CORRETO aqui (sonda). Num gate real seria
+  # um defeito.
+  #
+  # Nota sobre o sentinela CHUNK_COMPLETE em modo enumerate:
+  # Com TRACKFW_FALSIFY_ENUMERATE=1, se o chunk tiver falhas, ele emite
+  # "[falsify/enumerate] N cenários reprovaram" para stderr e sai com exit 1
+  # ANTES de emitir CHUNK_COMPLETE. A guarda local do driver então reporta
+  # "chunk não chegou ao sentinela" — mensagem imprecisa para este caso, mas
+  # o FINAL_RC já é 1 de qualquer forma e o log é copiado antes da decisão
+  # de FINAL_RC. Comportamento documentado em gen-falsify-chunks.py linha
+  # ~560 como intencional. Não há conflito — o log é preservado.
+  # ──────────────────────────────────────────────────────────────────────────
+  censo:
+    runs-on: windows-latest
+    needs: falsificacao
+    if: always()
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+    continue-on-error: true
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: bash
+    env:
+      SHARD_INDEX: ${{ matrix.shard }}
+      SHARD_COUNT: "8"
+      OUTPUT_DIR: falsify-shard-out
+      TRACKFW_FALSIFY_ENUMERATE: "1"
+      TRACKFW_DISABLE_EXTERNAL_COMMANDS: "1"
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - run: npm ci --ignore-scripts
+        working-directory: npm
+
+      - run: python -m pip install --upgrade pip
+
+      - run: python -m pip install pypi/
+
+      - run: go build -o bin/trackfw ./cmd/trackfw
+
+      - name: "Shard ${{ matrix.shard }} de check-gates-falsify.sh (enumerate)"
+        run: scripts/run-gates-falsify-shard.sh
+
+      - name: "Upload log do shard ${{ matrix.shard }}"
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: falsify-shard-${{ matrix.shard }}
+          path: falsify-shard-out/
+          retention-days: 7
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Job 3 — apuracao
+  #
+  # Agrega os 8 logs, conta OK/FAIL por shard e imprime a tabela comparativa
+  # contra a linha de base ARM64 (440 OK · 512 FAIL, shard by shard).
+  #
+  # Regras de contagem:
+  # - grep -ac '^FAIL' com -a para não pular arquivos com bytes NUL
+  #   (npm/src/validator/index.js tem NUL literal — sem -a, grep pula em
+  #   silêncio e conta menos)
+  # - Contagem cruzada com awk para detectar discrepância
+  # - Se discreparam, imprimir ambas e parar; não escolher uma
+  # - Se algum shard não foi baixado, declarar explicitamente; não apresentar
+  #   total parcial como completo
+  # ──────────────────────────────────────────────────────────────────────────
+  apuracao:
+    runs-on: ubuntu-latest
+    needs: censo
+    if: always()
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: "Baixar todos os artefatos do censo"
+        uses: actions/download-artifact@v4
+        with:
+          pattern: falsify-shard-*
+          path: censo-artifacts/
+          merge-multiple: false
+
+      - name: "Apurar resultados e imprimir tabela"
+        run: |
+          set -euo pipefail
+
+          # Referência ARM64 por shard (VM privada, 2026-09-08)
+          declare -A BASE_OK=(  [0]=? [1]=? [2]=? [3]=? [4]=? [5]=? [6]=? [7]=? )
+          declare -A BASE_FAIL=([0]=110 [1]=25 [2]=5 [3]=113 [4]=5 [5]=17 [6]=234 [7]=3)
+          BASE_TOTAL_OK=440
+          BASE_TOTAL_FAIL=512
+
+          # Nota: os valores BASE_OK por shard não foram medidos individualmente
+          # na VM ARM64 — só o total (440). Deixados como '?' por honestidade.
+
+          echo "=== Artefatos baixados ==="
+          ls -la censo-artifacts/ 2>/dev/null || true
+
+          TOTAL_OK=0
+          TOTAL_FAIL=0
+          SHARDS_FOUND=0
+          SHARDS_MISSING=""
+          TABLE_LINES=""
+
+          for i in 0 1 2 3 4 5 6 7; do
+            LOG_FILE=""
+            # Tenta os dois possíveis layouts de download-artifact
+            if [[ -f "censo-artifacts/falsify-shard-${i}/shard_${i}.log" ]]; then
+              LOG_FILE="censo-artifacts/falsify-shard-${i}/shard_${i}.log"
+            elif [[ -f "censo-artifacts/shard_${i}.log" ]]; then
+              LOG_FILE="censo-artifacts/shard_${i}.log"
+            fi
+
+            if [[ -z "$LOG_FILE" ]]; then
+              SHARDS_MISSING="$SHARDS_MISSING $i"
+              TABLE_LINES="$TABLE_LINES\n  shard $i: AUSENTE (artefato não baixado)"
+              continue
+            fi
+
+            SHARDS_FOUND=$((SHARDS_FOUND + 1))
+
+            # Contagem primária com grep -a para tolerar bytes NUL
+            CNT_FAIL_GREP=$(grep -ac '^FAIL' "$LOG_FILE" 2>/dev/null || echo 0)
+            CNT_OK_GREP=$(grep -ac '^OK' "$LOG_FILE" 2>/dev/null || echo 0)
+
+            # Contagem cruzada com awk
+            CNT_FAIL_AWK=$(awk '/^FAIL/{n++} END{print n+0}' "$LOG_FILE")
+            CNT_OK_AWK=$(awk '/^OK/{n++} END{print n+0}' "$LOG_FILE")
+
+            if [[ "$CNT_FAIL_GREP" != "$CNT_FAIL_AWK" ]]; then
+              echo "::warning::shard $i — discrepância FAIL: grep=$CNT_FAIL_GREP awk=$CNT_FAIL_AWK — usando grep (com -a)"
+              echo "DISCREPÂNCIA FAIL shard $i: grep=$CNT_FAIL_GREP awk=$CNT_FAIL_AWK" >&2
+            fi
+            if [[ "$CNT_OK_GREP" != "$CNT_OK_AWK" ]]; then
+              echo "::warning::shard $i — discrepância OK: grep=$CNT_OK_GREP awk=$CNT_OK_AWK — usando grep (com -a)"
+            fi
+
+            CNT_FAIL=$CNT_FAIL_GREP
+            CNT_OK=$CNT_OK_GREP
+
+            TOTAL_FAIL=$((TOTAL_FAIL + CNT_FAIL))
+            TOTAL_OK=$((TOTAL_OK + CNT_OK))
+
+            DELTA_FAIL=$((CNT_FAIL - ${BASE_FAIL[$i]}))
+            DELTA_SIGN=""
+            if [[ $DELTA_FAIL -lt 0 ]]; then DELTA_SIGN="▼"; elif [[ $DELTA_FAIL -gt 0 ]]; then DELTA_SIGN="▲"; fi
+
+            TABLE_LINES="$TABLE_LINES\n  shard $i: OK=$CNT_OK FAIL=$CNT_FAIL  (base FAIL=${BASE_FAIL[$i]} delta=$DELTA_FAIL $DELTA_SIGN)"
+          done
+
+          QUEDA=$((BASE_TOTAL_FAIL - TOTAL_FAIL))
+
+          # ─── GITHUB_STEP_SUMMARY ──────────────────────────────────────────
+          {
+            echo "## Censo windows-latest x64 vs. linha de base ARM64"
+            echo ""
+            echo "| | ARM64 VM (2026-09-08) | x64 runner (hoje) |"
+            echo "|---|---|---|"
+            echo "| OK   | $BASE_TOTAL_OK | $TOTAL_OK |"
+            echo "| FAIL | $BASE_TOTAL_FAIL | $TOTAL_FAIL |"
+            echo ""
+
+            if [[ $SHARDS_FOUND -lt 8 ]]; then
+              echo "⚠️  **TOTAL INCOMPLETO** — apenas $SHARDS_FOUND/8 shards presentes."
+              echo "Shards ausentes:$SHARDS_MISSING"
+              echo "O total acima subestima FAIL e **não deve ser usado para calcular queda**."
+              echo ""
+            else
+              echo "Shards completos: 8/8"
+              echo ""
+              echo "**Queda de FAIL:** $BASE_TOTAL_FAIL → $TOTAL_FAIL = $QUEDA a menos"
+              echo ""
+              if [[ $QUEDA -ge 420 && $QUEDA -le 465 ]]; then
+                echo "✅ Queda próxima de 442 — atribuição do ML-R2a sustentada neste runner (x64)."
+              elif [[ $QUEDA -gt 0 ]]; then
+                echo "⚠️  Queda fora do intervalo esperado (~442). ACHADO: verificar hipótese do ML-R2a."
+                echo "Possíveis causas: diferença ARM64 vs x64, cenários adicionais corrigidos, ou atribuição incompleta."
+              else
+                echo "🔴 FAIL não caiu (ou subiu). ACHADO: a correção do ML-R2c não produziu redução mensurável neste runner."
+              fi
+              echo ""
+            fi
+
+            echo "### Por shard"
+            echo ""
+            echo "| Shard | OK | FAIL | Base FAIL (ARM64) | Delta |"
+            echo "|---|---|---|---|---|"
+
+            for i in 0 1 2 3 4 5 6 7; do
+              LOG_FILE=""
+              if [[ -f "censo-artifacts/falsify-shard-${i}/shard_${i}.log" ]]; then
+                LOG_FILE="censo-artifacts/falsify-shard-${i}/shard_${i}.log"
+              elif [[ -f "censo-artifacts/shard_${i}.log" ]]; then
+                LOG_FILE="censo-artifacts/shard_${i}.log"
+              fi
+
+              if [[ -z "$LOG_FILE" ]]; then
+                echo "| $i | — | — | ${BASE_FAIL[$i]} | AUSENTE |"
+                continue
+              fi
+
+              CNT_FAIL_R=$(grep -ac '^FAIL' "$LOG_FILE" 2>/dev/null || echo 0)
+              CNT_OK_R=$(grep -ac '^OK' "$LOG_FILE" 2>/dev/null || echo 0)
+              DELTA_R=$((CNT_FAIL_R - ${BASE_FAIL[$i]}))
+              echo "| $i | $CNT_OK_R | $CNT_FAIL_R | ${BASE_FAIL[$i]} | $DELTA_R |"
+            done
+
+            echo ""
+            echo "### Notas"
+            echo "- Linha de base ARM64: VM privada (2026-09-08), 8 shards, TRACKFW_FALSIFY_ENUMERATE=1"
+            echo "- Este runner: windows-latest x64 (GitHub-hosted)"
+            echo "- Diferença residual ARM64 vs x64 pode existir independente da correção do ML-R2c"
+            echo "- Queda esperada ~442 é a atribuição do ML-R2a (git não no PATH = causa de 512 FAILs na VM ARM64)"
+            echo "- Contagem: grep -ac (com -a para tolerar NUL em npm/src/validator/index.js)"
+            echo "- TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 está definido neste censo (job 'censo'); a base ARM64 rodou sem essa variável. Os 3 scripts corrigidos neste ML fazem 'unset' da variável no próprio corpo, portanto não são afetados. Para os demais cenários do censo, a diferença não foi medida."
+
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # ─── Saída de console (para log do job) ───────────────────────────
+          echo ""
+          echo "=== Apuração: windows-latest x64 vs. ARM64 ==="
+          echo "  censo ARM64 (2026-09-08):   OK=$BASE_TOTAL_OK · FAIL=$BASE_TOTAL_FAIL"
+          echo "  censo x64   (este run):      OK=$TOTAL_OK · FAIL=$TOTAL_FAIL"
+          if [[ $SHARDS_FOUND -eq 8 ]]; then
+            echo "  queda de FAIL:               $QUEDA  (esperado ~442)"
+          else
+            echo "  TOTAL INCOMPLETO — $SHARDS_FOUND/8 shards. Queda não calculada."
+          fi
+          echo ""
+          echo "  Por shard:"
+          echo -e "$TABLE_LINES"
