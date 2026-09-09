@@ -7,7 +7,7 @@ const identityStore = require('../identity')
 const projectConfig = require('../config')
 const { catalog, buildPlans, IntegrationManager, globalGroupPath } = require('../integrations')
 const { tildeify, validateTargets, buildDocument, humanReport, silenceConsole } = require('../lib/update-engine')
-const { mergeClaudeHookArray, mergeSimpleCommandArray, mergeCopilotHookArray, generateGlobalCredentialGuardScript, generateGlobalGitBranchGuardScript } = require('../generators/hooks')
+const { mergeClaudeHookArray, mergeSimpleCommandArray, mergeCopilotHookArray, GIT_BRANCH_GUARD_SCRIPT, GLOBAL_CREDENTIAL_GUARD_SCRIPT } = require('../generators/hooks')
 const { homedir } = require('../homedir')
 
 // `trackfw update harness` is the global counterpart to `trackfw update` —
@@ -71,6 +71,72 @@ Cadeia: **ADR → REQ → ROADMAP** · Estados: \`backlog / wip / blocked / done
 2. Após concluir: atualizar \`docs/agents-working-context.md\`
 3. Antes de PR: \`trackfw validate\` deve passar com zero violations
 `
+}
+
+// gitBranchGuardScriptTarget — evaluates (and, unless --dry-run, applies) the
+// global git-branch-guard shell script at
+// ~/.trackfw/scripts/trackfw-git-branch-guard.sh.
+//
+// This target OWNS the script file. It compares content before writing so that
+// an already up-to-date script reports "skipped" and its mtime is left unchanged
+// (REQ-2026-09-09 AC3). Creation does not require --install-missing because
+// ~/.trackfw/scripts/ is 100% trackfw-owned.
+function gitBranchGuardScriptTarget(homeRoot, { dryRun }) {
+  const id = 'git-branch-guard-script'
+  const filePath = path.join(homeRoot, '.trackfw', 'scripts', 'trackfw-git-branch-guard.sh')
+  const displayPath = tildeify(homeRoot, filePath)
+  const desired = GIT_BRANCH_GUARD_SCRIPT
+
+  try {
+    const exists = fs.existsSync(filePath)
+    const actual = exists ? fs.readFileSync(filePath, 'utf8') : null
+
+    if (exists && actual === desired) {
+      // Content identical — skip write, repair execute bit without touching mtime.
+      try { fs.chmodSync(filePath, 0o755) } catch (_) { /* best-effort */ }
+      return { id, state: 'skipped', path: displayPath }
+    }
+
+    if (dryRun) return { id, state: 'updated', path: displayPath }
+
+    fs.mkdirSync(path.dirname(filePath), { recursive: true })
+    fs.writeFileSync(filePath, desired, { encoding: 'utf8', mode: 0o755 })
+    return { id, state: 'updated', path: displayPath }
+  } catch (e) {
+    return { id, state: 'failed', path: displayPath, message: e.message }
+  }
+}
+
+// credentialGuardScriptTarget — evaluates (and, unless --dry-run, applies) the
+// global credential-guard shell script at
+// ~/.trackfw/scripts/trackfw-credential-guard.sh.
+//
+// Mirrors gitBranchGuardScriptTarget — same ownership model, same idempotency
+// contract, same absence of --install-missing gate.
+function credentialGuardScriptTarget(homeRoot, { dryRun }) {
+  const id = 'credential-guard-script'
+  const filePath = path.join(homeRoot, '.trackfw', 'scripts', 'trackfw-credential-guard.sh')
+  const displayPath = tildeify(homeRoot, filePath)
+  const desired = GLOBAL_CREDENTIAL_GUARD_SCRIPT
+
+  try {
+    const exists = fs.existsSync(filePath)
+    const actual = exists ? fs.readFileSync(filePath, 'utf8') : null
+
+    if (exists && actual === desired) {
+      // Content identical — skip write, repair execute bit without touching mtime.
+      try { fs.chmodSync(filePath, 0o755) } catch (_) { /* best-effort */ }
+      return { id, state: 'skipped', path: displayPath }
+    }
+
+    if (dryRun) return { id, state: 'updated', path: displayPath }
+
+    fs.mkdirSync(path.dirname(filePath), { recursive: true })
+    fs.writeFileSync(filePath, desired, { encoding: 'utf8', mode: 0o755 })
+    return { id, state: 'updated', path: displayPath }
+  } catch (e) {
+    return { id, state: 'failed', path: displayPath, message: e.message }
+  }
 }
 
 function claudeSkillTarget(homeRoot, { dryRun, installMissing }) {
@@ -799,7 +865,10 @@ function catalogBundleTarget(toolId, kind, homeRoot, identityConfig, { dryRun, i
 // which precede claude-agents/claude-skills), with credential-guard always
 // preceding git-branch-guard within a tool — see buildHarnessTargetIDs's
 // comment in update.go for the full rationale.
-const HARNESS_TARGET_IDS = ['claude-skill', 'claude-credential-guard', 'claude-git-branch-guard']
+// Script targets precede every wiring target that references them so that even
+// a --targets-filtered run that only requests a wiring target still finds the
+// script already in place from a prior full run.
+const HARNESS_TARGET_IDS = ['claude-skill', 'git-branch-guard-script', 'credential-guard-script', 'claude-credential-guard', 'claude-git-branch-guard']
 for (const target of catalog.targets) {
   if (target.id === 'codex') HARNESS_TARGET_IDS.push('codex-credential-guard', 'codex-git-branch-guard')
   if (target.id === 'gemini') HARNESS_TARGET_IDS.push('gemini-credential-guard', 'gemini-git-branch-guard')
@@ -818,6 +887,8 @@ function buildHarnessTargets(homeRoot, identityConfig, { dryRun, installMissing 
   const include = (id) => !wanted || wanted.includes(id)
   const targets = []
   if (include('claude-skill')) targets.push(claudeSkillTarget(homeRoot, { dryRun, installMissing }))
+  if (include('git-branch-guard-script')) targets.push(gitBranchGuardScriptTarget(homeRoot, { dryRun }))
+  if (include('credential-guard-script')) targets.push(credentialGuardScriptTarget(homeRoot, { dryRun }))
   if (include('claude-credential-guard')) targets.push(credentialGuardTargetClaude(homeRoot, { dryRun, installMissing }))
   if (include('claude-git-branch-guard')) targets.push(gitBranchGuardTargetClaude(homeRoot, { dryRun, installMissing }))
   for (const target of catalog.targets) {
@@ -885,20 +956,11 @@ function run(options) {
   const dryRun = Boolean(options.dryRun)
   const installMissing = Boolean(options.installMissing)
 
-  // The per-CLI *-credential-guard targets below only wire hook entries that
-  // point at ~/.trackfw/scripts/trackfw-credential-guard.sh — none of them
-  // write the script itself (ADR-2026-08-06, decision #2/#3). Without this
-  // call the wiring is installed but every hook invocation fails with
-  // "No such file or directory" because the script never exists.
-  if (!dryRun) {
-    if (options.json) {
-      silenceConsole(() => generateGlobalCredentialGuardScript(homeRoot))
-      silenceConsole(() => generateGlobalGitBranchGuardScript(homeRoot))
-    } else {
-      generateGlobalCredentialGuardScript(homeRoot)
-      generateGlobalGitBranchGuardScript(homeRoot)
-    }
-  }
+  // NOTE: the script files are now first-class targets ("git-branch-guard-script",
+  // "credential-guard-script") positioned before the wiring targets in
+  // HARNESS_TARGET_IDS. The pre-loop unconditional writes that used to live here
+  // have been removed — the target functions handle creation and idempotency.
+  // (REQ-2026-09-09, ML-1A)
 
   // Identidade resolvida do disco antes de buildPlans — pular esta etapa
   // reverteria silenciosamente os nomes customizados para os defaults

@@ -210,16 +210,23 @@ $(cat "$WORK/s1.diff.go-py.txt")"
     ok "update-harness/empty-harness/three-runtimes-identical"
   fi
 
-  # Every target must be `missing` and summary must equal
-  # {updated:0, skipped:0, missing:<n>, failed:0}.
+  # Every target must be `missing` EXCEPT the two script targets
+  # ("git-branch-guard-script", "credential-guard-script") which always write
+  # on first run without --install-missing (REQ-2026-09-09 ML-1A).
   python3 -c "
 import json, sys
 d = json.loads(sys.argv[1])
+SCRIPT_TARGETS = {'git-branch-guard-script', 'credential-guard-script'}
 n = len(d['targets'])
-bad = [t['id'] for t in d['targets'] if t['state'] != 'missing']
+bad = [t['id'] for t in d['targets']
+       if t['id'] not in SCRIPT_TARGETS and t['state'] != 'missing']
+bad += [t['id'] for t in d['targets']
+        if t['id'] in SCRIPT_TARGETS and t['state'] != 'updated']
 s = d['summary']
-if bad or s != {'updated': 0, 'skipped': 0, 'missing': n, 'failed': 0}:
-    print('go: bad states=%r summary=%r' % (bad, s))
+n_scripts = len(SCRIPT_TARGETS)
+expected_summary = {'updated': n_scripts, 'skipped': 0, 'missing': n - n_scripts, 'failed': 0}
+if bad or s != expected_summary:
+    print('go: bad states=%r summary=%r (expected=%r)' % (bad, s, expected_summary))
     sys.exit(1)
 " "$S1_GO_OUT" || diag "update-harness/empty-harness/all-missing" "Go: not every target is 'missing' or summary miscounts"
 fi

@@ -16,6 +16,7 @@ const { spawnSync } = require('node:child_process')
 
 const bin = path.resolve(__dirname, '../bin/trackfw')
 const { HARNESS_TARGET_IDS, claudeSkillContent } = require('../src/commands/update-harness')
+const { GIT_BRANCH_GUARD_SCRIPT, GLOBAL_CREDENTIAL_GUARD_SCRIPT } = require('../src/generators/hooks')
 
 function scratchHome() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-harness-test-'))
@@ -68,6 +69,10 @@ test('update harness runs fine from inside a project directory that has its own 
 })
 
 test('an empty harness reports every declared target missing and exits 0', () => {
+  // ML-1A (REQ-2026-09-09): the two script targets ("git-branch-guard-script",
+  // "credential-guard-script") do NOT require --install-missing — they always
+  // write on first run. On an empty home they report "updated", not "missing".
+  const scriptTargetIDs = new Set(['git-branch-guard-script', 'credential-guard-script'])
   const homeRoot = scratchHome()
   const result = run(['update', 'harness', '--json'], homeRoot)
   assert.equal(result.status, 0, result.stderr)
@@ -75,9 +80,16 @@ test('an empty harness reports every declared target missing and exits 0', () =>
   assert.equal(doc.scope, 'harness')
   assert.equal(doc.targets.length, HARNESS_TARGET_IDS.length)
   assert.deepEqual(doc.targets.map(t => t.id), HARNESS_TARGET_IDS)
-  for (const t of doc.targets) assert.equal(t.state, 'missing', `${t.id} expected missing`)
-  assert.equal(doc.summary.missing, HARNESS_TARGET_IDS.length)
-  assert.equal(doc.summary.updated + doc.summary.skipped + doc.summary.failed, 0)
+  for (const t of doc.targets) {
+    if (scriptTargetIDs.has(t.id)) {
+      assert.equal(t.state, 'updated', `${t.id} expected updated on empty home (no --install-missing gate)`)
+    } else {
+      assert.equal(t.state, 'missing', `${t.id} expected missing`)
+    }
+  }
+  assert.equal(doc.summary.missing, HARNESS_TARGET_IDS.length - scriptTargetIDs.size)
+  assert.equal(doc.summary.updated, scriptTargetIDs.size)
+  assert.equal(doc.summary.skipped + doc.summary.failed, 0)
 })
 
 test('JSON document has the exact frozen key order: scope, dry_run, targets, summary', () => {
@@ -911,4 +923,118 @@ test('a project-scoped catalog install under HOME is not touched by trackfw upda
   run(['update', '--install-missing'], projectRoot, homeRoot)
   const after = fs.readFileSync(path.join(homeRoot, '.claude', 'agents', 'trackfw-architect.md'), 'utf8')
   assert.equal(before, after, 'project-scoped `update` must never touch the global harness')
+})
+
+// ────────────────────────────────────────────────────────────────────────────
+// git-branch-guard-script target (REQ-2026-09-09 ML-1A)
+// ────────────────────────────────────────────────────────────────────────────
+
+// ML-1A conclusion: a missing git-branch-guard script is written and reported
+// as "updated" without requiring --install-missing.
+test('git-branch-guard-script: missing writes the script and reports updated', () => {
+  const homeRoot = scratchHome()
+  const result = run(['update', 'harness', '--json', '--targets', 'git-branch-guard-script'], homeRoot)
+  assert.equal(result.status, 0, result.stderr)
+  const doc = JSON.parse(result.stdout)
+  const target = doc.targets.find(t => t.id === 'git-branch-guard-script')
+  assert.ok(target, 'git-branch-guard-script must appear in targets')
+  assert.equal(target.state, 'updated', 'missing script must report updated without --install-missing')
+  const scriptPath = path.join(homeRoot, '.trackfw', 'scripts', 'trackfw-git-branch-guard.sh')
+  assert.equal(fs.readFileSync(scriptPath, 'utf8'), GIT_BRANCH_GUARD_SCRIPT, 'written content must match GIT_BRANCH_GUARD_SCRIPT')
+})
+
+// ML-1A conclusion: outdated git-branch-guard content triggers a write and
+// the target reports "updated".
+test('git-branch-guard-script: outdated content is rewritten and reports updated', () => {
+  const homeRoot = scratchHome()
+  const scriptPath = path.join(homeRoot, '.trackfw', 'scripts', 'trackfw-git-branch-guard.sh')
+  fs.mkdirSync(path.dirname(scriptPath), { recursive: true })
+  fs.writeFileSync(scriptPath, '# stale version\n', { mode: 0o755 })
+
+  const result = run(['update', 'harness', '--json', '--targets', 'git-branch-guard-script'], homeRoot)
+  const doc = JSON.parse(result.stdout)
+  const target = doc.targets.find(t => t.id === 'git-branch-guard-script')
+  assert.equal(target.state, 'updated', 'stale script must report updated')
+  assert.equal(fs.readFileSync(scriptPath, 'utf8'), GIT_BRANCH_GUARD_SCRIPT, 'stale content must be replaced by current GIT_BRANCH_GUARD_SCRIPT')
+})
+
+// ML-1A conclusion: when the git-branch-guard script content is already
+// identical, the target reports "skipped" and the file's mtime is unchanged.
+test('git-branch-guard-script: identical content reports skipped and mtime is unchanged', () => {
+  const homeRoot = scratchHome()
+  const scriptPath = path.join(homeRoot, '.trackfw', 'scripts', 'trackfw-git-branch-guard.sh')
+  fs.mkdirSync(path.dirname(scriptPath), { recursive: true })
+  fs.writeFileSync(scriptPath, GIT_BRANCH_GUARD_SCRIPT, { mode: 0o755 })
+  // Pin mtime to a known-old value via fs.utimesSync so a rewrite is detectable.
+  const ancientMs = new Date('2000-01-01T00:00:00Z').getTime() / 1000
+  fs.utimesSync(scriptPath, ancientMs, ancientMs)
+  const mtimeBefore = fs.statSync(scriptPath).mtimeMs
+
+  const result = run(['update', 'harness', '--json', '--targets', 'git-branch-guard-script'], homeRoot)
+  const doc = JSON.parse(result.stdout)
+  const target = doc.targets.find(t => t.id === 'git-branch-guard-script')
+  assert.equal(target.state, 'skipped', 'current script must report skipped')
+  const mtimeAfter = fs.statSync(scriptPath).mtimeMs
+  assert.equal(mtimeAfter, mtimeBefore, 'mtime must not change when content is already current (skipped)')
+})
+
+// ML-1A conclusion: dry-run reports "updated" for git-branch-guard-script
+// but writes nothing to disk.
+test('git-branch-guard-script: --dry-run reports updated but writes nothing', () => {
+  const homeRoot = scratchHome()
+  const result = run(['update', 'harness', '--json', '--dry-run', '--targets', 'git-branch-guard-script'], homeRoot)
+  const doc = JSON.parse(result.stdout)
+  const target = doc.targets.find(t => t.id === 'git-branch-guard-script')
+  assert.equal(target.state, 'updated', 'dry-run must report updated for missing script')
+  const scriptPath = path.join(homeRoot, '.trackfw', 'scripts', 'trackfw-git-branch-guard.sh')
+  assert.equal(fs.existsSync(scriptPath), false, 'dry-run must not write the script to disk')
+})
+
+// ────────────────────────────────────────────────────────────────────────────
+// credential-guard-script target (REQ-2026-09-09 ML-1A)
+// ────────────────────────────────────────────────────────────────────────────
+
+// ML-1A conclusion: a missing credential-guard script is written and reported
+// as "updated" without requiring --install-missing.
+test('credential-guard-script: missing writes the script and reports updated', () => {
+  const homeRoot = scratchHome()
+  const result = run(['update', 'harness', '--json', '--targets', 'credential-guard-script'], homeRoot)
+  assert.equal(result.status, 0, result.stderr)
+  const doc = JSON.parse(result.stdout)
+  const target = doc.targets.find(t => t.id === 'credential-guard-script')
+  assert.ok(target, 'credential-guard-script must appear in targets')
+  assert.equal(target.state, 'updated', 'missing script must report updated without --install-missing')
+  const scriptPath = path.join(homeRoot, '.trackfw', 'scripts', 'trackfw-credential-guard.sh')
+  assert.equal(fs.readFileSync(scriptPath, 'utf8'), GLOBAL_CREDENTIAL_GUARD_SCRIPT, 'written content must match GLOBAL_CREDENTIAL_GUARD_SCRIPT')
+})
+
+// ML-1A conclusion: identical credential-guard-script content reports "skipped"
+// and mtime is left unchanged.
+test('credential-guard-script: identical content reports skipped and mtime is unchanged', () => {
+  const homeRoot = scratchHome()
+  const scriptPath = path.join(homeRoot, '.trackfw', 'scripts', 'trackfw-credential-guard.sh')
+  fs.mkdirSync(path.dirname(scriptPath), { recursive: true })
+  fs.writeFileSync(scriptPath, GLOBAL_CREDENTIAL_GUARD_SCRIPT, { mode: 0o755 })
+  const ancientMs = new Date('2000-01-01T00:00:00Z').getTime() / 1000
+  fs.utimesSync(scriptPath, ancientMs, ancientMs)
+  const mtimeBefore = fs.statSync(scriptPath).mtimeMs
+
+  const result = run(['update', 'harness', '--json', '--targets', 'credential-guard-script'], homeRoot)
+  const doc = JSON.parse(result.stdout)
+  const target = doc.targets.find(t => t.id === 'credential-guard-script')
+  assert.equal(target.state, 'skipped', 'current credential-guard script must report skipped')
+  const mtimeAfter = fs.statSync(scriptPath).mtimeMs
+  assert.equal(mtimeAfter, mtimeBefore, 'mtime must not change when credential-guard content is already current')
+})
+
+// ML-1A conclusion: dry-run reports "updated" for credential-guard-script
+// but writes nothing to disk.
+test('credential-guard-script: --dry-run reports updated but writes nothing', () => {
+  const homeRoot = scratchHome()
+  const result = run(['update', 'harness', '--json', '--dry-run', '--targets', 'credential-guard-script'], homeRoot)
+  const doc = JSON.parse(result.stdout)
+  const target = doc.targets.find(t => t.id === 'credential-guard-script')
+  assert.equal(target.state, 'updated', 'dry-run must report updated for missing credential-guard script')
+  const scriptPath = path.join(homeRoot, '.trackfw', 'scripts', 'trackfw-credential-guard.sh')
+  assert.equal(fs.existsSync(scriptPath), false, 'dry-run must not write the credential-guard script to disk')
 })

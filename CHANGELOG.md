@@ -5,6 +5,25 @@ Todas as mudanças notáveis deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 e este projeto adere a [Semantic Versioning](https://semver.org/).
 
+## [7.5.1] - 2026-09-09
+
+### Fixed
+
+- 🔴 **`update harness` reescrevia o script do guard e reportava `updated=0`** (issue #300). Nenhum
+  alvo do manifesto era dono de `~/.trackfw/scripts/trackfw-git-branch-guard.sh` — o script era
+  escrito como **efeito colateral** do alvo de fiação, e a contagem só enxergava a fiação.
+
+  **Isto desacreditava a instrução em destaque da 7.5.0.** Quem seguia o `trackfw update harness`
+  via `updated=0` e concluía, razoavelmente, que o comando não fez nada — quando ele **tinha
+  funcionado**.
+
+  Agora o script é **alvo de primeira classe**, aparece nomeado no relatório, e o comando é
+  **idempotente**: conteúdo idêntico ⇒ `skipped` **sem reescrever** (o `mtime` deixa de mudar à toa).
+  O mesmo vale para o `trackfw-credential-guard.sh`, que foi **medido** com o mesmo padrão.
+
+  ⚠️ **Se você rodou `trackfw update harness` na 7.5.0 e viu `updated=0`, o comando provavelmente
+  funcionou.** Para confirmar, `trackfw validate` não deve mais acusar divergência do guard.
+
 ## [7.5.0] - 2026-09-09
 
 ### ⚠️ Leia antes de atualizar

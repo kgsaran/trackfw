@@ -1,6 +1,7 @@
 package generators
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -449,8 +450,13 @@ var harnessCatalogTargetOrder = []string{
 var HarnessTargetIDs = buildHarnessTargetIDs()
 
 func buildHarnessTargetIDs() []string {
-	ids := make([]string, 0, 5+2*len(harnessCatalogTargetOrder))
-	ids = append(ids, "claude-skill", "claude-credential-guard", "claude-git-branch-guard")
+	ids := make([]string, 0, 7+2*len(harnessCatalogTargetOrder))
+	// Script targets precede every wiring target that references them so that
+	// even a --targets-filtered run that only requests a wiring target still
+	// finds the script already in place from a prior full run. The two script
+	// targets are 100% trackfw-owned and do not require --install-missing.
+	ids = append(ids, "claude-skill", "git-branch-guard-script", "credential-guard-script",
+		"claude-credential-guard", "claude-git-branch-guard")
 	for _, tool := range harnessCatalogTargetOrder {
 		if tool == "codex" {
 			ids = append(ids, "codex-credential-guard", "codex-git-branch-guard")
@@ -494,19 +500,11 @@ func UpdateHarness(opts UpdateOptions) (UpdateReport, error) {
 		return UpdateReport{}, fmt.Errorf("resolving home directory: %w", homeErr)
 	}
 
-	// The per-CLI *-credential-guard targets below only wire hook entries that
-	// point at ~/.trackfw/scripts/trackfw-credential-guard.sh — none of them
-	// write the script itself (ADR-2026-08-06, decision #2/#3). Without this
-	// call the wiring is installed but every hook invocation fails with
-	// "No such file or directory" because the script never exists.
-	if !opts.DryRun {
-		if err := GenerateGlobalCredentialGuardScript(home); err != nil {
-			return UpdateReport{}, fmt.Errorf("generating global credential guard script: %w", err)
-		}
-		if err := GenerateGlobalGitBranchGuardScript(home); err != nil {
-			return UpdateReport{}, fmt.Errorf("generating global git branch guard script: %w", err)
-		}
-	}
+	// NOTE: the script files are now first-class targets ("git-branch-guard-script",
+	// "credential-guard-script") positioned before the wiring targets in
+	// HarnessTargetIDs. The pre-loop unconditional writes that used to live here
+	// have been removed — the target functions handle creation and idempotency.
+	// (REQ-2026-09-09, ML-1A)
 
 	catalog, catalogErr := integrations.LoadCatalog()
 	if catalogErr != nil {
@@ -517,6 +515,14 @@ func UpdateHarness(opts UpdateOptions) (UpdateReport, error) {
 	for _, id := range selected {
 		if id == "claude-skill" {
 			results = append(results, harnessClaudeSkillTarget(home, opts))
+			continue
+		}
+		if id == "git-branch-guard-script" {
+			results = append(results, harnessGitBranchGuardScriptTarget(home, opts))
+			continue
+		}
+		if id == "credential-guard-script" {
+			results = append(results, harnessCredentialGuardScriptTarget(home, opts))
 			continue
 		}
 		if id == "claude-credential-guard" {
@@ -617,6 +623,73 @@ func selectDeclaredTargets(declared []string, requested []string) ([]string, err
 		}
 	}
 	return out, nil
+}
+
+// harnessGitBranchGuardScriptTarget evaluates (and, unless DryRun, applies)
+// the global git-branch-guard shell script at
+// ~/.trackfw/scripts/trackfw-git-branch-guard.sh.
+//
+// Unlike wiring targets (e.g. claude-git-branch-guard), this target OWNS the
+// script file itself. It compares content before writing so that an already
+// up-to-date script is reported as "skipped" and its mtime is left unchanged
+// (REQ-2026-09-09 AC3). Creation does not require --install-missing because
+// ~/.trackfw/scripts/ is 100% trackfw-owned (unlike ~/.claude/settings.json).
+func harnessGitBranchGuardScriptTarget(home string, opts UpdateOptions) TargetResult {
+	const id = "git-branch-guard-script"
+	const displayPath = "~/.trackfw/scripts/trackfw-git-branch-guard.sh"
+
+	path := filepath.Join(home, ".trackfw", "scripts", "trackfw-git-branch-guard.sh")
+	desired := []byte(gitBranchGuardScript)
+
+	data, err := os.ReadFile(path)
+	if err == nil && bytes.Equal(data, desired) {
+		// Content identical — skip write, repair execute bit without touching mtime.
+		_ = os.Chmod(path, 0755)
+		return TargetResult{ID: id, State: TargetSkipped, Path: displayPath}
+	}
+	// File is missing or outdated — write it.
+	if opts.DryRun {
+		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+	}
+	if mkErr := os.MkdirAll(filepath.Dir(path), 0755); mkErr != nil {
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: mkErr.Error()}
+	}
+	if writeErr := os.WriteFile(path, desired, 0755); writeErr != nil {
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
+	}
+	return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+}
+
+// harnessCredentialGuardScriptTarget evaluates (and, unless DryRun, applies)
+// the global credential-guard shell script at
+// ~/.trackfw/scripts/trackfw-credential-guard.sh.
+//
+// Mirrors harnessGitBranchGuardScriptTarget — same ownership model, same
+// idempotency contract, same absence of --install-missing gate.
+func harnessCredentialGuardScriptTarget(home string, opts UpdateOptions) TargetResult {
+	const id = "credential-guard-script"
+	const displayPath = "~/.trackfw/scripts/trackfw-credential-guard.sh"
+
+	path := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+	desired := []byte(globalCredentialGuardScript)
+
+	data, err := os.ReadFile(path)
+	if err == nil && bytes.Equal(data, desired) {
+		// Content identical — skip write, repair execute bit without touching mtime.
+		_ = os.Chmod(path, 0755)
+		return TargetResult{ID: id, State: TargetSkipped, Path: displayPath}
+	}
+	// File is missing or outdated — write it.
+	if opts.DryRun {
+		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+	}
+	if mkErr := os.MkdirAll(filepath.Dir(path), 0755); mkErr != nil {
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: mkErr.Error()}
+	}
+	if writeErr := os.WriteFile(path, desired, 0755); writeErr != nil {
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
+	}
+	return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
 }
 
 // harnessClaudeSkillTarget evaluates (and, unless DryRun, applies) the

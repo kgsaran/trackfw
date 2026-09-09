@@ -67,6 +67,10 @@ def count_json_leaf_matches(raw: str, want: str) -> int:
 
 
 def test_harness_empty_reports_all_missing_and_exits_zero(tmp_path):
+    # ML-1A (REQ-2026-09-09): the two script targets ("git-branch-guard-script",
+    # "credential-guard-script") do NOT require --install-missing — they always
+    # write on first run. On an empty home they report "updated", not "missing".
+    script_target_ids = {"git-branch-guard-script", "credential-guard-script"}
     home = tmp_path / "home"
     home.mkdir()
     project = tmp_path / "project"
@@ -78,8 +82,17 @@ def test_harness_empty_reports_all_missing_and_exits_zero(tmp_path):
     payload = json.loads(result.stdout)
     assert payload["scope"] == "harness"
     assert payload["dry_run"] is False
-    assert all(target["state"] == "missing" for target in payload["targets"])
-    assert payload["summary"] == {"updated": 0, "skipped": 0, "missing": len(payload["targets"]), "failed": 0}
+    for target in payload["targets"]:
+        if target["id"] in script_target_ids:
+            assert target["state"] == "updated", f"{target['id']} expected updated on empty home (no --install-missing gate)"
+        else:
+            assert target["state"] == "missing", f"{target['id']} expected missing"
+    assert payload["summary"] == {
+        "updated": len(script_target_ids),
+        "skipped": 0,
+        "missing": len(payload["targets"]) - len(script_target_ids),
+        "failed": 0,
+    }
 
 
 def test_harness_does_not_require_trackfw_yaml_or_project_cwd(tmp_path):
@@ -127,37 +140,40 @@ def test_harness_declared_target_list_and_order(tmp_path):
     from trackfw.commands.update_harness import declared_target_ids
 
     ids = declared_target_ids()
+    # ML-1A (REQ-2026-09-09): the two new script targets precede all wiring targets.
     assert ids[0] == "claude-skill"
-    assert ids[1] == "claude-credential-guard"
-    assert ids[2] == "claude-git-branch-guard"
-    assert ids[3:5] == ["claude-agents", "claude-skills"]
+    assert ids[1] == "git-branch-guard-script"
+    assert ids[2] == "credential-guard-script"
+    assert ids[3] == "claude-credential-guard"
+    assert ids[4] == "claude-git-branch-guard"
+    assert ids[5:7] == ["claude-agents", "claude-skills"]
     # codex-credential-guard/codex-git-branch-guard sit immediately before
     # codex-agents/codex-skills — same relative position as
     # claude-credential-guard/claude-git-branch-guard before
     # claude-agents/claude-skills (ROADMAP-2026-08-06 Wave 2/ML-2B;
     # ROADMAP-2026-08-17 Wave 2/ML-2A for git-branch-guard).
-    assert ids[5:9] == ["codex-credential-guard", "codex-git-branch-guard", "codex-agents", "codex-skills"]
+    assert ids[7:11] == ["codex-credential-guard", "codex-git-branch-guard", "codex-agents", "codex-skills"]
     # gemini-credential-guard/gemini-git-branch-guard sit immediately before
     # gemini-agents/gemini-skills — same relative position
     # (ROADMAP-2026-08-06 Wave 2/ML-2C).
-    assert ids[9:13] == ["gemini-credential-guard", "gemini-git-branch-guard", "gemini-agents", "gemini-skills"]
-    assert ids[13:15] == ["antigravity-agents", "antigravity-skills"]
+    assert ids[11:15] == ["gemini-credential-guard", "gemini-git-branch-guard", "gemini-agents", "gemini-skills"]
+    assert ids[15:17] == ["antigravity-agents", "antigravity-skills"]
     # cursor-credential-guard/cursor-git-branch-guard sit immediately before
     # cursor-agents/cursor-skills — same relative position
     # (ROADMAP-2026-08-06 Wave 2/ML-2D).
-    assert ids[15:19] == ["cursor-credential-guard", "cursor-git-branch-guard", "cursor-agents", "cursor-skills"]
+    assert ids[17:21] == ["cursor-credential-guard", "cursor-git-branch-guard", "cursor-agents", "cursor-skills"]
     # copilot-credential-guard/copilot-git-branch-guard sit immediately before
     # copilot-agents/copilot-skills — same relative position
     # (ROADMAP-2026-08-06 Wave 2/ML-2E).
-    assert ids[19:23] == ["copilot-credential-guard", "copilot-git-branch-guard", "copilot-agents", "copilot-skills"]
+    assert ids[21:25] == ["copilot-credential-guard", "copilot-git-branch-guard", "copilot-agents", "copilot-skills"]
     # kiro-credential-guard/kiro-git-branch-guard sit immediately before
     # kiro-agents/kiro-skills — same relative position
     # (ROADMAP-2026-08-06 Wave 2/ML-2F).
     assert ids[-4:] == ["kiro-credential-guard", "kiro-git-branch-guard", "kiro-agents", "kiro-skills"]
-    # claude-skill + 2*(claude-credential-guard, git-branch-guard pairs for
-    # claude/codex/gemini/cursor/copilot/kiro = 6 pairs) + 20 agents/skills
-    # entries (2 per each of the 10 catalog targets) = 1 + 12 + 20 = 33.
-    assert len(ids) == 33
+    # claude-skill + 2 script targets + 2*(claude/codex/gemini/cursor/copilot/kiro
+    # credential-guard+git-branch-guard = 6 pairs = 12) + 20 agents/skills entries
+    # (2 per each of the 10 catalog targets) = 1 + 2 + 12 + 20 = 35.
+    assert len(ids) == 35
 
     home = tmp_path / "home"
     home.mkdir()
@@ -1353,3 +1369,159 @@ def test_kiro_credential_guard_and_git_branch_guard_write_separate_files(tmp_pat
     assert all(target["state"] == "skipped" for target in payload["targets"])
     assert cred_path.read_bytes() == cred_before
     assert branch_path.read_bytes() == branch_before
+
+
+# ---------------------------------------------------------------------------
+# git-branch-guard-script and credential-guard-script targets
+# (REQ-2026-09-09 ML-1A)
+# ---------------------------------------------------------------------------
+
+
+def test_git_branch_guard_script_missing_writes_and_reports_updated(tmp_path):
+    """ML-1A conclusion: a missing git-branch-guard script is written and
+    reported as 'updated' without requiring --install-missing."""
+    from trackfw.generators.init_gen import _GIT_BRANCH_GUARD_SH
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+
+    result = cli("update", "harness", "--targets", "git-branch-guard-script", "--json", cwd=project, home=home)
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    target = next(t for t in payload["targets"] if t["id"] == "git-branch-guard-script")
+    assert target["state"] == "updated", "missing script must report updated without --install-missing"
+    script_path = home / ".trackfw" / "scripts" / "trackfw-git-branch-guard.sh"
+    assert script_path.read_text(encoding="utf-8") == _GIT_BRANCH_GUARD_SH.lstrip("\n")
+
+
+def test_git_branch_guard_script_outdated_writes_and_reports_updated(tmp_path):
+    """ML-1A conclusion: outdated git-branch-guard content triggers a write
+    and the target reports 'updated'."""
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+    script_path = home / ".trackfw" / "scripts" / "trackfw-git-branch-guard.sh"
+    script_path.parent.mkdir(parents=True, exist_ok=True)
+    script_path.write_text("# stale version\n", encoding="utf-8")
+    script_path.chmod(0o755)
+
+    from trackfw.generators.init_gen import _GIT_BRANCH_GUARD_SH
+    result = cli("update", "harness", "--targets", "git-branch-guard-script", "--json", cwd=project, home=home)
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    target = next(t for t in payload["targets"] if t["id"] == "git-branch-guard-script")
+    assert target["state"] == "updated", "stale script must report updated"
+    assert script_path.read_text(encoding="utf-8") == _GIT_BRANCH_GUARD_SH.lstrip("\n")
+
+
+def test_git_branch_guard_script_identical_reports_skipped_and_mtime_unchanged(tmp_path):
+    """ML-1A conclusion: when the git-branch-guard script content is already
+    identical, the target reports 'skipped' and the file's mtime is unchanged."""
+    import time
+    from trackfw.generators.init_gen import _GIT_BRANCH_GUARD_SH
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+    script_path = home / ".trackfw" / "scripts" / "trackfw-git-branch-guard.sh"
+    script_path.parent.mkdir(parents=True, exist_ok=True)
+    script_path.write_text(_GIT_BRANCH_GUARD_SH.lstrip("\n"), encoding="utf-8", newline="\n")
+    script_path.chmod(0o755)
+    # Pin mtime to a known-old value so a rewrite is detectable regardless of clock granularity.
+    ancient = 946684800.0  # 2000-01-01 00:00:00 UTC
+    os.utime(script_path, (ancient, ancient))
+    mtime_before = script_path.stat().st_mtime
+
+    result = cli("update", "harness", "--targets", "git-branch-guard-script", "--json", cwd=project, home=home)
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    target = next(t for t in payload["targets"] if t["id"] == "git-branch-guard-script")
+    assert target["state"] == "skipped", "current script must report skipped"
+    mtime_after = script_path.stat().st_mtime
+    assert mtime_after == mtime_before, f"mtime must not change on skipped target: before={mtime_before} after={mtime_after}"
+
+
+def test_git_branch_guard_script_dry_run_reports_updated_writes_nothing(tmp_path):
+    """ML-1A conclusion: dry-run reports 'updated' for git-branch-guard-script
+    but writes nothing to disk."""
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+
+    result = cli("update", "harness", "--targets", "git-branch-guard-script", "--dry-run", "--json", cwd=project, home=home)
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    target = next(t for t in payload["targets"] if t["id"] == "git-branch-guard-script")
+    assert target["state"] == "updated", "dry-run must report updated for missing script"
+    script_path = home / ".trackfw" / "scripts" / "trackfw-git-branch-guard.sh"
+    assert not script_path.exists(), "dry-run must not write the script to disk"
+
+
+def test_credential_guard_script_missing_writes_and_reports_updated(tmp_path):
+    """ML-1A conclusion: a missing credential-guard script is written and
+    reported as 'updated' without requiring --install-missing."""
+    from trackfw.generators.init_gen import _GLOBAL_CREDENTIAL_GUARD_SH
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+
+    result = cli("update", "harness", "--targets", "credential-guard-script", "--json", cwd=project, home=home)
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    target = next(t for t in payload["targets"] if t["id"] == "credential-guard-script")
+    assert target["state"] == "updated", "missing credential-guard script must report updated without --install-missing"
+    script_path = home / ".trackfw" / "scripts" / "trackfw-credential-guard.sh"
+    assert script_path.read_text(encoding="utf-8") == _GLOBAL_CREDENTIAL_GUARD_SH.lstrip("\n")
+
+
+def test_credential_guard_script_identical_reports_skipped_and_mtime_unchanged(tmp_path):
+    """ML-1A conclusion: when the credential-guard script content is already
+    identical, the target reports 'skipped' and the file's mtime is unchanged."""
+    from trackfw.generators.init_gen import _GLOBAL_CREDENTIAL_GUARD_SH
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+    script_path = home / ".trackfw" / "scripts" / "trackfw-credential-guard.sh"
+    script_path.parent.mkdir(parents=True, exist_ok=True)
+    script_path.write_text(_GLOBAL_CREDENTIAL_GUARD_SH.lstrip("\n"), encoding="utf-8", newline="\n")
+    script_path.chmod(0o755)
+    ancient = 946684800.0  # 2000-01-01 00:00:00 UTC
+    os.utime(script_path, (ancient, ancient))
+    mtime_before = script_path.stat().st_mtime
+
+    result = cli("update", "harness", "--targets", "credential-guard-script", "--json", cwd=project, home=home)
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    target = next(t for t in payload["targets"] if t["id"] == "credential-guard-script")
+    assert target["state"] == "skipped", "current credential-guard script must report skipped"
+    mtime_after = script_path.stat().st_mtime
+    assert mtime_after == mtime_before, f"mtime must not change on skipped credential-guard target"
+
+
+def test_credential_guard_script_dry_run_reports_updated_writes_nothing(tmp_path):
+    """ML-1A conclusion: dry-run reports 'updated' for credential-guard-script
+    but writes nothing to disk."""
+    home = tmp_path / "home"
+    home.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+
+    result = cli("update", "harness", "--targets", "credential-guard-script", "--dry-run", "--json", cwd=project, home=home)
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    target = next(t for t in payload["targets"] if t["id"] == "credential-guard-script")
+    assert target["state"] == "updated", "dry-run must report updated for missing credential-guard script"
+    script_path = home / ".trackfw" / "scripts" / "trackfw-credential-guard.sh"
+    assert not script_path.exists(), "dry-run must not write the credential-guard script to disk"

@@ -3282,11 +3282,16 @@ Wave 6 round.
 
 ### Declared harness targets — pinned list
 
-<!-- trackfw-contract: gate=scripts/check-update-parity.sh partial=mesmo padrão da lista de targets do projeto — os 3 runtimes concordando entre si sobre os 33 ids não prova que a lista bate com os 33 documentados; nenhum cenário afirma a contagem/ordem exata de forma independente -->
+<!-- trackfw-contract: gate=scripts/check-update-parity.sh partial=mesmo padrão da lista de targets do projeto — os 3 runtimes concordando entre si sobre os 35 ids não prova que a lista bate com os 35 documentados; nenhum cenário afirma a contagem/ordem exata de forma independente -->
 
 
-The harness target list is **not** derived at runtime; it is this fixed sequence of 33 ids, in this
-exact order: `claude-skill`, `claude-credential-guard` (global-scope credential-guard wiring for
+The harness target list is **not** derived at runtime; it is this fixed sequence of 35 ids, in this
+exact order: `claude-skill`, `git-branch-guard-script` (global script owner —
+`~/.trackfw/scripts/trackfw-git-branch-guard.sh` — REQ-2026-09-09 ML-1A; always writes on first
+run, no `--install-missing` gate, because `~/.trackfw/scripts/` is 100% trackfw-owned),
+`credential-guard-script` (global script owner — `~/.trackfw/scripts/trackfw-credential-guard.sh`
+— same ownership model; must precede all wiring targets referencing these scripts),
+`claude-credential-guard` (global-scope credential-guard wiring for
 Claude Code — `ROADMAP-2026-08-06-hooks-de-credential-guard-como-escopo-global-cross-project-via-trackfw-update-harness.md`,
 ML-2A), `claude-git-branch-guard` (global-scope git-branch-guard wiring for Claude Code —
 `ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-e-integridade-independente-de-fiacao.md`,

@@ -7244,7 +7244,7 @@ T68_DUP_HOME="$WORK/s68-dup-home-gbg"
 mkdir -p "$T68_DUP_HOME"
 set +e
 (HOME="$T68_DUP_HOME" "$ROOT_DIR/bin/trackfw" update harness \
-  --targets claude-git-branch-guard,codex-git-branch-guard --install-missing) \
+  --targets claude-git-branch-guard,codex-git-branch-guard,git-branch-guard-script --install-missing) \
   >"$WORK/s68-dup-update-harness-gbg.log" 2>&1
 s68dupgbg_setup_status=$?
 set -e
@@ -7284,7 +7284,7 @@ T68_DUP_HOME_CG="$WORK/s68-dup-home-cg"
 mkdir -p "$T68_DUP_HOME_CG"
 set +e
 (HOME="$T68_DUP_HOME_CG" "$ROOT_DIR/bin/trackfw" update harness \
-  --targets claude-credential-guard,codex-credential-guard --install-missing) \
+  --targets claude-credential-guard,codex-credential-guard,credential-guard-script --install-missing) \
   >"$WORK/s68-dup-update-harness-cg.log" 2>&1
 s68dupcg_setup_status=$?
 set -e
@@ -7339,7 +7339,7 @@ mkdir -p "$T69_HOME"
 
 set +e
 (HOME="$T69_HOME" "$ROOT_DIR/bin/trackfw" update harness \
-  --targets kiro-git-branch-guard,kiro-credential-guard --install-missing) \
+  --targets kiro-git-branch-guard,kiro-credential-guard,git-branch-guard-script,credential-guard-script --install-missing) \
   >"$WORK/s69-update-harness.log" 2>&1
 s69setup_status=$?
 set -e
