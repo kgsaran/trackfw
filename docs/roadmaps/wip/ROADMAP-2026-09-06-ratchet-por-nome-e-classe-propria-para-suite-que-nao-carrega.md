@@ -216,3 +216,38 @@ Terceira ocorrência do padrão dois-estados-um-observable registrado em `vault/
 **Status:** ✅ Concluído · **Agente:** `ares-tf`
 🔴 **Só aqui.** Remover antes tornaria a `main` imergível com a dívida atual — o ponto do ratchet é
 bloquear regressão **sem** exigir zero primeiro.
+
+#### Corretivo ML-3A — Guarda de marcador consulta lista (CI run 34519502920)
+**Status:** 🔄 Em andamento · **Agente:** `ares-tf`
+
+**Defeito (auditoria do arquiteto):** a guarda de marcadores no `run_check` reprovava em
+**qualquer** marcador de `suite-load-failure`, sem consultar a lista. `validator.test.js`
+estava na lista como dívida conhecida (`runtime: node, class: suite-load-failure`), mas a
+guarda retornava 1 antes que o ratchet de nomes pudesse absolver a entrada. Resultado: job
+permanentemente não-verde enquanto houver qualquer entrada na lista dessa classe.
+
+**Causa raiz (nota de método):** leitura do D3 como "falha de classe própria = sempre fatal"
+quando D3 diz "falha de **classe** própria" — ou seja, precisa de **classificação** própria,
+não que seja automaticamente fatal. O parágrafo seguinte do mesmo ADR distingue o caso perigoso
+(sem nome, contagem some sem rastro) do caso catalogável (com nome, dívida conhecida).
+
+**Correção aplicada (`scripts/check-windows-known-failures.py`):**
+- `_parse_go_load_names(content)` — extrai pacotes de marcador Go (`FAIL\t<pkg> [setup failed]`).
+- Passo 3 (early): apenas marcadores sem nome extraível (Python load, zero-test Node/Python) → `return 1`.
+- Passo 3b (late, após extração): Go load (`known_go_load`) e Node load (`obs_node_load`):
+  - Row 1 (nome na lista) → passa (dívida conhecida, job pode ser verde).
+  - Row 2 (nome novo) → `has_new = True` (step-6 para Node; 3b para Go).
+  - Row 3 (sem nome) → `has_new = True` + mensagem "sem nome".
+- `known_go_load` adicionado ao `run_check`.
+
+**Novos testes (T19–T22):**
+- T19: Node load-failure marker + nome na lista → exit 0 (o braço cuja ausência causou o defeito).
+- T20: Node load-failure marker + nome fora da lista → exit 1, nome na mensagem (row 2).
+- T21: Node load-failure marker + `obs_node_load` vazio → exit 1, "sem nome" (row 3, D3).
+- T22: `zero-test-failure.node.txt` → exit 1 (row 3, early check, sem nome por construção).
+
+**Gates (macOS arm64, foreground):**
+- `python3 scripts/check-windows-known-failures.py --self-test` → **23 PASS, 0 FAIL** (T1-T22)
+- `make parity-rest` → exit 0
+- `trackfw validate` → 0 errors (174 warnings pré-existentes)
+- YAML: `python3 -c "yaml.safe_load(...)"` → válido

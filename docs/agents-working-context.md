@@ -4,6 +4,31 @@
 
 ---
 
+## Sessão 2026-09-10h — ares-tf (Infrastructure) — Corretivo ML-3A: ENTREGUE, aguarda auditoria do arquiteto
+
+Branch `fix/ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega`.
+
+**Escopo:** corretivo ao ML-3A detectado pelo CI (run 34519502920). Causa raiz: guarda de marcadores reprovava em qualquer `suite-load-failure.node.txt` sem consultar a lista de dívida conhecida. `validator.test.js` estava na lista mas a guarda retornava 1 antes do ratchet de nomes.
+
+**Arquivos modificados:**
+- `scripts/check-windows-known-failures.py`:
+  - `_parse_go_load_names(content)` — novo helper que extrai pacotes de marcador Go.
+  - Passo 3 early: só Python load e zero-test (sem nome extraível → row 3).
+  - Passo 3b late (após extração): Go load consulta `known_go_load`; Node load consulta `obs_node_load` vs `known_node_load`.
+  - `known_go_load` set adicionado ao `run_check`.
+  - T19–T22 adicionados (23 PASS total). Reconciliação de T16/T17 atualizada.
+- `docs/roadmaps/wip/ROADMAP-2026-09-06-ratchet-...md` — seção de corretivo adicionada ao ML-3A.
+
+**Gates executados (sequenciais, foreground, local, macOS arm64):**
+- `python3 scripts/check-windows-known-failures.py --self-test` → **23 PASS, 0 FAIL** (T1-T22)
+- `make parity-rest` → exit 0
+- `trackfw validate` → 0 errors (174 warnings pré-existentes)
+- YAML: `python3 -c "yaml.safe_load(...)"` → válido
+
+**Status:** Microbatch entregue ao `trackfw_architect` para auditoria e commit. Corretivo ML-3A não marcado `✅ Concluído` — aguarda aprovação da auditoria.
+
+---
+
 ## Sessão 2026-09-10g — ares-tf (Infrastructure) — Corretivo ML-2B: ENTREGUE, aguarda auditoria do arquiteto
 
 Branch `fix/ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega`.

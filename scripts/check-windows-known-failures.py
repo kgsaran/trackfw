@@ -371,6 +371,24 @@ def extract_python_passes(python_out_path: Path) -> tuple[set[str], bool]:
 
 
 # ---------------------------------------------------------------------------
+# ML-3A: Go suite-load-failure name parser
+# ---------------------------------------------------------------------------
+
+def _parse_go_load_names(content: str) -> set[str]:
+    """Extract package paths from Go suite-load-failure marker content.
+
+    Workflow writes one line per failing package:
+        'FAIL\\tgithub.com/kgsaran/trackfw/internal/badpkg [setup failed]'
+    (Measured: T16 fixture format; run 34478752778 pattern.)
+
+    Returns the stable package path (e.g. 'github.com/kgsaran/trackfw/internal/badpkg').
+    Returns empty set if no matching lines are found.
+    """
+    pattern = re.compile(r'^FAIL\s+(\S+)\s+\[setup failed\]', re.MULTILINE)
+    return set(pattern.findall(content))
+
+
+# ---------------------------------------------------------------------------
 # ML-2B: removed section validation (D4)
 # ---------------------------------------------------------------------------
 
@@ -595,6 +613,7 @@ def run_check(
 
     # Build lookup sets by runtime+class
     known_go_assert   = {e['name'] for e in known if e['runtime'] == 'go'     and e['class'] == 'assertion'}
+    known_go_load     = {e['name'] for e in known if e['runtime'] == 'go'     and e['class'] == 'suite-load-failure'}
     known_node_assert = {e['name'] for e in known if e['runtime'] == 'node'   and e['class'] == 'assertion'}
     known_node_load   = {e['name'] for e in known if e['runtime'] == 'node'   and e['class'] == 'suite-load-failure'}
     known_py_assert   = {e['name'] for e in known if e['runtime'] == 'python' and e['class'] == 'assertion'}
@@ -604,32 +623,37 @@ def run_check(
     tap_path = require_artifact(node_tap,   'node-suite.tap')
     py_path  = require_artifact(python_out, 'python-suite-out.txt')
 
-    # 3. ML-3A: suite-load-failure and zero-test marker check (classe própria, ML-1A).
-    #    Suite steps write marker files to load_markers_dir when they detect load failures
-    #    or zero-test events BEFORE exiting. Step-level continue-on-error absorbs the exit
-    #    code but not the marker file. The ratchet reads the markers here and exits 1 if any
-    #    exist — two distinct states, two distinct messages (vault note: dois-estados-um-observable).
-    #    "Não consegui procurar → fatal, nunca aviso."
+    # 3. ML-3A: early marker check — markers where no name is extractable (row 3 only).
+    #    Suite steps write marker files BEFORE exiting; continue-on-error absorbs the exit
+    #    code but not the marker. The ratchet reads markers here and in step 3b.
+    #    "Não consegui procurar → fatal, nunca aviso." (vault note: dois-estados-um-observable)
+    #
+    #    Row classification by marker (measured, 2026-09-10):
+    #      suite-load-failure.python.txt — content: fixed string 'python-suite-load-failure
+    #                                      (exit code $rc)'. No extractable name → row 3.
+    #      zero-test-failure.node.txt    — content: fixed string 'zero-test'. No test name
+    #                                      by construction ('# tests 0') → row 3.
+    #      zero-test-failure.python.txt  — content: fixed string 'python-zero-test-failure
+    #                                      (exit code 5)'. No test name → row 3.
+    #    Go and Node suite-load-failure markers carry names; handled in step 3b (after
+    #    extraction) so the known list can be consulted. See classification there.
     if load_markers_dir:
-        load_fail = False
-        marker_specs = [
-            ("suite-load-failure.go.txt",     "Go suite-load-failure"),
-            ("suite-load-failure.node.txt",   "Node.js suite-load-failure"),
+        early_fail = False
+        early_specs = [
             ("suite-load-failure.python.txt", "Python suite-load-failure"),
             ("zero-test-failure.node.txt",    "Node.js zero-test-failure"),
             ("zero-test-failure.python.txt",  "Python zero-test-failure"),
         ]
-        for fname, label in marker_specs:
+        for fname, label in early_specs:
             marker = Path(load_markers_dir) / fname
             if marker.exists():
                 content = marker.read_text(encoding="utf-8").strip()
                 _err(
-                    f"ML-3A: {label} — suíte não carregou ou zero testes (classe própria, ML-1A). "
-                    f"O ratchet de nomes não captura este evento por nome; o árbitro reprova diretamente. "
-                    f"Detalhe: {content}"
+                    f"ML-3A: {label} — sem nome extraível (row 3: o pior modo, a contagem some "
+                    f"sem rastro). Detalhe: {content}"
                 )
-                load_fail = True
-        if load_fail:
+                early_fail = True
+        if early_fail:
             return 1
 
     # 4. Extract observed failures
@@ -669,6 +693,62 @@ def run_check(
         return 1
 
     has_new = False
+
+    # 3b. ML-3A: late marker check — Go and Node suite-load-failure (names available).
+    #     Done after extraction so the known list can be consulted.
+    #
+    #     Row classification (measured, 2026-09-10):
+    #       suite-load-failure.go.txt  — content: 'FAIL\t<pkg> [setup failed]' lines written
+    #                                    by the workflow. Package path is stable. Parsed by
+    #                                    _parse_go_load_names(). Consult known_go_load:
+    #                                    row 1 (name in list) | row 2 (name not in list,
+    #                                    new failure) | row 3 (content unparseable, no name).
+    #       suite-load-failure.node.txt — content: 'exitCode:' YAML lines from TAP — these
+    #                                    are NOT names. Names come from extract_node_failures()
+    #                                    → obs_node_load. Marker is a signal only.
+    #                                    row 1/2: obs_node_load non-empty → step 6 ratchet
+    #                                             handles by name (known → pass, new → fail).
+    #                                    row 3: marker exists AND obs_node_load empty → load
+    #                                           failure produced no name in TAP → fatal.
+    if load_markers_dir:
+        # Go suite-load-failure: extract names from marker content, consult list
+        go_load_marker = Path(load_markers_dir) / "suite-load-failure.go.txt"
+        if go_load_marker.exists():
+            go_marker_content = go_load_marker.read_text(encoding="utf-8").strip()
+            go_load_names = _parse_go_load_names(go_marker_content)
+            if not go_load_names:
+                # Row 3: marker exists but no package name parseable
+                _err(
+                    f"ML-3A: Go suite-load-failure sem nome extraível (row 3 — o pior modo, "
+                    f"a contagem some sem rastro). Detalhe: {go_marker_content}"
+                )
+                has_new = True
+            else:
+                for pkg in sorted(go_load_names):
+                    if pkg not in known_go_load:
+                        # Row 2: new Go load failure, package not in known list
+                        _err(
+                            f"ML-3A: NEW Go suite-load-failure not in known list: '{pkg}'. "
+                            "Add to .github/windows-known-failures.json (with source run id) "
+                            "or fix the compilation error. "
+                            "(ADR D3: suite-load-failure has its own class — not a test assertion.)"
+                        )
+                        has_new = True
+                    # Row 1: pkg in known_go_load — known debt, pass silently
+
+        # Node.js suite-load-failure: marker is a signal; names come from obs_node_load
+        node_load_marker = Path(load_markers_dir) / "suite-load-failure.node.txt"
+        if node_load_marker.exists():
+            if not obs_node_load:
+                # Row 3: marker signals a load failure but TAP produced no name
+                node_marker_content = node_load_marker.read_text(encoding="utf-8").strip()
+                _err(
+                    f"ML-3A: Node.js suite-load-failure sem nome no TAP (row 3 — o pior modo: "
+                    f"suíte falhou sem produzir nome rastreável no TAP). "
+                    f"Detalhe do marcador: {node_marker_content}"
+                )
+                has_new = True
+            # Rows 1 and 2: obs_node_load non-empty — step 6 ratchet handles by name
 
     # 6. New failures NOT in the known list -> ::error:: + exit 1
     for name in sorted(obs_go - known_go_assert):
@@ -829,19 +909,22 @@ def run_self_test() -> int:
           When baseline_path is empty the line is absent (two-states-one-observable
           fix: "clean" and "skipped" were previously indistinguishable in the log).
 
-    ── ML-3A (T16–T18) ─────────────────────────────────────────────────────────
+    ── ML-3A (T16–T22) ─────────────────────────────────────────────────────────
 
-    T16 — 'Go suite-load-failure marker present' -> exit 1 (row 4 "reprova" arm)
-          Asserts: ML-3A row 4 — when a suite step writes a load-failure marker file
-          (classe própria, ML-1A), the ratchet exits 1 even if all observed test names
-          are in the known list. Step-level continue-on-error absorbs the exit code but
-          not the marker; the marker is the signal that reaches the judge.
-          [SYNTHETIC: marker file created in temp dir; no real Go compilation failure]
+    T16 — 'Go suite-load-failure marker, package not in known_go_load' -> exit 1 (row 2)
+          Asserts: Go load-failure marker content 'FAIL\t<pkg> [setup failed]' yields a
+          package path; _parse_go_load_names extracts it; package compared against
+          known_go_load; 'github.com/kgsaran/trackfw/internal/badpkg' is not in the empty
+          known_go_load → row 2 (name produced, not in list) → exit 1 with package named.
+          Measurement: marker content format from run 34478752778; workflow line ~603.
+          [UPDATED: previously tested blanket check; now exercises step-3b "consult list"
+           path. Behavior unchanged (no Go load entries → always row 2 today) but
+           mechanism now satisfiable by adding an entry.]
 
-    T17 — 'no load-failure markers, only known failures' -> exit 0 (row 4 counter-arm)
-          Asserts: the marker mechanism (ML-3A) does not block the normal path (row 1);
-          the T16 guard fires only on marker presence, not always. Without this arm, a
-          verdict that always fails looks identical to a correctly failing verdict.
+    T17 — 'no load-failure markers, only known failures' -> exit 0 (counter-arm)
+          Asserts: when markers_dir is empty (no marker files), neither step-3 early check
+          nor step-3b late check fires; known names pass step 6 → exit 0.
+          Without this arm, a guard that always fails would look correct.
           [SYNTHETIC: markers_dir exists but is empty]
 
     T18 — 'go-suite-out.txt present but vacuous (no FAIL/PASS lines)' -> exit 1
@@ -851,6 +934,32 @@ def run_self_test() -> int:
           results; the guard fires before the ratchet compares names and emits spurious
           "not observed" warnings for all 14 known Go entries.
           [SYNTHETIC: go-suite-out.txt written with only a [setup failed] line]
+
+    T19 — 'Node.js load-failure marker + name in known_node_load' -> exit 0 (row 1)
+          Asserts: when a Node suite-load-failure marker exists but all extracted names
+          (from TAP) are in known_node_load (e.g. 'broken.test.js'), the ratchet exits
+          clean — known debt does not block CI. This is the arm whose absence shipped the
+          original defect: 'validator.test.js' was in the known list but the blanket marker
+          check failed regardless, making the job permanently un-green.
+          [SYNTHETIC: marker file present; TAP has broken.test.js with exitCode → row 1]
+
+    T20 — 'Node.js load-failure marker + name NOT in known_node_load' -> exit 1, named (row 2)
+          Asserts: 'new_broken.test.js' extracted from TAP (exitCode block present), not
+          in known_node_load → step-6 ratchet fires naming the file → exit 1.
+          Marker exists but row-1/2 decision belongs to step-6, not step-3b (step-3b only
+          handles the row-3 no-name case). Message contains 'new_broken.test.js'.
+          [SYNTHETIC: marker present; TAP has new_broken.test.js with exitCode]
+
+    T21 — 'Node.js load-failure marker + obs_node_load empty' -> exit 1, "sem nome" (row 3)
+          Asserts: marker exists (signal: load failure occurred) but TAP has no exitCode
+          block → obs_node_load empty → step-3b detects row-3 (D3: worst mode, contagem
+          some sem rastro) → exit 1 with "sem nome" in message.
+          [SYNTHETIC: marker present; TAP has only assertion failures, no exitCode blocks]
+
+    T22 — 'Node.js zero-test-failure marker' -> exit 1 (row 3, early check)
+          Asserts: zero-test produces no test name by construction ('# tests 0' + exit 0)
+          → row 3 → step-3 early check fires immediately → exit 1.
+          [SYNTHETIC: zero-test-failure.node.txt present with fixed-string content]
     """
     n_pass = 0
     n_fail = 0
@@ -1193,6 +1302,84 @@ def run_self_test() -> int:
         # No marker: testing the vacuity guard path (independent of marker path)
         rc = run_check(list_path, go_path, tap_path, py_path)
         check(rc == 1, "T18: go-suite-out.txt vacuous (no FAIL/PASS lines) -> exit 1")
+
+        # ── ML-3A T19: Node.js load-failure marker + name IN list -> exit 0 (row 1) ──
+        # broken.test.js is in BASE_ENTRIES as suite-load-failure; TAP_LOAD produces it
+        # in obs_node_load. Marker is present but step-6 ratchet sees no new names.
+        print("=== T19: Node.js load-failure marker + name in list -> exit 0 (row 1) ===", flush=True)
+        markers_t19 = os.path.join(td, "markers_t19")
+        os.makedirs(markers_t19, exist_ok=True)
+        write_list(BASE_ENTRIES)
+        write_artifacts()  # default TAP_ASSERT + TAP_LOAD; TAP_LOAD yields broken.test.js
+        Path(os.path.join(markers_t19, "suite-load-failure.node.txt")).write_text(
+            "  exitCode: 1", encoding="utf-8"
+        )
+        rc = run_check(list_path, go_path, tap_path, py_path, load_markers_dir=markers_t19)
+        check(rc == 0, "T19: Node load-failure marker, 'broken.test.js' in known list -> exit 0 (row 1)")
+
+        # ── ML-3A T20: Node.js load-failure marker + name NOT in list -> exit 1, named ─
+        # new_broken.test.js extracted from TAP (exitCode block), not in known_node_load
+        # → step-6 ratchet fires naming it. Marker present, obs_node_load non-empty → step-3b
+        # takes no action. Message from step-6 contains 'new_broken.test.js'.
+        print("=== T20: Node.js load-failure marker + name not in list -> exit 1, named (row 2) ===", flush=True)
+        markers_t20 = os.path.join(td, "markers_t20")
+        os.makedirs(markers_t20, exist_ok=True)
+        new_load_tap = (
+            TAP_ASSERT
+            + "not ok 2 - /runner/work/trackfw/tests/new_broken.test.js\n"
+            "  ---\n"
+            "  failureType: 'testCodeFailure'\n"
+            "  exitCode: 1\n"
+            "  ...\n"
+        )
+        write_list(BASE_ENTRIES)
+        write_artifacts(tap=new_load_tap)
+        Path(os.path.join(markers_t20, "suite-load-failure.node.txt")).write_text(
+            "  exitCode: 1", encoding="utf-8"
+        )
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = run_check(list_path, go_path, tap_path, py_path, load_markers_dir=markers_t20)
+        out_t20 = buf.getvalue()
+        check(
+            rc == 1 and "new_broken.test.js" in out_t20,
+            "T20: Node load-failure 'new_broken.test.js' not in list -> exit 1, named in message (row 2)"
+        )
+
+        # ── ML-3A T21: Node.js load-failure marker + obs_node_load empty -> exit 1, "sem nome"
+        # TAP has only assertion failures (no exitCode block) → obs_node_load empty.
+        # Marker exists → step-3b detects row-3 (D3 worst mode) → exit 1 with "sem nome".
+        # TAP_ASSERT alone: has 'not ok' lines (so 5b vacuity doesn't fire) but no exitCode.
+        print("=== T21: Node.js load-failure marker + no name in TAP -> exit 1 (row 3) ===", flush=True)
+        markers_t21 = os.path.join(td, "markers_t21")
+        os.makedirs(markers_t21, exist_ok=True)
+        write_list(BASE_ENTRIES)
+        write_artifacts(tap=TAP_ASSERT)  # assertion-only TAP; no exitCode block → obs_node_load = {}
+        Path(os.path.join(markers_t21, "suite-load-failure.node.txt")).write_text(
+            "  exitCode: 1", encoding="utf-8"
+        )
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = run_check(list_path, go_path, tap_path, py_path, load_markers_dir=markers_t21)
+        out_t21 = buf.getvalue()
+        check(
+            rc == 1 and "sem nome" in out_t21,
+            "T21: Node load-failure marker, obs_node_load empty -> exit 1, 'sem nome' in message (row 3)"
+        )
+
+        # ── ML-3A T22: Node.js zero-test-failure marker -> exit 1 (row 3, early check) ──
+        # zero-test marker has no test name by construction ('# tests 0' + exit 0) → row 3
+        # → step-3 early check fires immediately → exit 1.
+        print("=== T22: Node.js zero-test-failure marker -> exit 1 (row 3) ===", flush=True)
+        markers_t22 = os.path.join(td, "markers_t22")
+        os.makedirs(markers_t22, exist_ok=True)
+        write_list(BASE_ENTRIES)
+        write_artifacts()
+        Path(os.path.join(markers_t22, "zero-test-failure.node.txt")).write_text(
+            "zero-test", encoding="utf-8"
+        )
+        rc = run_check(list_path, go_path, tap_path, py_path, load_markers_dir=markers_t22)
+        check(rc == 1, "T22: Node.js zero-test-failure marker -> exit 1 (row 3, early check)")
 
     print(f"\nSelf-test summary: {n_pass} PASS, {n_fail} FAIL", flush=True)
     return 0 if n_fail == 0 else 1
