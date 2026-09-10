@@ -2286,6 +2286,55 @@ testou.** Corrigir na sonda antes de citar 13-F/13-G como evidência de Python.
 Node**; `.exe` funciona nos dois. **Justifica o shim compilado em vez do wrapper `.cmd`**, que seria
 a solução óbvia e mais simples — e estaria errada.
 
+### ML-R2b1b — As chaves de `{owner}/{repo}` somem ao atravessar o shim
+**Status:** 🔄 Em andamento · **Agente:** `ares-tf` · **causa DIFERENTE do ML-R2b1, medida**
+
+Exposta pelo ML-R2b1: com o `gh.exe` funcionando, os 48 rótulos de `release-tag-parity` deixaram de
+falhar por "forge CLI ausente" e passaram a falhar **dentro do stub**.
+
+```
+release-tag-parity stub: unexpected gh call: api repos/owner/repo
+```
+
+O `case` do stub (`scripts/check-release-tag-parity.sh`, `write_release_gh_stub`) casa com:
+
+```bash
+repos\{owner\}/\{repo\})
+```
+
+🔴 **O produto envia `repos/{owner}/{repo}`; o stub recebe `repos/owner/repo`.** As chaves somem —
+e só no Windows, porque em Linux/macOS o mesmo `case` casa e o gate passa.
+
+**Onde some, é o que este ML tem de medir** — não presumir. Duas hipóteses:
+
+1. **Conversão de argumento do MSYS.** O `bash.exe` do Git for Windows reescreve argumentos que
+   *parecem* caminho. Candidato de correção: `MSYS2_ARG_CONV_EXCL='*'` no ambiente com que o shim
+   invoca o bash.
+2. **Citação de `os.Args` do Go** atravessando `CreateProcess` e sendo re-parseada pelo bash.
+
+🔴 **Meça qual das duas, com prova mínima e SEM o trackfw no meio** — foi assim que a nota do
+`msys-nao-converte-caminho-embutido-em-string-maior` isolou o caso anterior. Um `gh` que só faz
+`printf '%s\n' "$@"`, chamado pelos 3 runtimes através do shim, mostra a forma exata que chega.
+
+#### 🔴 O que NÃO fazer
+
+**Não afrouxe o `case` para `repos/*`.** Fecharia os 48 e destruiria o poder discriminante do stub —
+ele deixaria de distinguir a chamada certa da errada, e o gate passaria a aprovar por tolerância em
+vez de por acerto. É a forma clássica de "corrigir" reduzindo contagem escondendo defeito, que os
+critérios de aceite desta REQ proíbem explicitamente.
+
+Se a medição mostrar que preservar a forma exata é impossível, isso é **achado para decisão do
+arquiteto**, não licença para relaxar o matcher.
+
+#### Critérios de aceite
+
+- [ ] a forma exata que chega ao stub, medida com probe mínimo sem trackfw, **saída crua**
+- [ ] hipótese 1 ou 2 declarada por escrito, com a medição que a decide
+- [ ] correção preservando a forma `{owner}/{repo}` — o `case` **não** afrouxa
+- [ ] censo nas duas pernas: quantos dos 48 fecham, **0 FAIL novo**
+- [ ] 🔴 se fecharem menos, **reporte — não force**; foram 2 estimativas erradas seguidas nesta REQ
+- [ ] `make quality` verde no Linux
+
 ### ML-R2b2 — Triagem dos 76 rótulos restantes por causa
 **Status:** ⬜ Pendente · **Agente:** `ares-tf` · **depende do ML-R2b1** · **pré-requisito do ratchet**
 
