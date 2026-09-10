@@ -2326,10 +2326,24 @@ critérios de aceite desta REQ proíbem explicitamente.
 Se a medição mostrar que preservar a forma exata é impossível, isso é **achado para decisão do
 arquiteto**, não licença para relaxar o matcher.
 
+#### Candidatos de correção — declarados, NÃO medidos (aguardando Pergunta 14 Windows)
+
+Três variantes de shim testadas em `windows-probe.yml` Pergunta 14 (adicionada em 2026-09-10):
+
+| variante | mecanismo | output esperado no log |
+|---|---|---|
+| baseline | shim atual (sem modificação) | `P14_SHIM_BASE_RECV` + `P14_ARG` (mostra fronteiras ① e ②) |
+| env-var | `cmd.Env = append(os.Environ(), "MSYS=noglob", "MSYS_NO_PATHCONV=1", "MSYS2_ARG_CONV_EXCL=*")` | `P14_SHIM_ENV_RECV` + `P14_ARG` |
+| force-quoted | `SysProcAttr.CmdLine` com todos os args em aspas duplas Windows | `P14_SHIM_FQ_CMDLINE` + `P14_ARG` |
+
+Discriminante H1 vs H2: Pergunta 14-I — Go chama `bash.exe` diretamente (sem shim). Se `{owner}/{repo}` some na chamada direta também → H2 (problema na fronteira Go→bash); se não some → o problema está na fronteira shim→bash (H1 ou outra causa no shim).
+
+**A correção aplicada nos 3 scripts (`check-release-tag-parity.sh`, `check-ship-force-parity.sh`, `check-doctor-remote-parity.sh`) só acontece APÓS a Pergunta 14 identificar qual variante funciona.**
+
 #### Critérios de aceite
 
-- [ ] a forma exata que chega ao stub, medida com probe mínimo sem trackfw, **saída crua**
-- [ ] hipótese 1 ou 2 declarada por escrito, com a medição que a decide
+- [ ] a forma exata que chega ao stub, medida com probe mínimo sem trackfw, **saída crua** (Pergunta 14)
+- [ ] hipótese 1 ou 2 declarada por escrito, com a medição que a decide (output de 14-I)
 - [ ] correção preservando a forma `{owner}/{repo}` — o `case` **não** afrouxa
 - [ ] censo nas duas pernas: quantos dos 48 fecham, **0 FAIL novo**
 - [ ] 🔴 se fecharem menos, **reporte — não force**; foram 2 estimativas erradas seguidas nesta REQ

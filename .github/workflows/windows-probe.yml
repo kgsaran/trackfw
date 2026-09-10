@@ -567,6 +567,113 @@ jobs:
 
           rm -rf "$T"
 
+      # Pergunta 14 — por que {owner}/{repo} perde as chaves ao atravessar o shim .exe (ML-R2b1b)
+      # Três variantes de shim: baseline (log apenas), env-var (MSYS=noglob MSYS_NO_PATHCONV=1
+      # MSYS2_ARG_CONV_EXCL=*), force-quoted (SysProcAttr.CmdLine). Cada shim imprime
+      # P14_SHIM_*_RECV[i] antes de chamar o bash — para ver o que chega na fronteira ①(product→shim)
+      # e comparar com P14_ARG[i] do stub — fronteira ②(shim→bash).
+      # PATH restrito: T14 (stub+shims) + BASH_DIR. Real gh excluído (lição da Pergunta 13).
+      - name: "Pergunta 14 — como {owner}/{repo} atravessa o shim .exe até o stub bash (ML-R2b1b)"
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          echo "=== Pergunta 14: travessia de {owner}/{repo} pelo shim .exe — ML-R2b1b ==="
+
+          T14=$(mktemp -d)
+          BASH_BIN=$(command -v bash 2>/dev/null || true)
+          BASH_DIR=$(dirname "$BASH_BIN")
+          REAL_GH=$(command -v gh 2>/dev/null || true)
+          REAL_GH_DIR=$([ -n "$REAL_GH" ] && dirname "$REAL_GH" || echo "nao_encontrado")
+          echo "T14=$T14  BASH_BIN=$BASH_BIN  REAL_GH=$REAL_GH  REAL_GH_DIR=$REAL_GH_DIR"
+
+          # PATH restrito: stub/shims dir + bash dir (real gh excluído — lição da P13)
+          PATH_14="$T14:$BASH_DIR"
+          echo "PATH_14=$PATH_14"
+
+          echo "=== 14-A: stub bash — imprime P14_STUB_OK + P14_ARG[i] para cada arg ==="
+          printf '#!/usr/bin/env bash\necho "P14_STUB_OK"\ni=0; for a in "$@"; do echo "P14_ARG[$i]=$a"; i=$((i+1)); done\n' > "$T14/gh"
+          chmod +x "$T14/gh"
+          echo "Stub direto (sem shim — esperado: braces preservadas):"
+          "$T14/gh" api "repos/{owner}/{repo}" 2>&1
+
+          echo "=== 14-B: prova de isolamento PATH — gh deve resolver para T14, real gh inacessível ==="
+          GH_VIA_P14=$(PATH="$PATH_14" command -v gh 2>/dev/null || echo "NAO_ENCONTRADO")
+          echo "gh via PATH_14: $GH_VIA_P14"
+          case "$GH_VIA_P14" in
+            *"$T14"*) echo "P14_PATH_OK: gh resolve para stub em T14" ;;
+            *) echo "P14_PATH_PROBLEMA: gh=$GH_VIA_P14 (esperado em T14)" ;;
+          esac
+          echo "real gh via PATH_14: $(PATH="$PATH_14" "$REAL_GH" --version 2>&1 | head -1 || echo 'P14_REAL_GH_BLOQUEADO')"
+
+          echo "=== 14-C: compila shim baseline (loga P14_SHIM_BASE_RECV antes de chamar bash) ==="
+          T14_BS="$T14/src_base"; mkdir -p "$T14_BS"
+          printf 'package main\nimport ("fmt";"os";"os/exec";"path/filepath")\nfunc findBash() string {for _,n:=range []string{"bash.exe","bash"}{if p,err:=exec.LookPath(n);err==nil{return p}};return ""}\nfunc main() {\nexe,err:=os.Executable()\nif err!=nil{fmt.Fprintln(os.Stderr,err);os.Exit(1)}\nstub:=filepath.Join(filepath.Dir(exe),"gh")\nbash:=findBash()\nif bash==""{fmt.Fprintln(os.Stderr,"bash.exe not found");os.Exit(1)}\nfor i,a:=range os.Args{fmt.Fprintf(os.Stderr,"P14_SHIM_BASE_RECV[%%d]=%%s\\n",i,a)}\nargs:=append([]string{stub},os.Args[1:]...)\ncmd:=exec.Command(bash,args...)\ncmd.Stdin=os.Stdin;cmd.Stdout=os.Stdout;cmd.Stderr=os.Stderr\nif err:=cmd.Run();err!=nil{if e,ok:=err.(*exec.ExitError);ok{os.Exit(e.ExitCode())};fmt.Fprintln(os.Stderr,err);os.Exit(1)}\n}\n' > "$T14_BS/main.go"
+          printf 'module shimbase\ngo 1.21\n' > "$T14_BS/go.mod"
+          (cd "$T14_BS" && go build -o "$T14/gh_base.exe" .) && echo "14-C build: OK" || echo "14-C build: FALHOU"
+
+          echo "=== 14-D: compila shim env-var (MSYS=noglob MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL=*) ==="
+          T14_EV="$T14/src_envvar"; mkdir -p "$T14_EV"
+          printf 'package main\nimport ("fmt";"os";"os/exec";"path/filepath")\nfunc findBash() string {for _,n:=range []string{"bash.exe","bash"}{if p,err:=exec.LookPath(n);err==nil{return p}};return ""}\nfunc main() {\nexe,err:=os.Executable()\nif err!=nil{fmt.Fprintln(os.Stderr,err);os.Exit(1)}\nstub:=filepath.Join(filepath.Dir(exe),"gh")\nbash:=findBash()\nif bash==""{fmt.Fprintln(os.Stderr,"bash.exe not found");os.Exit(1)}\nfor i,a:=range os.Args{fmt.Fprintf(os.Stderr,"P14_SHIM_ENV_RECV[%%d]=%%s\\n",i,a)}\nargs:=append([]string{stub},os.Args[1:]...)\ncmd:=exec.Command(bash,args...)\ncmd.Env=append(os.Environ(),"MSYS=noglob","MSYS_NO_PATHCONV=1","MSYS2_ARG_CONV_EXCL=*")\ncmd.Stdin=os.Stdin;cmd.Stdout=os.Stdout;cmd.Stderr=os.Stderr\nif err:=cmd.Run();err!=nil{if e,ok:=err.(*exec.ExitError);ok{os.Exit(e.ExitCode())};fmt.Fprintln(os.Stderr,err);os.Exit(1)}\n}\n' > "$T14_EV/main.go"
+          printf 'module shimenvvar\ngo 1.21\n' > "$T14_EV/go.mod"
+          (cd "$T14_EV" && go build -o "$T14/gh_env.exe" .) && echo "14-D build: OK" || echo "14-D build: FALHOU"
+
+          echo "=== 14-E: compila shim force-quoted (SysProcAttr.CmdLine — todos os args com aspas explícitas) ==="
+          T14_FQ="$T14/src_forceq"; mkdir -p "$T14_FQ"
+          # Go source codificado em base64 para evitar escaping de aspas duplas no shell
+          echo 'cGFja2FnZSBtYWluCgppbXBvcnQgKAoJImZtdCIKCSJvcyIKCSJvcy9leGVjIgoJInBhdGgvZmlsZXBhdGgiCgkic3RyaW5ncyIKCSJzeXNjYWxsIgopCgpmdW5jIGZpbmRCYXNoKCkgc3RyaW5nIHsKCWZvciBfLCBuIDo9IHJhbmdlIFtdc3RyaW5neyJiYXNoLmV4ZSIsICJiYXNoIn0gewoJCWlmIHAsIGVyciA6PSBleGVjLkxvb2tQYXRoKG4pOyBlcnIgPT0gbmlsIHsKCQkJcmV0dXJuIHAKCQl9Cgl9CglyZXR1cm4gIiIKfQoKLy8gd2luUSB3cmFwcyBzIGluIFdpbmRvd3MgZG91YmxlLXF1b3RlZCBmb3JtIChvbmx5ICIgbmVlZHMgZXNjYXBpbmcgYXMgXCIpCmZ1bmMgd2luUShzIHN0cmluZykgc3RyaW5nIHsKCXZhciBiIHN0cmluZ3MuQnVpbGRlcgoJYi5Xcml0ZUJ5dGUoJyInKQoJZm9yIGkgOj0gMDsgaSA8IGxlbihzKTsgaSsrIHsKCQlpZiBzW2ldID09ICciJyB7CgkJCWIuV3JpdGVTdHJpbmcoYFwiYCkKCQl9IGVsc2UgewoJCQliLldyaXRlQnl0ZShzW2ldKQoJCX0KCX0KCWIuV3JpdGVCeXRlKCciJykKCXJldHVybiBiLlN0cmluZygpCn0KCmZ1bmMgbWFpbigpIHsKCWV4ZSwgZXJyIDo9IG9zLkV4ZWN1dGFibGUoKQoJaWYgZXJyICE9IG5pbCB7CgkJZm10LkZwcmludGxuKG9zLlN0ZGVyciwgZXJyKQoJCW9zLkV4aXQoMSkKCX0KCXN0dWIgOj0gZmlsZXBhdGguSm9pbihmaWxlcGF0aC5EaXIoZXhlKSwgImdoIikKCWJhc2ggOj0gZmluZEJhc2goKQoJaWYgYmFzaCA9PSAiIiB7CgkJZm10LkZwcmludGxuKG9zLlN0ZGVyciwgImJhc2guZXhlIG5vdCBmb3VuZCIpCgkJb3MuRXhpdCgxKQoJfQoJZm9yIGksIGEgOj0gcmFuZ2Ugb3MuQXJncyB7CgkJZm10LkZwcmludGYob3MuU3RkZXJyLCAiUDE0X1NISU1fRlFfUkVDVlslZF09JXNcbiIsIGksIGEpCgl9CglhcmdzIDo9IGFwcGVuZChbXXN0cmluZ3tzdHVifSwgb3MuQXJnc1sxOl0uLi4pCglwYXJ0cyA6PSBtYWtlKFtdc3RyaW5nLCBsZW4oYXJncykrMSkKCXBhcnRzWzBdID0gd2luUShiYXNoKQoJZm9yIGksIGEgOj0gcmFuZ2UgYXJncyB7CgkJcGFydHNbaSsxXSA9IHdpblEoYSkKCX0KCWNtZExpbmUgOj0gc3RyaW5ncy5Kb2luKHBhcnRzLCAiICIpCglmbXQuRnByaW50Zihvcy5TdGRlcnIsICJQMTRfU0hJTV9GUV9DTURMSU5FPSVzXG4iLCBjbWRMaW5lKQoJY21kIDo9IGV4ZWMuQ29tbWFuZChiYXNoKQoJY21kLlN5c1Byb2NBdHRyID0gJnN5c2NhbGwuU3lzUHJvY0F0dHJ7Q21kTGluZTogY21kTGluZX0KCWNtZC5TdGRpbiA9IG9zLlN0ZGluCgljbWQuU3Rkb3V0ID0gb3MuU3Rkb3V0CgljbWQuU3RkZXJyID0gb3MuU3RkZXJyCglpZiBlcnIgOj0gY21kLlJ1bigpOyBlcnIgIT0gbmlsIHsKCQlpZiBlLCBvayA6PSBlcnIuKCpleGVjLkV4aXRFcnJvcik7IG9rIHsKCQkJb3MuRXhpdChlLkV4aXRDb2RlKCkpCgkJfQoJCWZtdC5GcHJpbnRsbihvcy5TdGRlcnIsIGVycikKCQlvcy5FeGl0KDEpCgl9Cn0K' | base64 -d > "$T14_FQ/main.go"
+          printf 'module shimforceq\ngo 1.21\n' > "$T14_FQ/go.mod"
+          (cd "$T14_FQ" && go build -o "$T14/gh_fq.exe" .) && echo "14-E build: OK" || echo "14-E build: FALHOU"
+
+          echo "=== 14-F/G/H: Go, Node.js, Python chamam gh via shim baseline ==="
+          cp "$T14/gh_base.exe" "$T14/gh.exe" 2>/dev/null || true
+          echo "=== 14-F: Go exec.Command('gh','api','repos/{owner}/{repo}') via baseline ==="
+          T14_GC="$T14/src_caller"; mkdir -p "$T14_GC"
+          printf 'package main\nimport ("fmt";"os";"os/exec";"strings")\nfunc main() {\np14:=os.Getenv("PATH_14")\nos.Setenv("PATH",p14)\ncmd:=exec.Command("gh","api","repos/{owner}/{repo}")\nout,err:=cmd.CombinedOutput()\nfmt.Printf("P14F_GO rc=%%v out=%%s\\n",err,strings.TrimSpace(string(out)))\n}\n' > "$T14_GC/main.go"
+          printf 'module gocaller\ngo 1.21\n' > "$T14_GC/go.mod"
+          (cd "$T14_GC" && go build -o "$T14/go_caller.exe" .) && echo "go_caller build: OK" || echo "go_caller build: FALHOU"
+          if [ -f "$T14/go_caller.exe" ]; then
+            PATH_14="$PATH_14" "$T14/go_caller.exe" 2>&1 || true
+          fi
+
+          echo "=== 14-G: Node.js spawnSync('gh',['api','repos/{owner}/{repo}']) via baseline ==="
+          printf 'const c=require("child_process"),p14=process.env.PATH_14||"";\nconst r=c.spawnSync("gh",["api","repos/{owner}/{repo}"],{encoding:"utf8",env:{...process.env,PATH:p14}});\nconsole.log("P14G_NODE rc="+r.status+" stdout="+JSON.stringify((r.stdout||"").trim())+" stderr="+JSON.stringify((r.stderr||"").trim()));\n' > "$T14/node_caller.js"
+          PATH_14="$PATH_14" node "$T14/node_caller.js" 2>&1 || true
+
+          echo "=== 14-H: Python subprocess.run(['gh','api','repos/{owner}/{repo}']) via baseline ==="
+          printf 'import subprocess,os\np14=os.environ.get("PATH_14","")\nr=subprocess.run(["gh","api","repos/{owner}/{repo}"],capture_output=True,env={**os.environ,"PATH":p14})\nprint("P14H_PY rc="+str(r.returncode)+" stdout="+repr(r.stdout.decode().strip())+" stderr="+repr(r.stderr.decode().strip()))\n' > "$T14/py_caller.py"
+          PATH_14="$PATH_14" python3 "$T14/py_caller.py" 2>&1 || true
+
+          echo "=== 14-I: Go chama bash.exe DIRETAMENTE (sem shim) — discriminante fronteira shim→bash ==="
+          # Se braces chegam aqui mas somem via shim → problema na fronteira shim→bash (H1)
+          # Se braces somem aqui também → problema na fronteira Go→bash (H2)
+          T14_GD="$T14/src_direct"; mkdir -p "$T14_GD"
+          printf 'package main\nimport ("fmt";"os";"os/exec")\nfunc findBash() string {for _,n:=range []string{"bash.exe","bash"}{if p,err:=exec.LookPath(n);err==nil{return p}};return ""}\nfunc main() {\nstub:=os.Args[1]\nbash:=findBash()\nif bash==""{fmt.Fprintln(os.Stderr,"bash.exe not found");os.Exit(1)}\nfmt.Fprintf(os.Stderr,"P14I_DIRECT bash=%%s stub=%%s\\n",bash,stub)\nargs:=[]string{stub,"api","repos/{owner}/{repo}"}\ncmd:=exec.Command(bash,args...)\ncmd.Stdin=os.Stdin;cmd.Stdout=os.Stdout;cmd.Stderr=os.Stderr\nif err:=cmd.Run();err!=nil{if e,ok:=err.(*exec.ExitError);ok{os.Exit(e.ExitCode())};fmt.Fprintln(os.Stderr,err);os.Exit(1)}\n}\n' > "$T14_GD/main.go"
+          printf 'module godirect\ngo 1.21\n' > "$T14_GD/go.mod"
+          (cd "$T14_GD" && go build -o "$T14/go_direct.exe" .) && echo "go_direct build: OK" || echo "go_direct build: FALHOU"
+          if [ -f "$T14/go_direct.exe" ]; then
+            PATH="$PATH_14" "$T14/go_direct.exe" "$T14/gh" 2>&1 || true
+          fi
+
+          echo "=== 14-J: Go via shim env-var (MSYS=noglob MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL=*) ==="
+          if [ -f "$T14/gh_env.exe" ] && [ -f "$T14/go_caller.exe" ]; then
+            cp "$T14/gh_env.exe" "$T14/gh.exe"
+            PATH_14="$PATH_14" "$T14/go_caller.exe" 2>&1 || true
+          else
+            echo "14-J: shim env-var ou go_caller nao disponivel — pulando"
+          fi
+
+          echo "=== 14-K: Go via shim force-quoted (SysProcAttr.CmdLine) ==="
+          if [ -f "$T14/gh_fq.exe" ] && [ -f "$T14/go_caller.exe" ]; then
+            cp "$T14/gh_fq.exe" "$T14/gh.exe"
+            PATH_14="$PATH_14" "$T14/go_caller.exe" 2>&1 || true
+          else
+            echo "14-K: shim force-quoted ou go_caller nao disponivel — pulando"
+          fi
+
+          rm -rf "$T14"
+          echo "=== Pergunta 14 CONCLUIDA — aguardar output Windows para identificar causa raiz ==="
+
       - name: Registrar duração
         if: always()
         shell: pwsh

@@ -4,6 +4,37 @@
 
 ---
 
+## Sessão 2026-09-10a — ares-tf (Infrastructure) — ML-R2b1b: Pergunta 14 na sonda + candidatos de correção declarados (CONCLUÍDO)
+
+Branch `fix/fechar-os-grupos-de-falha-de-windows-por-causa-raiz`.
+
+**Escopo ML-R2b1b:**
+Medir por que `repos/{owner}/{repo}` perde as chaves ao atravessar o shim `.exe` → `bash.exe` no Windows.
+Duas hipóteses (H1: conversão MSYS no startup do bash; H2: quoting do CreateProcess pelo Go).
+
+**O que foi feito:**
+- Adicionada **Pergunta 14** ao `.github/workflows/windows-probe.yml` (inserida entre P13 e "Registrar duração")
+- Três variantes de shim instrumentadas: baseline (sem modificação), env-var (MSYS=noglob + MSYS_NO_PATHCONV + MSYS2_ARG_CONV_EXCL), force-quoted (SysProcAttr.CmdLine)
+- Cada shim loga `P14_SHIM_*_RECV[i]` na fronteira ①(product→shim) antes de chamar bash
+- Stub loga `P14_STUB_OK` + `P14_ARG[i]` na fronteira ②(shim→bash)
+- Discriminante 14-I: Go chama bash diretamente sem shim (isola H1 de H2)
+- PATH restrito: `T14:BASH_DIR` — real gh excluído (lição da Pergunta 13); 14-B prova o isolamento
+- Roadmap ML-R2b1b atualizado: candidatos declarados com marcador "NÃO medidos", aguardando output do runner Windows
+- Nenhuma modificação nos 3 scripts de produção — correção aplicada somente após a Pergunta 14 decidir o candidato
+
+**Gates (Linux local):**
+- `go build ./...`: exit 0
+- `go test ./...`: exit 0 (todos os pacotes verdes ou cached)
+- `go vet ./...`: exit 0
+- YAML (windows-probe.yml): `python3 yaml.safe_load` → YAML OK
+- `trackfw validate`: 174 ⚠ pré-existentes, sem erros novos, sem violação `branch_has_wip_roadmap`
+
+**Pendente (aguarda arquiteto / runner Windows):**
+- Disparar `windows-probe.yml` via workflow_dispatch e ler o output da Pergunta 14
+- Após output identificar qual variante preserva as chaves: aplicar correção nos 3 scripts e fechar critérios de aceite
+
+---
+
 ## Sessão 2026-09-09d — ares-tf (Infrastructure) — ML-R2b1 corretivo (auditoria do arquiteto): 3 pontos (EM ANDAMENTO)
 
 Branch `fix/fechar-os-grupos-de-falha-de-windows-por-causa-raiz`.
