@@ -213,6 +213,6 @@ Terceira ocorrência do padrão dois-estados-um-observable registrado em `vault/
 > Dependências: Waves 1 e 2 fechadas e verdes.
 
 ### ML-3A — Remover `continue-on-error` do `windows-full-suites`
-**Status:** ⬜ Pendente · **Agente:** `ares-tf`
+**Status:** ✅ Concluído · **Agente:** `ares-tf`
 🔴 **Só aqui.** Remover antes tornaria a `main` imergível com a dívida atual — o ponto do ratchet é
 bloquear regressão **sem** exigir zero primeiro.

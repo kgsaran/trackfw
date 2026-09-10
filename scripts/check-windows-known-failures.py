@@ -584,6 +584,7 @@ def run_check(
     node_tap: str,
     python_out: str,
     baseline_path: str = "",
+    load_markers_dir: str = "",
 ) -> int:
     """Run the ratchet check. Returns 0 (pass) or 1 (new failure(s) detected)."""
 
@@ -598,24 +599,78 @@ def run_check(
     known_node_load   = {e['name'] for e in known if e['runtime'] == 'node'   and e['class'] == 'suite-load-failure'}
     known_py_assert   = {e['name'] for e in known if e['runtime'] == 'python' and e['class'] == 'assertion'}
 
-    # 2. Require artifacts (observation-side vacuity guard)
+    # 2. Require artifacts (observation-side vacuity guard — file-existence)
     go_path  = require_artifact(go_out,     'go-suite-out.txt')
     tap_path = require_artifact(node_tap,   'node-suite.tap')
     py_path  = require_artifact(python_out, 'python-suite-out.txt')
 
-    # 3. Extract observed failures
+    # 3. ML-3A: suite-load-failure and zero-test marker check (classe própria, ML-1A).
+    #    Suite steps write marker files to load_markers_dir when they detect load failures
+    #    or zero-test events BEFORE exiting. Step-level continue-on-error absorbs the exit
+    #    code but not the marker file. The ratchet reads the markers here and exits 1 if any
+    #    exist — two distinct states, two distinct messages (vault note: dois-estados-um-observable).
+    #    "Não consegui procurar → fatal, nunca aviso."
+    if load_markers_dir:
+        load_fail = False
+        marker_specs = [
+            ("suite-load-failure.go.txt",     "Go suite-load-failure"),
+            ("suite-load-failure.node.txt",   "Node.js suite-load-failure"),
+            ("suite-load-failure.python.txt", "Python suite-load-failure"),
+            ("zero-test-failure.node.txt",    "Node.js zero-test-failure"),
+            ("zero-test-failure.python.txt",  "Python zero-test-failure"),
+        ]
+        for fname, label in marker_specs:
+            marker = Path(load_markers_dir) / fname
+            if marker.exists():
+                content = marker.read_text(encoding="utf-8").strip()
+                _err(
+                    f"ML-3A: {label} — suíte não carregou ou zero testes (classe própria, ML-1A). "
+                    f"O ratchet de nomes não captura este evento por nome; o árbitro reprova diretamente. "
+                    f"Detalhe: {content}"
+                )
+                load_fail = True
+        if load_fail:
+            return 1
+
+    # 4. Extract observed failures
     obs_go = extract_go_failures(go_path)
     obs_node_assert, obs_node_load = extract_node_failures(tap_path)
     obs_py = extract_python_failures(py_path)
 
-    # 4. Extract observed passes (ML-2B: discriminant for corrected vs no-longer-runs)
+    # 5. Extract observed passes (ML-2B: discriminant for corrected vs no-longer-runs)
     go_passes,   go_pass_vac   = extract_go_passes(go_path)
     node_passes, node_pass_vac = extract_node_passes(tap_path)
     py_passes,   py_pass_vac   = extract_python_passes(py_path)
 
+    # 5b. ML-3A: results-present vacuity guard.
+    #     If an artifact exists but contains NO test result lines, that is
+    #     "não consegui procurar" — not "procurei e não achei" (vault note).
+    #     Fatal, not a warning. is_vacuous=True means no FAIL/PASS lines at all.
+    if go_pass_vac and not obs_go:
+        _err(
+            "ML-3A vacuity (results-present): go-suite-out.txt exists but contains no "
+            "'--- FAIL:' or '--- PASS:' lines. Suite may not have produced results — "
+            "'não consegui procurar' → fatal (not a warning)."
+        )
+        return 1
+    if node_pass_vac and not obs_node_assert and not obs_node_load:
+        _err(
+            "ML-3A vacuity (results-present): node-suite.tap exists but contains no "
+            "'ok'/'not ok' lines. Suite may not have produced results — "
+            "'não consegui procurar' → fatal (not a warning)."
+        )
+        return 1
+    if py_pass_vac and not obs_py:
+        _err(
+            "ML-3A vacuity (results-present): python-suite-out.txt exists but contains no "
+            "'FAILED' or 'PASSED' lines. Suite may not have produced results — "
+            "'não consegui procurar' → fatal (not a warning)."
+        )
+        return 1
+
     has_new = False
 
-    # 5. New failures NOT in the known list -> ::error:: + exit 1
+    # 6. New failures NOT in the known list -> ::error:: + exit 1
     for name in sorted(obs_go - known_go_assert):
         _err(
             f"ML-2A ratchet: NEW Go assertion failure not in known list: '{name}'. "
@@ -644,7 +699,7 @@ def run_check(
         )
         has_new = True
 
-    # 6. Known entries NOT observed (fixed/renamed) -> ::warning:: only, never exit 1
+    # 7. Known entries NOT observed (fixed/renamed) -> ::warning:: only, never exit 1
     #    Fixing a test must not break CI (that would make the ratchet a trap).
     for name in sorted(known_go_assert - obs_go):
         _warn(
@@ -671,11 +726,11 @@ def run_check(
             "Please move to the 'removed' section with a 'removal_note' (ML-2B)."
         )
 
-    # 7. ML-2B: baseline deletion check (D4 — silent deletion via git diff)
+    # 8. ML-2B: baseline deletion check (D4 — silent deletion via git diff)
     if not check_baseline_deletions(baseline_path, known, removed):
         has_new = True
 
-    # 8. ML-2B: validate removed section entries (D4)
+    # 9. ML-2B: validate removed section entries (D4)
     if not validate_removed(
         removed, known,
         go_passes, node_passes, py_passes,
@@ -683,7 +738,7 @@ def run_check(
     ):
         has_new = True
 
-    # 9. Informational summary — counts only (never used for decisions per ADR D1)
+    # 10. Informational summary — counts only (never used for decisions per ADR D1)
     total_obs   = len(obs_go) + len(obs_node_assert) + len(obs_node_load) + len(obs_py)
     total_known = len(known)
     total_removed = len(removed)
@@ -773,6 +828,29 @@ def run_self_test() -> int:
           comparadas' when a baseline is provided and all entries are accounted for.
           When baseline_path is empty the line is absent (two-states-one-observable
           fix: "clean" and "skipped" were previously indistinguishable in the log).
+
+    ── ML-3A (T16–T18) ─────────────────────────────────────────────────────────
+
+    T16 — 'Go suite-load-failure marker present' -> exit 1 (row 4 "reprova" arm)
+          Asserts: ML-3A row 4 — when a suite step writes a load-failure marker file
+          (classe própria, ML-1A), the ratchet exits 1 even if all observed test names
+          are in the known list. Step-level continue-on-error absorbs the exit code but
+          not the marker; the marker is the signal that reaches the judge.
+          [SYNTHETIC: marker file created in temp dir; no real Go compilation failure]
+
+    T17 — 'no load-failure markers, only known failures' -> exit 0 (row 4 counter-arm)
+          Asserts: the marker mechanism (ML-3A) does not block the normal path (row 1);
+          the T16 guard fires only on marker presence, not always. Without this arm, a
+          verdict that always fails looks identical to a correctly failing verdict.
+          [SYNTHETIC: markers_dir exists but is empty]
+
+    T18 — 'go-suite-out.txt present but vacuous (no FAIL/PASS lines)' -> exit 1
+          Asserts: ML-3A results-present vacuity guard (vault note: "não consegui
+          procurar → fatal, nunca aviso") — go-suite-out.txt containing only a
+          '[setup failed]' line (no test result lines) means the suite did not produce
+          results; the guard fires before the ratchet compares names and emits spurious
+          "not observed" warnings for all 14 known Go entries.
+          [SYNTHETIC: go-suite-out.txt written with only a [setup failed] line]
     """
     n_pass = 0
     n_fail = 0
@@ -1085,6 +1163,37 @@ def run_self_test() -> int:
             "T15b: baseline skipped (empty path) → no confirmation line",
         )
 
+        # ── ML-3A T16: Go suite-load-failure marker present -> exit 1 ──────────
+        print("=== T16: Go suite-load-failure marker present -> exit 1 ===", flush=True)
+        markers_dir = os.path.join(td, "markers")
+        os.makedirs(markers_dir, exist_ok=True)
+        write_list(BASE_ENTRIES)
+        write_artifacts()  # normal artifacts — no new test names outside known list
+        Path(os.path.join(markers_dir, "suite-load-failure.go.txt")).write_text(
+            "FAIL\tgithub.com/kgsaran/trackfw/internal/badpkg [setup failed]",
+            encoding="utf-8",
+        )
+        rc = run_check(list_path, go_path, tap_path, py_path, load_markers_dir=markers_dir)
+        check(rc == 1, "T16: Go suite-load-failure marker -> exit 1")
+        # Remove marker for T17
+        os.remove(os.path.join(markers_dir, "suite-load-failure.go.txt"))
+
+        # ── ML-3A T17: no markers + known-only failures -> exit 0 (row 4 counter-arm)
+        print("=== T17: no load-failure markers -> exit 0 (row 4 counter-arm) ===", flush=True)
+        write_list(BASE_ENTRIES)
+        write_artifacts()
+        rc = run_check(list_path, go_path, tap_path, py_path, load_markers_dir=markers_dir)
+        check(rc == 0, "T17: no markers, only known failures -> exit 0")
+
+        # ── ML-3A T18: go-suite-out.txt vacuous -> results-present guard -> exit 1
+        print("=== T18: go-suite-out.txt vacuous -> results-present guard -> exit 1 ===", flush=True)
+        write_list(BASE_ENTRIES)
+        # go artifact has only [setup failed] — no --- FAIL: or --- PASS: lines
+        write_artifacts(go="FAIL\tgithub.com/kgsaran/trackfw/internal/badpkg [setup failed]\n")
+        # No marker: testing the vacuity guard path (independent of marker path)
+        rc = run_check(list_path, go_path, tap_path, py_path)
+        check(rc == 1, "T18: go-suite-out.txt vacuous (no FAIL/PASS lines) -> exit 1")
+
     print(f"\nSelf-test summary: {n_pass} PASS, {n_fail} FAIL", flush=True)
     return 0 if n_fail == 0 else 1
 
@@ -1095,7 +1204,7 @@ def run_self_test() -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="ML-2A ratchet + ML-2B removal-note enforcement."
+        description="ML-2A ratchet + ML-2B removal-note enforcement + ML-3A load-failure verdict."
     )
     parser.add_argument(
         "--self-test",
@@ -1116,6 +1225,16 @@ def main() -> int:
             "'removed' record cause exit 1 (ML-2B D4 baseline check)."
         ),
     )
+    parser.add_argument(
+        "--load-markers-dir",
+        default="",
+        help=(
+            "Directory where suite steps write marker files for suite-load-failure and "
+            "zero-test events (ML-3A). Typically RUNNER_TEMP on Windows CI. If any "
+            "marker file is found, ratchet exits 1 immediately (classe própria, ML-1A). "
+            "Also enables the results-present vacuity guard."
+        ),
+    )
     args = parser.parse_args()
 
     if args.self_test:
@@ -1132,6 +1251,7 @@ def main() -> int:
     return run_check(
         args.list, args.go_out, args.node_tap, args.python_out,
         baseline_path=args.baseline,
+        load_markers_dir=args.load_markers_dir,
     )
 
 

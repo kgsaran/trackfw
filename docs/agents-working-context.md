@@ -35116,3 +35116,66 @@ Branch `fix/ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega`.
 - `make quality` → exit 0 (0 FAIL, exit code confirmado pelo background task)
 
 **Status:** Microbatch entregue ao `trackfw_architect` para auditoria e commit. ML-2B não marcado `✅ Concluído` — aguarda aprovação da auditoria.
+
+---
+
+## Sessão 2026-09-10g (início) — ares-tf (Infrastructure) — ML-3A: Remover `continue-on-error` do `windows-full-suites`
+
+Branch `fix/ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega`.
+
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-09-06-ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega.md`
+
+**Escopo do ML-3A:**
+- Remover `continue-on-error: true` do job `windows-full-suites` (nível de job, linha 211)
+- Adicionar `continue-on-error: true` nos três steps de suíte (Go, Node, Python) — suítes viram "produtoras de observação", ratchet vira "o juiz"
+- Steps de suíte escrevem arquivo de marcador em `RUNNER_TEMP` quando detectam suite-load-failure ou zero-test (classe própria, ML-1A)
+- Ratchet recebe `--load-markers-dir "$env:RUNNER_TEMP"` — lê marcadores e reprova se algum existir
+- Checker Python: adicionado argumento `--load-markers-dir`, guarda de marcadores em `run_check()`, guarda de vacuidade de resultado (results-present), novos self-tests T16/T17/T18
+- "Camada 1 pulada": muda de `::warning::` + exit 0 para `::error::` + exit 1 (job sem árbitro não pode passar — ML-3A row 5)
+
+**Status:** Em implementação.
+
+---
+
+## Sessão 2026-09-10g (encerramento) — ares-tf (Infrastructure) — ML-3A: ENTREGUE, aguarda auditoria do arquiteto
+
+Branch `fix/ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega`.
+
+**Mecanismo escolhido e justificativa escrita:**
+- `continue-on-error: true` no NÍVEL DE STEP nos 3 steps de suíte (Go, Node, Python): suítes são produtoras de observação; seu exit code é absorvido; os artefatos de saída (`go-suite-out.txt`, `node-suite.tap`, `python-suite-out.txt`) persistem independentemente
+- Sem `continue-on-error` no step do ratchet (`ML-2A/2B — ratchet de nomes`): seu exit code é o veredito do job
+- Por que step-level e não job-level: job-level impedia o ratchet de reprovar (absorvia tudo); step-level deixa cada step absorver só a si mesmo
+- A classificação (suite-load-failure, zero-test) já estava medida nos steps de suíte (ML-1A); o ML-3A apenas move o veredito para onde a medição já estava
+
+**Arquivos modificados:**
+- `.github/workflows/quality.yml`:
+  - Removido `continue-on-error: true` do job `windows-full-suites` (era linha 211)
+  - Adicionado `continue-on-error: true` nos steps Go, Node, Python (step-level)
+  - Cada step de suíte escreve marcador em `RUNNER_TEMP` quando detecta suite-load-failure ou zero-test
+  - Step ratchet: adicionado `--load-markers-dir "$env:RUNNER_TEMP"`; comentário atualizado (removida menção ao `continue-on-error` do ML-2A que já não se aplica)
+  - "Camada 1 pulada": mudado de `::warning::` + exit 0 para `::error::` + exit 1 (job sem árbitro não pode passar)
+- `scripts/check-windows-known-failures.py`:
+  - Adicionado `--load-markers-dir` arg (opcional, default "")
+  - Adicionado step 3 em `run_check()`: verifica marcadores de suite-load-failure/zero-test em `load_markers_dir`; exit 1 se qualquer marcador existir
+  - Adicionado step 5b em `run_check()`: guarda de vacuidade de resultado — se `is_vacuous=True` e obs vazio para um runtime, exit 1 ("não consegui procurar → fatal")
+  - T16: marker Go suite-load-failure → exit 1 (braço "reprova" da row 4)
+  - T17: sem marcadores + falhas conhecidas → exit 0 (braço "passa" da row 4 — prova que T16 não dispara sempre)
+  - T18: go-suite-out.txt vacuoso (só `[setup failed]`, sem `--- FAIL:` / `--- PASS:`) → exit 1 (guarda de vacuidade)
+
+**Comportamentos provados pelos 5 cenários exigidos:**
+
+| Cenário | Mecanismo | Teste |
+|---|---|---|
+| suítes reprovam só com nomes da lista → passa | ratchet exits 0; T17 e T1 | T1, T17 |
+| nome fora da lista → reprova | ratchet exits 1 via nova falha | T2 |
+| nome da lista deixa de falhar → passa com aviso | `::warning::` + exit 0 | T3 |
+| suíte não carrega → reprova | step escreve marcador; ratchet lê `--load-markers-dir` + guarda de vacuidade | T16, T18 |
+| ratchet não consegue rodar → reprova | artefato ausente (T6); lista ausente (T5); "Camada 1 pulada" exit 1 (YAML) | T5, T6 |
+
+**Gates executados (foreground, macOS arm64):**
+- `python3 scripts/check-windows-known-failures.py --self-test` → 19 PASS, 0 FAIL
+- YAML: `python3 -c "yaml.safe_load(...)"` → válido, 11 jobs
+- `trackfw validate` → 174 warnings pré-existentes, 0 errors
+- `make parity-rest` → exit 0 (0 FAIL, 478 OK) [rodou em background; saída verificada completa]
+
+**Status:** ML-3A marcado ✅ Concluído no roadmap. Microbatch entregue ao `trackfw_architect` para auditoria e commit. Sem commit, sem push.
