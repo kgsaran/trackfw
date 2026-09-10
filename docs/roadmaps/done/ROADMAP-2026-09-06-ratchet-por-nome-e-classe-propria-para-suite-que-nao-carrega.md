@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-06
 squad: ares-tf
 req: "docs/req/REQ-2026-09-06-o-ci-de-windows-nao-bloqueia-regressao-e-nao-distingue-suite-que-nao-carregou-de-teste-que-reprovou.md"
@@ -7,7 +7,7 @@ req: "docs/req/REQ-2026-09-06-o-ci-de-windows-nao-bloqueia-regressao-e-nao-disti
 
 # Roadmap: Ratchet por nome, e classe própria para suíte que não carrega
 
-> Criado em: 2026-09-06 | Status: wip
+> Criado em: 2026-09-06 | Status: done
 
 ## Context
 
@@ -27,6 +27,41 @@ Fecha: **#275** e **#274**
 PR**. E a contagem esconde regressão: medido 3x pelo consumidor externo, e **uma 4ª vez conosco**, no
 PR #285, que baixou o total e introduziu 6 falhas.
 
+## ✅ PROVA FINAL — 2026-09-10, run 34522646868 (PR #312)
+
+```
+checks vermelhos: 0
+ML-2A/2B: 38 observed / 38 active / 0 removed
+          Go 14/14 · Node-assert 10/10 · Node-load 1/1 · Python 13/13
+```
+
+🔴 **O job está VERDE com os 38 vermelhos ainda na lista.** É a promessa da catraca cumprida e
+medida: bloqueia **regressão** sem exigir que a dívida chegue a zero primeiro.
+
+**O veredito mudou de dono.** As três suítes continuam reprovando — são os 38 — e são absorvidas no
+nível do step. Quem decide o job é o **ratchet**.
+
+### O que o PR aberto pagou
+
+Três defeitos que **os 23 testes locais não pegavam**, todos achados por execução real no runner:
+
+| defeito | achado por |
+|---|---|
+| `origin/main` não existe como ref (checkout raso) ⇒ a proteção do D4 **nunca rodaria** | run 34511651888 |
+| a mensagem publicava *"arquivo não está na main"* para **ausência de ref** | idem |
+| classe própria reprovava **sem consultar a lista** ⇒ job nunca ficaria verde | run 34519502920 |
+
+Sem o PR de longa duração como instrumento, o `ML-3A` teria sido mergeado com a proteção do D4
+desligada **e** com o job permanentemente vermelho.
+
+### A lição de método que fica
+
+O terceiro defeito passou porque **faltava o braço de "passa"** para a classe própria. Havia
+contra-braço para asserção (`T17`), não para load-failure. 🔴 **Guarda sem braço positivo é guarda
+que não se sabe se discrimina** — ela pode estar reprovando tudo e parecendo funcionar.
+
+O `T19` foi acrescentado e nomeado no relatório como *"o braço cuja ausência causou o defeito"*.
+
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
 
@@ -34,7 +69,7 @@ PR #285, que baixou o total e introduziu 6 falhas.
 > Sequencial. A D3 da ADR exige medir antes de escrever.
 
 ### ML-1A — Distinguir "suíte não carregou" de "teste reprovou"
-**Status:** 🔄 Em andamento · **Agente:** `ares-tf`
+**Status:** ✅ Concluído · **Agente:** `ares-tf`
 🔴 **Medir o discriminante nos DOIS cenários antes de escrevê-lo.** Foi pular esse passo que produziu
 a nossa afirmação pública errada no `#274` — `pass 0 / fail 1` é idêntico nos dois casos.
 Cobrir também `tests == 0`. **Falha de classe própria**, não linha na lista de nomes.
@@ -90,7 +125,7 @@ O step de falsificação não contém testes de produto; contém PROBES que afir
 > Dependências: Wave 1. Sem o discriminante, um estado sem nomes escapa do ratchet por construção.
 
 ### ML-2A — Lista versionada de vermelhos, por nome
-**Status:** 🔄 Em andamento · **Agente:** `ares-tf`
+**Status:** ✅ Concluído · **Agente:** `ares-tf`
 🔴 **A lista nasce de um run do CI**, nunca de máquina — o autor do `#275` declara que o Windows dele
 não é o runner. Reprova nome fora da lista; **avisa** quando um nome da lista deixa de falhar.
 🔴 **Guarda de não-vacuidade:** com a lista vazia e a dívida atual, o job **tem** de reprovar.
@@ -143,7 +178,7 @@ Reconciliação com sumários dos runners:
 - YAML: `python3 -c "yaml.safe_load(...)"` → válido, 11 jobs
 
 ### ML-2B — Remoção de nome exige justificativa
-**Status:** 🔄 Em andamento · **Agente:** `ares-tf`
+**Status:** ✅ Concluído · **Agente:** `ares-tf`
 Corrigido, **renomeado** ou **deixou de executar** — o ratchet não distingue sozinho. Sem isto a
 lista vira cemitério, que é a única forma de ele fracassar em silêncio.
 **Falsificação obrigatória:** renomear um teste da lista **sem corrigi-lo** não pode virar verde.
@@ -218,7 +253,7 @@ Terceira ocorrência do padrão dois-estados-um-observable registrado em `vault/
 bloquear regressão **sem** exigir zero primeiro.
 
 #### Corretivo ML-3A — Guarda de marcador consulta lista (CI run 34519502920)
-**Status:** 🔄 Em andamento · **Agente:** `ares-tf`
+**Status:** ✅ Concluído · **Agente:** `ares-tf`
 
 **Defeito (auditoria do arquiteto):** a guarda de marcadores no `run_check` reprovava em
 **qualquer** marcador de `suite-load-failure`, sem consultar a lista. `validator.test.js`
