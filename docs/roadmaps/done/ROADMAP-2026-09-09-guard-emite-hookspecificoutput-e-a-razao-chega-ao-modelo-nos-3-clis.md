@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-09
 squad: prometeu-tf
 req: "docs/req/REQ-2026-09-02-guard-instalado-emite-schema-de-hook-que-o-claude-code-rejeita-e-a-razao-do-bloqueio-se-perde-nos-3-clis.md"
@@ -7,7 +7,7 @@ req: "docs/req/REQ-2026-09-02-guard-instalado-emite-schema-de-hook-que-o-claude-
 
 # Roadmap: O guard emite `hookSpecificOutput` e a razão chega ao modelo — nos 3 CLIs
 
-> Criado em: 2026-09-09 | Status: wip
+> Criado em: 2026-09-09 | Status: done
 
 ## Context
 

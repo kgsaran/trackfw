@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-09
 squad: apolo-tf
 req: "docs/req/REQ-2026-09-09-update-harness-reescreve-o-script-do-guard-e-nao-o-contabiliza-e-a-instrucao-do-validate-fica-desacreditada.md"
@@ -7,7 +7,7 @@ req: "docs/req/REQ-2026-09-09-update-harness-reescreve-o-script-do-guard-e-nao-o
 
 # Roadmap: O alvo do manifesto é dono do caminho do script do guard
 
-> Criado em: 2026-09-09 | Status: wip
+> Criado em: 2026-09-09 | Status: done
 
 ## Context
 

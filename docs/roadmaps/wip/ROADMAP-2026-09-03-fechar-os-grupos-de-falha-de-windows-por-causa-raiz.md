@@ -1438,8 +1438,616 @@ ML**, por causa distinta da corrigida aqui:
 **Sem commit/push** — fora da minha autoridade. ML-R1 pronto para revisão `hades-tf` e depois
 auditoria do `trackfw_architect`; nenhuma pendência técnica aberta desta correção.
 
-### ML-R2 — Triagem dos 512 do censo de Windows por causa
-**Status:** ⬜ Pendente · **Agente:** `ares-tf` · **pré-requisito do ratchet de CI**
+### ML-R2a — O discriminante do `/usr/bin/git`: a maior causa é defeito ou é artefato desta VM?
+**Status:** ✅ Concluído — veredito **(A)**, defeito real, provado em `windows-latest` x64 · **Agente:** `ares-tf` + auditoria/medição x64 do arquiteto
+
+O ML-2B atribuiu **135 das 275 reprovações únicas dos chunks 0-5 (49%)** a UMA causa: `git` não
+resolvível sob o `BASE_PATH="$RUNTIME_BIN:/usr/bin:/bin"` que `check-release-tag-parity.sh:112` e
+`check-ship-force-parity.sh:115` constroem. E o próprio ML-2B declarou a ressalva que invalida o uso
+desse número:
+
+> *"medido nesta VM específica, cujo layout de Git (MSYS2 `clangarm64`, sem `/usr/bin/git`) pode não
+> ser representativo de um runner de CI Windows padrão"*
+
+🔴 **A ressalva bloqueia o ML-R2b inteiro.** Se metade da lista existe só por causa do layout desta
+VM, o ratchet por nome nasce calibrado contra ficção e o teto nunca desce — que é exatamente o
+defeito que o issue #275 apontou.
+
+#### Medição já feita pelo arquiteto (2026-09-09) — a ressalva parece FALSA
+
+`ssh powershell-vm`, dentro de `C:\Program Files\Git\bin\bash.exe` (o bash que o `shell: bash` do
+GitHub Actions usa em `windows-latest`, **não** um MSYS2 avulso):
+
+```
+BASH_VERSION=5.3.15(1)-release
+uname=MINGW64_NT-10.0-26200-ARM64 ... Msys
+ls -l /usr/bin/git /bin/git   → No such file or directory  (os dois)
+command -v git                → /clangarm64/bin/git
+git --version                 → git version 2.55.0.windows.3
+PATH="/usr/bin:/bin" command -v git → git NAO resolvivel
+```
+
+**`git version 2.55.0.windows.3` é Git for Windows**, não MSYS2 avulso; `/clangarm64/bin` é o prefixo
+mingw do Git for Windows **em ARM64** (o análogo de `/mingw64/bin` no x64). Em nenhum dos dois
+`git.exe` mora em `/usr/bin`. Ou seja: a hipótese que emerge é que `BASE_PATH=".../usr/bin:/bin"` é
+**defeito de script de gate em qualquer Git for Windows**, e não peculiaridade desta VM.
+
+🔴 **Isto ainda NÃO está provado para x64.** Esta VM é ARM64; o runner é x64. É a única coisa que
+falta, e é barata.
+
+**Ações:**
+1. Medir em `windows-latest` (x64) do GitHub Actions, num workflow descartável ou num step
+   temporário, sob `shell: bash`: `ls -l /usr/bin/git /bin/git; command -v git;
+   PATH=/usr/bin:/bin command -v git`. **Colar a saída crua no roadmap.**
+2. Conforme o resultado, escrever qual das duas frases é verdadeira, com a medição ao lado:
+   - **(A)** a causa é defeito real de `scripts/`, reproduz no runner ⇒ sai da lista do ratchet e
+     vira correção de 2 linhas em 2 scripts (ML próprio, **não** REQ nova — mesma causa);
+   - **(B)** a causa é artefato de ambiente ⇒ **~250 linhas saem do censo** e o ML-R2b começa com
+     ~260, não 512.
+3. Recontar quantas linhas de FAIL do censo pendem dessa causa — nos 8 logs, **por rótulo**, não por
+   estimativa. Os logs já estão fora da VM (ver "Insumo" no ML-R2b).
+
+#### Resultado da medição (ares-tf, 2026-09-09)
+
+##### Ação 1 — Sonda x64 no GitHub Actions
+
+O sandbox do agente bloqueou a criação do workflow via `gh api --method PUT`. O workflow probe
+**não foi criado** e a saída crua de `windows-latest` x64 **não foi coletada diretamente**.
+
+Em substituição, foram usadas duas fontes indiretas já disponíveis:
+
+**Fonte A — Windows Probe run 33447191373 (2026-08-31, windows-latest x64):**
+```
+bash -> C:\Program Files\Git\bin\bash.exe
+bash --version -> GNU bash, version 5.3.15(2)-release (x86_64-pc-cygwin)
+git (via actions/checkout): "C:\Program Files\Git\bin\git.exe" version
+git version 2.55.0.windows.5
+```
+Git for Windows x64 instala git.exe em `C:\Program Files\Git\bin\git.exe`. A estrutura de diretórios
+do GFW é: `/usr/bin/` → `C:\Program Files\Git\usr\bin\` (utilitários MSYS2, NOT git.exe); git.exe
+fica em `/mingw64/bin/` (x64) ou `/clangarm64/bin/` (ARM64). Portanto `PATH="/usr/bin:/bin"` **não
+resolve git.exe** no x64 — mesma conclusão do ARM64.
+
+**Fonte B — quality.yml run 34403529213 (2026-09-09, windows-latest x64):**
+```
+windows-full-suites | Python suíte completa:
+  Error: could not determine current branch (are you in a git repo?): git not found in PATH
+```
+O CLI Python invocado no runner x64 (via pytest) reproduz o mesmo erro `git not found in PATH` —
+a mesma string que aparece nos FAILs de categoria C2/C1 do censo.
+
+##### Lacuna FECHADA pelo arquiteto — medição direta em `windows-latest` x64
+
+A sonda `windows-probe.yml` já existia para exatamente este tipo de pergunta ("o dia em que a
+pergunta ainda não virou asserção nenhuma", diz o cabeçalho dela). Em vez de um workflow descartável,
+a pergunta entrou como **Pergunta 12** da sonda — permanente, porque documenta o layout que dois
+scripts de gate presumem.
+
+Run **34406101512**, `windows-latest`, `shell: bash`. **Saída crua**, não parafraseada:
+
+```
+shell: C:\Program Files\Git\bin\bash.EXE --noprofile --norc -e -o pipefail {0}
+BASH_VERSION=5.3.15(2)-release
+MINGW64_NT-10.0-26100 runnervmeef0v 3.6.10-710e5275.x86_64 ... x86_64 Msys
+--- ls -l /usr/bin/git /bin/git ---
+ls: cannot access '/usr/bin/git': No such file or directory
+ls: cannot access '/bin/git': No such file or directory
+--- ls -l /mingw64/bin/git.exe /mingw32/bin/git.exe ---
+ls: cannot access '/mingw32/bin/git.exe': No such file or directory
+-rwxr-xr-x 4 runneradmin 197121 4378456 Aug 20 15:47 /mingw64/bin/git.exe
+--- command -v git ---
+/mingw64/bin/git
+--- git --version ---
+git version 2.55.0.windows.5
+--- git resolve sob o BASE_PATH dos gates? ---
+RESULTADO: git NAO resolvivel sob PATH=/usr/bin:/bin
+--- raiz POSIX deste bash ---
+cygpath -w /        -> C:\Program Files\Git\
+cygpath -w /bin     -> C:\Program Files\Git\usr\bin
+cygpath -w /usr/bin -> C:\Program Files\Git\usr\bin
+```
+
+🔴 **Achado que ninguém tinha visto, e que só a medição crua dava:** `cygpath -w /bin` e
+`cygpath -w /usr/bin` devolvem **o mesmo diretório**. No bash do Git for Windows, `/bin` é alias de
+`/usr/bin` — então `BASE_PATH="$RUNTIME_BIN:/usr/bin:/bin"` lista **o mesmo diretório duas vezes**. A
+redundância que parecia rede de segurança ("se não estiver num, está no outro") é uma entrada só. Em
+Linux/macOS os dois são diretórios distintos, e é de lá que o hábito veio.
+
+Note também que a **Fonte A do agente estava mal lida**: ela mostrava
+`C:\Program Files\Git\bin\git.exe` (o wrapper) e o agente inferiu daí `/mingw64/bin`. A inferência
+acertou o destino por outro caminho — `C:\Program Files\Git\bin` **não é** `/bin` na visão POSIX deste
+bash, como o `cygpath` acima prova. Conclusão certa, evidência que não a sustentava.
+
+##### Ação 2 — Veredicto
+
+**(A) — Defeito real de `scripts/`, reproduz no runner x64.**
+
+Evidência direta: o runner x64 `windows-latest` já mostra `git not found in PATH` em CI real
+(Fonte B, run 34403529213). A estrutura do GFW x64 (git.exe em `/mingw64/bin/`, não em `/usr/bin/`)
+é idêntica à do ARM64 (git.exe em `/clangarm64/bin/`), confirmando que a causa é arquitetural do GFW,
+não peculiaridade da VM.
+
+**O `BASE_PATH=".../usr/bin:/bin"` dos scripts é defeito de script em qualquer Git for Windows**, ARM64
+ou x64. Os FAILs do censo NÃO são artefato da VM. O ratchet pode ser calibrado sobre eles.
+
+**Ressalva residual: ELIMINADA.** A medição direta em `windows-latest` x64 está acima (run **34406101512**): `/usr/bin/git` e `/bin/git` não existem, `git` mora em `/mingw64/bin`, e `PATH="/usr/bin:/bin" command -v git` não resolve. O veredito (A) deixou de depender de inferência estrutural. O workflow descartável não foi criado — a pergunta virou a **Pergunta 12** da sonda `windows-probe.yml`, que fica.
+
+##### Ação 3 — Contagem exata de linhas de FAIL atribuíveis à causa
+
+**Logs:** `/tmp/trackfw-win-census/chunk_{0..7}.enum.log` (8 arquivos, 512 linhas `^FAIL` total,
+confirmado com `grep -h '^FAIL' chunk_{0..7}.enum.log | wc -l = 512`).
+
+**Critério de atribuição:** uma linha `^FAIL` é atribuída a "git não resolvível no PATH" se satisfaz
+UM dos seguintes critérios (mutuamente exclusivos):
+
+- **C1** — a linha contém `could not determine working tree status` (o CLI `trackfw release-tag-parity`
+  falhou ao invocar `git status --porcelain`; aparece nas 3 variantes: Go=`exec: "git": executable
+  file not found in %PATH%`, Node=`git status --porcelain exited with null`, Python=`git not found in PATH`)
+- **C2** — a linha contém `could not determine current branch (are you in a git repo?)` (o CLI
+  `trackfw ship-force` falhou ao invocar `git symbolic-ref --short HEAD`)
+- **C3** — a linha contém `stdout/stderr diverges:` E as próximas ≤15 linhas contêm C1 ou C2 (os
+  dois runtimes produziram mensagens diferentes para o mesmo git-not-found — a divergência de
+  formato é a segunda falha causada pelo mesmo root cause)
+- **C4** — a linha é `falsify/setup-sXX` com `check-release-tag-parity.sh` ou
+  `check-ship-force-parity.sh` (o script falhou no baseline porque suas invocações internas
+  produzem C1/C2; confirmado pelo contexto `output: FAIL [...]` git-not-found na linha seguinte)
+
+**Comandos exatos:**
+
+```bash
+# C1
+grep -h '^FAIL' /tmp/trackfw-win-census/chunk_{0..7}.enum.log | \
+  grep -c 'could not determine working tree status'
+# → 248
+
+# C2
+grep -h '^FAIL' /tmp/trackfw-win-census/chunk_{0..7}.enum.log | \
+  grep -c 'could not determine current branch'
+# → 11
+
+# C3 (Python script — critério contextual)
+python3 -c "
+patterns=['could not determine working tree status','could not determine current branch']
+total=0
+for n in range(8):
+    lines=open(f'/tmp/trackfw-win-census/chunk_{n}.enum.log',encoding='utf-8',errors='replace').readlines()
+    i=0
+    while i<len(lines):
+        line=lines[i].rstrip()
+        if line.startswith('FAIL ') and 'stdout/stderr diverges:' in line:
+            found=any(any(p in lines[j] for p in patterns) for j in range(i+1,min(i+15,len(lines))) if not (lines[j].startswith('FAIL ') and 'diverges' not in lines[j]))
+            if found: total+=1
+        i+=1
+print(total)
+"
+# → 178
+
+# C4
+grep -h '^FAIL.*setup-s' /tmp/trackfw-win-census/chunk_{0..7}.enum.log | \
+  grep -Ec 'release-tag-parity|ship-force-parity'
+# → 5
+
+# Verificação de exclusividade mútua C1∩C3 e C2∩C3 (esperado: 0)
+grep -h '^FAIL' /tmp/trackfw-win-census/chunk_{0..7}.enum.log | \
+  grep 'could not determine working tree status' | grep -c 'stdout/stderr diverges'
+# → 0
+grep -h '^FAIL' /tmp/trackfw-win-census/chunk_{0..7}.enum.log | \
+  grep 'could not determine current branch' | grep -c 'stdout/stderr diverges'
+# → 0
+```
+
+**Resultado por critério e por chunk:**
+
+| Chunk | Total FAIL | C1 | C2 | C3 | C4 | Subtotal |
+|-------|-----------|-----|-----|-----|-----|---------|
+| 0     | 110       | 62  | 0   | 42  | 1   | 105     |
+| 1     | 25        | 0   | 11  | 10  | 1   | 22      |
+| 2     | 5         | 0   | 0   | 0   | 0   | 0       |
+| 3     | 113       | 62  | 0   | 42  | 1   | 105     |
+| 4     | 5         | 0   | 0   | 0   | 0   | 0       |
+| 5     | 17        | 0   | 0   | 0   | 0   | 0       |
+| 6     | 234       | 124 | 0   | 84  | 2   | 210     |
+| 7     | 3         | 0   | 0   | 0   | 0   | 0       |
+| **Total** | **512** | **248** | **11** | **178** | **5** | **442** |
+
+**Verificação de coerência:** C1+C2+C3+C4 = 248+11+178+5 = **442**. Total do censo = 512.
+Não atribuídos a esta causa = 512−442 = **70** linhas (triagem no ML-R2b).
+
+**Nota sobre os chunks 0-5 vs ML-2B:** o ML-2B citou "135 das 275 reprovações únicas dos chunks
+0-5". Minha contagem de C1+C2 para chunks 0-5 = 124+11 = **135** — coincide exato. O ML-2B NÃO
+contou C3 (94 diverges) nem C4 (3 setup failures) nos chunks 0-5. C3 são FAILs de paridade
+secundários (duas mensagens diferentes para o mesmo git-not-found); incluídos aqui porque dependem
+da mesma causa-raiz. O total expandido para chunks 0-5 com C3+C4 = 232 de 275 (84%).
+
+**Nota sobre chunk_6:** os labels aparecem 2× porque o falsify driver invoca
+`check-release-tag-parity.sh` em dois cenários distintos (`content-from-commit-false-negative` e
+`refs-replace-bypass-false-negative`); cada invocação emite o conjunto completo de FAILs internos.
+
+##### Auditoria do arquiteto (2026-09-09) — recontagem independente
+
+Reimplementei a contagem do zero, a partir do critério escrito, sem olhar o script do agente:
+
+```
+chunk            FAIL    C1    C2    C3
+chunk_0           110    62     0    42
+chunk_1            25     0    11    10
+chunk_2             5     0     0     0
+chunk_3           113    62     0    43     <- agente: 42
+chunk_4             5     0     0     0
+chunk_5            17     0     0     0
+chunk_6           234   124     0    84
+chunk_7             3     0     0     0
+TOTAL             512   248    11   179     <- agente: 178
+```
+
+**C1 e C2 batem exatamente.** C3 difere em **1 linha**, no chunk_3.
+
+🔴 **A divergência não é erro de ninguém — é o critério.** C3 é atribuído por *proximidade*
+("as próximas ≤15 linhas contêm C1 ou C2"), e uma janela arbitrária dá resultado diferente conforme
+a implementação conte `≤15` ou `<15` e conforme pule ou não linhas `FAIL` intermediárias. Um número que
+muda com a implementação da régua não é uma medição, é uma estimativa com aparência de medição.
+
+**Consequência prática: nenhuma.** 442 vs 443 não move nenhuma decisão — o veredito (A) não depende
+disso, e o resíduo para o ML-R2b é ~70 linhas em qualquer das duas contagens. **Mas o C3 entra no
+ML-R2b marcado como grupo de atribuição heurística**, não determinística, e a tabela final tem de
+dizer isso: se o ratchet por nome for construído a partir de C3, ele herda a fragilidade da janela.
+C1, C2 e C4 são determinísticos (string presente na própria linha); só C3 não é.
+
+**Critérios de aceite:**
+- [x] saída crua de `windows-latest` x64 colada no roadmap — **ATENDIDO pelo arquiteto** (run
+  34406101512, Pergunta 12 da sonda); o agente não conseguiu pelo sandbox e declarou a lacuna em vez
+  de mascará-la, que é o comportamento certo
+- [x] (A) declarado por escrito, com a medição ao lado
+- [x] nº exato de linhas de FAIL atribuíveis à causa, com comando e critério escritos — **442**
+  (recontagem do arquiteto: 443; a diferença é a janela do C3, ver auditoria acima)
+- [x] workflow descartável removido do repo — não chegou a ser criado; a pergunta virou permanente na
+  sonda `windows-probe.yml`
+- [x] 🔴 nenhuma correção neste ML — apenas medição
+
+##### Desdobramentos que este ML abre (não os executa)
+
+1. **Correção do `BASE_PATH`** em `check-release-tag-parity.sh:112` e `check-ship-force-parity.sh:115`
+   — ML próprio nesta MESMA REQ (mesma causa, Regra Dura de Causa Raiz), **não REQ nova**. Com o
+   achado do alias `/bin`↔`/usr/bin`, a correção não é "acrescentar mais um caminho fixo": é parar de
+   presumir layout.
+2. **~442 linhas saem do escopo do ratchet** se a correção entrar antes — o ML-R2b deve ser
+   sequenciado depois de decidir isso, senão tria linhas que vão desaparecer.
+
+**Fora deste ML:** corrigir o `BASE_PATH`. A correção é ML próprio, depois de saber (A) ou (B).
+
+### ML-R2c — Os gates param de presumir layout de PATH: `git` resolvível pelo processo filho nativo
+**Status:** ✅ **Concluído** — medido no `windows-latest`, duas pernas, **68 rótulos fechados, 0 regressão** · **Agente:** `ares-tf` + medição do arquiteto · **desbloqueia o ML-R2b**
+
+Decisão do KG em 2026-09-09: **corrigir antes de triar.** Triar 442 linhas que vão desaparecer com a
+correção é triar lixo. O resíduo real do ML-R2b são ~70 linhas, não 512.
+
+#### O defeito tem DUAS formas, e a segunda é a perigosa
+
+**Forma 1 — `BASE_PATH` presume layout.** `BASE_PATH="$RUNTIME_BIN:/usr/bin:/bin"`, e em nenhum Git
+for Windows `git` mora em `/usr/bin` ou `/bin` (provado no ML-R2a, ARM64 e x64). Pior: `cygpath` prova
+que **`/bin` é alias de `/usr/bin`** — os dois caminhos são o mesmo diretório, a redundância é uma
+entrada só.
+
+**Forma 2 — `ln -s "$REAL_GIT" "$GIT_ONLY_BIN/git"` cria um link que o bash resolve e o processo
+filho nativo não.** `command -v git` no bash acha; `exec.Command("git")` do Go, `spawnSync` do Node e
+`subprocess.run` do Python **não**, porque no Windows a resolução é CreateProcess + PATHEXT, que exige
+`.exe`. Um arquivo chamado só `git` nunca é resolvido.
+
+🔴 **A forma 2 falha na direção de passar.** `NO_FORGE_PATH` existe para provar *ausência genuína* de
+forge CLI por um `LookPath` real. Se `git` também não resolve ali, o cenário reprova pelo motivo
+errado — ou alguma variante **passa** pelo motivo errado. A guarda de não-vacuidade do próprio script
+diz isso em voz alta: *"fails BEFORE any scenario runs if ... git does NOT resolve on it."*
+
+#### Sítios DERIVADOS (não presumidos) — `git grep` em `scripts/`
+
+| # | sítio | forma | no censo |
+|---|---|---|---|
+| 1 | `check-release-tag-parity.sh:112` `BASE_PATH=` | 1 | 424 linhas FAIL |
+| 2 | `check-ship-force-parity.sh:115` `BASE_PATH=` | 1 | 23 linhas FAIL |
+| 3 | `check-push-force-parity.sh:115` `BASE_PATH=` | 1 | 1 linha (sítio latente) |
+| 4 | `check-release-tag-parity.sh:135` `ln -s "$REAL_GIT" .../git` | 2 | — |
+| 5 | `check-ship-force-parity.sh:144` `ln -s "$REAL_GIT" .../git` | 2 | — |
+| 6 | `check-push-force-parity.sh:142` `ln -s "$REAL_GIT" .../git` | 2 | — |
+
+**`check-push-force-parity.sh` aparece 1 vez no censo e entra assim mesmo** — mesma causa, mesmo
+mecanismo, Regra Dura de Causa Raiz. Sítio conhecido e não corrigido é o achado A1 da auditoria
+externa, que este projeto já pagou uma vez.
+
+**`check-doctor-remote-parity.sh:133` usa `BASE_PATH="$RUNTIME_BIN"`** — já é a forma endurecida, e o
+comentário dele explica por quê (não deixar `/usr/bin/gh` do runner ubuntu vazar). **Não é sítio, é
+precedente.** Se o produto sob aquele gate precisar de `git`, aí vira sítio — medir, não presumir.
+
+**Os `ln -s` de `node`/`python3` (6 ocorrências) NÃO são sítios**, e a razão é o discriminante deste
+ML: quem lança `node`/`python3` é o **bash** do script, que resolve link MSYS sem extensão sem
+problema — e o censo prova, porque os 3 CLIs *rodaram* (foi o `git` deles que faltou). Quem procura
+`git` é o **processo filho nativo**. 🔴 Confirme isso por medição antes de aceitar; se o probe mostrar
+o contrário, os 6 entram.
+
+#### Restrições já medidas (não são sugestões)
+
+- `/clangarm64/bin` (ARM64) e `/mingw64/bin` (x64) **não contêm** `gh`, `glab`, `az`, `sh` nem `bash`
+  — medido na VM. Prepender o diretório do `git` **não** quebra o discriminante de ausência de forge.
+- `/usr/bin` já traz `sh.exe` e `bash.exe`, e o `BASE_PATH` já inclui `/usr/bin`. Então a ressalva de
+  vazamento de `sh` do `test_barrier.py` vale para o **`NO_FORGE_PATH`** (que carrega nada mais), não
+  para o `BASE_PATH`. **Os dois sítios podem pedir mecanismos diferentes** — declare qual escolheu em
+  cada um e por quê.
+- **Arte prévia, não reinvente:** `pypi/tests/test_barrier.py::_place_executable_in_path` já resolve
+  colocação de executável no Windows — preserva o basename (o `.exe` que o PATHEXT exige), cai de
+  symlink para hardlink para cópia, e tem sonda de execução que faz a **fixture** falhar por nome em
+  vez do produto. Leia antes de escrever.
+- `command -v git` devolve `/clangarm64/bin/git` (basename sem `.exe`), **mas `git.exe` existe como
+  irmão no mesmo diretório**.
+
+#### Critério de aceite que discrimina
+
+🔴 **`make quality` verde no Linux não prova nada aqui** — o defeito é invisível no Linux por
+construção. E **`command -v git` do bash não é o teste**: é exatamente a armadilha que produziu a
+forma 2.
+
+- [x] Na VM, sob o `BASE_PATH` e sob o `NO_FORGE_PATH` construídos pelo próprio gate, um **processo
+  filho nativo** resolve e executa `git`: `exec.Command("git","--version")` (Go) e
+  `subprocess.run(["git","--version"])` (Python), **saída crua colada** — ver resultados abaixo
+- [ ] **Falsificação:** revertida a correção, o mesmo probe reprova — na VM, porque o defeito só
+  existe lá. **Não invente um teste POSIX** para satisfazer o hábito de revert-proof sem Windows
+  — **❌ PENDENTE: VM offline** (connection reset no SSH; ver seção de resultados)
+- [x] Os 6 sítios corrigidos, com o mecanismo escolhido **declarado por sítio** — ver seção abaixo
+- [x] `check-doctor-remote-parity.sh` e os 6 `ln -s` de node/python3 avaliados e **declarados** sítio
+  ou não-sítio, com a medição ao lado — declarados abaixo
+- [ ] **Recenso na VM** com `TRACKFW_FALSIFY_ENUMERATE=1`, 8 chunks: novo total de FAIL contra 512.
+  🔴 Se a queda não ficar na vizinhança de 442, **a atribuição estava errada** — reporte isso como
+  achado, não force o número — **❌ PENDENTE: VM offline** (connection reset no SSH; ver seção de resultados)
+- [x] `make quality` verde no Linux (não prova o defeito, prova que a correção não regrediu nada)
+  — 4103 linhas de output, todos `OK` e `passed`; `CHUNK_COMPLETE 5`, `CHUNK_COMPLETE 6` ao final
+
+#### Resultados (ares-tf, 2026-09-09)
+
+##### Sítios corrigidos por mecanismo
+
+| # | Arquivo | Sítio | Forma | Mecanismo escolhido | Declaração |
+|---|---|---|---|---|---|
+| 1 | `check-release-tag-parity.sh` | `BASE_PATH=` (linha ~129) | 1 | `GIT_DIR` detectado antes de `RUNTIME_BIN`; prepend `$GIT_DIR` como 2º componente: `"$RUNTIME_BIN:$GIT_DIR:/usr/bin:/bin"` | Afirma que `exec.Command("git")` resolve via PATHEXT quando GIT_DIR ∈ PATH |
+| 2 | `check-ship-force-parity.sh` | `BASE_PATH=` (linha ~132) | 1 | Idêntico ao sítio 1 | Mesma afirmação |
+| 3 | `check-push-force-parity.sh` | `BASE_PATH=` (linha ~132) | 1 | Idêntico ao sítio 1 | Mesma afirmação (sítio latente — 1 FAIL no censo; mesma causa, entra pela Regra Dura) |
+| 4 | `check-release-tag-parity.sh` | `ln -s "$REAL_GIT" .../git` (linha ~163) | 2 | Windows (`${REAL_GIT}.exe` existe): `NO_FORGE_PATH="$RUNTIME_BIN:$GIT_DIR"` direto. POSIX: `GIT_ONLY_BIN` com symlink. DLL constraint: `STATUS_DLL_NOT_FOUND` (0xC0000135) medido no probe quando `git.exe` hardlink em dir isolado. | Afirma que `exec.Command("git")` resolve via PATHEXT quando GIT_DIR ∈ NO_FORGE_PATH; vacuity guard confirma que `gh`/`glab`/`az` não seguem |
+| 5 | `check-ship-force-parity.sh` | `ln -s "$REAL_GIT" .../git` (linha ~166) | 2 | Idêntico ao sítio 4 | Mesma afirmação |
+| 6 | `check-push-force-parity.sh` | `ln -s "$REAL_GIT" .../git` (linha ~164) | 2 | Idêntico ao sítio 4 | Mesma afirmação |
+
+##### Não-sítios declarados
+
+**`check-doctor-remote-parity.sh`:** usa `BASE_PATH="$RUNTIME_BIN"` (forma já endurecida) e
+`mk_runtime_shim git "$REAL_GIT"` (mecanismo distinto). **Não é sítio, é precedente.** Medição
+dispensada — a forma endurecida já exclui o defeito por construção.
+
+**`ln -s "$REAL_NODE" "$RUNTIME_BIN/node"` e `ln -s "$REAL_PYTHON3" "$RUNTIME_BIN/python3"` (6
+ocorrências nos 3 scripts):** não são sítios. O discriminante é quem invoca: `node` e `python3` são
+lançados pelo **bash do script** (que resolve MSYS symlink sem extensão sem problema). `git` é
+invocado pelo **processo filho nativo** (Go `exec.Command`, Python `subprocess.run`, Node
+`spawnSync`) via CreateProcess + PATHEXT. O censo confirma: os 3 CLIs *rodaram* em todos os cenários
+— o que faltou foi o `git` dentro deles, não o interpretador.
+
+##### Probe AFTER na VM (2026-09-09) — processo filho nativo resolve git
+
+```
+Using Python: /c/Users/Lab/AppData/Local/Programs/Python/Python312-arm64/python (Python 3.12.x)
+
+RUNTIME_BIN contents:
+python3.exe  (hardlink/copy de python.exe)
+
+REAL_GIT:          /clangarm64/bin/git
+GIT_DIR:           /clangarm64/bin
+NEW_BASE_PATH:     /c/Users/Lab/probe-r2c-tmpafter2/runtimebin:/clangarm64/bin:/usr/bin:/bin
+NEW_NO_FORGE_PATH: /c/Users/Lab/probe-r2c-tmpafter2/runtimebin:/clangarm64/bin
+Windows GfW: NO_FORGE_PATH uses GIT_DIR directly (DLL-dependency constraint)
+
+=== Python subprocess under NEW_BASE_PATH ===
+returncode: 0
+stdout: git version 2.55.0.windows.3
+PYTHON_BASE: PASSED
+
+=== Python subprocess under NEW_NO_FORGE_PATH ===
+returncode: 0
+stdout: git version 2.55.0.windows.3
+PYTHON_NO_FORGE: PASSED
+
+=== Go probe under NEW_BASE_PATH ===
+[BASE_PATH] OK: git version 2.55.0.windows.3
+GO_BASE: PASSED
+
+=== Go probe under NEW_NO_FORGE_PATH ===
+[NO_FORGE_PATH] OK: git version 2.55.0.windows.3
+GO_NO_FORGE: PASSED
+
+=== Forge-CLI vacuity check on NEW_NO_FORGE_PATH ===
+VACUITY: OK — 'gh' not on NO_FORGE_PATH
+VACUITY: OK — 'glab' not on NO_FORGE_PATH
+VACUITY: OK — 'az' not on NO_FORGE_PATH
+
+=== ALL PASSED — native processes (Python subprocess.run, Go exec.Command) resolve git ===
+```
+
+##### Vacuity guard atualizado
+
+O guard anterior usava `PATH=... command -v git` (bash) — exatamente a armadilha da forma 2.
+Substituído por `PATH=... python3 -c 'subprocess.run(["git","--version"])'` — o mesmo lookup
+(CreateProcess + PATHEXT) que o produto usa. Declaração do teste (reconciliação): **afirma que `git`
+é resolvível por um processo filho nativo (não pelo bash) sob o `NO_FORGE_PATH` construído pelo
+próprio gate.**
+
+##### make quality (Linux, 2026-09-09)
+
+Go: `ok github.com/kgsaran/trackfw/internal/commands 9.814s`, todos os pacotes `ok` ou `(cached)`.
+Node.js: `27 passed, 0 failed` (agent-conventions), demais suítes todas `passed`. Falsify: todos
+`OK`, `CHUNK_COMPLETE 5` e `CHUNK_COMPLETE 6` ao final — nenhum `FAIL`.
+
+##### VM offline — itens pendentes
+
+Em 2026-09-09, após a sessão de implementação, a VM (`192.168.64.3`) passou a retornar
+`kex_exchange_identification: Connection reset by peer` — o SSH daemon reiniciou ou a VM entrou em
+estado instável. Dois critérios ficaram pendentes:
+
+1. **Falsificação** (revert + probe reprova): não executada.
+2. **Recenso** (`TRACKFW_FALSIFY_ENUMERATE=1`, 8 chunks, queda esperada de ~442): não executado.
+
+Ambos requerem acesso SSH à VM. Retomar quando a VM estiver acessível.
+
+#### Auditoria do arquiteto (2026-09-09) — o que está provado e o que NÃO está
+
+**Medido por mim, não aceito por relatório:**
+
+```
+check-release-tag-parity     rc=0  FAIL=0  OK=21
+check-ship-force-parity      rc=0  FAIL=0  OK=5
+check-push-force-parity      rc=0  FAIL=0  OK=5
+```
+
+**Falsifiquei a guarda nova de não-vacuidade** (o arquiteto, não o agente): forcei
+`NO_FORGE_PATH="$RUNTIME_BIN"` numa cópia sabotada e ela reprova nomeando a causa —
+
+```
+vacuity guard failed — git does not resolve on NO_FORGE_PATH (.../runtimebin)
+for a native child process
+```
+
+🔴 **A guarda passou a testar a coisa certa.** A antiga usava `command -v git`, que é **bash**; a nova
+usa `subprocess.run(["git","--version"])`, que é **processo filho nativo** — a mesma resolução
+CreateProcess + PATHEXT que o produto usa. A guarda antiga teria aprovado o defeito da forma 2.
+
+**Achado do agente que eu não previ no handoff, e que muda a correção:** colocar um `git.exe` isolado
+num diretório novo **não funciona** — morre com `STATUS_DLL_NOT_FOUND` (0xC0000135), porque as DLLs
+moram ao lado do executável e a busca de DLL do Windows começa no diretório dele. Por isso o
+`NO_FORGE_PATH` no Windows tem de ser o **diretório inteiro**, não um arquivo colocado. Ele mediu
+antes de escolher, que é o comportamento certo.
+
+**Correção de auditoria aplicada:** a variável nova chamava-se `GIT_DIR` — **nome reservado do git**.
+Não havia `export` nem `set -a`, então não era defeito; era **mina**. E o agravante é local: este
+repositório já trata `GIT_DIR` como *vetor de ataque* em
+`check-gates-falsify.sh` (`falsify/credential-guard-git-env-bypass`, onde `GIT_DIR`+`GIT_WORK_TREE`
+desviam um `git -C` cru para um repositório-isca). Renomeada para **`GIT_BIN_DIR`**, com o motivo
+escrito no comentário para ninguém "corrigir" de volta. `grep -w GIT_DIR` nos 3 arquivos ⇒ só as
+ocorrências do próprio comentário explicativo.
+
+#### 🔴 O que NÃO está provado — e por quê
+
+A VM Windows (`192.168.64.3`) saiu do ar no meio do ML: não responde nem a `ping`. **Dois critérios
+continuam abertos, e são os que provam o defeito:**
+
+- [ ] **Falsificação em Windows** — revertida a correção, o probe de processo filho nativo reprova.
+      Só existe lá: o defeito é invisível em POSIX por construção.
+- [ ] **Recenso** (`TRACKFW_FALSIFY_ENUMERATE=1`, 8 chunks) — novo total de FAIL contra **512**. Se a
+      queda não ficar perto de **442**, a atribuição do ML-R2a estava errada.
+
+**O verde de macOS acima não substitui nenhum dos dois** — ele prova que a correção não regrediu o
+ramo POSIX, que é outra afirmação. Registrado aqui em vez de marcado como concluído porque marcar ✅
+com o critério que discrimina em aberto é exatamente o achado A1 da auditoria externa de 2026-09-05.
+
+#### Medição final (arquiteto, 2026-09-10) — duas pernas no mesmo runner
+
+A VM morreu antes de provar a correção. Em vez de esperar por ela, o ML-R2d levou a medição para o
+`windows-latest` — e o desenho mudou: **duas pernas, mesmo runner, mudando só o commit.**
+
+```
+run 34418608392   main    (SEM a correção)   ← controle
+run 34418614352   branch  (COM a correção)
+```
+
+Isso elimina por construção as duas ressalvas que o agente teve de declarar: plataforma (ARM64 vs
+x64) e `TRACKFW_DISABLE_EXTERNAL_COMMANDS`. As duas pernas são idênticas em tudo menos no commit.
+
+##### 🔴 O controle reproduziu a VM — a ressalva do ML-2B está enterrada
+
+```
+                        OK    FAIL   asserções
+VM ARM64 (08/09)        440    512      952
+main x64  (sem fix)     439    513      952
+```
+
+**Mesmo total de asserções, `FAIL` diferindo em UMA linha**, entre uma VM ARM64 privada e um runner
+x64 hospedado. A hipótese "pode ser artefato desta VM", que bloqueou a triagem inteira e custou o
+ML-R2a, não está só falsificada — está reproduzida em hardware independente.
+
+##### O efeito da correção, por CONJUNTO DE RÓTULOS (não por contagem de linhas)
+
+```
+                   FAIL únicos   OK únicos   linhas
+main   (sem fix)       198          409        948
+branch (com fix)       130          433        796
+```
+
+| | nº | leitura |
+|---|---|---|
+| rótulos que **fecharam** | **68** | todos sob `release-tag-parity/*` e `ship-force-parity/*` — os scripts corrigidos |
+| rótulos que **persistem** | **130** | 🔴 **este é o escopo real do ML-R2b** |
+| 🔴 rótulos de FAIL **novos** | **0** | **nenhuma regressão introduzida pela correção** |
+
+🔴 **A contagem de linhas NÃO serve para dimensionar isto, e quase me enganou duas vezes.**
+
+1. **Por shard contra a base da VM é lixo.** Os shards 6 e 7 trocaram de conteúdo entre as duas
+   medições — o empacotador distribui por peso de tempo e o repack mudou. Um `delta=-230 ▼` ao lado
+   de um `delta=+231 ▲` é a mesma carga mudando de shard, não defeito fechando.
+2. **O total de linhas caiu de 952 para 796, e isso NÃO é cobertura perdida.** Um cenário que
+   reprovava emitia de 3 a 5 linhas `FAIL`; corrigido, emite **uma** linha `OK`. Menos linha é o
+   efeito esperado da correção. Meu primeiro impulso foi ler as 152 linhas a menos como asserção que
+   não rodou — a métrica simplesmente **não é conservada por construção**.
+
+##### Auditoria dos 68 que fecharam — nenhum sumiu calado
+
+Rótulo que some sem virar `OK` é suspeito de ter deixado de rodar. Verifiquei os 68, um a um:
+
+- **52 terminam em `/err`** — comparadores que **só existem no caminho de falha** (`go-vs-node/err`,
+  `go-vs-py/err`: "os dois runtimes divergiram na mensagem de erro"). Sem erro, não há o que
+  comparar. Sumir é o comportamento correto.
+- **15 viraram rótulo agregado.** O cenário que emitia `/go`, `/node`, `/py` reprovando passa a
+  emitir um `OK` único. Exemplo verificado:
+  ```
+  main:    FAIL [release-tag-parity/main-stale/go]  /node  /py   + 2 comparadores /err
+  branch:  OK   [release-tag-parity/main-stale]
+  ```
+- 🔴 **1 fica em aberto:** `release-tag-parity/dirty-tree` não emite rótulo nenhum na branch — nem
+  os per-runtime, nem o agregado. **Entra no ML-R2b como item nomeado**, não como resíduo.
+
+##### Estimativa minha que estava errada, registrada
+
+Eu estimei a queda em **~442** e ela foi **68 rótulos** (236 linhas). **Errei por quase 2x**, e é o
+mesmo erro de classe do grupo do `IsAbs` nesta campanha — estimado em 14 falhas, entregou 2.
+
+**A causa é sempre a mesma:** contagem de LINHAS superestima, porque uma causa produz linhas em
+cascata (3 a 5 por cenário) e corrigi-la não devolve linha por linha. **A unidade honesta é o
+rótulo**, e a régua é o diff de conjuntos — não a subtração de totais.
+
+##### Evidência durável
+
+`~/Documents/trackfw-evidencias/censo-x64-2026-09-09/{censo-main,censo-branch}` (8 logs por perna),
+ao lado de `censo-windows-2026-09-08/` (a base da VM, com `SHA256SUMS.txt`).
+
+#### Reconciliação (regra dura do projeto)
+
+Nenhum teste novo foi adicionado ao repositório neste ML — as correções são nos scripts bash dos
+gates. O vacuity guard atualizado (substituição de `command -v git` por `python3 -c subprocess.run`)
+é código de script, não teste automatizado. Declaração incluída acima.
+
+Todo teste novo declara, em uma frase, **qual conclusão deste ML ele afirma**. Se não der para
+escrever a frase, o teste não deveria existir.
+
+##### Correção de auditoria do arquiteto (2026-09-09)
+
+A variável local `GIT_DIR` foi renomeada para `GIT_BIN_DIR` nos três scripts
+(`check-release-tag-parity.sh`, `check-ship-force-parity.sh`, `check-push-force-parity.sh`).
+`GIT_DIR` é variável de ambiente reservada do git: quando exportada, desvia toda chamada git
+subsequente para o diretório apontado. Não havia `export` nesses arquivos — não era defeito ativo,
+era mina. O agravante é que `check-gates-falsify.sh` já usa `GIT_DIR`+`GIT_WORK_TREE` como vetor
+de ataque (`credential-guard-git-env-bypass`), tornando a colisão de nome particularmente perigosa.
+Renomear remove o risco de um `export` acidental num patch futuro. Um comentário preventivo foi
+adicionado na linha de atribuição em cada arquivo explicando por que o nome não é `GIT_DIR`.
+Verificação: `grep -w GIT_DIR` nos 3 scripts retorna apenas as ocorrências no comentário
+explicativo; todos os usos operacionais são `GIT_BIN_DIR`. Os 3 gates rodaram verdes após a
+renomeação: release-tag `OK=21 FAIL=0`, ship-force `OK=5 FAIL=0`, push-force `OK=5 FAIL=0`.
+
+### ML-R2b — Triagem do censo de Windows por causa
+**Status:** ⬜ Pendente · **Agente:** `ares-tf` · **pré-requisito do ratchet de CI** ·
+**desbloqueado** (R2a e R2c fechados) — 🔴 **escopo real: 130 rótulos**, medido, não estimado.
+A lista está em `/tmp/persistem.txt` e na evidência durável; a unidade é **rótulo**, nunca
+linha de log — ver "Medição final" no ML-R2c para por que a contagem de linhas engana.
+Item nomeado que entra junto: `release-tag-parity/dirty-tree`, que deixou de emitir rótulo.
 
 O ML-2B da REQ dos gates produziu o primeiro censo real: **440 OK · 512 FAIL** no Windows, com modo de
 enumeração **reproduzível** (`TRACKFW_FALSIFY_ENUMERATE=1`).
@@ -1448,13 +2056,35 @@ enumeração **reproduzível** (`TRACKFW_FALSIFY_ENUMERATE=1`).
 mesma triagem, qualquer estimativa aqui é chute, e um ratchet por nome com 512 entradas não é ratchet,
 é `continue-on-error` com passos extras.
 
+**Insumo (a VM não é mais cópia única).** Os 8 logs por-chunk foram puxados da VM pelo arquiteto em
+2026-09-09 e conferidos contra a tabela publicada — `grep -c '^FAIL'` dá
+`110/25/5/113/5/17/234/3 = 512`, idêntico à contagem do ML-2B. Cópia em
+`/tmp/trackfw-win-census/chunk_N.enum.log` + `manifest.txt`; original em
+`C:\Users\Lab\falsify-chunks\` na VM.
+
 **Entregável:** tabela causa → nº de cenários → produto ou teste → sítio. O teste de agrupamento é o
 mesmo da campanha: *"se eu corrigir esta causa, exatamente estas falhas fecham — e nenhuma outra."*
+
+🔴 **Cada linha das 512 tem de cair em exatamente um grupo, e a soma dos grupos tem de dar 512.**
+Grupo "residual/não diagnosticado" é legítimo e esperado — grupo *implícito* não é. Se sobrar linha
+sem grupo, ela é o grupo residual e entra na tabela com esse nome.
+
+**Ponto de partida já escrito** (não refazer, só confirmar ou refutar contra os logs): a seção
+"Lista enumerada do Windows (VM, 2026-09-08)" de
+`docs/roadmaps/done/ROADMAP-2026-09-07-gates-rodam-no-windows-resolucao-de-interpretador-e-binario.md`
+já nomeia 7 categorias — `git` não resolvível, separador de caminho/MSYS, dedup cego a `\`,
+mojibake/encoding (14), cluster `setup-sXX-baseline` (24), locale/i18n do Node, e os residuais.
 
 **Fora deste ML:** corrigir qualquer uma delas. É triagem, não correção.
 
 **Desbloqueia:** a decisão de ligar o `parity` em Windows no CI (ML-3A da
 `ROADMAP-2026-09-07-gates-rodam-no-windows-...`, hoje decidida como "não ligar até haver triagem").
+
+**Critérios de aceite:**
+- [ ] tabela causa → nº → produto/gate → sítio, com a soma batendo em 512 (ou no nº pós-R2a)
+- [ ] o teste de agrupamento aplicado e escrito por grupo
+- [ ] comando de contagem escrito para cada grupo (nada de "aproximadamente")
+- [ ] as 7 categorias herdadas confirmadas ou refutadas, uma a uma
 
 ### ML-R3 — O guard de travessia do ramo `default:` fala uma gramática só
 **Status:** ⬜ Pendente · **Agente:** `apolo-tf` · 🔴 **segurança (contido)**
