@@ -161,3 +161,16 @@ barreira que autoriza as waves pode aprovar **por falha, não por verificação*
 defeito que custou duas REQs reabertas nesta campanha, mas no componente que decide se o resto pode
 prosseguir. Os itens 3 e 4 são reais e têm pré-condição (host malicioso, janela de corrida); este
 não precisa de adversário.
+
+
+## Candidato anotado — arquiteto, 2026-09-10
+
+**`trackfw-gate / governance-install-script` é check OBRIGATÓRIO com dependência HTTP externa.**
+
+Ele roda `curl -sSfL .../releases/latest/download/install.sh | sh`. No PR #305 reprovou com
+`curl: (22) ... error: 403` — nada a ver com o conteúdo do PR (doc-only); o mesmo check passou no
+#304. Rodado de novo, ficou verde.
+
+🔴 **Um portão obrigatório que reprova por 403 de terceiro é ruído que todo mundo aprende a ignorar**
+— e este projeto tem ADR sobre exatamente esse modo de falha. Não é REQ hoje; é uma linha aqui para
+não se perder.

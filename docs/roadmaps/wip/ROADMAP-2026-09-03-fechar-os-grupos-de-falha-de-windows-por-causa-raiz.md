@@ -2042,49 +2042,114 @@ Verificação: `grep -w GIT_DIR` nos 3 scripts retorna apenas as ocorrências no
 explicativo; todos os usos operacionais são `GIT_BIN_DIR`. Os 3 gates rodaram verdes após a
 renomeação: release-tag `OK=21 FAIL=0`, ship-force `OK=5 FAIL=0`, push-force `OK=5 FAIL=0`.
 
-### ML-R2b — Triagem do censo de Windows por causa
-**Status:** ⬜ Pendente · **Agente:** `ares-tf` · **pré-requisito do ratchet de CI** ·
-**desbloqueado** (R2a e R2c fechados) — 🔴 **escopo real: 130 rótulos**, medido, não estimado.
-A lista está em `/tmp/persistem.txt` e na evidência durável; a unidade é **rótulo**, nunca
-linha de log — ver "Medição final" no ML-R2c para por que a contagem de linhas engana.
-Item nomeado que entra junto: `release-tag-parity/dirty-tree`, que deixou de emitir rótulo.
+### ML-R2b1 — O `gh` tem o MESMO defeito do `git`: `BASE_PATH` presume `/usr/bin`
+**Status:** 🔄 Em andamento · **Agente:** `ares-tf` · 🔴 **mesma causa do ML-R2c, binário diferente**
 
-O ML-2B da REQ dos gates produziu o primeiro censo real: **440 OK · 512 FAIL** no Windows, com modo de
-enumeração **reproduzível** (`TRACKFW_FALSIFY_ENUMERATE=1`).
+Descoberto ao triar os 130 que persistiram depois do ML-R2c. **Não é causa nova — é o mesmo
+mecanismo, um binário adiante.**
 
-🔴 **512 é número, não escopo.** A campanha anterior colapsou **246 sintomas em 6 causas** — sem a
-mesma triagem, qualquer estimativa aqui é chute, e um ratchet por nome com 512 entradas não é ratchet,
-é `continue-on-error` com passos extras.
+```
+FAIL [release-tag-parity/success/go]: expected exit 0 on the fully valid fixture, got 1;
+  stderr: Error: trackfw release tag requires the GitHub CLI (gh) to publish the tag.
+          No forge CLI is available for this repository
+```
 
-**Insumo (a VM não é mais cópia única).** Os 8 logs por-chunk foram puxados da VM pelo arquiteto em
-2026-09-09 e conferidos contra a tabela publicada — `grep -c '^FAIL'` dá
-`110/25/5/113/5/17/234/3 = 512`, idêntico à contagem do ML-2B. Cópia em
-`/tmp/trackfw-win-census/chunk_N.enum.log` + `manifest.txt`; original em
-`C:\Users\Lab\falsify-chunks\` na VM.
+`BASE_PATH` presume que `/usr/bin` provê o `gh`. **No ubuntu provê** — e isso está escrito no
+comentário do próprio script como a razão de o `NO_FORGE_PATH` existir (`ML-6B`: o runner ubuntu traz
+`/usr/bin/gh` de verdade). **No Windows não provê**, exatamente como não provia o `git`.
 
-**Entregável:** tabela causa → nº de cenários → produto ou teste → sítio. O teste de agrupamento é o
-mesmo da campanha: *"se eu corrigir esta causa, exatamente estas falhas fecham — e nenhuma outra."*
+#### Por que a derivação do ML-R2c não pegou
 
-🔴 **Cada linha das 512 tem de cair em exatamente um grupo, e a soma dos grupos tem de dar 512.**
-Grupo "residual/não diagnosticado" é legítimo e esperado — grupo *implícito* não é. Se sobrar linha
-sem grupo, ela é o grupo residual e entra na tabela com esse nome.
+A lista de sítios do R2c saiu de `git grep` por `REAL_GIT` e `BASE_PATH`. **O `gh` era invisível aos
+dois**: ele nunca foi symlinkado para lugar nenhum — era só *presumido* presente via `/usr/bin`.
+Sítio que existe por ausência de código não aparece em busca por código.
 
-**Ponto de partida já escrito** (não refazer, só confirmar ou refutar contra os logs): a seção
-"Lista enumerada do Windows (VM, 2026-09-08)" de
-`docs/roadmaps/done/ROADMAP-2026-09-07-gates-rodam-no-windows-resolucao-de-interpretador-e-binario.md`
-já nomeia 7 categorias — `git` não resolvível, separador de caminho/MSYS, dedup cego a `\`,
-mojibake/encoding (14), cluster `setup-sXX-baseline` (24), locale/i18n do Node, e os residuais.
+🔴 Isso **não indicia o PR #304**: o `gh` foi descoberto pela medição que aquele PR produziu. Mas fica
+escrito, porque quem ler o PR mergeado vai perguntar.
 
-**Fora deste ML:** corrigir qualquer uma delas. É triagem, não correção.
+#### Escopo medido, com a discriminação feita
 
-**Desbloqueia:** a decisão de ligar o `parity` em Windows no CI (ML-3A da
-`ROADMAP-2026-09-07-gates-rodam-no-windows-...`, hoje decidida como "não ligar até haver triagem").
+```
+release-tag-parity/*    48 rótulos   →  45 com "forge CLI"   ·  3 NÃO
+ship-force-parity/*      9 rótulos   →   9 com "forge CLI"   ·  0 NÃO
+                                   ────
+                        escopo:      54 rótulos
+```
 
-**Critérios de aceite:**
-- [ ] tabela causa → nº → produto/gate → sítio, com a soma batendo em 512 (ou no nº pós-R2a)
-- [ ] o teste de agrupamento aplicado e escrito por grupo
-- [ ] comando de contagem escrito para cada grupo (nada de "aproximadamente")
-- [ ] as 7 categorias herdadas confirmadas ou refutadas, uma a uma
+🔴 **Os 3 que ficaram de fora têm causa medida, diferente, e NÃO entram aqui:**
+
+```
+release-tag-parity/no-forge-cli/{go,node,py}
+  vacuity guard: stderr missing the no-forge-CLI refusal;
+  stderr: Error: ... could not fetch origin (git fetch origin ...)
+```
+
+Esse cenário roda sob `NO_FORGE_PATH` — o `git` já resolve lá depois do R2c, e a falha agora é
+**outra**: o `fetch` do transporte local. Agrupá-los pelo sintoma ("cenário de release-tag falhando")
+seria repetir o erro do grupo do `IsAbs` desta campanha — estimado em 14, entregou 2, porque sintoma
+parecido foi tomado por causa comum. **Vão para o ML-R2b2.**
+
+#### 🔴 A correção NÃO é simétrica à do `git`
+
+O comentário do próprio script diz por quê:
+
+- **`BASE_PATH` PRECISA ganhar o `gh`** — os cenários `success`, `changelog-missing`,
+  `version-mismatch-*` exigem forge CLI presente;
+- **`NO_FORGE_PATH` NUNCA pode enxergar `gh`** — é a razão de ele existir, e `/usr/bin/gh` vazando
+  para lá foi a falha original do ML-6B.
+
+**Meça antes de escolher o mecanismo** (o R2c ensinou isto): onde mora o `gh` no `windows-latest`, e
+o que mais existe naquele diretório. Foi assim que `/clangarm64/bin` foi liberado para o `git` — por
+medição de que não continha `gh`/`glab`/`az`/`sh`/`bash`, não por suposição.
+
+**E declare, cenário a cenário, qual PATH cada um dos 16 usa** antes de mudar qualquer coisa. Tornar
+`gh` resolvível no `BASE_PATH` pode **quebrar** um cenário que dependa da ausência dele.
+
+#### Critérios de aceite
+
+- [ ] onde o `gh` mora no `windows-latest`, e o conteúdo do diretório, com **saída crua**
+- [ ] os 16 cenários com o PATH que cada um usa, escrito
+- [ ] guarda de não-vacuidade estendida: `gh` **resolve** no `BASE_PATH` **e NÃO resolve** no
+      `NO_FORGE_PATH`, por **processo filho nativo** — falsificação nas duas direções por construção
+- [ ] censo nas duas pernas (`main` × branch) no `windows-latest`: os 54 fecham, **0 FAIL novo**
+- [ ] 🔴 se fecharem menos que 54, a atribuição estava errada — **reporte, não force**
+- [ ] `make quality` verde no Linux
+
+### ML-R2b2 — Triagem dos 76 rótulos restantes por causa
+**Status:** ⬜ Pendente · **Agente:** `ares-tf` · **depende do ML-R2b1** · **pré-requisito do ratchet**
+
+Depois que o R2b1 fechar os 54, sobram **76 rótulos**. Escopo **medido**, não estimado.
+
+**Estrutura já levantada** — a triagem aqui é em boa parte **confirmar ou refutar contra os logs**,
+não descobrir: quatro dos seis grupos já têm causa nomeada no relatório do ML-2B ou em nota de vault.
+
+| grupo | nº | causa já nomeada? |
+|---|---|---|
+| `falsify/validate-parity` | 11 | não |
+| `falsify/setup-sXX-baseline` | ~19 | ML-2B: "cluster não triado — baseline reprova com binário real" |
+| `harness-hooks-parity/*` | 13 | sim — `structural drift` = mojibake, família com nota de vault |
+| `falsify/serve-chain-canonical-link` | 4 | ML-2B: `MODULE_NOT_FOUND` em `bash -c "$(declare -f fn)"` |
+| `falsify/git-branch-guard-dedup` | 2 | sim — dedup cego a `\`, nota de vault de 2026-09-05 |
+| `release-tag-parity/no-forge-cli/*` | 3 | **medida aqui**: `could not fetch origin` sob `NO_FORGE_PATH` |
+| `release-tag-parity/dirty-tree` | 1 | 🔴 **nomeado**: deixou de emitir rótulo nenhum |
+| demais | resto | — |
+
+**Entregável:** tabela causa → nº de **rótulos** → produto ou gate → sítio. Teste de agrupamento:
+*"se eu corrigir esta causa, exatamente estes rótulos fecham — e nenhum outro."*
+
+🔴 **A unidade é RÓTULO, nunca linha de log.** Ver "Medição final" no ML-R2c: contagem de linha
+superestima porque uma causa emite 3-5 linhas por cenário, e corrigi-la devolve **uma** linha `OK`.
+Foi assim que eu estimei 442 e entreguei 68.
+
+🔴 **A soma dos grupos tem de dar 76.** Grupo "residual" é legítimo; grupo *implícito* não é.
+
+**Insumo:** `~/Documents/trackfw-evidencias/censo-x64-2026-09-09/` — 8 logs por perna (`censo-main`
+sem a correção, `censo-branch` com) + `persistem.txt` com a lista nominal.
+
+**Fora deste ML:** corrigir qualquer uma delas.
+
+**Desbloqueia:** ligar o `parity` de Windows no CI com ratchet por nome sobre lista **triada**
+(issues #274 e #275).
 
 ### ML-R3 — O guard de travessia do ramo `default:` fala uma gramática só
 **Status:** ⬜ Pendente · **Agente:** `apolo-tf` · 🔴 **segurança (contido)**
