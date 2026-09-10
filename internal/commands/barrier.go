@@ -646,17 +646,21 @@ type gatesTrustVerdict struct {
 // roadmapTrustForGates determines whether the gates declared in a roadmap can
 // be trusted for execution without --trust-local-gates.
 //
-// Decision (AC4, AC11): the discriminant is git — a roadmap whose content
-// differs from origin/main, or that is absent from origin/main, is untrusted.
+// Posture (AC1): CLOSED by default. Gates execute only when the function can
+// PROVE that the roadmap is present in refs/remotes/origin/main byte-for-byte.
+// Absence of proof is absence of trust — every error path returns trusted:false
+// with a named reason (AC2). There is exactly one trusted:true return, at the
+// very end, after all five proofs succeed.
 //
-// Fail-open cases (trust granted, residual declared in docs/cli-parity.md):
-//   - roadmapPath is not inside a git repository
-//   - origin/main reference is not resolvable (no remote, not fetched)
-//   - any git invocation fails for reasons other than "path absent from origin/main"
+// AC3: the discriminant never parses git stderr. Steps 4 and 5 use
+// "git rev-parse --verify" and "git cat-file -e" whose exit codes answer the
+// questions directly. The fully-qualified ref refs/remotes/origin/main is used
+// throughout so that a local branch or tag named "origin/main" cannot satisfy
+// the trust anchor.
 //
-// These fail-open cases preserve the check-barrier.sh fixtures (temp dirs, no
-// git repo) and fresh clones without a fetched remote, without compromising the
-// PR-review protection. The residuals are named in docs/cli-parity.md.
+// Residual (declared in docs/cli-parity.md): Windows users with
+// core.autocrlf=true may receive "content differs" for an otherwise-identical
+// roadmap (LF vs CRLF). The check fails closed, so the residual is safe.
 func roadmapTrustForGates(roadmapPath string) gatesTrustVerdict {
 	roadmapDir := filepath.Dir(roadmapPath)
 
@@ -664,8 +668,10 @@ func roadmapTrustForGates(roadmapPath string) gatesTrustVerdict {
 	revParseCmd := exec.Command("git", "rev-parse", "--git-dir")
 	revParseCmd.Dir = roadmapDir
 	if err := revParseCmd.Run(); err != nil {
-		// Not a git repo → fail-open.
-		return gatesTrustVerdict{trusted: true}
+		return gatesTrustVerdict{
+			trusted:    false,
+			failureMsg: "gates not evaluated: not a git repository — pass --trust-local-gates to evaluate local gates",
+		}
 	}
 
 	// Step 2: get the repository toplevel so we can compute a repo-relative path.
@@ -673,46 +679,74 @@ func roadmapTrustForGates(roadmapPath string) gatesTrustVerdict {
 	topCmd.Dir = roadmapDir
 	topOut, err := topCmd.Output()
 	if err != nil {
-		return gatesTrustVerdict{trusted: true}
+		return gatesTrustVerdict{
+			trusted:    false,
+			failureMsg: "gates not evaluated: cannot resolve git repository root — pass --trust-local-gates to evaluate local gates",
+		}
 	}
 	topLevel := strings.TrimSpace(string(topOut))
 
 	// Step 3: compute path relative to the toplevel (git uses forward slashes).
 	absRoadmap, err := filepath.Abs(roadmapPath)
 	if err != nil {
-		return gatesTrustVerdict{trusted: true}
+		return gatesTrustVerdict{
+			trusted:    false,
+			failureMsg: "gates not evaluated: cannot compute relative path to roadmap — pass --trust-local-gates to evaluate local gates",
+		}
 	}
 	relPath, err := filepath.Rel(topLevel, absRoadmap)
 	if err != nil {
-		return gatesTrustVerdict{trusted: true}
+		return gatesTrustVerdict{
+			trusted:    false,
+			failureMsg: "gates not evaluated: cannot compute relative path to roadmap — pass --trust-local-gates to evaluate local gates",
+		}
 	}
 	relPath = filepath.ToSlash(relPath)
 
-	// Step 4: retrieve the file at origin/main.
-	showCmd := exec.Command("git", "show", "origin/main:"+relPath)
+	// Step 4: verify that refs/remotes/origin/main resolves to a commit (AC3 —
+	// exit code only, no stderr parsing). Failure means: no remote named origin,
+	// origin/main never fetched, or wrong default branch name. All are untrusted.
+	verifyCmd := exec.Command("git", "rev-parse", "--verify", "--quiet", "refs/remotes/origin/main^{commit}")
+	verifyCmd.Dir = topLevel
+	if err := verifyCmd.Run(); err != nil {
+		return gatesTrustVerdict{
+			trusted:    false,
+			failureMsg: "gates not evaluated: origin/main ref not available — pass --trust-local-gates to evaluate local gates",
+		}
+	}
+
+	// Step 5: check whether the roadmap path exists in refs/remotes/origin/main
+	// (AC3 — "git cat-file -e" exits non-zero when the object does not exist).
+	refPath := "refs/remotes/origin/main:" + relPath
+	catFileCmd := exec.Command("git", "cat-file", "-e", refPath)
+	catFileCmd.Dir = topLevel
+	if err := catFileCmd.Run(); err != nil {
+		return gatesTrustVerdict{
+			trusted:    false,
+			failureMsg: "gates not evaluated: roadmap is not committed in origin/main — pass --trust-local-gates to evaluate local gates",
+		}
+	}
+
+	// Step 6: retrieve the file content from refs/remotes/origin/main.
+	showCmd := exec.Command("git", "show", refPath)
 	showCmd.Dir = topLevel
 	mainContent, err := showCmd.Output()
 	if err != nil {
-		// If the path specifically does not exist in origin/main, it is a
-		// PR-added file → untrusted.
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			stderr := string(exitErr.Stderr)
-			if strings.Contains(stderr, "does not exist in") ||
-				strings.Contains(stderr, "exists on disk, but not in") {
-				return gatesTrustVerdict{
-					trusted:    false,
-					failureMsg: "gates not evaluated: roadmap is not committed in origin/main — pass --trust-local-gates to evaluate local gates",
-				}
-			}
+		// The cat-file check already confirmed the object exists; this is an
+		// unexpected failure (e.g. transient I/O). Still fail closed.
+		return gatesTrustVerdict{
+			trusted:    false,
+			failureMsg: "gates not evaluated: cannot read roadmap from origin/main — pass --trust-local-gates to evaluate local gates",
 		}
-		// Any other failure (origin not configured, ref not fetched) → fail-open.
-		return gatesTrustVerdict{trusted: true}
 	}
 
-	// Step 5: compare content byte-for-byte.
+	// Step 7: compare content byte-for-byte.
 	localContent, err := os.ReadFile(roadmapPath)
 	if err != nil {
-		return gatesTrustVerdict{trusted: true}
+		return gatesTrustVerdict{
+			trusted:    false,
+			failureMsg: "gates not evaluated: cannot read local roadmap file — pass --trust-local-gates to evaluate local gates",
+		}
 	}
 	if string(mainContent) != string(localContent) {
 		return gatesTrustVerdict{
@@ -720,6 +754,8 @@ func roadmapTrustForGates(roadmapPath string) gatesTrustVerdict {
 			failureMsg: "gates not evaluated: roadmap content differs from origin/main — pass --trust-local-gates to evaluate local gates",
 		}
 	}
+
+	// Proven: roadmap is present in refs/remotes/origin/main and byte-identical.
 	return gatesTrustVerdict{trusted: true}
 }
 

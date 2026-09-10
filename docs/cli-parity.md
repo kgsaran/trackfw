@@ -2049,21 +2049,28 @@ roadmap — uses the direct CLI and gets protection without having to remember t
 guard that requires conscious opt-in for the dangerous case stays effective. The dominant
 (safe) flow is frictionless; the rare (risky) flow requires one more word.
 
-#### Fail-open cases (declared residuals)
+#### not_evaluated cases (fail-closed posture)
 
-<!-- trackfw-contract: gap reason=os casos fail-open são decisões de desenho declaradas (ML-2A); não há gate que simule ausência de remote ou falha de git invocation cross-CLI — seriam testes de integração dependentes de ambiente, não cross-CLI -->
+<!-- trackfw-contract: gate=scripts/check-barrier.sh -->
+<!-- trackfw-contract: gap reason=não há gate que simule ausência de remote ou falha de git invocation cross-CLI — seriam testes de integração dependentes de ambiente, não cross-CLI -->
 
-The trust check is **fail-open** in the following cases. Gates execute as if trusted:
+The trust check is **fail-closed**: gates execute **only** when the roadmap content is proven
+byte-for-byte identical to `origin/main`. Every other condition — including errors — yields
+`status: "not_evaluated"`. There are no fail-open cases.
 
-| Case | Reason | Residual |
-|---|---|---|
-| Roadmap is not inside a git repository | Cannot determine trust; test fixtures run in temp dirs | Declared in AC13 context: environment without git is considered safe enough |
-| `origin/main` reference is not resolvable (no remote configured, not fetched) | Ambiguous — could be a fresh clone | Maintainer should fetch before running barrier on PRs |
-| Any git invocation fails for reasons other than "path absent from origin/main" | Conservative: don't break normal usage for infrastructure issues | Log absence is the only way to detect this |
+| Case | `not_evaluated` reason string |
+|---|---|
+| Not a git repository | `not a git repository` |
+| `git rev-parse --show-toplevel` fails | `cannot resolve git repository root` |
+| Cannot compute relative path to roadmap | `cannot compute relative path to roadmap` |
+| `refs/remotes/origin/main` ref not available (no remote, not fetched) | `origin/main ref not available` |
+| Roadmap path not present in `origin/main` | `roadmap is not committed in origin/main` |
+| `git show` of the roadmap from `origin/main` fails | `cannot read roadmap from origin/main` |
+| Local roadmap file cannot be read | `cannot read local roadmap file` |
+| Local content differs from `origin/main` content | `roadmap content differs from origin/main` |
 
-Gates are NOT fail-open when the path specifically **does not exist in `origin/main`** (exit 128,
-"does not exist in" message from git). That case is the PR-vector: the roadmap was added by the
-PR contributor and is not yet merged.
+The only exit from `not_evaluated` into gate execution is proof of byte-identical content — one
+code path, one `trusted: true` return. Use `--trust-local-gates` to bypass for WIP roadmaps.
 
 #### Pinned failure strings for `not_evaluated` (AC3, AC6, AC7)
 
@@ -2071,10 +2078,16 @@ PR contributor and is not yet merged.
 
 When the trust check refuses gate execution, the `gates` check gets `status: "not_evaluated"` and
 exactly one entry in `failures`. The `commands` array is still populated from `parseGates` so the
-operator can see what would have been executed. The two pinned strings are:
+operator can see what would have been executed. All eight pinned strings:
 
 ```
+gates not evaluated: not a git repository — pass --trust-local-gates to evaluate local gates
+gates not evaluated: cannot resolve git repository root — pass --trust-local-gates to evaluate local gates
+gates not evaluated: cannot compute relative path to roadmap — pass --trust-local-gates to evaluate local gates
+gates not evaluated: origin/main ref not available — pass --trust-local-gates to evaluate local gates
 gates not evaluated: roadmap is not committed in origin/main — pass --trust-local-gates to evaluate local gates
+gates not evaluated: cannot read roadmap from origin/main — pass --trust-local-gates to evaluate local gates
+gates not evaluated: cannot read local roadmap file — pass --trust-local-gates to evaluate local gates
 gates not evaluated: roadmap content differs from origin/main — pass --trust-local-gates to evaluate local gates
 ```
 

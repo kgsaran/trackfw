@@ -1176,9 +1176,10 @@ fi
 
 # --- Cenário CRLF: "**Gates da wave:**" é reconhecido e os comandos declarados
 # EXECUTAM (não só "gates: passed" com zero comandos) nos 3 runtimes quando toda linha
-# termina em CRLF. FALSIFY_DIR não é um repositório git → roadmapTrustForGates cai no ramo
-# fail-open (trusted) em qualquer dos 3 runtimes, então os gates rodam sem
-# --trust-local-gates — mesma premissa das fixtures de falsificação acima.
+# termina em CRLF. FALSIFY_DIR não é um repositório git → roadmapTrustForGates retorna
+# not_evaluated com postura fail-closed; --trust-local-gates faz os gates rodarem sem
+# verificação de origem, que é o que este cenário quer medir (o parser de CRLF, não a
+# confiança do roadmap).
 write_fixture_crlf crlf-gates-header-recognized <<'EOF'
 ## Wave 1 — X
 ### ML-1A — x
@@ -1193,7 +1194,7 @@ true
 EOF
 CRLF_GATES_DIVERGENT=""
 for rt in go node py; do
-  run_cli "$rt" "$FALSIFY_DIR" barrier crlf-gates-header-recognized --wave 1 --json
+  run_cli "$rt" "$FALSIFY_DIR" barrier crlf-gates-header-recognized --wave 1 --json --trust-local-gates
   gates_status=$(doc_check_json "$CLI_STDOUT" "gates" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))")
   gates_evidence=$(doc_check_json "$CLI_STDOUT" "gates" "evidence")
   if [[ "$gates_status" != "passed" || "$gates_evidence" != '["true: exit 0"]' ]]; then
@@ -1226,7 +1227,7 @@ true
 EOF
 GATES_PREFIX_DIVERGENT=""
 for rt in go node py; do
-  run_cli "$rt" "$FALSIFY_DIR" barrier gates-header-prefix-match-with-trailing-prose --wave 1 --json
+  run_cli "$rt" "$FALSIFY_DIR" barrier gates-header-prefix-match-with-trailing-prose --wave 1 --json --trust-local-gates
   gates_status=$(doc_check_json "$CLI_STDOUT" "gates" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))")
   gates_evidence=$(doc_check_json "$CLI_STDOUT" "gates" "evidence")
   if [[ "$gates_status" != "passed" || "$gates_evidence" != '["true: exit 0"]' ]]; then

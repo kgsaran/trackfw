@@ -98,7 +98,7 @@ def test_resolve_roadmap_em_done():
         ml_status="✅",
         criteria_lines=["- [x] build passes"],
     )
-    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-barrier-fixture", "--wave", "1", "--json")
+    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-barrier-fixture", "--wave", "1", "--json", "--trust-local-gates")
     assert code == 0, f"stdout={stdout} stderr={stderr}"
     doc = json.loads(stdout)
     assert doc["status"] == "passed"
@@ -110,7 +110,7 @@ def test_resolve_roadmap_com_extensao_md_explicita():
         ml_status="✅",
         criteria_lines=["- [x] build passes"],
     )
-    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-barrier-fixture.md", "--wave", "1", "--json")
+    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-barrier-fixture.md", "--wave", "1", "--json", "--trust-local-gates")
     assert code == 0, f"stdout={stdout} stderr={stderr}"
 
 
@@ -252,7 +252,7 @@ def test_wave_sufixo_bis_resolve_heading_bis():
         "### ML-3A — Z\n**Status:** ✅\n**Critérios de aceite:**\n- [x] c\n\n"
     )
     (dir_ / "docs/roadmaps/wip/ROADMAP-suffix.md").write_text(content, encoding="utf-8")
-    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-suffix", "--wave", "2-bis", "--json")
+    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-suffix", "--wave", "2-bis", "--json", "--trust-local-gates")
     assert code == 0, f"expected exit 0 for --wave 2-bis, got {code}\nstdout={stdout}\nstderr={stderr}"
     doc = json.loads(stdout)
     assert doc["status"] == "passed"
@@ -451,7 +451,7 @@ def test_gates_multiplos_comandos_ordem_preservada():
         criteria_lines=["- [x] build passes"],
         gate_commands=["true", "true", "false"],
     )
-    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-barrier-fixture", "--wave", "1", "--json")
+    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-barrier-fixture", "--wave", "1", "--json", "--trust-local-gates")
     assert code == 1
     doc = json.loads(stdout)
     gates_check = next(c for c in doc["checks"] if c["name"] == "gates")
@@ -469,7 +469,7 @@ def test_gates_ferramenta_ausente_dentro_do_sh_e_exit_127_normal_nao_not_evaluat
         criteria_lines=["- [x] build passes"],
         gate_commands=["nosuchtool-xyz"],
     )
-    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-barrier-fixture", "--wave", "1", "--json")
+    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-barrier-fixture", "--wave", "1", "--json", "--trust-local-gates")
     assert code == 1
     doc = json.loads(stdout)
     gates_check = next(c for c in doc["checks"] if c["name"] == "gates")
@@ -496,7 +496,7 @@ def test_gates_sh_ausente_do_path_reporta_not_evaluated_com_mensagem_pinada():
     _place_executable_in_path(git_path, curated)
     try:
         stdout, stderr, code = _run_barrier_cli(
-            dir_, "ROADMAP-barrier-fixture", "--wave", "1", "--json", curated_path=curated,
+            dir_, "ROADMAP-barrier-fixture", "--wave", "1", "--json", "--trust-local-gates", curated_path=curated,
         )
         assert code == 1
         doc = json.loads(stdout)
@@ -518,7 +518,7 @@ def test_gates_stdout_nao_polui_documento_json():
         criteria_lines=["- [x] build passes"],
         gate_commands=["echo hello-from-gate"],
     )
-    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-barrier-fixture", "--wave", "1", "--json")
+    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-barrier-fixture", "--wave", "1", "--json", "--trust-local-gates")
     assert code == 0, f"stdout={stdout} stderr={stderr}"
     # stdout deve conter exatamente um documento JSON válido, sem output do gate.
     doc = json.loads(stdout)
@@ -535,7 +535,7 @@ def test_modo_texto_sem_json_reporta_status():
         ml_status="✅",
         criteria_lines=["- [x] build passes"],
     )
-    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-barrier-fixture", "--wave", "1")
+    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-barrier-fixture", "--wave", "1", "--trust-local-gates")
     assert code == 0
     assert "passed" in stdout.lower()
     # Modo texto não deve ser JSON válido.
@@ -556,7 +556,7 @@ def test_acceptance_evidence_conta_criterios_atendidos():
         ml_status="✅",
         criteria_lines=["- [x] a", "- [x] b", "- [x] c"],
     )
-    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-barrier-fixture", "--wave", "1", "--json")
+    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-barrier-fixture", "--wave", "1", "--json", "--trust-local-gates")
     assert code == 0, f"stdout={stdout} stderr={stderr}"
     doc = json.loads(stdout)
     evidence_check = next(c for c in doc["checks"] if c["name"] == "acceptance_evidence")
@@ -799,7 +799,7 @@ def test_barrier_cli_cabecalho_ingles_e_status_por_palavra_passam_e2e():
         "- [x] build passes\n"
     )
     _write_roadmap(dir_, content)
-    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-regression", "--wave", "1", "--json")
+    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-regression", "--wave", "1", "--json", "--trust-local-gates")
     assert code == 0, f"stdout={stdout} stderr={stderr}"
     doc = json.loads(stdout)
     checks = {c["name"]: c for c in doc["checks"]}
@@ -1051,7 +1051,7 @@ def test_barrier_cli_cabecalho_de_gates_com_prosa_final_ainda_executa_o_gate_e2e
         "- [x] build passes\n"
     )
     _write_roadmap(dir_, content)
-    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-regression", "--wave", "1", "--json")
+    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-regression", "--wave", "1", "--json", "--trust-local-gates")
     assert code == 1, f"esperava exit 1 (blocked), stdout={stdout} stderr={stderr}"
     doc = json.loads(stdout)
     checks = {c["name"]: c for c in doc["checks"]}
@@ -1104,7 +1104,7 @@ def test_barrier_cli_crlf_roadmap_com_ml_completo_passa_e2e():
         "",
     ])
     _write_roadmap(dir_, content)
-    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-regression", "--wave", "1", "--json")
+    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-regression", "--wave", "1", "--json", "--trust-local-gates")
     assert code == 0, f"esperava exit 0 (passed), stdout={stdout} stderr={stderr}"
     doc = json.loads(stdout)
     assert doc["status"] == "passed"
@@ -1209,7 +1209,7 @@ def test_barrier_cli_crlf_roadmap_gates_da_wave_e_reconhecido_e_comando_roda_e2e
         "",
     ])
     _write_roadmap(dir_, content)
-    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-regression", "--wave", "1", "--json")
+    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-regression", "--wave", "1", "--json", "--trust-local-gates")
     assert code == 1, f"esperava exit 1 (blocked pelo gate), stdout={stdout} stderr={stderr}"
     doc = json.loads(stdout)
     checks = {c["name"]: c for c in doc["checks"]}

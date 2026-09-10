@@ -4,6 +4,27 @@
 
 ---
 
+## Sessão 2026-09-10i — apolo-tf (Backend) — Inversão de postura do trust-check do barrier: ENTREGUE, aguarda auditoria do arquiteto
+
+Branch `fix/barrier-executa-gate-de-roadmap-nao-confiavel`.
+
+**Escopo:** REQ-2026-08-30-barrier-executa-gate-de-roadmap-nao-confiavel-porque-roadmaptrustforgates-falha-aberto-em-todo-caminho-de-erro. Inverter postura de fail-open para fail-closed nos 3 CLIs (Go, Node.js, Python). Implementação de ML-1A a ML-1H do roadmap (todos tratados como um único microbatch coeso — são AC1–AC8 da mesma REQ, mesma superfície, mesma causa).
+
+**Status:** CONCLUÍDO — aguarda auditoria do trackfw_architect.
+
+**Evidências:**
+- Go: `go test ./internal/commands/ -run TestBarrier` e `TestRoadmapTrust` — todos passam
+- Go: `go test ./...` — suite completa green
+- Node.js: `npm test` (npm/): 892 passed, 0 failed
+- Python: `python3 -m pytest tests/test_barrier.py -q` (pypi/): 52 passed, 0 failed
+- `trackfw validate`: 0 erros (173 warnings pré-existentes)
+- Falsificação provada: sentinel `/tmp/EXECUTOU_PROVA_FALSIFICACAO` AUSENTE nos 3 CLIs ao rodar `barrier` sem `--trust-local-gates` em diretório não-git com gate hostil `touch /tmp/EXECUTOU_PROVA_FALSIFICACAO`
+- `roadmapTrustForGates` tem exatamente 1 `return gatesTrustVerdict{trusted: true}` (test estrutural `TestRoadmapTrustForGates_TrustedCountIsOne` passa)
+- `docs/cli-parity.md`: seção "Fail-open cases" substituída por "not_evaluated cases (fail-closed posture)" com tabela de 8 strings pinadas
+- `make quality` EXIT 0: 0 FAILs, todos 181 cenários de falsificação passam (check-barrier.sh, check-roadmap-barrier-contract.sh, check-gates-falsify.sh, e toda suite Python/Node/Go)
+
+---
+
 ## Sessão 2026-09-10h — ares-tf (Infrastructure) — Corretivo ML-3A: ENTREGUE, aguarda auditoria do arquiteto
 
 Branch `fix/ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega`.

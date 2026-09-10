@@ -8,6 +8,7 @@ package commands
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -362,7 +363,9 @@ func TestBarrierCLI_EnglishHeaderAndWordStatusPass(t *testing.T) {
 		t.Fatalf("write roadmap: %v", err)
 	}
 
-	stdout, stderr, code := runBarrierCLI(t, dir, "ROADMAP-english-fixture", "--wave", "1", "--json")
+	// --trust-local-gates: temp dir (no git repo); test exercises English header
+	// parsing, not the trust check.
+	stdout, stderr, code := runBarrierCLI(t, dir, "ROADMAP-english-fixture", "--wave", "1", "--json", "--trust-local-gates")
 	if code != 0 {
 		t.Fatalf("expected exit 0 (passed), got %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
 	}
@@ -956,22 +959,203 @@ func TestBarrierRegression_FourthExitTwoMessage(t *testing.T) {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// Trust check tests (AC11, AC12, AC3, AC6 — ML-2A)
+// Trust check tests (AC1–AC5, AC3, AC6 — REQ-2026-08-30)
+//
+// Posture: CLOSED by default. Exactly one trusted:true return in
+// roadmapTrustForGates (after all proofs succeed). Every error path returns
+// trusted:false with a named reason (AC2). No stderr string matching (AC3).
 // ────────────────────────────────────────────────────────────────────────────
 
-// TestRoadmapTrustForGates_FailOpenWhenNotGitRepo verifies that when the roadmap
-// is in a directory that is not a git repository, the trust verdict is open
-// (trusted). This is the fail-open residual for non-git environments such as the
-// check-barrier.sh fixtures in temp dirs.
-func TestRoadmapTrustForGates_FailOpenWhenNotGitRepo(t *testing.T) {
+// makeTrustGitFixture creates a minimal git repo with a bare origin in dir.
+// It writes roadmapContent to docs/roadmaps/wip/ROADMAP-trust-test.md on disk
+// (not yet committed), initialises the repo pointing to the bare origin, and
+// optionally commits-and-pushes the roadmap (commitToOrigin=true).
+// Returns the clone path and the roadmap path inside it.
+func makeTrustGitFixture(t *testing.T, roadmapContent string, commitToOrigin bool) (string, string) {
+	t.Helper()
+	base := t.TempDir()
+	// On macOS, t.TempDir() returns a symlink path (/var/folders/…) while
+	// git rev-parse --show-toplevel resolves to the physical path
+	// (/private/var/folders/…). Resolve now so filepath.Rel agrees.
+	if phys, err := filepath.EvalSymlinks(base); err == nil {
+		base = phys
+	}
+	bareDir := filepath.Join(base, "origin.git")
+	cloneDir := filepath.Join(base, "clone")
+	roadmapRelPath := filepath.Join("docs", "roadmaps", "wip", "ROADMAP-trust-test.md")
+
+	run := func(dir string, args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(),
+			"GIT_CONFIG_GLOBAL="+filepath.Join(base, "gitconfig"),
+			"GIT_CONFIG_SYSTEM=/dev/null",
+			"GIT_TERMINAL_PROMPT=0",
+			"HOME="+base,
+			"LC_ALL=C",
+		)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v in %s: %v\n%s", args, dir, err, out)
+		}
+	}
+
+	// Write a minimal git config to suppress signing and identity prompts.
+	gitcfg := filepath.Join(base, "gitconfig")
+	_ = os.WriteFile(gitcfg, []byte("[user]\n\temail = test@trackfw\n\tname = trackfw test\n[commit]\n\tgpgsign = false\n[core]\n\thooksPath = /dev/null\n\tautocrlf = false\n"), 0600)
+
+	run("", "init", "--bare", "-b", "main", bareDir)
+	run("", "clone", "-q", bareDir, cloneDir)
+
+	// Write minimal trackfw.yaml so the validator is happy.
+	_ = os.MkdirAll(cloneDir, 0755)
+	_ = os.WriteFile(filepath.Join(cloneDir, "trackfw.yaml"), []byte("req_dir: docs/req\nroadmap_dir: docs/roadmaps\nadr_dirs: []\n"), 0644)
+
+	// Base commit (trackfw.yaml only) to have something on main.
+	run(cloneDir, "add", "trackfw.yaml")
+	run(cloneDir, "commit", "-q", "-m", "base")
+	run(cloneDir, "push", "-q", "origin", "main")
+
+	// Write the roadmap file to disk.
+	roadmapPath := filepath.Join(cloneDir, roadmapRelPath)
+	_ = os.MkdirAll(filepath.Dir(roadmapPath), 0755)
+	if err := os.WriteFile(roadmapPath, []byte(roadmapContent), 0644); err != nil {
+		t.Fatalf("write roadmap: %v", err)
+	}
+
+	if commitToOrigin {
+		run(cloneDir, "add", roadmapRelPath)
+		run(cloneDir, "commit", "-q", "-m", "add roadmap")
+		run(cloneDir, "push", "-q", "origin", "main")
+	}
+
+	return cloneDir, roadmapPath
+}
+
+// TestRoadmapTrustForGates_NotGitRepo verifies that a roadmap outside any git
+// repository is NOT trusted (fails closed — AC1).
+// Reconciliation: this test asserts that the absence of a git repo is treated
+// as absence of proof, which is the AC1 guarantee.
+func TestRoadmapTrustForGates_NotGitRepo(t *testing.T) {
 	dir := t.TempDir()
 	roadmapPath := filepath.Join(dir, "ROADMAP.md")
 	if err := os.WriteFile(roadmapPath, []byte("# Roadmap: test\n"), 0644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	verdict := roadmapTrustForGates(roadmapPath)
+	if verdict.trusted {
+		t.Fatal("expected trusted=false for non-git-repo path, got trusted=true")
+	}
+	const wantMsg = "gates not evaluated: not a git repository — pass --trust-local-gates to evaluate local gates"
+	if verdict.failureMsg != wantMsg {
+		t.Fatalf("wrong failureMsg:\n  got  %q\n  want %q", verdict.failureMsg, wantMsg)
+	}
+}
+
+// TestRoadmapTrustForGates_NoRemoteOrigin verifies that a git repo with no
+// remote configured is NOT trusted (AC1, AC2 — named reason).
+// Reconciliation: this test asserts that "origin/main ref not available" is
+// the named reason when no remote exists, satisfying AC2.
+func TestRoadmapTrustForGates_NoRemoteOrigin(t *testing.T) {
+	base := t.TempDir()
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = base
+		cmd.Env = append(os.Environ(),
+			"GIT_CONFIG_GLOBAL="+filepath.Join(base, "gitconfig"),
+			"GIT_CONFIG_SYSTEM=/dev/null",
+			"GIT_TERMINAL_PROMPT=0",
+			"HOME="+base,
+			"LC_ALL=C",
+		)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	_ = os.WriteFile(filepath.Join(base, "gitconfig"), []byte("[user]\n\temail = test@trackfw\n\tname = trackfw test\n[commit]\n\tgpgsign = false\n[core]\n\thooksPath = /dev/null\n"), 0600)
+	run("init", "-b", "main", base)
+	run("commit", "--allow-empty", "-m", "init")
+
+	roadmapPath := filepath.Join(base, "ROADMAP.md")
+	if err := os.WriteFile(roadmapPath, []byte("# Roadmap\n"), 0644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	verdict := roadmapTrustForGates(roadmapPath)
+	if verdict.trusted {
+		t.Fatal("expected trusted=false when no remote origin, got trusted=true")
+	}
+	const wantMsg = "gates not evaluated: origin/main ref not available — pass --trust-local-gates to evaluate local gates"
+	if verdict.failureMsg != wantMsg {
+		t.Fatalf("wrong failureMsg:\n  got  %q\n  want %q", verdict.failureMsg, wantMsg)
+	}
+}
+
+// TestRoadmapTrustForGates_NotCommittedInOrigin verifies that a roadmap that
+// exists on disk but has NOT been committed to origin/main is NOT trusted (AC2).
+// Reconciliation: this test asserts that "roadmap is not committed in
+// origin/main" is the named reason, satisfying AC2 for the not-committed case.
+func TestRoadmapTrustForGates_NotCommittedInOrigin(t *testing.T) {
+	_, roadmapPath := makeTrustGitFixture(t, "# Roadmap: test\n", false)
+	verdict := roadmapTrustForGates(roadmapPath)
+	if verdict.trusted {
+		t.Fatal("expected trusted=false for uncommitted roadmap, got trusted=true")
+	}
+	const wantMsg = "gates not evaluated: roadmap is not committed in origin/main — pass --trust-local-gates to evaluate local gates"
+	if verdict.failureMsg != wantMsg {
+		t.Fatalf("wrong failureMsg:\n  got  %q\n  want %q", verdict.failureMsg, wantMsg)
+	}
+}
+
+// TestRoadmapTrustForGates_IdenticalToOriginMain verifies that a roadmap
+// committed to origin/main and byte-identical to the local file IS trusted (AC5
+// positive arm).
+// Reconciliation: this test asserts that the sole trusted:true path requires
+// byte-identical content in refs/remotes/origin/main, which is the AC5 guarantee.
+func TestRoadmapTrustForGates_IdenticalToOriginMain(t *testing.T) {
+	_, roadmapPath := makeTrustGitFixture(t, "# Roadmap: test\n", true)
+	verdict := roadmapTrustForGates(roadmapPath)
 	if !verdict.trusted {
-		t.Fatalf("expected trusted=true for non-git-repo path, got failureMsg=%q", verdict.failureMsg)
+		t.Fatalf("expected trusted=true for roadmap identical to origin/main, got failureMsg=%q", verdict.failureMsg)
+	}
+}
+
+// TestRoadmapTrustForGates_ContentDiffers verifies that a roadmap committed to
+// origin/main but locally modified is NOT trusted (AC5, AC2 — named reason).
+// Reconciliation: this test asserts that "roadmap content differs from
+// origin/main" is the named reason, satisfying AC2 for the content-differs case.
+func TestRoadmapTrustForGates_ContentDiffers(t *testing.T) {
+	_, roadmapPath := makeTrustGitFixture(t, "# Roadmap: original\n", true)
+	// Modify local content without pushing.
+	if err := os.WriteFile(roadmapPath, []byte("# Roadmap: modified\n"), 0644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	verdict := roadmapTrustForGates(roadmapPath)
+	if verdict.trusted {
+		t.Fatal("expected trusted=false for locally-modified roadmap, got trusted=true")
+	}
+	const wantMsg = "gates not evaluated: roadmap content differs from origin/main — pass --trust-local-gates to evaluate local gates"
+	if verdict.failureMsg != wantMsg {
+		t.Fatalf("wrong failureMsg:\n  got  %q\n  want %q", verdict.failureMsg, wantMsg)
+	}
+}
+
+// TestRoadmapTrustForGates_TrustedCountIsOne verifies that roadmapTrustForGates
+// has exactly one trusted:true return (the proven-identical path). This is a
+// structural guard: any new fail-open regression would increase this count to > 1.
+// Reconciliation: this test asserts that "exactly one trusted:true return" is the
+// AC1 structural guarantee. grep -c is the measurement.
+func TestRoadmapTrustForGates_TrustedCountIsOne(t *testing.T) {
+	src, err := os.ReadFile(filepath.Join("barrier.go"))
+	if err != nil {
+		t.Fatalf("read barrier.go: %v", err)
+	}
+	const marker = "return gatesTrustVerdict{trusted: true}"
+	count := strings.Count(string(src), marker)
+	if count != 1 {
+		t.Fatalf("expected exactly 1 trusted:true return in roadmapTrustForGates, found %d — a fail-open regression may have been introduced", count)
 	}
 }
 

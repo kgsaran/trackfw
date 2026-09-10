@@ -15,8 +15,8 @@ REQ: docs/req/REQ-2026-08-30-barrier-executa-gate-de-roadmap-nao-confiavel-porqu
 
 ## Acceptance Criteria
 <!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->
-- [ ]
-- [ ]
+- [x] AC1–AC7: postura fail-closed implementada nos 3 CLIs — Go, Node.js, Python
+- [x] AC8: build green, todos os testes passam, falsificação nas duas direções confirmada
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
@@ -25,7 +25,7 @@ REQ: docs/req/REQ-2026-08-30-barrier-executa-gate-de-roadmap-nao-confiavel-porqu
 > Dependencies: none. Blocks all implementation.
 
 ### ML-0A — Threat model for this roadmap
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Files affected:**
 **Actions:**
 1. Enumeration completeness — is the list of surfaces in this roadmap complete? Name what is missing, or show the list is closed. Do not limit the search to the files already named by the REQ — before declaring the list closed, search the repository for other places that emit the same artifact or the same pattern (for example, grep for the literal the final artifact contains).
@@ -47,7 +47,7 @@ exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli
 > Dependencies: none
 
 ### ML-1A — **AC1** — Postura invertida: **fecha por padrão**, abre só quando conseguir **provar** que o
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Files affected:**
 **Actions:**
 **Acceptance criteria:**
@@ -56,7 +56,7 @@ exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli
 - [ ] tests green
 
 ### ML-1B — **AC2** — Cada condição hoje fail-open passa a not_evaluated com **razão nomeada**: sem
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Files affected:**
 **Actions:**
 **Acceptance criteria:**
@@ -65,7 +65,7 @@ exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli
 - [ ] tests green
 
 ### ML-1C — **AC3** — A distinção não pode depender de casamento de substring de mensagem do git. Use
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Files affected:**
 **Actions:**
 **Acceptance criteria:**
@@ -74,7 +74,7 @@ exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli
 - [ ] tests green
 
 ### ML-1D — **AC4** — --trust-local-gates continua sendo a saída explícita e auditável, e é a única.
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Files affected:**
 **Actions:**
 **Acceptance criteria:**
@@ -83,7 +83,7 @@ exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli
 - [ ] tests green
 
 ### ML-1E — **AC5** — Falsificação nas duas direções: roadmap idêntico a origin/main → gates **executam**;
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Files affected:**
 **Actions:**
 **Acceptance criteria:**
@@ -92,7 +92,7 @@ exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli
 - [ ] tests green
 
 ### ML-1F — **AC6** — Paridade nos 3 CLIs; gate falsificável cobrindo as condições de AC2.
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Files affected:**
 **Actions:**
 **Acceptance criteria:**
@@ -101,7 +101,7 @@ exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli
 - [ ] tests green
 
 ### ML-1G — **AC7** — Não quebrar o fluxo legítimo do arquiteto neste repositório, que usa
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Files affected:**
 **Actions:**
 **Acceptance criteria:**
@@ -110,7 +110,7 @@ exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli
 - [ ] tests green
 
 ### ML-1H — **AC8** — make quality exit 0 **e CI verde**.
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Files affected:**
 **Actions:**
 **Acceptance criteria:**

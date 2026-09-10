@@ -72,7 +72,8 @@ test('barrier regression: --wave 2-bis resolves ## Wave 2-bis heading at CLI lev
     '### ML-2A — Fixture ML\n**Status:** ✅\n**Critérios de aceite:**\n- [x] build passes\n\n'
   const dir = setupRegressionFixture(content)
   try {
-    const { stdout, stderr, status } = runBarrierCLI(dir, 'ROADMAP-regression', '--wave', '2-bis', '--json')
+    // --trust-local-gates: temp dir; test exercises wave-label suffix resolution.
+    const { stdout, stderr, status } = runBarrierCLI(dir, 'ROADMAP-regression', '--wave', '2-bis', '--json', '--trust-local-gates')
     assert.equal(status, 0, `expected exit 0 (passed), got ${status}\nstdout: ${stdout}\nstderr: ${stderr}`)
     const doc = JSON.parse(stdout)
     assert.equal(doc.status, 'passed')
@@ -754,7 +755,8 @@ test('barrier CLI: English header + word status passes end-to-end (AC1/AC12)', (
     '- [x] build passes\n'
   const dir = setupRegressionFixture(content)
   try {
-    const { stdout, stderr, status } = runBarrierCLI(dir, 'ROADMAP-regression', '--wave', '1', '--json')
+    // --trust-local-gates: temp dir; test exercises English header/status parsing.
+    const { stdout, stderr, status } = runBarrierCLI(dir, 'ROADMAP-regression', '--wave', '1', '--json', '--trust-local-gates')
     assert.equal(status, 0, `expected exit 0, got ${status}\nstdout: ${stdout}\nstderr: ${stderr}`)
     const doc = JSON.parse(stdout)
     for (const name of ['mls_complete', 'acceptance_evidence']) {
@@ -965,7 +967,8 @@ test('barrier CLI: gates header with trailing prose still runs the gate (ML-1B r
     '- [x] build passes\n'
   const dir = setupRegressionFixture(content)
   try {
-    const { stdout, stderr, status } = runBarrierCLI(dir, 'ROADMAP-regression', '--wave', '1', '--json')
+    // --trust-local-gates: temp dir; test exercises gate-header prefix parsing.
+    const { stdout, stderr, status } = runBarrierCLI(dir, 'ROADMAP-regression', '--wave', '1', '--json', '--trust-local-gates')
     assert.equal(status, 1, `expected exit 1 (blocked), got ${status}\nstdout: ${stdout}\nstderr: ${stderr}`)
     const doc = JSON.parse(stdout)
     const gatesCheck = doc.checks.find((c) => c.name === 'gates')
@@ -1013,7 +1016,8 @@ test('barrier regression: CRLF roadmap with a fully completed ML passes (ML-3C)'
   ].join('\r\n')
   const dir = setupRegressionFixture(content)
   try {
-    const { stdout, stderr, status } = runBarrierCLI(dir, 'ROADMAP-regression', '--wave', '1', '--json')
+    // --trust-local-gates: temp dir; test exercises CRLF normalisation.
+    const { stdout, stderr, status } = runBarrierCLI(dir, 'ROADMAP-regression', '--wave', '1', '--json', '--trust-local-gates')
     assert.equal(status, 0, `expected exit 0 (passed), got ${status}\nstdout: ${stdout}\nstderr: ${stderr}`)
     const doc = JSON.parse(stdout)
     assert.equal(doc.status, 'passed')
@@ -1139,7 +1143,8 @@ test('barrier regression: CRLF roadmap — "Gates da wave:" fence is recognized 
   ].join('\r\n')
   const dir = setupRegressionFixture(content)
   try {
-    const { stdout, stderr, status } = runBarrierCLI(dir, 'ROADMAP-regression', '--wave', '1', '--json')
+    // --trust-local-gates: temp dir; test exercises CRLF gate-fence parsing.
+    const { stdout, stderr, status } = runBarrierCLI(dir, 'ROADMAP-regression', '--wave', '1', '--json', '--trust-local-gates')
     assert.equal(status, 1, `expected exit 1 (blocked by the gate), got ${status}\nstdout: ${stdout}\nstderr: ${stderr}`)
     const doc = JSON.parse(stdout)
     const gatesCheck = doc.checks.find((c) => c.name === 'gates')

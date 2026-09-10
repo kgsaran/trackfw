@@ -115,7 +115,8 @@ test('barrier contract: wave_verde_passa', () => {
     gateCommands: null, // sem bloco de gates — zero gates é legal
   })
   try {
-    const { stdout, stderr, status } = runBarrierCLI(dir, 'ROADMAP-barrier-fixture', '--wave', '1', '--json')
+    // --trust-local-gates: temp dir (no git repo); test exercises gate-evaluation behaviour.
+    const { stdout, stderr, status } = runBarrierCLI(dir, 'ROADMAP-barrier-fixture', '--wave', '1', '--json', '--trust-local-gates')
     assert.equal(status, 0, `expected exit 0, got ${status}\nstdout: ${stdout}\nstderr: ${stderr}`)
 
     const doc = JSON.parse(stdout)
@@ -217,7 +218,8 @@ test('barrier contract: gate_falho_bloqueia', () => {
     gateCommands: ['false'],
   })
   try {
-    const { stdout, stderr, status } = runBarrierCLI(dir, 'ROADMAP-barrier-fixture', '--wave', '1', '--json')
+    // --trust-local-gates: temp dir; test exercises gate-execution path (exit non-zero).
+    const { stdout, stderr, status } = runBarrierCLI(dir, 'ROADMAP-barrier-fixture', '--wave', '1', '--json', '--trust-local-gates')
     assert.equal(status, 1, `expected exit 1, got ${status}\nstdout: ${stdout}\nstderr: ${stderr}`)
 
     const doc = JSON.parse(stdout)
@@ -245,7 +247,8 @@ test('barrier contract: validate_falho_bloqueia', () => {
     criteriaLines: ['- [x] build passes'],
   })
   try {
-    const { stdout, stderr, status } = runBarrierCLI(dir, 'ROADMAP-barrier-fixture', '--wave', '1', '--json')
+    // --trust-local-gates: temp dir; test isolates validate failure so gates must stay passed.
+    const { stdout, stderr, status } = runBarrierCLI(dir, 'ROADMAP-barrier-fixture', '--wave', '1', '--json', '--trust-local-gates')
     assert.equal(status, 1, `expected exit 1, got ${status}\nstdout: ${stdout}\nstderr: ${stderr}`)
 
     const doc = JSON.parse(stdout)
@@ -326,7 +329,8 @@ test('barrier contract: json_deterministico', () => {
 
   try {
     for (let run = 0; run < 2; run++) {
-      const { stdout, stderr, status } = runBarrierCLI(dir, 'ROADMAP-barrier-fixture', '--wave', '1', '--json')
+      // --trust-local-gates: temp dir; test exercises JSON structure, not trust check.
+      const { stdout, stderr, status } = runBarrierCLI(dir, 'ROADMAP-barrier-fixture', '--wave', '1', '--json', '--trust-local-gates')
       assert.equal(status, 0, `run ${run}: expected exit 0, got ${status}\nstdout: ${stdout}\nstderr: ${stderr}`)
 
       const doc = JSON.parse(stdout)

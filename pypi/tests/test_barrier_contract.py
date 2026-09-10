@@ -114,7 +114,7 @@ def test_wave_verde_passa():
         criteria_lines=["- [x] build passes", "- [x] tests pass"],
         gate_commands=None,  # sem bloco de gates — zero gates é legal
     )
-    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-barrier-fixture", "--wave", "1", "--json")
+    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-barrier-fixture", "--wave", "1", "--json", "--trust-local-gates")
     assert code == 0, f"expected exit 0, got {code}\nstdout: {stdout}\nstderr: {stderr}"
 
     doc = json.loads(stdout)
@@ -200,7 +200,7 @@ def test_gate_falho_bloqueia():
         criteria_lines=["- [x] build passes"],
         gate_commands=["false"],
     )
-    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-barrier-fixture", "--wave", "1", "--json")
+    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-barrier-fixture", "--wave", "1", "--json", "--trust-local-gates")
     assert code == 1, f"expected exit 1, got {code}\nstdout: {stdout}\nstderr: {stderr}"
 
     doc = json.loads(stdout)
@@ -224,7 +224,7 @@ def test_validate_falho_bloqueia():
         ml_status="✅",
         criteria_lines=["- [x] build passes"],
     )
-    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-barrier-fixture", "--wave", "1", "--json")
+    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-barrier-fixture", "--wave", "1", "--json", "--trust-local-gates")
     assert code == 1, f"expected exit 1, got {code}\nstdout: {stdout}\nstderr: {stderr}"
 
     doc = json.loads(stdout)
@@ -287,7 +287,7 @@ def test_json_deterministico():
     want_order = ["mls_complete", "acceptance_evidence", "gates", "validate"]
 
     for run in range(2):
-        stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-barrier-fixture", "--wave", "1", "--json")
+        stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-barrier-fixture", "--wave", "1", "--json", "--trust-local-gates")
         assert code == 0, f"run {run}: expected exit 0, got {code}\nstdout: {stdout}\nstderr: {stderr}"
 
         doc = json.loads(stdout)

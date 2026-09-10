@@ -471,12 +471,21 @@ function evalAcceptanceEvidence(mls) {
 // roadmapTrustForGates determines whether the gates declared in a roadmap can
 // be trusted for execution without --trust-local-gates.
 //
-// Decision (AC4, AC11): the discriminant is git — a roadmap whose content
-// differs from origin/main, or that is absent from origin/main, is untrusted.
+// Posture (AC1): CLOSED by default. Gates execute only when the function can
+// PROVE that the roadmap is present in refs/remotes/origin/main byte-for-byte.
+// Absence of proof is absence of trust — every error path returns
+// { trusted: false } with a named failureMsg (AC2). Exactly one
+// { trusted: true } return, at the very end, after all proofs succeed.
 //
-// Returns { trusted: true } or { trusted: false, failureMsg: '...' }.
-// Fail-open when not in a git repo, origin/main not resolvable, or any git
-// error other than "path absent from origin/main". See docs/cli-parity.md.
+// AC3: the discriminant never parses git stderr. Steps 4 and 5 use
+// "git rev-parse --verify" and "git cat-file -e" whose exit codes answer
+// the questions directly. The fully-qualified ref refs/remotes/origin/main
+// is used throughout to prevent a local branch named "origin/main" from
+// satisfying the trust anchor.
+//
+// Residual (declared in docs/cli-parity.md): Windows users with
+// core.autocrlf=true may receive "content differs" for an otherwise-identical
+// roadmap (LF vs CRLF). The check fails closed, so the residual is safe.
 function roadmapTrustForGates(roadmapPath) {
   const roadmapDir = path.dirname(roadmapPath)
 
@@ -486,51 +495,84 @@ function roadmapTrustForGates(roadmapPath) {
     encoding: 'utf8',
     stdio: 'pipe',
   })
-  if (revParse.status !== 0) {
-    // Not a git repo → fail-open.
-    return { trusted: true }
+  if (revParse.status !== 0 || revParse.error) {
+    return {
+      trusted: false,
+      failureMsg: 'gates not evaluated: not a git repository — pass --trust-local-gates to evaluate local gates',
+    }
   }
 
   // Step 2: get the repository toplevel.
-  const topLevel = spawnSync('git', ['rev-parse', '--show-toplevel'], {
+  const topResult = spawnSync('git', ['rev-parse', '--show-toplevel'], {
     cwd: roadmapDir,
     encoding: 'utf8',
     stdio: 'pipe',
   })
-  if (topLevel.status !== 0) {
-    return { trusted: true }
+  if (topResult.status !== 0 || topResult.error) {
+    return {
+      trusted: false,
+      failureMsg: 'gates not evaluated: cannot resolve git repository root — pass --trust-local-gates to evaluate local gates',
+    }
   }
-  const repoRoot = topLevel.stdout.trim()
+  const repoRoot = topResult.stdout.trim()
 
   // Step 3: compute repo-relative path (always forward slashes for git).
   const absRoadmap = path.resolve(roadmapPath)
   const relPath = path.relative(repoRoot, absRoadmap).split(path.sep).join('/')
 
-  // Step 4: retrieve the file at origin/main.
-  const show = spawnSync('git', ['show', `origin/main:${relPath}`], {
+  // Step 4: verify that refs/remotes/origin/main resolves to a commit (AC3 —
+  // exit code only, no stderr parsing). Failure means: no remote named origin,
+  // origin/main never fetched, or wrong default branch name. All are untrusted.
+  const verify = spawnSync(
+    'git', ['rev-parse', '--verify', '--quiet', 'refs/remotes/origin/main^{commit}'],
+    { cwd: repoRoot, encoding: 'utf8', stdio: 'pipe' }
+  )
+  if (verify.status !== 0 || verify.error) {
+    return {
+      trusted: false,
+      failureMsg: 'gates not evaluated: origin/main ref not available — pass --trust-local-gates to evaluate local gates',
+    }
+  }
+
+  // Step 5: check whether the roadmap path exists in refs/remotes/origin/main
+  // (AC3 — "git cat-file -e" exits non-zero when the object does not exist).
+  const refPath = `refs/remotes/origin/main:${relPath}`
+  const catFile = spawnSync('git', ['cat-file', '-e', refPath], {
     cwd: repoRoot,
     encoding: 'utf8',
     stdio: 'pipe',
   })
-  if (show.status !== 0) {
-    // If the path specifically does not exist in origin/main → untrusted.
-    const stderr = show.stderr || ''
-    if (stderr.includes('does not exist in') || stderr.includes('exists on disk, but not in')) {
-      return {
-        trusted: false,
-        failureMsg: 'gates not evaluated: roadmap is not committed in origin/main — pass --trust-local-gates to evaluate local gates',
-      }
+  if (catFile.status !== 0 || catFile.error) {
+    return {
+      trusted: false,
+      failureMsg: 'gates not evaluated: roadmap is not committed in origin/main — pass --trust-local-gates to evaluate local gates',
     }
-    // Other failures (no remote, not fetched) → fail-open.
-    return { trusted: true }
   }
 
-  // Step 5: compare content byte-for-byte.
+  // Step 6: retrieve the file content from refs/remotes/origin/main.
+  const show = spawnSync('git', ['show', refPath], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+    stdio: 'pipe',
+  })
+  if (show.status !== 0 || show.error) {
+    // The cat-file check already confirmed the object exists; this is an
+    // unexpected failure (e.g. transient I/O). Still fail closed.
+    return {
+      trusted: false,
+      failureMsg: 'gates not evaluated: cannot read roadmap from origin/main — pass --trust-local-gates to evaluate local gates',
+    }
+  }
+
+  // Step 7: compare content byte-for-byte.
   let localContent
   try {
     localContent = fs.readFileSync(roadmapPath, 'utf8')
   } catch (_) {
-    return { trusted: true }
+    return {
+      trusted: false,
+      failureMsg: 'gates not evaluated: cannot read local roadmap file — pass --trust-local-gates to evaluate local gates',
+    }
   }
   if (show.stdout !== localContent) {
     return {
@@ -538,6 +580,8 @@ function roadmapTrustForGates(roadmapPath) {
       failureMsg: 'gates not evaluated: roadmap content differs from origin/main — pass --trust-local-gates to evaluate local gates',
     }
   }
+
+  // Proven: roadmap is present in refs/remotes/origin/main and byte-identical.
   return { trusted: true }
 }
 

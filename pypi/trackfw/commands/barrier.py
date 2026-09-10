@@ -482,24 +482,42 @@ def _check_acceptance_evidence(mls: list) -> dict:
 def _roadmap_trust_for_gates(roadmap_path: str) -> dict:
     """Determines whether the gates declared in a roadmap can be trusted for execution.
 
-    Decision (AC4, AC11): the discriminant is git — a roadmap whose content
-    differs from origin/main, or that is absent from origin/main, is untrusted.
+    Posture (AC1): CLOSED by default. Gates execute only when the function can
+    PROVE that the roadmap is present in refs/remotes/origin/main byte-for-byte.
+    Absence of proof is absence of trust — every error path returns
+    {"trusted": False} with a named failure_msg (AC2). Exactly one
+    {"trusted": True} return, at the very end, after all proofs succeed.
 
-    Returns {"trusted": True} or {"trusted": False, "failure_msg": str}.
-    Fail-open when not in a git repo, origin/main not resolvable, or any git
-    error other than "path absent from origin/main". See docs/cli-parity.md.
+    AC3: the discriminant never parses git stderr. Steps 4 and 5 use
+    "git rev-parse --verify" and "git cat-file -e" whose exit codes answer
+    the questions directly. The fully-qualified ref refs/remotes/origin/main
+    is used throughout to prevent a local branch named "origin/main" from
+    satisfying the trust anchor.
+
+    Residual (declared in docs/cli-parity.md): Windows users with
+    core.autocrlf=true may receive "content differs" for an otherwise-identical
+    roadmap (LF vs CRLF). The check fails closed, so the residual is safe.
     """
     roadmap_dir = os.path.dirname(os.path.abspath(roadmap_path))
 
     # Step 1: check if we are inside a git repository.
-    r = subprocess.run(
-        ["git", "rev-parse", "--git-dir"],
-        cwd=roadmap_dir,
-        capture_output=True,
-    )
+    try:
+        r = subprocess.run(
+            ["git", "rev-parse", "--git-dir"],
+            cwd=roadmap_dir,
+            capture_output=True,
+        )
+    except FileNotFoundError:
+        # git binary not found — cannot determine trust.
+        return {
+            "trusted": False,
+            "failure_msg": "gates not evaluated: not a git repository — pass --trust-local-gates to evaluate local gates",
+        }
     if r.returncode != 0:
-        # Not a git repo → fail-open.
-        return {"trusted": True}
+        return {
+            "trusted": False,
+            "failure_msg": "gates not evaluated: not a git repository — pass --trust-local-gates to evaluate local gates",
+        }
 
     # Step 2: get the repository toplevel.
     r = subprocess.run(
@@ -509,43 +527,83 @@ def _roadmap_trust_for_gates(roadmap_path: str) -> dict:
         text=True,
     )
     if r.returncode != 0:
-        return {"trusted": True}
+        return {
+            "trusted": False,
+            "failure_msg": "gates not evaluated: cannot resolve git repository root — pass --trust-local-gates to evaluate local gates",
+        }
     repo_root = r.stdout.strip()
 
     # Step 3: compute repo-relative path (git uses forward slashes).
     abs_roadmap = os.path.abspath(roadmap_path)
-    rel_path = os.path.relpath(abs_roadmap, repo_root).replace(os.sep, "/")
+    try:
+        rel_path = os.path.relpath(abs_roadmap, repo_root).replace(os.sep, "/")
+    except ValueError:
+        # Cross-drive paths on Windows raise ValueError from os.path.relpath.
+        return {
+            "trusted": False,
+            "failure_msg": "gates not evaluated: cannot compute relative path to roadmap — pass --trust-local-gates to evaluate local gates",
+        }
 
-    # Step 4: retrieve the file at origin/main.
+    # Step 4: verify that refs/remotes/origin/main resolves to a commit (AC3 —
+    # exit code only, no stderr parsing). Failure means: no remote named origin,
+    # origin/main never fetched, or wrong default branch name. All are untrusted.
     r = subprocess.run(
-        ["git", "show", f"origin/main:{rel_path}"],
+        ["git", "rev-parse", "--verify", "--quiet", "refs/remotes/origin/main^{commit}"],
         cwd=repo_root,
         capture_output=True,
     )
     if r.returncode != 0:
-        # If the path specifically does not exist in origin/main → untrusted.
-        stderr = r.stderr.decode("utf-8", errors="replace")
-        if "does not exist in" in stderr or "exists on disk, but not in" in stderr:
-            return {
-                "trusted": False,
-                "failure_msg": "gates not evaluated: roadmap is not committed in origin/main — pass --trust-local-gates to evaluate local gates",
-            }
-        # Other failures (no remote, not fetched) → fail-open.
-        return {"trusted": True}
+        return {
+            "trusted": False,
+            "failure_msg": "gates not evaluated: origin/main ref not available — pass --trust-local-gates to evaluate local gates",
+        }
 
-    # Step 5: compare content byte-for-byte.
+    # Step 5: check whether the roadmap path exists in refs/remotes/origin/main
+    # (AC3 — "git cat-file -e" exits non-zero when the object does not exist).
+    ref_path = f"refs/remotes/origin/main:{rel_path}"
+    r = subprocess.run(
+        ["git", "cat-file", "-e", ref_path],
+        cwd=repo_root,
+        capture_output=True,
+    )
+    if r.returncode != 0:
+        return {
+            "trusted": False,
+            "failure_msg": "gates not evaluated: roadmap is not committed in origin/main — pass --trust-local-gates to evaluate local gates",
+        }
+
+    # Step 6: retrieve the file content from refs/remotes/origin/main.
+    r = subprocess.run(
+        ["git", "show", ref_path],
+        cwd=repo_root,
+        capture_output=True,
+    )
+    if r.returncode != 0:
+        # The cat-file check already confirmed the object exists; this is an
+        # unexpected failure (e.g. transient I/O). Still fail closed.
+        return {
+            "trusted": False,
+            "failure_msg": "gates not evaluated: cannot read roadmap from origin/main — pass --trust-local-gates to evaluate local gates",
+        }
+
+    # Step 7: compare content byte-for-byte.
     main_content = r.stdout
     try:
         with open(roadmap_path, "rb") as f:
             local_content = f.read()
     except OSError:
-        return {"trusted": True}
+        return {
+            "trusted": False,
+            "failure_msg": "gates not evaluated: cannot read local roadmap file — pass --trust-local-gates to evaluate local gates",
+        }
 
     if main_content != local_content:
         return {
             "trusted": False,
             "failure_msg": "gates not evaluated: roadmap content differs from origin/main — pass --trust-local-gates to evaluate local gates",
         }
+
+    # Proven: roadmap is present in refs/remotes/origin/main and byte-identical.
     return {"trusted": True}
 
 

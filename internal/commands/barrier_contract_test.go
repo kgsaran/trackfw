@@ -240,7 +240,9 @@ func TestBarrierContract_WaveVerdePassa(t *testing.T) {
 		gateCommands:  nil, // sem bloco de gates — zero gates é legal
 	})
 
-	stdout, stderr, code := runBarrierCLI(t, dir, "ROADMAP-barrier-fixture", "--wave", "1", "--json")
+	// --trust-local-gates: this fixture is a temp dir (no git repo) and tests
+	// gate evaluation behaviour, not the trust check.
+	stdout, stderr, code := runBarrierCLI(t, dir, "ROADMAP-barrier-fixture", "--wave", "1", "--json", "--trust-local-gates")
 	if code != 0 {
 		t.Fatalf("expected exit 0, got %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
 	}
@@ -397,7 +399,9 @@ func TestBarrierContract_GateFalhoBloqueia(t *testing.T) {
 		gateCommands:  []string{"false"},
 	})
 
-	stdout, stderr, code := runBarrierCLI(t, dir, "ROADMAP-barrier-fixture", "--wave", "1", "--json")
+	// --trust-local-gates: this fixture is a temp dir (no git repo); the test
+	// exercises the gate-execution path (exit non-zero), not the trust check.
+	stdout, stderr, code := runBarrierCLI(t, dir, "ROADMAP-barrier-fixture", "--wave", "1", "--json", "--trust-local-gates")
 	if code != 1 {
 		t.Fatalf("expected exit 1, got %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
 	}
@@ -440,7 +444,9 @@ func TestBarrierContract_ValidateFalhoBloqueia(t *testing.T) {
 		criteriaLines: []string{"- [x] build passes"},
 	})
 
-	stdout, stderr, code := runBarrierCLI(t, dir, "ROADMAP-barrier-fixture", "--wave", "1", "--json")
+	// --trust-local-gates: this fixture is a temp dir (no git repo); the test
+	// isolates the validate check failure, so gates must remain passed.
+	stdout, stderr, code := runBarrierCLI(t, dir, "ROADMAP-barrier-fixture", "--wave", "1", "--json", "--trust-local-gates")
 	if code != 1 {
 		t.Fatalf("expected exit 1, got %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
 	}
@@ -528,7 +534,8 @@ func TestBarrierContract_JSONDeterministico(t *testing.T) {
 	wantOrder := []string{"mls_complete", "acceptance_evidence", "gates", "validate"}
 
 	for run := 0; run < 2; run++ {
-		stdout, stderr, code := runBarrierCLI(t, dir, "ROADMAP-barrier-fixture", "--wave", "1", "--json")
+		// --trust-local-gates: temp dir fixture; test exercises JSON structure, not trust check.
+		stdout, stderr, code := runBarrierCLI(t, dir, "ROADMAP-barrier-fixture", "--wave", "1", "--json", "--trust-local-gates")
 		if code != 0 {
 			t.Fatalf("run %d: expected exit 0, got %d\nstdout: %s\nstderr: %s", run, code, stdout, stderr)
 		}
