@@ -4,6 +4,56 @@
 
 ---
 
+## Sessão 2026-09-10d — ares-tf (Infrastructure) — ML-1A: CONCLUÍDO, aguarda auditoria do arquiteto
+
+Branch `fix/ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega`.
+
+**Gates executados (sequenciais, locais, macOS arm64):**
+- `make build` → exit 0
+- `make test` → exit 0
+- `make quality` → exit 0 (412 OK, 0 FAIL, 181 cenários de falsificação)
+- `trackfw validate` → exit 0 (176 warnings pré-existentes, 0 errors)
+
+**Arquivo modificado:** `.github/workflows/quality.yml`
+**Roadmap atualizado:** `docs/roadmaps/wip/ROADMAP-2026-09-06-ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega.md` (ML-1A → `🔄 Em andamento`)
+
+**Status:** Microbatch entregue ao `trackfw_architect` para auditoria e commit. ML-1A não marcado `✅ Concluído` — aguarda aprovação da auditoria.
+
+---
+
+## Sessão 2026-09-10c — ares-tf (Infrastructure) — ML-1A: discriminante medido, implementação em progresso
+
+Branch `fix/ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega`.
+
+**Escopo ML-1A:** Distinguir "suíte não carregou" de "teste reprovou" nos 3 runtimes.
+
+**Medições realizadas (locais, antes de qualquer código):**
+
+Go 1.25.2 / macOS arm64 · flags CI exatas (`go test -v -p 1 -parallel 1 -timeout 20m ./...`):
+- Carga falha (setup failed): exit 1, linha `FAIL\t<pkg> [setup failed]`
+- Asserção falha: exit 1, linha `--- FAIL: TestName`, sem `[setup failed]`
+- Sem testes: exit **0**, `[no test files]`
+
+Python 3.14.7 / macOS arm64 · flags CI exatas (`python -m pytest -q`):
+- conftest.py não importa: exit **4**
+- módulo de teste não importa (coleção interrompida): exit **2**
+- asserção falha: exit **1**
+- sem testes: exit **5**
+
+Node.js v26.8.1 / macOS arm64 (com `--test-reporter=tap`; ADR adendum Node 22/Win11):
+- carga falha: `exitCode:` presente no bloco `not ok` (D3-bis confirmado)
+- asserção falha: `exitCode:` ausente, `code: 'ERR_ASSERTION'`
+- sem testes: exit **0**, `# tests 0`, `1..0`
+
+LACUNA DECLARADA: Node 20 / windows-latest não medido diretamente. Formato TAP estável entre 22 e 26.
+
+**O que está sendo implementado em `quality.yml`:**
+- Step de falsificação (antes dos 3 runs): prova o discriminante nas duas direções para os 3 runtimes
+- Go, Node, Python steps modificados para capturar saída e emitir `::error::` com classe (suite-load-failure vs normal)
+- Node: multi-reporter (spec→stdout + tap→arquivo) para usar discriminante D3-bis
+
+---
+
 ## Sessão 2026-09-10b — ares-tf (Infrastructure) — ML-R2b1b: correção implementada (env-var, 14-J) nos 3 scripts (CONCLUÍDO, aguarda commit)
 
 Branch `fix/fechar-os-grupos-de-falha-de-windows-por-causa-raiz`.
