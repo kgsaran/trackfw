@@ -90,10 +90,57 @@ O step de falsificação não contém testes de produto; contém PROBES que afir
 > Dependências: Wave 1. Sem o discriminante, um estado sem nomes escapa do ratchet por construção.
 
 ### ML-2A — Lista versionada de vermelhos, por nome
-**Status:** ⬜ Pendente · **Agente:** `ares-tf`
+**Status:** 🔄 Em andamento · **Agente:** `ares-tf`
 🔴 **A lista nasce de um run do CI**, nunca de máquina — o autor do `#275` declara que o Windows dele
 não é o runner. Reprova nome fora da lista; **avisa** quando um nome da lista deixa de falhar.
 🔴 **Guarda de não-vacuidade:** com a lista vazia e a dívida atual, o job **tem** de reprovar.
+
+**Medições (run 34478752778 · main · 2026-09-10T12:47 · job 102875922566):**
+
+Comando: `gh run view 34478752778 --log --job=102875922566`
+
+| Runtime | Classe | Contagem (informativa) |
+|---|---|---|
+| Go | assertion | 14 top-level (18 linhas `--- FAIL:` com subtests) |
+| Node.js | assertion | 10 |
+| Node.js | suite-load-failure | 1 (`validator.test.js`, `exitCode: 1` no TAP — D3-bis) |
+| Python | assertion | 13 |
+
+Reconciliação com sumários dos runners:
+- Go: `6 pacotes FAIL`, `14 Z --- FAIL: Test` top-level — ✓ consistente
+- Node: `# fail 11` no TAP (10 assertion + 1 suite-load) — ✓ consistente
+- Python: `13 failed, 1647 passed` no sumário pytest — ✓ consistente
+
+**D5 — decisões de estabilidade de nome:**
+- Go subtests: nome top-level apenas (strip depois de `/`). Subtests são entradas de tabela e mudam.
+- Python class methods: ID pytest completo com classe (`TestClass::method`). Nomes de função sozinhos não são únicos entre classes.
+- Node suite-load-failure: basename do arquivo apenas. Path completo do runner (`D:\a\trackfw\...`) é instável.
+- Node assertions: nome completo da string TAP (após `not ok N - `). Strings estáveis.
+
+**Artefatos entregues:**
+- `.github/windows-known-failures.json` — lista de 38 entradas com `_meta` (D2, D4, D5)
+- `scripts/check-windows-known-failures.py` — verificador com `--self-test` (9 testes, 9 PASS)
+- `Makefile` — `python3 scripts/check-windows-known-failures.py --self-test` adicionado a `parity-rest`
+- `.github/workflows/quality.yml` — step Python captura saída para arquivo; step ML-2A adicionado
+
+**Falsificação (nas duas direções + guardas de vacuidade):**
+- T1: todos observados == lista → exit 0
+- T2: nome novo não na lista → exit 1 (ADR D1)
+- T3: entrada da lista não observada → aviso, exit 0 (corrigir não bloqueia CI)
+- T4: lista vazia → guarda de vacuidade → SystemExit(1)
+- T5: arquivo ausente → guarda de vacuidade → SystemExit(1)
+- T6: artefato ausente (go-out) → guarda lado-observação → SystemExit(1)
+- T7: path Windows no TAP → basename correto (`validator.test.js`)
+- T8: backslash Python + método de classe → normalizado corretamente
+- T9: nome não-ASCII (em-dash, acentos) → round-trip sem perda de encoding
+
+**Gates executados (sequenciais, locais, macOS arm64):**
+- `make build` → exit 0
+- `make test` → exit 0 (cached)
+- `make parity-rest` → exit 0 (9 PASS, 0 FAIL no self-test)
+- `make quality` → exit 0
+- `trackfw validate` → exit 0 (174 warnings pré-existentes, 0 errors)
+- YAML: `python3 -c "yaml.safe_load(...)"` → válido, 11 jobs
 
 ### ML-2B — Remoção de nome exige justificativa
 **Status:** ⬜ Pendente · **Agente:** `ares-tf`

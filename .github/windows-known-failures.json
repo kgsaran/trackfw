@@ -1,0 +1,212 @@
+{
+  "_meta": {
+    "source": {
+      "run_id": "34478752778",
+      "ref": "main",
+      "timestamp": "2026-09-10T12:47:00Z",
+      "job": "windows-full-suites",
+      "job_id": "102875922566",
+      "command": "gh run view 34478752778 --log --job=102875922566"
+    },
+    "d2_note": "List extracted from CI run, not from developer machine (ADR D2). The reporter of #275 declared that his Windows machine is not the runner (no WSL, no bash in %PATH% natively). His list supports the need for the ratchet, not the content.",
+    "d4_note": "To remove an entry, add 'removal_note' field explaining: corrected | renamed | no-longer-runs. This is the ML-2B protocol. A name that disappears without a note may have been silently renamed or stopped running.",
+    "d5_decisions": {
+      "go_subtests": "Top-level test name only (strip everything after first '/'). Subtest names are table entries that can change when table parameters change.",
+      "python_class_methods": "Full pytest node ID relative to pypi/tests/ including class qualifier (ClassName::method_name). Function names alone are not unique across classes.",
+      "node_suite_load_failure": "File basename only (strip Windows runner path prefix D:\\a\\trackfw\\...). Full runner path is unstable across runs.",
+      "node_test_names": "Full test name string from TAP 'not ok N - <name>'. These are human-written strings and stable."
+    }
+  },
+  "entries": [
+    {
+      "name": "TestAttentionScripts_FallbackWithoutJQ",
+      "runtime": "go",
+      "class": "assertion"
+    },
+    {
+      "name": "TestChecksum_StableAndMatchesSHA256Sum",
+      "runtime": "go",
+      "class": "assertion"
+    },
+    {
+      "name": "TestFilenameUniqueness_DiretorioNaoLegivel_P2",
+      "runtime": "go",
+      "class": "assertion"
+    },
+    {
+      "name": "TestFolderStatus_DiretorioNaoLegivel_P2",
+      "runtime": "go",
+      "class": "assertion"
+    },
+    {
+      "name": "TestRenderOpenCodeAgent_CRLFSourceMatchesLF",
+      "runtime": "go",
+      "class": "assertion"
+    },
+    {
+      "name": "TestRenderSubagentRouteInjectsIdentity_CRLFSourceMatchesLF",
+      "runtime": "go",
+      "class": "assertion"
+    },
+    {
+      "name": "TestRenderWithoutIdentityMatchesFrozenGoldens",
+      "runtime": "go",
+      "class": "assertion"
+    },
+    {
+      "name": "TestResolveAgentModelMatchesRender",
+      "runtime": "go",
+      "class": "assertion"
+    },
+    {
+      "name": "TestSave_WritesAtomicallyWithPermissions",
+      "runtime": "go",
+      "class": "assertion"
+    },
+    {
+      "name": "TestShip_Integration_GracefulDegradation_RealBinary",
+      "runtime": "go",
+      "class": "assertion"
+    },
+    {
+      "name": "TestStaleWIPReportsWIPWalkError",
+      "runtime": "go",
+      "class": "assertion"
+    },
+    {
+      "name": "TestThirdPartyInstall_PassesValidateEndToEnd",
+      "runtime": "go",
+      "class": "assertion"
+    },
+    {
+      "name": "TestThirdPartyInstall_TamperAfterInstallFailsValidateEndToEnd",
+      "runtime": "go",
+      "class": "assertion"
+    },
+    {
+      "name": "TestUpdateMigratesKnownCodexAndPreservesUnknown",
+      "runtime": "go",
+      "class": "assertion"
+    },
+    {
+      "name": "Go manifest fixture is interoperable for inspect, update and uninstall",
+      "runtime": "node",
+      "class": "assertion"
+    },
+    {
+      "name": "attention signal script falls back to python3 when jq is not in PATH",
+      "runtime": "node",
+      "class": "assertion"
+    },
+    {
+      "name": "attention scripts are resilient to missing roadmap_dir in YAML and execute successfully",
+      "runtime": "node",
+      "class": "assertion"
+    },
+    {
+      "name": "attention scripts normalize/contain ROADMAP_DIR against path traversal",
+      "runtime": "node",
+      "class": "assertion"
+    },
+    {
+      "name": "attention scripts tolerate roadmap_dir without spaces and inline comments, and sanitize U+0000-U+001F control chars",
+      "runtime": "node",
+      "class": "assertion"
+    },
+    {
+      "name": "gemini e kiro (mesma representa\u00e7\u00e3o agent-markdown do cursor) permanecem bit-a-bit inalterados",
+      "runtime": "node",
+      "class": "assertion"
+    },
+    {
+      "name": "opencode-agent renderer: source CRLF renderiza byte-id\u00eantico ao source LF (ADR CRLF)",
+      "runtime": "node",
+      "class": "assertion"
+    },
+    {
+      "name": "renderers produce native deterministic formats",
+      "runtime": "node",
+      "class": "assertion"
+    },
+    {
+      "name": "save/load \u2014 round trip preserva agents e user_nickname",
+      "runtime": "node",
+      "class": "assertion"
+    },
+    {
+      "name": "sem identidade \u2014 sa\u00edda id\u00eantica ao comportamento pr\u00e9-existente (n\u00e3o-regress\u00e3o)",
+      "runtime": "node",
+      "class": "assertion"
+    },
+    {
+      "name": "validator.test.js",
+      "runtime": "node",
+      "class": "suite-load-failure"
+    },
+    {
+      "name": "test_agents_skills.py::test_update_alias_converts_only_present_codex_artifacts",
+      "runtime": "python",
+      "class": "assertion"
+    },
+    {
+      "name": "test_barrier.py::test_barrier_cli_crlf_roadmap_gates_da_wave_e_reconhecido_e_comando_roda_e2e",
+      "runtime": "python",
+      "class": "assertion"
+    },
+    {
+      "name": "test_commands_basic.py::TestRealCommands::test_status_uses_real_handler",
+      "runtime": "python",
+      "class": "assertion"
+    },
+    {
+      "name": "test_commands_extras.py::TestMetrics::test_parse_log_linhas_validas",
+      "runtime": "python",
+      "class": "assertion"
+    },
+    {
+      "name": "test_identity.py::TestLoadSave::test_save_is_atomic_and_mode_0600",
+      "runtime": "python",
+      "class": "assertion"
+    },
+    {
+      "name": "test_identity_wizard.py::test_agents_install_with_existing_identity_and_no_flag_does_not_invoke",
+      "runtime": "python",
+      "class": "assertion"
+    },
+    {
+      "name": "test_identity_wizard.py::test_agents_install_with_identity_flag_and_existing_identity_invokes",
+      "runtime": "python",
+      "class": "assertion"
+    },
+    {
+      "name": "test_identity_wizard.py::test_agents_install_without_identity_with_tty_invokes",
+      "runtime": "python",
+      "class": "assertion"
+    },
+    {
+      "name": "test_scope_resolution.py::test_targets_flag_with_tty_and_no_scope_still_triggers_scope_resolver",
+      "runtime": "python",
+      "class": "assertion"
+    },
+    {
+      "name": "test_ship.py::test_ship_integration_graceful_degradation_clean_path",
+      "runtime": "python",
+      "class": "assertion"
+    },
+    {
+      "name": "test_thirdparty.py::test_install_global_scope_requires_its_own_confirmation",
+      "runtime": "python",
+      "class": "assertion"
+    },
+    {
+      "name": "test_validator.py::TestResolveWipDirs::test_modo_by_agent_agents_configurados_complementados_pelo_disco",
+      "runtime": "python",
+      "class": "assertion"
+    },
+    {
+      "name": "test_validator.py::TestResolveWipDirs::test_modo_by_agent_com_agents_configurados_e_nada_em_disco",
+      "runtime": "python",
+      "class": "assertion"
+    }
+  ]
+}

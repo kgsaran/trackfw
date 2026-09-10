@@ -86,6 +86,11 @@ parity-rest: build
 	# segunda copia da regex) nas duas direcoes + a guarda de vacuidade. A medicao
 	# do corpo real acontece no job `pr-closing-keyword` de .github/workflows/quality.yml.
 	scripts/check-pr-closing-keyword.sh --self-test
+	# ML-2A (ROADMAP-2026-09-06-ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega):
+	# autoteste do ratchet de nomes do Windows. Roda localmente sem artefatos de CI (--self-test
+	# usa artefatos sinteticos). A verificacao real acontece no step "ML-2A — ratchet de nomes"
+	# do job windows-full-suites em .github/workflows/quality.yml.
+	python3 scripts/check-windows-known-failures.py --self-test
 
 parity-falsify: build
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/run-gates-falsify-parallel.sh

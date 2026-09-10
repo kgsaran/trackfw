@@ -661,8 +661,12 @@ jobs:
         # Protocolo de exit code estável entre essas versões.
         run: |
           $PSNativeCommandUseErrorActionPreference = $false
-          python -m pytest pypi/tests -q
+          # ML-2A: captura saída para extração de nomes de falhas pelo ratchet.
+          # python-suite-out.txt é lido pelo step "ML-2A — ratchet de nomes" abaixo.
+          $outFile = Join-Path $env:RUNNER_TEMP "python-suite-out.txt"
+          python -m pytest pypi/tests -q *> $outFile
           $rc = $LASTEXITCODE
+          Get-Content $outFile
           # Classificar por tipo de evento, nunca por contagem (ADR D3).
           if ($rc -eq 2 -or $rc -eq 3 -or $rc -eq 4) {
             Write-Host "::error::Python suite-load-failure: suíte interrompida ou não carregou (evento: exit code $rc — pytest collection/internal error, não asserção)"
@@ -670,6 +674,31 @@ jobs:
             Write-Host "::error::Python zero-test-failure: nenhum teste coletado (exit code 5)"
           }
           exit $rc
+
+      - name: ML-2A — ratchet de nomes (verifica falhas contra lista versionada)
+        # ADR D1: falha se nome novo aparecer fora da lista; avisa quando nome da
+        # lista deixa de falhar (mas NÃO reprova — corrigir um teste não pode
+        # quebrar o CI).
+        #
+        # Guarda de vacuidade (lista): lista vazia ou ausente → exit 1.
+        # Guarda de vacuidade (artefatos): artefato ausente → exit 1.
+        # Sem estas guardas, um conjunto de observação vazio passa silenciosamente
+        # sobre toda a dívida ativa — o pior modo de falha do ratchet.
+        #
+        # Contagem — nunca como critério (ADR D1): o log imprime totais apenas
+        # como informação. O exit code vem exclusivamente da comparação de conjuntos.
+        #
+        # continue-on-error: true do JOB ainda se aplica — este step pode reprovar
+        # sem bloquear PRs enquanto o ML-3A (remoção do continue-on-error) não for
+        # entregue. O valor do ratchet é registrar regressões no log, não bloquear ainda.
+        if: always() && steps.precondition.outcome == 'success'
+        shell: pwsh
+        run: |
+          python scripts/check-windows-known-failures.py `
+            --list .github/windows-known-failures.json `
+            --go-out  "$env:RUNNER_TEMP\go-suite-out.txt" `
+            --node-tap "$env:RUNNER_TEMP\node-suite.tap" `
+            --python-out "$env:RUNNER_TEMP\python-suite-out.txt"
 
       - name: Camada 1 pulada — AC12 impediu execução segura
         if: steps.precondition.outcome != 'success'

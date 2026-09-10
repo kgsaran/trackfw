@@ -4,6 +4,30 @@
 
 ---
 
+## Sessão 2026-09-10e — ares-tf (Infrastructure) — ML-2A: ENTREGUE, aguarda auditoria do arquiteto
+
+Branch `fix/ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega`.
+
+**Escopo ML-2A:** Lista versionada de vermelhos colhida do run 34478752778 + verificador que reprova nomes novos e avisa quando nomes somem.
+
+**Gates executados (sequenciais, locais, macOS arm64):**
+- `make build` → exit 0
+- `make test` → exit 0
+- `make parity-rest` → exit 0 (9 PASS, 0 FAIL no self-test do ML-2A)
+- `make quality` → exit 0
+- `trackfw validate` → exit 0 (174 warnings pré-existentes, 0 errors)
+- YAML: `python3 -c "yaml.safe_load(...)"` → válido, 11 jobs
+
+**Arquivos criados/modificados:**
+- `.github/windows-known-failures.json` — 38 entradas (Go:14, Node-assert:10, Node-load:1, Python:13)
+- `scripts/check-windows-known-failures.py` — verificador Python com --self-test (9 testes, todos PASS)
+- `Makefile` — self-test adicionado a `parity-rest`
+- `.github/workflows/quality.yml` — Python step captura output; step ML-2A adicionado (step 17 de 19)
+
+**Status:** Microbatch entregue ao `trackfw_architect` para auditoria e commit. ML-2A não marcado `✅ Concluído` — aguarda aprovação da auditoria.
+
+---
+
 ## Sessão 2026-09-10d — ares-tf (Infrastructure) — ML-1A: CONCLUÍDO, aguarda auditoria do arquiteto
 
 Branch `fix/ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega`.
