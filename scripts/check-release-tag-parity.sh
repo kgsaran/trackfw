@@ -194,6 +194,175 @@ if ! PATH="$NO_FORGE_PATH" python3 -c \
   exit 1
 fi
 
+# ---------------------------------------------------------------------------
+# Windows compatibility: gh.exe shim — defined HERE (before the vacuity guard)
+# so _build_gh_stub_shim_once is callable on Windows without a forward-reference
+# "command not found". On POSIX the guard block is always skipped
+# ([[ -f "${REAL_GIT}.exe" ]] is false), so ordering is irrelevant there.
+#
+# On Windows, exec.LookPath("gh") (Go), spawnSync("gh",...) (Node), and
+# subprocess.run(["gh",...]) (Python) all resolve through CreateProcess +
+# PATHEXT. A bash script named "gh" (no extension) is never found — only
+# files matching extensions in %PATHEXT% (.EXE, .CMD, .BAT, …) are resolved.
+#
+# Fix: alongside every bash stub "gh" we place a "gh.exe" shim compiled from
+# Go that delegates to the bash script in its own directory:
+#   gh.exe  →  bash.exe  <dir>/gh  "$@"   (stdin/stdout/stderr pass-through)
+# On POSIX the shim is never built (guard: [[ -f "${REAL_GIT}.exe" ]]).
+# The shim is built ONCE per test run into $WORK and copied to each stub dir.
+# ---------------------------------------------------------------------------
+_GH_STUB_SHIM=""  # POSIX path to the compiled gh.exe (empty on POSIX)
+
+_build_gh_stub_shim_once() {
+  [[ -n "$_GH_STUB_SHIM" ]] && return 0     # already built this run
+  [[ ! -f "${REAL_GIT}.exe" ]] && return 0  # not Windows — no-op
+
+  # Capture real bash path at gate build time — the gate runs inside bash and
+  # knows the exact executable. Injecting it avoids guessed constants (assumed
+  # layout was the root cause of ML-R2c; const gitBash is that defect reintroduced).
+  local _real_bash
+  _real_bash="$(command -v bash || true)"
+  if [[ -z "$_real_bash" ]]; then
+    echo "gh-stub shim: bash not found on PATH — cannot build gh.exe shim (Windows requires it)" >&2
+    exit 1
+  fi
+  # cygpath -w converts POSIX path to Windows path; available on all Git for Windows (MSYS2).
+  local _win_bash
+  _win_bash="$(cygpath -w "$_real_bash" 2>/dev/null || echo "$_real_bash")"
+
+  local _src_dir
+  _src_dir=$(mktemp -d)
+  local _out="$WORK/gh-stub-shim.exe"
+
+  # Write the captured bash path as a Go double-quoted string literal (backslashes escaped).
+  local _win_bash_esc="${_win_bash//\\/\\\\}"
+  printf 'package main\n\nconst bashFallback = "%s"\n' "$_win_bash_esc" > "$_src_dir/bash_path.go"
+
+  cat >"$_src_dir/main.go" <<'GOEOF'
+package main
+
+import (
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+)
+
+// findBash tries PATH first (works when /usr/bin is in PATH), then the
+// real bash path captured by the gate at shim build time (bashFallback,
+// injected via bash_path.go — never a guessed constant; assumed-layout
+// was the root cause of ML-R2c).
+func findBash() string {
+	for _, n := range []string{"bash.exe", "bash"} {
+		if p, err := exec.LookPath(n); err == nil {
+			return p
+		}
+	}
+	if bashFallback != "" {
+		if _, err := os.Stat(bashFallback); err == nil {
+			return bashFallback
+		}
+	}
+	return ""
+}
+
+func main() {
+	exe, err := os.Executable()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	stub := filepath.Join(filepath.Dir(exe), "gh")
+	bash := findBash()
+	if bash == "" {
+		fmt.Fprintln(os.Stderr, "gh-stub shim: bash not found on PATH or injected fallback path")
+		os.Exit(1)
+	}
+	args := append([]string{stub}, os.Args[1:]...)
+	cmd := exec.Command(bash, args...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	// Suppress MSYS brace/path conversion at the shim→bash frontier (run 34468562798,
+	// P14-I/P14-J). P14-F: {owner}/{repo} keys intact in shim RECV[2] but already gone
+	// in bash child's os.Args[1] — the rewrite happens at the MSYS bash entry point, not
+	// at any quoting layer of the Go caller. P14-I confirmed the loss survives when Go
+	// calls bash.exe directly (no shim), ruling out shim quoting as the cause. P14-J
+	// confirmed these three vars suppress the conversion end-to-end.
+	cmd.Env = append(os.Environ(),
+		"MSYS=noglob",
+		"MSYS_NO_PATHCONV=1",
+		"MSYS2_ARG_CONV_EXCL=*",
+	)
+	if err := cmd.Run(); err != nil {
+		if e, ok := err.(*exec.ExitError); ok {
+			os.Exit(e.ExitCode())
+		}
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+GOEOF
+
+  printf 'module ghstubshim\ngo 1.21\n' > "$_src_dir/go.mod"
+  touch "$_src_dir/go.sum"
+  # Capture build output — on Windows, build failure is fatal: bash stub alone is not
+  # found by native processes via PATHEXT, so the shim is required, not optional.
+  local _build_out
+  if ! _build_out=$(cd "$_src_dir" && go build -o "$_out" . 2>&1); then
+    echo "gh-stub shim: 'go build' failed (Windows: gh.exe shim is required; bash stub alone is not found by native processes via PATHEXT)" >&2
+    [[ -n "$_build_out" ]] && echo "$_build_out" >&2
+    rm -rf "$_src_dir"
+    exit 1
+  fi
+  _GH_STUB_SHIM="$_out"
+  rm -rf "$_src_dir"
+}
+
+# ML-R2b1 (corrected): gh vacuity guard — execute, not just resolve.
+# shutil.which is a resolver (same lesson as command -v vs CreateProcess — the root of ML-R2c).
+# subprocess.run proves the full CreateProcess+PATHEXT chain the product uses.
+#   (a) gh must NOT execute on NO_FORGE_PATH (no-forge scenario is meaningful)
+#   (b) gh.exe shim must execute AND return a marker (end-to-end proof, not just resolution)
+# Guard is Windows-only (POSIX: command -v and subprocess agree; no PATHEXT divergence).
+if [[ -f "${REAL_GIT}.exe" ]]; then
+  # (a) Execute, not resolve: prove gh is NOT executable on NO_FORGE_PATH.
+  # Exceptions cover WinError 2 (not found) and WinError 267 (ENOTDIR variant).
+  if PATH="$NO_FORGE_PATH" python3 -c '
+import subprocess, sys
+try:
+    subprocess.run(["gh", "--version"], capture_output=True)
+    sys.exit(0)  # gh ran — it was found
+except (FileNotFoundError, OSError):
+    sys.exit(1)  # not found — guard passes
+'; then
+    echo "check-release-tag-parity: vacuity guard failed — 'gh' executes on NO_FORGE_PATH ($NO_FORGE_PATH) via native subprocess; the no-forge-cli scenario would prove nothing" >&2
+    exit 1
+  fi
+  # (b) Execute and verify marker: probe PATH is bash-free (probe dir + RUNTIME_BIN only) so
+  # the shim's injected bashFallback is the load-bearing branch (exec.LookPath("bash.exe")
+  # misses on this PATH), proving the captured-bash-path correction is actually exercised.
+  _build_gh_stub_shim_once
+  if [[ -n "$_GH_STUB_SHIM" ]]; then
+    _PROBE_DIR="$WORK/gh-vacuity-probe"
+    mkdir -p "$_PROBE_DIR"
+    printf '#!/bin/bash\necho GH_SHIM_OK\n' > "$_PROBE_DIR/gh"
+    chmod +x "$_PROBE_DIR/gh"
+    cp "$_GH_STUB_SHIM" "$_PROBE_DIR/gh.exe"
+    if ! PATH="$_PROBE_DIR:$RUNTIME_BIN" python3 -c '
+import subprocess, sys
+try:
+    r = subprocess.run(["gh", "probe"], capture_output=True, text=True)
+    sys.exit(0 if r.returncode == 0 and "GH_SHIM_OK" in r.stdout else 1)
+except (FileNotFoundError, OSError):
+    sys.exit(1)
+'; then
+      echo "check-release-tag-parity: vacuity guard failed — gh.exe shim does NOT execute and return marker via native subprocess in probe dir ($WORK/gh-vacuity-probe); the stub fix would be vacuous" >&2
+      exit 1
+    fi
+  fi
+fi
+
 FAIL=0
 ok()   { echo "OK   [$1]"; }
 fail() { echo "FAIL [$1]: $2" >&2; FAIL=1; }
@@ -275,6 +444,12 @@ PYEOF
 }
 
 # ---------------------------------------------------------------------------
+# _build_gh_stub_shim_once — moved before the vacuity guard (ML-R2b1 corrective).
+# The guard calls it on Windows; a forward reference causes "command not found" there.
+# Current definition is above, before the "ML-R2b1 (corrected):" guard block.
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
 # write_release_gh_stub DIR CALL_LOG [FORGE_DEFAULT_BRANCH] [FORGE_COMMIT_SHA] — a `gh` stub
 # that answers all four `gh api` calls release tag makes:
 #   GET  repos/{owner}/{repo}                      -> default_branch (FORGE_DEFAULT_BRANCH,
@@ -291,6 +466,7 @@ PYEOF
 # ---------------------------------------------------------------------------
 write_release_gh_stub() {
   local dir=$1 call_log=$2 forge_default_branch=${3:-main} forge_commit_sha=${4:-0000000000000000000000000000000000000f}
+  _build_gh_stub_shim_once
   mkdir -p "$dir" "$call_log"
   cat >"$dir/gh" <<EOF
 #!/usr/bin/env bash
@@ -320,6 +496,8 @@ case "\$2" in
 esac
 EOF
   chmod +x "$dir/gh"
+  # Windows: copy compiled PE shim so native processes (Go/Node/Python) find gh via PATHEXT
+  [[ -n "$_GH_STUB_SHIM" ]] && cp "$_GH_STUB_SHIM" "$dir/gh.exe" || true
 }
 
 # ---------------------------------------------------------------------------

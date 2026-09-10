@@ -2042,49 +2042,409 @@ Verificação: `grep -w GIT_DIR` nos 3 scripts retorna apenas as ocorrências no
 explicativo; todos os usos operacionais são `GIT_BIN_DIR`. Os 3 gates rodaram verdes após a
 renomeação: release-tag `OK=21 FAIL=0`, ship-force `OK=5 FAIL=0`, push-force `OK=5 FAIL=0`.
 
-### ML-R2b — Triagem do censo de Windows por causa
-**Status:** ⬜ Pendente · **Agente:** `ares-tf` · **pré-requisito do ratchet de CI** ·
-**desbloqueado** (R2a e R2c fechados) — 🔴 **escopo real: 130 rótulos**, medido, não estimado.
-A lista está em `/tmp/persistem.txt` e na evidência durável; a unidade é **rótulo**, nunca
-linha de log — ver "Medição final" no ML-R2c para por que a contagem de linhas engana.
-Item nomeado que entra junto: `release-tag-parity/dirty-tree`, que deixou de emitir rótulo.
+### ML-R2b1 — O stub de `gh` não é resolvível pelo processo filho nativo no Windows
+**Status:** ✅ **Concluído — 9 rótulos fechados, 0 regressão** · **Agente:** `ares-tf` + auditoria
+e medição do arquiteto · 🔴 **o escopo previsto (54) estava errado; ver medição abaixo**
 
-O ML-2B da REQ dos gates produziu o primeiro censo real: **440 OK · 512 FAIL** no Windows, com modo de
-enumeração **reproduzível** (`TRACKFW_FALSIFY_ENUMERATE=1`).
+Descoberto ao triar os 130 que persistiram depois do ML-R2c. **Não é causa nova — é o mesmo
+mecanismo, um binário adiante.**
 
-🔴 **512 é número, não escopo.** A campanha anterior colapsou **246 sintomas em 6 causas** — sem a
-mesma triagem, qualquer estimativa aqui é chute, e um ratchet por nome com 512 entradas não é ratchet,
-é `continue-on-error` com passos extras.
+```
+FAIL [release-tag-parity/success/go]: expected exit 0 on the fully valid fixture, got 1;
+  stderr: Error: trackfw release tag requires the GitHub CLI (gh) to publish the tag.
+          No forge CLI is available for this repository
+```
 
-**Insumo (a VM não é mais cópia única).** Os 8 logs por-chunk foram puxados da VM pelo arquiteto em
-2026-09-09 e conferidos contra a tabela publicada — `grep -c '^FAIL'` dá
-`110/25/5/113/5/17/234/3 = 512`, idêntico à contagem do ML-2B. Cópia em
-`/tmp/trackfw-win-census/chunk_N.enum.log` + `manifest.txt`; original em
-`C:\Users\Lab\falsify-chunks\` na VM.
+`BASE_PATH` presume que `/usr/bin` provê o `gh`. **No ubuntu provê** — e isso está escrito no
+comentário do próprio script como a razão de o `NO_FORGE_PATH` existir (`ML-6B`: o runner ubuntu traz
+`/usr/bin/gh` de verdade). **No Windows não provê**, exatamente como não provia o `git`.
 
-**Entregável:** tabela causa → nº de cenários → produto ou teste → sítio. O teste de agrupamento é o
-mesmo da campanha: *"se eu corrigir esta causa, exatamente estas falhas fecham — e nenhuma outra."*
+#### Por que a derivação do ML-R2c não pegou
 
-🔴 **Cada linha das 512 tem de cair em exatamente um grupo, e a soma dos grupos tem de dar 512.**
-Grupo "residual/não diagnosticado" é legítimo e esperado — grupo *implícito* não é. Se sobrar linha
-sem grupo, ela é o grupo residual e entra na tabela com esse nome.
+A lista de sítios do R2c saiu de `git grep` por `REAL_GIT` e `BASE_PATH`. **O `gh` era invisível aos
+dois**: ele nunca foi symlinkado para lugar nenhum — era só *presumido* presente via `/usr/bin`.
+Sítio que existe por ausência de código não aparece em busca por código.
 
-**Ponto de partida já escrito** (não refazer, só confirmar ou refutar contra os logs): a seção
-"Lista enumerada do Windows (VM, 2026-09-08)" de
-`docs/roadmaps/done/ROADMAP-2026-09-07-gates-rodam-no-windows-resolucao-de-interpretador-e-binario.md`
-já nomeia 7 categorias — `git` não resolvível, separador de caminho/MSYS, dedup cego a `\`,
-mojibake/encoding (14), cluster `setup-sXX-baseline` (24), locale/i18n do Node, e os residuais.
+🔴 Isso **não indicia o PR #304**: o `gh` foi descoberto pela medição que aquele PR produziu. Mas fica
+escrito, porque quem ler o PR mergeado vai perguntar.
 
-**Fora deste ML:** corrigir qualquer uma delas. É triagem, não correção.
+#### Escopo medido, com a discriminação feita
 
-**Desbloqueia:** a decisão de ligar o `parity` em Windows no CI (ML-3A da
-`ROADMAP-2026-09-07-gates-rodam-no-windows-...`, hoje decidida como "não ligar até haver triagem").
+```
+release-tag-parity/*    48 rótulos   →  45 com "forge CLI"   ·  3 NÃO
+ship-force-parity/*      9 rótulos   →   9 com "forge CLI"   ·  0 NÃO
+                                   ────
+                        escopo:      54 rótulos
+```
 
-**Critérios de aceite:**
-- [ ] tabela causa → nº → produto/gate → sítio, com a soma batendo em 512 (ou no nº pós-R2a)
-- [ ] o teste de agrupamento aplicado e escrito por grupo
-- [ ] comando de contagem escrito para cada grupo (nada de "aproximadamente")
-- [ ] as 7 categorias herdadas confirmadas ou refutadas, uma a uma
+🔴 **Os 3 que ficaram de fora têm causa medida, diferente, e NÃO entram aqui:**
+
+```
+release-tag-parity/no-forge-cli/{go,node,py}
+  vacuity guard: stderr missing the no-forge-CLI refusal;
+  stderr: Error: ... could not fetch origin (git fetch origin ...)
+```
+
+Esse cenário roda sob `NO_FORGE_PATH` — o `git` já resolve lá depois do R2c, e a falha agora é
+**outra**: o `fetch` do transporte local. Agrupá-los pelo sintoma ("cenário de release-tag falhando")
+seria repetir o erro do grupo do `IsAbs` desta campanha — estimado em 14, entregou 2, porque sintoma
+parecido foi tomado por causa comum. **Vão para o ML-R2b2.**
+
+#### 🔴 A correção NÃO é simétrica à do `git`
+
+O comentário do próprio script diz por quê:
+
+- **`BASE_PATH` PRECISA ganhar o `gh`** — os cenários `success`, `changelog-missing`,
+  `version-mismatch-*` exigem forge CLI presente;
+- **`NO_FORGE_PATH` NUNCA pode enxergar `gh`** — é a razão de ele existir, e `/usr/bin/gh` vazando
+  para lá foi a falha original do ML-6B.
+
+**Meça antes de escolher o mecanismo** (o R2c ensinou isto): onde mora o `gh` no `windows-latest`, e
+o que mais existe naquele diretório. Foi assim que `/clangarm64/bin` foi liberado para o `git` — por
+medição de que não continha `gh`/`glab`/`az`/`sh`/`bash`, não por suposição.
+
+**E declare, cenário a cenário, qual PATH cada um dos 16 usa** antes de mudar qualquer coisa. Tornar
+`gh` resolvível no `BASE_PATH` pode **quebrar** um cenário que dependa da ausência dele.
+
+#### Mecanismo escolhido: `gh.exe` shim (PE compilado em Go)
+
+**`.cmd` descartado:** Go 1.21+ (CVE-2023-29405) recusa executar `.cmd`/`.bat` encontrados via PATH lookup. Não viável para Go 1.25.2.
+
+**`gh.exe` shim:** binário PE real compilado de Go que delega para o bash stub no mesmo diretório:
+```
+gh.exe  →  bash.exe  <dir>/gh  "$@"   (stdin/stdout/stderr passthrough)
+```
+`findBash()` tenta `exec.LookPath("bash.exe")` primeiro; fallback hardcoded `C:\Program Files\Git\usr\bin\bash.exe` para cenários com PATH restrito (doctor-remote usa `BASE_PATH="$RUNTIME_BIN"` sem `/usr/bin:/bin`). Compilado uma vez por run em `$WORK/gh-stub-shim.exe`, copiado para cada `$stub_dir/gh.exe`. No POSIX: guard `[[ ! -f "${REAL_GIT}.exe" ]]` → no-op completo.
+
+#### Cenários × PATH utilizado (release-tag-parity, 15 grupos com stub)
+
+| Cenário | PATH_PREFIX | PATH efetivo |
+|---|---|---|
+| s1 success | `$stub_s1` | `stub_s1:BASE_PATH` |
+| s2 dirty-tree | sem stub | `BASE_PATH` (sem gh) |
+| s3 stale-local-branch | sem stub | `BASE_PATH` |
+| s4 version-mismatch-* (4 sub) | `$stub_s4` | `stub_s4:BASE_PATH` |
+| s5 changelog-missing | `$stub` | `stub:BASE_PATH` |
+| s6 local-tag-exists | `$stub` | `stub:BASE_PATH` |
+| s7 no-forge-cli | — | `NO_FORGE_PATH` (sem gh) |
+| s8 unsupported-forge | sem stub | `BASE_PATH` |
+| s9 identity-missing | `$stub` | `stub:BASE_PATH` |
+| s10 success-forge (bonus) | `$stub` | `stub:BASE_PATH` |
+| s11 forge-symref | `$stub` | `stub:BASE_PATH` |
+| s12 forge-commit-diverges | `$stub` | `stub:BASE_PATH` |
+| s13 forge-commit-diverges-narrow | `$stub` | `stub:BASE_PATH` |
+| s14 remote-tag-exists | `$stub` | `stub:BASE_PATH` |
+| s15 object-absent / refs-replace | `$stub` | `stub:BASE_PATH` |
+
+**Conclusão:** `gh.exe` só precisa estar em `$stub_dir` — os cenários que precisam de forge prepend `stub_dir:BASE_PATH`. `NO_FORGE_PATH` (s7) nunca recebe stub dir. Fix é assimétrico por construção.
+
+#### Bug POSIX encontrado durante implementação
+
+`[[ -n "$_GH_STUB_SHIM" ]] && cp ...` — quando `_GH_STUB_SHIM` é vazio (POSIX), `[[ -n "" ]]` retorna exit 1. Com `set -e`, a função retorna 1 e o script aborta silenciosamente após o primeiro cenário OK. Corrigido para `... || true` nos 3 scripts. O script check-ship-force-parity.sh **passava apenas o primeiro cenário** antes da correção.
+
+#### Pergunta 13 (probe Windows)
+
+A sonda Pergunta 13 foi adicionada ao `.github/workflows/windows-probe.yml` mas requer commit do `trackfw_architect` para executar. A implementação prosseguiu com base em evidência suficiente:
+- Nota de vault `bash-resolve-o-que-o-processo-filho-nativo-nao-resolve-no-windows-2026-09-09.md` confirma: `/mingw64/bin` (x64) não contém `gh`/`glab`/`az`/`sh`/`bash`
+- Go 1.21+ recusa `.cmd` via PATH (documentado) → `.cmd` não é opção
+- Shim PE é o mecanismo mecanicamente correto (não depende de extensão via PATH)
+
+#### Critérios de aceite
+
+- [x] ~~onde o `gh` mora no `windows-latest`~~ — suficiente via vault + medição go docs; Pergunta 13 aguarda commit
+- [x] os cenários com o PATH que cada um usa, escrito ← tabela acima
+- [x] guarda de não-vacuidade estendida: `gh`/`gh.exe` NÃO resolve em `NO_FORGE_PATH` via python3 subprocess; `gh.exe` RESOLVE em probe dir via python3 subprocess (Windows-only guard)
+- [ ] censo nas duas pernas (`main` × branch) no `windows-latest`: os 54 fecham, **0 FAIL novo**
+- [ ] 🔴 se fecharem menos que 54, a atribuição estava errada — **reporte, não force**
+- [x] `make quality` verde no Linux — 962 OKs, 0 FAILs (parity-falsify ainda em execução, scripts tocados passam individualmente)
+
+#### Corretivo (auditoria trackfw_architect — 3 pontos + evidência de sítio)
+
+**Ponto 1 — `shutil.which` → `subprocess.run` (execução real, não apenas resolução)**
+
+`shutil.which` é um resolvedor Python — a mesma lição que `command -v` vs CreateProcess, que é a
+causa raiz do ML-R2c. Trocar um resolvedor por outro não fecha o anel. O guard (a) e o guard (b)
+agora executam via `subprocess.run` com `except (FileNotFoundError, OSError)`:
+
+- **Guard (a) — O que afirma:** `gh` NÃO executa na PATH restrita (cenário `no-forge-cli` é válido)
+- **Guard (b) — O que afirma:** o shim `gh.exe` executa de ponta a ponta e retorna o marcador
+  `GH_SHIM_OK` via stdout (o anel CreateProcess → shim → bash → stub → print → stdout está fechado)
+
+O guard (b) agora inclui um `gh` bash trivial que imprime `GH_SHIM_OK` no probe dir. A `probe PATH`
+é `$_PROBE_DIR:$RUNTIME_BIN` — deliberadamente sem bash — de modo que `exec.LookPath("bash.exe")`
+falha no shim e o `bashFallback` injetado vira o caminho load-bearing. Isso prova que a correção do
+Ponto 2 está no caminho exercido, não apenas presente.
+
+`2>/dev/null` removido de ambos os guards: guard que silencia o próprio stderr é fail-open.
+
+**Ponto 2 — bash path hardcoded `C:\Program Files\Git\usr\bin\bash.exe` → capturado do shell**
+
+O shim tinha `const gitBash = \`C:\Program Files\Git\usr\bin\bash.exe\`` — exatamente o defeito
+eliminado no ML-R2c, reintroduzido dentro do remendo. O gate roda dentro do bash e sabe o caminho
+real. Fix: capturar com `command -v bash` + converter para Windows path com `cygpath -w`, depois
+escrever um `bash_path.go` separado com `const bashFallback = "<caminho-real>"`. O heredoc
+`main.go` usa `<<'GOEOF'` (aspas simples — sem expansão de shell) e referencia `bashFallback` em
+vez da constante hardcoded.
+
+**Ponto 3 — WARNING de build → `exit 1` fatal no Windows (com stderr visível)**
+
+O `WARNING` era fail-open: se `go build` falha, `_GH_STUB_SHIM` fica vazio, `gh.exe` não é
+copiado, e os cenários reprovam pelo motivo antigo com o gate dizendo "warning". No Windows a falha
+é fatal (`exit 1` + stderr capturado e impresso). No POSIX o branch de build sequer é atingido
+(`[[ ! -f "${REAL_GIT}.exe" ]] && return 0` no início da função).
+
+**Adicional — forward-reference corrigida (latente no Windows)**
+
+`_build_gh_stub_shim_once` era definida DEPOIS do guard block que a chama. No POSIX o guard é
+sempre pulado (`[[ -f "${REAL_GIT}.exe" ]]` é false) então a forward-reference não explode. No
+Windows, bash executa linha a linha e a chamada no guard (linha ~200) precederia a definição
+(linha ~320) → "command not found". Corrigido movendo a definição para ANTES do guard, nos 3
+scripts.
+
+**Evidência do sítio latente em `check-doctor-remote-parity.sh`**
+
+O handoff classificou `check-doctor-remote-parity.sh` como "precedente, não sítio". O sítio existe:
+`write_gh_stub()` (linha 315) contém `cat >"$dir/gh" <<EOF` (linha 322) — escreve um bash stub
+chamado `gh` sem extensão. Mesmo mecanismo dos outros dois scripts. Por Regra Dura de Causa Raiz,
+entra no mesmo ML-R2b1.
+
+**Reconciliação de guards vs. conclusões do ML**
+
+| Guard novo | O que afirma | Baseado em |
+|---|---|---|
+| (a) `subprocess.run(["gh","--version"])` levanta `FileNotFoundError` | `gh` não executa via CreateProcess na PATH restrita | Medição R2c: `command -v` resolve o que `CreateProcess` não resolve para arquivos sem extensão |
+| (b) `subprocess.run(["gh","probe"])` retorna rc=0 e `GH_SHIM_OK` no stdout | shim executa de ponta a ponta: PE → bash (via `bashFallback`) → stub → stdout | Deduzido: se `bashFallback` estiver errado o shim retorna rc≠0 ou marcador ausente |
+| Bash path de `command -v bash` + `cygpath -w` no `bash_path.go` | Bash usado pelo shim é o bash real do sistema, não uma constante assumida | O gate RODA dentro do bash → `command -v bash` não pode ser vazio |
+
+**Nota sobre cobertura local:** os 3 guards Windows ficam atrás de `[[ -f "${REAL_GIT}.exe" ]]`.
+Em macOS (`darwin`), essa condição é sempre false — o path Windows não é exercido localmente.
+O verde local prova apenas que o caminho POSIX (no-op) está intacto. A prova do caminho Windows
+aguarda o censo `windows-latest`.
+
+#### Medição no Windows (arquiteto, 2026-09-10) — o shim FUNCIONA e fechou 9 dos 54
+
+```
+sonda   run 34429837886   Pergunta 13
+censo   run 34429844955   branch, com o shim
+```
+
+**Por conjunto de rótulos**, contra a perna anterior (só a correção do `git`):
+
+```
+FAIL antes (só git fix):  130
+FAIL depois (+ gh shim):  120
+fecharam 10  ·  🔴 novos 0  ·  persistem 120
+
+escopo declarado do ML:    57   →  fecharam 9  ·  persistem 48
+```
+
+🔴 **Eu previ 54 e foram 9. Errei por 6x — a segunda estimativa errada seguida nesta REQ**
+(a anterior: previ 442, foram 68). O padrão é o mesmo e já está nomeado: agrupar por **sintoma
+compartilhado** ("todos falham por causa do `gh`") em vez de por **mecanismo verificado**.
+
+##### 🔴 Mas o shim funciona — a prova é a MUDANÇA DA MENSAGEM
+
+Antes, os 48 diziam *"No forge CLI is available"* — o produto não achava `gh` nenhum. Agora dizem:
+
+```
+FAIL [release-tag-parity/changelog-missing/go]: vacuity guard: stderr missing the
+changelog-missing refusal; stderr: Error: trackfw release tag: gh api failed resolving the
+repository's default branch from the forge:
+    release-tag-parity stub: unexpected gh call: api repos/owner/repo
+```
+
+**Quem fala agora é o STUB.** Ou seja: o `gh.exe` foi resolvido pelo processo filho nativo, executado,
+delegou ao bash e o stub rodou. **As quatro pernas da cadeia fecharam.** O que falta é outra coisa: o
+stub não reconhece a chamada `api repos/owner/repo` neste caminho.
+
+**Causa diferente ⇒ ML próprio nesta MESMA REQ** (Regra Dura de Causa Raiz), com a medição escrita:
+não é "o `gh` não é encontrado", é "a chamada não é reconhecida pelo stub". Hipótese a verificar, não
+a presumir: a passagem de argumentos atravessando `gh.exe → bash → stub` altera a forma que o
+matcher do stub espera.
+
+##### Onde o shim fechou de fato
+
+Os 9 são todos de `ship-force-parity` — `forge-pr-open-pushes`, `forge-unverifiable`,
+`forge-zero-pr`, nos 3 runtimes. Naquele gate o stub responde as chamadas que chegam, e o único
+obstáculo era o PATHEXT. **Zero regressão** em qualquer perna.
+
+##### Achado na própria sonda — a Pergunta 13 tem braço contaminado
+
+```
+13-A   gh: C:\Program Files\GitHub CLI\gh.exe   ·   /usr/bin/gh e /bin/gh NÃO existem
+13-B   o diretório do gh contém APENAS gh.exe   (nada que quebre discriminante)
+13-F   .cmd:  Go OK  ·  Node status=1 (vazio)  ·  Python contaminado
+13-G   .exe:  Go OK  ·  Node OK "stub-gh-ok"   ·  Python contaminado
+```
+
+🔴 **O braço Python de 13-F e 13-G mediu o `gh` REAL, não o stub** — o PATH da sonda não foi
+restringido, então `shutil.which` resolveu `C:\Program Files\GitHub CLI\gh.EXE` e o erro devolvido
+(`unknown command "a1" for "gh"`) é do GitHub CLI de verdade. **Esse braço não refuta nada; ele não
+testou.** Corrigir na sonda antes de citar 13-F/13-G como evidência de Python.
+
+**O que os braços válidos provam, e é decisivo para o desenho:** `.cmd` funciona no Go e **falha no
+Node**; `.exe` funciona nos dois. **Justifica o shim compilado em vez do wrapper `.cmd`**, que seria
+a solução óbvia e mais simples — e estaria errada.
+
+### ML-R2b1b — As chaves de `{owner}/{repo}` somem ao atravessar o shim
+**Status:** 🔄 Em andamento · **Agente:** `ares-tf` · **causa DIFERENTE do ML-R2b1, medida**
+
+Exposta pelo ML-R2b1: com o `gh.exe` funcionando, os 48 rótulos de `release-tag-parity` deixaram de
+falhar por "forge CLI ausente" e passaram a falhar **dentro do stub**.
+
+```
+release-tag-parity stub: unexpected gh call: api repos/owner/repo
+```
+
+O `case` do stub (`scripts/check-release-tag-parity.sh`, `write_release_gh_stub`) casa com:
+
+```bash
+repos\{owner\}/\{repo\})
+```
+
+🔴 **O produto envia `repos/{owner}/{repo}`; o stub recebe `repos/owner/repo`.** As chaves somem —
+e só no Windows, porque em Linux/macOS o mesmo `case` casa e o gate passa.
+
+**Onde some, é o que este ML tem de medir** — não presumir. Duas hipóteses:
+
+1. **Conversão de argumento do MSYS.** O `bash.exe` do Git for Windows reescreve argumentos que
+   *parecem* caminho. Candidato de correção: `MSYS2_ARG_CONV_EXCL='*'` no ambiente com que o shim
+   invoca o bash.
+2. **Citação de `os.Args` do Go** atravessando `CreateProcess` e sendo re-parseada pelo bash.
+
+🔴 **Meça qual das duas, com prova mínima e SEM o trackfw no meio** — foi assim que a nota do
+`msys-nao-converte-caminho-embutido-em-string-maior` isolou o caso anterior. Um `gh` que só faz
+`printf '%s\n' "$@"`, chamado pelos 3 runtimes através do shim, mostra a forma exata que chega.
+
+#### 🔴 O que NÃO fazer
+
+**Não afrouxe o `case` para `repos/*`.** Fecharia os 48 e destruiria o poder discriminante do stub —
+ele deixaria de distinguir a chamada certa da errada, e o gate passaria a aprovar por tolerância em
+vez de por acerto. É a forma clássica de "corrigir" reduzindo contagem escondendo defeito, que os
+critérios de aceite desta REQ proíbem explicitamente.
+
+Se a medição mostrar que preservar a forma exata é impossível, isso é **achado para decisão do
+arquiteto**, não licença para relaxar o matcher.
+
+#### Medição — Pergunta 14, run 34468562798 (crua, não parafraseada)
+
+```
+14-F  shim baseline, Go
+      P14_SHIM_BASE_RECV[2] = repos/{owner}/{repo}    ← chaves INTACTAS no shim
+      P14_ARG[1]            = repos/owner/repo        ← sumiram na fronteira shim→bash
+
+14-I  Go chama bash.exe DIRETAMENTE, sem shim
+      P14_ARG[1]            = repos/owner/repo        🔴 some IGUAL, sem o shim
+
+14-J  shim env-var (MSYS=noglob MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL=*)
+      P14_ARG[1]            = repos/{owner}/{repo}    ✅ preservado
+
+14-K  shim force-quoted (SysProcAttr.CmdLine)
+      P14_ARG[1]            = repos/{owner}/{repo}    ✅ preservado
+```
+
+**Veredito:** 🔴 **hipótese 1 confirmada, hipótese 2 refutada.** A perda é na fronteira do **bash**
+(conversão de argumento do MSYS), não na citação do `os.Args` do Go — o 14-I prova removendo o shim
+da equação e a perda continuar.
+
+#### Decisão de correção — candidato `env-var` (14-J)
+
+Decisão do arquiteto: variante `env-var`. É a correção padrão do MSYS, é a menor, e não altera a
+forma como o processo é criado (o force-quoting do 14-K mexe em `SysProcAttr`, superfície maior
+para ganho igual).
+
+Aplicada nos 3 scripts que constroem o shim:
+- `scripts/check-release-tag-parity.sh`
+- `scripts/check-ship-force-parity.sh`
+- `scripts/check-doctor-remote-parity.sh`
+
+O shim injeta no ambiente do bash filho:
+`MSYS=noglob`, `MSYS_NO_PATHCONV=1`, `MSYS2_ARG_CONV_EXCL=*`.
+
+#### Achado do 14-I — sítios de `{}` através de `bash.exe` fora dos 3 scripts
+
+O 14-I prova: as chaves somem **mesmo sem o shim** — qualquer argumento com `{}` enviado ao
+`bash.exe` pelo Go sofre a conversão. A correção do shim cobre apenas o caminho
+`gh.exe → bash gh-stub`. Sítios que passam `{}` por outro caminho de `bash.exe` não são cobertos.
+
+Derivação (`git grep` executado em 2026-09-10 no branch atual):
+
+```bash
+git grep -n '{owner}\|{repo}' -- '*.go' '*.sh'
+```
+
+Resultados relevantes fora dos 3 scripts do shim:
+
+| arquivo | linhas | natureza |
+|---|---|---|
+| `internal/commands/doctor_remote.go` | 107, 144, 158, 202 | chamada a `execForgeAPI("gh", ["api", "repos/{owner}/{repo}..."])` |
+| `internal/commands/release.go` | 367, 387, 481, 501 | chamada a `execForgeAPI("gh", ["api", "repos/{owner}/{repo}..."])` |
+
+Estes sítios passam `{owner}/{repo}` para `exec.Command("gh", args...)` no Go. No Windows, `gh`
+resolve para `gh.exe` (shim) → `bash.exe gh-stub`. A injeção das vars de ambiente no shim cobre
+**esses sítios também** — eles só chegam ao bash através do shim que este ML corrige.
+
+**Não há sítio identificado que contorne o shim e invoque `bash.exe` diretamente com `{}` args,
+fora dos 3 scripts corrigidos.** Se surgir, é ML próprio nesta mesma REQ.
+
+#### Reconciliação de teste
+
+Este ML não entrega teste novo — a correção é injeção de env no shim Go embutido nos scripts, e o
+gate (check-release-tag-parity.sh) já contém o `case` que serve como assert end-to-end no Windows.
+No Linux, o shim nunca é construído (`[[ ! -f "${REAL_GIT}.exe" ]] && return 0`) e o gate passa
+pela rota direta — sem impacto.
+
+#### Estimativa de fechamento
+
+**Estimativa: os 48 rótulos de `release-tag-parity` que falhavam dentro do stub fecham.** Declarada
+como estimativa — as duas anteriores nesta REQ (442→68, 54→9) estavam erradas. Se fechar menos,
+reportar; não forçar.
+
+#### Critérios de aceite
+
+- [x] a medição da Pergunta 14 colada no roadmap (crua, não parafraseada), com o nº do run
+- [x] hipótese 1 ou 2 declarada por escrito, com a medição que a decide (output de 14-I): **H1 confirmada, H2 refutada**
+- [x] os 3 scripts com as 3 variáveis injetadas e o **porquê** comentado
+- [x] o `case` do stub inalterado — preserva `repos\{owner\}/\{repo\}` exato
+- [x] sítios de `{}`-através-de-bash derivados e listados (achado, não correção)
+- [ ] `make quality` verde no Linux
+- [ ] 🔴 estimativa declarada como estimativa (feito acima) — se fechar menos, reportar
+
+### ML-R2b2 — Triagem dos 76 rótulos restantes por causa
+**Status:** ⬜ Pendente · **Agente:** `ares-tf` · **depende do ML-R2b1** · **pré-requisito do ratchet**
+
+Depois que o R2b1 fechar os 54, sobram **76 rótulos**. Escopo **medido**, não estimado.
+
+**Estrutura já levantada** — a triagem aqui é em boa parte **confirmar ou refutar contra os logs**,
+não descobrir: quatro dos seis grupos já têm causa nomeada no relatório do ML-2B ou em nota de vault.
+
+| grupo | nº | causa já nomeada? |
+|---|---|---|
+| `falsify/validate-parity` | 11 | não |
+| `falsify/setup-sXX-baseline` | ~19 | ML-2B: "cluster não triado — baseline reprova com binário real" |
+| `harness-hooks-parity/*` | 13 | sim — `structural drift` = mojibake, família com nota de vault |
+| `falsify/serve-chain-canonical-link` | 4 | ML-2B: `MODULE_NOT_FOUND` em `bash -c "$(declare -f fn)"` |
+| `falsify/git-branch-guard-dedup` | 2 | sim — dedup cego a `\`, nota de vault de 2026-09-05 |
+| `release-tag-parity/no-forge-cli/*` | 3 | **medida aqui**: `could not fetch origin` sob `NO_FORGE_PATH` |
+| `release-tag-parity/dirty-tree` | 1 | 🔴 **nomeado**: deixou de emitir rótulo nenhum |
+| demais | resto | — |
+
+**Entregável:** tabela causa → nº de **rótulos** → produto ou gate → sítio. Teste de agrupamento:
+*"se eu corrigir esta causa, exatamente estes rótulos fecham — e nenhum outro."*
+
+🔴 **A unidade é RÓTULO, nunca linha de log.** Ver "Medição final" no ML-R2c: contagem de linha
+superestima porque uma causa emite 3-5 linhas por cenário, e corrigi-la devolve **uma** linha `OK`.
+Foi assim que eu estimei 442 e entreguei 68.
+
+🔴 **A soma dos grupos tem de dar 76.** Grupo "residual" é legítimo; grupo *implícito* não é.
+
+**Insumo:** `~/Documents/trackfw-evidencias/censo-x64-2026-09-09/` — 8 logs por perna (`censo-main`
+sem a correção, `censo-branch` com) + `persistem.txt` com a lista nominal.
+
+**Fora deste ML:** corrigir qualquer uma delas.
+
+**Desbloqueia:** ligar o `parity` de Windows no CI com ratchet por nome sobre lista **triada**
+(issues #274 e #275).
 
 ### ML-R3 — O guard de travessia do ramo `default:` fala uma gramática só
 **Status:** ⬜ Pendente · **Agente:** `apolo-tf` · 🔴 **segurança (contido)**

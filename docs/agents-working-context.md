@@ -4,6 +4,110 @@
 
 ---
 
+## Sessão 2026-09-10b — ares-tf (Infrastructure) — ML-R2b1b: correção implementada (env-var, 14-J) nos 3 scripts (CONCLUÍDO, aguarda commit)
+
+Branch `fix/fechar-os-grupos-de-falha-de-windows-por-causa-raiz`.
+
+**Escopo ML-R2b1b (continuação pós-medição):**
+Run 34468562798 retornou. H1 confirmada, H2 refutada (14-I: perda ocorre mesmo sem shim → causa é MSYS bash entry-point, não quoting do Go).
+
+**O que foi feito:**
+- Roadmap ML-R2b1b: medição do run 34468562798 colada crua (14-F/14-I/14-J/14-K), veredito H1 vs H2, decisão de candidato, achados de sítios fora dos 3 scripts, critérios de aceite atualizados
+- `scripts/check-release-tag-parity.sh`: shim Go injetado com `MSYS=noglob`, `MSYS_NO_PATHCONV=1`, `MSYS2_ARG_CONV_EXCL=*` + comentário com nº do run e linhas 14-F/14-I
+- `scripts/check-ship-force-parity.sh`: idem
+- `scripts/check-doctor-remote-parity.sh`: idem
+- `case` do stub preservado intacto (`repos\{owner\}/\{repo\}`)
+- Achados derivados por `git grep`: sítios `internal/commands/doctor_remote.go` (107, 144) e `internal/commands/release.go` (367, 387, 481, 501) passam `{owner}/{repo}` via `execForgeAPI → exec.Command("gh")` → shim → bash; todos cobertos pela correção do shim
+- Estimativa: ~48 rótulos de release-tag-parity devem fechar — declarada como estimativa
+
+**Gates (Linux local):**
+- `make quality`: 0 FAIL, todos os cenários verdes (3292 linhas de output)
+
+**Pendente:**
+- Commit e push pelo arquiteto
+- Validação no Windows (runner) para confirmar fechamento dos 48 rótulos
+
+---
+
+## Sessão 2026-09-10a — ares-tf (Infrastructure) — ML-R2b1b: Pergunta 14 na sonda + candidatos de correção declarados (CONCLUÍDO)
+
+Branch `fix/fechar-os-grupos-de-falha-de-windows-por-causa-raiz`.
+
+**Escopo ML-R2b1b:**
+Medir por que `repos/{owner}/{repo}` perde as chaves ao atravessar o shim `.exe` → `bash.exe` no Windows.
+Duas hipóteses (H1: conversão MSYS no startup do bash; H2: quoting do CreateProcess pelo Go).
+
+**O que foi feito:**
+- Adicionada **Pergunta 14** ao `.github/workflows/windows-probe.yml` (inserida entre P13 e "Registrar duração")
+- Três variantes de shim instrumentadas: baseline (sem modificação), env-var (MSYS=noglob + MSYS_NO_PATHCONV + MSYS2_ARG_CONV_EXCL), force-quoted (SysProcAttr.CmdLine)
+- Cada shim loga `P14_SHIM_*_RECV[i]` na fronteira ①(product→shim) antes de chamar bash
+- Stub loga `P14_STUB_OK` + `P14_ARG[i]` na fronteira ②(shim→bash)
+- Discriminante 14-I: Go chama bash diretamente sem shim (isola H1 de H2)
+- PATH restrito: `T14:BASH_DIR` — real gh excluído (lição da Pergunta 13); 14-B prova o isolamento
+- Roadmap ML-R2b1b atualizado: candidatos declarados com marcador "NÃO medidos", aguardando output do runner Windows
+- Nenhuma modificação nos 3 scripts de produção — correção aplicada somente após a Pergunta 14 decidir o candidato
+
+**Gates (Linux local):**
+- `go build ./...`: exit 0
+- `go test ./...`: exit 0 (todos os pacotes verdes ou cached)
+- `go vet ./...`: exit 0
+- YAML (windows-probe.yml): `python3 yaml.safe_load` → YAML OK
+- `trackfw validate`: 174 ⚠ pré-existentes, sem erros novos, sem violação `branch_has_wip_roadmap`
+
+**Pendente (aguarda arquiteto / runner Windows):**
+- Disparar `windows-probe.yml` via workflow_dispatch e ler o output da Pergunta 14
+- Após output identificar qual variante preserva as chaves: aplicar correção nos 3 scripts e fechar critérios de aceite
+
+---
+
+## Sessão 2026-09-09d — ares-tf (Infrastructure) — ML-R2b1 corretivo (auditoria do arquiteto): 3 pontos (EM ANDAMENTO)
+
+Branch `fix/fechar-os-grupos-de-falha-de-windows-por-causa-raiz`.
+
+**Escopo corretivo (3 pontos do handoff):**
+1. `shutil.which` → `subprocess.run` com execução real (não apenas resolução de PATH)
+2. Bash path hardcoded `C:\Program Files\Git\usr\bin\bash.exe` → capturado do shell em tempo de build do shim via `command -v bash` + `cygpath -w`
+3. WARNING de build do shim → `exit 1` fatal no Windows (com stderr visível)
+Adicional implícito: mover `_build_gh_stub_shim_once` para ANTES do guard block em todos os 3 scripts (forward-reference latente que explode no Windows)
+
+**Escopo de evidência no roadmap:** citar linha exata em `check-doctor-remote-parity.sh` onde `write_gh_stub` escreve o stub `gh` (sítio latente incluído por Regra Dura de Causa Raiz)
+
+**Resultado (CONCLUÍDO — pronto para auditoria trackfw_architect):**
+- 3 scripts corrigidos: `check-release-tag-parity.sh`, `check-ship-force-parity.sh`, `check-doctor-remote-parity.sh`
+- `shutil.which` → `subprocess.run` com execução real + verificação de marcador `GH_SHIM_OK` (guard (b))
+- Bash path hardcoded removido; `bash_path.go` com `bashFallback` capturado de `command -v bash` + `cygpath -w`
+- WARNING → `exit 1` fatal no Windows com stderr visível
+- Forward-reference latente corrigida: `_build_gh_stub_shim_once` movida para ANTES do guard em todos os 3 scripts
+- Evidência do sítio `check-doctor-remote-parity.sh`: `write_gh_stub()` linha 315, `cat >"$dir/gh"` linha 322
+- Roadmap atualizado: status ML-R2b1 → "🔄 Corretivo em andamento"; seção "Corretivo (auditoria trackfw_architect)" adicionada com reconciliação de guards vs. conclusões do ML
+- Gates individuais: 3/3 passam (rc=0, todos os cenários OK)
+- `make quality` (full): exit 0 · 412 OK, 0 FAIL (parity-falsify) · parity-rest (inclui os 3 scripts) verde
+
+**Nota de cobertura local:** os guards Windows ficam atrás de `[[ -f "${REAL_GIT}.exe" ]]`. Em macOS o caminho Windows nunca é exercido. O verde local prova apenas que o caminho POSIX (no-op) está intacto. O caminho Windows aguarda censo `windows-latest`.
+
+---
+
+## Sessão 2026-09-09c — ares-tf (Infrastructure) — ML-R2b1: gh.exe shim para stubs Windows (EM ANDAMENTO)
+
+Branch `fix/fechar-os-grupos-de-falha-de-windows-por-causa-raiz`.
+
+**Escopo ML-R2b1:**
+Causa raiz: `write_release_gh_stub` / `write_gh_stub` criam `$dir/gh` (bash script, sem extensão). No Windows, `exec.LookPath("gh")` (Go), `spawnSync("gh")` (Node), `subprocess.run(["gh"])` (Python) usam CreateProcess + PATHEXT e não encontram arquivo sem extensão → `adapter.Available = false` → "No forge CLI is available". Precondição 6 (forge CLI check) dispara ANTES de 3+4 → 54 labels de falha no censo Windows.
+
+**Fix implementado:**
+- `scripts/check-release-tag-parity.sh`: adicionado `_GH_STUB_SHIM` + `_build_gh_stub_shim_once()` + chamada em `write_release_gh_stub()` + cópia de `gh.exe` + vacuity guard extension (nativo)
+- `scripts/check-ship-force-parity.sh`: mesma pattern
+- `scripts/check-doctor-remote-parity.sh`: mesma pattern (latent site — Regra Dura de Causa Raiz)
+- Bug corrigido: `[[ -n "$_GH_STUB_SHIM" ]] && cp ... || true` — o `&&` sem `|| true` retornava 1 sob `set -e` quando shim não construído no POSIX
+
+**Resultado:** `make quality` verde (1016 OKs, 0 FAILs, exit 0). `trackfw validate` 174 warnings (pré-existentes, nenhum ❌). Todos os 3 scripts de parity passam individualmente e no gate completo. **Pronto para auditoria do trackfw_architect.**
+
+**Bug POSIX encontrado e corrigido:** `[[ -n "$_GH_STUB_SHIM" ]] && cp ...` retornava exit 1 sob `set -e` quando shim não construído. Corrigido para `|| true` nos 3 scripts.
+
+**Pendente (requer commit do trackfw_architect):** Pergunta 13 no `windows-probe.yml` (YAML validado, 27 steps) + censo Windows `windows-latest` para confirmar 54 rótulos fecham.
+
+---
+
 ## Sessão 2026-09-09b — ares-tf (Infrastructure) — ML-R2d corretivo: YAML fix + ressalva apuracao (CONCLUÍDO)
 
 Branch `fix/fechar-os-grupos-de-falha-de-windows-por-causa-raiz`.
@@ -34852,3 +34956,17 @@ o rótulo.**
 
 **Evidência durável:** `~/Documents/trackfw-evidencias/censo-x64-2026-09-09/` (8 logs por perna +
 `persistem.txt`), ao lado de `censo-windows-2026-09-08/` com `SHA256SUMS.txt`.
+
+---
+
+## [ares-tf] ML-R2b1 — Stub `gh` não resolvível por PATHEXT no Windows (54 rótulos)
+
+**Iniciado em:** 2026-09-09
+**Agente:** ares-tf
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-09-03-fechar-os-grupos-de-falha-de-windows-por-causa-raiz.md` (ML-R2b1)
+
+**Estado:** Em andamento — adicionando Pergunta 13 ao windows-probe.yml para medir localização do gh e viabilidade de mecanismo de wrapper (.cmd vs .exe shim) antes de implementar o fix.
+
+**Causa raiz confirmada (sem medição nova):** `write_release_gh_stub` / `write_gh_stub` criam `$dir/gh` (bash, sem `.exe`). `exec.LookPath("gh")` no Windows exige extensão via PATHEXT — stub não encontrado → `adapter.Available = false` → "No forge CLI" antes de qualquer outra verificação. Afeta os 54 rótulos que passam um stub_dir como PATH prefix mas cujo stub não é resolvível por processo nativo Windows.
+
+**Próximo passo:** Acionar `windows-probe.yml --ref fix/fechar-...` com Pergunta 13 adicionada, aguardar resposta, então implementar fix.
