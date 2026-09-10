@@ -196,3 +196,51 @@ nossa própria auditoria aprovou. O custo não está em ler — está em **execu
 
 **Tratar os 40 itens como fila.** Uma lista de 40 é a ausência de prioridade com aparência de
 organização.
+
+---
+
+## 8. Execução da Faixa 0 — 2026-09-10
+
+### 0.1 — 4 REQs fechadas · **40 → 36**
+
+```
+REQ-2026-08-12-mitigacao-do-fail-open-do-credential-guard-...        → Done
+REQ-2026-09-02-guard-instalado-emite-schema-de-hook-...              → Done  (7.5.0, PR #297)
+REQ-2026-09-05-auditoria-externa-aponta-que-declaramos-...           → Done  (PR #289)
+REQ-2026-09-09-update-harness-reescreve-o-script-do-guard-...        → Done  (7.5.1, PR #302)
+```
+
+🔴 **Uma delas quase foi fechada errado.** O roadmap da `auditoria-externa` tinha **1 ML pendente**
+(`ML-3D — serve casa a aresta pelo caminho literal`), e fechar a REQ assim seria o achado A1 repetido.
+
+Fui verificar **o código**, não o marcador: `internal/serve/api_chain.go:164` já usa
+`validator.ResolveRoadmapRef`, entregue no PR **#289** (`e337563d`), nos 3 CLIs. **O ML estava feito e
+o marcador desatualizado.** Marcador corrigido com a evidência ao lado, e só então a REQ fechada.
+
+**Lição operacional:** status de ML não é evidência de entrega. Antes de fechar REQ por marcador,
+**ler o código**.
+
+### 0.3 — 2 ADRs decididas · `Proposed` → **`Accepted`**
+
+**`ADR-2026-09-05-hook-de-windows-roda-no-windows-...`** — D1 recusa "instale Git Bash" por
+aritmética: **resolve 1 CLI de 6**; Gemini, Codex e Copilot continuam sem guard mesmo com ele
+instalado. D2: correção por CLI, porque o defeito é por CLI. Raciocínio sólido, **aceita**.
+
+**`ADR-2026-09-05-staging-com-escopo-implicito-...`** — D1 bloqueia `git add` sem escopo enumerado
+(`-A`, `--all`, `.`, `-u`, sem operando). D2 🔴 **recusa** condicionar a regra à detecção de agente
+ativo, porque *"detecção de atividade de agente é frágil e falha aberto"* — exatamente a classe de
+defeito que esta semana custou duas REQs reabertas. **Aceita.**
+
+⚠️ **Consequência a declarar:** quando implementada, `git add .` e `git add -A` passam a ser
+bloqueados **para todos, inclusive para o usuário**. Staging válido passa a ser por caminho
+explícito. A ADR não muda nada hoje — o custo chega com a implementação, não com o aceite.
+
+```
+ADRs:  63 Accepted · 2 Superseded · 0 Proposed
+```
+
+### 0.2 — pendente
+
+Correção dos IDs duplicados `ML-4A`/`ML-4B` fica para quando a branch de Windows estiver livre — o
+roadmap vive nela, e há microlote em execução na branch do ratchet. **Vai junto com o congelamento de
+escopo (Faixa 1.1).**

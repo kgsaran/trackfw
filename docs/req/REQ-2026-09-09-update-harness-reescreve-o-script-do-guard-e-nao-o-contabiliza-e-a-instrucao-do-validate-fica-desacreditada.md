@@ -1,5 +1,5 @@
 ---
-status: Open
+status: Done
 date: 2026-09-09
 author: ""
 adr: ""
@@ -8,7 +8,7 @@ roadmap: "docs/roadmaps/done/ROADMAP-2026-09-09-o-alvo-do-manifesto-e-dono-do-ca
 
 # REQ: update harness reescreve o script do guard e nao o contabiliza, e a instrucao do validate fica desacreditada
 
-> Date: 2026-09-09 | Status: Open
+> Date: 2026-09-09 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 

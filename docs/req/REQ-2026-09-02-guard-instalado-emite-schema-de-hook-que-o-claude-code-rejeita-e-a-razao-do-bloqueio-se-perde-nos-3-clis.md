@@ -1,5 +1,5 @@
 ---
-status: Open
+status: Done
 date: 2026-09-02
 author: "kgsaran"
 adr: ""
@@ -8,7 +8,7 @@ roadmap: "docs/roadmaps/done/ROADMAP-2026-09-09-guard-emite-hookspecificoutput-e
 
 # REQ: O guard instalado emite schema de hook que o Claude Code rejeita, e a razão do bloqueio se perde — nos 3 CLIs
 
-> Date: 2026-09-02 | Status: Open
+> Date: 2026-09-02 | Status: Done
 | Linear Issue:
 | Jira Issue:
 

@@ -179,7 +179,10 @@ Antes → depois, no acervo real:
 "o comportamento foi entregue"; fica escrito em vez de presumido.
 
 ### ML-3D — `serve` casa a aresta pelo caminho literal: mesma causa, aresta órfã no dashboard
-**Status:** 🔄 Em andamento · **Agente:** `apolo-tf`
+**Status:** ✅ Concluído — entregue no PR **#289** (`e337563d`), nos 3 CLIs · **Agente:** `apolo-tf`
+> 🔴 *Marcador corrigido na auditoria de governança de 2026-09-10: o código já usava
+> `validator.ResolveRoadmapRef` (`internal/serve/api_chain.go:164`) desde o merge, mas o status
+> ficou em `🔄`, mantendo a REQ aberta por sincronização, não por trabalho pendente.*
 
 Achado **do próprio agente** durante o ML-3B, e foi ele que decidiu a questão contra o silêncio.
 `internal/serve/api_chain.go:127-130` monta `edges` com `To: normalizeRefSeparator(val)` — valor
