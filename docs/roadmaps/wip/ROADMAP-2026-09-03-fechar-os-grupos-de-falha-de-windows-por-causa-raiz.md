@@ -2042,8 +2042,9 @@ Verificação: `grep -w GIT_DIR` nos 3 scripts retorna apenas as ocorrências no
 explicativo; todos os usos operacionais são `GIT_BIN_DIR`. Os 3 gates rodaram verdes após a
 renomeação: release-tag `OK=21 FAIL=0`, ship-force `OK=5 FAIL=0`, push-force `OK=5 FAIL=0`.
 
-### ML-R2b1 — O `gh` tem o MESMO defeito do `git`: `BASE_PATH` presume `/usr/bin`
-**Status:** 🔄 Corretivo em andamento (auditoria trackfw_architect — 3 pontos) · **Agente:** `ares-tf` · 🔴 **mesma causa do ML-R2c, binário diferente**
+### ML-R2b1 — O stub de `gh` não é resolvível pelo processo filho nativo no Windows
+**Status:** ✅ **Concluído — 9 rótulos fechados, 0 regressão** · **Agente:** `ares-tf` + auditoria
+e medição do arquiteto · 🔴 **o escopo previsto (54) estava errado; ver medição abaixo**
 
 Descoberto ao triar os 130 que persistiram depois do ML-R2c. **Não é causa nova — é o mesmo
 mecanismo, um binário adiante.**
@@ -2219,6 +2220,71 @@ entra no mesmo ML-R2b1.
 Em macOS (`darwin`), essa condição é sempre false — o path Windows não é exercido localmente.
 O verde local prova apenas que o caminho POSIX (no-op) está intacto. A prova do caminho Windows
 aguarda o censo `windows-latest`.
+
+#### Medição no Windows (arquiteto, 2026-09-10) — o shim FUNCIONA e fechou 9 dos 54
+
+```
+sonda   run 34429837886   Pergunta 13
+censo   run 34429844955   branch, com o shim
+```
+
+**Por conjunto de rótulos**, contra a perna anterior (só a correção do `git`):
+
+```
+FAIL antes (só git fix):  130
+FAIL depois (+ gh shim):  120
+fecharam 10  ·  🔴 novos 0  ·  persistem 120
+
+escopo declarado do ML:    57   →  fecharam 9  ·  persistem 48
+```
+
+🔴 **Eu previ 54 e foram 9. Errei por 6x — a segunda estimativa errada seguida nesta REQ**
+(a anterior: previ 442, foram 68). O padrão é o mesmo e já está nomeado: agrupar por **sintoma
+compartilhado** ("todos falham por causa do `gh`") em vez de por **mecanismo verificado**.
+
+##### 🔴 Mas o shim funciona — a prova é a MUDANÇA DA MENSAGEM
+
+Antes, os 48 diziam *"No forge CLI is available"* — o produto não achava `gh` nenhum. Agora dizem:
+
+```
+FAIL [release-tag-parity/changelog-missing/go]: vacuity guard: stderr missing the
+changelog-missing refusal; stderr: Error: trackfw release tag: gh api failed resolving the
+repository's default branch from the forge:
+    release-tag-parity stub: unexpected gh call: api repos/owner/repo
+```
+
+**Quem fala agora é o STUB.** Ou seja: o `gh.exe` foi resolvido pelo processo filho nativo, executado,
+delegou ao bash e o stub rodou. **As quatro pernas da cadeia fecharam.** O que falta é outra coisa: o
+stub não reconhece a chamada `api repos/owner/repo` neste caminho.
+
+**Causa diferente ⇒ ML próprio nesta MESMA REQ** (Regra Dura de Causa Raiz), com a medição escrita:
+não é "o `gh` não é encontrado", é "a chamada não é reconhecida pelo stub". Hipótese a verificar, não
+a presumir: a passagem de argumentos atravessando `gh.exe → bash → stub` altera a forma que o
+matcher do stub espera.
+
+##### Onde o shim fechou de fato
+
+Os 9 são todos de `ship-force-parity` — `forge-pr-open-pushes`, `forge-unverifiable`,
+`forge-zero-pr`, nos 3 runtimes. Naquele gate o stub responde as chamadas que chegam, e o único
+obstáculo era o PATHEXT. **Zero regressão** em qualquer perna.
+
+##### Achado na própria sonda — a Pergunta 13 tem braço contaminado
+
+```
+13-A   gh: C:\Program Files\GitHub CLI\gh.exe   ·   /usr/bin/gh e /bin/gh NÃO existem
+13-B   o diretório do gh contém APENAS gh.exe   (nada que quebre discriminante)
+13-F   .cmd:  Go OK  ·  Node status=1 (vazio)  ·  Python contaminado
+13-G   .exe:  Go OK  ·  Node OK "stub-gh-ok"   ·  Python contaminado
+```
+
+🔴 **O braço Python de 13-F e 13-G mediu o `gh` REAL, não o stub** — o PATH da sonda não foi
+restringido, então `shutil.which` resolveu `C:\Program Files\GitHub CLI\gh.EXE` e o erro devolvido
+(`unknown command "a1" for "gh"`) é do GitHub CLI de verdade. **Esse braço não refuta nada; ele não
+testou.** Corrigir na sonda antes de citar 13-F/13-G como evidência de Python.
+
+**O que os braços válidos provam, e é decisivo para o desenho:** `.cmd` funciona no Go e **falha no
+Node**; `.exe` funciona nos dois. **Justifica o shim compilado em vez do wrapper `.cmd`**, que seria
+a solução óbvia e mais simples — e estaria errada.
 
 ### ML-R2b2 — Triagem dos 76 rótulos restantes por causa
 **Status:** ⬜ Pendente · **Agente:** `ares-tf` · **depende do ML-R2b1** · **pré-requisito do ratchet**
