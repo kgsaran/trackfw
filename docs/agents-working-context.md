@@ -35044,3 +35044,54 @@ o rótulo.**
 **Causa raiz confirmada (sem medição nova):** `write_release_gh_stub` / `write_gh_stub` criam `$dir/gh` (bash, sem `.exe`). `exec.LookPath("gh")` no Windows exige extensão via PATHEXT — stub não encontrado → `adapter.Available = false` → "No forge CLI" antes de qualquer outra verificação. Afeta os 54 rótulos que passam um stub_dir como PATH prefix mas cujo stub não é resolvível por processo nativo Windows.
 
 **Próximo passo:** Acionar `windows-probe.yml --ref fix/fechar-...` com Pergunta 13 adicionada, aguardar resposta, então implementar fix.
+
+---
+
+## Sessão 2026-09-10f — ares-tf (Infrastructure) — ML-2B: em andamento
+
+Branch `fix/ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega`.
+
+**Escopo ML-2B:** Remoção de nome exige justificativa (D4). Medir discriminante corrigido-vs-não-executa nos 3 runtimes, materializar `removal_note`, 4 braços de falsificação.
+
+**Medições do discriminante (foreground, local, macOS arm64):**
+
+| Runtime | Observável de pass | Discriminante existe? |
+|---|---|---|
+| Go 1.25.2 (`-v`) | `--- PASS: TestFoo (0.01s)` | ✅ SIM |
+| Node (TAP) | `ok N - test name` | ✅ SIM |
+| Python (`-q -rA`) | `PASSED pypi/tests/...` em short summary | ✅ SIM (requer `-rA`) |
+
+**Python**: com `-q` puro (configuração atual), discriminante ausente. Com `-rA` (mudança de 1 flag no step Windows), discriminante existe. Medido localmente: `python3 -m pytest pypi/tests/test_commands_basic.py::... -q -rA` → `PASSED pypi/tests/test_commands_basic.py::TestRealCommands::test_status_uses_real_handler`. Limitação declarada: se `-rA` não for passado, checker emite aviso de vacuidade e ignora verificação de `corrected` para Python.
+
+**Design escolhido:**
+- JSON: seção `removed` separada de `entries`; entradas retiradas vão para `removed` com `removal_note` obrigatório
+- Checker: `--baseline` para detectar deleções silenciosas (bypassing `removed`)
+- 5 novos self-tests: T10 (baseline check), T11 (removed sem nota), T12 (corrected mas no-longer-runs), T13 (renamed sem renamed_to em entries), T14 (remoção válida → exit 0)
+
+**Status:** Implementação em andamento.
+
+---
+
+## Sessão 2026-09-10f (encerramento) — ares-tf (Infrastructure) — ML-2B: ENTREGUE, aguarda auditoria do arquiteto
+
+Branch `fix/ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega`.
+
+**Discriminante medido (foreground, macOS arm64):**
+- Go (`-v`): `--- PASS: TestFoo` → discriminante existe
+- Node (TAP): `ok N - test name` → discriminante existe
+- Python (`-q -rA`): `PASSED pypi/tests/...` → discriminante existe com `-rA`
+- Limitação declarada: sem `-rA`, Python vacuidade = checker emite aviso e pula verificação
+
+**Arquivos criados/modificados:**
+- `.github/windows-known-failures.json` — seção `removed: []` + `_meta.d4_note` atualizado
+- `scripts/check-windows-known-failures.py` — 3 extractors de pass; `validate_removed()`; `check_baseline_deletions()`; `--baseline` arg; 5 novos self-tests T10-T14
+- `.github/workflows/quality.yml` — `-rA` no Python step; step baseline (ML-2B); ratchet step renomeado e com `--baseline`
+
+**Gates executados (sequenciais, foreground, macOS arm64):**
+- `python3 scripts/check-windows-known-failures.py --self-test` → 14 PASS, 0 FAIL
+- `make parity-rest` → exit 0 (14 PASS self-test + todos os outros gates)
+- `trackfw validate` → exit 0 (174 warnings pré-existentes, 0 errors)
+- YAML: `python3 -c "yaml.safe_load(...)"` → válido, 11 jobs
+- `make quality` → exit 0 (0 FAIL, exit code confirmado pelo background task)
+
+**Status:** Microbatch entregue ao `trackfw_architect` para auditoria e commit. ML-2B não marcado `✅ Concluído` — aguarda aprovação da auditoria.

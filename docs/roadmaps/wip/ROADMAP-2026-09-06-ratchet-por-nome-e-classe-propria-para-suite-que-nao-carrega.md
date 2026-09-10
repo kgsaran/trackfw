@@ -143,10 +143,43 @@ Reconciliação com sumários dos runners:
 - YAML: `python3 -c "yaml.safe_load(...)"` → válido, 11 jobs
 
 ### ML-2B — Remoção de nome exige justificativa
-**Status:** ⬜ Pendente · **Agente:** `ares-tf`
+**Status:** 🔄 Em andamento · **Agente:** `ares-tf`
 Corrigido, **renomeado** ou **deixou de executar** — o ratchet não distingue sozinho. Sem isto a
 lista vira cemitério, que é a única forma de ele fracassar em silêncio.
 **Falsificação obrigatória:** renomear um teste da lista **sem corrigi-lo** não pode virar verde.
+
+**Medições do discriminante (2026-09-10, macOS arm64):**
+
+| Runtime | Observável de pass | Discriminante corrigido-vs-não-executa? |
+|---|---|---|
+| Go 1.25.2 (`-v`) | `--- PASS: TestFoo (0.01s)` | ✅ SIM — presente=corrected, ausente=deleted |
+| Node (TAP) | `ok N - test name` em coluna 0 | ✅ SIM — presente=corrected, ausente=deleted |
+| Python (`-q -rA`) | `PASSED pypi/tests/...` em short summary | ✅ SIM com `-rA` (1 flag extra) |
+
+Python sem `-rA`: sem discriminante (verificado medindo `pytest -q` vs `pytest -q -rA`). Mudança de 1 flag no step Windows supre. Se `-rA` ausente (vacuidade), checker emite aviso e pula verificação.
+
+**Design do artefato:** seção `removed` separada de `entries` no JSON.
+- Entradas retiradas: movidas para `removed` com `removal_note` obrigatório
+- `--baseline`: diff contra `origin/main` detecta deleções silenciosas (bypassing `removed`)
+
+**4 braços de falsificação implementados:**
+- T10: entrada deletada sem `removed` record → **exit 1** (baseline check)
+- T11: entrada em `removed` sem `removal_note` → **exit 1** (schema check)
+- T12: `removal_note: corrected` mas teste não está em PASS output (Go não-vacuous) → **exit 1**
+- T13: `removal_note: renamed` com `renamed_to` ausente das active entries → **exit 1**
+- T14: remoção válida (corrected + teste em PASS) → **exit 0** (guarda de vacuidade)
+
+**Arquivos afetados:**
+- `.github/windows-known-failures.json` — seção `removed` adicionada; `_meta.d4_note` atualizado
+- `scripts/check-windows-known-failures.py` — 3 extractors de pass, `validate_removed()`, `check_baseline_deletions()`, 5 novos self-tests (T10-T14), `--baseline` arg
+- `.github/workflows/quality.yml` — `-rA` no Python step; novo step de baseline; ratchet step atualizado
+
+**Gates (sequenciais, foreground, local, macOS arm64):**
+- `python3 scripts/check-windows-known-failures.py --self-test` → 14 PASS, 0 FAIL
+- `make parity-rest` → exit 0
+- `trackfw validate` → exit 0 (174 warnings pré-existentes)
+- YAML: `python3 -c "yaml.safe_load(...)"` → válido, 11 jobs
+- `make quality` → em andamento (vide sessão 2026-09-10f)
 
 ## Wave 3 — Tirar a rede
 > Dependências: Waves 1 e 2 fechadas e verdes.

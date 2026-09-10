@@ -9,7 +9,7 @@
       "command": "gh run view 34478752778 --log --job=102875922566"
     },
     "d2_note": "List extracted from CI run, not from developer machine (ADR D2). The reporter of #275 declared that his Windows machine is not the runner (no WSL, no bash in %PATH% natively). His list supports the need for the ratchet, not the content.",
-    "d4_note": "To remove an entry, add 'removal_note' field explaining: corrected | renamed | no-longer-runs. This is the ML-2B protocol. A name that disappears without a note may have been silently renamed or stopped running.",
+    "d4_note": "ML-2B protocol (ADR D4): to retire an entry, move it from 'entries' to the 'removed' array and add a 'removal_note' field. Valid values: corrected (test now passes — verifiable via PASS output in Go/Node/Python with -rA), renamed (test was renamed — also add renamed_to field pointing to the new name in active entries), no-longer-runs (test was deleted or restructured and no longer exists). The checker validates removal_note presence and correctness. Silent deletion (bypassing 'removed') is caught by --baseline diff against origin/main.",
     "d5_decisions": {
       "go_subtests": "Top-level test name only (strip everything after first '/'). Subtest names are table entries that can change when table parameters change.",
       "python_class_methods": "Full pytest node ID relative to pypi/tests/ including class qualifier (ClassName::method_name). Function names alone are not unique across classes.",
@@ -208,5 +208,6 @@
       "runtime": "python",
       "class": "assertion"
     }
-  ]
+  ],
+  "removed": []
 }

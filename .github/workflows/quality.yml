@@ -664,7 +664,12 @@ jobs:
           # ML-2A: captura saída para extração de nomes de falhas pelo ratchet.
           # python-suite-out.txt é lido pelo step "ML-2A — ratchet de nomes" abaixo.
           $outFile = Join-Path $env:RUNNER_TEMP "python-suite-out.txt"
-          python -m pytest pypi/tests -q *> $outFile
+          # ML-2B: -rA flag adds 'PASSED pypi/tests/...' lines to the short summary,
+          # enabling the corrected-vs-no-longer-runs discriminant for Python.
+          # Measured (2026-09-10, macOS arm64): pytest -q -rA emits
+          # 'PASSED pypi/tests/test_foo.py::Class::method' in the short summary section.
+          # Without -rA, no PASSED lines appear and the discriminant is absent.
+          python -m pytest pypi/tests -q -rA *> $outFile
           $rc = $LASTEXITCODE
           Get-Content $outFile
           # Classificar por tipo de evento, nunca por contagem (ADR D3).
@@ -675,18 +680,38 @@ jobs:
           }
           exit $rc
 
-      - name: ML-2A — ratchet de nomes (verifica falhas contra lista versionada)
-        # ADR D1: falha se nome novo aparecer fora da lista; avisa quando nome da
-        # lista deixa de falhar (mas NÃO reprova — corrigir um teste não pode
-        # quebrar o CI).
+      - name: ML-2B — extrair baseline para verificação de remoções (D4)
+        # ADR D4: toda entrada removida da lista declara o motivo (removal_note).
+        # O baseline (estado atual de origin/main) permite detectar entradas
+        # deletadas sem passar pelo array 'removed'.
+        # Se origin/main não tiver o arquivo (PR novo adicionando o ratchet),
+        # o step emite aviso e o check prossegue sem baseline.
+        if: always() && steps.precondition.outcome == 'success'
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          $baselineFile = Join-Path $env:RUNNER_TEMP "baseline-known-failures.json"
+          git show origin/main:.github/windows-known-failures.json 2>$null > $baselineFile
+          if (-not (Test-Path $baselineFile) -or (Get-Item $baselineFile).Length -eq 0) {
+            Write-Host "::warning::ML-2B: não foi possível extrair baseline de origin/main — verificação de remoções por baseline desabilitada (normal em PRs que adicionam o arquivo pela primeira vez)."
+            Remove-Item -Path $baselineFile -ErrorAction SilentlyContinue
+          }
+
+      - name: ML-2A/2B — ratchet de nomes e verificação de remoções
+        # ML-2A — ADR D1: falha se nome novo aparecer fora da lista; avisa quando
+        # nome da lista deixa de falhar (mas NÃO reprova — corrigir um teste não
+        # pode quebrar o CI).
+        #
+        # ML-2B — ADR D4: verifica entradas no array 'removed':
+        #   - toda entrada retirada de 'entries' deve estar em 'removed' (baseline)
+        #   - removal_note obrigatório (corrected | renamed | no-longer-runs)
+        #   - corrected: nome deve aparecer em '--- PASS:' / 'ok N -' / 'PASSED'
+        #   - renamed: renamed_to deve apontar para uma entrada ativa
         #
         # Guarda de vacuidade (lista): lista vazia ou ausente → exit 1.
         # Guarda de vacuidade (artefatos): artefato ausente → exit 1.
-        # Sem estas guardas, um conjunto de observação vazio passa silenciosamente
-        # sobre toda a dívida ativa — o pior modo de falha do ratchet.
-        #
-        # Contagem — nunca como critério (ADR D1): o log imprime totais apenas
-        # como informação. O exit code vem exclusivamente da comparação de conjuntos.
+        # Contagem — nunca como critério (ADR D1): o exit code vem exclusivamente
+        # da comparação de conjuntos.
         #
         # continue-on-error: true do JOB ainda se aplica — este step pode reprovar
         # sem bloquear PRs enquanto o ML-3A (remoção do continue-on-error) não for
@@ -694,11 +719,13 @@ jobs:
         if: always() && steps.precondition.outcome == 'success'
         shell: pwsh
         run: |
+          $baselineFile = Join-Path $env:RUNNER_TEMP "baseline-known-failures.json"
           python scripts/check-windows-known-failures.py `
             --list .github/windows-known-failures.json `
             --go-out  "$env:RUNNER_TEMP\go-suite-out.txt" `
             --node-tap "$env:RUNNER_TEMP\node-suite.tap" `
-            --python-out "$env:RUNNER_TEMP\python-suite-out.txt"
+            --python-out "$env:RUNNER_TEMP\python-suite-out.txt" `
+            --baseline "$baselineFile"
 
       - name: Camada 1 pulada — AC12 impediu execução segura
         if: steps.precondition.outcome != 'success'
