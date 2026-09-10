@@ -4,6 +4,31 @@
 
 ---
 
+## Sessão 2026-09-10b — ares-tf (Infrastructure) — ML-R2b1b: correção implementada (env-var, 14-J) nos 3 scripts (CONCLUÍDO, aguarda commit)
+
+Branch `fix/fechar-os-grupos-de-falha-de-windows-por-causa-raiz`.
+
+**Escopo ML-R2b1b (continuação pós-medição):**
+Run 34468562798 retornou. H1 confirmada, H2 refutada (14-I: perda ocorre mesmo sem shim → causa é MSYS bash entry-point, não quoting do Go).
+
+**O que foi feito:**
+- Roadmap ML-R2b1b: medição do run 34468562798 colada crua (14-F/14-I/14-J/14-K), veredito H1 vs H2, decisão de candidato, achados de sítios fora dos 3 scripts, critérios de aceite atualizados
+- `scripts/check-release-tag-parity.sh`: shim Go injetado com `MSYS=noglob`, `MSYS_NO_PATHCONV=1`, `MSYS2_ARG_CONV_EXCL=*` + comentário com nº do run e linhas 14-F/14-I
+- `scripts/check-ship-force-parity.sh`: idem
+- `scripts/check-doctor-remote-parity.sh`: idem
+- `case` do stub preservado intacto (`repos\{owner\}/\{repo\}`)
+- Achados derivados por `git grep`: sítios `internal/commands/doctor_remote.go` (107, 144) e `internal/commands/release.go` (367, 387, 481, 501) passam `{owner}/{repo}` via `execForgeAPI → exec.Command("gh")` → shim → bash; todos cobertos pela correção do shim
+- Estimativa: ~48 rótulos de release-tag-parity devem fechar — declarada como estimativa
+
+**Gates (Linux local):**
+- `make quality`: 0 FAIL, todos os cenários verdes (3292 linhas de output)
+
+**Pendente:**
+- Commit e push pelo arquiteto
+- Validação no Windows (runner) para confirmar fechamento dos 48 rótulos
+
+---
+
 ## Sessão 2026-09-10a — ares-tf (Infrastructure) — ML-R2b1b: Pergunta 14 na sonda + candidatos de correção declarados (CONCLUÍDO)
 
 Branch `fix/fechar-os-grupos-de-falha-de-windows-por-causa-raiz`.

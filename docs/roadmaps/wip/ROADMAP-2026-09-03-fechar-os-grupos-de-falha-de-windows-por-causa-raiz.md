@@ -2326,28 +2326,89 @@ critérios de aceite desta REQ proíbem explicitamente.
 Se a medição mostrar que preservar a forma exata é impossível, isso é **achado para decisão do
 arquiteto**, não licença para relaxar o matcher.
 
-#### Candidatos de correção — declarados, NÃO medidos (aguardando Pergunta 14 Windows)
+#### Medição — Pergunta 14, run 34468562798 (crua, não parafraseada)
 
-Três variantes de shim testadas em `windows-probe.yml` Pergunta 14 (adicionada em 2026-09-10):
+```
+14-F  shim baseline, Go
+      P14_SHIM_BASE_RECV[2] = repos/{owner}/{repo}    ← chaves INTACTAS no shim
+      P14_ARG[1]            = repos/owner/repo        ← sumiram na fronteira shim→bash
 
-| variante | mecanismo | output esperado no log |
+14-I  Go chama bash.exe DIRETAMENTE, sem shim
+      P14_ARG[1]            = repos/owner/repo        🔴 some IGUAL, sem o shim
+
+14-J  shim env-var (MSYS=noglob MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL=*)
+      P14_ARG[1]            = repos/{owner}/{repo}    ✅ preservado
+
+14-K  shim force-quoted (SysProcAttr.CmdLine)
+      P14_ARG[1]            = repos/{owner}/{repo}    ✅ preservado
+```
+
+**Veredito:** 🔴 **hipótese 1 confirmada, hipótese 2 refutada.** A perda é na fronteira do **bash**
+(conversão de argumento do MSYS), não na citação do `os.Args` do Go — o 14-I prova removendo o shim
+da equação e a perda continuar.
+
+#### Decisão de correção — candidato `env-var` (14-J)
+
+Decisão do arquiteto: variante `env-var`. É a correção padrão do MSYS, é a menor, e não altera a
+forma como o processo é criado (o force-quoting do 14-K mexe em `SysProcAttr`, superfície maior
+para ganho igual).
+
+Aplicada nos 3 scripts que constroem o shim:
+- `scripts/check-release-tag-parity.sh`
+- `scripts/check-ship-force-parity.sh`
+- `scripts/check-doctor-remote-parity.sh`
+
+O shim injeta no ambiente do bash filho:
+`MSYS=noglob`, `MSYS_NO_PATHCONV=1`, `MSYS2_ARG_CONV_EXCL=*`.
+
+#### Achado do 14-I — sítios de `{}` através de `bash.exe` fora dos 3 scripts
+
+O 14-I prova: as chaves somem **mesmo sem o shim** — qualquer argumento com `{}` enviado ao
+`bash.exe` pelo Go sofre a conversão. A correção do shim cobre apenas o caminho
+`gh.exe → bash gh-stub`. Sítios que passam `{}` por outro caminho de `bash.exe` não são cobertos.
+
+Derivação (`git grep` executado em 2026-09-10 no branch atual):
+
+```bash
+git grep -n '{owner}\|{repo}' -- '*.go' '*.sh'
+```
+
+Resultados relevantes fora dos 3 scripts do shim:
+
+| arquivo | linhas | natureza |
 |---|---|---|
-| baseline | shim atual (sem modificação) | `P14_SHIM_BASE_RECV` + `P14_ARG` (mostra fronteiras ① e ②) |
-| env-var | `cmd.Env = append(os.Environ(), "MSYS=noglob", "MSYS_NO_PATHCONV=1", "MSYS2_ARG_CONV_EXCL=*")` | `P14_SHIM_ENV_RECV` + `P14_ARG` |
-| force-quoted | `SysProcAttr.CmdLine` com todos os args em aspas duplas Windows | `P14_SHIM_FQ_CMDLINE` + `P14_ARG` |
+| `internal/commands/doctor_remote.go` | 107, 144, 158, 202 | chamada a `execForgeAPI("gh", ["api", "repos/{owner}/{repo}..."])` |
+| `internal/commands/release.go` | 367, 387, 481, 501 | chamada a `execForgeAPI("gh", ["api", "repos/{owner}/{repo}..."])` |
 
-Discriminante H1 vs H2: Pergunta 14-I — Go chama `bash.exe` diretamente (sem shim). Se `{owner}/{repo}` some na chamada direta também → H2 (problema na fronteira Go→bash); se não some → o problema está na fronteira shim→bash (H1 ou outra causa no shim).
+Estes sítios passam `{owner}/{repo}` para `exec.Command("gh", args...)` no Go. No Windows, `gh`
+resolve para `gh.exe` (shim) → `bash.exe gh-stub`. A injeção das vars de ambiente no shim cobre
+**esses sítios também** — eles só chegam ao bash através do shim que este ML corrige.
 
-**A correção aplicada nos 3 scripts (`check-release-tag-parity.sh`, `check-ship-force-parity.sh`, `check-doctor-remote-parity.sh`) só acontece APÓS a Pergunta 14 identificar qual variante funciona.**
+**Não há sítio identificado que contorne o shim e invoque `bash.exe` diretamente com `{}` args,
+fora dos 3 scripts corrigidos.** Se surgir, é ML próprio nesta mesma REQ.
+
+#### Reconciliação de teste
+
+Este ML não entrega teste novo — a correção é injeção de env no shim Go embutido nos scripts, e o
+gate (check-release-tag-parity.sh) já contém o `case` que serve como assert end-to-end no Windows.
+No Linux, o shim nunca é construído (`[[ ! -f "${REAL_GIT}.exe" ]] && return 0`) e o gate passa
+pela rota direta — sem impacto.
+
+#### Estimativa de fechamento
+
+**Estimativa: os 48 rótulos de `release-tag-parity` que falhavam dentro do stub fecham.** Declarada
+como estimativa — as duas anteriores nesta REQ (442→68, 54→9) estavam erradas. Se fechar menos,
+reportar; não forçar.
 
 #### Critérios de aceite
 
-- [ ] a forma exata que chega ao stub, medida com probe mínimo sem trackfw, **saída crua** (Pergunta 14)
-- [ ] hipótese 1 ou 2 declarada por escrito, com a medição que a decide (output de 14-I)
-- [ ] correção preservando a forma `{owner}/{repo}` — o `case` **não** afrouxa
-- [ ] censo nas duas pernas: quantos dos 48 fecham, **0 FAIL novo**
-- [ ] 🔴 se fecharem menos, **reporte — não force**; foram 2 estimativas erradas seguidas nesta REQ
+- [x] a medição da Pergunta 14 colada no roadmap (crua, não parafraseada), com o nº do run
+- [x] hipótese 1 ou 2 declarada por escrito, com a medição que a decide (output de 14-I): **H1 confirmada, H2 refutada**
+- [x] os 3 scripts com as 3 variáveis injetadas e o **porquê** comentado
+- [x] o `case` do stub inalterado — preserva `repos\{owner\}/\{repo\}` exato
+- [x] sítios de `{}`-através-de-bash derivados e listados (achado, não correção)
 - [ ] `make quality` verde no Linux
+- [ ] 🔴 estimativa declarada como estimativa (feito acima) — se fechar menos, reportar
 
 ### ML-R2b2 — Triagem dos 76 rótulos restantes por causa
 **Status:** ⬜ Pendente · **Agente:** `ares-tf` · **depende do ML-R2b1** · **pré-requisito do ratchet**

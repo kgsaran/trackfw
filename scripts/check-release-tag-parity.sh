@@ -283,6 +283,17 @@ func main() {
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+	// Suppress MSYS brace/path conversion at the shim→bash frontier (run 34468562798,
+	// P14-I/P14-J). P14-F: {owner}/{repo} keys intact in shim RECV[2] but already gone
+	// in bash child's os.Args[1] — the rewrite happens at the MSYS bash entry point, not
+	// at any quoting layer of the Go caller. P14-I confirmed the loss survives when Go
+	// calls bash.exe directly (no shim), ruling out shim quoting as the cause. P14-J
+	// confirmed these three vars suppress the conversion end-to-end.
+	cmd.Env = append(os.Environ(),
+		"MSYS=noglob",
+		"MSYS_NO_PATHCONV=1",
+		"MSYS2_ARG_CONV_EXCL=*",
+	)
 	if err := cmd.Run(); err != nil {
 		if e, ok := err.(*exec.ExitError); ok {
 			os.Exit(e.ExitCode())
