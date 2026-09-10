@@ -112,27 +112,41 @@ cat ~/.ssh/id_ed25519.pub                   # copie esta linha inteira
 **Na VM (PowerShell como Administrador)** — cole a linha no lugar de `COLE_A_CHAVE_AQUI`:
 
 ```powershell
-$key = 'COLE_A_CHAVE_AQUI'
 $f   = 'C:\ProgramData\ssh\administrators_authorized_keys'
+$key = 'COLE_A_CHAVE_AQUI'
 
-# UTF8 SEM BOM: o sshd rejeita o arquivo em silêncio se houver BOM
+# 1. garantir que o arquivo existe E que você tem acesso a ele
+if (-not (Test-Path $f)) { New-Item -ItemType File -Path $f -Force | Out-Null }
+takeown /f $f
+
+# 2. ACL POR SID, nunca por nome:
+#    *S-1-5-32-544 = Administradores/Administrators   ·   *S-1-5-18 = SYSTEM
+icacls $f /inheritance:r
+icacls $f /grant '*S-1-5-32-544:F' /grant '*S-1-5-18:F'
+
+# 3. SÓ AGORA escrever — UTF-8 SEM BOM
 [IO.File]::WriteAllText($f, "$key`n", (New-Object Text.UTF8Encoding $false))
 
-# ACL obrigatória: só Administrators e SYSTEM. Herança QUEBRADA.
-icacls $f /inheritance:r
-icacls $f /grant 'Administrators:F' /grant 'SYSTEM:F'
-icacls $f          # confira: nenhuma entrada além dessas duas
-
+# 4. conferir: icacls deve mostrar só DUAS entradas; Get-Content, UMA linha
+icacls $f
+Get-Content $f
 Restart-Service sshd
 ```
 
-🔴 **Três detalhes que fazem falhar em silêncio:**
+🔴 **Cinco detalhes que fazem falhar em silêncio** — os dois primeiros foram medidos em 2026-09-10,
+recriando esta VM, e **nenhum dos dois produz erro que pareça ter a ver com SSH**:
 
-1. **BOM.** `Set-Content`/`Out-File` do PowerShell 5.1 escrevem UTF-8 **com BOM** e o `sshd` recusa o
-   arquivo sem dizer nada. Por isso o `[IO.File]::WriteAllText` acima.
-2. **Herança de ACL.** Se qualquer usuário além de `Administrators`/`SYSTEM` tiver acesso, o `sshd`
-   ignora o arquivo — mesma falha silenciosa.
-3. **Quebra de linha.** Uma chave partida em duas linhas não é lida. Cole a linha inteira.
+1. 🔴 **Nome de grupo é localizado.** Em Windows pt-BR o grupo é **`Administradores`**, não
+   `Administrators` — e o `icacls` responde *"não foi feito mapeamento entre os nomes de conta e as
+   identificações de segurança"*. **Use SID** (`*S-1-5-32-544`), que é igual em qualquer idioma.
+2. 🔴 **A ordem importa: ACL ANTES da escrita.** Escrever primeiro dá
+   `UnauthorizedAccessException` — o arquivo já existe com ACL restritiva e nem administrador
+   escreve nele. Foi assim que os dois passos falharam em cascata aqui.
+3. **BOM.** `Set-Content`/`Out-File` gravam UTF-8 **com BOM** e o `sshd` recusa o arquivo sem dizer
+   nada. Por isso o `[IO.File]::WriteAllText`.
+4. **Herança de ACL.** Qualquer entrada além de Administradores/SYSTEM faz o `sshd` ignorar o
+   arquivo — mesma falha silenciosa.
+5. **Quebra de linha.** Uma chave partida em duas linhas não é lida. Cole a linha inteira.
 
 **Diagnóstico quando mesmo assim pedir senha** — na VM, pare o serviço e rode em modo verboso:
 
@@ -156,9 +170,11 @@ Teste: `ssh windows-vm 'hostname'` — tem que entrar **sem pedir senha**.
 
 ---
 
-## 5. 🔴 O shell padrão é PowerShell — e isso quebra comando com aspas
+## 5. 🔴 O shell padrão do SSH é `cmd.exe` — e isso quebra comando com aspas
 
-Ao entrar por SSH você cai no **PowerShell**, não em bash. Comandos POSIX (`ls`, `which`, `head`) não
+Ao entrar por SSH você cai no **`cmd.exe`** (medido em 2026-09-10; numa instalação anterior era
+PowerShell — **não presuma, teste**: mande `echo teste` e veja se volta ecoado literalmente, que
+é a assinatura do `cmd`). Em nenhum dos dois há bash. Comandos POSIX (`ls`, `which`, `head`) não
 existem, e `2>/dev/null` vira erro `Could not find a part of the path 'C:\dev\null'`.
 
 **Para rodar bash pelo SSH:**
@@ -197,8 +213,24 @@ winget install --id Python.Python.3.12  -e
 ```
 
 🔴 **`python3` no Windows resolve para o stub da Microsoft Store**, que imprime *"Python was not
-found"* mesmo com Python instalado. Os gates deste projeto já contornam isso
-(`resolve_py_bin()` valida por execução), mas ao sondar à mão use `python` ou `py -3`.
+found"* mesmo com Python instalado. Os gates deste projeto contornam isso (`resolve_py_bin()` valida
+por **execução**), mas os scripts chamam `python3` — então conserte:
+
+```powershell
+$d = Split-Path (Get-Command python).Source
+Copy-Item "$d\python.exe" "$d\python3.exe"
+where python3     # o real tem de vir ANTES do WindowsApps
+```
+
+**O Python para Windows instala `python.exe` e NÃO instala `python3.exe`** — por isso o único
+`python3` do sistema é o stub. **Cópia, no MESMO diretório**, nunca link noutro: as DLLs moram ao
+lado do executável (é o `STATUS_DLL_NOT_FOUND` do ML-R2c).
+
+Valide por **execução**, não por resolução — o stub resolve igual e só falha ao rodar:
+
+```bash
+python3 -c "import sys;print(sys.executable)"   # tem de apontar para o Python real
+```
 
 **Desligue o `core.autocrlf`** — ele corrompe fixture de teste que depende de bytes exatos:
 
@@ -238,13 +270,41 @@ DLLs moram ao lado do executável. Acrescente o **diretório**, não o arquivo.
 
 ---
 
+## 7-bis. 🔴 Anote ONDE a VM foi gravada — o UTM não te ajuda depois
+
+Medido em 2026-09-10, recriando esta VM: o UTM registrou a VM em
+
+```
+~/Library/Containers/com.utmapp.UTM/Data/Documents/Windows.utm
+```
+
+e **o bundle nunca foi escrito lá**. Ao ligar, o erro é só
+*"The file couldn't be opened because it doesn't exist"* — sem dizer qual arquivo nem onde.
+
+Agravantes que tornam a recuperação difícil:
+
+- **`Show in Finder` não funciona** para VM fora do container: o UTM da App Store é *sandboxed* e não
+  tem permissão para revelar aquele caminho. O item some ou não faz nada.
+- **O Spotlight não indexa volume externo por padrão** — `mdfind` não acha o `.qcow2`.
+- O caminho registrado fica em
+  `~/Library/Containers/com.utmapp.UTM/Data/Library/Preferences/com.utmapp.UTM.plist`, legível com
+  `plutil -p ... | grep '"Path"'`. **É a intenção registrada, não a prova de que o arquivo está lá.**
+
+**Ao criar a VM, anote o caminho** e confirme que o bundle existe antes de instalar o SO:
+
+```bash
+ls -la "<caminho>/Windows.utm/Data/"     # tem de listar um .qcow2
+```
+
 ## 8. Checklist final
 
 - [ ] Disco no SSD interno
 - [ ] UTM Guest Tools instalado
 - [ ] `sshd` rodando, `StartupType Automatic`, porta 22 liberada
-- [ ] `administrators_authorized_keys` com ACL correta, sem BOM
+- [ ] `administrators_authorized_keys` com ACL **por SID**, sem BOM, ACL aplicada **antes** da escrita
 - [ ] `ssh windows-vm 'hostname'` entra **sem senha**
 - [ ] Git, Go, Node, Python instalados; `core.autocrlf false`
+- [ ] `python3.exe` criado por cópia; `python3 -c "import sys;print(sys.executable)"` aponta para o real
+- [ ] caminho do bundle **anotado** e o `.qcow2` conferido no disco (§7-bis)
 - [ ] `go build -o bin/trackfw.exe ./cmd/trackfw` funciona
 - [ ] 🔴 **Snapshot tirado**
