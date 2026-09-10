@@ -184,3 +184,43 @@ exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli
 1. Linha ~941: "barrier fails-open (trusted)" → "barrier fails-closed (not_evaluated)"
 **Acceptance criteria:**
 - [x] F6: comentário corrigido
+
+### ML-W3A — Resíduos do parecer de segurança: as duas metades do F1
+**Status:** ⬜ Pendente · **Agente:** `apolo-tf` · **não bloqueia o merge** (parecer: **APROVA**)
+
+O `hades-tf` verificou o fechamento dos próprios achados e aprovou. Sobraram **dois resíduos do F1**,
+que ele separou em metades — e a separação é o valor do achado:
+
+**Metade do CALLEE — cobertura de paridade.** `TestRoadmapTrustForGates_VerifiesPassedBuffer` existe
+**só no Go**. Node e Python não têm equivalente. É o **F3 repetido dentro da correção do F1**: a
+guarda que prova a correção não tem paridade, mesmo com o código tendo.
+
+**Portar para Node e Python.**
+
+**Metade do CALLER — 🔴 não verificável por teste comportamental.** O invariante *"o buffer passado ao
+verificador é o buffer consumido pelo parser de gates"* **não é falsificável por fixture**: se o
+caller fizer duas leituras sem escritor concorrente, as duas devolvem bytes idênticos e **nenhum teste
+determinístico distingue**.
+
+Fechável **só estruturalmente** — guarda estática ou de shell contra `readFile`/`open` duplicado no
+caller. **Ausente nos 3 CLIs hoje.**
+
+🔴 **Este é o caso raro em que a guarda estrutural NÃO é o remédio fraco.** O projeto vinha
+preferindo guarda comportamental à estrutural (recomendação do próprio `hades-tf` no F3), e está
+certo — mas aqui o comportamento **não discrimina por construção**. Quando o observável não separa os
+estados, a estrutura é o único lugar onde a separação existe.
+
+**Também residual, declarado e julgado pelo parecer:**
+
+- **F2 PARCIAL** — o análogo em Node (`evalGates` sem `failureMsg` ⇒ `failures: [undefined]`) e o
+  `KeyError` do Python são **código morto**: nenhum call site omite o argumento. Fail-closed em
+  produção; dívida de docstring.
+- **Step 5 `cat-file`** — três causas, um `returncode`, **não separável** sem reescrever o protocolo
+  com o subprocesso. Aceito como limitação declarada, com comentário no código dos 3 CLIs.
+
+#### Correção de número, registrada
+
+Eu escrevi **"Go 8 guardas comportamentais"** no handoff de verificação, repetindo o relatório de
+implementação **sem contar**. O `hades-tf` contou: `grep -c "^func TestRoadmapTrustForGates"` ⇒ **7**.
+Os 7 passam. **Número repetido não é número medido** — é a mesma classe dos 4 `grep` errados desta
+campanha.

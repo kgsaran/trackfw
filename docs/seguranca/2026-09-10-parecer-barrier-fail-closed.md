@@ -281,3 +281,180 @@ documentação.
 | F4 | Node.js: strings UTF-8, não bytes | Informacional | Usar `Buffer` em vez de `encoding: 'utf8'` no spawnSync |
 | F5 | Python FileNotFoundError conflation | Informacional | Captura separada de `FileNotFoundError` com mensagem "git not found in PATH" |
 | F6 | Comentário stale no script | Documentação | Atualizar linha 941 do check-barrier.sh |
+
+---
+
+## Verificação de Fechamento — 2026-09-10
+
+**Revisor:** Hades (Security Reviewer)
+**Método:** leitura direta do código nas 3 implementações + análise de falsificabilidade dos testes.
+**Premissa:** premissas compartilhadas não passam pela barreira — nenhum relatório do apolo-tf foi consultado.
+
+---
+
+### F1 — Invariante de buffer: FECHADO (com gap de cobertura de teste em Node/Python)
+
+**Evidência de fechamento:**
+
+Go (`barrier.go`): `data` lido uma vez em linha 863 via `os.ReadFile`. Gates parseados de
+`string(data)` via `lines`. Chamada a `roadmapTrustForGates(roadmapPath, data)` em linha 964 passa
+esse mesmo buffer. Dentro da função, Step 7 compara `string(mainContent) != string(localContent)`
+onde `localContent` é o parâmetro recebido — sem `os.ReadFile` adicional. Contagem de `os.ReadFile`
+em `barrier.go` passou de 2 para 1 (a segunda era a releitura interna, agora eliminada).
+
+Node (`barrier.js`): `contentBuf = fs.readFileSync(resolved.path)` em linha 740 (sem encoding, tipo
+`Buffer`). Gates parseados de `contentBuf.toString('utf8')`. Chamada a
+`roadmapTrustForGates(resolved.path, contentBuf)` em linha 753 passa o mesmo `Buffer`. Step 7 usa
+`localContentBuf.equals(show.stdout)` — comparação de Buffer, sem releitura.
+
+Python (`barrier.py`): `raw_bytes = open(roadmap_path, "rb").read()` em linha 774. Gates parseados
+de `raw_bytes.decode("utf-8")`. Chamada a `_roadmap_trust_for_gates(roadmap_path, raw_bytes)` em
+linha 787 passa o mesmo buffer. Step 7 usa `main_content != local_content` — comparação de bytes,
+sem releitura.
+
+**Path `cannot read local roadmap file` era alcançável?** Sim — era a releitura interna que falhava
+se o arquivo fosse deletado entre a primeira leitura do caller e a segunda leitura da função. Era uma
+condição de corrida, não um defeito lógico. A remoção é correta: se o caller não consegue ler (linha
+865 Go / equivalentes), ele sai via `usageExit` antes de chamar a função de confiança. A função
+nunca mais lê o disco.
+
+**Teste `TestRoadmapTrustForGates_VerifiesPassedBuffer` é falsificável?** Sim. O teste
+(`barrier_test.go:1185`) passa `[]byte("# Roadmap: altered-in-memory\n")` como buffer enquanto o
+disco e origin/main têm `"# Roadmap: clean\n"`. Se alguém reintroduzir `os.ReadFile(roadmapPath)`
+dentro da função (ignorando o parâmetro), a função leria o conteúdo limpo do disco, compararia
+contra origin/main (igual), e retornaria `trusted=true`. O teste espera `trusted=false` — quebraria.
+O teste captura a regressão.
+
+**Gap residual de cobertura — dois meios, dois remédios distintos:**
+
+*Metade callee:* `VerifiesPassedBuffer` (Go) prova que a função honra o parâmetro — se alguém
+reintroduzir `os.ReadFile(roadmapPath)` internamente, o teste quebra. Node e Python não têm
+equivalente. Os testes F3 de "content-differs" não isolam o invariante parâmetro-vs-disco: a fixture
+faz com que arquivo local E parâmetro difiram de origin/main ao mesmo tempo — se uma segunda leitura
+for reintroduzida, a função ainda compara o arquivo local (correto) e continua bloqueando. Nenhum
+teste detectaria a regressão em Node/Python. Remédio: portar `VerifiesPassedBuffer` para Node e Python.
+
+*Metade caller:* `VerifiesPassedBuffer` prova o callee, não o caller. O invariante do caller
+("o buffer passado ao verificador é o mesmo que o parser de gates consumiu") não é testável por teste
+comportamental determinístico: se o caller fizesse duas leituras sem escritor concorrente, ambas
+retornam bytes idênticos e nenhuma fixture consegue distinguir. Esse lado é fechável apenas
+estruturalmente — um guard de leitura única sobre o read-path do caller, verificado via análise
+estática ou shell-ban (análogo ao `check-raw-read-ban.sh`). Remédio: análise estática ou script de
+ban de `readFile`/`open` duplicado no caller. Ausente hoje nos 3 CLIs.
+
+---
+
+### F2 — Defaults latentes fail-open: PARCIAL
+
+**Get defaults: FECHADO nos 3 CLIs.**
+
+- Go: zero-value de `gatesTrustVerdict.trusted` é `false`. Sem default implícito.
+- Node: `evalGates(commands, cwd, trustResult = { trusted: false })` em linha 615 — default mudou
+  de `{ trusted: true }` para `{ trusted: false }`.
+- Python: `trust_result.get("trusted", False)` em linha 645 — default mudou de `True` para `False`.
+
+**None-guard em Python: PARCIAL.**
+
+Código atual (`barrier.py:640`): `if trust_result is None: trust_result = {}`. O docstring
+(`barrier.py:636`) promete "produces not_evaluated with failureMsg=None — fail-closed". O que o
+código entrega: `trust_result = {}` → `{}.get("trusted", False)` = `False` → entra no ramo
+not-trusted → tenta `trust_result["failure_msg"]` → `KeyError: 'failure_msg'`.
+
+Resultado: crash de `KeyError`, não `not_evaluated` limpo. A promessa do docstring não é cumprida.
+
+**Impacto de segurança: NULO.** A exceção propaga para cima de `_build_result_document` e a
+barreira termina com erro, sem executar gates. É fail-closed. O crash só é atingível se alguém
+chamar `_check_gates(commands)` sem o segundo argumento — o call site de produção em linha 792
+sempre passa `trust_result` explicitamente.
+
+**Node.js — análogo: `[null]` em vez de KeyError.**
+
+`evalGates` default: `{ trusted: false }` (sem chave `failureMsg`). Linha 627:
+`failures: [trustResult.failureMsg]` → `undefined` → JSON serializa como `[null]` em vez de string.
+O call site de produção (linha 758) sempre passa `trustResult` explícito de `roadmapTrustForGates`,
+que sempre inclui `failureMsg`. Path morto — nunca atingível em produção. `grep` em Node/Python tests
+confirmou: nenhum teste chama `evalGates`/`_check_gates` com o argumento omitido.
+
+**Impacto de segurança: NULO nos dois casos.** Python crashe fail-closed; Node emite `[null]` em
+campo de failures informacional (não altera o `status`). Ambos são caminhos mortos em produção.
+
+**Classificação: PARCIAL** — o fail-open está fechado, mas os comportamentos declarados nos docstrings
+divergem do código em Python e Node. Manter como dívida técnica, sem impacto de segurança.
+
+---
+
+### F3 — Guardas comportamentais nos 3 CLIs: FECHADO para as razões cobertas
+
+**Go:** 7 funções `TestRoadmapTrustForGates_*` confirmadas via `grep -c` (não contagem estimada):
+`NotGitRepo`, `NoRemoteOrigin`, `NotCommittedInOrigin`, `IdenticalToOriginMain`, `ContentDiffers`,
+`TrustedCountIsOne`, `VerifiesPassedBuffer`. Executadas com `go test -run TestRoadmapTrustForGates
+-v`: todas PASS.
+
+**Node.js:** 3 testes sentinel confirmados executados: `node --test npm/tests/barrier.test.js` —
+`F3 sentinel: not a git repository`, `roadmap not committed in origin/main`, `local content differs`.
+Todos PASS. Cada um verifica `gates.status === 'not_evaluated'` AND sentinelPath ausente.
+
+**Python:** 3 testes sentinel confirmados executados: `pytest -k "sentinel"` —
+`test_f3_sentinel_not_git_repository_prevents_gate_execution`,
+`test_f3_sentinel_roadmap_not_committed_in_origin_prevents_gate_execution`,
+`test_f3_sentinel_content_differs_from_origin_prevents_gate_execution`. Todos PASS.
+
+**Gap herdado de F1:** os testes de "content-differs" (Node e Python) provam que um arquivo local
+modificado não executa gates — não provam o invariante parâmetro-vs-disco (VerifiesPassedBuffer).
+Esse gap é de cobertura de F1, não de F3.
+
+---
+
+### F4 — Comparação binária em Node.js: FECHADO
+
+**Evidência:** `barrier.js:740` — `fs.readFileSync(resolved.path)` sem parâmetro `encoding`,
+retorna `Buffer`. `barrier.js:596` — `localContentBuf.equals(show.stdout)` onde `show.stdout`
+também é `Buffer` (spawnSync sem `encoding`). Comparação é byte-a-byte via `Buffer.prototype.equals`.
+A string UTF-8 (`content`) é usada apenas para parsear gates, não para comparação de confiança.
+
+---
+
+### F5 — Separação de FileNotFoundError vs returncode: FECHADO nos 3 CLIs
+
+**Evidência:**
+
+- Go (`barrier.go:683-695`): `errors.As(err, &exitErr)` — spawn failure retorna "git not found in
+  PATH", exit non-zero retorna "not a git repository". Dois paths, dois `return` distintos.
+- Node (`barrier.js:508-523`): `revParse.error` distingue spawn failure de `revParse.status !== 0`.
+  Dois `return` com mensagens distintas.
+- Python (`barrier.py:515-528`): `except FileNotFoundError` captura spawn failure com mensagem "git
+  not found in PATH". `if r.returncode != 0` captura o repositório inexistente.
+
+**Impacto nos verditos de confiança:** nenhum. Ambos os caminhos em cada CLI retornam
+`trusted: False`. As mudanças afetaram apenas os campos de mensagem. Nenhum novo caminho fail-open
+foi introduzido. O Step 5 (cat-file) continua com três causas colapsadas em uma mensagem — declarado
+não separável por design, conforme comentário em `barrier.go:768-773`.
+
+---
+
+### F6 — Comentário stale em check-barrier.sh: FECHADO
+
+**Evidência:** `scripts/check-barrier.sh` (região de `make_barrier_git_fixture`) — o comentário
+anterior descrevia "barrier fails-open (trusted)". O texto atual diz "barrier fails-closed
+(not_evaluated)". O fato correto (fail-closed, não fail-open) está agora documentado. O fix continua
+necessário (`WORK_PHYS`) mas a consequência de não fazê-lo está corretamente descrita.
+
+---
+
+## Veredito Final de Fechamento
+
+| # | Achado original | Status |
+|---|-----------------|--------|
+| F1 | Invariante quebrado: prova ≠ payload | **FECHADO** — mesmo buffer em produção nos 3 CLIs; gap de cobertura de teste em Node/Python (VerifiesPassedBuffer ausente) |
+| F2 | Defaults latentes fail-open | **PARCIAL** — get defaults fechados nos 3 CLIs; Python None-guard crashe com KeyError em vez de retornar not_evaluated limpo; sem impacto de segurança |
+| F3 | Guarda estrutural Go-only | **FECHADO** — 3 sentinelas comportamentais em Node e Python; gap de cobertura F1 é residual declarado de F1, não de F3 |
+| F4 | Node.js: strings UTF-8, não bytes | **FECHADO** — Buffer.equals() nos 3 lados da comparação |
+| F5 | Python FileNotFoundError conflation | **FECHADO** — mensagens distintas nos 3 CLIs; nenhum impacto em verditos de confiança |
+| F6 | Comentário stale no script | **FECHADO** — "fails-open" substituído por "fails-closed (not_evaluated)" |
+
+**Veredito final: APROVA.**
+
+F2 PARCIAL não bloqueia: o comportamento de segurança está correto (fail-closed), apenas o docstring
+diverge do código. O gap de VerifiesPassedBuffer (F1/F3) é residual de cobertura, não de correção —
+a produção está correta nos 3 CLIs. Nenhum caminho exploitável dentro do threat model declarado
+permanece aberto.

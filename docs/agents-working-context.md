@@ -4,6 +4,20 @@
 
 ---
 
+## Sessão 2026-09-10k — hades-tf (Security) — Verificação de fechamento F1–F6: CONCLUÍDA
+
+Branch `fix/barrier-executa-gate-de-roadmap-nao-confiavel`.
+
+**Escopo:** verificar se cada achado F1–F6 do parecer 2026-09-10 fechou de verdade — lendo código, não relatório. Testes executados de frente nos 3 CLIs.
+
+**Veredito:** APROVA. F1/F3/F4/F5/F6: FECHADOS. F2: PARCIAL — Python None-guard vira KeyError (não not_evaluated limpo prometido no docstring); Node emite `[null]` na mesma rota morta. Ambos fail-closed, sem impacto de segurança. Gaps residuais declarados: (a) VerifiesPassedBuffer ausente em Node/Python (metade callee); (b) guard estrutural de leitura única no caller ausente nos 3 CLIs (metade caller — não cobrível por teste comportamental).
+
+**Parecer atualizado:** `docs/seguranca/2026-09-10-parecer-barrier-fail-closed.md` (seção de verificação de fechamento adicionada e corrigida: contagem Go 7 confirmada por grep, não 8 estimados; testes executados e listados como PASS).
+
+**Status:** CONCLUÍDO — veredito entregue.
+
+---
+
 ## Sessão 2026-09-10j — apolo-tf (Backend) — Corretivo barrier F1–F6 (parecer hades-tf): ENTREGUE, aguarda auditoria do arquiteto
 
 Branch `fix/barrier-executa-gate-de-roadmap-nao-confiavel`.
