@@ -3,7 +3,7 @@ status: Open
 date: 2026-09-06
 author: ""
 adr: ""
-roadmap: ""
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-06-ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega.md"
 ---
 
 # REQ: o CI de Windows nao bloqueia regressao e nao distingue suite que nao carregou de teste que reprovou

@@ -1,5 +1,5 @@
 ---
-status: backlog
+status: wip
 date: 2026-09-06
 squad: ares-tf
 req: "docs/req/REQ-2026-09-06-o-ci-de-windows-nao-bloqueia-regressao-e-nao-distingue-suite-que-nao-carregou-de-teste-que-reprovou.md"
@@ -7,12 +7,18 @@ req: "docs/req/REQ-2026-09-06-o-ci-de-windows-nao-bloqueia-regressao-e-nao-disti
 
 # Roadmap: Ratchet por nome, e classe própria para suíte que não carrega
 
-> Criado em: 2026-09-06 | Status: backlog
+> Criado em: 2026-09-06 | Status: wip
 
 ## Context
 
 REQ: `docs/req/REQ-2026-09-06-o-ci-de-windows-nao-bloqueia-regressao-e-nao-distingue-suite-que-nao-carregou-de-teste-que-reprovou.md`
 ADR: `docs/adr/ADR-2026-09-05-o-ci-de-windows-bloqueia-por-conjunto-de-nomes-e-por-tipo-de-evento-nunca-por-contagem.md` (`Accepted`)
+
+> 🔴 **Correção de auditoria (arquiteto, 2026-09-10):** este roadmap afirmava `Accepted` desde
+> 2026-09-06, mas a ADR estava **`Proposed`** — e a REQ estava **órfã** (`roadmap: ""`), apesar de o
+> roadmap apontar para ela. Vínculo de mão única. As duas coisas foram corrigidas agora, **antes** do
+> despacho: ADR lida e **aceita**, REQ vinculada. Trabalho sobre ADR não aceita é decisão
+> arquitetural tomada por omissão.
 Fecha: **#275** e **#274**
 
 ## Diagnóstico
