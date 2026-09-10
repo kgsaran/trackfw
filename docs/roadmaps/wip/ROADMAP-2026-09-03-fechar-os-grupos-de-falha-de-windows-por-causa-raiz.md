@@ -1716,7 +1716,7 @@ C1, C2 e C4 são determinísticos (string presente na própria linha); só C3 n�
 **Fora deste ML:** corrigir o `BASE_PATH`. A correção é ML próprio, depois de saber (A) ou (B).
 
 ### ML-R2c — Os gates param de presumir layout de PATH: `git` resolvível pelo processo filho nativo
-**Status:** ❌ **Bloqueado — VM Windows fora do ar** (correção entregue e auditada; faltam falsificação e recenso, que só existem lá) · **Agente:** `ares-tf` · **bloqueia o ML-R2b**
+**Status:** ✅ **Concluído** — medido no `windows-latest`, duas pernas, **68 rótulos fechados, 0 regressão** · **Agente:** `ares-tf` + medição do arquiteto · **desbloqueia o ML-R2b**
 
 Decisão do KG em 2026-09-09: **corrigir antes de triar.** Triar 442 linhas que vão desaparecer com a
 correção é triar lixo. O resíduo real do ML-R2b são ~70 linhas, não 512.
@@ -1940,6 +1940,85 @@ continuam abertos, e são os que provam o defeito:**
 ramo POSIX, que é outra afirmação. Registrado aqui em vez de marcado como concluído porque marcar ✅
 com o critério que discrimina em aberto é exatamente o achado A1 da auditoria externa de 2026-09-05.
 
+#### Medição final (arquiteto, 2026-09-10) — duas pernas no mesmo runner
+
+A VM morreu antes de provar a correção. Em vez de esperar por ela, o ML-R2d levou a medição para o
+`windows-latest` — e o desenho mudou: **duas pernas, mesmo runner, mudando só o commit.**
+
+```
+run 34418608392   main    (SEM a correção)   ← controle
+run 34418614352   branch  (COM a correção)
+```
+
+Isso elimina por construção as duas ressalvas que o agente teve de declarar: plataforma (ARM64 vs
+x64) e `TRACKFW_DISABLE_EXTERNAL_COMMANDS`. As duas pernas são idênticas em tudo menos no commit.
+
+##### 🔴 O controle reproduziu a VM — a ressalva do ML-2B está enterrada
+
+```
+                        OK    FAIL   asserções
+VM ARM64 (08/09)        440    512      952
+main x64  (sem fix)     439    513      952
+```
+
+**Mesmo total de asserções, `FAIL` diferindo em UMA linha**, entre uma VM ARM64 privada e um runner
+x64 hospedado. A hipótese "pode ser artefato desta VM", que bloqueou a triagem inteira e custou o
+ML-R2a, não está só falsificada — está reproduzida em hardware independente.
+
+##### O efeito da correção, por CONJUNTO DE RÓTULOS (não por contagem de linhas)
+
+```
+                   FAIL únicos   OK únicos   linhas
+main   (sem fix)       198          409        948
+branch (com fix)       130          433        796
+```
+
+| | nº | leitura |
+|---|---|---|
+| rótulos que **fecharam** | **68** | todos sob `release-tag-parity/*` e `ship-force-parity/*` — os scripts corrigidos |
+| rótulos que **persistem** | **130** | 🔴 **este é o escopo real do ML-R2b** |
+| 🔴 rótulos de FAIL **novos** | **0** | **nenhuma regressão introduzida pela correção** |
+
+🔴 **A contagem de linhas NÃO serve para dimensionar isto, e quase me enganou duas vezes.**
+
+1. **Por shard contra a base da VM é lixo.** Os shards 6 e 7 trocaram de conteúdo entre as duas
+   medições — o empacotador distribui por peso de tempo e o repack mudou. Um `delta=-230 ▼` ao lado
+   de um `delta=+231 ▲` é a mesma carga mudando de shard, não defeito fechando.
+2. **O total de linhas caiu de 952 para 796, e isso NÃO é cobertura perdida.** Um cenário que
+   reprovava emitia de 3 a 5 linhas `FAIL`; corrigido, emite **uma** linha `OK`. Menos linha é o
+   efeito esperado da correção. Meu primeiro impulso foi ler as 152 linhas a menos como asserção que
+   não rodou — a métrica simplesmente **não é conservada por construção**.
+
+##### Auditoria dos 68 que fecharam — nenhum sumiu calado
+
+Rótulo que some sem virar `OK` é suspeito de ter deixado de rodar. Verifiquei os 68, um a um:
+
+- **52 terminam em `/err`** — comparadores que **só existem no caminho de falha** (`go-vs-node/err`,
+  `go-vs-py/err`: "os dois runtimes divergiram na mensagem de erro"). Sem erro, não há o que
+  comparar. Sumir é o comportamento correto.
+- **15 viraram rótulo agregado.** O cenário que emitia `/go`, `/node`, `/py` reprovando passa a
+  emitir um `OK` único. Exemplo verificado:
+  ```
+  main:    FAIL [release-tag-parity/main-stale/go]  /node  /py   + 2 comparadores /err
+  branch:  OK   [release-tag-parity/main-stale]
+  ```
+- 🔴 **1 fica em aberto:** `release-tag-parity/dirty-tree` não emite rótulo nenhum na branch — nem
+  os per-runtime, nem o agregado. **Entra no ML-R2b como item nomeado**, não como resíduo.
+
+##### Estimativa minha que estava errada, registrada
+
+Eu estimei a queda em **~442** e ela foi **68 rótulos** (236 linhas). **Errei por quase 2x**, e é o
+mesmo erro de classe do grupo do `IsAbs` nesta campanha — estimado em 14 falhas, entregou 2.
+
+**A causa é sempre a mesma:** contagem de LINHAS superestima, porque uma causa produz linhas em
+cascata (3 a 5 por cenário) e corrigi-la não devolve linha por linha. **A unidade honesta é o
+rótulo**, e a régua é o diff de conjuntos — não a subtração de totais.
+
+##### Evidência durável
+
+`~/Documents/trackfw-evidencias/censo-x64-2026-09-09/{censo-main,censo-branch}` (8 logs por perna),
+ao lado de `censo-windows-2026-09-08/` (a base da VM, com `SHA256SUMS.txt`).
+
 #### Reconciliação (regra dura do projeto)
 
 Nenhum teste novo foi adicionado ao repositório neste ML — as correções são nos scripts bash dos
@@ -1965,7 +2044,10 @@ renomeação: release-tag `OK=21 FAIL=0`, ship-force `OK=5 FAIL=0`, push-force `
 
 ### ML-R2b — Triagem do censo de Windows por causa
 **Status:** ⬜ Pendente · **Agente:** `ares-tf` · **pré-requisito do ratchet de CI** ·
-**depende do ML-R2a (feito) e do ML-R2c** — o escopo real são ~70 linhas, não 512
+**desbloqueado** (R2a e R2c fechados) — 🔴 **escopo real: 130 rótulos**, medido, não estimado.
+A lista está em `/tmp/persistem.txt` e na evidência durável; a unidade é **rótulo**, nunca
+linha de log — ver "Medição final" no ML-R2c para por que a contagem de linhas engana.
+Item nomeado que entra junto: `release-tag-parity/dirty-tree`, que deixou de emitir rótulo.
 
 O ML-2B da REQ dos gates produziu o primeiro censo real: **440 OK · 512 FAIL** no Windows, com modo de
 enumeração **reproduzível** (`TRACKFW_FALSIFY_ENUMERATE=1`).

@@ -34820,3 +34820,35 @@ marcado como atribuição heurística**: C1/C2/C4 são determinísticos, C3 não
 **Sequenciamento que isto força:** a correção do `BASE_PATH` é ML próprio **nesta mesma REQ** (mesma
 causa), e o ML-R2b deve vir **depois** de decidir se ela entra antes — senão tria ~442 linhas que vão
 desaparecer. Resíduo real do ML-R2b: **~70 linhas**, não 512.
+
+## 2026-09-10 — Zeus (Arquiteto) — ML-R2c fechado por medição no runner; ML-R2b redimensionado de 512 para 130
+
+**A VM morreu antes de provar a correção. Em vez de esperar, mudei o desenho da medição:** duas
+pernas no `windows-latest`, mesmo runner, mudando **só o commit** — `main` (sem a correção, controle)
+e a branch (com). Isso elimina por construção as duas ressalvas que sobrariam escritas: plataforma
+(ARM64 vs x64) e `TRACKFW_DISABLE_EXTERNAL_COMMANDS`.
+
+🔴 **O controle reproduziu a VM:** `main` x64 deu `OK=439 FAIL=513` contra `OK=440 FAIL=512` da VM
+ARM64 — **952 asserções dos dois lados, uma linha de diferença**. A hipótese "pode ser artefato desta
+VM", que bloqueou a triagem inteira, está reproduzida em hardware independente.
+
+**Efeito da correção, por conjunto de rótulos:** 68 fecharam · **130 persistem** · **0 FAIL novos**.
+
+🔴 **A contagem de linhas quase me enganou duas vezes, e as duas ficam registradas:**
+1. comparação por shard contra a base da VM é lixo — os shards 6 e 7 trocaram de conteúdo (o
+   empacotador distribui por peso de tempo e o repack mudou);
+2. o total caiu de 952 para 796 linhas e eu li como cobertura perdida — **a métrica não é conservada
+   por construção**: cenário que reprovava emitia 3-5 `FAIL`, corrigido emite 1 `OK`.
+
+**Auditei os 68 que fecharam, um a um** (rótulo que some sem virar OK é suspeito de ter parado de
+rodar): 52 terminam em `/err` e só existem no caminho de falha; 15 viraram rótulo agregado
+(`FAIL /go /node /py` → `OK` único, verificado em `main-stale`); **1 fica em aberto** —
+`release-tag-parity/dirty-tree` não emite rótulo nenhum na branch, e entra no R2b **nomeado**.
+
+**Minha estimativa estava errada e está registrada:** previ queda de ~442 e foram 68 rótulos. Errei
+por quase 2x — mesmo erro de classe do grupo do `IsAbs` (14 previstos, 2 entregues). A causa é a
+mesma: contagem de linha superestima porque uma causa produz linhas em cascata. **A unidade honesta é
+o rótulo.**
+
+**Evidência durável:** `~/Documents/trackfw-evidencias/censo-x64-2026-09-09/` (8 logs por perna +
+`persistem.txt`), ao lado de `censo-windows-2026-09-08/` com `SHA256SUMS.txt`.
