@@ -478,6 +478,95 @@ jobs:
           cygpath -w /bin 2>&1 || true
           cygpath -w /usr/bin 2>&1 || true
 
+      # Pergunta 13 — onde mora o gh na visão POSIX do bash do Git for Windows
+      # (x64), o que há no diretório dele, e se um wrapper .cmd ou shim .exe
+      # compilado permite que Go, Node.js e Python encontrem e executem o stub
+      # bash sem extensão via PATHEXT.
+      #
+      # Motivação (ML-R2b1): os 54 rótulos que falham com "No forge CLI is
+      # available" falham porque write_release_gh_stub / write_gh_stub criam
+      # $dir/gh (bash, sem .exe) e exec.LookPath("gh") no Windows exige
+      # extensão em PATHEXT. A correção depende de qual mecanismo funciona em
+      # TODOS os três runtimes: .cmd wrapper (bloqueado em Go 1.21+ via
+      # segurança de batch file) ou shim .exe compilado que delega ao bash stub.
+      #
+      # Analogia: Pergunta 12 fez o mesmo para o git e informou o ML-R2c.
+      - name: "Pergunta 13 — onde está gh, seu diretório, e viabilidade de .cmd/.exe para o stub nativo"
+        if: always()
+        shell: bash
+        run: |
+          set +e
+
+          echo "=== 13-A: localização do gh ==="
+          echo "command -v gh: $(command -v gh 2>/dev/null || echo NAO_ENCONTRADO)"
+          echo "where.exe gh:"; where.exe gh 2>&1 || true
+          echo "gh --version:"; gh --version 2>&1 || true
+          ls -l /usr/bin/gh /bin/gh 2>&1 || true
+
+          GH_CMD=$(command -v gh 2>/dev/null || true)
+          GH_DIR=$([ -n "$GH_CMD" ] && dirname "$GH_CMD" || echo "")
+
+          echo "=== 13-B: conteúdo do diretório do gh ==="
+          if [ -n "$GH_DIR" ]; then
+            echo "GH_DIR (POSIX): $GH_DIR"
+            echo "GH_DIR (Win32): $(cygpath -w "$GH_DIR" 2>&1 || true)"
+            ls -la "$GH_DIR" 2>&1 | head -80 || true
+          else
+            echo "gh não encontrado — diretório desconhecido"
+          fi
+
+          echo "=== 13-C: setup — stub bash sem extensão em dir temporário ==="
+          T=$(mktemp -d)
+          TW=$(cygpath -w "$T" 2>/dev/null || echo "$T")
+          echo "T=$T  TW=$TW"
+          printf '#!/usr/bin/env bash\nbody=$(cat)\necho "stub-gh-ok body=$body args=$*"\n' > "$T/gh"
+          chmod +x "$T/gh"
+
+          echo "=== 13-D: PATHEXT na visão de processo nativo (Python) ==="
+          python3 -c "import os; print('PATHEXT:', os.environ.get('PATHEXT','NOT SET'))" || true
+
+          echo "=== 13-E: shutil.which sem extensão (esperado: None) ==="
+          python3 -c "import shutil,os; p=os.environ.get('T_WIN','')+os.pathsep+os.environ.get('PATH',''); print('shutil.which no-ext:', shutil.which('gh',path=p))" T_WIN="$TW" || true
+
+          echo "=== 13-F: .cmd wrapper — resolução e execução nos 3 runtimes ==="
+          printf '@echo off\r\nbash.exe "%%~dp0gh" %%*\r\n' > "$T/gh.cmd"
+
+          # Python probe escrita em arquivo para evitar multi-linha em python3 -c
+          printf 'import shutil,os,subprocess\np=os.environ.get("T_WIN","")+os.pathsep+os.environ.get("PATH","")\nfound=shutil.which("gh",path=p)\nprint("shutil.which .cmd:",found)\nif found:\n  env=dict(os.environ); env["PATH"]=p\n  r=subprocess.run(["gh","a1"],input=b"stdin-test",capture_output=True,env=env)\n  print("rc:",r.returncode,"stdout:",repr(r.stdout[:80]),"stderr:",repr(r.stderr[:80]))\nelse:\n  print("NOT FOUND with .cmd")\n' > "$T/probe_py.py"
+
+          echo "--- 13-F Python ---"
+          T_WIN="$TW" python3 "$T/probe_py.py" || true
+
+          echo "--- 13-F Node.js ---"
+          printf 'const s=require("child_process").spawnSync,p=require("path"),tw=process.env.T_WIN||"",pp=tw+p.delimiter+(process.env.PATH||""),r=s("gh",["a1"],{input:"stdin-test",encoding:"utf8",env:{...process.env,PATH:pp}});console.log("status:",r.status,"error:",r.error?r.error.message:null,"stdout:",JSON.stringify((r.stdout||"").slice(0,80)));\n' > "$T/probe_node.js"
+          T_WIN="$TW" node "$T/probe_node.js" || true
+
+          echo "--- 13-F Go (exec.Command com .cmd via PATH — Go 1.21+ pode bloquear batch) ---"
+          T_SRC="$T/go_probe"
+          mkdir -p "$T_SRC"
+          printf 'package main\nimport ("fmt";"os";"os/exec";"strings")\nfunc main() {\ntw := os.Getenv("T_WIN")\np := tw + string(os.PathListSeparator) + os.Getenv("PATH")\nos.Setenv("PATH", p)\ncmd := exec.Command("gh", "a1")\ncmd.Stdin = strings.NewReader("stdin-test")\nout, err := cmd.CombinedOutput()\nif err != nil {\nfmt.Printf("ERROR: %%v | output: %%s\\n", err, strings.TrimSpace(string(out)))\n} else {\nfmt.Printf("OK: %%s\\n", strings.TrimSpace(string(out)))\n}\n}\n' > "$T_SRC/main.go"
+          printf 'module ghprobe\ngo 1.21\n' > "$T_SRC/go.mod"
+          (cd "$T_SRC" && T_WIN="$TW" go run main.go) || true
+
+          echo "=== 13-G: compila gh.exe shim e repete nos 3 runtimes ==="
+          T_SHIM="$T/shim_src"
+          mkdir -p "$T_SHIM"
+          printf 'package main\nimport ("fmt";"os";"os/exec";"path/filepath")\nfunc main() {\nexe, err := os.Executable()\nif err != nil { fmt.Fprintln(os.Stderr, err); os.Exit(1) }\nstub := filepath.Join(filepath.Dir(exe), "gh")\nbash, err := exec.LookPath("bash.exe")\nif err != nil { fmt.Fprintln(os.Stderr, "bash.exe not found:", err); os.Exit(1) }\nargs := append([]string{stub}, os.Args[1:]...)\ncmd := exec.Command(bash, args...)\ncmd.Stdin = os.Stdin; cmd.Stdout = os.Stdout; cmd.Stderr = os.Stderr\nif err := cmd.Run(); err != nil {\nif e, ok := err.(*exec.ExitError); ok { os.Exit(e.ExitCode()) }\nfmt.Fprintln(os.Stderr, err); os.Exit(1)\n}\n}\n' > "$T_SHIM/main.go"
+          printf 'module ghshim\ngo 1.21\n' > "$T_SHIM/go.mod"
+          echo "compilando gh.exe shim..."
+          (cd "$T_SHIM" && go build -o "$T/gh.exe" .) 2>&1 && echo "shim build: OK" || echo "shim build: FALHOU"
+
+          if [ -f "$T/gh.exe" ]; then
+            echo "--- 13-G Python com gh.exe (mesma probe_py.py, agora aponta .exe) ---"
+            T_WIN="$TW" python3 "$T/probe_py.py" || true
+            echo "--- 13-G Node.js com gh.exe ---"
+            T_WIN="$TW" node "$T/probe_node.js" || true
+            echo "--- 13-G Go com gh.exe ---"
+            (cd "$T_SRC" && T_WIN="$TW" go run main.go) || true
+          fi
+
+          rm -rf "$T"
+
       - name: Registrar duração
         if: always()
         shell: pwsh

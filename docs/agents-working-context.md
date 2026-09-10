@@ -4,6 +4,54 @@
 
 ---
 
+## Sessão 2026-09-09d — ares-tf (Infrastructure) — ML-R2b1 corretivo (auditoria do arquiteto): 3 pontos (EM ANDAMENTO)
+
+Branch `fix/fechar-os-grupos-de-falha-de-windows-por-causa-raiz`.
+
+**Escopo corretivo (3 pontos do handoff):**
+1. `shutil.which` → `subprocess.run` com execução real (não apenas resolução de PATH)
+2. Bash path hardcoded `C:\Program Files\Git\usr\bin\bash.exe` → capturado do shell em tempo de build do shim via `command -v bash` + `cygpath -w`
+3. WARNING de build do shim → `exit 1` fatal no Windows (com stderr visível)
+Adicional implícito: mover `_build_gh_stub_shim_once` para ANTES do guard block em todos os 3 scripts (forward-reference latente que explode no Windows)
+
+**Escopo de evidência no roadmap:** citar linha exata em `check-doctor-remote-parity.sh` onde `write_gh_stub` escreve o stub `gh` (sítio latente incluído por Regra Dura de Causa Raiz)
+
+**Resultado (CONCLUÍDO — pronto para auditoria trackfw_architect):**
+- 3 scripts corrigidos: `check-release-tag-parity.sh`, `check-ship-force-parity.sh`, `check-doctor-remote-parity.sh`
+- `shutil.which` → `subprocess.run` com execução real + verificação de marcador `GH_SHIM_OK` (guard (b))
+- Bash path hardcoded removido; `bash_path.go` com `bashFallback` capturado de `command -v bash` + `cygpath -w`
+- WARNING → `exit 1` fatal no Windows com stderr visível
+- Forward-reference latente corrigida: `_build_gh_stub_shim_once` movida para ANTES do guard em todos os 3 scripts
+- Evidência do sítio `check-doctor-remote-parity.sh`: `write_gh_stub()` linha 315, `cat >"$dir/gh"` linha 322
+- Roadmap atualizado: status ML-R2b1 → "🔄 Corretivo em andamento"; seção "Corretivo (auditoria trackfw_architect)" adicionada com reconciliação de guards vs. conclusões do ML
+- Gates individuais: 3/3 passam (rc=0, todos os cenários OK)
+- `make quality` (full): exit 0 · 412 OK, 0 FAIL (parity-falsify) · parity-rest (inclui os 3 scripts) verde
+
+**Nota de cobertura local:** os guards Windows ficam atrás de `[[ -f "${REAL_GIT}.exe" ]]`. Em macOS o caminho Windows nunca é exercido. O verde local prova apenas que o caminho POSIX (no-op) está intacto. O caminho Windows aguarda censo `windows-latest`.
+
+---
+
+## Sessão 2026-09-09c — ares-tf (Infrastructure) — ML-R2b1: gh.exe shim para stubs Windows (EM ANDAMENTO)
+
+Branch `fix/fechar-os-grupos-de-falha-de-windows-por-causa-raiz`.
+
+**Escopo ML-R2b1:**
+Causa raiz: `write_release_gh_stub` / `write_gh_stub` criam `$dir/gh` (bash script, sem extensão). No Windows, `exec.LookPath("gh")` (Go), `spawnSync("gh")` (Node), `subprocess.run(["gh"])` (Python) usam CreateProcess + PATHEXT e não encontram arquivo sem extensão → `adapter.Available = false` → "No forge CLI is available". Precondição 6 (forge CLI check) dispara ANTES de 3+4 → 54 labels de falha no censo Windows.
+
+**Fix implementado:**
+- `scripts/check-release-tag-parity.sh`: adicionado `_GH_STUB_SHIM` + `_build_gh_stub_shim_once()` + chamada em `write_release_gh_stub()` + cópia de `gh.exe` + vacuity guard extension (nativo)
+- `scripts/check-ship-force-parity.sh`: mesma pattern
+- `scripts/check-doctor-remote-parity.sh`: mesma pattern (latent site — Regra Dura de Causa Raiz)
+- Bug corrigido: `[[ -n "$_GH_STUB_SHIM" ]] && cp ... || true` — o `&&` sem `|| true` retornava 1 sob `set -e` quando shim não construído no POSIX
+
+**Resultado:** `make quality` verde (1016 OKs, 0 FAILs, exit 0). `trackfw validate` 174 warnings (pré-existentes, nenhum ❌). Todos os 3 scripts de parity passam individualmente e no gate completo. **Pronto para auditoria do trackfw_architect.**
+
+**Bug POSIX encontrado e corrigido:** `[[ -n "$_GH_STUB_SHIM" ]] && cp ...` retornava exit 1 sob `set -e` quando shim não construído. Corrigido para `|| true` nos 3 scripts.
+
+**Pendente (requer commit do trackfw_architect):** Pergunta 13 no `windows-probe.yml` (YAML validado, 27 steps) + censo Windows `windows-latest` para confirmar 54 rótulos fecham.
+
+---
+
 ## Sessão 2026-09-09b — ares-tf (Infrastructure) — ML-R2d corretivo: YAML fix + ressalva apuracao (CONCLUÍDO)
 
 Branch `fix/fechar-os-grupos-de-falha-de-windows-por-causa-raiz`.
@@ -34852,3 +34900,17 @@ o rótulo.**
 
 **Evidência durável:** `~/Documents/trackfw-evidencias/censo-x64-2026-09-09/` (8 logs por perna +
 `persistem.txt`), ao lado de `censo-windows-2026-09-08/` com `SHA256SUMS.txt`.
+
+---
+
+## [ares-tf] ML-R2b1 — Stub `gh` não resolvível por PATHEXT no Windows (54 rótulos)
+
+**Iniciado em:** 2026-09-09
+**Agente:** ares-tf
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-09-03-fechar-os-grupos-de-falha-de-windows-por-causa-raiz.md` (ML-R2b1)
+
+**Estado:** Em andamento — adicionando Pergunta 13 ao windows-probe.yml para medir localização do gh e viabilidade de mecanismo de wrapper (.cmd vs .exe shim) antes de implementar o fix.
+
+**Causa raiz confirmada (sem medição nova):** `write_release_gh_stub` / `write_gh_stub` criam `$dir/gh` (bash, sem `.exe`). `exec.LookPath("gh")` no Windows exige extensão via PATHEXT — stub não encontrado → `adapter.Available = false` → "No forge CLI" antes de qualquer outra verificação. Afeta os 54 rótulos que passam um stub_dir como PATH prefix mas cujo stub não é resolvível por processo nativo Windows.
+
+**Próximo passo:** Acionar `windows-probe.yml --ref fix/fechar-...` com Pergunta 13 adicionada, aguardar resposta, então implementar fix.

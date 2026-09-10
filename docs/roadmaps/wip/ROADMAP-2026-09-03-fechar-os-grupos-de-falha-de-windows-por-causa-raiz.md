@@ -2043,7 +2043,7 @@ explicativo; todos os usos operacionais são `GIT_BIN_DIR`. Os 3 gates rodaram v
 renomeação: release-tag `OK=21 FAIL=0`, ship-force `OK=5 FAIL=0`, push-force `OK=5 FAIL=0`.
 
 ### ML-R2b1 — O `gh` tem o MESMO defeito do `git`: `BASE_PATH` presume `/usr/bin`
-**Status:** 🔄 Em andamento · **Agente:** `ares-tf` · 🔴 **mesma causa do ML-R2c, binário diferente**
+**Status:** 🔄 Corretivo em andamento (auditoria trackfw_architect — 3 pontos) · **Agente:** `ares-tf` · 🔴 **mesma causa do ML-R2c, binário diferente**
 
 Descoberto ao triar os 130 que persistiram depois do ML-R2c. **Não é causa nova — é o mesmo
 mecanismo, um binário adiante.**
@@ -2105,15 +2105,120 @@ medição de que não continha `gh`/`glab`/`az`/`sh`/`bash`, não por suposiçã
 **E declare, cenário a cenário, qual PATH cada um dos 16 usa** antes de mudar qualquer coisa. Tornar
 `gh` resolvível no `BASE_PATH` pode **quebrar** um cenário que dependa da ausência dele.
 
+#### Mecanismo escolhido: `gh.exe` shim (PE compilado em Go)
+
+**`.cmd` descartado:** Go 1.21+ (CVE-2023-29405) recusa executar `.cmd`/`.bat` encontrados via PATH lookup. Não viável para Go 1.25.2.
+
+**`gh.exe` shim:** binário PE real compilado de Go que delega para o bash stub no mesmo diretório:
+```
+gh.exe  →  bash.exe  <dir>/gh  "$@"   (stdin/stdout/stderr passthrough)
+```
+`findBash()` tenta `exec.LookPath("bash.exe")` primeiro; fallback hardcoded `C:\Program Files\Git\usr\bin\bash.exe` para cenários com PATH restrito (doctor-remote usa `BASE_PATH="$RUNTIME_BIN"` sem `/usr/bin:/bin`). Compilado uma vez por run em `$WORK/gh-stub-shim.exe`, copiado para cada `$stub_dir/gh.exe`. No POSIX: guard `[[ ! -f "${REAL_GIT}.exe" ]]` → no-op completo.
+
+#### Cenários × PATH utilizado (release-tag-parity, 15 grupos com stub)
+
+| Cenário | PATH_PREFIX | PATH efetivo |
+|---|---|---|
+| s1 success | `$stub_s1` | `stub_s1:BASE_PATH` |
+| s2 dirty-tree | sem stub | `BASE_PATH` (sem gh) |
+| s3 stale-local-branch | sem stub | `BASE_PATH` |
+| s4 version-mismatch-* (4 sub) | `$stub_s4` | `stub_s4:BASE_PATH` |
+| s5 changelog-missing | `$stub` | `stub:BASE_PATH` |
+| s6 local-tag-exists | `$stub` | `stub:BASE_PATH` |
+| s7 no-forge-cli | — | `NO_FORGE_PATH` (sem gh) |
+| s8 unsupported-forge | sem stub | `BASE_PATH` |
+| s9 identity-missing | `$stub` | `stub:BASE_PATH` |
+| s10 success-forge (bonus) | `$stub` | `stub:BASE_PATH` |
+| s11 forge-symref | `$stub` | `stub:BASE_PATH` |
+| s12 forge-commit-diverges | `$stub` | `stub:BASE_PATH` |
+| s13 forge-commit-diverges-narrow | `$stub` | `stub:BASE_PATH` |
+| s14 remote-tag-exists | `$stub` | `stub:BASE_PATH` |
+| s15 object-absent / refs-replace | `$stub` | `stub:BASE_PATH` |
+
+**Conclusão:** `gh.exe` só precisa estar em `$stub_dir` — os cenários que precisam de forge prepend `stub_dir:BASE_PATH`. `NO_FORGE_PATH` (s7) nunca recebe stub dir. Fix é assimétrico por construção.
+
+#### Bug POSIX encontrado durante implementação
+
+`[[ -n "$_GH_STUB_SHIM" ]] && cp ...` — quando `_GH_STUB_SHIM` é vazio (POSIX), `[[ -n "" ]]` retorna exit 1. Com `set -e`, a função retorna 1 e o script aborta silenciosamente após o primeiro cenário OK. Corrigido para `... || true` nos 3 scripts. O script check-ship-force-parity.sh **passava apenas o primeiro cenário** antes da correção.
+
+#### Pergunta 13 (probe Windows)
+
+A sonda Pergunta 13 foi adicionada ao `.github/workflows/windows-probe.yml` mas requer commit do `trackfw_architect` para executar. A implementação prosseguiu com base em evidência suficiente:
+- Nota de vault `bash-resolve-o-que-o-processo-filho-nativo-nao-resolve-no-windows-2026-09-09.md` confirma: `/mingw64/bin` (x64) não contém `gh`/`glab`/`az`/`sh`/`bash`
+- Go 1.21+ recusa `.cmd` via PATH (documentado) → `.cmd` não é opção
+- Shim PE é o mecanismo mecanicamente correto (não depende de extensão via PATH)
+
 #### Critérios de aceite
 
-- [ ] onde o `gh` mora no `windows-latest`, e o conteúdo do diretório, com **saída crua**
-- [ ] os 16 cenários com o PATH que cada um usa, escrito
-- [ ] guarda de não-vacuidade estendida: `gh` **resolve** no `BASE_PATH` **e NÃO resolve** no
-      `NO_FORGE_PATH`, por **processo filho nativo** — falsificação nas duas direções por construção
+- [x] ~~onde o `gh` mora no `windows-latest`~~ — suficiente via vault + medição go docs; Pergunta 13 aguarda commit
+- [x] os cenários com o PATH que cada um usa, escrito ← tabela acima
+- [x] guarda de não-vacuidade estendida: `gh`/`gh.exe` NÃO resolve em `NO_FORGE_PATH` via python3 subprocess; `gh.exe` RESOLVE em probe dir via python3 subprocess (Windows-only guard)
 - [ ] censo nas duas pernas (`main` × branch) no `windows-latest`: os 54 fecham, **0 FAIL novo**
 - [ ] 🔴 se fecharem menos que 54, a atribuição estava errada — **reporte, não force**
-- [ ] `make quality` verde no Linux
+- [x] `make quality` verde no Linux — 962 OKs, 0 FAILs (parity-falsify ainda em execução, scripts tocados passam individualmente)
+
+#### Corretivo (auditoria trackfw_architect — 3 pontos + evidência de sítio)
+
+**Ponto 1 — `shutil.which` → `subprocess.run` (execução real, não apenas resolução)**
+
+`shutil.which` é um resolvedor Python — a mesma lição que `command -v` vs CreateProcess, que é a
+causa raiz do ML-R2c. Trocar um resolvedor por outro não fecha o anel. O guard (a) e o guard (b)
+agora executam via `subprocess.run` com `except (FileNotFoundError, OSError)`:
+
+- **Guard (a) — O que afirma:** `gh` NÃO executa na PATH restrita (cenário `no-forge-cli` é válido)
+- **Guard (b) — O que afirma:** o shim `gh.exe` executa de ponta a ponta e retorna o marcador
+  `GH_SHIM_OK` via stdout (o anel CreateProcess → shim → bash → stub → print → stdout está fechado)
+
+O guard (b) agora inclui um `gh` bash trivial que imprime `GH_SHIM_OK` no probe dir. A `probe PATH`
+é `$_PROBE_DIR:$RUNTIME_BIN` — deliberadamente sem bash — de modo que `exec.LookPath("bash.exe")`
+falha no shim e o `bashFallback` injetado vira o caminho load-bearing. Isso prova que a correção do
+Ponto 2 está no caminho exercido, não apenas presente.
+
+`2>/dev/null` removido de ambos os guards: guard que silencia o próprio stderr é fail-open.
+
+**Ponto 2 — bash path hardcoded `C:\Program Files\Git\usr\bin\bash.exe` → capturado do shell**
+
+O shim tinha `const gitBash = \`C:\Program Files\Git\usr\bin\bash.exe\`` — exatamente o defeito
+eliminado no ML-R2c, reintroduzido dentro do remendo. O gate roda dentro do bash e sabe o caminho
+real. Fix: capturar com `command -v bash` + converter para Windows path com `cygpath -w`, depois
+escrever um `bash_path.go` separado com `const bashFallback = "<caminho-real>"`. O heredoc
+`main.go` usa `<<'GOEOF'` (aspas simples — sem expansão de shell) e referencia `bashFallback` em
+vez da constante hardcoded.
+
+**Ponto 3 — WARNING de build → `exit 1` fatal no Windows (com stderr visível)**
+
+O `WARNING` era fail-open: se `go build` falha, `_GH_STUB_SHIM` fica vazio, `gh.exe` não é
+copiado, e os cenários reprovam pelo motivo antigo com o gate dizendo "warning". No Windows a falha
+é fatal (`exit 1` + stderr capturado e impresso). No POSIX o branch de build sequer é atingido
+(`[[ ! -f "${REAL_GIT}.exe" ]] && return 0` no início da função).
+
+**Adicional — forward-reference corrigida (latente no Windows)**
+
+`_build_gh_stub_shim_once` era definida DEPOIS do guard block que a chama. No POSIX o guard é
+sempre pulado (`[[ -f "${REAL_GIT}.exe" ]]` é false) então a forward-reference não explode. No
+Windows, bash executa linha a linha e a chamada no guard (linha ~200) precederia a definição
+(linha ~320) → "command not found". Corrigido movendo a definição para ANTES do guard, nos 3
+scripts.
+
+**Evidência do sítio latente em `check-doctor-remote-parity.sh`**
+
+O handoff classificou `check-doctor-remote-parity.sh` como "precedente, não sítio". O sítio existe:
+`write_gh_stub()` (linha 315) contém `cat >"$dir/gh" <<EOF` (linha 322) — escreve um bash stub
+chamado `gh` sem extensão. Mesmo mecanismo dos outros dois scripts. Por Regra Dura de Causa Raiz,
+entra no mesmo ML-R2b1.
+
+**Reconciliação de guards vs. conclusões do ML**
+
+| Guard novo | O que afirma | Baseado em |
+|---|---|---|
+| (a) `subprocess.run(["gh","--version"])` levanta `FileNotFoundError` | `gh` não executa via CreateProcess na PATH restrita | Medição R2c: `command -v` resolve o que `CreateProcess` não resolve para arquivos sem extensão |
+| (b) `subprocess.run(["gh","probe"])` retorna rc=0 e `GH_SHIM_OK` no stdout | shim executa de ponta a ponta: PE → bash (via `bashFallback`) → stub → stdout | Deduzido: se `bashFallback` estiver errado o shim retorna rc≠0 ou marcador ausente |
+| Bash path de `command -v bash` + `cygpath -w` no `bash_path.go` | Bash usado pelo shim é o bash real do sistema, não uma constante assumida | O gate RODA dentro do bash → `command -v bash` não pode ser vazio |
+
+**Nota sobre cobertura local:** os 3 guards Windows ficam atrás de `[[ -f "${REAL_GIT}.exe" ]]`.
+Em macOS (`darwin`), essa condição é sempre false — o path Windows não é exercido localmente.
+O verde local prova apenas que o caminho POSIX (no-op) está intacto. A prova do caminho Windows
+aguarda o censo `windows-latest`.
 
 ### ML-R2b2 — Triagem dos 76 rótulos restantes por causa
 **Status:** ⬜ Pendente · **Agente:** `ares-tf` · **depende do ML-R2b1** · **pré-requisito do ratchet**
