@@ -95,3 +95,43 @@ for a in $(grep -rl '^status: Proposed' docs/adr/ | sed 's|.*/||'); do
   echo "$(grep -rl "$a" docs/roadmaps/ | wc -l) → $a"
 done
 ```
+
+---
+
+## 🔴 Achado medido durante a própria correção: `--from-req` não fecha o laço
+
+Ao criar os 4 roadmaps a partir das REQs existentes:
+
+```bash
+trackfw roadmap new --from-req docs/req/REQ-....md
+✓ created docs/roadmaps/backlog/ROADMAP-2026-09-10-....md
+
+grep '^roadmap:' docs/req/REQ-....md
+roadmap: ""          ← 🔴 continua órfã
+```
+
+**O comando cria o roadmap e não escreve o vínculo de volta na REQ.** Reproduzido **4 de 4 vezes**,
+com 4 REQs diferentes.
+
+🔴 **O comando que existe para resolver órfãs deixa a REQ órfã.** Não é o operador que esquece — é o
+laço que não fecha. E isso reclassifica o problema: a `ROADMAP-2026-09-09-req-nasce-orfa-...`
+descreve a causa como *"são dois comandos e o segundo se esquece"*, mas mesmo **usando** o segundo
+comando, e o comando **dedicado** a partir da REQ, o vínculo não é escrito.
+
+**Consequência para a REQ que trata disso:** o escopo dela precisa cobrir o `--from-req`
+explicitamente, senão a correção pode satisfazer o critério e deixar este caminho intacto — que é
+exatamente a forma de falha que o relator externo apontou no `#268` (*"um remédio pode satisfazer o
+AC e deixar o defeito em pé"*).
+
+**Os 4 vínculos foram escritos à mão.** Contagem depois: **31 → 27** REQs órfãs abertas.
+
+| issue | REQ | roadmap criado | MLs |
+|---|---|---|---|
+| #261 | `validate-unfiltered-do-python-...` | ✓ | 6 |
+| #258 | `gate-de-palavra-chave-de-fechamento-...` | ✓ | 6 |
+| #268 | `consumidores-que-nao-conhecem-by-agent-...` | ✓ | 8 |
+| #273 | `branch-has-wip-roadmap-casa-por-substring-...` | ✓ | 8 |
+
+⚠️ **Os MLs são stubs gerados dos critérios de aceite da REQ** — servem de esqueleto, **não** são
+roadmap decision-complete. Cada um precisa de revisão do arquiteto antes de despacho. O que esta
+etapa entrega é o **laço fechado**, não o plano pronto.

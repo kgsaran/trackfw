@@ -3,7 +3,7 @@ status: Open
 date: 2026-09-05
 author: ""
 adr: ""
-roadmap: ""
+roadmap: "docs/roadmaps/backlog/ROADMAP-2026-09-10-validate-unfiltered-do-python-devolve-lista-de-tipo-misto-e-o-consumidor-estoura.md"
 ---
 
 # REQ: validate_unfiltered do Python devolve lista de tipo misto e o consumidor estoura
