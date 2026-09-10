@@ -684,18 +684,72 @@ jobs:
         # ADR D4: toda entrada removida da lista declara o motivo (removal_note).
         # O baseline (estado atual de origin/main) permite detectar entradas
         # deletadas sem passar pelo array 'removed'.
-        # Se origin/main não tiver o arquivo (PR novo adicionando o ratchet),
-        # o step emite aviso e o check prossegue sem baseline.
+        #
+        # Raiz do defeito (corretivo ML-2B, 2026-09-10): actions/checkout@v7 sem
+        # 'with:' usa fetch-depth: 1 e busca APENAS o branch do PR — origin/main
+        # nunca é escrito como ref remota. `git show origin/main:...` falha com
+        # "unknown revision", não porque o arquivo está ausente na main, mas porque
+        # a REF não existe. Dois estados distintos (ref ausente / arquivo ausente)
+        # geravam o mesmo observable (silêncio + aviso genérico) e a mesma mensagem
+        # errada "normal em PRs que adicionam o arquivo pela primeira vez".
+        # Terceira ocorrência do padrão dois-estados-um-observable neste projeto
+        # (anterior: #307 git-vs-interpretador, #274 suíte-que-não-carrega).
+        #
+        # Correção: fetch incondicionalmente com refspec explícito (config-independente).
+        # Custo medido localmente: 0.09 s (1 commit + árvore, objeto único, < 1 MB).
+        # No runner do GitHub Actions (LAN-class vs. mesmo DC) custo comparável.
+        # fetch-depth: 0 (histórico completo) custa N commits × objetos — rejeitado.
+        # O fetch pontual é suficiente porque apenas `git show origin/main:...` e
+        # `git ls-tree origin/main` precisam do ref; nenhum outro step do job usa
+        # `git log`, `git describe` ou ancestralidade.
+        #
+        # Dois estados distintos, mensagens distintas (Falsificação):
+        #   Braço 1 — ref ausente (fetch falhou ou ref inválida): ::error:: + exit 1.
+        #             "Fatal" = exit 1 no step; o job continua enquanto
+        #             continue-on-error: true estiver ativo (ML-3A). Visível como
+        #             ##[error] no log do runner.
+        #   Braço 2 — ref presente + arquivo ausente na main (este PR adiciona o
+        #             arquivo): ::warning:: + exit 0 (step passa).
+        #   Braço 3 — ref presente + arquivo presente: baseline extraído, D4 ativa.
+        #             check-windows-known-failures.py emite 'ML-2B D4 (baseline):
+        #             N entrada(s) comparadas' (T15) — ausência dessa linha = D4
+        #             não rodou de verdade.
         if: always() && steps.precondition.outcome == 'success'
         shell: pwsh
         run: |
           $PSNativeCommandUseErrorActionPreference = $false
           $baselineFile = Join-Path $env:RUNNER_TEMP "baseline-known-failures.json"
-          git show origin/main:.github/windows-known-failures.json 2>$null > $baselineFile
-          if (-not (Test-Path $baselineFile) -or (Get-Item $baselineFile).Length -eq 0) {
-            Write-Host "::warning::ML-2B: não foi possível extrair baseline de origin/main — verificação de remoções por baseline desabilitada (normal em PRs que adicionam o arquivo pela primeira vez)."
-            Remove-Item -Path $baselineFile -ErrorAction SilentlyContinue
+
+          # Fetch origin/main unconditionally with explicit refspec.
+          # Bare branch name (fetch origin main) writes only FETCH_HEAD, which
+          # depends on remote.origin.fetch; the explicit refspec is config-independent.
+          Write-Host "ML-2B (baseline): fetching origin/main (depth=1, no-tags)..."
+          git fetch --depth=1 --no-tags origin "+refs/heads/main:refs/remotes/origin/main" 2>&1
+          $fetchExit = $LASTEXITCODE
+
+          $refVerify = git rev-parse --verify origin/main 2>&1
+          if ($LASTEXITCODE -ne 0 -or $fetchExit -ne 0) {
+            # Braço 1: ref indisponível — gate não pode fingir que rodou.
+            Write-Host "::error::ML-2B (baseline): origin/main indisponível após fetch (fetch exit=$fetchExit, rev-parse exit=$LASTEXITCODE) — verificação de remoções (D4) não pode rodar. Gate não pode fingir que rodou."
+            exit 1
           }
+
+          # Distinguir: ref existe mas arquivo ausente na main.
+          $fileInMain = git ls-tree origin/main -- .github/windows-known-failures.json 2>&1
+          if ([string]::IsNullOrWhiteSpace($fileInMain)) {
+            # Braço 2: arquivo adicionado por este PR, ainda não mergeado na main.
+            Write-Host "::warning::ML-2B (baseline): windows-known-failures.json ausente em origin/main — verificação de remoções por baseline desabilitada (arquivo adicionado por este PR, ainda não mergeado)."
+            exit 0
+          }
+
+          # Braço 3: ref e arquivo presentes — extrair baseline.
+          git show origin/main:.github/windows-known-failures.json > $baselineFile
+          if ($LASTEXITCODE -ne 0 -or (Get-Item $baselineFile -ErrorAction SilentlyContinue).Length -eq 0) {
+            Write-Host "::error::ML-2B (baseline): ls-tree listou o arquivo mas extração falhou — baseline não disponível."
+            exit 1
+          }
+          $sz = (Get-Item $baselineFile).Length
+          Write-Host "ML-2B (baseline): $sz bytes extraídos de origin/main — verificação de remoções (D4) ativa."
 
       - name: ML-2A/2B — ratchet de nomes e verificação de remoções
         # ML-2A — ADR D1: falha se nome novo aparecer fora da lista; avisa quando

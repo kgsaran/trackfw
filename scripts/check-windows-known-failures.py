@@ -54,6 +54,8 @@ Exit codes:
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import json
 import os
 import re
@@ -558,6 +560,17 @@ def check_baseline_deletions(
             )
             ok = False
 
+    # Positive confirmation — makes "baseline ran and found nothing" observable.
+    # Two-states-one-observable: without this line, "clean" and "skipped" are
+    # indistinguishable in the log (same silence). T15 asserts this line appears
+    # when a baseline is given and is absent when baseline_path is empty.
+    if ok:
+        print(
+            f"ML-2B D4 (baseline): {len(baseline_entries)} entrada(s) comparadas — "
+            "nenhuma deleção silenciosa.",
+            flush=True,
+        )
+
     return ok
 
 
@@ -754,6 +767,12 @@ def run_self_test() -> int:
     T14 — 'valid removal (corrected + test in PASS output)' -> exit 0
           Asserts: vacuity guard — the ratchet must not reprove all removals;
           a well-formed 'corrected' entry with the test in passes exits clean.
+
+    T15 — 'baseline positive confirmation line' -> emitted with baseline, absent without
+          Asserts: check_baseline_deletions emits 'ML-2B D4 (baseline): N entrada(s)
+          comparadas' when a baseline is provided and all entries are accounted for.
+          When baseline_path is empty the line is absent (two-states-one-observable
+          fix: "clean" and "skipped" were previously indistinguishable in the log).
     """
     n_pass = 0
     n_fail = 0
@@ -1037,6 +1056,34 @@ def run_self_test() -> int:
         write_artifacts(go=GO_PASS)  # TestFoo appears as PASS
         rc = run_check(list_path, go_path, tap_path, py_path, baseline_path=baseline_path)
         check(rc == 0, "T14: valid corrected removal with TestFoo in PASS output -> exit 0")
+
+        # ── ML-2B T15: baseline confirmation line emitted with baseline, absent without
+        # Asserts: check_baseline_deletions emits 'ML-2B D4 (baseline): N entrada(s)
+        # comparadas' when baseline is provided; line is absent when baseline_path=''.
+        # Fixes two-states-one-observable: "clean" and "skipped" were indistinguishable.
+        print("=== T15: baseline positive confirmation line -> present with baseline, absent without ===", flush=True)
+        write_list(BASE_ENTRIES, [])   # all entries in active, none removed
+        write_baseline(BASE_ENTRIES)   # baseline matches current entries exactly
+
+        # T15a: baseline provided → confirmation line appears
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            result = check_baseline_deletions(baseline_path, BASE_ENTRIES, [])
+        out = buf.getvalue()
+        check(
+            result is True and "ML-2B D4 (baseline):" in out and "comparadas" in out,
+            "T15a: baseline clean → 'ML-2B D4 (baseline): N entrada(s) comparadas' emitted",
+        )
+
+        # T15b: empty baseline_path → confirmation line absent (baseline skipped)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            result = check_baseline_deletions("", BASE_ENTRIES, [])
+        out = buf.getvalue()
+        check(
+            result is True and "comparadas" not in out,
+            "T15b: baseline skipped (empty path) → no confirmation line",
+        )
 
     print(f"\nSelf-test summary: {n_pass} PASS, {n_fail} FAIL", flush=True)
     return 0 if n_fail == 0 else 1

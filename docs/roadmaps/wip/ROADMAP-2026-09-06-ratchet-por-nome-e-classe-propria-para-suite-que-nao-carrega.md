@@ -181,6 +181,34 @@ Python sem `-rA`: sem discriminante (verificado medindo `pytest -q` vs `pytest -
 - YAML: `python3 -c "yaml.safe_load(...)"` → válido, 11 jobs
 - `make quality` → em andamento (vide sessão 2026-09-10f)
 
+---
+
+### Corretivo ML-2B — baseline D4 nunca rodava em CI (2026-09-10, sessão g)
+
+**Causa raiz medida:** `actions/checkout@v7` sem `with:` usa `fetch-depth: 1` e só busca o branch do PR. `origin/main` nunca é criado como ref remota. `git show origin/main:...` falha com *"unknown revision"* — não porque o arquivo está ausente na `main`, mas porque a **ref não existe**. Dois estados distintos (ref ausente / arquivo ausente) geravam o mesmo observável: silêncio + aviso genérico com mensagem errada *"normal em PRs que adicionam o arquivo pela primeira vez"*.
+
+Terceira ocorrência do padrão dois-estados-um-observable registrado em `vault/notes/guarda-que-reporta-ausencia-precisa-distinguir-nao-achei-de-nao-consegui-procurar-2026-09-10.md` (entrada `ML-2B (CI)` na tabela já existente).
+
+**O que foi corrigido (mesma REQ/roadmap — mesma causa):**
+1. Step `ML-2B — extrair baseline` reescrito: fetch incondicional com refspec explícito (`+refs/heads/main:refs/remotes/origin/main`) — custo medido: 0.09 s / < 1 MB localmente.
+2. Dois estados distinguíveis com mensagens próprias:
+   - ref ausente (fetch falhou) → `::error::` + **exit 1** ("fatal" = step-level exit 1; não bloqueia PR enquanto `continue-on-error: true` do job windows-full-suites estiver ativo — ML-3A)
+   - ref presente + arquivo ausente na main (este PR adiciona o arquivo) → `::warning::` + exit 0
+   - ref presente + arquivo presente → baseline extraído, tamanho logado, D4 ativa
+3. `check_baseline_deletions()` adicionou linha positiva de confirmação quando o baseline roda limpo (`ML-2B D4 (baseline): N entrada(s) comparadas — nenhuma deleção silenciosa`) — antes "clean" e "skipped" eram indistinguíveis no log.
+4. T15 (a+b) nos self-tests: afirma que a linha aparece com baseline e está ausente sem ele.
+
+**3 braços de falsificação (arm 3 ativo após merge para main):**
+- Braço 1 (ref ausente → exit 1): refspec errado ou fetch falha → step falha com `::error::` e exitcode 1
+- Braço 2 (ref ok + arquivo ausente → warning + exit 0): caso deste PR — arquivo adicionado aqui, ainda não mergeado
+- Braço 3 (ref ok + arquivo presente → D4 ativa): após merge, próximo PR que modifica a lista recebe verificação real; evidência: checker emite `ML-2B D4 (baseline): N entrada(s) comparadas` (T15a verifica)
+
+**Gates (corretivo, sequenciais, foreground, local, macOS arm64):**
+- `python3 scripts/check-windows-known-failures.py --self-test` → **16 PASS, 0 FAIL**
+- `make parity-rest` → exit 0
+- `trackfw validate` → 0 errors (174 warnings pré-existentes)
+- YAML: `python3 -c "yaml.safe_load(...)"` → válido
+
 ## Wave 3 — Tirar a rede
 > Dependências: Waves 1 e 2 fechadas e verdes.
 

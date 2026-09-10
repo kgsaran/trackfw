@@ -4,6 +4,27 @@
 
 ---
 
+## Sessão 2026-09-10g — ares-tf (Infrastructure) — Corretivo ML-2B: ENTREGUE, aguarda auditoria do arquiteto
+
+Branch `fix/ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega`.
+
+**Escopo:** corretivo ao ML-2B detectado pelo CI (run 34511651888, job `windows-full-suites`). Causa raiz: `actions/checkout@v7` sem `with:` não busca `origin/main` como ref remota — baseline D4 nunca rodava em nenhum PR.
+
+**Arquivos modificados:**
+- `scripts/check-windows-known-failures.py` — `import contextlib`, `import io`; positive log em `check_baseline_deletions()`; T15a+T15b nos self-tests
+- `.github/workflows/quality.yml` — step `ML-2B — extrair baseline` reescrito com fetch incondicional + refspec explícito + 3 braços distinguíveis
+- `docs/roadmaps/wip/ROADMAP-2026-09-06-ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega.md` — seção de corretivo adicionada à ML-2B
+
+**Gates executados (sequenciais, foreground, local, macOS arm64):**
+- `python3 scripts/check-windows-known-failures.py --self-test` → **16 PASS, 0 FAIL** (T1-T14 + T15a+T15b)
+- `make parity-rest` → exit 0
+- `trackfw validate` → 0 errors (174 warnings pré-existentes)
+- YAML: `python3 -c "yaml.safe_load(...)"` → válido
+
+**Status:** Microbatch entregue ao `trackfw_architect` para auditoria e commit. ML-2B não marcado `✅ Concluído` — aguarda aprovação da auditoria.
+
+---
+
 ## Sessão 2026-09-10e — ares-tf (Infrastructure) — ML-2A: ENTREGUE, aguarda auditoria do arquiteto
 
 Branch `fix/ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega`.
