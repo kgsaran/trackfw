@@ -90,3 +90,32 @@ exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli
 - [ ] **AC5** — 🔴 **Guarda de vacuidade:** o autoteste do gate já tem cenários de corpo vazio e
 - [ ] build passes
 - [ ] tests green
+
+### ML-NOVO — A adjacência quebra com markdown entre a palavra e o `#N`
+
+**Status:** ⬜ Pendente · **medido pelo arquiteto em 2026-09-10, contra o próprio PR #312**
+
+```
+Fecha #274.                   → gate RECUSA   ✅ correto
+Fecha **#274** e **#275**.    → gate PASSA    🔴 defeito
+```
+
+O `**` do negrito entre a palavra e o `#N` quebra a adjacência que o gate procura. **Não foi ataque:
+é markdown normal**, escrito sem intenção de driblar nada.
+
+**Consequência medida:** o PR **#312** foi mergeado com *"Fecha **#274** e **#275**"*, o gate ficou
+**verde**, e os dois issues **continuaram abertos**. Fechados à mão depois.
+
+🔴 **É a mesma classe dos outros dois defeitos deste issue:** o gate mede uma forma mais estreita do
+que a que afirma cobrir. Ver
+`vault/notes/guarda-que-reporta-ausencia-precisa-distinguir-nao-achei-de-nao-consegui-procurar-2026-09-10.md`.
+
+**Falsificação obrigatória — as formas que um humano escreve sem pensar:**
+
+```
+Fecha **#N**        Fecha o **#N**        Fecha [#N](url)
+Fecha `#N`          Fecha: #N             Fecha os #N e #M
+```
+
+E o contra-braço: prosa legítima que **cita** um issue sem pretender fechá-lo **não** pode reprovar —
+senão o gate vira ruído e alguém o desliga.

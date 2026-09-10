@@ -17,3 +17,4 @@
 - [Branch por objetivo, não por REQ](feedback_branch_por_objetivo_nao_por_req.md) — várias REQs na mesma branch se o objetivo final é um; organizar o PR por REQ
 - [Sem PR aberto, a implementação é nossa](feedback_sem_pr_aberto_implementacao_e_nossa.md) — oferta ≠ PR; dizer no ticket que abrimos a REQ e vamos implementar
 - [VM investiga, CI mede](project_vm_investiga_ci_mede.md) — VM é ARM64 e runner é x64; número que vira afirmação sai do windows-census.yml, e diferença mede as duas pernas no mesmo runner
+- [Palavra-chave de fechamento é em inglês](project_palavra_chave_de_fechamento_e_em_ingles.md) — "Fecha #N" não fecha; e o gate que checa isso é driblado por `Fecha **#N**` (markdown quebra a adjacência)
