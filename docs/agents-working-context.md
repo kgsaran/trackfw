@@ -4,6 +4,126 @@
 
 ---
 
+## Sessão 2026-09-10h — ares-tf (Infrastructure) — Corretivo ML-3A: ENTREGUE, aguarda auditoria do arquiteto
+
+Branch `fix/ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega`.
+
+**Escopo:** corretivo ao ML-3A detectado pelo CI (run 34519502920). Causa raiz: guarda de marcadores reprovava em qualquer `suite-load-failure.node.txt` sem consultar a lista de dívida conhecida. `validator.test.js` estava na lista mas a guarda retornava 1 antes do ratchet de nomes.
+
+**Arquivos modificados:**
+- `scripts/check-windows-known-failures.py`:
+  - `_parse_go_load_names(content)` — novo helper que extrai pacotes de marcador Go.
+  - Passo 3 early: só Python load e zero-test (sem nome extraível → row 3).
+  - Passo 3b late (após extração): Go load consulta `known_go_load`; Node load consulta `obs_node_load` vs `known_node_load`.
+  - `known_go_load` set adicionado ao `run_check`.
+  - T19–T22 adicionados (23 PASS total). Reconciliação de T16/T17 atualizada.
+- `docs/roadmaps/wip/ROADMAP-2026-09-06-ratchet-...md` — seção de corretivo adicionada ao ML-3A.
+
+**Gates executados (sequenciais, foreground, local, macOS arm64):**
+- `python3 scripts/check-windows-known-failures.py --self-test` → **23 PASS, 0 FAIL** (T1-T22)
+- `make parity-rest` → exit 0
+- `trackfw validate` → 0 errors (174 warnings pré-existentes)
+- YAML: `python3 -c "yaml.safe_load(...)"` → válido
+
+**Status:** Microbatch entregue ao `trackfw_architect` para auditoria e commit. Corretivo ML-3A não marcado `✅ Concluído` — aguarda aprovação da auditoria.
+
+---
+
+## Sessão 2026-09-10g — ares-tf (Infrastructure) — Corretivo ML-2B: ENTREGUE, aguarda auditoria do arquiteto
+
+Branch `fix/ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega`.
+
+**Escopo:** corretivo ao ML-2B detectado pelo CI (run 34511651888, job `windows-full-suites`). Causa raiz: `actions/checkout@v7` sem `with:` não busca `origin/main` como ref remota — baseline D4 nunca rodava em nenhum PR.
+
+**Arquivos modificados:**
+- `scripts/check-windows-known-failures.py` — `import contextlib`, `import io`; positive log em `check_baseline_deletions()`; T15a+T15b nos self-tests
+- `.github/workflows/quality.yml` — step `ML-2B — extrair baseline` reescrito com fetch incondicional + refspec explícito + 3 braços distinguíveis
+- `docs/roadmaps/wip/ROADMAP-2026-09-06-ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega.md` — seção de corretivo adicionada à ML-2B
+
+**Gates executados (sequenciais, foreground, local, macOS arm64):**
+- `python3 scripts/check-windows-known-failures.py --self-test` → **16 PASS, 0 FAIL** (T1-T14 + T15a+T15b)
+- `make parity-rest` → exit 0
+- `trackfw validate` → 0 errors (174 warnings pré-existentes)
+- YAML: `python3 -c "yaml.safe_load(...)"` → válido
+
+**Status:** Microbatch entregue ao `trackfw_architect` para auditoria e commit. ML-2B não marcado `✅ Concluído` — aguarda aprovação da auditoria.
+
+---
+
+## Sessão 2026-09-10e — ares-tf (Infrastructure) — ML-2A: ENTREGUE, aguarda auditoria do arquiteto
+
+Branch `fix/ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega`.
+
+**Escopo ML-2A:** Lista versionada de vermelhos colhida do run 34478752778 + verificador que reprova nomes novos e avisa quando nomes somem.
+
+**Gates executados (sequenciais, locais, macOS arm64):**
+- `make build` → exit 0
+- `make test` → exit 0
+- `make parity-rest` → exit 0 (9 PASS, 0 FAIL no self-test do ML-2A)
+- `make quality` → exit 0
+- `trackfw validate` → exit 0 (174 warnings pré-existentes, 0 errors)
+- YAML: `python3 -c "yaml.safe_load(...)"` → válido, 11 jobs
+
+**Arquivos criados/modificados:**
+- `.github/windows-known-failures.json` — 38 entradas (Go:14, Node-assert:10, Node-load:1, Python:13)
+- `scripts/check-windows-known-failures.py` — verificador Python com --self-test (9 testes, todos PASS)
+- `Makefile` — self-test adicionado a `parity-rest`
+- `.github/workflows/quality.yml` — Python step captura output; step ML-2A adicionado (step 17 de 19)
+
+**Status:** Microbatch entregue ao `trackfw_architect` para auditoria e commit. ML-2A não marcado `✅ Concluído` — aguarda aprovação da auditoria.
+
+---
+
+## Sessão 2026-09-10d — ares-tf (Infrastructure) — ML-1A: CONCLUÍDO, aguarda auditoria do arquiteto
+
+Branch `fix/ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega`.
+
+**Gates executados (sequenciais, locais, macOS arm64):**
+- `make build` → exit 0
+- `make test` → exit 0
+- `make quality` → exit 0 (412 OK, 0 FAIL, 181 cenários de falsificação)
+- `trackfw validate` → exit 0 (176 warnings pré-existentes, 0 errors)
+
+**Arquivo modificado:** `.github/workflows/quality.yml`
+**Roadmap atualizado:** `docs/roadmaps/wip/ROADMAP-2026-09-06-ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega.md` (ML-1A → `🔄 Em andamento`)
+
+**Status:** Microbatch entregue ao `trackfw_architect` para auditoria e commit. ML-1A não marcado `✅ Concluído` — aguarda aprovação da auditoria.
+
+---
+
+## Sessão 2026-09-10c — ares-tf (Infrastructure) — ML-1A: discriminante medido, implementação em progresso
+
+Branch `fix/ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega`.
+
+**Escopo ML-1A:** Distinguir "suíte não carregou" de "teste reprovou" nos 3 runtimes.
+
+**Medições realizadas (locais, antes de qualquer código):**
+
+Go 1.25.2 / macOS arm64 · flags CI exatas (`go test -v -p 1 -parallel 1 -timeout 20m ./...`):
+- Carga falha (setup failed): exit 1, linha `FAIL\t<pkg> [setup failed]`
+- Asserção falha: exit 1, linha `--- FAIL: TestName`, sem `[setup failed]`
+- Sem testes: exit **0**, `[no test files]`
+
+Python 3.14.7 / macOS arm64 · flags CI exatas (`python -m pytest -q`):
+- conftest.py não importa: exit **4**
+- módulo de teste não importa (coleção interrompida): exit **2**
+- asserção falha: exit **1**
+- sem testes: exit **5**
+
+Node.js v26.8.1 / macOS arm64 (com `--test-reporter=tap`; ADR adendum Node 22/Win11):
+- carga falha: `exitCode:` presente no bloco `not ok` (D3-bis confirmado)
+- asserção falha: `exitCode:` ausente, `code: 'ERR_ASSERTION'`
+- sem testes: exit **0**, `# tests 0`, `1..0`
+
+LACUNA DECLARADA: Node 20 / windows-latest não medido diretamente. Formato TAP estável entre 22 e 26.
+
+**O que está sendo implementado em `quality.yml`:**
+- Step de falsificação (antes dos 3 runs): prova o discriminante nas duas direções para os 3 runtimes
+- Go, Node, Python steps modificados para capturar saída e emitir `::error::` com classe (suite-load-failure vs normal)
+- Node: multi-reporter (spec→stdout + tap→arquivo) para usar discriminante D3-bis
+
+---
+
 ## Sessão 2026-09-10b — ares-tf (Infrastructure) — ML-R2b1b: correção implementada (env-var, 14-J) nos 3 scripts (CONCLUÍDO, aguarda commit)
 
 Branch `fix/fechar-os-grupos-de-falha-de-windows-por-causa-raiz`.
@@ -34970,3 +35090,117 @@ o rótulo.**
 **Causa raiz confirmada (sem medição nova):** `write_release_gh_stub` / `write_gh_stub` criam `$dir/gh` (bash, sem `.exe`). `exec.LookPath("gh")` no Windows exige extensão via PATHEXT — stub não encontrado → `adapter.Available = false` → "No forge CLI" antes de qualquer outra verificação. Afeta os 54 rótulos que passam um stub_dir como PATH prefix mas cujo stub não é resolvível por processo nativo Windows.
 
 **Próximo passo:** Acionar `windows-probe.yml --ref fix/fechar-...` com Pergunta 13 adicionada, aguardar resposta, então implementar fix.
+
+---
+
+## Sessão 2026-09-10f — ares-tf (Infrastructure) — ML-2B: em andamento
+
+Branch `fix/ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega`.
+
+**Escopo ML-2B:** Remoção de nome exige justificativa (D4). Medir discriminante corrigido-vs-não-executa nos 3 runtimes, materializar `removal_note`, 4 braços de falsificação.
+
+**Medições do discriminante (foreground, local, macOS arm64):**
+
+| Runtime | Observável de pass | Discriminante existe? |
+|---|---|---|
+| Go 1.25.2 (`-v`) | `--- PASS: TestFoo (0.01s)` | ✅ SIM |
+| Node (TAP) | `ok N - test name` | ✅ SIM |
+| Python (`-q -rA`) | `PASSED pypi/tests/...` em short summary | ✅ SIM (requer `-rA`) |
+
+**Python**: com `-q` puro (configuração atual), discriminante ausente. Com `-rA` (mudança de 1 flag no step Windows), discriminante existe. Medido localmente: `python3 -m pytest pypi/tests/test_commands_basic.py::... -q -rA` → `PASSED pypi/tests/test_commands_basic.py::TestRealCommands::test_status_uses_real_handler`. Limitação declarada: se `-rA` não for passado, checker emite aviso de vacuidade e ignora verificação de `corrected` para Python.
+
+**Design escolhido:**
+- JSON: seção `removed` separada de `entries`; entradas retiradas vão para `removed` com `removal_note` obrigatório
+- Checker: `--baseline` para detectar deleções silenciosas (bypassing `removed`)
+- 5 novos self-tests: T10 (baseline check), T11 (removed sem nota), T12 (corrected mas no-longer-runs), T13 (renamed sem renamed_to em entries), T14 (remoção válida → exit 0)
+
+**Status:** Implementação em andamento.
+
+---
+
+## Sessão 2026-09-10f (encerramento) — ares-tf (Infrastructure) — ML-2B: ENTREGUE, aguarda auditoria do arquiteto
+
+Branch `fix/ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega`.
+
+**Discriminante medido (foreground, macOS arm64):**
+- Go (`-v`): `--- PASS: TestFoo` → discriminante existe
+- Node (TAP): `ok N - test name` → discriminante existe
+- Python (`-q -rA`): `PASSED pypi/tests/...` → discriminante existe com `-rA`
+- Limitação declarada: sem `-rA`, Python vacuidade = checker emite aviso e pula verificação
+
+**Arquivos criados/modificados:**
+- `.github/windows-known-failures.json` — seção `removed: []` + `_meta.d4_note` atualizado
+- `scripts/check-windows-known-failures.py` — 3 extractors de pass; `validate_removed()`; `check_baseline_deletions()`; `--baseline` arg; 5 novos self-tests T10-T14
+- `.github/workflows/quality.yml` — `-rA` no Python step; step baseline (ML-2B); ratchet step renomeado e com `--baseline`
+
+**Gates executados (sequenciais, foreground, macOS arm64):**
+- `python3 scripts/check-windows-known-failures.py --self-test` → 14 PASS, 0 FAIL
+- `make parity-rest` → exit 0 (14 PASS self-test + todos os outros gates)
+- `trackfw validate` → exit 0 (174 warnings pré-existentes, 0 errors)
+- YAML: `python3 -c "yaml.safe_load(...)"` → válido, 11 jobs
+- `make quality` → exit 0 (0 FAIL, exit code confirmado pelo background task)
+
+**Status:** Microbatch entregue ao `trackfw_architect` para auditoria e commit. ML-2B não marcado `✅ Concluído` — aguarda aprovação da auditoria.
+
+---
+
+## Sessão 2026-09-10g (início) — ares-tf (Infrastructure) — ML-3A: Remover `continue-on-error` do `windows-full-suites`
+
+Branch `fix/ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega`.
+
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-09-06-ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega.md`
+
+**Escopo do ML-3A:**
+- Remover `continue-on-error: true` do job `windows-full-suites` (nível de job, linha 211)
+- Adicionar `continue-on-error: true` nos três steps de suíte (Go, Node, Python) — suítes viram "produtoras de observação", ratchet vira "o juiz"
+- Steps de suíte escrevem arquivo de marcador em `RUNNER_TEMP` quando detectam suite-load-failure ou zero-test (classe própria, ML-1A)
+- Ratchet recebe `--load-markers-dir "$env:RUNNER_TEMP"` — lê marcadores e reprova se algum existir
+- Checker Python: adicionado argumento `--load-markers-dir`, guarda de marcadores em `run_check()`, guarda de vacuidade de resultado (results-present), novos self-tests T16/T17/T18
+- "Camada 1 pulada": muda de `::warning::` + exit 0 para `::error::` + exit 1 (job sem árbitro não pode passar — ML-3A row 5)
+
+**Status:** Em implementação.
+
+---
+
+## Sessão 2026-09-10g (encerramento) — ares-tf (Infrastructure) — ML-3A: ENTREGUE, aguarda auditoria do arquiteto
+
+Branch `fix/ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega`.
+
+**Mecanismo escolhido e justificativa escrita:**
+- `continue-on-error: true` no NÍVEL DE STEP nos 3 steps de suíte (Go, Node, Python): suítes são produtoras de observação; seu exit code é absorvido; os artefatos de saída (`go-suite-out.txt`, `node-suite.tap`, `python-suite-out.txt`) persistem independentemente
+- Sem `continue-on-error` no step do ratchet (`ML-2A/2B — ratchet de nomes`): seu exit code é o veredito do job
+- Por que step-level e não job-level: job-level impedia o ratchet de reprovar (absorvia tudo); step-level deixa cada step absorver só a si mesmo
+- A classificação (suite-load-failure, zero-test) já estava medida nos steps de suíte (ML-1A); o ML-3A apenas move o veredito para onde a medição já estava
+
+**Arquivos modificados:**
+- `.github/workflows/quality.yml`:
+  - Removido `continue-on-error: true` do job `windows-full-suites` (era linha 211)
+  - Adicionado `continue-on-error: true` nos steps Go, Node, Python (step-level)
+  - Cada step de suíte escreve marcador em `RUNNER_TEMP` quando detecta suite-load-failure ou zero-test
+  - Step ratchet: adicionado `--load-markers-dir "$env:RUNNER_TEMP"`; comentário atualizado (removida menção ao `continue-on-error` do ML-2A que já não se aplica)
+  - "Camada 1 pulada": mudado de `::warning::` + exit 0 para `::error::` + exit 1 (job sem árbitro não pode passar)
+- `scripts/check-windows-known-failures.py`:
+  - Adicionado `--load-markers-dir` arg (opcional, default "")
+  - Adicionado step 3 em `run_check()`: verifica marcadores de suite-load-failure/zero-test em `load_markers_dir`; exit 1 se qualquer marcador existir
+  - Adicionado step 5b em `run_check()`: guarda de vacuidade de resultado — se `is_vacuous=True` e obs vazio para um runtime, exit 1 ("não consegui procurar → fatal")
+  - T16: marker Go suite-load-failure → exit 1 (braço "reprova" da row 4)
+  - T17: sem marcadores + falhas conhecidas → exit 0 (braço "passa" da row 4 — prova que T16 não dispara sempre)
+  - T18: go-suite-out.txt vacuoso (só `[setup failed]`, sem `--- FAIL:` / `--- PASS:`) → exit 1 (guarda de vacuidade)
+
+**Comportamentos provados pelos 5 cenários exigidos:**
+
+| Cenário | Mecanismo | Teste |
+|---|---|---|
+| suítes reprovam só com nomes da lista → passa | ratchet exits 0; T17 e T1 | T1, T17 |
+| nome fora da lista → reprova | ratchet exits 1 via nova falha | T2 |
+| nome da lista deixa de falhar → passa com aviso | `::warning::` + exit 0 | T3 |
+| suíte não carrega → reprova | step escreve marcador; ratchet lê `--load-markers-dir` + guarda de vacuidade | T16, T18 |
+| ratchet não consegue rodar → reprova | artefato ausente (T6); lista ausente (T5); "Camada 1 pulada" exit 1 (YAML) | T5, T6 |
+
+**Gates executados (foreground, macOS arm64):**
+- `python3 scripts/check-windows-known-failures.py --self-test` → 19 PASS, 0 FAIL
+- YAML: `python3 -c "yaml.safe_load(...)"` → válido, 11 jobs
+- `trackfw validate` → 174 warnings pré-existentes, 0 errors
+- `make parity-rest` → exit 0 (0 FAIL, 478 OK) [rodou em background; saída verificada completa]
+
+**Status:** ML-3A marcado ✅ Concluído no roadmap. Microbatch entregue ao `trackfw_architect` para auditoria e commit. Sem commit, sem push.

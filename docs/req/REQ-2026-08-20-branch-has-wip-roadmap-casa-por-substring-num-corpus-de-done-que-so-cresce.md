@@ -3,7 +3,7 @@ status: Open
 date: 2026-08-20
 author: ""
 adr: ""
-roadmap: ""
+roadmap: "docs/roadmaps/backlog/ROADMAP-2026-09-10-branch-has-wip-roadmap-casa-por-substring-num-corpus-de-done-que-so-cresce.md"
 ---
 
 # REQ: `branch_has_wip_roadmap` casa por substring num corpus de `done/` que só cresce

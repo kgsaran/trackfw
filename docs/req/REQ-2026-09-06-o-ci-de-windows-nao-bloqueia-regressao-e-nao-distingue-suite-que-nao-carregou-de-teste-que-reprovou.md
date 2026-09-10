@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-09-06
 author: ""
 adr: ""
-roadmap: ""
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-06-ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega.md"
 ---
 
 # REQ: o CI de Windows nao bloqueia regressao e nao distingue suite que nao carregou de teste que reprovou
 
-> Date: 2026-09-06 | Status: Open
+> Date: 2026-09-06 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -101,7 +101,7 @@ ADR: docs/adr/ADR-2026-09-05-o-ci-de-windows-bloqueia-por-conjunto-de-nomes-e-po
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: docs/roadmaps/backlog/ROADMAP-2026-09-06-ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-09-06-ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega.md
 
 
 ---

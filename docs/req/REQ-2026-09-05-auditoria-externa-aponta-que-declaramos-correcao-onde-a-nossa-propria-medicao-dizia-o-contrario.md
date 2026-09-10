@@ -1,5 +1,5 @@
 ---
-status: Open
+status: Done
 date: 2026-09-05
 author: ""
 adr: ""
@@ -8,7 +8,7 @@ roadmap: "docs/roadmaps/done/ROADMAP-2026-09-05-reconciliar-o-que-declaramos-com
 
 # REQ: auditoria externa aponta que declaramos correcao onde a nossa propria medicao dizia o contrario
 
-> Date: 2026-09-05 | Status: Open
+> Date: 2026-09-05 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 

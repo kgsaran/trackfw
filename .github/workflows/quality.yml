@@ -207,8 +207,11 @@ jobs:
     # achado novo. Corrigir isolação por-teste em
     # pypi/tests/conftest.py e internal/validator/main_test.go (usar
     # USERPROFILE, não só HOME) está fora do escopo desta ML.
+    # ML-3A: continue-on-error do job REMOVIDO. Veredito do job = exit code do ratchet (ML-2A/2B).
+    # Suítes têm continue-on-error: true no NÍVEL DE STEP — são produtoras de observação.
+    # Ratchet não tem continue-on-error — é o juiz. Seu exit code determina o resultado do job.
+    # "Camada 1 pulada" agora sai com exit 1 (job sem árbitro não pode passar — vault note).
     runs-on: windows-latest
-    continue-on-error: true
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
@@ -374,6 +377,181 @@ jobs:
             Write-Host "ML-1D — nenhum bloqueio de ambiente detectado: sob este HOME/USERPROFILE o git resolve, commita e responde symbolic-ref. Resultado CONSISTENTE com causa de fixture para as falhas de git desta execucao — nao e prova de que toda falha de git seja de fixture."
           }
 
+      - name: ML-1A — falsificação do discriminante (ambos os braços, 3 runtimes)
+        # Prova que o discriminante event-type funciona nas DUAS direções
+        # ANTES de usá-lo nos steps de suíte abaixo.
+        #
+        # Braço 1 (load failure): fixture que não compila/importa → detector deve disparar.
+        # Braço 2 (assertion): fixture com asserção falsa → detector NÃO deve disparar.
+        #
+        # Guarda de vacuidade: para cada braço, verifica que a mutação foi aplicada
+        # (string/exit-code esperados aparecem) ANTES de afirmar que o detector funciona.
+        # Um probe que não discrimina produz exit 0 no braço errado — o mesmo risco que
+        # afetou o windows-census.yml (B1/B2 guards).
+        #
+        # Fixtures criadas em $env:RUNNER_TEMP — NUNCA no working tree do checkout.
+        # git status --porcelain ao final garante que o repo está limpo.
+        #
+        # ADR: docs/adr/ADR-2026-09-05-o-ci-de-windows-bloqueia-por-conjunto-de-
+        # nomes-e-por-tipo-de-evento-nunca-por-contagem.md (D3, D3-bis)
+        if: always() && steps.precondition.outcome == 'success'
+        shell: pwsh
+        env:
+          HOME: ${{ steps.home.outputs.home }}
+          USERPROFILE: ${{ steps.home.outputs.home }}
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          $ErrorActionPreference = 'Continue'
+          $script:PASS = 0
+          $script:FAIL = 0
+
+          function Assert-True([bool]$cond, [string]$msg) {
+            if ($cond) {
+              Write-Host "  FALSIFY PASS: $msg"
+              $script:PASS++
+            } else {
+              Write-Host "::error::FALSIFY FAIL: $msg"
+              $script:FAIL++
+            }
+          }
+
+          $tmp = Join-Path $env:RUNNER_TEMP "ml1a-falsify"
+          Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+
+          # ─── GO ──────────────────────────────────────────────────────────────
+          Write-Host "=== Go braço 1: pacote com erro de sintaxe (load failure) ==="
+          $goLoad = Join-Path $tmp "go-load"
+          New-Item -ItemType Directory -Force -Path "$goLoad/badpkg" | Out-Null
+          Set-Content "$goLoad/go.mod" "module ml1a-probe`n`ngo 1.21"
+          # Erro de sintaxe: go toolchain falha em compile-time, sem consultar proxy.
+          Set-Content "$goLoad/badpkg/bad_test.go" @"
+          package badpkg
+          import "testing"
+          func TestX(t *testing.T) {
+              this is a syntax error
+          }
+          "@
+          $goLoadOut = Join-Path $tmp "go-load-out.txt"
+          Push-Location $goLoad
+          go test -v -p 1 -parallel 1 -timeout 2m ./... *> $goLoadOut
+          $rc_go_load = $LASTEXITCODE
+          Pop-Location
+          $goLoadContent = Get-Content $goLoadOut -Raw -ErrorAction SilentlyContinue
+          # Guarda de vacuidade: sintaxe inválida deve aparecer no output
+          Assert-True ($goLoadContent -match 'syntax error' -or $goLoadContent -match 'setup failed') `
+            "Go braço1 guarda: output contém 'syntax error' ou 'setup failed' (mutação aplicada)"
+          Assert-True ($rc_go_load -ne 0) "Go braço1: load failure retorna exit code != 0"
+          $goLoadFails = @(Select-String -Path $goLoadOut -Pattern 'FAIL\t.*\[setup failed\]' -ErrorAction SilentlyContinue)
+          Assert-True ($goLoadFails.Count -gt 0) "Go braço1: detector [setup failed] dispara em load failure"
+
+          Write-Host "=== Go braço 2: pacote com asserção falsa (normal failure) ==="
+          $goAssert = Join-Path $tmp "go-assert"
+          New-Item -ItemType Directory -Force -Path "$goAssert/failpkg" | Out-Null
+          Set-Content "$goAssert/go.mod" "module ml1a-probe2`n`ngo 1.21"
+          Set-Content "$goAssert/failpkg/fail_test.go" @"
+          package failpkg
+          import "testing"
+          func TestFail(t *testing.T) { t.Errorf("arm2 assertion failure") }
+          "@
+          $goAssertOut = Join-Path $tmp "go-assert-out.txt"
+          Push-Location $goAssert
+          go test -v -p 1 -parallel 1 -timeout 2m ./... *> $goAssertOut
+          $rc_go_assert = $LASTEXITCODE
+          Pop-Location
+          Assert-True ($rc_go_assert -ne 0) "Go braço2: asserção falsa retorna exit code != 0"
+          $goAssertFails = @(Select-String -Path $goAssertOut -Pattern 'FAIL\t.*\[setup failed\]' -ErrorAction SilentlyContinue)
+          Assert-True ($goAssertFails.Count -eq 0) "Go braço2: detector NÃO dispara em asserção falsa"
+
+          # ─── PYTHON ──────────────────────────────────────────────────────────
+          Write-Host "=== Python braço 1: import quebrado em módulo de teste (load failure) ==="
+          $pyLoad = Join-Path $tmp "py-load"
+          New-Item -ItemType Directory -Force -Path $pyLoad | Out-Null
+          Set-Content "$pyLoad/test_broken.py" @"
+          import no_such_module_ml1a_probe_falsify
+          def test_x(): pass
+          "@
+          $pyLoadOut = Join-Path $tmp "py-load-out.txt"
+          python -m pytest $pyLoad -q *> $pyLoadOut
+          $rc_py_load = $LASTEXITCODE
+          $pyLoadContent = Get-Content $pyLoadOut -Raw -ErrorAction SilentlyContinue
+          # Guarda de vacuidade: nome do módulo deve aparecer no output
+          Assert-True ($pyLoadContent -match 'no_such_module_ml1a_probe_falsify') `
+            "Python braço1 guarda: nome do módulo ausente aparece no output (mutação aplicada)"
+          Assert-True ($rc_py_load -eq 2 -or $rc_py_load -eq 4) `
+            "Python braço1: load failure detectado por exit code 2 ou 4 (obtido: $rc_py_load)"
+
+          Write-Host "=== Python braço 2: asserção falsa (normal failure) ==="
+          $pyAssert = Join-Path $tmp "py-assert"
+          New-Item -ItemType Directory -Force -Path $pyAssert | Out-Null
+          Set-Content "$pyAssert/test_fail.py" @"
+          def test_fail():
+              assert 1 == 2, "arm2 assertion failure"
+          "@
+          $pyAssertOut = Join-Path $tmp "py-assert-out.txt"
+          python -m pytest $pyAssert -q *> $pyAssertOut
+          $rc_py_assert = $LASTEXITCODE
+          Assert-True ($rc_py_assert -eq 1) `
+            "Python braço2: asserção falsa retorna exit code 1 (não 2/4)"
+          Assert-True ($rc_py_assert -ne 2 -and $rc_py_assert -ne 4) `
+            "Python braço2: detector NÃO dispara em asserção falsa (exit code $rc_py_assert)"
+
+          # ─── NODE.JS ─────────────────────────────────────────────────────────
+          Write-Host "=== Node braço 1: require quebrado (load failure) ==="
+          $nodeLoad = Join-Path $tmp "node-load"
+          New-Item -ItemType Directory -Force -Path $nodeLoad | Out-Null
+          Set-Content "$nodeLoad/broken.test.js" @"
+          const x = require('no_such_module_ml1a_probe_falsify');
+          const { test } = require('node:test');
+          test('x', () => {});
+          "@
+          $tapLoad = Join-Path $tmp "node-load.tap"
+          node --test --test-concurrency=1 `
+            "--test-reporter=spec" "--test-reporter-destination=stdout" `
+            "--test-reporter=tap" "--test-reporter-destination=$tapLoad" `
+            $nodeLoad 2>&1 | Out-Null
+          $rc_node_load = $LASTEXITCODE
+          $tapLoadContent = if (Test-Path $tapLoad) { Get-Content $tapLoad -Raw } else { "" }
+          # Guarda de vacuidade: exitCode field deve aparecer no TAP
+          Assert-True ($tapLoadContent -match 'exitCode:') `
+            "Node braço1 guarda: 'exitCode:' aparece no TAP (mutação aplicada — D3-bis)"
+          $nodeLoadFails = @(Select-String -Path $tapLoad -Pattern '^\s+exitCode:\s+\d+' -ErrorAction SilentlyContinue)
+          Assert-True ($nodeLoadFails.Count -gt 0) `
+            "Node braço1: detector exitCode field dispara em load failure"
+
+          Write-Host "=== Node braço 2: asserção falsa (normal failure) ==="
+          $nodeAssert = Join-Path $tmp "node-assert"
+          New-Item -ItemType Directory -Force -Path $nodeAssert | Out-Null
+          Set-Content "$nodeAssert/fail.test.js" @"
+          const { test } = require('node:test');
+          const assert = require('node:assert');
+          test('arm2 assertion failure', () => { assert.strictEqual(1, 2); });
+          "@
+          $tapAssert = Join-Path $tmp "node-assert.tap"
+          node --test --test-concurrency=1 `
+            "--test-reporter=spec" "--test-reporter-destination=stdout" `
+            "--test-reporter=tap" "--test-reporter-destination=$tapAssert" `
+            $nodeAssert 2>&1 | Out-Null
+          $rc_node_assert = $LASTEXITCODE
+          $tapAssertContent = if (Test-Path $tapAssert) { Get-Content $tapAssert -Raw } else { "" }
+          Assert-True ($rc_node_assert -ne 0) "Node braço2: asserção falsa retorna exit code != 0"
+          $nodeAssertFails = @(Select-String -Path $tapAssert -Pattern '^\s+exitCode:\s+\d+' -ErrorAction SilentlyContinue)
+          Assert-True ($nodeAssertFails.Count -eq 0) `
+            "Node braço2: detector NÃO dispara em asserção falsa (exitCode ausente no TAP)"
+
+          # ─── CLEANUP & RESULT ────────────────────────────────────────────────
+          Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
+
+          $status = git status --porcelain
+          if ($status) {
+            Write-Host "::error::ML-1A falsify: working tree sujo após a sonda — o job modificou arquivos do repositório"
+            exit 1
+          }
+
+          Write-Host ""
+          Write-Host "ML-1A falsify: $($script:PASS) PASS · $($script:FAIL) FAIL"
+          if ($script:FAIL -gt 0) { exit 1 }
+
       - name: Go — suíte completa (camada 1, AC1)
         # always() && <condição>: sem always() aqui, o GitHub Actions
         # prepende success() implicitamente a qualquer if: sem função de
@@ -387,6 +565,10 @@ jobs:
         # entrada — não é um always() cego (não roda quando a precondição
         # falhou).
         if: always() && steps.precondition.outcome == 'success'
+        # ML-3A: step-level continue-on-error — suíte é produtora de observação, não o juiz.
+        # Falhas de asserção (os 14 conhecidos) são absorvidas aqui e entregues ao ratchet
+        # via go-suite-out.txt. Suite-load-failure escreve marcador adicional (ver abaixo).
+        continue-on-error: true
         shell: pwsh
         env:
           HOME: ${{ steps.home.outputs.home }}
@@ -398,12 +580,36 @@ jobs:
         # -v, 13 com. O critério "toda supressão nomeia a garantia não exercitada"
         # era vácuo no Go sem esta flag: a mensagem existia e ninguém a lia.
         # `t.Logf` e `os.Stderr` dão 0 igualmente — as duas foram medidas.
-        run: go test -v -p 1 -parallel 1 -timeout 20m ./...
+        #
+        # ML-1A: captura saída para classificar falhas por tipo de evento.
+        # Discriminante: linha "FAIL\t<pkg> [setup failed]" — evento de toolchain que
+        # indica que o pacote NÃO compilou; nenhum teste rodou.
+        # Medido: Go 1.25.2/macOS arm64 com as flags exatas do CI.
+        # [setup failed] é string estável desde Go 1.17 (toolchain, não runtime).
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          $outFile = Join-Path $env:RUNNER_TEMP "go-suite-out.txt"
+          go test -v -p 1 -parallel 1 -timeout 20m ./... *> $outFile
+          $rc = $LASTEXITCODE
+          Get-Content $outFile
+          # Classificar por tipo de evento, nunca por contagem (ADR D3).
+          $loadFails = @(Select-String -Path $outFile -Pattern 'FAIL\t.*\[setup failed\]' -ErrorAction SilentlyContinue)
+          if ($loadFails.Count -gt 0) {
+            $lines = ($loadFails | ForEach-Object { $_.Line.Trim() }) -join ' ; '
+            Write-Host "::error::Go suite-load-failure: $($loadFails.Count) pacote(s) não compilou (evento: [setup failed], não ERR_ASSERTION). Pacotes: $lines"
+            # ML-3A: marcador de classe própria. Step-level continue-on-error absorve o exit
+            # code da suíte, mas não o marcador. O ratchet lê este arquivo via
+            # --load-markers-dir e reprova o job (vault note: não consegui procurar → fatal).
+            $lines | Set-Content "$env:RUNNER_TEMP\suite-load-failure.go.txt" -Encoding utf8
+          }
+          exit $rc
 
       - name: Node — suíte completa (camada 1, AC1)
         # always() && <condição>: ver comentário no step "Go — suíte
         # completa" acima — mesmo motivo, mesma correção (ML-1C).
         if: always() && steps.precondition.outcome == 'success'
+        # ML-3A: step-level continue-on-error — suíte é produtora de observação, não o juiz.
+        continue-on-error: true
         shell: pwsh
         working-directory: npm
         env:
@@ -417,23 +623,205 @@ jobs:
         # MESMOS 839 testes que `npm test` (verificado localmente) — mesma
         # suíte completa, não um filtro (não é a regressão "sem invocação
         # dirigida" que a Wave 0 e o AC1 proíbem).
-        run: node --test --test-concurrency=1
+        #
+        # ML-1A: multi-reporter — spec→stdout (legível humano) + tap→arquivo
+        # (para classificação por tipo de evento). --test-reporter-destination
+        # disponível desde Node 20.0.0 (versão pinada neste job).
+        # Discriminante D3-bis: campo "exitCode:" presente num bloco "not ok" do TAP
+        #   presente  → processo do arquivo morreu antes de rodar testes → suite-load-failure
+        #   ausente   → asserção ou throw DENTRO do teste → normal failure
+        # Versão local medida: Node 26.8.1/macOS arm64.
+        # ADR adendum: Node 22/Windows 11. Node 20/windows-latest: NÃO MEDIDO diretamente.
+        # Formato TAP estável entre Node 22 e 26; extrapolado para Node 20.
+        # Zero-test: exit 0 + "# tests 0" → pior modo — indistinguível de sucesso pelo exit code.
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          $tapFile = Join-Path $env:RUNNER_TEMP "node-suite.tap"
+          node --test --test-concurrency=1 `
+            "--test-reporter=spec" "--test-reporter-destination=stdout" `
+            "--test-reporter=tap" "--test-reporter-destination=$tapFile"
+          $rc = $LASTEXITCODE
+          if (Test-Path $tapFile) {
+            # Classificar por tipo de evento (campo exitCode), nunca por contagem (ADR D3/D3-bis).
+            $loadFails = @(Select-String -Path $tapFile -Pattern '^\s+exitCode:\s+\d+' -ErrorAction SilentlyContinue)
+            if ($loadFails.Count -gt 0) {
+              Write-Host "::error::Node.js suite-load-failure: $($loadFails.Count) arquivo(s) não carregou (evento: campo exitCode em bloco not-ok do TAP, não ERR_ASSERTION — ADR D3-bis)"
+              # ML-3A: marcador de classe própria para o ratchet.
+              ($loadFails | ForEach-Object { $_.Line.Trim() }) -join ' ; ' | Set-Content "$env:RUNNER_TEMP\suite-load-failure.node.txt" -Encoding utf8
+            }
+            $zeroLine = Select-String -Path $tapFile -Pattern '^# tests 0$' -ErrorAction SilentlyContinue
+            if ($zeroLine -and $rc -eq 0) {
+              Write-Host "::error::Node.js zero-test-failure: nenhum teste descoberto (exit 0 + # tests 0) — pior modo: indistinguível de sucesso pelo exit code"
+              # ML-3A: marcador de zero-test para o ratchet.
+              "zero-test" | Set-Content "$env:RUNNER_TEMP\zero-test-failure.node.txt" -Encoding utf8
+            }
+          }
+          exit $rc
 
       - name: Python — suíte completa (camada 1, AC1)
         # always() && <condição>: ver comentário no step "Go — suíte
         # completa" acima — mesmo motivo, mesma correção (ML-1C).
         if: always() && steps.precondition.outcome == 'success'
+        # ML-3A: step-level continue-on-error — suíte é produtora de observação, não o juiz.
+        continue-on-error: true
         shell: pwsh
         env:
           HOME: ${{ steps.home.outputs.home }}
           USERPROFILE: ${{ steps.home.outputs.home }}
-        run: python -m pytest pypi/tests -q
+        # ML-1A: classificar por exit code (tipo de evento, não contagem).
+        # Protocolo pytest (estável desde pytest 3.x; projeto usa 7.x):
+        #   0 = todos passaram                                         → não é falha
+        #   1 = falhas de asserção                                     → normal-failure
+        #   2 = interrompido durante coleta (import error no módulo)   → suite-load-failure
+        #   3 = erro interno durante execução                          → suite-load-failure
+        #   4 = erro interno (conftest.py não importa)                 → suite-load-failure
+        #   5 = nenhum teste coletado                                  → zero-test-failure
+        # Medido: Python 3.14.7/macOS arm64. CI usa Python 3.12.
+        # Protocolo de exit code estável entre essas versões.
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          # ML-2A: captura saída para extração de nomes de falhas pelo ratchet.
+          # python-suite-out.txt é lido pelo step "ML-2A — ratchet de nomes" abaixo.
+          $outFile = Join-Path $env:RUNNER_TEMP "python-suite-out.txt"
+          # ML-2B: -rA flag adds 'PASSED pypi/tests/...' lines to the short summary,
+          # enabling the corrected-vs-no-longer-runs discriminant for Python.
+          # Measured (2026-09-10, macOS arm64): pytest -q -rA emits
+          # 'PASSED pypi/tests/test_foo.py::Class::method' in the short summary section.
+          # Without -rA, no PASSED lines appear and the discriminant is absent.
+          python -m pytest pypi/tests -q -rA *> $outFile
+          $rc = $LASTEXITCODE
+          Get-Content $outFile
+          # Classificar por tipo de evento, nunca por contagem (ADR D3).
+          if ($rc -eq 2 -or $rc -eq 3 -or $rc -eq 4) {
+            Write-Host "::error::Python suite-load-failure: suíte interrompida ou não carregou (evento: exit code $rc — pytest collection/internal error, não asserção)"
+            # ML-3A: marcador de classe própria para o ratchet.
+            "python-suite-load-failure (exit code $rc)" | Set-Content "$env:RUNNER_TEMP\suite-load-failure.python.txt" -Encoding utf8
+          } elseif ($rc -eq 5) {
+            Write-Host "::error::Python zero-test-failure: nenhum teste coletado (exit code 5)"
+            # ML-3A: marcador de zero-test para o ratchet.
+            "python-zero-test-failure (exit code 5)" | Set-Content "$env:RUNNER_TEMP\zero-test-failure.python.txt" -Encoding utf8
+          }
+          exit $rc
+
+      - name: ML-2B — extrair baseline para verificação de remoções (D4)
+        # ADR D4: toda entrada removida da lista declara o motivo (removal_note).
+        # O baseline (estado atual de origin/main) permite detectar entradas
+        # deletadas sem passar pelo array 'removed'.
+        #
+        # Raiz do defeito (corretivo ML-2B, 2026-09-10): actions/checkout@v7 sem
+        # 'with:' usa fetch-depth: 1 e busca APENAS o branch do PR — origin/main
+        # nunca é escrito como ref remota. `git show origin/main:...` falha com
+        # "unknown revision", não porque o arquivo está ausente na main, mas porque
+        # a REF não existe. Dois estados distintos (ref ausente / arquivo ausente)
+        # geravam o mesmo observable (silêncio + aviso genérico) e a mesma mensagem
+        # errada "normal em PRs que adicionam o arquivo pela primeira vez".
+        # Terceira ocorrência do padrão dois-estados-um-observable neste projeto
+        # (anterior: #307 git-vs-interpretador, #274 suíte-que-não-carrega).
+        #
+        # Correção: fetch incondicionalmente com refspec explícito (config-independente).
+        # Custo medido localmente: 0.09 s (1 commit + árvore, objeto único, < 1 MB).
+        # No runner do GitHub Actions (LAN-class vs. mesmo DC) custo comparável.
+        # fetch-depth: 0 (histórico completo) custa N commits × objetos — rejeitado.
+        # O fetch pontual é suficiente porque apenas `git show origin/main:...` e
+        # `git ls-tree origin/main` precisam do ref; nenhum outro step do job usa
+        # `git log`, `git describe` ou ancestralidade.
+        #
+        # Dois estados distintos, mensagens distintas (Falsificação):
+        #   Braço 1 — ref ausente (fetch falhou ou ref inválida): ::error:: + exit 1.
+        #             "Fatal" = exit 1 no step; o job continua enquanto
+        #             continue-on-error: true estiver ativo (ML-3A). Visível como
+        #             ##[error] no log do runner.
+        #   Braço 2 — ref presente + arquivo ausente na main (este PR adiciona o
+        #             arquivo): ::warning:: + exit 0 (step passa).
+        #   Braço 3 — ref presente + arquivo presente: baseline extraído, D4 ativa.
+        #             check-windows-known-failures.py emite 'ML-2B D4 (baseline):
+        #             N entrada(s) comparadas' (T15) — ausência dessa linha = D4
+        #             não rodou de verdade.
+        if: always() && steps.precondition.outcome == 'success'
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          $baselineFile = Join-Path $env:RUNNER_TEMP "baseline-known-failures.json"
+
+          # Fetch origin/main unconditionally with explicit refspec.
+          # Bare branch name (fetch origin main) writes only FETCH_HEAD, which
+          # depends on remote.origin.fetch; the explicit refspec is config-independent.
+          Write-Host "ML-2B (baseline): fetching origin/main (depth=1, no-tags)..."
+          git fetch --depth=1 --no-tags origin "+refs/heads/main:refs/remotes/origin/main" 2>&1
+          $fetchExit = $LASTEXITCODE
+
+          $refVerify = git rev-parse --verify origin/main 2>&1
+          if ($LASTEXITCODE -ne 0 -or $fetchExit -ne 0) {
+            # Braço 1: ref indisponível — gate não pode fingir que rodou.
+            Write-Host "::error::ML-2B (baseline): origin/main indisponível após fetch (fetch exit=$fetchExit, rev-parse exit=$LASTEXITCODE) — verificação de remoções (D4) não pode rodar. Gate não pode fingir que rodou."
+            exit 1
+          }
+
+          # Distinguir: ref existe mas arquivo ausente na main.
+          $fileInMain = git ls-tree origin/main -- .github/windows-known-failures.json 2>&1
+          if ([string]::IsNullOrWhiteSpace($fileInMain)) {
+            # Braço 2: arquivo adicionado por este PR, ainda não mergeado na main.
+            Write-Host "::warning::ML-2B (baseline): windows-known-failures.json ausente em origin/main — verificação de remoções por baseline desabilitada (arquivo adicionado por este PR, ainda não mergeado)."
+            exit 0
+          }
+
+          # Braço 3: ref e arquivo presentes — extrair baseline.
+          git show origin/main:.github/windows-known-failures.json > $baselineFile
+          if ($LASTEXITCODE -ne 0 -or (Get-Item $baselineFile -ErrorAction SilentlyContinue).Length -eq 0) {
+            Write-Host "::error::ML-2B (baseline): ls-tree listou o arquivo mas extração falhou — baseline não disponível."
+            exit 1
+          }
+          $sz = (Get-Item $baselineFile).Length
+          Write-Host "ML-2B (baseline): $sz bytes extraídos de origin/main — verificação de remoções (D4) ativa."
+
+      - name: ML-2A/2B — ratchet de nomes e verificação de remoções
+        # ML-2A — ADR D1: falha se nome novo aparecer fora da lista; avisa quando
+        # nome da lista deixa de falhar (mas NÃO reprova — corrigir um teste não
+        # pode quebrar o CI).
+        #
+        # ML-2B — ADR D4: verifica entradas no array 'removed':
+        #   - toda entrada retirada de 'entries' deve estar em 'removed' (baseline)
+        #   - removal_note obrigatório (corrected | renamed | no-longer-runs)
+        #   - corrected: nome deve aparecer em '--- PASS:' / 'ok N -' / 'PASSED'
+        #   - renamed: renamed_to deve apontar para uma entrada ativa
+        #
+        # Guarda de vacuidade (lista): lista vazia ou ausente → exit 1.
+        # Guarda de vacuidade (artefatos): artefato ausente → exit 1.
+        # Contagem — nunca como critério (ADR D1): o exit code vem exclusivamente
+        # da comparação de conjuntos.
+        #
+        # ML-3A: este step é o juiz do job (continue-on-error do job removido).
+        # Seu exit code determina o resultado do job para os cenários de asserção
+        # e suite-load-failure por nome. Marcadores de suite-load-failure/zero-test
+        # (classe própria, ML-1A) são verificados via --load-markers-dir: se qualquer
+        # marcador existir em RUNNER_TEMP, o ratchet reprova diretamente (vault note:
+        # não consegui procurar → fatal). Guarda de vacuidade de resultado: se um
+        # artefato existir mas não contiver linhas de resultado, também reprova.
+        if: always() && steps.precondition.outcome == 'success'
+        shell: pwsh
+        run: |
+          $baselineFile = Join-Path $env:RUNNER_TEMP "baseline-known-failures.json"
+          python scripts/check-windows-known-failures.py `
+            --list .github/windows-known-failures.json `
+            --go-out  "$env:RUNNER_TEMP\go-suite-out.txt" `
+            --node-tap "$env:RUNNER_TEMP\node-suite.tap" `
+            --python-out "$env:RUNNER_TEMP\python-suite-out.txt" `
+            --baseline "$baselineFile" `
+            --load-markers-dir "$env:RUNNER_TEMP"
 
       - name: Camada 1 pulada — AC12 impediu execução segura
         if: steps.precondition.outcome != 'success'
         shell: pwsh
         run: |
-          Write-Host "::warning::Camada 1 (as três suítes completas) foi pulada porque a precondição de isolação de HOME/USERPROFILE falhou (AC12). A suíte de reprodução de defeito (job windows-defect-reproduction) roda de qualquer forma e é o instrumento que precisa nascer vermelho. Residual: a isolação por-teste em pypi/tests/conftest.py e internal/validator/main_test.go continua vazia no Windows (usa `$HOME`, produção lê `USERPROFILE`) — corrigir esses dois arquivos está fora do escopo do ML-1A."
+          # ML-3A: job cujo árbitro não rodou não pode passar (vault note: dois-estados-um-observable).
+          # Antes do ML-3A, o job-level continue-on-error tornava isso um warning silencioso.
+          # Com ML-3A, a única saída honesta é reprovar: o ratchet não rodou, portanto o
+          # job não tem veredito — e um job sem veredito é indistinguível de um job que passou.
+          # A suíte de reprodução de defeito (job windows-defect-reproduction) roda independentemente.
+          # Residual declarado: isolação por-teste em pypi/tests/conftest.py e
+          # internal/validator/main_test.go ausente no Windows — fora do escopo desta ML.
+          Write-Host "::error::ML-3A: Camada 1 (as três suítes completas) foi pulada porque a precondição de isolação de HOME/USERPROFILE falhou (AC12). O ratchet não rodou. Job cujo árbitro não rodou não pode passar."
+          exit 1
 
       - name: Registrar duração (AC10)
         if: always()
