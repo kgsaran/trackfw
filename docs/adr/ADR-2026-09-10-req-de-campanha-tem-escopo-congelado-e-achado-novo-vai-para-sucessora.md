@@ -85,14 +85,54 @@ semana medida, achados externos:
 
 **O custo nunca esteve em ler. Esteve em executar na hora.** D3 separa as duas coisas.
 
-### D4 — Roadmap de campanha tem teto de revisibilidade
+### D4 — Roadmap tem teto de revisibilidade, calibrado no acervo
 
-Roadmap que passa de **~30 MLs** ou **~2.000 linhas** perde revisibilidade — e o sinal medido de que
-isso aconteceu foi **ID de ML duplicado** (`ML-4A`/`ML-4B` duas vezes), que torna critério de aceite
-não rastreável.
+🔴 **A primeira redação desta ADR propunha "~30 MLs ou ~2.000 linhas". Estava errada** — foi calibrada
+no *outlier*, não no acervo. O usuário questionou, e a medição dos **177 roadmaps com pelo menos um
+ML** dá outra régua:
 
-Ao cruzar o teto, o roadmap **é congelado com a REQ** e o trabalho seguinte vai para o roadmap da
-sucessora.
+```
+MLs por roadmap          linhas por roadmap
+  mediana      5           mediana     201
+  p75          7           p75         336
+  p90         10           p90         557
+  p95         12           p95         710
+  p99         17           p99       1.168
+  máximo      32           máximo    2.496
+```
+
+```
+    1-3 MLs   55   31.1%  ████████████████
+    4-6 MLs   67   37.9%  ███████████████████
+    7-9 MLs   30   16.9%  ████████
+  10-14 MLs   22   12.4%  ██████
+  15-19 MLs    1    0.6%
+  20-29 MLs    1    0.6%
+    30+ MLs    1    0.6%   ← o de Windows
+```
+
+**87% dos roadmaps têm 9 MLs ou menos.** O de Windows, com **32 MLs e 2.496 linhas**, é **3x o p99**
+em MLs e **12x a mediana** em linhas. Um teto em 30 não teria pego **nenhum** roadmap do acervo além
+dele — ou seja, não seria teto, seria descrição do caso extremo.
+
+**O teto, calibrado:**
+
+| | valor | percentil |
+|---|---|---|
+| 🟡 **aviso** | **10 MLs** ou **600 linhas** | p90 |
+| 🔴 **teto duro** | **12 MLs** ou **900 linhas** | p95 |
+
+Ao cruzar o **aviso**, o arquiteto justifica por escrito por que o roadmap segue inteiro. Ao cruzar o
+**teto duro**, o roadmap **é congelado com a REQ** e o trabalho seguinte vai para o da sucessora.
+
+**Impacto medido no acervo:** com 10 MLs / 600 linhas, **28 dos 177 (16%)** teriam disparado o aviso.
+É aviso, não bloqueio — e 16% é a fração de roadmaps grandes que de fato existem, não um número
+escolhido para não incomodar.
+
+**Sinal complementar, e é o que fecha o critério:** **ID de ML duplicado.** No roadmap de Windows,
+`ML-4A` e `ML-4B` aparecem **duas vezes cada**, em MLs distintos — critério de aceite deixa de ser
+rastreável sem ambiguidade. ID duplicado é evidência de que o arquivo passou do ponto em que alguém
+ainda o revisa inteiro, **independente da contagem**.
 
 ## Consequências
 
@@ -101,7 +141,8 @@ sucessora.
 - A REQ de campanha volta a ter **condição terminal verificável por qualquer um** — o número é
   medido e a evidência é durável.
 - Achado externo deixa de ter efeito colateral sobre o cronograma da frente ativa.
-- O limite de revisibilidade impede que roadmap vire arquivo que ninguém audita inteiro.
+- O limite de revisibilidade impede que roadmap vire arquivo que ninguém audita inteiro — e está
+  **calibrado no acervo (p90/p95), não no caso extremo**.
 
 **Negativas, declaradas**
 
