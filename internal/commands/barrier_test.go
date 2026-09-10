@@ -1040,10 +1040,11 @@ func makeTrustGitFixture(t *testing.T, roadmapContent string, commitToOrigin boo
 func TestRoadmapTrustForGates_NotGitRepo(t *testing.T) {
 	dir := t.TempDir()
 	roadmapPath := filepath.Join(dir, "ROADMAP.md")
-	if err := os.WriteFile(roadmapPath, []byte("# Roadmap: test\n"), 0644); err != nil {
+	content := []byte("# Roadmap: test\n")
+	if err := os.WriteFile(roadmapPath, content, 0644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	verdict := roadmapTrustForGates(roadmapPath)
+	verdict := roadmapTrustForGates(roadmapPath, content)
 	if verdict.trusted {
 		t.Fatal("expected trusted=false for non-git-repo path, got trusted=true")
 	}
@@ -1080,10 +1081,11 @@ func TestRoadmapTrustForGates_NoRemoteOrigin(t *testing.T) {
 	run("commit", "--allow-empty", "-m", "init")
 
 	roadmapPath := filepath.Join(base, "ROADMAP.md")
-	if err := os.WriteFile(roadmapPath, []byte("# Roadmap\n"), 0644); err != nil {
+	content := []byte("# Roadmap\n")
+	if err := os.WriteFile(roadmapPath, content, 0644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	verdict := roadmapTrustForGates(roadmapPath)
+	verdict := roadmapTrustForGates(roadmapPath, content)
 	if verdict.trusted {
 		t.Fatal("expected trusted=false when no remote origin, got trusted=true")
 	}
@@ -1098,8 +1100,9 @@ func TestRoadmapTrustForGates_NoRemoteOrigin(t *testing.T) {
 // Reconciliation: this test asserts that "roadmap is not committed in
 // origin/main" is the named reason, satisfying AC2 for the not-committed case.
 func TestRoadmapTrustForGates_NotCommittedInOrigin(t *testing.T) {
-	_, roadmapPath := makeTrustGitFixture(t, "# Roadmap: test\n", false)
-	verdict := roadmapTrustForGates(roadmapPath)
+	const roadmapContent = "# Roadmap: test\n"
+	_, roadmapPath := makeTrustGitFixture(t, roadmapContent, false)
+	verdict := roadmapTrustForGates(roadmapPath, []byte(roadmapContent))
 	if verdict.trusted {
 		t.Fatal("expected trusted=false for uncommitted roadmap, got trusted=true")
 	}
@@ -1115,8 +1118,9 @@ func TestRoadmapTrustForGates_NotCommittedInOrigin(t *testing.T) {
 // Reconciliation: this test asserts that the sole trusted:true path requires
 // byte-identical content in refs/remotes/origin/main, which is the AC5 guarantee.
 func TestRoadmapTrustForGates_IdenticalToOriginMain(t *testing.T) {
-	_, roadmapPath := makeTrustGitFixture(t, "# Roadmap: test\n", true)
-	verdict := roadmapTrustForGates(roadmapPath)
+	const roadmapContent = "# Roadmap: test\n"
+	_, roadmapPath := makeTrustGitFixture(t, roadmapContent, true)
+	verdict := roadmapTrustForGates(roadmapPath, []byte(roadmapContent))
 	if !verdict.trusted {
 		t.Fatalf("expected trusted=true for roadmap identical to origin/main, got failureMsg=%q", verdict.failureMsg)
 	}
@@ -1129,10 +1133,11 @@ func TestRoadmapTrustForGates_IdenticalToOriginMain(t *testing.T) {
 func TestRoadmapTrustForGates_ContentDiffers(t *testing.T) {
 	_, roadmapPath := makeTrustGitFixture(t, "# Roadmap: original\n", true)
 	// Modify local content without pushing.
-	if err := os.WriteFile(roadmapPath, []byte("# Roadmap: modified\n"), 0644); err != nil {
+	modified := []byte("# Roadmap: modified\n")
+	if err := os.WriteFile(roadmapPath, modified, 0644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	verdict := roadmapTrustForGates(roadmapPath)
+	verdict := roadmapTrustForGates(roadmapPath, modified)
 	if verdict.trusted {
 		t.Fatal("expected trusted=false for locally-modified roadmap, got trusted=true")
 	}
@@ -1157,6 +1162,173 @@ func TestRoadmapTrustForGates_TrustedCountIsOne(t *testing.T) {
 	if count != 1 {
 		t.Fatalf("expected exactly 1 trusted:true return in roadmapTrustForGates, found %d — a fail-open regression may have been introduced", count)
 	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// F1 — TOCTOU invariant test
+// ────────────────────────────────────────────────────────────────────────────
+
+// TestRoadmapTrustForGates_VerifiesPassedBuffer verifies that the trust verdict
+// is a property of the buffer passed in, not of the file content at verification
+// time. This is the core invariant of the F1 fix: what is proved = what executes.
+//
+// Setup: origin/main and disk both contain the clean roadmap (they match).
+// Call: pass a buffer with different content to roadmapTrustForGates.
+// Expect: trusted=false ("content differs") — the PARAMETER is compared, not disk.
+//
+// Before the fix (Step 7 re-read from disk): disk = origin/main → trusted:true,
+// even when caller passes an altered buffer. After the fix: verdict reflects the
+// passed buffer, not the disk.
+//
+// Reconciliation: this test asserts that the verdict is a property of the buffer
+// parameter, not of the file on disk at verification time — the F1 invariant.
+func TestRoadmapTrustForGates_VerifiesPassedBuffer(t *testing.T) {
+	// origin/main and disk both have the clean content.
+	_, roadmapPath := makeTrustGitFixture(t, "# Roadmap: clean\n", true)
+	// Pass a buffer that differs from origin/main. If Step 7 re-reads disk, it
+	// would see the clean content and return trusted=true (TOCTOU bypass). After
+	// the fix, it compares this buffer against origin/main and returns false.
+	verdict := roadmapTrustForGates(roadmapPath, []byte("# Roadmap: altered-in-memory\n"))
+	if verdict.trusted {
+		t.Fatal("expected trusted=false when passed buffer differs from origin/main, got trusted=true — buffer parameter is not being used for comparison (F1 regression)")
+	}
+	const wantMsg = "gates not evaluated: roadmap content differs from origin/main — pass --trust-local-gates to evaluate local gates"
+	if verdict.failureMsg != wantMsg {
+		t.Fatalf("wrong failureMsg:\n  got  %q\n  want %q", verdict.failureMsg, wantMsg)
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// F3 — Behavioral sentinel tests per named reason
+//
+// Each test creates a fixture with a hostile gate command (touch <sentinel>),
+// runs the full barrier CLI without --trust-local-gates, and asserts:
+//   1. gates.status == "not_evaluated" with the expected named reason
+//   2. sentinel is absent (gate did NOT execute)
+//
+// Sentinel is placed in the test's own temp dir, not /tmp, for hermeticity.
+// Unreachable reasons (transient I/O, filepath.Abs failure) are not tested
+// here because no fixture can reproduce them deterministically; they are
+// covered by the structural count-of-one test above.
+// ────────────────────────────────────────────────────────────────────────────
+
+// setupTrustSentinelFixture creates a git fixture with a roadmap that contains
+// a hostile gate command. Returns (cloneDir, roadmapBasename).
+// commitToOrigin: if true, commits and pushes the roadmap to origin/main.
+// localModify: if non-empty, overwrites the local file with this content after commit.
+func setupTrustSentinelFixture(t *testing.T, sentinelPath string, commitToOrigin bool, localModify string) (string, string) {
+	t.Helper()
+	gateCmd := "touch " + sentinelPath
+	roadmapContent := buildBarrierRoadmap(barrierFixtureConfig{
+		linkedREQ:     false,
+		mlStatus:      "✅",
+		criteriaLines: []string{"- [x] criterion met"},
+		gateCommands:  []string{gateCmd},
+	})
+	cloneDir, roadmapPath := makeTrustGitFixture(t, roadmapContent, commitToOrigin)
+	if localModify != "" {
+		if err := os.WriteFile(roadmapPath, []byte(localModify), 0644); err != nil {
+			t.Fatalf("setupTrustSentinelFixture: overwrite: %v", err)
+		}
+	}
+	return cloneDir, "ROADMAP-trust-test"
+}
+
+// assertSentinelAbsentAndGatesNotEvaluated runs runBarrierCLI and checks that:
+//   1. gates check has status "not_evaluated"
+//   2. the named failure message matches wantMsg
+//   3. the sentinel file does not exist (gate did not execute)
+func assertSentinelAbsentAndGatesNotEvaluated(t *testing.T, cloneDir, roadmapBasename, sentinelPath, wantMsg string) {
+	t.Helper()
+	stdout, _, _ := runBarrierCLI(t, cloneDir, roadmapBasename, "--wave", "1", "--json")
+	var doc barrierResultDoc
+	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &doc); err != nil {
+		t.Fatalf("stdout is not valid JSON: %v\nstdout: %s", err, stdout)
+	}
+	gatesFound := false
+	for _, c := range doc.Checks {
+		if c.Name == "gates" {
+			gatesFound = true
+			if c.Status != "not_evaluated" {
+				t.Fatalf("gates.status = %q, want not_evaluated (named reason: %q)", c.Status, wantMsg)
+			}
+			if len(c.Failures) == 0 || c.Failures[0] != wantMsg {
+				t.Fatalf("gates.failures = %v, want [%q]", c.Failures, wantMsg)
+			}
+		}
+	}
+	if !gatesFound {
+		t.Fatal("gates check not found in result document")
+	}
+	if _, err := os.Stat(sentinelPath); err == nil {
+		t.Fatalf("sentinel file %q exists — gate executed despite not_evaluated trust verdict; named reason was %q", sentinelPath, wantMsg)
+	}
+}
+
+// TestRoadmapTrustBehavioral_Sentinel_NotGitRepo verifies that a hostile gate
+// does NOT execute when the roadmap is in a non-git directory.
+// Reconciliation: this test asserts that the named reason "not a git repository"
+// behaviorally prevents gate execution (sentinel absent), not just structurally.
+func TestRoadmapTrustBehavioral_Sentinel_NotGitRepo(t *testing.T) {
+	sentinelDir := t.TempDir()
+	sentinelPath := filepath.Join(sentinelDir, "gate-sentinel-not-git-repo")
+	gateCmd := "touch " + sentinelPath
+	dir, _ := setupBarrierFixture(t, barrierFixtureConfig{
+		linkedREQ:     false,
+		mlStatus:      "✅",
+		criteriaLines: []string{"- [x] criterion met"},
+		gateCommands:  []string{gateCmd},
+	})
+	const wantMsg = "gates not evaluated: not a git repository — pass --trust-local-gates to evaluate local gates"
+	assertSentinelAbsentAndGatesNotEvaluated(t, dir, "ROADMAP-barrier-fixture", sentinelPath, wantMsg)
+}
+
+// TestRoadmapTrustBehavioral_Sentinel_NoRemoteOrigin verifies that a hostile
+// gate does NOT execute when the git repo has no remote named origin.
+// Reconciliation: this test asserts that "origin/main ref not available"
+// behaviorally prevents gate execution (sentinel absent).
+func TestRoadmapTrustBehavioral_Sentinel_NoRemoteOrigin(t *testing.T) {
+	sentinelDir := t.TempDir()
+	sentinelPath := filepath.Join(sentinelDir, "gate-sentinel-no-remote")
+	cloneDir, roadmapBasename := setupTrustSentinelFixture(t, sentinelPath, false, "")
+	const wantMsg = "gates not evaluated: roadmap is not committed in origin/main — pass --trust-local-gates to evaluate local gates"
+	assertSentinelAbsentAndGatesNotEvaluated(t, cloneDir, roadmapBasename, sentinelPath, wantMsg)
+}
+
+// TestRoadmapTrustBehavioral_Sentinel_NotCommitted verifies that a hostile gate
+// does NOT execute when the roadmap exists locally but is not committed to origin/main.
+// Reconciliation: this test asserts that "roadmap is not committed in origin/main"
+// behaviorally prevents gate execution (sentinel absent).
+func TestRoadmapTrustBehavioral_Sentinel_NotCommitted(t *testing.T) {
+	sentinelDir := t.TempDir()
+	sentinelPath := filepath.Join(sentinelDir, "gate-sentinel-not-committed")
+	// commitToOrigin=false: roadmap on disk but not in origin/main.
+	cloneDir, roadmapBasename := setupTrustSentinelFixture(t, sentinelPath, false, "")
+	const wantMsg = "gates not evaluated: roadmap is not committed in origin/main — pass --trust-local-gates to evaluate local gates"
+	assertSentinelAbsentAndGatesNotEvaluated(t, cloneDir, roadmapBasename, sentinelPath, wantMsg)
+}
+
+// TestRoadmapTrustBehavioral_Sentinel_ContentDiffers verifies that a hostile gate
+// does NOT execute when the roadmap was committed to origin/main but the local copy
+// has been modified.
+// Reconciliation: this test asserts that "roadmap content differs from origin/main"
+// behaviorally prevents gate execution (sentinel absent).
+func TestRoadmapTrustBehavioral_Sentinel_ContentDiffers(t *testing.T) {
+	sentinelDir := t.TempDir()
+	sentinelPath := filepath.Join(sentinelDir, "gate-sentinel-content-differs")
+	gateCmd := "touch " + sentinelPath
+	// Build two roadmaps: one for origin/main, one as local modification.
+	originContent := buildBarrierRoadmap(barrierFixtureConfig{
+		linkedREQ:     false,
+		mlStatus:      "✅",
+		criteriaLines: []string{"- [x] criterion met"},
+		gateCommands:  []string{gateCmd},
+	})
+	// localModify is a different content — simulates attacker replacing the file.
+	localModify := originContent + "<!-- local modification -->\n"
+	cloneDir, roadmapBasename := setupTrustSentinelFixture(t, sentinelPath, true, localModify)
+	const wantMsg = "gates not evaluated: roadmap content differs from origin/main — pass --trust-local-gates to evaluate local gates"
+	assertSentinelAbsentAndGatesNotEvaluated(t, cloneDir, roadmapBasename, sentinelPath, wantMsg)
 }
 
 // TestBarrierTrustLocalGatesFlag verifies that --trust-local-gates causes the

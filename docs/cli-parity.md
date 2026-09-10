@@ -2060,13 +2060,13 @@ byte-for-byte identical to `origin/main`. Every other condition — including er
 
 | Case | `not_evaluated` reason string |
 |---|---|
-| Not a git repository | `not a git repository` |
+| `git` binary not found in PATH (spawn failure) | `git not found in PATH` |
+| Not a git repository (git ran but exited non-zero) | `not a git repository` |
 | `git rev-parse --show-toplevel` fails | `cannot resolve git repository root` |
 | Cannot compute relative path to roadmap | `cannot compute relative path to roadmap` |
 | `refs/remotes/origin/main` ref not available (no remote, not fetched) | `origin/main ref not available` |
 | Roadmap path not present in `origin/main` | `roadmap is not committed in origin/main` |
 | `git show` of the roadmap from `origin/main` fails | `cannot read roadmap from origin/main` |
-| Local roadmap file cannot be read | `cannot read local roadmap file` |
 | Local content differs from `origin/main` content | `roadmap content differs from origin/main` |
 
 The only exit from `not_evaluated` into gate execution is proof of byte-identical content — one
@@ -2081,15 +2081,19 @@ exactly one entry in `failures`. The `commands` array is still populated from `p
 operator can see what would have been executed. All eight pinned strings:
 
 ```
+gates not evaluated: git not found in PATH — install git to evaluate local gates
 gates not evaluated: not a git repository — pass --trust-local-gates to evaluate local gates
 gates not evaluated: cannot resolve git repository root — pass --trust-local-gates to evaluate local gates
 gates not evaluated: cannot compute relative path to roadmap — pass --trust-local-gates to evaluate local gates
 gates not evaluated: origin/main ref not available — pass --trust-local-gates to evaluate local gates
 gates not evaluated: roadmap is not committed in origin/main — pass --trust-local-gates to evaluate local gates
 gates not evaluated: cannot read roadmap from origin/main — pass --trust-local-gates to evaluate local gates
-gates not evaluated: cannot read local roadmap file — pass --trust-local-gates to evaluate local gates
 gates not evaluated: roadmap content differs from origin/main — pass --trust-local-gates to evaluate local gates
 ```
+
+Note: "cannot read local roadmap file" was removed (F1 — the trust function now receives the
+already-read buffer as a parameter; re-reading is no longer needed, so this path is unreachable).
+"git not found in PATH" was added (F5 — spawn failure is now separated from git exit-nonzero).
 
 All three runtimes must emit these byte-for-byte. The text report symbol for `not_evaluated` is
 `✗` (same as `blocked`) — only one symbol, the status string carries the distinction.

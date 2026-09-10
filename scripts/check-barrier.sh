@@ -938,7 +938,7 @@ done
 # /private/var/folders/…. git rev-parse --show-toplevel resolves symlinks, but
 # Go's filepath.Abs uses os.Getwd() which returns the symlink path. The mismatch
 # makes filepath.Rel produce an "outside repository" path → git show fails with
-# "is outside repository at" → barrier fails-open (trusted). Fix: resolve $WORK
+# "is outside repository at" → barrier fails-closed (not_evaluated). Fix: resolve $WORK
 # to its physical path (WORK_PHYS) and use that for all trust-check fixtures.
 # ---------------------------------------------------------------------------
 WORK_PHYS=$(cd "$WORK" && pwd -P)

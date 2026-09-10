@@ -1215,3 +1215,143 @@ def test_barrier_cli_crlf_roadmap_gates_da_wave_e_reconhecido_e_comando_roda_e2e
     checks = {c["name"]: c for c in doc["checks"]}
     assert checks["gates"]["status"] == "blocked", checks["gates"]
     assert checks["gates"]["commands"] == ["false"]
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# F3 — Behavioral sentinel tests per named reason
+#
+# Each test creates a fixture with a hostile gate command (touch <sentinel>),
+# runs the full barrier CLI without --trust-local-gates, and asserts:
+#   1. gates.status == "not_evaluated" with the expected named reason
+#   2. sentinel is absent (gate did NOT execute)
+#
+# Sentinel is placed in a test-specific temp dir for hermeticity.
+# ────────────────────────────────────────────────────────────────────────────
+
+
+def _make_git_trust_fixture(roadmap_content: str, commit_to_origin: bool) -> tuple[Path, Path]:
+    """Create a minimal git fixture with a bare origin.
+
+    Returns (clone_dir, roadmap_path).
+    """
+    base = Path(tempfile.mkdtemp(prefix="tw-trust-sentinel-"))
+    bare_dir = base / "origin.git"
+    clone_dir = base / "clone"
+    roadmap_rel = Path("docs/roadmaps/wip/ROADMAP-trust-sentinel.md")
+    gitcfg = base / "gitconfig"
+    gitcfg.write_text(
+        "[user]\n\temail = test@trackfw\n\tname = trackfw test\n"
+        "[commit]\n\tgpgsign = false\n[core]\n\thooksPath = /dev/null\n\tautocrlf = false\n"
+    )
+    env = {
+        **os.environ,
+        "GIT_CONFIG_GLOBAL": str(gitcfg),
+        "GIT_CONFIG_SYSTEM": "/dev/null",
+        "GIT_TERMINAL_PROMPT": "0",
+        "HOME": str(base),
+        "LC_ALL": "C",
+    }
+
+    def _git(cwd, *args):
+        r = subprocess.run(["git", *args], cwd=cwd, env=env, capture_output=True, text=True)
+        if r.returncode != 0:
+            raise RuntimeError(f"git {args} in {cwd}: {r.stderr}")
+
+    _git(str(base), "init", "--bare", "-b", "main", str(bare_dir))
+    _git(str(base), "clone", "-q", str(bare_dir), str(clone_dir))
+    (clone_dir / "trackfw.yaml").write_text(
+        "req_dir: docs/req\nroadmap_dir: docs/roadmaps\nadr_dirs: []\n"
+    )
+    _git(str(clone_dir), "add", "trackfw.yaml")
+    _git(str(clone_dir), "commit", "-q", "-m", "base")
+    _git(str(clone_dir), "push", "-q", "origin", "main")
+    roadmap_path = clone_dir / roadmap_rel
+    roadmap_path.parent.mkdir(parents=True, exist_ok=True)
+    roadmap_path.write_text(roadmap_content, encoding="utf-8")
+    if commit_to_origin:
+        _git(str(clone_dir), "add", str(roadmap_rel))
+        _git(str(clone_dir), "commit", "-q", "-m", "add roadmap")
+        _git(str(clone_dir), "push", "-q", "origin", "main")
+    return clone_dir, roadmap_path
+
+
+def _build_sentinel_roadmap(sentinel_path: Path) -> str:
+    return (
+        "# Roadmap: Trust Sentinel\n\n"
+        "## Acceptance Criteria\n- [x] criterion met\n\n"
+        "## Wave 1 — Trust Check\n> Dependências: nenhuma\n\n"
+        f"**Gates da wave:**\n```bash\ntouch {sentinel_path}\n```\n\n"
+        "### ML-1A — Fixture ML\n**Status:** ✅\n**Critérios de aceite:**\n- [x] criterion met\n\n"
+    )
+
+
+def _assert_sentinel_absent_and_gates_not_evaluated(
+    cwd: Path, roadmap_name: str, sentinel_path: Path, want_msg: str
+) -> None:
+    stdout, stderr, code = _run_barrier_cli(cwd, roadmap_name, "--wave", "1", "--json")
+    doc = json.loads(stdout)
+    checks = {c["name"]: c for c in doc["checks"]}
+    gates = checks.get("gates")
+    assert gates is not None, "gates check not found in result document"
+    assert gates["status"] == "not_evaluated", (
+        f"gates.status={gates['status']!r}, want not_evaluated (reason: {want_msg})"
+    )
+    assert gates["failures"] == [want_msg], f"gates.failures={gates['failures']!r}"
+    assert not sentinel_path.exists(), (
+        f"sentinel {sentinel_path} exists — gate executed despite not_evaluated (reason: {want_msg})"
+    )
+
+
+def test_f3_sentinel_not_git_repository_prevents_gate_execution():
+    """Reconciliation: asserts that the named reason 'not a git repository'
+    behaviorally prevents gate execution (sentinel absent), not just structurally."""
+    sentinel_dir = Path(tempfile.mkdtemp(prefix="tw-sentinel-nogit-"))
+    sentinel_path = sentinel_dir / "gate-sentinel-not-git"
+    roadmap_content = _build_sentinel_roadmap(sentinel_path)
+    # _setup_regression_dir creates a non-git directory — the "not a git repo" case.
+    dir_ = _setup_regression_dir()
+    _write_roadmap(dir_, roadmap_content)
+    try:
+        want_msg = "gates not evaluated: not a git repository — pass --trust-local-gates to evaluate local gates"
+        _assert_sentinel_absent_and_gates_not_evaluated(
+            dir_, "ROADMAP-regression", sentinel_path, want_msg
+        )
+    finally:
+        shutil.rmtree(str(dir_), ignore_errors=True)
+        shutil.rmtree(str(sentinel_dir), ignore_errors=True)
+
+
+def test_f3_sentinel_roadmap_not_committed_in_origin_prevents_gate_execution():
+    """Reconciliation: asserts that 'roadmap is not committed in origin/main'
+    behaviorally prevents gate execution (sentinel absent)."""
+    sentinel_dir = Path(tempfile.mkdtemp(prefix="tw-sentinel-notcommit-"))
+    sentinel_path = sentinel_dir / "gate-sentinel-not-committed"
+    roadmap_content = _build_sentinel_roadmap(sentinel_path)
+    clone_dir, _ = _make_git_trust_fixture(roadmap_content, commit_to_origin=False)
+    try:
+        want_msg = "gates not evaluated: roadmap is not committed in origin/main — pass --trust-local-gates to evaluate local gates"
+        _assert_sentinel_absent_and_gates_not_evaluated(
+            clone_dir, "ROADMAP-trust-sentinel", sentinel_path, want_msg
+        )
+    finally:
+        shutil.rmtree(str(clone_dir.parent), ignore_errors=True)
+        shutil.rmtree(str(sentinel_dir), ignore_errors=True)
+
+
+def test_f3_sentinel_content_differs_from_origin_prevents_gate_execution():
+    """Reconciliation: asserts that 'roadmap content differs from origin/main'
+    behaviorally prevents gate execution (sentinel absent)."""
+    sentinel_dir = Path(tempfile.mkdtemp(prefix="tw-sentinel-differs-"))
+    sentinel_path = sentinel_dir / "gate-sentinel-content-differs"
+    origin_content = _build_sentinel_roadmap(sentinel_path)
+    clone_dir, roadmap_path = _make_git_trust_fixture(origin_content, commit_to_origin=True)
+    try:
+        # Modify local file without pushing.
+        roadmap_path.write_text(origin_content + "<!-- local modification -->\n", encoding="utf-8")
+        want_msg = "gates not evaluated: roadmap content differs from origin/main — pass --trust-local-gates to evaluate local gates"
+        _assert_sentinel_absent_and_gates_not_evaluated(
+            clone_dir, "ROADMAP-trust-sentinel", sentinel_path, want_msg
+        )
+    finally:
+        shutil.rmtree(str(clone_dir.parent), ignore_errors=True)
+        shutil.rmtree(str(sentinel_dir), ignore_errors=True)

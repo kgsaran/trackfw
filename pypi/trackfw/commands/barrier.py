@@ -479,8 +479,14 @@ def _check_acceptance_evidence(mls: list) -> dict:
 # Roadmap trust check (AC11, AC12 — docs/cli-parity.md § Trust and --trust-local-gates)
 # ────────────────────────────────────────────────────────────────────────────
 
-def _roadmap_trust_for_gates(roadmap_path: str) -> dict:
+def _roadmap_trust_for_gates(roadmap_path: str, local_content: bytes) -> dict:
     """Determines whether the gates declared in a roadmap can be trusted for execution.
+
+    local_content (bytes) is the content already read by the caller — the same bytes
+    used to parse gate commands. Comparing it here ensures the proof covers exactly
+    what executes (F1 invariant: what is proved = what executes).
+    The only remaining route from unverified bytes to sh is --trust-local-gates,
+    which requires explicit operator consent.
 
     Posture (AC1): CLOSED by default. Gates execute only when the function can
     PROVE that the roadmap is present in refs/remotes/origin/main byte-for-byte.
@@ -501,6 +507,9 @@ def _roadmap_trust_for_gates(roadmap_path: str) -> dict:
     roadmap_dir = os.path.dirname(os.path.abspath(roadmap_path))
 
     # Step 1: check if we are inside a git repository.
+    # Two distinct failure reasons are separated here (F5):
+    #   FileNotFoundError → git binary not found in PATH (spawn failure)
+    #   returncode != 0   → git ran but not inside a git repository
     try:
         r = subprocess.run(
             ["git", "rev-parse", "--git-dir"],
@@ -508,10 +517,10 @@ def _roadmap_trust_for_gates(roadmap_path: str) -> dict:
             capture_output=True,
         )
     except FileNotFoundError:
-        # git binary not found — cannot determine trust.
+        # Spawn failure: git binary is not installed or not in PATH.
         return {
             "trusted": False,
-            "failure_msg": "gates not evaluated: not a git repository — pass --trust-local-gates to evaluate local gates",
+            "failure_msg": "gates not evaluated: git not found in PATH — install git to evaluate local gates",
         }
     if r.returncode != 0:
         return {
@@ -587,15 +596,16 @@ def _roadmap_trust_for_gates(roadmap_path: str) -> dict:
         }
 
     # Step 7: compare content byte-for-byte.
+    # local_content (the parameter) is the bytes the caller already read — the same
+    # bytes used to parse gate commands. No second read is performed here; the proof
+    # covers exactly what executes (F1 invariant).
+    #
+    # Step 5 triple note (F5 — declared unseparable): git cat-file -e exits non-zero
+    # for (a) roadmap absent from origin/main, (b) relPath computed incorrectly (e.g.
+    # macOS symlink divergence, mitigated by WORK_PHYS in check-barrier.sh), (c)
+    # unexpected I/O error. All are equally fail-closed; separating them without
+    # additional git invocations would expand the attack surface. Unseparable by design.
     main_content = r.stdout
-    try:
-        with open(roadmap_path, "rb") as f:
-            local_content = f.read()
-    except OSError:
-        return {
-            "trusted": False,
-            "failure_msg": "gates not evaluated: cannot read local roadmap file — pass --trust-local-gates to evaluate local gates",
-        }
 
     if main_content != local_content:
         return {
@@ -604,6 +614,7 @@ def _roadmap_trust_for_gates(roadmap_path: str) -> dict:
         }
 
     # Proven: roadmap is present in refs/remotes/origin/main and byte-identical.
+    # The bytes compared are the same ones parsed for gate commands.
     return {"trusted": True}
 
 
@@ -621,14 +632,17 @@ def _check_gates(commands, trust_result: dict | None = None) -> dict:
     """Evaluate gate commands, subject to trust check.
 
     trust_result: {"trusted": True} or {"trusted": False, "failure_msg": str}.
-    When None, defaults to trusted (backward compatibility for unit tests).
+    Every call site must pass an explicit trust_result; omitting it (None)
+    produces not_evaluated with failureMsg=None — fail-closed (F2).
+    The backward-compat None-guard and get("trusted", True) default have been
+    removed: the security default is False, not True.
     """
     if trust_result is None:
-        trust_result = {"trusted": True}
+        trust_result = {}
 
     cmd_list = list(commands) if commands is not None else []
 
-    if not trust_result.get("trusted", True):
+    if not trust_result.get("trusted", False):
         # Roadmap is not trusted: do not execute gates (AC3, AC14).
         # Report as not_evaluated — distinct from passed and blocked (AC6).
         return {
@@ -752,7 +766,13 @@ def _parse_wave_label(raw: str) -> str:
 
 def _build_result_document(roadmap_arg: str, roadmap_path: str, wave_label: str, trust_local_gates: bool = False) -> dict:
     global _LINES_CACHE, _FENCE_MASK_CACHE
-    content = open(roadmap_path, "r", encoding="utf-8").read()
+    # Read as bytes so the same buffer can be passed to _roadmap_trust_for_gates
+    # for the byte-for-byte comparison (F1 invariant: what is proved = what executes).
+    # _split_roadmap_lines handles \r\n by stripping the trailing \r (defensive but
+    # load-bearing when reading in binary mode — mirrors the behaviour of the text-mode
+    # read that previously performed universal-newlines translation automatically).
+    raw_bytes = open(roadmap_path, "rb").read()
+    content = raw_bytes.decode("utf-8")
     _LINES_CACHE = _split_roadmap_lines(content)
     _FENCE_MASK_CACHE = _fence_mask(_LINES_CACHE)
 
@@ -763,7 +783,8 @@ def _build_result_document(roadmap_arg: str, roadmap_path: str, wave_label: str,
     gate_commands = _find_gates(_LINES_CACHE, wave_start, wave_end)
 
     # Determine trust for gate execution (AC11, AC12).
-    trust_result = {"trusted": True} if trust_local_gates else _roadmap_trust_for_gates(roadmap_path)
+    # Pass raw_bytes so the trust check compares the same buffer used to parse gates.
+    trust_result = {"trusted": True} if trust_local_gates else _roadmap_trust_for_gates(roadmap_path, raw_bytes)
 
     checks = [
         _check_mls_complete(mls, wave_label),

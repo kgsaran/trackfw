@@ -7,6 +7,7 @@ package commands
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -661,13 +662,32 @@ type gatesTrustVerdict struct {
 // Residual (declared in docs/cli-parity.md): Windows users with
 // core.autocrlf=true may receive "content differs" for an otherwise-identical
 // roadmap (LF vs CRLF). The check fails closed, so the residual is safe.
-func roadmapTrustForGates(roadmapPath string) gatesTrustVerdict {
+// roadmapTrustForGates determines whether the gates declared in a roadmap can
+// be trusted for execution without --trust-local-gates.
+//
+// localContent is the byte slice already read by the caller (the same buffer
+// used to parse gate commands). Comparing it here ensures the proof covers the
+// exact bytes that will be executed — F1 invariant: what is proved = what executes.
+// The only remaining route from unverified bytes to sh -c is --trust-local-gates,
+// which requires explicit operator consent.
+func roadmapTrustForGates(roadmapPath string, localContent []byte) gatesTrustVerdict {
 	roadmapDir := filepath.Dir(roadmapPath)
 
 	// Step 1: check if we are inside a git repository.
+	// Two distinct failure reasons are separated here (F5):
+	//   spawn failure  → git binary not found in PATH
+	//   exit non-zero  → not inside a git repository
 	revParseCmd := exec.Command("git", "rev-parse", "--git-dir")
 	revParseCmd.Dir = roadmapDir
 	if err := revParseCmd.Run(); err != nil {
+		var exitErr *exec.ExitError
+		if !errors.As(err, &exitErr) {
+			// Spawn failure: git binary is not installed or not in PATH.
+			return gatesTrustVerdict{
+				trusted:    false,
+				failureMsg: "gates not evaluated: git not found in PATH — install git to evaluate local gates",
+			}
+		}
 		return gatesTrustVerdict{
 			trusted:    false,
 			failureMsg: "gates not evaluated: not a git repository — pass --trust-local-gates to evaluate local gates",
@@ -741,13 +761,16 @@ func roadmapTrustForGates(roadmapPath string) gatesTrustVerdict {
 	}
 
 	// Step 7: compare content byte-for-byte.
-	localContent, err := os.ReadFile(roadmapPath)
-	if err != nil {
-		return gatesTrustVerdict{
-			trusted:    false,
-			failureMsg: "gates not evaluated: cannot read local roadmap file — pass --trust-local-gates to evaluate local gates",
-		}
-	}
+	// localContent (the parameter) is the buffer the caller already read — it
+	// is the same slice used to parse gate commands. No second read is performed
+	// here; the proof covers exactly what executes (F1 invariant).
+	//
+	// Step 5 triple note (F5 — declared unseparable): git cat-file -e exits
+	// non-zero for three distinct reasons: (a) roadmap absent from origin/main,
+	// (b) relPath computed incorrectly (e.g. macOS symlink divergence, mitigated
+	// by WORK_PHYS in check-barrier.sh), (c) unexpected I/O error. Separating
+	// them without additional git invocations would expand the attack surface and
+	// all three paths are equally fail-closed. Declared unseparable by design.
 	if string(mainContent) != string(localContent) {
 		return gatesTrustVerdict{
 			trusted:    false,
@@ -756,6 +779,7 @@ func roadmapTrustForGates(roadmapPath string) gatesTrustVerdict {
 	}
 
 	// Proven: roadmap is present in refs/remotes/origin/main and byte-identical.
+	// The buffer compared is the same one parsed for gate commands.
 	return gatesTrustVerdict{trusted: true}
 }
 
@@ -937,7 +961,7 @@ func runBarrier(cmd *cobra.Command, roadmapArg string, waveLabel string, jsonOut
 		gatesCheck.Evidence = evidence
 		gatesCheck.Failures = failures
 	} else {
-		verdict := roadmapTrustForGates(roadmapPath)
+		verdict := roadmapTrustForGates(roadmapPath, data)
 		if !verdict.trusted {
 			// Roadmap is not trusted: do not execute gates (AC3, AC14).
 			// Report as not_evaluated — distinct from passed and blocked (AC6).

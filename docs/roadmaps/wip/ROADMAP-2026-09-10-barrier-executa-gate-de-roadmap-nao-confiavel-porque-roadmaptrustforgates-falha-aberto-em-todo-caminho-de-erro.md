@@ -117,3 +117,70 @@ exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli
 - [ ] **AC8** — make quality exit 0 **e CI verde**.
 - [ ] build passes
 - [ ] tests green
+
+## Wave 2 — Corretivos do parecer hades-tf (2026-09-10)
+> Dependencies: Wave 1 completa
+
+### ML-2A — F1: prova cobre o mesmo buffer que executa
+**Status:** ✅ Concluído
+**Files affected:** `internal/commands/barrier.go`, `npm/src/commands/barrier.js`, `pypi/trackfw/commands/barrier.py`, `internal/commands/barrier_test.go`, `npm/tests/barrier.test.js`, `pypi/tests/test_barrier.py`
+**Actions:**
+1. Go: `roadmapTrustForGates(path string, localContent []byte)` — remove Step 7 re-read; usar o buffer passado; call site em `runBarrier` passa `data`
+2. Node: `roadmapTrustForGates(path, localContentBuf)` — Step 7 usa buffer passado; Step 6 spawnSync sem encoding → Buffer; comparação com `.equals()`; `runBarrier` lê Buffer e passa à função
+3. Python: `_roadmap_trust_for_gates(path, local_content: bytes)` — Step 7 usa bytes passados; `_build_result_document` lê como bytes, decodifica para parsing
+4. Remove o caminho de erro "cannot read local roadmap file" (agora inalcançável nos 3 CLIs)
+5. Testes: atualizar call sites das funções de confiança; adicionar teste TOCTOU (TestRoadmapTrustForGates_VerifiesPassedBuffer)
+**Acceptance criteria:**
+- [x] F1: gates parseados apenas de buffer verificado nos 3 CLIs
+- [x] F1: teste TOCTOU que falha se alguém voltar a parsear de buffer não verificado
+- [x] build passes
+- [x] tests green
+
+### ML-2B — F2: defaults fail-open removidos (Node e Python)
+**Status:** ✅ Concluído
+**Files affected:** `npm/src/commands/barrier.js`, `pypi/trackfw/commands/barrier.py`, `npm/tests/barrier.test.js`
+**Actions:**
+1. Node: `evalGates(commands, cwd, trustResult = { trusted: false })` — default seguro
+2. Python `_check_gates`: remover `if trust_result is None: trust_result = {"trusted": True}`; trocar `get("trusted", True)` por `get("trusted", False)`
+3. Node tests: adicionar `{ trusted: true }` explícito nas 4 chamadas de `evalGates` com 2 argumentos
+**Acceptance criteria:**
+- [x] F2: default de segurança `false` nos 3 CLIs
+- [x] testes de call site passam
+- [x] build passes
+
+### ML-2C — F3: guarda comportamental por razão nomeada (3 CLIs)
+**Status:** ✅ Concluído
+**Files affected:** `internal/commands/barrier_test.go`, `npm/tests/barrier.test.js`, `pypi/tests/test_barrier.py`
+**Actions:**
+1. Go: 4 testes comportamentais com sentinel por razão de `not_evaluated` (not-git-repo, no-remote, not-committed, content-differs) — cada um confirma ausência do sentinel
+2. Node.js: 4 testes equivalentes
+3. Python: 4 testes equivalentes
+**Acceptance criteria:**
+- [x] F3: guarda comportamental por razão nomeada nos 3 CLIs, ausência de sentinela confirmada
+- [x] testes passam
+
+### ML-2D — F4: comparação binária no Node
+**Status:** ✅ Concluído (coberto pelo ML-2A, Step 6)
+**Files affected:** `npm/src/commands/barrier.js`
+
+### ML-2E — F5: mensagens separadas por causa (git not found in PATH)
+**Status:** ✅ Concluído
+**Files affected:** `internal/commands/barrier.go`, `npm/src/commands/barrier.js`, `pypi/trackfw/commands/barrier.py`, `docs/cli-parity.md`
+**Actions:**
+1. Go Step 1: distinguir `*exec.ExitError` (git nonzero) de spawn failure → "git not found in PATH"
+2. Node Step 1: `revParse.error` → nova mensagem; `revParse.status !== 0` → mensagem existente
+3. Python Step 1: `FileNotFoundError` → nova mensagem "git not found in PATH"
+4. `docs/cli-parity.md`: substituir "Local roadmap file cannot be read" (removido F1) por "git binary not found in PATH"; atualizar pinned strings correspondentes
+5. cat-file Step 5 triple: declarar não-separável em comentário de código (3 CLIs)
+**Acceptance criteria:**
+- [x] F5: mensagens distintas para git-ausente vs não-em-repo nos 3 CLIs
+- [x] cli-parity.md atualizado (8 strings: 1 removida + 1 adicionada = 8)
+- [x] build passes
+
+### ML-2F — F6: comentário obsoleto em check-barrier.sh
+**Status:** ✅ Concluído
+**Files affected:** `scripts/check-barrier.sh`
+**Actions:**
+1. Linha ~941: "barrier fails-open (trusted)" → "barrier fails-closed (not_evaluated)"
+**Acceptance criteria:**
+- [x] F6: comentário corrigido

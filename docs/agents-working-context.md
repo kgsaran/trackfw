@@ -4,6 +4,36 @@
 
 ---
 
+## Sessão 2026-09-10j — apolo-tf (Backend) — Corretivo barrier F1–F6 (parecer hades-tf): ENTREGUE, aguarda auditoria do arquiteto
+
+Branch `fix/barrier-executa-gate-de-roadmap-nao-confiavel`.
+
+**Escopo:** F1 (prova cobre payload), F2 (defaults fail-open removidos), F3 (guarda comportamental), F4 (comparação binária Node), F5 (mensagens separadas por causa), F6 (comentário obsoleto). Mesma REQ, mesma causa, Wave 2 adicionada ao roadmap.
+
+**Status:** CONCLUÍDO — aguarda auditoria do trackfw_architect.
+
+**Evidências:**
+- Go: `go build ./...` — EXIT 0
+- Go: `go test ./...` — 15 pacotes, todos green
+- Go: testes barrier incluindo novo TOCTOU + 4 behavioral sentinels — 11/11 pass
+- Node.js: `npm test` (npm/) — 895 passed, 0 failed (+3 vs Wave 1)
+- Python: `python3 -m pytest` (pypi/) — 1678 passed, 0 failed
+- `make quality` — todos os chunks CHUNK_COMPLETE 1–6, zero FAIL/ERROR
+- `trackfw validate` — 0 erros (173 warnings pré-existentes, nenhum introduzido)
+- Roadmap: todos os MLs da Wave 2 (ML-2A a ML-2F) marcados ✅ Concluído
+
+**Artefatos modificados:**
+- `internal/commands/barrier.go` — F1 (buffer param), F5 (errors.As), comentário F1 cat-file triple
+- `internal/commands/barrier_test.go` — F1 TOCTOU test, F3 behavioral sentinel (4 casos)
+- `npm/src/commands/barrier.js` — F1 (buffer param), F2 (default false), F4 (Buffer), F5 (error separation)
+- `npm/tests/barrier.test.js` — F2 call-site fixes (4), F3 behavioral sentinel (3 casos)
+- `pypi/trackfw/commands/barrier.py` — F1 (bytes param), F2 (fail-closed default), F5 (FileNotFoundError)
+- `pypi/tests/test_barrier.py` — F3 behavioral sentinel (3 casos)
+- `scripts/check-barrier.sh` — F6 (comentário corrigido)
+- `docs/cli-parity.md` — pinned strings: +1 (git not found in PATH), -1 (cannot read local roadmap file)
+
+---
+
 ## Sessão 2026-09-10i — apolo-tf (Backend) — Inversão de postura do trust-check do barrier: ENTREGUE, aguarda auditoria do arquiteto
 
 Branch `fix/barrier-executa-gate-de-roadmap-nao-confiavel`.
@@ -35225,3 +35255,41 @@ Branch `fix/ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega`.
 - `make parity-rest` → exit 0 (0 FAIL, 478 OK) [rodou em background; saída verificada completa]
 
 **Status:** ML-3A marcado ✅ Concluído no roadmap. Microbatch entregue ao `trackfw_architect` para auditoria e commit. Sem commit, sem push.
+
+---
+
+## hades-tf — 2026-09-10 — INÍCIO
+
+**Agente:** Hades (Security Reviewer)
+**Branch:** `fix/barrier-executa-gate-de-roadmap-nao-confiavel` (commit `a6205aa`)
+**Tarefa:** Parecer independente da inversão `roadmapTrustForGates` fail-open → fail-closed (3 CLIs)
+
+**Escopo:** 5 vetores explícitos do orquestrador:
+1. Caminho de erro que ainda retorna `trusted: true` — provar ou refutar "exatamente um"
+2. 35+ ocorrências de `--trust-local-gates` no check-barrier.sh são legítimas ou mascaramento?
+3. `TestRoadmapTrustForGates_TrustedCountIsOne` (Go only) — gap de paridade?
+4. Prova de identidade byte-a-byte — TOCTOU entre prova e execução?
+5. Chamadas git novas aceitam input controlado pelo atacante? Path chega ao shell?
+
+**Saída esperada:** `docs/seguranca/2026-09-10-parecer-barrier-fail-closed.md`
+
+## hades-tf — 2026-09-10 — FIM
+
+**Veredicto:** APROVA COM RESSALVAS
+
+**Parecer:** `docs/seguranca/2026-09-10-parecer-barrier-fail-closed.md`
+
+**Achados (todos reportados a apolo-tf, nenhum bloqueia o merge):**
+
+| # | Achado | Severidade |
+|---|--------|------------|
+| F1 | Invariante quebrado: prova cobre B1, execução deriva de B0 (dupla leitura de arquivo) | Médio |
+| F2 | Defaults latentes fail-open no consumidor — Python `None`/`get("trusted",True)`, Node.js parâmetro default | Baixo |
+| F3 | Guarda estrutural `TrustedCountIsOne` existe só em Go; Node/Python sem equivalente | Baixo |
+| F4 | Node.js compara strings UTF-8, não bytes — divergência de paridade com Go e Python | Informacional |
+| F5 | Python `FileNotFoundError` retorna "not a git repository" quando `git` não está no PATH (instância 9 do padrão vault) | Informacional |
+| F6 | Comentário stale em `check-barrier.sh:941` descreve comportamento pré-inversão | Documentação |
+
+**Superfícies confirmadas limpas:** parsing de stderr git (exit codes somente), injeção de shell, caminhos fail-open dentro das funções de confiança, uso de `--trust-local-gates` no harness.
+
+**Status:** Parecer entregue. Sem commit, sem push.

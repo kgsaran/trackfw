@@ -486,16 +486,34 @@ function evalAcceptanceEvidence(mls) {
 // Residual (declared in docs/cli-parity.md): Windows users with
 // core.autocrlf=true may receive "content differs" for an otherwise-identical
 // roadmap (LF vs CRLF). The check fails closed, so the residual is safe.
-function roadmapTrustForGates(roadmapPath) {
+// roadmapTrustForGates determines whether the gates declared in a roadmap can
+// be trusted for execution without --trust-local-gates.
+//
+// localContentBuf (Buffer) is the content already read by the caller — the same
+// bytes used to parse gate commands. Comparing it here ensures the proof covers
+// exactly what executes (F1 invariant: what is proved = what executes).
+// The only remaining route from unverified bytes to sh -c is --trust-local-gates,
+// which requires explicit operator consent.
+function roadmapTrustForGates(roadmapPath, localContentBuf) {
   const roadmapDir = path.dirname(roadmapPath)
 
   // Step 1: check if we are inside a git repository.
+  // Two distinct failure reasons are separated here (F5):
+  //   revParse.error   → git binary not found in PATH (spawn failure)
+  //   revParse.status  → git ran but not inside a git repository
   const revParse = spawnSync('git', ['rev-parse', '--git-dir'], {
     cwd: roadmapDir,
     encoding: 'utf8',
     stdio: 'pipe',
   })
-  if (revParse.status !== 0 || revParse.error) {
+  if (revParse.error) {
+    // Spawn failure: git binary is not installed or not in PATH.
+    return {
+      trusted: false,
+      failureMsg: 'gates not evaluated: git not found in PATH — install git to evaluate local gates',
+    }
+  }
+  if (revParse.status !== 0) {
     return {
       trusted: false,
       failureMsg: 'gates not evaluated: not a git repository — pass --trust-local-gates to evaluate local gates',
@@ -550,9 +568,9 @@ function roadmapTrustForGates(roadmapPath) {
   }
 
   // Step 6: retrieve the file content from refs/remotes/origin/main.
+  // No encoding option → stdout is a Buffer for true byte-for-byte comparison (F4).
   const show = spawnSync('git', ['show', refPath], {
     cwd: repoRoot,
-    encoding: 'utf8',
     stdio: 'pipe',
   })
   if (show.status !== 0 || show.error) {
@@ -565,16 +583,17 @@ function roadmapTrustForGates(roadmapPath) {
   }
 
   // Step 7: compare content byte-for-byte.
-  let localContent
-  try {
-    localContent = fs.readFileSync(roadmapPath, 'utf8')
-  } catch (_) {
-    return {
-      trusted: false,
-      failureMsg: 'gates not evaluated: cannot read local roadmap file — pass --trust-local-gates to evaluate local gates',
-    }
-  }
-  if (show.stdout !== localContent) {
+  // localContentBuf (the parameter) is the Buffer the caller already read — it
+  // is the same slice used to parse gate commands. No second read is performed
+  // here; the proof covers exactly what executes (F1 invariant).
+  // show.stdout is also a Buffer (no encoding option above) — true binary comparison (F4).
+  //
+  // Step 5 triple note (F5 — declared unseparable): git cat-file -e exits non-zero
+  // for (a) roadmap absent from origin/main, (b) relPath wrong (e.g. macOS symlink,
+  // mitigated by WORK_PHYS in check-barrier.sh), (c) unexpected I/O error. All are
+  // equally fail-closed; separating them without additional git invocations would
+  // expand the attack surface. Declared unseparable by design.
+  if (!localContentBuf.equals(show.stdout)) {
     return {
       trusted: false,
       failureMsg: 'gates not evaluated: roadmap content differs from origin/main — pass --trust-local-gates to evaluate local gates',
@@ -582,6 +601,7 @@ function roadmapTrustForGates(roadmapPath) {
   }
 
   // Proven: roadmap is present in refs/remotes/origin/main and byte-identical.
+  // The buffer compared is the same one parsed for gate commands.
   return { trusted: true }
 }
 
@@ -592,8 +612,10 @@ function roadmapTrustForGates(roadmapPath) {
 const SH_MISSING_MSG =
   'gates not evaluated: sh not found in PATH — install a POSIX shell (e.g. Git Bash, WSL) to evaluate gates'
 
-function evalGates(commands, cwd, trustResult = { trusted: true }) {
+function evalGates(commands, cwd, trustResult = { trusted: false }) {
   // trustResult: { trusted: true } | { trusted: false, failureMsg: string }
+  // Default is { trusted: false } — fail-closed (F2). Every call site must pass
+  // an explicit trustResult; omitting it produces not_evaluated, not gate execution.
   if (!trustResult.trusted) {
     // Roadmap is not trusted: do not execute gates (AC3, AC14).
     // Report as not_evaluated — distinct from passed and blocked (AC6).
@@ -713,7 +735,10 @@ async function runBarrier(roadmapArg, waveOption, jsonOutput, trustLocalGates) {
 
   const cfg = config.load()
   const resolved = resolveRoadmapFile(cfg, roadmapArg)
-  const content = fs.readFileSync(resolved.path, 'utf8')
+  // Read as Buffer (no encoding) so the same bytes can be passed to roadmapTrustForGates
+  // for the byte-for-byte comparison (F1 invariant: what is proved = what executes).
+  const contentBuf = fs.readFileSync(resolved.path)
+  const content = contentBuf.toString('utf8')
   const lines = splitRoadmapLines(content)
 
   const startedAt = new Date()
@@ -722,9 +747,10 @@ async function runBarrier(roadmapArg, waveOption, jsonOutput, trustLocalGates) {
   const gates = parseGates(lines, wave.startLine, wave.endLine)
 
   // Determine trust for gate execution (AC11, AC12).
+  // Pass contentBuf so the trust check compares the same buffer parsed for gates.
   const trustResult = trustLocalGates
     ? { trusted: true }
-    : roadmapTrustForGates(resolved.path)
+    : roadmapTrustForGates(resolved.path, contentBuf)
 
   const checks = []
   checks.push(evalMlsComplete(mls, waveLabel))

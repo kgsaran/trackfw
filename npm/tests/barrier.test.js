@@ -521,7 +521,8 @@ test('evalAcceptanceEvidence: pinned evidence/failures string formats', () => {
 // ────────────────────────────────────────────────────────────────────────────
 
 test('evalGates: zero commands passes with empty arrays', () => {
-  const check = barrier.evalGates([], process.cwd())
+  // Pass explicit { trusted: true } — default is now { trusted: false } (F2).
+  const check = barrier.evalGates([], process.cwd(), { trusted: true })
   assert.equal(check.status, 'passed')
   assert.deepEqual(check.commands, [])
   assert.deepEqual(check.evidence, [])
@@ -529,7 +530,8 @@ test('evalGates: zero commands passes with empty arrays', () => {
 })
 
 test('evalGates: passing and failing commands are recorded with pinned formats', () => {
-  const check = barrier.evalGates(['true', 'false'], process.cwd())
+  // Pass explicit { trusted: true } — default is now { trusted: false } (F2).
+  const check = barrier.evalGates(['true', 'false'], process.cwd(), { trusted: true })
   assert.equal(check.status, 'blocked')
   assert.deepEqual(check.evidence, ['true: exit 0'])
   assert.deepEqual(check.failures, ['false: exit 1'])
@@ -538,7 +540,8 @@ test('evalGates: passing and failing commands are recorded with pinned formats',
 // exit 127 signals "tool not found inside sh" — sh itself started and ran.
 // This must NEVER be confused with sh itself being missing (ML-0A measurement).
 test('evalGates: a missing tool inside sh is a normal exit 127, not not_evaluated', () => {
-  const check = barrier.evalGates(['nosuchtool-xyz'], process.cwd())
+  // Pass explicit { trusted: true } — default is now { trusted: false } (F2).
+  const check = barrier.evalGates(['nosuchtool-xyz'], process.cwd(), { trusted: true })
   assert.equal(check.status, 'blocked')
   assert.deepEqual(check.failures, ['nosuchtool-xyz: exit 127'])
 })
@@ -551,7 +554,8 @@ test('evalGates: sh missing from $PATH reports not_evaluated with the pinned mes
   const originalPath = process.env.PATH
   try {
     process.env.PATH = curated
-    const check = barrier.evalGates(['true', 'false'], process.cwd())
+    // Pass explicit { trusted: true } to reach the sh check (default is now { trusted: false }).
+    const check = barrier.evalGates(['true', 'false'], process.cwd(), { trusted: true })
     assert.equal(check.status, 'not_evaluated')
     assert.deepEqual(check.evidence, [])
     assert.deepEqual(check.failures, [
@@ -560,6 +564,147 @@ test('evalGates: sh missing from $PATH reports not_evaluated with the pinned mes
   } finally {
     process.env.PATH = originalPath
     fs.rmSync(curated, { recursive: true, force: true })
+  }
+})
+
+// ────────────────────────────────────────────────────────────────────────────
+// F3 — Behavioral sentinel tests per named reason (F3, same REQ)
+//
+// Each test creates a fixture with a hostile gate command (touch <sentinel>),
+// runs the full barrier CLI without --trust-local-gates, and asserts:
+//   1. gates.status == "not_evaluated" with the expected named reason
+//   2. sentinel is absent (gate did NOT execute)
+//
+// Sentinel is placed in a test-specific temp dir, not /tmp, for hermeticity.
+// Unreachable reasons (transient I/O) are declared unseparable in source comments.
+// ────────────────────────────────────────────────────────────────────────────
+
+function makeGitTrustFixture(roadmapContent, commitToOrigin) {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-trust-sentinel-'))
+  const bareDir = path.join(base, 'origin.git')
+  const cloneDir = path.join(base, 'clone')
+  const roadmapRelPath = path.join('docs', 'roadmaps', 'wip', 'ROADMAP-trust-sentinel.md')
+  const gitcfg = path.join(base, 'gitconfig')
+  fs.writeFileSync(gitcfg, '[user]\n\temail = test@trackfw\n\tname = trackfw test\n[commit]\n\tgpgsign = false\n[core]\n\thooksPath = /dev/null\n\tautocrlf = false\n')
+  const runGit = (cwd, ...args) => {
+    const r = spawnSync('git', args, {
+      cwd: cwd || base,
+      encoding: 'utf8',
+      env: { ...process.env, GIT_CONFIG_GLOBAL: gitcfg, GIT_CONFIG_SYSTEM: '/dev/null', GIT_TERMINAL_PROMPT: '0', HOME: base, LC_ALL: 'C' },
+    })
+    if (r.status !== 0) throw new Error(`git ${args.join(' ')}: ${r.stderr}`)
+  }
+  runGit(base, 'init', '--bare', '-b', 'main', bareDir)
+  runGit(base, 'clone', '-q', bareDir, cloneDir)
+  fs.writeFileSync(path.join(cloneDir, 'trackfw.yaml'), 'req_dir: docs/req\nroadmap_dir: docs/roadmaps\nadr_dirs: []\n')
+  runGit(cloneDir, 'add', 'trackfw.yaml')
+  runGit(cloneDir, 'commit', '-q', '-m', 'base')
+  runGit(cloneDir, 'push', '-q', 'origin', 'main')
+  const roadmapPath = path.join(cloneDir, roadmapRelPath)
+  fs.mkdirSync(path.dirname(roadmapPath), { recursive: true })
+  fs.writeFileSync(roadmapPath, roadmapContent)
+  if (commitToOrigin) {
+    runGit(cloneDir, 'add', roadmapRelPath)
+    runGit(cloneDir, 'commit', '-q', '-m', 'add roadmap')
+    runGit(cloneDir, 'push', '-q', 'origin', 'main')
+  }
+  return { cloneDir, roadmapPath, base }
+}
+
+function assertSentinelAbsentNodeCLI(cloneDir, sentinelPath, wantMsg) {
+  const { stdout } = runBarrierCLI(cloneDir, 'ROADMAP-trust-sentinel', '--wave', '1', '--json')
+  let doc
+  try { doc = JSON.parse(stdout) } catch (e) { throw new Error(`stdout is not valid JSON: ${e.message}\nstdout: ${stdout}`) }
+  const gatesCheck = doc.checks.find((c) => c.name === 'gates')
+  if (!gatesCheck) throw new Error('gates check not found in result document')
+  assert.equal(gatesCheck.status, 'not_evaluated', `gates.status = ${gatesCheck.status}, want not_evaluated (reason: ${wantMsg})`)
+  assert.deepEqual(gatesCheck.failures, [wantMsg])
+  assert.ok(!fs.existsSync(sentinelPath), `sentinel exists — gate executed despite not_evaluated (reason: ${wantMsg})`)
+}
+
+function buildSentinelRoadmap(sentinelPath) {
+  return (
+    '# Roadmap: Trust Sentinel\n\n' +
+    '## Acceptance Criteria\n- [x] criterion met\n\n' +
+    '## Wave 1 — Trust Check\n> Dependências: nenhuma\n\n' +
+    '**Gates da wave:**\n```bash\ntouch ' + sentinelPath + '\n```\n\n' +
+    '### ML-1A — Fixture ML\n**Status:** ✅\n**Critérios de aceite:**\n- [x] criterion met\n\n'
+  )
+}
+
+// Reconciliation: this test asserts that the named reason "not a git repository"
+// behaviorally prevents gate execution (sentinel absent), not just structurally.
+test('F3 sentinel: not a git repository prevents gate execution', () => {
+  const sentinelDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-sentinel-nogit-'))
+  const sentinelPath = path.join(sentinelDir, 'gate-sentinel-not-git')
+  const roadmapContent = buildSentinelRoadmap(sentinelPath)
+  // setupRegressionFixture creates a non-git directory — exactly the "not a git repo" case.
+  const dir = setupRegressionFixture(roadmapContent)
+  // Overwrite ROADMAP-regression.md with our sentinel content.
+  fs.writeFileSync(path.join(dir, 'docs/roadmaps/wip/ROADMAP-regression.md'), roadmapContent)
+  try {
+    const { stdout } = runBarrierCLI(dir, 'ROADMAP-regression', '--wave', '1', '--json')
+    let doc
+    try { doc = JSON.parse(stdout) } catch (e) { throw new Error(`not valid JSON: ${e.message}\n${stdout}`) }
+    const gatesCheck = doc.checks.find((c) => c.name === 'gates')
+    assert.ok(gatesCheck, 'gates check not found')
+    assert.equal(gatesCheck.status, 'not_evaluated', `gates.status=${gatesCheck.status}, want not_evaluated`)
+    const wantMsg = 'gates not evaluated: not a git repository — pass --trust-local-gates to evaluate local gates'
+    assert.deepEqual(gatesCheck.failures, [wantMsg])
+    assert.ok(!fs.existsSync(sentinelPath), `sentinel ${sentinelPath} exists — gate executed despite not_evaluated`)
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+    fs.rmSync(sentinelDir, { recursive: true, force: true })
+  }
+})
+
+// Reconciliation: this test asserts that "roadmap is not committed in origin/main"
+// behaviorally prevents gate execution (sentinel absent).
+test('F3 sentinel: roadmap not committed in origin/main prevents gate execution', () => {
+  const sentinelDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-sentinel-notcommit-'))
+  const sentinelPath = path.join(sentinelDir, 'gate-sentinel-not-committed')
+  const roadmapContent = buildSentinelRoadmap(sentinelPath)
+  let fixture
+  try {
+    fixture = makeGitTrustFixture(roadmapContent, false) // not committed to origin/main
+    const wantMsg = 'gates not evaluated: roadmap is not committed in origin/main — pass --trust-local-gates to evaluate local gates'
+    const { stdout } = runBarrierCLI(fixture.cloneDir, 'ROADMAP-trust-sentinel', '--wave', '1', '--json')
+    let doc
+    try { doc = JSON.parse(stdout) } catch (e) { throw new Error(`not valid JSON: ${e.message}\n${stdout}`) }
+    const gatesCheck = doc.checks.find((c) => c.name === 'gates')
+    assert.ok(gatesCheck, 'gates check not found')
+    assert.equal(gatesCheck.status, 'not_evaluated', `gates.status=${gatesCheck.status}, want not_evaluated`)
+    assert.deepEqual(gatesCheck.failures, [wantMsg])
+    assert.ok(!fs.existsSync(sentinelPath), `sentinel exists — gate executed despite not_evaluated`)
+  } finally {
+    if (fixture) fs.rmSync(fixture.base, { recursive: true, force: true })
+    fs.rmSync(sentinelDir, { recursive: true, force: true })
+  }
+})
+
+// Reconciliation: this test asserts that "roadmap content differs from origin/main"
+// behaviorally prevents gate execution (sentinel absent).
+test('F3 sentinel: local content differs from origin/main prevents gate execution', () => {
+  const sentinelDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-sentinel-differs-'))
+  const sentinelPath = path.join(sentinelDir, 'gate-sentinel-content-differs')
+  const originContent = buildSentinelRoadmap(sentinelPath)
+  let fixture
+  try {
+    fixture = makeGitTrustFixture(originContent, true) // committed to origin/main
+    // Modify local file without pushing
+    fs.writeFileSync(fixture.roadmapPath, originContent + '<!-- local modification -->\n')
+    const wantMsg = 'gates not evaluated: roadmap content differs from origin/main — pass --trust-local-gates to evaluate local gates'
+    const { stdout } = runBarrierCLI(fixture.cloneDir, 'ROADMAP-trust-sentinel', '--wave', '1', '--json')
+    let doc
+    try { doc = JSON.parse(stdout) } catch (e) { throw new Error(`not valid JSON: ${e.message}\n${stdout}`) }
+    const gatesCheck = doc.checks.find((c) => c.name === 'gates')
+    assert.ok(gatesCheck, 'gates check not found')
+    assert.equal(gatesCheck.status, 'not_evaluated', `gates.status=${gatesCheck.status}, want not_evaluated`)
+    assert.deepEqual(gatesCheck.failures, [wantMsg])
+    assert.ok(!fs.existsSync(sentinelPath), `sentinel exists — gate executed despite not_evaluated`)
+  } finally {
+    if (fixture) fs.rmSync(fixture.base, { recursive: true, force: true })
+    fs.rmSync(sentinelDir, { recursive: true, force: true })
   }
 })
 
