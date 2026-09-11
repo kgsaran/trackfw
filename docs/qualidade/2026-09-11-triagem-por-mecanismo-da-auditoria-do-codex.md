@@ -68,3 +68,45 @@ Vale registrar o que ele fez melhor que os nossos relatórios:
   *não* é defeito, e é isso que permite confiar no zero de uma varredura;
 - no A5, chegou por conta própria à mesma decisão do arquiteto: **não remover o cenário nem
   transformá-lo em skip.**
+
+---
+
+# Segunda rodada — auditoria `hades-tf` do Codex (segurança)
+
+`docs/qualidade/2026-09-11-auditoria-hades-codex-dos-fontes.md`
+
+**Resultado oposto ao da primeira rodada: aqui há achado NOVO, e um deles é sério.**
+
+| # | achado | destino |
+|---|---|---|
+| **H-01** | `/api/file` lê qualquer arquivo por symlink (Go e Node) | 🔴 **REQ nova** — reproduzido |
+| **M-03** | estáticos do Node seguem symlink | **mesma REQ do H-01** — mesma causa |
+| **H-02** | instalador não confere o `checksums.txt` que publicamos | **REQ nova** |
+| **M-04** | `serve` em rede sem auth, CORS `*` | residual **declarado**; decisão, não defeito |
+| **M-05** | `check-referential-integrity` verde em árvore vazia | **REQ já existia** (`2026-09-03`) |
+
+## H-01 reproduzido pelo arquiteto, nos 3 binários
+
+```
+GO    HTTP 200  HADES_SECRET_TOKEN_ABC123      🔴
+NODE  HTTP 200  HADES_SECRET_TOKEN_ABC123      🔴
+PY    HTTP 403                                 defendido
+```
+
+## Por que esta rodada achou coisa nova e a primeira não
+
+A primeira auditoria releu **o mesmo código com a mesma pergunta** que nós já tínhamos feito — e por
+isso reencontrou as nossas cinco REQs. Esta fez uma **pergunta diferente**: *onde está a fronteira de
+confiança?*
+
+🔴 **A independência que importa não é de quem audita. É da pergunta.** Um auditor independente com a
+nossa pergunta devolve o nosso backlog; com pergunta nova, devolve defeito novo.
+
+## ⚠️ E quase perdi o H-01
+
+Minha primeira reprodução deu **403** e eu ia classificar como falso positivo. A causa era o caminho:
+`mktemp -d` cru devolve `/var/...`, o `process.cwd()` do Node devolve `/private/var/...`. Com `pwd -P`,
+o mesmo teste devolve **200 e o segredo**.
+
+**Terceira vez em 24h que essa divergência produziu leitura falsa** — e desta vez teria custado um
+achado de severidade alta, atribuído a "o auditor errou".
