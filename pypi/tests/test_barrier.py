@@ -98,7 +98,7 @@ def test_resolve_roadmap_em_done():
         ml_status="✅",
         criteria_lines=["- [x] build passes"],
     )
-    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-barrier-fixture", "--wave", "1", "--json")
+    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-barrier-fixture", "--wave", "1", "--json", "--trust-local-gates")
     assert code == 0, f"stdout={stdout} stderr={stderr}"
     doc = json.loads(stdout)
     assert doc["status"] == "passed"
@@ -110,7 +110,7 @@ def test_resolve_roadmap_com_extensao_md_explicita():
         ml_status="✅",
         criteria_lines=["- [x] build passes"],
     )
-    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-barrier-fixture.md", "--wave", "1", "--json")
+    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-barrier-fixture.md", "--wave", "1", "--json", "--trust-local-gates")
     assert code == 0, f"stdout={stdout} stderr={stderr}"
 
 
@@ -252,7 +252,7 @@ def test_wave_sufixo_bis_resolve_heading_bis():
         "### ML-3A — Z\n**Status:** ✅\n**Critérios de aceite:**\n- [x] c\n\n"
     )
     (dir_ / "docs/roadmaps/wip/ROADMAP-suffix.md").write_text(content, encoding="utf-8")
-    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-suffix", "--wave", "2-bis", "--json")
+    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-suffix", "--wave", "2-bis", "--json", "--trust-local-gates")
     assert code == 0, f"expected exit 0 for --wave 2-bis, got {code}\nstdout={stdout}\nstderr={stderr}"
     doc = json.loads(stdout)
     assert doc["status"] == "passed"
@@ -451,7 +451,7 @@ def test_gates_multiplos_comandos_ordem_preservada():
         criteria_lines=["- [x] build passes"],
         gate_commands=["true", "true", "false"],
     )
-    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-barrier-fixture", "--wave", "1", "--json")
+    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-barrier-fixture", "--wave", "1", "--json", "--trust-local-gates")
     assert code == 1
     doc = json.loads(stdout)
     gates_check = next(c for c in doc["checks"] if c["name"] == "gates")
@@ -469,7 +469,7 @@ def test_gates_ferramenta_ausente_dentro_do_sh_e_exit_127_normal_nao_not_evaluat
         criteria_lines=["- [x] build passes"],
         gate_commands=["nosuchtool-xyz"],
     )
-    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-barrier-fixture", "--wave", "1", "--json")
+    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-barrier-fixture", "--wave", "1", "--json", "--trust-local-gates")
     assert code == 1
     doc = json.loads(stdout)
     gates_check = next(c for c in doc["checks"] if c["name"] == "gates")
@@ -496,7 +496,7 @@ def test_gates_sh_ausente_do_path_reporta_not_evaluated_com_mensagem_pinada():
     _place_executable_in_path(git_path, curated)
     try:
         stdout, stderr, code = _run_barrier_cli(
-            dir_, "ROADMAP-barrier-fixture", "--wave", "1", "--json", curated_path=curated,
+            dir_, "ROADMAP-barrier-fixture", "--wave", "1", "--json", "--trust-local-gates", curated_path=curated,
         )
         assert code == 1
         doc = json.loads(stdout)
@@ -518,7 +518,7 @@ def test_gates_stdout_nao_polui_documento_json():
         criteria_lines=["- [x] build passes"],
         gate_commands=["echo hello-from-gate"],
     )
-    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-barrier-fixture", "--wave", "1", "--json")
+    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-barrier-fixture", "--wave", "1", "--json", "--trust-local-gates")
     assert code == 0, f"stdout={stdout} stderr={stderr}"
     # stdout deve conter exatamente um documento JSON válido, sem output do gate.
     doc = json.loads(stdout)
@@ -535,7 +535,7 @@ def test_modo_texto_sem_json_reporta_status():
         ml_status="✅",
         criteria_lines=["- [x] build passes"],
     )
-    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-barrier-fixture", "--wave", "1")
+    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-barrier-fixture", "--wave", "1", "--trust-local-gates")
     assert code == 0
     assert "passed" in stdout.lower()
     # Modo texto não deve ser JSON válido.
@@ -556,7 +556,7 @@ def test_acceptance_evidence_conta_criterios_atendidos():
         ml_status="✅",
         criteria_lines=["- [x] a", "- [x] b", "- [x] c"],
     )
-    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-barrier-fixture", "--wave", "1", "--json")
+    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-barrier-fixture", "--wave", "1", "--json", "--trust-local-gates")
     assert code == 0, f"stdout={stdout} stderr={stderr}"
     doc = json.loads(stdout)
     evidence_check = next(c for c in doc["checks"] if c["name"] == "acceptance_evidence")
@@ -799,7 +799,7 @@ def test_barrier_cli_cabecalho_ingles_e_status_por_palavra_passam_e2e():
         "- [x] build passes\n"
     )
     _write_roadmap(dir_, content)
-    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-regression", "--wave", "1", "--json")
+    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-regression", "--wave", "1", "--json", "--trust-local-gates")
     assert code == 0, f"stdout={stdout} stderr={stderr}"
     doc = json.loads(stdout)
     checks = {c["name"]: c for c in doc["checks"]}
@@ -1051,7 +1051,7 @@ def test_barrier_cli_cabecalho_de_gates_com_prosa_final_ainda_executa_o_gate_e2e
         "- [x] build passes\n"
     )
     _write_roadmap(dir_, content)
-    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-regression", "--wave", "1", "--json")
+    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-regression", "--wave", "1", "--json", "--trust-local-gates")
     assert code == 1, f"esperava exit 1 (blocked), stdout={stdout} stderr={stderr}"
     doc = json.loads(stdout)
     checks = {c["name"]: c for c in doc["checks"]}
@@ -1104,7 +1104,7 @@ def test_barrier_cli_crlf_roadmap_com_ml_completo_passa_e2e():
         "",
     ])
     _write_roadmap(dir_, content)
-    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-regression", "--wave", "1", "--json")
+    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-regression", "--wave", "1", "--json", "--trust-local-gates")
     assert code == 0, f"esperava exit 0 (passed), stdout={stdout} stderr={stderr}"
     doc = json.loads(stdout)
     assert doc["status"] == "passed"
@@ -1209,9 +1209,155 @@ def test_barrier_cli_crlf_roadmap_gates_da_wave_e_reconhecido_e_comando_roda_e2e
         "",
     ])
     _write_roadmap(dir_, content)
-    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-regression", "--wave", "1", "--json")
+    stdout, stderr, code = _run_barrier_cli(dir_, "ROADMAP-regression", "--wave", "1", "--json", "--trust-local-gates")
     assert code == 1, f"esperava exit 1 (blocked pelo gate), stdout={stdout} stderr={stderr}"
     doc = json.loads(stdout)
     checks = {c["name"]: c for c in doc["checks"]}
     assert checks["gates"]["status"] == "blocked", checks["gates"]
     assert checks["gates"]["commands"] == ["false"]
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# F3 — Behavioral sentinel tests per named reason
+#
+# Each test creates a fixture with a hostile gate command (touch <sentinel>),
+# runs the full barrier CLI without --trust-local-gates, and asserts:
+#   1. gates.status == "not_evaluated" with the expected named reason
+#   2. sentinel is absent (gate did NOT execute)
+#
+# Sentinel is placed in a test-specific temp dir for hermeticity.
+# ────────────────────────────────────────────────────────────────────────────
+
+
+def _make_git_trust_fixture(roadmap_content: str, commit_to_origin: bool) -> tuple[Path, Path]:
+    """Create a minimal git fixture with a bare origin.
+
+    Returns (clone_dir, roadmap_path).
+    """
+    # On Windows, tempfile.mkdtemp() may return an 8.3 short-name path (e.g. RUNNER~1)
+    # while git rev-parse --show-toplevel returns the expanded long-name path.
+    # os.path.relpath() does a textual comparison and produces garbage when the two
+    # forms differ, causing git cat-file to report "not committed" instead of
+    # "content differs".  os.path.realpath expands 8.3 short names, mirroring
+    # Go's filepath.EvalSymlinks.
+    base = Path(os.path.realpath(tempfile.mkdtemp(prefix="tw-trust-sentinel-")))
+    bare_dir = base / "origin.git"
+    clone_dir = base / "clone"
+    roadmap_rel = Path("docs/roadmaps/wip/ROADMAP-trust-sentinel.md")
+    gitcfg = base / "gitconfig"
+    gitcfg.write_text(
+        "[user]\n\temail = test@trackfw\n\tname = trackfw test\n"
+        "[commit]\n\tgpgsign = false\n[core]\n\thooksPath = /dev/null\n\tautocrlf = false\n"
+    )
+    env = {
+        **os.environ,
+        "GIT_CONFIG_GLOBAL": str(gitcfg),
+        "GIT_CONFIG_SYSTEM": "/dev/null",
+        "GIT_TERMINAL_PROMPT": "0",
+        "HOME": str(base),
+        "LC_ALL": "C",
+    }
+
+    def _git(cwd, *args):
+        r = subprocess.run(["git", *args], cwd=cwd, env=env, capture_output=True, text=True)
+        if r.returncode != 0:
+            raise RuntimeError(f"git {args} in {cwd}: {r.stderr}")
+
+    _git(str(base), "init", "--bare", "-b", "main", str(bare_dir))
+    _git(str(base), "clone", "-q", str(bare_dir), str(clone_dir))
+    (clone_dir / "trackfw.yaml").write_text(
+        "req_dir: docs/req\nroadmap_dir: docs/roadmaps\nadr_dirs: []\n"
+    )
+    _git(str(clone_dir), "add", "trackfw.yaml")
+    _git(str(clone_dir), "commit", "-q", "-m", "base")
+    _git(str(clone_dir), "push", "-q", "origin", "main")
+    roadmap_path = clone_dir / roadmap_rel
+    roadmap_path.parent.mkdir(parents=True, exist_ok=True)
+    roadmap_path.write_text(roadmap_content, encoding="utf-8")
+    if commit_to_origin:
+        _git(str(clone_dir), "add", str(roadmap_rel))
+        _git(str(clone_dir), "commit", "-q", "-m", "add roadmap")
+        _git(str(clone_dir), "push", "-q", "origin", "main")
+    return clone_dir, roadmap_path
+
+
+def _build_sentinel_roadmap(sentinel_path: Path) -> str:
+    return (
+        "# Roadmap: Trust Sentinel\n\n"
+        "## Acceptance Criteria\n- [x] criterion met\n\n"
+        "## Wave 1 — Trust Check\n> Dependências: nenhuma\n\n"
+        f"**Gates da wave:**\n```bash\ntouch {sentinel_path}\n```\n\n"
+        "### ML-1A — Fixture ML\n**Status:** ✅\n**Critérios de aceite:**\n- [x] criterion met\n\n"
+    )
+
+
+def _assert_sentinel_absent_and_gates_not_evaluated(
+    cwd: Path, roadmap_name: str, sentinel_path: Path, want_msg: str
+) -> None:
+    stdout, stderr, code = _run_barrier_cli(cwd, roadmap_name, "--wave", "1", "--json")
+    doc = json.loads(stdout)
+    checks = {c["name"]: c for c in doc["checks"]}
+    gates = checks.get("gates")
+    assert gates is not None, "gates check not found in result document"
+    assert gates["status"] == "not_evaluated", (
+        f"gates.status={gates['status']!r}, want not_evaluated (reason: {want_msg})"
+    )
+    assert gates["failures"] == [want_msg], f"gates.failures={gates['failures']!r}"
+    assert not sentinel_path.exists(), (
+        f"sentinel {sentinel_path} exists — gate executed despite not_evaluated (reason: {want_msg})"
+    )
+
+
+def test_f3_sentinel_not_git_repository_prevents_gate_execution():
+    """Reconciliation: asserts that the named reason 'not a git repository'
+    behaviorally prevents gate execution (sentinel absent), not just structurally."""
+    sentinel_dir = Path(tempfile.mkdtemp(prefix="tw-sentinel-nogit-"))
+    sentinel_path = sentinel_dir / "gate-sentinel-not-git"
+    roadmap_content = _build_sentinel_roadmap(sentinel_path)
+    # _setup_regression_dir creates a non-git directory — the "not a git repo" case.
+    dir_ = _setup_regression_dir()
+    _write_roadmap(dir_, roadmap_content)
+    try:
+        want_msg = "gates not evaluated: not a git repository — pass --trust-local-gates to evaluate local gates"
+        _assert_sentinel_absent_and_gates_not_evaluated(
+            dir_, "ROADMAP-regression", sentinel_path, want_msg
+        )
+    finally:
+        shutil.rmtree(str(dir_), ignore_errors=True)
+        shutil.rmtree(str(sentinel_dir), ignore_errors=True)
+
+
+def test_f3_sentinel_roadmap_not_committed_in_origin_prevents_gate_execution():
+    """Reconciliation: asserts that 'roadmap is not committed in origin/main'
+    behaviorally prevents gate execution (sentinel absent)."""
+    sentinel_dir = Path(tempfile.mkdtemp(prefix="tw-sentinel-notcommit-"))
+    sentinel_path = sentinel_dir / "gate-sentinel-not-committed"
+    roadmap_content = _build_sentinel_roadmap(sentinel_path)
+    clone_dir, _ = _make_git_trust_fixture(roadmap_content, commit_to_origin=False)
+    try:
+        want_msg = "gates not evaluated: roadmap is not committed in origin/main — pass --trust-local-gates to evaluate local gates"
+        _assert_sentinel_absent_and_gates_not_evaluated(
+            clone_dir, "ROADMAP-trust-sentinel", sentinel_path, want_msg
+        )
+    finally:
+        shutil.rmtree(str(clone_dir.parent), ignore_errors=True)
+        shutil.rmtree(str(sentinel_dir), ignore_errors=True)
+
+
+def test_f3_sentinel_content_differs_from_origin_prevents_gate_execution():
+    """Reconciliation: asserts that 'roadmap content differs from origin/main'
+    behaviorally prevents gate execution (sentinel absent)."""
+    sentinel_dir = Path(tempfile.mkdtemp(prefix="tw-sentinel-differs-"))
+    sentinel_path = sentinel_dir / "gate-sentinel-content-differs"
+    origin_content = _build_sentinel_roadmap(sentinel_path)
+    clone_dir, roadmap_path = _make_git_trust_fixture(origin_content, commit_to_origin=True)
+    try:
+        # Modify local file without pushing.
+        roadmap_path.write_text(origin_content + "<!-- local modification -->\n", encoding="utf-8")
+        want_msg = "gates not evaluated: roadmap content differs from origin/main — pass --trust-local-gates to evaluate local gates"
+        _assert_sentinel_absent_and_gates_not_evaluated(
+            clone_dir, "ROADMAP-trust-sentinel", sentinel_path, want_msg
+        )
+    finally:
+        shutil.rmtree(str(clone_dir.parent), ignore_errors=True)
+        shutil.rmtree(str(sentinel_dir), ignore_errors=True)

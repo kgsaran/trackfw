@@ -227,7 +227,7 @@ else
   write_two_wave_roadmap "$ROADMAP1" "⬜ Pendente" "- [ ] build passes"
 fi
 
-run_barrier go "$S1" ROADMAP-barrier-e2e --wave 1 --json
+run_barrier go "$S1" ROADMAP-barrier-e2e --wave 1 --json --trust-local-gates
 if [[ "$BARRIER_EXIT" -ne 0 ]]; then
   fail "barrier/two-wave-flow/wave1-passed" "expected exit 0 for Wave 1, got $BARRIER_EXIT; stderr: $BARRIER_STDERR"
 fi
@@ -237,7 +237,7 @@ if [[ "$STATUS1" != "passed" ]]; then
 fi
 ok "barrier/two-wave-flow/wave1-passed"
 
-run_barrier go "$S1" ROADMAP-barrier-e2e --wave 2 --json
+run_barrier go "$S1" ROADMAP-barrier-e2e --wave 2 --json --trust-local-gates
 # No special-cased branch for BARRIER_SELFTEST_BREAK=1: it deliberately makes
 # the fixture already ✅ (see write_two_wave_roadmap call above), so the very
 # same assertion below — "Wave 2 must be exit 1 / status=blocked" — now fails
@@ -256,7 +256,7 @@ ok "barrier/two-wave-flow/wave2-blocked"
 # Scenario 2 — reexecution after correction: fix Wave 2 in place and prove the
 # *same* invocation now passes. Proves the barrier is not a permanent denial gate.
 write_two_wave_roadmap "$ROADMAP1" "✅" "- [x] build passes"
-run_barrier go "$S1" ROADMAP-barrier-e2e --wave 2 --json
+run_barrier go "$S1" ROADMAP-barrier-e2e --wave 2 --json --trust-local-gates
 if [[ "$BARRIER_EXIT" -ne 0 ]]; then
   fail "barrier/reexecution-after-fix" "expected exit 0 after correction, got $BARRIER_EXIT; stdout: $BARRIER_STDOUT stderr: $BARRIER_STDERR"
 fi
@@ -291,7 +291,7 @@ REQ: REQ-2026-07-29-barrier-fixture
 - [x] build passes
 EOF
 for runtime in go node py; do
-  run_barrier "$runtime" "$S3A" ROADMAP-barrier-fixture --wave 1 --json
+  run_barrier "$runtime" "$S3A" ROADMAP-barrier-fixture --wave 1 --json --trust-local-gates
   [[ "$BARRIER_EXIT" -eq 1 ]] || fail "barrier/isolated-check/mls_complete/$runtime" "expected exit 1, got $BARRIER_EXIT"
   assert_only_this_check_blocked "$BARRIER_STDOUT" "mls_complete" "barrier/isolated-check/mls_complete/$runtime"
 done
@@ -318,7 +318,7 @@ REQ: REQ-2026-07-29-barrier-fixture
 - [ ] tests pass
 EOF
 for runtime in go node py; do
-  run_barrier "$runtime" "$S3B" ROADMAP-barrier-fixture --wave 1 --json
+  run_barrier "$runtime" "$S3B" ROADMAP-barrier-fixture --wave 1 --json --trust-local-gates
   [[ "$BARRIER_EXIT" -eq 1 ]] || fail "barrier/isolated-check/acceptance_evidence/$runtime" "expected exit 1, got $BARRIER_EXIT"
   assert_only_this_check_blocked "$BARRIER_STDOUT" "acceptance_evidence" "barrier/isolated-check/acceptance_evidence/$runtime"
 done
@@ -349,7 +349,7 @@ false
 - [x] build passes
 EOF
 for runtime in go node py; do
-  run_barrier "$runtime" "$S3C" ROADMAP-barrier-fixture --wave 1 --json
+  run_barrier "$runtime" "$S3C" ROADMAP-barrier-fixture --wave 1 --json --trust-local-gates
   [[ "$BARRIER_EXIT" -eq 1 ]] || fail "barrier/isolated-check/gates/$runtime" "expected exit 1, got $BARRIER_EXIT"
   assert_only_this_check_blocked "$BARRIER_STDOUT" "gates" "barrier/isolated-check/gates/$runtime"
 done
@@ -373,7 +373,7 @@ cat >"$S3D/docs/roadmaps/wip/ROADMAP-barrier-fixture.md" <<'EOF'
 - [x] build passes
 EOF
 for runtime in go node py; do
-  run_barrier "$runtime" "$S3D" ROADMAP-barrier-fixture --wave 1 --json
+  run_barrier "$runtime" "$S3D" ROADMAP-barrier-fixture --wave 1 --json --trust-local-gates
   [[ "$BARRIER_EXIT" -eq 1 ]] || fail "barrier/isolated-check/validate/$runtime" "expected exit 1, got $BARRIER_EXIT"
   assert_only_this_check_blocked "$BARRIER_STDOUT" "validate" "barrier/isolated-check/validate/$runtime"
 done
@@ -411,7 +411,7 @@ touch "$SENTINEL"
 **Critérios de aceite:**
 - [x] build passes
 EOF
-run_barrier go "$S4A" ROADMAP-barrier-fixture --wave 1 --json
+run_barrier go "$S4A" ROADMAP-barrier-fixture --wave 1 --json --trust-local-gates
 [[ "$BARRIER_EXIT" -eq 0 ]] || fail "barrier/gates/declared-gate-executes" "expected exit 0, got $BARRIER_EXIT; stdout: $BARRIER_STDOUT"
 [[ -e "$SENTINEL" ]] || fail "barrier/gates/declared-gate-executes" "declared gate did not run — sentinel file was not created"
 ok "barrier/gates/declared-gate-executes"
@@ -444,7 +444,7 @@ REQ: REQ-2026-07-29-barrier-fixture
 **Critérios de aceite:**
 - [x] build passes
 EOF
-run_barrier go "$S4B" ROADMAP-barrier-fixture --wave 1 --json
+run_barrier go "$S4B" ROADMAP-barrier-fixture --wave 1 --json --trust-local-gates
 [[ "$BARRIER_EXIT" -eq 0 ]] || fail "barrier/gates/no-gates-block-invents-nothing" "expected exit 0, got $BARRIER_EXIT; stdout: $BARRIER_STDOUT"
 [[ ! -e "$SENTINEL_B" ]] || fail "barrier/gates/no-gates-block-invents-nothing" "barrier invented and ran a gate that was never declared"
 CMDS=$(check_field_json "$BARRIER_STDOUT" "gates" "commands")
@@ -535,15 +535,15 @@ json.dump(d, sys.stdout, indent=2, ensure_ascii=False)
 "
 }
 
-run_barrier go "$S6" ROADMAP-barrier-fixture --wave 1 --json
+run_barrier go "$S6" ROADMAP-barrier-fixture --wave 1 --json --trust-local-gates
 [[ "$BARRIER_EXIT" -eq 0 ]] || fail "barrier/parity/go" "expected exit 0, got $BARRIER_EXIT; stderr: $BARRIER_STDERR"
 echo "$BARRIER_STDOUT" | normalize_barrier_json >"$WORK/go.norm.json"
 
-run_barrier node "$S6" ROADMAP-barrier-fixture --wave 1 --json
+run_barrier node "$S6" ROADMAP-barrier-fixture --wave 1 --json --trust-local-gates
 [[ "$BARRIER_EXIT" -eq 0 ]] || fail "barrier/parity/node" "expected exit 0, got $BARRIER_EXIT; stderr: $BARRIER_STDERR"
 echo "$BARRIER_STDOUT" | normalize_barrier_json >"$WORK/node.norm.json"
 
-run_barrier py "$S6" ROADMAP-barrier-fixture --wave 1 --json
+run_barrier py "$S6" ROADMAP-barrier-fixture --wave 1 --json --trust-local-gates
 [[ "$BARRIER_EXIT" -eq 0 ]] || fail "barrier/parity/py" "expected exit 0, got $BARRIER_EXIT; stderr: $BARRIER_STDERR"
 echo "$BARRIER_STDOUT" | normalize_barrier_json >"$WORK/py.norm.json"
 
@@ -693,7 +693,7 @@ fi
 # ## Wave X is at line 10 in the normal fixture above.
 WANT9='trackfw barrier: malformed wave heading at line 10: "X" is not a valid wave label'
 for runtime in go node py; do
-  run_barrier "$runtime" "$S9" ROADMAP-barrier-fixture --wave 1
+  run_barrier "$runtime" "$S9" ROADMAP-barrier-fixture --wave 1 --trust-local-gates
   [[ "$BARRIER_EXIT" -eq 2 ]] || fail "barrier/wave-label/malformed-after-target/$runtime" "expected exit 2 for after-position malformed heading, got $BARRIER_EXIT; stderr: $BARRIER_STDERR"
   [[ -n "$BARRIER_STDERR" ]] || fail "barrier/wave-label/malformed-after-target/$runtime" "stderr is empty — vacuity guard failed"
   [[ "$BARRIER_STDERR" == "$WANT9"$'\n' || "$BARRIER_STDERR" == "$WANT9" ]] || fail "barrier/wave-label/malformed-after-target/$runtime" "stderr mismatch, want [$WANT9], got [$BARRIER_STDERR]"
@@ -743,14 +743,14 @@ get_wave_field() {
 }
 for runtime in go node py; do
   # --wave 2-bis must resolve Wave 2-bis (wave field = "2-bis", not "2")
-  run_barrier "$runtime" "$S10" ROADMAP-barrier-fixture --wave 2-bis --json
+  run_barrier "$runtime" "$S10" ROADMAP-barrier-fixture --wave 2-bis --json --trust-local-gates
   [[ "$BARRIER_EXIT" -eq 0 ]] || fail "barrier/wave-label/bis-identity/$runtime/bis-resolves" "expected exit 0, got $BARRIER_EXIT; stderr: $BARRIER_STDERR"
   GOT_WAVE=$(get_wave_field "$BARRIER_STDOUT")
   [[ "$GOT_WAVE" == "2-bis" ]] || fail "barrier/wave-label/bis-identity/$runtime/bis-resolves" "expected wave=2-bis, got $GOT_WAVE"
   ok "barrier/wave-label/bis-identity/$runtime/bis-resolves"
 
   # --wave 2 must resolve Wave 2, not Wave 2-bis (wave field = "2")
-  run_barrier "$runtime" "$S10" ROADMAP-barrier-fixture --wave 2 --json
+  run_barrier "$runtime" "$S10" ROADMAP-barrier-fixture --wave 2 --json --trust-local-gates
   [[ "$BARRIER_EXIT" -eq 0 ]] || fail "barrier/wave-label/bis-identity/$runtime/2-not-bis" "expected exit 0, got $BARRIER_EXIT; stderr: $BARRIER_STDERR"
   GOT_WAVE=$(get_wave_field "$BARRIER_STDOUT")
   [[ "$GOT_WAVE" == "2" ]] || fail "barrier/wave-label/bis-identity/$runtime/2-not-bis" "expected wave=2 (not 2-bis), got $GOT_WAVE"
@@ -791,7 +791,7 @@ exit 0
 - [x] done
 EOF
 for runtime in go node py; do
-  run_barrier "$runtime" "$S11" ROADMAP-barrier-fixture --wave 0 --json
+  run_barrier "$runtime" "$S11" ROADMAP-barrier-fixture --wave 0 --json --trust-local-gates
   [[ "$BARRIER_EXIT" -eq 0 || "$BARRIER_EXIT" -eq 1 ]] || fail "barrier/wave-label/wave-zero-accepted/$runtime" "expected exit 0 or 1 (never 2 — a usage/grammar error), got $BARRIER_EXIT; stderr: $BARRIER_STDERR"
   GOT_WAVE=$(get_wave_field "$BARRIER_STDOUT")
   [[ "$GOT_WAVE" == "0" ]] || fail "barrier/wave-label/wave-zero-accepted/$runtime" "expected wave=0, got $GOT_WAVE"
@@ -814,11 +814,11 @@ done
 # Byte-identical parity across runtimes for the Wave 0 JSON document (checks
 # array, evidence and all) — the same discipline as Scenario 12's four-message
 # parity check, applied to the newly-inverted contract.
-run_barrier go "$S11" ROADMAP-barrier-fixture --wave 0 --json
+run_barrier go "$S11" ROADMAP-barrier-fixture --wave 0 --json --trust-local-gates
 GO_STDOUT11="$BARRIER_STDOUT"
-run_barrier node "$S11" ROADMAP-barrier-fixture --wave 0 --json
+run_barrier node "$S11" ROADMAP-barrier-fixture --wave 0 --json --trust-local-gates
 NODE_STDOUT11="$BARRIER_STDOUT"
-run_barrier py "$S11" ROADMAP-barrier-fixture --wave 0 --json
+run_barrier py "$S11" ROADMAP-barrier-fixture --wave 0 --json --trust-local-gates
 PY_STDOUT11="$BARRIER_STDOUT"
 # started_at/finished_at are timestamps and legitimately differ per run — strip them before comparing.
 STRIP_TS='import json,sys; d=json.loads(sys.argv[1]); d.pop("started_at",None); d.pop("finished_at",None); print(json.dumps(d,sort_keys=True))'
@@ -938,7 +938,7 @@ done
 # /private/var/folders/…. git rev-parse --show-toplevel resolves symlinks, but
 # Go's filepath.Abs uses os.Getwd() which returns the symlink path. The mismatch
 # makes filepath.Rel produce an "outside repository" path → git show fails with
-# "is outside repository at" → barrier fails-open (trusted). Fix: resolve $WORK
+# "is outside repository at" → barrier fails-closed (not_evaluated). Fix: resolve $WORK
 # to its physical path (WORK_PHYS) and use that for all trust-check fixtures.
 # ---------------------------------------------------------------------------
 WORK_PHYS=$(cd "$WORK" && pwd -P)

@@ -729,8 +729,9 @@ def run_check(
                         # Row 2: new Go load failure, package not in known list
                         _err(
                             f"ML-3A: NEW Go suite-load-failure not in known list: '{pkg}'. "
-                            "Add to .github/windows-known-failures.json (with source run id) "
-                            "or fix the compilation error. "
+                            "Fix the compilation error. "
+                            "If this is inherited Windows-only debt that pre-dates this PR, "
+                            "add to .github/windows-known-failures.json with a source run id. "
                             "(ADR D3: suite-load-failure has its own class — not a test assertion.)"
                         )
                         has_new = True
@@ -754,28 +755,36 @@ def run_check(
     for name in sorted(obs_go - known_go_assert):
         _err(
             f"ML-2A ratchet: NEW Go assertion failure not in known list: '{name}'. "
-            "Add to .github/windows-known-failures.json (with source run id) or fix the test."
+            "Fix the test. "
+            "If this is inherited Windows-only debt that pre-dates this PR, "
+            "add to .github/windows-known-failures.json with a source run id."
         )
         has_new = True
 
     for name in sorted(obs_node_assert - known_node_assert):
         _err(
             f"ML-2A ratchet: NEW Node.js assertion failure not in known list: '{name}'. "
-            "Add to .github/windows-known-failures.json or fix the test."
+            "Fix the test. "
+            "If this is inherited Windows-only debt that pre-dates this PR, "
+            "add to .github/windows-known-failures.json with a source run id."
         )
         has_new = True
 
     for name in sorted(obs_node_load - known_node_load):
         _err(
             f"ML-2A ratchet: NEW Node.js suite-load-failure not in known list: '{name}'. "
-            "Add to .github/windows-known-failures.json or fix the suite."
+            "Fix the suite. "
+            "If this is inherited Windows-only debt that pre-dates this PR, "
+            "add to .github/windows-known-failures.json with a source run id."
         )
         has_new = True
 
     for name in sorted(obs_py - known_py_assert):
         _err(
             f"ML-2A ratchet: NEW Python assertion failure not in known list: '{name}'. "
-            "Add to .github/windows-known-failures.json or fix the test."
+            "Fix the test. "
+            "If this is inherited Windows-only debt that pre-dates this PR, "
+            "add to .github/windows-known-failures.json with a source run id."
         )
         has_new = True
 
@@ -818,16 +827,55 @@ def run_check(
     ):
         has_new = True
 
-    # 10. Informational summary — counts only (never used for decisions per ADR D1)
-    total_obs   = len(obs_go) + len(obs_node_assert) + len(obs_node_load) + len(obs_py)
-    total_known = len(known)
+    # 10. Informational summary — never used for decisions (ADR D1: discriminant is the name set).
+    #     The summary is derived from the same set differences as steps 6 and 7, so the
+    #     invariant holds: a failing gate (has_new=True, meaning obs-known is non-empty for some
+    #     class) always produces at least one [+N NOVO] on the first and only summary line.
+    #
+    #     Defect corrected (2026-09-11, PR #316): when one class gained failures (+1) and another
+    #     lost them (-1) by the same count, the total headline "38 observed / 38 active" looked
+    #     clean while the gate failed — CI run 34547480139: Node-assert 11/10, Python 12/13.
+    #     Root cause: the previous code printed the total without per-class direction; a reader
+    #     seeing only that line reached the most reasonable wrong conclusion.
+    #
+    #     Fix: imbalance in ANY class is visible on the same first line, with direction shown.
+    #     Uses set difference (not count) so equal counts with different names are also caught.
+    total_obs     = len(obs_go) + len(obs_node_assert) + len(obs_node_load) + len(obs_py)
+    total_known   = len(known)
     total_removed = len(removed)
+
+    def _cls_label(obs_set: set, known_set: set, prefix: str) -> tuple:
+        """Build per-class label with direction indicator using set difference.
+
+        Returns (label_string, has_imbalance).
+        Invariant: if steps 6/7 fire for this class, has_imbalance is True and the
+        label contains a direction tag — same set difference, same result.
+        """
+        surplus  = obs_set - known_set   # new failures in this class (step 6 direction)
+        resolved = known_set - obs_set   # debt paid in this class  (step 7 direction)
+        label = f"{prefix} {len(obs_set)}/{len(known_set)}"
+        if surplus and resolved:
+            label += f" [+{len(surplus)} NOVO, -{len(resolved)} resolvido]"
+        elif surplus:
+            label += f" [+{len(surplus)} NOVO]"
+        elif resolved:
+            label += f" [-{len(resolved)} resolvido]"
+        return label, bool(surplus or resolved)
+
+    go_lbl, go_imb = _cls_label(obs_go,         known_go_assert,  "Go")
+    na_lbl, na_imb = _cls_label(obs_node_assert, known_node_assert, "Node-assert")
+    nl_lbl, nl_imb = _cls_label(obs_node_load,   known_node_load,  "Node-load")
+    py_lbl, py_imb = _cls_label(obs_py,          known_py_assert,  "Python")
+
+    headline = (
+        " — DESEQUILÍBRIO POR CLASSE"
+        if (go_imb or na_imb or nl_imb or py_imb)
+        else ""
+    )
     print(
-        f"ML-2A/2B: {total_obs} observed / {total_known} active / {total_removed} removed. "
-        f"Go {len(obs_go)}/{len(known_go_assert)}, "
-        f"Node-assert {len(obs_node_assert)}/{len(known_node_assert)}, "
-        f"Node-load {len(obs_node_load)}/{len(known_node_load)}, "
-        f"Python {len(obs_py)}/{len(known_py_assert)}.",
+        f"ML-2A/2B: {total_obs} observed / {total_known} active / {total_removed} removed"
+        f"{headline}. "
+        f"{go_lbl}, {na_lbl}, {nl_lbl}, {py_lbl}.",
         flush=True
     )
 
@@ -960,6 +1008,36 @@ def run_self_test() -> int:
           Asserts: zero-test produces no test name by construction ('# tests 0' + exit 0)
           → row 3 → step-3 early check fires immediately → exit 1.
           [SYNTHETIC: zero-test-failure.node.txt present with fixed-string content]
+
+    ── Sumário (T23–T26) — corretivo 2026-09-11, PR #316 ───────────────────────
+
+    T23 — 'cancel case: Node-assert +1 NOVO + Python -1 resolvido, total balanced'
+          -> first line shows 'DESEQUILÍBRIO POR CLASSE' and direction tags
+          Asserts: set-based imbalance detection exposes the cancellation that count-based
+          total masks. CI case: run 34547480139, Node-assert 11/10, Python 12/13,
+          "38 observed / 38 active" looked clean while gate failed.
+          Measurement: without the fix, a reader seeing only the first line reached the
+          most reasonable wrong conclusion — "a catraca foi desligada".
+          [SYNTHETIC: 2 Node-assert obs (known + new_name), 0 Python obs, 1 Python known]
+
+    T24 — 'all classes balanced' -> no 'DESEQUILÍBRIO' on first line (counter-arm)
+          Asserts: when every observed name matches a known name and vice versa, the
+          headline is clean and no direction tags appear. Without this arm, a guard that
+          always flags would appear to work.
+          [REUSES: BASE_ENTRIES + default write_artifacts — same fixture as T1]
+
+    T25 — 'one class surplus, others balanced' -> first line shows '[+1 NOVO]' (single-class arm)
+          Asserts: imbalance in a single class is flagged independently of other classes.
+          [SYNTHETIC: Node-assert 2 obs (1 known + 1 new), Go/Node-load/Python matched]
+
+    T26 — 'equal count but different names in a class' -> first line shows '[+1 NOVO]'
+          Asserts: the fix uses set difference, not count comparison. When obs and known have
+          the same count but different names (one name replaced), count-based logic would
+          print a clean headline while set-based detection exposes the surplus. This arm
+          separates the correct fix from the plausible-wrong count-based alternative.
+          Measurement: Node-assert known={A,B}, obs={A,C} → count 2/2 but surplus={C},
+          resolved={B} → '+1 NOVO, -1 resolvido' tag appears despite equal count.
+          [SYNTHETIC: Node-assert with two known entries, one replaced in observation]
     """
     n_pass = 0
     n_fail = 0
@@ -1380,6 +1458,157 @@ def run_self_test() -> int:
         )
         rc = run_check(list_path, go_path, tap_path, py_path, load_markers_dir=markers_t22)
         check(rc == 1, "T22: Node.js zero-test-failure marker -> exit 1 (row 3, early check)")
+
+        # ── Sumário T23: cancel case — one class +1 NOVO, another -1 resolvido ──────────
+        # Asserts: set-based detection exposes the cancellation that the count-based total
+        # masks. CI case: run 34547480139, Node-assert 11/10, Python 12/13, total 38/38.
+        # Fixture: 2 Node-assert obs (known + new_name), 0 Python obs, 1 Python known,
+        # Go and Node-load balanced. Total obs == total known — the cancellation is exact.
+        print("=== T23: cancel case (Node +1 NOVO, Python -1 resolvido, total balanced) "
+              "-> DESEQUILÍBRIO on first line ===", flush=True)
+        entries_t23 = [
+            {"name": "TestFoo",              "runtime": "go",     "class": "assertion"},
+            {"name": "known_node_assert",    "runtime": "node",   "class": "assertion"},
+            {"name": "broken.test.js",       "runtime": "node",   "class": "suite-load-failure"},
+            {"name": "test_foo.py::test_bar","runtime": "python", "class": "assertion"},
+        ]
+        write_list(entries_t23)
+        cancel_tap = (
+            # known_node_assert still fails (remains in list)
+            "not ok 1 - known_node_assert\n"
+            "  ---\n"
+            "  failureType: 'testCodeFailure'\n"
+            "  ...\n"
+            # new_node_assert is NEW — not in list
+            "not ok 2 - new_node_assert\n"
+            "  ---\n"
+            "  failureType: 'testCodeFailure'\n"
+            "  ...\n"
+            # broken.test.js still load-fails (suite-load-failure, still in list)
+            "not ok 3 - /runner/tests/broken.test.js\n"
+            "  ---\n"
+            "  exitCode: 1\n"
+            "  ...\n"
+        )
+        # Python: 0 failures observed → test_foo.py::test_bar "resolved" (warning only)
+        write_artifacts(tap=cancel_tap, py="PASSED pypi/tests/test_foo.py::test_bar\n")
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            run_check(list_path, go_path, tap_path, py_path)
+        out_t23 = buf.getvalue()
+        summary_line_t23 = next(
+            (l for l in out_t23.splitlines() if l.startswith("ML-2A/2B:")), ""
+        )
+        check(
+            "DESEQUILÍBRIO POR CLASSE" in summary_line_t23
+            and "NOVO" in summary_line_t23
+            and "resolvido" in summary_line_t23,
+            "T23: cancel case → 'DESEQUILÍBRIO POR CLASSE' + NOVO + resolvido on first summary line",
+        )
+
+        # ── Sumário T24: all balanced -> no imbalance markers (counter-arm) ───────────
+        # Asserts: when every observed name matches a known name and vice versa, the
+        # first summary line is clean. Uses T1's fixture (BASE_ENTRIES + default artifacts).
+        print("=== T24: all balanced -> no DESEQUILÍBRIO on summary line (counter-arm) ===",
+              flush=True)
+        write_list(BASE_ENTRIES)
+        write_artifacts()
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            run_check(list_path, go_path, tap_path, py_path)
+        out_t24 = buf.getvalue()
+        summary_line_t24 = next(
+            (l for l in out_t24.splitlines() if l.startswith("ML-2A/2B:")), ""
+        )
+        check(
+            "DESEQUILÍBRIO" not in summary_line_t24
+            and "NOVO" not in summary_line_t24
+            and "resolvido" not in summary_line_t24,
+            "T24: all classes balanced → no 'DESEQUILÍBRIO', 'NOVO', or 'resolvido' on summary line",
+        )
+
+        # ── Sumário T25: one class surplus, others balanced ───────────────────────────
+        # Asserts: imbalance in a single class is flagged independently of other classes.
+        # Node-assert: 2 obs (known + new_one), 1 known → surplus = {new_one}.
+        # Others: balanced.
+        print("=== T25: one class surplus, others balanced -> [+1 NOVO] on summary line ===",
+              flush=True)
+        write_list(BASE_ENTRIES)
+        single_surplus_tap = (
+            # sample assertion test still fails (in list)
+            "not ok 1 - sample assertion test\n"
+            "  ---\n"
+            "  failureType: 'testCodeFailure'\n"
+            "  ...\n"
+            # extra_new_assertion is NEW — not in list
+            "not ok 2 - extra_new_assertion\n"
+            "  ---\n"
+            "  failureType: 'testCodeFailure'\n"
+            "  ...\n"
+            # broken.test.js still load-fails
+            "not ok 3 - /runner/tests/broken.test.js\n"
+            "  ---\n"
+            "  exitCode: 1\n"
+            "  ...\n"
+        )
+        write_artifacts(tap=single_surplus_tap)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            run_check(list_path, go_path, tap_path, py_path)
+        out_t25 = buf.getvalue()
+        summary_line_t25 = next(
+            (l for l in out_t25.splitlines() if l.startswith("ML-2A/2B:")), ""
+        )
+        check(
+            "DESEQUILÍBRIO POR CLASSE" in summary_line_t25
+            and "[+1 NOVO]" in summary_line_t25,
+            "T25: one class surplus → 'DESEQUILÍBRIO POR CLASSE' and '[+1 NOVO]' on summary line",
+        )
+
+        # ── Sumário T26: equal count but different names in one class ─────────────────
+        # Asserts: set-based detection catches one-name replacement (surplus + resolved in
+        # same class) even when obs count == known count. Count-based logic would see 2/2
+        # and print clean; set-based sees surplus={NodeC} → '[+1 NOVO, -1 resolvido]' tag.
+        # This arm separates the correct (set-based) fix from the plausible-wrong (count-based).
+        print("=== T26: equal count, different names in a class -> [+1 NOVO] on summary line ===",
+              flush=True)
+        entries_t26 = [
+            {"name": "TestFoo",              "runtime": "go",     "class": "assertion"},
+            {"name": "NodeA",                "runtime": "node",   "class": "assertion"},
+            {"name": "NodeB",                "runtime": "node",   "class": "assertion"},
+            {"name": "broken.test.js",       "runtime": "node",   "class": "suite-load-failure"},
+            {"name": "test_foo.py::test_bar","runtime": "python", "class": "assertion"},
+        ]
+        write_list(entries_t26)
+        # obs: NodeA (known) + NodeC (new, replaces NodeB) → obs count = known count = 2
+        replacement_tap = (
+            "not ok 1 - NodeA\n"
+            "  ---\n"
+            "  failureType: 'testCodeFailure'\n"
+            "  ...\n"
+            "not ok 2 - NodeC\n"
+            "  ---\n"
+            "  failureType: 'testCodeFailure'\n"
+            "  ...\n"
+            "not ok 3 - /runner/tests/broken.test.js\n"
+            "  ---\n"
+            "  exitCode: 1\n"
+            "  ...\n"
+        )
+        write_artifacts(tap=replacement_tap)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            run_check(list_path, go_path, tap_path, py_path)
+        out_t26 = buf.getvalue()
+        summary_line_t26 = next(
+            (l for l in out_t26.splitlines() if l.startswith("ML-2A/2B:")), ""
+        )
+        check(
+            "DESEQUILÍBRIO POR CLASSE" in summary_line_t26
+            and "NOVO" in summary_line_t26,
+            "T26: equal count (2/2) but different names → set-based detection fires "
+            "'DESEQUILÍBRIO POR CLASSE' and 'NOVO' despite equal count (count-based would miss this)",
+        )
 
     print(f"\nSelf-test summary: {n_pass} PASS, {n_fail} FAIL", flush=True)
     return 0 if n_fail == 0 else 1

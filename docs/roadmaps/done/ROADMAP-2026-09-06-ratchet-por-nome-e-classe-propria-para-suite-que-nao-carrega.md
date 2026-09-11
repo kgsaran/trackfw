@@ -286,3 +286,69 @@ não que seja automaticamente fatal. O parágrafo seguinte do mesmo ADR distingu
 - `make parity-rest` → exit 0
 - `trackfw validate` → 0 errors (174 warnings pré-existentes)
 - YAML: `python3 -c "yaml.safe_load(...)"` → válido
+
+---
+
+## Corretivo pós-fechamento — 2026-09-11, PR #316 (ares-tf)
+
+**Defeito encontrado em CI run 34547480139:**
+
+O sumário `ML-2A/2B: 38 observed / 38 active` parecia limpo, mas não estava. Node-assert tinha
+**11/10** (+1 regressão nova) e Python tinha **12/13** (-1 dívida paga). Os dois se cancelavam no
+total. O gate reprovou corretamente pela checagem por conjunto de nomes — mas **o número de manchete
+mentiu**, e o usuário que leu só a primeira linha concluiu que "a catraca foi desligada".
+
+É a **família exata** do defeito que a ADR existe para impedir:
+> *"a contagem cai e a queda parece progresso" / "O discriminante é o tipo do evento, nunca a contagem."*
+
+A ADR proibiu decidir por contagem — e decidimos por conjunto, corretamente, mas **reportamos** por
+contagem. O relatório reintroduziu a fraqueza que o mecanismo eliminou.
+
+**Segundo defeito (menor):** mensagem de erro "Add to .github/windows-known-failures.json or fix the
+test" colocava a lista como primeira saída, convidando ao abuso. Falha nova de código novo se corrige.
+
+### O que foi corrigido
+
+**`scripts/check-windows-known-failures.py` — step 10 (sumário):**
+
+Substituída a lógica de contagem (`len(obs_go) != len(known_go_assert)`) por detecção via **conjunto
+de nomes** — os mesmos `obs_set - known_set` e `known_set - obs_set` que os steps 6 e 7 já usam para
+a decisão. Invariante: se o gate falha (has_new=True), pelo menos uma classe tem surplus não-vazio →
+pelo menos um `[+N NOVO]` aparece na linha de sumário. Um gate que falha nunca mais pode imprimir
+manchete limpa.
+
+Formato novo — direção explícita por classe na mesma primeira linha:
+
+```
+ML-2A/2B: 38 observed / 38 active / 0 removed — DESEQUILÍBRIO POR CLASSE.
+Go 14/14, Node-assert 11/10 [+1 NOVO], Node-load 1/1, Python 12/13 [-1 resolvido].
+```
+
+Quando igual count mas nomes diferentes (ex: um nome substituído): `[+1 NOVO, -1 resolvido]`.
+
+**Mensagens de erro (5 sítios):** invertida a ordem — "Fix the test." primeiro. A lista citada
+como segunda saída, só para dívida herdada pré-existente ao PR, com source run id exigido.
+
+### Falsificação — 4 braços (T23-T26)
+
+- **T23** (caso do CI): Node-assert +1, Python -1, total igual → sumário acusa `DESEQUILÍBRIO POR
+  CLASSE` + `NOVO` + `resolvido` na primeira linha.
+- **T24** (contra-braço): todas as classes em equilíbrio → sem marcadores na primeira linha. Sem
+  este braço, uma guarda que sempre flagra pareceria funcionar.
+- **T25** (classe única): só Node-assert com surplus → `[+1 NOVO]` na primeira linha.
+- **T26** (contagem igual, nomes diferentes): Node-assert known={A,B}, obs={A,C} → count 2/2 mas
+  surplus={C} → `[+1 NOVO, -1 resolvido]`. Este braço é o que separa o fix correto (baseado em
+  conjunto) do fix plausível-errado (baseado em contagem).
+
+### Gates — 2026-09-11, foreground
+
+```
+python3 scripts/check-windows-known-failures.py --self-test
+→ Self-test summary: 27 PASS, 0 FAIL  (T1-T26)
+
+make parity-rest
+→ exit 0
+
+trackfw validate
+→ 0 errors (173 warnings pré-existentes)
+```
