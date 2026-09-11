@@ -2,15 +2,39 @@
 
 ---
 
-## Sessão 2026-09-11r — apolo-tf (Backend/Node) — ML-1B-fix: remove squad: do frontmatter da REQ no CLI Node — EM ANDAMENTO
+## Sessão 2026-09-11r — apolo-tf (Backend/Node) — ML-1B-fix: remove squad: do frontmatter da REQ no CLI Node — CONCLUÍDO (aguarda auditoria Zeus)
 
 Branch `fix/by-agent-req-new-e-roadmap-new`. Remove `squad:` do template da REQ em `npm/src/generators/req.js` para alinhar paridade com Go e Python (que não têm a chave). Ajusta teste que assertava `squad:` na REQ.
 
+**Alterações aplicadas (somente `npm/`):**
+1. `npm/src/generators/req.js`: removido `resolveAgentForWrite` do import; removidos `let resolvedAgent`, bloco de `resolveAgentForWrite`, `squadField` e linha `squad:` do template.
+2. `npm/tests/by_agent_req_roadmap_new.test.js`: ajustado o teste "newREQ: by_agent + --agent beta" — removida asserção de `squad: "beta"`, adicionada asserção inversa `!content.includes('squad:')`.
+
+**Evidência de conclusão:**
+- `node npm/tests/by_agent_req_roadmap_new.test.js` → 20 passed, 0 failed
+- `node --test npm/tests/*.test.js` → 897 passed, 0 failed
+- `bash scripts/check-artifact-parity.sh` → "Artifact parity checks passed (9 artifact types × 3 runtimes)"
+- Inspeção direta da REQ gerada pelo Node: `squad:` ausente; `trackfw validate` → 0 hard violations
+
 ---
 
-## Sessão 2026-09-11q — apolo-tf (Backend/Go) — ML-1A-fix: herança de agente em NewRoadmapFromContent via REQPath — EM ANDAMENTO
+## Sessão 2026-09-11q — apolo-tf (Backend/Go) — ML-1A-fix: herança de agente em NewRoadmapFromContent via REQPath — CONCLUÍDO (aguarda auditoria Zeus)
 
-Branch `fix/by-agent-req-new-e-roadmap-new`. Fix do AC11 no caminho `--req` do Go CLI: inserir herança de agente via `agentFromPath(cfg.REQDir, content.REQPath)` antes de `ResolveWriteAgent` em `NewRoadmapFromContent`, alinhando com `NewRoadmapFromREQ`. Remover comentário errado em `agent_write_test.go` e adicionar testes que exercitam o caminho `NewRoadmapFromContent` com `REQPath` preenchido.
+Branch `fix/by-agent-req-new-e-roadmap-new`. Fix do AC11 no caminho `--req` do Go CLI.
+
+**Correções aplicadas (somente `internal/`):**
+1. `internal/generators/roadmap.go`: em `NewRoadmapFromContent`, inserida herança de agente via `agentFromPath(cfg.REQDir, content.REQPath)` antes de `ResolveWriteAgent`, alinhando com `NewRoadmapFromREQ`. Guarda adicional: só usa o candidato se for um diretório sob req_dir (descarta REQs flat onde agentFromPath devolve o nome do arquivo).
+2. `internal/generators/agent_write_test.go`: removido comentário errado (linhas 204-205 que afirmavam que herança era exclusiva do --from-req). Adicionados 3 testes novos: T5b (herança via --req), T5c (REQ flat → ambiguidade), T5d (--agent explícito vence herança).
+
+**Evidência E2E:**
+```
+$ /tmp/tfw-fix roadmap new "rm" --req docs/req/beta/REQ-2026-01-01-t.md; echo "rc=$?"
+✓ created docs/roadmaps/beta/backlog/ROADMAP-2026-09-11-2026-01-01-t.md
+rc=0
+```
+
+**Testes:** `go test ./...` → 15 pacotes ok, 0 failures.
+**Gate:** `trackfw validate` → 0 hard violations (172 warnings são dívida pré-existente).
 
 ---
 

@@ -106,7 +106,7 @@ echo "ML-0A gate: OK"
 > - 🔴 **Nao rodar nada em background.**
 
 ### ML-1A — Go
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado E2E nos 3 binários
 **Arquivos afetados:** `internal/generators/req.go`, `internal/generators/roadmap.go`,
 `internal/commands/req.go`, `internal/commands/roadmap.go`, e os `*_test.go` correspondentes.
 **Acoes:** o contrato comum acima, no runtime Go. Sitio do `req new` conforme derivado no ML-0A.
@@ -269,3 +269,19 @@ de um ML de resolução de agente.
 
 A Wave 2 **não é liberada** até B1 e B2 fecharem. Os dois são microlotes corretivos na wave vigente,
 não REQ nova: **mesma causa, mesma REQ, mesmo PR.**
+
+### ✅ Barreira da Wave 1 — LEVANTADA em 2026-09-11
+
+B1 e B2 fechados. Auditoria do arquiteto **contra os 3 binários construídos**, projeto descartável,
+não contra relatório:
+
+```
+C1  roadmap new --req <REQ em beta/>          GO rc=0 beta/   NODE rc=0 beta/   PY rc=0 beta/
+C2  1 agente, sem flag  (contra-braço)        GO rc=0 alpha/  NODE rc=0 alpha/  PY rc=0 alpha/
+C3  2 agentes, sem flag (braço de erro)       GO "alpha, beta"  NODE idem  PY idem
+```
+
+`scripts/check-artifact-parity.sh` → verde (9 tipos × 3 runtimes). `squad:` ausente da REQ nos três.
+O comentário que declarava a não-entrega do AC11 foi removido do teste do Go.
+
+**Wave 2 liberada.**

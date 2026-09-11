@@ -189,8 +189,27 @@ func NewRoadmapFromContent(content RoadmapContent) error {
 
 	cfg := config.Load()
 
-	// Resolver o agente antes de construir o caminho — ResolveWriteAgent faz a guarda de ambiguidade.
-	agent, err := validator.ResolveWriteAgent(cfg, content.Agent)
+	// AC11: herdar o agente do caminho da REQ quando --agent não fornecido e em modo by_agent.
+	// Mesmo mecanismo que NewRoadmapFromREQ usa: agentFromPath extrai o primeiro segmento relativo
+	// ao req_dir. REQ flat (diretamente em req_dir/) faz agentFromPath devolver o nome do arquivo
+	// (não um namespace de agente) — descartamos esse caso verificando se o segmento extraído é
+	// realmente um diretório sob req_dir. Se não for, o candidato fica "" e a guarda de ambiguidade
+	// dispara normalmente.
+	agentCandidate := content.Agent
+	if agentCandidate == "" && cfg.RoadmapNamespacing == config.NamespacingByAgent && content.REQPath != "" {
+		candidate := agentFromPath(cfg.REQDir, content.REQPath)
+		if candidate != "" {
+			// Verificar que o segmento extraído é um diretório sob req_dir (namespace de agente),
+			// não o nome do arquivo em si (REQ flat diretamente em req_dir/).
+			absReqDir, _ := filepath.Abs(cfg.REQDir)
+			if info, err := os.Stat(filepath.Join(absReqDir, candidate)); err == nil && info.IsDir() {
+				agentCandidate = candidate
+			}
+		}
+	}
+
+	// Resolver o agente (--agent explícito > herdado da REQ > único namespace > erro de ambiguidade).
+	agent, err := validator.ResolveWriteAgent(cfg, agentCandidate)
 	if err != nil {
 		return err
 	}

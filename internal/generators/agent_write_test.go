@@ -199,10 +199,11 @@ func TestRoadmapNew_FlatMode_UnchangedBehavior(t *testing.T) {
 }
 
 // ── T5 ──────────────────────────────────────────────────────────────────────
-// Afirma: NewRoadmapFromREQ sem --agent herda o agente do caminho da REQ e cria
-// o roadmap em beta/ (AC11) — reusa agentFromPath, não cria derivação nova.
-// Nota: NewRoadmapFromContent com --req direto exige --agent explícito (sem herança).
-// A herança é exclusiva do caminho --from-req (NewRoadmapFromREQ).
+// Afirma: herança de agente por caminho da REQ funciona nos DOIS caminhos de geração:
+//   - NewRoadmapFromREQ (--from-req): já funcionava antes deste fix.
+//   - NewRoadmapFromContent com REQPath (--req): corrigido pelo AC11-fix (ML-1A-fix).
+// REQ flat (diretamente em req_dir/) não herda — cai na guarda de ambiguidade.
+// --agent explícito vence a herança em ambos os caminhos.
 
 // TestRoadmapFromREQ_InheritsAgentFromREQPath testa a herança via NewRoadmapFromREQ (--from-req).
 // Afirma: --from-req com REQ em beta/ sem --agent cria roadmap em beta/backlog/ (AC11).
@@ -232,6 +233,100 @@ func TestRoadmapFromREQ_InheritsAgentFromREQPath(t *testing.T) {
 	body, _ := os.ReadFile(matches[0])
 	if !strings.Contains(string(body), `squad: "beta"`) {
 		t.Errorf("frontmatter não contém squad: \"beta\":\n%s", body)
+	}
+}
+
+// ── T5b ─────────────────────────────────────────────────────────────────────
+// Afirma: NewRoadmapFromContent com REQPath preenchido e Agent="" herda o agente
+// do namespace da REQ (AC11) — o caminho --req agora tem o mesmo comportamento
+// que --from-req. Este é o caso que reprovou o ML anterior.
+
+// TestRoadmapFromContent_InheritsAgentFromREQPath testa a herança via NewRoadmapFromContent
+// (caminho --req). Afirma: REQPath em beta/ sem Agent explícito → roadmap em beta/backlog/.
+func TestRoadmapFromContent_InheritsAgentFromREQPath(t *testing.T) {
+	dir := setupByAgent(t, "- alpha\n- beta\n")
+
+	reqDir := filepath.Join(dir, "docs", "req", "beta")
+	if err := os.MkdirAll(reqDir, 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	reqPath := filepath.Join(reqDir, "REQ-2026-01-01-heranca-via-req.md")
+	if err := os.WriteFile(reqPath, []byte("---\nstatus: Open\ndate: 2026-01-01\n---\n# REQ: Heranca via req\n"), 0644); err != nil {
+		t.Fatalf("escrever REQ: %v", err)
+	}
+
+	// NewRoadmapFromContent sem Agent explícito deve herdar 'beta' do REQPath.
+	if err := NewRoadmapFromContent(RoadmapContent{Title: "rm", REQPath: reqPath}); err != nil {
+		t.Fatalf("NewRoadmapFromContent deveria herdar beta do REQPath: %v", err)
+	}
+
+	matches, _ := filepath.Glob("docs/roadmaps/beta/backlog/ROADMAP-*.md")
+	if len(matches) != 1 {
+		t.Fatalf("esperado roadmap em beta/backlog/, obteve %d (%v)", len(matches), matches)
+	}
+	body, _ := os.ReadFile(matches[0])
+	if !strings.Contains(string(body), `squad: "beta"`) {
+		t.Errorf("frontmatter não contém squad: \"beta\":\n%s", body)
+	}
+}
+
+// ── T5c ─────────────────────────────────────────────────────────────────────
+// Contra-braço: REQ flat (diretamente em req_dir/) não herda namespace —
+// cai na guarda de ambiguidade e retorna erro listando os agentes disponíveis.
+// Afirma: REQ flat com múltiplos agentes → erro de ambiguidade (comportamento correto).
+
+func TestRoadmapFromContent_FlatREQDoesNotInheritAgent(t *testing.T) {
+	dir := setupByAgent(t, "- alpha\n- beta\n")
+
+	// REQ flat: diretamente em req_dir/, sem subpasta de agente.
+	reqDir := filepath.Join(dir, "docs", "req")
+	if err := os.MkdirAll(reqDir, 0755); err != nil {
+		t.Fatalf("mkdir req_dir: %v", err)
+	}
+	reqPath := filepath.Join(reqDir, "REQ-2026-01-01-flat.md")
+	if err := os.WriteFile(reqPath, []byte("---\nstatus: Open\n---\n# REQ: flat\n"), 0644); err != nil {
+		t.Fatalf("escrever REQ: %v", err)
+	}
+
+	// Deve falhar com erro de ambiguidade — não deve herdar nenhum namespace de agente.
+	err := NewRoadmapFromContent(RoadmapContent{Title: "rm-flat", REQPath: reqPath})
+	if err == nil {
+		t.Fatal("esperado erro de ambiguidade para REQ flat com múltiplos agentes, mas obteve nil")
+	}
+	if !strings.Contains(err.Error(), "alpha") || !strings.Contains(err.Error(), "beta") {
+		t.Errorf("erro de ambiguidade deveria nomear alpha e beta, obteve: %v", err)
+	}
+}
+
+// ── T5d ─────────────────────────────────────────────────────────────────────
+// Contra-braço: --agent explícito vence a herança do REQPath.
+// Afirma: NewRoadmapFromContent com REQPath em beta/ mas Agent="alpha" → roadmap em alpha/backlog/.
+
+func TestRoadmapFromContent_ExplicitAgentWinsOverREQPathInheritance(t *testing.T) {
+	dir := setupByAgent(t, "- alpha\n- beta\n")
+
+	reqDir := filepath.Join(dir, "docs", "req", "beta")
+	if err := os.MkdirAll(reqDir, 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	reqPath := filepath.Join(reqDir, "REQ-2026-01-01-beta.md")
+	if err := os.WriteFile(reqPath, []byte("---\nstatus: Open\n---\n# REQ: beta req\n"), 0644); err != nil {
+		t.Fatalf("escrever REQ: %v", err)
+	}
+
+	// --agent alpha explícito deve vencer a herança de beta via REQPath.
+	if err := NewRoadmapFromContent(RoadmapContent{Title: "rm-explicit", REQPath: reqPath, Agent: "alpha"}); err != nil {
+		t.Fatalf("NewRoadmapFromContent com --agent alpha deveria ter sucesso: %v", err)
+	}
+
+	matches, _ := filepath.Glob("docs/roadmaps/alpha/backlog/ROADMAP-*.md")
+	if len(matches) != 1 {
+		t.Fatalf("esperado roadmap em alpha/backlog/ (--agent vence herança), obteve %d (%v)", len(matches), matches)
+	}
+	// Garante que NÃO foi criado em beta/.
+	betaMatches, _ := filepath.Glob("docs/roadmaps/beta/backlog/ROADMAP-*.md")
+	if len(betaMatches) != 0 {
+		t.Errorf("roadmap não deveria ter sido criado em beta/, obteve %d", len(betaMatches))
 	}
 }
 
