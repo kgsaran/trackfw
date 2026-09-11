@@ -2,6 +2,50 @@
 
 ---
 
+## Sessão 2026-09-11l — ares-tf (Infrastructure) — validação pós-retomada de contexto: harness de Cenário 195, D\W, wording staleness — CONCLUÍDO
+
+Branch `fix/o-ciclo-testa-onde-funciona`. Retomada de contexto após compactação. Nenhum arquivo de implementação foi alterado nesta sessão — apenas correção de typo e validações.
+
+**Validações realizadas:**
+
+- `check-python-writes-lf.sh` contra fixture `newline="\r\n"`: saiu 1 e nomeou o arquivo ofensor. Confirmação manual de Cenário 195.
+- `gen-falsify-chunks.py` extrai rótulos de `assert_fails_with` — `python-writes-lf/wrong-newline-value` entra no expected set do shard correto. A `echo "OK   [falsify/python-writes-lf]: ..."` é mensagem human-readable, nao `assert_*`, nao conflita com coverage.
+- `check-required-status-checks.py --scope dw`: exit 0, D\W=empty.
+- Wording antigo (`nenhuma chamada sem newline explicito`) só em registros historicos — sem referencia viva fora dos dois arquivos de gate.
+
+**Desvio AC5 (para auditoria do arquiteto):**
+
+O ML-1E original declarava "o cenario nasce vermelho (detecta o gap do gate)". Entrega real: gate fix e Cenário 195 foram pareados no mesmo ML — o cenario nasce verde desde o dia um.
+
+Motivo: `parity-falsify-shard` nao tem `TRACKFW_FALSIFY_ENUMERATE=1` nem `continue-on-error: true`. Um cenario vermelho abortaria cada shard que o contivesse, tornando todo PR vermelho ate o fix. Como a REQ exige tambem corrigir o gate (nao so documentar o gap), parear os dois e o comportamento correto — nao uma concessao. A sentenca de reconciliacao no roadmap ML-1E foi atualizada para refletir a entrega real.
+
+**Correci typo:** `cp1352` → `cp1252` na linha de REQ da sessao 2026-09-11k.
+
+---
+
+## Sessão 2026-09-11k — ares-tf (Infrastructure) — CI environments: cp1252, symlink privilege, consumer smoke, annotation gate — CONCLUÍDO
+
+Branch `fix/o-ciclo-testa-onde-funciona`.
+
+REQ: `docs/req/REQ-2026-09-11-o-ciclo-testa-onde-funciona-faltam-cp1252-windows-sem-privilegio-e-consumidor-novo.md`
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-09-11-o-ciclo-testa-onde-funciona-faltam-cp1252-windows-sem-privilegio-e-consumidor-novo.md`
+
+**Escopo:** AC1-AC7 da REQ. Sem commit/push — entregável: jobs/gates + medições no roadmap + este arquivo.
+
+**Entregáveis desta sessão (AC1-AC7):**
+- AC1: job `windows-gates-cp1252` em quality.yml — `--self-test` sob `PYTHONIOENCODING=cp1252 PYTHONUTF8=0`
+- AC2: job `windows-symlink-unprivileged` em quality.yml — desativa Developer Mode via registro; guarda de vacuidade embutida
+- AC3: script `scripts/check-consumer-smoke-by-agent.sh` + job `consumer-smoke-by-agent` em quality.yml (vermelha por #320, `continue-on-error: true` temporário)
+- AC4: `scripts/check-job-annotations.py` (7 braços de self-test) + workflow `check-annotations.yml`; self-test em `parity-rest`
+- AC5: Cenário 195 em `check-gates-falsify.sh` + fix em `check-python-writes-lf.sh` (regex verifica VALOR de `newline=`, não só presença); target `check-gates-remutation` no Makefile
+- AC6: contra-braços declarados em cada ambiente (AC1: crash confirmado; AC2: guarda de vacuidade; AC3: vermelha por #320; AC4: self-test 2 direções; AC5: cenário verde após fix)
+- AC7: custo declarado no roadmap (ML-1G)
+- Bug fix colateral: typo de espaço em `docs/req/REQ-2026-09-11-residuos-...md` (garbage bytes no path do roadmap)
+- `make parity-rest`: exit 0; `trackfw validate`: exit 0 (172 warnings pré-existentes)
+- `actionlint`: exit 0 após remoção de `FAIL=0` não-usado em `check-annotations.yml`
+
+---
+
 ## Sessão 2026-09-11j — ares-tf (Infrastructure) — self-test ratchet cp1252 + runner annotations — CONCLUÍDO
 
 Branch `fix/self-test-do-ratchet-escreve-no-canal-do-gate-real`.

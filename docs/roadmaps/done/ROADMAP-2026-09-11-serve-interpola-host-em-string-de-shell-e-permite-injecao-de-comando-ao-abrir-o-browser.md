@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-11
 req: "docs/req/REQ-2026-09-01-serve-interpola-host-em-string-de-shell-e-permite-injecao-de-comando-ao-abrir-o-browser.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: `serve` interpola `--host` em string de shell e permite injeção de comando ao abrir o browser
 
-> Created: 2026-09-11 | Status: 🔄 WIP
+> Created: 2026-09-11 | Status: done
 
 ## Context
 
@@ -161,7 +161,15 @@ controlável pelo usuário em processo filho. Todos os demais `exec.Command`/`ex
 usam strings fixas ou recebem input de arquivos de governança (não de CLI flags). Ver nota de vault.
 
 ### ML-1E — AC7: make quality
-**Status:** 🔄 Em andamento (aguarda CI para `parity-falsify`)
+**Status:** ✅ Concluído — CI verde na `main` depois do merge (run **34640029033**)
+
+```
+parity-falsify-shard (0..3)   success
+parity-other-gates            success
+parity                        success
+```
+
+A pendência era a evidência do `parity-falsify`, que não roda local por tempo. O merge a produziu.
 
 `make quality` = `make test test-node test-python lint parity`. Decomposição executada após ML-1F (2026-09-11):
 - `make test` (Go): PASS — `go test ./...` → 0 falhas (19 casos TestIsValidHost incluindo 4 novos de zone ID)
@@ -189,7 +197,7 @@ O `--no-open` não existe no Go porque nunca há abertura. Isso significa:
 **Nota para o arquiteto:** AC6 como escrito na REQ ("os 3 CLIs abrem o browser pela mesma forma") não é satisfatível sem adicionar browser-opening ao Go — o que estaria fora do escopo declarado ("só o caminho de abertura de browser do serve e sua paridade"). A divergência está documentada; a REQ pode precisar ser emendada para refletir a realidade.
 
 ### ML-NOVO — Resíduos do parecer de segurança (APROVA com 2 residuais)
-**Status:** ⬜ Pendente · **Agente:** `ares-tf` · **não bloqueia o merge**
+**Status:** ➡️ **Roteado para a REQ sucessora** `REQ-2026-09-11-residuos-dos-pareceres-de-seguranca-do-barrier-e-do-serve.md` · **Agente:** `ares-tf` · **não bloqueia o merge**
 
 **R1 — cenários 8-9 do gate não emitem FAIL explícito.** Com o módulo ilegível, o `set -euo pipefail`
 aborta na linha do `grep` antes da checagem de vazio. O gate termina RC=2 pelas falhas acumuladas de
@@ -319,3 +327,28 @@ partida (0 órfãos reais = o braço sintético do arm 1 é o que prova que o ga
 **Falsificação:** script sem consumidor ⇒ reprova nomeando · script ligado ao Makefile ⇒ passa
 (contra-braço) · script citado **só em testdata** ⇒ 🔴 reprova, porque testdata não executa ·
 script na lista de exceção ⇒ passa, e a lista **não pode estar vazia de motivo**.
+
+---
+
+## 🔴 ENCERRADO com resíduos roteados — 2026-09-11
+
+Governado por
+[`ADR-2026-09-10-req-de-campanha-tem-escopo-congelado-e-achado-novo-vai-para-sucessora`](../../adr/ADR-2026-09-10-req-de-campanha-tem-escopo-congelado-e-achado-novo-vai-para-sucessora.md).
+
+**O objetivo desta REQ foi atingido** — o `hades-tf` emitiu **APROVA** depois de verificar o
+fechamento dos próprios achados. Os resíduos que sobraram foram declarados **não-bloqueantes pelo
+próprio parecer**.
+
+**Eles NÃO ficam aqui.** Foram para a REQ sucessora:
+
+```
+REQ-2026-09-11-residuos-dos-pareceres-de-seguranca-do-barrier-e-do-serve.md
+```
+
+🔴 **Por que não deixar em `wip`:** roadmap com resíduo parado foi como o de Windows chegou a **34
+MLs e 2.496 linhas**. REQ sem condição terminal não fecha nunca, e `wip` deixa de significar "em
+andamento". Duas fecham, uma abre — saldo **−1**, e cada uma passa a ter estado verdadeiro.
+
+⚠️ **E isto NÃO é fechar com sítio conhecido em aberto** — o achado A1 que este projeto já pagou. O
+resíduo está **nomeado, com a causa medida e o destino escrito**. A diferença entre rotear e
+esconder é exatamente essa.

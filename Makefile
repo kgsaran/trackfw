@@ -6,7 +6,7 @@ BUILD_DIR=bin
 # à chamada de check-roadmap-barrier-contract.sh via `make quality`.
 HASH_CMD := $(shell command -v sha256sum >/dev/null 2>&1 && echo sha256sum || echo "shasum -a 256")
 
-.PHONY: build test test-node test-python parity parity-rest parity-falsify lint quality install clean sync-integration-assets check-integration-assets package-smoke check-required-full
+.PHONY: build test test-node test-python parity parity-rest parity-falsify lint quality install clean sync-integration-assets check-integration-assets package-smoke check-required-full check-gates-remutation
 
 build:
 	go build -o $(BUILD_DIR)/$(BINARY) ./cmd/trackfw
@@ -103,6 +103,16 @@ parity-rest: build
 	# O job CI roda --scope dw (D\W apenas, sem token). A verificacao completa D/R/W
 	# usa 'make check-required-full' (requer credencial de mantenedor, ver alvo abaixo).
 	python3 scripts/check-required-status-checks.py --self-test
+	# ML-1C (ROADMAP-2026-09-11-o-ciclo-testa-onde-funciona): autoteste do smoke
+	# de consumidor by_agent (2 agentes). O smoke completo roda no job
+	# consumer-smoke-by-agent em quality.yml (requer binários dos 3 CLIs).
+	# O --self-test aqui verifica apenas a estrutura do script e a lógica de
+	# detecção de #320 (sem invocar os CLIs reais).
+	scripts/check-consumer-smoke-by-agent.sh --self-test
+	# ML-1D (ROADMAP-2026-09-11-o-ciclo-testa-onde-funciona): autoteste do gate
+	# de anotações de job. A verificação real acontece no workflow check-annotations.yml
+	# (workflow_run, só roda da branch default após merge à main).
+	python3 scripts/check-job-annotations.py --self-test
 
 parity-falsify: build
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/run-gates-falsify-parallel.sh
@@ -116,6 +126,24 @@ check-required-full:
 	# ao CI, que foi a causa raiz do job permanentemente vermelho (ML-4B corretivo).
 	# Pré-condição de release: execute ANTES de 'git tag -a' (ver CLAUDE.md §Protocolo de Release, passo 3.5).
 	python3 scripts/check-required-status-checks.py
+
+check-gates-remutation:
+	# AC5 (ROADMAP-2026-09-11-o-ciclo-testa-onde-funciona): re-mutação de gates existentes.
+	# Roda a suíte completa de falsificação (sem sharding) para garantir que gates que eram
+	# corretos no dia 1 não ficaram vacuosos por mudanças adjacentes.
+	#
+	# POR QUE EXISTE: o #309 mostrou que check-python-writes-lf.sh verificava PRESENÇA de
+	# newline= mas não o VALOR. Um gate de valor-errado (`newline="\r\n"`) passaria. A suíte
+	# de falsificação (check-gates-falsify.sh) não tinha esse cenário — foi adicionado por
+	# este roadmap. Este alvo garante que a suíte completa (incluindo cenários de valor-errado)
+	# rode antes de todo release.
+	#
+	# NUNCA em CI de PR: a suíte completa leva ~78% do tempo de CI. Rodar aqui, em CI de PR,
+	# duplicaria o job parity-falsify (shardado) e tornaria o PR inteiro mais lento. O mesmo
+	# padrão do check-required-full: pré-condição de release, não bloqueio de PR diário.
+	#
+	# Pré-condição de release: execute ANTES de 'git tag -a'.
+	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/run-gates-falsify-parallel.sh
 
 sync-integration-assets:
 	scripts/sync-integration-assets.sh

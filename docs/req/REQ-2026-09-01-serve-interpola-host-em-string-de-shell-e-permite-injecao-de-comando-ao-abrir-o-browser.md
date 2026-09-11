@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-09-01
 author: "zeus-tf"
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-11-serve-interpola-host-em-string-de-shell-e-permite-injecao-de-comando-ao-abrir-o-browser.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-11-serve-interpola-host-em-string-de-shell-e-permite-injecao-de-comando-ao-abrir-o-browser.md"
 ---
 
 # REQ: `serve` interpola `--host` em string de shell e permite injeção de comando ao abrir o browser
 
-> Date: 2026-09-01 | Status: Open
+> Date: 2026-09-01 | Status: Done
 
 ## Motivation
 
@@ -103,4 +103,4 @@ avaliar ADR. -->
 
 ## Linked Roadmap
 
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-09-11-serve-interpola-host-em-string-de-shell-e-permite-injecao-de-comando-ao-abrir-o-browser.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-09-11-serve-interpola-host-em-string-de-shell-e-permite-injecao-de-comando-ao-abrir-o-browser.md`

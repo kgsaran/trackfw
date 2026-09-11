@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-11
 req: "docs/req/REQ-2026-09-11-self-test-do-ratchet-escreve-no-canal-do-gate-real-e-quebra-em-cp1252-e-no-runner.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: self-test do ratchet escreve no canal do gate real e quebra em cp1252 e no runner
 
-> Created: 2026-09-11 | Status: wip
+> Created: 2026-09-11 | Status: done
 
 ## Context
 

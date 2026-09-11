@@ -69,7 +69,13 @@ for root, dirs, fs in os.walk('pypi/trackfw'):
         for name in NAMES:
             for a, b in calls(s, name):
                 call = s[a:b]
-                if 'newline' in call: continue
+                if 'newline' in call:
+                    # AC5 (#309): verificar VALOR, nao so presenca.
+                    # Valores seguros: newline="" (sem traducao) ou newline="\n" (LF explicito).
+                    # Valor errado: newline="\r\n", newline="\r", ou qualquer outro.
+                    if re.search(r'''newline\s*=\s*(?:"(?:\\n)?"|'(?:\\n)?')''', call):
+                        continue
+                    # Valor errado — cai no fluxo de ofensores abaixo.
                 if name == 'open(':
                     if re.search(r'''["'][rwax]\+?b\+?["']''', call): continue
                     if not re.search(r'''["'][wa]\+?["']''', call): continue
@@ -80,10 +86,10 @@ PY
 )
 
 if [ -n "$OFFENDERS" ]; then
-  echo "escrita de texto sem newline explicito em pypi/trackfw/:"
+  echo "escrita de texto com newline ausente ou incorreto em pypi/trackfw/:"
   echo "$OFFENDERS" | sed 's/^/  /'
   echo
-  echo 'Use newline="\n". Ver docs/cli-parity.md.'
+  echo 'Use newline="\n" (ou newline=""). Valores como newline="\r\n" sao ofensores. Ver docs/cli-parity.md.'
   exit 1
 fi
-echo "Escrita em LF: nenhuma chamada sem newline explicito."
+echo "Escrita em LF: nenhuma chamada sem newline correto."

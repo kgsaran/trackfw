@@ -1,17 +1,17 @@
 ---
 status: backlog
 date: 2026-09-11
-req: "docs/req/REQ-2026-09-11-o-ciclo-testa-onde-funciona-faltam-cp1252-windows-sem-privilegio-e-consumidor-novo.md"
+req: "docs/req/REQ-2026-09-11-residuos-dos-pareceres-de-seguranca-do-barrier-e-do-serve.md"
 squad: ""
 ---
 
-# Roadmap: o ciclo testa onde funciona: faltam cp1252, Windows sem privilegio e consumidor novo
+# Roadmap: residuos dos pareceres de seguranca do barrier e do serve
 
 > Created: 2026-09-11 | Status: backlog
 
 ## Context
-<!-- Derived from REQ: REQ-2026-09-11-o-ciclo-testa-onde-funciona-faltam-cp1252-windows-sem-privilegio-e-consumidor-novo.md -->
-REQ: docs/req/REQ-2026-09-11-o-ciclo-testa-onde-funciona-faltam-cp1252-windows-sem-privilegio-e-consumidor-novo.md
+<!-- Derived from REQ: REQ-2026-09-11-residuos-dos-pareceres-de-seguranca-do-barrier-e-do-serve.md -->
+REQ: docs/req/REQ-2026-09-11-residuos-dos-pareceres-de-seguranca-do-barrier-e-do-serve.md
 
 ## Acceptance Criteria
 <!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->
@@ -46,65 +46,56 @@ exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli
 ## Wave 1 — Implementation (derived from REQ criteria)
 > Dependencies: none
 
-### ML-1A — **AC1 — console cp1252.** Um passo de CI em windows-latest roda a suíte de gates com
+### ML-1A — **AC1** — R1: VerifiesPassedBuffer portado para Node e Python, com a mesma conclusão afirmada.
 **Status:** ⬜ Pendente
 **Files affected:**
 **Actions:**
 **Acceptance criteria:**
-- [ ] **AC1 — console cp1252.** Um passo de CI em windows-latest roda a suíte de gates com
+- [ ] **AC1** — R1: VerifiesPassedBuffer portado para Node e Python, com a mesma conclusão afirmada.
 - [ ] build passes
 - [ ] tests green
 
-### ML-1B — **AC2 — Windows SEM Developer Mode.** Um job que exercite o caminho de os.Symlink **sem** o
+### ML-1B — **AC2** — R2: guarda **estrutural** contra leitura duplicada no caller, nos 3 CLIs. 🔴 E a
 **Status:** ⬜ Pendente
 **Files affected:**
 **Actions:**
 **Acceptance criteria:**
-- [ ] **AC2 — Windows SEM Developer Mode.** Um job que exercite o caminho de os.Symlink **sem** o
+- [ ] **AC2** — R2: guarda **estrutural** contra leitura duplicada no caller, nos 3 CLIs. 🔴 E a
 - [ ] build passes
 - [ ] tests green
 
-### ML-1C — **AC3 — consumidor novo.** Um smoke que faz init num **projeto descartável**, com
+### ML-1C — **AC3** — R3: cenários 8-9 emitem mensagem que **nomeia a causa**, sem perder o RC.
 **Status:** ⬜ Pendente
 **Files affected:**
 **Actions:**
 **Acceptance criteria:**
-- [ ] **AC3 — consumidor novo.** Um smoke que faz init num **projeto descartável**, com
+- [ ] **AC3** — R3: cenários 8-9 emitem mensagem que **nomeia a causa**, sem perder o RC.
 - [ ] build passes
 - [ ] tests green
 
-### ML-1D — **AC4 — 🔴 job verde com anotação de erro reprova.** O #319 é um job success com 10
+### ML-1D — **AC4** — R4: o gate invalida o pycache antes de medir. 🔴 **Falsificação:** com .pyc válido e
 **Status:** ⬜ Pendente
 **Files affected:**
 **Actions:**
 **Acceptance criteria:**
-- [ ] **AC4 — 🔴 job verde com anotação de erro reprova.** O #319 é um job success com 10
+- [ ] **AC4** — R4: o gate invalida o pycache antes de medir. 🔴 **Falsificação:** com .pyc válido e
 - [ ] build passes
 - [ ] tests green
 
-### ML-1E — **AC5 — re-mutação de gate antigo.** Alvo (à la check-required-full) que aplique mutação nos
+### ML-1E — **AC5** — contra-braço em cada um: configuração correta ⇒ passa. Guarda que só reprova é
 **Status:** ⬜ Pendente
 **Files affected:**
 **Actions:**
 **Acceptance criteria:**
-- [ ] **AC5 — re-mutação de gate antigo.** Alvo (à la check-required-full) que aplique mutação nos
+- [ ] **AC5** — contra-braço em cada um: configuração correta ⇒ passa. Guarda que só reprova é
 - [ ] build passes
 - [ ] tests green
 
-### ML-1F — **AC6 — 🔴 cada gate novo precisa de contra-braço.** Ambiente que nunca reprova é indistinguível
+### ML-1F — **AC6** — 🔴 **varredura:** o R4 é isolado? Outros gates nossos importam módulo Python cujo
 **Status:** ⬜ Pendente
 **Files affected:**
 **Actions:**
 **Acceptance criteria:**
-- [ ] **AC6 — 🔴 cada gate novo precisa de contra-braço.** Ambiente que nunca reprova é indistinguível
-- [ ] build passes
-- [ ] tests green
-
-### ML-1G — **AC7 — custo declarado.** Estes jobs acrescentam tempo a todo PR. **Meça e escreva** o custo;
-**Status:** ⬜ Pendente
-**Files affected:**
-**Actions:**
-**Acceptance criteria:**
-- [ ] **AC7 — custo declarado.** Estes jobs acrescentam tempo a todo PR. **Meça e escreva** o custo;
+- [ ] **AC6** — 🔴 **varredura:** o R4 é isolado? Outros gates nossos importam módulo Python cujo
 - [ ] build passes
 - [ ] tests green
