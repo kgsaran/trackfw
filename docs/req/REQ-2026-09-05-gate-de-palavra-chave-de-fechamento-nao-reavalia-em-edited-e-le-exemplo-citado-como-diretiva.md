@@ -58,4 +58,4 @@ ADR:
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap:
+Roadmap: `docs/roadmaps/backlog/ROADMAP-2026-09-10-gate-de-palavra-chave-de-fechamento-nao-reavalia-em-edited-e-le-exemplo-citado-como-diretiva.md`

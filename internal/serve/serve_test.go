@@ -53,6 +53,59 @@ func TestIsLoopbackHost(t *testing.T) {
 	}
 }
 
+func TestIsValidHost(t *testing.T) {
+	// Reconciliação: cada caso declara qual conclusão do ML ele afirma.
+	cases := []struct {
+		name string
+		host string
+		want bool
+	}{
+		// AFIRMAÇÃO: rejeita o payload de injeção da REQ — host com
+		// metacaracteres de shell nunca chega ao bind nem ao browser-open path.
+		{`rejeita payload de injeção (metacaracteres de shell)`, `x" ; id > /tmp/INJETADO ; echo "`, false},
+		{`rejeita host com semicolon`, `host;cmd`, false},
+		{`rejeita host com ampersand`, `host&cmd`, false},
+		{`rejeita host com pipe`, `host|cmd`, false},
+		{`rejeita host com redirect`, `host>file`, false},
+
+		// AFIRMAÇÃO: aceita 'localhost' — contra-braço do AC3, o caso padrão
+		// nunca deve ser rejeitado.
+		{`aceita localhost`, `localhost`, true},
+
+		// AFIRMAÇÃO: aceita endereços IPv4 válidos.
+		{`aceita 127.0.0.1`, `127.0.0.1`, true},
+		{`aceita 0.0.0.0`, `0.0.0.0`, true},
+		{`aceita 192.168.1.100`, `192.168.1.100`, true},
+
+		// AFIRMAÇÃO: aceita endereços IPv6 válidos.
+		{`aceita ::1`, `::1`, true},
+		{`aceita 2001:db8::1`, `2001:db8::1`, true},
+
+		// AFIRMAÇÃO: aceita hostnames RFC-1123 com hífens e pontos compostos.
+		{`aceita hostname simples`, `host`, true},
+		{`aceita hostname com hífen`, `my-host`, true},
+		{`aceita hostname composto`, `my-host.example.com`, true},
+
+		// AFIRMAÇÃO: rejeita IPv6 scoped addresses (zone ID com '%') — net.ParseIP
+		// retorna nil para qualquer literal com '%', garantindo que zone IDs
+		// (incluindo os com metacaracteres de cmd.exe como '&') nunca chegam ao
+		// bind nem ao browser-open path. Este pin documenta que o comportamento de
+		// rejeição de Go é o contrato compartilhado pelos 3 CLIs; Python e Node.js
+		// foram corrigidos neste ML para concordar com Go.
+		{`rejeita IPv6 scoped address fe80::1%eth0`, `fe80::1%eth0`, false},
+		{`rejeita IPv6 scoped com metacaractere & (vetor do hades-tf)`, `fe80::1%eth0&calc.exe&echo`, false},
+		{`rejeita IPv6 scoped com índice numérico`, `fe80::1%0`, false},
+		{`rejeita percent-encoding em hostname`, `host%20name`, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := IsValidHost(c.host); got != c.want {
+				t.Errorf("IsValidHost(%q) = %v, want %v", c.host, got, c.want)
+			}
+		})
+	}
+}
+
 // TestListenOnIPv6Loopback proves the addr-formatting fix by really binding
 // a socket, not by reading source: before this ML, Start() built the address
 // with fmt.Sprintf("%s:%d", "::1", port), producing the unparseable

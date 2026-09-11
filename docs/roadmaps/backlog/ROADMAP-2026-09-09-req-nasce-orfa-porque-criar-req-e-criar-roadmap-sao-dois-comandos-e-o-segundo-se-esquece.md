@@ -99,3 +99,50 @@ exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli
 - [ ] **AC6** — paridade nos 3 CLIs.
 - [ ] build passes
 - [ ] tests green
+
+### ML-NOVO — 🔴 Frontmatter e corpo são DUAS fontes de verdade, e os comandos discordam
+
+**Medido pelo arquiteto em 2026-09-11, ao "corrigir" REQs órfãs e descobrir que a correção não valeu.**
+
+```
+trackfw validate      lê o MARCADOR DE CORPO   "Roadmap: `docs/...`"
+trackfw roadmap new --from-req   escreve       (nada — não fecha o laço)
+edição do frontmatter roadmap:   escreve       o FRONTMATTER
+```
+
+**Consequência medida:** eu vinculei 4 REQs órfãs editando `roadmap:` no frontmatter. **As quatro
+continuaram órfãs para o `validate`**, que lê outro lugar. O conserto real exigiu preencher o
+marcador de corpo — e aí a contagem caiu de **57 → 52**.
+
+**E as duas contagens discordam por construção:**
+
+```
+roadmap: "" no frontmatter          27 REQs   ← o que eu media
+"no linked Roadmap" no validate     57 REQs   ← o que o produto mede
+```
+
+🔴 **Duas noções de "vinculado", e nenhuma sabe da outra.** A auditoria de governança de 2026-09-10
+usou a contagem errada — o número real de REQs sem roadmap **aos olhos do produto** era o dobro.
+
+#### É a mesma causa do issue #306
+
+O **#306** relata que `req list` lê o `status:` **do corpo** e ignora o frontmatter, contradizendo o
+`validate`. **Mesmo mecanismo, outro campo.** O relator classificou como *"não é quebra de paridade,
+é o contrato"* — e está certo: o contrato tem **duas fontes de verdade para metadado de REQ**, e cada
+comando escolhe uma.
+
+**Por isso este ML entra aqui e não em REQ nova:** a causa é a divergência frontmatter↔corpo, não o
+campo específico. Corrigir só o `status` deixaria o `roadmap` quebrado, e vice-versa.
+
+#### O que a correção precisa decidir
+
+1. **Qual é a fonte de verdade** — frontmatter, presumo, por consistência com `status`/`serve`, mas é
+   **decisão a registrar**, não a inferir;
+2. **O que fazer com os dois valores divergindo** — silêncio, aviso ou violação. Corrigir a leitura
+   sem decidir isto troca um defeito por outro;
+3. **Todo comando que escreve REQ escreve os DOIS**, ou o gerador para de emitir o marcador de corpo
+   como placeholder vazio — que é o que cria a órfã silenciosa;
+4. **Paridade nos 3 CLIs.**
+
+**Falsificação:** REQ com frontmatter preenchido e corpo vazio ⇒ o comportamento decidido em (2);
+REQ com os dois preenchidos e **divergentes** ⇒ idem; REQ com os dois iguais ⇒ passa (contra-braço).

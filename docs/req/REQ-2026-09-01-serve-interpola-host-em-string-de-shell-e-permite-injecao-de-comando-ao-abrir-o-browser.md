@@ -3,7 +3,7 @@ status: Open
 date: 2026-09-01
 author: "zeus-tf"
 adr: ""
-roadmap: ""
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-11-serve-interpola-host-em-string-de-shell-e-permite-injecao-de-comando-ao-abrir-o-browser.md"
 ---
 
 # REQ: `serve` interpola `--host` em string de shell e permite injeção de comando ao abrir o browser
@@ -68,8 +68,25 @@ nenhum sinal**. Diferente de um crash, aqui **o sucesso aparente é parte do def
       profundidade, e o `displayUrl` deixa de ser o único ponto de contenção.
 - [ ] **AC5** — Gate falsificável cobrindo AC1 e AC2 nos 3 CLIs. **Nasce ligado ao `Makefile`, com
       guarda de vacuidade ancorada no mesmo cwd, `python3` nunca `python`.**
-- [ ] **AC6** — Paridade: os 3 CLIs abrem o browser pela mesma forma, e o contrato entra em
-      `docs/cli-parity.md`.
+- [ ] **AC6** — ~~Paridade: os 3 CLIs abrem o browser pela mesma forma~~ — 🔴 **AC EMENDADO em
+      2026-09-11, pelo arquiteto que o escreveu errado.**
+
+      **Medido:** o **Go não tem caminho de abertura de browser** (`internal/commands/serve.go:23`,
+      *"Go has no browser-open path"*). Paridade de uma coisa que existe em dois dos três runtimes é
+      critério **insatisfazível** — um remédio só poderia atendê-lo inventando no Go um comportamento
+      que ninguém pediu.
+
+      **AC6 passa a ser sobre a VALIDAÇÃO, não sobre a abertura:**
+
+      - **os 3 CLIs rejeitam `--host` inválido** — no Go é defesa em profundidade, já que ele não abre
+        nada; nos outros dois é o que fecha o vetor;
+      - **Node e Python abrem por `argv`**, nunca por string de shell;
+      - a divergência do Go — não abrir — entra em `docs/cli-parity.md` como **exceção declarada**,
+        com o motivo, e não como lacuna.
+
+      🔴 **Por que registro em vez de reescrever em silêncio:** AC insatisfazível é pior que AC
+      ausente — ele força quem implementa a escolher entre descumprir o critério ou inventar código
+      para satisfazê-lo. Foi eu quem escrevi este, sem verificar se o Go abria browser.
 - [ ] **AC7** — `make quality` e **CI** verdes.
 
 ## Negative Scope
@@ -86,4 +103,4 @@ avaliar ADR. -->
 
 ## Linked Roadmap
 
-Roadmap:
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-09-11-serve-interpola-host-em-string-de-shell-e-permite-injecao-de-comando-ao-abrir-o-browser.md`

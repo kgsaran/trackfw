@@ -1,5 +1,157 @@
 # agents-working-context.md
 
+---
+
+## Sessão 2026-09-11h — hades-tf (Security) — Verificação de fechamento do bloqueio zone-ID — CONCLUÍDO
+
+Branch `fix/serve-interpola-host-em-string-de-shell`.
+
+Verificação de fechamento por execução (não por leitura) do bloqueio emitido em 2026-09-11g.
+
+**Metodologia:** falsificação dos cenários 2/4/8-9 via `chmod 000` + remoção de pycache; execução
+completa do gate em condição normal (21/21 OK, RC=0); inspeção do código dos 3 CLIs.
+
+**Resultados:**
+- Bloqueio original: FECHADO (21/21 cenários incluindo 17-21 específicos do zone ID)
+- Cenários 2 e 4 (fail-open com módulo ilegível): FECHADOS via sentinelas `NODE_LOADED`/`PY_LOADED`
+- Cenários 8-9 (set -e + NODE_LIVE_LINES): suprimidos silenciosamente quando Node ilegível, mas gate permanece RC não-zero — falha cosmética, não falso-OK
+- Pycache Python: risco real identificado — `serve.cpython-314.pyc` existia; sem remoção o cenário 4 pode importar código old mesmo com source a 000
+- `--port`: não é vetor; argumento anterior ("nunca chega a processo") era errado; razão correta é coerção para inteiro antes da formatação
+- `barrier.go:803`: argumento "vem do YAML = seguro" do implementador está errado (vault 2026-08-23); sítio pré-existente fora de escopo desta REQ
+- Decisão de rejeitar `%` inteiro: legítima; Node-Linux pode ter perdido capacidade real (zone ID via libuv), mas parity e closure-of-class prevalecem
+
+**Veredito: APROVA** com 5 residuais declarados (nenhum bloqueia merge).
+
+Parecer atualizado: `/Users/kgsaran/Sistemas/Desenvolvimento/workspace/trackfw/docs/seguranca/2026-09-11-parecer-serve-injecao-de-comando.md`
+
+---
+
+## Sessão 2026-09-11g — hades-tf (Security) — Parecer revisado pós-advisor: BLOQUEIA — CONCLUÍDO
+
+Branch `fix/serve-interpola-host-em-string-de-shell`.
+
+Segunda passagem do parecer após advisor identificar vetores não medidos na primeira passagem.
+Vetores IPv6 scoped e comportamento de `list2cmdline` medidos contra os 3 runtimes.
+
+**Veredito: BLOQUEIA**
+
+Achado de injeção de comando via IPv6 zone ID no Python Windows:
+- `_is_valid_host('fe80::1%eth0&calc.exe&echo')` → `True` (Python `ipaddress.ip_address` aceita zone IDs com `&`)
+- `list2cmdline` não cita a URL (sem espaço → sem quoting)
+- `cmd /c start "" http://[fe80::1%eth0&calc.exe&echo]:4080` → cmd.exe divide no `&` → `calc.exe` executa
+- Node.js seguro (rejeita zone IDs com metacaracteres). Go seguro (rejeita todos os scoped addresses).
+
+Fix necessário (Python): após `ipaddress.ip_address()` aceitar, validar zone ID com `^[a-zA-Z0-9._-]+$` e rejeitar se contiver caracteres fora desse conjunto.
+
+Ressalvas adicionais identificadas: cenários 2/4/8-9 do gate fail-open quando módulo ilegível; api_file symlink traversal (fora de escopo); `--port` UX; parity violation nos validadores IPv6.
+
+Parecer completo: `/Users/kgsaran/Sistemas/Desenvolvimento/workspace/trackfw/docs/seguranca/2026-09-11-parecer-serve-injecao-de-comando.md`
+
+---
+
+## Sessão 2026-09-11f — hades-tf (Security) — Parecer independente: serve injeção de comando — SUPERSEDIDO
+
+Branch `fix/serve-interpola-host-em-string-de-shell`.
+
+Primeiro parecer emitido com veredito APROVA COM RESSALVA — vetores IPv6 scoped não foram medidos.
+Supersedido pela sessão 2026-09-11g.
+
+---
+
+## Sessão 2026-09-11e — apolo-tf (Backend) — Gate revisado pós-barreira independente: 16 cenários, todos OK
+
+Branch `fix/serve-interpola-host-em-string-de-shell`.
+
+Revisão pós-advisor: 3 correções aplicadas ao gate e 1 ao código Node.js.
+
+**Correções no gate (`scripts/check-serve-browser-security.sh`):**
+1. **Arm vulnerável usa PATH shim** (antes usava `open` real → abria aba de browser + braços não comparáveis)
+2. **Contra-braço: comparação verbatim** do log do shim contra `$LEGIT_URL` (antes: `$# -gt 1` — morto em ambos os casos, nunca discriminava)
+3. **Novos cenários 14/15/16: wiring de AC4** — each CLI chamado como executável com `--host` inválido; verifica exit não-zero + stderr contém `"invalid --host"`. Prova que a validação está fiada antes do bind, não só que a função retorna false.
+4. **Go incluído no gate**: GO_BIN resolvido (mesma estratégia de `check-serve-address-parity.sh`); cena 16 prova a fiação do Go.
+
+**Correção no código (`npm/src/commands/serve.js`):**
+- `openBrowser`: removido `stdio: 'ignore'`; adicionado handler `close` para avisar em saída não-zero. O `exec()` original avisava para qualquer falha; o `spawn` com `stdio:'ignore'` só disparava `error` (ENOENT) — regressão silenciosa de UX.
+
+**Gate final:** 16/16 OK (executado em foreground, saída colada abaixo).
+**Testes:** Go ok (cached), Node 896 passed, Python 1691 passed.
+
+```
+OK   [vulnerable-reference/node (OLD exec+string approach creates sentinel — gate is falsifiable)]
+OK   [injection/node (sentinel absent — malicious URL does not execute extra command)]
+OK   [counter-arm/node (legitimate URL 'http://localhost:4080' passed as single argv to 'open')]
+OK   [injection/python-darwin (sentinel absent — Darwin branch does not inject)]
+OK   [counter-arm/python (legitimate URL passed as single argv to 'open')]
+OK   [ac2-static/python (AST: no live Popen(shell=True) call in serve.py — AC2 satisfied)]
+OK   [ac2-static/python-windows-cmd (Windows argv starts with 'cmd', not 'start')]
+OK   [ac1-static/node (old exec(string) pattern absent from live code in serve.js)]
+OK   [ac1-static/node-spawn (spawn is present in live code of serve.js)]
+OK   [ac4/node (isValidHost rejects injection payload)]
+OK   [ac4/node-legitimate (isValidHost accepts all legitimate host forms)]
+OK   [ac4/python (_is_valid_host rejects injection payload)]
+OK   [ac4/python-legitimate (_is_valid_host accepts all legitimate host forms)]
+OK   [ac4-wiring/node (CLI exits non-zero + stderr names bad host — AC4 is wired)]
+OK   [ac4-wiring/python (CLI exits non-zero + stderr names bad host — AC4 is wired)]
+OK   [ac4-wiring/go (CLI exits non-zero + stderr names bad host — AC4 is wired)]
+
+All check-serve-browser-security.sh scenarios passed.
+```
+
+**Itens ainda pendentes (para arquiteto):**
+- `make parity-falsify` não executado (~78% do wall time; aguarda CI)
+- AC6/Go: divergência intencional documentada; REQ pode precisar ser emendada (Go não abre browser)
+
+---
+
+## Sessão 2026-09-11d — apolo-tf (Backend) — Segurança: injeção de comando no `serve` browser-open: IMPLEMENTADO, aguarda auditoria do arquiteto
+
+Branch `fix/serve-interpola-host-em-string-de-shell`.
+
+**Defeito corrigido:** `npm/src/commands/serve.js` usava `exec(\`open "${url}"\`)` (string de shell com interpolação) e `pypi/trackfw/commands/serve.py` branch Windows usava `Popen(["start", url], shell=True)` — ambos permitindo injeção de comando via `--host` malicioso.
+
+**Implementação:**
+
+Node.js (`npm/src/commands/serve.js`):
+- Adicionado `browserArgv(platform, url)` → `[cmd, args]` (argv, não string)
+- Adicionado `openBrowser(platform, url)` usando `spawn` (sem shell)
+- Adicionado `isValidHost(host)` (AC4: validação na entrada)
+- `.action()` corrigido: `exec(openCmd)` → `openBrowser(process.platform, url)`
+- Exportados: `browserArgv`, `openBrowser`, `isValidHost`
+
+Python (`pypi/trackfw/commands/serve.py`):
+- Adicionado `_browser_argv(system, url)` e `_is_valid_host(host)`
+- `_open_browser` refatorado: `Popen(["start", url], shell=True)` → `Popen(["cmd", "/c", "start", "", url])`
+- `cmd_serve`: validação de `--host` antes do bind
+
+Go (`internal/serve/serve.go`, `internal/commands/serve.go`):
+- Adicionado `IsValidHost(host)` + `rfc1123Label` regex
+- Validação em `newServeCmd` antes de `serve.Start()`
+- Go não abre browser — divergência intencional, documentada em `docs/cli-parity.md`
+
+**Gate novo:** `scripts/check-serve-browser-security.sh` — 13 cenários, todos OK. Inclui reprodutor vulnerável (prova discriminação), injeção com sentinela, contra-braço com PATH shim, análise AST de `Popen(shell=True)`, e AC4 por execução direta.
+
+**Testes novos:**
+- `npm/tests/serve_browser_security.test.js` — 10 passed
+- `pypi/tests/test_serve_browser_security.py` — 13 passed
+- `internal/serve/serve_test.go` — `TestIsValidHost` 14 sub-testes
+
+**Gates executados:**
+- `go test ./...` → PASS (0 failed)
+- `node --test tests/*.test.js` → 896 passed, 0 failed
+- `python3 -m pytest tests/` → 1691 passed
+- `go vet ./...` → PASS
+- `check-serve-browser-security.sh` → 13/13 OK
+- `check-serve-address-parity.sh` → 8/8 OK
+- `check-cli-parity.sh` → PASS
+- `check-parity-contract-coverage.sh` → OK
+- `trackfw validate` → 0 errors, 173 warnings (pré-existentes, baseline inalterado)
+
+**Pendente:** `make parity-falsify` (~78% wall time, não executado localmente) — aguarda CI.
+
+**Divergência para o arquiteto:** AC6 da REQ ("os 3 CLIs abrem o browser pela mesma forma") não é satisfatível sem adicionar browser-open ao Go (fora do escopo). Divergência documentada em `docs/cli-parity.md`; REQ pode precisar de emenda.
+
+---
+
 > Arquivo de handoff entre sessões. Atualizar ao iniciar e ao encerrar cada ciclo de trabalho.
 
 ---
@@ -35534,3 +35686,50 @@ expande para nome longo. `path.relative(longo, curto)` produz lixo → `git cat-
 - `actionlint .github/workflows/*.yml` → apenas avisos shellcheck pré-existentes (windows-census/probe)
 - `make parity-rest` → 0 FAIL, 0 ERROR
 - `trackfw validate` → 0 errors (173 warnings pré-existentes)
+
+## apolo-tf — 2026-09-11 — INÍCIO
+
+**Agente:** Apolo (Backend)
+**Branch:** `fix/serve-interpola-host-em-string-de-shell`
+**Roadmap:** `ROADMAP-2026-09-11-serve-interpola-host-em-string-de-shell-e-permite-injecao-de-comando-ao-abrir-o-browser.md`
+**ML:** Novo ML para fechar bloqueio do hades-tf — injeção via IPv6 zone ID no Python Windows
+
+**Escopo:**
+1. Python `_is_valid_host`: rejeitar `%` antes do parse de `ipaddress.ip_address()`
+2. Node.js `isValidHost`: rejeitar `%` para paridade com Go e Python corrigido
+3. Go: sem mudança de código — pin de testes para `fe80::1%eth0` → false
+4. Testes nos 3 CLIs: braço vulnerável (list2cmdline), braços de rejeição por zona, contra-braço de hosts legítimos
+5. Gate `check-serve-browser-security.sh`: fechar fail-open de cenários 2, 4, 8-9
+6. `docs/cli-parity.md`: registrar contrato "rejeitar zone ID nos 3 CLIs"
+7. Nota de vault: mecanismo argv-não-protege-quando-filho-é-cmd.exe + derivação de outros sítios
+
+## apolo-tf — 2026-09-11 — FIM
+
+**Status:** ML-1F (bloqueio hades-tf — injeção via IPv6 zone ID) concluído. Sem commit, sem push — aguarda auditoria do trackfw_architect.
+
+**Artefatos modificados:**
+- `pypi/trackfw/commands/serve.py` — `_is_valid_host()`: `if "%" in host: return False` antes de `ipaddress.ip_address()`
+- `npm/src/commands/serve.js` — `isValidHost()`: `if (host.includes('%')) return false` antes de `net.isIPv6()`
+- `internal/serve/serve_test.go` — 4 casos pin de zone ID em `TestIsValidHost`
+- `pypi/tests/test_serve_browser_security.py` — 3 novos testes: `test_rejects_ipv6_scoped_address`, `test_list2cmdline_unquoted_ampersand_proves_vector_real`, `TestIsValidHostZoneIdParity`
+- `npm/tests/serve_browser_security.test.js` — teste de zone ID rejection (parity)
+- `scripts/check-serve-browser-security.sh` — 5 cenários novos (17-21: zone ID), fail-open fechado em cenários 2, 4, 8-9
+- `docs/cli-parity.md` — contrato de zone ID documentado com tabela, razão da decisão, mecanismo
+- `vault/notes/python-ipaddress-zone-id-metachar-windows-injection-2026-09-11.md` — atualizado com lição, derivação, fix, gate
+- `docs/roadmaps/wip/ROADMAP-*.md` — ML-1F adicionado como concluído, ML-1E atualizado com evidência
+
+**Gates (foreground, macOS arm64):**
+- `go test ./internal/serve/... -run TestIsValidHost` → PASS (19 casos)
+- `go test ./...` → PASS (0 falhas)
+- `go vet ./...` → PASS (saída vazia)
+- `python3 -m pytest pypi/tests/test_serve_browser_security.py` → 16 passed
+- `python3 -m pytest pypi/tests/` → 1694 passed
+- `node npm/tests/serve_browser_security.test.js` → 11 passed
+- `bash scripts/check-serve-browser-security.sh` → 21/21 OK
+- `make parity-rest` → EXIT CODE: 0
+- `trackfw validate` → 0 errors, 168 warnings (pré-existentes)
+- `make parity-falsify` → não medido (excede 10 min, aguarda CI)
+
+**Decisão de contrato:** rejeitar `%` nos 3 CLIs (lista de permissão = conjunto vazio). Razão: HTTPServer 2-tuple descarta zone ID; Go já rejeita; Python aceita qualquer conteúdo incluindo metacaracteres cmd.exe; Node aceita zone ID limpo mas depende de versão de runtime. Fechou a classe inteira em vez de enumerar `&`.
+
+**Derivação de sítios com cmd.exe:** apenas `serve` (Node e Python) — fechados por esta REQ. `barrier.go sh -c` usa input de arquivos de governança, não de CLI flags.
