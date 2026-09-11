@@ -185,8 +185,64 @@ podem ser editados em paralelo com nada.
 - [ ] Gate de paridade dos 3 CLIs verde
 - [ ] `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality` exit 0 (AC9)
 
-### ML-3B — 🔴 `consumer-smoke-by-agent` VERDE e `continue-on-error` REMOVIDO (AC15)
-**Status:** ⬜ Pendente
+### ML-3B-a — 🔴 O gate que "nasceu vermelho detectando o #320" NUNCA rodou o Go (issue #328)
+**Status:** ⬜ Pendente · **Bloqueia o ML-3B-b**
+**Arquivos afetados:** `scripts/check-consumer-smoke-by-agent.sh`, `.github/workflows/quality.yml`.
+🔴 **Só esses dois.**
+
+**Reportado pelo consumidor externo na issue #328 e REPRODUZIDO pelo arquiteto em 2026-09-11:**
+
+```
+guarda (da raiz):              ACHOU
+uso apos cd "$PROJECT":        rc=127
+uso apos cd, caminho absoluto: rc=0
+```
+
+`quality.yml:1280` passa `GO_BIN=bin/trackfw` — **relativo**. O default do script (linha 27) é
+`$ROOT_DIR/bin/trackfw`, absoluto. A guarda da linha 98 roda **na raiz do repo** e acha; **todas** as
+chamadas do Go (`153, 181, 188, 235, 239`) rodam depois de `cd "$PROJECT"` e dão **127**. `NODE_CLI` e
+`PY_ROOT` partem de `$ROOT_DIR` e escapam.
+
+🔴 **A guarda e o uso olham lugares diferentes — por isso a guarda passa.** É a nona instância da
+classe de 2026-09-10, agora numa variante nova: não é "não consegui procurar", é **"procurei noutro
+lugar"**.
+
+#### O que isto custa, e é mais do que 5 falhas
+
+1. **O Go não tem cobertura nenhuma no smoke.** Os "2 roadmaps em alpha" que supostamente detectam o
+   #320 são do Node e do Python.
+2. 🔴 **A linha 188 é a ÚNICA chamada `--req` do script inteiro — e é a do Go.** Ou seja: a metade do
+   #320 que diz *"`roadmap new --req` ignora o agente da REQ"* — a que consumiu a Wave 1 inteira,
+   incluindo o corretivo do ML-1A-fix — **não é exercitada em runtime nenhum**.
+3. **Corrigir o #320 não deixaria o job verde**, e quem fosse remover o `continue-on-error` (nós,
+   no ML-3B-b) encontraria vermelho alheio e não saberia disso.
+4. O `--self-test` não pega: por desenho ele valida a lógica de detecção **sem invocar os CLIs reais**.
+
+⚠️ **Nós criamos este gate e declaramos que ele nascia vermelho detectando o #320.** Ele nascia
+vermelho por **seis** motivos, dos quais **um** era o #320 — e a metade do #320 que mais nos custou não
+era medida por ele. **Escrevemos "nasce vermelho detectando X" sem verificar o que o vermelho dizia.**
+
+**Acoes:**
+1. Tornar `GO_BIN` absoluto **no próprio script**, logo após a guarda, para que guarda e uso vejam o
+   mesmo caminho. Sugestão medida pelo relator em 3 formas de entrada (`bin/trackfw`, `./bin/trackfw`,
+   absoluto): `GO_BIN="$(cd "$(dirname "$GO_BIN")" && pwd)/$(basename "$GO_BIN")"`.
+   🔴 Passar `GO_BIN="$PWD/bin/trackfw"` no workflow **não** basta — a guarda continuaria sem garantir
+   o que o uso precisa. Corrigir no script; opcionalmente **também** no workflow.
+2. 🔴 **`--req` passa a ser exercitado nos 3 runtimes**, não só no Go. É o buraco que o item 2 acima
+   expõe.
+3. 🔴 **O `validate (Go)` da linha 235 termina em `|| true` e falha em silêncio.** Mesma classe. Decidir
+   e escrever: ou ele conta, ou o motivo de não contar fica no script.
+4. **Derivar** se outros gates recebem caminho relativo por env e o usam depois de `cd`. Comando escrito.
+**Criterios de aceite:**
+- [ ] 🔴 **Falsificação:** com o binário Go removido, o gate **reprova nomeando o Go** — hoje ele
+      reprova nomeando o `#320`
+- [ ] `--req` exercitado nos 3 runtimes, com asserção de que o roadmap nasce no agente da REQ
+- [ ] Decisão do item 3 escrita no script
+- [ ] Varredura do item 4 com comando escrito
+- [ ] Fecha a issue **#328**
+
+### ML-3B-b — 🔴 `consumer-smoke-by-agent` VERDE e `continue-on-error` REMOVIDO (AC15)
+**Status:** ⬜ Pendente · **Dependência: ML-3B-a**
 **Arquivos afetados:** o workflow que define `consumer-smoke-by-agent` (introduzido no PR #326).
 **Acoes:**
 1. Confirmar que o job passa a **VERDE** com as waves 1-3A aplicadas.
@@ -456,7 +512,7 @@ não fallback. Entregar decisão de fronteira de segurança a um implementador �
 terceira resposta.
 
 ### ML-1E-a — o contrato nos 3 runtimes, e a paridade do teste de log
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:** `internal/generators/roadmap.go`, `npm/src/generators/roadmap.js`,
 `pypi/trackfw/generators/roadmap.py` e os testes dos três. 🔴 **Não toque em `scripts/`** — é o ML-1E-b.
 **Acoes:**

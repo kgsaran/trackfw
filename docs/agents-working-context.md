@@ -2,6 +2,33 @@
 
 ---
 
+## Sessão 2026-09-11u — apolo-tf (Backend) — ML-1E-a: erro explícito quando agentFromPath retorna "" (3 runtimes) — CONCLUÍDO (aguarda auditoria Zeus)
+
+Branch `fix/by-agent-req-new-e-roadmap-new`. Escopo: `internal/generators/roadmap.go`, `npm/src/generators/roadmap.js`, `pypi/trackfw/generators/roadmap.py` e seus testes.
+
+**Causa raiz confirmada (A/B reproducido):**
+- Node MAIN: `agentFromPath` sem realpathSync retorna `"evil"` → escapa para fora do projeto
+- Node BRANCH: realpathSync resolve `evil → /outside`, relativo começa com `..`, retorna `""` → fallback silencioso para `alice` → gate fica vácuo
+- Go: `EvalSymlinks` já retornava `""` — mesma situação, sem erro explícito
+- Python: derivação estrutural pura retornava `"evil"` (sem resolução de symlinks) → escapa via mecanismo diferente
+
+**Alterações:**
+1. `internal/generators/roadmap.go`: após `agentFromPath()` em `MoveRoadmap`, `agent == ""` → `return fmt.Errorf("cannot determine agent namespace for %q ...")`
+2. `npm/src/generators/roadmap.js`: após `agentFromPath()` em `moveRoadmap`, `!agent` → `process.exitCode = 1; return`
+3. `pypi/trackfw/generators/roadmap.py`: `_agent_from_roadmap_path` recebe `base_dir` opcional; quando fornecido, usa `os.path.realpath` e retorna `""` para paths externos; `move_roadmap` passa `cfg["roadmap_dir"]` e levanta `ValueError` se `not agent`
+4. Testes novos: Go (2), Node (3), Python (5) — todos com frases de reconciliação
+
+**Evidências:**
+- `go build ./...` → OK
+- `go test ./...` → OK (todos os pacotes)
+- `node npm/tests/roadmap_move.test.js` → 40 testes, 40 passaram
+- `python3 -m pytest pypi/tests/` → 1724 passed, 66 subtests
+- `trackfw validate` → exit 0, 172 warnings (todos pré-existentes)
+
+**Arquivos modificados:** `internal/generators/roadmap.go`, `internal/generators/roadmap_test.go`, `npm/src/generators/roadmap.js`, `npm/tests/roadmap_move.test.js`, `pypi/trackfw/generators/roadmap.py`, `pypi/tests/test_by_agent_ml1c.py`
+
+---
+
 ## Sessão 2026-09-11t — apolo-tf (Backend/Go) — ML-1D: `roadmap new` atribui args[0] a title antes do fallback — CONCLUÍDO (aguarda auditoria Zeus)
 
 Branch `fix/by-agent-req-new-e-roadmap-new`. Fix do bug onde `roadmap new "titulo" --req <REQ>` ignorava o título posicional e derivava o nome do roadmap a partir do nome da REQ.
@@ -36124,3 +36151,15 @@ Wave 0 derivação → Wave 1 resolução de agente (3 runtimes em paralelo) →
 - `trackfw validate` → 172 warnings (pré-existentes), 0 violações hard
 
 **Fim.** Entrega para Zeus para auditoria e commit.
+
+---
+
+## Sessão 2026-09-11t — apolo-tf (Backend) — ML-1E-a: contrato de erro explícito em MoveRoadmap by_agent + paridade de teste de log — EM ANDAMENTO
+
+Branch `fix/by-agent-req-new-e-roadmap-new`. Escopo: `internal/generators/roadmap.go`, `npm/src/generators/roadmap.js`, `pypi/trackfw/generators/roadmap.py` e respectivos testes.
+
+**Diagnóstico inicial (pre-implementação):**
+- Go: `agentFromPath` retorna `""` em caminho via symlink (EvalSymlinks mostra escape); `agentStateDir("")` cai em `agents[0]`. Fix: erro explícito após derivação em `MoveRoadmap`.
+- Node: `agentFromPath` usa `realpathSync`, retorna `""` para symlink de fuga; `agentStateDir(null)` delega a `resolveAgentForWrite` que pode lançar ou silenciosamente usar agent único. Fix: erro explícito antes de `agentStateDir`.
+- Python: `_agent_from_roadmap_path` usa `basename(dirname(dirname(path)))` SEM symlink resolution, retorna `"evil"` para `docs/roadmaps/evil/backlog/ROADMAP.md`. Portanto: guard de "agente vazio" não cobre o vetor de symlink no Python. Fix necessário: **contenção** — verificar que `realpath(src)` está dentro de `realpath(roadmap_dir)` antes de prosseguir.
+- Medindo A/B para confirmar antes de escrever qualquer código.
