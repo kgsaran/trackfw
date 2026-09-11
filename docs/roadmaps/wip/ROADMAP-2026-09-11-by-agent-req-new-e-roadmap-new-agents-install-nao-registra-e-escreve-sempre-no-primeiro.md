@@ -436,21 +436,55 @@ medindo certo e concluindo sobre um mundo que mudou.
 não é o dele. Contenção não é o mesmo que correção — o ML precisa decidir e escrever qual dos dois
 comportamentos é o contrato.
 
-### ML-1E — restaurar o poder de falsificação do `direction-b2`
+### 🔴 O contrato — decisão do arquiteto, NÃO do implementador
+
+O item 2 do rascunho anterior mandava o ML "decidir e escrever" o contrato. **Errado.** A decisão já
+existe, e é do KG, na própria REQ (2026-08-29):
+
+> *"controle que não reconhece **rejeita e avisa**, em vez de adivinhar"*
+
+Contenção silenciosa em `alice/` **é o adivinhar**: o roadmap vai parar num namespace que não é o dele
+e nada conta a ninguém. É a mesma classe que esta REQ inteira existe para fechar.
+
+**Contrato:** em `MoveRoadmap` modo `by_agent`, `agentFromPath` devolver `""` é **erro explícito**,
+não fallback. Entregar decisão de fronteira de segurança a um implementador é como se obtém uma
+terceira resposta.
+
+### ML-1E-a — o contrato nos 3 runtimes, e a paridade do teste de log
 **Status:** ⬜ Pendente
+**Arquivos afetados:** `internal/generators/roadmap.go`, `npm/src/generators/roadmap.js`,
+`pypi/trackfw/generators/roadmap.py` e os testes dos três. 🔴 **Não toque em `scripts/`** — é o ML-1E-b.
+**Acoes:**
+1. **O contrato:** em `by_agent`, agente derivado vazio em `MoveRoadmap` ⇒ **erro nomeando o caminho
+   recusado**. Nada de cair em `agents[0]`, nada de string vazia virando caminho.
+2. 🔴 **Reproduza o A/B você mesmo** (`git archive origin/main npm | tar -x`, `node_modules` ligado por
+   symlink, mutação do literal do `direction-b2`). Não aceite a medição de segunda mão.
+3. 🔴 **Rode o A/B também em Go e Python.** O cenário `direction-b2/python` (linha ~934) **passa** hoje
+   — ou o Python não tem o segundo guard, ou o cenário difere. **Isso discrimina.** O Go está
+   **excluído** do cenário (ver comentário do cabeçalho na linha 894) — **leia o motivo antes** de
+   assumir que ele entra no escopo.
+4. 🔴 **Paridade do teste de regressão:** o `TestMoveRoadmap_ByAgent_LogPrefixHasAgent` existe **só no
+   Go**. Mesma extração, mesmo defeito, três runtimes — **a regra dura de paridade vale para a guarda,
+   não só para o comportamento.** Portar para Node e Python.
+**Criterios de aceite:**
+- [ ] Contrato do item 1 nos 3 runtimes, com mensagem que **nomeia o caminho recusado**
+- [ ] **Contra-braço:** `move` legítimo entre namespaces continua funcionando nos 3
+- [ ] A/B dos 3 runtimes colado no relatório
+- [ ] Teste de prefixo do `.trackfw-log` nos 3 runtimes
+- [ ] `go test ./...`, suíte Node e `pytest pypi/tests/` verdes
+- [ ] Frase de reconciliação por teste novo
+
+### ML-1E-b — restaurar o poder de falsificação do `direction-b2`
+**Status:** ⬜ Pendente · **Dependência: ML-1E-a auditado** (b mede a)
 **Arquivos afetados:** `scripts/check-agent-namespace-union.sh`. 🔴 **Só `scripts/`.**
 **Acoes:**
-1. Reproduzir o A/B acima e **confirmar** (não aceitar esta medição de segunda mão).
-2. Decidir e **escrever** o contrato: com symlink apontando para fora, o `move` deve **falhar
-   explicitamente**, ou **conter em `alice/`**? 🔴 Contenção silenciosa num namespace errado é a
-   classe "a ferramenta decidiu e não contou a ninguém" — a mesma que esta REQ existe para fechar.
-3. Reescrever o cenário para **isolar o guard alvo**: mutar os **dois** guards, ou asserir o novo
-   contrato em vez da fuga. 🔴 Não basta deletar o cenário nem afrouxar a asserção.
-4. **Derivar** se os cenários `direction-b2/python` e demais sofrem do mesmo mascaramento. Comando
-   escrito.
+1. Reescrever o cenário contra o **novo contrato**: com symlink para fora, o binário **não corrompido**
+   deve **falhar explicitamente**. 🔴 Não basta deletar o cenário nem afrouxar a asserção.
+2. Para continuar provando o guard do AC12 (`.filter(e => e.isDirectory())`), o cenário precisa
+   **isolá-lo** — mutar os **dois** guards, já que agora há defesa em profundidade e um absorve a
+   mutação do outro.
+3. **Derivar** se outros cenários deste script sofrem do mesmo mascaramento. Comando escrito.
 **Criterios de aceite:**
 - [ ] `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality` exit 0
-- [ ] 🔴 O cenário **reprova** quando o guard que ele alveja é revertido — falsificação provada, não
-      afirmada
-- [ ] O contrato do item 2 escrito no próprio script, com o motivo
-- [ ] Varredura do item 4 com comando escrito
+- [ ] 🔴 O cenário **reprova** quando o guard alvo é revertido — falsificação **provada**, não afirmada
+- [ ] Varredura do item 3 com comando escrito
