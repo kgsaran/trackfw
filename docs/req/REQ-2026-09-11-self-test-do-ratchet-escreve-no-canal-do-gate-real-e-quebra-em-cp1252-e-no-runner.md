@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-09-11
 author: ""
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-11-self-test-do-ratchet-escreve-no-canal-do-gate-real-e-quebra-em-cp1252-e-no-runner.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-11-self-test-do-ratchet-escreve-no-canal-do-gate-real-e-quebra-em-cp1252-e-no-runner.md"
 ---
 
 # REQ: self-test do ratchet escreve no canal do gate real e quebra em cp1252 e no runner
 
-> Date: 2026-09-11 | Status: Open
+> Date: 2026-09-11 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -28,7 +28,7 @@ ADR:
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-09-11-self-test-do-ratchet-escreve-no-canal-do-gate-real-e-quebra-em-cp1252-e-no-runner.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-09-11-self-test-do-ratchet-escreve-no-canal-do-gate-real-e-quebra-em-cp1252-e-no-runner.md`
 ## Motivation
 
 Dois issues do consumidor externo, **ambos sobre código que entregamos em 2026-09-10**, e ambos no
