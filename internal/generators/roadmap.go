@@ -536,11 +536,16 @@ func MoveRoadmap(name, state string) error {
 
 	var targetDir string
 	var fromState string
+	// agent é computado ANTES do rename — agentFromPath depende de src existir no filesystem
+	// (EvalSymlinks falha em arquivo inexistente e produz prefixo diferente, quebrando o guard ".."
+	// no macOS onde /var é symlink de /private/var). Declarado aqui para ser reutilizado na linha
+	// de log abaixo sem nova chamada a agentFromPath após o rename.
+	var agent string
 
 	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
 		// em by_agent: src = roadmapDir/<agent>/<state>/file
 		// agentFromPath extrai o primeiro segmento do caminho relativo ao roadmapDir (AC11).
-		agent := agentFromPath(cfg.RoadmapDir, src)
+		agent = agentFromPath(cfg.RoadmapDir, src)
 		fromState = filepath.Base(filepath.Dir(src))
 		var ok bool
 		targetDir, ok = agentStateDir(agent, state)
@@ -578,7 +583,10 @@ func MoveRoadmap(name, state string) error {
 
 	logBasename := filepath.Base(src)
 	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
-		logBasename = agentFromPath(cfg.RoadmapDir, src) + "/" + filepath.Base(src)
+		// Reutiliza agent computado antes do rename — não chama agentFromPath de novo, pois
+		// src já não existe no filesystem após os.Rename e EvalSymlinks produziria prefixo
+		// divergente no macOS (/var vs /private/var), fazendo o guard ".." devolver "".
+		logBasename = agent + "/" + filepath.Base(src)
 	}
 	appendTransitionLog(logBasename, fromState, state)
 

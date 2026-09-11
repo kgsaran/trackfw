@@ -827,6 +827,53 @@ func TestMoveRoadmap_ByAgent(t *testing.T) {
 	}
 }
 
+// TestMoveRoadmap_ByAgent_LogPrefixHasAgent afirma que MoveRoadmap em modo by_agent registra
+// a transição no .trackfw-log com o prefixo "<agente>/ROADMAP-*.md", e não apenas "ROADMAP-*.md".
+// Isso garante que agentFromPath é chamada ANTES do os.Rename — quando src ainda existe —
+// e que o guard ".." não apaga o segmento por divergência de EvalSymlinks no macOS.
+func TestMoveRoadmap_ByAgent_LogPrefixHasAgent(t *testing.T) {
+	dir := t.TempDir()
+	chdirRoadmap(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	// Configurar by_agent com agente "alpha"
+	yaml := "roadmap_namespacing: by_agent\nagents:\n- alpha\n"
+	if err := os.WriteFile("trackfw.yaml", []byte(yaml), 0644); err != nil {
+		t.Fatalf("escrever trackfw.yaml: %v", err)
+	}
+	if err := os.MkdirAll("docs/roadmaps/alpha/backlog", 0755); err != nil {
+		t.Fatalf("mkdir alpha/backlog: %v", err)
+	}
+	const roadmapFile = "docs/roadmaps/alpha/backlog/ROADMAP-log-prefix.md"
+	content := "---\nstatus: backlog\ndate: 2026-09-11\n---\n\n# Roadmap: Log Prefix\n\n> Created: 2026-09-11 | Status: backlog\n"
+	if err := os.WriteFile(roadmapFile, []byte(content), 0644); err != nil {
+		t.Fatalf("escrever roadmap: %v", err)
+	}
+
+	if err := MoveRoadmap("ROADMAP-log-prefix", "analyzing"); err != nil {
+		t.Fatalf("MoveRoadmap() erro: %v", err)
+	}
+
+	log, err := os.ReadFile("docs/roadmaps/.trackfw-log")
+	if err != nil {
+		t.Fatalf("ler .trackfw-log: %v", err)
+	}
+	logStr := string(log)
+
+	// A linha deve conter "alpha/ROADMAP-log-prefix.md" — o segmento do agente não pode ser vazio.
+	// Sem este teste, um logBasename calculado após o rename pode devolver "" no macOS (EvalSymlinks
+	// assimétrico /var vs /private/var faz o guard ".." de agentFromPath retornar ""), deixando
+	// apenas "/ROADMAP-log-prefix.md" no log — violação silenciosa que o gate de paridade detecta
+	// mas nenhum teste unitário anterior verificava.
+	if !strings.Contains(logStr, "alpha/ROADMAP-log-prefix.md") {
+		t.Errorf(".trackfw-log não contém prefixo de agente; got:\n%s", logStr)
+	}
+	if !strings.Contains(logStr, "backlog → analyzing") {
+		t.Errorf(".trackfw-log não registrou a transição backlog → analyzing; got:\n%s", logStr)
+	}
+}
+
 // TestContainsIgnoreCase — função privada testada diretamente via white-box
 func TestContainsIgnoreCase(t *testing.T) {
 	cases := []struct {

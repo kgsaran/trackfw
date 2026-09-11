@@ -346,5 +346,63 @@ sempre dispara.
 - teste da triagem por mecanismo: corrigir a resolução de agente **não fecha** este defeito.
 
 Por `Regra Dura de Causa Raiz`, causa diferente autoriza REQ própria — e a diferença de mecanismo fica
-escrita acima. ⚠️ **Pendente de decisão do KG**, dada a preocupação declarada com o crescimento do
-backlog de REQs: são ~3 linhas num arquivo que já está aberto neste PR.
+escrita acima. ✅ **Decisão do KG, 2026-09-11: "vamos de ML aqui mesmo."** Vira o **ML-1D** desta wave, com a
+diferença de mecanismo escrita acima — não REQ nova.
+
+🔴 **A regra continua valendo; o que mudou foi o custo relativo.** Causa diferente **autoriza** REQ
+própria, não **obriga**. Com ~3 linhas, num arquivo já aberto neste PR, medido e reproduzido, mandar
+para uma fila de 36 REQs abertas seria o defeito que a análise de 2026-09-11 nomeou: **"registrado"
+não é "corrigido"**. O ônus de escrever a diferença de mecanismo foi pago acima; ele é o que permite
+decidir, e não o que obriga a separar.
+
+### ML-1D — Go: `roadmap new "<titulo>" --req` ignora o titulo posicional
+**Status:** ⬜ Pendente
+**Arquivos afetados:** `internal/commands/roadmap.go` e o teste correspondente. 🔴 **So `internal/`.**
+**Medicao (arquiteto, 2026-09-11):** ver "Achado lateral" acima. Reproduz em `flat`, existe em
+`origin/main`, e **nao fecha** com a correcao de resolucao de agente — causa diferente, mesmo PR por
+decisao do KG.
+**Acoes:**
+1. `internal/commands/roadmap.go:30` declara `Args: cobra.MaximumNArgs(1)`, mas **`args[0]` nunca e
+   atribuido a `title`**. Atribuir quando houver argumento posicional, antes do `if title == ""` da
+   linha ~44. O fallback que deriva do nome da REQ **fica**, para quando nao houver titulo.
+2. 🔴 **Derivar se o mesmo esquecimento existe em OUTROS comandos do Go** que declarem
+   `cobra.*NArgs` e leiam de variavel de flag. **Escrever o comando** usado. Mesma causa ⇒ mesmo ML.
+**Criterios de aceite:**
+- [ ] `roadmap new "titulo escolhido" --req <REQ>` produz `ROADMAP-<data>-titulo-escolhido.md` nos
+      **3 runtimes** — colar a saida dos tres binarios lado a lado
+- [ ] **Contra-braco:** **sem** titulo posicional, `--req` continua derivando do nome da REQ
+- [ ] Varredura do item 2 respondida com comando escrito
+- [ ] `go build ./... && go vet ./... && go test ./...` verdes e
+      `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality` exit 0
+- [ ] Frase de reconciliacao por teste novo
+
+### ML-1A-fix2 — `.trackfw-log` sem o segmento do agente
+**Status:** ✅ Concluído — log volta a gravar `alpha/ROADMAP-*.md`, verificado pelo arquiteto com binário recompilado
+
+---
+
+## ⚠️ Achado a triar — gate de mutação possivelmente VÁCUO
+
+Com o `check-artifact-parity.sh` verde, o `make quality` passou a alcançar um cenário que antes nem
+rodava:
+
+```
+direction-b2/node/detects-symlink-regression — corrupted binary did not escape through the symlink
+  → "checagem vácua" (a própria mensagem do gate)
+```
+
+`scripts/check-agent-namespace-union.sh:907-922` é um **teste de mutação**: corrompe o binário Node
+para seguir symlink e exige que ele **escape** — provando que a checagem detectaria a regressão. Se o
+binário mutado **não** escapa, o cenário não prova nada.
+
+**Medido:** o diff desta branch em `npm/src/validator/index.js` toca **apenas** `resolveAgentForWrite`
+e `reqWriteDir` (21 linhas) — **nada de travessia de diretório nem de symlink**. A linha que a mutação
+alveja (`statSync(...).isDirectory()`) não foi tocada.
+
+🔴 **É a classe do `#309`, e a mais desconfortável:** gate correto no dia 1 que vira vácuo no dia 30
+por mudança adjacente, **e nada percebe** — porque um gate vácuo passa. Este só apareceu porque outra
+falha deixou de mascará-lo.
+
+⚠️ **Não confirmado como pré-existente pelo arquiteto** — o ML anterior afirmou que era, mas usando
+como evidência que o arquivo "não foi alterado nesta branch", o que **é falso** (`9d042b8e` o alterou).
+A conclusão pode estar certa e a evidência errada. **Triar antes de afirmar qualquer coisa.**

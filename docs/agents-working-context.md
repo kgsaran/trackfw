@@ -2,9 +2,27 @@
 
 ---
 
-## Sessão 2026-09-11s — apolo-tf (Backend/Go) — ML-1A-fix2: logBasename usa variável agent já computada antes do rename — EM ANDAMENTO
+## Sessão 2026-09-11s — apolo-tf (Backend/Go) — ML-1A-fix2: logBasename usa variável agent já computada antes do rename — CONCLUÍDO (aguarda auditoria Zeus)
 
 Branch `fix/by-agent-req-new-e-roadmap-new`. Regressão: em modo `by_agent`, o segmento `<agente>/` saía vazio no `.trackfw-log` porque `agentFromPath` era chamada depois do `os.Rename` (quando `src` não existe mais), e o EvalSymlinks assimétrico do macOS (`/var` vs `/private/var`) fazia o guard de `".."` devolver `""`. Fix: elevar declaração de `agent` para fora do bloco `if by_agent` e reutilizá-la na linha de log, sem recalcular.
+
+**Alterações (somente `internal/`):**
+1. `internal/generators/roadmap.go`: `MoveRoadmap` — declaração `var agent string` elevada para antes do `if by_agent`; atribuição `agent = agentFromPath(...)` (sem `:=`) dentro do bloco; linha de log usa `agent` diretamente, sem nova chamada.
+2. `internal/generators/roadmap_test.go`: adicionado `TestMoveRoadmap_ByAgent_LogPrefixHasAgent` — move em modo `by_agent` e asserta que `.trackfw-log` contém `alpha/ROADMAP-log-prefix.md`.
+
+**Frase de reconciliação:** o novo teste afirma que `MoveRoadmap` em `by_agent` registra `<agente>/ROADMAP-*.md` no log — conclusão direta da causa raiz medida (agentFromPath pós-rename devolve `""` no macOS por EvalSymlinks assimétrico).
+
+**Evidência:**
+- `go build ./...` → OK
+- `go vet ./...` → OK
+- `go test ./...` → todos ok (generators 6.5 s)
+- Reprodução mínima: `.trackfw-log` contém `alpha/ROADMAP-2026-09-11-teste-log.md backlog → analyzing`
+- `check-artifact-parity.sh` → "Artifact parity checks passed (9 artifact types × 3 runtimes; ...)"
+- `trackfw validate` → 0 hard violations
+
+**Achado de sítio adicional:** nenhum outro sítio em `internal/` chama `agentFromPath` após mutação de filesystem. Verificado com `grep -rn "agentFromPath" internal/ --include="*.go"` — apenas linhas 200, 317 e 548 (as duas primeiras estão em funções de criação, chamadas antes de qualquer `os.MkdirAll`/write).
+
+**Falha pré-existente mascarada:** `check-agent-namespace-union.sh direction-b2/node/detects-symlink-regression` estava failing antes desta sessão; estava mascarada porque `make` parava no erro anterior do `check-artifact-parity.sh`. Causa: o cenário corrupto do Node.js move o roadmap para `alice/done` (dentro do projeto) em vez de `evil/done` (fora, via symlink), tornando a checagem vácua. Fora do escopo desta sessão (somente `internal/`).
 
 ---
 
