@@ -55,6 +55,59 @@ function displayUrl(host, port) {
   return `http://${host}:${port}`
 }
 
+// isValidHost reports whether host is acceptable as a --host argument.
+// Accepts: 'localhost', valid IPv4, valid IPv6 literal, RFC-1123 hostname.
+// Rejects anything else — in particular strings with shell metacharacters.
+// Espelha internal/serve/serve.go IsValidHost e _is_valid_host do Python.
+function isValidHost(host) {
+  if (host === 'localhost') return true
+  const net = require('net')
+  if (net.isIPv4(host) || net.isIPv6(host)) return true
+  // RFC 1123 hostname: labels separated by dots, each [a-zA-Z0-9] or hyphens,
+  // starting and ending with alphanum. Max label length 63, total max 253.
+  if (host.length > 253) return false
+  return /^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/.test(host)
+}
+
+// browserArgv returns [cmd, args] for opening url in the default browser
+// without shell interpolation — argv, never a shell string. This is the only
+// safe form: exec(`open "${url}"`) interpolates url into a shell command and
+// allows injection when url contains shell metacharacters.
+//
+// Darwin / Linux: 'open' / 'xdg-open' are invoked directly; no shell involved.
+// Windows: spawn('cmd', ['/c', 'start', '', url]) passes url as a distinct
+// argv element to CreateProcess — safer than exec(), but cmd.exe still
+// re-parses its own metacharacters (& | ^ >) in the url portion. Defense for
+// that residual is AC4 (isValidHost) rejecting metacharacter-bearing hosts
+// before they reach this function.
+//
+// Exported for testing.
+function browserArgv(platform, url) {
+  if (platform === 'darwin') return ['open', [url]]
+  if (platform === 'win32') return ['cmd', ['/c', 'start', '', url]]
+  return ['xdg-open', [url]]
+}
+
+// openBrowser opens url in the default browser using spawn (argv, no shell).
+// Exported for testing with a PATH shim.
+//
+// Preserves the original UX: warn when the opener exits non-zero (e.g. when
+// xdg-open finds no handler) as well as when it cannot be launched (ENOENT).
+// The old exec() warned via the callback err; spawn uses 'close' + 'error'.
+function openBrowser(platform, url) {
+  const { spawn } = require('child_process')
+  const [cmd, args] = browserArgv(platform, url)
+  const proc = spawn(cmd, args)
+  proc.on('error', (err) => {
+    console.warn(`Não foi possível abrir o browser: ${err.message}`)
+  })
+  proc.on('close', (code) => {
+    if (code !== 0 && code !== null) {
+      console.warn(`Não foi possível abrir o browser: processo encerrou com código ${code}`)
+    }
+  })
+}
+
 // Mapa de extensão → Content-Type
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -190,6 +243,14 @@ function createServeCommand() {
       const port = parseInt(opts.port, 10) || 8080
       const host = opts.host
 
+      // AC4 — validate --host before bind. Rejects metacharacter-bearing
+      // strings that would reach the browser-open path or the socket.
+      if (!isValidHost(host)) {
+        console.error(`trackfw serve: invalid --host value: ${host}`)
+        console.error('--host must be "localhost", a valid IPv4/IPv6 address, or an RFC-1123 hostname.')
+        process.exit(1)
+      }
+
       const server = createServer(cfg, port)
 
       if (!isLoopbackHost(host)) {
@@ -201,16 +262,8 @@ function createServeCommand() {
         console.log(`trackfw serve: ${url}`)
 
         if (opts.open !== false) {
-          // Tentar abrir o browser
-          const { exec } = require('child_process')
-          const platform = process.platform
-          let openCmd
-          if (platform === 'darwin') openCmd = `open "${url}"`
-          else if (platform === 'win32') openCmd = `start "" "${url}"`
-          else openCmd = `xdg-open "${url}"`
-          exec(openCmd, (err) => {
-            if (err) console.warn(`Não foi possível abrir o browser: ${err.message}`)
-          })
+          // AC1 — use argv (spawn), never shell string interpolation (exec).
+          openBrowser(process.platform, url)
         }
       })
 
@@ -235,4 +288,4 @@ function createServeCommand() {
   return cmd
 }
 
-module.exports = { createServeCommand, createServer, isLoopbackHost, displayUrl }
+module.exports = { createServeCommand, createServer, isLoopbackHost, displayUrl, isValidHost, browserArgv, openBrowser }

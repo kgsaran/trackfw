@@ -1,5 +1,101 @@
 # agents-working-context.md
 
+---
+
+## Sessão 2026-09-11e — apolo-tf (Backend) — Gate revisado pós-barreira independente: 16 cenários, todos OK
+
+Branch `fix/serve-interpola-host-em-string-de-shell`.
+
+Revisão pós-advisor: 3 correções aplicadas ao gate e 1 ao código Node.js.
+
+**Correções no gate (`scripts/check-serve-browser-security.sh`):**
+1. **Arm vulnerável usa PATH shim** (antes usava `open` real → abria aba de browser + braços não comparáveis)
+2. **Contra-braço: comparação verbatim** do log do shim contra `$LEGIT_URL` (antes: `$# -gt 1` — morto em ambos os casos, nunca discriminava)
+3. **Novos cenários 14/15/16: wiring de AC4** — each CLI chamado como executável com `--host` inválido; verifica exit não-zero + stderr contém `"invalid --host"`. Prova que a validação está fiada antes do bind, não só que a função retorna false.
+4. **Go incluído no gate**: GO_BIN resolvido (mesma estratégia de `check-serve-address-parity.sh`); cena 16 prova a fiação do Go.
+
+**Correção no código (`npm/src/commands/serve.js`):**
+- `openBrowser`: removido `stdio: 'ignore'`; adicionado handler `close` para avisar em saída não-zero. O `exec()` original avisava para qualquer falha; o `spawn` com `stdio:'ignore'` só disparava `error` (ENOENT) — regressão silenciosa de UX.
+
+**Gate final:** 16/16 OK (executado em foreground, saída colada abaixo).
+**Testes:** Go ok (cached), Node 896 passed, Python 1691 passed.
+
+```
+OK   [vulnerable-reference/node (OLD exec+string approach creates sentinel — gate is falsifiable)]
+OK   [injection/node (sentinel absent — malicious URL does not execute extra command)]
+OK   [counter-arm/node (legitimate URL 'http://localhost:4080' passed as single argv to 'open')]
+OK   [injection/python-darwin (sentinel absent — Darwin branch does not inject)]
+OK   [counter-arm/python (legitimate URL passed as single argv to 'open')]
+OK   [ac2-static/python (AST: no live Popen(shell=True) call in serve.py — AC2 satisfied)]
+OK   [ac2-static/python-windows-cmd (Windows argv starts with 'cmd', not 'start')]
+OK   [ac1-static/node (old exec(string) pattern absent from live code in serve.js)]
+OK   [ac1-static/node-spawn (spawn is present in live code of serve.js)]
+OK   [ac4/node (isValidHost rejects injection payload)]
+OK   [ac4/node-legitimate (isValidHost accepts all legitimate host forms)]
+OK   [ac4/python (_is_valid_host rejects injection payload)]
+OK   [ac4/python-legitimate (_is_valid_host accepts all legitimate host forms)]
+OK   [ac4-wiring/node (CLI exits non-zero + stderr names bad host — AC4 is wired)]
+OK   [ac4-wiring/python (CLI exits non-zero + stderr names bad host — AC4 is wired)]
+OK   [ac4-wiring/go (CLI exits non-zero + stderr names bad host — AC4 is wired)]
+
+All check-serve-browser-security.sh scenarios passed.
+```
+
+**Itens ainda pendentes (para arquiteto):**
+- `make parity-falsify` não executado (~78% do wall time; aguarda CI)
+- AC6/Go: divergência intencional documentada; REQ pode precisar ser emendada (Go não abre browser)
+
+---
+
+## Sessão 2026-09-11d — apolo-tf (Backend) — Segurança: injeção de comando no `serve` browser-open: IMPLEMENTADO, aguarda auditoria do arquiteto
+
+Branch `fix/serve-interpola-host-em-string-de-shell`.
+
+**Defeito corrigido:** `npm/src/commands/serve.js` usava `exec(\`open "${url}"\`)` (string de shell com interpolação) e `pypi/trackfw/commands/serve.py` branch Windows usava `Popen(["start", url], shell=True)` — ambos permitindo injeção de comando via `--host` malicioso.
+
+**Implementação:**
+
+Node.js (`npm/src/commands/serve.js`):
+- Adicionado `browserArgv(platform, url)` → `[cmd, args]` (argv, não string)
+- Adicionado `openBrowser(platform, url)` usando `spawn` (sem shell)
+- Adicionado `isValidHost(host)` (AC4: validação na entrada)
+- `.action()` corrigido: `exec(openCmd)` → `openBrowser(process.platform, url)`
+- Exportados: `browserArgv`, `openBrowser`, `isValidHost`
+
+Python (`pypi/trackfw/commands/serve.py`):
+- Adicionado `_browser_argv(system, url)` e `_is_valid_host(host)`
+- `_open_browser` refatorado: `Popen(["start", url], shell=True)` → `Popen(["cmd", "/c", "start", "", url])`
+- `cmd_serve`: validação de `--host` antes do bind
+
+Go (`internal/serve/serve.go`, `internal/commands/serve.go`):
+- Adicionado `IsValidHost(host)` + `rfc1123Label` regex
+- Validação em `newServeCmd` antes de `serve.Start()`
+- Go não abre browser — divergência intencional, documentada em `docs/cli-parity.md`
+
+**Gate novo:** `scripts/check-serve-browser-security.sh` — 13 cenários, todos OK. Inclui reprodutor vulnerável (prova discriminação), injeção com sentinela, contra-braço com PATH shim, análise AST de `Popen(shell=True)`, e AC4 por execução direta.
+
+**Testes novos:**
+- `npm/tests/serve_browser_security.test.js` — 10 passed
+- `pypi/tests/test_serve_browser_security.py` — 13 passed
+- `internal/serve/serve_test.go` — `TestIsValidHost` 14 sub-testes
+
+**Gates executados:**
+- `go test ./...` → PASS (0 failed)
+- `node --test tests/*.test.js` → 896 passed, 0 failed
+- `python3 -m pytest tests/` → 1691 passed
+- `go vet ./...` → PASS
+- `check-serve-browser-security.sh` → 13/13 OK
+- `check-serve-address-parity.sh` → 8/8 OK
+- `check-cli-parity.sh` → PASS
+- `check-parity-contract-coverage.sh` → OK
+- `trackfw validate` → 0 errors, 173 warnings (pré-existentes, baseline inalterado)
+
+**Pendente:** `make parity-falsify` (~78% wall time, não executado localmente) — aguarda CI.
+
+**Divergência para o arquiteto:** AC6 da REQ ("os 3 CLIs abrem o browser pela mesma forma") não é satisfatível sem adicionar browser-open ao Go (fora do escopo). Divergência documentada em `docs/cli-parity.md`; REQ pode precisar de emenda.
+
+---
+
 > Arquivo de handoff entre sessões. Atualizar ao iniciar e ao encerrar cada ciclo de trabalho.
 
 ---

@@ -77,4 +77,4 @@ ADR:
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap:
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-09-10-barrier-executa-gate-de-roadmap-nao-confiavel-porque-roadmaptrustforgates-falha-aberto-em-todo-caminho-de-erro.md`

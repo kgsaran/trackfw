@@ -86,4 +86,4 @@ avaliar ADR. -->
 
 ## Linked Roadmap
 
-Roadmap:
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-09-11-serve-interpola-host-em-string-de-shell-e-permite-injecao-de-comando-ao-abrir-o-browser.md`

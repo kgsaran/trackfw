@@ -2257,9 +2257,10 @@ failure message in `npm/src/commands/barrier.js` and `pypi/trackfw/commands/barr
 reproves if either file's gate-execution point reverts to the **literal spelling** `shell: true` / `shell=True` (see the `partial=` annotation: equivalent spellings evade it) (host-shell
 execution) — checked outside comment lines, since both files' own comments document the old
 pattern in prose as the thing *not* to do again. It reproves independently per file: a regression
-in only one of the two CLIs fails, naming which. It does not touch `serve.js`/`serve.py`, which
-retain a legitimate, unrelated `shell: true` / `shell=True` for opening a browser, tracked by its
-own REQ (ML-0A, finding 4.2).
+in only one of the two CLIs fails, naming which. It does not touch `serve.js`/`serve.py` — the browser-opening
+`shell: true` / `shell=True` carve-out from that gate has been resolved:
+`serve.js` now uses `spawn` (argv) and `serve.py` Windows branch no longer uses `shell=True`.
+See "Abertura de browser — segurança de processo" under `trackfw serve` for the current contract.
 
 ### Contrato gerador↔`barrier`: dialeto e vocabulário (ADR-2026-08-29)
 
@@ -5847,6 +5848,39 @@ intencional, é REQ própria. Ver o apêndice "Barreira ML-2A" em
 O gate degrada para teste de conexão quando falta `lsof`, e nesse modo **pula** a exclusão de
 wildcard em vez de passar em silêncio — o braço de detecção do Cenário 59 então deixa de reprovar e
 a falsificação fica vermelha. A vacuidade se denuncia sozinha em vez de virar falso verde.
+
+### Abertura de browser — segurança de processo (REQ-2026-09-01-serve-interpola-host)
+
+<!-- trackfw-contract: gate=scripts/check-serve-browser-security.sh -->
+
+Após o servidor subir, Node.js e Python abrem o browser usando **argv**, nunca interpolação de
+shell. O Go não abre browser — só imprime a URL; ausência de browser-open no Go é divergência
+intencional, não regressão.
+
+| Runtime | Implementação |
+|---------|--------------|
+| Go | Nenhuma abertura de browser — apenas imprime a URL via `DisplayURL`. Não existe caminho de injeção. |
+| Node.js | `openBrowser(platform, url)` → `spawn(cmd, [url])` via `browserArgv`. Nenhuma string de shell montada. |
+| Python Darwin/Linux | `_open_browser(url)` → `Popen(["open", url])` / `Popen(["xdg-open", url])` — sem `shell=True`. Comportamento pré-existente, correto desde a origem. |
+| Python Windows | `_open_browser(url)` → `Popen(["cmd", "/c", "start", "", url])` — sem `shell=True`. Corrigido em REQ-2026-09-01 (antes: `Popen(["start", url], shell=True)`). |
+
+**Residual declarado (Windows):** `spawn('cmd', ...)` no Node e `Popen(["cmd", ...])` no Python
+passam a URL para `cmd.exe`, que re-parseia seus próprios metacaracteres (`&`, `|`, `^`, `>`).
+A contenção para esse residual é **AC4 (`isValidHost` / `_is_valid_host`)** — hosts que não sejam
+hostname RFC-1123, IPv4 ou IPv6 válido são rejeitados antes de chegar ao browser-open path. Um
+host legítimo como `my-host.example.com` não contém metacaracteres de `cmd.exe`.
+
+**Validação de `--host` (AC4):** todos os 3 CLIs rejeitam `--host` inválido com mensagem clara.
+
+- Go: `serve.IsValidHost(host)` — erro retornado ao cobra antes do `serve.Start`.
+- Node.js: `isValidHost(host)` — `process.exit(1)` antes do `server.listen`.
+- Python: `_is_valid_host(host)` — `sys.exit(1)` antes do bind.
+
+**Falsificação (AC3):**
+
+- O gate `check-serve-browser-security.sh` contém um reprodutor vulnerável (a forma antiga `exec(\`open "${url}"\`)`) que **cria** um arquivo sentinela, provando que o teste discrimina.
+- O código corrigido, invocado com a mesma URL maliciosa, **não cria** o sentinela.
+- Um PATH shim substitui `open`/`xdg-open` por um stub que registra os argumentos recebidos — host legítimo → stub recebe a URL como único elemento de argv.
 
 ## `trackfw doctor` — detecção de artefato fora do manifesto (REQ-2026-08-17, ADR-2026-08-18, ML-2A/ML-2B/ML-2C)
 

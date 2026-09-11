@@ -84,4 +84,4 @@ ADR:
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap:
+Roadmap: `docs/roadmaps/backlog/ROADMAP-2026-09-10-consumidores-que-nao-conhecem-by-agent-status-do-python-conta-reqs-flat-e-walkmd-do-node-indexa-sem-filtro.md`
