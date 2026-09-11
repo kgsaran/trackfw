@@ -1,5 +1,5 @@
 ---
-status: done
+status: wip
 date: 2026-09-06
 squad: ares-tf
 req: "docs/req/REQ-2026-09-06-o-ci-de-windows-nao-bloqueia-regressao-e-nao-distingue-suite-que-nao-carregou-de-teste-que-reprovou.md"
@@ -7,7 +7,7 @@ req: "docs/req/REQ-2026-09-06-o-ci-de-windows-nao-bloqueia-regressao-e-nao-disti
 
 # Roadmap: Ratchet por nome, e classe própria para suíte que não carrega
 
-> Criado em: 2026-09-06 | Status: done
+> Criado em: 2026-09-06 | Status: wip
 
 ## Context
 
@@ -348,6 +348,374 @@ python3 scripts/check-windows-known-failures.py --self-test
 
 make parity-rest
 → exit 0
+
+trackfw validate
+→ 0 errors (173 warnings pré-existentes)
+```
+
+---
+
+## 🔴 REABERTO — 2026-09-11: o ratchet reprovava e nada consumia o veredito
+
+**Esta REQ foi fechada em 2026-09-10 afirmando que o CI bloqueia regressão de Windows. Ela não
+bloqueava.** Fechamento prematuro, e é a classe do achado **A1** da auditoria externa de 2026-09-05,
+que este projeto já pagou uma vez: marcar concluído algo cujo critério não foi atendido.
+
+**Quem viu foi o usuário**, pelo sintoma certo: *"o gate do windows não está mais como required"*.
+
+### ML-4A — O job reprova, mas não é `required` — medição sem consumidor
+**Status:** ✅ Concluído (instância) · **Agente:** arquiteto
+
+Medido em 2026-09-11:
+
+```
+gh api repos/kgsaran/trackfw/branches/main/protection --jq '.required_status_checks.contexts'
+
+["go","node","python (3.10)","python (3.12)","package-smoke",
+ "windows-integrations-resolve","parity",
+ "governance-install-script","governance-go-install"]
+```
+
+🔴 **`windows-full-suites` não estava na lista.** O `ML-3A` tirou o `continue-on-error` e o job passou
+a reprovar com honestidade — **num lugar onde ninguém agia sobre o resultado**. O PR #316 foi
+mergeado com ele vermelho, o que prova o ponto empiricamente.
+
+**A ADR D1 diz:** *"O job **falha** se aparecer um nome fora da lista."* Falhar só significa alguma
+coisa se alguém **consome o veredito**.
+
+**Corrigido** — `windows-full-suites` acrescentado aos required, depois de confirmar que estava
+**verde** na `main` (run 34595061413) com os 38 vermelhos catalogados. Ligar um check vermelho como
+required bloquearia todos os PRs.
+
+**Efeitos declarados:**
+- o job é o mais lento do run; todo PR passa a esperar por ele. Se incomodar, a saída é **encurtá-lo**,
+  não retirá-lo do required;
+- `strict: false` na proteção — PR não precisa estar atualizado com a `main`. PR aberto **antes** desta
+  mudança pode ter sido avaliado sem o check.
+
+### ML-4B — 🔴 A CLASSE: nada verifica se os `required` batem com os jobs bloqueantes
+**Status:** ✅ Concluído · **Agente:** `ares-tf`
+
+## Critérios de Aceite
+- [x] `.github/required-status-checks.txt` criado com os 10 checks medidos da API
+- [x] `scripts/check-required-status-checks.py` entrega exit 0/1/2 corretos sem passar em silêncio
+- [x] 6 braços de falsificação (T1-T6): concordância → 0, D\R → 1, R\W → 1, falha → 2, arquivo ausente → 2, arquivo vazio → 2
+- [x] `make parity-rest` inclui `--self-test` do gate e passa
+- [x] `trackfw validate` sem erros novos
+- [x] Job `check-required-checks` no `quality.yml` com `administration: read` isolado
+- [x] Fork PR tratado com `if:`-gated (não `continue-on-error`)
+- [x] `parity.needs` **NÃO inclui** `check-required-checks` até primeira run de CI confirmar o token (item aberto ao arquiteto — ver abaixo)
+
+**Por que ninguém viu durante o dia inteiro:** a lista de required checks vive **fora do
+repositório**, numa tela do GitHub. Nenhum `grep`, nenhuma derivação nossa, nenhum gate alcança
+aquilo. O acordo entre *"o que o `quality.yml` roda"* e *"o que bloqueia merge"* é **tácito**.
+
+Construímos a catraca inteira — 4 MLs, 3 corretivos, 27 testes de falsificação — e ela **não
+bloqueava nada**. Não por defeito de implementação: por **ausência de consumidor**.
+
+**O que fazer:** um gate que compare os `required_status_checks.contexts` da proteção com a lista de
+jobs que o repositório **declara** bloqueantes, e reprove na divergência.
+
+#### As 3 decisões — tomadas com justificativa (2026-09-11)
+
+**Decisão 1 — Onde mora a declaração:**
+Arquivo próprio `.github/required-status-checks.txt` (um nome por linha).
+
+Motivo: o contrato é específico deste repositório, não config do produto CLI trackfw —
+outros consumidores do trackfw não têm (nem devem ter) esta proteção de branch.
+Separado do workflow YAML para tornar edições divergentes visíveis no diff sem exigir parsing;
+trivial de auditar; trivial de testar sinteticamente. Não entra em `trackfw.yaml` (config do produto).
+Não fica como anotação nos jobs (exigiria parser YAML para extrair, e o significado fica implícito).
+
+**Decisão 2 — O que acontece quando o gate não consegue LER a proteção:**
+
+Medições realizadas (2026-09-11):
+```
+gh api repos/kgsaran/trackfw --jq '.private'
+→ false   (repo público)
+
+gh api repos/kgsaran/trackfw/actions/permissions/workflow
+→ {"default_workflow_permissions":"read","can_approve_pull_request_reviews":false}
+
+gh api repos/kgsaran/trackfw/branches/main/protection --jq '.required_status_checks.contexts'
+→ ["go","node","python (3.10)","python (3.12)","package-smoke",
+   "windows-integrations-resolve","parity","governance-install-script",
+   "governance-go-install","windows-full-suites"]
+   (com credencial pessoal do KG — não com GITHUB_TOKEN de CI)
+```
+
+Nenhum job existente em quality.yml declara `administration: read`. A chamada funciona
+localmente com credencial pessoal; **NÃO MEDIDO**: se GITHUB_TOKEN com `administration: read`
+consegue ler em CI. Requer run real não autorizado por este ML — **item aberto declarado ao
+arquiteto**.
+
+**Comportamento escolhido:**
+- Gate falha → exit 2 com `::error::` incluindo raw stderr do gh. **Nunca passa em silêncio.**
+- Em fork PR: o step de verificação real é `if:`-gated (não `continue-on-error` — um step
+  skippado é visível como "não rodou"; `continue-on-error` pintaria vermelho de verde, defeito
+  do ML-3A reintroduzido na própria correção). Um step de aviso imprime a limitação declarada.
+- Job dedicado `check-required-checks` com `permissions: contents: read, administration: read`.
+  Essa permissão não é adicionada a `parity-other-gates` (que roda ~50 scripts) para não ampliar
+  superfície desnecessariamente.
+
+**Decisão 3 — Direção da verificação:**
+**Ambas as direções reprovam com exit 1 nomeando os checks divergentes.** Três conjuntos:
+
+- D = `.github/required-status-checks.txt` (declaração)
+- R = `required_status_checks.contexts` da API
+- W = check names derivados de todos os `.github/workflows/*.yml` (com expansão de matriz)
+
+Checks:
+- `D \ R` → exit 1 (job declarado bloqueante ausente dos required — defeito de ontem)
+- `R \ W` → exit 1 (required aponta check que o CI nunca emitirá — PR pendente para sempre,
+  vault/notes/matriz-em-job-required-por-nome-fica-pendente-para-sempre-2026-09-08.md)
+- `D \ W` → exit 1 (declaração fantasma — job declarado que nenhum workflow define)
+
+Motivação: a direção `R \ W` é igual ao segundo defeito registrado no vault (PR que fica pendente).
+O custo foi medido e documentado. A terceira direção `D \ W` pega a declaração de um job que não
+existe antes mesmo de ele entrar no required.
+
+**Limitação declarada de W:** W é construído a partir de TODOS os jobs em TODOS os workflows, sem
+filtrar por trigger (`on:`) ou por `if:` no nível de job. Um check required cujo job esteja num
+workflow que NUNCA dispara em `pull_request` (ex: `release.yml`) satisfaz R\W = ∅ mas ainda deixa
+o PR pendente para sempre. Estado atual: os 10 checks required pertencem a jobs que disparam em
+`pull_request`; a limitação não afeta o gate hoje. Risco residual declarado — não requer mudança
+de código agora.
+
+#### Artefatos entregues
+
+- `.github/required-status-checks.txt` — declaração D com os 10 checks medidos
+- `scripts/check-required-status-checks.py` — gate Python com `--self-test` (6 braços)
+- `Makefile` — `python3 scripts/check-required-status-checks.py --self-test` adicionado ao `parity-rest`
+- `.github/workflows/quality.yml` — job `check-required-checks` adicionado com `administration: read`; `parity.needs` **não** inclui o job ainda (ver item aberto abaixo)
+- YAML validado com `python3 -c "yaml.safe_load(...)"` → válido, 12 jobs
+
+**Passo pendente (mesmo PR, mesma REQ — regra de mesma causa):** após a primeira run de CI
+confirmar que `GITHUB_TOKEN` com `administration: read` lê a proteção da branch (push para main ou
+PR interno verde), o arquiteto adiciona `check-required-checks` ao `parity.needs` e atualiza a
+mensagem de erro. Esse passo segue o mesmo sequenciamento do ML-4A: *"ligar um check vermelho
+como required bloquearia todos os PRs"* — aqui, wirear um job com token incerto no caminho
+obrigatório produziria o mesmo efeito.
+
+#### Falsificação — 6 braços (T1-T6)
+
+- **T1** (contra-braço obrigatório): D==R, todos em W → exit 0. Afirma: gate passa quando todos os conjuntos concordam.
+- **T2** (D\R): `'parity'` em D mas não em R → exit 1 nomeando `'parity'`. Afirma: D\R ≠ ∅ causa falha nomeando o check ausente dos required (defeito ML-4A).
+- **T3** (R\W): `'ghost-job'` em R mas não em W → exit 1 nomeando `'ghost-job'`. Afirma: R\W ≠ ∅ causa falha nomeando o check fantasma (PR pendente para sempre).
+- **T4** (leitura falha): `SELFTEST_REQUIRED_FAIL=1` → exit 2 com `::error::`. Afirma: falha do instrumento não passa em silêncio.
+- **T5** (arquivo ausente): ROOT aponta dir sem `.github/required-status-checks.txt` → exit 2. Afirma: arquivo ausente dispara guarda de vacuidade — não pode aprovar qualquer configuração.
+- **T6** (arquivo vazio): ROOT aponta dir com arquivo vazio → exit 2. Afirma: arquivo vazio dispara guarda de vacuidade — não pode aprovar qualquer configuração.
+
+#### Reconciliação teste↔conclusão (regra dura do projeto)
+
+- T1 afirma: quando D==R e ambos ⊆ W, o gate retorna 0 — nenhuma divergência detectada.
+- T2 afirma: quando D\R ≠ ∅ (medido: job adicionado a D sem estar em R), o gate retorna 1 e nomeia o check.
+- T3 afirma: quando R\W ≠ ∅ (medido: nome em required sem job correspondente em workflow), o gate retorna 1 e nomeia o check.
+- T4 afirma: quando o instrumento falha (simulado via SELFTEST_REQUIRED_FAIL), o gate retorna 2 com `::error::` — nunca passa.
+- T5 afirma: quando `.github/required-status-checks.txt` não existe, o gate retorna 2 — arquivo ausente = instrumento falho, não D vazia.
+- T6 afirma: quando `.github/required-status-checks.txt` existe mas está vazio, o gate retorna 2 — D vazia aprovaria qualquer configuração, o que é semanticamente falso.
+
+#### Gates — 2026-09-11, foreground
+
+```
+python3 scripts/check-required-status-checks.py --self-test
+→ Self-test summary: 6 PASS, 0 FAIL
+
+python3 scripts/check-required-status-checks.py
+→ check-required-status-checks: [OK] declared=10, required=10, workflow_checks=34 — D\R=∅, R\W=∅, D\W=∅ — todos os conjuntos concordam.
+→ EXIT: 0
+
+make parity-rest
+→ (tail) Self-test summary: 6 PASS, 0 FAIL
+→ exit 0
+
+python3 -c "yaml.safe_load(...quality.yml)"
+→ YAML válido. 12 jobs.
+
+trackfw validate
+→ 0 errors (174 warnings)
+```
+
+🔴 **Item aberto declarado ao arquiteto:** se `GITHUB_TOKEN` com `administration: read` consegue
+ler a proteção da branch em CI (PRs internos e push para main) — não medível neste ML, requer
+run real. Se falhar em CI, a causa é o token insuficiente; a mensagem de diagnóstico do gate
+inclui a instrução de correção. Após confirmação, wirear `check-required-checks` no `parity.needs`
+(passo pendente descrito acima).
+
+**Por que vale mais que o ML-4A:** o 4A corrige a instância. O 4B impede a classe — e a classe é
+*"construímos o mecanismo e não o ligamos a quem age sobre ele"*, que hoje apareceu **duas vezes**:
+aqui, e no baseline do D4 que nunca rodava porque `origin/main` não era fetchado.
+
+#### Corretivo ML-4B — `administration: read` não é escopo de workflow; schema rejeitado → 0 jobs (2026-09-11)
+**Status:** ✅ Concluído · **Agente:** `ares-tf`
+
+**Defeito:** declarar `administration: read` em `permissions:` do job `check-required-checks`
+fez o GitHub rejeitar o schema do `quality.yml` inteiro — 0 jobs criados, todos os
+`required_status_checks` ficam pendentes para sempre. YAML é válido para `yaml.safe_load`
+mas inválido para o schema do GitHub Actions.
+
+**Causa raiz:** `administration` é escopo de fine-grained PAT, não de workflow `permissions:`.
+Os escopos válidos de workflow não incluem `administration`. Confirmado por actionlint.
+
+**Erro de método identificado pelo arquiteto:** no ML-4B, o agente declarou a permissão no YAML
+em vez de medir se GITHUB_TOKEN consegue chamar o endpoint. São duas questões distintas —
+e a declaração de um escopo inválido causou o modo de falha `R\W` que o gate foi construído para detectar.
+
+**Medições realizadas (2026-09-11, corretivo):**
+```
+# FATO 1: actionlint confirma escopo inválido
+actionlint .github/workflows/quality.yml
+→ linha 1069: "unknown permission scope 'administration'. all available permission scopes
+   are 'actions', 'artifact-metadata', 'attestations', 'checks', 'contents', ..."
+
+# FATO 2: endpoint retorna 401 anônimo
+curl -s -w '\nHTTP %{http_code}\n' https://api.github.com/repos/kgsaran/trackfw/branches/main/protection
+→ {"message": "Requires authentication", "status": "401"}
+
+Controle (/branches/main anônimo):
+curl -s -w '\nHTTP %{http_code}\n' https://api.github.com/repos/kgsaran/trackfw/branches/main -o /dev/null
+→ HTTP 200
+
+# FATO 3: com token pessoal de KG (scope 'repo')
+gh api repos/kgsaran/trackfw/branches/main/protection -i | head -1
+→ HTTP/2.0 200 OK
+
+# NÃO CONFIRMADO: GITHUB_TOKEN com 'contents: read' em CI
+# Requer fine-grained PAT com 'metadata: read' only ou run real de CI.
+```
+
+**Decisão de design — R em CI:**
+O endpoint requer autenticação (FATO 2). GITHUB_TOKEN é autenticado mas não pode receber
+`administration` (escopo inválido). Se GITHUB_TOKEN com `contents: read` não conseguir chamar
+o endpoint em CI, D\R e R\W não são verificadas.
+
+🔴 **Limitação declarada:** o defeito que originou este ML (`windows-full-suites` ausente do
+`required_status_checks.contexts`) é um defeito D\R e **NÃO seria detectado** por um gate sem R.
+D\W continua funcionando sem token (só arquivos locais do checkout).
+
+Solução para R em CI: `secrets.REPO_ADMIN_TOKEN` (PAT com `repo` scope) — decisão de KG.
+Se o GITHUB_TOKEN conseguir (run real confirmará), nenhuma mudança adicional necessária.
+
+**Correções neste corretivo:**
+1. `quality.yml` — `administration: read` removido; comentário corrigido (documentando a
+   medição e a limitação declarada de R)
+2. `scripts/check-required-status-checks.py` — Decision 2 atualizada com medições brutas;
+   Limitação de R adicionada ao topo do docstring com declaração explícita
+3. `Makefile` — comentário sobre `administration:read` corrigido
+4. `vault/notes/administration-nao-e-escopo-de-workflow-github-actions-schema-rejeitado-2026-09-11.md` — nota criada
+
+**Reconciliação teste↔conclusão:**
+- Mudança 1 (remoção de `administration: read`) afirma: escopo inválido removido → actionlint
+  passa em quality.yml → workflow volta a criar jobs.
+- Mudança 2 (Decision 2) afirma: a decisão documenta os três fatos medidos, não uma presunção;
+  "NÃO CONFIRMADO" é honesto sobre o que não foi testado.
+
+**Gates (corretivo, sequenciais, foreground, local, macOS arm64):**
+```
+actionlint .github/workflows/quality.yml
+→ (sem saída, exit 0)
+
+actionlint .github/workflows/*.yml
+→ apenas avisos shellcheck pré-existentes em windows-census.yml e windows-probe.yml
+  (não introduzidos por este corretivo)
+
+python3 scripts/check-required-status-checks.py --self-test
+→ 6 PASS, 0 FAIL
+
+make parity-rest
+→ 0 FAIL, 0 ERROR (verificado por grep '^FAIL\|^ERROR' no output)
+
+trackfw validate
+→ (não executado neste corretivo — sem mudanças em artefatos de governança trackfw)
+```
+
+---
+
+## Corretivo de desenho ML-4B — 2026-09-11, PR #317 (ares-tf)
+
+**Defeito:** run CI 34605163678 provou que `GITHUB_TOKEN` retorna 404 ao chamar
+`/branches/main/protection`. O conjunto **R** não é obtível em CI.
+O gate ficaria permanentemente vermelho em todo PR — reproduzindo o ruído do issue #275.
+
+### A aritmética que decide
+
+| Verificação | Depende de R? | Obtível em CI? |
+|---|---|---|
+| D\R (job declarado ausente do required — defeito ML-4A) | Sim | Não |
+| R\W (required aponta check que CI não emite — PR pendente para sempre) | Sim | Não |
+| D\W (declaração fantasma — job não existe em nenhum workflow) | Não | Sim |
+
+As duas verificações que pegam os defeitos documentados dependem de R. D\W é o mais fraco e
+não teria pegado o defeito de ontem (`windows-full-suites` ausente do required = D\R).
+
+### Decisão
+
+**1. Alvo `make check-required-full`** — D/R/W completo. Roda localmente onde a credencial
+existe. Fatal se R não for legível (mantenedor deveria ter a credencial por definição).
+
+**2. CI roda `--scope dw`** — apenas D\W. Sem token, sem vermelho permanente. A saída
+declara explicitamente que R não foi verificado e o motivo — escopo declarado, não degradação
+silenciosa (padrão proibido por `vault/notes/guarda-que-reporta-ausencia-precisa-distinguir-
+nao-achei-de-nao-consegui-procurar-2026-09-10.md`).
+
+**3. `check-required-checks` entra em `parity.needs`** — o bloqueador era "esperar CI
+confirmar o token". Esse ponto está resolvido negativamente (token insuficiente). O escopo
+dw não depende de token; o job pode ser consumido.
+
+**4. `make check-required-full` amarrado à rotina de release** — pré-condição do `git tag -a`
+(CLAUDE.md §Protocolo de Release, passo 3.5). A lista muda episodicamente; verificar em cada
+push (hook) adicionaria latência constante por proteção episódica — caminho direto para
+`--no-verify`. Release é o gatilho natural.
+
+### Falsificação — 4 braços novos (T7-T10)
+
+- **T7** (`--scope dw` + token indisponível → exit 0): afirma que a medição do run
+  34605163678 (GITHUB_TOKEN retorna 404) não causa vermelho permanente em CI com --scope dw.
+- **T8** (`--scope dw` + D\R divergente → exit 0): afirma que R não é consultado em scope dw
+  (flag restringe, não é cosmético).
+- **T9** (`--scope dw` + D\W divergente → exit 1): afirma que D\W ainda funciona em scope dw.
+- **T10** (`--scope dw` + D==W → exit 0, declara "R não verificado"): contra-braço de T9;
+  afirma que o gate passa quando D e W concordam, e que a saída inclui a declaração de
+  escopo reduzido.
+
+### Critérios de aceite — corretivo
+
+- [x] `--self-test` → 10 PASS, 0 FAIL (T1-T10)
+- [x] `--scope dw` com workflows reais → exit 0, declara "R não verificado"
+- [x] `--scope full` local → exit 0 (declared=10, required=10, workflow_checks=35 — D\R=∅, R\W=∅, D\W=∅)
+- [x] CI job `check-required-checks` roda `--scope dw` (sem token, sem if-gate, sem fork-warning)
+- [x] `check-required-checks` em `parity.needs`
+- [x] `make check-required-full` — alvo standalone, comentado como pré-condição de release
+- [x] CLAUDE.md — passo 3.5 adicionado ao Protocolo de Release
+- [x] `actionlint .github/workflows/quality.yml` → exit 0
+- [x] `actionlint .github/workflows/*.yml` → apenas pre-existing shellcheck em windows-census/probe
+- [x] `make parity-rest` → 0 FAIL, 0 ERROR
+- [x] `trackfw validate` → 0 errors (173 warnings pré-existentes)
+
+### Gates — 2026-09-11, foreground
+
+```
+python3 scripts/check-required-status-checks.py --self-test
+→ Self-test summary: 10 PASS, 0 FAIL
+
+python3 scripts/check-required-status-checks.py --scope dw
+→ check-required-status-checks: [OK] [scope=dw] declared=10, workflow_checks=35 — D\\W=∅.
+  R não verificado (GITHUB_TOKEN sem permissão de administrador em CI): D\\R e R\\W não
+  foram verificados nesta execução. Use 'make check-required-full' para verificação
+  completa (requer credencial de mantenedor).
+
+python3 scripts/check-required-status-checks.py
+→ check-required-status-checks: [OK] [scope=full] declared=10, required=10,
+  workflow_checks=35 — D\\R=∅, R\\W=∅, D\\W=∅ — todos os conjuntos concordam.
+
+actionlint .github/workflows/quality.yml
+→ (sem saída, exit 0)
+
+actionlint .github/workflows/*.yml
+→ apenas avisos shellcheck pré-existentes em windows-census.yml e windows-probe.yml
+
+make parity-rest
+→ 0 FAIL, 0 ERROR
 
 trackfw validate
 → 0 errors (173 warnings pré-existentes)

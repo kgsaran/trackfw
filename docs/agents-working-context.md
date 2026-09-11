@@ -4,6 +4,75 @@
 
 ---
 
+## Sessão 2026-09-11c — ares-tf (Infrastructure) — Corretivo ML-4B: `administration: read` inválido em workflow → schema rejeitado → 0 jobs: CONCLUÍDO, aguarda auditoria do arquiteto
+
+Branch `fix/ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega` (PR #317).
+
+**Defeito:** `administration: read` declarado em `permissions:` do job `check-required-checks`
+no `quality.yml` é escopo inválido de workflow GitHub Actions. GitHub rejeitou o schema inteiro
+(0 jobs criados), todos os required_status_checks ficam pendentes para sempre — CI travado.
+
+**Medições realizadas nesta sessão:**
+- actionlint: "unknown permission scope 'administration'" confirmado na linha 1069
+- Anonymous → `/branches/main/protection` → HTTP 401 ("Requires authentication")
+- Controle: `/branches/main` anônimo → HTTP 200
+- KG admin token → `/branches/main/protection` → HTTP 200
+- GITHUB_TOKEN com `contents: read` em CI: NÃO CONFIRMADO (não testável sem fine-grained PAT ou run real)
+
+**Decisão de design:** R (leitura da proteção) permanece na arquitetura mas com limitação declarada.
+Se GITHUB_TOKEN não conseguir chamar o endpoint, D\R e R\W não são verificadas. O defeito original
+(windows-full-suites ausente do required) é D\R e NÃO seria detectado sem R. Solução: `secrets.REPO_ADMIN_TOKEN` — decisão de KG.
+
+**Artefatos modificados:**
+- `.github/workflows/quality.yml` — `administration: read` removido; comentário corrigido
+- `scripts/check-required-status-checks.py` — Decision 2 + topo do docstring com medições brutas e limitação declarada
+- `Makefile` — comentário sobre `administration:read` corrigido
+- `vault/notes/administration-nao-e-escopo-de-workflow-github-actions-schema-rejeitado-2026-09-11.md` — nota criada
+- `docs/roadmaps/wip/ROADMAP-*` — Corretivo ML-4B adicionado
+- `vault/notes/index.md` — nota linkada
+
+**Gates:**
+- actionlint .github/workflows/quality.yml → exit 0 (sem erros)
+- `python3 scripts/check-required-status-checks.py --self-test` → 6 PASS, 0 FAIL
+- `make parity-rest` → exit 0 (0 FAIL, 0 ERROR)
+- `trackfw validate` → 0 errors, 173 warnings (pré-existentes)
+
+**Nota pendente (não implementada neste ML — requer REQ+roadmap):** wiring do actionlint no
+`parity-rest` para pegar erros de schema de workflow antes de chegar ao CI.
+
+---
+
+## Sessão 2026-09-11b — ares-tf (Infrastructure) — ML-4B: gate que verifica concordância entre required_status_checks e jobs declarados bloqueantes: CONCLUÍDO, aguarda auditoria do arquiteto
+
+Branch `fix/ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega`.
+
+**Escopo:** ML-4B — construir gate que compare `required_status_checks.contexts` da proteção da main com (D) lista declarada local e (W) jobs que os workflows podem realmente emitir. Reprova nas três direções: D\R, R\W, D\W.
+
+**Medições realizadas nesta sessão:**
+- `gh api repos/kgsaran/trackfw --jq '.private'` → `false` (repo público)
+- `gh api repos/kgsaran/trackfw/actions/permissions/workflow` → `{"default_workflow_permissions":"read","can_approve_pull_request_reviews":false}`
+- `gh api repos/kgsaran/trackfw/branches/main/protection --jq '.required_status_checks.contexts'` → `["go","node","python (3.10)","python (3.12)","package-smoke","windows-integrations-resolve","parity","governance-install-script","governance-go-install","windows-full-suites"]` (com credencial pessoal do KG)
+- W (check names derivados de todos os workflows via YAML parser): go, node, python (3.10/3.12), package-smoke, windows-integrations-resolve, windows-full-suites, parity, governance-install-script, governance-go-install, parity-other-gates, parity-falsify-shard (0..3), pr-closing-keyword, + jobs de outros workflows.
+- Nenhum job existente declara `administration: read` em quality.yml.
+
+**Item aberto (não medível nesta sessão):** se GITHUB_TOKEN com `administration: read` consegue ler proteção da branch em CI — requer run real, não autorizado por este ML. Entregue como limitação declarada ao arquiteto. Passo pendente: após confirmação, o arquiteto adiciona `check-required-checks` ao `parity.needs` no mesmo PR.
+
+**Artefatos entregues:**
+- `.github/required-status-checks.txt` — declaração D com os 10 checks medidos
+- `scripts/check-required-status-checks.py` — gate Python com `--self-test` (6 braços: T1-T6); glob cobre `.yml` e `.yaml`; T5/T6 cobrem guardas de vacuidade (arquivo ausente/vazio)
+- `Makefile` — `python3 scripts/check-required-status-checks.py --self-test` adicionado ao `parity-rest`
+- `.github/workflows/quality.yml` — job `check-required-checks` (com `administration: read`) adicionado; `parity.needs` **NÃO** inclui o job ainda (aguarda run de CI — evita wirear gate não observado em caminho obrigatório)
+- `docs/roadmaps/wip/ROADMAP-*.md` — ML-4B marcado ✅ Concluído com critérios de aceite, 3 decisões, medições, 6 braços de falsificação e gates
+
+**Gates (foreground):**
+- `python3 scripts/check-required-status-checks.py --self-test` → **6 PASS, 0 FAIL**
+- `python3 scripts/check-required-status-checks.py` (live) → declared=10, required=10, workflow_checks=34, exit 0
+- `make parity-rest` → exit 0 (tail mostra 6 PASS do novo gate)
+- `trackfw validate` → 0 errors, 173 warnings (aceitação reduzida de 174 para 173: bloco de critérios ML-4B resolveu o warning de wip sem critérios)
+- YAML: `python3 -c "yaml.safe_load(...)"` → válido, 12 jobs
+
+---
+
 ## Sessão 2026-09-11a — ares-tf (Infrastructure) — Corretivo ratchet: sumário mascarava desequilíbrio por classe + mensagem de erro convidava ao abuso da lista: CONCLUÍDO, aguarda auditoria do arquiteto
 
 Branch `fix/barrier-executa-gate-de-roadmap-nao-confiavel`.
@@ -35432,3 +35501,36 @@ expande para nome longo. `path.relative(longo, curto)` produz lixo → `git cat-
 ## apolo-tf — 2026-09-10 — FIM
 
 **Status:** ML-W3B ✅ Concluído. Entregando para auditoria do trackfw_architect.
+
+## ares-tf — 2026-09-11 — INÍCIO
+
+**Agente:** Ares (Infrastructure)
+**Branch:** `fix/ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega` (PR #317)
+**Roadmap:** `ROADMAP-2026-09-06-ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega.md`
+**ML:** ML-4B — Corretivo de desenho: CI não consegue ler R (404) → redesenho de escopo
+
+**Escopo:**
+1. `scripts/check-required-status-checks.py` — adicionar flag `--scope {full,dw}`; modo dw: apenas D\W, declara o que não verificou; modo full: D/R/W completo, fatal se R não legível; novos testes T7-T10
+2. `.github/workflows/quality.yml` — job `check-required-checks` passa a rodar `--scope dw` (sem token, sem if-gate, sem fork-warning); `check-required-checks` entra em `parity.needs`
+3. `Makefile` — novo alvo `check-required-full` (D/R/W completo, somente local, comentado como pré-condição de release)
+4. `CLAUDE.md` — Protocolo de Release: passo 3.5 executar `make check-required-full` antes de `git tag -a`
+
+## ares-tf — 2026-09-11 — FIM
+
+**Status:** ML-4B Corretivo de desenho entregue. Sem commit, sem push — aguarda auditoria do trackfw_architect.
+
+**Artefatos modificados:**
+- `scripts/check-required-status-checks.py` — flag `--scope {full,dw}`; T7-T10 novos; docstring atualizada
+- `.github/workflows/quality.yml` — job `check-required-checks` passa a rodar `--scope dw`; sem if-gate, sem GH_TOKEN, sem fork-warning; comentário atualizado; `check-required-checks` em `parity.needs`
+- `Makefile` — alvo `check-required-full` adicionado; comentário de `parity-rest` atualizado
+- `CLAUDE.md` — passo 3.5 no Protocolo de Release (make check-required-full pré-condição da tag)
+- `docs/roadmaps/wip/ROADMAP-2026-09-06-ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega.md` — corretivo de desenho documentado com critérios de aceite e gates
+
+**Gates (foreground, macOS arm64):**
+- `python3 scripts/check-required-status-checks.py --self-test` → 10 PASS, 0 FAIL
+- `python3 scripts/check-required-status-checks.py --scope dw` → exit 0, declara R não verificado
+- `python3 scripts/check-required-status-checks.py` (scope full) → exit 0, D\R=∅, R\W=∅, D\W=∅
+- `actionlint .github/workflows/quality.yml` → exit 0
+- `actionlint .github/workflows/*.yml` → apenas avisos shellcheck pré-existentes (windows-census/probe)
+- `make parity-rest` → 0 FAIL, 0 ERROR
+- `trackfw validate` → 0 errors (173 warnings pré-existentes)

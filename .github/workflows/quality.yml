@@ -1042,15 +1042,40 @@ jobs:
   # `if: always()` sozinho faz o job PASSAR por padrão quando pulado ou
   # quando um needs falhou -- por isso o primeiro step abaixo falha
   # explicitamente nesse caso, antes de qualquer outra coisa rodar.
+  # ML-4B corretivo (ROADMAP-2026-09-06-ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega):
+  # Verifica que a declaração local (.github/required-status-checks.txt) concorda com os checks
+  # que os workflows podem realmente emitir — escopo D\W apenas (sem chamada à API).
+  #
+  # Escopo dw: GITHUB_TOKEN não tem permissão para ler /branches/main/protection em CI
+  # (medido: run 34605163678, PR #317 — retornou 404 "Resource not found").
+  # A verificação completa D/R/W (incluindo D\R e R\W) usa 'make check-required-full',
+  # que requer credencial de mantenedor e é pré-condição da rotina de release
+  # (ver CLAUDE.md §Protocolo de Release, passo 3.5).
+  # D\R e R\W não verificados nesta execução — declarado explicitamente na saída do gate.
+  check-required-checks:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: pip install PyYAML
+      - name: ML-4B autoteste (10 bracos de falsificacao, incluindo scope dw)
+        run: python3 scripts/check-required-status-checks.py --self-test
+      - name: ML-4B verificacao D\W — declared vs workflow checks (scope dw, sem token)
+        run: python3 scripts/check-required-status-checks.py --scope dw
+
   parity:
     runs-on: ubuntu-latest
-    needs: [parity-falsify-shard, parity-other-gates]
+    needs: [parity-falsify-shard, parity-other-gates, check-required-checks]
     if: always()
     steps:
       - name: Nenhum job de needs pode ter falhado ou sido cancelado
         if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
         run: |
-          echo "::error::pelo menos um job de needs (parity-falsify-shard ou parity-other-gates) falhou ou foi cancelado -- ver os jobs acima. if:always() aqui existe para RODAR e REPROVAR, nunca para mascarar."
+          echo "::error::pelo menos um job de needs (parity-falsify-shard, parity-other-gates ou check-required-checks) falhou ou foi cancelado -- ver os jobs acima. if:always() aqui existe para RODAR e REPROVAR, nunca para mascarar."
           exit 1
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
