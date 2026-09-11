@@ -183,19 +183,81 @@ class TrackfwHandler(BaseHTTPRequestHandler):
         pass
 
 
+def _is_valid_host(host):
+    """Returns True if host is a valid --host value.
+
+    Accepts: 'localhost', IPv4, IPv6 literal (without zone ID), RFC-1123 hostname.
+    Rejects anything else — in particular strings with shell metacharacters, or
+    IPv6 scoped addresses (zone ID after '%').
+
+    Zone IDs are rejected even when syntactically clean (e.g. 'fe80::1%eth0')
+    because:
+    1. Go's net.ParseIP rejects them — paridade exige concordância nos 3 CLIs.
+    2. HTTPServer 2-tuple bind strips the zone ID, making it non-functional.
+    3. Python's ipaddress.ip_address() accepts any zone ID content, including
+       cmd.exe metacharacters (&, |, ^…) — blocking '%' closes the entire class
+       rather than enumerating individual metacharacters.
+
+    Espelha internal/serve/serve.go IsValidHost e isValidHost do Node.js.
+    """
+    import re
+
+    if host == "localhost":
+        return True
+    # Reject IPv6 scoped addresses (zone ID). Python's ipaddress.ip_address()
+    # accepts any content after '%', including cmd.exe metacharacters that
+    # list2cmdline does not quote (& without adjacent space). Go rejects all
+    # scoped addresses; Node.js rejects zone IDs with metacharacters but accepts
+    # clean ones — rejecting '%' here aligns all three runtimes on the same
+    # contract and closes the entire attack class.
+    if "%" in host:
+        return False
+    try:
+        ipaddress.ip_address(host)
+        return True
+    except ValueError:
+        pass
+    # RFC 1123 hostname
+    if len(host) > 253:
+        return False
+    label = r"[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?"
+    return bool(re.match(r"^" + label + r"(\." + label + r")*$", host))
+
+
+def _browser_argv(system, url):
+    """Returns [cmd, args] for opening url without shell interpolation.
+
+    Darwin / Linux: cmd is invoked directly via Popen without shell=True.
+    Windows: ['cmd', '/c', 'start', '', url] — cmd.exe is needed because
+    'start' is a cmd.exe builtin. argv is still safer than shell=True
+    (no shell re-parsing by Python), but cmd.exe re-parses its own
+    metacharacters in url. Defense for that residual: _is_valid_host()
+    rejects metacharacter-bearing hosts before they reach this function.
+
+    Exported for testing.
+    """
+    if system == "Darwin":
+        return ["open", url]
+    if system == "Windows":
+        return ["cmd", "/c", "start", "", url]
+    return ["xdg-open", url]
+
+
 def _open_browser(url):
-    """Abre o navegador padrão na URL indicada."""
+    """Abre o navegador padrão na URL indicada.
+
+    AC1/AC2 — usa argv (Popen sem shell=True), nunca interpolação em string
+    de shell. Os ramos Darwin e Linux já estavam corretos; o ramo Windows
+    foi migrado de Popen(["start", url], shell=True) para
+    Popen(["cmd", "/c", "start", "", url]) (sem shell=True).
+    """
     import subprocess
     import platform
 
     system = platform.system()
+    argv = _browser_argv(system, url)
     try:
-        if system == "Darwin":
-            subprocess.Popen(["open", url])
-        elif system == "Windows":
-            subprocess.Popen(["start", url], shell=True)
-        else:
-            subprocess.Popen(["xdg-open", url])
+        subprocess.Popen(argv)
     except OSError:
         pass  # falha silenciosa se não conseguir abrir
 
@@ -207,6 +269,16 @@ def cmd_serve(args):
     port = getattr(args, "port", 8080)
     host = getattr(args, "host", "127.0.0.1")
     no_open = getattr(args, "no_open", False)
+
+    # AC4 — validate --host before bind. Rejects metacharacter-bearing
+    # strings that would reach the browser-open path or the socket.
+    if not _is_valid_host(host):
+        print(f"trackfw serve: invalid --host value: {host}", file=sys.stderr)
+        print(
+            '--host must be "localhost", a valid IPv4/IPv6 address, or an RFC-1123 hostname.',
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     cfg = _config.load()
 

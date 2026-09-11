@@ -131,21 +131,34 @@ fi
 
 # ---------------------------------------------------------------------------
 # 2 — Injection gate (Node.js): fixed openBrowser() does NOT create the sentinel.
+#
+# Fail-open fix: the snippet writes $WORK/node-loaded immediately after the
+# require() succeeds. If the module is unreadable, node fails and || true
+# swallows the error — leaving node-loaded absent. The gate then fails with
+# "module did not load" instead of the misleading "sentinel absent = OK".
+# Rationale: a guard that cannot measure its own instrument must FAIL, not PASS.
+# See vault/notes/guarda-que-reporta-ausencia-precisa-distinguir-nao-achei-de-
+# nao-consegui-procurar-2026-09-10.md
 # ---------------------------------------------------------------------------
-rm -f "$SENTINEL" "$SHIM_LOG"
+NODE_LOADED="$WORK/node-loaded"
+rm -f "$SENTINEL" "$SHIM_LOG" "$NODE_LOADED"
 
 SHIM_LOG="$SHIM_LOG" PATH="$SHIM_DIR:$PATH" \
   node -e "
+const fs = require('fs');
 const { openBrowser } = require('$NODE_SERVE');
+fs.writeFileSync('$NODE_LOADED', '1');
 openBrowser('darwin', process.argv[1]);
 setTimeout(() => {}, 300);
 " -- "$MALICIOUS_URL" 2>/dev/null || true
 sleep 0.4
 
-if [[ -f "$SENTINEL" ]]; then
+if [[ ! -f "$NODE_LOADED" ]]; then
+  fail "injection/node" "Node.js module '$NODE_SERVE' did not load — cannot measure injection safety (fail-closed: instrument failure = FAIL)"
+elif [[ -f "$SENTINEL" ]]; then
   fail "injection/node" "sentinel '$SENTINEL' was created — shell injection STILL POSSIBLE in Node.js fixed code"
 else
-  ok "injection/node (sentinel absent — malicious URL does not execute extra command)"
+  ok "injection/node (module loaded, sentinel absent — malicious URL does not execute extra command)"
 fi
 
 # ---------------------------------------------------------------------------
@@ -176,14 +189,21 @@ fi
 # ---------------------------------------------------------------------------
 # 4 — Injection gate (Python, Darwin branch): fixed _open_browser() does NOT
 #     create the sentinel.
+#
+# Fail-open fix: the snippet writes $WORK/py-loaded immediately after the
+# import succeeds. If the module is unreadable, python3 fails and || true
+# swallows the error — leaving py-loaded absent. The gate then fails with
+# "module did not load" instead of the misleading "sentinel absent = OK".
 # ---------------------------------------------------------------------------
-rm -f "$SENTINEL" "$SHIM_LOG"
+PY_LOADED="$WORK/py-loaded"
+rm -f "$SENTINEL" "$SHIM_LOG" "$PY_LOADED"
 
 SHIM_LOG="$SHIM_LOG" PATH="$SHIM_DIR:$PATH" \
   python3 -c "
 import sys
 sys.path.insert(0, '$PY_ROOT')
 from trackfw.commands.serve import _open_browser
+open('$PY_LOADED', 'w').close()
 import unittest.mock as mock
 url = sys.argv[1]
 with mock.patch('platform.system', return_value='Darwin'):
@@ -192,10 +212,12 @@ import time; time.sleep(0.3)
 " "$MALICIOUS_URL" 2>/dev/null || true
 sleep 0.4
 
-if [[ -f "$SENTINEL" ]]; then
+if [[ ! -f "$PY_LOADED" ]]; then
+  fail "injection/python-darwin" "Python module '$PY_SERVE' did not load — cannot measure injection safety (fail-closed: instrument failure = FAIL)"
+elif [[ -f "$SENTINEL" ]]; then
   fail "injection/python-darwin" "sentinel '$SENTINEL' was created — shell injection STILL POSSIBLE in Python Darwin branch"
 else
-  ok "injection/python-darwin (sentinel absent — Darwin branch does not inject)"
+  ok "injection/python-darwin (module loaded, sentinel absent — Darwin branch does not inject)"
 fi
 
 # ---------------------------------------------------------------------------
@@ -284,9 +306,19 @@ fi
 
 # ---------------------------------------------------------------------------
 # 8 — AC1 static (Node.js): old exec(`open pattern absent from live code.
+#
+# Fail-open fix: the two-stage pipeline grep -v ... | grep -F ... exits with
+# the second grep's code. When $NODE_SERVE is unreadable, the first grep fails
+# (but we're not checking it), the second grep finds nothing (exit 1), the
+# `if` evaluates the else branch, and the scenario reports OK — a false pass.
+# Fix: capture live-code lines first; fail if the capture is empty (file
+# unreadable or empty). "Not found" is only meaningful after "could read".
 # ---------------------------------------------------------------------------
 OLD_EXEC_PATTERN='exec(`open'
-if grep -v "^[[:space:]]*//" "$NODE_SERVE" | grep -F "$OLD_EXEC_PATTERN" >/dev/null 2>&1; then
+NODE_LIVE_LINES=$(grep -v "^[[:space:]]*//" "$NODE_SERVE" 2>/dev/null)
+if [[ -z "$NODE_LIVE_LINES" ]]; then
+  fail "ac1-static/node" "could not read live lines from '$NODE_SERVE' — cannot assess exec(string) pattern (fail-closed)"
+elif echo "$NODE_LIVE_LINES" | grep -qF "$OLD_EXEC_PATTERN"; then
   fail "ac1-static/node" "found live exec(string) pattern '$OLD_EXEC_PATTERN' in $NODE_SERVE (excluding comment lines)"
 else
   ok "ac1-static/node (old exec(string) pattern absent from live code in serve.js)"
@@ -294,8 +326,14 @@ fi
 
 # ---------------------------------------------------------------------------
 # 9 — AC1 static (Node.js): spawn present in live code.
+#
+# Fail-open fix: same pipeline race as cenário 8. Reuse NODE_LIVE_LINES so
+# the file-readable check is already done; an empty variable means we already
+# failed in cenário 8 and we must also fail here.
 # ---------------------------------------------------------------------------
-if grep -v "^[[:space:]]*//" "$NODE_SERVE" | grep -q "spawn"; then
+if [[ -z "$NODE_LIVE_LINES" ]]; then
+  fail "ac1-static/node-spawn" "could not read live lines from '$NODE_SERVE' — cannot assess spawn presence (fail-closed)"
+elif echo "$NODE_LIVE_LINES" | grep -q "spawn"; then
   ok "ac1-static/node-spawn (spawn is present in live code of serve.js)"
 else
   fail "ac1-static/node-spawn" "spawn not found in live code of $NODE_SERVE — openBrowser may not be using argv"
@@ -414,6 +452,117 @@ else
   else
     fail "ac4-wiring/go" "CLI exited non-zero but stderr does not contain 'invalid --host' (got: $(cat "$GO_STDERR" 2>/dev/null | head -2))"
   fi
+fi
+
+# ---------------------------------------------------------------------------
+# 17 — Zone ID injection: vulnerable arm — list2cmdline leaves & unquoted
+#      when there is no adjacent space, proving the attack vector is real and
+#      that the gate discriminates (does not pass vacuously).
+#
+#      This is the Python+Windows path exposed in the hades-tf BLOQUEIA:
+#      subprocess.list2cmdline(['cmd','/c','start','','http://[fe80::1%eth0&calc.exe]:4080'])
+#      → cmd /c start "" http://[fe80::1%eth0&calc.exe]:4080
+#      (& is unquoted → cmd.exe treats it as command separator → calc.exe runs)
+#
+#      The test runs list2cmdline as a pure string operation — no Windows needed.
+# ---------------------------------------------------------------------------
+ZONE_VECTOR_URL='http://[fe80::1%eth0&calc.exe&echo]:4080'
+
+ZONE_CMDLINE=$(python3 -c "
+import subprocess
+url = '$ZONE_VECTOR_URL'
+argv = ['cmd', '/c', 'start', '', url]
+print(subprocess.list2cmdline(argv))
+" 2>/dev/null)
+
+if [[ -z "$ZONE_CMDLINE" ]]; then
+  fail "zone-id-injection/vulnerable-arm" "list2cmdline check failed — cannot measure the attack vector (fail-closed)"
+else
+  # '&' must appear in output AND must not be quoted (list2cmdline quotes with "")
+  if echo "$ZONE_CMDLINE" | grep -q '&' && ! echo "$ZONE_CMDLINE" | grep -q '"&"'; then
+    ok "zone-id-injection/vulnerable-arm (list2cmdline leaves & unquoted — attack vector confirmed real, gate discriminates)"
+  else
+    fail "zone-id-injection/vulnerable-arm" "expected unquoted & in list2cmdline output but got: $ZONE_CMDLINE"
+  fi
+fi
+
+ZONE_HOST='fe80::1%eth0&calc.exe&echo'
+
+# ---------------------------------------------------------------------------
+# 18 — Zone ID rejection (Python): _is_valid_host rejects the exact vector
+#      that hades-tf blocked — fe80::1%eth0&calc.exe&echo.
+# ---------------------------------------------------------------------------
+PY_ZONE_CHECK=$(python3 -c "
+import sys
+sys.path.insert(0, '$PY_ROOT')
+from trackfw.commands.serve import _is_valid_host
+h = '$ZONE_HOST'
+print('false' if not _is_valid_host(h) else 'true', end='')
+" 2>/dev/null)
+
+if [[ "$PY_ZONE_CHECK" == "false" ]]; then
+  ok "zone-id-rejection/python (_is_valid_host rejects '$ZONE_HOST' — hades-tf vector blocked)"
+else
+  fail "zone-id-rejection/python" "_is_valid_host returned '$PY_ZONE_CHECK' for '$ZONE_HOST' — expected 'false' (BLOQUEIA vector not fixed)"
+fi
+
+# ---------------------------------------------------------------------------
+# 19 — Zone ID rejection (Node.js): isValidHost rejects the same vector.
+# ---------------------------------------------------------------------------
+NODE_ZONE_CHECK=$(node -e "
+const { isValidHost } = require('$NODE_SERVE');
+const h = '$ZONE_HOST';
+process.stdout.write(isValidHost(h) ? 'true' : 'false');
+" 2>/dev/null)
+
+if [[ "$NODE_ZONE_CHECK" == "false" ]]; then
+  ok "zone-id-rejection/node (isValidHost rejects '$ZONE_HOST' — zone ID blocked)"
+else
+  fail "zone-id-rejection/node" "isValidHost returned '$NODE_ZONE_CHECK' for '$ZONE_HOST' — expected 'false'"
+fi
+
+# ---------------------------------------------------------------------------
+# 20 — Zone ID rejection (Go CLI wiring): CLI exits non-zero for scoped host.
+# ---------------------------------------------------------------------------
+GO_ZONE_STDERR="$WORK/go-zone-stderr.txt"
+if "$GO_BIN" serve --host "$ZONE_HOST" \
+     >"$WORK/go-zone-stdout.txt" 2>"$GO_ZONE_STDERR"; then
+  fail "zone-id-rejection/go-wiring" "CLI exited 0 for zone ID host '$ZONE_HOST' — validation is not wired"
+else
+  ok "zone-id-rejection/go-wiring (CLI exits non-zero for '$ZONE_HOST')"
+fi
+
+# ---------------------------------------------------------------------------
+# 21 — Zone ID parity — all 3 CLIs agree: reject clean zone ID 'fe80::1%eth0'
+#      Paridade: Go (net.ParseIP) rejects; Python + Node corrected to reject.
+#      A divergence here means the three CLIs are not in agreement on the
+#      contract, violating the 3-CLI parity rule.
+# ---------------------------------------------------------------------------
+CLEAN_ZONE='fe80::1%eth0'
+
+PY_CLEAN_ZONE=$(python3 -c "
+import sys
+sys.path.insert(0, '$PY_ROOT')
+from trackfw.commands.serve import _is_valid_host
+print('false' if not _is_valid_host('$CLEAN_ZONE') else 'true', end='')
+" 2>/dev/null)
+
+NODE_CLEAN_ZONE=$(node -e "
+const { isValidHost } = require('$NODE_SERVE');
+process.stdout.write(isValidHost('$CLEAN_ZONE') ? 'true' : 'false');
+" 2>/dev/null)
+
+GO_CLEAN_ZONE_STDERR="$WORK/go-clean-zone-stderr.txt"
+if "$GO_BIN" serve --host "$CLEAN_ZONE" >"$WORK/go-clean-zone-stdout.txt" 2>"$GO_CLEAN_ZONE_STDERR"; then
+  GO_CLEAN_ZONE_RESULT="true"
+else
+  GO_CLEAN_ZONE_RESULT="false"
+fi
+
+if [[ "$PY_CLEAN_ZONE" == "false" && "$NODE_CLEAN_ZONE" == "false" && "$GO_CLEAN_ZONE_RESULT" == "false" ]]; then
+  ok "zone-id-parity (all 3 CLIs reject '$CLEAN_ZONE' — parity contract satisfied)"
+else
+  fail "zone-id-parity" "CLIs disagree on '$CLEAN_ZONE': Python=$PY_CLEAN_ZONE Node=$NODE_CLEAN_ZONE Go=$GO_CLEAN_ZONE_RESULT — all must be 'false'"
 fi
 
 # ---------------------------------------------------------------------------

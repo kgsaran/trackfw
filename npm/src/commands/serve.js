@@ -56,11 +56,25 @@ function displayUrl(host, port) {
 }
 
 // isValidHost reports whether host is acceptable as a --host argument.
-// Accepts: 'localhost', valid IPv4, valid IPv6 literal, RFC-1123 hostname.
-// Rejects anything else — in particular strings with shell metacharacters.
+// Accepts: 'localhost', valid IPv4, valid IPv6 literal (without zone ID),
+// RFC-1123 hostname. Rejects anything else — in particular strings with shell
+// metacharacters, or IPv6 scoped addresses (zone ID after '%').
+//
+// Zone IDs are rejected even when syntactically clean (e.g. 'fe80::1%eth0')
+// because: (1) Go's net.ParseIP rejects them — parity requires all 3 CLIs to
+// agree; (2) Python's ipaddress.ip_address() accepts any zone ID content,
+// including cmd.exe metacharacters that list2cmdline does not quote; blocking
+// '%' aligns both runtimes and closes the entire attack class rather than
+// enumerating individual metacharacters.
+//
 // Espelha internal/serve/serve.go IsValidHost e _is_valid_host do Python.
 function isValidHost(host) {
   if (host === 'localhost') return true
+  // Reject IPv6 scoped addresses (zone ID): '%' in host means a zone
+  // identifier that Python's ipaddress accepts with any content (including
+  // cmd.exe metacharacters); Go rejects all scoped addresses; rejecting here
+  // makes all three runtimes agree on the same contract.
+  if (host.includes('%')) return false
   const net = require('net')
   if (net.isIPv4(host) || net.isIPv6(host)) return true
   // RFC 1123 hostname: labels separated by dots, each [a-zA-Z0-9] or hyphens,

@@ -1,6 +1,8 @@
 package commands
 
 import (
+	"fmt"
+
 	"github.com/kgsaran/trackfw/internal/i18n"
 	"github.com/kgsaran/trackfw/internal/serve"
 	"github.com/spf13/cobra"
@@ -17,6 +19,15 @@ func newServeCmd() *cobra.Command {
 		Use:   "serve",
 		Short: i18n.T("serve.description"),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// AC4 — validate --host before bind. Rejects metacharacter-bearing
+			// strings. Go has no browser-open path; validation is defense in
+			// depth and parity with Node.js / Python.
+			if !serve.IsValidHost(host) {
+				return fmt.Errorf(
+					"invalid --host value: %s\n--host must be \"localhost\", a valid IPv4/IPv6 address, or an RFC-1123 hostname",
+					host,
+				)
+			}
 			// serve.Start prints the listening line itself, only after
 			// the bind succeeds — see internal/serve/serve.go.
 			return serve.Start(port, host)

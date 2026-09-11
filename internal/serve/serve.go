@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -37,6 +38,33 @@ func IsLoopbackHost(host string) bool {
 	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
+}
+
+// rfc1123Label matches a single DNS label per RFC 1123: alphanumeric + hyphens,
+// starting and ending with alphanumeric, 1–63 characters.
+var rfc1123Label = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?$`)
+
+// IsValidHost reports whether host is an acceptable --host value.
+// Accepts: "localhost", valid IPv4, valid IPv6 literal, RFC-1123 hostname.
+// Rejects anything else — in particular strings with shell metacharacters.
+// Espelha isValidHost do Node.js e _is_valid_host do Python.
+func IsValidHost(host string) bool {
+	if host == "localhost" {
+		return true
+	}
+	if net.ParseIP(host) != nil {
+		return true
+	}
+	// RFC 1123 hostname
+	if len(host) > 253 {
+		return false
+	}
+	for _, label := range strings.Split(host, ".") {
+		if !rfc1123Label.MatchString(label) {
+			return false
+		}
+	}
+	return true
 }
 
 // DisplayURL formats the URL to print and open in the browser for the given

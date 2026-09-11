@@ -106,6 +106,28 @@ test('isValidHost rejeita strings com semicolon, ampersand, pipe', () => {
 })
 
 // ---------------------------------------------------------------------------
+// IPv6 zone ID — parity with Go and Python (fix for hades-tf BLOQUEIA)
+// ---------------------------------------------------------------------------
+
+// AFIRMAÇÃO: isValidHost rejeita IPv6 scoped addresses (zone ID com '%') —
+// incluindo zone IDs sintaticamente limpos como fe80::1%eth0. Node.js
+// net.isIPv6() aceita zone IDs limpos mas rejeita os que têm metacaracteres;
+// esse comportamento dependente de versão do runtime não é um contrato
+// confiável. Rejeitando '%' antes de net.isIPv6() alinhamos Node.js com Go
+// (que rejeita todos os scoped via net.ParseIP) e com Python corrigido, e
+// fechamos a classe inteira de zone IDs em vez de enumerar metacaracteres.
+test('isValidHost rejeita IPv6 scoped address (zone ID com %)', () => {
+  // zone ID limpo — rejeitado para paridade com Go e Python
+  assert.strictEqual(isValidHost('fe80::1%eth0'), false)
+  // zone ID com metacaracteres de cmd.exe — o vetor do bloqueio do hades-tf
+  assert.strictEqual(isValidHost('fe80::1%eth0&calc.exe&echo'), false)
+  assert.strictEqual(isValidHost('fe80::1%eth0;id'), false)
+  assert.strictEqual(isValidHost('fe80::1%0'), false)
+  // percent em hostname RFC-1123
+  assert.strictEqual(isValidHost('host%20name'), false)
+})
+
+// ---------------------------------------------------------------------------
 // Runner
 // ---------------------------------------------------------------------------
 

@@ -22,10 +22,10 @@ Go não abre browser; ausência de superfície é divergência intencional docum
 - [x] AC1 — nenhum caminho interpola valor controlável em string de shell (argv, não comando montado)
 - [x] AC2 — ramo Windows do Python não usa shell=True
 - [x] AC3 — falsificação nas duas direções: sentinela ausente + contra-braço com PATH shim
-- [x] AC4 — validação de `--host` na entrada em todos os 3 CLIs
-- [x] AC5 — gate falsificável nos 3 CLIs, ligado ao Makefile
-- [x] AC6 — paridade documentada em `docs/cli-parity.md` com divergência Go declarada
-- [ ] AC7 — `make quality` e CI verdes (pendente: make quality inteiro, aguarda auditoria)
+- [x] AC4 — validação de `--host` na entrada em todos os 3 CLIs (incluindo rejeição de zone ID)
+- [x] AC5 — gate falsificável nos 3 CLIs, ligado ao Makefile (21 cenários, fail-open fechado)
+- [x] AC6 — paridade documentada em `docs/cli-parity.md` com contrato de zone ID e divergência Go declarada
+- [ ] AC7 — `make quality` e CI verdes (pendente: execução final com testes novos)
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
@@ -121,24 +121,62 @@ Python:
 - Nova seção "Abertura de browser — segurança de processo" com tabela Go/Node/Python, residual Windows declarado, e annotation `<!-- trackfw-contract: gate=scripts/check-serve-browser-security.sh -->`
 - Carve-out antigo (`serve.js`/`serve.py` retém `shell=True` "tracked by its own REQ") substituído por referência à nova seção
 
-### ML-1E — AC7: make quality (pendente auditoria)
-**Status:** ⬜ Pendente
+### ML-1F — Bloqueio hades-tf: injeção via IPv6 zone ID (2026-09-11)
+**Status:** ✅ Concluído
 
-`make quality` = `make test test-node test-python lint parity`. Decomposição executada:
-- `make test` (Go): PASS — `go test ./... 2>&1`
-- `make test-node`: 896 passed, 0 failed
-- `make test-python`: 1691 passed, 66 subtests passed
+**Causa:** hades-tf BLOQUEIA — `_is_valid_host('fe80::1%eth0&calc.exe&echo')` retorna True
+porque Python 3.9+ `ipaddress.ip_address()` aceita qualquer zone ID. `list2cmdline` não cita `&`
+sem espaço adjacente → cmd.exe interpreta como separador de comandos.
+
+**Arquivos afetados:**
+- `pypi/trackfw/commands/serve.py` — `_is_valid_host()`: `if "%" in host: return False` antes de `ipaddress.ip_address()`
+- `npm/src/commands/serve.js` — `isValidHost()`: `if (host.includes('%')) return false` antes de `net.isIPv6()`
+- `internal/serve/serve_test.go` — 4 casos de pin: `fe80::1%eth0`, `fe80::1%eth0&calc.exe&echo`, `fe80::1%0`, `host%20name` → false
+- `pypi/tests/test_serve_browser_security.py` — `test_rejects_ipv6_scoped_address`, `test_list2cmdline_unquoted_ampersand_proves_vector_real`, `TestIsValidHostZoneIdParity.test_all_cmd_metacharacters_via_zone_id_are_rejected`
+- `npm/tests/serve_browser_security.test.js` — teste de zone ID rejection com parity comment
+- `scripts/check-serve-browser-security.sh` — cenários 17-21 (zone ID), fix fail-open cenários 2, 4, 8-9
+- `docs/cli-parity.md` — contrato de zone ID documentado com tabela e razão da decisão
+- `vault/notes/python-ipaddress-zone-id-metachar-windows-injection-2026-09-11.md` — atualizado com lição, derivação de sítios, fix implementado
+
+**Contrato decidido:** rejeitar `%` nos 3 CLIs (lista de permissão = conjunto vazio, não lista de bloqueio de `&`).
+
+**Reconciliação de testes:**
+- `test_rejects_ipv6_scoped_address` afirma: rejeição de `%` fecha a classe de zone IDs antes do parse, inclusive casos sem metacaracteres evidentes — confirma a guarda opera na classe inteira, não só no metacaractere `&`.
+- `test_list2cmdline_unquoted_ampersand_proves_vector_real` afirma: o vetor é real — sem a guarda de `%`, `list2cmdline` produz `&` livre que cmd.exe interpreta como separador — o braço vulnerável prova que o gate discrimina.
+- `TestIsValidHostZoneIdParity.test_all_cmd_metacharacters_via_zone_id_are_rejected` afirma: todos os metacaracteres derivados de cmd.exe via zone ID são rejeitados — fecha a classe por construção, não por enumeração de `&` apenas.
+- `TestIsValidHost/rejeita_IPv6_scoped_address_fe80::1%eth0` (Go) afirma: `net.ParseIP` rejeita qualquer literal com `%` — pin que documenta o comportamento nativo como o contrato dos 3 CLIs.
+- Cenário 17 do gate afirma: o braço vulnerável (`list2cmdline` com zona maliciosa) produz `&` sem aspas — o gate discrimina e não passa vacuamente.
+- Cenário 21 do gate afirma: os 3 CLIs concordam em rejeitar `fe80::1%eth0` — violação de paridade detectável.
+
+**Gates (foreground, macOS):**
+```
+bash scripts/check-serve-browser-security.sh → 21/21 OK
+go test ./internal/serve/... -run TestIsValidHost → PASS (19 casos)
+python3 -m pytest pypi/tests/test_serve_browser_security.py → 16 passed
+node npm/tests/serve_browser_security.test.js → 11 passed
+```
+
+**Derivação de outros sítios com cmd.exe:** apenas o `serve` (Node e Python) recebe valor
+controlável pelo usuário em processo filho. Todos os demais `exec.Command`/`execSync`/`subprocess.run`
+usam strings fixas ou recebem input de arquivos de governança (não de CLI flags). Ver nota de vault.
+
+### ML-1E — AC7: make quality
+**Status:** 🔄 Em andamento (aguarda CI para `parity-falsify`)
+
+`make quality` = `make test test-node test-python lint parity`. Decomposição executada após ML-1F (2026-09-11):
+- `make test` (Go): PASS — `go test ./...` → 0 falhas (19 casos TestIsValidHost incluindo 4 novos de zone ID)
+- `make test-node`: 11 passed (serve_browser_security.test.js com novo caso zone ID)
+- `make test-python`: 1694 passed, 66 subtests passed (16 casos test_serve_browser_security.py incluindo 3 novos)
 - `make lint` (`go vet ./...`): PASS (saída vazia)
-- `make parity-rest`: gates afetados confirmados OK:
-  - `check-serve-browser-security.sh` — 13/13 OK
-  - `check-serve-address-parity.sh` — 8/8 OK
+- `make parity-rest` → EXIT CODE: 0
+  - `check-serve-browser-security.sh` — 21/21 OK (cenários 17-21 novos de zone ID; fail-open cenários 2, 4, 8-9 fechados)
+  - `check-serve-address-parity.sh` — PASS
   - `check-cli-parity.sh` — PASS
-  - `check-parity-contract-coverage.sh` — OK
-  - `check-output-encoding-declared.sh` — OK
-  - `check-parity-call-site-pins.sh` — OK
-- `make parity-falsify`: não executado localmente (~78% wall time); aguarda CI
+  - `check-parity-contract-coverage.sh` — PASS
+- `trackfw validate` → 0 errors, 168 warnings (warnings pré-existentes)
+- `make parity-falsify`: não executado localmente (~78% wall time, excede timeout de 10 min); aguarda CI
 
-**Nota:** `make quality` inteiro excede o timeout da ferramenta (~13 min). Aguarda auditoria do arquiteto e CI para verificação completa de `parity-falsify`.
+**Nota:** `make quality` inteiro excede o timeout da ferramenta (~13 min). `parity-falsify` aguarda CI para verificação completa. AC7 fica aberto até CI verde.
 
 ## Divergência declarada: Go não abre browser
 
