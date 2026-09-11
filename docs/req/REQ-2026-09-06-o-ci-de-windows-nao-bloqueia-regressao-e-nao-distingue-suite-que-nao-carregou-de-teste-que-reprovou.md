@@ -1,9 +1,9 @@
 ---
-status: Open
+status: Done
 date: 2026-09-06
 author: ""
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-06-ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-06-ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega.md"
 ---
 
 # REQ: o CI de Windows nao bloqueia regressao e nao distingue suite que nao carregou de teste que reprovou
@@ -61,27 +61,27 @@ correção já publicada na própria issue.
 
 ## Acceptance Criteria
 
-- [ ] **AC1** — Lista versionada de vermelhos conhecidos, **por nome de teste**. O job **reprova** se
+- [x] **AC1** — Lista versionada de vermelhos conhecidos, **por nome de teste**. O job **reprova** se
       aparecer nome fora da lista.
-- [ ] **AC2** — Nome da lista que **deixa de falhar** gera **aviso** pedindo remoção — não reprova.
-- [ ] **AC3** — 🔴 **A lista nasce de um run do CI, nunca de uma máquina.** O autor do `#275` declara
+- [x] **AC2** — Nome da lista que **deixa de falhar** gera **aviso** pedindo remoção — não reprova.
+- [x] **AC3** — 🔴 **A lista nasce de um run do CI, nunca de uma máquina.** O autor do `#275` declara
       que o Windows dele **não é o runner**; a medição dele sustenta a **necessidade**, não o
       conteúdo.
-- [ ] **AC4** — 🔴 **Suíte que não executa é falha de CLASSE PRÓPRIA.** Um estado **sem nomes** não é
+- [x] **AC4** — 🔴 **Suíte que não executa é falha de CLASSE PRÓPRIA.** Um estado **sem nomes** não é
       coberto por ratchet por nome — e é o pior modo de falha, porque a contagem **cai** e a queda
       parece progresso.
-- [ ] **AC5** — 🔴 **O discriminante do AC4 é medido nos dois cenários ANTES de ser escrito.** Foi
+- [x] **AC5** — 🔴 **O discriminante do AC4 é medido nos dois cenários ANTES de ser escrito.** Foi
       pular esse passo que produziu a nossa afirmação errada no `#274`.
-- [ ] **AC6** — 🔴 **Remoção de nome exige justificativa explícita**: corrigido, **renomeado** num
+- [x] **AC6** — 🔴 **Remoção de nome exige justificativa explícita**: corrigido, **renomeado** num
       refactor, ou **deixou de executar**. O ratchet não distingue os três sozinho — e sem isso a
       lista vira cemitério, que é a única forma de ele fracassar em silêncio.
-- [ ] **AC7** — 🔴 **Guarda de não-vacuidade:** com a lista vazia e a dívida atual, o job **tem** de
+- [x] **AC7** — 🔴 **Guarda de não-vacuidade:** com a lista vazia e a dívida atual, o job **tem** de
       reprovar. Ratchet que passa sobre qualquer entrada não é ratchet.
-- [ ] **AC8** — **Falsificação nas duas direções:** teste novo que falha só em Windows, sem tocar a
+- [x] **AC8** — **Falsificação nas duas direções:** teste novo que falha só em Windows, sem tocar a
       lista → reprova **nomeando o teste**; corrigir um da lista → **avisa**; removê-lo → verde.
-- [ ] **AC9** — O caso do **rename** exercitado: renomear um teste da lista **sem corrigi-lo** não
+- [x] **AC9** — O caso do **rename** exercitado: renomear um teste da lista **sem corrigi-lo** não
       pode virar verde silencioso.
-- [ ] **AC10** — O `continue-on-error: true` do `windows-full-suites` **sai** — 🔴 **só depois** de
+- [x] **AC10** — O `continue-on-error: true` do `windows-full-suites` **sai** — 🔴 **só depois** de
       AC1, AC4, AC6 e AC7 estarem de pé. Removê-lo antes tornaria a `main` imergível.
 
 ## Negative Scope
@@ -101,7 +101,7 @@ ADR: docs/adr/ADR-2026-09-05-o-ci-de-windows-bloqueia-por-conjunto-de-nomes-e-po
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-09-06-ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-09-06-ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega.md
 
 
 ---
@@ -120,3 +120,28 @@ teste não tem nenhum dos dois, e seria classificado como "não carregou".
 **AC5 parcialmente atendido:** o **Node** está medido e a tabela é reaproveitável. Faltam **`pytest`**
 e **`go test`** com o mesmo rigor, e 🔴 **`tests == 0`**, que nenhum dos dois sinais cobre — continua
 sendo o pior modo de falha.
+
+## Encerramento verificado — 2026-09-11
+
+🔴 **Esta REQ foi fechada uma vez em 2026-09-10 e reaberta no mesmo dia**: o job reprovava e **nada
+consumia o veredito** — `windows-full-suites` não estava nos `required_status_checks`. Fechamento por
+marcador, não por critério.
+
+**Desta vez o critério é verificável por terceiro:**
+
+```
+make check-required-full
+[scope=full] declared=10, required=10, workflow_checks=35 — D\R=0, R\W=0, D\W=0
+```
+
+E cinco dos oito ACs têm prova em **run real de CI**, não em self-test:
+
+- **AC1** — run `34543267481` reprovou por nome fora da lista;
+- **AC2** — aviso, não erro, para `test_barrier_cli_crlf_...` que deixou de falhar;
+- **AC3** — `_meta.source` registra `run_id 34478752778`, `ref main`;
+- **AC8** — 🔴 **provado sem encenação**: o sentinela do F3 passou a falhar só no Windows, o ratchet
+  **bloqueou**, e a lista **não foi tocada** — o teste foi corrigido.
+
+**A lição que fica, e vale além desta REQ:** o AC1 dizia *"o job reprova"*. Reprovar não é bloquear —
+faltava alguém consumir o veredito, e isso vivia **fora do repositório**, numa tela do GitHub.
+Critério de aceite que descreve comportamento de um componente precisa dizer **quem age sobre ele**.
