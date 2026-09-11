@@ -1,0 +1,34 @@
+# required-status-checks.txt — declaração canônica dos checks obrigatórios da main.
+#
+# Este arquivo é o conjunto D na verificação do gate check-required-status-checks.py:
+#
+#   D = este arquivo
+#   R = required_status_checks.contexts da API de proteção da branch (GitHub)
+#   W = check names derivados de .github/workflows/*.yml
+#
+# O gate reprova quando D\R ≠ ∅ (job declarado ausente do required),
+# R\W ≠ ∅ (required aponta check que o CI nunca emite), ou
+# D\W ≠ ∅ (declaração fantasma — job não existe em nenhum workflow).
+#
+# Para adicionar um check: (1) adicione aqui, (2) garanta que o job existe no
+# workflow, (3) adicione ao required_status_checks via Settings > Branches > main.
+# As três operações devem ocorrer no mesmo PR para o gate passar.
+#
+# Para remover um check: o processo inverso. O gate reprovará se R ainda contiver
+# o nome após a remoção daqui.
+#
+# Nomes exatos conforme o GitHub reporta (inclusive expansões de matriz,
+# ex: "python (3.10)"). Medido em 2026-09-11 via:
+#   gh api repos/kgsaran/trackfw/branches/main/protection \
+#     --jq '.required_status_checks.contexts'
+#
+go
+node
+python (3.10)
+python (3.12)
+package-smoke
+windows-integrations-resolve
+parity
+governance-install-script
+governance-go-install
+windows-full-suites

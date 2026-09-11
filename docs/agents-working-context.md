@@ -4,6 +4,37 @@
 
 ---
 
+## Sessão 2026-09-11b — ares-tf (Infrastructure) — ML-4B: gate que verifica concordância entre required_status_checks e jobs declarados bloqueantes: CONCLUÍDO, aguarda auditoria do arquiteto
+
+Branch `fix/ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega`.
+
+**Escopo:** ML-4B — construir gate que compare `required_status_checks.contexts` da proteção da main com (D) lista declarada local e (W) jobs que os workflows podem realmente emitir. Reprova nas três direções: D\R, R\W, D\W.
+
+**Medições realizadas nesta sessão:**
+- `gh api repos/kgsaran/trackfw --jq '.private'` → `false` (repo público)
+- `gh api repos/kgsaran/trackfw/actions/permissions/workflow` → `{"default_workflow_permissions":"read","can_approve_pull_request_reviews":false}`
+- `gh api repos/kgsaran/trackfw/branches/main/protection --jq '.required_status_checks.contexts'` → `["go","node","python (3.10)","python (3.12)","package-smoke","windows-integrations-resolve","parity","governance-install-script","governance-go-install","windows-full-suites"]` (com credencial pessoal do KG)
+- W (check names derivados de todos os workflows via YAML parser): go, node, python (3.10/3.12), package-smoke, windows-integrations-resolve, windows-full-suites, parity, governance-install-script, governance-go-install, parity-other-gates, parity-falsify-shard (0..3), pr-closing-keyword, + jobs de outros workflows.
+- Nenhum job existente declara `administration: read` em quality.yml.
+
+**Item aberto (não medível nesta sessão):** se GITHUB_TOKEN com `administration: read` consegue ler proteção da branch em CI — requer run real, não autorizado por este ML. Entregue como limitação declarada ao arquiteto. Passo pendente: após confirmação, o arquiteto adiciona `check-required-checks` ao `parity.needs` no mesmo PR.
+
+**Artefatos entregues:**
+- `.github/required-status-checks.txt` — declaração D com os 10 checks medidos
+- `scripts/check-required-status-checks.py` — gate Python com `--self-test` (6 braços: T1-T6); glob cobre `.yml` e `.yaml`; T5/T6 cobrem guardas de vacuidade (arquivo ausente/vazio)
+- `Makefile` — `python3 scripts/check-required-status-checks.py --self-test` adicionado ao `parity-rest`
+- `.github/workflows/quality.yml` — job `check-required-checks` (com `administration: read`) adicionado; `parity.needs` **NÃO** inclui o job ainda (aguarda run de CI — evita wirear gate não observado em caminho obrigatório)
+- `docs/roadmaps/wip/ROADMAP-*.md` — ML-4B marcado ✅ Concluído com critérios de aceite, 3 decisões, medições, 6 braços de falsificação e gates
+
+**Gates (foreground):**
+- `python3 scripts/check-required-status-checks.py --self-test` → **6 PASS, 0 FAIL**
+- `python3 scripts/check-required-status-checks.py` (live) → declared=10, required=10, workflow_checks=34, exit 0
+- `make parity-rest` → exit 0 (tail mostra 6 PASS do novo gate)
+- `trackfw validate` → 0 errors, 173 warnings (aceitação reduzida de 174 para 173: bloco de critérios ML-4B resolveu o warning de wip sem critérios)
+- YAML: `python3 -c "yaml.safe_load(...)"` → válido, 12 jobs
+
+---
+
 ## Sessão 2026-09-11a — ares-tf (Infrastructure) — Corretivo ratchet: sumário mascarava desequilíbrio por classe + mensagem de erro convidava ao abuso da lista: CONCLUÍDO, aguarda auditoria do arquiteto
 
 Branch `fix/barrier-executa-gate-de-roadmap-nao-confiavel`.

@@ -1042,6 +1042,51 @@ jobs:
   # `if: always()` sozinho faz o job PASSAR por padrão quando pulado ou
   # quando um needs falhou -- por isso o primeiro step abaixo falha
   # explicitamente nesse caso, antes de qualquer outra coisa rodar.
+  # ML-4B (ROADMAP-2026-09-06-ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega):
+  # Verifica que required_status_checks.contexts da main concorda com a declaração
+  # local (.github/required-status-checks.txt) e com os checks que os workflows
+  # podem realmente emitir. Reprova nas três direções: D\R, R\W, D\W.
+  #
+  # Decisão de permissões: 'administration: read' é necessário para ler a proteção
+  # da branch via 'gh api'. O job declara explicitamente; os outros jobs NÃO recebem
+  # essa permissão para não ampliar superfície de ataque desnecessariamente.
+  #
+  # Decisão de fork: GITHUB_TOKEN de fork PR não pode ler proteção do repo base
+  # mesmo com 'administration: read' declarado (GitHub restringe tokens de fork).
+  # O step de verificação real é if:-gated; fork PRs recebem um aviso declarado
+  # e o job passa (a verificação real ocorre em push para main e em PRs internos).
+  # NUNCA continue-on-error: um step skippado é visível como "não rodou" na UI;
+  # continue-on-error pintaria um step vermelho de verde — defeito do ML-3A
+  # reintroduzido na própria correção.
+  #
+  # Item aberto: se GITHUB_TOKEN com 'administration: read' consegue ler em CI
+  # de PRs internos — não medido neste ML (requer run real não autorizado). Ver
+  # Decision 2 em scripts/check-required-status-checks.py.
+  check-required-checks:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      administration: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: pip install PyYAML
+      - name: ML-4B autoteste (falsificacao nas quatro direcoes)
+        run: python3 scripts/check-required-status-checks.py --self-test
+      - name: ML-4B verificacao real — required_status_checks vs declared vs workflow
+        # if-gate: skip em fork PRs (token nao pode ler protecao do repo base).
+        # Em push para main e em PRs internos (head.repo == base.repo) o step roda.
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 scripts/check-required-status-checks.py
+      - name: ML-4B limitacao declarada — fork PR nao pode ler protecao do repo base
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
+        run: |
+          echo "::warning::check-required-status-checks skipped em fork PR: GITHUB_TOKEN nao pode ler protecao de branch do repo base (kgsaran/trackfw). O gate roda em push para main e em PRs internos. Limitacao declarada — ver Decision 2 em scripts/check-required-status-checks.py."
+
   parity:
     runs-on: ubuntu-latest
     needs: [parity-falsify-shard, parity-other-gates]

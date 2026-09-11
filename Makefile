@@ -91,6 +91,12 @@ parity-rest: build
 	# usa artefatos sinteticos). A verificacao real acontece no step "ML-2A — ratchet de nomes"
 	# do job windows-full-suites em .github/workflows/quality.yml.
 	python3 scripts/check-windows-known-failures.py --self-test
+	# ML-4B (ROADMAP-2026-09-06-ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega):
+	# autoteste do gate de concordância entre declared/required/workflow checks.
+	# --self-test usa fixtures sinteticas (sem chamada ao gh api nem leitura de workflow).
+	# A verificacao real acontece no job check-required-checks em .github/workflows/quality.yml,
+	# com administration:read no GITHUB_TOKEN.
+	python3 scripts/check-required-status-checks.py --self-test
 
 parity-falsify: build
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/run-gates-falsify-parallel.sh

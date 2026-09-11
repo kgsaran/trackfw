@@ -394,7 +394,17 @@ required bloquearia todos os PRs.
   mudança pode ter sido avaliado sem o check.
 
 ### ML-4B — 🔴 A CLASSE: nada verifica se os `required` batem com os jobs bloqueantes
-**Status:** ⬜ Pendente · **Agente:** `ares-tf`
+**Status:** ✅ Concluído · **Agente:** `ares-tf`
+
+## Critérios de Aceite
+- [x] `.github/required-status-checks.txt` criado com os 10 checks medidos da API
+- [x] `scripts/check-required-status-checks.py` entrega exit 0/1/2 corretos sem passar em silêncio
+- [x] 6 braços de falsificação (T1-T6): concordância → 0, D\R → 1, R\W → 1, falha → 2, arquivo ausente → 2, arquivo vazio → 2
+- [x] `make parity-rest` inclui `--self-test` do gate e passa
+- [x] `trackfw validate` sem erros novos
+- [x] Job `check-required-checks` no `quality.yml` com `administration: read` isolado
+- [x] Fork PR tratado com `if:`-gated (não `continue-on-error`)
+- [x] `parity.needs` **NÃO inclui** `check-required-checks` até primeira run de CI confirmar o token (item aberto ao arquiteto — ver abaixo)
 
 **Por que ninguém viu durante o dia inteiro:** a lista de required checks vive **fora do
 repositório**, numa tela do GitHub. Nenhum `grep`, nenhuma derivação nossa, nenhum gate alcança
@@ -406,23 +416,131 @@ bloqueava nada**. Não por defeito de implementação: por **ausência de consum
 **O que fazer:** um gate que compare os `required_status_checks.contexts` da proteção com a lista de
 jobs que o repositório **declara** bloqueantes, e reprove na divergência.
 
-**Decisões a tomar e registrar, não presumir:**
+#### As 3 decisões — tomadas com justificativa (2026-09-11)
 
-1. **Onde mora a declaração?** Não existe hoje. Candidatos: campo no `trackfw.yaml`, arquivo próprio,
-   ou anotação nos jobs do workflow. Escolha justificada.
-2. 🔴 **O gate consegue ler a proteção?** `gh api .../branches/main/protection` exige token com
-   permissão de administração. Num fork, ou num CI sem esse escopo, **a leitura falha**. Se falhar, o
-   gate **não pode passar em silêncio** — é a regra da nota de vault
-   `guarda-que-reporta-ausencia-precisa-distinguir-nao-achei-de-nao-consegui-procurar-2026-09-10.md`:
-   *"não consegui procurar"* é fatal, não aviso.
-3. **Direção da verificação.** Required sem job declarado, e job declarado sem required, são dois
-   defeitos distintos. Os dois reprovam? Um avisa? Declare.
+**Decisão 1 — Onde mora a declaração:**
+Arquivo próprio `.github/required-status-checks.txt` (um nome por linha).
 
-**Falsificação:**
-- required contém tudo que foi declarado ⇒ passa (🔴 contra-braço obrigatório);
-- job declarado bloqueante ausente dos required ⇒ reprova, nomeando;
-- required contendo check que não existe no workflow ⇒ reprova ou avisa, conforme a decisão 3;
-- leitura da proteção indisponível ⇒ 🔴 **reprova**, nunca passa.
+Motivo: o contrato é específico deste repositório, não config do produto CLI trackfw —
+outros consumidores do trackfw não têm (nem devem ter) esta proteção de branch.
+Separado do workflow YAML para tornar edições divergentes visíveis no diff sem exigir parsing;
+trivial de auditar; trivial de testar sinteticamente. Não entra em `trackfw.yaml` (config do produto).
+Não fica como anotação nos jobs (exigiria parser YAML para extrair, e o significado fica implícito).
+
+**Decisão 2 — O que acontece quando o gate não consegue LER a proteção:**
+
+Medições realizadas (2026-09-11):
+```
+gh api repos/kgsaran/trackfw --jq '.private'
+→ false   (repo público)
+
+gh api repos/kgsaran/trackfw/actions/permissions/workflow
+→ {"default_workflow_permissions":"read","can_approve_pull_request_reviews":false}
+
+gh api repos/kgsaran/trackfw/branches/main/protection --jq '.required_status_checks.contexts'
+→ ["go","node","python (3.10)","python (3.12)","package-smoke",
+   "windows-integrations-resolve","parity","governance-install-script",
+   "governance-go-install","windows-full-suites"]
+   (com credencial pessoal do KG — não com GITHUB_TOKEN de CI)
+```
+
+Nenhum job existente em quality.yml declara `administration: read`. A chamada funciona
+localmente com credencial pessoal; **NÃO MEDIDO**: se GITHUB_TOKEN com `administration: read`
+consegue ler em CI. Requer run real não autorizado por este ML — **item aberto declarado ao
+arquiteto**.
+
+**Comportamento escolhido:**
+- Gate falha → exit 2 com `::error::` incluindo raw stderr do gh. **Nunca passa em silêncio.**
+- Em fork PR: o step de verificação real é `if:`-gated (não `continue-on-error` — um step
+  skippado é visível como "não rodou"; `continue-on-error` pintaria vermelho de verde, defeito
+  do ML-3A reintroduzido na própria correção). Um step de aviso imprime a limitação declarada.
+- Job dedicado `check-required-checks` com `permissions: contents: read, administration: read`.
+  Essa permissão não é adicionada a `parity-other-gates` (que roda ~50 scripts) para não ampliar
+  superfície desnecessariamente.
+
+**Decisão 3 — Direção da verificação:**
+**Ambas as direções reprovam com exit 1 nomeando os checks divergentes.** Três conjuntos:
+
+- D = `.github/required-status-checks.txt` (declaração)
+- R = `required_status_checks.contexts` da API
+- W = check names derivados de todos os `.github/workflows/*.yml` (com expansão de matriz)
+
+Checks:
+- `D \ R` → exit 1 (job declarado bloqueante ausente dos required — defeito de ontem)
+- `R \ W` → exit 1 (required aponta check que o CI nunca emitirá — PR pendente para sempre,
+  vault/notes/matriz-em-job-required-por-nome-fica-pendente-para-sempre-2026-09-08.md)
+- `D \ W` → exit 1 (declaração fantasma — job declarado que nenhum workflow define)
+
+Motivação: a direção `R \ W` é igual ao segundo defeito registrado no vault (PR que fica pendente).
+O custo foi medido e documentado. A terceira direção `D \ W` pega a declaração de um job que não
+existe antes mesmo de ele entrar no required.
+
+**Limitação declarada de W:** W é construído a partir de TODOS os jobs em TODOS os workflows, sem
+filtrar por trigger (`on:`) ou por `if:` no nível de job. Um check required cujo job esteja num
+workflow que NUNCA dispara em `pull_request` (ex: `release.yml`) satisfaz R\W = ∅ mas ainda deixa
+o PR pendente para sempre. Estado atual: os 10 checks required pertencem a jobs que disparam em
+`pull_request`; a limitação não afeta o gate hoje. Risco residual declarado — não requer mudança
+de código agora.
+
+#### Artefatos entregues
+
+- `.github/required-status-checks.txt` — declaração D com os 10 checks medidos
+- `scripts/check-required-status-checks.py` — gate Python com `--self-test` (6 braços)
+- `Makefile` — `python3 scripts/check-required-status-checks.py --self-test` adicionado ao `parity-rest`
+- `.github/workflows/quality.yml` — job `check-required-checks` adicionado com `administration: read`; `parity.needs` **não** inclui o job ainda (ver item aberto abaixo)
+- YAML validado com `python3 -c "yaml.safe_load(...)"` → válido, 12 jobs
+
+**Passo pendente (mesmo PR, mesma REQ — regra de mesma causa):** após a primeira run de CI
+confirmar que `GITHUB_TOKEN` com `administration: read` lê a proteção da branch (push para main ou
+PR interno verde), o arquiteto adiciona `check-required-checks` ao `parity.needs` e atualiza a
+mensagem de erro. Esse passo segue o mesmo sequenciamento do ML-4A: *"ligar um check vermelho
+como required bloquearia todos os PRs"* — aqui, wirear um job com token incerto no caminho
+obrigatório produziria o mesmo efeito.
+
+#### Falsificação — 6 braços (T1-T6)
+
+- **T1** (contra-braço obrigatório): D==R, todos em W → exit 0. Afirma: gate passa quando todos os conjuntos concordam.
+- **T2** (D\R): `'parity'` em D mas não em R → exit 1 nomeando `'parity'`. Afirma: D\R ≠ ∅ causa falha nomeando o check ausente dos required (defeito ML-4A).
+- **T3** (R\W): `'ghost-job'` em R mas não em W → exit 1 nomeando `'ghost-job'`. Afirma: R\W ≠ ∅ causa falha nomeando o check fantasma (PR pendente para sempre).
+- **T4** (leitura falha): `SELFTEST_REQUIRED_FAIL=1` → exit 2 com `::error::`. Afirma: falha do instrumento não passa em silêncio.
+- **T5** (arquivo ausente): ROOT aponta dir sem `.github/required-status-checks.txt` → exit 2. Afirma: arquivo ausente dispara guarda de vacuidade — não pode aprovar qualquer configuração.
+- **T6** (arquivo vazio): ROOT aponta dir com arquivo vazio → exit 2. Afirma: arquivo vazio dispara guarda de vacuidade — não pode aprovar qualquer configuração.
+
+#### Reconciliação teste↔conclusão (regra dura do projeto)
+
+- T1 afirma: quando D==R e ambos ⊆ W, o gate retorna 0 — nenhuma divergência detectada.
+- T2 afirma: quando D\R ≠ ∅ (medido: job adicionado a D sem estar em R), o gate retorna 1 e nomeia o check.
+- T3 afirma: quando R\W ≠ ∅ (medido: nome em required sem job correspondente em workflow), o gate retorna 1 e nomeia o check.
+- T4 afirma: quando o instrumento falha (simulado via SELFTEST_REQUIRED_FAIL), o gate retorna 2 com `::error::` — nunca passa.
+- T5 afirma: quando `.github/required-status-checks.txt` não existe, o gate retorna 2 — arquivo ausente = instrumento falho, não D vazia.
+- T6 afirma: quando `.github/required-status-checks.txt` existe mas está vazio, o gate retorna 2 — D vazia aprovaria qualquer configuração, o que é semanticamente falso.
+
+#### Gates — 2026-09-11, foreground
+
+```
+python3 scripts/check-required-status-checks.py --self-test
+→ Self-test summary: 6 PASS, 0 FAIL
+
+python3 scripts/check-required-status-checks.py
+→ check-required-status-checks: [OK] declared=10, required=10, workflow_checks=34 — D\R=∅, R\W=∅, D\W=∅ — todos os conjuntos concordam.
+→ EXIT: 0
+
+make parity-rest
+→ (tail) Self-test summary: 6 PASS, 0 FAIL
+→ exit 0
+
+python3 -c "yaml.safe_load(...quality.yml)"
+→ YAML válido. 12 jobs.
+
+trackfw validate
+→ 0 errors (174 warnings)
+```
+
+🔴 **Item aberto declarado ao arquiteto:** se `GITHUB_TOKEN` com `administration: read` consegue
+ler a proteção da branch em CI (PRs internos e push para main) — não medível neste ML, requer
+run real. Se falhar em CI, a causa é o token insuficiente; a mensagem de diagnóstico do gate
+inclui a instrução de correção. Após confirmação, wirear `check-required-checks` no `parity.needs`
+(passo pendente descrito acima).
 
 **Por que vale mais que o ML-4A:** o 4A corrige a instância. O 4B impede a classe — e a classe é
 *"construímos o mecanismo e não o ligamos a quem age sobre ele"*, que hoje apareceu **duas vezes**:
