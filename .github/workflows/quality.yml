@@ -1042,37 +1042,16 @@ jobs:
   # `if: always()` sozinho faz o job PASSAR por padrão quando pulado ou
   # quando um needs falhou -- por isso o primeiro step abaixo falha
   # explicitamente nesse caso, antes de qualquer outra coisa rodar.
-  # ML-4B (ROADMAP-2026-09-06-ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega):
-  # Verifica que required_status_checks.contexts da main concorda com a declaração
-  # local (.github/required-status-checks.txt) e com os checks que os workflows
-  # podem realmente emitir. Reprova nas três direções: D\R, R\W, D\W.
+  # ML-4B corretivo (ROADMAP-2026-09-06-ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega):
+  # Verifica que a declaração local (.github/required-status-checks.txt) concorda com os checks
+  # que os workflows podem realmente emitir — escopo D\W apenas (sem chamada à API).
   #
-  # Decisão de permissões (medido 2026-09-11, corretivo ML-4B):
-  # 'administration' NÃO É escopo válido de permissions: em GitHub Actions workflow
-  # (confirmado por actionlint: "unknown permission scope"). É escopo de fine-grained PAT,
-  # não de GITHUB_TOKEN. Declarar 'administration: read' faz o GitHub rejeitar o schema
-  # do workflow (0 jobs criados, todos os checks required ficam pendentes para sempre).
-  # Removido. O job declara apenas 'contents: read'.
-  #
-  # Se GITHUB_TOKEN com 'contents: read' consegue chamar /branches/main/protection:
-  # NÃO CONFIRMADO localmente — o endpoint retorna 401 para chamadas anônimas; com token
-  # pessoal de KG (scope 'repo') retorna 200. GITHUB_TOKEN (app token) não testável sem
-  # um fine-grained PAT de 'metadata: read' only ou run real de CI. Se a chamada falhar
-  # em CI, o gate sai com exit 2 e saída raw do gh — nunca passa em silêncio.
-  # Ver Decision 2 em scripts/check-required-status-checks.py.
-  #
-  # Limitação declarada de R: se GITHUB_TOKEN não conseguir ler a proteção em CI,
-  # a verificação R\W e D\R não ocorre. O defeito que originou este ML
-  # (windows-full-suites ausente do required) é um defeito D\R e NÃO seria detectado
-  # por um gate sem R. Solução: secrets.REPO_ADMIN_TOKEN (PAT com 'repo' scope) —
-  # decisão de KG, não desta implementação.
-  #
-  # Decisão de fork: GITHUB_TOKEN de fork PR não pode acessar proteção do repo base
-  # (GitHub restringe tokens de fork ao repo forkado). O step de verificação real é
-  # if:-gated; fork PRs recebem aviso declarado e o job passa.
-  # NUNCA continue-on-error: um step skippado é visível como "não rodou" na UI;
-  # continue-on-error pintaria um step vermelho de verde — defeito do ML-3A
-  # reintroduzido na própria correção.
+  # Escopo dw: GITHUB_TOKEN não tem permissão para ler /branches/main/protection em CI
+  # (medido: run 34605163678, PR #317 — retornou 404 "Resource not found").
+  # A verificação completa D/R/W (incluindo D\R e R\W) usa 'make check-required-full',
+  # que requer credencial de mantenedor e é pré-condição da rotina de release
+  # (ver CLAUDE.md §Protocolo de Release, passo 3.5).
+  # D\R e R\W não verificados nesta execução — declarado explicitamente na saída do gate.
   check-required-checks:
     runs-on: ubuntu-latest
     permissions:
@@ -1083,29 +1062,20 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install PyYAML
-      - name: ML-4B autoteste (falsificacao nas quatro direcoes)
+      - name: ML-4B autoteste (10 bracos de falsificacao, incluindo scope dw)
         run: python3 scripts/check-required-status-checks.py --self-test
-      - name: ML-4B verificacao real — required_status_checks vs declared vs workflow
-        # if-gate: skip em fork PRs (token nao pode ler protecao do repo base).
-        # Em push para main e em PRs internos (head.repo == base.repo) o step roda.
-        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python3 scripts/check-required-status-checks.py
-      - name: ML-4B limitacao declarada — fork PR nao pode ler protecao do repo base
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
-        run: |
-          echo "::warning::check-required-status-checks skipped em fork PR: GITHUB_TOKEN nao pode ler protecao de branch do repo base (kgsaran/trackfw). O gate roda em push para main e em PRs internos. Limitacao declarada — ver Decision 2 em scripts/check-required-status-checks.py."
+      - name: ML-4B verificacao D\W — declared vs workflow checks (scope dw, sem token)
+        run: python3 scripts/check-required-status-checks.py --scope dw
 
   parity:
     runs-on: ubuntu-latest
-    needs: [parity-falsify-shard, parity-other-gates]
+    needs: [parity-falsify-shard, parity-other-gates, check-required-checks]
     if: always()
     steps:
       - name: Nenhum job de needs pode ter falhado ou sido cancelado
         if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
         run: |
-          echo "::error::pelo menos um job de needs (parity-falsify-shard ou parity-other-gates) falhou ou foi cancelado -- ver os jobs acima. if:always() aqui existe para RODAR e REPROVAR, nunca para mascarar."
+          echo "::error::pelo menos um job de needs (parity-falsify-shard, parity-other-gates ou check-required-checks) falhou ou foi cancelado -- ver os jobs acima. if:always() aqui existe para RODAR e REPROVAR, nunca para mascarar."
           exit 1
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7

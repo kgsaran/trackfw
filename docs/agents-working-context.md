@@ -35501,3 +35501,36 @@ expande para nome longo. `path.relative(longo, curto)` produz lixo → `git cat-
 ## apolo-tf — 2026-09-10 — FIM
 
 **Status:** ML-W3B ✅ Concluído. Entregando para auditoria do trackfw_architect.
+
+## ares-tf — 2026-09-11 — INÍCIO
+
+**Agente:** Ares (Infrastructure)
+**Branch:** `fix/ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega` (PR #317)
+**Roadmap:** `ROADMAP-2026-09-06-ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega.md`
+**ML:** ML-4B — Corretivo de desenho: CI não consegue ler R (404) → redesenho de escopo
+
+**Escopo:**
+1. `scripts/check-required-status-checks.py` — adicionar flag `--scope {full,dw}`; modo dw: apenas D\W, declara o que não verificou; modo full: D/R/W completo, fatal se R não legível; novos testes T7-T10
+2. `.github/workflows/quality.yml` — job `check-required-checks` passa a rodar `--scope dw` (sem token, sem if-gate, sem fork-warning); `check-required-checks` entra em `parity.needs`
+3. `Makefile` — novo alvo `check-required-full` (D/R/W completo, somente local, comentado como pré-condição de release)
+4. `CLAUDE.md` — Protocolo de Release: passo 3.5 executar `make check-required-full` antes de `git tag -a`
+
+## ares-tf — 2026-09-11 — FIM
+
+**Status:** ML-4B Corretivo de desenho entregue. Sem commit, sem push — aguarda auditoria do trackfw_architect.
+
+**Artefatos modificados:**
+- `scripts/check-required-status-checks.py` — flag `--scope {full,dw}`; T7-T10 novos; docstring atualizada
+- `.github/workflows/quality.yml` — job `check-required-checks` passa a rodar `--scope dw`; sem if-gate, sem GH_TOKEN, sem fork-warning; comentário atualizado; `check-required-checks` em `parity.needs`
+- `Makefile` — alvo `check-required-full` adicionado; comentário de `parity-rest` atualizado
+- `CLAUDE.md` — passo 3.5 no Protocolo de Release (make check-required-full pré-condição da tag)
+- `docs/roadmaps/wip/ROADMAP-2026-09-06-ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega.md` — corretivo de desenho documentado com critérios de aceite e gates
+
+**Gates (foreground, macOS arm64):**
+- `python3 scripts/check-required-status-checks.py --self-test` → 10 PASS, 0 FAIL
+- `python3 scripts/check-required-status-checks.py --scope dw` → exit 0, declara R não verificado
+- `python3 scripts/check-required-status-checks.py` (scope full) → exit 0, D\R=∅, R\W=∅, D\W=∅
+- `actionlint .github/workflows/quality.yml` → exit 0
+- `actionlint .github/workflows/*.yml` → apenas avisos shellcheck pré-existentes (windows-census/probe)
+- `make parity-rest` → 0 FAIL, 0 ERROR
+- `trackfw validate` → 0 errors (173 warnings pré-existentes)

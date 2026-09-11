@@ -628,3 +628,95 @@ make parity-rest
 trackfw validate
 → (não executado neste corretivo — sem mudanças em artefatos de governança trackfw)
 ```
+
+---
+
+## Corretivo de desenho ML-4B — 2026-09-11, PR #317 (ares-tf)
+
+**Defeito:** run CI 34605163678 provou que `GITHUB_TOKEN` retorna 404 ao chamar
+`/branches/main/protection`. O conjunto **R** não é obtível em CI.
+O gate ficaria permanentemente vermelho em todo PR — reproduzindo o ruído do issue #275.
+
+### A aritmética que decide
+
+| Verificação | Depende de R? | Obtível em CI? |
+|---|---|---|
+| D\R (job declarado ausente do required — defeito ML-4A) | Sim | Não |
+| R\W (required aponta check que CI não emite — PR pendente para sempre) | Sim | Não |
+| D\W (declaração fantasma — job não existe em nenhum workflow) | Não | Sim |
+
+As duas verificações que pegam os defeitos documentados dependem de R. D\W é o mais fraco e
+não teria pegado o defeito de ontem (`windows-full-suites` ausente do required = D\R).
+
+### Decisão
+
+**1. Alvo `make check-required-full`** — D/R/W completo. Roda localmente onde a credencial
+existe. Fatal se R não for legível (mantenedor deveria ter a credencial por definição).
+
+**2. CI roda `--scope dw`** — apenas D\W. Sem token, sem vermelho permanente. A saída
+declara explicitamente que R não foi verificado e o motivo — escopo declarado, não degradação
+silenciosa (padrão proibido por `vault/notes/guarda-que-reporta-ausencia-precisa-distinguir-
+nao-achei-de-nao-consegui-procurar-2026-09-10.md`).
+
+**3. `check-required-checks` entra em `parity.needs`** — o bloqueador era "esperar CI
+confirmar o token". Esse ponto está resolvido negativamente (token insuficiente). O escopo
+dw não depende de token; o job pode ser consumido.
+
+**4. `make check-required-full` amarrado à rotina de release** — pré-condição do `git tag -a`
+(CLAUDE.md §Protocolo de Release, passo 3.5). A lista muda episodicamente; verificar em cada
+push (hook) adicionaria latência constante por proteção episódica — caminho direto para
+`--no-verify`. Release é o gatilho natural.
+
+### Falsificação — 4 braços novos (T7-T10)
+
+- **T7** (`--scope dw` + token indisponível → exit 0): afirma que a medição do run
+  34605163678 (GITHUB_TOKEN retorna 404) não causa vermelho permanente em CI com --scope dw.
+- **T8** (`--scope dw` + D\R divergente → exit 0): afirma que R não é consultado em scope dw
+  (flag restringe, não é cosmético).
+- **T9** (`--scope dw` + D\W divergente → exit 1): afirma que D\W ainda funciona em scope dw.
+- **T10** (`--scope dw` + D==W → exit 0, declara "R não verificado"): contra-braço de T9;
+  afirma que o gate passa quando D e W concordam, e que a saída inclui a declaração de
+  escopo reduzido.
+
+### Critérios de aceite — corretivo
+
+- [x] `--self-test` → 10 PASS, 0 FAIL (T1-T10)
+- [x] `--scope dw` com workflows reais → exit 0, declara "R não verificado"
+- [x] `--scope full` local → exit 0 (declared=10, required=10, workflow_checks=35 — D\R=∅, R\W=∅, D\W=∅)
+- [x] CI job `check-required-checks` roda `--scope dw` (sem token, sem if-gate, sem fork-warning)
+- [x] `check-required-checks` em `parity.needs`
+- [x] `make check-required-full` — alvo standalone, comentado como pré-condição de release
+- [x] CLAUDE.md — passo 3.5 adicionado ao Protocolo de Release
+- [x] `actionlint .github/workflows/quality.yml` → exit 0
+- [x] `actionlint .github/workflows/*.yml` → apenas pre-existing shellcheck em windows-census/probe
+- [x] `make parity-rest` → 0 FAIL, 0 ERROR
+- [x] `trackfw validate` → 0 errors (173 warnings pré-existentes)
+
+### Gates — 2026-09-11, foreground
+
+```
+python3 scripts/check-required-status-checks.py --self-test
+→ Self-test summary: 10 PASS, 0 FAIL
+
+python3 scripts/check-required-status-checks.py --scope dw
+→ check-required-status-checks: [OK] [scope=dw] declared=10, workflow_checks=35 — D\\W=∅.
+  R não verificado (GITHUB_TOKEN sem permissão de administrador em CI): D\\R e R\\W não
+  foram verificados nesta execução. Use 'make check-required-full' para verificação
+  completa (requer credencial de mantenedor).
+
+python3 scripts/check-required-status-checks.py
+→ check-required-status-checks: [OK] [scope=full] declared=10, required=10,
+  workflow_checks=35 — D\\R=∅, R\\W=∅, D\\W=∅ — todos os conjuntos concordam.
+
+actionlint .github/workflows/quality.yml
+→ (sem saída, exit 0)
+
+actionlint .github/workflows/*.yml
+→ apenas avisos shellcheck pré-existentes em windows-census.yml e windows-probe.yml
+
+make parity-rest
+→ 0 FAIL, 0 ERROR
+
+trackfw validate
+→ 0 errors (173 warnings pré-existentes)
+```

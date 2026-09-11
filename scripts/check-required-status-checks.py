@@ -9,19 +9,30 @@ Três conjuntos:
   R = required_status_checks.contexts da API  (o que bloqueia merge no GitHub)
   W = check names derivados de .github/workflows/*.yml (o que o CI pode emitir)
 
+Escopos de verificação (--scope):
+  full (padrão) — D\\R, R\\W, D\\W.
+                  Requer credencial de mantenedor (gh auth login, repo scope).
+                  Falha fatal se R não for legível: 'não consegui procurar' é fatal.
+                  Uso: localmente via 'make check-required-full', e na rotina de release.
+  dw             — apenas D\\W (não consulta a API).
+                  Não requer token. Declara explicitamente que D\\R e R\\W não foram
+                  verificados e o motivo. Uso: CI (GITHUB_TOKEN não tem permissão de
+                  administrador para ler /branches/main/protection).
+
+Fundamento da divisão de escopo (medido 2026-09-11, run CI 34605163678, PR #317):
+  gh api repos/kgsaran/trackfw/branches/main/protection
+  → 404 "Resource not found" em CI (exit 2, GITHUB_TOKEN)
+  → 200 com token pessoal de KG (scope 'repo')
+  O GITHUB_TOKEN não tem permissão para ler a proteção da branch. Enquanto CI
+  precisasse de R, o job ficaria permanentemente vermelho em todo PR — exatamente
+  o ruído que o issue #275 descreve. Separar os escopos elimina o trade-off:
+  CI verifica D\\W (sem token), o mantenedor verifica D/R/W localmente antes de
+  cada release, onde a credencial existe por definição.
+
 Três verificações (D\\R e R\\W dependem de R; D\\W não):
   D \\ R → job declarado bloqueante ausente dos required (defeito ML-4A)
   R \\ W → required aponta check que nenhum workflow emite (PR pendente para sempre)
   D \\ W → declared aponta check inexistente em qualquer workflow (declaração fantasma)
-
-🔴 Limitação declarada de R (medido 2026-09-11):
-  R requer chamada autenticada a /branches/main/protection. 'administration: read' não é
-  escopo válido de workflow permissions: (actionlint confirma); GITHUB_TOKEN em CI não
-  pode ser concedido acesso admin por esse mecanismo. Se a chamada falhar em CI (exit 2),
-  as verificações D\\R e R\\W não ocorrem. O defeito que originou este ML
-  (windows-full-suites ausente do required_status_checks.contexts da main) é um defeito
-  D\\R e NÃO seria detectado por um gate sem R. Ver Decision 2 para detalhes e saída raw.
-  Solução: secrets.REPO_ADMIN_TOKEN — decisão de KG.
 
 Limitação declarada de W:
   W é construído a partir de TODOS os jobs em TODOS os workflows sem filtrar por
@@ -39,7 +50,7 @@ Decisão 1 — onde mora a declaração:
   Separado do workflow YAML para tornar edições divergentes visíveis no diff sem
   exigir parsing de YAML na revisão; trivial de auditar e de testar sinteticamente.
 
-Decisão 2 — permissão para ler /branches/main/protection (medido 2026-09-11, corretivo ML-4B):
+Decisão 2 — permissões e escopos (medido 2026-09-11):
 
   FATO 1: 'administration: read' não é escopo válido de permissions: em workflow GitHub Actions.
     Confirmado: actionlint .github/workflows/quality.yml → linha 1069:
@@ -49,30 +60,17 @@ Decisão 2 — permissão para ler /branches/main/protection (medido 2026-09-11,
     criados), não o step individual — o defeito pior possível para checks required.
 
   FATO 2: o endpoint retorna 401 para chamadas anônimas (medido 2026-09-11):
-    curl -s -w '\nHTTP %{http_code}\n' https://api.github.com/repos/kgsaran/trackfw/branches/main/protection
+    curl -s -w '\\nHTTP %{http_code}\\n' https://api.github.com/repos/kgsaran/trackfw/branches/main/protection
     → {"message": "Requires authentication", "status": "401"}
     Controle: /branches/main anônimo → HTTP 200 (subrecurso protege mais que o recurso pai).
 
-  FATO 3: com token pessoal de KG (scope 'repo') → HTTP 200 ✓
-    gh api repos/kgsaran/trackfw/branches/main/protection -i | head -1 → HTTP/2.0 200 OK
+  FATO 3: com token pessoal de KG (scope 'repo') → HTTP 200. Com GITHUB_TOKEN em CI → 404.
+    gh api repos/kgsaran/trackfw/branches/main/protection -i | head -1  → HTTP/2.0 200 OK
+    CI run 34605163678 (PR #317): GITHUB_TOKEN → "Resource not found" (404, exit 2)
 
-  NÃO CONFIRMADO: se GITHUB_TOKEN (app token, 'contents: read') consegue chamar
-  /branches/main/protection em CI. Não testável sem fine-grained PAT com 'metadata: read'
-  only ou run real de CI. A distinção anônimo/autenticado (FATO 2) prova que autenticação
-  é necessária; se o nível de auth do GITHUB_TOKEN é suficiente, desconhecido localmente.
-
-  🔴 LIMITAÇÃO DE R DECLARADA:
-  Se GITHUB_TOKEN não conseguir ler a proteção em CI, as verificações D\\R e R\\W não
-  ocorrem. O defeito que originou este ML (windows-full-suites ausente do required) é
-  um defeito D\\R e NÃO seria detectado por um gate sem R. D\\W continua funcionando
-  (não depende do token — lê só arquivos locais do checkout).
-  Solução para R em CI: secrets.REPO_ADMIN_TOKEN (PAT com 'repo' scope); decisão de KG.
-
-  Se a chamada falhar (qualquer código != 0): exit 2 com ::error:: e saída raw do gh.
-  Nunca passa em silêncio (vault/notes/guarda-que-reporta-ausencia-precisa-distinguir-
-  nao-achei-de-nao-consegui-procurar-2026-09-10.md).
-  Em fork PR: step da verificação real é if:-gated e skippado pelo workflow;
-  step de aviso imprime a limitação declarada. Nunca continue-on-error.
+  Consequência: CI não pode verificar R. Solução: escopo dw para CI (sem token),
+  verificação completa D/R/W localmente via 'make check-required-full' antes de cada release,
+  onde o mantenedor tem credencial por definição.
 
 Decisão 3 — direção da verificação:
   AMBAS as direções reprovam com exit 1 nomeando o(s) check(s) divergente(s).
@@ -83,8 +81,8 @@ Decisão 3 — direção da verificação:
   D\\W: declaração fantasma — job declarado que nenhum workflow define.
 
 Códigos de saída:
-  0 = todos os conjuntos concordam
-  1 = divergência encontrada (D\\R, R\\W, ou D\\W) — nomes listados
+  0 = todos os conjuntos verificados concordam
+  1 = divergência encontrada (D\\R, R\\W, e/ou D\\W) — nomes listados
   2 = não foi possível executar a verificação (instrumento falhou)
 
 Variáveis de ambiente para self-test (substituem fontes reais):
@@ -94,6 +92,7 @@ Variáveis de ambiente para self-test (substituem fontes reais):
   SELFTEST_WORKFLOW_CHECKS    — conjunto W simulado (newline-separated)
 """
 
+import argparse
 import itertools
 import os
 import subprocess
@@ -156,7 +155,12 @@ def load_declared() -> list[str]:
 # ── Load live required (R) ────────────────────────────────────────────────────
 
 def load_live_required() -> list[str]:
-    """Return the live required_status_checks.contexts via gh api."""
+    """Return the live required_status_checks.contexts via gh api.
+
+    Fatal (exit 2) if R is not readable — 'não consegui procurar' is fatal here
+    because this function is called only in full scope, where the caller (local
+    maintainer) is expected to have admin credentials.
+    """
     raw = os.environ.get("SELFTEST_REQUIRED", "")
     if raw:
         return [l.strip() for l in raw.splitlines() if l.strip()]
@@ -187,10 +191,9 @@ def load_live_required() -> list[str]:
         )
         emit_error(f"Saída raw do gh (stderr): {result.stderr.strip()!r}")
         emit_error(
-            "Este gate requer 'administration: read' no GITHUB_TOKEN. "
-            "Localmente: autentique 'gh' como administrador do repositório. "
-            "Em CI: job check-required-checks declara 'administration: read' — "
-            "se ainda falhar, inspecione os logs do job."
+            "Este gate (--scope full) requer credencial de mantenedor com 'repo' scope. "
+            "Execute: gh auth login — e confirme com: "
+            f"gh api repos/{REPO}/branches/{BRANCH}/protection --jq '.required_status_checks.contexts'"
         )
         emit_error(
             "Regra: 'não consegui procurar' é fatal — "
@@ -267,7 +270,7 @@ def load_workflow_checks() -> set[str]:
 # ── Self-test ─────────────────────────────────────────────────────────────────
 
 def self_test() -> None:
-    """Run the four falsification arms in-process using env-var fixtures."""
+    """Run falsification arms in-process using env-var fixtures."""
     script = str(Path(__file__).resolve())
     pass_count = 0
     fail_count = 0
@@ -276,6 +279,7 @@ def self_test() -> None:
         label: str,
         expected_exit: int,
         expected_in_output: str | None = None,
+        extra_args: list[str] | None = None,
         **env_overrides: str,
     ) -> None:
         nonlocal pass_count, fail_count
@@ -289,10 +293,8 @@ def self_test() -> None:
         env["ROOT"] = str(ROOT)
         env.update(env_overrides)
 
-        result = subprocess.run(
-            [sys.executable, script],
-            capture_output=True, text=True, env=env,
-        )
+        cmd = [sys.executable, script] + (extra_args or [])
+        result = subprocess.run(cmd, capture_output=True, text=True, env=env)
 
         ok = True
         combined = result.stdout + result.stderr
@@ -322,6 +324,8 @@ def self_test() -> None:
             pass_count += 1
         else:
             fail_count += 1
+
+    # ── Scope full: T1-T6 (comportamento original) ────────────────────────────
 
     # T1 — contra-braço obrigatório: D==R e todos em W → exit 0
     # Afirma: quando declared, required e workflow checks concordam, o gate passa.
@@ -397,6 +401,60 @@ def self_test() -> None:
             SELFTEST_WORKFLOW_CHECKS="go\nnode",
         )
 
+    # ── Scope dw: T7-T10 ─────────────────────────────────────────────────────
+
+    # T7 — --scope dw + SELFTEST_REQUIRED_FAIL=1 → exit 0
+    # Afirma: em scope dw, falha no token (run 34605163678: GITHUB_TOKEN retorna 404)
+    # não causa vermelho permanente em CI — o instrumento (R) não é invocado.
+    # Reconciliação com medição: run 34605163678 provou que GITHUB_TOKEN não consegue
+    # ler /branches/main/protection; este braço afirma que, com --scope dw, essa
+    # limitação não impede o gate de passar — o escopo reduzido é a resposta à medição.
+    assert_arm(
+        "T7: --scope dw + token indisponível (SELFTEST_REQUIRED_FAIL) → exit 0",
+        expected_exit=0,
+        extra_args=["--scope", "dw"],
+        SELFTEST_REQUIRED_FAIL="1",
+        SELFTEST_DECLARED="go\nnode",
+        SELFTEST_WORKFLOW_CHECKS="go\nnode",
+    )
+
+    # T8 — --scope dw + D\\R divergente → exit 0 (R não consultado em scope dw)
+    # Afirma: D\\R não é verificado em scope dw — o flag restringe o escopo,
+    # não é cosmético.
+    assert_arm(
+        "T8: --scope dw, D\\R divergente → exit 0 (R ignorado em scope dw)",
+        expected_exit=0,
+        extra_args=["--scope", "dw"],
+        SELFTEST_DECLARED="go\nnode\nparity",
+        SELFTEST_REQUIRED="go\nnode",    # parity ausente de R — mas R não é consultado
+        SELFTEST_WORKFLOW_CHECKS="go\nnode\nparity",
+    )
+
+    # T9 — --scope dw + D\\W divergente → exit 1 (D\\W ainda funciona em scope dw)
+    # Afirma: scope dw ainda verifica D\\W — o flag reduz, não desabilita todo o gate.
+    assert_arm(
+        "T9: --scope dw, D\\W divergente → exit 1 (D\\W funciona em scope dw)",
+        expected_exit=1,
+        extra_args=["--scope", "dw"],
+        SELFTEST_DECLARED="go\nnode\nghost-declared",
+        SELFTEST_REQUIRED="go\nnode",
+        SELFTEST_WORKFLOW_CHECKS="go\nnode",    # ghost-declared ausente de W
+    )
+
+    # T10 — --scope dw + D==W → exit 0 e declara o que não verificou (contra-braço de T9)
+    # Afirma: quando D e W concordam, scope dw passa — e a saída inclui a declaração
+    # de que D\\R e R\\W não foram verificados. Sem este braço, T9 poderia ser satisfeito
+    # por um gate que sempre reprova em scope dw.
+    assert_arm(
+        "T10: --scope dw, D==W → exit 0, declara R não verificado (contra-braço de T9)",
+        expected_exit=0,
+        expected_in_output="R não verificado",
+        extra_args=["--scope", "dw"],
+        SELFTEST_DECLARED="go\nnode",
+        SELFTEST_REQUIRED="go\nnode",
+        SELFTEST_WORKFLOW_CHECKS="go\nnode",
+    )
+
     print("---")
     print(f"Self-test summary: {pass_count} PASS, {fail_count} FAIL")
     sys.exit(0 if fail_count == 0 else 1)
@@ -405,15 +463,64 @@ def self_test() -> None:
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main() -> None:
-    if len(sys.argv) > 1 and sys.argv[1] == "--self-test":
+    parser = argparse.ArgumentParser(
+        description="Verifica concordância entre required_status_checks, declaração e workflow checks."
+    )
+    parser.add_argument(
+        "--self-test",
+        action="store_true",
+        help="Executa falsificação interna e encerra.",
+    )
+    parser.add_argument(
+        "--scope",
+        choices=["full", "dw"],
+        default="full",
+        help=(
+            "full (padrão): verifica D\\R, R\\W e D\\W — requer credencial de mantenedor. "
+            "dw: verifica apenas D\\W — sem chamada à API, adequado para CI."
+        ),
+    )
+    args = parser.parse_args()
+
+    if args.self_test:
         self_test()
         return  # unreachable, self_test calls sys.exit
 
     declared = load_declared()
-    live_required = load_live_required()
     workflow_checks = load_workflow_checks()
-
     declared_set = set(declared)
+
+    if args.scope == "dw":
+        # D\W only — não consulta R
+        phantom_in_declared = sorted(declared_set - workflow_checks)
+        if phantom_in_declared:
+            emit_error(
+                "check(s) em .github/required-status-checks.txt que NENHUM workflow define:"
+            )
+            for name in phantom_in_declared:
+                emit_error(f"  - '{name}'")
+            emit_error(
+                "Remova de .github/required-status-checks.txt ou adicione o job ao workflow."
+            )
+            emit_error(
+                "FALHOU [scope=dw] — D\\W ≠ ∅. "
+                "R não verificado (GITHUB_TOKEN sem permissão de administrador em CI): "
+                "D\\R e R\\W não foram verificados nesta execução. "
+                "Use 'make check-required-full' para verificação completa (requer credencial de mantenedor)."
+            )
+            sys.exit(1)
+
+        emit_ok(
+            f"[scope=dw] declared={len(declared_set)}, workflow_checks={len(workflow_checks)} — "
+            "D\\\\W=∅. "
+            "R não verificado (GITHUB_TOKEN sem permissão de administrador em CI): "
+            "D\\\\R e R\\\\W não foram verificados nesta execução. "
+            "Use 'make check-required-full' para verificação completa (requer credencial de mantenedor)."
+        )
+        return
+
+    # Full scope: D/R/W
+    live_required = load_live_required()
     required_set = set(live_required)
 
     fail = False
@@ -465,14 +572,13 @@ def main() -> None:
 
     if fail:
         emit_error(
-            "FALHOU — divergência entre declared (.github/required-status-checks.txt), "
+            "FALHOU [scope=full] — divergência entre declared (.github/required-status-checks.txt), "
             "required_status_checks (API) e workflow checks (.github/workflows/*.yml)."
         )
         sys.exit(1)
 
-    total = len(declared_set) + len(required_set) + len(workflow_checks)
     emit_ok(
-        f"declared={len(declared_set)}, required={len(required_set)}, "
+        f"[scope=full] declared={len(declared_set)}, required={len(required_set)}, "
         f"workflow_checks={len(workflow_checks)} — "
         "D\\\\R=∅, R\\\\W=∅, D\\\\W=∅ — todos os conjuntos concordam."
     )

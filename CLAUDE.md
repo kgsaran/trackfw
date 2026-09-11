@@ -276,6 +276,17 @@ Ao gerar uma nova tag, o fluxo obrigatório é:
    (`chore(release): bump version files to x.y.z`) — nunca um commit separado.
    `CHANGELOG.md` é arquivo único na raiz; não duplicar em `npm/` ou `pypi/`.
 
+3.5. **Verificar concordância entre required checks, declaração e workflows** (pré-condição obrigatória da tag):
+   ```bash
+   make check-required-full
+   ```
+   Executa a verificação completa D/R/W (declared vs required_status_checks da API vs workflow checks).
+   Requer credencial de mantenedor (`gh auth login` com scope `repo`). Falha fatal se R não for legível.
+   Por que aqui: a tag afirma que o estado do repositório está íntegro. R (o que bloqueia merge) vive
+   fora do repositório e muda episodicamente; o momento certo para verificar é imediatamente antes de
+   selar o estado com a tag — o mantenedor tem a credencial por definição, e o custo é uma chamada de API.
+   CI verifica apenas D\\W (sem token, via `check-required-checks`); D\\R e R\\W são responsabilidade deste passo.
+
 4. **Criar a tag anotada** com o changelog no corpo da mensagem:
    ```bash
    git tag -a v<x.y.z> -m "<changelog>"

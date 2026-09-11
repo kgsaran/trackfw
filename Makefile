@@ -6,7 +6,7 @@ BUILD_DIR=bin
 # à chamada de check-roadmap-barrier-contract.sh via `make quality`.
 HASH_CMD := $(shell command -v sha256sum >/dev/null 2>&1 && echo sha256sum || echo "shasum -a 256")
 
-.PHONY: build test test-node test-python parity parity-rest parity-falsify lint quality install clean sync-integration-assets check-integration-assets package-smoke
+.PHONY: build test test-node test-python parity parity-rest parity-falsify lint quality install clean sync-integration-assets check-integration-assets package-smoke check-required-full
 
 build:
 	go build -o $(BUILD_DIR)/$(BINARY) ./cmd/trackfw
@@ -91,17 +91,25 @@ parity-rest: build
 	# usa artefatos sinteticos). A verificacao real acontece no step "ML-2A — ratchet de nomes"
 	# do job windows-full-suites em .github/workflows/quality.yml.
 	python3 scripts/check-windows-known-failures.py --self-test
-	# ML-4B (ROADMAP-2026-09-06-ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega):
+	# ML-4B corretivo (ROADMAP-2026-09-06-ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega):
 	# autoteste do gate de concordância entre declared/required/workflow checks.
 	# --self-test usa fixtures sinteticas (sem chamada ao gh api nem leitura de workflow).
-	# A verificacao real acontece no job check-required-checks em .github/workflows/quality.yml.
-	# Nota: 'administration: read' nao e escopo valido de workflow permissions (actionlint);
-	# o job usa apenas 'contents: read'. Se GITHUB_TOKEN nao conseguir ler a protecao da
-	# branch em CI, as verificacoes D\R e R\W nao ocorrem — ver Decision 2 no script.
+	# O job CI roda --scope dw (D\W apenas, sem token). A verificacao completa D/R/W
+	# usa 'make check-required-full' (requer credencial de mantenedor, ver alvo abaixo).
 	python3 scripts/check-required-status-checks.py --self-test
 
 parity-falsify: build
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/run-gates-falsify-parallel.sh
+
+check-required-full:
+	# D/R/W — verificação completa: declared vs required_status_checks (API) vs workflow checks.
+	# Requer credencial de mantenedor: gh auth login com scope 'repo'.
+	# NUNCA em CI: GITHUB_TOKEN não tem permissão de administrador para ler
+	# /branches/main/protection (medido em run CI 34605163678, PR #317 — retornou 404).
+	# Adicionar este alvo a parity/quality/parity-rest reconectaria a dependência de token
+	# ao CI, que foi a causa raiz do job permanentemente vermelho (ML-4B corretivo).
+	# Pré-condição de release: execute ANTES de 'git tag -a' (ver CLAUDE.md §Protocolo de Release, passo 3.5).
+	python3 scripts/check-required-status-checks.py
 
 sync-integration-assets:
 	scripts/sync-integration-assets.sh
