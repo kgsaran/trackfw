@@ -4,6 +4,44 @@
 
 ---
 
+## Sessão 2026-09-11c — ares-tf (Infrastructure) — Corretivo ML-4B: `administration: read` inválido em workflow → schema rejeitado → 0 jobs: CONCLUÍDO, aguarda auditoria do arquiteto
+
+Branch `fix/ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega` (PR #317).
+
+**Defeito:** `administration: read` declarado em `permissions:` do job `check-required-checks`
+no `quality.yml` é escopo inválido de workflow GitHub Actions. GitHub rejeitou o schema inteiro
+(0 jobs criados), todos os required_status_checks ficam pendentes para sempre — CI travado.
+
+**Medições realizadas nesta sessão:**
+- actionlint: "unknown permission scope 'administration'" confirmado na linha 1069
+- Anonymous → `/branches/main/protection` → HTTP 401 ("Requires authentication")
+- Controle: `/branches/main` anônimo → HTTP 200
+- KG admin token → `/branches/main/protection` → HTTP 200
+- GITHUB_TOKEN com `contents: read` em CI: NÃO CONFIRMADO (não testável sem fine-grained PAT ou run real)
+
+**Decisão de design:** R (leitura da proteção) permanece na arquitetura mas com limitação declarada.
+Se GITHUB_TOKEN não conseguir chamar o endpoint, D\R e R\W não são verificadas. O defeito original
+(windows-full-suites ausente do required) é D\R e NÃO seria detectado sem R. Solução: `secrets.REPO_ADMIN_TOKEN` — decisão de KG.
+
+**Artefatos modificados:**
+- `.github/workflows/quality.yml` — `administration: read` removido; comentário corrigido
+- `scripts/check-required-status-checks.py` — Decision 2 + topo do docstring com medições brutas e limitação declarada
+- `Makefile` — comentário sobre `administration:read` corrigido
+- `vault/notes/administration-nao-e-escopo-de-workflow-github-actions-schema-rejeitado-2026-09-11.md` — nota criada
+- `docs/roadmaps/wip/ROADMAP-*` — Corretivo ML-4B adicionado
+- `vault/notes/index.md` — nota linkada
+
+**Gates:**
+- actionlint .github/workflows/quality.yml → exit 0 (sem erros)
+- `python3 scripts/check-required-status-checks.py --self-test` → 6 PASS, 0 FAIL
+- `make parity-rest` → exit 0 (0 FAIL, 0 ERROR)
+- `trackfw validate` → 0 errors, 173 warnings (pré-existentes)
+
+**Nota pendente (não implementada neste ML — requer REQ+roadmap):** wiring do actionlint no
+`parity-rest` para pegar erros de schema de workflow antes de chegar ao CI.
+
+---
+
 ## Sessão 2026-09-11b — ares-tf (Infrastructure) — ML-4B: gate que verifica concordância entre required_status_checks e jobs declarados bloqueantes: CONCLUÍDO, aguarda auditoria do arquiteto
 
 Branch `fix/ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega`.

@@ -545,3 +545,86 @@ inclui a instrução de correção. Após confirmação, wirear `check-required-
 **Por que vale mais que o ML-4A:** o 4A corrige a instância. O 4B impede a classe — e a classe é
 *"construímos o mecanismo e não o ligamos a quem age sobre ele"*, que hoje apareceu **duas vezes**:
 aqui, e no baseline do D4 que nunca rodava porque `origin/main` não era fetchado.
+
+#### Corretivo ML-4B — `administration: read` não é escopo de workflow; schema rejeitado → 0 jobs (2026-09-11)
+**Status:** ✅ Concluído · **Agente:** `ares-tf`
+
+**Defeito:** declarar `administration: read` em `permissions:` do job `check-required-checks`
+fez o GitHub rejeitar o schema do `quality.yml` inteiro — 0 jobs criados, todos os
+`required_status_checks` ficam pendentes para sempre. YAML é válido para `yaml.safe_load`
+mas inválido para o schema do GitHub Actions.
+
+**Causa raiz:** `administration` é escopo de fine-grained PAT, não de workflow `permissions:`.
+Os escopos válidos de workflow não incluem `administration`. Confirmado por actionlint.
+
+**Erro de método identificado pelo arquiteto:** no ML-4B, o agente declarou a permissão no YAML
+em vez de medir se GITHUB_TOKEN consegue chamar o endpoint. São duas questões distintas —
+e a declaração de um escopo inválido causou o modo de falha `R\W` que o gate foi construído para detectar.
+
+**Medições realizadas (2026-09-11, corretivo):**
+```
+# FATO 1: actionlint confirma escopo inválido
+actionlint .github/workflows/quality.yml
+→ linha 1069: "unknown permission scope 'administration'. all available permission scopes
+   are 'actions', 'artifact-metadata', 'attestations', 'checks', 'contents', ..."
+
+# FATO 2: endpoint retorna 401 anônimo
+curl -s -w '\nHTTP %{http_code}\n' https://api.github.com/repos/kgsaran/trackfw/branches/main/protection
+→ {"message": "Requires authentication", "status": "401"}
+
+Controle (/branches/main anônimo):
+curl -s -w '\nHTTP %{http_code}\n' https://api.github.com/repos/kgsaran/trackfw/branches/main -o /dev/null
+→ HTTP 200
+
+# FATO 3: com token pessoal de KG (scope 'repo')
+gh api repos/kgsaran/trackfw/branches/main/protection -i | head -1
+→ HTTP/2.0 200 OK
+
+# NÃO CONFIRMADO: GITHUB_TOKEN com 'contents: read' em CI
+# Requer fine-grained PAT com 'metadata: read' only ou run real de CI.
+```
+
+**Decisão de design — R em CI:**
+O endpoint requer autenticação (FATO 2). GITHUB_TOKEN é autenticado mas não pode receber
+`administration` (escopo inválido). Se GITHUB_TOKEN com `contents: read` não conseguir chamar
+o endpoint em CI, D\R e R\W não são verificadas.
+
+🔴 **Limitação declarada:** o defeito que originou este ML (`windows-full-suites` ausente do
+`required_status_checks.contexts`) é um defeito D\R e **NÃO seria detectado** por um gate sem R.
+D\W continua funcionando sem token (só arquivos locais do checkout).
+
+Solução para R em CI: `secrets.REPO_ADMIN_TOKEN` (PAT com `repo` scope) — decisão de KG.
+Se o GITHUB_TOKEN conseguir (run real confirmará), nenhuma mudança adicional necessária.
+
+**Correções neste corretivo:**
+1. `quality.yml` — `administration: read` removido; comentário corrigido (documentando a
+   medição e a limitação declarada de R)
+2. `scripts/check-required-status-checks.py` — Decision 2 atualizada com medições brutas;
+   Limitação de R adicionada ao topo do docstring com declaração explícita
+3. `Makefile` — comentário sobre `administration:read` corrigido
+4. `vault/notes/administration-nao-e-escopo-de-workflow-github-actions-schema-rejeitado-2026-09-11.md` — nota criada
+
+**Reconciliação teste↔conclusão:**
+- Mudança 1 (remoção de `administration: read`) afirma: escopo inválido removido → actionlint
+  passa em quality.yml → workflow volta a criar jobs.
+- Mudança 2 (Decision 2) afirma: a decisão documenta os três fatos medidos, não uma presunção;
+  "NÃO CONFIRMADO" é honesto sobre o que não foi testado.
+
+**Gates (corretivo, sequenciais, foreground, local, macOS arm64):**
+```
+actionlint .github/workflows/quality.yml
+→ (sem saída, exit 0)
+
+actionlint .github/workflows/*.yml
+→ apenas avisos shellcheck pré-existentes em windows-census.yml e windows-probe.yml
+  (não introduzidos por este corretivo)
+
+python3 scripts/check-required-status-checks.py --self-test
+→ 6 PASS, 0 FAIL
+
+make parity-rest
+→ 0 FAIL, 0 ERROR (verificado por grep '^FAIL\|^ERROR' no output)
+
+trackfw validate
+→ (não executado neste corretivo — sem mudanças em artefatos de governança trackfw)
+```

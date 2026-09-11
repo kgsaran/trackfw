@@ -94,8 +94,10 @@ parity-rest: build
 	# ML-4B (ROADMAP-2026-09-06-ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega):
 	# autoteste do gate de concordância entre declared/required/workflow checks.
 	# --self-test usa fixtures sinteticas (sem chamada ao gh api nem leitura de workflow).
-	# A verificacao real acontece no job check-required-checks em .github/workflows/quality.yml,
-	# com administration:read no GITHUB_TOKEN.
+	# A verificacao real acontece no job check-required-checks em .github/workflows/quality.yml.
+	# Nota: 'administration: read' nao e escopo valido de workflow permissions (actionlint);
+	# o job usa apenas 'contents: read'. Se GITHUB_TOKEN nao conseguir ler a protecao da
+	# branch em CI, as verificacoes D\R e R\W nao ocorrem — ver Decision 2 no script.
 	python3 scripts/check-required-status-checks.py --self-test
 
 parity-falsify: build

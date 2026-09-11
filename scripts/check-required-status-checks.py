@@ -9,10 +9,19 @@ Três conjuntos:
   R = required_status_checks.contexts da API  (o que bloqueia merge no GitHub)
   W = check names derivados de .github/workflows/*.yml (o que o CI pode emitir)
 
-Três verificações, todas fatais:
+Três verificações (D\\R e R\\W dependem de R; D\\W não):
   D \\ R → job declarado bloqueante ausente dos required (defeito ML-4A)
   R \\ W → required aponta check que nenhum workflow emite (PR pendente para sempre)
   D \\ W → declared aponta check inexistente em qualquer workflow (declaração fantasma)
+
+🔴 Limitação declarada de R (medido 2026-09-11):
+  R requer chamada autenticada a /branches/main/protection. 'administration: read' não é
+  escopo válido de workflow permissions: (actionlint confirma); GITHUB_TOKEN em CI não
+  pode ser concedido acesso admin por esse mecanismo. Se a chamada falhar em CI (exit 2),
+  as verificações D\\R e R\\W não ocorrem. O defeito que originou este ML
+  (windows-full-suites ausente do required_status_checks.contexts da main) é um defeito
+  D\\R e NÃO seria detectado por um gate sem R. Ver Decision 2 para detalhes e saída raw.
+  Solução: secrets.REPO_ADMIN_TOKEN — decisão de KG.
 
 Limitação declarada de W:
   W é construído a partir de TODOS os jobs em TODOS os workflows sem filtrar por
@@ -30,16 +39,37 @@ Decisão 1 — onde mora a declaração:
   Separado do workflow YAML para tornar edições divergentes visíveis no diff sem
   exigir parsing de YAML na revisão; trivial de auditar e de testar sinteticamente.
 
-Decisão 2 — quando a leitura da proteção falha:
-  O gate usa 'gh api' para ler a proteção. Medido (2026-09-11):
-    - repo é público  (gh api repos/kgsaran/trackfw --jq '.private' → false)
-    - default_workflow_permissions: read
-    - nenhum job em quality.yml declara 'administration: read'
-    - a chamada gh api funciona localmente com credencial pessoal do KG
-  NÃO MEDIDO: se GITHUB_TOKEN com 'administration: read' consegue ler em CI.
-  Requer run real não autorizado por este ML — item aberto declarado ao arquiteto.
-  Se a chamada falhar: exit 2 com ::error:: e saída raw do gh. Nunca passa em
-  silêncio (regra: vault/notes/guarda-que-reporta-ausencia-precisa-distinguir-
+Decisão 2 — permissão para ler /branches/main/protection (medido 2026-09-11, corretivo ML-4B):
+
+  FATO 1: 'administration: read' não é escopo válido de permissions: em workflow GitHub Actions.
+    Confirmado: actionlint .github/workflows/quality.yml → linha 1069:
+    "unknown permission scope 'administration'. all available permission scopes are
+    'actions', 'artifact-metadata', 'attestations', 'checks', 'contents', ..."
+    Declarar esse escopo faz o GitHub rejeitar o schema do workflow inteiro (0 jobs
+    criados), não o step individual — o defeito pior possível para checks required.
+
+  FATO 2: o endpoint retorna 401 para chamadas anônimas (medido 2026-09-11):
+    curl -s -w '\nHTTP %{http_code}\n' https://api.github.com/repos/kgsaran/trackfw/branches/main/protection
+    → {"message": "Requires authentication", "status": "401"}
+    Controle: /branches/main anônimo → HTTP 200 (subrecurso protege mais que o recurso pai).
+
+  FATO 3: com token pessoal de KG (scope 'repo') → HTTP 200 ✓
+    gh api repos/kgsaran/trackfw/branches/main/protection -i | head -1 → HTTP/2.0 200 OK
+
+  NÃO CONFIRMADO: se GITHUB_TOKEN (app token, 'contents: read') consegue chamar
+  /branches/main/protection em CI. Não testável sem fine-grained PAT com 'metadata: read'
+  only ou run real de CI. A distinção anônimo/autenticado (FATO 2) prova que autenticação
+  é necessária; se o nível de auth do GITHUB_TOKEN é suficiente, desconhecido localmente.
+
+  🔴 LIMITAÇÃO DE R DECLARADA:
+  Se GITHUB_TOKEN não conseguir ler a proteção em CI, as verificações D\\R e R\\W não
+  ocorrem. O defeito que originou este ML (windows-full-suites ausente do required) é
+  um defeito D\\R e NÃO seria detectado por um gate sem R. D\\W continua funcionando
+  (não depende do token — lê só arquivos locais do checkout).
+  Solução para R em CI: secrets.REPO_ADMIN_TOKEN (PAT com 'repo' scope); decisão de KG.
+
+  Se a chamada falhar (qualquer código != 0): exit 2 com ::error:: e saída raw do gh.
+  Nunca passa em silêncio (vault/notes/guarda-que-reporta-ausencia-precisa-distinguir-
   nao-achei-de-nao-consegui-procurar-2026-09-10.md).
   Em fork PR: step da verificação real é if:-gated e skippado pelo workflow;
   step de aviso imprime a limitação declarada. Nunca continue-on-error.
