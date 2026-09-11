@@ -1,5 +1,5 @@
 ---
-status: done
+status: wip
 date: 2026-09-06
 squad: ares-tf
 req: "docs/req/REQ-2026-09-06-o-ci-de-windows-nao-bloqueia-regressao-e-nao-distingue-suite-que-nao-carregou-de-teste-que-reprovou.md"
@@ -7,7 +7,7 @@ req: "docs/req/REQ-2026-09-06-o-ci-de-windows-nao-bloqueia-regressao-e-nao-disti
 
 # Roadmap: Ratchet por nome, e classe própria para suíte que não carrega
 
-> Criado em: 2026-09-06 | Status: done
+> Criado em: 2026-09-06 | Status: wip
 
 ## Context
 
@@ -352,3 +352,78 @@ make parity-rest
 trackfw validate
 → 0 errors (173 warnings pré-existentes)
 ```
+
+---
+
+## 🔴 REABERTO — 2026-09-11: o ratchet reprovava e nada consumia o veredito
+
+**Esta REQ foi fechada em 2026-09-10 afirmando que o CI bloqueia regressão de Windows. Ela não
+bloqueava.** Fechamento prematuro, e é a classe do achado **A1** da auditoria externa de 2026-09-05,
+que este projeto já pagou uma vez: marcar concluído algo cujo critério não foi atendido.
+
+**Quem viu foi o usuário**, pelo sintoma certo: *"o gate do windows não está mais como required"*.
+
+### ML-4A — O job reprova, mas não é `required` — medição sem consumidor
+**Status:** ✅ Concluído (instância) · **Agente:** arquiteto
+
+Medido em 2026-09-11:
+
+```
+gh api repos/kgsaran/trackfw/branches/main/protection --jq '.required_status_checks.contexts'
+
+["go","node","python (3.10)","python (3.12)","package-smoke",
+ "windows-integrations-resolve","parity",
+ "governance-install-script","governance-go-install"]
+```
+
+🔴 **`windows-full-suites` não estava na lista.** O `ML-3A` tirou o `continue-on-error` e o job passou
+a reprovar com honestidade — **num lugar onde ninguém agia sobre o resultado**. O PR #316 foi
+mergeado com ele vermelho, o que prova o ponto empiricamente.
+
+**A ADR D1 diz:** *"O job **falha** se aparecer um nome fora da lista."* Falhar só significa alguma
+coisa se alguém **consome o veredito**.
+
+**Corrigido** — `windows-full-suites` acrescentado aos required, depois de confirmar que estava
+**verde** na `main` (run 34595061413) com os 38 vermelhos catalogados. Ligar um check vermelho como
+required bloquearia todos os PRs.
+
+**Efeitos declarados:**
+- o job é o mais lento do run; todo PR passa a esperar por ele. Se incomodar, a saída é **encurtá-lo**,
+  não retirá-lo do required;
+- `strict: false` na proteção — PR não precisa estar atualizado com a `main`. PR aberto **antes** desta
+  mudança pode ter sido avaliado sem o check.
+
+### ML-4B — 🔴 A CLASSE: nada verifica se os `required` batem com os jobs bloqueantes
+**Status:** ⬜ Pendente · **Agente:** `ares-tf`
+
+**Por que ninguém viu durante o dia inteiro:** a lista de required checks vive **fora do
+repositório**, numa tela do GitHub. Nenhum `grep`, nenhuma derivação nossa, nenhum gate alcança
+aquilo. O acordo entre *"o que o `quality.yml` roda"* e *"o que bloqueia merge"* é **tácito**.
+
+Construímos a catraca inteira — 4 MLs, 3 corretivos, 27 testes de falsificação — e ela **não
+bloqueava nada**. Não por defeito de implementação: por **ausência de consumidor**.
+
+**O que fazer:** um gate que compare os `required_status_checks.contexts` da proteção com a lista de
+jobs que o repositório **declara** bloqueantes, e reprove na divergência.
+
+**Decisões a tomar e registrar, não presumir:**
+
+1. **Onde mora a declaração?** Não existe hoje. Candidatos: campo no `trackfw.yaml`, arquivo próprio,
+   ou anotação nos jobs do workflow. Escolha justificada.
+2. 🔴 **O gate consegue ler a proteção?** `gh api .../branches/main/protection` exige token com
+   permissão de administração. Num fork, ou num CI sem esse escopo, **a leitura falha**. Se falhar, o
+   gate **não pode passar em silêncio** — é a regra da nota de vault
+   `guarda-que-reporta-ausencia-precisa-distinguir-nao-achei-de-nao-consegui-procurar-2026-09-10.md`:
+   *"não consegui procurar"* é fatal, não aviso.
+3. **Direção da verificação.** Required sem job declarado, e job declarado sem required, são dois
+   defeitos distintos. Os dois reprovam? Um avisa? Declare.
+
+**Falsificação:**
+- required contém tudo que foi declarado ⇒ passa (🔴 contra-braço obrigatório);
+- job declarado bloqueante ausente dos required ⇒ reprova, nomeando;
+- required contendo check que não existe no workflow ⇒ reprova ou avisa, conforme a decisão 3;
+- leitura da proteção indisponível ⇒ 🔴 **reprova**, nunca passa.
+
+**Por que vale mais que o ML-4A:** o 4A corrige a instância. O 4B impede a classe — e a classe é
+*"construímos o mecanismo e não o ligamos a quem age sobre ele"*, que hoje apareceu **duas vezes**:
+aqui, e no baseline do D4 que nunca rodava porque `origin/main` não era fetchado.
