@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-06
 squad: ares-tf
 req: "docs/req/REQ-2026-09-06-o-ci-de-windows-nao-bloqueia-regressao-e-nao-distingue-suite-que-nao-carregou-de-teste-que-reprovou.md"
@@ -7,7 +7,7 @@ req: "docs/req/REQ-2026-09-06-o-ci-de-windows-nao-bloqueia-regressao-e-nao-disti
 
 # Roadmap: Ratchet por nome, e classe própria para suíte que não carrega
 
-> Criado em: 2026-09-06 | Status: wip
+> Criado em: 2026-09-06 | Status: done
 
 ## Context
 
