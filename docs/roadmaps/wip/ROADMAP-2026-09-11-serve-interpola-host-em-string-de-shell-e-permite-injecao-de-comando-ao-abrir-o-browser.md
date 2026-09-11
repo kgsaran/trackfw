@@ -228,7 +228,7 @@ terceiro é exatamente o vetor de RCE do `barrier`. O sítio é pré-existente e
 REQ; o trust-check fechado hoje pode protegê-lo, mas **isso precisa ser dito, não presumido**.
 
 ### ML-NOVO — 🔴 Gate que existe e ninguém invoca: a TERCEIRA instância do dia
-**Status:** ⬜ Pendente · **Agente:** `ares-tf` · **classe, não instância**
+**Status:** ✅ Concluído · **Agente:** `ares-tf` · **classe, não instância**
 
 **Descoberto ao abrir o PR seguinte**, por um aviso do `trackfw push` sobre outra branch.
 
@@ -275,16 +275,46 @@ Os dois foram ligados ao `parity-rest` neste ML. **O que falta é impedir o terc
 Verificar que **todo `scripts/check-*.sh` tem consumidor** — alvo do `Makefile`, workflow, ou outro
 script. Reprovar nomeando o órfão.
 
-**Decisões a tomar e registrar:**
+**Decisões registradas (ares-tf, 2026-09-11):**
 
-1. **O que conta como consumidor?** Ser citado por outro script é suficiente, ou tem de haver caminho
-   até um alvo que o CI de fato roda? 🔴 O `check-integration-cli-parity.sh` é citado por
-   `check-cli-parity.sh` **e por um arquivo de testdata** — a citação em testdata **não é consumo**,
-   e um casamento ingênuo por substring diria que sim.
-2. **Script novo sem consumidor: reprova ou avisa?** Reprovar força ligar antes de mergear — que é o
-   que faltou aqui. Avisar vira ruído.
-3. **Exceção declarada.** Se algum script legitimamente não tiver consumidor (ferramenta manual),
-   precisa de lista de exceção **com motivo**, não de tolerância silenciosa.
+1. **O que conta como consumidor?** Invocação real (não apenas menção em comentário) em linha
+   não-comentário de: (a) recipe do Makefile (prefixo tab, não `\t#`); (b) qualquer `.sh` fora de
+   `scripts/testdata/` (linha não-comentário, não o próprio script); (c) qualquer `.yml` de
+   `.github/workflows` (linha não-comentário). Citação em `scripts/testdata/` é corpus congelado —
+   **nunca é execução**. Por que "citado por outro script basta" não é suficiente: um par de scripts
+   que se cita em comentários forma ciclo de citação que nunca chega a nenhum executor. O discriminante
+   é testdata: `check-integration-cli-parity.sh` é citado em corpus `.md` de testdata e em comentários
+   de vários scripts, mas o único consumo real é `bash "$ROOT_DIR/scripts/check-integration-cli-parity.sh"`
+   em `check-cli-parity.sh:211`. O gate confere isso; a citação de testdata provoca FAIL se o
+   exclusão for removida (arm 3 de `--self-test` confirma que a exclusão é load-bearing, não
+   decorativa).
+
+2. **Script novo sem consumidor: reprova.** Não avisa — avisos viraram ruído (issue #275). Reprovar
+   força o autor a ligar o script antes de mergear, que é exatamente o que faltou nas duas instâncias
+   anteriores de hoje.
+
+3. **Exceção declarada obrigatória com motivo.** Lista `EXCEPTIONS` no gate com formato
+   `"basename.sh|motivo"`. Entrada sem `|` ou com motivo vazio faz o gate reprovar — tolerância
+   silenciosa é o anti-padrão que este gate fecha. Lista vazia por padrão: nenhum script é
+   atualmente ferramenta manual legítima sem consumidor.
+
+**Medição de partida confirmada:** 52 scripts `check-*.sh`; 0 órfãos após os dois ligados
+neste ML (`check-raw-read-ban.sh` e `check-serve-browser-security.sh`). O gate passa com 53/53 OK
+(inclui a si mesmo). Medição `make parity-rest` → exit 0.
+
+**Falsificação (4 braços, todos `--self-test` OK):**
+- Arm 1: script sem consumidor ⇒ FAIL nomeando o script  
+- Arm 2: script ligado ao Makefile ⇒ PASS (contra-braço)  
+- Arm 3: script citado só em `scripts/testdata/*.sh` ⇒ FAIL; remover exclusão vira falso-PASS (confirma que exclusão é discriminante, não no-op)  
+- Arm 4a/4b: script em lista de exceção com motivo ⇒ PASS; sem motivo ⇒ FAIL
+
+**Reconciliação de testes:** o `--self-test` afirma que o gate detecta scripts órfãos e não detecta
+falsos positivos para os 4 casos definidos pela especificação — confirmado contra a medição de
+partida (0 órfãos reais = o braço sintético do arm 1 é o que prova que o gate não é vacuous).
+
+**Arquivos entregues:**
+- `scripts/check-orphan-gates.sh` (novo gate com `--self-test`)
+- `Makefile` — gate adicionado a `parity-rest` (dois passos: `--self-test` + scan completo)
 
 **Falsificação:** script sem consumidor ⇒ reprova nomeando · script ligado ao Makefile ⇒ passa
 (contra-braço) · script citado **só em testdata** ⇒ 🔴 reprova, porque testdata não executa ·

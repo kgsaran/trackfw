@@ -2,6 +2,29 @@
 
 ---
 
+## Sessão 2026-09-11i — ares-tf (Infrastructure) — Gate check-orphan-gates.sh — CONCLUÍDO
+
+Branch `fix/serve-interpola-host-em-string-de-shell`.
+
+ML-NOVO (roadmap serve-interpola-host): gate que garante que todo `scripts/check-*.sh` tem consumidor.
+
+**Entregáveis:**
+- `scripts/check-orphan-gates.sh` — gate com `--self-test` (4 braços de falsificação)
+- `Makefile` — gate adicionado a `parity-rest`
+
+**Decisões registradas no roadmap:**
+- Consumidor = invocação real em linha não-comentário de Makefile recipe, .sh fora de testdata, ou .yml de workflow.
+- Sem consumidor → FAIL (não aviso).
+- Lista de exceção com motivo obrigatório; entrada sem motivo faz o gate reprovar.
+- Testdata é o discriminante: citação em scripts/testdata/ não é consumo; arm 3 confirma exclusão load-bearing.
+
+**Resultados:**
+- `--self-test`: 4/4 braços OK
+- Scan real: 53/53 OK (inclui o próprio gate)
+- `make parity-rest`: exit 0
+
+---
+
 ## Sessão 2026-09-11h — hades-tf (Security) — Verificação de fechamento do bloqueio zone-ID — CONCLUÍDO
 
 Branch `fix/serve-interpola-host-em-string-de-shell`.
