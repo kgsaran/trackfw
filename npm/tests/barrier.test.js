@@ -584,9 +584,15 @@ function makeGitTrustFixture(roadmapContent, commitToOrigin) {
   // git rev-parse --show-toplevel returns the expanded long-name path.  path.relative()
   // does a textual comparison and produces garbage when the two forms differ, causing
   // git cat-file to report "not committed" instead of "content differs".
-  // fs.realpathSync expands 8.3 short names, mirroring Go's filepath.EvalSymlinks.
+  //
+  // fs.realpathSync (JS implementation) walks the path with lstat/readlink and does NOT
+  // expand 8.3 short names on Windows — measured 2026-09-11 on Windows ARM64 VM: input
+  // "C:\Users\Lab\TW-MEA~2", output unchanged "C:\Users\Lab\TW-MEA~2".
+  // fs.realpathSync.native calls uv_fs_realpath → GetFinalPathNameByHandleW, which returns
+  // the canonical long-name form — measured: output "C:\Users\Lab\tw-measure-longname-test-..."
+  // This mirrors Go's filepath.EvalSymlinks (which also expands 8.3 on Windows).
   let base = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-trust-sentinel-'))
-  try { base = fs.realpathSync(base) } catch (_) { /* best-effort */ }
+  try { base = fs.realpathSync.native(base) } catch (_) { /* best-effort */ }
   const bareDir = path.join(base, 'origin.git')
   const cloneDir = path.join(base, 'clone')
   const roadmapRelPath = path.join('docs', 'roadmaps', 'wip', 'ROADMAP-trust-sentinel.md')

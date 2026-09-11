@@ -4,6 +4,46 @@
 
 ---
 
+## Sessão 2026-09-11a — ares-tf (Infrastructure) — Corretivo ratchet: sumário mascarava desequilíbrio por classe + mensagem de erro convidava ao abuso da lista: EM ANDAMENTO
+
+Branch `fix/barrier-executa-gate-de-roadmap-nao-confiavel`.
+
+**Escopo:** dois defeitos no `scripts/check-windows-known-failures.py`:
+1. Sumário `38 observed / 38 active` mascarava desequilíbrio por classe (Node-assert +1 NOVO, Python -1 resolvido). A primeira linha precisa mostrar o desequilíbrio em qualquer classe.
+2. Mensagens de erro "Add to .github/windows-known-failures.json or fix the test" convidavam ao abuso — a lista é para dívida herdada, não para falhas introduzidas pelo PR.
+
+**Causa raiz:** sumário usava contagem total e não detecção por conjunto de nomes; mensagem de erro não distinguia dívida herdada de regressão nova.
+
+---
+
+## Sessão 2026-09-11 — apolo-tf (Backend) — ML-W3B reentrega: `fs.realpathSync` → `fs.realpathSync.native`
+
+Branch `fix/barrier-executa-gate-de-roadmap-nao-confiavel`.
+
+**Escopo:** F3 sentinel `content differs` continuava falhando no Node.js no CI (run 34547480139)
+apesar do fix anterior com `fs.realpathSync`. Causa: `fs.realpathSync` (impl JS, lstat/readlink loop)
+NÃO expande nomes 8.3 no Windows. Medido no Windows ARM64 VM com guard `short != long`.
+
+**Tabela medida (VM 2026-09-11):**
+- `fs.realpathSync`: NÃO expande 8.3 (output = input curto)
+- `fs.realpathSync.native`: SIM expande 8.3 (`GetFinalPathNameByHandleW` via `uv_fs_realpath`)
+- `path.resolve`, `path.win32.resolve`: NÃO
+
+**Correção aplicada:**
+- `npm/tests/barrier.test.js` linha 589: `fs.realpathSync(base)` → `fs.realpathSync.native(base)`
+- `vault/notes/windows-8dot3-*-2026-09-10.md`: tabela medida, distinção JS-vs-native explicada
+- `ROADMAP-2026-09-10-barrier-*.md` ML-W3B: achado adicional + AC atualizado
+
+**Evidências locais:**
+- Node.js: 66/66 pass (inclui F3 sentinel `content_differs`)
+- Go: `go test ./...` all green
+- Python: 55/55 pass
+- `trackfw validate`: exit 0 (173 warnings pré-existentes, 0 erros)
+
+**Status:** ENTREGUE — sem commit (aguarda auditoria do `trackfw_architect`).
+
+---
+
 ## Sessão 2026-09-10l — apolo-tf (Backend) — Corretivo ML-W3B: 2 falhas Windows CI (F3 sentinel content_differs): CONCLUÍDO, aguarda auditoria do arquiteto
 
 Branch `fix/barrier-executa-gate-de-roadmap-nao-confiavel`.

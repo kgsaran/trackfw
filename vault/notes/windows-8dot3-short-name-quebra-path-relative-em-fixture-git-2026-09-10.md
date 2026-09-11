@@ -68,16 +68,34 @@ No **fixture de teste** (não na produção), adicionar normalização após `mk
 ### Node.js (`npm/tests/barrier.test.js`)
 ```js
 let base = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-trust-sentinel-'))
-try { base = fs.realpathSync(base) } catch (_) { /* best-effort */ }
+try { base = fs.realpathSync.native(base) } catch (_) { /* best-effort */ }
 ```
+
+**ATENÇÃO: `fs.realpathSync` (sem `.native`) NÃO expande 8.3 no Windows.**
+Medido em 2026-09-11 no Windows ARM64 VM:
+
+| API | Input | Output | Expande 8.3? |
+|-----|-------|--------|-------------|
+| `fs.realpathSync` | `C:\Users\Lab\TW-MEA~2` | `C:\Users\Lab\TW-MEA~2` | **NÃO** |
+| `fs.realpathSync.native` | `C:\Users\Lab\TW-MEA~2` | `C:\Users\Lab\tw-measure-longname-test-...` | **SIM** |
+| `path.resolve` | `C:\Users\Lab\TW-MEA~2` | `C:\Users\Lab\TW-MEA~2` | NÃO |
+| `path.win32.resolve` | `C:\Users\Lab\TW-MEA~2` | `C:\Users\Lab\TW-MEA~2` | NÃO |
+
+`fs.realpathSync` usa uma implementação JS (lstat/readlink loop) que resolve symlinks mas
+**não chama `GetFinalPathNameByHandleW`** e não expande nomes 8.3.
+`fs.realpathSync.native` chama `uv_fs_realpath` → `GetFinalPathNameByHandleW`, que retorna
+o nome longo canônico.
+
+Isso espelha o comportamento Go: `filepath.EvalSymlinks` usa `GetFinalPathNameByHandleW`
+internamente e expande 8.3. O análogo correto em Node é `.native`, não a versão JS.
 
 ### Python (`pypi/tests/test_barrier.py`)
 ```python
 base = Path(os.path.realpath(tempfile.mkdtemp(prefix="tw-trust-sentinel-")))
 ```
 
-`fs.realpathSync` e `os.path.realpath` usam `GetFinalPathNameByHandle` no Windows, que retorna o
-nome longo canônico.
+`os.path.realpath` no Windows chama `GetFinalPathNameByHandleW` e expande 8.3 — análogo ao
+`fs.realpathSync.native` do Node e ao `filepath.EvalSymlinks` do Go.
 
 ## Residual declarado na produção
 
@@ -85,8 +103,9 @@ O mesmo sítio existe na **produção** (`roadmapTrustForGates`). Se um usuário
 sob um caminho com 8.3 short names, a função retorna "not committed" em vez de "content differs".
 **Fail-closed** — gates não executam. O usuário pode passar `--trust-local-gates` como workaround.
 Corrigir a produção exigiria normalizar `absRoadmap` (derivado de `path.resolve`/`os.path.abspath`
-sobre o caminho passado pelo chamador, que pode estar em TEMP com nome curto) com `fs.realpathSync`
-/ `os.path.realpath` antes de computar o `relPath` — não feito neste ML. (`topLevel` já vem
+sobre o caminho passado pelo chamador, que pode estar em TEMP com nome curto) com
+`fs.realpathSync.native` (Node) / `os.path.realpath` (Python) / `filepath.EvalSymlinks` (Go)
+antes de computar o `relPath` — não feito neste ML. (`topLevel` já vem
 canônico do `git rev-parse --show-toplevel` e não precisa de normalização.)
 
 ## Padrão generalizável
