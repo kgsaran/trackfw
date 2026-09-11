@@ -293,3 +293,6 @@
 2026-09-11 17:01  ROADMAP-2026-09-11-serve-interpola-host-em-string-de-shell-e-permite-injecao-de-comando-ao-abrir-o-browser.md  wip → done
 2026-09-11 17:57  ROADMAP-2026-09-11-by-agent-req-new-e-roadmap-new-sempre-criam-no-primeiro-agente-e-so-o-python-aceita-agent.md  backlog → wip
 2026-09-11 18:04  ROADMAP-2026-09-11-by-agent-req-new-e-roadmap-new-sempre-criam-no-primeiro-agente-e-so-o-python-aceita-agent.md  wip → abandoned
+2026-09-11 20:31  ROADMAP-2026-08-31-guarda-de-folha-resolve-o-caminho-e-afirma-contencao-antes-de-escrever.md  analyzing → wip
+2026-09-11 20:32  ROADMAP-2026-08-31-guarda-de-folha-resolve-o-caminho-e-afirma-contencao-antes-de-escrever.md  wip → analyzing
+2026-09-11 20:32  ROADMAP-2026-09-11-install-sh-extrai-o-tarball-sem-conferir-o-checksums-txt-que-o-goreleaser-publica.md  backlog → wip
