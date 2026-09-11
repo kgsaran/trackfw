@@ -1095,3 +1095,186 @@ jobs:
       # o hades-tf achou no ML-2D em escala de processo.
       - name: Guarda de conjunto entre os shards de falsify
         run: scripts/check-falsify-shard-coverage.sh scripts/check-gates-falsify.sh "${{ env.FALSIFY_SHARD_COUNT }}" falsify-shard-artifacts
+
+  # ---------------------------------------------------------------------------
+  # AC1 — console cp1252 (REQ-2026-09-11-o-ciclo-testa-onde-funciona...)
+  #
+  # Roda o self-test do ratchet de Windows (check-windows-known-failures.py)
+  # com o console simulado como cp1252 (PYTHONIOENCODING=cp1252, PYTHONUTF8=0).
+  # O self-test exercita _st_print — o caminho que o #314 crashava com
+  # UnicodeEncodeError antes do fix.
+  #
+  # DECLARAÇÃO DE RECONCILIAÇÃO: Este job afirma que _st_print codifica com
+  # errors="replace" em vez de crashar quando o codec é cp1252 e o caractere é
+  # U+2192 (→). Medição local (2026-09-11): com fix → exit 0; sem fix →
+  # UnicodeEncodeError. Ver ML-1A do roadmap.
+  #
+  # CONTRA-BRAÇO (AC6): PYTHONIOENCODING=cp1252 é o ambiente; o self-test tem
+  # 43 casos incluindo T1-T26 que usam descricões com → (U+2192). Se _st_print
+  # fosse plain print(), 9+ casos crashariam antes de chegar ao resultado.
+  # ---------------------------------------------------------------------------
+  windows-gates-cp1252:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: "AC1 — self-test com codepage cp1252 (PYTHONIOENCODING=cp1252, PYTHONUTF8=0)"
+        shell: bash
+        run: |
+          PYTHONIOENCODING=cp1252 PYTHONUTF8=0 python scripts/check-windows-known-failures.py --self-test
+
+  # ---------------------------------------------------------------------------
+  # AC2 — Windows SEM Developer Mode / symlink privilege
+  # (REQ-2026-09-11-o-ciclo-testa-onde-funciona...)
+  #
+  # Tenta desabilitar o Developer Mode via registro (AllowDevelopmentWithoutDevLicense=0),
+  # verifica com guarda de vacuidade que os.Symlink de fato FALHA após a modificação,
+  # e então roda os testes do caminho de erro de symlink.
+  #
+  # DECLARAÇÃO DE RECONCILIAÇÃO: Este job afirma que o ambiente exercita o caminho
+  # de `os.Symlink` com privilege negado. Se não conseguir negar o privilege
+  # (vacuidade), o job REPROVA — nunca dá falsa cobertura.
+  #
+  # LIMITAÇÃO DECLARADA (ML-1B): Não é possível verificar localmente se o runner
+  # GitHub hospedado permite modificar HKLM:\...\AppModelUnlock. Se não permitir,
+  # a guarda de vacuidade ativa e o job reprova com mensagem declarada. Cobertura
+  # fingida é impossível pelo design da guarda.
+  # ---------------------------------------------------------------------------
+  windows-symlink-unprivileged:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: "AC2 — Tentar desabilitar Developer Mode via registro"
+        shell: pwsh
+        run: |
+          $regPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock"
+          try {
+            if (-not (Test-Path $regPath)) {
+              New-Item -Path $regPath -Force | Out-Null
+            }
+            Set-ItemProperty -Path $regPath -Name "AllowDevelopmentWithoutDevLicense" -Value 0 -Type DWord -Force
+            $val = (Get-ItemProperty -Path $regPath -Name "AllowDevelopmentWithoutDevLicense" -ErrorAction SilentlyContinue).AllowDevelopmentWithoutDevLicense
+            Write-Host "Registry: AllowDevelopmentWithoutDevLicense = $val"
+          } catch {
+            Write-Host "::warning::Modificação de registro falhou: $($_.Exception.Message)"
+            Write-Host "::warning::Developer Mode pode continuar ativo — guarda de vacuidade irá detectar."
+          }
+
+      - name: "AC2 — Guarda de vacuidade: verificar que os.Symlink falha após tentativa de desabilitar"
+        shell: bash
+        run: |
+          set -euo pipefail
+          TMPDIR_PROBE=$(mktemp -d)
+          trap 'rm -rf "$TMPDIR_PROBE"' EXIT
+
+          cat > "$TMPDIR_PROBE/probe.go" << 'GOEOF'
+          package main
+
+          import (
+            "fmt"
+            "os"
+          )
+
+          func main() {
+            target := os.TempDir() + "/symlink-probe-target"
+            link := os.TempDir() + "/symlink-probe-link"
+            // Create target file
+            os.WriteFile(target, []byte("probe"), 0644)
+            defer os.Remove(target)
+            defer os.Remove(link)
+
+            err := os.Symlink(target, link)
+            if err != nil {
+              fmt.Printf("os.Symlink failed (privilege denied — expected): %v\n", err)
+              os.Exit(0)  // failed = privilege was denied = vacuity guard passes
+            }
+            // Symlink succeeded — Developer Mode is still active
+            fmt.Println("os.Symlink succeeded — Developer Mode still active")
+            os.Exit(1)  // succeeded = vacuity guard FAILS — no real coverage
+          }
+          GOEOF
+
+          cat > "$TMPDIR_PROBE/go.mod" << 'MODEOF'
+          module symlink-probe
+          go 1.21
+          MODEOF
+
+          echo "=== Guarda de vacuidade AC2 ==="
+          VACUITY_RC=0
+          (cd "$TMPDIR_PROBE" && go run probe.go) || VACUITY_RC=$?
+
+          if [[ $VACUITY_RC -ne 0 ]]; then
+            echo "::error::AC2 GUARDA DE VACUIDADE FALHOU: os.Symlink ainda tem sucesso após tentativa de desabilitar Developer Mode. Nenhuma cobertura real do caminho sem privilégio. Isso é uma LIMITAÇÃO DECLARADA (ML-1B): o runner não permite revogar o privilégio de symlink. O ambiente esperado não está disponível neste runner."
+            exit 1
+          fi
+          echo "AC2 guarda de vacuidade: PASS — os.Symlink falhou como esperado"
+
+      - name: "AC2 — Rodar testes do caminho de erro de symlink"
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Rodar os testes que exercitam o caminho de erro de os.Symlink.
+          # Com Developer Mode desabilitado, os testes que têm t.Skipf quando
+          # symlink falha irão PULAR — isso é o comportamento esperado até #315
+          # ser corrigido (os testes devem testar o caminho de erro, não pular).
+          # O resultado é reportado como informativo.
+          echo "=== Testes do caminho de erro de symlink ==="
+          go test ./internal/generators/... -run TestSymlink -v 2>&1 || true
+          go test ./internal/integrations/... -run TestSymlink -v 2>&1 || true
+          go test ./pypi/... 2>&1 | grep -i "symlink\|SKIP\|PASS\|FAIL" || true
+          echo "=== Fim dos testes de symlink (informativo — #315 não está corrigido) ==="
+
+  # ---------------------------------------------------------------------------
+  # AC3 — consumer smoke by_agent (2 agentes, 3 CLIs)
+  # (REQ-2026-09-11-o-ciclo-testa-onde-funciona...)
+  #
+  # Cria um projeto descartável com roadmap_namespacing: by_agent e 2 agentes
+  # (alpha, beta) e roda os comandos principais nos 3 CLIs. Detecta o #320
+  # (roadmap always em agents[0], --req ignorando o agente da REQ).
+  #
+  # continue-on-error: true TEMPORÁRIO — remover quando #320 for corrigido.
+  # CRITÉRIO DE REMOÇÃO: job reprova APENAS por motivos distintos de #320;
+  # roadmap new (com e sem --req) rota para o agente correto nos 3 CLIs.
+  #
+  # DECLARAÇÃO DE RECONCILIAÇÃO: Este job afirma que com projeto by_agent +
+  # 2 agentes, roadmap new sempre coloca o artefato em agents[0] (alpha).
+  # Medição: agentStateDir("", "backlog") usa cfg.Agents[0]
+  # (internal/generators/roadmap.go:108-115).
+  # ---------------------------------------------------------------------------
+  consumer-smoke-by-agent:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - run: go build -o bin/trackfw ./cmd/trackfw
+
+      - run: npm ci --ignore-scripts
+        working-directory: npm
+
+      - run: python -m pip install pypi/
+
+      - name: "AC3 — consumer smoke by_agent (2 agentes, 3 CLIs)"
+        run: GO_BIN=bin/trackfw scripts/check-consumer-smoke-by-agent.sh

@@ -11191,6 +11191,39 @@ assert_output_lacks "serve-chain-canonical-link/python/edge-detects-regression" 
 echo "OK   [falsify/serve-chain-canonical-link]: Node + Python, direções A/B provadas (Go: TestChainHandler_EdgeResolvesStaleStateRoadmapPath + TestChainHandler_NoEdgeInventedForUnresolvableRoadmapRef, limite declarado)"
 
 # ---------------------------------------------------------------------------
+# Cenário 195 — check-python-writes-lf.sh: VALOR errado de newline= (AC5)
+# Ref: #309 — o gate verificava PRESENÇA de newline= mas não o VALOR.
+#
+# Fixture: open(path, "w", newline="\r\n") — newline= presente mas com valor
+# errado (escreve CRLF). O gate deve sair != 0 e listar o arquivo como ofensor.
+#
+# Declaração de reconciliação (ML-1E, Regra de Reconciliação do CLAUDE.md):
+#   Este cenário afirma que check-python-writes-lf.sh detecta newline="\r\n"
+#   (valor errado que produz CRLF) como ofensor — além do caso original de
+#   open() sem newline= (ausência). Medição: o gap do #309 foi confirmado; a
+#   correção em AC5 fortaleceu a regex de `if 'newline' in call: continue`
+#   para verificar o VALOR (só os valores seguros "" e "\n" passam).
+#   Após o fix, este cenário passou verde — falsificação confirmada.
+#
+# Nota: o gate usa os.walk('pypi/trackfw') com caminho RELATIVO ao cwd.
+# O subshell abaixo muda para a fixture antes de invocar o gate.
+# ---------------------------------------------------------------------------
+T195="$WORK/s195-python-writes-wrong-newline"
+mkdir -p "$T195/pypi/trackfw"
+# Fixture: valor errado -- newline="\r\n" escreve CRLF, não LF
+cat > "$T195/pypi/trackfw/wrong_newline.py" <<'FIXTURE'
+def write_file(path):
+    with open(path, "w", newline="\r\n") as f:
+        f.write("conteudo")
+FIXTURE
+
+assert_fails_with "python-writes-lf/wrong-newline-value" \
+  "pypi/trackfw" \
+  bash -c "cd '$T195' && bash '$ROOT_DIR/scripts/check-python-writes-lf.sh'"
+
+echo "OK   [falsify/python-writes-lf]: valor errado de newline= detectado (AC5 — gate verifica valor alem de presenca)"
+
+# ---------------------------------------------------------------------------
 # ML-2B — fechamento do modo de enumeração. Desligado (default): este bloco
 # inteiro é pulado (a condição é falsa) e a saída do processo é a do último
 # comando acima -- 0, exatamente como antes deste ML (byte-idêntico: nenhuma

@@ -224,24 +224,30 @@ Teste: success+failure→exit 1, success+warning→exit 0. A workflow_run não r
 **Status:** ✅ Concluído
 
 **Arquivos afetados:**
-- `scripts/check-gates-falsify.sh` — novo cenário para check-python-writes-lf.sh (valor errado)
+- `scripts/check-gates-falsify.sh` — Cenário 195: fixture com `newline="\r\n"` (valor errado)
+- `scripts/check-python-writes-lf.sh` — fix AC5: regex fortalecida para verificar VALOR de newline=
 - `Makefile` — target `check-gates-remutation` adicionado (pré-release, como check-required-full)
 
 **Ações:**
-1. Adicionar cenário a check-gates-falsify.sh: fixture com `open(path, "w", newline="\r\n")` →
+1. Cenário 195 adicionado a check-gates-falsify.sh: fixture com `open(path, "w", newline="\r\n")` →
    gate deve sair != 0. Este é o gap do #309 (gate verificava presença de newline=, não valor).
-2. Target `check-gates-remutation`: roda `scripts/run-gates-falsify-parallel.sh` com flag de
-   enumeração, amarrado ao release (não ao CI de PR, como check-required-full).
+2. Gate `check-python-writes-lf.sh` fortalecido: `if 'newline' in call: continue` substituído por
+   verificação de VALOR — só `newline=""` e `newline="\n"` passam; outros valores (ex: `"\r\n"`)
+   caem no fluxo de ofensores. Cenário 195 passou VERDE após o fix (não nasce vermelho).
+3. Target `check-gates-remutation`: roda `scripts/run-gates-falsify-parallel.sh`,
+   amarrado ao release (não ao CI de PR, como check-required-full).
 
-**Frase de reconciliação:** O novo cenário afirma que check-python-writes-lf.sh detecta `newline="\r\n"`
-(valor errado) além de `open()` sem newline= (ausência). Medição: o gate atual usa regex que verifica
-a PRESENÇA de `newline=` mas não o VALOR — o cenário vai REPROVAR até a regex ser fortalecida.
-Isso é o comportamento correto: o cenário nasce vermelho (detecta o gap do gate), até o gate ser corrigido.
+**Frase de reconciliação:** O Cenário 195 afirma que check-python-writes-lf.sh detecta `newline="\r\n"`
+(valor errado que produz CRLF) como ofensor — além do caso original de `open()` sem `newline=`
+(ausência). Medição: o gate anterior usava `if 'newline' in call: continue` sem verificar o valor
+(gap do #309). O fix fortalece a regex para aceitar apenas `""` e `"\n"`. Validado: gate passa em
+todos os usos reais (`newline="\n"`) e reprova no fixture `newline="\r\n"`. `make parity-rest`: exit 0.
 
 **Critérios de aceite:**
-- [x] Cenário para check-python-writes-lf.sh (wrong-value) em check-gates-falsify.sh
+- [x] Cenário 195 para check-python-writes-lf.sh (wrong-value) em check-gates-falsify.sh
+- [x] Gate check-python-writes-lf.sh fortalecido para verificar VALOR de newline=
 - [x] Target `check-gates-remutation` no Makefile
-- [x] Cenário declaradamente nasce vermelho (gap do gate exposto)
+- [x] Cenário passa verde (fix e cenário entregues juntos neste ML)
 
 ### ML-1F — AC6: contra-braço para cada ambiente novo
 **Status:** ✅ Concluído (integrado nos MLs 1A–1E acima)

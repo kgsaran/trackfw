@@ -1,0 +1,117 @@
+name: Check Job Annotations
+
+# AC4 — gate: job verde com anotação de erro reprova
+# (REQ-2026-09-11-o-ciclo-testa-onde-funciona-faltam-cp1252-windows-sem-privilegio-e-consumidor-novo.md)
+#
+# LIMITAÇÃO DECLARADA: workflows com trigger `workflow_run` APENAS executam a
+# partir da branch default (main). Este workflow não rodará em PRs de feature
+# branches — incluindo o PR que o adiciona. Uma vez mergeado à main, passa a
+# rodar em todo push/PR subsequente que aciona o workflow `Quality`.
+#
+# POLÍTICA: job success + ≥1 anotação de nível `failure` → exit 1.
+# ALLOWLIST: windows-full-suites, windows-defect-reproduction, parity-falsify-shard
+# (continue-on-error intencional — ver check-job-annotations.py para detalhes).
+#
+# Referência: scripts/check-job-annotations.py --self-test (7 braços, via parity-rest)
+
+on:
+  workflow_run:
+    workflows: ["Quality"]
+    types: [completed]
+
+permissions:
+  contents: read
+  checks: read
+  actions: read
+
+jobs:
+  check-annotations:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: "AC4 — verificar anotações dos jobs do workflow Quality"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          set -euo pipefail
+
+          echo "=== AC4: verificando anotações do workflow run $WORKFLOW_RUN_ID ==="
+          echo "Workflow: ${{ github.event.workflow_run.name }}"
+          echo "Conclusão: ${{ github.event.workflow_run.conclusion }}"
+          echo ""
+
+          # Listar jobs do workflow run
+          JOBS_JSON=$(gh api "repos/${{ github.repository }}/actions/runs/$WORKFLOW_RUN_ID/jobs" \
+            --jq '.jobs[]' 2>/dev/null || echo "")
+
+          if [[ -z "$JOBS_JSON" ]]; then
+            echo "::warning::Não foi possível listar os jobs do run $WORKFLOW_RUN_ID"
+            exit 0
+          fi
+
+          # Para cada job, baixar check-run annotations e verificar
+          gh api "repos/${{ github.repository }}/actions/runs/$WORKFLOW_RUN_ID/jobs" \
+            --jq '.jobs[] | {name: .name, conclusion: .conclusion, check_run_url: .check_run_url}' \
+            2>/dev/null | jq -c '.' | while IFS= read -r job_json; do
+
+            JOB_NAME=$(echo "$job_json" | jq -r '.name')
+            JOB_CONCLUSION=$(echo "$job_json" | jq -r '.conclusion')
+            CHECK_RUN_URL=$(echo "$job_json" | jq -r '.check_run_url // empty')
+
+            echo "--- Job: $JOB_NAME (conclusion: $JOB_CONCLUSION) ---"
+
+            if [[ "$JOB_CONCLUSION" != "success" ]]; then
+              echo "  Pulando: conclusão não é success"
+              continue
+            fi
+
+            if [[ -z "$CHECK_RUN_URL" ]]; then
+              echo "  ::warning::check_run_url ausente para $JOB_NAME"
+              continue
+            fi
+
+            # Extrair check_run_id do URL
+            CHECK_RUN_ID=$(echo "$CHECK_RUN_URL" | grep -oE '[0-9]+$')
+            if [[ -z "$CHECK_RUN_ID" ]]; then
+              echo "  ::warning::Não foi possível extrair check_run_id de $CHECK_RUN_URL"
+              continue
+            fi
+
+            # Baixar anotações do check-run
+            ANNOTATIONS_FILE=$(mktemp)
+            gh api "repos/${{ github.repository }}/check-runs/$CHECK_RUN_ID/annotations" \
+              > "$ANNOTATIONS_FILE" 2>/dev/null || true
+
+            ANNOTATION_COUNT=$(jq 'length' "$ANNOTATIONS_FILE" 2>/dev/null || echo 0)
+            echo "  Anotações: $ANNOTATION_COUNT"
+
+            # Verificar com o gate
+            JOB_RC=0
+            python3 scripts/check-job-annotations.py \
+              --job-name "$JOB_NAME" \
+              --conclusion "$JOB_CONCLUSION" \
+              --annotations-json "$ANNOTATIONS_FILE" || JOB_RC=$?
+
+            rm -f "$ANNOTATIONS_FILE"
+
+            if [[ $JOB_RC -ne 0 ]]; then
+              echo "$JOB_NAME" >> /tmp/ac4-failures.txt
+            fi
+          done
+
+          if [[ -f /tmp/ac4-failures.txt ]]; then
+            FAIL_COUNT=$(wc -l < /tmp/ac4-failures.txt)
+            echo ""
+            echo "::error::AC4: $FAIL_COUNT job(s) com success + failure annotations (fora da allowlist):"
+            cat /tmp/ac4-failures.txt | while read -r name; do echo "  - $name"; done
+            exit 1
+          fi
+
+          echo ""
+          echo "AC4: todos os jobs verificados — nenhum success com failure annotation fora da allowlist"

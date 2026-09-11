@@ -4,7 +4,7 @@ date: 2026-09-11
 author: ""
 adr: ""
 sucede: "REQ-2026-08-30-barrier-executa-gate-de-roadmap-nao-confiavel-porque-roadmaptrustforgates-falha-aberto-em-todo-caminho-de-erro.md, REQ-2026-09-01-serve-interpola-host-em-string-de-shell-e-permite-injecao-de-comando-ao-abrir-o-browser.md"
-roadmap: "docs/roadmaps/backlog/ ROADMAP-2026-09-11-residuos-dos-pareceres-de-seguranca-do-barrier-e-do-serve.md"
+roadmap: "docs/roadmaps/backlog/ROADMAP-2026-09-11-residuos-dos-pareceres-de-seguranca-do-barrier-e-do-serve.md"
 ---
 
 # REQ: residuos dos pareceres de seguranca do barrier e do serve
@@ -29,7 +29,7 @@ ADR:
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: `docs/roadmaps/backlog/ ROADMAP-2026-09-11-residuos-dos-pareceres-de-seguranca-do-barrier-e-do-serve.md`
+Roadmap: `docs/roadmaps/backlog/ROADMAP-2026-09-11-residuos-dos-pareceres-de-seguranca-do-barrier-e-do-serve.md`
 ## Motivation
 
 REQ **sucessora**, criada pela `ADR-2026-09-10-req-de-campanha-tem-escopo-congelado-e-achado-novo-vai-para-sucessora`.
