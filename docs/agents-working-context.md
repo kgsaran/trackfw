@@ -4,7 +4,7 @@
 
 ---
 
-## Sessão 2026-09-11a — ares-tf (Infrastructure) — Corretivo ratchet: sumário mascarava desequilíbrio por classe + mensagem de erro convidava ao abuso da lista: EM ANDAMENTO
+## Sessão 2026-09-11a — ares-tf (Infrastructure) — Corretivo ratchet: sumário mascarava desequilíbrio por classe + mensagem de erro convidava ao abuso da lista: CONCLUÍDO, aguarda auditoria do arquiteto
 
 Branch `fix/barrier-executa-gate-de-roadmap-nao-confiavel`.
 
@@ -13,6 +13,21 @@ Branch `fix/barrier-executa-gate-de-roadmap-nao-confiavel`.
 2. Mensagens de erro "Add to .github/windows-known-failures.json or fix the test" convidavam ao abuso — a lista é para dívida herdada, não para falhas introduzidas pelo PR.
 
 **Causa raiz:** sumário usava contagem total e não detecção por conjunto de nomes; mensagem de erro não distinguia dívida herdada de regressão nova.
+
+**Correção:**
+- Step 10 (sumário): substituída lógica de contagem por detecção via conjunto de nomes (`obs_set - known_set`, `known_set - obs_set`). Invariante: gate que falha nunca imprime manchete limpa. Formato: `[+N NOVO]` e/ou `[-N resolvido]` por classe, `DESEQUILÍBRIO POR CLASSE` no headline quando qualquer classe está em desequilíbrio.
+- 5 mensagens de erro: "Fix the test." primeiro; lista citada como segunda saída, só para dívida herdada pré-existente ao PR.
+- 4 braços de falsificação (T23-T26): caso do CI (cancelamento), contra-braço (tudo balanceado), classe única com surplus, contagem igual com nomes diferentes.
+
+**Gates (foreground):**
+- `python3 scripts/check-windows-known-failures.py --self-test` → **27 PASS, 0 FAIL** (T1-T26)
+- `make parity-rest` → exit 0
+- `trackfw validate` → 0 errors (173 warnings pré-existentes)
+
+**Artefatos modificados:**
+- `scripts/check-windows-known-failures.py` — step 10 + 5 mensagens de erro + docstring T23-T26 + implementações T23-T26
+- `docs/roadmaps/done/ROADMAP-2026-09-06-ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega.md` — seção "Corretivo pós-fechamento" adicionada
+- `docs/agents-working-context.md` — esta entrada
 
 ---
 
