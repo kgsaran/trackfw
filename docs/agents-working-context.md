@@ -2,6 +2,30 @@
 
 ---
 
+## Sessão 2026-09-11h — hades-tf (Security) — Verificação de fechamento do bloqueio zone-ID — CONCLUÍDO
+
+Branch `fix/serve-interpola-host-em-string-de-shell`.
+
+Verificação de fechamento por execução (não por leitura) do bloqueio emitido em 2026-09-11g.
+
+**Metodologia:** falsificação dos cenários 2/4/8-9 via `chmod 000` + remoção de pycache; execução
+completa do gate em condição normal (21/21 OK, RC=0); inspeção do código dos 3 CLIs.
+
+**Resultados:**
+- Bloqueio original: FECHADO (21/21 cenários incluindo 17-21 específicos do zone ID)
+- Cenários 2 e 4 (fail-open com módulo ilegível): FECHADOS via sentinelas `NODE_LOADED`/`PY_LOADED`
+- Cenários 8-9 (set -e + NODE_LIVE_LINES): suprimidos silenciosamente quando Node ilegível, mas gate permanece RC não-zero — falha cosmética, não falso-OK
+- Pycache Python: risco real identificado — `serve.cpython-314.pyc` existia; sem remoção o cenário 4 pode importar código old mesmo com source a 000
+- `--port`: não é vetor; argumento anterior ("nunca chega a processo") era errado; razão correta é coerção para inteiro antes da formatação
+- `barrier.go:803`: argumento "vem do YAML = seguro" do implementador está errado (vault 2026-08-23); sítio pré-existente fora de escopo desta REQ
+- Decisão de rejeitar `%` inteiro: legítima; Node-Linux pode ter perdido capacidade real (zone ID via libuv), mas parity e closure-of-class prevalecem
+
+**Veredito: APROVA** com 5 residuais declarados (nenhum bloqueia merge).
+
+Parecer atualizado: `/Users/kgsaran/Sistemas/Desenvolvimento/workspace/trackfw/docs/seguranca/2026-09-11-parecer-serve-injecao-de-comando.md`
+
+---
+
 ## Sessão 2026-09-11g — hades-tf (Security) — Parecer revisado pós-advisor: BLOQUEIA — CONCLUÍDO
 
 Branch `fix/serve-interpola-host-em-string-de-shell`.

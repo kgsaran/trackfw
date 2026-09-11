@@ -187,3 +187,42 @@ O `--no-open` não existe no Go porque nunca há abertura. Isso significa:
 - A validação `IsValidHost` foi adicionada ao Go como defense-in-depth (paridade de AC4), mesmo sem abertura de browser.
 
 **Nota para o arquiteto:** AC6 como escrito na REQ ("os 3 CLIs abrem o browser pela mesma forma") não é satisfatível sem adicionar browser-opening ao Go — o que estaria fora do escopo declarado ("só o caminho de abertura de browser do serve e sua paridade"). A divergência está documentada; a REQ pode precisar ser emendada para refletir a realidade.
+
+### ML-NOVO — Resíduos do parecer de segurança (APROVA com 2 residuais)
+**Status:** ⬜ Pendente · **Agente:** `ares-tf` · **não bloqueia o merge**
+
+**R1 — cenários 8-9 do gate não emitem FAIL explícito.** Com o módulo ilegível, o `set -euo pipefail`
+aborta na linha do `grep` antes da checagem de vazio. O gate termina RC=2 pelas falhas acumuladas de
+2 e 3 — **não é falso-OK**, mas a mensagem que nomeia a causa não aparece. Cosmético, e o `hades-tf`
+mediu por execução (`chmod 000`), não por leitura.
+
+**R2 — 🔴 pycache pode fazer o cenário 4 medir código que não existe mais.** Um `serve.cpython-*.pyc`
+válido faz o CPython importar o cache mesmo com `chmod 000` no fonte — a validação é por `stat()`.
+Se o `.pyc` estiver correto e o fonte for trocado por código vulnerável, o cenário **passa sobre
+código não medido**.
+
+É a classe de vacuidade escondida no interpretador. **O gate precisa invalidar o pycache antes de
+medir.** O `hades-tf` só viu porque removeu o cache explicitamente antes do teste.
+
+### Nota para o CHANGELOG — correção de narrativa exigida pelo parecer
+
+🔴 A justificativa interna de rejeitar `%` dizia que *"o feature nunca funcionou"*. **Meia verdade:**
+
+```
+Python   HTTPServer faz strip do scope_id   →  nunca funcionou
+Go       net.ParseIP rejeita                →  nunca funcionou
+Node     libuv no Linux                     →  provavelmente FUNCIONAVA
+```
+
+O changelog tem de dizer **"removemos zone ID (capacidade Node-Linux potencialmente funcional) por
+paridade e fechamento de classe de ataque"** — não *"nunca funcionou"*. Remoção de capacidade real
+declarada como limpeza de código morto é o tipo de imprecisão que a Regra Dura de Reconciliação
+proíbe.
+
+### Achado fora de escopo, registrado para o próximo revisor do `barrier`
+
+O implementador classificou `internal/commands/barrier.go:803`
+(`exec.Command("sh","-c",command)`) como seguro *"por vir de YAML de roadmap, não de flag do
+usuário"*. 🔴 **O argumento é tecnicamente errado** — o vault de 2026-08-23 documenta que roadmap de
+terceiro é exatamente o vetor de RCE do `barrier`. O sítio é pré-existente e fora do escopo desta
+REQ; o trust-check fechado hoje pode protegê-lo, mas **isso precisa ser dito, não presumido**.

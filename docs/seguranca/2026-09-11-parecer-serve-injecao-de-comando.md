@@ -300,46 +300,232 @@ com Python/Go.
 
 ---
 
-## Veredito final
+## Verificação de fechamento — pós-correção (2026-09-11, segunda passagem)
 
-**BLOQUEIA**
+O bloqueio emitido acima foi atendido pelo `apolo-tf` com a decisão de rejeitar `%` inteiro nos
+3 CLIs. Esta seção documenta a verificação independente por execução — não por leitura de código.
 
-O defeito original (interpolação em string de shell via `exec()` e `shell=True`) foi corrigido.
-AC1–AC4 estão satisfeitos no sentido que foi implementado. A emenda de AC6 é honesta.
+### Pergunta preliminar: a decisão é defesa legítima ou perda de funcionalidade disfarçada?
 
-Porém a REQ declara que o objetivo é impedir injeção de comando via `--host`. O achado abaixo é
-uma nova injeção de comando via `--host` no Python Windows que o fix introduziu (ao tornar
-`_is_valid_host()` o único gate, sem validar o zone ID):
+**Julgamento: legítima.** Razões sustentadas por evidência:
 
-### BLOQUEIA — Python Windows: injeção via IPv6 zone ID (alta severidade)
+1. **Go já rejeitava:** `net.ParseIP('fe80::1%eth0')` → nil + RFC-1123 rejeita `%`. A parity rule
+   exigia que Python e Node concordassem. A decisão não criou uma restrição nova — ela fechou o
+   delta de paridade que existia.
 
-**Vetor**: `trackfw serve --host "fe80::1%eth0&<comando>&echo"` no Windows com Python CLI.
+2. **Python não funcionava:** `HTTPServer((host, port), Handler)` faz `socket.bind((host, port))`
+   com o host como string. Em Python, `scope_id` é desaparecido na 2-tupla; o zone ID é descartado
+   no bind. Aceitar o zone ID era aceitar um host que não funcionaria.
 
-**Cadeia medida**:
-1. `_is_valid_host('fe80::1%eth0&calc.exe&echo')` → `True` (Python `ipaddress.ip_address` aceita)
-2. URL: `http://[fe80::1%eth0&calc.exe&echo]:4080`
-3. `Popen(["cmd", "/c", "start", "", url])` com `shell=False`
-4. `list2cmdline`: `cmd /c start "" http://[fe80::1%eth0&calc.exe&echo]:4080` (sem aspas — `&` sem espaço não dispara quoting)
-5. cmd.exe interpreta `&` como separador → `calc.exe` executa
+3. **Node.js pode ter funcionado** (libuv + `getaddrinfo` → `bind` com scope_id em Linux). Esta é
+   a única plataforma onde a remoção pode implicar perda real de capacidade. A framing correta é:
+   "removemos uma capacidade Node-Linux-only por exigência de paridade e fechamento de classe de
+   ataque", não "o feature nunca funcionou". O vault tem esta distinção; o commit deve ter.
 
-**Fix mínimo necessário em Python** (não cobre Node e Go que já estão seguros):
-- Em `_is_valid_host()`, após `ipaddress.ip_address(host)` aceitar, checar se `'%' in host` e se o zone ID contém qualquer caractere fora de `[a-zA-Z0-9._-]`. Rejeitar se sim.
-- Alternativamente: rejeitar toda string contendo `%` quando o uso real do CLI nunca requer zone IDs.
+4. **Fechar a classe é mais robusto que enumerar metacaracteres:** um regex de zone ID permitido
+   (`[a-zA-Z0-9._-]+`) permaneceria vulnerável a qualquer metacaractere de cmd.exe fora desse
+   conjunto que venha a ser aceito por `ipaddress` em versão futura. Rejeitar `%` fecha a classe
+   pela raiz.
 
-### Ressalvas remanescentes (não bloqueiam, mas devem ser registradas)
-
-**Ressalva 1 (gate, médio)**: cenários 2 e 4 fail-open quando `$NODE_SERVE` / `$PY_SERVE` são
-ilegíveis. Cenário 8-9 fail-open quando `$NODE_SERVE` é ilegível. Nenhuma contenção eficaz
-detectada. O gate não detecta o próprio instrumento falho.
-
-**Ressalva 2 (média, fora de escopo)**: `api_file` em Node.js e Go não resolve symlinks antes do
-check de path traversal. Python está correto. Verificar REQs abertas antes de abrir nova.
-
-**Ressalva 3 (baixa, UX)**: `--port` não-numérico silencia para 8080 no Node.js. Sem impacto de segurança.
-
-**Ressalva 4 (parity, médio)**: validadores IPv6 divergem entre os 3 runtimes em scoped addresses.
-A parity rule exige que sejam reconciliados.
+**Conclusão do julgamento:** a decisão é arquiteturalmente defensável. A perda de Node-Linux-zone-ID
+é real mas niche; o ganho (fecha classe inteira, restaura paridade) supera.
 
 ---
 
-*Parecer emitido por hades-tf. Achados reproduzidos em ambiente macOS/Python 3.x; o caminho de execução cmd.exe foi verificado via `subprocess.list2cmdline` e análise da semântica de cmd.exe.*
+### Q1 — O bloqueio fechou? Existe outro portador além de `%`?
+
+**FECHADO.** Medido por execução, não por leitura.
+
+Gate `scripts/check-serve-browser-security.sh` em condições normais: **21/21 OK, RC=0**.
+
+Cenários adicionados pelo implementador para o bloqueio:
+- Cenário 17 (`zone-id-injection/vulnerable-arm`): `list2cmdline` confirmado deixar `&` sem aspas → vetor era real.
+- Cenário 18 (`zone-id-rejection/python`): `_is_valid_host('fe80::1%eth0&calc.exe&echo')` → `false`. ✓
+- Cenário 19 (`zone-id-rejection/node`): `isValidHost('fe80::1%eth0&calc.exe&echo')` → `false`. ✓
+- Cenário 20 (`zone-id-rejection/go-wiring`): CLI Go sai non-zero para zone ID host. ✓
+- Cenário 21 (`zone-id-parity`): todos os 3 rejeitam `fe80::1%eth0`. ✓
+
+**Quais caracteres sobrevivem `isValidHost` e chegam ao browser URL?**
+
+Após a validação, o conjunto de caracteres possíveis no `host` é:
+`[a-zA-Z0-9.-:]` (IPv4/IPv6 sem `:`) — hífens em labels RFC-1123, pontos como separadores,
+dois-pontos para IPv6, alfanuméricos. Nenhum de `& | ^ < > ( ) " %` sobrevive. A URL
+formatada acrescenta `http://`, `[`, `]` (para IPv6), `:` e dígitos do port (integer-coerced —
+ver Q3). Nenhum caractere de shell estará presente.
+
+**Portador alternativo em `--host`:** nenhum identificado. A rejeição é por lista de permissão
+(`localhost`, IPv4, IPv6 sem `%`, RFC-1123 labels) — não por blacklist de metacaracteres. Qualquer
+caractere fora dessas classes é implicitamente rejeitado.
+
+---
+
+### Q2 — Os 4 cenários fail-open (2, 4, 8, 9): o implementador diz que fechou com `LOADED` e pré-captura.
+
+**FECHADOS** — mas com comportamento diferente do descrito. Medido por execução.
+
+**Procedimento de falsificação:**
+
+*Teste A — Node.js ilegível:*
+`chmod 000 npm/src/commands/serve.js && bash scripts/check-serve-browser-security.sh`
+
+Resultado observado:
+```
+FAIL [injection/node]: Node.js module '...serve.js' did not load — cannot measure injection safety (fail-closed)
+FAIL [counter-arm/node]: 'open' shim was never called for legitimate host — browser opener is broken
+RC=2
+```
+
+Cenários 2 e 3: **fail-FECHADO** via `NODE_LOADED`. ✓
+
+*Cenários 8-9 com Node ilegível:* **suprimidos silenciosamente** (zero output de 8-9 na saída).
+Causa: `set -euo pipefail` + `NODE_LIVE_LINES=$(grep ... "$NODE_SERVE" 2>/dev/null)` — quando
+`serve.js` é ilegível, `grep` sai com exit 2; `2>/dev/null` suprime stderr mas não o exit code;
+`set -e` aborta o script nessa linha antes do `if [[ -z "$NODE_LIVE_LINES" ]]` ser avaliado.
+O `fail "ac1-static/node"` que deveria imprimir nunca executa.
+
+**Implicação:** cenários 8-16 não correm quando serve.js é ilegível. O gate ainda sai RC=2 por
+causa das falhas de 2 e 3 — mas os cenários 8-16 reportam silêncio em vez de FAIL explícito.
+Isso é uma inconsistência cosmética, não uma falha de segurança: a condição já está detectada.
+
+*Teste B — Python ilegível (pycache removido):*
+`rm pypi/trackfw/commands/__pycache__/serve.cpython-314.pyc && chmod 000 pypi/trackfw/commands/serve.py && bash scripts/check-serve-browser-security.sh`
+
+**Nota crítica:** `serve.cpython-314.pyc` existia em `__pycache__/`. CPython valida o cache por
+`stat()` — que sucede mesmo em arquivo source com permissão 000 — e pode importar o `.pyc` mesmo
+com source ilegível. Este teste foi executado com pycache removido explicitamente.
+
+Resultado observado:
+```
+FAIL [injection/python-darwin]: Python module '...serve.py' did not load — fail-closed
+FAIL [counter-arm/python]: 'open' shim was never called — browser opener broken
+RC=1
+```
+
+Cenário 4: **fail-FECHADO** via `PY_LOADED`. ✓
+
+Cenários 6-16 com Python ilegível: **suprimidos silenciosamente**. Mesma causa: cenário 6 faz
+`PY_STATIC_CHECK=$(python3 -c "... open('$PY_SERVE').read() ..." 2>&1)` → `PermissionError` →
+python3 exit 1 → `set -e` aborta antes do `if [[ "$PY_STATIC_CHECK" == OK ]]`.
+
+**Veredito sobre os 4 cenários:** o implementador fechou o problema **descrito** (cenários
+2 e 4 não passam quando o módulo não carrega). O comportamento real difere da descrição: cenários
+8-16 desaparecem silenciosamente em vez de imprimir FAIL, mas o gate **não produz false-OK**
+porque já tem RC não-zero pelas falhas de 2 e 3. Falha cosmética documentada; não bloqueia.
+
+---
+
+### Q3 — `--port` virou o próximo candidato?
+
+**NÃO** — mas a razão no parecer anterior estava errada.
+
+`--port` **chega** ao browser URL: `displayUrl(host, port)` → `url` → `openBrowser(platform, url)`.
+A razão pela qual não é vetor é outra: **coerção para inteiro** antes da formatação.
+
+- Go: `IntVar(&port, ...)` → `int` em Go → `strconv.Itoa(port)` → só dígitos
+- Python: `type=int` no argparse → `int` em Python → `:{port}` → só dígitos
+- Node.js: `parseInt(opts.port, 10) || 8080` → `number` → ``:${port}`` → só dígitos
+
+Um inteiro não pode conter metacaracter de shell. Não existe payload que sobreviva `parseInt`
+e ainda carregue `&`, `|`, `^`, etc. `--port` não é vetor.
+
+---
+
+### Q4 — Os 3 rejeitam `%` pelo mesmo predicado ou por três caminhos independentes?
+
+**Três caminhos — divergência futura coberta pelo gate.**
+
+- Python: `if "%" in host: return False` — explícito, antes de `ipaddress.ip_address()`
+- Node.js: `if (host.includes('%')) return false` — explícito, antes de `net.isIPv6()`
+- Go: emergente — `net.ParseIP` retorna nil para zone IDs + RFC-1123 rejeita `%` na regex; sem
+  guarda explícita de `%`
+
+**Risco:** se Go adicionar suporte a zone IDs em `net.ParseIP` numa versão futura, `IsValidHost`
+passaria a aceitar `%` sem mudança de código. O gate cobre isso: cenário 20 (`zone-id-rejection/go-wiring`)
+e cenário 21 (`zone-id-parity`) detectam a divergência executando o CLI real — se Go aceitar,
+o cenário 20 faria FAIL (CLI exit 0 para host com zone ID). A cobertura existe.
+
+**Residual declarado:** a rejeição de `%` em Go é emergente, não explícita. Qualquer mudança
+futura em `net.ParseIP` que aceite zone IDs quebraria o gate antes que chegasse ao produto.
+Comportamento do gate confirmado; sem ação necessária agora.
+
+---
+
+### Q5 — A correção reintroduziu o padrão vault?
+
+**NÃO** — medido pela falsificação dos cenários 2, 4, 8-9.
+
+O padrão vault é "instrumento falha → gate declara OK (fail-open)". O comportamento observado:
+
+| Condição | Resultado real | Padrão vault? |
+|---|---|---|
+| Node.js ilegível | RC=2, FAILs em 2 e 3 | Não — fail-FECHADO |
+| Python ilegível (sem pycache) | RC=1, FAILs em 4 e 5 | Não — fail-FECHADO |
+
+Cenários 8-16 suprimidos silenciosamente não constituem padrão vault porque o gate NÃO declara OK
+nessas condições — ele já está em RC não-zero. A ausência de mensagem explícita dos cenários 8-16
+é falta de diagnóstico, não falso-positivo de segurança.
+
+**Pycache — caso real:** `serve.cpython-314.pyc` existia antes do teste. Se `chmod 000 serve.py`
+for feito SEM remover o pycache, CPython pode importar o `.pyc` e o cenário 4 pode reportar
+"module loaded" — com código OLD se o `.pyc` for de antes do fix. Este é um vetor real de falso
+negativo no gate: a sabotagem de serve.py não é detectada se o pycache estiver presente com
+versão antiga do código. Não é correto dizer que o gate está "fechado" sem a ressalva de pycache.
+
+**Achado adicional (gate, baixo):** o gate não invalida o pycache antes de testar. Se serve.py
+for substituído por versão vulnerável mas `.pyc` for gerado da versão correta, o cenário 4 passa
+com código não-testado. Mitigação possível: prefixar o cenário 4 com
+`find "$PY_ROOT" -name "serve.cpython-*.pyc" -delete`. Não bloqueia o merge, mas deve ser
+rastreado.
+
+---
+
+### Q6 — `barrier.go:803 exec.Command("sh","-c",command)` — argumento do implementador
+
+O implementador afirma que o sítio é seguro porque `command` vem do YAML de roadmap.
+
+**O argumento está errado.** O vault documenta explicitamente que roadmap de terceiro foi o vetor
+da REQ do `barrier` (`roadmap-title-newline-forges-wave-section-barrier-executes-gate-2026-08-23.md`).
+YAML de roadmap é conteúdo controlável por terceiro; "vem do YAML" não é defesa.
+
+**O sítio, porém, está fora do escopo desta REQ.** Esta REQ cobre injeção via `--host` em `serve`.
+`barrier.go:803` é pré-existente e rastreado no vault. A menção ao sítio no relatório do
+implementador foi incorreta como argumento de segurança; ela não cria nem fecha uma obrigação
+desta REQ. O revisor da próxima REQ de `barrier` deve descartar o argumento "vem do YAML"
+explicitamente.
+
+---
+
+## Veredito final
+
+**APROVA**
+
+O bloqueio original está fechado: nenhum valor de `--host` contendo `%` chega ao browser URL em
+nenhum dos 3 CLIs. O gate em 21/21 cenários confirma em execução real. A decisão de rejeitar `%`
+inteiro é arquiteturalmente defensável.
+
+### Residuais declarados (não bloqueiam merge)
+
+**R1 — Cenários 8-16 suprimidos silenciosamente quando serve.js/serve.py é ilegível.** Gate ainda
+falha (RC não-zero) por cenários 2/3 ou 4/5, mas os cenários estáticos de 8 em diante não
+produzem mensagem FAIL explícita. Falha cosmética; não é falso-OK.
+
+**R2 — Pycache pode mascarar sabotagem de serve.py no cenário 4.** Se `.pyc` de versão correta
+estiver presente, `chmod 000 serve.py` não impede a importação. O gate deveria limpar o pycache
+antes de testar o módulo Python. Rastreável como ML adicional, não bloqueia merge.
+
+**R3 — Rejeição de `%` em Go é emergente, não explícita.** Coberta pelo gate (cenários 20-21),
+mas depende de comportamento estável de `net.ParseIP`. Se Go adicionar suporte a zone IDs,
+o gate detecta antes que chegue ao produto.
+
+**R4 — Zone ID em Node.js (Linux) era potencialmente funcional antes do fix.** A remoção é
+correta por parity e segurança, mas o changelog deve reconhecer que isso remove uma capacidade
+Node-Linux-específica, não um feature universalmente quebrado.
+
+**R5 — `barrier.go:803` é superfície pré-existente não coberta por esta REQ.** O argumento
+"vem do YAML = seguro" do implementador está errado (vault `2026-08-23`) e deve ser descartado
+explicitamente na próxima REQ de `barrier`.
+
+---
+
+*Verificação de fechamento emitida por hades-tf, 2026-09-11. Evidência: execução de*
+*`check-serve-browser-security.sh` com e sem módulos ilegíveis; pycache removido no teste Python.*
