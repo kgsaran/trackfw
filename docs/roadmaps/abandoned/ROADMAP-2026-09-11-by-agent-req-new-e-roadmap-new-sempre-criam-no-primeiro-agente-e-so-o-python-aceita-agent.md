@@ -1,5 +1,5 @@
 ---
-status: wip
+status: abandoned
 date: 2026-09-11
 req: "docs/req/REQ-2026-09-11-by-agent-req-new-e-roadmap-new-sempre-criam-no-primeiro-agente-e-so-o-python-aceita-agent.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: by_agent: req new e roadmap new sempre criam no primeiro agente, e so o Python aceita --agent
 
-> Created: 2026-09-11 | Status: wip
+> Created: 2026-09-11 | Status: abandoned
 
 ## Context
 <!-- Derived from REQ: REQ-2026-09-11-by-agent-req-new-e-roadmap-new-sempre-criam-no-primeiro-agente-e-so-o-python-aceita-agent.md -->
@@ -108,3 +108,30 @@ exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli
 - [ ] **AC7** — flat continua funcionando. A correcao nao pode quebrar quem nao usa by_agent.
 - [ ] build passes
 - [ ] tests green
+
+---
+
+## 🔴 SUPERSEDED no mesmo dia — 2026-09-11
+
+**Esta REQ nao deveria ter sido aberta.** O defeito ja tinha REQ, desde **2026-08-29**:
+
+```
+docs/req/REQ-2026-08-29-agents-install-nao-registra-o-agente-na-governanca-e-roadmap-new-em-by-agent-escreve-sempre-no-primeiro-da-lista.md
+```
+
+Ela ja nomeava a causa (`cfg.Agents[0]` em silencio), **ja tinha o mecanismo decidido pelo KG** — um
+namespace usa, varios sem `--agent` falham nomeando — e a triagem de `2026-09-05` (linha 7) a marcava
+**AINDA VALIDA (verificado)**, citando **"AC5 nao implementado"**.
+
+Todo o conteudo do #320 foi movido para la como **AC10-AC15**, pela `Regra Dura de Causa Raiz`:
+**mesma causa ⇒ mesma REQ ⇒ mesmo PR.**
+
+### Como o engano aconteceu — e o que o evitou
+
+Li o issue, medi o defeito, e parti para REQ nova sem procurar REQ existente com a mesma causa.
+🔴 **E exatamente o padrao que a regra existe para impedir** — e ele produz backlog que cresce por
+construcao, com o defeito vivo por tras da aparencia tranquilizadora de estar "registrado".
+
+O que pegou foi a varredura que precedeu o desenho: ao procurar se `agents[0]` estava **documentado**
+como default, apareceu `docs/portabilidade/2026-09-05-triagem-das-reqs-abertas.md` linha 7. **A REQ
+duplicada durou minutos, e nao um ciclo, porque a medicao veio antes da decisao.**

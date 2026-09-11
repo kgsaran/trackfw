@@ -35836,3 +35836,36 @@ expande para nome longo. `path.relative(longo, curto)` produz lixo → `git cat-
 **Decisão de contrato:** rejeitar `%` nos 3 CLIs (lista de permissão = conjunto vazio). Razão: HTTPServer 2-tuple descarta zone ID; Go já rejeita; Python aceita qualquer conteúdo incluindo metacaracteres cmd.exe; Node aceita zone ID limpo mas depende de versão de runtime. Fechou a classe inteira em vez de enumerar `&`.
 
 **Derivação de sítios com cmd.exe:** apenas `serve` (Node e Python) — fechados por esta REQ. `barrier.go sh -c` usa input de arquivos de governança, não de CLI flags.
+
+---
+
+## 2026-09-11 — Zeus (trackfw_architect) — #320 entra na REQ de 2026-08-29, não em REQ nova
+
+**Início.** Issue #320 do consumidor externo: em `by_agent`, `req new` e `roadmap new` sempre criam em
+`agents[0]`; `roadmap new --req` ignora o agente da REQ; só o Python aceita `--agent`.
+
+🔴 **Abri REQ nova por engano e reverti no mesmo dia.** Ao medir se `agents[0]` era default
+*documentado* (em vez de presumir que era o defeito), apareceu
+`docs/portabilidade/2026-09-05-triagem-das-reqs-abertas.md` linha 7 apontando
+`REQ-2026-08-29-agents-install-nao-registra-o-agente-...` como **AINDA VÁLIDA (verificado)**, com
+**"AC5 não implementado"** — a mesma causa, com o mecanismo **já decidido pelo KG em 2026-08-29**.
+
+Pela `Regra Dura de Causa Raiz`, o #320 virou **AC10–AC15 daquela REQ**. A REQ de 2026-09-11 está
+`Superseded` e seu roadmap em `abandoned/`. **A medição antes da decisão é o que reduziu o engano de
+um ciclo para minutos.**
+
+**Derivado (não estimado):**
+- A dependência da REQ (irmã `agent_namespace_undeclared`) está **Done e presente nos 3 CLIs**.
+- 🔴 **Raio de alcance do AC5:** 10+ emissores geram `trackfw req new "title"` **sem** `--agent`
+  (`agentfiles.go:59`, `claudemd.go:57-58`, `scaffold.go:263`, `init.js:524,691-692,899`,
+  `push/ship/branch/commit` runners, `validator.py:1967`). Num projeto `by_agent` multi-agente, **a
+  própria orientação que o trackfw gera passaria a ensinar um comando que falha** — entram no mesmo PR
+  (ML-3A).
+- **Zero testes com 2+ agentes** no repositório.
+
+**Roadmap:** `ROADMAP-2026-09-11-by-agent-req-new-e-roadmap-new-agents-install-nao-registra-e-escreve-sempre-no-primeiro.md`
+(wip) — 9 MLs / 198 linhas, dentro do teto de 10 MLs recalibrado na ADR-2026-09-10.
+Wave 0 derivação → Wave 1 resolução de agente (3 runtimes em paralelo) → Wave 2 `agents install`
+(3 em paralelo) → Wave 3 emissores + `consumer-smoke-by-agent` verde com `continue-on-error` removido.
+
+**Branch:** `fix/by-agent-req-new-e-roadmap-new` · `trackfw validate` → 0 violations.

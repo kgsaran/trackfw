@@ -1,9 +1,9 @@
 ---
-status: Open
+status: Superseded
 date: 2026-09-11
 author: ""
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-11-by-agent-req-new-e-roadmap-new-sempre-criam-no-primeiro-agente-e-so-o-python-aceita-agent.md"
+roadmap: "docs/roadmaps/abandoned/ROADMAP-2026-09-11-by-agent-req-new-e-roadmap-new-sempre-criam-no-primeiro-agente-e-so-o-python-aceita-agent.md"
 ---
 
 # REQ: by_agent: req new e roadmap new sempre criam no primeiro agente, e so o Python aceita --agent
@@ -28,7 +28,7 @@ ADR:
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-09-11-by-agent-req-new-e-roadmap-new-sempre-criam-no-primeiro-agente-e-so-o-python-aceita-agent.md`
+Roadmap: `docs/roadmaps/abandoned/ROADMAP-2026-09-11-by-agent-req-new-e-roadmap-new-sempre-criam-no-primeiro-agente-e-so-o-python-aceita-agent.md`
 ## Motivation
 
 Issue **#320** do consumidor externo, medido nos 3 CLIs (v7.5.1) num projeto descartável com
@@ -106,3 +106,30 @@ exatamente por isso, e **nasce vermelho detectando este defeito**.
 ## Fora desta REQ
 
 Mudar o layout padrao ou o `roadmap_namespacing`. Migrar artefatos ja existentes.
+
+---
+
+## 🔴 SUPERSEDED no mesmo dia — 2026-09-11
+
+**Esta REQ nao deveria ter sido aberta.** O defeito ja tinha REQ, desde **2026-08-29**:
+
+```
+docs/req/REQ-2026-08-29-agents-install-nao-registra-o-agente-na-governanca-e-roadmap-new-em-by-agent-escreve-sempre-no-primeiro-da-lista.md
+```
+
+Ela ja nomeava a causa (`cfg.Agents[0]` em silencio), **ja tinha o mecanismo decidido pelo KG** — um
+namespace usa, varios sem `--agent` falham nomeando — e a triagem de `2026-09-05` (linha 7) a marcava
+**AINDA VALIDA (verificado)**, citando **"AC5 nao implementado"**.
+
+Todo o conteudo do #320 foi movido para la como **AC10-AC15**, pela `Regra Dura de Causa Raiz`:
+**mesma causa ⇒ mesma REQ ⇒ mesmo PR.**
+
+### Como o engano aconteceu — e o que o evitou
+
+Li o issue, medi o defeito, e parti para REQ nova sem procurar REQ existente com a mesma causa.
+🔴 **E exatamente o padrao que a regra existe para impedir** — e ele produz backlog que cresce por
+construcao, com o defeito vivo por tras da aparencia tranquilizadora de estar "registrado".
+
+O que pegou foi a varredura que precedeu o desenho: ao procurar se `agents[0]` estava **documentado**
+como default, apareceu `docs/portabilidade/2026-09-05-triagem-das-reqs-abertas.md` linha 7. **A REQ
+duplicada durou minutos, e nao um ciclo, porque a medicao veio antes da decisao.**
