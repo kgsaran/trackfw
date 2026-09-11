@@ -285,3 +285,66 @@ C3  2 agentes, sem flag (braço de erro)       GO "alpha, beta"  NODE idem  PY i
 O comentário que declarava a não-entrega do AC11 foi removido do teste do Go.
 
 **Wave 2 liberada.**
+
+---
+
+## 🔴 A barreira reabriu — `make quality` VERMELHO (2026-09-11)
+
+A barreira tinha sido levantada com base em **três cenários E2E verdes nos 3 binários**. O
+`make quality` reprovou depois:
+
+```
+artifact parity cycle failed: go/by_agent — .trackfw-log não registrou backlog → analyzing
+```
+
+### B3 — Go: derivação de caminho executada DEPOIS de mover o arquivo
+
+```
+obtido:    2026-09-11 18:43  /ROADMAP-...-teste-log.md    backlog → analyzing
+esperado:  2026-09-11 18:43  alpha/ROADMAP-...-teste-log.md  backlog → analyzing
+```
+
+`internal/generators/roadmap.go:581` chama `agentFromPath(cfg.RoadmapDir, src)` **depois** do
+`os.Rename(src, dst)` da linha ~563. `src` já não existe, e a função resolve symlink só no que existe:
+`absRoot` vira `/private/var/...`, `absFile` fica `/var/...`, o `Rel` devolve `".."`, e o guard —
+correto — devolve `""`.
+
+A `main` usava a variável `agent` **computada antes do rename**. 🔴 **A extração trocou uma variável já
+calculada por uma derivação nova executada tarde demais.** O `MoveRoadmap` já tem essa variável na
+linha ~541; basta reusá-la.
+
+### O que isto ensina sobre a auditoria — e é a parte que vale
+
+🔴 **Meu E2E de três cenários passou e a regressão estava lá.** Os três mediam **onde o artefato foi
+parar**; nenhum mediu o **efeito colateral** (o registro da transição). Os 16 testes unitários do ML
+também não — pela mesma razão.
+
+**Extrair uma expressão inline para função nomeada muda QUANDO ela é avaliada**, e efeito colateral sem
+dono é o que fica sem cobertura. `make quality` pegou porque exercita o **ciclo**, não o ponto.
+
+**Corretivo:** ML-1A-fix2. **Wave 2 continua bloqueada.**
+
+---
+
+## Achado lateral — medido, causa DIFERENTE, não entra nesta REQ
+
+`roadmap new "<título>" --req <caminho>` — o **Go ignora o título posicional**; Node e Python o usam:
+
+```
+GO    → ROADMAP-2026-09-11-2026-01-01-pagamentos.md   (derivou do nome da REQ)
+NODE  → ROADMAP-2026-09-11-titulo-escolhido.md
+PY    → ROADMAP-2026-09-11-titulo-escolhido.md
+```
+
+**Causa:** `internal/commands/roadmap.go:30` declara `Args: cobra.MaximumNArgs(1)`, mas **`args[0]`
+nunca é atribuído a `title`** — a variável só é alimentada por flag. O `if title == ""` da linha 44
+sempre dispara.
+
+**Medido como causa diferente, não presumido:**
+- reproduz em **`flat`**, sem nenhum agente configurado → **independente de `by_agent`**;
+- o código idêntico está em `origin/main` → **pré-existente**, não regressão desta wave;
+- teste da triagem por mecanismo: corrigir a resolução de agente **não fecha** este defeito.
+
+Por `Regra Dura de Causa Raiz`, causa diferente autoriza REQ própria — e a diferença de mecanismo fica
+escrita acima. ⚠️ **Pendente de decisão do KG**, dada a preocupação declarada com o crescimento do
+backlog de REQs: são ~3 linhas num arquivo que já está aberto neste PR.

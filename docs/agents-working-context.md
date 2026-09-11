@@ -2,6 +2,12 @@
 
 ---
 
+## Sessão 2026-09-11s — apolo-tf (Backend/Go) — ML-1A-fix2: logBasename usa variável agent já computada antes do rename — EM ANDAMENTO
+
+Branch `fix/by-agent-req-new-e-roadmap-new`. Regressão: em modo `by_agent`, o segmento `<agente>/` saía vazio no `.trackfw-log` porque `agentFromPath` era chamada depois do `os.Rename` (quando `src` não existe mais), e o EvalSymlinks assimétrico do macOS (`/var` vs `/private/var`) fazia o guard de `".."` devolver `""`. Fix: elevar declaração de `agent` para fora do bloco `if by_agent` e reutilizá-la na linha de log, sem recalcular.
+
+---
+
 ## Sessão 2026-09-11r — apolo-tf (Backend/Node) — ML-1B-fix: remove squad: do frontmatter da REQ no CLI Node — CONCLUÍDO (aguarda auditoria Zeus)
 
 Branch `fix/by-agent-req-new-e-roadmap-new`. Remove `squad:` do template da REQ em `npm/src/generators/req.js` para alinhar paridade com Go e Python (que não têm a chave). Ajusta teste que assertava `squad:` na REQ.
