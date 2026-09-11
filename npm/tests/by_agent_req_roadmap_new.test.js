@@ -120,9 +120,9 @@ test('agentFromPath: roadmap_dir/beta/wip/R.md → "beta"', () => {
 
 // ─── req new: by_agent com múltiplos agentes + --agent ───────────────────────
 
-// Reconciliation: affirms that newREQ with --agent beta creates file in beta/ and records beta in frontmatter.
+// Reconciliation: affirms that newREQ with --agent beta creates file in beta/ (path is authoritative; no squad: key in REQ frontmatter).
 // newREQ is async but runs synchronously in non-TTY mode — call without await, check fs state immediately.
-test('newREQ: by_agent [alpha,beta] + --agent beta → artefato em beta/, frontmatter squad:beta', () => {
+test('newREQ: by_agent [alpha,beta] + --agent beta → artefato em beta/, SEM squad: no frontmatter', () => {
   const yaml = 'roadmap_namespacing: by_agent\nagents:\n  - alpha\n  - beta\nreq_dir: docs/req\n'
   withProject(yaml, (tmp) => {
     const reqDir = path.join(tmp, 'docs', 'req')
@@ -133,7 +133,7 @@ test('newREQ: by_agent [alpha,beta] + --agent beta → artefato em beta/, frontm
     const files = fs.existsSync(betaDir) ? fs.readdirSync(betaDir).filter(f => f.endsWith('.md')) : []
     assert(files.length > 0, `Esperava REQ em beta/, encontrou: ${JSON.stringify(fs.existsSync(betaDir) ? fs.readdirSync(betaDir) : [])}`)
     const content = fs.readFileSync(path.join(betaDir, files[0]), 'utf8')
-    assert(content.includes('squad: "beta"'), `Frontmatter deve ter squad: "beta". Got:\n${content.slice(0, 300)}`)
+    assert(!content.includes('squad:'), `Frontmatter da REQ NÃO deve ter squad: (o caminho é a fonte de verdade). Got:\n${content.slice(0, 300)}`)
   })
 })
 

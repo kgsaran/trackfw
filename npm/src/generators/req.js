@@ -4,7 +4,7 @@ const path = require('path')
 const { localDateISO } = require('./date')
 const roadmapGen = require('./roadmap')
 const config = require('../config')
-const { resolveAgentNamespaces, resolveReqFiles, reqWriteDir, resolveAgentForWrite } = require('../validator')
+const { resolveAgentNamespaces, resolveReqFiles, reqWriteDir } = require('../validator')
 const { normalizeCRLF } = require('../integrations/render')
 
 const VALID_STATES = roadmapGen.VALID_STATES
@@ -251,16 +251,8 @@ async function newREQ(content, agent) {
   // Em by_agent com múltiplos namespaces sem --agent, reqWriteDir lança erro de ambiguidade (AC5/AC10).
   const cfg = require('../config').load()
   let reqDir
-  let resolvedAgent = ''
   try {
     reqDir = reqWriteDir(cfg, agent) || cfg.reqDir
-    // Resolve o agente para o frontmatter squad: (mesmo valor que vai para o caminho — AC4).
-    // Mantido no mesmo try: reqWriteDir chama resolveAgentForWrite internamente; se lançou, já
-    // saímos. Chamar de novo aqui reaproveita a mesma resolução sem adicionar novo ponto de falha.
-    const namespacing = cfg.roadmapNamespacing || cfg.roadmap_namespacing || ''
-    if (namespacing === 'by_agent') {
-      resolvedAgent = resolveAgentForWrite(cfg, agent)
-    }
   } catch (err) {
     console.error(`Error: ${err.message}`)
     process.exitCode = 1
@@ -297,15 +289,12 @@ async function newREQ(content, agent) {
     blockedSection = lines.join('\n')
   }
 
-  const squadField = resolvedAgent ? `"${resolvedAgent}"` : '""'
-
   const body = `---
 status: Open
 date: ${date}
 author: ""
 adr: ""
 roadmap: ""
-squad: ${squadField}
 ---
 
 # REQ: ${content.title}
