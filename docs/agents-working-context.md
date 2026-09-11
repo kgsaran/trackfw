@@ -35869,3 +35869,34 @@ Wave 0 derivação → Wave 1 resolução de agente (3 runtimes em paralelo) →
 (3 em paralelo) → Wave 3 emissores + `consumer-smoke-by-agent` verde com `continue-on-error` removido.
 
 **Branch:** `fix/by-agent-req-new-e-roadmap-new` · `trackfw validate` → 0 violations.
+
+## 2026-09-11 — apolo-tf — ML-0A: derivação by_agent req new/roadmap new
+
+**Início.** Handoff de Zeus: derivar 5 itens para a Wave 0 do roadmap
+`ROADMAP-2026-09-11-by-agent-req-new-e-roadmap-new-...`. Zero linhas de implementação.
+
+**Entregável:** `docs/qualidade/2026-09-11-derivacao-by-agent-ml0a.md`
+
+**Itens derivados:**
+
+1. **Sítio do `req new` Go:** `internal/generators/req.go:32` chama `validator.REQWriteDir(cfg)`;
+   decisão real em `internal/validator/validator.go:1464`. CONFIRMADO como ponto único de escrita.
+
+2. **`by_agent` para `req_dir`:** SIM, aplica-se a ambos. Evidência nos 3 runtimes:
+   Go `validator.go:1469`, Node `index.js:425`, Python `validator.py:806`. AC10 corretamente posto.
+
+3. **Mecanismo de derivação do `move`:** INLINE nos 3 runtimes (dois níveis de dirname + basename).
+   Go `roadmap.go:437-439`, Node `roadmap.js:267-268`, Python `roadmap.py:661-662`. Nenhuma função
+   nomeada separada — Wave 1 deve inline o padrão.
+
+4. **Lista de emissores re-derivada:** 10 confirmados + 10 novos (não estavam na lista de 2026-09-11).
+   Notáveis novos: `internal/commands/push.go:159`, `internal/commands/ship.go:305`,
+   `internal/validator/validator.go:2844`, `npm/src/validator/index.js:1508`,
+   `pypi/trackfw/generators/init_gen.py:263,409,674`, `pypi/trackfw/ship/runner.py:512`.
+
+5. **Threat model + gate concreto:** 3 vetores de esvaziamento documentados, contra-braços por AC,
+   gate executável de 7 linhas derivado para substituir o placeholder do roadmap.
+
+**Gate ML-0A:** `ML-0A gate: OK` (saída verificada).
+
+**Fim.** Entrega para Zeus para auditoria e commit.

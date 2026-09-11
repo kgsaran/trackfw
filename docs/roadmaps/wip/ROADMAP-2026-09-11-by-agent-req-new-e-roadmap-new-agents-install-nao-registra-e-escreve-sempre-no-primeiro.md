@@ -42,7 +42,7 @@ e a regra existe nos 3 CLIs — verificado em 2026-09-11.
 > Dependencias: nenhuma. **Nenhuma linha de implementacao nesta wave.**
 
 ### ML-0A — Derivar o que o handoff ainda presume
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — relatório em `docs/qualidade/2026-09-11-derivacao-by-agent-ml0a.md`
 **Arquivos afetados:** nenhum de codigo. Entrega um relatorio.
 **Acoes:**
 1. **Sitio do `req new` do Go.** O relator do #320 declarou que **nao o localizou**. Localizar e
@@ -68,7 +68,15 @@ e a regra existe nos 3 CLIs — verificado em 2026-09-11.
 ```bash
 # Falha fechado ate ML-0A responder. O relatorio do ML-0A substitui este comando
 # pelo gate real derivado no item 5.
-test -f docs/qualidade/2026-09-11-derivacao-by-agent-ml0a.md || exit 1
+f="docs/qualidade/2026-09-11-derivacao-by-agent-ml0a.md"
+test -f "$f"                                        || { echo "FALTANDO: $f" >&2; exit 1; }
+grep -q "req.go:"                            "$f"   || { echo "FALTA item 1: sitio req.go" >&2; exit 1; }
+grep -q "req_dir"                            "$f"   || { echo "FALTA item 2: by_agent/req_dir" >&2; exit 1; }
+grep -qE "roadmap\.(go|js|py):[0-9]"         "$f"   || { echo "FALTA item 3: mecanismo do move" >&2; exit 1; }
+grep -q "agentfiles.go"                      "$f"   || { echo "FALTA item 4: emissores" >&2; exit 1; }
+grep -q "init_gen.py"                        "$f"   || { echo "FALTA item 4: emissores novos" >&2; exit 1; }
+grep -qi "threat\|esvazia\|contra.bra"      "$f"   || { echo "FALTA item 5: threat model" >&2; exit 1; }
+echo "ML-0A gate: OK"
 ```
 
 ---
@@ -164,7 +172,11 @@ mais os testes. 🔴 Cada ML fica **dentro da sua arvore**.
 `internal/generators/scaffold.go:263`, `npm/src/generators/init.js:524,691-692,899`,
 `npm/src/push/runner.js:130`, `npm/src/ship/runner.js:502`, `npm/src/commands/branch.js:33`,
 `npm/src/commands/commit.js:37`, `pypi/trackfw/push/runner.py:148`, `pypi/trackfw/validator.py:1967`.
-🔴 **Usar a lista re-derivada, nao esta.**
+🔴 **Usar a lista re-derivada do ML-0A: 33 ARQUIVOS, nao 10 e nao 20.** E 🔴 **6 deles sao TESTES que
+afirmam o texto dos emissores** (`npm/tests/{push,serve_chain,ship}.test.js`,
+`pypi/tests/test_{push,serve_chain,ship}.py`) — mudam **em lockstep**, no mesmo ML. Classificar os 33 em
+{orientacao exibida · teste que a afirma · comentario} e **justificar por escrito cada exclusao**;
+contagem sozinha nao autoriza excluir nada.
 **Acoes:** onde o texto orienta `trackfw req new "title"`, ensinar `--agent` quando o projeto for
 `by_agent` com 2+ agentes. 🔴 **Um unico dono** — estes arquivos atravessam as tres arvores e nao
 podem ser editados em paralelo com nada.
