@@ -356,7 +356,12 @@ não é "corrigido"**. O ônus de escrever a diferença de mecanismo foi pago ac
 decidir, e não o que obriga a separar.
 
 ### ML-1D — Go: `roadmap new "<titulo>" --req` ignora o titulo posicional
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — os dois braços verificados pelo arquiteto com o binário:
+`"titulo escolhido"` → `ROADMAP-...-titulo-escolhido.md`; **sem** título → fallback pelo nome da REQ
+sobrevive. Varredura reconferida com régua própria (nenhum arquivo de `internal/commands/` declara
+`Args:` com posicional opcional e nunca lê `args[`). ⚠️ Resíduo declarado: a varredura cobre
+`MaximumNArgs` por sítio e `Args:` por arquivo; um arquivo com **dois** comandos, um lendo `args[` e
+outro não, escaparia das duas réguas.
 **Arquivos afetados:** `internal/commands/roadmap.go` e o teste correspondente. 🔴 **So `internal/`.**
 **Medicao (arquiteto, 2026-09-11):** ver "Achado lateral" acima. Reproduz em `flat`, existe em
 `origin/main`, e **nao fecha** com a correcao de resolucao de agente — causa diferente, mesmo PR por

@@ -2,6 +2,37 @@
 
 ---
 
+## Sessão 2026-09-11t — apolo-tf (Backend/Go) — ML-1D: `roadmap new` atribui args[0] a title antes do fallback — CONCLUÍDO (aguarda auditoria Zeus)
+
+Branch `fix/by-agent-req-new-e-roadmap-new`. Fix do bug onde `roadmap new "titulo" --req <REQ>` ignorava o título posicional e derivava o nome do roadmap a partir do nome da REQ.
+
+**Causa raiz:** `internal/commands/roadmap.go`, bloco `if reqPath != ""` (linhas 44-54): `args[0]` nunca era atribuído a `title`. A variável `title` só era alimentada pela flag `--title/-t`, então `if title == ""` sempre disparava o fallback de derivação do nome da REQ.
+
+**Alterações (somente `internal/commands/`):**
+1. `internal/commands/roadmap.go`: no bloco `if reqPath != ""`, adicionado `if len(args) > 0 && title == ""` para atribuir `args[0]` a `title` antes do fallback. Fallback preservado intacto.
+2. `internal/commands/roadmap_flags_test.go`: adicionados `TestRoadmapNew_PositionalTitleUsedWithReqFlag` e `TestRoadmapNew_FallbackDerivesFromREQNameWhenNoPositionalTitle` (mais helper `setupRoadmapNewDir`).
+
+**Frases de reconciliação:**
+- `TestRoadmapNew_PositionalTitleUsedWithReqFlag`: afirma que `args[0]` é usado como título quando fornecido com `--req` — conclusão direta do ML-1D (o bug era a ausência dessa atribuição).
+- `TestRoadmapNew_FallbackDerivesFromREQNameWhenNoPositionalTitle`: afirma que o fallback de derivação do nome da REQ sobrevive intacto quando não há título posicional — o contra-braço exigido pelo handoff.
+
+**Varredura de sítios adicionais (Regra Dura de Causa Raiz):**
+Comando: `grep -n "MaximumNArgs" /Users/kgsaran/Sistemas/Desenvolvimento/workspace/trackfw/internal/commands/*.go`
+Resultado: apenas dois sítios com `MaximumNArgs`:
+- `help.go:379` — lê `args[0]` na linha 399 ✅
+- `roadmap.go:31` — era o sítio corrigido ✅
+Nenhum outro comando ignora `args[0]` com `MaximumNArgs`. Todos os `ExactArgs` leem `args[0]` diretamente por definição (cobra garante a presença).
+
+**Evidência:**
+- `go build ./...` → OK
+- `go vet ./...` → OK
+- `go test ./...` → todos ok
+- E2E com binário `/tmp/tfw-1d`:
+  - `roadmap new "titulo escolhido" --req docs/req/REQ-2026-01-01-pagamentos.md` → `docs/roadmaps/backlog/ROADMAP-2026-09-11-titulo-escolhido.md` ✅
+  - `roadmap new --req docs/req/REQ-2026-01-01-pagamentos.md` → `docs/roadmaps/backlog/ROADMAP-2026-09-11-2026-01-01-pagamentos.md` ✅
+
+---
+
 ## Sessão 2026-09-11s — apolo-tf (Backend/Go) — ML-1A-fix2: logBasename usa variável agent já computada antes do rename — CONCLUÍDO (aguarda auditoria Zeus)
 
 Branch `fix/by-agent-req-new-e-roadmap-new`. Regressão: em modo `by_agent`, o segmento `<agente>/` saía vazio no `.trackfw-log` porque `agentFromPath` era chamada depois do `os.Rename` (quando `src` não existe mais), e o EvalSymlinks assimétrico do macOS (`/var` vs `/private/var`) fazia o guard de `".."` devolver `""`. Fix: elevar declaração de `agent` para fora do bloco `if by_agent` e reutilizá-la na linha de log, sem recalcular.

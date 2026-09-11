@@ -42,6 +42,11 @@ func newRoadmapNewCmd() *cobra.Command {
 
 			// --req flag bypasses wizard entirely; herda agente da REQ quando --agent não fornecido.
 			if reqPath != "" {
+				// Argumento posicional prevalece sobre derivação do nome da REQ, mas
+				// cede para --title/-t quando esse flag foi fornecido explicitamente.
+				if len(args) > 0 && title == "" {
+					title = args[0]
+				}
 				if title == "" {
 					title = strings.TrimSuffix(filepath.Base(reqPath), ".md")
 					title = strings.TrimPrefix(title, "REQ-")
