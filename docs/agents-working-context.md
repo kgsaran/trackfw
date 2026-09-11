@@ -2,6 +2,18 @@
 
 ---
 
+## Sessão 2026-09-11r — apolo-tf (Backend/Node) — ML-1B-fix: remove squad: do frontmatter da REQ no CLI Node — EM ANDAMENTO
+
+Branch `fix/by-agent-req-new-e-roadmap-new`. Remove `squad:` do template da REQ em `npm/src/generators/req.js` para alinhar paridade com Go e Python (que não têm a chave). Ajusta teste que assertava `squad:` na REQ.
+
+---
+
+## Sessão 2026-09-11q — apolo-tf (Backend/Go) — ML-1A-fix: herança de agente em NewRoadmapFromContent via REQPath — EM ANDAMENTO
+
+Branch `fix/by-agent-req-new-e-roadmap-new`. Fix do AC11 no caminho `--req` do Go CLI: inserir herança de agente via `agentFromPath(cfg.REQDir, content.REQPath)` antes de `ResolveWriteAgent` em `NewRoadmapFromContent`, alinhando com `NewRoadmapFromREQ`. Remover comentário errado em `agent_write_test.go` e adicionar testes que exercitam o caminho `NewRoadmapFromContent` com `REQPath` preenchido.
+
+---
+
 ## Sessão 2026-09-11p — apolo-tf (Backend/Python) — ML-1C: pós-auditoria — fix herança de REQ + testes de camada de comando + _agent_from_req_path nomeada — CONCLUÍDO (aguarda auditoria Zeus)
 
 Branch `fix/by-agent-req-new-e-roadmap-new`. Retomada pós-compactação para corrigir 3 problemas apontados pelo advisor.

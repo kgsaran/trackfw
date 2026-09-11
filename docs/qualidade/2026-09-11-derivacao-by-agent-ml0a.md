@@ -317,3 +317,27 @@ Python  pypi/trackfw/validator.py:~802        (equivalente)
 Os três já **filtram nomes vazios** antes de escolher — correção do `hades-tf` em 2026-09-03,
 documentada no próprio código do Go. **A Wave 1 altera essas três funções e a plumbing da flag; não
 cria caminho novo de escrita.** AC10 está bem posto.
+
+---
+
+## 🔴 Erratum do item 3 (2026-09-11) — a fórmula que este documento deu está ERRADA para REQ
+
+O item 3 descreveu `dirname(dirname(src))` + `basename` como "o mecanismo", e **eu propaguei isso nos
+três handoffs da Wave 1**. Está certo para **roadmap** e errado para **REQ**:
+
+```
+roadmap_dir/<agente>/<estado>/ROADMAP-x.md   → 3 níveis → dirname(dirname()) ✅
+req_dir/<agente>/REQ-x.md                    → 2 níveis → dirname()          ✅
+```
+
+Aplicar a fórmula do roadmap a uma REQ devolve `req_dir`, não o agente.
+
+**Quem pegou foi o ML-1C (Python)**, que reportou em vez de copiar. Go e Node escaparam por sorte de
+desenho: os dois implementaram `agentFromPath(rootDir, filePath)` pelo **primeiro segmento do caminho
+relativo ao root**, que é correto para qualquer profundidade. O Python entregou duas funções
+(`_agent_from_req_path`, `_agent_from_roadmap_path`).
+
+**Lição:** um documento de derivação é entrada de handoff, e **erro nele se multiplica por três**. O
+ML-0A tinha a evidência certa (arquivo:linha dos 3 sítios do `move`) e **generalizou errado a partir
+dela** — a citação estava correta, a inferência não. Conferir a citação não basta; é preciso conferir
+o passo que sai dela.
