@@ -406,3 +406,51 @@ falha deixou de mascará-lo.
 ⚠️ **Não confirmado como pré-existente pelo arquiteto** — o ML anterior afirmou que era, mas usando
 como evidência que o arquivo "não foi alterado nesta branch", o que **é falso** (`9d042b8e` o alterou).
 A conclusão pode estar certa e a evidência errada. **Triar antes de afirmar qualquer coisa.**
+
+### 🔴 O gate vácuo NÃO é pré-existente — é NOSSO. Medido em A/B
+
+O ML anterior afirmou "pré-existente", com a evidência de que `npm/src/validator/index.js` não fora
+alterado nesta branch — **evidência falsa**, o commit `9d042b8e` o alterou. Medi em A/B, com árvore
+`npm/` completa de cada lado e `node_modules` ligado:
+
+```
+MAIN    → ✓ moved ROADMAP-leak.md → docs/roadmaps/evil/done     ESCAPOU  → o gate detectaria
+BRANCH  → ✓ moved ROADMAP-leak.md → docs/roadmaps/alice/done    contido  → checagem VÁCUA
+```
+
+**Causa:** o `agentFromPath` do ML-1B resolve symlink (`realpathSync`) e depois exige que o caminho
+fique **dentro** do `roadmapDir`. Pelo symlink `evil → /fora`, o relativo começa com `..`, o guard
+devolve `""`, e o `move` cai em `alice`. **A fuga não acontece mais.**
+
+### Por que isto NÃO é "o gate está errado"
+
+🔴 **Defesa em profundidade quebra teste de mutação.** O cenário `direction-b2` mutila **um** guard (o
+`.filter(e => e.isDirectory())` do AC12) e conclui, pela fuga, que aquele guard era o que segurava.
+Agora existe um **segundo** guard, independente, que **absorve a mutação** — e o cenário perde o poder
+de falar sobre o primeiro.
+
+A premissa do gate ("só o filtro de `isDirectory` impede a fuga") virou **falsa**. O gate está
+medindo certo e concluindo sobre um mundo que mudou.
+
+⚠️ **E é ambíguo se `alice/done` é bom.** O roadmap foi **contido**, mas foi parar num namespace que
+não é o dele. Contenção não é o mesmo que correção — o ML precisa decidir e escrever qual dos dois
+comportamentos é o contrato.
+
+### ML-1E — restaurar o poder de falsificação do `direction-b2`
+**Status:** ⬜ Pendente
+**Arquivos afetados:** `scripts/check-agent-namespace-union.sh`. 🔴 **Só `scripts/`.**
+**Acoes:**
+1. Reproduzir o A/B acima e **confirmar** (não aceitar esta medição de segunda mão).
+2. Decidir e **escrever** o contrato: com symlink apontando para fora, o `move` deve **falhar
+   explicitamente**, ou **conter em `alice/`**? 🔴 Contenção silenciosa num namespace errado é a
+   classe "a ferramenta decidiu e não contou a ninguém" — a mesma que esta REQ existe para fechar.
+3. Reescrever o cenário para **isolar o guard alvo**: mutar os **dois** guards, ou asserir o novo
+   contrato em vez da fuga. 🔴 Não basta deletar o cenário nem afrouxar a asserção.
+4. **Derivar** se os cenários `direction-b2/python` e demais sofrem do mesmo mascaramento. Comando
+   escrito.
+**Criterios de aceite:**
+- [ ] `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality` exit 0
+- [ ] 🔴 O cenário **reprova** quando o guard que ele alveja é revertido — falsificação provada, não
+      afirmada
+- [ ] O contrato do item 2 escrito no próprio script, com o motivo
+- [ ] Varredura do item 4 com comando escrito
