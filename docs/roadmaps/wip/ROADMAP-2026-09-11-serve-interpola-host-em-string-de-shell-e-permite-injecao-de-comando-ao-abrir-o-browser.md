@@ -226,3 +226,66 @@ O implementador classificou `internal/commands/barrier.go:803`
 usuário"*. 🔴 **O argumento é tecnicamente errado** — o vault de 2026-08-23 documenta que roadmap de
 terceiro é exatamente o vetor de RCE do `barrier`. O sítio é pré-existente e fora do escopo desta
 REQ; o trust-check fechado hoje pode protegê-lo, mas **isso precisa ser dito, não presumido**.
+
+### ML-NOVO — 🔴 Gate que existe e ninguém invoca: a TERCEIRA instância do dia
+**Status:** ⬜ Pendente · **Agente:** `ares-tf` · **classe, não instância**
+
+**Descoberto ao abrir o PR seguinte**, por um aviso do `trackfw push` sobre outra branch.
+
+O `scripts/check-serve-browser-security.sh` foi mergeado **sem estar ligado a alvo nenhum**. Ele
+existia, passava 21/21 quando invocado à mão, e **nunca rodava**.
+
+🔴 **A falha de auditoria foi do arquiteto:** eu rodei `bash scripts/check-serve-browser-security.sh`
+diretamente, vi 21/21 e concluí que funcionava. **Verifiquei que o gate funciona — não que alguma
+coisa o executa.**
+
+#### Terceira vez no mesmo dia
+
+```
+ratchet       job reprovava, não era `required`         → ninguém consumia o veredito
+baseline D4   não rodava, `origin/main` não fetchado    → ninguém consumia
+serve gate    existia, fora de todo alvo                → ninguém consumia
+```
+
+**Não é descuido repetido — é uma classe:** *construímos o mecanismo e não o ligamos a quem age
+sobre ele.* O ML-4B fechou a instância de CI (required × jobs declarados); esta é a de `scripts/` ×
+alvos.
+
+#### E a varredura achou um órfão pior
+
+```
+52 scripts check-*.sh
+ 4 fora do Makefile
+   3 invocados por workflow ou outro script   ← legítimo
+   1 invocado por NINGUÉM  →  check-raw-read-ban.sh
+```
+
+O `check-raw-read-ban.sh` nasceu no PR **#285**, e o comentário dele diz para que serve:
+
+> *"This gate is what stops the NEXT ml from reintroducing a raw call one site at a time, unnoticed —
+> which is exactly how the original 26 sites accumulated."*
+
+🔴 **Um gate anti-reintrodução da classe fail-open, inerte desde que foi escrito.** Rodado agora à
+mão: **passa** — a classe não voltou. Dano zero até aqui; proteção zero também.
+
+Os dois foram ligados ao `parity-rest` neste ML. **O que falta é impedir o terceiro.**
+
+#### O gate da classe
+
+Verificar que **todo `scripts/check-*.sh` tem consumidor** — alvo do `Makefile`, workflow, ou outro
+script. Reprovar nomeando o órfão.
+
+**Decisões a tomar e registrar:**
+
+1. **O que conta como consumidor?** Ser citado por outro script é suficiente, ou tem de haver caminho
+   até um alvo que o CI de fato roda? 🔴 O `check-integration-cli-parity.sh` é citado por
+   `check-cli-parity.sh` **e por um arquivo de testdata** — a citação em testdata **não é consumo**,
+   e um casamento ingênuo por substring diria que sim.
+2. **Script novo sem consumidor: reprova ou avisa?** Reprovar força ligar antes de mergear — que é o
+   que faltou aqui. Avisar vira ruído.
+3. **Exceção declarada.** Se algum script legitimamente não tiver consumidor (ferramenta manual),
+   precisa de lista de exceção **com motivo**, não de tolerância silenciosa.
+
+**Falsificação:** script sem consumidor ⇒ reprova nomeando · script ligado ao Makefile ⇒ passa
+(contra-braço) · script citado **só em testdata** ⇒ 🔴 reprova, porque testdata não executa ·
+script na lista de exceção ⇒ passa, e a lista **não pode estar vazia de motivo**.
