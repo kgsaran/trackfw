@@ -2,6 +2,42 @@
 
 ---
 
+## Sessão 2026-09-11j — ares-tf (Infrastructure) — self-test ratchet cp1252 + runner annotations — CONCLUÍDO
+
+Branch `fix/self-test-do-ratchet-escreve-no-canal-do-gate-real`.
+
+REQ: `docs/req/REQ-2026-09-11-self-test-do-ratchet-escreve-no-canal-do-gate-real-e-quebra-em-cp1252-e-no-runner.md`
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-09-11-self-test-do-ratchet-escreve-no-canal-do-gate-real-e-quebra-em-cp1252-e-no-runner.md`
+
+**Escopo:** AC1-AC6 da REQ. Arquivo afetado: `scripts/check-windows-known-failures.py`. Sem paridade 3-CLI (arquivo em scripts/, não em Go/npm/pypi). Sem `.github/` — sem actionlint.
+
+**Medições AC1 (antes de qualquer edição):**
+- cp1252 crash: confirmado a T15a — `→` (U+2192, não definido em cp1252) em descrição de `check()` → `UnicodeEncodeError`
+- ::error:: no stdout durante self-test: 12 tokens (11 `::error::` + 1 `::warning::`) na execução UTF-8 completa; 9 antes do crash sob cp1252
+- Issue #319 reportou 10 — delta explicado pela adição de T16 e T18 (ML-3A) após o relato
+- Causa comum: CONFIRMADA. O self-test escreve no mesmo canal (sys.stdout) que o gate de produção — duas superfícies, uma causa
+
+**AC6 scan:**
+- `check-pr-closing-keyword.sh`, `check-orphan-gates.sh`, `check-git-branch-guard-hook-schema.sh`: zero `::error::` markers, shell sem encoding Python — NÃO afetados
+- `check-required-status-checks.py`: `_err()` escreve em stderr (não stdout), self-test usa subprocess — NÃO afetado
+- Defeito isolado: apenas `check-windows-known-failures.py`
+
+**Implementação (ML-1A — ✅ Concluído):**
+- `_ANNOTATION_SINK` module-level → `_err()`/`_warn()` escrevem no sink, não em sys.stdout
+- `_capture_annotations()` context manager → substitui sink temporariamente por StringIO durante fixtures
+- `_st_print()` encoding-safe → `encode(enc, errors="replace").decode(enc)` — nunca crasha em cp1252
+- T1-T26 atualizados; T27 AC4 adicionado (T27a: sink is sys.stdout; T27b: `_err()` roteia pelo sink)
+- 27 checks AC5 inline (um por braço de erro)
+
+**Gate evidence (make parity-rest — foreground — exit 0):**
+- check-windows-known-failures.py: 43 PASS, 0 FAIL
+- check-required-status-checks.py: 10 PASS, 0 FAIL
+- trackfw validate: 170 warnings, 0 hard violations (sem branch_has_wip_roadmap violation)
+
+**Pendente para trackfw_architect:** commit + push da branch. Arquivo: `scripts/check-windows-known-failures.py` + roadmap + agents-working-context.md.
+
+---
+
 ## Sessão 2026-09-11i — ares-tf (Infrastructure) — Gate check-orphan-gates.sh — CONCLUÍDO
 
 Branch `fix/serve-interpola-host-em-string-de-shell`.
