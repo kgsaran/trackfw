@@ -625,7 +625,7 @@ func TestNewRoadmapFromREQ_SingleGateBlockFromLegitREQ(t *testing.T) {
 		t.Fatalf("WriteFile REQ: %v", err)
 	}
 
-	if err := NewRoadmapFromREQ(reqPath); err != nil {
+	if err := NewRoadmapFromREQ(reqPath, ""); err != nil {
 		t.Fatalf("NewRoadmapFromREQ() inesperado: %v", err)
 	}
 
@@ -674,7 +674,7 @@ func TestNewRoadmapFromREQ_StatusLegendAndCanonicalForm(t *testing.T) {
 		t.Fatalf("WriteFile REQ: %v", err)
 	}
 
-	if err := NewRoadmapFromREQ(reqPath); err != nil {
+	if err := NewRoadmapFromREQ(reqPath, ""); err != nil {
 		t.Fatalf("NewRoadmapFromREQ() inesperado: %v", err)
 	}
 
@@ -711,7 +711,7 @@ func TestNewRoadmapFromREQ_AcceptsCRLFLineEndings(t *testing.T) {
 		t.Fatalf("WriteFile REQ CRLF: %v", err)
 	}
 
-	err := NewRoadmapFromREQ(reqPath)
+	err := NewRoadmapFromREQ(reqPath, "")
 	if err != nil {
 		t.Errorf("REQ com CRLF rejeitada inesperadamente: %v", err)
 	}

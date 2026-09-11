@@ -11,7 +11,8 @@ cmd.description(t('req.description'))
 
 cmd.command('new <title>')
   .description(t('req.new.description'))
-  .action(async (title) => {
+  .option('--agent <name>', 'Agent namespace to write the REQ into (required in by_agent with multiple namespaces)')
+  .action(async (title, opts) => {
     const { input, select } = require('@inquirer/prompts')
     const generators = require('../generators/req')
     const adrGenerators = require('../generators/adr')
@@ -68,7 +69,7 @@ cmd.command('new <title>')
       content.dependsOnADRs = [...new Set(generatedADRs)]
     }
 
-    await generators.newREQ(content)
+    await generators.newREQ(content, opts.agent)
 
     if (content.dependsOnADRs.length > 0) {
       console.log(`\n${t('req.new.adrDraftsCreated')}`)

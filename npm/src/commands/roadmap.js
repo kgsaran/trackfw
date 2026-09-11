@@ -12,14 +12,15 @@ cmd.command('new')
   .option('-t, --title <title>', 'Roadmap title (alias)')
   .option('-r, --req <path>', 'Path to the linked REQ')
   .option('--from-req <path>', 'Generate roadmap with ML stubs from REQ acceptance criteria')
+  .option('--agent <name>', 'Agent namespace to write the roadmap into (required in by_agent with multiple namespaces)')
   .action(async (titleArg, opts) => {
     if (opts.fromReq) {
-      newRoadmapFromReq(opts.fromReq)
+      newRoadmapFromReq(opts.fromReq, opts.agent)
       return
     }
     const title = titleArg || opts.title || 'New Roadmap'
     const reqPath = opts.req || ''
-    newRoadmap(title, reqPath)
+    newRoadmap(title, reqPath, opts.agent)
   })
 
 cmd.command('list')

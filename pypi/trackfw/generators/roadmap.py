@@ -176,6 +176,35 @@ def _state_dir(state: str, cfg: dict) -> str | None:
     return os.path.join(cfg["roadmap_dir"], state)
 
 
+def _agent_from_roadmap_path(path: str) -> str:
+    """
+    Extrai o nome do agente a partir de um caminho de roadmap em modo by_agent.
+
+    Estrutura esperada: roadmap_dir/<agent>/<state>/file.md
+    Derivação: agent = basename(dirname(dirname(path)))
+
+    Função nomeada extraída do inline em move_roadmap (ML-1C, AC11): chamada nos DOIS
+    sítios de roadmap — move_roadmap e (via _cmd_new) geração de roadmap.
+    """
+    return os.path.basename(os.path.dirname(os.path.dirname(path)))
+
+
+def _agent_from_req_path(req_path: str) -> str:
+    """
+    Extrai o nome do agente a partir de um caminho de REQ em modo by_agent.
+
+    Estrutura esperada: req_dir/<agent>/REQ-....md
+    Derivação: agent = basename(dirname(req_path))
+
+    Nota: a estrutura de REQ (dois níveis: req_dir/<agent>/REQ.md) é distinta da estrutura
+    de roadmap (três níveis: roadmap_dir/<agent>/<state>/ROADMAP.md). Por isso a derivação
+    usa UMA chamada a dirname, não duas. O ML-0A cometeu um erro de tipagem ao descrever
+    'dirname(dirname(req_path))' — a fórmula correta é 'basename(dirname(req_path))' e está
+    nomeada aqui (ML-1C, AC11 — derivação nomeada, não inline).
+    """
+    return os.path.basename(os.path.dirname(req_path))
+
+
 def _agent_state_dir(agent: str | None, state: str, cfg: dict) -> str | None:
     """Retorna diretório agente/estado em modo by_agent."""
     if state not in VALID_STATES:
@@ -232,19 +261,21 @@ def _append_transition_log(basename: str, from_state: str, to_state: str, cfg: d
         pass
 
 
-def _roadmap_template(title: str, slug: str, date: str, req_path: str = "") -> str:
+def _roadmap_template(title: str, slug: str, date: str, req_path: str = "", squad: str = "") -> str:
     """
     Retorna conteúdo do roadmap no formato canônico Go/Node (inglês).
-    Frontmatter: status: backlog · date · req: "<req_path>" (vazio se não informado) · squad: "" (minúsculo).
+    Frontmatter: status: backlog · date · req: "<req_path>" (vazio se não informado) ·
+                 squad: "<squad>" (agente responsável; vazio se não informado).
     Header: > Created: <data> | Status: backlog.
     Seções e labels de ML em inglês.
     REQ-2026-07-27-convergencia-templates-python.
+    ML-1C (AC4/AC10): squad é o mesmo valor que alimenta o caminho (dois efeitos, uma entrada).
     """
     return f"""---
 status: backlog
 date: {date}
 req: "{req_path}"
-squad: ""
+squad: "{squad}"
 ---
 
 # Roadmap: {title}
@@ -348,7 +379,9 @@ def generate_roadmap(title: str, cfg: dict, agent: str = None, req_path: str = "
     os.makedirs(backlog_dir, exist_ok=True)
     filepath = os.path.join(backlog_dir, filename)
 
-    body = _roadmap_template(title, slug, today, req_path=req_path)
+    # AC4/AC10: o mesmo valor alimenta o caminho (via _backlog_dir) e o frontmatter (squad:).
+    squad = agent or ""
+    body = _roadmap_template(title, slug, today, req_path=req_path, squad=squad)
     with open(filepath, "w", encoding="utf-8", newline="\n") as f:
         f.write(body)
 
@@ -397,11 +430,13 @@ def generate_roadmap_from_req(req_path: str, cfg: dict, agent: str = None) -> st
 
     adr_ref = f"\nADR: {linked_adr}" if linked_adr else ""
     ml_section = WAVE0_BLOCK + "\n".join(ml_lines)
+    # AC4/AC10: o mesmo valor alimenta o caminho (via _backlog_dir) e o frontmatter (squad:).
+    squad = agent or ""
     body = f"""---
 status: backlog
 date: {today}
 req: "{req_path}"
-squad: ""
+squad: "{squad}"
 ---
 
 # Roadmap: {title}
@@ -658,8 +693,7 @@ def move_roadmap(filename: str, to_state: str, cfg: dict) -> str:
 
     # Determina diretório de destino preservando agente em by_agent
     if cfg.get("roadmap_namespacing") == cfg_module.NAMESPACING_BY_AGENT:
-        agent_dir = os.path.dirname(os.path.dirname(src))
-        agent = os.path.basename(agent_dir)
+        agent = _agent_from_roadmap_path(src)
         target_dir = _agent_state_dir(agent, to_state, cfg)
         # log_basename vira uma linha do .trackfw-log — dado portável dentro de artefato
         # versionado, nunca separador nativo (os.path.join usaria "\" no Windows). Concatenação

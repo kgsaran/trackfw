@@ -791,21 +791,53 @@ def hidden_namespace_warnings(cfg: dict) -> list:
 _REQ_LAYOUT_STATES = ["backlog", "analyzing", "wip", "blocked", "done", "abandoned"]
 
 
-def req_write_dir(cfg: dict) -> str:
+def resolve_write_agent(cfg: dict, agent: str | None) -> str:
+    """
+    Resolve o agente para escrita em modo by_agent.
+
+    Regras (AC5/AC10, ML-1C):
+      - agent explícito fornecido → devolve como está (o chamador decide se é válido).
+      - agents: com UM não-vazio → usa aquele, sem erro.
+      - agents: com VÁRIOS não-vazios → levanta ValueError nomeando as opções.
+      - agents: vazia/ausente → devolve "default".
+
+    Deve ser chamado SOMENTE em modo by_agent (roadmap_namespacing == "by_agent").
+    Em modo flat o chamador não invoca esta função.
+    """
+    if agent:
+        return agent
+    agents = [a for a in (cfg.get("agents") or []) if a]
+    if len(agents) == 1:
+        return agents[0]
+    if len(agents) > 1:
+        options = ", ".join(agents)
+        raise ValueError(
+            f"multiple agent namespaces declared ({options}): use --agent to specify one"
+        )
+    return "default"
+
+
+def req_write_dir(cfg: dict, agent: str | None = None) -> str:
     """
     PONTO ÚNICO que decide ONDE uma REQ nova é gravada (ADR-2026-09-03, D2/D4):
       flat     -> req_dir/
-      by_agent -> req_dir/<agente>/   (primeiro de agents:, ou "default" se a lista é vazia)
+      by_agent -> req_dir/<agente>/   (agent se fornecido; caso contrário primeiro de agents:,
+                                       ou "default" se a lista é vazia)
 
     O par escritor/leitor não pode ter duas noções de layout (D4): a união devolvida por
     resolve_req_files contém, por construção, o diretório devolvido aqui.
+
+    O parâmetro `agent` permite que o chamador passe um agente já resolvido (ex: via
+    resolve_write_agent), sem alterar o comportamento para chamadores existentes que passam
+    apenas `cfg`.
     """
     req_dir = cfg.get("req_dir", "docs/req")
     if not req_dir:
         return ""
     if cfg.get("roadmap_namespacing", "") == "by_agent":
-        agents = [a for a in (cfg.get("agents") or []) if a]
-        agent = agents[0] if agents else "default"
+        if agent is None:
+            agents = [a for a in (cfg.get("agents") or []) if a]
+            agent = agents[0] if agents else "default"
         return os.path.join(req_dir, agent)
     return req_dir
 

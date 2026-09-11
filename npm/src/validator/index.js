@@ -414,18 +414,33 @@ function listReqMdFiles(dir) {
   } catch (_) { return [] }
 }
 
+// resolveAgentForWrite — ponto único de resolução do agente de escrita em modo by_agent.
+// Regra (AC5, AC10, KG 2026-08-29):
+//   - explicitAgent fornecido  → usa-o (AC4/AC5b: valor fora de agents: é permitido, produz violação de namespace)
+//   - agents: com UM namespace → usa aquele, sem erro (AC14: projeto single-agent nunca vê o erro)
+//   - agents: vazio            → usa "default"
+//   - agents: com VÁRIOS       → lança erro nomeando todas as opções (AC5: silêncio de agents[0] deixa de existir)
+// Nomes vazios em agents: não contam (agents: ["", "zeus"] é UM namespace) — filter antes de contar.
+function resolveAgentForWrite(cfg, explicitAgent) {
+  if (explicitAgent) return explicitAgent
+  const agents = (cfg.agents || []).filter(a => a)
+  if (agents.length === 0) return 'default'
+  if (agents.length === 1) return agents[0]
+  throw new Error(`--agent is required when multiple namespaces are configured: ${agents.join(', ')}`)
+}
+
 // reqWriteDir é o PONTO ÚNICO que decide ONDE uma REQ nova é gravada (ADR-2026-09-03, D2/D4):
 //   flat     → req_dir/
-//   by_agent → req_dir/<agente>/   (primeiro de agents:, ou "default" se a lista é vazia)
+//   by_agent → req_dir/<agente>/   (agente resolvido via resolveAgentForWrite — AC4/AC5/AC10)
 // Consumido pelo gerador (newREQ); a união de leitura abaixo contém este diretório por construção.
-function reqWriteDir(cfg) {
+// Lança Error em by_agent com múltiplos namespaces e sem agente explícito (AC5).
+function reqWriteDir(cfg, agent) {
   const reqDir = cfg.reqDir || cfg.req_dir || ''
   if (!reqDir) return ''
   const namespacing = cfg.roadmapNamespacing || cfg.roadmap_namespacing || ''
   if (namespacing === 'by_agent') {
-    const agents = (cfg.agents || []).filter(a => a)
-    const agent = agents.length > 0 ? agents[0] : 'default'
-    return path.join(reqDir, agent)
+    const resolvedAgent = resolveAgentForWrite(cfg, agent)
+    return path.join(reqDir, resolvedAgent)
   }
   return reqDir
 }
@@ -3962,6 +3977,7 @@ module.exports = {
   tryListDir,
   resolveReqFiles,
   reqWriteDir,
+  resolveAgentForWrite,
   resolveStateDirs,
   resolveWIPDirs,
   resolveDoneDirs,

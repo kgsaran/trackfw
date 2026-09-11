@@ -4,7 +4,7 @@ const path = require('path')
 const { localDateISO } = require('./date')
 const roadmapGen = require('./roadmap')
 const config = require('../config')
-const { resolveAgentNamespaces, resolveReqFiles, reqWriteDir } = require('../validator')
+const { resolveAgentNamespaces, resolveReqFiles, reqWriteDir, resolveAgentForWrite } = require('../validator')
 const { normalizeCRLF } = require('../integrations/render')
 
 const VALID_STATES = roadmapGen.VALID_STATES
@@ -242,13 +242,30 @@ function toSlug(s) {
 /**
  * newREQ — cria docs/req/REQ-YYYY-MM-DD-<slug>.md.
  * @param {{ title: string, motivation?: string, criteria?: string, dependsOnADRs?: string[] }} content
+ * @param {string} [agent] - agente explícito via --agent (AC4/AC5/AC10)
  * @returns {Promise<void>}
  */
-async function newREQ(content) {
+async function newREQ(content, agent) {
   // Ponto único de decisão de caminho de ESCRITA (ADR-2026-09-03, D2/D4): by_agent grava no
   // canônico req_dir/<agente>/; flat grava em req_dir/ — o mesmo ponto que alimenta a união de leitura.
+  // Em by_agent com múltiplos namespaces sem --agent, reqWriteDir lança erro de ambiguidade (AC5/AC10).
   const cfg = require('../config').load()
-  const reqDir = reqWriteDir(cfg) || cfg.reqDir
+  let reqDir
+  let resolvedAgent = ''
+  try {
+    reqDir = reqWriteDir(cfg, agent) || cfg.reqDir
+    // Resolve o agente para o frontmatter squad: (mesmo valor que vai para o caminho — AC4).
+    // Mantido no mesmo try: reqWriteDir chama resolveAgentForWrite internamente; se lançou, já
+    // saímos. Chamar de novo aqui reaproveita a mesma resolução sem adicionar novo ponto de falha.
+    const namespacing = cfg.roadmapNamespacing || cfg.roadmap_namespacing || ''
+    if (namespacing === 'by_agent') {
+      resolvedAgent = resolveAgentForWrite(cfg, agent)
+    }
+  } catch (err) {
+    console.error(`Error: ${err.message}`)
+    process.exitCode = 1
+    return
+  }
   fs.mkdirSync(reqDir, { recursive: true })
 
   const slug = toSlug(content.title)
@@ -280,12 +297,15 @@ async function newREQ(content) {
     blockedSection = lines.join('\n')
   }
 
+  const squadField = resolvedAgent ? `"${resolvedAgent}"` : '""'
+
   const body = `---
 status: Open
 date: ${date}
 author: ""
 adr: ""
 roadmap: ""
+squad: ${squadField}
 ---
 
 # REQ: ${content.title}

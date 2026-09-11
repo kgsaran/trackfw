@@ -24,7 +24,7 @@ func newRoadmapCmd() *cobra.Command {
 }
 
 func newRoadmapNewCmd() *cobra.Command {
-	var title, reqPath, fromReq string
+	var title, reqPath, fromReq, agentFlag string
 	cmd := &cobra.Command{
 		Use:   "new",
 		Short: "Create a new roadmap from a REQ",
@@ -34,12 +34,13 @@ func newRoadmapNewCmd() *cobra.Command {
 			// com newline). O uso correto do comando não muda após um erro de entrada.
 			cmd.SilenceUsage = true
 
-			// --from-req: gera roadmap pré-preenchido com MLs extraídos da REQ
+			// --from-req: gera roadmap pré-preenchido com MLs extraídos da REQ.
+			// --agent é passado para herança AC11: --agent > derivado do caminho da REQ > único agente.
 			if fromReq != "" {
-				return generators.NewRoadmapFromREQ(fromReq)
+				return generators.NewRoadmapFromREQ(fromReq, agentFlag)
 			}
 
-			// --req flag bypasses wizard entirely
+			// --req flag bypasses wizard entirely; herda agente da REQ quando --agent não fornecido.
 			if reqPath != "" {
 				if title == "" {
 					title = strings.TrimSuffix(filepath.Base(reqPath), ".md")
@@ -48,6 +49,7 @@ func newRoadmapNewCmd() *cobra.Command {
 				return generators.NewRoadmapFromContent(generators.RoadmapContent{
 					Title:   title,
 					REQPath: reqPath,
+					Agent:   agentFlag,
 				})
 			}
 
@@ -92,12 +94,14 @@ func newRoadmapNewCmd() *cobra.Command {
 			return generators.NewRoadmapFromContent(generators.RoadmapContent{
 				Title:   title,
 				REQPath: selectedREQ,
+				Agent:   agentFlag,
 			})
 		},
 	}
 	cmd.Flags().StringVarP(&title, "title", "t", "", "Roadmap title")
 	cmd.Flags().StringVarP(&reqPath, "req", "r", "", "Path to the linked REQ file")
 	cmd.Flags().StringVar(&fromReq, "from-req", "", "Generate roadmap with ML stubs from REQ acceptance criteria")
+	cmd.Flags().StringVar(&agentFlag, "agent", "", "Agent namespace in by_agent projects")
 	return cmd
 }
 

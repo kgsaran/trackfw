@@ -13,9 +13,10 @@ from trackfw.generators.roadmap import (
     move_roadmap,
     sync_paired_req_references,
     _normalize_ref_separator,
+    _agent_from_req_path,
     VALID_STATES,
 )
-from trackfw.validator import resolve_agent_namespaces
+from trackfw.validator import resolve_agent_namespaces, resolve_write_agent
 
 
 # ---------------------------------------------------------------------------
@@ -85,14 +86,48 @@ def _find_file(name: str, roadmap_dir: str, namespacing: str, agents=None) -> st
 def _cmd_new(args):
     cfg = cfg_module.load()
     agent = getattr(args, "agent", None)
+    namespacing = cfg.get("roadmap_namespacing", "flat")
+
     try:
-        if args.from_req:
+        if namespacing == cfg_module.NAMESPACING_BY_AGENT:
+            req_path = getattr(args, "req", None) or ""
+            from_req = getattr(args, "from_req", None)
+
+            if agent is None:
+                # Herança de agente a partir do caminho da REQ (AC11):
+                # req_dir/<agent>/REQ.md → agent = _agent_from_req_path(req_path)
+                # Só herda se a REQ estiver em subpasta de req_dir (ou seja,
+                # dirname(dirname(abs_req)) == abs_req_dir). REQs em flat-layout ou fora
+                # de req_dir caem no resolve_write_agent para preservar a regra de ambiguidade.
+                inherited = None
+                candidate = req_path or from_req or ""
+                if candidate:
+                    abs_req = os.path.abspath(candidate)
+                    abs_req_dir = os.path.abspath(cfg.get("req_dir", "docs/req"))
+                    # O pai direto da REQ deve ser exatamente uma subpasta de req_dir
+                    req_parent_dir = os.path.dirname(abs_req)
+                    req_grandparent = os.path.dirname(req_parent_dir)
+                    if os.path.normcase(req_grandparent) == os.path.normcase(abs_req_dir):
+                        # Estrutura by_agent confirmada: req_dir/<agent>/REQ.md
+                        inherited = _agent_from_req_path(abs_req)
+                if inherited:
+                    agent = inherited
+                else:
+                    # Nenhuma herança válida: resolve por regra de ambiguidade/única-opção.
+                    agent = resolve_write_agent(cfg, None)
+            # else: --agent explícito, usa como está (AC5b: fora de agents: é válido)
+
+        if getattr(args, "from_req", None):
             path = generate_roadmap_from_req(args.from_req, cfg, agent=agent)
         else:
             title_arg = " ".join(args.title) if isinstance(args.title, list) else args.title
             title = title_arg or args.title_flag or "New Roadmap"
-            path = generate_roadmap(title, cfg, agent=agent, req_path=args.req or "")
+            req_path = getattr(args, "req", None) or ""
+            path = generate_roadmap(title, cfg, agent=agent, req_path=req_path)
         print(f"Roadmap criado: {path}")
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
     except Exception as e:
         print(f"Erro ao criar roadmap: {e}", file=sys.stderr)
         sys.exit(1)

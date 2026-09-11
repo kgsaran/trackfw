@@ -3,7 +3,7 @@ const fs = require('fs')
 const path = require('path')
 const config = require('../config')
 const { localDateISO } = require('./date')
-const { resolveReqFiles, resolveAgentNamespaces } = require('../validator/index.js')
+const { resolveReqFiles, resolveAgentNamespaces, resolveAgentForWrite } = require('../validator/index.js')
 const { normalizeRefSeparator: pathfmtNormalizeRefSeparator } = require('../lib/pathfmt')
 const { normalizeCRLF } = require('../integrations/render')
 
@@ -65,13 +65,43 @@ function stateDir(state) {
   return cfg.roadmapDir + '/' + state
 }
 
+// agentFromPath — extrai o nome do agente a partir de um caminho de arquivo dentro de baseDir.
+// Estratégia relative-to-base: relativiza o filePath em relação a baseDir e retorna o primeiro
+// segmento do caminho relativo. Funciona para:
+//   req_dir/<agent>/REQ-x.md          → agent
+//   req_dir/<agent>/wip/REQ-x.md      → agent  (layout legado)
+//   roadmap_dir/<agent>/wip/R.md      → agent
+// Usa realpathSync para resolver symlinks antes de computar o relativo — necessário no macOS onde
+// /var é link para /private/var: sem resolução, path.relative produz '../..' em vez do agente.
+// Equivalente ao agentDir/agent inline do moveRoadmap — extraído para função nomeada (AC11).
+function agentFromPath(filePath, baseDir) {
+  let abs, base
+  try {
+    abs = fs.realpathSync(filePath)
+  } catch (_) {
+    abs = path.resolve(filePath)
+  }
+  try {
+    base = fs.realpathSync(path.resolve(baseDir))
+  } catch (_) {
+    base = path.resolve(baseDir)
+  }
+  const rel = path.relative(base, abs)
+  const parts = rel.split(path.sep)
+  // Arquivo direto em baseDir (1 segmento): não é um namespace, retorna vazio.
+  // Segmento inválido ('.' ou '..'): baseDir não contém filePath, retorna vazio.
+  if (parts.length < 2) return ''
+  if (!parts[0] || parts[0] === '.' || parts[0] === '..') return ''
+  return parts[0]
+}
+
 // agentStateDir retorna o diretório para um agente+estado em modo by_agent.
-// agent=null usa o primeiro agente configurado (ou "default" se lista vazia).
+// agent=null: delega a resolveAgentForWrite (que lança em multi-agente sem flag — AC5).
 function agentStateDir(agent, state) {
   const cfg = config.load()
   if (!VALID_STATES.includes(state)) return null
   if (!agent) {
-    agent = cfg.agents && cfg.agents.length > 0 ? cfg.agents[0] : 'default'
+    agent = resolveAgentForWrite(cfg, undefined)
   }
   return cfg.roadmapDir + '/' + agent + '/' + state
 }
@@ -264,8 +294,7 @@ function moveRoadmap(name, state) {
   let targetDir, fromState, logBasename
 
   if (cfg.roadmapNamespacing === config.NAMESPACING_BY_AGENT) {
-    const agentDir = path.dirname(path.dirname(src))
-    const agent = path.basename(agentDir)
+    const agent = agentFromPath(src, cfg.roadmapDir)
     fromState = path.basename(path.dirname(src))
     targetDir = agentStateDir(agent, state)
     if (!targetDir) {
@@ -492,9 +521,12 @@ function syncReqReferences(movedBasename, newRoadmapPath, cfg) {
 
 /**
  * newRoadmap — cria roadmap em <roadmapDir>/backlog/ROADMAP-YYYY-MM-DD-<slug>.md.
- * Em modo by_agent, usa o primeiro agente configurado.
+ * Em modo by_agent, usa o agente explícito ou detecta via resolveAgentForWrite (AC4/AC5).
+ * @param {string} title
+ * @param {string} reqPath - caminho da REQ vinculada (opcional)
+ * @param {string} [agent] - agente explícito via --agent (opcional; derivado da REQ se --req fornecido)
  */
-function newRoadmap(title, reqPath) {
+function newRoadmap(title, reqPath, agent) {
   // AC1/AC2: o título é dado de uma linha — newline e CR são entrada malformada.
   // Mensagem byte-idêntica nos 3 CLIs (docs/cli-parity.md).
   if (/[\n\r]/.test(title)) {
@@ -508,8 +540,20 @@ function newRoadmap(title, reqPath) {
   const slug = toSlug(title)
 
   let backlogDir
+  let resolvedAgent = ''
   if (cfg.roadmapNamespacing === config.NAMESPACING_BY_AGENT) {
-    backlogDir = agentStateDir(null, 'backlog')
+    // AC11: se --req fornecido e sem --agent explícito, deriva o agente da REQ (reusa agentFromPath)
+    if (!agent && reqPath) {
+      agent = agentFromPath(reqPath, cfg.reqDir || 'docs/req')
+    }
+    try {
+      resolvedAgent = resolveAgentForWrite(cfg, agent)
+    } catch (err) {
+      console.error(`Error: ${err.message}`)
+      process.exitCode = 1
+      return
+    }
+    backlogDir = agentStateDir(resolvedAgent, 'backlog')
     if (!backlogDir) {
       console.error('cannot resolve backlog dir in by_agent mode')
       process.exitCode = 1
@@ -523,12 +567,13 @@ function newRoadmap(title, reqPath) {
   fs.mkdirSync(backlogDir, { recursive: true })
 
   const reqField = reqPath ? `"${reqPath}"` : '""'
+  const squadField = resolvedAgent ? `"${resolvedAgent}"` : '""'
 
   const body = `---
 status: backlog
 date: ${date}
 req: ${reqField}
-squad: ""
+squad: ${squadField}
 ---
 
 # Roadmap: ${title}
@@ -564,8 +609,10 @@ ${WAVE0_BLOCK}## Wave 1 — <name> (parallel MLs)
 /**
  * newRoadmapFromReq — lê uma REQ e gera roadmap pré-preenchido com MLs extraídos
  * dos critérios de aceite.
+ * @param {string} reqPath
+ * @param {string} [agent] - agente explícito via --agent (AC11: herda do path da REQ se omitido)
  */
-function newRoadmapFromReq(reqPath) {
+function newRoadmapFromReq(reqPath, agent) {
   let data
   try {
     data = fs.readFileSync(reqPath, 'utf8')
@@ -591,8 +638,20 @@ function newRoadmapFromReq(reqPath) {
   const slug = toSlug(title)
 
   let backlogDir
+  let resolvedAgent = ''
   if (cfg.roadmapNamespacing === config.NAMESPACING_BY_AGENT) {
-    backlogDir = agentStateDir(null, 'backlog')
+    // AC11: herda o agente do caminho da REQ reusando agentFromPath (mesmo mecanismo de moveRoadmap)
+    if (!agent) {
+      agent = agentFromPath(reqPath, cfg.reqDir || 'docs/req')
+    }
+    try {
+      resolvedAgent = resolveAgentForWrite(cfg, agent)
+    } catch (err) {
+      console.error(`Error: ${err.message}`)
+      process.exitCode = 1
+      return
+    }
+    backlogDir = agentStateDir(resolvedAgent, 'backlog')
     if (!backlogDir) {
       console.error('cannot resolve backlog dir in by_agent mode')
       process.exitCode = 1
@@ -622,12 +681,13 @@ function newRoadmapFromReq(reqPath) {
   const mlSection = WAVE0_BLOCK + mlLines.join('\n')
 
   const adrRef = linkedADR ? `\nADR: ${linkedADR}` : ''
+  const squadField = resolvedAgent ? `"${resolvedAgent}"` : '""'
 
   const body = `---
 status: backlog
 date: ${date}
 req: "${reqPath}"
-squad: ""
+squad: ${squadField}
 ---
 
 # Roadmap: ${title}
@@ -769,6 +829,7 @@ module.exports = {
   newRoadmapFromReq,
   stateDir,
   agentStateDir,
+  agentFromPath,
   VALID_STATES,
   STATE_ORDER,
   toSlug,

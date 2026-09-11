@@ -1453,31 +1453,70 @@ func ResolveAgentNamespaces(cfg config.ProjectConfig, dir string) []string {
 // conceito de roadmap. Nada aqui deve ser usado para ESCREVER REQ.
 var reqLayoutStates = []string{"backlog", "analyzing", "wip", "blocked", "done", "abandoned"}
 
+// ResolveWriteAgent resolve o namespace de agente para escrita em modo by_agent.
+//
+//   - Em modo flat: retorna ("", nil) — o chamador escreve na raiz, sem subdirectório de agente.
+//   - flagAgent não-vazio: retorna-o sem validação contra agents:. O valor fora de agents: cria o
+//     namespace e dispara a violação agent_namespace_undeclared da REQ irmã (AC5b).
+//   - by_agent + exatamente um namespace não-vazio em agents:: retorna aquele, sem necessidade de flag.
+//   - by_agent + zero namespaces não-vazios: retorna ("default", nil) — comportamento de fallback.
+//   - by_agent + dois ou mais namespaces não-vazios e sem flag: retorna erro nomeando as opções.
+//
+// Nomes vazios em agents: não contam — mesma noção de REQWriteDir e agentStateDir (filtrar, não indexar).
+func ResolveWriteAgent(cfg config.ProjectConfig, flagAgent string) (string, error) {
+	if cfg.RoadmapNamespacing != config.NamespacingByAgent {
+		return "", nil
+	}
+	if flagAgent != "" {
+		return flagAgent, nil
+	}
+	// Filtrar nomes vazios — mesma convenção do lado leitor (resolveAgentNamespaces).
+	var nonEmpty []string
+	for _, a := range cfg.Agents {
+		if a != "" {
+			nonEmpty = append(nonEmpty, a)
+		}
+	}
+	switch len(nonEmpty) {
+	case 0:
+		return "default", nil
+	case 1:
+		return nonEmpty[0], nil
+	default:
+		return "", fmt.Errorf(
+			"by_agent project has multiple agent namespaces (%s): use --agent to specify one",
+			strings.Join(nonEmpty, ", "),
+		)
+	}
+}
+
 // REQWriteDir é o PONTO ÚNICO que decide ONDE uma REQ nova é gravada (ADR-2026-09-03, D2/D4):
 //   - flat      → req_dir/
-//   - by_agent  → req_dir/<agente>/   (agente = primeiro de agents:, ou "default" se a lista é vazia;
-//     mesma convenção de agentStateDir em internal/generators/roadmap.go)
+//   - by_agent  → req_dir/<agente>/   (agente pré-resolvido pelo chamador via ResolveWriteAgent)
 //
 // 🔴 O par escritor/leitor não pode ter duas noções de layout (D4). Este ponto e ResolveREQFiles
 // abaixo são consumidos pelos DOIS lados; a união de leitura contém, por construção, o diretório
 // devolvido aqui. Alterar um sem o outro é exatamente o defeito que a REQ-2026-08-30 fecha.
-func REQWriteDir(cfg config.ProjectConfig) string {
+//
+// agent deve ser o valor já resolvido por ResolveWriteAgent — não chamar esta função com ""
+// em modo by_agent (o fallback interno existe apenas para compatibilidade de chamadores antigos).
+func REQWriteDir(cfg config.ProjectConfig, agent string) string {
 	reqDir := cfg.REQDir
 	if reqDir == "" {
 		return ""
 	}
 	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
-		// S5 (hades-tf 2026-09-03): FILTRAR os vazios, não testar só o índice 0. Com
-		// agents: ["", "zeus"] o teste em cfg.Agents[0] caía em "default" enquanto Node e Python
-		// escolhiam "zeus" — mesmo trackfw.yaml, dois destinos de escrita, regra dura de paridade
-		// violada dentro da função criada por este PR. Filtrar é também o que o LADO LEITOR já faz
-		// (resolveAgentNamespaces descarta a == ""), então o par escritor/leitor volta a ter UMA
-		// noção de agente (D4). String vazia não é nome de agente: é ausência de entrada.
-		agent := "default"
-		for _, a := range cfg.Agents {
-			if a != "" {
-				agent = a
-				break
+		if agent == "" {
+			// Fallback interno: filtrar vazios, mesmo que ResolveWriteAgent já deva ter resolvido.
+			// S5 (hades-tf 2026-09-03): FILTRAR os vazios, não testar só o índice 0.
+			for _, a := range cfg.Agents {
+				if a != "" {
+					agent = a
+					break
+				}
+			}
+			if agent == "" {
+				agent = "default"
 			}
 		}
 		return filepath.Join(reqDir, agent)

@@ -116,7 +116,7 @@ echo "ML-0A gate: OK"
 - [ ] 🔴 Nenhum arquivo fora de `internal/` tocado
 
 ### ML-1B — Node
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Arquivos afetados:** `npm/src/generators/req.js`, `npm/src/generators/roadmap.js`,
 `npm/src/commands/req.js`, `npm/src/commands/roadmap.js`, e os testes em `npm/tests/`.
 **Acoes:** o contrato comum acima, no runtime Node.
@@ -126,16 +126,16 @@ echo "ML-0A gate: OK"
 - [ ] 🔴 Nenhum arquivo fora de `npm/` tocado
 
 ### ML-1C — Python
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Arquivos afetados:** `pypi/trackfw/generators/req.py`, `pypi/trackfw/generators/roadmap.py`,
 `pypi/trackfw/commands/req.py`, `pypi/trackfw/commands/roadmap.py`, e os testes em `pypi/tests/`.
 **Acoes:** o contrato comum acima, no runtime Python. **Atencao:** o `--agent` do `roadmap new` **ja
 existe** aqui (`pypi/trackfw/commands/roadmap.py:211`) — estender para `req new` e alinhar o
 comportamento sem-flag, nao reescrever o que ja funciona.
 **Criterios de aceite:**
-- [ ] Contrato comum inteiro, com os 4 cenarios de teste
-- [ ] Suite do Python verde
-- [ ] 🔴 Nenhum arquivo fora de `pypi/` tocado
+- [x] Contrato comum inteiro, com os 4 cenarios de teste
+- [x] Suite do Python verde (1714 passed)
+- [x] 🔴 Nenhum arquivo fora de `pypi/` tocado
 
 ---
 
@@ -208,3 +208,64 @@ podem ser editados em paralelo com nada.
   `REQ-2026-09-11-by-agent-req-new-...` foi aberta por engano antes de eu encontrar esta, e esta
   **superseded**. Mesma causa ⇒ mesma REQ ⇒ **mesmo PR**.
 - A decisao de mecanismo e do KG, 2026-08-29, e esta na REQ. **Nao reabrir.**
+
+---
+
+## 🔴 Barreira da Wave 1 — 2026-09-11 — DOIS bloqueios medidos pelo arquiteto
+
+### B1 — Go (ML-1A): AC11 **não entregue**, e o teste afirma outra coisa
+
+Medido com binário recém-compilado, projeto descartável `agents: [alpha, beta]`:
+
+```
+$ trackfw req new "t" --agent beta
+created docs/req/beta/REQ-2026-09-11-t.md
+
+$ trackfw roadmap new "rm" --req docs/req/beta/REQ-2026-09-11-t.md
+Error: by_agent project has multiple agent namespaces (alpha, beta): use --agent to specify one
+rc = 1 · roadmaps criados: NENHUM
+```
+
+**O AC11 diz:** `roadmap new --req <caminho>` **herda o agente da REQ**. O binário **erra**.
+
+🔴 **E o ML escreveu, no próprio teste, que não ia entregar:**
+
+```go
+// Nota: NewRoadmapFromContent com --req direto exige --agent explícito (sem herança).
+// A herança é exclusiva do caminho --from-req (NewRoadmapFromREQ).
+```
+
+O `TestRoadmapFromREQ_InheritsAgentFromREQPath` **passa** — porque exercita `NewRoadmapFromREQ`
+(`--from-req`), que **não é o caminho que o AC11 nomeia**. É a `Regra Dura de Reconciliação` no seu
+caso exato: **teste verde afirmando conclusão diferente da do AC**, com a divergência declarada em
+comentário e ninguém confrontando.
+
+**Causa provável:** em `NewRoadmapFromContent` (`internal/generators/roadmap.go:193`) a guarda
+`ResolveWriteAgent` roda **antes** de qualquer derivação a partir de `content.REQPath`. Em
+`NewRoadmapFromREQ` (`:298`) a ordem está certa — `agentFromPath` primeiro, `ResolveWriteAgent`
+depois. **Os dois caminhos do mesmo comando têm ordens diferentes.**
+
+⚠️ **Também não pegou porque os testes unitários chamam o gerador direto**, pulando a camada de
+comando. O E2E com binário real é o que separou.
+
+### B2 — Node (ML-1B): `squad:` no frontmatter da **REQ** — não autorizado, e quebra paridade
+
+O ML-1B acrescentou `squad: "<agente>"` ao frontmatter da REQ (`npm/src/generators/req.js:300,308`),
+e ele mesmo avisou que `scripts/check-artifact-parity.sh` faz **diff byte-a-byte** entre os 3 CLIs.
+Medido: **Go não tem, Python não tem, Node tem.** O gate vai reprovar.
+
+**Decisão do arquiteto: REVERTER no Node. A REQ NÃO ganha `squad:`.**
+
+🔴 O agente de uma REQ **já está no caminho** (`req_dir/<agente>/`). Acrescentar `squad:` cria uma
+**segunda fonte de verdade que pode divergir da pasta** — que é exatamente a classe de defeito que esta
+REQ existe para fechar (`agents:` virou fotografia e divergiu do disco). Uma REQ movida entre
+namespaces passaria a mentir no frontmatter.
+
+O "um valor, dois efeitos" do AC4 vale para o **roadmap**, cujo frontmatter **já tem** `squad:`. O
+template da REQ nunca teve, e acrescentar chave ao schema é decisão de template — não efeito colateral
+de um ML de resolução de agente.
+
+### Consequência de governança
+
+A Wave 2 **não é liberada** até B1 e B2 fecharem. Os dois são microlotes corretivos na wave vigente,
+não REQ nova: **mesma causa, mesma REQ, mesmo PR.**
