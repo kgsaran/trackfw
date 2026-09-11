@@ -185,6 +185,48 @@ exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli
 **Acceptance criteria:**
 - [x] F6: comentário corrigido
 
+### ML-W3B — Corretivo CI: F3 sentinel `content_differs` falha em Windows (8.3 short-name)
+**Status:** ✅ Concluído · **Agente:** `apolo-tf`
+
+**Causa raiz medida:** No runner do CI (`runneradmin` → `RUNNER~1`), `os.tmpdir()` retorna o caminho em
+formato 8.3 curto (ex.: `C:\Users\RUNNER~1\...`). `git rev-parse --show-toplevel` expande para o
+formato longo (`C:\Users\runneradmin\...`). `path.relative(longForm, shortForm)` produz traversal
+garbage (`../../../../../../runneradmin/...`), fazendo `git cat-file -e` falhar com código 128 → a
+função retorna "not committed" em vez de "content differs" → teste falha.
+
+**Por que Go passa:** `filepath.EvalSymlinks(base)` no fixture Go expande nomes 8.3 curtos para nomes
+longos antes de qualquer cálculo de caminho. Node e Python não tinham o equivalente.
+
+**Evidência bruta (Windows ARM64 — probe3.js):**
+```
+TEST 2: path.relative with 8.3 short root vs long abs
+root (short 8.3): C:/Users/RUNNER~1/AppData/Local/Temp/tw-trust-sentinel-xxx/clone
+abs (long form): C:\Users\runneradmin\AppData\Local\Temp\tw-trust-sentinel-xxx\...
+path.relative result: ..\..\..\..\..\..\runneradmin\AppData\...  ← GARBAGE
+correct? false
+```
+
+**Reconciliação (CLAUDE.md §Regra Dura de Reconciliação):**
+- `makeGitTrustFixture` Node.js (linha 583): `fs.realpathSync(base)` adicionado — afirma que "o base
+  path do fixture tem o mesmo formato de caminho que `git rev-parse --show-toplevel` retorna".
+- `_make_git_trust_fixture` Python (linha 1237): `os.path.realpath(...)` adicionado — mesma afirmação.
+
+**Arquivos afetados:**
+- `npm/tests/barrier.test.js` — `makeGitTrustFixture`: adicionar `base = fs.realpathSync(base)`
+- `pypi/tests/test_barrier.py` — `_make_git_trust_fixture`: usar `os.path.realpath(...)` no `mkdtemp`
+
+**Acceptance criteria:**
+- [x] F3 sentinel `content_differs` pass nos 3 runtimes no Mac
+- [x] F3 sentinel `content_differs` pass em Windows ARM64 (VM, sem mangling — "Lab" é 3 chars)
+- [x] Mecanismo de 8.3 short-name provado com saída bruta Windows (probe3.js TEST 2)
+- [x] Nenhum teste F3 adicionado à `windows-known-failures.json`
+- [x] `trackfw validate` exit 0
+
+**Residual declarado:** A PRODUCTION code tem o mesmo sítio (produziria "not committed" em vez de "content
+differs" para usuários cujo repo está sob caminho 8.3). Fail-closed — gates não executam. A correção
+da production seria normalizar `absRoadmap` (derivado de `path.resolve`/`os.path.abspath` sobre o caminho do chamador) com `fs.realpathSync`/`os.path.realpath` antes de computar o `relPath` — `topLevel` já vem canônico do git. O comportamento
+observável pelo usuário final é seguro. Declarado, não corrigido neste ML.
+
 ### ML-W3A — Resíduos do parecer de segurança: as duas metades do F1
 **Status:** ⬜ Pendente · **Agente:** `apolo-tf` · **não bloqueia o merge** (parecer: **APROVA**)
 

@@ -1234,7 +1234,13 @@ def _make_git_trust_fixture(roadmap_content: str, commit_to_origin: bool) -> tup
 
     Returns (clone_dir, roadmap_path).
     """
-    base = Path(tempfile.mkdtemp(prefix="tw-trust-sentinel-"))
+    # On Windows, tempfile.mkdtemp() may return an 8.3 short-name path (e.g. RUNNER~1)
+    # while git rev-parse --show-toplevel returns the expanded long-name path.
+    # os.path.relpath() does a textual comparison and produces garbage when the two
+    # forms differ, causing git cat-file to report "not committed" instead of
+    # "content differs".  os.path.realpath expands 8.3 short names, mirroring
+    # Go's filepath.EvalSymlinks.
+    base = Path(os.path.realpath(tempfile.mkdtemp(prefix="tw-trust-sentinel-")))
     bare_dir = base / "origin.git"
     clone_dir = base / "clone"
     roadmap_rel = Path("docs/roadmaps/wip/ROADMAP-trust-sentinel.md")

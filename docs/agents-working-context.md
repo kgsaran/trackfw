@@ -4,6 +4,45 @@
 
 ---
 
+## Sessão 2026-09-10l — apolo-tf (Backend) — Corretivo ML-W3B: 2 falhas Windows CI (F3 sentinel content_differs): CONCLUÍDO, aguarda auditoria do arquiteto
+
+Branch `fix/barrier-executa-gate-de-roadmap-nao-confiavel`.
+
+**Escopo:** 2 falhas novas introduzidas em PR #316 no CI do Windows (run 34543267481):
+- `F3 sentinel: local content differs from origin/main prevents gate execution` (Node.js)
+- `test_f3_sentinel_content_differs_from_origin_prevents_gate_execution` (Python)
+
+**Causa raiz confirmada por log primário do CI** (não simulada): `TEMP` do runner do GitHub Actions retorna `C:\Users\RUNNER~1\...` (forma 8.3 curta). `git rev-parse --show-toplevel` retorna forma longa (`C:/Users/runneradmin/...`). `path.relative(longa, curta)` → garbage → `git cat-file -e .../<garbage>` → exit 128 → função retorna "not committed" em vez de "content differs". Go passa porque `filepath.EvalSymlinks(base)` em `makeTrustGitFixture` expande o 8.3 antes de qualquer comparação.
+
+**Correção:** código de teste apenas (produção não tocada):
+- `npm/tests/barrier.test.js` (linha 583): `try { base = fs.realpathSync(base) } catch (_) { }` após `mkdtempSync`
+- `pypi/tests/test_barrier.py` (linha 1237): `base = Path(os.path.realpath(tempfile.mkdtemp(...)))`
+
+**Residual corrigido:** wording incorreto "normalizar topLevel" → corrigido para "normalizar absRoadmap" em vault note e roadmap ML-W3B (topLevel já vem canônico do git; absRoadmap é o lado exposto ao TEMP curto).
+
+**Status:** CONCLUÍDO — aguarda auditoria do trackfw_architect. `make quality` a completar em background (chunks 0-6 OK, chunk 7 em andamento; todos os testes unitários e parity checks green).
+
+**Evidências medidas:**
+- Log CI run 34543267481: actual `"roadmap is not committed in origin/main"` — confirma hipótese 8.3 short-name
+- Go: `go test ./...` — todos green (EXIT 0)
+- Node.js (Mac): 1678 passed, 0 failed — F3 sentinel 3/3 pass
+- Python (Mac): 1678 passed, 66 subtests — F3 sentinel 3/3 pass
+- Node.js (Windows VM): F3 sentinel 3/3 pass (confirmado em sessão anterior)
+- Python (Windows VM): F3 sentinel 3/3 pass (confirmado em sessão anterior)
+- `make quality` em progresso: Go green, Node 1678/0, Python 1678/0, todos check-*.sh "All scenarios passed", falsify chunks 0-6 OK
+- `trackfw validate`: EXIT 0 (173 warnings pré-existentes, 0 erros)
+- `windows-known-failures.json`: NÃO modificado
+- Nenhuma assertion relaxada
+
+**Artefatos modificados:**
+- `npm/tests/barrier.test.js` — realpathSync após mkdtempSync em makeGitTrustFixture
+- `pypi/tests/test_barrier.py` — os.path.realpath no mkdtemp em _make_git_trust_fixture
+- `docs/roadmaps/wip/ROADMAP-2026-09-10-barrier-*.md` — ML-W3B adicionado (✅ Concluído)
+- `vault/notes/windows-8dot3-short-name-quebra-path-relative-em-fixture-git-2026-09-10.md` — novo
+- `vault/notes/index.md` — novo entry linkado
+
+---
+
 ## Sessão 2026-09-10k — hades-tf (Security) — Verificação de fechamento F1–F6: CONCLUÍDA
 
 Branch `fix/barrier-executa-gate-de-roadmap-nao-confiavel`.
@@ -35307,3 +35346,34 @@ Branch `fix/ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega`.
 **Superfícies confirmadas limpas:** parsing de stderr git (exit codes somente), injeção de shell, caminhos fail-open dentro das funções de confiança, uso de `--trust-local-gates` no harness.
 
 **Status:** Parecer entregue. Sem commit, sem push.
+
+## apolo-tf — 2026-09-10 — INÍCIO
+
+**Branch:** `fix/barrier-executa-gate-de-roadmap-nao-confiavel`
+**Roadmap:** `ROADMAP-2026-09-10-barrier-executa-gate-de-roadmap-nao-confiavel-porque-roadmaptrustforgates-falha-aberto-em-todo-caminho-de-erro.md`
+**ML:** ML-W3B (corretivo CI Windows F3 sentinel `content_differs`)
+
+**Tarefa:** Corrigir dois testes F3 sentinel que falhavam no CI Windows (CI run 34543267481):
+- `F3 sentinel: local content differs from origin/main prevents gate execution` (Node.js)
+- `test_barrier.py::test_f3_sentinel_content_differs_from_origin_prevents_gate_execution` (Python)
+
+**Diagnóstico:** Causa raiz medida com saída bruta Windows (probe3.js). No runner do CI,
+`os.tmpdir()` retorna caminho com 8.3 short name (`RUNNER~1`). `git rev-parse --show-toplevel`
+expande para nome longo. `path.relative(longo, curto)` produz lixo → `git cat-file -e` falha →
+"not committed" em vez de "content differs". Go passava porque já usava `filepath.EvalSymlinks`.
+
+**Correção aplicada (TEST CODE somente):**
+- `npm/tests/barrier.test.js` linha 583: adicionado `try { base = fs.realpathSync(base) } catch (_) { }`
+- `pypi/tests/test_barrier.py` linha 1237: `Path(os.path.realpath(tempfile.mkdtemp(...)))`
+
+**Evidências:**
+- Go tests: all green (Mac + CI)
+- Node.js: 66/66 pass Mac; F3 sentinel 3/3 pass Windows ARM64 VM
+- Python: F3 sentinel 3/3 pass Windows ARM64 VM
+- `trackfw validate`: exit 0
+
+**Sem commit, sem push** (aguardando auditoria de trackfw_architect).
+
+## apolo-tf — 2026-09-10 — FIM
+
+**Status:** ML-W3B ✅ Concluído. Entregando para auditoria do trackfw_architect.

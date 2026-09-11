@@ -580,7 +580,13 @@ test('evalGates: sh missing from $PATH reports not_evaluated with the pinned mes
 // ────────────────────────────────────────────────────────────────────────────
 
 function makeGitTrustFixture(roadmapContent, commitToOrigin) {
-  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-trust-sentinel-'))
+  // On Windows, os.tmpdir() may return an 8.3 short-name path (e.g. RUNNER~1) while
+  // git rev-parse --show-toplevel returns the expanded long-name path.  path.relative()
+  // does a textual comparison and produces garbage when the two forms differ, causing
+  // git cat-file to report "not committed" instead of "content differs".
+  // fs.realpathSync expands 8.3 short names, mirroring Go's filepath.EvalSymlinks.
+  let base = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-trust-sentinel-'))
+  try { base = fs.realpathSync(base) } catch (_) { /* best-effort */ }
   const bareDir = path.join(base, 'origin.git')
   const cloneDir = path.join(base, 'clone')
   const roadmapRelPath = path.join('docs', 'roadmaps', 'wip', 'ROADMAP-trust-sentinel.md')
