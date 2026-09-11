@@ -226,3 +226,96 @@ O implementador classificou `internal/commands/barrier.go:803`
 usuário"*. 🔴 **O argumento é tecnicamente errado** — o vault de 2026-08-23 documenta que roadmap de
 terceiro é exatamente o vetor de RCE do `barrier`. O sítio é pré-existente e fora do escopo desta
 REQ; o trust-check fechado hoje pode protegê-lo, mas **isso precisa ser dito, não presumido**.
+
+### ML-NOVO — 🔴 Gate que existe e ninguém invoca: a TERCEIRA instância do dia
+**Status:** ✅ Concluído · **Agente:** `ares-tf` · **classe, não instância**
+
+**Descoberto ao abrir o PR seguinte**, por um aviso do `trackfw push` sobre outra branch.
+
+O `scripts/check-serve-browser-security.sh` foi mergeado **sem estar ligado a alvo nenhum**. Ele
+existia, passava 21/21 quando invocado à mão, e **nunca rodava**.
+
+🔴 **A falha de auditoria foi do arquiteto:** eu rodei `bash scripts/check-serve-browser-security.sh`
+diretamente, vi 21/21 e concluí que funcionava. **Verifiquei que o gate funciona — não que alguma
+coisa o executa.**
+
+#### Terceira vez no mesmo dia
+
+```
+ratchet       job reprovava, não era `required`         → ninguém consumia o veredito
+baseline D4   não rodava, `origin/main` não fetchado    → ninguém consumia
+serve gate    existia, fora de todo alvo                → ninguém consumia
+```
+
+**Não é descuido repetido — é uma classe:** *construímos o mecanismo e não o ligamos a quem age
+sobre ele.* O ML-4B fechou a instância de CI (required × jobs declarados); esta é a de `scripts/` ×
+alvos.
+
+#### E a varredura achou um órfão pior
+
+```
+52 scripts check-*.sh
+ 4 fora do Makefile
+   3 invocados por workflow ou outro script   ← legítimo
+   1 invocado por NINGUÉM  →  check-raw-read-ban.sh
+```
+
+O `check-raw-read-ban.sh` nasceu no PR **#285**, e o comentário dele diz para que serve:
+
+> *"This gate is what stops the NEXT ml from reintroducing a raw call one site at a time, unnoticed —
+> which is exactly how the original 26 sites accumulated."*
+
+🔴 **Um gate anti-reintrodução da classe fail-open, inerte desde que foi escrito.** Rodado agora à
+mão: **passa** — a classe não voltou. Dano zero até aqui; proteção zero também.
+
+Os dois foram ligados ao `parity-rest` neste ML. **O que falta é impedir o terceiro.**
+
+#### O gate da classe
+
+Verificar que **todo `scripts/check-*.sh` tem consumidor** — alvo do `Makefile`, workflow, ou outro
+script. Reprovar nomeando o órfão.
+
+**Decisões registradas (ares-tf, 2026-09-11):**
+
+1. **O que conta como consumidor?** Invocação real (não apenas menção em comentário) em linha
+   não-comentário de: (a) recipe do Makefile (prefixo tab, não `\t#`); (b) qualquer `.sh` fora de
+   `scripts/testdata/` (linha não-comentário, não o próprio script); (c) qualquer `.yml` de
+   `.github/workflows` (linha não-comentário). Citação em `scripts/testdata/` é corpus congelado —
+   **nunca é execução**. Por que "citado por outro script basta" não é suficiente: um par de scripts
+   que se cita em comentários forma ciclo de citação que nunca chega a nenhum executor. O discriminante
+   é testdata: `check-integration-cli-parity.sh` é citado em corpus `.md` de testdata e em comentários
+   de vários scripts, mas o único consumo real é `bash "$ROOT_DIR/scripts/check-integration-cli-parity.sh"`
+   em `check-cli-parity.sh:211`. O gate confere isso; a citação de testdata provoca FAIL se o
+   exclusão for removida (arm 3 de `--self-test` confirma que a exclusão é load-bearing, não
+   decorativa).
+
+2. **Script novo sem consumidor: reprova.** Não avisa — avisos viraram ruído (issue #275). Reprovar
+   força o autor a ligar o script antes de mergear, que é exatamente o que faltou nas duas instâncias
+   anteriores de hoje.
+
+3. **Exceção declarada obrigatória com motivo.** Lista `EXCEPTIONS` no gate com formato
+   `"basename.sh|motivo"`. Entrada sem `|` ou com motivo vazio faz o gate reprovar — tolerância
+   silenciosa é o anti-padrão que este gate fecha. Lista vazia por padrão: nenhum script é
+   atualmente ferramenta manual legítima sem consumidor.
+
+**Medição de partida confirmada:** 52 scripts `check-*.sh`; 0 órfãos após os dois ligados
+neste ML (`check-raw-read-ban.sh` e `check-serve-browser-security.sh`). O gate passa com 53/53 OK
+(inclui a si mesmo). Medição `make parity-rest` → exit 0.
+
+**Falsificação (4 braços, todos `--self-test` OK):**
+- Arm 1: script sem consumidor ⇒ FAIL nomeando o script  
+- Arm 2: script ligado ao Makefile ⇒ PASS (contra-braço)  
+- Arm 3: script citado só em `scripts/testdata/*.sh` ⇒ FAIL; remover exclusão vira falso-PASS (confirma que exclusão é discriminante, não no-op)  
+- Arm 4a/4b: script em lista de exceção com motivo ⇒ PASS; sem motivo ⇒ FAIL
+
+**Reconciliação de testes:** o `--self-test` afirma que o gate detecta scripts órfãos e não detecta
+falsos positivos para os 4 casos definidos pela especificação — confirmado contra a medição de
+partida (0 órfãos reais = o braço sintético do arm 1 é o que prova que o gate não é vacuous).
+
+**Arquivos entregues:**
+- `scripts/check-orphan-gates.sh` (novo gate com `--self-test`)
+- `Makefile` — gate adicionado a `parity-rest` (dois passos: `--self-test` + scan completo)
+
+**Falsificação:** script sem consumidor ⇒ reprova nomeando · script ligado ao Makefile ⇒ passa
+(contra-braço) · script citado **só em testdata** ⇒ 🔴 reprova, porque testdata não executa ·
+script na lista de exceção ⇒ passa, e a lista **não pode estar vazia de motivo**.

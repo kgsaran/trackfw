@@ -66,6 +66,8 @@ parity-rest: build
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-agent-hooks-parity.sh
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-harness-hooks-parity.sh
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-serve-address-parity.sh
+	scripts/check-serve-browser-security.sh
+	scripts/check-raw-read-ban.sh
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-doctor-parity.sh
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-doctor-remote-parity.sh
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-agent-models-parity.sh
@@ -81,6 +83,10 @@ parity-rest: build
 	scripts/check-shell-posix-portability.sh
 	scripts/check-output-encoding-declared.sh
 	scripts/check-parity-call-site-pins.sh
+	# ML-NOVO (ROADMAP-2026-09-11-serve-interpola-host-...): gate da classe — todo
+	# check-*.sh deve ter consumidor. Inclui --self-test para falsificar os 4 braços.
+	scripts/check-orphan-gates.sh --self-test
+	scripts/check-orphan-gates.sh
 	# --self-test: `make parity` roda fora de um pull request, entao nao ha corpo de
 	# PR para medir. O autoteste exercita o MESMO matcher que o CI usa (nao ha
 	# segunda copia da regex) nas duas direcoes + a guarda de vacuidade. A medicao
