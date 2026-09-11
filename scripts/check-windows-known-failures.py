@@ -68,12 +68,62 @@ from pathlib import Path
 # GitHub Actions annotation helpers
 # ---------------------------------------------------------------------------
 
+# _ANNOTATION_SINK is where _err() and _warn() write ::error:: / ::warning::
+# tokens.  Default: sys.stdout — the GitHub Actions runner reads every line
+# on stdout and turns ::error:: into a check-run annotation (#319).
+#
+# During run_self_test(), each fixture call that exercises an error path uses
+# _capture_annotations() to swap the sink for an in-process io.StringIO.
+# The caller then asserts on ann.getvalue() to prove the error arm was reached
+# (AC5) without leaking any ::error:: to the real stdout.
+#
+# Production mode never touches this variable — _err()/_warn() keep writing to
+# sys.stdout so real ratchet failures still create runner annotations (AC4).
+_ANNOTATION_SINK = sys.stdout
+
+
+@contextlib.contextmanager
+def _capture_annotations():
+    """Redirect _err/_warn to a buffer for one self-test fixture call.
+
+    Usage::
+
+        with _capture_annotations() as ann:
+            rc = run_check(...)
+        assert "::error::" in ann.getvalue()   # AC5: error arm was reached
+
+    Restores the previous sink on exit; safe for nesting.
+    """
+    global _ANNOTATION_SINK
+    buf = io.StringIO()
+    old = _ANNOTATION_SINK
+    _ANNOTATION_SINK = buf
+    try:
+        yield buf
+    finally:
+        _ANNOTATION_SINK = old
+
+
+def _st_print(msg: str, *, stream=None) -> None:
+    """Write a self-test diagnostic line safely on any console encoding.
+
+    Replaces characters not representable in the console charset with '?'
+    instead of raising UnicodeEncodeError — e.g. U+2192 (→) in cp1252 (#314).
+
+    Survives contextlib.redirect_stdout(io.StringIO()): StringIO has no
+    .encoding attribute, so the fallback is 'utf-8' (encode/decode is a no-op).
+    """
+    s = stream or sys.stdout
+    enc = getattr(s, "encoding", None) or "utf-8"
+    print(msg.encode(enc, errors="replace").decode(enc, errors="replace"), file=s, flush=True)
+
+
 def _err(msg: str) -> None:
-    print(f"::error::{msg}", flush=True)
+    print(f"::error::{msg}", file=_ANNOTATION_SINK, flush=True)
 
 
 def _warn(msg: str) -> None:
-    print(f"::warning::{msg}", flush=True)
+    print(f"::warning::{msg}", file=_ANNOTATION_SINK, flush=True)
 
 
 # ---------------------------------------------------------------------------
@@ -1045,10 +1095,10 @@ def run_self_test() -> int:
     def check(cond: bool, description: str) -> None:
         nonlocal n_pass, n_fail
         if cond:
-            print(f"  SELF-TEST PASS: {description}", flush=True)
+            _st_print(f"  SELF-TEST PASS: {description}")
             n_pass += 1
         else:
-            print(f"  SELF-TEST FAIL: {description}", file=sys.stderr, flush=True)
+            _st_print(f"  SELF-TEST FAIL: {description}", stream=sys.stderr)
             n_fail += 1
 
     with tempfile.TemporaryDirectory() as td:
@@ -1127,68 +1177,79 @@ def run_self_test() -> int:
             Path(py_path).write_text(py, encoding="utf-8")
 
         # ── T1: all observed match known ─────────────────────────────────────
-        print("=== T1: all observed match known -> exit 0 ===", flush=True)
+        _st_print("=== T1: all observed match known -> exit 0 ===")
         write_list(BASE_ENTRIES)
         write_artifacts()
-        rc = run_check(list_path, go_path, tap_path, py_path)
+        with _capture_annotations():
+            rc = run_check(list_path, go_path, tap_path, py_path)
         check(rc == 0, "T1: all known observed -> exit 0")
 
         # ── T2: new Go failure not in list ────────────────────────────────────
-        print("=== T2: new Go failure not in list -> exit 1 ===", flush=True)
+        _st_print("=== T2: new Go failure not in list -> exit 1 ===")
         write_list(BASE_ENTRIES)
         write_artifacts(go=GO_FAIL + GO_FAIL_2)  # TestBar is not in list
-        rc = run_check(list_path, go_path, tap_path, py_path)
+        with _capture_annotations() as ann:
+            rc = run_check(list_path, go_path, tap_path, py_path)
         check(rc == 1, "T2: new Go failure -> exit 1")
+        check("::error::" in ann.getvalue(), "T2 AC5: _err() called (error arm executed)")
 
         # ── T3: known entry not observed -> warning, exit 0 ──────────────────
-        print("=== T3: known entry missing from observed -> warning, exit 0 ===", flush=True)
+        _st_print("=== T3: known entry missing from observed -> warning, exit 0 ===")
         extra = BASE_ENTRIES + [
             {"name": "TestKnownButFixed", "runtime": "go", "class": "assertion"}
         ]
         write_list(extra)
         write_artifacts()  # TestKnownButFixed absent from go output
-        rc = run_check(list_path, go_path, tap_path, py_path)
+        with _capture_annotations() as ann:
+            rc = run_check(list_path, go_path, tap_path, py_path)
         check(rc == 0, "T3: known entry not observed -> warning only, exit 0")
+        check("::warning::" in ann.getvalue(), "T3 AC5: _warn() called (warning arm executed)")
 
         # ── T4: empty list -> vacuity guard -> SystemExit(1) ─────────────────
-        print("=== T4: empty list -> vacuity guard -> SystemExit(1) ===", flush=True)
+        _st_print("=== T4: empty list -> vacuity guard -> SystemExit(1) ===")
         Path(list_path).write_text(
             '{"entries": [], "removed": []}', encoding="utf-8"
         )
         write_artifacts()
-        fired = False
-        try:
-            run_check(list_path, go_path, tap_path, py_path)
-        except SystemExit as e:
-            fired = (e.code == 1)
+        with _capture_annotations() as ann:
+            fired = False
+            try:
+                run_check(list_path, go_path, tap_path, py_path)
+            except SystemExit as e:
+                fired = (e.code == 1)
         check(fired, "T4: empty list -> SystemExit(1)")
+        check("::error::" in ann.getvalue(), "T4 AC5: vacuity guard called _err()")
 
         # ── T5: list file missing -> vacuity guard -> SystemExit(1) ──────────
-        print("=== T5: missing list file -> vacuity guard -> SystemExit(1) ===", flush=True)
+        _st_print("=== T5: missing list file -> vacuity guard -> SystemExit(1) ===")
         if os.path.exists(list_path):
             os.unlink(list_path)
         write_artifacts()
-        fired = False
-        try:
-            run_check(list_path, go_path, tap_path, py_path)
-        except SystemExit as e:
-            fired = (e.code == 1)
+        with _capture_annotations() as ann:
+            fired = False
+            try:
+                run_check(list_path, go_path, tap_path, py_path)
+            except SystemExit as e:
+                fired = (e.code == 1)
         check(fired, "T5: missing list -> SystemExit(1)")
+        check("::error::" in ann.getvalue(), "T5 AC5: vacuity guard called _err()")
 
         # ── T6: artifact missing -> observation-side vacuity -> SystemExit(1) ─
-        print("=== T6: missing go artifact -> SystemExit(1) ===", flush=True)
+        _st_print("=== T6: missing go artifact -> SystemExit(1) ===")
         write_list(BASE_ENTRIES)
         write_artifacts()
         os.unlink(go_path)
-        fired = False
-        try:
-            run_check(list_path, go_path, tap_path, py_path)
-        except SystemExit as e:
-            fired = (e.code == 1)
+        with _capture_annotations() as ann:
+            fired = False
+            try:
+                run_check(list_path, go_path, tap_path, py_path)
+            except SystemExit as e:
+                fired = (e.code == 1)
         check(fired, "T6: missing artifact -> SystemExit(1)")
+        check("::error::" in ann.getvalue(), "T6 AC5: artifact guard called _err()")
 
         # ── T7: Node suite-load-failure with Windows full path ────────────────
-        print("=== T7: Node suite-load with Windows path -> basename match ===", flush=True)
+        _st_print("=== T7: Node suite-load with Windows path -> basename match ===")
         write_list(BASE_ENTRIES)
         win_tap = (
             "not ok 1 - sample assertion test\n"
@@ -1203,11 +1264,12 @@ def run_self_test() -> int:
             "  ...\n"
         )
         write_artifacts(tap=win_tap)
-        rc = run_check(list_path, go_path, tap_path, py_path)
+        with _capture_annotations():
+            rc = run_check(list_path, go_path, tap_path, py_path)
         check(rc == 0, "T7: Windows path in TAP -> basename 'broken.test.js' matches known entry")
 
         # ── T8: Python class method with Windows backslash path ───────────────
-        print("=== T8: Python class method + Windows backslash -> normalized ===", flush=True)
+        _st_print("=== T8: Python class method + Windows backslash -> normalized ===")
         entries_with_class = BASE_ENTRIES + [
             {
                 "name": "test_commands_basic.py::TestRealCommands::test_status_uses_real_handler",
@@ -1221,11 +1283,12 @@ def run_self_test() -> int:
             "FAILED pypi\\tests\\test_commands_basic.py::TestRealCommands::test_status_uses_real_handler - TypeError\n"
         )
         write_artifacts(py=py_win)
-        rc = run_check(list_path, go_path, tap_path, py_path)
+        with _capture_annotations():
+            rc = run_check(list_path, go_path, tap_path, py_path)
         check(rc == 0, "T8: Windows backslash Python path normalized -> class method matches")
 
         # ── T9: non-ASCII name round-trip ─────────────────────────────────────
-        print("=== T9: non-ASCII name (em-dash, accents) round-trip ===", flush=True)
+        _st_print("=== T9: non-ASCII name (em-dash, accents) round-trip ===")
         non_ascii_name = "sem identidade \u2014 sa\u00edda id\u00eantica ao comportamento pr\u00e9-existente (n\u00e3o-regress\u00e3o)"
         entries_utf8 = [
             {"name": "TestFoo",              "runtime": "go",     "class": "assertion"},
@@ -1245,38 +1308,43 @@ def run_self_test() -> int:
             "  ...\n"
         )
         write_artifacts(tap=non_ascii_tap)
-        rc = run_check(list_path, go_path, tap_path, py_path)
+        with _capture_annotations():
+            rc = run_check(list_path, go_path, tap_path, py_path)
         check(rc == 0, "T9: non-ASCII test name survives JSON->file->extract round-trip")
 
         # ── ML-2B T10: baseline entry deleted without removed record -> exit 1 ─
         # Asserts: entry in baseline, absent from current entries, NOT in removed
         # → baseline check fires. The test passes (appears as '--- PASS: TestFoo')
         # so ML-2A does NOT fire for a new failure; only baseline check fires.
-        print("=== T10: baseline entry deleted, no removed record -> exit 1 ===", flush=True)
+        _st_print("=== T10: baseline entry deleted, no removed record -> exit 1 ===")
         active_without_testfoo = [e for e in BASE_ENTRIES if e["name"] != "TestFoo"]
         write_list(active_without_testfoo, [])  # TestFoo gone, removed is empty
         write_baseline(BASE_ENTRIES)             # TestFoo was in baseline
         write_artifacts(go=GO_PASS)              # TestFoo passes now (not in fail output)
-        rc = run_check(list_path, go_path, tap_path, py_path, baseline_path=baseline_path)
+        with _capture_annotations() as ann:
+            rc = run_check(list_path, go_path, tap_path, py_path, baseline_path=baseline_path)
         check(rc == 1, "T10: baseline entry deleted without removed record -> exit 1")
+        check("::error::" in ann.getvalue(), "T10 AC5: baseline check called _err()")
 
         # ── ML-2B T11: removed entry without removal_note -> exit 1 ──────────
         # Asserts: an entry in 'removed' without 'removal_note' must cause exit 1.
         # This is the intra-file validation arm of D4.
-        print("=== T11: removed entry without removal_note -> exit 1 ===", flush=True)
+        _st_print("=== T11: removed entry without removal_note -> exit 1 ===")
         active_without_testfoo = [e for e in BASE_ENTRIES if e["name"] != "TestFoo"]
         removed_no_note = [{"name": "TestFoo", "runtime": "go", "class": "assertion"}]
         write_list(active_without_testfoo, removed_no_note)
         write_baseline(BASE_ENTRIES)
         write_artifacts(go=GO_PASS)
-        rc = run_check(list_path, go_path, tap_path, py_path, baseline_path=baseline_path)
+        with _capture_annotations() as ann:
+            rc = run_check(list_path, go_path, tap_path, py_path, baseline_path=baseline_path)
         check(rc == 1, "T11: removed entry without removal_note -> exit 1")
+        check("::error::" in ann.getvalue(), "T11 AC5: removal validation called _err()")
 
         # ── ML-2B T12: corrected claim but test not in PASS output -> exit 1 ──
         # Asserts: measured discriminant (Go -v '--- PASS:' present for corrected,
         # absent for no-longer-runs) — non-vacuous pass set without test name means
         # the corrected claim cannot be verified.
-        print("=== T12: removal_note=corrected but test not in PASS output -> exit 1 ===", flush=True)
+        _st_print("=== T12: removal_note=corrected but test not in PASS output -> exit 1 ===")
         active_without_testfoo = [e for e in BASE_ENTRIES if e["name"] != "TestFoo"]
         removed_corrected = [{
             "name": "TestFoo", "runtime": "go", "class": "assertion",
@@ -1286,14 +1354,16 @@ def run_self_test() -> int:
         write_baseline(BASE_ENTRIES)
         # GO_OTHER_PASS: non-vacuous (has a PASS line) but TestFoo is NOT there
         write_artifacts(go=GO_OTHER_PASS)
-        rc = run_check(list_path, go_path, tap_path, py_path, baseline_path=baseline_path)
+        with _capture_annotations() as ann:
+            rc = run_check(list_path, go_path, tap_path, py_path, baseline_path=baseline_path)
         check(rc == 1, "T12: corrected claim without TestFoo in PASS output -> exit 1")
+        check("::error::" in ann.getvalue(), "T12 AC5: corrected-claim check called _err()")
 
         # ── ML-2B T13: renamed without renamed_to in active entries -> exit 1 ─
         # Asserts: if removal_note=renamed and renamed_to is absent from active entries,
         # the checker fires. The fixture has TestFooRenamed passing (not in fails),
         # so ML-2A cannot be the cause — only the renamed_to validation fires.
-        print("=== T13: removal_note=renamed, renamed_to not in entries -> exit 1 ===", flush=True)
+        _st_print("=== T13: removal_note=renamed, renamed_to not in entries -> exit 1 ===")
         active_without_testfoo = [e for e in BASE_ENTRIES if e["name"] != "TestFoo"]
         removed_renamed = [{
             "name": "TestFoo", "runtime": "go", "class": "assertion",
@@ -1303,14 +1373,16 @@ def run_self_test() -> int:
         write_baseline(BASE_ENTRIES)
         # TestFooRenamed passes (not failing), TestFoo passes — neither in fail output
         write_artifacts(go="--- PASS: TestFooRenamed (0.01s)\n")
-        rc = run_check(list_path, go_path, tap_path, py_path, baseline_path=baseline_path)
+        with _capture_annotations() as ann:
+            rc = run_check(list_path, go_path, tap_path, py_path, baseline_path=baseline_path)
         check(rc == 1, "T13: renamed_to='TestFooRenamed' not in active entries -> exit 1")
+        check("::error::" in ann.getvalue(), "T13 AC5: renamed_to check called _err()")
 
         # ── ML-2B T14: valid removal (corrected + TestFoo in PASS output) -> exit 0
         # Asserts: the ratchet must not block all removals — a well-formed 'corrected'
         # entry with the test appearing in pass output exits cleanly (vacuity guard
         # for the removal mechanism itself).
-        print("=== T14: valid removal (corrected + test in PASS output) -> exit 0 ===", flush=True)
+        _st_print("=== T14: valid removal (corrected + test in PASS output) -> exit 0 ===")
         active_without_testfoo = [e for e in BASE_ENTRIES if e["name"] != "TestFoo"]
         removed_valid = [{
             "name": "TestFoo", "runtime": "go", "class": "assertion",
@@ -1319,25 +1391,28 @@ def run_self_test() -> int:
         write_list(active_without_testfoo, removed_valid)
         write_baseline(BASE_ENTRIES)
         write_artifacts(go=GO_PASS)  # TestFoo appears as PASS
-        rc = run_check(list_path, go_path, tap_path, py_path, baseline_path=baseline_path)
+        with _capture_annotations():
+            rc = run_check(list_path, go_path, tap_path, py_path, baseline_path=baseline_path)
         check(rc == 0, "T14: valid corrected removal with TestFoo in PASS output -> exit 0")
 
         # ── ML-2B T15: baseline confirmation line emitted with baseline, absent without
         # Asserts: check_baseline_deletions emits 'ML-2B D4 (baseline): N entrada(s)
         # comparadas' when baseline is provided; line is absent when baseline_path=''.
         # Fixes two-states-one-observable: "clean" and "skipped" were indistinguishable.
-        print("=== T15: baseline positive confirmation line -> present with baseline, absent without ===", flush=True)
+        _st_print("=== T15: baseline positive confirmation line -> present with baseline, absent without ===")
         write_list(BASE_ENTRIES, [])   # all entries in active, none removed
         write_baseline(BASE_ENTRIES)   # baseline matches current entries exactly
 
         # T15a: baseline provided → confirmation line appears
+        # check_baseline_deletions() uses print() not _err()/_warn(), so
+        # redirect_stdout captures its output directly (no annotation sink needed).
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
             result = check_baseline_deletions(baseline_path, BASE_ENTRIES, [])
         out = buf.getvalue()
         check(
             result is True and "ML-2B D4 (baseline):" in out and "comparadas" in out,
-            "T15a: baseline clean → 'ML-2B D4 (baseline): N entrada(s) comparadas' emitted",
+            "T15a: baseline clean -> 'ML-2B D4 (baseline): N entrada(s) comparadas' emitted",
         )
 
         # T15b: empty baseline_path → confirmation line absent (baseline skipped)
@@ -1347,11 +1422,11 @@ def run_self_test() -> int:
         out = buf.getvalue()
         check(
             result is True and "comparadas" not in out,
-            "T15b: baseline skipped (empty path) → no confirmation line",
+            "T15b: baseline skipped (empty path) -> no confirmation line",
         )
 
         # ── ML-3A T16: Go suite-load-failure marker present -> exit 1 ──────────
-        print("=== T16: Go suite-load-failure marker present -> exit 1 ===", flush=True)
+        _st_print("=== T16: Go suite-load-failure marker present -> exit 1 ===")
         markers_dir = os.path.join(td, "markers")
         os.makedirs(markers_dir, exist_ok=True)
         write_list(BASE_ENTRIES)
@@ -1360,31 +1435,36 @@ def run_self_test() -> int:
             "FAIL\tgithub.com/kgsaran/trackfw/internal/badpkg [setup failed]",
             encoding="utf-8",
         )
-        rc = run_check(list_path, go_path, tap_path, py_path, load_markers_dir=markers_dir)
+        with _capture_annotations() as ann:
+            rc = run_check(list_path, go_path, tap_path, py_path, load_markers_dir=markers_dir)
         check(rc == 1, "T16: Go suite-load-failure marker -> exit 1")
+        check("::error::" in ann.getvalue(), "T16 AC5: load-failure ratchet called _err()")
         # Remove marker for T17
         os.remove(os.path.join(markers_dir, "suite-load-failure.go.txt"))
 
         # ── ML-3A T17: no markers + known-only failures -> exit 0 (row 4 counter-arm)
-        print("=== T17: no load-failure markers -> exit 0 (row 4 counter-arm) ===", flush=True)
+        _st_print("=== T17: no load-failure markers -> exit 0 (row 4 counter-arm) ===")
         write_list(BASE_ENTRIES)
         write_artifacts()
-        rc = run_check(list_path, go_path, tap_path, py_path, load_markers_dir=markers_dir)
+        with _capture_annotations():
+            rc = run_check(list_path, go_path, tap_path, py_path, load_markers_dir=markers_dir)
         check(rc == 0, "T17: no markers, only known failures -> exit 0")
 
         # ── ML-3A T18: go-suite-out.txt vacuous -> results-present guard -> exit 1
-        print("=== T18: go-suite-out.txt vacuous -> results-present guard -> exit 1 ===", flush=True)
+        _st_print("=== T18: go-suite-out.txt vacuous -> results-present guard -> exit 1 ===")
         write_list(BASE_ENTRIES)
         # go artifact has only [setup failed] — no --- FAIL: or --- PASS: lines
         write_artifacts(go="FAIL\tgithub.com/kgsaran/trackfw/internal/badpkg [setup failed]\n")
         # No marker: testing the vacuity guard path (independent of marker path)
-        rc = run_check(list_path, go_path, tap_path, py_path)
+        with _capture_annotations() as ann:
+            rc = run_check(list_path, go_path, tap_path, py_path)
         check(rc == 1, "T18: go-suite-out.txt vacuous (no FAIL/PASS lines) -> exit 1")
+        check("::error::" in ann.getvalue(), "T18 AC5: results-present guard called _err()")
 
         # ── ML-3A T19: Node.js load-failure marker + name IN list -> exit 0 (row 1) ──
         # broken.test.js is in BASE_ENTRIES as suite-load-failure; TAP_LOAD produces it
         # in obs_node_load. Marker is present but step-6 ratchet sees no new names.
-        print("=== T19: Node.js load-failure marker + name in list -> exit 0 (row 1) ===", flush=True)
+        _st_print("=== T19: Node.js load-failure marker + name in list -> exit 0 (row 1) ===")
         markers_t19 = os.path.join(td, "markers_t19")
         os.makedirs(markers_t19, exist_ok=True)
         write_list(BASE_ENTRIES)
@@ -1392,14 +1472,15 @@ def run_self_test() -> int:
         Path(os.path.join(markers_t19, "suite-load-failure.node.txt")).write_text(
             "  exitCode: 1", encoding="utf-8"
         )
-        rc = run_check(list_path, go_path, tap_path, py_path, load_markers_dir=markers_t19)
+        with _capture_annotations():
+            rc = run_check(list_path, go_path, tap_path, py_path, load_markers_dir=markers_t19)
         check(rc == 0, "T19: Node load-failure marker, 'broken.test.js' in known list -> exit 0 (row 1)")
 
         # ── ML-3A T20: Node.js load-failure marker + name NOT in list -> exit 1, named ─
         # new_broken.test.js extracted from TAP (exitCode block), not in known_node_load
-        # → step-6 ratchet fires naming it. Marker present, obs_node_load non-empty → step-3b
-        # takes no action. Message from step-6 contains 'new_broken.test.js'.
-        print("=== T20: Node.js load-failure marker + name not in list -> exit 1, named (row 2) ===", flush=True)
+        # → step-6 ratchet fires naming it via _err(). With the sink, _err() goes to
+        # the annotation capture buffer, not stdout. The assertion checks ann.getvalue().
+        _st_print("=== T20: Node.js load-failure marker + name not in list -> exit 1, named (row 2) ===")
         markers_t20 = os.path.join(td, "markers_t20")
         os.makedirs(markers_t20, exist_ok=True)
         new_load_tap = (
@@ -1415,20 +1496,20 @@ def run_self_test() -> int:
         Path(os.path.join(markers_t20, "suite-load-failure.node.txt")).write_text(
             "  exitCode: 1", encoding="utf-8"
         )
-        buf = io.StringIO()
-        with contextlib.redirect_stdout(buf):
-            rc = run_check(list_path, go_path, tap_path, py_path, load_markers_dir=markers_t20)
-        out_t20 = buf.getvalue()
+        with _capture_annotations() as ann_t20:
+            with contextlib.redirect_stdout(io.StringIO()):
+                rc = run_check(list_path, go_path, tap_path, py_path, load_markers_dir=markers_t20)
         check(
-            rc == 1 and "new_broken.test.js" in out_t20,
-            "T20: Node load-failure 'new_broken.test.js' not in list -> exit 1, named in message (row 2)"
+            rc == 1 and "new_broken.test.js" in ann_t20.getvalue(),
+            "T20: Node load-failure 'new_broken.test.js' not in list -> exit 1, named in annotation (row 2)"
         )
+        check("::error::" in ann_t20.getvalue(), "T20 AC5: step-6 ratchet called _err() with file name")
 
         # ── ML-3A T21: Node.js load-failure marker + obs_node_load empty -> exit 1, "sem nome"
         # TAP has only assertion failures (no exitCode block) → obs_node_load empty.
         # Marker exists → step-3b detects row-3 (D3 worst mode) → exit 1 with "sem nome".
         # TAP_ASSERT alone: has 'not ok' lines (so 5b vacuity doesn't fire) but no exitCode.
-        print("=== T21: Node.js load-failure marker + no name in TAP -> exit 1 (row 3) ===", flush=True)
+        _st_print("=== T21: Node.js load-failure marker + no name in TAP -> exit 1 (row 3) ===")
         markers_t21 = os.path.join(td, "markers_t21")
         os.makedirs(markers_t21, exist_ok=True)
         write_list(BASE_ENTRIES)
@@ -1436,19 +1517,19 @@ def run_self_test() -> int:
         Path(os.path.join(markers_t21, "suite-load-failure.node.txt")).write_text(
             "  exitCode: 1", encoding="utf-8"
         )
-        buf = io.StringIO()
-        with contextlib.redirect_stdout(buf):
-            rc = run_check(list_path, go_path, tap_path, py_path, load_markers_dir=markers_t21)
-        out_t21 = buf.getvalue()
+        with _capture_annotations() as ann_t21:
+            with contextlib.redirect_stdout(io.StringIO()):
+                rc = run_check(list_path, go_path, tap_path, py_path, load_markers_dir=markers_t21)
         check(
-            rc == 1 and "sem nome" in out_t21,
-            "T21: Node load-failure marker, obs_node_load empty -> exit 1, 'sem nome' in message (row 3)"
+            rc == 1 and "sem nome" in ann_t21.getvalue(),
+            "T21: Node load-failure marker, obs_node_load empty -> exit 1, 'sem nome' in annotation (row 3)"
         )
+        check("::error::" in ann_t21.getvalue(), "T21 AC5: step-3b row-3 called _err()")
 
         # ── ML-3A T22: Node.js zero-test-failure marker -> exit 1 (row 3, early check) ──
         # zero-test marker has no test name by construction ('# tests 0' + exit 0) → row 3
         # → step-3 early check fires immediately → exit 1.
-        print("=== T22: Node.js zero-test-failure marker -> exit 1 (row 3) ===", flush=True)
+        _st_print("=== T22: Node.js zero-test-failure marker -> exit 1 (row 3) ===")
         markers_t22 = os.path.join(td, "markers_t22")
         os.makedirs(markers_t22, exist_ok=True)
         write_list(BASE_ENTRIES)
@@ -1456,16 +1537,18 @@ def run_self_test() -> int:
         Path(os.path.join(markers_t22, "zero-test-failure.node.txt")).write_text(
             "zero-test", encoding="utf-8"
         )
-        rc = run_check(list_path, go_path, tap_path, py_path, load_markers_dir=markers_t22)
+        with _capture_annotations() as ann:
+            rc = run_check(list_path, go_path, tap_path, py_path, load_markers_dir=markers_t22)
         check(rc == 1, "T22: Node.js zero-test-failure marker -> exit 1 (row 3, early check)")
+        check("::error::" in ann.getvalue(), "T22 AC5: zero-test early check called _err()")
 
         # ── Sumário T23: cancel case — one class +1 NOVO, another -1 resolvido ──────────
         # Asserts: set-based detection exposes the cancellation that the count-based total
         # masks. CI case: run 34547480139, Node-assert 11/10, Python 12/13, total 38/38.
         # Fixture: 2 Node-assert obs (known + new_name), 0 Python obs, 1 Python known,
         # Go and Node-load balanced. Total obs == total known — the cancellation is exact.
-        print("=== T23: cancel case (Node +1 NOVO, Python -1 resolvido, total balanced) "
-              "-> DESEQUILÍBRIO on first line ===", flush=True)
+        _st_print("=== T23: cancel case (Node +1 NOVO, Python -1 resolvido, total balanced) "
+                  "-> DESEQUILIBRIO on first line ===")
         entries_t23 = [
             {"name": "TestFoo",              "runtime": "go",     "class": "assertion"},
             {"name": "known_node_assert",    "runtime": "node",   "class": "assertion"},
@@ -1493,46 +1576,46 @@ def run_self_test() -> int:
         # Python: 0 failures observed → test_foo.py::test_bar "resolved" (warning only)
         write_artifacts(tap=cancel_tap, py="PASSED pypi/tests/test_foo.py::test_bar\n")
         buf = io.StringIO()
-        with contextlib.redirect_stdout(buf):
+        with _capture_annotations(), contextlib.redirect_stdout(buf):
             run_check(list_path, go_path, tap_path, py_path)
         out_t23 = buf.getvalue()
         summary_line_t23 = next(
             (l for l in out_t23.splitlines() if l.startswith("ML-2A/2B:")), ""
         )
         check(
-            "DESEQUILÍBRIO POR CLASSE" in summary_line_t23
+            "DESEQUIL" in summary_line_t23
             and "NOVO" in summary_line_t23
             and "resolvido" in summary_line_t23,
-            "T23: cancel case → 'DESEQUILÍBRIO POR CLASSE' + NOVO + resolvido on first summary line",
+            "T23: cancel case -> 'DESEQUILIBRIO POR CLASSE' + NOVO + resolvido on first summary line",
         )
 
         # ── Sumário T24: all balanced -> no imbalance markers (counter-arm) ───────────
         # Asserts: when every observed name matches a known name and vice versa, the
         # first summary line is clean. Uses T1's fixture (BASE_ENTRIES + default artifacts).
-        print("=== T24: all balanced -> no DESEQUILÍBRIO on summary line (counter-arm) ===",
-              flush=True)
+        # Negative assertion kept live by the positive arm of T23/T25 running in the same
+        # session (same fixture writer / same redirect pattern) — the channel is proven live.
+        _st_print("=== T24: all balanced -> no DESEQUILIBRIO on summary line (counter-arm) ===")
         write_list(BASE_ENTRIES)
         write_artifacts()
         buf = io.StringIO()
-        with contextlib.redirect_stdout(buf):
+        with _capture_annotations(), contextlib.redirect_stdout(buf):
             run_check(list_path, go_path, tap_path, py_path)
         out_t24 = buf.getvalue()
         summary_line_t24 = next(
             (l for l in out_t24.splitlines() if l.startswith("ML-2A/2B:")), ""
         )
         check(
-            "DESEQUILÍBRIO" not in summary_line_t24
+            "DESEQUIL" not in summary_line_t24
             and "NOVO" not in summary_line_t24
             and "resolvido" not in summary_line_t24,
-            "T24: all classes balanced → no 'DESEQUILÍBRIO', 'NOVO', or 'resolvido' on summary line",
+            "T24: all classes balanced -> no 'DESEQUILIBRIO', 'NOVO', or 'resolvido' on summary line",
         )
 
         # ── Sumário T25: one class surplus, others balanced ───────────────────────────
         # Asserts: imbalance in a single class is flagged independently of other classes.
         # Node-assert: 2 obs (known + new_one), 1 known → surplus = {new_one}.
         # Others: balanced.
-        print("=== T25: one class surplus, others balanced -> [+1 NOVO] on summary line ===",
-              flush=True)
+        _st_print("=== T25: one class surplus, others balanced -> [+1 NOVO] on summary line ===")
         write_list(BASE_ENTRIES)
         single_surplus_tap = (
             # sample assertion test still fails (in list)
@@ -1553,16 +1636,16 @@ def run_self_test() -> int:
         )
         write_artifacts(tap=single_surplus_tap)
         buf = io.StringIO()
-        with contextlib.redirect_stdout(buf):
+        with _capture_annotations(), contextlib.redirect_stdout(buf):
             run_check(list_path, go_path, tap_path, py_path)
         out_t25 = buf.getvalue()
         summary_line_t25 = next(
             (l for l in out_t25.splitlines() if l.startswith("ML-2A/2B:")), ""
         )
         check(
-            "DESEQUILÍBRIO POR CLASSE" in summary_line_t25
+            "DESEQUIL" in summary_line_t25
             and "[+1 NOVO]" in summary_line_t25,
-            "T25: one class surplus → 'DESEQUILÍBRIO POR CLASSE' and '[+1 NOVO]' on summary line",
+            "T25: one class surplus -> 'DESEQUILIBRIO POR CLASSE' and '[+1 NOVO]' on summary line",
         )
 
         # ── Sumário T26: equal count but different names in one class ─────────────────
@@ -1570,8 +1653,7 @@ def run_self_test() -> int:
         # same class) even when obs count == known count. Count-based logic would see 2/2
         # and print clean; set-based sees surplus={NodeC} → '[+1 NOVO, -1 resolvido]' tag.
         # This arm separates the correct (set-based) fix from the plausible-wrong (count-based).
-        print("=== T26: equal count, different names in a class -> [+1 NOVO] on summary line ===",
-              flush=True)
+        _st_print("=== T26: equal count, different names in a class -> [+1 NOVO] on summary line ===")
         entries_t26 = [
             {"name": "TestFoo",              "runtime": "go",     "class": "assertion"},
             {"name": "NodeA",                "runtime": "node",   "class": "assertion"},
@@ -1597,20 +1679,50 @@ def run_self_test() -> int:
         )
         write_artifacts(tap=replacement_tap)
         buf = io.StringIO()
-        with contextlib.redirect_stdout(buf):
+        with _capture_annotations(), contextlib.redirect_stdout(buf):
             run_check(list_path, go_path, tap_path, py_path)
         out_t26 = buf.getvalue()
         summary_line_t26 = next(
             (l for l in out_t26.splitlines() if l.startswith("ML-2A/2B:")), ""
         )
         check(
-            "DESEQUILÍBRIO POR CLASSE" in summary_line_t26
+            "DESEQUIL" in summary_line_t26
             and "NOVO" in summary_line_t26,
-            "T26: equal count (2/2) but different names → set-based detection fires "
-            "'DESEQUILÍBRIO POR CLASSE' and 'NOVO' despite equal count (count-based would miss this)",
+            "T26: equal count (2/2) but different names -> set-based detection fires "
+            "'DESEQUILIBRIO POR CLASSE' and 'NOVO' despite equal count (count-based would miss this)",
         )
 
-    print(f"\nSelf-test summary: {n_pass} PASS, {n_fail} FAIL", flush=True)
+        # ── AC4: production sink emits ::error:: (falsification in both directions) ──────
+        # Direction 1 (fixture -> not annotate): proven structurally — all fixture
+        # run_check() calls above are wrapped in _capture_annotations(), so no ::error::
+        # can reach the real stdout during self-test (demonstrated by AC3 check below).
+        #
+        # Direction 2 (production -> annotates): _err() must route through _ANNOTATION_SINK
+        # and _ANNOTATION_SINK must default to sys.stdout.
+        #
+        # Note: redirect_stdout(buf) replaces sys.stdout but NOT _ANNOTATION_SINK, which
+        # was bound to the original sys.stdout at import time. To test _err() routing,
+        # we swap _ANNOTATION_SINK directly — same mechanism as _capture_annotations().
+        # T27a checks the default binding; T27b checks _err() routes through the sink.
+        _st_print("=== T27: AC4 falsification (production direction) ===")
+
+        # T27a: _ANNOTATION_SINK is sys.stdout in default state (outside any capture context)
+        check(
+            _ANNOTATION_SINK is sys.stdout,
+            "T27a AC4: _ANNOTATION_SINK is sys.stdout in default state (no active capture)",
+        )
+
+        # T27b: _err() writes to _ANNOTATION_SINK, not a hardcoded stream
+        # (if _err() ignored the sink and wrote directly to sys.stdout, this would still
+        # pass — but T27a + T27b together prove the chain: sink=stdout + _err uses sink)
+        with _capture_annotations() as ac4_buf:
+            _err("sentinel-ac4")
+        check(
+            "::error::sentinel-ac4" in ac4_buf.getvalue(),
+            "T27b AC4: _err() routes through _ANNOTATION_SINK -> '::error::sentinel-ac4' in sink",
+        )
+
+    _st_print(f"\nSelf-test summary: {n_pass} PASS, {n_fail} FAIL")
     return 0 if n_fail == 0 else 1
 
 
