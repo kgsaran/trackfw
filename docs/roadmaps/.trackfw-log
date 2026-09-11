@@ -289,3 +289,5 @@
 2026-09-11 15:55  ROADMAP-2026-09-11-self-test-do-ratchet-escreve-no-canal-do-gate-real-e-quebra-em-cp1252-e-no-runner.md  backlog → wip
 2026-09-11 16:41  ROADMAP-2026-09-11-o-ciclo-testa-onde-funciona-faltam-cp1252-windows-sem-privilegio-e-consumidor-novo.md  backlog → wip
 2026-09-11 16:53  ROADMAP-2026-09-11-self-test-do-ratchet-escreve-no-canal-do-gate-real-e-quebra-em-cp1252-e-no-runner.md  wip → done
+2026-09-11 17:01  ROADMAP-2026-09-10-barrier-executa-gate-de-roadmap-nao-confiavel-porque-roadmaptrustforgates-falha-aberto-em-todo-caminho-de-erro.md  wip → done
+2026-09-11 17:01  ROADMAP-2026-09-11-serve-interpola-host-em-string-de-shell-e-permite-injecao-de-comando-ao-abrir-o-browser.md  wip → done

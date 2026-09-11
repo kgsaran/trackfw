@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-10
 req: "docs/req/REQ-2026-08-30-barrier-executa-gate-de-roadmap-nao-confiavel-porque-roadmaptrustforgates-falha-aberto-em-todo-caminho-de-erro.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: `barrier` executa gate de roadmap não confiável porque `roadmapTrustForGates` falha aberto em todo caminho de erro
 
-> Created: 2026-09-10 | Status: wip
+> Created: 2026-09-10 | Status: done
 
 ## Context
 <!-- Derived from REQ: REQ-2026-08-30-barrier-executa-gate-de-roadmap-nao-confiavel-porque-roadmaptrustforgates-falha-aberto-em-todo-caminho-de-erro.md -->
@@ -257,7 +257,7 @@ da production seria normalizar `absRoadmap` com `fs.realpathSync.native` (Node) 
 do git. Declarado, não corrigido neste ML (Python production usa `os.path.abspath`, mesma lacuna).
 
 ### ML-W3A — Resíduos do parecer de segurança: as duas metades do F1
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` · **não bloqueia o merge** (parecer: **APROVA**)
+**Status:** ➡️ **Roteado para a REQ sucessora** `REQ-2026-09-11-residuos-dos-pareceres-de-seguranca-do-barrier-e-do-serve.md` · **Agente:** `apolo-tf` · **não bloqueia o merge** (parecer: **APROVA**)
 
 O `hades-tf` verificou o fechamento dos próprios achados e aprovou. Sobraram **dois resíduos do F1**,
 que ele separou em metades — e a separação é o valor do achado:
@@ -295,3 +295,28 @@ Eu escrevi **"Go 8 guardas comportamentais"** no handoff de verificação, repet
 implementação **sem contar**. O `hades-tf` contou: `grep -c "^func TestRoadmapTrustForGates"` ⇒ **7**.
 Os 7 passam. **Número repetido não é número medido** — é a mesma classe dos 4 `grep` errados desta
 campanha.
+
+---
+
+## 🔴 ENCERRADO com resíduos roteados — 2026-09-11
+
+Governado por
+[`ADR-2026-09-10-req-de-campanha-tem-escopo-congelado-e-achado-novo-vai-para-sucessora`](../../adr/ADR-2026-09-10-req-de-campanha-tem-escopo-congelado-e-achado-novo-vai-para-sucessora.md).
+
+**O objetivo desta REQ foi atingido** — o `hades-tf` emitiu **APROVA** depois de verificar o
+fechamento dos próprios achados. Os resíduos que sobraram foram declarados **não-bloqueantes pelo
+próprio parecer**.
+
+**Eles NÃO ficam aqui.** Foram para a REQ sucessora:
+
+```
+REQ-2026-09-11-residuos-dos-pareceres-de-seguranca-do-barrier-e-do-serve.md
+```
+
+🔴 **Por que não deixar em `wip`:** roadmap com resíduo parado foi como o de Windows chegou a **34
+MLs e 2.496 linhas**. REQ sem condição terminal não fecha nunca, e `wip` deixa de significar "em
+andamento". Duas fecham, uma abre — saldo **−1**, e cada uma passa a ter estado verdadeiro.
+
+⚠️ **E isto NÃO é fechar com sítio conhecido em aberto** — o achado A1 que este projeto já pagou. O
+resíduo está **nomeado, com a causa medida e o destino escrito**. A diferença entre rotear e
+esconder é exatamente essa.

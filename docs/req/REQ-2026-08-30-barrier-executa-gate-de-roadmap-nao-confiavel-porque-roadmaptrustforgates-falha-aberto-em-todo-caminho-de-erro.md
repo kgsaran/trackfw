@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-08-30
 author: "trackfw_architect (Zeus)"
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-10-barrier-executa-gate-de-roadmap-nao-confiavel-porque-roadmaptrustforgates-falha-aberto-em-todo-caminho-de-erro.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-10-barrier-executa-gate-de-roadmap-nao-confiavel-porque-roadmaptrustforgates-falha-aberto-em-todo-caminho-de-erro.md"
 ---
 
 # REQ: `barrier` executa gate de roadmap não confiável porque `roadmapTrustForGates` falha aberto em todo caminho de erro
 
-> Date: 2026-08-30 | Status: Open
+> Date: 2026-08-30 | Status: Done
 
 ## Motivation
 
@@ -77,4 +77,4 @@ ADR:
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-09-10-barrier-executa-gate-de-roadmap-nao-confiavel-porque-roadmaptrustforgates-falha-aberto-em-todo-caminho-de-erro.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-09-10-barrier-executa-gate-de-roadmap-nao-confiavel-porque-roadmaptrustforgates-falha-aberto-em-todo-caminho-de-erro.md`
