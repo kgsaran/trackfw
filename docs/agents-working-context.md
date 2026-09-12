@@ -2,6 +2,30 @@
 
 ---
 
+## Sessão 2026-09-11 — hefesto-tf (FIM: diagnóstico e fix do make parity-falsify — CONCLUÍDO)
+
+Branch `fix/by-agent-req-new-e-roadmap-new`. Escopo: diagnóstico dos 4 rótulos AUSENTE do `roadmap-ref-stale-state/python/` e correção sem afrouxar o guard.
+
+**Causa raiz:** ML-1D (commit `274dce77`) adicionou o argumento `squadVal` à chamada `fmt.Sprintf` em `internal/generators/roadmap.go`. Os corrupt_literal de s25-go e s26-go miravam os literais antigos → count=0 → SystemExit → `set -e` matava os chunks → todos os rótulos subsequentes AUSENTE em cascata (incluindo os 4 Python de s193).
+
+**Correções aplicadas** (somente `scripts/check-gates-falsify.sh`):
+- s25-go (linhas 2466-2467): inserido `squadVal,` após `reqPath,` no literal e no replacement.
+- s26-go (linhas 2606-2607): inserido `squadVal,` após `content.REQPath,` no literal e no replacement.
+A intenção dos cenários é preservada (substituir `reqPath`/`content.REQPath` por versão truncada).
+
+**Evidências:**
+- Worktree temporário `origin/main` criado para A/B → confirmou count=1 nos literais antigos.
+- Chunk_6 direto com literal quebrado: `EXIT_CODE=1`, última linha `[s25-go] expected exactly 1 occurrence of pattern, got 0`.
+- Com fix aplicado: `env -u FORCE_COLOR TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make parity-falsify` → RC=0, **414 OK, 0 FAIL, guarda de conjunto OK**.
+- Prova do guard: com literal revertido → `run-gates-falsify-parallel: GUARDA -- chunk_6 nao chegou ao sentinela CHUNK_COMPLETE`, RC=2.
+- Worktree temporário removido.
+
+**Vault:** `vault/notes/falsify-s25-s26-go-quebram-apos-ml1d-squadval-2026-09-11.md` (mesma classe de `cenarios-de-falsificacao-quebram-em-refactor-do-alvo-2026-08-02`).
+
+## Sessão 2026-09-11 — hefesto-tf (INÍCIO: diagnóstico do make parity-falsify — 4 rótulos Python AUSENTE)
+
+Branch `fix/by-agent-req-new-e-roadmap-new`. Diagnóstico de `env -u FORCE_COLOR TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make parity-falsify` falhando com 4 rótulos AUSENTE: `roadmap-ref-stale-state/python/{broken-link,lifecycle,stale-warning,vacuity}-detects-regression`. Sem commits, sem push, sem background.
+
 ## Sessão 2026-09-11 — hades-tf (FIM: segunda varredura adversarial/paridade solicitada por KG — CONCLUÍDO)
 
 Relatório gravado em `docs/qualidade/2026-09-11-segunda-varredura-hades-codex.md`. Foram executados gates diferenciais de CLI, validate, update, roadmap move, doctor, hooks, artefatos, third party, home, browser, instalador, release e integridade referencial. Todos passaram, exceto bind do `serve`, inconclusivo por `EPERM` de sockets no sandbox; o gate de cobertura de shards foi chamado sem os argumentos necessários e retornou uso. Nenhum novo defeito explorável foi confirmado. H-01 (symlink no `/api/file` Go/Node) e H-02 (checksum ausente no instalador) foram independentemente reconfirmados; M-05 e B2 permanecem lacunas de assurance.
@@ -36359,3 +36383,59 @@ make build → OK
 **Falha pré-existente em `make parity-rest`:** `direction-b2/node/detects-symlink-regression` falha porque o gate `check-agent-namespace-union.sh` na branch seguranca é a versão pré-ML-1E-b (corrompe só G1), enquanto `generators/roadmap.js` na branch seguranca não tem G3 (ML-1E-a). A versão corrigida existe na branch `fix/by-agent-req-new-e-roadmap-new`. Zeus precisa cherry-pick ou rebase antes do merge.
 
 **Fim.** Entrega para Zeus para auditoria e commit.
+
+---
+
+## 2026-09-11 (fim do dia) — Zeus — duas frentes em worktree, 4 REQs fechadas
+
+**Frentes ativas** (worktrees do mesmo repositório, branches distintas, arquivos disjuntos):
+
+```
+A  /workspace/trackfw              fix/by-agent-req-new-e-roadmap-new          #320 + #328
+B  /workspace/trackfw-seguranca    fix/install-sh-extrai-o-tarball-sem-conferir  H-02  ✅
+B  /workspace/trackfw-seguranca    fix/serve-api-file-valida-o-caminho-lexico    H-01  ✅
+```
+
+🔴 **`git worktree`, não clone.** Os guards do projeto bloquearam `git worktree add -b`,
+`git worktree remove --force` e `git restore <path>` — e em todos os três estavam certos. O caminho é
+`trackfw branch new` dentro da worktree.
+
+### Fechado hoje
+
+| item | prova |
+|---|---|
+| **H-01** leitura arbitrária por symlink em `/api/file` | 3 binários: ataque 403 sem vazar · legítimo 200 · symlink interno 200 |
+| **H-02** instalador não conferia o `checksums.txt` | 9 cenários; braço de falsificação instala binário `MALICIOUS` sem o gate |
+| **#320** `by_agent` sempre no primeiro agente | 3 runtimes: `--req` herda · 1 agente não erra · 2 agentes erram nomeando |
+| **#328** smoke nunca rodava o Go | registrado como ML-3B-a (pendente) |
+| shard `parity-falsify` | 8 chunks, 414 OK, guarda de conjunto OK |
+
+### Achados nossos, que ninguém reportou
+
+- regressão do `.trackfw-log` — derivação de caminho executada **depois** do `os.Rename`
+- `squad:` na REQ quebrando `check-artifact-parity` (revertido; a pasta é a fonte de verdade)
+- **#315 reintroduzido** nos testes escritos hoje, dentro da correção de outro defeito
+- `check-serve-api-file-security.sh` criado e **ligado a nenhum alvo** — a classe do `check-orphan-gates`, de novo
+
+### Lições de método que viraram vault
+
+1. **Teste do gerador não prova AC da camada de comando** — 13 testes verdes, AC quebrado no binário.
+2. **Extrair inline para função nomeada muda QUANDO a expressão é avaliada.**
+3. **Sintoma nomeia onde o script parou de imprimir, não onde quebrou** (`set -e` + rótulo ausente).
+4. **Régua errada produz número confiante e falso** — `_test\.`, `dirname(dirname())`, A/B sem `node_modules`.
+5. 🔴 **`/var` × `/private/var` no macOS: CINCO leituras falsas em um dia**, uma delas quase descartou o H-01.
+
+### Triagem das auditorias externas
+
+- **1ª auditoria Codex:** 5 achados, **5 já tinham REQ aberta**. Zero REQs novas.
+  🔴 Conclusão: **o gargalo é fechamento, não detecção.**
+- **Auditoria `hades-tf` Codex:** H-01 e H-02 **novos** — porque a **pergunta** era outra
+  (fronteira de confiança), não porque o auditor era outro.
+- **2ª varredura (4 frentes):** zero achados novos. Retorno decrescente na superfície atual.
+
+### Pendente
+
+- 7 sítios de symlink sem guarda (em curso) + gate `check-symlink-privilege-guard.sh`
+- ML-2A/2B/2C (`agents install` registra em `agents:`), ML-3A (emissores), ML-3B-a/b (#328)
+- A2, A3, A4 do Codex — REQs `Open` **sem roadmap**, análise já paga duas vezes
+- `roadmap move ""` casa roadmap arbitrário e move — medido hoje, vira REQ
