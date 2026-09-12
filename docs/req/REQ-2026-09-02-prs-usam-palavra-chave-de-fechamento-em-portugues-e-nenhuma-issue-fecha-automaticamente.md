@@ -88,3 +88,60 @@ ADR:
 <!-- Roadmap a criar quando a branch do `context` do CLI Node fechar — não despachar dois agentes
      sobre a mesma árvore. -->
 Roadmap:
+
+---
+
+## Ampliação decidida pelo KG — 2026-09-12: a REQ carrega o issue, e o gate cruza
+
+> *"não seria interessante termos na REQ a referência ao issue, quando essa nascer de um issue, e
+> termos um gate validando quando uma REQ for para done sem a grafia no PR?"*
+
+### O caso que o gate atual NÃO pega — e por quê
+
+O gate de hoje resolve **grafia**: `Fecha **#320**`, `Corrigido #12`, ênfase markdown em três posições.
+Verificado em 2026-09-12: **está coberto**, com contra-braço (outra palavra entre a chave e o `#N`
+descaracteriza e vira prosa, sem reprovar).
+
+🔴 **O que ele não pega é a AUSÊNCIA.** No PR #330 escrevi `Closes #315` na abertura e **nunca
+acrescentei** `Closes #320` / `Closes #328` quando o trabalho entrou. Merge feito, dois issues abertos,
+fechados à mão depois. **O gate não tinha como saber quais issues aquele PR deveria fechar** — essa
+informação não existe em lugar algum legível por máquina.
+
+**Medido:** **21 REQs** já citam issue em prosa (`Closes #`, `issue #N`). A informação **existe** e é
+escrita rotineiramente — só não em campo estruturado.
+
+### ⚠️ Correção de desenho: o gate NÃO pode disparar no `done`
+
+O KG propôs validar *"quando uma REQ for para done"*. 🔴 **Tarde demais.** A REQ vai para `done`
+**depois** do merge — e depois do merge não dá mais para acrescentar a palavra-chave ao corpo do PR.
+Foi literalmente o que aconteceu no #330.
+
+**O gate dispara no PR, antes do merge:**
+
+```
+roadmap em wip nesta branch  →  REQ vinculada tem issue: N  →  corpo do PR contem Closes #N
+```
+
+### Critérios acrescentados
+
+- [ ] **AC-N1** — campo `issue:` no frontmatter da REQ, opcional, preenchido quando a REQ nasce de um
+      issue. 🔴 **UMA fonte de verdade** — não repetir o número em prosa e em campo, como aconteceu com
+      `roadmap:` (frontmatter) × marcador de corpo, que produziu contagens de **27 vs 57** órfãs.
+      Escolher o campo e fazer o `validate` ler **só ele**.
+- [ ] **AC-N2** — `trackfw req new --issue <N>` preenche o campo. Nos **3 CLIs**.
+- [ ] **AC-N3** — gate no PR: para cada roadmap em `wip` da branch, se a REQ vinculada tem `issue: N`
+      e o corpo do PR **não** contém palavra-chave válida com `#N`, **reprova nomeando o número**.
+- [ ] **AC-N4** — 🔴 **contra-braço, e sem ele o gate vira atrito:** PR cuja REQ **não** tem `issue:`
+      **passa**. É o caso normal de achado interno — o #332 (H-01/M-03) veio de auditoria própria e
+      corretamente não fecha issue nenhum.
+- [ ] **AC-N5** — 🔴 **segundo contra-braço:** issue **já fechado** por outro PR não reprova. Senão o
+      gate bloqueia trabalho legítimo de continuação.
+- [ ] **AC-N6** — migração dos **21** que já citam issue em prosa: preencher o campo. ⚠️ **Derivar a
+      lista**, não presumir que são 21 — o número é de 2026-09-12 e a régua foi um `grep`.
+
+### Por que aqui e não em REQ nova
+
+O mecanismo **é outro** (grafia errada × ausência de declaração), e a `Regra Dura de Causa Raiz`
+autorizaria REQ própria. **Mas o desfecho é o mesmo e esta REQ já é dele:** *"nenhuma issue fecha
+automaticamente"*. Abrir outra dividiria a mesma promessa em duas filas — e o backlog já tem 92% das
+REQs sem roadmap. A diferença de mecanismo fica escrita acima, que é o que a regra exige.
