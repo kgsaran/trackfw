@@ -716,3 +716,45 @@ byte-idêntica nos 3 CLIs"*.
 Nada compara o `trackfw.yaml` **depois de modificado** pelos 3 CLIs, nem as **mensagens de erro** desta
 família. As três divergências acima só apareceram porque **rodei os binários lado a lado**. Sem gate,
 todas voltam.
+
+### ⚠️ Correção do D2 pelo arquiteto — eu li errado, e o contrato muda por causa disso
+
+Escrevi acima que o Go *"não registra, e não avisa"*. **Falso.** Meu E2E usou `tail -1` sobre saída
+combinada e **descartou o stderr**. Medido de novo, com os fluxos separados:
+
+```
+STDOUT: install complete: 1 agents artifact(s)
+STDERR: warning: could not register agent "architect" in trackfw.yaml:
+        trackfw.yaml has agents: in inline-flow format; edit <caminho> manually to add "architect"
+```
+
+🔴 **O Go avisa, nomeia o arquivo e diz o que fazer.** Sexta leitura falsa minha em dois dias, e a
+terceira por régua de captura de saída — não por raciocínio.
+
+#### O contrato que eu tinha escrito estava errado, e eu o inverto aqui
+
+Eu havia decidido *"flow inline deve funcionar nos três"*. Reconsiderando com a medição certa:
+
+- a `REQ-2026-08-02` garante **leitura** de flow inline — e os três leem. Ela **não** obriga reescrita;
+- o Node, ao reescrever, **reformata o arquivo do usuário**: `[alpha, beta]` vira `[ alpha, beta, architect ]`.
+  Mudança de estilo não pedida, em arquivo versionado;
+- o comportamento do Go é exatamente a decisão do KG de 2026-08-29 — **"controle que não reconhece
+  rejeita e avisa, em vez de adivinhar"**.
+
+**Contrato final: o Go é a referência.** Formato flow inline ⇒ **não reescrever**, emitir aviso que
+nomeia o arquivo e o item, e sair sem alterar bytes. **Node deixa de reescrever. Python deixa de
+corromper.**
+
+**Ranking de severidade, corrigido:**
+
+```
+PY    chave agents: DUPLICADA — perda silenciosa de alpha e beta      🔴 corrupcao de dado
+NODE  reescreve e reformata o arquivo do usuario                       degradacao aceitavel-mas-errada
+GO    avisa e nao toca                                                 ✅ referencia
+```
+
+#### Ordem de correção
+
+1. **Python primeiro** — é o único que destrói dado, e já está empurrado no PR #330.
+2. Node — parar de reescrever.
+3. Go — só o D1 (posição do bloco).
