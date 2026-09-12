@@ -250,3 +250,72 @@ Custa um protótipo descartável e responde se dá para apagar 53.744 linhas sem
   (varrer issues antes de escrever roadmap), aplicada a **prior art de mercado**: verificar como o
   problema já foi resolvido fora, antes de projetar solução própria. O primeiro parecer do arquiteto
   recomendou WASM sem ter feito essa verificação.
+
+---
+
+## Decisões de adoção — 2026-09-12 (KG)
+
+Duas questões que ficaram abertas na aceitação foram decididas. Registro com o ajuste que proponho
+em cada, para a decisão ficar completa e não voltar como dúvida.
+
+### 1. Os sítios de versão passando de 5 para 11+
+
+**Decisão do KG:** *"podemos criar um gate e o problema está resolvido."*
+
+**Concordo — com um ajuste que sai mais barato.** Um gate policiando 11 arquivos escritos à mão é
+mais caro e mais frágil do que **gerar os 11 a partir de um**.
+
+```
+hoje              5 sítios escritos à mão, conferidos só no `release tag`  (issue #338)
+gate sobre 11+    11 sítios à mão + gate vigiando        ← funciona, mas mantém a classe viva
+GERAR + gate      1 sítio real; os manifests de plataforma são artefato de build
+```
+
+Os `package.json` dos pacotes de plataforma **não precisam existir no repositório** — o esbuild os
+gera no release. Com geração, o número de sítios **cai de 5 para 1**, e o gate deixa de vigiar
+divergência para verificar que a geração aconteceu.
+
+🔴 **A diferença importa por um motivo que este projeto já pagou:** gate detecta *drift*; geração
+**impede** o drift. A ADR de causa raiz deste repositório é explícita — registro não é correção.
+
+**Consequência:** o **#338 deixa de piorar com a opção D e passa a ser resolvido por ela.** De
+pré-requisito, vira entregável.
+
+### 2. A medição de retorno (ML-2A da trilha 2)
+
+**Decisão do KG:** *"nem precisamos saber disso; sabendo que diminuiremos pela metade os issues já
+vale o risco."*
+
+**Concordo quanto à decisão, e proponho realocar a medição em vez de cancelá-la.**
+
+Por que concordo: o termo dominante da conta **já está medido**, e não é o número de issues —
+
+```
+53.744 linhas de reimplementação        medido
+31 de 61 gates existindo só p/ paridade medido
+```
+
+Isso sozinho justifica a mudança. A contagem de issues é confirmação, não fundamento.
+
+🔴 **Uma ressalva que preciso deixar escrita, porque a decisão passou a se apoiar nela:** o
+*"8 de 16 issues desaparecem"* é **classificação preliminar do arquiteto, por leitura** — não
+medição. Pode ser 5, pode ser 11. Não deve ser citado como fato medido em changelog, PR ou
+comunicação externa.
+
+**Por que a medição continua necessária, só que depois:** o valor dela nunca foi decidir; é saber,
+**depois de adotar D**, quais das 33 REQs e dos 16 issues fecham por *causa removida* em vez de
+ficarem abertos para sempre. Sem isso, adotamos a opção D e o backlog fica em limbo — ninguém sabe o
+que ainda é trabalho.
+
+**Realocada:** deixa de ser pré-requisito da decisão e passa a ser **entregável da execução da v8**,
+junto com o fechamento em massa dos artefatos cuja causa desapareceu.
+
+### O que ainda gate a adoção
+
+Sobra **um** item, e é o modo de falha conhecido da opção D:
+
+- **AC6** — `package-lock.json` gerado no macOS instalando no **Windows real**, com o binário de
+  plataforma presente. É o bug clássico de `optionalDependencies` + lockfile.
+
+Em execução na VM de Windows (`powershell-vm`) neste momento. 🔴 **É o único AC cuja falha ainda
+reverteria a adoção.**
