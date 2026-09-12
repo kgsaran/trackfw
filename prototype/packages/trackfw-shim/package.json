@@ -1,0 +1,14 @@
+{
+  "name": "trackfw-shim",
+  "version": "0.0.1",
+  "description": "trackfw CLI — shim that resolves platform binary at runtime (no postinstall)",
+  "bin": { "trackfw": "bin/trackfw.js" },
+  "optionalDependencies": {
+    "@trackfw-bin/linux-x64": "0.0.1",
+    "@trackfw-bin/linux-arm64": "0.0.1",
+    "@trackfw-bin/darwin-x64": "0.0.1",
+    "@trackfw-bin/darwin-arm64": "0.0.1",
+    "@trackfw-bin/win32-x64": "0.0.1"
+  },
+  "files": ["bin/trackfw.js"]
+}

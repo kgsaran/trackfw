@@ -2,6 +2,29 @@
 
 ---
 
+## Sessão 2026-09-12 — Ares (Trilha 1: ML-1A → ML-1D — Opção D) — Auditoria corrigida
+
+**Início:** 2026-09-12 | Branch: `fix/validar-um-binario-muitos-canais` | Roadmap: `ROADMAP-2026-09-12-validar-um-binario-muitos-canais.md` em wip.
+**Tarefa:** Executar ML-1A (AC1–AC4), ML-1B (AC5), ML-1C (AC6–AC7), ML-1D (AC8–AC9) no worktree `trackfw-nul`.
+
+**Status real (pós-auditoria):** ML-1A ✅ ML-1B ✅ ML-1C 🔄 ML-1D 🔄 — evidências em `prototype/evidence/trilha1-ml1a-ml1d-2026-09-12.md`.
+
+**Achados principais:**
+- AC4: npm EACCES com cache somente-leitura é restrição geral do npm, não da opção D (vault note adicionada)
+- AC3: bloqueio de github.com provado; proxy log tem advertência de ambiguidade (proxy pode ter morrido antes do install)
+- AC7: shim nomeia `darwin/arm64` e `@trackfw-bin/darwin-arm64` no erro — nunca MODULE_NOT_FOUND ✅
+- AC8/AC9: byte-idêntico em darwin/arm64 (6 cenários) ✅; Linux e Windows não provados empiricamente
+- AC6: lockfile macOS → Windows real não testado; provado localmente via --os/--cpu (aproximação)
+- go-to-wheel v0.2 incompatível com cmd/trackfw/ layout — wheel construído manualmente, formato gh-bin exato
+- Issue #338 agrava: 5 sítios → 11+ com a opção D
+- Gate: build ✅ tests ✅ lint ✅ validate ✅ (178 warnings pré-existentes, exit 0)
+
+**Para fechar AC6 + AC8/AC9 empiricamente:** npm pack tarballs + nova pergunta no windows-probe.yml + workflow_dispatch manual. Requer commit/push de Zeus.
+
+**Handoff para Zeus:** roadmap ML-1C e ML-1D marcados 🔄; evidence file e vault note atualizados com advertências honestas.
+
+---
+
 ## Sessão 2026-09-12 — Zeus (v7.6.0 TAGGED — npm bloqueado por credencial)
 
 Tag `v7.6.0` publicada via `trackfw release tag 7.6.0` (o `git push origin <tag>` cru é bloqueado
