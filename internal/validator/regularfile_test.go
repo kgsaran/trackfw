@@ -3,7 +3,6 @@ package validator
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 	"time"
 )
@@ -90,9 +89,12 @@ func TestReadRegularFile_Ausente_RetornaENOENT(t *testing.T) {
 // reproduzindo o corpus adversarial da barreira anterior (symlink válido para fora do diretório):
 // a mudança para abrir-depois-classificar não pode quebrar o caso legítimo de symlink.
 func TestReadRegularFile_SymlinkParaArquivoRegularExterno_LeNormalmente(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("os.Symlink pode exigir privilégio elevado no Windows")
-	}
+	// Antipadrão corrigido: a guarda anterior era runtime.GOOS == "windows" →
+	// t.Skip, que abandonava cobertura mesmo em Windows com Developer Mode.
+	// A guarda correta é pela CONDIÇÃO (falha de privilégio), não pela
+	// plataforma: symlinkOrSkip tenta criar e só pula se o processo realmente
+	// não tem privilégio (WinError 1314 / EPERM). Em macOS/Linux e em Windows
+	// com Developer Mode, o symlink é criado e o teste executa de verdade.
 	dir := t.TempDir()
 	external := filepath.Join(dir, "external.json")
 	want := []byte(`{"hooks":{}}`)
@@ -100,9 +102,7 @@ func TestReadRegularFile_SymlinkParaArquivoRegularExterno_LeNormalmente(t *testi
 		t.Fatalf("WriteFile: %v", err)
 	}
 	link := filepath.Join(dir, "settings.json")
-	if err := os.Symlink(external, link); err != nil {
-		t.Fatalf("Symlink: %v", err)
-	}
+	symlinkOrSkip(t, external, link)
 
 	got, err, hung := readWithDeadline(t, 3*time.Second, link)
 	if hung {

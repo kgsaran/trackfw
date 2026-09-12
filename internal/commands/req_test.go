@@ -15,7 +15,7 @@ func TestRunReqNew_NoTTY_BehaviorUnchanged(t *testing.T) {
 	_ = os.Chdir(dir)
 	t.Cleanup(func() { _ = os.Chdir(orig) })
 
-	if err := runReqNew(nil, []string{"Estrategia de Autenticacao"}); err != nil {
+	if err := runReqNew(nil, []string{"Estrategia de Autenticacao"}, ""); err != nil {
 		t.Fatalf("runReqNew erro inesperado (sem TTY não deveria acionar wizard): %v", err)
 	}
 

@@ -84,8 +84,10 @@ message; review and edit before using it with -m. When '--suggest' is set, '-m' 
 passed) is ignored and no commit ever happens.
 
 Create the governance artifacts first if this blocks you:
-  trackfw req new "title"
-  trackfw roadmap new "title"
+  trackfw req new "title"               # flat project
+  trackfw req new --agent <agent> "title"  # by_agent project with 2+ agents
+  trackfw roadmap new "title"               # flat project
+  trackfw roadmap new --agent <agent> "title"  # by_agent project with 2+ agents
   trackfw roadmap move <name> wip`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Silence cobra's own error/usage printing — runCommit already writes a
@@ -330,7 +332,7 @@ func runCommit(message string, deps commitDeps) error {
 		if !matched {
 			var msg string
 			if len(candidates) == 0 {
-				msg = validator.BranchGovernanceOrientation(branch)
+				msg = validator.BranchGovernanceOrientation(branch, cfg)
 			} else {
 				msg = validator.BranchNoMatchingRoadmapMessage(branch, candidates)
 			}

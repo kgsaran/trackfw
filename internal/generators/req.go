@@ -21,15 +21,23 @@ type REQContent struct {
 	LinkedADR     string
 	LinkedRoadmap string
 	DependsOnADRs []string // basenames de ADRs Draft vinculados
+	// Agent é o namespace de agente em modo by_agent. Quando vazio, a resolução usa
+	// ResolveWriteAgent: um único namespace → usa aquele; vários → retorna erro.
+	Agent string
 }
 
 // NewREQ gera um arquivo REQ em docs/req/ com base no conteúdo fornecido.
 // Campos preenchidos são inseridos diretamente; campos vazios mantêm o placeholder original.
 func NewREQ(content REQContent) error {
 	cfg := config.Load()
+	// Resolver o agente antes de chamar REQWriteDir — ResolveWriteAgent faz a guarda de ambiguidade.
+	agent, err := validator.ResolveWriteAgent(cfg, content.Agent)
+	if err != nil {
+		return err
+	}
 	// Ponto único de decisão de caminho de ESCRITA (ADR-2026-09-03, D2/D4): em by_agent grava no
 	// canônico req_dir/<agente>/; em flat, req_dir/ — o mesmo ponto que alimenta a união de leitura.
-	reqDir := validator.REQWriteDir(cfg)
+	reqDir := validator.REQWriteDir(cfg, agent)
 	if reqDir == "" {
 		reqDir = cfg.REQDir
 	}

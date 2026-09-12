@@ -3,7 +3,7 @@
 const fs = require('fs')
 const path = require('path')
 const os = require('os')
-const { readAgentConventions } = require('../config/index.js')
+const { readAgentConventions, readNamespacingConfig, NAMESPACING_BY_AGENT } = require('../config/index.js')
 const { homedir } = require('../homedir');
 
 // PACKAGE_VERSION — the version of the trackfw binary generating the CI
@@ -499,7 +499,7 @@ const AGENT_HEADERS = {
   cursor:   '---\ndescription: trackfw governance rules\nglob: "**/*"\nalwaysApply: true\n---\n',
 }
 
-function trackfwRulesBlock(agentConventions) {
+function trackfwRulesBlock(agentConventions, namespacing, agents) {
   let conventionsSection = ''
   if (agentConventions && String(agentConventions).trim() !== '') {
     conventionsSection = `
@@ -513,6 +513,19 @@ ${String(agentConventions).trim()}
 `
   }
 
+  // Determine step-1 command form — by_agent + 2+ agents shows --agent variant
+  const nonEmpty = (agents || []).filter(a => a)
+  const isMulti = namespacing === NAMESPACING_BY_AGENT && nonEmpty.length >= 2
+  const step1Req = isMulti
+    ? `\`trackfw req new --agent <agent> "title"\``
+    : `\`trackfw req new "title"\``
+  const step1Roadmap = isMulti
+    ? `\`trackfw roadmap new --agent <agent> "title"\``
+    : `\`trackfw roadmap new "title"\``
+  const step1Note = isMulti
+    ? `\n   ⚠️ \`--agent\` is required for this project (agents: ${nonEmpty.join(', ')})`
+    : ''
+
   return RULES_START + `
 ## trackfw — Governance Rules
 
@@ -521,7 +534,7 @@ Chain: \`ADR → REQ → ROADMAP\` · States: \`backlog / analyzing / wip / bloc
 
 ### Agent Protocol
 1. **Before any implementation (mandatory):** create governance artifacts FIRST, then branch:
-   \`trackfw req new "title"\` → \`trackfw roadmap new "title"\` → \`trackfw roadmap move <name> wip\` → \`git checkout -b feat/<branch>\`
+   ${step1Req} → ${step1Roadmap} → \`trackfw roadmap move <name> wip\` → \`git checkout -b feat/<branch>\`${step1Note}
    ❌ Never create a branch before REQ + ROADMAP are in wip/
    ❌ Never defer REQ/ROADMAP creation to a future task — they are prerequisites, not deliverables
    ✓ \`trackfw validate\` enforces this via \`branch_has_wip_roadmap\` rule (v2.7.0+)
@@ -574,7 +587,8 @@ Delete the file when resolved. Visible as a live banner in \`trackfw serve\`.
 function injectOrUpdateRules(filePath, headerIfNew, cwd) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true })
 
-  const block = trackfwRulesBlock(readAgentConventions(cwd))
+  const { namespacing, agents: nsAgents } = readNamespacingConfig(cwd)
+  const block = trackfwRulesBlock(readAgentConventions(cwd), namespacing, nsAgents)
 
   if (!fs.existsSync(filePath)) {
     let content = headerIfNew || ''
@@ -688,8 +702,17 @@ function generateClaudeMD(cfg) {
   content += '| Command | When to use |\n'
   content += '|---|---|\n'
   content += '| `trackfw adr new "title"` | Create ADR |\n'
-  content += '| `trackfw req new "title"` | Create REQ |\n'
-  content += '| `trackfw roadmap new` | Create empty roadmap linked to a REQ |\n'
+  {
+    const nsNonEmpty = (cfg.agents || []).filter(a => a)
+    if (cfg.roadmapNamespacing === NAMESPACING_BY_AGENT && nsNonEmpty.length >= 2) {
+      const agentList = nsNonEmpty.join(', ')
+      content += `| \`trackfw req new --agent <agent> "title"\` | Create REQ (\`--agent\` required; agents: ${agentList}) |\n`
+      content += '| `trackfw roadmap new --agent <agent>` | Create roadmap linked to a REQ (`--agent` required) |\n'
+    } else {
+      content += '| `trackfw req new "title"` | Create REQ |\n'
+      content += '| `trackfw roadmap new` | Create empty roadmap linked to a REQ |\n'
+    }
+  }
   content += '| `trackfw roadmap move <name> <state>` | Move roadmap state |\n'
   content += '| `trackfw validate` | Governance validation gate |\n'
   content += '| `trackfw status` | Show governance status |\n\n'
@@ -897,6 +920,8 @@ trackfw não está instalado. Instale com uma das opções:
 \`\`\``,
 
     'req.md': `Execute o seguinte comando bash: \`trackfw req new "$ARGUMENTS"\`
+
+⚠️ Em projetos com \`roadmap_namespacing: by_agent\` e 2+ agentes, use: \`trackfw req new --agent <seu-agente> "$ARGUMENTS"\`
 
 Se o comando falhar com \`trackfw: command not found\` ou similar, informe ao usuário:
 

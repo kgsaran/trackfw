@@ -12,12 +12,35 @@ const path = require('path')
 const config = require('../src/config/index.js')
 const { listRoadmaps, showRoadmap, moveRoadmap, rewriteRoadmapStatus, newRoadmap, newRoadmapFromReq } = require('../src/generators/roadmap')
 const { validateFolderStatusCoherence } = require('../src/validator/index.js')
+const { symlinkOrSkip: _symlinkCore, SymlinkPrivilegeSkip } = require('./helpers/symlink')
 
-let passed = 0, failed = 0
+// Adapts the shared helper to this file's custom harness:
+// EPERM/EACCES → throws SymlinkPrivilegeSkip (caught by test() as "pulado")
+// Any other error → rethrows (caught by test() as failure)
+function symlinkOrSkip (target, link) {
+  return _symlinkCore(target, link, (err) => {
+    throw new SymlinkPrivilegeSkip(
+      `criação de symlink exige Developer Mode (ou processo elevado) neste Windows: ${err.message}`
+    )
+  })
+}
 
-function test(name, fn) {
-  try { fn(); console.log(`✓ ${name}`); passed++ }
-  catch (e) { console.error(`✗ ${name}: ${e.message}`); failed++ }
+let passed = 0, failed = 0, skipped = 0
+
+function test (name, fn) {
+  try {
+    fn()
+    console.log(`✓ ${name}`)
+    passed++
+  } catch (e) {
+    if (e instanceof SymlinkPrivilegeSkip) {
+      console.log(`- ${name} (pulado: ${e.message})`)
+      skipped++
+    } else {
+      console.error(`✗ ${name}: ${e.message}`)
+      failed++
+    }
+  }
 }
 
 /**
@@ -1050,7 +1073,125 @@ test('moveRoadmap — controle de regressão: frontmatter sincronizado nunca con
   })
 })
 
+// ─── Testes ML-1E-a: erro explícito e log-prefix em by_agent ─────────────────
+
+test('moveRoadmap — by_agent log prefix tem segmento de agente (port de TestMoveRoadmap_ByAgent_LogPrefixHasAgent)', () => {
+  // Conclusão do ML-1E-a: o .trackfw-log em modo by_agent deve conter "<agente>/ROADMAP-*.md",
+  // não apenas "ROADMAP-*.md". Afirma que agentFromPath é chamado antes do rename e retorna
+  // o nome do agente corretamente para paths legítimos dentro do roadmapDir.
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-logprefix-'))
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-logprefix-proj-'))
+  const origCwd = process.cwd()
+  try {
+    const roadmapDir = path.join(tmp, 'docs', 'roadmaps')
+    fs.mkdirSync(path.join(roadmapDir, 'alpha', 'backlog'), { recursive: true })
+    fs.writeFileSync(path.join(tmp, 'trackfw.yaml'),
+      'roadmap_dir: docs/roadmaps\nroadmap_namespacing: by_agent\nagents:\n- alpha\n', 'utf8')
+    config.reset()
+    process.chdir(tmp)
+
+    const content = '---\nstatus: backlog\ndate: 2026-09-11\n---\n\n# Roadmap: Log Prefix\n\n> Created: 2026-09-11 | Status: backlog\n'
+    fs.writeFileSync(path.join(roadmapDir, 'alpha', 'backlog', 'ROADMAP-log-prefix.md'), content, 'utf8')
+
+    const savedExit = process.exitCode
+    try {
+      process.exitCode = undefined
+      moveRoadmap('ROADMAP-log-prefix', 'analyzing')
+      assert.notStrictEqual(process.exitCode, 1, 'moveRoadmap não deve marcar exitCode=1 para move legítimo')
+    } finally {
+      process.exitCode = savedExit
+    }
+
+    const log = fs.readFileSync(path.join(roadmapDir, '.trackfw-log'), 'utf8')
+    assert.ok(log.includes('alpha/ROADMAP-log-prefix.md'), `log deve conter "alpha/ROADMAP-log-prefix.md"; got: ${log}`)
+    assert.ok(log.includes('backlog → analyzing'), `log deve registrar "backlog → analyzing"; got: ${log}`)
+  } finally {
+    process.chdir(origCwd)
+    config.reset()
+    fs.rmSync(tmp, { recursive: true, force: true })
+    fs.rmSync(outside, { recursive: true, force: true })
+  }
+})
+
+test('moveRoadmap — by_agent symlink fora do roadmapDir seta exitCode=1 e nomeia o path', () => {
+  // Conclusão do ML-1E-a: quando agentFromPath retorna "" (realpathSync resolve symlink para
+  // fora de roadmapDir), moveRoadmap deve falhar com exitCode=1 e mensagem nomeando o path.
+  // Não pode haver fallback silencioso ao primeiro agente declarado.
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-symlink-outside-'))
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-symlink-proj-'))
+  const origCwd = process.cwd()
+  try {
+    const roadmapDir = path.join(tmp, 'docs', 'roadmaps')
+    fs.mkdirSync(path.join(roadmapDir, 'alice', 'wip'), { recursive: true })
+    // outside/wip/ROADMAP-leak.md
+    fs.mkdirSync(path.join(outside, 'wip'), { recursive: true })
+    fs.writeFileSync(path.join(outside, 'wip', 'ROADMAP-leak.md'), '# leak', 'utf8')
+    // evil → outside, dentro do roadmapDir
+    // symlinkOrSkip: EPERM/EACCES → SymlinkPrivilegeSkip (test() marca como pulado)
+    // qualquer outro erro → relança (test() marca como falha)
+    symlinkOrSkip(outside, path.join(roadmapDir, 'evil'))
+
+    fs.writeFileSync(path.join(tmp, 'trackfw.yaml'),
+      'roadmap_dir: docs/roadmaps\nroadmap_namespacing: by_agent\nagents:\n- alice\n- evil\n', 'utf8')
+    config.reset()
+    process.chdir(tmp)
+
+    // agentFromPath usará realpathSync — evil resolve para outside, relativo começa com ".."
+    // Portanto agentFromPath retorna '' e moveRoadmap deve sair com exitCode=1
+    const savedExit = process.exitCode
+    let stderrLine = ''
+    const origError = console.error
+    try {
+      process.exitCode = undefined
+      console.error = (...args) => { stderrLine = args.join(' ') }
+      // Chamar moveRoadmap com o path via symlink diretamente (simula scanner corrompido)
+      // Nota: findRoadmapMatches em Node usa resolveAgentNamespaces que inclui "evil" em agents:
+      // Mas fs.readdirSync em by_agent percorre evil/wip/ via o symlink, então o arquivo é encontrado.
+      moveRoadmap('ROADMAP-leak', 'done')
+      assert.strictEqual(process.exitCode, 1, 'moveRoadmap deve setar exitCode=1 para path via symlink externo')
+      assert.ok(stderrLine.includes('agent namespace'), `stderr deve mencionar "agent namespace"; got: ${stderrLine}`)
+      // O path recusado deve ser nomeado — contrato "nomeia o caminho recusado"
+      assert.ok(stderrLine.includes('ROADMAP-leak'), `stderr deve nomear o path recusado (ROADMAP-leak); got: ${stderrLine}`)
+    } finally {
+      process.exitCode = savedExit
+      console.error = origError
+    }
+
+    // O arquivo não deve ter escapado para outside/done/
+    assert.ok(!fs.existsSync(path.join(outside, 'done', 'ROADMAP-leak.md')),
+      'arquivo não deve escapar para fora do roadmapDir via symlink')
+  } finally {
+    process.chdir(origCwd)
+    config.reset()
+    fs.rmSync(tmp, { recursive: true, force: true })
+    fs.rmSync(outside, { recursive: true, force: true })
+  }
+})
+
+test('moveRoadmap — by_agent move legítimo entre estados continua funcionando (contra-braço ML-1E-a)', () => {
+  // Conclusão do ML-1E-a: o erro explícito para "" não afeta moves dentro do roadmapDir.
+  withRoadmapDir((tmp, roadmapDir) => {
+    fs.writeFileSync(path.join(tmp, 'trackfw.yaml'),
+      'roadmap_dir: docs/roadmaps\nroadmap_namespacing: by_agent\nagents:\n- zeus\n', 'utf8')
+    config.reset()
+    fs.mkdirSync(path.join(roadmapDir, 'zeus', 'wip'), { recursive: true })
+    fs.writeFileSync(path.join(roadmapDir, 'zeus', 'wip', 'ROADMAP-legit.md'), canonicalRoadmap('Legit', 'wip'), 'utf8')
+
+    const savedExit = process.exitCode
+    try {
+      process.exitCode = undefined
+      moveRoadmap('ROADMAP-legit', 'done')
+      assert.notStrictEqual(process.exitCode, 1, 'moveRoadmap não deve errar para move legítimo')
+    } finally {
+      process.exitCode = savedExit
+    }
+
+    assert.ok(fs.existsSync(path.join(roadmapDir, 'zeus', 'done', 'ROADMAP-legit.md')),
+      'arquivo deve existir em zeus/done após move legítimo')
+  })
+})
+
 // ─── Relatório final ─────────────────────────────────────────────────────────
 
-console.log(`\n${passed + failed} testes — ${passed} passaram, ${failed} falharam`)
+console.log(`\n${passed + failed + skipped} testes — ${passed} passaram, ${failed} falharam, ${skipped} pulados`)
 if (failed > 0) process.exitCode = 1

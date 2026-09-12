@@ -12,11 +12,34 @@ Cobre os mesmos casos que Go e Node.js:
   - is_ship_branch, is_git_write_cmd, normalize_branch_slug
 """
 
+import errno
 import os
 import re
 import subprocess
 import tempfile
 import pytest
+
+
+def _symlink_or_skip_path(src: str, dst: str) -> None:
+    """Guarda de capacidade: cria os.symlink(src, dst); pytest.skip se o
+    processo não tem privilégio (WinError 1314 / EPERM / EACCES). Qualquer
+    outro OSError é re-lançado — a guarda discrimina "sem privilégio" de
+    "falhou por outro motivo".
+
+    A detecção é pela CONDIÇÃO (falha de privilégio), não por sys.platform:
+    num Windows com Developer Mode habilitado, os.symlink tem sucesso e o
+    teste executa de verdade.
+    """
+    try:
+        os.symlink(src, dst)
+    except OSError as err:
+        winerror = getattr(err, 'winerror', None)
+        if winerror == 1314 or err.errno in (errno.EPERM, errno.EACCES):
+            pytest.skip(
+                'guarda de symlink não exercitada: criação de symlink exige '
+                f'Developer Mode (ou processo elevado) neste Windows: {err}'
+            )
+        raise
 
 from trackfw.ship.runner import (
     run_ship,
@@ -975,7 +998,7 @@ def test_ship_integration_graceful_degradation_clean_path():
         os.makedirs(tmp_bin)
         git_path = shutil.which('git')
         assert git_path, 'git must be installed to run integration test'
-        os.symlink(git_path, os.path.join(tmp_bin, 'git'))
+        _symlink_or_skip_path(git_path, os.path.join(tmp_bin, 'git'))
 
         # Create git repo
         repo_dir = os.path.join(tmp_dir, 'repo')

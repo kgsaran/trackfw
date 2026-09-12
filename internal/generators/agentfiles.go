@@ -34,7 +34,10 @@ var agentHeaders = map[string]string{
 	"cursor":   "---\ndescription: trackfw governance rules\nglob: \"**/*\"\nalwaysApply: true\n---\n",
 }
 
-func trackfwRulesBlock(agentConventions string) string {
+// trackfwRulesBlock generates the governance rules block for AI agent configuration files.
+// namespacing and agents are used to emit the correct `req new` / `roadmap new` command for
+// projects with by_agent namespacing and 2+ agents (AC13, ML-3A).
+func trackfwRulesBlock(agentConventions, namespacing string, agents []string) string {
 	conventionsSection := ""
 	if strings.TrimSpace(agentConventions) != "" {
 		conventionsSection = `
@@ -48,6 +51,29 @@ func trackfwRulesBlock(agentConventions string) string {
 `
 	}
 
+	// Compute the step-1 command sequence, conditional on by_agent 2+.
+	// The named predicate is validator.IsMultiAgentByAgent; the same check governs the
+	// ambiguity error in `req new` / `roadmap new` (Wave 1). Using it here ensures the
+	// documentation matches the command behaviour exactly.
+	step1Req := "`trackfw req new \"title\"`"
+	step1Roadmap := "`trackfw roadmap new \"title\"`"
+	step1Note := ""
+
+	if namespacing == config.NamespacingByAgent {
+		var nonEmpty []string
+		for _, a := range agents {
+			if a != "" {
+				nonEmpty = append(nonEmpty, a)
+			}
+		}
+		if len(nonEmpty) >= 2 {
+			agentList := strings.Join(nonEmpty, ", ")
+			step1Req = "`trackfw req new --agent <agent> \"title\"`"
+			step1Roadmap = "`trackfw roadmap new --agent <agent> \"title\"`"
+			step1Note = "\n   ⚠️ `--agent` is required for this project (agents: " + agentList + ")"
+		}
+	}
+
 	return rulesStart + `
 ## trackfw — Governance Rules
 
@@ -56,7 +82,7 @@ Chain: ` + "`ADR → REQ → ROADMAP`" + ` · States: ` + "`backlog / analyzing 
 
 ### Agent Protocol
 1. **Before any implementation (mandatory):** create governance artifacts FIRST, then branch:
-   ` + "`trackfw req new \"title\"`" + ` → ` + "`trackfw roadmap new \"title\"`" + ` → ` + "`trackfw roadmap move <name> wip`" + ` → ` + "`git checkout -b feat/<branch>`" + `
+   ` + step1Req + ` → ` + step1Roadmap + ` → ` + "`trackfw roadmap move <name> wip`" + ` → ` + "`git checkout -b feat/<branch>`" + step1Note + `
    ❌ Never create a branch before REQ + ROADMAP are in wip/
    ❌ Never defer REQ/ROADMAP creation to a future task — they are prerequisites, not deliverables
    ✓ ` + "`trackfw validate`" + ` enforces this via ` + "`branch_has_wip_roadmap`" + ` rule (v2.7.0+)
@@ -109,7 +135,8 @@ func injectOrUpdateRules(filePath, headerIfNew, cwd string) error {
 		return err
 	}
 
-	block := trackfwRulesBlock(config.ReadAgentConventions(cwd))
+	namespacing, agents := config.ReadNamespacingConfig(cwd)
+	block := trackfwRulesBlock(config.ReadAgentConventions(cwd), namespacing, agents)
 
 	data, err := os.ReadFile(filePath)
 	if os.IsNotExist(err) {

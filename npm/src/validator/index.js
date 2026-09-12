@@ -414,18 +414,33 @@ function listReqMdFiles(dir) {
   } catch (_) { return [] }
 }
 
+// resolveAgentForWrite — ponto único de resolução do agente de escrita em modo by_agent.
+// Regra (AC5, AC10, KG 2026-08-29):
+//   - explicitAgent fornecido  → usa-o (AC4/AC5b: valor fora de agents: é permitido, produz violação de namespace)
+//   - agents: com UM namespace → usa aquele, sem erro (AC14: projeto single-agent nunca vê o erro)
+//   - agents: vazio            → usa "default"
+//   - agents: com VÁRIOS       → lança erro nomeando todas as opções (AC5: silêncio de agents[0] deixa de existir)
+// Nomes vazios em agents: não contam (agents: ["", "zeus"] é UM namespace) — filter antes de contar.
+function resolveAgentForWrite(cfg, explicitAgent) {
+  if (explicitAgent) return explicitAgent
+  const agents = (cfg.agents || []).filter(a => a)
+  if (agents.length === 0) return 'default'
+  if (agents.length === 1) return agents[0]
+  throw new Error(`by_agent project has multiple agent namespaces (${agents.join(', ')}): use --agent to specify one`)
+}
+
 // reqWriteDir é o PONTO ÚNICO que decide ONDE uma REQ nova é gravada (ADR-2026-09-03, D2/D4):
 //   flat     → req_dir/
-//   by_agent → req_dir/<agente>/   (primeiro de agents:, ou "default" se a lista é vazia)
+//   by_agent → req_dir/<agente>/   (agente resolvido via resolveAgentForWrite — AC4/AC5/AC10)
 // Consumido pelo gerador (newREQ); a união de leitura abaixo contém este diretório por construção.
-function reqWriteDir(cfg) {
+// Lança Error em by_agent com múltiplos namespaces e sem agente explícito (AC5).
+function reqWriteDir(cfg, agent) {
   const reqDir = cfg.reqDir || cfg.req_dir || ''
   if (!reqDir) return ''
   const namespacing = cfg.roadmapNamespacing || cfg.roadmap_namespacing || ''
   if (namespacing === 'by_agent') {
-    const agents = (cfg.agents || []).filter(a => a)
-    const agent = agents.length > 0 ? agents[0] : 'default'
-    return path.join(reqDir, agent)
+    const resolvedAgent = resolveAgentForWrite(cfg, agent)
+    return path.join(reqDir, resolvedAgent)
   }
   return reqDir
 }
@@ -1500,12 +1515,37 @@ function branchSlugMatchesRoadmap(branchSlug, wipDirs, doneDirs) {
   return { matched, candidates }
 }
 
+// isMultiAgentByAgent returns {multi: bool, agents: string[]} — parity with Go's IsMultiAgentByAgent.
+// multi is true only when roadmap_namespacing is "by_agent" AND there are 2+ non-empty agent names.
+function isMultiAgentByAgent(cfg) {
+  const ns = cfg.roadmapNamespacing || cfg.roadmap_namespacing || ''
+  if (ns !== 'by_agent') return { multi: false, agents: [] }
+  const nonEmpty = (cfg.agents || []).filter(a => a)
+  if (nonEmpty.length < 2) return { multi: false, agents: nonEmpty }
+  return { multi: true, agents: nonEmpty }
+}
+
+// reqNewLine returns the correct `trackfw req new` command for the project — parity with Go's ReqNewLine.
+function reqNewLine(cfg) {
+  const { multi, agents } = isMultiAgentByAgent(cfg)
+  if (multi) return `trackfw req new --agent <agent> "title"  # agents: ${agents.join(', ')}`
+  return 'trackfw req new "title"'
+}
+
+// roadmapNewLine returns the correct `trackfw roadmap new` command — parity with Go's RoadmapNewLine.
+function roadmapNewLine(cfg) {
+  const { multi } = isMultiAgentByAgent(cfg)
+  if (multi) return 'trackfw roadmap new --agent <agent> "title"'
+  return 'trackfw roadmap new "title"'
+}
+
 // branchGovernanceOrientation is the guidance message printed when a feat/fix/refactor branch has
 // no roadmap in wip/ nor done/ at all (candidates is empty). Shared by validateBranchHasWIPRoadmap
 // and `trackfw branch new` — never duplicate this string. Byte-identical to Go's
 // BranchGovernanceOrientation.
-function branchGovernanceOrientation(branch) {
-  return `branch "${branch}" is a feat/fix/refactor branch but no roadmap is in wip/ nor done/ — create governance artifacts first:\n  trackfw req new "title"\n  trackfw roadmap new "title"\n  trackfw roadmap move <name> wip`
+function branchGovernanceOrientation(branch, cfg) {
+  const cfgObj = cfg || {}
+  return `branch "${branch}" is a feat/fix/refactor branch but no roadmap is in wip/ nor done/ — create governance artifacts first:\n  ${reqNewLine(cfgObj)}\n  ${roadmapNewLine(cfgObj)}\n  trackfw roadmap move <name> wip`
 }
 
 // branchNoMatchingRoadmapMessage is the guidance message printed when roadmaps exist in wip/ or
@@ -1548,7 +1588,7 @@ function validateBranchHasWIPRoadmap() {
   if (matched) return []
 
   if (candidates.length === 0) {
-    return [branchGovernanceOrientation(branch)]
+    return [branchGovernanceOrientation(branch, cfg)]
   }
   return [branchNoMatchingRoadmapMessage(branch, candidates)]
 }
@@ -3962,6 +4002,7 @@ module.exports = {
   tryListDir,
   resolveReqFiles,
   reqWriteDir,
+  resolveAgentForWrite,
   resolveStateDirs,
   resolveWIPDirs,
   resolveDoneDirs,
@@ -3980,6 +4021,9 @@ module.exports = {
   validateBranchHasWIPRoadmap,
   // novas funções — trackfw branch new (extraídas do gate branch_has_wip_roadmap)
   branchSlugMatchesRoadmap,
+  isMultiAgentByAgent,
+  reqNewLine,
+  roadmapNewLine,
   branchGovernanceOrientation,
   branchNoMatchingRoadmapMessage,
   normalizeBranchSlug,

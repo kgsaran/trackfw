@@ -107,7 +107,7 @@ func TestREQWriteDirEstaContidoNaUniao(t *testing.T) {
 				RoadmapNamespacing: tc.namespacing,
 				Agents:             []string{"claude"},
 			}
-			writeDir := REQWriteDir(cfg)
+			writeDir := REQWriteDir(cfg, "")
 			if want := filepath.Join(dir, tc.wantSuffix); writeDir != want {
 				t.Fatalf("REQWriteDir = %q, esperado %q", writeDir, want)
 			}
@@ -136,7 +136,7 @@ func TestREQWriteDirDefaultEstaContidoNaUniao(t *testing.T) {
 		REQDir:             filepath.Join(dir, "docs/req"),
 		RoadmapNamespacing: config.NamespacingByAgent,
 	}
-	writeDir := REQWriteDir(cfg)
+	writeDir := REQWriteDir(cfg, "")
 	writeREQ(t, filepath.Join(writeDir, "REQ-nova.md"))
 
 	got := basenames(ResolveREQFiles(cfg))
@@ -149,7 +149,7 @@ func TestREQWriteDirDefaultEstaContidoNaUniao(t *testing.T) {
 // internal/generators/roadmap.go: sem agents:, o namespace de escrita é "default".
 func TestREQWriteDirSemAgentsDeclaradosUsaDefault(t *testing.T) {
 	cfg := config.ProjectConfig{REQDir: "docs/req", RoadmapNamespacing: config.NamespacingByAgent}
-	if got, want := REQWriteDir(cfg), filepath.Join("docs/req", "default"); got != want {
+	if got, want := REQWriteDir(cfg, ""), filepath.Join("docs/req", "default"); got != want {
 		t.Fatalf("REQWriteDir = %q, esperado %q", got, want)
 	}
 }

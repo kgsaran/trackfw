@@ -1453,31 +1453,110 @@ func ResolveAgentNamespaces(cfg config.ProjectConfig, dir string) []string {
 // conceito de roadmap. Nada aqui deve ser usado para ESCREVER REQ.
 var reqLayoutStates = []string{"backlog", "analyzing", "wip", "blocked", "done", "abandoned"}
 
+// ResolveWriteAgent resolve o namespace de agente para escrita em modo by_agent.
+//
+//   - Em modo flat: retorna ("", nil) — o chamador escreve na raiz, sem subdirectório de agente.
+//   - flagAgent não-vazio: retorna-o sem validação contra agents:. O valor fora de agents: cria o
+//     namespace e dispara a violação agent_namespace_undeclared da REQ irmã (AC5b).
+//   - by_agent + exatamente um namespace não-vazio em agents:: retorna aquele, sem necessidade de flag.
+//   - by_agent + zero namespaces não-vazios: retorna ("default", nil) — comportamento de fallback.
+//   - by_agent + dois ou mais namespaces não-vazios e sem flag: retorna erro nomeando as opções.
+//
+// Nomes vazios em agents: não contam — mesma noção de REQWriteDir e agentStateDir (filtrar, não indexar).
+func ResolveWriteAgent(cfg config.ProjectConfig, flagAgent string) (string, error) {
+	if cfg.RoadmapNamespacing != config.NamespacingByAgent {
+		return "", nil
+	}
+	if flagAgent != "" {
+		return flagAgent, nil
+	}
+	// Filtrar nomes vazios — mesma convenção do lado leitor (resolveAgentNamespaces).
+	var nonEmpty []string
+	for _, a := range cfg.Agents {
+		if a != "" {
+			nonEmpty = append(nonEmpty, a)
+		}
+	}
+	switch len(nonEmpty) {
+	case 0:
+		return "default", nil
+	case 1:
+		return nonEmpty[0], nil
+	default:
+		return "", fmt.Errorf(
+			"by_agent project has multiple agent namespaces (%s): use --agent to specify one",
+			strings.Join(nonEmpty, ", "),
+		)
+	}
+}
+
+// IsMultiAgentByAgent retorna true quando cfg usa namespacing by_agent com 2 ou mais namespaces
+// de agente não-vazios — a condição que exige --agent em `req new` / `roadmap new`.
+// Retorna (false, nil) para flat ou by_agent com 0–1 agente.
+// Segundo valor: lista dos agentes ativos (para mensagens de orientação).
+func IsMultiAgentByAgent(cfg config.ProjectConfig) (bool, []string) {
+	if cfg.RoadmapNamespacing != config.NamespacingByAgent {
+		return false, nil
+	}
+	var nonEmpty []string
+	for _, a := range cfg.Agents {
+		if a != "" {
+			nonEmpty = append(nonEmpty, a)
+		}
+	}
+	if len(nonEmpty) < 2 {
+		return false, nonEmpty
+	}
+	return true, nonEmpty
+}
+
+// ReqNewLine retorna a linha de comando `trackfw req new` correta para o projeto.
+// Para projetos flat ou by_agent com 1 agente: forma canônica sem --agent.
+// Para projetos by_agent com 2+ agentes: inclui --agent com a lista de agentes disponíveis.
+func ReqNewLine(cfg config.ProjectConfig) string {
+	multi, agents := IsMultiAgentByAgent(cfg)
+	if multi {
+		return fmt.Sprintf("trackfw req new --agent <agent> \"title\"  # agents: %s", strings.Join(agents, ", "))
+	}
+	return "trackfw req new \"title\""
+}
+
+// RoadmapNewLine retorna a linha de comando `trackfw roadmap new` correta para o projeto.
+func RoadmapNewLine(cfg config.ProjectConfig) string {
+	multi, _ := IsMultiAgentByAgent(cfg)
+	if multi {
+		return "trackfw roadmap new --agent <agent> \"title\""
+	}
+	return "trackfw roadmap new \"title\""
+}
+
 // REQWriteDir é o PONTO ÚNICO que decide ONDE uma REQ nova é gravada (ADR-2026-09-03, D2/D4):
 //   - flat      → req_dir/
-//   - by_agent  → req_dir/<agente>/   (agente = primeiro de agents:, ou "default" se a lista é vazia;
-//     mesma convenção de agentStateDir em internal/generators/roadmap.go)
+//   - by_agent  → req_dir/<agente>/   (agente pré-resolvido pelo chamador via ResolveWriteAgent)
 //
 // 🔴 O par escritor/leitor não pode ter duas noções de layout (D4). Este ponto e ResolveREQFiles
 // abaixo são consumidos pelos DOIS lados; a união de leitura contém, por construção, o diretório
 // devolvido aqui. Alterar um sem o outro é exatamente o defeito que a REQ-2026-08-30 fecha.
-func REQWriteDir(cfg config.ProjectConfig) string {
+//
+// agent deve ser o valor já resolvido por ResolveWriteAgent — não chamar esta função com ""
+// em modo by_agent (o fallback interno existe apenas para compatibilidade de chamadores antigos).
+func REQWriteDir(cfg config.ProjectConfig, agent string) string {
 	reqDir := cfg.REQDir
 	if reqDir == "" {
 		return ""
 	}
 	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
-		// S5 (hades-tf 2026-09-03): FILTRAR os vazios, não testar só o índice 0. Com
-		// agents: ["", "zeus"] o teste em cfg.Agents[0] caía em "default" enquanto Node e Python
-		// escolhiam "zeus" — mesmo trackfw.yaml, dois destinos de escrita, regra dura de paridade
-		// violada dentro da função criada por este PR. Filtrar é também o que o LADO LEITOR já faz
-		// (resolveAgentNamespaces descarta a == ""), então o par escritor/leitor volta a ter UMA
-		// noção de agente (D4). String vazia não é nome de agente: é ausência de entrada.
-		agent := "default"
-		for _, a := range cfg.Agents {
-			if a != "" {
-				agent = a
-				break
+		if agent == "" {
+			// Fallback interno: filtrar vazios, mesmo que ResolveWriteAgent já deva ter resolvido.
+			// S5 (hades-tf 2026-09-03): FILTRAR os vazios, não testar só o índice 0.
+			for _, a := range cfg.Agents {
+				if a != "" {
+					agent = a
+					break
+				}
+			}
+			if agent == "" {
+				agent = "default"
 			}
 		}
 		return filepath.Join(reqDir, agent)
@@ -2831,7 +2910,7 @@ func validateBranchHasWIPRoadmap() ([]string, error) {
 	}
 
 	if len(candidates) == 0 {
-		return []string{BranchGovernanceOrientation(branch)}, nil
+		return []string{BranchGovernanceOrientation(branch, cfg)}, nil
 	}
 	return []string{BranchNoMatchingRoadmapMessage(branch, candidates)}, nil
 }
@@ -2839,10 +2918,12 @@ func validateBranchHasWIPRoadmap() ([]string, error) {
 // BranchGovernanceOrientation is the guidance message printed when a feat/fix/refactor branch
 // has no roadmap in wip/ nor done/ at all (candidates is empty). Shared by
 // validateBranchHasWIPRoadmap and `trackfw branch new` — never duplicate this string.
-func BranchGovernanceOrientation(branch string) string {
+// For by_agent projects with 2+ agents, the hint includes --agent so the user does not run
+// the command that now requires a flag (AC13, ML-3A).
+func BranchGovernanceOrientation(branch string, cfg config.ProjectConfig) string {
 	return fmt.Sprintf(
-		"branch %q is a feat/fix/refactor branch but no roadmap is in wip/ nor done/ — create governance artifacts first:\n  trackfw req new \"title\"\n  trackfw roadmap new \"title\"\n  trackfw roadmap move <name> wip",
-		branch,
+		"branch %q is a feat/fix/refactor branch but no roadmap is in wip/ nor done/ — create governance artifacts first:\n  %s\n  %s\n  trackfw roadmap move <name> wip",
+		branch, ReqNewLine(cfg), RoadmapNewLine(cfg),
 	)
 }
 

@@ -19,6 +19,9 @@ type RoadmapContent struct {
 	Title   string
 	REQPath string
 	Body    string
+	// Agent é o namespace de agente em modo by_agent. Quando vazio, a resolução usa
+	// ResolveWriteAgent: um único namespace → usa aquele; vários → retorna erro.
+	Agent string
 }
 
 // wave0GateFence is the fixed, literal, non-interpolated gate command emitted inside every
@@ -99,20 +102,70 @@ func stateDir(state string) (string, bool) {
 }
 
 // agentStateDir retorna o diretório para um agente+estado em modo by_agent.
-// agent="" usa o primeiro agente configurado (ou "default" se lista vazia).
+// agent="" usa o primeiro agente não-vazio configurado (ou "default" se lista vazia).
+// Nomes vazios em agents: não contam — mesma noção de REQWriteDir (filtrar, não indexar).
 func agentStateDir(agent, state string) (string, bool) {
 	cfg := config.Load()
 	if !roadmapValidStateNames[state] {
 		return "", false
 	}
 	if agent == "" {
-		if len(cfg.Agents) > 0 {
-			agent = cfg.Agents[0]
-		} else {
+		// Filtrar nomes vazios — mesma convenção de REQWriteDir e resolveAgentNamespaces.
+		for _, a := range cfg.Agents {
+			if a != "" {
+				agent = a
+				break
+			}
+		}
+		if agent == "" {
 			agent = "default"
 		}
 	}
 	return cfg.RoadmapDir + "/" + agent + "/" + state, true
+}
+
+// agentFromPath extrai o namespace de agente a partir de um caminho de arquivo em modo by_agent.
+// Dado que rootDir é o diretório raiz do artefato (roadmapDir ou reqDir), o agente é o primeiro
+// segmento do caminho relativo: rootDir/<agent>/... → agent.
+//
+// Funciona com qualquer profundidade de arquivo abaixo do namespace:
+//   - roadmapDir/<agent>/<state>/file.md → agent  (usado em MoveRoadmap)
+//   - reqDir/<agent>/REQ-x.md           → agent  (usado em NewRoadmapFromREQ --from-req)
+//
+// Extração compartilhada para eliminar cópias inline divergentes (AC11).
+// Caminhos são normalizados para absoluto + symlinks resolvidos antes do Rel, para que
+// casos mistos (caminho relativo + absoluto, /var vs /private/var no macOS) não quebrem.
+func agentFromPath(rootDir, filePath string) string {
+	// Passo 1: tornar ambos os caminhos absolutos.
+	absRoot, err := filepath.Abs(rootDir)
+	if err != nil {
+		absRoot = filepath.Clean(rootDir)
+	}
+	absFile, err := filepath.Abs(filePath)
+	if err != nil {
+		absFile = filepath.Clean(filePath)
+	}
+
+	// Passo 2: resolver symlinks para obter caminhos canônicos.
+	// Necessário em macOS onde /var é um symlink para /private/var: filepath.Abs não resolve
+	// symlinks, então dois caminhos absolutos podem ter prefixos diferentes (/var vs /private/var)
+	// mesmo apontando para o mesmo local. Se o arquivo ainda não existe, usamos o Abs como fallback.
+	if r, err := filepath.EvalSymlinks(absRoot); err == nil {
+		absRoot = r
+	}
+	if r, err := filepath.EvalSymlinks(absFile); err == nil {
+		absFile = r
+	}
+
+	rel, err := filepath.Rel(absRoot, absFile)
+	if err != nil || rel == "." {
+		return ""
+	}
+	parts := strings.SplitN(filepath.ToSlash(rel), "/", 2)
+	if len(parts) == 0 || parts[0] == ".." {
+		return ""
+	}
+	return parts[0]
 }
 
 // logPath retorna o caminho do arquivo de log de transições.
@@ -136,9 +189,34 @@ func NewRoadmapFromContent(content RoadmapContent) error {
 
 	cfg := config.Load()
 
+	// AC11: herdar o agente do caminho da REQ quando --agent não fornecido e em modo by_agent.
+	// Mesmo mecanismo que NewRoadmapFromREQ usa: agentFromPath extrai o primeiro segmento relativo
+	// ao req_dir. REQ flat (diretamente em req_dir/) faz agentFromPath devolver o nome do arquivo
+	// (não um namespace de agente) — descartamos esse caso verificando se o segmento extraído é
+	// realmente um diretório sob req_dir. Se não for, o candidato fica "" e a guarda de ambiguidade
+	// dispara normalmente.
+	agentCandidate := content.Agent
+	if agentCandidate == "" && cfg.RoadmapNamespacing == config.NamespacingByAgent && content.REQPath != "" {
+		candidate := agentFromPath(cfg.REQDir, content.REQPath)
+		if candidate != "" {
+			// Verificar que o segmento extraído é um diretório sob req_dir (namespace de agente),
+			// não o nome do arquivo em si (REQ flat diretamente em req_dir/).
+			absReqDir, _ := filepath.Abs(cfg.REQDir)
+			if info, err := os.Stat(filepath.Join(absReqDir, candidate)); err == nil && info.IsDir() {
+				agentCandidate = candidate
+			}
+		}
+	}
+
+	// Resolver o agente (--agent explícito > herdado da REQ > único namespace > erro de ambiguidade).
+	agent, err := validator.ResolveWriteAgent(cfg, agentCandidate)
+	if err != nil {
+		return err
+	}
+
 	var backlogDir string
 	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
-		dir, ok := agentStateDir("", "backlog")
+		dir, ok := agentStateDir(agent, "backlog")
 		if !ok {
 			return fmt.Errorf("cannot resolve backlog dir in by_agent mode")
 		}
@@ -159,11 +237,13 @@ func NewRoadmapFromContent(content RoadmapContent) error {
 	if content.Body != "" {
 		body = content.Body
 	} else {
+		// squad recebe o agente resolvido quando em by_agent; vazio em flat (AC4).
+		squadVal := agent
 		body = fmt.Sprintf(`---
 status: backlog
 date: %s
 req: "%s"
-squad: ""
+squad: "%s"
 ---
 
 # Roadmap: %s
@@ -179,7 +259,7 @@ REQ: %s
 - [ ]
 - [ ]
 
-`, date, content.REQPath, content.Title, date, content.REQPath) + wave0Block + fmt.Sprintf(`## Wave 1 — <name> (parallel MLs)
+`, date, content.REQPath, squadVal, content.Title, date, content.REQPath) + wave0Block + fmt.Sprintf(`## Wave 1 — <name> (parallel MLs)
 > Dependencies: none
 
 ### ML-1A — %s
@@ -203,7 +283,13 @@ REQ: %s
 
 // NewRoadmapFromREQ cria um roadmap pré-preenchido lendo o conteúdo de uma REQ.
 // Extrai título e critérios de aceite; gera MLs rascunho para cada critério.
-func NewRoadmapFromREQ(reqPath string) error {
+//
+// agent é o valor do flag --agent (vazio = não informado). Em modo by_agent:
+//   - agent não-vazio: usa esse namespace.
+//   - agent vazio: herda o namespace da REQ a partir do caminho reqPath usando agentFromPath
+//     (AC11 — reusa o mecanismo do roadmap move; não cria derivação nova).
+//   - Se não for possível derivar do caminho E o projeto tiver múltiplos agentes, retorna erro.
+func NewRoadmapFromREQ(reqPath, agent string) error {
 	data, err := os.ReadFile(reqPath)
 	if err != nil {
 		return fmt.Errorf("reading REQ: %w", err)
@@ -220,6 +306,21 @@ func NewRoadmapFromREQ(reqPath string) error {
 	// mas a mensagem de erro sai daqui para o caminho --from-req.
 	if strings.ContainsAny(title, "\n\r") {
 		return fmt.Errorf("roadmap title must be a single line: newline and carriage return are not allowed")
+	}
+
+	cfg := config.Load()
+
+	// AC11: herdar o agente do caminho da REQ quando a flag não foi fornecida.
+	// agentFromPath reutiliza o mesmo mecanismo de extração que MoveRoadmap já usa —
+	// primeiro segmento relativo ao req_dir. Symlinks são resolvidos internamente.
+	if agent == "" && cfg.RoadmapNamespacing == config.NamespacingByAgent {
+		agent = agentFromPath(cfg.REQDir, reqPath)
+	}
+
+	// Resolver o agente (flag > herdado do caminho da REQ > único namespace > erro).
+	resolvedAgent, err := validator.ResolveWriteAgent(cfg, agent)
+	if err != nil {
+		return err
 	}
 
 	date := time.Now().Format("2006-01-02")
@@ -246,11 +347,13 @@ func NewRoadmapFromREQ(reqPath string) error {
 		adrRef = "\nADR: " + linkedADR
 	}
 
+	// squad recebe o agente resolvido para registrar o namespace no frontmatter (AC4/AC11).
+	squadVal := resolvedAgent
 	body := fmt.Sprintf(`---
 status: backlog
 date: %s
 req: "%s"
-squad: ""
+squad: "%s"
 ---
 
 # Roadmap: %s
@@ -266,11 +369,12 @@ REQ: %s%s
 - [ ]
 - [ ]
 
-%s`, date, reqPath, title, date, filepath.Base(reqPath), reqPath, adrRef, mlSection.String())
+%s`, date, reqPath, squadVal, title, date, filepath.Base(reqPath), reqPath, adrRef, mlSection.String())
 
 	return NewRoadmapFromContent(RoadmapContent{
 		Title: title,
 		Body:  body,
+		Agent: resolvedAgent, // passa o agente já resolvido para o path resolver em NewRoadmapFromContent
 	})
 }
 
@@ -432,11 +536,19 @@ func MoveRoadmap(name, state string) error {
 
 	var targetDir string
 	var fromState string
+	// agent é computado ANTES do rename — agentFromPath depende de src existir no filesystem
+	// (EvalSymlinks falha em arquivo inexistente e produz prefixo diferente, quebrando o guard ".."
+	// no macOS onde /var é symlink de /private/var). Declarado aqui para ser reutilizado na linha
+	// de log abaixo sem nova chamada a agentFromPath após o rename.
+	var agent string
 
 	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
-		// em by_agent: src = roadmapDir/agent/state/file → agentDir é a pasta avó
-		agentDir := filepath.Dir(filepath.Dir(src))
-		agent := filepath.Base(agentDir)
+		// em by_agent: src = roadmapDir/<agent>/<state>/file
+		// agentFromPath extrai o primeiro segmento do caminho relativo ao roadmapDir (AC11).
+		agent = agentFromPath(cfg.RoadmapDir, src)
+		if agent == "" {
+			return fmt.Errorf("cannot determine agent namespace for %q — path is outside roadmap directory or resolves via symlink to an external location", src)
+		}
 		fromState = filepath.Base(filepath.Dir(src))
 		var ok bool
 		targetDir, ok = agentStateDir(agent, state)
@@ -474,7 +586,9 @@ func MoveRoadmap(name, state string) error {
 
 	logBasename := filepath.Base(src)
 	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
-		agent := filepath.Base(filepath.Dir(filepath.Dir(src)))
+		// Reutiliza agent computado antes do rename — não chama agentFromPath de novo, pois
+		// src já não existe no filesystem após os.Rename e EvalSymlinks produziria prefixo
+		// divergente no macOS (/var vs /private/var), fazendo o guard ".." devolver "".
 		logBasename = agent + "/" + filepath.Base(src)
 	}
 	appendTransitionLog(logBasename, fromState, state)
@@ -651,7 +765,7 @@ func ListRoadmaps() error {
 	}
 
 	if !found {
-		fmt.Println("Nenhum roadmap encontrado. Crie um com 'trackfw roadmap new'.")
+		fmt.Printf("Nenhum roadmap encontrado. Crie um com '%s'.\n", validator.RoadmapNewLine(cfg))
 	}
 	return nil
 }

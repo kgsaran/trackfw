@@ -432,6 +432,23 @@ def run(args: argparse.Namespace, kind: str) -> int:
                 print(f"  {plan['destination']}")
         if args.action == "install":
             manager.install(plans, force=args.force)
+            # ML-2C — register each installed agent in trackfw.yaml for
+            # by_agent projects.  Derive IDs from the actual plans so that
+            # "install all" (no --items) still registers every agent that
+            # landed on disk.  register_agent_in_yaml is idempotent.
+            if kind == "agents":
+                # Only project-scoped installs touch trackfw.yaml; global
+                # installs write to $HOME/.claude/... and must not modify the
+                # project config.  IDs come from plan["claim"]["item"] — the
+                # catalog item ID (e.g. "architect"), matching the namespace
+                # that trackfw.yaml already uses for by_agent routing.
+                _installed_ids = dict.fromkeys(
+                    p["claim"]["item"]
+                    for p in plans
+                    if p["claim"]["scope"] == "project"
+                )
+                for _agent_id in _installed_ids:
+                    trackfw_config.register_agent_in_yaml(os.getcwd(), _agent_id)
         elif args.action == "update":
             manager.update(plans, force=args.force)
         elif args.action == "uninstall":

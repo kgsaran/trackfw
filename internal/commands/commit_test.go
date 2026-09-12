@@ -78,7 +78,7 @@ func TestCommit_GovernedBranch_NoMatch_NoCandidates_Blocks(t *testing.T) {
 	if len(*calls) != 0 {
 		t.Fatalf("git commit must not run when blocked, got calls: %v", *calls)
 	}
-	want := validator.BranchGovernanceOrientation("feat/orphan-slug")
+	want := validator.BranchGovernanceOrientation("feat/orphan-slug", config.ProjectConfig{})
 	if !strings.Contains(out.String(), want) {
 		t.Fatalf("expected output to contain governance orientation message.\ngot: %q\nwant substring: %q", out.String(), want)
 	}

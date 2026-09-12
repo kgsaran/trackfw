@@ -124,3 +124,64 @@ REQ.
 - [ ] `roadmap new --from-req` grava `roadmap:` no frontmatter da REQ, como o `roadmap move` já faz
 - [ ] o bloco consolidado de "Acceptance Criteria" do roadmap deixa de sair vazio quando a REQ tem ACs
 - [ ] falsificação: criar REQ+roadmap pelo caminho integrado ⇒ `req_has_roadmap` **não** dispara
+
+---
+
+## Evidência acumulada em 2026-09-12 — a decisão do KG de priorizar esta REQ
+
+> *"coloque a de req nasce órfã antes das demais, assim já fechamos o buraco que cada vez mais estamos
+> cavando"*
+
+### O número, medido hoje
+
+```
+37 REQs abertas
+ 4 em PR aberto
+ 3 com roadmap ativo
+34 SEM roadmap nenhum      ← 92%
+```
+
+🔴 **O backlog não é fila priorizada — é depósito.** E a auditoria independente do Codex, em
+2026-09-11, devolveu **5 achados, e os 5 já tinham REQ nossa**, escrita, verificada, com arquivo e
+linha. Paradas. **O gargalo não é detecção; é fechamento** — e a raiz do fechamento que não acontece é
+o trabalho nascer sem plano.
+
+### Três defeitos NOVOS do mesmo mecanismo, medidos hoje
+
+Todos são faces de **"o vínculo REQ↔roadmap é manual e frágil"**:
+
+**1. `roadmap move ""` casa um roadmap ARBITRÁRIO e o move.**
+```
+$ trackfw roadmap move "" wip
+✓ synced REQ-2026-08-31-guarda-de-folha-... → docs/roadmaps/wip/ROADMAP-2026-08-31-...
+```
+Aconteceu comigo: uma variável vazia por erro de shell, e o comando **adivinhou** em vez de recusar.
+🔴 É a decisão do KG de 2026-08-29 (*"rejeita e avisa, em vez de adivinhar"*) violada **pelo próprio
+comando que governa o ciclo**.
+
+**2. `roadmap new --from-req` cria o roadmap e NÃO escreve o vínculo de volta na REQ.**
+O elo tem de ser feito à mão depois — e é exatamente o passo que "o segundo comando se esquece",
+como o título desta REQ diz.
+
+**3. Duas noções de "vinculada" que discordam.**
+O `validate` lê o **marcador no corpo**; o frontmatter `roadmap:` é outro campo. Contei **27** REQs
+órfãs pelo frontmatter enquanto o produto enxergava **57**. 🔴 Duas fontes de verdade para o mesmo
+vínculo, e nenhuma delas é autoritativa.
+
+**4. E o vínculo não sobrevive a rebase.** Hoje, ao rebasear os PRs #331 e #332, o roadmap ficou
+apontando para uma REQ que não existia mais naquela branch — porque REQ e roadmap foram commitados em
+branches diferentes. Tive que restaurar os dois arquivos e refazer o elo à mão.
+
+### Critérios acrescentados
+
+- [ ] **AC7** — `roadmap move` com nome **vazio** ou que não casa exatamente **recusa e nomeia**, nos 3
+      CLIs. 🔴 Nunca escolher um roadmap por proximidade. Falsificação: nome vazio ⇒ erro; nome exato ⇒
+      move.
+- [ ] **AC8** — `roadmap new --from-req` escreve o vínculo **de volta na REQ**, no formato que o
+      `validate` de fato lê. Uma operação, dois lados do elo.
+- [ ] **AC9** — 🔴 **uma** noção de "vinculada". Ou o corpo é autoritativo e o frontmatter é derivado,
+      ou o inverso — **escolher e escrever**. Enquanto houver duas, toda contagem de órfãs é uma
+      opinião. Gate que prove que as duas concordam, ou que só uma existe.
+- [ ] **AC10** — 🔴 **contra-braço do AC1:** criar REQ **sem** roadmap continua possível quando é
+      deliberado (decisão pura, REQ fechada sem implementação). O remédio não pode ser proibir — o AC5
+      já reconhece que parte das 34 é legítima. **Atrito onde é engano, caminho livre onde é intenção.**

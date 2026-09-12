@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import os
@@ -11,6 +12,28 @@ from importlib.resources import files
 from pathlib import Path
 
 import pytest
+
+
+def _symlink_or_skip(link: Path, target: Path) -> None:
+    """Guarda de capacidade: cria link.symlink_to(target); pytest.skip se o
+    processo não tem privilégio (WinError 1314 / EPERM / EACCES). Qualquer
+    outro OSError é re-lançado — a guarda discrimina "sem privilégio" de
+    "falhou por outro motivo".
+
+    A detecção é pela CONDIÇÃO (falha de privilégio), não por sys.platform:
+    num Windows com Developer Mode habilitado, symlink_to tem sucesso e o
+    teste executa de verdade.
+    """
+    try:
+        link.symlink_to(str(target))
+    except OSError as err:
+        winerror = getattr(err, 'winerror', None)
+        if winerror == 1314 or err.errno in (errno.EPERM, errno.EACCES):
+            pytest.skip(
+                'guarda de symlink não exercitada: criação de symlink exige '
+                f'Developer Mode (ou processo elevado) neste Windows: {err}'
+            )
+        raise
 
 from trackfw.integrations.catalog import _surfaces, load_catalog, plan_deployments
 from trackfw.integrations.command import _prompt_ambiguous_surfaces
@@ -526,7 +549,11 @@ def test_manager_rejects_unsafe_destinations(tmp_path, scope, destination):
 def test_manager_rejects_symlink_parent(tmp_path):
     outside = tmp_path / "outside"
     outside.mkdir()
-    (tmp_path / "linked").symlink_to(outside, target_is_directory=True)
+    # Guarda de capacidade: sem privilégio → pytest.skip; outro erro → re-raise.
+    # O symlink precede um pytest.raises — sem guarda, um PermissionError do
+    # symlink_to substituiria o IntegrationError esperado e o teste passaria
+    # pelo motivo errado.
+    _symlink_or_skip(tmp_path / "linked", outside)
     plan = {
         "claim": {"target": "x", "surface": "x", "scope": "project", "kind": "agents", "item": "x"},
         "destination": "linked/file.md",
@@ -664,3 +691,458 @@ def test_antigravity_current_surface_renders_agent_directory():
 
     for forbidden in forbidden_ids:
         assert forbidden not in content, f"ID proibido '{forbidden}' presente no output do backend:\n{content}"
+
+
+# ---------------------------------------------------------------------------
+# ML-2C — agents install registers agent in trackfw.yaml for by_agent projects
+# ---------------------------------------------------------------------------
+
+def _by_agent_yaml(extra_keys: str = "") -> str:
+    """Minimal trackfw.yaml with roadmap_namespacing: by_agent."""
+    return (
+        "# trackfw project config\n"
+        "req_dir: docs/req\n"
+        "roadmap_dir: docs/roadmaps\n"
+        "roadmap_namespacing: by_agent\n"
+        f"{extra_keys}"
+    )
+
+
+def _flat_yaml() -> str:
+    """Minimal trackfw.yaml with roadmap_namespacing: flat (default)."""
+    return (
+        "req_dir: docs/req\n"
+        "roadmap_dir: docs/roadmaps\n"
+        "roadmap_namespacing: flat\n"
+    )
+
+
+def test_agents_install_registers_agent_in_by_agent_yaml_idempotent(tmp_path):
+    """
+    AC1 / AC8 (installed appears) — After ``trackfw agents install`` in a
+    by_agent project the installed agent ID appears in ``agents:`` exactly
+    once.  Running a second install leaves exactly one entry (idempotent).
+
+    Reconciliation: asserts that ``agents: install`` in a by_agent project
+    writes the installed item ID into ``agents:`` and does not duplicate it
+    on a second call — the core behavioural contract of ML-2C.
+    """
+    (tmp_path / "trackfw.yaml").write_text(_by_agent_yaml(), encoding="utf-8")
+    home = tmp_path / "home"
+    home.mkdir()
+
+    result = cli(
+        "agents", "install",
+        "--targets", "claude",
+        "--items", "backend",
+        "--scope", "project",
+        "--json",
+        cwd=tmp_path,
+        home=home,
+    )
+    assert result.returncode == 0, result.stderr
+
+    content = (tmp_path / "trackfw.yaml").read_text(encoding="utf-8")
+    assert "agents:" in content, "agents: key must appear after install in by_agent project"
+    # Count occurrences — a substring check would pass with two entries
+    assert content.count("- backend") == 1, (
+        f"expected exactly one '- backend' entry, got:\n{content}"
+    )
+
+    # Second install — must stay idempotent
+    cli(
+        "agents", "install",
+        "--targets", "claude",
+        "--items", "backend",
+        "--scope", "project",
+        "--json",
+        cwd=tmp_path,
+        home=home,
+    )
+    content_after = (tmp_path / "trackfw.yaml").read_text(encoding="utf-8")
+    assert content_after.count("- backend") == 1, (
+        f"idempotency violated — duplicate entry after second install:\n{content_after}"
+    )
+
+
+def test_agents_install_does_not_create_agents_key_in_flat_project(tmp_path):
+    """
+    AC2 / AC8 (flat does not create key) — In a flat project ``trackfw agents
+    install`` must NOT write an ``agents:`` key to ``trackfw.yaml``.
+
+    Reconciliation: asserts that the by_agent guard fires correctly for a flat
+    project — the complement of AC1 that falsifies AC2 in the opposite
+    direction.
+    """
+    (tmp_path / "trackfw.yaml").write_text(_flat_yaml(), encoding="utf-8")
+    before = (tmp_path / "trackfw.yaml").read_bytes()
+    home = tmp_path / "home"
+    home.mkdir()
+
+    result = cli(
+        "agents", "install",
+        "--targets", "claude",
+        "--items", "backend",
+        "--scope", "project",
+        "--json",
+        cwd=tmp_path,
+        home=home,
+    )
+    assert result.returncode == 0, result.stderr
+
+    content = (tmp_path / "trackfw.yaml").read_text(encoding="utf-8")
+    # Assert the string "agents:" is absent — not just that the install
+    # returned 0 — so the test actually falsifies the flat-guard.
+    assert "agents:" not in content, (
+        f"agents: key must NOT appear in flat project, got:\n{content}"
+    )
+
+
+def test_agents_install_yaml_diff_touches_only_agents_block(tmp_path):
+    """
+    AC3 — With a fixture that has comments, a trailing comment after agents:,
+    and non-alphabetical key order, a diff after install shows only the agents:
+    block changing.  Every other byte is preserved.
+
+    Reconciliation: asserts that text-level splicing does not rewrite keys it
+    did not intend to touch — the formatting-preservation claim of ML-2C.
+    """
+    # Fixture: comments + non-alphabetical key order + agents: with one entry
+    fixture = (
+        "# project settings (do not sort keys)\n"
+        "roadmap_dir: docs/roadmaps\n"  # before req_dir — intentionally non-alphabetical
+        "req_dir: docs/req\n"
+        "roadmap_namespacing: by_agent\n"
+        "agents:\n"
+        "  - architect\n"
+        "# end of file\n"
+    )
+    (tmp_path / "trackfw.yaml").write_text(fixture, encoding="utf-8")
+    home = tmp_path / "home"
+    home.mkdir()
+
+    result = cli(
+        "agents", "install",
+        "--targets", "claude",
+        "--items", "backend",
+        "--scope", "project",
+        "--json",
+        cwd=tmp_path,
+        home=home,
+    )
+    assert result.returncode == 0, result.stderr
+
+    after = (tmp_path / "trackfw.yaml").read_text(encoding="utf-8")
+    assert "- backend" in after, "installed agent must appear in agents: block"
+
+    # Remove the single inserted line and compare byte-for-byte with the
+    # original.  This is the AC3 claim: "diff shows only agents: changing."
+    reconstructed = after.replace("  - backend\n", "", 1)
+    assert reconstructed == fixture, (
+        "trackfw.yaml changed beyond the agents: block:\n"
+        f"reconstructed:\n{reconstructed}\n"
+        f"expected:\n{fixture}"
+    )
+
+
+def test_agents_install_both_falsification_directions(tmp_path):
+    """
+    AC8 — Two sub-cases in one test, one for each falsification direction:
+    (a) by_agent project: installed agent appears in agents:
+    (b) flat project:     agents: key is absent after install
+
+    Reconciliation: explicitly exercises both branches of the by_agent guard
+    and checks the opposite outcome for each, ensuring neither direction can
+    produce a false green.
+    """
+    home = tmp_path / "home"
+    home.mkdir()
+
+    # (a) by_agent — installed agent must appear
+    by_agent_dir = tmp_path / "by_agent_proj"
+    by_agent_dir.mkdir()
+    (by_agent_dir / "trackfw.yaml").write_text(_by_agent_yaml(), encoding="utf-8")
+    r = cli(
+        "agents", "install",
+        "--targets", "claude",
+        "--items", "frontend",
+        "--scope", "project",
+        "--json",
+        cwd=by_agent_dir,
+        home=home,
+    )
+    assert r.returncode == 0, r.stderr
+    content_a = (by_agent_dir / "trackfw.yaml").read_text(encoding="utf-8")
+    assert "agents:" in content_a, "(a) agents: key must appear in by_agent project"
+    assert content_a.count("- frontend") == 1, (
+        f"(a) expected exactly one '- frontend', got:\n{content_a}"
+    )
+
+    # (b) flat — agents: key must be absent
+    flat_dir = tmp_path / "flat_proj"
+    flat_dir.mkdir()
+    (flat_dir / "trackfw.yaml").write_text(_flat_yaml(), encoding="utf-8")
+    r = cli(
+        "agents", "install",
+        "--targets", "claude",
+        "--items", "frontend",
+        "--scope", "project",
+        "--json",
+        cwd=flat_dir,
+        home=home,
+    )
+    assert r.returncode == 0, r.stderr
+    content_b = (flat_dir / "trackfw.yaml").read_text(encoding="utf-8")
+    assert "agents:" not in content_b, (
+        f"(b) agents: key must NOT appear in flat project, got:\n{content_b}"
+    )
+
+
+def test_agents_install_global_scope_does_not_write_trackfw_yaml(tmp_path):
+    """
+    Contrato de paridade ML-2B/2C — instalação de escopo global não toca
+    trackfw.yaml do projeto.
+
+    Reconciliation: asserts the scope == 'project' guard fires correctly —
+    a global install must leave trackfw.yaml byte-identical after the call.
+    """
+    (tmp_path / "trackfw.yaml").write_text(_by_agent_yaml(), encoding="utf-8")
+    before = (tmp_path / "trackfw.yaml").read_bytes()
+
+    result = cli(
+        "agents", "install",
+        "--targets", "claude",
+        "--items", "backend",
+        "--scope", "global",
+        "--json",
+        cwd=tmp_path,
+    )
+    assert result.returncode == 0, result.stderr
+
+    after = (tmp_path / "trackfw.yaml").read_bytes()
+    assert after == before, (
+        "trackfw.yaml must not change for global-scope install:\n"
+        f"{(tmp_path / 'trackfw.yaml').read_text(encoding='utf-8')}"
+    )
+
+
+def test_agents_install_appends_agents_block_at_end_of_file(tmp_path):
+    """
+    Contrato de paridade ML-2B/2C — quando `agents:` ainda não existe, o
+    bloco é anexado ao FIM do documento, nunca inserido no meio.
+
+    Reconciliation: asserts the end-of-file append rule: with `wip_limit`
+    as the last key, the `agents:` block appears after it — not between
+    `roadmap_namespacing` and `wip_limit`.
+    """
+    fixture = (
+        "req_dir: docs/req\n"
+        "roadmap_dir: docs/roadmaps\n"
+        "roadmap_namespacing: by_agent\n"
+        "wip_limit: 3\n"
+    )
+    (tmp_path / "trackfw.yaml").write_text(fixture, encoding="utf-8")
+    home = tmp_path / "home"
+    home.mkdir()
+
+    env = dict(__import__("os").environ)
+    env.pop("FORCE_COLOR", None)
+    env["PYTHONPATH"] = str(__import__("pathlib").Path(__file__).parents[1])
+    __import__("subprocess").run(
+        [__import__("sys").executable, "-m", "trackfw",
+         "agents", "install", "--targets", "claude", "--items", "architect",
+         "--scope", "project", "--json"],
+        cwd=tmp_path, env=env, capture_output=True, text=True, check=False,
+    )
+
+    content = (tmp_path / "trackfw.yaml").read_text(encoding="utf-8")
+    lines = content.splitlines()
+    wip_idx = next(i for i, l in enumerate(lines) if l.startswith("wip_limit:"))
+    agents_idx = next(i for i, l in enumerate(lines) if l == "agents:")
+    assert agents_idx > wip_idx, (
+        f"agents: must appear AFTER wip_limit (end of file), "
+        f"but wip_limit is at line {wip_idx} and agents: at line {agents_idx}:\n{content}"
+    )
+
+
+def test_agents_install_existing_agents_block_stays_in_place(tmp_path):
+    """
+    Contrato de paridade ML-2B/2C — quando `agents:` já existe no meio do
+    arquivo, o novo item é adicionado DENTRO do bloco e o bloco NÃO muda
+    de posição.
+
+    Reconciliation: asserts that an already-present agents: block is extended
+    in-place — no block relocation, no diff noise on keys surrounding it.
+    """
+    fixture = (
+        "req_dir: docs/req\n"
+        "agents:\n"
+        "  - architect\n"
+        "roadmap_dir: docs/roadmaps\n"
+        "roadmap_namespacing: by_agent\n"
+        "wip_limit: 3\n"
+    )
+    (tmp_path / "trackfw.yaml").write_text(fixture, encoding="utf-8")
+    home = tmp_path / "home"
+    home.mkdir()
+
+    import os, subprocess, sys
+    from pathlib import Path
+    env = dict(os.environ)
+    env.pop("FORCE_COLOR", None)
+    env["PYTHONPATH"] = str(Path(__file__).parents[1])
+    subprocess.run(
+        [sys.executable, "-m", "trackfw",
+         "agents", "install", "--targets", "claude", "--items", "backend",
+         "--scope", "project", "--json"],
+        cwd=tmp_path, env=env, capture_output=True, text=True, check=False,
+    )
+
+    content = (tmp_path / "trackfw.yaml").read_text(encoding="utf-8")
+    lines = content.splitlines()
+
+    # agents: must still be at line index 1 (second line)
+    agents_idx = next(i for i, l in enumerate(lines) if l == "agents:")
+    assert agents_idx == 1, (
+        f"agents: block must NOT move — expected line 1, got line {agents_idx}:\n{content}"
+    )
+
+    # both entries must be present
+    assert "  - architect" in lines, f"original entry missing:\n{content}"
+    assert "  - backend" in lines, f"new entry missing:\n{content}"
+
+    # wip_limit must still be after roadmap_dir (original trailing order preserved)
+    wip_idx = next(i for i, l in enumerate(lines) if l.startswith("wip_limit:"))
+    rd_idx = next(i for i, l in enumerate(lines) if l.startswith("roadmap_dir:"))
+    assert wip_idx > rd_idx, (
+        f"trailing key order must be preserved:\n{content}"
+    )
+
+
+def test_agents_install_inline_flow_leaves_file_byte_identical(tmp_path):
+    """
+    Bug-fix ML-2C — trackfw.yaml com agents: em flow inline NÃO deve ser
+    modificado.  O arquivo deve ficar byte-idêntico após o install, e um
+    aviso deve aparecer no stderr.
+
+    Reconciliation: asserts that the inline-flow guard prevents any write —
+    the file is byte-identical after install, falsifying the duplicate-key bug
+    where agents: [alpha, beta] followed by a new agents: block caused silent
+    data loss.
+    """
+    fixture = (
+        "roadmap_dir: docs/roadmaps\n"
+        "req_dir: docs/req\n"
+        "roadmap_namespacing: by_agent\n"
+        "agents: [alpha, beta]\n"
+    )
+    (tmp_path / "trackfw.yaml").write_text(fixture, encoding="utf-8")
+    before_bytes = (tmp_path / "trackfw.yaml").read_bytes()
+
+    import os, subprocess, sys
+    from pathlib import Path
+    env = dict(os.environ)
+    env.pop("FORCE_COLOR", None)
+    env["PYTHONPATH"] = str(Path(__file__).parents[1])
+    result = subprocess.run(
+        [sys.executable, "-m", "trackfw",
+         "agents", "install", "--targets", "claude", "--items", "architect",
+         "--scope", "project", "--json"],
+        cwd=tmp_path, env=env, capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == 0, result.stderr
+
+    after_bytes = (tmp_path / "trackfw.yaml").read_bytes()
+    assert after_bytes == before_bytes, (
+        "File must be byte-identical after install with inline-flow agents:\n"
+        f"before: {before_bytes!r}\nafter:  {after_bytes!r}"
+    )
+    # Warning must appear in stderr naming the file and the item
+    assert "inline-flow" in result.stderr, (
+        f"Expected inline-flow warning in stderr, got:\n{result.stderr}"
+    )
+    assert "architect" in result.stderr, (
+        f"Warning must name the item, got:\n{result.stderr}"
+    )
+    assert str(tmp_path / "trackfw.yaml") in result.stderr, (
+        f"Warning must name the file path, got:\n{result.stderr}"
+    )
+
+
+def test_agents_install_block_style_still_registers_correctly(tmp_path):
+    """
+    Contra-braço do bug-fix — com agents: em estilo block, o registro
+    continua funcionando normalmente após a introdução do guard de flow inline.
+
+    Reconciliation: asserts that the inline-flow guard does not accidentally
+    fire for block-style agents: headers — the registration path is still
+    reachable and the new entry appears in the block.
+    """
+    fixture = (
+        "roadmap_dir: docs/roadmaps\n"
+        "req_dir: docs/req\n"
+        "roadmap_namespacing: by_agent\n"
+        "agents:\n"
+        "  - alpha\n"
+    )
+    (tmp_path / "trackfw.yaml").write_text(fixture, encoding="utf-8")
+
+    import os, subprocess, sys
+    from pathlib import Path
+    env = dict(os.environ)
+    env.pop("FORCE_COLOR", None)
+    env["PYTHONPATH"] = str(Path(__file__).parents[1])
+    result = subprocess.run(
+        [sys.executable, "-m", "trackfw",
+         "agents", "install", "--targets", "claude", "--items", "backend",
+         "--scope", "project", "--json"],
+        cwd=tmp_path, env=env, capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == 0, result.stderr
+
+    content = (tmp_path / "trackfw.yaml").read_text(encoding="utf-8")
+    assert content.count("agents:") == 1, (
+        f"Must have exactly one agents: key, got:\n{content}"
+    )
+    assert "  - alpha" in content, f"Original entry alpha missing:\n{content}"
+    assert "  - backend" in content, f"New entry backend missing:\n{content}"
+    assert "inline-flow" not in result.stderr, (
+        f"Guard must NOT fire for block-style agents::\n{result.stderr}"
+    )
+
+
+def test_agents_install_writes_lf_not_crlf(tmp_path):
+    """
+    Gate check-python-writes-lf.sh — register_agent_in_yaml must write LF
+    line endings, never CRLF.  Reading in text mode masks the difference;
+    this test reads raw bytes to falsify the Windows translation bug where
+    open(..., "w") without newline="\\n" converts \\n to \\r\\n for every
+    line in the rewritten file.
+
+    Reconciliation: asserts that the newline="\\n" argument on the write open
+    is load-bearing — the output file contains no \\r\\n byte sequence after
+    install, not just that the install returned 0.
+    """
+    (tmp_path / "trackfw.yaml").write_bytes(
+        b"roadmap_namespacing: by_agent\n"
+        b"roadmap_dir: docs/roadmaps\n"
+    )
+
+    import os, subprocess, sys
+    from pathlib import Path
+    env = dict(os.environ)
+    env.pop("FORCE_COLOR", None)
+    env["PYTHONPATH"] = str(Path(__file__).parents[1])
+    result = subprocess.run(
+        [sys.executable, "-m", "trackfw",
+         "agents", "install", "--targets", "claude", "--items", "backend",
+         "--scope", "project", "--json"],
+        cwd=tmp_path, env=env, capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == 0, result.stderr
+
+    raw = (tmp_path / "trackfw.yaml").read_bytes()
+    assert b"\r\n" not in raw, (
+        f"File must use LF-only line endings, found CRLF:\n{raw!r}"
+    )
+    assert b"- backend" in raw, "Registration must have happened"

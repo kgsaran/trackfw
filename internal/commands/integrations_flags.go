@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/kgsaran/trackfw/internal/homedir"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -279,6 +280,35 @@ func executeIntegrationMutation(cmd *cobra.Command, kind integrations.ItemKind, 
 			}
 		}
 	}
+	// AC1-AC3, AC8 (ML-2A): register installed agents in trackfw.yaml agents: list
+	// so that by_agent projects stay synchronised without a manual discover --init.
+	// Scoped to project installs only — global installs install into ~/.claude/agents/
+	// and say nothing about this project's roadmap namespaces.
+	//
+	// The value written is the CATALOG ITEM ID (e.g. "architect", "backend") — this is
+	// what plan.Claim.Item carries and what the roadmap namespace directory will be named
+	// (docs/roadmaps/architect/). Identity-resolved names (e.g. "apolo-tf") are NOT used:
+	// the product-prefix convention belongs to the agent file, not to the namespace.
+	// Matches the Node ML-2B implementation (plan.claim.item). See parity contract.
+	//
+	// Blast-radius note: when --items is omitted, all catalog agents are installed
+	// (currently 12), each registered as a namespace. Projects with 2+ agents in
+	// agents: will get a hard error from bare req new / roadmap new (Wave 1 contract);
+	// use --agent to disambiguate. This is the expected outcome of ML-3A (not yet landed).
+	if operation == "install" && kind == integrations.KindAgents && opts.scope == "project" {
+		seen := make(map[string]bool)
+		yamlPath := filepath.Join(manager.ProjectRoot, "trackfw.yaml")
+		for _, plan := range plans {
+			name := plan.Claim.Item // catalog item ID — parity with Node ML-2B
+			if seen[name] {
+				continue
+			}
+			seen[name] = true
+			if regErr := config.AppendAgentToConfig(yamlPath, name); regErr != nil {
+				fmt.Fprintf(os.Stderr, "warning: could not register agent %q in trackfw.yaml: %v\n", name, regErr)
+			}
+		}
+	}
 	if opts.json {
 		return printLifecycleOutput(cmd, catalog, kind, plans, manager)
 	}
@@ -549,3 +579,4 @@ func surfaceCapability(target integrations.Target, surfaceID string, kind integr
 	}
 	return integrations.Surface{}, integrations.Capability{}
 }
+

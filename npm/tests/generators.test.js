@@ -1119,10 +1119,28 @@ test('attention signal script falls back to python3 when jq is not in PATH', asy
         const src = path.join(dir, file)
         const dst = path.join(fakeBinDir, file)
         if (!fs.existsSync(dst)) {
-          try { fs.symlinkSync(src, dst) } catch (_) {}
-        }
+            try {
+              fs.symlinkSync(src, dst)
+            } catch (symlinkErr) {
+              // Marginal corrigido: distingue "sem privilégio" (EPERM/EACCES —
+              // continua sem este binário, setup best-effort) e "já existe"
+              // (EEXIST — existsSync não detecta symlinks pendentes; continua)
+              // de "falhou por outro motivo" (relança para falhar o teste).
+              const ok = !symlinkErr ||
+                symlinkErr.code === 'EPERM' ||
+                symlinkErr.code === 'EACCES' ||
+                symlinkErr.code === 'EEXIST'  // dangling symlink já no dst
+              if (!ok) throw symlinkErr
+            }
+          }
       }
-    } catch (_) {}
+    } catch (dirErr) {
+      // O catch externo protege contra readdirSync em diretórios inacessíveis.
+      // Outros erros (incluindo symlink não-privilégio relançado acima) falham.
+      if (!dirErr || (dirErr.code !== 'ENOENT' && dirErr.code !== 'EACCES')) {
+        throw dirErr
+      }
+    }
   }
 
   execSync(`"${signalScript}"`, {

@@ -22,16 +22,21 @@ func newReqCmd() *cobra.Command {
 }
 
 func newReqNewCmd() *cobra.Command {
-	return &cobra.Command{
+	var agentFlag string
+	cmd := &cobra.Command{
 		Use:   "new <title>",
 		Short: "Create a new REQ",
 		Args:  cobra.ExactArgs(1),
-		RunE:  runReqNew,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runReqNew(cmd, args, agentFlag)
+		},
 	}
+	cmd.Flags().StringVar(&agentFlag, "agent", "", "Agent namespace in by_agent projects")
+	return cmd
 }
 
-func runReqNew(_ *cobra.Command, args []string) error {
-	content := generators.REQContent{Title: args[0]}
+func runReqNew(_ *cobra.Command, args []string, agentFlag string) error {
+	content := generators.REQContent{Title: args[0], Agent: agentFlag}
 
 	// Detectar se stdin é TTY — wizard interativo somente em TTY
 	if !cbterm.IsTerminal(uintptr(os.Stdin.Fd())) {

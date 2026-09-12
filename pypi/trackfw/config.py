@@ -273,6 +273,105 @@ def reset():
     _instance = None
 
 
+def register_agent_in_yaml(cwd: str, agent_name: str) -> None:
+    """
+    ML-2C — In a ``by_agent`` project, adds *agent_name* to the ``agents:``
+    list in ``trackfw.yaml`` when it is not already there (idempotent, AC1).
+    In a ``flat`` project the file is not touched (AC2).
+
+    Text-level manipulation preserves order, comments and spacing of every
+    other field so that a post-call diff shows only the ``agents:`` block
+    changing (AC3).
+
+    Decision to write uses the canonical loader (``load()``); the actual write
+    is line-level splicing — parse to decide, text-edit to write (advisor
+    guidance, avoids false positives from YAML comments).
+
+    Called by ``trackfw agents install`` after successful installation.
+    """
+    yaml_path = os.path.join(cwd, "trackfw.yaml")
+    if not os.path.exists(yaml_path):
+        return  # nothing to register against
+
+    # AC2: canonical detection — load() is memoised; reset first so the
+    # singleton reflects *this* cwd, not whatever was loaded earlier.
+    reset()
+    cfg = load(cwd)
+    reset()  # leave the singleton clean for the caller
+    if cfg.get("roadmap_namespacing") != NAMESPACING_BY_AGENT:
+        return
+
+    with open(yaml_path, "r", encoding="utf-8") as fh:
+        content = fh.read()
+
+    lines = content.splitlines(keepends=True)
+    # Normalise: every line must end with "\n" so inserts splice cleanly.
+    # If the very last line has no newline, add one before we insert.
+    if lines and not lines[-1].endswith(("\n", "\r")):
+        lines[-1] = lines[-1] + "\n"
+
+    # --- Locate the agents: header line (exact match, not inside comments) ---
+    agents_header_idx: int | None = None
+    for i, line in enumerate(lines):
+        stripped = line.rstrip("\r\n")
+        if stripped == "agents:":
+            agents_header_idx = i
+            break
+        # Detect flow-inline format: agents: [alpha, beta]
+        # The line starts with "agents:" but is NOT the bare "agents:" header.
+        # Rewriting it would change the file style without user consent and can
+        # silently drop existing entries (Go runtime reference decision:
+        # KG 2026-08-29 — "control that does not recognise rejects and warns").
+        if stripped.startswith("agents:") and not stripped.lstrip().startswith("#"):
+            sys.stderr.write(
+                f"warning: could not register agent \"{agent_name}\" in "
+                f"trackfw.yaml: trackfw.yaml has agents: in inline-flow format; "
+                f"edit {yaml_path} manually to add \"{agent_name}\"\n"
+            )
+            return  # installation itself succeeds; only registration is skipped
+
+    if agents_header_idx is not None:
+        # Collect entries that are already in the block (skip blanks/comments)
+        existing: list[str] = []
+        j = agents_header_idx + 1
+        while j < len(lines):
+            sline = lines[j].rstrip("\r\n")
+            if sline.startswith("  - "):
+                existing.append(sline[4:].strip())
+                j += 1
+            elif sline == "" or sline.lstrip().startswith("#"):
+                j += 1
+            else:
+                break  # non-entry, non-blank line ends the block
+
+        if agent_name in existing:
+            return  # already registered — idempotent (AC1)
+
+        # Insertion point: right after the last "  - " line in the block
+        last_entry_idx = agents_header_idx
+        j = agents_header_idx + 1
+        while j < len(lines):
+            sline = lines[j].rstrip("\r\n")
+            if sline.startswith("  - "):
+                last_entry_idx = j
+            elif sline == "" or sline.lstrip().startswith("#"):
+                pass
+            else:
+                break
+            j += 1
+        insert_at = last_entry_idx + 1
+        lines.insert(insert_at, f"  - {agent_name}\n")
+    else:
+        # No agents: block yet — append to the END of the document.
+        # "After key X" breaks when X is absent; end-of-file is always
+        # deterministic regardless of which other keys are present or their
+        # order.  This matches the Node.js runtime contract (ML-2B/2C parity).
+        lines.append(f"agents:\n  - {agent_name}\n")
+
+    with open(yaml_path, "w", encoding="utf-8", newline="\n") as fh:
+        fh.writelines(lines)
+
+
 def parse_rules_from_content(content):
     """Parseia só o mapeamento `rules:` de um conteúdo arbitrário de trackfw.yaml (ex.: um blob do
     git HEAD obtido via `git show HEAD:./trackfw.yaml`, não o arquivo do CWD que load() lê) e
@@ -327,6 +426,33 @@ def read_agent_conventions(cwd=None):
         return cfg["update"].get("agent_conventions", "")
     except Exception:
         return ""
+
+
+def read_namespacing_config(cwd=None):
+    """Lê roadmap_namespacing e agents diretamente de <cwd>/trackfw.yaml, contornando o
+    singleton load() — espelha ReadNamespacingConfig (Go) e readNamespacingConfig (Node).
+    Nunca lança exceção; retorna ('flat', []) em qualquer falha.
+    """
+    try:
+        yaml_path = os.path.join(cwd or os.getcwd(), "trackfw.yaml")
+        with open(yaml_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        cfg = {
+            "rules": {},
+            "credential_guard": {},
+            "update": {},
+            "sync": {},
+            "link_fields": {},
+            "agent_models": {},
+            "roadmap_namespacing": "flat",
+            "agents": [],
+        }
+        malformed = _parse(content, cfg)
+        if malformed:
+            return "flat", []
+        return cfg.get("roadmap_namespacing", "flat"), cfg.get("agents", [])
+    except Exception:
+        return "flat", []
 
 
 def _cwd_agent_models_source(cwd: str | None) -> str:

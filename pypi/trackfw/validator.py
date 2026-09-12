@@ -791,21 +791,53 @@ def hidden_namespace_warnings(cfg: dict) -> list:
 _REQ_LAYOUT_STATES = ["backlog", "analyzing", "wip", "blocked", "done", "abandoned"]
 
 
-def req_write_dir(cfg: dict) -> str:
+def resolve_write_agent(cfg: dict, agent: str | None) -> str:
+    """
+    Resolve o agente para escrita em modo by_agent.
+
+    Regras (AC5/AC10, ML-1C):
+      - agent explícito fornecido → devolve como está (o chamador decide se é válido).
+      - agents: com UM não-vazio → usa aquele, sem erro.
+      - agents: com VÁRIOS não-vazios → levanta ValueError nomeando as opções.
+      - agents: vazia/ausente → devolve "default".
+
+    Deve ser chamado SOMENTE em modo by_agent (roadmap_namespacing == "by_agent").
+    Em modo flat o chamador não invoca esta função.
+    """
+    if agent:
+        return agent
+    agents = [a for a in (cfg.get("agents") or []) if a]
+    if len(agents) == 1:
+        return agents[0]
+    if len(agents) > 1:
+        options = ", ".join(agents)
+        raise ValueError(
+            f"by_agent project has multiple agent namespaces ({options}): use --agent to specify one"
+        )
+    return "default"
+
+
+def req_write_dir(cfg: dict, agent: str | None = None) -> str:
     """
     PONTO ÚNICO que decide ONDE uma REQ nova é gravada (ADR-2026-09-03, D2/D4):
       flat     -> req_dir/
-      by_agent -> req_dir/<agente>/   (primeiro de agents:, ou "default" se a lista é vazia)
+      by_agent -> req_dir/<agente>/   (agent se fornecido; caso contrário primeiro de agents:,
+                                       ou "default" se a lista é vazia)
 
     O par escritor/leitor não pode ter duas noções de layout (D4): a união devolvida por
     resolve_req_files contém, por construção, o diretório devolvido aqui.
+
+    O parâmetro `agent` permite que o chamador passe um agente já resolvido (ex: via
+    resolve_write_agent), sem alterar o comportamento para chamadores existentes que passam
+    apenas `cfg`.
     """
     req_dir = cfg.get("req_dir", "docs/req")
     if not req_dir:
         return ""
     if cfg.get("roadmap_namespacing", "") == "by_agent":
-        agents = [a for a in (cfg.get("agents") or []) if a]
-        agent = agents[0] if agents else "default"
+        if agent is None:
+            agents = [a for a in (cfg.get("agents") or []) if a]
+            agent = agents[0] if agents else "default"
         return os.path.join(req_dir, agent)
     return req_dir
 
@@ -1956,16 +1988,46 @@ def branch_slug_matches_roadmap(branch_slug: str, wip_dirs: list, done_dirs: lis
     return matched, candidates
 
 
-def branch_governance_orientation(branch: str) -> str:
+def is_multi_agent_by_agent(cfg: dict) -> tuple[bool, list]:
+    """Retorna (True, [agents]) se o projeto é by_agent com 2+ agentes não-vazios.
+    Espelha IsMultiAgentByAgent (Go) e isMultiAgentByAgent (Node)."""
+    if cfg.get("roadmap_namespacing") != _config.NAMESPACING_BY_AGENT:
+        return False, []
+    non_empty = [a for a in cfg.get("agents", []) if a]
+    if len(non_empty) < 2:
+        return False, non_empty
+    return True, non_empty
+
+
+def req_new_line(cfg: dict) -> str:
+    """Retorna a linha de comando `trackfw req new` correta para o projeto.
+    Espelha ReqNewLine (Go) e reqNewLine (Node)."""
+    multi, agents = is_multi_agent_by_agent(cfg)
+    if multi:
+        return f'trackfw req new --agent <agent> "title"  # agents: {", ".join(agents)}'
+    return 'trackfw req new "title"'
+
+
+def roadmap_new_line(cfg: dict) -> str:
+    """Retorna a linha de comando `trackfw roadmap new` correta para o projeto.
+    Espelha RoadmapNewLine (Go) e roadmapNewLine (Node)."""
+    multi, _ = is_multi_agent_by_agent(cfg)
+    if multi:
+        return 'trackfw roadmap new --agent <agent> "title"'
+    return 'trackfw roadmap new "title"'
+
+
+def branch_governance_orientation(branch: str, cfg: dict | None = None) -> str:
     """Mensagem de orientação impressa quando uma branch feat/fix/refactor não tem nenhum
     roadmap em wip/ nem em done/ (candidates vazio). Espelha
     internal/validator/validator.go BranchGovernanceOrientation — byte-idêntica. Compartilhada
     por validate_branch_has_wip_roadmap e `trackfw branch new` — nunca duplicar esta string."""
+    cfg_obj = cfg or {}
     return (
         f'branch "{branch}" is a feat/fix/refactor branch but no roadmap is in wip/ nor done/ — '
         f'create governance artifacts first:\n'
-        f'  trackfw req new "title"\n'
-        f'  trackfw roadmap new "title"\n'
+        f'  {req_new_line(cfg_obj)}\n'
+        f'  {roadmap_new_line(cfg_obj)}\n'
         f'  trackfw roadmap move <name> wip'
     )
 
@@ -2022,7 +2084,7 @@ def validate_branch_has_wip_roadmap(cfg: dict) -> list:
         return []
 
     if not candidates:
-        return [branch_governance_orientation(branch)]
+        return [branch_governance_orientation(branch, cfg)]
     return [branch_no_matching_roadmap_message(branch, candidates)]
 
 

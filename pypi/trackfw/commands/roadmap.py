@@ -13,9 +13,10 @@ from trackfw.generators.roadmap import (
     move_roadmap,
     sync_paired_req_references,
     _normalize_ref_separator,
+    _agent_from_req_path,
     VALID_STATES,
 )
-from trackfw.validator import resolve_agent_namespaces
+from trackfw.validator import resolve_agent_namespaces, resolve_write_agent
 
 
 # ---------------------------------------------------------------------------
@@ -85,14 +86,41 @@ def _find_file(name: str, roadmap_dir: str, namespacing: str, agents=None) -> st
 def _cmd_new(args):
     cfg = cfg_module.load()
     agent = getattr(args, "agent", None)
+    namespacing = cfg.get("roadmap_namespacing", "flat")
+
     try:
-        if args.from_req:
+        if namespacing == cfg_module.NAMESPACING_BY_AGENT:
+            req_path = getattr(args, "req", None) or ""
+            from_req = getattr(args, "from_req", None)
+
+            if agent is None:
+                # Herança de agente a partir do caminho da REQ (AC11):
+                # _agent_from_req_path canonicaliza os dois lados (realpath) antes de computar
+                # o relativo — trata /var vs /private/var no macOS (ML-3C, 2026-09-12).
+                # Retorna "" para flat layout (REQ diretamente em req_dir/) ou fora de req_dir.
+                inherited = None
+                candidate = req_path or from_req or ""
+                if candidate:
+                    abs_req_dir = cfg.get("req_dir", "docs/req")
+                    inherited = _agent_from_req_path(candidate, abs_req_dir) or None
+                if inherited:
+                    agent = inherited
+                else:
+                    # Nenhuma herança válida: resolve por regra de ambiguidade/única-opção.
+                    agent = resolve_write_agent(cfg, None)
+            # else: --agent explícito, usa como está (AC5b: fora de agents: é válido)
+
+        if getattr(args, "from_req", None):
             path = generate_roadmap_from_req(args.from_req, cfg, agent=agent)
         else:
             title_arg = " ".join(args.title) if isinstance(args.title, list) else args.title
             title = title_arg or args.title_flag or "New Roadmap"
-            path = generate_roadmap(title, cfg, agent=agent, req_path=args.req or "")
+            req_path = getattr(args, "req", None) or ""
+            path = generate_roadmap(title, cfg, agent=agent, req_path=req_path)
         print(f"Roadmap criado: {path}")
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
     except Exception as e:
         print(f"Erro ao criar roadmap: {e}", file=sys.stderr)
         sys.exit(1)

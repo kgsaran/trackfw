@@ -30,6 +30,8 @@ function defaultCheckGovernance() {
   return checkShipGovernance()
 }
 
+const { load: loadConfig } = require('../config')
+const validator = require('../validator')
 const { resolve: forgeResolve } = require('../forge/resolve')
 const { forgeAdapter } = require('../forge/adapter')
 
@@ -127,8 +129,9 @@ function runPush(opts, deps) {
         writeln(`  ${v}`)
       }
       writeln('\nCreate the required artifacts before running push:')
-      writeln('  trackfw req new "<title>"')
-      writeln('  trackfw roadmap new "<title>"')
+      const pushCfg = loadConfig()
+      writeln(`  ${validator.reqNewLine(pushCfg)}`)
+      writeln(`  ${validator.roadmapNewLine(pushCfg)}`)
       writeln('  trackfw roadmap move <name> wip')
       writeln("\nNote: this governance check is a hard gate — it is not affected by lenient")
       writeln("mode or per-rule severity configured in trackfw.yaml. If 'trackfw validate'")

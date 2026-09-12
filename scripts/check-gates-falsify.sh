@@ -2463,8 +2463,8 @@ cp "$ROOT_DIR/go.mod" "$T25G_MOD/go.mod"
 cp "$ROOT_DIR/go.sum" "$T25G_MOD/go.sum"
 corrupt_literal \
   "$ROOT_DIR/internal/generators/roadmap.go" "$T25G_MOD/internal/generators/roadmap.go" \
-  'date, reqPath, title, date, filepath.Base(reqPath), reqPath, adrRef, mlSection.String())' \
-  'date, filepath.Base(reqPath), title, date, filepath.Base(reqPath), reqPath, adrRef, mlSection.String())' \
+  'date, reqPath, squadVal, title, date, filepath.Base(reqPath), reqPath, adrRef, mlSection.String())' \
+  'date, filepath.Base(reqPath), squadVal, title, date, filepath.Base(reqPath), reqPath, adrRef, mlSection.String())' \
   "s25-go"
 
 T25G_BIN="$WORK/s25-go-bin/trackfw"
@@ -2603,8 +2603,8 @@ cp "$ROOT_DIR/go.mod" "$T26C_GO_MOD/go.mod"
 cp "$ROOT_DIR/go.sum" "$T26C_GO_MOD/go.sum"
 corrupt_literal \
   "$ROOT_DIR/internal/generators/roadmap.go" "$T26C_GO_MOD/internal/generators/roadmap.go" \
-  ', date, content.REQPath, content.Title, date, content.REQPath)' \
-  ', date, "", content.Title, date, content.REQPath)' \
+  ', date, content.REQPath, squadVal, content.Title, date, content.REQPath)' \
+  ', date, "", squadVal, content.Title, date, content.REQPath)' \
   "s26-go"
 
 T26C_GO_BIN="$WORK/s26-corrupt-go-bin/trackfw"

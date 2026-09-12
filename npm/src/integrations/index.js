@@ -9,6 +9,7 @@ const { legacyHashes } = require('./legacy')
 const identityStore = require('../identity')
 const { injectRulesForTool } = require('../generators/init')
 const { applyThirdPartyReferences } = require('../thirdparty/references')
+const { registerAgentInConfig } = require('./register-agent')
 const { homedir } = require('../homedir')
 
 function parseSurfaces(values = []) {
@@ -141,6 +142,27 @@ function execute(kind, operation, options = {}, roots = {}) {
   if (operation === 'install') {
     const targetValues = options.targets && options.targets.length ? options.targets : catalog.targets.map(entry => entry.id)
     for (const targetID of targetValues) injectRulesForTool(targetID, manager.roots.project)
+
+    // ML-2B: register installed catalog agent IDs in trackfw.yaml `agents:` so
+    // that `trackfw req new` / `roadmap new` can route to the agent namespace.
+    // Guard: only for `agents` kind (not skills), project scope (global installs
+    // do not own the project's trackfw.yaml), and only when install operation
+    // succeeds (same call site as injectRulesForTool above).
+    // Name written: plan.claim.item (the catalog ID, e.g. "architect") — chosen
+    // over the artifact file name ("trackfw-architect") to stay consistent with
+    // the namespace format already used in trackfw.yaml's agents: list (bare
+    // names, no prefix). Surfaced in handback for parity binding across Go/Python.
+    if (kind === 'agents') {
+      const projectRoot = options.projectRoot || manager.roots.project
+      const installedItems = [...new Set(
+        plans
+          .filter(p => p.claim.scope === 'project')
+          .map(p => p.claim.item)
+      )]
+      for (const agentName of installedItems) {
+        registerAgentInConfig(projectRoot, agentName)
+      }
+    }
   }
 
   return result(kind, plans, statuses)

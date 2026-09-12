@@ -499,8 +499,9 @@ function runShip(opts, deps = {}) {
         writeln(`  ${v}`)
       }
       writeln('\nCreate the required artifacts before running ship:')
-      writeln('  trackfw req new "<title>"')
-      writeln('  trackfw roadmap new "<title>"')
+      const shipCfg = loadConfig()
+      writeln(`  ${validator.reqNewLine(shipCfg)}`)
+      writeln(`  ${validator.roadmapNewLine(shipCfg)}`)
       writeln('  trackfw roadmap move <name> wip')
       writeln("\nNote: this governance check is a hard gate — it is not affected by lenient")
       writeln("mode or per-rule severity configured in trackfw.yaml. If 'trackfw validate'")

@@ -1408,25 +1408,32 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Cria cópia do teste sem a guarda EPERM em symlinkOrSkip.
-          # Cópia vai para npm/tests/ para que os require('../src/...') resolvam corretamente.
-          python3 -c "
-          src = open('npm/tests/update_discover_symlink_guard.test.js', encoding='utf-8').read()
-          needle = \"    if (err && (err.code === 'EPERM' || err.code === 'EACCES')) {\"
-          count = src.count(needle)
-          assert count >= 1, f'Falsificação Node: padrão de guarda não encontrado (count={count})'
-          falsified = src.replace(
-              needle,
-              \"    if (false) { // FALSIFIED: guard removed\"
-          )
-          open('npm/tests/_ci_falsify_node_test.js', 'w', encoding='utf-8').write(falsified)
-          "
+          # ML-1E-a2 extraiu symlinkOrSkip para npm/tests/helpers/symlink.js;
+          # update_discover_symlink_guard.test.js virou wrapper fino.
+          # A guarda agora vive no helper (linha 48). Retarget: falsifica o helper
+          # (if false) e remenda o teste para importar o helper falsificado, de
+          # modo que require('../src/...') continuem resolvendo a partir de npm/tests/.
+          python3 - << 'PYGENNODEFALSEEOF'
+          helper_src = open('npm/tests/helpers/symlink.js', encoding='utf-8').read()
+          needle = "    if (err && (err.code === 'EPERM' || err.code === 'EACCES')) {"
+          count = helper_src.count(needle)
+          assert count >= 1, f'Falsificacao Node: padrao de guarda nao encontrado em npm/tests/helpers/symlink.js (count={count})'
+          falsified_helper = helper_src.replace(needle, "    if (false) { // FALSIFIED: guard removed")
+          open('npm/tests/helpers/_ci_falsify_symlink.js', 'w', encoding='utf-8').write(falsified_helper)
 
-          echo "=== Node falsificacao: guarda EPERM removida ==="
+          test_src = open('npm/tests/update_discover_symlink_guard.test.js', encoding='utf-8').read()
+          patched_test = test_src.replace(
+              "require('./helpers/symlink')",
+              "require('./helpers/_ci_falsify_symlink')"
+          )
+          open('npm/tests/_ci_falsify_node_test.js', 'w', encoding='utf-8').write(patched_test)
+          PYGENNODEFALSEEOF
+
+          echo "=== Node falsificacao: guarda EPERM removida (helper falsificado) ==="
           OUT=$(node --require ./_ci_preload_eperm.cjs \
             --test npm/tests/_ci_falsify_node_test.js 2>&1 || true)
           echo "$OUT"
-          rm -f npm/tests/_ci_falsify_node_test.js
+          rm -f npm/tests/_ci_falsify_node_test.js npm/tests/helpers/_ci_falsify_symlink.js
 
           # node --test: testes reprovados aparecem como "not ok N - ..." ou sumario "ℹ fail N"
           # Nao aceitar "fail 0" (false positive), exigir fail count>=1 ou "not ok"
@@ -1570,22 +1577,20 @@ jobs:
   # AC3 — consumer smoke by_agent (2 agentes, 3 CLIs)
   # (REQ-2026-09-11-o-ciclo-testa-onde-funciona...)
   #
-  # Cria um projeto descartável com roadmap_namespacing: by_agent e 2 agentes
-  # (alpha, beta) e roda os comandos principais nos 3 CLIs. Detecta o #320
-  # (roadmap always em agents[0], --req ignorando o agente da REQ).
+  # Smoke end-to-end com projeto by_agent + 2 agentes (alpha, beta).
+  # Verifica: --agent roteia para o namespace correto; roadmap new --req herda
+  # o agente da REQ (AC11); sem --agent com 2 agentes → erro de ambiguidade (AC5).
   #
-  # continue-on-error: true TEMPORÁRIO — remover quando #320 for corrigido.
-  # CRITÉRIO DE REMOÇÃO: job reprova APENAS por motivos distintos de #320;
-  # roadmap new (com e sem --req) rota para o agente correto nos 3 CLIs.
-  #
-  # DECLARAÇÃO DE RECONCILIAÇÃO: Este job afirma que com projeto by_agent +
-  # 2 agentes, roadmap new sempre coloca o artefato em agents[0] (alpha).
-  # Medição: agentStateDir("", "backlog") usa cfg.Agents[0]
-  # (internal/generators/roadmap.go:108-115).
+  # ML-3B-a (PR #330): GO_BIN=bin/trackfw era relativo; depois de `go build` o CWD
+  #   é a raiz mas as chamadas do script rodam após cd "$PROJECT" → rc=127 (issue #328).
+  #   O script agora normaliza GO_BIN para absoluto internamente (padrão dos outros gates).
+  #   O workflow não precisa mais passar o valor; GO_BIN omitido → default absoluto no script.
+  # ML-3B-b (PR #330): continue-on-error removido — #320 corrigido nas waves 1-3A.
+  #   ⚠️ Python roadmap new --req não herda agente da REQ (defecto AC11 medido em 2026-09-12);
+  #   o job ficará vermelho por esse motivo até o defecto ser corrigido.
   # ---------------------------------------------------------------------------
   consumer-smoke-by-agent:
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v7
 
@@ -1609,5 +1614,5 @@ jobs:
 
       - run: python -m pip install pypi/
 
-      - name: "AC3 — consumer smoke by_agent (2 agentes, 3 CLIs)"
-        run: GO_BIN=bin/trackfw scripts/check-consumer-smoke-by-agent.sh
+      - name: "consumer smoke by_agent (2 agentes, 3 CLIs — AC4, AC5, AC11)"
+        run: scripts/check-consumer-smoke-by-agent.sh

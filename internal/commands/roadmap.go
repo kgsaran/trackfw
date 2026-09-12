@@ -24,7 +24,7 @@ func newRoadmapCmd() *cobra.Command {
 }
 
 func newRoadmapNewCmd() *cobra.Command {
-	var title, reqPath, fromReq string
+	var title, reqPath, fromReq, agentFlag string
 	cmd := &cobra.Command{
 		Use:   "new",
 		Short: "Create a new roadmap from a REQ",
@@ -34,13 +34,19 @@ func newRoadmapNewCmd() *cobra.Command {
 			// com newline). O uso correto do comando não muda após um erro de entrada.
 			cmd.SilenceUsage = true
 
-			// --from-req: gera roadmap pré-preenchido com MLs extraídos da REQ
+			// --from-req: gera roadmap pré-preenchido com MLs extraídos da REQ.
+			// --agent é passado para herança AC11: --agent > derivado do caminho da REQ > único agente.
 			if fromReq != "" {
-				return generators.NewRoadmapFromREQ(fromReq)
+				return generators.NewRoadmapFromREQ(fromReq, agentFlag)
 			}
 
-			// --req flag bypasses wizard entirely
+			// --req flag bypasses wizard entirely; herda agente da REQ quando --agent não fornecido.
 			if reqPath != "" {
+				// Argumento posicional prevalece sobre derivação do nome da REQ, mas
+				// cede para --title/-t quando esse flag foi fornecido explicitamente.
+				if len(args) > 0 && title == "" {
+					title = args[0]
+				}
 				if title == "" {
 					title = strings.TrimSuffix(filepath.Base(reqPath), ".md")
 					title = strings.TrimPrefix(title, "REQ-")
@@ -48,12 +54,14 @@ func newRoadmapNewCmd() *cobra.Command {
 				return generators.NewRoadmapFromContent(generators.RoadmapContent{
 					Title:   title,
 					REQPath: reqPath,
+					Agent:   agentFlag,
 				})
 			}
 
 			// Lista pelo ponto único de leitura de REQ (ADR-2026-09-03, D3/D4): em by_agent o glob
 			// flat não enxergava nenhuma REQ e o wizard oferecia uma lista vazia.
-			reqFiles := validator.ResolveREQFiles(config.Load())
+			roadmapCfg := config.Load()
+			reqFiles := validator.ResolveREQFiles(roadmapCfg)
 			var selectedREQ string
 
 			isTTY := cbterm.IsTerminal(uintptr(os.Stdin.Fd()))
@@ -80,7 +88,7 @@ func newRoadmapNewCmd() *cobra.Command {
 				}
 				// selectedREQ permanece vazio — argumento posicional é o título, não um caminho de REQ
 			} else if len(reqFiles) == 0 {
-				fmt.Fprintln(os.Stderr, "Nenhuma REQ encontrada em docs/req/. Crie uma REQ primeiro com 'trackfw req new'.")
+				fmt.Fprintf(os.Stderr, "Nenhuma REQ encontrada. Crie uma REQ primeiro com '%s'.\n", validator.ReqNewLine(roadmapCfg))
 				return nil
 			}
 
@@ -92,12 +100,14 @@ func newRoadmapNewCmd() *cobra.Command {
 			return generators.NewRoadmapFromContent(generators.RoadmapContent{
 				Title:   title,
 				REQPath: selectedREQ,
+				Agent:   agentFlag,
 			})
 		},
 	}
 	cmd.Flags().StringVarP(&title, "title", "t", "", "Roadmap title")
 	cmd.Flags().StringVarP(&reqPath, "req", "r", "", "Path to the linked REQ file")
 	cmd.Flags().StringVar(&fromReq, "from-req", "", "Generate roadmap with ML stubs from REQ acceptance criteria")
+	cmd.Flags().StringVar(&agentFlag, "agent", "", "Agent namespace in by_agent projects")
 	return cmd
 }
 

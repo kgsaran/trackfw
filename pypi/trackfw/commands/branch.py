@@ -485,8 +485,10 @@ def register(subparsers):
             "  4. With a match (or for chore/docs): runs 'git checkout -b <type>/<slug>', "
             "propagating Git's own output and exit status literally.\n\n"
             "Create the governance artifacts first if this blocks you:\n"
-            "  trackfw req new \"title\"\n"
-            "  trackfw roadmap new \"title\"\n"
+            "  trackfw req new \"title\"               # flat project\n"
+            "  trackfw req new --agent <agent> \"title\"  # by_agent project with 2+ agents\n"
+            "  trackfw roadmap new \"title\"               # flat project\n"
+            "  trackfw roadmap new --agent <agent> \"title\"  # by_agent project with 2+ agents\n"
             "  trackfw roadmap move <name> wip"
         ),
     )

@@ -14,7 +14,7 @@ def register(subparsers):
     )
     req_sub = req_parser.add_subparsers(dest="req_command", metavar="COMMAND")
 
-    # req new [<title>]
+    # req new [<title>] [--agent AGENT]
     new_parser = req_sub.add_parser(
         "new",
         help="Create a new REQ",
@@ -24,6 +24,11 @@ def register(subparsers):
         nargs="?",
         default=None,
         help="REQ title (prompted if omitted)",
+    )
+    new_parser.add_argument(
+        "--agent",
+        default=None,
+        help="Agente responsavel (modo by_agent)",
     )
 
     move_parser = req_sub.add_parser(
@@ -75,9 +80,21 @@ def _cmd_new(args):
     # Ponto único de decisão de caminho de ESCRITA (ADR-2026-09-03, D2/D4): by_agent grava no
     # canônico req_dir/<agente>/; flat grava em req_dir/ — o mesmo ponto que alimenta a união de
     # leitura de resolve_req_files.
-    from trackfw.validator import req_write_dir  # noqa: PLC0415
+    from trackfw.validator import req_write_dir, resolve_write_agent  # noqa: PLC0415
 
-    req_dir = req_write_dir(cfg) or cfg.get("req_dir", "docs/req")
+    agent = getattr(args, "agent", None)
+    namespacing = cfg.get("roadmap_namespacing", "flat")
+
+    if namespacing == "by_agent":
+        # AC5/AC10: resolve agente — flag explícita, único namespace, ou erro de ambiguidade.
+        try:
+            agent = resolve_write_agent(cfg, agent)
+        except ValueError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+        req_dir = req_write_dir(cfg, agent=agent) or cfg.get("req_dir", "docs/req")
+    else:
+        req_dir = req_write_dir(cfg) or cfg.get("req_dir", "docs/req")
 
     filepath = generate_req(title=title, req_dir=req_dir)
     print(f"created {filepath}")

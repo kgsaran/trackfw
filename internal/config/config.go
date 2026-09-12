@@ -274,6 +274,20 @@ func ParseRulesFromContent(content string) map[string]string {
 // necessarily the process's own working directory the singleton is cached against. The file
 // being absent, unreadable, malformed or simply missing the key are all treated the same: return
 // "" silently, never an error — this is a best-effort read of an optional, free-text field.
+// ReadNamespacingConfig reads roadmap_namespacing and agents from <cwd>/trackfw.yaml,
+// bypassing the Load() singleton — same isolation pattern as ReadAgentConventions.
+// Returns ("flat", nil) when the file is absent, unreadable, or missing those fields.
+// Used by generators that write project files (CLAUDE.md, agentfiles) for an arbitrary cwd.
+func ReadNamespacingConfig(cwd string) (namespacing string, agents []string) {
+	data, err := os.ReadFile(filepath.Join(cwd, "trackfw.yaml"))
+	if err != nil {
+		return "flat", nil
+	}
+	cfg := ProjectConfig{Rules: make(map[string]string), AgentModels: map[string]string{}}
+	parse(string(data), &cfg)
+	return cfg.RoadmapNamespacing, cfg.Agents
+}
+
 func ReadAgentConventions(cwd string) string {
 	data, err := os.ReadFile(filepath.Join(cwd, "trackfw.yaml"))
 	if err != nil {

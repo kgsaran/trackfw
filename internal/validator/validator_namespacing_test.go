@@ -156,3 +156,57 @@ func TestByAgentNamespacingBlockedHasREQ(t *testing.T) {
 		t.Fatalf("não esperava violation para blocked com REQ em by_agent; violations=%v", violations)
 	}
 }
+
+// ── ResolveWriteAgent — contrato de mensagem de paridade ─────────────────────
+//
+// Reconciliation: affirms that ResolveWriteAgent returns the exact parity message
+// (byte-identical across Go/Node/Python) when multiple namespaces are present.
+// This pins the canonical message so any future Go edit also breaks the suite.
+
+func TestResolveWriteAgent_MultipleNamespaces_ParityMessage(t *testing.T) {
+	cfg := config.ProjectConfig{
+		RoadmapNamespacing: config.NamespacingByAgent,
+		Agents:             []string{"alpha", "beta"},
+	}
+	_, err := ResolveWriteAgent(cfg, "")
+	if err == nil {
+		t.Fatal("esperado erro para múltiplos namespaces sem flag; não houve erro")
+	}
+	const want = "by_agent project has multiple agent namespaces (alpha, beta): use --agent to specify one"
+	if err.Error() != want {
+		t.Fatalf("mensagem deve ser byte-idêntica ao contrato de paridade;\nwant: %q\ngot:  %q", want, err.Error())
+	}
+}
+
+// Reconciliation: affirms that empty entries in agents: are filtered and the parity
+// message only names non-empty agents.
+func TestResolveWriteAgent_MultipleNamespacesWithEmpty_ParityMessage(t *testing.T) {
+	cfg := config.ProjectConfig{
+		RoadmapNamespacing: config.NamespacingByAgent,
+		Agents:             []string{"", "alpha", "beta"},
+	}
+	_, err := ResolveWriteAgent(cfg, "")
+	if err == nil {
+		t.Fatal("esperado erro para múltiplos namespaces (com vazio filtrado) sem flag; não houve erro")
+	}
+	const want = "by_agent project has multiple agent namespaces (alpha, beta): use --agent to specify one"
+	if err.Error() != want {
+		t.Fatalf("mensagem deve ser byte-idêntica ao contrato de paridade;\nwant: %q\ngot:  %q", want, err.Error())
+	}
+}
+
+// Reconciliation: affirms that a single non-empty namespace returns no error (contra-braço —
+// Wave 1 decision: ambiguity only, never absence).
+func TestResolveWriteAgent_SingleNamespace_NoError(t *testing.T) {
+	cfg := config.ProjectConfig{
+		RoadmapNamespacing: config.NamespacingByAgent,
+		Agents:             []string{"alpha"},
+	}
+	agent, err := ResolveWriteAgent(cfg, "")
+	if err != nil {
+		t.Fatalf("não esperado erro para namespace único; erro: %v", err)
+	}
+	if agent != "alpha" {
+		t.Fatalf("esperado agente 'alpha'; obteve %q", agent)
+	}
+}
