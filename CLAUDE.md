@@ -52,6 +52,33 @@ Toda feature nova, correção de comportamento ou ajuste de lógica **DEVE ser i
 intencionais estão documentados em `docs/cli-parity.md`. Mudanças doc-only,
 infra e templates de artefato são exceções explícitas.
 
+### 🔴 O Go é a expressão da verdade — sempre
+
+**Quando os três divergirem, o Go está certo e os outros dois convergem para ele.** Não é
+preferência de estilo nem "2 contra 1": é a ordem de nascimento e o papel de cada um.
+
+**Por quê:** o trackfw **nasceu em Go**. Os CLIs de Node.js e Python foram criados **depois, por
+convenção**, para atender empresas com **restrição de segurança para baixar executáveis** — elas já
+têm `npm` e `pip` liberados e um binário solto, não. Os dois existem para **entregar o mesmo produto
+por outro canal**, não para propor comportamento próprio.
+
+**Consequências práticas:**
+
+- Divergência medida ⇒ a pergunta **não** é "qual está melhor", é "o que falta em Node/Python para
+  igualar o Go". Mesmo quando o outro runtime parece mais correto.
+- Se o comportamento do Go for genuinamente o defeituoso, **corrija o Go primeiro** e só então
+  propague. Nunca alinhe pelo Node ou pelo Python "porque já está assim lá".
+- Uma melhoria que só faça sentido nos três é mudança de contrato: muda o Go, muda o
+  `docs/cli-parity.md`, e depois os outros dois.
+- 🔴 **Nunca remova capacidade do Go para "fechar paridade".** Fechar paridade é sempre por adição
+  nos outros dois.
+
+**Exemplo medido (2026-09-12, issue #310):** os três `trackfw init` geravam
+`scripts/trackfw-validate.sh` diferentes — Go/Node com mensagens ao usuário, Python silencioso e com
+`set -euo pipefail`. O `set` do Python era objetivamente mais estrito. **Convergiu para o Go mesmo
+assim**, e o Python ganhou as mensagens. A variante estrita, se for desejada, é mudança nos três,
+começando pelo Go.
+
 ## Regra Dura de Reconciliação — todo teste novo declara o que afirma (INVIOLÁVEL)
 
 **Todo ML que entregue teste novo declara, no relatório, qual conclusão do próprio ML aquele teste

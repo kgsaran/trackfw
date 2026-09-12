@@ -2,6 +2,53 @@
 
 ---
 
+## Sessão 2026-09-12 — Zeus (frente B PARADA — não se constrói o que será apagado)
+
+Branch `fix/triagem-medida-das-reqs-de-paridade`, MLs restantes marcados ❌ Bloqueado, por
+decisão do KG. 🔴 O roadmap **permanece em `wip/`** por um defeito descoberto ao executar a própria
+parada: mover para `blocked/` torna a branch `fix/` não-conforme e **impede commitar o ato de
+bloquear** — `branch_has_wip_roadmap` aceita só `wip/` e `done/`, apesar de `blocked` ser estado
+documentado do ciclo. Catch-22 registrado como achado.
+
+**Motivo:** a `ADR-2026-09-12-estrategia-de-distribuicao` foi aceita e a direção é a **opção D — um
+binário, muitos canais**. Os dois entregáveis restantes desta frente (`check-rule-set-parity.sh` e
+`check-subcommand-parity.sh`) são infraestrutura de paridade: com um runtime, **deixam de ter
+objeto**.
+
+🔴 **O ML-2A trouxe a demonstração.** O agente de QA bloqueou corretamente: **não existe superfície
+executável que enumere as regras implementadas** em runtime nenhum (`--list-rules` é flag
+desconhecida nos três; `validate --json` só mostra regra que dispara, e um fixture que dispare todas
+exigiria conhecer o conjunto a priori — circular). A única opção viável seria criar `--list-rules`
+nos três CLIs: **pagar o imposto de paridade para construir o detector do imposto de paridade.**
+
+**Entregue e válido independentemente da v8:** triagem medida (0 entregues, 2 parciais, 4
+pendentes); vereditos aplicados com registro de que a evidência original era falsa; **o Go como
+expressão da verdade** no `CLAUDE.md` e no `cli-parity.md`, com o porquê; três notas de vault do byte
+NUL consolidadas em uma; absorção do #298 e do #310 com a convergência decidida.
+
+**Erro meu registrado:** despachei o ML-2A **depois** de já ter escrito na ADR que a opção D o
+tornaria obsoleto. O agente gastou 27 chamadas para descobrir um bloqueio que a minha própria análise
+tornava previsível. Não foi desperdício total — o bloqueio é evidência forte —, mas foi eu não
+aplicando a minha conclusão ao meu despacho.
+
+**Reabre com a decisão da v8:** adota D ⇒ ML-2A e ML-2A-b são abandonados e as REQs parciais fecham
+por desaparecimento da causa; não adota ⇒ volta para `wip` começando pela decisão de contrato do
+`--list-rules`.
+
+---
+
+## Sessão 2026-09-12 — Ártemis (ML-2A — gate de conjunto de regras — BLOQUEADO)
+
+**Início:** 2026-09-12 | Branch: `fix/triagem-medida-das-reqs-de-paridade` | Roadmap em wip.
+**Tarefa:** ML-2A do ROADMAP-2026-09-12-triagem — escrever `scripts/check-rule-set-parity.sh` e
+wiring no Makefile para comparar os conjuntos de regras implementadas nos 3 runtimes.
+**Bloqueado:** nenhum runtime expõe superfície para listar TODAS as regras implementadas. A superfície
+existente (`validate --json`) emite apenas regras que DISPARAM num projeto concreto — é incapaz de
+satisfazer AC4 + AC6 simultaneamente (ver análise abaixo). Attention signal escrito; aguarda decisão
+de arquiteto sobre superfície de enumeração.
+
+---
+
 ## Sessão 2026-09-12 — Zeus (v7.6.0 TAGGED — npm bloqueado por credencial)
 
 Tag `v7.6.0` publicada via `trackfw release tag 7.6.0` (o `git push origin <tag>` cru é bloqueado
@@ -36865,3 +36912,61 @@ Depois da tag, é histórico — e dá rastro visível de que houve correção d
 ⚠️ **Este bloco existe porque "alguém lembra depois" falhou hoje**: o `Closes #315` foi escrito na
 abertura do #330 e os `Closes #320`/`Closes #328` nunca foram acrescentados — os dois issues tiveram de
 ser fechados à mão após o merge. **Intenção declarada não é gate.**
+
+---
+
+## Sessão 2026-09-12 — Hefesto (Code Quality) — ML-1A triagem medida das REQs de paridade
+
+Início: 2026-09-12. Executando ML-1A do roadmap
+`ROADMAP-2026-09-12-triagem-medida-das-reqs-de-paridade-e-gate-de-conjunto-de-regras.md`.
+Tarefa: medir presença e comportamento nos 3 runtimes (Go, Node, Python) para cada REQ aberta
+cuja evidência seja "ausente num runtime". Nenhum arquivo de produto será tocado neste ML.
+Entregável: `docs/qualidade/2026-09-12-triagem-medida-das-reqs-de-paridade.md`.
+
+## Sessão 2026-09-12 — Hefesto (Code Quality) — ML-1A CONCLUÍDO
+
+ML-1A da triagem medida entregue. Documento: `docs/qualidade/2026-09-12-triagem-medida-das-reqs-de-paridade.md`.
+
+**Vereditos:**
+- note_orphan (REQ-2026-08-20): PARCIAL — AC1/AC4 entregues; AC3 pendente (gate cross-CLI ausente)
+- thirdparty_artifact_has_provenance (REQ-2026-09-01): PARCIAL — AC1-AC3 entregues; AC4 pendente (gate de conjunto)
+- validate-json-python (REQ-2026-08-20): PENDENTE — `rule: None` confirmado no binário
+- cli-python-init (REQ-2026-08-28): PENDENTE — sem --ci/--hooks no binário
+- consumidores-by-agent (REQ-2026-08-30): PENDENTE — Python "REQs 0" vs Go/Node "REQs 1"; issue #268 refina AC1
+- check-referential-integrity (REQ-2026-09-03): PENDENTE — RC=0 sobre árvore vazia confirmado
+
+**Achados adicionais sem REQ:**
+- Issue #310: Python cria ADR-001 extra no init; shebang trackfw-validate.sh diverge (sh vs bash)
+- Issue #298: check-cli-parity.sh só cobre 1º nível; 9 subcomandos sem gate cross-CLI
+
+**REQs entregues: 0. Parciais: 2. Pendentes: 4.**
+
+Dois falsos negativos do ugrep-I confirmados: note_orphan e thirdparty_artifact_has_provenance
+estavam presentes no Node desde a origem; as REQs foram abertas com evidência defeituosa.
+
+## Sessão 2026-09-12 — Hefesto (Code Quality) — ML-1B início
+
+Início: 2026-09-12. Executando ML-1B do roadmap
+`ROADMAP-2026-09-12-triagem-medida-das-reqs-de-paridade-e-gate-de-conjunto-de-regras.md`.
+Tarefa: aplicar vereditos do ML-1A nas REQs parciais. Zero REQs entregues; nenhum `trackfw req move`
+será executado. Dois artefatos parciais recebem seção de evidência datada.
+Validate baseline: RC=0 (178 warnings, pré-existentes).
+
+## Sessão 2026-09-12 — Hefesto (Code Quality) — ML-1B CONCLUÍDO
+
+ML-1B da triagem medida entregue.
+
+**Artefatos modificados:**
+- `docs/req/REQ-2026-08-20-note-orphan-existe-em-go-e-python-e-esta-ausente-do-cli-node.md` — seção `## Triagem medida — 2026-09-12` adicionada
+- `docs/req/REQ-2026-09-01-regra-thirdparty-artifact-has-provenance-existe-em-go-e-python-mas-nao-no-validator-do-node.md` — seção `## Triagem medida — 2026-09-12` adicionada
+- `vault/notes/grep-do-ambiente-pula-arquivo-com-nul-2026-09-12.md` — nota nova
+- `vault/notes/index.md` — entrada adicionada
+- `docs/roadmaps/wip/ROADMAP-2026-09-12-triagem-medida-das-reqs-de-paridade-e-gate-de-conjunto-de-regras.md` — ML-1B marcado ✅
+
+**Achado durante ML-1B:** note_orphan tem AC pendentes {AC3, AC5, AC6-não-medido} — o handoff mencionava só AC3. AC5 depende de AC3; AC6 não pode ser verificado enquanto AC3/AC5 estão abertos. Veredito PARCIAL confirmado, conjunto de pendências expandido.
+
+**Mudança de veredito:** nenhuma REQ mudou de veredito. As duas permanecem PARCIAL.
+
+**Zero REQs fechadas.** `trackfw req move` não foi executado. `trackfw validate` RC=0 (178 warnings, todos pré-existentes).
+
+Próximo: ML-2A (gate de conjunto de regras) — handoff para implementador de produto.
