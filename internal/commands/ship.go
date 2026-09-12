@@ -27,6 +27,10 @@ type shipDeps struct {
 	// Injected so that tests do not depend on a real trackfw project layout.
 	checkGovernance func() []string
 
+	// cfg is the project config used to compute governance remediation hints.
+	// Zero value (flat) is the correct default for tests that do not specify a project layout.
+	cfg config.ProjectConfig
+
 	out io.Writer
 
 	// Step 7 — forge resolution and PR/MR opening.
@@ -109,11 +113,13 @@ PR first. When nothing is staged, it pushes existing commits without requiring -
 			// Silence usage for runtime errors (governance failures, missing files, etc.).
 			// Flag-parse errors happen before RunE is reached; cobra still shows usage for those.
 			cmd.SilenceUsage = true
+			cfg := config.Load()
 			deps := shipDeps{
 				execGit:         defaultGitExec,
 				checkGovernance: defaultCheckGovernance,
+				cfg:             cfg,
 				out:             cmd.OutOrStdout(),
-				configForge:     config.Load().Forge,
+				configForge:     cfg.Forge,
 				repoDir:         ".",
 				availFn:         nil, // forge.NewAdapter uses its own default when nil
 				execForgeCLI:    defaultExecForgeCLI,
@@ -302,8 +308,8 @@ func runShip(opts shipOpts, deps shipDeps) error {
 				fmt.Fprintf(deps.out, "  %s\n", v)
 			}
 			fmt.Fprintf(deps.out, "\nCreate the required artifacts before running ship:\n")
-			fmt.Fprintf(deps.out, "  trackfw req new \"<title>\"\n")
-			fmt.Fprintf(deps.out, "  trackfw roadmap new \"<title>\"\n")
+			fmt.Fprintf(deps.out, "  %s\n", validator.ReqNewLine(deps.cfg))
+			fmt.Fprintf(deps.out, "  %s\n", validator.RoadmapNewLine(deps.cfg))
 			fmt.Fprintf(deps.out, "  trackfw roadmap move <name> wip\n")
 			fmt.Fprintf(deps.out, "\nNote: this governance check is a hard gate — it is not affected by lenient\n")
 			fmt.Fprintf(deps.out, "mode or per-rule severity configured in trackfw.yaml. If 'trackfw validate'\n")

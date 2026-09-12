@@ -3,7 +3,7 @@ const fs = require('fs')
 const path = require('path')
 const config = require('../config')
 const { localDateISO } = require('./date')
-const { resolveReqFiles, resolveAgentNamespaces, resolveAgentForWrite } = require('../validator/index.js')
+const { resolveReqFiles, resolveAgentNamespaces, resolveAgentForWrite, roadmapNewLine } = require('../validator/index.js')
 const { normalizeRefSeparator: pathfmtNormalizeRefSeparator } = require('../lib/pathfmt')
 const { normalizeCRLF } = require('../integrations/render')
 
@@ -153,7 +153,7 @@ function listRoadmaps() {
   }
 
   if (!found) {
-    console.log("Nenhum roadmap encontrado. Crie um com 'trackfw roadmap new'.")
+    console.log(`Nenhum roadmap encontrado. Crie um com '${roadmapNewLine(cfg)}'.`)
   }
 }
 

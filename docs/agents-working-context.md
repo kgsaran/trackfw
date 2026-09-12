@@ -2,6 +2,20 @@
 
 ---
 
+## Sessão 2026-09-12 — apolo-tf (FIM-2: ML-3A + testes discriminantes obrigatórios)
+
+Branch `fix/by-agent-req-new-e-roadmap-new`. Adicionados após auditoria do advisor: testes de igualdade exata para `IsMultiAgentByAgent`/`ReqNewLine`/`RoadmapNewLine` nos 3 runtimes (4 casos cada: by_agent+2, by_agent+1, flat, by_agent+2+empty). Generator tests Go: `TestTrackfwRulesBlock_ByAgent2plus_Step1Block`, `TestTrackfwRulesBlock_ByAgentSingle_NoAgentFlag`, `TestInjectOrUpdateRules_ByAgent2plus_Step1Present`. Parity fixture `bhr-byagent` adicionada ao `check-validate-parity.sh` (by_agent+2, wip/done vazios) — verifica `--agent` na mensagem de orientação cross-runtime. Gates: `go test ./internal/validator/... ./internal/generators/...` ok, Node 118 pass, Python 147 pass, `check-artifact-parity.sh` ok, `check-validate-parity.sh` ok (incl. bhr-byagent), `check-rules-parity.sh` ok, `check-slash-parity.sh` ok, `check-cli-parity.sh` ok, `trackfw validate` 176 warnings 0 violations. `make parity-rest` e `make quality` rodando em background.
+
+## Sessão 2026-09-12 — apolo-tf (FIM: ML-3A — emissores param de ensinar o comando que falha)
+
+Branch `fix/by-agent-req-new-e-roadmap-new`. Entregues: emissores de orientação de `trackfw req new`/`roadmap new` atualizados nos 3 runtimes para emitir o form `--agent` quando `by_agent` + 2+ agentes. Novos helpers `IsMultiAgentByAgent`/`ReqNewLine`/`RoadmapNewLine` (Go), `isMultiAgentByAgent`/`reqNewLine`/`roadmapNewLine` (Node), `is_multi_agent_by_agent`/`req_new_line`/`roadmap_new_line` (Python). Gates: `go build ok`, `go test ok`, Node 908 pass, Python 1735 pass, `check-artifact-parity.sh` ok, `make parity-rest` EXIT 0, `trackfw validate` sem violações, `make quality` EXIT 0.
+
+## Sessão 2026-09-12 — apolo-tf (INÍCIO: ML-3A — emissores param de ensinar o comando que falha)
+
+Branch `fix/by-agent-req-new-e-roadmap-new`. Escopo: 34 arquivos derivados (Go + Node + Python) — emissores de orientação, testes em lockstep, e parity gate para fixture by_agent 2+. Único dono. Sem commit, sem push, sem background.
+
+---
+
 ## Sessão 2026-09-12 — apolo-tf (FIM: ML-2E — mensagem de ambiguidade de agente byte-idêntica nos 3 runtimes)
 
 Branch `fix/by-agent-req-new-e-roadmap-new`. Escopo: `internal/validator/`, `npm/src/validator/`, `pypi/trackfw/validator.py` e seus testes.

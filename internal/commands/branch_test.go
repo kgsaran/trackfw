@@ -141,7 +141,7 @@ func TestRunBranchNew_NoMatch_NoCandidates_Blocks(t *testing.T) {
 		t.Fatalf("git checkout must not run when blocked, got calls: %v", *calls)
 	}
 	got := out.String()
-	want := validator.BranchGovernanceOrientation("feat/orphan-slug")
+	want := validator.BranchGovernanceOrientation("feat/orphan-slug", config.ProjectConfig{})
 	if !strings.Contains(got, want) {
 		t.Fatalf("expected output to contain governance orientation message.\ngot: %q\nwant substring: %q", got, want)
 	}
@@ -280,7 +280,7 @@ func TestRunBranchNew_FeatWithoutRoadmap_StillBlocks_NonRegression(t *testing.T)
 		t.Fatalf("git checkout must not run when the gate blocks, got calls: %v", *calls)
 	}
 	got := out.String()
-	want := validator.BranchGovernanceOrientation("feat/no-roadmap-for-this")
+	want := validator.BranchGovernanceOrientation("feat/no-roadmap-for-this", config.ProjectConfig{})
 	if !strings.Contains(got, want) {
 		t.Fatalf("expected output to still contain the governance orientation message.\ngot: %q\nwant substring: %q", got, want)
 	}

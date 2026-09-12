@@ -34,8 +34,10 @@ function createCommitCommand() {
       'ready-to-use message; review and edit before using it with -m. When \'--suggest\' is set,\n' +
       "'-m' (if also passed) is ignored and no commit ever happens.\n\n" +
       'Create the governance artifacts first if this blocks you:\n' +
-      '  trackfw req new "title"\n' +
-      '  trackfw roadmap new "title"\n' +
+      '  trackfw req new "title"               # flat project\n' +
+      '  trackfw req new --agent <agent> "title"  # by_agent project with 2+ agents\n' +
+      '  trackfw roadmap new "title"               # flat project\n' +
+      '  trackfw roadmap new --agent <agent> "title"  # by_agent project with 2+ agents\n' +
       '  trackfw roadmap move <name> wip'
     )
     .option('-m, --message <msg>', 'Commit message (required)')

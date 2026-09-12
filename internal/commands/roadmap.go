@@ -60,7 +60,8 @@ func newRoadmapNewCmd() *cobra.Command {
 
 			// Lista pelo ponto único de leitura de REQ (ADR-2026-09-03, D3/D4): em by_agent o glob
 			// flat não enxergava nenhuma REQ e o wizard oferecia uma lista vazia.
-			reqFiles := validator.ResolveREQFiles(config.Load())
+			roadmapCfg := config.Load()
+			reqFiles := validator.ResolveREQFiles(roadmapCfg)
 			var selectedREQ string
 
 			isTTY := cbterm.IsTerminal(uintptr(os.Stdin.Fd()))
@@ -87,7 +88,7 @@ func newRoadmapNewCmd() *cobra.Command {
 				}
 				// selectedREQ permanece vazio — argumento posicional é o título, não um caminho de REQ
 			} else if len(reqFiles) == 0 {
-				fmt.Fprintln(os.Stderr, "Nenhuma REQ encontrada em docs/req/. Crie uma REQ primeiro com 'trackfw req new'.")
+				fmt.Fprintf(os.Stderr, "Nenhuma REQ encontrada. Crie uma REQ primeiro com '%s'.\n", validator.ReqNewLine(roadmapCfg))
 				return nil
 			}
 

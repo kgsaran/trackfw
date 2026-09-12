@@ -509,8 +509,9 @@ def run_ship(
             for v in violations:
                 writeln(f'  {v}')
             writeln('\nCreate the required artifacts before running ship:')
-            writeln('  trackfw req new "<title>"')
-            writeln('  trackfw roadmap new "<title>"')
+            ship_cfg = _config.load()
+            writeln(f'  {_validator.req_new_line(ship_cfg)}')
+            writeln(f'  {_validator.roadmap_new_line(ship_cfg)}')
             writeln('  trackfw roadmap move <name> wip')
             writeln("\nNote: this governance check is a hard gate — it is not affected by lenient")
             writeln("mode or per-rule severity configured in trackfw.yaml. If 'trackfw validate'")

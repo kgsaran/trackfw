@@ -27,6 +27,10 @@ type Config struct {
 	RequireReqInCommit bool      // gera hook commit-msg que exige REQ: em feat/* e fix/*
 	Forge              string    // forge platform: "github", "gitlab", "bitbucket", "azure", or "" (omit key)
 	AgentConventions   string    // agent_conventions: free-text, multi-line, or "" (omit key)
+	// RoadmapNamespacing and Agents are used by generators (claudemd, scaffold) to emit the
+	// correct `req new` / `roadmap new` command for by_agent projects with 2+ agents (AC13).
+	RoadmapNamespacing string   // "flat" (default) | "by_agent"
+	Agents             []string // agent namespaces declared in by_agent projects
 }
 
 var govDirs = []string{
@@ -261,6 +265,8 @@ trackfw não está instalado. Instale com uma das opções:
 ` + "```",
 
 		"req.md": `Execute o seguinte comando bash: ` + "`trackfw req new \"$ARGUMENTS\"`" + `
+
+⚠️ Em projetos com ` + "`roadmap_namespacing: by_agent`" + ` e 2+ agentes, use: ` + "`trackfw req new --agent <seu-agente> \"$ARGUMENTS\"`" + `
 
 Se o comando falhar com ` + "`trackfw: command not found`" + ` ou similar, informe ao usuário:
 

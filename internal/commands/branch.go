@@ -81,8 +81,10 @@ by 'trackfw validate' and 'trackfw ship') to before branch creation, instead of 
      output and exit status literally.
 
 Create the governance artifacts first if this blocks you:
-  trackfw req new "title"
-  trackfw roadmap new "title"
+  trackfw req new "title"               # flat project
+  trackfw req new --agent <agent> "title"  # by_agent project with 2+ agents
+  trackfw roadmap new "title"               # flat project
+  trackfw roadmap new --agent <agent> "title"  # by_agent project with 2+ agents
   trackfw roadmap move <name> wip`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -153,7 +155,7 @@ func runBranchNew(spec string, dryRun bool, deps branchNewDeps) error {
 		if !matched {
 			var msg string
 			if len(candidates) == 0 {
-				msg = validator.BranchGovernanceOrientation(branchName)
+				msg = validator.BranchGovernanceOrientation(branchName, cfg)
 			} else {
 				msg = validator.BranchNoMatchingRoadmapMessage(branchName, candidates)
 			}

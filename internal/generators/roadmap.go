@@ -765,7 +765,7 @@ func ListRoadmaps() error {
 	}
 
 	if !found {
-		fmt.Println("Nenhum roadmap encontrado. Crie um com 'trackfw roadmap new'.")
+		fmt.Printf("Nenhum roadmap encontrado. Crie um com '%s'.\n", validator.RoadmapNewLine(cfg))
 	}
 	return nil
 }

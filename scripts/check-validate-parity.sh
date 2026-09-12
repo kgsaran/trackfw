@@ -663,13 +663,27 @@ echo "Validate JSON parity checks passed (global-scope guard missing-type hook_r
 mkdir -p \
   "$TMP_DIR/bhr-match/docs/roadmaps"/{wip,done} \
   "$TMP_DIR/bhr-nomatch/docs/roadmaps"/{wip,done} \
-  "$TMP_DIR/bhr-diff/docs/roadmaps"/{wip,done}
+  "$TMP_DIR/bhr-diff/docs/roadmaps"/{wip,done} \
+  "$TMP_DIR/bhr-byagent/docs/roadmaps/zeus"/{wip,done} \
+  "$TMP_DIR/bhr-byagent/docs/roadmaps/apolo"/{wip,done}
 
 for d in bhr-match bhr-nomatch bhr-diff; do
   cat >"$TMP_DIR/$d/trackfw.yaml" <<'EOF'
 roadmap_dir: docs/roadmaps
 EOF
 done
+
+# bhr-byagent: by_agent + 2 agents, wip/ e done/ deliberadamente vazios.
+# Propósito: verifica que a mensagem de orientação ensina --agent <agent> nos 3 CLIs
+# (ML-3A, REQ-2026-09-11-by-agent-req-new-e-roadmap-new). O slug da branch não
+# coincide com nenhum roadmap, garantindo que a violação dispara.
+cat >"$TMP_DIR/bhr-byagent/trackfw.yaml" <<'EOF'
+roadmap_dir: docs/roadmaps
+roadmap_namespacing: by_agent
+agents:
+  - zeus
+  - apolo
+EOF
 
 cat >"$TMP_DIR/bhr-match/docs/roadmaps/done/ROADMAP-2026-08-20-minha-feature.md" <<'EOF'
 ---
@@ -706,6 +720,10 @@ run_bhr "$TMP_DIR/bhr-nomatch-py.json"   "$TMP_DIR/bhr-nomatch" feat/sem-roadmap
 run_bhr "$TMP_DIR/bhr-diff-go.json"      "$TMP_DIR/bhr-diff"    feat/minha-feature       "$GO_BIN" validate --json
 run_bhr "$TMP_DIR/bhr-diff-node.json"    "$TMP_DIR/bhr-diff"    feat/minha-feature       node "$ROOT_DIR/npm/bin/trackfw" validate --json
 run_bhr "$TMP_DIR/bhr-diff-py.json"      "$TMP_DIR/bhr-diff"    feat/minha-feature       env PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw validate --json
+
+run_bhr "$TMP_DIR/bhr-byagent-go.json"   "$TMP_DIR/bhr-byagent" feat/sem-roadmap-byagent "$GO_BIN" validate --json
+run_bhr "$TMP_DIR/bhr-byagent-node.json" "$TMP_DIR/bhr-byagent" feat/sem-roadmap-byagent node "$ROOT_DIR/npm/bin/trackfw" validate --json
+run_bhr "$TMP_DIR/bhr-byagent-py.json"   "$TMP_DIR/bhr-byagent" feat/sem-roadmap-byagent env PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw validate --json
 
 python3 - "$TMP_DIR" <<'PY'
 import json
@@ -749,6 +767,10 @@ cases = {
     "match": ("bhr-match-{}.json", False, None),
     "nomatch": ("bhr-nomatch-{}.json", True, "no roadmap is in wip/ nor done/"),
     "diff": ("bhr-diff-{}.json", True, "no matching roadmap in wip/ nor done/"),
+    # bhr-byagent: by_agent + 2 agents — orientation message must teach --agent
+    # (ML-3A, REQ-2026-09-11-by-agent-req-new-e-roadmap-new). The extra assertion
+    # below (outside the loop) checks --agent is present cross-runtime.
+    "byagent": ("bhr-byagent-{}.json", True, "no roadmap is in wip/ nor done/"),
 }
 
 for label, (pattern, expect_violation, expectation) in cases.items():
@@ -811,6 +833,24 @@ for label, (pattern, expect_violation, expectation) in cases.items():
             f"branch_has_wip_roadmap done/ parity ({label}): mensagens divergem "
             f"entre runtimes -- go={go_msgs!r} node={node_msgs!r} py={py_msgs!r}"
         )
+
+# Extra assertion for bhr-byagent: the orientation text must teach --agent <agent>
+# across all 3 CLIs. This is the discriminant that proves ML-3A's central conclusion:
+# by_agent + 2 agents → --agent form is emitted in the governance message.
+byagent_results = {rt: load("bhr-byagent-{}.json".format(rt)) for rt in ("go", "node", "py")}
+for rt, (_, msgs, _) in byagent_results.items():
+    if not msgs:
+        raise SystemExit(
+            f"bhr-byagent ({rt}): nenhuma mensagem branch_has_wip_roadmap — fixture vazia?"
+        )
+    for m in msgs:
+        if "--agent" not in m:
+            raise SystemExit(
+                f"bhr-byagent ({rt}): mensagem de orientação não contém '--agent' "
+                f"para projeto by_agent com 2 agentes (zeus, apolo).\n"
+                f"  Mensagem obtida: {m!r}\n"
+                f"  ML-3A exige que emissores ensinem o form correto."
+            )
 
 print(
     "branch_has_wip_roadmap done/ acceptance parity checks passed "

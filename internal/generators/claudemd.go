@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	projectconfig "github.com/kgsaran/trackfw/internal/config"
 )
 
 // GlobalADRsDirective é a diretiva obrigatória para instruir os agentes sobre ADRs globais.
@@ -54,8 +56,27 @@ func generateClaudeMD(cfg Config) error {
 	sb.WriteString("| Command | When to use |\n")
 	sb.WriteString("|---|---|\n")
 	sb.WriteString("| `trackfw adr new \"title\"` | Create ADR |\n")
-	sb.WriteString("| `trackfw req new \"title\"` | Create REQ |\n")
-	sb.WriteString("| `trackfw roadmap new` | Create empty roadmap linked to a REQ |\n")
+	// Emit the correct req new / roadmap new command for by_agent projects with 2+ agents.
+	// For flat or by_agent with 0–1 agents the canonical form without --agent is correct.
+	if cfg.RoadmapNamespacing == projectconfig.NamespacingByAgent {
+		var nonEmpty []string
+		for _, a := range cfg.Agents {
+			if a != "" {
+				nonEmpty = append(nonEmpty, a)
+			}
+		}
+		if len(nonEmpty) >= 2 {
+			agentList := strings.Join(nonEmpty, ", ")
+			sb.WriteString("| `trackfw req new --agent <agent> \"title\"` | Create REQ (`--agent` required; agents: " + agentList + ") |\n")
+			sb.WriteString("| `trackfw roadmap new --agent <agent>` | Create roadmap linked to a REQ (`--agent` required) |\n")
+		} else {
+			sb.WriteString("| `trackfw req new \"title\"` | Create REQ |\n")
+			sb.WriteString("| `trackfw roadmap new` | Create empty roadmap linked to a REQ |\n")
+		}
+	} else {
+		sb.WriteString("| `trackfw req new \"title\"` | Create REQ |\n")
+		sb.WriteString("| `trackfw roadmap new` | Create empty roadmap linked to a REQ |\n")
+	}
 	sb.WriteString("| `trackfw roadmap move <name> <state>` | Move roadmap state |\n")
 	sb.WriteString("| `trackfw validate` | Governance validation gate |\n")
 	sb.WriteString("| `trackfw status` | Show governance status |\n\n")

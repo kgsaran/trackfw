@@ -1515,12 +1515,37 @@ function branchSlugMatchesRoadmap(branchSlug, wipDirs, doneDirs) {
   return { matched, candidates }
 }
 
+// isMultiAgentByAgent returns {multi: bool, agents: string[]} — parity with Go's IsMultiAgentByAgent.
+// multi is true only when roadmap_namespacing is "by_agent" AND there are 2+ non-empty agent names.
+function isMultiAgentByAgent(cfg) {
+  const ns = cfg.roadmapNamespacing || cfg.roadmap_namespacing || ''
+  if (ns !== 'by_agent') return { multi: false, agents: [] }
+  const nonEmpty = (cfg.agents || []).filter(a => a)
+  if (nonEmpty.length < 2) return { multi: false, agents: nonEmpty }
+  return { multi: true, agents: nonEmpty }
+}
+
+// reqNewLine returns the correct `trackfw req new` command for the project — parity with Go's ReqNewLine.
+function reqNewLine(cfg) {
+  const { multi, agents } = isMultiAgentByAgent(cfg)
+  if (multi) return `trackfw req new --agent <agent> "title"  # agents: ${agents.join(', ')}`
+  return 'trackfw req new "title"'
+}
+
+// roadmapNewLine returns the correct `trackfw roadmap new` command — parity with Go's RoadmapNewLine.
+function roadmapNewLine(cfg) {
+  const { multi } = isMultiAgentByAgent(cfg)
+  if (multi) return 'trackfw roadmap new --agent <agent> "title"'
+  return 'trackfw roadmap new "title"'
+}
+
 // branchGovernanceOrientation is the guidance message printed when a feat/fix/refactor branch has
 // no roadmap in wip/ nor done/ at all (candidates is empty). Shared by validateBranchHasWIPRoadmap
 // and `trackfw branch new` — never duplicate this string. Byte-identical to Go's
 // BranchGovernanceOrientation.
-function branchGovernanceOrientation(branch) {
-  return `branch "${branch}" is a feat/fix/refactor branch but no roadmap is in wip/ nor done/ — create governance artifacts first:\n  trackfw req new "title"\n  trackfw roadmap new "title"\n  trackfw roadmap move <name> wip`
+function branchGovernanceOrientation(branch, cfg) {
+  const cfgObj = cfg || {}
+  return `branch "${branch}" is a feat/fix/refactor branch but no roadmap is in wip/ nor done/ — create governance artifacts first:\n  ${reqNewLine(cfgObj)}\n  ${roadmapNewLine(cfgObj)}\n  trackfw roadmap move <name> wip`
 }
 
 // branchNoMatchingRoadmapMessage is the guidance message printed when roadmaps exist in wip/ or
@@ -1563,7 +1588,7 @@ function validateBranchHasWIPRoadmap() {
   if (matched) return []
 
   if (candidates.length === 0) {
-    return [branchGovernanceOrientation(branch)]
+    return [branchGovernanceOrientation(branch, cfg)]
   }
   return [branchNoMatchingRoadmapMessage(branch, candidates)]
 }
@@ -3996,6 +4021,9 @@ module.exports = {
   validateBranchHasWIPRoadmap,
   // novas funções — trackfw branch new (extraídas do gate branch_has_wip_roadmap)
   branchSlugMatchesRoadmap,
+  isMultiAgentByAgent,
+  reqNewLine,
+  roadmapNewLine,
   branchGovernanceOrientation,
   branchNoMatchingRoadmapMessage,
   normalizeBranchSlug,

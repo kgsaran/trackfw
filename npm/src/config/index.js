@@ -356,6 +356,26 @@ function readAgentConventions(cwd) {
   return cfg.update.agentConventions || '';
 }
 
+// readNamespacingConfig reads roadmap_namespacing and agents from <cwd>/trackfw.yaml, bypassing
+// the load() singleton — mirrors Go's config.ReadNamespacingConfig. Never throws; returns
+// defaults ('flat', []) on any failure.
+function readNamespacingConfig(cwd) {
+  let content;
+  try {
+    content = fs.readFileSync(path.join(cwd || process.cwd(), 'trackfw.yaml'), 'utf8');
+  } catch (_) {
+    return { namespacing: 'flat', agents: [] };
+  }
+  const cfg = { rules: {}, credentialGuard: {}, update: {}, sync: {}, linkFields: {}, agentModels: {},
+    roadmapNamespacing: 'flat', agents: [] };
+  try {
+    parse(content, cfg);
+  } catch (_) {
+    return { namespacing: 'flat', agents: [] };
+  }
+  return { namespacing: cfg.roadmapNamespacing || 'flat', agents: cfg.agents || [] };
+}
+
 // _cwdAgentModelsSource returns 'project_only' if cwd's trackfw.yaml has agent_models configured,
 // 'none' otherwise. Used for the AC14 diagnostic in loadGlobalAgentModels.
 function _cwdAgentModelsSource(cwd) {
@@ -425,6 +445,7 @@ module.exports = {
   expandPath,
   parseRulesFromContent,
   readAgentConventions,
+  readNamespacingConfig,
   loadGlobalAgentModels,
   resolveAgentModels,
   NAMESPACING_FLAT,

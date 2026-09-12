@@ -1490,6 +1490,46 @@ func ResolveWriteAgent(cfg config.ProjectConfig, flagAgent string) (string, erro
 	}
 }
 
+// IsMultiAgentByAgent retorna true quando cfg usa namespacing by_agent com 2 ou mais namespaces
+// de agente não-vazios — a condição que exige --agent em `req new` / `roadmap new`.
+// Retorna (false, nil) para flat ou by_agent com 0–1 agente.
+// Segundo valor: lista dos agentes ativos (para mensagens de orientação).
+func IsMultiAgentByAgent(cfg config.ProjectConfig) (bool, []string) {
+	if cfg.RoadmapNamespacing != config.NamespacingByAgent {
+		return false, nil
+	}
+	var nonEmpty []string
+	for _, a := range cfg.Agents {
+		if a != "" {
+			nonEmpty = append(nonEmpty, a)
+		}
+	}
+	if len(nonEmpty) < 2 {
+		return false, nonEmpty
+	}
+	return true, nonEmpty
+}
+
+// ReqNewLine retorna a linha de comando `trackfw req new` correta para o projeto.
+// Para projetos flat ou by_agent com 1 agente: forma canônica sem --agent.
+// Para projetos by_agent com 2+ agentes: inclui --agent com a lista de agentes disponíveis.
+func ReqNewLine(cfg config.ProjectConfig) string {
+	multi, agents := IsMultiAgentByAgent(cfg)
+	if multi {
+		return fmt.Sprintf("trackfw req new --agent <agent> \"title\"  # agents: %s", strings.Join(agents, ", "))
+	}
+	return "trackfw req new \"title\""
+}
+
+// RoadmapNewLine retorna a linha de comando `trackfw roadmap new` correta para o projeto.
+func RoadmapNewLine(cfg config.ProjectConfig) string {
+	multi, _ := IsMultiAgentByAgent(cfg)
+	if multi {
+		return "trackfw roadmap new --agent <agent> \"title\""
+	}
+	return "trackfw roadmap new \"title\""
+}
+
 // REQWriteDir é o PONTO ÚNICO que decide ONDE uma REQ nova é gravada (ADR-2026-09-03, D2/D4):
 //   - flat      → req_dir/
 //   - by_agent  → req_dir/<agente>/   (agente pré-resolvido pelo chamador via ResolveWriteAgent)
@@ -2870,7 +2910,7 @@ func validateBranchHasWIPRoadmap() ([]string, error) {
 	}
 
 	if len(candidates) == 0 {
-		return []string{BranchGovernanceOrientation(branch)}, nil
+		return []string{BranchGovernanceOrientation(branch, cfg)}, nil
 	}
 	return []string{BranchNoMatchingRoadmapMessage(branch, candidates)}, nil
 }
@@ -2878,10 +2918,12 @@ func validateBranchHasWIPRoadmap() ([]string, error) {
 // BranchGovernanceOrientation is the guidance message printed when a feat/fix/refactor branch
 // has no roadmap in wip/ nor done/ at all (candidates is empty). Shared by
 // validateBranchHasWIPRoadmap and `trackfw branch new` — never duplicate this string.
-func BranchGovernanceOrientation(branch string) string {
+// For by_agent projects with 2+ agents, the hint includes --agent so the user does not run
+// the command that now requires a flag (AC13, ML-3A).
+func BranchGovernanceOrientation(branch string, cfg config.ProjectConfig) string {
 	return fmt.Sprintf(
-		"branch %q is a feat/fix/refactor branch but no roadmap is in wip/ nor done/ — create governance artifacts first:\n  trackfw req new \"title\"\n  trackfw roadmap new \"title\"\n  trackfw roadmap move <name> wip",
-		branch,
+		"branch %q is a feat/fix/refactor branch but no roadmap is in wip/ nor done/ — create governance artifacts first:\n  %s\n  %s\n  trackfw roadmap move <name> wip",
+		branch, ReqNewLine(cfg), RoadmapNewLine(cfg),
 	)
 }
 

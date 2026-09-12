@@ -7,6 +7,7 @@ import (
 
 	"github.com/kgsaran/trackfw/internal/config"
 	"github.com/kgsaran/trackfw/internal/forge"
+	"github.com/kgsaran/trackfw/internal/validator"
 	"github.com/spf13/cobra"
 )
 
@@ -19,6 +20,10 @@ type pushDeps struct {
 	// checkGovernance returns violation messages (nil or empty slice = pass).
 	// Injected so that tests do not depend on a real trackfw project layout.
 	checkGovernance func() []string
+
+	// cfg is the project config used to compute governance remediation hints.
+	// Zero value (flat) is the correct default for tests that do not specify a project layout.
+	cfg config.ProjectConfig
 
 	out io.Writer
 
@@ -85,11 +90,13 @@ PR first.`,
 		// allow_abbrev=False (argparse) equivalent: cobra/pflag never abbreviates by default.
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cmd.SilenceUsage = true
+			cfg := config.Load()
 			deps := pushDeps{
 				execGit:         defaultGitExec,
 				checkGovernance: defaultCheckGovernance,
+				cfg:             cfg,
 				out:             cmd.OutOrStdout(),
-				configForge:     config.Load().Forge,
+				configForge:     cfg.Forge,
 				repoDir:         ".",
 				availFn:         nil,
 				checkPROpen:     nil,
@@ -156,8 +163,8 @@ func runPush(opts pushOpts, deps pushDeps) error {
 				fmt.Fprintf(deps.out, "  %s\n", v)
 			}
 			fmt.Fprintf(deps.out, "\nCreate the required artifacts before running push:\n")
-			fmt.Fprintf(deps.out, "  trackfw req new \"<title>\"\n")
-			fmt.Fprintf(deps.out, "  trackfw roadmap new \"<title>\"\n")
+			fmt.Fprintf(deps.out, "  %s\n", validator.ReqNewLine(deps.cfg))
+			fmt.Fprintf(deps.out, "  %s\n", validator.RoadmapNewLine(deps.cfg))
 			fmt.Fprintf(deps.out, "  trackfw roadmap move <name> wip\n")
 			fmt.Fprintf(deps.out, "\nNote: this governance check is a hard gate — it is not affected by lenient\n")
 			fmt.Fprintf(deps.out, "mode or per-rule severity configured in trackfw.yaml. If 'trackfw validate'\n")

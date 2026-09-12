@@ -242,7 +242,7 @@ GLOBAL_ADR_DIRECTIVE = (
 )
 
 
-def _trackfw_rules_block(agent_conventions: str = "") -> str:
+def _trackfw_rules_block(agent_conventions: str = "", namespacing: str = "flat", agents: list = None) -> str:
     conventions_section = ""
     if agent_conventions.strip():
         conventions_section = (
@@ -253,6 +253,18 @@ def _trackfw_rules_block(agent_conventions: str = "") -> str:
             f'{agent_conventions.strip()}\n'
         )
 
+    # Determine step-1 command form — by_agent + 2+ agents shows --agent variant
+    non_empty = [a for a in (agents or []) if a]
+    is_multi = namespacing == "by_agent" and len(non_empty) >= 2
+    if is_multi:
+        step1_req = '`trackfw req new --agent <agent> "title"`'
+        step1_roadmap = '`trackfw roadmap new --agent <agent> "title"`'
+        step1_note = f'\n   ⚠️ `--agent` is required for this project (agents: {", ".join(non_empty)})'
+    else:
+        step1_req = '`trackfw req new "title"`'
+        step1_roadmap = '`trackfw roadmap new "title"`'
+        step1_note = ''
+
     return (
         RULES_START + '\n'
         '## trackfw — Governance Rules\n\n'
@@ -260,7 +272,7 @@ def _trackfw_rules_block(agent_conventions: str = "") -> str:
         'Chain: `ADR → REQ → ROADMAP` · States: `backlog / analyzing / wip / blocked / done / abandoned`\n\n'
         '### Agent Protocol\n'
         '1. **Before any implementation (mandatory):** create governance artifacts FIRST, then branch:\n'
-        '   `trackfw req new "title"` → `trackfw roadmap new "title"` → `trackfw roadmap move <name> wip` → `git checkout -b feat/<branch>`\n'
+        f'   {step1_req} → {step1_roadmap} → `trackfw roadmap move <name> wip` → `git checkout -b feat/<branch>`{step1_note}\n'
         '   ❌ Never create a branch before REQ + ROADMAP are in wip/\n'
         '   ❌ Never defer REQ/ROADMAP creation to a future task — they are prerequisites, not deliverables\n'
         '   ✓ `trackfw validate` enforces this via `branch_has_wip_roadmap` rule (v2.7.0+)\n'
@@ -305,8 +317,9 @@ def _trackfw_rules_block(agent_conventions: str = "") -> str:
 def _inject_or_update_rules(file_path: str, header_if_new: str, cwd: str = None) -> None:
     os.makedirs(os.path.dirname(os.path.abspath(file_path)), exist_ok=True)
 
-    from trackfw.config import read_agent_conventions
-    block = _trackfw_rules_block(read_agent_conventions(cwd))
+    from trackfw.config import read_agent_conventions, read_namespacing_config
+    namespacing, ns_agents = read_namespacing_config(cwd)
+    block = _trackfw_rules_block(read_agent_conventions(cwd), namespacing, ns_agents)
 
     if not os.path.exists(file_path):
         content = header_if_new or ''
@@ -406,8 +419,14 @@ def generate_claude_md(cwd: str, opts: dict) -> None:
     lines.append('\n| Command | When to use |\n')
     lines.append('|---|---|\n')
     lines.append('| `trackfw adr new "title"` | Create ADR |\n')
-    lines.append('| `trackfw req new "title"` | Create REQ |\n')
-    lines.append('| `trackfw roadmap new` | Create empty roadmap linked to a REQ |\n')
+    _ns_non_empty = [a for a in opts.get('agents', []) or [] if a]
+    if opts.get('roadmap_namespacing') == 'by_agent' and len(_ns_non_empty) >= 2:
+        _agent_list = ', '.join(_ns_non_empty)
+        lines.append(f'| `trackfw req new --agent <agent> "title"` | Create REQ (`--agent` required; agents: {_agent_list}) |\n')
+        lines.append('| `trackfw roadmap new --agent <agent>` | Create roadmap linked to a REQ (`--agent` required) |\n')
+    else:
+        lines.append('| `trackfw req new "title"` | Create REQ |\n')
+        lines.append('| `trackfw roadmap new` | Create empty roadmap linked to a REQ |\n')
     lines.append('| `trackfw roadmap move <name> <state>` | Move roadmap state |\n')
     lines.append('| `trackfw validate` | Governance validation gate |\n')
     lines.append('| `trackfw status` | Show governance status |\n')
@@ -671,7 +690,8 @@ def generate_claude_commands(cwd: str) -> None:
             + _install_not_found
         ),
         'req.md': (
-            'Execute o seguinte comando bash: `trackfw req new "$ARGUMENTS"`'
+            'Execute o seguinte comando bash: `trackfw req new "$ARGUMENTS"`\n\n'
+            '⚠️ Em projetos com `roadmap_namespacing: by_agent` e 2+ agentes, use: `trackfw req new --agent <seu-agente> "$ARGUMENTS"`'
             + _install_not_found
         ),
         'validate.md': (

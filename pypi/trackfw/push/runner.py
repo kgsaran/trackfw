@@ -31,6 +31,8 @@ from trackfw.ship.runner import (
 
 from trackfw.forge.resolve import resolve as forge_resolve
 from trackfw.forge.adapter import forge_adapter
+from trackfw import config as _config
+from trackfw.validator import req_new_line, roadmap_new_line
 
 
 # push --force-with-lease refusal messages — "trackfw push" (not "ship") because this command
@@ -145,8 +147,9 @@ def run_push(
             for v in violations:
                 writeln(f'  {v}')
             writeln('\nCreate the required artifacts before running push:')
-            writeln('  trackfw req new "<title>"')
-            writeln('  trackfw roadmap new "<title>"')
+            push_cfg = _config.load()
+            writeln(f'  {req_new_line(push_cfg)}')
+            writeln(f'  {roadmap_new_line(push_cfg)}')
             writeln('  trackfw roadmap move <name> wip')
             writeln("\nNote: this governance check is a hard gate — it is not affected by lenient")
             writeln("mode or per-rule severity configured in trackfw.yaml. If 'trackfw validate'")

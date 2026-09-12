@@ -2436,6 +2436,69 @@ test('credential_guard_hook_resolvable: sh -c "$PWD/…" usa mensagem do $PWD (M
     } finally { fs.rmSync(tmp, { recursive: true, force: true }) }
   })
 
+  // --- isMultiAgentByAgent / reqNewLine / roadmapNewLine orientation helpers ---
+  // Four discrimination cases (exact-equality), matching the Go and Python tests.
+
+  test('isMultiAgentByAgent byAgent2plus: by_agent + 2 agents returns multi=true', () => {
+    // Affirms: 2 non-empty agents in by_agent triggers the --agent form.
+    const cfg = { roadmap_namespacing: 'by_agent', agents: ['alpha', 'beta'] }
+    const { multi, agents } = validator.isMultiAgentByAgent(cfg)
+    assert.strictEqual(multi, true, `esperava multi=true; got ${multi}`)
+    assert.deepStrictEqual(agents, ['alpha', 'beta'])
+  })
+
+  test('isMultiAgentByAgent byAgentSingle: by_agent + 1 agent returns multi=false (contra-braço)', () => {
+    // Affirms: single-agent by_agent projects must NOT trigger --agent (contra-braço).
+    const cfg = { roadmap_namespacing: 'by_agent', agents: ['alpha'] }
+    const { multi } = validator.isMultiAgentByAgent(cfg)
+    assert.strictEqual(multi, false, `contra-braço violado: esperava multi=false; got ${multi}`)
+  })
+
+  test('isMultiAgentByAgent flat: flat project returns multi=false (contra-braço)', () => {
+    // Affirms: flat projects must NOT trigger --agent (contra-braço).
+    const cfg = {}
+    const { multi } = validator.isMultiAgentByAgent(cfg)
+    assert.strictEqual(multi, false, `contra-braço violado: esperava multi=false; got ${multi}`)
+  })
+
+  test('isMultiAgentByAgent byAgent2plusWithEmpty: empty string filtered, 2 real agents triggers multi=true', () => {
+    // Affirms: empty-string filter works — ["","alpha","beta"] counts as 2 non-empty agents.
+    const cfg = { roadmap_namespacing: 'by_agent', agents: ['', 'alpha', 'beta'] }
+    const { multi, agents } = validator.isMultiAgentByAgent(cfg)
+    assert.strictEqual(multi, true, `esperava multi=true após filtrar vazio; got ${multi}`)
+    assert.deepStrictEqual(agents, ['alpha', 'beta'])
+  })
+
+  test('reqNewLine byAgent2plus: emits exact --agent form with agent list', () => {
+    // Affirms: reqNewLine for by_agent 2+ produces the exact string taught to users.
+    const cfg = { roadmap_namespacing: 'by_agent', agents: ['alpha', 'beta'] }
+    const line = validator.reqNewLine(cfg)
+    assert.strictEqual(line, 'trackfw req new --agent <agent> "title"  # agents: alpha, beta')
+  })
+
+  test('reqNewLine flat: emits flat form without --agent', () => {
+    // Affirms: reqNewLine for flat project produces the simple form (contra-braço).
+    const cfg = {}
+    const line = validator.reqNewLine(cfg)
+    assert.strictEqual(line, 'trackfw req new "title"')
+    assert(!line.includes('--agent'), `contra-braço violado: flat reqNewLine contains --agent`)
+  })
+
+  test('roadmapNewLine byAgent2plus: emits exact --agent form', () => {
+    // Affirms: roadmapNewLine for by_agent 2+ produces the exact string taught to users.
+    const cfg = { roadmap_namespacing: 'by_agent', agents: ['alpha', 'beta'] }
+    const line = validator.roadmapNewLine(cfg)
+    assert.strictEqual(line, 'trackfw roadmap new --agent <agent> "title"')
+  })
+
+  test('roadmapNewLine flat: emits flat form without --agent', () => {
+    // Affirms: roadmapNewLine for flat project produces the simple form (contra-braço).
+    const cfg = {}
+    const line = validator.roadmapNewLine(cfg)
+    assert.strictEqual(line, 'trackfw roadmap new "title"')
+    assert(!line.includes('--agent'), `contra-braço violado: flat roadmapNewLine contains --agent`)
+  })
+
   console.log(`\n${passed} passed, ${failed} failed, ${skipped} xfail`)
   if (failed > 0) process.exit(1)
 })()

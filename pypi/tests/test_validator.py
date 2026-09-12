@@ -2865,5 +2865,80 @@ class TestBlockedByDraftAdrDeixaDeSerCegaAProposed(unittest.TestCase):
             shutil.rmtree(tmp, ignore_errors=True)
 
 
+class TestOrientationHelpers(unittest.TestCase):
+    """Four discrimination cases for is_multi_agent_by_agent / req_new_line / roadmap_new_line.
+
+    Each method includes a reconciliation sentence per CLAUDE.md Regra Dura de Reconciliação.
+    """
+
+    def test_byAgent2plus_multi_true(self):
+        """Affirms: by_agent + ["alpha","beta"] returns (True, ["alpha","beta"]) — 2 non-empty
+        agents triggers the --agent form."""
+        from trackfw.validator import is_multi_agent_by_agent
+        cfg = {"roadmap_namespacing": "by_agent", "agents": ["alpha", "beta"]}
+        multi, agents = is_multi_agent_by_agent(cfg)
+        self.assertTrue(multi, "esperava multi=True para by_agent com 2 agentes")
+        self.assertEqual(agents, ["alpha", "beta"])
+
+    def test_byAgentSingle_multi_false(self):
+        """Affirms: by_agent + ["alpha"] returns (False, ...) — contra-braço: single-agent
+        by_agent projects must NOT trigger --agent."""
+        from trackfw.validator import is_multi_agent_by_agent
+        cfg = {"roadmap_namespacing": "by_agent", "agents": ["alpha"]}
+        multi, _ = is_multi_agent_by_agent(cfg)
+        self.assertFalse(multi, "contra-braço violado: by_agent com 1 agente não deve ativar --agent")
+
+    def test_flat_multi_false(self):
+        """Affirms: flat (no namespacing) returns (False, []) — contra-braço: flat projects
+        must NOT trigger --agent."""
+        from trackfw.validator import is_multi_agent_by_agent
+        cfg = {}
+        multi, agents = is_multi_agent_by_agent(cfg)
+        self.assertFalse(multi, "contra-braço violado: flat project não deve ativar --agent")
+        self.assertEqual(agents, [])
+
+    def test_byAgent2plusWithEmpty_filters_empty(self):
+        """Affirms: ["","alpha","beta"] filters the empty string and counts 2 real agents —
+        multi=True, agents=["alpha","beta"]."""
+        from trackfw.validator import is_multi_agent_by_agent
+        cfg = {"roadmap_namespacing": "by_agent", "agents": ["", "alpha", "beta"]}
+        multi, agents = is_multi_agent_by_agent(cfg)
+        self.assertTrue(multi, "filtro de string vazia falhou: esperava multi=True")
+        self.assertEqual(agents, ["alpha", "beta"])
+
+    def test_req_new_line_byAgent2plus_exact(self):
+        """Affirms: req_new_line for by_agent+2 returns exact string including two spaces before #."""
+        from trackfw.validator import req_new_line
+        cfg = {"roadmap_namespacing": "by_agent", "agents": ["alpha", "beta"]}
+        line = req_new_line(cfg)
+        self.assertEqual(
+            line,
+            'trackfw req new --agent <agent> "title"  # agents: alpha, beta',
+        )
+
+    def test_req_new_line_flat_no_agent(self):
+        """Affirms: req_new_line for flat returns flat form without --agent (contra-braço)."""
+        from trackfw.validator import req_new_line
+        cfg = {}
+        line = req_new_line(cfg)
+        self.assertEqual(line, 'trackfw req new "title"')
+        self.assertNotIn("--agent", line, "contra-braço violado: flat req_new_line contém --agent")
+
+    def test_roadmap_new_line_byAgent2plus_exact(self):
+        """Affirms: roadmap_new_line for by_agent+2 returns exact --agent form."""
+        from trackfw.validator import roadmap_new_line
+        cfg = {"roadmap_namespacing": "by_agent", "agents": ["alpha", "beta"]}
+        line = roadmap_new_line(cfg)
+        self.assertEqual(line, 'trackfw roadmap new --agent <agent> "title"')
+
+    def test_roadmap_new_line_flat_no_agent(self):
+        """Affirms: roadmap_new_line for flat returns flat form without --agent (contra-braço)."""
+        from trackfw.validator import roadmap_new_line
+        cfg = {}
+        line = roadmap_new_line(cfg)
+        self.assertEqual(line, 'trackfw roadmap new "title"')
+        self.assertNotIn("--agent", line, "contra-braço violado: flat roadmap_new_line contém --agent")
+
+
 if __name__ == "__main__":
     unittest.main()

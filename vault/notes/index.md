@@ -4,6 +4,7 @@
 
 ## Índice
 
+- [angle-bracket-title-parity-trap-2026-09-12](angle-bracket-title-parity-trap-2026-09-12.md) — `"<title>"` (com angle brackets) vs `"title"` em ReqNewLine/RoadmapNewLine causa falha silenciosa em parity-rest; gate check-validate-parity.sh só testa o caso flat, então o bug sobrevive em Go enquanto Node/Python usam a forma correta
 - [substring-assert-nao-detecta-drift-de-mensagem-de-paridade-2026-09-12](substring-assert-nao-detecta-drift-de-mensagem-de-paridade-2026-09-12.md) — assert de substring passa mesmo com mensagens completamente diferentes; paridade de string requer igualdade exata + diff de binários; mensagem de ambiguidade de agente alinhada nos 3 runtimes (ML-2E)
 - [serve-browser-exec-string-para-argv-seguranca-2026-09-11](serve-browser-exec-string-para-argv-seguranca-2026-09-11.md) — `exec(string)` no browser-open silenciosamente executa comandos extras; exit code mente — use arquivo sentinela; residual Windows: `cmd.exe` re-parseia metacaracteres mesmo via argv; contenção é AC4 (isValidHost)
 - [fixture-update-harness-fixtures-dependiam-de-side-effect-pre-loop-2026-09-09](fixture-update-harness-fixtures-dependiam-de-side-effect-pre-loop-2026-09-09.md) — ML-1A: 3 fixtures dos cenários 68/69 dependiam do side-effect pre-loop de `update harness` para criar `.trackfw/scripts/`; ao remover o pre-loop, `printf >>` falhava com "No such file or directory" (diretório ausente) — sintoma: 0 FAIL mas vários GUARDA labels ausentes em cascata; corrigido adicionando os targets explícitos na chamada de setup

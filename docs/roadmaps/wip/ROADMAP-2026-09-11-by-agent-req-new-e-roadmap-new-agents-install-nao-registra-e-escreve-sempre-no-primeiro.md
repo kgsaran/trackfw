@@ -166,7 +166,7 @@ mais os testes. 🔴 Cada ML fica **dentro da sua arvore**.
 > Dependencias: waves 1 e 2 auditadas. 🔴 **3A e 3B sao sequenciais entre si** — o 3B mede o efeito do 3A.
 
 ### ML-3A — Os emissores param de ensinar um comando que falha (AC13)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:** os derivados no **item 4 do ML-0A**. A lista de 2026-09-11 era:
 `internal/generators/agentfiles.go:59`, `internal/generators/claudemd.go:57-58`,
 `internal/generators/scaffold.go:263`, `npm/src/generators/init.js:524,691-692,899`,

@@ -428,6 +428,33 @@ def read_agent_conventions(cwd=None):
         return ""
 
 
+def read_namespacing_config(cwd=None):
+    """Lê roadmap_namespacing e agents diretamente de <cwd>/trackfw.yaml, contornando o
+    singleton load() — espelha ReadNamespacingConfig (Go) e readNamespacingConfig (Node).
+    Nunca lança exceção; retorna ('flat', []) em qualquer falha.
+    """
+    try:
+        yaml_path = os.path.join(cwd or os.getcwd(), "trackfw.yaml")
+        with open(yaml_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        cfg = {
+            "rules": {},
+            "credential_guard": {},
+            "update": {},
+            "sync": {},
+            "link_fields": {},
+            "agent_models": {},
+            "roadmap_namespacing": "flat",
+            "agents": [],
+        }
+        malformed = _parse(content, cfg)
+        if malformed:
+            return "flat", []
+        return cfg.get("roadmap_namespacing", "flat"), cfg.get("agents", [])
+    except Exception:
+        return "flat", []
+
+
 def _cwd_agent_models_source(cwd: str | None) -> str:
     """Returns 'project_only' if cwd's trackfw.yaml has agent_models configured, 'none' otherwise.
     Used for the AC14 diagnostic in load_global_agent_models.
