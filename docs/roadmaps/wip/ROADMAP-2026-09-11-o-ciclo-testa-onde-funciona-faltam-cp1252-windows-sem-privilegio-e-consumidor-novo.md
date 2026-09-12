@@ -119,40 +119,65 @@ o codec é cp1252 e o caractere é U+2192. Medição local confirma: com fix →
 - [x] actionlint limpo
 
 ### ML-1B — AC2: job Windows sem Developer Mode
-**Status:** ✅ Concluído
+**Status:** ✅ Concluído (redesenhado 2026-09-12)
 
 **Arquivos afetados:**
-- `.github/workflows/quality.yml` — job `windows-symlink-unprivileged` adicionado
+- `.github/workflows/quality.yml` — job `windows-symlink-unprivileged` redesenhado
 
-**Ações:**
-1. Novo job `windows-symlink-unprivileged` em `quality.yml`, `runs-on: windows-latest`.
-2. Step que tenta desabilitar Developer Mode via registro:
-   `Set-ItemProperty -Path HKLM:\...\AppModelUnlock -Name AllowDevelopmentWithoutDevLicense -Value 0`.
-3. Guarda de vacuidade: prova que os.Symlink falha após desabilitar.
-4. Se a guarda de vacuidade falha (Developer Mode não pôde ser desabilitado): job REPROVA com
-   mensagem explícita "substitute did not take effect — não há cobertura real do caminho sem privilégio".
+**Causa raiz do problema (medida, run 34646752028, head 8105f148):**
+O runner windows-latest porta `SeCreateSymbolicLinkPrivilege` no token do processo. A remoção
+via registro (`AllowDevelopmentWithoutDevLicense=0`) isolada não revoga o privilégio — o processo
+já tem o token com o privilégio. São necessários dois portões simultaneamente:
+(a) registro = 0 (fecha o caminho `SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE`)
+(b) `AdjustTokenPrivileges/SE_PRIVILEGE_REMOVED` (fecha o caminho privilegiado do token)
+A guarda de vacuidade anterior estava correta em reprovar — o defeito era o design do job, não a guarda.
 
-**Medição — LIMITAÇÃO DECLARADA:**
+**Redesenho (KG, 2026-09-12) — substituto por injeção:**
 
-Não é possível medir localmente (darwin/arm64). A medição depende de:
-(a) O runner windows-latest rodar como usuário com permissão de modificar HKLM.
-(b) A modificação de registro ser efetiva para o processo atual (pode exigir reboot ou nova sessão).
-(c) O valor 0 em AllowDevelopmentWithoutDevLicense realmente revogar SeCreateSymbolicLinkPrivilege.
+O job substituiu a guarda-de-vacuidade-que-falha por dois mecanismos:
 
-Nenhuma das três pode ser confirmada sem rodar no runner. A guarda de vacuidade é o contrato:
-se as três condições não valerem, o job REPROVA com "substitute did not take effect" em vez de
-passar falsamente. Isso garante que cobertura fingida é impossível — o pior caso é "job vermelho
-permanentemente" (que é achado em si: CI não consegue exercitar este ambiente).
+1. **Passo de medição** (PowerShell, não falha o job): tenta fechar os dois portões
+   (registro + `AdjustTokenPrivileges`) e roda sonda Go em subprocesso filho (que herda o
+   token ajustado). Reporta veredito (`REAL_ENV=true/false`) e imprime matriz de medição.
+   Se o ambiente real ficar disponível, a limitação declarada abaixo cai.
 
-**Frase de reconciliação:** Este job afirma que o ambiente exercita o caminho de `os.Symlink` com
-privilege negado. Se não conseguir negar o privilege (vacuidade), o job REPROVA — nunca dá falsa
-cobertura.
+2. **Substituto por injeção** (3 runtimes, sempre executa):
+   - **Go**: `go test -overlay` injeta `syscall.Errno(1314)` diretamente em `symlinkOrSkip`
+     (`internal/generators/update_test.go`). Exercita `isSymlinkPrivilegeError` e `t.Skipf` REAIS.
+     Contra-braço: overlay com guarda desabilitada (`if false &&`) → `--- FAIL`.
+   - **Node**: preload CJS patcha `fs.symlinkSync` para lançar EPERM. A função `symlinkOrSkip`
+     real do arquivo de teste é exercitada. Contra-braço: cópia do arquivo sem a guarda + preload → falha.
+   - **Python**: `unittest.mock.patch('os.symlink')` injeta `OSError(winerror=1314)`. A função
+     `_symlink_or_skip` real de `test_update_discover_symlink_guard.py` é exercitada.
+     Contra-braço: `_symlink_or_skip` substituída por versão sem guarda → `OSError` propaga.
+
+3. **Grep de proteção** (inline): verifica que os arquivos que DEVEM usar os helpers de guarda
+   (`update_test.go`, `manager_test.go`, `update_discover_symlink_guard.test.js`,
+   `test_update_discover_symlink_guard.py`) não contêm chamadas raw fora das implementações dos helpers.
+
+**LIMITAÇÃO DECLARADA:** O substituto não exercita o nó OS real — não detecta automaticamente
+um teste em outro arquivo que chame `os.Symlink` diretamente e que compilaria com sucesso no runner.
+O grep de proteção mitiga isso enquanto o padrão "chamada raw = somente dentro do helper" for mantido.
+
+**Frase de reconciliação:** O job afirma que quando os.Symlink/fs.symlinkSync/os.symlink devolve
+erro de privilégio, os helpers PULAM o teste. Sem a guarda, o mesmo erro causa FALHA (falsificação
+por overlay/cópia modificada). Nenhum teste contorna o helper com chamada raw (grep de proteção).
+Medição local (darwin/arm64): overlay SKIP e falsificação FAIL ambos confirmados antes de envio.
 
 **Critérios de aceite:**
-- [x] Job `windows-symlink-unprivileged` existe em quality.yml
-- [x] Vacuidade: se symlink ainda funciona após desabilitar, job REPROVA
-- [x] Limitação declarada: medição local impossível; resultado depende do runner
-- [x] actionlint limpo
+- [x] Job `windows-symlink-unprivileged` existe em quality.yml com novo design
+- [x] Passo de medição: tenta registro + AdjustTokenPrivileges, reporta REAL_ENV; `$PSNativeCommandUseErrorActionPreference = $false` + `exit 0` garantem que step não falha quando probe retorna 1
+- [x] Go substituto: overlay injeta `*os.LinkError{Err: syscall.Errno(1314)}`, verifica `grep -q -e "--- SKIP"` (não casa com opção longa)
+- [x] Go falsificação: overlay com guarda desabilitada, verifica `grep -q -e "--- FAIL"`
+- [x] Node substituto: preload EPERM, verifica `grep -qE "skipped [1-9][0-9]*"` (ℹ ≠ #; não casa com skipped 0)
+- [x] Node falsificação: cópia sem guarda + preload, verifica `grep -qE "not ok|fail [1-9][0-9]*"` (não casa com fail 0)
+- [x] Python substituto: mock os.symlink, verifica skipTest
+- [x] Python falsificação: versão sem guarda, verifica OSError propagado
+- [x] Grep de proteção: só arquivos de guarda, sem raw fora dos helpers
+- [x] actionlint limpo (SC2140 eliminado via heredoc nos geradores Go)
+- [x] Contagem de substituições (assert >= 1) em todos os geradores Go e Node
+- [x] Medição local confirma: Go overlay SKIP (*os.LinkError) ✓, Go falsificação FAIL ✓, Node substituto skipped 8 ✓, Node falsificação fail>0 ✓, Python mock SKIP ✓
+- [ ] Veredito REAL_ENV: pendente — será preenchido com a saída do próximo run de CI
 
 ### ML-1C — AC3: consumer smoke by_agent (2 agentes, 3 CLIs)
 **Status:** ✅ Concluído
