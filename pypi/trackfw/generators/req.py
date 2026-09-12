@@ -166,10 +166,12 @@ def rewrite_req_status(source: str, status: str) -> tuple[str, bool]:
 
 
 def parse_req_status(filepath: str) -> str:
-    """
-    Extrai o status da linha `> Date: ... | Status: ...` de um arquivo REQ.
-    Espelha parseREQStatus (Node) / parseREQMeta (Go): o status termina no
-    próximo " |" ou no fim da linha. 'unknown' se não encontrado ou arquivo ilegível.
+    """Extrai o status de um arquivo REQ.
+
+    ML-1A (AC9) — fonte de verdade: FRONTMATTER.
+    Lê `status:` do bloco YAML frontmatter primeiro; cai para a linha de cabeçalho
+    `> Date: ... | Status: ...` no corpo se o frontmatter estiver ausente ou vazio.
+    Espelha parseREQStatus (Node) / parseREQMeta (Go) após a correção do issue #306.
     """
     try:
         with open(filepath, "r", encoding="utf-8") as f:
@@ -177,8 +179,29 @@ def parse_req_status(filepath: str) -> str:
     except OSError:
         return "unknown"
 
+    lines = content.replace("\r\n", "\n").split("\n")
+
+    # Frontmatter first: procurar campo status: no bloco YAML delimitado por "---".
+    in_fm = False
+    fm_count = 0
+    for line in lines:
+        if line.strip() == "---":
+            fm_count += 1
+            if fm_count == 1:
+                in_fm = True
+                continue
+            in_fm = False
+            break  # frontmatter fechado
+        if in_fm:
+            colon = line.find(":")
+            if colon > 0 and line[:colon].strip().lower() == "status":
+                val = line[colon + 1:].strip().strip("\"'")
+                if val:
+                    return val
+
+    # Body fallback: linha `> Date: ... | Status: ...`
     marker = "| Status: "
-    for line in content.split("\n"):
+    for line in lines:
         idx = line.find(marker)
         if idx < 0:
             continue

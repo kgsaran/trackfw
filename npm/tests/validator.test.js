@@ -2499,6 +2499,175 @@ test('credential_guard_hook_resolvable: sh -c "$PWD/…" usa mensagem do $PWD (M
     assert(!line.includes('--agent'), `contra-braço violado: flat roadmapNewLine contains --agent`)
   })
 
+  // ML-1A (AC9): validateREQsHaveRoadmap e parseREQStatus — frontmatter-first
+  // Reconciliação obrigatória (CLAUDE.md): cada teste declara qual conclusão do ML-1A afirma.
+
+  test('ML-1A validateREQsHaveRoadmap: frontmatter roadmap: preenchido (corpo vazio) passa req_has_roadmap', () => {
+    // Afirma: frontmatter `roadmap:` preenchido é suficiente para req_has_roadmap passar.
+    // Conclusão ML-1A: extractRefPath (frontmatter-first) elimina os 21 falsos positivos de órfã.
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-ml1a-fm-'))
+    const reqDir = path.join(tmp, 'docs', 'req')
+    fs.mkdirSync(reqDir, { recursive: true })
+    fs.mkdirSync(path.join(tmp, 'docs', 'roadmaps', 'done'), { recursive: true })
+    fs.mkdirSync(path.join(tmp, 'docs', 'roadmaps', 'wip'), { recursive: true })
+    fs.mkdirSync(path.join(tmp, 'docs', 'adr'), { recursive: true })
+    fs.writeFileSync(path.join(tmp, 'trackfw.yaml'), 'req_dir: docs/req\nroadmap_dir: docs/roadmaps\n')
+    // Frontmatter com roadmap preenchido; corpo sem marcador Roadmap: real
+    fs.writeFileSync(path.join(reqDir, 'REQ-fm-only.md'),
+      '---\nstatus: Open\ndate: 2026-09-12\nroadmap: "docs/roadmaps/done/ROADMAP-x.md"\n---\n\n# REQ: Fixture\n\n> Date: 2026-09-12 | Status: Open\n\n## Linked Roadmap\nRoadmap: <!-- none -->\n')
+    const origDir = process.cwd()
+    process.chdir(tmp)
+    config.reset()
+    try {
+      const violations = validator.validateREQsHaveRoadmap()
+      const hasOrphan = violations.some(v => v.includes('no linked Roadmap'))
+      assert(!hasOrphan, `frontmatter roadmap: preenchido NÃO deve disparar req_has_roadmap, obteve: ${JSON.stringify(violations)}`)
+    } finally {
+      process.chdir(origDir)
+      config.reset()
+      fs.rmSync(tmp, { recursive: true })
+    }
+  })
+
+  test('ML-1A validateREQsHaveRoadmap: corpo Roadmap: preenchido (frontmatter vazio) ainda é aceito como fallback', () => {
+    // Afirma: corpo `Roadmap:` é fallback válido quando frontmatter está vazio (legados).
+    // Conclusão ML-1A: extractRefPath fallback mantém compatibilidade com REQs legadas sem frontmatter.
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-ml1a-body-'))
+    const reqDir = path.join(tmp, 'docs', 'req')
+    fs.mkdirSync(reqDir, { recursive: true })
+    fs.mkdirSync(path.join(tmp, 'docs', 'roadmaps', 'done'), { recursive: true })
+    fs.mkdirSync(path.join(tmp, 'docs', 'roadmaps', 'wip'), { recursive: true })
+    fs.mkdirSync(path.join(tmp, 'docs', 'adr'), { recursive: true })
+    fs.writeFileSync(path.join(tmp, 'trackfw.yaml'), 'req_dir: docs/req\nroadmap_dir: docs/roadmaps\n')
+    // Frontmatter com roadmap vazio; corpo com marcador Roadmap: preenchido
+    fs.writeFileSync(path.join(reqDir, 'REQ-body-only.md'),
+      '---\nstatus: Open\ndate: 2026-09-12\nroadmap: ""\n---\n\n# REQ: Fixture\n\n> Date: 2026-09-12 | Status: Open\n\n## Linked Roadmap\nRoadmap: docs/roadmaps/done/ROADMAP-x.md\n')
+    const origDir = process.cwd()
+    process.chdir(tmp)
+    config.reset()
+    try {
+      const violations = validator.validateREQsHaveRoadmap()
+      const hasOrphan = violations.some(v => v.includes('no linked Roadmap'))
+      assert(!hasOrphan, `corpo Roadmap: preenchido (frontmatter vazio) NÃO deve disparar req_has_roadmap, obteve: ${JSON.stringify(violations)}`)
+    } finally {
+      process.chdir(origDir)
+      config.reset()
+      fs.rmSync(tmp, { recursive: true })
+    }
+  })
+
+  test('ML-1A validateREQsHaveRoadmap: ambos vazios dispara violation (preserva cheque de órfã)', () => {
+    // Afirma: ausência de ambos os campos produz violation req_has_roadmap.
+    // Conclusão ML-1A: contra-braço — cheque de órfã não foi removido.
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-ml1a-neither-'))
+    const reqDir = path.join(tmp, 'docs', 'req')
+    fs.mkdirSync(reqDir, { recursive: true })
+    fs.mkdirSync(path.join(tmp, 'docs', 'roadmaps', 'done'), { recursive: true })
+    fs.mkdirSync(path.join(tmp, 'docs', 'roadmaps', 'wip'), { recursive: true })
+    fs.mkdirSync(path.join(tmp, 'docs', 'adr'), { recursive: true })
+    fs.writeFileSync(path.join(tmp, 'trackfw.yaml'), 'req_dir: docs/req\nroadmap_dir: docs/roadmaps\n')
+    fs.writeFileSync(path.join(reqDir, 'REQ-neither.md'),
+      '---\nstatus: Open\ndate: 2026-09-12\nroadmap: ""\n---\n\n# REQ: Fixture\n\n> Date: 2026-09-12 | Status: Open\n\n## Linked Roadmap\nRoadmap: <!-- none -->\n')
+    const origDir = process.cwd()
+    process.chdir(tmp)
+    config.reset()
+    try {
+      const violations = validator.validateREQsHaveRoadmap()
+      const hasOrphan = violations.some(v => v.includes('no linked Roadmap'))
+      assert(hasOrphan, `ausência de ambos os campos deve disparar req_has_roadmap violation, obteve: ${JSON.stringify(violations)}`)
+    } finally {
+      process.chdir(origDir)
+      config.reset()
+      fs.rmSync(tmp, { recursive: true })
+    }
+  })
+
+  test('ML-1A validateREQRoadmapSync: basename diferente dispara warning req_roadmap_sync', () => {
+    // Afirma: basename divergente entre frontmatter e corpo dispara req_roadmap_sync warning.
+    // Conclusão ML-1A: warning (não violation) sinaliza divergência sem bloquear usuário.
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-ml1a-sync-'))
+    const reqDir = path.join(tmp, 'docs', 'req')
+    fs.mkdirSync(reqDir, { recursive: true })
+    fs.mkdirSync(path.join(tmp, 'docs', 'roadmaps', 'done'), { recursive: true })
+    fs.mkdirSync(path.join(tmp, 'docs', 'roadmaps', 'wip'), { recursive: true })
+    fs.mkdirSync(path.join(tmp, 'docs', 'adr'), { recursive: true })
+    fs.writeFileSync(path.join(tmp, 'trackfw.yaml'), 'req_dir: docs/req\nroadmap_dir: docs/roadmaps\n')
+    // frontmatter aponta para ROADMAP-a.md, corpo para ROADMAP-b.md — basenames diferentes
+    fs.writeFileSync(path.join(reqDir, 'REQ-divergent.md'),
+      '---\nstatus: Open\ndate: 2026-09-12\nroadmap: "docs/roadmaps/done/ROADMAP-a.md"\n---\n\n# REQ: Fixture\n\n## Linked Roadmap\nRoadmap: docs/roadmaps/done/ROADMAP-b.md\n')
+    const origDir = process.cwd()
+    process.chdir(tmp)
+    config.reset()
+    try {
+      const warnings = validator.validateREQRoadmapSync()
+      const hasDivergence = warnings.some(w => w.includes('divergent roadmap'))
+      assert(hasDivergence, `basename diferente deve disparar req_roadmap_sync warning, obteve: ${JSON.stringify(warnings)}`)
+    } finally {
+      process.chdir(origDir)
+      config.reset()
+      fs.rmSync(tmp, { recursive: true })
+    }
+  })
+
+  test('ML-1A validateREQRoadmapSync: diferença apenas de pasta de estado (mesmo basename) NÃO dispara warning', () => {
+    // Afirma: diferença wip vs done com mesmo basename NÃO dispara req_roadmap_sync.
+    // Conclusão ML-1A: 38 REQs com state-folder diferente (após roadmap move) não geram ruído.
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-ml1a-state-'))
+    const reqDir = path.join(tmp, 'docs', 'req')
+    fs.mkdirSync(reqDir, { recursive: true })
+    fs.mkdirSync(path.join(tmp, 'docs', 'roadmaps', 'done'), { recursive: true })
+    fs.mkdirSync(path.join(tmp, 'docs', 'roadmaps', 'wip'), { recursive: true })
+    fs.mkdirSync(path.join(tmp, 'docs', 'adr'), { recursive: true })
+    fs.writeFileSync(path.join(tmp, 'trackfw.yaml'), 'req_dir: docs/req\nroadmap_dir: docs/roadmaps\n')
+    // frontmatter aponta done/ROADMAP-x.md, corpo aponta wip/ROADMAP-x.md — mesmo basename
+    fs.writeFileSync(path.join(reqDir, 'REQ-state-diff.md'),
+      '---\nstatus: Open\ndate: 2026-09-12\nroadmap: "docs/roadmaps/done/ROADMAP-x.md"\n---\n\n# REQ: Fixture\n\n## Linked Roadmap\nRoadmap: docs/roadmaps/wip/ROADMAP-x.md\n')
+    const origDir = process.cwd()
+    process.chdir(tmp)
+    config.reset()
+    try {
+      const warnings = validator.validateREQRoadmapSync()
+      const hasDivergence = warnings.some(w => w.includes('divergent roadmap'))
+      assert(!hasDivergence, `state-folder diferente (mesmo basename) NÃO deve disparar req_roadmap_sync, obteve: ${JSON.stringify(warnings)}`)
+    } finally {
+      process.chdir(origDir)
+      config.reset()
+      fs.rmSync(tmp, { recursive: true })
+    }
+  })
+
+  test('ML-1A parseREQStatus: frontmatter status: é fonte de verdade para req list', () => {
+    // Afirma: parseREQStatus retorna o status do frontmatter quando presente.
+    // Conclusão ML-1A: issue #306 — req list não usa mais apenas o corpo para status.
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-ml1a-status-'))
+    const reqFile = path.join(tmp, 'REQ-status-test.md')
+    // Frontmatter diz Done, corpo diz WIP — deve retornar Done
+    fs.writeFileSync(reqFile, '---\nstatus: Done\ndate: 2026-09-12\nroadmap: ""\n---\n\n# REQ: Test\n\n> Date: 2026-09-12 | Status: WIP\n')
+    try {
+      const reqGen = require('../src/generators/req')
+      const status = reqGen.parseREQStatus(reqFile)
+      assert.strictEqual(status, 'Done', `parseREQStatus deve retornar status do frontmatter (Done) quando presente, obteve: ${status}`)
+    } finally {
+      fs.rmSync(tmp, { recursive: true })
+    }
+  })
+
+  test('ML-1A parseREQStatus: body | Status: é fallback quando frontmatter ausente', () => {
+    // Afirma: parseREQStatus cai para body quando frontmatter sem status.
+    // Conclusão ML-1A: REQs legadas sem frontmatter ainda retornam status corretamente.
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-ml1a-status-fb-'))
+    const reqFile = path.join(tmp, 'REQ-legacy.md')
+    // Sem frontmatter, só linha de cabeçalho
+    fs.writeFileSync(reqFile, '# REQ: Legacy\n\n> Date: 2026-09-12 | Status: WIP\n')
+    try {
+      const reqGen = require('../src/generators/req')
+      const status = reqGen.parseREQStatus(reqFile)
+      assert.strictEqual(status, 'WIP', `parseREQStatus deve cair para body quando frontmatter ausente, obteve: ${status}`)
+    } finally {
+      fs.rmSync(tmp, { recursive: true })
+    }
+  })
+
   console.log(`\n${passed} passed, ${failed} failed, ${skipped} xfail`)
   if (failed > 0) process.exit(1)
 })()

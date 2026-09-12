@@ -1,5 +1,5 @@
 ---
-status: backlog
+status: abandoned
 date: 2026-09-10
 req: "docs/req/REQ-2026-08-20-branch-has-wip-roadmap-casa-por-substring-num-corpus-de-done-que-so-cresce.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: `branch_has_wip_roadmap` casa por substring num corpus de `done/` que só cresce
 
-> Created: 2026-09-10 | Status: backlog
+> Created: 2026-09-10 | Status: abandoned
 
 ## Context
 <!-- Derived from REQ: REQ-2026-08-20-branch-has-wip-roadmap-casa-por-substring-num-corpus-de-done-que-so-cresce.md -->

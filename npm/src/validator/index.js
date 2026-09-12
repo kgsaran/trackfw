@@ -793,7 +793,13 @@ function validateBlockedHasREQ() {
   return violations
 }
 
-// validateREQsHaveRoadmap — REQs sem marker Roadmap → violation
+// validateREQsHaveRoadmap — REQs sem vínculo de roadmap → violation.
+//
+// ML-1A (AC9) — fonte de verdade: FRONTMATTER primeiro.
+// Usa extractFrontmatterField (frontmatter `roadmap:`) como fonte primária; cai no
+// contentHasMarkerValue (corpo `Roadmap:` com HasPrefix) se o frontmatter estiver vazio.
+// Isso corrige os 21 órfãos falsos (frontmatter preenchido, corpo vazio) SEM exigir sufixo .md
+// — o predicado é "não-vazio, não-HTML-comment", preservando os seams dos cenários 192 e 25.
 function validateREQsHaveRoadmap() {
   const cfg = config.load()
   const files = resolveReqFiles(cfg)
@@ -801,11 +807,51 @@ function validateREQsHaveRoadmap() {
   for (const filePath of files) {
     const content = readFileForRule('req_has_roadmap', filePath, violations)
     if (content === null) continue
-    if (!contentHasMarkerValue(content, cfg.linkFields.roadmap)) {
+    const fmRoadmap = extractFrontmatterField(content, 'roadmap')
+    if (!fmRoadmap && !contentHasMarkerValue(content, cfg.linkFields.roadmap)) {
       violations.push(`req "${path.basename(filePath)}" has no linked Roadmap (marker must start the line with a real, non-placeholder value)`)
     }
   }
   return violations
+}
+
+// validateREQRoadmapSync — detecta REQs onde frontmatter `roadmap:` e corpo `Roadmap:` divergem
+// em basename (diferenças de estado wip→done são esperadas e NÃO disparam esta regra).
+// ML-1A decisão 2: warning para divergência real de basename.
+function validateREQRoadmapSync() {
+  const cfg = config.load()
+  const files = resolveReqFiles(cfg)
+  const warnings = []
+  for (const filePath of files) {
+    const content = readFileForRule('req_roadmap_sync', filePath, warnings)
+    if (content === null) continue
+    const fmRef = extractFrontmatterField(content, 'roadmap')
+    const bodyRef = extractBodyRefPath(content, 'Roadmap')
+    if (!fmRef || !bodyRef) continue
+    const fmBase = fmRef.split('/').pop()
+    const bodyBase = bodyRef.split('/').pop()
+    if (fmBase !== bodyBase) {
+      warnings.push(`req "${path.basename(filePath)}" has divergent roadmap links: frontmatter="${fmRef}" body="${bodyRef}"`)
+    }
+  }
+  return warnings
+}
+
+// extractBodyRefPath — extrai o valor do campo `field` (ex: "Roadmap") do CORPO da REQ,
+// ignorando o bloco frontmatter delimitado por "---". Retorna null se sem frontmatter.
+function extractBodyRefPath(content, field) {
+  const lines = content.replace(/\r\n/g, '\n').split('\n')
+  let fmCount = 0
+  let bodyStart = -1
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].trim() === '---') {
+      fmCount++
+      if (fmCount === 2) { bodyStart = i + 1; break }
+    }
+  }
+  if (bodyStart < 0) return null
+  const bodyContent = lines.slice(bodyStart).join('\n')
+  return extractRefPath(bodyContent, field)
 }
 
 // validateADRDirsExist — verifica se todos adrDirs existem.
@@ -3484,6 +3530,9 @@ const RULE_DEFAULTS = {
   // agent_namespace_undeclared ('error'). Nunca 'off' por default — silêncio total é o defeito que
   // esta REQ existe para fechar.
   agent_namespace_hidden: 'warning',
+  // ML-1A (AC9, REQ nasce órfã): divergência entre frontmatter `roadmap:` e corpo `Roadmap:`
+  // quando ambos estão preenchidos mas apontam para basenames diferentes.
+  req_roadmap_sync: 'warning',
 }
 
 // ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard, ML-1A.
@@ -3773,6 +3822,7 @@ async function validateUnfiltered() {
   applyRule('req_has_adr',          validateREQsHaveADR(),          violations, warnings)
   applyRule('blocked_has_req',      validateBlockedHasREQ(),        violations, warnings)
   applyRule('req_has_roadmap',      validateREQsHaveRoadmap(),      violations, warnings)
+  applyRule('req_roadmap_sync',     validateREQRoadmapSync(),       violations, warnings)
 
   // Regra direta (sem configuração de severidade): violation sempre
   for (const msg of validateFrontmatterPresence())  { _setMeta(msg, 'frontmatter_presence'); violations.push(msg) }
@@ -3989,6 +4039,8 @@ module.exports = {
   validateREQsHaveADR,
   validateBlockedHasREQ,
   validateREQsHaveRoadmap,
+  validateREQRoadmapSync,
+  extractBodyRefPath,
   validateADRsAreReferenced,
   validateWIPHasAcceptanceCriteria,
   validateWIPLimit,
