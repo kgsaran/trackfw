@@ -115,12 +115,36 @@ printf '%s  %s\n' "deadbeefcafe0000" "trackfw_${VERSION}_linux_arm64.tar.gz"    
 
 # Cenario C2: tarball adulterado (1 byte trocado), checksums aponta para hash original.
 mkdir -p "$WORK/scenarios/tampered"
-cp "$FIXTURES/$FILENAME" "$WORK/scenarios/tampered/$FILENAME"
-python3 -c "
-data = bytearray(open('$WORK/scenarios/tampered/$FILENAME', 'rb').read())
-data[200] ^= 0xFF
-open('$WORK/scenarios/tampered/$FILENAME', 'wb').write(data)
-"
+TAMPERED="$WORK/scenarios/tampered/$FILENAME"
+cp "$FIXTURES/$FILENAME" "$TAMPERED"
+
+# Offset derivado do tamanho real do arquivo. O tamanho do .tar.gz depende da versao do
+# tar/gzip e do nome do arquivo — o indice fixo anterior (200) estourava IndexError no
+# Linux do CI, onde o tarball da fixture e menor que no macOS. A fixture presumia um
+# tamanho que ela nao controla.
+# Falha fechada se pequeno demais: "nao consegui adulterar" != "adulterei".
+# Garantia de nao-vacuidade e a assercao de hash abaixo, nao um raciocinio sobre
+# onde o byte caiu na estrutura gzip.
+TAMPER_HASH_BEFORE=$(hash_file "$TAMPERED")
+python3 -c '
+import sys
+p = sys.argv[1]
+data = bytearray(open(p, "rb").read())
+if len(data) < 32:
+    sys.stderr.write("FATAL [C2/setup]: tarball de fixture com %d bytes -- pequeno demais para adulterar\n" % len(data))
+    sys.exit(2)
+idx = len(data) // 2
+data[idx] ^= 0xFF
+open(p, "wb").write(data)
+sys.stderr.write("C2/setup: byte %d de %d invertido\n" % (idx, len(data)))
+' "$TAMPERED" || { echo "FATAL [C2/setup]: adulteracao do tarball falhou" >&2; exit 2; }
+
+TAMPER_HASH_AFTER=$(hash_file "$TAMPERED")
+if [ "$TAMPER_HASH_BEFORE" = "$TAMPER_HASH_AFTER" ]; then
+  echo "FATAL [C2/setup]: adulteracao nao alterou o hash -- C2 seria vacuo" >&2
+  exit 2
+fi
+echo "C2/nao-vacuidade: hash antes=${TAMPER_HASH_BEFORE}  depois=${TAMPER_HASH_AFTER}  (diferem)"
 cp "$FIXTURES/checksums.txt" "$WORK/scenarios/tampered/checksums.txt"
 
 # Cenario AC6/falsificacao: tarball VALIDO estruturalmente mas conteudo diferente.
