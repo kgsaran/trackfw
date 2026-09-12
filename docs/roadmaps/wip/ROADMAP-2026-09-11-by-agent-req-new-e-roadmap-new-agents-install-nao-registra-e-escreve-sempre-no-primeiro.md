@@ -116,7 +116,7 @@ echo "ML-0A gate: OK"
 - [ ] 🔴 Nenhum arquivo fora de `internal/` tocado
 
 ### ML-1B — Node
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído — auditado E2E nos 3 binários
 **Arquivos afetados:** `npm/src/generators/req.js`, `npm/src/generators/roadmap.js`,
 `npm/src/commands/req.js`, `npm/src/commands/roadmap.js`, e os testes em `npm/tests/`.
 **Acoes:** o contrato comum acima, no runtime Node.
@@ -126,7 +126,7 @@ echo "ML-0A gate: OK"
 - [ ] 🔴 Nenhum arquivo fora de `npm/` tocado
 
 ### ML-1C — Python
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído — auditado E2E nos 3 binários
 **Arquivos afetados:** `pypi/trackfw/generators/req.py`, `pypi/trackfw/generators/roadmap.py`,
 `pypi/trackfw/commands/req.py`, `pypi/trackfw/commands/roadmap.py`, e os testes em `pypi/tests/`.
 **Acoes:** o contrato comum acima, no runtime Python. **Atencao:** o `--agent` do `roadmap new` **ja
@@ -512,7 +512,7 @@ não fallback. Entregar decisão de fronteira de segurança a um implementador �
 terceira resposta.
 
 ### ML-1E-a — o contrato nos 3 runtimes, e a paridade do teste de log
-**Status:** 🔄 Em andamento — aguarda auditoria Zeus
+**Status:** ✅ Concluído — contrato byte-idêntico nos 3, contra-braço medido
 **Arquivos afetados:** `internal/generators/roadmap.go`, `npm/src/generators/roadmap.js`,
 `pypi/trackfw/generators/roadmap.py` e os testes dos três. 🔴 **Não toque em `scripts/`** — é o ML-1E-b.
 **Acoes:**
@@ -536,7 +536,7 @@ terceira resposta.
 - [ ] Frase de reconciliação por teste novo
 
 ### ML-1E-b — restaurar o poder de falsificação do `direction-b2`
-**Status:** ⬜ Pendente · **Dependência: ML-1E-a auditado** (b mede a)
+**Status:** ✅ Concluído — 68 cenários, `direction-b2` x4, falsificação em 3 casos
 **Arquivos afetados:** `scripts/check-agent-namespace-union.sh`. 🔴 **Só `scripts/`.**
 **Acoes:**
 1. Reescrever o cenário contra o **novo contrato**: com symlink para fora, o binário **não corrompido**
