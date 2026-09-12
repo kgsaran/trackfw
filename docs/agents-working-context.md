@@ -2,6 +2,18 @@
 
 ---
 
+## Sessão 2026-09-12 — ares-tf (FIM: gzip ausente C7 + guarda de vacuidade — check-install-checksum.sh)
+
+Worktree `trackfw-seguranca`, branch `fix/install-sh-extrai-o-tarball-sem-conferir` (PR #331). Escopo: somente `scripts/check-install-checksum.sh`. Defeito: C7 monta PATH curado sem `gzip` — GNU tar no Linux faz fork de `gzip` para descomprimir `.gz`, causando `tar (child): gzip: Cannot exec`. Fix (1): adicionado `gzip` à lista essencial do loop C7; `gunzip` ligado oportunisticamente (opcional, pode ser wrapper em algumas distros). Fix (2): guarda de vacuidade em C7 — se utilitário essencial não for encontrado no sistema, `FAIL [C7/setup]: utilitario essencial ausente: <nome>` em vez de silenciar com `|| true`. Mesma guarda aplicada em C6 (sem `gzip`, desnecessário — install.sh falha no hash antes do tar). Varredura: linhas 271 e 523 (`$STUB_BIN:$PATH`) aumentam PATH herdado → herdam `gzip`, imunes; linhas 406 (C6) e 466 (C7) substituem PATH, apenas C7 atinge tar. Provas: (A) URL_LOG populado com URL correta — wget stub foi invocado; (B) remoção do stub wget → `install.sh: line 122: wget: command not found`; (C) `gzip_absent_probe` → guarda nomeia o utilitário ausente. macOS: GNU tar não instalado — evidência primária é log CI. Gate: 9 cenários OK RC=0. `make parity-rest` RC=0.
+
+---
+
+## Sessão 2026-09-12 — ares-tf (INÍCIO: gzip ausente C7 + guarda de vacuidade — check-install-checksum.sh)
+
+Worktree `trackfw-seguranca`, branch `fix/install-sh-extrai-o-tarball-sem-conferir` (PR #331). Escopo: somente `scripts/check-install-checksum.sh`. CI do PR #331 reprova em `parity-other-gates` com `tar (child): gzip: Cannot exec` no cenário C7. Causa: loop C7 monta PATH curado sem `gzip`; no Linux, GNU tar faz fork de `gzip` para descomprimir `.gz`. macOS tar lida internamente, mascarando o defeito. Tarefa: (1) adicionar `gzip`/`gunzip` à lista; (2) guarda de vacuidade para nomear utilitário ausente; (3) varredura de todos os PATHs curados no script.
+
+---
+
 ## Sessão 2026-09-12 — apolo-tf (INÍCIO: ML-3C — Python _agent_from_req_path não-canônico)
 
 Branch `fix/by-agent-req-new-e-roadmap-new`. Escopo: `pypi/trackfw/generators/roadmap.py`, `pypi/trackfw/commands/roadmap.py`, `pypi/tests/test_by_agent_ml1c.py`, `internal/generators/roadmap_test.go`, `npm/tests/by_agent_req_roadmap_new.test.js`. Defecto: `_agent_from_req_path` usa `os.path.abspath` (não resolve symlinks); guarda em `_cmd_new` compara `req_grandparent` (de abspath de path absoluto não-canônico, ex: /var/...) contra `abs_req_dir` (de abspath de path relativo via cwd canônico /private/var/...) → comparação falha → cai em resolve_write_agent → erro de ambiguidade. Fix: refatorar `_agent_from_req_path(req_path, req_dir)` com realpath em ambos os lados (espelho de Go agentFromPath + Node agentFromPath). Simplificar guarda em _cmd_new.
