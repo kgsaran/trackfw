@@ -79,11 +79,44 @@ check_help() {
   local runtime=$1
   # Strip any remaining ANSI escape sequences before grep so the check is
   # immune to runtimes that honour NO_COLOR inconsistently or not at all.
-  local output
+  local output cmd_section
   output=$(printf '%s' "$2" | sed 's/\x1b\[[0-9;]*m//g')
+
+  # Extract the commands-listing region per runtime before grepping.
+  # Scanning the full help text is vulnerable to prose that contains a command
+  # name — the original (^|[[:space:]])cmd([[:space:]]|$) pattern matches
+  # mid-sentence occurrences (e.g. "2+ agents" in a multi-line description).
+  # Same root cause as the check-integration-cli-parity.sh:72 fix; the
+  # extractors are NOT shared via a sourced helper because the falsify gate
+  # copies each gate script into an isolated fixture directory via `cp` without
+  # co-copying sibling files — adding that co-copy to all 5+ scenario setups
+  # in check-gates-falsify.sh would be a disproportionate change for two
+  # short awk one-liners whose drift risk is covered by each gate's own
+  # falsification scenario.
+  case "$runtime" in
+    node)
+      # commander: "Commands:\n  <name>   <desc>\n..."
+      # Command entries start with 2 spaces + a non-space char; prose
+      # continuation lines use uppercase or punctuation as first non-space.
+      cmd_section=$(printf '%s' "$output" \
+        | awk '/^Commands:/{f=1;next} f && /^  [^ ]/{print}')
+      ;;
+    python)
+      # argparse: "positional arguments:\n  {choices}\n    <name>  <desc>\n...\noptions:"
+      cmd_section=$(printf '%s' "$output" \
+        | awk '/^positional arguments:/{f=1;next} f && /^options:/{exit} f{print}')
+      ;;
+    *)
+      # Unknown runtime: fall back to full output (should not occur in practice).
+      cmd_section="$output"
+      ;;
+  esac
+
   local command
   for command in "${commands[@]}"; do
-    if ! grep -Eq "(^|[[:space:]])${command}([[:space:]]|$)" <<<"$output"; then
+    # Require the command name to appear as the first word on a line (anchored
+    # at ^), not just anywhere in the text.
+    if ! grep -Eq "^[[:space:]]+${command}([[:space:]]|$)" <<<"$cmd_section"; then
       echo "${runtime}: missing command '${command}'" >&2
       return 1
     fi

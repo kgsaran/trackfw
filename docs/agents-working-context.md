@@ -2,6 +2,12 @@
 
 ---
 
+## Sessão 2026-09-12 — artemis-tf (FIM-2: ML-3A-fix + sítio irmão check-cli-parity.sh:86)
+
+Branch `fix/by-agent-req-new-e-roadmap-new`. Adicionado após decisão do arquiteto: mesma causa em `scripts/check-cli-parity.sh:86` — `check_help()` usava `(^|[[:space:]])${command}([[:space:]]|$)` no help inteiro. Fix: extrator awk por runtime (Node → commander `Commands:`, Python → argparse `positional arguments:`) + grep ancorado em `^[[:space:]]+${command}`. Extratores NÃO compartilhados por helper: falsify gate copia scripts via `cp` sem co-copiar irmãos — 5+ setups em `check-gates-falsify.sh` (8000+ linhas) para adicionar co-cópia seria mudança desproporcionada. Falsificação própria: `grep -v "require('./agents')"` → `node: missing command 'agents'` RC=1. Contra-braço RC=0. Varredura: outros `grep -E` no gate (linhas 155-160, 201-208) operam sobre strings de versão de uma linha — não vulneráveis. make quality RC=0, 0 FAILs, all 181 falsify scenarios passed.
+
+---
+
 ## Sessão 2026-09-12 — artemis-tf (FIM: ML-3A-fix — asserção vacuosa em check-integration-cli-parity.sh)
 
 Branch `fix/by-agent-req-new-e-roadmap-new`. Entregue: `scripts/check-integration-cli-parity.sh` — função `assert_help_contract` reescrita para extrair a região de listagem de comandos por runtime (cobra/commander/argparse) antes do grep, e ancorar o padrão em `^[[:space:]]+${kind}`. Falsificação: saída `node: root help missing agents` RC=1 com agents removido. Contra-braço: RC=0 sem mutação. Cenário `falsify/integration-cli-parity/missing-agents`: `OK`. make quality RC=0, `Falsification checks passed (all 181 scenarios)`. trackfw validate: 176 warnings 0 violations. Varredura: `grep -n "grep -E" scripts/check-integration-cli-parity.sh` + `grep -rn 'grep -E' scripts/check-*.sh | grep -v check-integration-cli-parity` — sítio adicional de mesma causa: `scripts/check-cli-parity.sh:86` (não corrigido aqui — decisão do arquiteto). Vault: `vault/notes/assert-help-contract-vacuous-prose-injection-2026-09-12.md`.
