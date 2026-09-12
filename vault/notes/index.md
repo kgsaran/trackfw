@@ -4,6 +4,7 @@
 
 ## Índice
 
+- [assert-help-contract-vacuous-prose-injection-2026-09-12](assert-help-contract-vacuous-prose-injection-2026-09-12.md) — `(^|[[:space:]])palavra` no grep de help inteiro é re-vacuável por prosa: ML-3A injetou "2+ agents" na descrição do commit e o gate passou mesmo sem o comando registrado; fix: extrair região de listagem por runtime (cobra/commander/argparse) + ancorar em `^[[:space:]]+`
 - [angle-bracket-title-parity-trap-2026-09-12](angle-bracket-title-parity-trap-2026-09-12.md) — `"<title>"` (com angle brackets) vs `"title"` em ReqNewLine/RoadmapNewLine causa falha silenciosa em parity-rest; gate check-validate-parity.sh só testa o caso flat, então o bug sobrevive em Go enquanto Node/Python usam a forma correta
 - [substring-assert-nao-detecta-drift-de-mensagem-de-paridade-2026-09-12](substring-assert-nao-detecta-drift-de-mensagem-de-paridade-2026-09-12.md) — assert de substring passa mesmo com mensagens completamente diferentes; paridade de string requer igualdade exata + diff de binários; mensagem de ambiguidade de agente alinhada nos 3 runtimes (ML-2E)
 - [serve-browser-exec-string-para-argv-seguranca-2026-09-11](serve-browser-exec-string-para-argv-seguranca-2026-09-11.md) — `exec(string)` no browser-open silenciosamente executa comandos extras; exit code mente — use arquivo sentinela; residual Windows: `cmd.exe` re-parseia metacaracteres mesmo via argv; contenção é AC4 (isValidHost)

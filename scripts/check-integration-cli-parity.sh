@@ -63,19 +63,68 @@ run_cli() {
 }
 
 assert_help_contract() {
-  local runtime=$1 project=$2 home=$3 kind action root_output stripped_root kind_output stripped_kind
+  local runtime=$1 project=$2 home=$3 kind action root_output stripped_root kind_output stripped_kind _root_cmd _kind_cmd
   root_output=$(run_cli "$runtime" "$project" "$home" --help)
   # Strip ANSI escapes before grep — Python 3.13+ colourises argparse help and
   # NO_COLOR may not propagate into nested invocations through run_cli.
   stripped_root=$(printf '%s' "$root_output" | sed 's/\x1b\[[0-9;]*m//g')
+
+  # Extract the commands-listing region from root help, per runtime.
+  # Scanning the full text would admit prose that contains a command name
+  # (e.g. "by_agent project with 2+ agents" injected into the 'commit'
+  # description by ML-3A), making the assertion vacuously true even after the
+  # command is removed from the registry.  Each runtime (cobra / commander /
+  # argparse) uses different section markers; the regions were derived by
+  # running --help on all three runtimes and measuring the output directly.
+  case "$runtime" in
+    go)
+      # cobra: "Available Commands:\n  <name>   <desc>\n...\n<blank line>"
+      _root_cmd=$(printf '%s' "$stripped_root" \
+        | awk '/^Available Commands:/{f=1;next} f && /^[[:space:]]*$/{exit} f{print}')
+      ;;
+    node)
+      # commander: "Commands:\n  <name>   <desc>\n..."
+      # Command entries start with 2 spaces + a non-space char.  Prose
+      # continuation lines inside multi-line descriptions (e.g. "  Stage your
+      # files explicitly...") are excluded because they begin with an uppercase
+      # letter or punctuation, confirmed by measurement against actual output.
+      _root_cmd=$(printf '%s' "$stripped_root" \
+        | awk '/^Commands:/{f=1;next} f && /^  [^ ]/{print}')
+      ;;
+    python)
+      # argparse: "positional arguments:\n  {choices}\n    <name>  <desc>\n...\noptions:"
+      _root_cmd=$(printf '%s' "$stripped_root" \
+        | awk '/^positional arguments:/{f=1;next} f && /^options:/{exit} f{print}')
+      ;;
+  esac
+
   for kind in agents skills; do
-    grep -Eq "(^|[[:space:]])${kind}([[:space:]]|$)" <<<"$stripped_root" || {
+    # Require $kind to appear as the first word on a line (anchored at ^),
+    # not just anywhere in the text — the original (^|[[:space:]]) pattern
+    # matched word occurrences mid-line (e.g. "2+ agents" at end of a prose
+    # sentence) and was therefore vacuous after ML-3A prose was introduced.
+    grep -Eq "^[[:space:]]+${kind}([[:space:]]|$)" <<<"$_root_cmd" || {
       echo "$runtime: root help missing $kind" >&2; return 1;
     }
     kind_output=$(run_cli "$runtime" "$project" "$home" "$kind" --help)
     stripped_kind=$(printf '%s' "$kind_output" | sed 's/\x1b\[[0-9;]*m//g')
+    # Same region extraction for subcommand help — same section markers apply.
+    case "$runtime" in
+      go)
+        _kind_cmd=$(printf '%s' "$stripped_kind" \
+          | awk '/^Available Commands:/{f=1;next} f && /^[[:space:]]*$/{exit} f{print}')
+        ;;
+      node)
+        _kind_cmd=$(printf '%s' "$stripped_kind" \
+          | awk '/^Commands:/{f=1;next} f && /^  [^ ]/{print}')
+        ;;
+      python)
+        _kind_cmd=$(printf '%s' "$stripped_kind" \
+          | awk '/^positional arguments:/{f=1;next} f && /^options:/{exit} f{print}')
+        ;;
+    esac
     for action in list install uninstall update; do
-      grep -Eq "(^|[[:space:]])${action}([[:space:]]|$)" <<<"$stripped_kind" || {
+      grep -Eq "^[[:space:]]+${action}([[:space:]]|$)" <<<"$_kind_cmd" || {
         echo "$runtime: $kind help missing $action" >&2; return 1;
       }
     done

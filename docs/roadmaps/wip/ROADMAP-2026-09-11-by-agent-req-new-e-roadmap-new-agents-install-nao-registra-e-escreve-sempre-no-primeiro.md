@@ -848,7 +848,7 @@ ausente).
 durante a execução — não descoberta na auditoria final.**
 
 ### ML-3A-fix — 🔴 o texto novo tornou VÁCUA a asserção do `check-integration-cli-parity`
-**Status:** ⬜ Pendente · **Arquivos:** `scripts/check-integration-cli-parity.sh`
+**Status:** ✅ Concluído · **Arquivos:** `scripts/check-integration-cli-parity.sh`
 
 `make quality` → **RC=2**, um FAIL real (os 12 `GUARDA` são consequência: o chunk morre em `set -e`).
 

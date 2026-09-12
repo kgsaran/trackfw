@@ -2,6 +2,18 @@
 
 ---
 
+## Sessão 2026-09-12 — artemis-tf (FIM: ML-3A-fix — asserção vacuosa em check-integration-cli-parity.sh)
+
+Branch `fix/by-agent-req-new-e-roadmap-new`. Entregue: `scripts/check-integration-cli-parity.sh` — função `assert_help_contract` reescrita para extrair a região de listagem de comandos por runtime (cobra/commander/argparse) antes do grep, e ancorar o padrão em `^[[:space:]]+${kind}`. Falsificação: saída `node: root help missing agents` RC=1 com agents removido. Contra-braço: RC=0 sem mutação. Cenário `falsify/integration-cli-parity/missing-agents`: `OK`. make quality RC=0, `Falsification checks passed (all 181 scenarios)`. trackfw validate: 176 warnings 0 violations. Varredura: `grep -n "grep -E" scripts/check-integration-cli-parity.sh` + `grep -rn 'grep -E' scripts/check-*.sh | grep -v check-integration-cli-parity` — sítio adicional de mesma causa: `scripts/check-cli-parity.sh:86` (não corrigido aqui — decisão do arquiteto). Vault: `vault/notes/assert-help-contract-vacuous-prose-injection-2026-09-12.md`.
+
+---
+
+## Sessão 2026-09-12 — artemis-tf (INÍCIO: ML-3A-fix — asserção vacuosa em check-integration-cli-parity.sh)
+
+Branch `fix/by-agent-req-new-e-roadmap-new`. Escopo: somente `scripts/check-integration-cli-parity.sh`. Corrigir função `assert_help_contract` — linhas 72 e 78 fazem grep no texto inteiro do help; ML-3A introduziu prosa com "2+ agents" que satisfaz a asserção mesmo sem o comando registrado. Fix: extrair região de listagem de comandos por runtime (cobra/commander/argparse) antes do grep, e ancorar o padrão em `^[[:space:]]+${kind}`.
+
+---
+
 ## Sessão 2026-09-12 — apolo-tf (FIM-2: ML-3A + testes discriminantes obrigatórios)
 
 Branch `fix/by-agent-req-new-e-roadmap-new`. Adicionados após auditoria do advisor: testes de igualdade exata para `IsMultiAgentByAgent`/`ReqNewLine`/`RoadmapNewLine` nos 3 runtimes (4 casos cada: by_agent+2, by_agent+1, flat, by_agent+2+empty). Generator tests Go: `TestTrackfwRulesBlock_ByAgent2plus_Step1Block`, `TestTrackfwRulesBlock_ByAgentSingle_NoAgentFlag`, `TestInjectOrUpdateRules_ByAgent2plus_Step1Present`. Parity fixture `bhr-byagent` adicionada ao `check-validate-parity.sh` (by_agent+2, wip/done vazios) — verifica `--agent` na mensagem de orientação cross-runtime. Gates: `go test ./internal/validator/... ./internal/generators/...` ok, Node 118 pass, Python 147 pass, `check-artifact-parity.sh` ok, `check-validate-parity.sh` ok (incl. bhr-byagent), `check-rules-parity.sh` ok, `check-slash-parity.sh` ok, `check-cli-parity.sh` ok, `trackfw validate` 176 warnings 0 violations. `make parity-rest` e `make quality` rodando em background.
