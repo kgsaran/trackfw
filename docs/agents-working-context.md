@@ -36756,3 +36756,24 @@ Branch `fix/serve-api-file-valida-o-caminho-lexico`. Escopo: `internal/serve/api
 Worktree `trackfw-seguranca`, branch `fix/serve-api-file-valida-o-caminho-lexico` (PR #332). Escopo: somente `scripts/check-serve-api-file-security.sh`. Defeito: captura da linha 267 (`NODE_ALL=$(node ...)`) sem `|| true` — `set -euo pipefail` mata o script antes de alcançar o bloco de diagnóstico. Fix: adicionar `|| true` na captura Node, varredura de todas as capturas `VAR=$(...)` do script.
 ## Sessão 2026-09-12 — ares-tf (FIM: set -e mata diagnóstico — check-serve-api-file-security.sh)
 Worktree `trackfw-seguranca`, branch `fix/serve-api-file-valida-o-caminho-lexico` (PR #332). Escopo: somente `scripts/check-serve-api-file-security.sh`, linha 267. Defeito corrigido: `NODE_ALL=$(node ... 2>&1)` sem `|| true` → `set -euo pipefail` matava o script em silêncio antes de alcançar o bloco if/else de diagnóstico. Fix: adicionado `|| true` na mesma forma das irmãs Go (linhas 132 e 144). Prova antes: script termina com exit=1, sem mensagem. Prova depois: bloco `fail "AC2 Node serveStatic attack arm falhou"` é impresso, script continua. Validações: (1) gate direto RC=0, 15 ok, 0 falhou; (2) `make parity-rest` RC=0, 15 ok. Varredura: ver relatório de varredura no handoff ao arquiteto.
+
+---
+
+## ⏳ PENDÊNCIAS DA RELEASE v7.6.0 — decididas pelo KG, executar na ordem
+
+**1. Mergear o #332** (H-01 leitura arbitrária + M-03 estáticos). Não fecha issue nenhum — verificado:
+nenhum dos 17 abertos toca `serve`/`api_file`/symlink/static/traversal, e o corpo do PR corretamente
+não declara `Closes`.
+
+**2. Cortar a `v7.6.0`** — CHANGELOG + bump nos 3 pacotes (hoje `7.5.1`) + `make check-required-full`
+(pré-condição da tag; exige credencial de mantenedor, é do KG).
+
+**3. 🔴 SÓ DEPOIS DA TAG: abrir H-01 e H-02 como issues JÁ FECHADOS**, referenciando PR e REQ.
+
+Decisão do KG em 2026-09-12. **Por que depois e não antes:** enquanto a correção não está em versão
+publicada, um issue público descrevendo leitura arbitrária de arquivo é mapa para quem quiser explorar.
+Depois da tag, é histórico — e dá rastro visível de que houve correção de segurança e em qual versão.
+
+⚠️ **Este bloco existe porque "alguém lembra depois" falhou hoje**: o `Closes #315` foi escrito na
+abertura do #330 e os `Closes #320`/`Closes #328` nunca foram acrescentados — os dois issues tiveram de
+ser fechados à mão após o merge. **Intenção declarada não é gate.**
