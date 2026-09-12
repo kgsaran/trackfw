@@ -937,9 +937,7 @@ func TestWriteCIWorkflow_NeverWritesThroughLiveSymlink(t *testing.T) {
 
 	workflowPath := filepath.Join(dir, ".github", "workflows", "trackfw-validate.yml")
 	mustMkdir(t, dir, ".github/workflows")
-	if err := os.Symlink(victim, workflowPath); err != nil {
-		t.Fatal(err)
-	}
+	symlinkOrSkip(t, victim, workflowPath)
 
 	r := DiscoveryResult{CISystem: "github-actions"}
 	if err := InstallGates(r, dir, io.Discard); err != nil {
@@ -974,9 +972,7 @@ func TestWriteCIWorkflow_NeverWritesThroughDanglingSymlink(t *testing.T) {
 	danglingTarget := filepath.Join(outside, "does-not-exist-yet")
 	workflowPath := filepath.Join(dir, ".github", "workflows", "trackfw-validate.yml")
 	mustMkdir(t, dir, ".github/workflows")
-	if err := os.Symlink(danglingTarget, workflowPath); err != nil {
-		t.Fatal(err)
-	}
+	symlinkOrSkip(t, danglingTarget, workflowPath)
 
 	r := DiscoveryResult{CISystem: "github-actions"}
 	if err := InstallGates(r, dir, io.Discard); err != nil {

@@ -68,6 +68,10 @@ parity-rest: build
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-serve-address-parity.sh
 	scripts/check-serve-browser-security.sh
 	scripts/check-raw-read-ban.sh
+	# ML-1B (ROADMAP-2026-09-11-o-ciclo-testa-onde-funciona): toda criacao de
+	# symlink/fifo em arquivo de teste passa por guarda de capacidade (nao por
+	# guarda de plataforma). Gate impede a decima-primeira instancia da issue #315.
+	scripts/check-symlink-privilege-guard.sh
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-doctor-parity.sh
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-doctor-remote-parity.sh
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-agent-models-parity.sh

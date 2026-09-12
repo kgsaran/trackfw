@@ -4,6 +4,7 @@ Espelha a cobertura de npm/src/validator/index.test.js.
 Usa tempfile.mkdtemp() para isolamento — sem fixtures compartilhadas.
 """
 
+import errno
 import json
 import os
 import time
@@ -1862,8 +1863,16 @@ class TestAdrOrphanExemptOutsideCwd(unittest.TestCase):
         symlink_path = os.path.join(internal_adr_dir, "ADR-0100-external-symlink.md")
         try:
             os.symlink(ext_file, symlink_path)
-        except (OSError, AttributeError, NotImplementedError):
-            return
+        except OSError as _err:
+            # Marginal corrigido: distingue "sem privilégio" (EPERM/EACCES ou
+            # WinError 1314 — retorna silenciosamente, setup best-effort) de
+            # "falhou por outro motivo" (re-raise para falhar o teste).
+            _winerr = getattr(_err, 'winerror', None)
+            if _winerr == 1314 or _err.errno in (errno.EPERM, errno.EACCES):
+                return
+            raise
+        except (AttributeError, NotImplementedError):
+            return  # plataforma não suporta symlinks; pula silenciosamente
 
         cfg = _config.defaults()
         cfg["adr_dirs"] = [internal_adr_dir]

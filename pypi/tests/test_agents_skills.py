@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import os
@@ -11,6 +12,28 @@ from importlib.resources import files
 from pathlib import Path
 
 import pytest
+
+
+def _symlink_or_skip(link: Path, target: Path) -> None:
+    """Guarda de capacidade: cria link.symlink_to(target); pytest.skip se o
+    processo não tem privilégio (WinError 1314 / EPERM / EACCES). Qualquer
+    outro OSError é re-lançado — a guarda discrimina "sem privilégio" de
+    "falhou por outro motivo".
+
+    A detecção é pela CONDIÇÃO (falha de privilégio), não por sys.platform:
+    num Windows com Developer Mode habilitado, symlink_to tem sucesso e o
+    teste executa de verdade.
+    """
+    try:
+        link.symlink_to(str(target))
+    except OSError as err:
+        winerror = getattr(err, 'winerror', None)
+        if winerror == 1314 or err.errno in (errno.EPERM, errno.EACCES):
+            pytest.skip(
+                'guarda de symlink não exercitada: criação de symlink exige '
+                f'Developer Mode (ou processo elevado) neste Windows: {err}'
+            )
+        raise
 
 from trackfw.integrations.catalog import _surfaces, load_catalog, plan_deployments
 from trackfw.integrations.command import _prompt_ambiguous_surfaces
@@ -526,7 +549,11 @@ def test_manager_rejects_unsafe_destinations(tmp_path, scope, destination):
 def test_manager_rejects_symlink_parent(tmp_path):
     outside = tmp_path / "outside"
     outside.mkdir()
-    (tmp_path / "linked").symlink_to(outside, target_is_directory=True)
+    # Guarda de capacidade: sem privilégio → pytest.skip; outro erro → re-raise.
+    # O symlink precede um pytest.raises — sem guarda, um PermissionError do
+    # symlink_to substituiria o IntegrationError esperado e o teste passaria
+    # pelo motivo errado.
+    _symlink_or_skip(tmp_path / "linked", outside)
     plan = {
         "claim": {"target": "x", "surface": "x", "scope": "project", "kind": "agents", "item": "x"},
         "destination": "linked/file.md",

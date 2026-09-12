@@ -2,6 +2,32 @@
 
 ---
 
+## Sessão 2026-09-11 — artemis-tf (FIM: guarda de privilégio de symlink — ML-1B CONCLUÍDO)
+
+Branch `fix/by-agent-req-new-e-roadmap-new`. Escopo: 6 sítios ativos + 3 marginais + gate `scripts/check-symlink-privilege-guard.sh`.
+
+**Entregues (sem commit, sem push — para auditoria do arquiteto):**
+- `internal/discover/symlink_helper_test.go` — helper `symlinkOrSkip`/`isSymlinkPrivilegeError` (cópia per-package, Go test boundary)
+- `internal/validator/symlink_helper_test.go` — idem, package `validator`
+- `internal/discover/discover_test.go` — 2 sítios ativos (linhas 940, 977) convertidos a `symlinkOrSkip`
+- `internal/validator/regularfile_test.go` — 1 sítio ativo: plataforma-guard removido, substituído por guarda de capacidade
+- `internal/generators/scaffold_test.go` — 1 sítio marginal: `_ = os.Symlink` → check explícito distinguindo EPERM/1314 de outros erros
+- `npm/tests/agents-skills.test.js` — 1 sítio ativo: `fs.symlinkSync` → `symlinkOrSkip` helper
+- `npm/tests/generators.test.js` — 1 sítio marginal: `catch (_) {}` duplo → discrimina EPERM/EACCES/EEXIST de outros erros
+- `pypi/tests/test_agents_skills.py` — 1 sítio ativo: `.symlink_to` → `_symlink_or_skip`
+- `pypi/tests/test_ship.py` — 1 sítio ativo: `os.symlink` → `_symlink_or_skip_path`
+- `pypi/tests/test_validator.py` — 1 sítio marginal: `except (OSError, ...)` → discrimina winerror 1314/EPERM/EACCES
+- `scripts/check-symlink-privilege-guard.sh` — gate novo, falsificado 3/3 braços
+- `Makefile` — gate inserido em `parity-rest` com comentário ML-1B
+
+**Evidências:** `make quality` RC=0; gate self-test 3/3 OK; `trackfw validate` RC=0, 176 warnings (pré-existentes), zero errors.
+
+## Sessão 2026-09-11 — artemis-tf (INÍCIO: guarda de privilégio de symlink — 6 sítios ativos + 3 marginais + gate)
+
+Branch `fix/by-agent-req-new-e-roadmap-new`. Escopo: corrigir os 6 sítios ativos (symlink cru em teste que fatalmente reprova Windows sem Developer Mode) e 3 marginais (engolem TODO erro), criar gate `scripts/check-symlink-privilege-guard.sh` ligado ao Makefile, falsificar o gate nas duas direções. Sem commits, sem push, sem background.
+
+---
+
 ## Sessão 2026-09-11 — hefesto-tf (FIM: diagnóstico e fix do make parity-falsify — CONCLUÍDO)
 
 Branch `fix/by-agent-req-new-e-roadmap-new`. Escopo: diagnóstico dos 4 rótulos AUSENTE do `roadmap-ref-stale-state/python/` e correção sem afrouxar o guard.

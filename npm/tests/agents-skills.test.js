@@ -10,6 +10,7 @@ const { spawnSync } = require('node:child_process')
 const { buildPlans, execute, IntegrationManager } = require('../src/integrations')
 const { sha256 } = require('../src/integrations/manager')
 const { promptSelection, promptAmbiguousSurfaces } = require('../src/commands/integrations')
+const { symlinkOrSkip } = require('./helpers/symlink')
 const { legacyCodexFixtures } = require('../src/generators/codex')
 
 function roots() {
@@ -295,15 +296,26 @@ test('failed atomic mutation rolls files and manifest back', () => {
   assert.equal(fs.existsSync(path.join(dirs.projectRoot, '.trackfw/integrations-manifest.json')), false)
 })
 
-test('manager rejects traversal, absolute destinations and symlinks', () => {
+test('manager rejects traversal, absolute destinations and symlinks', (t) => {
   const dirs = roots()
   const manager = new IntegrationManager(dirs)
   const [base] = buildPlans('agents', options(['claude'], ['architect']))
   assert.throws(() => manager.install([{ ...base, destination: '../escape.md' }]), /Unsafe|escapes/)
   assert.throws(() => manager.install([{ ...base, destination: '/tmp/escape.md' }]), /outside/)
 
+  // Guarda de capacidade: symlinkOrSkip distingue "sem privilégio" (skip) de
+  // "falhou por outro motivo" (rethrow). IMPORTANTE: o symlink precede um
+  // assert.throws — se symlinkSync lançasse EPERM diretamente, o teste
+  // passaria pelo motivo errado (EPERM substituindo o erro esperado do manager).
+  // A guarda corrige isso: sem privilégio → t.skip() antes de chegar ao
+  // assert.throws; com privilégio → symlink criado, assert.throws válido.
   fs.mkdirSync(path.join(dirs.projectRoot, '.claude'))
-  fs.symlinkSync(dirs.homeRoot, path.join(dirs.projectRoot, '.claude', 'agents'))
+  const created = symlinkOrSkip(
+    dirs.homeRoot,
+    path.join(dirs.projectRoot, '.claude', 'agents'),
+    (err) => t.skip(`symlink privilege not available: ${err.message}`)
+  )
+  if (!created) return
   assert.throws(() => manager.install([base]), /Symlink/)
 })
 

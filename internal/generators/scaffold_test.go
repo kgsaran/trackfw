@@ -394,9 +394,17 @@ func TestAttentionScripts_FallbackWithoutJQ(t *testing.T) {
 	// Utilitários necessários para o script rodar sem jq: bash, python3, date, grep, sed, tr, mkdir, printf, cat, rm
 	requiredBins := []string{"bash", "python3", "python", "date", "grep", "sed", "tr", "mkdir", "printf", "cat", "rm"}
 	for _, bin := range requiredBins {
-		path, err := exec.LookPath(bin)
+		binPath, err := exec.LookPath(bin)
 		if err == nil {
-			_ = os.Symlink(path, filepath.Join(fakeBinDir, bin))
+			// Marginal corrigido: distingue "sem privilégio" (continua sem o
+			// binário — setup best-effort) de "falhou por outro motivo" (falha
+			// o teste, já que o source existe e o target não existe ainda).
+			if symlinkErr := os.Symlink(binPath, filepath.Join(fakeBinDir, bin)); symlinkErr != nil {
+				if !isSymlinkPrivilegeError(symlinkErr) {
+					t.Fatalf("os.Symlink(%q, fakeBinDir/%s): %v", binPath, bin, symlinkErr)
+				}
+				// Sem privilégio: prossegue sem este binário no fakeBinDir.
+			}
 		}
 	}
 

@@ -549,3 +549,31 @@ terceira resposta.
 - [ ] `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality` exit 0
 - [ ] 🔴 O cenário **reprova** quando o guard alvo é revertido — falsificação **provada**, não afirmada
 - [ ] Varredura do item 3 com comando escrito
+
+### ML-1E-a3 — os 7 sítios remanescentes da classe #315 + gate da classe
+**Status:** ✅ Concluído — auditado pelo arquiteto **por execução própria**
+
+```
+RC COM symlink cru plantado = 1     ← gate acusa
+RC SEM symlink cru          = 0     ← e nao acusa sempre
+varredura final             : 290 arquivos, zero sitios desguardados
+```
+
+🔴 **Falsifiquei o gate eu mesmo**, plantando `(tmp_path / "link").symlink_to(...)` num teste e
+removendo depois. Não aceitei o `--self-test 3/3` do relatório: **self-test prova que o gate roda, não
+que ele pega o caso real.** Foi essa exata distinção que deixou o `check-serve-api-file-security.sh`
+existir sem alvo hoje.
+
+**Contra-braço medido:** neste macOS os testes **executam de verdade** — `--- PASS` nos três Go, 160
+passed no Python, Node verde, **zero SKIP**. Guarda que vira skip permanente é pior que o defeito
+original, e essa é a forma mais provável de "corrigir" a classe #315 errado.
+
+**Gate ligado ao `Makefile`** (linha 74) — 🔴 gate órfão foi a classe que reapareceu **duas vezes hoje**.
+
+**Dois antipadrões distintos fechados, e eles não são a mesma coisa:**
+
+- `regularfile_test.go` pulava **por plataforma** (`runtime.GOOS == "windows"`), abandonando cobertura
+  que existiria com Developer Mode. Virou guarda **por capacidade**: tenta, e só pula se o privilégio
+  faltar.
+- `generators.test.js` e `test_validator.py` engoliam **todo** erro (`catch (_) {}`). Agora
+  discriminam: `EPERM`/`EACCES`/`winerror 1314` ⇒ skip; **qualquer outro erro ⇒ falha**.
