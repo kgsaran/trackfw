@@ -1,14 +1,33 @@
 ---
-status: Open
+status: Superseded
 date: 2026-08-20
 author: ""
 adr: ""
-roadmap: "docs/roadmaps/backlog/ROADMAP-2026-09-10-branch-has-wip-roadmap-casa-por-substring-num-corpus-de-done-que-so-cresce.md"
+roadmap: "docs/roadmaps/abandoned/ROADMAP-2026-09-10-branch-has-wip-roadmap-casa-por-substring-num-corpus-de-done-que-so-cresce.md"
 ---
 
 # REQ: `branch_has_wip_roadmap` casa por substring num corpus de `done/` que só cresce
 
-> Date: 2026-08-20 | Status: Open (backlog, sem roadmap)
+> Date: 2026-08-20 | Status: Superseded (absorvida em 2026-09-12)
+
+## 🔴 ABSORVIDA — mesma causa da REQ de REQ órfã
+
+Em **2026-09-12**, por decisão do KG (*"absorve como ML na órfã"*), esta REQ foi absorvida por
+`REQ-2026-09-09-req-nasce-orfa-porque-criar-req-e-criar-roadmap-sao-dois-comandos-e-o-segundo-se-esquece.md`
+como **AC11–AC14**. Não trabalhe a partir deste arquivo.
+
+**Por quê — Regra Dura de Causa Raiz.** Medido no código: `validator.go:2870`
+(`strings.Contains`, consumido por validate/branch new/commit) e `generators/roadmap.go:632`
+(`containsIgnoreCase`, consumido por `roadmap move`) são **duas implementações do mesmo mecanismo**
+— substring, primeiro-que-casar-vence. `strings.Contains(x, "")` sempre verdadeiro é a causa do
+`roadmap move ""` mover um roadmap arbitrário, que a REQ órfã já registrava no AC7.
+
+**E a medição feita na absorção falsifica o candidato 1 desta REQ** (casamento por fronteira,
+descrito aqui como *"provavelmente suficiente"*): contra 185 roadmaps reais e 111 branches
+históricas, fronteira produz **zero** regressão e **zero** ganho no uso real, e deixa `fix/roadmap`
+casando **159 de 185**. A análise completa está na REQ absorvedora.
+
+---
 
 ## Motivação
 
