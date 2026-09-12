@@ -244,3 +244,48 @@ ADRs:  63 Accepted · 2 Superseded · 0 Proposed
 Correção dos IDs duplicados `ML-4A`/`ML-4B` fica para quando a branch de Windows estiver livre — o
 roadmap vive nela, e há microlote em execução na branch do ratchet. **Vai junto com o congelamento de
 escopo (Faixa 1.1).**
+
+---
+
+## Reordenação decidida pelo KG — 2026-09-12
+
+> *"minha ideia é elas depois da 330 e depois do problema de reqs órfãs"*
+
+```
+1. #330                  by_agent (#315, #320, #328) — em voo, faltam ML-3C e o rebase
+2. req nasce orfa        fecha o buraco que cava o backlog
+3. Bloco 1 — fronteira   roadmap move symlink · guarda de folha lstat · chmodSync TOCTOU
+4. paridade              9 REQs — AQUI entra o paralelismo em worktree
+5. Bloco 2 — sanitizacao agent_models · titulo com newline (AC2 de req/adr/note)
+```
+
+### Por que o `req nasce órfã` vem antes das de segurança
+
+Medido em 2026-09-12: **34 das 37 REQs abertas não têm roadmap** — 92%. O backlog não é fila
+priorizada, é depósito. E a auditoria independente do Codex devolveu **5 achados, 5 já com REQ nossa**,
+escritas e verificadas, paradas.
+
+🔴 **Corrigir defeito sem fechar essa causa é encher um balde furado.** As 5 de segurança viram REQ
+fechada; as próximas 5 nascem órfãs do mesmo jeito.
+
+### Por que as de segurança NÃO são uma REQ só
+
+Aglutinar as 5 apagaria o que a `Regra Dura de Causa Raiz` protege: **cada uma tem causa medida e
+escrita**. O agrupamento correto é por **mecanismo**, não pelo rótulo "segurança" — e por mecanismo elas
+são **duas** campanhas, não uma.
+
+O Bloco 1 é literalmente a classe que este projeto pagou o dia inteiro — **"validar uma coisa e agir
+sobre outra"**: mesma forma do H-01 (`/api/file`), do `.trackfw-log` (derivação após `rename`) e do
+`--req` com caminho não-canônico. Um contrato comum e um gate servem às três.
+
+### Por que o paralelismo só entra no passo 4
+
+O #330 já tocou **19 subsistemas** — praticamente toda a superfície dos 3 CLIs (`generators`,
+`validator`, `commands`, `config`, `integrations`, `push`, `ship`). Frente nova hoje colide por
+construção.
+
+⚠️ Custo já pago hoje por ignorar isso: o **#333 nasceu empilhado** e o CI acusou um defeito já
+corrigido; e o rebase de **#331/#332** quebrou o vínculo REQ↔roadmap, que teve de ser refeito à mão.
+
+**Paralelismo não é grátis quando as frentes compartilham superfície — ali ele soma rebase, não
+velocidade.**
