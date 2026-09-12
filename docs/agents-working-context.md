@@ -2,6 +2,19 @@
 
 ---
 
+## Sessão 2026-09-12 (2) — Ares (regressão do shim: resolução por subcaminho + falsificação)
+
+**Início:** 2026-09-12 | Branch: `fix/validar-um-binario-muitos-canais` | Roadmap em wip.
+**Tarefa:** corrigir regressão introduzida pelo KG ao remover `bin` dos 6 pacotes de plataforma — o shim lia `pkgJson.bin` e falhava (P15 mostrou `shim_exit=1` com "has no bin entry"). Implementar resolução por subcaminho conhecido (sem `bin`), adicionar teste de falsificação de dois braços, atualizar comentário stale no probe, e provar localmente em darwin/arm64.
+**Concluído:**
+- `prototype/packages/trackfw-shim/bin/trackfw.js`: shim resolve por `path.join(pkgDir, 'bin', binaryName)` onde `binaryName = os.platform() === 'win32' ? 'trackfw.exe' : 'trackfw'`. AC7 preservado via `fs.existsSync` com mensagem nomeada. Campo `bin` não consultado.
+- `npm/tests/shim_packaging.test.js`: 4 testes (Arm A: sem `bin` em nenhum dos 6 pacotes; Arm B estático: `files` contém o subcaminho correto; Arm B disco: binário existe; Arm B runtime: shim invocado via NODE_PATH, stderr sem mensagens de falha de resolução). 4/4 verdes.
+- `.github/workflows/windows-probe.yml`: comentário stale da colisão (linhas ~714-720) atualizado para refletir o estado correto.
+- Prova local darwin/arm64: 4/4 comandos BYTE_IDENTICAL, EXIT_MATCH (version, validate --json, status, context --json). Hash nativo = d7b95b11... == hash instalado.
+- `trackfw validate`: 180 warnings pré-existentes, 0 violations. `npm test` (shim_packaging): 4/4. Falhas pré-existentes no suite full não afetadas.
+
+---
+
 ## Sessão 2026-09-12 — Ares (AC9 em x64: Pergunta 15 no windows-probe.yml)
 
 **Início:** 2026-09-12 | Branch: `fix/validar-um-binario-muitos-canais` | Roadmap em wip.

@@ -711,13 +711,15 @@ jobs:
       #   reexercitada. Isso restringe a afirmação: o shim é transparente,
       #   dado que o pacote correto está em node_modules.
       #
-      # Bin collision declarada: shim e @trackfw-bin/win32-x64 ambos
-      #   declaram `"bin": { "trackfw": ... }`. npm coloca o último a ser
-      #   instalado em node_modules/.bin/trackfw. Esta sonda sempre invoca
-      #   por caminho explícito — não usa .bin/trackfw nem npx — então a
-      #   colisão não afeta o resultado. É uma observação de packaging da
-      #   opção D: o modelo esbuild não declara `bin` nos pacotes de
-      #   plataforma; a opção D declara, o que cria essa colisão.
+      # Bin collision — resolvida (2026-09-12): os pacotes de plataforma
+      #   NÃO declaram `bin`. A declaração dupla (shim + pacote de plataforma)
+      #   era nondeterminista: qual arquivo vencia em node_modules/.bin/trackfw
+      #   dependia da ordem de npm install. Esta sonda invoca por caminho
+      #   explícito (shimJs + platformBin), portanto a colisão não afetava o
+      #   resultado aqui — mas afetaria usuários invocando via .bin/trackfw.
+      #   O shim resolve o binário por subcaminho conhecido (bin/trackfw.exe),
+      #   calculado a partir de os.platform(), sem ler package.json.bin.
+      #   Falsificação: npm/tests/shim_packaging.test.js, Arm A + Arm B.
       #
       # Argumento sobre necessidade de medição x64 vs. extrapolação ARM64:
       #   `stdio: inherit` + `process.exit(result.status)` é comportamento

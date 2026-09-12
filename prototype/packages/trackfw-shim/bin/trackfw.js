@@ -4,8 +4,15 @@
 // trackfw shim — resolves the platform binary at runtime.
 // Design: NO postinstall. Binary is located here, at require() time.
 // Prior art: esbuild (https://github.com/evanw/esbuild/blob/main/pkg/api/api_impl.go)
+//
+// Resolution strategy: platform packages carry NO `bin` field — that field would
+// create a collision in node_modules/.bin/trackfw (npm install-order dependent,
+// nondeterministic). Instead, the shim computes the binary subpath from os.platform()
+// directly (same pattern as esbuild: `require.resolve(`${pkg}/${subpath}`)`), then
+// joins with the already-known pkgDir. No package metadata consulted for the path.
 
 const path = require("path");
+const fs = require("fs");
 const { spawnSync } = require("child_process");
 const os = require("os");
 
@@ -36,16 +43,23 @@ function resolveBinaryPath(pkg) {
   }
 
   const pkgDir = path.dirname(pkgPath);
-  const pkgJson = require(pkgPath);
 
-  // Extract bin path from platform package.json
-  const binEntry = pkgJson.bin;
-  if (!binEntry) {
-    process.stderr.write(`trackfw: platform package ${pkg} has no bin entry.\n`);
+  // Compute binary subpath from platform — platform packages carry no `bin` field
+  // (avoids nondeterministic collision in node_modules/.bin/ from install order).
+  const binaryName = os.platform() === "win32" ? "trackfw.exe" : "trackfw";
+  const resolvedBin = path.join(pkgDir, "bin", binaryName);
+
+  // Fail loudly and name the cause — AC7: no MODULE_NOT_FOUND surprises.
+  if (!fs.existsSync(resolvedBin)) {
+    process.stderr.write(
+      `trackfw: platform binary not found in ${pkg}.\n` +
+      `Expected: ${resolvedBin}\n` +
+      `The platform package may be corrupted or missing the binary in bin/${binaryName}.\n`
+    );
     process.exit(1);
   }
-  const binRelPath = typeof binEntry === "string" ? binEntry : binEntry.trackfw;
-  return path.join(pkgDir, binRelPath);
+
+  return resolvedBin;
 }
 
 const pkg = getPlatformPackage();
