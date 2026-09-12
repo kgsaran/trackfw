@@ -49,12 +49,12 @@ func AppendAgentToConfig(yamlPath, agentName string) error {
 //
 // Supported shapes:
 //
-//	agents:          ← block list (appends a new "  - <name>" line after the last item)
-//	  - alpha
+//	agents:          ← block list: appends "  - <name>" after the last item;
+//	  - alpha          the block stays in its current position (do not move it)
 //	  - beta
 //
-//	<absent>         ← inserts "agents:\n  - <name>" after the roadmap_namespacing: line
-//	                   (or at end of file when roadmap_namespacing: is also absent)
+//	<absent>         ← appends "agents:\n  - <name>" at the END of the document;
+//	                   deterministic regardless of which other keys are present or absent
 //
 // Rejected shape (returns error, does NOT rewrite):
 //
@@ -76,15 +76,11 @@ func appendAgentTextual(yamlPath string, data []byte, agentName string) error {
 		}
 	}
 
-	agentsLineIdx := -1 // index of "agents:" line
-	agentsBlockEnd := -1 // index of last "  - ..." item line (or same as agentsLineIdx when block is empty)
-	roadmapNsIdx := -1  // index of "roadmap_namespacing: ..." line
+	agentsLineIdx := -1  // index of "agents:" line
+	agentsBlockEnd := -1 // index of last "  - ..." item line (or agentsLineIdx when block is empty)
 
 	for i, line := range lines {
 		bare := strings.TrimRight(line, " \t\r")
-		if strings.HasPrefix(bare, "roadmap_namespacing:") {
-			roadmapNsIdx = i
-		}
 		if bare == "agents:" {
 			agentsLineIdx = i
 			agentsBlockEnd = i
@@ -103,7 +99,7 @@ func appendAgentTextual(yamlPath string, data []byte, agentName string) error {
 	var result []string
 
 	if agentsLineIdx >= 0 {
-		// agents: block exists — append after the last item in the block
+		// agents: block exists — insert inside the block, preserving its position
 		for i, line := range lines {
 			result = append(result, line)
 			if i == agentsBlockEnd {
@@ -111,18 +107,17 @@ func appendAgentTextual(yamlPath string, data []byte, agentName string) error {
 			}
 		}
 	} else {
-		// agents: absent — insert block after roadmap_namespacing: (or at end)
-		insertAfter := roadmapNsIdx
-		if insertAfter < 0 {
-			insertAfter = len(lines) - 1
+		// agents: absent — append the block at the end of the document.
+		// "End" means after the last non-empty, non-trailing line, so we never
+		// insert before a trailing newline that the file already has.
+		result = lines
+		// Trim trailing empty strings produced by a final "\n"
+		for len(result) > 0 && strings.TrimRight(result[len(result)-1], " \t\r") == "" {
+			result = result[:len(result)-1]
 		}
-		for i, line := range lines {
-			result = append(result, line)
-			if i == insertAfter {
-				result = append(result, "agents:")
-				result = append(result, newEntry)
-			}
-		}
+		result = append(result, "agents:")
+		result = append(result, newEntry)
+		result = append(result, "") // restore trailing newline
 	}
 
 	return os.WriteFile(yamlPath, []byte(strings.Join(result, "\n")), 0o644)

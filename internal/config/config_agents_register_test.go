@@ -137,11 +137,11 @@ func TestAppendAgentToConfig_PreservesFormat(t *testing.T) {
 	}
 }
 
-// TestAppendAgentToConfig_CreatesAgentsKey verifies that the agents: block is inserted
-// when it does not exist yet in a by_agent project.
+// TestAppendAgentToConfig_CreatesAgentsKey verifies that the agents: block is appended
+// at the END of the document when it does not exist yet in a by_agent project.
 // Reconciliation: this test asserts that a by_agent project without an agents: key gets
-// the key created with the new agent — the "first install" path where discover --init
-// did not write agents: yet.
+// the block appended after all existing keys — deterministic regardless of which other
+// keys are present. Inserting before other keys would depend on key position.
 func TestAppendAgentToConfig_CreatesAgentsKey(t *testing.T) {
 	tmp := t.TempDir()
 	original := "roadmap_namespacing: by_agent\nci: none\n"
@@ -158,9 +158,37 @@ func TestAppendAgentToConfig_CreatesAgentsKey(t *testing.T) {
 	if !strings.Contains(got, "  - gamma\n") {
 		t.Errorf("expected '  - gamma' in output; got:\n%s", got)
 	}
-	// Other keys must be preserved.
-	if !strings.Contains(got, "roadmap_namespacing: by_agent") {
-		t.Errorf("roadmap_namespacing must be preserved; got:\n%s", got)
+	// The agents: block must come AFTER the ci: key (end-of-document rule).
+	ciIdx := strings.Index(got, "ci:")
+	agentsIdx := strings.Index(got, "agents:")
+	if ciIdx < 0 || agentsIdx < 0 || agentsIdx <= ciIdx {
+		t.Errorf("agents: must appear after ci: (appended at end); positions ci=%d agents=%d; got:\n%s", ciIdx, agentsIdx, got)
+	}
+}
+
+// TestAppendAgentToConfig_AppendsAfterLastKey verifies that when agents: is absent the
+// block is appended after whatever key is last in the file (wip_limit in this fixture).
+// Reconciliation: this test fixes the position contract — "append at end" is deterministic
+// with any trackfw.yaml layout, unlike "insert after roadmap_namespacing:" which depends
+// on that key being present and on its position relative to other keys.
+func TestAppendAgentToConfig_AppendsAfterLastKey(t *testing.T) {
+	tmp := t.TempDir()
+	// wip_limit is the last key; agents: must come after it, not after roadmap_namespacing:
+	original := "roadmap_namespacing: by_agent\nwip_limit: 3\n"
+	p := writeYAML(t, tmp, original)
+
+	if err := AppendAgentToConfig(p, "architect"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	got := readFile(t, p)
+	wipIdx := strings.Index(got, "wip_limit:")
+	agentsIdx := strings.Index(got, "agents:")
+	if wipIdx < 0 || agentsIdx < 0 || agentsIdx <= wipIdx {
+		t.Errorf("agents: must appear after wip_limit: (appended at end); positions wip=%d agents=%d; got:\n%s", wipIdx, agentsIdx, got)
+	}
+	if !strings.Contains(got, "  - architect\n") {
+		t.Errorf("expected '  - architect' in output; got:\n%s", got)
 	}
 }
 
