@@ -9,8 +9,23 @@ const { handleBoard } = require('../src/serve/api_board')
 const { handleFile } = require('../src/serve/api_file')
 const { handleMetrics } = require('../src/serve/api_metrics')
 const { getAttention } = require('../src/serve/api_attention')
+const { serveStatic } = require('../src/commands/serve')
+const { symlinkOrSkip: _symlinkCore, SymlinkPrivilegeSkip } = require('./helpers/symlink')
 
-let passed = 0, failed = 0
+// Adapta o helper compartilhado para o harness customizado deste arquivo:
+// EPERM/EACCES → throws SymlinkPrivilegeSkip (capturado pelo runner como "pulado")
+// Qualquer outro erro → rethrows (capturado como falha)
+// Guarda de capacidade: distingue "sem privilégio" (skip) de "falhou por outro
+// motivo" (fail) — padrão do projeto, issue #315.
+function symlinkOrSkip (target, link) {
+  return _symlinkCore(target, link, (err) => {
+    throw new SymlinkPrivilegeSkip(
+      `criação de symlink exige Developer Mode (ou processo elevado) neste Windows: ${err.message}`
+    )
+  })
+}
+
+let passed = 0, failed = 0, skipped = 0
 const tests = []
 
 function test(name, fn) {
@@ -181,6 +196,147 @@ test('api_file — path fora dos dirs permitidos retorna 403', () => {
   }
 })
 
+// AC1 + AC3 + AC5 — symlink dentro de reqDir apontando para fora deve retornar
+// 403 e NÃO deve vazar o conteúdo do destino.
+// Reconciliação: afirma que a contenção física (realpathSync.native) bloqueia um
+// symlink cujo destino físico está fora das raízes autorizadas — conclusão do H-01.
+test('api_file — symlink para fora da raiz retorna 403 sem vazar conteúdo (AC1/AC3/AC5)', () => {
+  const tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'tw-symlink-')))
+  const outside = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'tw-outside-')))
+  try {
+    const reqDir = path.join(tmp, 'docs', 'req')
+    mkdirp(reqDir)
+
+    // Arquivo secreto fora da raiz autorizada
+    const secretFile = path.join(outside, 'secret.txt')
+    fs.writeFileSync(secretFile, 'HADES_SECRET_TOKEN_ABC123', 'utf8')
+
+    // Symlink dentro de reqDir apontando para o arquivo externo
+    const linkPath = path.join(reqDir, 'link.md')
+    symlinkOrSkip(secretFile, linkPath)
+
+    const cfg = { reqDir }
+    const req = mockReq()
+    req.url = '/api/file?path=' + linkPath
+    const res = mockRes()
+    handleFile(cfg, req, res)
+
+    // AC3: status deve ser 403
+    assert.strictEqual(res.statusCode, 403, 'symlink para fora deve retornar 403')
+    // AC3: corpo NÃO deve conter o segredo
+    assert(!res.body.includes('HADES_SECRET'), 'corpo não deve vazar conteúdo do destino externo')
+  } finally {
+    fs.rmSync(tmp, { recursive: true })
+    fs.rmSync(outside, { recursive: true })
+  }
+})
+
+// AC4 — symlink legítimo (destino dentro da raiz) deve continuar retornando 200.
+// Reconciliação: afirma que symlinks internos legítimos não são bloqueados pela
+// contenção física — o contra-braço de AC1.
+test('api_file — symlink legítimo dentro da raiz retorna 200 com conteúdo (AC4)', () => {
+  const tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'tw-symlink-leg-')))
+  try {
+    const reqDir = path.join(tmp, 'docs', 'req')
+    mkdirp(reqDir)
+
+    // Arquivo real dentro da raiz
+    const realFile = path.join(reqDir, 'REQ-real.md')
+    const wantContent = '# REQ real\nConteúdo legítimo.\n'
+    fs.writeFileSync(realFile, wantContent, 'utf8')
+
+    // Symlink também dentro da raiz apontando para o arquivo real
+    const linkPath = path.join(reqDir, 'REQ-link.md')
+    symlinkOrSkip(realFile, linkPath)
+
+    const cfg = { reqDir }
+    const req = mockReq()
+    req.url = '/api/file?path=' + linkPath
+    const res = mockRes()
+    handleFile(cfg, req, res)
+
+    assert.strictEqual(res.statusCode, 200, 'symlink interno deve retornar 200')
+    assert.strictEqual(res.body, wantContent, 'corpo deve ter conteúdo do arquivo destino')
+  } finally {
+    fs.rmSync(tmp, { recursive: true })
+  }
+})
+
+// ─── serveStatic (M-03) ───────────────────────────────────────────────────────
+
+// AC2 / AC4 counter-arm — arquivo legítimo em STATIC_DIR real deve retornar 200.
+// Reconciliação: afirma que a contenção física de serveStatic não bloqueia
+// arquivos legítimos do STATIC_DIR real — contra-braço de M-03.
+test('serveStatic — arquivo legítimo em STATIC_DIR retorna 200 com conteúdo (AC2/AC4)', () => {
+  const res = { statusCode: null, headers: {}, body: Buffer.alloc(0) }
+  res.writeHead = (code, headers) => { res.statusCode = code; Object.assign(res.headers, headers || {}) }
+  res.end = (data) => { if (data) res.body = Buffer.isBuffer(data) ? data : Buffer.from(data) }
+
+  serveStatic('/static/app.js', res)
+
+  assert.strictEqual(res.statusCode, 200, 'app.js deve retornar 200 — REAL_STATIC_DIR está correto')
+  assert(res.body.length > 0, 'corpo deve ter conteúdo')
+})
+
+// AC2 / AC3 attack arm — symlink em cópia temporária do STATIC_DIR apontando para fora
+// deve retornar 403 sem vazar conteúdo.
+// Reconciliação: afirma que realpathSync.native em serveStatic bloqueia symlink externo
+// e o corpo não vaza segredo — conclusão direta do M-03.
+test('serveStatic — symlink para fora do STATIC_DIR retorna 403 sem vazar conteúdo (AC2/AC3)', () => {
+  // Cria cópia temporária de npm/src para plantar symlink sem tocar no repo
+  const tmpRoot = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'tw-static-atk-')))
+  const outside = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'tw-out-')))
+  try {
+    // Copia npm/src para o diretório temporário
+    const srcDir = path.join(__dirname, '..', 'src')
+    const tmpSrcDir = path.join(tmpRoot, 'src')
+    function copyDir(from, to) {
+      fs.mkdirSync(to, { recursive: true })
+      for (const entry of fs.readdirSync(from, { withFileTypes: true })) {
+        const src = path.join(from, entry.name)
+        const dst = path.join(to, entry.name)
+        if (entry.isDirectory()) copyDir(src, dst)
+        else fs.copyFileSync(src, dst)
+      }
+    }
+    copyDir(srcDir, tmpSrcDir)
+
+    // Planta symlink externo dentro do STATIC_DIR da cópia
+    const secretFile = path.join(outside, 'secret.txt')
+    fs.writeFileSync(secretFile, 'HADES_STATIC_SECRET_M03', 'utf8')
+    const tmpStaticDir = path.join(tmpSrcDir, 'serve', 'static')
+    symlinkOrSkip(secretFile, path.join(tmpStaticDir, 'evil.js'))
+
+    // Cria versão modificada de serve.js com STATIC_DIR apontando para a cópia.
+    // Patcha requires relativos para caminhos absolutos e resolve commander via abs path
+    // para que o módulo carregado do tmpRoot encontre suas dependências.
+    const npmRoot = path.join(__dirname, '..')
+    const serveSrc = fs.readFileSync(path.join(tmpSrcDir, 'commands', 'serve.js'), 'utf8')
+    let modSrc = serveSrc
+      .replace(/const STATIC_DIR = .*/, `const STATIC_DIR = ${JSON.stringify(tmpStaticDir)}`)
+      // Patcha requires relativos (../foo) para caminhos absolutos no npm/src real
+      .replace(/require\('\.\.\/([^']+)'\)/g, (_, p) => `require(${JSON.stringify(path.resolve(npmRoot, 'src', p))})`)
+      // Patcha require('commander') para caminho absoluto no npm/node_modules
+      .replace(/require\('commander'\)/, `require(${JSON.stringify(path.resolve(npmRoot, 'node_modules', 'commander'))})`)
+    const tmpServeFile = path.join(tmpRoot, 'serve_test.js')
+    fs.writeFileSync(tmpServeFile, modSrc + '\nmodule.exports._serveStatic = serveStatic\n', 'utf8')
+
+    const { _serveStatic } = require(tmpServeFile)
+
+    const res = { statusCode: null, body: '' }
+    res.writeHead = (code) => { res.statusCode = code }
+    res.end = (d) => { res.body += (d || '') }
+
+    _serveStatic('/static/evil.js', res)
+
+    assert.strictEqual(res.statusCode, 403, 'symlink externo em STATIC_DIR deve retornar 403 (AC2/AC3)')
+    assert(!res.body.includes('HADES_STATIC_SECRET'), 'corpo não deve vazar segredo do symlink (AC3)')
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true })
+    fs.rmSync(outside, { recursive: true, force: true })
+  }
+})
+
 // ─── api_metrics ──────────────────────────────────────────────────────────────
 
 test('api_metrics — sem trackfw-log retorna zeros sem erro', () => {
@@ -274,10 +430,15 @@ test('api_attention — arquivo valido retorna active', () => {
       console.log('v', name)
       passed++
     } catch (e) {
-      console.error('x', name, e.message)
-      failed++
+      if (e instanceof SymlinkPrivilegeSkip) {
+        console.log(`- ${name} (pulado: ${e.message})`)
+        skipped++
+      } else {
+        console.error('x', name, e.message)
+        failed++
+      }
     }
   }
-  console.log(`\n${passed} passed, ${failed} failed`)
+  console.log(`\n${passed} passed, ${failed} failed${skipped ? ', ' + skipped + ' pulados' : ''}`)
   if (failed > 0) process.exit(1)
 })()

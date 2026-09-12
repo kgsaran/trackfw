@@ -13,6 +13,18 @@ const { handleAttention } = require('../serve/api_attention')
 
 const STATIC_DIR = path.join(__dirname, '..', 'serve', 'static')
 
+// REAL_STATIC_DIR é a versão canônica (symlinks resolvidos) de STATIC_DIR.
+// Calculado uma vez no carregamento do módulo para canonicalizar ambos os lados
+// na verificação de segurança do serveStatic (M-03: prevenção de escape via symlink).
+// Se STATIC_DIR não existir no momento do carregamento, fica null e serveStatic
+// retorna 404 para qualquer requisição de asset estático.
+let REAL_STATIC_DIR
+try {
+  REAL_STATIC_DIR = fs.realpathSync.native(STATIC_DIR)
+} catch (_) {
+  REAL_STATIC_DIR = null
+}
+
 // Aviso pinado, byte-idêntico entre os 3 runtimes (Go, Node.js, Python) — ver
 // docs/cli-parity.md "`trackfw serve` — endereço de escuta, `--host` e
 // aviso de exposição". Emitido quando --host resolve para uma interface
@@ -134,7 +146,17 @@ const MIME = {
 
 /**
  * serveStatic serve arquivos do STATIC_DIR.
- * Retorna 404 se o arquivo não existe ou se o path tenta escape (path traversal).
+ *
+ * Modelo de segurança — contenção em dois estágios (M-03):
+ *
+ * 1. Contenção léxica: path.resolve() normaliza ".." e o resultado deve começar
+ *    com STATIC_DIR.  Caminhos fora recebem 403 antes de tocar o disco.
+ *
+ * 2. Contenção física: fs.realpathSync.native() é chamado no arquivo pedido e
+ *    comparado com REAL_STATIC_DIR (pré-computado no carregamento do módulo).
+ *    Um symlink dentro de STATIC_DIR cujo destino físico aponta para fora → 403.
+ *    Qualquer falha de canonicalização → 404.
+ *
  * @param {string} urlPath - pathname da URL (ex: '/static/app.js')
  * @param {http.ServerResponse} res
  */
@@ -143,25 +165,43 @@ function serveStatic(urlPath, res) {
   const relative = urlPath.replace(/^\/static/, '') || '/index.html'
   const resolved = path.resolve(path.join(STATIC_DIR, relative))
 
-  // Segurança: path traversal
-  if (!resolved.startsWith(path.resolve(STATIC_DIR) + path.sep) && resolved !== path.resolve(STATIC_DIR)) {
+  // ── Estágio 1: Contenção léxica ────────────────────────────────────────────
+  const lexicalStaticDir = path.resolve(STATIC_DIR)
+  if (!resolved.startsWith(lexicalStaticDir + path.sep) && resolved !== lexicalStaticDir) {
     res.writeHead(403, { 'Content-Type': 'text/plain' })
     res.end('Forbidden')
     return
   }
 
-  if (!fs.existsSync(resolved)) {
+  // ── Estágio 2: Contenção física ────────────────────────────────────────────
+  if (!REAL_STATIC_DIR) {
+    // STATIC_DIR não existe — nenhum arquivo pode ser servido.
     res.writeHead(404, { 'Content-Type': 'text/plain' })
     res.end('Not Found')
     return
   }
 
-  const ext = path.extname(resolved).toLowerCase()
+  let realResolved
+  try {
+    realResolved = fs.realpathSync.native(resolved)
+  } catch (_) {
+    res.writeHead(404, { 'Content-Type': 'text/plain' })
+    res.end('Not Found')
+    return
+  }
+
+  if (!realResolved.startsWith(REAL_STATIC_DIR + path.sep) && realResolved !== REAL_STATIC_DIR) {
+    res.writeHead(403, { 'Content-Type': 'text/plain' })
+    res.end('Forbidden')
+    return
+  }
+
+  const ext = path.extname(realResolved).toLowerCase()
   const contentType = MIME[ext] || 'application/octet-stream'
 
   let content
   try {
-    content = fs.readFileSync(resolved)
+    content = fs.readFileSync(realResolved)
   } catch (_) {
     res.writeHead(500, { 'Content-Type': 'text/plain' })
     res.end('Internal Server Error')
@@ -302,4 +342,4 @@ function createServeCommand() {
   return cmd
 }
 
-module.exports = { createServeCommand, createServer, isLoopbackHost, displayUrl, isValidHost, browserArgv, openBrowser }
+module.exports = { createServeCommand, createServer, isLoopbackHost, displayUrl, isValidHost, browserArgv, openBrowser, serveStatic }

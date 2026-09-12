@@ -4,15 +4,15 @@ const fs = require('fs')
 const path = require('path')
 
 /**
- * isPathAllowed verifica se o filePath resolvido está dentro de um dos diretórios permitidos.
- * @param {string} resolved - path.resolve(filePath)
- * @param {string[]} allowedDirs - lista de diretórios permitidos (já resolvidos)
+ * isPathAllowed verifica se absPath está dentro de um dos diretórios permitidos.
+ * Usa separador no sufixo para evitar que /docs/adr case com /docs/adr2.
+ * @param {string} absPath
+ * @param {string[]} allowedDirs
  * @returns {boolean}
  */
-function isPathAllowed(resolved, allowedDirs) {
+function isPathAllowed(absPath, allowedDirs) {
   for (const dir of allowedDirs) {
-    // garantir que o path começa com dir + separador
-    if (resolved === dir || resolved.startsWith(dir + path.sep)) {
+    if (absPath === dir || absPath.startsWith(dir + path.sep)) {
       return true
     }
   }
@@ -21,7 +21,22 @@ function isPathAllowed(resolved, allowedDirs) {
 
 /**
  * handleFile responde ao GET /api/file?path=... com o conteúdo do arquivo.
- * Retorna 400 se path ausente, 403 se fora dos diretórios permitidos, 404 se não existe.
+ *
+ * Modelo de segurança — contenção em dois estágios:
+ *
+ * 1. Contenção léxica (sem acesso ao filesystem): path.resolve() normaliza ".."
+ *    e o resultado deve começar com uma das raízes autorizadas.  Caminhos fora
+ *    das raízes recebem 403 antes de qualquer acesso ao disco, impedindo que a
+ *    distinção 403 vs 404 sirva de oracle de existência para caminhos arbitrários.
+ *
+ * 2. Contenção física (resolução de symlinks): fs.realpathSync.native() é chamado
+ *    no arquivo pedido e em cada raiz autorizada.  Um symlink cujo nome está
+ *    dentro de uma raiz autorizada mas cujo destino físico não está → 403.
+ *    Qualquer falha de canonicalização (ENOENT, symlink pendente, …) → 404.
+ *
+ * Um symlink legítimo cujo destino também está dentro de uma raiz autorizada
+ * continua sendo servido normalmente.
+ *
  * @param {object} cfg
  * @param {http.IncomingMessage} req
  * @param {http.ServerResponse} res
@@ -43,10 +58,10 @@ function handleFile(cfg, req, res) {
     return
   }
 
-  // Resolver o path absoluto para verificar segurança
+  // ── Estágio 1: Contenção léxica ────────────────────────────────────────────
+  // path.resolve() resolve '..' mas NÃO segue symlinks (operação puramente léxica).
   const resolved = path.resolve(filePath)
 
-  // Montar lista de diretórios permitidos a partir da config
   const adrDirs = (cfg.adrDirs || ['docs/adr']).map(d => path.resolve(d))
   const reqDir = path.resolve(cfg.reqDir || 'docs/req')
   const roadmapDir = path.resolve(cfg.roadmapDir || 'docs/roadmaps')
@@ -58,15 +73,37 @@ function handleFile(cfg, req, res) {
     return
   }
 
-  if (!fs.existsSync(resolved)) {
+  // ── Estágio 2: Contenção física ────────────────────────────────────────────
+  // Canonicalizar o arquivo pedido. Qualquer erro (ENOENT, symlink pendente,
+  // loop, permissão) → 404. O arquivo está nominalmente dentro de uma raiz
+  // autorizada (estágio 1 passou), portanto 404 é o resultado correto quando
+  // ele simplesmente não existe.
+  let realResolved
+  try {
+    realResolved = fs.realpathSync.native(resolved)
+  } catch (_) {
     res.writeHead(404, { 'Content-Type': 'text/plain' })
     res.end('Not Found')
     return
   }
 
+  // Canonicalizar as raízes autorizadas. Raízes inexistentes são ignoradas —
+  // nenhum arquivo pode residir em um diretório que não existe.
+  const realAllowedDirs = allowedDirs.flatMap(d => {
+    try { return [fs.realpathSync.native(d)] } catch (_) { return [] }
+  })
+
+  // Contenção física: o destino canônico deve estar dentro de uma raiz canônica.
+  if (!isPathAllowed(realResolved, realAllowedDirs)) {
+    res.writeHead(403, { 'Content-Type': 'text/plain' })
+    res.end('Forbidden')
+    return
+  }
+
+  // O arquivo existe (realpathSync não falhou) — ler da rota canônica.
   let content
   try {
-    content = fs.readFileSync(resolved, 'utf8')
+    content = fs.readFileSync(realResolved, 'utf8')
   } catch (err) {
     res.writeHead(500, { 'Content-Type': 'text/plain' })
     res.end('Internal Server Error')

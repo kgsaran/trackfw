@@ -2,6 +2,30 @@
 
 ---
 
+## Sessão 2026-09-12 — ares-tf (FIM: pytest ausente em parity-other-gates + guarda gate + symlink guards — PR #332)
+
+Branch `fix/serve-api-file-valida-o-caminho-lexico`. Entregue: (1) `quality.yml` — pytest adicionado ao pip install do job `parity-other-gates`; varredura confirmou único job afetado. (2) `scripts/check-serve-api-file-security.sh` — guarda de pré-requisito antes de AC7: verifica python3 e pytest separadamente; se ausente, aborta com `ERRO: ambiente incompleto` (exit 1), sem contabilizar FAIL de produto; não chama `ok()` para não inflar PASS/EXPECTED_PASS=15; falsificação: venv sem pytest → "ERRO: ambiente incompleto — pytest nao encontrado" RC=1; contra-braço: 15 ok, 0 falhou RC=0. (3) `internal/serve/symlink_helper_test.go` — criado (cópia do padrão de outros pacotes); 2 sítios em `api_file_test.go` substituídos por `symlinkOrSkip`. (4) `npm/tests/serve_api.test.js` — helper importado, wrapper `symlinkOrSkip`, runner atualizado para `SymlinkPrivilegeSkip`; 3 sítios substituídos; 14 passed RC=0. (5) `pypi/tests/test_serve_api.py` — `errno` importado, `_symlink_or_skip` adicionado, 2 sítios substituídos; 18 passed RC=0. check-symlink-privilege-guard RC=0. make parity-rest RC=0, zero FAILs. actionlint quality.yml limpo.
+
+---
+
+## Sessão 2026-09-12 — ares-tf (INÍCIO: pytest ausente em parity-other-gates + guarda gate + symlink guards — PR #332)
+
+Branch `fix/serve-api-file-valida-o-caminho-lexico`. Escopo: `.github/workflows/quality.yml` (job `parity-other-gates`), `scripts/check-serve-api-file-security.sh`, `internal/serve/api_file_test.go`, `npm/tests/serve_api.test.js`, `pypi/tests/test_serve_api.py`, novo `internal/serve/symlink_helper_test.go`. Defeitos: (1) job `parity-other-gates` não instala pytest → 3 asserções Python do gate acusam "FAIL Python ... test falhou" quando é infraestrutura ausente; (2) gate não distingue "pytest ausente" de "teste reprovou"; (3) 7 sítios em 3 arquivos de teste usam os.Symlink/fs.symlinkSync/symlink_to sem guarda de privilégio — flagrados por check-symlink-privilege-guard.sh.
+
+---
+
+## Sessão 2026-09-12 — ares-tf (FIM: gzip ausente C7 + guarda de vacuidade — check-install-checksum.sh)
+
+Worktree `trackfw-seguranca`, branch `fix/install-sh-extrai-o-tarball-sem-conferir` (PR #331). Escopo: somente `scripts/check-install-checksum.sh`. Defeito: C7 monta PATH curado sem `gzip` — GNU tar no Linux faz fork de `gzip` para descomprimir `.gz`, causando `tar (child): gzip: Cannot exec`. Fix (1): adicionado `gzip` à lista essencial do loop C7; `gunzip` ligado oportunisticamente (opcional, pode ser wrapper em algumas distros). Fix (2): guarda de vacuidade em C7 — se utilitário essencial não for encontrado no sistema, `FAIL [C7/setup]: utilitario essencial ausente: <nome>` em vez de silenciar com `|| true`. Mesma guarda aplicada em C6 (sem `gzip`, desnecessário — install.sh falha no hash antes do tar). Varredura: linhas 271 e 523 (`$STUB_BIN:$PATH`) aumentam PATH herdado → herdam `gzip`, imunes; linhas 406 (C6) e 466 (C7) substituem PATH, apenas C7 atinge tar. Provas: (A) URL_LOG populado com URL correta — wget stub foi invocado; (B) remoção do stub wget → `install.sh: line 122: wget: command not found`; (C) `gzip_absent_probe` → guarda nomeia o utilitário ausente. macOS: GNU tar não instalado — evidência primária é log CI. Gate: 9 cenários OK RC=0. `make parity-rest` RC=0.
+
+---
+
+## Sessão 2026-09-12 — ares-tf (INÍCIO: gzip ausente C7 + guarda de vacuidade — check-install-checksum.sh)
+
+Worktree `trackfw-seguranca`, branch `fix/install-sh-extrai-o-tarball-sem-conferir` (PR #331). Escopo: somente `scripts/check-install-checksum.sh`. CI do PR #331 reprova em `parity-other-gates` com `tar (child): gzip: Cannot exec` no cenário C7. Causa: loop C7 monta PATH curado sem `gzip`; no Linux, GNU tar faz fork de `gzip` para descomprimir `.gz`. macOS tar lida internamente, mascarando o defeito. Tarefa: (1) adicionar `gzip`/`gunzip` à lista; (2) guarda de vacuidade para nomear utilitário ausente; (3) varredura de todos os PATHs curados no script.
+
+---
+
 ## Sessão 2026-09-12 — apolo-tf (INÍCIO: ML-3C — Python _agent_from_req_path não-canônico)
 
 Branch `fix/by-agent-req-new-e-roadmap-new`. Escopo: `pypi/trackfw/generators/roadmap.py`, `pypi/trackfw/commands/roadmap.py`, `pypi/tests/test_by_agent_ml1c.py`, `internal/generators/roadmap_test.go`, `npm/tests/by_agent_req_roadmap_new.test.js`. Defecto: `_agent_from_req_path` usa `os.path.abspath` (não resolve symlinks); guarda em `_cmd_new` compara `req_grandparent` (de abspath de path absoluto não-canônico, ex: /var/...) contra `abs_req_dir` (de abspath de path relativo via cwd canônico /private/var/...) → comparação falha → cai em resolve_write_agent → erro de ambiguidade. Fix: refatorar `_agent_from_req_path(req_path, req_dir)` com realpath em ambos os lados (espelho de Go agentFromPath + Node agentFromPath). Simplificar guarda em _cmd_new.
@@ -36689,3 +36713,79 @@ Continuação da sessão 2026-09-12a. Revisor identificou 4 bloqueadores antes d
 - Python mock SKIP → `skipped=1` ✓
 - Grep bypass → vazio ✓
 **Pendente:** veredito REAL_ENV do próximo run de CI (arquiteto dispara).
+## Sessão 2026-09-11w — apolo-tf (Backend) — H-01/M-03: revisão de auditoria — AC2+AC6 dinâmico — CONCLUÍDO (aguarda auditoria Zeus)
+Branch `fix/serve-api-file-valida-o-caminho-lexico`. Revisão pós-auditoria: 3 bloqueadores identificados pelo revisor.
+**Bloqueador 1 (AC2 — serveStatic):** zero evidência executada para AC2. Corrigido:
+- `npm/src/commands/serve.js`: `serveStatic` adicionado ao module.exports
+- `npm/tests/serve_api.test.js`: 2 novos testes: attack arm (symlink → 403 sem corpo) + counter-arm (app.js → 200 com conteúdo)
+**Bloqueador 2 (gate não wired):** gate existia mas não era chamado por nenhum target. Corrigido:
+- `Makefile`: `scripts/check-serve-api-file-security.sh` adicionado a parity-rest (após check-serve-browser-security.sh)
+**Bloqueador 3 (AC6 estático):** falsificações Go e Python eram estáticas (grep). Corrigido — falsificação dinâmica nos 3 runtimes:
+- Go: `go test -overlay` com cópia vulnerável (`if false &&` desabilita check físico). Teste FALHA na versão vulnerável, PASSA na correta.
+- Python: `sed os.path.realpath → os.path.abspath` + importlib; get_file() no módulo vulnerável vaza segredo via wfile.write.
+- Node: já era dinâmico (inalterado).
+**Minor:** `contains`/`containsRune` em `api_file_test.go` substituídos por `strings.Contains`; import `strings` adicionado.
+**Evidências pós-revisão:**
+- `go test ./...` → todos os pacotes ok (internal/serve: 0.353s)
+- `node npm/tests/serve_api.test.js` → 14 passed, 0 failed
+- `PYTHONPATH=pypi python3 -m pytest pypi/tests/` → 1722 passed, 66 subtests
+- `bash scripts/check-serve-api-file-security.sh` → 15 ok, 0 falhou
+- `env -u FORCE_COLOR make parity-rest` → 1 falha (direction-b2/node — pré-autorizada); restante verde
+**Nota sobre FORCE_COLOR:** `make parity-rest` no terminal Claude (FORCE_COLOR=3) mostra falhas em branch-new-parity causadas por warning Node.js sobre NO_COLOR vs FORCE_COLOR. Não relacionado ao código. `env -u FORCE_COLOR make parity-rest` elimina essas falhas; resta apenas direction-b2/node pré-autorizada.
+**Frases de reconciliação (testes novos desta sessão):**
+- Node `serveStatic — arquivo legítimo em STATIC_DIR retorna 200`: REAL_STATIC_DIR correto + contra-braço de M-03
+- Node `serveStatic — symlink para fora do STATIC_DIR retorna 403`: realpathSync.native bloqueia symlink externo — conclusão M-03
+## Sessão 2026-09-11v — apolo-tf (Backend) — H-01/M-03: serve /api/file symlink escape + static symlink (3 runtimes) — CONCLUÍDO (aguarda auditoria Zeus)
+Branch `fix/serve-api-file-valida-o-caminho-lexico`. Escopo: `internal/serve/api_file.go`, `npm/src/serve/api_file.js`, `npm/src/commands/serve.js`, `pypi/trackfw/serve/api_file.py` e testes nos 3 runtimes + gate em `scripts/`.
+**Causa raiz confirmada:** verificação de segurança ocorria antes da resolução física do symlink. Go usava `filepath.Clean`+`filepath.Join` (léxico); Node usava `path.resolve()` (léxico). Python usava `os.path.realpath` em ambos os lados — referência.
+**Reprodução "before":**
+- Go: HTTP 200 `HADES_SECRET_TOKEN_ABC123` (vulnerable)
+- Node: HTTP 200 `HADES_SECRET_TOKEN_ABC123` (vulnerable)
+- Python: HTTP 403 (defended — referência)
+**Reprodução "after":**
+- Go: HTTP 403 "Forbidden" (sem corpo com segredo)
+- Node: HTTP 403 "Forbidden" (sem corpo com segredo)
+- Python: HTTP 403 (unchanged)
+- Arquivo legítimo Go: HTTP 200 com conteúdo correto
+1. `internal/serve/api_file.go`: dois estágios — léxico (filepath.Clean/Join) → físico (EvalSymlinks na raiz e no arquivo). Qualquer falha de EvalSymlinks → 404.
+2. `npm/src/serve/api_file.js`: dois estágios — léxico (path.resolve) → físico (realpathSync.native na raiz e no arquivo). Falha → 404.
+3. `npm/src/commands/serve.js`: REAL_STATIC_DIR pré-computado no load + contenção física em serveStatic (M-03).
+4. `internal/serve/api_file_test.go`: TestFileHandler_SymlinkEscape + TestFileHandler_SymlinkInsideRoot (2 testes)
+5. `npm/tests/serve_api.test.js`: symlink escape 403+sem corpo + symlink legítimo 200 (2 testes)
+6. `pypi/tests/test_serve_api.py`: test_symlink_escape_blocked_403_no_body + test_symlink_inside_root_allowed (2 testes)
+7. `scripts/check-serve-api-file-security.sh`: gate novo com falsificação (AC6) e varredura (AC7)
+- `go build ./...` → ok
+- `go test ./...` → ok (todos os pacotes)
+- `node npm/tests/serve_api.test.js` → 12 passed, 0 failed
+- `python3 -m pytest pypi/tests/` → 1722 passed, 66 subtests
+- `bash scripts/check-serve-api-file-security.sh` → 12 ok, 0 falhou
+- `trackfw validate` → exit 0
+**AC7 — varredura (lista fechada):**
+- Go: 1 sítio (api_file.go); Go usa embed.FS para assets estáticos
+- Node: 2 sítios (api_file.js + serveStatic) — ambos corrigidos
+- Python: 2 sítios (api_file.py + _serve_static_file) — ambos já defendidos
+## Sessão 2026-09-12 — ares-tf (INÍCIO: set -e mata diagnóstico — check-serve-api-file-security.sh)
+Worktree `trackfw-seguranca`, branch `fix/serve-api-file-valida-o-caminho-lexico` (PR #332). Escopo: somente `scripts/check-serve-api-file-security.sh`. Defeito: captura da linha 267 (`NODE_ALL=$(node ...)`) sem `|| true` — `set -euo pipefail` mata o script antes de alcançar o bloco de diagnóstico. Fix: adicionar `|| true` na captura Node, varredura de todas as capturas `VAR=$(...)` do script.
+## Sessão 2026-09-12 — ares-tf (FIM: set -e mata diagnóstico — check-serve-api-file-security.sh)
+Worktree `trackfw-seguranca`, branch `fix/serve-api-file-valida-o-caminho-lexico` (PR #332). Escopo: somente `scripts/check-serve-api-file-security.sh`, linha 267. Defeito corrigido: `NODE_ALL=$(node ... 2>&1)` sem `|| true` → `set -euo pipefail` matava o script em silêncio antes de alcançar o bloco if/else de diagnóstico. Fix: adicionado `|| true` na mesma forma das irmãs Go (linhas 132 e 144). Prova antes: script termina com exit=1, sem mensagem. Prova depois: bloco `fail "AC2 Node serveStatic attack arm falhou"` é impresso, script continua. Validações: (1) gate direto RC=0, 15 ok, 0 falhou; (2) `make parity-rest` RC=0, 15 ok. Varredura: ver relatório de varredura no handoff ao arquiteto.
+
+---
+
+## ⏳ PENDÊNCIAS DA RELEASE v7.6.0 — decididas pelo KG, executar na ordem
+
+**1. Mergear o #332** (H-01 leitura arbitrária + M-03 estáticos). Não fecha issue nenhum — verificado:
+nenhum dos 17 abertos toca `serve`/`api_file`/symlink/static/traversal, e o corpo do PR corretamente
+não declara `Closes`.
+
+**2. Cortar a `v7.6.0`** — CHANGELOG + bump nos 3 pacotes (hoje `7.5.1`) + `make check-required-full`
+(pré-condição da tag; exige credencial de mantenedor, é do KG).
+
+**3. 🔴 SÓ DEPOIS DA TAG: abrir H-01 e H-02 como issues JÁ FECHADOS**, referenciando PR e REQ.
+
+Decisão do KG em 2026-09-12. **Por que depois e não antes:** enquanto a correção não está em versão
+publicada, um issue público descrevendo leitura arbitrária de arquivo é mapa para quem quiser explorar.
+Depois da tag, é histórico — e dá rastro visível de que houve correção de segurança e em qual versão.
+
+⚠️ **Este bloco existe porque "alguém lembra depois" falhou hoje**: o `Closes #315` foi escrito na
+abertura do #330 e os `Closes #320`/`Closes #328` nunca foram acrescentados — os dois issues tiveram de
+ser fechados à mão após o merge. **Intenção declarada não é gate.**
