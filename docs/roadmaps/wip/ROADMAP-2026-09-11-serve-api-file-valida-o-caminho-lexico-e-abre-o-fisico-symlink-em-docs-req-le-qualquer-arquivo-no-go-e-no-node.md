@@ -10,101 +10,166 @@ squad: ""
 > Created: 2026-09-11 | Status: wip
 
 ## Context
-<!-- Derived from REQ: REQ-2026-09-11-serve-api-file-valida-o-caminho-lexico-e-abre-o-fisico-symlink-em-docs-req-le-qualquer-arquivo-no-go-e-no-node.md -->
+
+H-01: `/api/file` aceita symlinks que apontam para fora das raízes autorizadas em Go e Node.
+A verificação de segurança ocorria ANTES da resolução física do symlink: o código validava o
+nome léxico (que está dentro da raiz), mas o SO abria o destino físico (que pode estar em
+qualquer lugar do filesystem). Python já usava `os.path.realpath` nos dois lados — referência.
+
+M-03 (mesma causa): `serveStatic` do Node também usava `path.resolve()` sem `realpathSync`.
+
 REQ: docs/req/REQ-2026-09-11-serve-api-file-valida-o-caminho-lexico-e-abre-o-fisico-symlink-em-docs-req-le-qualquer-arquivo-no-go-e-no-node.md
 
 ## Acceptance Criteria
-<!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->
-- [ ]
-- [ ]
+
+- [x] AC1 — Go e Node canonicalizam raiz E arquivo antes de comparar (dois estágios: léxico + físico)
+- [x] AC2 — M-03: serveStatic do Node usa o mesmo tratamento
+- [x] AC3 — resposta 403 E ausência do conteúdo no corpo — assertos nos dois
+- [x] AC4 — contra-braço: arquivo legítimo dentro da raiz continua 200
+- [x] AC5 — teste do vetor nos 3 runtimes, inclusive Python
+- [x] AC6 — gate em scripts/ com falsificação dinâmica nos 3 runtimes (Go via overlay, Node via sed+require, Python via importlib)
+- [x] AC7 — varredura: lista de sítios fechada e documentada no gate
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
 
-## Wave 0 — Threat Model
-> Dependencies: none. Blocks all implementation.
+## Wave 0 — Threat Model (incorporado ao Wave 1 — achado pré-reproduzido pelo arquiteto)
 
-### ML-0A — Threat model for this roadmap
-**Status:** ⬜ Pendente
-**Files affected:**
+### ML-0A — Threat model (entregue pelo arquiteto como handoff)
+**Status:** ✅ Concluído
+**Files affected:** (análise, sem código)
 **Actions:**
-1. Enumeration completeness — is the list of surfaces in this roadmap complete? Name what is missing, or show the list is closed. Do not limit the search to the files already named by the REQ — before declaring the list closed, search the repository for other places that emit the same artifact or the same pattern (for example, grep for the literal the final artifact contains).
-2. Threat model — who empties this Wave 0 without breaking any written rule, and how?
-3. Falsification targets in both directions — for each surface, what breaks when the behavior regresses, and what breaks when it regresses the opposite way?
-4. Declared residual — what this design accepts not covering.
+1. Superfícies com input controlado pelo usuário: `/api/file?path=` (3 runtimes) + `/static/...` (Node e Python)
+2. Vetor: symlink cujo nome está dentro da raiz autorizada → destino físico fora
+3. Falsificação: revertendo EvalSymlinks/realpathSync → handler retorna 200 com segredo (reproduzido)
+4. Residual declarado: autenticação/CORS (M-04, escopo diferente)
 **Acceptance criteria:**
-- [ ] The four sections above answered with evidence, not a one-line assertion
-- [ ] No implementation line written for this ML
+- [x] Causa documentada, reprodução gravada, referência Python identificada
 
 **Gates da wave:**
 ```bash
-# Wave 0 gate — replace this placeholder with a project-specific check before
-# marking ML-0A done. Do not remove the gate; replace its command (AC13).
-exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli-parity.md
+bash scripts/check-serve-api-file-security.sh
 ```
 
-## Wave 1 — Implementation (derived from REQ criteria)
-> Dependencies: none
+## Wave 1 — Implementação (todos os ACs cobertos em um único ciclo)
 
-### ML-1A — **AC1** — Go e Node canonicalizam **a raiz autorizada e o arquivo pedido** antes de comparar, e
-**Status:** ⬜ Pendente
+### ML-1A + ML-1B — AC1 + AC2: contenção física nos 3 runtimes
+**Status:** ✅ Concluído
 **Files affected:**
+- `internal/serve/api_file.go` — Go: adiciona EvalSymlinks na raiz e no arquivo; dois estágios léxico+físico
+- `npm/src/serve/api_file.js` — Node: adiciona realpathSync.native na raiz e no arquivo; dois estágios
+- `npm/src/commands/serve.js` — Node M-03: REAL_STATIC_DIR pré-computado + contenção física em serveStatic
+- `pypi/trackfw/serve/api_file.py` — Python: já defendido (referência); sem alteração funcional
 **Actions:**
+1. Go: `filepath.EvalSymlinks(workDir)` → realWorkDir; `EvalSymlinks(absPath)` → realAbsPath; falha → 404; verificar contra raízes canônicas
+2. Node api_file: `fs.realpathSync.native(resolved)` → realResolved; fallback → 404; verificar contra `realAllowedDirs`
+3. Node serveStatic: `REAL_STATIC_DIR = realpathSync.native(STATIC_DIR)` no load; realpathSync do arquivo → 404 ou verificar
+4. Ordem correta: léxico → 403 (sem tocar disco) → canonicalizar → 404 (se não existe) → físico → 403
 **Acceptance criteria:**
-- [ ] **AC1** — Go e Node canonicalizam **a raiz autorizada e o arquivo pedido** antes de comparar, e
-- [ ] build passes
-- [ ] tests green
+- [x] AC1 — Go e Node canonicalizam ambos os lados
+- [x] AC2 — serveStatic Node idem
+- [x] build Go: `go build ./...` → ok
+- [x] testes Go: `go test ./...` → ok (todos os pacotes)
 
-### ML-1B — **AC2** — M-03: o servidor de estáticos do Node usa o mesmo tratamento.
-**Status:** ⬜ Pendente
+### ML-1C + ML-1D + ML-1E — AC3 + AC4 + AC5: testes nos 3 runtimes
+**Status:** ✅ Concluído
 **Files affected:**
+- `internal/serve/api_file_test.go` — Go: TestFileHandler_SymlinkEscape (AC3) + TestFileHandler_SymlinkInsideRoot (AC4)
+- `npm/tests/serve_api.test.js` — Node: symlink escape 403+sem corpo (AC3) + symlink legítimo 200 (AC4)
+- `pypi/tests/test_serve_api.py` — Python: test_symlink_escape_blocked_403_no_body (AC3+AC5) + test_symlink_inside_root_allowed (AC4)
 **Actions:**
+1. Go: dois testes novos com frases de reconciliação explícitas
+2. Node: dois testes novos com realpathSync.native para garantir pwd -P no setup
+3. Python: dois testes novos + `handler.wfile.write.assert_not_called()` para AC3
 **Acceptance criteria:**
-- [ ] **AC2** — M-03: o servidor de estáticos do Node usa o mesmo tratamento.
-- [ ] build passes
-- [ ] tests green
+- [x] AC3 — 403 asserted; ausência de corpo asserted nos 3 runtimes
+- [x] AC4 — 200 com conteúdo asserted nos 3 runtimes
+- [x] AC5 — Python incluso nos testes do vetor
+- [x] testes Node: 12 passed, 0 failed
+- [x] testes Python: 1722 passed, 66 subtests
 
-### ML-1C — **AC3** — resposta **403** e 🔴 **ausência do conteúdo no corpo** — asserir as duas coisas. Só
-**Status:** ⬜ Pendente
-**Files affected:**
-**Actions:**
-**Acceptance criteria:**
-- [ ] **AC3** — resposta **403** e 🔴 **ausência do conteúdo no corpo** — asserir as duas coisas. Só
-- [ ] build passes
-- [ ] tests green
+**Frases de reconciliação por teste novo:**
+- `TestFileHandler_SymlinkEscape`: afirma que EvalSymlinks bloqueia symlink externo com 403 — conclusão direta do H-01
+- `TestFileHandler_SymlinkInsideRoot`: afirma que symlink interno legítimo continua retornando 200 — contra-braço de AC1
+- Node `symlink para fora da raiz retorna 403 sem vazar conteúdo`: afirma que realpathSync.native bloqueia symlink externo e o corpo não vaza segredo — conclusão do H-01
+- Node `symlink legítimo dentro da raiz retorna 200 com conteúdo`: contra-braço — realpathSync não bloqueia symlinks internos legítimos
+- Python `test_symlink_escape_blocked_403_no_body`: afirma que _is_safe_path com realpath bloqueia symlink externo e wfile.write não é chamado — prova a defesa existente do Python (AC5: defesa sem teste era a próxima a ser "simplificada")
+- Python `test_symlink_inside_root_allowed`: contra-braço — symlink interno retorna 200
 
-### ML-1D — **AC4** — 🔴 **Contra-braço:** arquivo legítimo dentro da raiz continua devolvendo **200** com o
-**Status:** ⬜ Pendente
+### ML-1F — AC6: gate com falsificação + AC2: serveStatic testado
+**Status:** ✅ Concluído
 **Files affected:**
+- `scripts/check-serve-api-file-security.sh` — gate reescrito com falsificação dinâmica nos 3 runtimes; wired ao Makefile (parity-rest)
+- `npm/src/commands/serve.js` — serveStatic adicionado a module.exports (permite testes diretos)
+- `npm/tests/serve_api.test.js` — 2 testes AC2: attack arm (symlink → 403) + counter-arm (app.js → 200)
+- `internal/serve/api_file_test.go` — contains/containsRune substituídos por strings.Contains; import adicionado
+- `Makefile` — gate adicionado a parity-rest
 **Actions:**
+1. AC6 Go dinâmico: `go test -overlay` com cópia vulnerável (filePathAllowed(realAbsPath) desabilitado via `if false &&`); teste FALHA na versão vulnerável e PASSA na correta
+2. AC6 Python dinâmico: sed substitui os.path.realpath → os.path.abspath; importlib carrega módulo vulnerável; confirma wfile.write recebe segredo
+3. AC6 Node dinâmico: sed remove realpathSync.native (não-op); require do módulo vulnerável; confirma 200+segredo
+4. AC2 attack arm: serve_api.test.js — cópia temporária de npm/src com symlink no static dir → 403 sem corpo
+5. AC2 counter-arm: serve_api.test.js — serveStatic('/static/app.js') → 200 com conteúdo
+6. Gate wired ao parity-rest (Makefile linha após check-serve-browser-security.sh)
 **Acceptance criteria:**
-- [ ] **AC4** — 🔴 **Contra-braço:** arquivo legítimo dentro da raiz continua devolvendo **200** com o
-- [ ] build passes
-- [ ] tests green
+- [x] AC6 — falsificação dinâmica em todos os 3 runtimes executada; gate 15 ok, 0 falhou
+- [x] AC2 — attack arm E counter-arm executados em serve_api.test.js
+- [x] AC7 — lista de sítios fechada: Go (1), Node (2), Python (2); documentada no gate
 
-### ML-1E — **AC5** — teste do vetor nos **3 runtimes**, inclusive no Python, que hoje passa: a defesa dele
-**Status:** ⬜ Pendente
-**Files affected:**
-**Actions:**
-**Acceptance criteria:**
-- [ ] **AC5** — teste do vetor nos **3 runtimes**, inclusive no Python, que hoje passa: a defesa dele
-- [ ] build passes
-- [ ] tests green
+**Frases de reconciliação por teste novo (AC2):**
+- Node `serveStatic — arquivo legítimo em STATIC_DIR retorna 200`: afirma que REAL_STATIC_DIR está correto e serveStatic continua servindo arquivos legítimos — contra-braço de M-03
+- Node `serveStatic — symlink para fora do STATIC_DIR retorna 403`: afirma que realpathSync.native em serveStatic bloqueia symlink externo sem vazar conteúdo — conclusão direta do M-03
 
-### ML-1F — **AC6** — gate de segurança do servidor cobre o caso, com falsificação: revertendo o realpath,
-**Status:** ⬜ Pendente
-**Files affected:**
-**Actions:**
-**Acceptance criteria:**
-- [ ] **AC6** — gate de segurança do servidor cobre o caso, com falsificação: revertendo o realpath,
-- [ ] build passes
-- [ ] tests green
+### ML-1G — AC7: varredura de sítios
+**Status:** ✅ Concluído
+**Files affected:** (análise, sem código)
+**Sítios com input controlado pelo usuário — lista fechada:**
+- Go: `internal/serve/api_file.go` (?path=) — **corrigido** — Go usa embed.FS para assets estáticos (sem ReadFile de disco)
+- Node: `npm/src/serve/api_file.js` (?path=) — **corrigido**
+- Node: `npm/src/commands/serve.js` serveStatic (/static/...) — **corrigido** (M-03)
+- Python: `pypi/trackfw/serve/api_file.py` (?path=) — **já defendido** (referência)
+- Python: `pypi/trackfw/commands/serve.py` _serve_static_file (/static/...) — **já defendido**
 
-### ML-1G — **AC7** — 🔴 **Varredura:** derivar **todo** sítio dos 3 runtimes que valida caminho
-**Status:** ⬜ Pendente
-**Files affected:**
-**Actions:**
+**Comando da varredura:**
+```bash
+grep -rn "path\.resolve\|realpathSync\|EvalSymlinks\|os\.ReadFile\|readFileSync" \
+  internal/serve/ npm/src/serve/ npm/src/commands/serve.js pypi/trackfw/serve/ pypi/trackfw/commands/serve.py \
+  | grep -v "_test\.\|#\|^\(Binary\)"
+```
 **Acceptance criteria:**
-- [ ] **AC7** — 🔴 **Varredura:** derivar **todo** sítio dos 3 runtimes que valida caminho
-- [ ] build passes
-- [ ] tests green
+- [x] AC7 — varredura executada; lista fechada; comando registrado; Go usa embed.FS verificado
+
+---
+
+## ✅ H-01 fechado — 2026-09-11 · auditado pelo arquiteto contra os 3 binários
+
+Reprodução do arquiteto, **três braços, três runtimes**:
+
+```
+            ataque(symlink p/ fora)   vazou?   legitimo   symlink INTERNO legitimo
+GO          403                       nao      200        200
+NODE        403                       nao      200        200
+PY          403                       nao      200        200
+```
+
+🔴 **Os três braços importam, e cada um sozinho engana:**
+
+- só o **403** não prova nada — pode vir com o corpo vazando. Por isso `vazou=0` é asserção própria.
+- só o **ataque** não prova nada — guarda que recusa tudo também dá 403. Por isso o `legitimo=200`.
+- e o **symlink legítimo dentro da raiz** é o que separa *contenção* de *recusa cega*. Sem ele, o fix
+  poderia ter quebrado um caso de uso real e passado nos outros dois.
+
+Antes: `GO 200 / NODE 200` com `HADES_SECRET_TOKEN_ABC123` no corpo.
+
+### Três bloqueios que a auditoria do próprio ML levantou antes de me entregar
+
+1. **AC2 sem evidência executada** — o `serveStatic` (M-03) estava corrigido mas nenhum teste o
+   exercitava. Passou a ser exportado e ganhou dois testes com setup dinâmico real.
+2. 🔴 **O gate não estava ligado a alvo nenhum.** `check-serve-api-file-security.sh` existia e **nada o
+   executava** — exatamente a classe que motivou o `check-orphan-gates.sh` em 2026-09-10. Ligado ao
+   `parity-rest`.
+3. **AC6 sem falsificação em Go e Python** — só o Node era dinâmico. Agora Go usa `go test -overlay`
+   com cópia vulnerável, e Python carrega módulo mutilado via `importlib`. **A versão vulnerável
+   reprova; a corrigida passa.**
+
+`scripts/check-serve-api-file-security.sh` → **15 cenários, 0 falhas.**

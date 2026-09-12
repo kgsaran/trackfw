@@ -244,6 +244,87 @@ class TestFileAPI:
         traversal = str(tmp_path / "docs" / "roadmaps" / ".." / ".." / "etc" / "passwd")
         assert _is_safe_path(base, traversal) is False
 
+    def test_symlink_escape_blocked_403_no_body(self, tmp_path, monkeypatch):
+        """AC1 + AC3 + AC5 — symlink dentro de req_dir apontando para fora retorna
+        403 e NÃO retorna conteúdo do destino externo.
+
+        Reconciliação: afirma que _is_safe_path usa os.path.realpath e bloqueia
+        symlinks cujo destino físico está fora das raízes autorizadas — defesa
+        central do H-01, documentada como referência para os demais runtimes.
+        """
+        # Arquivo secreto fora da raiz autorizada
+        outside_dir = tmp_path / "outside"
+        outside_dir.mkdir()
+        secret_file = outside_dir / "secret.txt"
+        secret_file.write_text("HADES_SECRET_TOKEN_ABC123", encoding="utf-8")
+
+        # Raiz autorizada com symlink apontando para fora
+        req_dir = tmp_path / "docs" / "req"
+        req_dir.mkdir(parents=True)
+        link_path = req_dir / "link.md"
+        link_path.symlink_to(secret_file)
+
+        monkeypatch.chdir(tmp_path)
+
+        from urllib.parse import urlparse
+        rel_path = str(link_path.relative_to(tmp_path))
+        parsed_url = urlparse(f"/?path={rel_path}")
+
+        handler = self._make_handler_mock()
+        cfg = {
+            "adr_dirs": ["docs/adr"],
+            "req_dir": "docs/req",
+            "roadmap_dir": "docs/roadmaps",
+        }
+
+        get_file(cfg, parsed_url, handler)
+
+        # AC3: deve chamar send_error(403, ...)
+        handler.send_error.assert_called_once()
+        assert handler.send_error.call_args[0][0] == 403
+        # AC3: wfile.write NÃO deve ser chamado (conteúdo não deve ser retornado)
+        handler.wfile.write.assert_not_called()
+
+    def test_symlink_inside_root_allowed(self, tmp_path, monkeypatch):
+        """AC4 — symlink legítimo dentro de req_dir apontando para outro arquivo
+        dentro de req_dir deve continuar retornando 200 com conteúdo.
+
+        Reconciliação: afirma que symlinks internos legítimos não são bloqueados —
+        o contra-braço de AC1; sem ele, a guarda seria indistinguível de uma que
+        recusa tudo.
+        """
+        req_dir = tmp_path / "docs" / "req"
+        req_dir.mkdir(parents=True)
+
+        # Arquivo real dentro da raiz
+        real_file = req_dir / "REQ-real.md"
+        want_content = "# REQ real\nConteúdo legítimo.\n"
+        real_file.write_text(want_content, encoding="utf-8")
+
+        # Symlink também dentro da raiz apontando para o arquivo real
+        link_path = req_dir / "REQ-link.md"
+        link_path.symlink_to(real_file)
+
+        monkeypatch.chdir(tmp_path)
+
+        from urllib.parse import urlparse
+        rel_path = str(link_path.relative_to(tmp_path))
+        parsed_url = urlparse(f"/?path={rel_path}")
+
+        handler = self._make_handler_mock()
+        cfg = {
+            "adr_dirs": ["docs/adr"],
+            "req_dir": "docs/req",
+            "roadmap_dir": "docs/roadmaps",
+        }
+
+        get_file(cfg, parsed_url, handler)
+
+        handler.send_response.assert_called_once_with(200)
+        handler.wfile.write.assert_called_once()
+        written = handler.wfile.write.call_args[0][0]
+        assert want_content.encode("utf-8") in written
+
 
 # ---------------------------------------------------------------------------
 # api_metrics

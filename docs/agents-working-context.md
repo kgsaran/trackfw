@@ -36689,3 +36689,54 @@ Continuação da sessão 2026-09-12a. Revisor identificou 4 bloqueadores antes d
 - Python mock SKIP → `skipped=1` ✓
 - Grep bypass → vazio ✓
 **Pendente:** veredito REAL_ENV do próximo run de CI (arquiteto dispara).
+## Sessão 2026-09-11w — apolo-tf (Backend) — H-01/M-03: revisão de auditoria — AC2+AC6 dinâmico — CONCLUÍDO (aguarda auditoria Zeus)
+Branch `fix/serve-api-file-valida-o-caminho-lexico`. Revisão pós-auditoria: 3 bloqueadores identificados pelo revisor.
+**Bloqueador 1 (AC2 — serveStatic):** zero evidência executada para AC2. Corrigido:
+- `npm/src/commands/serve.js`: `serveStatic` adicionado ao module.exports
+- `npm/tests/serve_api.test.js`: 2 novos testes: attack arm (symlink → 403 sem corpo) + counter-arm (app.js → 200 com conteúdo)
+**Bloqueador 2 (gate não wired):** gate existia mas não era chamado por nenhum target. Corrigido:
+- `Makefile`: `scripts/check-serve-api-file-security.sh` adicionado a parity-rest (após check-serve-browser-security.sh)
+**Bloqueador 3 (AC6 estático):** falsificações Go e Python eram estáticas (grep). Corrigido — falsificação dinâmica nos 3 runtimes:
+- Go: `go test -overlay` com cópia vulnerável (`if false &&` desabilita check físico). Teste FALHA na versão vulnerável, PASSA na correta.
+- Python: `sed os.path.realpath → os.path.abspath` + importlib; get_file() no módulo vulnerável vaza segredo via wfile.write.
+- Node: já era dinâmico (inalterado).
+**Minor:** `contains`/`containsRune` em `api_file_test.go` substituídos por `strings.Contains`; import `strings` adicionado.
+**Evidências pós-revisão:**
+- `go test ./...` → todos os pacotes ok (internal/serve: 0.353s)
+- `node npm/tests/serve_api.test.js` → 14 passed, 0 failed
+- `PYTHONPATH=pypi python3 -m pytest pypi/tests/` → 1722 passed, 66 subtests
+- `bash scripts/check-serve-api-file-security.sh` → 15 ok, 0 falhou
+- `env -u FORCE_COLOR make parity-rest` → 1 falha (direction-b2/node — pré-autorizada); restante verde
+**Nota sobre FORCE_COLOR:** `make parity-rest` no terminal Claude (FORCE_COLOR=3) mostra falhas em branch-new-parity causadas por warning Node.js sobre NO_COLOR vs FORCE_COLOR. Não relacionado ao código. `env -u FORCE_COLOR make parity-rest` elimina essas falhas; resta apenas direction-b2/node pré-autorizada.
+**Frases de reconciliação (testes novos desta sessão):**
+- Node `serveStatic — arquivo legítimo em STATIC_DIR retorna 200`: REAL_STATIC_DIR correto + contra-braço de M-03
+- Node `serveStatic — symlink para fora do STATIC_DIR retorna 403`: realpathSync.native bloqueia symlink externo — conclusão M-03
+## Sessão 2026-09-11v — apolo-tf (Backend) — H-01/M-03: serve /api/file symlink escape + static symlink (3 runtimes) — CONCLUÍDO (aguarda auditoria Zeus)
+Branch `fix/serve-api-file-valida-o-caminho-lexico`. Escopo: `internal/serve/api_file.go`, `npm/src/serve/api_file.js`, `npm/src/commands/serve.js`, `pypi/trackfw/serve/api_file.py` e testes nos 3 runtimes + gate em `scripts/`.
+**Causa raiz confirmada:** verificação de segurança ocorria antes da resolução física do symlink. Go usava `filepath.Clean`+`filepath.Join` (léxico); Node usava `path.resolve()` (léxico). Python usava `os.path.realpath` em ambos os lados — referência.
+**Reprodução "before":**
+- Go: HTTP 200 `HADES_SECRET_TOKEN_ABC123` (vulnerable)
+- Node: HTTP 200 `HADES_SECRET_TOKEN_ABC123` (vulnerable)
+- Python: HTTP 403 (defended — referência)
+**Reprodução "after":**
+- Go: HTTP 403 "Forbidden" (sem corpo com segredo)
+- Node: HTTP 403 "Forbidden" (sem corpo com segredo)
+- Python: HTTP 403 (unchanged)
+- Arquivo legítimo Go: HTTP 200 com conteúdo correto
+1. `internal/serve/api_file.go`: dois estágios — léxico (filepath.Clean/Join) → físico (EvalSymlinks na raiz e no arquivo). Qualquer falha de EvalSymlinks → 404.
+2. `npm/src/serve/api_file.js`: dois estágios — léxico (path.resolve) → físico (realpathSync.native na raiz e no arquivo). Falha → 404.
+3. `npm/src/commands/serve.js`: REAL_STATIC_DIR pré-computado no load + contenção física em serveStatic (M-03).
+4. `internal/serve/api_file_test.go`: TestFileHandler_SymlinkEscape + TestFileHandler_SymlinkInsideRoot (2 testes)
+5. `npm/tests/serve_api.test.js`: symlink escape 403+sem corpo + symlink legítimo 200 (2 testes)
+6. `pypi/tests/test_serve_api.py`: test_symlink_escape_blocked_403_no_body + test_symlink_inside_root_allowed (2 testes)
+7. `scripts/check-serve-api-file-security.sh`: gate novo com falsificação (AC6) e varredura (AC7)
+- `go build ./...` → ok
+- `go test ./...` → ok (todos os pacotes)
+- `node npm/tests/serve_api.test.js` → 12 passed, 0 failed
+- `python3 -m pytest pypi/tests/` → 1722 passed, 66 subtests
+- `bash scripts/check-serve-api-file-security.sh` → 12 ok, 0 falhou
+- `trackfw validate` → exit 0
+**AC7 — varredura (lista fechada):**
+- Go: 1 sítio (api_file.go); Go usa embed.FS para assets estáticos
+- Node: 2 sítios (api_file.js + serveStatic) — ambos corrigidos
+- Python: 2 sítios (api_file.py + _serve_static_file) — ambos já defendidos
