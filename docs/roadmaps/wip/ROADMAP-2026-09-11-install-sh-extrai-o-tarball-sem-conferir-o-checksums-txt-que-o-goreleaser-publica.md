@@ -99,3 +99,43 @@ exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli
 - [ ] **AC6** — gate que reprova se o install.sh voltar a extrair sem conferir.
 - [ ] build passes
 - [ ] tests green
+
+---
+
+## ✅ Entregue — 2026-09-11 · auditado pelo arquiteto
+
+**Ordem verificada por leitura, não por relatório** (`scripts/install.sh`):
+
+```
+166  Erro: nem sha256sum nem shasum encontrados        AC5 — falha fechada
+187  Erro: checksum ausente                            AC2 — estado 1
+191  Erro: checksum duplicado                          AC2 — estado 2
+204  Erro: checksum divergente                         AC2 — estado 3
+211  Checksum OK: <hash>
+214  tar -xzf                                          ← extração DEPOIS da conferência
+```
+
+`scripts/check-install-checksum.sh` → **9 cenários OK**, incluindo o braço de falsificação:
+removendo a verificação, um binário **MALICIOUS é instalado e executa** — 🔴 prova de que o gate é
+*load-bearing*, e não decorativo.
+
+### 🔴 Quatro vacuidades que o próprio ML pegou no gate que ele mesmo escreveu
+
+Vale registrar, porque é a disciplina que faltou em vários MLs de hoje:
+
+1. **O `sed` de remoção apagava até o EOF** se o padrão final não casasse. O script mutilado saía 0 sem
+   binário, e a asserção `RC=0 OU binário presente` reportava **OK por vacuidade**. Corrigido com
+   guarda de sanidade: o mutilado **não** pode conter `Checksum OK` **e precisa** conter `tar -xzf`.
+2. **O `grep` de "ferramenta de hash ausente" era largo demais** (`checksum\|hash\|verifica`) e casava
+   com a mensagem de *falha de download* — uma falha de rede satisfaria vacuamente o cenário. Trocado
+   pelo literal exato.
+3. **O ramo `wget` nunca era exercitado** — todo cenário achava `curl` primeiro no PATH. Cenário C7 com
+   PATH sem `curl`.
+4. **A cláusula "mesma tag" do AC1 não era verificada.** Os stubs passaram a registrar cada URL pedida,
+   e o cenário asserta `/v7.3.0/` na URL do `checksums.txt`.
+
+### Nota de escopo
+
+O `make parity-rest` reprova nesta worktree por **`direction-b2/node`**, e **não é desta frente**: a
+branch nasceu antes do ML-1E-b. Rebase sobre a frente A resolve. Os arquivos desta frente
+(`install.sh`, `check-install-checksum.sh`, `Makefile`) não tocam nada do cenário que falha.

@@ -84,6 +84,7 @@ parity-rest: build
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-agents-install-yaml-parity.sh
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-thirdparty-parity.sh
 	scripts/check-install-version-pin.sh
+	scripts/check-install-checksum.sh
 	scripts/check-ci-workflow-pin-parity.sh
 	scripts/check-ci-workflow-job-id-collision.sh
 	GO_BIN=$(BUILD_DIR)/$(BINARY) HASH_CMD_BIN="$(HASH_CMD)" scripts/check-roadmap-barrier-contract.sh
