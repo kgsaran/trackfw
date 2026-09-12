@@ -23,6 +23,63 @@ duas — a primeira diz *se dá*, a segunda diz *se vale*.
 - [ ] AC7 — contra-braço: sem pacote de plataforma, aborta nomeando a plataforma
 - [ ] AC8–AC9 — saída e exit code byte-idênticos ao nativo, nos 3 SOs
 - [ ] AC10–AC13 — quanto do backlog (REQs **e** issues) desaparece, barateia, e o que passa a existir
+- [ ] AC14 — quantos sítios de versão o protótipo cria (a opção D **agrava** o #338)
+
+## Anexo — o molde, medido nos pacotes de referência (2026-09-12)
+
+Os dois pacotes foram **baixados e abertos**, não lidos em documentação. Isso muda o ML-1A e o ML-1B
+de *"descobrir como faz"* para *"reproduzir um molde conhecido"*, e reduz o risco da Trilha 1.
+
+### PyPI — o wheel do `gh-bin` não tem uma linha de Python
+
+```
+gh_bin-2.100.0.dist-info/{RECORD,WHEEL,METADATA}
+gh_bin-2.100.0.data/scripts/gh      ← Mach-O 64-bit executable arm64
+
+Root-Is-Purelib: false
+Tag: py3-none-macosx_11_0_arm64
+```
+
+`find -name "*.py"` → **vazio**.
+
+🔴 **O mecanismo é o `.data/scripts/` do próprio formato wheel**: o `pip` põe o conteúdo **direto no
+PATH**. Sem launcher, sem `console_scripts`, sem import. `Root-Is-Purelib: false` é o que sinaliza.
+
+**Consequência:** `pypi/trackfw/` (27.472 linhas) é **deletado e nada o substitui**. Para o canal
+pip, a opção D é **literalmente só mudança de publicação**.
+
+### npm — a casquinha é pequena, e o essencial são três linhas
+
+`optionalDependencies`: **26** entradas no esbuild, uma por plataforma, cada uma com `os`/`cpu` para
+o npm instalar só a que casa. O miolo de `bin/esbuild`:
+
+```js
+let platformKey = `${process.platform} ${os.arch()} ${os.endianness()}`
+// resolve o pacote de plataforma; fallback para Yarn PnP
+require("child_process").execFileSync(binPath, process.argv.slice(2), { stdio: "inherit" })
+```
+
+⚠️ O `lib/main.js` do esbuild tem 2.536 linhas, mas é a **API JavaScript programática** dele. O
+trackfw **não expõe API** — a nossa casquinha é só o `bin/`, ordem de **200 linhas**.
+
+🔴 **Detalhe que decide o AC2:** o esbuild **mantém** `postinstall: node install.js`, mas a
+resolução real é por `optionalDependencies` — é por isso que funciona com `--ignore-scripts`.
+**Reproduzir essa separação.** Se a casquinha depender do postinstall para achar o binário, o AC2
+reprova, e reprova certo.
+
+### 🔴 O que a opção D AGRAVA — e precisa entrar na conta da v8
+
+Hoje há **5 sítios de bump** de versão, e o cruzamento com o `CHANGELOG` só roda no `release tag` —
+é o **issue #338**, aberto pelo consumidor externo em 2026-09-12.
+
+Com N pacotes de plataforma no npm, **cada um carrega a própria versão**: os sítios passam de **5
+para 5+N**.
+
+**A opção D piora este issue em vez de resolvê-lo.** Não é escopo da validação corrigir, mas é
+escopo **contar**:
+
+- [ ] **AC14** — o relatório da Trilha 1 informa **quantos sítios de versão** o protótipo cria, e o
+      roadmap da v8 registra o #338 como pré-requisito, não como consequência descoberta depois.
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
@@ -32,7 +89,7 @@ duas — a primeira diz *se dá*, a segunda diz *se vale*.
 ## Trilha 1 — Prova técnica (protótipo descartável)
 
 ### ML-1A — **AC1–AC4** — pacote npm com `optionalDependencies`, sob restrição
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Arquivos afetados:** somente `prototype/` (novo, descartável). 🔴 **Nada de `npm/src/`.**
 **Ações:**
 1. Cross-compilar o binário Go para as plataformas do CI.
@@ -48,7 +105,7 @@ duas — a primeira diz *se dá*, a segunda diz *se vale*.
 **Reconciliação:** cada cenário declara qual conclusão do relatório ele afirma.
 
 ### ML-1B — **AC5** — wheel de plataforma no PyPI local
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:** somente `prototype/`.
 **Contexto:** `gh-bin` já faz isto com o `cli/cli` (Go) — 4 wheels `py3-none-<plataforma>`. Existe
 `go-to-wheel` (fev/2026) que cross-compila Go e emite as tags certas; avaliar antes de escrever do
@@ -60,7 +117,7 @@ puro é rejeitado pelo PyPI.**
 - [ ] Nenhum publish em pypi.org — 🔴 o PyPI **não permite reusar nome de arquivo**
 
 ### ML-1C — **AC6 + AC7** — os dois modos de falha conhecidos
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Ações:**
 1. **Braço do lockfile:** gerar `package-lock.json` no macOS, instalar no **Windows do CI**, exigir
    que o binário esteja lá. É o defeito conhecido de `optionalDependencies` + lockfile.
