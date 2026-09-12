@@ -1007,7 +1007,11 @@ jobs:
       # importado continua sendo o do repositório — só as deps de runtime vêm
       # do pacote instalado. Mesmo padrão do job `python` (zero drift: nomes
       # de dependência não são hardcodados aqui).
-      - run: python -m pip install --upgrade pip
+      # pytest: necessário para check-serve-api-file-security.sh (AC4, AC5, AC6
+      # Python). O job `python` instala explicitamente; este job não o instalava,
+      # causando "No module named pytest" reportado como FAIL de produto em vez
+      # de infraestrutura ausente.
+      - run: python -m pip install --upgrade pip pytest
       - run: python -m pip install pypi/
       - run: make parity-rest
         env:

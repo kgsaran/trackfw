@@ -2,6 +2,18 @@
 
 ---
 
+## Sessão 2026-09-12 — ares-tf (FIM: pytest ausente em parity-other-gates + guarda gate + symlink guards — PR #332)
+
+Branch `fix/serve-api-file-valida-o-caminho-lexico`. Entregue: (1) `quality.yml` — pytest adicionado ao pip install do job `parity-other-gates`; varredura confirmou único job afetado. (2) `scripts/check-serve-api-file-security.sh` — guarda de pré-requisito antes de AC7: verifica python3 e pytest separadamente; se ausente, aborta com `ERRO: ambiente incompleto` (exit 1), sem contabilizar FAIL de produto; não chama `ok()` para não inflar PASS/EXPECTED_PASS=15; falsificação: venv sem pytest → "ERRO: ambiente incompleto — pytest nao encontrado" RC=1; contra-braço: 15 ok, 0 falhou RC=0. (3) `internal/serve/symlink_helper_test.go` — criado (cópia do padrão de outros pacotes); 2 sítios em `api_file_test.go` substituídos por `symlinkOrSkip`. (4) `npm/tests/serve_api.test.js` — helper importado, wrapper `symlinkOrSkip`, runner atualizado para `SymlinkPrivilegeSkip`; 3 sítios substituídos; 14 passed RC=0. (5) `pypi/tests/test_serve_api.py` — `errno` importado, `_symlink_or_skip` adicionado, 2 sítios substituídos; 18 passed RC=0. check-symlink-privilege-guard RC=0. make parity-rest RC=0, zero FAILs. actionlint quality.yml limpo.
+
+---
+
+## Sessão 2026-09-12 — ares-tf (INÍCIO: pytest ausente em parity-other-gates + guarda gate + symlink guards — PR #332)
+
+Branch `fix/serve-api-file-valida-o-caminho-lexico`. Escopo: `.github/workflows/quality.yml` (job `parity-other-gates`), `scripts/check-serve-api-file-security.sh`, `internal/serve/api_file_test.go`, `npm/tests/serve_api.test.js`, `pypi/tests/test_serve_api.py`, novo `internal/serve/symlink_helper_test.go`. Defeitos: (1) job `parity-other-gates` não instala pytest → 3 asserções Python do gate acusam "FAIL Python ... test falhou" quando é infraestrutura ausente; (2) gate não distingue "pytest ausente" de "teste reprovou"; (3) 7 sítios em 3 arquivos de teste usam os.Symlink/fs.symlinkSync/symlink_to sem guarda de privilégio — flagrados por check-symlink-privilege-guard.sh.
+
+---
+
 ## Sessão 2026-09-12 — ares-tf (FIM: gzip ausente C7 + guarda de vacuidade — check-install-checksum.sh)
 
 Worktree `trackfw-seguranca`, branch `fix/install-sh-extrai-o-tarball-sem-conferir` (PR #331). Escopo: somente `scripts/check-install-checksum.sh`. Defeito: C7 monta PATH curado sem `gzip` — GNU tar no Linux faz fork de `gzip` para descomprimir `.gz`, causando `tar (child): gzip: Cannot exec`. Fix (1): adicionado `gzip` à lista essencial do loop C7; `gunzip` ligado oportunisticamente (opcional, pode ser wrapper em algumas distros). Fix (2): guarda de vacuidade em C7 — se utilitário essencial não for encontrado no sistema, `FAIL [C7/setup]: utilitario essencial ausente: <nome>` em vez de silenciar com `|| true`. Mesma guarda aplicada em C6 (sem `gzip`, desnecessário — install.sh falha no hash antes do tar). Varredura: linhas 271 e 523 (`$STUB_BIN:$PATH`) aumentam PATH herdado → herdam `gzip`, imunes; linhas 406 (C6) e 466 (C7) substituem PATH, apenas C7 atinge tar. Provas: (A) URL_LOG populado com URL correta — wget stub foi invocado; (B) remoção do stub wget → `install.sh: line 122: wget: command not found`; (C) `gzip_absent_probe` → guarda nomeia o utilitário ausente. macOS: GNU tar não instalado — evidência primária é log CI. Gate: 9 cenários OK RC=0. `make parity-rest` RC=0.

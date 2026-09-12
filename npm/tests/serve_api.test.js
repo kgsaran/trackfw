@@ -10,8 +10,22 @@ const { handleFile } = require('../src/serve/api_file')
 const { handleMetrics } = require('../src/serve/api_metrics')
 const { getAttention } = require('../src/serve/api_attention')
 const { serveStatic } = require('../src/commands/serve')
+const { symlinkOrSkip: _symlinkCore, SymlinkPrivilegeSkip } = require('./helpers/symlink')
 
-let passed = 0, failed = 0
+// Adapta o helper compartilhado para o harness customizado deste arquivo:
+// EPERM/EACCES → throws SymlinkPrivilegeSkip (capturado pelo runner como "pulado")
+// Qualquer outro erro → rethrows (capturado como falha)
+// Guarda de capacidade: distingue "sem privilégio" (skip) de "falhou por outro
+// motivo" (fail) — padrão do projeto, issue #315.
+function symlinkOrSkip (target, link) {
+  return _symlinkCore(target, link, (err) => {
+    throw new SymlinkPrivilegeSkip(
+      `criação de symlink exige Developer Mode (ou processo elevado) neste Windows: ${err.message}`
+    )
+  })
+}
+
+let passed = 0, failed = 0, skipped = 0
 const tests = []
 
 function test(name, fn) {
@@ -199,7 +213,7 @@ test('api_file — symlink para fora da raiz retorna 403 sem vazar conteúdo (AC
 
     // Symlink dentro de reqDir apontando para o arquivo externo
     const linkPath = path.join(reqDir, 'link.md')
-    fs.symlinkSync(secretFile, linkPath)
+    symlinkOrSkip(secretFile, linkPath)
 
     const cfg = { reqDir }
     const req = mockReq()
@@ -233,7 +247,7 @@ test('api_file — symlink legítimo dentro da raiz retorna 200 com conteúdo (A
 
     // Symlink também dentro da raiz apontando para o arquivo real
     const linkPath = path.join(reqDir, 'REQ-link.md')
-    fs.symlinkSync(realFile, linkPath)
+    symlinkOrSkip(realFile, linkPath)
 
     const cfg = { reqDir }
     const req = mockReq()
@@ -291,7 +305,7 @@ test('serveStatic — symlink para fora do STATIC_DIR retorna 403 sem vazar cont
     const secretFile = path.join(outside, 'secret.txt')
     fs.writeFileSync(secretFile, 'HADES_STATIC_SECRET_M03', 'utf8')
     const tmpStaticDir = path.join(tmpSrcDir, 'serve', 'static')
-    fs.symlinkSync(secretFile, path.join(tmpStaticDir, 'evil.js'))
+    symlinkOrSkip(secretFile, path.join(tmpStaticDir, 'evil.js'))
 
     // Cria versão modificada de serve.js com STATIC_DIR apontando para a cópia.
     // Patcha requires relativos para caminhos absolutos e resolve commander via abs path
@@ -416,10 +430,15 @@ test('api_attention — arquivo valido retorna active', () => {
       console.log('v', name)
       passed++
     } catch (e) {
-      console.error('x', name, e.message)
-      failed++
+      if (e instanceof SymlinkPrivilegeSkip) {
+        console.log(`- ${name} (pulado: ${e.message})`)
+        skipped++
+      } else {
+        console.error('x', name, e.message)
+        failed++
+      }
     }
   }
-  console.log(`\n${passed} passed, ${failed} failed`)
+  console.log(`\n${passed} passed, ${failed} failed${skipped ? ', ' + skipped + ' pulados' : ''}`)
   if (failed > 0) process.exit(1)
 })()

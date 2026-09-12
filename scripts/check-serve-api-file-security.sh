@@ -72,6 +72,27 @@ echo ""
 echo "=== check-serve-api-file-security.sh ==="
 echo ""
 
+# ─── Pré-requisitos ───────────────────────────────────────────────────────────
+# pytest é necessário para as asserções AC4, AC5 e AC6 (Python). Se ausente,
+# o gate não pode afirmar nada sobre esses braços e deve abortar com diagnóstico
+# claro em vez de reportar FAIL de produto (mesma classe de erro que
+# "não consegui procurar" ≠ "não achei" — issue recorrente neste projeto).
+# Verificação em duas etapas para distinguir "python3 ausente" de "pytest ausente".
+echo "── Pré-requisitos ────────────────────────────────────────────────────────"
+if ! command -v python3 >/dev/null 2>&1; then
+  printf '  ERRO: ambiente incompleto — python3 nao encontrado\n'
+  printf '        Este gate requer python3 com pytest instalado.\n'
+  exit 1
+fi
+if ! python3 -m pytest --version >/dev/null 2>&1; then
+  printf '  ERRO: ambiente incompleto — pytest nao encontrado (python3 = %s)\n' "$(command -v python3)"
+  printf '        Instale com: python -m pip install pytest\n'
+  printf '        Este gate nao pode afirmar nada sobre os bracos Python (AC4, AC5, AC6).\n'
+  exit 1
+fi
+printf '  --  python3 e pytest disponiveis (%s)\n' "$(python3 -m pytest --version 2>/dev/null)"
+echo ""
+
 # ─── AC7: Varredura de sítios ─────────────────────────────────────────────────
 # Comando: grep -rn "path.*resolve\|filepath\.Clean\|filepath\.Join\|os\.ReadFile\|readFileSync"
 # nos handlers serve de cada runtime e identificar todos os sítios que recebem

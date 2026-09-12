@@ -149,8 +149,10 @@ func TestFileHandler_SymlinkEscape(t *testing.T) {
 
 	// Symlink dentro de docs/req apontando para o arquivo secreto externo
 	linkPath := filepath.Join(reqDir, "link.md")
-	if err := os.Symlink(secretFile, linkPath); err != nil {
-		t.Fatalf("Symlink: %v", err)
+	// symlinkOrSkip: guarda de capacidade — distingue "sem privilégio" (skip)
+	// de "falhou por outro motivo" (fail). Issue #315, padrão do projeto.
+	if !symlinkOrSkip(t, secretFile, linkPath) {
+		return
 	}
 
 	chdir(t, base)
@@ -193,8 +195,10 @@ func TestFileHandler_SymlinkInsideRoot(t *testing.T) {
 
 	// Symlink também dentro da raiz, apontando para o arquivo real
 	linkPath := filepath.Join(reqDir, "REQ-link.md")
-	if err := os.Symlink(realFile, linkPath); err != nil {
-		t.Fatalf("Symlink: %v", err)
+	// symlinkOrSkip: guarda de capacidade — distingue "sem privilégio" (skip)
+	// de "falhou por outro motivo" (fail). Issue #315, padrão do projeto.
+	if !symlinkOrSkip(t, realFile, linkPath) {
+		return
 	}
 
 	chdir(t, base)

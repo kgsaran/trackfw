@@ -5,6 +5,7 @@ api_file.py e api_metrics.py (ML-4C).
 Usa pytest + tmp_path fixture para criar estruturas temporárias.
 """
 
+import errno
 import os
 import sys
 from datetime import datetime
@@ -24,6 +25,32 @@ from trackfw.serve.api_attention import get_attention
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _symlink_or_skip(target: str, link_path: str) -> None:
+    """Cria symlink em link_path apontando para target.
+
+    Se a criação falhar por falta do privilégio que o Windows exige
+    (Developer Mode ou processo elevado — WinError 1314,
+    ERROR_PRIVILEGE_NOT_HELD), pula o teste chamador nomeando a garantia
+    não exercitada. Qualquer outro erro é relançado (falha, não skip).
+
+    Detecção pela CONDIÇÃO (falha de privilégio), não por sys.platform:
+    num Windows com Developer Mode habilitado, ou em Linux/macOS, os.symlink
+    tem sucesso e o teste executa normalmente.
+
+    Guarda de capacidade: padrão do projeto, issue #315.
+    """
+    try:
+        os.symlink(target, link_path)
+    except OSError as err:
+        winerror = getattr(err, 'winerror', None)
+        if winerror == 1314 or err.errno in (errno.EPERM, errno.EACCES):
+            pytest.skip(
+                'guarda de symlink não exercitada: criação de symlink exige '
+                f'Developer Mode (ou processo elevado) neste Windows: {err}'
+            )
+        raise
+
 
 def _make_md(path, title=None):
     """Cria arquivo .md com conteúdo mínimo no caminho indicado."""
@@ -262,7 +289,9 @@ class TestFileAPI:
         req_dir = tmp_path / "docs" / "req"
         req_dir.mkdir(parents=True)
         link_path = req_dir / "link.md"
-        link_path.symlink_to(secret_file)
+        # _symlink_or_skip: guarda de capacidade — distingue "sem privilégio"
+        # (skip) de "falhou por outro motivo" (fail). Issue #315, padrão do projeto.
+        _symlink_or_skip(str(secret_file), str(link_path))
 
         monkeypatch.chdir(tmp_path)
 
@@ -303,7 +332,9 @@ class TestFileAPI:
 
         # Symlink também dentro da raiz apontando para o arquivo real
         link_path = req_dir / "REQ-link.md"
-        link_path.symlink_to(real_file)
+        # _symlink_or_skip: guarda de capacidade — distingue "sem privilégio"
+        # (skip) de "falhou por outro motivo" (fail). Issue #315, padrão do projeto.
+        _symlink_or_skip(str(real_file), str(link_path))
 
         monkeypatch.chdir(tmp_path)
 
