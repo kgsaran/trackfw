@@ -2,6 +2,38 @@
 
 ---
 
+## Sessão 2026-09-12 — Zeus (v7.6.0 TAGGED — npm bloqueado por credencial)
+
+Tag `v7.6.0` publicada via `trackfw release tag 7.6.0` (o `git push origin <tag>` cru é bloqueado
+pelo guard; o comando governado publica por API preservando a anotação, derivada do CHANGELOG).
+Aponta para `9007a402`. Pré-condição §3.5 satisfeita: `make check-required-full` → `declared=10,
+required=10, D\R=∅, R\W=∅, D\W=∅`.
+
+**Estado da distribuição — parcial:**
+
+| canal | estado |
+|---|---|
+| GitHub release | ✅ 7 assets em v7.6.0 |
+| PyPI | ✅ 7.6.0 |
+| npm | ❌ **parado em 7.5.1** |
+
+🔴 **`publish-npm` falhou com `npm error 404 Not Found - PUT https://registry.npmjs.org/trackfw`.**
+O npm devolve 404 em vez de 401/403 para não revelar existência de pacote — e o pacote **existe**
+(7.5.1 está publicado). Logo é **permissão, não pacote ausente**.
+
+**Descartado do nosso lado, por medição:** `.github/workflows/release.yml` **não mudou** entre
+v7.5.1 e v7.6.0 (`git log v7.5.1..v7.6.0 -- .github/workflows/release.yml` → vazio); `name:
+trackfw`, sem `private`, sem `publishConfig`. Último publish bem-sucedido: **2026-09-09T20:56Z**,
+três dias antes. Conclusão: `secrets.NPM_TOKEN` expirou ou foi revogado. **Ação é do mantenedor** —
+rotacionar o token e re-executar só o job `publish-npm` do run 34712096620.
+
+🔴 **H-01 e H-02 NÃO foram abertos como issues.** O plano era abrir após a tag, mas os usuários de
+**npm continuam na 7.5.1, que é vulnerável**. Publicar agora um issue descrevendo leitura arbitrária
+de arquivo entrega o mapa antes de a correção chegar nesse canal. **Abrir só depois que o npm
+estiver em 7.6.0.**
+
+---
+
 ## Sessão 2026-09-12 — Zeus (release v7.6.0 — CHANGELOG, bump, higiene de governança)
 
 Branch `chore/release-7-6-0`. Versão decidida **pelo usuário** (AskUserQuestion): `7.6.0` minor, não
