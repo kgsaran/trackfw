@@ -319,3 +319,60 @@ Sobra **um** item, e é o modo de falha conhecido da opção D:
 
 Em execução na VM de Windows (`powershell-vm`) neste momento. 🔴 **É o único AC cuja falha ainda
 reverteria a adoção.**
+
+---
+
+## 🔴 ADOTADA PARA A v8 — 2026-09-12 (KG)
+
+> *"podemos gerar os manifests sem problemas e bora para a v8."*
+
+A validação fechou. **A opção D entra na v8.**
+
+### O que ficou provado, empiricamente
+
+| AC | prova |
+|---|---|
+| AC1 | instala de registry que não é o npmjs.org (verdaccio) |
+| AC2 | instala com `--ignore-scripts` — a resolução é por `optionalDependencies`, não por postinstall |
+| AC3 | instala **sem rota para github.com** — provado, e a ambiguidade do agente foi fechada na auditoria |
+| AC5 | `pip install` de wheel de plataforma, sem rede para o GitHub e sem toolchain Go |
+| **AC6** | 🔴 **lockfile gerado no macOS instalando em Windows real** — `npm ci` e `npm install`, exit 0, só a plataforma alvo. **O bug clássico de `optionalDependencies` + lockfile não se manifesta** com npm 11.17.0 / `lockfileVersion 3` |
+| AC7 | sem pacote de plataforma, o shim aborta **nomeando a plataforma** |
+| AC8/AC9 | byte-identidade **6/6 em darwin/arm64** e **5/5 em win32/arm64**; exit codes idênticos; **sem divergência de CRLF** (o binário Go emite LF no Windows e `stdio: inherit` não transforma bytes) |
+
+**A prova na VM encontrou um defeito que a simulação não encontraria:** o shim tinha `platformMap`
+hardcoded sem `win32-arm64`. Corrigido para resolução dinâmica.
+
+### As ressalvas, e o que aconteceu com cada uma
+
+**1. Sítios de versão 5 → 11+.** 🔴 **Resolvida por decisão: os manifests de plataforma passam a ser
+GERADOS**, não escritos à mão. Os sítios caem de 5 para **1**, e o gate verifica que a geração
+aconteceu. **O #338 deixa de piorar com a opção D e passa a ser resolvido por ela.**
+
+**2. `pypi/trackfw/` desaparece e quem faz `import trackfw` perde a API.** **Cai, medido:** o único
+entry point é `trackfw = "trackfw.cli:main"` (console script); o `__init__.py` não exporta nada além
+de `__version__`; zero menção a `import trackfw` no README ou docs. **Não há API a perder.**
+No npm, `main: ./src/commands/index.js` faz `require('trackfw')` resolver, mas é superfície
+**acidental** — sem `exports`, sem `types`, sem documentação. **Break declarado no CHANGELOG.**
+
+**3. 🔴 Política corporativa sobre executáveis, não sobre rede.** **NÃO cai — e é a decisão de
+verdade.** O AC3 prova que a instalação não precisa do github. Não prova que um administrador que
+proíbe *executáveis em geral* aceite um binário Go dentro de um tarball npm. Hoje esse usuário
+recebe Node e Python **puros**; com a opção D receberia um binário, e estaria **pior**.
+
+> **A decisão, sem enfeite: trocamos uma audiência hipotética — nunca observada em nenhum canal, e
+> cujo único caso concreto conhecido saiu de cena — por 53.744 linhas e 31 gates.**
+
+**4. VM é ARM64, runner do CI é x64.** Aberta. O mecanismo independe de arquitetura, mas isso é
+raciocínio, não medição. Fecha com um `workflow_dispatch` do `windows-probe.yml`.
+
+### O que a v8 precisa entregar
+
+- geração dos manifests de plataforma (npm) e das wheels (PyPI) no workflow de release
+- casquinha npm (~80 linhas, medida no protótipo) + wheels no formato `gh-bin` (zero Python)
+- remoção de `npm/src/` (26.272 linhas) e `pypi/trackfw/` (27.472)
+- remoção/repensa das suítes de teste dos dois e dos gates de paridade que perdem objeto
+- **#338 como entregável**, via geração
+- 🔴 **a medição realocada**: quais REQs e issues fecham por *causa removida* — senão o backlog fica
+  em limbo
+- break do `require('trackfw')` declarado no CHANGELOG
