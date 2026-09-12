@@ -6,6 +6,7 @@
 
 **Início:** 2026-09-12 | Branch: `fix/validar-um-binario-muitos-canais` | PR #346 aberto.
 **Tarefa:** (1) Substituir `--registry http://127.0.0.1:1` por `--offline` nos dois `npm install` da Pergunta 15; adicionar braço ENOTCACHED que prova que o flag recusa rede. (2) Corrigir afirmação errada de ECONNREFUSED em `docs/agents-working-context.md` e no comentário do YAML; escrever nota de vault sobre o SYN_SENT medido.
+**Concluído:** YAML validado (python3 yaml.safe_load OK). `trackfw validate`: 180 warnings pré-existentes, nenhum novo. Braço 3.5 adicionado (lodash + cache vazio + ENOTCACHED verificado no exit e na saída). Seção 4 reescrita: installs com `--offline`, comentário honesto sobre vacuidade. `agents-working-context.md` corrigido (ECONNREFUSED → SYN_SENT, razão do erro documentada). Nota de vault criada e linkada no index. `trackfw commit` + `trackfw push` executados. PR #346 atualizado. KG dispara o workflow para medir o novo tempo do passo 28.
 
 ---
 
