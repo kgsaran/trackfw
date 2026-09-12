@@ -3,6 +3,16 @@
 Go is the behavioral reference. Node.js and Python must expose the same public
 commands unless an exception is listed below.
 
+**Why Go is the reference, and not a majority vote:** trackfw was born in Go. The Node.js and
+Python CLIs were added later, by convention, to serve organisations whose security policy forbids
+downloading standalone executables — they already allow `npm` and `pip`. Those two runtimes exist to
+**ship the same product through another channel**, never to originate behaviour.
+
+So when the three diverge, the question is not "which one is better" but "what is missing from
+Node/Python to match Go" — even when the other runtime looks more correct. If Go is the one that is
+genuinely wrong, fix Go first, then propagate. Never close a parity gap by removing capability from
+Go.
+
 Supported runtimes: Go 1.25+, Node.js 18+, and Python 3.10+.
 
 | Command | Go | Node.js | Python | Contract |
