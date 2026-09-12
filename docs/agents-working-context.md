@@ -2,6 +2,23 @@
 
 ---
 
+## Sessão 2026-09-12 — Ares (AC9 em x64: Pergunta 15 no windows-probe.yml)
+
+**Início:** 2026-09-12 | Branch: `fix/validar-um-binario-muitos-canais` | Roadmap em wip.
+**Tarefa:** fechar AC9 em win32/x64 adicionando Pergunta 15 ao `windows-probe.yml` — byte-identidade do shim Node.js vs. binário nativo no runner `windows-latest` (x64).
+**Diagnóstico:** O probe existente estava intocado (diff vazio contra origin/main); o `npm ci --ignore-scripts` da linha 102 instalava o Node CLI do repositório, não a casquinha da opção D — sinal verde medindo outra coisa.
+**Decisões técnicas:**
+- Sem tarballs pré-commitados (EBADPLATFORM impede `npm install` cross-platform no macOS; 5.3MB de binário em git seria custo alto para um único probe). O step constrói e empacota inline no runner x64.
+- `npm install` (não `npm ci`) — desvio declarado no YAML; o braço AC6/lockfile-macOS foi provado na VM ARM64 e o mecanismo (lockfileVersion 3 + optionalDependencies) não é arch-dependente.
+- Reutiliza o binário da Pergunta 5b se disponível (evita segundo go build); compila fresh se ausente.
+- Registry morto (`http://127.0.0.1:1`) durante install: qualquer tentativa de rede falha com ECONNREFUSED — `file:` paths resolvem localmente.
+- Guarda de vacuidade: exit 1 se build/pack/install falham ou se shim/binário ausentes de node_modules ou se hash diverge; única exceção à regra "sem veredito" da sonda, escopo declarado no comentário.
+- Noise floor: nativo × nativo para `version` — detecta não-determinismo antes da comparação.
+- Comparação via `Start-Process -RedirectStandardOutput` (sem pipeline PowerShell) + `fc.exe /b` (binário).
+**Concluído:** `windows-probe.yml` atualizado com Pergunta 15 (29 steps total). YAML valida com python3 yaml.safe_load. Pronto para `trackfw commit` + `trackfw push`. Evidência de medição x64 pendente — KG dispara o workflow.
+
+---
+
 ## Sessão 2026-09-12 — Ares (Trilha 1: ML-1A → ML-1D — Opção D) ✅
 
 **Início:** 2026-09-12 | Branch: `fix/validar-um-binario-muitos-canais` | Roadmap: `ROADMAP-2026-09-12-validar-um-binario-muitos-canais.md` em wip.
