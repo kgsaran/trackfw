@@ -812,7 +812,7 @@ def resolve_write_agent(cfg: dict, agent: str | None) -> str:
     if len(agents) > 1:
         options = ", ".join(agents)
         raise ValueError(
-            f"multiple agent namespaces declared ({options}): use --agent to specify one"
+            f"by_agent project has multiple agent namespaces ({options}): use --agent to specify one"
         )
     return "default"
 

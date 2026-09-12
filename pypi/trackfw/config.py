@@ -368,7 +368,7 @@ def register_agent_in_yaml(cwd: str, agent_name: str) -> None:
         # order.  This matches the Node.js runtime contract (ML-2B/2C parity).
         lines.append(f"agents:\n  - {agent_name}\n")
 
-    with open(yaml_path, "w", encoding="utf-8") as fh:
+    with open(yaml_path, "w", encoding="utf-8", newline="\n") as fh:
         fh.writelines(lines)
 
 

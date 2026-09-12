@@ -167,14 +167,22 @@ class TestAmbiguidade:
     """TC2 afirma: sem flag com vários agentes levanta erro nomeando TODOS os namespaces disponíveis."""
 
     def test_resolve_write_agent_multi_levanta_valor(self):
-        """resolve_write_agent sem agent + vários → ValueError."""
+        """resolve_write_agent sem agent + vários → ValueError com mensagem byte-idêntica ao contrato de paridade Go/Node/Python."""
         cfg = {"agents": ["alpha", "beta"], "roadmap_namespacing": "by_agent"}
         with pytest.raises(ValueError) as exc_info:
             resolve_write_agent(cfg, None)
         msg = str(exc_info.value)
-        # A mensagem DEVE nomear AMBOS os agentes (AC5 — asserte o conteúdo, não só que falhou)
-        assert "alpha" in msg, f"Esperado 'alpha' na mensagem de erro, obteve: {msg!r}"
-        assert "beta" in msg, f"Esperado 'beta' na mensagem de erro, obteve: {msg!r}"
+        expected = "by_agent project has multiple agent namespaces (alpha, beta): use --agent to specify one"
+        assert msg == expected, f"Mensagem deve ser byte-idêntica ao contrato; obteve: {msg!r}"
+
+    def test_resolve_write_agent_multi_empty_entry_parity_message(self):
+        """resolve_write_agent com ['', 'alpha', 'beta'] → mensagem byte-idêntica, só não-vazios."""
+        cfg = {"agents": ["", "alpha", "beta"], "roadmap_namespacing": "by_agent"}
+        with pytest.raises(ValueError) as exc_info:
+            resolve_write_agent(cfg, None)
+        msg = str(exc_info.value)
+        expected = "by_agent project has multiple agent namespaces (alpha, beta): use --agent to specify one"
+        assert msg == expected, f"Mensagem deve ser byte-idêntica ao contrato; obteve: {msg!r}"
 
     def test_resolve_write_agent_multi_filtra_vazios(self):
         """agents: ['', 'zeus'] conta como UM namespace → sem erro."""

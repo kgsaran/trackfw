@@ -1109,3 +1109,40 @@ def test_agents_install_block_style_still_registers_correctly(tmp_path):
     assert "inline-flow" not in result.stderr, (
         f"Guard must NOT fire for block-style agents::\n{result.stderr}"
     )
+
+
+def test_agents_install_writes_lf_not_crlf(tmp_path):
+    """
+    Gate check-python-writes-lf.sh — register_agent_in_yaml must write LF
+    line endings, never CRLF.  Reading in text mode masks the difference;
+    this test reads raw bytes to falsify the Windows translation bug where
+    open(..., "w") without newline="\\n" converts \\n to \\r\\n for every
+    line in the rewritten file.
+
+    Reconciliation: asserts that the newline="\\n" argument on the write open
+    is load-bearing — the output file contains no \\r\\n byte sequence after
+    install, not just that the install returned 0.
+    """
+    (tmp_path / "trackfw.yaml").write_bytes(
+        b"roadmap_namespacing: by_agent\n"
+        b"roadmap_dir: docs/roadmaps\n"
+    )
+
+    import os, subprocess, sys
+    from pathlib import Path
+    env = dict(os.environ)
+    env.pop("FORCE_COLOR", None)
+    env["PYTHONPATH"] = str(Path(__file__).parents[1])
+    result = subprocess.run(
+        [sys.executable, "-m", "trackfw",
+         "agents", "install", "--targets", "claude", "--items", "backend",
+         "--scope", "project", "--json"],
+        cwd=tmp_path, env=env, capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == 0, result.stderr
+
+    raw = (tmp_path / "trackfw.yaml").read_bytes()
+    assert b"\r\n" not in raw, (
+        f"File must use LF-only line endings, found CRLF:\n{raw!r}"
+    )
+    assert b"- backend" in raw, "Registration must have happened"
