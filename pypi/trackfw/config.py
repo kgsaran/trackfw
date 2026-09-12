@@ -317,6 +317,18 @@ def register_agent_in_yaml(cwd: str, agent_name: str) -> None:
         if stripped == "agents:":
             agents_header_idx = i
             break
+        # Detect flow-inline format: agents: [alpha, beta]
+        # The line starts with "agents:" but is NOT the bare "agents:" header.
+        # Rewriting it would change the file style without user consent and can
+        # silently drop existing entries (Go runtime reference decision:
+        # KG 2026-08-29 — "control that does not recognise rejects and warns").
+        if stripped.startswith("agents:") and not stripped.lstrip().startswith("#"):
+            sys.stderr.write(
+                f"warning: could not register agent \"{agent_name}\" in "
+                f"trackfw.yaml: trackfw.yaml has agents: in inline-flow format; "
+                f"edit {yaml_path} manually to add \"{agent_name}\"\n"
+            )
+            return  # installation itself succeeds; only registration is skipped
 
     if agents_header_idx is not None:
         # Collect entries that are already in the block (skip blanks/comments)

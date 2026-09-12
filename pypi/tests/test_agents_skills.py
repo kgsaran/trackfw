@@ -1017,3 +1017,95 @@ def test_agents_install_existing_agents_block_stays_in_place(tmp_path):
     assert wip_idx > rd_idx, (
         f"trailing key order must be preserved:\n{content}"
     )
+
+
+def test_agents_install_inline_flow_leaves_file_byte_identical(tmp_path):
+    """
+    Bug-fix ML-2C — trackfw.yaml com agents: em flow inline NÃO deve ser
+    modificado.  O arquivo deve ficar byte-idêntico após o install, e um
+    aviso deve aparecer no stderr.
+
+    Reconciliation: asserts that the inline-flow guard prevents any write —
+    the file is byte-identical after install, falsifying the duplicate-key bug
+    where agents: [alpha, beta] followed by a new agents: block caused silent
+    data loss.
+    """
+    fixture = (
+        "roadmap_dir: docs/roadmaps\n"
+        "req_dir: docs/req\n"
+        "roadmap_namespacing: by_agent\n"
+        "agents: [alpha, beta]\n"
+    )
+    (tmp_path / "trackfw.yaml").write_text(fixture, encoding="utf-8")
+    before_bytes = (tmp_path / "trackfw.yaml").read_bytes()
+
+    import os, subprocess, sys
+    from pathlib import Path
+    env = dict(os.environ)
+    env.pop("FORCE_COLOR", None)
+    env["PYTHONPATH"] = str(Path(__file__).parents[1])
+    result = subprocess.run(
+        [sys.executable, "-m", "trackfw",
+         "agents", "install", "--targets", "claude", "--items", "architect",
+         "--scope", "project", "--json"],
+        cwd=tmp_path, env=env, capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == 0, result.stderr
+
+    after_bytes = (tmp_path / "trackfw.yaml").read_bytes()
+    assert after_bytes == before_bytes, (
+        "File must be byte-identical after install with inline-flow agents:\n"
+        f"before: {before_bytes!r}\nafter:  {after_bytes!r}"
+    )
+    # Warning must appear in stderr naming the file and the item
+    assert "inline-flow" in result.stderr, (
+        f"Expected inline-flow warning in stderr, got:\n{result.stderr}"
+    )
+    assert "architect" in result.stderr, (
+        f"Warning must name the item, got:\n{result.stderr}"
+    )
+    assert str(tmp_path / "trackfw.yaml") in result.stderr, (
+        f"Warning must name the file path, got:\n{result.stderr}"
+    )
+
+
+def test_agents_install_block_style_still_registers_correctly(tmp_path):
+    """
+    Contra-braço do bug-fix — com agents: em estilo block, o registro
+    continua funcionando normalmente após a introdução do guard de flow inline.
+
+    Reconciliation: asserts that the inline-flow guard does not accidentally
+    fire for block-style agents: headers — the registration path is still
+    reachable and the new entry appears in the block.
+    """
+    fixture = (
+        "roadmap_dir: docs/roadmaps\n"
+        "req_dir: docs/req\n"
+        "roadmap_namespacing: by_agent\n"
+        "agents:\n"
+        "  - alpha\n"
+    )
+    (tmp_path / "trackfw.yaml").write_text(fixture, encoding="utf-8")
+
+    import os, subprocess, sys
+    from pathlib import Path
+    env = dict(os.environ)
+    env.pop("FORCE_COLOR", None)
+    env["PYTHONPATH"] = str(Path(__file__).parents[1])
+    result = subprocess.run(
+        [sys.executable, "-m", "trackfw",
+         "agents", "install", "--targets", "claude", "--items", "backend",
+         "--scope", "project", "--json"],
+        cwd=tmp_path, env=env, capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == 0, result.stderr
+
+    content = (tmp_path / "trackfw.yaml").read_text(encoding="utf-8")
+    assert content.count("agents:") == 1, (
+        f"Must have exactly one agents: key, got:\n{content}"
+    )
+    assert "  - alpha" in content, f"Original entry alpha missing:\n{content}"
+    assert "  - backend" in content, f"New entry backend missing:\n{content}"
+    assert "inline-flow" not in result.stderr, (
+        f"Guard must NOT fire for block-style agents::\n{result.stderr}"
+    )

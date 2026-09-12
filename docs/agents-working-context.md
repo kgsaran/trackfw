@@ -13,7 +13,9 @@ Branch `fix/by-agent-req-new-e-roadmap-new`. Escopo: `pypi/` apenas (ML-2C em pa
 
 **Evidências:** 7 novos testes passam; `env -u FORCE_COLOR python3 -m pytest pypi/tests/` → 1731 passed, 0 failed.
 
-**Fixo pós-contrato-de-paridade:** inserção de bloco novo passou a ser `append` ao fim do arquivo (não `insert` após `roadmap_namespacing:`). Bloco existente continua sendo estendido no lugar, sem realocação.
+**Fixo pós-contrato-de-paridade:** inserção de bloco novo passou a ser `append` ao fim do arquivo. Bloco existente estendido no lugar, sem realocação.
+
+**Bug-fix urgente:** `agents: [alpha, beta]` (flow inline) era detectado como "bloco ausente" e gerava chave duplicada com perda de dados. Guard adicionado: linha `agents: [...]` → stderr warning nomeando arquivo e item, sem nenhuma escrita. Alinha com decisão Go (KG 2026-08-29). Suite: 1733 passed.
 
 **Assessment init_gen.py:186-192:** `_write_example_adr()` lê `agents[0]` apenas para determinar o diretório do ADR de exemplo. Não toca `trackfw.yaml` — não é um sítio desta REQ. O sítio legítimo de escrita de `agents:` em init está em `_write_trackfw_yaml()` (:135), que é a fotografia inicial correta.
 
