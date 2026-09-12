@@ -250,3 +250,129 @@ Custa um protótipo descartável e responde se dá para apagar 53.744 linhas sem
   (varrer issues antes de escrever roadmap), aplicada a **prior art de mercado**: verificar como o
   problema já foi resolvido fora, antes de projetar solução própria. O primeiro parecer do arquiteto
   recomendou WASM sem ter feito essa verificação.
+
+---
+
+## Decisões de adoção — 2026-09-12 (KG)
+
+Duas questões que ficaram abertas na aceitação foram decididas. Registro com o ajuste que proponho
+em cada, para a decisão ficar completa e não voltar como dúvida.
+
+### 1. Os sítios de versão passando de 5 para 11+
+
+**Decisão do KG:** *"podemos criar um gate e o problema está resolvido."*
+
+**Concordo — com um ajuste que sai mais barato.** Um gate policiando 11 arquivos escritos à mão é
+mais caro e mais frágil do que **gerar os 11 a partir de um**.
+
+```
+hoje              5 sítios escritos à mão, conferidos só no `release tag`  (issue #338)
+gate sobre 11+    11 sítios à mão + gate vigiando        ← funciona, mas mantém a classe viva
+GERAR + gate      1 sítio real; os manifests de plataforma são artefato de build
+```
+
+Os `package.json` dos pacotes de plataforma **não precisam existir no repositório** — o esbuild os
+gera no release. Com geração, o número de sítios **cai de 5 para 1**, e o gate deixa de vigiar
+divergência para verificar que a geração aconteceu.
+
+🔴 **A diferença importa por um motivo que este projeto já pagou:** gate detecta *drift*; geração
+**impede** o drift. A ADR de causa raiz deste repositório é explícita — registro não é correção.
+
+**Consequência:** o **#338 deixa de piorar com a opção D e passa a ser resolvido por ela.** De
+pré-requisito, vira entregável.
+
+### 2. A medição de retorno (ML-2A da trilha 2)
+
+**Decisão do KG:** *"nem precisamos saber disso; sabendo que diminuiremos pela metade os issues já
+vale o risco."*
+
+**Concordo quanto à decisão, e proponho realocar a medição em vez de cancelá-la.**
+
+Por que concordo: o termo dominante da conta **já está medido**, e não é o número de issues —
+
+```
+53.744 linhas de reimplementação        medido
+31 de 61 gates existindo só p/ paridade medido
+```
+
+Isso sozinho justifica a mudança. A contagem de issues é confirmação, não fundamento.
+
+🔴 **Uma ressalva que preciso deixar escrita, porque a decisão passou a se apoiar nela:** o
+*"8 de 16 issues desaparecem"* é **classificação preliminar do arquiteto, por leitura** — não
+medição. Pode ser 5, pode ser 11. Não deve ser citado como fato medido em changelog, PR ou
+comunicação externa.
+
+**Por que a medição continua necessária, só que depois:** o valor dela nunca foi decidir; é saber,
+**depois de adotar D**, quais das 33 REQs e dos 16 issues fecham por *causa removida* em vez de
+ficarem abertos para sempre. Sem isso, adotamos a opção D e o backlog fica em limbo — ninguém sabe o
+que ainda é trabalho.
+
+**Realocada:** deixa de ser pré-requisito da decisão e passa a ser **entregável da execução da v8**,
+junto com o fechamento em massa dos artefatos cuja causa desapareceu.
+
+### O que ainda gate a adoção
+
+Sobra **um** item, e é o modo de falha conhecido da opção D:
+
+- **AC6** — `package-lock.json` gerado no macOS instalando no **Windows real**, com o binário de
+  plataforma presente. É o bug clássico de `optionalDependencies` + lockfile.
+
+Em execução na VM de Windows (`powershell-vm`) neste momento. 🔴 **É o único AC cuja falha ainda
+reverteria a adoção.**
+
+---
+
+## 🔴 ADOTADA PARA A v8 — 2026-09-12 (KG)
+
+> *"podemos gerar os manifests sem problemas e bora para a v8."*
+
+A validação fechou. **A opção D entra na v8.**
+
+### O que ficou provado, empiricamente
+
+| AC | prova |
+|---|---|
+| AC1 | instala de registry que não é o npmjs.org (verdaccio) |
+| AC2 | instala com `--ignore-scripts` — a resolução é por `optionalDependencies`, não por postinstall |
+| AC3 | instala **sem rota para github.com** — provado, e a ambiguidade do agente foi fechada na auditoria |
+| AC5 | `pip install` de wheel de plataforma, sem rede para o GitHub e sem toolchain Go |
+| **AC6** | 🔴 **lockfile gerado no macOS instalando em Windows real** — `npm ci` e `npm install`, exit 0, só a plataforma alvo. **O bug clássico de `optionalDependencies` + lockfile não se manifesta** com npm 11.17.0 / `lockfileVersion 3` |
+| AC7 | sem pacote de plataforma, o shim aborta **nomeando a plataforma** |
+| AC8/AC9 | byte-identidade **6/6 em darwin/arm64** e **5/5 em win32/arm64**; exit codes idênticos; **sem divergência de CRLF** (o binário Go emite LF no Windows e `stdio: inherit` não transforma bytes) |
+
+**A prova na VM encontrou um defeito que a simulação não encontraria:** o shim tinha `platformMap`
+hardcoded sem `win32-arm64`. Corrigido para resolução dinâmica.
+
+### As ressalvas, e o que aconteceu com cada uma
+
+**1. Sítios de versão 5 → 11+.** 🔴 **Resolvida por decisão: os manifests de plataforma passam a ser
+GERADOS**, não escritos à mão. Os sítios caem de 5 para **1**, e o gate verifica que a geração
+aconteceu. **O #338 deixa de piorar com a opção D e passa a ser resolvido por ela.**
+
+**2. `pypi/trackfw/` desaparece e quem faz `import trackfw` perde a API.** **Cai, medido:** o único
+entry point é `trackfw = "trackfw.cli:main"` (console script); o `__init__.py` não exporta nada além
+de `__version__`; zero menção a `import trackfw` no README ou docs. **Não há API a perder.**
+No npm, `main: ./src/commands/index.js` faz `require('trackfw')` resolver, mas é superfície
+**acidental** — sem `exports`, sem `types`, sem documentação. **Break declarado no CHANGELOG.**
+
+**3. 🔴 Política corporativa sobre executáveis, não sobre rede.** **NÃO cai — e é a decisão de
+verdade.** O AC3 prova que a instalação não precisa do github. Não prova que um administrador que
+proíbe *executáveis em geral* aceite um binário Go dentro de um tarball npm. Hoje esse usuário
+recebe Node e Python **puros**; com a opção D receberia um binário, e estaria **pior**.
+
+> **A decisão, sem enfeite: trocamos uma audiência hipotética — nunca observada em nenhum canal, e
+> cujo único caso concreto conhecido saiu de cena — por 53.744 linhas e 31 gates.**
+
+**4. VM é ARM64, runner do CI é x64.** Aberta. O mecanismo independe de arquitetura, mas isso é
+raciocínio, não medição. Fecha com um `workflow_dispatch` do `windows-probe.yml`.
+
+### O que a v8 precisa entregar
+
+- geração dos manifests de plataforma (npm) e das wheels (PyPI) no workflow de release
+- casquinha npm (~80 linhas, medida no protótipo) + wheels no formato `gh-bin` (zero Python)
+- remoção de `npm/src/` (26.272 linhas) e `pypi/trackfw/` (27.472)
+- remoção/repensa das suítes de teste dos dois e dos gates de paridade que perdem objeto
+- **#338 como entregável**, via geração
+- 🔴 **a medição realocada**: quais REQs e issues fecham por *causa removida* — senão o backlog fica
+  em limbo
+- break do `require('trackfw')` declarado no CHANGELOG
