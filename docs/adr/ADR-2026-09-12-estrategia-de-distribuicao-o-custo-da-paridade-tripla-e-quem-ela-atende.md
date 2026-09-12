@@ -1,14 +1,18 @@
 ---
 name: ADR-2026-09-12-estrategia-de-distribuicao-o-custo-da-paridade-tripla-e-quem-ela-atende
-status: Proposed
+status: Accepted
 date: 2026-09-12
 ---
 
 # ADR: Estratégia de distribuição — o custo da paridade tripla e quem ela atende
 
-> **Status: Proposed.** Esta ADR **não decide**; ela congela a medição e a análise de 2026-09-12
-> para que a decisão da v8/v9 seja tomada com o trabalho pronto em vez de refeito. A decisão exige
-> dados de adoção que **hoje não existem** — ver "Quando decidir".
+> **Status: Accepted** (KG, 2026-09-12). A direção está decidida: **opção D — um binário, muitos
+> canais.** O que **não** está decidido é o *quando* — se entra na v8 —, e isso depende da validação
+> descrita em "Quando decidir", que passou de gatilho passivo a **trabalho em execução**.
+>
+> As posições 1 e 2 (não descontinuar canal, não fazer o instalador de Windows) seguem valendo e
+> foram **absorvidas** pela decisão: com D, não se descontinua canal porque manter passa a ser
+> barato.
 
 ## Contexto
 
