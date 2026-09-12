@@ -360,5 +360,112 @@ test('comando roadmap new expõe --agent', () => {
   assert(flags.has('--agent'), 'roadmap new deve expor --agent')
 })
 
+// ─── ML-3C: herança de agente com as 3 formas de caminho da REQ (Node) ──────
+
+// symlinkOrSkip: cria symlink; retorna false e pula o teste se faltar privilégio (Windows).
+function symlinkOrSkipNode(link, target) {
+  try {
+    fs.symlinkSync(target, link, 'dir')
+    return true
+  } catch (e) {
+    if (e.code === 'EPERM' || e.code === 'EACCES') {
+      console.log(`  SKIP: symlink exige privilégio elevado neste ambiente: ${e.message}`)
+      return false
+    }
+    throw e
+  }
+}
+
+// Cria projeto by_agent (alpha+beta) com REQ em docs/req/beta/ e retorna o caminho canônico.
+function setupByAgentWithBetaREQ(tmp) {
+  const yaml = 'roadmap_namespacing: by_agent\nagents:\n  - alpha\n  - beta\nreq_dir: docs/req\nroadmap_dir: docs/roadmaps\n'
+  fs.writeFileSync(path.join(tmp, 'trackfw.yaml'), yaml, 'utf8')
+  for (const ag of ['alpha', 'beta']) {
+    for (const state of ['backlog', 'wip', 'done']) {
+      fs.mkdirSync(path.join(tmp, 'docs', 'roadmaps', ag, state), { recursive: true })
+    }
+  }
+  const betaReqDir = path.join(tmp, 'docs', 'req', 'beta')
+  fs.mkdirSync(betaReqDir, { recursive: true })
+  const reqFile = path.join(betaReqDir, 'REQ-2026-01-01-ml3c.md')
+  fs.writeFileSync(reqFile, '---\nstatus: Open\n---\n# REQ: ML3C\n', 'utf8')
+  try { return fs.realpathSync(reqFile) } catch (_) { return reqFile }
+}
+
+// Reconciliation: affirms that agentFromPath with a RELATIVE req_path (resolved from cwd) derives
+// the correct agent — TC-ML3C-Node-1.
+test('ML3C Forma1: agentFromPath com caminho relativo → "beta"', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ml3c-rel-'))
+  try {
+    setupByAgentWithBetaREQ(tmp)
+    const reqDir = path.join(tmp, 'docs', 'req')
+    // Caminho relativo direto — não depende de tmp ser canônico (evita path.relative não-canônico)
+    const relReq = path.join('docs', 'req', 'beta', 'REQ-2026-01-01-ml3c.md')
+    const origCwd = process.cwd()
+    process.chdir(tmp)
+    try {
+      const result = agentFromPath(relReq, reqDir)
+      assert.strictEqual(result, 'beta', `Forma 1 relativa: esperado "beta", obteve "${result}"`)
+    } finally {
+      process.chdir(origCwd)
+    }
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true })
+  }
+})
+
+// Reconciliation: affirms that agentFromPath with an ABSOLUTE CANONICAL path derives the correct
+// agent — TC-ML3C-Node-2.
+test('ML3C Forma2: agentFromPath com caminho absoluto canônico → "beta"', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ml3c-can-'))
+  try {
+    const canonReq = setupByAgentWithBetaREQ(tmp)
+    const reqDir = path.join(tmp, 'docs', 'req')
+    const result = agentFromPath(canonReq, reqDir)
+    assert.strictEqual(result, 'beta', `Forma 2 canônica: esperado "beta", obteve "${result}"`)
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true })
+  }
+})
+
+// Reconciliation: affirms that agentFromPath with an ABSOLUTE NON-CANONICAL path (via symlink,
+// analogous to /var vs /private/var on macOS) derives the correct agent — TC-ML3C-Node-3.
+// realpathSync resolves both sides before path.relative, so the divergent prefix is neutralised.
+test('ML3C Forma3: agentFromPath com caminho absoluto não-canônico (symlink) → "beta"', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ml3c-sym-'))
+  const linkDir = tmp + '_link'
+  try {
+    const canonReq = setupByAgentWithBetaREQ(tmp)
+    const reqDir = path.join(tmp, 'docs', 'req')
+    if (!symlinkOrSkipNode(linkDir, tmp)) return
+    // Caminho não-canônico: via symlink.
+    // Usar path relativo fixo para evitar divergência entre tmp (não-canônico) e canonReq
+    // (canônico via realpathSync) no path.relative — /var vs /private/var produziria '../..' incorreto.
+    const reqRel = path.join('docs', 'req', 'beta', 'REQ-2026-01-01-ml3c.md')
+    const nonCanonReq = path.join(linkDir, reqRel)
+    const result = agentFromPath(nonCanonReq, reqDir)
+    assert.strictEqual(result, 'beta', `Forma 3 não-canônica: esperado "beta", obteve "${result}". nonCanonReq=${nonCanonReq}`)
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true })
+    try { fs.unlinkSync(linkDir) } catch (_) {}
+  }
+})
+
+// Reconciliation: affirms that agentFromPath with a FLAT REQ (directly in req_dir/) returns ''
+// so the ambiguity error is still raised — TC-ML3C-Node-4 (contra-braço).
+test('ML3C Contra-braço: agentFromPath REQ flat em req_dir/ → "" (mantém ambiguidade)', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ml3c-flat-'))
+  try {
+    const reqDir = path.join(tmp, 'docs', 'req')
+    fs.mkdirSync(reqDir, { recursive: true })
+    const flatReq = path.join(reqDir, 'REQ-2026-01-01-flat.md')
+    fs.writeFileSync(flatReq, '---\nstatus: Open\n---\n# REQ: Flat\n', 'utf8')
+    const result = agentFromPath(flatReq, reqDir)
+    assert.strictEqual(result, '', `Contra-braço flat: esperado "", obteve "${result}"`)
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true })
+  }
+})
+
 console.log(`\n${passed} passed, ${failed} failed`)
 if (failed > 0) process.exit(1)

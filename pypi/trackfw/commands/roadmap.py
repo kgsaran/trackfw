@@ -95,21 +95,14 @@ def _cmd_new(args):
 
             if agent is None:
                 # Herança de agente a partir do caminho da REQ (AC11):
-                # req_dir/<agent>/REQ.md → agent = _agent_from_req_path(req_path)
-                # Só herda se a REQ estiver em subpasta de req_dir (ou seja,
-                # dirname(dirname(abs_req)) == abs_req_dir). REQs em flat-layout ou fora
-                # de req_dir caem no resolve_write_agent para preservar a regra de ambiguidade.
+                # _agent_from_req_path canonicaliza os dois lados (realpath) antes de computar
+                # o relativo — trata /var vs /private/var no macOS (ML-3C, 2026-09-12).
+                # Retorna "" para flat layout (REQ diretamente em req_dir/) ou fora de req_dir.
                 inherited = None
                 candidate = req_path or from_req or ""
                 if candidate:
-                    abs_req = os.path.abspath(candidate)
-                    abs_req_dir = os.path.abspath(cfg.get("req_dir", "docs/req"))
-                    # O pai direto da REQ deve ser exatamente uma subpasta de req_dir
-                    req_parent_dir = os.path.dirname(abs_req)
-                    req_grandparent = os.path.dirname(req_parent_dir)
-                    if os.path.normcase(req_grandparent) == os.path.normcase(abs_req_dir):
-                        # Estrutura by_agent confirmada: req_dir/<agent>/REQ.md
-                        inherited = _agent_from_req_path(abs_req)
+                    abs_req_dir = cfg.get("req_dir", "docs/req")
+                    inherited = _agent_from_req_path(candidate, abs_req_dir) or None
                 if inherited:
                     agent = inherited
                 else:

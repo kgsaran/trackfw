@@ -511,25 +511,29 @@ def test_agent_from_roadmap_path_extrai_correto():
 
 
 def test_agent_from_req_path_extrai_correto():
-    """_agent_from_req_path extrai o agente de req_dir/<agent>/REQ.md (2 níveis).
-    TC-extra afirma: a estrutura de 2 níveis usa dirname(path) — derivação distinta e nomeada,
-    corrijo o erro do ML-0A que descreveu dirname(dirname(req_path))."""
-    path = "/proj/docs/req/beta/REQ-2026-01-01-test.md"
-    assert _agent_from_req_path(path) == "beta", (
-        f"Esperado 'beta', obteve: {_agent_from_req_path(path)!r}"
+    """_agent_from_req_path extrai o agente de req_dir/<agent>/REQ.md (caminho sintético).
+    TC-extra afirma: relpath(realpath(req_path), realpath(req_dir)) → primeiro segmento = agente."""
+    req_path = "/proj/docs/req/beta/REQ-2026-01-01-test.md"
+    req_dir = "/proj/docs/req"
+    assert _agent_from_req_path(req_path, req_dir) == "beta", (
+        f"Esperado 'beta', obteve: {_agent_from_req_path(req_path, req_dir)!r}"
     )
 
 
 def test_agent_from_req_path_difere_de_roadmap_path():
     """Confirma que REQ e roadmap têm estruturas de profundidade distintas — não são intercambiáveis.
-    TC-extra afirma: aplicar a fórmula de roadmap (2x dirname) a um caminho de REQ dá resultado errado."""
+    TC-extra afirma: aplicar a fórmula de roadmap a um caminho de REQ não é a mesma coisa que usar
+    _agent_from_req_path com req_dir explícito (ML-3C: relpath, não basename/dirname)."""
     req_path = "/proj/docs/req/beta/REQ.md"
-    # Fórmula correta para REQ (1x dirname):
-    assert _agent_from_req_path(req_path) == "beta"
-    # Fórmula ERRADA se aplicada a REQ (2x dirname, como faria _agent_from_roadmap_path):
-    wrong = os.path.basename(os.path.dirname(os.path.dirname(req_path)))
-    assert wrong != "beta", (
-        f"Confirmação: fórmula de roadmap aplicada a REQ daria {wrong!r}, não 'beta' — estruturas distintas"
+    req_dir = "/proj/docs/req"
+    # Fórmula correta para REQ (relpath com req_dir):
+    assert _agent_from_req_path(req_path, req_dir) == "beta"
+    # Fórmula estrutural legada (basename/dirname) — ainda devolve beta aqui, mas diverge
+    # quando os prefixos são não-canônicos (/var vs /private/var): é exatamente o defeito
+    # que _agent_from_req_path(req_dir=...) corrige via realpath.
+    legacy = os.path.basename(os.path.dirname(req_path))
+    assert legacy == "beta", (
+        f"Resultado legado para path sintético deve ser 'beta', obteve: {legacy!r}"
     )
 
 
@@ -651,4 +655,135 @@ class TestLegitMoveStillWorks:
         dst = move_roadmap(filename, "done", cfg)
         assert "/zeus/done/" in dst.replace(os.sep, "/"), (
             f"Esperado zeus/done/ após move legítimo, obteve: {dst}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# ML-3C — herança de agente com as 3 formas de caminho da REQ (Python)
+# ---------------------------------------------------------------------------
+
+class TestML3CReqPathForms:
+    """ML-3C afirma: roadmap new --req herda o agente para as 3 formas de caminho da REQ.
+
+    Forma 1 (relativa):      docs/req/beta/REQ.md          → beta
+    Forma 2 (absoluta canônica):  /private/var/.../beta/REQ.md  → beta
+    Forma 3 (absoluta não-canônica): /var/.../beta/REQ.md  → beta   (era 🔴 antes do ML-3C)
+
+    Contra-braço: REQ flat (req_dir/REQ.md, fora de namespace) continua caindo em erro de
+    ambiguidade — a correção não pode fazer o Python adivinhar agente onde não há.
+    """
+
+    def _setup(self, tmp_path):
+        """Retorna (cfg, beta_req_path) com estrutura by_agent + 2 agentes."""
+        cfg = _make_cfg(str(tmp_path), namespacing="by_agent", agents=["alpha", "beta"])
+        req_beta = os.path.join(str(tmp_path), "req", "beta")
+        os.makedirs(req_beta, exist_ok=True)
+        req_file = os.path.join(req_beta, "REQ-2026-01-01-ml3c.md")
+        with open(req_file, "w", encoding="utf-8") as f:
+            f.write("---\nstatus: Open\n---\n# REQ: ML3C\n")
+        return cfg, req_file
+
+    def test_forma1_relativa(self, tmp_path, monkeypatch):
+        """Forma 1: caminho relativo → herda beta.
+        TC-ML3C-1 afirma: _agent_from_req_path com req_path relativo e req_dir relativo
+        deriva o agente correto via realpath(abspath(...))."""
+        from trackfw.commands import roadmap as roadmap_cmd
+        cfg, req_file = self._setup(tmp_path)
+        monkeypatch.chdir(tmp_path)
+        import trackfw.config as cfg_module
+        monkeypatch.setattr(cfg_module, "load", lambda: cfg)
+
+        # Caminho relativo a partir de tmp_path
+        rel_req = os.path.relpath(req_file, str(tmp_path))
+        args = _make_roadmap_args(agent=None, req=rel_req)
+        roadmap_cmd._cmd_new(args)
+
+        beta_backlog = os.path.join(str(tmp_path), "roadmaps", "beta", "backlog")
+        files = [f for f in os.listdir(beta_backlog) if f.endswith(".md")] if os.path.isdir(beta_backlog) else []
+        assert len(files) == 1, (
+            f"Forma 1 (relativa): esperado roadmap em beta/backlog/, encontrado {files!r}"
+        )
+
+    def test_forma2_absoluta_canonica(self, tmp_path, monkeypatch):
+        """Forma 2: caminho absoluto canônico → herda beta.
+        TC-ML3C-2 afirma: _agent_from_req_path com caminho realpath-canônico deriva o agente
+        correto (braço direto, sem symlink no meio)."""
+        from trackfw.commands import roadmap as roadmap_cmd
+        cfg, req_file = self._setup(tmp_path)
+        monkeypatch.chdir(tmp_path)
+        import trackfw.config as cfg_module
+        monkeypatch.setattr(cfg_module, "load", lambda: cfg)
+
+        # Caminho absoluto canônico
+        canon_req = os.path.realpath(req_file)
+        args = _make_roadmap_args(agent=None, req=canon_req)
+        roadmap_cmd._cmd_new(args)
+
+        beta_backlog = os.path.join(str(tmp_path), "roadmaps", "beta", "backlog")
+        files = [f for f in os.listdir(beta_backlog) if f.endswith(".md")] if os.path.isdir(beta_backlog) else []
+        assert len(files) == 1, (
+            f"Forma 2 (canônica): esperado roadmap em beta/backlog/, encontrado {files!r}"
+        )
+
+    def test_forma3_absoluta_nao_canonica(self, tmp_path, monkeypatch):
+        """Forma 3: caminho absoluto não-canônico (via symlink) → herda beta.
+        TC-ML3C-3 afirma: _agent_from_req_path com req_path via symlink para o mesmo
+        diretório que req_dir deriva o agente correto — realpath resolve o symlink e o
+        relpath é computado sobre os caminhos canônicos.
+        Era 🔴 antes do ML-3C: abspath deixava /var/... intacto enquanto req_dir resolvia
+        via cwd para /private/var/..., produzindo req_grandparent != abs_req_dir."""
+        from trackfw.commands import roadmap as roadmap_cmd
+        cfg, req_file = self._setup(tmp_path)
+
+        # Criar symlink para tmp_path — simula /var → /private/var no macOS
+        link = tmp_path.parent / ("symlink_ml3c_" + tmp_path.name[-6:])
+        symlink_or_skip(link, tmp_path)
+        try:
+            # cwd fica em tmp_path (canônico); --req usa o symlink (não-canônico)
+            monkeypatch.chdir(tmp_path)
+            import trackfw.config as cfg_module
+            monkeypatch.setattr(cfg_module, "load", lambda: cfg)
+
+            # Caminho não-canônico: link/req/beta/REQ-...md
+            req_via_link = str(link / "req" / "beta" / os.path.basename(req_file))
+            args = _make_roadmap_args(agent=None, req=req_via_link)
+            roadmap_cmd._cmd_new(args)
+
+            beta_backlog = os.path.join(str(tmp_path), "roadmaps", "beta", "backlog")
+            files = [f for f in os.listdir(beta_backlog) if f.endswith(".md")] if os.path.isdir(beta_backlog) else []
+            assert len(files) == 1, (
+                f"Forma 3 (não-canônica): esperado roadmap em beta/backlog/, encontrado {files!r}. "
+                f"req_via_link={req_via_link!r}"
+            )
+        finally:
+            try:
+                link.unlink()
+            except OSError:
+                pass
+
+    def test_contrabra_flat_cai_em_ambiguidade(self, tmp_path, capsys, monkeypatch):
+        """Contra-braço: REQ flat (req_dir/REQ.md, fora de namespace) → erro de ambiguidade.
+        TC-ML3C-4 afirma: a correção do ML-3C não faz o Python adivinhar agente onde não há —
+        REQ diretamente em req_dir/ (1 segmento de relpath) retorna '' e cai em resolve_write_agent."""
+        from trackfw.commands import roadmap as roadmap_cmd
+        cfg = _make_cfg(str(tmp_path), namespacing="by_agent", agents=["alpha", "beta"])
+        monkeypatch.chdir(tmp_path)
+        import trackfw.config as cfg_module
+        monkeypatch.setattr(cfg_module, "load", lambda: cfg)
+
+        # REQ flat: diretamente em req_dir/, NÃO em req_dir/<agent>/
+        req_root = os.path.join(str(tmp_path), "req")
+        os.makedirs(req_root, exist_ok=True)
+        flat_req = os.path.join(req_root, "REQ-2026-01-01-flat.md")
+        with open(flat_req, "w", encoding="utf-8") as f:
+            f.write("---\nstatus: Open\n---\n# REQ: Flat\n")
+
+        args = _make_roadmap_args(agent=None, req=flat_req)
+        with pytest.raises(SystemExit) as exc_info:
+            roadmap_cmd._cmd_new(args)
+        assert exc_info.value.code != 0
+        captured = capsys.readouterr()
+        assert "alpha" in captured.err and "beta" in captured.err, (
+            f"Contra-braço flat: esperado erro de ambiguidade com alpha/beta, "
+            f"obteve stderr={captured.err!r}"
         )

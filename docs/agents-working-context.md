@@ -2,6 +2,24 @@
 
 ---
 
+## Sessão 2026-09-12 — apolo-tf (INÍCIO: ML-3C — Python _agent_from_req_path não-canônico)
+
+Branch `fix/by-agent-req-new-e-roadmap-new`. Escopo: `pypi/trackfw/generators/roadmap.py`, `pypi/trackfw/commands/roadmap.py`, `pypi/tests/test_by_agent_ml1c.py`, `internal/generators/roadmap_test.go`, `npm/tests/by_agent_req_roadmap_new.test.js`. Defecto: `_agent_from_req_path` usa `os.path.abspath` (não resolve symlinks); guarda em `_cmd_new` compara `req_grandparent` (de abspath de path absoluto não-canônico, ex: /var/...) contra `abs_req_dir` (de abspath de path relativo via cwd canônico /private/var/...) → comparação falha → cai em resolve_write_agent → erro de ambiguidade. Fix: refatorar `_agent_from_req_path(req_path, req_dir)` com realpath em ambos os lados (espelho de Go agentFromPath + Node agentFromPath). Simplificar guarda em _cmd_new.
+
+---
+
+## Sessão 2026-09-12 — ares-tf (FIM: PYTHONIOENCODING — check-install-checksum.sh)
+
+Worktree `trackfw-seguranca`, branch `fix/install-sh-extrai-o-tarball-sem-conferir` (PR #331). Escopo: somente `scripts/check-install-checksum.sh`. Defeito: gate `check-output-encoding-declared` acusava o script por invocar `python3` (linha 107) sem declarar `export PYTHONIOENCODING=utf-8`. Convenção lida de `check-agent-hooks-parity.sh` (linha 56): bloco de comentário explicativo logo após `set -euo pipefail`, seguido de `export PYTHONIOENCODING=utf-8`. Inserido imediatamente após `set -euo pipefail` (linha 42) com comentário idêntico ao dos scripts irmãos. Validações: (1) gate encoding RC=0 com 44 scripts checados; (2) contra-braço: sem a declaração, gate volta a acusar `scripts/check-install-checksum.sh: invoca python3 (linha 118) e NAO declara...` RC=1; (3) gate H-02 próprio: 9 cenários OK RC=0; (4) `make parity-rest` RC=0 — Self-test summary: 7 PASS, 0 FAIL.
+
+---
+
+## Sessão 2026-09-12 — ares-tf (INÍCIO: PYTHONIOENCODING — check-install-checksum.sh)
+
+Worktree `trackfw-seguranca`, branch `fix/install-sh-extrai-o-tarball-sem-conferir` (PR #331). Escopo: somente `scripts/check-install-checksum.sh`. Gate `check-output-encoding-declared` reprovando porque script invoca `python3` sem declarar `export PYTHONIOENCODING=utf-8`. Lendo scripts irmãos para identificar posição e grafia corretas da declaração antes de editar.
+
+---
+
 ## Sessão 2026-09-12 — ares-tf (FIM: ML-3B-a + ML-3B-b)
 
 Branch `fix/by-agent-req-new-e-roadmap-new`. Entregue: `scripts/check-consumer-smoke-by-agent.sh` — GO_BIN normalizado para absoluto ANTES da guarda (padrão de check-agent-hooks-parity.sh:73-74); --req exercitado nos 3 runtimes com asserção de herança de agente por delta de arquivo + frontmatter squad:; cenário de ambiguidade (sem --agent) em 3 runtimes com diff byte-a-byte do erro; validate (Go) com decisão documentada (RC≠127, não assertions de violations porque fixture em strict mode sempre tem req_has_adr/req_has_roadmap); varredura item 4: só check-consumer-smoke-by-agent.sh era afetado. `.github/workflows/quality.yml` — continue-on-error: true removido do job consumer-smoke-by-agent (era em chave real, não comentário). DEFECTO ENCONTRADO: Python roadmap new --req não herda agente da REQ (AC11); Go e Node OK; reportado ao arquiteto; vault note criada. Falsificação: braço (a) GO_BIN=/nonexistent → RC=1 nomeando GO_BIN não-encontrado; braço (b) GO_BIN=bin/trackfw (relativo da raiz) → Go executa corretamente. actionlint: limpo. make quality: RC=0, 181 cenários, 414 OK, 0 FAIL.
@@ -36614,3 +36632,40 @@ B  /workspace/trackfw-seguranca    fix/serve-api-file-valida-o-caminho-lexico   
 - ML-2A/2B/2C (`agents install` registra em `agents:`), ML-3A (emissores), ML-3B-a/b (#328)
 - A2, A3, A4 do Codex — REQs `Open` **sem roadmap**, análise já paga duas vezes
 - `roadmap move ""` casa roadmap arbitrário e move — medido hoje, vira REQ
+
+---
+## FIM — apolo-tf · 2026-09-12
+
+**Microlote:** ML-3C — Python: `--req` com caminho absoluto não-canônico não herda o agente
+**Branch:** `fix/by-agent-req-new-e-roadmap-new`
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-09-11-by-agent-req-new-e-roadmap-new-...`
+
+### O que foi feito
+
+1. **Fix principal (Python):** `_agent_from_req_path` em `pypi/trackfw/generators/roadmap.py`
+   — adicionado segundo argumento `req_dir`; aplica `os.path.realpath(os.path.abspath(...))` nos
+   dois lados antes de `os.path.relpath`. Guard em `_cmd_new` simplificado para delegar inteiramente.
+
+2. **Varredura 3 runtimes:** único sítio defeituoso era o Python (`commands/roadmap.py:105-110`).
+   Go e Node já usavam EvalSymlinks/realpathSync respectivamente.
+
+3. **Testes:** 4 testes adicionados por runtime (forma1 relativa, forma2 canônica, forma3 não-canônica
+   via symlink, contra-braço flat REQ → ambiguidade):
+   - Python: `pypi/tests/test_by_agent_ml1c.py` — classe `TestML3CReqPathForms`
+   - Go: `internal/generators/roadmap_test.go` — 4 funções `TestNewRoadmapFromContent_ML3C_*`
+   - Node: `npm/tests/by_agent_req_roadmap_new.test.js` — 4 casos ML-3C
+
+4. **Smoke:** `check-consumer-smoke-by-agent.sh` — PASS, Python AC11 "defecto resolvido"
+
+5. **`make quality` RC=0** (processo completo, 181 cenários de falsificação, todos os gates)
+
+6. **Vault:** nota criada em `vault/notes/python-abspath-nao-resolve-symlink-macos-var-private-var-2026-09-12.md`
+
+7. **Roadmap ML-3C:** status atualizado para ✅ Concluído
+
+### Chave técnica
+
+No macOS `/var` é symlink para `/private/var`. `os.path.abspath` normaliza `.`/`..` mas não resolve
+symlinks. `os.getcwd()` retorna a forma canônica; paths absolutos passados diretamente não são
+canonicalizados. Fix: `os.path.realpath(os.path.abspath(...))` nos dois lados — espelha o padrão
+dos outros dois runtimes.

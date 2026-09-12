@@ -905,7 +905,7 @@ fecha neste PR.**
 - [ ] Varredura do item 3 com comando escrito
 
 ### ML-3C — 🔴 Python: `--req` com caminho ABSOLUTO NÃO-CANÔNICO não herda o agente
-**Status:** ⬜ Pendente · **bloqueia o AC15** · **Arquivos:** `pypi/trackfw/generators/roadmap.py` + testes
+**Status:** ✅ Concluído — `os.path.realpath` nos dois lados em `_agent_from_req_path`; varredura 3 runtimes; 4 testes por runtime (forma1/2/3 + contra-braço); smoke PASS; `make quality` RC=0
 
 Achado pelo `consumer-smoke-by-agent` **na primeira vez que ele executou de verdade** — antes disso o
 Go dava `rc=127` por `GO_BIN` relativo e mascarava a comparação inteira.

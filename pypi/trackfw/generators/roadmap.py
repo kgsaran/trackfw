@@ -210,20 +210,45 @@ def _agent_from_roadmap_path(path: str, base_dir: str | None = None) -> str:
     return os.path.basename(os.path.dirname(os.path.dirname(path)))
 
 
-def _agent_from_req_path(req_path: str) -> str:
+def _agent_from_req_path(req_path: str, req_dir: str) -> str:
     """
     Extrai o nome do agente a partir de um caminho de REQ em modo by_agent.
 
-    Estrutura esperada: req_dir/<agent>/REQ-....md
-    Derivação: agent = basename(dirname(req_path))
+    Canonicaliza os dois lados com os.path.realpath antes de computar o relativo —
+    necessário no macOS onde /var é symlink para /private/var: os.path.abspath não resolve
+    symlinks, então dois caminhos absolutos com prefixos distintos (/var vs /private/var)
+    produzem req_grandparent != abs_req_dir, caindo silenciosamente em resolve_write_agent
+    e disparando o erro de ambiguidade (ML-3C, 2026-09-12).
 
-    Nota: a estrutura de REQ (dois níveis: req_dir/<agent>/REQ.md) é distinta da estrutura
-    de roadmap (três níveis: roadmap_dir/<agent>/<state>/ROADMAP.md). Por isso a derivação
-    usa UMA chamada a dirname, não duas. O ML-0A cometeu um erro de tipagem ao descrever
-    'dirname(dirname(req_path))' — a fórmula correta é 'basename(dirname(req_path))' e está
-    nomeada aqui (ML-1C, AC11 — derivação nomeada, não inline).
+    Estratégia: relpath(realpath(req_path), realpath(req_dir)) → primeiro segmento.
+    Equivalente a agentFromPath do Go (EvalSymlinks em ambos) e do Node (realpathSync em ambos).
+
+    Estrutura esperada: req_dir/<agent>/REQ-....md (ou req_dir/<agent>/<subnível>/REQ.md —
+    layout legado com subnível é aceito, consistente com Go SplitN 2 e Node parts.length < 2).
+
+    Retorna "" se:
+    - req_path tem somente 1 nível abaixo de req_dir (flat layout: req_dir/REQ.md)
+    - req_path está fora de req_dir (primeiro segmento "..")
     """
-    return os.path.basename(os.path.dirname(req_path))
+    try:
+        abs_req = os.path.realpath(os.path.abspath(req_path))
+    except OSError:
+        abs_req = os.path.abspath(req_path)
+    try:
+        abs_req_dir = os.path.realpath(os.path.abspath(req_dir))
+    except OSError:
+        abs_req_dir = os.path.abspath(req_dir)
+    try:
+        rel = os.path.relpath(abs_req, abs_req_dir)
+    except ValueError:
+        # Windows: unidades diferentes
+        return ""
+    parts = rel.replace("\\", "/").split("/")
+    # Flat layout (1 segmento): req_dir/REQ.md → parts = ["REQ.md"] → não é namespace
+    # Fora de req_dir: parts[0] = ".." → rejeitar
+    if len(parts) < 2 or not parts[0] or parts[0] in (".", ".."):
+        return ""
+    return parts[0]
 
 
 def _agent_state_dir(agent: str | None, state: str, cfg: dict) -> str | None:

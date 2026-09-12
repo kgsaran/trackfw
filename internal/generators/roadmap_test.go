@@ -1774,3 +1774,175 @@ func TestMoveRoadmap_SyncsREQFrontmatterWithPortableSeparator(t *testing.T) {
 		t.Errorf("frontmatter da REQ contém separador nativo \"\\\\\"; conteúdo:\n%s", s)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// ML-3C — herança de agente com as 3 formas de caminho da REQ (Go)
+// ---------------------------------------------------------------------------
+
+// setupByAgentWithBetaREQ cria um projeto by_agent (alpha+beta) com uma REQ em docs/req/beta/
+// e retorna o caminho absoluto canônico da REQ criada.
+func setupByAgentWithBetaREQ(t *testing.T, dir string) string {
+	t.Helper()
+	yaml := "roadmap_namespacing: by_agent\nagents:\n- alpha\n- beta\nreq_dir: docs/req\nroadmap_dir: docs/roadmaps\n"
+	if err := os.WriteFile("trackfw.yaml", []byte(yaml), 0644); err != nil {
+		t.Fatalf("escrever trackfw.yaml: %v", err)
+	}
+	for _, state := range []string{"backlog", "wip", "done"} {
+		for _, ag := range []string{"alpha", "beta"} {
+			if err := os.MkdirAll(filepath.Join("docs", "roadmaps", ag, state), 0755); err != nil {
+				t.Fatalf("mkdir %s/%s: %v", ag, state, err)
+			}
+		}
+	}
+	betaReqDir := filepath.Join("docs", "req", "beta")
+	if err := os.MkdirAll(betaReqDir, 0755); err != nil {
+		t.Fatalf("mkdir docs/req/beta: %v", err)
+	}
+	reqFile := filepath.Join(betaReqDir, "REQ-2026-01-01-ml3c.md")
+	if err := os.WriteFile(reqFile, []byte("---\nstatus: Open\n---\n# REQ: ML3C\n"), 0644); err != nil {
+		t.Fatalf("escrever REQ: %v", err)
+	}
+	abs, err := filepath.Abs(reqFile)
+	if err != nil {
+		t.Fatalf("Abs REQ: %v", err)
+	}
+	real, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		return abs
+	}
+	return real
+}
+
+// TestNewRoadmapFromContent_ML3C_Forma1_Relativa afirma: --req com caminho RELATIVO herda
+// o agente beta.
+// TC-ML3C-Go-1 afirma: REQPath relativo resolvido via Abs(cwd) e EvalSymlinks corretos.
+func TestNewRoadmapFromContent_ML3C_Forma1_Relativa(t *testing.T) {
+	dir := t.TempDir()
+	chdirRoadmap(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	setupByAgentWithBetaREQ(t, dir)
+	// Caminho relativo direto — não depende de dir ser canônico.
+	relReq := filepath.Join("docs", "req", "beta", "REQ-2026-01-01-ml3c.md")
+
+	err := NewRoadmapFromContent(RoadmapContent{
+		Title:   "ML3C Forma1 Go",
+		REQPath: relReq,
+	})
+	if err != nil {
+		t.Fatalf("NewRoadmapFromContent forma1 relativa: %v", err)
+	}
+
+	matches, _ := filepath.Glob(filepath.Join("docs", "roadmaps", "beta", "backlog", "*.md"))
+	if len(matches) != 1 {
+		t.Errorf("Forma 1 (relativa): esperado 1 roadmap em beta/backlog, obteve %d", len(matches))
+	}
+}
+
+// TestNewRoadmapFromContent_ML3C_Forma2_CanonicaAbsoluta afirma: --req com caminho ABSOLUTO
+// CANÔNICO herda o agente beta.
+// TC-ML3C-Go-2 afirma: REQPath absoluto já canônico é tratado corretamente por EvalSymlinks.
+func TestNewRoadmapFromContent_ML3C_Forma2_CanonicaAbsoluta(t *testing.T) {
+	dir := t.TempDir()
+	chdirRoadmap(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	canonReq := setupByAgentWithBetaREQ(t, dir)
+
+	err := NewRoadmapFromContent(RoadmapContent{
+		Title:   "ML3C Forma2 Go",
+		REQPath: canonReq,
+	})
+	if err != nil {
+		t.Fatalf("NewRoadmapFromContent forma2 canônica: %v", err)
+	}
+
+	matches, _ := filepath.Glob(filepath.Join("docs", "roadmaps", "beta", "backlog", "*.md"))
+	if len(matches) != 1 {
+		t.Errorf("Forma 2 (canônica absoluta): esperado 1 roadmap em beta/backlog, obteve %d", len(matches))
+	}
+}
+
+// TestNewRoadmapFromContent_ML3C_Forma3_NaoCanonicaAbsoluta afirma: --req com caminho ABSOLUTO
+// NÃO-CANÔNICO (via symlink, análogo a /var vs /private/var no macOS) herda o agente beta.
+// TC-ML3C-Go-3 afirma: agentFromPath com EvalSymlinks em ambos os lados resolve o prefixo
+// divergente e devolve "beta" — idêntico ao comportamento de Node e Python pós-ML-3C.
+func TestNewRoadmapFromContent_ML3C_Forma3_NaoCanonicaAbsoluta(t *testing.T) {
+	dir := t.TempDir()
+	chdirRoadmap(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	setupByAgentWithBetaREQ(t, dir)
+
+	// Symlink para dir (acesso não-canônico ao mesmo filesystem)
+	parentDir := filepath.Dir(dir)
+	linkDir := filepath.Join(parentDir, "symlink_ml3c_"+filepath.Base(dir))
+	symlinkOrSkip(t, dir, linkDir)
+	defer os.Remove(linkDir)
+
+	// Caminho não-canônico: via linkDir.
+	// Usar caminho relativo fixo para evitar divergência entre dir (não-canônico) e canonReq
+	// (canônico via EvalSymlinks) no filepath.Rel — /var vs /private/var produziria ".." incorreto.
+	reqRel := filepath.Join("docs", "req", "beta", "REQ-2026-01-01-ml3c.md")
+	nonCanonReq := filepath.Join(linkDir, reqRel)
+
+	err := NewRoadmapFromContent(RoadmapContent{
+		Title:   "ML3C Forma3 Go",
+		REQPath: nonCanonReq,
+	})
+	if err != nil {
+		t.Fatalf("NewRoadmapFromContent forma3 não-canônica: %v — nonCanonReq=%q", err, nonCanonReq)
+	}
+
+	matches, _ := filepath.Glob(filepath.Join("docs", "roadmaps", "beta", "backlog", "*.md"))
+	if len(matches) != 1 {
+		t.Errorf("Forma 3 (não-canônica): esperado 1 roadmap em beta/backlog, obteve %d. nonCanonReq=%q", len(matches), nonCanonReq)
+	}
+}
+
+// TestNewRoadmapFromContent_ML3C_ContraBraco_REQFlat afirma: REQ flat (diretamente em req_dir/)
+// não herda agente e cai em erro de ambiguidade.
+// TC-ML3C-Go-4 afirma: a correção do ML-3C não faz o Go adivinhar agente onde não há —
+// agentFromPath com REQ em req_dir/ devolve o nome do arquivo (não um diretório de namespace)
+// e a guarda os.Stat rejeita, caindo em ResolveWriteAgent que lança o erro de ambiguidade.
+func TestNewRoadmapFromContent_ML3C_ContraBraco_REQFlat(t *testing.T) {
+	dir := t.TempDir()
+	chdirRoadmap(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	yaml := "roadmap_namespacing: by_agent\nagents:\n- alpha\n- beta\nreq_dir: docs/req\nroadmap_dir: docs/roadmaps\n"
+	if err := os.WriteFile("trackfw.yaml", []byte(yaml), 0644); err != nil {
+		t.Fatalf("escrever trackfw.yaml: %v", err)
+	}
+	for _, state := range []string{"backlog", "wip"} {
+		for _, ag := range []string{"alpha", "beta"} {
+			if err := os.MkdirAll(filepath.Join("docs", "roadmaps", ag, state), 0755); err != nil {
+				t.Fatalf("mkdir %s/%s: %v", ag, state, err)
+			}
+		}
+	}
+	reqDir := filepath.Join("docs", "req")
+	if err := os.MkdirAll(reqDir, 0755); err != nil {
+		t.Fatalf("mkdir docs/req: %v", err)
+	}
+	flatReq := filepath.Join(reqDir, "REQ-2026-01-01-flat.md")
+	if err := os.WriteFile(flatReq, []byte("---\nstatus: Open\n---\n# REQ: Flat\n"), 0644); err != nil {
+		t.Fatalf("escrever REQ flat: %v", err)
+	}
+
+	err := NewRoadmapFromContent(RoadmapContent{
+		Title:   "ML3C Contra Braco Go",
+		REQPath: flatReq,
+	})
+	if err == nil {
+		t.Fatal("Contra-braço flat: esperado erro de ambiguidade, obteve nil")
+	}
+	errMsg := err.Error()
+	if !strings.Contains(errMsg, "alpha") || !strings.Contains(errMsg, "beta") {
+		t.Errorf("Contra-braço flat: erro deve nomear alpha e beta, obteve: %q", errMsg)
+	}
+}
