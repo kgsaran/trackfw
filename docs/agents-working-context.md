@@ -2,6 +2,18 @@
 
 ---
 
+## Sessão 2026-09-12 — ares-tf (FIM: ML-3B-a + ML-3B-b)
+
+Branch `fix/by-agent-req-new-e-roadmap-new`. Entregue: `scripts/check-consumer-smoke-by-agent.sh` — GO_BIN normalizado para absoluto ANTES da guarda (padrão de check-agent-hooks-parity.sh:73-74); --req exercitado nos 3 runtimes com asserção de herança de agente por delta de arquivo + frontmatter squad:; cenário de ambiguidade (sem --agent) em 3 runtimes com diff byte-a-byte do erro; validate (Go) com decisão documentada (RC≠127, não assertions de violations porque fixture em strict mode sempre tem req_has_adr/req_has_roadmap); varredura item 4: só check-consumer-smoke-by-agent.sh era afetado. `.github/workflows/quality.yml` — continue-on-error: true removido do job consumer-smoke-by-agent (era em chave real, não comentário). DEFECTO ENCONTRADO: Python roadmap new --req não herda agente da REQ (AC11); Go e Node OK; reportado ao arquiteto; vault note criada. Falsificação: braço (a) GO_BIN=/nonexistent → RC=1 nomeando GO_BIN não-encontrado; braço (b) GO_BIN=bin/trackfw (relativo da raiz) → Go executa corretamente. actionlint: limpo. make quality: RC=0, 181 cenários, 414 OK, 0 FAIL.
+
+---
+
+## Sessão 2026-09-12 — ares-tf (INÍCIO: ML-3B-a + ML-3B-b — GO_BIN relativo, --req nos 3 runtimes, continue-on-error removido)
+
+Branch `fix/by-agent-req-new-e-roadmap-new`. Escopo: somente `scripts/check-consumer-smoke-by-agent.sh` e `.github/workflows/quality.yml` (job `consumer-smoke-by-agent`). Medições realizadas: GO_BIN relativo dá rc=127 após cd "$PROJECT"; validação que GO_BIN precisa ser normalizado ANTES da guarda (padrão de check-agent-hooks-parity.sh:73-74); --agent existe nos 3 runtimes para req new; validate --json em fixture retorna violations=0; roadmap new --req herda agente em Go e Node mas FALHA em Python (defecto de produto — reportar ao arquiteto). Varredura de item 4: só check-consumer-smoke-by-agent.sh era afetado; check-agent-hooks-parity.sh e check-agent-namespace-union.sh já normalizam GO_BIN.
+
+---
+
 ## Sessão 2026-09-12 — artemis-tf (FIM-2: ML-3A-fix + sítio irmão check-cli-parity.sh:86)
 
 Branch `fix/by-agent-req-new-e-roadmap-new`. Adicionado após decisão do arquiteto: mesma causa em `scripts/check-cli-parity.sh:86` — `check_help()` usava `(^|[[:space:]])${command}([[:space:]]|$)` no help inteiro. Fix: extrator awk por runtime (Node → commander `Commands:`, Python → argparse `positional arguments:`) + grep ancorado em `^[[:space:]]+${command}`. Extratores NÃO compartilhados por helper: falsify gate copia scripts via `cp` sem co-copiar irmãos — 5+ setups em `check-gates-falsify.sh` (8000+ linhas) para adicionar co-cópia seria mudança desproporcionada. Falsificação própria: `grep -v "require('./agents')"` → `node: missing command 'agents'` RC=1. Contra-braço RC=0. Varredura: outros `grep -E` no gate (linhas 155-160, 201-208) operam sobre strings de versão de uma linha — não vulneráveis. make quality RC=0, 0 FAILs, all 181 falsify scenarios passed.

@@ -903,3 +903,49 @@ fecha neste PR.**
 - [ ] `env -u FORCE_COLOR TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality` → **exit 0**, com o exit
       code capturado direto do `make` (não de um `grep` na saída)
 - [ ] Varredura do item 3 com comando escrito
+
+### ML-3C — 🔴 Python: `--req` com caminho ABSOLUTO NÃO-CANÔNICO não herda o agente
+**Status:** ⬜ Pendente · **bloqueia o AC15** · **Arquivos:** `pypi/trackfw/generators/roadmap.py` + testes
+
+Achado pelo `consumer-smoke-by-agent` **na primeira vez que ele executou de verdade** — antes disso o
+Go dava `rc=127` por `GO_BIN` relativo e mascarava a comparação inteira.
+
+**Matriz medida pelo arquiteto:**
+
+```
+forma do --req                     GO    NODE   PY
+caminho relativo                    ✓      ✓     ✓
+absoluto CANONICO (/private/var)    ✓      ✓     ✓
+absoluto NAO-CANONICO (/var)        ✓      ✓    🔴 erro de ambiguidade
+```
+
+`_agent_from_req_path` resolve symlink de **um lado só** — é o mesmo mecanismo do bug do `.trackfw-log`
+que corrigimos hoje de manhã no Go, agora no Python e em outra função.
+
+🔴 **Isto atinge usuário real:** projeto sob `/tmp` ou `/var` no macOS, ou qualquer caminho com symlink
+no meio.
+
+### ⚠️ Como escapou de mim QUATRO vezes
+
+Adotei `pwd -P` em toda fixture justamente para não cair em leitura falsa por `/var` × `/private/var`.
+**Essa disciplina canonizou o caminho e escondeu o defeito.** Rodei a comparação dos 3 runtimes quatro
+vezes hoje e declarei paridade nas quatro.
+
+**A lição não é "abandonar o `pwd -P`"** — ele evitou seis leituras falsas. É que **normalizar a entrada
+de teste apaga a classe de defeito que vive na entrada não normalizada.** Fixture canônica testa o
+caminho feliz; o usuário não canoniza nada.
+
+**Acoes:**
+1. `_agent_from_req_path` canonicaliza **os dois lados** antes do relativo — mesmo remédio do
+   `agentFromPath` do Go.
+2. 🔴 **Varredura:** outros sítios dos **3 runtimes** que comparam caminho resolvendo só um lado.
+   **Comando escrito.** Go e Node passam nesta matriz, mas passar não é o mesmo que estar certo.
+3. Teste com as **três formas** de caminho, nos 3 runtimes.
+
+**Criterios de aceite:**
+- [ ] A matriz de 3 formas × 3 runtimes fica toda ✓, colada no relatório
+- [ ] 🔴 **Contra-braço:** REQ **flat** (fora de namespace) continua caindo no erro de ambiguidade —
+      a correção não pode fazer o Python adivinhar agente onde não há
+- [ ] `consumer-smoke-by-agent` VERDE — é ele que expõe o defeito hoje
+- [ ] Varredura do item 2 com comando escrito
+- [ ] `env -u FORCE_COLOR TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality ; echo "RC=$?"` → RC=0

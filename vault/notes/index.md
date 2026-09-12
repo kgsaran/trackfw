@@ -4,6 +4,7 @@
 
 ## Índice
 
+- [python-roadmap-req-inheritance-defect-2026-09-12](python-roadmap-req-inheritance-defect-2026-09-12.md) — Python `roadmap new --req` não herda agente da REQ (AC11 aberto); Go e Node OK; provável inversão de ordem `resolve_write_agent` vs extração do caminho; descoberto em ML-3B-a ao exercitar Go pela primeira vez no smoke
 - [assert-help-contract-vacuous-prose-injection-2026-09-12](assert-help-contract-vacuous-prose-injection-2026-09-12.md) — `(^|[[:space:]])palavra` no grep de help inteiro é re-vacuável por prosa: ML-3A injetou "2+ agents" na descrição do commit e o gate passou mesmo sem o comando registrado; fix: extrair região de listagem por runtime (cobra/commander/argparse) + ancorar em `^[[:space:]]+`
 - [angle-bracket-title-parity-trap-2026-09-12](angle-bracket-title-parity-trap-2026-09-12.md) — `"<title>"` (com angle brackets) vs `"title"` em ReqNewLine/RoadmapNewLine causa falha silenciosa em parity-rest; gate check-validate-parity.sh só testa o caso flat, então o bug sobrevive em Go enquanto Node/Python usam a forma correta
 - [substring-assert-nao-detecta-drift-de-mensagem-de-paridade-2026-09-12](substring-assert-nao-detecta-drift-de-mensagem-de-paridade-2026-09-12.md) — assert de substring passa mesmo com mensagens completamente diferentes; paridade de string requer igualdade exata + diff de binários; mensagem de ambiguidade de agente alinhada nos 3 runtimes (ML-2E)

@@ -1237,22 +1237,20 @@ jobs:
   # AC3 — consumer smoke by_agent (2 agentes, 3 CLIs)
   # (REQ-2026-09-11-o-ciclo-testa-onde-funciona...)
   #
-  # Cria um projeto descartável com roadmap_namespacing: by_agent e 2 agentes
-  # (alpha, beta) e roda os comandos principais nos 3 CLIs. Detecta o #320
-  # (roadmap always em agents[0], --req ignorando o agente da REQ).
+  # Smoke end-to-end com projeto by_agent + 2 agentes (alpha, beta).
+  # Verifica: --agent roteia para o namespace correto; roadmap new --req herda
+  # o agente da REQ (AC11); sem --agent com 2 agentes → erro de ambiguidade (AC5).
   #
-  # continue-on-error: true TEMPORÁRIO — remover quando #320 for corrigido.
-  # CRITÉRIO DE REMOÇÃO: job reprova APENAS por motivos distintos de #320;
-  # roadmap new (com e sem --req) rota para o agente correto nos 3 CLIs.
-  #
-  # DECLARAÇÃO DE RECONCILIAÇÃO: Este job afirma que com projeto by_agent +
-  # 2 agentes, roadmap new sempre coloca o artefato em agents[0] (alpha).
-  # Medição: agentStateDir("", "backlog") usa cfg.Agents[0]
-  # (internal/generators/roadmap.go:108-115).
+  # ML-3B-a (PR #330): GO_BIN=bin/trackfw era relativo; depois de `go build` o CWD
+  #   é a raiz mas as chamadas do script rodam após cd "$PROJECT" → rc=127 (issue #328).
+  #   O script agora normaliza GO_BIN para absoluto internamente (padrão dos outros gates).
+  #   O workflow não precisa mais passar o valor; GO_BIN omitido → default absoluto no script.
+  # ML-3B-b (PR #330): continue-on-error removido — #320 corrigido nas waves 1-3A.
+  #   ⚠️ Python roadmap new --req não herda agente da REQ (defecto AC11 medido em 2026-09-12);
+  #   o job ficará vermelho por esse motivo até o defecto ser corrigido.
   # ---------------------------------------------------------------------------
   consumer-smoke-by-agent:
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v7
 
@@ -1276,5 +1274,5 @@ jobs:
 
       - run: python -m pip install pypi/
 
-      - name: "AC3 — consumer smoke by_agent (2 agentes, 3 CLIs)"
-        run: GO_BIN=bin/trackfw scripts/check-consumer-smoke-by-agent.sh
+      - name: "consumer smoke by_agent (2 agentes, 3 CLIs — AC4, AC5, AC11)"
+        run: scripts/check-consumer-smoke-by-agent.sh

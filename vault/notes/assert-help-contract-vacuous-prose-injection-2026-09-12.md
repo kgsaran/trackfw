@@ -71,3 +71,27 @@ Uma asserção de presença de palavra-chave em texto longo é re-vacuável semp
 o texto puder crescer por outra razão (help text, exemplo de uso, comentário inline).
 O padrão seguro para verificar que um subcomando está _registrado_ é extrair a
 seção de listagem de comandos do help e ancorar o grep ao início de linha.
+
+## Sítio irmão: check-cli-parity.sh:86
+
+Mesmo defeito, mesma causa:
+```bash
+grep -Eq "(^|[[:space:]])${command}([[:space:]]|$)" <<<"$output"
+```
+`$output` é o help inteiro de Node e Python. A mesma prosa "2+ agents" tornaria a
+asserção vacuosa se alguém removesse o comando `agents` do registro.
+
+Corrigido na mesma REQ/PR: extrai a região por runtime (Node → commander `Commands:`,
+Python → argparse `positional arguments:`) antes do grep, e ancora em `^[[:space:]]+`.
+
+## Por que os extratores NÃO foram compartilhados em helper
+
+O falsify gate (`check-gates-falsify.sh`) copia cada script de gate via `cp` para
+diretórios de fixture isolados, sem mecanismo para co-copiar arquivos irmãos. Em
+particular, para os cenários de `check-cli-parity.sh` (5, 10, 21, 22, 23), apenas
+o script principal é `cp`-ado; `check-integration-cli-parity.sh` é `ln -s`. Um
+helper `_help-region.sh` ficaria ausente no `$T/scripts/` da fixture e quebraria o
+`source`. Adicionar a co-cópia a todos os 5+ setups em `check-gates-falsify.sh`
+(8000+ linhas) é mudança desproporcionalmente grande para dois awk one-liners. Os
+extratores são duplicados com comentário justificando — drift coberto pelas
+falsificações independentes de cada gate.
