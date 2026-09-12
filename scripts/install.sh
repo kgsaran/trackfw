@@ -3,7 +3,7 @@ set -e
 
 REPO="kgsaran/trackfw"
 BIN="trackfw"
-INSTALL_DIR="/usr/local/bin"
+INSTALL_DIR="${TRACKFW_INSTALL_DIR:-/usr/local/bin}"
 
 # --- Detectar OS ---
 RAW_OS=$(uname -s)
@@ -98,6 +98,9 @@ VERSION_BARE="${VERSION#v}"
 FILENAME="${BIN}_${VERSION_BARE}_${OS}_${ARCH}.tar.gz"
 URL="https://github.com/${REPO}/releases/download/${VERSION}/${FILENAME}"
 TMP_DIR=$(mktemp -d)
+# Garantir limpeza do diretorio temporario em qualquer saida (normal ou por erro).
+# Signal 0 equivale a EXIT em sh POSIX.
+trap 'rm -rf "${TMP_DIR}"' 0
 
 echo "Instalando trackfw ${VERSION} (${OS}/${ARCH})..."
 echo "URL: ${URL}"
@@ -119,6 +122,94 @@ else
   wget -qO "${TMP_DIR}/${FILENAME}" "${URL}"
 fi
 
+# --- Verificar checksum SHA-256 (antes de extrair) ---
+#
+# O checksums.txt e publicado pelo GoReleaser na mesma tag do release.
+# Baixar, localizar a entrada exata de FILENAME (match por igualdade de campo,
+# nunca substring — ver comentario das linhas 35-43 sobre ancoragem de grep)
+# e comparar com o hash calculado localmente antes de qualquer extracao.
+#
+# Tres estados de falha, cada um com mensagem propria:
+#   ausente   — FILENAME nao encontrado em checksums.txt
+#   duplicado — FILENAME aparece mais de uma vez (arquivo corrompido/adulterado)
+#   divergente— hash calculado nao bate o hash publicado
+#
+# Ferramenta de hash: sha256sum (Linux/GNU) ou shasum -a 256 (macOS/BSD).
+# Ausencia das duas e falha fechada — "nao consegui verificar" nao e
+# "verificado" e nunca pode ser tratado como tal.
+
+CHECKSUMS_URL="https://github.com/${REPO}/releases/download/${VERSION}/checksums.txt"
+CHECKSUMS_FILE="${TMP_DIR}/checksums.txt"
+
+# Baixar checksums.txt da mesma tag
+if command -v curl >/dev/null 2>&1; then
+  if ! curl -sSfL "${CHECKSUMS_URL}" -o "${CHECKSUMS_FILE}"; then
+    echo "Erro: nao foi possivel baixar checksums.txt de ${CHECKSUMS_URL}" >&2
+    echo "Instalacao abortada — verificacao de integridade impossivel." >&2
+    exit 1
+  fi
+elif command -v wget >/dev/null 2>&1; then
+  if ! wget -qO "${CHECKSUMS_FILE}" "${CHECKSUMS_URL}"; then
+    echo "Erro: nao foi possivel baixar checksums.txt de ${CHECKSUMS_URL}" >&2
+    echo "Instalacao abortada — verificacao de integridade impossivel." >&2
+    exit 1
+  fi
+fi
+
+# Detectar ferramenta de hash — sha256sum (Linux/GNU) ou shasum (macOS/BSD)
+SHA256_CMD=""
+if command -v sha256sum >/dev/null 2>&1; then
+  SHA256_CMD="sha256sum"
+elif command -v shasum >/dev/null 2>&1; then
+  SHA256_CMD="shasum"
+else
+  echo "Erro: nem sha256sum nem shasum encontrados neste sistema." >&2
+  echo "Instalacao abortada — verificacao de checksum nao pode ser realizada." >&2
+  exit 1
+fi
+
+# Parsear checksums.txt: contar entradas exatas para FILENAME e capturar o hash.
+# Formato goreleaser: "<hash>  <filename>" (dois espacos como separador).
+# Usa awk para separar campos — nao usa grep para evitar match de substrings
+# (ex: 'trackfw_1.0.0_linux_amd64.tar.gz' nao deve casar 'trackfw_1.0.0_linux_amd64.tar.gz.sig').
+EXPECTED_HASH=""
+MATCH_COUNT=0
+while IFS= read -r CKLINE || [ -n "$CKLINE" ]; do
+  CKLINE_HASH=$(printf '%s' "$CKLINE" | awk '{print $1}')
+  CKLINE_FILE=$(printf '%s' "$CKLINE" | awk '{print $2}')
+  if [ "$CKLINE_FILE" = "$FILENAME" ]; then
+    MATCH_COUNT=$((MATCH_COUNT + 1))
+    EXPECTED_HASH="$CKLINE_HASH"
+  fi
+done < "${CHECKSUMS_FILE}"
+
+if [ "$MATCH_COUNT" -eq 0 ]; then
+  echo "Erro: checksum ausente — '${FILENAME}' nao encontrado em checksums.txt." >&2
+  echo "Instalacao abortada." >&2
+  exit 1
+elif [ "$MATCH_COUNT" -gt 1 ]; then
+  echo "Erro: checksum duplicado — '${FILENAME}' aparece ${MATCH_COUNT} vezes em checksums.txt." >&2
+  echo "Instalacao abortada." >&2
+  exit 1
+fi
+
+# Calcular hash do tarball baixado e comparar
+if [ "$SHA256_CMD" = "sha256sum" ]; then
+  ACTUAL_HASH=$(sha256sum "${TMP_DIR}/${FILENAME}" | awk '{print $1}')
+else
+  ACTUAL_HASH=$(shasum -a 256 "${TMP_DIR}/${FILENAME}" | awk '{print $1}')
+fi
+
+if [ "$ACTUAL_HASH" != "$EXPECTED_HASH" ]; then
+  echo "Erro: checksum divergente — o tarball recebido nao corresponde ao hash publicado." >&2
+  echo "  Esperado:  ${EXPECTED_HASH}" >&2
+  echo "  Calculado: ${ACTUAL_HASH}" >&2
+  echo "Instalacao abortada — o tarball pode estar corrompido ou adulterado." >&2
+  exit 1
+fi
+
+echo "Checksum OK: ${ACTUAL_HASH}"
+
 # --- Extrair ---
 tar -xzf "${TMP_DIR}/${FILENAME}" -C "${TMP_DIR}"
 
@@ -132,8 +223,7 @@ else
   chmod +x "${INSTALL_DIR}/${BIN}"
 fi
 
-# --- Limpeza ---
-rm -rf "${TMP_DIR}"
+# --- Limpeza --- (realizada automaticamente pelo trap EXIT configurado acima)
 
 # --- Verificar PATH ---
 case ":${PATH}:" in
