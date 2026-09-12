@@ -2,8 +2,13 @@
   "name": "@trackfw-bin/linux-x64",
   "version": "0.0.1",
   "description": "trackfw binary for linux x64",
-  "bin": { "trackfw": "bin/trackfw" },
-  "os": ["linux"],
-  "cpu": ["x64"],
-  "files": ["bin/trackfw"]
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "files": [
+    "bin/trackfw"
+  ]
 }

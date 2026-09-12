@@ -2,8 +2,13 @@
   "name": "@trackfw-bin/darwin-x64",
   "version": "0.0.1",
   "description": "trackfw binary for darwin x64",
-  "bin": { "trackfw": "bin/trackfw" },
-  "os": ["darwin"],
-  "cpu": ["x64"],
-  "files": ["bin/trackfw"]
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "files": [
+    "bin/trackfw"
+  ]
 }

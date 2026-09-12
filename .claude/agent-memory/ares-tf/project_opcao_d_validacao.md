@@ -20,6 +20,7 @@ Opção D validada (Trilha 1 completa) em 2026-09-12. worktree `trackfw-nul`, br
 - AC6: lockfile macOS → Windows real; provado localmente via --os/--cpu flag (aproximação); Windows CI seria o fechamento correto via windows-probe.yml
 - AC8/AC9: Linux e Windows (OrbStack não ativo, sem QEMU; windows-probe.yml é o caminho)
 
+<<<<<<< HEAD
 **Prova VM (win32/arm64, 2026-09-12):**
 - AC2: npm ci --ignore-scripts win32/arm64 ✅ (shim resolve dinamicamente, sem platformMap hardcoded)
 - AC6: lockfile darwin/arm64 → npm ci win32/arm64 instala win32-arm64 corretamente ✅
@@ -30,6 +31,9 @@ Opção D validada (Trilha 1 completa) em 2026-09-12. worktree `trackfw-nul`, br
 **Observação:** VM é ARM64 (UTM); CI runner win32/x64 não testado empiricamente. Para x64: windows-probe.yml (instrumento disponível).
 
 **AC3 resolvido por Zeus:** cache frio + exit 0 do npm install provam que npm não tentou github.com (a advertência do proxy era inofensiva).
+=======
+**Caminho para fechar:** npm pack os 5 tarballs + adicionar pergunta ao windows-probe + disparar manualmente. Requer commit/push por Zeus.
+>>>>>>> origin/main
 
 **Custo oculto confirmado:** issue #338 piora — 5 sítios de versão viram 11+ (5 platform pkgs + shim + wheels).
 

@@ -325,6 +325,9 @@ _RULE_DEFAULTS = {
     # agent_namespace_undeclared ("error"). Nunca "off" por default — silêncio total é o defeito que
     # esta REQ existe para fechar.
     "agent_namespace_hidden": "warning",
+    # ML-1A (AC9, REQ nasce órfã): divergência entre frontmatter `roadmap:` e corpo `Roadmap:`
+    # quando ambos estão preenchidos mas apontam para basenames diferentes.
+    "req_roadmap_sync": "warning",
 }
 
 
@@ -1277,7 +1280,14 @@ def validate_blocked_has_req(cfg: dict) -> list:
 
 
 def validate_reqs_have_roadmap(cfg: dict) -> list:
-    """REQs sem marcador roadmap → violation."""
+    """REQs sem vínculo de roadmap → violation.
+
+    ML-1A (AC9) — fonte de verdade: FRONTMATTER primeiro.
+    Usa parse_frontmatter(content).get("roadmap") como fonte primária; cai no
+    _content_has_marker_value (corpo `Roadmap:` com HasPrefix) se o frontmatter estiver vazio.
+    Isso corrige os 21 órfãos falsos (frontmatter preenchido, corpo vazio) SEM exigir sufixo .md
+    — preservando os seams dos cenários 192 e 25.
+    """
     files = resolve_req_files(cfg)
     roadmap_markers = cfg.get("link_fields", {}).get("roadmap", ["Roadmap:"])
     violations = []
@@ -1285,12 +1295,57 @@ def validate_reqs_have_roadmap(cfg: dict) -> list:
         content = _read_file_for_rule("req_has_roadmap", file_path, violations)
         if content is None:
             continue
-        if not _content_has_marker_value(content, roadmap_markers):
+        fm_roadmap = parse_frontmatter(content).get("roadmap", "")
+        if not fm_roadmap and not _content_has_marker_value(content, roadmap_markers):
             name = os.path.basename(file_path)
             violations.append(
                 {"type": "violation", "message": f'req "{name}" has no linked Roadmap (marker must start the line with a real, non-placeholder value)'}
             )
     return violations
+
+
+def _extract_body_ref_path(content: str, field: str) -> str:
+    """Extrai o valor do campo `field` do CORPO da REQ, ignorando o bloco frontmatter.
+    Retorna '' se não houver frontmatter ou o campo não estiver no corpo.
+    """
+    lines = content.replace("\r\n", "\n").split("\n")
+    fm_count = 0
+    body_start = -1
+    for i, line in enumerate(lines):
+        if line.strip() == "---":
+            fm_count += 1
+            if fm_count == 2:
+                body_start = i + 1
+                break
+    if body_start < 0:
+        return ""
+    body_content = "\n".join(lines[body_start:])
+    return _extract_ref_path(body_content, field)
+
+
+def validate_req_roadmap_sync(cfg: dict) -> list:
+    """Detecta REQs onde frontmatter `roadmap:` e corpo `Roadmap:` divergem em basename.
+    Diferenças de estado (wip→done) são esperadas e NÃO disparam esta regra.
+    ML-1A decisão 2: warning para divergência real de basename.
+    """
+    files = resolve_req_files(cfg)
+    warnings = []
+    for file_path in files:
+        content = _read_file_for_rule("req_roadmap_sync", file_path, warnings)
+        if content is None:
+            continue
+        fm_ref = parse_frontmatter(content).get("roadmap", "")
+        body_ref = _extract_body_ref_path(content, "Roadmap")
+        if not fm_ref or not body_ref:
+            continue
+        fm_base = os.path.basename(fm_ref.strip("`\"'"))
+        body_base = os.path.basename(body_ref.strip("`\"'"))
+        if fm_base != body_base:
+            name = os.path.basename(file_path)
+            warnings.append(
+                {"type": "warning", "message": f'req "{name}" has divergent roadmap links: frontmatter="{fm_ref}" body="{body_ref}"'}
+            )
+    return warnings
 
 
 def validate_adrs_are_referenced(cfg: dict, cwd: str = None) -> list:
@@ -4316,6 +4371,7 @@ def validate_unfiltered(cwd: str = None) -> dict:
     _apply_rule("req_has_adr",     validate_reqs_have_adr(cfg),     violations, warnings, cfg)
     _apply_rule("blocked_has_req", validate_blocked_has_req(cfg),   violations, warnings, cfg)
     _apply_rule("req_has_roadmap", validate_reqs_have_roadmap(cfg), violations, warnings, cfg)
+    _apply_rule("req_roadmap_sync", validate_req_roadmap_sync(cfg), violations, warnings, cfg)
     violations += _enrich_items(validate_frontmatter_presence(cfg),    "frontmatter_presence")
 
     # wip_limit: violations e warnings já separados internamente

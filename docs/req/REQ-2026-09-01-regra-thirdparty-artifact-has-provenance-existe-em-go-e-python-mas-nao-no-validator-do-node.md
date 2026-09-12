@@ -63,3 +63,63 @@ ADR: <!-- nenhum. Fechamento de lacuna de paridade sobre regra já decidida. -->
 ## Linked Roadmap
 
 Roadmap:
+
+---
+
+## Triagem medida — 2026-09-12 (ML-1B)
+
+**Veredito: PARCIAL — não fechar.**
+
+### 🔴 A evidência original desta REQ era falsa
+
+A evidência original (Zeus, 2026-09-01) usou `grep -rn` do ambiente e obteve "0 ocorrências no
+Node". Era um **falso negativo**: o `grep` do ambiente é `ugrep 7.8.4` com o flag `-I` ativo por
+padrão. `ugrep -I` trata arquivos com byte NUL como binários e os **pula em silêncio** (RC=1, sem
+output). `npm/src/validator/index.js` contém um byte NUL literal — mesma causa que a REQ
+`note_orphan` da mesma data.
+
+Medição que prova:
+
+```bash
+# grep do shell (ugrep 7.8.4 com -I)
+grep -c thirdparty_artifact_has_provenance npm/src/validator/index.js   →  (vazio), RC=1
+
+# /usr/bin/grep (grep nativo do sistema)
+/usr/bin/grep -c thirdparty_artifact_has_provenance npm/src/validator/index.js   →  8, RC=0
+```
+
+Referência completa: `vault/notes/grep-do-ambiente-pula-arquivo-com-nul-2026-09-12.md`
+
+### Medição de presença (/usr/bin/grep, ML-1A)
+
+```
+/usr/bin/grep -rn "thirdparty_artifact_has_provenance" internal/validator/validator_thirdparty_provenance.go
+  →  9 ocorrências (linhas 24,113,135,166,176,187,196+)
+
+/usr/bin/grep -rn "thirdparty_artifact_has_provenance" npm/src/validator/index.js
+  →  8 ocorrências (linhas 3614,3654,3669,3700,3712,3728,3770)
+  npm/src/commands/thirdparty.js
+  →  1 ocorrência (linha 39: THIRD_PARTY_PROVENANCE_RULE)
+
+/usr/bin/grep -rn "thirdparty_artifact_has_provenance" pypi/trackfw/validator.py
+  →  12+ ocorrências (linhas 127,4112,4118,4119,4160,4174,4204,4219,4229,4310,4311)
+```
+
+**A regra existe nos 3 runtimes.** A premissa da abertura desta REQ estava errada.
+
+### Status por AC
+
+| AC | Status | Evidência |
+|---|---|---|
+| AC1 — regra no Node com mesma mensagem e severidade | **Entregue** | `npm/src/validator/index.js:3614`; `check-thirdparty-parity.sh` parte C (`Makefile:86`) verifica byte-parity da mensagem nos 3 CLIs |
+| AC2 — chave montada com `/`, não separador nativo | **Entregue** | `npm/src/lib/pathfmt.js:39-43`: `normalizeRefSeparator` substitui `\` por `/`; usada na linha 3696 para `provenanceKey` |
+| AC3 — Falsificação nos 3 runtimes | **Entregue** | `check-thirdparty-parity.sh` parte C (linha 421-422): `diff -u go-branch-i.msg node-branch-i.msg`; D2-bis (linha 384): install legítimo → 0 violações em 3 CLIs |
+| AC4 — Gate reprova se regra existe em N e falta em outro | **Pendente** | Gate de conjunto de regras não existe; nenhum gate compara o conjunto implementado entre os 3 validators |
+
+**AC pendente: AC4.**
+
+O AC4 será fechado via ML-2A do roadmap
+`ROADMAP-2026-09-12-triagem-medida-das-reqs-de-paridade-e-gate-de-conjunto-de-regras.md`.
+É a Regra Dura de Causa Raiz: a lacuna sobreviveu porque nenhum gate compara o conjunto de regras
+entre os 3 validators — é a causa raiz declarada no texto da própria REQ, e o ML-2A é a correção.
+Mesma causa, mesmo roadmap. Não abrir REQ nova.

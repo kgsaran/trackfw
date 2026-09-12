@@ -186,6 +186,11 @@ var ruleDefaults = map[string]string{
 	// (que fica "error"). Nunca "off" por default: silêncio total é exatamente o defeito que esta
 	// REQ existe para fechar.
 	"agent_namespace_hidden": "warning",
+	// ML-1A (AC9, REQ nasce órfã): divergência entre frontmatter `roadmap:` e corpo `Roadmap:`
+	// quando ambos estão preenchidos mas apontam para basenames diferentes. Estado diferente
+	// (wip→done após roadmap move) não dispara esta regra. Default "warning" porque a divergência
+	// pode ser transitória (frontmatter já atualizado, body ainda com path antigo).
+	"req_roadmap_sync": "warning",
 }
 
 // ruleSeverity retorna a severidade configurada para a regra.
@@ -417,6 +422,12 @@ func ValidateUnfiltered() (violations []string, warnings []string, err error) {
 		return nil, nil, e
 	}
 	applyRule("req_has_roadmap", reqRoadmapViolations, &violations, &warnings)
+
+	reqRoadmapSyncWarns, e := validateREQRoadmapSync()
+	if e != nil {
+		return nil, nil, e
+	}
+	applyRule("req_roadmap_sync", reqRoadmapSyncWarns, &violations, &warnings)
 
 	adrOrphanViolations, e := validateADRsAreReferenced()
 	if e != nil {
@@ -711,6 +722,12 @@ func validateUnfilteredTagged() (violations []TaggedMsg, warnings []TaggedMsg, e
 		return nil, nil, e
 	}
 	applyRuleTagged("req_has_roadmap", reqRoadmapViolations, &violations, &warnings)
+
+	reqRoadmapSyncWarnsT, e := validateREQRoadmapSync()
+	if e != nil {
+		return nil, nil, e
+	}
+	applyRuleTagged("req_roadmap_sync", reqRoadmapSyncWarnsT, &violations, &warnings)
 
 	adrOrphanViolations, e := validateADRsAreReferenced()
 	if e != nil {
@@ -1761,6 +1778,17 @@ func validateBlockedHasREQ() ([]string, error) {
 	return violations, nil
 }
 
+// validateREQsHaveRoadmap verifica se cada REQ tem ao menos um campo de vínculo preenchido.
+//
+// ML-1A (AC9) — fonte de verdade: FRONTMATTER.
+// O campo `roadmap:` do frontmatter é mantido pelo `roadmap move` via syncREQReferences;
+// é o que o `serve` e o `validate` usam como autoridade. O marcador de corpo `Roadmap:`
+// é legado e pode estar desatualizado após moves. A detecção usa extractRefPath, que é
+// case-insensitive e frontmatter-first: retorna o campo `roadmap:` do frontmatter quando
+// não-vazio, caindo para o `Roadmap:` do corpo caso contrário. Isso corrige os 21 casos
+// onde o frontmatter estava preenchido mas a contagem do validate mostrava "órfã" porque
+// contentHasMarkerValue (case-sensitive, marcador capital "Roadmap:") não enxergava o
+// campo lowercase "roadmap:" do frontmatter.
 func validateREQsHaveRoadmap() ([]string, error) {
 	cfg := config.Load()
 	files := resolveREQFiles(cfg)
@@ -1771,11 +1799,65 @@ func validateREQsHaveRoadmap() ([]string, error) {
 		if !ok {
 			continue
 		}
-		if !contentHasMarkerValue(string(content), cfg.LinkFieldsRoadmap) {
+		fmRoadmap := extractFrontmatterField(string(content), "roadmap")
+		if fmRoadmap == "" && !contentHasMarkerValue(string(content), cfg.LinkFieldsRoadmap) {
 			violations = append(violations, fmt.Sprintf("req %q has no linked Roadmap (marker must start the line with a real, non-placeholder value)", filepath.Base(path)))
 		}
 	}
 	return violations, nil
+}
+
+// validateREQRoadmapSync detecta REQs onde o campo `roadmap:` do frontmatter e o marcador
+// `Roadmap:` do corpo estão AMBOS preenchidos mas apontam para basenames diferentes — sinal
+// de edição manual inconsistente. Diferenças apenas de pasta de estado (wip→done) são
+// esperadas após `roadmap move` e NÃO disparam esta regra (ML-1A decisão 2: aviso só para
+// divergência real de basename).
+func validateREQRoadmapSync() ([]string, error) {
+	cfg := config.Load()
+	files := resolveREQFiles(cfg)
+
+	var warnings []string
+	for _, path := range files {
+		content, ok := readFileForRule("req_roadmap_sync", path, &warnings)
+		if !ok {
+			continue
+		}
+		fmRef := extractFrontmatterField(string(content), "roadmap")
+		bodyRef := extractBodyRefPath(string(content), "Roadmap")
+		if fmRef == "" || bodyRef == "" {
+			continue // divergência requer os dois preenchidos
+		}
+		fmBase := filepath.Base(strings.Trim(fmRef, `"'` + "`"))
+		bodyBase := filepath.Base(strings.Trim(bodyRef, `"'` + "`"))
+		if fmBase != bodyBase {
+			warnings = append(warnings, fmt.Sprintf("req %q has divergent roadmap links: frontmatter=%q body=%q", filepath.Base(path), fmRef, bodyRef))
+		}
+	}
+	return warnings, nil
+}
+
+// extractBodyRefPath extrai o valor de um campo ref (ex: "Roadmap") do CORPO da REQ,
+// ignorando o bloco frontmatter. Usa extractRefPath no conteúdo pós-frontmatter.
+// Se não houver bloco frontmatter delimitado por "---", retorna "" (sem tentar o arquivo inteiro,
+// pois a ausência de frontmatter já é tratada pela função chamadora).
+func extractBodyRefPath(content, field string) string {
+	lines := strings.Split(content, "\n")
+	fmCount := 0
+	bodyStart := -1
+	for i, line := range lines {
+		if strings.TrimSpace(line) == "---" {
+			fmCount++
+			if fmCount == 2 {
+				bodyStart = i + 1
+				break
+			}
+		}
+	}
+	if bodyStart < 0 {
+		return ""
+	}
+	bodyContent := strings.Join(lines[bodyStart:], "\n")
+	return extractRefPath(bodyContent, field)
 }
 
 func validateADRsAreReferenced() ([]string, error) {

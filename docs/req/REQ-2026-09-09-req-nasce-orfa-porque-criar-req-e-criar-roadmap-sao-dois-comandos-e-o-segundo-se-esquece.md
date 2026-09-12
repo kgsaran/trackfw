@@ -3,7 +3,7 @@ status: Open
 date: 2026-09-09
 author: ""
 adr: ""
-roadmap: "docs/roadmaps/backlog/ROADMAP-2026-09-09-req-nasce-orfa-porque-criar-req-e-criar-roadmap-sao-dois-comandos-e-o-segundo-se-esquece.md"
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-09-req-nasce-orfa-porque-criar-req-e-criar-roadmap-sao-dois-comandos-e-o-segundo-se-esquece.md"
 ---
 
 # REQ: REQ nasce orfa porque criar REQ e criar roadmap sao dois comandos e o segundo se esquece
@@ -185,3 +185,90 @@ branches diferentes. Tive que restaurar os dois arquivos e refazer o elo à mão
 - [ ] **AC10** — 🔴 **contra-braço do AC1:** criar REQ **sem** roadmap continua possível quando é
       deliberado (decisão pura, REQ fechada sem implementação). O remédio não pode ser proibir — o AC5
       já reconhece que parte das 34 é legítima. **Atrito onde é engano, caminho livre onde é intenção.**
+
+---
+
+## Absorção da `REQ-2026-08-20` (casamento por substring) — 2026-09-12
+
+Decisão do KG: *"absorve como ML na órfã"*. A `REQ-2026-08-20-branch-has-wip-roadmap-casa-por-substring-num-corpus-de-done-que-so-cresce`
+passa a `Superseded` e seu conteúdo entra aqui.
+
+### Por que é a mesma causa, medido no código
+
+Dois sítios, duas implementações, **um mecanismo**: substring, primeiro-que-casar-vence, sem exigir
+casamento exato.
+
+```go
+// internal/generators/roadmap.go:632 — consumido por `roadmap move`
+if containsIgnoreCase(e.Name(), name) { return primeiro_match }
+
+// internal/validator/validator.go:2870 — consumido por validate, branch new, commit
+if strings.Contains(normalizeBranchSlug(name), branchSlug) { matched = true }
+```
+
+🔴 **`strings.Contains(x, "")` é sempre verdadeiro** — é por isso que o `roadmap move ""` do AC7 moveu
+um roadmap arbitrário. O bug do nome vazio **é** a fraqueza de substring, no outro sítio.
+
+### 🔴 Medição que FALSIFICA o candidato preferido da REQ absorvida
+
+A REQ-2026-08-20 propunha três candidatos e dizia do primeiro (casamento por fronteira) que era
+*"mais estrito, e provavelmente suficiente"*. **Não é.** Medido contra o corpus real — 185 roadmaps
+em `done/`+`wip/` e as 111 branches `feat|fix|refactor` de PRs mergeados:
+
+| | substring | fronteira |
+|---|---|---|
+| casamentos das 111 branches históricas | 109 | **109** |
+| branches que perderiam casamento (regressão) | — | **0** |
+| casamentos de 20 slugs curtos genéricos | 326 | 266 (−18%) |
+
+Ou seja: **fronteira não regride nada e também não resolve nada** para o uso real, porque os slugs
+históricos são longos e descritivos. Onde deveria resolver, não resolve:
+
+```
+fix/roadmap    substring 159   fronteira 159    ← 86% do corpus, inalterado
+fix/req                 17              16
+fix/guard               16              14
+fix/gate                19              15
+fix/ci                  28               2      ← só aqui funciona
+```
+
+**Por que falha:** quando o token curto é uma palavra *legítima* do nome do roadmap, a fronteira o
+encontra igual. Fronteira só remove o caso de palavra-dentro-de-palavra (`ci` em `precisao`), que é a
+minoria.
+
+### O que a medição sustenta
+
+🔴 **Nenhum dos três candidatos da REQ absorvida resolve o problema, porque os três continuam
+INFERINDO o vínculo a partir do nome.** O remédio é o mesmo que esta REQ já defende no AC8:
+
+> **o vínculo branch↔roadmap deve ser ESCRITO por quem cria a branch, não adivinhado por
+> comparação de string depois.**
+
+O `trackfw branch new` sabe qual roadmap está em `wip` no momento em que cria a branch. Esse é o
+instante em que o elo existe sem ambiguidade — e é o instante em que ele não é gravado.
+
+**Isto é a quarta ocorrência do padrão desta REQ:** a capacidade existe num comando e falta no outro.
+
+### Critérios acrescentados
+
+- [ ] **AC11** — 🔴 **ADR obrigatório** (herdado do AC1 da REQ absorvida): decisão registrada sobre
+      precisão do vínculo branch↔roadmap, com os candidatos descartados **e a medição acima**, que
+      falsifica o candidato 1. A ADR precisa dizer se o vínculo passa a ser escrito, inferido com
+      regra mais estrita, ou os dois.
+      > Nota: `adr_accepted_when_req_done` **não** exige ADR (`adrRef == "" → continue`); só valida
+      > ADR já linkado. Esta obrigação é da REQ, não do gate — registrar para não evaporar.
+- [ ] **AC12** — `findRoadmap` (`roadmap move`) e `BranchSlugMatchesRoadmap` (`validate`/`branch
+      new`/`commit`) param de aceitar nome vazio e param de escolher por proximidade, **nos 3 CLIs**.
+      🔴 Ordem obrigatória: o caso do nome vazio primeiro — ele é estritamente aditivo e não tem
+      consumidor legítimo.
+- [ ] **AC13** — retomada legítima de roadmap concluído **continua funcionando**, provada por cenário
+      (AC3 da REQ absorvida). 🔴 Risco dominante herdado: este portão é atravessado por **todo**
+      `branch new`, `commit` e `ship`; falso-positivo aqui **paralisa**, não irrita.
+- [ ] **AC14** — a medição dos 185 roadmaps vira **gate**, não nota de rodapé: mudança no matcher que
+      altere o veredito de qualquer das 111 branches históricas reprova.
+
+### Risco de execução registrado
+
+🔴 **Apertar `BranchSlugMatchesRoadmap` durante a sessão quebra qualquer frente paralela**, porque
+`branch new` e `commit` de outras frentes atravessam o mesmo binário. Frente paralela deve fixar o
+binário instalado, não reconstruir a partir da árvore desta REQ.
