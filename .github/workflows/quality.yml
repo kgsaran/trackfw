@@ -1408,25 +1408,32 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Cria cópia do teste sem a guarda EPERM em symlinkOrSkip.
-          # Cópia vai para npm/tests/ para que os require('../src/...') resolvam corretamente.
-          python3 -c "
-          src = open('npm/tests/update_discover_symlink_guard.test.js', encoding='utf-8').read()
-          needle = \"    if (err && (err.code === 'EPERM' || err.code === 'EACCES')) {\"
-          count = src.count(needle)
-          assert count >= 1, f'Falsificação Node: padrão de guarda não encontrado (count={count})'
-          falsified = src.replace(
-              needle,
-              \"    if (false) { // FALSIFIED: guard removed\"
-          )
-          open('npm/tests/_ci_falsify_node_test.js', 'w', encoding='utf-8').write(falsified)
-          "
+          # ML-1E-a2 extraiu symlinkOrSkip para npm/tests/helpers/symlink.js;
+          # update_discover_symlink_guard.test.js virou wrapper fino.
+          # A guarda agora vive no helper (linha 48). Retarget: falsifica o helper
+          # (if false) e remenda o teste para importar o helper falsificado, de
+          # modo que require('../src/...') continuem resolvendo a partir de npm/tests/.
+          python3 - << 'PYGENNODEFALSEEOF'
+          helper_src = open('npm/tests/helpers/symlink.js', encoding='utf-8').read()
+          needle = "    if (err && (err.code === 'EPERM' || err.code === 'EACCES')) {"
+          count = helper_src.count(needle)
+          assert count >= 1, f'Falsificacao Node: padrao de guarda nao encontrado em npm/tests/helpers/symlink.js (count={count})'
+          falsified_helper = helper_src.replace(needle, "    if (false) { // FALSIFIED: guard removed")
+          open('npm/tests/helpers/_ci_falsify_symlink.js', 'w', encoding='utf-8').write(falsified_helper)
 
-          echo "=== Node falsificacao: guarda EPERM removida ==="
+          test_src = open('npm/tests/update_discover_symlink_guard.test.js', encoding='utf-8').read()
+          patched_test = test_src.replace(
+              "require('./helpers/symlink')",
+              "require('./helpers/_ci_falsify_symlink')"
+          )
+          open('npm/tests/_ci_falsify_node_test.js', 'w', encoding='utf-8').write(patched_test)
+          PYGENNODEFALSEEOF
+
+          echo "=== Node falsificacao: guarda EPERM removida (helper falsificado) ==="
           OUT=$(node --require ./_ci_preload_eperm.cjs \
             --test npm/tests/_ci_falsify_node_test.js 2>&1 || true)
           echo "$OUT"
-          rm -f npm/tests/_ci_falsify_node_test.js
+          rm -f npm/tests/_ci_falsify_node_test.js npm/tests/helpers/_ci_falsify_symlink.js
 
           # node --test: testes reprovados aparecem como "not ok N - ..." ou sumario "ℹ fail N"
           # Nao aceitar "fail 0" (false positive), exigir fail count>=1 ou "not ok"
