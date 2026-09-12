@@ -1,7 +1,6 @@
 package generators
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -159,30 +158,66 @@ func ListREQs() error {
 }
 
 // parseREQMeta extrai título e status de um arquivo REQ markdown.
+//
+// ML-1A (AC9) — fonte de verdade do status: FRONTMATTER.
+// O campo `status:` do frontmatter é mantido atualizado por `req move` via rewriteREQStatus.
+// A linha de cabeçalho `> Date: ... | Status: ...` no corpo é lida como fallback para REQs
+// que não têm frontmatter (legados) ou cujo frontmatter está vazio.
+// Antes desta correção (issue #306), o extrator lia apenas o corpo — dois leitores (req list
+// e validate) com duas fontes distintas, podendo mostrar "WIP" para uma REQ que o validate
+// considerava "Done". Agora usam a mesma fonte: frontmatter primeiro.
 func parseREQMeta(path string) (title, status string) {
-	f, err := os.Open(path)
+	content, err := os.ReadFile(path)
 	if err != nil {
 		return "", "unknown"
 	}
-	defer f.Close()
-
-	scanner := bufio.NewScanner(f)
+	contentStr := string(content)
 	status = "unknown"
-	for scanner.Scan() {
-		line := scanner.Text()
+
+	// Frontmatter first: procurar campo status: no bloco YAML delimitado por "---".
+	inFM := false
+	fmClosed := false
+	fmCount := 0
+	for _, line := range strings.Split(contentStr, "\n") {
+		line = strings.TrimRight(line, "\r") // tolera CRLF
+		if !fmClosed {
+			if strings.TrimSpace(line) == "---" {
+				fmCount++
+				if fmCount == 1 {
+					inFM = true
+					continue
+				}
+				fmClosed = true
+				inFM = false
+				continue
+			}
+			if inFM {
+				k, v, ok := strings.Cut(line, ":")
+				if ok && strings.EqualFold(strings.TrimSpace(k), "status") {
+					val := strings.Trim(strings.TrimSpace(v), `"'`)
+					if val != "" {
+						status = val
+					}
+				}
+				continue
+			}
+		}
+		// Título: ancorado no início da linha de heading.
 		if strings.HasPrefix(line, "# REQ: ") {
 			title = strings.TrimPrefix(line, "# REQ: ")
 		}
-		if strings.Contains(line, "| Status: ") {
+		// Body fallback para status (apenas quando frontmatter não o forneceu).
+		if status == "unknown" && strings.Contains(line, "| Status: ") {
 			idx := strings.Index(line, "| Status: ")
 			if idx >= 0 {
 				rest := line[idx+len("| Status: "):]
-				// O status termina no próximo " |" ou no final da linha
 				if pipeIdx := strings.Index(rest, " |"); pipeIdx >= 0 {
 					rest = rest[:pipeIdx]
 				}
 				rest = strings.TrimRight(rest, " >|")
-				status = strings.TrimSpace(rest)
+				if s := strings.TrimSpace(rest); s != "" {
+					status = s
+				}
 			}
 		}
 	}

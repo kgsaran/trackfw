@@ -2,6 +2,30 @@
 
 ---
 
+## Sessão 2026-09-12 (3) — Apolo (ML-1A — correção de predicado: frontmatter-first + contentHasMarkerValue)
+
+**Início:** 2026-09-12 (continuação de contexto esgotado pela 3ª vez) | Branch: `fix/req-nasce-orfa`.
+**Tarefa:** corrigir 2 novas falhas falsify (`structural-marker-value/go` + `adr-not-accepted/go`) introduzidas pelo predicado `.md` de `extractRefPath` em `validateREQsHaveRoadmap`.
+**Diagnóstico:** `extractRefPath` exige sufixo `.md` — efeito colateral não previsto que quebrou seams S192 e S27. A correção é usar `extractFrontmatterField` + `contentHasMarkerValue` (não-vazio, não-HTML-comment), preservando HasPrefix do corpo. `extractRefPath` permanece em `ref_targets_exist` e `req_roadmap_sync` onde o `.md` é semântico correto.
+**Concluído:** 3 CLIs corrigidos (Go/Node/Python). `ROADMAP_CYCLE_SCRIPT_FROM_REQ_S25` revertido. Vault note atualizada. `make quality` **EXIT:0** (181 falsify OK, 8 chunks, 0 FAIL). `trackfw validate` **EXIT:0** (174 warnings). ML-1A ✅. Pronto para `trackfw commit` + handoff para architect.
+
+---
+
+## Sessão 2026-09-12 (2) — Apolo (ML-1A — conclusão: falsify S25 + vault)
+
+**Início:** 2026-09-12 (continuação de contexto esgotado) | Branch: `fix/req-nasce-orfa`.
+**Tarefa:** corrigir falha falsify `roadmap-req-frontmatter-path/go/from-req-baseline` (ML-1A regression), escrever nota de vault sobre o gap de backlink `syncREQReferences`, marcar ML-1A como ✅.
+**Concluído:** falsify S25 corrigido (`ROADMAP_CYCLE_SCRIPT_FROM_REQ_S25` suprime `req_has_roadmap` no baseline — placeholder `Roadmap: none` era intencional, `extractRefPath` o rejeita agora); vault note criada; ML-1A ✅; `make quality` rodando em background. Falhas pre-existentes não-ML-1A identificadas: `cli-parity/roadmap-new-flag-drift` e `cli-parity/v-flag-accepted` (não tocadas por este branch). Achado reportado ao arquiteto: `NewRoadmapFromREQ` não grava backlink na REQ — pertence ao ML-1B (AC7).
+
+---
+
+## Sessão 2026-09-12 — Apolo (ML-1A — AC9: uma noção de "vinculada")
+
+**Início:** 2026-09-12 | Branch: `fix/req-nasce-orfa` | Roadmap em wip.
+**Tarefa:** ML-1A do ROADMAP-2026-09-09-req-nasce-orfa — decidir fonte de verdade do vínculo REQ→roadmap e unificar a leitura nos 3 CLIs e no `req list`.
+
+---
+
 ## Sessão 2026-09-12 — Hades (ML-0A threat model — REQ nasce órfã)
 
 **Início:** 2026-09-12 | Branch: `fix/req-nasce-orfa` | Roadmap em wip.

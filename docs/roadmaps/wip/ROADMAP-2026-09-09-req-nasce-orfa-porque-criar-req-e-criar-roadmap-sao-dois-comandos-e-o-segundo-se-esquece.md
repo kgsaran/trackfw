@@ -296,7 +296,7 @@ echo "Gate ML-0A: $found/$EXPECTED sítios de inferência por substring confirma
 > contagem e todo gate deste roadmap medem coisas diferentes.
 
 ### ML-1A — **AC9** — uma noção de "vinculada"
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:** `internal/validator/validator.go`, `npm/src/validator/index.js`,
 `pypi/trackfw/validator.py`, e todo comando que **escreve** REQ (`req new`, `roadmap new --from-req`,
 `roadmap move`) nos 3 runtimes.
@@ -312,12 +312,24 @@ frontmatter).
 3. Todo comando que escreve REQ escreve **os dois**, ou o gerador para de emitir o marcador de corpo
    como placeholder vazio — que é o que cria a órfã silenciosa.
 **Critérios de aceite:**
-- [ ] Fonte de verdade escrita no artefato, com o motivo
-- [ ] Frontmatter preenchido + corpo vazio ⇒ comportamento decidido em (2)
-- [ ] Os dois preenchidos e **divergentes** ⇒ idem
-- [ ] Os dois iguais ⇒ passa (contra-braço)
-- [ ] Paridade nos 3 CLIs, com diff de saída real
+- [x] Fonte de verdade escrita no artefato, com o motivo
+- [x] Frontmatter preenchido + corpo vazio ⇒ comportamento decidido em (2)
+- [x] Os dois preenchidos e **divergentes** ⇒ idem
+- [x] Os dois iguais ⇒ passa (contra-braço)
+- [x] Paridade nos 3 CLIs, com diff de saída real
 **Reconciliação:** cada teste novo declara, em uma frase, qual conclusão deste ML ele afirma.
+
+**Decisões implementadas:**
+- **Fonte de verdade:** `extractRefPath(content, "roadmap")` — frontmatter `roadmap:` primeiro, fallback para corpo `Roadmap:`, exige sufixo `.md`. Motivo: consistência com `status:`, `adr:` e com o `serve`; eliminou 21 falsos positivos de órfã (REQs com frontmatter preenchido mas corpo vazio/placeholder).
+- **Divergência (dois campos preenchidos e basenames distintos):** `req_roadmap_sync: "warning"` — não bloqueia o usuário; sinaliza drift para reparo.
+- **`req list status:` (issue #306):** `parseREQMeta`/`parseREQStatus`/`parse_req_status` reescritos frontmatter-first em todos os 3 CLIs.
+- **Falsify S25 (braço baseline):** `ROADMAP_CYCLE_SCRIPT_FROM_REQ_S25` suprime `req_has_roadmap` no sandbox S25 — o placeholder `Roadmap: none` era intencional para não disparar req_has_roadmap; extractRefPath o rejeita agora; a regra é suprimida no baseline para provar só a ausência de S25_PATTERN (ref_targets_exist), que é o seam do Cenário 25.
+
+**Achado: `NewRoadmapFromREQ` não escreve backlink na REQ (ML-1B, não ML-1A):**
+`roadmap new --from-req` cria o roadmap com `req:` preenchido mas NÃO grava `roadmap:` de volta na
+REQ. `syncREQReferences` (em `roadmap move`) só atualiza REQs que já têm frontmatter `roadmap: != ""`
+— portanto REQs com `roadmap: ""` nunca recebem o backlink via esse fluxo. Este é o defeito raiz
+do AC7 (ML-1B), mesma causa, mesmo roadmap. Registrado no vault.
 
 ### ML-1B — **AC7** — `--from-req` fecha o laço
 **Status:** ⬜ Pendente

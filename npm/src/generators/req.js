@@ -23,7 +23,7 @@ function listREQFiles(cfg) {
 
 /**
  * listREQs — lista REQs (recursivo nos 3 layouts), imprimindo filename e status (coluna 60 chars).
- * Extrai status da linha `> Date: ... | Status: ...`.
+ * ML-1A (AC9): extrai status do frontmatter primeiro; cai para `> Date: ... | Status: ...` como fallback.
  * Se nenhum REQ encontrado: imprime "No REQs found in <reqDir>".
  * @param {object} cfg — config completo (ver npm/src/config)
  */
@@ -43,8 +43,10 @@ function listREQs(cfg) {
 }
 
 /**
- * parseREQStatus — extrai o status da linha `> Date: ... | Status: ...` de um arquivo REQ.
- * Status termina no próximo " |" ou fim da linha.
+ * parseREQStatus — extrai o status de um arquivo REQ.
+ * ML-1A (AC9) — fonte de verdade: FRONTMATTER.
+ * Lê `status:` do bloco YAML frontmatter primeiro; cai para a linha de cabeçalho
+ * `> Date: ... | Status: ...` no corpo se o frontmatter estiver ausente ou vazio.
  */
 function parseREQStatus(filepath) {
   let content
@@ -54,7 +56,32 @@ function parseREQStatus(filepath) {
     return 'unknown'
   }
 
-  for (const line of content.split('\n')) {
+  // Frontmatter first: procurar campo status: no bloco YAML delimitado por "---".
+  const lines = content.replace(/\r\n/g, '\n').split('\n')
+  let inFM = false
+  let fmCount = 0
+  let fmStatus = null
+  for (const line of lines) {
+    if (line.trim() === '---') {
+      fmCount++
+      if (fmCount === 1) { inFM = true; continue }
+      inFM = false; break // closed
+    }
+    if (inFM) {
+      const colonIdx = line.indexOf(':')
+      if (colonIdx > 0) {
+        const key = line.slice(0, colonIdx).trim().toLowerCase()
+        if (key === 'status') {
+          const val = line.slice(colonIdx + 1).trim().replace(/^["']|["']$/g, '')
+          if (val) { fmStatus = val; break }
+        }
+      }
+    }
+  }
+  if (fmStatus) return fmStatus
+
+  // Body fallback: linha `> Date: ... | Status: ...`
+  for (const line of lines) {
     const idx = line.indexOf('| Status: ')
     if (idx >= 0) {
       let rest = line.slice(idx + '| Status: '.length)
