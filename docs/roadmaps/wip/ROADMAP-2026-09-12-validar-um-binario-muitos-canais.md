@@ -18,10 +18,10 @@ restrição real) e a **medição de retorno** (quanto do backlog D apaga). A de
 duas — a primeira diz *se dá*, a segunda diz *se vale*.
 
 ## Acceptance Criteria
-- [ ] AC1–AC5 — instala sob a restrição real: registry alternativo, `--ignore-scripts`, sem GitHub, FS read-only, sem toolchain
-- [ ] AC6 — lockfile gerado no macOS instala no Windows
-- [ ] AC7 — contra-braço: sem pacote de plataforma, aborta nomeando a plataforma
-- [ ] AC8–AC9 — saída e exit code byte-idênticos ao nativo, nos 3 SOs
+- [x] AC1–AC5 — instala sob a restrição real: registry alternativo, `--ignore-scripts`, sem GitHub, FS read-only, sem toolchain
+- [x] AC6 — lockfile gerado no macOS instala no Windows
+- [x] AC7 — contra-braço: sem pacote de plataforma, aborta nomeando a plataforma
+- [x] AC8–AC9 — byte-idênticos: darwin/arm64 6/6 · win32/arm64 5/5 · **win32/x64 5/5** (run 34724883828)
 - [ ] AC10–AC13 — quanto do backlog (REQs **e** issues) desaparece, barateia, e o que passa a existir
 - [ ] AC14 — quantos sítios de versão o protótipo cria (a opção D **agrava** o #338)
 

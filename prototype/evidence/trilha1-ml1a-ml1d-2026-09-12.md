@@ -433,3 +433,62 @@ od -c (native): t r a c k f w   7 . 6 . 0 \n
 
 A doc `docs/portabilidade/2026-09-09-vm-de-windows-para-medicao-instalacao-e-ssh.md` registra: "Investigue na VM, meça no windows-latest." O runner do CI é x64; esta VM é ARM64. Os resultados provam a viabilidade do mecanismo em win32/arm64. Para fechar AC8/AC9 em win32/x64, o instrumento correto é `windows-probe.yml` (disponível). Dado que o mecanismo de transparência do shim (`stdio: inherit`, `process.exit(result.status)`) não depende da arquitetura, a prova em ARM64 é forte evidência para x64 — mas não é medição direta.
 
+
+---
+
+## AC9 FECHADO em win32/x64 — run 34724883828, 2026-09-12
+
+Runner `windows-latest` (x64), Pergunta 15 do `windows-probe.yml`. Passo 28 = `success`
+(o `job: cancelled` é do post-cleanup, não do passo).
+
+```
+P15_GUARD_OK: shim + binario presentes, hash verificado
+P15_HASH_NATIVE    = D3DC128C0CD5BD157C859569CB8F5A233D4CDA8C547E97D7E70DDBB22BB3DD58
+P15_HASH_INSTALLED = D3DC128C0CD5BD157C859569CB8F5A233D4CDA8C547E97D7E70DDBB22BB3DD58
+
+P15 [version]          exit 0/0   14/14        EXIT_MATCH BYTE_IDENTICAL
+P15 [validate-json]    exit 0/0   50657/50657  EXIT_MATCH BYTE_IDENTICAL
+P15 [status]           exit 0/0   1128/1128    EXIT_MATCH BYTE_IDENTICAL
+P15 [context-json]     exit 1/1   0/0          EXIT_MATCH BYTE_IDENTICAL
+P15 [validate-strict]  exit 1/1   0/0          EXIT_MATCH BYTE_IDENTICAL
+```
+
+### ⚠️ O peso de cada linha não é o mesmo
+
+🔴 `context-json` e `validate-strict` produzem **0 bytes dos dois lados**. Comparar vazio com vazio
+**não prova transparência de bytes** — o que essas duas linhas provam é o **exit code de violação
+batendo**, que é o AC9 e importa.
+
+A prova substantiva de byte-identidade são as **três primeiras**, com 14, 50.657 e 1.128 bytes. O
+`validate-json` com 50 KB é a mais forte.
+
+Registrado assim para ninguém contar "5 de 5" como se as cinco pesassem igual.
+
+### O que este run corrigiu em relação ao anterior
+
+O run 34723015977 reprovou com `shim_exit=1, shim_bytes=0` e
+`platform package @trackfw-bin/win32-x64 has no bin entry` — regressão introduzida **pelo
+arquiteto**, que removeu o `bin` dos pacotes de plataforma (correto, evita colisão em
+`node_modules/.bin/`) sem ver que o shim resolvia o binário por esse campo.
+
+Corrigido: o shim calcula o subcaminho e usa o `pkgDir` que já tinha. As duas propriedades — sem
+`bin` **e** resolvendo — passaram a ser provadas juntas em `npm/tests/shim_packaging.test.js`,
+falsificadas por mutação nas duas direções.
+
+### 🔴 Defeito remanescente no próprio probe: o registry morto trava em vez de recusar
+
+O install usa `--registry http://127.0.0.1:1` para provar que não precisa de rede. **A porta 1 não
+recusa** — fica em `SYN_SENT` até o timeout de TCP. São dois `npm install` esperando, e é por isso
+que o passo 28 leva ~11 min e parece pendurado.
+
+🔴 **Contradição interna registrada** (Regra Dura de Reconciliação): o agente **mediu** isso —
+*"port 1 trava no macOS por SYN_SENT em vez de ECONNREFUSED"* — contornou localmente cabeando o
+`node_modules` à mão, e **deixou no `agents-working-context.md` a afirmação oposta**: *"qualquer
+tentativa de rede falha com ECONNREFUSED"*. Medição certa, artefato afirmando o contrário.
+
+**Correção pendente:** `npm install --offline`. É mais rápido **e prova mais** — em vez de inferir
+"não usou rede porque a porta estava morta e mesmo assim funcionou", o próprio npm afirma que não
+usou rede.
+
+Isso é lentidão e registro errado, **não invalida o resultado**: os hashes batem e as saídas são
+byte-idênticas.
