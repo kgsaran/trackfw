@@ -387,7 +387,12 @@ ln -sf "$STUB_BIN/wget" "$MINPATH_DIR/wget"
 
 for util in sh env awk sed uname tr wc mktemp mv chmod tar cp rm printf python3; do
   bin_path="$(command -v "$util" 2>/dev/null)" || true
-  if [ -n "$bin_path" ] && [ "$(basename "$bin_path")" != "sha256sum" ] && [ "$(basename "$bin_path")" != "shasum" ]; then
+  if [ -z "$bin_path" ]; then
+    echo "FAIL [C6/setup]: utilitario essencial ausente no sistema: $util" >&2
+    GATE_FAIL=1
+    continue
+  fi
+  if [ "$(basename "$bin_path")" != "sha256sum" ] && [ "$(basename "$bin_path")" != "shasum" ]; then
     ln -sf "$bin_path" "$MINPATH_DIR/$(basename "$bin_path")" 2>/dev/null || true
   fi
 done
@@ -432,18 +437,30 @@ fi
 # C7 — PATH sem curl, somente wget → instala normalmente
 #
 # Exercita o caminho elif de install.sh (wget) que nunca executa quando curl
-# esta presente no PATH. O WGET_ONLY_BIN contem o stub wget e utilitarios
-# essenciais; curl e explicitamente excluido.
+# esta presente no PATH. O WGET_ONLY_BIN contem o stub wget, utilitarios
+# essenciais (inclusive gzip — necessario porque GNU tar faz fork de gzip para
+# descomprimir .gz no Linux) e exclui curl explicitamente.
 # Reconciliacao: afirma que o caminho wget funciona corretamente quando curl ausente.
+# Guarda de vacuidade: utilitario essencial ausente no sistema nomeia o culpado
+# em vez de montar PATH incompleto e reprovar com atribuicao errada.
+# gunzip: ligado se existir como binario separado; opcional (pode ser wrapper/
+# link de gzip em algumas distribuicoes — ausencia nao e defeito do cenario).
 # ---------------------------------------------------------------------------
 WGET_ONLY_BIN="$WORK/wget-only-bin"
 mkdir -p "$WGET_ONLY_BIN"
 ln -sf "$STUB_BIN/wget" "$WGET_ONLY_BIN/wget"
 
-for util in sh env awk sed uname tr wc mktemp mv chmod tar cp rm printf grep; do
+for util in sh env awk sed uname tr wc mktemp mv chmod tar cp rm printf grep gzip; do
   _p="$(command -v "$util" 2>/dev/null)" || true
-  [ -n "$_p" ] && ln -sf "$_p" "$WGET_ONLY_BIN/$(basename "$_p")" 2>/dev/null || true
+  if [ -z "$_p" ]; then
+    echo "FAIL [C7/setup]: utilitario essencial ausente no sistema: $util" >&2
+    GATE_FAIL=1
+    continue
+  fi
+  ln -sf "$_p" "$WGET_ONLY_BIN/$(basename "$_p")" 2>/dev/null || true
 done
+_gunzip_p="$(command -v gunzip 2>/dev/null)" || true
+[ -n "$_gunzip_p" ] && ln -sf "$_gunzip_p" "$WGET_ONLY_BIN/gunzip" 2>/dev/null || true
 if command -v sha256sum >/dev/null 2>&1; then
   ln -sf "$(command -v sha256sum)" "$WGET_ONLY_BIN/sha256sum"
 elif command -v shasum >/dev/null 2>&1; then
