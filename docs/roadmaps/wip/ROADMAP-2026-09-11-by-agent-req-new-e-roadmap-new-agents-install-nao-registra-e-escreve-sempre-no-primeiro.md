@@ -186,7 +186,7 @@ podem ser editados em paralelo com nada.
 - [ ] `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality` exit 0 (AC9)
 
 ### ML-3B-a — 🔴 O gate que "nasceu vermelho detectando o #320" NUNCA rodou o Go (issue #328)
-**Status:** ⬜ Pendente · **Bloqueia o ML-3B-b**
+**Status:** ✅ Concluído — GO_BIN absoluto, --req nos 3, fecha #328 · **Bloqueia o ML-3B-b**
 **Arquivos afetados:** `scripts/check-consumer-smoke-by-agent.sh`, `.github/workflows/quality.yml`.
 🔴 **Só esses dois.**
 
@@ -242,7 +242,7 @@ era medida por ele. **Escrevemos "nasce vermelho detectando X" sem verificar o q
 - [ ] Fecha a issue **#328**
 
 ### ML-3B-b — 🔴 `consumer-smoke-by-agent` VERDE e `continue-on-error` REMOVIDO (AC15)
-**Status:** ⬜ Pendente · **Dependência: ML-3B-a**
+**Status:** ✅ Concluído — chave YAML ausente, verificado por grep · **Dependência: ML-3B-a**
 **Arquivos afetados:** o workflow que define `consumer-smoke-by-agent` (introduzido no PR #326).
 **Acoes:**
 1. Confirmar que o job passa a **VERDE** com as waves 1-3A aplicadas.
@@ -949,3 +949,53 @@ caminho feliz; o usuário não canoniza nada.
 - [ ] `consumer-smoke-by-agent` VERDE — é ele que expõe o defeito hoje
 - [ ] Varredura do item 2 com comando escrito
 - [ ] `env -u FORCE_COLOR TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality ; echo "RC=$?"` → RC=0
+
+---
+
+## ✅ REQ COMPLETA — 2026-09-12
+
+**15 MLs, todos auditados pelo arquiteto contra os binários** — nenhum aceito por relatório.
+
+```
+Wave 0   derivacao dos sitios
+Wave 1   resolucao de agente nos 3 CLIs        + 1A-fix, 1A-fix2, 1D, 1E-a, 1E-a2, 1E-a3, 1E-b
+Wave 2   agents install registra em agents:    + 2D (gate), 2E (mensagem byte-identica)
+Wave 3   emissores (3A) + 3A-fix + #328 (3B-a) + AC15 (3B-b) + 3C
+```
+
+`make quality` **RC=0** · `make parity-rest` **RC=0** (sem o flag, como o CI roda)
+
+### Fecha
+
+`Closes #315` · `Closes #320` · `Closes #328`
+
+### 🔴 Oito defeitos que NÓS achamos, nenhum reportado de fora
+
+```
+.trackfw-log        derivacao de caminho executada DEPOIS do rename
+squad: na REQ       quebrava check-artifact-parity (a pasta e a fonte de verdade)
+#315 reintroduzido  nos testes escritos no mesmo dia, dentro da correcao de outro defeito
+parity-falsify      perdia o braco Python em silencio apos o squadVal
+direction-b2        virou vacuo por defesa em profundidade absorver a mutacao
+help contract       prosa "2+ agents" satisfazia a assercao sem o comando existir
+LF no Windows       reescrita do trackfw.yaml trocava TODOS os terminadores
+agents: duplicada   Python perdia alpha e beta silenciosamente
+```
+
+### O que mudou de método, e é o que fica
+
+🔴 **Nenhuma das 15 entregas passou na primeira auditoria.** Todas voltaram com algo — AC não
+entregue, paridade quebrada, sítio deixado vivo, gate sem alvo, teste afirmando o oposto do contrato.
+
+O que separou "entregue" de "entregue quebrado" foi sempre a mesma coisa: **rodar o binário, não ler o
+relatório.** E o instrumento que mais rendeu não foi teste unitário — foi **mutação**: quatro gates que
+estavam corretos quando escritos haviam **parado de medir**, cada um por um motivo diferente, e nenhum
+seria pego por revisão de diff.
+
+⚠️ **Oito leituras falsas do próprio arquiteto** nestes três dias, quase todas por régua: `grep` de
+substring onde era preciso `diff`, `tail -1` sobre stdout+stderr, árvore de teste sem `node_modules`,
+`--targets` ausente, run do workflow errado, e `pwd -P` canonizando a fixture — **este último escondeu
+um defeito real de produto durante quatro medições**.
+
+**A lição que vale além desta REQ:** normalizar a entrada de teste apaga a classe de defeito que vive
+na entrada não normalizada. Fixture curada testa o caminho feliz; o usuário não cura nada.
