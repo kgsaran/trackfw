@@ -8,10 +8,12 @@ Branch `fix/by-agent-req-new-e-roadmap-new`. Escopo: `pypi/` apenas (ML-2C em pa
 
 **Entregues (sem commit, sem push — para auditoria do arquiteto):**
 - `pypi/trackfw/config.py` — `register_agent_in_yaml(cwd, agent_name)`: usa `load(cwd)` para decidir se é `by_agent` (canônico, evita falso positivo em comentários YAML); splicing text-level para preservar ordem, comentários e formatação (AC3); idempotente via contagem de entradas existentes (AC1); no-op em flat (AC2); no-op quando `trackfw.yaml` ausente.
-- `pypi/trackfw/integrations/command.py` — importação via `trackfw_config` já presente; hook após `manager.install()` quando `kind == "agents"`; IDs derivados de `plan["claim"]["item"]` (não de `args.items`), garantindo cobertura mesmo em "install all" sem `--items`.
-- `pypi/tests/test_agents_skills.py` — 4 testes novos: `test_agents_install_registers_agent_in_by_agent_yaml_idempotent`, `test_agents_install_does_not_create_agents_key_in_flat_project`, `test_agents_install_yaml_diff_touches_only_agents_block`, `test_agents_install_both_falsification_directions`.
+- `pypi/trackfw/integrations/command.py` — importação via `trackfw_config` já presente; hook após `manager.install()` quando `kind == "agents"`; IDs derivados de `plan["claim"]["item"]` com filtro `scope == "project"` (escopo global não toca trackfw.yaml — contrato de paridade ML-2B/2C); cobertura de "install all" sem `--items`.
+- `pypi/tests/test_agents_skills.py` — 5 testes novos: `test_agents_install_registers_agent_in_by_agent_yaml_idempotent`, `test_agents_install_does_not_create_agents_key_in_flat_project`, `test_agents_install_yaml_diff_touches_only_agents_block`, `test_agents_install_both_falsification_directions`, `test_agents_install_global_scope_does_not_write_trackfw_yaml`.
 
-**Evidências:** 4 novos testes passam; `python3 -m pytest pypi/tests/` → 1728 passed, 0 failed.
+**Evidências:** 7 novos testes passam; `env -u FORCE_COLOR python3 -m pytest pypi/tests/` → 1731 passed, 0 failed.
+
+**Fixo pós-contrato-de-paridade:** inserção de bloco novo passou a ser `append` ao fim do arquivo (não `insert` após `roadmap_namespacing:`). Bloco existente continua sendo estendido no lugar, sem realocação.
 
 **Assessment init_gen.py:186-192:** `_write_example_adr()` lê `agents[0]` apenas para determinar o diretório do ADR de exemplo. Não toca `trackfw.yaml` — não é um sítio desta REQ. O sítio legítimo de escrita de `agents:` em init está em `_write_trackfw_yaml()` (:135), que é a fotografia inicial correta.
 

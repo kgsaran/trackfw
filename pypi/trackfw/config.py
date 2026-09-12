@@ -350,15 +350,11 @@ def register_agent_in_yaml(cwd: str, agent_name: str) -> None:
         insert_at = last_entry_idx + 1
         lines.insert(insert_at, f"  - {agent_name}\n")
     else:
-        # No agents: block yet — create one immediately after the
-        # roadmap_namespacing: line (closest logical anchor).
-        ns_idx: int | None = None
-        for i, line in enumerate(lines):
-            if line.lstrip().startswith("roadmap_namespacing:") and not line.lstrip().startswith("#"):
-                ns_idx = i
-                break
-        insert_at = (ns_idx + 1) if ns_idx is not None else len(lines)
-        lines.insert(insert_at, f"agents:\n  - {agent_name}\n")
+        # No agents: block yet — append to the END of the document.
+        # "After key X" breaks when X is absent; end-of-file is always
+        # deterministic regardless of which other keys are present or their
+        # order.  This matches the Node.js runtime contract (ML-2B/2C parity).
+        lines.append(f"agents:\n  - {agent_name}\n")
 
     with open(yaml_path, "w", encoding="utf-8") as fh:
         fh.writelines(lines)

@@ -621,3 +621,33 @@ O Node já faz assim. **Python ajusta.** Go: verificar ao chegar.
 
 🔴 Nenhum gate compara o `trackfw.yaml` **depois de modificado** pelos 3 CLIs. Sem ele, esta
 divergência volta na próxima mudança. **Entra como critério do corretivo**, não como observação.
+
+### ✅ Divergência de posição fechada — verificada rodando os dois CLIs
+
+```
+NODE                PYTHON
+wip_limit: 3        wip_limit: 3
+agents:             agents:
+  - architect         - architect
+```
+
+**Contrato final, e os dois ramos importam:**
+- bloco `agents:` **ausente** ⇒ **anexado ao fim** do documento;
+- bloco `agents:` **já existente**, mesmo no meio do arquivo ⇒ item entra **dentro do bloco**, e o bloco
+  🔴 **não muda de lugar**.
+
+O segundo ramo é o que impede a correção de criar o defeito que ela conserta: mover um bloco existente
+sujaria o diff de todo projeto que já tem a chave.
+
+### O que o broadcast de contrato evitou
+
+O ML-2B declarou três decisões no relatório dele. Propaguei aos outros dois **antes de terminarem**, e o
+Python **tinha divergido em silêncio num deles**: o filtro de escopo, ausente — instalação **global**
+escreveria o `trackfw.yaml` do **projeto**.
+
+🔴 **Sem o broadcast, essa diferença só apareceria numa auditoria futura — ou num usuário.** Vale como
+método: quando um ML de paridade decide algo que os irmãos precisam honrar, a decisão é **transmitida
+em voo**, não descoberta na auditoria final.
+
+⚠️ **E o gate continua faltando:** nada compara o `trackfw.yaml` **depois de modificado** pelos 3 CLIs.
+Esta divergência só apareceu porque rodei o comando. Entra como critério do fechamento da Wave 2.

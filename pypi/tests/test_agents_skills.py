@@ -924,3 +924,96 @@ def test_agents_install_global_scope_does_not_write_trackfw_yaml(tmp_path):
         "trackfw.yaml must not change for global-scope install:\n"
         f"{(tmp_path / 'trackfw.yaml').read_text(encoding='utf-8')}"
     )
+
+
+def test_agents_install_appends_agents_block_at_end_of_file(tmp_path):
+    """
+    Contrato de paridade ML-2B/2C — quando `agents:` ainda não existe, o
+    bloco é anexado ao FIM do documento, nunca inserido no meio.
+
+    Reconciliation: asserts the end-of-file append rule: with `wip_limit`
+    as the last key, the `agents:` block appears after it — not between
+    `roadmap_namespacing` and `wip_limit`.
+    """
+    fixture = (
+        "req_dir: docs/req\n"
+        "roadmap_dir: docs/roadmaps\n"
+        "roadmap_namespacing: by_agent\n"
+        "wip_limit: 3\n"
+    )
+    (tmp_path / "trackfw.yaml").write_text(fixture, encoding="utf-8")
+    home = tmp_path / "home"
+    home.mkdir()
+
+    env = dict(__import__("os").environ)
+    env.pop("FORCE_COLOR", None)
+    env["PYTHONPATH"] = str(__import__("pathlib").Path(__file__).parents[1])
+    __import__("subprocess").run(
+        [__import__("sys").executable, "-m", "trackfw",
+         "agents", "install", "--targets", "claude", "--items", "architect",
+         "--scope", "project", "--json"],
+        cwd=tmp_path, env=env, capture_output=True, text=True, check=False,
+    )
+
+    content = (tmp_path / "trackfw.yaml").read_text(encoding="utf-8")
+    lines = content.splitlines()
+    wip_idx = next(i for i, l in enumerate(lines) if l.startswith("wip_limit:"))
+    agents_idx = next(i for i, l in enumerate(lines) if l == "agents:")
+    assert agents_idx > wip_idx, (
+        f"agents: must appear AFTER wip_limit (end of file), "
+        f"but wip_limit is at line {wip_idx} and agents: at line {agents_idx}:\n{content}"
+    )
+
+
+def test_agents_install_existing_agents_block_stays_in_place(tmp_path):
+    """
+    Contrato de paridade ML-2B/2C — quando `agents:` já existe no meio do
+    arquivo, o novo item é adicionado DENTRO do bloco e o bloco NÃO muda
+    de posição.
+
+    Reconciliation: asserts that an already-present agents: block is extended
+    in-place — no block relocation, no diff noise on keys surrounding it.
+    """
+    fixture = (
+        "req_dir: docs/req\n"
+        "agents:\n"
+        "  - architect\n"
+        "roadmap_dir: docs/roadmaps\n"
+        "roadmap_namespacing: by_agent\n"
+        "wip_limit: 3\n"
+    )
+    (tmp_path / "trackfw.yaml").write_text(fixture, encoding="utf-8")
+    home = tmp_path / "home"
+    home.mkdir()
+
+    import os, subprocess, sys
+    from pathlib import Path
+    env = dict(os.environ)
+    env.pop("FORCE_COLOR", None)
+    env["PYTHONPATH"] = str(Path(__file__).parents[1])
+    subprocess.run(
+        [sys.executable, "-m", "trackfw",
+         "agents", "install", "--targets", "claude", "--items", "backend",
+         "--scope", "project", "--json"],
+        cwd=tmp_path, env=env, capture_output=True, text=True, check=False,
+    )
+
+    content = (tmp_path / "trackfw.yaml").read_text(encoding="utf-8")
+    lines = content.splitlines()
+
+    # agents: must still be at line index 1 (second line)
+    agents_idx = next(i for i, l in enumerate(lines) if l == "agents:")
+    assert agents_idx == 1, (
+        f"agents: block must NOT move — expected line 1, got line {agents_idx}:\n{content}"
+    )
+
+    # both entries must be present
+    assert "  - architect" in lines, f"original entry missing:\n{content}"
+    assert "  - backend" in lines, f"new entry missing:\n{content}"
+
+    # wip_limit must still be after roadmap_dir (original trailing order preserved)
+    wip_idx = next(i for i, l in enumerate(lines) if l.startswith("wip_limit:"))
+    rd_idx = next(i for i, l in enumerate(lines) if l.startswith("roadmap_dir:"))
+    assert wip_idx > rd_idx, (
+        f"trailing key order must be preserved:\n{content}"
+    )
