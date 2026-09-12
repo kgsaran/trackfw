@@ -796,26 +796,52 @@ jobs:
           tar -tzf $win64Tgz | Write-Host
           Write-Host "P15_TARBALL_SIZES: shim=$('{0:N0}' -f (Get-Item $shimTgz).Length)B win32x64=$('{0:N0}' -f (Get-Item $win64Tgz).Length)B"
 
+          # ── 3.5 Braço: --offline rejeita pacote ausente do cache (não passa vacuamente) ──
+          # Prova que --offline recusa rede de verdade: instala lodash (pacote real,
+          # publicado) contra um cache vazio. A única razão para falhar é o flag.
+          # Exit não-zero + "ENOTCACHED" na saída são ambos obrigatórios — exit-nonzero
+          # sozinho poderia vir de qualquer outra causa.
+          $emptyCache       = Join-Path $env:RUNNER_TEMP "p15-empty-cache"
+          $offlineSanityDir = Join-Path $env:RUNNER_TEMP "p15-offline-sanity"
+          $offlineOutFile   = Join-Path $env:RUNNER_TEMP "p15-offline-out.txt"
+          New-Item -ItemType Directory -Force -Path $emptyCache       | Out-Null
+          New-Item -ItemType Directory -Force -Path $offlineSanityDir | Out-Null
+          Push-Location $offlineSanityDir
+          npm install --offline --cache $emptyCache lodash 2>&1 | Tee-Object $offlineOutFile | Write-Host
+          $offlineExit = $LASTEXITCODE
+          Pop-Location
+          if ($offlineExit -eq 0) {
+            Write-Host "P15_GUARD_FAIL: OFFLINE_FLAG_IGNORED — lodash sem cache deveria falhar (exit=0)"
+            exit 1
+          }
+          $offlineContent = Get-Content $offlineOutFile -Raw -ErrorAction SilentlyContinue
+          if ($offlineContent -notmatch "ENOTCACHED|offline") {
+            Write-Host "P15_GUARD_FAIL: OFFLINE_WRONG_ERROR — sem ENOTCACHED/offline na saida; flag pode estar ignorada"
+            exit 1
+          }
+          Write-Host "P15_OFFLINE_SANITY_OK: --offline rejeita lodash sem cache (exit=$offlineExit, ENOTCACHED confirmado)"
+
           # ── 4. Instalar em projeto de teste ────────────────────────────
-          # Registry morto (http://127.0.0.1:1) prova que instalação não usa
-          # rede: qualquer tentativa falharia com ECONNREFUSED. file: paths
-          # resolvem localmente, sem registry.
-          # --omit=optional no install do shim: evita timeout por tentativas
-          # de conexão ao registry morto para as outras 5 plataformas do
-          # optionalDependencies do shim.
+          # Ambos os installs resolvem exclusivamente a partir dos tarballs locais
+          # passados como argumento (file: specs). Nenhum dep de registry resta:
+          # - shim: optionalDependencies são 6 pacotes de plataforma excluídos
+          #   via --omit=optional (não são necessários para este teste).
+          # - @trackfw-bin/win32-x64: sem dependências.
+          # --offline guarda contra regressão caso deps de registry sejam adicionados.
+          # A prova de que --offline recusa rede ativamente vive no braço 3.5 acima.
           $testDir = Join-Path $env:RUNNER_TEMP "p15-test"
           New-Item -ItemType Directory -Force -Path $testDir | Out-Null
 
-          Write-Host "=== P15-INSTALL: shim (--omit=optional, registry morto) ==="
+          Write-Host "=== P15-INSTALL: shim (--omit=optional, --offline) ==="
           Push-Location $testDir
-          npm install --ignore-scripts --omit=optional --registry http://127.0.0.1:1 $shimTgz 2>&1 | Write-Host
+          npm install --ignore-scripts --omit=optional --offline $shimTgz 2>&1 | Write-Host
           if ($LASTEXITCODE -ne 0) {
             Write-Host "P15_GUARD_FAIL: INSTALL_FAILED shim"
             Pop-Location; exit 1
           }
 
-          Write-Host "=== P15-INSTALL: @trackfw-bin/win32-x64 (registry morto) ==="
-          npm install --ignore-scripts --registry http://127.0.0.1:1 $win64Tgz 2>&1 | Write-Host
+          Write-Host "=== P15-INSTALL: @trackfw-bin/win32-x64 (--offline) ==="
+          npm install --ignore-scripts --offline $win64Tgz 2>&1 | Write-Host
           if ($LASTEXITCODE -ne 0) {
             Write-Host "P15_GUARD_FAIL: INSTALL_FAILED win32-x64"
             Pop-Location; exit 1

@@ -2,6 +2,13 @@
 
 ---
 
+## Sessão 2026-09-12 (3) — Ares (Correção 1+2: --offline + reconciliação ECONNREFUSED)
+
+**Início:** 2026-09-12 | Branch: `fix/validar-um-binario-muitos-canais` | PR #346 aberto.
+**Tarefa:** (1) Substituir `--registry http://127.0.0.1:1` por `--offline` nos dois `npm install` da Pergunta 15; adicionar braço ENOTCACHED que prova que o flag recusa rede. (2) Corrigir afirmação errada de ECONNREFUSED em `docs/agents-working-context.md` e no comentário do YAML; escrever nota de vault sobre o SYN_SENT medido.
+
+---
+
 ## Sessão 2026-09-12 (2) — Ares (regressão do shim: resolução por subcaminho + falsificação)
 
 **Início:** 2026-09-12 | Branch: `fix/validar-um-binario-muitos-canais` | Roadmap em wip.
@@ -24,7 +31,7 @@
 - Sem tarballs pré-commitados (EBADPLATFORM impede `npm install` cross-platform no macOS; 5.3MB de binário em git seria custo alto para um único probe). O step constrói e empacota inline no runner x64.
 - `npm install` (não `npm ci`) — desvio declarado no YAML; o braço AC6/lockfile-macOS foi provado na VM ARM64 e o mecanismo (lockfileVersion 3 + optionalDependencies) não é arch-dependente.
 - Reutiliza o binário da Pergunta 5b se disponível (evita segundo go build); compila fresh se ausente.
-- Registry morto (`http://127.0.0.1:1`) durante install: qualquer tentativa de rede falha com ECONNREFUSED — `file:` paths resolvem localmente.
+- Registry morto (`http://127.0.0.1:1`) durante install: **medição corrigida** — no macOS, a porta 1 não recusa (`ECONNREFUSED`); fica em `SYN_SENT` até o timeout de TCP, travando o passo por ~11 min. `file:` paths resolvem localmente (confirmado), mas o mecanismo não era o que estava escrito. **Por que o registro errado existiu:** o bullet foi escrito na seção "Decisões técnicas" no momento do design, antes de medir o comportamento real no macOS. A medição mostrou SYN_SENT, foi contornada localmente cabeando o `node_modules` à mão, mas o artefato de design não foi reescrito para refletir o que foi medido. Corrigido via `--offline` (commit de 2026-09-12, Correção 1+2).
 - Guarda de vacuidade: exit 1 se build/pack/install falham ou se shim/binário ausentes de node_modules ou se hash diverge; única exceção à regra "sem veredito" da sonda, escopo declarado no comentário.
 - Noise floor: nativo × nativo para `version` — detecta não-determinismo antes da comparação.
 - Comparação via `Start-Process -RedirectStandardOutput` (sem pipeline PowerShell) + `fc.exe /b` (binário).
