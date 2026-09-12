@@ -37,6 +37,26 @@ Branch `fix/by-agent-req-new-e-roadmap-new`. Escopo: `internal/validator/`, `npm
 
 ---
 
+## Sessão 2026-09-12 — artemis-tf (FIM: ML-2D — gate check-agents-install-yaml-parity.sh)
+
+Branch `fix/by-agent-req-new-e-roadmap-new`. Escopo: `scripts/` e `Makefile` apenas (ML-2D).
+
+**Entregues (sem commit, sem push — para auditoria do arquiteto):**
+- `scripts/check-agents-install-yaml-parity.sh` — 4 cenários × 3 runtimes, `cmp` byte a byte; idempotência; `--self-test` com mutant-pypi; `name_offender()` nomeia qual runtime divergiu. Adicionado pós-revisão: asserção `stderr-path` em S3 (o aviso deve nomear o caminho do arquivo), guarda de vacuidade positiva em S4 (`.claude/agents/trackfw-architect.md` deve existir após o install, provando que o caminho de execução foi percorrido), e correção do label `S1/reference` que imprimia OK com base no `$FAIL` global em vez do `cmp` real.
+- `Makefile` — gate ligado duas vezes em `parity-rest`: `--self-test` (falsificação) seguido do run normal. Ambas as invocações têm `GO_BIN=$(BUILD_DIR)/$(BINARY)`.
+
+**Evidências:**
+- Gate normal (pós-fix): 38 OK, exit 0 (inclui os 3 novos `stderr-path` de S3 e os 3 novos `vacuity` de S4).
+- `--self-test` (pós-fix): mutation confirmada (Python escreve chave duplicada), offender nomeado "python", contra-braço OK.
+- `env -u FORCE_COLOR TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality` → exit 0 (run completo de background completou após o compaction; incluiu `parity-falsify` com 414 OK / 0 FAIL e os demais gates).
+- `trackfw validate`: 176 warnings pré-existentes, 0 erros.
+
+**Medição prévia dos 12 cells:** todos 4 cenários × 3 runtimes já alinhados antes de escrever o gate; o gate passou de primeira. Confirmado que ML-2A/2B/2C entregaram o comportamento correto.
+
+**`make quality` — nota para o arquiteto:** o run completo excede 600s de CPU por causa do `parity-falsify` (181 cenários). O make quality do background completou exit 0; o CI deve reproduzir isso sem o timeout da ferramenta de conversação.
+
+---
+
 ## Sessão 2026-09-12 — artemis-tf (INÍCIO: ML-2D — gate check-agents-install-yaml-parity.sh)
 
 Branch `fix/by-agent-req-new-e-roadmap-new`. Escopo: `scripts/` e `Makefile` apenas (ML-2D). Outros agentes atuam em paralelo em `internal/`, `npm/`, `pypi/` — não tocar.

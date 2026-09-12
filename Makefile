@@ -77,6 +77,11 @@ parity-rest: build
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-agent-models-parity.sh
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-audit-surface.sh
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-agent-namespace-union.sh
+	# ML-2D (ROADMAP-2026-09-11-by-agent-req-new-e-roadmap-new-agents-install-nao-registra-e-escreve-sempre-no-primeiro.md):
+	# 4 cenários × 3 runtimes, compara trackfw.yaml DEPOIS de `agents install --scope project`.
+	# O check-artifact-parity.sh compara artefatos GERADOS; este gate cobre o trackfw.yaml MODIFICADO.
+	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-agents-install-yaml-parity.sh --self-test
+	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-agents-install-yaml-parity.sh
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-thirdparty-parity.sh
 	scripts/check-install-version-pin.sh
 	scripts/check-ci-workflow-pin-parity.sh

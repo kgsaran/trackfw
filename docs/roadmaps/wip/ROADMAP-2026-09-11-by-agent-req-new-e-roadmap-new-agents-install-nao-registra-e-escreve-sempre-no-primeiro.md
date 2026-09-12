@@ -152,7 +152,7 @@ comportamento sem-flag, nao reescrever o que ja funciona.
 > - 🔴 Regra Dura de Reconciliacao, uma frase por teste novo. **Nada em background.**
 
 ### ML-2A — Go · ### ML-2B — Node · ### ML-2C — Python
-**Status:** ⬜ Pendente (os tres)
+**Status:** ✅ Concluídos — paridade byte a byte nos 4 cenários, verificada pelo arquiteto com os 3 binários
 **Arquivos afetados:** o subsistema de integracoes/agents e o escritor de config de cada runtime,
 mais os testes. 🔴 Cada ML fica **dentro da sua arvore**.
 **Criterios de aceite (cada um):**
@@ -762,7 +762,7 @@ GO    avisa e nao toca                                                 ✅ refer
 ---
 
 ### ML-2D — 🔴 o gate que compara o `trackfw.yaml` DEPOIS de modificado pelos 3 CLIs
-**Status:** ⬜ Pendente · **fecha a Wave 2** · **Arquivos:** `scripts/`, `Makefile`
+**Status:** ✅ Concluído — 35 asserções; falsificação refeita pelo arquiteto (mutei o Python para inserir no topo ⇒ `offender: python`) · **Arquivos:** `scripts/`, `Makefile`
 
 **Por que este ML existe:** as **três** divergências da Wave 2 (posição do bloco, flow inline, mensagem
 de erro) apareceram **só porque o arquiteto rodou os três binários lado a lado à mão**. Isso não é
@@ -795,7 +795,7 @@ na lista dele — e é justamente onde a divergência morava.
 - [ ] `env -u FORCE_COLOR TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality` → exit 0
 
 ### ML-2E — 🔴 a mensagem de ambiguidade da Wave 1 não é byte-idêntica (D3)
-**Status:** ⬜ Pendente · **dono único, atravessa os 3 runtimes**
+**Status:** ✅ Concluído — `diff` vazio entre os 3 binários, inclusive com entrada vazia na lista
 **Arquivos:** `internal/validator/`, `npm/src/validator/`, `pypi/trackfw/validator.py` + testes
 
 ```
@@ -814,3 +814,35 @@ byte-idêntica nos 3 CLIs"*. Esta não é.
 **Contrato:** adotar a do Go, que é a mais informativa.
 **AC:** `diff` entre as saídas dos três, byte a byte — nunca substring. E falsificação: mudar **um**
 caractere em **um** runtime ⇒ o gate reprova.
+
+---
+
+## ✅ Wave 2 ENCERRADA — 2026-09-12
+
+```
+agents install registra em agents:        Go · Node · Python
+4 cenarios x 3 runtimes, cmp byte a byte  sem chave · bloco no meio · flow inline · flat
+mensagem de ambiguidade                   byte-identica nos 3
+newline LF na reescrita                   pego pelo CI, corrigido
+gate check-agents-install-yaml-parity     35 assercoes, ligado ao parity-rest
+```
+
+### O que a Wave 2 ensinou, e não estava no plano
+
+🔴 **Três divergências entre runtimes passaram por testes unitários verdes nos três**, e uma delas
+(`agents:` duplicada no Python) **destruía configuração do usuário**. Nenhuma foi achada por suíte:
+todas apareceram quando o arquiteto **rodou os três binários lado a lado**.
+
+**Cada runtime testado sozinho não prova paridade.** O `check-artifact-parity.sh` comparava artefatos
+**gerados**; o arquivo **modificado** não estava na lista. O ML-2D fecha esse buraco — e o faz
+comparando **bytes**, porque foi `grep -o "alpha, beta"` que deixou a divergência de mensagem passar
+pela auditoria do próprio arquiteto.
+
+### Método que passou a valer: contrato transmitido em voo
+
+O ML-2B declarou três decisões de contrato no relatório. O arquiteto **propagou aos irmãos antes de
+eles terminarem**, e o Python **tinha divergido em silêncio numa delas** (filtro de escopo global
+ausente).
+
+🔴 **Quando um ML de paridade decide algo que os irmãos precisam honrar, a decisão é transmitida
+durante a execução — não descoberta na auditoria final.**
