@@ -27,10 +27,25 @@ trackfw`, sem `private`, sem `publishConfig`. Último publish bem-sucedido: **20
 três dias antes. Conclusão: `secrets.NPM_TOKEN` expirou ou foi revogado. **Ação é do mantenedor** —
 rotacionar o token e re-executar só o job `publish-npm` do run 34712096620.
 
-🔴 **H-01 e H-02 NÃO foram abertos como issues.** O plano era abrir após a tag, mas os usuários de
-**npm continuam na 7.5.1, que é vulnerável**. Publicar agora um issue descrevendo leitura arbitrária
-de arquivo entrega o mapa antes de a correção chegar nesse canal. **Abrir só depois que o npm
-estiver em 7.6.0.**
+✅ **RESOLVIDO no mesmo dia.** O `NPM_TOKEN` novo autenticou mas ainda dava `403 — Two-factor
+authentication or granular access token with bypass 2fa enabled is required`. Diagnóstico pela
+**mudança do código de erro**: `404` (tentativa 1) → `403` (tentativa 2) provou que o token fora
+trocado e que o problema restante era o flag de bypass, não a credencial em si. Resolvido com token
+granular com bypass 2FA ligado. **npm em 7.6.0** desde 2026-09-12T19:00:07Z.
+
+⚠️ `npm view trackfw version` serve **cache** — mostrou 7.5.1 depois do publish bem-sucedido.
+Consultar `https://registry.npmjs.org/trackfw` direto para medir.
+
+🔴 **Recomendação pendente:** esse token vai expirar de novo, e a descoberta será igual — no meio de
+uma release, com PyPI e GitHub já publicados. O npm suporta **Trusted Publishing por OIDC**, sem
+token e sem expiração. Candidato a REQ, mesma família do H-02: canal de distribuição que confia sem
+verificar.
+
+**H-01 e H-02 abertos como issues já fechados**, #335 e #336, só **depois** dos três canais em
+7.6.0 — o critério de liberação é a distribuição, não a tag. Versões afetadas medidas, não
+presumidas: H-01 atinge Go e Node de **v2.7.0 a v7.5.1** (`filepath.Clean`+`HasPrefix` e
+`path.resolve`+`startsWith`, inalterados no período); **Python nunca foi afetado** — `api_file.py`
+usava `os.path.realpath` desde a origem e não foi tocado pelo fix.
 
 ---
 
