@@ -2,6 +2,53 @@
 
 ---
 
+## Sessão 2026-09-12 — Zeus (v7.6.0 TAGGED — npm bloqueado por credencial)
+
+Tag `v7.6.0` publicada via `trackfw release tag 7.6.0` (o `git push origin <tag>` cru é bloqueado
+pelo guard; o comando governado publica por API preservando a anotação, derivada do CHANGELOG).
+Aponta para `9007a402`. Pré-condição §3.5 satisfeita: `make check-required-full` → `declared=10,
+required=10, D\R=∅, R\W=∅, D\W=∅`.
+
+**Estado da distribuição — parcial:**
+
+| canal | estado |
+|---|---|
+| GitHub release | ✅ 7 assets em v7.6.0 |
+| PyPI | ✅ 7.6.0 |
+| npm | ❌ **parado em 7.5.1** |
+
+🔴 **`publish-npm` falhou com `npm error 404 Not Found - PUT https://registry.npmjs.org/trackfw`.**
+O npm devolve 404 em vez de 401/403 para não revelar existência de pacote — e o pacote **existe**
+(7.5.1 está publicado). Logo é **permissão, não pacote ausente**.
+
+**Descartado do nosso lado, por medição:** `.github/workflows/release.yml` **não mudou** entre
+v7.5.1 e v7.6.0 (`git log v7.5.1..v7.6.0 -- .github/workflows/release.yml` → vazio); `name:
+trackfw`, sem `private`, sem `publishConfig`. Último publish bem-sucedido: **2026-09-09T20:56Z**,
+três dias antes. Conclusão: `secrets.NPM_TOKEN` expirou ou foi revogado. **Ação é do mantenedor** —
+rotacionar o token e re-executar só o job `publish-npm` do run 34712096620.
+
+✅ **RESOLVIDO no mesmo dia.** O `NPM_TOKEN` novo autenticou mas ainda dava `403 — Two-factor
+authentication or granular access token with bypass 2fa enabled is required`. Diagnóstico pela
+**mudança do código de erro**: `404` (tentativa 1) → `403` (tentativa 2) provou que o token fora
+trocado e que o problema restante era o flag de bypass, não a credencial em si. Resolvido com token
+granular com bypass 2FA ligado. **npm em 7.6.0** desde 2026-09-12T19:00:07Z.
+
+⚠️ `npm view trackfw version` serve **cache** — mostrou 7.5.1 depois do publish bem-sucedido.
+Consultar `https://registry.npmjs.org/trackfw` direto para medir.
+
+🔴 **Recomendação pendente:** esse token vai expirar de novo, e a descoberta será igual — no meio de
+uma release, com PyPI e GitHub já publicados. O npm suporta **Trusted Publishing por OIDC**, sem
+token e sem expiração. Candidato a REQ, mesma família do H-02: canal de distribuição que confia sem
+verificar.
+
+**H-01 e H-02 abertos como issues já fechados**, #335 e #336, só **depois** dos três canais em
+7.6.0 — o critério de liberação é a distribuição, não a tag. Versões afetadas medidas, não
+presumidas: H-01 atinge Go e Node de **v2.7.0 a v7.5.1** (`filepath.Clean`+`HasPrefix` e
+`path.resolve`+`startsWith`, inalterados no período); **Python nunca foi afetado** — `api_file.py`
+usava `os.path.realpath` desde a origem e não foi tocado pelo fix.
+
+---
+
 ## Sessão 2026-09-12 — Zeus (release v7.6.0 — CHANGELOG, bump, higiene de governança)
 
 Branch `chore/release-7-6-0`. Versão decidida **pelo usuário** (AskUserQuestion): `7.6.0` minor, não
