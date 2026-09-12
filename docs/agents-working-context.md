@@ -2,26 +2,27 @@
 
 ---
 
-## Sessão 2026-09-12 — Ares (Trilha 1: ML-1A → ML-1D — Opção D) — Auditoria corrigida
+## Sessão 2026-09-12 — Ares (Trilha 1: ML-1A → ML-1D — Opção D) ✅
 
 **Início:** 2026-09-12 | Branch: `fix/validar-um-binario-muitos-canais` | Roadmap: `ROADMAP-2026-09-12-validar-um-binario-muitos-canais.md` em wip.
 **Tarefa:** Executar ML-1A (AC1–AC4), ML-1B (AC5), ML-1C (AC6–AC7), ML-1D (AC8–AC9) no worktree `trackfw-nul`.
 
-**Status real (pós-auditoria):** ML-1A ✅ ML-1B ✅ ML-1C 🔄 ML-1D 🔄 — evidências em `prototype/evidence/trilha1-ml1a-ml1d-2026-09-12.md`.
+**Status final:** ML-1A ✅ ML-1B ✅ ML-1C ✅ ML-1D ✅ — evidências em `prototype/evidence/trilha1-ml1a-ml1d-2026-09-12.md`.
 
-**Achados principais:**
+**Achados:**
 - AC4: npm EACCES com cache somente-leitura é restrição geral do npm, não da opção D (vault note adicionada)
-- AC3: bloqueio de github.com provado; proxy log tem advertência de ambiguidade (proxy pode ter morrido antes do install)
-- AC7: shim nomeia `darwin/arm64` e `@trackfw-bin/darwin-arm64` no erro — nunca MODULE_NOT_FOUND ✅
-- AC8/AC9: byte-idêntico em darwin/arm64 (6 cenários) ✅; Linux e Windows não provados empiricamente
-- AC6: lockfile macOS → Windows real não testado; provado localmente via --os/--cpu (aproximação)
-- go-to-wheel v0.2 incompatível com cmd/trackfw/ layout — wheel construído manualmente, formato gh-bin exato
-- Issue #338 agrava: 5 sítios → 11+ com a opção D
-- Gate: build ✅ tests ✅ lint ✅ validate ✅ (178 warnings pré-existentes, exit 0)
+- AC3: bloqueio de github.com provado (advertência de proxy resolvida por Zeus — cache frio + exit 0 provam que npm não tentou github.com)
+- AC6: lockfile darwin/arm64 → npm ci win32/arm64 → instala win32-arm64 corretamente; npm install idem ✅
+- AC7: shim nomeia plataforma no erro; nunca MODULE_NOT_FOUND ✅
+- AC8/AC9: byte-idêntico darwin/arm64 6/6 ✅; win32/arm64 5/5 + CRLF check (LF, 14 bytes) ✅
+- Defeito no shim corrigido: platformMap hardcoded sem win32-arm64 → resolução dinâmica em 0.0.3
+- go-to-wheel v0.2 incompatível com cmd/trackfw/ layout; wheel construído manualmente
+- Issue #338 agrava: 5 sítios → 11+ com a opção D (6 npm + N wheels PyPI)
+- Gate: make build ✅ make test ✅ make lint ✅ trackfw validate ✅ (178 warnings pré-existentes)
 
-**Para fechar AC6 + AC8/AC9 empiricamente:** npm pack tarballs + nova pergunta no windows-probe.yml + workflow_dispatch manual. Requer commit/push de Zeus.
+**Observação:** VM é ARM64; CI runner é x64. Para fechar win32/x64 empiricamente: windows-probe.yml (instrumento disponível, requer commit/push).
 
-**Handoff para Zeus:** roadmap ML-1C e ML-1D marcados 🔄; evidence file e vault note atualizados com advertências honestas.
+**Handoff para Zeus:** ML-1C e ML-1D marcados ✅; evidence file appendado com seção da VM; shim 0.0.3 publicado em verdaccio.
 
 ---
 

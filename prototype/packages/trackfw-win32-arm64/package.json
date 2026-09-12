@@ -1,0 +1,11 @@
+{
+  "name": "@trackfw-bin/win32-arm64",
+  "version": "0.0.1",
+  "description": "trackfw binary for windows arm64",
+  "os": ["win32"],
+  "cpu": ["arm64"],
+  "bin": {
+    "trackfw": "bin/trackfw.exe"
+  },
+  "files": ["bin/trackfw.exe"]
+}

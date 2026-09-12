@@ -348,3 +348,88 @@ O agente escreveu `.claude/agent-memory/ares-tf/project_opcao_d_validacao.md` na
 A**, não nesta. `.claude/agent-memory/` é versionado de propósito (48 arquivos), então o conteúdo é
 legítimo — mas vai pegar carona no commit de outra REQ. Sem impacto em produto; registrado como
 contaminação entre worktrees.
+
+---
+
+## Ares — Continuação pós-auditoria: VM de Windows (2026-09-12)
+
+> VM: `WIN-C83B0R5MIGB` · Node `v24.19.0` · npm `11.17.0` · **win32/arm64** (UTM ARM64, não x64)
+> Verdaccio: `192.168.64.1:4873` — isolado, sem uplinks para npmjs
+> Shim publicado: `trackfw-shim@0.0.3` (plataforma resolvida dinamicamente — sem platformMap hardcoded)
+> Pacote Windows ARM64: `@trackfw-bin/win32-arm64@0.0.1` (Go `windows/arm64`, `-ldflags="-s -w"`, 12.8 MB / 4.7 MB comprimido)
+
+### Defeito encontrado e corrigido no shim (durante a prova)
+
+A versão `0.0.2` do shim usava `platformMap` hardcoded com 5 plataformas (sem `win32-arm64`). Ao rodar na VM ARM64, o shim saía com `"unsupported platform win32/arm64"`. Causa: lista mantida manualmente, não acompanhou a adição do sexto pacote.
+
+**Correção:** `getPlatformPackage()` agora constrói o nome do pacote dinamicamente (`@trackfw-bin/${platform}-${arch}`). Nenhum allowlist a manter. Se a plataforma não tem pacote instalado, `resolveBinaryPath()` já produz a mensagem correta. Publicado como `0.0.3`.
+
+**Reconciliação:** este defeito afirma que um platformMap hardcoded é um ponto de falha silencioso para novas plataformas. A correção afirma que a resolução dinâmica elimina essa classe de defeito.
+
+### Cenário AC2 — Windows: npm ci --ignore-scripts
+
+```
+npm ci --ignore-scripts --registry http://192.168.64.1:4873
+→ added 2 packages in 516ms
+AC2_EXIT:0
+
+node node_modules/trackfw-shim/bin/trackfw.js version
+→ trackfw 7.6.0
+AC2_SHIM_EXIT:0
+```
+
+**Reconciliação:** este cenário afirma que `--ignore-scripts` não impede a instalação nem a resolução do binário em Windows ARM64. Provado com exit 0 e shim funcional.
+
+### Cenário AC6 — lockfile de macOS + install no Windows
+
+**Variante CI (`npm ci` com lockfile de macOS):**
+```
+npm ci --registry http://192.168.64.1:4873
+→ added 2 packages in 509ms
+AC6_CI_EXIT:0
+
+Pacotes em node_modules/@trackfw-bin/: win32-arm64
+Shim: trackfw 7.6.0  AC6_CI_SHIM_EXIT:0
+```
+
+**Variante install (`npm install` sem lockfile, detecção dinâmica):**
+```
+npm install --registry http://192.168.64.1:4873
+→ added 2 packages in 575ms
+AC6_INSTALL_EXIT:0
+
+Pacotes em node_modules/@trackfw-bin/: win32-arm64
+```
+
+**Resultado:** O lockfile gerado no macOS (que lista todos os 6 pacotes de plataforma como `"optional": true`) é usado corretamente pelo `npm ci` na VM Windows ARM64 — instala apenas `win32-arm64`. O "bug clássico" de lockfile omitindo optionalDependencies de outras plataformas **não se manifestou** com npm 11.17.0 / lockfileVersion 3. Tanto `npm ci` quanto `npm install` entregaram o mesmo resultado.
+
+**Reconciliação:** este cenário afirma que o lockfileVersion 3 preserva todos os optionalDependencies independentemente da plataforma geradora, e que o npm seleciona corretamente a plataforma alvo ao instalar. Provado empiricamente em win32/arm64 com lockfile gerado em darwin/arm64.
+
+### Cenário AC8/AC9 — Byte-identidade no Windows
+
+```
+BYTE_IDENTICAL [version] exit=0
+BYTE_IDENTICAL [version (exit code)] exit=0
+BYTE_IDENTICAL [req list] exit=0
+BYTE_IDENTICAL [roadmap status] exit=0
+BYTE_IDENTICAL [bad-command (exit!=0)] exit=1
+```
+
+**CRLF check:**
+```
+shim version byte count: 14
+native version byte count: 14
+CRLF_CHECK: SAME byte count — no CRLF divergence in transport
+
+od -c (shim):   t r a c k f w   7 . 6 . 0 \n
+od -c (native): t r a c k f w   7 . 6 . 0 \n
+```
+
+**Resultado:** 5/5 cenários BYTE_IDENTICAL em win32/arm64. Exit code preservado (0 e 1). Sem divergência de CRLF — o Go binary emite LF mesmo no Windows, e o shim (`stdio: "inherit"`) não transforma bytes.
+
+**Reconciliação:** este cenário afirma que o shim é byte-transparente em win32/arm64 — bytes e exit codes são idênticos ao nativo. Provado empiricamente com od -c comparando byte a byte.
+
+### Observação: VM é ARM64, runner CI é x64
+
+A doc `docs/portabilidade/2026-09-09-vm-de-windows-para-medicao-instalacao-e-ssh.md` registra: "Investigue na VM, meça no windows-latest." O runner do CI é x64; esta VM é ARM64. Os resultados provam a viabilidade do mecanismo em win32/arm64. Para fechar AC8/AC9 em win32/x64, o instrumento correto é `windows-probe.yml` (disponível). Dado que o mecanismo de transparência do shim (`stdio: inherit`, `process.exit(result.status)`) não depende da arquitetura, a prova em ARM64 é forte evidência para x64 — mas não é medição direta.
+

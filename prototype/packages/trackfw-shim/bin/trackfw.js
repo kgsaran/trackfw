@@ -12,25 +12,10 @@ const os = require("os");
 function getPlatformPackage() {
   const platform = os.platform();   // 'linux', 'darwin', 'win32'
   const arch = os.arch();           // 'x64', 'arm64'
-
-  const platformMap = {
-    "linux-x64":    "@trackfw-bin/linux-x64",
-    "linux-arm64":  "@trackfw-bin/linux-arm64",
-    "darwin-x64":   "@trackfw-bin/darwin-x64",
-    "darwin-arm64": "@trackfw-bin/darwin-arm64",
-    "win32-x64":    "@trackfw-bin/win32-x64",
-  };
-
-  const key = `${platform}-${arch}`;
-  const pkg = platformMap[key];
-  if (!pkg) {
-    process.stderr.write(
-      `trackfw: unsupported platform ${platform}/${arch}.\n` +
-      `Supported platforms: ${Object.keys(platformMap).join(", ")}.\n`
-    );
-    process.exit(1);
-  }
-  return pkg;
+  // Dynamic: package name is constructed from platform+arch.
+  // If the platform package is not installed, resolveBinaryPath handles
+  // the error with a clear message. No hardcoded allowlist needed.
+  return `@trackfw-bin/${platform}-${arch}`;
 }
 
 function resolveBinaryPath(pkg) {

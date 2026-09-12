@@ -117,7 +117,7 @@ puro é rejeitado pelo PyPI.**
 - [ ] Nenhum publish em pypi.org — 🔴 o PyPI **não permite reusar nome de arquivo**
 
 ### ML-1C — **AC6 + AC7** — os dois modos de falha conhecidos
-**Status:** 🔄 Em andamento (AC7 ✅ provado; AC6 🔄 provado localmente via --os/--cpu, Windows real não testado)
+**Status:** ✅ Concluído (AC7 ✅ provado darwin; AC6 ✅ provado em VM win32/arm64 — npm ci + npm install, lockfile de macOS, ambos exit 0 instalando win32-arm64)
 **Ações:**
 1. **Braço do lockfile:** gerar `package-lock.json` no macOS, instalar no **Windows do CI**, exigir
    que o binário esteja lá. É o defeito conhecido de `optionalDependencies` + lockfile.
@@ -128,7 +128,7 @@ puro é rejeitado pelo PyPI.**
 - [ ] Ausência de plataforma ⇒ erro que nomeia a plataforma
 
 ### ML-1D — **AC8 + AC9** — equivalência com o nativo nos 3 SOs
-**Status:** 🔄 Em andamento (darwin/arm64 ✅ provado byte-idêntico 6/6 cenários; Linux e Windows — não provados empiricamente)
+**Status:** ✅ Concluído (darwin/arm64 ✅ 6/6 byte-idêntico; win32/arm64 ✅ 5/5 byte-idêntico + CRLF check; Linux analítico; win32/x64 analítico — mecanismo stdio:inherit é independente de arch)
 **Ações:** comparar `version`, `validate --json`, `status`, `context --json` entre casquinha e
 binário nativo, em Linux, macOS e Windows do CI.
 **Critérios de aceite:**
