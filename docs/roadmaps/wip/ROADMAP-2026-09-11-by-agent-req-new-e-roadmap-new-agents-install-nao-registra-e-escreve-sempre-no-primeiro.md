@@ -758,3 +758,59 @@ GO    avisa e nao toca                                                 ✅ refer
 1. **Python primeiro** — é o único que destrói dado, e já está empurrado no PR #330.
 2. Node — parar de reescrever.
 3. Go — só o D1 (posição do bloco).
+
+---
+
+### ML-2D — 🔴 o gate que compara o `trackfw.yaml` DEPOIS de modificado pelos 3 CLIs
+**Status:** ⬜ Pendente · **fecha a Wave 2** · **Arquivos:** `scripts/`, `Makefile`
+
+**Por que este ML existe:** as **três** divergências da Wave 2 (posição do bloco, flow inline, mensagem
+de erro) apareceram **só porque o arquiteto rodou os três binários lado a lado à mão**. Isso não é
+repetível e não estará aqui na próxima mudança. Escrevi "falta este gate" **três vezes** neste roadmap
+antes de ele virar ML.
+
+⚠️ O `check-artifact-parity.sh` compara artefatos **gerados**. O `trackfw.yaml` **modificado** não está
+na lista dele — e é justamente onde a divergência morava.
+
+**Matriz obrigatória — 4 cenários × 3 runtimes, comparando o arquivo resultante byte a byte:**
+
+| cenário | entrada | esperado |
+|---|---|---|
+| sem chave | `trackfw.yaml` sem `agents:` | bloco **anexado ao fim**; comentários e ordem preservados |
+| bloco existente | `agents:` block **no meio** do arquivo | item entra no bloco; **o bloco não muda de lugar** |
+| flow inline | `agents: [alpha, beta]` | 🔴 arquivo **byte-idêntico**; aviso no stderr nomeando arquivo e item |
+| flat | `roadmap_namespacing: flat` | chave **não** criada |
+
+**Critérios de aceite:**
+- [ ] Os 4 cenários × 3 runtimes, com `diff` **byte a byte** entre os arquivos resultantes — 🔴 **não**
+      `grep`, **não** substring. Foi `grep -o "alpha, beta"` que deixou o D3 passar
+- [ ] Idempotência coberta: segunda instalação não duplica, nos três
+- [ ] 🔴 **Falsificação:** revertendo **um** runtime para o comportamento antigo (posição no meio, ou
+      reescrita do flow inline), o gate **reprova nomeando qual runtime divergiu**. Prove executando,
+      com a saída colada
+- [ ] 🔴 **Contra-braço:** com os três alinhados, o gate **passa**. Gate que só reprova é indistinguível
+      de gate quebrado
+- [ ] 🔴 **Ligado a alvo do `Makefile`.** Gate órfão foi a classe que reapareceu **três vezes** em
+      2026-09-10 e **duas** em 2026-09-11, uma delas num gate de segurança recém-escrito
+- [ ] `env -u FORCE_COLOR TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality` → exit 0
+
+### ML-2E — 🔴 a mensagem de ambiguidade da Wave 1 não é byte-idêntica (D3)
+**Status:** ⬜ Pendente · **dono único, atravessa os 3 runtimes**
+**Arquivos:** `internal/validator/`, `npm/src/validator/`, `pypi/trackfw/validator.py` + testes
+
+```
+GO    Error: by_agent project has multiple agent namespaces (alpha, beta): use --agent to specify one
+NODE  Error: --agent is required when multiple namespaces are configured: alpha, beta
+PY    Error: multiple agent namespaces declared (alpha, beta): use --agent to specify one
+```
+
+`internal/generators/roadmap.go` afirma no próprio comentário que *"a mensagem é contrato de paridade:
+byte-idêntica nos 3 CLIs"*. Esta não é.
+
+⚠️ **Regressão que a auditoria do arquiteto deixou passar.** Verifiquei o C3 da Wave 1 com
+`grep -o "alpha, beta"` — que casa nos três. **Afirmei que os nomes aparecem e concluí que a mensagem
+é a mesma.** São coisas diferentes.
+
+**Contrato:** adotar a do Go, que é a mais informativa.
+**AC:** `diff` entre as saídas dos três, byte a byte — nunca substring. E falsificação: mudar **um**
+caractere em **um** runtime ⇒ o gate reprova.
