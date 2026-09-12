@@ -2,6 +2,46 @@
 
 ---
 
+## Sessão 2026-09-12 — apolo-tf (FIM: ML-2C Python — agents install registra no trackfw.yaml)
+
+Branch `fix/by-agent-req-new-e-roadmap-new`. Escopo: `pypi/` apenas (ML-2C em paralelo com Go ML-2A e Node ML-2B).
+
+**Entregues (sem commit, sem push — para auditoria do arquiteto):**
+- `pypi/trackfw/config.py` — `register_agent_in_yaml(cwd, agent_name)`: usa `load(cwd)` para decidir se é `by_agent` (canônico, evita falso positivo em comentários YAML); splicing text-level para preservar ordem, comentários e formatação (AC3); idempotente via contagem de entradas existentes (AC1); no-op em flat (AC2); no-op quando `trackfw.yaml` ausente.
+- `pypi/trackfw/integrations/command.py` — importação via `trackfw_config` já presente; hook após `manager.install()` quando `kind == "agents"`; IDs derivados de `plan["claim"]["item"]` (não de `args.items`), garantindo cobertura mesmo em "install all" sem `--items`.
+- `pypi/tests/test_agents_skills.py` — 4 testes novos: `test_agents_install_registers_agent_in_by_agent_yaml_idempotent`, `test_agents_install_does_not_create_agents_key_in_flat_project`, `test_agents_install_yaml_diff_touches_only_agents_block`, `test_agents_install_both_falsification_directions`.
+
+**Evidências:** 4 novos testes passam; `python3 -m pytest pypi/tests/` → 1728 passed, 0 failed.
+
+**Assessment init_gen.py:186-192:** `_write_example_adr()` lê `agents[0]` apenas para determinar o diretório do ADR de exemplo. Não toca `trackfw.yaml` — não é um sítio desta REQ. O sítio legítimo de escrita de `agents:` em init está em `_write_trackfw_yaml()` (:135), que é a fotografia inicial correta.
+
+## Sessão 2026-09-12 — apolo-tf (INÍCIO: ML-2C Python — agents install deve registrar agente no trackfw.yaml)
+
+Branch `fix/by-agent-req-new-e-roadmap-new`. Escopo: implementar AC1/AC2/AC3/AC8 apenas em `pypi/`. Dois outros agentes atuam em paralelo em `internal/` e `npm/`. Sem commits, sem push, sem background.
+
+---
+
+## Sessão 2026-09-12 — apolo-tf (FIM: ML-2B Node — agents install registra no trackfw.yaml)
+
+Branch `fix/by-agent-req-new-e-roadmap-new`. Escopo: `npm/` apenas (ML-2B em paralelo com Go ML-2A e Python ML-2C).
+
+**Entregues (sem commit, sem push — para auditoria do arquiteto):**
+- `npm/src/integrations/register-agent.js` — `registerAgentInConfig(projectRoot, agentName)`: lê `trackfw.yaml`, guarda `roadmap_namespacing === 'by_agent'`, escreve entrada via `parseDocument`/`toString()` preservando ordem de chaves, comentários e formatação; idempotente (AC1); no-op em flat (AC2); no-op quando arquivo ausente.
+- `npm/src/integrations/index.js` — importação de `register-agent`; hook em `execute()` após `manager.install()`: guarda `kind === 'agents'`, `operation === 'install'`, `plan.claim.scope === 'project'`; coleta items únicos e chama `registerAgentInConfig` por item.
+- `npm/tests/agents_install_register.test.js` — 8 testes cobrindo AC1, AC2, AC3, AC8 (+braços complementares), todos com sentença de reconciliação.
+
+**Evidências:** `node --test tests/agents_install_register.test.js` → 8/8 ✔; `npm test` → 905 passed, 0 failed.
+
+**Decisão de nome a propagar por paridade:** valor escrito em `agents:` é `plan.claim.item` (ID do catálogo, ex: `"architect"`), não o nome do artefato (`"trackfw-architect"`). Idêntico ao formato que `trackfw.yaml` já usa para namespaces (nomes bare sem prefixo). Surfacear para o arquiteto para vinculação de paridade Go/Python.
+
+**Escopo da guarda de scope:** installs `scope === 'global'` não tocam o `trackfw.yaml` do projeto (decisão de implementação, comentada no código).
+
+## Sessão 2026-09-12 — apolo-tf (INÍCIO: ML-2B Node — agents install deve registrar agente no trackfw.yaml)
+
+Branch `fix/by-agent-req-new-e-roadmap-new`. Escopo: implementar AC1/AC2/AC3/AC8 apenas em `npm/`. Dois outros agentes atuam em paralelo em `internal/` e `pypi/`. Sem commits, sem push, sem background.
+
+---
+
 ## Sessão 2026-09-11 — artemis-tf (FIM: guarda de privilégio de symlink — ML-1B CONCLUÍDO)
 
 Branch `fix/by-agent-req-new-e-roadmap-new`. Escopo: 6 sítios ativos + 3 marginais + gate `scripts/check-symlink-privilege-guard.sh`.

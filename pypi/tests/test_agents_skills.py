@@ -691,3 +691,236 @@ def test_antigravity_current_surface_renders_agent_directory():
 
     for forbidden in forbidden_ids:
         assert forbidden not in content, f"ID proibido '{forbidden}' presente no output do backend:\n{content}"
+
+
+# ---------------------------------------------------------------------------
+# ML-2C — agents install registers agent in trackfw.yaml for by_agent projects
+# ---------------------------------------------------------------------------
+
+def _by_agent_yaml(extra_keys: str = "") -> str:
+    """Minimal trackfw.yaml with roadmap_namespacing: by_agent."""
+    return (
+        "# trackfw project config\n"
+        "req_dir: docs/req\n"
+        "roadmap_dir: docs/roadmaps\n"
+        "roadmap_namespacing: by_agent\n"
+        f"{extra_keys}"
+    )
+
+
+def _flat_yaml() -> str:
+    """Minimal trackfw.yaml with roadmap_namespacing: flat (default)."""
+    return (
+        "req_dir: docs/req\n"
+        "roadmap_dir: docs/roadmaps\n"
+        "roadmap_namespacing: flat\n"
+    )
+
+
+def test_agents_install_registers_agent_in_by_agent_yaml_idempotent(tmp_path):
+    """
+    AC1 / AC8 (installed appears) — After ``trackfw agents install`` in a
+    by_agent project the installed agent ID appears in ``agents:`` exactly
+    once.  Running a second install leaves exactly one entry (idempotent).
+
+    Reconciliation: asserts that ``agents: install`` in a by_agent project
+    writes the installed item ID into ``agents:`` and does not duplicate it
+    on a second call — the core behavioural contract of ML-2C.
+    """
+    (tmp_path / "trackfw.yaml").write_text(_by_agent_yaml(), encoding="utf-8")
+    home = tmp_path / "home"
+    home.mkdir()
+
+    result = cli(
+        "agents", "install",
+        "--targets", "claude",
+        "--items", "backend",
+        "--scope", "project",
+        "--json",
+        cwd=tmp_path,
+        home=home,
+    )
+    assert result.returncode == 0, result.stderr
+
+    content = (tmp_path / "trackfw.yaml").read_text(encoding="utf-8")
+    assert "agents:" in content, "agents: key must appear after install in by_agent project"
+    # Count occurrences — a substring check would pass with two entries
+    assert content.count("- backend") == 1, (
+        f"expected exactly one '- backend' entry, got:\n{content}"
+    )
+
+    # Second install — must stay idempotent
+    cli(
+        "agents", "install",
+        "--targets", "claude",
+        "--items", "backend",
+        "--scope", "project",
+        "--json",
+        cwd=tmp_path,
+        home=home,
+    )
+    content_after = (tmp_path / "trackfw.yaml").read_text(encoding="utf-8")
+    assert content_after.count("- backend") == 1, (
+        f"idempotency violated — duplicate entry after second install:\n{content_after}"
+    )
+
+
+def test_agents_install_does_not_create_agents_key_in_flat_project(tmp_path):
+    """
+    AC2 / AC8 (flat does not create key) — In a flat project ``trackfw agents
+    install`` must NOT write an ``agents:`` key to ``trackfw.yaml``.
+
+    Reconciliation: asserts that the by_agent guard fires correctly for a flat
+    project — the complement of AC1 that falsifies AC2 in the opposite
+    direction.
+    """
+    (tmp_path / "trackfw.yaml").write_text(_flat_yaml(), encoding="utf-8")
+    before = (tmp_path / "trackfw.yaml").read_bytes()
+    home = tmp_path / "home"
+    home.mkdir()
+
+    result = cli(
+        "agents", "install",
+        "--targets", "claude",
+        "--items", "backend",
+        "--scope", "project",
+        "--json",
+        cwd=tmp_path,
+        home=home,
+    )
+    assert result.returncode == 0, result.stderr
+
+    content = (tmp_path / "trackfw.yaml").read_text(encoding="utf-8")
+    # Assert the string "agents:" is absent — not just that the install
+    # returned 0 — so the test actually falsifies the flat-guard.
+    assert "agents:" not in content, (
+        f"agents: key must NOT appear in flat project, got:\n{content}"
+    )
+
+
+def test_agents_install_yaml_diff_touches_only_agents_block(tmp_path):
+    """
+    AC3 — With a fixture that has comments, a trailing comment after agents:,
+    and non-alphabetical key order, a diff after install shows only the agents:
+    block changing.  Every other byte is preserved.
+
+    Reconciliation: asserts that text-level splicing does not rewrite keys it
+    did not intend to touch — the formatting-preservation claim of ML-2C.
+    """
+    # Fixture: comments + non-alphabetical key order + agents: with one entry
+    fixture = (
+        "# project settings (do not sort keys)\n"
+        "roadmap_dir: docs/roadmaps\n"  # before req_dir — intentionally non-alphabetical
+        "req_dir: docs/req\n"
+        "roadmap_namespacing: by_agent\n"
+        "agents:\n"
+        "  - architect\n"
+        "# end of file\n"
+    )
+    (tmp_path / "trackfw.yaml").write_text(fixture, encoding="utf-8")
+    home = tmp_path / "home"
+    home.mkdir()
+
+    result = cli(
+        "agents", "install",
+        "--targets", "claude",
+        "--items", "backend",
+        "--scope", "project",
+        "--json",
+        cwd=tmp_path,
+        home=home,
+    )
+    assert result.returncode == 0, result.stderr
+
+    after = (tmp_path / "trackfw.yaml").read_text(encoding="utf-8")
+    assert "- backend" in after, "installed agent must appear in agents: block"
+
+    # Remove the single inserted line and compare byte-for-byte with the
+    # original.  This is the AC3 claim: "diff shows only agents: changing."
+    reconstructed = after.replace("  - backend\n", "", 1)
+    assert reconstructed == fixture, (
+        "trackfw.yaml changed beyond the agents: block:\n"
+        f"reconstructed:\n{reconstructed}\n"
+        f"expected:\n{fixture}"
+    )
+
+
+def test_agents_install_both_falsification_directions(tmp_path):
+    """
+    AC8 — Two sub-cases in one test, one for each falsification direction:
+    (a) by_agent project: installed agent appears in agents:
+    (b) flat project:     agents: key is absent after install
+
+    Reconciliation: explicitly exercises both branches of the by_agent guard
+    and checks the opposite outcome for each, ensuring neither direction can
+    produce a false green.
+    """
+    home = tmp_path / "home"
+    home.mkdir()
+
+    # (a) by_agent — installed agent must appear
+    by_agent_dir = tmp_path / "by_agent_proj"
+    by_agent_dir.mkdir()
+    (by_agent_dir / "trackfw.yaml").write_text(_by_agent_yaml(), encoding="utf-8")
+    r = cli(
+        "agents", "install",
+        "--targets", "claude",
+        "--items", "frontend",
+        "--scope", "project",
+        "--json",
+        cwd=by_agent_dir,
+        home=home,
+    )
+    assert r.returncode == 0, r.stderr
+    content_a = (by_agent_dir / "trackfw.yaml").read_text(encoding="utf-8")
+    assert "agents:" in content_a, "(a) agents: key must appear in by_agent project"
+    assert content_a.count("- frontend") == 1, (
+        f"(a) expected exactly one '- frontend', got:\n{content_a}"
+    )
+
+    # (b) flat — agents: key must be absent
+    flat_dir = tmp_path / "flat_proj"
+    flat_dir.mkdir()
+    (flat_dir / "trackfw.yaml").write_text(_flat_yaml(), encoding="utf-8")
+    r = cli(
+        "agents", "install",
+        "--targets", "claude",
+        "--items", "frontend",
+        "--scope", "project",
+        "--json",
+        cwd=flat_dir,
+        home=home,
+    )
+    assert r.returncode == 0, r.stderr
+    content_b = (flat_dir / "trackfw.yaml").read_text(encoding="utf-8")
+    assert "agents:" not in content_b, (
+        f"(b) agents: key must NOT appear in flat project, got:\n{content_b}"
+    )
+
+
+def test_agents_install_global_scope_does_not_write_trackfw_yaml(tmp_path):
+    """
+    Contrato de paridade ML-2B/2C — instalação de escopo global não toca
+    trackfw.yaml do projeto.
+
+    Reconciliation: asserts the scope == 'project' guard fires correctly —
+    a global install must leave trackfw.yaml byte-identical after the call.
+    """
+    (tmp_path / "trackfw.yaml").write_text(_by_agent_yaml(), encoding="utf-8")
+    before = (tmp_path / "trackfw.yaml").read_bytes()
+
+    result = cli(
+        "agents", "install",
+        "--targets", "claude",
+        "--items", "backend",
+        "--scope", "global",
+        "--json",
+        cwd=tmp_path,
+    )
+    assert result.returncode == 0, result.stderr
+
+    after = (tmp_path / "trackfw.yaml").read_bytes()
+    assert after == before, (
+        "trackfw.yaml must not change for global-scope install:\n"
+        f"{(tmp_path / 'trackfw.yaml').read_text(encoding='utf-8')}"
+    )

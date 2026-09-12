@@ -273,6 +273,97 @@ def reset():
     _instance = None
 
 
+def register_agent_in_yaml(cwd: str, agent_name: str) -> None:
+    """
+    ML-2C — In a ``by_agent`` project, adds *agent_name* to the ``agents:``
+    list in ``trackfw.yaml`` when it is not already there (idempotent, AC1).
+    In a ``flat`` project the file is not touched (AC2).
+
+    Text-level manipulation preserves order, comments and spacing of every
+    other field so that a post-call diff shows only the ``agents:`` block
+    changing (AC3).
+
+    Decision to write uses the canonical loader (``load()``); the actual write
+    is line-level splicing — parse to decide, text-edit to write (advisor
+    guidance, avoids false positives from YAML comments).
+
+    Called by ``trackfw agents install`` after successful installation.
+    """
+    yaml_path = os.path.join(cwd, "trackfw.yaml")
+    if not os.path.exists(yaml_path):
+        return  # nothing to register against
+
+    # AC2: canonical detection — load() is memoised; reset first so the
+    # singleton reflects *this* cwd, not whatever was loaded earlier.
+    reset()
+    cfg = load(cwd)
+    reset()  # leave the singleton clean for the caller
+    if cfg.get("roadmap_namespacing") != NAMESPACING_BY_AGENT:
+        return
+
+    with open(yaml_path, "r", encoding="utf-8") as fh:
+        content = fh.read()
+
+    lines = content.splitlines(keepends=True)
+    # Normalise: every line must end with "\n" so inserts splice cleanly.
+    # If the very last line has no newline, add one before we insert.
+    if lines and not lines[-1].endswith(("\n", "\r")):
+        lines[-1] = lines[-1] + "\n"
+
+    # --- Locate the agents: header line (exact match, not inside comments) ---
+    agents_header_idx: int | None = None
+    for i, line in enumerate(lines):
+        stripped = line.rstrip("\r\n")
+        if stripped == "agents:":
+            agents_header_idx = i
+            break
+
+    if agents_header_idx is not None:
+        # Collect entries that are already in the block (skip blanks/comments)
+        existing: list[str] = []
+        j = agents_header_idx + 1
+        while j < len(lines):
+            sline = lines[j].rstrip("\r\n")
+            if sline.startswith("  - "):
+                existing.append(sline[4:].strip())
+                j += 1
+            elif sline == "" or sline.lstrip().startswith("#"):
+                j += 1
+            else:
+                break  # non-entry, non-blank line ends the block
+
+        if agent_name in existing:
+            return  # already registered — idempotent (AC1)
+
+        # Insertion point: right after the last "  - " line in the block
+        last_entry_idx = agents_header_idx
+        j = agents_header_idx + 1
+        while j < len(lines):
+            sline = lines[j].rstrip("\r\n")
+            if sline.startswith("  - "):
+                last_entry_idx = j
+            elif sline == "" or sline.lstrip().startswith("#"):
+                pass
+            else:
+                break
+            j += 1
+        insert_at = last_entry_idx + 1
+        lines.insert(insert_at, f"  - {agent_name}\n")
+    else:
+        # No agents: block yet — create one immediately after the
+        # roadmap_namespacing: line (closest logical anchor).
+        ns_idx: int | None = None
+        for i, line in enumerate(lines):
+            if line.lstrip().startswith("roadmap_namespacing:") and not line.lstrip().startswith("#"):
+                ns_idx = i
+                break
+        insert_at = (ns_idx + 1) if ns_idx is not None else len(lines)
+        lines.insert(insert_at, f"agents:\n  - {agent_name}\n")
+
+    with open(yaml_path, "w", encoding="utf-8") as fh:
+        fh.writelines(lines)
+
+
 def parse_rules_from_content(content):
     """Parseia só o mapeamento `rules:` de um conteúdo arbitrário de trackfw.yaml (ex.: um blob do
     git HEAD obtido via `git show HEAD:./trackfw.yaml`, não o arquivo do CWD que load() lê) e

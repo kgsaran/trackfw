@@ -577,3 +577,47 @@ original, e essa é a forma mais provável de "corrigir" a classe #315 errado.
   faltar.
 - `generators.test.js` e `test_validator.py` engoliam **todo** erro (`catch (_) {}`). Agora
   discriminam: `EPERM`/`EACCES`/`winerror 1314` ⇒ skip; **qualquer outro erro ⇒ falha**.
+
+---
+
+## 🔴 Wave 2 — divergência de POSIÇÃO, achada no E2E do arquiteto
+
+Mesmo `trackfw.yaml` de entrada, mesmo comando, **dois arquivos de saída diferentes**:
+
+```
+NODE                              PYTHON
+# comentario ...                  # comentario ...
+roadmap_dir: docs/roadmaps        roadmap_dir: docs/roadmaps
+req_dir: docs/req                 req_dir: docs/req
+roadmap_namespacing: by_agent     roadmap_namespacing: by_agent
+wip_limit: 3                      agents:            ← inserido ANTES do wip_limit
+agents:                             - architect
+  - architect                     wip_limit: 3
+                ↑ anexado no FIM
+```
+
+**Os dois cumprem o AC3 ao pé da letra** — comentário preservado, demais bytes intactos, idempotência OK,
+`flat` intocado. **E mesmo assim produzem arquivos diferentes.**
+
+### Por que isso importa
+
+O `trackfw.yaml` é **versionado**. Um time onde uns usam o CLI Node e outros o Python veria o arquivo
+oscilar de posição a cada instalação — diff sujo, conflito de merge, e nenhuma das duas versões errada.
+
+🔴 **E é a classe do dia inteiro, outra vez:** cada runtime foi testado sozinho, **nada comparou os
+três**. O `check-artifact-parity.sh` compara artefatos gerados; o `trackfw.yaml` **modificado** não
+está na lista dele.
+
+### Contrato decidido pelo arquiteto
+
+**`agents:` é ANEXADO AO FIM do documento.** Motivo: é a única regra que **não depende** da presença
+nem da posição de nenhuma outra chave — determinística com qualquer `trackfw.yaml` de entrada.
+Inserir "depois da chave X" falha quando X não existe, e obriga os três a concordarem sobre uma ordem
+canônica que hoje ninguém declara.
+
+O Node já faz assim. **Python ajusta.** Go: verificar ao chegar.
+
+### E o gate que faltava
+
+🔴 Nenhum gate compara o `trackfw.yaml` **depois de modificado** pelos 3 CLIs. Sem ele, esta
+divergência volta na próxima mudança. **Entra como critério do corretivo**, não como observação.
