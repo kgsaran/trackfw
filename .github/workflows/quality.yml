@@ -1128,21 +1128,36 @@ jobs:
           PYTHONIOENCODING=cp1252 PYTHONUTF8=0 python scripts/check-windows-known-failures.py --self-test
 
   # ---------------------------------------------------------------------------
-  # AC2 — Windows SEM Developer Mode / symlink privilege
-  # (REQ-2026-09-11-o-ciclo-testa-onde-funciona...)
+  # AC2 — Windows sem privilégio de symlink (substituto por injeção)
   #
-  # Tenta desabilitar o Developer Mode via registro (AllowDevelopmentWithoutDevLicense=0),
-  # verifica com guarda de vacuidade que os.Symlink de fato FALHA após a modificação,
-  # e então roda os testes do caminho de erro de symlink.
+  # DESIGN REVISADO (2026-09-12, KG): O runner windows-latest roda como
+  # administrador com SeCreateSymbolicLinkPrivilege no token. A remoção via
+  # registro isolada não revoga o privilégio (run 34646752028, head 8105f148).
+  # É necessário fechar AMBOS os portões: (a) registro
+  # AllowDevelopmentWithoutDevLicense=0 e (b) AdjustTokenPrivileges/
+  # SE_PRIVILEGE_REMOVED. O passo de medição tenta os dois e reporta o veredito
+  # como informação — não falha o job independentemente do resultado.
   #
-  # DECLARAÇÃO DE RECONCILIAÇÃO: Este job afirma que o ambiente exercita o caminho
-  # de `os.Symlink` com privilege negado. Se não conseguir negar o privilege
-  # (vacuidade), o job REPROVA — nunca dá falsa cobertura.
+  # Independentemente do resultado da medição, os passos de substituto exercem
+  # o MESMO caminho de código via injeção direta:
+  #   • Go: go test -overlay injeta syscall.Errno(1314) em symlinkOrSkip
+  #     (internal/generators/update_test.go) — isSymlinkPrivilegeError e t.Skipf
+  #     reais são exercitados (não cópias).
+  #   • Node: preload CJS patcha fs.symlinkSync para lançar EPERM — a função
+  #     symlinkOrSkip real do arquivo de teste é exercitada.
+  #   • Python: unittest.mock.patch('os.symlink') injeta OSError(winerror=1314) —
+  #     _symlink_or_skip real de test_update_discover_symlink_guard.py é exercitada.
   #
-  # LIMITAÇÃO DECLARADA (ML-1B): Não é possível verificar localmente se o runner
-  # GitHub hospedado permite modificar HKLM:\...\AppModelUnlock. Se não permitir,
-  # a guarda de vacuidade ativa e o job reprova com mensagem declarada. Cobertura
-  # fingida é impossível pelo design da guarda.
+  # O que este job afirma:
+  #   Quando os.Symlink/fs.symlinkSync/os.symlink devolve erro de privilégio
+  #   negado, os helpers PULAM o teste em vez de reprová-lo. Sem a guarda, o
+  #   mesmo erro causa FALHA (falsificação por overlay/cópia modificada). Nenhum
+  #   teste contorna o helper com chamada raw (grep de proteção).
+  #
+  # LIMITAÇÃO DECLARADA: o substituto não exercita o nó OS real — se surgir um
+  # NOVO teste com chamada raw que compile com sucesso no runner, o grep de
+  # proteção o detecta, mas o substituto por si só não. Se REAL_ENV=true, o
+  # ambiente real está disponível e a limitação cai.
   # ---------------------------------------------------------------------------
   windows-symlink-unprivileged:
     runs-on: windows-latest
@@ -1153,85 +1168,403 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: "AC2 — Tentar desabilitar Developer Mode via registro"
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - run: npm ci --ignore-scripts
+        working-directory: npm
+
+      - run: python -m pip install pypi/
+
+      - name: "Medição — registro=0 + AdjustTokenPrivileges: consegue negar os.Symlink?"
         shell: pwsh
         run: |
-          $regPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock"
-          try {
-            if (-not (Test-Path $regPath)) {
-              New-Item -Path $regPath -Force | Out-Null
+          # Garante que & nativo com exit!=0 nao aborte o step (acao de medicao, nao criterio de passe)
+          $PSNativeCommandUseErrorActionPreference = $false
+          # Compila sonda Go em diretório temporário
+          $d = Join-Path $env:TEMP "syml-probe-$([System.Guid]::NewGuid().ToString('N'))"
+          New-Item -ItemType Directory -Path $d | Out-Null
+          @'
+          package main
+          import ("errors"; "fmt"; "os"; "syscall")
+          func main() {
+            t := os.TempDir() + `\sp-t`
+            l := os.TempDir() + `\sp-l`
+            _ = os.WriteFile(t, []byte("x"), 0644)
+            defer os.Remove(t); defer os.Remove(l)
+            err := os.Symlink(t, l)
+            if err != nil {
+              var en syscall.Errno
+              if errors.As(err, &en) {
+                fmt.Printf("FAIL errno=%d (%v)\n", en, err)
+              } else {
+                fmt.Printf("FAIL (%v)\n", err)
+              }
+              os.Exit(1)
             }
-            Set-ItemProperty -Path $regPath -Name "AllowDevelopmentWithoutDevLicense" -Value 0 -Type DWord -Force
-            $val = (Get-ItemProperty -Path $regPath -Name "AllowDevelopmentWithoutDevLicense" -ErrorAction SilentlyContinue).AllowDevelopmentWithoutDevLicense
-            Write-Host "Registry: AllowDevelopmentWithoutDevLicense = $val"
+            fmt.Println("OK symlink succeeded")
+          }
+          '@ | Set-Content -Path (Join-Path $d "probe.go") -Encoding utf8
+          "module symlink-probe`ngo 1.21" | Set-Content -Path (Join-Path $d "go.mod") -Encoding utf8
+          Push-Location $d
+          go build -o probe.exe . 2>&1 | Out-Null
+          Pop-Location
+          $probe = Join-Path $d "probe.exe"
+
+          # Medição 1 — baseline (sem modificações)
+          Write-Host "=== Medição 1: baseline ==="
+          & $probe
+          $base = $LASTEXITCODE
+
+          # Portão 1: registro AllowDevelopmentWithoutDevLicense=0
+          $reg = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock"
+          try {
+            if (-not (Test-Path $reg)) { New-Item -Path $reg -Force | Out-Null }
+            Set-ItemProperty -Path $reg -Name "AllowDevelopmentWithoutDevLicense" -Value 0 -Type DWord -Force
+            $v = (Get-ItemProperty -Path $reg -ErrorAction SilentlyContinue).AllowDevelopmentWithoutDevLicense
+            Write-Host "Registro: AllowDevelopmentWithoutDevLicense = $v"
           } catch {
-            Write-Host "::warning::Modificação de registro falhou: $($_.Exception.Message)"
-            Write-Host "::warning::Developer Mode pode continuar ativo — guarda de vacuidade irá detectar."
+            Write-Host "::warning::Registro falhou: $($_.Exception.Message)"
           }
 
-      - name: "AC2 — Guarda de vacuidade: verificar que os.Symlink falha após tentativa de desabilitar"
+          # Portão 2: token — AdjustTokenPrivileges remove SeCreateSymbolicLinkPrivilege
+          Add-Type -Language CSharp @"
+          using System;
+          using System.Diagnostics;
+          using System.Runtime.InteropServices;
+          public class SymPrivHelper {
+            [StructLayout(LayoutKind.Sequential, Pack = 1)]
+            internal struct TokPriv1Luid {
+              public int Count;
+              public long Luid;
+              public int Attr;
+            }
+            [DllImport("advapi32.dll", ExactSpelling = true, SetLastError = true)]
+            static extern bool OpenProcessToken(IntPtr h, int acc, ref IntPtr tok);
+            [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+            static extern bool LookupPrivilegeValue(string host, string name, ref long luid);
+            [DllImport("advapi32.dll", ExactSpelling = true, SetLastError = true)]
+            static extern bool AdjustTokenPrivileges(IntPtr tok, bool da,
+              ref TokPriv1Luid n, int len, IntPtr prev, IntPtr relen);
+            public static string Remove(string priv) {
+              IntPtr hToken = IntPtr.Zero;
+              if (!OpenProcessToken(Process.GetCurrentProcess().Handle, 0x0028, ref hToken))
+                return "OpenProcessToken err=" + Marshal.GetLastWin32Error();
+              TokPriv1Luid tp = new TokPriv1Luid { Count = 1, Luid = 0, Attr = 4 };
+              if (!LookupPrivilegeValue(null, priv, ref tp.Luid))
+                return "LookupPrivilegeValue err=" + Marshal.GetLastWin32Error();
+              AdjustTokenPrivileges(hToken, false, ref tp, 0, IntPtr.Zero, IntPtr.Zero);
+              int last = Marshal.GetLastWin32Error();
+              return last == 0 ? "OK" : "AdjustTokenPrivileges err=" + last;
+            }
+          }
+          "@
+          Write-Host "Token adjustment: $([SymPrivHelper]::Remove('SeCreateSymbolicLinkPrivilege'))"
+
+          # Medição 2 — após registro=0 + token removido
+          Write-Host "=== Medição 2: após registro=0 + remoção de token ==="
+          & $probe
+          $post = $LASTEXITCODE
+
+          # Veredito
+          if ($post -ne 0) {
+            Write-Host "VEREDITO: Ambiente real disponível — os.Symlink falhou (errno=1314)"
+            "REAL_ENV=true" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          } else {
+            Write-Host "VEREDITO: Ambiente real INDISPONÍVEL — os.Symlink ainda tem sucesso após ambos os portões"
+            Write-Host "::warning::Limitação ML-1B: runner não permite revogar o privilégio de symlink. O substituto por injeção exercitará o caminho de código."
+            "REAL_ENV=false" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          }
+          Write-Host "Baseline: $(if ($base -eq 0) { 'OK (symlink succeeded)' } else { 'FAIL (denied)' })"
+          Write-Host "Pos-ajuste: $(if ($post -eq 0) { 'OK (still succeeds)' } else { 'FAIL (denied -- real env)' })"
+          Remove-Item -Recurse -Force $d -ErrorAction SilentlyContinue
+          # Step de medicao: nunca falha -- resultado vai para GITHUB_ENV para uso pelos passos seguintes
+          exit 0
+
+      - name: "Go — substituto: symlinkOrSkip pula ao receber errno 1314 (overlay)"
         shell: bash
         run: |
           set -euo pipefail
-          TMPDIR_PROBE=$(mktemp -d)
-          trap 'rm -rf "$TMPDIR_PROBE"' EXIT
-
-          cat > "$TMPDIR_PROBE/probe.go" << 'GOEOF'
-          package main
-
-          import (
-            "fmt"
-            "os"
+          # Cria versão injetada de update_test.go: substitui os.Symlink por *os.LinkError wrapping errno 1314
+          # Exercita isSymlinkPrivilegeError e t.Skipf REAIS (não cópias)
+          python3 - << 'PYGENEOF'
+          import os, json
+          cwd = os.getcwd()
+          src = os.path.join(cwd, 'internal', 'generators', 'update_test.go')
+          inject = os.path.join(cwd, '_ci_inject_update_test.go')
+          content = open(src, encoding='utf-8').read()
+          needle = 'err := os.Symlink(target, link)'
+          q = chr(34)
+          replacement = (
+              'err := error(&os.LinkError{Op: ' + q + 'symlink' + q + ', Old: target, New: link,'
+              ' Err: syscall.Errno(1314)}) // SUBSTITUTE: simula privilegio negado'
           )
+          count = content.count(needle)
+          assert count >= 1, f'Injecao Go substituto: padrao nao encontrado em {src} (count={count})'
+          injected = content.replace(needle, replacement)
+          open(inject, 'w', encoding='utf-8').write(injected)
+          open('_ci_overlay_inject.json', 'w').write(json.dumps({'Replace': {src: inject}}))
+          print(f'Injecao: {count} ocorrencia(s) substituida(s)')
+          PYGENEOF
 
-          func main() {
-            target := os.TempDir() + "/symlink-probe-target"
-            link := os.TempDir() + "/symlink-probe-link"
-            // Create target file
-            os.WriteFile(target, []byte("probe"), 0644)
-            defer os.Remove(target)
-            defer os.Remove(link)
+          echo "=== Go substituto: errno 1314 injetado via overlay ==="
+          OUT=$(go test -overlay=_ci_overlay_inject.json ./internal/generators/... \
+            -run "TestUpdateNeverWritesThrough" -v -count=1 -timeout 60s 2>&1 || true)
+          echo "$OUT"
 
-            err := os.Symlink(target, link)
-            if err != nil {
-              fmt.Printf("os.Symlink failed (privilege denied — expected): %v\n", err)
-              os.Exit(0)  // failed = privilege was denied = vacuity guard passes
-            }
-            // Symlink succeeded — Developer Mode is still active
-            fmt.Println("os.Symlink succeeded — Developer Mode still active")
-            os.Exit(1)  // succeeded = vacuity guard FAILS — no real coverage
-          }
-          GOEOF
-
-          cat > "$TMPDIR_PROBE/go.mod" << 'MODEOF'
-          module symlink-probe
-          go 1.21
-          MODEOF
-
-          echo "=== Guarda de vacuidade AC2 ==="
-          VACUITY_RC=0
-          (cd "$TMPDIR_PROBE" && go run probe.go) || VACUITY_RC=$?
-
-          if [[ $VACUITY_RC -ne 0 ]]; then
-            echo "::error::AC2 GUARDA DE VACUIDADE FALHOU: os.Symlink ainda tem sucesso após tentativa de desabilitar Developer Mode. Nenhuma cobertura real do caminho sem privilégio. Isso é uma LIMITAÇÃO DECLARADA (ML-1B): o runner não permite revogar o privilégio de symlink. O ambiente esperado não está disponível neste runner."
+          if echo "$OUT" | grep -q -e "--- SKIP"; then
+            echo "PASS: Go substituto -- symlinkOrSkip pulou com errno 1314 (isSymlinkPrivilegeError + t.Skipf reais exercitados)"
+          else
+            echo "::error::Go substituto FALHOU: teste nao pulou com errno 1314 injetado"
             exit 1
           fi
-          echo "AC2 guarda de vacuidade: PASS — os.Symlink falhou como esperado"
+          if echo "$OUT" | grep -q -e "--- FAIL"; then
+            echo "::error::Go substituto: teste FALHOU em vez de PULAR"
+            exit 1
+          fi
 
-      - name: "AC2 — Rodar testes do caminho de erro de symlink"
+      - name: "Go — falsificacao: sem a guarda, errno 1314 causa FAIL (overlay)"
         shell: bash
         run: |
           set -euo pipefail
-          # Rodar os testes que exercitam o caminho de erro de os.Symlink.
-          # Com Developer Mode desabilitado, os testes que têm t.Skipf quando
-          # symlink falha irão PULAR — isso é o comportamento esperado até #315
-          # ser corrigido (os testes devem testar o caminho de erro, não pular).
-          # O resultado é reportado como informativo.
-          echo "=== Testes do caminho de erro de symlink ==="
-          go test ./internal/generators/... -run TestSymlink -v 2>&1 || true
-          go test ./internal/integrations/... -run TestSymlink -v 2>&1 || true
-          go test ./pypi/... 2>&1 | grep -i "symlink\|SKIP\|PASS\|FAIL" || true
-          echo "=== Fim dos testes de symlink (informativo — #315 não está corrigido) ==="
+          # Cria versão falsificada: injeta *os.LinkError(errno=1314) E desabilita isSymlinkPrivilegeError
+          # Padrão: if false && isSymlinkPrivilegeError(err) — como em check-serve-api-file-security.sh
+          python3 - << 'PYGENFALSEOF'
+          import os, json
+          cwd = os.getcwd()
+          src = os.path.join(cwd, 'internal', 'generators', 'update_test.go')
+          falsify = os.path.join(cwd, '_ci_falsify_update_test.go')
+          content = open(src, encoding='utf-8').read()
+          needle = 'err := os.Symlink(target, link)'
+          q = chr(34)
+          replacement = (
+              'err := error(&os.LinkError{Op: ' + q + 'symlink' + q + ', Old: target, New: link,'
+              ' Err: syscall.Errno(1314)}) // SUBSTITUTE: simula privilegio negado'
+          )
+          count_inj = content.count(needle)
+          assert count_inj >= 1, f'Falsificacao Go: padrao de injecao nao encontrado em {src} (count={count_inj})'
+          guard_needle = 'if isSymlinkPrivilegeError(err) {'
+          count_grd = content.count(guard_needle)
+          assert count_grd >= 1, f'Falsificacao Go: padrao de guarda nao encontrado em {src} (count={count_grd})'
+          falsified = (
+              content
+              .replace(needle, replacement)
+              .replace(guard_needle, 'if false && isSymlinkPrivilegeError(err) { // FALSIFIED: guarda desabilitada')
+          )
+          open(falsify, 'w', encoding='utf-8').write(falsified)
+          open('_ci_overlay_falsify.json', 'w').write(json.dumps({'Replace': {src: falsify}}))
+          print(f'Falsificacao: injecao={count_inj} guarda={count_grd} ocorrencia(s)')
+          PYGENFALSEOF
+
+          echo "=== Go falsificacao: overlay com guarda desabilitada ==="
+          OUT=$(go test -overlay=_ci_overlay_falsify.json ./internal/generators/... \
+            -run "TestUpdateNeverWritesThrough" -v -count=1 -timeout 60s 2>&1 || true)
+          echo "$OUT"
+
+          if echo "$OUT" | grep -q -e "--- FAIL"; then
+            echo "PASS: Go falsificacao -- sem a guarda, errno 1314 causa FAIL (guarda é carga-sustentante)"
+          else
+            echo "::error::Go falsificacao FALHOU: esperava --- FAIL sem a guarda, got: $OUT"
+            exit 1
+          fi
+
+      - name: "Node — substituto: symlinkOrSkip pula ao receber EPERM (preload)"
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Preload CJS: patcha fs.symlinkSync para lancar EPERM
+          # A funcao symlinkOrSkip REAL do arquivo de teste é exercitada
+          cat > _ci_preload_eperm.cjs << 'PRELOADEOF'
+          'use strict'
+          const fs = require('fs')
+          const origSymlinkSync = fs.symlinkSync.bind(fs)
+          fs.symlinkSync = function(target, path, type) {
+            const err = new Error('A required privilege is not held by the client.')
+            err.code = 'EPERM'
+            throw err
+          }
+          PRELOADEOF
+
+          echo "=== Node substituto: fs.symlinkSync EPERM injetado ==="
+          OUT=$(node --require ./_ci_preload_eperm.cjs \
+            --test npm/tests/update_discover_symlink_guard.test.js 2>&1 || true)
+          echo "$OUT"
+
+          # node --test usa "ℹ skipped N" (ou "# skipped N") no sumario -- verifica N >= 1
+          # Nao casa com "skipped 0"
+          if echo "$OUT" | grep -qE "skipped [1-9][0-9]*"; then
+            echo "PASS: Node substituto -- symlinkOrSkip pulou ao receber EPERM"
+          else
+            echo "::error::Node substituto FALHOU: teste nao pulou com EPERM injetado (skipped=0 ou ausente)"
+            exit 1
+          fi
+
+      - name: "Node — falsificacao: sem a guarda, EPERM causa falha (copia modificada)"
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Cria cópia do teste sem a guarda EPERM em symlinkOrSkip.
+          # Cópia vai para npm/tests/ para que os require('../src/...') resolvam corretamente.
+          python3 -c "
+          src = open('npm/tests/update_discover_symlink_guard.test.js', encoding='utf-8').read()
+          needle = \"    if (err && (err.code === 'EPERM' || err.code === 'EACCES')) {\"
+          count = src.count(needle)
+          assert count >= 1, f'Falsificação Node: padrão de guarda não encontrado (count={count})'
+          falsified = src.replace(
+              needle,
+              \"    if (false) { // FALSIFIED: guard removed\"
+          )
+          open('npm/tests/_ci_falsify_node_test.js', 'w', encoding='utf-8').write(falsified)
+          "
+
+          echo "=== Node falsificacao: guarda EPERM removida ==="
+          OUT=$(node --require ./_ci_preload_eperm.cjs \
+            --test npm/tests/_ci_falsify_node_test.js 2>&1 || true)
+          echo "$OUT"
+          rm -f npm/tests/_ci_falsify_node_test.js
+
+          # node --test: testes reprovados aparecem como "not ok N - ..." ou sumario "ℹ fail N"
+          # Nao aceitar "fail 0" (false positive), exigir fail count>=1 ou "not ok"
+          if echo "$OUT" | grep -qE "not ok|fail [1-9][0-9]*"; then
+            echo "PASS: Node falsificacao -- sem guarda, EPERM causa falha (fail count > 0)"
+          else
+            echo "::error::Node falsificacao FALHOU: esperava fail count>0 ou not ok sem a guarda"
+            exit 1
+          fi
+
+      - name: "Python — substituto: _symlink_or_skip pula ao receber OSError winerror=1314 (mock)"
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - << 'PYEOF'
+          import sys, os, errno, unittest, unittest.mock
+          sys.path.insert(0, 'pypi')
+
+          # Importa o helper REAL do modulo de teste
+          import importlib.util
+          spec = importlib.util.spec_from_file_location(
+              'guard_test',
+              os.path.join(os.getcwd(), 'pypi', 'tests', 'test_update_discover_symlink_guard.py')
+          )
+          mod = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(mod)
+          _symlink_or_skip = mod._symlink_or_skip
+
+          # Monta erro: OSError com winerror=1314
+          priv_err = OSError(errno.EPERM, 'privilege denied')
+          priv_err.winerror = 1314
+
+          class TestSubstitute(unittest.TestCase):
+              def test_skips_on_privilege_denied(self):
+                  with unittest.mock.patch('os.symlink', side_effect=priv_err):
+                      _symlink_or_skip(self, '/fake/target', '/fake/link')
+                  # Se chegou aqui, nao pulou — erro
+                  self.fail('deveria ter pulado com skipTest')
+
+          suite = unittest.TestLoader().loadTestsFromTestCase(TestSubstitute)
+          result = unittest.TextTestRunner(verbosity=2).run(suite)
+          if result.skipped:
+              print('PASS: Python substituto -- _symlink_or_skip pulou com OSError winerror=1314')
+              sys.exit(0)
+          else:
+              print('FAIL: Python substituto -- nao pulou como esperado')
+              sys.exit(1)
+          PYEOF
+
+      - name: "Python — falsificacao: sem a guarda, OSError winerror=1314 causa FAIL"
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - << 'PYEOF'
+          import sys, os, errno, unittest, unittest.mock
+          sys.path.insert(0, 'pypi')
+
+          import importlib.util
+          spec = importlib.util.spec_from_file_location(
+              'guard_test',
+              os.path.join(os.getcwd(), 'pypi', 'tests', 'test_update_discover_symlink_guard.py')
+          )
+          mod = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(mod)
+
+          # Falsifica: substitui _symlink_or_skip por versao sem guarda
+          def _no_guard(tc, target, link_path):
+              os.symlink(target, link_path)  # propaga o erro sem capturar
+
+          mod._symlink_or_skip = _no_guard
+
+          priv_err = OSError(errno.EPERM, 'privilege denied')
+          priv_err.winerror = 1314
+
+          class TestFalsify(unittest.TestCase):
+              def test_fails_without_guard(self):
+                  with unittest.mock.patch('os.symlink', side_effect=priv_err):
+                      try:
+                          mod._symlink_or_skip(self, '/fake/t', '/fake/l')
+                          self.fail('esperava OSError propagado')
+                      except unittest.SkipTest:
+                          self.fail('falsificacao: nao deveria pular -- guarda foi removida')
+                      except OSError:
+                          pass  # Esperado: sem guarda, OSError propaga
+
+          suite = unittest.TestLoader().loadTestsFromTestCase(TestFalsify)
+          result = unittest.TextTestRunner(verbosity=2).run(suite)
+          if result.wasSuccessful():
+              print('PASS: Python falsificacao -- sem guarda, OSError causa FAIL')
+              sys.exit(0)
+          else:
+              print('FAIL: Python falsificacao falhou inesperadamente')
+              sys.exit(1)
+          PYEOF
+
+      - name: "Protecao — nenhuma chamada raw a os.Symlink/fs.symlinkSync/os.symlink em testes"
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Grep busca chamadas raw nos arquivos que DEVEM usar o helper de guarda,
+          # excluindo as linhas que sao a implementacao do proprio helper.
+          # Outros arquivos de teste (serve_api, discover, etc.) usam raw legitimamente.
+          echo "=== Protecao: grep de bypass de guarda nos arquivos de guarda ==="
+
+          GO_BYPASS=$(grep -n "os\.Symlink(" \
+              internal/generators/update_test.go \
+              internal/integrations/manager_test.go \
+            | grep -v 'err := os\.Symlink(target, link)' \
+            | grep -v 't\.Fatalf("os\.Symlink' || true)
+          NODE_BYPASS=$(grep -n "fs\.symlinkSync(" \
+              npm/tests/update_discover_symlink_guard.test.js \
+            | grep -v 'fs\.symlinkSync(target' || true)
+          PY_BYPASS=$(grep -n "os\.symlink(" \
+              pypi/tests/test_update_discover_symlink_guard.py \
+            | grep -v 'os\.symlink(target' || true)
+
+          FAIL=0
+          if [[ -n "$GO_BYPASS" ]]; then
+            echo "::error::Guard bypass Go: chamada raw os.Symlink() fora do helper:"
+            echo "$GO_BYPASS"
+            FAIL=1
+          fi
+          if [[ -n "$NODE_BYPASS" ]]; then
+            echo "::error::Guard bypass Node: chamada raw fs.symlinkSync() fora do helper:"
+            echo "$NODE_BYPASS"
+            FAIL=1
+          fi
+          if [[ -n "$PY_BYPASS" ]]; then
+            echo "::error::Guard bypass Python: chamada raw os.symlink() fora do helper:"
+            echo "$PY_BYPASS"
+            FAIL=1
+          fi
+
+          if [[ $FAIL -eq 0 ]]; then
+            echo "PASS: Nenhuma chamada raw encontrada -- todos os testes usam os helpers de guarda"
+          else
+            exit 1
+          fi
 
   # ---------------------------------------------------------------------------
   # AC3 — consumer smoke by_agent (2 agentes, 3 CLIs)

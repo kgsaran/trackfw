@@ -36669,3 +36669,23 @@ No macOS `/var` é symlink para `/private/var`. `os.path.abspath` normaliza `.`/
 symlinks. `os.getcwd()` retorna a forma canônica; paths absolutos passados diretamente não são
 canonicalizados. Fix: `os.path.realpath(os.path.abspath(...))` nos dois lados — espelha o padrão
 dos outros dois runtimes.
+
+## Sessão 2026-09-12b — ares-tf (Infrastructure) — ML-1B correção pós-revisão: 4 bloqueadores eliminados — CONCLUÍDO (aguarda auditoria Zeus)
+Continuação da sessão 2026-09-12a. Revisor identificou 4 bloqueadores antes do commit.
+**Bloqueador 1 (grep `--- SKIP`/`--- FAIL`):** `grep -q "--- SKIP"` interpreta `---` como opção longa → exit 2 → step vermelho. Corrigido: `grep -q -e "--- SKIP"` e `grep -q -e "--- FAIL"` em todos os três pontos.
+**Bloqueador 2 (PowerShell exit code):** `& $probe` com exit=1 (ambiente real disponível) causava exit=1 no step de medição via `$PSNativeCommandUseErrorActionPreference`. Corrigido: `$PSNativeCommandUseErrorActionPreference = $false` no início do step + `exit 0` explícito no fim.
+**Bloqueador 3 (Node skip count):** `grep -qi "skip"` casava com `ℹ skipped 0` (false positive). `node --test` usa `ℹ` (U+2139), não `#`. Corrigido: `grep -qE "skipped [1-9][0-9]*"`. Falsificação Node: `grep -qiE "not ok|Error:|FAIL"` casava com `ℹ fail 0`. Corrigido: `grep -qE "not ok|fail [1-9][0-9]*"`.
+**Item 4 (forma real do erro Go):** Injeção usava `syscall.Errno(1314)` bare; `isSymlinkPrivilegeError` depende de `errors.As` unwrap de `*os.LinkError`. Corrigido: `error(&os.LinkError{Op: "symlink", Old: target, New: link, Err: syscall.Errno(1314)})` em ambas as gerações (substituto e falsificação). Confirmed: SKIP ainda aparece → unwrap provado.
+**Refactoring colateral:** Geração Go migrada de `python3 -c "..."` para heredoc (`<< 'PYGENEOF'`) para evitar SC2140 do shellcheck (aspas duplas dentro de string Python dentro de bash string). `actionlint` → exit 0. Contagem de substituições adicionada (assert count >= 1) aos geradores Go e Node.
+**Evidências locais (darwin/arm64) — pós-correção:**
+- `make test` → todos os pacotes OK
+- `make lint` → OK
+- `trackfw validate` → exit 0 (178 warnings, 0 errors)
+- `actionlint quality.yml` → exit 0
+- Go overlay SKIP (`*os.LinkError` wrapping) → `--- SKIP: TestUpdateNeverWritesThrough* (2 testes)` ✓
+- Go falsificação FAIL → `--- FAIL: TestUpdateNeverWritesThrough* (2 testes)` ✓
+- Node substituto: `grep -qE "skipped [1-9]"` → PASS (skipped 8) ✓
+- Node falsificação: `grep -qE "not ok|fail [1-9]"` → PASS ✓
+- Python mock SKIP → `skipped=1` ✓
+- Grep bypass → vazio ✓
+**Pendente:** veredito REAL_ENV do próximo run de CI (arquiteto dispara).
