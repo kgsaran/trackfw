@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-09-11
 author: ""
 adr: ""
-roadmap: ""
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-11-install-sh-extrai-o-tarball-sem-conferir-o-checksums-txt-que-o-goreleaser-publica.md"
 ---
 
 # REQ: install.sh extrai o tarball sem conferir o checksums.txt que o goreleaser publica
 
-> Date: 2026-09-11 | Status: Open
+> Date: 2026-09-11 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -28,7 +28,7 @@ ADR:
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: 
+Roadmap: docs/roadmaps/done/ROADMAP-2026-09-11-install-sh-extrai-o-tarball-sem-conferir-o-checksums-txt-que-o-goreleaser-publica.md
 
 ## Motivation
 

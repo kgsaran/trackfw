@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-09-11
 author: ""
 adr: ""
-roadmap: ""
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-11-serve-api-file-valida-o-caminho-lexico-e-abre-o-fisico-symlink-em-docs-req-le-qualquer-arquivo-no-go-e-no-node.md"
 ---
 
 # REQ: serve /api/file valida o caminho lexico e abre o fisico: symlink em docs/req/ le qualquer arquivo no Go e no Node
 
-> Date: 2026-09-11 | Status: Open
+> Date: 2026-09-11 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -28,7 +28,7 @@ ADR:
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: 
+Roadmap: docs/roadmaps/done/ROADMAP-2026-09-11-serve-api-file-valida-o-caminho-lexico-e-abre-o-fisico-symlink-em-docs-req-le-qualquer-arquivo-no-go-e-no-node.md
 
 ## Motivation
 

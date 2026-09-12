@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-11
 req: "docs/req/REQ-2026-09-11-serve-api-file-valida-o-caminho-lexico-e-abre-o-fisico-symlink-em-docs-req-le-qualquer-arquivo-no-go-e-no-node.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: serve /api/file valida o caminho lexico e abre o fisico: symlink em docs/req/ le qualquer arquivo no Go e no Node
 
-> Created: 2026-09-11 | Status: wip
+> Created: 2026-09-11 | Status: done
 
 ## Context
 

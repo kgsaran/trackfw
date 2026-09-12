@@ -297,3 +297,6 @@
 2026-09-11 20:32  ROADMAP-2026-08-31-guarda-de-folha-resolve-o-caminho-e-afirma-contencao-antes-de-escrever.md  wip → analyzing
 2026-09-11 20:32  ROADMAP-2026-09-11-install-sh-extrai-o-tarball-sem-conferir-o-checksums-txt-que-o-goreleaser-publica.md  backlog → wip
 2026-09-11 21:26  ROADMAP-2026-09-11-serve-api-file-valida-o-caminho-lexico-e-abre-o-fisico-symlink-em-docs-req-le-qualquer-arquivo-no-go-e-no-node.md  backlog → wip
+2026-09-12 15:10  ROADMAP-2026-09-11-by-agent-req-new-e-roadmap-new-agents-install-nao-registra-e-escreve-sempre-no-primeiro.md  wip → done
+2026-09-12 15:10  ROADMAP-2026-09-11-install-sh-extrai-o-tarball-sem-conferir-o-checksums-txt-que-o-goreleaser-publica.md  wip → done
+2026-09-12 15:10  ROADMAP-2026-09-11-serve-api-file-valida-o-caminho-lexico-e-abre-o-fisico-symlink-em-docs-req-le-qualquer-arquivo-no-go-e-no-node.md  wip → done

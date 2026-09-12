@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-11
 req: "docs/req/REQ-2026-08-29-agents-install-nao-registra-o-agente-na-governanca-e-roadmap-new-em-by-agent-escreve-sempre-no-primeiro-da-lista.md"
 squad: "apolo-tf"
@@ -7,7 +7,7 @@ squad: "apolo-tf"
 
 # Roadmap: `agents install` nao registra o agente, e `by_agent` escreve sempre no primeiro da lista
 
-> Created: 2026-09-11 | Status: wip
+> Created: 2026-09-11 | Status: done
 
 ## Context
 <!-- Derived from REQ: REQ-2026-08-29-agents-install-nao-registra-o-agente-na-governanca-e-roadmap-new-em-by-agent-escreve-sempre-no-primeiro-da-lista.md -->

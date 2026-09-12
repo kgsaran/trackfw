@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-08-29
 author: "trackfw_architect (Zeus)"
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-11-by-agent-req-new-e-roadmap-new-agents-install-nao-registra-e-escreve-sempre-no-primeiro.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-11-by-agent-req-new-e-roadmap-new-agents-install-nao-registra-e-escreve-sempre-no-primeiro.md"
 ---
 
 # REQ: `agents install` não registra o agente na governança, e `roadmap new` em `by_agent` escreve sempre no primeiro da lista
 
-> Date: 2026-08-29 | Status: Open
+> Date: 2026-08-29 | Status: Done
 
 ## Motivation
 
@@ -127,7 +127,7 @@ ADR: <!-- a criar: formaliza o mecanismo decidido acima antes da implementação
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-09-11-by-agent-req-new-e-roadmap-new-agents-install-nao-registra-e-escreve-sempre-no-primeiro.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-09-11-by-agent-req-new-e-roadmap-new-agents-install-nao-registra-e-escreve-sempre-no-primeiro.md
 
 ---
 
