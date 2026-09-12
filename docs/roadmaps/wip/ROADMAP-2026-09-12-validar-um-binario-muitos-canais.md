@@ -22,7 +22,7 @@ duas — a primeira diz *se dá*, a segunda diz *se vale*.
 - [ ] AC6 — lockfile gerado no macOS instala no Windows
 - [ ] AC7 — contra-braço: sem pacote de plataforma, aborta nomeando a plataforma
 - [ ] AC8–AC9 — saída e exit code byte-idênticos ao nativo, nos 3 SOs
-- [ ] AC10–AC12 — quanto do backlog desaparece, barateia, e o que passa a existir
+- [ ] AC10–AC13 — quanto do backlog (REQs **e** issues) desaparece, barateia, e o que passa a existir
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
@@ -32,7 +32,7 @@ duas — a primeira diz *se dá*, a segunda diz *se vale*.
 ## Trilha 1 — Prova técnica (protótipo descartável)
 
 ### ML-1A — **AC1–AC4** — pacote npm com `optionalDependencies`, sob restrição
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Arquivos afetados:** somente `prototype/` (novo, descartável). 🔴 **Nada de `npm/src/`.**
 **Ações:**
 1. Cross-compilar o binário Go para as plataformas do CI.
@@ -83,23 +83,59 @@ binário nativo, em Linux, macOS e Windows do CI.
 
 ## Trilha 2 — Medição de retorno (independente da Trilha 1)
 
-### ML-2A — **AC10 + AC11 + AC12** — quanto D apaga, barateia e acrescenta
+### ML-2A — **AC10 + AC11 + AC12 + AC13** — quanto D apaga, barateia e acrescenta
 **Status:** ⬜ Pendente
 **Arquivos afetados:** somente `docs/qualidade/2026-09-12-quanto-a-opcao-d-apaga-do-backlog.md` (novo).
+
+🔴 **Um único critério para REQs e issues.** Os dois foram classificados por caminhos diferentes até
+agora — as REQs por varredura, os issues por leitura do arquiteto. Este ML **refaz os dois pelo
+mesmo critério**, senão os números não são comparáveis.
+
+**Os três baldes, e a definição de cada um:**
+
+| balde | definição operacional |
+|---|---|
+| **(a) desaparece** | o artefato **só existe** porque há três implementações. Sem elas, não há o que corrigir — o defeito deixa de ser possível |
+| **(b) barateia ~3×** | defeito real de comportamento, hoje corrigido três vezes. Continua existindo; o custo cai |
+| **(c) indiferente** | não toca runtime nenhum |
+
 **Ações:**
-1. Classificar as **33 REQs abertas** em: **(a) desaparecem** — o defeito é "existe num runtime e
-   falta noutro"; **(b) barateiam ~3×** — defeito real, hoje corrigido três vezes;
-   **(c) indiferentes**.
-   🔴 Medição preliminar do arquiteto: **18 das 33 têm componente de paridade.** Mas *"tem
-   componente"* **não é** *"desaparece"* — separar é o trabalho deste ML, e o número preliminar
-   **não serve como resultado**.
-2. Mesmo exercício para os **31 gates de paridade**: quantos deixam de ter objeto.
-3. O que **aparece**: `trackfw serve` é exclusivo do Go hoje e passaria a existir em npm e pip.
+
+1. **As 33 REQs abertas.** Medição preliminar: **18 têm componente de paridade** — 🔴 mas *"tem
+   componente"* **não é** *"desaparece"*, e separar é o trabalho. O número preliminar **não serve
+   como resultado**.
+
+2. **Os 16 issues abertos.** Classificação preliminar do arquiteto, por leitura — 🔴 **confirme ou
+   contradiga cada um, não aceite**:
+
+   ```
+   (a) desaparecem  #261 #268 #286 #298 #307 #309 #310 #329          8
+   (b) barateiam    #273 #290 #306 #308 #327 #338                    6
+   (c) indiferentes #258 #277                                        2
+   ```
+
+   Os três que o arquiteto abriu por dúvida — **#286, #307, #329** — merecem releitura própria.
+   Um caso instrutivo: **#290** (*"`validate` imprime usage na violação — só no Go"*) foi
+   classificado **(b)**, não (a): com D o comportamento do Go vira **o** comportamento, então o
+   enquadramento *"só no Go"* dissolve, **mas o defeito de sujar o stream JSON permanece e precisa
+   ser corrigido.** Esse é o tipo de distinção que o ML precisa fazer, e onde o arquiteto erraria
+   primeiro.
+
+3. **Os 31 gates de paridade**: quantos deixam de ter objeto. Nomeados.
+
+4. **O que aparece**: `trackfw serve` é exclusivo do Go hoje; com D passa a existir em npm e pip.
+   Ganho, não custo — mas entra na conta.
+
 **Critérios de aceite:**
-- [ ] Três listas nomeadas, REQ a REQ, com o critério de cada classificação
-- [ ] Contagem de gates que perdem objeto, nomeados
+- [ ] REQs e issues classificados **pelo mesmo critério**, com o critério escrito
+- [ ] Três listas nomeadas, item a item, com **justificativa de uma linha cada**
+- [ ] 🔴 Divergência da classificação preliminar do arquiteto é **reportada explicitamente**, com o
+      motivo — é o resultado mais valioso deste ML
+- [ ] Gates que perdem objeto, nomeados e contados
 - [ ] O ganho do `serve` quantificado
-- [ ] 🔴 Nenhuma REQ classificada sem justificativa de uma linha
+- [ ] Nenhum item classificado sem justificativa
+
+**Reconciliação:** o relatório declara, por balde, qual medição sustenta a classificação.
 
 ---
 
