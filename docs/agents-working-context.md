@@ -2,6 +2,17 @@
 
 ---
 
+## Sessão 2026-09-12 — Hades (ML-0A threat model — REQ nasce órfã)
+
+**Início:** 2026-09-12 | Branch: `fix/req-nasce-orfa` | Roadmap em wip.
+**Tarefa:** escrever as quatro seções do threat model do ML-0A no roadmap da REQ nasce órfã.
+**Concluído:** ML-0A ✅ — 10 sítios enumerados em 4 famílias (findRoadmap, findREQ,
+BranchSlugMatchesRoadmap, Python _find_file); 2 famílias não estavam na lista original; defeito
+em ambas as direções de BranchSlugMatchesRoadmap confirmado ativo (issue #273, ~9% das branches).
+Gate de fechamento escrito (git grep conta os 10 sítios; vacuidade guard contra NUL).
+
+---
+
 ## Sessão 2026-09-12 — Zeus (v7.6.0 TAGGED — npm bloqueado por credencial)
 
 Tag `v7.6.0` publicada via `trackfw release tag 7.6.0` (o `git push origin <tag>` cru é bloqueado

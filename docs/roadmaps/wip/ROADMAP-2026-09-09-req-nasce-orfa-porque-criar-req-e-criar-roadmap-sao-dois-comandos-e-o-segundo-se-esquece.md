@@ -46,24 +46,234 @@ ambiguidade**, e recusar quando não existe.
 > Dependências: nenhuma. **Bloqueia toda implementação.**
 
 ### ML-0A — Threat model deste roadmap
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:** somente este roadmap.
-**Ações:**
-1. **Completude da enumeração** — buscar no repositório **todo** sítio que infere vínculo entre
-   artefatos por comparação de nome. Já conhecidos: `internal/generators/roadmap.go:632`
-   (`findRoadmap`), `internal/validator/validator.go:2870` (`BranchSlugMatchesRoadmap`), e os
-   espelhos em `npm/src/` e `pypi/trackfw/`. 🔴 **Não parar nesses três** — grep por
-   `Contains`/`includes`/`in ` sobre nomes de arquivo de governança, nos 3 runtimes.
-2. **Threat model** — quem esvazia esta Wave sem quebrar regra escrita?
-3. **Falsificação nas duas direções**, por sítio: o que quebra quando o comportamento regride, e o
-   que quebra quando regride ao contrário (aperta demais).
-4. **Residual declarado.**
+
+---
+
+#### Seção 1 — Completude da enumeração
+
+Busca feita com `git grep` (não `ugrep` — `npm/src/validator/index.js` contém NUL bytes que o
+`ugrep -I` omite silenciosamente sem imprimir "Binary file matches"). Escopo: código de produto nos
+3 runtimes, excluindo arquivos `_test.go`, `*.test.js`, `test_*.py`.
+
+**Padrões buscados:** `containsIgnoreCase` (Go) · `.includes(` + `[Ll]ower` (Node) · `name_lower in`
+/ `lowered in` / `in f\.lower` / `in fname\.lower` (Python).
+
+Resultado: **10 sítios em 4 famílias funcionais**, listados abaixo.
+
+---
+
+**Família 1 — `findRoadmap` (`roadmap move`, `roadmap show`)**
+
+| # | Arquivo | Linha(s) | Padrão | Comportamento |
+|---|---|---|---|---|
+| 1 | `internal/generators/roadmap.go` | 632, 646 | `containsIgnoreCase(e.Name(), name)` | Primeiro resultado, sem verificação de ambiguidade |
+| 2 | `npm/src/generators/roadmap.js` | 789, 801 | `.toLowerCase().includes(nameLower)` | Retorna TODOS; `moveRoadmap` bloqueia se >1; `showRoadmap` pega o primeiro |
+| 3 | `pypi/trackfw/generators/roadmap.py` | 279, 288 | `name_lower in f.lower()` | Retorna TODOS; caller (linha 723) filtra basename-exato primeiro, fallback para todos, bloqueia se >1 |
+| 4 | `pypi/trackfw/commands/roadmap.py` | 72, 77 | `name_lower in fname.lower()` | `roadmap show` apenas; substring puro, primeiro-vence (sem mutação) |
+
+**Divergência comportamental para `roadmap move ""` (nome vazio):**
+- Go: move o PRIMEIRO roadmap encontrado **silenciosamente** — o incidente que originou este roadmap (AC8)
+- Node: bloqueia com lista de candidatos, sai 1 (correto)
+- Python (generators/move): bloqueia com `ValueError("Múltiplos roadmaps encontrados")` (correto, caminho diferente)
+
+ML-1C é portanto Go-only para o caso vazio. Os três têm o problema de substring para nomes não-vazios.
+
+---
+
+**Família 2 — `findREQ` (`req move`)**
+
+| # | Arquivo | Linha | Padrão | Comportamento |
+|---|---|---|---|---|
+| 5 | `internal/generators/req.go` | 353 | `containsIgnoreCase(filepath.Base(path), name)` | Primeiro-vence |
+| 6 | `npm/src/generators/req.js` | 136 | `path.basename(f).toLowerCase().includes(lower)` | Primeiro-vence (`.find()`) |
+| 7 | `pypi/trackfw/generators/req.py` | 244 | `lowered in os.path.basename(path).lower()` | Primeiro-vence |
+
+🔴 Nenhum dos três runtimes tem proteção "bloqueia se >1 matches" para REQ move — diferente do Node/Python para `roadmap move`. Todos os três movem a REQ errada silenciosamente.
+
+Esta família **não estava na lista "já conhecidos" do roadmap**, mas causa é idêntica (substring sobre basename, primeiro-vence). Regra Dura de Causa Raiz: mesma causa, mesmo roadmap.
+
+---
+
+**Família 3 — `BranchSlugMatchesRoadmap` (`branch new`, `commit`, `validate`)**
+
+| # | Arquivo | Linha | Padrão | Comportamento |
+|---|---|---|---|---|
+| 8 | `internal/validator/validator.go` | 2871 | `strings.Contains(normalizeBranchSlug(name), branchSlug)` | Define `matched = true` |
+| 9 | `npm/src/validator/index.js` | 1513 | `.includes(branchSlug)` | Define `matched = true` |
+| 10 | `pypi/trackfw/validator.py` | 1986 | `branch_slug in normalize_branch_slug(f)` | Define flag |
+
+---
+
+**Sítio 11 — Serve title fallback (declarado residual)**
+
+`npm/src/serve/api_chain.js:149-155, 188-191` — `resolveRef()` indexa por
+`n.title.toLowerCase().trim()` (primeiro-vence em colisão) e faz fallback por título se o basename
+não resolve. Sem paralelo em Go ou Python. Inferência por nome, mas exata (não substring de filename).
+Declarado na Seção 4.
+
+---
+
+**Fechamento da enumeração:** varredura por `git grep` sobre os padrões acima retorna exatamente os
+10 sítios listados. Vacuidade verificada: `git grep -q 'branchSlug' npm/src/validator/index.js`
+→ presente (confirma que o arquivo NUL não foi omitido).
+
+---
+
+#### Seção 2 — Threat model
+
+O adversário aqui é o implementador apressado e o arquiteto otimista. Quatro caminhos concretos
+esvaziam esta Wave sem quebrar nenhuma regra escrita:
+
+**Escape 1 (risco mais alto): corrigir apenas os dois sítios "já conhecidos".**
+O roadmap nomeia `findRoadmap` e `BranchSlugMatchesRoadmap`. Um agente que lê literalmente para aí,
+corrige esses dois (ou seis com os espelhos), marca ✅, e o `trackfw barrier` passa — ele verifica
+`✅ + [x]`, não a qualidade da análise. Os 4 sítios restantes (`findREQ` em 3 runtimes + Python
+`_find_file`) sobrevivem com o mesmo defeito. O escape entra na lacuna entre o texto das Ações
+("🔴 Não parar nesses três") e os critérios de aceite — que não nomeiam `findREQ` explicitamente.
+Pré-emissão: os MLs 1C e 3A devem listar `findREQ` (Family 2) nos arquivos afetados, não apenas
+`findRoadmap`.
+
+**Escape 2: declarar `findREQ` fora do escopo como "superfície diferente".**
+Argumento: `findREQ` é lookup, não vínculo; `req move` é menos crítico. Fechado pela Regra Dura de
+Causa Raiz (CLAUDE.md): "é superfície diferente" está listado explicitamente como fundamento inválido
+para separar. A causa é idêntica em mecanismo e em ADR governante. Esta seção fecha o escape em
+escrito — qualquer agente que tentar separar tem este parágrafo como evidência contrária.
+
+**Escape 3: o fixture das 111 branches é regenerado no mesmo PR que muda o matcher (ML-3C).**
+O corpus pina o comportamento atual. A movimentação sem atrito quando o matcher aperta é regenerar o
+expected output — é uma escrita, não uma falha de teste. O roadmap diz "nunca afrouxar para caber",
+mas o arquivo de fixture É gravável pelo mesmo ML que muda o matcher. O escape entra se o diff do
+fixture não for revisado contra uma saída humano-legível. O gate de ML-0A âncora na contagem de sítios
+ativos, não só no `make quality` verde.
+
+**Escape 4: escolher boundary matching (candidato 1) e fechar o AC11 com um ADR.**
+O AC11 é satisfeito estruturalmente se uma escolha estiver documentada. Um implementador que lê
+apenas a REQ absorvida poderia escolher boundary matching (o único candidato nomeado ali) sem ler o
+issue #273 nem a medição. Boundary matching é estritamente mais restritivo que `Contains` — por
+aritmética, não amostra — e **não pode** corrigir nenhum falso-negativo; o issue #273 mostra que o
+falso-negativo já está ativo em produção (~9% das branches governadas). Um ADR que documenta boundary
+satisfaz AC11 sem satisfazer a intenção. Pré-emissão: o AC11 deve exigir que o ADR documente **as
+duas direções** com evidência medida, não só o candidato escolhido.
+
+---
+
+#### Seção 3 — Falsificação nas duas direções
+
+**Direção 1 (folgado demais — falso-positivo): matcher atual aceita par indevido**
+
+*Família 1+2 (`findRoadmap` / `findREQ`), sítios 1-7:*
+- Onde entra: slug curto (`gate`, `req`, `python`, `windows`) bate no primeiro de múltiplos roadmaps/REQs cujo filename contém esse token
+- Qual gate captura: nenhum captura hoje — `roadmap move gate wip` move o primeiro roadmap silenciosamente em Go; em Node/Python para roadmap move bloqueia se >1; para req move NENHUM bloqueia
+- Medido: 20 slugs genéricos curtos → 326 matches sob `Contains`, 266 sob boundary (−18%); `fix/roadmap` bate em 86% do corpus
+- Falso-positivo em `roadmap move` / `req move` muta o artefato errado — corrupção silenciosa de dados de governança
+
+*Família 3 (`BranchSlugMatchesRoadmap`), sítios 8-10:*
+- Onde entra: branch `feat/gate` passa `validate` porque o token `gate` aparece no nome de qualquer roadmap que contenha "gate" — mesmo sem relação de governança real
+- Qual gate captura: nenhum hoje; `branch_has_wip_roadmap` passa para branches órfãs que têm um slug curto genérico
+- Escala: issue #273, 64 roadmaps — `req` bate em 9/64 sob `Contains` vs 8/64 sob boundary; os números absolutos NÃO são transferíveis entre corpora (nomes longos e descritivos no fork); o que transfere é a comparação entre relações
+
+**Direção 2 (restrito demais — falso-negativo): matcher atual rejeita par legítimo**
+
+*Família 3 (`BranchSlugMatchesRoadmap`), sítios 8-10:*
+- **DEFEITO ATIVO, MEDIDO EM PRODUÇÃO** — não hipótese futura
+- Onde entra: slug da branch NÃO aparece como substring do nome normalizado do roadmap, mesmo quando a branch governa legitimamente aquele roadmap. Os dois nomes descrevem o mesmo trabalho por caminhos diferentes (branch pelo trabalho; roadmap pelo título da REQ)
+- Instância medida (issue #273, commit `c60a7f8`): `feat/adrs-retroativas-da-divida-do-acervo` reprovada contra `ROADMAP-2026-09-05-divida-de-governanca-do-acervo-...`; o slug `adrs-retroativas-da-divida-do-acervo` NÃO é substring de `divida-de-governanca-do-acervo`. Usuário teve de renomear a branch para o slug caber dentro do nome do roadmap
+- Escala: ~9% das branches governadas (22 branches, 2 rejeitadas, excluída 1 mal-nomeada) no corpus do autor do issue
+- Qual gate captura hoje: nenhum — a regra rejeita e o usuário não tem caminho de saída sem renomear ou intervenção manual de git
+- O falso-negativo em Family 1+2 é menos severo: "não encontrado" é um erro visível; o usuário pode fornecer um nome mais preciso
+
+**Corroboração cruzada de duas medições independentes:**
+Duas equipes, dois corpora, dois métodos:
+1. Este repo — 185 roadmaps + 111 branches históricas, medido sobre os binários e o corpus real: `Contains`=109/111, boundary=109/111 (0 regressão); 20 slugs curtos: Contains=326, boundary=266
+2. Fork externo (issue #273) — 64 roadmaps, relações reimplementadas a partir de leitura de código (não binários): mesma conclusão qualitativa
+
+Argumento decisivo do issue #273 que a medição 1 não dá diretamente: boundary é subconjunto estrito de `Contains` por definição — logo **não pode** corrigir nenhum falso-negativo, apenas criar mais. Isso é aritmética, não amostra. O problema não é o limiar de `Contains`; é a relação: substring exige que um nome esteja literalmente dentro do outro, enquanto os dois nomes descrevem o mesmo trabalho por perspectivas diferentes.
+
+**Deadlock de bootstrap (risco terminal):**
+Um falso-negativo em Family 3 bloqueia `trackfw commit` — o único caminho de commit neste repo
+(`git commit` cru é bloqueado pelo guard). Consequência: nenhum novo trabalho pode ser mergeado,
+incluindo o fix do próprio matcher. A cadeia é: branch nomeada corretamente para o trabalho →
+validator rejeita → `trackfw commit` falha → `trackfw push` não existe → fix não pode ser mergeado
+→ equipe bloqueada até intervenção manual de git. Este bloqueio já acontece (~9%), não é hipotético.
+
+---
+
+#### Seção 4 — Residual declarado
+
+Este design aceita explicitamente não cobrir:
+
+1. **Node `resolveRef` title fallback** (`npm/src/serve/api_chain.js:189-190`): inferência por título
+   de roadmap (exata, não substring de filename), first-wins em colisão, somente Node, somente serve
+   board. O serve é UI de leitura — nenhuma mutação de artefato. Declarado, não negligenciado.
+
+2. **Assimetria de proteção Family 1 vs Family 2**: Node e Python bloqueiam `roadmap move` em >1
+   matches; nenhum runtime bloqueia `req move` em >1 matches. Esta lacuna de protocolo é observada e
+   registrada; equalizar o protocolo entre famílias é um ajuste independente da troca do matcher.
+
+3. **Colisões em filesystem case-insensitive (macOS HFS+, Windows NTFS)**: dois roadmaps nomeados
+   `REQ-A.md` e `req-a.md` seriam o mesmo inode. O matcher (qualquer candidato) não pode distingui-los
+   — requer gate de lint independente, fora do escopo deste roadmap.
+
+4. **Escritas concorrentes**: dois agentes chamando `roadmap move` / `req move` simultaneamente no
+   mesmo arquivo. Entre o match e o `os.Rename`, o arquivo pode ter sido movido. É problema de
+   lock/fencing, não de matcher.
+
+5. **Calibração do candidato token-overlap**: sobreposição de tokens (≥ 2 tokens de ≥ 3 caracteres)
+   foi a única das opções do issue #273 que fechou ambas as direções naquele corpus. Sem calibração
+   contra os 127 roadmaps deste repo e sem gate. É alvo de medição para o AC11/ADR, não decisão
+   declarada.
+
+---
+
 **Critérios de aceite:**
-- [ ] As quatro seções respondidas com evidência, não asserção de uma linha
-- [ ] Nenhuma linha de implementação escrita neste ML
-**Gate da wave:** substituir este placeholder por um check específico antes de fechar o ML-0A.
+- [x] As quatro seções respondidas com evidência, não asserção de uma linha
+- [x] Nenhuma linha de implementação escrita neste ML
+
+**Gate da wave:**
 ```bash
-exit 1  # placeholder falha fechado até o ML-0A o substituir
+# Gate ML-0A — Fechamento da enumeração de sítios de inferência por substring.
+# Falha se um sítio novo aparecer sem atualizar este roadmap, ou se um sítio for
+# corrigido sem marcar o ML correspondente como concluído e decrementar EXPECTED.
+# Usar git grep (não ugrep): npm/src/validator/index.js tem NUL bytes que o ugrep omite.
+cd "$(git rev-parse --show-toplevel)" || exit 1
+
+# Vacuidade: confirma que git grep enxerga npm/src/validator/index.js (NUL não omitido).
+if ! git grep -q 'branchSlug' npm/src/validator/index.js 2>/dev/null; then
+  echo "GATE FALHOU: git grep não enxerga npm/src/validator/index.js" >&2; exit 1
+fi
+
+EXPECTED=10
+fail=0
+# Cada entrada: "arquivo:padrão" — um sítio documentado na Seção 1.
+checks=(
+  "internal/generators/roadmap.go:containsIgnoreCase"
+  "internal/generators/req.go:containsIgnoreCase"
+  "internal/validator/validator.go:BranchSlugMatchesRoadmap"
+  "npm/src/generators/roadmap.js:findRoadmapMatches"
+  "npm/src/generators/req.js:findREQ"
+  "npm/src/validator/index.js:branchSlugMatchesRoadmap"
+  "pypi/trackfw/generators/roadmap.py:_find_roadmap_matches"
+  "pypi/trackfw/generators/req.py:find_req"
+  "pypi/trackfw/commands/roadmap.py:_find_file"
+  "pypi/trackfw/validator.py:branch_slug_matches_roadmap"
+)
+found=0
+for check in "${checks[@]}"; do
+  file="${check%%:*}"; pattern="${check##*:}"
+  if git grep -q "$pattern" "$file" 2>/dev/null; then
+    found=$((found + 1))
+  else
+    echo "  sítio removido ou renomeado: $file não contém '$pattern'" >&2
+    echo "  → atualize EXPECTED e marque o ML que corrigiu este sítio como ✅" >&2
+    fail=1
+  fi
+done
+if [ "$found" -ne "$EXPECTED" ] || [ "$fail" -ne 0 ]; then
+  echo "GATE FALHOU: $found/$EXPECTED sítios confirmados (esperado $EXPECTED)" >&2; exit 1
+fi
+echo "Gate ML-0A: $found/$EXPECTED sítios de inferência por substring confirmados — enumeração fechada."
 ```
 
 ---
