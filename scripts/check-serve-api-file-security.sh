@@ -195,7 +195,7 @@ leaked = any('HADES_SECRET' in c for c in calls)
 errors = handler.send_error.call_args_list
 sys.stdout.write('leaked=' + str(leaked) + ' errors=' + str(len(errors)))
 PYEOF
-)
+) || true
 
 if echo "$PY_VULN_RESULT" | grep -q "leaked=True"; then
   ok "AC6 Python falsificação: sem realpath o handler vulnerável vaza o segredo"
@@ -207,7 +207,7 @@ fi
 # Confirma que versão corrigida NÃO vaza
 PY_CORR_RESULT=$(cd "$ROOT_DIR" && PYTHONPATH=pypi python3 -m pytest \
     pypi/tests/test_serve_api.py::TestFileAPI::test_symlink_escape_blocked_403_no_body \
-    -v --tb=short 2>&1)
+    -v --tb=short 2>&1 || true)
 if echo "$PY_CORR_RESULT" | grep -q "PASSED"; then
   ok "AC6 Python corrigido: test_symlink_escape_blocked_403_no_body PASSA na versão correta"
 else
@@ -248,7 +248,7 @@ let statusCode = null, body = '';
 const res = { writeHead: (c) => { statusCode = c }, end: (d) => { body += (d || '') } };
 handleFile(cfg, req, res);
 process.stdout.write(statusCode + ':' + body.slice(0, 50));
-" 2>/dev/null)
+" 2>/dev/null || true)
 
 if echo "$VULN_RESULT" | grep -q "HADES_SECRET"; then
   ok "AC6 Node falsificação: handler vulnerável (sem realpathSync) retorna 200 + segredo"
@@ -264,7 +264,7 @@ fi
 echo ""
 echo "── AC2: M-03 serveStatic — braços attack e counter ─────────────────────"
 
-NODE_ALL=$(node "$ROOT_DIR/npm/tests/serve_api.test.js" 2>&1)
+NODE_ALL=$(node "$ROOT_DIR/npm/tests/serve_api.test.js" 2>&1 || true)
 
 if echo "$NODE_ALL" | grep -q "serveStatic — symlink para fora do STATIC_DIR retorna 403"; then
   ok "AC2 Node serveStatic attack arm — symlink externo → 403 sem corpo (serve_api.test.js)"
@@ -302,7 +302,7 @@ fi
 
 # ── Python ──
 echo "   Python:"
-PY_RESULT=$(cd "$ROOT_DIR" && PYTHONPATH=pypi python3 -m pytest pypi/tests/test_serve_api.py::TestFileAPI::test_symlink_escape_blocked_403_no_body -v --tb=short 2>&1)
+PY_RESULT=$(cd "$ROOT_DIR" && PYTHONPATH=pypi python3 -m pytest pypi/tests/test_serve_api.py::TestFileAPI::test_symlink_escape_blocked_403_no_body -v --tb=short 2>&1 || true)
 if echo "$PY_RESULT" | grep -q "PASSED"; then
   ok "Python test_symlink_escape_blocked_403_no_body — 403 sem corpo"
 else
@@ -327,7 +327,7 @@ else
 fi
 
 # Python
-PY_LEG=$(cd "$ROOT_DIR" && PYTHONPATH=pypi python3 -m pytest pypi/tests/test_serve_api.py::TestFileAPI::test_symlink_inside_root_allowed -v --tb=short 2>&1)
+PY_LEG=$(cd "$ROOT_DIR" && PYTHONPATH=pypi python3 -m pytest pypi/tests/test_serve_api.py::TestFileAPI::test_symlink_inside_root_allowed -v --tb=short 2>&1 || true)
 if echo "$PY_LEG" | grep -q "PASSED"; then
   ok "Python test_symlink_inside_root_allowed — 200 com conteúdo"
 else
@@ -338,6 +338,13 @@ echo ""
 echo "── Resultado final ───────────────────────────────────────────────────────"
 echo "  $PASS ok, $FAIL falhou"
 if [ "$FAIL" -gt 0 ]; then
+  exit 1
+fi
+# Guarda de conjunto: detecta cenário silenciado por set -e ou lógica condicional.
+# Um gate que não sabe quantos cenários deveria ter não sabe quando perdeu um.
+EXPECTED_PASS=15
+if [ "$PASS" -ne "$EXPECTED_PASS" ]; then
+  printf '  ERRO: esperados %d ok, obtidos %d — cenário silenciado\n' "$EXPECTED_PASS" "$PASS"
   exit 1
 fi
 exit 0
