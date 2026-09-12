@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-11
 req: "docs/req/REQ-2026-09-11-install-sh-extrai-o-tarball-sem-conferir-o-checksums-txt-que-o-goreleaser-publica.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: install.sh extrai o tarball sem conferir o checksums.txt que o goreleaser publica
 
-> Created: 2026-09-11 | Status: wip
+> Created: 2026-09-11 | Status: done
 
 ## Context
 <!-- Derived from REQ: REQ-2026-09-11-install-sh-extrai-o-tarball-sem-conferir-o-checksums-txt-que-o-goreleaser-publica.md -->
@@ -25,29 +25,64 @@ REQ: docs/req/REQ-2026-09-11-install-sh-extrai-o-tarball-sem-conferir-o-checksum
 > Dependencies: none. Blocks all implementation.
 
 ### ML-0A — Threat model for this roadmap
-**Status:** ⬜ Pendente
-**Files affected:**
-**Actions:**
-1. Enumeration completeness — is the list of surfaces in this roadmap complete? Name what is missing, or show the list is closed. Do not limit the search to the files already named by the REQ — before declaring the list closed, search the repository for other places that emit the same artifact or the same pattern (for example, grep for the literal the final artifact contains).
-2. Threat model — who empties this Wave 0 without breaking any written rule, and how?
-3. Falsification targets in both directions — for each surface, what breaks when the behavior regresses, and what breaks when it regresses the opposite way?
-4. Declared residual — what this design accepts not covering.
-**Acceptance criteria:**
-- [ ] The four sections above answered with evidence, not a one-line assertion
-- [ ] No implementation line written for this ML
+**Status:** ✅ Concluído
+**Executado em:** 2026-09-12, no fechamento do roadmap — **fora de ordem**. A Wave 1 foi entregue e
+mergeada (#331) antes deste ML rodar. Registrado como desvio, não como sequência normal.
+
+**1. Completude da enumeração — a lista fecha em UM sítio.**
+Medido por busca no repositório, não por leitura da REQ:
+```
+grep -rnE "tar -x|tar\.gz|extractall|tarfile|releases/download" --include=*.{sh,go,js,py,yml}
+  → scripts/install.sh:214   tar -xzf   ← único extrator
+  → scripts/install.sh:99    releases/download/${VERSION}/${FILENAME}
+  → scripts/check-install-*.sh          ← gates, não produto
+```
+Verificado que **não há segundo caminho de download**: `npm/package.json` não tem `postinstall`
+(scripts = test, smoke); `pypi` não baixa binário; `update harness` escreve arquivo local e não
+faz rede. O `third-party fetch` baixa, mas é outra superfície, governada por quarentena +
+provenance — causa diferente, fora deste roadmap.
+
+**2. Quem esvazia esta Wave sem quebrar regra escrita.**
+O gate confere que `install.sh` **contém** a conferência. Um ataque de baixo custo é manter a
+conferência presente e torná-la inócua — `set +e` antes dela, ou redirecionar o `exit 1`. Por isso
+o gate não lê o texto: ele **executa** o instalador com um tarball adulterado de um byte e exige
+que a instalação **falhe** (AC3), e com o tarball íntegro exige que **instale** (AC4). Um
+verificador que só recusa reprova no contra-braço.
+
+**3. Falsificação nas duas direções** — implementada, 9 cenários em
+`scripts/check-install-checksum.sh`:
+
+| direção | cenário | esperado |
+|---|---|---|
+| regressão | um byte trocado no tarball | instalação aborta |
+| regressão | checksum ausente / duplicado / divergente | aborta, mensagem distinta |
+| regressão | `checksums.txt` inexistente | aborta (não segue sem conferir) |
+| oposta | tarball íntegro | instala normalmente |
+| oposta | ambiente sem `sha256sum` (macOS) | usa `shasum -a 256` e instala |
+| oposta | ausência das duas utilidades | **aborta**, nomeando a utilidade que falta |
+
+**4. 🔴 Residual declarado — o `checksums.txt` vem da mesma origem que o tarball.**
+Ele é baixado de `releases/download/<tag>/checksums.txt`, o mesmo host e a mesma tag do artefato
+que ele autentica. Isso fecha **adulteração em trânsito de um** dos dois e **corrupção parcial**,
+que era o defeito (H-02). **Não fecha** comprometimento do release no GitHub nem da conta que
+publica: quem forja o tarball forja o `checksums.txt` junto. Fechar isso exige **assinatura**
+(cosign/minisign) com a chave pública fora do canal de distribuição — não implementado, e não
+prometido em lugar nenhum.
+
+**Critérios de aceite:**
+- [x] As quatro seções acima respondidas com evidência, não asserção de uma linha
+- [x] Nenhuma linha de implementação escrita neste ML
 
 **Gates da wave:**
 ```bash
-# Wave 0 gate — replace this placeholder with a project-specific check before
-# marking ML-0A done. Do not remove the gate; replace its command (AC13).
-exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli-parity.md
+scripts/check-install-checksum.sh   # 9 cenários; substitui o placeholder que falhava fechado
 ```
 
 ## Wave 1 — Implementation (derived from REQ criteria)
 > Dependencies: none
 
 ### ML-1A — **AC1** — o instalador baixa o checksums.txt **da mesma tag**, valida o nome esperado e confere
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Files affected:**
 **Actions:**
 **Acceptance criteria:**
@@ -56,7 +91,7 @@ exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli
 - [ ] tests green
 
 ### ML-1B — **AC2** — 🔴 **falha fechado** quando o checksum está **ausente**, **duplicado** ou **divergente**.
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Files affected:**
 **Actions:**
 **Acceptance criteria:**
@@ -65,7 +100,7 @@ exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli
 - [ ] tests green
 
 ### ML-1C — **AC3** — 🔴 **Falsificação:** stub de download que troca **um byte** do tarball ⇒ **nenhum
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Files affected:**
 **Actions:**
 **Acceptance criteria:**
@@ -74,7 +109,7 @@ exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli
 - [ ] tests green
 
 ### ML-1D — **AC4** — 🔴 **Contra-braço:** tarball íntegro instala normalmente. Verificador que só recusa é
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Files affected:**
 **Actions:**
 **Acceptance criteria:**
@@ -83,7 +118,7 @@ exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli
 - [ ] tests green
 
 ### ML-1E — **AC5** — funciona onde não há sha256sum (macOS usa shasum -a 256). 🔴 **Ausência da
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Files affected:**
 **Actions:**
 **Acceptance criteria:**
@@ -92,7 +127,7 @@ exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli
 - [ ] tests green
 
 ### ML-1F — **AC6** — gate que reprova se o install.sh voltar a extrair sem conferir.
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Files affected:**
 **Actions:**
 **Acceptance criteria:**

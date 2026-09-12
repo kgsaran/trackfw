@@ -2,6 +2,35 @@
 
 ---
 
+## Sessão 2026-09-12 — Zeus (release v7.6.0 — CHANGELOG, bump, higiene de governança)
+
+Branch `chore/release-7-6-0`. Versão decidida **pelo usuário** (AskUserQuestion): `7.6.0` minor, não
+`8.0.0` — os 3 breaks quebram apenas uso que já dependia de defeito (by_agent escrevia no agente
+errado em silêncio, barrier falhava aberto, zone ID era vetor de injeção).
+
+**Entregue:** (1) `CHANGELOG.md` — seção 7.6.0 com "⚠️ Leia antes de atualizar" (3 breaks),
+Security (H-01, H-02, injeção de browser, barrier fail-open), Fixed e Internal. (2) Bump em **5
+sítios, não 3** — `pypi/pyproject.toml`, `pypi/trackfw/__init__.py` (**duas** linhas, 3 e 5),
+`internal/version/version.go`, `npm/package.json`; `grep 7.5.1` residual = **zero**.
+(3) Roadmaps de #330/#331/#332 movidos `wip → done`; REQs vinculados e fechados.
+
+**Achado:** o roadmap do #331 estava com **7 MLs pendentes e zero concluídos** — o PR mergeou e os
+status nunca foram virados. Pior: o **ML-0A (threat model) nunca foi executado** e seu gate ainda era
+o placeholder `exit 1`. Executado agora, **fora de ordem**, e registrado como desvio no próprio
+roadmap. A enumeração fecha em **um sítio** (`scripts/install.sh:214`): npm não tem `postinstall`,
+pypi não baixa binário, `update harness` não faz rede. 🔴 **Residual declarado:** o `checksums.txt`
+vem da mesma origem/tag do tarball — fecha adulteração em trânsito, **não** fecha comprometimento do
+release; exigiria assinatura (cosign/minisign).
+
+**Verificado antes de fechar:** `gh release view` confirma que v7.4.0/v7.5.0/v7.5.1 **publicam**
+`checksums.txt` — o instalador novo não quebra instalação de versão antiga. Higiene: 36 branches
+locais classificadas (todas integradas) e apagadas; 1 worktree removido.
+
+**Pendente para o usuário:** `make check-required-full` (pré-condição da tag, exige credencial de
+mantenedor) e o merge do PR. 🔴 **Só depois da tag** abrir H-01 e H-02 como issues já fechados.
+
+---
+
 ## Sessão 2026-09-12 — ares-tf (FIM: pytest ausente em parity-other-gates + guarda gate + symlink guards — PR #332)
 
 Branch `fix/serve-api-file-valida-o-caminho-lexico`. Entregue: (1) `quality.yml` — pytest adicionado ao pip install do job `parity-other-gates`; varredura confirmou único job afetado. (2) `scripts/check-serve-api-file-security.sh` — guarda de pré-requisito antes de AC7: verifica python3 e pytest separadamente; se ausente, aborta com `ERRO: ambiente incompleto` (exit 1), sem contabilizar FAIL de produto; não chama `ok()` para não inflar PASS/EXPECTED_PASS=15; falsificação: venv sem pytest → "ERRO: ambiente incompleto — pytest nao encontrado" RC=1; contra-braço: 15 ok, 0 falhou RC=0. (3) `internal/serve/symlink_helper_test.go` — criado (cópia do padrão de outros pacotes); 2 sítios em `api_file_test.go` substituídos por `symlinkOrSkip`. (4) `npm/tests/serve_api.test.js` — helper importado, wrapper `symlinkOrSkip`, runner atualizado para `SymlinkPrivilegeSkip`; 3 sítios substituídos; 14 passed RC=0. (5) `pypi/tests/test_serve_api.py` — `errno` importado, `_symlink_or_skip` adicionado, 2 sítios substituídos; 18 passed RC=0. check-symlink-privilege-guard RC=0. make parity-rest RC=0, zero FAILs. actionlint quality.yml limpo.

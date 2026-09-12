@@ -5,6 +5,71 @@ Todas as mudanças notáveis deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 e este projeto adere a [Semantic Versioning](https://semver.org/).
 
+## [7.6.0] - 2026-09-12
+
+### ⚠️ Leia antes de atualizar
+
+Três comandos passam a **recusar** entrada que antes aceitavam em silêncio. Nos três casos o
+comportamento antigo era o defeito — mas se algum fluxo seu dependia dele, ele para agora.
+
+1. 🔴 **`req new` e `roadmap new` em projeto `by_agent` com mais de um agente** exigem `--agent`.
+   Antes, sem a flag, o artefato era escrito **no primeiro agente da lista** — sem aviso, e quase
+   sempre no lugar errado. Agora o comando falha com
+   `by_agent project has multiple agent namespaces (alpha, beta): use --agent to specify one`.
+   Projetos `flat`, ou `by_agent` com um único agente, não mudam.
+
+   Também mudou o `roadmap move`: o agente de destino é **explícito no contrato**, não inferido.
+
+2. 🔴 **`trackfw barrier` fecha por padrão.** O trust-check **falhava aberto**: quando a checagem
+   não conseguia concluir, a barreira liberava. Agora ela bloqueia. Se a sua barreira passava por
+   esse caminho, ela vai começar a reprovar — e essa reprovação é a informação que faltava.
+
+3. **`trackfw serve` rejeita zone ID de IPv6** (`fe80::1%eth0`) na URL passada ao browser.
+
+### Security
+
+- 🔴 **Leitura arbitrária de arquivo no `trackfw serve`** — `/api/file` e a rota de estáticos
+  autorizavam pelo caminho **léxico**, antes de resolver symlink. Um link dentro do diretório de
+  roadmaps apontando para fora dele era servido. Reproduzido nos três binários com um segredo
+  plantado. Agora o caminho **físico** é canonizado antes da autorização.
+
+- 🔴 **`install.sh` extraía o tarball sem conferir o checksum publicado.** O `checksums.txt` era
+  baixado e ignorado. Um tarball adulterado em trânsito era instalado sem reclamação. Agora a
+  conferência é pré-condição da extração, e a ausência do `checksums.txt` **aborta** a instalação
+  em vez de seguir. Releases anteriores publicam o arquivo — instalar versão antiga continua
+  funcionando.
+
+- **Injeção de comando ao abrir o browser** no `serve`: a URL era montada como string de shell.
+  Agora é passada por `argv`, nos três CLIs.
+
+- **`barrier` falhava aberto** no trust-check (ver seção acima).
+
+### Fixed
+
+- **`by_agent` resolvia o agente errado nos três CLIs.** `roadmap new --req` agora herda o agente
+  da REQ; `req new` e `roadmap new` resolvem o namespace em Node e Python, que não resolviam.
+  O campo `squad:` deixa de vazar para a REQ. No Go, `roadmap new --req` volta a usar o título
+  posicional.
+- **`trackfw-log` parou de gravar o agente** na transição — voltou a gravar.
+- **Gates de Windows**: `git` e `gh` não eram resolvíveis pelo processo filho nativo — 68 e 48
+  rótulos fechados, sem regressão. Chaves preservadas no MSYS.
+- **Self-test do ratchet** sai por canal próprio; saída não-ASCII declara codificação (cp1252).
+- **`serve` no Node**: `context` aguarda o `validate` antes de responder.
+
+### Internal
+
+- **Quatro gates que estavam corretos no dia 1 haviam parado de medir** — `direction-b2`,
+  `s25-go`/`s26-go`, `check-integration-cli-parity` e `check-cli-parity`. Nenhum era detectável
+  lendo diff; todos foram recuperados por teste de mutação.
+- **Quatro gates novos**: `check-agents-install-yaml-parity` (35 asserções),
+  `check-symlink-privilege-guard` (295 arquivos, zero sítios desguardados),
+  `check-install-checksum` (9 cenários) e `check-serve-api-file-security` (15 cenários).
+- **O CI deixou de testar só onde funciona**: cp1252, Windows sem privilégio de symlink e
+  consumidor externo novo entraram no ciclo. O job `consumer-smoke-by-agent` perdeu o
+  `continue-on-error` — ele reprovava e ninguém via.
+- Auditoria externa (Codex/hades) em duas varreduras; triagem por mecanismo em
+  `docs/qualidade/`. Cinco achados, cinco REQs já abertas, zero REQ nova.
+
 ## [7.5.1] - 2026-09-09
 
 ### Fixed
