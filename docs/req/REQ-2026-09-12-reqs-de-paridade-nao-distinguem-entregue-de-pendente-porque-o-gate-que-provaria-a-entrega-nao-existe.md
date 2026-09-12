@@ -92,3 +92,76 @@ O que as duas compartilham é o **efeito** — backlog que cresce e não fecha �
 
 ## Linked ADR
 ADR: <!-- não requer -->
+
+---
+
+## Absorção do issue #298 (subcomandos sem gate) — 2026-09-12
+
+Decisão do KG: *"absorve o #298 também"*.
+
+### Por que é a mesma causa
+
+O AC4 desta REQ pede um gate que enumere as **regras implementadas** por runtime e reprove na
+divergência. O #298 relata exatamente o mesmo buraco, uma superfície ao lado: `check-cli-parity.sh`
+compara **comandos de primeiro nível** e **12 subcomandos** (`adr` 3, `req` 4, `roadmap` 5) não são
+comparados entre runtimes.
+
+Mesmo mecanismo: **gate de paridade que verifica itens, não o conjunto.** O teste da Regra Dura
+fecha — corrigir "o gate não enumera o conjunto" fecha as duas superfícies; nenhuma delas fecha
+sozinha pela correção da outra.
+
+### 🔴 Já mordeu — não é hipótese
+
+O próprio comentário do gate atual registra o que motivou escrevê-lo:
+
+> *"`req move` faltou nos três e `req list` faltou no Python sem nenhum gate avisar."*
+
+### Medição do relator, verificada por nós
+
+Ele falsificou removendo `req list` **só do Node**:
+
+```
+[defeito plantado]  cmd.command('list') → cmd.command('list-REMOVIDO-PELA-SONDA')
+check-cli-parity.sh         exit 0  "CLI parity smoke checks passed"   ← CEGO
+check-subcommand-parity.sh  exit 1  "✗ req: 'list' faltando no runtime node"
+
+[controle, árvore intacta]
+check-cli-parity.sh         exit 0
+check-subcommand-parity.sh  exit 0
+```
+
+Confirmado por nós em 2026-09-12: `scripts/check-cli-parity.sh` enumera só o primeiro nível
+(lista literal na linha 34, comparação via `--help` da raiz na linha 48). O
+`scripts/check-subcommand-parity.sh` que ele cita **não existe neste repositório**.
+
+### 🔴 Limites que o relator declarou, e que os ACs abaixo precisam fechar
+
+Ele foi explícito sobre o que **não** mediu — respeitar isso é obrigação, não cortesia:
+
+1. Falsificou **uma** direção do conjunto — subcomando **faltando**. A direção **sobrando** está
+   implementada no gate dele, mas **não provada por sabotagem**.
+2. Cobre `adr`, `req` e `roadmap`. Um quarto comando com subcomando **não é descoberto sozinho** —
+   a lista é literal. É sítio de manutenção, e isso deve estar escrito na própria entrada.
+3. Medido só em Windows/Git Bash. Não mediu Linux nem macOS.
+
+### Quem implementa
+
+🔴 **Nós.** O relator ofereceu abrir PR (*"posso abrir PR com ele, se interessar"*) e **não há PR
+aberto**. Registrado como comentário no #298 para que ele não duplique trabalho.
+
+### Critérios acrescentados
+
+- [ ] **AC9** — gate de paridade de **subcomandos**: desce um nível a partir do `--help` de cada
+      comando que tenha subcomando e compara os conjuntos **nos dois sentidos** — faltando **e**
+      sobrando.
+- [ ] **AC10** — 🔴 **falsificar a direção que o relator não falsificou**: plantar subcomando
+      **sobrando** num runtime ⇒ gate reprova nomeando comando, runtime e subcomando. Mais o braço
+      dele (faltando) e o contra-braço (árvore intacta ⇒ passa).
+- [ ] **AC11** — 🔴 **a lista de comandos com subcomando não se descobre sozinha.** Ou o gate a
+      deriva do `--help` em vez de hardcodar, ou a entrada literal carrega, escrito, que é sítio de
+      manutenção e o que acontece quando um quarto comando aparecer.
+- [ ] **AC12** — `known_divergences` no formato `<comando>:<runtime>:<subcomando>:<faltando|sobrando>`,
+      **cada entrada exigindo motivo escrito**. Congela o conhecido **sem esconder** — mesmo
+      princípio do baseline. Hoje a lista nasce vazia.
+- [ ] **AC13** — `docs/cli-parity.md` ganha a tabela de **subcomandos** por runtime, que hoje não
+      existe (só há a de primeiro nível).

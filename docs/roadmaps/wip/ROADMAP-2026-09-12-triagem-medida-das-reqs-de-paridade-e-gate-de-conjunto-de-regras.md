@@ -28,6 +28,11 @@ três fontes à mão — que é o que ninguém faz.
 - [ ] AC6 — guarda de vacuidade: conjunto vazio ⇒ reprova, não "paridade"
 - [ ] AC7 — `docs/cli-parity.md` nomeia o gate
 - [ ] AC8 — `make quality` verde e CI verde
+- [ ] AC9 — gate de paridade de **subcomandos**, comparando conjuntos nos dois sentidos (#298)
+- [ ] AC10 — falsificar a direção **sobrando**, que o relator do #298 não falsificou
+- [ ] AC11 — a lista de comandos com subcomando não se descobre sozinha: derivar, ou declarar o sítio
+- [ ] AC12 — `known_divergences` com motivo escrito por entrada
+- [ ] AC13 — `docs/cli-parity.md` ganha a tabela de subcomandos
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
@@ -107,11 +112,48 @@ de artefatos gerados (4 arquivos × 3 runtimes), não as regras implementadas. N
 - [ ] Wired no `Makefile` e executado por `make quality`
 **Reconciliação:** cada teste novo declara qual conclusão do ML ele afirma.
 
-### ML-2B — **AC7 + AC8** — documentação e fechamento
+### ML-2A-b — **AC9 + AC10 + AC11 + AC12** — gate de paridade de subcomandos (#298)
+**Status:** ⬜ Pendente
+**Arquivos afetados:** novo `scripts/check-subcommand-parity.sh`, `Makefile`.
+🔴 **Não alterar `scripts/check-cli-parity.sh`** — ele mede o primeiro nível e continua válido para
+isso. Este gate desce um nível.
+
+**Mesma causa do ML-2A, superfície ao lado:** lá é o conjunto de **regras**, aqui é o conjunto de
+**subcomandos**. Os dois são "gate que verifica itens, não o conjunto".
+
+**Contexto medido:** `check-cli-parity.sh` enumera só o primeiro nível (lista literal na linha 34,
+comparação via `--help` da raiz na linha 48). Doze subcomandos sem gate: `adr` 3, `req` 4,
+`roadmap` 5. O comentário do gate atual registra que isso **já mordeu**: *"`req move` faltou nos três
+e `req list` faltou no Python sem nenhum gate avisar."*
+
+**Ações:**
+1. Descer um nível a partir do `--help` de cada comando com subcomando; comparar conjuntos **nos
+   dois sentidos** — faltando **e** sobrando.
+2. `known_divergences` no formato `<comando>:<runtime>:<subcomando>:<faltando|sobrando>`, **cada
+   entrada exigindo motivo escrito**. Nasce vazia.
+3. 🔴 Resolver o item 2 dos limites do relator: ou derivar a lista de comandos-com-subcomando do
+   `--help` em vez de hardcodar, ou deixar **escrito na entrada** que é sítio de manutenção e o que
+   acontece quando um quarto comando aparecer.
+
+**Critérios de aceite:**
+- [ ] Braço A (o que o relator falsificou): remover subcomando de um runtime ⇒ reprova nomeando
+      comando, runtime e subcomando
+- [ ] 🔴 Braço B (**o que ele NÃO falsificou**): plantar subcomando **sobrando** num runtime ⇒
+      reprova. A direção existe no desenho dele mas nunca foi provada por sabotagem
+- [ ] Contra-braço: árvore intacta ⇒ passa. *(Um gate que reprovasse sempre também "pegaria" o caso
+      plantado — é a ressalva do próprio relator.)*
+- [ ] `known_divergences` sem motivo escrito ⇒ o gate recusa a entrada
+- [ ] Wired no `Makefile`, executado por `make quality`
+**Reconciliação:** cada teste novo declara qual conclusão do ML ele afirma.
+
+### ML-2B — **AC7 + AC8 + AC13** — documentação e fechamento
 **Status:** ⬜ Pendente
 **Arquivos afetados:** `docs/cli-parity.md`.
 **Critérios de aceite:**
 - [ ] Seção nomeando `check-rule-set-parity.sh` e o que ele cobre
+- [ ] Seção nomeando `check-subcommand-parity.sh` e o que ele cobre
+- [ ] 🔴 Tabela de **subcomandos** por runtime em `docs/cli-parity.md` — hoje só existe a de
+      primeiro nível, e é essa ausência que deixou os 12 sem cobertura documental
 - [ ] `make quality` verde e CI verde
 
 ---
