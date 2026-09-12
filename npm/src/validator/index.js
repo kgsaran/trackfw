@@ -426,7 +426,7 @@ function resolveAgentForWrite(cfg, explicitAgent) {
   const agents = (cfg.agents || []).filter(a => a)
   if (agents.length === 0) return 'default'
   if (agents.length === 1) return agents[0]
-  throw new Error(`--agent is required when multiple namespaces are configured: ${agents.join(', ')}`)
+  throw new Error(`by_agent project has multiple agent namespaces (${agents.join(', ')}): use --agent to specify one`)
 }
 
 // reqWriteDir é o PONTO ÚNICO que decide ONDE uma REQ nova é gravada (ADR-2026-09-03, D2/D4):

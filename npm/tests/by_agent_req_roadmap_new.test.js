@@ -73,8 +73,8 @@ test('resolveAgentForWrite: nomes vazios não contam — ["","zeus"] é UM names
   assert.strictEqual(result, 'zeus')
 })
 
-// Reconciliation: affirms that resolveAgentForWrite throws naming ALL available options when multiple and no explicit agent.
-test('resolveAgentForWrite: múltiplos namespaces sem flag → erro nomeando alpha E beta', () => {
+// Reconciliation: affirms that resolveAgentForWrite throws the byte-identical parity message (contrato de paridade Go/Node/Python).
+test('resolveAgentForWrite: múltiplos namespaces sem flag → mensagem byte-idêntica ao contrato de paridade', () => {
   const cfg = { agents: ['alpha', 'beta'] }
   let threw = false
   let msg = ''
@@ -85,9 +85,24 @@ test('resolveAgentForWrite: múltiplos namespaces sem flag → erro nomeando alp
     msg = e.message
   }
   assert(threw, 'deve lançar erro em multi-agente sem flag explícita')
-  assert(msg.includes('alpha'), `mensagem deve nomear "alpha", recebeu: "${msg}"`)
-  assert(msg.includes('beta'), `mensagem deve nomear "beta", recebeu: "${msg}"`)
-  assert(msg.includes('--agent'), `mensagem deve mencionar --agent, recebeu: "${msg}"`)
+  const expected = 'by_agent project has multiple agent namespaces (alpha, beta): use --agent to specify one'
+  assert.strictEqual(msg, expected, `mensagem deve ser byte-idêntica ao contrato; recebeu: "${msg}"`)
+})
+
+// Reconciliation: affirms that resolveAgentForWrite with empty entries still produces the parity message with only non-empty names.
+test('resolveAgentForWrite: múltiplos namespaces com vazio → mensagem cita só os não-vazios (paridade)', () => {
+  const cfg = { agents: ['', 'alpha', 'beta'] }
+  let threw = false
+  let msg = ''
+  try {
+    resolveAgentForWrite(cfg, undefined)
+  } catch (e) {
+    threw = true
+    msg = e.message
+  }
+  assert(threw, 'deve lançar erro — ["","alpha","beta"] tem dois namespaces não-vazios')
+  const expected = 'by_agent project has multiple agent namespaces (alpha, beta): use --agent to specify one'
+  assert.strictEqual(msg, expected, `mensagem deve ser byte-idêntica; recebeu: "${msg}"`)
 })
 
 // ─── agentFromPath ────────────────────────────────────────────────────────────

@@ -2,6 +2,47 @@
 
 ---
 
+## Sessão 2026-09-12 — apolo-tf (FIM: ML-2E — mensagem de ambiguidade de agente byte-idêntica nos 3 runtimes)
+
+Branch `fix/by-agent-req-new-e-roadmap-new`. Escopo: `internal/validator/`, `npm/src/validator/`, `pypi/trackfw/validator.py` e seus testes.
+
+**Entregues (sem commit, sem push — para auditoria do arquiteto):**
+- `npm/src/validator/index.js` linha 429 — mensagem alinhada ao Go canônico
+- `pypi/trackfw/validator.py` linha 815 — mensagem alinhada ao Go canônico
+- `internal/validator/validator_namespacing_test.go` — 3 novos testes Go com igualdade exata (parity message, empty-filter, contra-braço)
+- `npm/tests/by_agent_req_roadmap_new.test.js` — teste de substring substituído por `strictEqual` + novo teste com empty-filter
+- `pypi/tests/test_by_agent_ml1c.py` — teste de substring substituído por `==` exato + novo teste com empty-filter
+- `vault/notes/substring-assert-nao-detecta-drift-de-mensagem-de-paridade-2026-09-12.md` — nota sobre por que substring assert não detecta drift
+
+**Evidências:**
+- diff Go/Node (fixture `[alpha,beta]`): vazio
+- diff Go/Python (fixture `[alpha,beta]`): vazio
+- diff Go/Node (fixture `["",alpha,beta]`): vazio
+- diff Go/Python (fixture `["",alpha,beta]`): vazio
+- Contra-braço (1 agente): Go exit 0, Node exit 0, Python exit 0
+- Falsificação: mudar "namespaces" → "namespacesX" em Node → 2 testes reprovam com diff exato mostrado
+- Go: `go test ./...` → all ok
+- Node: 908 passed, 0 failed
+- Python: 1735 passed, 0 failed
+
+**Mensagens divergentes residuais (fora do escopo da REQ — reportadas ao arquiteto):**
+- `is not a regular file`: Go = sem path, Node = com path, Python = com path+mode
+- `ler baseline`: Go = lowercase `"erro..."`, Node/Python = uppercase `"Erro..."`
+
+---
+
+## Sessão 2026-09-12 — apolo-tf (INÍCIO: ML-2E — alinhar mensagem de ambiguidade de agente byte-a-byte nos 3 runtimes)
+
+Branch `fix/by-agent-req-new-e-roadmap-new`. Escopo: `internal/validator/`, `npm/src/validator/`, `pypi/trackfw/validator.py` e seus testes. Outro agente atua em paralelo em `scripts/` e `Makefile` — não tocar. Sem commits, sem push, sem background.
+
+---
+
+## Sessão 2026-09-12 — artemis-tf (INÍCIO: ML-2D — gate check-agents-install-yaml-parity.sh)
+
+Branch `fix/by-agent-req-new-e-roadmap-new`. Escopo: `scripts/` e `Makefile` apenas (ML-2D). Outros agentes atuam em paralelo em `internal/`, `npm/`, `pypi/` — não tocar.
+
+---
+
 ## Sessão 2026-09-12 — apolo-tf (FIM: ML-2C Python — agents install registra no trackfw.yaml)
 
 Branch `fix/by-agent-req-new-e-roadmap-new`. Escopo: `pypi/` apenas (ML-2C em paralelo com Go ML-2A e Node ML-2B).
