@@ -78,7 +78,7 @@ REQ-2026-09-03-check-referential-integrity-diz-ok-e-sai-zero-sobre-arvore-vazia-
 **Reconciliação:** o relatório declara, por veredito, qual medição o sustenta.
 
 ### ML-1B — **AC2 + AC3** — aplicar os vereditos
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:** os `docs/req/*.md` triados no ML-1A.
 **Ações:**
 1. Veredito **entregue** ⇒ `trackfw req move <nome> Done`, e escrever a evidência **no artefato**.

@@ -36896,3 +36896,30 @@ ML-1A da triagem medida entregue. Documento: `docs/qualidade/2026-09-12-triagem-
 
 Dois falsos negativos do ugrep-I confirmados: note_orphan e thirdparty_artifact_has_provenance
 estavam presentes no Node desde a origem; as REQs foram abertas com evidência defeituosa.
+
+## Sessão 2026-09-12 — Hefesto (Code Quality) — ML-1B início
+
+Início: 2026-09-12. Executando ML-1B do roadmap
+`ROADMAP-2026-09-12-triagem-medida-das-reqs-de-paridade-e-gate-de-conjunto-de-regras.md`.
+Tarefa: aplicar vereditos do ML-1A nas REQs parciais. Zero REQs entregues; nenhum `trackfw req move`
+será executado. Dois artefatos parciais recebem seção de evidência datada.
+Validate baseline: RC=0 (178 warnings, pré-existentes).
+
+## Sessão 2026-09-12 — Hefesto (Code Quality) — ML-1B CONCLUÍDO
+
+ML-1B da triagem medida entregue.
+
+**Artefatos modificados:**
+- `docs/req/REQ-2026-08-20-note-orphan-existe-em-go-e-python-e-esta-ausente-do-cli-node.md` — seção `## Triagem medida — 2026-09-12` adicionada
+- `docs/req/REQ-2026-09-01-regra-thirdparty-artifact-has-provenance-existe-em-go-e-python-mas-nao-no-validator-do-node.md` — seção `## Triagem medida — 2026-09-12` adicionada
+- `vault/notes/grep-do-ambiente-pula-arquivo-com-nul-2026-09-12.md` — nota nova
+- `vault/notes/index.md` — entrada adicionada
+- `docs/roadmaps/wip/ROADMAP-2026-09-12-triagem-medida-das-reqs-de-paridade-e-gate-de-conjunto-de-regras.md` — ML-1B marcado ✅
+
+**Achado durante ML-1B:** note_orphan tem AC pendentes {AC3, AC5, AC6-não-medido} — o handoff mencionava só AC3. AC5 depende de AC3; AC6 não pode ser verificado enquanto AC3/AC5 estão abertos. Veredito PARCIAL confirmado, conjunto de pendências expandido.
+
+**Mudança de veredito:** nenhuma REQ mudou de veredito. As duas permanecem PARCIAL.
+
+**Zero REQs fechadas.** `trackfw req move` não foi executado. `trackfw validate` RC=0 (178 warnings, todos pré-existentes).
+
+Próximo: ML-2A (gate de conjunto de regras) — handoff para implementador de produto.

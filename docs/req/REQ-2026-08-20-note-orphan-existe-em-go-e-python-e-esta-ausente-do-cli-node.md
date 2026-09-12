@@ -75,3 +75,70 @@ ADR: <!-- nenhum; é implementação de regra já decidida -->
 
 ## Linked Roadmap
 Roadmap: <!-- sem roadmap; backlog -->
+
+---
+
+## Triagem medida — 2026-09-12 (ML-1B)
+
+**Veredito: PARCIAL — não fechar.**
+
+### 🔴 A evidência original desta REQ era falsa
+
+A evidência original usou `grep -rn note_orphan npm/src/` e obteve "NENHUMA ocorrência". Isso era
+um **falso negativo**: o `grep` do ambiente é `ugrep 7.8.4` com o flag `-I` ativo por padrão.
+`ugrep -I` trata arquivos com byte NUL como binários e os **pula em silêncio** (RC=1, sem output).
+
+`npm/src/validator/index.js` contém um byte NUL literal (offset 83123). Por isso o arquivo foi
+omitido, e a busca concluiu "ausente" quando o código estava lá desde a origem.
+
+Medição que prova:
+
+```bash
+# grep do shell (ugrep 7.8.4 com -I)
+grep -c note_orphan npm/src/validator/index.js   →  (vazio), RC=1
+
+# /usr/bin/grep (grep nativo do sistema)
+/usr/bin/grep -c note_orphan npm/src/validator/index.js   →  3, RC=0
+```
+
+Referência completa: `vault/notes/grep-do-ambiente-pula-arquivo-com-nul-2026-09-12.md`
+
+### Medição de presença (/usr/bin/grep, ML-1A)
+
+```
+/usr/bin/grep -rn "note_orphan" internal/validator/validator.go   →  4 ocorrências (linhas 170,495,795,2995)
+/usr/bin/grep -rn "note_orphan" npm/src/validator/index.js        →  3 ocorrências (linhas 1621,3469,3758)
+/usr/bin/grep -rn "note_orphan" pypi/trackfw/validator.py         →  5 ocorrências (linhas 309,2100,2123,2144,4272)
+```
+
+**A regra existe nos 3 runtimes.** A premissa da abertura desta REQ estava errada.
+
+### Medição de comportamento (3 binários 7.6.0, ML-1A)
+
+Fixture: `vault/notes/index.md` vazio + `vault/notes/nota-orfa-2026-09-12.md` não linkada.
+
+```
+./bin/trackfw validate --json        →  rule: "note_orphan" - note "nota-orfa..." not referenced
+node npm/bin/trackfw validate --json →  rule: "note_orphan" - note "nota-orfa..." not referenced
+python3 -m trackfw validate --json   →  rule: "note_orphan" - note "nota-orfa..." not referenced
+```
+
+Os 3 runtimes detectam e nomeam corretamente.
+
+### Status por AC
+
+| AC | Status | Evidência |
+|---|---|---|
+| AC1 — `note_orphan` no Node | **Entregue** | `npm/src/validator/index.js:1621,3469,3758`; binário detecta nota órfã |
+| AC2 — Go e Python concordam antes de codificar | N/A post-facto | os 3 concordam; processo não é mais verificável |
+| AC3 — Gate comparando **3 saídas reais** | **Pendente** | `check-artifact-closed-cycle.sh` testa por runtime independentemente; `cli-parity.md:148` documenta `partial=check-artifact-closed-cycle.sh` explicitamente |
+| AC4 — Cenário P4, baseline + detecção | **Entregue** | `check-artifact-closed-cycle.sh`: `note_orphan-silent-for-indexed` + `note_orphan-fires-for-unindexed` para os 3 runtimes |
+| AC5 — `cli-parity.md` atualizado, gate nomeado | **Parcial** | gate nomeado (`check-artifact-closed-cycle.sh`) mas documentado como `partial=`; satisfação plena depende do AC3 |
+| AC6 — `make quality` verde e CI verde | **Não medido neste ML** | AC3 e AC5 pendentes; gate não pode ser verde enquanto o critério de comparação cross-CLI não existir |
+
+**AC pendentes: AC3, AC5 (depende de AC3), AC6 (não medido).**
+
+O AC3 e o AC5 serão fechados via ML-2A do roadmap
+`ROADMAP-2026-09-12-triagem-medida-das-reqs-de-paridade-e-gate-de-conjunto-de-regras.md`.
+É a Regra Dura de Causa Raiz: mesma causa (ausência de gate cross-CLI), mesma REQ, mesmo roadmap.
+Não abrir REQ nova.
