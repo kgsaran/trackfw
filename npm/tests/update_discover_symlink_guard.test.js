@@ -30,6 +30,7 @@ const path = require('node:path')
 const { spawnSync } = require('node:child_process')
 
 const bin = path.resolve(__dirname, '../bin/trackfw')
+const { symlinkOrSkip: _symlinkCore } = require('./helpers/symlink')
 
 function scratch(extraYaml = '') {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'trackfw-symlink-guard-test-'))
@@ -53,27 +54,18 @@ function run(args, cwd, homeRoot) {
 
 const VALIDATE_ABS_REL = path.join('.github', 'workflows', 'trackfw-validate.yml')
 
-// symlinkOrSkip mirrors fs.symlinkSync, but if creation fails because the
+// symlinkOrSkip — thin wrapper around the shared helper in helpers/symlink.js.
+// Adapts the shared (target, link, onPrivilegeError) interface to the
+// node:test TestContext API used by this file: if creation fails because the
 // process lacks the privilege Windows requires to create symlinks
-// (Developer Mode or an elevated process — WinError 1314,
-// ERROR_PRIVILEGE_NOT_HELD), it skips the calling test via node:test's
-// TestContext#skip instead of throwing, naming the guarantee that was not
-// exercised. Detection is on the CONDITION (the failed syscall), not on
-// process.platform: on a Windows runner with Developer Mode enabled, or on
-// Linux/macOS, fs.symlinkSync succeeds and the test executes normally.
-// Returns true if the symlink was created (caller should proceed), false if
-// the test was skipped (caller must return immediately).
-function symlinkOrSkip(t, target, link) {
-  try {
-    fs.symlinkSync(target, link)
-    return true
-  } catch (err) {
-    if (err && (err.code === 'EPERM' || err.code === 'EACCES')) {
-      t.skip(`guarda de escrita através de symlink não exercitada: criação de symlink exige Developer Mode (ou processo elevado) neste Windows: ${err.message}`)
-      return false
-    }
-    throw err
-  }
+// (Developer Mode or elevated process — WinError 1314, ERROR_PRIVILEGE_NOT_HELD),
+// the calling test is skipped via t.skip instead of failing.
+// Returns true if symlink was created (caller should proceed),
+// false if test was skipped (caller must return immediately).
+function symlinkOrSkip (t, target, link) {
+  return _symlinkCore(target, link, (err) => {
+    t.skip(`guarda de escrita através de symlink não exercitada: criação de symlink exige Developer Mode (ou processo elevado) neste Windows: ${err.message}`)
+  })
 }
 
 test('trackfw update (ci: none) never writes through a live symlink pointing outside the project', (t) => {

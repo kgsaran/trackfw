@@ -2,6 +2,101 @@
 
 ---
 
+## Sessão 2026-09-11 — hades-tf (FIM: segunda varredura adversarial/paridade solicitada por KG — CONCLUÍDO)
+
+Relatório gravado em `docs/qualidade/2026-09-11-segunda-varredura-hades-codex.md`. Foram executados gates diferenciais de CLI, validate, update, roadmap move, doctor, hooks, artefatos, third party, home, browser, instalador, release e integridade referencial. Todos passaram, exceto bind do `serve`, inconclusivo por `EPERM` de sockets no sandbox; o gate de cobertura de shards foi chamado sem os argumentos necessários e retornou uso. Nenhum novo defeito explorável foi confirmado. H-01 (symlink no `/api/file` Go/Node) e H-02 (checksum ausente no instalador) foram independentemente reconfirmados; M-05 e B2 permanecem lacunas de assurance.
+
+## Sessão 2026-09-11 — hades-tf (INÍCIO: auditoria de segurança independente solicitada pelo Codex)
+
+KG solicitou uma revisão Hades complementar à auditoria ampla do Zeus. Escopo: threat analysis somente leitura sobre trust boundaries, injeção, symlinks/traversal, execução de comandos, permissões, segredos, supply chain e gates fail-open. Entregável previsto: `docs/qualidade/2026-09-11-auditoria-hades-codex-dos-fontes.md`. Nenhum arquivo de produto será alterado.
+
+## Sessão 2026-09-11 — hades-tf (FIM: auditoria de segurança independente solicitada pelo Codex — CONCLUÍDO)
+
+Relatório gravado em `docs/qualidade/2026-09-11-auditoria-hades-codex-dos-fontes.md`. Achados confirmados: H-01 `/api/file` permite leitura via symlink externo em Go e Node, enquanto Python usa `realpath`; H-02 o instalador não verifica o `checksums.txt` publicado; M-03 assets estáticos Node usam somente contenção lexical; M-04 `serve` exposto em rede permanece sem autenticação e com CORS universal por desenho opt-in; M-05 gate referencial fica verde sem população. Nenhum código de produto foi alterado. A reprodução Node do H-01 retornou `200` e conteúdo de segredo por symlink; a tentativa dinâmica Go foi limitada pelo sandbox/cache global, com evidência estática equivalente registrada. Controles de browser opener, host validation, embed FS Go, guards de integração e filtragem de ambiente foram rechecados.
+
+## Sessão 2026-09-11v — apolo-tf (Backend) — ML-1E-a2: guarda de privilégio de symlink nos 3 testes escritos pelo ML-1E-a — CONCLUÍDO (aguarda auditoria Zeus)
+
+Branch `fix/by-agent-req-new-e-roadmap-new`. Escopo: testes escritos hoje pelo ML-1E-a nos 3 runtimes + extração de helper Node compartilhado.
+
+**Defeito corrigido:** `os.Symlink`/`fs.symlinkSync`/`.symlink_to` nus nos 3 testes de symlink do ML-1E-a causavam `t.Fatal`/falha de suite (não skip) em Windows sem Developer Mode — reintrodução da issue #315 (e classe da #279).
+
+**Alterações:**
+1. `npm/tests/helpers/symlink.js` (NOVO): helper canônico `symlinkOrSkip(target, link, onPrivilegeError)` + classe `SymlinkPrivilegeSkip`. EPERM/EACCES → chama `onPrivilegeError` e retorna false; outro erro → relança.
+2. `npm/tests/update_discover_symlink_guard.test.js`: substituída implementação local por thin wrapper usando `_symlinkCore` do helper compartilhado; interface `symlinkOrSkip(t, target, link)` preservada.
+3. `npm/tests/roadmap_move.test.js`: require do helper + `symlinkOrSkip` local que joga `SymlinkPrivilegeSkip`; harness `test()` captura o sentinel como "pulado" (counter separado, sem incrementar `failed`); summary atualizado com `, N pulados`.
+4. `pypi/tests/test_by_agent_ml1c.py`: helper `symlink_or_skip(link, target)` com `pytest.skip` em EPERM/EACCES, re-raise em outros OSErrors. Ambos os sítios de `.symlink_to` cru substituídos.
+5. `internal/generators/roadmap_test.go`: removidos os `if err := os.Symlink(...); err != nil { t.Fatalf }` — substituídos por `symlinkOrSkip(t, ...)` já definido em `update_test.go` (mesmo pacote).
+
+**Frases de reconciliação por teste alterado:**
+- Go `TestAgentFromPath_SymlinkOutside_ReturnsEmpty`: afirma que `agentFromPath` retorna `""` via symlink externo — conclusão do ML-1E-a. `symlinkOrSkip`: skip em Windows sem privilégio; executa de verdade em macOS (PASS confirmado com `-v`).
+- Go `TestMoveRoadmap_ByAgent_EmptyAgent_ReturnsExplicitError`: afirma que `MoveRoadmap` retorna erro explícito nomeando o path via symlink externo — conclusão do ML-1E-a. Idem.
+- Node `moveRoadmap — by_agent symlink fora...`: afirma que `moveRoadmap` seta `exitCode=1` via symlink externo — conclusão do ML-1E-a. `SymlinkPrivilegeSkip`: pulado explicitamente em Windows sem Developer Mode; executa de verdade (40/40 passados) em macOS.
+- Python `test_symlink_fora_levanta_valor_error`: afirma que `move_roadmap` levanta `ValueError` nomeando o path via symlink externo — conclusão ML-1E-a. `symlink_or_skip`: pytest.skip em EPERM; re-raise em outros OSErrors; PASSED em macOS.
+- Python `test_agentfrompath_retorna_vazio_para_symlink_externo`: afirma que `_agent_from_roadmap_path` retorna `""` via symlink externo — conclusão ML-1E-a. Idem.
+
+**Evidências:**
+- `go build ./...` → OK
+- `go test -run 'TestAgentFromPath_SymlinkOutside_ReturnsEmpty|TestMoveRoadmap_ByAgent_EmptyAgent_ReturnsExplicitError' ./internal/generators/ -v` → PASS (ambos), não skip
+- `go test ./...` → OK (todos os pacotes)
+- `env -u FORCE_COLOR node npm/tests/roadmap_move.test.js` → 40 testes — 40 passaram, 0 falharam, 0 pulados
+- `python3 -m pytest pypi/tests/test_by_agent_ml1c.py -v -rs` → 30 PASSED, 0 skipped
+- `python3 -m pytest pypi/tests/ -q` → 1724 passed, 66 subtests
+- `trackfw validate` → exit 0, 172 warnings (todos pré-existentes)
+
+**Discriminação provada (ENOENT → FAIL, não SKIP):** `isSymlinkPrivilegeError` com `os.Symlink("/tmp/target", "/tmp/nonexistent-parent/link")` → `isPrivilege: false → would FAIL`
+
+**Sítios remanescentes (listados, não corrigidos neste ML — ver relatório):**
+- `internal/discover/discover_test.go:940,977` — `t.Fatal(err)` após `os.Symlink`
+- `internal/validator/regularfile_test.go:103` — `t.Fatalf` pós platform-check antipattern (GOOS=windows)
+- `internal/generators/scaffold_test.go:399` — `_ = os.Symlink(...)` descarta todos os erros
+- `npm/tests/agents-skills.test.js:306` — `fs.symlinkSync` antes de `assert.throws`
+- `npm/tests/generators.test.js:1122` — `catch (_) {}` engole TODOS os erros
+- `pypi/tests/test_agents_skills.py:529` — `.symlink_to` sem guarda
+- `pypi/tests/test_ship.py:978` — `os.symlink` sem guarda
+- `pypi/tests/test_validator.py:1864` — `except (OSError, ...): return` engole privilégio silenciosamente
+
+**Falsos positivos na lista do arquiteto (confirmados como não-sítios):**
+- `internal/validator/validator_credential_guard_test.go:356` — é `filepath.EvalSymlinks` (resolução, não criação), sem privilégio requerido
+- `internal/validator/validator_thirdparty_provenance_test.go:134` — idem
+
+---
+
+## Sessão 2026-09-11 — Zeus Architect — auditoria ampla orientada pelos issues — CONCLUÍDA
+
+**Evidência executada:** `bin/trackfw context` → score 100/100; `bin/trackfw validate --json` → 0 violações, 172 warnings preexistentes; `go test ./...` → passou; `node --test tests/*.test.js` → 897 passou; `pytest pypi/tests` → 1724 passou + 66 subtests; `make quality` → falhou em `scripts/check-agent-namespace-union.sh`, direção B2 Node, porque o cenário ainda espera fuga pelo symlink enquanto o produto agora encerra com erro explícito.
+
+**Achados confirmados:** (1) bloqueio de qualidade por cenário B2 vácuo/desatualizado; (2) `pypi/trackfw/commands/status.py:50-58` conta REQs somente em `req_dir` e ignora REQs em subpastas de estado/agente; (3) `pypi/trackfw/serve/api_chain.py:187-204` não normaliza separadores antes de resolver referências, perdendo arestas com caminho Windows; (4) `internal/generators/req.go:101`, `internal/generators/adr.go:65` e `internal/generators/note.go:34-40`, com equivalentes Node/Python, interpolam títulos com controles/quebras de linha no artefato; (5) `scripts/check-referential-integrity.sh:10-12` termina verde sobre árvore sem REQs, deixando o gate vácuo.
+
+**Padrão extraído dos issues recentes:** defeitos surgem nas fronteiras não exercitadas pelo ambiente local — consumidor real versus helper, três runtimes, estado/layout, caminho físico/symlink, encoding e gates que só provam presença. Ações recomendadas: corrigir primeiro o contra-braço B2 e reexecutar `make quality`; depois abrir REQs separadas para status/layout, chain separator, sanitização de títulos e vacuidade do gate; adicionar reprodução E2E com os binários reais e falsificação negativa para cada uma.
+
+**Limitação:** a API pública de issues estava indisponível (`gh`: erro de conexão com `api.github.com`, browser não disponível); o corpus foi reconstruído dos commits, triagens, roadmaps e vault versionados do repositório, que referenciam os issues e preservam suas reproduções.
+
+## Sessão 2026-09-11 — Zeus Architect — auditoria ampla orientada pelos issues — CONCLUÍDA
+
+Objetivo: auditar os fontes dos três CLIs e os gates em busca de defeitos ocultos, usando os 38 issues recentes do consumidor como corpus de padrões de falha. Escopo somente leitura nos fontes; nenhuma correção será aplicada nesta auditoria.
+
+Método: reconstruir a série de issues pelo histórico/artefatos disponíveis, consultar o vault antes da investigação, comparar Go/Node/Python, executar gates reais e procurar caminhos de entrada, fallback silencioso, divergência de contrato e testes vacuos.
+
+Artefato detalhado: `docs/qualidade/2026-09-11-auditoria-ampla-dos-fontes-orientada-pelos-issues.md`.
+
+## Sessão 2026-09-11v2 — apolo-tf (Backend) — ML-1E-b: fix cenários direction-b2 em check-agent-namespace-union.sh — CONCLUÍDO (aguarda auditoria Zeus)
+
+Branch `fix/by-agent-req-new-e-roadmap-new`. Arquivo único alterado: `scripts/check-agent-namespace-union.sh`.
+
+**Problema corrigido:** após ML-1E-a adicionar G3 (if(!agent) → exit 1) em moveRoadmap nos 3 runtimes, os cenários direction-b2 ficaram vácuos: mutar apenas G1 (AC12) não restaurava a fuga — G2 (realpathSync em agentFromPath) retornava agent="" → G3 disparava → arquivo não escapava → assertions falhavam.
+
+**Novo design (2 sub-cenários × 2 runtimes = 4 cenários):**
+- Sub-A (`explicit-error-on-external-symlink`): G1 apenas. Asserta exit não-zero + output nomeia ROADMAP-leak + arquivo NÃO escapou. Prova que G3 (via G2) captura o path vazio sem AC12.
+- Sub-B (`detects-symlink-regression`): G1 + G2 (abs E base — ambos necessários: macOS $WORK em /var→/private/var faz path.relative produzir '..' se só abs for corrompido). Asserta fuga para local externo. Prova G1 e G2 como guardas independentes.
+
+**Falsificação provada:** Case 1 (G1 restaurado) → sem fuga. Case 2 (G2a restaurado) → sem fuga. Case 3 (G1+G2a+G2b corrompidos) → fuga confirmada.
+
+**Sweep de mascaramento:** somente direction-b2 usava asserção de fuga de arquivo; demais cenários (a/b1/b3/b4/c) checam output de CLI, não arquivo externo — imunes ao padrão.
+
+**Evidências:** `bash scripts/check-agent-namespace-union.sh` → 68/68 OK. `env -u FORCE_COLOR TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality` → exit 0.
+
+---
+
 ## Sessão 2026-09-11u — apolo-tf (Backend) — ML-1E-a: erro explícito quando agentFromPath retorna "" (3 runtimes) — CONCLUÍDO (aguarda auditoria Zeus)
 
 Branch `fix/by-agent-req-new-e-roadmap-new`. Escopo: `internal/generators/roadmap.go`, `npm/src/generators/roadmap.js`, `pypi/trackfw/generators/roadmap.py` e seus testes.
@@ -36163,3 +36258,104 @@ Branch `fix/by-agent-req-new-e-roadmap-new`. Escopo: `internal/generators/roadma
 - Node: `agentFromPath` usa `realpathSync`, retorna `""` para symlink de fuga; `agentStateDir(null)` delega a `resolveAgentForWrite` que pode lançar ou silenciosamente usar agent único. Fix: erro explícito antes de `agentStateDir`.
 - Python: `_agent_from_roadmap_path` usa `basename(dirname(dirname(path)))` SEM symlink resolution, retorna `"evil"` para `docs/roadmaps/evil/backlog/ROADMAP.md`. Portanto: guard de "agente vazio" não cobre o vetor de symlink no Python. Fix necessário: **contenção** — verificar que `realpath(src)` está dentro de `realpath(roadmap_dir)` antes de prosseguir.
 - Medindo A/B para confirmar antes de escrever qualquer código.
+
+---
+
+## Sessão 2026-09-11v — apolo-tf (Backend) — ML-1E-a: correção de bloqueios do advisor (reconciliação de testes) — CONCLUÍDO
+
+Branch `fix/by-agent-req-new-e-roadmap-new`. Continuação direta da sessão 2026-09-11t.
+
+**Bloqueios corrigidos (levantados pelo advisor):**
+
+1. **`TestMoveRoadmap_ByAgent_EmptyAgent_ReturnsExplicitError` (Go) chamava `agentFromPath` mas nunca `MoveRoadmap`.** Reescrito: com `evil` em `agents:`, `os.ReadDir("docs/roadmaps/evil/wip")` segue o symlink (o OS resolve), `findRoadmap` encontra o arquivo, `agentFromPath` retorna `""`, `MoveRoadmap` retorna o erro explícito. Assertions: `err != nil`, mensagem contém `"agent namespace"`, mensagem nomeia `"ROADMAP-evil"`, arquivo não escapou para `outside/done/`.
+
+2. **Nenhum runtime afirmava que a mensagem nomeia o path recusado.** Corrigido nos 3:
+   - Go: `strings.Contains(err.Error(), "ROADMAP-evil")`
+   - Node: `stderrLine.includes('ROADMAP-leak')`
+   - Python: `assert "ROADMAP-leak" in err_msg`
+
+3. **Python: `pytest.raises((ValueError, FileNotFoundError))` era vacuoso.** Medido em isolamento: Python lança `ValueError` (scanner segue symlink via `os.listdir`, encontra o arquivo, `_agent_from_roadmap_path` resolve e retorna `""`, guarda levanta `ValueError`). Narrowed para `pytest.raises(ValueError)`.
+
+4. **Divergência de call-site em Python documentada para o auditor:** Go e Node resolvem symlink incondicionalmente em `agentFromPath`; Python usa `base_dir` como opt-in (um único call-site de produção em `roadmap.py:717`). Nenhum call-site sem guard encontrado (`grep -rn` confirmado).
+
+**`direction-b2/python` reportado para ML-1E-b:** a guarda Python agora torna o cenário direction-b2/python também vacuoso (análogo ao Node). ML-1E-b precisa restaurar falsificação nos dois runtimes (Node + Python), não só no Node.
+
+**Evidências finais (3 suites):**
+- `go test ./...` → todos os packages PASS; `internal/generators` 7.326s
+- `node npm/tests/roadmap_move.test.js` → 40 testes, 40 passaram
+- `python3 -m pytest pypi/tests/` → 1724 passed, 66 subtests passed
+- `trackfw validate` → exit 0, 172 warnings pré-existentes
+
+**Fim.** Aguarda auditoria Zeus. Roadmap ML-1E-a em 🔄 (Zeus flipa para ✅ após audit).
+
+---
+
+## Sessão 2026-09-11w — ares-tf (Infrastructure) — H-02: install.sh checksum verification — EM ANDAMENTO
+
+Branch `fix/install-sh-extrai-o-tarball-sem-conferir`. Worktree: `trackfw-seguranca`.
+Escopo: `scripts/install.sh` + novo gate `scripts/check-install-checksum.sh` + `Makefile`.
+
+**Achado:** `.goreleaser.yaml` publica `checksums.txt` (SHA-256); `scripts/install.sh` nunca baixa
+nem confere esse arquivo. Classe "controle construído, nada consome" — mesma forma fechada três
+vezes em 2026-09-10.
+
+**Plano:**
+- `install.sh`: adicionar INSTALL_DIR override + download de checksums.txt + verificação SHA-256
+  com falha fechada nos três estados (ausente / duplicado / divergente)
+- `check-install-checksum.sh`: gate novo com 6 cenários de falsificação (AC1-AC6)
+- `Makefile`: adicionar gate em `parity-rest` após `check-install-version-pin.sh`
+
+---
+
+## Sessão 2026-09-11x — ares-tf (Infrastructure) — H-02: install.sh checksum verification — CONCLUÍDO
+
+Branch `fix/install-sh-extrai-o-tarball-sem-conferir`. Worktree: `trackfw-seguranca`.
+
+**Entregáveis:**
+- `scripts/install.sh`: TRACKFW_INSTALL_DIR override + trap EXIT + download checksums.txt + verificação SHA-256 com 3 estados de falha (ausente/duplicado/divergente) + compatibilidade sha256sum/shasum
+- `scripts/check-install-checksum.sh`: gate novo com 7 cenários de falsificação (C1-C6 + AC6)
+- `Makefile`: gate adicionado em `parity-rest` após `check-install-version-pin.sh`
+
+**Evidências:**
+- `bash scripts/check-install-checksum.sh` → 7 cenarios passaram
+- `bash scripts/check-install-version-pin.sh` → 16 cenarios OK (não regrediu)
+- `bash scripts/check-orphan-gates.sh` → all check-*.sh scripts have a consumer
+- `bash scripts/check-shell-posix-portability.sh` → OK
+- `shellcheck scripts/install.sh` → OK
+- `make build` → OK
+- `make test` → todos os packages PASS
+- `trackfw validate` → exit 0, 178 warnings pré-existentes, 0 violações hard
+
+**Fim.** Entrega para Zeus para auditoria e commit.
+
+## Sessão 2026-09-11 — hefesto (Code Quality) — INÍCIO: parity-falsify chunk_6 Python braço ausente
+
+Branch `fix/by-agent-req-new-e-roadmap-new`. Escopo: diagnosticar por que `make parity-falsify` reprova no chunk_6 com 4 rótulos do braço Python do cenário roadmap-ref-stale-state ausentes. A/B obrigatório (branch vs origin/main). Nenhum arquivo de produto será alterado — apenas relatório de achado.
+
+## Sessão 2026-09-11y — ares-tf (Infrastructure) — FIM: H-02 check-install-checksum.sh revisado após advisor — CONCLUÍDO
+
+Branch `fix/install-sh-extrai-o-tarball-sem-conferir` (worktree `trackfw-seguranca`).
+
+**4 gaps bloqueantes corrigidos (apontados pelo advisor):**
+
+1. **AC6 vacuidade por truncamento de sed**: adicionada guarda de strip — copia sem verificação deve NÃO conter "Checksum OK" e DEVE conter "tar -xzf"; afirmação principal trocada para `"$INSTALL_DIR_TMP/trackfw" | grep -q "MALICIOUS"` (presença provada por conteúdo, não só existência do arquivo ou exit code).
+
+2. **C6 padrão amplo demais**: `grep -qi "sha256sum\|shasum\|checksum\|hash\|verifica"` substituído por `grep -qF "nem sha256sum nem shasum"` (string literal exata da mensagem de falha em AC5).
+
+3. **Ramo wget nunca exercitado**: adicionado cenário C7 — PATH mínimo com wget stub e utilitários essenciais mas sem curl; afirma que o `elif wget` do install.sh funciona corretamente.
+
+4. **AC1 "da mesma tag" sem asserção**: stubs curl/wget agora gravam cada URL requisitada em `$STUB_URL_LOG`; após C1, verifica que a URL de checksums.txt contém `/v7.3.0/`.
+
+**Cenários após revisão:** 9 passaram (C1 + C1/ac1-mesma-tag + C2 + C3 + C4 + C5 + C6 + C7 + AC6).
+
+**Evidências de gate:**
+```
+check-install-checksum: OK — 9 cenarios passaram
+check-install-version-pin: 16 cenarios OK
+check-orphan-gates: OK — all check-*.sh scripts have a consumer
+make build → OK
+```
+
+**Falha pré-existente em `make parity-rest`:** `direction-b2/node/detects-symlink-regression` falha porque o gate `check-agent-namespace-union.sh` na branch seguranca é a versão pré-ML-1E-b (corrompe só G1), enquanto `generators/roadmap.js` na branch seguranca não tem G3 (ML-1E-a). A versão corrigida existe na branch `fix/by-agent-req-new-e-roadmap-new`. Zeus precisa cherry-pick ou rebase antes do merge.
+
+**Fim.** Entrega para Zeus para auditoria e commit.

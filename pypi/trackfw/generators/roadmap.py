@@ -176,16 +176,37 @@ def _state_dir(state: str, cfg: dict) -> str | None:
     return os.path.join(cfg["roadmap_dir"], state)
 
 
-def _agent_from_roadmap_path(path: str) -> str:
+def _agent_from_roadmap_path(path: str, base_dir: str | None = None) -> str:
     """
     Extrai o nome do agente a partir de um caminho de roadmap em modo by_agent.
 
     Estrutura esperada: roadmap_dir/<agent>/<state>/file.md
     Derivação: agent = basename(dirname(dirname(path)))
 
+    Quando base_dir é fornecido, resolve symlinks antes de computar o relativo —
+    necessário para detectar symlinks que apontam para fora de roadmap_dir (AC12).
+    Retorna "" se o path resolvido estiver fora de base_dir (análogo ao guard ".." de
+    Go/Node). Sem base_dir, usa a derivação estrutural original (compatibilidade).
+
     Função nomeada extraída do inline em move_roadmap (ML-1C, AC11): chamada nos DOIS
     sítios de roadmap — move_roadmap e (via _cmd_new) geração de roadmap.
     """
+    if base_dir is not None:
+        try:
+            real_file = os.path.realpath(path)
+        except OSError:
+            real_file = os.path.abspath(path)
+        try:
+            real_base = os.path.realpath(base_dir)
+        except OSError:
+            real_base = os.path.abspath(base_dir)
+        rel = os.path.relpath(real_file, real_base)
+        parts = rel.split(os.sep)
+        if len(parts) < 2:
+            return ""
+        if not parts[0] or parts[0] in (".", ".."):
+            return ""
+        return parts[0]
     return os.path.basename(os.path.dirname(os.path.dirname(path)))
 
 
@@ -693,7 +714,11 @@ def move_roadmap(filename: str, to_state: str, cfg: dict) -> str:
 
     # Determina diretório de destino preservando agente em by_agent
     if cfg.get("roadmap_namespacing") == cfg_module.NAMESPACING_BY_AGENT:
-        agent = _agent_from_roadmap_path(src)
+        agent = _agent_from_roadmap_path(src, base_dir=cfg["roadmap_dir"])
+        if not agent:
+            raise ValueError(
+                f'cannot determine agent namespace for "{src}" — path is outside roadmap directory or resolves via symlink to an external location'
+            )
         target_dir = _agent_state_dir(agent, to_state, cfg)
         # log_basename vira uma linha do .trackfw-log — dado portável dentro de artefato
         # versionado, nunca separador nativo (os.path.join usaria "\" no Windows). Concatenação

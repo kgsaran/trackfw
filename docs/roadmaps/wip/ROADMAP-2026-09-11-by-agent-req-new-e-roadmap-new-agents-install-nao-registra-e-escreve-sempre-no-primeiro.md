@@ -512,7 +512,7 @@ não fallback. Entregar decisão de fronteira de segurança a um implementador �
 terceira resposta.
 
 ### ML-1E-a — o contrato nos 3 runtimes, e a paridade do teste de log
-**Status:** ✅ Concluído
+**Status:** 🔄 Em andamento — aguarda auditoria Zeus
 **Arquivos afetados:** `internal/generators/roadmap.go`, `npm/src/generators/roadmap.js`,
 `pypi/trackfw/generators/roadmap.py` e os testes dos três. 🔴 **Não toque em `scripts/`** — é o ML-1E-b.
 **Acoes:**

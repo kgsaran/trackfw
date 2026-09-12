@@ -295,6 +295,11 @@ function moveRoadmap(name, state) {
 
   if (cfg.roadmapNamespacing === config.NAMESPACING_BY_AGENT) {
     const agent = agentFromPath(src, cfg.roadmapDir)
+    if (!agent) {
+      console.error(`cannot determine agent namespace for "${src}" — path is outside roadmap directory or resolves via symlink to an external location`)
+      process.exitCode = 1
+      return
+    }
     fromState = path.basename(path.dirname(src))
     targetDir = agentStateDir(agent, state)
     if (!targetDir) {

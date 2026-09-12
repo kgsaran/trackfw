@@ -892,13 +892,73 @@ ok "direction-b4/go/detects-glob-crossmatch-regression"
 # ===========================================================================
 # Direction B2 — AC12 regression: disk scan follows symlinks again
 # (reproduced live in ML-0A for Node/Python; Go excluded, see header comment).
+#
+# CONTRACT UPDATED in ML-1E-a / ML-1E-b:
+#   In by_agent mode three independent guards protect symlink escape:
+#
+#   G1 – AC12   : .filter(e => e.isDirectory()) in the namespace scanner.
+#                 Symlink entries return false from isDirectory(), so they
+#                 never appear as agent namespaces. Corrupting this makes the
+#                 "evil" symlink dir visible to the scanner.
+#
+#   G2 – ML-1B  : realpathSync(filePath) + realpathSync(baseDir) inside
+#                 agentFromPath (Node) / realpath(path) + realpath(base_dir)
+#                 inside _agent_from_roadmap_path (Python). The resolved file
+#                 path will point outside the roadmap dir, so relpath yields
+#                 '..', and agentFromPath returns ''.
+#                 IMPORTANT: BOTH sides (file AND base) must be corrupted.
+#                 Corrupting only the file side and leaving the base resolved
+#                 still produces a '..' relpath because macOS $WORK lives under
+#                 /var which resolves to /private/var — the two paths then have
+#                 different prefixes and path.relative again yields '..'.
+#                 Measured: $WORK=$(mktemp -d ...) → /var/...; realpath → /private/var/...
+#
+#   G3 – ML-1E-a: if (!agent) { process.exitCode=1; return } / raise ValueError
+#                 in moveRoadmap. Makes the '==""' result an explicit named error.
+#
+# MUTUAL GUARD ABSORPTION — why two sub-scenarios are needed:
+#
+#   Before ML-1E-a: only G1+G2 existed. Mutating G1 alone → G2 returned ''
+#   → the move fell back to alice/done (contained). Mutating G1+G2 → agent='evil'
+#   → file escaped to external path.
+#
+#   After ML-1E-a the old single-mutation scenario became VACUOUS:
+#   Mutating G1 only → G2 returns '' → G3 fires (exit 1, named error) → no
+#   escape, assertion "file not at external location" fires the fail() branch.
+#
+#   The new combination that restores the escape:
+#     G1 + G2 (both file AND base realpath calls) → agent='evil' → G3 does NOT
+#     fire (agent is non-empty) → file written to evil/done = external path.
+#
+#   The rejected alternative (G1 + G3): G2 still active → relpath yields '..'
+#   → agent='' → move targets alice/done (contained). Measured in ML-1E,
+#   recorded in vault. NOT a valid double-mutation for the escape scenario.
+#
+# Sub-scenario A (explicit-error-on-external-symlink):
+#   Mutation: G1 only.
+#   Assert: exit non-0, output names the roadmap file, file NOT at external location.
+#   Proves: G3 (via G2) catches the '==""' case even without AC12.
+#
+# Sub-scenario B (detects-symlink-regression):
+#   Mutation: G1 + G2 (both realpath calls per runtime).
+#   Assert: file ESCAPES to external location.
+#   Proves: G1 and G2 are genuine independent guards — removing both restores
+#           escape; G3 alone cannot prevent it because it only fires on ''.
 # ===========================================================================
 
+# External locations for direction-b2 (separate fixtures per sub-scenario to
+# avoid A's output interfering with B's assertion).
 P4_LEAK_OUT="$WORK/dirb2-leak-out"
 mkdir -p "$P4_LEAK_OUT/wip"
 write_wip_roadmap "$P4_LEAK_OUT/wip/ROADMAP-leak.md" "leak"
 
-# --- Node ---
+P4_LEAK_OUT_B="$WORK/dirb2-leak-out-b"
+mkdir -p "$P4_LEAK_OUT_B/wip"
+write_wip_roadmap "$P4_LEAK_OUT_B/wip/ROADMAP-leak.md" "leak"
+
+# ---------------------------------------------------------------------------
+# Node sub-scenario A — G1 (AC12) only mutated
+# ---------------------------------------------------------------------------
 TB2_N="$WORK/dirb2-node"
 setup_npm_tree "$TB2_N"
 corrupt_literal \
@@ -916,15 +976,79 @@ set +e
 dirb2_node_out=$(cd "$P4_N" && node "$TB2_N/npm/bin/trackfw" roadmap move ROADMAP-leak done 2>&1)
 dirb2_node_status=$?
 set -e
-if [[ ! -f "$P4_LEAK_OUT/done/ROADMAP-leak.md" ]]; then
-  fail "direction-b2/node/detects-symlink-regression" "corrupted binary did not escape through the symlink (exit=$dirb2_node_status, output: $(printf '%q' "$dirb2_node_out")) — checagem vácua"
+# G3 must fire: exit non-zero
+if [[ "$dirb2_node_status" -eq 0 ]]; then
+  fail "direction-b2/node/explicit-error-on-external-symlink" \
+    "corrupted binary (G1 only) exited 0 — G3 did not fire; the empty-agent path was not caught (output: $(printf '%q' "$dirb2_node_out"))"
+fi
+# G3 must name the artefact (not just a generic error message)
+if ! grep -qF 'ROADMAP-leak' <<<"$dirb2_node_out"; then
+  fail "direction-b2/node/explicit-error-on-external-symlink" \
+    "error output does not name the roadmap file — error message too generic to confirm the intended guard fired (status=$dirb2_node_status, output: $(printf '%q' "$dirb2_node_out"))"
+fi
+# File must NOT have escaped to the external location
+if [[ -f "$P4_LEAK_OUT/done/ROADMAP-leak.md" ]]; then
+  fail "direction-b2/node/explicit-error-on-external-symlink" \
+    "file escaped despite G3 firing — external location was written (output: $(printf '%q' "$dirb2_node_out"))"
+fi
+ok "direction-b2/node/explicit-error-on-external-symlink"
+
+# ---------------------------------------------------------------------------
+# Node sub-scenario B — G1 + G2 (both realpathSync calls) mutated
+# ---------------------------------------------------------------------------
+TB2_N_DOUBLE="$WORK/dirb2-node-double"
+setup_npm_tree "$TB2_N_DOUBLE"
+# G1: AC12 guard in the namespace scanner
+corrupt_literal \
+  "$ROOT_DIR/npm/src/validator/index.js" "$TB2_N_DOUBLE/npm/src/validator/index.js" \
+  '.filter(e => e.isDirectory()) // symlinks retornam false aqui — nunca seguidos (AC12/AC13)' \
+  '.filter(e => fs.statSync(path.join(dir, e.name)).isDirectory()) // CORRUPTED (direction-b2): segue symlink' \
+  "direction-b2-node-double-ac12"
+# G2a: file-side realpathSync in agentFromPath — bypass symlink resolution for the file
+corrupt_literal \
+  "$ROOT_DIR/npm/src/generators/roadmap.js" "$TB2_N_DOUBLE/npm/src/generators/roadmap.js" \
+  'abs = fs.realpathSync(filePath)' \
+  'abs = path.resolve(filePath) // CORRUPTED (direction-b2-double): realpathSync bypassed — agentFromPath returns structural name' \
+  "direction-b2-node-double-abs"
+# G2b: base-side realpathSync in agentFromPath — bypass symlink resolution for the base dir.
+#      src == dest intentional: reads the G2a-patched file, adds the base corruption.
+#      Without this, macOS /var→/private/var makes path.relative yield '..' (see comment above).
+corrupt_literal \
+  "$TB2_N_DOUBLE/npm/src/generators/roadmap.js" "$TB2_N_DOUBLE/npm/src/generators/roadmap.js" \
+  'base = fs.realpathSync(path.resolve(baseDir))' \
+  'base = path.resolve(baseDir) // CORRUPTED (direction-b2-double): realpathSync bypassed — base side' \
+  "direction-b2-node-double-base"
+
+P4_N_B="$WORK/dirb2-node-project-b"
+scaffold_by_agent "$P4_N_B" "- alice"
+mkdir -p "$P4_N_B/docs/roadmaps/alice/wip"
+ln -s "$P4_LEAK_OUT_B" "$P4_N_B/docs/roadmaps/evil"
+
+set +e
+dirb2_node_dbl_out=$(cd "$P4_N_B" && node "$TB2_N_DOUBLE/npm/bin/trackfw" roadmap move ROADMAP-leak done 2>&1)
+dirb2_node_dbl_status=$?
+set -e
+# Liveness: the file must have moved somewhere (not silently dropped)
+if [[ -f "$P4_LEAK_OUT_B/wip/ROADMAP-leak.md" ]]; then
+  fail "direction-b2/node/detects-symlink-regression" \
+    "double-corrupted binary (G1+G2) did not escape — file still at wip (no move happened); a third guard may have absorbed the attack or path resolution broke (exit=$dirb2_node_dbl_status, output: $(printf '%q' "$dirb2_node_dbl_out")) — checagem vácua"
+fi
+if [[ ! -f "$P4_LEAK_OUT_B/done/ROADMAP-leak.md" ]]; then
+  fail "direction-b2/node/detects-symlink-regression" \
+    "double-corrupted binary (G1+G2) moved the file but NOT to the external location — escape did not happen as expected (exit=$dirb2_node_dbl_status, output: $(printf '%q' "$dirb2_node_dbl_out")) — checagem vácua"
 fi
 ok "direction-b2/node/detects-symlink-regression"
 
-# --- Python ---
+# ---------------------------------------------------------------------------
+# Python sub-scenario A — G1 (AC12) only mutated
+# ---------------------------------------------------------------------------
 P4_LEAK_OUT_PY="$WORK/dirb2-leak-out-python"
 mkdir -p "$P4_LEAK_OUT_PY/wip"
 write_wip_roadmap "$P4_LEAK_OUT_PY/wip/ROADMAP-leak.md" "leak"
+
+P4_LEAK_OUT_PY_B="$WORK/dirb2-leak-out-python-b"
+mkdir -p "$P4_LEAK_OUT_PY_B/wip"
+write_wip_roadmap "$P4_LEAK_OUT_PY_B/wip/ROADMAP-leak.md" "leak"
 
 TB2_P="$WORK/dirb2-python"
 setup_py_tree "$TB2_P"
@@ -943,8 +1067,65 @@ set +e
 dirb2_python_out=$(cd "$P4_P" && env PYTHONPATH="$TB2_P/pypi" python3 -m trackfw roadmap move ROADMAP-leak done 2>&1)
 dirb2_python_status=$?
 set -e
-if [[ ! -f "$P4_LEAK_OUT_PY/done/ROADMAP-leak.md" ]]; then
-  fail "direction-b2/python/detects-symlink-regression" "corrupted binary did not escape through the symlink (exit=$dirb2_python_status, output: $(printf '%q' "$dirb2_python_out")) — checagem vácua"
+# G3 must fire: exit non-zero
+if [[ "$dirb2_python_status" -eq 0 ]]; then
+  fail "direction-b2/python/explicit-error-on-external-symlink" \
+    "corrupted binary (G1 only) exited 0 — G3 did not fire; the empty-agent path was not caught (output: $(printf '%q' "$dirb2_python_out"))"
+fi
+# G3 must name the artefact
+if ! grep -qF 'ROADMAP-leak' <<<"$dirb2_python_out"; then
+  fail "direction-b2/python/explicit-error-on-external-symlink" \
+    "error output does not name the roadmap file — error message too generic to confirm the intended guard fired (status=$dirb2_python_status, output: $(printf '%q' "$dirb2_python_out"))"
+fi
+# File must NOT have escaped to the external location
+if [[ -f "$P4_LEAK_OUT_PY/done/ROADMAP-leak.md" ]]; then
+  fail "direction-b2/python/explicit-error-on-external-symlink" \
+    "file escaped despite G3 firing — external location was written (output: $(printf '%q' "$dirb2_python_out"))"
+fi
+ok "direction-b2/python/explicit-error-on-external-symlink"
+
+# ---------------------------------------------------------------------------
+# Python sub-scenario B — G1 + G2 (both realpath calls) mutated
+# ---------------------------------------------------------------------------
+TB2_P_DOUBLE="$WORK/dirb2-python-double"
+setup_py_tree "$TB2_P_DOUBLE"
+# G1: AC12 guard in the namespace scanner (config.py)
+corrupt_literal \
+  "$ROOT_DIR/pypi/trackfw/config.py" "$TB2_P_DOUBLE/pypi/trackfw/config.py" \
+  $'                if e.is_dir(follow_symlinks=False)  # symlinks retornam False — nunca seguidos\n' \
+  $'                if os.path.isdir(os.path.join(directory, e.name))  # CORRUPTED (direction-b2): segue symlink\n' \
+  "direction-b2-python-double-ac12"
+# G2a: file-side realpath in _agent_from_roadmap_path — bypass symlink resolution for the file
+corrupt_literal \
+  "$ROOT_DIR/pypi/trackfw/generators/roadmap.py" "$TB2_P_DOUBLE/pypi/trackfw/generators/roadmap.py" \
+  '            real_file = os.path.realpath(path)' \
+  '            real_file = os.path.abspath(path)  # CORRUPTED (direction-b2-double): realpath bypassed — structural name returned' \
+  "direction-b2-python-double-realfile"
+# G2b: base-side realpath in _agent_from_roadmap_path — bypass symlink resolution for the base dir.
+#      src == dest intentional: reads the G2a-patched file, adds the base corruption.
+corrupt_literal \
+  "$TB2_P_DOUBLE/pypi/trackfw/generators/roadmap.py" "$TB2_P_DOUBLE/pypi/trackfw/generators/roadmap.py" \
+  '            real_base = os.path.realpath(base_dir)' \
+  '            real_base = os.path.abspath(base_dir)  # CORRUPTED (direction-b2-double): realpath bypassed — base side' \
+  "direction-b2-python-double-realbase"
+
+P4_P_B="$WORK/dirb2-python-project-b"
+scaffold_by_agent "$P4_P_B" "- alice"
+mkdir -p "$P4_P_B/docs/roadmaps/alice/wip"
+ln -s "$P4_LEAK_OUT_PY_B" "$P4_P_B/docs/roadmaps/evil"
+
+set +e
+dirb2_python_dbl_out=$(cd "$P4_P_B" && env PYTHONPATH="$TB2_P_DOUBLE/pypi" python3 -m trackfw roadmap move ROADMAP-leak done 2>&1)
+dirb2_python_dbl_status=$?
+set -e
+# Liveness: the file must have moved somewhere (not silently dropped)
+if [[ -f "$P4_LEAK_OUT_PY_B/wip/ROADMAP-leak.md" ]]; then
+  fail "direction-b2/python/detects-symlink-regression" \
+    "double-corrupted binary (G1+G2) did not escape — file still at wip (no move happened); a third guard may have absorbed the attack or path resolution broke (exit=$dirb2_python_dbl_status, output: $(printf '%q' "$dirb2_python_dbl_out")) — checagem vácua"
+fi
+if [[ ! -f "$P4_LEAK_OUT_PY_B/done/ROADMAP-leak.md" ]]; then
+  fail "direction-b2/python/detects-symlink-regression" \
+    "double-corrupted binary (G1+G2) moved the file but NOT to the external location — escape did not happen as expected (exit=$dirb2_python_dbl_status, output: $(printf '%q' "$dirb2_python_dbl_out")) — checagem vácua"
 fi
 ok "direction-b2/python/detects-symlink-regression"
 
@@ -1030,4 +1211,4 @@ if (( zulu_ln < alfa_ln )); then
 fi
 ok "direction-c/python/detects-order-regression"
 
-echo "check-agent-namespace-union: all $SCENARIOS scenarios passed (AC1 x3 runtimes x3 checks, AC4 x3, AC5 x3+x3, infra-filter x3, hidden-namespace x3x4, glob-metachar x3x3, flat-untouched x3, AC12 x3, ordering x3, direction-a x3, direction-b1 x3, direction-b3 x3, direction-b4 x1, direction-b2 x2, direction-c x3)."
+echo "check-agent-namespace-union: all $SCENARIOS scenarios passed (AC1 x3 runtimes x3 checks, AC4 x3, AC5 x3+x3, infra-filter x3, hidden-namespace x3x4, glob-metachar x3x3, flat-untouched x3, AC12 x3, ordering x3, direction-a x3, direction-b1 x3, direction-b3 x3, direction-b4 x1, direction-b2 x4, direction-c x3)."

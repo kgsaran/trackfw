@@ -546,6 +546,9 @@ func MoveRoadmap(name, state string) error {
 		// em by_agent: src = roadmapDir/<agent>/<state>/file
 		// agentFromPath extrai o primeiro segmento do caminho relativo ao roadmapDir (AC11).
 		agent = agentFromPath(cfg.RoadmapDir, src)
+		if agent == "" {
+			return fmt.Errorf("cannot determine agent namespace for %q — path is outside roadmap directory or resolves via symlink to an external location", src)
+		}
 		fromState = filepath.Base(filepath.Dir(src))
 		var ok bool
 		targetDir, ok = agentStateDir(agent, state)

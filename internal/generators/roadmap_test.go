@@ -874,6 +874,113 @@ func TestMoveRoadmap_ByAgent_LogPrefixHasAgent(t *testing.T) {
 	}
 }
 
+// TestAgentFromPath_SymlinkOutside_ReturnsEmpty afirma que agentFromPath retorna "" quando
+// o filePath resolve (via EvalSymlinks) para fora de rootDir.
+// Conclusão do ML-1E-a: Go já impede que findRoadmap encontre arquivos via symlink (AC12 no
+// scanner, `e.IsDir()` false para symlinks). O guard de agentFromPath é defesa-em-profundidade
+// para qualquer path que chegue a MoveRoadmap por rota não-scanner.
+func TestAgentFromPath_SymlinkOutside_ReturnsEmpty(t *testing.T) {
+	rootDir := t.TempDir()
+	outside := t.TempDir()
+
+	// Criar arquivo fora
+	if err := os.MkdirAll(filepath.Join(outside, "wip"), 0755); err != nil {
+		t.Fatalf("mkdir outside/wip: %v", err)
+	}
+	const rm = "ROADMAP-outside.md"
+	filePath := filepath.Join(outside, "wip", rm)
+	if err := os.WriteFile(filePath, []byte("# outside"), 0644); err != nil {
+		t.Fatalf("escrever arquivo fora: %v", err)
+	}
+	// Symlink evil dentro do rootDir aponta para outside
+	symlinkOrSkip(t, outside, filepath.Join(rootDir, "evil"))
+	// Caminho DENTRO de rootDir via symlink
+	viaSymlink := filepath.Join(rootDir, "evil", "wip", rm)
+
+	got := agentFromPath(rootDir, viaSymlink)
+	if got != "" {
+		t.Errorf("agentFromPath via symlink fora de rootDir: got %q, want \"\"", got)
+	}
+}
+
+// TestMoveRoadmap_ByAgent_EmptyAgent_ReturnsExplicitError afirma que MoveRoadmap retorna erro
+// explícito nomeando o path quando agentFromPath devolve "" — sem fallback silencioso.
+// Conclusão do ML-1E-a: em `by_agent`, declarar "evil" em agents: faz findRoadmap ler
+// evil/wip/ (os.ReadDir segue o symlink). agentFromPath recebe o path e resolve via
+// EvalSymlinks — evil aponta para fora, resultado começa com "..", retorna "".
+// MoveRoadmap deve retornar erro com o path recusado em vez de cair em alice.
+func TestMoveRoadmap_ByAgent_EmptyAgent_ReturnsExplicitError(t *testing.T) {
+	outside := t.TempDir()
+	dir := t.TempDir()
+	chdirRoadmap(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	// evil em agents: — resolveAgentNamespaces inclui sempre os nomes configurados.
+	// findRoadmap chamará os.ReadDir("docs/roadmaps/evil/wip") que o OS resolve via symlink.
+	yaml := "roadmap_namespacing: by_agent\nagents:\n- alice\n- evil\n"
+	if err := os.WriteFile("trackfw.yaml", []byte(yaml), 0644); err != nil {
+		t.Fatalf("escrever trackfw.yaml: %v", err)
+	}
+	if err := os.MkdirAll("docs/roadmaps/alice/wip", 0755); err != nil {
+		t.Fatalf("mkdir alice/wip: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(outside, "wip"), 0755); err != nil {
+		t.Fatalf("mkdir outside/wip: %v", err)
+	}
+	const rm = "ROADMAP-evil.md"
+	if err := os.WriteFile(filepath.Join(outside, "wip", rm), []byte("# evil"), 0644); err != nil {
+		t.Fatalf("escrever arquivo: %v", err)
+	}
+	// evil symlink dentro do roadmapDir aponta para outside
+	symlinkOrSkip(t, outside, "docs/roadmaps/evil")
+
+	err := MoveRoadmap("ROADMAP-evil", "done")
+	if err == nil {
+		t.Fatal("MoveRoadmap() deveria retornar erro para path externo via symlink, mas retornou nil")
+	}
+	if !strings.Contains(err.Error(), "agent namespace") {
+		t.Errorf("mensagem de erro deve mencionar 'agent namespace'; got: %v", err)
+	}
+	// O path recusado deve aparecer na mensagem — é o contrato "nomeia o caminho recusado"
+	if !strings.Contains(err.Error(), "ROADMAP-evil") {
+		t.Errorf("mensagem deve nomear o path recusado (ROADMAP-evil); got: %v", err)
+	}
+	// Contenção: arquivo não deve ter escapado
+	if _, statErr := os.Stat(filepath.Join(outside, "done", rm)); statErr == nil {
+		t.Error("arquivo escapou para outside/done — violação de contenção")
+	}
+}
+
+// TestMoveRoadmap_ByAgent_BetweenNamespaces_StillWorks é o contra-braço:
+// mover entre namespaces legítimos deve continuar funcionando após o fix.
+// Conclusão do ML-1E-a: o erro explícito para "" não afeta moves dentro de roadmap_dir.
+func TestMoveRoadmap_ByAgent_BetweenNamespaces_StillWorks(t *testing.T) {
+	dir := t.TempDir()
+	chdirRoadmap(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	yaml := "roadmap_namespacing: by_agent\nagents:\n- zeus\n- athena\n"
+	if err := os.WriteFile("trackfw.yaml", []byte(yaml), 0644); err != nil {
+		t.Fatalf("escrever trackfw.yaml: %v", err)
+	}
+	if err := os.MkdirAll("docs/roadmaps/zeus/wip", 0755); err != nil {
+		t.Fatalf("mkdir zeus/wip: %v", err)
+	}
+	const rm = "ROADMAP-shared.md"
+	if err := os.WriteFile("docs/roadmaps/zeus/wip/"+rm, []byte("# shared"), 0644); err != nil {
+		t.Fatalf("escrever roadmap: %v", err)
+	}
+
+	if err := MoveRoadmap("ROADMAP-shared", "done"); err != nil {
+		t.Fatalf("MoveRoadmap() erro inesperado em move legítimo: %v", err)
+	}
+	if _, statErr := os.Stat("docs/roadmaps/zeus/done/" + rm); statErr != nil {
+		t.Errorf("arquivo não encontrado em zeus/done após move legítimo: %v", statErr)
+	}
+}
+
 // TestContainsIgnoreCase — função privada testada diretamente via white-box
 func TestContainsIgnoreCase(t *testing.T) {
 	cases := []struct {

@@ -48,6 +48,32 @@ except ImportError:
 # Helpers
 # ---------------------------------------------------------------------------
 
+def symlink_or_skip(link, target):
+    """Create link.symlink_to(target); pytest.skip if the process lacks privilege.
+
+    On Windows without Developer Mode, os.symlink raises PermissionError
+    (errno.EPERM, winerror=1314 ERROR_PRIVILEGE_NOT_HELD) or OSError with
+    errno.EACCES.  Those conditions mean the guarantee cannot be exercised on
+    this runner — skip rather than fail.
+
+    Any other OSError is a genuine test-infrastructure failure and is re-raised
+    so the test is marked as an error, not silently skipped.
+
+    NOTE: Path.symlink_to is link-first, target-second (opposite of os.symlink
+    and fs.symlinkSync) — the signature follows the native Python convention.
+    """
+    import errno as errno_mod
+    try:
+        link.symlink_to(str(target))
+    except OSError as exc:
+        if exc.errno in (errno_mod.EPERM, errno_mod.EACCES):
+            pytest.skip(
+                f"criação de symlink exige privilégio elevado "
+                f"(Developer Mode no Windows): {exc}"
+            )
+        raise
+
+
 def _make_cfg(tmpdir: str, namespacing: str = "flat", agents=None) -> dict:
     cfg = {
         "roadmap_dir": os.path.join(tmpdir, "roadmaps"),
@@ -497,3 +523,124 @@ def test_agent_from_req_path_difere_de_roadmap_path():
     assert wrong != "beta", (
         f"Confirmação: fórmula de roadmap aplicada a REQ daria {wrong!r}, não 'beta' — estruturas distintas"
     )
+
+
+# ---------------------------------------------------------------------------
+# ML-1E-a — erro explícito e log-prefix em by_agent
+# ---------------------------------------------------------------------------
+
+class TestLogPrefixHasAgent:
+    """Port de TestMoveRoadmap_ByAgent_LogPrefixHasAgent (Go → Python).
+
+    Afirma que move_roadmap em modo by_agent registra a transição no .trackfw-log
+    com o prefixo "<agente>/ROADMAP-*.md", não apenas "ROADMAP-*.md".
+    Conclusão do ML-1E-a: _agent_from_roadmap_path com base_dir retorna o agente correto
+    para paths legítimos dentro do roadmapDir.
+    """
+
+    def test_log_prefix_contem_agente(self, tmp_path):
+        cfg = _make_cfg(str(tmp_path), namespacing="by_agent", agents=["alpha"])
+        src_path = generate_roadmap("Log Prefix", cfg, agent="alpha")
+        filename = os.path.basename(src_path)
+
+        move_roadmap(filename, "analyzing", cfg)
+
+        log_path = os.path.join(cfg["roadmap_dir"], ".trackfw-log")
+        assert os.path.exists(log_path), ".trackfw-log deve existir após move"
+        log_content = open(log_path, encoding="utf-8").read()
+        assert "alpha/" + filename in log_content, (
+            f".trackfw-log deve conter 'alpha/{filename}'; got:\n{log_content}"
+        )
+        assert "backlog → analyzing" in log_content, (
+            f".trackfw-log deve registrar 'backlog → analyzing'; got:\n{log_content}"
+        )
+
+
+class TestSymlinkOutsideRaisesExplicitError:
+    """Afirma que move_roadmap em by_agent levanta ValueError explícito nomeando o path
+    quando _agent_from_roadmap_path retorna "" (symlink resolve para fora de roadmapDir).
+    Conclusão do ML-1E-a: não há fallback silencioso ao primeiro agente — o contrato é
+    'controle que não reconhece rejeita e avisa'.
+    """
+
+    def test_symlink_fora_levanta_valor_error(self, tmp_path):
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        (outside / "wip").mkdir()
+        (outside / "wip" / "ROADMAP-leak.md").write_text("# leak", encoding="utf-8")
+
+        project = tmp_path / "project"
+        project.mkdir()
+        roadmap_dir = project / "roadmaps"
+        roadmap_dir.mkdir()
+        (roadmap_dir / "alice" / "wip").mkdir(parents=True)
+
+        # evil → outside, dentro de roadmap_dir
+        # symlink_or_skip: EPERM/EACCES → pytest.skip; qualquer outro erro → re-raise (falha)
+        symlink_or_skip(roadmap_dir / "evil", outside)
+
+        cfg = {
+            "roadmap_dir": str(roadmap_dir),
+            "req_dir": str(project / "req"),
+            "roadmap_namespacing": "by_agent",
+            "agents": ["alice", "evil"],
+        }
+
+        # Medido em 2026-09-11: Python levanta ValueError (não FileNotFoundError).
+        # _find_roadmap_matches com evil em agents: segue o symlink via os.listdir e
+        # encontra ROADMAP-leak.md; _agent_from_roadmap_path(src, base_dir) resolve via
+        # os.path.realpath, retorna ""; a guarda em move_roadmap levanta ValueError.
+        with pytest.raises(ValueError) as exc_info:
+            move_roadmap("ROADMAP-leak.md", "done", cfg)
+
+        err_msg = str(exc_info.value)
+        # A mensagem deve mencionar "agent namespace"
+        assert "agent namespace" in err_msg, (
+            f"ValueError deve mencionar 'agent namespace'; got: {err_msg}"
+        )
+        # O path recusado deve ser nomeado — contrato "nomeia o caminho recusado"
+        assert "ROADMAP-leak" in err_msg, (
+            f"ValueError deve nomear o path recusado (ROADMAP-leak); got: {err_msg}"
+        )
+
+        # Verificar contenção: o arquivo não deve ter escapado
+        escaped = outside / "done" / "ROADMAP-leak.md"
+        assert not escaped.exists(), "arquivo não deve escapar para fora do roadmapDir via symlink"
+
+    def test_agentfrompath_retorna_vazio_para_symlink_externo(self, tmp_path):
+        """Afirma que _agent_from_roadmap_path com base_dir retorna '' para paths
+        que resolvem via symlink para fora de base_dir.
+        Conclusão do ML-1E-a: a resolução de symlinks em _agent_from_roadmap_path
+        é o mecanismo que produz '' para caminhos externos — afirma o comportamento da função."""
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        (outside / "wip").mkdir()
+        the_file = outside / "wip" / "ROADMAP-test.md"
+        the_file.write_text("# test", encoding="utf-8")
+
+        base_dir = tmp_path / "roadmaps"
+        base_dir.mkdir()
+        symlink_or_skip(base_dir / "evil", outside)
+
+        via_symlink = str(base_dir / "evil" / "wip" / "ROADMAP-test.md")
+        result = _agent_from_roadmap_path(via_symlink, base_dir=str(base_dir))
+        assert result == "", (
+            f"_agent_from_roadmap_path deve retornar '' para symlink externo; got: {result!r}"
+        )
+
+
+class TestLegitMoveStillWorks:
+    """Contra-braço do ML-1E-a: move legítimo entre estados continua funcionando.
+    Conclusão do ML-1E-a: o erro explícito para '' não afeta moves de paths reais
+    dentro do roadmapDir.
+    """
+
+    def test_move_legitimo_nao_falha(self, tmp_path):
+        cfg = _make_cfg(str(tmp_path), namespacing="by_agent", agents=["zeus"])
+        src_path = generate_roadmap("Legit", cfg, agent="zeus")
+        filename = os.path.basename(src_path)
+
+        dst = move_roadmap(filename, "done", cfg)
+        assert "/zeus/done/" in dst.replace(os.sep, "/"), (
+            f"Esperado zeus/done/ após move legítimo, obteve: {dst}"
+        )
