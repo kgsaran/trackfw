@@ -651,3 +651,68 @@ em voo**, não descoberta na auditoria final.
 
 ⚠️ **E o gate continua faltando:** nada compara o `trackfw.yaml` **depois de modificado** pelos 3 CLIs.
 Esta divergência só apareceu porque rodei o comando. Entra como critério do fechamento da Wave 2.
+
+---
+
+## 🔴 Wave 2 — três divergências no E2E dos 3 binários, e uma é regressão de dados
+
+### D1 — posição do bloco `agents:` (Go diverge)
+
+```
+GO                              NODE / PYTHON
+agents:                         wip_limit: 3
+  - architect                   agents:
+wip_limit: 3                      - architect
+```
+
+Go insere após `roadmap_namespacing:`; os outros dois anexam ao fim. **Culpa minha:** transmiti o
+contrato de posição só ao Python. Go segue o contrato: **anexar ao fim**.
+
+### D2 — 🔴 `agents:` em FLOW inline: três comportamentos, e o Python CORROMPE
+
+Entrada: `agents: [alpha, beta]` — formato **suportado** (`REQ-2026-08-02`, status **Done**; os três
+**leem** corretamente).
+
+```
+GO      "install complete"      agents: [alpha, beta]                    ← nao registra, e nao avisa
+NODE    ok                      agents: [ alpha, beta, architect ]       ← registra (reformata espaco)
+PY      ok                      agents: [alpha, beta]
+                                agents:                                  ← 🔴 SEGUNDA chave
+                                  - architect
+```
+
+🔴 **O Python grava uma chave `agents:` DUPLICADA.** Em YAML isso é erro ou "último vence" — de
+qualquer forma **`alpha` e `beta` são perdidos silenciosamente**. É perda de dado de configuração do
+usuário, não cosmético.
+
+🔴 **E o Go relata "install complete" sem registrar nada.** O teste unitário dele afirma que o caso
+inline **retorna erro nomeando o arquivo**; no binário, o erro não chega ao usuário. **Teste verde,
+comportamento oposto** — a Regra Dura de Reconciliação outra vez, agora na fronteira função→comando.
+
+**Contrato:** o flow inline é formato suportado e **deve funcionar nos três**, acrescentando o item e
+**preservando o estilo flow**. Recusar quebraria formato documentado; corromper é inaceitável.
+Os três produzem **o mesmo arquivo**.
+
+### D3 — ⚠️ a mensagem de erro da Wave 1 NÃO é byte-idêntica — e a auditoria fui eu que fiz
+
+```
+GO    Error: by_agent project has multiple agent namespaces (alpha, beta): use --agent to specify one
+NODE  Error: --agent is required when multiple namespaces are configured: alpha, beta
+PY    Error: multiple agent namespaces declared (alpha, beta): use --agent to specify one
+```
+
+🔴 **Eu declarei paridade no C3 da Wave 1 usando `grep -o "alpha, beta"`** — que casa nos três. Afirmei
+que **os nomes aparecem**; concluí que **a mensagem é a mesma**. São coisas diferentes, e
+`internal/generators/roadmap.go` diz no próprio comentário que *"a mensagem é contrato de paridade:
+byte-idêntica nos 3 CLIs"*.
+
+**Régua frouxa produz verde falso** — quinta vez nesta campanha, e desta vez a régua era minha.
+
+**Contrato:** adotar a do Go, que é a mais informativa:
+`by_agent project has multiple agent namespaces (<lista>): use --agent to specify one`
+
+### O gate que faltava, agora com três motivos
+
+Nada compara o `trackfw.yaml` **depois de modificado** pelos 3 CLIs, nem as **mensagens de erro** desta
+família. As três divergências acima só apareceram porque **rodei os binários lado a lado**. Sem gate,
+todas voltam.
