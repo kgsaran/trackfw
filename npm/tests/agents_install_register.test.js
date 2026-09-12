@@ -241,3 +241,65 @@ test('global-scope install does not write project trackfw.yaml', () => {
     fs.rmSync(path.dirname(projectRoot), { recursive: true, force: true })
   }
 })
+
+// ── inline-flow guard (contract correction post-measure) ──────────────────────
+
+test('inline-flow: file is byte-identical after install (no rewrite)', () => {
+  // Reconciliation: affirms that when agents: is written in inline/flow style
+  // (e.g. "agents: [alpha, beta]"), registerAgentInConfig does NOT rewrite the
+  // file — the byte content is identical before and after install.
+  const yaml = 'roadmap_namespacing: by_agent\nagents: [alpha, beta]\nroadmap_dir: docs/roadmaps\n'
+  const { projectRoot, homeRoot } = makeProject(yaml)
+  try {
+    const before = fs.readFileSync(require('node:path').join(projectRoot, 'trackfw.yaml'), 'utf8')
+    installAgent({ projectRoot, homeRoot }, 'architect')
+    const after = fs.readFileSync(require('node:path').join(projectRoot, 'trackfw.yaml'), 'utf8')
+    assert.equal(after, before,
+      'file must be byte-identical after install when agents: is in inline-flow format')
+  } finally {
+    fs.rmSync(require('node:path').dirname(projectRoot), { recursive: true, force: true })
+  }
+})
+
+test('inline-flow: install emits warning to stderr naming file and item', () => {
+  // Reconciliation: affirms that when agents: is in inline-flow format, the
+  // warning emitted to stderr names both the absolute config file path and the
+  // agent item that could not be registered.
+  const yaml = 'roadmap_namespacing: by_agent\nagents: [alpha, beta]\nroadmap_dir: docs/roadmaps\n'
+  const { projectRoot, homeRoot } = makeProject(yaml)
+  try {
+    const stderrChunks = []
+    const origWrite = process.stderr.write.bind(process.stderr)
+    process.stderr.write = (chunk, ...args) => { stderrChunks.push(String(chunk)); return origWrite(chunk, ...args) }
+    try {
+      installAgent({ projectRoot, homeRoot }, 'architect')
+    } finally {
+      process.stderr.write = origWrite
+    }
+    const stderr = stderrChunks.join('')
+    assert.ok(stderr.includes('architect'),
+      `stderr must name the item "architect"; got: ${JSON.stringify(stderr)}`)
+    assert.ok(stderr.includes('trackfw.yaml'),
+      `stderr must name the config file; got: ${JSON.stringify(stderr)}`)
+    assert.ok(stderr.toLowerCase().includes('inline') || stderr.toLowerCase().includes('flow'),
+      `stderr must mention inline/flow format; got: ${JSON.stringify(stderr)}`)
+  } finally {
+    fs.rmSync(require('node:path').dirname(projectRoot), { recursive: true, force: true })
+  }
+})
+
+test('counter-arm: block-style agents: continues to be registered after install', () => {
+  // Reconciliation: affirms that the inline-flow guard does NOT affect block-style
+  // agents: entries — registration still appends the agent and the command succeeds.
+  const yaml = 'roadmap_namespacing: by_agent\nagents:\n  - alpha\n  - beta\nroadmap_dir: docs/roadmaps\n'
+  const { projectRoot, homeRoot } = makeProject(yaml)
+  try {
+    installAgent({ projectRoot, homeRoot }, 'architect')
+    const agents = readAgents(projectRoot)
+    assert.ok(agents.includes('alpha'), '"alpha" must still be present')
+    assert.ok(agents.includes('beta'), '"beta" must still be present')
+    assert.ok(agents.includes('architect'), '"architect" must be registered in block-style list')
+  } finally {
+    fs.rmSync(require('node:path').dirname(projectRoot), { recursive: true, force: true })
+  }
+})
