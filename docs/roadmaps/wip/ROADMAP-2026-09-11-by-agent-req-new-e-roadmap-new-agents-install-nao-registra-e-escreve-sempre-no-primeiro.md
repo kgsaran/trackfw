@@ -846,3 +846,60 @@ ausente).
 
 🔴 **Quando um ML de paridade decide algo que os irmãos precisam honrar, a decisão é transmitida
 durante a execução — não descoberta na auditoria final.**
+
+### ML-3A-fix — 🔴 o texto novo tornou VÁCUA a asserção do `check-integration-cli-parity`
+**Status:** ⬜ Pendente · **Arquivos:** `scripts/check-integration-cli-parity.sh`
+
+`make quality` → **RC=2**, um FAIL real (os 12 `GUARDA` são consequência: o chunk morre em `set -e`).
+
+```
+FAIL [falsify/integration-cli-parity/missing-agents]:
+  saiu com 1 mas falta diagnóstico 'node: root help missing agents'
+```
+
+**A/B contra `origin/main`, worktree completa dos dois lados:**
+
+```
+MAIN   mutado → node: root help missing agents     ← o cenário funciona
+BRANCH mutado → node: agents help missing list     ← falha ANTES, noutra asserção
+```
+
+**Causa raiz medida.** O ML-3A acrescentou ao root help:
+
+```
+trackfw req new --agent <agent> "title"  # by_agent project with 2+ agents
+```
+
+A asserção do gate (`scripts/check-integration-cli-parity.sh:72`) é:
+
+```bash
+grep -Eq "(^|[[:space:]])${kind}([[:space:]]|$)" <<<"$stripped_root"
+```
+
+Ela varre **o texto inteiro** do help. A frase **`2+ agents`** casa — **mesmo com o comando `agents`
+removido do `program.addCommand`**. Medido: `main` = 0 ocorrências, branch = **2**.
+
+🔴 **A asserção passou a ser satisfeita por PROSA em vez de pela LISTA DE COMANDOS.** O teste de
+mutação perdeu o poder de detectar um comando ausente — e só apareceu porque existe um cenário de
+falsificação que o exercita.
+
+**Decisão do arquiteto:** o texto do help **fica**; a régua é que está errada. Casar palavra solta em
+help inteiro sempre foi frágil — bastou prosa nova para esvaziar. **Mas quem a quebrou fomos nós, então
+fecha neste PR.**
+
+**Acoes:**
+1. A asserção passa a olhar a **região de lista de comandos** do help, não o texto inteiro.
+   Cada runtime formata diferente (cobra × commander × argparse) — 🔴 derive a região por runtime, com
+   evidência, em vez de presumir um formato comum.
+2. Mesmo tratamento para `skills`, que corre o mesmo risco.
+3. 🔴 **Varredura:** outras asserções deste gate — e de gates irmãos — que casam palavra solta em saída
+   inteira. **Comando escrito.**
+
+**Criterios de aceite:**
+- [ ] 🔴 Com `program.addCommand(require('./agents'))` removido, o gate volta a dizer
+      **`node: root help missing agents`**. Cole a saída
+- [ ] 🔴 **Contra-braço:** sem mutação, o gate **passa** — inclusive com o texto novo do ML-3A presente
+- [ ] O cenário `falsify/integration-cli-parity/missing-agents` volta ao verde
+- [ ] `env -u FORCE_COLOR TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 make quality` → **exit 0**, com o exit
+      code capturado direto do `make` (não de um `grep` na saída)
+- [ ] Varredura do item 3 com comando escrito
