@@ -34,6 +34,82 @@ três fontes à mão — que é o que ninguém faz.
 - [ ] AC12 — `known_divergences` com motivo escrito por entrada
 - [ ] AC13 — `docs/cli-parity.md` ganha a tabela de subcomandos
 
+## 🔴 FRENTE PARADA em 2026-09-12 — decisão do KG
+
+**Estado: MLs restantes marcados ❌ Bloqueado; o roadmap fica em `wip/`.**
+
+> 🔴 **Defeito encontrado ao executar esta própria parada:** mover o roadmap para `blocked/` torna a
+> branch `fix/` não-conforme e **impede commitar o ato de bloquear** — `branch_has_wip_roadmap`
+> aceita só `wip/` e `done/`, apesar de `blocked` ser estado documentado do ciclo
+> (`backlog / analyzing / wip / blocked / done / abandoned`). Catch-22: para registrar o bloqueio é
+> preciso não bloquear. Por isso o roadmap permanece em `wip/` com os MLs marcados ❌. **Registrado
+> como achado, não contornado em silêncio.**
+ Não é abandono e não é pausa por falta de gente: é **decisão de não construir
+o que já se sabe que será apagado**.
+
+### O que a levou a parar
+
+`ADR-2026-09-12-estrategia-de-distribuicao` foi **aceita**, e a direção é a **opção D — um binário,
+muitos canais**: uma implementação em Go distribuída por npm e pip com o binário dentro do pacote,
+no lugar da reimplementação tripla.
+
+Os dois entregáveis restantes desta frente são **infraestrutura de paridade**:
+
+```
+ML-2A     check-rule-set-parity.sh      compara o conjunto de REGRAS entre 3 runtimes
+ML-2A-b   check-subcommand-parity.sh    compara o conjunto de SUBCOMANDOS entre 3 runtimes
+```
+
+Com um runtime, os dois **não passam a passar — deixam de ter objeto.**
+
+### 🔴 E o ML-2A trouxe a demonstração, não a projeção
+
+O agente de QA mediu e **bloqueou, corretamente**: não existe superfície executável que enumere as
+regras implementadas em runtime nenhum.
+
+```
+--list-rules / --rules                       unknown flag nos 3
+audit-surface · configure · doctor · context  nenhum expõe o conjunto
+validate --json                               só mostra regra que DISPARA
+```
+
+E o argumento que fecha a questão:
+
+> *"Uma regra implementada mas não acionada pelo fixture é byte-a-byte indistinguível de uma regra
+> não-implementada. Construir um fixture que dispare TODAS as regras exigiria saber o conjunto a
+> priori — que é exatamente o que o gate deveria produzir. É circular."*
+
+As duas saídas fáceis foram recusadas pelos motivos certos: os *severity maps* dão conjunto
+**parcial por construção** (só listam regras cujo default não é `error`), e grep de fonte mede
+**ortografia, não implementação** — a classe de gate vácuo que este projeto já pagou quatro vezes.
+
+Sobra uma única opção viável: **adicionar `--list-rules` aos três CLIs.**
+
+🔴 **Ou seja: para construir o detector do imposto de paridade, seria preciso pagar o imposto de
+paridade** — implementar um comando novo três vezes, para criar um gate que a opção D apaga.
+
+### O que esta frente JÁ entregou, e vale independentemente da v8
+
+| ML | entrega | sobrevive a D? |
+|---|---|---|
+| ML-1A | triagem medida: 0 entregues, 2 parciais, 4 pendentes | ✅ sim |
+| ML-1B | vereditos aplicados; parciais registram que a evidência original era falsa | ✅ sim |
+| — | **o Go é a expressão da verdade** no `CLAUDE.md` e no `cli-parity.md`, com o porquê | ✅ sim, e vira central |
+| — | três notas de vault do byte NUL consolidadas em uma | ✅ sim |
+| — | absorção do #298 e do #310, com a convergência decidida | ✅ a decisão sim |
+
+### O que reabre esta frente
+
+A decisão da v8, que depende de `ROADMAP-2026-09-12-validar-um-binario-muitos-canais`:
+
+- **v8 adota D** ⇒ ML-2A e ML-2A-b são **abandonados**, e os ACs de gate das REQs parciais fecham
+  por desaparecimento da causa. Registrar isso nas REQs, não deixá-las abertas.
+- **v8 não adota D** ⇒ esta frente **volta para `wip`**, e o ML-2A começa pela decisão de contrato:
+  criar `--list-rules` nos três CLIs.
+
+🔴 **Em nenhum dos dois casos as REQs parciais ficam como estão.** Elas hoje esperam um gate; se o
+gate deixar de ser necessário, quem fecha é o registro da causa desaparecida.
+
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
 
@@ -95,7 +171,7 @@ REQ-2026-09-03-check-referential-integrity-diz-ok-e-sai-zero-sobre-arvore-vazia-
 > Dependências: Wave 1 (a triagem diz o que o gate precisa cobrir).
 
 ### ML-2A — **AC4 + AC5 + AC6** — gate de conjunto de regras
-**Status:** ⬜ Pendente
+**Status:** ❌ Bloqueado — ver "FRENTE PARADA" acima
 **Arquivos afetados:** novo `scripts/check-rule-set-parity.sh`, `Makefile`.
 🔴 **Nome distinto de `check-rules-parity.sh`, que já existe e mede outra coisa** — o bloco de regras
 de artefatos gerados (4 arquivos × 3 runtimes), não as regras implementadas. Não alterar aquele gate.
@@ -113,7 +189,7 @@ de artefatos gerados (4 arquivos × 3 runtimes), não as regras implementadas. N
 **Reconciliação:** cada teste novo declara qual conclusão do ML ele afirma.
 
 ### ML-2A-b — **AC9 + AC10 + AC11 + AC12** — gate de paridade de subcomandos (#298)
-**Status:** ⬜ Pendente
+**Status:** ❌ Bloqueado — ver "FRENTE PARADA" acima
 **Arquivos afetados:** novo `scripts/check-subcommand-parity.sh`, `Makefile`.
 🔴 **Não alterar `scripts/check-cli-parity.sh`** — ele mede o primeiro nível e continua válido para
 isso. Este gate desce um nível.
@@ -147,7 +223,7 @@ e `req list` faltou no Python sem nenhum gate avisar."*
 **Reconciliação:** cada teste novo declara qual conclusão do ML ele afirma.
 
 ### ML-2B — **AC7 + AC8 + AC13** — documentação e fechamento
-**Status:** ⬜ Pendente
+**Status:** ❌ Bloqueado — ver "FRENTE PARADA" acima
 **Arquivos afetados:** `docs/cli-parity.md`.
 **Critérios de aceite:**
 - [ ] Seção nomeando `check-rule-set-parity.sh` e o que ele cobre

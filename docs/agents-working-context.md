@@ -2,6 +2,53 @@
 
 ---
 
+## Sessão 2026-09-12 — Zeus (frente B PARADA — não se constrói o que será apagado)
+
+Branch `fix/triagem-medida-das-reqs-de-paridade`, MLs restantes marcados ❌ Bloqueado, por
+decisão do KG. 🔴 O roadmap **permanece em `wip/`** por um defeito descoberto ao executar a própria
+parada: mover para `blocked/` torna a branch `fix/` não-conforme e **impede commitar o ato de
+bloquear** — `branch_has_wip_roadmap` aceita só `wip/` e `done/`, apesar de `blocked` ser estado
+documentado do ciclo. Catch-22 registrado como achado.
+
+**Motivo:** a `ADR-2026-09-12-estrategia-de-distribuicao` foi aceita e a direção é a **opção D — um
+binário, muitos canais**. Os dois entregáveis restantes desta frente (`check-rule-set-parity.sh` e
+`check-subcommand-parity.sh`) são infraestrutura de paridade: com um runtime, **deixam de ter
+objeto**.
+
+🔴 **O ML-2A trouxe a demonstração.** O agente de QA bloqueou corretamente: **não existe superfície
+executável que enumere as regras implementadas** em runtime nenhum (`--list-rules` é flag
+desconhecida nos três; `validate --json` só mostra regra que dispara, e um fixture que dispare todas
+exigiria conhecer o conjunto a priori — circular). A única opção viável seria criar `--list-rules`
+nos três CLIs: **pagar o imposto de paridade para construir o detector do imposto de paridade.**
+
+**Entregue e válido independentemente da v8:** triagem medida (0 entregues, 2 parciais, 4
+pendentes); vereditos aplicados com registro de que a evidência original era falsa; **o Go como
+expressão da verdade** no `CLAUDE.md` e no `cli-parity.md`, com o porquê; três notas de vault do byte
+NUL consolidadas em uma; absorção do #298 e do #310 com a convergência decidida.
+
+**Erro meu registrado:** despachei o ML-2A **depois** de já ter escrito na ADR que a opção D o
+tornaria obsoleto. O agente gastou 27 chamadas para descobrir um bloqueio que a minha própria análise
+tornava previsível. Não foi desperdício total — o bloqueio é evidência forte —, mas foi eu não
+aplicando a minha conclusão ao meu despacho.
+
+**Reabre com a decisão da v8:** adota D ⇒ ML-2A e ML-2A-b são abandonados e as REQs parciais fecham
+por desaparecimento da causa; não adota ⇒ volta para `wip` começando pela decisão de contrato do
+`--list-rules`.
+
+---
+
+## Sessão 2026-09-12 — Ártemis (ML-2A — gate de conjunto de regras — BLOQUEADO)
+
+**Início:** 2026-09-12 | Branch: `fix/triagem-medida-das-reqs-de-paridade` | Roadmap em wip.
+**Tarefa:** ML-2A do ROADMAP-2026-09-12-triagem — escrever `scripts/check-rule-set-parity.sh` e
+wiring no Makefile para comparar os conjuntos de regras implementadas nos 3 runtimes.
+**Bloqueado:** nenhum runtime expõe superfície para listar TODAS as regras implementadas. A superfície
+existente (`validate --json`) emite apenas regras que DISPARAM num projeto concreto — é incapaz de
+satisfazer AC4 + AC6 simultaneamente (ver análise abaixo). Attention signal escrito; aguarda decisão
+de arquiteto sobre superfície de enumeração.
+
+---
+
 ## Sessão 2026-09-12 — Zeus (v7.6.0 TAGGED — npm bloqueado por credencial)
 
 Tag `v7.6.0` publicada via `trackfw release tag 7.6.0` (o `git push origin <tag>` cru é bloqueado
