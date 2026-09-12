@@ -2,6 +2,14 @@
 
 ---
 
+## Sessão 2026-09-12 — Hefesto (REQ: suítes não distinguem ambiente incompleto de código quebrado)
+
+**Início:** 2026-09-12 | Detached HEAD em origin/main (trackfw-triagem).
+**Tarefa:** medir as 4 perguntas do KG e registrar REQ + roadmap em backlog. Nenhuma implementação.
+**Escopo:** `docs/req/` e `docs/roadmaps/backlog/`. Branch via `trackfw branch new` após os artefatos.
+
+---
+
 ## Sessão 2026-09-12 (3) — Apolo (ML-1A — correção de predicado: frontmatter-first + contentHasMarkerValue)
 
 **Início:** 2026-09-12 (continuação de contexto esgotado pela 3ª vez) | Branch: `fix/req-nasce-orfa`.
