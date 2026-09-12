@@ -38,7 +38,7 @@ três fontes à mão — que é o que ninguém faz.
 > Dependências: nenhuma.
 
 ### ML-1A — **AC1** — triagem medida das REQs de ausência
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:** somente `docs/qualidade/2026-09-12-triagem-medida-das-reqs-de-paridade.md` (novo).
 Nenhum arquivo de produto neste ML.
 

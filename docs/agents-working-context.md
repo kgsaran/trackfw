@@ -36865,3 +36865,34 @@ Depois da tag, é histórico — e dá rastro visível de que houve correção d
 ⚠️ **Este bloco existe porque "alguém lembra depois" falhou hoje**: o `Closes #315` foi escrito na
 abertura do #330 e os `Closes #320`/`Closes #328` nunca foram acrescentados — os dois issues tiveram de
 ser fechados à mão após o merge. **Intenção declarada não é gate.**
+
+---
+
+## Sessão 2026-09-12 — Hefesto (Code Quality) — ML-1A triagem medida das REQs de paridade
+
+Início: 2026-09-12. Executando ML-1A do roadmap
+`ROADMAP-2026-09-12-triagem-medida-das-reqs-de-paridade-e-gate-de-conjunto-de-regras.md`.
+Tarefa: medir presença e comportamento nos 3 runtimes (Go, Node, Python) para cada REQ aberta
+cuja evidência seja "ausente num runtime". Nenhum arquivo de produto será tocado neste ML.
+Entregável: `docs/qualidade/2026-09-12-triagem-medida-das-reqs-de-paridade.md`.
+
+## Sessão 2026-09-12 — Hefesto (Code Quality) — ML-1A CONCLUÍDO
+
+ML-1A da triagem medida entregue. Documento: `docs/qualidade/2026-09-12-triagem-medida-das-reqs-de-paridade.md`.
+
+**Vereditos:**
+- note_orphan (REQ-2026-08-20): PARCIAL — AC1/AC4 entregues; AC3 pendente (gate cross-CLI ausente)
+- thirdparty_artifact_has_provenance (REQ-2026-09-01): PARCIAL — AC1-AC3 entregues; AC4 pendente (gate de conjunto)
+- validate-json-python (REQ-2026-08-20): PENDENTE — `rule: None` confirmado no binário
+- cli-python-init (REQ-2026-08-28): PENDENTE — sem --ci/--hooks no binário
+- consumidores-by-agent (REQ-2026-08-30): PENDENTE — Python "REQs 0" vs Go/Node "REQs 1"; issue #268 refina AC1
+- check-referential-integrity (REQ-2026-09-03): PENDENTE — RC=0 sobre árvore vazia confirmado
+
+**Achados adicionais sem REQ:**
+- Issue #310: Python cria ADR-001 extra no init; shebang trackfw-validate.sh diverge (sh vs bash)
+- Issue #298: check-cli-parity.sh só cobre 1º nível; 9 subcomandos sem gate cross-CLI
+
+**REQs entregues: 0. Parciais: 2. Pendentes: 4.**
+
+Dois falsos negativos do ugrep-I confirmados: note_orphan e thirdparty_artifact_has_provenance
+estavam presentes no Node desde a origem; as REQs foram abertas com evidência defeituosa.
