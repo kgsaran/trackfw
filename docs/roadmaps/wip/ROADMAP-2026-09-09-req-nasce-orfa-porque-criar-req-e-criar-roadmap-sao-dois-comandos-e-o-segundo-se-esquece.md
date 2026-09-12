@@ -234,8 +234,21 @@ Este design aceita explicitamente não cobrir:
 **Gate da wave:**
 ```bash
 # Gate ML-0A — Fechamento da enumeração de sítios de inferência por substring.
-# Falha se um sítio novo aparecer sem atualizar este roadmap, ou se um sítio for
-# corrigido sem marcar o ML correspondente como concluído e decrementar EXPECTED.
+# Falha se um sítio DESAPARECER (função removida ou renomeada) sem que o ML
+# correspondente seja marcado concluído e EXPECTED decrementado.
+#
+# 🔴 LIMITE MEDIDO deste gate (auditoria do arquiteto, 2026-09-12): 8 dos 10 checks
+# rastreiam o NOME DA FUNÇÃO, não o padrão defeituoso. Corrigir um sítio EM LUGAR —
+# manter `find_req`/`_find_file`/`branchSlugMatchesRoadmap` e trocar substring por
+# casamento exato — deixa este gate VERDE. Ele prova que o sítio existe, não que ele
+# ainda é defeituoso.
+#
+# Só `internal/generators/roadmap.go` e `internal/generators/req.go` rastreiam o padrão
+# real (`containsIgnoreCase`) e detectariam a correção em lugar.
+#
+# Quem prova a correção são os critérios de aceite de cada ML (falsificação: nome vazio
+# ⇒ erro; contra-braço: nome exato ⇒ move). Este gate é de ENUMERAÇÃO, não de correção —
+# não o use como evidência de que um sítio foi consertado.
 # Usar git grep (não ugrep): npm/src/validator/index.js tem NUL bytes que o ugrep omite.
 cd "$(git rev-parse --show-toplevel)" || exit 1
 
