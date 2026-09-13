@@ -58,8 +58,15 @@ check_destination() {
 check_destination "$ROOT_DIR/npm/src/integrations/assets"
 check_destination "$ROOT_DIR/pypi/trackfw/integrations/assets"
 
-if ! grep -Fq '"src/"' "$ROOT_DIR/npm/package.json"; then
-  echo "npm package files must include src/ so integration assets are published" >&2
+# v8: integration assets are embedded in the Go binary (go:embed assets in
+# internal/integrations/catalog.go). The npm package ships only the shim
+# (bin/trackfw.js); `src/` is no longer in `files`. Verify the shim is wired.
+if ! grep -Fq '"bin/trackfw.js"' "$ROOT_DIR/npm/package.json"; then
+  echo "npm package.json must list bin/trackfw.js in files (v8 shim) — ML-1B" >&2
+  exit 1
+fi
+if grep -Fq '"src/"' "$ROOT_DIR/npm/package.json"; then
+  echo "npm package.json files still includes src/ — must be removed for v8 shim (ML-1B)" >&2
   exit 1
 fi
 for pattern in \

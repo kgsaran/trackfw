@@ -177,6 +177,13 @@ if is_shim:
     else:
         ok("no src/ directory — correct for v8 shim")
 
+    # Assert: no bin/trackfw (the v7 Node entry, without .js extension)
+    # "conteúdo v7 sob nome v8" is the accident this REQ exists to prevent — ML-1B.
+    if 'bin/trackfw' in names_stripped:
+        fail("contains bin/trackfw (v7 Node entry without .js) — old implementation must not be in v8 tarball")
+    else:
+        ok("no bin/trackfw v7 entry — correct for v8 shim")
+
     # Assert: has package.json
     if 'package.json' in names_stripped:
         ok("contains package.json")

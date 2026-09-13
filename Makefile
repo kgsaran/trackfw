@@ -199,7 +199,7 @@ sync-integration-assets:
 check-integration-assets:
 	scripts/check-integration-assets.sh
 
-package-smoke: check-integration-assets
+package-smoke: build check-integration-assets
 	# PYTHON_BIN pinado (ML-2E, mesma família de HASH_CMD_BIN acima -- severidade menor
 	# porque não há guarda que um binário forjado possa satisfazer vaziamente aqui, só
 	# quebra o próprio build/smoke se for forjado).

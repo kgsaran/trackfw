@@ -37172,3 +37172,13 @@ pré-requisito hard de ML-3A.
 **Início:** 2026-09-13 | Branch: `fix/v8-um-binario-muitos-canais` | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` ML-1A
 **Tarefa:** Fechar os 7 defeitos do release workflow (D1–D7): plumbing de binários goreleaser→npm/pypi, paridade de plataformas, dist-tag automático, ordem de publicação, sem sdist, normalização de versão prerelease, verify-channels por conteúdo.
 **Estado ao início:** goreleaser 2.18.1 disponível localmente. npm/package.json sem optionalDependencies. Branch limpa em e19556ac (merge de main/Wave 1 squashada em #352).
+
+---
+
+## Sessão 2026-09-13 — Ares (trackfw-nul — ML-1B completar: npm/package.json + discriminante + smoke)
+
+**Início:** 2026-09-13 | Branch: `fix/v8-um-binario-muitos-canais` (trackfw-nul) | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` ML-1B
+**Tarefa:** Fechar ML-1B incompleto: (1) `npm/package.json` ainda aponta para a implementação Node v7 — precisa apontar para `bin/trackfw.js` (shim) e remover dependências e src/ do `files`; (2) discriminante no release.yml está errado (verifica `npm/src/` na árvore, deveria inspecionar o tarball sempre); (3) `smoke-integration-packages.sh` afirma assets em `src/integrations/` que não estarão mais no tarball.
+
+**Concluído:** (1) `npm/package.json` corrigido: bin→`./bin/trackfw.js`, files→`["bin/trackfw.js"]`, main removido, deps movidas para devDeps, smoke→`node --check`. Lockfile regenerado. (2) release.yml: discriminante corrigido para sempre rodar `check-channels-content.sh --local` (não condicionado à presença de npm/src/ na árvore). (3) `smoke-integration-packages.sh` npm arm reescrito: shim + platform pkg sem `bin` (AC13) + Go binary real; `check-integration-assets.sh` e `check-channels-content.sh` atualizados. Makefile: `package-smoke: build check-integration-assets`. Reconciliações escritas no roadmap. Falsificação: src/ em files → FAIL exit 1 (provado). Shim sem binary → exit 1 nomeando plataforma. Shim com binary (sem bin field) → delegates exit 0. `make quality` verde. `npm test` 910/0. `check-workflow-yaml.py` 8/8. `trackfw validate` sem violações bloqueantes.
+
