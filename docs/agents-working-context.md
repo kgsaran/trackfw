@@ -2,6 +2,14 @@
 
 ---
 
+## Sessão 2026-09-12 — Ares (trackfw-nul — Correção 1+2: --offline + reconciliação ECONNREFUSED)
+
+**Início:** 2026-09-12 | Branch: `fix/validar-um-binario-muitos-canais` (trackfw-nul) | PR #346.
+**Tarefa:** Substituir registry morto (`127.0.0.1:1`) por `--offline` nos dois npm install da P15; adicionar braço ENOTCACHED (lodash + cache vazio) que prova que o flag recusa rede; corrigir afirmação ECONNREFUSED vs SYN_SENT medido.
+**Concluído:** YAML OK. Braço 3.5 adicionado. Comentário da seção 4 reescrito (vacuidade documentada honestamente). Afirmação ECONNREFUSED corrigida em agents-working-context.md (trackfw-nul) com explicação de por que o erro foi escrito. Nota de vault `npm-offline-port1-syn_sent-vacuidade-2026-09-12.md` criada e linkada. `trackfw commit` + `trackfw push` executados.
+
+---
+
 ## Sessão 2026-09-12 (3) — Apolo (ML-1A — correção de predicado: frontmatter-first + contentHasMarkerValue)
 
 **Início:** 2026-09-12 (continuação de contexto esgotado pela 3ª vez) | Branch: `fix/req-nasce-orfa`.
