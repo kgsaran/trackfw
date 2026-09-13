@@ -44,7 +44,7 @@
 #   4. The gate NEVER touches a real remote or forge: origin is a local bare repo (file
 #      protocol, no credential helper needed), and the ONLY "publish" ever exercised is against
 #      the local `gh` stub, whose two calls are captured to disk and asserted on directly.
-#   5. File edits to fixture content (isolating one of the 5 version checks) use python3, never
+#   5. File edits to fixture content (isolating one of the 3 version checks) use python3, never
 #      `sed -i` — BSD vs GNU divergence already broke CI once in this series.
 set -euo pipefail
 
@@ -705,16 +705,16 @@ done
 assert_three_way "$RT_LABEL"
 
 # ---------------------------------------------------------------------------
-# Scenarios 3a-3e — the 5 version checks across the 4 files, one isolated mismatch each. Checks
-# 4 and 5 share pypi/trackfw/__init__.py but target distinct, non-overlapping substrings (the
-# try-block fallback vs. the except-block fallback), per the file's own doc comment.
+# Scenarios 3a-3c — the 3 version checks across the 3 files, one isolated mismatch each.
+# ML-1A (v8): the two pypi/trackfw/__init__.py scenarios (formerly 3d and 3e) were removed
+# because Wave 3 (ML-3A) deletes pypi/trackfw/ — keeping those checks in RELEASE_VERSION_FILES
+# would break 'trackfw release tag' after Wave 3. The write_version_files fixture still creates
+# pypi/trackfw/__init__.py (the file exists until Wave 3) but release tag no longer reads it.
 # ---------------------------------------------------------------------------
 declare -a MISMATCH_CASES=(
   "version-mismatch-go|internal/version/version.go|Version = \"$RELEASE_VERSION\"|Version = \"9.9.8\"|internal/version/version.go has version \"9.9.8\", expected \"$RELEASE_VERSION\""
   "version-mismatch-npm|npm/package.json|\"version\":\"$RELEASE_VERSION\"|\"version\":\"9.9.8\"|npm/package.json has version \"9.9.8\", expected \"$RELEASE_VERSION\""
   "version-mismatch-pyproject|pypi/pyproject.toml|version = \"$RELEASE_VERSION\"|version = \"9.9.8\"|pypi/pyproject.toml has version \"9.9.8\", expected \"$RELEASE_VERSION\""
-  "version-mismatch-init-try|pypi/trackfw/__init__.py|or \"$RELEASE_VERSION\"|or \"9.9.8\"|pypi/trackfw/__init__.py (importlib.metadata fallback) has version \"9.9.8\", expected \"$RELEASE_VERSION\""
-  "version-mismatch-init-except|pypi/trackfw/__init__.py|__version__ = \"$RELEASE_VERSION\"|__version__ = \"9.9.8\"|pypi/trackfw/__init__.py (except fallback) has version \"9.9.8\", expected \"$RELEASE_VERSION\""
 )
 for case_spec in "${MISMATCH_CASES[@]}"; do
   IFS='|' read -r RT_LABEL rel_path old_pattern new_pattern expect_msg <<<"$case_spec"

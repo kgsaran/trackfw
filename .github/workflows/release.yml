@@ -140,3 +140,68 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: pypi/dist/
+
+  # verify-channels — AC4: partial publication failure is detectable.
+  # Runs after BOTH publish-npm and publish-pypi, even if one of them failed (if: always()).
+  # v7.6.0 published GitHub and PyPI successfully but left npm behind due to an expired
+  # credential — both jobs showed green and the missing channel was only noticed later.
+  # This job makes the failure visible: it checks all three channels by name and exits
+  # non-zero with a named message for each missing channel.
+  #
+  # Note: the npm registry and PyPI may need a short propagation window after publishing.
+  # The 45-second sleep covers normal propagation; transient failures should be re-run.
+  verify-channels:
+    name: Verify all release channels
+    needs: [publish-npm, publish-pypi]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for registry propagation
+        run: sleep 45
+
+      - name: Verify GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          if gh release view "v$VERSION" > /dev/null 2>&1; then
+            echo "ok: GitHub release v$VERSION is live"
+          else
+            echo "FAIL: GitHub release v$VERSION not found — goreleaser may have failed" >&2
+            exit 1
+          fi
+
+      - name: Verify npm channel
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          if npm view "trackfw@$VERSION" version > /dev/null 2>&1; then
+            echo "ok: npm trackfw@$VERSION is live"
+          else
+            echo "FAIL: npm trackfw@$VERSION not found — publish-npm may have failed or credential expired" >&2
+            exit 1
+          fi
+
+      - name: Verify PyPI channel
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          FOUND=$(python3 -c "
+import urllib.request, json, sys
+url = 'https://pypi.org/pypi/trackfw/json'
+try:
+    data = json.loads(urllib.request.urlopen(url, timeout=15).read())
+    releases = data.get('releases', {})
+    sys.exit(0 if '$VERSION' in releases else 1)
+except Exception as e:
+    print(f'query failed: {e}', file=sys.stderr)
+    sys.exit(1)
+" 2>&1) && STATUS=0 || STATUS=$?
+          if [[ "$STATUS" -eq 0 ]]; then
+            echo "ok: PyPI trackfw $VERSION is live"
+          else
+            echo "FAIL: PyPI trackfw $VERSION not found — publish-pypi may have failed$( [[ -n "$FOUND" ]] && echo " ($FOUND)" )" >&2
+            exit 1
+          fi

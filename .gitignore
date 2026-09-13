@@ -1,5 +1,6 @@
 /bin/
 /dist/
+/build/npm-platform/
 *.exe
 npm/bin/trackfw-bin
 npm/bin/trackfw-bin.exe

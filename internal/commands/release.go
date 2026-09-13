@@ -92,8 +92,14 @@ const (
 )
 
 // releaseVersionFile describes one location where the project version is recorded, and how
-// to extract it. All 5 checks (4 files — pypi/trackfw/__init__.py holds 2 occurrences) must
-// agree with the version requested on the CLI before release tag proceeds.
+// to extract it. All 3 checks (3 files) must agree with the version requested on the CLI
+// before release tag proceeds.
+//
+// ML-1A (v8): pypi/trackfw/__init__.py was removed from this list. Wave 3 (ML-3A) deletes
+// pypi/trackfw/ — keeping those entries would cause 'trackfw release tag' to refuse on every
+// invocation after Wave 3. The single source of truth is internal/version/version.go;
+// TestReleaseVersionFiles_NoWave3DeletedPaths enforces that no path under pypi/trackfw/ or
+// npm/src/ is re-added here.
 type releaseVersionFile struct {
 	label   string // used in refusal messages — names exactly what diverges
 	path    string // relative to repoDir
@@ -104,8 +110,6 @@ var releaseVersionFiles = []releaseVersionFile{
 	{"internal/version/version.go", "internal/version/version.go", extractGoVersion},
 	{"npm/package.json", "npm/package.json", extractNpmVersion},
 	{"pypi/pyproject.toml", "pypi/pyproject.toml", extractPyprojectVersion},
-	{"pypi/trackfw/__init__.py (importlib.metadata fallback)", "pypi/trackfw/__init__.py", extractInitTryVersion},
-	{"pypi/trackfw/__init__.py (except fallback)", "pypi/trackfw/__init__.py", extractInitExceptVersion},
 }
 
 var goVersionRE = regexp.MustCompile(`Version\s*=\s*"([^"]+)"`)
@@ -141,29 +145,6 @@ func extractPyprojectVersion(content string) (string, error) {
 	return m[1], nil
 }
 
-// initTryVersionRE matches the fallback in `__version__ = version("trackfw") or "7.1.0"`.
-var initTryVersionRE = regexp.MustCompile(`or\s+"([^"]+)"`)
-
-func extractInitTryVersion(content string) (string, error) {
-	m := initTryVersionRE.FindStringSubmatch(content)
-	if m == nil {
-		return "", fmt.Errorf("could not find the importlib.metadata fallback version in pypi/trackfw/__init__.py")
-	}
-	return m[1], nil
-}
-
-// initExceptVersionRE matches the except-block's `__version__ = "7.1.0"` — distinct from the
-// try-block line above, which never starts with `__version__ = "` directly (it starts with
-// `__version__ = version(...)`).
-var initExceptVersionRE = regexp.MustCompile(`__version__\s*=\s*"([^"]+)"`)
-
-func extractInitExceptVersion(content string) (string, error) {
-	m := initExceptVersionRE.FindStringSubmatch(content)
-	if m == nil {
-		return "", fmt.Errorf("could not find the except-block fallback version in pypi/trackfw/__init__.py")
-	}
-	return m[1], nil
-}
 
 func newReleaseCmd() *cobra.Command {
 	cmd := &cobra.Command{

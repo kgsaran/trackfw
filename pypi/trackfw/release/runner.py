@@ -128,13 +128,12 @@ def _object_absent_msg(path, sha, err_message):
 
 # ─── Version file extraction ───────────────────────────────────────────────
 
+# ML-1A (v8): pypi/trackfw/__init__.py was removed from RELEASE_VERSION_FILES. Wave 3
+# (ML-3A) deletes pypi/trackfw/ — keeping those entries would cause 'trackfw release tag'
+# to refuse after Wave 3. The single source of truth is internal/version/version.go.
+
 _GO_VERSION_RE = re.compile(r'Version\s*=\s*"([^"]+)"')
 _PYPROJECT_VERSION_RE = re.compile(r'^version\s*=\s*"([^"]+)"', re.MULTILINE)
-# Matches the try-block fallback in `__version__ = version("trackfw") or "7.1.0"`.
-_INIT_TRY_VERSION_RE = re.compile(r'or\s+"([^"]+)"')
-# Matches the except-block's `__version__ = "7.1.0"` — distinct from the try-block line, which
-# never starts with `__version__ = "` directly (it starts with `__version__ = version(...)`).
-_INIT_EXCEPT_VERSION_RE = re.compile(r'__version__\s*=\s*"([^"]+)"')
 
 
 def _extract_go_version(content):
@@ -162,38 +161,10 @@ def _extract_pyproject_version(content):
     return m.group(1)
 
 
-def _extract_init_try_version(content):
-    m = _INIT_TRY_VERSION_RE.search(content)
-    if not m:
-        raise ValueError(
-            "could not find the importlib.metadata fallback version in pypi/trackfw/__init__.py"
-        )
-    return m.group(1)
-
-
-def _extract_init_except_version(content):
-    m = _INIT_EXCEPT_VERSION_RE.search(content)
-    if not m:
-        raise ValueError(
-            "could not find the except fallback version in pypi/trackfw/__init__.py"
-        )
-    return m.group(1)
-
-
 RELEASE_VERSION_FILES = [
     ("internal/version/version.go", "internal/version/version.go", _extract_go_version),
     ("npm/package.json", "npm/package.json", _extract_npm_version),
     ("pypi/pyproject.toml", "pypi/pyproject.toml", _extract_pyproject_version),
-    (
-        "pypi/trackfw/__init__.py (importlib.metadata fallback)",
-        "pypi/trackfw/__init__.py",
-        _extract_init_try_version,
-    ),
-    (
-        "pypi/trackfw/__init__.py (except fallback)",
-        "pypi/trackfw/__init__.py",
-        _extract_init_except_version,
-    ),
 ]
 
 

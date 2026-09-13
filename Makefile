@@ -6,7 +6,7 @@ BUILD_DIR=bin
 # à chamada de check-roadmap-barrier-contract.sh via `make quality`.
 HASH_CMD := $(shell command -v sha256sum >/dev/null 2>&1 && echo sha256sum || echo "shasum -a 256")
 
-.PHONY: build test test-node test-python parity parity-rest parity-falsify lint quality install clean sync-integration-assets check-integration-assets package-smoke check-required-full check-gates-remutation
+.PHONY: build test test-node test-python parity parity-rest parity-falsify lint quality install clean sync-integration-assets check-integration-assets package-smoke check-required-full check-gates-remutation gen-manifests
 
 build:
 	go build -o $(BUILD_DIR)/$(BINARY) ./cmd/trackfw
@@ -124,6 +124,10 @@ parity-rest: build
 	# de anotações de job. A verificação real acontece no workflow check-annotations.yml
 	# (workflow_run, só roda da branch default após merge à main).
 	python3 scripts/check-job-annotations.py --self-test
+	# ML-1A (v8 ROADMAP-2026-09-12-v8-um-binario-muitos-canais): AC3 + partial #338.
+	# Generates platform manifests from internal/version/version.go (single source of truth)
+	# and verifies each manifest version matches the Go source AND the CHANGELOG top section.
+	scripts/check-manifest-version-gate.sh
 
 parity-falsify: build
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/run-gates-falsify-parallel.sh
@@ -175,6 +179,12 @@ quality: test test-node test-python lint parity
 
 install: build
 	mv $(BUILD_DIR)/$(BINARY) /usr/local/bin/$(BINARY)
+
+# gen-manifests — generates per-platform @trackfw-bin/<platform>/package.json artefacts
+# from the single version source in internal/version/version.go. Output is gitignored
+# (build/npm-platform/). Run this before publishing platform npm packages.
+gen-manifests:
+	scripts/gen-platform-manifests.sh
 
 clean:
 	rm -rf $(BUILD_DIR)
