@@ -37198,3 +37198,37 @@ pré-requisito hard de ML-3A.
 
 **Concluído:** (1) `npm/package.json` corrigido: bin→`./bin/trackfw.js`, files→`["bin/trackfw.js"]`, main removido, deps movidas para devDeps, smoke→`node --check`. Lockfile regenerado. (2) release.yml: discriminante corrigido para sempre rodar `check-channels-content.sh --local` (não condicionado à presença de npm/src/ na árvore). (3) `smoke-integration-packages.sh` npm arm reescrito: shim + platform pkg sem `bin` (AC13) + Go binary real; `check-integration-assets.sh` e `check-channels-content.sh` atualizados. Makefile: `package-smoke: build check-integration-assets`. Reconciliações escritas no roadmap. Falsificação: src/ em files → FAIL exit 1 (provado). Shim sem binary → exit 1 nomeando plataforma. Shim com binary (sem bin field) → delegates exit 0. `make quality` verde. `npm test` 910/0. `check-workflow-yaml.py` 8/8. `trackfw validate` sem violações bloqueantes.
 
+
+---
+
+## Sessão 2026-09-13 — Hefesto (ML-3D AC8+AC11 retomada: make quality + correção de anotação)
+
+**Início:** 2026-09-13 | Branch: `fix/binario-muitos-canais` (trackfw-triagem) | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` ML-3D
+
+**Tarefa:** Retomada de sessão anterior. Verificar `make quality` (saída em background), fechar duas descobertas do revisor: (1) seção 177→255 explicada; (2) `## Command contract` annotation `none` → `gap`.
+
+**Concluído:**
+- `make quality` confirmado exit 0 (418/418 checks, saída do background job `bcaqvzv37`).
+- Contagem de seções 253→255: +2 `##` adicionados por ML-3D; pré-edição era 253 (não 177 — o 177 é o snapshot histórico do momento em que o gate entrou em modo bloqueante no ML-3A). Sem regressão de parsing.
+- Anotação `## Command contract` corrigida de `none` para `gap` com reason honesto: configure/discover/metrics/sync não têm seção `##` própria com gate nomeado. Gate de cobertura permanece green.
+- Committed + pushed para PR #358 via `trackfw ship`.
+
+---
+
+## Sessão 2026-09-13 — Hefesto (ML-3D auditoria do coordenador: 3 correções + varredura de plataforma)
+
+**Início:** 2026-09-13 | Branch: `fix/binario-muitos-canais` (trackfw-triagem) | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` ML-3D
+
+**Tarefa:** Corrigir três achados da auditoria do coordenador sobre o PR #358.
+
+**Concluído:**
+1. `README.md:141` — removido bullet "Windows ARM64 is not built" (falso: ML-1A removeu o ignore block do goreleaser; win/arm64 está publicado e validado em VM real).
+2. `README.md` seção pip — substituídos slugs npm por tags de wheel reais: 8 wheels (manylinux+musllinux por arch Linux; musl explicitado para Alpine).
+3. `CHANGELOG.md` — "Este é o único break" → dois breaks declarados com tabela: `require('trackfw')` (npm) e `python -m trackfw` (PyPI).
+4. `README.md` Windows "What we know works" — exemplo `windows_amd64.tar.gz` ampliado para `windows_amd64 / windows_arm64`.
+
+**Varredura de plataforma/arquitetura:** enumerada abaixo.
+
+**Gates:** `check-parity-contract-coverage.sh` OK (255/0), `check-manifest-version-gate.sh` 10/0, `trackfw validate` 185 warnings (pré-existentes, sem violações novas).
+
+**Committed:** `docs(v8): corrige win/arm64, wheel tags PyPI e dois breaks no CHANGELOG (ML-3D audit)` → PR #358.
