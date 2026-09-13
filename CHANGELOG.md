@@ -11,14 +11,28 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 > `npm install trackfw` continua instalando a 7.6.0. Para testar a RC: `npm install trackfw@rc` /
 > `pip install trackfw==8.0.0rc1`.
 
-### ⚠️ Breaking Change — `require('trackfw')` deixa de funcionar
+### ⚠️ Breaking Changes — dois breaks, canais diferentes
+
+**npm — `require('trackfw')` deixa de funcionar**
 
 O campo `main` foi removido do `npm/package.json`. O pacote npm não exporta mais nenhum módulo
 Node.js — ele é uma casquinha que resolve e executa o binário Go. **Código que importava
-`require('trackfw')` como biblioteca quebra nesta versão.** Este é o único break de contrato desta
-migração.
+`require('trackfw')` como biblioteca quebra nesta versão.**
 
 Quem usava apenas o CLI (`npx trackfw` / `trackfw` no PATH) não é afetado.
+
+**PyPI — `python -m trackfw` deixa de funcionar**
+
+O pacote PyPI passa a ser uma wheel binária sem nenhum arquivo Python. O `__main__.py` que
+permitia `python -m trackfw` não existe mais. **Scripts ou pipelines que invocam
+`python -m trackfw` em vez do executável `trackfw` quebram nesta versão.**
+
+Quem já usava o executável `trackfw` diretamente não é afetado.
+
+| canal | o que quebra | quem é atingido |
+|---|---|---|
+| npm | `require('trackfw')` | quem usava o pacote como biblioteca |
+| PyPI | `python -m trackfw` | quem invocava por módulo em vez do executável |
 
 ### O que muda para quem instala
 
@@ -74,6 +88,29 @@ permanecem iguais.
 - `npm install --tag rc` (não `latest`) no job `publish-npm-shim` — RC nunca vai para `latest`.
 - `verify-pypi-channel.py` normaliza PEP 440 antes de comparar com o registry.
 - `check-workflow-yaml.py` valida estrutura do YAML de CI como gate permanente.
+
+### Mudanças de empacotamento
+
+- **npm:** o pacote `trackfw` não contém mais `src/` nem nenhum arquivo JavaScript de implementação.
+  A única entrega é `bin/trackfw.js` (a casquinha) e `@trackfw-bin/<plataforma>` (o binário).
+- **PyPI:** o pacote `trackfw` não contém mais nenhum arquivo `.py`. `python -m trackfw` não existe
+  mais; use o executável `trackfw` adicionado ao PATH pelo pip.
+- **pip em plataforma não coberta:** a instalação falha em resolução com
+  "no matching distribution found". Antes da v8, caía num sdist que instalava a implementação
+  Python. A falha agora é limpa e explícita em vez de silenciosa.
+
+### Limites medidos — o que não foi exercitado nesta RC
+
+Estas limitações são declaradas para que você saiba o que a RC cobre antes de adotar em produção.
+
+- **Cobertura real de plataforma:** os testes em máquina real cobriam **Windows arm64** e
+  **macOS arm64** apenas. Nenhum teste real cobriu x64 em qualquer SO (Linux, macOS ou Windows).
+  A afirmação de suporte a x64 é inferida a partir dos artefatos do goreleaser, não medida.
+- **Exec bit da wheel PyPI não exercitado em máquina limpa:** o bit de execução do binário na wheel
+  (`external_attr` no zip) não foi verificado numa instalação limpa de pip. Sem ele, `pip install`
+  conclui com sucesso mas o comando `trackfw` falha com "permission denied". Aplica-se a Linux e
+  macOS; não se aplica a Windows. Um teste em máquina limpa é recomendado antes de adotar a release
+  final em produção nessas plataformas.
 
 ## [7.6.0] - 2026-09-12
 
