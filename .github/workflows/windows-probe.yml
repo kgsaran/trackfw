@@ -674,6 +674,261 @@ jobs:
           rm -rf "$T14"
           echo "=== Pergunta 14 CONCLUIDA — aguardar output Windows para identificar causa raiz ==="
 
+      # ---------------------------------------------------------------
+      # Pergunta 15 — Opção D (AC9): byte-identidade shim Node.js vs.
+      # binário nativo em win32/x64.
+      #
+      # O que esta pergunta mede (e como reprova se o cenário não montar):
+      #   Dado o binário correto instalado, o shim é byte-transparente em x64?
+      #   O shim usa `spawnSync(binPath, args, { stdio: 'inherit' })` +
+      #   `process.exit(result.status)` — por construção, zero bytes são
+      #   modificados. Esta pergunta confirma empiricamente em x64.
+      #
+      #   GUARDA DE VACUIDADE (exit 1 em falha de montagem de cenário — única
+      #   exceção à regra de "sem veredito" desta sonda; ver cabeçalho do YAML):
+      #     - go build falhou → P15_GUARD_FAIL: BUILD_FAILED
+      #     - npm pack falhou → P15_GUARD_FAIL: PACK_FAILED
+      #     - npm install falhou → P15_GUARD_FAIL: INSTALL_FAILED
+      #     - shim.js ausente em node_modules → P15_GUARD_FAIL: VACUIDADE_SHIM
+      #     - trackfw.exe ausente em node_modules → P15_GUARD_FAIL: VACUIDADE_BIN
+      #     - hash do binário em node_modules ≠ hash do binário compilado →
+      #       P15_GUARD_FAIL: HASH_MISMATCH (pacote correto não foi instalado)
+      #
+      # Desvio declarado vs. VM ARM64:
+      #   A VM usou `npm ci` com lockfile gerado no macOS + verdaccio.
+      #   Aqui: `npm install` a partir de tarballs gerados no runner (sem
+      #   verdaccio, sem lockfile pré-existente). O braço AC6 (lockfile do
+      #   macOS instalando no Windows) já foi provado em ARM64 via mecanismo
+      #   de lockfileVersion 3 + optionalDependencies — esse mecanismo não
+      #   depende de arquitetura. O que esta pergunta prova é mais estreito:
+      #   dado o binário correto instalado, o shim é byte-transparente em x64?
+      #
+      # Desvio de plataforma vs. produção:
+      #   Em produção, o npm resolve @trackfw-bin/win32-x64 via
+      #   optionalDependencies do shim + seleção por os/cpu. Aqui,
+      #   instalamos win32-x64 explicitamente como dependência direta do
+      #   projeto de teste — a seleção por plataforma (AC6) não é
+      #   reexercitada. Isso restringe a afirmação: o shim é transparente,
+      #   dado que o pacote correto está em node_modules.
+      #
+      # Bin collision — resolvida (2026-09-12): os pacotes de plataforma
+      #   NÃO declaram `bin`. A declaração dupla (shim + pacote de plataforma)
+      #   era nondeterminista: qual arquivo vencia em node_modules/.bin/trackfw
+      #   dependia da ordem de npm install. Esta sonda invoca por caminho
+      #   explícito (shimJs + platformBin), portanto a colisão não afetava o
+      #   resultado aqui — mas afetaria usuários invocando via .bin/trackfw.
+      #   O shim resolve o binário por subcaminho conhecido (bin/trackfw.exe),
+      #   calculado a partir de os.platform(), sem ler package.json.bin.
+      #   Falsificação: npm/tests/shim_packaging.test.js, Arm A + Arm B.
+      #
+      # Argumento sobre necessidade de medição x64 vs. extrapolação ARM64:
+      #   `stdio: inherit` + `process.exit(result.status)` é comportamento
+      #   de libuv/Node, arch-agnostic. A prova ARM64 é evidência forte.
+      #   A medição x64 existe porque windows-latest é o alvo publicado do
+      #   CI, e mesmo com mecanismo idêntico, um dado empírico no ambiente
+      #   de produção vale mais que extrapolação — especialmente após o
+      #   episódio do sinal verde medindo outra coisa (2026-09-12).
+      # ---------------------------------------------------------------
+      - name: "Pergunta 15 — Opcao D: byte-identidade shim vs. nativo em win32/x64 (AC9)"
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+
+          # ── 1. Binário nativo ──────────────────────────────────────────
+          # Reusa o exe compilado pela Pergunta 5b se disponível (evita
+          # segundo go build); compila do zero se ausente.
+          $step5bBin = Join-Path $env:RUNNER_TEMP "probe-bin\trackfw-probe.exe"
+          $p15Bin = Join-Path $env:RUNNER_TEMP "p15-native.exe"
+
+          if (Test-Path $step5bBin) {
+            Copy-Item $step5bBin $p15Bin -Force
+            Write-Host "P15_BUILD_SRC: reutilizado de Pergunta 5b"
+          } else {
+            Write-Host "P15_BUILD_SRC: compilando agora (Pergunta 5b nao rodou ou falhou)"
+            go build -o $p15Bin ./cmd/trackfw
+            if ($LASTEXITCODE -ne 0) {
+              Write-Host "P15_GUARD_FAIL: BUILD_FAILED"
+              exit 1
+            }
+          }
+          $nativeHash = (Get-FileHash $p15Bin -Algorithm SHA256).Hash
+          Write-Host "P15_NATIVE_BIN: $p15Bin  SHA256=$nativeHash"
+
+          # ── 2. Preparar pacote win32-x64 com binário ───────────────────
+          $pkgWin   = Join-Path $env:GITHUB_WORKSPACE "prototype\packages\trackfw-win32-x64"
+          $pkgShim  = Join-Path $env:GITHUB_WORKSPACE "prototype\packages\trackfw-shim"
+          $pkgBin   = Join-Path $pkgWin "bin"
+          New-Item -ItemType Directory -Force -Path $pkgBin | Out-Null
+          Copy-Item $p15Bin (Join-Path $pkgBin "trackfw.exe") -Force
+          Write-Host "P15_BIN_COPIED: trackfw.exe em $pkgBin"
+
+          # ── 3. npm pack dos dois pacotes ───────────────────────────────
+          $tgzDir = Join-Path $env:RUNNER_TEMP "p15-tarballs"
+          New-Item -ItemType Directory -Force -Path $tgzDir | Out-Null
+
+          Push-Location $pkgWin
+          npm pack --pack-destination $tgzDir 2>&1 | Write-Host
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "P15_GUARD_FAIL: PACK_FAILED win32-x64"
+            Pop-Location; exit 1
+          }
+          Pop-Location
+
+          Push-Location $pkgShim
+          npm pack --pack-destination $tgzDir 2>&1 | Write-Host
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "P15_GUARD_FAIL: PACK_FAILED shim"
+            Pop-Location; exit 1
+          }
+          Pop-Location
+
+          $shimTgz   = (Get-ChildItem $tgzDir -Filter "trackfw-shim-*.tgz" | Select-Object -First 1).FullName
+          $win64Tgz  = (Get-ChildItem $tgzDir -Filter "*win32-x64*.tgz"   | Select-Object -First 1).FullName
+
+          if (-not $shimTgz -or -not $win64Tgz) {
+            Write-Host "P15_GUARD_FAIL: TARBALL_MISSING shim=$shimTgz win32x64=$win64Tgz"
+            exit 1
+          }
+
+          # Preflight: o binário ESTÁ no tarball?
+          Write-Host "P15_TARBALL_CONTENTS (win32-x64):"
+          tar -tzf $win64Tgz | Write-Host
+          Write-Host "P15_TARBALL_SIZES: shim=$('{0:N0}' -f (Get-Item $shimTgz).Length)B win32x64=$('{0:N0}' -f (Get-Item $win64Tgz).Length)B"
+
+          # ── 3.5 Braço: --offline rejeita pacote ausente do cache (não passa vacuamente) ──
+          # Prova que --offline recusa rede de verdade: instala lodash (pacote real,
+          # publicado) contra um cache vazio. A única razão para falhar é o flag.
+          # Exit não-zero + "ENOTCACHED" na saída são ambos obrigatórios — exit-nonzero
+          # sozinho poderia vir de qualquer outra causa.
+          $emptyCache       = Join-Path $env:RUNNER_TEMP "p15-empty-cache"
+          $offlineSanityDir = Join-Path $env:RUNNER_TEMP "p15-offline-sanity"
+          $offlineOutFile   = Join-Path $env:RUNNER_TEMP "p15-offline-out.txt"
+          New-Item -ItemType Directory -Force -Path $emptyCache       | Out-Null
+          New-Item -ItemType Directory -Force -Path $offlineSanityDir | Out-Null
+          Push-Location $offlineSanityDir
+          npm install --offline --cache $emptyCache lodash 2>&1 | Tee-Object $offlineOutFile | Write-Host
+          $offlineExit = $LASTEXITCODE
+          Pop-Location
+          if ($offlineExit -eq 0) {
+            Write-Host "P15_GUARD_FAIL: OFFLINE_FLAG_IGNORED — lodash sem cache deveria falhar (exit=0)"
+            exit 1
+          }
+          $offlineContent = Get-Content $offlineOutFile -Raw -ErrorAction SilentlyContinue
+          if ($offlineContent -notmatch "ENOTCACHED|offline") {
+            Write-Host "P15_GUARD_FAIL: OFFLINE_WRONG_ERROR — sem ENOTCACHED/offline na saida; flag pode estar ignorada"
+            exit 1
+          }
+          Write-Host "P15_OFFLINE_SANITY_OK: --offline rejeita lodash sem cache (exit=$offlineExit, ENOTCACHED confirmado)"
+
+          # ── 4. Instalar em projeto de teste ────────────────────────────
+          # Ambos os installs resolvem exclusivamente a partir dos tarballs locais
+          # passados como argumento (file: specs). Nenhum dep de registry resta:
+          # - shim: optionalDependencies são 6 pacotes de plataforma excluídos
+          #   via --omit=optional (não são necessários para este teste).
+          # - @trackfw-bin/win32-x64: sem dependências.
+          # --offline guarda contra regressão caso deps de registry sejam adicionados.
+          # A prova de que --offline recusa rede ativamente vive no braço 3.5 acima.
+          $testDir = Join-Path $env:RUNNER_TEMP "p15-test"
+          New-Item -ItemType Directory -Force -Path $testDir | Out-Null
+
+          Write-Host "=== P15-INSTALL: shim (--omit=optional, --offline) ==="
+          Push-Location $testDir
+          npm install --ignore-scripts --omit=optional --offline $shimTgz 2>&1 | Write-Host
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "P15_GUARD_FAIL: INSTALL_FAILED shim"
+            Pop-Location; exit 1
+          }
+
+          Write-Host "=== P15-INSTALL: @trackfw-bin/win32-x64 (--offline) ==="
+          npm install --ignore-scripts --offline $win64Tgz 2>&1 | Write-Host
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "P15_GUARD_FAIL: INSTALL_FAILED win32-x64"
+            Pop-Location; exit 1
+          }
+          Pop-Location
+
+          # ── 5. Guarda de vacuidade + proveniência do hash ─────────────
+          $shimJs      = Join-Path $testDir "node_modules\trackfw-shim\bin\trackfw.js"
+          $platformBin = Join-Path $testDir "node_modules\@trackfw-bin\win32-x64\bin\trackfw.exe"
+
+          if (-not (Test-Path $shimJs)) {
+            Write-Host "P15_GUARD_FAIL: VACUIDADE_SHIM — $shimJs ausente"
+            exit 1
+          }
+          if (-not (Test-Path $platformBin)) {
+            Write-Host "P15_GUARD_FAIL: VACUIDADE_BIN — $platformBin ausente"
+            exit 1
+          }
+
+          $installedHash = (Get-FileHash $platformBin -Algorithm SHA256).Hash
+          Write-Host "P15_HASH_NATIVE=$nativeHash"
+          Write-Host "P15_HASH_INSTALLED=$installedHash"
+          if ($installedHash -ne $nativeHash) {
+            Write-Host "P15_GUARD_FAIL: HASH_MISMATCH — binario em node_modules difere do compilado"
+            exit 1
+          }
+          Write-Host "P15_GUARD_OK: shim + binario presentes, hash verificado"
+
+          # ── 6. Floor de ruido: nativo vs. nativo ──────────────────────
+          # Se native1 != native2, a saida do comando nao e deterministica
+          # e a comparacao shim-vs-nativo e ininterpretavel para esse comando.
+          $cmpDir = Join-Path $env:RUNNER_TEMP "p15-cmp"
+          New-Item -ItemType Directory -Force -Path $cmpDir | Out-Null
+
+          $floorCmds = @("version")
+          foreach ($fc in $floorCmds) {
+            $n1 = Join-Path $cmpDir "floor-n1-$fc.bin"
+            $n2 = Join-Path $cmpDir "floor-n2-$fc.bin"
+            $p1 = Start-Process -FilePath $platformBin -ArgumentList @($fc) -NoNewWindow -PassThru `
+                    -RedirectStandardOutput $n1 -Wait
+            $p2 = Start-Process -FilePath $platformBin -ArgumentList @($fc) -NoNewWindow -PassThru `
+                    -RedirectStandardOutput $n2 -Wait
+            fc.exe /b $n1 $n2 | Out-Null
+            $noiseResult = if ($LASTEXITCODE -eq 0) { "IDENTICAL" } else { "NONDETERMINISTIC" }
+            Write-Host "P15_NOISE_FLOOR [$fc] native_vs_native=$noiseResult"
+          }
+
+          # ── 7. Comparacao byte-a-byte: shim vs. nativo ────────────────
+          # CWD: raiz do checkout (projeto real trackfw-nul), mesmo padrao
+          # da VM ARM64. Captura stdout via Start-Process (sem pipeline
+          # PowerShell para nao modificar bytes). fc.exe /b compara binario.
+          $cmds = @(
+            @{ label = "version";        args = @("version") },
+            @{ label = "validate-json";  args = @("validate","--json") },
+            @{ label = "status";         args = @("status") },
+            @{ label = "context-json";   args = @("context","--json") },
+            @{ label = "validate-strict";args = @("validate","--strict") }
+          )
+
+          foreach ($c in $cmds) {
+            $lbl  = $c.label
+            $args = $c.args
+
+            $nOut = Join-Path $cmpDir "native-$lbl.bin"
+            $sOut = Join-Path $cmpDir "shim-$lbl.bin"
+
+            $pn = Start-Process -FilePath $platformBin -ArgumentList $args `
+                    -NoNewWindow -PassThru -RedirectStandardOutput $nOut -Wait
+            $nExit = $pn.ExitCode
+
+            $ps = Start-Process -FilePath "node" `
+                    -ArgumentList (@($shimJs) + $args) `
+                    -NoNewWindow -PassThru -RedirectStandardOutput $sOut -Wait
+            $sExit = $ps.ExitCode
+
+            $nBytes = (Get-Item $nOut).Length
+            $sBytes = (Get-Item $sOut).Length
+
+            fc.exe /b $nOut $sOut | Out-Null
+            $verdict = if ($LASTEXITCODE -eq 0) { "BYTE_IDENTICAL" } else { "DIVERGE" }
+            $exitMatch = if ($nExit -eq $sExit) { "EXIT_MATCH" } else { "EXIT_MISMATCH" }
+
+            Write-Host "P15 [$lbl] native_exit=$nExit shim_exit=$sExit native_bytes=$nBytes shim_bytes=$sBytes $exitMatch $verdict"
+          }
+
+          Write-Host "=== P15 CONCLUIDA — buscar linhas P15_ no log para leitura dos resultados ==="
+
       - name: Registrar duração
         if: always()
         shell: pwsh
