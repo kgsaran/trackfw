@@ -158,6 +158,57 @@ else
     fi
 fi
 
+# ── Step 5: Conditional check for pypi/trackfw/__init__.py literals ──────────
+# WHY CONDITIONAL:
+#   This file carries two hardcoded version literals (the importlib.metadata
+#   fallback and the bare except fallback). Wave 3 (ML-3A) of the v8 roadmap
+#   deletes the entire pypi/trackfw/ directory. Between now and Wave 3 execution
+#   those literals are not covered by any other gate, creating a window where a
+#   version bump could leave them stale. A plain check would fail when Wave 3
+#   runs; a missing check leaves a silent window.
+#
+#   The conditional pattern resolves both without future maintenance:
+#   - File present: verify both literals against internal/version/version.go.
+#   - File absent: print an informational line (not silent) and continue.
+#   The informational else-branch is mandatory — a missing else is
+#   indistinguishable from a check that never ran, which is the failure mode
+#   this project has seen in four other gates.
+#
+#   Other gates should use this same pattern for any file that Wave 3 removes:
+#   guard with [ -f ], emit a named informational message in the else branch,
+#   and document which wave makes the file absent.
+#
+# Reconciliation:
+#   - Arm 1 (file present, literal matches): both hardcoded literals agree with version.go.
+#   - Arm 2 (file present, literal diverges): a version bump did not update __init__.py.
+#   - Arm 3 (file absent): Wave 3 has run; this check is inapplicable; gate continues.
+
+INIT_PY="$REPO_ROOT/pypi/trackfw/__init__.py"
+if [[ -f "$INIT_PY" ]]; then
+    # Extract the try-branch fallback: __version__ = version("trackfw") or "X.Y.Z"
+    INIT_TRY_VERSION=$(awk -F'"' '/version\("trackfw"\)[[:space:]]*or[[:space:]]*"/ { print $4; exit }' "$INIT_PY")
+    # Extract the except-branch literal: __version__ = "X.Y.Z"
+    INIT_EXCEPT_VERSION=$(awk -F'"' '/^[[:space:]]*__version__[[:space:]]*=[[:space:]]*"[0-9]/ { print $2; exit }' "$INIT_PY")
+
+    if [[ -z "$INIT_TRY_VERSION" ]]; then
+        fail "pypi/trackfw/__init__.py: could not extract try-branch fallback literal"
+    elif [[ "$INIT_TRY_VERSION" != "$GO_VERSION" ]]; then
+        fail "pypi/trackfw/__init__.py: try-branch fallback is \"$INIT_TRY_VERSION\", expected \"$GO_VERSION\" (from internal/version/version.go)"
+    else
+        ok "pypi/trackfw/__init__.py: try-branch fallback \"$INIT_TRY_VERSION\" matches Go source"
+    fi
+
+    if [[ -z "$INIT_EXCEPT_VERSION" ]]; then
+        fail "pypi/trackfw/__init__.py: could not extract except-branch literal"
+    elif [[ "$INIT_EXCEPT_VERSION" != "$GO_VERSION" ]]; then
+        fail "pypi/trackfw/__init__.py: except-branch literal is \"$INIT_EXCEPT_VERSION\", expected \"$GO_VERSION\" (from internal/version/version.go)"
+    else
+        ok "pypi/trackfw/__init__.py: except-branch literal \"$INIT_EXCEPT_VERSION\" matches Go source"
+    fi
+else
+    echo "info: pypi/trackfw/__init__.py absent — Wave 3 (ML-3A) has run; __init__.py literals check does not apply"
+fi
+
 echo ""
 echo "manifest-version-gate: $PASS passed, $FAIL failed"
 if [[ "$FAIL" -gt 0 ]]; then
