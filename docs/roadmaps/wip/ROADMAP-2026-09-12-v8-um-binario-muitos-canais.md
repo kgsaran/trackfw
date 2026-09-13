@@ -400,7 +400,7 @@ sobrevive e vale para qualquer fonte, inclusive Go.
 > Dependências: **Wave 1 inteira verde.** 🔴 Primeira etapa irreversível.
 
 ### ML-2A — publicação sob `v8.0.0-rc`
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 🔴 **Nome e versão no npm são permanentes após 72 h; o PyPI não reusa nome de arquivo.** Por isso
 `-rc`, e por isso esta wave não começa antes da Wave 1 fechar.
 **Critérios de aceite:**

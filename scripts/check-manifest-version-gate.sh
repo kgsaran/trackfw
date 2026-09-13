@@ -185,25 +185,40 @@ fi
 
 INIT_PY="$REPO_ROOT/pypi/trackfw/__init__.py"
 if [[ -f "$INIT_PY" ]]; then
-    # Extract the try-branch fallback: __version__ = version("trackfw") or "X.Y.Z"
+    # Two formats are accepted:
+    #   (a) Simple hardcoded: __version__ = "X.Y.Z"
+    #       Used from 8.0.0-rc1 onwards. importlib.metadata returns the *installed* version,
+    #       which diverges from source during development — so the hardcoded constant is canonical.
+    #   (b) Legacy try/except: version("trackfw") or "X.Y.Z" / except: __version__ = "X.Y.Z"
+    #       Used in versions <= 7.x. Both branches must agree with Go source.
     INIT_TRY_VERSION=$(awk -F'"' '/version\("trackfw"\)[[:space:]]*or[[:space:]]*"/ { print $4; exit }' "$INIT_PY")
-    # Extract the except-branch literal: __version__ = "X.Y.Z"
+    # Matches any top-level __version__ = "X.Y.Z" (simple or except-branch)
     INIT_EXCEPT_VERSION=$(awk -F'"' '/^[[:space:]]*__version__[[:space:]]*=[[:space:]]*"[0-9]/ { print $2; exit }' "$INIT_PY")
 
     if [[ -z "$INIT_TRY_VERSION" ]]; then
-        fail "pypi/trackfw/__init__.py: could not extract try-branch fallback literal"
-    elif [[ "$INIT_TRY_VERSION" != "$GO_VERSION" ]]; then
-        fail "pypi/trackfw/__init__.py: try-branch fallback is \"$INIT_TRY_VERSION\", expected \"$GO_VERSION\" (from internal/version/version.go)"
+        # No try-branch found — expect simple hardcoded format
+        if [[ -z "$INIT_EXCEPT_VERSION" ]]; then
+            fail "pypi/trackfw/__init__.py: could not extract __version__ literal (expected simple __version__ = \"X.Y.Z\")"
+        elif [[ "$INIT_EXCEPT_VERSION" != "$GO_VERSION" ]]; then
+            fail "pypi/trackfw/__init__.py: __version__ is \"$INIT_EXCEPT_VERSION\", expected \"$GO_VERSION\" (from internal/version/version.go)"
+        else
+            ok "pypi/trackfw/__init__.py: __version__ \"$INIT_EXCEPT_VERSION\" matches Go source"
+        fi
     else
-        ok "pypi/trackfw/__init__.py: try-branch fallback \"$INIT_TRY_VERSION\" matches Go source"
-    fi
+        # Legacy try/except format — check both branches
+        if [[ "$INIT_TRY_VERSION" != "$GO_VERSION" ]]; then
+            fail "pypi/trackfw/__init__.py: try-branch fallback is \"$INIT_TRY_VERSION\", expected \"$GO_VERSION\" (from internal/version/version.go)"
+        else
+            ok "pypi/trackfw/__init__.py: try-branch fallback \"$INIT_TRY_VERSION\" matches Go source"
+        fi
 
-    if [[ -z "$INIT_EXCEPT_VERSION" ]]; then
-        fail "pypi/trackfw/__init__.py: could not extract except-branch literal"
-    elif [[ "$INIT_EXCEPT_VERSION" != "$GO_VERSION" ]]; then
-        fail "pypi/trackfw/__init__.py: except-branch literal is \"$INIT_EXCEPT_VERSION\", expected \"$GO_VERSION\" (from internal/version/version.go)"
-    else
-        ok "pypi/trackfw/__init__.py: except-branch literal \"$INIT_EXCEPT_VERSION\" matches Go source"
+        if [[ -z "$INIT_EXCEPT_VERSION" ]]; then
+            fail "pypi/trackfw/__init__.py: could not extract except-branch literal"
+        elif [[ "$INIT_EXCEPT_VERSION" != "$GO_VERSION" ]]; then
+            fail "pypi/trackfw/__init__.py: except-branch literal is \"$INIT_EXCEPT_VERSION\", expected \"$GO_VERSION\" (from internal/version/version.go)"
+        else
+            ok "pypi/trackfw/__init__.py: except-branch literal \"$INIT_EXCEPT_VERSION\" matches Go source"
+        fi
     fi
 else
     echo "info: pypi/trackfw/__init__.py absent — Wave 3 (ML-3A) has run; __init__.py literals check does not apply"

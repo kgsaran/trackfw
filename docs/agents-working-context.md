@@ -2,10 +2,19 @@
 
 ---
 
+## Sessão 2026-09-13 — Ares (trackfw-nul — ML-2A: bump de versão para 8.0.0-rc1)
+
+**Início:** 2026-09-13 | Branch: `fix/v8-um-binario-muitos-canais` (trackfw-nul) | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` ML-2A
+**Tarefa:** Bump dos 3 sítios de versão para `8.0.0-rc1`, nova seção no CHANGELOG.md (8.0.0-rc1), gate `scripts/check-manifest-version-gate.sh`, `make quality` e `trackfw validate` verdes. Preparação do PR de release candidate.
+**Concluído:** (1) `internal/version/version.go`, `npm/package.json`, `pypi/pyproject.toml` e `pypi/trackfw/__init__.py` em `8.0.0-rc1`. (2) CHANGELOG.md com seção `## [8.0.0-rc1] - 2026-09-13` no topo, incluindo o break de `require('trackfw')`. (3) check-manifest-version-gate.sh verde (10/0 — atualizado para aceitar formato simples de `__init__.py`). (4) Go/Node/Python tests verdes. (5) Defects secundários fechados: regex de versão nos 3 runtimes atualizado para aceitar prerelease (`-rc1`), `pypi/trackfw/__init__.py` refatorado para hardcoded (resolve conflito com `importlib.metadata` retornando versão instalada), `scaffold_doctor.py` usa `__version__` em vez de `importlib.metadata`, normalizador de versão no `check-doctor-parity.sh` atualizado para `v[\w.-]+`. (6) `trackfw validate` sem violações novas. (7) ML-2A marcado 🔄. (8) Aguarda commit e push do trackfw-architect.
+
+---
+
 ## Sessão 2026-09-13 — Ares (trackfw-nul — PR #355: package-smoke sem Go no CI)
 
 **Início:** 2026-09-13 | Branch: `fix/v8-um-binario-muitos-canais` (trackfw-nul) | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md`
 **Tarefa:** PR #355 vermelho: job `package-smoke` não instala Go nem compila o binário antes de chamar `scripts/smoke-integration-packages.sh`, que exige `bin/trackfw`. Varredura de outros jobs com o mesmo defeito.
+**Concluído:** Adicionados `actions/setup-go@v7` (go-version-file: go.mod) e `go build -o bin/trackfw ./cmd/trackfw` ao job `package-smoke`. Varredura: único sítio com o defeito. `make quality` verde (418 OK, 0 FAIL, EXIT 0). `check-workflow-yaml.py` 8/8. `trackfw ship` executado → PR #355 atualizado.
 
 ---
 
