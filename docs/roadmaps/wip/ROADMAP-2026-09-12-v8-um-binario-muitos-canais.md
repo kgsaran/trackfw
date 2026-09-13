@@ -297,7 +297,7 @@ graça, um detector de defeito. Isso é perda real e vai declarada.
 > Dependências: Wave 0. **Tudo reversível.** Os MLs 1A–1C são paralelos entre si; 1D e 1E dependem deles.
 
 ### ML-1A — **AC3 + AC4** — geração dos manifests e do release
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:** `.github/workflows/release.yml`, novo script de geração, `Makefile`.
 **Contexto:** hoje há **5 sítios de versão** e o cruzamento com o `CHANGELOG` só roda no
 `release tag` — é o **issue #338**. Com N pacotes de plataforma seriam **5+N**.

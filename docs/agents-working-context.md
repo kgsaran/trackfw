@@ -2,6 +2,15 @@
 
 ---
 
+## Sessão 2026-09-13 — Ares (trackfw-nul — ML-1A segunda metade: D1–D7 release workflow v8)
+
+**Início:** 2026-09-13 | Branch: `fix/v8-um-binario-muitos-canais` (trackfw-nul) | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` ML-1A
+**Tarefa:** Fechar D1–D7 no release workflow antes de v8.0.0-rc1: D1 (artefatos goreleaser não baixados nas jobs de publish), D2 (divergência entre .goreleaser.yaml e gen-platform-manifests.sh — 5 vs 6 plataformas), D3 (npm publish sem --tag envia RC para latest), D4 (shim publicado antes dos platform packages), D5 (python -m build gera sdist silenciosamente), D6 (8.0.0-rc1 não normalizado para 8.0.0rc1 na lookup PyPI), D7 (verify-channels verifica presença mas não conteúdo).
+**Arquivos criados/modificados:** `.goreleaser.yaml` (removeu ignore windows/arm64), `scripts/check-platform-matrix-parity.sh` (gate com falsificação em dois braços), `scripts/check-channels-content.sh` (gate conteúdo npm+PyPI com --self-test/--local/--published), `scripts/verify-pypi-channel.py` (D6: normalização PEP 440), `.github/workflows/release.yml` (reescrita completa: publish-npm-platforms, publish-npm-shim, publish-pypi, verify-channels), `Makefile` (parity-rest: dois novos gates).
+**Concluído:** make quality verde (0 FAIL, 885 ok, EXIT 0). check-workflow-yaml.py verde (8 passed). Todos os gates com auto-falsificação testados. ML-1A marcado ✅. trackfw ship executado.
+
+---
+
 ## Sessão 2026-09-13 — Hades (ML-1F: gate de byte NUL literal em fonte)
 
 **Início:** 2026-09-13 | Branch: `fix/binario-muitos-canais` (trackfw-triagem) | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` ML-1F
@@ -37139,3 +37148,11 @@ pré-requisito hard de ML-3A.
 **Concluído:** ML-1D: `scripts/check-shim-byte-identity.sh` criado — 5 comandos comparados (C1 stdout version, C2 stdout validate --json ~30kB, C3 stdout status, C4 stderr context --json, C5 exit code version --nonexistent); staging direto sem npm install; 5/5 SUBSTANTIVE, 10 pass, 0 fail, ~2s. ML-1E: `scripts/check-install-restriction.sh` criado — 4 cenários (C1 --offline+cache vazio→ENOTCACHED; C2 --ignore-scripts previne postinstall; C3 inspeção estática sem URLs github; C4 file: protocol filtra por plataforma); 7 pass, 0 fail, ~1s. Makefile: dois alvos acrescentados no fim da lista parity-rest. quality.yml: job `shim-byte-identity` adicionado (ubuntu+macos; ML-1E fica no parity-rest, <2s). `make quality` verde (segundo run, após limpeza de artefatos npm espúrios na raiz). Roadmap: ML-1D e ML-1E marcados ✅. `trackfw commit` + `trackfw push` executados.
 
 ---
+
+---
+
+## Sessão 2026-09-13 — Ares (ML-1A segunda metade: D1–D7 release workflow)
+
+**Início:** 2026-09-13 | Branch: `fix/v8-um-binario-muitos-canais` | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` ML-1A
+**Tarefa:** Fechar os 7 defeitos do release workflow (D1–D7): plumbing de binários goreleaser→npm/pypi, paridade de plataformas, dist-tag automático, ordem de publicação, sem sdist, normalização de versão prerelease, verify-channels por conteúdo.
+**Estado ao início:** goreleaser 2.18.1 disponível localmente. npm/package.json sem optionalDependencies. Branch limpa em e19556ac (merge de main/Wave 1 squashada em #352).
