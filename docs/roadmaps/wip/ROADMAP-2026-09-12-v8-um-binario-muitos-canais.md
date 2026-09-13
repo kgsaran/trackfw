@@ -318,7 +318,7 @@ invocação** e o projeto perde a capacidade de publicar. Nenhum gate pega antes
       trás por credencial, e o job saiu verde para os dois primeiros
 
 ### ML-1B — **AC1 + AC13** — casquinha npm de produção
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:** `npm/bin/`, `npm/package.json`. 🔴 **Não remover `npm/src/` ainda** — é Wave 3.
 **Molde medido:** `prototype/packages/trackfw-shim/bin/trackfw.js`, **80 linhas**, já auditado.
 **Critérios de aceite:**
@@ -330,7 +330,7 @@ invocação** e o projeto perde a capacidade de publicar. Nenhum gate pega antes
 - [ ] Porte de `npm/tests/shim_packaging.test.js`, que hoje testa o protótipo
 
 ### ML-1C — **AC2** — wheels PyPI
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:** `pypi/pyproject.toml`, build de wheels. 🔴 **Não remover `pypi/trackfw/`** — Wave 3.
 **Molde medido:** wheel do `gh-bin` — `dist-info` + `.data/scripts/<bin>`, **zero arquivo Python**.
 🔴 Tags: `manylinux_2_17_*` · `musllinux_1_2_*` · `macosx_*` · `win_amd64`. **`linux_x86_64` puro é
