@@ -237,6 +237,62 @@ texto neste roadmap — um agente que não leia esta seção pode executar Wave 
 
 ---
 
+### Auditoria do arquiteto ao ML-0A — 2026-09-12
+
+Verifiquei os quatro achados **por execução**, não pelo relatório.
+
+**CRÍTICO 1 — CONFIRMADO.** `internal/commands/release.go:102-108`:
+
+```go
+{"pypi/pyproject.toml",                                  "pypi/pyproject.toml", ...},
+{"pypi/trackfw/__init__.py (importlib.metadata fallback)","pypi/trackfw/__init__.py", ...},
+{"pypi/trackfw/__init__.py (except fallback)",            "pypi/trackfw/__init__.py", ...},
+```
+
+🔴 O AC5 apaga `pypi/trackfw/`. Depois disso, **`trackfw release tag` recusa em toda invocação** — o
+CLI do próprio projeto perde a capacidade de publicar release, e nenhum gate detecta antes do
+runtime. Vira **dependência dura ML-1A → ML-3A**, registrada nos dois MLs.
+
+**CRÍTICO 2 — CONFIRMADO.** `.github/required-status-checks.txt` declara `node`, `python (3.10)` e
+`python (3.12)` — jobs que a Wave 3 remove.
+
+🔴 **O conjunto R (branch protection) vive fora do repositório e o CI não consegue lê-lo.** Se os
+jobs saírem sem R ser atualizado, **todo PR fica pendente para sempre — inclusive o PR que
+consertaria isso.** Deadlock de repositório.
+
+O próprio arquivo documenta o procedimento: *"Para remover um check: o processo inverso (…) As três
+operações devem ocorrer no mesmo PR."* E `make check-required-full` detecta — mas exige credencial de
+mantenedor e **só é obrigatório na release, não no PR**.
+
+**ALTA — 🔴 NÃO CONFERE COMO DESCRITO. Rebaixada.** O relatório diz que
+`check-serve-api-file-security.sh:122` ficaria *"silente, com exit 0 sem ter verificado nada"*. O
+código tem `else fail`:
+
+```bash
+if grep -q "os\.path\.realpath" ".../pypi/trackfw/commands/serve.py" 2>/dev/null; then
+  ok "..."
+else
+  fail "Python serve.py pode estar sem realpath — revisar AC7"
+fi
+```
+
+Arquivo ausente ⇒ `grep` retorna 2 ⇒ `else` ⇒ **`fail`**. O gate fica **vermelho, não silencioso** —
+que é o comportamento correto. Varri o arquivo: é o **único** sítio com esse padrão, e ele tem
+guarda.
+
+**O que sobra do achado, e continua válido:** a Wave 3 precisa **atualizar** esse gate ao remover o
+arquivo, senão ele reprova por motivo alheio. É trabalho do ML-3C, não risco de cobertura silenciosa.
+
+**MÉDIA — aceita sem reverificação.** O corpus de falsify encolher sem alarme proporcional é
+plausível e o remédio (converter ou descartar cenários antes de remover, recalibrar pesos) é barato.
+Registrado no ML-3B.
+
+**Residual R2, acrescentado pelo ML-0A e que não estava na ADR:** depois da v8, **nenhuma ferramenta
+verifica divergência de comportamento do binário Go por execução independente** — a paridade era, de
+graça, um detector de defeito. Isso é perda real e vai declarada.
+
+---
+
 ## Wave 1 — Construir o canal novo, sem remover nada
 > Dependências: Wave 0. **Tudo reversível.** Os MLs 1A–1C são paralelos entre si; 1D e 1E dependem deles.
 
@@ -247,7 +303,14 @@ texto neste roadmap — um agente que não leia esta seção pode executar Wave 
 `release tag` — é o **issue #338**. Com N pacotes de plataforma seriam **5+N**.
 🔴 **Gerar em vez de vigiar:** os `package.json` de plataforma **não existem no repositório**; são
 artefato de build, como no esbuild. Sítios caem para **1**, e o #338 é **resolvido por esta REQ**.
+🔴 **DEPENDÊNCIA DURA — ML-1A precede ML-3A.** `internal/commands/release.go:102-108` hardcoda
+`pypi/trackfw/__init__.py` (duas vezes) e `npm/package.json` em `releaseVersionFiles`. Se o ML-3A
+apagar `pypi/trackfw/` antes de este ML reescrever a lista, **`trackfw release tag` recusa em toda
+invocação** e o projeto perde a capacidade de publicar. Nenhum gate pega antes do runtime.
+
 **Critérios de aceite:**
+- [ ] 🔴 `releaseVersionFiles` deixa de hardcodar caminhos que a Wave 3 remove — derivado do sítio único
+- [ ] Falsificação: simular a árvore pós-Wave-3 e provar que `release tag` **ainda funciona**
 - [ ] Um único sítio de versão; os manifests são gerados a partir dele
 - [ ] Gate verifica que a geração aconteceu **e** bate com o `CHANGELOG`
 - [ ] Falsificação: divergir o sítio único do CHANGELOG ⇒ reprova
@@ -343,7 +406,19 @@ binário, repassa argv, devolve exit code.
 **Status:** ⬜ Pendente
 **31 dos 61** são de paridade. 🔴 **Nomear um a um**, dizendo o que cada um media e por que não mede
 mais nada. Remover em bloco é como se perde cobertura sem perceber.
+🔴 **`.github/required-status-checks.txt` declara `node`, `python (3.10)` e `python (3.12)`** — jobs
+que esta wave remove. O conjunto **R** (branch protection) vive **fora do repositório** e o CI não o
+lê. Remover os jobs sem atualizar R deixa **todo PR pendente para sempre, inclusive o que
+consertaria** — deadlock de repositório.
+
+**As três operações no MESMO PR**, como o próprio arquivo prescreve: remover do workflow, remover da
+declaração, remover de `required_status_checks` via API. 🔴 A terceira **exige credencial de
+mantenedor** — não é operação de agente.
+
 **Critérios de aceite:**
+- [ ] 🔴 `make check-required-full` verde **antes** do merge do PR que remove os jobs
+- [ ] `check-serve-api-file-security.sh` atualizado ao remover `pypi/trackfw/commands/serve.py` —
+      ele **reprova alto** com o arquivo ausente (verificado), então precisa ser reescrito, não só observado
 - [ ] Lista nomeada, com justificativa por gate
 - [ ] Gate que ainda mede algo **fica** — paridade não é o único motivo de um gate existir
 
