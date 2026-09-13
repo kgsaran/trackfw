@@ -1,12 +1,25 @@
 #!/usr/bin/env bash
-# check-manifest-version-gate.sh — gate for AC3 + partial #338 resolution.
+# check-manifest-version-gate.sh — gate for AC3 + full #338 resolution.
 #
-# Asserts three things in sequence:
+# Asserts four things in sequence:
 #   1. gen-platform-manifests.sh runs without error (generation happened).
 #   2. Every generated @trackfw-bin/<platform>/package.json carries the version from
 #      internal/version/version.go — not a hand-written number.
 #   3. That version matches the latest versioned section in CHANGELOG.md — the cross-check
 #      that issue #338 identified as missing from the pre-release pipeline.
+#   4. npm/package.json and pypi/pyproject.toml agree with internal/version/version.go.
+#
+# WHY SOME FILES ARE GENERATED AND OTHERS ARE MONITORED:
+#   - The 6 @trackfw-bin/<platform>/package.json manifests are generated (not committed)
+#     because their sole purpose is to declare the binary path per platform; they carry
+#     no other information. Generating them from the Go source eliminates drift by
+#     construction and costs nothing at runtime.
+#   - npm/package.json and pypi/pyproject.toml MUST remain hand-written in the tree:
+#     `npm ci` reads npm/package.json directly and cannot work from a generated file;
+#     package metadata (description, keywords, scripts, devDependencies) lives alongside
+#     the version field and is meaningfully maintained by humans. Generating these files
+#     would break `npm ci` and obscure intentional metadata edits. The right answer for
+#     these two is continuous monitoring, not generation.
 #
 # Vacuity guard: zero manifests found after generation → reprova.
 # This gate never passes silently: every verification emits ok/FAIL, and a non-zero FAIL
@@ -17,6 +30,9 @@
 #   - Assertion 2 proves: generated manifests carry the same version as Go's single source.
 #   - Assertion 3 proves: the Go version and CHANGELOG top section agree — the #338 check
 #     now fires at gate time, not only at 'trackfw release tag' runtime.
+#   - Assertion 4 proves: npm/package.json and pypi/pyproject.toml agree with version.go —
+#     the two hand-written version sites that remain after Wave 3 are now continuously
+#     monitored, closing issue #338 fully.
 set -euo pipefail
 export PYTHONIOENCODING=utf-8
 
@@ -99,6 +115,46 @@ else
         fail "CHANGELOG.md top section is [$CHANGELOG_VERSION] but internal/version/version.go is \"$GO_VERSION\" — update one before release"
     else
         ok "CHANGELOG.md top section [$CHANGELOG_VERSION] matches Go source v$GO_VERSION"
+    fi
+fi
+
+# ── Step 4: Verify hand-written version sites agree with version.go (#338) ──
+# npm/package.json and pypi/pyproject.toml must be kept in sync with
+# internal/version/version.go by the developer. This gate enforces that
+# agreement continuously rather than only at 'trackfw release tag' runtime.
+
+NPM_PKG="$REPO_ROOT/npm/package.json"
+if [[ ! -f "$NPM_PKG" ]]; then
+    fail "npm/package.json not found at $NPM_PKG"
+else
+    NPM_VERSION=$(python3 -c "
+import json, sys
+try:
+    d = json.load(open(sys.argv[1]))
+    print(d.get('version', ''))
+except Exception:
+    sys.exit(1)
+" "$NPM_PKG" 2>/dev/null) || NPM_VERSION=""
+    if [[ -z "$NPM_VERSION" ]]; then
+        fail "npm/package.json: could not read version field"
+    elif [[ "$NPM_VERSION" != "$GO_VERSION" ]]; then
+        fail "npm/package.json: version is \"$NPM_VERSION\", expected \"$GO_VERSION\" (from internal/version/version.go)"
+    else
+        ok "npm/package.json: version $NPM_VERSION matches Go source"
+    fi
+fi
+
+PYPROJECT="$REPO_ROOT/pypi/pyproject.toml"
+if [[ ! -f "$PYPROJECT" ]]; then
+    fail "pypi/pyproject.toml not found at $PYPROJECT"
+else
+    PYPI_VERSION=$(awk -F'"' '/^version[[:space:]]*=/ { print $2; exit }' "$PYPROJECT")
+    if [[ -z "$PYPI_VERSION" ]]; then
+        fail "pypi/pyproject.toml: could not read version field"
+    elif [[ "$PYPI_VERSION" != "$GO_VERSION" ]]; then
+        fail "pypi/pyproject.toml: version is \"$PYPI_VERSION\", expected \"$GO_VERSION\" (from internal/version/version.go)"
+    else
+        ok "pypi/pyproject.toml: version $PYPI_VERSION matches Go source"
     fi
 fi
 
