@@ -2,6 +2,47 @@
 
 ---
 
+## Sessão 2026-09-13 — Ares (trackfw-nul — ML-2A: bump de versão para 8.0.0-rc1) — ENCERRADO
+
+**Início:** 2026-09-13 | Branch: `fix/v8-um-binario-muitos-canais` (trackfw-nul) | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` ML-2A
+**Tarefa:** Bump dos 3 sítios de versão para `8.0.0-rc1`, nova seção no CHANGELOG.md (8.0.0-rc1), gate `scripts/check-manifest-version-gate.sh`, `make quality` e `trackfw validate` verdes. Preparação do PR de release candidate.
+**Concluído:** (1) `internal/version/version.go`, `npm/package.json`, `pypi/pyproject.toml` e `pypi/trackfw/__init__.py` em `8.0.0-rc1`. (2) CHANGELOG.md com seção `## [8.0.0-rc1] - 2026-09-13` no topo, incluindo o break de `require('trackfw')`; corrigida referência a `--no-sdist` (não é flag passada — mecanismo real é `build_wheel.py` sem `python -m build`). (3) check-manifest-version-gate.sh verde (10/0 — atualizado para aceitar formato simples de `__init__.py`; drop de 11→10 assertions documentado: era try-branch + except-branch = 2 para um arquivo; agora 1 literal = 1 assertion sem perda). (4) Go/Node/Python tests verdes. (5) Defects secundários da mesma causa (primeira prerelease expôs regex `X.Y.Z`-only): `internal/commands/version_test.go`, `npm/tests/version.test.js`, `pypi/tests/test_commands_basic.py`, `scripts/check-cli-parity.sh`, `scripts/check-gates-falsify.sh` (liveness s23) e `scripts/check-doctor-parity.sh` atualizados para aceitar sufixo prerelease. `pypi/trackfw/__init__.py` refatorado para hardcoded (resolve conflito com `importlib.metadata` retornando versão instalada); `scaffold_doctor.py` usa `__version__` em vez de `importlib.metadata`. (6) parity-falsify EXIT=0, 0 FAILs. parity-rest EXIT=0, 0 FAILs. make quality EXIT=0. (7) `trackfw validate` sem violações novas (185 warnings pré-existentes). (8) ML-2A marcado 🔄; reconciliação de testes adicionada ao roadmap. (9) PR #356: https://github.com/kgsaran/trackfw/pull/356
+
+---
+
+## Sessão 2026-09-13 — Ares (trackfw-nul — PR #355: package-smoke sem Go no CI)
+
+**Início:** 2026-09-13 | Branch: `fix/v8-um-binario-muitos-canais` (trackfw-nul) | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md`
+**Tarefa:** PR #355 vermelho: job `package-smoke` não instala Go nem compila o binário antes de chamar `scripts/smoke-integration-packages.sh`, que exige `bin/trackfw`. Varredura de outros jobs com o mesmo defeito.
+**Concluído:** Adicionados `actions/setup-go@v7` (go-version-file: go.mod) e `go build -o bin/trackfw ./cmd/trackfw` ao job `package-smoke`. Varredura: único sítio com o defeito. `make quality` verde (418 OK, 0 FAIL, EXIT 0). `check-workflow-yaml.py` 8/8. `trackfw ship` executado → PR #355 atualizado.
+
+---
+
+## Sessão 2026-09-13 — Ares (trackfw-nul — PR #354: packaging ausente em parity-falsify-shard + skip-silencioso-em-CI)
+
+**Início:** 2026-09-13 | Branch: `fix/v8-um-binario-muitos-canais` (trackfw-nul) | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md`
+**Tarefa:** Dois defeitos que bloqueiam PR #354: (1) `packaging` ausente nos jobs `parity-falsify-shard` e `parity-other-gates`; (2) gates com SKIP silencioso que ficaria verde em CI sem cobertura. Varredura de outros sítios com mesma causa.
+**Concluído:** (1) `packaging` declarado explicitamente em `parity-falsify-shard` e `parity-other-gates`. (2) Três scripts corrigidos com CI-strict: check-wheel-filename.sh (falsify arms + normal mode dead-code branch), check-shim-byte-identity.sh (go/node ausente), check-install-restriction.sh (node/npm ausente). Platform SKIP preservado (runners Windows são condição genuína). Prova das duas direções com shadow module PYTHONPATH. Go tests verdes. check-workflow-yaml.py 8/8. trackfw ship executado → PR #354 atualizado.
+
+---
+
+## Sessão 2026-09-13 — Ares (trackfw-nul — ML-1A D6-write: normalização PEP 440 em build_wheel.py)
+
+**Início:** 2026-09-13 | Branch: `fix/v8-um-binario-muitos-canais` (trackfw-nul) | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` ML-1A
+**Tarefa:** (1) Endurecer ImportError em build_wheel.py para hard-fail (não fallback silencioso). (2) Ampliar gate check-wheel-filename.sh para verificar internos da wheel (prefixo dist-info + Version: no METADATA) e igualdade da versão parseada. (3) Adicionar falsificação raw+normalized ao check-gates-falsify.sh. (4) Adicionar `packaging` ao pip install do job publish-pypi em release.yml.
+**Concluído:** `normalize_version()` em build_wheel.py (hard-fail sem packaging). Gate `check-wheel-filename.sh` 3 modos verdes. parity-rest exit 0. `packaging` declarado explicitamente em release.yml. Falsificação cenários 182+183 em check-gates-falsify.sh. Empurrado para PR #354.
+
+---
+
+## Sessão 2026-09-13 — Ares (trackfw-nul — ML-1A segunda metade: D1–D7 release workflow v8)
+
+**Início:** 2026-09-13 | Branch: `fix/v8-um-binario-muitos-canais` (trackfw-nul) | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` ML-1A
+**Tarefa:** Fechar D1–D7 no release workflow antes de v8.0.0-rc1: D1 (artefatos goreleaser não baixados nas jobs de publish), D2 (divergência entre .goreleaser.yaml e gen-platform-manifests.sh — 5 vs 6 plataformas), D3 (npm publish sem --tag envia RC para latest), D4 (shim publicado antes dos platform packages), D5 (python -m build gera sdist silenciosamente), D6 (8.0.0-rc1 não normalizado para 8.0.0rc1 na lookup PyPI), D7 (verify-channels verifica presença mas não conteúdo).
+**Arquivos criados/modificados:** `.goreleaser.yaml` (removeu ignore windows/arm64), `scripts/check-platform-matrix-parity.sh` (gate com falsificação em dois braços), `scripts/check-channels-content.sh` (gate conteúdo npm+PyPI com --self-test/--local/--published), `scripts/verify-pypi-channel.py` (D6: normalização PEP 440), `.github/workflows/release.yml` (reescrita completa: publish-npm-platforms, publish-npm-shim, publish-pypi, verify-channels), `Makefile` (parity-rest: dois novos gates).
+**Concluído:** make quality verde (0 FAIL, 885 ok, EXIT 0). check-workflow-yaml.py verde (8 passed). Todos os gates com auto-falsificação testados. ML-1A marcado ✅. trackfw ship executado.
+
+---
+
 ## Sessão 2026-09-13 — Hades (ML-1F: gate de byte NUL literal em fonte)
 
 **Início:** 2026-09-13 | Branch: `fix/binario-muitos-canais` (trackfw-triagem) | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` ML-1F
@@ -31,6 +72,7 @@
 
 **Início:** 2026-09-12 | Branch: `fix/validar-um-binario-muitos-canais` | PR #346 aberto.
 **Tarefa:** Corrigir falha em CI no `npm/tests/shim_packaging.test.js` linha 116: braço "Arm B (disco)" trata binário ausente (gitignored por design em `prototype/.gitignore`) como defeito de produto em vez de condição de ambiente. Três checks obrigatórios cascateavam a partir disso: `node`, `parity-falsify-shard`, `parity`, `windows-full-suites`. Fix: aceitar `t` (TestContext) no braço de disco, verificar existência antes do assert — se ausente, `t.skip()` com razão nomeada referenciando a REQ. Braços A, B-estático e B-runtime continuam rodando sempre.
+**Concluído:** `npm/tests/shim_packaging.test.js` corrigido — braço de disco aceita `t`, skip nomeado quando binário ausente. Verificado SEM binário (CI): 3 pass, 1 skip nomeado, 0 fail, EXIT 0. COM binário (local): 4 pass, 0 skip, 0 fail, EXIT 0. `npm test` completo: 911 pass / 1 skip / 0 fail sem binário; 912 pass / 0 skip sem binário presente. Nota de vault criada e linkada. `trackfw commit` (ff2dd564) + `trackfw push` executados. PR #346 atualizado.
 
 ---
 
@@ -37093,3 +37135,66 @@ ML-1B da triagem medida entregue.
 **Zero REQs fechadas.** `trackfw req move` não foi executado. `trackfw validate` RC=0 (178 warnings, todos pré-existentes).
 
 Próximo: ML-2A (gate de conjunto de regras) — handoff para implementador de produto.
+
+## Sessão 2026-09-12 — Hades (Security) — ML-0A início
+
+Início: 2026-09-12. Executando ML-0A do roadmap
+`ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` (branch `fix/v8-um-binario-muitos-canais`,
+worktree `trackfw-nul`). Tarefa: threat model da migração v8 (opção D: um binário, muitos canais).
+Enumeração completa de sítios que assumem três implementações — inclui categorias fora de `npm/` e
+`pypi/`. Entrega: quatro seções no roadmap com evidência, não asserção.
+
+## Sessão 2026-09-12 — Hades (Security) — ML-0A CONCLUÍDO
+
+ML-0A do roadmap `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` entregue.
+
+**Artefatos modificados:**
+- `docs/roadmaps/wip/ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` — ML-0A marcado ✅,
+  quatro seções escritas com evidência.
+- `docs/agents-working-context.md` — esta entrada.
+
+**Principais achados (por severidade):**
+- CRÍTICO: `internal/commands/release.go:95-108` hardcoda `pypi/trackfw/__init__.py` como
+  version-site — Wave 3 quebra `trackfw release tag` permanentemente. ML-1A deve atualizar
+  product code antes de ML-3A apagar o arquivo. Dependência sem gate.
+- CRÍTICO: `.github/required-status-checks.txt` declara `node`, `python (3.10)`, `python (3.12)`
+  como required checks. Wave 3 remove os jobs; branch protection (R, fora do repo) continua
+  exigindo check-names que nenhum workflow emite. Cada PR subsequente fica pendente para sempre.
+- ALTA: `check-serve-api-file-security.sh` usa `2>/dev/null` — gate passa silenciosamente após
+  Wave 3 remover `pypi/trackfw/commands/serve.py`. Coverage de segurança some sem alarme.
+- MÉDIA: Falsify corpus encolhe sem alarme proporcional — `check-falsify-shard-coverage.sh`
+  mede relativo ao corpus presente.
+
+**Residual aceito:** audiência de política corporativa anti-executável (da ADR) + remoção do
+detector de defeito independente (novo, não na ADR) + três gaps de gate sem alarme (R3/R4/R5).
+
+Próximo: handoff para o arquiteto — Wave 1 pode iniciar com ML-1A (atualizar release.go) como
+pré-requisito hard de ML-3A.
+
+---
+
+## Sessão 2026-09-13 — Ares (ML-1D + ML-1E — gates de byte-identidade e instalação sob restrição)
+
+**Início:** 2026-09-13 | Branch: `fix/v8-um-binario-muitos-canais` | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md`
+**Tarefa:** Promover Pergunta 15 do windows-probe.yml a gate permanente (ML-1D, AC9) e portar 4 cenários de instalação sob restrição (ML-1E, AC10). Novos arquivos: `scripts/check-shim-byte-identity.sh`, `scripts/check-install-restriction.sh`, wiring em Makefile e quality.yml.
+**Concluído:** ML-1D: `scripts/check-shim-byte-identity.sh` criado — 5 comandos comparados (C1 stdout version, C2 stdout validate --json ~30kB, C3 stdout status, C4 stderr context --json, C5 exit code version --nonexistent); staging direto sem npm install; 5/5 SUBSTANTIVE, 10 pass, 0 fail, ~2s. ML-1E: `scripts/check-install-restriction.sh` criado — 4 cenários (C1 --offline+cache vazio→ENOTCACHED; C2 --ignore-scripts previne postinstall; C3 inspeção estática sem URLs github; C4 file: protocol filtra por plataforma); 7 pass, 0 fail, ~1s. Makefile: dois alvos acrescentados no fim da lista parity-rest. quality.yml: job `shim-byte-identity` adicionado (ubuntu+macos; ML-1E fica no parity-rest, <2s). `make quality` verde (segundo run, após limpeza de artefatos npm espúrios na raiz). Roadmap: ML-1D e ML-1E marcados ✅. `trackfw commit` + `trackfw push` executados.
+
+---
+
+---
+
+## Sessão 2026-09-13 — Ares (ML-1A segunda metade: D1–D7 release workflow)
+
+**Início:** 2026-09-13 | Branch: `fix/v8-um-binario-muitos-canais` | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` ML-1A
+**Tarefa:** Fechar os 7 defeitos do release workflow (D1–D7): plumbing de binários goreleaser→npm/pypi, paridade de plataformas, dist-tag automático, ordem de publicação, sem sdist, normalização de versão prerelease, verify-channels por conteúdo.
+**Estado ao início:** goreleaser 2.18.1 disponível localmente. npm/package.json sem optionalDependencies. Branch limpa em e19556ac (merge de main/Wave 1 squashada em #352).
+
+---
+
+## Sessão 2026-09-13 — Ares (trackfw-nul — ML-1B completar: npm/package.json + discriminante + smoke)
+
+**Início:** 2026-09-13 | Branch: `fix/v8-um-binario-muitos-canais` (trackfw-nul) | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` ML-1B
+**Tarefa:** Fechar ML-1B incompleto: (1) `npm/package.json` ainda aponta para a implementação Node v7 — precisa apontar para `bin/trackfw.js` (shim) e remover dependências e src/ do `files`; (2) discriminante no release.yml está errado (verifica `npm/src/` na árvore, deveria inspecionar o tarball sempre); (3) `smoke-integration-packages.sh` afirma assets em `src/integrations/` que não estarão mais no tarball.
+
+**Concluído:** (1) `npm/package.json` corrigido: bin→`./bin/trackfw.js`, files→`["bin/trackfw.js"]`, main removido, deps movidas para devDeps, smoke→`node --check`. Lockfile regenerado. (2) release.yml: discriminante corrigido para sempre rodar `check-channels-content.sh --local` (não condicionado à presença de npm/src/ na árvore). (3) `smoke-integration-packages.sh` npm arm reescrito: shim + platform pkg sem `bin` (AC13) + Go binary real; `check-integration-assets.sh` e `check-channels-content.sh` atualizados. Makefile: `package-smoke: build check-integration-assets`. Reconciliações escritas no roadmap. Falsificação: src/ em files → FAIL exit 1 (provado). Shim sem binary → exit 1 nomeando plataforma. Shim com binary (sem bin field) → delegates exit 0. `make quality` verde. `npm test` 910/0. `check-workflow-yaml.py` 8/8. `trackfw validate` sem violações bloqueantes.
+

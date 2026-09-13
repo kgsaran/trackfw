@@ -6,7 +6,7 @@ BUILD_DIR=bin
 # à chamada de check-roadmap-barrier-contract.sh via `make quality`.
 HASH_CMD := $(shell command -v sha256sum >/dev/null 2>&1 && echo sha256sum || echo "shasum -a 256")
 
-.PHONY: build test test-node test-python parity parity-rest parity-falsify lint quality install clean sync-integration-assets check-integration-assets package-smoke check-required-full check-gates-remutation
+.PHONY: build test test-node test-python parity parity-rest parity-falsify lint quality install clean sync-integration-assets check-integration-assets package-smoke check-required-full check-gates-remutation gen-manifests
 
 build:
 	go build -o $(BUILD_DIR)/$(BINARY) ./cmd/trackfw
@@ -34,6 +34,10 @@ test-python:
 parity: build parity-rest parity-falsify
 
 parity-rest: build
+	# Defeito 3 (PR #352): valida sintaxe YAML de todos os .github/workflows/*.yml
+	# antes do push, sem credencial. Guarda de vacuidade: falha se nenhum arquivo
+	# encontrado. Fecha a classe: workflow inválido não atravessa mais o ciclo local.
+	python3 scripts/check-workflow-yaml.py
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-cli-parity.sh
 	scripts/check-validate-parity.sh
 	scripts/check-referential-integrity.sh
@@ -124,6 +128,33 @@ parity-rest: build
 	# de anotações de job. A verificação real acontece no workflow check-annotations.yml
 	# (workflow_run, só roda da branch default após merge à main).
 	python3 scripts/check-job-annotations.py --self-test
+	# ML-1A (v8 ROADMAP-2026-09-12-v8-um-binario-muitos-canais): AC3 + partial #338.
+	# Generates platform manifests from internal/version/version.go (single source of truth)
+	# and verifies each manifest version matches the Go source AND the CHANGELOG top section.
+	scripts/check-manifest-version-gate.sh
+	# ML-1A (v8 ROADMAP-2026-09-12-v8-um-binario-muitos-canais): D2 — paridade de plataformas.
+	# Asserts .goreleaser.yaml build matrix == gen-platform-manifests.sh PLATFORMS.
+	# Divergence is permanent: publishing @trackfw-bin/X without a binary is irreversible.
+	scripts/check-platform-matrix-parity.sh
+	# ML-1A-D6write (v8 ROADMAP-2026-09-12-v8-um-binario-muitos-canais): normalização semver→PEP440
+	# no nome da wheel. Usa versão de pré-lançamento (8.0.0-rc1): a versão limpa 8.0.0 é idêntica
+	# nas duas grafias e passaria com o defeito intacto. Validação via parse_wheel_filename oficial.
+	# Falsificação em check-gates-falsify.sh (--falsify-raw e --falsify-normalized).
+	scripts/check-wheel-filename.sh
+	# ML-1A (v8 ROADMAP-2026-09-12-v8-um-binario-muitos-canais): D7 — conteúdo dos pacotes
+	# publicados deve ser inspecionado, não apenas a presença. Self-test usa artefatos
+	# sintéticos independentes do estado da árvore (Wave 1 ainda tem npm/src/; Wave 3 remove).
+	# Modo --local é invocado no release workflow após Wave 3, antes de publicar.
+	scripts/check-channels-content.sh --self-test
+	# ML-1D (v8 ROADMAP-2026-09-12-v8-um-binario-muitos-canais): AC9 — byte-identidade
+	# do shim npm/bin/trackfw.js vira gate permanente. Prova que o shim não modifica
+	# bytes nem exit codes ao delegar para o binário Go nativo (5 comandos, ≥4 SUBSTANTIVE).
+	# Requer go e node no PATH; faz skip nomeado se ausentes (ambiente, não defeito).
+	scripts/check-shim-byte-identity.sh
+	# ML-1E (v8 ROADMAP-2026-09-12-v8-um-binario-muitos-canais): AC10 — instalação
+	# sob restrição vira gate permanente. 4 cenários: C1=--offline/ENOTCACHED,
+	# C2=--ignore-scripts, C3=sem-rota-GitHub, C4=lockfile-cruzado/filtragem de plataforma.
+	scripts/check-install-restriction.sh
 	# ML-1F (ROADMAP-2026-09-12-v8-um-binario-muitos-canais): gate que impede byte NUL
 	# literal em qualquer fonte rastreado com text= em .gitattributes. NÃO usa grep
 	# (ugrep -I pula silenciosamente arquivos com NUL, sendo derrotado pelo objeto medido).
@@ -168,7 +199,7 @@ sync-integration-assets:
 check-integration-assets:
 	scripts/check-integration-assets.sh
 
-package-smoke: check-integration-assets
+package-smoke: build check-integration-assets
 	# PYTHON_BIN pinado (ML-2E, mesma família de HASH_CMD_BIN acima -- severidade menor
 	# porque não há guarda que um binário forjado possa satisfazer vaziamente aqui, só
 	# quebra o próprio build/smoke se for forjado).
@@ -181,6 +212,12 @@ quality: test test-node test-python lint parity
 
 install: build
 	mv $(BUILD_DIR)/$(BINARY) /usr/local/bin/$(BINARY)
+
+# gen-manifests — generates per-platform @trackfw-bin/<platform>/package.json artefacts
+# from the single version source in internal/version/version.go. Output is gitignored
+# (build/npm-platform/). Run this before publishing platform npm packages.
+gen-manifests:
+	scripts/gen-platform-manifests.sh
 
 clean:
 	rm -rf $(BUILD_DIR)

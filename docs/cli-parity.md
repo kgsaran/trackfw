@@ -59,7 +59,7 @@ Pinned literally:
 | Element | Rule |
 |---|---|
 | Program name | Literal `trackfw`, then a single space |
-| Version | SemVer `<major>.<minor>.<patch>`, **no `v` prefix**, no suffix |
+| Version | SemVer `<major>.<minor>.<patch>[-<prerelease>]`, **no `v` prefix**. Pre-release identifier is optional (stable releases have no suffix); when present it follows semver §9 (e.g. `rc1`, `alpha.1`). |
 | Line | Exactly one, terminated by `\n`, on **stdout** |
 | `version` ≡ `--version` | Byte-identical to each other, within and across runtimes |
 
