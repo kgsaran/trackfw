@@ -2,6 +2,14 @@
 
 ---
 
+## Sessão 2026-09-13 — Hades (ML-1F: gate de byte NUL literal em fonte)
+
+**Início:** 2026-09-13 | Branch: `fix/binario-muitos-canais` (trackfw-triagem) | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` ML-1F
+**Tarefa:** Criar `scripts/check-no-literal-nul-in-source.sh` + `scripts/nul-source-exceptions.txt` + entrada no Makefile (parity-rest). Escolha de design: Opção 1 (lista de exceção com prazo estrutural, não calendário). Três modos de obsolescência cobertos: arquivo ausente, contagem = 0, contagem divergente.
+**Concluído:** Gate verde em real tree (651 fontes texto; 2 excepções declaradas, sem terceiro). Self-test 5 arms verdes. check-output-encoding-declared passou após adicionar `export PYTHONIOENCODING=utf-8`. Makefile atualizado (fim de parity-rest). ML-1F marcado ✅. trackfw commit + push executados.
+
+---
+
 ## Sessão 2026-09-12 — Ares (trackfw-nul — Correção 1+2: --offline + reconciliação ECONNREFUSED)
 
 **Início:** 2026-09-12 | Branch: `fix/validar-um-binario-muitos-canais` (trackfw-nul) | PR #346.

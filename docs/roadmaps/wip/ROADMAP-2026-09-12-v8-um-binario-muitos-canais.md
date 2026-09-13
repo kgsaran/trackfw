@@ -144,14 +144,17 @@ o timeout — custou 11 min por execução no probe.
 - [ ] O `--offline` tem braço próprio provando que **falha quando precisa de rede**
 
 ### ML-1F — gate de byte NUL literal em fonte
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Origem:** `REQ-2026-09-12-byte-nul-literal-no-fonte-...` — 🔴 **só o gate entra aqui.** Os dois
 arquivos com NUL são fontes do Node que a Wave 3 deleta; o defeito some sozinho. O **gate**
 sobrevive e vale para qualquer fonte, inclusive Go.
 **Critérios de aceite:**
-- [ ] Reprova se qualquer fonte rastreado contiver NUL literal, nomeando arquivo e offset
-- [ ] 🔴 **Não usa `grep`** para procurar o NUL — seria a ferramenta derrotada pelo objeto medido
-- [ ] Guarda de vacuidade: varredura que não examina arquivo nenhum ⇒ reprova
+- [x] Reprova se qualquer fonte rastreado contiver NUL literal, nomeando arquivo e offset
+- [x] 🔴 **Não usa `grep`** para procurar o NUL — usa `LC_ALL=C tr -d -c '\000' | wc -c`
+- [x] Guarda de vacuidade: varredura que não examina arquivo nenhum ⇒ reprova
+- [x] Falsificação: 5 arms no --self-test (limpa/NUL não-declarado/exc-ausente/exc-zero-NUL/exc-contagem-divergente)
+- [x] Decisão escolhida: Opção 1 (lista de exceção com prazo **estrutural**) — três modos de obsolescência, não calendário
+- [x] Achado de varredura: 651 fontes texto examinados; NUL em exatamente 2 (os declarados) — sem terceiro
 
 ---
 

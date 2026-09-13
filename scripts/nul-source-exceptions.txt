@@ -1,0 +1,14 @@
+# check-no-literal-nul-in-source.sh — lista de exceções declaradas
+#
+# Formato: <caminho-relativo-à-raiz><TAB><contagem-de-NUL><TAB><razão>
+# Linhas começando com # são comentários e são ignoradas.
+#
+# PRAZO ESTRUTURAL (não calendário):
+#   Cada entrada falha automaticamente quando o arquivo some (Wave 3 — ML-3A),
+#   quando a contagem cai a zero (escape \0 aplicado) ou quando a contagem diverge.
+#   A lista não pode se tornar permanente — qualquer dessas três condições exige limpeza.
+#
+# ACHADO DE VARREDURA (2026-09-13): 1820 arquivos rastreados examinados; NUL encontrado
+#   exatamente nestes dois. Sem terceiro arquivo com NUL na árvore atual.
+npm/src/validator/index.js	1	NUL literal como separador de chave composta; Wave 3 (ML-3A) deleta npm/src/ inteiro
+npm/src/integrations/doctor.js	2	NUL literal como separador de chave composta; Wave 3 (ML-3A) deleta npm/src/ inteiro
