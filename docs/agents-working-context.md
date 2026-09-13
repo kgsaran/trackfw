@@ -2,6 +2,29 @@
 
 ---
 
+## Sessão 2026-09-13 — Ares (trackfw-nul — PR #352: 3 correções pós-auditoria da Wave 1 v8)
+
+**Início:** 2026-09-13 | Branch: `fix/v8-um-binario-muitos-canais` (trackfw-nul) | PR #352.
+**Tarefa:** Defeito 1: release.yml com YAML inválido (python3 multilinha em coluna 1 quebra bloco `run: |`). Defeito 2: `declare -A` em `check-shim-byte-identity.sh` falha em bash 3.2 (macOS CI). Defeito 3: `make quality` não valida sintaxe dos workflows (novo gate `check-workflow-yaml.py`). Varredura de bash 4+ em todos os scripts.
+
+---
+
+## Sessão 2026-09-12 — Ares (trackfw-nul — ML-1A v8: remove Wave-3-deleted paths de releaseVersionFiles)
+
+**Início:** 2026-09-12 | Branch: `fix/v8-um-binario-muitos-canais` (trackfw-nul).
+**Tarefa:** ML-1A do ROADMAP-2026-09-12-v8-um-binario-muitos-canais — remover `pypi/trackfw/__init__.py` (2 entradas) de `releaseVersionFiles`/`RELEASE_VERSION_FILES` nos 3 CLIs; adicionar gate `check-manifest-version-gate.sh`; acrescentar `verify-channels` job no release.yml (AC4: falha parcial de publicação detectável); scripts `gen-platform-manifests.sh` e entrada em `.gitignore`.
+**Concluído:** Todos os 3 CLIs atualizados (Go, Node.js, Python). `check-output-encoding-declared` falhou na primeira rodada (faltava `export PYTHONIOENCODING=utf-8` no novo script); corrigido e `make quality` verde (exit 0, 414 falsification OK). `trackfw commit` + `trackfw push` executados. PR não aberto (não solicitado). ML não marcado no roadmap (arquiteto faz após auditoria).
+
+---
+
+## Sessão 2026-09-13 — Ares (trackfw-nul — ML-1A pós-auditoria: Steps 4-5 do manifest-version gate)
+
+**Início:** 2026-09-13 | Branch: `fix/v8-um-binario-muitos-canais` (trackfw-nul).
+**Tarefa:** Duas correções de auditoria do arquiteto sobre ML-1A. Step 4: estender `check-manifest-version-gate.sh` para monitorar `npm/package.json` e `pypi/pyproject.toml` contra `internal/version/version.go` (fechamento completo de #338). Step 5: verificação condicional de `pypi/trackfw/__init__.py` (dois literais: try-branch e except-branch) com três braços: presente+bate→pass, presente+diverge→fail nomeando qual, ausente→info Wave 3 já rodou. Threat model: `check-serve-api-file-security.sh` quebra na Wave 3 (linha 122 + linha 181 referenciam arquivos que ML-3A apaga) — reportado ao arquiteto, fora do escopo atual.
+**Concluído:** Gate: 11 passed, 0 failed. Falsificação dos 3 braços do Step 5 verificada. `trackfw commit` (9ac6bdfd) + `trackfw push` executados. PR não aberto. ML não marcado no roadmap.
+
+---
+
 ## Sessão 2026-09-12 — Ares (trackfw-nul — Correção 1+2: --offline + reconciliação ECONNREFUSED)
 
 **Início:** 2026-09-12 | Branch: `fix/validar-um-binario-muitos-canais` (trackfw-nul) | PR #346.
