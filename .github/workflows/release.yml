@@ -296,7 +296,10 @@ jobs:
           path: dist/
 
       - name: Install build tools
-        run: pip install --quiet build
+        # packaging is required by build_wheel.py for PEP 440 normalization (D6-write).
+        # build depends on packaging transitively, but we declare it explicitly so that
+        # a future refactor that changes the build tool does not silently lose the dependency.
+        run: pip install --quiet build packaging
 
       - name: Copia README para o pacote PyPI
         run: cp README.md pypi/README.md

@@ -2,6 +2,13 @@
 
 ---
 
+## Sessão 2026-09-13 — Ares (trackfw-nul — ML-1A D6-write: normalização PEP 440 em build_wheel.py)
+
+**Início:** 2026-09-13 | Branch: `fix/v8-um-binario-muitos-canais` (trackfw-nul) | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` ML-1A
+**Tarefa:** (1) Endurecer ImportError em build_wheel.py para hard-fail (não fallback silencioso). (2) Ampliar gate check-wheel-filename.sh para verificar internos da wheel (prefixo dist-info + Version: no METADATA) e igualdade da versão parseada. (3) Adicionar falsificação raw+normalized ao check-gates-falsify.sh. (4) Adicionar `packaging` ao pip install do job publish-pypi em release.yml.
+
+---
+
 ## Sessão 2026-09-13 — Ares (trackfw-nul — ML-1A segunda metade: D1–D7 release workflow v8)
 
 **Início:** 2026-09-13 | Branch: `fix/v8-um-binario-muitos-canais` (trackfw-nul) | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` ML-1A

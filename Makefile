@@ -136,6 +136,11 @@ parity-rest: build
 	# Asserts .goreleaser.yaml build matrix == gen-platform-manifests.sh PLATFORMS.
 	# Divergence is permanent: publishing @trackfw-bin/X without a binary is irreversible.
 	scripts/check-platform-matrix-parity.sh
+	# ML-1A-D6write (v8 ROADMAP-2026-09-12-v8-um-binario-muitos-canais): normalização semver→PEP440
+	# no nome da wheel. Usa versão de pré-lançamento (8.0.0-rc1): a versão limpa 8.0.0 é idêntica
+	# nas duas grafias e passaria com o defeito intacto. Validação via parse_wheel_filename oficial.
+	# Falsificação em check-gates-falsify.sh (--falsify-raw e --falsify-normalized).
+	scripts/check-wheel-filename.sh
 	# ML-1A (v8 ROADMAP-2026-09-12-v8-um-binario-muitos-canais): D7 — conteúdo dos pacotes
 	# publicados deve ser inspecionado, não apenas a presença. Self-test usa artefatos
 	# sintéticos independentes do estado da árvore (Wave 1 ainda tem npm/src/; Wave 3 remove).
