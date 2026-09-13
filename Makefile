@@ -137,6 +137,12 @@ parity-rest: build
 	# sob restrição vira gate permanente. 4 cenários: C1=--offline/ENOTCACHED,
 	# C2=--ignore-scripts, C3=sem-rota-GitHub, C4=lockfile-cruzado/filtragem de plataforma.
 	scripts/check-install-restriction.sh
+	# ML-1F (ROADMAP-2026-09-12-v8-um-binario-muitos-canais): gate que impede byte NUL
+	# literal em qualquer fonte rastreado com text= em .gitattributes. NÃO usa grep
+	# (ugrep -I pula silenciosamente arquivos com NUL, sendo derrotado pelo objeto medido).
+	# Dois arquivos node têm NUL declarado com prazo estrutural: somem na Wave 3 (ML-3A).
+	scripts/check-no-literal-nul-in-source.sh --self-test
+	scripts/check-no-literal-nul-in-source.sh
 
 parity-falsify: build
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/run-gates-falsify-parallel.sh
