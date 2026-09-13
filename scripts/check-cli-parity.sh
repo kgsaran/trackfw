@@ -151,7 +151,8 @@ check_roadmap_new_flags "python" "$(PYTHONPATH="$ROOT_DIR/pypi" python3 -m track
 # regex '^([0-9]+\.){2}[0-9]+|^0\.0\.0-dev$' that encoded format divergence as
 # expected behaviour. Both are replaced here with the same strict assertion plus
 # byte-by-byte comparison across runtimes and surfaces.
-_VERSION_RE='^trackfw [0-9]+\.[0-9]+\.[0-9]+$'
+# Pre-release identifier is optional (e.g. -rc1, -alpha.1); stable releases have no suffix.
+_VERSION_RE='^trackfw [0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+(\.[a-zA-Z0-9]+)*)?$'
 
 _GO_VER=$("$GO_BIN" version) \
   || { echo "check-cli-parity: go version exited non-zero" >&2; exit 1; }

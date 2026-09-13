@@ -2227,7 +2227,8 @@ if [[ $_S23_V_EXIT -ne 0 ]]; then
   echo "FAIL [falsify/setup-s23-liveness]: seam inativo — binário corrompido ainda rejeita -v (exit $_S23_V_EXIT; got: '$_S23_V_OUT')" >&2
   falsify_fail_point
 fi
-if ! grep -Eq '^trackfw [0-9]+\.[0-9]+\.[0-9]+$' <<<"$_S23_V_OUT"; then
+# Pre-release identifier is optional (e.g. -rc1, -alpha.1); stable releases have no suffix.
+if ! grep -Eq '^trackfw [0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+(\.[a-zA-Z0-9]+)*)?$' <<<"$_S23_V_OUT"; then
   echo "FAIL [falsify/setup-s23-liveness]: seam ativo mas -v não imprimiu versão no formato esperado (exit $_S23_V_EXIT; got: '$_S23_V_OUT')" >&2
   falsify_fail_point
 fi

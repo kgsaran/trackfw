@@ -37,9 +37,10 @@ def run_trackfw(*args, cwd=None, env=None):
 
 class TestVersion(unittest.TestCase):
     # Regex que pina o formato canônico do contrato de paridade:
-    #   ^trackfw [0-9]+\.[0-9]+\.[0-9]+$
-    # (sem prefixo 'v', sem sufixo, exatamente uma linha)
-    _CANONICAL_RE = r"^trackfw [0-9]+\.[0-9]+\.[0-9]+$"
+    #   ^trackfw [0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+(\.[a-zA-Z0-9]+)*)?$
+    # (sem prefixo 'v'; identificador de pre-release opcional — ex: -rc1, -alpha.1)
+    # Atualizado em 8.0.0-rc1: primeira release candidate.
+    _CANONICAL_RE = r"^trackfw [0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+(\.[a-zA-Z0-9]+)*)?$"
 
     def test_version_flag_format_exact(self):
         """--version imprime exatamente 'trackfw <semver>' em stdout, sem prefixo v."""

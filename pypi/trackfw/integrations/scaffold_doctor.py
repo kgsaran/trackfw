@@ -222,8 +222,7 @@ def _scaffold_remedy(action: str, rel_path: str) -> str:
     but direction (project stale vs binary stale) left to the user to determine.
     """
     try:
-        import importlib.metadata
-        ver = importlib.metadata.version('trackfw')
+        from trackfw import __version__ as ver
     except Exception:
         ver = 'unknown'
     return (

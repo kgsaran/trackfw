@@ -5,6 +5,76 @@ Todas as mudanças notáveis deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 e este projeto adere a [Semantic Versioning](https://semver.org/).
 
+## [8.0.0-rc1] - 2026-09-13
+
+> **Release Candidate.** No npm, este pacote é publicado sob o dist-tag `rc`, **não** `latest`.
+> `npm install trackfw` continua instalando a 7.6.0. Para testar a RC: `npm install trackfw@rc` /
+> `pip install trackfw==8.0.0rc1`.
+
+### ⚠️ Breaking Change — `require('trackfw')` deixa de funcionar
+
+O campo `main` foi removido do `npm/package.json`. O pacote npm não exporta mais nenhum módulo
+Node.js — ele é uma casquinha que resolve e executa o binário Go. **Código que importava
+`require('trackfw')` como biblioteca quebra nesta versão.** Este é o único break de contrato desta
+migração.
+
+Quem usava apenas o CLI (`npx trackfw` / `trackfw` no PATH) não é afetado.
+
+### O que muda para quem instala
+
+O **mecanismo** de entrega muda; o **comando de instalação** e a **interface de linha de comando**
+permanecem iguais.
+
+- **npm (`npm install trackfw@rc`):** a casquinha resolve `@trackfw-bin/<plataforma>` na
+  instalação e executa o binário Go. O pacote deixa de ser Node.js puro. Quem tinha restrição de
+  política para baixar executáveis avulsos continua atendido — o binário chega pelo canal que `npm`
+  já tem autorizado.
+- **PyPI (`pip install trackfw==8.0.0rc1`):** o pacote passa a ser uma wheel binária
+  `py3-none-<plataforma>`, sem nenhum arquivo Python. `python -m trackfw` não existe mais; use o
+  executável `trackfw` adicionado ao PATH pelo pip.
+- Quem tinha restrição a **binário em qualquer forma** (independentemente do canal) é afetado pelos
+  dois pontos acima — esta migração não resolve esse caso.
+
+### Added
+
+- **Casquinha npm + pacotes de plataforma** (`@trackfw-bin/<plataforma>`): resolução dinâmica do
+  binário Go via `optionalDependencies`. Seis plataformas: `linux-x64`, `linux-arm64`,
+  `darwin-x64`, `darwin-arm64`, `win32-x64`, `win32-arm64`.
+- **Wheels binárias PyPI** (`py3-none-<plataforma>`), formato `gh-bin`, zero Python. Geradas por
+  `scripts/build_wheel.py` com normalização PEP 440 (`8.0.0rc1` derivado de `8.0.0-rc1`).
+- **Manifests de plataforma gerados** (`gen-platform-manifests.sh`): os seis
+  `@trackfw-bin/<plataforma>/package.json` são gerados a partir de `internal/version/version.go`,
+  eliminando drift de versão por construção (resolve #338).
+- **Release workflow reescrito** (`release.yml`): publica N+1 pacotes npm (shim + plataformas) e N
+  wheels sem sdist, em ordem correta, com `--tag rc` no npm e exclusão de sdist no PyPI via
+  `build_wheel.py` (sem `python -m build`); falha parcial entre canais é detectada e reportada.
+- **Gate `check-manifest-version-gate.sh`**: cruza versão Go ↔ manifests gerados ↔ CHANGELOG ↔
+  `npm/package.json` ↔ `pypi/pyproject.toml` — reprovado se qualquer um divergir.
+- **Gate `check-channels-content.sh`**: verifica conteúdo (não só presença) nos canais npm e PyPI
+  pós-publicação, com `--self-test`, `--local` e `--published`.
+- **Gate `check-platform-matrix-parity.sh`**: valida coerência entre `.goreleaser.yaml` e
+  `gen-platform-manifests.sh` — falsificação em dois braços.
+- **Gate `check-shim-byte-identity.sh`** e **`check-install-restriction.sh`**: CI-strict (falham
+  explicitamente quando Go/Node/npm estão ausentes, em vez de SKIP silencioso).
+- **Gate `check-no-literal-nul-in-source.sh`**: detecta byte NUL literal em fontes texto (dois
+  arquivos com NUL legado declarados em lista de exceção com prazo estrutural).
+
+### Fixed
+
+- `package-smoke` no CI agora instala Go e compila o binário antes de executar o smoke (#355).
+- `build_wheel.py` falha com erro explícito se o pacote `packaging` estiver ausente (sem fallback
+  silencioso para grafia errada).
+- `parity-falsify-shard` e `parity-other-gates` declaravam `packaging` como dependência implícita
+  — agora explícita nos jobs de CI.
+- `.goreleaser.yaml` alinhado com `gen-platform-manifests.sh`: seis plataformas (era cinco, faltava
+  `windows/arm64`).
+
+### Internal
+
+- `npm install --tag rc` (não `latest`) no job `publish-npm-shim` — RC nunca vai para `latest`.
+- `verify-pypi-channel.py` normaliza PEP 440 antes de comparar com o registry.
+- `check-workflow-yaml.py` valida estrutura do YAML de CI como gate permanente.
+
 ## [7.6.0] - 2026-09-12
 
 ### ⚠️ Leia antes de atualizar
