@@ -400,13 +400,57 @@ sobrevive e vale para qualquer fonte, inclusive Go.
 > Dependências: **Wave 1 inteira verde.** 🔴 Primeira etapa irreversível.
 
 ### ML-2A — publicação sob `v8.0.0-rc`
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 🔴 **Nome e versão no npm são permanentes após 72 h; o PyPI não reusa nome de arquivo.** Por isso
 `-rc`, e por isso esta wave não começa antes da Wave 1 fechar.
+
+**Publicado em 2026-09-13** — tag `v8.0.0-rc1`, commit `c4cd9f71`, run `34779379955`.
+
 **Critérios de aceite:**
-- [ ] `npm install trackfw@rc` e `pip install trackfw==8.0.0rc1` funcionam em máquina limpa, nos 3 SOs
-- [ ] Instalação de versão **anterior** continua funcionando
-- [ ] 🔴 Falha parcial entre canais é detectada e reportada
+- [x] `npm install trackfw@rc` funciona em máquina limpa — medido em **Windows arm64** (VM real) e
+      **macOS arm64**. 🔴 **Limite declarado:** as duas máquinas são arm64; **nenhum teste real
+      cobriu x64 em nenhum SO**, e o `pip install` não foi exercido por falta de máquina limpa.
+- [x] Instalação de versão anterior continua funcionando — `latest` permanece `7.6.0`;
+      `npm install trackfw` → `7.6.0`, `npm install trackfw@rc` → `8.0.0-rc1` (D3 confirmado no registry)
+- [x] 🔴 Falha parcial entre canais é detectada e reportada — **provado nas duas direções no mesmo
+      run**: na 1ª tentativa `verify-channels` reprovou nomeando o canal (`FAIL: npm trackfw@8.0.0-rc1
+      not found`); após o rerun, passou. É a correção do acidente da v7.6.0 demonstrada em produção.
+
+**Estado publicado:**
+
+| Canal | Resultado |
+|---|---|
+| GitHub | `v8.0.0-rc1`, 6 binários (windows/arm64 pela primeira vez) |
+| npm | shim + 6 `@trackfw-bin`, dist-tag `rc`; `latest` intacto em 7.6.0 |
+| PyPI | 8 wheels em `8.0.0rc1`, nenhum sdist |
+| conteúdo | `check-channels-content --published`: 2 passed, 0 failed, **0 skipped** |
+
+**Medição em máquina real (o que o CI não podia afirmar):**
+
+| | Windows arm64 | macOS arm64 |
+|---|---|---|
+| pacote de plataforma baixado | `@trackfw-bin/win32-arm64` | `@trackfw-bin/darwin-arm64` |
+| campo `bin` do pacote de plataforma | `undefined` (AC13) | `undefined` (AC13) |
+| shim resolve mesmo assim (AC1) | ✅ `trackfw 8.0.0-rc1` | ✅ `trackfw 8.0.0-rc1` |
+| idêntico ao binário nativo | ✅ | ✅ stdout+stderr e exit **também no caso de violação** |
+| `src/` no pacote instalado | ausente | ausente |
+
+🔴 **Achado que justifica retroativamente a regra "fechar por adição".** A VM é `win32 arm64` — a
+plataforma que o `.goreleaser.yaml` **ignorava** até o D2 ser fechado hoje. Se o D2 tivesse sido
+fechado **por remoção** (tirando o slug do gerador em vez de acrescentar o build), esta máquina
+teria recebido `added 1 package` sem erro e falhado só na execução: instalação silenciosamente
+incompleta. A regra do projeto pagou na primeira máquina real em que o pacote rodou.
+
+**Causa da falha da 1ª tentativa (registrada para o ML-4A):** o escopo `@trackfw-bin` não existia no
+npmjs.org (`404 Scope not found`), nos 6 jobs de plataforma. O shim foi corretamente **pulado** pelo
+`needs:`, provando a ordem que o D4 estabeleceu. Classe de defeito que **nenhuma validação local
+podia pegar** — não é código, workflow nem ambiente de runner, é estado de conta em serviço externo.
+Custo total: um nome de prerelease no PyPI e ~20 min. Com a `8.0.0` final seria a versão definitiva
+saindo pela metade — é exatamente para isso que a Wave 2 publica um `rc`.
+
+**Pendência herdada pela Wave 3:** o bit de execução da wheel no `pip install` (o `external_attr` que
+o ML-1C tratou) não foi exercido em máquina limpa. Sem ele o `pip install` passa e o comando falha
+com permissão negada. Não se aplica a Windows; aplica-se a Linux e macOS.
 
 **Testes alterados e conclusão que cada um afirma (regra de reconciliação):**
 
