@@ -14,9 +14,10 @@ builds:
     goarch:
       - amd64
       - arm64
-    ignore:
-      - goos: windows
-        goarch: arm64
+    # D2 (ML-1A v8): win32/arm64 was previously ignored because gen-platform-manifests.sh
+    # already listed it. Go cross-compiles windows/arm64 cleanly with CGO_ENABLED=0.
+    # check-platform-matrix-parity.sh gates that .goreleaser.yaml and
+    # gen-platform-manifests.sh always agree — divergence is now caught at make quality time.
     ldflags:
       - -s -w -X 'github.com/kgsaran/trackfw/internal/version.Version={{.Version}}'
 

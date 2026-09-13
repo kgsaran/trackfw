@@ -297,7 +297,14 @@ graça, um detector de defeito. Isso é perda real e vai declarada.
 > Dependências: Wave 0. **Tudo reversível.** Os MLs 1A–1C são paralelos entre si; 1D e 1E dependem deles.
 
 ### ML-1A — **AC3 + AC4** — geração dos manifests e do release
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
+**Adendo — auditoria 2026-09-13 (D6-write):** `build_wheel.py` recebia a versão crua do goreleaser
+(`8.0.0-rc1`) e a usava em todos os campos internos da wheel (nome do arquivo, dist-info, .data,
+METADATA `Version:`). `packaging.utils.parse_wheel_filename` rejeita `8.0.0-rc1` com
+`InvalidWheelFilename: Invalid build number: rc1`. Corrigido: `normalize_version()` adicionada ao
+início de `build_wheel.py`; gate `scripts/check-wheel-filename.sh` adicionado ao `parity-rest`
+(usa versão de pré-lançamento — versão limpa `8.0.0` é idêntica nas duas grafias e passaria com
+o defeito intacto). Falsificação em duas direções em `check-gates-falsify.sh` (cenários 182+183).
 **Arquivos afetados:** `.github/workflows/release.yml`, novo script de geração, `Makefile`.
 **Contexto:** hoje há **5 sítios de versão** e o cruzamento com o `CHANGELOG` só roda no
 `release tag` — é o **issue #338**. Com N pacotes de plataforma seriam **5+N**.

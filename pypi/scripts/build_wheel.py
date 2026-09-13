@@ -40,6 +40,33 @@ import sys
 import zipfile
 from pathlib import Path
 
+try:
+    from packaging.version import Version as _PkgVersion
+
+    def normalize_version(raw: str) -> str:
+        """Converte semver (8.0.0-rc1) → PEP 440 (8.0.0rc1).
+
+        O sítio único de verdade da versão é semver (internal/version/version.go,
+        npm/package.json, tag git).  A grafia PEP 440 é DERIVADA aqui, no canal
+        PyPI — nunca escrita à mão.  Sem isso, o nome da wheel fica
+        '8.0.0-rc1', o parser oficial lê 'rc1' como build-tag (que tem de
+        começar com dígito) e rejeita com InvalidWheelFilename.
+        """
+        return str(_PkgVersion(raw))
+
+except ImportError:
+    def normalize_version(raw: str) -> str:  # type: ignore[misc]
+        """Hard fail: packaging é obrigatório para build de produção.
+
+        Não há fallback: emitir wheel com nome não-normalizado (8.0.0-rc1 em vez de
+        8.0.0rc1) faz o PyPI rejeitar o upload — e a publicação já teria acontecido
+        no npm, repetindo o acidente da v7.6.0.  Use um venv ou `pip install packaging`.
+        """
+        raise SystemExit(
+            "FAIL [build_wheel]: o módulo 'packaging' é obrigatório mas não está instalado.\n"
+            "Instale com: pip install packaging"
+        )
+
 
 def sha256_digest(data: bytes) -> str:
     """Retorna sha256=<base64url> como exigido pelo formato RECORD."""
@@ -53,6 +80,10 @@ def build_wheel(binary_path: Path, version: str, platform_tag: str, output_dir: 
     output_dir.mkdir(parents=True, exist_ok=True)
 
     name = "trackfw"
+    # Normaliza para PEP 440 antes de usar em nomes de arquivo e metadados.
+    # O input pode ser semver (8.0.0-rc1); a wheel precisa de 8.0.0rc1.
+    # D6-write — auditoria 2026-09-13 (trackfw-architect).
+    version = normalize_version(version)
     dist_name = f"{name}-{version}"
     # Wheel filename: {name}-{version}-{python_tag}-{abi_tag}-{platform_tag}.whl
     whl_name = f"{dist_name}-py3-none-{platform_tag}.whl"
