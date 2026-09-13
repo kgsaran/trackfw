@@ -37201,6 +37201,28 @@ pré-requisito hard de ML-3A.
 
 ---
 
+## Sessão 2026-09-13 — Hefesto (ML-3D: documentação v8 e declaração do break)
+
+**Início:** 2026-09-13 | Branch: `fix/binario-muitos-canais` (trackfw-triagem) | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` ML-3D
+**Tarefa:** AC8 + AC11 — doc-only: (1) README.md corrige as três linhas "pure Node.js / pure Python / no compiled binary"; (2) docs/cli-parity.md reescrito como documento de canais; (3) Regra Dura de Paridade no CLAUDE.md reescrita para v8; (4) CHANGELOG.md [8.0.0-rc1] completado com o break, limites medidos e mudanças de empacotamento.
+**Estado ao início:** gate check-parity-contract-coverage.sh verde (177/177 seções, OK). Branch HEAD=763277a7, diff vazio contra main.
+
+**Concluído:** (1) README.md: seção npm corrigida ("pure Node.js — no binary" → explicação honesta do shim + binário + quem é afetado pela mudança); seção pip corrigida ("pure Python 3.10+" → wheel binária, zero .py, falha limpa em plataforma não coberta); linha "three CLIs install" corrigida para "all three channels". (2) docs/cli-parity.md: preamble reescrito como documento de canais — nova seção "## Distribution channels" (annotation: none reason=...) com tabela de canais + limites medidos (arm64-only, exec bit não exercitado) + quem é afetado; nova seção "## Command contract" (annotation: none reason=...) com tabela de comandos simplificada (sem colunas Go/Node/Python). Intro reescrita: uma implementação, três canais. gate check-parity-contract-coverage.sh: verde, 255 seções (2 novas). (3) CLAUDE.md: Regra Dura de Paridade reescrita para v8 — uma implementação em Go, histórico preservado, princípio sobrevive por construção. (4) CHANGELOG.md [8.0.0-rc1]: seção "Mudanças de empacotamento" adicionada (npm sem src/, PyPI sem .py, pip em plataforma não coberta falha limpo); seção "Limites medidos" adicionada (arm64-only, exec bit não exercitado). check-manifest-version-gate.sh: 10/0. trackfw validate: 185 warnings pré-existentes, 0 violações novas. ML-3D marcado ✅.
+
+---
+
+## Sessão 2026-09-13 — Ártemis (QA) — ML-3C primeira metade: extração de pins de paridade
+
+**Início:** 2026-09-13 | Branch: `fix/v8-um-binario-muitos-canais` | Dir: `trackfw-nul`
+**Roadmap:** `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` ML-3C
+**Tarefa:** Enumerar todos os gates de `scripts/`, classificar por balde (DELETAR / PIN EXTRAÍDO / SOBREVIVE / REESCREVER), extrair pins de comportamento para gates próprios, falsificar em duas direções.
+
+**Concluído (primeira metade):** (1) Enumerei todos os 65 gates de `scripts/check-*.sh` com classificação por balde (29 DELETAR, 1 PIN EXTRAÍDO, 11 SOBREVIVE, 23 REESCREVER). (2) Extraí 25 pins comportamentais de `check-validate-parity.sh` para `scripts/check-validate-rule-pins.sh` (Block 1: rule-set {adr_accepted_when_req_done, blocked_by_draft_adr}; Block 2: bhr-messages nomatch/diff/byagent/match; Block 3: 15 pins credential_guard_hook_resolvable; Block 4: 5 pins git_branch_guard_hook_resolvable). (3) Falsificação em duas direções: PIN1 (rule rename), PIN5 (--agent→--scope), PIN13 (invalid JSON msg) — cada mutação reprova; restore passa. (4) Gate wired em Makefile (parity-rest) e release.yml. check-orphan-gates.sh verde; check-workflow-yaml.py 8/8; `go build ./...` verde; `go test ./...` verde; `trackfw validate` 0 violations. (5) Roadmap ML-3C atualizado com lista nomeada de todos os 65 gates e status 🔄. (6) Segunda metade (deleção) é PR separado — input: lista nomeada acima, balde DELETAR (29 gates).
+
+**Concluído (gate confirmado — 2026-09-13):** `make quality` (task bb95mrnuj, env -u FORCE_COLOR) em trackfw-nul exitou RC=0 com o suite completo. Linha final: "run-gates-falsify-parallel: suite completa -- 8 chunks, 418 OK, 0 FAIL, guarda de conjunto OK (nenhum rotulo esperado ausente)". `check-validate-rule-pins.sh` wired e verde. Microbatch devolvido ao trackfw-architect para auditoria e commit.
+
+---
+
 ## Sessão 2026-09-13 — Hefesto (ML-3D AC8+AC11 retomada: make quality + correção de anotação)
 
 **Início:** 2026-09-13 | Branch: `fix/binario-muitos-canais` (trackfw-triagem) | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` ML-3D

@@ -93,15 +93,23 @@ brew install kgsaran/tap/trackfw
 go install github.com/kgsaran/trackfw/cmd/trackfw@latest
 ```
 
-### npm (pure Node.js — no binary)
+### npm
 
 ```bash
 npm install -g trackfw
 ```
 
-The npm package is pure Node.js — no compiled binary or postinstall download.
-It installs wherever Node.js ≥ 18 is installed. Shared behavior, including the AI
-integration lifecycle, follows the [CLI parity contract](docs/cli-parity.md).
+From v8.0.0, the npm package is a ~80-line JavaScript shim that resolves
+`@trackfw-bin/<platform>` at install time and executes the Go binary. **It is no
+longer pure Node.js — it contains a compiled binary.** The binary arrives through
+the `npm` channel rather than as a separate download, so organisations whose policy
+allows `npm install` but blocks direct executable downloads remain served.
+
+If your policy forbids compiled binaries in any form regardless of channel, this
+version is a breaking change for you. See [Changelog](CHANGELOG.md) for the full
+declaration.
+
+Shared behavior follows the [command contract](docs/cli-parity.md).
 
 > **The CLI installs on Node ≥ 18 alone — the generated guard hooks do not run on
 > Node alone.** They are POSIX shell scripts and need a POSIX shell to execute. On
@@ -118,8 +126,9 @@ are than let you find them after adoption.
 
 **What we know works**
 
-- The three CLIs install (`npm install -g trackfw`, `pip install trackfw`, and the
-  published `trackfw_<version>_windows_amd64.tar.gz`).
+- All three channels install (`npm install -g trackfw`, `pip install trackfw`, and the
+  published `trackfw_<version>_windows_amd64.tar.gz` / `windows_arm64.tar.gz`). From v8.0.0 all
+  three deliver the same Go binary; no separate Node.js or Python implementation.
 - Core governance commands — `req new`, `roadmap new`, `roadmap move`, `status`,
   `validate` — run, and artifacts are written with LF endings.
 
@@ -129,8 +138,6 @@ are than let you find them after adoption.
   Install manually from the release archive for now.
 - Our Windows CI still reports **known test failures**. They are mapped by root cause,
   not unknown — but they are not zero.
-- **Windows ARM64 is not built.** Only `windows_amd64` is published.
-
 **Guard hooks on Windows — measured, per agent CLI**
 
 The guard hooks are `.sh` scripts, executed by *your* AI agent CLI. Which shell that CLI
@@ -168,9 +175,19 @@ an issue with what you measured.
 pip install trackfw
 ```
 
-The pip package is pure Python 3.10+ — no compiled binary or postinstall
-download. Shared commands, validation rules, and by_agent behavior follow the
-[CLI parity contract](docs/cli-parity.md).
+From v8.0.0, the pip package is a binary wheel in `gh-bin` format — **it contains
+no Python files and no source**. The Go binary is installed into the PATH by pip.
+`python -m trackfw` no longer works; use the `trackfw` executable directly.
+
+Platforms not covered by the published wheels now fail at resolution time with
+"no matching distribution found" — a clean failure instead of silently installing
+the wrong thing. Eight wheels are published: `manylinux_2_17_x86_64`, `musllinux_1_2_x86_64`,
+`manylinux_2_17_aarch64`, `musllinux_1_2_aarch64`, `macosx_10_9_x86_64`,
+`macosx_11_0_arm64`, `win_amd64`, `win_arm64`. Linux publishes two wheels per
+architecture (manylinux + musllinux), so Alpine and similar musl-based distributions
+are covered.
+
+Shared behavior follows the [command contract](docs/cli-parity.md).
 
 ---
 

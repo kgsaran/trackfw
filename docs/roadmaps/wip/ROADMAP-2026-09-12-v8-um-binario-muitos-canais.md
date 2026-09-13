@@ -484,7 +484,108 @@ binário, repassa argv, devolve exit code.
 **Mover, não apagar** (está escrito no topo do arquivo).
 
 ### ML-3C — **AC7** — gates que perdem objeto
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento (primeira metade: extração de pins — Ártemis, 2026-09-13)
+
+#### Primeira metade concluída — extração de pins (PR separado, sem deleções)
+
+**Gate novo extraído:** `scripts/check-validate-rule-pins.sh`
+— 25 pins comportamentais extraídos de `check-validate-parity.sh` antes da deleção.
+— Wired em `Makefile` (parity-rest) e `.github/workflows/release.yml`.
+— `check-orphan-gates.sh` verde; `check-workflow-yaml.py` 8/8; build e testes Go verdes.
+
+**Falsificação em duas direções (3 pins representativos):**
+- PIN1 (rule-set): renomear `adr_accepted_when_req_done` → `adr_accepted_when_req_MUTATED` em `validator.go` → gate reprova com "missing rule(s) ['adr_accepted_when_req_done']". Restore → verde.
+- PIN5 (--agent guidance): mudar `--agent <agent>` → `--scope <agent>` em `validator.go` → gate reprova com "orientation message must contain '--agent'". Restore → verde.
+- PIN13 (invalid JSON): mudar "is not valid JSON" → "has invalid JSON syntax" em `validator_credential_guard.go` → gate reprova com "message does not contain 'is not valid JSON'". Restore → verde.
+
+#### Lista nomeada — 67 gates (classificação por balde)
+
+**DELETAR** — só compara runtimes (comparação morre com Node/Python), sem pin próprio:
+
+| Gate | O que media |
+|---|---|
+| check-agent-hooks-parity.sh | Byte-identidade de hooks gerados (Go/Node/Py) |
+| check-agents-install-yaml-parity.sh | trackfw.yaml pós `agents install` nos 3 runtimes |
+| check-artifact-closed-cycle.sh | Ciclo fechado de artefatos nos 3 runtimes |
+| check-artifact-parity.sh | Byte-identidade de artefatos gerados |
+| check-attention-scripts-parity.sh | Scripts de atenção byte-idênticos nos 3 runtimes |
+| check-audit-surface.sh | Surface de auditoria nos 3 runtimes |
+| check-branch-new-parity.sh | `trackfw branch new` nos 3 runtimes |
+| check-branch-prune-parity.sh | `trackfw branch prune` nos 3 runtimes |
+| check-cli-parity.sh | `--help`, `version`, `-v` nos 3 runtimes |
+| check-commit-parity.sh | `trackfw commit` nos 3 runtimes |
+| check-consumer-smoke-by-agent.sh | Smoke test by-agent nos 3 runtimes |
+| check-doctor-parity.sh | `trackfw doctor` nos 3 runtimes |
+| check-doctor-remote-parity.sh | `trackfw doctor --remote` nos 3 runtimes |
+| check-harness-hooks-parity.sh | Hooks do harness nos 3 runtimes |
+| check-homedir-parity.sh | Comportamento de $HOME nos 3 runtimes |
+| check-identity-parity.sh | Identidade de arquivos gerados nos 3 runtimes |
+| check-integration-cli-parity.sh | CLI de integração nos 3 runtimes |
+| check-push-force-parity.sh | `trackfw push --force` nos 3 runtimes |
+| check-push-parity.sh | `trackfw push` nos 3 runtimes |
+| check-roadmap-barrier-contract.sh | Contrato de barreira de roadmap nos 3 runtimes |
+| check-roadmap-move-parity.sh | `trackfw roadmap move` nos 3 runtimes |
+| check-rules-parity.sh | Bloco de regras gerado nos 3 runtimes |
+| check-ship-force-parity.sh | `trackfw ship --force` nos 3 runtimes |
+| check-ship-parity.sh | `trackfw ship` nos 3 runtimes |
+| check-unknown-command-parity.sh | Comando desconhecido nos 3 runtimes |
+| check-update-parity.sh | `trackfw update` nos 3 runtimes |
+| check-atomic-write-anti-divergence.sh | Anti-divergência entre 3 cópias Python do _atomic_write — objeto desaparece (sem Python) |
+| check-python-writes-lf.sh | Saída Python em LF — objeto desaparece (sem Python) |
+| check-shell-posix-portability.sh | barrier.js/barrier.py usam `sh -c` — objeto desaparece (sem npm/pypi fontes) |
+
+**PIN EXTRAÍDO** — tinha pin próprio embutido, extraído para gate novo:
+
+| Gate original | Gate extraído | Pins |
+|---|---|---|
+| check-validate-parity.sh | check-validate-rule-pins.sh | 25 pins (rule-set, bhr-messages, credential-guard, git-branch-guard) |
+
+**SOBREVIVE** — sem dependência de runtime Node/Python, continua como está:
+
+| Gate | Por que sobrevive |
+|---|---|
+| check-ci-workflow-job-id-collision.sh | Lê workflow YAML, não invoca CLI |
+| check-falsify-shard-coverage.sh | Analisa scripts/check-*.sh, sem runtime |
+| check-install-checksum.sh | Verifica checksum de artefato Go |
+| check-install-version-pin.sh | Verifica pin de versão de instalação |
+| check-no-literal-nul-in-source.sh | Scan de NUL em código-fonte, sem runtime |
+| check-orphan-gates.sh | Meta-gate: referência de gates no Makefile/workflow |
+| check-parity-call-site-pins.sh | Só Go, pins de call-site |
+| check-parity-contract-coverage.sh | Meta-checker docs/cli-parity.md |
+| check-platform-matrix-parity.sh | Verifica matrix de plataformas no CI |
+| check-pr-closing-keyword.sh | Verifica keyword de fechamento de PR |
+| check-referential-integrity.sh | Integridade referencial de artefatos |
+| check-job-annotations.py | Verifica annotations nível failure em jobs success via GitHub API (workflow_run); sem dependência de CLI; sobrevive sem mudança |
+
+**REESCREVER** — mede algo real mas invoca Node/Python CLI ou lê fontes npm/pypi:
+
+| Gate | O que sobrevive (Go/shell) | O que morre (npm/pypi) |
+|---|---|---|
+| check-agent-models-parity.sh | Composição de model IDs por tier (Go) | Comparação Node/Py |
+| check-agent-namespace-union.sh | União namespace disk+declarado (Go) | Comparação Node/Py |
+| check-barrier.sh | Exit code e msg de barrier (Go) | Comparação Node/Py |
+| check-channels-content.sh | Conteúdo de canais Go (bin/) | npm/pypi channels |
+| check-ci-workflow-pin-parity.sh | Pins de workflow CI (sem runtime) | Invocação Python CLI |
+| check-git-branch-guard-hook-schema.sh | Schema hookSpecificOutput (Go + shell) | Geradores Node/Py |
+| check-integration-assets.sh | Assets Go binário | Assets npm/pypi |
+| check-install-restriction.sh | Restrição de instalação Go | npm/pypi restriction |
+| check-manifest-version-gate.sh | Versão em version.go e go.mod | npm/package.json, pypi |
+| check-output-encoding-declared.sh | PYTHONIOENCODING em gates (tool) | attentionSignalScript em npm/pypi |
+| check-raw-read-ban.sh | Ban de raw read em internal/*.go | Ban em npm/src, pypi |
+| check-ref-separator-portability.sh | normalizeRefSeparator em internal/ | npm/src, pypi |
+| check-release-tag-parity.sh | 9 refusal literals + SHA linkage (Go) | Comparação Node/Py |
+| check-serve-address-parity.sh | Bind address 0.0.0.0 (Go) | Comparação Node/Py |
+| check-serve-api-file-security.sh | Segurança de API serve (Go) | pypi/trackfw/commands/serve.py |
+| check-serve-browser-security.sh | Segurança browser (Go) | Node/Py |
+| check-shim-byte-identity.sh | Shim Go binary identity | Node shim identity |
+| check-slash-parity.sh | EXPECTED_COMMANDS (Go) | Comparação Node/Py |
+| check-static-assets.sh | Assets estáticos Go | Assets npm/pypi |
+| check-symlink-privilege-guard.sh | Guarda symlink em sources Go | npm/src, pypi |
+| check-thirdparty-parity.sh | Test coverage Go thirdparty_test.go | Node/Py tests |
+| check-tty-detection.sh | TTY detection Go | Python tty |
+| check-wheel-filename.sh | Nome do wheel PyPI (CI-only) | pypi wheel |
+| check-windows-known-failures.py | Ratchet de falhas Windows conhecidas (D1/D2 core sobrevive) | D4 `removal_note='corrected'` lê output Go/Node/Py — Node/Py arms morrem |
+
 **31 dos 61** são de paridade. 🔴 **Nomear um a um**, dizendo o que cada um media e por que não mede
 mais nada. Remover em bloco é como se perde cobertura sem perceber.
 🔴 **`.github/required-status-checks.txt` declara `node`, `python (3.10)` e `python (3.12)`** — jobs
@@ -551,7 +652,7 @@ shim↔nativo, mais os pins extraídos antes*.
       Falsificação: mutar o comportamento que o pin protegia ⇒ algum gate ainda reprova.
 
 ### ML-3D — **AC8 + AC11** — documentação e o break
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 `docs/cli-parity.md` vira documento de **canais**. O `CLAUDE.md` tem a regra dura de paridade
 **reescrita, não apagada** — o Go continua sendo a expressão da verdade, agora por construção.
 🔴 CHANGELOG declara o break: `require('trackfw')` deixa de resolver.
