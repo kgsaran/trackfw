@@ -52,6 +52,7 @@ jobs:
       # scripts já rodaram verdes nesse exato commit.
       - run: scripts/check-cli-parity.sh
       - run: scripts/check-validate-parity.sh
+      - run: GO_BIN=bin/trackfw scripts/check-validate-rule-pins.sh
       - run: scripts/check-static-assets.sh
 
   release:
