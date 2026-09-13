@@ -38,46 +38,39 @@ make quality        # Go + Node.js + Python + contratos de paridade
 make install        # instala em /usr/local/bin
 ```
 
-## Regra Dura de Paridade — 3 CLIs (INVIOLÁVEL)
+## Regra Dura — o Go é a implementação única (INVIOLÁVEL)
 
-Toda feature nova, correção de comportamento ou ajuste de lógica **DEVE ser implementada nos três CLIs**:
+A partir da v8.0.0, o trackfw tem **uma implementação em Go** entregue por três canais
+(`npm`, `PyPI`, `GitHub/Homebrew`). Não existem mais implementações separadas em Node.js e Python.
 
-| CLI | Localização | Stack |
-|-----|------------|-------|
-| Go | `internal/` | Go + cobra |
-| Node.js | `npm/src/` | Node.js puro (commander) |
-| Python | `pypi/trackfw/` | Python puro (argparse/click) |
+**Histórico e por quê isso importa:** o trackfw **nasceu em Go**. Os CLIs de Node.js e Python foram
+criados **depois, por convenção**, para atender empresas com **restrição de segurança para baixar
+executáveis** — elas já têm `npm` e `pip` liberados e um binário solto, não. Os dois existiam para
+**entregar o mesmo produto por outro canal**, não para propor comportamento próprio. A v8 faz isso de
+forma direta: o binário Go chega pelo canal que a política da empresa já autoriza. Não existem mais
+dois artefatos adicionais para manter em paridade.
 
-**Nenhum PR é aceito sem paridade nos 3 CLIs.** O contrato e as exceções
-intencionais estão documentados em `docs/cli-parity.md`. Mudanças doc-only,
-infra e templates de artefato são exceções explícitas.
+### 🔴 O Go é a expressão da verdade — por construção
 
-### 🔴 O Go é a expressão da verdade — sempre
-
-**Quando os três divergirem, o Go está certo e os outros dois convergem para ele.** Não é
-preferência de estilo nem "2 contra 1": é a ordem de nascimento e o papel de cada um.
-
-**Por quê:** o trackfw **nasceu em Go**. Os CLIs de Node.js e Python foram criados **depois, por
-convenção**, para atender empresas com **restrição de segurança para baixar executáveis** — elas já
-têm `npm` e `pip` liberados e um binário solto, não. Os dois existem para **entregar o mesmo produto
-por outro canal**, não para propor comportamento próprio.
+**Na v8, divergência entre runtimes é impossível por construção** — existe uma única implementação.
+Mas a regra continua vigente na sua forma original para qualquer código fora de `internal/`:
+scripts, templates, documentação de contrato.
 
 **Consequências práticas:**
 
-- Divergência medida ⇒ a pergunta **não** é "qual está melhor", é "o que falta em Node/Python para
-  igualar o Go". Mesmo quando o outro runtime parece mais correto.
-- Se o comportamento do Go for genuinamente o defeituoso, **corrija o Go primeiro** e só então
-  propague. Nunca alinhe pelo Node ou pelo Python "porque já está assim lá".
-- Uma melhoria que só faça sentido nos três é mudança de contrato: muda o Go, muda o
-  `docs/cli-parity.md`, e depois os outros dois.
-- 🔴 **Nunca remova capacidade do Go para "fechar paridade".** Fechar paridade é sempre por adição
-  nos outros dois.
+- Toda mudança de comportamento do CLI vai em `internal/` (Go). Não há outro lugar.
+- Scripts e templates em `scripts/` continuam sendo o segundo sítio de acerto — se o script diverge
+  do que o binário faz, o binário é a referência.
+- O contrato de comportamento continua documentado em `docs/cli-parity.md` — agora como contrato de
+  canal (o que cada canal entrega) e contrato de comportamento (o que o binário faz).
+- 🔴 **Nunca remova capacidade do Go para simplificar um canal.** O canal existe para entregar o
+  produto; não é o produto que se adapta ao canal.
 
-**Exemplo medido (2026-09-12, issue #310):** os três `trackfw init` geravam
+**Exemplo medido que levou à v8 (2026-09-12, issue #310):** os três `trackfw init` geravam
 `scripts/trackfw-validate.sh` diferentes — Go/Node com mensagens ao usuário, Python silencioso e com
-`set -euo pipefail`. O `set` do Python era objetivamente mais estrito. **Convergiu para o Go mesmo
-assim**, e o Python ganhou as mensagens. A variante estrita, se for desejada, é mudança nos três,
-começando pelo Go.
+`set -euo pipefail`. O `set` do Python era objetivamente mais estrito. Convergiu para o Go mesmo
+assim. A variante estrita, se for desejada, é mudança no Go primeiro. **Este é o último exemplo de
+"divergência entre runtimes" — na v8 não há mais o que divergir.**
 
 ## Regra Dura de Reconciliação — todo teste novo declara o que afirma (INVIOLÁVEL)
 
