@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-13
 req: "docs/requisições/claude/REQ-2026-09-13-upstream-sync-recompila-tambem-o-bin-trackfw-exe-no-windows.md"
 squad: "claude"
@@ -7,7 +7,7 @@ squad: "claude"
 
 # Roadmap: upstream-sync recompila também o bin/trackfw.exe no Windows
 
-> Created: 2026-09-13 | Status: wip
+> Created: 2026-09-13 | Status: done
 
 ## Context
 
@@ -19,11 +19,11 @@ executa — fica uma versão atrás a cada sync. Decisão do usuário em 2026-09
 
 ## Acceptance Criteria
 
-- [ ] AC1 — `.exe` e binário sem extensão com a mesma versão depois do sync, medido com controle
-- [ ] AC2 — extensão vinda de `go env GOEXE`, sem predicado de SO; nada muda onde `GOEXE` é vazio
-- [ ] AC3 — baseline e pós-merge cobertos
-- [ ] AC4 — `check-upstream-sync-falsify.sh` OK, com o limite do `--skip-verify` declarado
-- [ ] AC5 — `validate` 0 e `run-local-gates.sh` 0 falhas
+- [x] AC1 — `.exe` e binário sem extensão com a mesma versão depois do sync, medido com controle
+- [x] AC2 — extensão vinda de `go env GOEXE`, sem predicado de SO; nada muda onde `GOEXE` é vazio
+- [x] AC3 — baseline e pós-merge cobertos
+- [x] AC4 — `check-upstream-sync-falsify.sh` OK, com o limite do `--skip-verify` declarado
+- [x] AC5 — `validate` 0 e `run-local-gates.sh` 0 falhas
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
@@ -82,7 +82,7 @@ bash scripts/check-upstream-sync-falsify.sh
 > Dependencies: ML-0A
 
 ### ML-1A — upstream-sync recompila também o bin/trackfw.exe no Windows
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Files affected:** `scripts/upstream-sync.sh`
 **Actions:**
 1. Nos dois sítios (80 e 151), depois do `go build -o bin/trackfw`, se `$(go env GOEXE)` não for vazio,
@@ -90,6 +90,32 @@ bash scripts/check-upstream-sync-falsify.sh
 2. Medir por efeito num worktree atrás do upstream, com controle sem a mudança.
 3. Rodar `check-upstream-sync-falsify.sh`, `run-local-gates.sh` e `validate`.
 **Acceptance criteria:**
-- [ ] AC1 medido com controle
-- [ ] AC2 e AC3 conferidos no diff
-- [ ] AC4 e AC5 verdes
+- [x] AC1 medido com controle
+- [x] AC2 e AC3 conferidos no diff
+- [x] AC4 e AC5 verdes
+
+## Evidência — 2026-09-13
+
+**AC1 — medido por efeito, com controle.** Dois worktrees em `9f4c0f1` (2 commits atrás de
+`upstream/main`), `bin/` vazio, o mesmo sync nos dois:
+
+| worktree | script | `bin/trackfw` | `bin/trackfw.exe` | `./bin/trackfw` no PowerShell |
+|---|---|---|---|---|
+| controle | `upstream-sync.sh` antigo | `8.0.0-rc1` | **AUSENTE** | não resolve |
+| mudança | `upstream-sync.sh` desta branch | `8.0.0-rc1` | **`8.0.0-rc1`** | **`8.0.0-rc1`** |
+
+Os dois syncs trouxeram o mesmo conteúdo (`go build` exit 0, `validate` 0 antes · 0 depois); a única
+diferença é o `.exe`. Confirmado antes de rodar que o sync opera no cwd, não no caminho do próprio
+script — é o que permite rodar o script da branch dentro do worktree.
+
+**AC2 e AC3 — no diff.** A extensão vem de `GOEXE_EXT="$(go env GOEXE)"`; o build extra é
+`[ -z "$GOEXE_EXT" ] || go build -o "bin/trackfw$GOEXE_EXT" ... || die`, nos dois sítios — baseline
+(linhas 84–85) e pós-merge (157, com `${GOEXE_EXT:-}`). Os dois ficam dentro de
+`if [ "$SKIP_VERIFY" = "0" ]`, então a variável sempre existe quando o pós-merge roda. `GOEXE` medido:
+`.exe` aqui, vazio em `GOOS=linux` e `GOOS=darwin` — onde nada muda.
+
+**AC4.** `check-upstream-sync-falsify.sh`: `OK`. Limite mantido e declarado: ele usa `--skip-verify`
+e não exercita os builds; a prova do AC1 é a tabela acima, não este gate.
+
+**AC5.** `trackfw validate`: 0 violações (5 warnings pré-existentes, em REQs de 2026-08-29 que esta
+branch não toca). `scripts/run-local-gates.sh`: 10 executados · 0 falhas.

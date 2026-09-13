@@ -78,6 +78,11 @@ BIN="./bin/trackfw"
 VAL_BEFORE="n/a"
 if [ "$SKIP_VERIFY" = "0" ]; then
 	go build -o bin/trackfw ./cmd/trackfw 2>/dev/null || die "não consegui construir o binário da árvore para medir o baseline"
+	# No Windows o `-o bin/trackfw` grava exatamente esse nome, e o bin/trackfw.exe -- o que o
+	# PowerShell executa -- ficava uma versão atrás a cada sync. A extensão vem do toolchain, não de
+	# predicado de SO: GOEXE é ".exe" no Windows e vazio no resto, onde nada muda.
+	GOEXE_EXT="$(go env GOEXE 2>/dev/null)"
+	[ -z "$GOEXE_EXT" ] || go build -o "bin/trackfw$GOEXE_EXT" ./cmd/trackfw 2>/dev/null || die "não consegui construir bin/trackfw$GOEXE_EXT para medir o baseline"
 	VAL_BEFORE="$("$BIN" validate 2>&1 | grep -c '^✗' || true)"
 fi
 
@@ -149,6 +154,7 @@ if [ "$SKIP_VERIFY" = "0" ]; then
 	say "upstream-sync: verificando…"
 	go build ./... >/dev/null 2>&1 || die "go build ./... reprovou depois do merge."
 	go build -o bin/trackfw ./cmd/trackfw >/dev/null 2>&1 || die "não consegui reconstruir o binário da árvore."
+	[ -z "${GOEXE_EXT:-}" ] || go build -o "bin/trackfw$GOEXE_EXT" ./cmd/trackfw >/dev/null 2>&1 || die "não consegui reconstruir bin/trackfw$GOEXE_EXT."
 	VAL_AFTER="$("$BIN" validate 2>&1 | grep -c '^✗' || true)"
 	say "  go build ./...   exit 0"
 	say "  validate         $VAL_BEFORE antes · $VAL_AFTER depois"
