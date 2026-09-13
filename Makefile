@@ -128,6 +128,15 @@ parity-rest: build
 	# Generates platform manifests from internal/version/version.go (single source of truth)
 	# and verifies each manifest version matches the Go source AND the CHANGELOG top section.
 	scripts/check-manifest-version-gate.sh
+	# ML-1D (v8 ROADMAP-2026-09-12-v8-um-binario-muitos-canais): AC9 — byte-identidade
+	# do shim npm/bin/trackfw.js vira gate permanente. Prova que o shim não modifica
+	# bytes nem exit codes ao delegar para o binário Go nativo (5 comandos, ≥4 SUBSTANTIVE).
+	# Requer go e node no PATH; faz skip nomeado se ausentes (ambiente, não defeito).
+	scripts/check-shim-byte-identity.sh
+	# ML-1E (v8 ROADMAP-2026-09-12-v8-um-binario-muitos-canais): AC10 — instalação
+	# sob restrição vira gate permanente. 4 cenários: C1=--offline/ENOTCACHED,
+	# C2=--ignore-scripts, C3=sem-rota-GitHub, C4=lockfile-cruzado/filtragem de plataforma.
+	scripts/check-install-restriction.sh
 
 parity-falsify: build
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/run-gates-falsify-parallel.sh

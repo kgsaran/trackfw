@@ -341,7 +341,7 @@ rejeitado pelo PyPI.**
 - [ ] Avaliar `go-to-wheel` antes de escrever do zero — 🔴 ele **não** suporta layout `cmd/<nome>/`, medido no protótipo
 
 ### ML-1D — **AC9** — byte-identidade vira gate permanente
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:** novo `scripts/check-shim-byte-identity.sh`, `.github/workflows/quality.yml`.
 **Contexto:** hoje isso é a **Pergunta 15 de uma sonda sob demanda**. Vira **gate**, nos 3 SOs.
 **Critérios de aceite:**
@@ -352,7 +352,7 @@ rejeitado pelo PyPI.**
       obrigatórios por não fazer isso
 
 ### ML-1E — **AC10** — instalação sob restrição vira gate
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:** novo gate, `Makefile`.
 **Cenários, todos já provados no protótipo:** registry alternativo · `--ignore-scripts` · **sem rota
 para github** · lockfile de um SO instalando em outro.

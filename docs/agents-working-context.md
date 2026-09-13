@@ -37121,3 +37121,13 @@ detector de defeito independente (novo, não na ADR) + três gaps de gate sem al
 
 Próximo: handoff para o arquiteto — Wave 1 pode iniciar com ML-1A (atualizar release.go) como
 pré-requisito hard de ML-3A.
+
+---
+
+## Sessão 2026-09-13 — Ares (ML-1D + ML-1E — gates de byte-identidade e instalação sob restrição)
+
+**Início:** 2026-09-13 | Branch: `fix/v8-um-binario-muitos-canais` | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md`
+**Tarefa:** Promover Pergunta 15 do windows-probe.yml a gate permanente (ML-1D, AC9) e portar 4 cenários de instalação sob restrição (ML-1E, AC10). Novos arquivos: `scripts/check-shim-byte-identity.sh`, `scripts/check-install-restriction.sh`, wiring em Makefile e quality.yml.
+**Concluído:** ML-1D: `scripts/check-shim-byte-identity.sh` criado — 5 comandos comparados (C1 stdout version, C2 stdout validate --json ~30kB, C3 stdout status, C4 stderr context --json, C5 exit code version --nonexistent); staging direto sem npm install; 5/5 SUBSTANTIVE, 10 pass, 0 fail, ~2s. ML-1E: `scripts/check-install-restriction.sh` criado — 4 cenários (C1 --offline+cache vazio→ENOTCACHED; C2 --ignore-scripts previne postinstall; C3 inspeção estática sem URLs github; C4 file: protocol filtra por plataforma); 7 pass, 0 fail, ~1s. Makefile: dois alvos acrescentados no fim da lista parity-rest. quality.yml: job `shim-byte-identity` adicionado (ubuntu+macos; ML-1E fica no parity-rest, <2s). `make quality` verde (segundo run, após limpeza de artefatos npm espúrios na raiz). Roadmap: ML-1D e ML-1E marcados ✅. `trackfw commit` + `trackfw push` executados.
+
+---
