@@ -1620,3 +1620,30 @@ jobs:
 
       - name: "consumer smoke by_agent (2 agentes, 3 CLIs — AC4, AC5, AC11)"
         run: scripts/check-consumer-smoke-by-agent.sh
+
+  # ---------------------------------------------------------------------------
+  # ML-1D (v8 ROADMAP-2026-09-12-v8-um-binario-muitos-canais): AC9 — byte-identidade
+  # do shim npm/bin/trackfw.js. Prova que 5 comandos produzem saída e exit code
+  # byte-idênticos entre o binário nativo Go e o shim Node.js (≥4 SUBSTANTIVE).
+  # Roda em ubuntu-latest (Linux/x64) e macos-latest (macOS/arm64).
+  # Windows: Pergunta 15 do windows-probe.yml (PowerShell, mantido separado).
+  # ---------------------------------------------------------------------------
+  shim-byte-identity:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+
+      - name: "byte-identity gate (AC9 — ML-1D)"
+        run: scripts/check-shim-byte-identity.sh

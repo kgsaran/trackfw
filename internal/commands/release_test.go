@@ -24,11 +24,7 @@ func validReleaseVersionFiles(version string) map[string]string {
 		"internal/version/version.go": fmt.Sprintf("package version\n\nvar Version = %q\n", version),
 		"npm/package.json":            fmt.Sprintf(`{"name":"trackfw","version":%q}`, version),
 		"pypi/pyproject.toml":         fmt.Sprintf("[project]\nname = \"trackfw\"\nversion = %q\n", version),
-		"pypi/trackfw/__init__.py": fmt.Sprintf(
-			"try:\n    from importlib.metadata import version\n    __version__ = version(\"trackfw\") or %q\nexcept Exception:\n    __version__ = %q\n",
-			version, version,
-		),
-		"CHANGELOG.md": fmt.Sprintf("# Changelog\n\n## [%s] - 2026-08-19\n\n### Added\n- x\n", version),
+		"CHANGELOG.md":                fmt.Sprintf("# Changelog\n\n## [%s] - 2026-08-19\n\n### Added\n- x\n", version),
 	}
 }
 
@@ -231,29 +227,42 @@ var Version = "0.0.1"
 	}
 }
 
-func TestReleaseTag_InitPyTryFallbackMismatch_Aborts(t *testing.T) {
-	files := validReleaseVersionFiles(releaseTestVersion)
-	files["pypi/trackfw/__init__.py"] = fmt.Sprintf(
-		"try:\n    from importlib.metadata import version\n    __version__ = version(\"trackfw\") or \"0.0.1\"\nexcept Exception:\n    __version__ = %q\n",
-		releaseTestVersion,
-	)
-	d, _ := makeReleaseDeps(t, files)
-	err := runReleaseTag(releaseTestVersion, d)
-	if err == nil || !strings.Contains(err.Error(), "importlib.metadata fallback") {
-		t.Fatalf("expected error naming the try-block fallback, got: %v", err)
+// TestReleaseVersionFiles_NoWave3DeletedPaths is a static assertion: no entry in
+// releaseVersionFiles may reference a path under pypi/trackfw/ or npm/src/ — both deleted
+// by Wave 3 (ML-3A). A violation means 'trackfw release tag' breaks the moment Wave 3 runs,
+// with no CI gate between the deletion and the runtime failure (Threat Model, Vetor 1).
+// Affirmation: this test asserts that every path in releaseVersionFiles survives Wave 3.
+func TestReleaseVersionFiles_NoWave3DeletedPaths(t *testing.T) {
+	for _, vf := range releaseVersionFiles {
+		if strings.HasPrefix(vf.path, "pypi/trackfw/") || strings.HasPrefix(vf.path, "npm/src/") {
+			t.Errorf("releaseVersionFiles entry %q references path %q which Wave 3 deletes — re-adding such an entry breaks 'trackfw release tag' after ML-3A", vf.label, vf.path)
+		}
 	}
 }
 
-func TestReleaseTag_InitPyExceptFallbackMismatch_Aborts(t *testing.T) {
-	files := validReleaseVersionFiles(releaseTestVersion)
-	files["pypi/trackfw/__init__.py"] = fmt.Sprintf(
-		"try:\n    from importlib.metadata import version\n    __version__ = version(\"trackfw\") or %q\nexcept Exception:\n    __version__ = \"0.0.1\"\n",
-		releaseTestVersion,
-	)
-	d, _ := makeReleaseDeps(t, files)
-	err := runReleaseTag(releaseTestVersion, d)
-	if err == nil || !strings.Contains(err.Error(), "except fallback") {
-		t.Fatalf("expected error naming the except-block fallback, got: %v", err)
+// TestReleaseTag_PostWave3Tree_Succeeds proves the critical ML-1A fix: with pypi/trackfw/
+// absent (as it will be after Wave 3, ML-3A), 'trackfw release tag' must still succeed.
+// Before the fix the 5-entry releaseVersionFiles requested pypi/trackfw/__init__.py, which
+// produced releaseTagObjectAbsentFmt and rendered the project unable to publish releases
+// after Wave 3. This test would have been red against the old array.
+// Affirmation: this test asserts that releaseVersionFiles does not request any file under
+// pypi/trackfw/ — confirming the critical dependency ML-1A → ML-3A is satisfied.
+func TestReleaseTag_PostWave3Tree_Succeeds(t *testing.T) {
+	pypiTrackfwCalled := false
+	d, _ := makeReleaseDeps(t, nil)
+	orig := d.readCommittedFile
+	d.readCommittedFile = func(sha, path string) (string, error) {
+		if strings.HasPrefix(path, "pypi/trackfw/") {
+			pypiTrackfwCalled = true
+			return "", fmt.Errorf("object absent — post-Wave-3 tree has no pypi/trackfw/")
+		}
+		return orig(sha, path)
+	}
+	if err := runReleaseTag(releaseTestVersion, d); err != nil {
+		t.Fatalf("expected success with post-Wave-3 tree (pypi/trackfw/ absent), got: %v", err)
+	}
+	if pypiTrackfwCalled {
+		t.Error("releaseVersionFiles still requests a file under pypi/trackfw/ — 'trackfw release tag' would break after Wave 3 (ML-3A)")
 	}
 }
 

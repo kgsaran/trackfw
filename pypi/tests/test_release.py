@@ -22,15 +22,11 @@ SHA = "abc123def456"
 
 
 def valid_files(version):
+    # ML-1A (v8): pypi/trackfw/__init__.py removed — RELEASE_VERSION_FILES no longer checks it.
     return {
         "internal/version/version.go": f'package version\n\nvar Version = "{version}"\n',
         "npm/package.json": json.dumps({"name": "trackfw", "version": version}),
         "pypi/pyproject.toml": f'[project]\nname = "trackfw"\nversion = "{version}"\n',
-        "pypi/trackfw/__init__.py": (
-            "try:\n    from importlib.metadata import version\n"
-            f'    __version__ = version("trackfw") or "{version}"\n'
-            f'except Exception:\n    __version__ = "{version}"\n'
-        ),
         "CHANGELOG.md": f"# Changelog\n\n## [{version}] - 2026-08-19\n\n### Added\n- x\n",
     }
 
@@ -202,34 +198,40 @@ def test_mismatched_pyproject_version_names_the_file():
     assert "pypi/pyproject.toml" in err[0]
 
 
-def test_mismatched_init_py_try_fallback_names_it():
-    deps, _, _, err = make_deps(
-        file_overrides={
-            "pypi/trackfw/__init__.py": (
-                "try:\n    from importlib.metadata import version\n"
-                '    __version__ = version("trackfw") or "0.0.1"\n'
-                f'except Exception:\n    __version__ = "{VERSION}"\n'
-            )
-        }
-    )
-    code = run_release_tag(VERSION, **deps)
-    assert code == 1
-    assert "importlib.metadata fallback" in err[0]
+def test_release_version_files_no_wave3_deleted_paths():
+    """ML-1A static assertion: RELEASE_VERSION_FILES must not reference any path under
+    pypi/trackfw/ or npm/src/ — both deleted by Wave 3 (ML-3A). A violation means
+    'trackfw release tag' breaks after Wave 3 with no CI gate to catch it first.
+    Affirmation: every path in RELEASE_VERSION_FILES survives Wave 3."""
+    from trackfw.release.runner import RELEASE_VERSION_FILES
+    for label, path, _ in RELEASE_VERSION_FILES:
+        assert not path.startswith("pypi/trackfw/") and not path.startswith("npm/src/"), (
+            f'RELEASE_VERSION_FILES entry "{label}" references "{path}" which Wave 3 deletes'
+        )
 
 
-def test_mismatched_init_py_except_fallback_names_it():
-    deps, _, _, err = make_deps(
-        file_overrides={
-            "pypi/trackfw/__init__.py": (
-                "try:\n    from importlib.metadata import version\n"
-                f'    __version__ = version("trackfw") or "{VERSION}"\n'
-                'except Exception:\n    __version__ = "0.0.1"\n'
-            )
-        }
-    )
+def test_release_tag_post_wave3_tree_succeeds():
+    """ML-1A falsification: with pypi/trackfw/ absent (post-Wave-3 tree), release tag must
+    still succeed. Before the fix the 5-entry array caused a refusal when readAtCommit for
+    pypi/trackfw/__init__.py returned an error. This test would have been red vs. the old array.
+    Affirmation: RELEASE_VERSION_FILES does not request any file under pypi/trackfw/."""
+    pypi_trackfw_called = []
+
+    deps, _, _, err = make_deps()
+    orig_read = deps["read_at_commit"]
+
+    def guarded_read(sha, path):
+        if path.startswith("pypi/trackfw/"):
+            pypi_trackfw_called.append(path)
+            return ("", f"object absent — post-Wave-3 tree has no pypi/trackfw/")
+        return orig_read(sha, path)
+
+    deps["read_at_commit"] = guarded_read
     code = run_release_tag(VERSION, **deps)
-    assert code == 1
-    assert "except fallback" in err[0]
+    assert code == 0, f"expected success with post-Wave-3 tree; errors: {err}"
+    assert not pypi_trackfw_called, (
+        f"RELEASE_VERSION_FILES still requests pypi/trackfw/ — breaks after Wave 3: {pypi_trackfw_called}"
+    )
 
 
 def test_v_prefix_arg_normalized_against_bare_file_versions():
