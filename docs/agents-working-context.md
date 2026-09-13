@@ -6,6 +6,7 @@
 
 **Início:** 2026-09-13 | Branch: `fix/v8-um-binario-muitos-canais` (trackfw-nul) | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md`
 **Tarefa:** Dois defeitos que bloqueiam PR #354: (1) `packaging` ausente nos jobs `parity-falsify-shard` e `parity-other-gates`; (2) gates com SKIP silencioso que ficaria verde em CI sem cobertura. Varredura de outros sítios com mesma causa.
+**Concluído:** (1) `packaging` declarado explicitamente em `parity-falsify-shard` e `parity-other-gates`. (2) Três scripts corrigidos com CI-strict: check-wheel-filename.sh (falsify arms + normal mode dead-code branch), check-shim-byte-identity.sh (go/node ausente), check-install-restriction.sh (node/npm ausente). Platform SKIP preservado (runners Windows são condição genuína). Prova das duas direções com shadow module PYTHONPATH. Go tests verdes. check-workflow-yaml.py 8/8. trackfw ship executado → PR #354 atualizado.
 
 ---
 
