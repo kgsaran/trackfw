@@ -10,6 +10,81 @@
 
 ---
 
+## Sessão 2026-09-12 — Hefesto (REQ: suítes não distinguem ambiente incompleto de código quebrado)
+
+**Início:** 2026-09-12 | Branch: `chore/suite-guard-prereq`.
+**Tarefa:** medir as 4 perguntas do KG e registrar REQ + roadmap em backlog. Nenhuma implementação.
+**Escopo:** `docs/req/` e `docs/roadmaps/backlog/`.
+**Concluído:** REQ e roadmap criados, 4 perguntas medidas com evidência. Achado principal: suíte Go já é inconsistente (3 funções em `validator_git_exec_test.go` usam `t.Fatalf` sem `exec.LookPath` guard; branch_prune e ship já têm o padrão correto). AC3 (Go) sobrevive à v8 inteira. Branch `chore/suite-guard-prereq` criada, commit e push via `trackfw`. Roadmap em `backlog/` — ordem de entrada decide o arquiteto.
+
+---
+
+## Sessão 2026-09-12 (4) — Ares (Arm B (disco): t.skip() quando binário gitignored ausente — PR #346)
+
+**Início:** 2026-09-12 | Branch: `fix/validar-um-binario-muitos-canais` | PR #346 aberto.
+**Tarefa:** Corrigir falha em CI no `npm/tests/shim_packaging.test.js` linha 116: braço "Arm B (disco)" trata binário ausente (gitignored por design em `prototype/.gitignore`) como defeito de produto em vez de condição de ambiente. Três checks obrigatórios cascateavam a partir disso: `node`, `parity-falsify-shard`, `parity`, `windows-full-suites`. Fix: aceitar `t` (TestContext) no braço de disco, verificar existência antes do assert — se ausente, `t.skip()` com razão nomeada referenciando a REQ. Braços A, B-estático e B-runtime continuam rodando sempre.
+
+---
+
+## Sessão 2026-09-12 (3) — Ares (Correção 1+2: --offline + reconciliação ECONNREFUSED)
+
+**Início:** 2026-09-12 | Branch: `fix/validar-um-binario-muitos-canais` | PR #346 aberto.
+**Tarefa:** (1) Substituir `--registry http://127.0.0.1:1` por `--offline` nos dois `npm install` da Pergunta 15; adicionar braço ENOTCACHED que prova que o flag recusa rede. (2) Corrigir afirmação errada de ECONNREFUSED em `docs/agents-working-context.md` e no comentário do YAML; escrever nota de vault sobre o SYN_SENT medido.
+**Concluído:** YAML validado (python3 yaml.safe_load OK). `trackfw validate`: 180 warnings pré-existentes, nenhum novo. Braço 3.5 adicionado (lodash + cache vazio + ENOTCACHED verificado no exit e na saída). Seção 4 reescrita: installs com `--offline`, comentário honesto sobre vacuidade. `agents-working-context.md` corrigido (ECONNREFUSED → SYN_SENT, razão do erro documentada). Nota de vault criada e linkada no index. `trackfw commit` + `trackfw push` executados. PR #346 atualizado. KG dispara o workflow para medir o novo tempo do passo 28.
+
+---
+
+## Sessão 2026-09-12 (2) — Ares (regressão do shim: resolução por subcaminho + falsificação)
+
+**Início:** 2026-09-12 | Branch: `fix/validar-um-binario-muitos-canais` | Roadmap em wip.
+**Tarefa:** corrigir regressão introduzida pelo KG ao remover `bin` dos 6 pacotes de plataforma — o shim lia `pkgJson.bin` e falhava (P15 mostrou `shim_exit=1` com "has no bin entry"). Implementar resolução por subcaminho conhecido (sem `bin`), adicionar teste de falsificação de dois braços, atualizar comentário stale no probe, e provar localmente em darwin/arm64.
+**Concluído:**
+- `prototype/packages/trackfw-shim/bin/trackfw.js`: shim resolve por `path.join(pkgDir, 'bin', binaryName)` onde `binaryName = os.platform() === 'win32' ? 'trackfw.exe' : 'trackfw'`. AC7 preservado via `fs.existsSync` com mensagem nomeada. Campo `bin` não consultado.
+- `npm/tests/shim_packaging.test.js`: 4 testes (Arm A: sem `bin` em nenhum dos 6 pacotes; Arm B estático: `files` contém o subcaminho correto; Arm B disco: binário existe; Arm B runtime: shim invocado via NODE_PATH, stderr sem mensagens de falha de resolução). 4/4 verdes.
+- `.github/workflows/windows-probe.yml`: comentário stale da colisão (linhas ~714-720) atualizado para refletir o estado correto.
+- Prova local darwin/arm64: 4/4 comandos BYTE_IDENTICAL, EXIT_MATCH (version, validate --json, status, context --json). Hash nativo = d7b95b11... == hash instalado.
+- `trackfw validate`: 180 warnings pré-existentes, 0 violations. `npm test` (shim_packaging): 4/4. Falhas pré-existentes no suite full não afetadas.
+
+---
+
+## Sessão 2026-09-12 — Ares (AC9 em x64: Pergunta 15 no windows-probe.yml)
+
+**Início:** 2026-09-12 | Branch: `fix/validar-um-binario-muitos-canais` | Roadmap em wip.
+**Tarefa:** fechar AC9 em win32/x64 adicionando Pergunta 15 ao `windows-probe.yml` — byte-identidade do shim Node.js vs. binário nativo no runner `windows-latest` (x64).
+**Diagnóstico:** O probe existente estava intocado (diff vazio contra origin/main); o `npm ci --ignore-scripts` da linha 102 instalava o Node CLI do repositório, não a casquinha da opção D — sinal verde medindo outra coisa.
+**Decisões técnicas:**
+- Sem tarballs pré-commitados (EBADPLATFORM impede `npm install` cross-platform no macOS; 5.3MB de binário em git seria custo alto para um único probe). O step constrói e empacota inline no runner x64.
+- `npm install` (não `npm ci`) — desvio declarado no YAML; o braço AC6/lockfile-macOS foi provado na VM ARM64 e o mecanismo (lockfileVersion 3 + optionalDependencies) não é arch-dependente.
+- Reutiliza o binário da Pergunta 5b se disponível (evita segundo go build); compila fresh se ausente.
+- Registry morto (`http://127.0.0.1:1`) durante install: **medição corrigida** — no macOS, a porta 1 não recusa (`ECONNREFUSED`); fica em `SYN_SENT` até o timeout de TCP, travando o passo por ~11 min. `file:` paths resolvem localmente (confirmado), mas o mecanismo não era o que estava escrito. **Por que o registro errado existiu:** o bullet foi escrito na seção "Decisões técnicas" no momento do design, antes de medir o comportamento real no macOS. A medição mostrou SYN_SENT, foi contornada localmente cabeando o `node_modules` à mão, mas o artefato de design não foi reescrito para refletir o que foi medido. Corrigido via `--offline` (commit de 2026-09-12, Correção 1+2).
+- Guarda de vacuidade: exit 1 se build/pack/install falham ou se shim/binário ausentes de node_modules ou se hash diverge; única exceção à regra "sem veredito" da sonda, escopo declarado no comentário.
+- Noise floor: nativo × nativo para `version` — detecta não-determinismo antes da comparação.
+- Comparação via `Start-Process -RedirectStandardOutput` (sem pipeline PowerShell) + `fc.exe /b` (binário).
+**Concluído:** `windows-probe.yml` atualizado com Pergunta 15 (29 steps total). YAML valida com python3 yaml.safe_load. Pronto para `trackfw commit` + `trackfw push`. Evidência de medição x64 pendente — KG dispara o workflow.
+
+---
+
+## Sessão 2026-09-12 — Ares (Trilha 1: ML-1A → ML-1D — Opção D) ✅
+
+**Início:** 2026-09-12 | Branch: `fix/validar-um-binario-muitos-canais` | Roadmap: `ROADMAP-2026-09-12-validar-um-binario-muitos-canais.md` em wip.
+**Tarefa:** Executar ML-1A (AC1–AC4), ML-1B (AC5), ML-1C (AC6–AC7), ML-1D (AC8–AC9) no worktree `trackfw-nul`.
+
+**Status final:** ML-1A ✅ ML-1B ✅ ML-1C ✅ ML-1D ✅ — evidências em `prototype/evidence/trilha1-ml1a-ml1d-2026-09-12.md`.
+
+**Achados:**
+- AC4: npm EACCES com cache somente-leitura é restrição geral do npm, não da opção D (vault note adicionada)
+- AC3: bloqueio de github.com provado (advertência de proxy resolvida por Zeus — cache frio + exit 0 provam que npm não tentou github.com)
+- AC6: lockfile darwin/arm64 → npm ci win32/arm64 → instala win32-arm64 corretamente; npm install idem ✅
+- AC7: shim nomeia plataforma no erro; nunca MODULE_NOT_FOUND ✅
+- AC8/AC9: byte-idêntico darwin/arm64 6/6 ✅; win32/arm64 5/5 + CRLF check (LF, 14 bytes) ✅
+- Defeito no shim corrigido: platformMap hardcoded sem win32-arm64 → resolução dinâmica em 0.0.3
+- go-to-wheel v0.2 incompatível com cmd/trackfw/ layout; wheel construído manualmente
+- Issue #338 agrava: 5 sítios → 11+ com a opção D (6 npm + N wheels PyPI)
+- Gate: make build ✅ make test ✅ make lint ✅ trackfw validate ✅ (178 warnings pré-existentes)
+
+**Observação:** VM é ARM64; CI runner é x64. Para fechar win32/x64 empiricamente: windows-probe.yml (instrumento disponível, requer commit/push).
+
+**Handoff para Zeus:** ML-1C e ML-1D marcados ✅; evidence file appendado com seção da VM; shim 0.0.3 publicado em verdaccio.
 ## Sessão 2026-09-12 (3) — Apolo (ML-1A — correção de predicado: frontmatter-first + contentHasMarkerValue)
 
 **Início:** 2026-09-12 (continuação de contexto esgotado pela 3ª vez) | Branch: `fix/req-nasce-orfa`.

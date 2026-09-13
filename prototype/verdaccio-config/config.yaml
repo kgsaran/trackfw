@@ -1,0 +1,23 @@
+storage: /tmp/verdaccio-storage
+auth:
+  htpasswd:
+    file: /tmp/verdaccio-htpasswd
+    max_users: 1
+uplinks: {}
+packages:
+  '@trackfw-bin/*':
+    access: $all
+    publish: $all
+  'trackfw-shim':
+    access: $all
+    publish: $all
+  '**':
+    access: $all
+    publish: $all
+log:
+  type: stdout
+  format: pretty
+  level: warn
+server:
+  keepAliveTimeout: 60
+  maxBodySize: 100mb
