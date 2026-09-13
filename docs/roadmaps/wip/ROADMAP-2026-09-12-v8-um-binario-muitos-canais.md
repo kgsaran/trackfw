@@ -422,6 +422,53 @@ mantenedor** — não é operação de agente.
 - [ ] Lista nomeada, com justificativa por gate
 - [ ] Gate que ainda mede algo **fica** — paridade não é o único motivo de um gate existir
 
+#### 🔴 Medição prévia do arquiteto — os 31 NÃO são um bloco
+
+Feita em 2026-09-12, para quem executar este ML não redescobrir. **Não é o resultado do AC — é o
+ponto de partida**, e o AC continua exigindo nomear um a um.
+
+**Prova de que tratar como bloco perde cobertura**, `scripts/check-validate-parity.sh:200`:
+
+```python
+expected_rules = {"adr_accepted_when_req_done", "blocked_by_draft_adr"}
+missing = expected_rules - got_rules
+```
+
+🔴 Isso **não compara runtimes** — é um *pin* no conjunto de regras esperado, afirmado por runtime.
+Com um runtime só, *"o validate tem que emitir estas regras para esta fixture"* **continua sendo
+contrato válido**. O arquivo carrega **duas coisas**: a comparação cross-runtime (morre) e um pin de
+comportamento (sobrevive).
+
+**Deletar o arquivo inteiro perde o pin sem ninguém perceber** — e é o tipo de perda que só aparece
+meses depois, quando o defeito que ele pegava volta.
+
+**Quatro baldes, medidos por quantos runtimes cada gate invoca:**
+
+| balde | quantos | o que fazer |
+|---|---|---|
+| comparam os 3 runtimes | ~27 | a comparação morre — **mas extrair pins antes** |
+| carregam pin próprio junto | ≥1 confirmado | 🔴 **extrair para gate próprio antes de deletar** |
+| não invocam CLI nenhum | 3 | sobrevivem com reescrita |
+| **novo** | +1 | shim ↔ binário nativo (ML-1D) |
+
+**Os três que não invocam runtime** (`go=0 node=0 py=0` ou só Go):
+
+```
+check-parity-contract-coverage   meta-checker de docs/cli-parity.md — verifica que cada
+                                 contrato NOMEIA um gate. Vira doc de canais, mas a ideia
+                                 de "todo contrato nomeia seu gate" sobrevive intacta
+check-parity-call-site-pins      só Go
+check-ci-workflow-pin-parity     compara arquivos de workflow, não runtimes
+```
+
+**O saldo real não é "31 deletados".** É *31 gates de comparação tripla trocados por 1 de comparação
+shim↔nativo, mais os pins extraídos antes*.
+
+**Critério de aceite acrescentado:**
+- [ ] 🔴 **Todo gate deletado é lido antes**, procurando asserção que **não** seja comparação entre
+      runtimes. O que for pin de comportamento é **extraído para gate próprio**, não perdido junto.
+      Falsificação: mutar o comportamento que o pin protegia ⇒ algum gate ainda reprova.
+
 ### ML-3D — **AC8 + AC11** — documentação e o break
 **Status:** ⬜ Pendente
 `docs/cli-parity.md` vira documento de **canais**. O `CLAUDE.md` tem a regra dura de paridade
