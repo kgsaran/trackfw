@@ -1,5 +1,5 @@
 ---
-status: wip
+status: blocked
 date: 2026-09-03
 squad: apolo-tf
 req: "docs/req/REQ-2026-09-03-as-217-falhas-reais-de-windows-colapsam-em-poucas-causas-e-tres-delas-exigem-decisao-antes-de-codigo.md"
@@ -7,7 +7,7 @@ req: "docs/req/REQ-2026-09-03-as-217-falhas-reais-de-windows-colapsam-em-poucas-
 
 # Roadmap: Fechar os grupos de falha de Windows por causa raiz
 
-> Criado em: 2026-09-03 | Status: wip
+> Criado em: 2026-09-03 | Status: blocked
 
 ## Context
 
@@ -2494,3 +2494,25 @@ Nunca `"..\\outside.md"`.
 
 **Por que é ML e não REQ nova:** mesma causa da reabertura desta REQ — predicado de segurança cego a
 uma gramática de caminho. Mesma causa ⇒ mesma REQ ⇒ mesmo PR.
+
+---
+
+## 🔴 ESTACIONADO até a v8 — decisão do KG, 2026-09-12
+
+> *"antes de implementar qualquer coisa vamos finalizar a v8. Ela destrava todo o restante."*
+
+**Não é abandono nem falta de gente.** É a ordem correta: a
+`REQ-2026-09-12-v8-um-binario-muitos-canais` remove `npm/src/` (26.272 linhas) e `pypi/trackfw/`
+(27.472), mais **31 dos 61 gates**. Todo trabalho que toque esses alvos hoje é feito **três vezes** e
+apagado em seguida.
+
+**O que muda quando a v8 entrar:**
+
+- o que for **paridade pura** desaparece — não é corrigido, deixa de ser possível
+- o que for **defeito real** continua valendo, e passa a custar **1× em vez de 3×**
+
+🔴 **Nenhum ML daqui deve ser retomado sem antes reclassificar nessa chave.** Retomar como está
+significa implementar em runtimes que estão sendo deletados.
+
+**Reabre:** quando a Wave 3 da v8 fechar (`ROADMAP-2026-09-12-v8-um-binario-muitos-canais`), pelo
+ML-4A dela, que classifica REQs e issues em *desaparece / barateia / indiferente*.

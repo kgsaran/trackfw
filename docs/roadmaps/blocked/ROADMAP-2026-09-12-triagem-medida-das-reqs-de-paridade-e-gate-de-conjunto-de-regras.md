@@ -1,5 +1,5 @@
 ---
-status: wip
+status: blocked
 date: 2026-09-12
 req: "docs/req/REQ-2026-09-12-reqs-de-paridade-nao-distinguem-entregue-de-pendente-porque-o-gate-que-provaria-a-entrega-nao-existe.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: Triagem medida das REQs de paridade e gate de conjunto de regras
 
-> Created: 2026-09-12 | Status: wip
+> Created: 2026-09-12 | Status: blocked
 
 ## Context
 REQ: docs/req/REQ-2026-09-12-reqs-de-paridade-nao-distinguem-entregue-de-pendente-porque-o-gate-que-provaria-a-entrega-nao-existe.md
@@ -242,3 +242,28 @@ e `req list` faltou no Python sem nenhum gate avisar."*
   `roadmap move` — 🔴 são da REQ de REQ órfã, **em execução paralela neste momento**.
 - **Não** alterar `scripts/check-rules-parity.sh`.
 - **Não** corrigir o `grep` do ambiente — é config de shell do usuário, não do produto.
+
+---
+
+## 🔴 ESTACIONADO até a v8 — decisão do KG, 2026-09-12
+
+> *"antes de implementar qualquer coisa vamos finalizar a v8. Ela destrava todo o restante."*
+
+**Não é abandono nem falta de gente.** É a ordem correta: a
+`REQ-2026-09-12-v8-um-binario-muitos-canais` remove `npm/src/` (26.272 linhas) e `pypi/trackfw/`
+(27.472), mais **31 dos 61 gates**. Todo trabalho que toque esses alvos hoje é feito **três vezes** e
+apagado em seguida.
+
+**O que muda quando a v8 entrar:**
+
+- o que for **paridade pura** desaparece — não é corrigido, deixa de ser possível
+- o que for **defeito real** continua valendo, e passa a custar **1× em vez de 3×**
+
+🔴 **Nenhum ML daqui deve ser retomado sem antes reclassificar nessa chave.** Retomar como está
+significa implementar em runtimes que estão sendo deletados.
+
+**Reabre:** quando a Wave 3 da v8 fechar (`ROADMAP-2026-09-12-v8-um-binario-muitos-canais`), pelo
+ML-4A dela, que classifica REQs e issues em *desaparece / barateia / indiferente*.
+
+**Nota específica:** esta frente já estava com os MLs restantes marcados ❌ Bloqueado — os dois
+entregáveis eram **gates de paridade**, que a v8 apaga. O estacionamento aqui só formaliza a pasta.

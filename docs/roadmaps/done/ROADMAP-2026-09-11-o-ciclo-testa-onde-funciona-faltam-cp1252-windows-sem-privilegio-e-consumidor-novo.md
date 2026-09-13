@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-11
 req: "docs/req/REQ-2026-09-11-o-ciclo-testa-onde-funciona-faltam-cp1252-windows-sem-privilegio-e-consumidor-novo.md"
 squad: "ares-tf"
@@ -7,7 +7,7 @@ squad: "ares-tf"
 
 # Roadmap: o ciclo testa onde funciona: faltam cp1252, Windows sem privilegio e consumidor novo
 
-> Created: 2026-09-11 | Status: 🔄 WIP
+> Created: 2026-09-11 | Status: done
 
 ## Contexto
 REQ: docs/req/REQ-2026-09-11-o-ciclo-testa-onde-funciona-faltam-cp1252-windows-sem-privilegio-e-consumidor-novo.md

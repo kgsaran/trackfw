@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-12
 req: "docs/req/REQ-2026-09-12-validar-a-opcao-d-um-binario-muitos-canais-antes-de-decidir-se-entra-na-v8.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: Validar um binário, muitos canais — antes de decidir a v8
 
-> Created: 2026-09-12 | Status: wip
+> Created: 2026-09-12 | Status: done
 
 ## Context
 REQ: docs/req/REQ-2026-09-12-validar-a-opcao-d-um-binario-muitos-canais-antes-de-decidir-se-entra-na-v8.md
@@ -141,7 +141,17 @@ binário nativo, em Linux, macOS e Windows do CI.
 ## Trilha 2 — Medição de retorno (independente da Trilha 1)
 
 ### ML-2A — **AC10 + AC11 + AC12 + AC13** — quanto D apaga, barateia e acrescenta
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — **por absorção**, não por execução
+
+🔴 **Este ML foi REALOCADO para a REQ da v8**, como AC12 / ML-4A, por decisão do KG em 2026-09-12:
+*"nem precisamos saber disso; sabendo que diminuiremos pela metade os issues já vale o risco."*
+
+O valor dele nunca foi **decidir** — o termo dominante já estava medido (53.744 linhas, 31 de 61
+gates). É saber, **depois** de adotar a opção D, quais REQs e issues fecham por *causa removida* em
+vez de ficarem em limbo. Isso é execução da v8, não pré-requisito da validação.
+
+⚠️ A estimativa de *"8 de 16 issues"* segue sendo **classificação preliminar por leitura**, não
+medição — não serve como resultado do ML-4A da v8.
 **Arquivos afetados:** somente `docs/qualidade/2026-09-12-quanto-a-opcao-d-apaga-do-backlog.md` (novo).
 
 🔴 **Um único critério para REQs e issues.** Os dois foram classificados por caminhos diferentes até
