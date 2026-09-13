@@ -2,10 +2,19 @@
 
 ---
 
+## Sessão 2026-09-13 — Ares (trackfw-nul — ML-2A: bump de versão para 8.0.0-rc1) — ENCERRADO
+
+**Início:** 2026-09-13 | Branch: `fix/v8-um-binario-muitos-canais` (trackfw-nul) | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` ML-2A
+**Tarefa:** Bump dos 3 sítios de versão para `8.0.0-rc1`, nova seção no CHANGELOG.md (8.0.0-rc1), gate `scripts/check-manifest-version-gate.sh`, `make quality` e `trackfw validate` verdes. Preparação do PR de release candidate.
+**Concluído:** (1) `internal/version/version.go`, `npm/package.json`, `pypi/pyproject.toml` e `pypi/trackfw/__init__.py` em `8.0.0-rc1`. (2) CHANGELOG.md com seção `## [8.0.0-rc1] - 2026-09-13` no topo, incluindo o break de `require('trackfw')`; corrigida referência a `--no-sdist` (não é flag passada — mecanismo real é `build_wheel.py` sem `python -m build`). (3) check-manifest-version-gate.sh verde (10/0 — atualizado para aceitar formato simples de `__init__.py`; drop de 11→10 assertions documentado: era try-branch + except-branch = 2 para um arquivo; agora 1 literal = 1 assertion sem perda). (4) Go/Node/Python tests verdes. (5) Defects secundários da mesma causa (primeira prerelease expôs regex `X.Y.Z`-only): `internal/commands/version_test.go`, `npm/tests/version.test.js`, `pypi/tests/test_commands_basic.py`, `scripts/check-cli-parity.sh`, `scripts/check-gates-falsify.sh` (liveness s23) e `scripts/check-doctor-parity.sh` atualizados para aceitar sufixo prerelease. `pypi/trackfw/__init__.py` refatorado para hardcoded (resolve conflito com `importlib.metadata` retornando versão instalada); `scaffold_doctor.py` usa `__version__` em vez de `importlib.metadata`. (6) parity-falsify EXIT=0, 0 FAILs. parity-rest EXIT=0, 0 FAILs. make quality EXIT=0. (7) `trackfw validate` sem violações novas (185 warnings pré-existentes). (8) ML-2A marcado 🔄; reconciliação de testes adicionada ao roadmap. (9) PR #356: https://github.com/kgsaran/trackfw/pull/356
+
+---
+
 ## Sessão 2026-09-13 — Ares (trackfw-nul — PR #355: package-smoke sem Go no CI)
 
 **Início:** 2026-09-13 | Branch: `fix/v8-um-binario-muitos-canais` (trackfw-nul) | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md`
 **Tarefa:** PR #355 vermelho: job `package-smoke` não instala Go nem compila o binário antes de chamar `scripts/smoke-integration-packages.sh`, que exige `bin/trackfw`. Varredura de outros jobs com o mesmo defeito.
+**Concluído:** Adicionados `actions/setup-go@v7` (go-version-file: go.mod) e `go build -o bin/trackfw ./cmd/trackfw` ao job `package-smoke`. Varredura: único sítio com o defeito. `make quality` verde (418 OK, 0 FAIL, EXIT 0). `check-workflow-yaml.py` 8/8. `trackfw ship` executado → PR #355 atualizado.
 
 ---
 
