@@ -1,5 +1,5 @@
 ---
-status: wip
+status: blocked
 date: 2026-09-09
 req: "docs/req/REQ-2026-09-09-req-nasce-orfa-porque-criar-req-e-criar-roadmap-sao-dois-comandos-e-o-segundo-se-esquece.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: REQ nasce orfa porque criar REQ e criar roadmap sao dois comandos e o segundo se esquece
 
-> Created: 2026-09-09 | Reestruturado: 2026-09-12 (absorção da REQ-2026-08-20) | Status: wip
+> Created: 2026-09-09 | Reestruturado: 2026-09-12 (absorção da REQ-2026-08-20) | Status: blocked
 
 ## Context
 REQ: docs/req/REQ-2026-09-09-req-nasce-orfa-porque-criar-req-e-criar-roadmap-sao-dois-comandos-e-o-segundo-se-esquece.md
@@ -502,3 +502,30 @@ ramo primeiro, então REQ que tenha as duas coisas cai em "decisão".
 - **Não** remover a aceitação de `done/` no `branch_has_wip_roadmap`. Ela existe por um motivo
   (retomar trabalho concluído) e a `REQ-2026-07-26` a decidiu. Este roadmap ajusta a **precisão**, não
   a política.
+
+---
+
+## 🔴 ESTACIONADO até a v8 — decisão do KG, 2026-09-12
+
+> *"antes de implementar qualquer coisa vamos finalizar a v8. Ela destrava todo o restante."*
+
+**Não é abandono nem falta de gente.** É a ordem correta: a
+`REQ-2026-09-12-v8-um-binario-muitos-canais` remove `npm/src/` (26.272 linhas) e `pypi/trackfw/`
+(27.472), mais **31 dos 61 gates**. Todo trabalho que toque esses alvos hoje é feito **três vezes** e
+apagado em seguida.
+
+**O que muda quando a v8 entrar:**
+
+- o que for **paridade pura** desaparece — não é corrigido, deixa de ser possível
+- o que for **defeito real** continua valendo, e passa a custar **1× em vez de 3×**
+
+🔴 **Nenhum ML daqui deve ser retomado sem antes reclassificar nessa chave.** Retomar como está
+significa implementar em runtimes que estão sendo deletados.
+
+**Reabre:** quando a Wave 3 da v8 fechar (`ROADMAP-2026-09-12-v8-um-binario-muitos-canais`), pelo
+ML-4A dela, que classifica REQs e issues em *desaparece / barateia / indiferente*.
+
+**Nota específica:** o **AC7** desta REQ (o `roadmap new --from-req` não consolida os ACs nem
+deriva MLs) mordeu **três vezes em 2026-09-12** — inclusive ao gerar o esqueleto do roadmap da
+próprio v8, que precisou ser reescrito à mão. Ele **sobrevive à v8** e é o candidato mais forte a
+retomada imediata quando ela fechar.

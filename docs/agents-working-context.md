@@ -2,6 +2,23 @@
 
 ---
 
+## Sessão 2026-09-12 — Ares (trackfw-nul — Correção 1+2: --offline + reconciliação ECONNREFUSED)
+
+**Início:** 2026-09-12 | Branch: `fix/validar-um-binario-muitos-canais` (trackfw-nul) | PR #346.
+**Tarefa:** Substituir registry morto (`127.0.0.1:1`) por `--offline` nos dois npm install da P15; adicionar braço ENOTCACHED (lodash + cache vazio) que prova que o flag recusa rede; corrigir afirmação ECONNREFUSED vs SYN_SENT medido.
+**Concluído:** YAML OK. Braço 3.5 adicionado. Comentário da seção 4 reescrito (vacuidade documentada honestamente). Afirmação ECONNREFUSED corrigida em agents-working-context.md (trackfw-nul) com explicação de por que o erro foi escrito. Nota de vault `npm-offline-port1-syn_sent-vacuidade-2026-09-12.md` criada e linkada. `trackfw commit` + `trackfw push` executados.
+
+---
+
+## Sessão 2026-09-12 — Hefesto (REQ: suítes não distinguem ambiente incompleto de código quebrado)
+
+**Início:** 2026-09-12 | Branch: `chore/suite-guard-prereq`.
+**Tarefa:** medir as 4 perguntas do KG e registrar REQ + roadmap em backlog. Nenhuma implementação.
+**Escopo:** `docs/req/` e `docs/roadmaps/backlog/`.
+**Concluído:** REQ e roadmap criados, 4 perguntas medidas com evidência. Achado principal: suíte Go já é inconsistente (3 funções em `validator_git_exec_test.go` usam `t.Fatalf` sem `exec.LookPath` guard; branch_prune e ship já têm o padrão correto). AC3 (Go) sobrevive à v8 inteira. Branch `chore/suite-guard-prereq` criada, commit e push via `trackfw`. Roadmap em `backlog/` — ordem de entrada decide o arquiteto.
+
+---
+
 ## Sessão 2026-09-12 (4) — Ares (Arm B (disco): t.skip() quando binário gitignored ausente — PR #346)
 
 **Início:** 2026-09-12 | Branch: `fix/validar-um-binario-muitos-canais` | PR #346 aberto.
