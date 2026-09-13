@@ -34,6 +34,10 @@ test-python:
 parity: build parity-rest parity-falsify
 
 parity-rest: build
+	# Defeito 3 (PR #352): valida sintaxe YAML de todos os .github/workflows/*.yml
+	# antes do push, sem credencial. Guarda de vacuidade: falha se nenhum arquivo
+	# encontrado. Fecha a classe: workflow inválido não atravessa mais o ciclo local.
+	python3 scripts/check-workflow-yaml.py
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-cli-parity.sh
 	scripts/check-validate-parity.sh
 	scripts/check-referential-integrity.sh

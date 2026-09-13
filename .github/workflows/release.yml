@@ -188,17 +188,19 @@ jobs:
       - name: Verify PyPI channel
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          FOUND=$(python3 -c "
-import urllib.request, json, sys
-url = 'https://pypi.org/pypi/trackfw/json'
-try:
-    data = json.loads(urllib.request.urlopen(url, timeout=15).read())
-    releases = data.get('releases', {})
-    sys.exit(0 if '$VERSION' in releases else 1)
-except Exception as e:
-    print(f'query failed: {e}', file=sys.stderr)
-    sys.exit(1)
-" 2>&1) && STATUS=0 || STATUS=$?
+          cat > /tmp/verify_pypi.py <<'PY'
+          import os, urllib.request, json, sys
+          version = os.environ['VERSION']
+          url = 'https://pypi.org/pypi/trackfw/json'
+          try:
+              data = json.loads(urllib.request.urlopen(url, timeout=15).read())
+              releases = data.get('releases', {})
+              sys.exit(0 if version in releases else 1)
+          except Exception as e:
+              print(f'query failed: {e}', file=sys.stderr)
+              sys.exit(1)
+          PY
+          FOUND=$(VERSION="$VERSION" python3 /tmp/verify_pypi.py 2>&1) && STATUS=0 || STATUS=$?
           if [[ "$STATUS" -eq 0 ]]; then
             echo "ok: PyPI trackfw $VERSION is live"
           else

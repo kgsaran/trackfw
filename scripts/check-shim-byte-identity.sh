@@ -221,7 +221,10 @@ ok "shim resolve e delega corretamente para o binário nativo"
 # Dois comandos com saída determinística esperada (version, validate --json).
 # Se o nativo não for idempotente, a comparação shim vs. nativo seria enganosa.
 
-declare -A NONDETERMINISTIC
+# NONDETERMINISTIC é uma lista de labels separados por espaços simples.
+# Não usa declare -A (bash 4+) para manter compatibilidade com bash 3.2 (macOS padrão).
+# Acesso: [[ " $NONDETERMINISTIC " == *" $label "* ]]
+NONDETERMINISTIC=""
 
 _noise_check() {
   local label="$1"; shift
@@ -230,7 +233,7 @@ _noise_check() {
   (cd "$REPO_ROOT" && "$NATIVE_BIN" "$@" >"$out1" 2>"$err1") || true
   (cd "$REPO_ROOT" && "$NATIVE_BIN" "$@" >"$out2" 2>"$err2") || true
   if ! cmp -s "$out1" "$out2" || ! cmp -s "$err1" "$err2"; then
-    NONDETERMINISTIC["$label"]=1
+    NONDETERMINISTIC="${NONDETERMINISTIC} ${label}"
     note "NOISE: $label — nativo não-determinístico (nativo vs. nativo diverge), comparação shim ignorada"
   fi
 }
@@ -247,7 +250,7 @@ _compare_cmd() {
   local label="$1"; shift
   local args=("$@")
 
-  if [[ -n "${NONDETERMINISTIC[$label]+_}" ]]; then
+  if [[ " ${NONDETERMINISTIC} " == *" ${label} "* ]]; then
     note "SKIP_NOISE: $label ignorado por não-determinismo no ruído de piso"
     return
   fi
