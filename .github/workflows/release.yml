@@ -249,18 +249,16 @@ jobs:
           npm pkg set "optionalDependencies.@trackfw-bin/win32-arm64=$VERSION"
 
       # D7 --local: assert the shim tarball has the expected v8 content before publishing.
-      # Only active after Wave 3 (ML-3A) removes npm/src/ — until then, npm/src/ exists
-      # as part of the Wave 1 "build without removing" strategy. The step is a no-op when
-      # npm/src/ is present (Wave 1-2 phase). After Wave 3 it becomes a hard gate.
-      - name: Assert shim content (v8 checks, Wave 3+)
+      # Runs always — the tarball is controlled by npm/package.json `files`, not by
+      # whether npm/src/ exists in the tree. npm/src/ coexists with the shim during
+      # Wave 1-2 (ML-1B, ML-3A removes it in Wave 3) but the tarball never included
+      # npm/src/ once `files` was corrected to ["bin/trackfw.js"].
+      # Discriminant was fixed in ML-1B: the old check looked at the tree; the correct
+      # check packs and inspects the actual tarball.
+      - name: Assert shim content (v8 gate)
         run: |
           cd ..
-          if [[ -d npm/src ]]; then
-            echo "info: npm/src/ present — pre-Wave 3 tree; skipping v8 content assertions"
-            echo "(Wave 3 / ML-3A removes npm/src/ and activates this gate)"
-          else
-            bash scripts/check-channels-content.sh --local
-          fi
+          bash scripts/check-channels-content.sh --local
 
       # D3: dist-tag derived from git tag
       - name: Publica no npm
