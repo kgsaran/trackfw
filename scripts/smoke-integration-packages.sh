@@ -7,15 +7,90 @@ trap 'rm -rf "$TMP_ROOT"' EXIT HUP INT TERM
 
 "$ROOT_DIR/scripts/check-integration-assets.sh"
 
+# ── npm shim (v8) ────────────────────────────────────────────────────────────
+# In v8 the npm package ships only the shim (bin/trackfw.js). The integration
+# assets (catalog, agents, skills) are embedded in the Go binary via go:embed
+# (internal/integrations/catalog.go:15 //go:embed assets). The binary is
+# delivered via the @trackfw-bin/<platform> optional package, not by npm/src/.
+#
+# This smoke:
+#   (1) Packs the shim tarball from npm/ and verifies v8 structure
+#       (shim present, no src/ directory — would indicate a v7 tree).
+#   (2) Stages a local platform package in $TMP_ROOT with the built binary
+#       and NO `bin` field (AC13) — proves AC1+AC13 together.
+#   (3) Installs both tarballs together, then runs agents/skills commands
+#       through the shim, which delegates to the Go binary (which embeds assets).
+#
+# Hard-fail if binary absent — a named skip here would be the same vacuity
+# class fixed in check-shim-byte-identity.sh and check-install-restriction.sh.
+# package-smoke depends on `make build` (see Makefile).
+#
+# Reconciliation: replacing lines 16-18 (src/integrations/assets/ assertions)
+# with (1)+(2)+(3). The protected property — "the installed npm package can
+# serve catalog and agents" — holds because the Go binary embeds the assets.
+# The assertion moves from "assets in src/ tarball" to "shim delegates to
+# binary which serves assets via go:embed". Falsification: binary absent →
+# named hard-fail at line ~55; src/ present in tarball → test ! -d assertion.
+
+OS_NAME=$(node -e "const os=require('os');process.stdout.write(os.platform())")
+ARCH_NAME=$(node -e "const os=require('os');process.stdout.write(os.arch())")
+PLATFORM="${OS_NAME}-${ARCH_NAME}"
+if [ "$OS_NAME" = "win32" ]; then
+  BIN_FILENAME="trackfw.exe"
+else
+  BIN_FILENAME="trackfw"
+fi
+LOCAL_BIN="$ROOT_DIR/bin/$BIN_FILENAME"
+
+# Hard-fail: binary must exist. package-smoke: build check-integration-assets.
+if [ ! -f "$LOCAL_BIN" ]; then
+  echo "FAIL: $LOCAL_BIN not found — package-smoke requires 'make build' (Makefile dependency)" >&2
+  exit 1
+fi
+
 mkdir -p "$TMP_ROOT/npm-pack" "$TMP_ROOT/npm-prefix" "$TMP_ROOT/npm-project"
+
+# Pack the shim tarball.
 NPM_CONFIG_CACHE="$TMP_ROOT/npm-cache" npm pack --silent --pack-destination "$TMP_ROOT/npm-pack" "$ROOT_DIR/npm" >/dev/null
-NPM_TARBALL=$(find "$TMP_ROOT/npm-pack" -type f -name '*.tgz' -print | head -n 1)
-test -n "$NPM_TARBALL"
-NPM_CONFIG_CACHE="$TMP_ROOT/npm-cache" npm install --no-audit --no-fund --ignore-scripts --prefix "$TMP_ROOT/npm-prefix" "$NPM_TARBALL"
+NPM_TARBALL=$(find "$TMP_ROOT/npm-pack" -type f -name 'trackfw-*.tgz' -print | head -n 1)
+test -n "$NPM_TARBALL" || { echo "FAIL: npm pack produced no tarball" >&2; exit 1; }
+
+# Stage a local platform package with NO `bin` field (AC13).
+# Staged in $TMP_ROOT to keep the repo tree clean — not in build/npm-platform/.
+PLAT_DIR="$TMP_ROOT/platform-pkg/@trackfw-bin/$PLATFORM"
+mkdir -p "$PLAT_DIR/bin"
+cp "$LOCAL_BIN" "$PLAT_DIR/bin/$BIN_FILENAME"
+# Write package.json: no `bin` field (AC13) — shim resolves via subpath, not bin map.
+cat > "$PLAT_DIR/package.json" << PKGJSON
+{
+  "name": "@trackfw-bin/$PLATFORM",
+  "version": "0.0.1-smoke",
+  "description": "smoke-test local platform package — no bin field (AC13)",
+  "os": ["$OS_NAME"],
+  "cpu": ["$ARCH_NAME"],
+  "files": ["bin/$BIN_FILENAME"]
+}
+PKGJSON
+
+NPM_CONFIG_CACHE="$TMP_ROOT/npm-cache" npm pack --silent --pack-destination "$TMP_ROOT/npm-pack" "$PLAT_DIR" >/dev/null
+PLATFORM_TARBALL=$(find "$TMP_ROOT/npm-pack" -type f -name "trackfw-bin-*.tgz" -print | head -n 1)
+test -n "$PLATFORM_TARBALL" || { echo "FAIL: npm pack produced no tarball for platform package" >&2; exit 1; }
+
+# Install shim + platform together in one npm install (proves AC1+AC13 simultaneously).
+NPM_CONFIG_CACHE="$TMP_ROOT/npm-cache" npm install --no-audit --no-fund --ignore-scripts --prefix "$TMP_ROOT/npm-prefix" "$NPM_TARBALL" "$PLATFORM_TARBALL"
+
+# v8 structural assertions (replaces v7 src/ asset assertions).
+# Reconciliation: "shim is present in installed package" asserts the bin field in
+# npm/package.json correctly points to bin/trackfw.js and `files` includes it.
+test -f "$TMP_ROOT/npm-prefix/node_modules/trackfw/bin/trackfw.js" \
+  || { echo "FAIL: shim bin/trackfw.js not in installed package" >&2; exit 1; }
+# Reconciliation: "no src/ in installed package" asserts `files` excludes npm/src/ —
+# the v7 tree would include it; the v8 shim must not.
+test ! -d "$TMP_ROOT/npm-prefix/node_modules/trackfw/src" \
+  || { echo "FAIL: src/ present in installed shim package — v7 tree leaked into tarball" >&2; exit 1; }
+
 NPM_BIN="$TMP_ROOT/npm-prefix/node_modules/.bin/trackfw"
-test -f "$TMP_ROOT/npm-prefix/node_modules/trackfw/src/integrations/assets/catalog.json"
-test -f "$TMP_ROOT/npm-prefix/node_modules/trackfw/src/integrations/assets/agents/architect.md"
-test -f "$TMP_ROOT/npm-prefix/node_modules/trackfw/src/integrations/assets/skills/governance.md"
+
 # --scope project is required, not redundant: since
 # ADR-2026-07-25-escopo-de-instalacao-selecionavel-para-agents-e-skills the
 # non-interactive default is `global` (~/.codex/...), so without the flag the
@@ -32,8 +107,11 @@ test -f "$TMP_ROOT/npm-prefix/node_modules/trackfw/src/integrations/assets/skill
 echo "npm tarball integration smoke passed"
 
 PYTHON_BIN=${PYTHON_BIN:-python3}
-if ! "$PYTHON_BIN" -c 'import build' >/dev/null 2>&1; then
-  echo "Python package smoke requires the 'build' module (python -m pip install build)" >&2
+# Use `-m build --version` instead of `import build` to avoid false-positives from
+# other packages named 'build' that satisfy `import build` but are not the PEP 517
+# build frontend (seen on Python 3.14 + Homebrew where a namespace collision exists).
+if ! "$PYTHON_BIN" -m build --version >/dev/null 2>&1; then
+  echo "Python package smoke requires the PEP 517 'build' frontend (python -m pip install build)" >&2
   exit 1
 fi
 mkdir -p "$TMP_ROOT/wheels" "$TMP_ROOT/python-project"

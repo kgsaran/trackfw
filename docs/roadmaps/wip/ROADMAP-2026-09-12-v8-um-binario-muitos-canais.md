@@ -326,15 +326,27 @@ invocação** e o projeto perde a capacidade de publicar. Nenhum gate pega antes
 
 ### ML-1B — **AC1 + AC13** — casquinha npm de produção
 **Status:** ✅ Concluído
-**Arquivos afetados:** `npm/bin/`, `npm/package.json`. 🔴 **Não remover `npm/src/` ainda** — é Wave 3.
+**Adendo — 2026-09-13 (o que faltava):** `npm/package.json` ainda apontava para a implementação Node v7 (`bin/trackfw`, `main: src/commands/index.js`, `files: ["bin/", "src/"]`, deps de runtime). Corrigido: `bin.trackfw` → `./bin/trackfw.js`, `files` → `["bin/trackfw.js"]`, deps movidas para `devDependencies`, `main` removido (break de `require('trackfw')` — documentado para ML-3D), `scripts.smoke` → `node --check bin/trackfw.js`. O discriminante do release.yml que verificava `npm/src/` na árvore também foi corrigido (sempre inspeciona o tarball via `check-channels-content.sh --local`). `smoke-integration-packages.sh` npm arm atualizado para provar shim + platform package sem `bin` (AC13), delegação ao binário Go que embeds assets (go:embed). `check-integration-assets.sh` e `check-channels-content.sh` atualizados.
+**Arquivos afetados:** `npm/bin/`, `npm/package.json`, `npm/package-lock.json`, `scripts/smoke-integration-packages.sh`, `scripts/check-integration-assets.sh`, `scripts/check-channels-content.sh`, `.github/workflows/release.yml`, `Makefile`.
+🔴 **Não remover `npm/src/` ainda** — é Wave 3.
 **Molde medido:** `prototype/packages/trackfw-shim/bin/trackfw.js`, **80 linhas**, já auditado.
 **Critérios de aceite:**
-- [ ] Resolução **dinâmica** (`@trackfw-bin/${platform}-${arch}`), nunca mapa hardcoded — foi o
+- [x] Resolução **dinâmica** (`@trackfw-bin/${platform}-${arch}`), nunca mapa hardcoded — foi o
       defeito que a VM pegou
-- [ ] Pacotes de plataforma **sem `bin`** (AC13) **e** o shim resolvendo mesmo assim — 🔴 **as duas
+- [x] Pacotes de plataforma **sem `bin`** (AC13) **e** o shim resolvendo mesmo assim — 🔴 **as duas
       propriedades provadas juntas**; foi trocar uma pela outra que quebrou o CI no protótipo
-- [ ] Sem pacote de plataforma ⇒ aborta **nomeando a plataforma**, nunca `MODULE_NOT_FOUND`
-- [ ] Porte de `npm/tests/shim_packaging.test.js`, que hoje testa o protótipo
+- [x] Sem pacote de plataforma ⇒ aborta **nomeando a plataforma**, nunca `MODULE_NOT_FOUND`
+- [x] Porte de `npm/tests/shim_packaging.test.js`, que hoje testa o protótipo
+
+**Reconciliações (Regra Dura — CLAUDE.md):**
+- `npm/tests/shim_packaging.test.js` Arm B: "sem campo `bin` no pacote de plataforma, o shim resolve pelo subcaminho calculado." (AC1+AC13 juntos — as duas propriedades provadas pela MESMA condição inicial)
+- `npm/tests/shim_packaging.test.js` Arm C: "sem pacote de plataforma instalado, o shim aborta nomeando a plataforma, sem MODULE_NOT_FOUND." (AC1 + a propriedade de erro amigável)
+- `smoke-integration-packages.sh` — `test -f .../bin/trackfw.js`: "shim presente no pacote instalado" afirma que `files: ["bin/trackfw.js"]` está correto e `bin.trackfw` aponta para ele.
+- `smoke-integration-packages.sh` — `test ! -d .../src`: "src/ ausente do pacote instalado" afirma que a mudança em `files` remove a v7 da v8 — D7 fechado.
+- `check-channels-content.sh` (shim): "no src/ directory" asserts D7 is closed — v7 tree would have src/. Falsificação: adicionar `src/` a `files` → exit 1 (provado).
+- `check-channels-content.sh` (shim): "no bin/trackfw v7 entry" afirma que o entry-point Node v7 não vazou para o tarball v8.
+
+🔴 **Nota para ML-3D:** a remoção de `main` de `npm/package.json` quebra `require('trackfw')` — este break é real e já está acontecendo desde este ML. ML-3D deve declarar no CHANGELOG.
 
 ### ML-1C — **AC2** — wheels PyPI
 **Status:** ✅ Concluído
