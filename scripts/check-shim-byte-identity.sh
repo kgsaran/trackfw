@@ -88,6 +88,10 @@ note() { echo "NOTE: $1"; }
 # ── Guarda de dependências de ambiente ──────────────────────────────────────
 
 if ! command -v go >/dev/null 2>&1; then
+  if [[ -n "${CI:-}" ]]; then
+    echo "FAIL: 'go' ausente no runner (CI=true) — o workflow declara actions/setup-go; ausência é erro de configuração, não ambiente incompleto" >&2
+    exit 1
+  fi
   echo "SKIP: go não encontrado no PATH — ambiente incompleto, não defeito de shim"
   echo ""
   echo "shim-byte-identity: SKIP (go ausente)"
@@ -95,6 +99,10 @@ if ! command -v go >/dev/null 2>&1; then
 fi
 
 if ! command -v node >/dev/null 2>&1; then
+  if [[ -n "${CI:-}" ]]; then
+    echo "FAIL: 'node' ausente no runner (CI=true) — o workflow declara actions/setup-node; ausência é erro de configuração, não ambiente incompleto" >&2
+    exit 1
+  fi
   echo "SKIP: node não encontrado no PATH — ambiente incompleto, não defeito de shim"
   echo ""
   echo "shim-byte-identity: SKIP (node ausente)"

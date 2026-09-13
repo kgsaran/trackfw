@@ -9,6 +9,15 @@ permissions:
   contents: write
   id-token: write
 
+# D3: derive npm dist-tag from the git tag.
+# Versions containing a pre-release identifier (8.0.0-rc1, 8.0.0-beta.2, etc.) map to
+# the label before the first digit of the pre-release segment (rc, beta, alpha).
+# Clean versions (8.0.0) map to "latest".
+# This step is shared by all npm publish jobs via outputs.
+#
+# D6: the npm tag string stays as-is (8.0.0-rc1); PyPI normalizes it to 8.0.0rc1
+# automatically when the wheel is uploaded. verify-channels normalizes before querying PyPI.
+
 jobs:
   quality:
     runs-on: ubuntu-latest
@@ -34,26 +43,13 @@ jobs:
       - run: npm test
         working-directory: npm
       - run: python -m pip install build pytest
-      # Instala o pacote (e suas dependências declaradas em pypi/pyproject.toml,
-      # ex. PyYAML) para que os testes tenham as libs de runtime disponíveis —
-      # mesmo padrão já em uso em quality.yml.
       - run: python -m pip install pypi/
       - run: python -m pytest pypi/tests -q
       - run: python -m build pypi
-      # Subconjunto reduzido intencional (3 dos 15 scripts de `make parity`),
-      # não os 15 completos de quality.yml — decisão registrada em
-      # docs/req/REQ-2026-08-04-job-parity-do-ci-so-roda-4-de-14-scripts-do-make-parity-falsificacao-e-identity-parity-nunca-rodam-em-ci.md
-      # (título referencia a contagem de 14 scripts vigente à data da REQ;
-      # check-attention-scripts-parity.sh elevou para 15 em 2026-08-05).
-      # Tags só são criadas (conforme CLAUDE.md "Protocolo de Release") a
-      # partir de um commit já mergeado na main, e quality.yml roda `make
-      # parity` completo (15 scripts) em todo push para main — logo, quando
-      # esta tag dispara, os 15 scripts já rodaram verdes nesse exato commit.
-      # Rodar os 15 de novo aqui seria redundância completa (~4min medidos
-      # localmente) sem ganho de sinal, só atraso na publicação de release.
-      # Este smoke check reduzido existe apenas como defesa contra o caso
-      # excepcional de alguém criar uma tag manualmente sobre um commit que
-      # nunca passou por quality.yml (ex: tag em branch fora de main).
+      # Subconjunto reduzido intencional (3 dos 15 scripts de `make parity`).
+      # Tags só são criadas a partir de um commit já mergeado na main, e quality.yml roda
+      # `make parity` completo em todo push para main — quando esta tag dispara, os 15
+      # scripts já rodaram verdes nesse exato commit.
       - run: scripts/check-cli-parity.sh
       - run: scripts/check-validate-parity.sh
       - run: scripts/check-static-assets.sh
@@ -61,6 +57,9 @@ jobs:
   release:
     needs: quality
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      dist_tag: ${{ steps.version.outputs.dist_tag }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -71,6 +70,24 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      # D3: Derive dist-tag from the git tag name.
+      # 8.0.0-rc1  → version=8.0.0-rc1  dist_tag=rc
+      # 8.0.0-beta.1 → version=8.0.0-beta.1  dist_tag=beta
+      # 8.0.0      → version=8.0.0      dist_tag=latest
+      - name: Derive version and npm dist-tag
+        id: version
+        run: |
+          RAW="${GITHUB_REF_NAME#v}"
+          echo "version=$RAW" >> "$GITHUB_OUTPUT"
+          # Extract pre-release label: everything between first '-' and first digit after it
+          if echo "$RAW" | grep -qE '\-[a-zA-Z]'; then
+            TAG=$(echo "$RAW" | sed 's/.*-\([a-zA-Z][a-zA-Z]*\).*/\1/')
+          else
+            TAG=latest
+          fi
+          echo "dist_tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$RAW  dist_tag=$TAG"
+
       - uses: goreleaser/goreleaser-action@v7
         with:
           version: latest
@@ -79,8 +96,127 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
 
-  publish-npm:
-    needs: [quality, release]
+      # D1+D4: Upload goreleaser artifacts so downstream publish jobs can download them.
+      # goreleaser produces dist/<name>_<version>_<os>_<arch>.tar.gz for each platform.
+      # These artifacts are the authoritative binaries; downstream jobs do not rebuild.
+      - name: Upload goreleaser artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: goreleaser-dist
+          path: dist/*.tar.gz
+          if-no-files-found: error
+          retention-days: 1
+
+  # D4: Platform packages MUST be published before the top-level shim.
+  # optionalDependencies silently skips unresolvable packages — the shim installs
+  # "successfully" and then fails at runtime with "no package for your platform".
+  # Publishing platforms first (this job) then the shim (publish-npm-shim, needs: this)
+  # enforces the ordering structurally via needs:.
+  publish-npm-platforms:
+    needs: release
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - slug: linux-x64
+            goreleaser_os: linux
+            goreleaser_arch: amd64
+            binary: trackfw
+          - slug: linux-arm64
+            goreleaser_os: linux
+            goreleaser_arch: arm64
+            binary: trackfw
+          - slug: darwin-x64
+            goreleaser_os: darwin
+            goreleaser_arch: amd64
+            binary: trackfw
+          - slug: darwin-arm64
+            goreleaser_os: darwin
+            goreleaser_arch: arm64
+            binary: trackfw
+          - slug: win32-x64
+            goreleaser_os: windows
+            goreleaser_arch: amd64
+            binary: trackfw.exe
+          - slug: win32-arm64
+            goreleaser_os: windows
+            goreleaser_arch: arm64
+            binary: trackfw.exe
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Download goreleaser artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: goreleaser-dist
+          path: dist/
+
+      # D1: Stage binary from goreleaser archive into the manifest package directory.
+      # Archive name pattern: trackfw_<version>_<os>_<arch>.tar.gz
+      # Binary inside archive: trackfw or trackfw.exe (no subdirectory in archive).
+      - name: Stage binary into manifest
+        run: |
+          VERSION="${{ needs.release.outputs.version }}"
+          SLUG="${{ matrix.platform.slug }}"
+          GOOS="${{ matrix.platform.goreleaser_os }}"
+          GOARCH="${{ matrix.platform.goreleaser_arch }}"
+          BINARY="${{ matrix.platform.binary }}"
+
+          ARCHIVE="dist/trackfw_${VERSION}_${GOOS}_${GOARCH}.tar.gz"
+          if [[ ! -f "$ARCHIVE" ]]; then
+            echo "ERROR: expected archive not found: $ARCHIVE" >&2
+            echo "Available archives:" >&2
+            ls dist/*.tar.gz >&2
+            exit 1
+          fi
+
+          # Generate the manifest for this platform
+          scripts/gen-platform-manifests.sh
+
+          PKG_DIR="build/npm-platform/@trackfw-bin/$SLUG"
+          mkdir -p "$PKG_DIR/bin"
+
+          # Extract binary from archive (binary is at root of archive, no subdir)
+          tar xzf "$ARCHIVE" -C "$PKG_DIR/bin" "$BINARY"
+          chmod +x "$PKG_DIR/bin/$BINARY"
+
+          echo "Staged $BINARY for $SLUG:"
+          ls -la "$PKG_DIR/bin/"
+
+      - name: Set package version
+        run: |
+          VERSION="${{ needs.release.outputs.version }}"
+          SLUG="${{ matrix.platform.slug }}"
+          PKG_DIR="build/npm-platform/@trackfw-bin/$SLUG"
+
+          # gen-platform-manifests.sh already wrote package.json with the Go version.
+          # At release time we set it explicitly from the git tag to be safe.
+          (cd "$PKG_DIR" && npm version "$VERSION" --no-git-tag-version --allow-same-version)
+
+      # D3: dist-tag derived from git tag — rc/beta/alpha for pre-releases, latest for clean.
+      - name: Publish @trackfw-bin/${{ matrix.platform.slug }}
+        run: |
+          SLUG="${{ matrix.platform.slug }}"
+          DIST_TAG="${{ needs.release.outputs.dist_tag }}"
+          PKG_DIR="build/npm-platform/@trackfw-bin/$SLUG"
+
+          echo "Publishing @trackfw-bin/$SLUG with --tag $DIST_TAG ..."
+          (cd "$PKG_DIR" && npm publish --access public --tag "$DIST_TAG")
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  # D4: Shim published AFTER all platform packages — needs: publish-npm-platforms.
+  # The shim declares optionalDependencies so npm pulls the right platform package.
+  # optionalDependencies are injected here (not committed to the tree) so the
+  # version string matches the exact version being published.
+  publish-npm-shim:
+    needs: [release, publish-npm-platforms]
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -96,22 +232,53 @@ jobs:
       - name: Copia README para o pacote npm
         run: cp ../README.md README.md
 
-      - name: Atualiza versão no package.json
+      # Inject version and optionalDependencies at publish time.
+      # optionalDependencies are NOT committed — they would pin the version in the tree,
+      # creating an #338-style drift problem. Instead, npm pkg set writes them here.
+      - name: Set version and optionalDependencies
         run: |
-          VERSION=${GITHUB_REF_NAME#v}
+          VERSION="${{ needs.release.outputs.version }}"
           npm version "$VERSION" --no-git-tag-version --allow-same-version
 
+          # D4: inject all 6 platform packages as optional dependencies at exact version
+          npm pkg set "optionalDependencies.@trackfw-bin/linux-x64=$VERSION"
+          npm pkg set "optionalDependencies.@trackfw-bin/linux-arm64=$VERSION"
+          npm pkg set "optionalDependencies.@trackfw-bin/darwin-x64=$VERSION"
+          npm pkg set "optionalDependencies.@trackfw-bin/darwin-arm64=$VERSION"
+          npm pkg set "optionalDependencies.@trackfw-bin/win32-x64=$VERSION"
+          npm pkg set "optionalDependencies.@trackfw-bin/win32-arm64=$VERSION"
+
+      # D7 --local: assert the shim tarball has the expected v8 content before publishing.
+      # Only active after Wave 3 (ML-3A) removes npm/src/ — until then, npm/src/ exists
+      # as part of the Wave 1 "build without removing" strategy. The step is a no-op when
+      # npm/src/ is present (Wave 1-2 phase). After Wave 3 it becomes a hard gate.
+      - name: Assert shim content (v8 checks, Wave 3+)
+        run: |
+          cd ..
+          if [[ -d npm/src ]]; then
+            echo "info: npm/src/ present — pre-Wave 3 tree; skipping v8 content assertions"
+            echo "(Wave 3 / ML-3A removes npm/src/ and activates this gate)"
+          else
+            bash scripts/check-channels-content.sh --local
+          fi
+
+      # D3: dist-tag derived from git tag
       - name: Publica no npm
-        run: npm publish --access public
+        run: npm publish --access public --tag "${{ needs.release.outputs.dist_tag }}"
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
+  # D5: PyPI publishes ONLY wheels — no sdist.
+  # Rationale: with no sdist, an uncovered platform fails at resolution time with
+  # "no matching distribution found" (clean, immediate). An sdist that succeeds would
+  # install the v7 Python implementation silently. An sdist that fails would produce a
+  # confusing build error. The explicit "no sdist" decision is enforced by:
+  #   a) never running `python -m build` (which produces both sdist and wheel)
+  #   b) using build_wheel.py per platform (produces one .whl per call)
+  #   c) asserting before upload that dist/ contains ONLY .whl files (no .tar.gz sdist)
   publish-pypi:
-    needs: [quality, release]
+    needs: release
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: pypi
     environment:
       name: pypi
       url: https://pypi.org/project/trackfw/
@@ -122,40 +289,107 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Instala build
-        run: pip install build
+      - name: Download goreleaser artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: goreleaser-dist
+          path: dist/
 
-      - name: Atualiza versão no pyproject.toml
-        run: |
-          VERSION=${GITHUB_REF_NAME#v}
-          sed -i "s/^version = .*/version = \"$VERSION\"/" pyproject.toml
+      - name: Install build tools
+        # packaging is required by build_wheel.py for PEP 440 normalization (D6-write).
+        # build depends on packaging transitively, but we declare it explicitly so that
+        # a future refactor that changes the build tool does not silently lose the dependency.
+        run: pip install --quiet build packaging
 
       - name: Copia README para o pacote PyPI
-        run: cp ../README.md README.md
+        run: cp README.md pypi/README.md
 
-      - name: Build do pacote
-        run: python -m build
+      # D5: Build one wheel per platform from the goreleaser binary.
+      # Platform wheel tags: manylinux_2_17 + musllinux_1_2 for linux; macosx_10_9 for darwin;
+      # win_amd64 and win_arm64 for windows.
+      # NOTE: the wheel platform tag table is NOT 1:1 with npm slugs — one linux/amd64 binary
+      # fans out to both manylinux_2_17_x86_64 and musllinux_1_2_x86_64.
+      - name: Build platform wheels
+        run: |
+          VERSION="${{ needs.release.outputs.version }}"
+          mkdir -p dist/wheels
+
+          build_wheel() {
+            local goos="$1" goarch="$2" binary="$3" platform_tags="$4"
+            local archive="dist/trackfw_${VERSION}_${goos}_${goarch}.tar.gz"
+            if [[ ! -f "$archive" ]]; then
+              echo "ERROR: archive not found: $archive" >&2
+              exit 1
+            fi
+            local tmpdir
+            tmpdir=$(mktemp -d)
+            tar xzf "$archive" -C "$tmpdir" "$binary"
+            chmod +x "$tmpdir/$binary"
+            for tag in $platform_tags; do
+              python3 pypi/scripts/build_wheel.py \
+                --binary "$tmpdir/$binary" \
+                --version "$VERSION" \
+                --platform "$tag" \
+                --output dist/wheels
+            done
+            rm -rf "$tmpdir"
+          }
+
+          build_wheel linux   amd64 trackfw     "manylinux_2_17_x86_64 musllinux_1_2_x86_64"
+          build_wheel linux   arm64 trackfw     "manylinux_2_17_aarch64 musllinux_1_2_aarch64"
+          build_wheel darwin  amd64 trackfw     "macosx_10_9_x86_64"
+          build_wheel darwin  arm64 trackfw     "macosx_11_0_arm64"
+          build_wheel windows amd64 trackfw.exe "win_amd64"
+          build_wheel windows arm64 trackfw.exe "win_arm64"
+
+          echo "Built wheels:"
+          ls -la dist/wheels/*.whl
+
+      # D5: Assert dist/ contains ONLY .whl files — no sdist (.tar.gz would be an accident).
+      - name: Assert no sdist in dist/wheels
+        run: |
+          NON_WHL=$(find dist/wheels -type f ! -name '*.whl' | sort)
+          if [[ -n "$NON_WHL" ]]; then
+            echo "FAIL: non-wheel files found in dist/wheels (possible sdist accident):" >&2
+            echo "$NON_WHL" >&2
+            exit 1
+          fi
+          WHL_COUNT=$(find dist/wheels -name '*.whl' | wc -l | tr -d ' ')
+          if [[ "$WHL_COUNT" -eq 0 ]]; then
+            echo "FAIL: no wheels found in dist/wheels — build step may have failed" >&2
+            exit 1
+          fi
+          echo "ok: dist/wheels contains $WHL_COUNT wheel(s) and no sdist"
 
       - name: Publica no PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          packages-dir: pypi/dist/
+          packages-dir: dist/wheels/
 
-  # verify-channels — AC4: partial publication failure is detectable.
-  # Runs after BOTH publish-npm and publish-pypi, even if one of them failed (if: always()).
-  # v7.6.0 published GitHub and PyPI successfully but left npm behind due to an expired
-  # credential — both jobs showed green and the missing channel was only noticed later.
-  # This job makes the failure visible: it checks all three channels by name and exits
-  # non-zero with a named message for each missing channel.
+  # verify-channels: AC4 — partial publication failure is detectable.
+  # Runs after ALL publish jobs, even if some failed (if: always()).
+  # v7.6.0 published GitHub and PyPI successfully but left npm behind due to a credential
+  # issue — both jobs showed green and the missing channel was only noticed later.
+  # This job makes the failure visible: checks all channels and exits non-zero for each missing.
   #
-  # Note: the npm registry and PyPI may need a short propagation window after publishing.
-  # The 45-second sleep covers normal propagation; transient failures should be re-run.
+  # D7: extended to assert CONTENT, not just presence.
+  # D6: PyPI lookup normalizes the version string to PEP 440 before querying the releases dict.
+  #     8.0.0-rc1 (git/npm format) → 8.0.0rc1 (PyPI normalized key in releases JSON).
   verify-channels:
     name: Verify all release channels
-    needs: [publish-npm, publish-pypi]
+    needs: [publish-npm-shim, publish-pypi]
     runs-on: ubuntu-latest
     if: always()
     steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Install packaging (for PEP 440 normalization)
+        run: pip install --quiet packaging
+
       - name: Extract version from tag
         id: version
         run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
@@ -175,35 +409,41 @@ jobs:
             exit 1
           fi
 
-      - name: Verify npm channel
+      - name: Verify npm shim channel
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           if npm view "trackfw@$VERSION" version > /dev/null 2>&1; then
             echo "ok: npm trackfw@$VERSION is live"
           else
-            echo "FAIL: npm trackfw@$VERSION not found — publish-npm may have failed or credential expired" >&2
+            echo "FAIL: npm trackfw@$VERSION not found — publish-npm-shim may have failed or credential expired" >&2
             exit 1
           fi
 
-      - name: Verify PyPI channel
+      - name: Verify npm platform channels
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          cat > /tmp/verify_pypi.py <<'PY'
-          import os, urllib.request, json, sys
-          version = os.environ['VERSION']
-          url = 'https://pypi.org/pypi/trackfw/json'
-          try:
-              data = json.loads(urllib.request.urlopen(url, timeout=15).read())
-              releases = data.get('releases', {})
-              sys.exit(0 if version in releases else 1)
-          except Exception as e:
-              print(f'query failed: {e}', file=sys.stderr)
-              sys.exit(1)
-          PY
-          FOUND=$(VERSION="$VERSION" python3 /tmp/verify_pypi.py 2>&1) && STATUS=0 || STATUS=$?
-          if [[ "$STATUS" -eq 0 ]]; then
-            echo "ok: PyPI trackfw $VERSION is live"
-          else
-            echo "FAIL: PyPI trackfw $VERSION not found — publish-pypi may have failed$( [[ -n "$FOUND" ]] && echo " ($FOUND)" )" >&2
+          FAILED=0
+          for slug in linux-x64 linux-arm64 darwin-x64 darwin-arm64 win32-x64 win32-arm64; do
+            if npm view "@trackfw-bin/${slug}@${VERSION}" version > /dev/null 2>&1; then
+              echo "ok: npm @trackfw-bin/${slug}@${VERSION} is live"
+            else
+              echo "FAIL: npm @trackfw-bin/${slug}@${VERSION} not found" >&2
+              FAILED=$((FAILED+1))
+            fi
+          done
+          if [[ "$FAILED" -gt 0 ]]; then
+            echo "FAIL: $FAILED platform package(s) missing from npm" >&2
             exit 1
           fi
+
+      # D6: verify-pypi-channel.py normalizes the version to PEP 440 before the lookup.
+      # 8.0.0-rc1 (git tag / npm format) → 8.0.0rc1 (PyPI releases dict key).
+      - name: Verify PyPI channel
+        run: python3 scripts/verify-pypi-channel.py "${{ steps.version.outputs.version }}"
+
+      # D7: assert CONTENT of published packages.
+      # --published mode downloads and inspects the live artifacts.
+      - name: Verify channel content (D7)
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          bash scripts/check-channels-content.sh --published "$VERSION"
