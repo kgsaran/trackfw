@@ -6,6 +6,7 @@
 
 **Início:** 2026-09-13 | Branch: `fix/v8-um-binario-muitos-canais` (trackfw-nul) | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` ML-1A
 **Tarefa:** (1) Endurecer ImportError em build_wheel.py para hard-fail (não fallback silencioso). (2) Ampliar gate check-wheel-filename.sh para verificar internos da wheel (prefixo dist-info + Version: no METADATA) e igualdade da versão parseada. (3) Adicionar falsificação raw+normalized ao check-gates-falsify.sh. (4) Adicionar `packaging` ao pip install do job publish-pypi em release.yml.
+**Concluído:** `normalize_version()` em build_wheel.py (hard-fail sem packaging). Gate `check-wheel-filename.sh` 3 modos verdes. parity-rest exit 0. `packaging` declarado explicitamente em release.yml. Falsificação cenários 182+183 em check-gates-falsify.sh. Empurrado para PR #354.
 
 ---
 
