@@ -78,10 +78,41 @@ test('no hardcoded version literal in the CI workflow builders (source-level)', 
   assert.ok(start > -1 && end > start, 'could not locate builder block in init.js')
   const block = initSrc.slice(start, end)
   // The only version-shaped token allowed in the block is the ${PACKAGE_VERSION}
-  // interpolation itself — no literal semver string may appear.
-  const semverLiteral = /["'`]v?\d+\.\d+\.\d+["'`]/
+  // interpolation itself — no literal semver string may appear (including pre-release forms
+  // such as "8.0.0-rc1" or "v8.0.0-rc1" that the original three-component regex missed).
+  const semverLiteral = /["'`]v?\d+\.\d+\.\d+(-[a-zA-Z0-9]+(\.[a-zA-Z0-9]+)*)?["'`]/
   assert.ok(!semverLiteral.test(block), `found a literal semver string in builder block:\n${block}`)
   assert.ok(block.includes('${PACKAGE_VERSION}'), 'builders must interpolate PACKAGE_VERSION, not a literal')
+})
+
+// Falsification — direction A: literal prerelease injected → guard reproves.
+// Conclusion: semverLiteral catches "X.Y.Z-rc1" (and "vX.Y.Z-rc1") — the gap that
+// existed before this fix, where only stable "X.Y.Z" literals were detected.
+test('no hardcoded version literal guard detects injected prerelease literal (falsify direction-A)', () => {
+  const semverLiteral = /["'`]v?\d+\.\d+\.\d+(-[a-zA-Z0-9]+(\.[a-zA-Z0-9]+)*)?["'`]/
+  // Simulate a builder block that accidentally contains a hardcoded prerelease literal.
+  const tamperedBlock = 'const v = "8.0.0-rc1"; // literal instead of ${PACKAGE_VERSION}'
+  assert.ok(
+    semverLiteral.test(tamperedBlock),
+    'guard must DETECT the injected prerelease literal "8.0.0-rc1" — if this fails the fix is broken',
+  )
+  const tamperedBlockV = 'const v = "v8.0.0-rc1"; // literal with v-prefix'
+  assert.ok(
+    semverLiteral.test(tamperedBlockV),
+    'guard must DETECT the injected v-prefix prerelease literal "v8.0.0-rc1" — if this fails the fix is broken',
+  )
+})
+
+// Falsification — direction B: no literal injected → guard passes.
+// Conclusion: semverLiteral does NOT match ${PACKAGE_VERSION} interpolations,
+// so correctly governed blocks remain green under the stricter regex.
+test('no hardcoded version literal guard passes clean block (falsify direction-B)', () => {
+  const semverLiteral = /["'`]v?\d+\.\d+\.\d+(-[a-zA-Z0-9]+(\.[a-zA-Z0-9]+)*)?["'`]/
+  const cleanBlock = 'const v = `TRACKFW_VERSION: "${PACKAGE_VERSION}"`'
+  assert.ok(
+    !semverLiteral.test(cleanBlock),
+    'guard must NOT flag a block using ${PACKAGE_VERSION} interpolation — if this fails the fix over-matches',
+  )
 })
 
 // --- Idempotency: generating twice produces byte-identical output ---

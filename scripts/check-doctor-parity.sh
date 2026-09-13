@@ -488,7 +488,7 @@ _normalize_version_in_file() {
 import pathlib, re, sys
 p = pathlib.Path(sys.argv[1])
 p.write_text(
-    re.sub(r'trackfw v[\w.]+', 'trackfw vTEST', p.read_text(encoding='utf-8')),
+    re.sub(r'trackfw v[\w.-]+', 'trackfw vTEST', p.read_text(encoding='utf-8')),
     encoding='utf-8',
 )
 PY

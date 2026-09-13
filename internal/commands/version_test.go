@@ -8,8 +8,10 @@ import (
 )
 
 // versionLineRE é o contrato congelado do cli-parity.md §Version output:
-// exatamente "trackfw <major>.<minor>.<patch>", sem prefixo v, sem sufixo.
-var versionLineRE = regexp.MustCompile(`^trackfw [0-9]+\.[0-9]+\.[0-9]+$`)
+// "trackfw <major>.<minor>.<patch>[-<prerelease>]", sem prefixo v.
+// O identificador de pre-release (ex: -rc1, -alpha.1) é opcional; release
+// estável não tem sufixo. Atualizado em 8.0.0-rc1: primeira release candidate.
+var versionLineRE = regexp.MustCompile(`^trackfw [0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+(\.[a-zA-Z0-9]+)*)?$`)
 
 // captureVersionSubcmd executa o subcomando "version" e retorna a linha impressa,
 // sem o \n final.

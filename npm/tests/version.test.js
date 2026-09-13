@@ -5,7 +5,8 @@
 //   trackfw --version   →  "trackfw <semver>"  (byte-idêntico ao subcomando)
 //
 // Contrato congelado em docs/cli-parity.md §"Version output".
-// Regex canônica: ^trackfw [0-9]+\.[0-9]+\.[0-9]+$
+// Regex canônica: ^trackfw [0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+(\.[a-zA-Z0-9]+)*)?$
+// Atualizada em 8.0.0-rc1: pre-release identifier é opcional; estável não tem sufixo.
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
@@ -13,7 +14,7 @@ const path = require('node:path')
 const { spawnSync } = require('node:child_process')
 
 const CLI = path.resolve(__dirname, '../bin/trackfw')
-const VERSION_RE = /^trackfw [0-9]+\.[0-9]+\.[0-9]+$/
+const VERSION_RE = /^trackfw [0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+(\.[a-zA-Z0-9]+)*)?$/
 
 /** Roda `node <CLI> ...args` e devolve stdout sem trailing newline. */
 function runCLI(...args) {
