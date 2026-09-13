@@ -6,6 +6,7 @@
 
 **Início:** 2026-09-12 | Branch: `fix/validar-um-binario-muitos-canais` | PR #346 aberto.
 **Tarefa:** Corrigir falha em CI no `npm/tests/shim_packaging.test.js` linha 116: braço "Arm B (disco)" trata binário ausente (gitignored por design em `prototype/.gitignore`) como defeito de produto em vez de condição de ambiente. Três checks obrigatórios cascateavam a partir disso: `node`, `parity-falsify-shard`, `parity`, `windows-full-suites`. Fix: aceitar `t` (TestContext) no braço de disco, verificar existência antes do assert — se ausente, `t.skip()` com razão nomeada referenciando a REQ. Braços A, B-estático e B-runtime continuam rodando sempre.
+**Concluído:** `npm/tests/shim_packaging.test.js` corrigido — braço de disco aceita `t`, skip nomeado quando binário ausente. Verificado SEM binário (CI): 3 pass, 1 skip nomeado, 0 fail, EXIT 0. COM binário (local): 4 pass, 0 skip, 0 fail, EXIT 0. `npm test` completo: 911 pass / 1 skip / 0 fail sem binário; 912 pass / 0 skip sem binário presente. Nota de vault criada e linkada. `trackfw commit` (ff2dd564) + `trackfw push` executados. PR #346 atualizado.
 
 ---
 
@@ -37068,3 +37069,38 @@ ML-1B da triagem medida entregue.
 **Zero REQs fechadas.** `trackfw req move` não foi executado. `trackfw validate` RC=0 (178 warnings, todos pré-existentes).
 
 Próximo: ML-2A (gate de conjunto de regras) — handoff para implementador de produto.
+
+## Sessão 2026-09-12 — Hades (Security) — ML-0A início
+
+Início: 2026-09-12. Executando ML-0A do roadmap
+`ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` (branch `fix/v8-um-binario-muitos-canais`,
+worktree `trackfw-nul`). Tarefa: threat model da migração v8 (opção D: um binário, muitos canais).
+Enumeração completa de sítios que assumem três implementações — inclui categorias fora de `npm/` e
+`pypi/`. Entrega: quatro seções no roadmap com evidência, não asserção.
+
+## Sessão 2026-09-12 — Hades (Security) — ML-0A CONCLUÍDO
+
+ML-0A do roadmap `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` entregue.
+
+**Artefatos modificados:**
+- `docs/roadmaps/wip/ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` — ML-0A marcado ✅,
+  quatro seções escritas com evidência.
+- `docs/agents-working-context.md` — esta entrada.
+
+**Principais achados (por severidade):**
+- CRÍTICO: `internal/commands/release.go:95-108` hardcoda `pypi/trackfw/__init__.py` como
+  version-site — Wave 3 quebra `trackfw release tag` permanentemente. ML-1A deve atualizar
+  product code antes de ML-3A apagar o arquivo. Dependência sem gate.
+- CRÍTICO: `.github/required-status-checks.txt` declara `node`, `python (3.10)`, `python (3.12)`
+  como required checks. Wave 3 remove os jobs; branch protection (R, fora do repo) continua
+  exigindo check-names que nenhum workflow emite. Cada PR subsequente fica pendente para sempre.
+- ALTA: `check-serve-api-file-security.sh` usa `2>/dev/null` — gate passa silenciosamente após
+  Wave 3 remover `pypi/trackfw/commands/serve.py`. Coverage de segurança some sem alarme.
+- MÉDIA: Falsify corpus encolhe sem alarme proporcional — `check-falsify-shard-coverage.sh`
+  mede relativo ao corpus presente.
+
+**Residual aceito:** audiência de política corporativa anti-executável (da ADR) + remoção do
+detector de defeito independente (novo, não na ADR) + três gaps de gate sem alarme (R3/R4/R5).
+
+Próximo: handoff para o arquiteto — Wave 1 pode iniciar com ML-1A (atualizar release.go) como
+pré-requisito hard de ML-3A.

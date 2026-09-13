@@ -56,28 +56,184 @@ um revert grande sob pressão. A ordem inversa custa um ciclo a mais e elimina e
 > Dependências: nenhuma. **Bloqueia tudo.**
 
 ### ML-0A — Threat model desta migração
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:** somente este roadmap.
 
-🔴 **Não pule.** O threat model da REQ de REQ órfã achou a família `findREQ` — 3 sítios que o
-arquiteto não tinha enumerado. Aqui o custo de enumerar errado é maior: o que não for encontrado
-antes da Wave 3 vira código deletado sem substituto.
-
-**Ações:**
-1. **Enumeração:** todo sítio que **assume três implementações**. Não só `npm/src/` e
-   `pypi/trackfw/` — também CI, Makefile, gates, docs, templates de artefato, `.github/`, scripts de
-   release. Declare a lista fechada com a busca que a fecha.
-   🔴 Use `/usr/bin/grep` ou `git grep`: o `grep` do shell é `ugrep -I` e omite arquivos com NUL byte.
-2. **Threat model:** quem esvazia esta migração sem quebrar regra escrita?
-3. **Falsificação nas duas direções:** o que quebra se a migração regredir, e o que quebra se ela
-   **for longe demais** — removendo algo que ainda tem consumidor.
-4. **Residual declarado.** Em especial: a audiência que a ADR admite estar sendo trocada
-   (política corporativa que proíbe executáveis, não só rede).
-
 **Critérios de aceite:**
-- [ ] As quatro seções com evidência, não asserção de uma linha
-- [ ] 🔴 A lista de sítios inclui pelo menos uma categoria **fora** de `npm/` e `pypi/`
-- [ ] Nenhuma linha de implementação neste ML
+- [x] As quatro seções com evidência, não asserção de uma linha
+- [x] 🔴 A lista de sítios inclui pelo menos uma categoria **fora** de `npm/` e `pypi/`
+- [x] Nenhuma linha de implementação neste ML
+
+---
+
+#### Seção 1 — Completude da enumeração
+
+**Busca usada:** `/usr/bin/grep` e `git grep` em todo o worktree (o `grep` do ambiente é `ugrep -I`
+e omite em silêncio arquivos com NUL byte — `npm/src/validator/index.js` e
+`npm/src/integrations/doctor.js` foram confirmados com NUL byte; toda busca abaixo usou o binário
+cru do sistema). Lista fechada:
+
+**Categoria A — Go produto (`internal/`):**
+A1. `internal/commands/release.go` linhas 95-108: array `releaseVersionFiles` hardcoda cinco caminhos
+lidos por `trackfw release tag`, incluindo `pypi/trackfw/__init__.py` (duas vezes) e
+`npm/package.json`. Após a Wave 3 (AC5 apaga `pypi/trackfw/`), `trackfw release tag` recusa com
+erro de leitura — o CLI Go próprio do projeto perde a capacidade de publicar releases.
+A2. `internal/commands/commit.go` linhas 188-191: `commitCommandDirs` lista `npm/src/commands/` e
+`pypi/trackfw/commands/` na heurística de tipo de commit. Após Wave 3, a heurística deixa de
+disparar para esses caminhos silenciosamente (mudança comportamental, não crash).
+
+**Categoria B — CI workflows (`.github/workflows/`):**
+B1. `quality.yml` job `node` (linha 62): `npm ci`, `npm test`, `npm run smoke`, `npm pack --dry-run`
+contra `npm/`.
+B2. `quality.yml` job `python` (linha 90): matrix [3.10, 3.12], `pytest pypi/tests -q`.
+B3. `quality.yml` job `windows-full-suites` (linha 150): executa npm test e pytest.
+B4. `quality.yml` job `windows-integrations-resolve` (linha 117):
+`pytest pypi/tests/test_integrations_resolve.py`.
+B5. `quality.yml` job `consumer-smoke-by-agent` (linha ~1596): instala os 3 CLIs e invoca
+`check-consumer-smoke-by-agent.sh`.
+B6. `release.yml` job `quality` (linhas 21-41): `npm test` e `pytest pypi/tests -q` como pré-check
+de release.
+B7. `release.yml` job `publish-npm` (linhas 83-104): faz bump em `npm/package.json` e publica a
+estrutura atual de `npm/` — após v8 a estrutura muda completamente (casquinha + optionalDeps).
+B8. `release.yml` job `publish-pypi` (linhas 107-135): `python -m build pypi` e publica
+`pypi/dist/` — toda a estrutura muda para wheels `py3-none-<platform>`.
+
+**Categoria C — Required status checks (`.github/required-status-checks.txt`):**
+C1. Declara como checks obrigatórios (bloqueiam merge no GitHub): `node`, `python (3.10)`,
+`python (3.12)`, `package-smoke`, `windows-integrations-resolve`, `windows-full-suites`. Esses
+nomes vivem **fora do repositório** em branch protection (conjunto R). CI não tem acesso a R —
+`check-required-status-checks.py` roda só com `--scope dw`. Se Wave 3 remove os jobs `node` e
+`python` sem atualizar R, o check-name não é mais emitido por nenhum workflow e **todo PR seguinte
+fica pendente para sempre** (nota do vault: `matriz-em-job-required-por-nome-fica-pendente-para-sempre-2026-09-08.md`).
+
+**Categoria D — Makefile:**
+D1. Targets `.PHONY`: `test-node` (`cd npm && npm test`) e `test-python`
+(`python3 -m pytest pypi/tests -q`). Linha 9 e 17-21.
+D2. `quality: test test-node test-python lint parity` (linha 174). Após Wave 3,
+`make quality` invoca targets cujos objetos não existem.
+
+**Categoria E — Scripts de gate não-paridade que inspecionam source files:**
+E1. `scripts/check-raw-read-ban.sh` (linhas 100-141): lê `npm/src/validator/index.js` e
+`pypi/trackfw/validator.py`.
+E2. `scripts/check-output-encoding-declared.sh` (linhas 145-146): lê
+`npm/src/generators/hooks.js` e `pypi/trackfw/generators/init_gen.py`.
+E3. `scripts/check-atomic-write-anti-divergence.sh` (linhas 95-97): lê três arquivos em
+`pypi/trackfw/`.
+E4. `scripts/check-ref-separator-portability.sh` (linhas 91-206): lista específica de arquivos
+em `npm/src/` e `pypi/trackfw/`.
+E5. `scripts/check-static-assets.sh` (linhas 60-61): `npm/src/serve/static` e
+`pypi/trackfw/serve/static`. **Nota:** Go embeds `internal/serve/static` via `go:embed`
+(`internal/serve/serve.go:17`); as cópias npm/pypi foram mantidas pela paridade tripla, não
+como fonte. Após Wave 3 o gate perde seu objeto.
+E6. `scripts/check-integration-assets.sh` (linhas 58-59): `npm/src/integrations/assets` e
+`pypi/trackfw/integrations/assets`. Mesma situação — Go embeds via `go:embed assets`
+(`internal/integrations/catalog.go:15`).
+E7. `scripts/sync-integration-assets.sh` (linhas 26-27): sincroniza PARA esses diretórios. Após
+Wave 3 o destino some.
+E8. `scripts/check-python-writes-lf.sh`: percorre `pypi/trackfw/` — tem vacuity guard que faz
+exit 1 em zero arquivos, então falha ruidosamente após Wave 3.
+E9. `scripts/check-tty-detection.sh` (linha 66): percorre `pypi/trackfw/` — mesma vacuity, mesma
+falha ruidosa.
+E10. `scripts/check-serve-api-file-security.sh` (linhas 38-40): lê quatro arquivos em npm/pypi.
+**Silente:** linha 122 usa `grep -q ... 2>/dev/null` — se o arquivo some, o check passa sem
+coverage (falso positivo de gate).
+E11. `scripts/check-serve-browser-security.sh` (linhas 62-66): lê `npm/src/commands/serve.js`,
+`pypi/trackfw/commands/serve.py`, `pypi/trackfw/__main__.py`.
+
+**Categoria F — Falsify sharding (`scripts/check-gates-falsify.sh`):**
+F1. Linhas 392, 1177-1194, 2373-3030: copia `npm/bin/trackfw`, `npm/src/`, `pypi/` como fixtures
+de teste e invoca diretamente os CLIs Node e Python em 144 referências. Após Wave 3 os fixtures
+não existem, a contagem de cenários muda e o shard coverage (`check-falsify-shard-coverage.sh`)
+pode passar sobre um corpus reduzido.
+
+**Categoria G — `docs/cli-parity.md` anotações com gate= apontando para test files:**
+G1. 192 anotações `gate=` em 270 seções. Exemplos: `gate=npm/tests/credential_guard_integrity.test.js,pypi/tests/test_credential_guard_integrity.py`. `check-parity-contract-coverage.sh` critério 2 exige que o caminho em `gate=` exista no disco — após ML-3B remover `npm/tests/` e `pypi/tests/`, essas anotações fazem o gate falhar.
+
+**Fechamento da lista:** busca com `/usr/bin/grep -rn "npm/src\|pypi/trackfw\|npm/bin\|npm/tests\|pypi/tests" .github/ Makefile scripts/ internal/ docs/cli-parity.md` enumera os sítios acima. Não foram encontradas categorias adicionais em templates de artefato (`docs/roadmaps/`, `docs/req/`) nem em scripts de instalação (`scripts/install.sh`). A lista inclui categorias A (Go produto) e C (required-status-checks) que estão **fora de `npm/` e `pypi/`**, satisfazendo o critério de aceitação.
+
+---
+
+#### Seção 2 — Threat model
+
+**Adversário:** o implementador que executa a Wave 3 sem atualizar as dependências fora de `npm/` e `pypi/`. Não é um atacante externo — é o desenvolvedor apressado ou o agente que recebe um handoff incompleto.
+
+**Como esvaziar a migração sem quebrar regra escrita:**
+
+**Vetor 1 — Release quebrado (A1, severidade: crítica).**
+O agente executa Wave 3 (apaga `pypi/trackfw/`) antes que ML-1A atualize `internal/commands/release.go`. A regra escrita exige ML-1A antes de ML-3A (dependência implícita no roadmap), mas não há gate que impeça Wave 3 de começar com `release.go` intacto. Resultado: `trackfw release tag` lança erro de leitura a cada invocação. O projeto perde a capacidade de publicar releases até que alguém edite product code — e isso não é reversível pela branch protection.
+
+**Vetor 2 — Branch protection trava o repositório (C1, severidade: crítica).**
+Wave 3 remove os jobs `node` e `python` dos workflows. `make quality` passa, `trackfw validate` passa, o PR mergeia. O conjunto R (GitHub branch protection) ainda exige check-names que nenhum workflow emite. Todo PR subsequente fica bloqueado indefinidamente — inclusive o PR que consertaria o problema. O repositório entra em deadlock. Esta é a mesma falha documentada na nota de vault `matriz-em-job-required-por-nome-fica-pendente-para-sempre-2026-09-08.md`.
+
+**Vetor 3 — Gate silente passa sem coverage (E10, severidade: alta).**
+`check-serve-api-file-security.sh` usa `grep -q ... 2>/dev/null` ao verificar `pypi/trackfw/commands/serve.py`. Após Wave 3, o arquivo some e o grep retorna não-zero em silêncio — o check continua passando (exit 0) sem ter verificado nada. A auditoria de segurança de serve desaparece sem deixar rastro.
+
+**Vetor 4 — Falsify corpus reduzido, shard coverage verde (F1, severidade: média).**
+Wave 3 remove `npm/src/` e `pypi/`. `check-gates-falsify.sh` copia esses diretórios como fixtures. Com os fixtures ausentes, os cenários que os invocam são ignorados ou falham silenciosamente. `check-falsify-shard-coverage.sh` verifica cobertura relativa ao corpus presente — um corpus reduzido produz cobertura de 100% sobre menos cenários. Gate verde, coverage real reduzida.
+
+**Vetor 5 — Commit heuristic muda silenciosamente (A2, severidade: baixa).**
+`trackfw commit` para de classificar corretamente commits em caminhos `npm/src/commands/` e `pypi/trackfw/commands/`. Não gera erro, não quebra gate — apenas classifica commits de forma diferente. Comportamento observável só por quem conhece a heurística anterior.
+
+---
+
+#### Seção 3 — Falsificação nas duas direções
+
+Para cada superfície: onde a sabotagem entra, qual gate deveria capturar, em qual direção.
+
+**Direção regressão (a migração não se completa — Wave 3 foi revertida ou não executada):**
+
+| Superfície | Onde entra a sabotagem | Gate que deveria capturar | Resultado esperado |
+|---|---|---|---|
+| npm/src/ permanece | Wave 3 não apaga `npm/src/` | `check-gates-falsify.sh` invoca Node — mas se Node passa, gate verde; nenhum gate detecta "npm/src/ ainda existe" | Falso negativo: gate verde, fonte mantida |
+| pypi/trackfw/ permanece | idem | idem para Python | Falso negativo |
+| `release.go` não atualizado | ML-1A não entregue antes de Wave 3 | Nenhum gate — só falha em runtime ao rodar `trackfw release tag` | Não capturado pelo CI |
+| required-status-checks não atualizado | Wave 3 remove jobs sem atualizar R | `make check-required-full` detecta D\\R — mas só é obrigatório na release, não na PR | Falso negativo: PR mergeia, repositório trava depois |
+
+**Direção longe demais (removeu algo que ainda tem consumidor):**
+
+| Superfície | Onde entra a sabotagem | Gate que deveria capturar | Resultado esperado |
+|---|---|---|---|
+| `cli-parity.md` anotações gate= | ML-3B remove `npm/tests/` e `pypi/tests/`; anotações ficam apontando para paths inexistentes | `check-parity-contract-coverage.sh` critério 2 — path em `gate=` deve existir no disco | Capturado — gate falha ruidosamente |
+| `check-python-writes-lf.sh` | pypi/trackfw/ removida antes do gate ser desativado | Vacuity guard do próprio script: exit 1 em zero arquivos | Capturado — gate falha ruidosamente |
+| `check-tty-detection.sh` | idem | idem | Capturado — gate falha ruidosamente |
+| `check-serve-api-file-security.sh` | pypi/trackfw/commands/serve.py removida | `2>/dev/null` suprime o erro — gate passa sem coverage | **Não capturado** — falso negativo silente |
+| falsify corpus | npm/src/ e pypi/ removidas antes dos cenários serem convertidos | `check-falsify-shard-coverage.sh` — mas mede cobertura relativa ao corpus presente | **Não capturado** — cobertura aparece 100% sobre corpus menor |
+| `trackfw release tag` | Wave 3 antes de ML-1A atualizar release.go | Nenhum gate em CI — só falha ao executar o comando | **Não capturado** — descoberto em produção |
+
+---
+
+#### Seção 4 — Residual declarado
+
+O que este design aceita não cobrir, dito explicitamente:
+
+**R1 — Audiência que recebe binário onde antes recebia código-fonte puro (da ADR).**
+A ADR documenta explicitamente: "Não prova que um administrador que proíbe executáveis em geral
+aceite um binário Go dentro de um tarball npm. Hoje esse usuário recebe Node e Python puros; com a
+opção D receberia um binário, e estaria pior." Esta audiência é aceita como perda intencional.
+
+**R2 — Remoção de um detector de defeito independente.**
+Os três CLIs foram a principal fonte de achados na campanha de paridade de 2026-09. Remover as
+reimplementações Node e Python remove a capacidade de detectar divergências de comportamento por
+execução independente. Após v8, nenhuma ferramenta no repositório verifica que o binário Go se
+comporta como os contratos documentados em `docs/cli-parity.md` prometem — só os smoke tests de
+consumidor fazem isso, em granularidade muito mais grossa. Este residual não está declarado na ADR.
+
+**R3 — `check-serve-api-file-security.sh` silente após Wave 3.**
+Identificado na Seção 3. O gate usa `2>/dev/null` em pelo menos uma verificação de arquivo Python.
+Após Wave 3 a verificação desaparece sem falha visível. A cobertura de segurança de serve reduz
+sem alarme. Requer correção no ML que remove o arquivo (AC7 deve nomear este gate explicitamente).
+
+**R4 — Falsify corpus encolhe sem alarme proporcional.**
+`check-falsify-shard-coverage.sh` mede cobertura relativa ao corpus presente. Com 144 referências
+Node/Python ausentes, a cobertura aparece completa sobre um corpus menor. Requer que ML-3B converta
+ou descarte os cenários Node/Python antes de remover os CLIs, e que `gen-falsify-chunks.py` seja
+re-calibrado com os pesos atualizados.
+
+**R5 — Dependência implícita ML-1A → ML-3A não tem gate.**
+A restrição "release.go deve ser atualizado antes de pypi/trackfw/ ser apagado" é uma dependência
+de ordem entre waves que o roadmap implica mas não impõe mecanicamente. Nenhum gate em CI detecta
+que `release.go` ainda referencia `pypi/trackfw/__init__.py`. A dependência existe apenas como
+texto neste roadmap — um agente que não leia esta seção pode executar Wave 3 fora de ordem.
 
 ---
 
