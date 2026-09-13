@@ -1,0 +1,16 @@
+# Binários pré-compilados — NÃO commitar (são artefatos de build, MBs)
+bins/
+wheels/*.whl
+
+# Binários copiados para dentro dos pacotes de plataforma.
+# 🔴 Regra por EXTENSÃO e não por diretório: `packages/*/bin/` engoliria também o
+# fonte da casquinha (`trackfw-shim/bin/trackfw.js`), que é o artefato mais
+# importante do protótipo. Descoberto na auditoria de 2026-09-12.
+packages/*/bin/trackfw
+packages/*/bin/trackfw.exe
+
+# Verdaccio storage
+/tmp/verdaccio-storage/
+
+# npm artifacts
+node_modules/
