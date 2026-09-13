@@ -2,6 +2,13 @@
 
 ---
 
+## Sessão 2026-09-13 — Ares (trackfw-nul — PR #354: packaging ausente em parity-falsify-shard + skip-silencioso-em-CI)
+
+**Início:** 2026-09-13 | Branch: `fix/v8-um-binario-muitos-canais` (trackfw-nul) | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md`
+**Tarefa:** Dois defeitos que bloqueiam PR #354: (1) `packaging` ausente nos jobs `parity-falsify-shard` e `parity-other-gates`; (2) gates com SKIP silencioso que ficaria verde em CI sem cobertura. Varredura de outros sítios com mesma causa.
+
+---
+
 ## Sessão 2026-09-13 — Ares (trackfw-nul — ML-1A D6-write: normalização PEP 440 em build_wheel.py)
 
 **Início:** 2026-09-13 | Branch: `fix/v8-um-binario-muitos-canais` (trackfw-nul) | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` ML-1A

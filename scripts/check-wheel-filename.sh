@@ -66,6 +66,14 @@ PYEOF
   if [[ "$result" == FAIL:* ]]; then
     echo "OK   [falsify/wheel-filename/raw]: nome não-normalizado rejeitado — $result"
     exit 0
+  elif [[ "$result" == SKIP:* ]]; then
+    if [[ -n "${CI:-}" ]]; then
+      echo "FAIL [falsify/wheel-filename/raw]: 'packaging' ausente no runner (CI=true) — instalar no job: pip install packaging" >&2
+      exit 1
+    else
+      echo "SKIP [falsify/wheel-filename/raw]: packaging indisponivel localmente — instale com: pip install packaging"
+      exit 0
+    fi
   else
     echo "FAIL [falsify/wheel-filename/raw]: esperava rejeição, obteve: $result" >&2
     exit 1
@@ -93,6 +101,14 @@ PYEOF
   if [[ "$result" == "PASS" ]]; then
     echo "OK   [falsify/wheel-filename/normalized]: nome normalizado aceito"
     exit 0
+  elif [[ "$result" == SKIP:* ]]; then
+    if [[ -n "${CI:-}" ]]; then
+      echo "FAIL [falsify/wheel-filename/normalized]: 'packaging' ausente no runner (CI=true) — instalar no job: pip install packaging" >&2
+      exit 1
+    else
+      echo "SKIP [falsify/wheel-filename/normalized]: packaging indisponivel localmente — instale com: pip install packaging"
+      exit 0
+    fi
   else
     echo "FAIL [falsify/wheel-filename/normalized]: esperava aceitação, obteve: $result" >&2
     exit 1
@@ -153,7 +169,16 @@ try:
     from packaging.utils import parse_wheel_filename, InvalidWheelFilename
     from packaging.version import Version
 except ImportError:
-    print("SKIP: packaging indisponivel")
+    # Nota: este bloco é código morto em modo normal. build_wheel.py (linha acima)
+    # já falha com SystemExit se 'packaging' estiver ausente — o shell encerra
+    # antes de chegar aqui (set -euo pipefail). Mantido por defensividade: se o
+    # ambiente divergir (ex: venv partido com packaging parcialmente instalado),
+    # emite uma mensagem clara em vez de traceback.
+    import os as _os
+    if _os.environ.get("CI"):
+        print("FAIL: 'packaging' ausente no runner (CI=true) — instalar no job: pip install packaging")
+    else:
+        print("SKIP: packaging indisponivel (instale com: pip install packaging)")
     sys.exit(0)
 
 errors = []
@@ -209,6 +234,9 @@ case "$result" in
     echo "OK   [wheel-filename]: '$BASENAME' — nome PEP 440 válido, versão=8.0.0rc1, internos consistentes"
     ;;
   SKIP:*)
+    # Código morto em modo normal (build_wheel.py hard-fail vem primeiro).
+    # Emitido apenas em caso de venv partido; em CI vira FAIL via o bloco
+    # except ImportError acima — este braço só é atingido localmente.
     echo "SKIP [wheel-filename]: packaging indisponível — ${result#SKIP: }"
     ;;
   FAIL:*)

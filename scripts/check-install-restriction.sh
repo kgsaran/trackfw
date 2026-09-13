@@ -61,6 +61,10 @@ note() { echo "NOTE: $1"; }
 # ── Guarda de dependências de ambiente ──────────────────────────────────────
 
 if ! command -v node >/dev/null 2>&1; then
+  if [[ -n "${CI:-}" ]]; then
+    echo "FAIL: 'node' ausente no runner (CI=true) — o workflow declara actions/setup-node; ausência é erro de configuração, não ambiente incompleto" >&2
+    exit 1
+  fi
   echo "SKIP: node não encontrado no PATH — ambiente incompleto"
   echo ""
   echo "install-restriction: SKIP (node ausente)"
@@ -68,6 +72,10 @@ if ! command -v node >/dev/null 2>&1; then
 fi
 
 if ! command -v npm >/dev/null 2>&1; then
+  if [[ -n "${CI:-}" ]]; then
+    echo "FAIL: 'npm' ausente no runner (CI=true) — o workflow declara actions/setup-node (que instala npm); ausência é erro de configuração, não ambiente incompleto" >&2
+    exit 1
+  fi
   echo "SKIP: npm não encontrado no PATH — ambiente incompleto"
   echo ""
   echo "install-restriction: SKIP (npm ausente)"
