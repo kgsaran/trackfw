@@ -11,14 +11,28 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 > `npm install trackfw` continua instalando a 7.6.0. Para testar a RC: `npm install trackfw@rc` /
 > `pip install trackfw==8.0.0rc1`.
 
-### ⚠️ Breaking Change — `require('trackfw')` deixa de funcionar
+### ⚠️ Breaking Changes — dois breaks, canais diferentes
+
+**npm — `require('trackfw')` deixa de funcionar**
 
 O campo `main` foi removido do `npm/package.json`. O pacote npm não exporta mais nenhum módulo
 Node.js — ele é uma casquinha que resolve e executa o binário Go. **Código que importava
-`require('trackfw')` como biblioteca quebra nesta versão.** Este é o único break de contrato desta
-migração.
+`require('trackfw')` como biblioteca quebra nesta versão.**
 
 Quem usava apenas o CLI (`npx trackfw` / `trackfw` no PATH) não é afetado.
+
+**PyPI — `python -m trackfw` deixa de funcionar**
+
+O pacote PyPI passa a ser uma wheel binária sem nenhum arquivo Python. O `__main__.py` que
+permitia `python -m trackfw` não existe mais. **Scripts ou pipelines que invocam
+`python -m trackfw` em vez do executável `trackfw` quebram nesta versão.**
+
+Quem já usava o executável `trackfw` diretamente não é afetado.
+
+| canal | o que quebra | quem é atingido |
+|---|---|---|
+| npm | `require('trackfw')` | quem usava o pacote como biblioteca |
+| PyPI | `python -m trackfw` | quem invocava por módulo em vez do executável |
 
 ### O que muda para quem instala
 

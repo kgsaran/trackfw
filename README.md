@@ -127,8 +127,8 @@ are than let you find them after adoption.
 **What we know works**
 
 - All three channels install (`npm install -g trackfw`, `pip install trackfw`, and the
-  published `trackfw_<version>_windows_amd64.tar.gz`). From v8.0.0 all three deliver the
-  same Go binary; no separate Node.js or Python implementation.
+  published `trackfw_<version>_windows_amd64.tar.gz` / `windows_arm64.tar.gz`). From v8.0.0 all
+  three deliver the same Go binary; no separate Node.js or Python implementation.
 - Core governance commands — `req new`, `roadmap new`, `roadmap move`, `status`,
   `validate` — run, and artifacts are written with LF endings.
 
@@ -138,8 +138,6 @@ are than let you find them after adoption.
   Install manually from the release archive for now.
 - Our Windows CI still reports **known test failures**. They are mapped by root cause,
   not unknown — but they are not zero.
-- **Windows ARM64 is not built.** Only `windows_amd64` is published.
-
 **Guard hooks on Windows — measured, per agent CLI**
 
 The guard hooks are `.sh` scripts, executed by *your* AI agent CLI. Which shell that CLI
@@ -183,8 +181,11 @@ no Python files and no source**. The Go binary is installed into the PATH by pip
 
 Platforms not covered by the published wheels now fail at resolution time with
 "no matching distribution found" — a clean failure instead of silently installing
-the wrong thing. Six platforms are covered: `linux-x64`, `linux-arm64`,
-`darwin-x64`, `darwin-arm64`, `win32-x64`, `win32-arm64`.
+the wrong thing. Eight wheels are published: `manylinux_2_17_x86_64`, `musllinux_1_2_x86_64`,
+`manylinux_2_17_aarch64`, `musllinux_1_2_aarch64`, `macosx_10_9_x86_64`,
+`macosx_11_0_arm64`, `win_amd64`, `win_arm64`. Linux publishes two wheels per
+architecture (manylinux + musllinux), so Alpine and similar musl-based distributions
+are covered.
 
 Shared behavior follows the [command contract](docs/cli-parity.md).
 
