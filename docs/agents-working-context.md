@@ -2,6 +2,13 @@
 
 ---
 
+## Sessão 2026-09-13 — Ares (trackfw-nul — PR #355: package-smoke sem Go no CI)
+
+**Início:** 2026-09-13 | Branch: `fix/v8-um-binario-muitos-canais` (trackfw-nul) | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md`
+**Tarefa:** PR #355 vermelho: job `package-smoke` não instala Go nem compila o binário antes de chamar `scripts/smoke-integration-packages.sh`, que exige `bin/trackfw`. Varredura de outros jobs com o mesmo defeito.
+
+---
+
 ## Sessão 2026-09-13 — Ares (trackfw-nul — PR #354: packaging ausente em parity-falsify-shard + skip-silencioso-em-CI)
 
 **Início:** 2026-09-13 | Branch: `fix/v8-um-binario-muitos-canais` (trackfw-nul) | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md`
