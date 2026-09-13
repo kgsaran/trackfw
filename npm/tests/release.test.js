@@ -9,14 +9,11 @@ const TAG = 'v9.9.9'
 const SHA = 'abc123def456'
 
 function validFiles(version) {
+  // ML-1A (v8): pypi/trackfw/__init__.py removed — RELEASE_VERSION_FILES no longer checks it.
   return {
     'internal/version/version.go': `package version\n\nvar Version = "${version}"\n`,
     'npm/package.json': JSON.stringify({ name: 'trackfw', version }),
     'pypi/pyproject.toml': `[project]\nname = "trackfw"\nversion = "${version}"\n`,
-    'pypi/trackfw/__init__.py':
-      'try:\n    from importlib.metadata import version\n' +
-      `    __version__ = version("trackfw") or "${version}"\n` +
-      `except Exception:\n    __version__ = "${version}"\n`,
     'CHANGELOG.md': `# Changelog\n\n## [${version}] - 2026-08-19\n\n### Added\n- x\n`,
   }
 }
@@ -178,32 +175,40 @@ test('release tag: mismatched pyproject version names the file', () => {
   assert.match(errLines[0], /pypi\/pyproject\.toml/)
 })
 
-test('release tag: mismatched __init__.py try-block fallback names it', () => {
-  const { deps, errLines } = makeDeps({
-    fileOverrides: {
-      'pypi/trackfw/__init__.py':
-        'try:\n    from importlib.metadata import version\n' +
-        '    __version__ = version("trackfw") or "0.0.1"\n' +
-        `except Exception:\n    __version__ = "${VERSION}"\n`,
-    },
-  })
-  const code = runReleaseTag(VERSION, deps)
-  assert.equal(code, 1)
-  assert.match(errLines[0], /importlib\.metadata fallback/)
+// ML-1A (v8) — static assertion: RELEASE_VERSION_FILES must not reference any path under
+// pypi/trackfw/ or npm/src/ (both deleted by Wave 3, ML-3A). A violation here means
+// 'trackfw release tag' breaks after Wave 3 with no CI gate to catch it first.
+// Affirmation: this test asserts every path in RELEASE_VERSION_FILES survives Wave 3.
+test('RELEASE_VERSION_FILES: no paths deleted by Wave 3', () => {
+  const { RELEASE_VERSION_FILES: files } = require('../src/release/runner')
+  for (const vf of files) {
+    assert.ok(
+      !vf.path.startsWith('pypi/trackfw/') && !vf.path.startsWith('npm/src/'),
+      `RELEASE_VERSION_FILES entry "${vf.label}" references "${vf.path}" which Wave 3 deletes`
+    )
+  }
 })
 
-test('release tag: mismatched __init__.py except-block fallback names it', () => {
-  const { deps, errLines } = makeDeps({
-    fileOverrides: {
-      'pypi/trackfw/__init__.py':
-        'try:\n    from importlib.metadata import version\n' +
-        `    __version__ = version("trackfw") or "${VERSION}"\n` +
-        'except Exception:\n    __version__ = "0.0.1"\n',
-    },
-  })
+// ML-1A (v8) — falsification: with pypi/trackfw/ absent (post-Wave-3 tree), release tag
+// must still succeed. Before the fix, the 5-entry array caused releaseTagObjectAbsentFmt
+// because readAtCommit('pypi/trackfw/__init__.py') returned an error. This test would
+// have been red against the old array.
+// Affirmation: this test asserts RELEASE_VERSION_FILES does not request pypi/trackfw/__init__.py.
+test('release tag: post-Wave-3 tree (no pypi/trackfw/) still succeeds', () => {
+  let pypiTrackfwCalled = false
+  const origMakeDeps = makeDeps
+  const { deps, errLines } = origMakeDeps()
+  const origRead = deps.readAtCommit
+  deps.readAtCommit = (sha, p) => {
+    if (p.startsWith('pypi/trackfw/')) {
+      pypiTrackfwCalled = true
+      return { content: '', error: new Error('object absent — post-Wave-3 tree has no pypi/trackfw/') }
+    }
+    return origRead(sha, p)
+  }
   const code = runReleaseTag(VERSION, deps)
-  assert.equal(code, 1)
-  assert.match(errLines[0], /except fallback/)
+  assert.equal(code, 0, `expected success with post-Wave-3 tree; errors: ${errLines.join('\n')}`)
+  assert.ok(!pypiTrackfwCalled, 'RELEASE_VERSION_FILES still requests pypi/trackfw/ — breaks after Wave 3')
 })
 
 test('release tag: accepts a leading "v" on the CLI argument', () => {
