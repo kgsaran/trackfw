@@ -1,47 +1,88 @@
-# CLI parity contract
+# CLI command contract and distribution channels
 
-Go is the behavioral reference. Node.js and Python must expose the same public
-commands unless an exception is listed below.
+From v8.0.0, trackfw is a **single Go binary** delivered through three channels.
+There are no separate Node.js or Python implementations.
 
-**Why Go is the reference, and not a majority vote:** trackfw was born in Go. The Node.js and
-Python CLIs were added later, by convention, to serve organisations whose security policy forbids
-downloading standalone executables — they already allow `npm` and `pip`. Those two runtimes exist to
-**ship the same product through another channel**, never to originate behaviour.
+**Why Go, and why one implementation:** trackfw was born in Go. The npm and PyPI
+channels were added later, by convention, to serve organisations whose security policy
+forbids downloading standalone executables — they already allow `npm` and `pip`. Those
+two channels existed to **ship the same product through another channel**, never to
+originate behaviour. From v8.0.0, this is literal: the binary arrives through the
+channel rather than being reimplemented in a different runtime.
 
-So when the three diverge, the question is not "which one is better" but "what is missing from
-Node/Python to match Go" — even when the other runtime looks more correct. If Go is the one that is
-genuinely wrong, fix Go first, then propagate. Never close a parity gap by removing capability from
-Go.
+When Go has a bug, fix Go. There are no other implementations to align to.
+Never remove capability from Go to simplify a channel — the channel adapts to the
+product, not the other way around.
 
-Supported runtimes: Go 1.25+, Node.js 18+, and Python 3.10+.
+**Every contract in this document names the gate that proves it.** That principle
+survives the v8 migration intact. See each `## section` for the annotated gate.
 
-| Command | Go | Node.js | Python | Contract |
-|---|---:|---:|---:|---|
-| `init` | yes | yes | yes | Creates governance structure and `trackfw.yaml`; `--identity-preset` selects an agent identity preset |
-| `adr` | yes | yes | yes | `new`, `list` |
-| `req` | yes | yes | yes | `new`, `list`, `move` |
-| `roadmap` | yes | yes | yes | `new`, `move`, `list`, `show` |
-| `validate` | yes | yes | yes | Text and `--json`; nonzero on violations |
-| `status` | yes | yes | yes | Governance summary |
-| `context` | yes | yes | yes | Markdown/JSON context |
-| `log` | yes | yes | yes | Append/read transition log |
-| `baseline` | yes | yes | yes | Persist accepted findings |
-| `help` | yes | yes | yes | Single explicit help surface: `trackfw help` lists commands and config keys; `trackfw help <command>` shows that command's help; `trackfw help <key>` shows config key documentation; unknown topic exits non-zero with a suggestion when a close match exists. Native `--help` on root/subcommands is preserved separately by each runtime's framework (cobra/commander/argparse) |
-| `configure` | yes | yes | yes | Generate configuration |
-| `discover` | yes | yes | yes | Inspect existing repository |
-| `update` | yes | yes | yes | Refresh managed artifacts |
-| `metrics` | yes | yes | yes | Delivery metrics |
-| `sync` | yes | yes | yes | Jira/Linear synchronization |
-| `serve` | yes | yes | yes | Local dashboard |
-| `agents` | yes | yes | yes | `list`, `install`, `uninstall`, `update` across supported AI CLIs |
-| `skills` | yes | yes | yes | `list`, `install`, `uninstall`, `update` across supported AI CLIs |
-| `note` | yes | yes | yes | `new <title>` — creates `vault/notes/<slug>-YYYY-MM-DD.md` and links in `index.md`; idempotent (fails on duplicate) |
-| `ship` | yes | yes | yes | Governed `git commit + push + open PR/MR` for `feat`/`fix`/`refactor`/`chore`/`docs` branches; hard governance gate for `feat`/`fix`/`refactor` only — `chore`/`docs` skip it (see below) |
-| `push` | yes | yes | yes | Governed `git push` for already-committed work — never commits, never opens a PR/MR; same branch vocabulary and governance gate as `ship` (see below) |
-| `branch` | yes | yes | yes | `new <type>/<slug>` — for `feat`/`fix`/`refactor`, gates `git checkout -b` on the same `branch_has_wip_roadmap` matching logic `trackfw validate` already applies, moving the check before branch creation instead of after; `chore`/`docs` create the branch without that gate, mirroring the housekeeping exemption `trackfw ship`/`trackfw commit` already grant those types (see below). `prune [--apply]` — reports (and, with `--apply`, deletes) local branches already integrated into `origin/main` via the touched-files heuristic (see below); `--dry-run` behavior is the default, `--apply` is opt-in |
-| `gemini` / `cursor` / `copilot` / `windsurf` / `amazonq` | yes | no | no | Historical Go-only compatibility aliases |
-| `version` / `--version` | yes | yes | yes | Both print the same single line: `trackfw <semver>`, no `v` prefix — see "Version output" below |
-| `changelog` | yes | yes | yes | Reads `CHANGELOG.md` at project root; no flags prints the first `## [...]` section (`Unreleased` or latest version); `--version <x.y.z>` prints a specific section (accepts an optional leading `v`); `--all` prints the entire file. Error messages byte-identical: `CHANGELOG.md not found — nothing to show`, `version "<x>" not found in CHANGELOG.md` |
+## Distribution channels
+<!-- trackfw-contract: none reason=distribution channel descriptions document packaging, not CLI behaviour — there is no behavioural assertion to gate here -->
+
+All three channels deliver the same binary. No behavioural difference exists between
+channels — only packaging differs.
+
+| Channel | Install | What ships |
+|---|---|---|
+| **GitHub / Homebrew** | release archive / `brew install trackfw` | Go binary, prebuilt per platform |
+| **npm** | `npm install -g trackfw` | ~80-line JS shim (`trackfw` package) + Go binary (`@trackfw-bin/<platform>`) resolved via `optionalDependencies` |
+| **PyPI** | `pip install trackfw` | Binary wheel, `gh-bin` format — zero Python files, Go binary placed in `.data/scripts/` |
+
+**Platforms (v8.0.0-rc1):** `linux-x64`, `linux-arm64`, `darwin-x64`, `darwin-arm64`,
+`win32-x64`, `win32-arm64`.
+
+**Validation coverage measured at v8.0.0-rc1:** real-machine smoke tests covered
+**Windows arm64** and **macOS arm64** only. No real x64 machine was tested for any OS.
+The exec-bit assignment for the PyPI wheel (`external_attr` in the zip) was not
+exercised on a clean machine — on Linux and macOS, `pip install` passes but the
+binary fails with permission denied if the bit is absent. Does not apply to Windows.
+
+**Who is affected by the v8 change:**
+- Security policy allows `npm`/`pip` but blocks direct executable downloads: you
+  remain served — the binary arrives through the channel your policy already
+  authorises.
+- Security policy forbids compiled binaries in any form regardless of channel: all
+  three channels are now affected. This migration does not resolve that case.
+
+**PyPI on uncovered platforms:** `pip install trackfw` fails at resolution with
+"no matching distribution found" on platforms not in the list above. Before v8 it
+fell back to an sdist that installed the Python implementation. The failure is now
+clean and explicit instead of silently installing the wrong thing.
+
+## Command contract
+<!-- trackfw-contract: gap reason=command table is a contract surface; configure/discover/metrics/sync and others have no ## section below naming a gate — table completeness is not mechanically gated -->
+
+All commands below are implemented once, in the Go binary. The contract column
+describes the expected behaviour; each `##` section below names the gate that proves it.
+
+| Command | Contract |
+|---|---|
+| `init` | Creates governance structure and `trackfw.yaml`; `--identity-preset` selects an agent identity preset |
+| `adr` | `new`, `list` |
+| `req` | `new`, `list`, `move` |
+| `roadmap` | `new`, `move`, `list`, `show` |
+| `validate` | Text and `--json`; nonzero on violations |
+| `status` | Governance summary |
+| `context` | Markdown/JSON context |
+| `log` | Append/read transition log |
+| `baseline` | Persist accepted findings |
+| `help` | Single explicit help surface: `trackfw help` lists commands and config keys; `trackfw help <command>` shows that command's help; `trackfw help <key>` shows config key documentation; unknown topic exits non-zero with a suggestion when a close match exists. Native `--help` on root/subcommands is preserved by cobra |
+| `configure` | Generate configuration |
+| `discover` | Inspect existing repository |
+| `update` | Refresh managed artifacts |
+| `metrics` | Delivery metrics |
+| `sync` | Jira/Linear synchronization |
+| `serve` | Local dashboard |
+| `agents` | `list`, `install`, `uninstall`, `update` across supported AI CLIs |
+| `skills` | `list`, `install`, `uninstall`, `update` across supported AI CLIs |
+| `note` | `new <title>` — creates `vault/notes/<slug>-YYYY-MM-DD.md` and links in `index.md`; idempotent (fails on duplicate) |
+| `ship` | Governed `git commit + push + open PR/MR` for `feat`/`fix`/`refactor`/`chore`/`docs` branches; hard governance gate for `feat`/`fix`/`refactor` only — `chore`/`docs` skip it (see below) |
+| `push` | Governed `git push` for already-committed work — never commits, never opens a PR/MR; same branch vocabulary and governance gate as `ship` (see below) |
+| `branch` | `new <type>/<slug>` — for `feat`/`fix`/`refactor`, gates `git checkout -b` on the same `branch_has_wip_roadmap` matching logic `trackfw validate` already applies, moving the check before branch creation instead of after; `chore`/`docs` create the branch without that gate, mirroring the housekeeping exemption `trackfw ship`/`trackfw commit` already grant those types (see below). `prune [--apply]` — reports (and, with `--apply`, deletes) local branches already integrated into `origin/main` via the touched-files heuristic (see below); `--dry-run` behavior is the default, `--apply` is opt-in |
+| `gemini` / `cursor` / `copilot` / `windsurf` / `amazonq` | Compatibility aliases (Go binary only; existed as Go-only in v7) |
+| `version` / `--version` | Both print the same single line: `trackfw <semver>`, no `v` prefix — see "Version output" below |
+| `changelog` | Reads `CHANGELOG.md` at project root; no flags prints the first `## [...]` section (`Unreleased` or latest version); `--version <x.y.z>` prints a specific section (accepts an optional leading `v`); `--all` prints the entire file. Error messages byte-identical: `CHANGELOG.md not found — nothing to show`, `version "<x>" not found in CHANGELOG.md` |
 
 ## Version output
 

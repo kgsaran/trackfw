@@ -37198,3 +37198,15 @@ pré-requisito hard de ML-3A.
 
 **Concluído:** (1) `npm/package.json` corrigido: bin→`./bin/trackfw.js`, files→`["bin/trackfw.js"]`, main removido, deps movidas para devDeps, smoke→`node --check`. Lockfile regenerado. (2) release.yml: discriminante corrigido para sempre rodar `check-channels-content.sh --local` (não condicionado à presença de npm/src/ na árvore). (3) `smoke-integration-packages.sh` npm arm reescrito: shim + platform pkg sem `bin` (AC13) + Go binary real; `check-integration-assets.sh` e `check-channels-content.sh` atualizados. Makefile: `package-smoke: build check-integration-assets`. Reconciliações escritas no roadmap. Falsificação: src/ em files → FAIL exit 1 (provado). Shim sem binary → exit 1 nomeando plataforma. Shim com binary (sem bin field) → delegates exit 0. `make quality` verde. `npm test` 910/0. `check-workflow-yaml.py` 8/8. `trackfw validate` sem violações bloqueantes.
 
+
+---
+
+## Sessão 2026-09-13 — Hefesto (ML-3D: documentação v8 e declaração do break)
+
+**Início:** 2026-09-13 | Branch: `fix/binario-muitos-canais` (trackfw-triagem) | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` ML-3D
+**Tarefa:** AC8 + AC11 — doc-only: (1) README.md corrige as três linhas "pure Node.js / pure Python / no compiled binary"; (2) docs/cli-parity.md reescrito como documento de canais; (3) Regra Dura de Paridade no CLAUDE.md reescrita para v8; (4) CHANGELOG.md [8.0.0-rc1] completado com o break, limites medidos e mudanças de empacotamento.
+**Estado ao início:** gate check-parity-contract-coverage.sh verde (177/177 seções, OK). Branch HEAD=763277a7, diff vazio contra main.
+
+**Concluído:** (1) README.md: seção npm corrigida ("pure Node.js — no binary" → explicação honesta do shim + binário + quem é afetado pela mudança); seção pip corrigida ("pure Python 3.10+" → wheel binária, zero .py, falha limpa em plataforma não coberta); linha "three CLIs install" corrigida para "all three channels". (2) docs/cli-parity.md: preamble reescrito como documento de canais — nova seção "## Distribution channels" (annotation: none reason=...) com tabela de canais + limites medidos (arm64-only, exec bit não exercitado) + quem é afetado; nova seção "## Command contract" (annotation: none reason=...) com tabela de comandos simplificada (sem colunas Go/Node/Python). Intro reescrita: uma implementação, três canais. gate check-parity-contract-coverage.sh: verde, 255 seções (2 novas). (3) CLAUDE.md: Regra Dura de Paridade reescrita para v8 — uma implementação em Go, histórico preservado, princípio sobrevive por construção. (4) CHANGELOG.md [8.0.0-rc1]: seção "Mudanças de empacotamento" adicionada (npm sem src/, PyPI sem .py, pip em plataforma não coberta falha limpo); seção "Limites medidos" adicionada (arm64-only, exec bit não exercitado). check-manifest-version-gate.sh: 10/0. trackfw validate: 185 warnings pré-existentes, 0 violações novas. ML-3D marcado ✅.
+
+---
