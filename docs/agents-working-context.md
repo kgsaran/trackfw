@@ -2,6 +2,13 @@
 
 ---
 
+## Sessão 2026-09-12 (4) — Ares (Arm B (disco): t.skip() quando binário gitignored ausente — PR #346)
+
+**Início:** 2026-09-12 | Branch: `fix/validar-um-binario-muitos-canais` | PR #346 aberto.
+**Tarefa:** Corrigir falha em CI no `npm/tests/shim_packaging.test.js` linha 116: braço "Arm B (disco)" trata binário ausente (gitignored por design em `prototype/.gitignore`) como defeito de produto em vez de condição de ambiente. Três checks obrigatórios cascateavam a partir disso: `node`, `parity-falsify-shard`, `parity`, `windows-full-suites`. Fix: aceitar `t` (TestContext) no braço de disco, verificar existência antes do assert — se ausente, `t.skip()` com razão nomeada referenciando a REQ. Braços A, B-estático e B-runtime continuam rodando sempre.
+
+---
+
 ## Sessão 2026-09-12 (3) — Ares (Correção 1+2: --offline + reconciliação ECONNREFUSED)
 
 **Início:** 2026-09-12 | Branch: `fix/validar-um-binario-muitos-canais` | PR #346 aberto.
