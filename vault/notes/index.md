@@ -4,6 +4,7 @@
 
 ## Índice
 
+- [falsificar-fonte-python-deixa-pyc-obsoleto-2026-09-13](falsificar-fonte-python-deixa-pyc-obsoleto-2026-09-13.md) — 🔴 mutar fonte Python para falsificar deixa `.pyc` que **sobrevive à restauração**: disco e `git status` limpos, interpretador com o valor antigo; o sintoma aponta para código e enganou duas pessoas seguidas (o agente e o arquiteto) — limpar `__pycache__` faz parte da restauração
 - [npm-offline-port1-syn_sent-vacuidade-2026-09-12](npm-offline-port1-syn_sent-vacuidade-2026-09-12.md) — porta 1 causa SYN_SENT (não ECONNREFUSED) no macOS; `--offline` com cache vazio é o probe correto; com `file:` tarballs + `--omit=optional`, `--offline` passa vacuamente — a prova vive em braço separado com ENOTCACHED
 - [opcao-d-npm-cache-eacces-restricao-geral-do-npm-2026-09-12](opcao-d-npm-cache-eacces-restricao-geral-do-npm-2026-09-12.md) — AC4 da validação D: npm recusa install quando cache dir é chmod 555 (restrição geral, não defeito da opção D); variante com HOME ro + cache gravável passa; go-to-wheel v0.2 incompatível com cmd/trackfw/ layout
 - [sync-req-references-bootstrap-gap-2026-09-12](sync-req-references-bootstrap-gap-2026-09-12.md) — `syncREQReferences` não estabelece backlink REQ→roadmap quando `roadmap: ""` no frontmatter; `roadmap new --from-req` não grava o backlink na REQ; `Roadmap: none` era placeholder aceito por `contentHasMarkerValue` mas rejeitado por `extractRefPath` (ML-1A); fix pertence ao ML-1B (AC7)

@@ -2,6 +2,14 @@
 
 ---
 
+## Sessão 2026-09-13 — Hades (ML-1F: gate de byte NUL literal em fonte)
+
+**Início:** 2026-09-13 | Branch: `fix/binario-muitos-canais` (trackfw-triagem) | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` ML-1F
+**Tarefa:** Criar `scripts/check-no-literal-nul-in-source.sh` + `scripts/nul-source-exceptions.txt` + entrada no Makefile (parity-rest). Escolha de design: Opção 1 (lista de exceção com prazo estrutural, não calendário). Três modos de obsolescência cobertos: arquivo ausente, contagem = 0, contagem divergente.
+**Concluído:** Gate verde em real tree (651 fontes texto; 2 excepções declaradas, sem terceiro). Self-test 5 arms verdes. check-output-encoding-declared passou após adicionar `export PYTHONIOENCODING=utf-8`. Makefile atualizado (fim de parity-rest). ML-1F marcado ✅. trackfw commit + push executados.
+
+---
+
 ## Sessão 2026-09-12 — Ares (trackfw-nul — Correção 1+2: --offline + reconciliação ECONNREFUSED)
 
 **Início:** 2026-09-12 | Branch: `fix/validar-um-binario-muitos-canais` (trackfw-nul) | PR #346.
@@ -23,6 +31,7 @@
 
 **Início:** 2026-09-12 | Branch: `fix/validar-um-binario-muitos-canais` | PR #346 aberto.
 **Tarefa:** Corrigir falha em CI no `npm/tests/shim_packaging.test.js` linha 116: braço "Arm B (disco)" trata binário ausente (gitignored por design em `prototype/.gitignore`) como defeito de produto em vez de condição de ambiente. Três checks obrigatórios cascateavam a partir disso: `node`, `parity-falsify-shard`, `parity`, `windows-full-suites`. Fix: aceitar `t` (TestContext) no braço de disco, verificar existência antes do assert — se ausente, `t.skip()` com razão nomeada referenciando a REQ. Braços A, B-estático e B-runtime continuam rodando sempre.
+**Concluído:** `npm/tests/shim_packaging.test.js` corrigido — braço de disco aceita `t`, skip nomeado quando binário ausente. Verificado SEM binário (CI): 3 pass, 1 skip nomeado, 0 fail, EXIT 0. COM binário (local): 4 pass, 0 skip, 0 fail, EXIT 0. `npm test` completo: 911 pass / 1 skip / 0 fail sem binário; 912 pass / 0 skip sem binário presente. Nota de vault criada e linkada. `trackfw commit` (ff2dd564) + `trackfw push` executados. PR #346 atualizado.
 
 ---
 
@@ -37085,3 +37094,48 @@ ML-1B da triagem medida entregue.
 **Zero REQs fechadas.** `trackfw req move` não foi executado. `trackfw validate` RC=0 (178 warnings, todos pré-existentes).
 
 Próximo: ML-2A (gate de conjunto de regras) — handoff para implementador de produto.
+
+## Sessão 2026-09-12 — Hades (Security) — ML-0A início
+
+Início: 2026-09-12. Executando ML-0A do roadmap
+`ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` (branch `fix/v8-um-binario-muitos-canais`,
+worktree `trackfw-nul`). Tarefa: threat model da migração v8 (opção D: um binário, muitos canais).
+Enumeração completa de sítios que assumem três implementações — inclui categorias fora de `npm/` e
+`pypi/`. Entrega: quatro seções no roadmap com evidência, não asserção.
+
+## Sessão 2026-09-12 — Hades (Security) — ML-0A CONCLUÍDO
+
+ML-0A do roadmap `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` entregue.
+
+**Artefatos modificados:**
+- `docs/roadmaps/wip/ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` — ML-0A marcado ✅,
+  quatro seções escritas com evidência.
+- `docs/agents-working-context.md` — esta entrada.
+
+**Principais achados (por severidade):**
+- CRÍTICO: `internal/commands/release.go:95-108` hardcoda `pypi/trackfw/__init__.py` como
+  version-site — Wave 3 quebra `trackfw release tag` permanentemente. ML-1A deve atualizar
+  product code antes de ML-3A apagar o arquivo. Dependência sem gate.
+- CRÍTICO: `.github/required-status-checks.txt` declara `node`, `python (3.10)`, `python (3.12)`
+  como required checks. Wave 3 remove os jobs; branch protection (R, fora do repo) continua
+  exigindo check-names que nenhum workflow emite. Cada PR subsequente fica pendente para sempre.
+- ALTA: `check-serve-api-file-security.sh` usa `2>/dev/null` — gate passa silenciosamente após
+  Wave 3 remover `pypi/trackfw/commands/serve.py`. Coverage de segurança some sem alarme.
+- MÉDIA: Falsify corpus encolhe sem alarme proporcional — `check-falsify-shard-coverage.sh`
+  mede relativo ao corpus presente.
+
+**Residual aceito:** audiência de política corporativa anti-executável (da ADR) + remoção do
+detector de defeito independente (novo, não na ADR) + três gaps de gate sem alarme (R3/R4/R5).
+
+Próximo: handoff para o arquiteto — Wave 1 pode iniciar com ML-1A (atualizar release.go) como
+pré-requisito hard de ML-3A.
+
+---
+
+## Sessão 2026-09-13 — Ares (ML-1D + ML-1E — gates de byte-identidade e instalação sob restrição)
+
+**Início:** 2026-09-13 | Branch: `fix/v8-um-binario-muitos-canais` | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md`
+**Tarefa:** Promover Pergunta 15 do windows-probe.yml a gate permanente (ML-1D, AC9) e portar 4 cenários de instalação sob restrição (ML-1E, AC10). Novos arquivos: `scripts/check-shim-byte-identity.sh`, `scripts/check-install-restriction.sh`, wiring em Makefile e quality.yml.
+**Concluído:** ML-1D: `scripts/check-shim-byte-identity.sh` criado — 5 comandos comparados (C1 stdout version, C2 stdout validate --json ~30kB, C3 stdout status, C4 stderr context --json, C5 exit code version --nonexistent); staging direto sem npm install; 5/5 SUBSTANTIVE, 10 pass, 0 fail, ~2s. ML-1E: `scripts/check-install-restriction.sh` criado — 4 cenários (C1 --offline+cache vazio→ENOTCACHED; C2 --ignore-scripts previne postinstall; C3 inspeção estática sem URLs github; C4 file: protocol filtra por plataforma); 7 pass, 0 fail, ~1s. Makefile: dois alvos acrescentados no fim da lista parity-rest. quality.yml: job `shim-byte-identity` adicionado (ubuntu+macos; ML-1E fica no parity-rest, <2s). `make quality` verde (segundo run, após limpeza de artefatos npm espúrios na raiz). Roadmap: ML-1D e ML-1E marcados ✅. `trackfw commit` + `trackfw push` executados.
+
+---

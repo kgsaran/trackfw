@@ -83,14 +83,13 @@ function objectAbsentMsg(filePath, sha, errMessage) {
 }
 
 // ─── Version file extraction ───────────────────────────────────────────────
+//
+// ML-1A (v8): pypi/trackfw/__init__.py was removed from RELEASE_VERSION_FILES. Wave 3
+// (ML-3A) deletes pypi/trackfw/ — keeping those entries would cause 'trackfw release tag'
+// to refuse after Wave 3. The single source of truth is internal/version/version.go.
 
 const GO_VERSION_RE = /Version\s*=\s*"([^"]+)"/
 const PYPROJECT_VERSION_RE = /^version\s*=\s*"([^"]+)"/m
-// Matches the try-block fallback in `__version__ = version("trackfw") or "7.1.0"`.
-const INIT_TRY_VERSION_RE = /or\s+"([^"]+)"/
-// Matches the except-block's `__version__ = "7.1.0"` — distinct from the try-block line, which
-// never starts with `__version__ = "` directly (it starts with `__version__ = version(...)`).
-const INIT_EXCEPT_VERSION_RE = /__version__\s*=\s*"([^"]+)"/
 
 function extractGoVersion(content) {
   const m = GO_VERSION_RE.exec(content)
@@ -115,24 +114,10 @@ function extractPyprojectVersion(content) {
   return m[1]
 }
 
-function extractInitTryVersion(content) {
-  const m = INIT_TRY_VERSION_RE.exec(content)
-  if (!m) throw new Error('could not find the importlib.metadata fallback version in pypi/trackfw/__init__.py')
-  return m[1]
-}
-
-function extractInitExceptVersion(content) {
-  const m = INIT_EXCEPT_VERSION_RE.exec(content)
-  if (!m) throw new Error('could not find the except fallback version in pypi/trackfw/__init__.py')
-  return m[1]
-}
-
 const RELEASE_VERSION_FILES = [
   { label: 'internal/version/version.go', path: 'internal/version/version.go', extract: extractGoVersion },
   { label: 'npm/package.json', path: 'npm/package.json', extract: extractNpmVersion },
   { label: 'pypi/pyproject.toml', path: 'pypi/pyproject.toml', extract: extractPyprojectVersion },
-  { label: 'pypi/trackfw/__init__.py (importlib.metadata fallback)', path: 'pypi/trackfw/__init__.py', extract: extractInitTryVersion },
-  { label: 'pypi/trackfw/__init__.py (except fallback)', path: 'pypi/trackfw/__init__.py', extract: extractInitExceptVersion },
 ]
 
 /** normalizeReleaseVersion strips an optional leading "v"/"V". */
@@ -468,7 +453,5 @@ module.exports = {
   extractGoVersion,
   extractNpmVersion,
   extractPyprojectVersion,
-  extractInitTryVersion,
-  extractInitExceptVersion,
   defaultBaseBranch,
 }
