@@ -408,6 +408,20 @@ sobrevive e vale para qualquer fonte, inclusive Go.
 - [ ] Instalação de versão **anterior** continua funcionando
 - [ ] 🔴 Falha parcial entre canais é detectada e reportada
 
+**Testes alterados e conclusão que cada um afirma (regra de reconciliação):**
+
+| Arquivo | Regex/assertion alterada | Conclusão afirmada por este ML |
+|---|---|---|
+| `internal/commands/version_test.go` | `versionLineRE` — adicionado grupo `(-[a-zA-Z0-9]+(\.[a-zA-Z0-9]+)*)?` | `trackfw version` e `trackfw --version` emitem `trackfw 8.0.0-rc1` (formato semver com pre-release aceito pelo contrato) |
+| `npm/tests/version.test.js` | `VERSION_RE` — mesmo sufixo opcional | `trackfw version` no Node emite `trackfw 8.0.0-rc1` |
+| `pypi/tests/test_commands_basic.py` | `_CANONICAL_RE` — mesmo sufixo opcional | `trackfw version` no Python emite `trackfw 8.0.0-rc1` |
+| `scripts/check-cli-parity.sh` | `_VERSION_RE` — mesmo sufixo opcional | o gate de paridade valida `trackfw 8.0.0-rc1` como formato canônico e compara os 3 runtimes byte-a-byte |
+| `scripts/check-gates-falsify.sh` | liveness probe s23 — mesmo sufixo opcional | o binário corrompido que aceita `-v` imprime versão no formato correto (incluindo pre-release), provando que o seam está ativo antes de rodar o gate |
+| `scripts/check-doctor-parity.sh` | normalização `v[\w.]+` → `v[\w.-]+` | strings de versão com hífen (e.g. `v8.0.0-rc1`) são completamente normalizadas para `vTEST` antes da comparação byte-a-byte |
+| `scripts/check-manifest-version-gate.sh` | awk — suporte a formato simples `__version__ = "X"` | `pypi/trackfw/__init__.py` com valor hardcoded (sem try/except) é verificado como literal único; 10 assertions (antes 11: try-branch + except-branch eram 2 assertions para o mesmo arquivo; agora 1 literal = 1 assertion, sem perda de cobertura) |
+
+**Mudança de comportamento em `pypi/trackfw/__init__.py`:** `importlib.metadata.version('trackfw')` substituído por `__version__ = "8.0.0-rc1"` hardcoded. Um pacote instalado agora reporta a versão compilada na fonte, não a versão do pacote instalado. Deriva é detectada pelo gate. Wave 3 remove o arquivo inteiro; esta constante é transitória.
+
 ---
 
 ## Wave 3 — Remover

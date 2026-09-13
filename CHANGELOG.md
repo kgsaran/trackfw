@@ -46,8 +46,8 @@ permanecem iguais.
   `@trackfw-bin/<plataforma>/package.json` são gerados a partir de `internal/version/version.go`,
   eliminando drift de versão por construção (resolve #338).
 - **Release workflow reescrito** (`release.yml`): publica N+1 pacotes npm (shim + plataformas) e N
-  wheels sem sdist, em ordem correta, com `--tag rc` no npm e `--no-sdist` no PyPI; falha parcial
-  entre canais é detectada e reportada.
+  wheels sem sdist, em ordem correta, com `--tag rc` no npm e exclusão de sdist no PyPI via
+  `build_wheel.py` (sem `python -m build`); falha parcial entre canais é detectada e reportada.
 - **Gate `check-manifest-version-gate.sh`**: cruza versão Go ↔ manifests gerados ↔ CHANGELOG ↔
   `npm/package.json` ↔ `pypi/pyproject.toml` — reprovado se qualquer um divergir.
 - **Gate `check-channels-content.sh`**: verifica conteúdo (não só presença) nos canais npm e PyPI
