@@ -1,5 +1,5 @@
 ---
-status: wip
+status: blocked
 date: 2026-09-11
 req: "docs/requisições/claude/REQ-2026-09-11-o-gitattributes-do-fork-mascara-um-defeito-de-produto-que-o-upstream-mantem-exposto-de-proposito.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: o .gitattributes do fork mascara um defeito de produto que o upstream mantém exposto de propósito
 
-> Created: 2026-09-11 | Status: wip
+> Created: 2026-09-11 | Status: blocked
 
 ## Context
 
@@ -153,3 +153,11 @@ Node responde normalmente.
 
 - O defeito de produto — o parser de frontmatter e o CRLF — continua sendo do upstream. Esta REQ decide
   só se o fork o **vê**.
+
+## Bloqueio — 2026-09-13
+
+Movido para `blocked/` porque o único critério em aberto, o AC4, depende de
+[kgsaran/trackfw#329](https://github.com/kgsaran/trackfw/issues/329) — e o mantenedor classificou
+esse issue, em 2026-09-12, como *"deixa de ser possível"* na v8, que remove a suíte Python.
+Todos os MLs daqui estão concluídos. O bloqueio é externo, não pendência nossa: sai daqui quando a
+#329 fechar ou quando a Wave 3 da v8 remover a suíte, e aí o AC4 recebe o veredito `(c) caducou`.

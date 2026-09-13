@@ -3,7 +3,7 @@ status: Open
 date: 2026-09-11
 author: ""
 adr: "docs/adr/ADR-2026-08-29-adotar-upstream-como-base.md"
-roadmap: "docs/roadmaps/claude/wip/ROADMAP-2026-09-11-o-gitattributes-do-fork-mascara-um-defeito-de-produto-que-o-upstream-mantem-exposto-de-proposito.md"
+roadmap: "docs/roadmaps/claude/blocked/ROADMAP-2026-09-11-o-gitattributes-do-fork-mascara-um-defeito-de-produto-que-o-upstream-mantem-exposto-de-proposito.md"
 ---
 
 # REQ: o .gitattributes do fork mascara um defeito de produto que o upstream mantém exposto de propósito
@@ -157,4 +157,4 @@ ADR: docs/adr/ADR-2026-09-11-o-gitattributes-do-fork-alinha-ao-upstream-porque-m
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: docs/roadmaps/claude/wip/ROADMAP-2026-09-11-o-gitattributes-do-fork-mascara-um-defeito-de-produto-que-o-upstream-mantem-exposto-de-proposito.md
+Roadmap: docs/roadmaps/claude/blocked/ROADMAP-2026-09-11-o-gitattributes-do-fork-mascara-um-defeito-de-produto-que-o-upstream-mantem-exposto-de-proposito.md
