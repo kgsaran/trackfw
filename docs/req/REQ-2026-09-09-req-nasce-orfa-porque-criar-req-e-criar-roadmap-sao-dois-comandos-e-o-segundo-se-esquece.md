@@ -3,7 +3,7 @@ status: Open
 date: 2026-09-09
 author: ""
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-09-req-nasce-orfa-porque-criar-req-e-criar-roadmap-sao-dois-comandos-e-o-segundo-se-esquece.md"
+roadmap: "docs/roadmaps/blocked/ROADMAP-2026-09-09-req-nasce-orfa-porque-criar-req-e-criar-roadmap-sao-dois-comandos-e-o-segundo-se-esquece.md"
 ---
 
 # REQ: REQ nasce orfa porque criar REQ e criar roadmap sao dois comandos e o segundo se esquece

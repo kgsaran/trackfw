@@ -3,7 +3,7 @@ status: Open
 date: 2026-09-11
 author: ""
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-11-o-ciclo-testa-onde-funciona-faltam-cp1252-windows-sem-privilegio-e-consumidor-novo.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-11-o-ciclo-testa-onde-funciona-faltam-cp1252-windows-sem-privilegio-e-consumidor-novo.md"
 ---
 
 # REQ: o ciclo testa onde funciona: faltam cp1252, Windows sem privilegio e consumidor novo
@@ -28,7 +28,7 @@ ADR:
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-09-11-o-ciclo-testa-onde-funciona-faltam-cp1252-windows-sem-privilegio-e-consumidor-novo.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-09-11-o-ciclo-testa-onde-funciona-faltam-cp1252-windows-sem-privilegio-e-consumidor-novo.md`
 ## Motivation
 
 Pergunta do usuário em 2026-09-11: *"por que o Lourival está achando tantos erros e nós não?"*
