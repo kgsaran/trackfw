@@ -507,7 +507,7 @@ shim↔nativo, mais os pins extraídos antes*.
       Falsificação: mutar o comportamento que o pin protegia ⇒ algum gate ainda reprova.
 
 ### ML-3D — **AC8 + AC11** — documentação e o break
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 `docs/cli-parity.md` vira documento de **canais**. O `CLAUDE.md` tem a regra dura de paridade
 **reescrita, não apagada** — o Go continua sendo a expressão da verdade, agora por construção.
 🔴 CHANGELOG declara o break: `require('trackfw')` deixa de resolver.

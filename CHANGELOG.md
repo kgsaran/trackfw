@@ -75,6 +75,29 @@ permanecem iguais.
 - `verify-pypi-channel.py` normaliza PEP 440 antes de comparar com o registry.
 - `check-workflow-yaml.py` valida estrutura do YAML de CI como gate permanente.
 
+### Mudanças de empacotamento
+
+- **npm:** o pacote `trackfw` não contém mais `src/` nem nenhum arquivo JavaScript de implementação.
+  A única entrega é `bin/trackfw.js` (a casquinha) e `@trackfw-bin/<plataforma>` (o binário).
+- **PyPI:** o pacote `trackfw` não contém mais nenhum arquivo `.py`. `python -m trackfw` não existe
+  mais; use o executável `trackfw` adicionado ao PATH pelo pip.
+- **pip em plataforma não coberta:** a instalação falha em resolução com
+  "no matching distribution found". Antes da v8, caía num sdist que instalava a implementação
+  Python. A falha agora é limpa e explícita em vez de silenciosa.
+
+### Limites medidos — o que não foi exercitado nesta RC
+
+Estas limitações são declaradas para que você saiba o que a RC cobre antes de adotar em produção.
+
+- **Cobertura real de plataforma:** os testes em máquina real cobriam **Windows arm64** e
+  **macOS arm64** apenas. Nenhum teste real cobriu x64 em qualquer SO (Linux, macOS ou Windows).
+  A afirmação de suporte a x64 é inferida a partir dos artefatos do goreleaser, não medida.
+- **Exec bit da wheel PyPI não exercitado em máquina limpa:** o bit de execução do binário na wheel
+  (`external_attr` no zip) não foi verificado numa instalação limpa de pip. Sem ele, `pip install`
+  conclui com sucesso mas o comando `trackfw` falha com "permission denied". Aplica-se a Linux e
+  macOS; não se aplica a Windows. Um teste em máquina limpa é recomendado antes de adotar a release
+  final em produção nessas plataformas.
+
 ## [7.6.0] - 2026-09-12
 
 ### ⚠️ Leia antes de atualizar
