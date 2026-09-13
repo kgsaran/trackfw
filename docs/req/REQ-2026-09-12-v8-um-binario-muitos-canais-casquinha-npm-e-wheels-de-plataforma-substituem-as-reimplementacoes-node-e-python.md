@@ -81,6 +81,14 @@ pypi/trackfw/    27.472 linhas
       ⚠️ A estimativa de *"8 de 16 issues"* é **classificação preliminar por leitura**, não medição —
       **não usar como resultado**.
 
+- [ ] **AC13** — 🔴 **os pacotes de plataforma NÃO declaram `bin`.** Medido no protótipo em
+      2026-09-12: shim e pacote de plataforma declaravam ambos `bin: {trackfw: ...}` e **colidem em
+      `node_modules/.bin/trackfw`** — quem instala por último vence, de forma não determinística, e
+      a invocação por `.bin` ou `npx` pode **passar por cima da casquinha**, que é justamente quem
+      resolve a plataforma e emite o erro nomeado do AC7.
+      Confirmado contra o modelo de referência: `@esbuild/darwin-arm64` **não declara `bin`**.
+      Falsificação: pacote de plataforma com `bin` ⇒ gate reprova.
+
 ## Escopo negativo
 
 - **Não** mudar comportamento do CLI. Esta REQ move **distribuição**, não semântica. Qualquer
