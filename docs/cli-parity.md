@@ -51,7 +51,7 @@ fell back to an sdist that installed the Python implementation. The failure is n
 clean and explicit instead of silently installing the wrong thing.
 
 ## Command contract
-<!-- trackfw-contract: none reason=command contract table is preamble to the per-command sections below; each command's gate is named in its own ## section -->
+<!-- trackfw-contract: gap reason=command table is a contract surface; configure/discover/metrics/sync and others have no ## section below naming a gate — table completeness is not mechanically gated -->
 
 All commands below are implemented once, in the Go binary. The contract column
 describes the expected behaviour; each `##` section below names the gate that proves it.
