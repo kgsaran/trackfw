@@ -881,15 +881,50 @@ jobs:
       - name: ML-4B verificacao D\W — declared vs workflow checks (scope dw, sem token)
         run: python3 scripts/check-required-status-checks.py --scope dw
 
+  # ML-4E: job de RECOLHIMENTO do shim-byte-identity.
+  #
+  # Por que existe: shim-byte-identity é MATRIZ (macos-latest, ubuntu-latest) e os
+  # nomes de check que ela emite são "shim-byte-identity (macos-latest)" e
+  # "(ubuntu-latest)". Exigir "shim-byte-identity" cru em required_status_checks
+  # deixa o check PENDENTE PARA SEMPRE e trava todo PR — inclusive o que
+  # consertaria (vault: matriz-em-job-required-por-nome-fica-pendente-para-sempre-2026-09-08.md).
+  # Este job tem nome estável e é ele que entra no conjunto R.
+  #
+  # Por que a guarda NÃO copia a do `parity`: a do parity testa apenas
+  # 'failure' e 'cancelled'. 'skipped' passa. Medido no PR #365: o
+  # parity-falsify-shard foi PULADO (package-smoke reprovou e está no needs
+  # dele), a guarda deixou passar, e quem reprovou foi a guarda de conjunto
+  # por artefato no passo seguinte. O parity está protegido por uma segunda
+  # linha de defesa que ESTE job não tem — então aqui a guarda precisa ser
+  # completa, e exigir evidência POSITIVA, não só ausência de falha.
+  shim-byte-identity-gate:
+    runs-on: ubuntu-latest
+    needs: [shim-byte-identity]
+    if: always()
+    steps:
+      - name: Todos os braços da matriz têm de ter tido SUCESSO
+        env:
+          RESULT: ${{ needs.shim-byte-identity.result }}
+        run: |
+          # Evidência positiva: o único valor aceito é 'success'.
+          # 'skipped', 'failure' e 'cancelled' reprovam — um braço pulado não
+          # prova byte-identidade, e um required check verde sobre nada
+          # verificado é pior que check nenhum.
+          if [ "$RESULT" != "success" ]; then
+            echo "::error::shim-byte-identity resultou '$RESULT' (esperado: success) — a byte-identidade do shim NÃO foi verificada nesta corrida."
+            exit 1
+          fi
+          echo "shim-byte-identity: todos os braços da matriz com sucesso."
+
   parity:
     runs-on: ubuntu-latest
     needs: [parity-falsify-shard, parity-other-gates, check-required-checks]
     if: always()
     steps:
-      - name: Nenhum job de needs pode ter falhado ou sido cancelado
-        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+      - name: Nenhum job de needs pode ter falhado, sido cancelado ou pulado
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped')
         run: |
-          echo "::error::pelo menos um job de needs (parity-falsify-shard, parity-other-gates ou check-required-checks) falhou ou foi cancelado -- ver os jobs acima. if:always() aqui existe para RODAR e REPROVAR, nunca para mascarar."
+          echo "::error::pelo menos um job de needs (parity-falsify-shard, parity-other-gates ou check-required-checks) falhou, foi cancelado ou PULADO -- ML-4E: `skipped` passou a reprovar porque um needs pulado nao prova nada e o parity so nao ficou verde em 16/09 por causa da guarda de conjunto por artefato -- ver os jobs acima. if:always() aqui existe para RODAR e REPROVAR, nunca para mascarar."
           exit 1
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7

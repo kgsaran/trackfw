@@ -1,5 +1,5 @@
 ---
-status: done
+status: wip
 date: 2026-09-12
 req: "docs/req/REQ-2026-09-12-v8-um-binario-muitos-canais-casquinha-npm-e-wheels-de-plataforma-substituem-as-reimplementacoes-node-e-python.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: v8 — um binário, muitos canais
 
-> Created: 2026-09-12 | Reescrito: 2026-09-12 | Status: done
+> Created: 2026-09-12 | Reescrito: 2026-09-12 | Status: wip
 
 ## Context
 REQ: docs/req/REQ-2026-09-12-v8-um-binario-muitos-canais-casquinha-npm-e-wheels-de-plataforma-substituem-as-reimplementacoes-node-e-python.md
@@ -921,6 +921,59 @@ binária que a v8 publica de verdade**. Verificado localmente:
 itens 2, 7 e 10 perderam 2 braços cada (Node + Python); os **3 braços Go sobrevivem** porque medem
 comportamento do produto no Windows, não divergência entre implementações. O título do item 11 foi
 corrigido de `(5 Python, 5 Node, 2 Go)` para `(2 Go)` — prometia 12 testes e rodava 2.
+
+---
+
+### ML-4E — `shim-byte-identity` vira required, e a guarda de `needs` do `parity` fecha
+**Status:** 🔄 Entregue no código; **R pendente** — a ação de mantenedor só pode vir depois do merge
+
+**Por que este gate e não outro.** `check-shim-byte-identity.sh` prova que o binário entregue pelo
+npm e pelo PyPI é byte-a-byte o mesmo que o goreleaser publicou. É o **AC9** deste roadmap, escrito
+como *"byte-identidade vira gate permanente"* — e um gate permanente que não bloqueia merge não é
+permanente, é um aviso. Se ele regredir, os três canais divergem em silêncio, e **divergência entre
+canais é o que a v8 trocou por divergência entre runtimes**: não adianta ter eliminado três
+implementações se o que chega ao usuário pode diferir do que foi construído.
+
+🔴 **Ele é matriz (`macos-latest`, `ubuntu-latest`) — não pode ser required pelo nome.** Os nomes
+emitidos são `shim-byte-identity (macos-latest)` e `(ubuntu-latest)`; exigir `shim-byte-identity` cru
+deixa o check pendente para sempre (vault:
+`matriz-em-job-required-por-nome-fica-pendente-para-sempre-2026-09-08.md`, a mesma falha que o R1
+desta wave pagou). Daí o job de recolhimento.
+
+🔴 **Buraco medido no padrão que seria copiado.** O `parity` recolhe com:
+
+```yaml
+if: always()
+- if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+```
+
+**`skipped` não é testado.** Não é teórico: na primeira corrida do PR #365 o `parity-falsify-shard`
+foi **pulado** (o `package-smoke` reprovou e está no `needs` dele), a guarda deixou passar, e quem
+reprovou foi o passo seguinte — `check-falsify-shard-coverage.sh`, recusando declarar cobertura sobre
+diretório vazio.
+
+Ou seja, o `parity` está protegido **por acidente**: tem uma segunda linha de defesa baseada em
+artefato. Um recolhimento para o `shim-byte-identity` **não teria** essa segunda linha — copiar o
+padrão como está produziria job verde, required check verde e **nada verificado**, que é exatamente o
+modo de falha que tornar o gate obrigatório pretende fechar.
+
+**Escopo (decisão do usuário: mesmo PR, mesma causa — guarda de `needs` incompleta):**
+1. Job de recolhimento para o `shim-byte-identity`, com `skipped` na guarda e exigência de evidência
+   **positiva** dos dois braços da matriz — não só ausência de falha.
+2. Corrigir a guarda de `needs` do `parity` pela mesma razão.
+3. Acrescentar o nome do recolhimento a `.github/required-status-checks.txt` (conjunto D).
+
+🔴 **Entregue (2026-09-16):** job `shim-byte-identity-gate` criado (`quality.yml:900`), guarda do
+`parity` passou a reprovar `skipped`, e `shim-byte-identity-gate` declarado em D — 8 nomes.
+`check-required-status-checks.py --scope dw` → `D\\W=∅`, declared=8. Auto-teste 10/0.
+`check-workflow-yaml.py` 8/0. O `--scope full` **reprova de propósito** neste momento, acusando
+`D\\R = {shim-byte-identity-gate}`: é o estado esperado até a ação de mantenedor, e é a evidência de
+que a ordem está sendo respeitada.
+
+🔴 **Ordem obrigatória, inversa à do R1: W antes de R.** Ao *remover* nomes (node/python), R vem
+primeiro. Ao *adicionar*, o job precisa existir na `main` **antes** de entrar no `required_status_checks`
+— senão o nome fica exigido sem workflow que o emita e **todo PR trava, inclusive o que consertaria**.
+Sequência: PR com o job → merge → ação de mantenedor na API.
 
 ---
 
