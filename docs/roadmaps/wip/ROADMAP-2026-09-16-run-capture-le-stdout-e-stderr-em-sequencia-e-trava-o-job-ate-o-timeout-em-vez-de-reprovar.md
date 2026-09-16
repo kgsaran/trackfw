@@ -1,7 +1,7 @@
 ---
 status: wip
 date: 2026-09-16
-req: ""
+req: "docs/req/REQ-2026-09-16-run-capture-le-stdout-e-stderr-em-sequencia-e-trava-o-job-ate-o-timeout-em-vez-de-reprovar.md"
 squad: ""
 ---
 
@@ -11,7 +11,7 @@ squad: ""
 
 ## Context
 <!-- What problem does this roadmap solve? Link the REQ. -->
-REQ: 
+REQ: docs/req/REQ-2026-09-16-run-capture-le-stdout-e-stderr-em-sequencia-e-trava-o-job-ate-o-timeout-em-vez-de-reprovar.md
 
 ## Acceptance Criteria
 <!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->
