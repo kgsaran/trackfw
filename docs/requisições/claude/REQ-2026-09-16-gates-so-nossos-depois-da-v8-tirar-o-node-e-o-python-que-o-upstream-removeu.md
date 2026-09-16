@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-09-16
 author: "claude"
 adr: "docs/adr/ADR-2026-08-29-adotar-upstream-como-base.md"
-roadmap: "docs/roadmaps/claude/wip/ROADMAP-2026-09-16-gates-so-nossos-depois-da-v8-tirar-o-node-e-o-python-que-o-upstream-removeu.md"
+roadmap: "docs/roadmaps/claude/done/ROADMAP-2026-09-16-gates-so-nossos-depois-da-v8-tirar-o-node-e-o-python-que-o-upstream-removeu.md"
 ---
 
 # REQ: gates só nossos depois da v8: tirar o Node e o Python que o upstream removeu
 
-> Date: 2026-09-16 | Status: Open
+> Date: 2026-09-16 | Status: Done
 
 ## Motivation
 
@@ -34,25 +34,25 @@ Já estava previsto: o risco da Wave 3 na pré-condição do agregador foi anota
 
 ## Acceptance Criteria
 
-- [ ] **AC1** — `scripts/run-local-gates.sh` com **0 falhas** na árvore da v8, sem exigir Node nem
+- [x] **AC1** — `scripts/run-local-gates.sh` com **0 falhas** na árvore da v8, sem exigir Node nem
       Python; a pré-condição continua exigindo `bin/trackfw` e continua reprovando **nomeada** sem ele
       (falsificado).
-- [ ] **AC2** — `check-subcommand-parity.sh` **retirado**, com o motivo escrito: a propriedade que ele
+- [x] **AC2** — `check-subcommand-parity.sh` **retirado**, com o motivo escrito: a propriedade que ele
       media (divergência de subcomando entre implementações) deixou de ser definível com uma
       implementação só — o mesmo discriminante que o mantenedor escreveu ao fechar a
       [#298](https://github.com/kgsaran/trackfw/issues/298). Não é detector perdido com defeito vivo.
-- [ ] **AC3** — `check-slug-inventory.sh` reduzido ao Go e **ainda reprovando** implementação nova ou
+- [x] **AC3** — `check-slug-inventory.sh` reduzido ao Go e **ainda reprovando** implementação nova ou
       sumida (falsificado nos dois sentidos).
-- [ ] **AC4** — os dois instrumentos de predicado de SO com escopo `internal cmd`, **zero** declaração
+- [x] **AC4** — os dois instrumentos de predicado de SO com escopo `internal cmd`, **zero** declaração
       obsoleta no lint, baseline do `measure` regravado **só depois** de conferir que todo nome que sai
       é de arquivo removido pela v8; as guardas de vacuidade continuam de pé.
-- [ ] **AC5** — `local-gates.yml` sem `setup-node`, `setup-python`, `npm ci` e `pip install`, e o job
+- [x] **AC5** — `local-gates.yml` sem `setup-node`, `setup-python`, `npm ci` e `pip install`, e o job
       verde no CI.
-- [ ] **AC6** — `CLAUDE.md`: toda afirmação sobre os runtimes removidos que ficou falsa é corrigida ou
+- [x] **AC6** — `CLAUDE.md`: toda afirmação sobre os runtimes removidos que ficou falsa é corrigida ou
       marcada como caducada **com o fato que mudou**; nenhuma é apagada em silêncio.
-- [ ] **AC7** — `trackfw validate` com 0 violações; CI comparado por nome contra o run do upstream em
+- [x] **AC7** — `trackfw validate` com 0 violações; CI comparado por nome contra o run do upstream em
       `66b7ad8`.
-- [ ] **AC8** — `docs/cli-parity.md` trazido do upstream e **mantido** pelo `upstream-sync.sh` (decisão
+- [x] **AC8** — `docs/cli-parity.md` trazido do upstream e **mantido** pelo `upstream-sync.sh` (decisão
       do usuário em 2026-09-16), com a retenção do resto de `docs/` ainda provada por efeito, o arquivo
       provado igual ao do REF, e a falsificação reprovando um sync sem a exceção.
 
@@ -60,6 +60,26 @@ Já estava previsto: o risco da Wave 3 na pré-condição do agregador foi anota
       retido citava. O `check-parity-contract-coverage.sh` reprovou o `parity-other-gates` em
       `Makefile:35` — antes do barrier, onde ele parava —, e o item 4 do `windows-defect-reproduction`,
       que roda o mesmo gate, travou no `run.ps1:148` até o timeout.
+
+## Evidência — 2026-09-16
+
+Detalhe por microlote no roadmap. Aqui, o sítio de cada AC:
+
+| AC | onde se comprova |
+|---|---|
+| AC1 | `scripts/run-local-gates.sh`: `9 executado(s) · 0 falha(s)`; worktree sem `bin/` → rc=1 nomeando o binário (ML-1A) |
+| AC2 | `scripts/check-subcommand-parity.sh` removido em `08e1db8`, motivo no comentário do agregador e no `CLAUDE.md` |
+| AC3 | `scripts/check-slug-inventory.sh`: 1 implementação; slug novo e slug sumido → rc=1 (ML-1A) |
+| AC4 | lint `204 · 57 D1 · 4 D2 em 2 arquivos`, 0 obsoleta; baseline do `measure` reconciliado por `arquivo:predicado` e regravado (ML-1B) |
+| AC5 | `Gates locais do fork` **success** em `push` e `pull_request` no head `c07582c` da PR #135, sem os passos de Node e Python |
+| AC6 | tabela de veredito por seção no ML-2A |
+| AC7 | `validate` 0 violações; Quality `35142703865` contra o upstream `35135752812`: **18 jobs, nomes idênticos nos dois sentidos**; não-verdes só `parity` e `parity-other-gates`, este parando em `Makefile:63` — `check-roadmap-barrier-contract: um ou mais cenários FALHARAM (49 executados)`, o snapshot congelado —; `windows-defect-reproduction` **success** |
+| AC8 | `scripts/upstream-sync.sh` com `PRODUTO_EM_DOCS`; falsificação OK e controle sem a exceção rc=1 (ML-3A); primeiro sync real com a exceção: `93f046e` (#371) |
+
+**O CI precisou de três rodadas, e cada uma ensinou algo.** A primeira reprovou o passo de divergência
+porque o upstream mesclou o #370 durante o run (`release.yml` diferia da `upstream/main` nova, não por
+mudança nossa) — trazido na mesma PR. A segunda expôs o `docs/cli-parity.md` retido e defasado
+(AC8). A terceira fechou com o conjunto conhecido.
 
 ## Escopo negativo
 
@@ -78,4 +98,4 @@ ADR: docs/adr/ADR-2026-08-29-adotar-upstream-como-base.md
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: docs/roadmaps/claude/wip/ROADMAP-2026-09-16-gates-so-nossos-depois-da-v8-tirar-o-node-e-o-python-que-o-upstream-removeu.md
+Roadmap: docs/roadmaps/claude/done/ROADMAP-2026-09-16-gates-so-nossos-depois-da-v8-tirar-o-node-e-o-python-que-o-upstream-removeu.md
