@@ -27,6 +27,12 @@
 #      o log de chamadas do stub deve ficar vazio.
 set -euo pipefail
 
+# Codificacao de saida (ML-4I-bis): forca UTF-8 no stdio de todo python3 deste gate.
+# Sob console cp1252 (Windows) o Python herda a codepage e um print() de caractere fora
+# do cp1252 estoura UnicodeEncodeError — o gate reprova por motivo alheio ao que mede.
+# Declarado aqui, e nao no Makefile, para valer em invocacoes diretas e em CI.
+export PYTHONIOENCODING=utf-8
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 INSTALL_SH="$ROOT/scripts/install.sh"
 
@@ -227,6 +233,36 @@ pass_api_resolved "unset-resolves-via-api"
 run_install "TRACKFW_VERSION="
 pass_api_resolved "empty-resolves-via-api"
 
+# --- Pre-release versions (-rcN / -betaN): admitted since ML-4I (install.sh Windows support) ---
+# Afirma: TRACKFW_VERSION com sufixo -rcN ou -betaN e aceito; URL e DEST usam a versao completa
+# incluindo o sufixo. O VERSION_BARE resultante (ex.: 8.0.0-rc2) nao contem "/" nem ".." —
+# o charset do sufixo (so digitos) garante que o alvo do -o do curl permanece dentro de TMP_DIR.
+pass_pinned "pinned-prerelease-rc-bare"      "8.0.0-rc2"   "v8.0.0-rc2"   "8.0.0-rc2"
+pass_pinned "pinned-prerelease-rc-v"         "v8.0.0-rc2"  "v8.0.0-rc2"   "8.0.0-rc2"
+pass_pinned "pinned-prerelease-beta"         "v8.0.0-beta1" "v8.0.0-beta1" "8.0.0-beta1"
+
+# AC5-pre: bare e prefixed com prerelease devem baixar o mesmo asset
+run_install "TRACKFW_VERSION=8.0.0-rc2"
+URL_PRE_BARE=$(grep '^URL: ' <<<"$OUT")
+DEST_PRE_BARE=$(sed -n 's/^DEST: //p' <<<"$OUT")
+run_install "TRACKFW_VERSION=v8.0.0-rc2"
+URL_PRE_PREFIXED=$(grep '^URL: ' <<<"$OUT")
+DEST_PRE_PREFIXED=$(sed -n 's/^DEST: //p' <<<"$OUT")
+if [ "$URL_PRE_BARE" != "$URL_PRE_PREFIXED" ]; then
+  echo "FAIL [install-version-pin/ac5-prerelease-same-asset]: '8.0.0-rc2' e 'v8.0.0-rc2' compuseram URLs diferentes" >&2
+  echo "  bare:      $URL_PRE_BARE" >&2
+  echo "  prefixed:  $URL_PRE_PREFIXED" >&2
+  exit 1
+fi
+if [ "${DEST_PRE_BARE##*/}" != "${DEST_PRE_PREFIXED##*/}" ]; then
+  echo "FAIL [install-version-pin/ac5-prerelease-same-asset]: '8.0.0-rc2' e 'v8.0.0-rc2' compuseram basenames de DEST diferentes" >&2
+  echo "  bare:      $DEST_PRE_BARE" >&2
+  echo "  prefixed:  $DEST_PRE_PREFIXED" >&2
+  exit 1
+fi
+echo "OK   [install-version-pin/ac5-prerelease-same-asset]"
+SCENARIOS_RUN=$((SCENARIOS_RUN + 1))
+
 # --- Cenarios que FALHAM, com a razao declarada pelo proprio install.sh ----
 
 assert_fails_with "command-separator-semicolon" "$REASON" '7.3.0; rm -rf /'
@@ -248,6 +284,181 @@ assert_fails_with "whitespace-only"             "$REASON" '   '
 # que expoe o bug de ancoragem por-linha do grep.
 NEWLINE_VALUE=$(printf 'v7.3.0\nFOO')
 assert_fails_with "embedded-newline-with-trailing-content" "$REASON" "$NEWLINE_VALUE"
+
+# Pre-release invalidos — sufixos fora do formato admitido devem falhar (ML-4I).
+# Afirma: apenas -rcN e -betaN sao admitidos; outras formas sao rejeitadas como antes.
+assert_fails_with "prerelease-alpha-rejected"   "$REASON" 'v8.0.0-alpha1'
+assert_fails_with "prerelease-dash-only"        "$REASON" 'v8.0.0-'
+assert_fails_with "prerelease-rc-no-digit"      "$REASON" 'v8.0.0-rc'
+assert_fails_with "prerelease-rc-with-slash"    "$REASON" 'v8.0.0-rc1/evil'
+assert_fails_with "prerelease-rc-newline"       "$REASON" "$(printf 'v8.0.0-rc1\nFOO')"
+
+# --- Cenarios de deteccao de arquitetura no Windows -------------------------
+#
+# Falsifica que install.sh lê RAW_OS (uname -s) em vez de uname -m para detectar
+# arquitetura no Windows. Mecanismo: stubs configuraveis via STUB_UNAME_S / STUB_UNAME_M.
+#
+# Medicao: uname -s = MINGW64_NT-10.0-26200-ARM64 no Windows 11 ARM64 Git Bash (2026-09-16).
+# Limitacao: MSYS_NT e CYGWIN_NT nao medidos diretamente — mesma base NT, mesmo padrao.
+# O cenario B (x64 simulado) e declarado como simulacao, nao medicao em VM real.
+#
+# Stub de uname em diretorio proprio (separado de $STUB_BIN) para nao interferir
+# com `command -v uname` em cenarios existentes.
+UNAME_STUB_BIN="$WORK/uname-stubbin"
+mkdir -p "$UNAME_STUB_BIN"
+
+REAL_UNAME=$(command -v uname)
+cat > "$UNAME_STUB_BIN/uname" << UNAME_STUB_HEREDOC
+#!/bin/sh
+if [ -n "\${STUB_UNAME_S:-}" ]; then
+  case "\$1" in
+    -s) printf '%s\n' "\${STUB_UNAME_S}" ;;
+    -m) printf '%s\n' "\${STUB_UNAME_M:-x86_64}" ;;
+    *)  "${REAL_UNAME}" "\$@" ;;
+  esac
+else
+  "${REAL_UNAME}" "\$@"
+fi
+UNAME_STUB_HEREDOC
+chmod +x "$UNAME_STUB_BIN/uname"
+
+run_install_win() {
+  # run_install_win ENV=val ...  — como run_install mas com stub de uname no PATH
+  : > "$CURL_LOG"
+  set +e
+  OUT=$(env "$@" TRACKFW_INSTALL_DRYRUN=1 PATH="$UNAME_STUB_BIN:$STUB_BIN:$PATH" sh "$INSTALL_SH" 2>&1)
+  EC=$?
+  set -e
+}
+
+assert_url_contains() {
+  # assert_url_contains label substring
+  local label="$1" substr="$2"
+  if ! grep -qF "$substr" <<<"$OUT"; then
+    echo "FAIL [win-arch/$label]: URL/output nao contem '$substr'" >&2
+    echo "  output: $OUT" >&2
+    exit 1
+  fi
+  echo "OK   [win-arch/$label]"
+  SCENARIOS_RUN=$((SCENARIOS_RUN + 1))
+}
+
+assert_win_fails_with() {
+  local label="$1" pattern="$2"
+  if [ "$EC" -eq 0 ]; then
+    echo "FAIL [win-arch/$label]: esperava falha (exit != 0), saiu com 0" >&2
+    echo "  output: $OUT" >&2
+    exit 1
+  fi
+  if ! grep -qF "$pattern" <<<"$OUT"; then
+    echo "FAIL [win-arch/$label]: saiu com $EC mas mensagem nao contem '$pattern'" >&2
+    echo "  output: $OUT" >&2
+    exit 1
+  fi
+  echo "OK   [win-arch/$label]"
+  SCENARIOS_RUN=$((SCENARIOS_RUN + 1))
+}
+
+# A — MINGW64 ARM64: uname -m diz x86_64 (mente), uname -s tem sufixo -ARM64
+# Afirma: install.sh seleciona windows_arm64 lendo RAW_OS, nao uname -m.
+# (Medido em VM real: ver braço A do relatorio ML-4I-bis.)
+run_install_win "TRACKFW_VERSION=v7.3.0" \
+                "STUB_UNAME_S=MINGW64_NT-10.0-26200-ARM64" \
+                "STUB_UNAME_M=x86_64"
+if [ "$EC" -ne 0 ]; then
+  echo "FAIL [win-arch/mingw64-arm64]: esperava exit 0, saiu com $EC" >&2; echo "  output: $OUT" >&2; exit 1
+fi
+assert_url_contains "mingw64-arm64" "windows_arm64"
+
+# B — MINGW64 x64 (SIMULADO): sem sufixo ARM64, string NT presente → amd64
+# NOTA: e simulacao, nao medicao em VM x64 real. Declarado como tal.
+# Afirma: ausencia do sufixo ARM64 com sinal NT positivo (*_NT-*) produz windows_amd64.
+run_install_win "TRACKFW_VERSION=v7.3.0" \
+                "STUB_UNAME_S=MINGW64_NT-10.0-19041" \
+                "STUB_UNAME_M=x86_64"
+if [ "$EC" -ne 0 ]; then
+  echo "FAIL [win-arch/mingw64-x64-sim]: esperava exit 0, saiu com $EC (SIMULADO)" >&2; echo "  output: $OUT" >&2; exit 1
+fi
+assert_url_contains "mingw64-x64-sim" "windows_amd64"
+
+# MSYS ARM64 — mesmo mecanismo, prefixo MSYS_NT
+# Afirma: sufixo -ARM64 em MSYS_NT tambem seleciona windows_arm64.
+run_install_win "TRACKFW_VERSION=v7.3.0" \
+                "STUB_UNAME_S=MSYS_NT-10.0-26200-ARM64" \
+                "STUB_UNAME_M=x86_64"
+if [ "$EC" -ne 0 ]; then
+  echo "FAIL [win-arch/msys-arm64]: esperava exit 0, saiu com $EC" >&2; echo "  output: $OUT" >&2; exit 1
+fi
+assert_url_contains "msys-arm64" "windows_arm64"
+
+# C — sinal ausente: MINGW sem string de versao NT (nao tem _NT-) → recusa nomeada
+# Afirma: install.sh recusa nomeando em vez de assumir amd64 quando nao ha sinal confiavel.
+run_install_win "TRACKFW_VERSION=v7.3.0" \
+                "STUB_UNAME_S=MINGW64" \
+                "STUB_UNAME_M=x86_64"
+assert_win_fails_with "no-nt-string-fails" "Arquitetura Windows nao reconhecida"
+
+# TRACKFW_ARCH override — forcando arm64 num host que seria detectado como amd64
+# Afirma: override valido e aceito e produz a arquitetura declarada.
+run_install_win "TRACKFW_VERSION=v7.3.0" \
+                "TRACKFW_ARCH=arm64" \
+                "STUB_UNAME_S=MINGW64_NT-10.0-19041" \
+                "STUB_UNAME_M=x86_64"
+if [ "$EC" -ne 0 ]; then
+  echo "FAIL [win-arch/trackfw-arch-override]: esperava exit 0, saiu com $EC" >&2; echo "  output: $OUT" >&2; exit 1
+fi
+assert_url_contains "trackfw-arch-override" "windows_arm64"
+
+# TRACKFW_ARCH invalido — valor fora de amd64|arm64 deve falhar
+# Afirma: TRACKFW_ARCH com valor nao admitido produz falha com mensagem "TRACKFW_ARCH invalido".
+run_install_win "TRACKFW_VERSION=v7.3.0" \
+                "TRACKFW_ARCH=x86_64" \
+                "STUB_UNAME_S=MINGW64_NT-10.0-19041" \
+                "STUB_UNAME_M=x86_64"
+assert_win_fails_with "trackfw-arch-invalid" "TRACKFW_ARCH invalido"
+
+# Nao-vacuidade (contra-braco): install.sh sem o fix entrega windows_amd64 com
+# o mesmo stub ARM64, provando que o cenario mingw64-arm64 e discriminante.
+# Cria copia regredida com Python substituindo o bloco de arch Windows pelo
+# comportamento antigo (uname -m).
+INSTALL_SH_REGRESSED="$WORK/install-regressed.sh"
+python3 - "$INSTALL_SH" "$INSTALL_SH_REGRESSED" <<'REGRESS_PYEOF'
+import re, sys
+src = open(sys.argv[1]).read()
+new_src = re.sub(
+    r'(# --- Detectar ARCH ---\n).*?(?=\n# --- Honrar)',
+    r'\1RAW_ARCH=$(uname -m)\n'
+     'case "$RAW_ARCH" in\n'
+     '  x86_64)          ARCH="amd64" ;;\n'
+     '  aarch64|arm64)   ARCH="arm64" ;;\n'
+     '  *)\n'
+     '    echo "Arquitetura nao suportada: $RAW_ARCH" >&2; exit 1 ;;\n'
+     'esac',
+    src, flags=re.DOTALL)
+if new_src == src:
+    sys.stderr.write("FATAL [regress]: bloco de arch detection nao encontrado em install.sh\n")
+    sys.exit(2)
+open(sys.argv[2], 'w').write(new_src)
+REGRESS_PYEOF
+
+: > "$CURL_LOG"
+set +e
+OUT_REG=$(env "TRACKFW_VERSION=v7.3.0" \
+  "STUB_UNAME_S=MINGW64_NT-10.0-26200-ARM64" \
+  "STUB_UNAME_M=x86_64" \
+  TRACKFW_INSTALL_DRYRUN=1 \
+  PATH="$UNAME_STUB_BIN:$STUB_BIN:$PATH" \
+  sh "$INSTALL_SH_REGRESSED" 2>&1)
+EC_REG=$?
+set -e
+if [ "$EC_REG" -eq 0 ] && grep -qF "windows_amd64" <<<"$OUT_REG"; then
+  echo "OK   [win-arch/nonvacuity-regressed]: install.sh sem fix entrega windows_amd64 com stub ARM64 — cenario mingw64-arm64 e discriminante"
+  SCENARIOS_RUN=$((SCENARIOS_RUN + 1))
+else
+  echo "FAIL [win-arch/nonvacuity-regressed]: install.sh regredido nao entregou windows_amd64 com stub ARM64 (EC=$EC_REG)" >&2
+  echo "  output: $OUT_REG" >&2
+  exit 1
+fi
 
 # --- Guarda de vacuidade ----------------------------------------------------
 if [ "$SCENARIOS_RUN" -eq 0 ]; then

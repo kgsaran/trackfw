@@ -86,7 +86,11 @@ esac
 case "$(uname -m)" in
   x86_64)        T_ARCH="amd64" ;;
   aarch64|arm64) T_ARCH="arm64" ;;
-  *)             T_ARCH="amd64" ;;
+  *)
+    echo "FATAL [setup]: arquitetura nao suportada para criacao de fixtures: $(uname -m)" >&2
+    echo "Se estiver num host nao convencional, set T_ARCH manualmente antes de invocar este gate." >&2
+    exit 2
+    ;;
 esac
 VERSION="7.3.0"
 FILENAME="trackfw_${VERSION}_${T_OS}_${T_ARCH}.tar.gz"
@@ -385,7 +389,7 @@ mkdir -p "$MINPATH_DIR"
 ln -sf "$STUB_BIN/curl" "$MINPATH_DIR/curl"
 ln -sf "$STUB_BIN/wget" "$MINPATH_DIR/wget"
 
-for util in sh env awk sed uname tr wc mktemp mv chmod tar cp rm printf python3; do
+for util in sh env awk sed uname tr wc mktemp mkdir mv chmod tar cp rm printf python3; do
   bin_path="$(command -v "$util" 2>/dev/null)" || true
   if [ -z "$bin_path" ]; then
     echo "FAIL [C6/setup]: utilitario essencial ausente no sistema: $util" >&2
@@ -450,7 +454,7 @@ WGET_ONLY_BIN="$WORK/wget-only-bin"
 mkdir -p "$WGET_ONLY_BIN"
 ln -sf "$STUB_BIN/wget" "$WGET_ONLY_BIN/wget"
 
-for util in sh env awk sed uname tr wc mktemp mv chmod tar cp rm printf grep gzip; do
+for util in sh env awk sed uname tr wc mktemp mkdir mv chmod tar cp rm printf grep gzip; do
   _p="$(command -v "$util" 2>/dev/null)" || true
   if [ -z "$_p" ]; then
     echo "FAIL [C7/setup]: utilitario essencial ausente no sistema: $util" >&2
