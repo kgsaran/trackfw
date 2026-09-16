@@ -5,6 +5,111 @@ Todas as mudanças notáveis deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 e este projeto adere a [Semantic Versioning](https://semver.org/).
 
+## [8.0.0] - 2026-09-16
+
+**Uma implementação, em Go, entregue por três canais.** As reimplementações em Node.js e Python
+foram removidas: `npm` e `PyPI` passam a empacotar o binário Go em vez de reimplementá-lo.
+
+Consolida `8.0.0-rc1`, `8.0.0-rc2` e `8.0.0-rc3`, publicadas entre 13 e 16/09.
+
+### ⚠️ Breaking Changes — dois, em canais diferentes
+
+| canal | o que quebra | quem é atingido |
+|---|---|---|
+| npm | `require('trackfw')` | quem usava o pacote como **biblioteca** |
+| PyPI | `python -m trackfw` | quem invocava **por módulo** em vez do executável |
+
+O campo `main` saiu do `npm/package.json`: o pacote não exporta mais módulo Node.js. A wheel do PyPI
+não contém nenhum arquivo `.py`, então não há `__main__.py` para `python -m`.
+
+**Quem usa o CLI — `trackfw ...` no PATH, `npx trackfw` — não é afetado.** O comando de instalação e
+a interface de linha de comando não mudaram.
+
+### Por que a mudança
+
+Os CLIs de Node.js e Python nasceram para atender empresas com restrição para baixar executáveis:
+elas já têm `npm` e `pip` liberados. O objetivo sempre foi **entregar o mesmo produto por outro
+canal**, não ter três produtos. Manter três implementações em paridade custava caro e produzia
+divergência real — o `trackfw init` dos três gerava scripts diferentes entre si. Agora o binário
+chega pelo canal que a política da empresa já autoriza, e **divergência entre runtimes deixou de ser
+possível por construção**.
+
+### Removed
+
+- `npm/src/` e `pypi/trackfw/` — as reimplementações.
+- `npm/tests/` e `pypi/tests/`, e 27 gates cujo objeto era comparar os três runtimes. Antes da
+  remoção, 25 pins comportamentais foram extraídos para um gate próprio, para que a deleção não
+  levasse junto o que eles afirmavam sobre o Go.
+- **−137.887 linhas.**
+
+### Added
+
+- Pacotes de plataforma npm (`@trackfw-bin/<os>-<arch>`) e wheels binárias no PyPI, por plataforma,
+  incluindo **Windows ARM64** nos dois canais.
+- `scripts/install.sh` passa a **suportar Windows** (Git Bash / MSYS2 / Cygwin).
+
+### Fixed
+
+- 🔴 **Em Windows ARM64, o instalador entregava o binário `amd64`.** O Git Bash é um processo x64
+  **emulado**: `uname -m` devolve `x86_64` e `PROCESSOR_ARCHITECTURE` devolve `AMD64` — ambos
+  descrevem a emulação, não a máquina. A arquitetura passou a ser lida do sufixo de `uname -s`.
+  Sem sinal reconhecível, o instalador **recusa nomeando** em vez de assumir `amd64`.
+- **Tags de pré-lançamento publicavam como release estável.** O `.goreleaser.yaml` não declarava
+  `prerelease` e o default do GoReleaser é `false`; a `8.0.0-rc1` virou o `latest` do GitHub e o
+  `install.sh` sem pin entregou a RC no lugar da 7.6.0 por três dias.
+- **A verificação de canais reprovava por latência de CDN**, acusando pacotes recém-publicados como
+  ausentes. Agora espera com backoff até um prazo declarado.
+
+### Verificado nesta release
+
+- Os três canais publicados e verificados por conteúdo, não só por existência: o shim npm sem `src/`,
+  a wheel sem `.py` e com o binário embarcado.
+- **Windows 11 ARM64 real:** npm, PyPI e `install.sh` instalam e executam; a arquitetura do binário
+  entregue foi conferida no cabeçalho PE (`machine=0xAA64`), não pela saída de `--version` — um
+  binário emulado responde `--version` igual ao nativo.
+
+### Limites conhecidos
+
+- Os hooks de guarda **não disparam** em todos os CLIs de agente no Windows; ver a seção
+  *Windows support (partial)* no README antes de adotar em Windows.
+- O braço x64 do Windows é verificado por simulação do discriminante — não há máquina Windows x64
+  entre os instrumentos de medição.
+
+## [8.0.0-rc3] - 2026-09-16
+
+> **Release Candidate.** No npm, sob o dist-tag `rc`, **não** `latest`.
+> `npm install trackfw` continua instalando a 7.6.0.
+
+Sem breaks novos — os dois declarados na `8.0.0-rc1` seguem valendo.
+
+Esta RC existe para **provar o verificador de canais** corrigido abaixo: ele só roda numa tag, então
+não há como exercitá-lo sem publicar.
+
+### Fixed
+
+- **`scripts/install.sh` passa a suportar Windows.** Publicávamos `windows_amd64` e `windows_arm64`
+  desde a `8.0.0-rc1`, e o instalador recusava a plataforma com *"Sistema operacional nao
+  suportado"*. Instala em `$HOME/bin` (sem exigir elevação), em Git Bash / MSYS2 / Cygwin.
+- 🔴 **Em Windows ARM64, o instalador entregava o binário `amd64`.** O Git Bash é um processo x64
+  **emulado**: `uname -m` devolve `x86_64` e `PROCESSOR_ARCHITECTURE` devolve `AMD64` — ambos
+  descrevem a emulação, não a máquina. A arquitetura passou a ser lida do sufixo de `uname -s`
+  (`MINGW64_NT-10.0-…-ARM64`). Verificado pelo cabeçalho PE do binário instalado
+  (`machine=0xAA64`), não pela saída de `--version` — um binário emulado responde `--version` igual
+  ao nativo. Sem sinal reconhecível o instalador **recusa nomeando**, em vez de assumir `amd64`.
+- **A verificação de canais reprovava por latência de CDN.** Na publicação da `8.0.0-rc2` o job
+  acusou 4 de 6 pacotes npm como ausentes segundos após o `publish`; nenhum faltava — os seis só
+  ficaram disponíveis **717 segundos** depois. Agora há retry com backoff e deadline de 900 s, e a
+  mensagem distingue *"não propagou no prazo"* de *"o publish falhou"*. Esgotar o prazo continua
+  reprovando.
+
+### Internal
+
+- O workflow de release ganhou `workflow_dispatch` para poder ser exercitado **sem criar tag**. Os
+  cinco jobs que publicam exigem `github.event_name == 'push'`, que só um push de tag produz — um
+  disparo manual não tem como publicar.
+- O job de release construía `bin/trackfw` de forma incorreta (`go build ./...` não emite binário
+  nomeado), o que abortou a publicação da `8.0.0-rc2` na primeira tentativa.
+
 ## [8.0.0-rc2] - 2026-09-16
 
 > **Release Candidate.** No npm, publicada sob o dist-tag `rc`, **não** `latest`.

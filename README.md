@@ -126,16 +126,15 @@ are than let you find them after adoption.
 
 **What we know works**
 
-- All three channels install (`npm install -g trackfw`, `pip install trackfw`, and the
+- All four channels install (`npm install -g trackfw`, `pip install trackfw`,
+  `curl … | sh` via `scripts/install.sh` on Git Bash / MSYS2 / Cygwin, and the
   published `trackfw_<version>_windows_amd64.tar.gz` / `windows_arm64.tar.gz`). From v8.0.0 all
-  three deliver the same Go binary; no separate Node.js or Python implementation.
+  channels deliver the same Go binary; no separate Node.js or Python implementation.
 - Core governance commands — `req new`, `roadmap new`, `roadmap move`, `status`,
   `validate` — run, and artifacts are written with LF endings.
 
 **What we know does not work yet**
 
-- `scripts/install.sh` **refuses Windows**, even though we publish a Windows binary.
-  Install manually from the release archive for now.
 - Our Windows CI still reports **known test failures**. They are mapped by root cause,
   not unknown — but they are not zero.
 **Guard hooks on Windows — measured, per agent CLI**
