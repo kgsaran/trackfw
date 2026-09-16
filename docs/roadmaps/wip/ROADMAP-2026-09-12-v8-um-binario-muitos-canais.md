@@ -925,7 +925,7 @@ corrigido de `(5 Python, 5 Node, 2 Go)` para `(2 Go)` — prometia 12 testes e r
 ---
 
 ### ML-4E — `shim-byte-identity` vira required, e a guarda de `needs` do `parity` fecha
-**Status:** ⬜ Pendente — decidido com o usuário em 2026-09-16
+**Status:** 🔄 Entregue no código; **R pendente** — a ação de mantenedor só pode vir depois do merge
 
 **Por que este gate e não outro.** `check-shim-byte-identity.sh` prova que o binário entregue pelo
 npm e pelo PyPI é byte-a-byte o mesmo que o goreleaser publicou. É o **AC9** deste roadmap, escrito
@@ -962,6 +962,13 @@ modo de falha que tornar o gate obrigatório pretende fechar.
    **positiva** dos dois braços da matriz — não só ausência de falha.
 2. Corrigir a guarda de `needs` do `parity` pela mesma razão.
 3. Acrescentar o nome do recolhimento a `.github/required-status-checks.txt` (conjunto D).
+
+🔴 **Entregue (2026-09-16):** job `shim-byte-identity-gate` criado (`quality.yml:900`), guarda do
+`parity` passou a reprovar `skipped`, e `shim-byte-identity-gate` declarado em D — 8 nomes.
+`check-required-status-checks.py --scope dw` → `D\\W=∅`, declared=8. Auto-teste 10/0.
+`check-workflow-yaml.py` 8/0. O `--scope full` **reprova de propósito** neste momento, acusando
+`D\\R = {shim-byte-identity-gate}`: é o estado esperado até a ação de mantenedor, e é a evidência de
+que a ordem está sendo respeitada.
 
 🔴 **Ordem obrigatória, inversa à do R1: W antes de R.** Ao *remover* nomes (node/python), R vem
 primeiro. Ao *adicionar*, o job precisa existir na `main` **antes** de entrar no `required_status_checks`

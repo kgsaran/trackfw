@@ -29,3 +29,4 @@ parity
 governance-install-script
 governance-go-install
 windows-full-suites
+shim-byte-identity-gate
