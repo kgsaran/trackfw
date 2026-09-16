@@ -37468,3 +37468,18 @@ pré-requisito hard de ML-3A.
 - `make quality` → RC=0. `go build ./...` → RC=0. `go test ./...` → RC=0.
 
 **Pendente para o arquiteto:** auditoria do diff, commit, push.
+
+---
+
+## Sessão 2026-09-16 — Ares (fix/run-capture-le-stdout — ML-5A: Run-Capture deadlock com stderr acima do buffer do pipe) — EM ANDAMENTO
+
+**Início:** 2026-09-16 | Branch: `fix/run-capture-le-stdout` | Roadmap: a determinar pelo arquiteto | Issue: #372
+**Tarefa:** `Run-Capture` lê stdout e stderr em sequência com `ReadToEnd()` síncrono. Se o filho escrever stderr além do buffer do pipe, pai bloqueia lendo stdout enquanto filho bloqueia escrevendo stderr → deadlock. Job sai `cancelled` após 20 min sem diagnóstico. Corrigir com leitura assíncrona dos dois fluxos (`ReadToEndAsync` + `Task.WaitAll`) antes do `WaitForExit()`. Varredura: só `run.ps1` tem o padrão.
+**Concluído:**
+(1) `Run-Capture` em `scripts/windows-repro/run.ps1` — leitura sequencial síncrona substituída por `ReadToEndAsync()` em ambos os fluxos, emitidas simultaneamente ANTES de qualquer `.Wait()`. Ordem: `Start()` → `outTask = ReadToEndAsync()` → `errTask = ReadToEndAsync()` → `outTask.Wait($TimeoutMs)` → `errTask.Wait($TimeoutMs)` → `.Result` × 2 → `WaitForExit()` (sem arg) → `ExitCode`. Parâmetro `-TimeoutMs` opcional (default 18 min) — estouro mata o filho e faz `throw` com nome do exe+args+tempo, nunca retorna saída parcial.
+(2) Varredura por `ReadToEnd` em todos os `.ps1` do repositório: único sítio era `run.ps1` linhas 147-148 (agora corrigidas). Grep: `grep -rn "ReadToEnd" scripts/ --include="*.ps1"`.
+**Falsificação (Windows real, PS 5.1.26100.9457):**
+- Direção A: deadlock confirmado a 8KB de stderr — `Run-Capture-Old` ficou Running após 10s de timeout no Start-Job.
+- Direção B: `Run-Capture-New` retornou Stdout/Stderr/ExitCode completos: 1KB stderr PASS, 64KB stderr PASS, 256KB stdout + 256KB stderr PASS, saída vazia exit 7 PASS, stdout simples PASS.
+**Verificações:** `go build ./...` RC=0. `go test ./...` RC=0 (todos os pacotes). `env -u FORCE_COLOR make quality` RC=0 (212 OK, 0 FAIL). `pwsh parse` RC=0.
+**ALERTA:** `trackfw.yaml` pode aparecer modificado após `make quality` — issue #366 conhecida. Não commitado.

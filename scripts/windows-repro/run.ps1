@@ -114,7 +114,20 @@ function Add-Result {
 }
 
 function Run-Capture {
-    param([string]$Exe, [string[]]$ArgList, [string]$WorkDir = $null, [hashtable]$EnvVars = @{})
+    # -TimeoutMs (opcional): prazo em milissegundos para drenar CADA fluxo apos o
+    # inicio do processo filho. Padrao: 18 minutos (1 080 000 ms) — generoso o
+    # suficiente para `go build` em runner frio, mas menor que o timeout-minutes
+    # do job (~20 min), de modo que um filho travado produz um erro NOMEADO em
+    # vez de um cancellation mudo (o defeito descrito na issue #372).
+    # Estouro termina o filho, mata o job com throw e reporta exe + args + tempo
+    # decorrido — nunca segue com saida parcial.
+    param(
+        [string]$Exe,
+        [string[]]$ArgList,
+        [string]$WorkDir = $null,
+        [hashtable]$EnvVars = @{},
+        [int]$TimeoutMs = 1080000
+    )
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = $Exe
     # ProcessStartInfo.ArgumentList so existe no .NET Core (pwsh 7+). No Windows
@@ -137,15 +150,37 @@ function Run-Capture {
         }) -join " "
     }
     $psi.RedirectStandardOutput = $true
-    $psi.RedirectStandardError = $true
+    $psi.RedirectStandardError  = $true
     $psi.UseShellExecute = $false
     if ($WorkDir) { $psi.WorkingDirectory = $WorkDir }
     foreach ($k in $EnvVars.Keys) { $psi.Environment[$k] = $EnvVars[$k] }
     $p = New-Object System.Diagnostics.Process
     $p.StartInfo = $psi
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
     $p.Start() | Out-Null
-    $stdout = $p.StandardOutput.ReadToEnd()
-    $stderr = $p.StandardError.ReadToEnd()
+    # Leitura assincrona dos dois fluxos simultaneamente — AMBAS as tasks sao
+    # emitidas ANTES de esperar qualquer uma. A leitura sequencial sincrona
+    # (ReadToEnd/ReadToEnd) cria deadlock quando o filho escreve stderr acima do
+    # buffer do pipe enquanto o pai esta bloqueado lendo stdout: issue #372,
+    # confirmado nos runs 35136396248 e 35138855115 (20 min ate timeout-minutes).
+    $outTask = $p.StandardOutput.ReadToEndAsync()
+    $errTask = $p.StandardError.ReadToEndAsync()
+    if (-not $outTask.Wait($TimeoutMs)) {
+        $p.Kill()
+        $p.WaitForExit()
+        throw "Run-Capture timeout (stdout) apos $($sw.ElapsedMilliseconds) ms: $Exe $($ArgList -join ' ')"
+    }
+    if (-not $errTask.Wait($TimeoutMs)) {
+        $p.Kill()
+        $p.WaitForExit()
+        throw "Run-Capture timeout (stderr) apos $($sw.ElapsedMilliseconds) ms: $Exe $($ArgList -join ' ')"
+    }
+    $stdout = $outTask.Result
+    $stderr = $errTask.Result
+    # WaitForExit sem argumento: ambos os fluxos ja foram drenados, entao o
+    # filho saiu (ou esta saindo); esta chamada e quase instantanea. Nao usar
+    # WaitForExit($ms): a sobrecarga com prazo NAO espera a drenagem dos pipes
+    # redirecionados, trocando deadlock por saida truncada.
     $p.WaitForExit()
     return [pscustomobject]@{ ExitCode = $p.ExitCode; Stdout = $stdout; Stderr = $stderr }
 }
