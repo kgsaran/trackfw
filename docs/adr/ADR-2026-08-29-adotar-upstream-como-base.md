@@ -80,6 +80,22 @@ UTF-8 no CLI Python, o gate de paridade de subcomando, o `.gitattributes` e o `p
 dev-dependencies — sobrevivem à migração e são candidatas naturais a contribuição para o upstream.
 Isso é decisão do mantenedor deste repositório, não desta ADR.
 
+## Nota de 2026-09-16 — uma exceção nomeada em `docs/`
+
+**`docs/cli-parity.md` passa a vir do upstream a cada sync.** Não é governança: é o contrato de
+comportamento do produto, e o `scripts/check-parity-contract-coverage.sh` do upstream o lê e reprova a
+seção cuja anotação cita gate que não existe.
+
+Retido desde o #259, o nosso ficou parado. A v8.0.0 (#365) apagou os gates que ele citava, e o efeito
+foi medido na PR #135 deste fork: o `parity-other-gates` passou a reprovar em `Makefile:35`, antes do
+barrier — tirando do CI todos os gates depois dessa linha —, e o `windows-defect-reproduction` travou
+até o timeout de 20 minutos, porque o item 4 dele roda o mesmo gate e o `run.ps1:148` lê a saída
+padrão antes da de erro.
+
+A decisão é do mantenedor deste repositório (2026-09-16): trazer e manter trazendo. O critério de
+entrada na lista `PRODUTO_EM_DOCS` do `scripts/upstream-sync.sh` é **um gate do upstream que leia o
+arquivo** — "é documentação de produto" sozinho não basta. O resto de `docs/` continua retido.
+
 ## Alternatives Considered
 
 **Re-fundar sobre a história do upstream**, com a governança local aplicada por cima. Histórico final

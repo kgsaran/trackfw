@@ -26,6 +26,7 @@ usa, e o `CLAUDE.md` afirma fatos sobre eles.
 - [ ] AC5 — `local-gates.yml` sem runtimes removidos, verde no CI
 - [ ] AC6 — `CLAUDE.md` sem afirmação falsa sobre os runtimes removidos
 - [ ] AC7 — `validate` 0; CI por nome contra o upstream em `66b7ad8`
+- [ ] AC8 — `docs/cli-parity.md` trazido e mantido pelo sync, com prova e falsificação
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
@@ -170,3 +171,48 @@ classificação nova em `internal/`; as duas guardas afirmam que o escopo menor 
 
 Nada foi apagado: toda seção caducada ou desatualizada ganhou um bloco datado com o fato. Os dois
 comentários do `check-upstream-content.sh` que citavam `npm/src` e `pypi/tests` como vivos também.
+
+## Wave 3 — O contrato de produto retido em docs/
+
+> Por que o escopo original não previa: o ML-0A enumerou só os sítios que **citam** os runtimes
+> removidos. O `docs/cli-parity.md` não os cita por caminho; ele cita **gates** que a v8 apagou, e o
+> leitor é um gate do upstream que o nosso agregador não roda. Apareceu no CI da PR #135.
+
+### ML-3A — upstream-sync traz docs/cli-parity.md
+**Status:** ✅ Concluído
+**Files affected:** `scripts/upstream-sync.sh`, `scripts/check-upstream-sync-falsify.sh`, `docs/cli-parity.md`, `docs/adr/ADR-2026-08-29-adotar-upstream-como-base.md`, `CLAUDE.md`
+**Acceptance criteria:**
+- [x] AC8 medido
+
+**Evidência — 2026-09-16.**
+
+**O defeito, no CI da PR (run `35138855115`).** `parity-other-gates` parou em `Makefile:35` com
+`FAIL: ## Version output (linha 36): gate nomeado não existe no disco: scripts/check-cli-parity.sh` e
+dezenas iguais; no run anterior da `main` ele parava no barrier. O `windows-defect-reproduction` ficou
+de `19:10:14` a `19:29:51` sem uma linha de saída e foi cancelado com o depurador parado em
+`run.ps1:148`, `$stderr = $p.StandardError.ReadToEnd()` — leitura de stdout antes de stderr, que
+trava quando a saída de erro enche o buffer. No upstream, com o contrato em dia, o mesmo job passou em
+53 s.
+
+**Medição do alcance.** Arquivos de `docs/` citados por caminho em `scripts`, `Makefile`, `.github`,
+`internal` e `cmd` do upstream, e que diferem do nosso: só `docs/cli-parity.md` (337 citações) e
+`docs/agents-working-context.md`, que é nosso handoff e fica retido. O resto da lista são ADRs e REQs
+dele que não importamos, por decisão.
+
+**Mudança.** `PRODUTO_EM_DOCS="docs/cli-parity.md"` no sync: depois de restaurar `docs/` da base, o
+arquivo volta do REF; a prova de retenção exclui a entrada, e uma segunda prova exige que ela seja
+igual ao REF. A falsificação lê a lista do próprio sync e ganhou a invariante 4.
+
+| caso | resultado |
+|---|---|
+| falsificação, sync novo | OK — caso 2 (`01086b5...6b3ba49`) toca o arquivo: `produto em docs/ identico ao REF (o merge tocou 1 dele)` |
+| **controle:** sync sem a exceção, mesma falsificação | rc=1 — `produto NAO trazido: docs/cli-parity.md` e `produto em docs/ difere do REF` |
+| `check-parity-contract-coverage.sh` com o arquivo trazido | rc=0, `nenhuma anotação inválida e nenhuma seção sem anotação`; `trackfw.yaml` intacto |
+| blob `docs/cli-parity.md` | `a8aaa06708` = `upstream/main` |
+
+**Frase por teste:** a invariante 4 afirma que o sync deixa o produto em `docs/` igual ao REF; o
+controle afirma que ela reprova quando a exceção some.
+
+**Achado do upstream, relatado à parte:** o travamento do `run.ps1:148` existe independente de nós —
+qualquer item cuja saída de erro passe do buffer trava o job até o timeout e aparece como
+`cancelled`, não como falha.

@@ -383,7 +383,9 @@ git fetch upstream
 scripts/upstream-sync.sh
 ```
 
-O `upstream-sync.sh` mescla, **retém `docs/` e `vault/`**, prova a retenção por efeito, reporta a
+O `upstream-sync.sh` mescla, **retém `docs/` e `vault/`** — exceto `docs/cli-parity.md`, que é contrato
+de produto lido por gate do upstream e vem dele desde 2026-09-16 (nota na `ADR-2026-08-29`) —, prova a
+retenção por efeito, reporta a
 proporção produto/governança e verifica que o `validate` não mexeu. Não commita nem faz push por
 padrão: o commit carrega a medição, e quem mede é quem escreve. Aborta e devolve a árvore se sobrar
 conflito de produto ou se a retenção não puder ser provada.

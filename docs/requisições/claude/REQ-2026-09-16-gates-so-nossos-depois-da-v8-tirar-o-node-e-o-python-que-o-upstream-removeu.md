@@ -52,6 +52,14 @@ Já estava previsto: o risco da Wave 3 na pré-condição do agregador foi anota
       marcada como caducada **com o fato que mudou**; nenhuma é apagada em silêncio.
 - [ ] **AC7** — `trackfw validate` com 0 violações; CI comparado por nome contra o run do upstream em
       `66b7ad8`.
+- [ ] **AC8** — `docs/cli-parity.md` trazido do upstream e **mantido** pelo `upstream-sync.sh` (decisão
+      do usuário em 2026-09-16), com a retenção do resto de `docs/` ainda provada por efeito, o arquivo
+      provado igual ao do REF, e a falsificação reprovando um sync sem a exceção.
+
+      Descoberto no CI desta PR, e é a mesma causa: a v8 apagou os gates que o nosso `cli-parity.md`
+      retido citava. O `check-parity-contract-coverage.sh` reprovou o `parity-other-gates` em
+      `Makefile:35` — antes do barrier, onde ele parava —, e o item 4 do `windows-defect-reproduction`,
+      que roda o mesmo gate, travou no `run.ps1:148` até o timeout.
 
 ## Escopo negativo
 
