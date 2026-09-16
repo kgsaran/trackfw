@@ -5,6 +5,41 @@ Todas as mudanças notáveis deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 e este projeto adere a [Semantic Versioning](https://semver.org/).
 
+## [8.0.0-rc3] - 2026-09-16
+
+> **Release Candidate.** No npm, sob o dist-tag `rc`, **não** `latest`.
+> `npm install trackfw` continua instalando a 7.6.0.
+
+Sem breaks novos — os dois declarados na `8.0.0-rc1` seguem valendo.
+
+Esta RC existe para **provar o verificador de canais** corrigido abaixo: ele só roda numa tag, então
+não há como exercitá-lo sem publicar.
+
+### Fixed
+
+- **`scripts/install.sh` passa a suportar Windows.** Publicávamos `windows_amd64` e `windows_arm64`
+  desde a `8.0.0-rc1`, e o instalador recusava a plataforma com *"Sistema operacional nao
+  suportado"*. Instala em `$HOME/bin` (sem exigir elevação), em Git Bash / MSYS2 / Cygwin.
+- 🔴 **Em Windows ARM64, o instalador entregava o binário `amd64`.** O Git Bash é um processo x64
+  **emulado**: `uname -m` devolve `x86_64` e `PROCESSOR_ARCHITECTURE` devolve `AMD64` — ambos
+  descrevem a emulação, não a máquina. A arquitetura passou a ser lida do sufixo de `uname -s`
+  (`MINGW64_NT-10.0-…-ARM64`). Verificado pelo cabeçalho PE do binário instalado
+  (`machine=0xAA64`), não pela saída de `--version` — um binário emulado responde `--version` igual
+  ao nativo. Sem sinal reconhecível o instalador **recusa nomeando**, em vez de assumir `amd64`.
+- **A verificação de canais reprovava por latência de CDN.** Na publicação da `8.0.0-rc2` o job
+  acusou 4 de 6 pacotes npm como ausentes segundos após o `publish`; nenhum faltava — os seis só
+  ficaram disponíveis **717 segundos** depois. Agora há retry com backoff e deadline de 900 s, e a
+  mensagem distingue *"não propagou no prazo"* de *"o publish falhou"*. Esgotar o prazo continua
+  reprovando.
+
+### Internal
+
+- O workflow de release ganhou `workflow_dispatch` para poder ser exercitado **sem criar tag**. Os
+  cinco jobs que publicam exigem `github.event_name == 'push'`, que só um push de tag produz — um
+  disparo manual não tem como publicar.
+- O job de release construía `bin/trackfw` de forma incorreta (`go build ./...` não emite binário
+  nomeado), o que abortou a publicação da `8.0.0-rc2` na primeira tentativa.
+
 ## [8.0.0-rc2] - 2026-09-16
 
 > **Release Candidate.** No npm, publicada sob o dist-tag `rc`, **não** `latest`.
