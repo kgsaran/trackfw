@@ -2,6 +2,21 @@
 
 ---
 
+## Sessão 2026-09-16 — Ares (trackfw-nul — ML-4C: corrigir 4 jobs CI quebrados pós-Wave-3) — ENCERRADO
+
+**Início:** 2026-09-16 (continuação de sessão anterior, contexto compactado) | Branch: `fix/v8-um-binario-muitos-canais` (trackfw-nul) | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` ML-4C
+**Tarefa:** Corrigir 4 jobs cujos braços apontam para suítes deletadas na Wave 3 (ML-3A removeu npm/src e pypi/trackfw; ML-3B removeu npm/tests e pypi/tests): `package-smoke`, `windows-full-suites`, `windows-defect-reproduction`, `windows-symlink-unprivileged`.
+**Concluído:**
+(1) Fix 1 — `scripts/smoke-integration-packages.sh`: seção Python substituída. `python -m build --wheel pypi/` → `build_wheel.py` (requer apenas `packaging`). Assertions de `catalog.json`/assets removidas (go:embed). Comentário de reconciliação ML-4C escrito.
+(2) Fix 2 — `scripts/check-windows-known-failures.py`: `--node-tap` e `--python-out` tornados opcionais. `main()` só requer `--go-out`. Guards de presença em `run_check()` (erro se entradas ativas existem mas path ausente; skip se não há entradas e path também ausente). Auto-teste: 43 PASS, 0 FAIL.
+(3) Fix 3 — `scripts/windows-repro/run.ps1`: itens 2, 7, 10 reduzidos a Go-only (MANTER REDUZIDO A GO — propriedade do produto Windows, não divergência entre implementações). `$item2EnvVarsPy`, `$nodeModels`, `$pyModels`, `$nodeSourceLine`, `$pySourceLine` removidos. `$item7NormalNode/Py`, `$item7CuratedNode/Py` e seus checks removidos. `$item10Node`, `$item10Py` removidos. Lógicas de medido/verdict simplificadas para Go. Título item 11 "(5 Python, 5 Node, 2 Go)" → "(2 Go)".
+(4) Fix 3 — `.github/workflows/quality.yml` job `windows-defect-reproduction`: `setup-node`, `npm ci --ignore-scripts`, `pip install pypi/` (e comentário explicativo) removidos. Comentário ML-4C escrito.
+(5) Fix 4 — `.github/workflows/quality.yml` job `windows-symlink-unprivileged`: `setup-node` removido (npm/src e npm/tests deletados). `npm ci` removido. `pip install pypi/` removido. Passos "Node — substituto", "Node — falsificacao", "Python — substituto", "Python — falsificacao" removidos (arquivos de teste deletados em ML-3B). Grep de proteção reduzido a Go-only. `setup-python` mantido (Go overlay steps usam `python3 - << 'PYGENEOF'`).
+**Verificações:** `python3 scripts/check-workflow-yaml.py` 8 passed, 0 failed. `go build ./...` RC=0. `go test ./...` RC=0 (todos os packages). `env -u FORCE_COLOR make quality` RC=0 (212 OK, 0 FAIL). `trackfw validate` violações pré-existentes somente; nenhuma nova; `branch_has_wip_roadmap` não disparado.
+**ALERTA:** `git status` mostra `trackfw.yaml` com modificação não-staged após `make quality`. Não foi escrito por Ares — comportamento de gate (issue #366). Não commitado, não corrigido, reportado a KG per instrução.
+
+---
+
 ## Sessão 2026-09-16 — Ares (trackfw-nul — ML-4B: remover dependência morta de node em check-release-tag-parity.sh) — ENCERRADO
 
 **Início:** 2026-09-16 | Branch: `fix/v8-um-binario-muitos-canais` (trackfw-nul) | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` ML-4B
@@ -37335,3 +37350,11 @@ pré-requisito hard de ML-3A.
 **Bloqueio medido (R1, previsto no roadmap linhas 107/166/260):** `make check-required-full` REPROVA — `required_status_checks` da API ainda exige `node`, `python (3.10)`, `python (3.12)`, que nenhum workflow emite após a Wave 3. Ordem obrigatória de merge: **atualizar branch protection primeiro, PR depois**. Gates locais verdes não detectam isso por construção.
 
 **Pendente para o arquiteto:** (1) auditoria do diff de 486 arquivos contra os ACs; (2) reconciliação de status ML-3A/3B/3C no roadmap (ainda ⬜/🔄); (3) `check-gates-falsify.sh` linha ~6428 ainda diz "all 183 scenarios"; (4) ML-4A (AC12) não iniciado; (5) `trackfw branch prune` — `trackfw-triagem` já squashado em #358, worktree `t332` prunable.
+
+---
+
+## Sessão 2026-09-16 — Ares (trackfw-nul — ML-4C: corrigir quatro jobs de CI com braços apontando para suítes deletadas na Wave 3) — INICIADO
+
+**Início:** 2026-09-16 | Branch: `fix/v8-um-binario-muitos-canais` (trackfw-nul) | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` ML-4C
+**Tarefa:** Corrigir quatro jobs de CI com braços mortos: (1) `package-smoke` — smoke script usa `python -m build pypi/` mas `pypi/trackfw/` não existe mais; fix: trocar por `build_wheel.py` + remover asserções de Python package data. (2) `windows-full-suites` — ratchet exige `--node-tap`/`--python-out` que não existem; fix: tornar esses args opcionais em `check-windows-known-failures.py` quando JSON não tem entradas para esses runtimes. (3) `windows-defect-reproduction` — itens 2, 7, 10 invocam Node/Python que não existem; fix: reduzir a Go-only e remover pip install pypi/. (4) `windows-symlink-unprivileged` — 4 steps Node/Python referenciam npm/tests e pypi/tests deletados; fix: remover esses steps, manter os 2 steps Go.
+
