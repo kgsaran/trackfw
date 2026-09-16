@@ -108,6 +108,12 @@ parity-rest: build
 	scripts/check-no-literal-nul-in-source.sh --self-test
 	scripts/check-no-literal-nul-in-source.sh
 	# ML-3C (v8): pins comportamentais do validate extraídos antes da deleção do check-validate-parity.sh.
+	# ML-3E (v8): garante que .goreleaser.yaml declara prerelease: auto no bloco release:.
+	# Sem essa chave, o GoReleaser usa false (padrão), e tags rc publicam como latest estável.
+	# Medido em 2026-09-16: v8.0.0-rc1 ficou como latest por 3 dias. --self-test inclui
+	# as duas direções de falsificação (chave ausente/errada e configuração correta).
+	scripts/check-goreleaser-prerelease.sh --self-test
+	scripts/check-goreleaser-prerelease.sh
 
 parity-falsify: build
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/run-gates-falsify-parallel.sh
