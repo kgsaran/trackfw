@@ -10,7 +10,7 @@
 # tambem em upstream/main e conteudo do upstream, a menos que esteja em KEEP abaixo.
 # Lista de caminhos proibidos envelheceria a cada release; a interseccao nao.
 #
-# ESCOPO: so docs/ e vault/. Em internal/, npm/src/ e pypi/trackfw/ coincidir com o
+# ESCOPO: so docs/ e vault/. Em internal/ e cmd/ (e, ate a v8, npm/src/ e pypi/trackfw/) coincidir com o
 # upstream e o comportamento DESEJADO — um gate que reclamasse disso estaria invertido.
 #
 # Ver REQ-2026-08-29-politica-de-conteudo-do-upstream-sem-gate.
@@ -47,7 +47,7 @@ docs/roadmaps/.trackfw-log                              # nosso log; coincide so
 
 # As 3 abaixo sao FIXTURE, nao governanca. internal/validator/validator_test.go
 # (TestExtractRefPath_TresREQsReaisDoRepositorio) e pypi/tests/test_validator.py
-# (test_extract_ref_path_resolve_reqs_reais_com_backtick) leem estes arquivos do
+# (test_extract_ref_path_resolve_reqs_reais_com_backtick, removido com pypi/tests/ na v8) leem estes arquivos do
 # repositorio por caminho fixo, a partir da raiz. Sem eles as suites Go e Python
 # reprovam na CI deste fork — e o motivo e a propria ADR: a governanca do upstream
 # nao e importada, entao docs/req/ nao existe aqui.

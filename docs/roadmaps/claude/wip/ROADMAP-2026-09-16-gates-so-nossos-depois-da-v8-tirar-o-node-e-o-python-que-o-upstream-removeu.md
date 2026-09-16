@@ -148,7 +148,25 @@ classificação nova em `internal/`; as duas guardas afirmam que o escopo menor 
 ## Wave 2 — Documentação
 
 ### ML-2A — CLAUDE.md
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Files affected:** `CLAUDE.md`, `scripts/check-upstream-content.sh` (comentário)
 **Acceptance criteria:**
-- [ ] AC6: cada afirmação caducada corrigida com o fato que mudou
+- [x] AC6: cada afirmação caducada corrigida com o fato que mudou
+
+**Evidência — 2026-09-16.** Enumeração por `grep` no `CLAUDE.md` por `npm/src`, `pypi/`, `node`,
+`python (3`, `três runtimes`, `3 runtimes`, `tri-runtime`. Cada ocorrência lida e classificada:
+
+| seção | veredito | fato que mudou |
+|---|---|---|
+| Gate de layout de REQ — `docs/req` como fixture | **atualizada** | fixture segue viva só no Go (`validator_test.go`, conferido por `git grep`) |
+| Branch `feat/fix/refactor` custa 3 vermelhos | **caducou**, marcada no topo | jobs `python` removidos; `validator.py` apagado; #261 fechada |
+| Ponto cego dos 3 gates de PATH curado | **atualizada** | 2 dos 3 gates removidos; o de `release-tag` segue com `ln -s python3`, **não re-medido** |
+| Lint de predicado de SO — números | **atualizada** | 240 → 204, 16 D2 em 9 arquivos → 4 em 2 |
+| Ratchet de Windows — três suítes | **atualizada** | `entries` com 14 nomes, todos `go` |
+| Divergência local — lista de scripts só nossos | **atualizada** | `check-subcommand-parity` retirado |
+| `req new --agent` "nos três runtimes" | mantida | afirmação datada de 12/09, verdadeira na data |
+| Gate de REQ herdada — "`req list` dos três runtimes" | mantida | idem, histórica |
+| **nova:** não rodar `parity-rest` na raiz | acrescentada | #366 aberta; `check-tty-detection.sh` ainda roda `init` no cwd |
+
+Nada foi apagado: toda seção caducada ou desatualizada ganhou um bloco datado com o fato. Os dois
+comentários do `check-upstream-content.sh` que citavam `npm/src` e `pypi/tests` como vivos também.
