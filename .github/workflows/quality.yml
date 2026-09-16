@@ -59,21 +59,6 @@ jobs:
       - name: Corpo deste PR usa palavra-chave de fechamento em ingles
         run: scripts/check-pr-closing-keyword.sh
 
-  node:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: npm
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: "20"
-      - run: npm ci --ignore-scripts
-      - run: npm test
-      - run: npm run smoke
-      - run: npm pack --dry-run
-
   package-smoke:
     runs-on: ubuntu-latest
     steps:
@@ -87,36 +72,9 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-      - run: python -m pip install --upgrade pip build
+      - run: python -m pip install --upgrade pip packaging
       - run: go build -o bin/trackfw ./cmd/trackfw
       - run: scripts/smoke-integration-packages.sh
-
-  python:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.10", "3.12"]
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
-        with:
-          python-version: ${{ matrix.python-version }}
-      - run: python -m pip install --upgrade pip build pytest
-      # Instala o pacote (e suas dependências declaradas em pypi/pyproject.toml,
-      # ex. PyYAML) para que os testes tenham as libs de runtime disponíveis.
-      # Os testes importam do código-fonte via sys.path (não do pacote
-      # instalado), então isso não sombreia o que está sendo testado — apenas
-      # resolve dependências sem hardcodar nomes aqui (zero drift: nova dep
-      # em pyproject.toml passa a ser instalada automaticamente).
-      - run: python -m pip install pypi/
-      - run: python -m pytest pypi/tests -q
-      - run: python -m build pypi
-      - run: python -m pip install --force-reinstall pypi/dist/*.whl
-      - run: trackfw --version
-      - run: |
-          tmp_dir=$(mktemp -d)
-          cd "$tmp_dir"
-          trackfw validate --json
 
   windows-integrations-resolve:
     # Guard de regressão: o bug de path Windows (manager.js:31, manager.go:398)
@@ -134,22 +92,6 @@ jobs:
       - run: go test ./internal/integrations/... -run TestResolveWindowsCrossplatform -v
         env:
           TRACKFW_DISABLE_EXTERNAL_COMMANDS: "1"
-
-      - name: Node — integrations resolve (Windows)
-        uses: actions/setup-node@v7
-        with:
-          node-version: "20"
-      - run: npm ci --ignore-scripts
-        working-directory: npm
-      - run: node --test tests/integrations_resolve.test.js
-        working-directory: npm
-
-      - name: Python — integrations resolve (Windows)
-        uses: actions/setup-python@v7
-        with:
-          python-version: "3.12"
-      - run: python -m pip install --upgrade pip pytest
-      - run: python -m pytest pypi/tests/test_integrations_resolve.py -v
 
   windows-full-suites:
     # Camada 1 do instrumento de medição — ADR-2026-08-30-ci-de-windows-como-
@@ -246,18 +188,10 @@ jobs:
           python-version: "3.12"
       - run: npm ci --ignore-scripts
         working-directory: npm
+      # ML-3A (v8): pip install pypi/ removido — pypi/trackfw/ não existe mais.
+      # A suíte pytest (Python — suíte completa) foi removida junto com pypi/tests/.
+      # pytest ainda é necessário para o step ML-1A (falsificação do discriminante).
       - run: python -m pip install --upgrade pip pytest
-      # Instala o pacote (e suas dependências declaradas em pypi/pyproject.toml,
-      # ex. PyYAML>=6.0) para que a suíte pytest completa tenha as libs de
-      # runtime disponíveis — mesmo padrão dos jobs `python` (linha 73) e
-      # `parity` (linha 407) acima: zero drift, sem hardcodar nomes de
-      # dependência aqui. Faltava aqui (ML-1D): o job só instalava pytest,
-      # então `python -m pytest pypi/tests` falhava na COLETA de 40 módulos
-      # com `ModuleNotFoundError: No module named 'yaml'` antes de exercitar
-      # qualquer defeito real da issue #216 — resíduo do instrumento, não a
-      # medição pretendida (ver comentário AC12 acima sobre residual do
-      # instrumento vs. achado novo).
-      - run: python -m pip install pypi/
 
       - name: Registrar início (AC10)
         shell: pwsh
@@ -608,105 +542,6 @@ jobs:
           }
           exit $rc
 
-      - name: Node — suíte completa (camada 1, AC1)
-        # always() && <condição>: ver comentário no step "Go — suíte
-        # completa" acima — mesmo motivo, mesma correção (ML-1C).
-        if: always() && steps.precondition.outcome == 'success'
-        # ML-3A: step-level continue-on-error — suíte é produtora de observação, não o juiz.
-        continue-on-error: true
-        shell: pwsh
-        working-directory: npm
-        env:
-          HOME: ${{ steps.home.outputs.home }}
-          USERPROFILE: ${{ steps.home.outputs.home }}
-        # SEM argumento de caminho, de propósito: com Node 20/26 testados
-        # localmente, `node --test tests/` (positional de diretório) falha
-        # com MODULE_NOT_FOUND — parece tratar o positional como um módulo a
-        # exigir, não como raiz de descoberta, nesta versão. `node --test`
-        # (sem positional) usa a descoberta padrão a partir do cwd e achou os
-        # MESMOS 839 testes que `npm test` (verificado localmente) — mesma
-        # suíte completa, não um filtro (não é a regressão "sem invocação
-        # dirigida" que a Wave 0 e o AC1 proíbem).
-        #
-        # ML-1A: multi-reporter — spec→stdout (legível humano) + tap→arquivo
-        # (para classificação por tipo de evento). --test-reporter-destination
-        # disponível desde Node 20.0.0 (versão pinada neste job).
-        # Discriminante D3-bis: campo "exitCode:" presente num bloco "not ok" do TAP
-        #   presente  → processo do arquivo morreu antes de rodar testes → suite-load-failure
-        #   ausente   → asserção ou throw DENTRO do teste → normal failure
-        # Versão local medida: Node 26.8.1/macOS arm64.
-        # ADR adendum: Node 22/Windows 11. Node 20/windows-latest: NÃO MEDIDO diretamente.
-        # Formato TAP estável entre Node 22 e 26; extrapolado para Node 20.
-        # Zero-test: exit 0 + "# tests 0" → pior modo — indistinguível de sucesso pelo exit code.
-        run: |
-          $PSNativeCommandUseErrorActionPreference = $false
-          $tapFile = Join-Path $env:RUNNER_TEMP "node-suite.tap"
-          node --test --test-concurrency=1 `
-            "--test-reporter=spec" "--test-reporter-destination=stdout" `
-            "--test-reporter=tap" "--test-reporter-destination=$tapFile"
-          $rc = $LASTEXITCODE
-          if (Test-Path $tapFile) {
-            # Classificar por tipo de evento (campo exitCode), nunca por contagem (ADR D3/D3-bis).
-            $loadFails = @(Select-String -Path $tapFile -Pattern '^\s+exitCode:\s+\d+' -ErrorAction SilentlyContinue)
-            if ($loadFails.Count -gt 0) {
-              Write-Host "::error::Node.js suite-load-failure: $($loadFails.Count) arquivo(s) não carregou (evento: campo exitCode em bloco not-ok do TAP, não ERR_ASSERTION — ADR D3-bis)"
-              # ML-3A: marcador de classe própria para o ratchet.
-              ($loadFails | ForEach-Object { $_.Line.Trim() }) -join ' ; ' | Set-Content "$env:RUNNER_TEMP\suite-load-failure.node.txt" -Encoding utf8
-            }
-            $zeroLine = Select-String -Path $tapFile -Pattern '^# tests 0$' -ErrorAction SilentlyContinue
-            if ($zeroLine -and $rc -eq 0) {
-              Write-Host "::error::Node.js zero-test-failure: nenhum teste descoberto (exit 0 + # tests 0) — pior modo: indistinguível de sucesso pelo exit code"
-              # ML-3A: marcador de zero-test para o ratchet.
-              "zero-test" | Set-Content "$env:RUNNER_TEMP\zero-test-failure.node.txt" -Encoding utf8
-            }
-          }
-          exit $rc
-
-      - name: Python — suíte completa (camada 1, AC1)
-        # always() && <condição>: ver comentário no step "Go — suíte
-        # completa" acima — mesmo motivo, mesma correção (ML-1C).
-        if: always() && steps.precondition.outcome == 'success'
-        # ML-3A: step-level continue-on-error — suíte é produtora de observação, não o juiz.
-        continue-on-error: true
-        shell: pwsh
-        env:
-          HOME: ${{ steps.home.outputs.home }}
-          USERPROFILE: ${{ steps.home.outputs.home }}
-        # ML-1A: classificar por exit code (tipo de evento, não contagem).
-        # Protocolo pytest (estável desde pytest 3.x; projeto usa 7.x):
-        #   0 = todos passaram                                         → não é falha
-        #   1 = falhas de asserção                                     → normal-failure
-        #   2 = interrompido durante coleta (import error no módulo)   → suite-load-failure
-        #   3 = erro interno durante execução                          → suite-load-failure
-        #   4 = erro interno (conftest.py não importa)                 → suite-load-failure
-        #   5 = nenhum teste coletado                                  → zero-test-failure
-        # Medido: Python 3.14.7/macOS arm64. CI usa Python 3.12.
-        # Protocolo de exit code estável entre essas versões.
-        run: |
-          $PSNativeCommandUseErrorActionPreference = $false
-          # ML-2A: captura saída para extração de nomes de falhas pelo ratchet.
-          # python-suite-out.txt é lido pelo step "ML-2A — ratchet de nomes" abaixo.
-          $outFile = Join-Path $env:RUNNER_TEMP "python-suite-out.txt"
-          # ML-2B: -rA flag adds 'PASSED pypi/tests/...' lines to the short summary,
-          # enabling the corrected-vs-no-longer-runs discriminant for Python.
-          # Measured (2026-09-10, macOS arm64): pytest -q -rA emits
-          # 'PASSED pypi/tests/test_foo.py::Class::method' in the short summary section.
-          # Without -rA, no PASSED lines appear and the discriminant is absent.
-          python -m pytest pypi/tests -q -rA *> $outFile
-          $rc = $LASTEXITCODE
-          Get-Content $outFile
-          # Classificar por tipo de evento, nunca por contagem (ADR D3).
-          if ($rc -eq 2 -or $rc -eq 3 -or $rc -eq 4) {
-            Write-Host "::error::Python suite-load-failure: suíte interrompida ou não carregou (evento: exit code $rc — pytest collection/internal error, não asserção)"
-            # ML-3A: marcador de classe própria para o ratchet.
-            "python-suite-load-failure (exit code $rc)" | Set-Content "$env:RUNNER_TEMP\suite-load-failure.python.txt" -Encoding utf8
-          } elseif ($rc -eq 5) {
-            Write-Host "::error::Python zero-test-failure: nenhum teste coletado (exit code 5)"
-            # ML-3A: marcador de zero-test para o ratchet.
-            "python-zero-test-failure (exit code 5)" | Set-Content "$env:RUNNER_TEMP\zero-test-failure.python.txt" -Encoding utf8
-          }
-          exit $rc
-
       - name: ML-2B — extrair baseline para verificação de remoções (D4)
         # ADR D4: toda entrada removida da lista declara o motivo (removal_note).
         # O baseline (estado atual de origin/main) permite detectar entradas
@@ -808,8 +643,6 @@ jobs:
           python scripts/check-windows-known-failures.py `
             --list .github/windows-known-failures.json `
             --go-out  "$env:RUNNER_TEMP\go-suite-out.txt" `
-            --node-tap "$env:RUNNER_TEMP\node-suite.tap" `
-            --python-out "$env:RUNNER_TEMP\python-suite-out.txt" `
             --baseline "$baselineFile" `
             --load-markers-dir "$env:RUNNER_TEMP"
 
@@ -940,7 +773,8 @@ jobs:
   # shard baixa suas próprias deps e builda seu próprio bin/trackfw do zero.
   parity-falsify-shard:
     runs-on: ubuntu-latest
-    needs: [go, node, python, package-smoke, windows-integrations-resolve]
+    # ML-3A (v8): node e python removidos dos needs — jobs deletados.
+    needs: [go, package-smoke, windows-integrations-resolve]
     strategy:
       fail-fast: false
       matrix:
@@ -950,20 +784,12 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
-      - uses: actions/setup-node@v7
-        with:
-          node-version: "20"
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-      - run: npm ci --ignore-scripts
-        working-directory: npm
-      - run: python -m pip install --upgrade pip
-      - run: python -m pip install pypi/
-      # packaging: necessário para check-wheel-filename.sh (D6-write). pypi/ só
-      # declara PyYAML; pytest traz packaging transitivamente em parity-other-gates
-      # mas não aqui. Declarado explicitamente para evitar dependência implícita.
-      - run: python -m pip install packaging
+      # ML-3A (v8): npm ci e pip install pypi/ removidos — npm/src e pypi/trackfw deletados.
+      # packaging: necessário para check-wheel-filename.sh (D6-write).
+      - run: python -m pip install --upgrade pip packaging
       - name: Grau da matriz bate com FALSIFY_SHARD_COUNT (guarda contra drift)
         run: |
           if [ "${{ strategy.job-total }}" != "${{ env.FALSIFY_SHARD_COUNT }}" ]; then
@@ -994,36 +820,22 @@ jobs:
   # (alvo `parity-rest`) para a lista completa e a justificativa da divisão.
   parity-other-gates:
     runs-on: ubuntu-latest
-    needs: [go, node, python, package-smoke, windows-integrations-resolve]
+    # ML-3A (v8): node e python removidos dos needs — jobs deletados.
+    needs: [go, package-smoke, windows-integrations-resolve]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
-      - uses: actions/setup-node@v7
-        with:
-          node-version: "20"
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-      - run: npm ci --ignore-scripts
-        working-directory: npm
-      # Instala o pacote (e suas dependências declaradas em pypi/pyproject.toml,
-      # ex. PyYAML) para que os scripts de paridade, que invocam o CLI Python a
-      # partir do código-fonte via PYTHONPATH, tenham as libs de runtime
-      # disponíveis. PYTHONPATH é preposto ao sys.path, então o código
-      # importado continua sendo o do repositório — só as deps de runtime vêm
-      # do pacote instalado. Mesmo padrão do job `python` (zero drift: nomes
-      # de dependência não são hardcodados aqui).
-      # pytest: necessário para check-serve-api-file-security.sh (AC4, AC5, AC6
-      # Python). O job `python` instala explicitamente; este job não o instalava,
-      # causando "No module named pytest" reportado como FAIL de produto em vez
-      # de infraestrutura ausente.
-      # packaging: necessário para check-wheel-filename.sh (D6-write). pytest traz
-      # packaging transitivamente mas a dependência deve ser declarada explicitamente
-      # — dep transitiva pode ser removida/versão alterada sem aviso.
-      - run: python -m pip install --upgrade pip pytest packaging
-      - run: python -m pip install pypi/
+      # ML-3A (v8): setup-node e npm ci removidos — npm/src deletado.
+      # pip install pypi/ removido — pypi/trackfw/ deletado.
+      # pytest: necessário para check-serve-api-file-security.sh.
+      # packaging: necessário para check-wheel-filename.sh (D6-write).
+      # PyYAML: necessário para check-workflow-yaml.py e check-required-status-checks.py.
+      - run: python -m pip install --upgrade pip pytest packaging PyYAML
       - run: make parity-rest
         env:
           TRACKFW_DISABLE_EXTERNAL_COMMANDS: "1"
@@ -1587,50 +1399,6 @@ jobs:
           else
             exit 1
           fi
-
-  # ---------------------------------------------------------------------------
-  # AC3 — consumer smoke by_agent (2 agentes, 3 CLIs)
-  # (REQ-2026-09-11-o-ciclo-testa-onde-funciona...)
-  #
-  # Smoke end-to-end com projeto by_agent + 2 agentes (alpha, beta).
-  # Verifica: --agent roteia para o namespace correto; roadmap new --req herda
-  # o agente da REQ (AC11); sem --agent com 2 agentes → erro de ambiguidade (AC5).
-  #
-  # ML-3B-a (PR #330): GO_BIN=bin/trackfw era relativo; depois de `go build` o CWD
-  #   é a raiz mas as chamadas do script rodam após cd "$PROJECT" → rc=127 (issue #328).
-  #   O script agora normaliza GO_BIN para absoluto internamente (padrão dos outros gates).
-  #   O workflow não precisa mais passar o valor; GO_BIN omitido → default absoluto no script.
-  # ML-3B-b (PR #330): continue-on-error removido — #320 corrigido nas waves 1-3A.
-  #   ⚠️ Python roadmap new --req não herda agente da REQ (defecto AC11 medido em 2026-09-12);
-  #   o job ficará vermelho por esse motivo até o defecto ser corrigido.
-  # ---------------------------------------------------------------------------
-  consumer-smoke-by-agent:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: "20"
-
-      - uses: actions/setup-python@v7
-        with:
-          python-version: "3.12"
-
-      - run: go build -o bin/trackfw ./cmd/trackfw
-
-      - run: npm ci --ignore-scripts
-        working-directory: npm
-
-      - run: python -m pip install pypi/
-
-      - name: "consumer smoke by_agent (2 agentes, 3 CLIs — AC4, AC5, AC11)"
-        run: scripts/check-consumer-smoke-by-agent.sh
 
   # ---------------------------------------------------------------------------
   # ML-1D (v8 ROADMAP-2026-09-12-v8-um-binario-muitos-canais): AC9 — byte-identidade

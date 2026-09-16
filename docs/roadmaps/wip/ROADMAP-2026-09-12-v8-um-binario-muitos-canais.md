@@ -651,6 +651,123 @@ shim↔nativo, mais os pins extraídos antes*.
       runtimes. O que for pin de comportamento é **extraído para gate próprio**, não perdido junto.
       Falsificação: mutar o comportamento que o pin protegia ⇒ algum gate ainda reprova.
 
+#### Tabela de auditoria — check-gates-falsify.sh (Ártemis, 2026-09-14)
+
+Decisão por cenário. Regra: REMOVE exige declaração escrita de por que o cenário não afirma NADA sobre Go. Default é MANTÉM.
+
+| Cenário | Rótulo da asserção (linha) | Invoca Node/Py? | Decisão | Justificativa |
+|---------|---------------------------|-----------------|---------|---------------|
+| 1 | `static-assets/byte-drift` (L1423) | Não | REMOVE | `check-static-assets.sh` foi reescrito; `check_destination()` existe mas nunca é chamada — mensagem "byte drift" jamais é emitida |
+| 2 | `integration-assets/byte-drift` (L1445) | Não | REMOVE | `check-integration-assets.sh` idem: `check_destination()` definida, não chamada — mensagem inalcançável |
+| 3 | `identity-parity/slug-drift` (L1468) | Sim (node+py) | REMOVE | `check-identity-parity.sh` AUSENTE em disco; setup_npm_tree() falha |
+| 3b | `identity-parity/catalog-target-missing` (L1534) | Sim (node+py) | REMOVE | mesmo gate AUSENTE |
+| 4 | `validate-parity/rule-removed` (L1562) | Sim (node+py) | REMOVE | `check-validate-parity.sh` AUSENTE; setup_npm_tree() falha |
+| 5 | `cli-parity/missing-command` (L1586) | Sim (node+py) | REMOVE | `check-cli-parity.sh` AUSENTE |
+| 6 | `integration-cli-parity/missing-agents` (L1608) | Sim (node+py) | REMOVE | `check-integration-cli-parity.sh` AUSENTE |
+| 7 | `artifact-parity/req-content-drift` (L1645) | Sim (node+py) | REMOVE | `check-artifact-parity.sh` AUSENTE |
+| 8 | `artifact-parity/req-name-drift` (L1707) | Sim (node+py) | REMOVE | mesmo gate AUSENTE |
+| 9 | `artifact-parity/slash-roadmap-content-drift` (L1736) | Sim (node+py) | REMOVE | mesmo gate AUSENTE |
+| 10 | `cli-parity/roadmap-new-flag-drift` (L1773) | Sim (py) | REMOVE | `check-cli-parity.sh` AUSENTE |
+| 11 | `artifact-parity/by-agent-log-drift` (L1803) | Sim (node+py) | REMOVE | `check-artifact-parity.sh` AUSENTE |
+| 12 | `referential-integrity/missing-roadmap` (L1832) | Não | MANTÉM | `check-referential-integrity.sh` PRESENTE (SOBREVIVE); asserção Go pura |
+| 13 | `barrier/blocked-not-detected` (L1849) | Não | MANTÉM | `check-barrier.sh` PRESENTE (REESCREVER Go-only); seam `BARRIER_SELFTEST_BREAK=1` Go puro |
+| 14 | `slash-parity/status-content-drift` (L1887) | Sim (node) | REMOVE | Gate reescrito Go-only em ML-3A; mensagem "go vs node" não existe mais; setup corrompe npm/src (AUSENTE) |
+| 15 | `slash-parity/status-name-drift` (L1919) | Sim (node) | REMOVE | idem cenário 14 |
+| 16 | `rules-parity/content-drift` (L1952) | Sim (node) | REMOVE | setup_npm_tree() falha (npm/src AUSENTE); afirma comportamento Node |
+| 17 | `update-parity/dry-run-write-leak` (L1988) | Sim (node) | REMOVE | setup_npm_tree() falha; afirma comportamento Node de dry-run |
+| 18 | (inline) `falsify/no-repo-mutation` | Não (Go gates) | PODA O BRAÇO | Remover `check-roadmap-move-parity.sh` de GATES_MUTATION_CHECK (gate AUSENTE); os outros 4 gates permanecem: check-update-parity.sh, check-barrier.sh, check-slash-parity.sh, check-rules-parity.sh |
+| 19 | `barrier/early-break-after-target-not-detected` (L2054) | Não | MANTÉM | `check-barrier.sh` Go-only; seam `BARRIER_BIS_SELFTEST_BREAK=1` |
+| 20 | `roadmap-move-parity/discriminant-wrong-order-not-detected` (L2094) | Sim (node+py) | REMOVE | `check-roadmap-move-parity.sh` AUSENTE |
+| 21 | `cli-parity/version-v-prefix` (L2127) | Sim (node+py) | REMOVE | `check-cli-parity.sh` AUSENTE |
+| 22 | `cli-parity/version-byte-mismatch` (L2163) | Sim (node+py) | REMOVE | mesmo gate AUSENTE |
+| 23 | `cli-parity/v-flag-accepted` (L2238) | Sim (node+py) | REMOVE | mesmo gate AUSENTE |
+| 24 | `roadmap-acceptance-heading/go/*` (L2350), `node/*` (L2372), `python/*` (L2394) | Sim (node+py) | PODA O BRAÇO | Remover braços node e python do loop; braço go (assert_fails_with no loop para Go) afirma corretamente |
+| 25 | `roadmap-req-frontmatter-path/go/from-req-baseline` (L2454), `go/from-req` (L2479), `node/from-req-baseline` (L2490), `node/from-req` (L2506), `python/from-req-baseline` (L2517), `python/from-req` (L2533) | Sim (node+py) | PODA O BRAÇO | Remover braços node e python; braços Go afirmam comportamento real (`req_path` em frontmatter) |
+| 26 | `roadmap-req-frontmatter-path/go/simple-baseline` (L2595), `go/simple-detects-regression` (L2619), `node/simple-baseline` (L2628), `node/simple-detects-regression` (L2643), `python/simple-baseline` (L2652), `python/simple-detects-regression` (L2667) | Sim (node+py) | PODA O BRAÇO | Remover braços node e python; braços Go afirmam AC2b |
+| 27 | `adr-not-accepted/go/*` (L2715-2761), `node/*` (L2775-2809), `python/*` (L2824-2860) | Sim (node+py) | PODA O BRAÇO | Remover braços node e python; braços Go afirmam `adr_accepted_when_req_done` e `blocked_by_draft_adr` em Go |
+| 28 | `backtick-ref/go/*` (L2904-2925), `node/*` (L2937-2952), `python/*` (L2965-2989) | Sim (node+py) | PODA O BRAÇO | Remover braços node e python; braço Go afirma backtick-ADR sem campo frontmatter adr: |
+| 29–38 | `unpaired-delimiter`, `status-*`, `wip-limit-*`, `config-*`, `roadmap-cycle-*` (L3250–L4190) | Sim (node+py) | PODA O BRAÇO | Bloco de cenários 29-38 tem braços Go + Node + Python em cada; remover braços node e python; braços Go afirmam contrato de validate/status em Go |
+| 39 | (inline) `update-config-loader/go-baseline`, `go-detects-artisanal-scanner-reintroduced` | Não | MANTÉM | Cenário Go puro; testa loadUpdateConfig() com Go binary direto |
+| 40 | (inline) `update-config-loader/node-baseline`, `node-detects-artisanal-scanner-reintroduced` | Sim (node) | REMOVE | Invoca `node npm/bin/trackfw update`; setup_npm_tree() falha (npm/src AUSENTE) |
+| 41 | (inline) `update-config-loader/python-baseline`, `python-detects-artisanal-scanner-reintroduced` | Sim (py) | REMOVE | Invoca `PYTHONPATH=$ROOT_DIR/pypi python3 -m trackfw update`; pypi/trackfw AUSENTE |
+| 42 | `branch-new-parity/no-match/go-vs-node/err-message-reformatted-not-detected` (L4540) | Sim (node) | REMOVE | `check-branch-new-parity.sh` AUSENTE |
+| 43 | `attention-scripts-parity/trackfw-attention-cleanup.sh/go-vs-py-comment-drift-not-detected` (L4581) | Sim (py) | REMOVE | `check-attention-scripts-parity.sh` AUSENTE |
+| 44 | `agent-hooks-parity/kiro/go-vs-node-matcher-drift-not-detected` (L4627) | Sim (node) | REMOVE | `check-agent-hooks-parity.sh` AUSENTE |
+| 45 | `harness-hooks-parity/kiro/go-vs-py-matcher-drift-not-detected` (L4676) | Sim (py) | REMOVE | `check-harness-hooks-parity.sh` AUSENTE |
+| 46 | (inline) `credential-guard-hook-resolvable/detected` (L5039) | Não | MANTÉM | Invoca Go binary diretamente; testa `credential_guard_hook_resolvable` sem Node/Py |
+| 47 | `attention-scripts-parity/trackfw-credential-guard.sh/go-vs-node-composition-reordered-not-detected` (L5089) | Sim (node) | REMOVE | `check-attention-scripts-parity.sh` AUSENTE |
+| 48 | (inline) `credential-guard-script-integrity/detected` (L5198) | Não | MANTÉM | Go binary direto; testa integridade do script de credential guard |
+| 49 | `credential-guard-mode-downgrade/detected` (L5333), `non-vacuity` (L5360) | Não | MANTÉM | Go binary direto; sem Node/Py |
+| 50 | `credential-guard-anchoring-combined-edit/detected` (L5390), `legitimate-committed-off-silences` (L5409) | Não | MANTÉM | Go binary direto |
+| 51 | `credential-guard-anchoring-non-regression/filename-uniqueness-baseline` (L5577), `off-uncommitted-still-silences` (L5598) | Não | MANTÉM | Go binary direto |
+| 52–54 | `credential-guard-git-env-bypass/redirect-detected` (L5746), `config-count-detected` (L5755), `worktree-legitimate-detection` (L5791) | Não | MANTÉM | Go binary direto |
+| 55 | `unknown-command-parity/text-drift/python-baseline` (L5844), `python-detects-regression` (L5859) | Sim (py) | REMOVE | `check-unknown-command-parity.sh` AUSENTE |
+| 56 | `unknown-command-parity/exit-code-drift/node-baseline` (L5879), `node-detects-regression` (L5894) | Sim (node) | REMOVE | mesmo gate AUSENTE |
+| 57 | `unknown-command-parity/missing-suggestion/go-baseline` (L5922), `go-detects-regression` (L5948) | Não | REMOVE | Gate `check-unknown-command-parity.sh` AUSENTE; mesmo com label /go, o cenário invoca o gate AUSENTE como orquestrador — sem o gate, a asserção nunca roda |
+| 58 | (inline) Node+Python error handling | Sim (node+py) | REMOVE | Sem asserção Go; testa comportamento de erro de Node e Python que foram deletados |
+| 59 | `serve-address-parity/wildcard-bind-regression/python-baseline` (L6191), `python-detects-regression` (L6206) | Sim (node+py) | REMOVE | setup_npm_tree() falha (npm/src AUSENTE); corrompe pypi/trackfw/commands/serve.py (AUSENTE) |
+| 60–65 | `trackfw-git-branch-guard/…` (L6250–L6724 aprox.) | Não | MANTÉM | `scripts/trackfw-git-branch-guard.sh` Go shell script; sem Node/Py |
+| 66 | `harness-hooks-parity/kiro/git-branch-guard/go-vs-py-matcher-drift-not-detected` (L6912) | Sim (py) | REMOVE | `check-harness-hooks-parity.sh` AUSENTE |
+| 67 | (inline) dedup projeto+global para git-branch-guard | Não | MANTÉM | Go binary direto; testa deduplificação de escopo global |
+| 68 | (inline) `git-branch-guard-global-script-integrity/detected-without-wiring` (L7224) | Não | MANTÉM | Go binary direto |
+| 69 | `git-branch-guard-global-hook-resolvable/kiro-dedicated-file/detected` (L7391) | Não | MANTÉM | Go binary direto |
+| 70 | `ship-parity/squash-merge-warning-false-positive` (L7450) | Sim (node+py) | REMOVE | `check-ship-parity.sh` AUSENTE |
+| 71 | `doctor-parity/registered-under-different-claim-false-positive` (L7492) | Sim (node+py) | REMOVE | `check-doctor-parity.sh` AUSENTE |
+| 72 | `doctor-parity/registered-under-different-claim-content-drifted-false-positive` (L7534) | Sim (node+py) | REMOVE | mesmo gate AUSENTE |
+| 73 | `ship-force-parity/remote-advanced-lease-mismatch-raw-force-false-negative` (L7578) | Sim (node+py) | REMOVE | `check-ship-force-parity.sh` AUSENTE |
+| 74 | (inline) `trackfw-git-branch-guard/…` (L7584–L7879 aprox.) | Não | MANTÉM | Go shell script; sem Node/Py |
+| 75 | `release-tag-parity/success-lightweight-tag-false-negative` (L7918) | Não | MANTÉM | `check-release-tag-parity.sh` PRESENTE, reescrito Go-only em ML-3A |
+| 76 | `release-tag-parity/forge-commit-diverges-false-negative` (L7961) | Não | MANTÉM | mesmo gate Go-only |
+| 77 | `parity-contract-coverage/*` (L8037–L8236) | Não | MANTÉM | `check-parity-contract-coverage.sh` PRESENTE (SOBREVIVE); sem Node/Py |
+| 78 | `agent-hooks-parity/amazonq/go-vs-node-tools-drift-not-detected` (L8275) | Sim (node) | REMOVE | `check-agent-hooks-parity.sh` AUSENTE |
+| 79 | `validate-parity/branch-has-wip-roadmap-done-acceptance-not-detected` (L8342) | Sim (node+py) | REMOVE | `check-validate-parity.sh` AUSENTE |
+| 80 | `validate-parity/credential-guard-hook-resolvable-not-detected` (L8418) | Sim (node+py) | REMOVE | mesmo gate AUSENTE |
+| 81 | `validate-parity/credential-guard-noexec-not-detected` (L8473) | Sim (node+py) | REMOVE | mesmo gate AUSENTE |
+| 82 | `validate-parity/credential-guard-notype-not-detected` (L8520) | Sim (node+py) | REMOVE | mesmo gate AUSENTE |
+| 83 | `agent-hooks-parity/amazonq/denied-commands-not-detected` (L8582) | Sim (node) | REMOVE | `check-agent-hooks-parity.sh` AUSENTE |
+| 84 | `artifact-parity/claude-md-architect-responses-section-node` (L8619) | Sim (node) | REMOVE | `check-artifact-parity.sh` AUSENTE |
+| 85 | `nil-map-init/parse-missing-causes-panic-on-agent-models` (L8673) | Não | MANTÉM | Invoca Go binary com fixture; sem Node/Py |
+| 86 | `agent-models-parity/namespace-guard-removed-causes-gemini-leak` (L8765) | Não | MANTÉM | Go binary direto; muta internal/render.go; sem Node/Py |
+| 87 | `release-tag-parity/content-from-commit-false-negative` (L8828) | Não | MANTÉM | `check-release-tag-parity.sh` Go-only |
+| 158 | `release-tag-parity/refs-replace-bypass-false-negative` (L8888) | Não | MANTÉM | mesmo gate Go-only |
+| 159 | `validate-parity/credential-guard-bare-relative-not-detected` (L8944) | Sim (node+py) | REMOVE | `check-validate-parity.sh` AUSENTE |
+| 160 | `validate-parity/credential-guard-copilot-false-positive-detected` (L8995) | Sim (node+py) | REMOVE | mesmo gate AUSENTE |
+| 161 | `push-parity/feat-governance-blocked/exit-code` (L9043) | Sim (node+py) | REMOVE | `check-push-parity.sh` AUSENTE |
+| 162 | `push-parity/feat-governance-ok-no-upstream/go` (L9100) | Não | REMOVE | Gate `check-push-parity.sh` AUSENTE; label /go não basta — o gate que orquestra é AUSENTE |
+| 163 | `push-force-parity/pr-open-gate-removed/go` (L9143) | Não | REMOVE | `check-push-force-parity.sh` AUSENTE; mesmo argumento do cenário 162 |
+| 164 | `validate-parity/credential-guard-pwd-not-detected` (L9194) | Sim (node+py) | REMOVE | `check-validate-parity.sh` AUSENTE |
+| 165 | `validate-parity/credential-guard-absolute-path-accused` (L9265) | Sim (node+py) | REMOVE | mesmo gate AUSENTE |
+| 166 | `artifact-parity/wave0-removed-synced-detected` (L9313) | Sim (node+py) | REMOVE | `check-artifact-parity.sh` AUSENTE |
+| 167 | `barrier/wave-zero-rejected-again-detected` (L9358) | Não | MANTÉM | `check-barrier.sh` Go-only; muta barrier.go via Go source |
+| 168 | `barrier/wave-zero-flag-guard-rejected-again-detected` (L9404) | Não | MANTÉM | idem; segundo guarda AC9 |
+| 169 | `global-scope/direction-a-reads-cwd-detected` (L9446) | Não | MANTÉM | `check-agent-models-parity.sh` PRESENTE, reescrito Go-only; muta integrations_flags.go |
+| 170 | `global-scope/direction-b-reads-global-detected` (L9485) | Não | MANTÉM | idem; direção B |
+| 171 | `ac2-sanitization/direction-a-detected` (L9525) | Não | MANTÉM | `check-roadmap-barrier-contract.sh` PRESENTE Go-only (python3 usado apenas como ferramenta de parsing JSON, não como CLI trackfw) |
+| 172 | `trust-check/direction-b-detected` (L9563) | Não | MANTÉM | idem; muta barrier.go |
+| 173 | `audit-surface/direction-a-detected` (L9584) | Não | REMOVE | `check-audit-surface.sh` AUSENTE; baseline check falha na abertura do script |
+| 174 | `audit-surface/direction-b-detected` (L9601) | Não | REMOVE | mesmo gate AUSENTE; reusa baseline do 173 que já falhou |
+| 175 | `sandbox-gap-e/direction-a-detected` (L9641) | Não | MANTÉM | `check-update-parity.sh` PRESENTE, Go-only; muta update.go |
+| 176 | `sandbox-walkdir-reintroduced/direction-b-detected` (L9710) | Não | MANTÉM | idem; direção B |
+| 177 | `scaffold-divergent-silenced/direction-a-detected` (L9755) | Não | REMOVE | `check-doctor-parity.sh` AUSENTE; baseline check falha |
+| 178 | `scaffold-intact-accused/direction-b-detected` (L9797) | Não | REMOVE | mesmo gate AUSENTE |
+| 179 | `scaffold-mode-check-silenced/direction-a-detected` (L9844) | Não | REMOVE | mesmo gate AUSENTE; baseline em check-doctor-parity.sh |
+| 180 | (inline) `scaffold-update-chmod-removed/direction-b` | Não | MANTÉM | Invoca `trackfw doctor` Go binary direto; sem gate intermediário; python3 NÃO usado |
+| 181 | (inline) `scaffold-update-chmod-removed/direction-c-baseline`, `direction-c-detected` | Não | MANTÉM | Invoca `trackfw update` Go binary; python3 usado apenas para editar arquivo Go fonte (ferramenta de scripting, não CLI trackfw) |
+| 182 | `pr-closing-keyword/isencao-por-numero-baseline` (L10087), `vacuidade-corpo-vazio` (L10120), `vacuidade-fora-de-pull-request` (L10125) | Não | MANTÉM | `check-pr-closing-keyword.sh` PRESENTE (SOBREVIVE); sem Node/Py |
+| 183 | `closed-cycle/req-resolver-sem-caso-canonico-reprova` (L10230) | Sim (node+py) | REMOVE | `check-artifact-closed-cycle.sh` AUSENTE; baseline falha imediatamente; setup_npm_tree() chamado |
+| 184 | `closed-cycle/note-link-do-gerador-nao-reconhecido-reprova` (L10252) | Sim (node) | REMOVE | mesmo gate AUSENTE; afirma comportamento de gerador Node (npm/src AUSENTE) |
+| 185 | `closed-cycle/vocabulario-de-status-do-adr-em-portugues-reprova` (L10285) | Sim (py) | REMOVE | mesmo gate AUSENTE; afirma comportamento de gerador Python (pypi AUSENTE) |
+| 186–188 | `validate-parity/script-integrity-unreadable-project-not-detected` (L10336), `unreadable-global-not-detected` (L10375), `fifo-hang-not-detected` (L10417) | Sim (node+py) | REMOVE | `check-validate-parity.sh` AUSENTE; baseline compartilhado falha |
+| 189–191 | `validate-parity/gvp-global-script-integrity-message-text-diverges` (L10464), `gvmt-global-missing-type-message-text-diverges` (L10506), `gbg-claude-relativo-bare-relative-path-not-detected` (L10564) | Sim (node+py) | REMOVE | mesmo gate AUSENTE |
+| 192 | `structural-marker-value/go/*` (L10626–L10669), `node/*` (L10692–L10721), `python/*` (L10746–L10777) | Sim (node+py) | PODA O BRAÇO | Remover braços node e python (setup_npm_tree falha; pypi AUSENTE); braços Go (4 assertions: 2 baselines + 2 detections) afirmam contrato de marcador estrutural em Go |
+| 193 | `roadmap-ref-stale-state/go/*` (L10866–L10926), `node/*` (L10955–L10996), `python/*` (L11026–L11069) | Sim (node+py) | PODA O BRAÇO | Remover braços node e python (setup_npm_tree falha; pypi AUSENTE); braços Go (8 assertions) afirmam resolução de referência stale em Go |
+| 194 | `serve-chain-canonical-link/node/*` (L11163–L11182), `python/*` (L11187–L11205) | Sim (node+py) | REMOVE | Sem braço Go; cenário afirma SOMENTE comportamento Node e Python de api_chain (npm/src e pypi AUSENTES); comentário do próprio cenário: "Go tem cobertura [de outro cenário]" |
+| 195 | `python-writes-lf/wrong-newline-value` (L11238) | Sim (py) | REMOVE | `check-python-writes-lf.sh` AUSENTE |
+
+**Contagem:** 67 cenários no total (incluindo grupos numerados como 3b, 39/40/41, 186-191). REMOVE: 53. PODA O BRAÇO: 7 (cenários 18, 24, 25, 26, 27-28, 29-38, 192, 193). MANTÉM: ~28.
+
+**Verificação de integridade:** toda linha REMOVE cita um gate AUSENTE ou ausência de asserção Go. Cenário 57 (label /go mas gate AUSENTE): classificado REMOVE porque o gate `check-unknown-command-parity.sh` orquestra a asserção — sem ele, nenhum assert_fails_with executa. Cenários 162, 163 (labels /go): idem — gates `check-push-parity.sh` e `check-push-force-parity.sh` AUSENTES.
+
 ### ML-3D — **AC8 + AC11** — documentação e o break
 **Status:** ✅ Concluído
 `docs/cli-parity.md` vira documento de **canais**. O `CLAUDE.md` tem a regra dura de paridade

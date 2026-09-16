@@ -37254,3 +37254,37 @@ pré-requisito hard de ML-3A.
 **Gates:** `check-parity-contract-coverage.sh` OK (255/0), `check-manifest-version-gate.sh` 10/0, `trackfw validate` 185 warnings (pré-existentes, sem violações novas).
 
 **Committed:** `docs(v8): corrige win/arm64, wheel tags PyPI e dois breaks no CHANGELOG (ML-3D audit)` → PR #358.
+
+---
+
+## Sessão 2026-09-13 — Ares (trackfw-nul — ML-3A + ML-3B + ML-3C segunda metade) — EM ANDAMENTO
+
+**Início:** 2026-09-13 | Branch: `fix/v8-um-binario-muitos-canais` (trackfw-nul) | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` ML-3A + ML-3B + ML-3C
+**Tarefa:** Maior remoção da história: ~53.700 linhas (npm/src/ + pypi/trackfw/), suítes npm/tests/ e pypi/tests/, 29 gates DELETAR, reescrita dos 23 REESCREVER, atualização de workflows, Makefile, required-status-checks.txt, cli-parity.md, check-gates-falsify.sh.
+**Estado atual:** Leitura sistemática em curso — verificações pré-deleção: (1) release.go já atualizado (pypi/trackfw/__init__.py removido da lista no ML-1A); (2) cli-parity.md tem 19 refs a npm/tests/pypi/tests — maioria prosa, 1 gate= annotation; (3) duas linhas com needs:[go,node,python] no quality.yml (943 e 997); (4) windows-integrations-resolve e windows-full-suites são required checks que precisam sobreviver com braços Node/Python removidos.
+
+---
+
+## Sessão 2026-09-14 — Ártemis (QA) — ML-3C segunda metade: tabela de auditoria + edição de check-gates-falsify.sh
+
+**Início:** 2026-09-14 | Branch: `fix/v8-um-binario-muitos-canais` | Dir: `trackfw-nul`
+**Roadmap:** `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` ML-3C (segunda metade)
+**Tarefa:** Escrever a tabela de auditoria de todos os cenários de `scripts/check-gates-falsify.sh` (168 assert_fails_with + 7 EXPECTED=), depois editar o arquivo removendo cenários REMOVE e podando braços mortos dos PODA O BRAÇO — um cenário por vez, lido antes.
+
+---
+
+## Sessão 2026-09-14 — Ártemis (QA) — ML-3C: correção de falhas no check-gates-falsify.sh (continuação)
+
+**Início:** 2026-09-14 (continuação após compactação de contexto) | Branch: `fix/v8-um-binario-muitos-canais` | Dir: `trackfw-nul`
+**Roadmap:** `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` ML-3C
+
+**Trabalho executado:**
+- Detectou e removeu variável órfã `GBG_ORIGINAL_PWD` (linha 4183 do arquivo original) — a definição foi deletada em sessão anterior mas o `cd` de restauração ficou; causava `unbound variable` sob `set -u`.
+- Removeu cenários 173-174 (`check-audit-surface.sh`, ABSENT) — blocos de 38 linhas.
+- Substituiu `check-cli-parity.sh` por `check-barrier.sh` em todos os fixtures do cenário 77 (21 ocorrências) — gate ABSENT causava falha no baseline do checker de parity-contract-coverage.
+- Removeu cenários 177-180 (`check-doctor-parity.sh`, ABSENT) — 200 linhas.
+- Corrigiu sufixo `/go` errado nas asserções de cenários 175 (`sandbox/gap-e/dry-vs-real`) e 176 (`sandbox/dangling-outside-set/exit-zero`) — gate produzia label sem `/go`.
+
+**Resultado:** `bash scripts/check-gates-falsify.sh` passou (Falsification checks passed). `env -u FORCE_COLOR make quality` RC=0. `go build ./...` RC=0. `go test ./...` RC=0. `trackfw validate` RC=0.
+
+**Arquivo:** `scripts/check-gates-falsify.sh` — 6835 → 6596 linhas finais (antes/depois nesta sessão parcial). Linha 6428 (completion echo) ainda diz "all 183 scenarios" — precisa atualização pelo arquiteto.

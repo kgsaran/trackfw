@@ -3,7 +3,6 @@ package generators
 import (
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
 )
@@ -51,73 +50,14 @@ func getGoScripts(t *testing.T) (signal, cleanup string) {
 	return string(sigBytes), string(cleanBytes)
 }
 
-func getNodeScripts(t *testing.T, repoRoot string) (signal, cleanup string) {
-	t.Helper()
-	hooksPath := filepath.Join(repoRoot, "npm", "src", "generators", "hooks.js")
-	content, err := os.ReadFile(hooksPath)
-	if err != nil {
-		t.Fatalf("erro lendo %s: %v", hooksPath, err)
-	}
-
-	s := string(content)
-
-	sigMatch := regexp.MustCompile(`const SIGNAL_SCRIPT = \x60([\s\S]*?)\x60`).FindStringSubmatch(s)
-	if len(sigMatch) < 2 {
-		t.Fatalf("SIGNAL_SCRIPT não encontrado em npm/src/generators/hooks.js")
-	}
-
-	cleanMatch := regexp.MustCompile(`const CLEANUP_SCRIPT = \x60([\s\S]*?)\x60`).FindStringSubmatch(s)
-	if len(cleanMatch) < 2 {
-		t.Fatalf("CLEANUP_SCRIPT não encontrado em npm/src/generators/hooks.js")
-	}
-
-	// Normaliza escapes de template JS (\${ROADMAP_DIR} -> ${ROADMAP_DIR}, \\ -> \)
-	normNode := func(script string) string {
-		res := strings.ReplaceAll(script, `\${ROADMAP_DIR:-docs/roadmaps}`, `${ROADMAP_DIR:-docs/roadmaps}`)
-		res = strings.ReplaceAll(res, `\\000-\\037`, `\000-\037`)
-		res = strings.ReplaceAll(res, `\\\\`, `\\`)
-		res = strings.ReplaceAll(res, `\\\"`, `\"`)
-		res = strings.ReplaceAll(res, `\\n`, `\n`)
-		return res
-	}
-
-	return normNode(sigMatch[1]), normNode(cleanMatch[1])
-}
-
-func getPythonScripts(t *testing.T, repoRoot string) (signal, cleanup string) {
-	t.Helper()
-	initPath := filepath.Join(repoRoot, "pypi", "trackfw", "generators", "init_gen.py")
-	content, err := os.ReadFile(initPath)
-	if err != nil {
-		t.Fatalf("erro lendo %s: %v", initPath, err)
-	}
-
-	s := string(content)
-
-	sigMatch := regexp.MustCompile(`_ATTENTION_SIGNAL_SH = r?"""([\s\S]*?)"""`).FindStringSubmatch(s)
-	if len(sigMatch) < 2 {
-		t.Fatalf("_ATTENTION_SIGNAL_SH não encontrado em pypi/trackfw/generators/init_gen.py")
-	}
-
-	cleanMatch := regexp.MustCompile(`_ATTENTION_CLEANUP_SH = r?"""([\s\S]*?)"""`).FindStringSubmatch(s)
-	if len(cleanMatch) < 2 {
-		t.Fatalf("_ATTENTION_CLEANUP_SH não encontrado em pypi/trackfw/generators/init_gen.py")
-	}
-
-	return strings.TrimSpace(sigMatch[1]), strings.TrimSpace(cleanMatch[1])
-}
 
 func TestScriptsParity_GoldenCanonicalBlocks(t *testing.T) {
-	repoRoot := findRepoRoot(t)
-
+	// ML-3A (v8 — um binário, muitos canais): Node.js and Python reimplementations
+	// removed. Cross-stack comparison replaced with Go behavioral pin.
 	goSig, goClean := getGoScripts(t)
-	nodeSig, nodeClean := getNodeScripts(t, repoRoot)
-	pySig, pyClean := getPythonScripts(t, repoRoot)
 
 	clis := map[string]struct{ signal, cleanup string }{
-		"Go":     {goSig, goClean},
-		"Node":   {nodeSig, nodeClean},
-		"Python": {pySig, pyClean},
+		"Go": {goSig, goClean},
 	}
 
 	// Canonical Block 1: Path Traversal Case Statement

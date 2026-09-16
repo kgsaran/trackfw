@@ -55,8 +55,12 @@ check_destination() {
   done < "$TMP_ROOT/canonical-files"
 }
 
-check_destination "$ROOT_DIR/npm/src/integrations/assets"
-check_destination "$ROOT_DIR/pypi/trackfw/integrations/assets"
+# ML-3A (v8 — um binário, muitos canais): npm/src/integrations/assets e
+# pypi/trackfw/integrations/assets removidos. O binário Go embute os assets
+# via go:embed (internal/integrations/catalog.go). Não há mais cópias a
+# sincronizar; o gate verifica apenas que a fonte canônica é não-vazia acima
+# e que os pacotes de distribuição (npm shim, PyPI wheel) estão configurados
+# corretamente abaixo.
 
 # v8: integration assets are embedded in the Go binary (go:embed assets in
 # internal/integrations/catalog.go). The npm package ships only the shim

@@ -3,7 +3,6 @@ package generators
 import (
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -27,63 +26,6 @@ func getGoCopilotHooks(t *testing.T) map[string]interface{} {
 	return readCopilotHooksJSON(t, filepath.Join(dir, ".github", "hooks", "trackfw-attention.json"))
 }
 
-func getNodeCopilotHooks(t *testing.T, repoRoot string) map[string]interface{} {
-	t.Helper()
-	if _, err := exec.LookPath("node"); err != nil {
-		t.Skip("node não encontrado no PATH — pulando comparação estrutural com Node")
-	}
-
-	dir := t.TempDir()
-	script := `
-const path = require('path')
-const hooks = require(path.join(process.argv[2], 'npm', 'src', 'generators', 'hooks.js'))
-hooks.injectCopilotHooks(process.argv[3])
-`
-	scriptFile := filepath.Join(dir, "run.js")
-	if err := os.WriteFile(scriptFile, []byte(script), 0644); err != nil {
-		t.Fatalf("erro escrevendo script node: %v", err)
-	}
-	targetDir := filepath.Join(dir, "target")
-	if err := os.MkdirAll(targetDir, 0755); err != nil {
-		t.Fatalf("erro criando targetDir: %v", err)
-	}
-
-	cmd := exec.Command("node", scriptFile, repoRoot, targetDir)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("erro executando injectCopilotHooks via node: %v\n%s", err, out)
-	}
-
-	return readCopilotHooksJSON(t, filepath.Join(targetDir, ".github", "hooks", "trackfw-attention.json"))
-}
-
-func getPythonCopilotHooks(t *testing.T, repoRoot string) map[string]interface{} {
-	t.Helper()
-	pythonBin := "python3"
-	if _, err := exec.LookPath(pythonBin); err != nil {
-		t.Skip("python3 não encontrado no PATH — pulando comparação estrutural com Python")
-	}
-
-	dir := t.TempDir()
-	targetDir := filepath.Join(dir, "target")
-	if err := os.MkdirAll(targetDir, 0755); err != nil {
-		t.Fatalf("erro criando targetDir: %v", err)
-	}
-
-	script := `
-import sys
-sys.path.insert(0, sys.argv[1])
-from trackfw.generators.hooks import inject_copilot_hooks
-inject_copilot_hooks(sys.argv[2])
-`
-	cmd := exec.Command(pythonBin, "-c", script, filepath.Join(repoRoot, "pypi"), targetDir)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("erro executando inject_copilot_hooks via python3: %v\n%s", err, out)
-	}
-
-	return readCopilotHooksJSON(t, filepath.Join(targetDir, ".github", "hooks", "trackfw-attention.json"))
-}
 
 func readCopilotHooksJSON(t *testing.T, path string) map[string]interface{} {
 	t.Helper()
@@ -135,16 +77,13 @@ func assertCopilotHookEntry(t *testing.T, stack string, entries []map[string]int
 }
 
 func TestInjectCopilotHooks_StructuralParityAcrossStacks(t *testing.T) {
-	// Isolate global credential-guard dedup check (ML-3A) from the real $HOME —
-	// subprocesses spawned below (node/python3) inherit this via os.Environ().
+	// ML-3A (v8 — um binário, muitos canais): Node.js and Python reimplementations
+	// removed. Cross-stack structural comparison replaced with Go behavioral pin.
+	// Isolate global credential-guard dedup check from the real $HOME.
 	t.Setenv("HOME", t.TempDir())
-	repoRoot := findRepoRoot(t)
-
 	goData := getGoCopilotHooks(t)
-	nodeData := getNodeCopilotHooks(t, repoRoot)
-	pyData := getPythonCopilotHooks(t, repoRoot)
 
-	for name, data := range map[string]map[string]interface{}{"Go": goData, "Node": nodeData, "Python": pyData} {
+	for name, data := range map[string]map[string]interface{}{"Go": goData} {
 		version, ok := data["version"].(float64)
 		if !ok || version != 1 {
 			t.Errorf("%s: version deveria ser 1, obteve %v", name, data["version"])
