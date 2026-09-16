@@ -71,6 +71,10 @@ while IFS=$'\t' read -r BASE REF LABEL; do
 	ALL="$(cd "$WT" && git diff --name-only "$BASE...$REF" | sort)"
 	RETAINED="$(comm -23 <(printf '%s\n' "$ALL") <(printf '%s\n' "$BROUGHT"))"
 
+	# Produto em docs/ (a mesma lista do sync, lida dele: duas listas divergiriam).
+	PRODUTO_EM_DOCS="$(sed -n 's/^PRODUTO_EM_DOCS="\(.*\)"$/\1/p' "$SYNC")"
+	[ -n "$PRODUTO_EM_DOCS" ] || { echo "  FAIL: nao li PRODUTO_EM_DOCS do upstream-sync.sh"; FAILED=1; continue; }
+
 	# INVARIANTE 1 — nada retido fora de docs/ ou vault/ (nao suprime produto)
 	LEAK="$(printf '%s\n' "$RETAINED" | grep -vE '^(docs/|vault/)' | grep -v '^$' || true)"
 	if [ -n "$LEAK" ]; then
@@ -80,19 +84,30 @@ while IFS=$'\t' read -r BASE REF LABEL; do
 	fi
 
 	# INVARIANTE 2 — nada de produto ficou para tras
-	MISSED="$(comm -23 <(printf '%s\n' "$ALL" | grep -vE '^(docs/|vault/)' || true) <(printf '%s\n' "$BROUGHT"))"
+	ESPERADO_TRAZIDO="$( { printf '%s\n' "$ALL" | grep -vE '^(docs/|vault/)' || true; for p in $PRODUTO_EM_DOCS; do printf '%s\n' "$ALL" | grep -xF "$p" || true; done; } | sort -u)"
+	MISSED="$(comm -23 <(printf '%s\n' "$ESPERADO_TRAZIDO") <(printf '%s\n' "$BROUGHT"))"
 	if [ -n "$(printf '%s\n' "$MISSED" | grep -c . || true)" ] && [ -n "$MISSED" ]; then
 		echo "  FAIL: produto NAO trazido:"; printf '%s\n' "$MISSED" | sed 's/^/      /'; FAILED=1
 	else
 		echo "  ok  todo produto trazido            ($(printf '%s\n' "$BROUGHT" | grep -c . || true) arquivos)"
 	fi
 
-	# INVARIANTE 3 — docs/ e vault/ identicos a base
-	DIFF="$(cd "$WT" && git diff --cached "$BASE" -- docs vault --stat)"
+	# INVARIANTE 3 — docs/ e vault/ identicos a base, fora o produto em docs/
+	EXCL=(); for p in $PRODUTO_EM_DOCS; do EXCL+=(":(exclude)$p"); done
+	DIFF="$(cd "$WT" && git diff --cached "$BASE" --stat -- docs vault "${EXCL[@]}")"
 	if [ -n "$DIFF" ]; then
 		echo "  FAIL: docs/ ou vault/ divergem da base"; FAILED=1
 	else
-		echo "  ok  docs/ e vault/ identicos a base"
+		echo "  ok  docs/ e vault/ identicos a base (fora $PRODUTO_EM_DOCS)"
+	fi
+
+	# INVARIANTE 4 — produto em docs/ identico ao REF
+	DIFF4="$(cd "$WT" && git diff --cached "$REF" --stat -- $PRODUTO_EM_DOCS)"
+	TOCOU="$(printf '%s\n' "$ALL" | grep -cxF -e "$(printf '%s\n' $PRODUTO_EM_DOCS)" || true)"
+	if [ -n "$DIFF4" ]; then
+		echo "  FAIL: produto em docs/ difere do REF"; printf '%s\n' "$DIFF4" | sed 's/^/      /'; FAILED=1
+	else
+		echo "  ok  produto em docs/ identico ao REF (o merge tocou ${TOCOU} dele)"
 	fi
 done <<< "$CASES"
 

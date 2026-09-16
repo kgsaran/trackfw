@@ -3,7 +3,9 @@
 #
 # REQ-2026-09-05-procedimento-de-merge-do-upstream-com-retencao-da-governanca-local
 # Governado por ADR-2026-08-29-adotar-upstream-como-base: produto vem do upstream;
-# docs/ e vault/ são locais e NUNCA são importados.
+# docs/ e vault/ são locais e NUNCA são importados — com UMA exceção nomeada,
+# `docs/cli-parity.md`, que é contrato de produto lido por gate do produto (ver
+# PRODUTO_EM_DOCS abaixo).
 #
 # Por que existe
 # -------------
@@ -22,6 +24,19 @@
 # merges HISTÓRICOS reais, nos dois extremos, mais dois controles negativos (árvore suja e
 # ref inexistente). A propriedade verificada é a INVARIANTE — retido ⊆ docs/ ∪ vault/, e
 # todo o resto trazido —, não a contagem de arquivos: a contagem à mão errou nos DOIS casos.
+
+# ── Produto que mora em docs/ — TRAZIDO, não retido ─────────────────────────────
+# 🔴 Lista literal e curta DE PROPÓSITO. Cada entrada precisa de um gate do upstream que a
+# leia; "é documentação de produto" sozinho não basta, senão a lista vira depósito.
+#
+# docs/cli-parity.md — lido por scripts/check-parity-contract-coverage.sh, que reprova
+# seção cuja anotação nomeia gate inexistente. Retido desde o #259, o nosso ficou parado;
+# a v8.0.0 (#365) removeu os gates que ele citava, e o gate de cobertura passou a reprovar
+# o parity-other-gates em Makefile:35 — antes do barrier —, e o item 4 do
+# windows-defect-reproduction travou até o timeout. Medido em 2026-09-16, PR #135.
+# Decisão do usuário: trazer e manter trazendo.
+# Ver REQ-2026-09-16-gates-so-nossos-depois-da-v8, ML-3A.
+PRODUTO_EM_DOCS="docs/cli-parity.md"
 
 set -euo pipefail
 
@@ -120,12 +135,31 @@ git rm -r -q --ignore-unmatch --force docs vault >/dev/null 2>&1 || true
 git checkout "$BASE" -- docs >/dev/null 2>&1 || true
 # vault/ não existe na nossa árvore: fica deletado, que é o estado correto.
 
+# Produto em docs/: volta a ser o do REF. Se o REF não tem o arquivo, ele sai.
+EXCLUI_PRODUTO=()
+for p in $PRODUTO_EM_DOCS; do
+	EXCLUI_PRODUTO+=(":(exclude)$p")
+	if git cat-file -e "$REF:$p" 2>/dev/null; then
+		git checkout "$REF" -- "$p" >/dev/null 2>&1 || die "não consegui trazer $p de $REF."
+	else
+		git rm -q --ignore-unmatch --cached -- "$p" >/dev/null 2>&1 || true
+		rm -f -- "$p"
+	fi
+done
+
 # ── AC2: PROVAR a retenção por efeito, não afirmá-la ─────────────────────────────
-RETENTION_DIFF="$(git diff --cached "$BASE" -- docs vault --stat)"
+RETENTION_DIFF="$(git diff --cached "$BASE" --stat -- docs vault "${EXCLUI_PRODUTO[@]}")"
 if [ -n "$RETENTION_DIFF" ]; then
 	echo "$RETENTION_DIFF" >&2
 	git merge --abort 2>/dev/null || git reset --hard "$BASE" >/dev/null 2>&1
 	die "RETENÇÃO NÃO PROVADA: docs/ ou vault/ diferem da base. Árvore devolvida."
+fi
+# ...e a exceção prova o lado oposto: o produto em docs/ ficou IGUAL ao do REF.
+TRAZIDO_DIFF="$(git diff --cached "$REF" --stat -- $PRODUTO_EM_DOCS)"
+if [ -n "$TRAZIDO_DIFF" ]; then
+	echo "$TRAZIDO_DIFF" >&2
+	git merge --abort 2>/dev/null || git reset --hard "$BASE" >/dev/null 2>&1
+	die "PRODUTO EM docs/ NÃO TRAZIDO: difere de $REF. Árvore devolvida."
 fi
 
 # ── Conflito remanescente é de PRODUTO: aborta ───────────────────────────────────
@@ -175,7 +209,8 @@ ADR-2026-08-29: a governança do upstream não é importada.
   governança retida    $GOV_N  (de $TOTAL_N no merge)
   validate             $VAL_BEFORE antes · ${VAL_AFTER:-n/a} depois
 
-Retenção PROVADA por efeito: git diff --cached $BASE_SHORT -- docs vault saiu vazio.
+Retenção PROVADA por efeito: git diff --cached $BASE_SHORT -- docs vault saiu vazio,
+exceto o produto em docs/ ($PRODUTO_EM_DOCS), provado igual ao de $REF_SHORT.
 
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
 EOF

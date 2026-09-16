@@ -43,7 +43,6 @@ check-inherited-req.sh
 check-req-done-com-criterio-aberto.sh
 check-os-predicate-classification.sh
 check-slug-inventory.sh
-check-subcommand-parity.sh
 check-upstream-sync-falsify.sh
 measure-os-predicate-sites.sh
 "
@@ -117,26 +116,31 @@ if [ "$nao_listados" -gt 0 ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# PRE-CONDICAO DOS RUNTIMES — converte morte silenciosa em falha NOMEADA.
+# PRE-CONDICAO DO BINARIO — converte morte silenciosa em falha NOMEADA.
 #
 # Medido na primeira corrida em CI (2026-09-10): sem `npm ci`, o
-# check-subcommand-parity saiu exit 1 com ZERO linhas de saida. Ele invoca
-# `node npm/bin/trackfw --help 2>/dev/null`; sem os modulos o node falha, o
-# stderr e descartado, e `set -euo pipefail` mata o script sem dizer nada.
+# check-subcommand-parity saiu exit 1 com ZERO linhas de saida. Ele invocava
+# `node npm/bin/trackfw --help 2>/dev/null`; sem os modulos o node falhava, o
+# stderr era descartado, e `set -euo pipefail` matava o script sem dizer nada.
 #
 # Um gate que morre calado e indistinguivel de um gate que reprovou. Esta guarda
-# faz a diferenca aparecer ANTES, com o nome do runtime que falta.
+# faz a diferenca aparecer ANTES, com o nome do que falta.
+#
+# 🔴 Ate 2026-09-16 ela exigia tambem `node npm/bin/trackfw` e
+# `python3 -m trackfw`. A v8.0.0 do upstream (#365) removeu as duas
+# reimplementacoes, e com elas o unico gate nosso que as invocava
+# (check-subcommand-parity, retirado). Exigir runtime que nenhum gate usa
+# reprovaria o agregador inteiro por motivo nenhum -- foi o que o sync mediu.
+# Ver REQ-2026-09-16-gates-so-nossos-depois-da-v8.
 # ---------------------------------------------------------------------------
 faltando=""
-node "$ROOT_DIR/npm/bin/trackfw" --version >/dev/null 2>&1 || faltando="$faltando node(npm/bin/trackfw)"
-PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw --version >/dev/null 2>&1 || faltando="$faltando python3(-m trackfw)"
 [ -x "$ROOT_DIR/bin/trackfw" ] || faltando="$faltando bin/trackfw"
 
 if [ -n "$faltando" ]; then
-  echo "run-local-gates: FALHA — runtime(s) indisponivel(is):$faltando" >&2
-  echo "  Varios gates comparam os 3 CLIs e DESCARTAM o stderr deles. Sem o runtime," >&2
+  echo "run-local-gates: FALHA — pre-requisito(s) indisponivel(is):$faltando" >&2
+  echo "  Gates que chamam o binario da arvore descartam o stderr dele. Sem ele," >&2
   echo "  eles morrem com exit 1 e nenhuma mensagem -- indistinguivel de reprovacao." >&2
-  echo "  Rode 'npm ci --ignore-scripts', 'pip install pypi/' e 'go build -o bin/trackfw ./cmd/trackfw'." >&2
+  echo "  Rode 'go build -o bin/trackfw ./cmd/trackfw'." >&2
   exit 1
 fi
 

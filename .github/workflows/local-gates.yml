@@ -63,31 +63,12 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Dependencias do Node e do Python
-        # 🔴 OBRIGATORIO, e medido: sem elas o `check-subcommand-parity` morre em
-        # SILENCIO. Ele invoca `node npm/bin/trackfw --help 2>/dev/null`; sem os
-        # modulos o node falha, o stderr e descartado, e `set -euo pipefail` mata
-        # o script com exit 1 e ZERO saida. Foi o que a primeira corrida deste
-        # workflow mostrou -- e e o motivo de o AC3 exigir falsificacao em CI.
-        run: npm ci --ignore-scripts
-        # 🔴 `working-directory: npm` — o package.json e o package-lock.json moram
-        # em `npm/`, nao na raiz. Sem isto o `npm ci` sai EUSAGE dizendo que nao
-        # ha lockfile, e o job reprova antes de executar gate nenhum. Medido na
-        # segunda corrida deste workflow.
-        working-directory: npm
-
-      - name: Dependencias do Python
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install pypi/
+      # 🔴 Sem setup-node, setup-python, `npm ci` e `pip install` desde 2026-09-16.
+      # Existiam para o check-subcommand-parity, que invocava os CLIs de Node e
+      # Python. A v8.0.0 do upstream (#365) removeu as duas reimplementacoes, o
+      # gate foi retirado, e nenhum gate nosso usa mais runtime alem do Go. O
+      # self-test do ratchet abaixo usa o python3 que o ubuntu-latest ja traz.
+      # Ver REQ-2026-09-16-gates-so-nossos-depois-da-v8.
 
       - name: Compilar o binário da árvore
         # O gate mede com o binário DESTA árvore, nunca com o do PATH — um
@@ -137,7 +118,7 @@ jobs:
 
       - name: Divergência de produto tem de ser ZERO
         # O invariante do fork: arquivo COMPARTILHADO que difere. Adição não
-        # conta — os 11 scripts só nossos não são divergência.
+        # conta — os scripts só nossos não são divergência.
         run: |
           set -euo pipefail
           div=0

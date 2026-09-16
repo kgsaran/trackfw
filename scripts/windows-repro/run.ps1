@@ -10,7 +10,10 @@
 #
 # Mapeamento completo dos 11 itens da issue #216 (numeracao da tabela do
 # ML-0A / Wave 0, hades-tf):
-#   1  cp1252 no cli.py (--help de topo)          -> checado aqui (REAL)
+#   1  cp1252 no cli.py (--help de topo)          -> REMOVIDO ML-4D: pypi/trackfw
+#      deletado em ML-3A. Mecanismo (UnicodeEncodeError em stdout cp1252 do
+#      Python) e especifico do Python — Go usa os.Stdout binario (nunca
+#      traduz encoding). Nao ha sitio Go com o mesmo mecanismo.
 #   2  $HOME ignorado nos 3 runtimes                -> checado aqui (REAL).
 #      ROADMAP-2026-09-05, ML-2A: retargetado — ate a Wave 1 media
 #      os.homedir()/expanduser()/os.UserHomeDir() CRUS (a PLATAFORMA, nunca
@@ -26,20 +29,23 @@
 #      ROADMAP-2026-09-05, ML-2C: retargetado — ate a Wave 1 media um
 #      print() isolado (mecanismo REPLICADO). Agora invoca
 #      scripts/check-parity-contract-coverage.sh REAL via `bash`.
-#   5  CRLF na escrita dos geradores Python          -> checado aqui (REAL,
-#      via `trackfw init` de verdade + varredura de bytes). ML-1C: medido
-#      com o item 1 (cp1252) neutralizado SO neste subprocesso via
-#      PYTHONIOENCODING=utf-8, para nao mascarar o item 5 atras do crash
-#      do item 1 — documentado no proprio veredito.
-#   6  isatty() mente para NUL no Windows            -> checado aqui (REAL,
-#      via `trackfw init` com stdin=NUL, sem monkeypatch). ML-1C: mesma
-#      neutralizacao do item 5.
-#   7  sh -c hardcodado no Go (barrier.go:729)       -> checado aqui.
-#      ROADMAP-2026-09-05, ML-2D: retargetado — ate a Wave 1 media a MESMA
-#      chamada de shell REPLICADA fora do `barrier`, em isolamento. Agora
-#      invoca `trackfw barrier` de verdade nos 3 runtimes, com PATH normal
-#      (paridade do caminho feliz) e com PATH curado sem `sh` (AC3/AC4 da
-#      correcao #235 — mensagem byte-identica "gates not evaluated: ...").
+#   5  CRLF na escrita dos geradores Python          -> REMOVIDO ML-4D: pypi/trackfw
+#      deletado em ML-3A. Mecanismo (open() modo texto no Python escreve CRLF
+#      no Windows sem newline='') nao existe em Go: os.WriteFile e binario e
+#      nunca traduz terminadores. Propriedade garantida por construcao em Go.
+#   6  isatty() mente para NUL no Windows            -> REMOVIDO ML-4D: pypi/trackfw
+#      deletado em ML-3A. Propriedade Go equivalente JA coberta por
+#      scripts/check-tty-detection.sh (gate parity-rest): binario Go nao
+#      trava com stdin=DEVNULL — redundancia por cobertura.
+#   7  barrier falha limpo sem 'sh' no PATH (Go)     -> checado aqui.
+#      ML-4F: repontado — a dependencia de 'sh' e restricao documentada, nao
+#      defeito (shMissingMsg declarado em barrier.go:790, diagnostico limpo).
+#      Mede o contrato em duas direcoes: (a) sh ausente no PATH → gate reporta
+#      status=not_evaluated + shMissingMsg exato; (b) gate que sai 127 (tool
+#      inexistente) com sh presente → status=blocked, SEM shMissingMsg — exit
+#      127 dentro de um sh funcional nao e "sh ausente". CONFIRMATORY se o
+#      contrato e honrado, REPRODUCED se alguem trocar a distincao
+#      spawnFailed/exitCode em runGateCommand ou alterar a mensagem.
 #   8  postura divergente com \ (manager.go/js)      -> NAO checado aqui.
 #      resolve() e nao-exportado em internal/integrations/manager.go — nao
 #      da para chamar de fora sem tocar internal/ (fora do escopo desta
@@ -170,14 +176,6 @@ $pythonExePath = if ($pythonCmd) { $pythonCmd.Source } else { "python" }
 $nodeCliPath = Join-Path $repoRoot "npm\bin\trackfw"
 
 # ---------------------------------------------------------------------
-# item 1 — cp1252 no cli.py --help de topo
-# ---------------------------------------------------------------------
-$r1 = Run-Capture -Exe "python" -ArgList @("scripts/windows-repro/python/checks.py", "help")
-Add-Result -Item "1" -Title "cp1252 no cli.py --help de topo" `
-    -Verdict ($(if ($r1.Stdout -match "VERDICT=REPRODUCED") { "REPRODUCED" } elseif ($r1.Stdout -match "VERDICT=ABSENT") { "ABSENT" } else { "INCONCLUSIVE" })) `
-    -Detail $r1.Stdout
-
-# ---------------------------------------------------------------------
 # item 4 — retargetado (ROADMAP-2026-09-05, ML-2C). Ate aqui este item
 # rodava um `print()` isolado em checks.py (mecanismo REPLICADO, nunca o
 # .sh real). Agora invoca scripts/check-parity-contract-coverage.sh — o
@@ -248,12 +246,11 @@ $item2NeutralCwd = Join-Path $env:RUNNER_TEMP "item2-neutral-cwd"
 New-Item -ItemType Directory -Force -Path $item2NeutralCwd | Out-Null
 
 $item2EnvVars = @{ HOME = $fakeHome; USERPROFILE = $fakeProfile }
-$item2EnvVarsPy = @{ HOME = $fakeHome; USERPROFILE = $fakeProfile; PYTHONPATH = $env:TRACKFW_PYPI_SRC }
+# ML-4C: Node/Python arms removed — npm/src and pypi/trackfw deleted in ML-3A/ML-3B.
+# HOME resolution is a Windows-platform product property (Go binary behavior), not a
+# cross-runtime divergence property. MANTER REDUZIDO A GO.
 
 $goModels = Run-Capture -Exe $trackfwBinPathShared -ArgList @("agents", "models") -WorkDir $item2NeutralCwd -EnvVars $item2EnvVars
-$nodeModels = Run-Capture -Exe "node" -ArgList @($nodeCliPath, "agents", "models") -WorkDir $item2NeutralCwd -EnvVars $item2EnvVars
-$pyModels = Run-Capture -Exe "python" -ArgList @("-c", "from trackfw.cli import main; import sys; sys.argv=['trackfw','agents','models']; main()") `
-    -WorkDir $item2NeutralCwd -EnvVars $item2EnvVarsPy
 
 function Get-Item2SourceLine {
     param([string]$Stdout)
@@ -263,23 +260,20 @@ function Get-Item2SourceLine {
 }
 $item2ExpectedLine = "source: ~/.trackfw/trackfw.yaml"
 $goSourceLine = Get-Item2SourceLine -Stdout $goModels.Stdout
-$nodeSourceLine = Get-Item2SourceLine -Stdout $nodeModels.Stdout
-$pySourceLine = Get-Item2SourceLine -Stdout $pyModels.Stdout
 
 $item2Detail = @"
 HOME=$fakeHome (marcador agent_models presente SOMENTE aqui, em .trackfw/trackfw.yaml)
 USERPROFILE=$fakeProfile (sem marcador — deliberadamente diferente de HOME)
-'trackfw agents models' chama homedir.Dir()/homedir()/home_dir() e depois le <home>/.trackfw/trackfw.yaml.
+'trackfw agents models' chama homedir.Dir() e depois le <home>/.trackfw/trackfw.yaml.
 Esperado se o trackfw preferir `$HOME`: '$item2ExpectedLine'
 Go   -> $goSourceLine
-Node -> $nodeSourceLine
-Py   -> $pySourceLine
+(Node/Python arms removidos em ML-4C: npm/src e pypi/trackfw deletados em ML-3A/ML-3B)
 "@
-$item2Medido = $goModels.Stdout -and $nodeModels.Stdout -and $pyModels.Stdout
+$item2Medido = ($goModels.Stdout -ne "")
 $item2Verdict = if (-not $item2Medido) { "INCONCLUSIVE" }
-                elseif ($goSourceLine -ne $item2ExpectedLine -or $nodeSourceLine -ne $item2ExpectedLine -or $pySourceLine -ne $item2ExpectedLine) { "REPRODUCED" }
+                elseif ($goSourceLine -ne $item2ExpectedLine) { "REPRODUCED" }
                 else { "ABSENT" }
-Add-Result -Item "2" -Title "HOME ignorado nos 3 runtimes no Windows (retargetado ML-2A: invoca o binario real via 'trackfw agents models', nao os.homedir() cru)" -Verdict $item2Verdict -Detail $item2Detail
+Add-Result -Item "2" -Title "HOME ignorado no Windows — Go (retargetado ML-2A: invoca o binario real via 'trackfw agents models', nao os.homedir() cru)" -Verdict $item2Verdict -Detail $item2Detail
 
 # ---------------------------------------------------------------------
 # item 3 — bit de execucao. CONFIRMATORIO (ROADMAP-2026-09-05, ML-2B —
@@ -315,40 +309,6 @@ Add-Result -Item "2" -Title "HOME ignorado nos 3 runtimes no Windows (retargetad
 $r3 = Run-Capture -Exe "go" -ArgList @("run", "scripts/windows-repro/go/checks.go", "execbit")
 $item3Verdict = if ($r3.ExitCode -ne 0) { "CONFIRMATORY-EXECUTION-FAILED" } else { "CONFIRMATORY" }
 Add-Result -Item "3" -Title "info.Mode()&0111==0 sempre verdadeiro no Windows — CONFIRMATORIO (ML-2B): evidencia primaria = camada 1 (TestCredentialGuardHookResolvable_WindowsNaoDisparaBitDeExecucao / TestGitBranchGuardHookResolvable_WindowsNaoDisparaBitDeExecucao), estruturalmente excluido do contador de REPRODUCED/INCONCLUSIVE" -Verdict $item3Verdict -Detail $r3.Stdout
-
-# ---------------------------------------------------------------------
-# item 5 — CRLF na escrita dos geradores Python
-#
-# USERPROFILE isolado e PROPRIO (nao compartilhado com o item 6): o guard
-# do wizard de identidade em init.py e
-# `skip_identity_wizard = preset_changed or _identity_file_exists(home)` —
-# se este check e o do item 6 dividissem o mesmo home sintetico, um arquivo
-# de identidade deixado por este `init --identity-preset none` faria o
-# item 6 pular o wizard por _identity_file_exists()==True, nao por
-# preset_changed, mascarando silenciosamente o proprio isatty() que o
-# item 6 precisa medir (falso negativo dependente de ordem).
-# ---------------------------------------------------------------------
-$item5Home = Join-Path $env:RUNNER_TEMP "item5-fake-USERPROFILE"
-New-Item -ItemType Directory -Force -Path $item5Home | Out-Null
-$r5 = Run-Capture -Exe "python" -ArgList @("scripts/windows-repro/python/checks.py", "crlf") `
-    -EnvVars @{ RUNNER_TEMP = $env:RUNNER_TEMP; USERPROFILE = $item5Home; HOME = $item5Home }
-$item5Verdict = if ($r5.Stdout -match "VERDICT=REPRODUCED") { "REPRODUCED" } elseif ($r5.Stdout -match "VERDICT=ABSENT") { "ABSENT" } elseif ($r5.Stdout -match "VERDICT=BLOCKED-BY-ITEM-1") { "BLOCKED-BY-ITEM-1" } else { "INCONCLUSIVE" }
-Add-Result -Item "5" -Title "geradores Python escrevem CRLF (open sem newline=; ML-1C: medido com item 1 neutralizado via PYTHONIOENCODING=utf-8)" -Verdict $item5Verdict -Detail $r5.Stdout
-
-# ---------------------------------------------------------------------
-# item 6 — isatty() mente para NUL
-#
-# USERPROFILE isolado e PROPRIO, vazio (sem arquivo de identidade) — e
-# precondicao da medicao: o check so e valido se _identity_file_exists(home)
-# for False, senao skip_identity_wizard vira True por um motivo que nao e
-# o que este item mede (ver comentario do item 5 acima).
-# ---------------------------------------------------------------------
-$item6Home = Join-Path $env:RUNNER_TEMP "item6-fake-USERPROFILE"
-New-Item -ItemType Directory -Force -Path $item6Home | Out-Null
-$r6 = Run-Capture -Exe "python" -ArgList @("scripts/windows-repro/python/checks.py", "isatty") `
-    -EnvVars @{ USERPROFILE = $item6Home; HOME = $item6Home }
-$item6Verdict = if ($r6.Stdout -match "VERDICT=REPRODUCED") { "REPRODUCED" } elseif ($r6.Stdout -match "VERDICT=ABSENT") { "ABSENT" } elseif ($r6.Stdout -match "VERDICT=BLOCKED-BY-ITEM-1") { "BLOCKED-BY-ITEM-1" } else { "INCONCLUSIVE" }
-Add-Result -Item "6" -Title "sys.stdin.isatty() mente True para NUL (ML-1C: medido com item 1 neutralizado via PYTHONIOENCODING=utf-8)" -Verdict $item6Verdict -Detail $r6.Stdout
 
 # ---------------------------------------------------------------------
 # item 7 — retargetado (ROADMAP-2026-09-05, ML-2D). Ate aqui este item
@@ -417,58 +377,108 @@ function Get-BarrierGateCheck {
 
 $item7BarrierArgs = @("barrier", "ROADMAP-item7-fixture", "--wave", "1", "--json", "--trust-local-gates")
 
-# (a) PATH normal — paridade do caminho feliz.
-# $item7PyArgvLiteral e o mesmo literal Python para as duas chamadas
-# (normal e curada) — construido uma vez, sem interpolar $item7BarrierArgs
-# dentro da string Python (evitaria depender de como o PowerShell serializa
-# um array dentro de uma string dupla).
-$item7PyArgvLiteral = "['trackfw','barrier','ROADMAP-item7-fixture','--wave','1','--json','--trust-local-gates']"
-$item7NormalGo = Run-Capture -Exe $trackfwBinPathShared -ArgList $item7BarrierArgs -WorkDir $item7Dir
-$item7NormalNode = Run-Capture -Exe $nodeExePath -ArgList (@($nodeCliPath) + $item7BarrierArgs) -WorkDir $item7Dir
-$item7NormalPy = Run-Capture -Exe $pythonExePath -ArgList @("-c", "from trackfw.cli import main; import sys; sys.argv=$item7PyArgvLiteral; main()") -WorkDir $item7Dir -EnvVars @{ PYTHONPATH = $env:TRACKFW_PYPI_SRC }
+# ML-4C: Node/Python arms removed — npm/src and pypi/trackfw deleted in ML-3A/ML-3B.
+# The property measured (barrier sh dependency on Windows) is a Go product property,
+# not a cross-runtime divergence property. MANTER REDUZIDO A GO.
+# Verdict logic: REPRODUCED if Go behaves differently without sh in PATH (sh dependency
+# confirmed); ABSENT if both paths produce same gate result (sh not needed).
 
+# (a) PATH normal — caminho feliz Go.
+$item7NormalGo = Run-Capture -Exe $trackfwBinPathShared -ArgList $item7BarrierArgs -WorkDir $item7Dir
 $item7NormalGoCheck = Get-BarrierGateCheck -Stdout $item7NormalGo.Stdout
-$item7NormalNodeCheck = Get-BarrierGateCheck -Stdout $item7NormalNode.Stdout
-$item7NormalPyCheck = Get-BarrierGateCheck -Stdout $item7NormalPy.Stdout
 
 # (b) PATH curado SEM sh — mesma tecnica usada para provar a correcao
 # (commit fce709f): um diretorio vazio como PATH do processo FILHO apenas
-# (via -EnvVars, escopado a esta chamada). $trackfwBinPathShared/$nodeExePath/
-# $pythonExePath sao caminhos ABSOLUTOS (resolvidos antes desta secao), o
-# que elimina a ambiguidade de resolucao do proprio $psi.FileName sob um
-# PATH sobrescrito.
+# (via -EnvVars, escopado a esta chamada). $trackfwBinPathShared e caminho
+# ABSOLUTO (resolvido antes desta secao), eliminando ambiguidade de resolucao
+# do proprio $psi.FileName sob um PATH sobrescrito.
 $item7CuratedPathDir = Join-Path $env:RUNNER_TEMP "item7-curated-path-empty"
 New-Item -ItemType Directory -Force -Path $item7CuratedPathDir | Out-Null
 $item7CuratedEnv = @{ PATH = $item7CuratedPathDir }
-$item7CuratedEnvPy = @{ PATH = $item7CuratedPathDir; PYTHONPATH = $env:TRACKFW_PYPI_SRC }
 
 $item7CuratedGo = Run-Capture -Exe $trackfwBinPathShared -ArgList $item7BarrierArgs -WorkDir $item7Dir -EnvVars $item7CuratedEnv
-$item7CuratedNode = Run-Capture -Exe $nodeExePath -ArgList (@($nodeCliPath) + $item7BarrierArgs) -WorkDir $item7Dir -EnvVars $item7CuratedEnv
-$item7CuratedPy = Run-Capture -Exe $pythonExePath -ArgList @("-c", "from trackfw.cli import main; import sys; sys.argv=$item7PyArgvLiteral; main()") -WorkDir $item7Dir -EnvVars $item7CuratedEnvPy
-
 $item7CuratedGoCheck = Get-BarrierGateCheck -Stdout $item7CuratedGo.Stdout
-$item7CuratedNodeCheck = Get-BarrierGateCheck -Stdout $item7CuratedNode.Stdout
-$item7CuratedPyCheck = Get-BarrierGateCheck -Stdout $item7CuratedPy.Stdout
+
+# ML-4F: contrato documentado: shMissingMsg (barrier.go:790). Construido em
+# codigo para evitar mojibake em PowerShell 5.1 (leitura ANSI, nao UTF-8):
+# o em-dash U+2014 seria reinterpretado se literalmente no fonte .ps1.
+$emDash = [char]0x2014
+$item7ShMissingMsg = "gates not evaluated: sh not found in PATH " + $emDash + " install a POSIX shell (e.g. Git Bash, WSL) to evaluate gates"
+
+# Terceiro braco (ML-4F): gate que sai 127 (ferramenta inexistente) com sh
+# presente nao deve emitir shMissingMsg — exit 127 dentro de sh funcional
+# nao e "sh ausente" (distincao spawnFailed vs. exitCode, ML-0A/runGateCommand).
+$item7Dir127 = Join-Path $env:RUNNER_TEMP "item7-barrier-fixture-127"
+Remove-Item -Recurse -Force $item7Dir127 -ErrorAction SilentlyContinue
+foreach ($sub in @("docs\roadmaps\wip", "docs\roadmaps\backlog", "docs\roadmaps\blocked", "docs\roadmaps\done", "docs\roadmaps\abandoned", "docs\req", "docs\adr")) {
+    New-Item -ItemType Directory -Force -Path (Join-Path $item7Dir127 $sub) | Out-Null
+}
+@'
+# Roadmap: Item 7 Fixture 127 (ML-4F — terceiro braco: gate que sai 127 nao e sh ausente)
+
+REQ: REQ-item7-fixture-127
+
+## Acceptance Criteria
+- [x] fixture roadmap-level criterion
+
+## Wave 1 - Fixture Wave 127
+> Dependencias: nenhuma
+
+**Gates da wave:**
+```bash
+nosuchtool-trackfw-item7-ix --version
+```
+
+### ML-1A - Fixture ML 127
+**Status:** ✅
+**Criterios de aceite:**
+- [x] build passes
+'@ | Set-Content -NoNewline -Encoding utf8 (Join-Path $item7Dir127 "docs\roadmaps\wip\ROADMAP-item7-fixture-127.md")
+
+$item7Normal127 = Run-Capture -Exe $trackfwBinPathShared -ArgList @("barrier", "ROADMAP-item7-fixture-127", "--wave", "1", "--json", "--trust-local-gates") -WorkDir $item7Dir127
+$item7NormalCheck127 = Get-BarrierGateCheck -Stdout $item7Normal127.Stdout
+
+# Contrato (direcao A — sh ausente):
+#   status=not_evaluated, failures contem shMissingMsg exato.
+# Contrato (direcao B — exit 127 dentro de sh funcional):
+#   status=blocked, failures NAO contem shMissingMsg.
+# Controle: PATH normal deve produzir status avaliado (nao not_evaluated) —
+#   prova que sh e localizavel no ambiente base antes de curar o PATH.
+$item7ControlOk  = ($item7NormalGoCheck.Status -ne "not_evaluated") -and ($item7NormalGo.Stdout -ne "")
+$item7StatusOk   = ($item7CuratedGoCheck.Status -eq "not_evaluated")
+$item7MsgOk      = ($item7CuratedGoCheck.Failures -contains $item7ShMissingMsg)
+$item7Status127Ok = ($item7NormalCheck127.Status -eq "blocked")
+$item7Msg127Ok   = -not ($item7NormalCheck127.Failures -contains $item7ShMissingMsg)
+$item7Medido     = ($item7NormalGo.Stdout -ne "") -and ($item7CuratedGo.Stdout -ne "") -and ($item7Normal127.Stdout -ne "")
 
 $item7Detail = @"
-(a) PATH normal — status do check 'gates' via 'trackfw barrier':
-Go   -> $($item7NormalGoCheck.Status) failures=$($item7NormalGoCheck.Failures -join ' | ')
-Node -> $($item7NormalNodeCheck.Status) failures=$($item7NormalNodeCheck.Failures -join ' | ')
-Py   -> $($item7NormalPyCheck.Status) failures=$($item7NormalPyCheck.Failures -join ' | ')
+Contrato documentado (ML-0A / shMissingMsg barrier.go:790):
+  Direcao A: sh ausente -> status=not_evaluated + shMissingMsg exato nos failures.
+  Direcao B: gate que sai 127 com sh presente -> status=blocked, SEM shMissingMsg.
+  Controle: PATH normal deve ser avaliado (nao not_evaluated).
 
-(b) PATH CURADO sem 'sh' ($item7CuratedPathDir) — status do check 'gates':
-Go   -> $($item7CuratedGoCheck.Status) failures=$($item7CuratedGoCheck.Failures -join ' | ')
-Node -> $($item7CuratedNodeCheck.Status) failures=$($item7CuratedNodeCheck.Failures -join ' | ')
-Py   -> $($item7CuratedPyCheck.Status) failures=$($item7CuratedPyCheck.Failures -join ' | ')
+Controle PATH normal — check 'gates' (Go):
+  status=$($item7NormalGoCheck.Status) control_ok=$item7ControlOk
+
+Direcao A — PATH CURADO sem 'sh' ($item7CuratedPathDir):
+  status=$($item7CuratedGoCheck.Status) failures=$($item7CuratedGoCheck.Failures -join ' | ')
+  status_ok=$item7StatusOk msg_ok=$item7MsgOk
+
+Direcao B — gate exit 127 com sh presente (fixture $item7Dir127):
+  status=$($item7NormalCheck127.Status) failures=$($item7NormalCheck127.Failures -join ' | ')
+  status_ok=$item7Status127Ok msg_absent_ok=$item7Msg127Ok
+
+(Node/Python arms removidos em ML-4C: npm/src e pypi/trackfw deletados em ML-3A/ML-3B)
 "@
 
-$item7Medido = $item7NormalGo.Stdout -and $item7NormalNode.Stdout -and $item7NormalPy.Stdout -and $item7CuratedGo.Stdout -and $item7CuratedNode.Stdout -and $item7CuratedPy.Stdout
-$item7NormalConsistent = ($item7NormalGoCheck.Status -eq $item7NormalNodeCheck.Status) -and ($item7NormalGoCheck.Status -eq $item7NormalPyCheck.Status)
-$item7CuratedConsistent = ($item7CuratedGoCheck.Status -eq $item7CuratedNodeCheck.Status) -and ($item7CuratedGoCheck.Status -eq $item7CuratedPyCheck.Status)
+# CONFIRMATORY: contrato honrado em ambas as direcoes e controle ok.
+# REPRODUCED:   contrato quebrado (spawnFailed/exitCode trocados, mensagem alterada,
+#               ou exit 127 tratado como sh ausente).
+# INCONCLUSIVE: sem saida para medir em algum braco.
 $item7Verdict = if (-not $item7Medido) { "INCONCLUSIVE" }
-                elseif ((-not $item7NormalConsistent) -or (-not $item7CuratedConsistent)) { "REPRODUCED" }
-                else { "ABSENT" }
-Add-Result -Item "7" -Title "trackfw barrier avalia o MESMO gate de wave diferente entre CLIs (retargetado ML-2D: invoca 'trackfw barrier' de verdade, nao mais a replica isolada de exec.Command/spawnSync/subprocess)" -Verdict $item7Verdict -Detail $item7Detail
+                elseif ($item7ControlOk -and $item7StatusOk -and $item7MsgOk -and $item7Status127Ok -and $item7Msg127Ok) { "CONFIRMATORY" }
+                else { "REPRODUCED" }
+Add-Result -Item "7" -Title "barrier falha limpo sem 'sh' no PATH: not_evaluated + shMissingMsg exato; exit 127 dentro de sh = blocked sem shMissingMsg (ML-4F — CONFIRMATORY se contrato honrado)" -Verdict $item7Verdict -Detail $item7Detail
 
 # ---------------------------------------------------------------------
 # item 8 — declarado, nao checado (residual)
@@ -555,16 +565,17 @@ roadmap: docs/roadmaps/backlog/ROADMAP-item10.md
 }
 
 $item10Go = Test-Item10 -Runtime "go"
-$item10Node = Test-Item10 -Runtime "node"
-$item10Py = Test-Item10 -Runtime "python"
-$item10Detail = ($item10Go, $item10Node, $item10Py | ForEach-Object { "$($_.Runtime): $($_.Verdict) — $($_.Detail)" }) -join "`n"
-$item10Verdict = if (@($item10Go, $item10Node, $item10Py) | Where-Object { $_.Verdict -eq "REPRODUCED" }) { "REPRODUCED" } elseif (@($item10Go, $item10Node, $item10Py) | Where-Object { $_.Verdict -eq "INCONCLUSIVE" }) { "INCONCLUSIVE" } else { "ABSENT" }
-Add-Result -Item "10" -Title "separador de SO (\) vazando para o frontmatter da REQ no roadmap move" -Verdict $item10Verdict -Detail $item10Detail
+# ML-4C: Node/Python arms removed — npm/src and pypi/trackfw deleted in ML-3A/ML-3B.
+# OS separator leaking into REQ frontmatter on roadmap move is a Go product property
+# on Windows, not a cross-runtime divergence property. MANTER REDUZIDO A GO.
+$item10Detail = "go: $($item10Go.Verdict) — $($item10Go.Detail)`n(Node/Python arms removidos em ML-4C: npm/src e pypi/trackfw deletados em ML-3A/ML-3B)"
+$item10Verdict = $item10Go.Verdict
+Add-Result -Item "10" -Title "separador de SO (\) vazando para o frontmatter da REQ no roadmap move — Go" -Verdict $item10Verdict -Detail $item10Detail
 
 # ---------------------------------------------------------------------
 # item 11 — declarado, coberto pela camada 1
 # ---------------------------------------------------------------------
-Add-Result -Item "11" -Title "12 testes de symlink sem privilegio (5 Python, 5 Node, 2 Go)" `
+Add-Result -Item "11" -Title "2 testes de symlink sem privilegio (2 Go)" `
     -Verdict "COVERED-BY-CAMADA-1" `
     -Detail "Ja exposto por go test ./..., npm test e pytest pypi/tests (camada 1, job windows-full-suites) — sao os proprios arquivos de teste da suite. O skip explicito com mensagem nomeando a garantia nao exercitada e a Wave 2 (ML-2A), fora do escopo desta ML."
 
@@ -884,7 +895,7 @@ Add-Result -Item "12" -Title "SONDA ML-0B (fora da issue #216): exit 1 uniforme 
 # ---------------------------------------------------------------------
 Write-Host ""
 Write-Host "===================================================================="
-Write-Host "SUMARIO — suite de reproducao de defeito (11 itens da issue #216)"
+Write-Host "SUMARIO — suite de reproducao de defeito (8 itens da issue #216; itens 1/5/6 removidos em ML-4D — ver comentarios no cabecalho deste arquivo)"
 Write-Host "===================================================================="
 $results | Format-Table -AutoSize | Out-String | Write-Host
 
@@ -899,6 +910,11 @@ $gateResults = @($results | Where-Object { $_.InGate })
 $reproduced = @($gateResults | Where-Object { $_.Verdict -eq "REPRODUCED" })
 $inconclusive = @($gateResults | Where-Object { $_.Verdict -eq "INCONCLUSIVE" })
 $blocked = @($gateResults | Where-Object { $_.Verdict -eq "BLOCKED-BY-ITEM-1" })
+# $confirmatory (ML-4F): itens cujo contrato e honrado (CONFIRMATORY — item 3 e
+# agora item 7). Contados separadamente para que o sumario mostre explicitamente
+# quantos itens confirmaram o contrato, em vez de deixar isso invisivel no "Total
+# de linhas" (mesma logica do $executionFailed para o item 3).
+$confirmatory = @($gateResults | Where-Object { $_.Verdict -eq "CONFIRMATORY" })
 # $executionFailed (ROADMAP-2026-09-05, ML-3B — vazamento 1): o item 3 saiu
 # do contador de REPRODUCED/INCONCLUSIVE de proposito (CONFIRMATORIO, ML-2B)
 # — mas "confirmatorio" nao e "invisivel". Se a SONDA que sustenta o item 3
@@ -912,7 +928,7 @@ $blocked = @($gateResults | Where-Object { $_.Verdict -eq "BLOCKED-BY-ITEM-1" })
 # de fechar para o item 3 — precisaria do proprio contador, fora do InGate.
 $executionFailed = @($gateResults | Where-Object { $_.Verdict -eq "CONFIRMATORY-EXECUTION-FAILED" })
 
-Write-Host "Reproduzidos: $($reproduced.Count) | Inconclusivos: $($inconclusive.Count) | Bloqueados por dependencia (item 1): $($blocked.Count) | Falhas de execucao confirmatoria (item 3 sem medir): $($executionFailed.Count) | Total de linhas: $($results.Count) | Fora do gate (observacional, item 12): $(@($results | Where-Object { -not $_.InGate }).Count)"
+Write-Host "Reproduzidos: $($reproduced.Count) | Inconclusivos: $($inconclusive.Count) | Bloqueados por dependencia (item 1): $($blocked.Count) | Confirmatorios (contrato honrado — itens 3 e 7): $($confirmatory.Count) | Falhas de execucao confirmatoria (item 3 sem medir): $($executionFailed.Count) | Total de linhas: $($results.Count) | Fora do gate (observacional, item 12): $(@($results | Where-Object { -not $_.InGate }).Count)"
 
 if ($env:GITHUB_STEP_SUMMARY) {
     # ROADMAP-2026-09-05, ML-3B — o filtro do gate (InGate) NAO pode ficar

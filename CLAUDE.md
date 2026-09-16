@@ -356,7 +356,7 @@ Delete the file when resolved. Visible as a live banner in `trackfw serve`.
 - **Docker + .env from day 1:** containerize early; all config via env vars
 - **2-layer validation:** frontend (UX) + backend (security) — never only one
 - **API-first:** define OpenAPI contract before coding frontend/backend integration
-- **Security wave:** include a red-team review wave in every feature roadmap
+- **Threat model waves:** every feature roadmap opens with a Wave 0 threat model (before implementation) and closes with a red-team review wave (before release)
 - **Test coverage:** TDD for critical logic; min 60% (prototype) / 80% (production)
 - Use `/trackfw:architect` to define stack before the first REQ
 
@@ -383,7 +383,9 @@ git fetch upstream
 scripts/upstream-sync.sh
 ```
 
-O `upstream-sync.sh` mescla, **retém `docs/` e `vault/`**, prova a retenção por efeito, reporta a
+O `upstream-sync.sh` mescla, **retém `docs/` e `vault/`** — exceto `docs/cli-parity.md`, que é contrato
+de produto lido por gate do upstream e vem dele desde 2026-09-16 (nota na `ADR-2026-08-29`) —, prova a
+retenção por efeito, reporta a
 proporção produto/governança e verifica que o `validate` não mexeu. Não commita nem faz push por
 padrão: o commit carrega a medição, e quem mede é quem escreve. Aborta e devolve a árvore se sobrar
 conflito de produto ou se a retenção não puder ser provada.
@@ -406,6 +408,18 @@ merges históricos mais dois controles negativos. A propriedade verificada é a 
 retido ⊆ `docs/` ∪ `vault/`, e todo o resto trazido —, não a contagem: a contagem à mão errou nos
 dois casos.
 
+## Não rode `make parity-rest` na raiz deste fork
+
+🔴 Enquanto a [#366](https://github.com/kgsaran/trackfw/issues/366) do upstream estiver aberta, um gate
+do `parity-rest` **reescreve o `trackfw.yaml` real**. O mantenedor isolou por bissecção:
+`scripts/check-tty-detection.sh` roda `"$GO_BIN" init --ai-tools gemini` no **cwd**, sem `cd` para a
+fixture que ele mesmo cria. Lido na árvore da v8 (2026-09-16): o `init` continua sem `cd`.
+
+Aqui o custo é maior que no upstream: o nosso `trackfw.yaml` tem `req_dir: docs/requisições`,
+`roadmap_namespacing: by_agent` e os três agentes. Regenerado, o `validate` passa a olhar o lugar errado
+e pode sair verde por não achar nada. Nenhum gate nosso chama o `parity-rest`; o CI roda num runner
+descartável. Se precisar rodar local, rode num worktree.
+
 ## Gate de layout de REQ (`scripts/check-req-layout.sh`)
 
 A `ADR-2026-09-03` D1 decide que **REQ não tem dimensão de estado** — `backlog`/`wip`/`done` são
@@ -422,6 +436,10 @@ falha se varrer zero.
 🔴 **`docs/req/` fica fora por decisão escrita.** Não é o nosso `req_dir`, e três daqueles arquivos
 são **fixture de teste do produto**, lidas por caminho literal nos 3 runtimes — removê-las quebra
 `go`, `node` e `python`, medido em 2026-09-05.
+
+> **Atualização de 2026-09-16 (v8).** Node e Python saíram do produto; a fixture continua viva no Go —
+> os três nomes aparecem em `internal/validator/validator_test.go`, conferido com `git grep` fora de
+> `docs/`. Continua fora pelo mesmo motivo, agora com um runtime a quebrar em vez de três.
 
 O gate existe porque a ADR foi aceita e, cinco dias depois, **7 REQs estavam em pasta de estado** com
 o `validate` dizendo `✓ No violations found`. E o custo não era a desarrumação: aquele nível a mais
@@ -450,6 +468,15 @@ agora **herda o agente da REQ** em vez de ignorá-lo.
 Medido por efeito em projeto temporário com os mesmos três agentes, antes de mesclar.
 
 ## Branch `feat/fix/refactor` custa 3 jobs vermelhos por motivo falso
+
+> 🔴 **Caducou em 2026-09-16, com a v8.0.0 do upstream
+> ([#365](https://github.com/kgsaran/trackfw/pull/365)).** Os jobs `python (3.10)` e `python (3.12)`
+> saíram do `quality.yml`, a suíte `pytest` saiu do `windows-full-suites`, e
+> `pypi/trackfw/validator.py` — onde estava o mecanismo — não existe mais. O mantenedor fechou a
+> [#261](https://github.com/kgsaran/trackfw/issues/261) por isso, observando que no Go a regra passa
+> por `applyRule` com tipo homogêneo. A seção fica como registro da medição; **não use mais este
+> motivo para ler vermelho** sem medir de novo. `chore/` e `docs/` continuam o tipo certo para trabalho
+> sem produto, por ser o tipo certo, não por este mecanismo.
 
 🔴 **Não leia estes três como regressão** — `python (3.10)`, `python (3.12)` e `windows-full-suites`.
 Em branch `feat/`, `fix/` ou `refactor/` eles reprovam **sem que a árvore tenha defeito**. Medido em
@@ -498,6 +525,11 @@ Reportado no upstream como sítio da mesma causa:
 `main` dele (blob `26a5f6c854bd`): não há divergência local envolvida.
 
 ## Ponto cego local: os 3 gates de PATH curado não rodam nesta máquina
+
+> **Atualização de 2026-09-16 (v8).** `check-ship-force-parity.sh` e `check-push-force-parity.sh`
+> **foram removidos** pelo upstream. O `check-release-tag-parity.sh` continua, agora Go-only, e ainda
+> faz `ln -s "$REAL_PYTHON3" "$RUNTIME_BIN/python3"` (linha 116) — o bloqueio 1 abaixo tem onde
+> ocorrer, mas **não foi re-medido** nesta máquina depois da v8. A tabela é de 2026-09-09.
 
 `check-ship-force-parity.sh`, `check-push-force-parity.sh` e `check-release-tag-parity.sh` **não
 verificam nada no Windows daqui.** Não é "alguns cenários falham": é **zero cenário executado**.
@@ -567,6 +599,16 @@ bash scripts/check-os-predicate-classification.sh
 ```
 
 Os cinco somam 240 exatamente — o denominador reconcilia, não sobra resto.
+
+> **Atualização de 2026-09-16 (v8).** O escopo passou a `internal cmd`, e sete arquivos saíram do
+> baseline — todos de `npm/src` e `pypi/trackfw`, apagados pelo upstream. Medido depois:
+>
+> ```
+> 204 sitios · 116 com teste · 57 D1 · 2 D3 · 25 comentario · 4 D2 em 2 arquivos declarados
+> ```
+>
+> Os cinco somam 204. Os números acima, as duas leituras inline de `homedir.py` e `tty.py` e os "16
+> sítios" abaixo são de 2026-09-11. Detalhe e falsificação na `REQ-2026-09-16-gates-so-nossos-depois-da-v8`.
 
 **O ML-1H (2026-09-11) alargou o lint em três frentes, e a terceira corrigiu o próprio acervo:**
 
@@ -725,6 +767,12 @@ uma.
 Custo por suíte, nos três runs medidos em 2026-09-11 (`34603239796`, `34598894601`, `34596059692`):
 Go 136 a 183 s, Node 128 a 198 s, Python 110 a 132 s.
 
+> **Atualização de 2026-09-16 (v8).** A lista `entries` do `.github/windows-known-failures.json` ficou
+> com **14 nomes, todos `go`** — as 24 entradas de Node e Python foram para `removed[]` com
+> `removal_note: "no-longer-runs"`, e a suíte `pytest` saiu do `windows-full-suites`. Os custos acima
+> são de antes. O self-test continua no `local-gates.yml`, agora sem `setup-python`: usa o `python3`
+> do `ubuntu-latest`.
+
 **Fica fora do `run-local-gates.sh`, e o motivo não é o custo:**
 
 1. O veredito precisa dos artefatos das **três suítes completas rodadas no Windows**. Sem eles, a
@@ -798,6 +846,11 @@ Os únicos arquivos só nossos são adições que o upstream não tem — `scrip
 `scripts/check-subcommand-parity.sh`, `scripts/check-upstream-content.sh`, `scripts/upstream-sync.sh`
 e `scripts/check-upstream-sync-falsify.sh`. Adição não é divergência: nenhum arquivo compartilhado
 difere.
+
+> **Atualização de 2026-09-16 (v8).** O `check-subcommand-parity.sh` foi **retirado**: comparava
+> subcomandos entre os três CLIs, e com uma implementação só a propriedade deixou de ser definível. O
+> `check-slug-inventory.sh` ficou Go-only. `npm/src` e `pypi/trackfw` não existem mais — o comando
+> acima continua valendo, e os dois caminhos passam a não casar nada.
 
 > **Correção de 2026-09-05.** Esta seção afirmava que `_force_utf8_output` em `pypi/trackfw/cli.py`
 > era divergência local deliberada. **Não é mais** — o upstream absorveu (2 ocorrências em

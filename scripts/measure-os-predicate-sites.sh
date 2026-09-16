@@ -34,7 +34,13 @@ ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$ROOT_DIR"
 
 BASELINE="${BASELINE:-$ROOT_DIR/scripts/testdata/os-predicate-sites-baseline.txt}"
-ESCOPO=(internal npm/src pypi/trackfw cmd)
+# 🔴 ESCOPO sem `npm/src` e `pypi/trackfw` desde 2026-09-16: a v8.0.0 do upstream
+# (#365) removeu as duas reimplementacoes. Com elas no escopo, o `git grep` varre
+# diretorio que nao existe, e o denominador parece so ter encolhido. Os tres
+# predicados de Node e Python continuam na lista: custam nada, e um sitio desses
+# reaparecendo em `internal/` ou `cmd/` seria achado, nao ruido.
+# Ver REQ-2026-09-16-gates-so-nossos-depois-da-v8.
+ESCOPO=(internal cmd)
 
 # Predicados que a REQ nomeia. Lista literal DE PROPÓSITO: ela é o contrato do
 # AC2, não uma heurística a derivar. Acrescentar um aqui é mudar o escopo da
