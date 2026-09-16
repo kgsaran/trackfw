@@ -2,6 +2,14 @@
 
 ---
 
+## Sessão 2026-09-16 — Ártemis (trackfw-nul — ML-3C-bis: defeito de autorrelato em check-gates-falsify.sh) — ENCERRADO
+
+**Início:** 2026-09-16 | Branch: `fix/v8-um-binario-muitos-canais` (trackfw-nul) | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` ML-3C-bis
+**Tarefa:** Corrigir dois defeitos em `scripts/check-gates-falsify.sh`: (1) mensagem de sucesso `echo "Falsification checks passed (all 183 scenarios, ..."` estava em linha 6272 mas ~370 cenários continuavam após ela — falha nesses cenários ainda imprimia a mensagem antes do exit 1; (2) contador "183" era hardcoded e desatualizado. Fix: mover mensagem para o final real do script, substituir por contador medido via arquivo `$FALSIFY_SUCCESS_TALLY`.
+**Concluído:** (1) Adicionado `FALSIFY_SUCCESS_TALLY` (arquivo, não variável shell, para sobreviver subshell boundary). (2) Adicionada `falsify_count_success()` que incrementa o arquivo. (3) Instrumentados todos os 65 pontos `echo "OK   [falsify/..."`: 7 helpers + 39 body-level non-indented + 19 body-level indented (blocos if). (4) Removida mensagem hardcoded na linha 6272. (5) Adicionada mensagem medida na última linha: `echo "Falsification checks passed (${falsify_success_n:-0} scenarios)"`. (6) Direção A provada: injeção de mismatch no cenário `integration-assets/direction-b-shim-absent` (após linha 6272 original) → exit 1, "Falsification checks passed" NÃO impresso. (7) Direção B provada: cenário `integration-assets/baseline` comentado → 201→200 cenários; restaurado → 201 novamente. (8) `go build ./...` RC=0. (9) `go test ./...` RC=0. (10) `make quality` RC=0 (212 OK, 0 FAIL). (11) `trackfw validate` RC=0 (176 violações pré-existentes, nenhuma nova). (12) `check-orphan-gates.sh` RC=0. Nota: contador reporta 201 (cenários instrumentados por este script); `make quality` mostra 212 porque inclui ~2 linhas OK de `check-wheel-filename.sh` externo + linhas de shard parcial/paralelo.
+
+---
+
 ## Sessão 2026-09-13 — Ares (trackfw-nul — ML-2A: bump de versão para 8.0.0-rc1) — ENCERRADO
 
 **Início:** 2026-09-13 | Branch: `fix/v8-um-binario-muitos-canais` (trackfw-nul) | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` ML-2A

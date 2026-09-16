@@ -229,6 +229,8 @@ export FALSIFY_GO_BIN
 #    (nenhuma ocorrência fora deste arquivo e do gerador de chunks).
 TRACKFW_FALSIFY_ENUMERATE=${TRACKFW_FALSIFY_ENUMERATE:-0}
 FALSIFY_ENUM_TALLY="$WORK/enum-failures"
+FALSIFY_SUCCESS_TALLY="$WORK/success-count"
+: > "$FALSIFY_SUCCESS_TALLY"
 if [[ "$TRACKFW_FALSIFY_ENUMERATE" == "1" ]]; then
   : > "$FALSIFY_ENUM_TALLY"
   echo "[falsify/enumerate] modo de enumeração ATIVO (TRACKFW_FALSIFY_ENUMERATE=1, default=0) -- reprovações são contadas e a execução continua para o próximo cenário; o exit code final permanece != 0 se qualquer cenário reprovar. Ferramenta de diagnóstico -- não usada por make quality/parity." >&2
@@ -275,6 +277,12 @@ falsify_count_failure() {
   printf 'x\n' >> "$FALSIFY_ENUM_TALLY"
 }
 
+# Conta uma asserção bem-sucedida (helper passou). Usa arquivo como
+# FALSIFY_ENUM_TALLY: sobrevive fronteira de subshell.
+falsify_count_success() {
+  printf 'x\n' >> "$FALSIFY_SUCCESS_TALLY"
+}
+
 # ---------------------------------------------------------------------------
 # Helper: assert que o comando retorna exit != 0 E a saída contém o diagnóstico.
 # Uso: assert_fails_with LABEL DIAGNOSTIC_PATTERN CMD [ARGS...]
@@ -302,6 +310,7 @@ assert_fails_with() {
     [[ "$TRACKFW_FALSIFY_ENUMERATE" == "1" ]] && return 0
     exit 1
   fi
+  falsify_count_success
   echo "OK   [falsify/$label]"
 }
 
@@ -360,6 +369,7 @@ assert_output_contains() {
     [[ "$TRACKFW_FALSIFY_ENUMERATE" == "1" ]] && return 0
     exit 1
   fi
+  falsify_count_success
   echo "OK   [falsify/$label]"
 }
 
@@ -379,6 +389,7 @@ assert_output_lacks() {
     [[ "$TRACKFW_FALSIFY_ENUMERATE" == "1" ]] && return 0
     exit 1
   fi
+  falsify_count_success
   echo "OK   [falsify/$label]"
 }
 
@@ -487,6 +498,7 @@ assert_guard_exit() {
     [[ "$TRACKFW_FALSIFY_ENUMERATE" == "1" ]] && return 0
     exit 1
   fi
+  falsify_count_success
   echo "OK   [falsify/$label]: exit $status"
 }
 
@@ -549,6 +561,7 @@ sys.stdout.flush()
     [[ "$TRACKFW_FALSIFY_ENUMERATE" == "1" ]] && return 0
     exit 1
   fi
+  falsify_count_success
   echo "OK   [falsify/$label]: guard exit $guard_status, writer_status=$writer_status, escritor_erro=$writer_had_error"
 }
 
@@ -693,6 +706,7 @@ assert_lacks_pattern() {
     [[ "$TRACKFW_FALSIFY_ENUMERATE" == "1" ]] && return 0
     exit 1
   fi
+  falsify_count_success
   echo "OK   [falsify/$label]"
 }
 
@@ -716,6 +730,7 @@ assert_succeeds() {
     [[ "$TRACKFW_FALSIFY_ENUMERATE" == "1" ]] && return 0
     exit 1
   fi
+  falsify_count_success
   echo "OK   [falsify/$label]: $out"
 }
 
@@ -1438,6 +1453,7 @@ if [[ "$before_status" != "$after_status" ]]; then
   diff <(echo "$before_status") <(echo "$after_status") >&2 || true
   falsify_fail_point
 fi
+falsify_count_success
 echo "OK   [falsify/no-repo-mutation]"
 
 # ---------------------------------------------------------------------------
@@ -1943,6 +1959,7 @@ S30_EXPECTED=$'── trackfw status ──────────────�
 s30_go_out=$(cd "$S30_PROJECT" && "$T27_GO_BIN" status)$'\n'
 
 if [[ "$s30_go_out" == "$S30_EXPECTED" ]]; then
+  falsify_count_success
   echo "OK   [falsify/status-inventory/baseline-byte-identical-and-pinned]"
 else
   echo "FAIL [falsify/status-inventory/baseline-byte-identical-and-pinned]: esperava '$S30_EXPECTED' nos 3 CLIs" >&2
@@ -1971,6 +1988,7 @@ build_go_or_fail "setup-s30-go-corrupt-build" "$T30C_GO_MOD" "$T30C_GO_BIN"
 
 s30c_go_out=$(cd "$S30_PROJECT" && "$T30C_GO_BIN" status)$'\n'
 if [[ "$s30c_go_out" != "$S30_EXPECTED" ]]; then
+  falsify_count_success
   echo "OK   [falsify/status-inventory/go-detects-analyzing-omission]"
 else
   echo "FAIL [falsify/status-inventory/go-detects-analyzing-omission]: enumeração de analyzing revertida mas a comparação continuou passando (checagem vácua)" >&2
@@ -2083,6 +2101,7 @@ S34_EXPECTED=$'── trackfw status ──────────────�
 s34_go_out=$(cd "$S34_PROJECT" && "$T27_GO_BIN" status)$'\n'
 
 if [[ "$s34_go_out" == "$S34_EXPECTED" ]]; then
+  falsify_count_success
   echo "OK   [falsify/config-unindented-agents/baseline-byte-identical-and-pinned]"
 else
   echo "FAIL [falsify/config-unindented-agents/baseline-byte-identical-and-pinned]: esperava '$S34_EXPECTED' nos 3 CLIs" >&2
@@ -2114,6 +2133,7 @@ if grep -qF "$S34_ZEUS_UNDECLARED" <<<"$s34_validate_go_out"; then
   echo "  output: $(printf '%q' "$s34_validate_go_out")" >&2
   falsify_fail_point
 fi
+falsify_count_success
 echo "OK   [falsify/config-unindented-agents/go/agent-namespace-undeclared-baseline]"
 
 # --- braço de detecção: Go deixa de atribuir cfg.Agents a partir da lista --
@@ -2137,6 +2157,7 @@ build_go_or_fail "setup-s34-go-corrupt-build" "$T34C_GO_MOD" "$T34C_GO_BIN"
 
 s34c_validate_go_out=$(cd "$S34_PROJECT" && "$T34C_GO_BIN" validate 2>&1; true)
 if grep -qF "$S34_ZEUS_UNDECLARED" <<<"$s34c_validate_go_out"; then
+  falsify_count_success
   echo "OK   [falsify/config-unindented-agents/go-detects-list-discarded]"
 else
   echo "FAIL [falsify/config-unindented-agents/go-detects-list-discarded]: cfg.Agents descartado, mas zeus não virou 'não declarado' na violação agent_namespace_undeclared — diagnóstico pelo motivo errado" >&2
@@ -2276,6 +2297,7 @@ S35_EXPECTED=$'── trackfw status ──────────────�
 s35_go_out=$(cd "$S35_PROJECT" && "$T27_GO_BIN" status)$'\n'
 
 if [[ "$s35_go_out" == "$S35_EXPECTED" ]]; then
+  falsify_count_success
   echo "OK   [falsify/config-inline-comma-in-quotes/baseline-byte-identical-and-pinned]"
 else
   echo "FAIL [falsify/config-inline-comma-in-quotes/baseline-byte-identical-and-pinned]: esperava '$S35_EXPECTED' nos 3 CLIs" >&2
@@ -2311,6 +2333,7 @@ for pair in "go:$s35_validate_go_out"; do
     echo "  output: $(printf '%q' "$out")" >&2
     falsify_fail_point
   fi
+  falsify_count_success
   echo "OK   [falsify/config-inline-comma-in-quotes/$runtime/agent-namespace-undeclared-baseline]"
 done
 
@@ -2335,6 +2358,7 @@ build_go_or_fail "setup-s35-go-corrupt-build" "$T35C_GO_MOD" "$T35C_GO_BIN"
 
 s35c_validate_go_out=$(cd "$S35_PROJECT" && "$T35C_GO_BIN" validate 2>&1; true)
 if grep -qF "$S35_KATSU_UNDECLARED" <<<"$s35c_validate_go_out" && grep -qF "$S35_OBI_UNDECLARED" <<<"$s35c_validate_go_out"; then
+  falsify_count_success
   echo "OK   [falsify/config-inline-comma-in-quotes/go-detects-agents-discarded]"
 else
   echo "FAIL [falsify/config-inline-comma-in-quotes/go-detects-agents-discarded]: cfg.Agents descartado, mas obi e/ou 'ka, tsu' não viraram 'não declarados' na violação agent_namespace_undeclared — diagnóstico pelo motivo errado" >&2
@@ -2457,6 +2481,7 @@ S36_EXPECTED=$'── trackfw status ──────────────�
 s36_go_out=$(cd "$S36_PROJECT" && "$T27_GO_BIN" status)$'\n'
 
 if [[ "$s36_go_out" == "$S36_EXPECTED" ]]; then
+  falsify_count_success
   echo "OK   [falsify/config-schema-discriminant/baseline-byte-identical-and-pinned]"
 else
   echo "FAIL [falsify/config-schema-discriminant/baseline-byte-identical-and-pinned]: esperava '$S36_EXPECTED' nos 3 CLIs" >&2
@@ -2490,6 +2515,7 @@ if [[ "$s36c_go_out" == "$S36_EXPECTED" ]]; then
   falsify_fail_point
 fi
 if grep -qF "ADRs        1" <<<"$s36c_go_out" && grep -qF "REQs        2" <<<"$s36c_go_out" && grep -qF "backlog 1" <<<"$s36c_go_out"; then
+  falsify_count_success
   echo "OK   [falsify/config-schema-discriminant/go-detects-typed-scalar-regression]"
 else
   echo "FAIL [falsify/config-schema-discriminant/go-detects-typed-scalar-regression]: saída corrompida diverge do pinado, mas não no padrão esperado (ADRs deveria permanecer 1; REQs e Roadmaps deveriam cair para o default) — diagnóstico pelo motivo errado" >&2
@@ -2536,6 +2562,7 @@ s37_go_status=$?
 set -e
 
 if [[ "$s37_go_status" -eq 1 && "$s37_go_out" == "$S37_EXPECTED_STDERR" ]]; then
+  falsify_count_success
   echo "OK   [falsify/config-malformed-error-path/baseline-byte-identical-exit-1-3-clis]"
 else
   echo "FAIL [falsify/config-malformed-error-path/baseline-byte-identical-exit-1-3-clis]: esperava stderr '$S37_EXPECTED_STDERR' e exit 1 nos 3 CLIs" >&2
@@ -2570,6 +2597,7 @@ if [[ "$s37c_go_status" -eq 1 && "$s37c_go_out" == "$S37_EXPECTED_STDERR" ]]; th
   falsify_fail_point
 fi
 if [[ "$s37c_go_status" -eq 0 ]]; then
+  falsify_count_success
   echo "OK   [falsify/config-malformed-error-path/go-detects-fatal-check-removed]"
 else
   echo "FAIL [falsify/config-malformed-error-path/go-detects-fatal-check-removed]: saída corrompida diverge do pinado, mas o exit não caiu para 0 — diagnóstico pelo motivo errado" >&2
@@ -2630,6 +2658,7 @@ s38_go_out=$(cd "$S38_PROJECT" && "$T27_GO_BIN" validate 2>&1)
 set -e
 
 if grep -qF "$S38_EXPECTED_WARNING" <<<"$s38_go_out"; then
+  falsify_count_success
   echo "OK   [falsify/wip-limit-quoted/baseline-3-clis]"
 else
   echo "FAIL [falsify/wip-limit-quoted/baseline-3-clis]: esperava '$S38_EXPECTED_WARNING' nos 3 CLIs" >&2
@@ -2659,6 +2688,7 @@ set +e
 s38c_go_out=$(cd "$S38_PROJECT" && "$T38C_GO_BIN" validate 2>&1)
 set -e
 if grep -qF "$S38_REGRESSED_WARNING" <<<"$s38c_go_out" && ! grep -qF "$S38_EXPECTED_WARNING" <<<"$s38c_go_out"; then
+  falsify_count_success
   echo "OK   [falsify/wip-limit-quoted/go-detects-artisanal-reader-reintroduced]"
 else
   echo "FAIL [falsify/wip-limit-quoted/go-detects-artisanal-reader-reintroduced]: leitor artesanal reintroduzido mas a saída não voltou a '(limit: 1)' — checagem vácua" >&2
@@ -2744,6 +2774,7 @@ set -e
 if [[ $s39_base_status -eq 0 ]] \
     && grep -qF "$S39_EXPECTED_MSG" <<<"$s39_base_out" \
     && ! grep -qF "$S39_REGRESSED_MSG" <<<"$s39_base_out"; then
+  falsify_count_success
   echo "OK   [falsify/update-config-loader/go-baseline]"
 else
   echo "FAIL [falsify/update-config-loader/go-baseline]: esperava exit 0 e '$S39_EXPECTED_MSG'" >&2
@@ -2776,6 +2807,7 @@ set +e
 s39c_out=$(cd "$S39C" && "$T39C_GO_BIN" update 2>&1)
 set -e
 if grep -qF "$S39_REGRESSED_MSG" <<<"$s39c_out" && ! grep -qF "$S39_EXPECTED_MSG" <<<"$s39c_out"; then
+  falsify_count_success
   echo "OK   [falsify/update-config-loader/go-detects-artisanal-scanner-reintroduced]"
 else
   echo "FAIL [falsify/update-config-loader/go-detects-artisanal-scanner-reintroduced]: scanner artesanal reintroduzido mas a saída não regrediu para hooks=husky — checagem vácua" >&2
@@ -2898,6 +2930,7 @@ if grep -qF "$S47_MSG_MISSING" <<<"$s47ok_out"; then
   echo "  output: $s47ok_out" >&2
   falsify_fail_point
 fi
+falsify_count_success
 echo "OK   [falsify/credential-guard-hook-resolvable/baseline]"
 
 # --- braço detecção: script ausente -> validate acusa esta regra -----------
@@ -3008,6 +3041,7 @@ if grep -qF "$S49_MSG" <<<"$s49ok_out"; then
   echo "  output: $s49ok_out" >&2
   falsify_fail_point
 fi
+falsify_count_success
 echo "OK   [falsify/credential-guard-script-integrity/baseline]"
 
 # --- braço detecção: script corrompido -> validate acusa esta regra --------
@@ -3142,6 +3176,7 @@ if grep -qF "$S50_MSG" <<<"$s50ok_out"; then
   echo "  output: $s50ok_out" >&2
   falsify_fail_point
 fi
+falsify_count_success
 echo "OK   [falsify/credential-guard-mode-downgrade/baseline]"
 
 # --- braço detecção: disco diverge do HEAD (mode: warn, não commitado) -----
@@ -3345,6 +3380,7 @@ if grep -qF "$S52_FILENAME_MSG" <<<"$s52_out"; then
   echo "  output: $s52_out" >&2
   falsify_fail_point
 fi
+falsify_count_success
 echo "OK   [falsify/credential-guard-baseline-carveout]: guarda reportada apesar do baseline, não-guarda suprimida pelo MESMO baseline"
 
 # ---------------------------------------------------------------------------
@@ -3544,6 +3580,7 @@ if [[ $s54_raw_status -eq 0 ]] && grep -qF "mode: block" <<<"$s54_raw_out"; then
   echo "  output: $s54_raw_out" >&2
   falsify_fail_point
 fi
+falsify_count_success
 echo "OK   [falsify/credential-guard-git-env-bypass/redirect-attack-is-real]: GIT_DIR/GIT_WORK_TREE realmente desviam um \`git -C\` cru (saiu $s54_raw_status, sem 'mode: block' do HEAD real) — confirma que o vetor é genuíno, não teatro"
 
 set +e
@@ -3555,6 +3592,7 @@ if [[ $s54_rawcfg_status -eq 0 ]]; then
   echo "  output: $s54_rawcfg_out" >&2
   falsify_fail_point
 fi
+falsify_count_success
 echo "OK   [falsify/credential-guard-git-env-bypass/config-attack-is-real]: GIT_CONFIG_COUNT=abc realmente derruba um \`git -C\` cru (saiu $s54_rawcfg_status) — confirma que o vetor é genuíno"
 
 # Braço de detecção 1/2 — REDIRECIONAMENTO: mesmo GIT_DIR/GIT_WORK_TREE do
@@ -3605,6 +3643,7 @@ if grep -qF "$S50_MSG" <<<"$s54wt_ok_out"; then
   echo "  output: $s54wt_ok_out" >&2
   falsify_fail_point
 fi
+falsify_count_success
 echo "OK   [falsify/credential-guard-git-env-bypass/worktree-legitimate-baseline]"
 
 s50_yaml_content warn > "$T54_WT_LINKED/trackfw.yaml"
@@ -4345,6 +4384,7 @@ if grep -qF 'trackfw-git-branch-guard.sh' "$s67b_settings"; then
   cat "$s67b_settings" >&2
   falsify_fail_point
 fi
+falsify_count_success
 echo "OK   [falsify/git-branch-guard-dedup/baseline-skips-project-entry]"
 
 if ! grep -qF 'trackfw-credential-guard.sh' "$s67b_settings"; then
@@ -4352,6 +4392,7 @@ if ! grep -qF 'trackfw-credential-guard.sh' "$s67b_settings"; then
   cat "$s67b_settings" >&2
   falsify_fail_point
 fi
+falsify_count_success
 echo "OK   [falsify/git-branch-guard-dedup/baseline-credential-guard-unaffected]"
 
 # --- braço 2: reverse-vacuity, $HOME vazio -> entrada de projeto normal ---
@@ -4377,6 +4418,7 @@ if ! grep -qF 'trackfw-git-branch-guard.sh' "$s67rv_settings"; then
   cat "$s67rv_settings" >&2
   falsify_fail_point
 fi
+falsify_count_success
 echo "OK   [falsify/git-branch-guard-dedup/reverse-vacuity]"
 
 # --- braço 3: detecção — dedup neutralizado, entrada de projeto reaparece ---
@@ -4417,6 +4459,7 @@ if ! grep -qF 'trackfw-git-branch-guard.sh' "$s67d_settings"; then
   cat "$s67d_settings" >&2
   falsify_fail_point
 fi
+falsify_count_success
 echo "OK   [falsify/git-branch-guard-dedup/detection-catches-regression]"
 
 # --- braço 4 (ML-2C) — tolerância a "//" no comando gravado no config global ---
@@ -4454,6 +4497,7 @@ if grep -qF 'trackfw-git-branch-guard.sh' "$s67s_settings"; then
   cat "$s67s_settings" >&2
   falsify_fail_point
 fi
+falsify_count_success
 echo "OK   [falsify/git-branch-guard-dedup/double-slash-tolerance]"
 
 # ---------------------------------------------------------------------------
@@ -4523,6 +4567,7 @@ if grep -qF "$S68_MSG" <<<"$s68ok_out"; then
   echo "  output: $s68ok_out" >&2
   falsify_fail_point
 fi
+falsify_count_success
 echo "OK   [falsify/git-branch-guard-global-script-integrity/baseline]"
 
 # --- braço de ausência: $HOME onde NENHUM script foi instalado -> silêncio -
@@ -4548,6 +4593,7 @@ if grep -qF "$S68_MSG" <<<"$s68absent_out"; then
   echo "  output: $s68absent_out" >&2
   falsify_fail_point
 fi
+falsify_count_success
 echo "OK   [falsify/git-branch-guard-global-script-integrity/absent-is-not-a-violation]"
 
 # --- braço de detecção: script global corrompido, ZERO config referenciando
@@ -4609,6 +4655,7 @@ if [[ "$s68dup_count" -ne 1 ]]; then
   echo "  output: $s68dup_out" >&2
   falsify_fail_point
 fi
+falsify_count_success
 echo "OK   [falsify/git-branch-guard-global-script-integrity/no-double-report]"
 
 # --- braço de não-regressão + não-duplicação (credential-guard): mesmo
@@ -4649,6 +4696,7 @@ if [[ "$s68dupcg_count" -ne 1 ]]; then
   echo "  output: $s68dupcg_out" >&2
   falsify_fail_point
 fi
+falsify_count_success
 echo "OK   [falsify/credential-guard-global-script-integrity/no-double-report]"
 
 # ---------------------------------------------------------------------------
@@ -4712,6 +4760,7 @@ if grep -qF 'trackfw-git-branch-guard.json' <<<"$s69ok_out"; then
   echo "  output: $s69ok_out" >&2
   falsify_fail_point
 fi
+falsify_count_success
 echo "OK   [falsify/git-branch-guard-global-hook-resolvable/kiro-dedicated-file/baseline]"
 
 # --- braço de detecção: script referenciado pelo arquivo DEDICADO do Kiro
@@ -4754,6 +4803,7 @@ if grep -qF 'trackfw-credential-guard.json' <<<"$s69bad_out"; then
   echo "  output: $s69bad_out" >&2
   falsify_fail_point
 fi
+falsify_count_success
 echo "OK   [falsify/git-branch-guard-global-hook-resolvable/kiro-dedicated-file/no-double-report-and-no-regression]"
 
 # ---------------------------------------------------------------------------
@@ -5073,6 +5123,7 @@ if ! GO_BIN="$FALSIFY_GO_BIN" bash "$ROOT_DIR/scripts/check-release-tag-parity.s
   echo "FAIL [falsify/setup-s75]: check-release-tag-parity.sh failed against the UNMODIFIED Go binary — baseline must be green before the detection arm means anything" >&2
   falsify_fail_point
 fi
+falsify_count_success
 echo "OK   [falsify/release-tag-parity/success/baseline-clean]"
 
 T75C_GO_MOD="$WORK/s75-corrupt-go"
@@ -5116,6 +5167,7 @@ if ! GO_BIN="$FALSIFY_GO_BIN" bash "$ROOT_DIR/scripts/check-release-tag-parity.s
   echo "FAIL [falsify/setup-s76]: check-release-tag-parity.sh failed against the UNMODIFIED Go binary — baseline must be green before the detection arm means anything" >&2
   falsify_fail_point
 fi
+falsify_count_success
 echo "OK   [falsify/release-tag-parity/forge-commit-diverges-update-ref/baseline-clean]"
 
 T76_GO_MOD="$WORK/s76-corrupt-go"
@@ -5200,6 +5252,7 @@ for expected in \
     falsify_fail_point
   fi
 done
+falsify_count_success
 echo "OK   [falsify/parity-contract-coverage/baseline]: 3 níveis de título + 4 estados válidos, todas anotadas, contagens corretas"
 
 # --- 77b — gate= sem caminho nomeado (vazio) — regra GERAL da Emenda 2:
@@ -5461,6 +5514,7 @@ if ! (cd "$ROOT_DIR" && env GOCACHE="$WORK/go-build-cache" TRACKFW_DISABLE_EXTER
   echo "FAIL [falsify/setup-s85-baseline]: go test falhou no código real — prova P4 inválida" >&2
   falsify_fail_point
 fi
+falsify_count_success
 echo "OK   [falsify/nil-map-init/parse-with-agent-models-nopanic-baseline]"
 
 # Braço de detecção: go test panica na cópia corrompida
@@ -5722,6 +5776,7 @@ if ! GO_BIN="$FALSIFY_GO_BIN" bash "$ROOT_DIR/scripts/check-barrier.sh" >/dev/nu
   echo "FAIL [falsify/setup-s167-baseline]: check-barrier.sh ja reprova com o binario real -- prova P4 invalida" >&2
   falsify_fail_point
 fi
+falsify_count_success
 echo "OK   [falsify/barrier/wave-zero-rejected-again-baseline]"
 
 assert_fails_with "barrier/wave-zero-rejected-again-detected" \
@@ -5768,6 +5823,7 @@ build_go_or_fail "setup-s168-build" "$T99" "$T99_BIN"
 # Baseline ja provado pelo Cenario 167 (mesmo binario real, mesmo
 # check-barrier.sh) -- reexecutar aqui seria redundante; a garantia de
 # nao-vacuidade do braco de deteccao vem do assert_fails_with abaixo.
+falsify_count_success
 echo "OK   [falsify/barrier/wave-zero-flag-guard-rejected-again-baseline]: reaproveita a baseline do Cenario 167 (mesmo binario real, mesmo check-barrier.sh)"
 
 assert_fails_with "barrier/wave-zero-flag-guard-rejected-again-detected" \
@@ -5810,6 +5866,7 @@ if ! GO_BIN="$FALSIFY_GO_BIN" bash "$ROOT_DIR/scripts/check-agent-models-parity.
   echo "FAIL [falsify/setup-s169-baseline]: check-agent-models-parity.sh ja reprova com o binario real -- prova P4 invalida" >&2
   falsify_fail_point
 fi
+falsify_count_success
 echo "OK   [falsify/global-scope/direction-a-reads-cwd-baseline]"
 
 assert_fails_with "global-scope/direction-a-reads-cwd-detected" \
@@ -5849,6 +5906,7 @@ mkdir -p "$(dirname "$T170_BIN")"
 build_go_or_fail "setup-s170-build" "$T170" "$T170_BIN"
 
 # Baseline reaproveita do Cenario 169 (mesmo binario real, mesmo gate)
+falsify_count_success
 echo "OK   [falsify/global-scope/direction-b-reads-global-baseline]: reaproveita baseline do Cenario 169"
 
 assert_fails_with "global-scope/direction-b-reads-global-detected" \
@@ -5889,6 +5947,7 @@ if ! GO_BIN="$FALSIFY_GO_BIN" bash "$ROOT_DIR/scripts/check-barrier.sh" >/dev/nu
   echo "FAIL [falsify/setup-s171-baseline]: check-barrier.sh ja reprova com o binario real -- prova P4 invalida" >&2
   falsify_fail_point
 fi
+falsify_count_success
 echo "OK   [falsify/ac2-sanitization/direction-a-baseline]"
 
 assert_fails_with "ac2-sanitization/direction-a-detected" \
@@ -5927,6 +5986,7 @@ mkdir -p "$(dirname "$T172_BIN")"
 build_go_or_fail "setup-s172-build" "$T172" "$T172_BIN"
 
 # Baseline reaproveita do Cenario 171 (mesmo binario real, mesmo gate)
+falsify_count_success
 echo "OK   [falsify/trust-check/direction-b-baseline]: reaproveita baseline do Cenario 171"
 
 assert_fails_with "trust-check/direction-b-detected" \
@@ -5967,6 +6027,7 @@ if ! GO_BIN="$FALSIFY_GO_BIN" bash "$ROOT_DIR/scripts/check-update-parity.sh" >/
   echo "FAIL [falsify/setup-s175-baseline]: check-update-parity.sh ja reprova com o binario real -- prova P4 invalida" >&2
   falsify_fail_point
 fi
+falsify_count_success
 echo "OK   [falsify/sandbox-gap-e/direction-a-baseline]"
 
 assert_fails_with "sandbox-gap-e/direction-a-detected" \
@@ -6036,6 +6097,7 @@ T176_BIN="$WORK/s176-bin/trackfw"
 mkdir -p "$(dirname "$T176_BIN")"
 build_go_or_fail "setup-s176-build" "$T176" "$T176_BIN"
 
+falsify_count_success
 echo "OK   [falsify/sandbox-walkdir-reintroduced/direction-b-baseline]: reaproveita baseline do Cenario 175"
 
 assert_fails_with "sandbox-walkdir-reintroduced/direction-b-detected" \
@@ -6116,6 +6178,7 @@ chmod 0644 "$T181_BASE_PROJ/scripts/trackfw-validate.sh"
 (cd "$T181_BASE_PROJ" && HOME="$T181_BASE_HOME" "$ROOT_DIR/bin/trackfw" \
   update --targets validate-script) >/dev/null
 if test -x "$T181_BASE_PROJ/scripts/trackfw-validate.sh"; then
+  falsify_count_success
   echo "OK   [falsify/scaffold-update-chmod-removed/direction-c-baseline]"
 else
   echo "FAIL [falsify/scaffold-update-chmod-removed/direction-c-baseline]: binario real nao restaurou o bit de execucao apos update" >&2
@@ -6151,6 +6214,7 @@ if test -x "$T181_SCRIPT"; then
   ls -la "$T181_SCRIPT" >&2
   falsify_fail_point
 fi
+falsify_count_success
 echo "OK   [falsify/scaffold-update-chmod-removed/direction-c-detected]"
 
 # ---------------------------------------------------------------------------
@@ -6164,9 +6228,11 @@ echo "OK   [falsify/scaffold-update-chmod-removed/direction-c-detected]"
 #     a forma normalizada é suficiente.
 # ---------------------------------------------------------------------------
 bash "$ROOT_DIR/scripts/check-wheel-filename.sh" --falsify-raw
+falsify_count_success
 echo "OK   [falsify/wheel-filename/raw]: nome nao-normalizado rejeitado (cenario 182)"
 
 bash "$ROOT_DIR/scripts/check-wheel-filename.sh" --falsify-normalized
+falsify_count_success
 echo "OK   [falsify/wheel-filename/normalized]: nome normalizado aceito (cenario 183)"
 
 # ---------------------------------------------------------------------------
@@ -6193,6 +6259,7 @@ if ! bash "$ROOT_DIR/scripts/check-static-assets.sh" >/dev/null 2>&1; then
   echo "FAIL [falsify/setup-s184-baseline]: check-static-assets.sh ja reprova com a fonte real -- prova invalida" >&2
   falsify_fail_point
 fi
+falsify_count_success
 echo "OK   [falsify/static-assets/vacuity-baseline]"
 
 # Direcao A: fonte canonica VAZIA -> gate falha
@@ -6234,6 +6301,7 @@ if ! bash "$ROOT_DIR/scripts/check-integration-assets.sh" >/dev/null 2>&1; then
   echo "FAIL [falsify/setup-s185-baseline]: check-integration-assets.sh ja reprova com artefatos reais -- prova invalida" >&2
   falsify_fail_point
 fi
+falsify_count_success
 echo "OK   [falsify/integration-assets/baseline]"
 
 # Direcao A: catalog.json ausente (dir de assets existe mas sem catalog.json)
@@ -6267,9 +6335,6 @@ assert_fails_with "integration-assets/direction-b-shim-absent" \
   "must list bin/trackfw.js in files" \
   bash "$T185B/scripts/check-integration-assets.sh"
 
-
-
-echo "Falsification checks passed (all 183 scenarios, 23 gates + 11 generator/validator contracts — roadmap acceptance heading (24), req frontmatter --from-req path (25, baseline + detection) and --req simple path AC2b (26, baseline + detection), adr_accepted_when_req_done + blocked_by_draft_adr (27, baseline + baseline-negative + detection, 2 rules x 3 CLIs), backtick-wrapped ADR reference without frontmatter adr: field (28, baseline + detection, 3 CLIs), validate success message pinned + byte-identical across 3 CLIs (29, baseline + detection), status Inventory block flat mode pinned + byte-identical with analyzing/REQ-status discriminant fixture (30, baseline + Go analyzing-omission detection), status Inventory + WIP by Agent block by_agent mode pinned + byte-identical (31, baseline + Python WIP-by-Agent body-drift detection), unpaired reference delimiter in adr_accepted_when_req_done fixture — Python-only regression (32, baseline 3 CLIs + Python detection), status by_agent fallback order without agents: configured — Python-only regression (33, baseline 3 CLIs pinned + Python detection with positional assertion), config parser unindented block sequence for agents: — Go+Node-only regression (34, baseline 3 CLIs pinned + Go and Node detection via agent_namespace_undeclared violation presence, RETARGETED 2026-08-02 for the yaml.v3/yaml-2.x migration — original literal removed by ML-1A — RETARGETED AGAIN 2026-08-29 ML-3A from positional/order assertion to violation-message presence after REQ-2026-08-29's union made ordering the weaker discriminant), config parser inline list item with comma-inside-quotes for agents: — 3 CLIs regression (35, baseline 3 CLIs pinned + Go/Node/Python detection via agent_namespace_undeclared violation presence, RETARGETED 2026-08-02 for the yaml.v3/yaml-2.x migration — original splitTopLevelCommas literal removed by ML-1A — RETARGETED AGAIN 2026-08-29 ML-3A from positional/order assertion to violation-message presence after REQ-2026-08-29's union made ordering the weaker discriminant), config scalar schema-fidelity (octal/bare-date/yes) via roadmap_dir+req_dir+adr_dirs — normalizeNode typed-scalar regression, each CLI diverges only on the case the ADR predicts (36, baseline 3 CLIs pinned + Go/Node/Python detection each isolating its own discriminant), malformed trackfw.yaml error path — stderr message + exit 1 byte-identical across 3 CLIs (37, baseline 3 CLIs + Go fatal-check-removed detection) — proved non-vacuous, wip_limit quoted-scalar regression via wipConfigFrom/_wip_config_from — validate() bypassing config.Load() with an artisanal trackfw.yaml re-read discriminated only by a quoted \"3\" scalar (38, baseline 3 CLIs pinned + Go/Node/Python detection reintroducing the readWIPConfig pattern eliminated by 74d70ee), \`trackfw update\` hooks/ci/backend/frontend/pkg_manager scanner regression via loadUpdateConfig/_load_update_config — nested homonym key discriminant (\`hooks: lefthook\` at root vs nested \`hooks: husky\`) reintroducing the ML-2A-eliminated any-indentation last-match-wins scanner, one cenario per CLI (39 Go, 40 Node.js, 41 Python — each baseline + detection; Python's braço exercises the bare \`trackfw update\` invocation per the ML-2A/Hefesto barrier constraint and adds a --dry-run blindness guard proving _run_project never reaches the loader), \`trackfw branch new\` no-match stderr message (\`blocked: no matching roadmap in wip/ nor done/ for ...\`) reformatted by Node.js — check-branch-new-parity.sh's go-vs-node stderr diff detects the divergence (42), attention-hook scripts (signal/cleanup) byte-identity across Go/Node.js/Python — Python's \"no-op fora da raiz\" comment corrupted in the cleanup script literal — check-attention-scripts-parity.sh's go-vs-py diff detects the divergence (43), per-CLI agent hook files (.claude/settings.json, .codex/hooks.json, .gemini/settings.json, .github/hooks/trackfw-attention.json, .cursor/hooks.json, .kiro/hooks/trackfw-attention.json) structural parity across Go/Node.js/Python for all 6 native-wave CLIs — Node.js's Kiro credential-guard-post matcher corrupted from 'shell' to 'execute_bash' — check-agent-hooks-parity.sh's go-vs-node structural diff detects the divergence at \$.hooks[3].matcher (44), global-scope credential-guard hook files (~/.claude/settings.json, ~/.codex/hooks.json, ~/.gemini/settings.json, ~/.cursor/hooks.json, ~/.copilot/settings.json, ~/.kiro/hooks/trackfw-credential-guard.json) written by \`trackfw update harness --targets <tool>-credential-guard --install-missing\` structural parity across Go/Node.js/Python for all 6 native-wave CLIs — Python's Kiro credential-guard-global-post matcher corrupted from 'shell' to 'execute_bash' — check-harness-hooks-parity.sh's go-vs-py structural diff detects the divergence at \$.hooks[1].matcher (45), check-agent-hooks-parity.sh's credential-guard-present vacuity guard (P2) — Go/Node.js/Python's globalCredentialGuardInstalledClaude/_global_credential_guard_installed_claude dedup forced to always report \"installed\" in 3 isolated source copies, dropping the project-scope credential-guard entry for Claude identically across all 3 stacks (structural comparator stays satisfied, never even reached — gate exits at the vacuity guard first) — proved non-vacuous against a neutered guard and proved the failure key is credential-guard-present, not go-vs-node/go-vs-py; detection arm made self-discriminating (ML-1B, ROADMAP-2026-08-12) against the 2026-08-08 environmental-leak failure mode via a test-controlled synthetic \$HOME (Codex-only global guard, no Claude) plus an exclusivity assertion that none of the 5 non-sabotaged CLIs may appear in the FAIL set — proved against a leak-only (no sabotage) adversarial variant that the pre-ML-1B assertion set was satisfiable by pure environmental leak and the new exclusivity check rejects it (46), \`trackfw validate\`'s credential_guard_hook_resolvable rule (ROADMAP-2026-08-12-mitigacao-do-fail-open-do-credential-guard, ML-1A/ML-2A) — a registered project-scope Claude credential-guard hook (.claude/settings.json) whose referenced script is missing must be flagged, and must stay silent when the script is present and executable, exercised end-to-end via the real Go binary against an otherwise-empty scaffold_adr_req_project fixture (the same fixture Scenario 29 pins to zero violations, so no other rule has material to fire) — detection arm asserts the exact validator diagnostic literal (unique across internal/validator/*.go per grep) rather than a generic non-zero exit, proved non-vacuous, no \$HOME dependency by design since the rule never reads outside the project root (47), check-attention-scripts-parity.sh extended (ML-0B, ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate) to cover scripts/trackfw-credential-guard.sh (project scope) alongside the two attention scripts — Node.js's CREDENTIAL_GUARD_SCRIPT composition line reordered (CG_PROJECT_GUARD and CG_DETECTION_CORE swapped, no CG_* block content touched) so the script actually emitted by \`discover --init\` diverges from Go/Python while the pre-existing Go-only TestCredentialGuardScript_ParityAcrossStacks (which reconstructs the script by regex-scraping and Go-hardcoded-order-concatenating the CG_*/_CG_* literals, never executing Node/Python) stays green — proves the shell gate closes a real coverage gap the structural unit test cannot see (48), \`trackfw validate\`'s credential_guard_script_integrity rule (ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate, ML-1A/ML-2A) — scripts/trackfw-credential-guard.sh diverging from the template this trackfw binary would generate (via a real, isolated \`discover --init\` run, then a single tampered line appended) must be flagged with \`rules: credential_guard_script_integrity: error\` fixed in the fixture (default severity is warning, which does not flip validate's exit code), and must stay silent when the script is byte-identical to that binary's own template — detection arm asserts the exact validator diagnostic literal, proved non-vacuous via assert_would_now_fail (same exit!=0-and-message-present criterion as assert_fails_with, required to NOT hold against a config-only \`rules: ...: off\` neutering of the same corrupted fixture) rather than a message-absence-only check, single-delta design isolates the corruption (baseline vs. detection) and the severity override (detection vs. non-vacuity) as the only variables, applyRuleTagged/--json path left uncovered same as Scenario 47 (49), \`trackfw validate\`'s credential_guard_mode_downgrade rule (ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate, ML-1A/ML-2A) — credential_guard.mode: block committed at git HEAD followed by an uncommitted on-disk downgrade to mode: warn must be flagged (first check-gates-falsify.sh scenario to git-init/commit a real fixture repo, closing the gap Apolo found — no prior fixture had a HEAD for this rule to anchor against), and must stay silent when disk matches HEAD — non-vacuity mechanism REPLACED by ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard/ML-2A (ADR Emenda 2): the old \`rules: ...: off\` uncommitted neutering stopped proving anything once M4 anchored severity at HEAD, so it now commits \`rules: credential_guard_mode_downgrade: off\` TOGETHER with mode: block at HEAD (the ADR's legitimate-committed-disable path) instead, single-delta design isolates the uncommitted downgrade (baseline vs. detection) and the committed-off HEAD (detection vs. non-vacuity) as the only variables, applyRuleTagged/--json path left uncovered same as Scenario 47 (50), the M4 mechanism itself (ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard, ML-1A/ML-2A) — the decisive scenario: the COMBINED uncommitted edit (\`credential_guard.mode: warn\` + \`rules: credential_guard_mode_downgrade: off\`, both disk-only, HEAD only ever committing mode: block) must still be reported, self-discriminating against a contrast fixture where the SAME disk-side attack is applied but \`rules: ...: off\` is committed at HEAD alongside mode: block (legitimate, auditable) and is silenced — isolating commit-status of the off as the only variable; non-vacuity proved by temporarily reverting credentialGuardRuleSeverity to disk-only resolution (pre-ADR behavior), rebuilding bin/trackfw, confirming the detection arm goes red, then restoring and rebuilding (51), the .trackfw-baseline.json carve-out (Barreira B0/ML-1A/ML-2A) — a credential-guard violation listed in .trackfw-baseline.json by its full literal message continues to be reported, verified against the real BaselineFile{Violations,Warnings} shape and exact-message-match semantics in filterBaselineTagged (validator.go) rather than assumed from ADR prose, self-discriminating within a single fixture/single \`validate\` run: a filename_uniqueness (non-guard) violation listed in the SAME baseline by the same mechanism IS suppressed, proving the carve-out is specific to the 3 guard rules rather than the baseline format being broken outright (which would make the guard violation \"surviving\" prove nothing) — non-vacuity proved by temporarily dropping the \`&& !credentialGuardAnchoredRules[v.Rule]\` guard in filterBaselineTagged, rebuilding, confirming both violations get suppressed, then restoring and rebuilding (52), non-regression for non-guard rules (the most important scenario for confidence in M4, closing the \"blast radius\" question) — filename_uniqueness (not in credentialGuardAnchoredRules, default severity error) with \`rules: filename_uniqueness: off\` set disk-only and never committed continues to fully silence the rule exactly as before this ADR, proving diskRuleSeverity's disk-only path for the other ~38 rules received zero delta from M4; fixture carries a real git HEAD (committing a trackfw.yaml with no rules: block) specifically so the non-vacuity proof is meaningful — without a HEAD, credentialGuardRuleSeverity would fall back to disk-only regardless of anchoring, masking exactly the scope-leak this scenario exists to catch; non-vacuity proved by temporarily adding filename_uniqueness to credentialGuardAnchoredRules (simulating an M4 scope leak), rebuilding, confirming the silenced arm goes red (HEAD's absent rules: entry now resolves to the stricter default and wins over disk's off), then restoring and rebuilding (53), the GIT_* environment-variable bypass of the M4 anchoring (ROADMAP-2026-08-12-ancorar-rules-no-head-para-as-regras-de-credential-guard, ML-1B/ML-2B) stays closed against both vectors found by ML-3B — GIT_DIR/GIT_WORK_TREE redirection to a decoy repository without a committed trackfw.yaml, and GIT_CONFIG_COUNT=abc failure-induction (unrelated to redirection, just makes the git subprocess exit 128) — each embedded with a raw \`git -C\` control proving the vector is a genuine attack (not inert) before testing the trackfw binary, plus a legitimate git-worktree control (worktree add/-C anchoring) proving normal worktree usage is unaffected; non-vacuity proved by temporarily reverting cleanGitEnv() (validator_git_exec.go) to return unfiltered os.Environ(), rebuilding bin/trackfw, confirming both detection arms go silent, then restoring and rebuilding (54), check-unknown-command-parity.sh (ROADMAP-2026-08-15-remocao-do-subsistema-de-plugins-do-trackfw, ML-2B) — gate created by ML-2A without a falsification scenario, closing the reported gap: canonical-message text drift via Python's format_unknown_command_error dropping the \` for \"{cmd_path}\"\` suffix, caught by the gate's own \"no-suggestion\" vacuity guard (55, baseline + detection), unknown-command exit code drift via Node's \`process.exit(1)\` changed to \`process.exit(3)\`, caught by assert_three_way's exit-code check (56, baseline + detection), and the \"Did you mean\" suggestion suppressed in Go by neutering formatUnknownCommandError's \`found\` branch (\`found && false\`, keeping \`found\` referenced so \`go build\` still succeeds), caught by the gate's \"with-suggestion\" vacuity guard for the go runtime, rebuilt via an isolated Go binary per Cenário 25/26 convention (57, baseline + detection) — one CLI sabotaged per discriminant, each baseline arm proving the clean cycle passes before its paired detection arm proves the corrupted cycle fails), the global fatal-error handler in the Node and Python entrypoints, PLUS a Go baseline arm locking the third CLI's already-clean behavior against future regression (REQ-2026-08-16-erro-nao-tratado-no-cli-node-vaza-stack-trace-caminhos-absolutos-e-versao-do-runtime, ML-1A) — Node baseline reproduces the REAL unmanaged-artifact production bug end to end (agents install + manifest/artifact tamper + agents update --force) against the unmodified bin/trackfw and proves stderr carries no stack frame, no npm/src/ install path and no \"Node.js vX\"; Node detection reverts bin/trackfw's parseAsync().catch(reportFatalError) to its pre-fix bare parseAsync() call in an isolated copy against the SAME repro and proves the leak reappears; Go baseline runs the SAME repro against the isolated Go binary already built for Cenários 27+ and proves stderr carries no panic:/goroutine/.go:N line — no detection arm, since no Go code was touched by this ML and there is no own-code regression to prove, only \"nos 3 CLIs\" (REQ AC1/roadmap action 4) to lock; Python baseline/detection hold a synthetic corrupted commands/roadmap.py:_cmd_list (unconditional raise, since the REQ found no Python path leaks today) IDENTICAL across both arms and vary only cli.py's try/except around args.func — present it prints \"trackfw roadmap: ...\" with no Traceback, reverted to the pre-fix bare call it prints a full Traceback (58), check-serve-address-parity.sh (ROADMAP-2026-08-16-serve-amarra-em-loopback-por-padrao-com-opt-in-explicito-para-exposicao, ML-1C) — gate created by ML-1C without a falsification scenario, closing the reported gap: pypi/trackfw/commands/serve.py's server_cls((host, port), ...) reverted to server_cls((\"\", port), ...), reintroducing the exact wildcard-bind regression this REQ exists to fix, caught by the gate's own default-bind/py assertion (\"expected lsof to show 127.0.0.1:...\") — baseline arm proves the clean cycle passes across all 4 sub-checks (default loopback bind, ::1 bind, wildcard exposure warning, printed URL) before the paired detection arm proves the corrupted cycle fails (59, git-branch-guard: brecha de contorno via 'git switch -c' (60, baseline + deteccao) e falso-positivo por prosa em linha de mensagem de commit (61, baseline + deteccao) — ML-1A da ROADMAP-2026-08-16-higiene-sete-debitos, prefixo env/command antes de git e flag do checkout -b fora da primeira posicao de token (62, baseline + deteccao para cada sub-caso) — ML-4B corretivo do veredito BLOQUEAR do hades-tf, mesma ROADMAP, git branch <nome>/-c/-C/-m/-M, git worktree add -b, e env CHAVE=valor git ... (63, baseline + deteccao + auto-discriminacao para cada um dos 3 sub-casos) — ML-4C corretivo da reverificacao do hades-tf apos levantar o bloqueio, mesma ROADMAP, guard vira no-op fora de projeto trackfw (64, baseline sem trackfw.yaml + baseline com trackfw.yaml/reverse-vacuity + deteccao + auto-discriminacao dentro de projeto) — ML-1A da ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-e-integridade-independente-de-fiacao, pre-requisito para cabear o guard em escopo global sem quebrar git commit/push em toda a maquina, guard drena o stdin ANTES do no-op para o escritor externo nao receber EPIPE (65, baseline com payload normal + baseline com payload grande >64KB estourando o buffer do pipe + deteccao corrompendo o literal isolado do dreno de stdin, escritor real via subprocesso python3 nao via here-string do bash, non-vacuity provada isolando o EPIPE apenas no braco de deteccao) — ML-1B corretivo da auditoria do arquiteto que reprovou o ML-1A, mesma ROADMAP), check-harness-hooks-parity.sh estendido para o par git-branch-guard global (66, Python muda o matcher de trackfw-git-branch-guard-global-post no arquivo dedicado do Kiro, gate reprova sob o label novo harness-hooks-parity/kiro/git-branch-guard/go-vs-py, e prova de independencia: o label original harness-hooks-parity/kiro/go-vs-py (credential-guard) continua passando na MESMA arvore corrompida) — ML-2A da mesma ROADMAP-2026-08-17, fiacao global do git-branch-guard nos mesmos 6 CLIs do credential-guard), dedup projeto+global do git-branch-guard via \`trackfw discover --init\` real contra um \$HOME sintetico (67, baseline prova que a fiacao global instalada suprime a entrada de projeto do git-branch-guard sem afetar a de credential-guard + reverse-vacuity com \$HOME vazio prova que a ausencia veio da fiacao global, nao de uma quebra geral + deteccao neutraliza globalGitBranchGuardInstalledClaude para 'return false' incondicional numa copia isolada e prova que a entrada de projeto REAPARECE, reproduzindo o sintoma de mensagem duplicada + braco 4 (ML-2C) prova que a comparacao normalizada tolera \"//\" no comando gravado no config global, HOME sintetico deliberadamente com barra dupla embutida) — ML-2B/ML-2C da mesma ROADMAP-2026-08-17, global-scope git_branch_guard_script_integrity/credential_guard_script_integrity trigger on ARTIFACT EXISTENCE at ~/.trackfw/scripts/, not on config wiring (68, baseline com script global integro e ZERO fiacao + ausencia do script nunca instalado + deteccao do script corrompido sem NENHUM config referenciando-o (discriminante central) + prova de nao-vacuidade via rules:...off + nao-duplicacao com o MESMO script referenciado por 2 CLIs (Claude+Codex) para git-branch-guard e, nao-regressao, para credential-guard, contando ocorrencias exatas da mensagem no output real) — ML-3A da mesma ROADMAP-2026-08-17, git_branch_guard_hook_resolvable em escopo GLOBAL passa a inspecionar o arquivo dedicado do Kiro (~/.kiro/hooks/trackfw-git-branch-guard.json), nao so trackfw-credential-guard.json (69, baseline com os dois arquivos dedicados do Kiro integros + deteccao removendo o script referenciado pelo arquivo dedicado do git-branch-guard, mensagem citando o arquivo e o CLI Kiro + nao-duplicacao (exatamente 1 ocorrencia) + nao-regressao (credential-guard do Kiro, arquivo separado e intacto, permanece em silencio)) — ML-3B da mesma ROADMAP-2026-08-17, check-doctor-parity.sh (ROADMAP-2026-08-18-doctor-detecta-artefato-fora-do-manifesto-e-inverte-a-ordem-de-persistencia, ML-2B) — gate created by this ML without its own falsification scenario, closing the reported gap by targeting the exact near-miss the ML-2A audit trail flagged before shipping: ClassifyDoctor's \`!inspection.Registered\` discriminant (internal/integrations/doctor.go) reverted to \`!inspection.Managed\` in an isolated Go binary, so a destination legitimately registered under a DIFFERENT claim (Managed=false, Registered=true, State=Current) is misreported as an unregistered-write false positive, caught end to end through the real \`doctor\` command by the gate's own scenario (e) \"registered-under-different-claim\" fixture — baseline arm proves check-doctor-parity.sh passes clean against the unmodified Go binary before the paired detection arm proves the single-literal corruption makes it fail (71), ML-2C's unknown-content class (ROADMAP-2026-08-18-doctor-detecta-artefato-fora-do-manifesto-e-inverte-a-ordem-de-persistencia, ML-2C) — the analogous near-miss for the third case ClassifyDoctor gained to close the ML-3A audit finding (docs/seguranca/2026-08-18-revisao-do-doctor-e-da-inversao.md): \`!inspection.Registered\` reverted to \`!inspection.Managed\` in the unknown-content case-clause, caught end to end by check-doctor-parity.sh's NEW scenario (f) \"registered-under-different-claim-content-drifted\" fixture (retargeted claim item + a byte appended to on-disk content, so State=Modified where scenario (e) alone stays State=Current and cannot discriminate this corruption) — baseline arm proves check-doctor-parity.sh passes clean against the unmodified Go binary before the paired detection arm proves the single-literal corruption makes it fail (72), check-ship-force-parity.sh (ROADMAP-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md, ML-1B) — gate created by this ML without its own falsification scenario, closing the reported gap: internal/commands/ship.go's single \`\"--force-with-lease\"\` push-arg literal reverted to raw \`\"--force\"\` in an isolated Go binary, caught end to end through the real \`ship\` command by the gate's own scenario (e) \"remote-advanced-lease-mismatch\" fixture — a second clone pushes a legitimate commit to the same branch while our clone's remote-tracking ref is pinned stale on purpose, so the correct flag refuses (stale lease) and the sabotaged raw --force pushes through and destroys the other party's commit; the semantic outcome (push exit code + commit survival on the remote), not argv string-inspection, is what discriminates — baseline arm proves check-ship-force-parity.sh passes clean against the unmodified Go binary before the paired detection arm proves the single-literal corruption makes it fail (73), git-branch-guard extended to the destructive working-tree class (stash/reset --hard/clean -f|-x/restore <path>/checkout -- <path>|checkout .) per REQ-2026-08-19-guard-nao-bloqueia-comandos-destrutivos-de-working-tree-em-repo-compartilhado-por-agentes.md ML-3A -- one baseline+detection pair PER COMMAND, covering BOTH directions the REQ names as risk: the blocked form escaping (case-label corrupted away) and the freed form being wrongly caught (allow-list/discriminant corrupted away or widened to match everything, e.g. --hard turned into a bare wildcard so git reset --soft would wrongly block) -- git reset --soft/--mixed, git stash list/show, git clean -n, git restore --staged and git checkout <branch> all proven free both before and after corruption isolates the exact literal each depends on (74), check-release-tag-parity.sh (ROADMAP-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md, ML-2B) — gate created by this ML without its own falsification scenario, closing the reported gap: internal/commands/release.go's single \`SHA: tagObj.SHA\` ref-payload literal reverted to \`SHA: objectSHA\` in an isolated Go binary, degrading the published tag from annotated to lightweight (the ref points straight at the commit instead of at the tag object the first gh api call created) — caught end to end through the real \`release tag\` command by the gate's own \"success\" fixture, whose gh stub deliberately returns a tag-object sha different from the commit sha so the ref payload's sha field discriminates the two outcomes; baseline arm proves check-release-tag-parity.sh passes clean against the unmodified Go binary before the paired detection arm proves the single-literal corruption makes it fail (75), the commit-target divergence check itself (ADR-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md, Emenda 1, ML-4B corretivo do veredito BLOQUEAR do hades-tf, mesma ROADMAP) — internal/commands/release.go's single \`if forgeLocalSHA != \\\"\\\" && forgeLocalSHA != commitObj.SHA {\` guard neutered with a \`false &&\` prefix in an isolated Go binary, silently reverting the commit-target back to trusting a local ref instead of refusing on divergence from the forge, caught end to end through the real \`release tag\` command by the gate's own Scenario 12 fixture (origin/main forged via \`git update-ref\` under a narrowed remote.origin.fetch refspec, refs/heads/main reset to match so the pre-existing local-branch-staleness check cannot discriminate this corruption either) — baseline arm proves check-release-tag-parity.sh passes clean against the unmodified Go binary before the paired detection arm proves the single-literal corruption makes it fail (76), scripts/check-parity-contract-coverage.sh (ROADMAP-2026-08-20-contrato-pinado-no-cli-parity-sem-gate-nomeado.md, ML-1B) — gate created by this ML without its own falsification scenario, closing the reported gap: baseline fixture covering all 3 heading levels (##/###/####) and all 4 valid trackfw-contract annotation shapes (gate=, gate=+partial=, gap reason=, none reason=) proves the counts are honest, then 6 single-delta corruptions off that same baseline prove each documented failure class (gate= empty, gate= naming a path missing on disk, gap without reason=, none without reason=, unknown key reson= per the ADR Emenda 1 parsing note, and a malformed trackfw-contract prefix naming no recognized state) each reprove with the exact diagnostic literal, plus non-vacuity neutering the gate-existence check on an isolated copy of the checker to prove the gate-missing-on-disk detection arm actually depends on it (77), the ADR's Emenda 2 general rule (ROADMAP-2026-08-20-contrato-pinado-no-cli-parity-sem-gate-nomeado.md, ML-1B-bis) — 'toda chave presente exige valor não-vazio' implemented as a single loop over every key present in the parsed annotation (not a per-key if) that replaced the old 77b-only gate=-empty special case, proved single-delta against the same baseline by THREE arms exercising keys that never had a dedicated empty check before this ML: gate=scripts/check-cli-parity.sh partial= (77i, the 'gate= com partial=' cell silently under-counting a section with an undeclared gap is exactly the failure Emenda 2 exists to close), gap reason= (77j, distinct from the pre-existing 77d which tests the key never being written at all — here the key IS written and empty, a case that scenario structurally cannot reach since its fixture omits the key), and none reason= (77k, same distinction against 77e, isolating that the shared state in (\"gap\", \"none\") branch enforces the rule for BOTH states, not just gap) — each asserting the generic 'CHAVE= presente com valor vazio' diagnostic naming the empty key rather than a bespoke per-key message, plus non-vacuity (77l) neutering the general empty-value loop itself (not a specific gate=/reason= check, since those were removed as dead code by this ML) on an isolated copy and proving 77i's detection goes silent, isolating that the LOOP is what's load-bearing (142), the ADR Nota de parsing's positional gap this ML closes (ROADMAP-2026-08-20-contrato-pinado-no-cli-parity-sem-gate-nomeado.md, ML-1B-ter) — chave desconhecida na anotação agora reprova em QUALQUER posição, não só antes da primeira chave real: find_unknown_key_typos() varre o corpo inteiro (inclusive dentro do valor já fatiado de reason=/partial=) por token alfabético minúsculo imediatamente seguido de '=' a distância de edição <=1 de gate/partial/reason, proved by 77m ('reson=' escrito DEPOIS de um reason= real, o caso que 77f não alcança já que o typo de 77f fica antes de qualquer chave real e é pego pelo \`leading\` antigo), non-regressed against the heuristic's own false-positive risk by 77n (LANG=pt_BR e --flag=valor dentro de um reason= legítimo não podem reprovar — chave maiúscula e flag precedida de '-' nunca batem no formato tocado-por-espaço-minúsculo que o heurístico procura), and proved non-vacuous by 77o neutering find_unknown_key_typos()'s call site to an empty set in an isolated copy and confirming 77m goes silent (145), the ML-3A blocking-mode flip itself (ROADMAP-2026-08-20-contrato-pinado-no-cli-parity-sem-gate-nomeado.md, ML-3A) -- the Wave 2 triage having closed 177/177, an unannotated section now reproves instead of only being counted -- proved single-delta (77p) by appending ONE extra unannotated heading on top of the same 77a baseline (whose 4 fully-annotated sections alone still pass, isolating that the new heading's absent annotation is the only variable) and asserting the exact 'seção sem anotação trackfw-contract' diagnostic (146), check-agent-hooks-parity.sh extended to windsurf and amazonq (ROADMAP-2026-08-20-gates-para-os-tres-contratos-de-maior-risco.md, ML-1B) — the generic structural comparator needed zero changes (CLIS/marker_for/hookfile_for gained two entries each, and the credential-guard vacuity guard's marker string is now per-CLI since windsurf/amazonq only wire git-branch-guard, not credential-guard) — Node.js's injectAmazonQHooks default \`tools: ['*']\` corrupted to \`tools: ['read']\` in an isolated copy of npm/, caught end to end through the real \`discover --init\` entry points by the gate's own structural diff at \$.tools[0], proving the extension actually exercises cross-stack comparison for these two CLIs and not just vacuous same-marker equality (147), check-validate-parity.sh's branch_has_wip_roadmap done/ acceptance block (ROADMAP-2026-08-20-gates-para-os-tres-contratos-de-maior-risco.md, ML-2A) — the rule accepting a roadmap in done/ (not just wip/) since REQ-2026-07-26 had never been exercised cross-CLI (check-branch-new-parity.sh's fixtures literally said \"wip/ and done/ deliberately left empty\", check-validate-parity.sh had zero occurrences of the rule) — closed via TRACKFW_BRANCH (supported identically by the 3 CLIs, no real git checkout needed) across 3 cases: roadmap in done/ with matching slug accepted (the untested central case), no roadmap anywhere still blocks (non-regression), and roadmap in done/ with a DIFFERENT slug still blocks (the discriminant that keeps the gate from accidentally passing for any roadmap in done/) — while assembling the fixture, found and PINNED (not fixed) a genuine pre-existing Python-only divergence: pypi/trackfw/validator.py's validate_branch_has_wip_roadmap returns plain strings instead of the {\"message\":...} dict shape _enrich_items expects, so Python's validate --json tags this one rule with \"rule\": null/\"file\": null while Go/Node.js correctly tag \"branch_has_wip_roadmap\" — message text stays byte-identical across all 3, so the gate filters by message substring and separately asserts the rule-tag divergence explicitly so it cannot silently drift further; GO_BIN override added to check-validate-parity.sh (previously always self-built, unlike every sibling check-*-parity.sh script) to make P4 possible without a full script copy — proved by Cenário 79, single-literal corruption of internal/validator/validator.go's BranchSlugMatchesRoadmap dropping doneDirs from the scanned directory set, caught end to end through the real check-validate-parity.sh pointed at the isolated sabotaged Go binary via GO_BIN, while Node.js/Python stay real and correct (148, baseline + detecção), check-validate-parity.sh's credential_guard_hook_resolvable cross-CLI block (ROADMAP-2026-08-20-gates-para-os-tres-contratos-de-maior-risco.md, ML-3A) — the rule exercised end-to-end in all 3 CLIs for the first time (Cenário 47 only covered Go), via 4 fixture cases: claude-absent (detection: .claude/settings.json with \$CLAUDE_PROJECT_DIR/… and script absent fires in all 3), claude-present (baseline: same hook with script present stays silent), cursor-absent (relative-path branch live — discriminant that prevents a vacuous ok=false-for-all-relatives implementation from passing the cursor-present arm alone), cursor-present (false-positive guard: legitimate Cursor relative path not accused when script is present) — proved non-vacuous by Cenário 80, single-literal corruption of credentialGuardScriptMarker in validator_credential_guard.go from \"trackfw-credential-guard.sh\" to \"trackfw-credential-guard-DISABLED.sh\", making Go blind to all credential-guard hook entries while Node.js/Python stay real and correct; the 4-case block correctly detects the divergence at the claude-absent/go vacuity check (149, baseline + detecção), check-validate-parity.sh's credential_guard_hook_resolvable exec-bit detection (ROADMAP-2026-08-20-gates-para-os-tres-contratos-de-maior-risco.md, ML-4B/A-1) — new cg-claude-noexec case: script present but chmod 644 must fire \"not executable\" in all 3 CLIs; proved non-vacuous by Cenário 81, single-literal \`false &&\` prefix to \`case info.Mode()&0111 == 0:\` in validator_credential_guard.go, making the exec-bit case unreachable in Go (no false-positive on cg-claude-present, discriminates only the non-executable path) while Node.js/Python stay real and correct (150, baseline + detecção), check-validate-parity.sh's credential_guard_hook_resolvable missing-type detection (ROADMAP-2026-08-20-gates-para-os-tres-contratos-de-maior-risco.md, ML-4B/A-1) — new cg-claude-notype case: hook without \"type\":\"command\" must fire 'missing \"type\":\"command\"' in all 3 CLIs (check fires BEFORE existence check, per ROADMAP-2026-08-17 ML-4B); proved non-vacuous by Cenário 82, single-literal \`false &&\` prefix to \`if hf.requiresCommandType && !m.typeIsCommand {\` in validator_credential_guard.go, making the type check unreachable in Go (no false-positive on cg-claude-present or cg-claude-absent, discriminates only the notype path) while Node.js/Python stay real and correct (151, baseline + detecção), check-agent-hooks-parity.sh's deniedCommands P3 vacuity guard (ROADMAP-2026-08-20-gates-para-os-tres-contratos-de-maior-risco.md, ML-4B/B-1) — a correlated drop of Amazon Q deniedCommands from all 3 stacks passes compare_json (both sides write the key with the same wrong value) and the P2 guard (git-branch-guard script string still present); the new P3 guard catches it via grep -F for the exact deny pattern '^git (commit|push|checkout -b)'; proved non-vacuous by Cenário 83, tri-stack sabotage replacing gitDenyPattern/GBG_DENIED_COMMANDS_PATTERN/_GIT_GUARD_DENIED_COMMANDS_PATTERN with \'DENIED_COMMANDS_REMOVED\' in isolated Go/npm/pypi copies (NODE_CLI via T83/scripts/ ROOT_DIR, PY_ROOT override, GO_BIN override), all 3 stacks write deniedCommands with the wrong literal, compare_json passes, P3 guard fires at agent-hooks-parity/amazonq/go/denied-commands-present (152, baseline + detecção), check-artifact-parity.sh's CLAUDE.md ## Architect responses vacuity guard (ML-1A, ROADMAP-2026-08-21-regra-de-verbosidade-no-asset-do-arquiteto-e-nas-regras-semeadas) — Node.js's init.js section header corrupted from '## Architect responses' to '## VERBOSITY_SECTION_REMOVED' in an isolated npm copy (setup_npm_tree + corrupt_literal, script copied to T84/scripts/ so ROOT_DIR resolves to T84 and node uses the corrupted init.js while GO_BIN stays real via env override and Python uses a real pypi copy); awk extraction finds no '## Architect responses' heading in the Node.js CLAUDE.md → vacuity guard fires at 'CLAUDE.md ## Architect responses missing or empty (node)'; baseline arm proves check-artifact-parity.sh passes clean against unmodified runtimes before the paired detection arm proves the corrupted cycle fails (153, baseline + detecção), nil map em ProjectConfig.AgentModels: initConfigMaps(cfg) removido de parse() em config.go restaura o nil map — ParseRulesFromContent cria ProjectConfig{Rules: make(...)} sem inicializar AgentModels; parse() escreve cfg.AgentModels[k] = s → panic 'assignment to entry in nil map'; o fix usa reflexão para inicializar todos os campos de mapa de ProjectConfig antes de qualquer escrita, tornando parse() seguro independentemente da construção do caller; provado por trackfw validate em fixture git com agent_models: em HEAD que chega a ParseRulesFromContent via credentialGuardRuleSeverity, usando binário com initConfigMaps(cfg) comentado de parse() (155, baseline + detecção), namespace leak via remoção da guarda \`targetID == \"claude\" && len(agentModels) > 0\` de internal/integrations/render.go — targets que usam o case default: do switch de representação (ex.: Gemini via \"agent-markdown\") recebem model ID composto (\"claude-sonnet-4-6\") em vez do alias canônico (\"sonnet\") quando agent_models está configurado; check-agent-models-parity.sh reprova com 'namespace leak'; braco de baseline prova que o binário real passa antes da detecção; seam: literal isolado em cópia de árvore Go compilada em $T86 (156, baseline + detecção), check-release-tag-parity.sh content-anchorage bypass via readCommittedFile(objectSHA) → readCommittedFile(\"HEAD\") on the CHANGELOG read (ROADMAP-2026-08-21-release-tag-ancora-versao-e-mensagem-no-forge, ML-2B) — readFile was REMOVED from releaseDeps struct (ML-2A) so no fallback to working-tree disk read can compile; the only viable regression is passing a different sha argument to readCommittedFile; \"HEAD\" compiles and resolves to the local tip; P3 still reads version files from objectSHA (9.9.9 ✓); P4 reads CHANGELOG from HEAD which ALSO has ## [9.9.9] section → still passes → exit 0; but message = \"head-only\" (HEAD's CHANGELOG body), not \"forge-only\" (forge commit's CHANGELOG body) → Scenario 16's provenance assertion fires: 'provenance: tag message must contain forge-only'; two-axis fixture (HEAD at 9.9.7/head-only, decoy at 9.9.9/forge-only) makes both anchored reads independently falsifiable; baseline arm proves check-release-tag-parity.sh passes clean with real binary; detection arm proves corrupted binary makes it fail with the exact provenance message; seam: literal isolated in corrupt-go copy in $T87 (157, baseline + detecção), check-release-tag-parity.sh refs-replace-bypass detection arm (ROADMAP-2026-08-21-release-tag-ancora-versao-e-mensagem-no-forge, ML-4A) — internal/commands/release.go's single '\"--no-replace-objects\", \"show\"' literal removed (reverting git show to follow refs/replace/ object-identity redirect); git show \$FORGE_SHA:CHANGELOG.md follows the replace ref written by the attacker as a raw file write and returns 'refs-replace-forged' instead of 'forge-only'; P3 still reads version files from objectSHA (9.9.9 matches) → exit 0; but message = 'refs-replace-forged' → Scenario 17's per-runtime provenance assertion fires: 'provenance: tag message must contain forge-only'; three-axis fixture (HEAD at 9.9.7/head-only, forge commit at 9.9.9/forge-only, attacker commit LOCAL-ONLY at 9.9.9/refs-replace-forged with replace ref as file write) independently falsifiable per runtime; assert_three_way catches single-stack revert; baseline arm proves check-release-tag-parity.sh passes clean with real binary before paired detection arm proves corrupted binary makes it fail; seam isolated in corrupt-go copy in $T88 (158, baseline + detecção), check-validate-parity.sh credential_guard_hook_resolvable bare-relative-suppression (ROADMAP-2026-08-21 ML-2A, RETARGETED 2026-08-22 ML-2A para classifyHookAnchorage — seam deslocado de isRelativePureForGuard para a cláusula bare-relative da classe 2: !strings.HasPrefix(rawStripped, \"$\") → false; bare-relative cai na classe 3 e é silenciado em Go; \$PWD/… permanece acusado via cláusula de prefixo anterior) (159, baseline + detecção), check-validate-parity.sh credential_guard_hook_resolvable \$PWD-suppression direção-A (ROADMAP-2026-08-22 ML-2A): prefixo \"\$PWD/\" → \"\$PWD_DEAD/\" faz \$PWD/… cair na classe 3 em Go enquanto Node.js/Python ficam reais; P2 vacuity guard reprova no caso cg-claude-pwd (164, baseline + detecção), check-validate-parity.sh credential_guard_hook_resolvable absolute-path-accused direção-B (ROADMAP-2026-08-22 ML-2A): filepath.IsAbs(rawStripped) → false nas linhas 105 e 112 faz caminhos absolutos cair na classe 2 e serem acusados em Go; o case cg-claude-absoluto (expect silence) reporta mensagem inesperada; protege o defeito caro desta entrega (165, baseline + detecção) — synced Wave 0 removal across the 3 roadmap generators, caught by check-artifact-parity.sh expected-content assertion, not by cross-stack diff (166, baseline + detection), and barrier lower-bound regression on --wave 0 reintroducing the pre-ML-1A rejection, caught by the inverted Scenario 11 of check-barrier.sh (167, baseline + detection) and Direction B's second guard — the flag-level validation in newBarrierCmd (waveInt), distinct from parseWaves — reverted independently, also caught by the same inverted Scenario 11 assertion (168, detection only, baseline shared with 167), check-audit-surface.sh falsificado nas duas direcoes exigidas por AC9: digest constante via sha256.Sum256(nil) em auditsurface.go faz FN-2 ver mesmo digest entre dois refs onde o script diferiu — gate reprova em audit-surface/fn-2/digest-changes-when-script-changes (173, baseline + deteccao via AUDIT_SURFACE_SELFTEST_BREAK=A), e caminho de instrucao docs/cli-parity.md inserido em instructionFilePaths faz FP-1 encontrar o arquivo no output onde nao deveria aparecer — gate reprova em audit-surface/fp-1/cli-parity-absent (174, baseline compartilhada com 173 + deteccao via AUDIT_SURFACE_SELFTEST_BREAK=B), check-doctor-parity.sh's scaffold findings in both directions (ML-2A, ROADMAP-2026-08-27-doctor-cobre-artefatos-de-scaffold-por-comparacao-com-o-template): checkScaffoldArtifact silenced by replacing bytes.Equal(actual, expected) with bytes.Equal(actual, actual) in an isolated Go binary (always equal, never reports divergence), caught by the gate's own scenario (h) scaffold-attention-signal-divergent vacuity guard (177, baseline + detecção), and checkScaffoldArtifact's equal guard inverted to !bytes.Equal(actual, expected) so intact scaffold files are falsely reported as scaffold-divergent, caught by the gate's own scenario (g) scaffold-baseline-clean vacuity guard (178, baseline shared with 177 + detecção), check-doctor-parity.sh's execute-bit check in three directions (ML-2A, ROADMAP-2026-08-28-doctor-compara-o-bit-de-execucao-dos-artefatos-de-scaffold): Direction A — execBit && silenced via execBit && → false && in checkScaffoldArtifact (scaffold_doctor.go:324) so the mode check never fires, the binary reports no wrong-mode finding even when scripts/trackfw-validate.sh is at 0644, caught by check-doctor-parity.sh's scenario (p) scaffold-wrong-mode-detected vacuity guard (179, baseline + detecção), Direction B — execBit discriminant silenced via execBit && → true && so checkScaffoldArtifact checks the execute bit on every artifact regardless of descriptor, producing false scaffold-wrong-mode findings on slash commands (.claude/commands/trackfw/*.md, 0644) that carry execBit=false; the gate runs Go only (not 3-way parity because Python emits an extra progress line for the slash commands directory) against a fixture built with --targets validate-script,agent-hooks,claude-commands (180, baseline + detecção), Direction C — os.Chmod removed from generateValidateScript (scaffold.go AC9): the sabotaged update rewrites the content (apply() still runs via runFileTarget for existing files, proved by cmp -s) but does not restore the execute bit; baseline arm proves the real binary restores the bit after chmod 0644; detection arm proves the sabotaged binary restores only the content (bit still absent after update), isolating the Chmod call as the load-bearing step (181, baseline + detecção)\""
 
 # ---------------------------------------------------------------------------
 # Cenario 182 -- check-pr-closing-keyword.sh: a isencao e POR NUMERO DE ISSUE.
@@ -6325,6 +6390,7 @@ s182_sab_out=$(env PR_BODY_FILE="$S182_BODY" bash "$S182_SAB" 2>&1)
 s182_sab_status=$?
 set -e
 if [[ $s182_sab_status -eq 0 ]]; then
+  falsify_count_success
   echo "OK   [falsify/pr-closing-keyword/isencao-por-numero-sabotada-fica-verde]"
 else
   echo "FAIL [falsify/pr-closing-keyword/isencao-por-numero-sabotada-fica-verde]: gate sabotado saiu $s182_sab_status, esperava 0 -- a sabotagem deixou de representar a regressao" >&2
@@ -6338,6 +6404,7 @@ s182_prose_out=$(env PR_BODY_FILE="$S182_PROSE" bash "$S182_REAL" 2>&1)
 s182_prose_status=$?
 set -e
 if [[ $s182_prose_status -eq 0 ]]; then
+  falsify_count_success
   echo "OK   [falsify/pr-closing-keyword/prosa-nao-reprova]"
 else
   echo "FAIL [falsify/pr-closing-keyword/prosa-nao-reprova]: gate reprovou prosa real de PR mergeado (exit $s182_prose_status) -- falso positivo" >&2
@@ -6359,6 +6426,7 @@ assert_fails_with "pr-closing-keyword/vacuidade-fora-de-pull-request" \
 # Autoteste do proprio gate (deteccao + prosa + isencao + vacuidade), pelo
 # MESMO matcher que o CI usa.
 if bash "$S182_REAL" --self-test >/dev/null 2>&1; then
+  falsify_count_success
   echo "OK   [falsify/pr-closing-keyword/self-test-verde]"
 else
   echo "FAIL [falsify/pr-closing-keyword/self-test-verde]: o autoteste do gate reprovou" >&2
@@ -6618,7 +6686,9 @@ assert_output_lacks "roadmap-ref-stale-state/go/vacuity-detects-regression" \
   "$S193_MSG_VACUITY" \
   bash -c "cd '$T193_G_VACUITY' && exec '$T193C_GO_B_BIN' validate"
 
+falsify_count_success
 echo "OK   [falsify/roadmap-ref-stale-state/go]: as 3 direções (A/B/C) provadas"
+falsify_count_success
 echo "OK   [falsify/roadmap-ref-stale-state/python]: as 3 direções (A/B/C) provadas"
 
 # ---------------------------------------------------------------------------
@@ -6639,3 +6709,13 @@ if [[ "$TRACKFW_FALSIFY_ENUMERATE" == "1" ]]; then
   fi
   echo "[falsify/enumerate] 0 cenários reprovaram -- exit 0" >&2
 fi
+
+# Imprime o número medido de asserções bem-sucedidas. Usa o mesmo arquivo
+# usado por falsify_count_success — medição da execução, não grep de fonte.
+# O contador cobre todas as linhas "OK   [falsify/..." emitidas por este
+# script (helpers + blocos inline). Sub-scripts externos como
+# check-wheel-filename.sh emitem suas próprias linhas OK sem incrementar
+# este contador — são ~2-7 linhas adicionais que não alteram a contagem aqui.
+falsify_success_n=$(wc -l < "$FALSIFY_SUCCESS_TALLY" 2>/dev/null || echo 0)
+falsify_success_n=${falsify_success_n//[[:space:]]/}
+echo "Falsification checks passed (${falsify_success_n:-0} scenarios)"

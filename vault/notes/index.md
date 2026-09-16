@@ -4,6 +4,7 @@
 
 ## Índice
 
+- [falsify-success-counter-subshell-misplacement-2026-09-16](falsify-success-counter-subshell-misplacement-2026-09-16.md) — mensagem de sucesso deslocada (linha 6272 de 6641) mentia sobre resultado; contador "183" hardcoded; fix: arquivo `$FALSIFY_SUCCESS_TALLY` + 65 pontos instrumentados; falsificações A (mensagem suprimida) e B (contador -1) provadas
 - [falsificar-fonte-python-deixa-pyc-obsoleto-2026-09-13](falsificar-fonte-python-deixa-pyc-obsoleto-2026-09-13.md) — 🔴 mutar fonte Python para falsificar deixa `.pyc` que **sobrevive à restauração**: disco e `git status` limpos, interpretador com o valor antigo; o sintoma aponta para código e enganou duas pessoas seguidas (o agente e o arquiteto) — limpar `__pycache__` faz parte da restauração
 - [npm-offline-port1-syn_sent-vacuidade-2026-09-12](npm-offline-port1-syn_sent-vacuidade-2026-09-12.md) — porta 1 causa SYN_SENT (não ECONNREFUSED) no macOS; `--offline` com cache vazio é o probe correto; com `file:` tarballs + `--omit=optional`, `--offline` passa vacuamente — a prova vive em braço separado com ENOTCACHED
 - [opcao-d-npm-cache-eacces-restricao-geral-do-npm-2026-09-12](opcao-d-npm-cache-eacces-restricao-geral-do-npm-2026-09-12.md) — AC4 da validação D: npm recusa install quando cache dir é chmod 555 (restrição geral, não defeito da opção D); variante com HOME ro + cache gravável passa; go-to-wheel v0.2 incompatível com cmd/trackfw/ layout

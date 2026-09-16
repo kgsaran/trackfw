@@ -497,8 +497,7 @@ binário, repassa argv, devolve exit code.
 **Mover, não apagar** (está escrito no topo do arquivo).
 
 ### ML-3C — **AC7** — gates que perdem objeto
-**Status:** 🔄 Em andamento — segunda metade implementada; **bloqueado por um defeito aberto** (ver
-"Auditoria do arquiteto — 2026-09-16" ao final desta seção)
+**Status:** ✅ Concluído — segunda metade implementada; defeito de autorrelato corrigido em ML-3C-bis (ver seção abaixo e "Auditoria do arquiteto — 2026-09-16")
 
 #### Primeira metade concluída — extração de pins (PR separado, sem deleções)
 
@@ -808,6 +807,30 @@ medidos**, e estão obsoletos após as deleções desta wave.
 **Consequência de auditoria:** a evidência "Falsification checks passed" reportada pelos agentes
 desta wave é **parcial por construção** e não conta como prova até o defeito ser corrigido.
 Correção atribuída a Ártemis (ML-3C-bis, mesma REQ, mesma causa).
+
+#### ML-3C-bis — defeito de autorrelato em `check-gates-falsify.sh`
+**Status:** ✅ Concluído (2026-09-16 — Ártemis)
+
+**Defeito:** `echo "Falsification checks passed (all 183 scenarios, ..."` estava na linha 6272 de 6641;
+~370 cenários executavam após ela. Falha nesses cenários: exit 1, mas a mensagem era impressa antes.
+Contador "183" hardcoded e obsoleto.
+
+**Fix entregue:**
+- `$FALSIFY_SUCCESS_TALLY` (arquivo, sobrevive subshell boundary — padrão do `$FALSIFY_ENUM_TALLY` existente)
+- `falsify_count_success()` instrumentada em 65 pontos: 7 helpers + 39 body non-indented + 19 body indented
+- Mensagem hardcoded removida; mensagem medida adicionada na última linha do script
+- Contador reporta `201 scenarios` na execução de 2026-09-16
+
+**Falsificações provadas:**
+- Direção A: injeção de mismatch em `integration-assets/direction-b-shim-absent` (após linha 6272) → exit 1, sem mensagem de sucesso. Restauração → exit 0, 201 scenarios.
+- Direção B: `integration-assets/baseline` comentado → 200 scenarios. Restauração → 201 scenarios.
+
+**Gates verdes:** `go build` RC=0 · `go test` RC=0 · `make quality` RC=0 (212 OK, 0 FAIL) · `trackfw validate` RC=0 (176 violações pré-existentes) · `check-orphan-gates.sh` RC=0.
+
+**Regra Dura de Reconciliação:**
+- `make quality` reporta 212 OK: confirma que a suíte completa passa com o fix aplicado.
+- `trackfw validate` RC=0: confirma que nenhuma violação nova foi introduzida.
+- Contador 201: mede exatamente os `echo "OK   [falsify/..."` instrumentados neste script; ~11 linhas adicionais vêm de sub-scripts externos não instrumentados (documentado no comentário do script e na nota de vault).
 
 ---
 
