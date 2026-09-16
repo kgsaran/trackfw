@@ -1,23 +1,19 @@
-# trackfw configuration
-# generated: 2026-09-16
+# trackfw configuration — gerado por trackfw discover
+# governance_mode: lenient permite validação não-bloqueante durante onboarding
 
-frontend: 
-backend: 
-backend_framework: 
-pkg_manager: npm
-hooks: none
-ci: none
-wip_limit: 1
-wip_by_squad: false
-require_req_in_commit: false
+governance_mode: lenient
 
-# validator rules (off / warning / error)
-rules:
-  branch_has_wip_roadmap: error
-
-# governance paths (edit to match your project structure)
 adr_dirs:
   - docs/adr
 req_dir: docs/req
 roadmap_dir: docs/roadmaps
 roadmap_namespacing: flat
+hooks: none
+ci: github-actions
+forge: github
+
+# Versão do modelo por tier (ADR-2026-08-21). Guarda a VERSÃO, não o ID —
+# cada alvo compõe a própria forma. Motivo da escolha: COTA, não custo —
+# o Sonnet 4.6 usa o tokenizador pré-4.7 e consome ~30% menos tokens para
+# o mesmo texto, embora custe mais por token ($3/$15 contra $2/$10).
+# Conferir a resolução efetiva: trackfw agents models
