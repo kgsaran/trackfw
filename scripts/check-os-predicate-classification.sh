@@ -44,7 +44,13 @@ set -euo pipefail
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$ROOT_DIR"
 
-ESCOPO=(internal npm/src pypi/trackfw cmd)
+# 🔴 ESCOPO sem `npm/src` e `pypi/trackfw` desde 2026-09-16: a v8.0.0 do upstream
+# (#365) removeu as duas reimplementacoes. Com elas no escopo, o `git grep` varre
+# diretorio que nao existe, e o denominador parece so ter encolhido. Os tres
+# predicados de Node e Python continuam na lista: custam nada, e um sitio desses
+# reaparecendo em `internal/` ou `cmd/` seria achado, nao ruido.
+# Ver REQ-2026-09-16-gates-so-nossos-depois-da-v8.
+ESCOPO=(internal cmd)
 PREDICADOS='filepath\.IsAbs|os\.path\.isabs|path\.isAbsolute|process\.platform|os\.name|os\.IsNotExist|runtime\.GOOS|sys\.platform|platform\.system\(\)'
 
 # Os predicados que leem a PLATAFORMA (nao um caminho, nao um erro). So estes
@@ -71,6 +77,9 @@ COMPARADORES='strings\.(Contains|HasPrefix|HasSuffix|EqualFold|Index)|startswith
 # uma docstring que explica a ADR citando os.path.isabs e os.name. O classificador
 # anterior so olhava o inicio da linha, entao contava prosa como classificacao -- e o
 # arquivo foi declarado por um sitio que nunca existiu.
+# Sete declaracoes SAIRAM em 2026-09-16 -- os espelhos Node e Python e as duas leituras
+# inline de plataforma (homedir.py, tty.py) --, todas de arquivo que a v8.0.0 do upstream
+# removeu. O gate as acusou como obsoletas no primeiro run depois do sync.
 # Granularidade de ARQUIVO, nao de linha: numero de linha muda a cada merge do
 # upstream e o baseline viraria ruido. O que importa e "este arquivo ja tinha
 # sitio de classificacao"; um arquivo NOVO com sitio novo e o que o gate pega.
@@ -78,13 +87,6 @@ COMPARADORES='strings\.(Contains|HasPrefix|HasSuffix|EqualFold|Index)|startswith
 BASELINE="
 internal/integrations/manager.go|resolucao de caminho de instalacao de integracao; produto do upstream, e o maior sitio unico (10 ocorrencias)
 internal/validator/validator.go|validacao de caminho relativo em artefato; produto do upstream
-npm/src/integrations/manager.js|espelho Node do manager.go; produto do upstream
-npm/src/validator/index.js|espelho Node do validator.go; produto do upstream
-pypi/trackfw/generators/req.py|resolve req_dir vindo do trackfw.yaml; produto do upstream
-pypi/trackfw/generators/adr.py|resolve adr_dir vindo do trackfw.yaml; produto do upstream
-pypi/trackfw/commands/status.py|resolve caminho de artefato; produto do upstream
-pypi/trackfw/homedir.py|leitura INLINE de plataforma (sys.platform == "win32") para preferir $HOME no Windows; um unico sitio no arquivo. Nao e classificacao de string autorada: este lint ainda nao tem classe para leitura inline de plataforma, e reporta sob D2 por falta de classe mais fina. Produto do upstream
-pypi/trackfw/tty.py|leitura INLINE de plataforma (sys.platform == "win32") para escolher a sonda de console; um unico sitio no arquivo. Mesma ressalva do homedir.py. Produto do upstream
 "
 
 esta_no_baseline() {
@@ -214,8 +216,8 @@ echo "  comentario                                    : ${coment}"
 echo "  D2 CLASSIFICACAO                              : ${classificacao}  em ${#arq_vistos[@]} arquivo(s) declarado(s)"
 
 # Declaracao que nao corresponde mais a nada e lixo: avisa, mas nao reprova --
-# some sozinha quando o sitio for corrigido. Mesmo tratamento do
-# check-subcommand-parity.
+# some sozinha quando o sitio for corrigido. Mesmo tratamento que o
+# check-subcommand-parity dava, antes de ser retirado na v8.
 obsoletas=0
 printf '%s
 ' "$BASELINE" | while IFS='|' read -r arq motivo; do

@@ -99,13 +99,48 @@ continua nomeando o binário ausente depois de perder Node e Python; as duas do 
 reduzido ao Go ainda reprova nos dois sentidos.
 
 ### ML-1B — instrumentos de predicado de SO
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Files affected:** `scripts/check-os-predicate-classification.sh`, `scripts/measure-os-predicate-sites.sh`, `scripts/testdata/os-predicate-sites-baseline.txt`
 **Acceptance criteria:**
-- [ ] AC4 medido: nomes que saem conferidos contra arquivos removidos; guardas de pé
+- [x] AC4 medido: nomes que saem conferidos contra arquivos removidos; guardas de pé
+
+**Evidência — 2026-09-16.**
+
+**Lint.** Escopo `internal cmd`, 7 declarações removidas do `BASELINE` (os espelhos Node e Python e as
+duas leituras inline de plataforma), todas de arquivo que a v8 apagou. Depois:
+`204 sitios · 116 com teste · 57 D1 · 2 D3 · 25 comentario · 4 D2 em 2 arquivos declarados`, **zero**
+aviso de obsolescência. Os cinco somam 204.
+
+| falsificação | resultado |
+|---|---|
+| `runtime.GOOS == "windows"` plantado e **rastreado** em `internal/pathanchor/` | rc=1, pede resolvedor canônico ou baseline com motivo |
+| escopo `cmd` (nenhum predicado) | rc=1, guarda de vacuidade: `zero sitios varridos` |
+| escopo `internal/pathanchor` (12 predicados, nenhum `os.IsNotExist`) | rc=1, guarda **D1**: `zero sitios classificados como D1` |
+
+**Measure — o baseline não foi regravado às cegas.** Contra o baseline de 11/09: `29 novos · 65
+sumidos`. Por topo: 40 dos sumidos são `npm/src` (19) e `pypi/trackfw` (21), apagados pela v8. O resto
+foi reconciliado por `arquivo:predicado`, contando ocorrências antes e agora — só **cinco** pares mudaram
+de contagem, e **nenhum pela v8**: todos já estavam iguais em `a873897`, a `main` antes do sync.
+
+| arquivo:predicado | baseline → agora | origem |
+|---|---|---|
+| `internal/config/config_agents_register.go:os.IsNotExist` | 0 → 1 | #330, 12/09 — recebe `err`, é D1 |
+| `internal/serve/api_file.go:os.IsNotExist` | 1 → 0 | #332, 12/09 |
+| `internal/{discover,serve}/symlink_helper_test.go:runtime.GOOS` | 0 → 1 cada | arquivo de teste (D5) |
+| `internal/validator/symlink_helper_test.go:runtime.GOOS` | 0 → 2 | arquivo de teste (D5) |
+
+Os demais nomes de `internal/` mudaram só de **número de linha**, com a contagem por arquivo e
+predicado idêntica. Regravado: `204 sítio(s)`, e a comparação seguinte dá `novos 0 · sumidos 0`.
+
+🔴 **Achado lateral:** o baseline do `measure` estava defasado desde 12/09. O script **mede e não
+reprova** — sai `rc=0` com "a superfície MUDOU" —, então o agregador o mostrava `ok` a cada push.
+É a forma declarada dele, não defeito novo; fica registrado porque foi a v8 que obrigou a olhar.
+
+**Frase por teste:** o sítio plantado afirma que o lint com escopo reduzido ainda reprova
+classificação nova em `internal/`; as duas guardas afirmam que o escopo menor não virou verde vazio.
 
 ### ML-1C — workflow do fork
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Files affected:** `.github/workflows/local-gates.yml`
 **Acceptance criteria:**
 - [ ] AC5 verde no CI
