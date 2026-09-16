@@ -6,6 +6,9 @@ on:
 jobs:
   governance-install-script:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TRACKFW_VERSION: "8.0.0"
     steps:
       - uses: actions/checkout@v4
 
