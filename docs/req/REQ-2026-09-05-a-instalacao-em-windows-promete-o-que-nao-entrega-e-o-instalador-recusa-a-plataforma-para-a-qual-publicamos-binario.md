@@ -104,3 +104,65 @@ ADR:
 
 ## Linked Roadmap
 Roadmap:
+
+---
+
+## Medição em Windows ARM64 real — 2026-09-16 (v8.0.0-rc2)
+
+**Instrumento:** VM `Windows-Lab` (UTM/QEMU `aarch64`, `-accel hvf`), **Windows 11 ARM64 build
+26200**, acesso por SSH. Artefatos **publicados** da `v8.0.0-rc2` — não build local.
+
+🔴 **Por que a VM vale como medição aqui, contra a regra usual "VM investiga, CI mede":** o runner do
+CI é **x64**. Os artefatos `@trackfw-bin/win32-arm64` (npm) e a wheel `win_arm64` (PyPI) **nunca
+tinham sido executados em lugar nenhum** — nem no CI, nem antes. Para eles a VM não é um proxy pior
+que o runner: é a única máquina que existe. A ressalva de transferência (`n=1`, ARM64) vale para
+qualquer generalização a x64, **não** para a afirmação sobre arm64, que é direta.
+
+### Resultado por canal
+
+| Canal | Comando | Resultado |
+|---|---|---|
+| npm | `npm install -g trackfw@rc` | ✅ shim + `@trackfw-bin/win32-arm64` com `bin/trackfw.exe`; `--version` → `8.0.0-rc2`; exit 0 |
+| PyPI | `pip install trackfw==8.0.0rc2` | ✅ wheel `win_arm64`; `pip show` → `8.0.0rc2`; `--version` → `8.0.0-rc2`; exit 0 |
+| `install.sh` | `TRACKFW_VERSION=v8.0.0-rc2 sh install.sh` | 🔴 **recusa**, exit **1** |
+
+Saída exata do terceiro:
+
+```
+Sistema operacional nao suportado: MINGW64_NT-10.0-26200-ARM64
+Plataformas suportadas: macOS (Darwin), Linux
+```
+
+### O que isto faz com os ACs
+
+- **AC3 — confirmado em hardware real, e continua aberto.** A contradição medida em 05/09 por
+  leitura do repositório agora está medida por **execução**: publicamos `windows_arm64`, o pacote
+  instala e roda pelos outros dois canais, e o instalador recusa a mesma plataforma. O `exit 1` está
+  correto (recusa não é silenciosa); o defeito é **recusar plataforma para a qual publicamos
+  binário**, exatamente como a AC descreve.
+- **AC4 — o limite mudou de natureza.** A AC pedia *declarar* o limite de ARM64. Medido hoje: **não
+  há limite de ARM64 nos canais npm e PyPI** — os dois entregam e executam em Windows ARM64. O que
+  resta declarar é o limite do **`install.sh`**, que é outro eixo (sistema operacional, não
+  arquitetura).
+- 🔴 **O escopo negativo *"❌ Não implementar ARM64"* está obsoleto e deve ser removido.** Ele foi
+  escrito em 05/09, quando o `.goreleaser.yaml` tinha bloco de `ignore` para `windows/arm64`. O ML-1A
+  da v8 removeu esse bloco; a `v8.0.0-rc2` publica arm64 nos três canais e **dois deles foram
+  executados agora**. Manter a linha faria um leitor futuro recusar trabalho já entregue.
+- **AC1 e AC2 — parcialmente atendidos pelo ML-3D da v8**, que reescreveu o README: há aviso de
+  plataforma no topo (linha 21), seção `Windows support (partial)` (linha 118) e a contradição do
+  instalador está **declarada** na linha 137 (*"`scripts/install.sh` refuses Windows, even though we
+  publish a Windows binary"*). Declarar não fecha a AC3 — o defeito continua —, mas o usuário deixou
+  de ser surpreendido.
+- **AC5, AC6, AC7 — não medidos aqui.** Esta sessão exercitou **instalação e execução de
+  `--version`**, não a jornada com hook disparando, nem a falsificação sem Git Bash, nem caminhos com
+  espaço e acento. Registrado para não ser lido como cobertura maior do que foi.
+
+### Armadilhas do instrumento, registradas para a próxima medição
+
+- Um `trackfw.exe` **7.5.1 do pip**, de sessão anterior, sombreava o `PATH`
+  (`...\Python312-arm64\Scripts\` antes de `...\Roaming\npm\`). O primeiro `trackfw --version`
+  devolveu `7.5.1` e quase virou "a rc2 não instalou". Sempre resolver por `where trackfw` antes de
+  concluir.
+- `npm.ps1` é bloqueado pela *execution policy* do PowerShell; usar `cmd /c "npm ..."`.
+- Medir exit code de script **sem** canalizar para `tail`: `sh x.sh | tail` devolve o `$?` do `tail`.
+  A primeira medição deu `RC=0` por esse motivo e foi refeita — o valor real é `1`.
