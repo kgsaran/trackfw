@@ -10,7 +10,10 @@
 #
 # Mapeamento completo dos 11 itens da issue #216 (numeracao da tabela do
 # ML-0A / Wave 0, hades-tf):
-#   1  cp1252 no cli.py (--help de topo)          -> checado aqui (REAL)
+#   1  cp1252 no cli.py (--help de topo)          -> REMOVIDO ML-4D: pypi/trackfw
+#      deletado em ML-3A. Mecanismo (UnicodeEncodeError em stdout cp1252 do
+#      Python) e especifico do Python — Go usa os.Stdout binario (nunca
+#      traduz encoding). Nao ha sitio Go com o mesmo mecanismo.
 #   2  $HOME ignorado nos 3 runtimes                -> checado aqui (REAL).
 #      ROADMAP-2026-09-05, ML-2A: retargetado — ate a Wave 1 media
 #      os.homedir()/expanduser()/os.UserHomeDir() CRUS (a PLATAFORMA, nunca
@@ -26,14 +29,14 @@
 #      ROADMAP-2026-09-05, ML-2C: retargetado — ate a Wave 1 media um
 #      print() isolado (mecanismo REPLICADO). Agora invoca
 #      scripts/check-parity-contract-coverage.sh REAL via `bash`.
-#   5  CRLF na escrita dos geradores Python          -> checado aqui (REAL,
-#      via `trackfw init` de verdade + varredura de bytes). ML-1C: medido
-#      com o item 1 (cp1252) neutralizado SO neste subprocesso via
-#      PYTHONIOENCODING=utf-8, para nao mascarar o item 5 atras do crash
-#      do item 1 — documentado no proprio veredito.
-#   6  isatty() mente para NUL no Windows            -> checado aqui (REAL,
-#      via `trackfw init` com stdin=NUL, sem monkeypatch). ML-1C: mesma
-#      neutralizacao do item 5.
+#   5  CRLF na escrita dos geradores Python          -> REMOVIDO ML-4D: pypi/trackfw
+#      deletado em ML-3A. Mecanismo (open() modo texto no Python escreve CRLF
+#      no Windows sem newline='') nao existe em Go: os.WriteFile e binario e
+#      nunca traduz terminadores. Propriedade garantida por construcao em Go.
+#   6  isatty() mente para NUL no Windows            -> REMOVIDO ML-4D: pypi/trackfw
+#      deletado em ML-3A. Propriedade Go equivalente JA coberta por
+#      scripts/check-tty-detection.sh (gate parity-rest): binario Go nao
+#      trava com stdin=DEVNULL — redundancia por cobertura.
 #   7  sh -c hardcodado no Go (barrier.go:729)       -> checado aqui.
 #      ROADMAP-2026-09-05, ML-2D: retargetado — ate a Wave 1 media a MESMA
 #      chamada de shell REPLICADA fora do `barrier`, em isolamento. Agora
@@ -170,14 +173,6 @@ $pythonExePath = if ($pythonCmd) { $pythonCmd.Source } else { "python" }
 $nodeCliPath = Join-Path $repoRoot "npm\bin\trackfw"
 
 # ---------------------------------------------------------------------
-# item 1 — cp1252 no cli.py --help de topo
-# ---------------------------------------------------------------------
-$r1 = Run-Capture -Exe "python" -ArgList @("scripts/windows-repro/python/checks.py", "help")
-Add-Result -Item "1" -Title "cp1252 no cli.py --help de topo" `
-    -Verdict ($(if ($r1.Stdout -match "VERDICT=REPRODUCED") { "REPRODUCED" } elseif ($r1.Stdout -match "VERDICT=ABSENT") { "ABSENT" } else { "INCONCLUSIVE" })) `
-    -Detail $r1.Stdout
-
-# ---------------------------------------------------------------------
 # item 4 — retargetado (ROADMAP-2026-09-05, ML-2C). Ate aqui este item
 # rodava um `print()` isolado em checks.py (mecanismo REPLICADO, nunca o
 # .sh real). Agora invoca scripts/check-parity-contract-coverage.sh — o
@@ -311,40 +306,6 @@ Add-Result -Item "2" -Title "HOME ignorado no Windows — Go (retargetado ML-2A:
 $r3 = Run-Capture -Exe "go" -ArgList @("run", "scripts/windows-repro/go/checks.go", "execbit")
 $item3Verdict = if ($r3.ExitCode -ne 0) { "CONFIRMATORY-EXECUTION-FAILED" } else { "CONFIRMATORY" }
 Add-Result -Item "3" -Title "info.Mode()&0111==0 sempre verdadeiro no Windows — CONFIRMATORIO (ML-2B): evidencia primaria = camada 1 (TestCredentialGuardHookResolvable_WindowsNaoDisparaBitDeExecucao / TestGitBranchGuardHookResolvable_WindowsNaoDisparaBitDeExecucao), estruturalmente excluido do contador de REPRODUCED/INCONCLUSIVE" -Verdict $item3Verdict -Detail $r3.Stdout
-
-# ---------------------------------------------------------------------
-# item 5 — CRLF na escrita dos geradores Python
-#
-# USERPROFILE isolado e PROPRIO (nao compartilhado com o item 6): o guard
-# do wizard de identidade em init.py e
-# `skip_identity_wizard = preset_changed or _identity_file_exists(home)` —
-# se este check e o do item 6 dividissem o mesmo home sintetico, um arquivo
-# de identidade deixado por este `init --identity-preset none` faria o
-# item 6 pular o wizard por _identity_file_exists()==True, nao por
-# preset_changed, mascarando silenciosamente o proprio isatty() que o
-# item 6 precisa medir (falso negativo dependente de ordem).
-# ---------------------------------------------------------------------
-$item5Home = Join-Path $env:RUNNER_TEMP "item5-fake-USERPROFILE"
-New-Item -ItemType Directory -Force -Path $item5Home | Out-Null
-$r5 = Run-Capture -Exe "python" -ArgList @("scripts/windows-repro/python/checks.py", "crlf") `
-    -EnvVars @{ RUNNER_TEMP = $env:RUNNER_TEMP; USERPROFILE = $item5Home; HOME = $item5Home }
-$item5Verdict = if ($r5.Stdout -match "VERDICT=REPRODUCED") { "REPRODUCED" } elseif ($r5.Stdout -match "VERDICT=ABSENT") { "ABSENT" } elseif ($r5.Stdout -match "VERDICT=BLOCKED-BY-ITEM-1") { "BLOCKED-BY-ITEM-1" } else { "INCONCLUSIVE" }
-Add-Result -Item "5" -Title "geradores Python escrevem CRLF (open sem newline=; ML-1C: medido com item 1 neutralizado via PYTHONIOENCODING=utf-8)" -Verdict $item5Verdict -Detail $r5.Stdout
-
-# ---------------------------------------------------------------------
-# item 6 — isatty() mente para NUL
-#
-# USERPROFILE isolado e PROPRIO, vazio (sem arquivo de identidade) — e
-# precondicao da medicao: o check so e valido se _identity_file_exists(home)
-# for False, senao skip_identity_wizard vira True por um motivo que nao e
-# o que este item mede (ver comentario do item 5 acima).
-# ---------------------------------------------------------------------
-$item6Home = Join-Path $env:RUNNER_TEMP "item6-fake-USERPROFILE"
-New-Item -ItemType Directory -Force -Path $item6Home | Out-Null
-$r6 = Run-Capture -Exe "python" -ArgList @("scripts/windows-repro/python/checks.py", "isatty") `
-    -EnvVars @{ USERPROFILE = $item6Home; HOME = $item6Home }
-$item6Verdict = if ($r6.Stdout -match "VERDICT=REPRODUCED") { "REPRODUCED" } elseif ($r6.Stdout -match "VERDICT=ABSENT") { "ABSENT" } elseif ($r6.Stdout -match "VERDICT=BLOCKED-BY-ITEM-1") { "BLOCKED-BY-ITEM-1" } else { "INCONCLUSIVE" }
-Add-Result -Item "6" -Title "sys.stdin.isatty() mente True para NUL (ML-1C: medido com item 1 neutralizado via PYTHONIOENCODING=utf-8)" -Verdict $item6Verdict -Detail $r6.Stdout
 
 # ---------------------------------------------------------------------
 # item 7 — retargetado (ROADMAP-2026-09-05, ML-2D). Ate aqui este item
@@ -865,7 +826,7 @@ Add-Result -Item "12" -Title "SONDA ML-0B (fora da issue #216): exit 1 uniforme 
 # ---------------------------------------------------------------------
 Write-Host ""
 Write-Host "===================================================================="
-Write-Host "SUMARIO — suite de reproducao de defeito (11 itens da issue #216)"
+Write-Host "SUMARIO — suite de reproducao de defeito (8 itens da issue #216; itens 1/5/6 removidos em ML-4D — ver comentarios no cabecalho deste arquivo)"
 Write-Host "===================================================================="
 $results | Format-Table -AutoSize | Out-String | Write-Host
 

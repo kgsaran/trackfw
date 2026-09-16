@@ -2,6 +2,22 @@
 
 ---
 
+## Sessão 2026-09-16 — Ares (fix/v8-um-binario — ML-4D: remover itens 1/5/6 da suite windows-repro que mediam Python deletado) — ENCERRADO
+
+**Início:** 2026-09-16 | Branch: `fix/v8-um-binario` | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` ML-4D
+**Tarefa:** Items 1, 5, 6 de `scripts/windows-repro/run.ps1` morrem com Traceback porque invocam `pypi/trackfw` (deletado em ML-3A). Decidir destino de cada item (remover / retarget Go / não-se-aplica) e implementar.
+**Concluído:**
+(1) Item 1 (cp1252 no cli.py --help): REMOVIDO. Mecanismo (UnicodeEncodeError em stdout cp1252 do Python) é Python-specific. Go usa os.Stdout binário, sem tradução de encoding. Nenhum sítio Go com mesmo mecanismo.
+(2) Item 5 (CRLF nos geradores Python): REMOVIDO. Mecanismo (open() texto no Python escreve CRLF sem newline='') não existe em Go. os.WriteFile é binário — propriedade garantida por construção. Nenhum teste Go específico existe, mas nenhum é necessário porque o sítio não existe.
+(3) Item 6 (isatty() mente True para NUL): REMOVIDO por redundância. scripts/check-tty-detection.sh (gate parity-rest) já cobre a propriedade Go equivalente: `$GO_BIN init --ai-tools gemini </dev/null` — verifica que o binário não trava com stdin não interativo.
+(4) Bloco de comentários do cabeçalho atualizado (linhas 13-16, 32-39 do arquivo) com justificativa ML-4D para cada remoção.
+(5) Sumário atualizado: "11 itens da issue #216" → "8 itens da issue #216; itens 1/5/6 removidos em ML-4D".
+(6) Nenhuma chamada a `scripts/windows-repro/python/checks.py` restando em run.ps1.
+**Verificações:** go build ./... RC=0. go test ./... RC=0 (todos os packages). python3 scripts/check-workflow-yaml.py 8 passed, 0 failed. env -u FORCE_COLOR make quality RC=0 (212 OK, 0 FAIL).
+**ALERTA:** git status mostra trackfw.yaml modificado após make quality — issue #366 conhecida (check-tty-detection.sh:43). Não commitado, reportado a KG.
+
+---
+
 ## Sessão 2026-09-16 — Ares (trackfw-nul — ML-4C: corrigir 4 jobs CI quebrados pós-Wave-3) — ENCERRADO
 
 **Início:** 2026-09-16 (continuação de sessão anterior, contexto compactado) | Branch: `fix/v8-um-binario-muitos-canais` (trackfw-nul) | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` ML-4C
