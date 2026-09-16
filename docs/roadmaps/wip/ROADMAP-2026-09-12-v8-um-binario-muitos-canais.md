@@ -842,6 +842,60 @@ Contador "183" hardcoded e obsoleto.
 
 ---
 
+### ML-3C-ter — guarda de piso no contador do falsify
+**Status:** ✅ Concluído — auditado pelo arquiteto (2026-09-16)
+
+O ML-3C-bis trocou o literal por um contador medido, mas deixou o fecho sem piso: um tally zerado, ou
+a remoção das chamadas de contagem por um refator futuro, faria o gate imprimir
+`Falsification checks passed (0 scenarios)` e **sair com 0** — a mesma classe de defeito que o
+ML-3C-bis existia para eliminar, uma camada abaixo.
+
+🔴 **Erro de handoff do arquiteto, registrado:** pedi um piso fixo sem verificar que
+`check-gates-falsify.sh` **não roda só em série**. O `gen-falsify-chunks.py` materializa preâmbulo +
+fatia do corpo em ~7 chunks paralelos, e **é esse o caminho do CI**. Um piso de corpus inteiro é falso
+por construção para qualquer chunk: medido, `chunk_6` conta ~10 cenários. A guarda pedida para
+impedir falso-negativo produziu **falso-positivo**, que é pior — ensina a ignorar o gate.
+
+**Desenho final (auditado no artefato):** o piso só vale na execução íntegra. O discriminante é
+explícito, não inferido de contagem — `gen-falsify-chunks.py:502` injeta `__falsify_timing_mark` no
+preâmbulo de **cada** chunk, e essa função **nunca** existe no script completo; a guarda roda sob
+`if ! declare -f __falsify_timing_mark`.
+
+**Por que não há lacuna no CI.** Sob sharding a guarda de piso não dispara, mas a garantia equivalente
+já existe no caminho do CI e é **mais forte que contagem**: `run-gates-falsify-parallel.sh` faz guarda
+de conjunto **por rótulo** (linha 190-208 — reprova se qualquer rótulo esperado estiver ausente), e
+`check-falsify-shard-coverage.sh` roda no job `parity` (`quality.yml:924`). Contagem é um proxy;
+conjunto de rótulos é o invariante. O piso é o complemento da execução serial local.
+
+---
+
+### ML-3E — tag de pré-release publicando como release estável
+**Status:** ✅ Concluído — auditado pelo arquiteto (2026-09-16)
+
+**Reportado pelo usuário e confirmado por medição:** o `install.sh` estava servindo `8.0.0-rc1` como
+versão estável, havia 3 dias.
+
+| Canal | O que servia como estável | Estado |
+|---|---|---|
+| GitHub (`scripts/install.sh`) | 🔴 `v8.0.0-rc1` | corrigido |
+| npm | `7.6.0` (rc sob dist-tag `rc`) | já correto |
+| PyPI | `7.6.0` (PEP440 trata pré-release) | já correto |
+
+**Causa raiz:** o bloco `release:` do `.goreleaser.yaml` não declarava `prerelease`, e o default do
+GoReleaser é `false` (documentação oficial de `customization/release`). Logo **toda** tag `-rc`
+publicava como release estável e virava o `latest` do GitHub. Não foi descuido no rc1 — era o
+comportamento configurado, e reincidiria no rc2.
+
+**Correção em duas camadas:** (1) ação de mantenedor — o release `v8.0.0-rc1` foi marcado
+`prerelease: true` / `make_latest: false` via API, e `/releases/latest` voltou a devolver `v7.6.0`
+(verificado, não presumido; o `install.sh` resolve por esse endpoint, que honra a flag);
+(2) origem — `prerelease: auto` no `.goreleaser.yaml` + `scripts/check-goreleaser-prerelease.sh` com
+5 braços de auto-falsificação (chave ausente, valor `false`, config correta, arquivo ausente, bloco
+ausente), ligado em `parity-rest`, que o CI já executa em `quality.yml:839` sob o required check
+`parity`. Auto-teste rodado pelo arquiteto: 5 passed, 0 failed.
+
+---
+
 ### Ação de mantenedor executada — R1 fechado (2026-09-16)
 
 `make check-required-full` reprovava: o `required_status_checks` do branch protection (conjunto R,
