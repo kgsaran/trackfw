@@ -96,33 +96,12 @@ echo "=== check-raw-read-ban: Go (internal/validator/*.go, non-test) ==="
 GO_FILES=$(find internal/validator -maxdepth 1 -name '*.go' ! -name '*_test.go')
 check_file "go" '\<os\.ReadFile\(' $GO_FILES
 
-echo
-echo "=== check-raw-read-ban: Node (npm/src/validator/index.js) ==="
-# grep -a is MANDATORY here: `file(1)` classifies this file as binary (Unicode text with certain
-# byte sequences trips libmagic's heuristic), so a plain `grep` silently scans ZERO lines and always
-# reports "clean" no matter what raw calls are reintroduced — this exact trap already produced two
-# false-premise REQs earlier in this campaign.
-check_file "node" '\<fs\.readFileSync\(' npm/src/validator/index.js
 
-echo
-echo "=== check-raw-read-ban: Python (pypi/trackfw/validator.py) ==="
-# Matches only STATEMENT-POSITION open( — preceded by "with", "=" or "return" plus whitespace, i.e.
-# actual code that reads a file — not `os.open(`/`fdopen(` (different call) and not prose in a
-# docstring/comment that merely mentions "open(...)" (e.g. "replaces open(path, ...).read()"),
-# which this pattern does NOT match. Earlier version of this gate used a lookbehind-shaped standalone-
-# open( pattern that DID match prose, and the fix was to reword 7 archaeological ML-1B/1C comments
-# from "open(" to "open (" just to dodge the regex — backwards: it broke prose to satisfy the gate,
-# and the next agent writing "open(" in a comment hits the same wall. Anchoring on statement shape
-# instead makes prose a structural non-match, no rewording needed; the declared residual is a raw
-# `open(` nested inside another call with no assignment/with/return on the same line (e.g.
-# `foo(open(p))`), which this pattern would miss — not exercised by this codebase, called out here
-# rather than silently accepted.
-# Written without a (?<!...) lookbehind on purpose: macOS's BSD grep has NO -P flag at all (verified
-# live: `grep -P` errors "invalid option -- P" and, worse, the `|| true` around the grep call in
-# check_file swallowed that error silently, reporting "0 raw sites" no matter what the file actually
-# contained — a vacuous gate on the exact runtime this campaign already got bitten by twice for a
-# different reason). -E is portable to both BSD and GNU grep and needs no lookbehind for this shape.
-check_file "python" '(with|=|return)[[:space:]]+open\(' pypi/trackfw/validator.py
+# ML-3A (v8): Node section removed — npm/src/validator/index.js deleted
+
+
+# ML-3A (v8): Python section removed — pypi/trackfw/validator.py deleted
+
 
 echo
 echo "=== vacuity guard ==="
@@ -130,7 +109,7 @@ if [ "$SCANNED_ANY" -ne 1 ]; then
   echo "FAIL vacuity guard: no file was actually scanned end to end — the gate would silently pass on nothing"
   FAIL=1
 else
-  echo "OK   at least one file was scanned with a non-trivial line count in all 3 runtimes"
+  echo "OK   at least one file was scanned with a non-trivial line count (Go only — v8 single-runtime)"
 fi
 
 echo
@@ -138,5 +117,5 @@ if [ "$FAIL" -ne 0 ]; then
   echo "check-raw-read-ban: FAIL"
   exit 1
 fi
-echo "check-raw-read-ban: OK — no unjustified raw reads in internal/validator, npm/src/validator/index.js, pypi/trackfw/validator.py"
+echo "check-raw-read-ban: OK — no unjustified raw reads in internal/validator (Go only — v8: npm/src/ and pypi/trackfw/ removed)"
 exit 0

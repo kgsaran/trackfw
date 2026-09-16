@@ -182,12 +182,12 @@ func parseStagedNameStatus(raw string) []stagedFile {
 	return files
 }
 
-// commitCommandDirs lists the directories (across the 3 supported CLIs) where a new (status
-// "A") file signals a new CLI command was added — used by the "feat" heuristic rule below.
+// commitCommandDirs lists the directories where a new (status "A") file signals a new CLI
+// command was added — used by the "feat" heuristic rule below.
+// v8 (ML-3C): npm/src/commands/ and pypi/trackfw/commands/ removed with the Node/Python
+// reimplementations; only the Go source remains authoritative.
 var commitCommandDirs = []string{
 	"internal/commands/",
-	"npm/src/commands/",
-	"pypi/trackfw/commands/",
 }
 
 // suggestedCommitType returns the Conventional Commits type suggested for a set of staged

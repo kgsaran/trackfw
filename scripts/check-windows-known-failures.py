@@ -41,9 +41,11 @@ Usage:
   check-windows-known-failures.py \\
       --list .github/windows-known-failures.json \\
       --go-out  <path/to/go-suite-out.txt> \\
-      --node-tap <path/to/node-suite.tap> \\
-      --python-out <path/to/python-suite-out.txt> \\
+      [--node-tap <path/to/node-suite.tap>] \\
+      [--python-out <path/to/python-suite-out.txt>] \\
       [--baseline <path/to/baseline-known-failures.json>]
+  # ML-4C: --node-tap and --python-out are optional when the known list has
+  # no active entries for those runtimes (all moved to 'removed').
 
 Exit codes:
   0 — no new failures detected (warnings may have been emitted)
@@ -668,10 +670,30 @@ def run_check(
     known_node_load   = {e['name'] for e in known if e['runtime'] == 'node'   and e['class'] == 'suite-load-failure'}
     known_py_assert   = {e['name'] for e in known if e['runtime'] == 'python' and e['class'] == 'assertion'}
 
-    # 2. Require artifacts (observation-side vacuity guard — file-existence)
+    # 2. ML-4C: runtime-presence guard — require node/python artifacts only when the
+    #    known list has active entries for those runtimes. If all node/python entries
+    #    have been moved to 'removed', the paths may be omitted and those runtimes
+    #    are skipped entirely. If any active entry exists for a runtime whose path is
+    #    empty, that is a configuration error (the caller must provide the artifact).
+    if not node_tap and (known_node_assert or known_node_load):
+        _err(
+            "--node-tap is required when the known-failures list has active Node.js entries. "
+            "Provide the path or move all node entries to the 'removed' section (ML-4C)."
+        )
+        return 1
+    if not python_out and known_py_assert:
+        _err(
+            "--python-out is required when the known-failures list has active Python entries. "
+            "Provide the path or move all python entries to the 'removed' section (ML-4C)."
+        )
+        return 1
+
+    # 2b. Require artifacts (observation-side vacuity guard — file-existence).
+    #     For runtimes with no active known entries and no path provided, tap_path/py_path
+    #     is None; all downstream processing is guarded to skip None paths.
     go_path  = require_artifact(go_out,     'go-suite-out.txt')
-    tap_path = require_artifact(node_tap,   'node-suite.tap')
-    py_path  = require_artifact(python_out, 'python-suite-out.txt')
+    tap_path = require_artifact(node_tap,   'node-suite.tap') if node_tap else None
+    py_path  = require_artifact(python_out, 'python-suite-out.txt') if python_out else None
 
     # 3. ML-3A: early marker check — markers where no name is extractable (row 3 only).
     #    Suite steps write marker files BEFORE exiting; continue-on-error absorbs the exit
@@ -706,20 +728,24 @@ def run_check(
         if early_fail:
             return 1
 
-    # 4. Extract observed failures
+    # 4. Extract observed failures.
+    #    ML-4C: tap_path/py_path may be None when no active entries exist for that
+    #    runtime and the path was not provided — skip extraction and return empty sets.
     obs_go = extract_go_failures(go_path)
-    obs_node_assert, obs_node_load = extract_node_failures(tap_path)
-    obs_py = extract_python_failures(py_path)
+    obs_node_assert, obs_node_load = (extract_node_failures(tap_path) if tap_path is not None else (set(), set()))
+    obs_py = (extract_python_failures(py_path) if py_path is not None else set())
 
-    # 5. Extract observed passes (ML-2B: discriminant for corrected vs no-longer-runs)
+    # 5. Extract observed passes (ML-2B: discriminant for corrected vs no-longer-runs).
+    #    ML-4C: same None guard as step 4.
     go_passes,   go_pass_vac   = extract_go_passes(go_path)
-    node_passes, node_pass_vac = extract_node_passes(tap_path)
-    py_passes,   py_pass_vac   = extract_python_passes(py_path)
+    node_passes, node_pass_vac = (extract_node_passes(tap_path)   if tap_path is not None else (set(), False))
+    py_passes,   py_pass_vac   = (extract_python_passes(py_path)  if py_path  is not None else (set(), False))
 
     # 5b. ML-3A: results-present vacuity guard.
     #     If an artifact exists but contains NO test result lines, that is
     #     "não consegui procurar" — not "procurei e não achei" (vault note).
     #     Fatal, not a warning. is_vacuous=True means no FAIL/PASS lines at all.
+    #     ML-4C: skip vacuity guard for runtimes whose path was not provided (None).
     if go_pass_vac and not obs_go:
         _err(
             "ML-3A vacuity (results-present): go-suite-out.txt exists but contains no "
@@ -727,14 +753,14 @@ def run_check(
             "'não consegui procurar' → fatal (not a warning)."
         )
         return 1
-    if node_pass_vac and not obs_node_assert and not obs_node_load:
+    if tap_path is not None and node_pass_vac and not obs_node_assert and not obs_node_load:
         _err(
             "ML-3A vacuity (results-present): node-suite.tap exists but contains no "
             "'ok'/'not ok' lines. Suite may not have produced results — "
             "'não consegui procurar' → fatal (not a warning)."
         )
         return 1
-    if py_pass_vac and not obs_py:
+    if py_path is not None and py_pass_vac and not obs_py:
         _err(
             "ML-3A vacuity (results-present): python-suite-out.txt exists but contains no "
             "'FAILED' or 'PASSED' lines. Suite may not have produced results — "
@@ -787,10 +813,19 @@ def run_check(
                         has_new = True
                     # Row 1: pkg in known_go_load — known debt, pass silently
 
-        # Node.js suite-load-failure: marker is a signal; names come from obs_node_load
+        # Node.js suite-load-failure: marker is a signal; names come from obs_node_load.
+        # ML-4C: if tap_path is None (no active Node entries, --node-tap not provided),
+        # no Node test was expected to run and no marker should appear; if one does,
+        # warn but do not fail (the caller declared no Node coverage for this run).
         node_load_marker = Path(load_markers_dir) / "suite-load-failure.node.txt"
         if node_load_marker.exists():
-            if not obs_node_load:
+            if tap_path is None:
+                _warn(
+                    "ML-4C: suite-load-failure.node.txt marker found but --node-tap was not "
+                    "provided. Node.js test coverage was not expected for this run. "
+                    "Marker ignored."
+                )
+            elif not obs_node_load:
                 # Row 3: marker signals a load failure but TAP produced no name
                 node_marker_content = node_load_marker.read_text(encoding="utf-8").strip()
                 _err(
@@ -1768,10 +1803,14 @@ def main() -> int:
     if args.self_test:
         return run_self_test()
 
-    if not args.go_out or not args.node_tap or not args.python_out:
+    # ML-4C: only --go-out is required unconditionally. --node-tap and --python-out
+    # are required only when the known list has active entries for those runtimes;
+    # that check lives inside run_check() after loading the list (so it can consult
+    # the known sets). A run with only --go-out is valid when all node/python entries
+    # have been moved to 'removed'.
+    if not args.go_out:
         print(
-            "error: --go-out, --node-tap and --python-out are required "
-            "when not running --self-test.",
+            "error: --go-out is required when not running --self-test.",
             file=sys.stderr,
         )
         return 2

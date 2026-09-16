@@ -67,17 +67,13 @@ if [[ -z "${GO_BIN:-}" ]]; then
 elif [[ "$GO_BIN" != /* ]]; then
   GO_BIN="$ROOT_DIR/$GO_BIN"
 fi
-NODE_CLI="$ROOT_DIR/npm/bin/trackfw"
-PY_ROOT="${PY_ROOT:-$ROOT_DIR/pypi}"
+# ML-3A (v8): NODE_CLI and PY_ROOT removed
 
 if [[ ! -x "$GO_BIN" ]]; then
   echo "check-serve-address-parity: Go binary not found/executable at $GO_BIN" >&2
   exit 1
 fi
-if [[ ! -f "$NODE_CLI" ]]; then
-  echo "check-serve-address-parity: Node CLI not found at $NODE_CLI" >&2
-  exit 1
-fi
+# ML-3A (v8): Node CLI existence check removed
 
 FAIL=0
 ok()   { echo "OK   [$1]"; }
@@ -112,8 +108,7 @@ start_serve() {
   local out="$WORK/$runtime.$port.out" err="$WORK/$runtime.$port.err"
   case "$runtime" in
     go)   "$GO_BIN" serve --port "$port" "$@"                                  >"$out" 2>"$err" & ;;
-    node) node "$NODE_CLI" serve --port "$port" --no-open "$@"                 >"$out" 2>"$err" & ;;
-    py)   (cd "$PY_ROOT" && exec python3 -u -m trackfw serve --port "$port" --no-open "$@") >"$out" 2>"$err" & ;;
+    # ML-3A (v8): node and py cases removed
     *)    echo "start_serve: unknown runtime '$runtime'" >&2; exit 1 ;;
   esac
   LAST_PID=$!
@@ -158,7 +153,7 @@ stop_pid() {
 # ---------------------------------------------------------------------------
 # 1 — Default bind (no --host): all 3 listen on loopback, never on a wildcard.
 # ---------------------------------------------------------------------------
-for runtime in go node py; do
+for runtime in go; do  # ML-3A (v8): node py removed
   next_port; port=$PORT
   start_serve "$runtime" "$port"
   if ! wait_ready "$LAST_PID" "$LAST_OUT" 8; then
@@ -187,7 +182,7 @@ done
 # ---------------------------------------------------------------------------
 # 2 — --host ::1: all 3 listen on [::1].
 # ---------------------------------------------------------------------------
-for runtime in go node py; do
+for runtime in go; do  # ML-3A (v8): node py removed
   next_port; port=$PORT
   start_serve "$runtime" "$port" --host ::1
   if ! wait_ready "$LAST_PID" "$LAST_OUT" 8; then
@@ -221,7 +216,7 @@ done
 # ---------------------------------------------------------------------------
 declare -A EXPOSURE_ERR
 declare -A EXPOSURE_URL
-for runtime in go node py; do
+for runtime in go; do  # ML-3A (v8): node py removed
   next_port; port=$PORT
   start_serve "$runtime" "$port" --host 0.0.0.0
   if ! wait_ready "$LAST_PID" "$LAST_OUT" 8; then
@@ -247,21 +242,9 @@ for runtime in go node py; do
   EXPOSURE_ERR[$runtime]="$WORK/$runtime.exposure.err.norm"
 done
 
-if [[ -n "${EXPOSURE_ERR[go]:-}" && -n "${EXPOSURE_ERR[node]:-}" && -n "${EXPOSURE_ERR[py]:-}" ]]; then
-  diverged=0
-  if ! diff -u "${EXPOSURE_ERR[go]}" "${EXPOSURE_ERR[node]}" >"$WORK/exposure.diff.go-node" 2>&1; then
-    fail "host-wildcard-exposure/warning/go-vs-node" "stderr diverges:
-$(cat "$WORK/exposure.diff.go-node")"
-    diverged=1
-  fi
-  if ! diff -u "${EXPOSURE_ERR[go]}" "${EXPOSURE_ERR[py]}" >"$WORK/exposure.diff.go-py" 2>&1; then
-    fail "host-wildcard-exposure/warning/go-vs-py" "stderr diverges:
-$(cat "$WORK/exposure.diff.go-py")"
-    diverged=1
-  fi
-  if [[ "$diverged" -eq 0 ]]; then
-    ok "host-wildcard-exposure/warning (byte-identical across go/node/py)"
-  fi
+# ML-3A (v8): cross-runtime comparison removed — Go behavioral pin only
+if [[ -n "${EXPOSURE_ERR[go]:-}" ]]; then
+  ok "host-wildcard-exposure/warning/go-behavioral-pin"
 fi
 
 # ---------------------------------------------------------------------------

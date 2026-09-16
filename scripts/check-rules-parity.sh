@@ -1,47 +1,23 @@
 #!/usr/bin/env bash
-# check-rules-parity.sh — proves the three CLI runtimes (Go, Node.js, Python)
-# inject the exact same governance rules block, byte-for-byte identical, into
-# the four auxiliary rules files created by `trackfw init --ai-tools`.
+# check-rules-parity.sh — pins the governance rules block that `trackfw init
+# --ai-tools` injects into GEMINI.md, .github/copilot-instructions.md,
+# .windsurfrules and .amazonq/developer/guidelines.md.
 #
-# ML-5G (ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador).
+# ML-3A (v8 — um binário, muitos canais): Node.js and Python reimplementations
+# removed. This gate now asserts the Go binary's output alone — the four rules
+# files exist, are non-empty, and contain byte-for-byte identical governance
+# blocks delimited by <!-- trackfw:rules:start --> / <!-- trackfw:rules:end -->.
 #
-# Diagnosis this gate closes: the rules block text injected into GEMINI.md,
-# .github/copilot-instructions.md, .windsurfrules and
-# .amazonq/developer/guidelines.md is hand-maintained in three separate
-# generators (internal/generators/agentfiles.go, npm/src/generators/init.js,
-# pypi/trackfw/generators/init_gen.py). Content drifted between them (missing
-# `analyzing` state, missing ML-lifecycle item, missing Key Commands section,
-# and a literal duplicated Architecture Directives block in Go) without any
-# gate catching it, because scripts/check-identity-parity.sh only started
-# exercising this path once ML-5E wired the injection into the catalog
-# install flow — and that gate compares whole-project sha256 snapshots, so
-# its failure output ("hash mismatch") does not point at the rules text
-# specifically. This gate isolates the rules block on its own.
+# Each AI tool file has a tool-specific heading (e.g. "# GitHub Copilot
+# Instructions") so whole-file byte identity is intentionally NOT asserted.
+# Only the governance block (between the delimiters) must be identical.
 #
-# Strategy: run `<cli> init --ai-tools <tools>` in a throwaway directory for
-# each runtime, then diff the four resulting rules files byte-for-byte.
-# `init` has no --scope flag (ADR D4/D1): non-interactively it always
-# resolves to scope "global", writing the rules files under $HOME rather
-# than the project directory — so each runtime gets an isolated $HOME here,
-# mirroring check-identity-parity.sh. Follows the conventions of
-# check-slash-parity.sh:
-# set -euo pipefail, mktemp -d fixtures with a cleanup trap, a vacuity guard
-# before comparing, "OK [scenario/name]" on success, and accumulating all
-# drift before exiting instead of failing on the first mismatch.
+# Original ML-5G (ROADMAP-2026-07-29-barrier-governanca-e-autoridade-do-
+# orquestrador). Cross-runtime comparison removed by ML-3A (v8) because
+# Node.js and Python CLIs no longer exist (npm/src/ and pypi/trackfw/ deleted).
 set -euo pipefail
 
-# Codificacao de saida (ML-1B, ROADMAP-2026-09-02-saida-nao-ascii-declara-
-# codificacao-em-script-gerado-e-em-gate): forca UTF-8 no stdio de todo
-# python3 deste gate. Sob console cp1252 (Windows) o Python herda a codepage
-# e um print() de caractere fora do cp1252 estoura UnicodeEncodeError -- o
-# gate reprova por um motivo alheio ao que ele mede. Declarado aqui, e nao no
-# Makefile, para valer tambem na invocacao direta pelo workflow de CI, na
-# invocacao manual de um gate isolado e na invocacao de um gate por outro.
-# Trade-off assumido: num console genuinamente cp1252 a saida vira mojibake
-# em vez de crashar -- acento ilegivel com exit code correto vale mais que
-# uma reprovacao falsa.
 export PYTHONIOENCODING=utf-8
-
 export NO_COLOR=1
 export TERM=dumb
 
@@ -59,21 +35,11 @@ fi
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/trackfw-rules-parity.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
 
-mkdir -p "$WORK/go" "$WORK/node" "$WORK/python"
+mkdir -p "$WORK/go" "$WORK/home-go"
 
 TOOLS="gemini,copilot,windsurf,amazonq"
 
-mkdir -p "$WORK/home-go" "$WORK/home-node" "$WORK/home-python"
-
-# Auxiliary rules files are always written relative to the project cwd
-# (generators.InjectRulesForTool(tool, cwd) — see internal/commands/init.go:
-# installAITools), independent of the agents/skills catalog scope, which is
-# what resolves to "global"/$HOME non-interactively. Isolated $HOME per
-# runtime avoids polluting (or reading stale identity from) the real user
-# home while still exercising the real non-TTY code path.
 (cd "$WORK/go" && HOME="$WORK/home-go" "$GO_BIN" init --ai-tools "$TOOLS" >/dev/null)
-(cd "$WORK/node" && HOME="$WORK/home-node" node "$ROOT_DIR/npm/bin/trackfw" init --ai-tools "$TOOLS" >/dev/null)
-(cd "$WORK/python" && HOME="$WORK/home-python" PYTHONPATH="$ROOT_DIR/pypi" python3 -m trackfw init --ai-tools "$TOOLS" >/dev/null)
 
 # Files relative to the project root, one per --ai-tools entry above.
 RULES_FILES=(
@@ -86,19 +52,15 @@ RULES_FILES=(
 FAIL=0
 
 # ---------------------------------------------------------------------------
-# Vacuity guard — the four rules files must exist and be non-empty in all
-# three runtimes before any comparison. Without this, three missing files
-# would "diff" as identical (nothing to compare) and the gate would pass
-# vacuously.
+# Vacuity guard — the four rules files must exist and be non-empty.
+# Without this, missing files would pass silently.
 # ---------------------------------------------------------------------------
-for RUNTIME in go node python; do
-  for FILE in "${RULES_FILES[@]}"; do
-    PATH_CANDIDATE="$WORK/$RUNTIME/$FILE"
-    if [[ ! -s "$PATH_CANDIDATE" ]]; then
-      echo "rules parity drift: $FILE missing or empty ($RUNTIME) — vacuity guard failed" >&2
-      FAIL=1
-    fi
-  done
+for FILE in "${RULES_FILES[@]}"; do
+  PATH_CANDIDATE="$WORK/go/$FILE"
+  if [[ ! -s "$PATH_CANDIDATE" ]]; then
+    echo "rules parity drift: $FILE missing or empty (go) — vacuity guard failed" >&2
+    FAIL=1
+  fi
 done
 
 if [[ "$FAIL" -ne 0 ]]; then
@@ -109,21 +71,40 @@ fi
 echo "OK   [rules-parity/vacuity-guard]"
 
 # ---------------------------------------------------------------------------
-# Byte-for-byte comparison of each rules file across the three runtimes.
+# Extract the governance block from each file (between trackfw:rules delimiters)
+# and verify all four are byte-for-byte identical.
+#
+# Each AI tool file has a different H1 heading, so whole-file comparison
+# would always fail. The invariant is that the rules BLOCK is the same.
 # ---------------------------------------------------------------------------
-for FILE in "${RULES_FILES[@]}"; do
-  GO_FILE="$WORK/go/$FILE"
-  NODE_FILE="$WORK/node/$FILE"
-  PY_FILE="$WORK/python/$FILE"
+extract_rules_block() {
+  local file="$1"
+  awk '/<!-- trackfw:rules:start -->/{found=1} found{print} /<!-- trackfw:rules:end -->/{found=0}' "$file"
+}
 
-  if ! cmp -s "$GO_FILE" "$NODE_FILE"; then
-    echo "rules parity drift: $FILE differs between go and node" >&2
-    diff -u "$GO_FILE" "$NODE_FILE" >&2 || true
+REFERENCE_FILE="$WORK/go/${RULES_FILES[0]}"
+REFERENCE_BLOCK="$WORK/reference-block.txt"
+extract_rules_block "$REFERENCE_FILE" > "$REFERENCE_BLOCK"
+
+if [[ ! -s "$REFERENCE_BLOCK" ]]; then
+  echo "rules parity: reference file ${RULES_FILES[0]} has no trackfw:rules block — delimiter missing?" >&2
+  exit 1
+fi
+
+echo "OK   [rules-parity/reference-block-found]"
+
+for FILE in "${RULES_FILES[@]:1}"; do
+  CANDIDATE="$WORK/go/$FILE"
+  CANDIDATE_BLOCK="$WORK/candidate-block.txt"
+  extract_rules_block "$CANDIDATE" > "$CANDIDATE_BLOCK"
+  if [[ ! -s "$CANDIDATE_BLOCK" ]]; then
+    echo "rules parity: $FILE has no trackfw:rules block — delimiter missing?" >&2
     FAIL=1
+    continue
   fi
-  if ! cmp -s "$GO_FILE" "$PY_FILE"; then
-    echo "rules parity drift: $FILE differs between go and python" >&2
-    diff -u "$GO_FILE" "$PY_FILE" >&2 || true
+  if ! cmp -s "$REFERENCE_BLOCK" "$CANDIDATE_BLOCK"; then
+    echo "rules parity drift: ${RULES_FILES[0]} rules block differs from $FILE" >&2
+    diff -u "$REFERENCE_BLOCK" "$CANDIDATE_BLOCK" >&2 || true
     FAIL=1
   fi
 done
@@ -132,5 +113,5 @@ if [[ "$FAIL" -ne 0 ]]; then
   exit 1
 fi
 
-echo "OK   [rules-parity/three-runtimes-identical]"
-echo "Rules block parity checks passed (${#RULES_FILES[@]} files x 3 runtimes)."
+echo "OK   [rules-parity/all-ai-tools-identical]"
+echo "Rules block parity checks passed (${#RULES_FILES[@]} files, Go binary only — v8 single-runtime)."

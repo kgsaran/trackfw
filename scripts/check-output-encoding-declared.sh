@@ -142,8 +142,6 @@ ALLOWLIST=(
 # Alvo 2 — os 3 arquivos-fonte que embutem o literal attentionSignalScript.
 ATTENTION_SOURCES=(
   "internal/generators/scaffold.go"
-  "npm/src/generators/hooks.js"
-  "pypi/trackfw/generators/init_gen.py"
 )
 
 python3 - "$SELF_BASENAME" "${#ALLOWLIST[@]}" "${ALLOWLIST[@]}" "${ATTENTION_SOURCES[@]}" <<'PYEOF'

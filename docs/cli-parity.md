@@ -86,7 +86,7 @@ describes the expected behaviour; each `##` section below names the gate that pr
 
 ## Version output
 
-<!-- trackfw-contract: gate=scripts/check-cli-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 Both surfaces — the `version` subcommand and the `--version` flag — print **the same single line** to
 stdout, in all three runtimes:
@@ -129,7 +129,7 @@ both.
 
 ### Gate assertion — pinned, and why the old one was vacuous
 
-<!-- trackfw-contract: gate=scripts/check-cli-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 The parity gate must apply **the same assertion to all three runtimes**:
 
@@ -149,7 +149,7 @@ A per-runtime exemption in a parity gate makes the difference permanent and invi
 
 ### `-v` is reserved for verbose — never bound to `--version`
 
-<!-- trackfw-contract: gate=scripts/check-cli-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 `-v` is **not** a shorthand for `--version` in any runtime. All three reject it with a **non-zero exit**.
 Resolved by `REQ-2026-07-30-reservar-v-para-verbose-e-remover-atalho-de-versao-no-go`; previously it was
@@ -172,7 +172,7 @@ per command, and in what format, needs a concrete use case. It gets its own REQ 
 
 #### What is *not* unified — measured, and deliberately left alone
 
-<!-- trackfw-contract: gate=scripts/check-cli-parity.sh partial=a exigência positiva (-v não vincula e sai não-zero nos 3 runtimes) é coberta pelo mesmo gate da seção-mãe; a tabela de mensagem/exit code exatos por runtime para QUALQUER flag desconhecida (--zzz) é medida como baseline mas não verificada por nenhum gate -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 After rejection, the three emit **different messages and exit codes**, because those are produced by the
 frameworks. Baseline measured with an arbitrary unknown flag (`--zzz`):
@@ -196,7 +196,7 @@ fail, and most likely reach for a hack in one framework's error path.
 
 ## Vault de conhecimento
 
-<!-- trackfw-contract: gate=scripts/check-artifact-closed-cycle.sh partial=check-artifact-parity.sh compara byte a byte a NOTA gerada entre os 3 CLIs mas nunca alimentou o verificador com ela; check-artifact-closed-cycle.sh fecha o ciclo `note new` → `note_orphan` nos 3 CLIs (nota indexada não é acusada + nota não indexada é acusada), e a severidade/`rules: note_orphan: error`/projeto sem vault continuam sem comparação cross-CLI -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 `trackfw init` cria `vault/notes/` e gera `vault/notes/index.md` nos três CLIs.
 
@@ -216,7 +216,7 @@ Regra de validação `note_orphan` — notas em `vault/notes/` não referenciada
 
 ## `.gitattributes` — `merge=union` para o `.trackfw-log`
 
-<!-- trackfw-contract: gate=scripts/check-artifact-parity.sh partial=o gate compara byte a byte só o caminho de CRIAÇÃO (projeto novo, sem .gitattributes); o caminho de APPEND (projeto que já tem o arquivo), o predicado de idempotência e o arquivo sem newline final são cobertos por teste em cada runtime (internal/generators/gitattributes_test.go, npm/tests/gitattributes.test.js, pypi/tests/test_gitattributes.py), não cross-runtime -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 > REQ-2026-09-02-reconciliacao-pos-merge-dos-prs-238-e-240-e-o-trackfw-log-que-conflita-em-toda-branch-paralela.md (AC6/AC7)
 
@@ -333,7 +333,7 @@ file with the same basename exists elsewhere under `docs/roadmaps/`.
 
 ### `roadmap move` synchronizes the paired REQ reference
 
-<!-- trackfw-contract: gate=scripts/check-roadmap-move-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 Because the reference is checked literally against the state directory, moving a roadmap invalidates
 every REQ that points at it. `trackfw roadmap move` therefore rewrites those references as part of the
@@ -644,7 +644,7 @@ Python test the `.trackfw-log` source of truth, configurable boundary behavior,
 
 ## AI integration lifecycle
 
-<!-- trackfw-contract: gate=scripts/check-integration-cli-parity.sh partial=comportamento não-interativo sem --targets (abre seletor TTY / exige a flag) não é exercitado por este gate, que sempre passa --targets explícito -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 The Go, Node.js, and Python runtimes expose the same public lifecycle:
 
@@ -661,7 +661,7 @@ Cursor, GitHub Copilot, Windsurf, Amazon Q, OpenCode, and Kiro.
 
 ### OpenCode agent representation (`opencode-agent`)
 
-<!-- trackfw-contract: gate=scripts/check-identity-parity.sh partial=o target "opencode" entra na lista derivada do catálogo (support_level != unsupported) e tem seus artefatos comparados byte a byte nos 3 runtimes; as RAZÕES da representação (mode: subagent fixo, model:/tools:/memory: omitidos deliberadamente) são justificativa pinada que o diff de bytes não discrimina — os 3 runtimes concordando num valor errado ainda passaria -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 OpenCode (opencode.ai) is the tenth catalog target
 (`REQ-2026-08-04-compatibilidade-com-opencode-opencode-ai-para-uso-de-modelos-open-source`).
@@ -891,7 +891,7 @@ unrelated to and unaffected by the install-scope feature.
 
 ## Agent identity
 
-<!-- trackfw-contract: gate=scripts/check-identity-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 Agent identity is a cross-runtime contract, not a per-distribution feature. The
 Go, Node.js, and Python CLIs read the **same** configuration file and must
@@ -899,7 +899,7 @@ produce the same artifact bytes for the same input.
 
 ### Shared configuration
 
-<!-- trackfw-contract: gate=scripts/check-identity-parity.sh partial=o fallback "sem identity.json" é testado byte a byte nos 3 runtimes (HOME_WITHOUT); schema_version inválido, agents vazio e entrada ausente para um id específico não são exercitados -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 ```
 ~/.trackfw/identity.json
@@ -935,7 +935,7 @@ name.
 
 ### Slug contract
 
-<!-- trackfw-contract: gate=scripts/check-identity-parity.sh partial=cobre só o ponto 1 (slugs de preset hardcoded, renderizados e comparados byte a byte nos 3 runtimes); o modo custom (slugificação dinâmica) e a rejeição de entrada inválida/colisão de slugs (pontos 2 e 3) não são exercitados -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 1. **Preset slugs are hardcoded.** Every themed preset ships an explicit
    `display_name`/`slug` pair. Slugs are never derived at runtime, so the three
@@ -952,7 +952,7 @@ name.
 
 ### Shared test fixture
 
-<!-- trackfw-contract: gate=scripts/check-identity-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 The slug vectors live in a single fixture replicated **byte-identically** in
 the three packages:
@@ -969,7 +969,7 @@ adding a vector in one runtime without propagating it is a contract break.
 
 ### Parity gate
 
-<!-- trackfw-contract: gate=scripts/check-identity-parity.sh,scripts/check-gates-falsify.sh -->
+<!-- trackfw-contract: gate=scripts/check-gates-falsify.sh -->
 
 `scripts/check-identity-parity.sh` is the cross-CLI gate for this contract. It
 verifies that the three `slug_vectors.json` copies are byte-identical and that
@@ -1023,7 +1023,7 @@ change.
 
 ## `trackfw ship`
 
-<!-- trackfw-contract: gate=scripts/check-ship-parity.sh partial=roda com TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 e a maioria dos cenários usa --no-pr/--dry-run, então os passos 5–7 (commit real, push real, abertura de PR/MR) quase nunca executam ponta a ponta; --forge, resolução de forge e a tabela de adaptadores também não são exercitados (ver subseções) -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 `trackfw ship` runs a seven-step governed delivery sequence in all three runtimes:
 
@@ -1041,7 +1041,7 @@ change.
 
 ### Flags
 
-<!-- trackfw-contract: gate=scripts/check-ship-parity.sh partial=--forge não é exercitado por nenhum cenário deste gate -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 | Flag | Type | Description |
 |---|---|---|
@@ -1132,7 +1132,7 @@ pass (exit 0) but `trackfw ship` abort. This is intentional. The error message f
 
 ### Step 2 governance check — shared implementation, byte-identical output (ML-1B)
 
-<!-- trackfw-contract: gate=scripts/check-ship-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 > ROADMAP-2026-08-16-higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-da-release-7-0-0.md
 
@@ -1173,7 +1173,7 @@ they are raised by cobra/commander/argparse before the command handler runs.
 
 ### `ship --force-with-lease` — governed force-push (ML-1B)
 
-<!-- trackfw-contract: gate=scripts/check-ship-force-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 > ROADMAP-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md,
 > ADR-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md
@@ -1477,7 +1477,7 @@ runtimes on stdout, stderr, and exit code:
 
 ## `trackfw push`
 
-<!-- trackfw-contract: gate=scripts/check-push-parity.sh partial=roda com TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 e todos os cenários usam --dry-run; o push real (git push para o remoto) e a detecção de squash-merges com fetch real não são exercitados ponta a ponta (--force-with-lease tem gate próprio: scripts/check-push-force-parity.sh) -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 `trackfw push` pushes already-created commits without committing and without opening a PR/MR. It
 runs the same branch-name validation and governance gate as `trackfw ship`, but stops after the
@@ -1514,7 +1514,7 @@ pushes; `push` never commits.
 
 ### `push --force-with-lease` — governed force-push (ML-4B)
 
-<!-- trackfw-contract: gate=scripts/check-push-force-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 `push --force-with-lease` runs `git push --force-with-lease` instead of a plain push — for the
 post-rebase case where a plain push is rejected. It only runs when the branch already has an open
@@ -1539,7 +1539,7 @@ and proves the gate detects the P4-push regression.
 
 ## `trackfw branch new`
 
-<!-- trackfw-contract: gate=scripts/check-branch-new-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 `trackfw branch new <type>/<slug>` moves the `branch_has_wip_roadmap` governance gate — already
 enforced by `trackfw validate` and `trackfw ship` (see "Regra `branch_has_wip_roadmap`" below) —
@@ -1566,7 +1566,7 @@ time.
 
 ### Command surface
 
-<!-- trackfw-contract: gate=scripts/check-branch-new-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 | Element | Value |
 |---|---|
@@ -1581,7 +1581,7 @@ time.
 
 ### Decision flow
 
-<!-- trackfw-contract: gate=scripts/check-branch-new-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 ```
 1. Parse "<type>/<slug>" — <type> must be feat|fix|refactor|chore|docs, <slug> non-empty.
@@ -1619,7 +1619,7 @@ same way.
 
 ### Git output and exit code are propagated literally
 
-<!-- trackfw-contract: gate=scripts/check-branch-new-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 `trackfw branch new` never reformats, wraps, or replaces `git checkout -b`'s own stdout, stderr,
 or exit code. This was **not** true by default in two of the three runtimes and required an
@@ -1651,7 +1651,7 @@ is exactly what `scripts/check-branch-new-parity.sh` (see below) does.
 
 ### Parity gate
 
-<!-- trackfw-contract: gate=scripts/check-branch-new-parity.sh,scripts/check-gates-falsify.sh -->
+<!-- trackfw-contract: gate=scripts/check-gates-falsify.sh -->
 
 `scripts/check-branch-new-parity.sh` covers three scenarios, each asserting stdout, stderr, and
 exit code are byte-identical across all three runtimes:
@@ -1669,7 +1669,7 @@ message is a scenario the gate is asserted to reject.
 
 ## `trackfw branch prune`
 
-<!-- trackfw-contract: gate=scripts/check-branch-prune-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 `trackfw branch prune [--apply]` automates the "one active branch at a time" check documented in
 `CLAUDE.md` §1 ("Uma branch ativa por vez")
@@ -1686,7 +1686,7 @@ actually run `git branch -d`/`-D` (see "Deletion: `-d` before `-D`" below).
 
 ### `git fetch origin --prune` — best-effort, non-blocking, always warned on failure
 
-<!-- trackfw-contract: gate=scripts/check-branch-prune-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 Per `CLAUDE.md` §1 step 1, the command runs `git fetch origin --prune` before evaluating anything.
 Unlike `trackfw ship`'s squash-merge check (`ship.go`), which **skips its check entirely** when
@@ -1709,7 +1709,7 @@ local commits, only the freshness of `origin/main` changed.
 
 ### Why not `git branch -d`, and why not a naive `git diff`
 
-<!-- trackfw-contract: gate=scripts/check-branch-prune-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 
 `git branch -d` refuses by **ancestry** — with squash-merge as the project's merge strategy,
@@ -1725,7 +1725,7 @@ positive is closed.
 
 ### The touched-files heuristic — the single shared decision function
 
-<!-- trackfw-contract: gate=scripts/check-branch-prune-parity.sh partial=as linhas no_own_work e no_merge_base da tabela de decisão não são exercitadas cross-CLI pelo gate; só content_identical, review_doc_config e pending_work o são (cenários a, b, e, f) -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 
 ```
@@ -1744,7 +1744,7 @@ diverg  = git diff --name-only -z origin/main <branch> -- touched  (what still d
 
 ### The `review_doc_config` category — flagged, never auto-deleted, requires a PROPER subset
 
-<!-- trackfw-contract: gate=scripts/check-branch-prune-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 
 `CLAUDE.md` §1's own manual procedure treats a divergence limited to doc/config files (its
@@ -1800,7 +1800,7 @@ modules); Go needs no import — both functions live in the same `commands` pack
 
 ### Always-kept branches — never evaluated for deletion, never candidates
 
-<!-- trackfw-contract: gate=scripts/check-branch-prune-parity.sh partial=exclusão de branch com worktree checked-out em outro diretório não é exercitada cross-CLI pelo gate (só a branch atual via HEAD é, cenário c) -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 
 - **`main`** — the default branch itself. Evaluating it against `origin/main` would trivially
@@ -1817,7 +1817,7 @@ state mid-run.
 
 ### Deletion: `-d` before `-D`
 
-<!-- trackfw-contract: gate=scripts/check-branch-prune-parity.sh partial=o fallback -d→-D só é exercitado cross-CLI no sentido squash (-d falha, cai para -D); o caminho onde -d sozinho basta (merge não-squash com ancestria) só tem prova por teste unitário isolado por runtime, não por comparação cross-CLI -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 
 `defaultDeleteBranch` (Go), `defaultDeleteBranch` (Node.js), `_default_delete_branch` (Python) try
@@ -1834,7 +1834,7 @@ back to `-D` and succeeds).
 
 ### Offline / no remote — fails closed
 
-<!-- trackfw-contract: gate=scripts/check-branch-prune-parity.sh partial=cenário d prova exit 1 e zero deleções quando origin/main não é resolvível, mas o gate não afirma o texto pinado "branch prune: origin/main not resolvable" — grep por "not resolvable" no script não retorna nada -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 
 The only ref this command consults is `origin/main`, checked once via
@@ -1846,7 +1846,7 @@ stderr (mirroring `trackfw branch new`'s stdout/stderr split), exit 1.
 
 ### Command surface
 
-<!-- trackfw-contract: gate=scripts/check-branch-prune-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 
 | Element | Value |
@@ -1859,7 +1859,7 @@ stderr (mirroring `trackfw branch new`'s stdout/stderr split), exit 1.
 
 ### Parity gate
 
-<!-- trackfw-contract: gate=scripts/check-branch-prune-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 
 `scripts/check-branch-prune-parity.sh` builds a **real** local bare repository as `origin` (no
@@ -2236,7 +2236,7 @@ These are literal parsing rules. All three runtimes must implement them identica
 
 ### Wave gates are a portable POSIX-shell contract, not an OS script (ADR-2026-09-01)
 
-<!-- trackfw-contract: gate=scripts/check-shell-posix-portability.sh partial=o gate detecta a reversao ESCRITA NA GRAFIA LITERAL, nao a reversao semantica. Duas evasoes reproduzidas por execucao na barreira de 2026-09-01 (hades-tf): (a) a metade positiva assert_count NAO exclui comentarios, entao a assinatura viva comentada satisfaz o grep; (b) a metade negativa assert_no_code_match usa regex literal, evadida por grafia equivalente e funcional — {["shell"]: true} em JS e **{"shell": True} em Python, ambas verificadas como sintaxe valida e comportamento real de shell do SO. Endurecer para checagem COMPORTAMENTAL (observar o interpretador em runtime, nao o texto) e REQ propria; ate la esta e defesa contra reversao acidental, NAO contra reversao deliberada. Ver vault/notes/gate-literal-regex-syntax-equivalent-bypass-2026-09-01.md -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 The `**Gates da wave:**` block (rule 5 above) is a **contract written in POSIX shell**, not a
 script interpreted by whatever shell the host OS defaults to. All three CLIs execute it with
@@ -2655,7 +2655,7 @@ Wave 5 (ML-5A) scope.
 
 #### Codex wiring (ML-2B) — `PreToolUse`/`PostToolUse` matcher `"Bash"`
 
-<!-- trackfw-contract: gate=scripts/check-agent-hooks-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 
 `InjectCodexHooks` (Go: `internal/generators/agentfiles.go`; Node.js:
@@ -2705,7 +2705,7 @@ of merging into an existing one).
 
 #### Gemini CLI wiring (ML-2C) — `BeforeTool`/`AfterTool` matcher `"run_shell_command"`
 
-<!-- trackfw-contract: gate=scripts/check-agent-hooks-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 
 `InjectGeminiHooks` (Go: `internal/generators/agentfiles.go`; Node.js:
@@ -2789,7 +2789,7 @@ and the `Bash`-matcher wiring together.
 
 #### GitHub Copilot wiring (ML-2D) — `.github/hooks/trackfw-attention.json` format correction + matcher `"bash"`
 
-<!-- trackfw-contract: gate=scripts/check-agent-hooks-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 
 `InjectCopilotHooks` (Go: `internal/generators/agentfiles.go`; Node.js:
@@ -2869,7 +2869,7 @@ since each stack's own JSON serializer is free to choose its own formatting.
 
 #### Cursor wiring (ML-2E) — `.cursor/hooks.json`, `hooks.beforeShellExecution`/`hooks.afterShellExecution`
 
-<!-- trackfw-contract: gate=scripts/check-agent-hooks-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 
 `InjectCursorHooks` (Go: `internal/generators/agentfiles.go`; Node.js:
@@ -2997,7 +2997,7 @@ migrate and is a no-op on the top-level keys.
 
 #### Kiro wiring (ML-2F) — `.kiro/hooks/trackfw-attention.json` format correction + `PreToolUse`/`PostToolUse` matcher `"shell"`
 
-<!-- trackfw-contract: gate=scripts/check-agent-hooks-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 
 `InjectKiroHooks` (Go: `internal/generators/agentfiles.go`; Node.js:
@@ -3094,7 +3094,7 @@ regenerated with the same four entries, so re-running the injector never duplica
 
 #### Suporte por CLI — visão consolidada, escopo DE PROJETO (ML-5A, `ROADMAP-2026-08-05-hooks-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md`)
 
-<!-- trackfw-contract: gate=scripts/check-agent-hooks-parity.sh partial=a estrutura do wiring (matcher/evento/schema por CLI) é comparada byte a byte entre os 3 runtimes; a própria seção declara cobertura de teste de sabotagem end-to-end em só 3 de 6 CLIs (Claude Code, Cursor, Kiro) — Codex, Gemini CLI e GitHub Copilot ficaram sem esse teste específico -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 
 > Não confundir com a seção "Suporte por CLI — visão consolidada, escopo GLOBAL (ML-5A)" mais abaixo
@@ -3398,7 +3398,7 @@ the ADR).
 
 ### Kiro global-scope git-branch-guard wiring (ROADMAP-2026-08-17 Wave 2/ML-2A) — `~/.kiro/hooks/trackfw-git-branch-guard.json`, dedicated file
 
-<!-- trackfw-contract: gate=scripts/check-harness-hooks-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 
 Same `{"version":"v1","hooks":[...]}` schema as `kiro-credential-guard`'s own
@@ -3417,7 +3417,7 @@ targets flap between each other's desired 2-entry document on every subsequent r
 
 ### GitHub Copilot global-scope wiring (ML-2E) — `~/.copilot/settings.json`, inline `hooks` field
 
-<!-- trackfw-contract: gate=scripts/check-harness-hooks-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 
 **Investigation, confirmed 2026-08-06** against
@@ -3471,7 +3471,7 @@ confidence: no opt-in flag is needed for either project-scope (`.codex/hooks.jso
 
 ### Kiro global-scope wiring (ML-2F) — `~/.kiro/hooks/trackfw-credential-guard.json`, dedicated file
 
-<!-- trackfw-contract: gate=scripts/check-harness-hooks-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 
 **Format, confirmed 2026-08-06** against `https://kiro.dev/changelog/cli/2-13/` (re-fetched via
@@ -3515,7 +3515,7 @@ instead; release notes pointing users at `trackfw update harness` should mention
 
 ### Suporte por CLI — visão consolidada, escopo GLOBAL (ML-5A, `ROADMAP-2026-08-06-hooks-de-credential-guard-como-escopo-global-cross-project-via-trackfw-update-harness.md`)
 
-<!-- trackfw-contract: gate=scripts/check-harness-hooks-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 
 Consolida, numa única tabela, o wiring **global** (`trackfw update harness`) já detalhado CLI a CLI
@@ -3765,7 +3765,7 @@ strings de aviso **byte-a-byte** entre os três runtimes.
 
 ## Regra `branch_has_wip_roadmap` — comportamento unificado nos 3 runtimes
 
-<!-- trackfw-contract: gate=scripts/check-validate-parity.sh partial=cobre as 3 linhas centrais da tabela via TRACKFW_BRANCH (roadmap em done/ com slug igual aceito, nenhum roadmap em wip/ nem done/ bloqueia, roadmap em done/ com slug diferente bloqueia); check-branch-new-parity.sh continua cobrindo só wip/ (cenário b) e ausência total (cenário a/f), sem cenário próprio de done/ — redundante com o bloco de check-validate-parity.sh, que exercita a mesma BranchSlugMatchesRoadmap; achado registrado (não corrigido, ver vault/notes/validate-branch-has-wip-roadmap-done-python-rule-null-2026-08-20.md): pypi/trackfw/validator.py's validate_branch_has_wip_roadmap retorna strings simples em vez do formato dict de _enrich_items, então o "rule"/"file" desta regra sai null em validate --json no Python (Go/Node.js tagueiam corretamente) — texto da mensagem é byte-idêntico nos 3, o gate compara por esse texto e pina a divergência de tag explicitamente -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 
 A regra verifica que toda branch `feat/`, `fix/` ou `refactor/` possui um roadmap cujo nome
@@ -3796,7 +3796,7 @@ chama aqui — não uma segunda implementação.
 
 ## Contrato de artefatos gerados (req, adr, roadmap, note)
 
-<!-- trackfw-contract: gate=scripts/check-artifact-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 
 Os quatro comandos de geração de artefatos produzem arquivos **byte-a-byte idênticos**
@@ -3804,11 +3804,11 @@ nos três runtimes para a mesma entrada. Isso inclui conteúdo e nome de arquivo
 
 ### Frontmatter e formato — contrato explícito
 
-<!-- trackfw-contract: gate=scripts/check-artifact-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 #### `req new <title>`
 
-<!-- trackfw-contract: gate=scripts/check-artifact-parity.sh partial=cobre o template default gerado com título posicional (byte-a-byte, KIND="req"); o prompt de escopo local/global de ADR drafts via probe (Go+Node, requer TTY) e a ausência do fluxo de probes em Python são exceções documentadas sem gate -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 
 Arquivo: `docs/req/REQ-YYYY-MM-DD-<slug>.md`
@@ -3863,7 +3863,7 @@ Python, fora do escopo desta REQ.
 
 #### `adr new <title>`
 
-<!-- trackfw-contract: gate=scripts/check-artifact-parity.sh partial=cobre só o template default (--scope project implícito, KIND="adr", byte-a-byte); grep confirma zero ocorrência de "adr" combinado com "--scope"/"adr list" em qualquer check-*.sh — --scope global (diretório ~/.trackfw/adr/), `adr list` (project/global) e os flags Python-only --status/--dir não são exercitados por nenhum gate cross-CLI -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 
 Arquivo: `docs/adr/ADR-YYYY-MM-DD-<slug>.md`
@@ -3920,7 +3920,7 @@ author: ""
 
 #### `roadmap new <title>`
 
-<!-- trackfw-contract: gate=scripts/check-artifact-parity.sh partial=cobre template default, --title/--req e --from-req (KINDS roadmap/roadmap_flags/roadmap_from_req, incluindo o campo req: no formato exato "docs/req/<slug>.md" — linhas 272/388 do gate), o ciclo E2E backlog→analyzing em layout flat e by_agent, e uma asserção de conteúdo esperado (não só diff cross-stack) que os 3 KINDS acima contêm os literais `## Wave 0 — Threat Model`, `**Gates da wave:**` e `ML-0A` (AC14, ROADMAP-2026-08-22-wave-0-de-modelo-de-ameaca-no-harness-e-o-asset-do-arquiteto-ensina-trackfw-push, ML-2A — fecha a lacuna em que uma regressão sincronizada removendo Wave 0 dos 3 stacks passava despercebida no diff cross-stack sozinho, provado por check-gates-falsify.sh Cenário 166); as transições subsequentes da máquina de estados (analyzing→wip→blocked→done→abandoned) não são exercitadas por este gate -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->.md" — linhas 272/388 do gate), o ciclo E2E backlog→analyzing em layout flat e by_agent, e uma asserção de conteúdo esperado (não só diff cross-stack) que os 3 KINDS acima contêm os literais `## Wave 0 — Threat Model`, `**Gates da wave:**` e `ML-0A` (AC14, ROADMAP-2026-08-22-wave-0-de-modelo-de-ameaca-no-harness-e-o-asset-do-arquiteto-ensina-trackfw-push, ML-2A — fecha a lacuna em que uma regressão sincronizada removendo Wave 0 dos 3 stacks passava despercebida no diff cross-stack sozinho, provado por check-gates-falsify.sh Cenário 166); as transições subsequentes da máquina de estados (analyzing→wip→blocked→done→abandoned) não são exercitadas por este gate -->
 
 
 Arquivo: `docs/roadmaps/backlog/ROADMAP-YYYY-MM-DD-<slug>.md`
@@ -4013,7 +4013,7 @@ o log preserva o prefixo do agente, por exemplo
 
 #### `note new <title>`
 
-<!-- trackfw-contract: gate=scripts/check-artifact-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 
 Arquivo: `vault/notes/<slug>-YYYY-MM-DD.md` (slug antes da data, inverso do req/adr/roadmap).
@@ -4044,7 +4044,7 @@ related: []
 
 ### Slug — normalização NFKD portável nos três runtimes
 
-<!-- trackfw-contract: gate=scripts/check-artifact-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 
 Os três runtimes usam a mesma semântica: NFKD decomposition → remoção de
@@ -4072,7 +4072,7 @@ runtimes. O gate `check-artifact-parity.sh` usa título acentuado
 
 ### Data — hora local nos três runtimes
 
-<!-- trackfw-contract: gate=scripts/check-artifact-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 
 Todos os CLIs usam a data local (`date +%F` / `time.Now().Format("2006-01-02")` /
@@ -4082,7 +4082,7 @@ essa condição e falha explicitamente.
 
 ### Parity gate
 
-<!-- trackfw-contract: gate=scripts/check-artifact-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 
 `scripts/check-artifact-parity.sh` é o gate transversal que verifica esse contrato.
@@ -4109,7 +4109,7 @@ Dois cenários negativos (P4) estão em `scripts/check-gates-falsify.sh`:
 
 ### Ciclo fechado gerador → verificador (ML-2A, ROADMAP-2026-09-03-resolvedor-de-req-cobre-o-layout-canonico-e-ciclo-fechado-por-artefato)
 
-<!-- trackfw-contract: gate=scripts/check-artifact-closed-cycle.sh partial=cobre req/adr/note nos 3 CLIs em flat e by_agent pelas regras req_has_adr, adr_orphan, adr_accepted_when_req_done e note_orphan; roadmap não entra (o ciclo E2E backlog→analyzing de check-artifact-parity.sh já o cobre) e o eixo de layout do braço de nota é degenerado porque vault/notes é constante do gerador -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 `check-artifact-parity.sh` prova que os 3 CLIs **geram a mesma coisa**. Ele nunca provou que o
 **verificador enxerga o que o gerador escreveu** — e essa lacuna já produziu três defeitos nesta
@@ -4153,7 +4153,7 @@ intactos:
 
 ## CLAUDE.md — seção `## Architect responses` byte-idêntica nos 3 runtimes (ML-1A, ROADMAP-2026-08-21-regra-de-verbosidade-no-asset-do-arquiteto-e-nas-regras-semeadas)
 
-<!-- trackfw-contract: gate=scripts/check-artifact-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 `trackfw init` / `trackfw discover --init` grava `CLAUDE.md` em cada runtime a partir de um
 gerador embutido (`internal/generators/claudemd.go`, `npm/src/generators/init.js`,
@@ -4176,7 +4176,7 @@ Node.js's `init.js` section header corrupted from `'## Architect responses'` to
 
 ## Scripts de attention hooks (`trackfw-attention-signal.sh` / `trackfw-attention-cleanup.sh`) — byte-idênticos
 
-<!-- trackfw-contract: gate=scripts/check-attention-scripts-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 
 `trackfw discover --init` grava `scripts/trackfw-attention-signal.sh` e
@@ -4197,7 +4197,7 @@ de signal), e `sed` de expressão única (`sed 'expr1; expr2'`, não
 
 ### Parity gate
 
-<!-- trackfw-contract: gate=scripts/check-attention-scripts-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 
 `scripts/check-attention-scripts-parity.sh` roda `discover --init` com os três
@@ -4215,7 +4215,7 @@ explícito no diagnóstico.
 
 ## Agent hooks por CLI (`.claude/settings.json`, `.codex/hooks.json`, `.gemini/settings.json`, `.github/hooks/trackfw-attention.json`, `.cursor/hooks.json`, `.kiro/hooks/trackfw-attention.json`) — paridade estrutural (ML-3A)
 
-<!-- trackfw-contract: gate=scripts/check-agent-hooks-parity.sh partial=o comparador estrutural garante que os 3 runtimes concordam entre si (mesmas chaves, mesmos valores) e que a ordem de array é significativa, mas não afirma independentemente que o valor bate com a string exata documentada por CLI — os 3 runtimes concordando com um mecanismo errado ainda passaria (mesmo padrão do achado "OpenCode agent representation" do lote 1) -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 
 Cada `InjectXHooks`/`injectXHooks`/`inject_x_hooks` (`internal/generators/agentfiles.go`,
@@ -4235,7 +4235,7 @@ do serializador nunca é reportada como drift.
 
 ### Divergência pré-existente encontrada e corrigida por este ML
 
-<!-- trackfw-contract: gate=scripts/check-agent-hooks-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 
 A primeira execução do gate reprovou de verdade contra o estado pós-Wave 2:
@@ -4254,7 +4254,7 @@ do Gemini.
 
 ### Parity gate
 
-<!-- trackfw-contract: gate=scripts/check-agent-hooks-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 
 `scripts/check-agent-hooks-parity.sh` roda `discover --init` uma vez por
@@ -4314,7 +4314,7 @@ reprova.
 
 ## Mecanismo de resolução de caminho dos hooks de projeto, por CLI
 
-<!-- trackfw-contract: gate=scripts/check-agent-hooks-parity.sh partial=o guard de vacuidade confirma que cada arquivo referencia trackfw-credential-guard.sh pelo menos uma vez, e o comparador estrutural confirma que os 3 runtimes concordam entre si sobre o comando emitido; nenhum gate afirma independentemente que a string emitida bate com o mecanismo exato documentado nesta tabela por CLI (env var vs shell substitution vs caminho relativo) -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 
 Decidido em
@@ -4400,7 +4400,7 @@ e `vault/notes/codex-hooks-de-projeto-so-rodam-em-projeto-trusted-2026-08-11.md`
 
 ### Kiro — mecanismo de resolução não verificável em doc primária, mantido relativo
 
-<!-- trackfw-contract: gate=scripts/check-agent-hooks-parity.sh partial=o comparador estrutural confirma que o mecanismo do Kiro permaneceu inalterado (comando de hook comparado entre runtimes); o veredito INDETERMINADO em si — a impossibilidade de verificar o cwd do Kiro contra doc primária do fornecedor — é limitação de pesquisa documental, não testável por gate -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 
 Veredito `INDETERMINADO` em 2026-08-11 (`docs/pesquisa/2026-08-11-hook-cwd-e-placeholders-por-cli.md`,
@@ -4418,7 +4418,7 @@ partir de outro CLI.
 
 ### A heterogeneidade entre os 4 mecanismos é intencional, não divergência acidental
 
-<!-- trackfw-contract: gate=scripts/check-agent-hooks-parity.sh partial=a existência de 4 formas distintas por CLI é a mesma tabela já registrada na seção "Mecanismo de resolução..." acima, coberta pelo mesmo comparador estrutural (que confirma que os 3 runtimes concordam entre si, não que o valor bate com o mecanismo documentado); a justificativa de design (ordem de preferência, rejeição de mecanismo único) é rationale do ADR, não comportamento de CLI -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 
 Depois desta mudança existem **4 formas diferentes** de comando de hook entre os 6 CLIs
@@ -4621,7 +4621,7 @@ REQ nova a partir do parecer de Hades.
 
 ## Controle positivo do credential-guard: o que a regra `credential_guard_hook_resolvable` cobre, e o que não cobre (ROADMAP-2026-08-12-mitigacao-do-fail-open, Wave 1/2/3/3-bis + Barreira B1)
 
-<!-- trackfw-contract: gate=scripts/check-validate-parity.sh partial=bloco ROADMAP-2026-08-20 ML-3A/ML-4B e ROADMAP-2026-08-21 ML-2A e ROADMAP-2026-08-22 ML-2A e ML-4A e ROADMAP-2026-09-03 ML-3A: cobre 20 casos CG (claude-absent/claude-present/cursor-absent/cursor-present/claude-noexec/claude-notype/claude-relativo/copilot-relativo-present/claude-pwd/claude-pwd-quoted/claude-absoluto/claude-git-toplevel/claude-outra-var/cursor-pwd/claude-tilde/claude-tilde-quoted/claude-tilde-user/claude-pwd-braced/claude-sh-c-pwd/claude-windows-drive) e 2 casos GBG (gbg-claude-relativo/gbg-cursor-relativo-present) byte-identicos nos 3 CLIs; Cenário 80 prova nao-vacuidade do cross-CLI de deteccao; Cenários 159/160 provam as duas direcoes do discriminante de falso-positivo (acusar de menos e acusar de mais para Copilot); Cenário 164 prova direcao-A da classificacao por ancoragem ($PWD suprimido); Cenário 165 prova direcao-B (caminho absoluto acusado — o falso-positivo caro desta entrega, retargetado 2026-09-04 de filepath.IsAbs para pathIsAnchoredForHookConfig); ML-4A adicionou: ~/... sem aspas=classe1 (silencio), "~/..." com aspas=classe2, ${PWD}/...=classe2, sh -c "$PWD/..."=mensagem-PWD (Contains vs HasPrefix); ROADMAP-2026-09-03 ML-3A (ADR-2026-09-04-caminho-posix-ancorado-...) adicionou: letra de unidade/UNC do Windows=classe1 ancorado por uniao independente do GOOS (claude-windows-drive), e D4 renomeou a mensagem de classe2 para as duas formas de til — "~/..." com aspas agora diz "quoted tilde path" (nao mais "bare relative path") e ~usuario/... diz "named-user tilde path"; nao exerce todas as 6 entradas de credentialGuardHookFiles (Codex/Gemini/Kiro dependem de cobertura unitaria interna por runtime) -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 > Fontes: `internal/validator/validator_credential_guard.go` (implementação, os 3 CLIs têm
 > equivalente em `npm/src/` e `pypi/trackfw/`), `docs/adr/ADR-2026-08-12-defesa-do-credential-guard-vive-no-escopo-global-controle-que-mora-onde-o-agente-escreve-nao-e-controle.md`
@@ -4636,7 +4636,7 @@ coisa que sobrou no escopo de projeto**. O risco real de documentação é algu�
 
 ### 1. O que a regra faz
 
-<!-- trackfw-contract: gate=scripts/check-validate-parity.sh partial=bloco ML-3A cobre resolução de caminho para Claude ($CLAUDE_PROJECT_DIR/) e Cursor (relativo puro); as outras 4 formas (Codex/Gemini/GitHub/Kiro) têm paridade de wiring coberta pelo Cenário 44 mas não gate cross-CLI de existência/executabilidade -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 
 `credential_guard_hook_resolvable` (default `error`, configurável por `rules:` no `trackfw.yaml`,
@@ -4753,7 +4753,7 @@ Copiados do ADR, na íntegra, sem atenuação:
 
 ## Hooks GLOBAIS de credential-guard (`~/.claude/settings.json`, `~/.codex/hooks.json`, `~/.gemini/settings.json`, `~/.cursor/hooks.json`, `~/.copilot/settings.json`, `~/.kiro/hooks/trackfw-credential-guard.json`) — paridade estrutural (ROADMAP-2026-08-06, ML-4A)
 
-<!-- trackfw-contract: gate=scripts/check-harness-hooks-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 
 Sibling do gate de hooks por-projeto (seção anterior), para o escopo GLOBAL
@@ -4770,7 +4770,7 @@ arquivo global que este gate exercita, mas nunca o escreve.
 
 ### Parity gate
 
-<!-- trackfw-contract: gate=scripts/check-harness-hooks-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 
 `scripts/check-harness-hooks-parity.sh` roda `update harness --targets
@@ -4853,7 +4853,7 @@ Pontos pinados:
 
 ## Cobertura de matchers Read/Write/Edit do credential-guard por CLI (ADR-2026-08-06 emenda 7, ROADMAP-2026-08-08 Wave 2)
 
-<!-- trackfw-contract: gate=scripts/check-agent-hooks-parity.sh partial=os matchers de leitura/escrita são comparados estruturalmente (os 3 runtimes concordam entre si) pelo mesmo comparador do wiring de Bash, com o mesmo limite: não afirma independentemente que o valor bate com a tabela documentada por CLI; a cobertura ponta-a-ponta (matcher → script bloqueando/alertando um payload real) é testada só em npm/tests/credential_guard.test.js e pypi/tests/test_credential_guard.py — a seção omite menção ao equivalente em Go, que existe (internal/generators/credential_guard_test.go, credential_guard_sabotage_test.go) mas não é cross-CLI — não há gate ou suíte que compare os 3 runtimes entre si para essa ponta-a-ponta -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 
 Antes desta REQ, o wiring por-projeto e global do credential-guard só interceptava o **shell tool**
@@ -4901,7 +4901,7 @@ ali sua prova negativa.
 
 ### Gate ligado é o que revela os outros defeitos — evidência desta REQ (REQ-2026-08-31, ML-1C/ML-2B/ML-3C)
 
-<!-- trackfw-contract: gate=scripts/check-python-writes-lf.sh,scripts/check-homedir-parity.sh,scripts/check-tty-detection.sh partial=os três gates existem, estão listados no alvo parity do Makefile e têm guarda de vacuidade no corpo do próprio script — mas nenhum gate cross-CLI verifica essas duas propriedades por fora: grep confirma zero ocorrência de "python-writes-lf"/"homedir-parity"/"tty-detection" em scripts/check-gates-falsify.sh, então a falsificação da guarda de vacuidade (propriedades 2 e 3 da lista abaixo) foi feita manualmente em fixtures de scratchpad durante ML-1C/ML-2B/ML-3C, não como cenário registrado; e nenhum gate varre scripts/check-*.sh por invocação nua do interpretador Python sem o sufixo 3 (propriedade 4) nem scripts/check-*.sh por ausência no alvo parity do Makefile (propriedade 1) — as quatro propriedades são checklist de revisão humana, não asserção automatizada -->
+<!-- trackfw-contract: gate=scripts/check-tty-detection.sh partial=v8-ML-3A: scripts cross-runtime removidos -->
 
 Um gate, para **contar** como gate, precisa (a) estar listado no alvo `parity:` do `Makefile` — ou
 equivalente — e (b) **reprovar** quando a varredura que ele faz visita zero itens, com mensagem
@@ -4967,7 +4967,7 @@ by npm and PyPI must remain byte-identical and are checked in CI.
 
 ## Plugin subsystem — removed (ADR-2026-08-15)
 
-<!-- trackfw-contract: gate=scripts/check-unknown-command-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 
 `trackfw plugins {list,add,remove}` and all plugin download/execution code were
@@ -4987,7 +4987,7 @@ section for the canonical, cross-CLI message this produces.
 
 ## Unknown top-level command — canonical message
 
-<!-- trackfw-contract: gate=scripts/check-unknown-command-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 `trackfw <unrecognized>` produces, in **all three CLIs**, on **stderr**, **exit
 code 1**:
@@ -5056,7 +5056,7 @@ the fixed list that Node.js (`program.commands`) and Python
 
 ### Bare invocation (`trackfw` with no argument) — unified
 
-<!-- trackfw-contract: gate=scripts/check-unknown-command-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 `trackfw` **with no argument at all** behaves identically across the three runtimes: **exit
 `0`**, help printed to **stdout**, **stderr empty**. This used to diverge — Go exited `0`
@@ -5149,7 +5149,7 @@ não feito.
 
 ### Cópia local do template no validador — dívida conhecida, coberta
 
-<!-- trackfw-contract: gate=internal/validator/validator_credential_guard_integrity_external_test.go,npm/tests/credential_guard_integrity.test.js,pypi/tests/test_credential_guard_integrity.py partial=cada stack tem seu próprio teste MatchesGenerator (Go: TestCredentialGuardScriptReference_MatchesGenerator; Node: "CREDENTIAL_GUARD_SCRIPT_REFERENCE é byte-idêntico ao que generateCredentialGuardScript emite"; Python: test_credential_guard_integrity.py:82) provando que a cópia local do PRÓPRIO validador bate com o gerador REAL do PRÓPRIO stack — mas são 3 testes unitários isolados, nunca um gate cross-CLI que rode os 3 juntos e compare as 3 cópias entre si; o Cenário 48 de check-gates-falsify.sh prova que os 3 GERADORES emitem o mesmo script (via check-attention-scripts-parity.sh), o que fecha a lacuna transitivamente quando somado aos 3 testes MatchesGenerator, mas nenhum gate único afirma essa cadeia completa de uma vez -->
+<!-- trackfw-contract: gate=internal/validator/validator_credential_guard_integrity_external_test.go partial=ML-3A (v8): npm/tests/ e pypi/tests/ removidos; apenas o teste Go (TestCredentialGuardScriptReference_MatchesGenerator) permanece ativo; a lacuna cross-CLI (3 copias nunca comparadas por gate unico) e agora vacua pois so existe 1 runtime -->
 
 `internal/validator` **não pode importar** `internal/generators` (ciclo de import), então o template
 existe **também** numa cópia local do validador, em cada stack. A alternativa de injeção de provider
@@ -5231,7 +5231,7 @@ o processo falhar. Detalhe em
 
 ## Git branch guard por runtime (ML-1A, ROADMAP-2026-08-14-bloqueio-tecnico-de-comandos-git-brutos-por-subagente-via-deny-hooks-nos-7-runtimes-suportados.md)
 
-<!-- trackfw-contract: gate=scripts/check-harness-hooks-parity.sh,scripts/check-agent-hooks-parity.sh partial=GUARDS="credential-guard git-branch-guard" prova paridade estrutural do wiring project-scope (discover --init) nos 8 CLIs nativos, incluindo Windsurf e Amazon Q desde ROADMAP-2026-08-20/ML-1B (claude/codex/gemini/cursor/copilot/kiro/windsurf/amazonq via check-agent-hooks-parity.sh), e do wiring global/harness-scope (update harness) nos 6 CLIs que têm target de harness (claude/codex/gemini/cursor/copilot/kiro via check-harness-hooks-parity.sh) — Windsurf não tem par de targets de harness por impossibilidade estrutural: não tem mecanismo de hook global nativo (decisão registrada no próprio comentário de harnessCatalogTargetOrder, internal/generators/update.go) e nunca terá — sem artefato global para gatear. Amazon Q não tem par de targets de harness por pendência de implementação: caminhos ~/.aws/amazonq/ existem no catálogo (catalog.json linha 44), mas os harness targets nunca foram implementados nos 3 CLIs — a ausência não é permanente (grep confirma zero ocorrências de "windsurf"/"amazonq" pareadas com credential-guard/git-branch-guard em HarnessTargetIDs/buildHarnessTargetIDs nos 3 CLIs) -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 > REQ: `docs/req/REQ-2026-08-14-bloqueio-tecnico-de-comandos-git-brutos-por-subagente-via-deny-hooks-nos-7-runtimes-suportados.md`
 
@@ -5269,7 +5269,7 @@ uma REQ nova.
 
 ### Contrato de payload do script (`gitBranchGuardScript`)
 
-<!-- trackfw-contract: gate=scripts/check-attention-scripts-parity.sh,scripts/check-gates-falsify.sh,scripts/check-git-branch-guard-hook-schema.sh partial=check-attention-scripts-parity.sh prova a byte-identidade do script entre os 3 CLIs; os Cenários 60-69/74 de check-gates-falsify.sh exercitam os 3 formatos de entrada e o padrão casado contra esse script canônico único, mas nenhum cenário testa especificamente o campo `tool_info.command_line` (formato Windsurf) nem `$TRACKFW_GIT_COMMAND` como fallback; check-git-branch-guard-hook-schema.sh (ML-2A, ROADMAP-2026-09-09-guard-emite-hookspecificoutput-e-a-razao-chega-ao-modelo-nos-3-clis.md) prova por execução real + decode JSON estruturado que a FORMA do JSON emitido no caminho de bloqueio é a que o Claude Code aceita hoje -->
+<!-- trackfw-contract: gate=scripts/check-gates-falsify.sh,scripts/check-git-branch-guard-hook-schema.sh partial=check-attention-scripts-parity.sh removido (v8: ML-3A); check-gates-falsify.sh exerce o padrao casado; check-git-branch-guard-hook-schema.sh pina a forma JSON emitida no caminho de bloqueio -->
 
 O script suporta 3 formatos de entrada, nesta ordem de precedência — cobre os contratos divergentes
 dos 7 runtimes sem precisar de uma variante de script por runtime:
@@ -5316,7 +5316,7 @@ Mensagem de bloqueio por subcomando (todas referenciam CLAUDE.md §1):
 
 ### Caminhos confirmados — Windsurf e Amazon Q (apolo-tf, 2026-08-14, correção pós-auditoria do ML-3A)
 
-<!-- trackfw-contract: gate=scripts/check-agent-hooks-parity.sh partial=prova paridade estrutural (identidade semântica via diff JSON recursivo, não byte-idêntica — ver seção "Campos mínimos do custom agent Amazon Q" logo abaixo) dos 2 arquivos de project-scope entre Go/Node.js/Python desde ROADMAP-2026-08-20/ML-1B; check-harness-hooks-parity.sh não se aplica a estes caminhos (arquivos de project-scope, não de ~/.<tool> global-scope) e nunca poderia comparar algo que não existe nesse escopo para nenhum dos dois CLIs -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 A primeira implementação do wiring (ML-3A) escreveu caminhos/formatos **inventados** para Windsurf e
 Amazon Q, sinalizados no próprio comentário de código como não confirmados contra documentação
@@ -5426,7 +5426,7 @@ interpretador de shell); essa ressalva geral permanece registrada na REQ vincula
 
 ### Gate de paridade do `trackfw commit` (`scripts/check-commit-parity.sh`, ML-4A)
 
-<!-- trackfw-contract: gate=scripts/check-commit-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 Criado para fechar a lacuna que só `check-branch-new-parity.sh` cobria antes — verifica que as
 mensagens de bloqueio/aviso do novo comando `trackfw commit` são byte-idênticas entre os 3 CLIs em 3
@@ -5962,7 +5962,7 @@ Razão da decisão (auditoria 2026-09-11, hades-tf BLOQUEIA):
 
 ## `trackfw doctor` — detecção de artefato fora do manifesto (REQ-2026-08-17, ADR-2026-08-18, ML-2A/ML-2B/ML-2C)
 
-<!-- trackfw-contract: gate=scripts/check-doctor-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 Gate: **`scripts/check-doctor-parity.sh`** (alvo `parity`) + Cenários 71 e 72 de
 `check-gates-falsify.sh`. O gate compara as **três saídas reais** (`diff -u` byte a byte, stdout e
@@ -5983,7 +5983,7 @@ de recusar. Ver `vault/notes/doctor-classifydoctor-silences-tampering-when-manif
 
 ### As três classes, e por que não podem ser fundidas
 
-<!-- trackfw-contract: gate=scripts/check-doctor-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 | classe | condição | remédio |
 |---|---|---|
@@ -6007,7 +6007,7 @@ isso o remédio nomeia a recusa literalmente em vez de escolher um lado.
 
 ### Cenários do gate (a–f), cada um em texto e `--json`
 
-<!-- trackfw-contract: gate=scripts/check-doctor-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 - **(a) baseline limpo** — nada instalado, os 3 relatam `no mismatches found` / `[]`.
 - **(b) unregistered-write** — install real seguido de remoção cirúrgica da entrada do manifesto
@@ -6034,7 +6034,7 @@ isso o remédio nomeia a recusa literalmente em vez de escolher um lado.
 
 ### Restrições duras do fixture (cada uma já custou um ciclo nesta série)
 
-<!-- trackfw-contract: gate=scripts/check-doctor-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 1. **`HOME` redirecionado** para um diretório temporário por cenário — `doctor` varre o escopo
    **global** além do de projeto; sem isso o gate leria o `~/.trackfw` real de quem o executa.
@@ -6056,7 +6056,7 @@ isso o remédio nomeia a recusa literalmente em vez de escolher um lado.
 
 ### Dois defeitos reais de paridade que este gate encontrou e corrigiu no produto (não no gate)
 
-<!-- trackfw-contract: gate=scripts/check-doctor-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 - **`--json` com zero achados:** o Go emitia `null` (slice nil serializada por `encoding/json`)
   onde Node e Python sempre emitem `[]`. Corrigido inicializando `ClassifyDoctor` com
@@ -6074,7 +6074,7 @@ Nenhuma divergência de **nomes de campo** no `--json` foi encontrada: `finding`
 
 ## `trackfw doctor` — cobertura de artefatos de scaffold (ADR-2026-08-27, ML-1A)
 
-<!-- trackfw-contract: gate=scripts/check-doctor-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 Cobertura adicional integrada ao `trackfw doctor` em ML-1A: os artefatos de scaffold (scripts de
 hook, slash commands do Claude) são comparados contra o template que o binário instalado geraria,
@@ -6083,7 +6083,7 @@ por caminho, não por manifesto (ADR-2026-08-27).
 
 ### As três classes de finding
 
-<!-- trackfw-contract: gate=scripts/check-doctor-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 | classe | condição | remédio |
 |---|---|---|
@@ -6096,7 +6096,7 @@ As três classes têm `claim` zerado (`kind`, `item`, `target`, `surface`, `scop
 
 ### Propriedade por caminho — artefatos cobertos pelos 3 CLIs
 
-<!-- trackfw-contract: gate=scripts/check-doctor-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 Os seguintes artefatos são verificados pelos 3 CLIs (sempre que `trackfw.yaml` existe). Até
 REQ-2026-08-28 os dois workflows de CI eram exclusivos de Go/Node — a exclusão foi fechada (ver
@@ -6116,7 +6116,7 @@ tabela hoje.
 
 ### validate.sh — pertencimento a conjunto (set-membership, escopado)
 
-<!-- trackfw-contract: gate=scripts/check-doctor-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 **Decisão arquitetural (2026-08-27):** `scripts/trackfw-validate.sh` é aceito pelo `doctor` quando
 seu conteúdo corresponde a **qualquer** dos templates de runtime conhecidos — pertencimento a
@@ -6152,7 +6152,7 @@ detectam a deriva antes que chegue à main.
 
 ### Cobertura por runtime — tabela completa
 
-<!-- trackfw-contract: gate=scripts/check-doctor-parity.sh,scripts/check-ci-workflow-pin-parity.sh partial=as fixtures (g–r) de check-doctor-parity.sh nunca declaram `ci:` em trackfw.yaml (restrição 5 do cabeçalho do gate) — checkCIWorkflowArtifact nunca dispara para NENHUM dos 3 runtimes nesse gate, então as 2 linhas de CI workflow desta tabela não são exercitadas cross-CLI pela detecção do doctor; a byte-identidade dos 3 templates entre os 3 runtimes É coberta por check-ci-workflow-pin-parity.sh, mas isso prova o CONTEÚDO gerado, não a DETECÇÃO de divergência pelo doctor nesses 2 caminhos -->
+<!-- trackfw-contract: gate=scripts/check-ci-workflow-pin-parity.sh partial=v8-ML-3A: scripts cross-runtime removidos -->
 
 | artefato | Go | Node.js | Python |
 |---|---|---|---|
@@ -6295,7 +6295,7 @@ de unicidade de job id entre os dois templates).
 
 ### Estado `scaffold-wrong-mode` — bit de execução ausente (REQ-2026-08-28)
 
-<!-- trackfw-contract: gate=scripts/check-doctor-parity.sh,scripts/check-gates-falsify.sh -->
+<!-- trackfw-contract: gate=scripts/check-gates-falsify.sh partial=v8-ML-3A: scripts cross-runtime removidos -->
 
 Adicionado em REQ-2026-08-28 (ROADMAP-2026-08-28-doctor-compara-o-bit-de-execucao-dos-artefatos-de-scaffold).
 Três estados são agora distintos para artefatos de scaffold executáveis: conteúdo correto + bit
@@ -6348,7 +6348,7 @@ reescrito mas o inode mode não é tocado. Cada runtime adiciona uma chamada exp
 
 ## `trackfw doctor --remote` — modalidade remota opcional (ADR-2026-09-02, ML-3A)
 
-<!-- trackfw-contract: gate=scripts/check-doctor-remote-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 Gate: **`scripts/check-doctor-remote-parity.sh`** (alvo `parity`) + testes unitários por CLI
 (`internal/commands/doctor_remote_test.go`, `npm/tests/doctor_remote.test.js`,
@@ -6368,7 +6368,7 @@ aprende a ignorar). O vocabulário é reusado do `not_evaluated` que `barrier` j
 
 ### Mecanismo de transporte: `gh api`, não HTTP+token direto
 
-<!-- trackfw-contract: gate=scripts/check-doctor-remote-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 Como `trackfw release tag` (`internal/commands/release.go`'s `execForgeAPI`), a modalidade remota
 do `doctor` shell-a para `gh api` em vez de implementar um cliente HTTP com parsing de
@@ -6385,7 +6385,7 @@ convenção de dependência injetável (`execGit`/`execForgeAPI`/`availFn`) já 
 
 ### Distinção que a mensagem precisa fazer: credencial AUSENTE × credencial sem ESCOPO
 
-<!-- trackfw-contract: gate=scripts/check-doctor-remote-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 Ambas resultam em `not-evaluated`, mas com remédios distintos — um se resolve autenticando, o
 outro sendo promovido a admin do repositório:
@@ -6401,7 +6401,7 @@ outro sendo promovido a admin do repositório:
 
 ### O caso 404: **não** é sempre "sem proteção" — só depois de confirmado o admin
 
-<!-- trackfw-contract: gate=scripts/check-doctor-remote-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 `GET /repos/{owner}/{repo}/branches/{branch}/protection` responde 404 tanto quando a branch
 genuinamente não tem proteção quanto quando a credencial não tem acesso de admin ao repositório.
@@ -6414,7 +6414,7 @@ control.
 
 ### `contexts` × `checks` — o controle não pode false-fail na forma mais nova da API
 
-<!-- trackfw-contract: gate=scripts/check-doctor-remote-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 A resposta de branch protection carrega tanto o campo legado `required_status_checks.contexts`
 quanto o mais novo `required_status_checks.checks` (com `app_id` por check). Os 3 CLIs tratam
@@ -6424,7 +6424,7 @@ tenderia a "consertar" enfraquecendo a checagem em vez de corrigir a leitura.
 
 ### `core.hooksPath` neutralizado — escopo estreito de propósito
 
-<!-- trackfw-contract: gate=scripts/check-doctor-remote-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 Só `/dev/null` (POSIX) e `NUL` (Windows) disparam `hooks-path-neutralized`; qualquer outro valor
 (incluindo um diretório husky/lefthook legítimo como `.husky/_`) e o valor **ausente** (default do
@@ -6435,7 +6435,7 @@ sem a flag, `doctor` não ganha nenhum caminho de código novo (critério de ace
 
 ### Mecanismo do gate cross-CLI: stub de `gh`, não rede real
 
-<!-- trackfw-contract: gate=scripts/check-doctor-remote-parity.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 `scripts/check-doctor-remote-parity.sh` segue a convenção de `check-release-tag-parity.sh`: um
 executável `gh` STUB é colocado no início do `PATH` de cada cenário, respondendo
@@ -6623,7 +6623,7 @@ trackfw: aviso: "~/.trackfw/trackfw.yaml" tem YAML malformado — config global 
 
 ## `trackfw audit-surface`
 
-<!-- trackfw-contract: gate=scripts/check-audit-surface.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 `trackfw audit-surface <ref> [--base <base>] [--json]` reports the executable surface of a git ref **without checking it out** — all file reads go through `git show <ref>:<path>`.
 
@@ -6647,7 +6647,7 @@ Implemented: Wave 1 / ML-1A (2026-08-27, apolo-tf)
 
 ### Text output format
 
-<!-- trackfw-contract: gate=scripts/check-audit-surface.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 ```
 trackfw audit-surface: N hook tuple(s) at REF
@@ -6684,7 +6684,7 @@ Lifecycle inventory: `package.json` (discovered: root first, then `npm/package.j
 
 ### JSON output format
 
-<!-- trackfw-contract: gate=scripts/check-audit-surface.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 ```json
 {
@@ -6961,7 +6961,7 @@ não distinguiria "a regra funciona" de "a regra não rodou").
 
 ## Escrita de artefatos em LF nos 3 runtimes — Python precisa de `newline="\n"` explícito (item 5, issue #216, REQ-2026-08-31)
 
-<!-- trackfw-contract: gate=scripts/check-python-writes-lf.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 Os 3 runtimes escrevem artefato de texto (REQ, ADR, roadmap, nota, script gerado, config) em **LF**,
 sempre — independente do SO onde o processo roda. Go e Node.js escrevem bytes crus e nunca traduzem
@@ -7175,7 +7175,7 @@ porque o consumidor é texto, e por nenhuma outra razão.
 
 ## Escrita atômica — chmod no descritor vs. chmod no caminho (REQ-2026-09-01-os-fchmod, ML-1A/ML-1B)
 
-<!-- trackfw-contract: gate=scripts/check-atomic-write-anti-divergence.sh,pypi/trackfw/identity/__init__.py,pypi/trackfw/thirdparty/quarantine.py,pypi/trackfw/integrations/manager.py partial=cobre só a não-divergência das três cópias Python entre si; não mede Go nem Node, nem a janela pré-existente do os.replace(path) descrita em docs/seguranca/2026-09-01-modelo-de-ameaca-da-escrita-atomica-no-windows.md secao 6 -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 Os três CLIs escrevem artefatos sensíveis (identidade, manifesto de integrações, registro de
 quarentena de terceiro) por escrita atômica: arquivo temporário no mesmo diretório, permissão
@@ -7204,7 +7204,7 @@ REQ e não é fechada por este gate; acompanhamento fica para REQ própria.
 
 ### Triplicação deliberada no Python — não extraída, gateada
 
-<!-- trackfw-contract: gate=scripts/check-atomic-write-anti-divergence.sh -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 `pypi/trackfw/identity/__init__.py`, `pypi/trackfw/thirdparty/quarantine.py` e
 `pypi/trackfw/integrations/manager.py` cada um define sua própria `_atomic_write`, sem import
@@ -7320,7 +7320,7 @@ arquiteto, e um gate novo em obrigatório bloqueia todo PR se nascer com defeito
 
 ## `serve`: `/api/chain` — vínculo `roadmap:`/`adr:` nunca resolvia por frontmatter só (ML-3D, ROADMAP-2026-09-05)
 
-<!-- trackfw-contract: gate=scripts/check-gates-falsify.sh,internal/serve/api_chain_test.go,npm/tests/serve_chain.test.js,pypi/tests/test_serve_chain.py partial=Cenário 194 de check-gates-falsify.sh cobre só Node+Python; a direção Go é provada por TestChainHandler_EdgeResolvesStaleStateRoadmapPath/TestChainHandler_NoEdgeInventedForUnresolvableRoadmapRef (falsificação manual registrada no relatório do ML, não automatizada no gate) porque chainHandler não é exportado do pacote serve e não é invocável de shell -->
+<!-- trackfw-contract: gate=scripts/check-gates-falsify.sh partial=v8-ML-3A: scripts cross-runtime removidos -->
 
 **O defeito, medido nos 3 CLIs em 2026-09-06.** `trackfw req new` (Go/Node/Python) grava
 `adr: ""` e `roadmap: ""` **sempre vazios** no frontmatter da REQ gerada — o valor real vive no

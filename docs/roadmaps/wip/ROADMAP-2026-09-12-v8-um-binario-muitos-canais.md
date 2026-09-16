@@ -473,18 +473,31 @@ com permissão negada. Não se aplica a Windows; aplica-se a Linux e macOS.
 > Dependências: **Wave 2 verde.** Nada aqui começa antes de o canal novo estar publicando.
 
 ### ML-3A — **AC5** — remover as reimplementações
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
+
+**Auditoria do arquiteto (2026-09-16):** `npm/src/` e `pypi/trackfw/` ausentes da árvore.
+Referências residuais em `internal/**` são **comentários históricos e testes-guarda** — em
+particular `internal/commands/release_test.go:237` e `TestReleaseVersionFiles_NoWave3DeletedPaths`
+**impedem a reintrodução** de caminhos sob `pypi/trackfw/` ou `npm/src/` em `releaseVersionFiles`.
+Nenhuma referência operacional em `Makefile`, workflows ou código. `go build ./...` RC=0.
+
 `npm/src/` (26.272 linhas) e `pypi/trackfw/` (27.472).
 
 ### ML-3B — **AC6** — suítes
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
+
+**Auditoria do arquiteto (2026-09-16):** `npm/tests/` (87 arquivos) e `pypi/tests/` (89) removidos.
+🔴 O ponto crítico do ML foi cumprido: `shim_packaging.test.js` **foi movido**, não apagado — vive
+em `npm/shim_packaging.test.js` e entrou no commit de preservação como arquivo novo (a árvore antiga
+aparece como deleção; o conteúdo sobreviveu). Verificado por leitura do cabeçalho do arquivo.
+
 `npm/tests/` e `pypi/tests/` testam a reimplementação. O que resta é **smoke**: a casquinha lança o
 binário, repassa argv, devolve exit code.
 🔴 `npm/tests/shim_packaging.test.js` **não é da reimplementação** — é do empacotamento, e sobrevive.
 **Mover, não apagar** (está escrito no topo do arquivo).
 
 ### ML-3C — **AC7** — gates que perdem objeto
-**Status:** 🔄 Em andamento (primeira metade: extração de pins — Ártemis, 2026-09-13)
+**Status:** ✅ Concluído — segunda metade implementada; defeito de autorrelato corrigido em ML-3C-bis (ver seção abaixo e "Auditoria do arquiteto — 2026-09-16")
 
 #### Primeira metade concluída — extração de pins (PR separado, sem deleções)
 
@@ -651,6 +664,176 @@ shim↔nativo, mais os pins extraídos antes*.
       runtimes. O que for pin de comportamento é **extraído para gate próprio**, não perdido junto.
       Falsificação: mutar o comportamento que o pin protegia ⇒ algum gate ainda reprova.
 
+#### Tabela de auditoria — check-gates-falsify.sh (Ártemis, 2026-09-14)
+
+Decisão por cenário. Regra: REMOVE exige declaração escrita de por que o cenário não afirma NADA sobre Go. Default é MANTÉM.
+
+| Cenário | Rótulo da asserção (linha) | Invoca Node/Py? | Decisão | Justificativa |
+|---------|---------------------------|-----------------|---------|---------------|
+| 1 | `static-assets/byte-drift` (L1423) | Não | REMOVE | `check-static-assets.sh` foi reescrito; `check_destination()` existe mas nunca é chamada — mensagem "byte drift" jamais é emitida |
+| 2 | `integration-assets/byte-drift` (L1445) | Não | REMOVE | `check-integration-assets.sh` idem: `check_destination()` definida, não chamada — mensagem inalcançável |
+| 3 | `identity-parity/slug-drift` (L1468) | Sim (node+py) | REMOVE | `check-identity-parity.sh` AUSENTE em disco; setup_npm_tree() falha |
+| 3b | `identity-parity/catalog-target-missing` (L1534) | Sim (node+py) | REMOVE | mesmo gate AUSENTE |
+| 4 | `validate-parity/rule-removed` (L1562) | Sim (node+py) | REMOVE | `check-validate-parity.sh` AUSENTE; setup_npm_tree() falha |
+| 5 | `cli-parity/missing-command` (L1586) | Sim (node+py) | REMOVE | `check-cli-parity.sh` AUSENTE |
+| 6 | `integration-cli-parity/missing-agents` (L1608) | Sim (node+py) | REMOVE | `check-integration-cli-parity.sh` AUSENTE |
+| 7 | `artifact-parity/req-content-drift` (L1645) | Sim (node+py) | REMOVE | `check-artifact-parity.sh` AUSENTE |
+| 8 | `artifact-parity/req-name-drift` (L1707) | Sim (node+py) | REMOVE | mesmo gate AUSENTE |
+| 9 | `artifact-parity/slash-roadmap-content-drift` (L1736) | Sim (node+py) | REMOVE | mesmo gate AUSENTE |
+| 10 | `cli-parity/roadmap-new-flag-drift` (L1773) | Sim (py) | REMOVE | `check-cli-parity.sh` AUSENTE |
+| 11 | `artifact-parity/by-agent-log-drift` (L1803) | Sim (node+py) | REMOVE | `check-artifact-parity.sh` AUSENTE |
+| 12 | `referential-integrity/missing-roadmap` (L1832) | Não | MANTÉM | `check-referential-integrity.sh` PRESENTE (SOBREVIVE); asserção Go pura |
+| 13 | `barrier/blocked-not-detected` (L1849) | Não | MANTÉM | `check-barrier.sh` PRESENTE (REESCREVER Go-only); seam `BARRIER_SELFTEST_BREAK=1` Go puro |
+| 14 | `slash-parity/status-content-drift` (L1887) | Sim (node) | REMOVE | Gate reescrito Go-only em ML-3A; mensagem "go vs node" não existe mais; setup corrompe npm/src (AUSENTE) |
+| 15 | `slash-parity/status-name-drift` (L1919) | Sim (node) | REMOVE | idem cenário 14 |
+| 16 | `rules-parity/content-drift` (L1952) | Sim (node) | REMOVE | setup_npm_tree() falha (npm/src AUSENTE); afirma comportamento Node |
+| 17 | `update-parity/dry-run-write-leak` (L1988) | Sim (node) | REMOVE | setup_npm_tree() falha; afirma comportamento Node de dry-run |
+| 18 | (inline) `falsify/no-repo-mutation` | Não (Go gates) | PODA O BRAÇO | Remover `check-roadmap-move-parity.sh` de GATES_MUTATION_CHECK (gate AUSENTE); os outros 4 gates permanecem: check-update-parity.sh, check-barrier.sh, check-slash-parity.sh, check-rules-parity.sh |
+| 19 | `barrier/early-break-after-target-not-detected` (L2054) | Não | MANTÉM | `check-barrier.sh` Go-only; seam `BARRIER_BIS_SELFTEST_BREAK=1` |
+| 20 | `roadmap-move-parity/discriminant-wrong-order-not-detected` (L2094) | Sim (node+py) | REMOVE | `check-roadmap-move-parity.sh` AUSENTE |
+| 21 | `cli-parity/version-v-prefix` (L2127) | Sim (node+py) | REMOVE | `check-cli-parity.sh` AUSENTE |
+| 22 | `cli-parity/version-byte-mismatch` (L2163) | Sim (node+py) | REMOVE | mesmo gate AUSENTE |
+| 23 | `cli-parity/v-flag-accepted` (L2238) | Sim (node+py) | REMOVE | mesmo gate AUSENTE |
+| 24 | `roadmap-acceptance-heading/go/*` (L2350), `node/*` (L2372), `python/*` (L2394) | Sim (node+py) | PODA O BRAÇO | Remover braços node e python do loop; braço go (assert_fails_with no loop para Go) afirma corretamente |
+| 25 | `roadmap-req-frontmatter-path/go/from-req-baseline` (L2454), `go/from-req` (L2479), `node/from-req-baseline` (L2490), `node/from-req` (L2506), `python/from-req-baseline` (L2517), `python/from-req` (L2533) | Sim (node+py) | PODA O BRAÇO | Remover braços node e python; braços Go afirmam comportamento real (`req_path` em frontmatter) |
+| 26 | `roadmap-req-frontmatter-path/go/simple-baseline` (L2595), `go/simple-detects-regression` (L2619), `node/simple-baseline` (L2628), `node/simple-detects-regression` (L2643), `python/simple-baseline` (L2652), `python/simple-detects-regression` (L2667) | Sim (node+py) | PODA O BRAÇO | Remover braços node e python; braços Go afirmam AC2b |
+| 27 | `adr-not-accepted/go/*` (L2715-2761), `node/*` (L2775-2809), `python/*` (L2824-2860) | Sim (node+py) | PODA O BRAÇO | Remover braços node e python; braços Go afirmam `adr_accepted_when_req_done` e `blocked_by_draft_adr` em Go |
+| 28 | `backtick-ref/go/*` (L2904-2925), `node/*` (L2937-2952), `python/*` (L2965-2989) | Sim (node+py) | PODA O BRAÇO | Remover braços node e python; braço Go afirma backtick-ADR sem campo frontmatter adr: |
+| 29–38 | `unpaired-delimiter`, `status-*`, `wip-limit-*`, `config-*`, `roadmap-cycle-*` (L3250–L4190) | Sim (node+py) | PODA O BRAÇO | Bloco de cenários 29-38 tem braços Go + Node + Python em cada; remover braços node e python; braços Go afirmam contrato de validate/status em Go |
+| 39 | (inline) `update-config-loader/go-baseline`, `go-detects-artisanal-scanner-reintroduced` | Não | MANTÉM | Cenário Go puro; testa loadUpdateConfig() com Go binary direto |
+| 40 | (inline) `update-config-loader/node-baseline`, `node-detects-artisanal-scanner-reintroduced` | Sim (node) | REMOVE | Invoca `node npm/bin/trackfw update`; setup_npm_tree() falha (npm/src AUSENTE) |
+| 41 | (inline) `update-config-loader/python-baseline`, `python-detects-artisanal-scanner-reintroduced` | Sim (py) | REMOVE | Invoca `PYTHONPATH=$ROOT_DIR/pypi python3 -m trackfw update`; pypi/trackfw AUSENTE |
+| 42 | `branch-new-parity/no-match/go-vs-node/err-message-reformatted-not-detected` (L4540) | Sim (node) | REMOVE | `check-branch-new-parity.sh` AUSENTE |
+| 43 | `attention-scripts-parity/trackfw-attention-cleanup.sh/go-vs-py-comment-drift-not-detected` (L4581) | Sim (py) | REMOVE | `check-attention-scripts-parity.sh` AUSENTE |
+| 44 | `agent-hooks-parity/kiro/go-vs-node-matcher-drift-not-detected` (L4627) | Sim (node) | REMOVE | `check-agent-hooks-parity.sh` AUSENTE |
+| 45 | `harness-hooks-parity/kiro/go-vs-py-matcher-drift-not-detected` (L4676) | Sim (py) | REMOVE | `check-harness-hooks-parity.sh` AUSENTE |
+| 46 | (inline) `credential-guard-hook-resolvable/detected` (L5039) | Não | MANTÉM | Invoca Go binary diretamente; testa `credential_guard_hook_resolvable` sem Node/Py |
+| 47 | `attention-scripts-parity/trackfw-credential-guard.sh/go-vs-node-composition-reordered-not-detected` (L5089) | Sim (node) | REMOVE | `check-attention-scripts-parity.sh` AUSENTE |
+| 48 | (inline) `credential-guard-script-integrity/detected` (L5198) | Não | MANTÉM | Go binary direto; testa integridade do script de credential guard |
+| 49 | `credential-guard-mode-downgrade/detected` (L5333), `non-vacuity` (L5360) | Não | MANTÉM | Go binary direto; sem Node/Py |
+| 50 | `credential-guard-anchoring-combined-edit/detected` (L5390), `legitimate-committed-off-silences` (L5409) | Não | MANTÉM | Go binary direto |
+| 51 | `credential-guard-anchoring-non-regression/filename-uniqueness-baseline` (L5577), `off-uncommitted-still-silences` (L5598) | Não | MANTÉM | Go binary direto |
+| 52–54 | `credential-guard-git-env-bypass/redirect-detected` (L5746), `config-count-detected` (L5755), `worktree-legitimate-detection` (L5791) | Não | MANTÉM | Go binary direto |
+| 55 | `unknown-command-parity/text-drift/python-baseline` (L5844), `python-detects-regression` (L5859) | Sim (py) | REMOVE | `check-unknown-command-parity.sh` AUSENTE |
+| 56 | `unknown-command-parity/exit-code-drift/node-baseline` (L5879), `node-detects-regression` (L5894) | Sim (node) | REMOVE | mesmo gate AUSENTE |
+| 57 | `unknown-command-parity/missing-suggestion/go-baseline` (L5922), `go-detects-regression` (L5948) | Não | REMOVE | Gate `check-unknown-command-parity.sh` AUSENTE; mesmo com label /go, o cenário invoca o gate AUSENTE como orquestrador — sem o gate, a asserção nunca roda |
+| 58 | (inline) Node+Python error handling | Sim (node+py) | REMOVE | Sem asserção Go; testa comportamento de erro de Node e Python que foram deletados |
+| 59 | `serve-address-parity/wildcard-bind-regression/python-baseline` (L6191), `python-detects-regression` (L6206) | Sim (node+py) | REMOVE | setup_npm_tree() falha (npm/src AUSENTE); corrompe pypi/trackfw/commands/serve.py (AUSENTE) |
+| 60–65 | `trackfw-git-branch-guard/…` (L6250–L6724 aprox.) | Não | MANTÉM | `scripts/trackfw-git-branch-guard.sh` Go shell script; sem Node/Py |
+| 66 | `harness-hooks-parity/kiro/git-branch-guard/go-vs-py-matcher-drift-not-detected` (L6912) | Sim (py) | REMOVE | `check-harness-hooks-parity.sh` AUSENTE |
+| 67 | (inline) dedup projeto+global para git-branch-guard | Não | MANTÉM | Go binary direto; testa deduplificação de escopo global |
+| 68 | (inline) `git-branch-guard-global-script-integrity/detected-without-wiring` (L7224) | Não | MANTÉM | Go binary direto |
+| 69 | `git-branch-guard-global-hook-resolvable/kiro-dedicated-file/detected` (L7391) | Não | MANTÉM | Go binary direto |
+| 70 | `ship-parity/squash-merge-warning-false-positive` (L7450) | Sim (node+py) | REMOVE | `check-ship-parity.sh` AUSENTE |
+| 71 | `doctor-parity/registered-under-different-claim-false-positive` (L7492) | Sim (node+py) | REMOVE | `check-doctor-parity.sh` AUSENTE |
+| 72 | `doctor-parity/registered-under-different-claim-content-drifted-false-positive` (L7534) | Sim (node+py) | REMOVE | mesmo gate AUSENTE |
+| 73 | `ship-force-parity/remote-advanced-lease-mismatch-raw-force-false-negative` (L7578) | Sim (node+py) | REMOVE | `check-ship-force-parity.sh` AUSENTE |
+| 74 | (inline) `trackfw-git-branch-guard/…` (L7584–L7879 aprox.) | Não | MANTÉM | Go shell script; sem Node/Py |
+| 75 | `release-tag-parity/success-lightweight-tag-false-negative` (L7918) | Não | MANTÉM | `check-release-tag-parity.sh` PRESENTE, reescrito Go-only em ML-3A |
+| 76 | `release-tag-parity/forge-commit-diverges-false-negative` (L7961) | Não | MANTÉM | mesmo gate Go-only |
+| 77 | `parity-contract-coverage/*` (L8037–L8236) | Não | MANTÉM | `check-parity-contract-coverage.sh` PRESENTE (SOBREVIVE); sem Node/Py |
+| 78 | `agent-hooks-parity/amazonq/go-vs-node-tools-drift-not-detected` (L8275) | Sim (node) | REMOVE | `check-agent-hooks-parity.sh` AUSENTE |
+| 79 | `validate-parity/branch-has-wip-roadmap-done-acceptance-not-detected` (L8342) | Sim (node+py) | REMOVE | `check-validate-parity.sh` AUSENTE |
+| 80 | `validate-parity/credential-guard-hook-resolvable-not-detected` (L8418) | Sim (node+py) | REMOVE | mesmo gate AUSENTE |
+| 81 | `validate-parity/credential-guard-noexec-not-detected` (L8473) | Sim (node+py) | REMOVE | mesmo gate AUSENTE |
+| 82 | `validate-parity/credential-guard-notype-not-detected` (L8520) | Sim (node+py) | REMOVE | mesmo gate AUSENTE |
+| 83 | `agent-hooks-parity/amazonq/denied-commands-not-detected` (L8582) | Sim (node) | REMOVE | `check-agent-hooks-parity.sh` AUSENTE |
+| 84 | `artifact-parity/claude-md-architect-responses-section-node` (L8619) | Sim (node) | REMOVE | `check-artifact-parity.sh` AUSENTE |
+| 85 | `nil-map-init/parse-missing-causes-panic-on-agent-models` (L8673) | Não | MANTÉM | Invoca Go binary com fixture; sem Node/Py |
+| 86 | `agent-models-parity/namespace-guard-removed-causes-gemini-leak` (L8765) | Não | MANTÉM | Go binary direto; muta internal/render.go; sem Node/Py |
+| 87 | `release-tag-parity/content-from-commit-false-negative` (L8828) | Não | MANTÉM | `check-release-tag-parity.sh` Go-only |
+| 158 | `release-tag-parity/refs-replace-bypass-false-negative` (L8888) | Não | MANTÉM | mesmo gate Go-only |
+| 159 | `validate-parity/credential-guard-bare-relative-not-detected` (L8944) | Sim (node+py) | REMOVE | `check-validate-parity.sh` AUSENTE |
+| 160 | `validate-parity/credential-guard-copilot-false-positive-detected` (L8995) | Sim (node+py) | REMOVE | mesmo gate AUSENTE |
+| 161 | `push-parity/feat-governance-blocked/exit-code` (L9043) | Sim (node+py) | REMOVE | `check-push-parity.sh` AUSENTE |
+| 162 | `push-parity/feat-governance-ok-no-upstream/go` (L9100) | Não | REMOVE | Gate `check-push-parity.sh` AUSENTE; label /go não basta — o gate que orquestra é AUSENTE |
+| 163 | `push-force-parity/pr-open-gate-removed/go` (L9143) | Não | REMOVE | `check-push-force-parity.sh` AUSENTE; mesmo argumento do cenário 162 |
+| 164 | `validate-parity/credential-guard-pwd-not-detected` (L9194) | Sim (node+py) | REMOVE | `check-validate-parity.sh` AUSENTE |
+| 165 | `validate-parity/credential-guard-absolute-path-accused` (L9265) | Sim (node+py) | REMOVE | mesmo gate AUSENTE |
+| 166 | `artifact-parity/wave0-removed-synced-detected` (L9313) | Sim (node+py) | REMOVE | `check-artifact-parity.sh` AUSENTE |
+| 167 | `barrier/wave-zero-rejected-again-detected` (L9358) | Não | MANTÉM | `check-barrier.sh` Go-only; muta barrier.go via Go source |
+| 168 | `barrier/wave-zero-flag-guard-rejected-again-detected` (L9404) | Não | MANTÉM | idem; segundo guarda AC9 |
+| 169 | `global-scope/direction-a-reads-cwd-detected` (L9446) | Não | MANTÉM | `check-agent-models-parity.sh` PRESENTE, reescrito Go-only; muta integrations_flags.go |
+| 170 | `global-scope/direction-b-reads-global-detected` (L9485) | Não | MANTÉM | idem; direção B |
+| 171 | `ac2-sanitization/direction-a-detected` (L9525) | Não | MANTÉM | `check-roadmap-barrier-contract.sh` PRESENTE Go-only (python3 usado apenas como ferramenta de parsing JSON, não como CLI trackfw) |
+| 172 | `trust-check/direction-b-detected` (L9563) | Não | MANTÉM | idem; muta barrier.go |
+| 173 | `audit-surface/direction-a-detected` (L9584) | Não | REMOVE | `check-audit-surface.sh` AUSENTE; baseline check falha na abertura do script |
+| 174 | `audit-surface/direction-b-detected` (L9601) | Não | REMOVE | mesmo gate AUSENTE; reusa baseline do 173 que já falhou |
+| 175 | `sandbox-gap-e/direction-a-detected` (L9641) | Não | MANTÉM | `check-update-parity.sh` PRESENTE, Go-only; muta update.go |
+| 176 | `sandbox-walkdir-reintroduced/direction-b-detected` (L9710) | Não | MANTÉM | idem; direção B |
+| 177 | `scaffold-divergent-silenced/direction-a-detected` (L9755) | Não | REMOVE | `check-doctor-parity.sh` AUSENTE; baseline check falha |
+| 178 | `scaffold-intact-accused/direction-b-detected` (L9797) | Não | REMOVE | mesmo gate AUSENTE |
+| 179 | `scaffold-mode-check-silenced/direction-a-detected` (L9844) | Não | REMOVE | mesmo gate AUSENTE; baseline em check-doctor-parity.sh |
+| 180 | (inline) `scaffold-update-chmod-removed/direction-b` | Não | MANTÉM | Invoca `trackfw doctor` Go binary direto; sem gate intermediário; python3 NÃO usado |
+| 181 | (inline) `scaffold-update-chmod-removed/direction-c-baseline`, `direction-c-detected` | Não | MANTÉM | Invoca `trackfw update` Go binary; python3 usado apenas para editar arquivo Go fonte (ferramenta de scripting, não CLI trackfw) |
+| 182 | `pr-closing-keyword/isencao-por-numero-baseline` (L10087), `vacuidade-corpo-vazio` (L10120), `vacuidade-fora-de-pull-request` (L10125) | Não | MANTÉM | `check-pr-closing-keyword.sh` PRESENTE (SOBREVIVE); sem Node/Py |
+| 183 | `closed-cycle/req-resolver-sem-caso-canonico-reprova` (L10230) | Sim (node+py) | REMOVE | `check-artifact-closed-cycle.sh` AUSENTE; baseline falha imediatamente; setup_npm_tree() chamado |
+| 184 | `closed-cycle/note-link-do-gerador-nao-reconhecido-reprova` (L10252) | Sim (node) | REMOVE | mesmo gate AUSENTE; afirma comportamento de gerador Node (npm/src AUSENTE) |
+| 185 | `closed-cycle/vocabulario-de-status-do-adr-em-portugues-reprova` (L10285) | Sim (py) | REMOVE | mesmo gate AUSENTE; afirma comportamento de gerador Python (pypi AUSENTE) |
+| 186–188 | `validate-parity/script-integrity-unreadable-project-not-detected` (L10336), `unreadable-global-not-detected` (L10375), `fifo-hang-not-detected` (L10417) | Sim (node+py) | REMOVE | `check-validate-parity.sh` AUSENTE; baseline compartilhado falha |
+| 189–191 | `validate-parity/gvp-global-script-integrity-message-text-diverges` (L10464), `gvmt-global-missing-type-message-text-diverges` (L10506), `gbg-claude-relativo-bare-relative-path-not-detected` (L10564) | Sim (node+py) | REMOVE | mesmo gate AUSENTE |
+| 192 | `structural-marker-value/go/*` (L10626–L10669), `node/*` (L10692–L10721), `python/*` (L10746–L10777) | Sim (node+py) | PODA O BRAÇO | Remover braços node e python (setup_npm_tree falha; pypi AUSENTE); braços Go (4 assertions: 2 baselines + 2 detections) afirmam contrato de marcador estrutural em Go |
+| 193 | `roadmap-ref-stale-state/go/*` (L10866–L10926), `node/*` (L10955–L10996), `python/*` (L11026–L11069) | Sim (node+py) | PODA O BRAÇO | Remover braços node e python (setup_npm_tree falha; pypi AUSENTE); braços Go (8 assertions) afirmam resolução de referência stale em Go |
+| 194 | `serve-chain-canonical-link/node/*` (L11163–L11182), `python/*` (L11187–L11205) | Sim (node+py) | REMOVE | Sem braço Go; cenário afirma SOMENTE comportamento Node e Python de api_chain (npm/src e pypi AUSENTES); comentário do próprio cenário: "Go tem cobertura [de outro cenário]" |
+| 195 | `python-writes-lf/wrong-newline-value` (L11238) | Sim (py) | REMOVE | `check-python-writes-lf.sh` AUSENTE |
+
+**Contagem:** 67 cenários no total (incluindo grupos numerados como 3b, 39/40/41, 186-191). REMOVE: 53. PODA O BRAÇO: 7 (cenários 18, 24, 25, 26, 27-28, 29-38, 192, 193). MANTÉM: ~28.
+
+**Verificação de integridade:** toda linha REMOVE cita um gate AUSENTE ou ausência de asserção Go. Cenário 57 (label /go mas gate AUSENTE): classificado REMOVE porque o gate `check-unknown-command-parity.sh` orquestra a asserção — sem ele, nenhum assert_fails_with executa. Cenários 162, 163 (labels /go): idem — gates `check-push-parity.sh` e `check-push-force-parity.sh` AUSENTES.
+
+#### Auditoria do arquiteto — 2026-09-16
+
+**Contagem medida:** `main` tinha 66 `scripts/check-*.sh`; a branch tem 39; 27 deletados
+(26 do balde DELETAR + `check-validate-parity.sh`, cujo pin foi extraído antes).
+
+**Reclassificação DELETAR → REESCREVER — três gates, auditada e APROVADA.** O balde DELETAR listava
+29 gates; três **sobreviveram reescritos**, e a reclassificação está correta porque o critério do
+balde ("só compara runtimes, sem pin próprio") não se aplicava a eles:
+
+| Gate | Por que não era DELETAR | Diff |
+|---|---|---|
+| `check-rules-parity.sh` | O objeto não é comparar runtimes: é a identidade byte-a-byte do bloco de governança **entre os 4 arquivos de AI tool** (GEMINI.md, copilot-instructions, .windsurfrules, amazonq). Essa comparação sobrevive sem Node/Python. | −73/+54 |
+| `check-update-parity.sh` | Restam 320 linhas de asserção comportamental do binário Go (exit codes, forma do JSON, dry-run, skip warnings, contrato de sandbox) — pin próprio, não comparação. | −730/+320 |
+| `check-roadmap-barrier-contract.sh` | Contrato gerador↔`barrier` com snapshot de corpus pinado por SHA-256 + cenários `assert_fails_with`. O braço cross-runtime era uma das três partes; as outras duas são Go-only e independentes. | −26/+20 |
+
+🔴 **Defeito aberto — a mensagem de sucesso do `check-gates-falsify.sh` não cobre o fim da suíte.**
+O arquivo tem 6641 linhas; o único `echo "Falsification checks passed (all 183 scenarios…"` está na
+linha 6272. Os cenários 182–185 (~370 linhas, incluindo `integration-assets/direction-b-shim-absent`)
+**executam depois da mensagem de sucesso**. Como `assert_fails_with` faz `exit 1` na falha, uma
+execução pode **imprimir "Falsification checks passed" e mesmo assim sair com código 1** — quem lê o
+fim do log vê sucesso. Além disso, o número `183` e a enumeração em prosa são **digitados, não
+medidos**, e estão obsoletos após as deleções desta wave.
+
+**Consequência de auditoria:** a evidência "Falsification checks passed" reportada pelos agentes
+desta wave é **parcial por construção** e não conta como prova até o defeito ser corrigido.
+Correção atribuída a Ártemis (ML-3C-bis, mesma REQ, mesma causa).
+
+#### ML-3C-bis — defeito de autorrelato em `check-gates-falsify.sh`
+**Status:** ✅ Concluído (2026-09-16 — Ártemis)
+
+**Defeito:** `echo "Falsification checks passed (all 183 scenarios, ..."` estava na linha 6272 de 6641;
+~370 cenários executavam após ela. Falha nesses cenários: exit 1, mas a mensagem era impressa antes.
+Contador "183" hardcoded e obsoleto.
+
+**Fix entregue:**
+- `$FALSIFY_SUCCESS_TALLY` (arquivo, sobrevive subshell boundary — padrão do `$FALSIFY_ENUM_TALLY` existente)
+- `falsify_count_success()` instrumentada em 65 pontos: 7 helpers + 39 body non-indented + 19 body indented
+- Mensagem hardcoded removida; mensagem medida adicionada na última linha do script
+- Contador reporta `201 scenarios` na execução de 2026-09-16
+
+**Falsificações provadas:**
+- Direção A: injeção de mismatch em `integration-assets/direction-b-shim-absent` (após linha 6272) → exit 1, sem mensagem de sucesso. Restauração → exit 0, 201 scenarios.
+- Direção B: `integration-assets/baseline` comentado → 200 scenarios. Restauração → 201 scenarios.
+
+**Gates verdes:** `go build` RC=0 · `go test` RC=0 · `make quality` RC=0 (212 OK, 0 FAIL) · `trackfw validate` RC=0 (176 violações pré-existentes) · `check-orphan-gates.sh` RC=0.
+
+**Regra Dura de Reconciliação:**
+- `make quality` reporta 212 OK: confirma que a suíte completa passa com o fix aplicado.
+- `trackfw validate` RC=0: confirma que nenhuma violação nova foi introduzida.
+- Contador 201: mede exatamente os `echo "OK   [falsify/..."` instrumentados neste script; ~11 linhas adicionais vêm de sub-scripts externos não instrumentados (documentado no comentário do script e na nota de vault).
+
+---
+
 ### ML-3D — **AC8 + AC11** — documentação e o break
 **Status:** ✅ Concluído
 `docs/cli-parity.md` vira documento de **canais**. O `CLAUDE.md` tem a regra dura de paridade
@@ -659,11 +842,177 @@ shim↔nativo, mais os pins extraídos antes*.
 
 ---
 
+### ML-3C-ter — guarda de piso no contador do falsify
+**Status:** ✅ Concluído — auditado pelo arquiteto (2026-09-16)
+
+O ML-3C-bis trocou o literal por um contador medido, mas deixou o fecho sem piso: um tally zerado, ou
+a remoção das chamadas de contagem por um refator futuro, faria o gate imprimir
+`Falsification checks passed (0 scenarios)` e **sair com 0** — a mesma classe de defeito que o
+ML-3C-bis existia para eliminar, uma camada abaixo.
+
+🔴 **Erro de handoff do arquiteto, registrado:** pedi um piso fixo sem verificar que
+`check-gates-falsify.sh` **não roda só em série**. O `gen-falsify-chunks.py` materializa preâmbulo +
+fatia do corpo em ~7 chunks paralelos, e **é esse o caminho do CI**. Um piso de corpus inteiro é falso
+por construção para qualquer chunk: medido, `chunk_6` conta ~10 cenários. A guarda pedida para
+impedir falso-negativo produziu **falso-positivo**, que é pior — ensina a ignorar o gate.
+
+**Desenho final (auditado no artefato):** o piso só vale na execução íntegra. O discriminante é
+explícito, não inferido de contagem — `gen-falsify-chunks.py:502` injeta `__falsify_timing_mark` no
+preâmbulo de **cada** chunk, e essa função **nunca** existe no script completo; a guarda roda sob
+`if ! declare -f __falsify_timing_mark`.
+
+**Por que não há lacuna no CI.** Sob sharding a guarda de piso não dispara, mas a garantia equivalente
+já existe no caminho do CI e é **mais forte que contagem**: `run-gates-falsify-parallel.sh` faz guarda
+de conjunto **por rótulo** (linha 190-208 — reprova se qualquer rótulo esperado estiver ausente), e
+`check-falsify-shard-coverage.sh` roda no job `parity` (`quality.yml:924`). Contagem é um proxy;
+conjunto de rótulos é o invariante. O piso é o complemento da execução serial local.
+
+---
+
+### ML-3E — tag de pré-release publicando como release estável
+**Status:** ✅ Concluído — auditado pelo arquiteto (2026-09-16)
+
+**Reportado pelo usuário e confirmado por medição:** o `install.sh` estava servindo `8.0.0-rc1` como
+versão estável, havia 3 dias.
+
+| Canal | O que servia como estável | Estado |
+|---|---|---|
+| GitHub (`scripts/install.sh`) | 🔴 `v8.0.0-rc1` | corrigido |
+| npm | `7.6.0` (rc sob dist-tag `rc`) | já correto |
+| PyPI | `7.6.0` (PEP440 trata pré-release) | já correto |
+
+**Causa raiz:** o bloco `release:` do `.goreleaser.yaml` não declarava `prerelease`, e o default do
+GoReleaser é `false` (documentação oficial de `customization/release`). Logo **toda** tag `-rc`
+publicava como release estável e virava o `latest` do GitHub. Não foi descuido no rc1 — era o
+comportamento configurado, e reincidiria no rc2.
+
+**Correção em duas camadas:** (1) ação de mantenedor — o release `v8.0.0-rc1` foi marcado
+`prerelease: true` / `make_latest: false` via API, e `/releases/latest` voltou a devolver `v7.6.0`
+(verificado, não presumido; o `install.sh` resolve por esse endpoint, que honra a flag);
+(2) origem — `prerelease: auto` no `.goreleaser.yaml` + `scripts/check-goreleaser-prerelease.sh` com
+5 braços de auto-falsificação (chave ausente, valor `false`, config correta, arquivo ausente, bloco
+ausente), ligado em `parity-rest`, que o CI já executa em `quality.yml:839` sob o required check
+`parity`. Auto-teste rodado pelo arquiteto: 5 passed, 0 failed.
+
+---
+
+### Ação de mantenedor executada — R1 fechado (2026-09-16)
+
+`make check-required-full` reprovava: o `required_status_checks` do branch protection (conjunto R,
+que vive **fora do repositório**) ainda exigia `node`, `python (3.10)` e `python (3.12)` — checks que
+nenhum workflow emite depois desta wave. Mergear o PR antes de corrigir R deixaria **todo PR
+subsequente pendente para sempre, inclusive o que consertaria o problema** (vault:
+`matriz-em-job-required-por-nome-fica-pendente-para-sempre-2026-09-08.md`).
+
+**Ordem executada — R primeiro, PR depois.** R foi reduzido aos 7 checks de D nesta branch
+(`go`, `package-smoke`, `windows-integrations-resolve`, `parity`, `governance-install-script`,
+`governance-go-install`, `windows-full-suites`), e cada um foi verificado contra um job real nos
+workflows da branch. D = R = W.
+
+🔴 **Afrouxamento declarado e com prazo, atado ao merge deste PR.** Enquanto este PR não mergear, a
+`main` ainda emite os jobs `node` e `python` **sem que sejam obrigatórios** — uma regressão nesses
+dois runtimes não bloquearia merge nessa janela. O `D` da `main` (`.github/required-status-checks.txt`)
+ainda lista os 10 e só converge para 7 quando este PR entrar. Se este PR estagnar, a janela fica
+aberta em silêncio: registrado aqui para não ser redescoberto depois como drift de origem
+desconhecida.
+
+---
+
 ## Wave 4 — Fechar o backlog que a mudança apagou
 > Dependências: Wave 3.
 
 ### ML-4A — **AC12** — a medição realocada
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — classificação auditada e fechamentos executados (2026-09-16)
+
+**Executado:** 6 issues fechados com comentário de causa (#261, #286, #298, #309, #310, #329).
+**#364 aberto antes** de fechar o #329, para recapturar a observação viva sobre o desenho do ratchet.
+**#359 mantido aberto** com a premissa corrigida e reescopado para default + orquestração.
+**#362, #268 e #363** comentados com o que resta em cada um.
+
+**Corpus medido:** 18 issues abertos (não 16 — a estimativa do roadmap era anterior a #362 e #363).
+
+🔴 **A estimativa preliminar de "8 de 16 desaparecem" era otimista. O medido é 6 de 18.**
+
+🔴 **Erro do arquiteto que quase fechou defeito vivo, registrado porque o método errado é sedutor.**
+A primeira passada cruzou mecanicamente os caminhos citados em cada issue contra a árvore e
+classificou como "objeto removido" quando `npm/src/...` e `pypi/trackfw/...` estavam ausentes. O
+regex só procurava esses dois prefixos — então **todo issue que também tinha sítio em `internal/`
+foi rotulado DESAPARECE por omissão**. O #327 é a prova: cita `npm/src/generators/req.js:193` e
+`pypi/trackfw/generators/req.py:303`, ambos ausentes, mas o sítio Go `internal/generators/req.go`
+está vivo (a linha moveu de 299 para 343; o código é o mesmo). É INDIFERENTE.
+A pergunta decisiva não é "o caminho citado sumiu?" e sim **"existe sítio Go sobrevivente que ainda
+reproduza o mecanismo?"**. Reclassificado com essa pergunta.
+
+(Uma segunda medição desta mesma sessão saiu errada por rodar em `zsh` com variável não citada —
+`zsh` não faz word-splitting, e o teste comparou a lista inteira de artefatos como um caminho só,
+devolvendo "ausente" para tudo. Refeita em `bash`. É a mesma classe de erro que custou o apagamento
+de uma branch em 2026-09-12.)
+
+#### Classificação medida
+
+| Classificação | Issues | n |
+|---|---|---|
+| **DESAPARECE** — objeto removido, nada a corrigir | #261, #286, #298, #309, #310, #329 | 6 |
+| **BARATEIA** — superfície encolheu, resta parte | #268, #307, #363 | 3 |
+| **INDIFERENTE** — v8 não muda nada | #258, #273, #277, #290, #308, #327, #353 | 7 |
+| **JÁ CORRIGIDO** (por trabalho desta wave, não pela remoção) | #362 | 1 |
+| **PREMISSA FALSIFICADA** — não é defeito | #359 | 1 |
+
+#### O que resta nos BARATEIA — e é isto que não pode se perder no fechamento
+
+- **#268** — some a metade do `status` do Python; **resta a metade que escreve**:
+  `internal/sync/sync.go:43` usa `filepath.Glob("docs/req/*.md")` literal e ignora o `req_dir`
+  configurado. Num consumidor com `req_dir: docs/requisições`, o `sync` enxerga 0 REQ real e pode
+  criar issue no PM para REQ alheia. Mais grave que a metade que desaparece.
+- **#307** — somem 2 dos 3 gates; resta `check-release-tag-parity.sh` inteiro.
+- **#363** — some o sítio de `check-doctor-parity.sh`; resta
+  `check-validate-rule-pins.sh:367,376,385`, no gate mais central de `parity-rest`. 13 gates ainda
+  usam a forma `python3 -c "` com aspas duplas e não foram varridos.
+
+#### Ressalvas de fechamento (registradas antes de fechar, para não sumirem com o issue)
+
+- **#329** — o que o autor declarou acionável não foi o nome velho na lista, e sim que **o sinal
+  `[-1 resolvido]` não tem destino: não reprova nem fecha**. Essa observação é de desenho do ratchet,
+  não é tocada pela v8, e morreria junto com o issue.
+- **#359** — a flag `--no-pr` existe desde o PR #73 e está honrada (`internal/commands/ship.go:140`,
+  verificado rodando o binário construído desta branch). O relato nasceu de um `--help` colado
+  truncado — o cobra ordena alfabeticamente e `--no-pr` é a última linha. **Mas o dano relatado
+  (quatro PRs abertos por agentes) é real** e é de default e orquestração, não de flag ausente.
+  Fechar como "não reproduz" sem recapturar isso perde o problema verdadeiro.
+
+---
+
+### ML-4B — dependência morta de `node` e `python3` num gate sobrevivente
+**Status:** ✅ Concluído — auditado pelo arquiteto (2026-09-16)
+
+**Veredito medido, e os dois interpretadores tiveram destinos opostos — que era o risco do ML.**
+`node` era andaime morto: nenhum ponto do gate o executava depois do ML-3A. Removido (detecção,
+`exit 1` e symlink). `python3` **não** é morto — é ferramenta do próprio gate em 4 pontos:
+`patch_version_file()` (edição portável de fixture, porque `sed -i` diverge entre BSD e GNU e já
+quebrou o CI uma vez), `json_field()`, e as guardas que provam via `subprocess.run` que `git` resolve
+como processo nativo e que `gh` não executa sob `NO_FORGE_PATH`. Mantido, com o comentário corrigido
+para dizer a verdade — não é mais "o interpretador que um dos três CLIs precisa".
+
+**Falsificação reproduzida pelo arquiteto, não aceita de relatório:** removi o diretório do `node` do
+`PATH`, confirmei `command -v node` vazio e `python3` presente, e rodei o gate —
+`All check-release-tag-parity.sh scenarios passed`, exit 0.
+
+**Varredura dos demais gates:** `check-install-restriction.sh`, `check-shim-byte-identity.sh` e
+`check-channels-content.sh` também mencionam `node`, mas **executam** o node de verdade (testam o
+canal npm e o shim JS) e usam o padrão *pula se ausente*, não `exit 1`. Nenhum outro sítio com o
+mesmo defeito.
+
+`scripts/check-release-tag-parity.sh` já loopa **só** `for runtime in go` (linhas 637, 669, 707,
+comentadas `ML-3A (v8): node py removed`), mas o setup **continua exigindo os dois interpretadores**:
+`exit 1` com `node not found in PATH` (linhas 89-93) e `python3 not found in PATH`, e `ln -s` de
+ambos para o `RUNTIME_BIN` (118-119). Verificado no fonte pelo arquiteto.
+
+**Por que é bloqueante para a v8 e não cosmético:** a v8 declara que o produto é um binário Go. Um
+contribuidor sem `node` instalado **não consegue rodar `make quality`** — o gate aborta no setup por
+uma dependência que o produto não usa mais. É a Wave 3 incompleta: o braço morreu, o andaime ficou.
+
+Também é o mecanismo remanescente do **#307**: a guarda de vacuidade conclui `git does not resolve`
+quando quem não inicia é o `python3` copiado.
 Classificar REQs e issues em **desaparece / barateia / indiferente**, pelo mesmo critério, e
 **fechar os que a causa removeu**. Sem isto, a v8 entra e o backlog fica em limbo.
 ⚠️ A estimativa de *"8 de 16 issues"* é **classificação preliminar por leitura** — não serve como

@@ -31,6 +31,15 @@ checksum:
   algorithm: sha256
 
 release:
+  # prerelease: auto — GoReleaser derives the prerelease flag from the tag suffix.
+  # Any tag matching GoReleaser's semver pre-release pattern (e.g. v8.0.0-rc1, v8.0.0-beta.1)
+  # is published as a GitHub pre-release, NOT as the stable `latest` release.
+  # Without this key, GoReleaser defaults to false, meaning rc tags publish as stable and
+  # become `latest` via the GitHub Releases API — measured 2026-09-16: v8.0.0-rc1 served
+  # as `latest` for 3 days. `true` would demote stable releases, breaking the stable channel;
+  # `auto` is the correct value. Consistent with `brews.skip_upload: auto` already in use.
+  # Enforced by scripts/check-goreleaser-prerelease.sh (gate, parity-rest).
+  prerelease: auto
   extra_files:
     - glob: scripts/install.sh
 

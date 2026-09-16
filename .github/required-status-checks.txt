@@ -23,9 +23,6 @@
 #     --jq '.required_status_checks.contexts'
 #
 go
-node
-python (3.10)
-python (3.12)
 package-smoke
 windows-integrations-resolve
 parity

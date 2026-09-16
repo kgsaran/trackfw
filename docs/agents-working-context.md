@@ -2,6 +2,53 @@
 
 ---
 
+## Sessão 2026-09-16 — Ares (trackfw-nul — ML-4C: corrigir 4 jobs CI quebrados pós-Wave-3) — ENCERRADO
+
+**Início:** 2026-09-16 (continuação de sessão anterior, contexto compactado) | Branch: `fix/v8-um-binario-muitos-canais` (trackfw-nul) | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` ML-4C
+**Tarefa:** Corrigir 4 jobs cujos braços apontam para suítes deletadas na Wave 3 (ML-3A removeu npm/src e pypi/trackfw; ML-3B removeu npm/tests e pypi/tests): `package-smoke`, `windows-full-suites`, `windows-defect-reproduction`, `windows-symlink-unprivileged`.
+**Concluído:**
+(1) Fix 1 — `scripts/smoke-integration-packages.sh`: seção Python substituída. `python -m build --wheel pypi/` → `build_wheel.py` (requer apenas `packaging`). Assertions de `catalog.json`/assets removidas (go:embed). Comentário de reconciliação ML-4C escrito.
+(2) Fix 2 — `scripts/check-windows-known-failures.py`: `--node-tap` e `--python-out` tornados opcionais. `main()` só requer `--go-out`. Guards de presença em `run_check()` (erro se entradas ativas existem mas path ausente; skip se não há entradas e path também ausente). Auto-teste: 43 PASS, 0 FAIL.
+(3) Fix 3 — `scripts/windows-repro/run.ps1`: itens 2, 7, 10 reduzidos a Go-only (MANTER REDUZIDO A GO — propriedade do produto Windows, não divergência entre implementações). `$item2EnvVarsPy`, `$nodeModels`, `$pyModels`, `$nodeSourceLine`, `$pySourceLine` removidos. `$item7NormalNode/Py`, `$item7CuratedNode/Py` e seus checks removidos. `$item10Node`, `$item10Py` removidos. Lógicas de medido/verdict simplificadas para Go. Título item 11 "(5 Python, 5 Node, 2 Go)" → "(2 Go)".
+(4) Fix 3 — `.github/workflows/quality.yml` job `windows-defect-reproduction`: `setup-node`, `npm ci --ignore-scripts`, `pip install pypi/` (e comentário explicativo) removidos. Comentário ML-4C escrito.
+(5) Fix 4 — `.github/workflows/quality.yml` job `windows-symlink-unprivileged`: `setup-node` removido (npm/src e npm/tests deletados). `npm ci` removido. `pip install pypi/` removido. Passos "Node — substituto", "Node — falsificacao", "Python — substituto", "Python — falsificacao" removidos (arquivos de teste deletados em ML-3B). Grep de proteção reduzido a Go-only. `setup-python` mantido (Go overlay steps usam `python3 - << 'PYGENEOF'`).
+**Verificações:** `python3 scripts/check-workflow-yaml.py` 8 passed, 0 failed. `go build ./...` RC=0. `go test ./...` RC=0 (todos os packages). `env -u FORCE_COLOR make quality` RC=0 (212 OK, 0 FAIL). `trackfw validate` violações pré-existentes somente; nenhuma nova; `branch_has_wip_roadmap` não disparado.
+**ALERTA:** `git status` mostra `trackfw.yaml` com modificação não-staged após `make quality`. Não foi escrito por Ares — comportamento de gate (issue #366). Não commitado, não corrigido, reportado a KG per instrução.
+
+---
+
+## Sessão 2026-09-16 — Ares (trackfw-nul — ML-4B: remover dependência morta de node em check-release-tag-parity.sh) — ENCERRADO
+
+**Início:** 2026-09-16 | Branch: `fix/v8-um-binario-muitos-canais` (trackfw-nul) | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` ML-4B
+**Tarefa:** Remover `REAL_NODE` (exit-1 se ausente, symlink em RUNTIME_BIN) de `scripts/check-release-tag-parity.sh`. `python3` mantido — confirmado em uso por `patch_version_file`, `json_field` e guards de vacuidade inline. Varredura de outros gates com o mesmo padrão morto.
+**Concluído:** (1) `REAL_NODE` detection + exit-1-if-missing removidos (linhas 87-92, substituídas por comentário ML-4B). (2) `ln -s "$REAL_NODE" "$RUNTIME_BIN/node"` removido. (3) Comentários de `runtimebin/` e `BASE_PATH` atualizados para descrever a razão real (python3 para patch_version_file/json_field/guards). (4) `python3` mantido — leitura confirmou uso em `patch_version_file` (linha 416), `json_field` (linha 433), guard de vacuidade git (linha 186), guards Windows (linhas 327, 348). (5) Varredura de `check-*.sh`: `check-install-restriction.sh` e `check-shim-byte-identity.sh` têm `command -v node` mas com padrão SKIP-se-ausente (não exit-1 hard) — legítimo, esses gates testam o canal npm. `check-channels-content.sh` usa node somente no branch `--local`. Nenhum gate com o mesmo padrão morto encontrado. (6) Direção A: gate com PATH sem node → exit 0, "All check-release-tag-parity.sh scenarios passed". (7) Direção B: gate no ambiente normal → exit 0, mesmos 18+ rótulos OK. (8) `go build ./...` RC=0. (9) `go test ./...` RC=0. (10) `make quality` → 212 OK, 0 FAIL. (11) `check-orphan-gates.sh` RC=0.
+
+---
+
+## Sessão 2026-09-16 — Ártemis (trackfw-nul — ML-3C-ter: guarda de vacuidade em check-gates-falsify.sh) — ENCERRADO
+
+**Início:** 2026-09-16 | Branch: `fix/v8-um-binario-muitos-canais` (trackfw-nul) | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` ML-3C-ter
+**Tarefa:** Fechar o modo de degradação silenciosa que o ML-3C-bis deixou aberto: o gate imprimia "Falsification checks passed (0 scenarios)" com exit 0 se o `$FALSIFY_SUCCESS_TALLY` fosse inacessível ou todas as chamadas `falsify_count_success` fossem removidas por refator. Fix: (1) `FALSIFY_SUCCESS_FLOOR=201` no preâmbulo (piso pinado com comentário). (2) Guarda de vacuidade no fechamento: medido < piso → exit 1 + diagnóstico. (3) Detecção de chunk: guard envolta em `! declare -f __falsify_timing_mark` — função injetada em cada chunk pelo gen-falsify-chunks.py, ausente no script completo; sem isso a guarda disparava em chunk_6 (~10 cenários < 201). Ares (ML-3E, sessão paralela) já havia identificado e reportado o mesmo bloqueio antes desta sessão.
+**Concluído:** (1) FALSIFY_SUCCESS_FLOOR=201 adicionado após definição de FALSIFY_SUCCESS_TALLY (linha 241). (2) Guarda de vacuidade com proteção de chunk mode via `! declare -f __falsify_timing_mark`. (3) Direção A: probe com FALSIFY_SUCCESS_FLOOR=9999 → exit 1, FAIL presente, "Falsification checks passed" ausente. (4) Direção B: run direto completo → exit 0, "Falsification checks passed (201 scenarios)". (5) `go build ./...` RC=0. (6) `go test ./...` RC=0. (7) `env -u FORCE_COLOR make quality` RC=0 (212 OK, 0 FAIL). (8) `check-orphan-gates.sh` RC=0.
+
+---
+
+## Sessão 2026-09-16 — Ares (trackfw-nul — ML-3E: gate para impedir pré-release como release estável) — ENCERRADO
+
+**Início:** 2026-09-16 | Branch: `fix/v8-um-binario-muitos-canais` (trackfw-nul) | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` ML-3E
+**Tarefa:** Corrigir `.goreleaser.yaml` adicionando `prerelease: auto` ao bloco `release:`, criar gate `scripts/check-goreleaser-prerelease.sh` com falsificação em duas direções, ligar em `parity-rest`.
+**Concluído:** (1) `.goreleaser.yaml` bloco `release:` com `prerelease: auto` + comentário explicando a escolha do valor vs. `true` e referência ao incidente rc1. (2) `scripts/check-goreleaser-prerelease.sh` criado com `export PYTHONIOENCODING=utf-8`, vacuidade tripla (arquivo ausente, bloco ausente, chave ausente), `--self-test` com 5 braços: A1 (chave removida via sed — fixture diferenciada de cmp), A2 (valor `False` — Python str(False)=='False' confirmado), B1 (config correta passa), B2 (arquivo ausente reprova), B3 (bloco release: ausente reprova com mensagem distinta de A1). (3) Gate ligado em `parity-rest` no Makefile (não em quality.yml — os gates vizinhos da Wave v8 não modificam o workflow, fazendo isso transitivamente via `make parity-rest` no job quality). (4) `check-orphan-gates.sh` RC=0. (5) `make parity-rest` RC=0. (6) `go build ./...` e `go test ./...` RC=0. (7) `trackfw validate` 176 violações pré-existentes, nenhuma nova. **BLOQUEIO REPORTADO:** `make parity-falsify` (e portanto `make quality`) falha com "apenas 10 cenário(s) contados, piso é 201" no chunk_6. Causa: ML-3C-bis adicionou `FALSIFY_SUCCESS_FLOOR=201` e vacuity guard ao final de `check-gates-falsify.sh` (uncommitted); quando gen-falsify-chunks.py distribui o script em chunks, o chunk que recebe o guard final tem ~10 cenários, abaixo do piso de 201. Esta é uma regressão pré-existente ao ML-3E; `check-gates-falsify.sh` estava fora do escopo do handoff ("há agente em rodada paralela nesse gate"). Relatado ao arquiteto para resolução.
+
+---
+
+## Sessão 2026-09-16 — Ártemis (trackfw-nul — ML-3C-bis: defeito de autorrelato em check-gates-falsify.sh) — ENCERRADO
+
+**Início:** 2026-09-16 | Branch: `fix/v8-um-binario-muitos-canais` (trackfw-nul) | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` ML-3C-bis
+**Tarefa:** Corrigir dois defeitos em `scripts/check-gates-falsify.sh`: (1) mensagem de sucesso `echo "Falsification checks passed (all 183 scenarios, ..."` estava em linha 6272 mas ~370 cenários continuavam após ela — falha nesses cenários ainda imprimia a mensagem antes do exit 1; (2) contador "183" era hardcoded e desatualizado. Fix: mover mensagem para o final real do script, substituir por contador medido via arquivo `$FALSIFY_SUCCESS_TALLY`.
+**Concluído:** (1) Adicionado `FALSIFY_SUCCESS_TALLY` (arquivo, não variável shell, para sobreviver subshell boundary). (2) Adicionada `falsify_count_success()` que incrementa o arquivo. (3) Instrumentados todos os 65 pontos `echo "OK   [falsify/..."`: 7 helpers + 39 body-level non-indented + 19 body-level indented (blocos if). (4) Removida mensagem hardcoded na linha 6272. (5) Adicionada mensagem medida na última linha: `echo "Falsification checks passed (${falsify_success_n:-0} scenarios)"`. (6) Direção A provada: injeção de mismatch no cenário `integration-assets/direction-b-shim-absent` (após linha 6272 original) → exit 1, "Falsification checks passed" NÃO impresso. (7) Direção B provada: cenário `integration-assets/baseline` comentado → 201→200 cenários; restaurado → 201 novamente. (8) `go build ./...` RC=0. (9) `go test ./...` RC=0. (10) `make quality` RC=0 (212 OK, 0 FAIL). (11) `trackfw validate` RC=0 (176 violações pré-existentes, nenhuma nova). (12) `check-orphan-gates.sh` RC=0. Nota: contador reporta 201 (cenários instrumentados por este script); `make quality` mostra 212 porque inclui ~2 linhas OK de `check-wheel-filename.sh` externo + linhas de shard parcial/paralelo.
+
+---
+
 ## Sessão 2026-09-13 — Ares (trackfw-nul — ML-2A: bump de versão para 8.0.0-rc1) — ENCERRADO
 
 **Início:** 2026-09-13 | Branch: `fix/v8-um-binario-muitos-canais` (trackfw-nul) | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` ML-2A
@@ -37254,3 +37301,60 @@ pré-requisito hard de ML-3A.
 **Gates:** `check-parity-contract-coverage.sh` OK (255/0), `check-manifest-version-gate.sh` 10/0, `trackfw validate` 185 warnings (pré-existentes, sem violações novas).
 
 **Committed:** `docs(v8): corrige win/arm64, wheel tags PyPI e dois breaks no CHANGELOG (ML-3D audit)` → PR #358.
+
+---
+
+## Sessão 2026-09-13 — Ares (trackfw-nul — ML-3A + ML-3B + ML-3C segunda metade) — EM ANDAMENTO
+
+**Início:** 2026-09-13 | Branch: `fix/v8-um-binario-muitos-canais` (trackfw-nul) | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` ML-3A + ML-3B + ML-3C
+**Tarefa:** Maior remoção da história: ~53.700 linhas (npm/src/ + pypi/trackfw/), suítes npm/tests/ e pypi/tests/, 29 gates DELETAR, reescrita dos 23 REESCREVER, atualização de workflows, Makefile, required-status-checks.txt, cli-parity.md, check-gates-falsify.sh.
+**Estado atual:** Leitura sistemática em curso — verificações pré-deleção: (1) release.go já atualizado (pypi/trackfw/__init__.py removido da lista no ML-1A); (2) cli-parity.md tem 19 refs a npm/tests/pypi/tests — maioria prosa, 1 gate= annotation; (3) duas linhas com needs:[go,node,python] no quality.yml (943 e 997); (4) windows-integrations-resolve e windows-full-suites são required checks que precisam sobreviver com braços Node/Python removidos.
+
+---
+
+## Sessão 2026-09-14 — Ártemis (QA) — ML-3C segunda metade: tabela de auditoria + edição de check-gates-falsify.sh
+
+**Início:** 2026-09-14 | Branch: `fix/v8-um-binario-muitos-canais` | Dir: `trackfw-nul`
+**Roadmap:** `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` ML-3C (segunda metade)
+**Tarefa:** Escrever a tabela de auditoria de todos os cenários de `scripts/check-gates-falsify.sh` (168 assert_fails_with + 7 EXPECTED=), depois editar o arquivo removendo cenários REMOVE e podando braços mortos dos PODA O BRAÇO — um cenário por vez, lido antes.
+
+---
+
+## Sessão 2026-09-14 — Ártemis (QA) — ML-3C: correção de falhas no check-gates-falsify.sh (continuação)
+
+**Início:** 2026-09-14 (continuação após compactação de contexto) | Branch: `fix/v8-um-binario-muitos-canais` | Dir: `trackfw-nul`
+**Roadmap:** `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` ML-3C
+
+**Trabalho executado:**
+- Detectou e removeu variável órfã `GBG_ORIGINAL_PWD` (linha 4183 do arquivo original) — a definição foi deletada em sessão anterior mas o `cd` de restauração ficou; causava `unbound variable` sob `set -u`.
+- Removeu cenários 173-174 (`check-audit-surface.sh`, ABSENT) — blocos de 38 linhas.
+- Substituiu `check-cli-parity.sh` por `check-barrier.sh` em todos os fixtures do cenário 77 (21 ocorrências) — gate ABSENT causava falha no baseline do checker de parity-contract-coverage.
+- Removeu cenários 177-180 (`check-doctor-parity.sh`, ABSENT) — 200 linhas.
+- Corrigiu sufixo `/go` errado nas asserções de cenários 175 (`sandbox/gap-e/dry-vs-real`) e 176 (`sandbox/dangling-outside-set/exit-zero`) — gate produzia label sem `/go`.
+
+**Resultado:** `bash scripts/check-gates-falsify.sh` passou (Falsification checks passed). `env -u FORCE_COLOR make quality` RC=0. `go build ./...` RC=0. `go test ./...` RC=0. `trackfw validate` RC=0.
+
+**Arquivo:** `scripts/check-gates-falsify.sh` — 6835 → 6596 linhas finais (antes/depois nesta sessão parcial). Linha 6428 (completion echo) ainda diz "all 183 scenarios" — precisa atualização pelo arquiteto.
+
+---
+
+## Sessão 2026-09-16 — Zeus (retomada após interrupção por janela de tokens)
+
+**Início:** 2026-09-16 | Branch: `fix/v8-um-binario-muitos-canais` (trackfw-nul)
+**Tarefa:** Localizar o ponto de parada e tornar durável o trabalho não commitado.
+
+**Encontrado:** 486 arquivos não commitados em `trackfw-nul` — ML-3A (npm/src + pypi/trackfw), ML-3B (npm/tests + pypi/tests, com `shim_packaging.test.js` movido para `npm/`), ML-3C segunda metade (29 gates DELETAR removidos, 23 REESCREVER editados). 137.839 deleções, 1.704 inserções.
+
+**Feito:** commit de preservação `4c8f1b04` (nenhum agente vivo; branch sem PR — preservar não é publicar).
+
+**Bloqueio medido (R1, previsto no roadmap linhas 107/166/260):** `make check-required-full` REPROVA — `required_status_checks` da API ainda exige `node`, `python (3.10)`, `python (3.12)`, que nenhum workflow emite após a Wave 3. Ordem obrigatória de merge: **atualizar branch protection primeiro, PR depois**. Gates locais verdes não detectam isso por construção.
+
+**Pendente para o arquiteto:** (1) auditoria do diff de 486 arquivos contra os ACs; (2) reconciliação de status ML-3A/3B/3C no roadmap (ainda ⬜/🔄); (3) `check-gates-falsify.sh` linha ~6428 ainda diz "all 183 scenarios"; (4) ML-4A (AC12) não iniciado; (5) `trackfw branch prune` — `trackfw-triagem` já squashado em #358, worktree `t332` prunable.
+
+---
+
+## Sessão 2026-09-16 — Ares (trackfw-nul — ML-4C: corrigir quatro jobs de CI com braços apontando para suítes deletadas na Wave 3) — INICIADO
+
+**Início:** 2026-09-16 | Branch: `fix/v8-um-binario-muitos-canais` (trackfw-nul) | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` ML-4C
+**Tarefa:** Corrigir quatro jobs de CI com braços mortos: (1) `package-smoke` — smoke script usa `python -m build pypi/` mas `pypi/trackfw/` não existe mais; fix: trocar por `build_wheel.py` + remover asserções de Python package data. (2) `windows-full-suites` — ratchet exige `--node-tap`/`--python-out` que não existem; fix: tornar esses args opcionais em `check-windows-known-failures.py` quando JSON não tem entradas para esses runtimes. (3) `windows-defect-reproduction` — itens 2, 7, 10 invocam Node/Python que não existem; fix: reduzir a Go-only e remover pip install pypi/. (4) `windows-symlink-unprivileged` — 4 steps Node/Python referenciam npm/tests e pypi/tests deletados; fix: remover esses steps, manter os 2 steps Go.
+

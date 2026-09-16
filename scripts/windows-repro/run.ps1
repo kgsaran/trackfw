@@ -248,12 +248,11 @@ $item2NeutralCwd = Join-Path $env:RUNNER_TEMP "item2-neutral-cwd"
 New-Item -ItemType Directory -Force -Path $item2NeutralCwd | Out-Null
 
 $item2EnvVars = @{ HOME = $fakeHome; USERPROFILE = $fakeProfile }
-$item2EnvVarsPy = @{ HOME = $fakeHome; USERPROFILE = $fakeProfile; PYTHONPATH = $env:TRACKFW_PYPI_SRC }
+# ML-4C: Node/Python arms removed — npm/src and pypi/trackfw deleted in ML-3A/ML-3B.
+# HOME resolution is a Windows-platform product property (Go binary behavior), not a
+# cross-runtime divergence property. MANTER REDUZIDO A GO.
 
 $goModels = Run-Capture -Exe $trackfwBinPathShared -ArgList @("agents", "models") -WorkDir $item2NeutralCwd -EnvVars $item2EnvVars
-$nodeModels = Run-Capture -Exe "node" -ArgList @($nodeCliPath, "agents", "models") -WorkDir $item2NeutralCwd -EnvVars $item2EnvVars
-$pyModels = Run-Capture -Exe "python" -ArgList @("-c", "from trackfw.cli import main; import sys; sys.argv=['trackfw','agents','models']; main()") `
-    -WorkDir $item2NeutralCwd -EnvVars $item2EnvVarsPy
 
 function Get-Item2SourceLine {
     param([string]$Stdout)
@@ -263,23 +262,20 @@ function Get-Item2SourceLine {
 }
 $item2ExpectedLine = "source: ~/.trackfw/trackfw.yaml"
 $goSourceLine = Get-Item2SourceLine -Stdout $goModels.Stdout
-$nodeSourceLine = Get-Item2SourceLine -Stdout $nodeModels.Stdout
-$pySourceLine = Get-Item2SourceLine -Stdout $pyModels.Stdout
 
 $item2Detail = @"
 HOME=$fakeHome (marcador agent_models presente SOMENTE aqui, em .trackfw/trackfw.yaml)
 USERPROFILE=$fakeProfile (sem marcador — deliberadamente diferente de HOME)
-'trackfw agents models' chama homedir.Dir()/homedir()/home_dir() e depois le <home>/.trackfw/trackfw.yaml.
+'trackfw agents models' chama homedir.Dir() e depois le <home>/.trackfw/trackfw.yaml.
 Esperado se o trackfw preferir `$HOME`: '$item2ExpectedLine'
 Go   -> $goSourceLine
-Node -> $nodeSourceLine
-Py   -> $pySourceLine
+(Node/Python arms removidos em ML-4C: npm/src e pypi/trackfw deletados em ML-3A/ML-3B)
 "@
-$item2Medido = $goModels.Stdout -and $nodeModels.Stdout -and $pyModels.Stdout
+$item2Medido = ($goModels.Stdout -ne "")
 $item2Verdict = if (-not $item2Medido) { "INCONCLUSIVE" }
-                elseif ($goSourceLine -ne $item2ExpectedLine -or $nodeSourceLine -ne $item2ExpectedLine -or $pySourceLine -ne $item2ExpectedLine) { "REPRODUCED" }
+                elseif ($goSourceLine -ne $item2ExpectedLine) { "REPRODUCED" }
                 else { "ABSENT" }
-Add-Result -Item "2" -Title "HOME ignorado nos 3 runtimes no Windows (retargetado ML-2A: invoca o binario real via 'trackfw agents models', nao os.homedir() cru)" -Verdict $item2Verdict -Detail $item2Detail
+Add-Result -Item "2" -Title "HOME ignorado no Windows — Go (retargetado ML-2A: invoca o binario real via 'trackfw agents models', nao os.homedir() cru)" -Verdict $item2Verdict -Detail $item2Detail
 
 # ---------------------------------------------------------------------
 # item 3 — bit de execucao. CONFIRMATORIO (ROADMAP-2026-09-05, ML-2B —
@@ -417,58 +413,42 @@ function Get-BarrierGateCheck {
 
 $item7BarrierArgs = @("barrier", "ROADMAP-item7-fixture", "--wave", "1", "--json", "--trust-local-gates")
 
-# (a) PATH normal — paridade do caminho feliz.
-# $item7PyArgvLiteral e o mesmo literal Python para as duas chamadas
-# (normal e curada) — construido uma vez, sem interpolar $item7BarrierArgs
-# dentro da string Python (evitaria depender de como o PowerShell serializa
-# um array dentro de uma string dupla).
-$item7PyArgvLiteral = "['trackfw','barrier','ROADMAP-item7-fixture','--wave','1','--json','--trust-local-gates']"
-$item7NormalGo = Run-Capture -Exe $trackfwBinPathShared -ArgList $item7BarrierArgs -WorkDir $item7Dir
-$item7NormalNode = Run-Capture -Exe $nodeExePath -ArgList (@($nodeCliPath) + $item7BarrierArgs) -WorkDir $item7Dir
-$item7NormalPy = Run-Capture -Exe $pythonExePath -ArgList @("-c", "from trackfw.cli import main; import sys; sys.argv=$item7PyArgvLiteral; main()") -WorkDir $item7Dir -EnvVars @{ PYTHONPATH = $env:TRACKFW_PYPI_SRC }
+# ML-4C: Node/Python arms removed — npm/src and pypi/trackfw deleted in ML-3A/ML-3B.
+# The property measured (barrier sh dependency on Windows) is a Go product property,
+# not a cross-runtime divergence property. MANTER REDUZIDO A GO.
+# Verdict logic: REPRODUCED if Go behaves differently without sh in PATH (sh dependency
+# confirmed); ABSENT if both paths produce same gate result (sh not needed).
 
+# (a) PATH normal — caminho feliz Go.
+$item7NormalGo = Run-Capture -Exe $trackfwBinPathShared -ArgList $item7BarrierArgs -WorkDir $item7Dir
 $item7NormalGoCheck = Get-BarrierGateCheck -Stdout $item7NormalGo.Stdout
-$item7NormalNodeCheck = Get-BarrierGateCheck -Stdout $item7NormalNode.Stdout
-$item7NormalPyCheck = Get-BarrierGateCheck -Stdout $item7NormalPy.Stdout
 
 # (b) PATH curado SEM sh — mesma tecnica usada para provar a correcao
 # (commit fce709f): um diretorio vazio como PATH do processo FILHO apenas
-# (via -EnvVars, escopado a esta chamada). $trackfwBinPathShared/$nodeExePath/
-# $pythonExePath sao caminhos ABSOLUTOS (resolvidos antes desta secao), o
-# que elimina a ambiguidade de resolucao do proprio $psi.FileName sob um
-# PATH sobrescrito.
+# (via -EnvVars, escopado a esta chamada). $trackfwBinPathShared e caminho
+# ABSOLUTO (resolvido antes desta secao), eliminando ambiguidade de resolucao
+# do proprio $psi.FileName sob um PATH sobrescrito.
 $item7CuratedPathDir = Join-Path $env:RUNNER_TEMP "item7-curated-path-empty"
 New-Item -ItemType Directory -Force -Path $item7CuratedPathDir | Out-Null
 $item7CuratedEnv = @{ PATH = $item7CuratedPathDir }
-$item7CuratedEnvPy = @{ PATH = $item7CuratedPathDir; PYTHONPATH = $env:TRACKFW_PYPI_SRC }
 
 $item7CuratedGo = Run-Capture -Exe $trackfwBinPathShared -ArgList $item7BarrierArgs -WorkDir $item7Dir -EnvVars $item7CuratedEnv
-$item7CuratedNode = Run-Capture -Exe $nodeExePath -ArgList (@($nodeCliPath) + $item7BarrierArgs) -WorkDir $item7Dir -EnvVars $item7CuratedEnv
-$item7CuratedPy = Run-Capture -Exe $pythonExePath -ArgList @("-c", "from trackfw.cli import main; import sys; sys.argv=$item7PyArgvLiteral; main()") -WorkDir $item7Dir -EnvVars $item7CuratedEnvPy
-
 $item7CuratedGoCheck = Get-BarrierGateCheck -Stdout $item7CuratedGo.Stdout
-$item7CuratedNodeCheck = Get-BarrierGateCheck -Stdout $item7CuratedNode.Stdout
-$item7CuratedPyCheck = Get-BarrierGateCheck -Stdout $item7CuratedPy.Stdout
 
 $item7Detail = @"
-(a) PATH normal — status do check 'gates' via 'trackfw barrier':
+(a) PATH normal — status do check 'gates' via 'trackfw barrier' (Go):
 Go   -> $($item7NormalGoCheck.Status) failures=$($item7NormalGoCheck.Failures -join ' | ')
-Node -> $($item7NormalNodeCheck.Status) failures=$($item7NormalNodeCheck.Failures -join ' | ')
-Py   -> $($item7NormalPyCheck.Status) failures=$($item7NormalPyCheck.Failures -join ' | ')
+(Node/Python arms removidos em ML-4C: npm/src e pypi/trackfw deletados em ML-3A/ML-3B)
 
-(b) PATH CURADO sem 'sh' ($item7CuratedPathDir) — status do check 'gates':
+(b) PATH CURADO sem 'sh' ($item7CuratedPathDir) — status do check 'gates' (Go):
 Go   -> $($item7CuratedGoCheck.Status) failures=$($item7CuratedGoCheck.Failures -join ' | ')
-Node -> $($item7CuratedNodeCheck.Status) failures=$($item7CuratedNodeCheck.Failures -join ' | ')
-Py   -> $($item7CuratedPyCheck.Status) failures=$($item7CuratedPyCheck.Failures -join ' | ')
 "@
 
-$item7Medido = $item7NormalGo.Stdout -and $item7NormalNode.Stdout -and $item7NormalPy.Stdout -and $item7CuratedGo.Stdout -and $item7CuratedNode.Stdout -and $item7CuratedPy.Stdout
-$item7NormalConsistent = ($item7NormalGoCheck.Status -eq $item7NormalNodeCheck.Status) -and ($item7NormalGoCheck.Status -eq $item7NormalPyCheck.Status)
-$item7CuratedConsistent = ($item7CuratedGoCheck.Status -eq $item7CuratedNodeCheck.Status) -and ($item7CuratedGoCheck.Status -eq $item7CuratedPyCheck.Status)
+$item7Medido = ($item7NormalGo.Stdout -ne "") -and ($item7CuratedGo.Stdout -ne "")
 $item7Verdict = if (-not $item7Medido) { "INCONCLUSIVE" }
-                elseif ((-not $item7NormalConsistent) -or (-not $item7CuratedConsistent)) { "REPRODUCED" }
+                elseif ($item7NormalGoCheck.Status -ne $item7CuratedGoCheck.Status) { "REPRODUCED" }
                 else { "ABSENT" }
-Add-Result -Item "7" -Title "trackfw barrier avalia o MESMO gate de wave diferente entre CLIs (retargetado ML-2D: invoca 'trackfw barrier' de verdade, nao mais a replica isolada de exec.Command/spawnSync/subprocess)" -Verdict $item7Verdict -Detail $item7Detail
+Add-Result -Item "7" -Title "trackfw barrier depende de 'sh' no PATH no Windows — Go (retargetado ML-2D: invoca 'trackfw barrier' de verdade, nao mais a replica isolada de exec.Command)" -Verdict $item7Verdict -Detail $item7Detail
 
 # ---------------------------------------------------------------------
 # item 8 — declarado, nao checado (residual)
@@ -555,16 +535,17 @@ roadmap: docs/roadmaps/backlog/ROADMAP-item10.md
 }
 
 $item10Go = Test-Item10 -Runtime "go"
-$item10Node = Test-Item10 -Runtime "node"
-$item10Py = Test-Item10 -Runtime "python"
-$item10Detail = ($item10Go, $item10Node, $item10Py | ForEach-Object { "$($_.Runtime): $($_.Verdict) — $($_.Detail)" }) -join "`n"
-$item10Verdict = if (@($item10Go, $item10Node, $item10Py) | Where-Object { $_.Verdict -eq "REPRODUCED" }) { "REPRODUCED" } elseif (@($item10Go, $item10Node, $item10Py) | Where-Object { $_.Verdict -eq "INCONCLUSIVE" }) { "INCONCLUSIVE" } else { "ABSENT" }
-Add-Result -Item "10" -Title "separador de SO (\) vazando para o frontmatter da REQ no roadmap move" -Verdict $item10Verdict -Detail $item10Detail
+# ML-4C: Node/Python arms removed — npm/src and pypi/trackfw deleted in ML-3A/ML-3B.
+# OS separator leaking into REQ frontmatter on roadmap move is a Go product property
+# on Windows, not a cross-runtime divergence property. MANTER REDUZIDO A GO.
+$item10Detail = "go: $($item10Go.Verdict) — $($item10Go.Detail)`n(Node/Python arms removidos em ML-4C: npm/src e pypi/trackfw deletados em ML-3A/ML-3B)"
+$item10Verdict = $item10Go.Verdict
+Add-Result -Item "10" -Title "separador de SO (\) vazando para o frontmatter da REQ no roadmap move — Go" -Verdict $item10Verdict -Detail $item10Detail
 
 # ---------------------------------------------------------------------
 # item 11 — declarado, coberto pela camada 1
 # ---------------------------------------------------------------------
-Add-Result -Item "11" -Title "12 testes de symlink sem privilegio (5 Python, 5 Node, 2 Go)" `
+Add-Result -Item "11" -Title "2 testes de symlink sem privilegio (2 Go)" `
     -Verdict "COVERED-BY-CAMADA-1" `
     -Detail "Ja exposto por go test ./..., npm test e pytest pypi/tests (camada 1, job windows-full-suites) — sao os proprios arquivos de teste da suite. O skip explicito com mensagem nomeando a garantia nao exercitada e a Wave 2 (ML-2A), fora do escopo desta ML."
 

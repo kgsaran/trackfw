@@ -9,6 +9,33 @@
           }
         ],
         "matcher": "*"
+      },
+      {
+        "hooks": [
+          {
+            "command": "$GEMINI_PROJECT_DIR/scripts/trackfw-credential-guard.sh",
+            "type": "command"
+          }
+        ],
+        "matcher": "run_shell_command"
+      },
+      {
+        "hooks": [
+          {
+            "command": "$GEMINI_PROJECT_DIR/scripts/trackfw-credential-guard.sh",
+            "type": "command"
+          }
+        ],
+        "matcher": "read_file|read_many_files"
+      },
+      {
+        "hooks": [
+          {
+            "command": "$GEMINI_PROJECT_DIR/scripts/trackfw-credential-guard.sh",
+            "type": "command"
+          }
+        ],
+        "matcher": "write_file|replace"
       }
     ],
     "BeforeTool": [
@@ -17,9 +44,31 @@
           {
             "command": "$GEMINI_PROJECT_DIR/scripts/trackfw-git-branch-guard.sh",
             "type": "command"
+          },
+          {
+            "command": "$GEMINI_PROJECT_DIR/scripts/trackfw-credential-guard.sh",
+            "type": "command"
           }
         ],
         "matcher": "run_shell_command"
+      },
+      {
+        "hooks": [
+          {
+            "command": "$GEMINI_PROJECT_DIR/scripts/trackfw-credential-guard.sh",
+            "type": "command"
+          }
+        ],
+        "matcher": "read_file|read_many_files"
+      },
+      {
+        "hooks": [
+          {
+            "command": "$GEMINI_PROJECT_DIR/scripts/trackfw-credential-guard.sh",
+            "type": "command"
+          }
+        ],
+        "matcher": "write_file|replace"
       }
     ],
     "Notification": [
