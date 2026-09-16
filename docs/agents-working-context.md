@@ -2,6 +2,22 @@
 
 ---
 
+## Sessão 2026-09-16 — Ártemis (trackfw-nul — ML-3C-ter: guarda de vacuidade em check-gates-falsify.sh) — ENCERRADO
+
+**Início:** 2026-09-16 | Branch: `fix/v8-um-binario-muitos-canais` (trackfw-nul) | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` ML-3C-ter
+**Tarefa:** Fechar o modo de degradação silenciosa que o ML-3C-bis deixou aberto: o gate imprimia "Falsification checks passed (0 scenarios)" com exit 0 se o `$FALSIFY_SUCCESS_TALLY` fosse inacessível ou todas as chamadas `falsify_count_success` fossem removidas por refator. Fix: (1) `FALSIFY_SUCCESS_FLOOR=201` no preâmbulo (piso pinado com comentário). (2) Guarda de vacuidade no fechamento: medido < piso → exit 1 + diagnóstico. (3) Detecção de chunk: guard envolta em `! declare -f __falsify_timing_mark` — função injetada em cada chunk pelo gen-falsify-chunks.py, ausente no script completo; sem isso a guarda disparava em chunk_6 (~10 cenários < 201). Ares (ML-3E, sessão paralela) já havia identificado e reportado o mesmo bloqueio antes desta sessão.
+**Concluído:** (1) FALSIFY_SUCCESS_FLOOR=201 adicionado após definição de FALSIFY_SUCCESS_TALLY (linha 241). (2) Guarda de vacuidade com proteção de chunk mode via `! declare -f __falsify_timing_mark`. (3) Direção A: probe com FALSIFY_SUCCESS_FLOOR=9999 → exit 1, FAIL presente, "Falsification checks passed" ausente. (4) Direção B: run direto completo → exit 0, "Falsification checks passed (201 scenarios)". (5) `go build ./...` RC=0. (6) `go test ./...` RC=0. (7) `env -u FORCE_COLOR make quality` RC=0 (212 OK, 0 FAIL). (8) `check-orphan-gates.sh` RC=0.
+
+---
+
+## Sessão 2026-09-16 — Ares (trackfw-nul — ML-3E: gate para impedir pré-release como release estável) — ENCERRADO
+
+**Início:** 2026-09-16 | Branch: `fix/v8-um-binario-muitos-canais` (trackfw-nul) | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` ML-3E
+**Tarefa:** Corrigir `.goreleaser.yaml` adicionando `prerelease: auto` ao bloco `release:`, criar gate `scripts/check-goreleaser-prerelease.sh` com falsificação em duas direções, ligar em `parity-rest`.
+**Concluído:** (1) `.goreleaser.yaml` bloco `release:` com `prerelease: auto` + comentário explicando a escolha do valor vs. `true` e referência ao incidente rc1. (2) `scripts/check-goreleaser-prerelease.sh` criado com `export PYTHONIOENCODING=utf-8`, vacuidade tripla (arquivo ausente, bloco ausente, chave ausente), `--self-test` com 5 braços: A1 (chave removida via sed — fixture diferenciada de cmp), A2 (valor `False` — Python str(False)=='False' confirmado), B1 (config correta passa), B2 (arquivo ausente reprova), B3 (bloco release: ausente reprova com mensagem distinta de A1). (3) Gate ligado em `parity-rest` no Makefile (não em quality.yml — os gates vizinhos da Wave v8 não modificam o workflow, fazendo isso transitivamente via `make parity-rest` no job quality). (4) `check-orphan-gates.sh` RC=0. (5) `make parity-rest` RC=0. (6) `go build ./...` e `go test ./...` RC=0. (7) `trackfw validate` 176 violações pré-existentes, nenhuma nova. **BLOQUEIO REPORTADO:** `make parity-falsify` (e portanto `make quality`) falha com "apenas 10 cenário(s) contados, piso é 201" no chunk_6. Causa: ML-3C-bis adicionou `FALSIFY_SUCCESS_FLOOR=201` e vacuity guard ao final de `check-gates-falsify.sh` (uncommitted); quando gen-falsify-chunks.py distribui o script em chunks, o chunk que recebe o guard final tem ~10 cenários, abaixo do piso de 201. Esta é uma regressão pré-existente ao ML-3E; `check-gates-falsify.sh` estava fora do escopo do handoff ("há agente em rodada paralela nesse gate"). Relatado ao arquiteto para resolução.
+
+---
+
 ## Sessão 2026-09-16 — Ártemis (trackfw-nul — ML-3C-bis: defeito de autorrelato em check-gates-falsify.sh) — ENCERRADO
 
 **Início:** 2026-09-16 | Branch: `fix/v8-um-binario-muitos-canais` (trackfw-nul) | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` ML-3C-bis

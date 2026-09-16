@@ -231,6 +231,14 @@ TRACKFW_FALSIFY_ENUMERATE=${TRACKFW_FALSIFY_ENUMERATE:-0}
 FALSIFY_ENUM_TALLY="$WORK/enum-failures"
 FALSIFY_SUCCESS_TALLY="$WORK/success-count"
 : > "$FALSIFY_SUCCESS_TALLY"
+# Piso mínimo de cenários de falsificação bem-sucedidos. Medido em
+# 2026-09-16: 201 cenários. Se o número medido ficar abaixo deste valor o
+# gate reprova com diagnóstico explícito em vez de imprimir "passed" com
+# zero cenários -- a classe de defeito que este gate existe para eliminar.
+# Ao remover cenários legitimamente (consolidação, renomeação), atualize
+# este valor no mesmo commit que remove os cenários. Sem esse passo o piso
+# fica pessimista e o gate começará a reprovar em execuções limpas.
+FALSIFY_SUCCESS_FLOOR=201
 if [[ "$TRACKFW_FALSIFY_ENUMERATE" == "1" ]]; then
   : > "$FALSIFY_ENUM_TALLY"
   echo "[falsify/enumerate] modo de enumeração ATIVO (TRACKFW_FALSIFY_ENUMERATE=1, default=0) -- reprovações são contadas e a execução continua para o próximo cenário; o exit code final permanece != 0 se qualquer cenário reprovar. Ferramenta de diagnóstico -- não usada por make quality/parity." >&2
@@ -6718,4 +6726,28 @@ fi
 # este contador — são ~2-7 linhas adicionais que não alteram a contagem aqui.
 falsify_success_n=$(wc -l < "$FALSIFY_SUCCESS_TALLY" 2>/dev/null || echo 0)
 falsify_success_n=${falsify_success_n//[[:space:]]/}
+
+# Guarda de vacuidade: o número medido deve ser pelo menos FALSIFY_SUCCESS_FLOOR.
+# Se ficar abaixo, algo removeu chamadas de falsify_count_success ou o
+# arquivo de tally ficou inacessível -- cenário que produz "passed" sem medir
+# nada, exatamente a classe de defeito que este script existe para eliminar.
+# Vale nos dois modos (normal e TRACKFW_FALSIFY_ENUMERATE=1): no modo de
+# enumeração já chegamos aqui sem reprovações de cenário (o bloco acima sairia
+# com exit 1 se tivesse), mas o piso ainda se aplica porque o tally pode estar
+# zerado por razão diferente (tally inacessível, refator removeu contadores).
+#
+# NÃO se aplica em chunk: gen-falsify-chunks.py injeta a função
+# __falsify_timing_mark em cada chunk gerado (preâmbulo do chunk), mas NUNCA
+# no script original. A presença dessa função é o sinal confiável de que
+# este código está rodando dentro de um chunk paralelo -- cada chunk
+# carrega apenas uma fração dos ~201 cenários e, por construção, ficaria
+# abaixo do piso mesmo num run limpo. A guarda de completude do driver
+# paralelo (sentinela CHUNK_COMPLETE + rótulos esperados) cobre o chunk;
+# a guarda de vacuidade abaixo cobre o run direto do script completo.
+if ! declare -f __falsify_timing_mark &>/dev/null; then
+  if [[ "${falsify_success_n:-0}" -lt "$FALSIFY_SUCCESS_FLOOR" ]]; then
+    echo "FAIL [falsify/vacuity-guard] apenas ${falsify_success_n:-0} cenário(s) contados, piso é $FALSIFY_SUCCESS_FLOOR -- provável remoção de chamadas falsify_count_success por refator ou tally inacessível; atualize FALSIFY_SUCCESS_FLOOR no mesmo commit que remover cenários" >&2
+    exit 1
+  fi
+fi
 echo "Falsification checks passed (${falsify_success_n:-0} scenarios)"
