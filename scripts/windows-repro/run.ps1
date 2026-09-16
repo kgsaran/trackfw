@@ -37,12 +37,15 @@
 #      deletado em ML-3A. Propriedade Go equivalente JA coberta por
 #      scripts/check-tty-detection.sh (gate parity-rest): binario Go nao
 #      trava com stdin=DEVNULL — redundancia por cobertura.
-#   7  sh -c hardcodado no Go (barrier.go:729)       -> checado aqui.
-#      ROADMAP-2026-09-05, ML-2D: retargetado — ate a Wave 1 media a MESMA
-#      chamada de shell REPLICADA fora do `barrier`, em isolamento. Agora
-#      invoca `trackfw barrier` de verdade nos 3 runtimes, com PATH normal
-#      (paridade do caminho feliz) e com PATH curado sem `sh` (AC3/AC4 da
-#      correcao #235 — mensagem byte-identica "gates not evaluated: ...").
+#   7  barrier falha limpo sem 'sh' no PATH (Go)     -> checado aqui.
+#      ML-4F: repontado — a dependencia de 'sh' e restricao documentada, nao
+#      defeito (shMissingMsg declarado em barrier.go:790, diagnostico limpo).
+#      Mede o contrato em duas direcoes: (a) sh ausente no PATH → gate reporta
+#      status=not_evaluated + shMissingMsg exato; (b) gate que sai 127 (tool
+#      inexistente) com sh presente → status=blocked, SEM shMissingMsg — exit
+#      127 dentro de um sh funcional nao e "sh ausente". CONFIRMATORY se o
+#      contrato e honrado, REPRODUCED se alguem trocar a distincao
+#      spawnFailed/exitCode em runGateCommand ou alterar a mensagem.
 #   8  postura divergente com \ (manager.go/js)      -> NAO checado aqui.
 #      resolve() e nao-exportado em internal/integrations/manager.go — nao
 #      da para chamar de fora sem tocar internal/ (fora do escopo desta
@@ -396,20 +399,86 @@ $item7CuratedEnv = @{ PATH = $item7CuratedPathDir }
 $item7CuratedGo = Run-Capture -Exe $trackfwBinPathShared -ArgList $item7BarrierArgs -WorkDir $item7Dir -EnvVars $item7CuratedEnv
 $item7CuratedGoCheck = Get-BarrierGateCheck -Stdout $item7CuratedGo.Stdout
 
-$item7Detail = @"
-(a) PATH normal — status do check 'gates' via 'trackfw barrier' (Go):
-Go   -> $($item7NormalGoCheck.Status) failures=$($item7NormalGoCheck.Failures -join ' | ')
-(Node/Python arms removidos em ML-4C: npm/src e pypi/trackfw deletados em ML-3A/ML-3B)
+# ML-4F: contrato documentado: shMissingMsg (barrier.go:790). Construido em
+# codigo para evitar mojibake em PowerShell 5.1 (leitura ANSI, nao UTF-8):
+# o em-dash U+2014 seria reinterpretado se literalmente no fonte .ps1.
+$emDash = [char]0x2014
+$item7ShMissingMsg = "gates not evaluated: sh not found in PATH " + $emDash + " install a POSIX shell (e.g. Git Bash, WSL) to evaluate gates"
 
-(b) PATH CURADO sem 'sh' ($item7CuratedPathDir) — status do check 'gates' (Go):
-Go   -> $($item7CuratedGoCheck.Status) failures=$($item7CuratedGoCheck.Failures -join ' | ')
+# Terceiro braco (ML-4F): gate que sai 127 (ferramenta inexistente) com sh
+# presente nao deve emitir shMissingMsg — exit 127 dentro de sh funcional
+# nao e "sh ausente" (distincao spawnFailed vs. exitCode, ML-0A/runGateCommand).
+$item7Dir127 = Join-Path $env:RUNNER_TEMP "item7-barrier-fixture-127"
+Remove-Item -Recurse -Force $item7Dir127 -ErrorAction SilentlyContinue
+foreach ($sub in @("docs\roadmaps\wip", "docs\roadmaps\backlog", "docs\roadmaps\blocked", "docs\roadmaps\done", "docs\roadmaps\abandoned", "docs\req", "docs\adr")) {
+    New-Item -ItemType Directory -Force -Path (Join-Path $item7Dir127 $sub) | Out-Null
+}
+@'
+# Roadmap: Item 7 Fixture 127 (ML-4F — terceiro braco: gate que sai 127 nao e sh ausente)
+
+REQ: REQ-item7-fixture-127
+
+## Acceptance Criteria
+- [x] fixture roadmap-level criterion
+
+## Wave 1 - Fixture Wave 127
+> Dependencias: nenhuma
+
+**Gates da wave:**
+```bash
+nosuchtool-trackfw-item7-ix --version
+```
+
+### ML-1A - Fixture ML 127
+**Status:** ✅
+**Criterios de aceite:**
+- [x] build passes
+'@ | Set-Content -NoNewline -Encoding utf8 (Join-Path $item7Dir127 "docs\roadmaps\wip\ROADMAP-item7-fixture-127.md")
+
+$item7Normal127 = Run-Capture -Exe $trackfwBinPathShared -ArgList @("barrier", "ROADMAP-item7-fixture-127", "--wave", "1", "--json", "--trust-local-gates") -WorkDir $item7Dir127
+$item7NormalCheck127 = Get-BarrierGateCheck -Stdout $item7Normal127.Stdout
+
+# Contrato (direcao A — sh ausente):
+#   status=not_evaluated, failures contem shMissingMsg exato.
+# Contrato (direcao B — exit 127 dentro de sh funcional):
+#   status=blocked, failures NAO contem shMissingMsg.
+# Controle: PATH normal deve produzir status avaliado (nao not_evaluated) —
+#   prova que sh e localizavel no ambiente base antes de curar o PATH.
+$item7ControlOk  = ($item7NormalGoCheck.Status -ne "not_evaluated") -and ($item7NormalGo.Stdout -ne "")
+$item7StatusOk   = ($item7CuratedGoCheck.Status -eq "not_evaluated")
+$item7MsgOk      = ($item7CuratedGoCheck.Failures -contains $item7ShMissingMsg)
+$item7Status127Ok = ($item7NormalCheck127.Status -eq "blocked")
+$item7Msg127Ok   = -not ($item7NormalCheck127.Failures -contains $item7ShMissingMsg)
+$item7Medido     = ($item7NormalGo.Stdout -ne "") -and ($item7CuratedGo.Stdout -ne "") -and ($item7Normal127.Stdout -ne "")
+
+$item7Detail = @"
+Contrato documentado (ML-0A / shMissingMsg barrier.go:790):
+  Direcao A: sh ausente -> status=not_evaluated + shMissingMsg exato nos failures.
+  Direcao B: gate que sai 127 com sh presente -> status=blocked, SEM shMissingMsg.
+  Controle: PATH normal deve ser avaliado (nao not_evaluated).
+
+Controle PATH normal — check 'gates' (Go):
+  status=$($item7NormalGoCheck.Status) control_ok=$item7ControlOk
+
+Direcao A — PATH CURADO sem 'sh' ($item7CuratedPathDir):
+  status=$($item7CuratedGoCheck.Status) failures=$($item7CuratedGoCheck.Failures -join ' | ')
+  status_ok=$item7StatusOk msg_ok=$item7MsgOk
+
+Direcao B — gate exit 127 com sh presente (fixture $item7Dir127):
+  status=$($item7NormalCheck127.Status) failures=$($item7NormalCheck127.Failures -join ' | ')
+  status_ok=$item7Status127Ok msg_absent_ok=$item7Msg127Ok
+
+(Node/Python arms removidos em ML-4C: npm/src e pypi/trackfw deletados em ML-3A/ML-3B)
 "@
 
-$item7Medido = ($item7NormalGo.Stdout -ne "") -and ($item7CuratedGo.Stdout -ne "")
+# CONFIRMATORY: contrato honrado em ambas as direcoes e controle ok.
+# REPRODUCED:   contrato quebrado (spawnFailed/exitCode trocados, mensagem alterada,
+#               ou exit 127 tratado como sh ausente).
+# INCONCLUSIVE: sem saida para medir em algum braco.
 $item7Verdict = if (-not $item7Medido) { "INCONCLUSIVE" }
-                elseif ($item7NormalGoCheck.Status -ne $item7CuratedGoCheck.Status) { "REPRODUCED" }
-                else { "ABSENT" }
-Add-Result -Item "7" -Title "trackfw barrier depende de 'sh' no PATH no Windows — Go (retargetado ML-2D: invoca 'trackfw barrier' de verdade, nao mais a replica isolada de exec.Command)" -Verdict $item7Verdict -Detail $item7Detail
+                elseif ($item7ControlOk -and $item7StatusOk -and $item7MsgOk -and $item7Status127Ok -and $item7Msg127Ok) { "CONFIRMATORY" }
+                else { "REPRODUCED" }
+Add-Result -Item "7" -Title "barrier falha limpo sem 'sh' no PATH: not_evaluated + shMissingMsg exato; exit 127 dentro de sh = blocked sem shMissingMsg (ML-4F — CONFIRMATORY se contrato honrado)" -Verdict $item7Verdict -Detail $item7Detail
 
 # ---------------------------------------------------------------------
 # item 8 — declarado, nao checado (residual)
@@ -841,6 +910,11 @@ $gateResults = @($results | Where-Object { $_.InGate })
 $reproduced = @($gateResults | Where-Object { $_.Verdict -eq "REPRODUCED" })
 $inconclusive = @($gateResults | Where-Object { $_.Verdict -eq "INCONCLUSIVE" })
 $blocked = @($gateResults | Where-Object { $_.Verdict -eq "BLOCKED-BY-ITEM-1" })
+# $confirmatory (ML-4F): itens cujo contrato e honrado (CONFIRMATORY — item 3 e
+# agora item 7). Contados separadamente para que o sumario mostre explicitamente
+# quantos itens confirmaram o contrato, em vez de deixar isso invisivel no "Total
+# de linhas" (mesma logica do $executionFailed para o item 3).
+$confirmatory = @($gateResults | Where-Object { $_.Verdict -eq "CONFIRMATORY" })
 # $executionFailed (ROADMAP-2026-09-05, ML-3B — vazamento 1): o item 3 saiu
 # do contador de REPRODUCED/INCONCLUSIVE de proposito (CONFIRMATORIO, ML-2B)
 # — mas "confirmatorio" nao e "invisivel". Se a SONDA que sustenta o item 3
@@ -854,7 +928,7 @@ $blocked = @($gateResults | Where-Object { $_.Verdict -eq "BLOCKED-BY-ITEM-1" })
 # de fechar para o item 3 — precisaria do proprio contador, fora do InGate.
 $executionFailed = @($gateResults | Where-Object { $_.Verdict -eq "CONFIRMATORY-EXECUTION-FAILED" })
 
-Write-Host "Reproduzidos: $($reproduced.Count) | Inconclusivos: $($inconclusive.Count) | Bloqueados por dependencia (item 1): $($blocked.Count) | Falhas de execucao confirmatoria (item 3 sem medir): $($executionFailed.Count) | Total de linhas: $($results.Count) | Fora do gate (observacional, item 12): $(@($results | Where-Object { -not $_.InGate }).Count)"
+Write-Host "Reproduzidos: $($reproduced.Count) | Inconclusivos: $($inconclusive.Count) | Bloqueados por dependencia (item 1): $($blocked.Count) | Confirmatorios (contrato honrado — itens 3 e 7): $($confirmatory.Count) | Falhas de execucao confirmatoria (item 3 sem medir): $($executionFailed.Count) | Total de linhas: $($results.Count) | Fora do gate (observacional, item 12): $(@($results | Where-Object { -not $_.InGate }).Count)"
 
 if ($env:GITHUB_STEP_SUMMARY) {
     # ROADMAP-2026-09-05, ML-3B — o filtro do gate (InGate) NAO pode ficar
