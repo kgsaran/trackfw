@@ -922,7 +922,75 @@ desconhecida.
 > Dependências: Wave 3.
 
 ### ML-4A — **AC12** — a medição realocada
-**Status:** ⬜ Pendente
+**Status:** 🔄 Classificação concluída e auditada (2026-09-16) — fechamento dos issues pendente de confirmação do usuário
+
+**Corpus medido:** 18 issues abertos (não 16 — a estimativa do roadmap era anterior a #362 e #363).
+
+🔴 **A estimativa preliminar de "8 de 16 desaparecem" era otimista. O medido é 6 de 18.**
+
+🔴 **Erro do arquiteto que quase fechou defeito vivo, registrado porque o método errado é sedutor.**
+A primeira passada cruzou mecanicamente os caminhos citados em cada issue contra a árvore e
+classificou como "objeto removido" quando `npm/src/...` e `pypi/trackfw/...` estavam ausentes. O
+regex só procurava esses dois prefixos — então **todo issue que também tinha sítio em `internal/`
+foi rotulado DESAPARECE por omissão**. O #327 é a prova: cita `npm/src/generators/req.js:193` e
+`pypi/trackfw/generators/req.py:303`, ambos ausentes, mas o sítio Go `internal/generators/req.go`
+está vivo (a linha moveu de 299 para 343; o código é o mesmo). É INDIFERENTE.
+A pergunta decisiva não é "o caminho citado sumiu?" e sim **"existe sítio Go sobrevivente que ainda
+reproduza o mecanismo?"**. Reclassificado com essa pergunta.
+
+(Uma segunda medição desta mesma sessão saiu errada por rodar em `zsh` com variável não citada —
+`zsh` não faz word-splitting, e o teste comparou a lista inteira de artefatos como um caminho só,
+devolvendo "ausente" para tudo. Refeita em `bash`. É a mesma classe de erro que custou o apagamento
+de uma branch em 2026-09-12.)
+
+#### Classificação medida
+
+| Classificação | Issues | n |
+|---|---|---|
+| **DESAPARECE** — objeto removido, nada a corrigir | #261, #286, #298, #309, #310, #329 | 6 |
+| **BARATEIA** — superfície encolheu, resta parte | #268, #307, #363 | 3 |
+| **INDIFERENTE** — v8 não muda nada | #258, #273, #277, #290, #308, #327, #353 | 7 |
+| **JÁ CORRIGIDO** (por trabalho desta wave, não pela remoção) | #362 | 1 |
+| **PREMISSA FALSIFICADA** — não é defeito | #359 | 1 |
+
+#### O que resta nos BARATEIA — e é isto que não pode se perder no fechamento
+
+- **#268** — some a metade do `status` do Python; **resta a metade que escreve**:
+  `internal/sync/sync.go:43` usa `filepath.Glob("docs/req/*.md")` literal e ignora o `req_dir`
+  configurado. Num consumidor com `req_dir: docs/requisições`, o `sync` enxerga 0 REQ real e pode
+  criar issue no PM para REQ alheia. Mais grave que a metade que desaparece.
+- **#307** — somem 2 dos 3 gates; resta `check-release-tag-parity.sh` inteiro.
+- **#363** — some o sítio de `check-doctor-parity.sh`; resta
+  `check-validate-rule-pins.sh:367,376,385`, no gate mais central de `parity-rest`. 13 gates ainda
+  usam a forma `python3 -c "` com aspas duplas e não foram varridos.
+
+#### Ressalvas de fechamento (registradas antes de fechar, para não sumirem com o issue)
+
+- **#329** — o que o autor declarou acionável não foi o nome velho na lista, e sim que **o sinal
+  `[-1 resolvido]` não tem destino: não reprova nem fecha**. Essa observação é de desenho do ratchet,
+  não é tocada pela v8, e morreria junto com o issue.
+- **#359** — a flag `--no-pr` existe desde o PR #73 e está honrada (`internal/commands/ship.go:140`,
+  verificado rodando o binário construído desta branch). O relato nasceu de um `--help` colado
+  truncado — o cobra ordena alfabeticamente e `--no-pr` é a última linha. **Mas o dano relatado
+  (quatro PRs abertos por agentes) é real** e é de default e orquestração, não de flag ausente.
+  Fechar como "não reproduz" sem recapturar isso perde o problema verdadeiro.
+
+---
+
+### ML-4B — dependência morta de `node` e `python3` num gate sobrevivente
+**Status:** ⬜ Pendente — descoberto na triagem do ML-4A, mesma causa, mesma REQ
+
+`scripts/check-release-tag-parity.sh` já loopa **só** `for runtime in go` (linhas 637, 669, 707,
+comentadas `ML-3A (v8): node py removed`), mas o setup **continua exigindo os dois interpretadores**:
+`exit 1` com `node not found in PATH` (linhas 89-93) e `python3 not found in PATH`, e `ln -s` de
+ambos para o `RUNTIME_BIN` (118-119). Verificado no fonte pelo arquiteto.
+
+**Por que é bloqueante para a v8 e não cosmético:** a v8 declara que o produto é um binário Go. Um
+contribuidor sem `node` instalado **não consegue rodar `make quality`** — o gate aborta no setup por
+uma dependência que o produto não usa mais. É a Wave 3 incompleta: o braço morreu, o andaime ficou.
+
+Também é o mecanismo remanescente do **#307**: a guarda de vacuidade conclui `git does not resolve`
+quando quem não inicia é o `python3` copiado.
 Classificar REQs e issues em **desaparece / barateia / indiferente**, pelo mesmo critério, e
 **fechar os que a causa removeu**. Sem isto, a v8 entra e o backlog fica em limbo.
 ⚠️ A estimativa de *"8 de 16 issues"* é **classificação preliminar por leitura** — não serve como
