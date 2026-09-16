@@ -2,6 +2,23 @@
 
 ---
 
+## Sessão 2026-09-16 — Ares (fix/um-binario-muitos — ML-4I-bis: install.sh entrega amd64 em ARM64 Windows) — ENCERRADO
+
+**Início:** 2026-09-16 | Branch: `fix/um-binario-muitos` | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` ML-4I-bis
+**Tarefa:** install.sh usa `uname -m` para detectar arquitetura; no Windows ARM64 com Git Bash (processo x64 emulado), `uname -m` retorna `x86_64` → instala `windows_amd64` em vez de `windows_arm64`. Corrigir para usar o sufixo de `uname -s` (ex.: `MINGW64_NT-10.0-26200-ARM64`) que o kernel NT acrescenta na máquina ARM64. Adicionar override `TRACKFW_ARCH`. Adicionar cenários de gate. Corrigir mesmo mecanismo em `check-install-checksum.sh`.
+**Concluído:**
+(1) `scripts/install.sh` — bloco de arch detection reescrito: Windows usa `RAW_OS` em vez de `uname -m`. `*-ARM64|*-arm64` → arm64; `*_NT-*` (sinal NT positivo sem ARM64) → amd64; `*)` → recusa nomeada. Override `TRACKFW_ARCH=amd64|arm64` validado com `case` (nunca grep). Comentário de limitação: host ARM64 com MSYS2/Cygwin antigo sem sufixo e com string `_NT-` selecionaria amd64 silenciosamente.
+(2) `scripts/check-install-checksum.sh` — mesmo mecanismo corrigido: `*) T_ARCH="amd64"` substituído por `*) exit 2 com mensagem`.
+(3) `scripts/check-install-version-pin.sh` — 7 cenários novos: mingw64-arm64, mingw64-x64-sim (simulado), msys-arm64, no-nt-string-fails (cenário C), trackfw-arch-override, trackfw-arch-invalid, nonvacuity-regressed (contra-braço AC6-style). `export PYTHONIOENCODING=utf-8` adicionado. Stub uname em `$UNAME_STUB_BIN` separado.
+**Falsificação:**
+- Braço A (VM ARM64 real): dryrun mostra `windows/arm64` / URL `windows_arm64`. Instalação real baixa `windows_arm64`. PE COFF machine=0xAA64 (ARM64). `which -a trackfw` mostra `/c/Users/Lab/bin/trackfw` primeiro; invocado por caminho absoluto → `trackfw 8.0.0-rc2`.
+- Braço B (simulado, declarado como tal): cenário mingw64-x64-sim na gate.
+- Braço C (sinal ausente): `STUB_UNAME_S=MINGW64` → recusa com "Arquitetura Windows nao reconhecida".
+**Verificações:** `go build ./...` RC=0. `go test ./...` RC=0. `env -u FORCE_COLOR make quality` RC=0 (212 OK, 0 FAIL). `check-install-version-pin.sh` 32 cenários OK. `check-install-checksum.sh` 9 cenários OK.
+**ALERTA:** git status mostra trackfw.yaml modificado após make quality — issue #366 conhecida. Não commitado.
+
+---
+
 ## Sessão 2026-09-16 — Ares (fix/binario-muitos — ML-4G: release.yml constrói bin/trackfw antes do gate e ganha workflow_dispatch sem publicação) — ENCERRADO
 
 **Início:** 2026-09-16 | Branch: `fix/binario-muitos` | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` ML-4G
@@ -37417,3 +37434,37 @@ pré-requisito hard de ML-3A.
 **Erros do arquiteto nesta sessão, registrados:** (1) handoff com piso fixo de contagem sem verificar que o falsify roda em shards — produziu falso-positivo; (2) triagem de issues por cruzamento de caminhos `npm/`/`pypi/`, que rotula DESAPARECE por omissão quando há sítio Go vivo; (3) medição em `zsh` com variável não citada, sem word-splitting; (4) `git add -A` varreu a corrupção do `trackfw.yaml` para dentro do commit, quebrando o CI.
 
 **Pendente:** `v8.0.0-rc2` (bump + CHANGELOG + tag), depois a GA. Entrada órfã de 2026-09-13 (Ares, ML-3C BLOQUEADO) preservada em scratchpad — superada pela tabela de auditoria dos 67 cenários no roadmap.
+
+---
+
+## Sessão 2026-09-16 — Ares (fix/um-binario-muitos — ML-4H + ML-4I)
+
+**Início:** 2026-09-16 | Branch: `fix/um-binario-muitos` | Dir: `/Users/kgsaran/Sistemas/Desenvolvimento/workspace/trackfw`
+**Roadmap:** `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` ML-4H + ML-4I
+**Tarefa:** (1) ML-4H: adicionar retry+backoff+deadline ao `verify-channels` no release.yml — distingue "não propagou no prazo" de "publish falhou". (2) ML-4I: fazer `install.sh` funcionar em Windows ARM64/Git Bash, testar na VM `ssh powershell-vm`.
+
+**Concluído:**
+
+**ML-4H** — `verify-channels` retry+backoff+deadline:
+- Criado `scripts/verify-npm-channels.sh`: retry com backoff (inicial 30s, max 60s), deadline 900s (717s medido + ~26% margem). Deadline esgotado → FAIL. Mensagem distingue "CDN propagation timeout" de "publish job failed" via env var `PUBLISH_NPM_RESULT`.
+- Atualizado `scripts/verify-pypi-channel.py`: flag `--retry` habilita loop; `PUBLISH_PYPI_RESULT` distingue as duas causas. Pre-sleep deadline check evita sleep além do prazo.
+- Atualizado `release.yml`: removido `sleep 45`, substituídos os steps de npm shim + npm platform channels por uma única chamada ao novo script; PyPI step recebe `--retry`; ambos recebem `needs.*.result` como env var.
+
+**ML-4I** — `install.sh` Windows:
+- Detecta `MINGW*|MSYS*|CYGWIN*` → OS="windows".
+- INSTALL_DIR padrão: `$HOME/bin` no Windows (já em PATH no Git Bash; medido em VM).
+- `mkdir -p "${INSTALL_DIR}"` antes da instalação.
+- `BIN_EXE=trackfw.exe` no Windows; outros: `trackfw`.
+- sudo guard: só tenta sudo em Darwin/Linux.
+- Invoca binário por caminho absoluto no passo de verificação final.
+- Validator de TRACKFW_VERSION relaxado: aceita `-rcN`/`-betaN` (case, nunca grep -E; sem `/` nem newline no sufixo).
+- `check-install-version-pin.sh`: +5 cenários pass (rc-bare, rc-v, beta, ac5-prerelease-same-asset) + 5 cenários fail (alpha, dash-only, rc-sem-dígito, rc-com-slash, rc-newline). Total: 25 cenários.
+- `check-install-checksum.sh`: adicionado `mkdir` à lista de utilitários essenciais do minpath (C6 e C7).
+- README: removido bullet "refuses Windows", atualizado "What we know works" para mencionar install.sh.
+
+**Evidências:**
+- VM Windows 11 ARM64 (build 26200): `TRACKFW_VERSION=v8.0.0-rc2 sh install_test.sh` → `trackfw 8.0.0-rc2`, `which -a trackfw` confirma `/c/Users/Lab/bin/trackfw` primeiro.
+- Falsificação VM: uname stub FreeBSD → `EXIT_CODE:1` + mensagem nomeada.
+- `make quality` → RC=0. `go build ./...` → RC=0. `go test ./...` → RC=0.
+
+**Pendente para o arquiteto:** auditoria do diff, commit, push.

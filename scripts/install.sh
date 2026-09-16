@@ -3,31 +3,98 @@ set -e
 
 REPO="kgsaran/trackfw"
 BIN="trackfw"
-INSTALL_DIR="${TRACKFW_INSTALL_DIR:-/usr/local/bin}"
 
 # --- Detectar OS ---
+# Windows via Git Bash / MSYS2 / Cygwin: uname -s returns MINGW64_NT-*, MSYS_NT-*, CYGWIN_NT-*.
+# Measured 2026-09-16 on Windows 11 ARM64 (build 26200) with Git Bash: MINGW64_NT-10.0-26200-ARM64.
 RAW_OS=$(uname -s)
 case "$RAW_OS" in
-  Darwin) OS="darwin" ;;
-  Linux)  OS="linux" ;;
+  Darwin)    OS="darwin" ;;
+  Linux)     OS="linux" ;;
+  MINGW*|MSYS*|CYGWIN*)
+             OS="windows" ;;
   *)
     echo "Sistema operacional nao suportado: $RAW_OS" >&2
-    echo "Plataformas suportadas: macOS (Darwin), Linux" >&2
+    echo "Plataformas suportadas: macOS (Darwin), Linux, Windows (Git Bash / MSYS2 / Cygwin)" >&2
     exit 1
     ;;
 esac
 
+# --- Instalar para o diretorio correto por plataforma ---
+# Windows: /usr/local/bin maps inside Git's installation tree and requires admin rights.
+# Default to $HOME/bin (already in PATH on Git Bash installs: measured /c/Users/Lab/bin in PATH).
+# mkdir -p is called below before the install step to create it if absent.
+if [ "$OS" = "windows" ]; then
+  INSTALL_DIR="${TRACKFW_INSTALL_DIR:-${HOME}/bin}"
+else
+  INSTALL_DIR="${TRACKFW_INSTALL_DIR:-/usr/local/bin}"
+fi
+
+# --- Nome do binario na plataforma ---
+# GoReleaser embeds trackfw.exe in the Windows tarball; all other platforms use trackfw.
+if [ "$OS" = "windows" ]; then
+  BIN_EXE="trackfw.exe"
+else
+  BIN_EXE="trackfw"
+fi
+
 # --- Detectar ARCH ---
-RAW_ARCH=$(uname -m)
-case "$RAW_ARCH" in
-  x86_64)          ARCH="amd64" ;;
-  aarch64|arm64)   ARCH="arm64" ;;
-  *)
-    echo "Arquitetura nao suportada: $RAW_ARCH" >&2
-    echo "Arquiteturas suportadas: x86_64 (amd64), aarch64/arm64" >&2
-    exit 1
-    ;;
-esac
+#
+# TRACKFW_ARCH permite forcar a arquitetura quando a deteccao automatica falha
+# (ex.: ARM64 com versao antiga de MSYS2/Cygwin sem sufixo no uname -s).
+# Validado com `case`, nunca com grep -E — ver comentario de TRACKFW_VERSION
+# acima sobre ancoragem por linha vs. buffer inteiro. TRACKFW_ARCH alimenta
+# FILENAME e o argumento -o do curl (ver comentarios de path traversal acima).
+# Charset restrito a exatamente "amd64" ou "arm64".
+ARCH=""
+if [ -n "${TRACKFW_ARCH:-}" ]; then
+  case "$TRACKFW_ARCH" in
+    amd64|arm64) ARCH="$TRACKFW_ARCH" ;;
+    *)
+      echo "Erro: TRACKFW_ARCH invalido: '${TRACKFW_ARCH}'" >&2
+      echo "Valores aceitos: amd64, arm64" >&2
+      exit 1
+      ;;
+  esac
+fi
+
+if [ -z "$ARCH" ]; then
+  if [ "$OS" = "windows" ]; then
+    # Windows: uname -m mente sob emulacao x64 — retorna x86_64 num host ARM64.
+    # Medido 2026-09-16 no Windows 11 ARM64 (build 26200) com Git Bash:
+    #   uname -s  →  MINGW64_NT-10.0-26200-ARM64  (correto)
+    #   uname -m  →  x86_64                        (mente — descreve o processo emulado)
+    # O kernel NT acrescenta o sufixo de arquitetura ao string de versao quando o
+    # host e ARM64. O mesmo padrao e esperado para MSYS_NT e CYGWIN_NT (nao medido
+    # diretamente — mesma base de kernel NT; declarado como limitacao).
+    # Sinal positivo para amd64: presenca de "_NT-" no string (ex.: MINGW64_NT-10.0-19041).
+    # Ausencia de qualquer sinal reconhecivel → recusa nomeada; nunca assume amd64.
+    # Limitacao: host ARM64 com versao antiga de Git Bash/MSYS2/Cygwin que omita o
+    # sufixo -ARM64 mas contenha _NT- selecionara amd64 silenciosamente. Use
+    # TRACKFW_ARCH=arm64 para contornar.
+    case "$RAW_OS" in
+      *-ARM64|*-arm64) ARCH="arm64" ;;
+      *_NT-*)          ARCH="amd64" ;;
+      *)
+        echo "Arquitetura Windows nao reconhecida a partir de: $RAW_OS" >&2
+        echo "Use TRACKFW_ARCH=arm64 ou TRACKFW_ARCH=amd64 para especificar explicitamente." >&2
+        exit 1
+        ;;
+    esac
+  else
+    # Linux e macOS: uname -m e confiavel (o processo e nativo, nao emulado)
+    RAW_ARCH=$(uname -m)
+    case "$RAW_ARCH" in
+      x86_64)          ARCH="amd64" ;;
+      aarch64|arm64)   ARCH="arm64" ;;
+      *)
+        echo "Arquitetura nao suportada: $RAW_ARCH" >&2
+        echo "Arquiteturas suportadas: x86_64 (amd64), aarch64/arm64" >&2
+        exit 1
+        ;;
+    esac
+  fi
+fi
 
 # --- Honrar TRACKFW_VERSION, se definida (pin explicito) ---
 # Se ausente ou vazia, o fluxo abaixo (resolucao via API) fica intocado.
@@ -53,6 +120,25 @@ if [ -n "${TRACKFW_VERSION:-}" ]; then
     v*) _tv_body="${_tv_raw#v}" ;;
     *)  _tv_body="$_tv_raw" ;;
   esac
+  # Strip optional pre-release suffix: -rcN or -betaN (N = one or more digits).
+  # Only these two forms are admitted; no slashes, dots or other chars in the suffix.
+  # `case` anchors on the entire parameter buffer — never `grep -E` (see comment above).
+  # Path-traversal note: VERSION_BARE feeds the `-o` dest of curl (e.g.
+  # trackfw_8.0.0-rc2_linux_amd64.tar.gz). The '-' in -rc2/-beta2 is safe; the charset
+  # restriction below (only digits in N) ensures no '/', '..', newlines or commands.
+  _tv_pre_suffix=""
+  case "$_tv_body" in
+    *-rc[0-9]|*-rc[0-9][0-9]|*-rc[0-9][0-9][0-9])
+      _tv_pre_suffix="${_tv_body##*-}"         # e.g. rc2
+      _tv_pre_suffix="-${_tv_pre_suffix}"      # e.g. -rc2
+      _tv_body="${_tv_body%-rc*}"              # e.g. 8.0.0
+      ;;
+    *-beta[0-9]|*-beta[0-9][0-9]|*-beta[0-9][0-9][0-9])
+      _tv_pre_suffix="${_tv_body##*-}"
+      _tv_pre_suffix="-${_tv_pre_suffix}"
+      _tv_body="${_tv_body%-beta*}"
+      ;;
+  esac
   _tv_valid=1
   case "$_tv_body" in
     *[!0-9.]*|.*|*.|*..*|"")
@@ -65,10 +151,10 @@ if [ -n "${TRACKFW_VERSION:-}" ]; then
   fi
   if [ "$_tv_valid" != "1" ]; then
     echo "Erro: TRACKFW_VERSION invalida: '${_tv_raw}'" >&2
-    echo "Formato esperado: v?MAJOR.MINOR.PATCH (ex.: 7.3.0 ou v7.3.0)" >&2
+    echo "Formato esperado: v?MAJOR.MINOR.PATCH[-rcN|-betaN] (ex.: 7.3.0, v7.3.0, v8.0.0-rc2)" >&2
     exit 1
   fi
-  VERSION="v${_tv_body}"
+  VERSION="v${_tv_body}${_tv_pre_suffix}"
 fi
 
 # --- Obter versao mais recente via API do GitHub (pulado se ja pinada acima) ---
@@ -97,6 +183,10 @@ VERSION_BARE="${VERSION#v}"
 
 FILENAME="${BIN}_${VERSION_BARE}_${OS}_${ARCH}.tar.gz"
 URL="https://github.com/${REPO}/releases/download/${VERSION}/${FILENAME}"
+
+# --- Criar diretorio de instalacao se nao existir ---
+# Necessario em especial no Windows onde $HOME/bin nao existe por padrao.
+mkdir -p "${INSTALL_DIR}"
 TMP_DIR=$(mktemp -d)
 # Garantir limpeza do diretorio temporario em qualquer saida (normal ou por erro).
 # Signal 0 equivale a EXIT em sh POSIX.
@@ -214,13 +304,18 @@ echo "Checksum OK: ${ACTUAL_HASH}"
 tar -xzf "${TMP_DIR}/${FILENAME}" -C "${TMP_DIR}"
 
 # --- Instalar (idempotente: sobrescreve binario existente) ---
-if [ ! -w "${INSTALL_DIR}" ]; then
+# sudo nao existe no Windows; o diretorio de instalacao padrao ($HOME/bin) nao requer
+# elevacao. Apenas tentar sudo em plataformas Unix (Darwin e Linux).
+if [ "$OS" = "windows" ]; then
+  mv "${TMP_DIR}/${BIN_EXE}" "${INSTALL_DIR}/${BIN_EXE}"
+  chmod +x "${INSTALL_DIR}/${BIN_EXE}"
+elif [ ! -w "${INSTALL_DIR}" ]; then
   echo "Permissao negada em ${INSTALL_DIR}. Tentando com sudo..."
-  sudo mv "${TMP_DIR}/${BIN}" "${INSTALL_DIR}/${BIN}"
-  sudo chmod +x "${INSTALL_DIR}/${BIN}"
+  sudo mv "${TMP_DIR}/${BIN_EXE}" "${INSTALL_DIR}/${BIN_EXE}"
+  sudo chmod +x "${INSTALL_DIR}/${BIN_EXE}"
 else
-  mv "${TMP_DIR}/${BIN}" "${INSTALL_DIR}/${BIN}"
-  chmod +x "${INSTALL_DIR}/${BIN}"
+  mv "${TMP_DIR}/${BIN_EXE}" "${INSTALL_DIR}/${BIN_EXE}"
+  chmod +x "${INSTALL_DIR}/${BIN_EXE}"
 fi
 
 # --- Limpeza --- (realizada automaticamente pelo trap EXIT configurado acima)
@@ -239,5 +334,7 @@ esac
 
 # --- Sucesso ---
 echo ""
-echo "trackfw ${VERSION} instalado com sucesso em ${INSTALL_DIR}/${BIN}"
-"${INSTALL_DIR}/${BIN}" --version
+echo "trackfw ${VERSION} instalado com sucesso em ${INSTALL_DIR}/${BIN_EXE}"
+# Invocar pelo caminho absoluto para evitar que um binario anterior no PATH
+# (ex.: versao do pip em Python/Scripts/) responda em lugar do recem-instalado.
+"${INSTALL_DIR}/${BIN_EXE}" --version
