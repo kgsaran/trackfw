@@ -376,6 +376,18 @@ jobs:
   # issue — both jobs showed green and the missing channel was only noticed later.
   # This job makes the failure visible: checks all channels and exits non-zero for each missing.
   #
+  # ML-4H: added retry+backoff+deadline to npm and PyPI checks.
+  # Problem: first run of rc2 (2026-09-14) saw FAIL for 4/6 platform packages seconds after
+  # publish. Packages appeared staggered; all 6 were live 717s later. Root cause: the job
+  # asserted read-after-write against distributed CDN with no retry — measuring propagation
+  # latency and reporting it as "missing". A false-positive in the release workflow trains
+  # engineers to ignore the only channel verifier we have.
+  # Fix: retry with backoff up to a 900s deadline (717s + ~26% margin). Exhausting the
+  # deadline is always a FAIL. Messages distinguish two root causes:
+  #   "not propagated within deadline" — publish succeeded, CDN not caught up
+  #   "publish failed"                 — upstream job did not succeed
+  # The needs.*.result context is passed as env vars so scripts can make this distinction.
+  #
   # D7: extended to assert CONTENT, not just presence.
   # D6: PyPI lookup normalizes the version string to PEP 440 before querying the releases dict.
   #     8.0.0-rc1 (git/npm format) → 8.0.0rc1 (PyPI normalized key in releases JSON).
@@ -386,6 +398,8 @@ jobs:
     # ML-4G: publish gate — only reachable via tag push. `always()` alone would run even
     # on workflow_dispatch, querying live registries for packages that were never published.
     if: github.event_name == 'push' && always()
+    # timeout-minutes: default (6h) — script-level deadline (900s) fires first and produces
+    # a clear diagnostic message. Job timeout is the backstop for unexpected hangs only.
     steps:
       - uses: actions/checkout@v7
 
@@ -400,9 +414,6 @@ jobs:
         id: version
         run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
-      - name: Wait for registry propagation
-        run: sleep 45
-
       - name: Verify GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -415,40 +426,26 @@ jobs:
             exit 1
           fi
 
-      - name: Verify npm shim channel
+      # ML-4H: retry+backoff+deadline via scripts/verify-npm-channels.sh.
+      # PUBLISH_NPM_RESULT lets the script distinguish CDN delay from publish failure.
+      - name: Verify npm channels (shim + 6 platform packages)
+        env:
+          PUBLISH_NPM_RESULT: ${{ needs.publish-npm-shim.result }}
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          if npm view "trackfw@$VERSION" version > /dev/null 2>&1; then
-            echo "ok: npm trackfw@$VERSION is live"
-          else
-            echo "FAIL: npm trackfw@$VERSION not found — publish-npm-shim may have failed or credential expired" >&2
-            exit 1
-          fi
+          bash scripts/verify-npm-channels.sh "${{ steps.version.outputs.version }}"
 
-      - name: Verify npm platform channels
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          FAILED=0
-          for slug in linux-x64 linux-arm64 darwin-x64 darwin-arm64 win32-x64 win32-arm64; do
-            if npm view "@trackfw-bin/${slug}@${VERSION}" version > /dev/null 2>&1; then
-              echo "ok: npm @trackfw-bin/${slug}@${VERSION} is live"
-            else
-              echo "FAIL: npm @trackfw-bin/${slug}@${VERSION} not found" >&2
-              FAILED=$((FAILED+1))
-            fi
-          done
-          if [[ "$FAILED" -gt 0 ]]; then
-            echo "FAIL: $FAILED platform package(s) missing from npm" >&2
-            exit 1
-          fi
-
-      # D6: verify-pypi-channel.py normalizes the version to PEP 440 before the lookup.
+      # ML-4H: retry+backoff+deadline via scripts/verify-pypi-channel.py --retry.
+      # D6: normalizes the version to PEP 440 before the lookup.
       # 8.0.0-rc1 (git tag / npm format) → 8.0.0rc1 (PyPI releases dict key).
+      # PUBLISH_PYPI_RESULT lets the script distinguish CDN delay from publish failure.
       - name: Verify PyPI channel
-        run: python3 scripts/verify-pypi-channel.py "${{ steps.version.outputs.version }}"
+        env:
+          PUBLISH_PYPI_RESULT: ${{ needs.publish-pypi.result }}
+        run: python3 scripts/verify-pypi-channel.py "${{ steps.version.outputs.version }}" --retry
 
       # D7: assert CONTENT of published packages.
       # --published mode downloads and inspects the live artifacts.
+      # By this point npm + PyPI confirmed live (steps above), so read-after-write is resolved.
       - name: Verify channel content (D7)
         run: |
           VERSION="${{ steps.version.outputs.version }}"
