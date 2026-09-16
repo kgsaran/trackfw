@@ -5,6 +5,51 @@ Todas as mudanças notáveis deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 e este projeto adere a [Semantic Versioning](https://semver.org/).
 
+## [8.0.0-rc2] - 2026-09-16
+
+> **Release Candidate.** No npm, publicada sob o dist-tag `rc`, **não** `latest`.
+> `npm install trackfw` continua instalando a 7.6.0.
+> Para testar: `npm install trackfw@rc` / `pip install trackfw==8.0.0rc2` /
+> `TRACKFW_VERSION=v8.0.0-rc2 curl -fsSL .../install.sh | sh`.
+
+Os breaking changes são os mesmos declarados na `8.0.0-rc1` — nenhum break novo nesta RC.
+**Esta é a primeira RC construída a partir da árvore sem as reimplementações**: a `rc1` ainda
+continha `npm/src/` e `pypi/trackfw/`.
+
+### Fixed
+
+- **Tag de pré-lançamento publicava como release estável.** O bloco `release:` do
+  `.goreleaser.yaml` não declarava `prerelease`, e o default do GoReleaser é `false` — então a
+  `v8.0.0-rc1` foi publicada como release normal e virou o `latest` do GitHub. Como o `install.sh`
+  resolve a versão por `/releases/latest`, **quem instalou sem pin entre 13 e 16/09 recebeu a RC no
+  lugar da 7.6.0**. O release foi remarcado como pré-lançamento e a origem corrigida com
+  `prerelease: auto`, mais o gate `check-goreleaser-prerelease.sh`. npm e PyPI não foram afetados.
+- **A suíte de falsificação podia declarar sucesso e sair com erro.** A mensagem
+  `Falsification checks passed` estava 370 linhas antes do fim de `check-gates-falsify.sh`, então os
+  últimos cenários rodavam depois dela. A mensagem foi para o fim real e o total passou a vir de um
+  contador de execução, com guarda de piso.
+- **`package-smoke` testava uma wheel que não existe mais.** O smoke construía a wheel com
+  `python -m build --wheel pypi/`, que exige `pypi/trackfw` como pacote fonte. Passou a usar
+  `pypi/scripts/build_wheel.py` — o mesmo mecanismo do release —, exercitando a wheel binária que a
+  v8 realmente publica.
+- **Gate exigia `node` no PATH sem nunca executá-lo.** `check-release-tag-parity.sh` abortava se
+  `node` estivesse ausente, embora só testasse o binário Go desde a remoção — um contribuidor sem
+  Node instalado não conseguia rodar `make quality`.
+
+### Removed
+
+- `npm/src/` e `pypi/trackfw/` (as reimplementações), `npm/tests/` e `pypi/tests/`, e 27 gates cujo
+  objeto era comparar os três runtimes. Antes da remoção, 25 pins comportamentais foram extraídos
+  para `check-validate-rule-pins.sh`. **−137.887 linhas.**
+- Braços Node e Python das suítes de Windows. Os braços Go foram mantidos: eles medem comportamento
+  do produto no Windows, não divergência entre implementações.
+
+### Internal
+
+- Os checks obrigatórios do repositório passaram a refletir os jobs que existem: `node`,
+  `python (3.10)` e `python (3.12)` foram removidos do branch protection antes do merge, porque um
+  check obrigatório sem job correspondente deixa **todo** PR pendente para sempre.
+
 ## [8.0.0-rc1] - 2026-09-13
 
 > **Release Candidate.** No npm, este pacote é publicado sob o dist-tag `rc`, **não** `latest`.

@@ -64,8 +64,8 @@ if [[ -z "${GO_BIN:-}" ]]; then
 elif [[ "$GO_BIN" != /* ]]; then
   GO_BIN="$ROOT_DIR/$GO_BIN"
 fi
-NODE_CLI="$ROOT_DIR/npm/bin/trackfw"
-PY_ROOT="${PY_ROOT:-$ROOT_DIR/pypi}"
+# ML-3A (v8): NODE_CLI e PY_ROOT removidos — npm/src e pypi/trackfw deletados.
+# Este gate agora testa apenas o runtime Go (Part A) e mantém Parts B+C intactas.
 
 # $HOME isolado e sintético — nunca o real (mesmo precedente de check-barrier.sh e
 # check-artifact-parity.sh: o gate "validate" embutido no barrier, e `trackfw validate` direto,
@@ -76,10 +76,6 @@ mkdir -p "$HOME"
 
 if [[ ! -x "$GO_BIN" ]]; then
   echo "check-roadmap-barrier-contract: Go binary not found/executable at $GO_BIN" >&2
-  exit 1
-fi
-if [[ ! -f "$NODE_CLI" ]]; then
-  echo "check-roadmap-barrier-contract: Node CLI not found at $NODE_CLI" >&2
   exit 1
 fi
 
@@ -97,9 +93,8 @@ run_cli() {
   local out_file="$WORK/out.$$.$RANDOM" err_file="$WORK/err.$$.$RANDOM"
   set +e
   case "$runtime" in
+  # ML-3A (v8): node e py removidos — npm/src e pypi/trackfw deletados.
   go) (cd "$dir" && "$GO_BIN" "$@") >"$out_file" 2>"$err_file" ;;
-  node) (cd "$dir" && node "$NODE_CLI" "$@") >"$out_file" 2>"$err_file" ;;
-  py) (cd "$dir" && PYTHONPATH="$PY_ROOT" python3 -m trackfw "$@") >"$out_file" 2>"$err_file" ;;
   *) echo "run_cli: unknown runtime '$runtime'" >&2; exit 1 ;;
   esac
   CLI_EXIT=$?
@@ -251,9 +246,8 @@ run_closed_cycle() {
   assert_check_status "closed-cycle/$runtime/acceptance-evidence-passed" "$doc" "acceptance_evidence" "passed"
 }
 
+# ML-3A (v8): node e py removidos — npm/src e pypi/trackfw deletados.
 run_closed_cycle go
-run_closed_cycle node
-run_closed_cycle py
 
 # ═══════════════════════════════════════════════════════════════════════════
 # PARTE A (continuação) — regressão do TEMPLATE, provada mutando uma CÓPIA do conteúdo
@@ -752,7 +746,7 @@ Example of a phantom ML hidden inside a tilde fence:
 ~~~
 EOF
 FENCE_TILDE_BLOCKED_DIVERGENT=""
-for rt in go node py; do
+for rt in go; do  # ML-3A (v8): node py removidos
   run_cli "$rt" "$FALSIFY_DIR" barrier fence-phantom-tilde-blocked-cross-runtime --wave 1 --json
   mls_status=$(doc_check_json "$CLI_STDOUT" "mls_complete" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))")
   mls_failures=$(doc_check_json "$CLI_STDOUT" "mls_complete" "failures")
@@ -790,7 +784,7 @@ still inside the outer fence
 ````
 EOF
 FENCE_B4_BLOCKED_DIVERGENT=""
-for rt in go node py; do
+for rt in go; do  # ML-3A (v8): node py removidos
   run_cli "$rt" "$FALSIFY_DIR" barrier fence-phantom-backtick4-blocked-cross-runtime --wave 1 --json
   mls_status=$(doc_check_json "$CLI_STDOUT" "mls_complete" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))")
   mls_failures=$(doc_check_json "$CLI_STDOUT" "mls_complete" "failures")
@@ -815,7 +809,7 @@ write_fixture indented-status <<EOF
 - [x] a
 EOF
 INDENT_DIVERGENT=""
-for rt in go node py; do
+for rt in go; do  # ML-3A (v8): node py removidos
   run_cli "$rt" "$FALSIFY_DIR" barrier indented-status --wave 1 --json
   status=$(doc_check_json "$CLI_STDOUT" "mls_complete" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))")
   if [[ "$status" != "blocked" ]]; then
@@ -888,7 +882,7 @@ Conteúdo real da ML, fora do exemplo:
 - [ ] criterio real nao atendido
 EOF
 FENCE_BYPASS_DIVERGENT=""
-for rt in go node py; do
+for rt in go; do  # ML-3A (v8): node py removidos
   run_cli "$rt" "$FALSIFY_DIR" barrier fence-close-with-trailing-content-bypass --wave 1 --json
   mls_status=$(doc_check_json "$CLI_STDOUT" "mls_complete" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))")
   ev_status=$(doc_check_json "$CLI_STDOUT" "acceptance_evidence" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))")
@@ -969,7 +963,7 @@ with open(path, "w", encoding="utf-8") as f:
     f.write(content)
 PYEOF
 COMBINING_VERDICTS=""
-for rt in go node py; do
+for rt in go; do  # ML-3A (v8): node py removidos
   run_cli "$rt" "$FALSIFY_DIR" barrier combining-mark-out-of-range-u1dc0 --wave 1 --json
   status=$(doc_check_json "$CLI_STDOUT" "mls_complete" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))")
   COMBINING_VERDICTS="${COMBINING_VERDICTS}${rt}=${status} "
@@ -1010,13 +1004,13 @@ write_fixture vs16-still-accepted <<'EOF'
 - [x] a
 EOF
 VS16_VERDICTS=""
-for rt in go node py; do
+for rt in go; do  # ML-3A (v8): node py removidos
   run_cli "$rt" "$FALSIFY_DIR" barrier vs16-still-accepted --wave 1 --json
   status=$(doc_check_json "$CLI_STDOUT" "mls_complete" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))")
   VS16_VERDICTS="${VS16_VERDICTS}${rt}=${status} "
 done
-if [[ "$VS16_VERDICTS" != *"go=passed"* || "$VS16_VERDICTS" != *"node=passed"* || "$VS16_VERDICTS" != *"py=passed"* ]]; then
-  fail "falsify/vs16-still-accepted-cross-runtime" "esperava 'passed' nos 3 CLIs (ADR decisão 9, exceção única); obtido: $VS16_VERDICTS"
+if [[ "$VS16_VERDICTS" != *"go=passed"* ]]; then  # ML-3A (v8): node/py removidos — go-behavioral-pin
+  fail "falsify/vs16-still-accepted-cross-runtime" "esperava 'passed' no Go (ADR decisão 9, exceção única); obtido: $VS16_VERDICTS"
 else
   ok "falsify/vs16-still-accepted-cross-runtime"
 fi
@@ -1034,12 +1028,12 @@ write_fixture accented-concluido-still-accepted <<'EOF'
 - [x] a
 EOF
 ACCENTED_VERDICTS=""
-for rt in go node py; do
+for rt in go; do  # ML-3A (v8): node py removidos
   run_cli "$rt" "$FALSIFY_DIR" barrier accented-concluido-still-accepted --wave 1 --json
   status=$(doc_check_json "$CLI_STDOUT" "mls_complete" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))")
   ACCENTED_VERDICTS="${ACCENTED_VERDICTS}${rt}=${status} "
 done
-if [[ "$ACCENTED_VERDICTS" != *"go=passed"* || "$ACCENTED_VERDICTS" != *"node=passed"* || "$ACCENTED_VERDICTS" != *"py=passed"* ]]; then
+if [[ "$ACCENTED_VERDICTS" != *"go=passed"* ]]; then  # ML-3A (v8): node/py removidos — go-behavioral-pin
   fail "falsify/accented-concluido-still-accepted-cross-runtime" "esperava 'passed' nos 3 CLIs (ADR decisão 9, NFD deve rodar depois da checagem de Mn); obtido: $ACCENTED_VERDICTS"
 else
   ok "falsify/accented-concluido-still-accepted-cross-runtime"
@@ -1083,7 +1077,7 @@ write_fixture_crlf crlf-full-roadmap-passes <<'EOF'
 - [x] a
 EOF
 CRLF_FULL_DIVERGENT=""
-for rt in go node py; do
+for rt in go; do  # ML-3A (v8): node py removidos
   run_cli "$rt" "$FALSIFY_DIR" barrier crlf-full-roadmap-passes --wave 1 --json
   mls_status=$(doc_check_json "$CLI_STDOUT" "mls_complete" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))")
   acc_status=$(doc_check_json "$CLI_STDOUT" "acceptance_evidence" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))")
@@ -1106,7 +1100,7 @@ write_fixture_crlf crlf-pending-ml-blocks <<'EOF'
 - [ ] a
 EOF
 CRLF_PENDING_DIVERGENT=""
-for rt in go node py; do
+for rt in go; do  # ML-3A (v8): node py removidos
   run_cli "$rt" "$FALSIFY_DIR" barrier crlf-pending-ml-blocks --wave 1 --json
   mls_status=$(doc_check_json "$CLI_STDOUT" "mls_complete" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))")
   if [[ "$mls_status" != "blocked" ]]; then
@@ -1136,7 +1130,7 @@ Example:
 - [ ] a
 EOF
 CRLF_FENCE_DIVERGENT=""
-for rt in go node py; do
+for rt in go; do  # ML-3A (v8): node py removidos
   run_cli "$rt" "$FALSIFY_DIR" barrier crlf-fence-mask-still-works --wave 1 --json
   mls_status=$(doc_check_json "$CLI_STDOUT" "mls_complete" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))")
   if [[ "$mls_status" != "blocked" ]]; then
@@ -1161,7 +1155,7 @@ write_fixture_crlf crlf-indented-marker-still-rejected <<EOF
 - [x] a
 EOF
 CRLF_INDENT_DIVERGENT=""
-for rt in go node py; do
+for rt in go; do  # ML-3A (v8): node py removidos
   run_cli "$rt" "$FALSIFY_DIR" barrier crlf-indented-marker-still-rejected --wave 1 --json
   mls_status=$(doc_check_json "$CLI_STDOUT" "mls_complete" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))")
   if [[ "$mls_status" != "blocked" ]]; then
@@ -1193,7 +1187,7 @@ true
 ```
 EOF
 CRLF_GATES_DIVERGENT=""
-for rt in go node py; do
+for rt in go; do  # ML-3A (v8): node py removidos
   run_cli "$rt" "$FALSIFY_DIR" barrier crlf-gates-header-recognized --wave 1 --json --trust-local-gates
   gates_status=$(doc_check_json "$CLI_STDOUT" "gates" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))")
   gates_evidence=$(doc_check_json "$CLI_STDOUT" "gates" "evidence")
@@ -1226,7 +1220,7 @@ true
 ```
 EOF
 GATES_PREFIX_DIVERGENT=""
-for rt in go node py; do
+for rt in go; do  # ML-3A (v8): node py removidos
   run_cli "$rt" "$FALSIFY_DIR" barrier gates-header-prefix-match-with-trailing-prose --wave 1 --json --trust-local-gates
   gates_status=$(doc_check_json "$CLI_STDOUT" "gates" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))")
   gates_evidence=$(doc_check_json "$CLI_STDOUT" "gates" "evidence")

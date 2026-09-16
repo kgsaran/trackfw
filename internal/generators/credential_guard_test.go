@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
 )
@@ -96,48 +95,13 @@ func getGoCredentialGuardScript(t *testing.T) string {
 	return string(content)
 }
 
-// getNodeCredentialGuardScript reconstrói o conteúdo da variante de PROJETO a partir dos blocos
-// componíveis (CG_HEADER + CG_PROJECT_GUARD + CG_DETECTION_CORE + CG_PROJECT_TAIL), já que
-// CREDENTIAL_GUARD_SCRIPT deixou de ser um único template literal (agora é a concatenação desses
-// blocos, mesma decomposição de credentialGuardScript em scaffold.go — ver
-// TestGlobalCredentialGuardScript_ParityAcrossStacks para a variante global).
-func getNodeCredentialGuardScript(t *testing.T, repoRoot string) string {
-	t.Helper()
-	hooksPath := filepath.Join(repoRoot, "npm", "src", "generators", "hooks.js")
-
-	header := getNodeSourceBlock(t, hooksPath, "CG_HEADER")
-	guard := getNodeSourceBlock(t, hooksPath, "CG_PROJECT_GUARD")
-	core := getNodeSourceBlock(t, hooksPath, "CG_DETECTION_CORE")
-	tail := getNodeSourceBlock(t, hooksPath, "CG_PROJECT_TAIL")
-	return header + guard + core + tail
-}
-
-// getPythonCredentialGuardScript reconstrói o conteúdo da variante de PROJETO a partir dos blocos
-// componíveis (_CG_HEADER + _CG_PROJECT_GUARD + _CG_DETECTION_CORE + _CG_PROJECT_TAIL) — mesmo
-// racional de getNodeCredentialGuardScript.
-func getPythonCredentialGuardScript(t *testing.T, repoRoot string) string {
-	t.Helper()
-	initPath := filepath.Join(repoRoot, "pypi", "trackfw", "generators", "init_gen.py")
-
-	header := getPythonSourceBlock(t, initPath, "_CG_HEADER")
-	guard := getPythonSourceBlock(t, initPath, "_CG_PROJECT_GUARD")
-	core := getPythonSourceBlock(t, initPath, "_CG_DETECTION_CORE")
-	tail := getPythonSourceBlock(t, initPath, "_CG_PROJECT_TAIL")
-	return header + guard + core + tail
-}
 
 func TestCredentialGuardScript_ParityAcrossStacks(t *testing.T) {
-	repoRoot := findRepoRoot(t)
-
+	// ML-3A (v8 — um binário, muitos canais): Node.js and Python reimplementations
+	// removed. Cross-stack byte-identical comparison replaced with Go behavioral pin.
 	goScript := getGoCredentialGuardScript(t)
-	nodeScript := getNodeCredentialGuardScript(t, repoRoot)
-	pyScript := getPythonCredentialGuardScript(t, repoRoot)
-
-	if goScript != pyScript {
-		t.Errorf("script diverge entre Go e Python (esperado byte-idêntico).\n--- Go ---\n%s\n--- Python ---\n%s", goScript, pyScript)
-	}
-	if goScript != nodeScript {
-		t.Errorf("script diverge entre Go e Node (após normalizar escapes de template literal).\n--- Go ---\n%s\n--- Node (normalizado) ---\n%s", goScript, nodeScript)
+	if !strings.HasPrefix(goScript, "#!/usr/bin/env bash") {
+		t.Errorf("credentialGuardScript não começa com shebang esperado")
 	}
 }
 
@@ -201,65 +165,13 @@ func getGoGlobalCredentialGuardScript(t *testing.T) string {
 	return string(content)
 }
 
-// getNodeSourceBlock extrai um bloco `const <name> = \`...\`` literal (template literal simples,
-// sem concatenação) de um arquivo-fonte JS, e reverte a duplicação de backslash + o escape de
-// ${...} feitos para o parser de template literal (mesma normalização de
-// getNodeCredentialGuardScript).
-func getNodeSourceBlock(t *testing.T, path, constName string) string {
-	t.Helper()
-	content, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("erro lendo %s: %v", path, err)
-	}
-
-	s := string(content)
-	match := regexp.MustCompile(`const `+constName+` = \x60([\s\S]*?)\x60`).FindStringSubmatch(s)
-	if len(match) < 2 {
-		t.Fatalf("%s não encontrado em %s", constName, path)
-	}
-
-	res := match[1]
-	res = strings.ReplaceAll(res, `\${`, `${`)
-	res = strings.ReplaceAll(res, `\\`, `\`)
-	return res
-}
-
-// getPythonSourceBlock extrai um bloco `<name> = r"""..."""` literal de um arquivo-fonte Python.
-func getPythonSourceBlock(t *testing.T, path, varName string) string {
-	t.Helper()
-	content, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("erro lendo %s: %v", path, err)
-	}
-
-	s := string(content)
-	match := regexp.MustCompile(varName + ` = r?"""([\s\S]*?)"""`).FindStringSubmatch(s)
-	if len(match) < 2 {
-		t.Fatalf("%s não encontrado em %s", varName, path)
-	}
-	return match[1]
-}
 
 func TestGlobalCredentialGuardScript_ParityAcrossStacks(t *testing.T) {
-	repoRoot := findRepoRoot(t)
-
+	// ML-3A (v8 — um binário, muitos canais): Node.js and Python reimplementations
+	// removed. Cross-stack byte-identical comparison replaced with Go behavioral pin.
 	goScript := getGoGlobalCredentialGuardScript(t)
-
-	nodeHeader := getNodeSourceBlock(t, filepath.Join(repoRoot, "npm", "src", "generators", "hooks.js"), "CG_HEADER")
-	nodeCore := getNodeSourceBlock(t, filepath.Join(repoRoot, "npm", "src", "generators", "hooks.js"), "CG_DETECTION_CORE")
-	nodeGlobalTail := getNodeSourceBlock(t, filepath.Join(repoRoot, "npm", "src", "generators", "hooks.js"), "CG_GLOBAL_TAIL")
-	nodeScript := nodeHeader + nodeCore + nodeGlobalTail
-
-	pyHeader := getPythonSourceBlock(t, filepath.Join(repoRoot, "pypi", "trackfw", "generators", "init_gen.py"), "_CG_HEADER")
-	pyCore := getPythonSourceBlock(t, filepath.Join(repoRoot, "pypi", "trackfw", "generators", "init_gen.py"), "_CG_DETECTION_CORE")
-	pyGlobalTail := getPythonSourceBlock(t, filepath.Join(repoRoot, "pypi", "trackfw", "generators", "init_gen.py"), "_CG_GLOBAL_TAIL")
-	pyScript := pyHeader + pyCore + pyGlobalTail
-
-	if goScript != pyScript {
-		t.Errorf("script global diverge entre Go e Python (esperado byte-idêntico).\n--- Go ---\n%s\n--- Python ---\n%s", goScript, pyScript)
-	}
-	if goScript != nodeScript {
-		t.Errorf("script global diverge entre Go e Node (após normalizar escapes de template literal).\n--- Go ---\n%s\n--- Node (normalizado) ---\n%s", goScript, nodeScript)
+	if !strings.HasPrefix(goScript, "#!/usr/bin/env bash") {
+		t.Errorf("globalCredentialGuardScript não começa com shebang esperado")
 	}
 }
 

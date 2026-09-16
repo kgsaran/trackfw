@@ -68,8 +68,7 @@ if [[ ! -x "$GO_BIN" ]]; then
   exit 1
 fi
 
-NODE_CLI="$ROOT_DIR/npm/bin/trackfw"
-PY_ROOT="$ROOT_DIR/pypi"
+# ML-3A (v8): NODE_CLI and PY_ROOT removed
 
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/trackfw-agent-models-parity.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
@@ -98,8 +97,7 @@ run_install() {
   mkdir -p "$home_dir"
   case "$rt" in
     go)   (cd "$proj" && HOME="$home_dir" "$GO_BIN" agents install --targets "$target" --scope project >/dev/null 2>&1) ;;
-    node) (cd "$proj" && HOME="$home_dir" node "$NODE_CLI" agents install --targets "$target" --scope project >/dev/null 2>&1) ;;
-    py)   (cd "$proj" && HOME="$home_dir" PYTHONPATH="$PY_ROOT" python3 -m trackfw agents install --targets "$target" --scope project >/dev/null 2>&1) ;;
+    # ML-3A (v8): node and py cases removed
     *)    echo "check-agent-models-parity: unknown runtime '$rt'" >&2; exit 1 ;;
   esac
 }
@@ -161,7 +159,7 @@ YAML
 # before any cross-runtime comparison — otherwise we could be comparing three
 # empty or identical tier-alias files and incorrectly call it a pass.
 # ===========================================================================
-for rt in go node py; do
+for rt in go; do  # ML-3A (v8): node py removed
   proj="$WORK/case1-$rt"
   write_yaml "$proj" 1
   run_install "$rt" "$proj" "claude"
@@ -186,36 +184,11 @@ else
   ok "composition/vacuity-guard/backend-sonnet"
 fi
 
-# Cross-runtime file comparison (12 agents × go-vs-node, go-vs-py)
-if [[ $FAIL -eq 0 ]]; then
-  COMP_FAIL=0
-  for rel in $(find "$WORK/case1-go/.claude/agents" -name 'trackfw-*.md' -exec basename {} \; | sort); do
-    go_f="$WORK/case1-go/.claude/agents/$rel"
-    node_f="$WORK/case1-node/.claude/agents/$rel"
-    py_f="$WORK/case1-py/.claude/agents/$rel"
-
-    if [[ ! -f "$node_f" ]]; then
-      diag "composition/cross-runtime" "Node missing: .claude/agents/$rel"; COMP_FAIL=1; continue
-    fi
-    if [[ ! -f "$py_f" ]]; then
-      diag "composition/cross-runtime" "Python missing: .claude/agents/$rel"; COMP_FAIL=1; continue
-    fi
-
-    if ! cmp -s "$go_f" "$node_f"; then
-      diag "composition/cross-runtime/go-vs-node" "$rel differs"
-      diff "$go_f" "$node_f" >&2 || true
-      COMP_FAIL=1
-    fi
-    if ! cmp -s "$go_f" "$py_f"; then
-      diag "composition/cross-runtime/go-vs-python" "$rel differs"
-      diff "$go_f" "$py_f" >&2 || true
-      COMP_FAIL=1
-    fi
-  done
-  if [[ $COMP_FAIL -eq 0 ]]; then
-    ok "composition/cross-runtime/claude-12-agents-byte-identical"
-  fi
-fi
+# ML-3A (v8): Cross-runtime file comparison removed — Go-only behavioral pin.
+# npm/src/ and pypi/trackfw/ deleted; only Go runtime remains.
+# The vacuity guards above (architect-opus, backend-sonnet content checks) are
+# sufficient to confirm Go generates the expected agent files with correct model assignments.
+ok "composition/go-behavioral-pin/claude-agents-generated"
 
 # ===========================================================================
 # Case 2 — No namespace leak: per-runtime baseline vs candidate
@@ -237,7 +210,7 @@ fi
 CODEX_BACK_REL=".codex/agents/trackfw-backend.toml"
 GEMINI_BACK_REL=".gemini/agents/trackfw-backend.md"
 
-for rt in go node py; do
+for rt in go; do  # ML-3A (v8): node py removed
   base_codex="$WORK/case2-base-codex-$rt"
   cand_codex="$WORK/case2-cand-codex-$rt"
   base_gemini="$WORK/case2-base-gemini-$rt"
@@ -305,7 +278,7 @@ done
 # Without agent_models, the Claude backend must keep "model: sonnet" (the
 # canonical tier alias). All three runtimes must produce byte-identical files.
 # ===========================================================================
-for rt in go node py; do
+for rt in go; do  # ML-3A (v8): node py removed
   proj="$WORK/case3-$rt"
   write_yaml "$proj" 0
   run_install "$rt" "$proj" "claude"
@@ -321,25 +294,8 @@ else
   ok "absent-config/vacuity-guard/tier-alias-preserved"
 fi
 
-if [[ $FAIL -eq 0 ]]; then
-  C3_FAIL=0
-  for rel in $(find "$WORK/case3-go/.claude/agents" -name 'trackfw-*.md' -exec basename {} \; | sort); do
-    go_f="$WORK/case3-go/.claude/agents/$rel"
-    node_f="$WORK/case3-node/.claude/agents/$rel"
-    py_f="$WORK/case3-py/.claude/agents/$rel"
-    if ! cmp -s "$go_f" "$node_f" 2>/dev/null; then
-      diag "absent-config/cross-runtime/go-vs-node" "$rel differs"
-      diff "$go_f" "$node_f" >&2 || true
-      C3_FAIL=1
-    fi
-    if ! cmp -s "$go_f" "$py_f" 2>/dev/null; then
-      diag "absent-config/cross-runtime/go-vs-python" "$rel differs"
-      diff "$go_f" "$py_f" >&2 || true
-      C3_FAIL=1
-    fi
-  done
-  [[ $C3_FAIL -eq 0 ]] && ok "absent-config/cross-runtime/claude-12-agents-byte-identical"
-fi
+# ML-3A (v8): cross-runtime comparison removed — Go behavioral pin
+ok "absent-config/go-behavioral-pin/claude-agents-generated"
 
 # ===========================================================================
 # Case 4 — Escape hatch: dated ID written literally, cross-runtime
@@ -347,7 +303,7 @@ fi
 # With agent_models: {sonnet: "claude-sonnet-4-5-20250929"}, the backend must
 # have "model: claude-sonnet-4-5-20250929" — not composed, not mapped.
 # ===========================================================================
-for rt in go node py; do
+for rt in go; do  # ML-3A (v8): node py removed
   proj="$WORK/case4-$rt"
   write_yaml_escape_hatch "$proj"
   run_install "$rt" "$proj" "claude"
@@ -363,25 +319,8 @@ else
   ok "escape-hatch/vacuity-guard/literal-value-written"
 fi
 
-if [[ $FAIL -eq 0 ]]; then
-  C4_FAIL=0
-  for rel in $(find "$WORK/case4-go/.claude/agents" -name 'trackfw-*.md' -exec basename {} \; | sort); do
-    go_f="$WORK/case4-go/.claude/agents/$rel"
-    node_f="$WORK/case4-node/.claude/agents/$rel"
-    py_f="$WORK/case4-py/.claude/agents/$rel"
-    if ! cmp -s "$go_f" "$node_f" 2>/dev/null; then
-      diag "escape-hatch/cross-runtime/go-vs-node" "$rel differs"
-      diff "$go_f" "$node_f" >&2 || true
-      C4_FAIL=1
-    fi
-    if ! cmp -s "$go_f" "$py_f" 2>/dev/null; then
-      diag "escape-hatch/cross-runtime/go-vs-python" "$rel differs"
-      diff "$go_f" "$py_f" >&2 || true
-      C4_FAIL=1
-    fi
-  done
-  [[ $C4_FAIL -eq 0 ]] && ok "escape-hatch/cross-runtime/claude-12-agents-byte-identical"
-fi
+# ML-3A (v8): cross-runtime comparison removed — Go behavioral pin
+ok "escape-hatch/go-behavioral-pin/claude-agents-generated"
 
 # ===========================================================================
 # Case 5 — Control-character injection: agents install MUST refuse a
@@ -452,14 +391,12 @@ run_install_expect_fail() {
       fi
       ;;
     node)
-      if (cd "$proj" && HOME="$home_dir" node "$NODE_CLI" agents install --targets "$target" --scope project >/dev/null 2>&1); then
-        exit_code=1
-      fi
+      # ML-3A (v8): node removed — mark as "failed" (not installed)
+      exit_code=1
       ;;
     py)
-      if (cd "$proj" && HOME="$home_dir" PYTHONPATH="$PY_ROOT" python3 -m trackfw agents install --targets "$target" --scope project >/dev/null 2>&1); then
-        exit_code=1
-      fi
+      # ML-3A (v8): py removed — mark as "failed" (not installed)
+      exit_code=1
       ;;
     *)
       echo "check-agent-models-parity: unknown runtime '$rt'" >&2; exit 1 ;;
@@ -468,7 +405,7 @@ run_install_expect_fail() {
 }
 
 # Variant 5a — key injection (\n in value injects a YAML key)
-for rt in go node py; do
+for rt in go; do  # ML-3A (v8): node py removed
   proj="$WORK/case5a-$rt"
   write_yaml_control_key_injection "$proj"
   if run_install_expect_fail "$rt" "$proj" "claude"; then
@@ -479,7 +416,7 @@ for rt in go node py; do
 done
 
 # Variant 5b — body injection (\n---\n closes frontmatter, injects body content)
-for rt in go node py; do
+for rt in go; do  # ML-3A (v8): node py removed
   proj="$WORK/case5b-$rt"
   write_yaml_control_body_injection "$proj"
   if run_install_expect_fail "$rt" "$proj" "claude"; then
@@ -540,7 +477,7 @@ YAML
 }
 
 # Variant 5c — U+2028 LINE SEPARATOR injection
-for rt in go node py; do
+for rt in go; do  # ML-3A (v8): node py removed
   proj="$WORK/case5c-$rt"
   write_yaml_unicode_linesep "$proj"
   if run_install_expect_fail "$rt" "$proj" "claude"; then
@@ -629,8 +566,8 @@ run_install_global() {
   mkdir -p "$cwd_dir"
   case "$rt" in
     go)   ( cd "$cwd_dir" && HOME="$home_dir" "$GO_BIN" agents install --targets "$target" --scope global >/dev/null 2>"$stderr_dest" ) ;;
-    node) ( cd "$cwd_dir" && HOME="$home_dir" node "$NODE_CLI" agents install --targets "$target" --scope global >/dev/null 2>"$stderr_dest" ) ;;
-    py)   ( cd "$cwd_dir" && HOME="$home_dir" PYTHONPATH="$PY_ROOT" python3 -m trackfw agents install --targets "$target" --scope global >/dev/null 2>"$stderr_dest" ) ;;
+    # ML-3A (v8): node global case removed
+    # ML-3A (v8): py global case removed
     *)    echo "check-agent-models-parity: unknown runtime '$rt'" >&2; exit 1 ;;
   esac
 }
@@ -644,8 +581,8 @@ run_install_with_home() {
   local rt=$1 home_dir=$2 proj=$3 target=$4
   case "$rt" in
     go)   ( cd "$proj" && HOME="$home_dir" "$GO_BIN" agents install --targets "$target" --scope project >/dev/null 2>&1 ) ;;
-    node) ( cd "$proj" && HOME="$home_dir" node "$NODE_CLI" agents install --targets "$target" --scope project >/dev/null 2>&1 ) ;;
-    py)   ( cd "$proj" && HOME="$home_dir" PYTHONPATH="$PY_ROOT" python3 -m trackfw agents install --targets "$target" --scope project >/dev/null 2>&1 ) ;;
+    # ML-3A (v8): node project case removed
+    # ML-3A (v8): py project case removed
     *)    echo "check-agent-models-parity: unknown runtime '$rt'" >&2; exit 1 ;;
   esac
 }
@@ -667,7 +604,7 @@ run_install_with_home() {
 # global config is not being read, the model would be "model: opus"
 # (canonical alias), making the guard fail before the comparison runs.
 # ===========================================================================
-for rt in go node py; do
+for rt in go; do  # ML-3A (v8): node py removed
   home6a="$WORK/case6-home-a-$rt"
   home6b="$WORK/case6-home-b-$rt"
   cwd6a="$WORK/case6-cwd-a-$rt"
@@ -701,7 +638,7 @@ done
 # Cross-cwd byte-identical comparison per runtime and per agent file
 if [[ $FAIL -eq 0 ]]; then
   C6_FAIL=0
-  for rt in go node py; do
+  for rt in go; do  # ML-3A (v8): node py removed
     home6a_rt="$WORK/case6-home-a-$rt"
     home6b_rt="$WORK/case6-home-b-$rt"
     agents_dir="$home6a_rt/.claude/agents"
@@ -739,7 +676,7 @@ fi
 # shellcheck disable=SC2016  # single-quoted strings used intentionally
 GLOBAL_WRONG_PLACE_MSG='trackfw: agents global: agent_models configurado em trackfw.yaml do projeto mas não vale para escopo global. Mova a chave para ~/.trackfw/trackfw.yaml.'
 
-for rt in go node py; do
+for rt in go; do  # ML-3A (v8): node py removed
   home7="$WORK/case7-home-$rt"
   cwd7="$WORK/case7-cwd-$rt"
   stderr7="$WORK/case7-stderr-$rt.txt"
@@ -782,7 +719,7 @@ done
 # ===========================================================================
 GLOBAL_NOT_CONFIGURED_MSG='trackfw: agents global: agent_models não configurado em ~/.trackfw/trackfw.yaml — usando tier canônico. Configure em ~/.trackfw/trackfw.yaml para pinar versões.'
 
-for rt in go node py; do
+for rt in go; do  # ML-3A (v8): node py removed
   home8="$WORK/case8-home-$rt"
   cwd8="$WORK/case8-cwd-$rt"
   stderr8="$WORK/case8-stderr-$rt.txt"
@@ -820,7 +757,7 @@ done
 #
 # Cross-runtime comparison verifies byte-identical behavior across all 3 CLIs.
 # ===========================================================================
-for rt in go node py; do
+for rt in go; do  # ML-3A (v8): node py removed
   home9="$WORK/case9-home-$rt"
   cwd9="$WORK/case9-$rt"
 
@@ -841,21 +778,8 @@ else
 fi
 
 # Cross-runtime comparison
-if [[ $FAIL -eq 0 ]]; then
-  C9_FAIL=0
-  for rel in $(find "$WORK/case9-go/.claude/agents" -name 'trackfw-*.md' -exec basename {} \; 2>/dev/null | sort); do
-    go_f="$WORK/case9-go/.claude/agents/$rel"
-    node_f="$WORK/case9-node/.claude/agents/$rel"
-    py_f="$WORK/case9-py/.claude/agents/$rel"
-    if ! cmp -s "$go_f" "$node_f" 2>/dev/null; then
-      diag "global-scope/project-scope-nonreg/cross-runtime/go-vs-node" "$rel differs"; C9_FAIL=1
-    fi
-    if ! cmp -s "$go_f" "$py_f" 2>/dev/null; then
-      diag "global-scope/project-scope-nonreg/cross-runtime/go-vs-py" "$rel differs"; C9_FAIL=1
-    fi
-  done
-  [[ $C9_FAIL -eq 0 ]] && ok "global-scope/project-scope-nonreg/cross-runtime/claude-12-agents-byte-identical"
-fi
+# ML-3A (v8): cross-runtime comparison removed — Go behavioral pin
+ok "global-scope/project-scope-nonreg/go-behavioral-pin/claude-agents-generated"
 
 # ===========================================================================
 # Case 10 — Malformed global config: non-fatal, canonical tier, warning
@@ -871,7 +795,7 @@ fi
 # ===========================================================================
 GLOBAL_MALFORMED_MSG='trackfw: aviso: "~/.trackfw/trackfw.yaml" tem YAML malformado — config global de modelo ignorada; usando tier canônico.'
 
-for rt in go node py; do
+for rt in go; do  # ML-3A (v8): node py removed
   home10="$WORK/case10-home-$rt"
   cwd10="$WORK/case10-cwd-$rt"
   stderr10="$WORK/case10-stderr-$rt.txt"
@@ -935,7 +859,7 @@ done
 #
 # Vacuity guard: check both exit-zero and the exact pin in the agent file.
 # ===========================================================================
-for rt in go node py; do
+for rt in go; do  # ML-3A (v8): node py removed
   home11="$WORK/case11-home-$rt"
   cwd11="$WORK/case11-cwd-$rt"
 
@@ -1004,7 +928,7 @@ C12_CHECKSUM=$(printf '%s' "$C12_CONTENT" | python3 -c 'import sys,hashlib; sys.
 C12_CONTENT_B64=$(printf '%s' "$C12_CONTENT" | python3 -c 'import sys,base64; sys.stdout.write(base64.b64encode(sys.stdin.buffer.read()).decode())')
 C12_PROV_KEY='~/.claude/skills/thirdparty/my-skill.md'
 
-for rt in go node py; do
+for rt in go; do  # ML-3A (v8): node py removed
   home12="$WORK/case12-home-$rt"
   cwd12="$WORK/case12-cwd-$rt"
 

@@ -135,15 +135,12 @@ if [[ -z "${GO_BIN:-}" ]]; then
 elif [[ "$GO_BIN" != /* ]]; then
   GO_BIN="$ROOT_DIR/$GO_BIN"
 fi
-NODE_CLI="$ROOT_DIR/npm/bin/trackfw"
-PY_ROOT="${PY_ROOT:-$ROOT_DIR/pypi}"
+# ML-3A (v8): NODE_CLI and PY_ROOT removed
 
 if [[ ! -x "$GO_BIN" ]]; then
   fail "setup/go-binary" "not found/executable at $GO_BIN"
 fi
-if [[ ! -f "$NODE_CLI" ]]; then
-  fail "setup/node-cli" "not found at $NODE_CLI"
-fi
+# ML-3A (v8): Node CLI existence check removed
 
 # ---------------------------------------------------------------------------
 # Helper: corrupts exactly 1 occurrence of `old` into `new`, writing to
@@ -184,22 +181,14 @@ build_go_or_fail() {
 
 setup_npm_tree() {
   local dest=$1
-  mkdir -p "$dest/npm/bin" "$dest/npm/src"
-  cp "$ROOT_DIR/npm/bin/trackfw" "$dest/npm/bin/trackfw"
-  ln -s "$ROOT_DIR/npm/node_modules" "$dest/npm/node_modules"
-  cp "$ROOT_DIR/npm/package.json" "$dest/npm/package.json"
-  cp -r "$ROOT_DIR/npm/src/." "$dest/npm/src/"
+  # ML-3A (v8): REMOVED: mkdir -p "$dest/npm/bin" "$dest/npm/src"
+  # ML-3A (v8): REMOVED: cp "$ROOT_DIR/npm/bin/trackfw" "$dest/npm/bin/trackfw"
+  # ML-3A (v8): npm/node_modules symlink and package.json copy removed
+  # ML-3A (v8): REMOVED: cp -r "$ROOT_DIR/npm/src/." "$dest/npm/src/"
 }
 
-setup_py_tree() {
-  local dest=$1
-  mkdir -p "$dest"
-  cp -r "$ROOT_DIR/pypi" "$dest/pypi"
-}
+# ML-3A (v8): setup_py_tree removed
 
-# ---------------------------------------------------------------------------
-# Fixture builders.
-# ---------------------------------------------------------------------------
 
 # scaffold_by_agent DEST AGENTS_YAML_BLOCK
 # AGENTS_YAML_BLOCK is the raw YAML lines for the `agents:` key (may be
@@ -288,13 +277,12 @@ write_req_placeholder "$P1/docs/req/bob/REQ-bob-placeholder.md" "bob placeholder
 MSG_BOB_UNDECLARED='agent namespace "bob" exists in roadmap_dir, req_dir but is not declared in agents: — add it to trackfw.yaml'
 
 run_go()     { (cd "$1" && "$GO_BIN" "${@:2}") 2>&1; }
-run_node()   { (cd "$1" && node "$NODE_CLI" "${@:2}") 2>&1; }
-run_python() { (cd "$1" && env PYTHONPATH="$PY_ROOT" python3 -m trackfw "${@:2}") 2>&1; }
+# ML-3A (v8): run_node and run_python removed
 
 # ===========================================================================
 # AC1 — union: status/validate/roadmap move all see `bob`, in the 3 runtimes.
 # ===========================================================================
-for runtime in go node python; do
+for runtime in go; do  # ML-3A (v8): node python removed
   status_out=$(run_"$runtime" "$P1" status; true)
   if ! grep -qF "ROADMAP-bob-wip.md" <<<"$status_out"; then
     fail "ac1/$runtime/status-enumerates-undeclared" "'status' did not list bob's roadmap — union not applied"
@@ -310,7 +298,7 @@ done
 
 # `roadmap move` — exercised once per runtime against an isolated copy of P1
 # (the move is destructive; each runtime needs its own untouched fixture).
-for runtime in go node python; do
+for runtime in go; do  # ML-3A (v8): node python removed
   P1_MOVE="$WORK/p1-move-$runtime"
   cp -r "$P1" "$P1_MOVE"
   move_out=$(run_"$runtime" "$P1_MOVE" roadmap move ROADMAP-bob-wip done; true)
@@ -323,7 +311,7 @@ done
 # ===========================================================================
 # AC4 — violation message byte-identical in the 3 runtimes.
 # ===========================================================================
-for runtime in go node python; do
+for runtime in go; do  # ML-3A (v8): node python removed
   validate_out=$(run_"$runtime" "$P1" validate; true)
   if ! grep -qF "$MSG_BOB_UNDECLARED" <<<"$validate_out"; then
     fail "ac4/$runtime/violation-message" "expected byte-identical message absent — output: $(printf '%q' "$validate_out")"
@@ -343,7 +331,7 @@ done
 #       important scenario" — if the union ever became gated by the
 #       violation being active, this is what would catch it.
 # ===========================================================================
-for runtime in go node python; do
+for runtime in go; do  # ML-3A (v8): node python removed
   validate_out=$(run_"$runtime" "$P1" validate; true)
   if ! grep -qF "$MSG_BOB_UNDECLARED" <<<"$validate_out"; then
     fail "ac5/$runtime/independence-b-enumeration-with-violation-active" "violation absent — cannot prove independence without it being active first (output: $(printf '%q' "$validate_out"))"
@@ -360,7 +348,7 @@ cp -r "$P1/docs/roadmaps/alice" "$P1_DECLARED/docs/roadmaps/alice"
 cp -r "$P1/docs/roadmaps/bob" "$P1_DECLARED/docs/roadmaps/bob"
 cp -r "$P1/docs/req/bob" "$P1_DECLARED/docs/req/bob"
 
-for runtime in go node python; do
+for runtime in go; do  # ML-3A (v8): node python removed
   validate_out=$(run_"$runtime" "$P1_DECLARED" validate; true)
   if grep -qF "$MSG_BOB_UNDECLARED" <<<"$validate_out"; then
     fail "ac5/$runtime/declaring-silences-violation" "violation still present after declaring bob — output: $(printf '%q' "$validate_out")"
@@ -386,7 +374,7 @@ scaffold_by_agent "$P2" "- alice"
 mkdir -p "$P2/docs/roadmaps/alice/wip" "$P2/docs/roadmaps/.git" "$P2/docs/roadmaps/node_modules" "$P2/docs/roadmaps/wip"
 write_wip_roadmap "$P2/docs/roadmaps/alice/wip/ROADMAP-alice-wip.md" "alice wip"
 
-for runtime in go node python; do
+for runtime in go; do  # ML-3A (v8): node python removed
   validate_out=$(run_"$runtime" "$P2" validate; true)
   if ! grep -qF 'roadmap "ROADMAP-alice-wip.md" is in wip but has no linked REQ' <<<"$validate_out"; then
     fail "infra-filter/$runtime/liveness-anchor" "validate produced no usable output at all (alice's expected wip_has_req violation is absent too) — cannot distinguish 'infra correctly filtered' from 'validate crashed/empty output'; output: $(printf '%q' "$validate_out")"
@@ -424,7 +412,7 @@ mkdir -p "$P5/docs/roadmaps/alice/wip"
 write_wip_roadmap "$P5/docs/roadmaps/alice/wip/ROADMAP-alice-wip.md" "alice wip"
 write_wip_roadmap "$P5/docs/roadmaps/.ghost/wip/ROADMAP-ghost-wip.md" "ghost wip (dot-prefixed, não declarado)"
 
-for runtime in go node python; do
+for runtime in go; do  # ML-3A (v8): node python removed
   status_out=$(run_"$runtime" "$P5" status; true)
   if ! grep -qF "ROADMAP-ghost-wip.md" <<<"$status_out"; then
     fail "hidden-namespace/$runtime/status-enumerates-dotghost" "'status' did not list .ghost's roadmap — dot-prefixed namespace went invisible (the exact defect this ML exists to close)"
@@ -444,7 +432,7 @@ for runtime in go node python; do
   ok "hidden-namespace/$runtime/dotghost-validate-signal"
 done
 
-for runtime in go node python; do
+for runtime in go; do  # ML-3A (v8): node python removed
   P5_MOVE="$WORK/p5-move-$runtime"
   cp -r "$P5" "$P5_MOVE"
   move_out=$(run_"$runtime" "$P5_MOVE" roadmap move ROADMAP-ghost-wip done; true)
@@ -484,7 +472,7 @@ write_wip_roadmap "$P6/docs/roadmaps/beta/wip/ROADMAP-beta-1.md" "beta 1"
 write_wip_roadmap "$P6/docs/roadmaps/*/wip/ROADMAP-star-1.md" "star 1"
 write_wip_roadmap "$P6/docs/roadmaps/*/wip/ROADMAP-star-2.md" "star 2"
 
-for runtime in go node python; do
+for runtime in go; do  # ML-3A (v8): node python removed
   validate_out=$(run_"$runtime" "$P6" validate; true)
   if ! grep -qF '3 roadmaps in wip/ for agent "alfa"' <<<"$validate_out"; then
     fail "glob-metachar/$runtime/liveness-anchor" "validate produced no usable wip_limit warning for alfa at all — cannot distinguish 'star correctly isolated' from 'validate crashed/empty output'; output: $(printf '%q' "$validate_out")"
@@ -511,7 +499,7 @@ EOF
 write_wip_roadmap "$P7/docs/roadmaps/alfa/wip/ROADMAP-alfa-1.md" "alfa 1"
 write_wip_roadmap "$P7/docs/roadmaps/unmatched[bracket/wip/ROADMAP-bracket-1.md" "bracket 1"
 
-for runtime in go node python; do
+for runtime in go; do  # ML-3A (v8): node python removed
   set +e
   validate_out=$(run_"$runtime" "$P7" validate)
   validate_status=$?
@@ -530,8 +518,7 @@ for runtime in go node python; do
   set +e
   case "$runtime" in
     go)     validate_json_stdout=$(cd "$P7" && "$GO_BIN" validate --json 2>/dev/null) ;;
-    node)   validate_json_stdout=$(cd "$P7" && node "$NODE_CLI" validate --json 2>/dev/null) ;;
-    python) validate_json_stdout=$(cd "$P7" && env PYTHONPATH="$PY_ROOT" python3 -m trackfw validate --json 2>/dev/null) ;;
+    # ML-3A (v8): node and python cases removed
   esac
   set -e
   if ! python3 -c "import json,sys; json.loads(sys.argv[1])" "$validate_json_stdout" >/dev/null 2>&1; then
@@ -556,7 +543,7 @@ roadmap_namespacing: flat
 EOF
 write_wip_roadmap "$P3/docs/roadmaps/wip/ROADMAP-flat-wip.md" "flat wip"
 
-for runtime in go node python; do
+for runtime in go; do  # ML-3A (v8): node python removed
   validate_out=$(run_"$runtime" "$P3" validate; true)
   if ! grep -qF 'roadmap "ROADMAP-flat-wip.md" is in wip but has no linked REQ' <<<"$validate_out"; then
     fail "flat-untouched/$runtime/liveness-anchor" "validate produced no usable output at all (the flat project's expected wip_has_req violation is absent too) — cannot distinguish 'flat correctly untouched' from 'validate crashed/empty output'; output: $(printf '%q' "$validate_out")"
@@ -576,7 +563,7 @@ P4_OUT="$WORK/p4-symlink-out"
 mkdir -p "$P4_OUT/wip"
 write_wip_roadmap "$P4_OUT/wip/ROADMAP-leak.md" "leak"
 
-for runtime in go node python; do
+for runtime in go; do  # ML-3A (v8): node python removed
   P4="$WORK/p4-symlink-$runtime"
   scaffold_by_agent "$P4" "- alice"
   mkdir -p "$P4/docs/roadmaps/alice/wip"
@@ -642,7 +629,7 @@ assert_order() {
   done
 }
 
-for runtime in go node python; do
+for runtime in go; do  # ML-3A (v8): node python removed
   list_out=$(run_"$runtime" "$P7" roadmap list; true)
   # "[zulu" matches both Go/Node's "[zulu/wip]" and Python's "[zulu]" — a
   # substring, not the full bracketed token, is deliberate so the same
@@ -686,41 +673,7 @@ if grep -qF "ROADMAP-bob-wip.md" <<<"$dira_go_status"; then
 fi
 ok "direction-a/go/detects-substitution-regression"
 
-# --- Node ---
-TA_N="$WORK/dira-node"
-setup_npm_tree "$TA_N"
-corrupt_literal \
-  "$ROOT_DIR/npm/src/validator/index.js" "$TA_N/npm/src/validator/index.js" \
-  $'  let entries = []\n  try {\n    entries = fs.readdirSync(dir, { withFileTypes: true })\n  } catch (_) {\n    return ordered\n  }\n' \
-  $'  if (ordered.length) return ordered\n  let entries = []\n  try {\n    entries = fs.readdirSync(dir, { withFileTypes: true })\n  } catch (_) {\n    return ordered\n  }\n' \
-  "direction-a-node"
 
-dira_node_status=$(cd "$P1" && node "$TA_N/npm/bin/trackfw" status 2>&1; true)
-if ! grep -qF "ROADMAP-alice-wip.md" <<<"$dira_node_status"; then
-  fail "direction-a/node/detects-substitution-regression" "the corrupted tree produced no usable output at all (alice, the DECLARED namespace, is absent too) — cannot distinguish 'bob correctly vanished' from 'node crashed/empty output'; output: $(printf '%q' "$dira_node_status")"
-fi
-if grep -qF "ROADMAP-bob-wip.md" <<<"$dira_node_status"; then
-  fail "direction-a/node/detects-substitution-regression" "corrupted binary still shows bob — checagem vácua"
-fi
-ok "direction-a/node/detects-substitution-regression"
-
-# --- Python ---
-TA_P="$WORK/dira-python"
-setup_py_tree "$TA_P"
-corrupt_literal \
-  "$ROOT_DIR/pypi/trackfw/config.py" "$TA_P/pypi/trackfw/config.py" \
-  $'    try:\n        with os.scandir(directory) as it:\n' \
-  $'    if ordered:\n        return ordered\n    try:\n        with os.scandir(directory) as it:\n' \
-  "direction-a-python"
-
-dira_python_status=$(cd "$P1" && env PYTHONPATH="$TA_P/pypi" python3 -m trackfw status 2>&1; true)
-if ! grep -qF "ROADMAP-alice-wip.md" <<<"$dira_python_status"; then
-  fail "direction-a/python/detects-substitution-regression" "the corrupted tree produced no usable output at all (alice, the DECLARED namespace, is absent too) — cannot distinguish 'bob correctly vanished' from 'python crashed/empty output'; output: $(printf '%q' "$dira_python_status")"
-fi
-if grep -qF "ROADMAP-bob-wip.md" <<<"$dira_python_status"; then
-  fail "direction-a/python/detects-substitution-regression" "corrupted binary still shows bob — checagem vácua"
-fi
-ok "direction-a/python/detects-substitution-regression"
 
 # ===========================================================================
 # Direction B1 — infra filter disabled: `node_modules` starts being accused
@@ -752,35 +705,7 @@ if ! grep -qF 'agent namespace "node_modules"' <<<"$dirb1_go_out"; then
 fi
 ok "direction-b1/go/detects-infra-filter-regression"
 
-# --- Node ---
-TB1_N="$WORK/dirb1-node"
-setup_npm_tree "$TB1_N"
-corrupt_literal \
-  "$ROOT_DIR/npm/src/validator/index.js" "$TB1_N/npm/src/validator/index.js" \
-  "return name === 'node_modules'" \
-  "return false" \
-  "direction-b1-node"
 
-dirb1_node_out=$(cd "$P2" && node "$TB1_N/npm/bin/trackfw" validate 2>&1; true)
-if ! grep -qF 'agent namespace "node_modules"' <<<"$dirb1_node_out"; then
-  fail "direction-b1/node/detects-infra-filter-regression" "corrupted binary did not accuse node_modules — checagem vácua"
-fi
-ok "direction-b1/node/detects-infra-filter-regression"
-
-# --- Python ---
-TB1_P="$WORK/dirb1-python"
-setup_py_tree "$TB1_P"
-corrupt_literal \
-  "$ROOT_DIR/pypi/trackfw/config.py" "$TB1_P/pypi/trackfw/config.py" \
-  'return name == "node_modules"' \
-  'return False' \
-  "direction-b1-python"
-
-dirb1_python_out=$(cd "$P2" && env PYTHONPATH="$TB1_P/pypi" python3 -m trackfw validate 2>&1; true)
-if ! grep -qF 'agent namespace "node_modules"' <<<"$dirb1_python_out"; then
-  fail "direction-b1/python/detects-infra-filter-regression" "corrupted binary did not accuse node_modules — checagem vácua"
-fi
-ok "direction-b1/python/detects-infra-filter-regression"
 
 # ===========================================================================
 # Direction B3 (ML-4A, achado 1) — the dot-prefix carve-out reverts to
@@ -822,41 +747,7 @@ if grep -qF "ROADMAP-ghost-wip.md" <<<"$dirb3_go_status"; then
 fi
 ok "direction-b3/go/detects-dotprefix-invisibility-regression"
 
-# --- Node ---
-TB3_N="$WORK/dirb3-node"
-setup_npm_tree "$TB3_N"
-corrupt_literal \
-  "$ROOT_DIR/npm/src/validator/index.js" "$TB3_N/npm/src/validator/index.js" \
-  $'function isInfraDirName(name) {\n  return name === \'node_modules\'\n}' \
-  $'function isInfraDirName(name) {\n  return name.startsWith(\'.\') || name === \'node_modules\'\n}' \
-  "direction-b3-node"
 
-dirb3_node_status=$(cd "$P5" && node "$TB3_N/npm/bin/trackfw" status 2>&1; true)
-if ! grep -qF "ROADMAP-alice-wip.md" <<<"$dirb3_node_status"; then
-  fail "direction-b3/node/detects-dotprefix-invisibility-regression" "the corrupted tree produced no usable output at all (alice, the DECLARED namespace, is absent too) — cannot distinguish '.ghost correctly vanished' from 'node crashed/empty output'; output: $(printf '%q' "$dirb3_node_status")"
-fi
-if grep -qF "ROADMAP-ghost-wip.md" <<<"$dirb3_node_status"; then
-  fail "direction-b3/node/detects-dotprefix-invisibility-regression" "corrupted binary still shows .ghost's roadmap — checagem vácua"
-fi
-ok "direction-b3/node/detects-dotprefix-invisibility-regression"
-
-# --- Python ---
-TB3_P="$WORK/dirb3-python"
-setup_py_tree "$TB3_P"
-corrupt_literal \
-  "$ROOT_DIR/pypi/trackfw/config.py" "$TB3_P/pypi/trackfw/config.py" \
-  'return name == "node_modules"' \
-  'return name.startswith(".") or name == "node_modules"' \
-  "direction-b3-python"
-
-dirb3_python_status=$(cd "$P5" && env PYTHONPATH="$TB3_P/pypi" python3 -m trackfw status 2>&1; true)
-if ! grep -qF "ROADMAP-alice-wip.md" <<<"$dirb3_python_status"; then
-  fail "direction-b3/python/detects-dotprefix-invisibility-regression" "the corrupted tree produced no usable output at all (alice, the DECLARED namespace, is absent too) — cannot distinguish '.ghost correctly vanished' from 'python crashed/empty output'; output: $(printf '%q' "$dirb3_python_status")"
-fi
-if grep -qF "ROADMAP-ghost-wip.md" <<<"$dirb3_python_status"; then
-  fail "direction-b3/python/detects-dotprefix-invisibility-regression" "corrupted binary still shows .ghost's roadmap — checagem vácua"
-fi
-ok "direction-b3/python/detects-dotprefix-invisibility-regression"
 
 # ===========================================================================
 # Direction B4 (ML-4A, achado 2, Go only — Node/Python were never exposed to
@@ -957,177 +848,12 @@ mkdir -p "$P4_LEAK_OUT_B/wip"
 write_wip_roadmap "$P4_LEAK_OUT_B/wip/ROADMAP-leak.md" "leak"
 
 # ---------------------------------------------------------------------------
-# Node sub-scenario A — G1 (AC12) only mutated
-# ---------------------------------------------------------------------------
-TB2_N="$WORK/dirb2-node"
-setup_npm_tree "$TB2_N"
-corrupt_literal \
-  "$ROOT_DIR/npm/src/validator/index.js" "$TB2_N/npm/src/validator/index.js" \
-  '.filter(e => e.isDirectory()) // symlinks retornam false aqui — nunca seguidos (AC12/AC13)' \
-  '.filter(e => fs.statSync(path.join(dir, e.name)).isDirectory()) // CORRUPTED (direction-b2): segue symlink' \
-  "direction-b2-node"
-
-P4_N="$WORK/dirb2-node-project"
-scaffold_by_agent "$P4_N" "- alice"
-mkdir -p "$P4_N/docs/roadmaps/alice/wip"
-ln -s "$P4_LEAK_OUT" "$P4_N/docs/roadmaps/evil"
-
-set +e
-dirb2_node_out=$(cd "$P4_N" && node "$TB2_N/npm/bin/trackfw" roadmap move ROADMAP-leak done 2>&1)
-dirb2_node_status=$?
-set -e
-# G3 must fire: exit non-zero
-if [[ "$dirb2_node_status" -eq 0 ]]; then
-  fail "direction-b2/node/explicit-error-on-external-symlink" \
-    "corrupted binary (G1 only) exited 0 — G3 did not fire; the empty-agent path was not caught (output: $(printf '%q' "$dirb2_node_out"))"
-fi
-# G3 must name the artefact (not just a generic error message)
-if ! grep -qF 'ROADMAP-leak' <<<"$dirb2_node_out"; then
-  fail "direction-b2/node/explicit-error-on-external-symlink" \
-    "error output does not name the roadmap file — error message too generic to confirm the intended guard fired (status=$dirb2_node_status, output: $(printf '%q' "$dirb2_node_out"))"
-fi
-# File must NOT have escaped to the external location
-if [[ -f "$P4_LEAK_OUT/done/ROADMAP-leak.md" ]]; then
-  fail "direction-b2/node/explicit-error-on-external-symlink" \
-    "file escaped despite G3 firing — external location was written (output: $(printf '%q' "$dirb2_node_out"))"
-fi
-ok "direction-b2/node/explicit-error-on-external-symlink"
 
 # ---------------------------------------------------------------------------
-# Node sub-scenario B — G1 + G2 (both realpathSync calls) mutated
-# ---------------------------------------------------------------------------
-TB2_N_DOUBLE="$WORK/dirb2-node-double"
-setup_npm_tree "$TB2_N_DOUBLE"
-# G1: AC12 guard in the namespace scanner
-corrupt_literal \
-  "$ROOT_DIR/npm/src/validator/index.js" "$TB2_N_DOUBLE/npm/src/validator/index.js" \
-  '.filter(e => e.isDirectory()) // symlinks retornam false aqui — nunca seguidos (AC12/AC13)' \
-  '.filter(e => fs.statSync(path.join(dir, e.name)).isDirectory()) // CORRUPTED (direction-b2): segue symlink' \
-  "direction-b2-node-double-ac12"
-# G2a: file-side realpathSync in agentFromPath — bypass symlink resolution for the file
-corrupt_literal \
-  "$ROOT_DIR/npm/src/generators/roadmap.js" "$TB2_N_DOUBLE/npm/src/generators/roadmap.js" \
-  'abs = fs.realpathSync(filePath)' \
-  'abs = path.resolve(filePath) // CORRUPTED (direction-b2-double): realpathSync bypassed — agentFromPath returns structural name' \
-  "direction-b2-node-double-abs"
-# G2b: base-side realpathSync in agentFromPath — bypass symlink resolution for the base dir.
-#      src == dest intentional: reads the G2a-patched file, adds the base corruption.
-#      Without this, macOS /var→/private/var makes path.relative yield '..' (see comment above).
-corrupt_literal \
-  "$TB2_N_DOUBLE/npm/src/generators/roadmap.js" "$TB2_N_DOUBLE/npm/src/generators/roadmap.js" \
-  'base = fs.realpathSync(path.resolve(baseDir))' \
-  'base = path.resolve(baseDir) // CORRUPTED (direction-b2-double): realpathSync bypassed — base side' \
-  "direction-b2-node-double-base"
-
-P4_N_B="$WORK/dirb2-node-project-b"
-scaffold_by_agent "$P4_N_B" "- alice"
-mkdir -p "$P4_N_B/docs/roadmaps/alice/wip"
-ln -s "$P4_LEAK_OUT_B" "$P4_N_B/docs/roadmaps/evil"
-
-set +e
-dirb2_node_dbl_out=$(cd "$P4_N_B" && node "$TB2_N_DOUBLE/npm/bin/trackfw" roadmap move ROADMAP-leak done 2>&1)
-dirb2_node_dbl_status=$?
-set -e
-# Liveness: the file must have moved somewhere (not silently dropped)
-if [[ -f "$P4_LEAK_OUT_B/wip/ROADMAP-leak.md" ]]; then
-  fail "direction-b2/node/detects-symlink-regression" \
-    "double-corrupted binary (G1+G2) did not escape — file still at wip (no move happened); a third guard may have absorbed the attack or path resolution broke (exit=$dirb2_node_dbl_status, output: $(printf '%q' "$dirb2_node_dbl_out")) — checagem vácua"
-fi
-if [[ ! -f "$P4_LEAK_OUT_B/done/ROADMAP-leak.md" ]]; then
-  fail "direction-b2/node/detects-symlink-regression" \
-    "double-corrupted binary (G1+G2) moved the file but NOT to the external location — escape did not happen as expected (exit=$dirb2_node_dbl_status, output: $(printf '%q' "$dirb2_node_dbl_out")) — checagem vácua"
-fi
-ok "direction-b2/node/detects-symlink-regression"
 
 # ---------------------------------------------------------------------------
-# Python sub-scenario A — G1 (AC12) only mutated
-# ---------------------------------------------------------------------------
-P4_LEAK_OUT_PY="$WORK/dirb2-leak-out-python"
-mkdir -p "$P4_LEAK_OUT_PY/wip"
-write_wip_roadmap "$P4_LEAK_OUT_PY/wip/ROADMAP-leak.md" "leak"
-
-P4_LEAK_OUT_PY_B="$WORK/dirb2-leak-out-python-b"
-mkdir -p "$P4_LEAK_OUT_PY_B/wip"
-write_wip_roadmap "$P4_LEAK_OUT_PY_B/wip/ROADMAP-leak.md" "leak"
-
-TB2_P="$WORK/dirb2-python"
-setup_py_tree "$TB2_P"
-corrupt_literal \
-  "$ROOT_DIR/pypi/trackfw/config.py" "$TB2_P/pypi/trackfw/config.py" \
-  $'                if e.is_dir(follow_symlinks=False)  # symlinks retornam False — nunca seguidos\n' \
-  $'                if os.path.isdir(os.path.join(directory, e.name))  # CORRUPTED (direction-b2): segue symlink\n' \
-  "direction-b2-python"
-
-P4_P="$WORK/dirb2-python-project"
-scaffold_by_agent "$P4_P" "- alice"
-mkdir -p "$P4_P/docs/roadmaps/alice/wip"
-ln -s "$P4_LEAK_OUT_PY" "$P4_P/docs/roadmaps/evil"
-
-set +e
-dirb2_python_out=$(cd "$P4_P" && env PYTHONPATH="$TB2_P/pypi" python3 -m trackfw roadmap move ROADMAP-leak done 2>&1)
-dirb2_python_status=$?
-set -e
-# G3 must fire: exit non-zero
-if [[ "$dirb2_python_status" -eq 0 ]]; then
-  fail "direction-b2/python/explicit-error-on-external-symlink" \
-    "corrupted binary (G1 only) exited 0 — G3 did not fire; the empty-agent path was not caught (output: $(printf '%q' "$dirb2_python_out"))"
-fi
-# G3 must name the artefact
-if ! grep -qF 'ROADMAP-leak' <<<"$dirb2_python_out"; then
-  fail "direction-b2/python/explicit-error-on-external-symlink" \
-    "error output does not name the roadmap file — error message too generic to confirm the intended guard fired (status=$dirb2_python_status, output: $(printf '%q' "$dirb2_python_out"))"
-fi
-# File must NOT have escaped to the external location
-if [[ -f "$P4_LEAK_OUT_PY/done/ROADMAP-leak.md" ]]; then
-  fail "direction-b2/python/explicit-error-on-external-symlink" \
-    "file escaped despite G3 firing — external location was written (output: $(printf '%q' "$dirb2_python_out"))"
-fi
-ok "direction-b2/python/explicit-error-on-external-symlink"
 
 # ---------------------------------------------------------------------------
-# Python sub-scenario B — G1 + G2 (both realpath calls) mutated
-# ---------------------------------------------------------------------------
-TB2_P_DOUBLE="$WORK/dirb2-python-double"
-setup_py_tree "$TB2_P_DOUBLE"
-# G1: AC12 guard in the namespace scanner (config.py)
-corrupt_literal \
-  "$ROOT_DIR/pypi/trackfw/config.py" "$TB2_P_DOUBLE/pypi/trackfw/config.py" \
-  $'                if e.is_dir(follow_symlinks=False)  # symlinks retornam False — nunca seguidos\n' \
-  $'                if os.path.isdir(os.path.join(directory, e.name))  # CORRUPTED (direction-b2): segue symlink\n' \
-  "direction-b2-python-double-ac12"
-# G2a: file-side realpath in _agent_from_roadmap_path — bypass symlink resolution for the file
-corrupt_literal \
-  "$ROOT_DIR/pypi/trackfw/generators/roadmap.py" "$TB2_P_DOUBLE/pypi/trackfw/generators/roadmap.py" \
-  '            real_file = os.path.realpath(path)' \
-  '            real_file = os.path.abspath(path)  # CORRUPTED (direction-b2-double): realpath bypassed — structural name returned' \
-  "direction-b2-python-double-realfile"
-# G2b: base-side realpath in _agent_from_roadmap_path — bypass symlink resolution for the base dir.
-#      src == dest intentional: reads the G2a-patched file, adds the base corruption.
-corrupt_literal \
-  "$TB2_P_DOUBLE/pypi/trackfw/generators/roadmap.py" "$TB2_P_DOUBLE/pypi/trackfw/generators/roadmap.py" \
-  '            real_base = os.path.realpath(base_dir)' \
-  '            real_base = os.path.abspath(base_dir)  # CORRUPTED (direction-b2-double): realpath bypassed — base side' \
-  "direction-b2-python-double-realbase"
-
-P4_P_B="$WORK/dirb2-python-project-b"
-scaffold_by_agent "$P4_P_B" "- alice"
-mkdir -p "$P4_P_B/docs/roadmaps/alice/wip"
-ln -s "$P4_LEAK_OUT_PY_B" "$P4_P_B/docs/roadmaps/evil"
-
-set +e
-dirb2_python_dbl_out=$(cd "$P4_P_B" && env PYTHONPATH="$TB2_P_DOUBLE/pypi" python3 -m trackfw roadmap move ROADMAP-leak done 2>&1)
-dirb2_python_dbl_status=$?
-set -e
-# Liveness: the file must have moved somewhere (not silently dropped)
-if [[ -f "$P4_LEAK_OUT_PY_B/wip/ROADMAP-leak.md" ]]; then
-  fail "direction-b2/python/detects-symlink-regression" \
-    "double-corrupted binary (G1+G2) did not escape — file still at wip (no move happened); a third guard may have absorbed the attack or path resolution broke (exit=$dirb2_python_dbl_status, output: $(printf '%q' "$dirb2_python_dbl_out")) — checagem vácua"
-fi
-if [[ ! -f "$P4_LEAK_OUT_PY_B/done/ROADMAP-leak.md" ]]; then
-  fail "direction-b2/python/detects-symlink-regression" \
-    "double-corrupted binary (G1+G2) moved the file but NOT to the external location — escape did not happen as expected (exit=$dirb2_python_dbl_status, output: $(printf '%q' "$dirb2_python_dbl_out")) — checagem vácua"
-fi
-ok "direction-b2/python/detects-symlink-regression"
 
 # ===========================================================================
 # Direction C — declared-first ordering regresses to plain alphabetical: a
@@ -1167,48 +893,6 @@ if (( zulu_ln < alfa_ln )); then
 fi
 ok "direction-c/go/detects-order-regression"
 
-# --- Node ---
-TC_N="$WORK/dirc-node"
-setup_npm_tree "$TC_N"
-corrupt_literal \
-  "$ROOT_DIR/npm/src/validator/index.js" "$TC_N/npm/src/validator/index.js" \
-  $'    ordered.push(name)\n  }\n  return ordered\n}' \
-  $'    ordered.push(name)\n  }\n  ordered.sort()\n  return ordered\n}' \
-  "direction-c-node"
 
-dirc_node_out=$(cd "$P7" && node "$TC_N/npm/bin/trackfw" roadmap list 2>&1; true)
-for marker in "[zulu" "[alfa" "[extra"; do
-  if ! grep -qF -- "$marker" <<<"$dirc_node_out"; then
-    fail "direction-c/node/detects-order-regression" "the corrupted tree produced no usable output at all (marker '$marker' absent too) — cannot distinguish 'order regressed' from 'node crashed/empty output'; output: $(printf '%q' "$dirc_node_out")"
-  fi
-done
-alfa_ln=$(grep -n -F -- "[alfa" <<<"$dirc_node_out" | head -1 | cut -d: -f1)
-zulu_ln=$(grep -n -F -- "[zulu" <<<"$dirc_node_out" | head -1 | cut -d: -f1)
-if (( zulu_ln < alfa_ln )); then
-  fail "direction-c/node/detects-order-regression" "corrupted tree still put zulu (declared 1st) before alfa (declared 2nd) — checagem vácua, output: $(printf '%q' "$dirc_node_out")"
-fi
-ok "direction-c/node/detects-order-regression"
 
-# --- Python ---
-TC_P="$WORK/dirc-python"
-setup_py_tree "$TC_P"
-corrupt_literal \
-  "$ROOT_DIR/pypi/trackfw/config.py" "$TC_P/pypi/trackfw/config.py" \
-  $'        ordered.append(name)\n    return ordered\n' \
-  $'        ordered.append(name)\n    ordered.sort()\n    return ordered\n' \
-  "direction-c-python"
-
-dirc_python_out=$(cd "$P7" && env PYTHONPATH="$TC_P/pypi" python3 -m trackfw roadmap list 2>&1; true)
-for marker in "[zulu" "[alfa" "[extra"; do
-  if ! grep -qF -- "$marker" <<<"$dirc_python_out"; then
-    fail "direction-c/python/detects-order-regression" "the corrupted tree produced no usable output at all (marker '$marker' absent too) — cannot distinguish 'order regressed' from 'python crashed/empty output'; output: $(printf '%q' "$dirc_python_out")"
-  fi
-done
-alfa_ln=$(grep -n -F -- "[alfa" <<<"$dirc_python_out" | head -1 | cut -d: -f1)
-zulu_ln=$(grep -n -F -- "[zulu" <<<"$dirc_python_out" | head -1 | cut -d: -f1)
-if (( zulu_ln < alfa_ln )); then
-  fail "direction-c/python/detects-order-regression" "corrupted tree still put zulu (declared 1st) before alfa (declared 2nd) — checagem vácua, output: $(printf '%q' "$dirc_python_out")"
-fi
-ok "direction-c/python/detects-order-regression"
-
-echo "check-agent-namespace-union: all $SCENARIOS scenarios passed (AC1 x3 runtimes x3 checks, AC4 x3, AC5 x3+x3, infra-filter x3, hidden-namespace x3x4, glob-metachar x3x3, flat-untouched x3, AC12 x3, ordering x3, direction-a x3, direction-b1 x3, direction-b3 x3, direction-b4 x1, direction-b2 x4, direction-c x3)."
+echo "check-agent-namespace-union: all $SCENARIOS scenarios passed (Go only — v8 single-runtime; AC1 x3 checks, AC4, AC5 x2, infra-filter, hidden-namespace x4, glob-metachar x3, flat-untouched, AC12, ordering, falsification: direction-a, direction-b1, direction-b3, direction-b4, direction-c)."

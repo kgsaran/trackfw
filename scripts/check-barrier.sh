@@ -62,15 +62,9 @@ if [[ -z "${GO_BIN:-}" ]]; then
 elif [[ "$GO_BIN" != /* ]]; then
   GO_BIN="$ROOT_DIR/$GO_BIN"
 fi
-NODE_CLI="$ROOT_DIR/npm/bin/trackfw"
-PY_ROOT="${PY_ROOT:-$ROOT_DIR/pypi}"
 
 if [[ ! -x "$GO_BIN" ]]; then
   echo "check-barrier: Go binary not found/executable at $GO_BIN" >&2
-  exit 1
-fi
-if [[ ! -f "$NODE_CLI" ]]; then
-  echo "check-barrier: Node CLI not found at $NODE_CLI" >&2
   exit 1
 fi
 
@@ -122,8 +116,6 @@ run_barrier() {
   set +e
   case "$runtime" in
   go) (cd "$dir" && "$GO_BIN" barrier "$@") >"$out_file" 2>"$err_file" ;;
-  node) (cd "$dir" && node "$NODE_CLI" barrier "$@") >"$out_file" 2>"$err_file" ;;
-  py) (cd "$dir" && PYTHONPATH="$PY_ROOT" python3 -m trackfw barrier "$@") >"$out_file" 2>"$err_file" ;;
   *) echo "run_barrier: unknown runtime '$runtime'" >&2; exit 1 ;;
   esac
   BARRIER_EXIT=$?
@@ -290,7 +282,7 @@ REQ: REQ-2026-07-29-barrier-fixture
 **Critérios de aceite:**
 - [x] build passes
 EOF
-for runtime in go node py; do
+for runtime in go; do  # ML-3A (v8): node py removidos
   run_barrier "$runtime" "$S3A" ROADMAP-barrier-fixture --wave 1 --json --trust-local-gates
   [[ "$BARRIER_EXIT" -eq 1 ]] || fail "barrier/isolated-check/mls_complete/$runtime" "expected exit 1, got $BARRIER_EXIT"
   assert_only_this_check_blocked "$BARRIER_STDOUT" "mls_complete" "barrier/isolated-check/mls_complete/$runtime"
@@ -317,7 +309,7 @@ REQ: REQ-2026-07-29-barrier-fixture
 - [x] build passes
 - [ ] tests pass
 EOF
-for runtime in go node py; do
+for runtime in go; do  # ML-3A (v8): node py removidos
   run_barrier "$runtime" "$S3B" ROADMAP-barrier-fixture --wave 1 --json --trust-local-gates
   [[ "$BARRIER_EXIT" -eq 1 ]] || fail "barrier/isolated-check/acceptance_evidence/$runtime" "expected exit 1, got $BARRIER_EXIT"
   assert_only_this_check_blocked "$BARRIER_STDOUT" "acceptance_evidence" "barrier/isolated-check/acceptance_evidence/$runtime"
@@ -348,7 +340,7 @@ false
 **Critérios de aceite:**
 - [x] build passes
 EOF
-for runtime in go node py; do
+for runtime in go; do  # ML-3A (v8): node py removidos
   run_barrier "$runtime" "$S3C" ROADMAP-barrier-fixture --wave 1 --json --trust-local-gates
   [[ "$BARRIER_EXIT" -eq 1 ]] || fail "barrier/isolated-check/gates/$runtime" "expected exit 1, got $BARRIER_EXIT"
   assert_only_this_check_blocked "$BARRIER_STDOUT" "gates" "barrier/isolated-check/gates/$runtime"
@@ -372,7 +364,7 @@ cat >"$S3D/docs/roadmaps/wip/ROADMAP-barrier-fixture.md" <<'EOF'
 **Critérios de aceite:**
 - [x] build passes
 EOF
-for runtime in go node py; do
+for runtime in go; do  # ML-3A (v8): node py removidos
   run_barrier "$runtime" "$S3D" ROADMAP-barrier-fixture --wave 1 --json --trust-local-gates
   [[ "$BARRIER_EXIT" -eq 1 ]] || fail "barrier/isolated-check/validate/$runtime" "expected exit 1, got $BARRIER_EXIT"
   assert_only_this_check_blocked "$BARRIER_STDOUT" "validate" "barrier/isolated-check/validate/$runtime"
@@ -473,7 +465,7 @@ REQ: REQ-2026-07-29-barrier-fixture
 - [x] build passes
 EOF
 
-for runtime in go node py; do
+for runtime in go; do  # ML-3A (v8): node py removidos
   run_barrier "$runtime" "$S5" ROADMAP-does-not-exist --wave 1 --json
   [[ "$BARRIER_EXIT" -eq 2 ]] || fail "barrier/usage-error/roadmap-not-found/$runtime" "expected exit 2, got $BARRIER_EXIT; stdout: $BARRIER_STDOUT stderr: $BARRIER_STDERR"
   WANT='trackfw barrier: roadmap "ROADMAP-does-not-exist" not found in wip/ nor done/ under docs/roadmaps'
@@ -539,23 +531,10 @@ run_barrier go "$S6" ROADMAP-barrier-fixture --wave 1 --json --trust-local-gates
 [[ "$BARRIER_EXIT" -eq 0 ]] || fail "barrier/parity/go" "expected exit 0, got $BARRIER_EXIT; stderr: $BARRIER_STDERR"
 echo "$BARRIER_STDOUT" | normalize_barrier_json >"$WORK/go.norm.json"
 
-run_barrier node "$S6" ROADMAP-barrier-fixture --wave 1 --json --trust-local-gates
-[[ "$BARRIER_EXIT" -eq 0 ]] || fail "barrier/parity/node" "expected exit 0, got $BARRIER_EXIT; stderr: $BARRIER_STDERR"
-echo "$BARRIER_STDOUT" | normalize_barrier_json >"$WORK/node.norm.json"
 
-run_barrier py "$S6" ROADMAP-barrier-fixture --wave 1 --json --trust-local-gates
-[[ "$BARRIER_EXIT" -eq 0 ]] || fail "barrier/parity/py" "expected exit 0, got $BARRIER_EXIT; stderr: $BARRIER_STDERR"
-echo "$BARRIER_STDOUT" | normalize_barrier_json >"$WORK/py.norm.json"
 
-if ! diff -u "$WORK/go.norm.json" "$WORK/node.norm.json" >"$WORK/diff-go-node.txt"; then
-  fail "barrier/parity/go-vs-node" "JSON diverges between Go and Node.js runtimes:
-$(cat "$WORK/diff-go-node.txt")"
-fi
-if ! diff -u "$WORK/go.norm.json" "$WORK/py.norm.json" >"$WORK/diff-go-py.txt"; then
-  fail "barrier/parity/go-vs-python" "JSON diverges between Go and Python runtimes:
-$(cat "$WORK/diff-go-py.txt")"
-fi
-ok "barrier/parity/three-runtimes-identical"
+
+ok "barrier/parity/go-behavioral-pin"
 
 # ---------------------------------------------------------------------------
 # Scenario 7 — no specialist asset authorizes Git operations; architect.md
@@ -617,7 +596,7 @@ cat >"$S8/docs/roadmaps/wip/ROADMAP-barrier-fixture.md" <<'EOF'
 EOF
 # ## Wave X is at line 3 in the file above.
 WANT8='trackfw barrier: malformed wave heading at line 3: "X" is not a valid wave label'
-for runtime in go node py; do
+for runtime in go; do  # ML-3A (v8): node py removidos
   run_barrier "$runtime" "$S8" ROADMAP-barrier-fixture --wave 1
   [[ "$BARRIER_EXIT" -eq 2 ]] || fail "barrier/wave-label/malformed-before-target/$runtime" "expected exit 2, got $BARRIER_EXIT; stderr: $BARRIER_STDERR"
   [[ -n "$BARRIER_STDERR" ]] || fail "barrier/wave-label/malformed-before-target/$runtime" "stderr is empty — vacuity guard failed"
@@ -692,7 +671,7 @@ EOF
 fi
 # ## Wave X is at line 10 in the normal fixture above.
 WANT9='trackfw barrier: malformed wave heading at line 10: "X" is not a valid wave label'
-for runtime in go node py; do
+for runtime in go; do  # ML-3A (v8): node py removidos
   run_barrier "$runtime" "$S9" ROADMAP-barrier-fixture --wave 1 --trust-local-gates
   [[ "$BARRIER_EXIT" -eq 2 ]] || fail "barrier/wave-label/malformed-after-target/$runtime" "expected exit 2 for after-position malformed heading, got $BARRIER_EXIT; stderr: $BARRIER_STDERR"
   [[ -n "$BARRIER_STDERR" ]] || fail "barrier/wave-label/malformed-after-target/$runtime" "stderr is empty — vacuity guard failed"
@@ -741,7 +720,7 @@ EOF
 get_wave_field() {
   python3 -c "import json,sys; print(json.loads(sys.argv[1])['wave'])" "$1"
 }
-for runtime in go node py; do
+for runtime in go; do  # ML-3A (v8): node py removidos
   # --wave 2-bis must resolve Wave 2-bis (wave field = "2-bis", not "2")
   run_barrier "$runtime" "$S10" ROADMAP-barrier-fixture --wave 2-bis --json --trust-local-gates
   [[ "$BARRIER_EXIT" -eq 0 ]] || fail "barrier/wave-label/bis-identity/$runtime/bis-resolves" "expected exit 0, got $BARRIER_EXIT; stderr: $BARRIER_STDERR"
@@ -790,7 +769,7 @@ exit 0
 **Critérios de aceite:**
 - [x] done
 EOF
-for runtime in go node py; do
+for runtime in go; do  # ML-3A (v8): node py removidos
   run_barrier "$runtime" "$S11" ROADMAP-barrier-fixture --wave 0 --json --trust-local-gates
   [[ "$BARRIER_EXIT" -eq 0 || "$BARRIER_EXIT" -eq 1 ]] || fail "barrier/wave-label/wave-zero-accepted/$runtime" "expected exit 0 or 1 (never 2 — a usage/grammar error), got $BARRIER_EXIT; stderr: $BARRIER_STDERR"
   GOT_WAVE=$(get_wave_field "$BARRIER_STDOUT")
@@ -816,18 +795,10 @@ done
 # parity check, applied to the newly-inverted contract.
 run_barrier go "$S11" ROADMAP-barrier-fixture --wave 0 --json --trust-local-gates
 GO_STDOUT11="$BARRIER_STDOUT"
-run_barrier node "$S11" ROADMAP-barrier-fixture --wave 0 --json --trust-local-gates
-NODE_STDOUT11="$BARRIER_STDOUT"
-run_barrier py "$S11" ROADMAP-barrier-fixture --wave 0 --json --trust-local-gates
-PY_STDOUT11="$BARRIER_STDOUT"
 # started_at/finished_at are timestamps and legitimately differ per run — strip them before comparing.
 STRIP_TS='import json,sys; d=json.loads(sys.argv[1]); d.pop("started_at",None); d.pop("finished_at",None); print(json.dumps(d,sort_keys=True))'
 GO_NORM11=$(python3 -c "$STRIP_TS" "$GO_STDOUT11")
-NODE_NORM11=$(python3 -c "$STRIP_TS" "$NODE_STDOUT11")
-PY_NORM11=$(python3 -c "$STRIP_TS" "$PY_STDOUT11")
-[[ "$GO_NORM11" == "$NODE_NORM11" ]] || fail "barrier/wave-label/wave-zero-accepted/parity/go-vs-node" "JSON diverges (timestamps excluded): go=[$GO_NORM11] node=[$NODE_NORM11]"
-[[ "$GO_NORM11" == "$PY_NORM11" ]] || fail "barrier/wave-label/wave-zero-accepted/parity/go-vs-py" "JSON diverges (timestamps excluded): go=[$GO_NORM11] py=[$PY_NORM11]"
-ok "barrier/wave-label/wave-zero-accepted/parity/three-runtimes-identical"
+ok "barrier/wave-label/wave-zero-accepted/parity/go-behavioral-pin"
 
 # ---------------------------------------------------------------------------
 # Scenario 12 — --wave 2-BIS is an invalid argument (fourth pinned exit-2
@@ -847,7 +818,7 @@ cat >"$S12/docs/roadmaps/wip/ROADMAP-barrier-fixture.md" <<'EOF'
 - [x] done
 EOF
 WANT12='trackfw barrier: invalid --wave "2-BIS" — not a valid wave label'
-for runtime in go node py; do
+for runtime in go; do  # ML-3A (v8): node py removidos
   run_barrier "$runtime" "$S12" ROADMAP-barrier-fixture --wave 2-BIS
   [[ "$BARRIER_EXIT" -eq 2 ]] || fail "barrier/wave-label/invalid-arg/$runtime" "expected exit 2, got $BARRIER_EXIT; stderr: $BARRIER_STDERR"
   [[ -n "$BARRIER_STDERR" ]] || fail "barrier/wave-label/invalid-arg/$runtime" "stderr is empty — vacuity guard failed"
@@ -857,13 +828,7 @@ done
 # Byte-identical parity across runtimes for the fourth exit-2 message.
 run_barrier go "$S12" ROADMAP-barrier-fixture --wave 2-BIS
 GO_STDERR4="$BARRIER_STDERR"
-run_barrier node "$S12" ROADMAP-barrier-fixture --wave 2-BIS
-NODE_STDERR4="$BARRIER_STDERR"
-run_barrier py "$S12" ROADMAP-barrier-fixture --wave 2-BIS
-PY_STDERR4="$BARRIER_STDERR"
-[[ "$GO_STDERR4" == "$NODE_STDERR4" ]] || fail "barrier/wave-label/invalid-arg/parity/go-vs-node" "stderr diverges: go=[$GO_STDERR4] node=[$NODE_STDERR4]"
-[[ "$GO_STDERR4" == "$PY_STDERR4" ]] || fail "barrier/wave-label/invalid-arg/parity/go-vs-py" "stderr diverges: go=[$GO_STDERR4] py=[$PY_STDERR4]"
-ok "barrier/wave-label/invalid-arg/parity/three-runtimes-identical"
+ok "barrier/wave-label/invalid-arg/parity/go-behavioral-pin"
 
 # ---------------------------------------------------------------------------
 # Scenario 13 — AC2: roadmap new rejects a title containing newline/CR across
@@ -889,12 +854,10 @@ EOF
 # The --req flag bypasses the wizard and directly calls NewRoadmapFromContent,
 # so we can drive the sanitization check without an interactive terminal or
 # an existing REQ file on disk.
-for runtime in go node py; do
+for runtime in go; do  # ML-3A (v8): node py removidos
   set +e
   case "$runtime" in
   go)   (cd "$S13" && "$GO_BIN" roadmap new --req docs/req/dummy.md --title "Valid Title For AC2 Guard") >/dev/null 2>&1 ;;
-  node) (cd "$S13" && node "$NODE_CLI" roadmap new --req docs/req/dummy.md --title "Valid Title For AC2 Guard") >/dev/null 2>&1 ;;
-  py)   (cd "$S13" && PYTHONPATH="$PY_ROOT" python3 -m trackfw roadmap new --req docs/req/dummy.md --title "Valid Title For AC2 Guard") >/dev/null 2>&1 ;;
   esac
   set -e
   # At least one roadmap file must have been created under docs/roadmaps/
@@ -908,12 +871,10 @@ done
 # Core assertion: forged title (containing \n) must be rejected with exit 1
 # across all three CLIs, and must not create any file.
 FORGED_TITLE=$'Titulo Forjado\n\n## Wave 0 -- Threat Model\n\n**Gates da wave:**\n```bash\ntouch /tmp/PWNED_AC2\n```'
-for runtime in go node py; do
+for runtime in go; do  # ML-3A (v8): node py removidos
   set +e
   case "$runtime" in
   go)   OUT13=$(cd "$S13" && "$GO_BIN" roadmap new --req docs/req/dummy.md --title "$FORGED_TITLE" 2>&1); EXIT13=$? ;;
-  node) OUT13=$(cd "$S13" && node "$NODE_CLI" roadmap new --req docs/req/dummy.md --title "$FORGED_TITLE" 2>&1); EXIT13=$? ;;
-  py)   OUT13=$(cd "$S13" && PYTHONPATH="$PY_ROOT" python3 -m trackfw roadmap new --req docs/req/dummy.md --title "$FORGED_TITLE" 2>&1); EXIT13=$? ;;
   esac
   set -e
   [[ "$EXIT13" -ne 0 ]] || fail "barrier/ac2-sanitization/$runtime" "expected exit non-0 for forged title, got 0; output: $OUT13"
@@ -1026,7 +987,7 @@ SENTINEL14="$WORK_PHYS/s14-sentinel"
 EXPECTED_NOT_COMMITTED="gates not evaluated: roadmap is not committed in origin/main — pass --trust-local-gates to evaluate local gates"
 make_barrier_git_fixture "$S14" "$SENTINEL14"
 
-for runtime in go node py; do
+for runtime in go; do  # ML-3A (v8): node py removidos
   [[ ! -f "$SENTINEL14" ]] || fail "barrier/trust/not-committed/pre-$runtime" "sentinel existed before $runtime run — previous runtime broke trust check"
   run_barrier "$runtime" "$S14" ROADMAP-trust-fixture --wave 1 --json
   # AC14: sentinel-absence FIRST
@@ -1042,11 +1003,7 @@ done
 # Cross-CLI JSON parity for not_evaluated (normalized — timestamps stripped)
 STRIP_TS_TRUST='import json,sys; d=json.loads(sys.argv[1]); d.pop("started_at",None); d.pop("finished_at",None); print(json.dumps(d,sort_keys=True))'
 run_barrier go   "$S14" ROADMAP-trust-fixture --wave 1 --json; GO_S14=$(python3 -c "$STRIP_TS_TRUST" "$BARRIER_STDOUT")
-run_barrier node "$S14" ROADMAP-trust-fixture --wave 1 --json; NODE_S14=$(python3 -c "$STRIP_TS_TRUST" "$BARRIER_STDOUT")
-run_barrier py   "$S14" ROADMAP-trust-fixture --wave 1 --json; PY_S14=$(python3 -c "$STRIP_TS_TRUST" "$BARRIER_STDOUT")
-[[ "$GO_S14" == "$NODE_S14" ]] || fail "barrier/trust/not-committed/parity/go-vs-node" "JSON diverges: go=[$GO_S14] node=[$NODE_S14]"
-[[ "$GO_S14" == "$PY_S14" ]]   || fail "barrier/trust/not-committed/parity/go-vs-py"   "JSON diverges: go=[$GO_S14] py=[$PY_S14]"
-ok "barrier/trust/not-committed/parity/three-runtimes-identical"
+ok "barrier/trust/not-committed/parity/go-behavioral-pin"
 
 # ---------------------------------------------------------------------------
 # Scenario 15 — trust check: same fixture (not committed), with --trust-local-gates.
@@ -1058,7 +1015,7 @@ S15="$WORK_PHYS/s15-trust-local-gates"
 SENTINEL15="$WORK_PHYS/s15-sentinel"
 make_barrier_git_fixture "$S15" "$SENTINEL15"
 
-for runtime in go node py; do
+for runtime in go; do  # ML-3A (v8): node py removidos
   rm -f "$SENTINEL15"
   run_barrier "$runtime" "$S15" ROADMAP-trust-fixture --wave 1 --json --trust-local-gates
   # Sentinel-presence proves the gate executed. Do NOT assert exit 0: the
@@ -1077,12 +1034,8 @@ STRIP_TS_GATES='import json,sys; d=json.loads(sys.argv[1]); d.pop("started_at",N
 rm -f "$SENTINEL15"
 run_barrier go   "$S15" ROADMAP-trust-fixture --wave 1 --json --trust-local-gates; GO_S15=$(python3 -c "$STRIP_TS_GATES" "$BARRIER_STDOUT")
 rm -f "$SENTINEL15"
-run_barrier node "$S15" ROADMAP-trust-fixture --wave 1 --json --trust-local-gates; NODE_S15=$(python3 -c "$STRIP_TS_GATES" "$BARRIER_STDOUT")
 rm -f "$SENTINEL15"
-run_barrier py   "$S15" ROADMAP-trust-fixture --wave 1 --json --trust-local-gates; PY_S15=$(python3 -c "$STRIP_TS_GATES" "$BARRIER_STDOUT")
-[[ "$GO_S15" == "$NODE_S15" ]] || fail "barrier/trust/trust-local-gates/parity/go-vs-node" "gates-check JSON diverges: go=[$GO_S15] node=[$NODE_S15]"
-[[ "$GO_S15" == "$PY_S15" ]]   || fail "barrier/trust/trust-local-gates/parity/go-vs-py"   "gates-check JSON diverges: go=[$GO_S15] py=[$PY_S15]"
-ok "barrier/trust/trust-local-gates/parity/three-runtimes-identical"
+ok "barrier/trust/trust-local-gates/parity/go-behavioral-pin"
 
 # ---------------------------------------------------------------------------
 # Scenario 16 — trust check: roadmap committed and IDENTICAL to origin/main.
@@ -1093,7 +1046,7 @@ SENTINEL16="$WORK_PHYS/s16-sentinel"
 make_barrier_git_fixture "$S16" "$SENTINEL16"
 commit_roadmap_to_origin "$S16"
 
-for runtime in go node py; do
+for runtime in go; do  # ML-3A (v8): node py removidos
   rm -f "$SENTINEL16"
   run_barrier "$runtime" "$S16" ROADMAP-trust-fixture --wave 1 --json
   # Sentinel-presence proves the gate executed (roadmap trusted).
@@ -1109,12 +1062,8 @@ done
 rm -f "$SENTINEL16"
 run_barrier go   "$S16" ROADMAP-trust-fixture --wave 1 --json; GO_S16=$(python3 -c "$STRIP_TS_GATES" "$BARRIER_STDOUT")
 rm -f "$SENTINEL16"
-run_barrier node "$S16" ROADMAP-trust-fixture --wave 1 --json; NODE_S16=$(python3 -c "$STRIP_TS_GATES" "$BARRIER_STDOUT")
 rm -f "$SENTINEL16"
-run_barrier py   "$S16" ROADMAP-trust-fixture --wave 1 --json; PY_S16=$(python3 -c "$STRIP_TS_GATES" "$BARRIER_STDOUT")
-[[ "$GO_S16" == "$NODE_S16" ]] || fail "barrier/trust/trusted-identical/parity/go-vs-node" "gates-check JSON diverges: go=[$GO_S16] node=[$NODE_S16]"
-[[ "$GO_S16" == "$PY_S16" ]]   || fail "barrier/trust/trusted-identical/parity/go-vs-py"   "gates-check JSON diverges: go=[$GO_S16] py=[$PY_S16]"
-ok "barrier/trust/trusted-identical/parity/three-runtimes-identical"
+ok "barrier/trust/trusted-identical/parity/go-behavioral-pin"
 
 # ---------------------------------------------------------------------------
 # Scenario 17 — trust check: roadmap committed in origin/main but LOCAL CONTENT
@@ -1131,7 +1080,7 @@ commit_roadmap_to_origin "$S17"
 # Append one byte locally (does not change origin/main)
 echo "# local-only edit" >> "$S17/docs/roadmaps/wip/ROADMAP-trust-fixture.md"
 
-for runtime in go node py; do
+for runtime in go; do  # ML-3A (v8): node py removidos
   [[ ! -f "$SENTINEL17" ]] || fail "barrier/trust/content-differs/pre-$runtime" "sentinel existed before $runtime run"
   run_barrier "$runtime" "$S17" ROADMAP-trust-fixture --wave 1 --json
   [[ ! -f "$SENTINEL17" ]] || fail "barrier/trust/content-differs/$runtime" "hostile gate EXECUTED — sentinel was created; content-differs check failed"
@@ -1145,11 +1094,7 @@ done
 
 # Cross-CLI JSON parity for content-differs path
 run_barrier go   "$S17" ROADMAP-trust-fixture --wave 1 --json; GO_S17=$(python3 -c "$STRIP_TS_TRUST" "$BARRIER_STDOUT")
-run_barrier node "$S17" ROADMAP-trust-fixture --wave 1 --json; NODE_S17=$(python3 -c "$STRIP_TS_TRUST" "$BARRIER_STDOUT")
-run_barrier py   "$S17" ROADMAP-trust-fixture --wave 1 --json; PY_S17=$(python3 -c "$STRIP_TS_TRUST" "$BARRIER_STDOUT")
-[[ "$GO_S17" == "$NODE_S17" ]] || fail "barrier/trust/content-differs/parity/go-vs-node" "JSON diverges: go=[$GO_S17] node=[$NODE_S17]"
-[[ "$GO_S17" == "$PY_S17" ]]   || fail "barrier/trust/content-differs/parity/go-vs-py"   "JSON diverges: go=[$GO_S17] py=[$PY_S17]"
-ok "barrier/trust/content-differs/parity/three-runtimes-identical"
+ok "barrier/trust/content-differs/parity/go-behavioral-pin"
 
 echo
 echo "All check-barrier.sh scenarios passed."

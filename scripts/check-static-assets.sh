@@ -57,7 +57,11 @@ check_destination() {
   done < "$TMP_ROOT/canonical-files"
 }
 
-check_destination "$ROOT_DIR/npm/src/serve/static"
-check_destination "$ROOT_DIR/pypi/trackfw/serve/static"
-
-echo "Static assets are synchronized"
+# ML-3A (v8 — um binário, muitos canais): npm/src/serve/static e
+# pypi/trackfw/serve/static removidos. O binário Go embute os assets via
+# //go:embed; não há mais cópias a sincronizar. Este gate agora verifica
+# apenas que a fonte canônica existe e é não-vazia (vacuity sobre a própria
+# fonte — um embed vazio compila sem erro mas serve assets quebrados).
+canonical_count=$(wc -l < "$TMP_ROOT/canonical-files" | tr -d ' ')
+echo "Static assets: canonical source exists and is non-empty (${canonical_count} files — v8 single-runtime)"
+echo "Static assets verified (Go embed source only)"

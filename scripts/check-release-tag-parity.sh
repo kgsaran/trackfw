@@ -76,24 +76,16 @@ if [[ -z "${GO_BIN:-}" ]]; then
 elif [[ "$GO_BIN" != /* ]]; then
   GO_BIN="$ROOT_DIR/$GO_BIN"
 fi
-NODE_CLI="$ROOT_DIR/npm/bin/trackfw"
-PY_ROOT="${PY_ROOT:-$ROOT_DIR/pypi}"
+# ML-3A (v8): NODE_CLI and PY_ROOT removed — single Go binary
 
 if [[ ! -x "$GO_BIN" ]]; then
   echo "check-release-tag-parity: Go binary not found/executable at $GO_BIN" >&2
   exit 1
 fi
-if [[ ! -f "$NODE_CLI" ]]; then
-  echo "check-release-tag-parity: Node CLI not found at $NODE_CLI" >&2
-  exit 1
-fi
+# ML-3A (v8): Node CLI existence check removed
 
-REAL_NODE=$(command -v node || true)
+# ML-4B (v8): REAL_NODE removed — node is no longer executed by this gate; only python3 remains.
 REAL_PYTHON3=$(command -v python3 || true)
-if [[ -z "$REAL_NODE" ]]; then
-  echo "check-release-tag-parity: node not found in PATH" >&2
-  exit 1
-fi
 if [[ -z "$REAL_PYTHON3" ]]; then
   echo "check-release-tag-parity: python3 not found in PATH" >&2
   exit 1
@@ -114,16 +106,17 @@ fi
 # where GIT_DIR+GIT_WORK_TREE diverts a git -C call to a decoy repository).
 GIT_BIN_DIR="$(dirname "$REAL_GIT")"
 
-# runtimebin/ carries ONLY the interpreters the three CLIs need, symlinked from their real
-# location — the scenario-controlled PATH built below never inherits the caller's PATH, so a
-# real gh installed on this machine can never leak into a scenario that must see none.
+# runtimebin/ carries the tools this gate needs, symlinked from their real location — the
+# scenario-controlled PATH built below never inherits the caller's PATH, so a real gh installed
+# on this machine can never leak into a scenario that must see none.
+# ML-4B (v8): node symlink removed — node is not executed by any scenario in this gate.
+# python3 is retained: used by patch_version_file, json_field, and the vacuity guards.
 RUNTIME_BIN="$WORK/runtimebin"
 mkdir -p "$RUNTIME_BIN"
-ln -s "$REAL_NODE" "$RUNTIME_BIN/node"
 ln -s "$REAL_PYTHON3" "$RUNTIME_BIN/python3"
 
-# BASE_PATH: git + coreutils + python3 (used by patch_version_file below) only, plus the two
-# interpreters above. No gh anywhere unless a scenario explicitly prepends its own stub dir.
+# BASE_PATH: git + coreutils + python3 (used by patch_version_file and json_field below) only.
+# No gh anywhere unless a scenario explicitly prepends its own stub dir.
 # GIT_BIN_DIR is prepended so native child processes (Go exec.Command, Python subprocess.run) find
 # git.exe via PATHEXT — on Git for Windows, git.exe lives in /clangarm64/bin (ARM64) or
 # /mingw64/bin (x64), neither of which is /usr/bin or /bin (measured: ML-R2a run 34406101512).
@@ -604,9 +597,8 @@ run_release() {
   set +e
   case "$runtime" in
     go)   (cd "$dir" && env "${e[@]}" "$GO_BIN" release tag "$@")                                >"$out_file" 2>"$err_file" ;;
-    node) (cd "$dir" && env "${e[@]}" node "$NODE_CLI" release tag "$@")                         >"$out_file" 2>"$err_file" ;;
-    py)   (cd "$dir" && env "${e[@]}" PYTHONPATH="$PY_ROOT" python3 -m trackfw release tag "$@") >"$out_file" 2>"$err_file" ;;
-    *)    echo "run_release: unknown runtime '$runtime'" >&2; exit 1 ;;
+    # ML-3A (v8): node and py cases removed — Go-only
+    *)    echo "run_release: unsupported runtime '$runtime' (v8: Go only)" >&2; exit 1 ;;
   esac
   RT_EXIT=$?
   set -e
@@ -620,33 +612,14 @@ run_release() {
 # run-to-run — every SHA in a message is either the fixed RELEASE_VERSION/RELEASE_TAG, the
 # FAKE_TAG_OBJECT_SHA, or a real commit sha that is IDENTICAL across runtimes because the fixture
 # is shared, not rebuilt per runtime.
+# ML-3A (v8): assert_three_way replaced with Go-only behavioral pin.
+# Cross-runtime comparison (go vs node vs python) removed — npm/src/ and
+# pypi/trackfw/ deleted. The function now just records that Go ran OK.
 assert_three_way() {
   local label=$1
-  local diverged=0
-  local stream
-  for stream in out err; do
-    if ! diff -u "$WORK/$label.go.$stream" "$WORK/$label.node.$stream" >"$WORK/$label.diff.go-node.$stream" 2>&1; then
-      fail "release-tag-parity/$label/go-vs-node/$stream" "stdout/stderr diverges:
-$(cat "$WORK/$label.diff.go-node.$stream")"
-      diverged=1
-    fi
-    if ! diff -u "$WORK/$label.go.$stream" "$WORK/$label.py.$stream" >"$WORK/$label.diff.go-py.$stream" 2>&1; then
-      fail "release-tag-parity/$label/go-vs-py/$stream" "stdout/stderr diverges:
-$(cat "$WORK/$label.diff.go-py.$stream")"
-      diverged=1
-    fi
-  done
-  local go_exit node_exit py_exit
+  local go_exit
   go_exit=$(cat "$WORK/$label.go.exit")
-  node_exit=$(cat "$WORK/$label.node.exit")
-  py_exit=$(cat "$WORK/$label.py.exit")
-  if [[ "$go_exit" != "$node_exit" || "$go_exit" != "$py_exit" ]]; then
-    fail "release-tag-parity/$label/exit-code" "exit codes diverge: go=$go_exit node=$node_exit py=$py_exit"
-    diverged=1
-  fi
-  if [[ "$diverged" -eq 0 ]]; then
-    ok "release-tag-parity/$label"
-  fi
+  ok "release-tag-parity/$label/go-behavioral-pin"
 }
 
 # ---------------------------------------------------------------------------
@@ -658,7 +631,7 @@ $(cat "$WORK/$label.diff.go-py.$stream")"
 RT_LABEL="dirty-tree"
 fixture=$(build_fixture "$WORK/s1" "github" "1")
 echo dirty >>"$fixture/CHANGELOG.md"
-for runtime in go node py; do
+for runtime in go; do  # ML-3A (v8): node py removed
   run_release "$runtime" "$fixture" "" "$WORK/s1" "$RELEASE_VERSION"
   echo "$RT_EXIT" >"$WORK/$RT_LABEL.$runtime.exit"
   if [[ "$RT_EXIT" -eq 0 ]]; then
@@ -690,7 +663,7 @@ fixture=$(build_fixture "$WORK/s2" "github" "1")
   env "GIT_CONFIG_GLOBAL=$WORK/s2/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "HOME=$WORK/s2" \
     git commit -q --amend -m "fixture: valid release state (amended, unpushed)"
 ) >>"$WORK/s2/build.log" 2>&1
-for runtime in go node py; do
+for runtime in go; do  # ML-3A (v8): node py removed
   run_release "$runtime" "$fixture" "" "$WORK/s2" "$RELEASE_VERSION"
   echo "$RT_EXIT" >"$WORK/$RT_LABEL.$runtime.exit"
   if [[ "$RT_EXIT" -eq 0 ]]; then
@@ -728,7 +701,7 @@ for case_spec in "${MISMATCH_CASES[@]}"; do
   real_sha=$(git --git-dir="$dest/origin.git" rev-parse main)
   stub_dir="$dest-stub"
   write_release_gh_stub "$stub_dir" "$dest-calls" "main" "$real_sha"
-  for runtime in go node py; do
+  for runtime in go; do  # ML-3A (v8): node py removed
     run_release "$runtime" "$fixture" "$stub_dir" "$dest" "$RELEASE_VERSION"
     echo "$RT_EXIT" >"$WORK/$RT_LABEL.$runtime.exit"
     if [[ "$RT_EXIT" -eq 0 ]]; then
@@ -761,7 +734,7 @@ commit_and_push_mutation "$fixture" "$dest/empty-gitconfig" "$dest"
 real_sha_s4=$(git --git-dir="$dest/origin.git" rev-parse main)
 stub_s4="$dest-stub"
 write_release_gh_stub "$stub_s4" "$dest-calls" "main" "$real_sha_s4"
-for runtime in go node py; do
+for runtime in go; do  # ML-3A (v8): node py removed
   run_release "$runtime" "$fixture" "$stub_s4" "$dest" "$RELEASE_VERSION"
   echo "$RT_EXIT" >"$WORK/$RT_LABEL.$runtime.exit"
   if [[ "$RT_EXIT" -eq 0 ]]; then
@@ -794,7 +767,7 @@ fixture=$(build_fixture "$dest" "github" "1")
   env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "HOME=$dest" \
     git tag "$RELEASE_TAG"
 ) >>"$dest/build.log" 2>&1
-for runtime in go node py; do
+for runtime in go; do  # ML-3A (v8): node py removed
   run_release "$runtime" "$fixture" "" "$dest" "$RELEASE_VERSION"
   echo "$RT_EXIT" >"$WORK/$RT_LABEL.$runtime.exit"
   if [[ "$RT_EXIT" -eq 0 ]]; then
@@ -827,7 +800,7 @@ fixture=$(build_fixture "$dest" "github" "1")
   env "${env_args[@]}" git tag -d "$RELEASE_TAG"
   env "${env_args[@]}" git config remote.origin.tagOpt --no-tags
 ) >>"$dest/build.log" 2>&1
-for runtime in go node py; do
+for runtime in go; do  # ML-3A (v8): node py removed
   run_release "$runtime" "$fixture" "" "$dest" "$RELEASE_VERSION"
   echo "$RT_EXIT" >"$WORK/$RT_LABEL.$runtime.exit"
   if [[ "$RT_EXIT" -eq 0 ]]; then
@@ -850,7 +823,7 @@ RT_LABEL="no-forge-cli"
 dest="$WORK/s7"
 fixture=$(build_fixture "$dest" "github" "1")
 RUN_PATH_OVERRIDE="$NO_FORGE_PATH"
-for runtime in go node py; do
+for runtime in go; do  # ML-3A (v8): node py removed
   run_release "$runtime" "$fixture" "" "$dest" "$RELEASE_VERSION"
   echo "$RT_EXIT" >"$WORK/$RT_LABEL.$runtime.exit"
   if [[ "$RT_EXIT" -eq 0 ]]; then
@@ -872,7 +845,7 @@ assert_three_way "$RT_LABEL"
 RT_LABEL="unsupported-forge"
 dest="$WORK/s8"
 fixture=$(build_fixture "$dest" "" "1")
-for runtime in go node py; do
+for runtime in go; do  # ML-3A (v8): node py removed
   run_release "$runtime" "$fixture" "" "$dest" "$RELEASE_VERSION"
   echo "$RT_EXIT" >"$WORK/$RT_LABEL.$runtime.exit"
   if [[ "$RT_EXIT" -eq 0 ]]; then
@@ -903,7 +876,7 @@ commit_sha_s9=$(git --git-dir="$dest/origin.git" rev-parse main)
 stub="$dest-stub"
 call_log="$dest-calls"
 write_release_gh_stub "$stub" "$call_log" "main" "$commit_sha_s9"
-for runtime in go node py; do
+for runtime in go; do  # ML-3A (v8): node py removed
   run_release "$runtime" "$fixture" "$stub" "$dest" "$RELEASE_VERSION"
   echo "$RT_EXIT" >"$WORK/$RT_LABEL.$runtime.exit"
   if [[ "$RT_EXIT" -eq 0 ]]; then
@@ -932,7 +905,7 @@ dest="$WORK/s10"
 fixture=$(build_fixture "$dest" "github" "1")
 commit_sha=$(git --git-dir="$dest/origin.git" rev-parse main)
 stub="$dest-stub"
-for runtime in go node py; do
+for runtime in go; do  # ML-3A (v8): node py removed
   call_log="$dest-calls-$runtime"
   write_release_gh_stub "$stub-$runtime" "$call_log" "main" "$commit_sha"
   run_release "$runtime" "$fixture" "$stub-$runtime" "$dest" "$RELEASE_VERSION"
@@ -1053,7 +1026,7 @@ fixture=$(build_fixture "$dest" "github" "1")
 ) >>"$dest/build.log" 2>&1
 commit_sha_s11=$(git --git-dir="$dest/origin.git" rev-parse main)
 stub="$dest-stub"
-for runtime in go node py; do
+for runtime in go; do  # ML-3A (v8): node py removed
   call_log="$dest-calls-$runtime"
   write_release_gh_stub "$stub-$runtime" "$call_log" "main" "$commit_sha_s11"
   run_release "$runtime" "$fixture" "$stub-$runtime" "$dest" "$RELEASE_VERSION"
@@ -1121,7 +1094,7 @@ forged_sha_s12=$(git --git-dir="$dest/origin.git" rev-parse s12-decoy)
 stub="$dest-stub"
 call_log="$dest-calls"
 write_release_gh_stub "$stub" "$call_log" "main" "$real_commit_sha_s12"
-for runtime in go node py; do
+for runtime in go; do  # ML-3A (v8): node py removed
   run_release "$runtime" "$fixture" "$stub" "$dest" "$RELEASE_VERSION"
   echo "$RT_EXIT" >"$WORK/$RT_LABEL.$runtime.exit"
   if [[ "$RT_EXIT" -eq 0 ]]; then
@@ -1188,7 +1161,7 @@ fi
 stub="$dest-stub"
 call_log="$dest-calls"
 write_release_gh_stub "$stub" "$call_log" "main" "$advanced_sha_s13"
-for runtime in go node py; do
+for runtime in go; do  # ML-3A (v8): node py removed
   run_release "$runtime" "$fixture" "$stub" "$dest" "$RELEASE_VERSION"
   echo "$RT_EXIT" >"$WORK/$RT_LABEL.$runtime.exit"
   if [[ "$RT_EXIT" -eq 0 ]]; then
@@ -1276,7 +1249,7 @@ if (cd "$fixture" && env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" HOME="$dest" 
   fail "release-tag-parity/$RT_LABEL/setup" "vacuity guard: refs/remotes/origin/main still resolves after the deletion — scenario proves nothing"
 fi
 stub="$dest-stub"
-for runtime in go node py; do
+for runtime in go; do  # ML-3A (v8): node py removed
   call_log="$dest-calls-$runtime"
   write_release_gh_stub "$stub-$runtime" "$call_log" "main" "$FORGE_ONLY_SHA_S14"
   run_release "$runtime" "$fixture" "$stub-$runtime" "$dest" "$RELEASE_VERSION"
@@ -1354,7 +1327,7 @@ fi
 stub="$dest-stub"
 call_log="$dest-calls"
 write_release_gh_stub "$stub" "$call_log" "main" "$FAKE_ABSENT_SHA"
-for runtime in go node py; do
+for runtime in go; do  # ML-3A (v8): node py removed
   run_release "$runtime" "$fixture" "$stub" "$dest" "$RELEASE_VERSION"
   echo "$RT_EXIT" >"$WORK/$RT_LABEL.$runtime.exit"
   if [[ "$RT_EXIT" -eq 0 ]]; then
@@ -1473,7 +1446,7 @@ fi
 if ! grep -qF '= "9.9.7"' "$fixture/internal/version/version.go"; then
   fail "release-tag-parity/$RT_LABEL/setup" 'vacuity guard: working-tree version.go does not contain "9.9.7" — two-axis fixture broken'
 fi
-for runtime in go node py; do
+for runtime in go; do  # ML-3A (v8): node py removed
   call_log="$dest-calls-$runtime"
   stub="$dest-stub-$runtime"
   write_release_gh_stub "$stub" "$call_log" "main" "$FORGE_ONLY_SHA_S16"
@@ -1670,7 +1643,7 @@ fi
 if ! grep -qF '= "9.9.7"' "$fixture/internal/version/version.go"; then
   fail "release-tag-parity/$RT_LABEL/setup" 'vacuity guard: working-tree version.go does not contain "9.9.7" — three-axis fixture broken'
 fi
-for runtime in go node py; do
+for runtime in go; do  # ML-3A (v8): node py removed
   call_log="$dest-calls-$runtime"
   stub="$dest-stub-$runtime"
   write_release_gh_stub "$stub" "$call_log" "main" "$FORGE_ONLY_SHA_S17"

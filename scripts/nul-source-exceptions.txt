@@ -8,7 +8,6 @@
 #   quando a contagem cai a zero (escape \0 aplicado) ou quando a contagem diverge.
 #   A lista não pode se tornar permanente — qualquer dessas três condições exige limpeza.
 #
-# ACHADO DE VARREDURA (2026-09-13): 1820 arquivos rastreados examinados; NUL encontrado
-#   exatamente nestes dois. Sem terceiro arquivo com NUL na árvore atual.
-npm/src/validator/index.js	1	NUL literal como separador de chave composta; Wave 3 (ML-3A) deleta npm/src/ inteiro
-npm/src/integrations/doctor.js	2	NUL literal como separador de chave composta; Wave 3 (ML-3A) deleta npm/src/ inteiro
+# ML-3A (v8 — um binário, muitos canais): npm/src/ e pypi/trackfw/ removidos.
+# As entradas npm/src/validator/index.js e npm/src/integrations/doctor.js foram
+# removidas junto com os arquivos que referenciavam.

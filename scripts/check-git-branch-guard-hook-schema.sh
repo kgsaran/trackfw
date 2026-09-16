@@ -260,8 +260,7 @@ run_discover_init() {
   mkdir -p "$dir"
   case "$runtime" in
     go)   (cd "$dir" && "$GO_BIN" discover --init)                              >/dev/null 2>"$WORK/$runtime.discover.err" ;;
-    node) (cd "$dir" && node "$NODE_CLI" discover --init)                       >/dev/null 2>"$WORK/$runtime.discover.err" ;;
-    py)   (cd "$dir" && PYTHONPATH="$PY_ROOT" python3 -m trackfw discover --init) >/dev/null 2>"$WORK/$runtime.discover.err" ;;
+    # ML-3A (v8): node and py cases removed
     *)    echo "run_discover_init: runtime desconhecido '$runtime'" >&2; exit 1 ;;
   esac
 }
@@ -350,27 +349,27 @@ self_test() {
   # `pypi/build/lib/...` e `.gitignore` no CI: presente no disco, ausente da
   # árvore versionada.
   local build_root="$WORK/self-test/ignored-build-artifact"
+  # ML-3A (v8): npm/src/ and pypi/trackfw/ removed; only Go generator site remains
   mkdir -p "$build_root/scripts" "$build_root/internal/generators" \
-    "$build_root/npm/src/generators" "$build_root/pypi/trackfw/generators" \
     "$build_root/pypi/build/lib/trackfw/generators"
   (cd "$build_root" && git init -q && git config user.email t@t && git config user.name t)
   printf 'pypi/build/\n' >"$build_root/.gitignore"
   cp "$ROOT_DIR/scripts/trackfw-git-branch-guard.sh" "$build_root/scripts/trackfw-git-branch-guard.sh"
   printf 'permissionDecisionReason\n' >"$build_root/internal/generators/scaffold.go"
-  printf 'permissionDecisionReason\n' >"$build_root/npm/src/generators/hooks.js"
-  printf 'permissionDecisionReason\n' >"$build_root/pypi/trackfw/generators/init_gen.py"
+  # ML-3A (v8): npm/src/generators/hooks.js and pypi/trackfw/generators/init_gen.py not created
   # Artefato de build: mesmo marcador, mesma extensão contabilizada — mas
   # NUNCA passa por `git add`. É o que `git ls-files` exclui por construção.
   printf 'permissionDecisionReason\n' >"$build_root/pypi/build/lib/trackfw/generators/init_gen.py"
-  (cd "$build_root" && git add scripts internal npm pypi/trackfw .gitignore && git commit -q -m "self-test: sitios reais")
+  # ML-3A (v8): only scripts and internal tracked (npm and pypi/trackfw removed)
+  (cd "$build_root" && git add scripts internal .gitignore && git commit -q -m "self-test: sitios reais")
   set +e
   out=$(TRACKFW_ROOT_DIR="$build_root" bash "$ROOT_DIR/scripts/check-git-branch-guard-hook-schema.sh" 2>&1)
   set -e
   if grep -qF 'pypi/build' <<<"$out"; then
     echo "FAIL [self-test/ignora-artefato-de-build]: artefato ignorado pelo git (pypi/build/lib/...) apareceu na saída do gate — a derivação voltou a contar arquivo não versionado como sítio" >&2
     failures=$((failures + 1))
-  elif ! grep -qF '4 sítio(s) derivado(s)' <<<"$out"; then
-    echo "FAIL [self-test/ignora-artefato-de-build]: esperava exatamente 4 sítio(s) derivado(s) (os tracked), saída não confirma" >&2
+  elif ! grep -qF '2 sítio(s) derivado(s)' <<<"$out"; then
+    echo "FAIL [self-test/ignora-artefato-de-build]: esperava exatamente 2 sítio(s) derivado(s) (os tracked — v8: Go only), saída não confirma" >&2
     printf '%s\n' "$out" | sed 's/^/    /' >&2
     failures=$((failures + 1))
   elif ! grep -qF 'reconciliação ok' <<<"$out"; then
@@ -378,7 +377,7 @@ self_test() {
     printf '%s\n' "$out" | sed 's/^/    /' >&2
     failures=$((failures + 1))
   else
-    echo "OK   [self-test/ignora-artefato-de-build]: gate deriva 4 sítios (só os tracked) e reconcilia — o 5º arquivo, presente no disco mas fora de 'git ls-files' (mesma relação de pypi/build/ com .gitignore no CI real), não vira sítio nem reprova"
+    echo "OK   [self-test/ignora-artefato-de-build]: gate deriva 2 sítios (só os tracked — v8: Go only) e reconcilia — o artefato ignorado pelo git (pypi/build/lib/...) não vira sítio nem reprova"
   fi
 
   # --- Cenário D2: sítio TRACKED sem cobertura ainda reprova no ramo git ----
@@ -440,10 +439,9 @@ self_test() {
   # scripts/trackfw-git-branch-guard.sh — o gate precisa reprovar por ausência
   # do script real, não passar por já ter achado "sítios" suficientes.
   local missing_script_root="$WORK/self-test/missing-script-root"
-  mkdir -p "$missing_script_root/internal/generators" "$missing_script_root/npm/src/generators" "$missing_script_root/pypi/trackfw/generators"
+  # ML-3A (v8): only Go generator site created (npm/src and pypi/trackfw removed)
+  mkdir -p "$missing_script_root/internal/generators"
   printf 'permissionDecisionReason\n' >"$missing_script_root/internal/generators/scaffold.go"
-  printf 'permissionDecisionReason\n' >"$missing_script_root/npm/src/generators/hooks.js"
-  printf 'permissionDecisionReason\n' >"$missing_script_root/pypi/trackfw/generators/init_gen.py"
   # scripts/trackfw-git-branch-guard.sh deliberadamente AUSENTE.
   set +e
   out=$(TRACKFW_ROOT_DIR="$missing_script_root" bash "$ROOT_DIR/scripts/check-git-branch-guard-hook-schema.sh" 2>&1)
@@ -470,11 +468,11 @@ self_test() {
   # CONTAGEM (que só cresce) passaria, e a EXECUÇÃO abaixo continuaria fixa
   # nos 4 alvos de hoje — o sítio novo ficaria listado e nunca verificado.
   local unaccounted_root="$WORK/self-test/unaccounted-site-root"
-  mkdir -p "$unaccounted_root/scripts" "$unaccounted_root/internal/generators" "$unaccounted_root/npm/src/generators" "$unaccounted_root/pypi/trackfw/generators"
+  # ML-3A (v8): npm/src and pypi/trackfw removed
+  mkdir -p "$unaccounted_root/scripts" "$unaccounted_root/internal/generators"
   cp "$ROOT_DIR/scripts/trackfw-git-branch-guard.sh" "$unaccounted_root/scripts/trackfw-git-branch-guard.sh"
   printf 'permissionDecisionReason\n' >"$unaccounted_root/internal/generators/scaffold.go"
-  printf 'permissionDecisionReason\n' >"$unaccounted_root/npm/src/generators/hooks.js"
-  printf 'permissionDecisionReason\n' >"$unaccounted_root/pypi/trackfw/generators/init_gen.py"
+  # ML-3A (v8): hooks.js and init_gen.py not created
   printf 'permissionDecisionReason\n' >"$unaccounted_root/internal/generators/second_copy_not_wired_here.go"
   set +e
   out=$(TRACKFW_ROOT_DIR="$unaccounted_root" bash "$ROOT_DIR/scripts/check-git-branch-guard-hook-schema.sh" 2>&1)
@@ -517,7 +515,7 @@ if [[ ! -f "$REAL_SCRIPT" ]]; then
 fi
 
 # --- Guarda de vacuidade 2: a lista de sítios derivada não pode ficar vazia,
-# nem deixar de cobrir os 3 stacks -------------------------------------------
+# nem deixar de cobrir o Go stack -------------------------------------------
 set +e
 SITES=$(derive_sites "$ROOT_DIR")
 set -e
@@ -533,15 +531,9 @@ if ! printf '%s\n' "$SITES" | grep -q '\.go$'; then
   echo "check-git-branch-guard-hook-schema: nenhum sítio Go (.go) encontrado — recusando aprovar em silêncio (vacuidade parcial)" >&2
   exit 1
 fi
-if ! printf '%s\n' "$SITES" | grep -q '\.js$'; then
-  echo "check-git-branch-guard-hook-schema: nenhum sítio Node (.js) encontrado — recusando aprovar em silêncio (vacuidade parcial)" >&2
-  exit 1
-fi
-if ! printf '%s\n' "$SITES" | grep -q '\.py$'; then
-  echo "check-git-branch-guard-hook-schema: nenhum sítio Python (.py) encontrado — recusando aprovar em silêncio (vacuidade parcial)" >&2
-  exit 1
-fi
-echo "check-git-branch-guard-hook-schema: $SITE_COUNT sítio(s) derivado(s) (permissionDecisionReason, 3 stacks confirmados):"
+# ML-3A (v8): Node (.js) and Python (.py) per-stack vacuity guards removed — single Go binary
+# npm/src/ and pypi/trackfw/ deleted; only Go generator site remains.
+echo "check-git-branch-guard-hook-schema: $SITE_COUNT sítio(s) derivado(s) (permissionDecisionReason, Go stack — v8 single-runtime):"
 printf '%s\n' "$SITES" | sed 's/^/  /'
 echo
 
@@ -565,8 +557,10 @@ echo
 # deste arquivo para a lista completa e o motivo de não duplicar a execução
 # aqui).
 # ---------------------------------------------------------------------------
-EXECUTED_HERE="scripts/trackfw-git-branch-guard.sh internal/generators/scaffold.go npm/src/generators/hooks.js pypi/trackfw/generators/init_gen.py"
-COVERED_BY_BYTE_IDENTITY_TEST="internal/validator/validator_git_branch_guard_reference.go pypi/trackfw/validator.py npm/src/validator/index.js"
+# ML-3A (v8): npm/src/generators/hooks.js and pypi/trackfw/generators/init_gen.py removed
+EXECUTED_HERE="scripts/trackfw-git-branch-guard.sh internal/generators/scaffold.go"
+# ML-3A (v8): pypi/trackfw/validator.py and npm/src/validator/index.js removed
+COVERED_BY_BYTE_IDENTITY_TEST="internal/validator/validator_git_branch_guard_reference.go"
 
 UNACCOUNTED=""
 while IFS= read -r site; do
@@ -601,15 +595,10 @@ if [[ -z "${GO_BIN:-}" ]]; then
 elif [[ "$GO_BIN" != /* ]]; then
   GO_BIN="$ROOT_DIR/$GO_BIN"
 fi
-NODE_CLI="$ROOT_DIR/npm/bin/trackfw"
-PY_ROOT="${PY_ROOT:-$ROOT_DIR/pypi}"
+# ML-3A (v8): NODE_CLI and PY_ROOT removed — Go binary only
 
 if [[ ! -x "$GO_BIN" ]]; then
   echo "check-git-branch-guard-hook-schema: binário Go não encontrado/executável em $GO_BIN" >&2
-  exit 1
-fi
-if [[ ! -f "$NODE_CLI" ]]; then
-  echo "check-git-branch-guard-hook-schema: CLI Node não encontrado em $NODE_CLI" >&2
   exit 1
 fi
 
@@ -620,19 +609,15 @@ check_site "git-branch-guard-hook-schema/script-real" "$ROOT_DIR" "scripts/track
 
 # --- 2/3/4. Os 3 geradores, via `discover --init` (entry point de produção) -
 GO_DIR="$WORK/gen-go"
-NODE_DIR="$WORK/gen-node"
-PY_DIR="$WORK/gen-py"
+# ML-3A (v8): NODE_DIR and PY_DIR removed
 
 set +e
 run_discover_init go "$GO_DIR"
 GO_DISCOVER_STATUS=$?
-run_discover_init node "$NODE_DIR"
-NODE_DISCOVER_STATUS=$?
-run_discover_init py "$PY_DIR"
-PY_DISCOVER_STATUS=$?
 set -e
+# ML-3A (v8): node and py discover calls removed
 
-for pair in "go:$GO_DISCOVER_STATUS:$GO_DIR" "node:$NODE_DISCOVER_STATUS:$NODE_DIR" "py:$PY_DISCOVER_STATUS:$PY_DIR"; do
+for pair in "go:$GO_DISCOVER_STATUS:$GO_DIR"; do  # ML-3A (v8): node py removed
   runtime=${pair%%:*}
   rest=${pair#*:}
   discover_status=${rest%%:*}

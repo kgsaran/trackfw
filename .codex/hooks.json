@@ -20,6 +20,24 @@
           }
         ],
         "matcher": ".*"
+      },
+      {
+        "hooks": [
+          {
+            "command": "\"$(git rev-parse --show-toplevel)/scripts/trackfw-credential-guard.sh\"",
+            "type": "command"
+          }
+        ],
+        "matcher": "Bash"
+      },
+      {
+        "hooks": [
+          {
+            "command": "\"$(git rev-parse --show-toplevel)/scripts/trackfw-credential-guard.sh\"",
+            "type": "command"
+          }
+        ],
+        "matcher": "apply_patch"
       }
     ],
     "PreToolUse": [
@@ -28,9 +46,22 @@
           {
             "command": "\"$(git rev-parse --show-toplevel)/scripts/trackfw-git-branch-guard.sh\"",
             "type": "command"
+          },
+          {
+            "command": "\"$(git rev-parse --show-toplevel)/scripts/trackfw-credential-guard.sh\"",
+            "type": "command"
           }
         ],
         "matcher": "Bash"
+      },
+      {
+        "hooks": [
+          {
+            "command": "\"$(git rev-parse --show-toplevel)/scripts/trackfw-credential-guard.sh\"",
+            "type": "command"
+          }
+        ],
+        "matcher": "apply_patch"
       }
     ]
   }

@@ -9,6 +9,33 @@
           }
         ],
         "matcher": "AskUserQuestion"
+      },
+      {
+        "hooks": [
+          {
+            "command": "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh",
+            "type": "command"
+          }
+        ],
+        "matcher": "Bash"
+      },
+      {
+        "hooks": [
+          {
+            "command": "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh",
+            "type": "command"
+          }
+        ],
+        "matcher": "Read"
+      },
+      {
+        "hooks": [
+          {
+            "command": "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh",
+            "type": "command"
+          }
+        ],
+        "matcher": "Write|Edit"
       }
     ],
     "PreToolUse": [
@@ -26,9 +53,31 @@
           {
             "command": "$CLAUDE_PROJECT_DIR/scripts/trackfw-git-branch-guard.sh",
             "type": "command"
+          },
+          {
+            "command": "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh",
+            "type": "command"
           }
         ],
         "matcher": "Bash"
+      },
+      {
+        "hooks": [
+          {
+            "command": "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh",
+            "type": "command"
+          }
+        ],
+        "matcher": "Read"
+      },
+      {
+        "hooks": [
+          {
+            "command": "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh",
+            "type": "command"
+          }
+        ],
+        "matcher": "Write|Edit"
       }
     ]
   }

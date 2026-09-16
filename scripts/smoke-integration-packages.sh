@@ -107,29 +107,51 @@ NPM_BIN="$TMP_ROOT/npm-prefix/node_modules/.bin/trackfw"
 echo "npm tarball integration smoke passed"
 
 PYTHON_BIN=${PYTHON_BIN:-python3}
-# Use `-m build --version` instead of `import build` to avoid false-positives from
-# other packages named 'build' that satisfy `import build` but are not the PEP 517
-# build frontend (seen on Python 3.14 + Homebrew where a namespace collision exists).
-if ! "$PYTHON_BIN" -m build --version >/dev/null 2>&1; then
-  echo "Python package smoke requires the PEP 517 'build' frontend (python -m pip install build)" >&2
-  exit 1
-fi
+# ── Python wheel (v8 binary wheel) ─────────────────────────────────────────
+# v8 delivers a binary-only wheel (no Python source). pypi/scripts/build_wheel.py
+# assembles the wheel directly from the compiled Go binary, using the same
+# mechanism as the release pipeline. This smoke:
+#   (1) Detects the local platform tag from OS_NAME/ARCH_NAME (already resolved above).
+#   (2) Reads the package version from npm/package.json (single source of truth).
+#   (3) Builds the binary wheel via pypi/scripts/build_wheel.py.
+#       Requires only `packaging` (already installed by the CI job).
+#   (4) Installs the wheel in an isolated venv.
+#   (5) Runs functional commands through the installed binary to prove that
+#       the wheel delivers a working trackfw executable.
+#
+# Reconciliation (ML-4C): replaced `python -m build --wheel pypi/` (which
+# required pypi/trackfw/ as a Python source package, deleted in ML-3A) with
+# build_wheel.py. catalog.json and agent/skill file assertions removed: in v8
+# the integration assets are embedded in the Go binary via go:embed; they are
+# not Python package data files installed into site-packages.
+# build_wheel.py requires only `packaging`, already in the CI pip install.
+#
+# Falsification: binary absent → hard-fail at line ~46 above;
+# wheel not produced → `test -n "$WHEEL"` hard-fail;
+# binary not installed → `test -x "$PY_TRACKFW"` hard-fail;
+# functional commands fail → subshell exits non-zero.
+PYPI_PLATFORM=$(case "${OS_NAME}-${ARCH_NAME}" in
+  darwin-arm64)  echo "macosx_11_0_arm64" ;;
+  darwin-x64)    echo "macosx_10_9_x86_64" ;;
+  linux-x64)     echo "manylinux_2_17_x86_64" ;;
+  linux-arm64)   echo "manylinux_2_17_aarch64" ;;
+  win32-x64)     echo "win_amd64" ;;
+  win32-arm64)   echo "win_arm64" ;;
+  *)             echo "manylinux_2_17_x86_64" ;;
+esac)
+PYPI_VERSION=$(node -e "process.stdout.write(require('$ROOT_DIR/npm/package.json').version)")
 mkdir -p "$TMP_ROOT/wheels" "$TMP_ROOT/python-project"
-"$PYTHON_BIN" -m build --wheel --outdir "$TMP_ROOT/wheels" "$ROOT_DIR/pypi" >/dev/null
+"$PYTHON_BIN" "$ROOT_DIR/pypi/scripts/build_wheel.py" \
+    --binary "$LOCAL_BIN" \
+    --version "$PYPI_VERSION" \
+    --platform "$PYPI_PLATFORM" \
+    --output "$TMP_ROOT/wheels"
 WHEEL=$(find "$TMP_ROOT/wheels" -type f -name '*.whl' -print | head -n 1)
-test -n "$WHEEL"
+test -n "$WHEEL" || { echo "FAIL: build_wheel.py produced no wheel" >&2; exit 1; }
 "$PYTHON_BIN" -m venv "$TMP_ROOT/venv"
-# --no-deps foi removido: o pacote deixou de ser zero-dep (ver
-# pypi/pyproject.toml `dependencies`). Deixar o pip resolver as dependências
-# a partir dos metadados da wheel também passa a validar que a declaração de
-# dependências está correta -- teste mais forte do que instalar isolado.
 "$TMP_ROOT/venv/bin/python" -m pip install --quiet "$WHEEL"
 PY_TRACKFW="$TMP_ROOT/venv/bin/trackfw"
-PY_ASSET=$(find "$TMP_ROOT/venv" -type f -path '*/trackfw/integrations/assets/catalog.json' -print | head -n 1)
-test -n "$PY_ASSET"
-PY_ASSET_DIR=$(dirname "$PY_ASSET")
-test -f "$PY_ASSET_DIR/agents/architect.md"
-test -f "$PY_ASSET_DIR/skills/governance.md"
+test -x "$PY_TRACKFW" || { echo "FAIL: trackfw not executable in venv bin" >&2; exit 1; }
 (
   cd "$TMP_ROOT/python-project"
   "$PY_TRACKFW" agents list --targets codex --items architect --json >/dev/null
