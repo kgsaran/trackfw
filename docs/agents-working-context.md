@@ -37288,3 +37288,18 @@ pré-requisito hard de ML-3A.
 **Resultado:** `bash scripts/check-gates-falsify.sh` passou (Falsification checks passed). `env -u FORCE_COLOR make quality` RC=0. `go build ./...` RC=0. `go test ./...` RC=0. `trackfw validate` RC=0.
 
 **Arquivo:** `scripts/check-gates-falsify.sh` — 6835 → 6596 linhas finais (antes/depois nesta sessão parcial). Linha 6428 (completion echo) ainda diz "all 183 scenarios" — precisa atualização pelo arquiteto.
+
+---
+
+## Sessão 2026-09-16 — Zeus (retomada após interrupção por janela de tokens)
+
+**Início:** 2026-09-16 | Branch: `fix/v8-um-binario-muitos-canais` (trackfw-nul)
+**Tarefa:** Localizar o ponto de parada e tornar durável o trabalho não commitado.
+
+**Encontrado:** 486 arquivos não commitados em `trackfw-nul` — ML-3A (npm/src + pypi/trackfw), ML-3B (npm/tests + pypi/tests, com `shim_packaging.test.js` movido para `npm/`), ML-3C segunda metade (29 gates DELETAR removidos, 23 REESCREVER editados). 137.839 deleções, 1.704 inserções.
+
+**Feito:** commit de preservação `4c8f1b04` (nenhum agente vivo; branch sem PR — preservar não é publicar).
+
+**Bloqueio medido (R1, previsto no roadmap linhas 107/166/260):** `make check-required-full` REPROVA — `required_status_checks` da API ainda exige `node`, `python (3.10)`, `python (3.12)`, que nenhum workflow emite após a Wave 3. Ordem obrigatória de merge: **atualizar branch protection primeiro, PR depois**. Gates locais verdes não detectam isso por construção.
+
+**Pendente para o arquiteto:** (1) auditoria do diff de 486 arquivos contra os ACs; (2) reconciliação de status ML-3A/3B/3C no roadmap (ainda ⬜/🔄); (3) `check-gates-falsify.sh` linha ~6428 ainda diz "all 183 scenarios"; (4) ML-4A (AC12) não iniciado; (5) `trackfw branch prune` — `trackfw-triagem` já squashado em #358, worktree `t332` prunable.
