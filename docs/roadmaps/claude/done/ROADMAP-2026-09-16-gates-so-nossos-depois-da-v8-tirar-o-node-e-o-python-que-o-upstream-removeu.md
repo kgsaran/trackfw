@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-16
 req: "docs/requisições/claude/REQ-2026-09-16-gates-so-nossos-depois-da-v8-tirar-o-node-e-o-python-que-o-upstream-removeu.md"
 squad: "claude"
@@ -7,7 +7,7 @@ squad: "claude"
 
 # Roadmap: gates só nossos depois da v8: tirar o Node e o Python que o upstream removeu
 
-> Created: 2026-09-16 | Status: wip
+> Created: 2026-09-16 | Status: done
 
 ## Context
 
@@ -19,14 +19,14 @@ usa, e o `CLAUDE.md` afirma fatos sobre eles.
 
 ## Acceptance Criteria
 
-- [ ] AC1 — agregador 0 falhas sem Node/Python; pré-condição do `bin/trackfw` falsificada
-- [ ] AC2 — `check-subcommand-parity.sh` retirado com motivo
-- [ ] AC3 — `check-slug-inventory.sh` Go-only, falsificado nos dois sentidos
-- [ ] AC4 — instrumentos de predicado de SO com escopo `internal cmd`, 0 obsoleta, baseline conferido
-- [ ] AC5 — `local-gates.yml` sem runtimes removidos, verde no CI
-- [ ] AC6 — `CLAUDE.md` sem afirmação falsa sobre os runtimes removidos
-- [ ] AC7 — `validate` 0; CI por nome contra o upstream em `66b7ad8`
-- [ ] AC8 — `docs/cli-parity.md` trazido e mantido pelo sync, com prova e falsificação
+- [x] AC1 — agregador 0 falhas sem Node/Python; pré-condição do `bin/trackfw` falsificada
+- [x] AC2 — `check-subcommand-parity.sh` retirado com motivo
+- [x] AC3 — `check-slug-inventory.sh` Go-only, falsificado nos dois sentidos
+- [x] AC4 — instrumentos de predicado de SO com escopo `internal cmd`, 0 obsoleta, baseline conferido
+- [x] AC5 — `local-gates.yml` sem runtimes removidos, verde no CI
+- [x] AC6 — `CLAUDE.md` sem afirmação falsa sobre os runtimes removidos
+- [x] AC7 — `validate` 0; CI por nome contra o upstream em `66b7ad8`
+- [x] AC8 — `docs/cli-parity.md` trazido e mantido pelo sync, com prova e falsificação
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
@@ -141,10 +141,13 @@ reprova** — sai `rc=0` com "a superfície MUDOU" —, então o agregador o mos
 classificação nova em `internal/`; as duas guardas afirmam que o escopo menor não virou verde vazio.
 
 ### ML-1C — workflow do fork
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Files affected:** `.github/workflows/local-gates.yml`
 **Acceptance criteria:**
-- [ ] AC5 verde no CI
+- [x] AC5 verde no CI
+
+**Evidência — 2026-09-16.** `Gates locais do fork` success em `push` e `pull_request` no head `c07582c`
+da PR #135, com 9 passos (eram 13). O self-test do ratchet rodou com o `python3` do `ubuntu-latest`.
 
 ## Wave 2 — Documentação
 
