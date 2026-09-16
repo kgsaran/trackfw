@@ -65,13 +65,41 @@ bash scripts/run-local-gates.sh
 ## Wave 1 — Gates e workflow
 
 ### ML-1A — agregador, subcommand-parity e slug-inventory
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Files affected:** `scripts/run-local-gates.sh`, `scripts/check-subcommand-parity.sh`, `scripts/check-slug-inventory.sh`
 **Acceptance criteria:**
-- [ ] AC1, AC2 e AC3 medidos, com falsificação
+- [x] AC1, AC2 e AC3 medidos, com falsificação
+
+**Evidência — 2026-09-16.**
+
+| caso | resultado |
+|---|---|
+| agregador, árvore real | `9 executado(s) · 0 falha(s)` (eram 10; saiu o `check-subcommand-parity`) |
+| agregador, worktree **sem `bin/`** | rc=1, `FALHA — pre-requisito(s) indisponivel(is): bin/trackfw` |
+| agregador, worktree com o gate retirado ainda no disco | rc=1, `COMPLETUDE: 'scripts/check-subcommand-parity.sh' e so nosso e nao esta nem em EXECUTAR nem em FORA` |
+| slug, árvore real | rc=0, `1 implementacao declarada` |
+| slug, `func toSlug` novo em `internal/generators/` | rc=1, diff nomeia `zz_falsif_slug.go:toSlug` |
+| slug, `toSlug` do `adr.go` renomeado para `slugDoADR` | rc=1, diff nomeia `adr.go:toSlug` como sumido |
+
+🔴 **Duas falsificações saíram erradas na primeira tentativa, e as duas pelo instrumento:**
+
+- **Slug "sumido" deu rc=0.** Eu tinha renomeado para `toSlugX`, e `^func toSlug` casa `toSlugX` por
+  prefixo. Refeito com um nome que não compartilha prefixo.
+- **Agregador "sem binário" rodou os gates.** Movi `bin/trackfw` para fora, mas no Git Bash
+  `[ -x bin/trackfw ]` resolve para `bin/trackfw.exe`, que ficou. Pior: o `mv` de volta **sobrescreveu
+  o `.exe` e apagou o sem-extensão** — `dir` do cmd mostrou só `trackfw.exe`. Os dois tinham o mesmo
+  build (19.967.488 bytes), recompilados em seguida. A falsificação válida foi num worktree sem `bin/`.
+
+Achado lateral, não corrigido aqui: o `|| true` no `grep` do slug existe porque, sem ele, a
+implementação sumida faria o `pipefail` matar o script dentro da atribuição, reprovando **sem dizer o
+que sumiu**. O gate antigo tinha a mesma forma, mascarada por três `grep` em sequência.
+
+**Frase por teste (Regra de Reconciliação):** a falsificação do worktree afirma que a pré-condição
+continua nomeando o binário ausente depois de perder Node e Python; as duas do slug afirmam que o gate
+reduzido ao Go ainda reprova nos dois sentidos.
 
 ### ML-1B — instrumentos de predicado de SO
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Files affected:** `scripts/check-os-predicate-classification.sh`, `scripts/measure-os-predicate-sites.sh`, `scripts/testdata/os-predicate-sites-baseline.txt`
 **Acceptance criteria:**
 - [ ] AC4 medido: nomes que saem conferidos contra arquivos removidos; guardas de pé
