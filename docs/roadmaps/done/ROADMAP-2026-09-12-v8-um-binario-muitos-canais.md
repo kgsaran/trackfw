@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-12
 req: "docs/req/REQ-2026-09-12-v8-um-binario-muitos-canais-casquinha-npm-e-wheels-de-plataforma-substituem-as-reimplementacoes-node-e-python.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: v8 — um binário, muitos canais
 
-> Created: 2026-09-12 | Reescrito: 2026-09-12 | Status: wip
+> Created: 2026-09-12 | Reescrito: 2026-09-12 | Status: done
 
 ## Context
 REQ: docs/req/REQ-2026-09-12-v8-um-binario-muitos-canais-casquinha-npm-e-wheels-de-plataforma-substituem-as-reimplementacoes-node-e-python.md
@@ -893,6 +893,55 @@ comportamento configurado, e reincidiria no rc2.
 5 braços de auto-falsificação (chave ausente, valor `false`, config correta, arquivo ausente, bloco
 ausente), ligado em `parity-rest`, que o CI já executa em `quality.yml:839` sob o required check
 `parity`. Auto-teste rodado pelo arquiteto: 5 passed, 0 failed.
+
+---
+
+### ML-4C — jobs de CI com braços apontando para suítes deletadas
+**Status:** ✅ Concluído — auditado pelo arquiteto (2026-09-16)
+
+Descoberto pela primeira corrida do PR #365: **5 checks vermelhos, 4 causas** (o `parity` era
+derivado). Mesma causa da Wave 3 — o objeto foi removido e o andaime ficou —, portanto ML novo na REQ
+vigente e **no mesmo PR**.
+
+| Job | Causa | Correção |
+|---|---|---|
+| `package-smoke` | o smoke chamava `python -m build --wheel pypi/`, que exige `pypi/trackfw` como pacote **fonte** | trocado por `pypi/scripts/build_wheel.py` — o mesmo mecanismo do release |
+| `windows-full-suites` | ratchet exigia `--go-out`, `--node-tap` e `--python-out` | as duas últimas viraram opcionais, com guarda contra vacuidade |
+| `windows-defect-reproduction` | 6 itens saíam "inconclusivos" porque o objeto não existe mais | braços Node/Python removidos dos itens 2, 7 e 10 |
+| `windows-symlink-unprivileged` | braço Node executava `npm/tests/update_discover_syml…` | braços Node/Python removidos; **braços Go mantidos** |
+| `parity` | **derivado** — `package-smoke` reprovou, os 4 shards foram pulados, e a guarda de conjunto recusou declarar cobertura sobre diretório vazio | fecha sozinho com o `package-smoke` |
+
+🔴 **A correção do `package-smoke` não é a que o arquiteto tinha proposto, e a diferença importa.**
+Eu ia acrescentar `build` ao `pip install` do job. Não teria funcionado: o alvo do comando era
+`pypi/` como pacote fonte Python, deletado no ML-3A. A correção certa faz o smoke exercitar **a wheel
+binária que a v8 publica de verdade**. Verificado localmente:
+`trackfw-8.0.0rc1-py3-none-macosx_11_0_arm64.whl`, exit 0.
+
+**Balanço de cobertura de Windows (exigido no handoff, para que a correção não virasse remoção):**
+itens 2, 7 e 10 perderam 2 braços cada (Node + Python); os **3 braços Go sobrevivem** porque medem
+comportamento do produto no Windows, não divergência entre implementações. O título do item 11 foi
+corrigido de `(5 Python, 5 Node, 2 Go)` para `(2 Go)` — prometia 12 testes e rodava 2.
+
+---
+
+### Achado colateral — gate escreve na árvore que audita (issue #366)
+**Status:** ✅ Diagnosticado e isolado; correção fora do escopo desta REQ
+
+Durante a Wave 3 o `trackfw.yaml` da raiz foi **regenerado por um gate** e a alteração entrou no
+commit de preservação por `git add -A`. A config perdeu `governance_mode: lenient`, `ci:
+github-actions`, `forge: github` e o bloco de versão de modelo por tier (ADR-2026-08-21).
+
+**Sem o `lenient`, warning vira erro:** o `trackfw validate` local continuou com RC=0, mas o CI
+reprovou `governance-go-install` acusando **26 REQs** e um ADR que ninguém tinha tocado — com a `main`
+verde nos mesmos artefatos. Sintoma a três camadas da causa.
+
+**Culpado isolado por bissecção** (cada candidato rodado isoladamente, com restauração entre eles):
+`scripts/check-tty-detection.sh:43` isola o `HOME` num temporário mas **não isola o `cwd`**, então o
+`trackfw init --ai-tools gemini` roda na raiz do repositório. O mesmo `init` também criou o
+`GEMINI.md` da raiz, que não existe na `main` e entrou rastreado no mesmo commit.
+
+A correção da **classe** — o runner comparar `git status --porcelain` antes e depois de cada gate e
+reprovar o que sujar a árvore — está no #366.
 
 ---
 

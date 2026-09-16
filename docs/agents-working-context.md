@@ -37358,3 +37358,18 @@ pré-requisito hard de ML-3A.
 **Início:** 2026-09-16 | Branch: `fix/v8-um-binario-muitos-canais` (trackfw-nul) | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` ML-4C
 **Tarefa:** Corrigir quatro jobs de CI com braços mortos: (1) `package-smoke` — smoke script usa `python -m build pypi/` mas `pypi/trackfw/` não existe mais; fix: trocar por `build_wheel.py` + remover asserções de Python package data. (2) `windows-full-suites` — ratchet exige `--node-tap`/`--python-out` que não existem; fix: tornar esses args opcionais em `check-windows-known-failures.py` quando JSON não tem entradas para esses runtimes. (3) `windows-defect-reproduction` — itens 2, 7, 10 invocam Node/Python que não existem; fix: reduzir a Go-only e remover pip install pypi/. (4) `windows-symlink-unprivileged` — 4 steps Node/Python referenciam npm/tests e pypi/tests deletados; fix: remover esses steps, manter os 2 steps Go.
 
+
+---
+
+## Sessão 2026-09-16 — Zeus (encerramento da v8: PR #365 mergeado, roadmap fechado)
+
+**Início:** 2026-09-16 | Branch: `chore/fechar-roadmap-v8`
+**Tarefa:** Retomada após interrupção por janela de tokens; auditoria e fechamento da Wave 3 e Wave 4.
+
+**Concluído:** trabalho de 486 arquivos preservado e auditado; R1 fechado (branch protection reduzido aos 7 checks reais, D = R = W verificado na `main` após o merge); ML-3C-bis/ter, ML-3E, ML-4A, ML-4B e ML-4C entregues e auditados no artefato; PR #365 mergeado (`2eae0a44`). Roadmap movido para `done`.
+
+**Issues:** 6 fechados (#261, #286, #298, #309, #310, #329) · #359 reescopado com premissa corrigida · #362, #268, #363 comentados com o que resta · **#364** aberto (sinal `[-1 resolvido]` do ratchet sem destino, recapturado antes de fechar o #329) · **#366** aberto e diagnosticado (`check-tty-detection.sh:43` roda `trackfw init` na raiz do repositório).
+
+**Erros do arquiteto nesta sessão, registrados:** (1) handoff com piso fixo de contagem sem verificar que o falsify roda em shards — produziu falso-positivo; (2) triagem de issues por cruzamento de caminhos `npm/`/`pypi/`, que rotula DESAPARECE por omissão quando há sítio Go vivo; (3) medição em `zsh` com variável não citada, sem word-splitting; (4) `git add -A` varreu a corrupção do `trackfw.yaml` para dentro do commit, quebrando o CI.
+
+**Pendente:** `v8.0.0-rc2` (bump + CHANGELOG + tag), depois a GA. Entrada órfã de 2026-09-13 (Ares, ML-3C BLOQUEADO) preservada em scratchpad — superada pela tabela de auditoria dos 67 cenários no roadmap.
