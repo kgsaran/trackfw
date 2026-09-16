@@ -473,18 +473,32 @@ com permissão negada. Não se aplica a Windows; aplica-se a Linux e macOS.
 > Dependências: **Wave 2 verde.** Nada aqui começa antes de o canal novo estar publicando.
 
 ### ML-3A — **AC5** — remover as reimplementações
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
+
+**Auditoria do arquiteto (2026-09-16):** `npm/src/` e `pypi/trackfw/` ausentes da árvore.
+Referências residuais em `internal/**` são **comentários históricos e testes-guarda** — em
+particular `internal/commands/release_test.go:237` e `TestReleaseVersionFiles_NoWave3DeletedPaths`
+**impedem a reintrodução** de caminhos sob `pypi/trackfw/` ou `npm/src/` em `releaseVersionFiles`.
+Nenhuma referência operacional em `Makefile`, workflows ou código. `go build ./...` RC=0.
+
 `npm/src/` (26.272 linhas) e `pypi/trackfw/` (27.472).
 
 ### ML-3B — **AC6** — suítes
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
+
+**Auditoria do arquiteto (2026-09-16):** `npm/tests/` (87 arquivos) e `pypi/tests/` (89) removidos.
+🔴 O ponto crítico do ML foi cumprido: `shim_packaging.test.js` **foi movido**, não apagado — vive
+em `npm/shim_packaging.test.js` e entrou no commit de preservação como arquivo novo (a árvore antiga
+aparece como deleção; o conteúdo sobreviveu). Verificado por leitura do cabeçalho do arquivo.
+
 `npm/tests/` e `pypi/tests/` testam a reimplementação. O que resta é **smoke**: a casquinha lança o
 binário, repassa argv, devolve exit code.
 🔴 `npm/tests/shim_packaging.test.js` **não é da reimplementação** — é do empacotamento, e sobrevive.
 **Mover, não apagar** (está escrito no topo do arquivo).
 
 ### ML-3C — **AC7** — gates que perdem objeto
-**Status:** 🔄 Em andamento (primeira metade: extração de pins — Ártemis, 2026-09-13)
+**Status:** 🔄 Em andamento — segunda metade implementada; **bloqueado por um defeito aberto** (ver
+"Auditoria do arquiteto — 2026-09-16" ao final desta seção)
 
 #### Primeira metade concluída — extração de pins (PR separado, sem deleções)
 
@@ -768,11 +782,62 @@ Decisão por cenário. Regra: REMOVE exige declaração escrita de por que o cen
 
 **Verificação de integridade:** toda linha REMOVE cita um gate AUSENTE ou ausência de asserção Go. Cenário 57 (label /go mas gate AUSENTE): classificado REMOVE porque o gate `check-unknown-command-parity.sh` orquestra a asserção — sem ele, nenhum assert_fails_with executa. Cenários 162, 163 (labels /go): idem — gates `check-push-parity.sh` e `check-push-force-parity.sh` AUSENTES.
 
+#### Auditoria do arquiteto — 2026-09-16
+
+**Contagem medida:** `main` tinha 66 `scripts/check-*.sh`; a branch tem 39; 27 deletados
+(26 do balde DELETAR + `check-validate-parity.sh`, cujo pin foi extraído antes).
+
+**Reclassificação DELETAR → REESCREVER — três gates, auditada e APROVADA.** O balde DELETAR listava
+29 gates; três **sobreviveram reescritos**, e a reclassificação está correta porque o critério do
+balde ("só compara runtimes, sem pin próprio") não se aplicava a eles:
+
+| Gate | Por que não era DELETAR | Diff |
+|---|---|---|
+| `check-rules-parity.sh` | O objeto não é comparar runtimes: é a identidade byte-a-byte do bloco de governança **entre os 4 arquivos de AI tool** (GEMINI.md, copilot-instructions, .windsurfrules, amazonq). Essa comparação sobrevive sem Node/Python. | −73/+54 |
+| `check-update-parity.sh` | Restam 320 linhas de asserção comportamental do binário Go (exit codes, forma do JSON, dry-run, skip warnings, contrato de sandbox) — pin próprio, não comparação. | −730/+320 |
+| `check-roadmap-barrier-contract.sh` | Contrato gerador↔`barrier` com snapshot de corpus pinado por SHA-256 + cenários `assert_fails_with`. O braço cross-runtime era uma das três partes; as outras duas são Go-only e independentes. | −26/+20 |
+
+🔴 **Defeito aberto — a mensagem de sucesso do `check-gates-falsify.sh` não cobre o fim da suíte.**
+O arquivo tem 6641 linhas; o único `echo "Falsification checks passed (all 183 scenarios…"` está na
+linha 6272. Os cenários 182–185 (~370 linhas, incluindo `integration-assets/direction-b-shim-absent`)
+**executam depois da mensagem de sucesso**. Como `assert_fails_with` faz `exit 1` na falha, uma
+execução pode **imprimir "Falsification checks passed" e mesmo assim sair com código 1** — quem lê o
+fim do log vê sucesso. Além disso, o número `183` e a enumeração em prosa são **digitados, não
+medidos**, e estão obsoletos após as deleções desta wave.
+
+**Consequência de auditoria:** a evidência "Falsification checks passed" reportada pelos agentes
+desta wave é **parcial por construção** e não conta como prova até o defeito ser corrigido.
+Correção atribuída a Ártemis (ML-3C-bis, mesma REQ, mesma causa).
+
+---
+
 ### ML-3D — **AC8 + AC11** — documentação e o break
 **Status:** ✅ Concluído
 `docs/cli-parity.md` vira documento de **canais**. O `CLAUDE.md` tem a regra dura de paridade
 **reescrita, não apagada** — o Go continua sendo a expressão da verdade, agora por construção.
 🔴 CHANGELOG declara o break: `require('trackfw')` deixa de resolver.
+
+---
+
+### Ação de mantenedor executada — R1 fechado (2026-09-16)
+
+`make check-required-full` reprovava: o `required_status_checks` do branch protection (conjunto R,
+que vive **fora do repositório**) ainda exigia `node`, `python (3.10)` e `python (3.12)` — checks que
+nenhum workflow emite depois desta wave. Mergear o PR antes de corrigir R deixaria **todo PR
+subsequente pendente para sempre, inclusive o que consertaria o problema** (vault:
+`matriz-em-job-required-por-nome-fica-pendente-para-sempre-2026-09-08.md`).
+
+**Ordem executada — R primeiro, PR depois.** R foi reduzido aos 7 checks de D nesta branch
+(`go`, `package-smoke`, `windows-integrations-resolve`, `parity`, `governance-install-script`,
+`governance-go-install`, `windows-full-suites`), e cada um foi verificado contra um job real nos
+workflows da branch. D = R = W.
+
+🔴 **Afrouxamento declarado e com prazo, atado ao merge deste PR.** Enquanto este PR não mergear, a
+`main` ainda emite os jobs `node` e `python` **sem que sejam obrigatórios** — uma regressão nesses
+dois runtimes não bloquearia merge nessa janela. O `D` da `main` (`.github/required-status-checks.txt`)
+ainda lista os 10 e só converge para 7 quando este PR entrar. Se este PR estagnar, a janela fica
+aberta em silêncio: registrado aqui para não ser redescoberto depois como drift de origem
+desconhecida.
 
 ---
 
