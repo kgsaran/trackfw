@@ -2,6 +2,19 @@
 
 ---
 
+## Sessão 2026-09-16 — Ares (fix/binario-muitos — ML-4G: release.yml constrói bin/trackfw antes do gate e ganha workflow_dispatch sem publicação) — ENCERRADO
+
+**Início:** 2026-09-16 | Branch: `fix/binario-muitos` | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` ML-4G
+**Tarefa:** (1) `release.yml` chamava gate `check-validate-rule-pins.sh` com `GO_BIN=bin/trackfw` mas a etapa anterior era `go build ./...` que não emite binário nomeado → exit 127. (2) O caminho release só era exercitado por tag; falhas só apareciam ao criar tags.
+**Concluído:**
+(1) Parte 1 — `go build ./...` substituído por `go build -o bin/trackfw ./cmd/trackfw` na etapa do job `quality` de `release.yml`. `check-static-assets.sh` não usa o binário (verifica apenas `internal/serve/static`), sem alteração necessária.
+(2) Parte 2 — `workflow_dispatch` adicionado ao trigger de `release.yml`. Os jobs `release`, `publish-npm-platforms`, `publish-npm-shim`, `publish-pypi` e `verify-channels` receberam `if: github.event_name == 'push'` (ou `if: github.event_name == 'push' && always()` para verify-channels). `workflow_dispatch` não pode setar `event_name` para `'push'`, portanto publicação é estruturalmente inalcançável por disparo manual — nenhum input pode contornar isso.
+**Análise de segurança:** o único caminho para publicar continua sendo `push: tags: v*`. Um `workflow_dispatch` roda apenas o job `quality` (build + test + vet + validate-pins + static-assets). Não há input de publicação. A guarda é estrutural, não declarativa.
+**Verificações:** `python3 scripts/check-workflow-yaml.py` 8 passed, 0 failed. `go build ./...` RC=0. `go test ./...` RC=0. `env -u FORCE_COLOR make quality` RC=0 (212 OK, 0 FAIL).
+**ALERTA:** git status mostra trackfw.yaml modificado após make quality — issue #366 conhecida. Não commitado, reportado a KG per instrução.
+
+---
+
 ## Sessão 2026-09-16 — Ares (fix/binario-muitos — ML-4F: item 7 da suite windows-repro de asserção negativa para positiva sobre contrato documentado) — ENCERRADO
 
 **Início:** 2026-09-16 | Branch: `fix/binario-muitos` | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` ML-4F
