@@ -922,7 +922,12 @@ desconhecida.
 > Dependências: Wave 3.
 
 ### ML-4A — **AC12** — a medição realocada
-**Status:** 🔄 Classificação concluída e auditada (2026-09-16) — fechamento dos issues pendente de confirmação do usuário
+**Status:** ✅ Concluído — classificação auditada e fechamentos executados (2026-09-16)
+
+**Executado:** 6 issues fechados com comentário de causa (#261, #286, #298, #309, #310, #329).
+**#364 aberto antes** de fechar o #329, para recapturar a observação viva sobre o desenho do ratchet.
+**#359 mantido aberto** com a premissa corrigida e reescopado para default + orquestração.
+**#362, #268 e #363** comentados com o que resta em cada um.
 
 **Corpus medido:** 18 issues abertos (não 16 — a estimativa do roadmap era anterior a #362 e #363).
 
@@ -978,7 +983,24 @@ de uma branch em 2026-09-12.)
 ---
 
 ### ML-4B — dependência morta de `node` e `python3` num gate sobrevivente
-**Status:** ⬜ Pendente — descoberto na triagem do ML-4A, mesma causa, mesma REQ
+**Status:** ✅ Concluído — auditado pelo arquiteto (2026-09-16)
+
+**Veredito medido, e os dois interpretadores tiveram destinos opostos — que era o risco do ML.**
+`node` era andaime morto: nenhum ponto do gate o executava depois do ML-3A. Removido (detecção,
+`exit 1` e symlink). `python3` **não** é morto — é ferramenta do próprio gate em 4 pontos:
+`patch_version_file()` (edição portável de fixture, porque `sed -i` diverge entre BSD e GNU e já
+quebrou o CI uma vez), `json_field()`, e as guardas que provam via `subprocess.run` que `git` resolve
+como processo nativo e que `gh` não executa sob `NO_FORGE_PATH`. Mantido, com o comentário corrigido
+para dizer a verdade — não é mais "o interpretador que um dos três CLIs precisa".
+
+**Falsificação reproduzida pelo arquiteto, não aceita de relatório:** removi o diretório do `node` do
+`PATH`, confirmei `command -v node` vazio e `python3` presente, e rodei o gate —
+`All check-release-tag-parity.sh scenarios passed`, exit 0.
+
+**Varredura dos demais gates:** `check-install-restriction.sh`, `check-shim-byte-identity.sh` e
+`check-channels-content.sh` também mencionam `node`, mas **executam** o node de verdade (testam o
+canal npm e o shim JS) e usam o padrão *pula se ausente*, não `exit 1`. Nenhum outro sítio com o
+mesmo defeito.
 
 `scripts/check-release-tag-parity.sh` já loopa **só** `for runtime in go` (linhas 637, 669, 707,
 comentadas `ML-3A (v8): node py removed`), mas o setup **continua exigindo os dois interpretadores**:

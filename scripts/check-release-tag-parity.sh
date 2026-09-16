@@ -84,12 +84,8 @@ if [[ ! -x "$GO_BIN" ]]; then
 fi
 # ML-3A (v8): Node CLI existence check removed
 
-REAL_NODE=$(command -v node || true)
+# ML-4B (v8): REAL_NODE removed — node is no longer executed by this gate; only python3 remains.
 REAL_PYTHON3=$(command -v python3 || true)
-if [[ -z "$REAL_NODE" ]]; then
-  echo "check-release-tag-parity: node not found in PATH" >&2
-  exit 1
-fi
 if [[ -z "$REAL_PYTHON3" ]]; then
   echo "check-release-tag-parity: python3 not found in PATH" >&2
   exit 1
@@ -110,16 +106,17 @@ fi
 # where GIT_DIR+GIT_WORK_TREE diverts a git -C call to a decoy repository).
 GIT_BIN_DIR="$(dirname "$REAL_GIT")"
 
-# runtimebin/ carries ONLY the interpreters the three CLIs need, symlinked from their real
-# location — the scenario-controlled PATH built below never inherits the caller's PATH, so a
-# real gh installed on this machine can never leak into a scenario that must see none.
+# runtimebin/ carries the tools this gate needs, symlinked from their real location — the
+# scenario-controlled PATH built below never inherits the caller's PATH, so a real gh installed
+# on this machine can never leak into a scenario that must see none.
+# ML-4B (v8): node symlink removed — node is not executed by any scenario in this gate.
+# python3 is retained: used by patch_version_file, json_field, and the vacuity guards.
 RUNTIME_BIN="$WORK/runtimebin"
 mkdir -p "$RUNTIME_BIN"
-ln -s "$REAL_NODE" "$RUNTIME_BIN/node"
 ln -s "$REAL_PYTHON3" "$RUNTIME_BIN/python3"
 
-# BASE_PATH: git + coreutils + python3 (used by patch_version_file below) only, plus the two
-# interpreters above. No gh anywhere unless a scenario explicitly prepends its own stub dir.
+# BASE_PATH: git + coreutils + python3 (used by patch_version_file and json_field below) only.
+# No gh anywhere unless a scenario explicitly prepends its own stub dir.
 # GIT_BIN_DIR is prepended so native child processes (Go exec.Command, Python subprocess.run) find
 # git.exe via PATHEXT — on Git for Windows, git.exe lives in /clangarm64/bin (ARM64) or
 # /mingw64/bin (x64), neither of which is /usr/bin or /bin (measured: ML-R2a run 34406101512).

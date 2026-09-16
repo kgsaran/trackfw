@@ -2,6 +2,14 @@
 
 ---
 
+## Sessão 2026-09-16 — Ares (trackfw-nul — ML-4B: remover dependência morta de node em check-release-tag-parity.sh) — ENCERRADO
+
+**Início:** 2026-09-16 | Branch: `fix/v8-um-binario-muitos-canais` (trackfw-nul) | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` ML-4B
+**Tarefa:** Remover `REAL_NODE` (exit-1 se ausente, symlink em RUNTIME_BIN) de `scripts/check-release-tag-parity.sh`. `python3` mantido — confirmado em uso por `patch_version_file`, `json_field` e guards de vacuidade inline. Varredura de outros gates com o mesmo padrão morto.
+**Concluído:** (1) `REAL_NODE` detection + exit-1-if-missing removidos (linhas 87-92, substituídas por comentário ML-4B). (2) `ln -s "$REAL_NODE" "$RUNTIME_BIN/node"` removido. (3) Comentários de `runtimebin/` e `BASE_PATH` atualizados para descrever a razão real (python3 para patch_version_file/json_field/guards). (4) `python3` mantido — leitura confirmou uso em `patch_version_file` (linha 416), `json_field` (linha 433), guard de vacuidade git (linha 186), guards Windows (linhas 327, 348). (5) Varredura de `check-*.sh`: `check-install-restriction.sh` e `check-shim-byte-identity.sh` têm `command -v node` mas com padrão SKIP-se-ausente (não exit-1 hard) — legítimo, esses gates testam o canal npm. `check-channels-content.sh` usa node somente no branch `--local`. Nenhum gate com o mesmo padrão morto encontrado. (6) Direção A: gate com PATH sem node → exit 0, "All check-release-tag-parity.sh scenarios passed". (7) Direção B: gate no ambiente normal → exit 0, mesmos 18+ rótulos OK. (8) `go build ./...` RC=0. (9) `go test ./...` RC=0. (10) `make quality` → 212 OK, 0 FAIL. (11) `check-orphan-gates.sh` RC=0.
+
+---
+
 ## Sessão 2026-09-16 — Ártemis (trackfw-nul — ML-3C-ter: guarda de vacuidade em check-gates-falsify.sh) — ENCERRADO
 
 **Início:** 2026-09-16 | Branch: `fix/v8-um-binario-muitos-canais` (trackfw-nul) | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` ML-3C-ter
