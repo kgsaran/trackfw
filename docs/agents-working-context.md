@@ -2,6 +2,21 @@
 
 ---
 
+## Sessão 2026-09-16 — Ares (fix/binario-muitos — ML-4F: item 7 da suite windows-repro de asserção negativa para positiva sobre contrato documentado) — ENCERRADO
+
+**Início:** 2026-09-16 | Branch: `fix/binario-muitos` | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` ML-4F
+**Tarefa:** Item 7 da suíte `scripts/windows-repro/run.ps1` assertia existência da dependência de `sh` (sempre REPRODUCED) — transformar em asserção positiva sobre o contrato documentado (shMissingMsg + status=not_evaluated; exit 127 dentro de sh ≠ sh ausente).
+**Concluído:**
+(1) Header comment item 7 atualizado (linhas 40-49) — "sh -c hardcodado" → "barrier falha limpo sem sh no PATH", explica restrição documentada vs. defeito, e os dois sentidos do contrato.
+(2) Asserção reescrita em três braços: controle (PATH normal → status avaliado, não not_evaluated), direção A (PATH curado sem sh → status=not_evaluated + shMissingMsg exato), direção B (gate que sai 127 com sh presente → status=blocked, SEM shMissingMsg). em-dash construído como [char]0x2014 para evitar mojibake em PowerShell 5.1.
+(3) Lógica de veredito: CONFIRMATORY se contrato honrado em ambas as direções e controle ok; REPRODUCED se contrato quebrado; INCONCLUSIVE se sem saída para medir.
+(4) $confirmatory counter adicionado (gateResults | Verdict -eq "CONFIRMATORY") com label explícito na linha Write-Host do sumário.
+(5) Título do Add-Result atualizado para descrever o que o item mede de fato.
+**Verificações:** go build ./... RC=0. go test ./... RC=0 (todos os packages). env -u FORCE_COLOR make quality RC=0 (212 OK, 0 FAIL). pwsh parse check RC=0 ("parse OK").
+**ALERTA:** git status mostra trackfw.yaml modificado após make quality — issue #366 conhecida (check-tty-detection.sh:43). Não commitado, reportado a KG per instrução.
+
+---
+
 ## Sessão 2026-09-16 — Ares (fix/v8-um-binario — ML-4D: remover itens 1/5/6 da suite windows-repro que mediam Python deletado) — ENCERRADO
 
 **Início:** 2026-09-16 | Branch: `fix/v8-um-binario` | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` ML-4D
