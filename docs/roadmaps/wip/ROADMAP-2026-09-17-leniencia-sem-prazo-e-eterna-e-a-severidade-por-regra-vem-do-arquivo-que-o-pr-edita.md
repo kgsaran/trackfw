@@ -61,7 +61,7 @@ não no código a corrigir. É o terceiro ciclo seguido em que a Wave 0 paga por
 > Dependências: **Wave 0 auditada.**
 
 ### ML-1A — severidade por regra ancorada em `origin/main`, e o fetch que a torna possível
-**Status:** ❌ REPROVADO na auditoria de Zeus (2026-09-17) — desenho correto, quatro defeitos bloqueantes → ML-1B · **Papel:** `apolo-tf`
+**Status:** ✅ Concluído **via corretivo ML-1B** — a primeira entrega foi REPROVADA por mim (4 defeitos, registro preservado abaixo e no commit); o AC1 fecha com as duas entregas somadas · **Papel:** `apolo-tf`
 Cobre **AC1** e o braço (b) do **AC8**.
 
 🔴 **Vem primeiro por decisão normativa da ADR.** Apertar o `lenient` sem isto reabre a superfície
@@ -86,20 +86,20 @@ Cobre **AC1** e o braço (b) do **AC8**.
    no relatório em vez de mantê-la por inércia.
 
 **Critérios de aceite:**
-- [ ] Toda regra ancorada em `origin/main`; a mais estrita vence
-- [ ] PR que **commita** `rules: {<regra>: off}` não rebaixa a severidade
-- [ ] 🔴 Contra-braço: **subir** a severidade no disco **é** respeitado (a regra é "mais estrita
+- [x] Toda regra ancorada em `origin/main`; a mais estrita vence
+- [x] PR que **commita** `rules: {<regra>: off}` não rebaixa a severidade
+- [x] 🔴 Contra-braço: **subir** a severidade no disco **é** respeitado (a regra é "mais estrita
       vence", não "`origin/main` sempre vence")
-- [ ] `origin/main` ilegível ⇒ falha fechada, com mensagem própria, distinta de "arquivo ausente"
-- [ ] `--scope dw` RC=0 — acrescentar `with:` não mudou nome de job
-- [ ] Reconciliação: uma frase por teste novo
-- [ ] `go build ./...`, `make test`, `make quality` — RC sem pipe
+- [x] `origin/main` ilegível ⇒ falha fechada, com mensagem própria, distinta de "arquivo ausente"
+- [x] `--scope dw` RC=0 — acrescentar `with:` não mudou nome de job
+- [x] Reconciliação: uma frase por teste novo
+- [x] `go build ./...`, `make test`, `make quality` — RC sem pipe
 
 ---
 
 
 ### ML-1B — corretivo do ML-1A: quatro defeitos bloqueantes na ancoragem
-**Status:** ⬜ Pendente · **Papel:** `apolo-tf`
+**Status:** ✅ Concluído (make quality RC=0, 2026-09-17) · **Papel:** `apolo-tf`
 Aberto pela auditoria do ML-1A em 2026-09-17. **O ML-1A está REPROVADO** — o código está commitado
 para não se perder, não porque foi aceito.
 
@@ -164,16 +164,16 @@ Consumidor cujo branch default seja `master`, `trunk` ou `develop` cai permanent
 e **declare o fallback** quando não der para derivar.
 
 **Critérios de aceite:**
-- [ ] `make quality` **RC=0**, medido sem pipe e **colado no relatório** — inclusive
+- [x] `make quality` **RC=0**, medido sem pipe e **colado no relatório** — inclusive
       `falsify/credential-guard-anchoring-combined-edit` e a guarda de conjunto
-- [ ] Se alguma garantia de credential-guard mudou, **o que se perdeu está escrito**
-- [ ] `./bin/trackfw doctor` → **0 `scaffold-divergent`**; o fetch sai dos **builders**, não só do disco
-- [ ] Fixture com `origin` sem `origin/main` e `trackfw.yaml` **sem enfraquecimento** ⇒ **não reprova**
-- [ ] Contra-braço: fixture com `origin` sem `origin/main` e `rules: {<regra>: off}` no disco ⇒
+- [x] Se alguma garantia de credential-guard mudou, **o que se perdeu está escrito**
+- [x] `./bin/trackfw doctor` → **0 `scaffold-divergent`**; o fetch sai dos **builders**, não só do disco
+- [x] Fixture com `origin` sem `origin/main` e `trackfw.yaml` **sem enfraquecimento** ⇒ **não reprova**
+- [x] Contra-braço: fixture com `origin` sem `origin/main` e `rules: {<regra>: off}` no disco ⇒
       **a regra não é rebaixada** (o bypass continua fechado)
-- [ ] Branch default derivado, não fixo; fallback declarado
-- [ ] `--scope dw` RC=0 · `go build ./...` · `make test`
-- [ ] Reconciliação: uma frase por teste novo ou alterado
+- [x] Branch default derivado, não fixo; fallback declarado
+- [x] `--scope dw` RC=0 · `go build ./...` · `make test`
+- [x] Reconciliação: uma frase por teste novo ou alterado
 ## Wave 2 — Prazo, carve-out e o terceiro interruptor
 > Dependências: **Wave 1 auditada.** Os dois MLs tocam `validator.go` — **sequenciais, não paralelos.**
 

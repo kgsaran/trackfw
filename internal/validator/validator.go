@@ -222,8 +222,11 @@ var ruleDefaults = map[string]string{
 func ruleSeverity(name string) string {
 	switch currentOriginMain.state {
 	case originAnchorRefUnreadable:
-		// Fail closed: ignore disk's rules: block, return the rule's built-in default.
-		return credentialGuardDefaultSeverity(name)
+		// ML-1B (Defect 3): return stricter of built-in default and disk (not default-only).
+		// Disk can strengthen (raise severity above default), but cannot weaken below default.
+		// This allows a repo to escalate a rule from "warning" to "error" even when the anchor
+		// is absent, while still preventing bypass via `rules: {<name>: off}` in the same commit.
+		return credentialGuardStricterSeverity(credentialGuardDefaultSeverity(name), diskRuleSeverity(name))
 	case originAnchorOK:
 		diskSev := diskRuleSeverity(name)
 		mainSev, ok := currentOriginMain.rules[name]
@@ -434,10 +437,13 @@ func ValidateUnfiltered() (violations []string, warnings []string, err error) {
 	currentOriginMain = loadOriginMainAnchor()
 	switch currentOriginMain.state {
 	case originAnchorRefUnreadable:
-		// Fail closed: emit a single named violation (not per-rule to avoid N identical messages).
-		// ruleSeverity() will return credentialGuardDefaultSeverity() for all rules in this state,
-		// so disk's `rules: {<name>: off}` has no effect.
-		violations = append(violations, originMainRefUnreadableMessage())
+		// ML-1B (Defect 3): changed from unconditional violation to warning.
+		// Anchor unavailable is a configuration signal, not a blocking failure for repos that
+		// never touch rules:. Bypass is still closed: ruleSeverity() returns stricter(default,disk)
+		// for all rules in this state, so disk's `rules: {<name>: off}` cannot lower any rule
+		// below its built-in default. A per-rule violation is emitted below for each rule that
+		// the disk explicitly weakens below default (guarantees observable even with no findings).
+		warnings = append(warnings, originMainRefUnreadableMessage())
 	case originAnchorFileAbsent:
 		// Informational: trackfw.yaml absent in origin/main — normal for a PR that adds the file.
 		// DISTINCT message from originAnchorRefUnreadable (two-states-one-observable prevention).
@@ -445,6 +451,22 @@ func ValidateUnfiltered() (violations []string, warnings []string, err error) {
 	}
 
 	cfg := config.Load()
+
+	// ML-1B (Defect 3): when anchor is unavailable, emit a violation for each rule that the user
+	// EXPLICITLY set in trackfw.yaml's rules: block AND whose explicit value is lower than its
+	// built-in default. Uses ParseRulesFromContent (not cfg.Rules) to read only explicitly-set
+	// rules — cfg.Rules includes config-package defaults (e.g. stale_wip:"warning") which would
+	// produce false positives if the user never touched those rules.
+	if currentOriginMain.state == originAnchorRefUnreadable {
+		if rawContent, readErr := readRegularFile("trackfw.yaml"); readErr == nil {
+			for ruleName, diskSev := range config.ParseRulesFromContent(string(rawContent)) {
+				defSev := credentialGuardDefaultSeverity(ruleName)
+				if credentialGuardSeverityRank(diskSev) < credentialGuardSeverityRank(defSev) {
+					violations = append(violations, originMainAnchorWeakeningMessage(ruleName, diskSev, defSev))
+				}
+			}
+		}
+	}
 
 	wipViolations, e := validateWIPHasREQ()
 	if e != nil {
@@ -753,12 +775,25 @@ func validateUnfilteredTagged() (violations []TaggedMsg, warnings []TaggedMsg, e
 	const anchorRule = "origin_main_anchor"
 	switch currentOriginMain.state {
 	case originAnchorRefUnreadable:
-		violations = append(violations, TaggedMsg{Rule: anchorRule, Msg: originMainRefUnreadableMessage()})
+		// ML-1B (Defect 3): warning, not violation — mirrors ValidateUnfiltered change.
+		warnings = append(warnings, TaggedMsg{Rule: anchorRule, Msg: originMainRefUnreadableMessage()})
 	case originAnchorFileAbsent:
 		warnings = append(warnings, TaggedMsg{Rule: anchorRule, Msg: originMainFileAbsentMessage()})
 	}
 
 	cfg := config.Load()
+
+	// ML-1B (Defect 3): per-rule weakening violations when anchor unavailable — mirrors ValidateUnfiltered.
+	if currentOriginMain.state == originAnchorRefUnreadable {
+		if rawContent, readErr := readRegularFile("trackfw.yaml"); readErr == nil {
+			for ruleName, diskSev := range config.ParseRulesFromContent(string(rawContent)) {
+				defSev := credentialGuardDefaultSeverity(ruleName)
+				if credentialGuardSeverityRank(diskSev) < credentialGuardSeverityRank(defSev) {
+					violations = append(violations, TaggedMsg{Rule: anchorRule, Msg: originMainAnchorWeakeningMessage(ruleName, diskSev, defSev)})
+				}
+			}
+		}
+	}
 
 	wipViolations, e := validateWIPHasREQ()
 	if e != nil {

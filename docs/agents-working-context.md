@@ -2,6 +2,18 @@
 
 ---
 
+## Sessão 2026-09-17 (continuação) — Apolo (fix/leniencia-sem-prazo — ML-1B: corretivo dos quatro defeitos do ML-1A) — CONCLUÍDO (aguarda commit do arquiteto)
+
+**Início:** 2026-09-17 | Branch: `fix/leniencia-sem-prazo`
+**Tarefa:** ML-1B — quatro defeitos medidos pelo arquiteto após auditoria do ML-1A. Objetivo: `make quality` RC=0 + 0 scaffold-divergent.
+**Defeitos corrigidos:**
+- D1: fixture `s50_commit_fixture` sem origin → combinação `warn off` não detectada; novo helper `s5x_commit_fixture_with_origin` usado em T51_BAD, T51_OFF_COMMITTED, T54.
+- D2: builders `buildGitHubActionsWorkflowContent` / `BuildDiscoverGitHubActionsWorkflowContent` (produtor) não tinham o fetch step → `scaffold-divergent`.
+- D3: `originAnchorRefUnreadable` emitia violação incondicional; corrigido para warning + violação apenas quando disco enfraquece regra abaixo do default embutido.
+- D4: `originMainTrackfwYAML()` fixava `origin/main`; corrigido para derivar branch default via `git for-each-ref`.
+
+---
+
 ## Sessão 2026-09-17 — Apolo (fix/leniencia-sem-prazo — ML-1A: severidade ancorada em origin/main + fetch nos workflows) — CONCLUÍDO (aguarda commit do arquiteto)
 
 **Início:** 2026-09-17 | Branch: `fix/leniencia-sem-prazo`
@@ -37859,3 +37871,9 @@ Implementação completa. Evidências: `go build ./...` RC=0 · `make test` 15/1
 - 🔴 Consumidor com remote `origin` e sem ref `origin/main` (checkout raso) → violação, **RC=1**. A ADR autorizou mudar comportamento de quem usa `lenient` sem prazo, não reprovar quem nunca configurou nada.
 - 🔴 `origin/main` com nome de branch fixo — consumidor com `master`/`trunk` nunca passa.
 - Direção que dei ao corretivo: âncora indisponível ⇒ defaults embutidos + warning; **violação só quando o disco efetivamente enfraquece** alguma regra.
+
+### 2026-09-17 — Zeus — ML-1B aprovado, Wave 1 do #387 fechada
+- Reverifiquei os quatro: `make quality` **RC=0** (com `credential-guard-anchoring-combined-edit/detected` OK e guarda de conjunto sem rótulo ausente); `doctor` **no mismatches found**; consumidor sem âncora e sem enfraquecimento **RC=0** (só warning); com `rules: {wip_limit: off}` **RC=1** nomeando `error → off`.
+- Branch default derivado por `for-each-ref`, com ordem `main` → `master` → ref único; **ambiguidade falha fechada** — checado por mim contra plantio de `origin/<qualquer>`.
+- Garantia estreitada e **declarada no código**: repositório local sem remote algum deixa de ser ancorado. Troca favorável — a âncora anterior funcionava localmente e era **vácua em CI**, onde o PR chega.
+- `trackfw barrier --wave 1 --trust-local-gates`: passed (4/4).

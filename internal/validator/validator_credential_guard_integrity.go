@@ -307,6 +307,46 @@ var currentOriginMain originMainAnchor
 //   - originAnchorRefUnreadable: origin exists but rev-parse --verify origin/main fails → FAIL CLOSED
 //   - originAnchorFileAbsent: ref ok but ls-tree shows file absent → disk only, warning
 //   - originAnchorOK: content returned
+// deriveOriginDefaultBranch enumerates refs/remotes/origin/ and returns the short ref name
+// (e.g. "origin/main") most likely to be the default branch.
+//
+// ML-1B (Defect 4): the old implementation hardcoded "origin/main", causing repos whose default
+// branch is "master", "trunk", or "develop" to permanently land in originAnchorRefUnreadable.
+//
+// Resolution order:
+//  1. "origin/main"   — most common GitHub default
+//  2. "origin/master" — legacy default
+//  3. The single non-HEAD ref, if exactly one exists — unambiguous regardless of name
+//  4. Otherwise → "", false (caller emits originAnchorRefUnreadable with fallback declared in msg)
+//
+// Does NOT use "git symbolic-ref refs/remotes/origin/HEAD" (written by git clone, not by
+// actions/checkout) or "git ls-remote" (network dependency). Uses only local refs.
+func deriveOriginDefaultBranch() (refName string, ok bool) {
+	out, err := gitCommand(".", "for-each-ref", "--format=%(refname:short)", "refs/remotes/origin/").Output()
+	if err != nil {
+		return "", false
+	}
+	var branches []string
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || line == "origin/HEAD" {
+			continue
+		}
+		branches = append(branches, line)
+	}
+	for _, preferred := range []string{"origin/main", "origin/master"} {
+		for _, b := range branches {
+			if b == preferred {
+				return preferred, true
+			}
+		}
+	}
+	if len(branches) == 1 {
+		return branches[0], true // unambiguous single branch — use it regardless of name
+	}
+	return "", false
+}
+
 func originMainTrackfwYAML() (content string, state originMainAnchorState) {
 	if !isGitWorktree(".") {
 		return "", originAnchorNoGit
@@ -319,22 +359,26 @@ func originMainTrackfwYAML() (content string, state originMainAnchorState) {
 		return "", originAnchorNoRemote
 	}
 
-	// State 3: origin exists but origin/main ref unreadable — FAIL CLOSED.
-	// This is the adversary-reachable case: a workflow without the ML-1A fetch step would land
-	// here for every PR, making every rule resolve at its strictest default. The fetch step in
-	// trackfw-gate.yml / trackfw-validate.yml ensures this state is not the normal path.
-	if err := gitCommand(".", "rev-parse", "--verify", "origin/main").Run(); err != nil {
+	// State 3: origin exists — derive default branch from local refs/remotes/origin/.
+	// ML-1B (Defect 4): hardcoded "origin/main" replaced by deriveOriginDefaultBranch so that
+	// repos whose default branch is "master", "trunk", or any other name are not permanently
+	// stuck in originAnchorRefUnreadable.
+	// When no usable ref is found (nothing fetched yet, or multiple ambiguous refs with no
+	// main/master), we fall through to originAnchorRefUnreadable — the same fail-closed state
+	// as before, but now reached only when the fetch hasn't run, not because of the branch name.
+	ref, found := deriveOriginDefaultBranch()
+	if !found {
 		return "", originAnchorRefUnreadable
 	}
 
 	// State 4: ref ok but file absent — new file in this PR.
-	lsOut, err := gitCommand(".", "ls-tree", "origin/main", "--", "./trackfw.yaml").Output()
+	lsOut, err := gitCommand(".", "ls-tree", ref, "--", "./trackfw.yaml").Output()
 	if err != nil || len(strings.TrimSpace(string(lsOut))) == 0 {
 		return "", originAnchorFileAbsent
 	}
 
 	// State 5: ref and file present — extract content.
-	out, err := gitCommand(".", "show", "origin/main:./trackfw.yaml").Output()
+	out, err := gitCommand(".", "show", ref+":./trackfw.yaml").Output()
 	if err != nil {
 		// ls-tree listed the file but show failed — treat as ref unreadable (fail safe).
 		return "", originAnchorRefUnreadable
@@ -361,11 +405,26 @@ func loadOriginMainAnchor() originMainAnchor {
 // DISTINCT from originMainFileAbsentMessage: ref-unreadable is a failure; file-absent is expected
 // for a PR that adds trackfw.yaml for the first time.
 func originMainRefUnreadableMessage() string {
-	return "severity anchor unavailable: origin/main ref could not be read — " +
-		"ensure the workflow runs: git fetch --depth=1 --no-tags origin " +
-		`+refs/heads/main:refs/remotes/origin/main` +
-		" before trackfw validate; " +
-		"all rule severities defaulted to built-in values to prevent bypass via trackfw.yaml"
+	return "severity anchor unavailable: no refs found under refs/remotes/origin/ — " +
+		"ensure the workflow runs a git fetch for the default branch " +
+		"(e.g. git fetch --depth=1 --no-tags origin +refs/heads/main:refs/remotes/origin/main) " +
+		"before trackfw validate; " +
+		"rule severities that are lower in trackfw.yaml than their built-in defaults " +
+		"are overridden to prevent bypass"
+}
+
+// originMainAnchorWeakeningMessage is the per-rule violation emitted when the severity anchor
+// is unavailable (originAnchorRefUnreadable) AND the disk's trackfw.yaml sets a lower severity
+// for a rule than its built-in default. This closes the bypass even when origin/main is absent:
+// the weakening attempt is reported regardless of whether the rule has findings in this repo.
+//
+// ML-1B (Defect 3): separated from the blanket anchor violation so that repos that never touch
+// rules: are not affected, while repos that DO try to weaken rules are still flagged.
+func originMainAnchorWeakeningMessage(ruleName, diskSev, defaultSev string) string {
+	return "severity anchor unavailable and trackfw.yaml weakens rule " + ruleName +
+		" below built-in default (" + defaultSev + " → " + diskSev + "): " +
+		"commit the fetch step (trackfw-gate.yml / trackfw-validate.yml) to activate the anchor, " +
+		"or remove the rules: override to restore default severity"
 }
 
 // originMainFileAbsentMessage is the informational warning emitted when origin/main is readable

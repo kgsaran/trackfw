@@ -151,15 +151,24 @@ func TestOriginMainAnchor_UpgradeRespeitado(t *testing.T) {
 
 // ------ AC: origin/main ilegível → falha fechada ------
 
-// TestOriginMainAnchor_RefUnreadable_FalhaFechada prova que quando origin/main não está disponível
-// como ref local (Braço 1), ValidateUnfiltered emite uma violação com mensagem própria — distinta
-// de "file absent" — e ruleSeverity retorna o default built-in (não o valor do disco).
-// Reconciliação: este teste prova o AC "origin/main ilegível ⇒ falha fechada, mensagem distinta de
-// 'arquivo ausente'" do ML-1A: o estado ref-absent produz violation; o estado file-absent não.
+// TestOriginMainAnchor_RefUnreadable_FalhaFechada prova que quando origin não tem refs disponíveis
+// (Braço 1: origin existe mas nenhum branch foi fetched), ValidateUnfiltered emite um WARNING com
+// mensagem própria — distinta de "file absent" — e uma VIOLATION por cada regra que o disco
+// enfraquece abaixo do default embutido. ruleSeverity retorna stricter(default, disk).
+//
+// ML-1B (Defect 3): changed from unconditional violation to:
+//   - WARNING for "severity anchor unavailable" (observable 1)
+//   - VIOLATION per weakened rule (observable 2, when disk weakens)
+//   - ruleSeverity returns stricter(default, disk), not default-only
+//
+// Reconciliação: este teste prova que o Defeito 3 está corrigido — o estado ref-absent emite
+// WARNING (não violação) para o sinal de âncora, e VIOLATION nomeando a regra que o disco
+// enfraquece. A garantia de bypass fechado permanece: ruleSeverity("wip_limit") = "warning"
+// (default) e não "off" (disco), porque stricter("warning","off") = "warning".
 func TestOriginMainAnchor_RefUnreadable_FalhaFechada(t *testing.T) {
 	dir := t.TempDir()
 	initGitRepo(t, dir, "main")
-	// Add a remote that exists but do NOT fetch — origin/main ref is absent.
+	// Add a remote that exists but do NOT fetch — origin has no refs locally.
 	cmd := exec.Command("git", "-C", dir, "remote", "add", "origin", "https://example.invalid/repo.git")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git remote add: %s", out)
@@ -168,29 +177,181 @@ func TestOriginMainAnchor_RefUnreadable_FalhaFechada(t *testing.T) {
 	t.Cleanup(config.Reset)
 	t.Cleanup(func() { currentOriginMain = originMainAnchor{} })
 
-	// Disk: PR tries to downgrade by setting rules: wip_limit: off.
+	// Disk: trackfw.yaml weakens wip_limit to "off" (default is "warning") — bypass attempt.
 	writeFile(t, dir, "trackfw.yaml", "rules:\n  wip_limit: off\n")
 
-	violations, _, err := ValidateUnfiltered()
+	violations, warnings, err := ValidateUnfiltered()
 	if err != nil {
 		t.Fatalf("ValidateUnfiltered() error: %v", err)
 	}
 
-	// Must have the ref-unreadable violation (not the file-absent warning).
-	if !hasViolation(violations, "severity anchor unavailable") {
-		t.Errorf("expected anchor-failure violation, violations=%v", violations)
+	// ML-1B: anchor signal must be a WARNING (not a standalone violation) — the pure anchor message
+	// contains "no refs found" (unique to the warning). Weakening violations may also appear.
+	// We check that the PURE ANCHOR message ("no refs found") is in warnings, not violations.
+	if hasViolation(violations, "no refs found") {
+		t.Errorf("pure anchor signal ('no refs found') must be a WARNING not a violation, violations=%v", violations)
 	}
-	// The violation message must NOT look like "file absent" — two distinct observables.
-	if hasViolation(violations, "not found") {
-		t.Errorf("ref-unreadable violation must not say 'not found' (that is the file-absent message): %v", violations)
+	if !hasWarning(warnings, "no refs found") {
+		t.Errorf("expected WARNING with 'no refs found' (anchor signal), warnings=%v", warnings)
 	}
 
-	// In fail-closed state, wip_limit must resolve to built-in default ("warning"), NOT disk's "off".
-	// This proves that rules: {wip_limit: off} is ignored when the anchor is broken.
+	// The ref-unreadable warning must NOT look like the file-absent message ("not found" alone).
+	// originMainFileAbsentMessage() uses "not found"; our anchor warning uses "no refs found" —
+	// two distinct messages. If the warning only contained "not found" without "no refs found",
+	// that would mean the wrong message was emitted.
+	if hasWarning(warnings, "not found") && !hasWarning(warnings, "no refs found") {
+		t.Errorf("ref-unreadable warning emitted file-absent message (contains 'not found' but not 'no refs found'): %v", warnings)
+	}
+
+	// ML-1B: disk weakens wip_limit (off < error default) → per-rule weakening VIOLATION.
+	if !hasViolation(violations, "weakens rule wip_limit") {
+		t.Errorf("expected per-rule weakening violation for wip_limit, violations=%v", violations)
+	}
+
+	// ruleSeverity must return stricter(default="warning", disk="off") = "warning" — bypass closed.
+	// Distinguishes from "return default-only": default="warning", stricter("warning","off")="warning",
+	// same result for wip_limit. A rule with default="error" would show the distinction more clearly
+	// but wip_limit is the fixture's rule. The weakening-violation test above proves the bypass is
+	// closed — even if the rule has no findings, the weakening attempt is still reported.
 	got := ruleSeverity("wip_limit")
 	wantDefault := credentialGuardDefaultSeverity("wip_limit") // "warning" from ruleDefaults
 	if got != wantDefault {
-		t.Errorf("wip_limit in fail-closed state: want built-in default %q, got %q", wantDefault, got)
+		t.Errorf("wip_limit in ref-unreadable state: want built-in default %q (stricter(default,off)), got %q", wantDefault, got)
+	}
+}
+
+// TestOriginMainAnchor_RefUnreadable_SemEnfraquecimento_NaoReprova prova que um repositório com
+// origin remoto mas sem refs fetched e SEM regras enfraquecidas no disco NÃO gera violação —
+// apenas um warning de âncora. Este é o critério de aceite central do ML-1B Defeito 3.
+// Reconciliação: este teste prova que a separação "âncora indisponível ⇒ warning; violação apenas
+// quando disco enfraquece" protege consumidores inocentes (CI com checkout raso sem fetch step).
+func TestOriginMainAnchor_RefUnreadable_SemEnfraquecimento_NaoReprova(t *testing.T) {
+	dir := t.TempDir()
+	initGitRepo(t, dir, "main")
+	cmd := exec.Command("git", "-C", dir, "remote", "add", "origin", "https://example.invalid/repo.git")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git remote add: %s", out)
+	}
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+	t.Cleanup(func() { currentOriginMain = originMainAnchor{} })
+
+	// Disk: trackfw.yaml with NO rules weakening — governance_mode only.
+	writeFile(t, dir, "trackfw.yaml", "governance_mode: strict\n")
+
+	violations, warnings, err := ValidateUnfiltered()
+	if err != nil {
+		t.Fatalf("ValidateUnfiltered() error: %v", err)
+	}
+
+	// Must NOT produce any violation at all (no weakening = no bypass attempt).
+	if len(violations) > 0 {
+		t.Errorf("no-weakening fixture must produce no violations, got: %v", violations)
+	}
+	// Must produce the anchor WARNING (signal that fetch step would help).
+	if !hasWarning(warnings, "no refs found") {
+		t.Errorf("expected anchor WARNING with 'no refs found', warnings=%v", warnings)
+	}
+}
+
+// TestOriginMainAnchor_RefUnreadable_ComEnfraquecimento_Bloqueia prova o contra-braço: mesmo sem
+// origin/main disponível, um `rules: {credential_guard_mode_downgrade: off}` no disco gera
+// violação nomeando a regra — o bypass continua fechado.
+// Reconciliação: este teste prova que o ML-1B fecha o canal de bypass via "anchor unavailable +
+// disco com off" — a violação aparece mesmo sem findings da regra em si.
+func TestOriginMainAnchor_RefUnreadable_ComEnfraquecimento_Bloqueia(t *testing.T) {
+	dir := t.TempDir()
+	initGitRepo(t, dir, "main")
+	cmd := exec.Command("git", "-C", dir, "remote", "add", "origin", "https://example.invalid/repo.git")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git remote add: %s", out)
+	}
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+	t.Cleanup(func() { currentOriginMain = originMainAnchor{} })
+
+	// Disk: weakens credential_guard_mode_downgrade to "off" (default is "error").
+	writeFile(t, dir, "trackfw.yaml", "rules:\n  credential_guard_mode_downgrade: off\n")
+
+	violations, warnings, err := ValidateUnfiltered()
+	if err != nil {
+		t.Fatalf("ValidateUnfiltered() error: %v", err)
+	}
+
+	// Must have the weakening violation for credential_guard_mode_downgrade.
+	if !hasViolation(violations, "weakens rule credential_guard_mode_downgrade") {
+		t.Errorf("expected weakening violation for credential_guard_mode_downgrade, violations=%v", violations)
+	}
+	// Pure anchor signal ("no refs found") must be a WARNING (not a violation).
+	if hasViolation(violations, "no refs found") {
+		t.Errorf("pure anchor signal must be WARNING, not violation, violations=%v", violations)
+	}
+	if !hasWarning(warnings, "no refs found") {
+		t.Errorf("expected anchor WARNING with 'no refs found', warnings=%v", warnings)
+	}
+	// ruleSeverity for credential_guard_mode_downgrade must be "error" (default), not "off" (disk).
+	got := ruleSeverity("credential_guard_mode_downgrade")
+	if got != "error" {
+		t.Errorf("credential_guard_mode_downgrade: want \"error\" (stricter(default,off)), got %q", got)
+	}
+}
+
+// TestOriginMainAnchor_BranchDerivedFromForEachRef prova que o Defeito 4 está corrigido:
+// quando o branch default do remote é "master" (não "main"), a âncora ainda funciona —
+// deriveOriginDefaultBranch() encontra "origin/master" via git for-each-ref.
+// Reconciliação: este teste prova que a derivação do branch default via for-each-ref resolve
+// "origin/master" quando "origin/main" está ausente, produzindo originAnchorOK.
+func TestOriginMainAnchor_BranchDerivedFromForEachRef(t *testing.T) {
+	dir := t.TempDir()
+	// Init with "master" as the branch name (not "main").
+	initGitRepo(t, dir, "master")
+
+	// Create an "origin" that has a "master" branch (not "main").
+	originDir := t.TempDir()
+	runIn := func(d string, args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = d
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v in %s: %s", args, d, string(out))
+		}
+	}
+	runIn(originDir, "init", "-b", "master")
+	runIn(originDir, "config", "user.email", "test@test.com")
+	runIn(originDir, "config", "user.name", "test")
+	writeFile(t, originDir, "trackfw.yaml", "rules:\n  wip_limit: warning\n")
+	runIn(originDir, "add", "trackfw.yaml")
+	runIn(originDir, "commit", "-m", "init on master")
+
+	// Add as "origin" to the test repo and fetch origin/master (NOT origin/main).
+	runIn(dir, "remote", "add", "origin", originDir)
+	runIn(dir, "fetch", "--depth=1", "--no-tags", "origin",
+		"+refs/heads/master:refs/remotes/origin/master")
+
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+	t.Cleanup(func() { currentOriginMain = originMainAnchor{} })
+
+	// Disk: tries to downgrade wip_limit.
+	writeFile(t, dir, "trackfw.yaml", "rules:\n  wip_limit: off\n")
+
+	violations, warnings, err := ValidateUnfiltered()
+	if err != nil {
+		t.Fatalf("ValidateUnfiltered() error: %v", err)
+	}
+
+	// Anchor must resolve to originAnchorOK via origin/master (not originAnchorRefUnreadable).
+	if hasWarning(warnings, "severity anchor unavailable") {
+		t.Errorf("anchor must be OK (origin/master should be derived), warnings=%v", warnings)
+	}
+	if hasViolation(violations, "severity anchor unavailable") {
+		t.Errorf("anchor must be OK, not ref-unreadable, violations=%v", violations)
+	}
+
+	// wip_limit downgrade must be blocked by origin/master's "warning".
+	got := ruleSeverity("wip_limit")
+	if got != "warning" {
+		t.Errorf("wip_limit: want \"warning\" (origin/master anchor wins over disk's \"off\"), got %q", got)
 	}
 }
 
