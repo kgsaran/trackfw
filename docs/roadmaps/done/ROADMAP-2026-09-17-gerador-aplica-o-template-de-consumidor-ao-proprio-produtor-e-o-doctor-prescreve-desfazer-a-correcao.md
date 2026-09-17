@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-17
 req: "docs/req/REQ-2026-09-17-gerador-aplica-o-template-de-consumidor-ao-proprio-produtor-e-o-doctor-prescreve-desfazer-a-correcao.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: gerador aplica o template de consumidor ao proprio produtor e o doctor prescreve desfazer a correcao
 
-> Created: 2026-09-17 | Status: wip
+> Created: 2026-09-17 | Status: done
 
 
 ## Wave 0 — Threat model
