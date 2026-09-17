@@ -37809,3 +37809,9 @@ Implementação completa. Evidências: `go build ./...` RC=0 · `make test` 15/1
 - PR #388 mergeado; issue #376 fechada automaticamente às 18:17Z. Roadmap movido para `done`.
 - Entregue: os dois builders distinguem produtor de consumidor, e os dois required checks de governança (`governance-go-install`, `governance-install-script`) compilam o trackfw do código do PR em vez de baixar o binário publicado.
 - 🔴 **Continua aberto, causa distinta: #387** — `governance_mode: lenient` faz esses mesmos dois checks saírem 0 incondicionalmente. Este PR consertou *qual binário* eles executam; falta *poderem bloquear*.
+
+### 2026-09-17 — Zeus — #387 aberto: ADR, REQ e roadmap criados
+- Decisões de KG: (a) leniência **sem prazo passa a ser strict** — falha fechada; (b) este repositório fica com **carve-out estrutural + `lenient_until` declarado**, sem saldar as 157 pendências históricas.
+- 🔴 Achado que muda a natureza: o mecanismo de prazo **já existe** (`Config.LenientUntil`), mas `trackfw discover` escreve `lenient` **sem** `lenient_until` (`discover.go:497-499`) e `IsLenient()` trata ausência como eterno (`validator.go:381-383`). É defeito de produto que atinge todo consumidor onboardado por `discover`, não higiene de config nossa.
+- Composição das 172: 157 dívida histórica · **8 inconsistência ativa, nossa, de 11 a 17/09**.
+- Ordem normativa da ADR: **ancorar severidade por regra (Wave 1) antes de apertar o lenient (Wave 2)**, senão troca-se o interruptor geral pelo interruptor por regra.
