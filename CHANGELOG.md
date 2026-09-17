@@ -5,6 +5,56 @@ Todas as mudanças notáveis deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 e este projeto adere a [Semantic Versioning](https://semver.org/).
 
+## [8.0.1] - 2026-09-17
+
+Duas correções, ambas com efeito em quem já usa a v8. **Patch de propósito:** correção de segurança
+deve alcançar também quem pina `~8.0.0`, que não receberia uma minor.
+
+### ⚠️ Duas mudanças de comportamento — leia antes de atualizar
+
+O número da versão não sinaliza isso, então está aqui. **Nos dois casos a falha é uma recusa
+nomeada, que diz o que fazer — não uma quebra silenciosa.**
+
+**1. `trackfw sync --to=jira` recusa a combinação `jira_base_url` na config + `JIRA_TOKEN` no ambiente.**
+
+Se você mantém a URL do Jira no `trackfw.yaml` e o token como secret de CI — que é a boa prática —,
+defina `TRACKFW_JIRA_ALLOW_MIXED_ORIGIN=1` **no ambiente do CI** (não no `trackfw.yaml`). Uma linha,
+uma vez.
+
+Motivo: nessa combinação, **um PR que edita apenas o `trackfw.yaml`** redirecionava o POST autenticado
+e entregava o `Authorization: Basic base64(email:token)` para um host escolhido. O atacante não
+precisava tocar em código nem ler o secret. As combinações `(config, config)` e `(env, env)`
+continuam funcionando sem nenhum passo extra.
+
+**2. `req_dir` apontando para fora da raiz do projeto passa a ser recusado.**
+
+Vale para `sync`, `validate` e `status` — não só para o `sync`. Inclui travessia por `../`, caminho
+absoluto fora da árvore e **symlink** que aponte para fora (a verificação é física, não lexical).
+
+Se você usa REQs num diretório compartilhado fora do repositório, este release o bloqueia. **Não
+medimos se esse uso existe** — se for o seu caso, abra issue: a saída provavelmente é a mesma do item
+1, opt-in fora da árvore em vez de recusa dura.
+
+### Fixed
+
+- **`jira_base_url` do repositório virava destino de POST autenticado sem validação** (#380). A URL
+  passa a ser validada (`url.Parse`, `https` exigido, `url.JoinPath` no lugar de concatenação) e há
+  política de redirect: o stdlib do Go já removia o `Authorization` em redirect para hostname
+  diferente, mas **preservava** em redirect para o mesmo hostname em porta diferente — esse caminho
+  agora é bloqueado.
+- **`trackfw sync` enumerava REQs por caminho literal `docs/req/*.md`**, ignorando o `req_dir`
+  configurado e o layout `by_agent` (#268). Num projeto com `req_dir` diferente, o `sync` via zero
+  REQs reais e podia **criar issue no Linear/Jira a partir de arquivos residuais**, injetando o id de
+  volta neles. Passou a resolver pelo mesmo ponto único que o `validate` usa.
+
+### Internal
+
+- Gate de mutação de árvore deixou de usar lista fixa de gates e passou a classificar na execução, de
+  modo que um gate novo nasce dentro da cobertura; e passou a comparar **conteúdo** em vez do código
+  de status do `git status --porcelain`, que é cego a alterações em arquivo já modificado.
+- `Run-Capture` da suíte de Windows drenava stdout e stderr em sequência, travando o job até o
+  timeout em vez de reprovar (#372).
+
 ## [8.0.0] - 2026-09-16
 
 **Uma implementação, em Go, entregue por três canais.** As reimplementações em Node.js e Python
