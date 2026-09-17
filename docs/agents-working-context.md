@@ -2,6 +2,18 @@
 
 ---
 
+## Sessão 2026-09-17 — Hades (fix/leniencia-sem-prazo — ML-0A: Wave 0 threat model REQ #387) — CONCLUÍDO (aguarda commit do arquiteto)
+
+**Início:** 2026-09-17 | Branch: `fix/leniencia-sem-prazo`
+**Tarefa:** Produzir o parecer de ameaça da Wave 0 (ML-0A) para a REQ do issue #387: quem continua conseguindo afrouxar a própria verificação DEPOIS desta REQ.
+**Entregável:** `docs/portabilidade/2026-09-17-threat-model-severidade-da-validacao.md`
+**Resultado:**
+- Gate Wave 0 passou: `IsLenient`, `ruleSeverity`, `checkout`, `req_dir`, `carve` todos presentes; residual declarado.
+- Achados principais: (1) enumeração abre 5 canais além dos 2 nomeados (req_dir vazio zerando tudo medido; baseline force-committed; stale_wip_days/wip_limit; lenient_until arbitrariamente distante); (2) ADR ordem 3-antes-de-1 confirmada por código — 21 regras ficam abertas se AC2 vier sem AC1; (3) CRÍTICO — AC1 fecha edições não commitadas mas HEAD==disco em CI para edições commitadas (HEAD^1 inacessível em clone raso, RC=128 medido); (4) `req_roadmap_lifecycle` é hardcoded warning, não passa por applyRuleTagged — carve-out AC4 é no-op para 6 das 8 ocorrências sem mudança de roteamento não prevista no ML-2A; (5) residual declarado em 6 itens.
+- Corpus: 175 avisos medidos (roadmap cita 172 — 3 adicionais incluem 2 do próprio roadmap desta REQ).
+
+---
+
 ## Sessão 2026-09-17 — Hades (fix/gerador-aplica-o-template-de-consumidor — ML-0A: Wave 0 threat model REQ #376) — CONCLUÍDO (aguarda commit do arquiteto)
 
 **Início:** 2026-09-17 | Branch: `fix/gerador-aplica-o-template-de-consumidor`
@@ -37815,3 +37827,11 @@ Implementação completa. Evidências: `go build ./...` RC=0 · `make test` 15/1
 - 🔴 Achado que muda a natureza: o mecanismo de prazo **já existe** (`Config.LenientUntil`), mas `trackfw discover` escreve `lenient` **sem** `lenient_until` (`discover.go:497-499`) e `IsLenient()` trata ausência como eterno (`validator.go:381-383`). É defeito de produto que atinge todo consumidor onboardado por `discover`, não higiene de config nossa.
 - Composição das 172: 157 dívida histórica · **8 inconsistência ativa, nossa, de 11 a 17/09**.
 - Ordem normativa da ADR: **ancorar severidade por regra (Wave 1) antes de apertar o lenient (Wave 2)**, senão troca-se o interruptor geral pelo interruptor por regra.
+
+### 2026-09-17 — Zeus — Wave 0 do #387 auditada: três achados bloqueantes, REQ e ADR reescritas
+- 🔴 **AC1 estava errado.** Ancorar em HEAD é vácuo em CI: no evento `pull_request`, `actions/checkout` traz o merge commit, então HEAD == disco. Verifiquei: os dois workflows de governança têm `checkout@v7` sem `with:`, nenhum usa `fetch-depth`, e o comentário em `validator.go:200-206` delimita o padrão a edição **não commitada** — mas um PR commita. Reescrito para ancorar em `origin/main`, com o fetch como parte do AC.
+- 🔴 **AC4/AC5 eram inatingíveis.** `req_roadmap_lifecycle` é anexado direto a `warnings` (`validator.go:787`) e nunca passa por `applyRuleTagged` — não vira violação sob config nenhuma. Rotear a regra virou ação 1 do ML-2A.
+- 🔴 **Terceiro interruptor, não previsto.** `strict` + `req_dir`/`roadmap_dir`/`adr_dirs` vazios → `✓ No violations found`, RC=0 com REQ quebrada no disco. Medido por mim. Mesma causa → mesma REQ (AC5 novo, ML-2B).
+- Corpus corrigido: **177** (via `--json`), não 172 — 8 ativas, 169 históricas. Uma delas não tem tag de regra, então nenhuma chave `rules:` a endereça.
+- `lenient_until: 9999-12-31` derrotava o AC2 a custo zero → AC2 ganhou teto de horizonte.
+- Barreira da Wave 0: passed (4/4).

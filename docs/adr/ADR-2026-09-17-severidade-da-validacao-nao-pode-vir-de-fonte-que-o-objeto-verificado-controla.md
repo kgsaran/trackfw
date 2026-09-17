@@ -31,7 +31,7 @@ Medição nesta árvore, com binário compilado do fonte:
 
 ```
 $ trackfw validate ; echo $?
-172 warning(s)
+177 warning(s)   # via --json; a saida humana colapsa algumas linhas
 0
 ```
 
@@ -80,8 +80,8 @@ estão na lista de credential-guard — troca-se um buraco por outro.
 ### Postura deste repositório
 
 Carve-out estrutural + prazo declarado. As regras da decisão 2 passam a bloquear imediatamente; as
-157 pendências históricas (122 REQ sem ADR, 35 REQ sem roadmap) permanecem sob `lenient` com
-`lenient_until` **escrito**. Justificativa: das 172 pendências, **8 são inconsistência ativa e
+169 pendências históricas (122 `req_has_adr`, 36 `req_has_roadmap`, 8 `adr_orphan`, 1 `wip_has_req`, 1 `wip_acceptance`, 1 sem tag de regra) permanecem sob `lenient` com
+`lenient_until` **escrito**. Justificativa: das 177 pendências, **8 são inconsistência ativa e
 recente** — 6 REQs abertas cujo roadmap já está em `done/`, datadas de 11 a 17/09, **todas produzidas
 por nós**, incluindo a do trabalho fechado hoje. O `lenient` está escondendo defeito que estamos
 criando agora, não só dívida de junho.
@@ -104,7 +104,7 @@ criando agora, não só dívida de junho.
   para esta ADR.
 - O carve-out é uma exceção a mais na configuração, e exceção tende a virar permanente. Mitigado por
   ser **lista nomeada e fechada**, com critério escrito de pertencimento.
-- As 157 pendências históricas continuam invisíveis até o prazo. Registrado como dívida com data.
+- As 169 pendências históricas continuam invisíveis até o prazo. Registrado como dívida com data.
 
 ## Alternatives Considered
 
@@ -116,11 +116,40 @@ criando agora, não só dívida de junho.
   gentil, mas exige carregar um estado intermediário e lembrar de fechá-lo — e este projeto tem
   histórico documentado de exceção temporária que virou permanente, sendo o próprio `lenient` deste
   repositório o exemplo (comentário diz "durante onboarding"; o onboarding terminou há meses).
-- **Sair do `lenient` de vez**, saldando as 172. Rejeitado por custo/benefício: 157 são dívida
+- **Sair do `lenient` de vez**, saldando as 177. Rejeitado por custo/benefício: 169 são dívida
   histórica de escrita, não de código, e consumiriam a sessão sem entregar produto. O carve-out
   captura os 8 casos que importam agora.
 - **Manter como está.** Rejeitado: dois required checks que não podem reprovar são pior que dois
   checks ausentes, porque aparentam cobertura.
+
+## Adendo de 2026-09-17 — corrigido pela auditoria da Wave 0
+
+Três correções a esta ADR, todas medidas. **Elas mudam decisões, não só números.**
+
+1. 🔴 **A ancoragem é em `origin/main`, não em HEAD — a decisão 3 acima está errada como escrita.**
+   O padrão de `credentialGuardAnchoredRules` cobre edição **não commitada**, e o próprio comentário
+   em `validator.go:200-206` diz isso com todas as letras. Em CI, no evento `pull_request`,
+   `actions/checkout` traz `refs/pull/N/merge`: **HEAD é o merge commit, logo HEAD == disco**, e a
+   comparação é vácua. Um PR que **commita** o rebaixamento passaria — e um PR commita, por
+   definição. A decisão 3 passa a ler **`origin/main`**, o que exige fetch explícito nos workflows.
+   Precedente já resolvido neste repositório, a reusar verbatim: `quality.yml:545-570`, inclusive a
+   discriminação entre *ref ausente* e *arquivo ausente*, com a primeira fatal.
+
+2. 🔴 **Existe um terceiro interruptor**, que esta ADR não previa: repontar
+   `req_dir`/`roadmap_dir`/`adr_dirs` para diretório existente e vazio zera a governança **mesmo em
+   `strict`**. Medido, com uma REQ quebrada no disco: `✓ No violations found`, RC=0. É a mesma causa
+   — o objeto verificado governa a própria verificação — e entra na **mesma REQ** pela Regra Dura.
+   **Consequência para esta ADR: a decisão vale para o `escopo` da verificação, não só para a
+   `severidade`.** É o pior dos três, porque é silencioso e sobrevive à correção dos outros dois.
+
+3. **Prazo absurdo é o mesmo que prazo ausente.** `lenient_until: 9999-12-31` derrota a decisão 1 a
+   custo zero. Recusar data ausente e aceitar data absurda seria incoerente — as duas escrevem
+   "leniência para sempre". A decisão 1 passa a incluir um **teto de horizonte**.
+
+**Residuais nomeados e não cobertos** (detalhe e motivo na REQ): `.trackfw-baseline.json` commitado à
+força; manoplas comportamentais (`stale_wip_days`, `wip_limit`); `req_roadmap_sync` como braço de
+falso-negativo, hoje com zero ocorrências. Ficam **nomeados** porque residual sem nome volta como
+surpresa.
 
 ## Relacionadas
 
